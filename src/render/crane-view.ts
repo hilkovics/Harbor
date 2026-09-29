@@ -33,8 +33,8 @@ import type { CraneVM } from './view-models';
 export type CraneState = CraneVM['state'];
 
 /**
- * Sklon výložníka v stupňoch (v smere hodinových ručičiek) podľa fázy: pri `grabbing` sa vychyľuje k lodi,
- * pri `placing` k apronu; inak je rovno. Malé konštanty — len jemné vizuálne naznačenie fázy cyklu.
+ * Sklon výložníka v stupňoch (v smere hodinových ručičiek) podľa fázy: pri `grabbing` sa mierne vychýli doprava,
+ * pri `placing` doľava, inak je rovno (nad vodou). Malé konštanty — len jemné vizuálne naznačenie fázy cyklu.
  */
 export const CRANE_BOOM_TILT_DEG: Readonly<Record<CraneState, number>> = {
   idle: 0,

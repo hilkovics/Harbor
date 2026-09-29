@@ -197,7 +197,7 @@ Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 
 - outputs: tools/simrun.ts; data/scenarios/smoke.json; tests/tools/simrun.test.ts
 - požiadavky: CLI `pnpm simrun <scenario.json> --ticks N [--report]`; scenár `{ id, seed, map?: string, commands: [] }` — mapa sa načíta, ak je uvedená (vo F0 žiadna). `World` vzniká až vo F1 → zatiaľ úzke rozhranie `Tickable { tick(): void }` so stubom nad `SimClock` + `Rng` + `DefRegistry`. Report JSON s finálnymi kľúčmi: `scenario, seed, ticks, cashEnd, exportedUnits, lostUnits, onTimeRate, craneBlockedPct` (neimplementované metriky `null`, `lostUnits` 0). Chýbajúci/nečitateľný scenár → exit 1 so správou.
 - acceptance:
-  - `pnpm simrun data/scenarios/smoke.json --ticks 1000 --report | jq -e '.ticks==1000 and .lostUnits==0'`
+  - `pnpm -s simrun data/scenarios/smoke.json --ticks 1000 --report | jq -e '.ticks==1000 and .lostUnits==0'` (`-s` potlačí hlavičku pnpm na stdout, aby výstup bol čistý JSON)
   - `! pnpm simrun data/scenarios/nope.json --ticks 1`
   - `pnpm vitest run tests/tools/simrun.test.ts`
 - do_not_touch: src/sim/**, package.json, .claude/**
@@ -225,7 +225,7 @@ Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 
 - acceptance:
   - `pnpm typecheck && pnpm lint && pnpm test && pnpm validate:defs`
   - `pnpm test:e2e && test -s tests/e2e/__screenshots__/boot.png`
-  - `pnpm simrun data/scenarios/smoke.json --ticks 1000 --report` → `lostUnits = 0` (namiesto `vertical_slice`, ktorý vznikne vo F5)
+  - `pnpm -s simrun data/scenarios/smoke.json --ticks 1000 --report | jq -e .lostUnits==0` → `lostUnits = 0` (namiesto `vertical_slice`, ktorý vznikne vo F5)
   - diff-loopy z T00-03 a T00-04 bez rozdielov
 - do_not_touch: všetko (neopravuje)
 - estimate: S

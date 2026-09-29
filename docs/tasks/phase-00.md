@@ -20,8 +20,10 @@
 - [x] T00-12 · Review `src/sim/**`
 - [x] T00-13 · Plná pipeline + triáž
 - [x] T00-14 · Uzavretie fázy (PROGRESS, BACKLOG)
+- [ ] T00-15 · Hranica `src/sim`: vlastný tsconfig + ESLint allowlist (nález T00-12 #1)
+- [ ] T00-16 · `tickGameSeconds` len delitele 60 v schéme aj DefRegistry (nález T00-12 #2)
 
-Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 11 → 12 → 13 → 14.
+Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 11 → 12 → 13 → 14 → {15 ‖ 16} (dodatočné karty z review T00-12).
 
 ---
 
@@ -241,4 +243,50 @@ Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 
   - `! grep -n '^- \[ \] T00-' docs/tasks/phase-00.md`
   - `grep -q 'vertical_slice' docs/BACKLOG.md`
 - do_not_touch: všetko mimo outputs
+- estimate: S
+
+---
+
+## Dodatočné karty z review T00-12 (major nálezy, pred F1)
+
+### T00-15 · Hranica `src/sim`: vlastný tsconfig + ESLint allowlist (nález T00-12 #1)
+- model: sonnet
+- agent: implementer
+- parallel: yes (nemení kód v `src/sim/**/*.ts`; ak by bolo treba, `needs_escalation`)
+- depends_on: T00-14
+- inputs: BACKLOG P1 „Vynútenie pravidiel 1/3 je denylist…"; ARCHITECTURE §2 („src/sim nesmie importovať nič mimo src/sim a data/"); CLAUDE.md „Tvrdé pravidlá" 1 a 3; eslint.config.js; tsconfig.json; package.json (skripty)
+- outputs: src/sim/tsconfig.json; tsconfig.json (ak treba vylúčiť/odkázať); eslint.config.js; package.json (iba skripty `typecheck`, `build`); tests/tools/sim-boundary.test.ts
+- požiadavky:
+  - Vrstva 1 — kompilátor: `src/sim/tsconfig.json` (extends root) s `lib: ["ES2023"]` a `types: []`, include `src/sim/**/*` (+ JSON z `data/` cez `resolveJsonModule`). Každý DOM/Node globál (`window`, `document`, `self`, `localStorage`, `navigator`, `setTimeout`, `process`, `crypto`, `console`, `structuredClone`…) je v `src/sim` chyba kompilácie. `pnpm typecheck` a `pnpm build` kontrolujú aj tento projekt.
+  - Vrstva 2 — ESLint pre `src/sim/**/*.{ts,tsx,mts,cts,js,mjs}`: importy ako **allowlist** (len `@sim/…`, `@data/…` a relatívne cesty, ktoré neopustia `src/sim`; zakázané aj `node:*`, akýkoľvek npm balík a traverzia typu `@sim/../render/x`); `no-restricted-syntax` na `new Date(...)`, `Date(...)` a prístup cez `globalThis.*`; existujúce `no-restricted-properties` (Math.random, Date.now, performance.now) ostávajú.
+  - Regresný test `tests/tools/sim-boundary.test.ts` cez ESLint Node API (`new ESLint().lintText(code, { filePath: 'src/sim/core/probe.ts' })`): každý obchvat z nálezu hlási ≥ 1 chybu; legitímne importy (`./x`, `../defs`, `@sim/core`, `@data/defs/time.json`) a bežný kód 0 chýb; mimo `src/sim` (napr. `src/ui/probe.tsx` s `document`) 0 chýb z týchto pravidiel.
+- acceptance:
+  - `pnpm typecheck && pnpm lint && pnpm test && pnpm build`
+  - `pnpm vitest run tests/tools/sim-boundary.test.ts`
+  - tsc sonda (bash, musí skončiť exit 0 a súbor po sebe zmazať):
+    ```bash
+    for g in "window" "document.title" "self" "localStorage" "navigator.userAgent" "setTimeout(() => 0, 1)" "process.hrtime()" "crypto.randomUUID()" "structuredClone({})"; do
+      printf 'export const x = %s;\n' "$g" > src/sim/__probe__.ts
+      if pnpm exec tsc --noEmit -p src/sim/tsconfig.json >/dev/null 2>&1; then echo "LEAK: $g"; rm -f src/sim/__probe__.ts; exit 1; fi
+    done; rm -f src/sim/__probe__.ts; echo "tsc boundary OK"
+    ```
+  - ESLint sondy (každá exit ≠ 0): `new Date()`, `Date()`, `globalThis.Math.random()`, `import 'node:fs'`, `import x from 'lodash'`, `import '@sim/../render/x'`, `import '../../render/x'` cez `pnpm exec eslint --stdin --stdin-filename src/sim/core/probe.ts`
+- do_not_touch: src/sim/**/*.ts, tools/**, data/**, tests/sim/**, .claude/**
+- estimate: M
+
+### T00-16 · `tickGameSeconds` len delitele 60 v schéme aj DefRegistry (nález T00-12 #2)
+- model: sonnet
+- agent: implementer
+- parallel: yes (disjunktné súbory s T00-15)
+- depends_on: T00-14
+- inputs: BACKLOG P1 „tickGameSeconds 7/120…"; ARCHITECTURE §3; ADR-002; data/schemas/time.schema.json; src/sim/defs/def-registry.ts; src/sim/core/sim-clock.ts
+- outputs: data/schemas/time.schema.json; src/sim/core/sim-clock.ts (iba `export` konštanty `SECONDS_PER_MINUTE`); src/sim/defs/def-registry.ts; tests/sim/defs/def-registry.test.ts; tests/tools/validate-defs.test.ts
+- požiadavky:
+  - Schéma: `tickGameSeconds` → `enum: [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60]` (delitele 60; `description` to vysvetlí s odkazom na §3).
+  - DefRegistry: rovnaké pravidlo odvodené z exportovanej `SECONDS_PER_MINUTE` (`SECONDS_PER_MINUTE % v === 0`), nie druhý literálny zoznam; chyba = `DefError('time', '/tickGameSeconds', …)`.
+  - Test konzistencie: pre každé n ∈ 1..120 platí schema-valid ⇔ registry-valid ⇔ `new SimClock({ tickGameSeconds: n })` nehodí.
+- acceptance:
+  - `pnpm vitest run tests/sim/defs tests/tools/validate-defs.test.ts` (vrátane „7 → DefError /tickGameSeconds", „120 → DefError", „validate-defs: 7 → chyba s /tickGameSeconds", test konzistencie 1..120)
+  - `pnpm validate:defs && pnpm typecheck && pnpm lint && pnpm test`
+- do_not_touch: eslint.config.js, tsconfig.json, package.json, src/sim/tsconfig.json, tools/**, data/defs/**, .claude/**
 - estimate: S

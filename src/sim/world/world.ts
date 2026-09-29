@@ -42,12 +42,12 @@ function copyParcels(map: LoadedMap): Map<string, Parcel> {
 
 export class World {
   readonly defs: DefRegistry;
-  /** Načítaná mapa — len na čítanie; `map.grid` je šablóna počiatočného stavu, živá mriežka sveta je `grid`. */
+  /** Načítaná mapa — len na čítanie; počiatočný stav mriežky dáva `map.createGrid()`, živá mriežka sveta je `grid`. */
   readonly map: LoadedMap;
   /** Seed novej hry (uint32); ďalší priebeh určuje stav `rng`. */
   readonly seed: number;
   readonly clock: SimClock;
-  /** Vlastná kópia `map.grid` — menia ju len príkazy a systémy tohto sveta. */
+  /** Vlastná mriežka z `map.createGrid()` — menia ju len príkazy a systémy tohto sveta. */
   readonly grid: Grid;
   /** Parcely v poradí mapy; meniteľné je len `ownership` (príkazy kúpy/prenájmu). */
   readonly parcels: ReadonlyMap<string, Parcel>;
@@ -75,7 +75,7 @@ export class World {
 
   /**
    * Nová hra: tick 0 pri rýchlosti `INITIAL_SPEED`, hotovosť `economy.startingCashCents`, `Rng(seed)`, ID od 1,
-   * mriežka = klon `map.grid` (so starter cestami), parcely skopírované (`startOwned` → `owned`).
+   * mriežka = nová `map.createGrid()` (so starter cestami), parcely skopírované (`startOwned` → `owned`).
    * Chyby: seed nie je uint32 → `RangeError`; `INITIAL_SPEED` chýba v `time.speeds` → `DefError`.
    */
   static create(defs: DefRegistry, map: LoadedMap, seed: number): World {
@@ -91,7 +91,7 @@ export class World {
       clock,
       rng,
       ids: new EntityIdAllocator(),
-      grid: map.grid.clone(),
+      grid: map.createGrid(),
       parcels: copyParcels(map),
       cashCents: defs.economy.startingCashCents,
     });
@@ -103,8 +103,8 @@ export class World {
    * `WorldStateError` (pozri `parseWorldState`). Výsledok nezdieľa meniteľný stav so `state` ani s `map`.
    */
   static deserialize(defs: DefRegistry, map: LoadedMap, state: WorldState): World {
-    const parsed = parseWorldState(state, defs, map);
-    const grid = map.grid.clone();
+    const grid = map.createGrid();
+    const parsed = parseWorldState(state, defs, map, grid);
     for (let i = 0; i < grid.cellCount; i++) grid.atIndex(i).road = 'none';
     for (const [index, layer] of parsed.roads) grid.atIndex(index).road = layer;
     const parcels = copyParcels(map);

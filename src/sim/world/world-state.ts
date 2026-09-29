@@ -9,7 +9,7 @@ import { EntityIdAllocator, type EntityIdAllocatorState } from '../core/entity-i
 import { Rng, type RngState } from '../core/rng';
 import { SimClock, type SimClockState } from '../core/sim-clock';
 import type { DefRegistry } from '../defs/def-registry';
-import type { RoadLayer } from '../grid/grid';
+import type { Grid, RoadLayer } from '../grid/grid';
 import { pointerSegment } from '../grid/map-error';
 import type { LoadedMap } from '../grid/map-loader';
 import type { ParcelOwnership } from '../grid/parcel';
@@ -121,9 +121,9 @@ function restore<T>(path: string, build: () => T): T {
   }
 }
 
-function parseRoads(value: unknown, map: LoadedMap): SerializedRoad[] {
+/** `grid` = mriežka počiatočného stavu mapy (z `map.createGrid()`); číta sa z nej len statický terén. */
+function parseRoads(value: unknown, grid: Grid): SerializedRoad[] {
   if (!Array.isArray(value)) throw new WorldStateError('/roads', `musí byť pole, dostal ${describeValue(value)}`);
-  const { grid } = map;
   const seen = new Set<number>();
   return value.map((entry: unknown, i): SerializedRoad => {
     const path = `/roads${pointerSegment(i)}`;
@@ -177,8 +177,11 @@ function parseParcels(value: unknown, map: LoadedMap): Map<string, ParcelOwnersh
  * (tick ≥ 0, rýchlosť v `time.speeds`), `ids`, `cashCents` (bezpečné celé číslo), `roads` (index v mape, vrstva,
  * bez duplicít, terén unesie cestu), `parcels` (presne parcely mapy, platné vlastníctvo, `leased` len pri
  * `leasable`). Vstup sa nemení a výsledok s ním nezdieľa meniteľné objekty.
+ *
+ * `grid` je mriežka počiatočného stavu tej istej mapy (`map.createGrid()`) — z nej sa overuje terén pod cestami;
+ * nemení sa.
  */
-export function parseWorldState(raw: unknown, defs: DefRegistry, map: LoadedMap): ParsedWorldState {
+export function parseWorldState(raw: unknown, defs: DefRegistry, map: LoadedMap, grid: Grid): ParsedWorldState {
   const state = checkKeys(raw, WORLD_STATE_KEYS, '');
   if (state.version !== WORLD_STATE_VERSION) {
     throw new WorldStateError('/version', `nepodporovaná verzia ${describeValue(state.version)} (podporovaná ${String(WORLD_STATE_VERSION)})`);
@@ -202,7 +205,7 @@ export function parseWorldState(raw: unknown, defs: DefRegistry, map: LoadedMap)
   if (typeof cashCents !== 'number' || !Number.isSafeInteger(cashCents)) {
     throw new WorldStateError('/cashCents', `musí byť bezpečné celé číslo (centy), dostal ${describeValue(cashCents)}`);
   }
-  const roads = parseRoads(state.roads, map);
+  const roads = parseRoads(state.roads, grid);
   const ownership = parseParcels(state.parcels, map);
   return { seed, clock, rng, ids, cashCents, roads, ownership };
 }

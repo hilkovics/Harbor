@@ -46,12 +46,6 @@ export interface LoadedMap {
   readonly height: number;
   /** Nová, nezávislá mriežka počiatočného stavu; každé volanie vráti inú inštanciu. */
   readonly createGrid: () => Grid;
-  /**
-   * @deprecated Meniteľná šablóna počiatočného stavu (BACKLOG P2 „LoadedMap.grid je meniteľná šablóna“). Prechodné pole
-   * len pre `World.create`/`World.deserialize` (`map.grid.clone()`), kým ich T02-01 neprepne na `createGrid()`;
-   * potom sa pole odstráni. Nový kód používa `createGrid()`, `width` a `height`.
-   */
-  readonly grid: Grid;
   /** Parcely v poradí mapy; `ownership` = `'owned'` pre `startOwned`, inak `'none'`. */
   readonly parcels: readonly Readonly<Parcel>[];
   readonly roadPortals: readonly MapPortal[];
@@ -321,13 +315,12 @@ export function loadMap(def: MapDef): LoadedMap {
 
   for (const { x, y } of def.starter.roads) grid.at(x, y).road = 'road';
 
-  // `grid` je šablóna: nikdy sa nevydáva (okrem prechodného `grid`, viď `LoadedMap`), každý svet dostane `clone()`.
+  // `grid` je šablóna: nikdy sa nevydáva, každý volajúci `createGrid()` dostane vlastný `clone()`.
   return Object.freeze({
     id: def.id,
     width: def.width,
     height: def.height,
     createGrid: () => grid.clone(),
-    grid,
     parcels: Object.freeze(def.parcels.map(toParcel)),
     roadPortals: toPortals(def.roadPortals),
     railPortals: toPortals(def.railPortals),

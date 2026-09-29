@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import harbor01Json from '@data/maps/harbor_01.json';
 import type { EntityId } from '@sim/core/entity-id';
 import {
+  Grid,
   MapError,
   loadBundledMap,
   loadMap,
@@ -228,6 +229,12 @@ describe('loadMap — čistota a determinizmus', () => {
       expect(clean.at(41, 30).traffic).toBe(0);
     });
 
+    it('LoadedMap nevystavuje meniteľnú šablónu — žiadne pole `grid`, len `createGrid()` (BACKLOG P2)', () => {
+      const map = load(harbor01Json);
+      expect(Object.hasOwn(map, 'grid')).toBe(false);
+      expect(Object.values(map).some((value) => value instanceof Grid)).toBe(false);
+    });
+
     it('funguje aj po rozklade mapy ({ ...map }) — nepoužíva `this`', () => {
       const map = load(harbor01Json);
       const copy = { ...map };
@@ -252,9 +259,8 @@ describe('loadMap — čistota a determinizmus', () => {
     const bundled = loadBundledMap();
     const direct = load(harbor01Json);
     expect(bundled.id).toBe('harbor_01');
-    const withoutGrids = ({ createGrid: _create, grid: _grid, ...rest }: LoadedMap) => {
+    const withoutGrids = ({ createGrid: _create, ...rest }: LoadedMap) => {
       void _create;
-      void _grid;
       return rest;
     };
     expect(withoutGrids(bundled)).toEqual(withoutGrids(direct));

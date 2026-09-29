@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "road": { "costPerCellCents": 200000, "maintenancePerDayCents": 0 },
+  "rail": { "costPerCellCents": 600000, "maintenancePerDayCents": 0 }
+}

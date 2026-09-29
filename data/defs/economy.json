@@ -7,5 +7,6 @@
   "leaseMonthlyRateOfPrice": 0.015,
   "bankruptcyDays": 30,
   "offersPerDay": 6,
-  "offerExpiryDays": 2
+  "offerExpiryDays": 2,
+  "removalRefundRate": 0.5
 }

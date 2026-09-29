@@ -1,7 +1,10 @@
 // Spoločné pomôcky pre testy World (T01-03). Skutočné príkazy (PlaceRoad, …) sú v @sim/commands (T01-04, testy
 // v tests/sim/commands) — tu sú testovacie príkazy, ktoré implementujú rozhranie `Command` a menia svet priamo.
+import cargoTypesJson from '@data/defs/cargo_types.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
+import modulesJson from '@data/defs/modules.json';
+import shipsJson from '@data/defs/ships.json';
 import timeJson from '@data/defs/time.json';
 import type { Command, SerializedCommand, ValidationReason, ValidationResult } from '@sim/commands';
 import { DefRegistry, loadBundledDefs } from '@sim/defs';
@@ -9,13 +12,22 @@ import { loadBundledMap, type CellCoord, type Grid, type LoadedMap } from '@sim/
 import type { World, WorldState } from '@sim/world';
 
 export const DEFS: DefRegistry = loadBundledDefs();
+/** Surové bundled defy — testy z nich skladajú `DefRegistry` s jedným upraveným defom. */
+export const RAW_DEFS = {
+  time: timeJson,
+  economy: economyJson,
+  infrastructure: infrastructureJson,
+  cargo_types: cargoTypesJson,
+  modules: modulesJson,
+  ships: shipsJson,
+};
 /** Zdieľaná mapa — testy overujú, že ju žiadny svet nezmení. */
 export const MAP: LoadedMap = loadBundledMap();
 export const SEED = 20260929;
 
 /** Defy s upraveným `time.json` (napr. `speeds` bez 1). */
 export function defsWithTime(overrides: Record<string, unknown>): DefRegistry {
-  return DefRegistry.fromRaw({ time: { ...timeJson, ...overrides }, economy: economyJson, infrastructure: infrastructureJson });
+  return DefRegistry.fromRaw({ ...RAW_DEFS, time: { ...timeJson, ...overrides } });
 }
 
 /** FNV-1a 32-bit nad `JSON.stringify(state)` — „hash stavu“ pre testy determinizmu. */

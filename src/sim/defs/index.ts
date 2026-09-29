@@ -1,2 +1,3 @@
 // Typované načítanie dátových definícií (DefRegistry).
-export {};
+export * from './types';
+export * from './def-registry';

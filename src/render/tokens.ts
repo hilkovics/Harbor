@@ -148,3 +148,31 @@ export function loadRenderPalette(resolve: TokenResolver = documentTokenResolver
     },
   };
 }
+
+/** Farby fallbacku entít sveta (moduly, žeriavy, lode, náklad) — používajú sa, len keď chýba sprite. */
+export interface EntityPalette {
+  readonly module: { readonly base: ColorValue; readonly outline: ColorValue };
+  readonly crane: { readonly frame: ColorValue; readonly boom: ColorValue };
+  readonly ship: { readonly hull: ColorValue; readonly deck: ColorValue };
+  readonly cargo: { readonly base: ColorValue; readonly dark: ColorValue };
+  /** Odznak zablokovania a stavový signál chyby (`--ui-danger`). */
+  readonly danger: ColorValue;
+  /** Značka konektora v build móde (`--module-connector`). */
+  readonly connector: ColorValue;
+}
+
+/**
+ * Načíta farby fallbacku entít z tokenov (DESIGN_BRIEF §3 „Moduly“, „Entity“, „Kategórie nákladu“); chýbajúci token →
+ * chyba s jeho menom. Náklad používa farbu kategórie kontajnerov (`--cargo-container*`) — vo F2 jediná kategória.
+ */
+export function loadEntityPalette(resolve: TokenResolver = documentTokenResolver): EntityPalette {
+  const color = (name: string): ColorValue => readColorToken(name, resolve);
+  return {
+    module: { base: color('--module-base'), outline: color('--module-outline') },
+    crane: { frame: color('--crane-frame'), boom: color('--crane-boom') },
+    ship: { hull: color('--ship-hull'), deck: color('--ship-deck') },
+    cargo: { base: color('--cargo-container'), dark: color('--cargo-container-dark') },
+    danger: color('--ui-danger'),
+    connector: color('--module-connector'),
+  };
+}

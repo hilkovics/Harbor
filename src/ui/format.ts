@@ -78,3 +78,31 @@ export function formatGameTime({ day, hour, minute }: GameTimeParts): string {
 export function formatSpeed(speed: number): string {
   return speed === 0 ? 'Pauza' : `${String(speed)}\u00D7`;
 }
+
+/** Krát U+00D7 pre rozmery (`8×3`) a rýchlosti (`4×`). */
+export const TIMES_SIGN = '×';
+
+/** Rozmer footprintu modulu v bunkách: `8×3` (šírka × výška po rotácii). */
+export function formatFootprint(footprint: { readonly w: number; readonly h: number }): string {
+  return `${String(Math.trunc(footprint.w))}${TIMES_SIGN}${String(Math.trunc(footprint.h))}`;
+}
+
+/**
+ * Percentá: `72 %` (celé číslo, medzera pred `%` ako v prototype, záporné s U+2212). Hodnota sa neorezáva na 0–100 —
+ * orezanie (napr. pre šírku pruhu) patrí volajúcemu. Neplatná hodnota (`NaN`, `±Infinity`) → `— %`.
+ */
+export function formatPercent(percent: number): string {
+  if (!Number.isFinite(percent)) return `${EM_DASH} %`;
+  const rounded = Math.round(Math.abs(percent));
+  return `${percent < 0 && rounded !== 0 ? MINUS_SIGN : ''}${String(rounded)} %`;
+}
+
+/**
+ * Pomer `časť / celok` s voliteľnou jednotkou: `3 / 4`, `1 / 4 TEU` (celé čísla s čiarkou ako oddeľovačom tisícov,
+ * medzery okolo lomky ako v prototype). Neplatná hodnota → `—`.
+ */
+export function formatFraction(part: number, total: number, unit?: string): string {
+  if (!Number.isFinite(part) || !Number.isFinite(total)) return EM_DASH;
+  const body = `${groupThousands(String(Math.trunc(part)))} / ${groupThousands(String(Math.trunc(total)))}`;
+  return unit === undefined || unit === '' ? body : `${body} ${unit}`;
+}

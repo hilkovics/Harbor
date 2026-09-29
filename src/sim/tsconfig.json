@@ -1,0 +1,18 @@
+{
+  // Hranica src/sim (CLAUDE.md, pravidlá 1 a 3; ARCHITECTURE §2): kompilátor vidí len čistý ES2023.
+  // Žiadne DOM ani Node typy → window, document, self, localStorage, navigator, setTimeout,
+  // process, crypto, console, structuredClone… sú tu chyba kompilácie.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": [],
+    // `import 'node:fs'` bez bindingu sa inak vôbec nerozlišuje → neexistujúci modul = chyba.
+    "noUncheckedSideEffectImports": true,
+    // Iba aliasy povolené v sim; @render/@ui/@app sa tu nedajú ani rozlíšiť.
+    "paths": {
+      "@sim/*": ["./*"],
+      "@data/*": ["../../data/*"]
+    }
+  },
+  "include": ["./**/*"]
+}

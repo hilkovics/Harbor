@@ -2,6 +2,7 @@
 // (JSON Schema draft 2020-12). Spustenie: `pnpm validate:defs` [defsDir schemasDir mapsDir]. Exit 1 pri akejkoľvek chybe.
 // Logika je exportovaná ako `validateDefsDir` a `validateMapsDir` (testovateľné bez procesu), CLI sa spustí len pri
 // priamom behu súboru. Schéma mapy overuje len štruktúru; vzťahy medzi poľami mapy overuje loader v sime (MapError).
+// Katalógové defy (`items: [...]`, ADR-009) majú navyše kontrolu jedinečnosti `id` — JSON Schema ju nevyjadrí.
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
@@ -39,8 +40,31 @@ function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-/** Overí JSON súbor `filePath` voči schéme `schemaName` z `schemasDir`; `label` je predpona každej chyby. */
-function validateJsonFile(label: string, filePath: string, schemaName: string, schemasDir: string): string[] {
+/**
+ * Duplicitné `id` v `items[]` katalógového defu (ADR-009): `<label>: /items/<i>/id duplicitné id 'x' (/items/<j>/id)`.
+ * Súbory bez `items` (konfiguračné defy, mapy) a položky bez reťazcového `id` sa preskakujú — tvar hlási schéma.
+ */
+function findDuplicateIds(label: string, json: unknown): string[] {
+  if (typeof json !== 'object' || json === null || Array.isArray(json)) return [];
+  const items: unknown = (json as { items?: unknown }).items;
+  if (!Array.isArray(items)) return [];
+  const firstSeen = new Map<string, number>();
+  const errors: string[] = [];
+  items.forEach((item: unknown, index) => {
+    const id = typeof item === 'object' && item !== null ? (item as { id?: unknown }).id : undefined;
+    if (typeof id !== 'string') return;
+    const first = firstSeen.get(id);
+    if (first === undefined) firstSeen.set(id, index);
+    else errors.push(`${label}: /items/${String(index)}/id duplicitné id '${id}' (/items/${String(first)}/id)`);
+  });
+  return errors;
+}
+
+/**
+ * Overí JSON súbor `filePath` voči schéme `schemaName` z `schemasDir`; `label` je predpona každej chyby.
+ * `catalog` zapne kontrolu jedinečnosti `id` v `items[]` (chyby schémy sa hlásia pred duplicitami).
+ */
+function validateJsonFile(label: string, filePath: string, schemaName: string, schemasDir: string, catalog: boolean): string[] {
   const schemaPath = join(schemasDir, schemaName);
   if (!existsSync(schemaPath)) {
     return [`${label}: / chýba schéma ${schemaName} v ${schemasDir}`];
@@ -57,11 +81,14 @@ function validateJsonFile(label: string, filePath: string, schemaName: string, s
     const schema: unknown = JSON.parse(readFileSync(schemaPath, 'utf8'));
     // Nová inštancia na každý súbor: schémy s rovnakým `$id` sa medzi behmi nezrazia.
     const validate = new Ajv2020({ allErrors: true }).compile(schema as object);
-    if (validate(json)) return [];
+    const duplicates = catalog ? findDuplicateIds(label, json) : [];
+    if (validate(json)) return duplicates;
     // Chyby zo subschémy `contains` (jedna na každý nevyhovujúci prvok) sú šum — ostáva len chyba samotného `contains`.
-    return (validate.errors ?? [])
-      .filter((error) => !error.schemaPath.includes('/contains/'))
+    // Sprievodná chyba `if` („must match "then" schema“) je šum — konkrétne chyby z vetvy `then` ostávajú.
+    const schemaErrors = (validate.errors ?? [])
+      .filter((error) => !error.schemaPath.includes('/contains/') && error.keyword !== 'if')
       .map((error) => describeAjvError(label, error));
+    return [...schemaErrors, ...duplicates];
   } catch (cause) {
     return [`${label}: / neplatná schéma ${schemaName}: ${errorMessage(cause)}`];
   }
@@ -78,7 +105,7 @@ export function validateDefsDir(defsDir: string, schemasDir: string): DefValidat
     .sort()
     .map((file) => ({
       file,
-      errors: validateJsonFile(file, join(defsDir, file), `${basename(file, JSON_SUFFIX)}${SCHEMA_SUFFIX}`, schemasDir),
+      errors: validateJsonFile(file, join(defsDir, file), `${basename(file, JSON_SUFFIX)}${SCHEMA_SUFFIX}`, schemasDir, true),
     }));
 }
 
@@ -92,7 +119,7 @@ export function validateMapsDir(mapsDir: string, schemasDir: string): DefValidat
     .sort()
     .map((name) => {
       const file = `${MAPS_LABEL_PREFIX}${name}`;
-      return { file, errors: validateJsonFile(file, join(mapsDir, name), MAP_SCHEMA_NAME, schemasDir) };
+      return { file, errors: validateJsonFile(file, join(mapsDir, name), MAP_SCHEMA_NAME, schemasDir, false) };
     });
 }
 

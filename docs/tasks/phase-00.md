@@ -24,7 +24,7 @@
 - [x] T00-16 · `tickGameSeconds` len delitele 60 v schéme aj DefRegistry (nález T00-12 #2)
 - [x] T00-17 · Hranica `src/sim`: zatvoriť obchvaty z re-review T00-15 (triple-slash/declare, eval/Function, aliasy Math/Date)
 - [x] T00-18 · Hranica `src/sim`: zákaz inline `eslint-disable` a `@ts-expect-error` (re-review T00-17)
-- [ ] T00-19 · ADR-007..011 pred F1 (hranica sim, cesty/parcely, singleton defy, domov konštánt, internalTicks + loadTicks) + ARCHITECTURE
+- [x] T00-19 · ADR-007..011 pred F1 (hranica sim, cesty/parcely, singleton defy, domov konštánt, internalTicks + loadTicks) + ARCHITECTURE
 
 Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 11 → 12 → 13 → 14 → {15 ‖ 16} → 17 → 18 → 19 (dodatočné karty z review T00-12, re-review a rozhodnutia pred F1).
 

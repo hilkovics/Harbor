@@ -6,16 +6,11 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 –
 
 ## P1
-- Singleton defy time/economy (bez items[] s id) odporujú ARCHITECTURE §4 a nie sú zapísané v ADR → veta do §4 alebo ADR. — pôvod: T00-12 · fáza: F1
-- Cesty vs parcely — §4.2 („requiresParcelOwnership vždy true okrem ciest na verejných bunkách") vs §5.1/§5.2; smie PlaceRoad stavať na bunky bez parcely? Rozhodnutie používateľa (ADR). — pôvod: T00-05 · fáza: pred F1
-- Pravidlo 4 vs §4 — bez defu sú cena cesty/koľaje (2k/6k, §5.3), konštanty kongescie (0.9/0.25/200/3, §7.6), default internalTicks 6 (§7.3); určiť def a rozšíriť schému. — pôvod: T00-05 · fáza: F1/F3/F11
-- internalTicks (§7.3) vs loadTicks/unloadTicks (§4.4) — sčítavajú sa? Rozhodnutie (ADR). — pôvod: T00-05 · fáza: pred F3
+- ReleaseParcel pri cestách/koľajach na prenajatej parcele nie je určené (ADR-008 ich tam povoľuje, §5.2 blokuje ukončenie prenájmu len pri moduloch): zostanú, odstránia sa s refundáciou, alebo ukončenie zablokujú? Rozhodnúť ADR-om. — pôvod: T00-19 · fáza: pred F7
 - Agent test-runner doslova volá simrun data/scenarios/vertical_slice.json, ktorý neexistuje do F5; dovtedy sa používa smoke.json. — pôvod: T00-13 · fáza: F5
-- ADR-007: hranica src/sim je trojvrstvová (src/sim/tsconfig.json bez DOM/Node typov + ESLint allowlist importov a zákazy obchvatov + test „len .ts" v src/sim; relatívne importy max 5× '../', hlbšie cez @sim/). ARCHITECTURE §2 a CLAUDE.md pravidlo 1 spomínajú len no-restricted-imports — zapísať ADR (sim-architect) a doplniť text; CLAUDE.md upravuje používateľ. — pôvod: T00-15, T00-17, T00-18 · fáza: pred F1
 
 ## P2
 - Zlomkový flowUnitsPerTick (0.5/0.3) vs diskrétne CargoUnit batche (ADR-003) — delenie jednotky alebo akumulácia? — pôvod: T00-05 · fáza: pred F9
-- §5.1 spomína len PlaceRoadCommand, §12.2 aj PlaceRail/RemoveRail — zosúladiť text. — pôvod: T00-05 · fáza: F1
 - DAYS_PER_MONTH v sim-clock.ts je privátne — exportovať (vzorec prenájmu §9.2 /30); do ADR-002 dopísať, že kalendár je konštanta v kóde. — pôvod: T00-12 · fáza: F7
 - INITIAL_SPEED=1 nemusí byť v time.speeds (schéma vyžaduje len 0). — pôvod: T00-12 · fáza: F1
 - Rng — seed | 0 aliasuje hodnoty nad 32 bitov (1 ≡ 2^32+1); povoliť len uint32. — pôvod: T00-12 · fáza: F1

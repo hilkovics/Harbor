@@ -25,3 +25,4 @@ Stav: **hotová** · vetva `claude/laughing-galileo-2ctnlq`
 - boot.png prezretý orchestrátorom
 - Odchýlky od plánu: simrun používa `data/scenarios/smoke.json` namiesto `vertical_slice` (vznikne vo F5); `World` je zatiaľ stub v tools/simrun.ts (F1).
 - Dodatočné karty z review (T00-15 až T00-18): hranica src/sim je trojvrstvová (sim tsconfig bez DOM/Node, ESLint allowlist + zákazy obchvatov vrátane inline `eslint-disable` a `@ts-expect-error`, len `.ts`), `tickGameSeconds` len delitele 60 (schéma = DefRegistry = SimClock). Pipeline zelená, 500 testov.
+- Rozhodnutia pred F1 (T00-19, delegované používateľom): ADR-007 trojvrstvová hranica src/sim, ADR-008 cesty/koľaje aj na verejných bunkách, ADR-009 konfiguračné vs katalógové defy, ADR-010 `infrastructure.json` + `logistics.json`, ADR-011 pobyt vozidla = internalTicks + load/unload za jednotku. Overené proti GDD (bez rozporu).

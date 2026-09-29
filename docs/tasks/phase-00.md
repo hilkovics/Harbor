@@ -24,8 +24,9 @@
 - [x] T00-16 · `tickGameSeconds` len delitele 60 v schéme aj DefRegistry (nález T00-12 #2)
 - [x] T00-17 · Hranica `src/sim`: zatvoriť obchvaty z re-review T00-15 (triple-slash/declare, eval/Function, aliasy Math/Date)
 - [x] T00-18 · Hranica `src/sim`: zákaz inline `eslint-disable` a `@ts-expect-error` (re-review T00-17)
+- [ ] T00-19 · ADR-007..011 pred F1 (hranica sim, cesty/parcely, singleton defy, domov konštánt, internalTicks + loadTicks) + ARCHITECTURE
 
-Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 11 → 12 → 13 → 14 → {15 ‖ 16} → 17 → 18 (dodatočné karty z review T00-12 a re-review).
+Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 11 → 12 → 13 → 14 → {15 ‖ 16} → 17 → 18 → 19 (dodatočné karty z review T00-12, re-review a rozhodnutia pred F1).
 
 ---
 
@@ -330,3 +331,25 @@ Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 
   - ESLint (exit 0): `export enum E { A }`, `export const enum F { B }`
 - do_not_touch: src/sim/**/*.ts, všetko mimo outputs
 - estimate: S
+
+### T00-19 · ADR-007..011 pred F1 + zosúladenie ARCHITECTURE
+- model: opus
+- agent: sim-architect
+- parallel: no
+- depends_on: T00-18
+- inputs: docs/BACKLOG.md P1; docs/DECISIONS.md (formát ADR-001..006); ARCHITECTURE §2, §4, §4.2, §4.4, §4.6, §5.1, §5.2, §5.3, §7.3, §7.6, §8, §12.2; eslint.config.js + src/sim/tsconfig.json (hranica); rozhodnutia orchestrátora (používateľ delegoval: „rozhodni ty čo najlepšie")
+- outputs: docs/DECISIONS.md (ADR-007..011); docs/ARCHITECTURE.md (len sekcie dotknuté ADR, číslovanie § sa nemení)
+- rozhodnutia:
+  - ADR-007 Hranica src/sim je trojvrstvová: `src/sim/tsconfig.json` (lib ES2023, types []) + ESLint (allowlist importov, zákazy obchvatov nedeterminizmu a globálov, `noInlineConfig`, zákaz `@ts-*` komentárov) + test „len `.ts`"; relatívne importy max 5× `../`, hlbšie cez `@sim/`.
+  - ADR-008 Cesty/koľaje a parcely: `PlaceRoad`/`PlaceRail` povolené na bunkách vlastnej/prenajatej parcely a na verejných bunkách (`parcelId === null`); zakázané na parcele s `ownership: 'none'`. Moduly vždy vyžadujú vlastnú/prenajatú parcelu (`requiresParcelOwnership` = true pre všetky moduly, keďže cesty nie sú moduly — ADR-006).
+  - ADR-009 Konfiguračné vs katalógové defy: konfiguračné (`time`, `economy`, budúce `infrastructure`, `logistics`) = jeden objekt so `schemaVersion`; katalógové (`cargo_types`, `modules`, `ships`, `vehicles`, `tech_tree`, `contract_templates`, …) = `{ schemaVersion, items: [...] }` s `id` (snake_case).
+  - ADR-010 Domov konštánt bez defu (pravidlo 4): `data/defs/infrastructure.json` — `road`/`rail`: `costPerCellCents` (200 000 / 600 000), `maintenancePerDayCents` (0); `data/defs/logistics.json` — `defaultInternalTicks` (6, modul môže prepísať `params.internalTicks`) a `congestion`: `trafficDecayPerHour` 0.9, `slowdownPerExtraVehicle` 0.25, `penaltyTrafficDivisor` 200, `penaltyMax` 3. Súbory + schémy + DefRegistry vzniknú až vo fáze, ktorá ich použije (infrastructure F1, logistics F3; congestion hodnoty sa použijú vo F3/F11).
+  - ADR-011 Pobyt vozidla pri konektore: `internalTicks` modulu (vnútorný presun, ADR-004) + za každú jednotku `loadTicks`/`unloadTicks` vozidla (manipulácia), sekvenčne; `CargoLedger.move` jednotky nastane po dokončení jej load/unload.
+- acceptance:
+  - `test "$(grep -c '^## ADR-0[01][0-9]:' docs/DECISIONS.md)" -eq 11`
+  - `for k in Kontext Rozhodnutie Alternatívy Dôsledky; do test "$(grep -c "^\*\*$k:\*\*" docs/DECISIONS.md)" -eq 11 || exit 1; done`
+  - `grep -q 'infrastructure.json' docs/ARCHITECTURE.md && grep -q 'logistics.json' docs/ARCHITECTURE.md`
+  - `! grep -n 'vždy true okrem ciest' docs/ARCHITECTURE.md`
+  - `diff <(grep -oE '^#{2,3} [0-9]+(\.[0-9]+)?\.? ' <(git show HEAD:docs/ARCHITECTURE.md)) <(grep -oE '^#{2,3} [0-9]+(\.[0-9]+)?\.? ' docs/ARCHITECTURE.md)` (číslovanie § nezmenené)
+- do_not_touch: src/**, data/**, tests/**, CLAUDE.md, docs/BACKLOG.md, eslint.config.js
+- estimate: M

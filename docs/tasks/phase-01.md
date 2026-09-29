@@ -25,8 +25,9 @@
 - [ ] T01-14 · Plná pipeline + triáž
 - [ ] T01-15 · Uzavretie fázy (PROGRESS, BACKLOG)
 - [ ] T01-16 · Sprity terénu a infraštruktúry (Claude Design relácia 2) + prechody pobrežia
+- [ ] T01-17 · ADR-013: zosúladenie ARCHITECTURE s implementáciou F1 (review T01-13)
 
-Vlny: 01 → 02 → {03 ‖ 08 ‖ 05*} → 04 → {06 ‖ 07 ‖ 13} → {10 ‖ 11} → 16 → 09 → 12 → 14 → 15.
+Vlny: 01 → 02 → {03 ‖ 08 ‖ 05*} → 04 → {06 ‖ 07 ‖ 13} → {10 ‖ 11 ‖ 17} → 16 → 09 → 12 → 14 → 15.
 \* T01-05 píše testy vopred vo worktree; zlúčia sa až po T01-04, keď sú zelené (pravidlo „pnpm test zelené pred commitom").
 Single writer `src/sim/**`: do `src/sim` píšu len T01-01 až T01-04, a to sériovo.
 
@@ -339,3 +340,18 @@ Scenár (replay, §12.2): `{ "id", "seed", "map": "data/maps/harbor_01.json", "c
   - screenshot appky (`pnpm dev` + Playwright, dočasný skript mimo commitu) so starter parcelou a pobrežím — pozretý, popis v zhrnutí
 - do_not_touch: src/sim/**, src/ui/**, data/defs/**, data/maps/**, assets/** (len čítať)
 - estimate: M
+
+### T01-17 · ADR-013: zosúladenie ARCHITECTURE s implementáciou F1 (review T01-13)
+- model: opus
+- agent: sim-architect
+- parallel: yes (len docs)
+- depends_on: T01-13
+- inputs: review T01-13 (riadok ARCHITECTURE zaostáva: §3, §4.6, §8, §14); karty T01-01, T01-03, T01-04; src/sim/{world,commands}/**; docs/DECISIONS.md ADR-012
+- outputs: docs/DECISIONS.md (ADR-013); docs/ARCHITECTURE.md (§3, §4.6, §6, §8, §14 — len dotknuté vety, číslovanie § bez zmeny)
+- požiadavky: ADR-013 „Rozhrania World a príkazov z F1": `World.create(defs, map, seed)` / `deserialize(defs, map, state)` (terén sa neukladá, mapa podľa `mapId`); `applyPending()` (stavba počas pauzy, replay ekvivalentný); `serialize()` odmieta neprázdnu frontu (fronta nie je vo v1); poradie udalostí v ticku (udalosti príkazov → `TickAdvanced` → hranice hodina/deň/mesiac); `ValidationResult { ok, reasons: ValidationReason[], cells, costCents }`; `insufficient_funds` len pri cene > 0 (dlh neblokuje bezplatné akcie ani refundáciu — platí aj pre PlaceModule vo F2); nové polia `time.maxTicksPerFrame` a `economy.removalRefundRate`.
+- acceptance:
+  - `test "$(grep -c '^## ADR-0[01][0-9]:' docs/DECISIONS.md)" -eq 13`
+  - `grep -q 'maxTicksPerFrame' docs/ARCHITECTURE.md && grep -q 'removalRefundRate' docs/ARCHITECTURE.md && grep -q 'deserialize(defs, map, state)' docs/ARCHITECTURE.md`
+  - číslovanie § nezmenené (diff nadpisov voči HEAD prázdny)
+- do_not_touch: src/**, tests/**, data/**, CLAUDE.md
+- estimate: S

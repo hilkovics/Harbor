@@ -1,0 +1,174 @@
+{
+  "schemaVersion": 1,
+  "cellPx": 64,
+  "note": "Čiastočný manifest (relácie 1–2: terén a infraštruktúra). Plný manifest vygeneruje Claude Design v relácii 6 (DESIGN_BRIEF §8); autotile sady road/rail/pipe sú v jednej orientácii (straight zvislá, corner N→E, t bez juhu, end otvorený na sever) a rotuje ich engine.",
+  "sprites": {
+    "water_deep": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "states": {
+        "default": "terrain/water_deep.svg"
+      }
+    },
+    "water_shallow": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "states": {
+        "default": "terrain/water_shallow.svg"
+      }
+    },
+    "quay": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "states": {
+        "default": "terrain/quay.svg"
+      }
+    },
+    "quay_edge_n": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "states": {
+        "default": "terrain/quay_edge_n.svg"
+      }
+    },
+    "land": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "states": {
+        "default": "terrain/land.svg"
+      }
+    },
+    "land_alt": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "states": {
+        "default": "terrain/land_alt.svg"
+      }
+    },
+    "blocked": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "states": {
+        "default": "terrain/blocked.svg"
+      }
+    },
+    "portal_road": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "states": {
+        "default": "terrain/portal_road.svg"
+      }
+    },
+    "portal_rail": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "states": {
+        "default": "terrain/portal_rail.svg"
+      }
+    },
+    "water_edge": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "states": {
+        "n": "terrain/water_edge_n.svg",
+        "e": "terrain/water_edge_e.svg",
+        "s": "terrain/water_edge_s.svg",
+        "w": "terrain/water_edge_w.svg"
+      }
+    },
+    "water_corner": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "states": {
+        "ne": "terrain/water_corner_ne.svg",
+        "nw": "terrain/water_corner_nw.svg",
+        "se": "terrain/water_corner_se.svg",
+        "sw": "terrain/water_corner_sw.svg"
+      }
+    },
+    "water_inner": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "states": {
+        "ne": "terrain/water_inner_ne.svg",
+        "nw": "terrain/water_inner_nw.svg",
+        "se": "terrain/water_inner_se.svg",
+        "sw": "terrain/water_inner_sw.svg"
+      }
+    },
+    "parcel_outline": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "states": {
+        "for_sale": "terrain/parcel_outline_for_sale.svg",
+        "owned": "terrain/parcel_outline_owned.svg",
+        "leased": "terrain/parcel_outline_leased.svg"
+      }
+    },
+    "road": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "states": {
+        "straight": "infra/road_straight.svg",
+        "corner": "infra/road_corner.svg",
+        "t": "infra/road_t.svg",
+        "cross": "infra/road_cross.svg",
+        "end": "infra/road_end.svg"
+      }
+    },
+    "rail": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "states": {
+        "straight": "infra/rail_straight.svg",
+        "corner": "infra/rail_corner.svg",
+        "t": "infra/rail_t.svg",
+        "cross": "infra/rail_cross.svg",
+        "end": "infra/rail_end.svg"
+      }
+    },
+    "pipe": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "states": {
+        "straight": "infra/pipe_straight.svg",
+        "corner": "infra/pipe_corner.svg",
+        "t": "infra/pipe_t.svg",
+        "end": "infra/pipe_end.svg",
+        "valve": "infra/pipe_valve.svg"
+      }
+    }
+  }
+}

@@ -290,6 +290,7 @@ assets/
 design/
   tokens.css
   design-system.html          (relácia 1 — referenčná stránka design systému)
+  terrain-infra.html          (relácia 2 — referenčný hárok terénu a infraštruktúry; SVG sú v assets/terrain, assets/infra)
   ui/{top-hud,build-bar,contracts-panel,module-inspector,finance-panel,tech-tree,stats-panel,parcel-panel,monthly-report,toasts,settings,game-over,components}.html
 ```
 Názvy súborov: `{id}[_{variant}][_{state}].svg` — napr. `container_yard_small_fill50.svg`, `straddle_carrier_loaded.svg`, `ship_feeder_container_loaded.svg`, `crane_container_gantry_boom.svg`.

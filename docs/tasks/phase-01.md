@@ -24,8 +24,9 @@
 - [ ] T01-13 · Review `src/sim/**`
 - [ ] T01-14 · Plná pipeline + triáž
 - [ ] T01-15 · Uzavretie fázy (PROGRESS, BACKLOG)
+- [ ] T01-16 · Sprity terénu a infraštruktúry (Claude Design relácia 2) + prechody pobrežia
 
-Vlny: 01 → 02 → {03 ‖ 08 ‖ 05*} → 04 → {06 ‖ 07 ‖ 13} → {10 ‖ 11} → 09 → 12 → 14 → 15.
+Vlny: 01 → 02 → {03 ‖ 08 ‖ 05*} → 04 → {06 ‖ 07 ‖ 13} → {10 ‖ 11} → 16 → 09 → 12 → 14 → 15.
 \* T01-05 píše testy vopred vo worktree; zlúčia sa až po T01-04, keď sú zelené (pravidlo „pnpm test zelené pred commitom").
 Single writer `src/sim/**`: do `src/sim` píšu len T01-01 až T01-04, a to sériovo.
 
@@ -272,7 +273,7 @@ Scenár (replay, §12.2): `{ "id", "seed", "map": "data/maps/harbor_01.json", "c
 - model: sonnet
 - agent: implementer
 - parallel: no
-- depends_on: T01-10, T01-11
+- depends_on: T01-10, T01-11, T01-16
 - inputs: ARCHITECTURE §16 (E2E, `window.__sim`); IMPLEMENTATION_PLAN akceptácia F1
 - outputs: tests/e2e/f1-roads.spec.ts; (boot.spec.ts upraviť, ak treba)
 - požiadavky: načítanie → canvas + HUD viditeľné; `B`, ťah myšou cez ≥ 8 buniek starter parcely (súradnice z `window.__sim.cellToScreen`) → počet ciest vo `window.__sim.world` vzrástol; screenshot `tests/e2e/__screenshots__/f1-road.png` (pobrežie + cesta viditeľné); klik 4× → za ~2 s tick narástol ≥ 3× viac ako pri 1× za rovnaký čas a text času v HUD sa zmenil.
@@ -314,3 +315,25 @@ Scenár (replay, §12.2): `{ "id", "seed", "map": "data/maps/harbor_01.json", "c
   - `! grep -n '^- \[ \] T01-' docs/tasks/phase-01.md`
 - do_not_touch: všetko mimo outputs
 - estimate: S
+
+### T01-16 · Sprity terénu a infraštruktúry (Claude Design relácia 2) + prechody pobrežia
+- model: sonnet
+- agent: implementer
+- parallel: no (mení src/render po T01-08 a vizuálne sa overuje v appke z T01-11)
+- depends_on: T01-08, T01-11
+- inputs: assets/manifest.json (čiastočný, relácie 1–2); assets/terrain/*.svg (24), assets/infra/*.svg (15); design/terrain-infra.html (referenčný hárok); DESIGN_BRIEF §4, §5.1, §5.2, §7; src/render/** z T01-08
+- outputs: src/render/{sprite-atlas,coast,terrain-layer,road-layer}.ts (+ úpravy); data/schemas/asset-manifest.schema.json; tests/render/coast.test.ts; tests/tools/asset-manifest.test.ts
+- požiadavky:
+  - Sprity načítať z `assets/manifest.json` cez Vite (`import.meta.glob('/assets/**/*.svg', { query: '?url', import: 'default', eager: true })`) a PixiJS `Assets` s rozlíšením pre zoom do 2,0 (SVG rasterizovať na 128 px). Autotile tvary `road/rail` z manifestu + rotácia z tabuľky T01-08. Dočasné `Graphics` kreslenie ostáva ako fallback pre chýbajúci sprite (budúce moduly).
+  - Portály: sprite `portal_road` / `portal_rail` na bunke portálu.
+  - Prechody pobrežia — čistá funkcia `coastTile(grid, x, y)` pre nevodnú bunku (vodné bunky = `water_deep` / `water_shallow`):
+    - `quay`: sever je voda → `quay_edge_n`, inak `quay`.
+    - `land` — maska vody v 4-susedoch N=1, E=2, S=4, W=8: jedna strana → `water_edge_{n|e|s|w}`; dve susedné strany N+E / E+S / S+W / W+N → `water_inner_{ne|se|sw|nw}`; protiľahlé strany alebo ≥ 3 strany → `water_edge_*` prvej strany v poradí N, E, S, W; žiadna strana, ale voda na diagonále → `water_corner_{ne|nw|se|sw}` (prvá v poradí NE, NW, SE, SW); inak šachovnica 2×2: `(⌊x/2⌋ + ⌊y/2⌋) mod 2 = 0 → land`, inak `land_alt`.
+    - Bunky mimo mapy sa nepočítajú ako voda.
+  - Schéma `asset-manifest.schema.json` + test, že manifest je platný a každý odkazovaný súbor existuje.
+- acceptance:
+  - `pnpm vitest run tests/render tests/tools/asset-manifest.test.ts` (vrátane tabuľky `coastTile`: všetky vetvy + harbor_01 bunky (9,10) → `water_inner_ne`, (5,10) → `water_edge_n`, (40,14) → `quay_edge_n`, (40,20) → land/land_alt)
+  - `pnpm typecheck && pnpm lint && pnpm test && pnpm build`
+  - screenshot appky (`pnpm dev` + Playwright, dočasný skript mimo commitu) so starter parcelou a pobrežím — pozretý, popis v zhrnutí
+- do_not_touch: src/sim/**, src/ui/**, data/defs/**, data/maps/**, assets/** (len čítať)
+- estimate: M

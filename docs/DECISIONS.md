@@ -137,3 +137,15 @@ Stav: prijaté (F0) · Zdroj: ARCHITECTURE §4.4, §7.1, §7.3; ADR-004; BACKLOG
 **Alternatívy:** Len `internalTicks` s manipuláciou v ňom by zneplatnilo `loadTicks`/`unloadTicks` a rozdiely medzi vozidlami. Súbežná manipulácia viacerých jednotiek alebo `max(internalTicks, …)` by zvýhodnili vozidlá s väčšou kapacitou (AGV 2) bez času na manipuláciu a hromadný presun by ukazoval jednotky vo vozidle ešte pred dokončením nakládky.
 
 **Dôsledky:** Vehicle FSM (F3) po `internalTicks` vykoná `k` sekvenčných krokov load/unload a po každom emituje `CargoMoved` (napr. `on_apron → in_vehicle`, `in_vehicle → in_storage`), takže každá jednotka má v každom ticku jednoznačnú polohu; `internalTicks` sa platí raz za návštevu modulu. Spresňuje dôsledok ADR-004 (presun nenastáva hneď po `internalTicks`). Platí pre interné vozidlá (§4.4); kamióny a vlaky nakladajú podľa `loadTicksPerUnit` rampy/stanice (§7.5).
+
+## ADR-012: Refundácia pri odstránení cesty/koľaje — `removalRefundRate`, kategória `road_sale`
+
+Stav: prijaté (F1) · Zdroj: ARCHITECTURE §5.1, §8 bod 8, §9.2, §12.2; ADR-006, ADR-008, ADR-010; karta T01-04
+
+**Kontext:** §8 bod 8 vracia pri `RemoveModule` 50 % ceny a T01-01 túto hodnotu presunul do `economy.removalRefundRate` (0.5), no pre `RemoveRoad`/`RemoveRail` (§12.2, ADR-006) nebolo určené, či a koľko sa vracia. Chýbala aj kategória §9.2 pre takýto príjem: `road_capex` je výdavok, moduly a vozidlá majú vlastné `module_sale` a `vehicle_sale`.
+
+**Rozhodnutie:** Odstránenie cesty/koľaje vracia `floor(n × costPerCellCents × economy.removalRefundRate)`, kde `n` je počet unikátnych odstránených buniek príkazu a `costPerCellCents` aktuálna cena vrstvy z `infrastructure.json` (`road` / `rail`); zaokrúhľuje sa nadol raz za celý príkaz. Pri 0.5 je to 50 %, rovnako ako pri moduloch (§8 bod 8). Refundácia sa účtuje do novej kategórie `road_sale`, stavba ostáva `road_capex`. Pre odstránenie platí pravidlo parcely ako pre stavbu (ADR-008: nie na parcele na predaj) a bunka bez danej vrstvy príkaz odmietne (`no_road`).
+
+**Alternatívy:** Bez refundácie by sa správanie líšilo od modulov a prestavba siete (bežná slučka tycoonu) by bola trestaná plnou cenou. Plná refundácia by z odstránenia urobila bezplatné experimentovanie bez ceny rozhodnutia. Refundácia v `road_capex` ako záporný výdavok by v súhrnoch §9.2 znižovala CAPEX príjmom, na rozdiel od modulov a vozidiel. Zaokrúhlenie po bunkách by pri nepárnej cene strácalo centy úmerne dĺžke ťahu.
+
+**Dôsledky:** `LEDGER_CATEGORIES` aj typ `LedgerCategory` v §9.2 obsahujú `road_sale` hneď za `road_capex` a `MoneyChanged` pri `RemoveRoad` nesie `reason: 'road_sale'`. `ValidationResult.costCents` je pri odstránení záporný (príjem), takže ghost v UI môže ukázať refundáciu. Vzorec počíta s aktuálnou, nie historickou cenou, teda aj pre starter cesty z mapy, ktoré hráč nezaplatil (tie môže „predať" za 50 % ceny); ide o drobnú výhodu na posúdenie pri balanse. `PlaceRail`/`RemoveRail` (F10) použijú rovnaký vzorec s `rail.costPerCellCents`.

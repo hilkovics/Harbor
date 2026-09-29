@@ -23,8 +23,15 @@ export interface ValidationResult {
   readonly ok: boolean;
   /** Dôvody odmietnutia (bez duplicít); pri `ok === true` prázdne. */
   readonly reasons: readonly ValidationReason[];
-  /** Bunky, na ktoré sa výsledok vzťahuje (ghost v UI ich zafarbí); príkazy bez buniek vracajú prázdne pole. */
+  /**
+   * Bunky, na ktoré sa výsledok vzťahuje (ghost v UI ich zafarbí); príkazy bez buniek vracajú prázdne pole.
+   * Príkazy nad vrstvou dopravy (`RoadLayerCommand`): unikátne bunky, ktoré `apply` zmení, v poradí prvého výskytu
+   * (pri odmietnutí tie, ktoré by samy prešli) — bunky už v cieľovom stave ani neplatné bunky tu nie sú.
+   */
   readonly cells: readonly CellCoord[];
-  /** Cena príkazu v centoch (USD), ktorú by `apply` strhol z hotovosti; 0 = zadarmo. */
+  /**
+   * Cena príkazu v centoch (USD), ktorú by `apply` strhol z hotovosti; 0 = zadarmo, záporná = príjem
+   * (napr. refundácia `RemoveRoad`, ADR-012). Pri odmietnutí cena platnej časti (`cells`).
+   */
   readonly costCents: number;
 }

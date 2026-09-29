@@ -1,5 +1,5 @@
-// Spoločné pomôcky pre testy World (T01-03). Skutočné príkazy (PlaceRoad, …) prídu v T01-04 — tu sú testovacie
-// príkazy, ktoré implementujú rozhranie `Command` a menia svet priamo.
+// Spoločné pomôcky pre testy World (T01-03). Skutočné príkazy (PlaceRoad, …) sú v @sim/commands (T01-04, testy
+// v tests/sim/commands) — tu sú testovacie príkazy, ktoré implementujú rozhranie `Command` a menia svet priamo.
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
 import timeJson from '@data/defs/time.json';

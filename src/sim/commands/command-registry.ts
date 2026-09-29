@@ -2,21 +2,17 @@
  * Register typov príkazov: `type` → factory (CLAUDE.md, pravidlo 7 — žiadny `switch`). Základ replay scenárov
  * a save (ARCHITECTURE §12.2): `commandFromJSON(cmd.toJSON())` vytvorí ekvivalentný príkaz.
  *
- * Kostra z T01-03 — register je zatiaľ prázdny; konkrétne príkazy (`PlaceRoad`, `RemoveRoad`, `SetGameSpeed`)
- * zaregistruje T01-04. Registrácia musí prebehnúť pri načítaní modulov (staticky), nie počas hry.
+ * Nová `CommandRegistry` je prázdna; predvolený `commandRegistry` má vstavané príkazy (`PlaceRoad`, `RemoveRoad`,
+ * `SetGameSpeed` — `builtin-commands.ts`) zaregistrované pri načítaní tohto modulu (staticky), nie počas hry.
  */
+import { registerBuiltinCommands } from './builtin-commands';
 import type { Command, SerializedCommand } from './command';
+import { CommandError } from './command-error';
+
+export { CommandError } from './command-error';
 
 /** Vytvorí príkaz zo serializovaného tvaru; pri neplatnom payloade vyhodí `CommandError`. */
 export type CommandFactory = (json: SerializedCommand) => Command;
-
-/** Neplatný serializovaný príkaz (neznámy typ, zlý tvar) alebo chyba registrácie. */
-export class CommandError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'CommandError';
-  }
-}
 
 export class CommandRegistry {
   private readonly factories = new Map<string, CommandFactory>();
@@ -59,8 +55,9 @@ export class CommandRegistry {
   }
 }
 
-/** Predvolený register simulácie; `commandFromJSON` číta z neho. */
+/** Predvolený register simulácie so vstavanými príkazmi; `commandFromJSON` číta z neho. */
 export const commandRegistry = new CommandRegistry();
+registerBuiltinCommands(commandRegistry);
 
 /** Príkaz zo serializovaného tvaru cez predvolený register (neznámy typ → `CommandError`). */
 export function commandFromJSON(json: SerializedCommand): Command {

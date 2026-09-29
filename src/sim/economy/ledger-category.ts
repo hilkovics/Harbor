@@ -10,6 +10,8 @@ export const LEDGER_CATEGORIES = [
   'module_capex',
   'module_sale',
   'road_capex',
+  /** Refundácia pri odstránení cesty/koľaje (ADR-012). */
+  'road_sale',
   'parcel_purchase',
   'parcel_lease',
   'maintenance',

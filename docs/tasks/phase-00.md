@@ -22,8 +22,9 @@
 - [x] T00-14 · Uzavretie fázy (PROGRESS, BACKLOG)
 - [ ] T00-15 · Hranica `src/sim`: vlastný tsconfig + ESLint allowlist (nález T00-12 #1)
 - [ ] T00-16 · `tickGameSeconds` len delitele 60 v schéme aj DefRegistry (nález T00-12 #2)
+- [ ] T00-17 · Hranica `src/sim`: zatvoriť obchvaty z re-review T00-15 (triple-slash/declare, eval/Function, aliasy Math/Date)
 
-Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 11 → 12 → 13 → 14 → {15 ‖ 16} (dodatočné karty z review T00-12).
+Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 11 → 12 → 13 → 14 → {15 ‖ 16} → 17 (dodatočné karty z review T00-12 a re-review).
 
 ---
 
@@ -289,4 +290,27 @@ Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 
   - `pnpm vitest run tests/sim/defs tests/tools/validate-defs.test.ts` (vrátane „7 → DefError /tickGameSeconds", „120 → DefError", „validate-defs: 7 → chyba s /tickGameSeconds", test konzistencie 1..120)
   - `pnpm validate:defs && pnpm typecheck && pnpm lint && pnpm test`
 - do_not_touch: eslint.config.js, tsconfig.json, package.json, src/sim/tsconfig.json, tools/**, data/defs/**, .claude/**
+- estimate: S
+
+### T00-17 · Hranica `src/sim`: zatvoriť obchvaty z re-review T00-15
+- model: sonnet
+- agent: implementer
+- parallel: no
+- depends_on: T00-15, T00-16
+- inputs: re-review T00-15 (sim-reviewer, verdikt FIX FIRST — 3 major + minor rovnakej triedy); eslint.config.js; src/sim/tsconfig.json; tests/tools/sim-boundary.test.ts; CLAUDE.md „Tvrdé pravidlá" 1 a 3
+- outputs: eslint.config.js; src/sim/tsconfig.json; tests/tools/sim-boundary.test.ts; (nový) tests/tools/sim-tsconfig.test.ts
+- požiadavky (selektory overené reviewerom sondou):
+  1. Triple-slash a ambientné deklarácie (major): pre sim súbory `@typescript-eslint/triple-slash-reference: ['error', { lib: 'never', path: 'never', types: 'never' }]`; do `no-restricted-syntax` `TSModuleDeclaration[global=true]`, `TSModuleDeclaration[declare=true]`, `VariableDeclaration[declare=true]`, `TSDeclareFunction`, `ClassDeclaration[declare=true]`.
+  2. Vyhodnotenie kódu (major): `no-eval`, `no-new-func`, `no-implied-eval`; `eval` a `Function` medzi zakázané globály; selektor `MemberExpression[property.name='constructor']`.
+  3. Aliasy (major): `Identifier[name='Math']:not(MemberExpression > Identifier.object)` a `Identifier[name='Date']:not(TSTypeReference > Identifier, MemberExpression[property.name='UTC'] > Identifier.object, MemberExpression > Identifier.property, Property > Identifier.key)` — `Date` ako typ, `Date.UTC`, `Math.max`/`Math.imul` ostávajú povolené; pokryť aj `Reflect.construct(Date, …)`, `Object(Date)` a `Object.getOwnPropertyDescriptor(Math, …)` (vyplynie z pravidla na holý identifikátor).
+  4. Nedeterministické API (minor): `Intl`, `WeakRef`, `FinalizationRegistry`, `SharedArrayBuffer`, `Atomics` medzi zakázané globály; `localeCompare` a `toLocaleString`/`toLocaleDateString`/`toLocaleTimeString` do `no-restricted-properties` (akýkoľvek objekt).
+  5. Typy súborov (minor): v `src/sim` len `.ts` — zo sim globov vyradiť `tsx`/`js`/`mjs`/`cts`/`mts` a pridať test, ktorý zlyhá, ak v `src/sim/**` existuje iný než `.ts` súbor (okrem `tsconfig.json`).
+  6. Regresný test vrstvy 1 (minor): `tests/tools/sim-tsconfig.test.ts` overí, že `src/sim/tsconfig.json` má `lib` bez `DOM*` a `types: []`, a spustí `tsc --noEmit -p` nad dočasnou fixtúrou s `window` (očakáva chybu) — dočasné súbory mimo `src/sim` alebo vždy zmazané v `afterAll`.
+  7. Do tabuľky VIOLATIONS v `sim-boundary.test.ts` doplniť všetky sondy z bodov 1–4 a do povolených `Date` ako typ, `Date.UTC(…)`, `Math.max(…)`, `Math.imul(…)`.
+- acceptance:
+  - `pnpm typecheck && pnpm lint && pnpm test && pnpm build`
+  - `pnpm vitest run tests/tools/sim-boundary.test.ts tests/tools/sim-tsconfig.test.ts`
+  - ESLint sondy (každá exit ≠ 0) cez `pnpm exec eslint --stdin --stdin-filename src/sim/core/probe.ts`: `/// <reference lib="dom" />`, `declare global { var x: number }`, `declare const fetch: any;`, `eval('1')`, `Function('return this')()`, `(() => 0).constructor('return this')()`, `const m = Math; m.random();`, `const D = Date; new D();`, `new Intl.DateTimeFormat()`, `'a'.localeCompare('b')`
+  - ESLint (exit 0): `export const t: Date | null = null;`, `export const u = Date.UTC(2020, 0, 1);`, `export const m = Math.max(1, 2);`
+- do_not_touch: src/sim/**/*.ts, tools/**, data/**, package.json, .claude/**
 - estimate: S

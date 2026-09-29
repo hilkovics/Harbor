@@ -738,5 +738,11 @@
         "default": "cargo/car.svg"
       }
     }
+  },
+  "icons": {
+    "file": "icons/icons.svg",
+    "format": "svg-sprite",
+    "symbolPrefix": "ic_",
+    "grid": 24
   }
 }

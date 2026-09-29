@@ -1,2 +1,14 @@
-// Typy udalostí SimEvent.
-export {};
+// Typy udalostí SimEvent (readonly DTO, ARCHITECTURE §12.1).
+export type {
+  CommandRejectedEvent,
+  DayClosedEvent,
+  GameSpeedChangedEvent,
+  HourClosedEvent,
+  MoneyChangedEvent,
+  MonthClosedEvent,
+  RoadChangedEvent,
+  SimEvent,
+  SimEventOf,
+  SimEventType,
+  TickAdvancedEvent,
+} from './sim-event';

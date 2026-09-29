@@ -142,6 +142,15 @@ const VIOLATIONS: Violation[] = [
   { name: '(1).toLocaleString()', code: 'export const a = (1).toLocaleString();', rule: 'no-restricted-properties' },
   { name: 'x.toLocaleDateString()', code: 'export const f = (x: { toLocaleDateString(): string }) => x.toLocaleDateString();', rule: 'no-restricted-properties' },
   { name: 'x.toLocaleTimeString()', code: 'export const f = (x: { toLocaleTimeString(): string }) => x.toLocaleTimeString();', rule: 'no-restricted-properties' },
+  // Inline konfigurácia a umlčanie kompilátora (T00-18): noInlineConfig → komentár nemá efekt, pôvodné pravidlo hlási chybu.
+  { name: 'eslint-disable-next-line nad Math.random()', code: '// eslint-disable-next-line no-restricted-properties\nexport const a = Math.random();', rule: 'no-restricted-properties' },
+  { name: '/* eslint-disable */ nad Math.random()', code: '/* eslint-disable */\nexport const a = Math.random();', rule: 'no-restricted-properties' },
+  { name: '/* eslint no-restricted-syntax: off */ nad new Date()', code: '/* eslint no-restricted-syntax: off */\nexport const a = new Date();', rule: 'no-restricted-syntax' },
+  { name: "@ts-expect-error nad fetch('x')", code: "// @ts-expect-error fetch nie je v sim typoch\nexport const a = fetch('x');", rule: '@typescript-eslint/ban-ts-comment' },
+  { name: '@ts-ignore', code: '// @ts-ignore\nexport const a: number = 1;', rule: '@typescript-eslint/ban-ts-comment' },
+  { name: 'fetch (globál)', code: "export const a = fetch('x');", rule: 'no-restricted-globals' },
+  { name: 'queueMicrotask', code: 'queueMicrotask(() => undefined);\nexport const a = 1;', rule: 'no-restricted-globals' },
+  { name: 'declare enum', code: 'declare enum E { A }\nexport type T = E;', rule: 'no-restricted-syntax' },
 ];
 
 interface Allowed {
@@ -192,6 +201,8 @@ const ALLOWED: Allowed[] = [
     code: 'export function f(x: number): number;\nexport function f(x: string): string;\nexport function f(x: number | string) {\n  return x;\n}',
   },
   { name: 'kľúč objektu Date', code: 'export const a = { Date: 1 };' },
+  { name: 'enum', code: 'export enum E {\n  A,\n  B,\n}' },
+  { name: 'const enum', code: 'export const enum F {\n  B = 1,\n}' },
 ];
 
 describe('hranica src/sim — ESLint allowlist a zákazy (T00-15, T00-17)', () => {

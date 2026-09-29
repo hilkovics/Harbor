@@ -23,8 +23,9 @@
 - [ ] T00-15 · Hranica `src/sim`: vlastný tsconfig + ESLint allowlist (nález T00-12 #1)
 - [ ] T00-16 · `tickGameSeconds` len delitele 60 v schéme aj DefRegistry (nález T00-12 #2)
 - [ ] T00-17 · Hranica `src/sim`: zatvoriť obchvaty z re-review T00-15 (triple-slash/declare, eval/Function, aliasy Math/Date)
+- [ ] T00-18 · Hranica `src/sim`: zákaz inline `eslint-disable` a `@ts-expect-error` (re-review T00-17)
 
-Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 11 → 12 → 13 → 14 → {15 ‖ 16} → 17 (dodatočné karty z review T00-12 a re-review).
+Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 11 → 12 → 13 → 14 → {15 ‖ 16} → 17 → 18 (dodatočné karty z review T00-12 a re-review).
 
 ---
 
@@ -313,4 +314,19 @@ Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 
   - ESLint sondy (každá exit ≠ 0) cez `pnpm exec eslint --stdin --stdin-filename src/sim/core/probe.ts`: `/// <reference lib="dom" />`, `declare global { var x: number }`, `declare const fetch: any;`, `eval('1')`, `Function('return this')()`, `(() => 0).constructor('return this')()`, `const m = Math; m.random();`, `const D = Date; new D();`, `new Intl.DateTimeFormat()`, `'a'.localeCompare('b')`
   - ESLint (exit 0): `export const t: Date | null = null;`, `export const u = Date.UTC(2020, 0, 1);`, `export const m = Math.max(1, 2);`
 - do_not_touch: src/sim/**/*.ts, tools/**, data/**, package.json, .claude/**
+- estimate: S
+
+### T00-18 · Hranica `src/sim`: zákaz inline `eslint-disable` a `@ts-expect-error` (re-review T00-17)
+- model: sonnet
+- agent: orchestrátor (S karta)
+- parallel: no
+- depends_on: T00-17
+- inputs: re-review T00-17 (sim-reviewer, verdikt FIX FIRST — 1 major: inline `eslint-disable` vypne vrstvu 2; minor: `@ts-expect-error` + neznámy globál prejde oboma vrstvami, `declare enum`); eslint.config.js; tests/tools/sim-boundary.test.ts
+- outputs: eslint.config.js; tests/tools/sim-boundary.test.ts
+- požiadavky: v sim bloku `linterOptions: { noInlineConfig: true }`; `@typescript-eslint/ban-ts-comment` s `'ts-expect-error': true` (len src/sim); selektor `TSEnumDeclaration[declare=true]`; do zakázaných globálov `fetch`, `queueMicrotask`, `setImmediate`, `clearTimeout`, `clearInterval`, `global`, `Buffer`; sondy do testu.
+- acceptance:
+  - `pnpm vitest run tests/tools/sim-boundary.test.ts && pnpm typecheck && pnpm lint && pnpm test`
+  - ESLint sondy (exit ≠ 0) cez `--stdin-filename src/sim/core/probe.ts`: `// eslint-disable-next-line` + `Math.random()`, `/* eslint-disable */` + `Math.random()`, `/* eslint no-restricted-syntax: off */` + `new Date()`, `// @ts-expect-error` + `fetch('x')`, `declare enum E { A }`
+  - ESLint (exit 0): `export enum E { A }`, `export const enum F { B }`
+- do_not_touch: src/sim/**/*.ts, všetko mimo outputs
 - estimate: S

@@ -39,6 +39,14 @@ const SIM_FORBIDDEN_GLOBALS = [
   'FinalizationRegistry',
   'SharedArrayBuffer',
   'Atomics',
+  // Mimo lib ES2023 ich chytí aj tsc; tu kvôli jasnej správe a pre prípad `@ts-…` komentára (re-review T00-17).
+  'fetch',
+  'queueMicrotask',
+  'setImmediate',
+  'clearTimeout',
+  'clearInterval',
+  'global',
+  'Buffer',
 ];
 
 // Konkrétne správy pre najčastejšie porušenia (idú pred allowlistom, aby hlásenie bolo výstižné).
@@ -126,7 +134,11 @@ export default defineConfig([
   {
     // Sim core: bez DOM/Node/Pixi/React a bez nedeterminizmu (Math.random, Date, performance.now).
     files: SIM_FILES,
+    // Inline `eslint-disable` / `/* eslint … off */` by vypli celú hranicu — v src/sim sa ignorujú (re-review T00-17).
+    linterOptions: { noInlineConfig: true },
     rules: {
+      // `@ts-expect-error` / `@ts-ignore` by umlčali kompilátorovú vrstvu (neznámy globál, DOM typ) — v src/sim zakázané.
+      '@typescript-eslint/ban-ts-comment': ['error', { 'ts-expect-error': true, 'ts-ignore': true, 'ts-nocheck': true }],
       // Triple-slash direktívy (`/// <reference lib="dom" />`) by vrátili DOM/Node typy späť do sim.
       '@typescript-eslint/triple-slash-reference': ['error', { lib: 'never', path: 'never', types: 'never' }],
       // Vyhodnotenie kódu z reťazca obchádza všetky statické zákazy.
@@ -195,6 +207,10 @@ export default defineConfig([
           // Iba `declare function`; preťaženia funkcií (signatúry bez tela, `declare` = false) ostávajú povolené.
           selector: 'TSDeclareFunction[declare=true]',
           message: 'Ambientné `declare function` je v src/sim zakázané (pravidlá 1 a 3, ARCHITECTURE §2).',
+        },
+        {
+          selector: 'TSEnumDeclaration[declare=true]',
+          message: 'Ambientné `declare enum` je v src/sim zakázané (pravidlá 1 a 3); bežné `enum`/`const enum` sú povolené.',
         },
         {
           selector: 'ClassDeclaration[declare=true]',

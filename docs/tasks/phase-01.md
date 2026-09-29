@@ -327,12 +327,13 @@ Scenár (replay, §12.2): `{ "id", "seed", "map": "data/maps/harbor_01.json", "c
   - Sprity načítať z `assets/manifest.json` cez Vite (`import.meta.glob('/assets/**/*.svg', { query: '?url', import: 'default', eager: true })`) a PixiJS `Assets` s rozlíšením pre zoom do 2,0 (SVG rasterizovať na 128 px). Autotile tvary `road/rail` z manifestu + rotácia z tabuľky T01-08. Dočasné `Graphics` kreslenie ostáva ako fallback pre chýbajúci sprite (budúce moduly).
   - Portály: sprite `portal_road` / `portal_rail` na bunke portálu.
   - Prechody pobrežia — čistá funkcia `coastTile(grid, x, y)` pre nevodnú bunku (vodné bunky = `water_deep` / `water_shallow`):
+    - `blocked` → `blocked`.
     - `quay`: sever je voda → `quay_edge_n`, inak `quay`.
     - `land` — maska vody v 4-susedoch N=1, E=2, S=4, W=8: jedna strana → `water_edge_{n|e|s|w}`; dve susedné strany N+E / E+S / S+W / W+N → `water_inner_{ne|se|sw|nw}`; protiľahlé strany alebo ≥ 3 strany → `water_edge_*` prvej strany v poradí N, E, S, W; žiadna strana, ale voda na diagonále → `water_corner_{ne|nw|se|sw}` (prvá v poradí NE, NW, SE, SW); inak šachovnica 2×2: `(⌊x/2⌋ + ⌊y/2⌋) mod 2 = 0 → land`, inak `land_alt`.
     - Bunky mimo mapy sa nepočítajú ako voda.
   - Schéma `asset-manifest.schema.json` + test, že manifest je platný a každý odkazovaný súbor existuje.
 - acceptance:
-  - `pnpm vitest run tests/render tests/tools/asset-manifest.test.ts` (vrátane tabuľky `coastTile`: všetky vetvy + harbor_01 bunky (9,10) → `water_inner_ne`, (5,10) → `water_edge_n`, (40,14) → `quay_edge_n`, (40,20) → land/land_alt)
+  - `pnpm vitest run tests/render tests/tools/asset-manifest.test.ts` (vrátane tabuľky `coastTile`: všetky vetvy + harbor_01 bunky (0,11) → `water_edge_n`, (5,11) → `water_inner_ne`, (9,12) → `water_inner_ne`, (5,12) → `water_corner_ne`, (9,13) → `water_edge_e`, (86,13) → `water_edge_w`, (90,11) → `water_inner_nw`, (10,14) → `quay_edge_n`, (10,15) → `quay`, (80,28) → `blocked`, (0,12) → `land`, (2,12) → `land_alt`)
   - `pnpm typecheck && pnpm lint && pnpm test && pnpm build`
   - screenshot appky (`pnpm dev` + Playwright, dočasný skript mimo commitu) so starter parcelou a pobrežím — pozretý, popis v zhrnutí
 - do_not_touch: src/sim/**, src/ui/**, data/defs/**, data/maps/**, assets/** (len čítať)

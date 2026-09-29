@@ -9,23 +9,23 @@
 
 ## Checklist
 
-- [ ] T01-01 · Defy: `infrastructure.json`, `time.maxTicksPerFrame`, `economy.removalRefundRate`, mapa `harbor_01` + schéma, validate-defs pre mapy, DefRegistry
-- [ ] T01-02 · Sim: Grid, Cell, TerrainType, `rotate`, MapDef loader + invarianty mapy
-- [ ] T01-03 · Sim: World kostra (tick kroky 1 + 13, `applyPending`, parcely, cash, serialize v1) + kalendár SimClock + Rng uint32
-- [ ] T01-04 · Sim: Command infra + `PlaceRoad` / `RemoveRoad` / `SetGameSpeed` + ADR-012
-- [ ] T01-05 · Testy: scenár `f1_roads` + determinizmus / roundtrip (TDD)
-- [ ] T01-06 · Tooling: `simrun` nad skutočným World + replay príkazov
-- [ ] T01-07 · App: GameLoop + SimBridge + `useSimSnapshot` + `window.__sim` (dev)
-- [ ] T01-08 · Render: WorldRenderer, TerrainLayer, RoadLayer (autotile), Camera
-- [ ] T01-09 · Tabuľkové testy (scaffold): `rotate`, `autotileShape`, `formatMoney`, `formatGameTime`
-- [ ] T01-10 · UI: TopHUD + SpeedControl + formátovače
-- [ ] T01-11 · App: InputController + bootstrap (Pixi + HUD)
-- [ ] T01-12 · E2E: cesta ťahom myši + rýchlosť 4× + screenshot
-- [ ] T01-13 · Review `src/sim/**`
-- [ ] T01-14 · Plná pipeline + triáž
-- [ ] T01-15 · Uzavretie fázy (PROGRESS, BACKLOG)
-- [ ] T01-16 · Sprity terénu a infraštruktúry (Claude Design relácia 2) + prechody pobrežia
-- [ ] T01-17 · ADR-013: zosúladenie ARCHITECTURE s implementáciou F1 (review T01-13)
+- [x] T01-01 · Defy: `infrastructure.json`, `time.maxTicksPerFrame`, `economy.removalRefundRate`, mapa `harbor_01` + schéma, validate-defs pre mapy, DefRegistry
+- [x] T01-02 · Sim: Grid, Cell, TerrainType, `rotate`, MapDef loader + invarianty mapy
+- [x] T01-03 · Sim: World kostra (tick kroky 1 + 13, `applyPending`, parcely, cash, serialize v1) + kalendár SimClock + Rng uint32
+- [x] T01-04 · Sim: Command infra + `PlaceRoad` / `RemoveRoad` / `SetGameSpeed` + ADR-012
+- [x] T01-05 · Testy: scenár `f1_roads` + determinizmus / roundtrip (TDD)
+- [x] T01-06 · Tooling: `simrun` nad skutočným World + replay príkazov
+- [x] T01-07 · App: GameLoop + SimBridge + `useSimSnapshot` + `window.__sim` (dev)
+- [x] T01-08 · Render: WorldRenderer, TerrainLayer, RoadLayer (autotile), Camera
+- [x] T01-09 · Tabuľkové testy (scaffold): `rotate`, `autotileShape`, `formatMoney`, `formatGameTime`
+- [x] T01-10 · UI: TopHUD + SpeedControl + formátovače
+- [x] T01-11 · App: InputController + bootstrap (Pixi + HUD)
+- [x] T01-12 · E2E: cesta ťahom myši + rýchlosť 4× + screenshot
+- [x] T01-13 · Review `src/sim/**`
+- [x] T01-14 · Plná pipeline + triáž
+- [x] T01-15 · Uzavretie fázy (PROGRESS, BACKLOG)
+- [x] T01-16 · Sprity terénu a infraštruktúry (Claude Design relácia 2) + prechody pobrežia
+- [x] T01-17 · ADR-013: zosúladenie ARCHITECTURE s implementáciou F1 (review T01-13)
 
 Vlny: 01 → 02 → {03 ‖ 08 ‖ 05*} → 04 → {06 ‖ 07 ‖ 13} → {10 ‖ 11 ‖ 17} → 16 → 09 → 12 → 14 → 15.
 \* T01-05 píše testy vopred vo worktree; zlúčia sa až po T01-04, keď sú zelené (pravidlo „pnpm test zelené pred commitom").

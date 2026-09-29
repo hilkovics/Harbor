@@ -51,11 +51,12 @@ Pravidlá toku dát:
 | `tickGameSeconds` | 10 | 1 tick = 10 herných sekúnd |
 | `ticksPerRealSecond` | 10 | pri rýchlosti 1× |
 | `speeds` | `[0, 1, 2, 4, 8]` | 0 = pauza |
+| `maxTicksPerFrame` | 64 | strop tickov za jeden render frame v `GameLoop` (ADR-013) |
 | Odvodené | 6 tickov = 1 herná minúta; 360 = hodina; 8 640 = deň; 259 200 = mesiac (30 dní) | |
 | Reálny čas | 1 herný deň ≈ 14,4 min pri 1×, 3,6 min pri 4× | tycoon pacing |
 
-- `SimClock { tick, speed }`; odvodené `gameMinute/Hour/Day/Month`. Udalosti `HourClosed`, `DayClosed`, `MonthClosed`.
-- `GameLoop` (app): akumulátor `dt`; vykoná `n = floor(acc / tickDuration)` tickov, max **64 tickov/frame** (proti spirále smrti); prezentácia interpoluje polohy medzi `prevTick` a `currTick` pomocou `alpha = acc / tickDuration`.
+- `SimClock { tick, speed }`; odvodené `gameMinute/Hour/Day/Month`. `clock.advance()` vráti uzavreté hranice a `World` v kroku 1 (§6) emituje `TickAdvanced`, potom `HourClosed`, `DayClosed`, `MonthClosed` (ADR-013).
+- `GameLoop` (app): každý frame najprv `world.applyPending()` (príkazy sa aplikujú aj počas pauzy), potom akumulátor `acc += dt × speed`; vykoná `n = min(floor(acc / tickDuration), time.maxTicksPerFrame)` tickov (64, proti spirále smrti; pri zásahu limitu sa `acc` oreže na najviac `tickDuration`); prezentácia interpoluje polohy medzi `prevTick` a `currTick` pomocou `alpha = acc / tickDuration` (ADR-013).
 - Všetky trvania v defoch sú **v tickoch** (nie v sekundách).
 
 ---
@@ -147,8 +148,8 @@ type TechEffect =
 
 ### 4.6 `contract_templates.json`, `economy.json`, `time.json`
 - `contract_templates`: `cargoTypeId, volumeUnitsRange, slaDaysRange, shipClassIds[], weight, minTier`.
-- `economy`: `startingCashCents, demurrageRateOfRewardPerHour (0.005), latePenaltyRateOfRewardPerDay (0.05), failAfterDaysLate (3), leaseMonthlyRateOfPrice (0.015), bankruptcyDays (30), offersPerDay (6), offerExpiryDays (2)`.
-- `time`: viď §3.
+- `economy`: `startingCashCents, demurrageRateOfRewardPerHour (0.005), latePenaltyRateOfRewardPerDay (0.05), failAfterDaysLate (3), leaseMonthlyRateOfPrice (0.015), bankruptcyDays (30), offersPerDay (6), offerExpiryDays (2), removalRefundRate (0.5)` — `removalRefundRate` je podiel ceny vrátený pri odstránení modulu (§8 bod 8) aj cesty/koľaje (ADR-012) (ADR-013).
+- `time`: viď §3, vrátane `maxTicksPerFrame (64)` — strop tickov za frame v `GameLoop` (ADR-013).
 - `infrastructure` (`data/defs/infrastructure.json`, konfiguračný, vznikne vo F1): `road: { costPerCellCents (200 000), maintenancePerDayCents (0) }`, `rail: { costPerCellCents (600 000), maintenancePerDayCents (0) }` (ADR-010).
 - `logistics` (`data/defs/logistics.json`, konfiguračný, vznikne vo F3): `defaultInternalTicks (6)` — modul ho môže prepísať `params.internalTicks`; `congestion: { trafficDecayPerHour (0.9), slowdownPerExtraVehicle (0.25), penaltyTrafficDivisor (200), penaltyMax (3) }` — použité vo F3/F11 (§7.6) (ADR-010).
 
@@ -267,7 +268,7 @@ Root modul zo štartovej mapy = `berth_standard` + `crane_container_gantry` pred
 ## 6. Tick pipeline (`World.tick()`) — poradie je záväzné
 
 ```
-1. clock.advance()                       // tick++, emit HourClosed/DayClosed/MonthClosed
+1. clock.advance()                       // tick++, emit TickAdvanced, potom HourClosed/DayClosed/MonthClosed (ADR-013)
 2. contractSystem.tick()                 // refresh poolu (denne), spawn lodí pre prijaté kontrakty, SLA kontrola, penalizácie
 3. shipSystem.tick()                     // pohyb po sea lane, alokácia kotviska, docking/undocking, demurrage
 4. craneSystem.tick()                    // cyklus žeriavov: loď → apron (import) / apron → loď (export, neskôr)
@@ -281,7 +282,7 @@ Root modul zo štartovej mapy = `berth_standard` + `crane_container_gantry` pred
 12. cargo.assertConservation()           // v DEV/testoch: každá jednotka má presne 1 lokáciu; súčet = konstantný
 13. events.flush() → SimBridge           // udalosti za tick sú k dispozícii prezentácii
 ```
-Príkazy (`Command`) sa aplikujú **pred krokom 1** z fronty `pendingCommands` (deterministické poradie).
+Príkazy (`Command`) sa aplikujú **pred krokom 1** z fronty `pendingCommands` v poradí vloženia: každý sa validuje nad aktuálnym stavom (vidí účinok predchádzajúcich), pri úspechu sa aplikuje, inak `World` emituje `CommandRejected` a stav sa nemení; príkaz zaradený počas `apply` čaká na ďalšie kolo (ADR-013). Rovnakú príkazovú časť bez posunu času vykoná `World.applyPending()` (stavba počas pauzy; `applyPending(); tick()` ≡ `tick()`, replay ekvivalentný) (ADR-013). Udalosti ticku idú v poradí vzniku: udalosti príkazov → `TickAdvanced` → `HourClosed` → `DayClosed` → `MonthClosed` → udalosti krokov 2–12 (ADR-013).
 
 ---
 
@@ -360,15 +361,15 @@ Truck FSM: spawned → to_gate → gate_queue(processTicks, FIFO za bránu) → 
 ---
 
 ## 8. Pravidlá umiestňovania (`PlaceModuleCommand.validate`)
-Vracia `ValidationResult { ok: boolean; reasons: PlacementError[]; cells: Cell[] }` — UI ho používa na farbu ghostu.
+Vracia `ValidationResult { ok: boolean; reasons: ValidationReason[]; cells: CellCoord[]; costCents: number }` — rovnaký tvar ako všetky príkazy; UI ho používa na farbu ghostu a `costCents` je cena, ktorú by `apply` strhol (záporná = príjem) (ADR-013).
 1. Všetky footprint bunky `inBounds`, terén ∈ `requiredTerrain`, `moduleId === null`, `road === 'none'`.
 2. Parcela vlastnená/prenajatá pre všetky bunky (ak `requiresParcelOwnership`).
 3. `berth`: všetky bunky dlhej hrany (po rotácii) susedia s vodou; vodné bunky pred kotviskom voľné od iných lodí/berthov.
 4. `crane`: footprint musí ležať celý v bunkách nejakého `berth` (`mustAttachTo`); berth môže mať max `params.maxCranes` (default 2 na 8 buniek).
 5. `ramp`, `gate`, `waiting_area`, `depot`, `storage`: aspoň jeden konektor typu `road` musí susediť s bunkou `road` **alebo** byť voľný (sklad postavený skôr než cesta je OK — dispatcher ho ignoruje, kým nie je pripojený; UI zobrazí „nepripojené").
-6. Tech: `techRequired` odomknutý. Peniaze: `cash >= costCents` (inak `insufficient_funds`, ghost stále zelený s ikonou $).
+6. Tech: `techRequired` odomknutý. Peniaze: pri `costCents > 0` musí platiť `cash >= costCents` (inak `insufficient_funds`, ghost stále zelený s ikonou $); bezplatné akcie a refundácie (`costCents ≤ 0`) prejdú aj pri zápornej hotovosti (ADR-013).
 7. Rotácia: 0/90/180/270 — footprint a konektory sa transformujú `rotate(cell, rotation)`.
-8. `RemoveModuleCommand`: modul nesmie obsahovať náklad (`stored > 0`), nesmie mať dokovanú loď, ani prebiehajúce joby; vráti 50 % ceny.
+8. `RemoveModuleCommand`: modul nesmie obsahovať náklad (`stored > 0`), nesmie mať dokovanú loď, ani prebiehajúce joby; vráti `economy.removalRefundRate` (0.5 = 50 %) ceny (ADR-013).
 
 ---
 
@@ -449,9 +450,9 @@ Každý `Command` má `type`, payload, `validate(world)`, `apply(world)`; serial
 ---
 
 ## 14. Save/Load
-- `SaveGame { version: 1, createdAt, seed, tick, world: WorldState }` — `WorldState` je čistý JSON (bez tried): `World.serialize()` / `World.deserialize(defs, state)`.
+- `SaveGame { version: 1, createdAt, seed, tick, world: WorldState }` — `WorldState` je čistý JSON (bez tried): `World.serialize()` / `World.deserialize(defs, map, state)`; v1 = `{ version: 1, mapId, seed, rng, clock, ids, cashCents, roads, parcels }`, terén ani geometria a ceny parciel sa neukladajú (dodá ich `LoadedMap` s `id === mapId`) a `serialize()` s neprázdnou frontou príkazov vyhodí chybu (fronta nie je súčasťou v1) (ADR-013).
 - Uložiť do `localStorage` (autosave každý herný deň) + export/import ako `.json` súbor. Migrácie `migrate(save, fromVersion)`.
-- Test: `deserialize(serialize(w)).tick(1000) ≡ w.tick(1000)` (determinizmus + roundtrip).
+- Test: `World.deserialize(defs, map, w.serialize())` po 1000 tickoch ≡ `w` po 1000 tickoch (hash `serialize()`; determinizmus + roundtrip) (ADR-013).
 
 ---
 

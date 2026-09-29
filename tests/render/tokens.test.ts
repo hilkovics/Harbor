@@ -91,5 +91,8 @@ describe('loadRenderPalette', () => {
     expect(palette.terrain.blocked.color).toBe(0x6e6a66);
     expect(palette.road.base.color).toBe(0x4b5058);
     expect(palette.road.marking.color).toBe(0xe9e4d6);
+    expect(palette.parcel.forSale.color).toBe(0xf2b233);
+    expect(palette.parcel.owned.color).toBe(0x35c27a);
+    expect(palette.parcel.leased.color).toBe(0x3aa0ff);
   });
 });

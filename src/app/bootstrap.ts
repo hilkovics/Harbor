@@ -72,8 +72,13 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
   let renderer: WorldRenderer;
   let buildLayer: BuildLayer;
   try {
-    // Renderer kreslí ŽIVÚ mriežku sveta (vrátane postavených ciest), nie šablónu mapy `world.map`.
-    renderer = await WorldRenderer.create({ host: mapHost, map: world.map, grid: world.grid });
+    // Renderer kreslí ŽIVÚ mriežku sveta (vrátane postavených ciest) a živé parcely, nie šablónu mapy `world.map`.
+    renderer = await WorldRenderer.create({
+      host: mapHost,
+      map: world.map,
+      grid: world.grid,
+      parcels: [...world.parcels.values()], // živé parcely: obrysy podľa aktuálneho `ownership`
+    });
     try {
       buildLayer = await BuildLayer.create();
     } catch (error) {

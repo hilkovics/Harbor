@@ -1,0 +1,107 @@
+/**
+ * SpriteAtlas (DESIGN_BRIEF §4, §7): textúry terénu a infraštruktúry z `assets/manifest.json`.
+ *
+ * Zoznam spritov a súborov sa berie z manifestu (`terrain.<id>.file`, `infra.<vrstva>.tiles.<tvar>.file`), nie z kódu.
+ * SVG sa rasterizuje pri načítaní na `SPRITE_RASTER_RESOLUTION` px na px zdroja (64 px bunka → 128 px pri zoome 2,0),
+ * takže pri najväčšom zoome ostáva ostré; mipmapy držia čitateľné tenké línie (pena, obrysy) aj pri zoome 0,25.
+ *
+ * Vrstvy (`TerrainLayer`, `RoadLayer`, …) závisia iba od rozhrania `SpriteTextures`; skutočný atlas ho spĺňa,
+ * testy bez DOM podstrčia atrapu a produkčný kód bez atlasu padá na `Graphics` fallback.
+ */
+import { Assets, Texture } from 'pixi.js';
+import { infra as infraManifest, terrain as terrainManifest } from '../../assets/manifest.json';
+import { assetUrl } from './asset-urls';
+import { CAMERA_MAX_ZOOM } from './camera';
+import type { TerrainSpriteId } from './coast';
+
+/** Vrstva infraštruktúry v manifeste (`infra.road|rail|pipe`). */
+export type InfraLayerId = keyof typeof infraManifest;
+
+/** Tvar dlaždice infraštruktúry vrstvy `L` (`infra.<L>.tiles.<tvar>`), napr. `straight`, `corner`, `valve`. */
+export type InfraTileId<L extends InfraLayerId = InfraLayerId> = keyof (typeof infraManifest)[L]['tiles'];
+
+/** Čo vrstvy sveta potrebujú od atlasu: textúru terénu a textúru dlaždice infraštruktúry. */
+export interface SpriteTextures {
+  terrain(id: TerrainSpriteId): Texture;
+  infra<L extends InfraLayerId>(layer: L, tile: InfraTileId<L>): Texture;
+}
+
+/** Rasterizácia SVG: px zdroja na 1 px SVG. Zoom 2,0 (`CAMERA_MAX_ZOOM`) → 128 px na bunku pri `--cell` = 64 px. */
+export const SPRITE_RASTER_RESOLUTION = CAMERA_MAX_ZOOM;
+
+export interface SpriteAtlasOptions {
+  /** Pomer fyzických a CSS px displeja (`devicePixelRatio`); zvyšuje hustotu rasterizácie. Predvolene 1. */
+  readonly deviceScale?: number;
+}
+
+/** Kľúč textúry infraštruktúry v mape atlasu. */
+function infraKey(layer: string, tile: string): string {
+  return `infra/${layer}/${tile}`;
+}
+
+function terrainKey(id: string): string {
+  return `terrain/${id}`;
+}
+
+interface SpriteEntry {
+  readonly key: string;
+  readonly file: string;
+}
+
+/** Všetky sprity, ktoré atlas načíta: `terrain.*` a `infra.*.tiles.*` z manifestu. */
+function manifestEntries(): SpriteEntry[] {
+  const entries: SpriteEntry[] = [];
+  for (const [id, entry] of Object.entries<{ file: string }>(terrainManifest)) {
+    entries.push({ key: terrainKey(id), file: entry.file });
+  }
+  for (const [layer, { tiles }] of Object.entries<{ tiles: Record<string, { file: string }> }>(infraManifest)) {
+    for (const [tile, entry] of Object.entries(tiles)) entries.push({ key: infraKey(layer, tile), file: entry.file });
+  }
+  return entries;
+}
+
+export class SpriteAtlas implements SpriteTextures {
+  private constructor(
+    private readonly textures: ReadonlyMap<string, Texture>,
+    private readonly urls: readonly string[],
+  ) {}
+
+  /** Načíta a rasterizuje všetky sprity terénu a infraštruktúry z manifestu (asynchrónne, potrebuje DOM). */
+  static async load(options: SpriteAtlasOptions = {}): Promise<SpriteAtlas> {
+    const resolution = Math.ceil(SPRITE_RASTER_RESOLUTION * (options.deviceScale ?? 1));
+    const entries = manifestEntries().map((entry) => ({ ...entry, url: assetUrl(entry.file) }));
+    const loaded = await Promise.all(
+      entries.map((entry) =>
+        Assets.load<Texture>({
+          src: entry.url,
+          // `data` sa prenáša do zdroja textúry: mipmapy s lineárnym filtrom (zoom 0,25 bez šumu na tenkých líniách).
+          data: { resolution, autoGenerateMipmaps: true, scaleMode: 'linear', mipmapFilter: 'linear' },
+        }),
+      ),
+    );
+    const textures = new Map<string, Texture>();
+    entries.forEach((entry, i) => textures.set(entry.key, loaded[i]));
+    return new SpriteAtlas(textures, entries.map((entry) => entry.url));
+  }
+
+  /** Textúra terénu (`terrain.<id>`); id mimo manifestu je chyba. */
+  terrain(id: TerrainSpriteId): Texture {
+    return this.texture(terrainKey(id));
+  }
+
+  /** Textúra dlaždice infraštruktúry (`infra.<vrstva>.tiles.<tvar>`); tvar mimo manifestu je chyba. */
+  infra<L extends InfraLayerId>(layer: L, tile: InfraTileId<L>): Texture {
+    return this.texture(infraKey(layer, String(tile)));
+  }
+
+  /** Uvoľní textúry z cache `Assets` (pri zrušení rendereru). */
+  async destroy(): Promise<void> {
+    await Promise.all(this.urls.map((url) => Assets.unload(url)));
+  }
+
+  private texture(key: string): Texture {
+    const texture = this.textures.get(key);
+    if (texture === undefined) throw new Error(`SpriteAtlas: sprite "${key}" nie je v manifeste`);
+    return texture;
+  }
+}

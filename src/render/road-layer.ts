@@ -1,17 +1,21 @@
 /**
  * RoadLayer (ARCHITECTURE §15.1): cesty ako autotile podľa susedov; prekresľuje sa len pri zmene (`RoadChanged`).
  *
- * Dočasné kreslenie z tokenov (`--road-base`, `--road-marking`), kým nie sú sprity `assets/infra/road_*.svg`
- * (DESIGN_BRIEF §5.2). Tvar a rotáciu určuje `autotile.ts`; tu sa iba kreslí základná orientácia tvaru
- * (`end` na sever, `straight` zvislá, `corner` N→E, `t` bez juhu, `cross`) a dlaždica sa otočí okolo stredu bunky.
- * Výmena za sprity = nahradiť `contextFor` (Graphics) za `Sprite` s textúrou `road_<shape>`; zvyšok ostáva.
+ * Tvar a rotáciu určuje `autotile.ts` (tabuľka T01-08); sprite je `infra.road.tiles.<tvar>` z manifestu
+ * (`assets/infra/road_*.svg`, DESIGN_BRIEF §5.2), nakreslený v základnej orientácii (`end` na sever, `straight` zvislá,
+ * `corner` N→E, `t` bez juhu, `cross`) a otočený okolo stredu bunky. Konzistenciu tabuľky s `connectsAtRot0` z manifestu
+ * stráži `tests/tools/asset-manifest.test.ts`.
  *
- * Každý tvar má jeden zdieľaný `GraphicsContext`; dlaždica je `Graphics` nad ním (pozícia + `angle`), takže
- * tisíc ciest = tisíc ľahkých objektov nad piatimi geometriami.
+ * Bez textúr (`textures === null`, napr. testy bez DOM alebo chýbajúci sprite) padá na dočasné kreslenie z tokenov
+ * (`--road-base`, `--road-marking`): každý tvar má jeden zdieľaný `GraphicsContext`, dlaždica je `Graphics` nad ním
+ * (pozícia + `angle`), takže tisíc ciest = tisíc ľahkých objektov nad piatimi geometriami.
+ *
+ * Vrstva je vlastná render group: posun kamery (transformácia rodiča) neprepočítava dlaždice a zmena ciest
+ * prestavia len túto vrstvu, nie terén.
  *
  * Kreslí sa iba vrstva `road`; koľaje (`rail`) pribudnú s ich stavbou (tokeny `--rail-*`).
  */
-import { Container, Graphics, GraphicsContext } from 'pixi.js';
+import { Container, Graphics, GraphicsContext, Sprite } from 'pixi.js';
 import { DIRECTIONS_4, type CellCoord, type Grid, type Rect, type Rotation } from '@sim/grid';
 import {
   AUTOTILE_SHAPE_BASE_MASK,
@@ -21,6 +25,7 @@ import {
   type AutotileTile,
 } from './autotile';
 import type { Point } from './camera';
+import type { SpriteTextures } from './sprite-atlas';
 import type { RenderPalette } from './tokens';
 
 /** Vrstva dopravy, ktorú tento layer kreslí. */
@@ -73,22 +78,27 @@ export function roadMarkingPaths(shape: AutotileShape): readonly (readonly Point
 }
 
 interface RoadTile {
-  readonly graphics: Graphics;
+  /** `Sprite` (textúra z atlasu) alebo `Graphics` (fallback). */
+  readonly display: Container;
   readonly shape: AutotileShape;
   readonly rotation: Rotation;
 }
 
 export class RoadLayer {
   /** Kontajner vrstvy; pridaj ho do sveta (súradnice v px pri zoome 1). */
-  readonly view = new Container({ label: 'roads' });
+  readonly view = new Container({ label: 'roads', isRenderGroup: true });
   /** Dlaždice podľa row-major indexu bunky. */
   private readonly tiles = new Map<number, RoadTile>();
   /** Zdieľaná geometria podľa tvaru (vytvára sa lazy). */
   private readonly contexts = new Map<AutotileShape, GraphicsContext>();
 
+  /**
+   * @param textures sprity ciest z `SpriteAtlas`; `null` = dočasné `Graphics` z tokenov
+   */
   constructor(
     private readonly grid: Grid,
     private readonly palette: RenderPalette,
+    private readonly textures: SpriteTextures | null = null,
   ) {
     this.rebuild();
   }
@@ -140,7 +150,7 @@ export class RoadLayer {
     if (existing && wanted && existing.shape === wanted.shape && existing.rotation === wanted.rotation) return false;
     if (!existing && !wanted) return false;
     if (existing) {
-      existing.graphics.destroy(); // zdieľaný context ostáva (destroy bez volieb ho neničí)
+      existing.display.destroy(); // textúra ani zdieľaný context sa neničia (destroy bez volieb)
       this.tiles.delete(index);
     }
     if (wanted) this.tiles.set(index, this.createTile(x, y, wanted));
@@ -149,16 +159,26 @@ export class RoadLayer {
 
   private createTile(x: number, y: number, { shape, rotation }: AutotileTile): RoadTile {
     const { cellPx } = this.palette;
-    const graphics = new Graphics(this.contextFor(shape));
-    graphics.pivot.set(cellPx / 2, cellPx / 2);
-    graphics.position.set((x + MID) * cellPx, (y + MID) * cellPx);
-    graphics.angle = rotation;
-    this.view.addChild(graphics);
-    return { graphics, shape, rotation };
+    let display: Container;
+    if (this.textures !== null) {
+      // Sprite v základnej orientácii, otáča sa okolo stredu bunky (anchor 0,5).
+      const sprite = new Sprite(this.textures.infra(LAYER, shape));
+      sprite.anchor.set(MID);
+      sprite.setSize(cellPx, cellPx);
+      display = sprite;
+    } else {
+      const graphics = new Graphics(this.contextFor(shape));
+      graphics.pivot.set(cellPx / 2, cellPx / 2);
+      display = graphics;
+    }
+    display.position.set((x + MID) * cellPx, (y + MID) * cellPx);
+    display.angle = rotation;
+    this.view.addChild(display);
+    return { display, shape, rotation };
   }
 
   private clearTiles(): void {
-    for (const tile of this.tiles.values()) tile.graphics.destroy();
+    for (const tile of this.tiles.values()) tile.display.destroy();
     this.tiles.clear();
   }
 

@@ -1,15 +1,21 @@
 /**
  * TerrainLayer (ARCHITECTURE §15.1): statický terén sveta, kreslí sa raz pri načítaní mapy.
  *
- * Dočasné kreslenie z tokenov (`--terrain-*`), kým nie sú sprity `assets/terrain/*` (DESIGN_BRIEF §5.1):
- * plné bunky (pevnina ako šachovnica 2×2), pena pri hrane vody a hrana nábrežia k vode.
+ * Sprity (`textures` z `SpriteAtlas`): každá bunka dostane sprite `terrain.<id>` z manifestu podľa `coastTile`
+ * (prechody pobrežia, šachovnica pevniny 2×2, hrana nábrežia — DESIGN_BRIEF §5.1). 6 144 buniek je jedna
+ * statická render group: batche sa zostavia raz a posun/zoom kamery ich neprepočítava (mení sa len transformácia
+ * skupiny), takže výkon pri zoome 0,25 aj 2,0 je rovnaký a nezávisí od počtu buniek vo výreze.
  *
+ * Bez textúr (`textures === null`, napr. testy bez DOM alebo chýbajúci sprite) padá na dočasné kreslenie z tokenov
+ * (`--terrain-*`): plné bunky (pevnina ako šachovnica 2×2), pena pri hrane vody a hrana nábrežia k vode.
  * Rozdelenie: `planTerrain` (čistá funkcia, testovateľná v Node) rozhodne CO sa kreslí — zlúčené obdĺžniky
  * podľa farby výplne a pásiky hrán v jednotkách buniek; `TerrainLayer` iba prevedie plán na jeden `Graphics`
- * (staticky, ~desiatky obdĺžnikov na farbu). Výmena za sprity sa týka len `TerrainLayer`.
+ * (staticky, ~desiatky obdĺžnikov na farbu).
  */
-import { Container, Graphics } from 'pixi.js';
+import { Container, Graphics, Sprite } from 'pixi.js';
 import { DIRECTIONS_4, isWater, type Direction4, type Grid, type Rect, type TerrainType } from '@sim/grid';
+import { coastTile, type CoastTileId } from './coast';
+import type { SpriteTextures } from './sprite-atlas';
 import type { ColorValue, RenderPalette } from './tokens';
 
 /** Farby výplne plných buniek (kľúče `TerrainPalette`). */
@@ -109,19 +115,56 @@ function drawRects(graphics: Graphics, rects: readonly Rect[], cellPx: number, c
 }
 
 export class TerrainLayer {
-  /** Kontajner vrstvy; pridaj ho do sveta (súradnice v px pri zoome 1). */
-  readonly view = new Container({ label: 'terrain' });
+  /** Kontajner vrstvy; pridaj ho do sveta (súradnice v px pri zoome 1). Statická render group. */
+  readonly view = new Container({ label: 'terrain', isRenderGroup: true });
+  /** Id sprity každej bunky (row-major); prázdne v režime `Graphics` fallback. */
+  private tileIds: CoastTileId[] = [];
 
+  /**
+   * @param textures sprity terénu z `SpriteAtlas`; `null` = dočasné `Graphics` z tokenov
+   */
   constructor(
     private readonly grid: Grid,
     private readonly palette: RenderPalette,
+    private readonly textures: SpriteTextures | null = null,
   ) {
     this.rebuild();
+  }
+
+  /** Počet spritov buniek (0 v režime `Graphics` fallback). */
+  get spriteCount(): number {
+    return this.tileIds.length;
+  }
+
+  /** Id sprity bunky (x, y), alebo `undefined` mimo mapy / v režime `Graphics` fallback. */
+  tileIdAt(x: number, y: number): CoastTileId | undefined {
+    return this.grid.inBounds(x, y) ? this.tileIds[this.grid.index(x, y)] : undefined;
   }
 
   /** Prekreslí celý terén (pri načítaní mapy; počas hry sa terén nemení). */
   rebuild(): void {
     for (const child of this.view.removeChildren()) child.destroy();
+    this.tileIds = [];
+    if (this.textures !== null) this.buildSprites(this.textures);
+    else this.buildGraphics();
+  }
+
+  private buildSprites(textures: SpriteTextures): void {
+    const { cellPx } = this.palette;
+    const { width, height } = this.grid;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const id = coastTile(this.grid, x, y);
+        const sprite = new Sprite(textures.terrain(id));
+        sprite.setSize(cellPx, cellPx);
+        sprite.position.set(x * cellPx, y * cellPx);
+        this.view.addChild(sprite);
+        this.tileIds.push(id);
+      }
+    }
+  }
+
+  private buildGraphics(): void {
     const { cellPx, terrain } = this.palette;
     const plan = planTerrain(this.grid);
     const graphics = new Graphics();

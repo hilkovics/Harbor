@@ -106,12 +106,20 @@ export interface RoadPalette {
   readonly marking: ColorValue;
 }
 
+/** Farby obrysov parciel podľa vlastníctva (DESIGN_BRIEF §3 „Herný svet“). */
+export interface ParcelPalette {
+  readonly forSale: ColorValue;
+  readonly owned: ColorValue;
+  readonly leased: ColorValue;
+}
+
 /** Všetko, čo vrstvy sveta potrebujú z tokenov; načíta sa raz pri štarte. */
 export interface RenderPalette {
   /** Veľkosť bunky v px pri zoome 1 (`--cell`). */
   readonly cellPx: number;
   readonly terrain: TerrainPalette;
   readonly road: RoadPalette;
+  readonly parcel: ParcelPalette;
 }
 
 /** Načíta paletu sveta z tokenov; chýbajúci token → chyba s jeho menom. */
@@ -132,6 +140,11 @@ export function loadRenderPalette(resolve: TokenResolver = documentTokenResolver
     road: {
       base: color('--road-base'),
       marking: color('--road-marking'),
+    },
+    parcel: {
+      forSale: color('--parcel-for-sale'),
+      owned: color('--parcel-owned'),
+      leased: color('--parcel-leased'),
     },
   };
 }

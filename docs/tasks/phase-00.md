@@ -20,10 +20,10 @@
 - [x] T00-12 · Review `src/sim/**`
 - [x] T00-13 · Plná pipeline + triáž
 - [x] T00-14 · Uzavretie fázy (PROGRESS, BACKLOG)
-- [ ] T00-15 · Hranica `src/sim`: vlastný tsconfig + ESLint allowlist (nález T00-12 #1)
-- [ ] T00-16 · `tickGameSeconds` len delitele 60 v schéme aj DefRegistry (nález T00-12 #2)
-- [ ] T00-17 · Hranica `src/sim`: zatvoriť obchvaty z re-review T00-15 (triple-slash/declare, eval/Function, aliasy Math/Date)
-- [ ] T00-18 · Hranica `src/sim`: zákaz inline `eslint-disable` a `@ts-expect-error` (re-review T00-17)
+- [x] T00-15 · Hranica `src/sim`: vlastný tsconfig + ESLint allowlist (nález T00-12 #1)
+- [x] T00-16 · `tickGameSeconds` len delitele 60 v schéme aj DefRegistry (nález T00-12 #2)
+- [x] T00-17 · Hranica `src/sim`: zatvoriť obchvaty z re-review T00-15 (triple-slash/declare, eval/Function, aliasy Math/Date)
+- [x] T00-18 · Hranica `src/sim`: zákaz inline `eslint-disable` a `@ts-expect-error` (re-review T00-17)
 
 Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 11 → 12 → 13 → 14 → {15 ‖ 16} → 17 → 18 (dodatočné karty z review T00-12 a re-review).
 

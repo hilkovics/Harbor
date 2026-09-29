@@ -24,3 +24,4 @@ Stav: **hotová** · vetva `claude/laughing-galileo-2ctnlq`
 - sim-reviewer: MERGE, 0 blocking, 2 major + 10 minor → BACKLOG (T00-12)
 - boot.png prezretý orchestrátorom
 - Odchýlky od plánu: simrun používa `data/scenarios/smoke.json` namiesto `vertical_slice` (vznikne vo F5); `World` je zatiaľ stub v tools/simrun.ts (F1).
+- Dodatočné karty z review (T00-15 až T00-18): hranica src/sim je trojvrstvová (sim tsconfig bez DOM/Node, ESLint allowlist + zákazy obchvatov vrátane inline `eslint-disable` a `@ts-expect-error`, len `.ts`), `tickGameSeconds` len delitele 60 (schéma = DefRegistry = SimClock). Pipeline zelená, 500 testov.

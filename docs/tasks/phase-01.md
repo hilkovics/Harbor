@@ -244,9 +244,9 @@ Scenár (replay, §12.2): `{ "id", "seed", "map": "data/maps/harbor_01.json", "c
 - agent: ui-builder
 - parallel: yes
 - depends_on: T01-07
-- inputs: DESIGN_BRIEF §6.1, §6.2 (TopHUD), §6.3 (SpeedControl), §6.4; design/tokens.css; `design/ui/top-hud.html` ak existuje (inak rozloženie podľa §6.1 len z tokenov); ARCHITECTURE §13, §15.2
+- inputs: DESIGN_BRIEF §6.1, §6.2 (TopHUD), §6.3 (SpeedControl), §6.4; design/tokens.css; design/design-system.html (relácia 1: typografia `--fs-*`, farby čísel, rozmery); `design/ui/top-hud.html` ak existuje (inak rozloženie podľa §6.1 len z tokenov); ARCHITECTURE §13, §15.2
 - outputs: src/ui/{top-hud,speed-control,format}.ts(x); src/ui/top-hud.css (len tokeny); src/ui/__demo__/top-hud.demo.tsx; tests/ui/format.test.ts
-- požiadavky: TopHUD 48 px (`--hud-top-h`): cash (`formatMoney`, `tabular-nums`, farba `--ui-money-pos/neg`), „Deň N · HH:MM" (`formatGameTime`), SpeedControl ⏸ 1× 2× 4× 8× (aktívny stav, `dispatch(SetGameSpeedCommand)`), stav pauza. Čítanie cez `useSimSnapshot(selector, 100)`, zápis len `dispatch`. `design/tokens.css` importovaný v `src/main.tsx`.
+- požiadavky: TopHUD 48 px (`--hud-top-h`): cash (`formatMoney`, `tabular-nums`, farba `--ui-money-pos/neg`), „Deň N · HH:MM" (`formatGameTime`), SpeedControl ⏸ 1× 2× 4× 8× (aktívny stav, `dispatch(SetGameSpeedCommand)`), stav pauza. Čítanie cez `useSimSnapshot(selector, 100)`, zápis len `dispatch`. `design/tokens.css` importovaný v `src/main.tsx`. Fonty `Inter` a `JetBrains Mono` (tokeny `--font-ui`, `--font-mono`) self-hosted cez `@fontsource/inter` a `@fontsource/jetbrains-mono` (v tejto karte povolené pridať tieto dve závislosti; žiadne CDN).
   - `formatMoney(cents)`: zaokrúhlenie na celé doláre, polovica od nuly; oddeľovač tisícov čiarka; záporné s U+2212: 0→`$0`, 49→`$0`, 99→`$1`, 149→`$1`, 150→`$2`, −49→`$0`, −150→`−$2`, 120000000→`$1,200,000`, 123456000→`$1,234,560`, −250000→`−$2,500`.
   - `formatGameTime({ day, hour, minute })` (day 0-based z SimClock): (0,0,0)→`Deň 1 · 00:00`, (0,0,1)→`Deň 1 · 00:01`, (0,1,0)→`Deň 1 · 01:00`, (0,23,59)→`Deň 1 · 23:59`, (1,0,0)→`Deň 2 · 00:00`, (11,14,20)→`Deň 12 · 14:20`.
 - acceptance:

@@ -37,6 +37,8 @@ const DAYS_PER_MONTH = 30;
 
 const defs = loadBundledDefs();
 const map = loadBundledMap();
+/** Počiatočný stav mriežky mapy len na čítanie (svety majú vlastné kópie). */
+const mapGrid = map.createGrid();
 const scenario = loadScenarioFile('f1_roads');
 
 const ROAD_COST = defs.infrastructure.road.costPerCellCents;
@@ -135,7 +137,7 @@ describe('scenár f1_roads: súbor', () => {
     expect(placed).toBeGreaterThanOrEqual(20);
 
     const cells = scenario.commands.filter((e) => e.command.type === 'PlaceRoad').flatMap((e) => cellsOf(e.command));
-    const parcelIds = new Set(cells.map((c) => map.grid.at(c.x, c.y).parcelId));
+    const parcelIds = new Set(cells.map((c) => mapGrid.at(c.x, c.y).parcelId));
     expect(parcelIds).toContain('starter');
     expect(parcelIds).toContain(null); // aj verejné bunky
   });
@@ -288,9 +290,10 @@ describe('scenár f1_roads: invarianty po každom ticku', () => {
     expect(countRoadCells(world)).toBeGreaterThan(before);
 
     let templateRoads = 0;
-    for (let y = 0; y < map.grid.height; y++) {
-      for (let x = 0; x < map.grid.width; x++) {
-        if (map.grid.at(x, y).road === 'road') templateRoads += 1;
+    const template = map.createGrid();
+    for (let y = 0; y < template.height; y++) {
+      for (let x = 0; x < template.width; x++) {
+        if (template.at(x, y).road === 'road') templateRoads += 1;
       }
     }
     expect(templateRoads).toBe(before);
@@ -308,7 +311,7 @@ function firstLandCell(parcelId: string): CellCoord {
   if (parcel === undefined) throw new Error(`mapa nemá parcelu '${parcelId}'`);
   for (let y = parcel.rect.y; y < parcel.rect.y + parcel.rect.h; y++) {
     for (let x = parcel.rect.x; x < parcel.rect.x + parcel.rect.w; x++) {
-      const cell = map.grid.at(x, y);
+      const cell = mapGrid.at(x, y);
       if (cell.terrain === 'land' && cell.road === 'none') return { x, y };
     }
   }
@@ -317,9 +320,9 @@ function firstLandCell(parcelId: string): CellCoord {
 
 /** Prvá voľná verejná bunka pevniny. */
 function firstPublicLandCell(): CellCoord {
-  for (let y = 0; y < map.grid.height; y++) {
-    for (let x = 0; x < map.grid.width; x++) {
-      const cell = map.grid.at(x, y);
+  for (let y = 0; y < mapGrid.height; y++) {
+    for (let x = 0; x < mapGrid.width; x++) {
+      const cell = mapGrid.at(x, y);
       if (cell.terrain === 'land' && cell.parcelId === null && cell.road === 'none') return { x, y };
     }
   }

@@ -67,7 +67,7 @@ describe('RoadLayer so spritmi (Pixi scene graph bez renderera)', () => {
 
   it('starter cesty harbor_01 = jeden sprite na cestnú bunku', () => {
     const map = loadBundledMap();
-    const layer = new RoadLayer(map.grid, PALETTE, new StubTextures());
+    const layer = new RoadLayer(map.createGrid(), PALETTE, new StubTextures());
     expect(layer.tileCount).toBe(map.starter.roads.length);
     expect(layer.view.children).toHaveLength(map.starter.roads.length);
   });

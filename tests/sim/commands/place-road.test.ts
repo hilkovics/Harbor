@@ -59,8 +59,8 @@ describe('PlaceRoad.validate — odmietnutia', () => {
     ['parcela na predaj', CELLS.forSaleLand, ['parcel_not_owned']],
     ['blocked na parcele na predaj (dva dôvody jednej bunky)', CELLS.forSaleBlocked, ['terrain', 'parcel_not_owned']],
     ['mimo mapy vľavo', { x: -1, y: 20 }, ['out_of_bounds']],
-    ['mimo mapy vpravo', { x: MAP.grid.width, y: 20 }, ['out_of_bounds']],
-    ['mimo mapy dole', { x: 20, y: MAP.grid.height }, ['out_of_bounds']],
+    ['mimo mapy vpravo', { x: MAP.width, y: 20 }, ['out_of_bounds']],
+    ['mimo mapy dole', { x: 20, y: MAP.height }, ['out_of_bounds']],
   ])('%s → %j, cells [], costCents 0', (_name, cell, reasons) => {
     expect(place(cell).validate(newWorld())).toEqual({ ok: false, reasons, cells: [], costCents: 0 });
   });

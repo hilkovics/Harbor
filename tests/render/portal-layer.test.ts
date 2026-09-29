@@ -28,7 +28,7 @@ describe('portalRotation (šípka von z mapy: sever = 0°)', () => {
 
 describe('PortalLayer (Pixi scene graph bez renderera)', () => {
   const map = loadBundledMap();
-  const { width, height } = map.grid;
+  const { width, height } = map;
 
   it('harbor_01: road_south (44,63) → juh 180°, rail_east (95,24) → východ 90°', () => {
     const layer = new PortalLayer(map, width, height, PALETTE, new StubTextures());

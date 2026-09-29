@@ -23,6 +23,8 @@ export const RAW_DEFS = {
 };
 /** Zdieľaná mapa — testy overujú, že ju žiadny svet nezmení. */
 export const MAP: LoadedMap = loadBundledMap();
+/** Mriežka počiatočného stavu mapy len na čítanie (hľadanie buniek, indexy); svety majú vlastné kópie, nezapisovať. */
+export const MAP_GRID: Grid = MAP.createGrid();
 export const SEED = 20260929;
 
 /** Defy s upraveným `time.json` (napr. `speeds` bez 1). */

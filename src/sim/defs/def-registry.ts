@@ -7,6 +7,7 @@
  */
 import timeJson from '@data/defs/time.json';
 import economyJson from '@data/defs/economy.json';
+import { SECONDS_PER_MINUTE } from '../core/sim-clock';
 import { SUPPORTED_SCHEMA_VERSION, type DefBase, type EconomyDef, type TimeDef } from './types';
 
 /** Chyba defu: názov defu + JSON pointer na problémové pole (`''` = celý def). Správa: `<defName><path>: <problém>`. */
@@ -35,6 +36,8 @@ interface NumberSpec {
   readonly kind: 'integer' | 'number';
   readonly min?: number;
   readonly max?: number;
+  /** Hodnota musí deliť toto číslo bezo zvyšku (`divisorOf % hodnota === 0`); zrkadlí `enum` deliteľov v schéme. */
+  readonly divisorOf?: number;
 }
 
 interface IntegerArraySpec {
@@ -54,7 +57,8 @@ type FieldSpec = NumberSpec | IntegerArraySpec;
 type FieldTable<T extends DefBase> = { readonly [K in Exclude<keyof T, keyof DefBase>]-?: FieldSpec };
 
 const TIME_FIELDS: FieldTable<TimeDef> = {
-  tickGameSeconds: { kind: 'integer', min: 1 },
+  // Tick musí deliť minútu (§3), inak by hranice minúty/hodiny/dňa nepadli na celý tick; rovnaké pravidlo má SimClock.
+  tickGameSeconds: { kind: 'integer', min: 1, divisorOf: SECONDS_PER_MINUTE },
   ticksPerRealSecond: { kind: 'integer', min: 1 },
   speeds: { kind: 'integerArray', minItems: 1, itemMin: 0, unique: true, contains: 0 },
 };
@@ -103,7 +107,11 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function checkNumber(value: unknown, spec: Pick<NumberSpec, 'kind' | 'min' | 'max'>, path: string): Problem | undefined {
+function checkNumber(
+  value: unknown,
+  spec: Pick<NumberSpec, 'kind' | 'min' | 'max' | 'divisorOf'>,
+  path: string,
+): Problem | undefined {
   const expected = spec.kind === 'integer' ? 'celé číslo' : 'číslo';
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return { path, message: `očakávané ${expected}, dostal ${describeValue(value)}` };
@@ -116,6 +124,9 @@ function checkNumber(value: unknown, spec: Pick<NumberSpec, 'kind' | 'min' | 'ma
   }
   if (spec.max !== undefined && value > spec.max) {
     return { path, message: `musí byť ≤ ${String(spec.max)}, dostal ${String(value)}` };
+  }
+  if (spec.divisorOf !== undefined && spec.divisorOf % value !== 0) {
+    return { path, message: `musí deliť ${String(spec.divisorOf)} bezo zvyšku (§3), dostal ${String(value)}` };
   }
   return undefined;
 }

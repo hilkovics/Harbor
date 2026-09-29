@@ -1,6 +1,8 @@
+import Ajv2020 from 'ajv/dist/2020';
 import { describe, expect, it } from 'vitest';
 import economyJson from '@data/defs/economy.json';
 import timeJson from '@data/defs/time.json';
+import timeSchema from '@data/schemas/time.schema.json';
 import { SimClock } from '@sim/core/sim-clock';
 import { DefError, DefRegistry, SUPPORTED_SCHEMA_VERSION, loadBundledDefs } from '@sim/defs';
 
@@ -66,6 +68,9 @@ describe('DefRegistry.fromRaw', () => {
       ['time', '/tickGameSeconds', 10.5],
       ['time', '/tickGameSeconds', 0],
       ['time', '/tickGameSeconds', null],
+      ['time', '/tickGameSeconds', 7],
+      ['time', '/tickGameSeconds', 120],
+      ['time', '/tickGameSeconds', -10],
       ['time', '/ticksPerRealSecond', 0],
       ['time', '/speeds', 8],
       ['time', '/speeds', []],
@@ -99,6 +104,14 @@ describe('DefRegistry.fromRaw', () => {
       const error = expectDefError(() => DefRegistry.fromRaw(raw), 'time', '/tickGameSeconds');
       expect(error.problem).toContain('celé číslo');
       expect(error.message).toBe(`time/tickGameSeconds: ${error.problem}`);
+    });
+
+    it('tickGameSeconds, ktoré nedelí 60 → DefError s vysvetlením', () => {
+      const raw = rawDefs();
+      raw.time['tickGameSeconds'] = 7;
+      const error = expectDefError(() => DefRegistry.fromRaw(raw), 'time', '/tickGameSeconds');
+      expect(error.problem).toContain('musí deliť 60');
+      expect(error.problem).toContain('dostal 7');
     });
 
     it('chýbajúce povinné pole → cesta poľa', () => {
@@ -186,6 +199,51 @@ describe('loadBundledDefs', () => {
 
   it('každé volanie vráti nezávislý register', () => {
     expect(loadBundledDefs()).not.toBe(loadBundledDefs());
+  });
+});
+
+describe('tickGameSeconds: schéma ⇔ DefRegistry ⇔ SimClock', () => {
+  /** Nezávislý oracle: delitele 60 (nie odvodený z kódu ani zo schémy). */
+  const DIVISORS_OF_60 = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60];
+  const validateTimeSchema = new Ajv2020({ allErrors: true }).compile(timeSchema);
+
+  const schemaAccepts = (n: number): boolean => validateTimeSchema({ ...timeJson, tickGameSeconds: n });
+  const registryAccepts = (n: number): boolean => {
+    try {
+      DefRegistry.fromRaw({ time: { ...timeJson, tickGameSeconds: n }, economy: economyJson });
+      return true;
+    } catch (error) {
+      if (error instanceof DefError) {
+        expect(error.defName).toBe('time');
+        expect(error.path).toBe('/tickGameSeconds');
+        return false;
+      }
+      throw error;
+    }
+  };
+  const clockAccepts = (n: number): boolean => {
+    try {
+      new SimClock({ tickGameSeconds: n });
+      return true;
+    } catch (error) {
+      if (error instanceof RangeError) return false;
+      throw error;
+    }
+  };
+
+  it('bundled time.json je platný pre schému aj registry', () => {
+    expect(schemaAccepts(timeJson.tickGameSeconds)).toBe(true);
+    expect(registryAccepts(timeJson.tickGameSeconds)).toBe(true);
+  });
+
+  it.each(Array.from({ length: 120 }, (_, i) => i + 1))('n = %i: schéma, registry a SimClock sa zhodujú', (n) => {
+    const expected = DIVISORS_OF_60.includes(n);
+    expect({ n, schema: schemaAccepts(n), registry: registryAccepts(n), clock: clockAccepts(n) }).toEqual({
+      n,
+      schema: expected,
+      registry: expected,
+      clock: expected,
+    });
   });
 });
 

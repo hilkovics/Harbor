@@ -26,7 +26,7 @@ export interface ClockBoundaries {
 
 // Kalendárne konštanty herného času (ARCHITECTURE §3) — skutočné konštanty, nie laditeľné hodnoty.
 /** Sekúnd v minúte (§3). */
-const SECONDS_PER_MINUTE = 60;
+export const SECONDS_PER_MINUTE = 60;
 /** Minút v hodine (§3). */
 const MINUTES_PER_HOUR = 60;
 /** Hodín v dni (§3). */

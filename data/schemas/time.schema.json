@@ -12,8 +12,8 @@
     },
     "tickGameSeconds": {
       "type": "integer",
-      "minimum": 1,
-      "description": "Koľko herných sekúnd trvá 1 tick."
+      "enum": [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60],
+      "description": "Koľko herných sekúnd trvá 1 tick. Musí deliť 60 bezo zvyšku (hranice minúty/hodiny/dňa musia padnúť na celý tick, ARCHITECTURE §3), preto enum deliteľov 60; rovnaké pravidlo vynucuje DefRegistry a SimClock."
     },
     "ticksPerRealSecond": {
       "type": "integer",

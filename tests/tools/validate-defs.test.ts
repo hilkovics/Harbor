@@ -79,7 +79,32 @@ describe('validateDefsDir', () => {
   describe('neplatný def → chyba s cestou k poľu', () => {
     it('zlý typ poľa: cesta je JSON pointer na pole', () => {
       writeDef('time.json', { ...TIME_OK, tickGameSeconds: '10' });
-      expect(resultFor('time.json').errors).toEqual(['time.json: /tickGameSeconds must be integer']);
+      const errors = resultFor('time.json').errors;
+      expect(errors).toContain('time.json: /tickGameSeconds must be integer');
+      expect(errors.every((line) => line.startsWith('time.json: /tickGameSeconds '))).toBe(true);
+    });
+
+    describe('tickGameSeconds musí deliť 60 (ARCHITECTURE §3)', () => {
+      const ENUM_ERROR = 'time.json: /tickGameSeconds must be equal to one of the allowed values';
+
+      it.each([7, 120, 8, 9, 11, 45])('%i → chyba s /tickGameSeconds', (value) => {
+        writeDef('time.json', { ...TIME_OK, tickGameSeconds: value });
+        expect(resultFor('time.json').errors).toEqual([ENUM_ERROR]);
+      });
+
+      it.each([1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60])('%i → platné', (value) => {
+        writeDef('time.json', { ...TIME_OK, tickGameSeconds: value });
+        expect(resultFor('time.json').errors).toEqual([]);
+      });
+
+      it('CLI: 7 → exit 1 a /tickGameSeconds v stderr', () => {
+        writeDef('time.json', { ...TIME_OK, tickGameSeconds: 7 });
+        const run = spawnSync(process.execPath, ['--import', 'tsx', VALIDATE_SCRIPT, defsDir, DEFAULT_SCHEMAS_DIR], {
+          encoding: 'utf8',
+        });
+        expect(run.status).toBe(1);
+        expect(run.stderr).toContain(ENUM_ERROR);
+      }, 30_000);
     });
 
     it('zlý prvok poľa: cesta obsahuje index', () => {
@@ -123,7 +148,7 @@ describe('validateDefsDir', () => {
     it('allErrors: vráti všetky chyby naraz', () => {
       writeDef('time.json', { ...TIME_OK, tickGameSeconds: 0, ticksPerRealSecond: 'x' });
       const errors = resultFor('time.json').errors;
-      expect(errors).toContain('time.json: /tickGameSeconds must be >= 1');
+      expect(errors).toContain('time.json: /tickGameSeconds must be equal to one of the allowed values');
       expect(errors).toContain('time.json: /ticksPerRealSecond must be integer');
     });
 

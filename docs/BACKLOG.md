@@ -10,6 +10,7 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - Agent test-runner doslova volá simrun data/scenarios/vertical_slice.json, ktorý neexistuje do F5; dovtedy sa používa smoke.json. — pôvod: T00-13 · fáza: F5
 
 ## P2
+- Sprite AGV nemá „nižší, modrý pás“ z DESIGN_BRIEF §5.6 — je žltý ako straddle carrier; pri 32 px sú rozlíšiteľné len tvarom. Iterovať v Claude Design (vzorový prompt v §8) pred F8 (odomknutie AGV). — pôvod: Claude Design relácia 4 · fáza: F8
 - Konektory modulov: návrh dizajnéra je v design/modules.html (napr. berth [1,2,S,road],[6,2,S,road]; container_yard_small [1,3,S,road]; tank_farm_small +[2,0,n,pipe]; rail_station_small [0,1,w,rail],[11,1,e,rail],[3,3,S,road],[8,3,S,road]) — prevziať do modules.json vo F2–F4 alebo vedome odchýliť. — pôvod: Claude Design relácia 3 · fáza: F2
 - Počty slotov v spritoch dvorov (medium 76×3 = 228, large 129×3 = 387) nesedia s capacityUnits v ARCHITECTURE §5.3 (180 / 384); small sedí (32×2 = 64). Sprity sú len vizualizácia 5 stavov, ale zosúladiť pri F3/F13 (balans) alebo požiadať Claude Design o úpravu. — pôvod: Claude Design relácia 3 · fáza: F3
 - Zlomkový flowUnitsPerTick (0.5/0.3) vs diskrétne CargoUnit batche (ADR-003) — delenie jednotky alebo akumulácia? — pôvod: T00-05 · fáza: pred F9

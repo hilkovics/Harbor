@@ -1,0 +1,310 @@
+/*
+ * TopHUD + SpeedControl (DESIGN_BRIEF §6.1–§6.4; vizuál z prototypu design/ui/game-ui.source.html, <header> hore).
+ * Len tokeny z design/tokens.css: žiadne pevné farby ani rozmery. Rozmery prototypu, ktoré nemajú vlastný token
+ * (20/18/34/36 px…), sú odvodené z tokenov (`calc(var(--space-*) ± …)`); pevné sú len 1 px čiary, 2 px focus ring
+ * a ±2 px korekcie. BEM: .top-hud, .top-hud__*, .top-hud--debt, .speed-control, .speed-control__*.
+ */
+
+/* ===== Spoločné: ikony a tlačidlá ===== */
+
+.hud-icon {
+  flex: none;
+}
+
+.top-hud__panel,
+.speed-control__btn {
+  box-sizing: border-box;
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ui-text-2);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out,
+    border-color 120ms ease-out;
+}
+
+.top-hud__panel:focus-visible,
+.speed-control__btn:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+
+/* ===== TopHUD (48 px lišta) ===== */
+
+.top-hud {
+  /* Ikony prototypu: 20 px = --icon-sm + --space-1, 18 px = --icon-sm + --space-1 / 2. */
+  --hud-icon-lg: calc(var(--icon-sm) + var(--space-1));
+  --hud-icon-md: calc(var(--icon-sm) + var(--space-1) / 2);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: var(--hud-top-h);
+  padding: 0 var(--space-3);
+  background: var(--ui-bg);
+  border-bottom: 1px solid var(--ui-border);
+  color: var(--ui-text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-normal);
+}
+
+.top-hud__divider {
+  flex: none;
+  width: 1px;
+  height: var(--space-6);
+  margin: 0 var(--space-3);
+  background: var(--ui-border);
+}
+
+.top-hud__spacer {
+  flex: 1;
+}
+
+/* Čísla vždy tabular-nums (§6.4). */
+.top-hud,
+.top-hud__cash-value,
+.top-hud__delta,
+.top-hud__xp,
+.top-hud__time,
+.speed-control__btn {
+  font-variant-numeric: tabular-nums;
+}
+
+.top-hud__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.top-hud__inline-icon {
+  width: var(--hud-icon-md);
+  height: var(--hud-icon-md);
+}
+
+/* --- Hotovosť + denný delta (jeden chip) --- */
+
+.top-hud__cash {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-2) + 2px);
+  height: calc(var(--space-8) + 2px);
+  padding: 0 calc(var(--space-3) + 2px) 0 calc(var(--space-2) - 2px);
+  border-radius: var(--radius-md);
+}
+
+.top-hud__cash-icon {
+  width: var(--hud-icon-lg);
+  height: var(--hud-icon-lg);
+  color: var(--ui-success);
+}
+
+.top-hud__cash-value {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  white-space: nowrap;
+}
+
+.top-hud__delta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  color: var(--ui-text-2);
+}
+
+.top-hud__trend {
+  width: var(--space-3);
+  height: var(--space-3);
+}
+
+.top-hud__delta--pos {
+  color: var(--ui-money-pos);
+}
+
+/* Svetlejšia červená z tokenov: --ui-money-neg má na tmavom pozadí len 3,9 : 1, malý text potrebuje ≥ 4,5 : 1. */
+.top-hud__delta--neg {
+  color: color-mix(in srgb, var(--ui-money-neg) 70%, var(--ui-text));
+}
+
+/*
+ * Varovanie (§6.2): cash < 0 → červená hodnota a ikona, jemné červené pozadie a „pulz" obrysu. Pulz je diskrétny
+ * (steps(1, end): ring sa zapne/vypne skokom, nič sa neinterpoluje), takže žiadny prechod netrvá dlhšie ako 200 ms.
+ */
+.top-hud--debt .top-hud__cash {
+  background: color-mix(in srgb, var(--ui-danger) 14%, transparent);
+  animation: top-hud-debt-pulse 1.6s steps(1, end) infinite;
+}
+
+.top-hud--debt .top-hud__cash-icon {
+  color: var(--ui-danger);
+}
+
+.top-hud--debt .top-hud__cash-value {
+  color: var(--ui-money-neg);
+}
+
+@keyframes top-hud-debt-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+
+  8%,
+  40% {
+    box-shadow: 0 0 0 calc(var(--space-1) - 1px) color-mix(in srgb, var(--ui-danger) 55%, transparent);
+  }
+
+  48% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+/* --- XP --- */
+
+.top-hud__xp {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+.top-hud__xp-icon {
+  color: var(--ui-xp);
+}
+
+.top-hud__xp--empty {
+  color: var(--ui-text-2);
+}
+
+/* --- Dátum a čas --- */
+
+.top-hud__clock {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.top-hud__clock-icon {
+  color: var(--ui-text-2);
+}
+
+.top-hud__time {
+  white-space: nowrap;
+}
+
+/* --- Tlačidlá panelov vpravo (F1: neaktívne placeholdery, okrem ⚙) --- */
+
+.top-hud__panels {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.top-hud__panel {
+  display: grid;
+  place-items: center;
+  width: calc(var(--space-8) + var(--space-1));
+  height: calc(var(--space-8) + var(--space-1));
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+}
+
+.top-hud__panel-icon {
+  width: var(--hud-icon-lg);
+  height: var(--hud-icon-lg);
+}
+
+.top-hud__panel:hover:not(:disabled) {
+  background: var(--ui-surface-2);
+  color: var(--ui-text);
+}
+
+.top-hud__panel--active {
+  background: var(--ui-surface-2);
+  border-color: var(--ui-border);
+  color: var(--ui-text);
+}
+
+.top-hud__panel:disabled {
+  cursor: default;
+}
+
+/* ===== SpeedControl ===== */
+
+.speed-control {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+}
+
+.speed-control__btn {
+  display: grid;
+  place-items: center;
+  min-width: calc(var(--space-8) + 2px);
+  height: calc(var(--space-6) + var(--space-1));
+  padding: 0 calc(var(--space-2) - 2px);
+  border-radius: calc(var(--radius-md) - 2px);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-normal);
+}
+
+.speed-control__btn--pause {
+  min-width: var(--space-8);
+  color: var(--ui-text);
+}
+
+.speed-control__icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+.speed-control__btn:hover {
+  background: var(--ui-surface-2);
+  color: var(--ui-text);
+}
+
+.speed-control__btn--active {
+  background: var(--ui-accent);
+  color: var(--ui-surface);
+}
+
+.speed-control__btn--active:hover {
+  background: var(--ui-accent-hover);
+  color: var(--ui-surface);
+}
+
+/* Pauza je aktívna = žltá (varovný stav), ikona ▶ hovorí, že klik hru obnoví. */
+.speed-control__btn--active.speed-control__btn--pause,
+.speed-control__btn--active.speed-control__btn--pause:hover {
+  background: var(--ui-warning);
+  color: var(--ui-surface);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .top-hud,
+  .top-hud *,
+  .speed-control,
+  .speed-control * {
+    animation: none;
+    transition: none;
+  }
+}

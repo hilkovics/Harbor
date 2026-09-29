@@ -1,0 +1,135 @@
+import { describe, expect, it } from 'vitest';
+import {
+  EM_DASH,
+  MINUS_SIGN,
+  formatGameTime,
+  formatMoney,
+  formatMoneyDelta,
+  formatSpeed,
+  formatXp,
+  moneySign,
+} from '@ui/format';
+
+const MINUS = '\u2212';
+
+describe('formatMoney', () => {
+  // Presná tabuľka z karty T01-10 (záporné s U+2212).
+  const table: ReadonlyArray<readonly [number, string]> = [
+    [0, '$0'],
+    [49, '$0'],
+    [99, '$1'],
+    [149, '$1'],
+    [150, '$2'],
+    [-49, '$0'],
+    [-150, `${MINUS}$2`],
+    [120_000_000, '$1,200,000'],
+    [123_456_000, '$1,234,560'],
+    [-250_000, `${MINUS}$2,500`],
+  ];
+
+  it.each(table)('%i c → %s', (cents, expected) => {
+    expect(formatMoney(cents)).toBe(expected);
+  });
+
+  it('mínus je U+2212, nie spojovník-mínus', () => {
+    expect(MINUS_SIGN).toBe(MINUS);
+    expect(formatMoney(-100)).toBe('−$1');
+    expect(formatMoney(-100)).not.toContain('-');
+  });
+
+  it('polovica sa zaokrúhľuje smerom od nuly (symetricky pre kladné aj záporné)', () => {
+    expect(formatMoney(50)).toBe('$1');
+    expect(formatMoney(250)).toBe('$3');
+    expect(formatMoney(-50)).toBe(`${MINUS}$1`);
+    expect(formatMoney(-250)).toBe(`${MINUS}$3`);
+    expect(formatMoney(149)).toBe('$1');
+    expect(formatMoney(-149)).toBe(`${MINUS}$1`);
+  });
+
+  it('hodnota zaokrúhlená na nulu nikdy nemá mínus (aj -0)', () => {
+    expect(formatMoney(-1)).toBe('$0');
+    expect(formatMoney(-49)).toBe('$0');
+    expect(formatMoney(-0)).toBe('$0');
+  });
+
+  it('oddeľovač tisícov po trojiciach, aj pre veľké sumy', () => {
+    expect(formatMoney(99_900)).toBe('$999');
+    expect(formatMoney(100_000)).toBe('$1,000');
+    expect(formatMoney(123_456_789)).toBe('$1,234,568');
+    expect(formatMoney(99_999_999_999)).toBe('$1,000,000,000');
+    expect(formatMoney(-123_456_789_000)).toBe(`${MINUS}$1,234,567,890`);
+  });
+
+  it('neplatná hodnota → pomlčka, nikdy $NaN', () => {
+    expect(formatMoney(Number.NaN)).toBe(EM_DASH);
+    expect(formatMoney(Number.POSITIVE_INFINITY)).toBe(EM_DASH);
+    expect(formatMoney(Number.NEGATIVE_INFINITY)).toBe(EM_DASH);
+  });
+});
+
+describe('formatMoneyDelta / moneySign', () => {
+  it('kladná zmena má +, záporná U+2212, nula bez znamienka', () => {
+    expect(formatMoneyDelta(1_230_000)).toBe('+$12,300');
+    expect(formatMoneyDelta(-482_000)).toBe(`${MINUS}$4,820`);
+    expect(formatMoneyDelta(0)).toBe('$0');
+  });
+
+  it('hodnota zaokrúhlená na nulu je $0 bez znamienka a znamienko 0', () => {
+    expect(formatMoneyDelta(49)).toBe('$0');
+    expect(formatMoneyDelta(-49)).toBe('$0');
+    expect(moneySign(49)).toBe(0);
+    expect(moneySign(-49)).toBe(0);
+  });
+
+  it('moneySign: -1 / 0 / +1; neplatná hodnota = 0', () => {
+    expect(moneySign(150)).toBe(1);
+    expect(moneySign(-150)).toBe(-1);
+    expect(moneySign(0)).toBe(0);
+    expect(moneySign(Number.NaN)).toBe(0);
+  });
+
+  it('neplatná hodnota → pomlčka bez +', () => {
+    expect(formatMoneyDelta(Number.NaN)).toBe(EM_DASH);
+  });
+});
+
+describe('formatGameTime', () => {
+  // Presná tabuľka z karty T01-10 (day je 0-based).
+  const table: ReadonlyArray<readonly [number, number, number, string]> = [
+    [0, 0, 0, 'Deň 1 · 00:00'],
+    [0, 0, 1, 'Deň 1 · 00:01'],
+    [0, 1, 0, 'Deň 1 · 01:00'],
+    [0, 23, 59, 'Deň 1 · 23:59'],
+    [1, 0, 0, 'Deň 2 · 00:00'],
+    [11, 14, 20, 'Deň 12 · 14:20'],
+  ];
+
+  it.each(table)('(day %i, %i:%i) → %s', (day, hour, minute, expected) => {
+    expect(formatGameTime({ day, hour, minute })).toBe(expected);
+  });
+
+  it('oddeľovač je stredná bodka U+00B7 s medzerami', () => {
+    expect(formatGameTime({ day: 0, hour: 0, minute: 0 })).toBe('Deň 1 · 00:00');
+  });
+
+  it('viacciferný deň sa nezalamuje ani neorezáva', () => {
+    expect(formatGameTime({ day: 364, hour: 9, minute: 5 })).toBe('Deň 365 · 09:05');
+    expect(formatGameTime({ day: 999, hour: 12, minute: 0 })).toBe('Deň 1000 · 12:00');
+  });
+});
+
+describe('formatSpeed / formatXp', () => {
+  it('0 = Pauza, ostatné N× (U+00D7)', () => {
+    expect(formatSpeed(0)).toBe('Pauza');
+    expect(formatSpeed(1)).toBe('1×');
+    expect(formatSpeed(8)).toBe('8×');
+  });
+
+  it('XP: celé číslo s oddeľovačom tisícov, neplatné → pomlčka', () => {
+    expect(formatXp(340)).toBe('340 XP');
+    expect(formatXp(12_340)).toBe('12,340 XP');
+    expect(formatXp(340.9)).toBe('340 XP');
+    expect(formatXp(-5)).toBe('0 XP');
+    expect(formatXp(Number.NaN)).toBe(`${EM_DASH} XP`);
+  });
+});

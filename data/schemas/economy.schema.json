@@ -13,7 +13,8 @@
     "leaseMonthlyRateOfPrice",
     "bankruptcyDays",
     "offersPerDay",
-    "offerExpiryDays"
+    "offerExpiryDays",
+    "removalRefundRate"
   ],
   "properties": {
     "schemaVersion": {
@@ -62,6 +63,12 @@
       "type": "integer",
       "minimum": 1,
       "description": "Po koľkých dňoch nevybraná ponuka expiruje."
+    },
+    "removalRefundRate": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Podiel pôvodnej ceny, ktorý sa vráti pri odstránení modulu, cesty alebo koľaje (ARCHITECTURE §8 bod 8)."
     }
   }
 }

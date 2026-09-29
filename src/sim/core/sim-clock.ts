@@ -2,7 +2,11 @@
  * Herné hodiny simulácie (ARCHITECTURE §3): `{ tick, speed }` + odvodené minúta/hodina/deň/mesiac.
  *
  * Hodiny eventy neemitujú — `advance()` iba vráti uzavreté hranice; `HourClosed`/`DayClosed`/`MonthClosed`
- * emituje `World` cez `EventBus` (fáza 1). Trvanie ticku pochádza z `time` defu (`tickGameSeconds`).
+ * emituje `World` cez `EventBus` (krok 1 v `World.tick()`). Trvanie ticku pochádza z `time` defu (`tickGameSeconds`).
+ *
+ * Dve sady odvodených hodnôt (všetky 0-based):
+ * - celkové počty od začiatku hry: `gameMinute`, `gameHour`, `gameDay`, `gameMonth`;
+ * - kalendárne zložky pre HUD: `minuteOfHour` (0–59), `hourOfDay` (0–23), `dayOfMonth` (0–29).
  */
 
 /** Konfigurácia hodín; štrukturálne kompatibilná s `TimeDef` (T00-10), ktorý má ďalšie polia. */
@@ -33,8 +37,11 @@ const MINUTES_PER_HOUR = 60;
 const HOURS_PER_DAY = 24;
 /** Dní v mesiaci — herný mesiac má vždy 30 dní (§3). */
 const DAYS_PER_MONTH = 30;
-/** Počiatočná rýchlosť: 1× = štandardná (§3, `speeds`). */
-const INITIAL_SPEED = 1;
+/**
+ * Počiatočná rýchlosť novej hry: 1× = štandardná (§3). Musí byť v `time.speeds` — overuje `World.create`
+ * (schéma `time` vyžaduje len 0).
+ */
+export const INITIAL_SPEED = 1;
 
 function assertValidSpeed(speed: number): void {
   if (!Number.isInteger(speed) || speed < 0) {
@@ -119,6 +126,23 @@ export class SimClock {
   /** Uplynulé herné mesiace od začiatku hry (prvý mesiac = 0). */
   get gameMonth(): number {
     return Math.floor(this.currentTick / this.ticksPerMonth);
+  }
+
+  // Kalendárne zložky (0-based) — odvodené z tickových konštánt vyššie, bez ďalších čísel. HUD: „Deň N · HH:MM“.
+
+  /** Minúta v rámci aktuálnej hodiny, 0–59. */
+  get minuteOfHour(): number {
+    return this.gameMinute % MINUTES_PER_HOUR;
+  }
+
+  /** Hodina v rámci aktuálneho dňa, 0–23. */
+  get hourOfDay(): number {
+    return this.gameHour % HOURS_PER_DAY;
+  }
+
+  /** Deň v rámci aktuálneho mesiaca, 0-based (0–29; herný mesiac má vždy 30 dní). */
+  get dayOfMonth(): number {
+    return this.gameDay % DAYS_PER_MONTH;
   }
 
   /** Nastaví rýchlosť (celé číslo ≥ 0; povolené hodnoty z `time.speeds` overuje `SetGameSpeed`). */

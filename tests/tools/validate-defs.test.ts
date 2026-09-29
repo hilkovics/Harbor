@@ -4,11 +4,29 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { DEFAULT_DEFS_DIR, DEFAULT_SCHEMAS_DIR, validateDefsDir } from '../../tools/validate-defs';
+import {
+  DEFAULT_DEFS_DIR,
+  DEFAULT_MAPS_DIR,
+  DEFAULT_SCHEMAS_DIR,
+  validateDefsDir,
+  validateMapsDir,
+} from '../../tools/validate-defs';
 
 const VALIDATE_SCRIPT = fileURLToPath(new URL('../../tools/validate-defs.ts', import.meta.url));
 
-const TIME_OK = { schemaVersion: 1, tickGameSeconds: 10, ticksPerRealSecond: 10, speeds: [0, 1, 2, 4, 8] };
+const TIME_OK = {
+  schemaVersion: 1,
+  tickGameSeconds: 10,
+  ticksPerRealSecond: 10,
+  maxTicksPerFrame: 64,
+  speeds: [0, 1, 2, 4, 8],
+};
+
+const INFRASTRUCTURE_OK = {
+  schemaVersion: 1,
+  road: { costPerCellCents: 200000, maintenancePerDayCents: 0 },
+  rail: { costPerCellCents: 600000, maintenancePerDayCents: 0 },
+};
 
 function readRealDef(name: string): Record<string, unknown> {
   return JSON.parse(readFileSync(join(DEFAULT_DEFS_DIR, `${name}.json`), 'utf8')) as Record<string, unknown>;
@@ -39,7 +57,9 @@ describe('validateDefsDir', () => {
   describe('skutočné defy', () => {
     it('všetky data/defs/*.json prejdú svojou schémou', () => {
       const results = validateDefsDir(DEFAULT_DEFS_DIR, DEFAULT_SCHEMAS_DIR);
-      expect(results.map((r) => r.file)).toEqual(expect.arrayContaining(['economy.json', 'time.json']));
+      expect(results.map((r) => r.file)).toEqual(
+        expect.arrayContaining(['economy.json', 'infrastructure.json', 'time.json']),
+      );
       for (const r of results) expect(r.errors, r.file).toEqual([]);
     });
 
@@ -58,7 +78,12 @@ describe('validateDefsDir', () => {
         bankruptcyDays: 30,
         offersPerDay: 6,
         offerExpiryDays: 2,
+        removalRefundRate: 0.5,
       });
+    });
+
+    it('infrastructure.json má hodnoty z ARCHITECTURE §4.6 (ADR-010)', () => {
+      expect(readRealDef('infrastructure')).toEqual(INFRASTRUCTURE_OK);
     });
   });
 
@@ -145,6 +170,81 @@ describe('validateDefsDir', () => {
       expect(resultFor('time.json').errors).toEqual(['time.json: /speeds must contain at least 1 valid item(s)']);
     });
 
+    describe('time.maxTicksPerFrame (ARCHITECTURE §3)', () => {
+      it.each([0, -1, 1.5, '64', null])('%j → chyba s /maxTicksPerFrame', (value) => {
+        writeDef('time.json', { ...TIME_OK, maxTicksPerFrame: value });
+        const errors = resultFor('time.json').errors;
+        expect(errors.length).toBeGreaterThan(0);
+        expect(errors.every((line) => line.startsWith('time.json: /maxTicksPerFrame '))).toBe(true);
+      });
+
+      it('chýbajúce pole je chyba', () => {
+        const { maxTicksPerFrame: _max, ...without } = TIME_OK;
+        void _max;
+        writeDef('time.json', without);
+        expect(resultFor('time.json').errors).toEqual(["time.json: / must have required property 'maxTicksPerFrame'"]);
+      });
+
+      it.each([1, 64, 1000])('%i → platné', (value) => {
+        writeDef('time.json', { ...TIME_OK, maxTicksPerFrame: value });
+        expect(resultFor('time.json').errors).toEqual([]);
+      });
+    });
+
+    describe('economy.removalRefundRate (ARCHITECTURE §8 bod 8)', () => {
+      it.each([-0.1, 1.5, '0.5', null])('%j → chyba s /removalRefundRate', (value) => {
+        writeDef('economy.json', { ...readRealDef('economy'), removalRefundRate: value });
+        const errors = resultFor('economy.json').errors;
+        expect(errors.length).toBeGreaterThan(0);
+        expect(errors.every((line) => line.startsWith('economy.json: /removalRefundRate '))).toBe(true);
+      });
+
+      it.each([0, 0.5, 1])('%d → platné', (value) => {
+        writeDef('economy.json', { ...readRealDef('economy'), removalRefundRate: value });
+        expect(resultFor('economy.json').errors).toEqual([]);
+      });
+    });
+
+    describe('infrastructure.json (ADR-010)', () => {
+      const withRoad = (road: unknown) => ({ ...INFRASTRUCTURE_OK, road });
+
+      it('platný def', () => {
+        writeDef('infrastructure.json', INFRASTRUCTURE_OK);
+        expect(resultFor('infrastructure.json').errors).toEqual([]);
+      });
+
+      it('záporná cena za bunku → cesta do vnoreného poľa', () => {
+        writeDef('infrastructure.json', withRoad({ costPerCellCents: -1, maintenancePerDayCents: 0 }));
+        expect(resultFor('infrastructure.json').errors).toEqual([
+          'infrastructure.json: /road/costPerCellCents must be >= 0',
+        ]);
+      });
+
+      it('zlý typ údržby', () => {
+        writeDef('infrastructure.json', withRoad({ costPerCellCents: 200000, maintenancePerDayCents: '0' }));
+        expect(resultFor('infrastructure.json').errors).toEqual([
+          'infrastructure.json: /road/maintenancePerDayCents must be integer',
+        ]);
+      });
+
+      it('chýbajúci kľúč rail', () => {
+        const { rail: _rail, ...without } = INFRASTRUCTURE_OK;
+        void _rail;
+        writeDef('infrastructure.json', without);
+        expect(resultFor('infrastructure.json').errors).toEqual([
+          "infrastructure.json: / must have required property 'rail'",
+        ]);
+      });
+
+      it('neznáme vnorené pole je pomenované', () => {
+        writeDef('infrastructure.json', withRoad({ costPerCellCents: 200000, maintenancePerDayCents: 0, extra: 1 }));
+        const errors = resultFor('infrastructure.json').errors;
+        expect(errors).toHaveLength(1);
+        expect(errors[0]).toMatch(/^infrastructure\.json: \/road must NOT have additional properties/);
+        expect(errors[0]).toContain('extra');
+      });
+    });
+
     it('allErrors: vráti všetky chyby naraz', () => {
       writeDef('time.json', { ...TIME_OK, tickGameSeconds: 0, ticksPerRealSecond: 'x' });
       const errors = resultFor('time.json').errors;
@@ -195,9 +295,176 @@ describe('validateDefsDir', () => {
     });
   });
 
+  describe('mapy (data/maps/*.json → map.schema.json)', () => {
+    let mapsDir: string;
+
+    const realMap = (): Record<string, unknown> =>
+      JSON.parse(readFileSync(join(DEFAULT_MAPS_DIR, 'harbor_01.json'), 'utf8')) as Record<string, unknown>;
+    const writeMap = (name: string, value: unknown): void => {
+      writeFileSync(join(mapsDir, name), typeof value === 'string' ? value : JSON.stringify(value));
+    };
+    const mapResult = (file: string) => {
+      const result = validateMapsDir(mapsDir, DEFAULT_SCHEMAS_DIR).find((r) => r.file === `maps/${file}`);
+      if (!result) throw new Error(`žiadny výsledok pre maps/${file}`);
+      return result;
+    };
+
+    beforeEach(() => {
+      mapsDir = join(tmpRoot, 'maps');
+      mkdirSync(mapsDir);
+    });
+
+    describe('skutočné mapy', () => {
+      it('všetky data/maps/*.json prejdú map.schema.json a výsledok je pomenovaný maps/<súbor>', () => {
+        const results = validateMapsDir(DEFAULT_MAPS_DIR, DEFAULT_SCHEMAS_DIR);
+        expect(results.map((r) => r.file)).toContain('maps/harbor_01.json');
+        for (const r of results) expect(r.errors, r.file).toEqual([]);
+      });
+
+      it('harbor_01 má rozmery 96×64 a terén presne width×height znakov (ARCHITECTURE §4.7)', () => {
+        const map = realMap() as { id: string; width: number; height: number; terrain: string[] };
+        expect(map.id).toBe('harbor_01');
+        expect([map.width, map.height]).toEqual([96, 64]);
+        expect(map.terrain).toHaveLength(64);
+        for (const row of map.terrain) expect(row).toHaveLength(96);
+      });
+
+      it('harbor_01: súvislé nábrežie ≥ 24 buniek, 3 parcely (1 štartovná), 1 cestný a 1 železničný portál', () => {
+        const map = realMap() as {
+          terrain: string[];
+          parcels: { id: string; startOwned?: boolean; leasable: boolean }[];
+          roadPortals: unknown[];
+          railPortals: unknown[];
+        };
+        const longestQuayRun = Math.max(
+          ...map.terrain.map((row) => Math.max(0, ...row.split(/[^Q]+/).map((run) => run.length))),
+        );
+        expect(longestQuayRun).toBeGreaterThanOrEqual(24);
+        expect(map.parcels).toHaveLength(3);
+        expect(map.parcels.filter((p) => p.startOwned === true).map((p) => p.id)).toEqual(['starter']);
+        expect(map.parcels.filter((p) => p.startOwned !== true).every((p) => p.leasable)).toBe(true);
+        expect(map.roadPortals).toHaveLength(1);
+        expect(map.railPortals).toHaveLength(1);
+      });
+    });
+
+    describe('platná mapa', () => {
+      it('vráti prázdne errors', () => {
+        writeMap('harbor_01.json', realMap());
+        expect(validateMapsDir(mapsDir, DEFAULT_SCHEMAS_DIR)).toEqual([{ file: 'maps/harbor_01.json', errors: [] }]);
+      });
+
+      it('spracuje len *.json a výsledky vráti zoradené podľa názvu', () => {
+        writeMap('b_map.json', realMap());
+        writeMap('a_map.json', realMap());
+        writeMap('poznamky.txt', 'nie je mapa');
+        expect(validateMapsDir(mapsDir, DEFAULT_SCHEMAS_DIR).map((r) => r.file)).toEqual([
+          'maps/a_map.json',
+          'maps/b_map.json',
+        ]);
+      });
+    });
+
+    describe('neplatná mapa → chyba s cestou k poľu', () => {
+      it('chýbajúce povinné pole (seaLane)', () => {
+        const { seaLane: _lane, ...without } = realMap();
+        void _lane;
+        writeMap('bad.json', without);
+        expect(mapResult('bad.json').errors).toEqual(["maps/bad.json: / must have required property 'seaLane'"]);
+      });
+
+      it('chýbajúce vnorené pole (parcels/0/priceCents)', () => {
+        const map = realMap() as { parcels: Record<string, unknown>[] };
+        const { priceCents: _price, ...parcel } = map.parcels[0] ?? {};
+        void _price;
+        writeMap('bad.json', { ...map, parcels: [parcel, ...map.parcels.slice(1)] });
+        expect(mapResult('bad.json').errors).toEqual([
+          "maps/bad.json: /parcels/0 must have required property 'priceCents'",
+        ]);
+      });
+
+      it('zlý typ poľa (width ako reťazec)', () => {
+        writeMap('bad.json', { ...realMap(), width: '96' });
+        expect(mapResult('bad.json').errors).toEqual(['maps/bad.json: /width must be integer']);
+      });
+
+      it('zlý typ riadku terénu', () => {
+        const map = realMap() as { terrain: unknown[] };
+        writeMap('bad.json', { ...map, terrain: [42, ...map.terrain.slice(1)] });
+        expect(mapResult('bad.json').errors).toContain('maps/bad.json: /terrain/0 must be string');
+      });
+
+      it('neznámy znak terénu', () => {
+        const map = realMap() as { terrain: string[] };
+        writeMap('bad.json', { ...map, terrain: ['X'.repeat(96), ...map.terrain.slice(1)] });
+        expect(mapResult('bad.json').errors).toEqual(['maps/bad.json: /terrain/0 must match pattern "^[~=Q.#]+$"']);
+      });
+
+      it('depth: zlý kľúč aj zlá hodnota', () => {
+        writeMap('bad.json', { ...realMap(), depth: { '10,14,20': 2, '30,14,28,3': 4 } });
+        const errors = mapResult('bad.json').errors;
+        expect(errors.some((line) => line.startsWith('maps/bad.json: /depth '))).toBe(true);
+        expect(errors).toContain('maps/bad.json: /depth/30,14,28,3 must be equal to one of the allowed values');
+      });
+
+      it('parcela: nulová šírka a zlé id', () => {
+        const map = realMap() as { parcels: Record<string, unknown>[] };
+        const bad = { ...map.parcels[0], id: 'Bad Id', rect: { x: 0, y: 0, w: 0, h: 5 } };
+        writeMap('bad.json', { ...map, parcels: [bad, ...map.parcels.slice(1)] });
+        const errors = mapResult('bad.json').errors;
+        expect(errors).toContain('maps/bad.json: /parcels/0/id must match pattern "^[a-z][a-z0-9_]*$"');
+        expect(errors).toContain('maps/bad.json: /parcels/0/rect/w must be >= 1');
+      });
+
+      it('bunka bez y', () => {
+        writeMap('bad.json', { ...realMap(), anchorage: [{ x: 44 }] });
+        expect(mapResult('bad.json').errors).toEqual(["maps/bad.json: /anchorage/0 must have required property 'y'"]);
+      });
+
+      it('neznáme pole (additionalProperties: false)', () => {
+        writeMap('bad.json', { ...realMap(), widht: 96 });
+        const errors = mapResult('bad.json').errors;
+        expect(errors).toHaveLength(1);
+        expect(errors[0]).toMatch(/^maps\/bad\.json: \/ must NOT have additional properties/);
+        expect(errors[0]).toContain('widht');
+      });
+
+      it('starter.modules: položka bez defId', () => {
+        writeMap('bad.json', { ...realMap(), starter: { modules: [{ x: 1, y: 1, rotation: 0 }], roads: [] } });
+        expect(mapResult('bad.json').errors).toEqual([
+          "maps/bad.json: /starter/modules/0 must have required property 'defId'",
+        ]);
+      });
+
+      it('koreň nie je objekt', () => {
+        writeMap('bad.json', '[]');
+        expect(mapResult('bad.json').errors).toEqual(['maps/bad.json: / must be object']);
+      });
+
+      it('nevalidný JSON je chyba (nie výnimka) a neblokuje ostatné mapy', () => {
+        writeMap('bad.json', '{ "id": ');
+        writeMap('good.json', realMap());
+        const results = validateMapsDir(mapsDir, DEFAULT_SCHEMAS_DIR);
+        expect(results.find((r) => r.file === 'maps/bad.json')?.errors[0]).toMatch(/^maps\/bad\.json: \/ neplatný JSON/);
+        expect(results.find((r) => r.file === 'maps/good.json')?.errors).toEqual([]);
+      });
+
+      it('chýbajúca map.schema.json je chyba pomenovaná podľa mapy', () => {
+        const emptySchemas = join(tmpRoot, 'schemas');
+        mkdirSync(emptySchemas);
+        writeMap('harbor_01.json', realMap());
+        const errors = validateMapsDir(mapsDir, emptySchemas)[0]?.errors ?? [];
+        expect(errors).toHaveLength(1);
+        expect(errors[0]).toMatch(/^maps\/harbor_01\.json: \/ chýba schéma map\.schema\.json/);
+      });
+    });
+  });
+
   describe('CLI (tools/validate-defs.ts)', () => {
-    const runCli = (defs: string, schemas: string) =>
-      spawnSync(process.execPath, ['--import', 'tsx', VALIDATE_SCRIPT, defs, schemas], { encoding: 'utf8' });
+    const runCli = (defs: string, schemas: string, maps?: string) =>
+      spawnSync(process.execPath, ['--import', 'tsx', VALIDATE_SCRIPT, defs, schemas, ...(maps ? [maps] : [])], {
+        encoding: 'utf8',
+      });
 
     it('platné defy → exit 0 a riadok "OK <súbor>"', () => {
       writeDef('time.json', TIME_OK);
@@ -220,6 +487,35 @@ describe('validateDefsDir', () => {
       const run = runCli(defsDir, DEFAULT_SCHEMAS_DIR);
       expect(run.status).toBe(1);
       expect(run.stderr).toContain('mystery.json: / chýba schéma');
+    }, 30_000);
+
+    it('bez argumentov: OK pre defy aj pre maps/harbor_01.json, exit 0', () => {
+      const run = spawnSync(process.execPath, ['--import', 'tsx', VALIDATE_SCRIPT], { encoding: 'utf8' });
+      expect(run.status).toBe(0);
+      expect(run.stdout).toContain('OK time.json');
+      expect(run.stdout).toContain('OK infrastructure.json');
+      expect(run.stdout).toContain('OK maps/harbor_01.json');
+    }, 30_000);
+
+    it('neplatná mapa → exit 1 a chyba s cestou v stderr; platné defy ostávajú OK', () => {
+      const mapsDir = join(tmpRoot, 'maps');
+      mkdirSync(mapsDir);
+      writeFileSync(join(mapsDir, 'broken.json'), JSON.stringify({ id: 'broken' }));
+      writeDef('time.json', TIME_OK);
+      const run = runCli(defsDir, DEFAULT_SCHEMAS_DIR, mapsDir);
+      expect(run.status).toBe(1);
+      expect(run.stdout).toContain('OK time.json');
+      expect(run.stderr).toContain("maps/broken.json: / must have required property 'width'");
+    }, 30_000);
+
+    it('platná mapa v odovzdanom adresári → OK maps/<súbor>', () => {
+      const mapsDir = join(tmpRoot, 'maps');
+      mkdirSync(mapsDir);
+      copyFileSync(join(DEFAULT_MAPS_DIR, 'harbor_01.json'), join(mapsDir, 'copy.json'));
+      writeDef('time.json', TIME_OK);
+      const run = runCli(defsDir, DEFAULT_SCHEMAS_DIR, mapsDir);
+      expect(run.status).toBe(0);
+      expect(run.stdout).toContain('OK maps/copy.json');
     }, 30_000);
   });
 });

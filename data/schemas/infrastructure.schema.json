@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "infrastructure.json",
+  "description": "Cesty a koľaje ako vrstva na bunke, nie moduly (ARCHITECTURE §4.6, §5.1; ADR-006, ADR-010). Konfiguračný def bez items[] (ADR-009); peniaze v centoch (USD).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "road", "rail"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Verzia schémy defu."
+    },
+    "road": {
+      "$ref": "#/$defs/layer",
+      "description": "Cesta (PlaceRoad / RemoveRoad)."
+    },
+    "rail": {
+      "$ref": "#/$defs/layer",
+      "description": "Koľaj (PlaceRail / RemoveRail, fáza 10)."
+    }
+  },
+  "$defs": {
+    "layer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["costPerCellCents", "maintenancePerDayCents"],
+      "properties": {
+        "costPerCellCents": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Cena za jednu novú bunku v centoch."
+        },
+        "maintenancePerDayCents": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Denná údržba za jednu bunku v centoch (v MVP 0)."
+        }
+      }
+    }
+  }
+}

@@ -26,6 +26,12 @@
   --cargo-liquid: #7B4FA0;      /* glyf: kvapka */
   --cargo-gas: #2BB3A3;         /* glyf: valec s hrdlom */
   --cargo-roro: #D64545;        /* glyf: auto zhora */
+  /* svetlý / tmavý variant (base ±14 % L; 3 tonálne stupne, §2) — doplnené z Claude Design, relácia 1 */
+  --cargo-container-light: #F6B06B; --cargo-container-dark: #C7680C;
+  --cargo-bulk-light: #DFBE59;      --cargo-bulk-dark: #8D721B;
+  --cargo-liquid-light: #9E79BD;    --cargo-liquid-dark: #563770;
+  --cargo-gas-light: #50D5C5;       --cargo-gas-dark: #1D796F;
+  --cargo-roro-light: #E38080;      --cargo-roro-dark: #AD2626;
   /* svetlé/tmavé varianty: +14 % L / −14 % L od base */
 
   /* ===== Moduly ===== */

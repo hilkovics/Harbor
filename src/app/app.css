@@ -1,0 +1,183 @@
+/*
+ * Kostra stránky: mapa (Pixi canvas) na celú plochu a nad ňou UI vrstva (HUD, banner, štítok ghostu).
+ * Len tokeny z design/tokens.css; pevné sú len 1 px čiary a ±1–2 px korekcie (rovnako ako src/ui/top-hud.css).
+ */
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+  background: var(--terrain-water-deep);
+  color: var(--ui-text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  /* Hra nie je dokument: ťah myšou cez HUD nesmie vyberať text. */
+  user-select: none;
+}
+
+/* --- Mapa --- */
+
+.app__map {
+  position: absolute;
+  inset: 0;
+  /* Ťah myšou nesmie vyberať text ani posúvať stránku. */
+  touch-action: none;
+  user-select: none;
+  cursor: default;
+}
+
+.app__map canvas {
+  display: block;
+}
+
+.app__map[data-input-state='pan'],
+.app__map[data-input-state='build_pan'] {
+  cursor: grabbing;
+}
+
+.app__map[data-input-state='build'],
+.app__map[data-input-state='build_place'],
+.app__map[data-input-state='build_remove'] {
+  cursor: crosshair;
+}
+
+/* --- UI vrstva nad mapou: prepúšťa myš, kým nenarazí na vlastný prvok --- */
+
+.app__ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.app__hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  pointer-events: auto;
+}
+
+/* Vizuálne skrytý nadpis (prístupný pre čítačky a testy). */
+.app__title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* --- Banner „Pozastavené“ (prototyp: 64 px od horného okraja = HUD + 16 px) --- */
+
+.paused-banner {
+  position: absolute;
+  top: calc(var(--hud-top-h) + var(--space-4));
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.paused-banner__chip {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-2) + 2px);
+  padding: var(--space-2) calc(var(--space-3) + 2px);
+  border: 1px solid var(--ui-warning);
+  border-radius: var(--radius-md);
+  background: var(--ui-bg);
+  box-shadow: var(--shadow-panel);
+}
+
+.paused-banner__icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--ui-warning);
+}
+
+.paused-banner__label {
+  font-weight: var(--fw-semibold);
+}
+
+/* KeyHint (§6.3): klávesová skratka v mono písme. */
+.paused-banner__key {
+  padding: 1px calc(var(--space-1) + 2px);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface-2);
+  color: var(--ui-text-2);
+  font-family: var(--font-mono);
+  font-size: calc(var(--fs-xs) - 1px);
+}
+
+/* --- Štítok pri kurzore v build móde --- */
+
+.build-tip {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  background: var(--ui-bg);
+  box-shadow: var(--shadow-panel);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(var(--space-4), var(--space-4));
+}
+
+.build-tip--flip {
+  transform: translate(calc(-100% - var(--space-4)), var(--space-4));
+}
+
+.build-tip--ok .build-tip__icon {
+  color: var(--ui-success);
+}
+
+.build-tip--bad {
+  border-color: var(--ui-danger);
+}
+
+.build-tip--bad .build-tip__icon {
+  color: var(--ui-danger);
+}
+
+.build-tip__icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+/* --- Chyba spustenia (napr. WebGL nedostupné) --- */
+
+.app__fatal {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  max-width: calc(var(--side-panel-w) * 2);
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--ui-danger);
+  border-radius: var(--radius-lg);
+  background: var(--ui-surface);
+  box-shadow: var(--shadow-panel);
+  transform: translate(-50%, -50%);
+}

@@ -1,14 +1,30 @@
 import Ajv2020 from 'ajv/dist/2020';
 import { describe, expect, it } from 'vitest';
 import economyJson from '@data/defs/economy.json';
+import infrastructureJson from '@data/defs/infrastructure.json';
 import timeJson from '@data/defs/time.json';
+import economySchema from '@data/schemas/economy.schema.json';
+import infrastructureSchema from '@data/schemas/infrastructure.schema.json';
 import timeSchema from '@data/schemas/time.schema.json';
 import { SimClock } from '@sim/core/sim-clock';
 import { DefError, DefRegistry, SUPPORTED_SCHEMA_VERSION, loadBundledDefs } from '@sim/defs';
+import { checkNumber } from '@sim/defs/def-registry';
+
+type DefName = 'time' | 'economy' | 'infrastructure';
+
+interface RawBundle {
+  time: Record<string, unknown>;
+  economy: Record<string, unknown>;
+  infrastructure: Record<string, unknown>;
+}
 
 /** Čerstvá hlboká kópia bundled defov; negatívne testy z nej upravia jedno pole. */
-function rawDefs(): { time: Record<string, unknown>; economy: Record<string, unknown> } {
-  return { time: structuredClone(timeJson), economy: structuredClone(economyJson) };
+function rawDefs(): RawBundle {
+  return {
+    time: structuredClone(timeJson),
+    economy: structuredClone(economyJson),
+    infrastructure: structuredClone(infrastructureJson),
+  };
 }
 
 /** Nastaví hodnotu na JSON pointeri (`/speeds/1`) v klonovanom deffe. */
@@ -42,10 +58,11 @@ describe('DefRegistry.fromRaw', () => {
     const registry = DefRegistry.fromRaw(rawDefs());
     expect(registry.time.tickGameSeconds).toBe(timeJson.tickGameSeconds);
     expect(registry.economy.startingCashCents).toBe(economyJson.startingCashCents);
+    expect(registry.infrastructure.road.costPerCellCents).toBe(infrastructureJson.road.costPerCellCents);
   });
 
   describe('chýbajúci def → DefError s názvom defu', () => {
-    it.each(['time', 'economy'] as const)('%s', (name) => {
+    it.each(['time', 'economy', 'infrastructure'] as const)('%s', (name) => {
       const raw: Partial<ReturnType<typeof rawDefs>> = rawDefs();
       delete raw[name];
       const error = expectDefError(() => DefRegistry.fromRaw(raw), name, '');
@@ -55,6 +72,7 @@ describe('DefRegistry.fromRaw', () => {
     it('def explicitne undefined alebo null', () => {
       expectDefError(() => DefRegistry.fromRaw({ ...rawDefs(), time: undefined }), 'time', '');
       expectDefError(() => DefRegistry.fromRaw({ ...rawDefs(), economy: null }), 'economy', '');
+      expectDefError(() => DefRegistry.fromRaw({ ...rawDefs(), infrastructure: undefined }), 'infrastructure', '');
     });
 
     it.each([[[]], ['{}'], [42]] as unknown[][])('def nie je objekt (%j)', (value) => {
@@ -63,7 +81,7 @@ describe('DefRegistry.fromRaw', () => {
   });
 
   describe('zlý typ alebo rozsah poľa → DefError s cestou', () => {
-    const cases: readonly (readonly [def: 'time' | 'economy', path: string, value: unknown])[] = [
+    const cases: readonly (readonly [def: DefName, path: string, value: unknown])[] = [
       ['time', '/tickGameSeconds', '10'],
       ['time', '/tickGameSeconds', 10.5],
       ['time', '/tickGameSeconds', 0],
@@ -72,6 +90,11 @@ describe('DefRegistry.fromRaw', () => {
       ['time', '/tickGameSeconds', 120],
       ['time', '/tickGameSeconds', -10],
       ['time', '/ticksPerRealSecond', 0],
+      ['time', '/maxTicksPerFrame', 0],
+      ['time', '/maxTicksPerFrame', -64],
+      ['time', '/maxTicksPerFrame', 1.5],
+      ['time', '/maxTicksPerFrame', '64'],
+      ['time', '/maxTicksPerFrame', null],
       ['time', '/speeds', 8],
       ['time', '/speeds', []],
       ['time', '/speeds', [1, 2, 4]],
@@ -90,6 +113,19 @@ describe('DefRegistry.fromRaw', () => {
       ['economy', '/bankruptcyDays', 0],
       ['economy', '/offersPerDay', -1],
       ['economy', '/offerExpiryDays', 0],
+      ['economy', '/removalRefundRate', 1.5],
+      ['economy', '/removalRefundRate', -0.1],
+      ['economy', '/removalRefundRate', '0.5'],
+      ['economy', '/removalRefundRate', Number.NaN],
+      ['infrastructure', '/road', 5],
+      ['infrastructure', '/road', null],
+      ['infrastructure', '/rail', []],
+      ['infrastructure', '/road/costPerCellCents', -1],
+      ['infrastructure', '/road/costPerCellCents', 2000.5],
+      ['infrastructure', '/road/costPerCellCents', '200000'],
+      ['infrastructure', '/road/maintenancePerDayCents', -1],
+      ['infrastructure', '/rail/costPerCellCents', null],
+      ['infrastructure', '/rail/maintenancePerDayCents', 0.5],
     ];
 
     it.each(cases)('%s %s = %j', (def, path, value) => {
@@ -119,13 +155,44 @@ describe('DefRegistry.fromRaw', () => {
       delete raw.economy['bankruptcyDays'];
       expectDefError(() => DefRegistry.fromRaw(raw), 'economy', '/bankruptcyDays');
     });
+
+    it.each([
+      ['time', 'maxTicksPerFrame'],
+      ['economy', 'removalRefundRate'],
+      ['infrastructure', 'rail'],
+    ] as const)('nové povinné pole %s/%s', (def, key) => {
+      const raw = rawDefs();
+      delete raw[def][key];
+      expectDefError(() => DefRegistry.fromRaw(raw), def, `/${key}`);
+    });
+
+    it('chýbajúce vnorené povinné pole → cesta vnoreného poľa', () => {
+      const raw = rawDefs();
+      delete (raw.infrastructure['road'] as Record<string, unknown>)['costPerCellCents'];
+      expectDefError(() => DefRegistry.fromRaw(raw), 'infrastructure', '/road/costPerCellCents');
+    });
+
+    it('hranice: maxTicksPerFrame 1 a removalRefundRate 0 aj 1 sú platné', () => {
+      const raw = rawDefs();
+      raw.time['maxTicksPerFrame'] = 1;
+      raw.economy['removalRefundRate'] = 0;
+      expect(DefRegistry.fromRaw(raw).time.maxTicksPerFrame).toBe(1);
+      raw.economy['removalRefundRate'] = 1;
+      expect(DefRegistry.fromRaw(raw).economy.removalRefundRate).toBe(1);
+    });
   });
 
   describe('neznámy kľúč → DefError', () => {
-    it.each(['time', 'economy'] as const)('%s', (def) => {
+    it.each(['time', 'economy', 'infrastructure'] as const)('%s', (def) => {
       const raw = rawDefs();
       raw[def]['unexpectedKey'] = 1;
       expectDefError(() => DefRegistry.fromRaw(raw), def, '/unexpectedKey');
+    });
+
+    it('neznámy kľúč vo vnorenom objekte má úplnú cestu', () => {
+      const raw = rawDefs();
+      (raw.infrastructure['rail'] as Record<string, unknown>)['costPerCel'] = 1;
+      expectDefError(() => DefRegistry.fromRaw(raw), 'infrastructure', '/rail/costPerCel');
     });
 
     it('preklep v názve poľa sa hlási ako neznámy kľúč', () => {
@@ -143,7 +210,7 @@ describe('DefRegistry.fromRaw', () => {
   });
 
   describe('zlá schemaVersion → DefError', () => {
-    it.each(['time', 'economy'] as const)('%s: iná verzia', (def) => {
+    it.each(['time', 'economy', 'infrastructure'] as const)('%s: iná verzia', (def) => {
       const raw = rawDefs();
       raw[def]['schemaVersion'] = SUPPORTED_SCHEMA_VERSION + 1;
       expectDefError(() => DefRegistry.fromRaw(raw), def, '/schemaVersion');
@@ -168,8 +235,14 @@ describe('DefRegistry.fromRaw', () => {
       expect(Object.isFrozen(registry.time)).toBe(true);
       expect(Object.isFrozen(registry.time.speeds)).toBe(true);
       expect(Object.isFrozen(registry.economy)).toBe(true);
+      expect(Object.isFrozen(registry.infrastructure)).toBe(true);
+      expect(Object.isFrozen(registry.infrastructure.road)).toBe(true);
+      expect(Object.isFrozen(registry.infrastructure.rail)).toBe(true);
       expect(() => {
         (registry.time as { tickGameSeconds: number }).tickGameSeconds = 1;
+      }).toThrow(TypeError);
+      expect(() => {
+        (registry.infrastructure.road as { costPerCellCents: number }).costPerCellCents = 1;
       }).toThrow(TypeError);
     });
 
@@ -180,7 +253,9 @@ describe('DefRegistry.fromRaw', () => {
       expect(raw).toEqual(before);
       expect(Object.isFrozen(raw.time)).toBe(false);
       expect(Object.isFrozen(raw.time['speeds'])).toBe(false);
+      expect(Object.isFrozen(raw.infrastructure['road'])).toBe(false);
       expect(registry.time.speeds).not.toBe(raw.time['speeds']);
+      expect(registry.infrastructure.road).not.toBe(raw.infrastructure['road']);
     });
   });
 });
@@ -190,11 +265,17 @@ describe('loadBundledDefs', () => {
     const registry = loadBundledDefs();
     expect(registry.time).toEqual(timeJson);
     expect(registry.economy).toEqual(economyJson);
-    // Kontrolné hodnoty podľa ARCHITECTURE §3 a §4.6.
+    expect(registry.infrastructure).toEqual(infrastructureJson);
+    // Kontrolné hodnoty podľa ARCHITECTURE §3, §4.6 a §8 bod 8.
     expect(registry.time.tickGameSeconds).toBe(10);
     expect(registry.time.speeds).toEqual([0, 1, 2, 4, 8]);
+    expect(registry.time.maxTicksPerFrame).toBe(64);
     expect(registry.economy.startingCashCents).toBe(120_000_000);
     expect(registry.economy.offersPerDay).toBe(6);
+    expect(registry.economy.removalRefundRate).toBe(0.5);
+    // ADR-010: cesta 2 000 USD a koľaj 6 000 USD za bunku, bez údržby.
+    expect(registry.infrastructure.road).toEqual({ costPerCellCents: 200_000, maintenancePerDayCents: 0 });
+    expect(registry.infrastructure.rail).toEqual({ costPerCellCents: 600_000, maintenancePerDayCents: 0 });
   });
 
   it('každé volanie vráti nezávislý register', () => {
@@ -210,7 +291,11 @@ describe('tickGameSeconds: schéma ⇔ DefRegistry ⇔ SimClock', () => {
   const schemaAccepts = (n: number): boolean => validateTimeSchema({ ...timeJson, tickGameSeconds: n });
   const registryAccepts = (n: number): boolean => {
     try {
-      DefRegistry.fromRaw({ time: { ...timeJson, tickGameSeconds: n }, economy: economyJson });
+      DefRegistry.fromRaw({
+        time: { ...timeJson, tickGameSeconds: n },
+        economy: economyJson,
+        infrastructure: infrastructureJson,
+      });
       return true;
     } catch (error) {
       if (error instanceof DefError) {
@@ -252,5 +337,104 @@ describe('DefRegistry.time ako SimClockConfig', () => {
     const clock = new SimClock(loadBundledDefs().time);
     expect(clock.ticksPerMinute).toBe(6);
     expect(clock.ticksPerDay).toBe(8640);
+  });
+});
+
+describe('checkNumber: divisorOf vyžaduje kladnú hodnotu', () => {
+  const spec = { kind: 'integer', divisorOf: 60 } as const;
+
+  it('kladný deliteľ 60 je platný', () => {
+    expect(checkNumber(10, spec, '/x')).toBeUndefined();
+    expect(checkNumber(60, spec, '/x')).toBeUndefined();
+  });
+
+  it.each([-1, -10, -60, 0])('%i (bez min) → problém', (value) => {
+    // 60 % -10 === 0, preto samotný zvyšok nestačí; nulu a zápor musí odmietnuť práve divisorOf.
+    const problem = checkNumber(value, spec, '/x');
+    expect(problem?.path).toBe('/x');
+    expect(problem?.message).toContain('musí byť kladné');
+  });
+
+  it('kladné číslo, ktoré nedelí, hlási deliteľnosť', () => {
+    expect(checkNumber(7, spec, '/x')?.message).toContain('musí deliť 60');
+  });
+});
+
+/** Konzistencia schéma (Ajv) ⇔ DefRegistry pre nové polia: rovnaké typy a rozsahy (T01-01). */
+describe('nové polia: schéma ⇔ DefRegistry', () => {
+  const validateTime = new Ajv2020({ allErrors: true }).compile(timeSchema);
+  const validateEconomy = new Ajv2020({ allErrors: true }).compile(economySchema);
+  const validateInfrastructure = new Ajv2020({ allErrors: true }).compile(infrastructureSchema);
+
+  const registryAccepts = (raw: RawBundle): boolean => {
+    try {
+      DefRegistry.fromRaw(raw);
+      return true;
+    } catch (error) {
+      if (error instanceof DefError) return false;
+      throw error;
+    }
+  };
+
+  const VALUES: readonly (readonly [unknown])[] = [
+    [-1],
+    [-0.1],
+    [0],
+    [0.5],
+    [1],
+    [1.5],
+    [2],
+    [64],
+    [1000],
+    [200_000.5],
+    ['1'],
+    [null],
+    [true],
+    [[]],
+    [{}],
+  ];
+
+  it.each(VALUES)('time.maxTicksPerFrame = %j', (value) => {
+    const raw = rawDefs();
+    raw.time['maxTicksPerFrame'] = value;
+    expect(registryAccepts(raw)).toBe(validateTime(raw.time));
+  });
+
+  it.each(VALUES)('economy.removalRefundRate = %j', (value) => {
+    const raw = rawDefs();
+    raw.economy['removalRefundRate'] = value;
+    expect(registryAccepts(raw)).toBe(validateEconomy(raw.economy));
+  });
+
+  describe.each([['road'], ['rail']] as const)('infrastructure.%s', (layer) => {
+    it.each(VALUES)('costPerCellCents = %j', (value) => {
+      const raw = rawDefs();
+      (raw.infrastructure[layer] as Record<string, unknown>)['costPerCellCents'] = value;
+      expect(registryAccepts(raw)).toBe(validateInfrastructure(raw.infrastructure));
+    });
+
+    it.each(VALUES)('maintenancePerDayCents = %j', (value) => {
+      const raw = rawDefs();
+      (raw.infrastructure[layer] as Record<string, unknown>)['maintenancePerDayCents'] = value;
+      expect(registryAccepts(raw)).toBe(validateInfrastructure(raw.infrastructure));
+    });
+
+    it.each(VALUES)('celý objekt = %j', (value) => {
+      const raw = rawDefs();
+      raw.infrastructure[layer] = value;
+      expect(registryAccepts(raw)).toBe(validateInfrastructure(raw.infrastructure));
+    });
+  });
+
+  it('chýbajúce alebo prebytočné kľúče: rovnaký verdikt', () => {
+    const missing = rawDefs();
+    delete (missing.infrastructure['rail'] as Record<string, unknown>)['costPerCellCents'];
+    expect(registryAccepts(missing)).toBe(validateInfrastructure(missing.infrastructure));
+    expect(registryAccepts(missing)).toBe(false);
+
+    const extra = rawDefs();
+    (extra.infrastructure['road'] as Record<string, unknown>)['bonus'] = 1;
+    expect(registryAccepts(extra)).toBe(validateInfrastructure(extra.infrastructure));
+    expect(registryAccepts(extra)).toBe(false);
   });
 });

@@ -20,6 +20,8 @@ export interface TimeDef extends DefBase {
   readonly tickGameSeconds: number;
   /** Počet tickov za reálnu sekundu pri rýchlosti 1×. */
   readonly ticksPerRealSecond: number;
+  /** Strop tickov simulácie na jeden render frame (ochrana GameLoopu proti špirále smrti, §3). */
+  readonly maxTicksPerFrame: number;
   /** Povolené násobky rýchlosti simulácie; 0 = pauza (vždy prítomná). */
   readonly speeds: readonly number[];
 }
@@ -42,4 +44,23 @@ export interface EconomyDef extends DefBase {
   readonly offersPerDay: number;
   /** Po koľkých dňoch nevybraná ponuka expiruje. */
   readonly offerExpiryDays: number;
+  /** Podiel pôvodnej ceny, ktorý sa vráti pri odstránení modulu, cesty alebo koľaje (§8 bod 8). */
+  readonly removalRefundRate: number;
+}
+
+/** Cena a údržba jednej vrstvy dopravy (cesta alebo koľaj), počítané za bunku; peniaze v centoch. */
+export interface InfrastructureLayerDef {
+  /** Cena za jednu novú bunku. */
+  readonly costPerCellCents: number;
+  /** Denná údržba za jednu bunku (v MVP 0). */
+  readonly maintenancePerDayCents: number;
+}
+
+/**
+ * `infrastructure.json` — cesty a koľaje ako vrstva na bunke, nie moduly (ARCHITECTURE §4.6, §5.1; ADR-006, ADR-010).
+ * Konfiguračný def (ADR-009).
+ */
+export interface InfrastructureDef extends DefBase {
+  readonly road: InfrastructureLayerDef;
+  readonly rail: InfrastructureLayerDef;
 }

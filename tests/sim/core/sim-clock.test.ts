@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SimClock, type ClockBoundaries } from '@sim/core/sim-clock';
+import { INITIAL_SPEED, SimClock, type ClockBoundaries } from '@sim/core/sim-clock';
 
 // Konfigurácia ako v data/defs/time.json (ARCHITECTURE §3): 1 tick = 10 herných sekúnd.
 const CFG = { tickGameSeconds: 10 };
@@ -45,9 +45,10 @@ describe('SimClock', () => {
   });
 
   describe('počiatočný stav a gettery', () => {
-    it('začína na ticku 0 pri rýchlosti 1×', () => {
+    it('začína na ticku 0 pri rýchlosti 1× (INITIAL_SPEED)', () => {
       const clock = new SimClock(CFG);
-      expect(clock.getState()).toEqual({ tick: 0, speed: 1 });
+      expect(INITIAL_SPEED).toBe(1);
+      expect(clock.getState()).toEqual({ tick: 0, speed: INITIAL_SPEED });
       expect(clock.tick).toBe(0);
       expect(clock.speed).toBe(1);
       expect([clock.gameMinute, clock.gameHour, clock.gameDay, clock.gameMonth]).toEqual([0, 0, 0, 0]);
@@ -68,6 +69,56 @@ describe('SimClock', () => {
       expect(late.gameDay).toBe(2 * 30 + 3);
       expect(late.gameHour).toBe((2 * 30 + 3) * 24 + 5);
       expect(late.gameMinute).toBe(((2 * 30 + 3) * 24 + 5) * 60 + 7);
+    });
+  });
+
+  describe('kalendár — minuteOfHour, hourOfDay, dayOfMonth (0-based)', () => {
+    const at = (tick: number): SimClock => new SimClock(CFG, { tick, speed: 1 });
+    const calendar = (clock: SimClock): [number, number, number] => [clock.minuteOfHour, clock.hourOfDay, clock.dayOfMonth];
+
+    it.each([
+      ['začiatok hry', 0, [0, 0, 0]],
+      ['posledný tick prvej minúty', TICKS_PER_MINUTE - 1, [0, 0, 0]],
+      ['prvá minúta', TICKS_PER_MINUTE, [1, 0, 0]],
+      ['posledná minúta hodiny', TICKS_PER_HOUR - 1, [59, 0, 0]],
+      ['prvá hodina', TICKS_PER_HOUR, [0, 1, 0]],
+      ['23:59 prvého dňa', TICKS_PER_DAY - 1, [59, 23, 0]],
+      ['polnoc druhého dňa', TICKS_PER_DAY, [0, 0, 1]],
+      ['posledná minúta mesiaca', TICKS_PER_MONTH - 1, [59, 23, 29]],
+      ['prvý deň druhého mesiaca', TICKS_PER_MONTH, [0, 0, 0]],
+      ['mesiac 2, deň 3, 05:07', 2 * TICKS_PER_MONTH + 3 * TICKS_PER_DAY + 5 * TICKS_PER_HOUR + 7 * TICKS_PER_MINUTE + 1, [7, 5, 3]],
+    ] as const)('%s (tick %i) → [minúta, hodina, deň] = %j', (_name, tick, expected) => {
+      expect(calendar(at(tick))).toEqual(expected);
+    });
+
+    it('gameDay ostáva celkový počet dní, dayOfMonth sa na hranici mesiaca vynuluje', () => {
+      const clock = at(TICKS_PER_MONTH + TICKS_PER_DAY);
+      expect(clock.gameDay).toBe(31);
+      expect(clock.dayOfMonth).toBe(1);
+      expect(clock.gameHour).toBe(31 * 24);
+      expect(clock.hourOfDay).toBe(0);
+    });
+
+    it('počas celého mesiaca: rozsahy 0–59 / 0–23 / 0–29 a zložky skladajú celkové minúty', () => {
+      const clock = new SimClock(CFG);
+      const seen = { minutes: new Set<number>(), hours: new Set<number>(), days: new Set<number>() };
+      for (let i = 0; i < TICKS_PER_MONTH; i++) {
+        const [minute, hour, day] = calendar(clock);
+        seen.minutes.add(minute);
+        seen.hours.add(hour);
+        seen.days.add(day);
+        if (i % TICKS_PER_MINUTE === 0) expect((day * 24 + hour) * 60 + minute).toBe(clock.gameMinute);
+        clock.advance();
+      }
+      expect([...seen.minutes].sort((a, b) => a - b)).toEqual(Array.from({ length: 60 }, (_, i) => i));
+      expect([...seen.hours].sort((a, b) => a - b)).toEqual(Array.from({ length: 24 }, (_, i) => i));
+      expect([...seen.days].sort((a, b) => a - b)).toEqual(Array.from({ length: 30 }, (_, i) => i));
+      expect(calendar(clock)).toEqual([0, 0, 0]);
+    });
+
+    it('odvodzuje sa z tickových konštánt (tickGameSeconds 5: 12 tickov/min)', () => {
+      const clock = new SimClock({ tickGameSeconds: 5 }, { tick: 17_280 + 720 * 13 + 12 * 42 + 11, speed: 1 });
+      expect(calendar(clock)).toEqual([42, 13, 1]);
     });
   });
 

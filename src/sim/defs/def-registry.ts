@@ -7,13 +7,21 @@
  */
 import timeJson from '@data/defs/time.json';
 import economyJson from '@data/defs/economy.json';
+import infrastructureJson from '@data/defs/infrastructure.json';
 import { SECONDS_PER_MINUTE } from '../core/sim-clock';
-import { SUPPORTED_SCHEMA_VERSION, type DefBase, type EconomyDef, type TimeDef } from './types';
+import {
+  SUPPORTED_SCHEMA_VERSION,
+  type DefBase,
+  type EconomyDef,
+  type InfrastructureDef,
+  type InfrastructureLayerDef,
+  type TimeDef,
+} from './types';
 
 /** Chyba defu: názov defu + JSON pointer na problémové pole (`''` = celý def). Správa: `<defName><path>: <problém>`. */
 export class DefError extends Error {
   readonly defName: string;
-  /** JSON pointer (RFC 6901), napr. `/tickGameSeconds` alebo `/speeds/2`; prázdny reťazec = koreň defu. */
+  /** JSON pointer (RFC 6901), napr. `/tickGameSeconds` alebo `/road/costPerCellCents`; prázdny reťazec = koreň defu. */
   readonly path: string;
   readonly problem: string;
 
@@ -31,12 +39,15 @@ export class DefError extends Error {
 // Hranice (`min`/`max`/...) zrkadlia `data/schemas/*.schema.json`, nie sú to laditeľné herné hodnoty.
 // ---------------------------------------------------------------------------------------------------------
 
-interface NumberSpec {
+export interface NumberSpec {
   /** `integer` = celé číslo (schéma `type: integer`), `number` = ľubovoľné konečné číslo. */
   readonly kind: 'integer' | 'number';
   readonly min?: number;
   readonly max?: number;
-  /** Hodnota musí deliť toto číslo bezo zvyšku (`divisorOf % hodnota === 0`); zrkadlí `enum` deliteľov v schéme. */
+  /**
+   * Hodnota musí byť kladná a deliť toto číslo bezo zvyšku (`divisorOf % hodnota === 0`); zrkadlí `enum` deliteľov
+   * v schéme. Kladnosť sa kontroluje osobitne, lebo `60 % -10 === 0` a zvyšok po delení nulou je `NaN`.
+   */
   readonly divisorOf?: number;
 }
 
@@ -51,15 +62,30 @@ interface IntegerArraySpec {
   readonly contains?: number;
 }
 
-type FieldSpec = NumberSpec | IntegerArraySpec;
+/** Vnorený objekt s pevnou sadou povinných kľúčov (schéma `additionalProperties: false`, `required` všetky). */
+interface ObjectSpec<V> {
+  readonly kind: 'object';
+  readonly fields: SpecTable<V>;
+}
 
-/** Tabuľka musí pokryť každé pole defu okrem `schemaVersion` — kompilátor ohlási chýbajúci aj prebytočný kľúč. */
-type FieldTable<T extends DefBase> = { readonly [K in Exclude<keyof T, keyof DefBase>]-?: FieldSpec };
+/** Špecifikácia poľa podľa typu jeho hodnoty; kompilátor tak spáruje tabuľku s typom defu. */
+type SpecFor<V> = V extends readonly number[] ? IntegerArraySpec : V extends number ? NumberSpec : ObjectSpec<V>;
+
+/** Tabuľka pokrýva každý kľúč typu `V` — kompilátor ohlási chýbajúci aj prebytočný kľúč. */
+type SpecTable<V> = { readonly [K in keyof V]-?: SpecFor<V[K]> };
+
+/** Tabuľka defu: každé pole okrem `schemaVersion`. */
+type FieldTable<T extends DefBase> = SpecTable<Omit<T, keyof DefBase>>;
+
+/** Nezávislé od typu defu — tvar, s ktorým pracuje generická validácia za behu. */
+type FieldSpec = NumberSpec | IntegerArraySpec | { readonly kind: 'object'; readonly fields: FieldRecord };
+type FieldRecord = { readonly [key: string]: FieldSpec };
 
 const TIME_FIELDS: FieldTable<TimeDef> = {
   // Tick musí deliť minútu (§3), inak by hranice minúty/hodiny/dňa nepadli na celý tick; rovnaké pravidlo má SimClock.
   tickGameSeconds: { kind: 'integer', min: 1, divisorOf: SECONDS_PER_MINUTE },
   ticksPerRealSecond: { kind: 'integer', min: 1 },
+  maxTicksPerFrame: { kind: 'integer', min: 1 },
   speeds: { kind: 'integerArray', minItems: 1, itemMin: 0, unique: true, contains: 0 },
 };
 
@@ -72,12 +98,25 @@ const ECONOMY_FIELDS: FieldTable<EconomyDef> = {
   bankruptcyDays: { kind: 'integer', min: 1 },
   offersPerDay: { kind: 'integer', min: 0 },
   offerExpiryDays: { kind: 'integer', min: 1 },
+  removalRefundRate: { kind: 'number', min: 0, max: 1 },
+};
+
+/** Cesta aj koľaj majú rovnaké polia (ADR-010), líšia sa iba hodnotami v defe. */
+const INFRASTRUCTURE_LAYER_FIELDS: SpecTable<InfrastructureLayerDef> = {
+  costPerCellCents: { kind: 'integer', min: 0 },
+  maintenancePerDayCents: { kind: 'integer', min: 0 },
+};
+
+const INFRASTRUCTURE_FIELDS: FieldTable<InfrastructureDef> = {
+  road: { kind: 'object', fields: INFRASTRUCTURE_LAYER_FIELDS },
+  rail: { kind: 'object', fields: INFRASTRUCTURE_LAYER_FIELDS },
 };
 
 /** Tabuľky všetkých defov; kľúč je názov defu (= názov súboru bez `.json`). */
 const DEF_FIELDS = {
   time: TIME_FIELDS,
   economy: ECONOMY_FIELDS,
+  infrastructure: INFRASTRUCTURE_FIELDS,
 } as const;
 
 type DefName = keyof typeof DEF_FIELDS;
@@ -107,11 +146,8 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function checkNumber(
-  value: unknown,
-  spec: Pick<NumberSpec, 'kind' | 'min' | 'max' | 'divisorOf'>,
-  path: string,
-): Problem | undefined {
+/** Overí číslo podľa `spec`; vráti prvý problém (poradie: typ, celé číslo, min, max, deliteľ) alebo `undefined`. */
+export function checkNumber(value: unknown, spec: NumberSpec, path: string): Problem | undefined {
   const expected = spec.kind === 'integer' ? 'celé číslo' : 'číslo';
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return { path, message: `očakávané ${expected}, dostal ${describeValue(value)}` };
@@ -125,8 +161,13 @@ function checkNumber(
   if (spec.max !== undefined && value > spec.max) {
     return { path, message: `musí byť ≤ ${String(spec.max)}, dostal ${String(value)}` };
   }
-  if (spec.divisorOf !== undefined && spec.divisorOf % value !== 0) {
-    return { path, message: `musí deliť ${String(spec.divisorOf)} bezo zvyšku (§3), dostal ${String(value)}` };
+  if (spec.divisorOf !== undefined) {
+    if (value <= 0) {
+      return { path, message: `musí byť kladné (deliteľ ${String(spec.divisorOf)}), dostal ${String(value)}` };
+    }
+    if (spec.divisorOf % value !== 0) {
+      return { path, message: `musí deliť ${String(spec.divisorOf)} bezo zvyšku (§3), dostal ${String(value)}` };
+    }
   }
   return undefined;
 }
@@ -149,13 +190,47 @@ function checkIntegerArray(value: unknown, spec: IntegerArraySpec, path: string)
   return undefined;
 }
 
+/** additionalProperties: false — preklep v názve poľa je pravdepodobnejší než zámerné rozšírenie. */
+function findUnknownKey(raw: Record<string, unknown>, known: ReadonlySet<string>, path: string): Problem | undefined {
+  for (const key of Object.keys(raw)) {
+    if (!known.has(key)) return { path: `${path}${pointerSegment(key)}`, message: 'neznámy kľúč' };
+  }
+  return undefined;
+}
+
+/** Každé pole tabuľky musí existovať a prejsť svojou špecifikáciou; hlási prvý problém v poradí tabuľky. */
+function checkFields(raw: Record<string, unknown>, fields: FieldRecord, path: string): Problem | undefined {
+  for (const [key, spec] of Object.entries(fields)) {
+    const fieldPath = `${path}${pointerSegment(key)}`;
+    if (!Object.hasOwn(raw, key)) return { path: fieldPath, message: 'chýba povinné pole' };
+    const problem = checkField(raw[key], spec, fieldPath);
+    if (problem) return problem;
+  }
+  return undefined;
+}
+
 function checkField(value: unknown, spec: FieldSpec, path: string): Problem | undefined {
-  return spec.kind === 'integerArray' ? checkIntegerArray(value, spec, path) : checkNumber(value, spec, path);
+  if (spec.kind === 'integerArray') return checkIntegerArray(value, spec, path);
+  if (spec.kind === 'object') {
+    if (!isPlainObject(value)) return { path, message: `očakávaný objekt, dostal ${describeValue(value)}` };
+    return findUnknownKey(value, new Set(Object.keys(spec.fields)), path) ?? checkFields(value, spec.fields, path);
+  }
+  return checkNumber(value, spec, path);
+}
+
+/** Hlboká zmrazená kópia JSON hodnoty (objekty a polia); vstup sa nemení ani nezmrazuje. */
+function freezeCopy(value: unknown): unknown {
+  if (Array.isArray(value)) return Object.freeze(value.map((item: unknown) => freezeCopy(item)));
+  if (isPlainObject(value)) {
+    return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, item]) => [key, freezeCopy(item)])));
+  }
+  return value;
 }
 
 /**
  * Overí surový def voči tabuľke polí a vráti jeho zmrazenú kópiu (vstup sa nemení ani nezmrazuje).
- * Hlási prvý nájdený problém: koreň → neznáme kľúče → `schemaVersion` → polia v poradí tabuľky.
+ * Hlási prvý nájdený problém: koreň → neznáme kľúče → `schemaVersion` → polia v poradí tabuľky (vnorené objekty
+ * rekurzívne rovnakým poradím, cesta je úplný JSON pointer).
  */
 function validateDef<T extends DefBase>(defName: string, raw: unknown, fields: FieldTable<T>): Readonly<T> {
   const fail = ({ path, message }: Problem): never => {
@@ -165,11 +240,9 @@ function validateDef<T extends DefBase>(defName: string, raw: unknown, fields: F
   if (raw === undefined) return fail({ path: '', message: 'def chýba' });
   if (!isPlainObject(raw)) return fail({ path: '', message: `očakávaný objekt, dostal ${describeValue(raw)}` });
 
-  // additionalProperties: false — preklep v názve poľa je pravdepodobnejší než zámerné rozšírenie.
-  const known = new Set<string>(['schemaVersion', ...Object.keys(fields)]);
-  for (const key of Object.keys(raw)) {
-    if (!known.has(key)) fail({ path: pointerSegment(key), message: 'neznámy kľúč' });
-  }
+  const table: FieldRecord = fields;
+  const unknownKey = findUnknownKey(raw, new Set(['schemaVersion', ...Object.keys(table)]), '');
+  if (unknownKey) fail(unknownKey);
 
   const versionPath = pointerSegment('schemaVersion');
   if (!Object.hasOwn(raw, 'schemaVersion')) fail({ path: versionPath, message: 'chýba povinné pole' });
@@ -180,17 +253,10 @@ function validateDef<T extends DefBase>(defName: string, raw: unknown, fields: F
     });
   }
 
-  const result: Record<string, unknown> = { schemaVersion: SUPPORTED_SCHEMA_VERSION };
-  for (const [key, spec] of Object.entries<FieldSpec>(fields)) {
-    const path = pointerSegment(key);
-    if (!Object.hasOwn(raw, key)) fail({ path, message: 'chýba povinné pole' });
-    const value = raw[key];
-    const problem = checkField(value, spec, path);
-    if (problem) fail(problem);
-    result[key] = Array.isArray(value) ? Object.freeze([...value]) : value;
-  }
-  // Všetky polia tabuľky prešli kontrolou, takže tvar zodpovedá `T`.
-  return Object.freeze(result) as Readonly<T>;
+  const problem = checkFields(raw, table, '');
+  if (problem) fail(problem);
+  // Všetky polia tabuľky prešli kontrolou a neznáme kľúče sú vylúčené, takže tvar zodpovedá `T`.
+  return freezeCopy(raw) as Readonly<T>;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -204,6 +270,7 @@ export class DefRegistry {
   private constructor(
     private readonly timeDef: Readonly<TimeDef>,
     private readonly economyDef: Readonly<EconomyDef>,
+    private readonly infrastructureDef: Readonly<InfrastructureDef>,
   ) {}
 
   /** Zvaliduje surové defy (fail-fast, `DefError`) a zostaví register so zmrazenými objektmi. */
@@ -211,6 +278,7 @@ export class DefRegistry {
     return new DefRegistry(
       validateDef<TimeDef>('time', raw.time, DEF_FIELDS.time),
       validateDef<EconomyDef>('economy', raw.economy, DEF_FIELDS.economy),
+      validateDef<InfrastructureDef>('infrastructure', raw.infrastructure, DEF_FIELDS.infrastructure),
     );
   }
 
@@ -223,9 +291,14 @@ export class DefRegistry {
   get economy(): Readonly<EconomyDef> {
     return this.economyDef;
   }
+
+  /** `infrastructure.json` (ARCHITECTURE §4.6, ADR-010): cena a údržba cesty a koľaje za bunku. */
+  get infrastructure(): Readonly<InfrastructureDef> {
+    return this.infrastructureDef;
+  }
 }
 
 /** Načíta defy zabalené v `data/defs/` (statické JSON importy, bez `fs`) a zvaliduje ich. */
 export function loadBundledDefs(): DefRegistry {
-  return DefRegistry.fromRaw({ time: timeJson, economy: economyJson });
+  return DefRegistry.fromRaw({ time: timeJson, economy: economyJson, infrastructure: infrastructureJson });
 }

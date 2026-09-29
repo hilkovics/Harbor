@@ -2,13 +2,16 @@
 // Spustenie: `pnpm simrun <scenario.json> --ticks N [--report]`. Exit 1 pri akejkoľvek chybe (správa na stderr).
 // Logika je exportovaná (`parseArgs`, `loadScenario`, `runScenario`), CLI sa spustí len pri priamom behu súboru.
 //
-// Fáza 0: `World` ešte neexistuje (vzniká vo fáze 1), takže sa tikuje iba stub nad `SimClock` + `Rng` (pozri nižšie).
+// Beh nad skutočným `World` (od fázy 1): `World.create(defs, mapa, seed)`; príkazy scenára sa vo fronte sveta
+// objavia presne pred tickom `atTick` (replay, ARCHITECTURE §12.2). Odmietnutý príkaz = chyba scenára → exit 1.
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Rng, SimClock } from '@sim/core';
+import { CommandError, commandFromJSON, type Command, type SerializedCommand } from '@sim/commands';
 import { loadBundledDefs, type DefRegistry } from '@sim/defs';
+import { loadBundledMap, loadMap, parseMapDef, type LoadedMap } from '@sim/grid';
+import { World } from '@sim/world';
 
 // ---------------------------------------------------------------------------------------------------------
 // Scenár
@@ -16,8 +19,9 @@ import { loadBundledDefs, type DefRegistry } from '@sim/defs';
 
 /** Jeden riadok replaye: príkaz, ktorý sa aplikuje pred tickom `atTick` (ARCHITECTURE §12.2). */
 export interface ScenarioEntry {
+  /** Celé číslo ≥ 0; záznamy v scenári sú zoradené neklesajúco (rovnaký tick = poradie zo scenára). */
   readonly atTick: number;
-  /** Serializovateľný `Command`; typ dostane vo fáze 1 (F0 príkazy nepozná). */
+  /** Serializovaný `Command` (`{ type, … }`); zostaví ho `commandFromJSON`. */
   readonly command: unknown;
 }
 
@@ -31,7 +35,7 @@ export interface Scenario {
   readonly commands: readonly ScenarioEntry[];
 }
 
-/** Scenár po načítaní; `mapData` je surový JSON mapy (vo F0 sa neinterpretuje, mapy ešte neexistujú). */
+/** Scenár po načítaní; `mapData` je surový JSON súboru `map` (`runScenario` ho spracuje `parseMapDef` + `loadMap`). */
 export interface LoadedScenario extends Scenario {
   readonly mapData?: unknown;
 }
@@ -59,45 +63,20 @@ export interface SimrunReport {
   readonly ticks: number;
   /** Uplynulé herné dni (= `clock.gameDay`). */
   readonly gameDays: number;
-  /** Hotovosť na konci v centoch; `null` do fázy 5 (ekonomika). */
-  readonly cashEnd: number | null;
+  /** Hotovosť na konci v centoch (`world.cashCents`). */
+  readonly cashEnd: number;
+  /** Exportované jednotky nákladu; do fázy 2 (náklad) vždy 0. */
   readonly exportedUnits: number;
-  /** Stratené jednotky nákladu; musí byť 0 (CLAUDE.md, `/sim-check`). */
+  /** Stratené jednotky nákladu; musí byť 0 (CLAUDE.md, `/sim-check`). Do fázy 2 (náklad) vždy 0. */
   readonly lostUnits: number;
   readonly onTimeRate: number | null;
   readonly craneBlockedPct: number | null;
-}
-
-// ---------------------------------------------------------------------------------------------------------
-// Stub sveta (len fáza 0)
-// ---------------------------------------------------------------------------------------------------------
-
-/** Najmenšie rozhranie, ktoré runner od sveta potrebuje: posunúť simuláciu o jeden tick. */
-export interface Tickable {
-  tick(): void;
-}
-
-/** Dočasný svet: len hodiny a náhoda, žiadna herná logika. */
-export interface StubWorld extends Tickable {
-  readonly clock: SimClock;
-  readonly rng: Rng;
-}
-
-/**
- * Dočasný stub sveta pre fázu 0. Vo fáze 1 ho nahradí `World` (`World.tick()` podľa ARCHITECTURE §6),
- * ktorý implementuje `Tickable` a vlastní `SimClock` aj `Rng` sám; `runScenario` sa vtedy zmení len
- * v tom, odkiaľ berie svet a ako z neho číta metriky do reportu.
- */
-export function createStubWorld(defs: DefRegistry, seed: number): StubWorld {
-  const clock = new SimClock(defs.time);
-  const rng = new Rng(seed);
-  return {
-    clock,
-    rng,
-    tick(): void {
-      clock.advance();
-    },
-  };
+  /** Počet buniek s cestou (`road === 'road'`) na konci behu, vrátane štartovacích ciest mapy. */
+  readonly roads: number;
+  /** Príkazy scenára aplikované pred tickom `atTick < ticks` (každý prešiel validáciou, inak beh končí chybou). */
+  readonly commandsApplied: number;
+  /** Príkazy s `atTick ≥ ticks` — beh skončil skôr, než na ne prišiel rad. */
+  readonly commandsSkipped: number;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -186,6 +165,7 @@ function readJsonFile(path: string, what: string): unknown {
 }
 
 function validateEntries(raw: unknown[], path: string): ScenarioEntry[] {
+  let previousTick = 0;
   return raw.map((entry, index) => {
     const at = `${path}: /commands/${String(index)}`;
     if (!isPlainObject(entry)) throw new SimrunError(`${at} musí byť objekt { atTick, command }`);
@@ -196,21 +176,19 @@ function validateEntries(raw: unknown[], path: string): ScenarioEntry[] {
     if (typeof atTick !== 'number' || !Number.isSafeInteger(atTick) || atTick < 0) {
       throw new SimrunError(`${at}/atTick musí byť celé číslo ≥ 0`);
     }
+    if (atTick < previousTick) {
+      throw new SimrunError(`${at}/atTick ${String(atTick)} je menší než predchádzajúci ${String(previousTick)} (záznamy musia byť neklesajúce)`);
+    }
+    previousTick = atTick;
     if (!isPlainObject(command)) throw new SimrunError(`${at}/command musí byť objekt`);
     return { atTick, command };
   });
 }
 
-/** Vo F0 neexistujú príkazy (`Command` vzniká vo F1) — neprázdny zoznam sa nesmie ticho ignorovať. */
-function assertNoCommands(scenario: Scenario, path: string): void {
-  if (scenario.commands.length > 0) {
-    throw new SimrunError(`${path}: príkazy zatiaľ nie sú podporované (F1), commands musí byť prázdne`);
-  }
-}
-
 /**
  * Načíta a zvaliduje scenár `{ id, seed, map?, commands }`. Ak je uvedená `map`, súbor sa načíta a parsuje ako JSON
- * (obsah sa vo F0 nevaliduje). Akákoľvek chyba (súbor, JSON, tvar, neprázdne `commands`) → `SimrunError`.
+ * (tvar mapy overí až `runScenario`). Záznamy `commands` musia mať `atTick` neklesajúci. Typy a payloady príkazov
+ * sa overujú v `runScenario`. Akákoľvek chyba (súbor, JSON, tvar) → `SimrunError`.
  */
 export function loadScenario(path: string): LoadedScenario {
   const raw = readJsonFile(path, 'scenár');
@@ -230,7 +208,6 @@ export function loadScenario(path: string): LoadedScenario {
   if (!Array.isArray(commands)) throw new SimrunError(`${path}: /commands musí byť pole`);
 
   const scenario: Scenario = { id, seed, commands: validateEntries(commands, path), ...(map !== undefined && { map }) };
-  assertNoCommands(scenario, path);
 
   if (scenario.map === undefined) return scenario;
   return { ...scenario, mapData: readJsonFile(scenario.map, 'mapa') };
@@ -240,26 +217,85 @@ export function loadScenario(path: string): LoadedScenario {
 // Beh
 // ---------------------------------------------------------------------------------------------------------
 
-/** Odsimuluje `ticks` tickov (kladné celé číslo) a zostaví report. Rovnaký scenár + seed + defy → identický report. */
-export function runScenario(scenario: Scenario, ticks: number, defs: DefRegistry): SimrunReport {
+interface ParsedEntry {
+  readonly atTick: number;
+  readonly command: Command;
+}
+
+/** Zostaví príkazy zo scenára vopred (pred prvým tickom), aby neplatný typ/payload zlyhal s cestou `/commands/i`. */
+function parseCommands(scenario: Scenario): ParsedEntry[] {
+  return scenario.commands.map((entry, index) => {
+    try {
+      return { atTick: entry.atTick, command: commandFromJSON(entry.command as SerializedCommand) };
+    } catch (cause) {
+      if (cause instanceof CommandError) {
+        throw new SimrunError(`${scenario.id}: /commands/${String(index)}/command: ${cause.message}`);
+      }
+      throw cause;
+    }
+  });
+}
+
+/** Mapa scenára (`map` = cesta k súboru, `mapData` = jeho obsah); bez `map` vstavaná `harbor_01`. */
+function resolveMap(scenario: LoadedScenario): LoadedMap {
+  if (scenario.map === undefined) return loadBundledMap();
+  const raw = scenario.mapData ?? readJsonFile(scenario.map, 'mapa');
+  try {
+    return loadMap(parseMapDef(raw));
+  } catch (cause) {
+    throw new SimrunError(`mapa "${scenario.map}" je neplatná: ${errorMessage(cause)}`);
+  }
+}
+
+function countRoads(world: World): number {
+  let roads = 0;
+  for (let i = 0; i < world.grid.cellCount; i++) {
+    if (world.grid.atIndex(i).road === 'road') roads += 1;
+  }
+  return roads;
+}
+
+/**
+ * Odsimuluje `ticks` tickov (kladné celé číslo) a zostaví report. Pred každým tickom sa do fronty sveta zaradia
+ * všetky príkazy s `atTick === world.clock.tick` (v poradí zo scenára) a zavolá sa `applyPending()`; odmietnutý
+ * príkaz (`CommandRejected`) ukončí beh chybou. Príkazy s `atTick ≥ ticks` sa nevykonajú (`commandsSkipped`).
+ * Rovnaký scenár + seed + defy + mapa → identický report.
+ */
+export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRegistry): SimrunReport {
   if (!Number.isSafeInteger(ticks) || ticks < 1) {
     throw new SimrunError(`ticks musí byť kladné celé číslo, dostal ${String(ticks)}`);
   }
-  assertNoCommands(scenario, scenario.id);
+  const entries = parseCommands(scenario);
+  const world = World.create(defs, resolveMap(scenario), scenario.seed);
 
-  const world = createStubWorld(defs, scenario.seed);
-  for (let i = 0; i < ticks; i++) world.tick();
+  let next = 0;
+  for (let i = 0; i < ticks; i++) {
+    const tick = world.clock.tick;
+    while (next < entries.length && entries[next].atTick === tick) {
+      world.enqueue(entries[next].command);
+      next += 1;
+    }
+    const rejected = world.applyPending().filter((event) => event.type === 'CommandRejected');
+    if (rejected.length > 0) {
+      const what = rejected.map((event) => `${event.commandType}: ${event.reasons.join(', ')}`).join('; ');
+      throw new SimrunError(`${scenario.id}: príkaz odmietnutý pri atTick ${String(tick)} — ${what}`);
+    }
+    world.tick();
+  }
 
   return {
     scenario: scenario.id,
     seed: scenario.seed,
     ticks: world.clock.tick,
     gameDays: world.clock.gameDay,
-    cashEnd: null, // ekonomika až vo fáze 5
-    exportedUnits: 0,
+    cashEnd: world.cashCents,
+    exportedUnits: 0, // náklad až od fázy 2
     lostUnits: 0,
     onTimeRate: null,
     craneBlockedPct: null,
+    roads: countRoads(world),
+    commandsApplied: next,
+    commandsSkipped: entries.length - next,
   };
 }
 
@@ -268,8 +304,9 @@ export function formatSummary(report: SimrunReport): string {
   const metric = (value: number | null): string => (value === null ? 'n/a' : String(value));
   return (
     `simrun ${report.scenario}: seed ${String(report.seed)}, ${String(report.ticks)} tickov ` +
-    `(${String(report.gameDays)} dní), cash ${metric(report.cashEnd)}, exportované ${String(report.exportedUnits)}, ` +
-    `stratené ${String(report.lostUnits)}, on-time ${metric(report.onTimeRate)}, žeriav blokovaný ${metric(report.craneBlockedPct)}`
+    `(${String(report.gameDays)} dní), cash ${String(report.cashEnd)}, exportované ${String(report.exportedUnits)}, ` +
+    `stratené ${String(report.lostUnits)}, on-time ${metric(report.onTimeRate)}, žeriav blokovaný ${metric(report.craneBlockedPct)}, ` +
+    `cesty ${String(report.roads)}, príkazy ${String(report.commandsApplied)} (preskočené ${String(report.commandsSkipped)})`
   );
 }
 

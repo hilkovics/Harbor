@@ -1,0 +1,80 @@
+/**
+ * Formátovače pre UI (DESIGN_BRIEF §6.1, §6.4). Čisté funkcie bez závislosti na prostredí: zámerne bez
+ * `Intl`/`toLocaleString`, aby výstup nezávisel od locale prehliadača ani Node (testy, screenshoty).
+ */
+
+/** Matematické mínus U+2212 (nie spojovník), ako v design systéme: `−$4,820`. */
+export const MINUS_SIGN = '\u2212';
+
+/** Znak plus pre kladné zmeny (`+$12,300`). */
+export const PLUS_SIGN = '+';
+
+/** Pomlčka U+2014 ako zástupný text pre chýbajúcu alebo neplatnú hodnotu. */
+export const EM_DASH = '\u2014';
+
+/** Vloží čiarky ako oddeľovač tisícov do reťazca číslic (`1234560` → `1,234,560`). */
+function groupThousands(digits: string): string {
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+/** Celé doláre zo sumy v centoch (`absCents` ≥ 0): zaokrúhlenie polovice smerom od nuly. */
+function roundedDollars(absCents: number): number {
+  // Bez delenia necelým číslom: (abs + 50) - ((abs + 50) mod 100) je násobok 100, presný aj pre veľké sumy.
+  const shifted = absCents + 50;
+  return (shifted - (shifted % 100)) / 100;
+}
+
+/**
+ * Peniaze pre UI: `$1,234,560`, záporné `−$2,500` (U+2212). Suma je v centoch, zaokrúhlená na celé doláre,
+ * polovica smerom od nuly (`150` → `$2`, `−150` → `−$2`); hodnota, ktorá sa zaokrúhli na nulu, je vždy `$0`
+ * (bez mínusu). Neplatná hodnota (`NaN`, `±Infinity`) → `—`, aby UI nikdy neukázalo `$NaN`.
+ */
+export function formatMoney(cents: number): string {
+  if (!Number.isFinite(cents)) return EM_DASH;
+  const dollars = roundedDollars(Math.abs(cents));
+  const body = `$${groupThousands(String(dollars))}`;
+  return cents < 0 && dollars !== 0 ? `${MINUS_SIGN}${body}` : body;
+}
+
+/**
+ * Zmena peňazí so znamienkom: `+$12,300`, `−$4,820`; hodnota zaokrúhlená na nulu je `$0` (bez znamienka).
+ * Rovnaké zaokrúhlenie ako `formatMoney`.
+ */
+export function formatMoneyDelta(cents: number): string {
+  const body = formatMoney(cents);
+  return moneySign(cents) > 0 ? `${PLUS_SIGN}${body}` : body;
+}
+
+/** Znamienko sumy pre farbu/ikonu: -1, 0, +1 (podľa hodnoty zaokrúhlenej na doláre; neplatná hodnota = 0). */
+export function moneySign(cents: number): -1 | 0 | 1 {
+  if (!Number.isFinite(cents) || roundedDollars(Math.abs(cents)) === 0) return 0;
+  return cents < 0 ? -1 : 1;
+}
+
+/** Skúsenosti: `340 XP`, `12,340 XP` (celé číslo, čiarka ako oddeľovač tisícov; neplatná hodnota → `— XP`). */
+export function formatXp(xp: number): string {
+  if (!Number.isFinite(xp)) return `${EM_DASH} XP`;
+  return `${groupThousands(String(Math.max(0, Math.trunc(xp))))} XP`;
+}
+
+/** Herný čas z `WorldSnapshot`/`SimClock`; `day` je 0-based. */
+export interface GameTimeParts {
+  readonly day: number;
+  readonly hour: number;
+  readonly minute: number;
+}
+
+function pad2(value: number): string {
+  const text = String(Math.trunc(value));
+  return text.length >= 2 ? text : `0${text}`;
+}
+
+/** `Deň N · HH:MM`, kde N = `day + 1` (SimClock je 0-based, hráč vidí od Dňa 1). */
+export function formatGameTime({ day, hour, minute }: GameTimeParts): string {
+  return `Deň ${String(Math.trunc(day) + 1)} \u00B7 ${pad2(hour)}:${pad2(minute)}`;
+}
+
+/** Popisok rýchlosti: `0` → `Pauza`, inak `N×` (U+00D7). */
+export function formatSpeed(speed: number): string {
+  return speed === 0 ? 'Pauza' : `${String(speed)}\u00D7`;
+}

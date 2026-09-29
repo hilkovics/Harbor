@@ -6,20 +6,20 @@
 
 ## Checklist
 
-- [ ] T00-01 · Import dokumentácie, `.gitignore`, prvý commit
-- [ ] T00-02 · Scaffold: Vite react-ts, TS strict, aliasy, závislosti, skripty, ESLint
-- [ ] T00-03 · Claude Code konfigurácia: settings, agenti, commands, šablóna karty
-- [ ] T00-04 · `design/tokens.css` z DESIGN_BRIEF §3
-- [ ] T00-05 · `docs/DECISIONS.md` s ADR-001..006
-- [ ] T00-06 · Adresáre, barrel `index.ts`, `BACKLOG.md`, `PROGRESS.md`
-- [ ] T00-07 · Defy `time` + `economy`, JSON schémy, `validate-defs`
-- [ ] T00-08 · Playwright + boot screenshot
-- [ ] T00-09 · Sim core: rng, sim-clock, entity-id, event-bus, ring-buffer
-- [ ] T00-10 · DefRegistry
-- [ ] T00-11 · `simrun` kostra
-- [ ] T00-12 · Review `src/sim/**`
-- [ ] T00-13 · Plná pipeline + triáž
-- [ ] T00-14 · Uzavretie fázy (PROGRESS, BACKLOG)
+- [x] T00-01 · Import dokumentácie, `.gitignore`, prvý commit
+- [x] T00-02 · Scaffold: Vite react-ts, TS strict, aliasy, závislosti, skripty, ESLint
+- [x] T00-03 · Claude Code konfigurácia: settings, agenti, commands, šablóna karty
+- [x] T00-04 · `design/tokens.css` z DESIGN_BRIEF §3
+- [x] T00-05 · `docs/DECISIONS.md` s ADR-001..006
+- [x] T00-06 · Adresáre, barrel `index.ts`, `BACKLOG.md`, `PROGRESS.md`
+- [x] T00-07 · Defy `time` + `economy`, JSON schémy, `validate-defs`
+- [x] T00-08 · Playwright + boot screenshot
+- [x] T00-09 · Sim core: rng, sim-clock, entity-id, event-bus, ring-buffer
+- [x] T00-10 · DefRegistry
+- [x] T00-11 · `simrun` kostra
+- [x] T00-12 · Review `src/sim/**`
+- [x] T00-13 · Plná pipeline + triáž
+- [x] T00-14 · Uzavretie fázy (PROGRESS, BACKLOG)
 
 Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 11 → 12 → 13 → 14.
 

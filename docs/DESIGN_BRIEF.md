@@ -295,6 +295,7 @@ design/
   entities.html               (relácia 4 — referenčný hárok entít a nákladu; SVG sú v assets/entities, assets/cargo)
   ui/game-ui.html             (relácia 5 — jeden interaktívny prototyp všetkých obrazoviek so prepínačom stavov; nahrádza samostatné ui/*.html)
   ui/game-ui.source.html      (čitateľný zdroj šablóny game-ui.html pre ui-builder)
+  icons-manifest.html         (relácia 6 — referenčný hárok ikon, overlayov a manifestu; kanonický manifest je assets/manifest.json)
   ui/{top-hud,build-bar,contracts-panel,module-inspector,finance-panel,tech-tree,stats-panel,parcel-panel,monthly-report,toasts,settings,game-over,components}.html
 ```
 Názvy súborov: `{id}[_{variant}][_{state}].svg` — napr. `container_yard_small_fill50.svg`, `straddle_carrier_loaded.svg`, `ship_feeder_container_loaded.svg`, `crane_container_gantry_boom.svg`.

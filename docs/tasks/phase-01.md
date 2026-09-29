@@ -322,7 +322,7 @@ Scenár (replay, §12.2): `{ "id", "seed", "map": "data/maps/harbor_01.json", "c
 - agent: implementer
 - parallel: no (mení src/render po T01-08 a vizuálne sa overuje v appke z T01-11)
 - depends_on: T01-08, T01-11
-- inputs: assets/manifest.json (čiastočný, relácie 1–2); assets/terrain/*.svg (24), assets/infra/*.svg (15); design/terrain-infra.html (referenčný hárok); DESIGN_BRIEF §4, §5.1, §5.2, §7; src/render/** z T01-08
+- inputs: assets/manifest.json (kanonický, Claude Design relácia 6: sekcie `terrain` (dlaždice s `waterSides`/`waterCorner`/`landCorner`, `nineSlice` obrysov parciel), `infra.{road,rail,pipe}.tiles.*.{file,connectsAtRot0}`, `overlay`, `conventions`); assets/terrain/*.svg (24), assets/infra/*.svg (15); design/terrain-infra.html, design/icons-manifest.html (referenčné hárky); DESIGN_BRIEF §4, §5.1, §5.2, §7; src/render/** z T01-08
 - outputs: src/render/{sprite-atlas,coast,terrain-layer,road-layer}.ts (+ úpravy); data/schemas/asset-manifest.schema.json; tests/render/coast.test.ts; tests/tools/asset-manifest.test.ts
 - požiadavky:
   - Sprity načítať z `assets/manifest.json` cez Vite (`import.meta.glob('/assets/**/*.svg', { query: '?url', import: 'default', eager: true })`) a PixiJS `Assets` s rozlíšením pre zoom do 2,0 (SVG rasterizovať na 128 px). Autotile tvary `road/rail` z manifestu + rotácia z tabuľky T01-08. Dočasné `Graphics` kreslenie ostáva ako fallback pre chýbajúci sprite (budúce moduly).
@@ -333,7 +333,7 @@ Scenár (replay, §12.2): `{ "id", "seed", "map": "data/maps/harbor_01.json", "c
     - `quay`: sever je voda → `quay_edge_n`, inak `quay`.
     - `land` — maska vody v 4-susedoch N=1, E=2, S=4, W=8: jedna strana → `water_edge_{n|e|s|w}`; dve susedné strany N+E / E+S / S+W / W+N → `water_inner_{ne|se|sw|nw}`; protiľahlé strany alebo ≥ 3 strany → `water_edge_*` prvej strany v poradí N, E, S, W; žiadna strana, ale voda na diagonále → `water_corner_{ne|nw|se|sw}` (prvá v poradí NE, NW, SE, SW); inak šachovnica 2×2: `(⌊x/2⌋ + ⌊y/2⌋) mod 2 = 0 → land`, inak `land_alt`.
     - Bunky mimo mapy sa nepočítajú ako voda.
-  - Schéma `asset-manifest.schema.json` + test, že manifest je platný a každý odkazovaný súbor existuje.
+  - Schéma `asset-manifest.schema.json` pre štruktúru kanonického manifestu (všetky sekcie vrátane `sprites`, `entities`, `cargo`, `overlay`, `icons`) + test, že manifest je platný, každý odkazovaný súbor existuje a každé SVG v `assets/` je v manifeste. Autotile tvar a rotáciu over voči `connectsAtRot0` z manifestu (konzistencia s tabuľkou T01-08).
 - acceptance:
   - `pnpm vitest run tests/render tests/tools/asset-manifest.test.ts` (vrátane tabuľky `coastTile`: všetky vetvy + harbor_01 bunky (0,11) → `water_edge_n`, (5,11) → `water_inner_ne`, (9,12) → `water_inner_ne`, (5,12) → `water_corner_ne`, (9,13) → `water_edge_e`, (86,13) → `water_edge_w`, (90,11) → `water_inner_nw`, (10,14) → `quay_edge_n`, (10,15) → `quay`, (80,28) → `blocked`, (0,12) → `land`, (2,12) → `land_alt`)
   - `pnpm typecheck && pnpm lint && pnpm test && pnpm build`

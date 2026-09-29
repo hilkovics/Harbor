@@ -1,0 +1,2 @@
+// Typy udalostí SimEvent.
+export {};

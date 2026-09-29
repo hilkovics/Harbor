@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "startingCashCents": 120000000,
+  "demurrageRateOfRewardPerHour": 0.005,
+  "latePenaltyRateOfRewardPerDay": 0.05,
+  "failAfterDaysLate": 3,
+  "leaseMonthlyRateOfPrice": 0.015,
+  "bankruptcyDays": 30,
+  "offersPerDay": 6,
+  "offerExpiryDays": 2
+}

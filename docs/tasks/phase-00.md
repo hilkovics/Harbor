@@ -6,22 +6,27 @@
 
 ## Checklist
 
-- [ ] T00-01 · Import dokumentácie, `.gitignore`, prvý commit
-- [ ] T00-02 · Scaffold: Vite react-ts, TS strict, aliasy, závislosti, skripty, ESLint
-- [ ] T00-03 · Claude Code konfigurácia: settings, agenti, commands, šablóna karty
-- [ ] T00-04 · `design/tokens.css` z DESIGN_BRIEF §3
-- [ ] T00-05 · `docs/DECISIONS.md` s ADR-001..006
-- [ ] T00-06 · Adresáre, barrel `index.ts`, `BACKLOG.md`, `PROGRESS.md`
-- [ ] T00-07 · Defy `time` + `economy`, JSON schémy, `validate-defs`
-- [ ] T00-08 · Playwright + boot screenshot
-- [ ] T00-09 · Sim core: rng, sim-clock, entity-id, event-bus, ring-buffer
-- [ ] T00-10 · DefRegistry
-- [ ] T00-11 · `simrun` kostra
-- [ ] T00-12 · Review `src/sim/**`
-- [ ] T00-13 · Plná pipeline + triáž
-- [ ] T00-14 · Uzavretie fázy (PROGRESS, BACKLOG)
+- [x] T00-01 · Import dokumentácie, `.gitignore`, prvý commit
+- [x] T00-02 · Scaffold: Vite react-ts, TS strict, aliasy, závislosti, skripty, ESLint
+- [x] T00-03 · Claude Code konfigurácia: settings, agenti, commands, šablóna karty
+- [x] T00-04 · `design/tokens.css` z DESIGN_BRIEF §3
+- [x] T00-05 · `docs/DECISIONS.md` s ADR-001..006
+- [x] T00-06 · Adresáre, barrel `index.ts`, `BACKLOG.md`, `PROGRESS.md`
+- [x] T00-07 · Defy `time` + `economy`, JSON schémy, `validate-defs`
+- [x] T00-08 · Playwright + boot screenshot
+- [x] T00-09 · Sim core: rng, sim-clock, entity-id, event-bus, ring-buffer
+- [x] T00-10 · DefRegistry
+- [x] T00-11 · `simrun` kostra
+- [x] T00-12 · Review `src/sim/**`
+- [x] T00-13 · Plná pipeline + triáž
+- [x] T00-14 · Uzavretie fázy (PROGRESS, BACKLOG)
+- [x] T00-15 · Hranica `src/sim`: vlastný tsconfig + ESLint allowlist (nález T00-12 #1)
+- [x] T00-16 · `tickGameSeconds` len delitele 60 v schéme aj DefRegistry (nález T00-12 #2)
+- [x] T00-17 · Hranica `src/sim`: zatvoriť obchvaty z re-review T00-15 (triple-slash/declare, eval/Function, aliasy Math/Date)
+- [x] T00-18 · Hranica `src/sim`: zákaz inline `eslint-disable` a `@ts-expect-error` (re-review T00-17)
+- [x] T00-19 · ADR-007..011 pred F1 (hranica sim, cesty/parcely, singleton defy, domov konštánt, internalTicks + loadTicks) + ARCHITECTURE
 
-Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 11 → 12 → 13 → 14.
+Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 11 → 12 → 13 → 14 → {15 ‖ 16} → 17 → 18 → 19 (dodatočné karty z review T00-12, re-review a rozhodnutia pred F1).
 
 ---
 
@@ -197,7 +202,7 @@ Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 
 - outputs: tools/simrun.ts; data/scenarios/smoke.json; tests/tools/simrun.test.ts
 - požiadavky: CLI `pnpm simrun <scenario.json> --ticks N [--report]`; scenár `{ id, seed, map?: string, commands: [] }` — mapa sa načíta, ak je uvedená (vo F0 žiadna). `World` vzniká až vo F1 → zatiaľ úzke rozhranie `Tickable { tick(): void }` so stubom nad `SimClock` + `Rng` + `DefRegistry`. Report JSON s finálnymi kľúčmi: `scenario, seed, ticks, cashEnd, exportedUnits, lostUnits, onTimeRate, craneBlockedPct` (neimplementované metriky `null`, `lostUnits` 0). Chýbajúci/nečitateľný scenár → exit 1 so správou.
 - acceptance:
-  - `pnpm simrun data/scenarios/smoke.json --ticks 1000 --report | jq -e '.ticks==1000 and .lostUnits==0'`
+  - `pnpm -s simrun data/scenarios/smoke.json --ticks 1000 --report | jq -e '.ticks==1000 and .lostUnits==0'` (`-s` potlačí hlavičku pnpm na stdout, aby výstup bol čistý JSON)
   - `! pnpm simrun data/scenarios/nope.json --ticks 1`
   - `pnpm vitest run tests/tools/simrun.test.ts`
 - do_not_touch: src/sim/**, package.json, .claude/**
@@ -225,7 +230,7 @@ Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 
 - acceptance:
   - `pnpm typecheck && pnpm lint && pnpm test && pnpm validate:defs`
   - `pnpm test:e2e && test -s tests/e2e/__screenshots__/boot.png`
-  - `pnpm simrun data/scenarios/smoke.json --ticks 1000 --report` → `lostUnits = 0` (namiesto `vertical_slice`, ktorý vznikne vo F5)
+  - `pnpm -s simrun data/scenarios/smoke.json --ticks 1000 --report | jq -e .lostUnits==0` → `lostUnits = 0` (namiesto `vertical_slice`, ktorý vznikne vo F5)
   - diff-loopy z T00-03 a T00-04 bez rozdielov
 - do_not_touch: všetko (neopravuje)
 - estimate: S
@@ -242,3 +247,109 @@ Vlny: 01 → {02 ‖ 03 ‖ 04 ‖ 05} → {06 ‖ 07 ‖ 08} → 09 → 10 → 
   - `grep -q 'vertical_slice' docs/BACKLOG.md`
 - do_not_touch: všetko mimo outputs
 - estimate: S
+
+---
+
+## Dodatočné karty z review T00-12 (major nálezy, pred F1)
+
+### T00-15 · Hranica `src/sim`: vlastný tsconfig + ESLint allowlist (nález T00-12 #1)
+- model: sonnet
+- agent: implementer
+- parallel: yes (nemení kód v `src/sim/**/*.ts`; ak by bolo treba, `needs_escalation`)
+- depends_on: T00-14
+- inputs: BACKLOG P1 „Vynútenie pravidiel 1/3 je denylist…"; ARCHITECTURE §2 („src/sim nesmie importovať nič mimo src/sim a data/"); CLAUDE.md „Tvrdé pravidlá" 1 a 3; eslint.config.js; tsconfig.json; package.json (skripty)
+- outputs: src/sim/tsconfig.json; tsconfig.json (ak treba vylúčiť/odkázať); eslint.config.js; package.json (iba skripty `typecheck`, `build`); tests/tools/sim-boundary.test.ts
+- požiadavky:
+  - Vrstva 1 — kompilátor: `src/sim/tsconfig.json` (extends root) s `lib: ["ES2023"]` a `types: []`, include `src/sim/**/*` (+ JSON z `data/` cez `resolveJsonModule`). Každý DOM/Node globál (`window`, `document`, `self`, `localStorage`, `navigator`, `setTimeout`, `process`, `crypto`, `console`, `structuredClone`…) je v `src/sim` chyba kompilácie. `pnpm typecheck` a `pnpm build` kontrolujú aj tento projekt.
+  - Vrstva 2 — ESLint pre `src/sim/**/*.{ts,tsx,mts,cts,js,mjs}`: importy ako **allowlist** (len `@sim/…`, `@data/…` a relatívne cesty, ktoré neopustia `src/sim`; zakázané aj `node:*`, akýkoľvek npm balík a traverzia typu `@sim/../render/x`); `no-restricted-syntax` na `new Date(...)`, `Date(...)` a prístup cez `globalThis.*`; existujúce `no-restricted-properties` (Math.random, Date.now, performance.now) ostávajú.
+  - Regresný test `tests/tools/sim-boundary.test.ts` cez ESLint Node API (`new ESLint().lintText(code, { filePath: 'src/sim/core/probe.ts' })`): každý obchvat z nálezu hlási ≥ 1 chybu; legitímne importy (`./x`, `../defs`, `@sim/core`, `@data/defs/time.json`) a bežný kód 0 chýb; mimo `src/sim` (napr. `src/ui/probe.tsx` s `document`) 0 chýb z týchto pravidiel.
+- acceptance:
+  - `pnpm typecheck && pnpm lint && pnpm test && pnpm build`
+  - `pnpm vitest run tests/tools/sim-boundary.test.ts`
+  - tsc sonda (bash, musí skončiť exit 0 a súbor po sebe zmazať):
+    ```bash
+    for g in "window" "document.title" "self" "localStorage" "navigator.userAgent" "setTimeout(() => 0, 1)" "process.hrtime()" "crypto.randomUUID()" "structuredClone({})"; do
+      printf 'export const x = %s;\n' "$g" > src/sim/__probe__.ts
+      if pnpm exec tsc --noEmit -p src/sim/tsconfig.json >/dev/null 2>&1; then echo "LEAK: $g"; rm -f src/sim/__probe__.ts; exit 1; fi
+    done; rm -f src/sim/__probe__.ts; echo "tsc boundary OK"
+    ```
+  - ESLint sondy (každá exit ≠ 0): `new Date()`, `Date()`, `globalThis.Math.random()`, `import 'node:fs'`, `import x from 'lodash'`, `import '@sim/../render/x'`, `import '../../render/x'` cez `pnpm exec eslint --stdin --stdin-filename src/sim/core/probe.ts`
+- do_not_touch: src/sim/**/*.ts, tools/**, data/**, tests/sim/**, .claude/**
+- estimate: M
+
+### T00-16 · `tickGameSeconds` len delitele 60 v schéme aj DefRegistry (nález T00-12 #2)
+- model: sonnet
+- agent: implementer
+- parallel: yes (disjunktné súbory s T00-15)
+- depends_on: T00-14
+- inputs: BACKLOG P1 „tickGameSeconds 7/120…"; ARCHITECTURE §3; ADR-002; data/schemas/time.schema.json; src/sim/defs/def-registry.ts; src/sim/core/sim-clock.ts
+- outputs: data/schemas/time.schema.json; src/sim/core/sim-clock.ts (iba `export` konštanty `SECONDS_PER_MINUTE`); src/sim/defs/def-registry.ts; tests/sim/defs/def-registry.test.ts; tests/tools/validate-defs.test.ts
+- požiadavky:
+  - Schéma: `tickGameSeconds` → `enum: [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60]` (delitele 60; `description` to vysvetlí s odkazom na §3).
+  - DefRegistry: rovnaké pravidlo odvodené z exportovanej `SECONDS_PER_MINUTE` (`SECONDS_PER_MINUTE % v === 0`), nie druhý literálny zoznam; chyba = `DefError('time', '/tickGameSeconds', …)`.
+  - Test konzistencie: pre každé n ∈ 1..120 platí schema-valid ⇔ registry-valid ⇔ `new SimClock({ tickGameSeconds: n })` nehodí.
+- acceptance:
+  - `pnpm vitest run tests/sim/defs tests/tools/validate-defs.test.ts` (vrátane „7 → DefError /tickGameSeconds", „120 → DefError", „validate-defs: 7 → chyba s /tickGameSeconds", test konzistencie 1..120)
+  - `pnpm validate:defs && pnpm typecheck && pnpm lint && pnpm test`
+- do_not_touch: eslint.config.js, tsconfig.json, package.json, src/sim/tsconfig.json, tools/**, data/defs/**, .claude/**
+- estimate: S
+
+### T00-17 · Hranica `src/sim`: zatvoriť obchvaty z re-review T00-15
+- model: sonnet
+- agent: implementer
+- parallel: no
+- depends_on: T00-15, T00-16
+- inputs: re-review T00-15 (sim-reviewer, verdikt FIX FIRST — 3 major + minor rovnakej triedy); eslint.config.js; src/sim/tsconfig.json; tests/tools/sim-boundary.test.ts; CLAUDE.md „Tvrdé pravidlá" 1 a 3
+- outputs: eslint.config.js; src/sim/tsconfig.json; tests/tools/sim-boundary.test.ts; (nový) tests/tools/sim-tsconfig.test.ts
+- požiadavky (selektory overené reviewerom sondou):
+  1. Triple-slash a ambientné deklarácie (major): pre sim súbory `@typescript-eslint/triple-slash-reference: ['error', { lib: 'never', path: 'never', types: 'never' }]`; do `no-restricted-syntax` `TSModuleDeclaration[global=true]`, `TSModuleDeclaration[declare=true]`, `VariableDeclaration[declare=true]`, `TSDeclareFunction`, `ClassDeclaration[declare=true]`.
+  2. Vyhodnotenie kódu (major): `no-eval`, `no-new-func`, `no-implied-eval`; `eval` a `Function` medzi zakázané globály; selektor `MemberExpression[property.name='constructor']`.
+  3. Aliasy (major): `Identifier[name='Math']:not(MemberExpression > Identifier.object)` a `Identifier[name='Date']:not(TSTypeReference > Identifier, MemberExpression[property.name='UTC'] > Identifier.object, MemberExpression > Identifier.property, Property > Identifier.key)` — `Date` ako typ, `Date.UTC`, `Math.max`/`Math.imul` ostávajú povolené; pokryť aj `Reflect.construct(Date, …)`, `Object(Date)` a `Object.getOwnPropertyDescriptor(Math, …)` (vyplynie z pravidla na holý identifikátor).
+  4. Nedeterministické API (minor): `Intl`, `WeakRef`, `FinalizationRegistry`, `SharedArrayBuffer`, `Atomics` medzi zakázané globály; `localeCompare` a `toLocaleString`/`toLocaleDateString`/`toLocaleTimeString` do `no-restricted-properties` (akýkoľvek objekt).
+  5. Typy súborov (minor): v `src/sim` len `.ts` — zo sim globov vyradiť `tsx`/`js`/`mjs`/`cts`/`mts` a pridať test, ktorý zlyhá, ak v `src/sim/**` existuje iný než `.ts` súbor (okrem `tsconfig.json`).
+  6. Regresný test vrstvy 1 (minor): `tests/tools/sim-tsconfig.test.ts` overí, že `src/sim/tsconfig.json` má `lib` bez `DOM*` a `types: []`, a spustí `tsc --noEmit -p` nad dočasnou fixtúrou s `window` (očakáva chybu) — dočasné súbory mimo `src/sim` alebo vždy zmazané v `afterAll`.
+  7. Do tabuľky VIOLATIONS v `sim-boundary.test.ts` doplniť všetky sondy z bodov 1–4 a do povolených `Date` ako typ, `Date.UTC(…)`, `Math.max(…)`, `Math.imul(…)`.
+- acceptance:
+  - `pnpm typecheck && pnpm lint && pnpm test && pnpm build`
+  - `pnpm vitest run tests/tools/sim-boundary.test.ts tests/tools/sim-tsconfig.test.ts`
+  - ESLint sondy (každá exit ≠ 0) cez `pnpm exec eslint --stdin --stdin-filename src/sim/core/probe.ts`: `/// <reference lib="dom" />`, `declare global { var x: number }`, `declare const fetch: any;`, `eval('1')`, `Function('return this')()`, `(() => 0).constructor('return this')()`, `const m = Math; m.random();`, `const D = Date; new D();`, `new Intl.DateTimeFormat()`, `'a'.localeCompare('b')`
+  - ESLint (exit 0): `export const t: Date | null = null;`, `export const u = Date.UTC(2020, 0, 1);`, `export const m = Math.max(1, 2);`
+- do_not_touch: src/sim/**/*.ts, tools/**, data/**, package.json, .claude/**
+- estimate: S
+
+### T00-18 · Hranica `src/sim`: zákaz inline `eslint-disable` a `@ts-expect-error` (re-review T00-17)
+- model: sonnet
+- agent: orchestrátor (S karta)
+- parallel: no
+- depends_on: T00-17
+- inputs: re-review T00-17 (sim-reviewer, verdikt FIX FIRST — 1 major: inline `eslint-disable` vypne vrstvu 2; minor: `@ts-expect-error` + neznámy globál prejde oboma vrstvami, `declare enum`); eslint.config.js; tests/tools/sim-boundary.test.ts
+- outputs: eslint.config.js; tests/tools/sim-boundary.test.ts
+- požiadavky: v sim bloku `linterOptions: { noInlineConfig: true }`; `@typescript-eslint/ban-ts-comment` s `'ts-expect-error': true` (len src/sim); selektor `TSEnumDeclaration[declare=true]`; do zakázaných globálov `fetch`, `queueMicrotask`, `setImmediate`, `clearTimeout`, `clearInterval`, `global`, `Buffer`; sondy do testu.
+- acceptance:
+  - `pnpm vitest run tests/tools/sim-boundary.test.ts && pnpm typecheck && pnpm lint && pnpm test`
+  - ESLint sondy (exit ≠ 0) cez `--stdin-filename src/sim/core/probe.ts`: `// eslint-disable-next-line` + `Math.random()`, `/* eslint-disable */` + `Math.random()`, `/* eslint no-restricted-syntax: off */` + `new Date()`, `// @ts-expect-error` + `fetch('x')`, `declare enum E { A }`
+  - ESLint (exit 0): `export enum E { A }`, `export const enum F { B }`
+- do_not_touch: src/sim/**/*.ts, všetko mimo outputs
+- estimate: S
+
+### T00-19 · ADR-007..011 pred F1 + zosúladenie ARCHITECTURE
+- model: opus
+- agent: sim-architect
+- parallel: no
+- depends_on: T00-18
+- inputs: docs/BACKLOG.md P1; docs/DECISIONS.md (formát ADR-001..006); ARCHITECTURE §2, §4, §4.2, §4.4, §4.6, §5.1, §5.2, §5.3, §7.3, §7.6, §8, §12.2; eslint.config.js + src/sim/tsconfig.json (hranica); rozhodnutia orchestrátora (používateľ delegoval: „rozhodni ty čo najlepšie")
+- outputs: docs/DECISIONS.md (ADR-007..011); docs/ARCHITECTURE.md (len sekcie dotknuté ADR, číslovanie § sa nemení)
+- rozhodnutia:
+  - ADR-007 Hranica src/sim je trojvrstvová: `src/sim/tsconfig.json` (lib ES2023, types []) + ESLint (allowlist importov, zákazy obchvatov nedeterminizmu a globálov, `noInlineConfig`, zákaz `@ts-*` komentárov) + test „len `.ts`"; relatívne importy max 5× `../`, hlbšie cez `@sim/`.
+  - ADR-008 Cesty/koľaje a parcely: `PlaceRoad`/`PlaceRail` povolené na bunkách vlastnej/prenajatej parcely a na verejných bunkách (`parcelId === null`); zakázané na parcele s `ownership: 'none'`. Moduly vždy vyžadujú vlastnú/prenajatú parcelu (`requiresParcelOwnership` = true pre všetky moduly, keďže cesty nie sú moduly — ADR-006).
+  - ADR-009 Konfiguračné vs katalógové defy: konfiguračné (`time`, `economy`, budúce `infrastructure`, `logistics`) = jeden objekt so `schemaVersion`; katalógové (`cargo_types`, `modules`, `ships`, `vehicles`, `tech_tree`, `contract_templates`, …) = `{ schemaVersion, items: [...] }` s `id` (snake_case).
+  - ADR-010 Domov konštánt bez defu (pravidlo 4): `data/defs/infrastructure.json` — `road`/`rail`: `costPerCellCents` (200 000 / 600 000), `maintenancePerDayCents` (0); `data/defs/logistics.json` — `defaultInternalTicks` (6, modul môže prepísať `params.internalTicks`) a `congestion`: `trafficDecayPerHour` 0.9, `slowdownPerExtraVehicle` 0.25, `penaltyTrafficDivisor` 200, `penaltyMax` 3. Súbory + schémy + DefRegistry vzniknú až vo fáze, ktorá ich použije (infrastructure F1, logistics F3; congestion hodnoty sa použijú vo F3/F11).
+  - ADR-011 Pobyt vozidla pri konektore: `internalTicks` modulu (vnútorný presun, ADR-004) + za každú jednotku `loadTicks`/`unloadTicks` vozidla (manipulácia), sekvenčne; `CargoLedger.move` jednotky nastane po dokončení jej load/unload.
+- acceptance:
+  - `test "$(grep -c '^## ADR-0[01][0-9]:' docs/DECISIONS.md)" -eq 11`
+  - `for k in Kontext Rozhodnutie Alternatívy Dôsledky; do test "$(grep -c "^\*\*$k:\*\*" docs/DECISIONS.md)" -eq 11 || exit 1; done`
+  - `grep -q 'infrastructure.json' docs/ARCHITECTURE.md && grep -q 'logistics.json' docs/ARCHITECTURE.md`
+  - `! grep -n 'vždy true okrem ciest' docs/ARCHITECTURE.md`
+  - `diff <(grep -oE '^#{2,3} [0-9]+(\.[0-9]+)?\.? ' <(git show HEAD:docs/ARCHITECTURE.md)) <(grep -oE '^#{2,3} [0-9]+(\.[0-9]+)?\.? ' docs/ARCHITECTURE.md)` (číslovanie § nezmenené)
+- do_not_touch: src/**, data/**, tests/**, CLAUDE.md, docs/BACKLOG.md, eslint.config.js
+- estimate: M

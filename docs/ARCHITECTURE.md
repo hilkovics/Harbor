@@ -39,7 +39,7 @@
 Pravidlá toku dát:
 - **Dole → hore iba čítanie.** Render/UI dostávajú `WorldSnapshot` (read-only view) a `SimEvent[]` za tick.
 - **Hore → dole iba príkazy.** `Command` objekty, validované simom.
-- `src/sim` nesmie importovať nič mimo `src/sim` a `data/` typov. Vynútené ESLint pravidlom `no-restricted-imports`.
+- `src/sim` nesmie importovať nič mimo `src/sim` a `data/` typov. Hranica je trojvrstvová: (1) kompilátor — `src/sim/tsconfig.json` s `lib: ["ES2023"]`, `types: []` a aliasmi len `@sim/*`, `@data/*` (DOM/Node globály = chyba `pnpm typecheck`); (2) ESLint — allowlist importov (`@sim/…`, `@data/…`, relatívne cesty, ktoré neopustia `src/sim`, najviac 5× `../`, vzdialenejšie cez `@sim/…`), zákazy globálov a obchvatov nedeterminizmu, `noInlineConfig`, zákaz `@ts-*` komentárov; (3) test, že `src/sim/**` obsahuje len súbory `.ts` (ADR-007).
 - Sim je pripravený bežať v Web Workeri (všetko je serializovateľné) — implementácia je ADR kandidát (§18).
 
 ---
@@ -62,7 +62,7 @@ Pravidlá toku dát:
 
 ## 4. Dátové definície (`data/defs/*.json`)
 
-Každý súbor má `schemaVersion` a pole položiek s `id` (snake_case). Načítava `DefRegistry` (typované gettery, fail-fast pri chybe). Schémy v `data/schemas/*.schema.json`, validácia `pnpm validate:defs`.
+Každý súbor má `schemaVersion`. Konfiguračné defy (`time`, `economy`, `infrastructure`, `logistics`) sú jeden objekt parametrov; katalógové defy (`cargo_types`, `modules`, `ships`, `vehicles`, `tech_tree`, `contract_templates`, …) majú `items: [...]` s `id` (snake_case) a rozhrania v §4.1–§4.5 opisujú jednu položku (ADR-009). Načítava `DefRegistry` (typované gettery, fail-fast pri chybe). Schémy v `data/schemas/*.schema.json`, validácia `pnpm validate:defs`.
 
 ### 4.1 `cargo_types.json`
 ```ts
@@ -89,7 +89,7 @@ interface ModuleDef {
   placement: {
     requiredTerrain: TerrainType[];           // napr. ['quay'] pre berth, ['land','quay'] pre sklad
     waterSide?: 'north';                      // berth: dlhá hrana musí susediť s vodou (pri rot 0 = sever)
-    requiresParcelOwnership: boolean;         // vždy true okrem ciest na verejných bunkách
+    requiresParcelOwnership: boolean;         // vždy true — cesty nie sú moduly (ADR-006), pravidlo pre cesty viď §5.2 (ADR-008)
     mustAttachTo?: ModuleKind[];              // crane → ['berth']; ramp → nič (cesta stačí)
   };
   connectors: { x: number; y: number; type: 'road' | 'rail' | 'pipe' | 'berth_edge' }[];
@@ -122,7 +122,7 @@ interface VehicleDef {
   id: 'straddle_carrier' | 'forklift' | 'agv' | 'bulk_shuttle' | 'tanker_shuttle' | string;
   capacityUnits: number;          // v CargoUnit (straddle 1, agv 2, bulk_shuttle 1)
   speedCellsPerTick: number;      // 0.4 / 0.3 / 0.5
-  loadTicks: number; unloadTicks: number;   // 3 / 3
+  loadTicks: number; unloadTicks: number;   // 3 / 3, za jednotku, sekvenčne po internalTicks (§7.3, ADR-011)
   cargoCategories: CargoCategory[];
   purchaseCents: number; wagePerDayCents: number;
   techRequired?: string;
@@ -149,6 +149,8 @@ type TechEffect =
 - `contract_templates`: `cargoTypeId, volumeUnitsRange, slaDaysRange, shipClassIds[], weight, minTier`.
 - `economy`: `startingCashCents, demurrageRateOfRewardPerHour (0.005), latePenaltyRateOfRewardPerDay (0.05), failAfterDaysLate (3), leaseMonthlyRateOfPrice (0.015), bankruptcyDays (30), offersPerDay (6), offerExpiryDays (2)`.
 - `time`: viď §3.
+- `infrastructure` (`data/defs/infrastructure.json`, konfiguračný, vznikne vo F1): `road: { costPerCellCents (200 000), maintenancePerDayCents (0) }`, `rail: { costPerCellCents (600 000), maintenancePerDayCents (0) }` (ADR-010).
+- `logistics` (`data/defs/logistics.json`, konfiguračný, vznikne vo F3): `defaultInternalTicks (6)` — modul ho môže prepísať `params.internalTicks`; `congestion: { trafficDecayPerHour (0.9), slowdownPerExtraVehicle (0.25), penaltyTrafficDivisor (200), penaltyMax (3) }` — použité vo F3/F11 (§7.6) (ADR-010).
 
 ### 4.7 Mapa (`data/maps/*.json`)
 ```ts
@@ -223,11 +225,11 @@ interface Cell {
 }
 ```
 - `Grid` má `width, height, cells: Cell[]` (row-major), helpery `inBounds, at, neighbors4, rect`.
-- **Cesty a koľaje nie sú moduly** — sú vrstva na bunke (`PlaceRoadCommand`), cena za bunku. Nesmú byť na vode ani cez footprint modulu; koľaj a cesta sa v MVP nekrižujú (level crossing = backlog).
+- **Cesty a koľaje nie sú moduly** — sú vrstva na bunke, stavajú ich príkazy `PlaceRoad`/`PlaceRail` (a `RemoveRoad`/`RemoveRail`, §12.2), cena za bunku z `infrastructure.json` (ADR-010). Nesmú byť na vode ani cez footprint modulu; koľaj a cesta sa v MVP nekrižujú (level crossing = backlog).
 - Pobrežie: bunky `quay` sú jediné, kde môže stáť `BerthModule`. Loď zaberá `shallow_water/deep_water` bunky priľahlé k dlhej hrane kotviska.
 
 ### 5.2 Parcely
-`Parcel { id, rect, priceCents, leasable, ownership: 'none' | 'owned' | 'leased' }`. Stavať možno len na vlastnej/prenajatej parcele (cesty na `startOwned` parcelách sú od začiatku možné). Prenájom účtuje `priceCents * leaseMonthlyRate / 30` denne (kategória `parcel_lease`). Kúpa = CAPEX jednorazovo. Hráč môže prenájom kedykoľvek ukončiť, ak na parcele nie sú moduly.
+`Parcel { id, rect, priceCents, leasable, ownership: 'none' | 'owned' | 'leased' }`. Moduly možno stavať len na vlastnej/prenajatej parcele (celý footprint); cesty a koľaje aj na verejných bunkách (`parcelId === null`), nie však na parcele s `ownership: 'none'` (na predaj); `startOwned` parcela je vlastnená od začiatku (ADR-008). Prenájom účtuje `priceCents * leaseMonthlyRate / 30` denne (kategória `parcel_lease`). Kúpa = CAPEX jednorazovo. Hráč môže prenájom kedykoľvek ukončiť, ak na parcele nie sú moduly.
 
 ### 5.3 Moduly — rozmery a parametre (počiatočné hodnoty, podliehajú balansu)
 | id | kind | footprint | kľúčové params | cena | údržba/deň |
@@ -251,7 +253,7 @@ interface Cell {
 | `loading_ramp_container` | ramp | 4×2 | `docks 2`, `loadTicksPerUnit 6` | 100k | 200 |
 | `vehicle_depot` | depot | 3×3 | `capacity 6` vozidiel | 90k | 150 |
 | `rail_station_small` | rail_station | 12×4 | `tracks 1`, `trainCapacity 60`, `loadTicksPerUnit 2` | 1.2M | 2 500 |
-| cesta / koľaj | vrstva | 1×1 | — | 2k / 6k za bunku | 0 |
+| cesta / koľaj | vrstva | 1×1 | — | 2k / 6k za bunku (`infrastructure.json`, ADR-010) | 0 |
 
 Root modul zo štartovej mapy = `berth_standard` + `crane_container_gantry` predpostavené na `starter` parcele.
 
@@ -319,7 +321,7 @@ Algoritmus každý tick (O(n) nad malými zoznamami, bez alokácií v hot path):
 1. **Inbound**: pre každú jednotku `on_apron` bez jobu → `StorageAllocator.reserve(cargoType, 1)` → vyber sklad s kompatibilnou kategóriou, voľnou kapacitou, **najbližší podľa cache vzdialenosti** od kotviska (predpočítaná matica konektor→konektor, invalidovaná pri zmene ciest). Ak žiadny sklad: job sa nevytvorí, emit `NoStorageAvailable` (throttled).
 2. **Outbound**: pre kontrakt v stave `exporting` a jednotku `in_storage` → ak existuje rampa kompatibilnej kategórie s voľným `dock` (alebo rezervovateľným) → job `storage → at_ramp`. Prioritizuj kontrakty podľa najbližšieho SLA.
 3. **Priradenie**: pre každý `open` job vyber voľné vozidlo (`idle`), kompatibilnú kategóriu, minimalizuj `pathCost(vehicle.cell, job.from)`. Vozidlo s kapacitou > 1 môže zobrať viac jobov s rovnakým `to`.
-4. **Vozidlo pri vstupe do konektora** modulu je „vnútri": čaká `internalTicks` (`params.internalTicks`, default 6) a vykoná load/unload. Vnútorný pohyb sa nemodeluje — zámerná abstrakcia (ADR-004).
+4. **Vozidlo pri vstupe do konektora** modulu je „vnútri": čaká `internalTicks` (`params.internalTicks` modulu, inak `logistics.defaultInternalTicks` = 6 z `logistics.json`), potom vykoná load/unload sekvenčne po jednotkách — každá trvá `loadTicks`/`unloadTicks` vozidla (§4.4) a `CargoLedger.move` jednotky nastane až po dokončení jej load/unload; pobyt = `internalTicks + k × loadTicks` (resp. `unloadTicks`). Vnútorný pohyb sa nemodeluje — zámerná abstrakcia (ADR-004, ADR-010, ADR-011).
 
 ### 7.4 Pathfinding
 - A* na 4-susednosti nad bunkami `road === 'road'` + cieľový konektor. Heuristika Manhattan, cena bunky `1 + congestionPenalty(cell)` (§7.6). Implementácia s binárnou haldou a znovupoužiteľnými poľami (`Int32Array` open/closed), bez alokácií na volanie.
@@ -339,8 +341,9 @@ Truck FSM: spawned → to_gate → gate_queue(processTicks, FIFO za bránu) → 
 - Vlaky (fáza 10): `RailStation` s `tracks`; vlak príde, keď `stagedUnits >= 0.6 * trainCapacity` alebo keď SLA kontraktu hrozí; loaduje `loadTicksPerUnit * units`, odchádza.
 
 ### 7.6 Soft kongescia (bez fyzických kolízií)
-- Každý tick, kým vozidlo stojí na bunke: `cell.traffic += 1`. Pri `HourClosed`: `traffic *= 0.9`.
-- Rýchlosť vozidla na bunke: `speed * 1 / (1 + 0.25 * max(0, vehiclesOnCell - 1))` (fáza 11). Pathfinding pridáva `congestionPenalty = clamp(traffic / 200, 0, 3)`.
+- Každý tick, kým vozidlo stojí na bunke: `cell.traffic += 1`. Pri `HourClosed`: `traffic *= trafficDecayPerHour` (0.9).
+- Rýchlosť vozidla na bunke: `speed * 1 / (1 + slowdownPerExtraVehicle * max(0, vehiclesOnCell - 1))` (0.25; fáza 11). Pathfinding pridáva `congestionPenalty = clamp(traffic / penaltyTrafficDivisor, 0, penaltyMax)` (200, 3).
+- Konštanty sú v `logistics.json` → `congestion` (§4.6) (ADR-010).
 - Heatmapa v UI = normalizované `traffic` per bunka. Žiadne deadlocky, žiadna fyzika.
 
 ### 7.7 Skladovanie

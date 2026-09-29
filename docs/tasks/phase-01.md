@@ -326,6 +326,7 @@ Scenár (replay, §12.2): `{ "id", "seed", "map": "data/maps/harbor_01.json", "c
 - požiadavky:
   - Sprity načítať z `assets/manifest.json` cez Vite (`import.meta.glob('/assets/**/*.svg', { query: '?url', import: 'default', eager: true })`) a PixiJS `Assets` s rozlíšením pre zoom do 2,0 (SVG rasterizovať na 128 px). Autotile tvary `road/rail` z manifestu + rotácia z tabuľky T01-08. Dočasné `Graphics` kreslenie ostáva ako fallback pre chýbajúci sprite (budúce moduly).
   - Portály: sprite `portal_road` / `portal_rail` na bunke portálu.
+  - Obrysy parciel (len vizuál, bez interakcie — ParcelPanel ostáva vo F7): sprity `parcel_outline_{for_sale|owned|leased}` po obvode každej parcely podľa `ownership`. Dôvod: F1 zavádza pravidlo stavby ciest podľa parciel (ADR-008), hráč musí vidieť, kde parcela na predaj začína.
   - Prechody pobrežia — čistá funkcia `coastTile(grid, x, y)` pre nevodnú bunku (vodné bunky = `water_deep` / `water_shallow`):
     - `blocked` → `blocked`.
     - `quay`: sever je voda → `quay_edge_n`, inak `quay`.

@@ -24,7 +24,7 @@ export interface WorldRendererOptions {
   readonly host: HTMLElement;
   /** Načítaná mapa: úvodný pohľad sa centruje na starter parcelu. */
   readonly map: LoadedMap;
-  /** Živá mriežka sveta (`World.grid`) — z nej sa kreslia cesty; predvolene `map.grid` (šablóna). */
+  /** Živá mriežka sveta (`World.grid`) — z nej sa kreslia cesty; predvolene nová `map.createGrid()` (počiatočný stav mapy). */
   readonly grid?: Grid;
   /**
    * Živé parcely sveta (`[...World.parcels.values()]`) — z nich sa kreslia obrysy podľa `ownership`;
@@ -46,7 +46,7 @@ export interface WorldRendererOptions {
  */
 export function starterParcelRect(map: LoadedMap): Rect {
   const owned = map.parcels.find((parcel) => parcel.ownership === 'owned');
-  return owned ? owned.rect : { x: 0, y: 0, w: map.grid.width, h: map.grid.height };
+  return owned ? owned.rect : { x: 0, y: 0, w: map.width, h: map.height };
 }
 
 export class WorldRenderer {
@@ -70,7 +70,7 @@ export class WorldRenderer {
     private readonly atlas: SpriteAtlas | null,
     textures: SpriteTextures | null,
   ) {
-    const grid = options.grid ?? options.map.grid;
+    const grid = options.grid ?? options.map.createGrid();
     this.app = app;
     this.palette = palette;
     this.camera = new Camera({

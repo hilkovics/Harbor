@@ -3,6 +3,7 @@ import { World, WorldStateError, WORLD_STATE_VERSION, type WorldState } from '@s
 import {
   DEFS,
   MAP,
+  MAP_GRID,
   SEED,
   TestCommand,
   adjustCash,
@@ -15,14 +16,14 @@ import {
 
 const create = (): World => World.create(DEFS, MAP, SEED);
 
-const PUBLIC_LAND = findCell(MAP.grid, (cell) => cell.terrain === 'land' && cell.parcelId === null && cell.road === 'none');
+const PUBLIC_LAND = findCell(MAP_GRID, (cell) => cell.terrain === 'land' && cell.parcelId === null && cell.road === 'none');
 const OTHER_PUBLIC_LAND = findCell(
-  MAP.grid,
+  MAP_GRID,
   (cell, x, y) => cell.terrain === 'land' && cell.parcelId === null && cell.road === 'none' && (x !== PUBLIC_LAND.x || y !== PUBLIC_LAND.y),
 );
 const WATER_INDEX = (() => {
-  const { x, y } = findCell(MAP.grid, (cell) => cell.terrain === 'deep_water');
-  return MAP.grid.index(x, y);
+  const { x, y } = findCell(MAP_GRID, (cell) => cell.terrain === 'deep_water');
+  return MAP_GRID.index(x, y);
 })();
 const STARTER_ROAD = MAP.starter.roads[0];
 
@@ -82,10 +83,10 @@ describe('World.serialize — WorldState v1', () => {
     expect(state.roads).toEqual(expected);
     const indexes = state.roads.map(([index]) => index);
     expect(indexes).toEqual([...indexes].sort((a, b) => a - b));
-    expect(state.roads).toContainEqual([MAP.grid.index(PUBLIC_LAND.x, PUBLIC_LAND.y), 'road']);
-    expect(state.roads).toContainEqual([MAP.grid.index(OTHER_PUBLIC_LAND.x, OTHER_PUBLIC_LAND.y), 'rail']);
-    expect(indexes).not.toContain(MAP.grid.index(STARTER_ROAD.x, STARTER_ROAD.y));
-    expect(state.roads).toContainEqual([MAP.grid.index(MAP.starter.roads[1].x, MAP.starter.roads[1].y), 'road']);
+    expect(state.roads).toContainEqual([MAP_GRID.index(PUBLIC_LAND.x, PUBLIC_LAND.y), 'road']);
+    expect(state.roads).toContainEqual([MAP_GRID.index(OTHER_PUBLIC_LAND.x, OTHER_PUBLIC_LAND.y), 'rail']);
+    expect(indexes).not.toContain(MAP_GRID.index(STARTER_ROAD.x, STARTER_ROAD.y));
+    expect(state.roads).toContainEqual([MAP_GRID.index(MAP.starter.roads[1].x, MAP.starter.roads[1].y), 'road']);
   });
 
   it('čistý JSON: JSON roundtrip je hlboko rovný a nie sú v ňom inštancie tried', () => {
@@ -159,7 +160,7 @@ describe('World.deserialize', () => {
     expect(restored.cashCents).toBe(original.cashCents);
     expect(restored.seed).toBe(SEED);
     expect(restored.parcels.get('west_quay')?.ownership).toBe('leased');
-    for (let i = 0; i < MAP.grid.cellCount; i++) {
+    for (let i = 0; i < MAP_GRID.cellCount; i++) {
       expect(restored.grid.atIndex(i)).toEqual(original.grid.atIndex(i));
     }
     // Odstránená starter cesta sa z mapy neobnoví.
@@ -178,8 +179,9 @@ describe('World.deserialize', () => {
     if (parcel === undefined) throw new Error('mapa nemá east_yard');
     parcel.ownership = 'owned';
     expect(hashState(state)).toBe(stateHash);
-    expect(MAP.grid.at(PUBLIC_LAND.x, PUBLIC_LAND.y).road).toBe('none');
-    expect(MAP.grid.at(STARTER_ROAD.x, STARTER_ROAD.y).road).toBe('road');
+    const template = MAP.createGrid();
+    expect(template.at(PUBLIC_LAND.x, PUBLIC_LAND.y).road).toBe('none');
+    expect(template.at(STARTER_ROAD.x, STARTER_ROAD.y).road).toBe('road');
     expect(MAP.parcels.find((p) => p.id === 'east_yard')?.ownership).toBe('none');
     expect(MAP.parcels.find((p) => p.id === 'west_quay')?.ownership).toBe('none');
 
@@ -231,7 +233,7 @@ describe('World.deserialize', () => {
     ['roads nie je pole', set('roads', {}), '/roads'],
     ['záznam cesty nie je dvojica', set('roads', [[1]]), '/roads/0'],
     ['záporný index bunky', set('roads', [[-1, 'road']]), '/roads/0/0'],
-    ['index mimo mapy', set('roads', [[MAP.grid.cellCount, 'road']]), '/roads/0/0'],
+    ['index mimo mapy', set('roads', [[MAP_GRID.cellCount, 'road']]), '/roads/0/0'],
     ['vrstva none', (s) => set('roads', [[firstRoadIndex(s), 'none']])(s), '/roads/0/1'],
     ['duplicitná bunka', (s) => set('roads', [[firstRoadIndex(s), 'road'], [firstRoadIndex(s), 'rail']])(s), '/roads/1/0'],
     ['cesta na vode', set('roads', [[WATER_INDEX, 'road']]), '/roads/0/0'],

@@ -34,7 +34,8 @@ describe('config aplikácie', () => {
 
   it('živá mriežka sveta je samostatná kópia (šablóna mapy sa nemení)', () => {
     const world = createAppWorld();
-    expect(world.grid).not.toBe(world.map.grid);
+    expect(world.grid).not.toBe(world.map.createGrid());
+    expect(world.map.createGrid()).not.toBe(world.map.createGrid());
   });
 
   it('ladiace konštanty ovládania sú kladné', () => {
@@ -46,28 +47,29 @@ describe('config aplikácie', () => {
   describe('úvodný pohľad kamery', () => {
     const map = loadAppMap();
     const focus = starterParcelRect(map);
+    const grid = map.createGrid();
     const CELL_PX = 64; // token --cell (design/tokens.css)
 
     it('pobrežie starter parcely je horný riadok nábrežia a nad ním je voda', () => {
-      const shore = shoreRow(map.grid, focus);
-      expect(isWater(map.grid.at(focus.x, shore).terrain)).toBe(false);
+      const shore = shoreRow(grid, focus);
+      expect(isWater(grid.at(focus.x, shore).terrain)).toBe(false);
       expect(shore).toBeGreaterThan(0);
-      expect(isWater(map.grid.at(focus.x, shore - 1).terrain)).toBe(true);
+      expect(isWater(grid.at(focus.x, shore - 1).terrain)).toBe(true);
     });
 
     it('obdĺžnik samej vody nemá pobrežie → horný riadok', () => {
-      expect(shoreRow(map.grid, { x: 0, y: 0, w: 4, h: 4 })).toBe(0);
+      expect(shoreRow(grid, { x: 0, y: 0, w: 4, h: 4 })).toBe(0);
     });
 
     it.each([
       [1280, 720],
       [1920, 1080],
     ])('na %i×%i je v úvodnom pohľade pod HUD vidno vodu, nábrežie aj starter parcelu', (width, height) => {
-      const camera = new Camera({ cellPx: CELL_PX, mapWidth: map.grid.width, mapHeight: map.grid.height, viewportWidth: width, viewportHeight: height });
+      const camera = new Camera({ cellPx: CELL_PX, mapWidth: map.width, mapHeight: map.height, viewportWidth: width, viewportHeight: height });
       const visibleRows = height / (CAMERA_START_ZOOM * CELL_PX);
-      const center = startViewCenter(map.grid, focus, visibleRows);
+      const center = startViewCenter(grid, focus, visibleRows);
       camera.centerOn(center.x, center.y);
-      const shore = shoreRow(map.grid, focus);
+      const shore = shoreRow(grid, focus);
       const shoreScreenY = camera.cellToScreen(focus.x, shore).y;
       const hudHeightPx = 48; // --hud-top-h
       // pobrežie leží na podiele výšky obrazovky, teda hlboko pod HUD; nad ním je aspoň 4 riadky vody vo výške

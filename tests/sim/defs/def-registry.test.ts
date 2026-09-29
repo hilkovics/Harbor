@@ -1,14 +1,17 @@
 import Ajv2020 from 'ajv/dist/2020';
 import { describe, expect, it } from 'vitest';
+import cargoTypesJson from '@data/defs/cargo_types.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
+import modulesJson from '@data/defs/modules.json';
+import shipsJson from '@data/defs/ships.json';
 import timeJson from '@data/defs/time.json';
 import economySchema from '@data/schemas/economy.schema.json';
 import infrastructureSchema from '@data/schemas/infrastructure.schema.json';
 import timeSchema from '@data/schemas/time.schema.json';
 import { SimClock } from '@sim/core/sim-clock';
 import { DefError, DefRegistry, SUPPORTED_SCHEMA_VERSION, loadBundledDefs } from '@sim/defs';
-import { checkNumber } from '@sim/defs/def-registry';
+import { checkNumber } from '@sim/defs/def-spec';
 
 type DefName = 'time' | 'economy' | 'infrastructure';
 
@@ -16,6 +19,9 @@ interface RawBundle {
   time: Record<string, unknown>;
   economy: Record<string, unknown>;
   infrastructure: Record<string, unknown>;
+  cargo_types: Record<string, unknown>;
+  modules: Record<string, unknown>;
+  ships: Record<string, unknown>;
 }
 
 /** Čerstvá hlboká kópia bundled defov; negatívne testy z nej upravia jedno pole. */
@@ -24,6 +30,9 @@ function rawDefs(): RawBundle {
     time: structuredClone(timeJson),
     economy: structuredClone(economyJson),
     infrastructure: structuredClone(infrastructureJson),
+    cargo_types: structuredClone(cargoTypesJson),
+    modules: structuredClone(modulesJson),
+    ships: structuredClone(shipsJson),
   };
 }
 
@@ -62,7 +71,7 @@ describe('DefRegistry.fromRaw', () => {
   });
 
   describe('chýbajúci def → DefError s názvom defu', () => {
-    it.each(['time', 'economy', 'infrastructure'] as const)('%s', (name) => {
+    it.each(['time', 'economy', 'infrastructure', 'cargo_types', 'modules', 'ships'] as const)('%s', (name) => {
       const raw: Partial<ReturnType<typeof rawDefs>> = rawDefs();
       delete raw[name];
       const error = expectDefError(() => DefRegistry.fromRaw(raw), name, '');
@@ -73,6 +82,8 @@ describe('DefRegistry.fromRaw', () => {
       expectDefError(() => DefRegistry.fromRaw({ ...rawDefs(), time: undefined }), 'time', '');
       expectDefError(() => DefRegistry.fromRaw({ ...rawDefs(), economy: null }), 'economy', '');
       expectDefError(() => DefRegistry.fromRaw({ ...rawDefs(), infrastructure: undefined }), 'infrastructure', '');
+      expectDefError(() => DefRegistry.fromRaw({ ...rawDefs(), modules: undefined }), 'modules', '');
+      expectDefError(() => DefRegistry.fromRaw({ ...rawDefs(), ships: null }), 'ships', '');
     });
 
     it.each([[[]], ['{}'], [42]] as unknown[][])('def nie je objekt (%j)', (value) => {
@@ -291,11 +302,7 @@ describe('tickGameSeconds: schéma ⇔ DefRegistry ⇔ SimClock', () => {
   const schemaAccepts = (n: number): boolean => validateTimeSchema({ ...timeJson, tickGameSeconds: n });
   const registryAccepts = (n: number): boolean => {
     try {
-      DefRegistry.fromRaw({
-        time: { ...timeJson, tickGameSeconds: n },
-        economy: economyJson,
-        infrastructure: infrastructureJson,
-      });
+      DefRegistry.fromRaw({ ...rawDefs(), time: { ...timeJson, tickGameSeconds: n } });
       return true;
     } catch (error) {
       if (error instanceof DefError) {

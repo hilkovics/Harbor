@@ -92,7 +92,7 @@ describe('RoadLayer (Pixi scene graph bez renderera)', () => {
 
   it('konštruktor nakreslí cesty, ktoré už sú v mriežke (starter cesty)', () => {
     const map = loadBundledMap();
-    const layer = new RoadLayer(map.grid, PALETTE);
+    const layer = new RoadLayer(map.createGrid(), PALETTE);
     expect(layer.tileCount).toBe(map.starter.roads.length);
     expect(layer.view.children).toHaveLength(map.starter.roads.length);
   });

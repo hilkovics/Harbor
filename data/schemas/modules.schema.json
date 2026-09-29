@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "modules.json",
+  "description": "Katalóg modulov (ARCHITECTURE §4.2, §5.3, ADR-009): { schemaVersion, items: [...] }. Tvar `params` závisí od `kind` (berth, crane; ostatné kind-y zatiaľ bez parametrov). Jedinečnosť `id` v items[] schéma nevyjadrí — kontroluje ju DefRegistry a `pnpm validate:defs`; polohu konektora vo footprinte kontroluje DefRegistry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "items"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Verzia schémy defu."
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/module" },
+      "description": "Moduly v poradí súboru."
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "snake_case identifikátor."
+    },
+    "kind": {
+      "enum": ["berth", "crane", "storage", "gate", "waiting_area", "ramp", "depot", "rail_station", "pipeline"]
+    },
+    "terrain": {
+      "enum": ["deep_water", "shallow_water", "quay", "land", "blocked"]
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "displayName",
+        "footprint",
+        "placement",
+        "connectors",
+        "costCents",
+        "maintenancePerDayCents",
+        "params"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "$ref": "#/$defs/kind" },
+        "displayName": { "type": "string", "minLength": 1 },
+        "footprint": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["w", "h"],
+          "properties": {
+            "w": { "type": "integer", "minimum": 1 },
+            "h": { "type": "integer", "minimum": 1 }
+          },
+          "description": "Rozmery v bunkách pri rotácii 0°."
+        },
+        "placement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["requiredTerrain", "requiresParcelOwnership"],
+          "properties": {
+            "requiredTerrain": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/terrain" },
+              "description": "Terény, na ktorých smú stáť všetky bunky footprintu."
+            },
+            "waterSide": {
+              "enum": ["north"],
+              "description": "Berth: strana dlhej hrany, ktorá musí susediť s vodou (pri rotácii 0 sever)."
+            },
+            "requiresParcelOwnership": {
+              "type": "boolean",
+              "description": "Modul smie stáť len na vlastnenej alebo prenajatej parcele."
+            },
+            "mustAttachTo": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/kind" },
+              "description": "Modul sa musí prekrývať s modulom jedného z týchto kind-ov (crane → berth)."
+            }
+          }
+        },
+        "connectors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/connector" },
+          "description": "Bunky, cez ktoré vozidlá vchádzajú do modulu a vychádzajú z neho (súradnice vo footprinte pri rotácii 0°)."
+        },
+        "costCents": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Kúpna cena v centoch (USD)."
+        },
+        "maintenancePerDayCents": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Denná údržba v centoch (USD)."
+        },
+        "techRequired": {
+          "$ref": "#/$defs/id",
+          "description": "Id uzla tech tree, ktorý modul odomyká; chýba = dostupný od začiatku."
+        },
+        "params": {
+          "type": "object",
+          "description": "Typ-špecifické parametre; tvar podľa `kind` (pozri `allOf`)."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "berth" } }, "required": ["kind"] },
+          "then": {
+            "properties": {
+              "params": { "$ref": "#/$defs/berthParams" },
+              "placement": { "type": "object", "required": ["waterSide"] }
+            }
+          }
+        },
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "crane" } }, "required": ["kind"] },
+          "then": { "properties": { "params": { "$ref": "#/$defs/craneParams" } } }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "kind": { "enum": ["storage", "gate", "waiting_area", "ramp", "depot", "rail_station", "pipeline"] }
+            },
+            "required": ["kind"]
+          },
+          "then": { "properties": { "params": { "$ref": "#/$defs/noParams" } } }
+        }
+      ]
+    },
+    "connector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "side", "type"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "side": { "enum": ["n", "e", "s", "w"], "description": "Strana bunky, ktorou sa vchádza (pri rotácii 0°)." },
+        "type": { "enum": ["road", "rail", "pipe"] }
+      }
+    },
+    "berthParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["depthClass", "apronSlots", "maxCranes", "frontWaterCells"],
+      "properties": {
+        "depthClass": { "enum": [1, 2, 3], "description": "Najhlbší ponor, ktorý kotvisko unesie." },
+        "apronSlots": { "type": "integer", "minimum": 1, "description": "Počet slotov apronu (ApronBuffer)." },
+        "maxCranes": { "type": "integer", "minimum": 1, "description": "Najviac žeriavov na kotvisku." },
+        "frontWaterCells": { "type": "integer", "minimum": 1, "description": "Šírka pásu vody pred dlhou hranou, ktorý musí byť voľný." }
+      }
+    },
+    "craneParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cycleTicks", "category"],
+      "properties": {
+        "cycleTicks": { "type": "integer", "minimum": 2, "description": "Trvanie celého cyklu žeriava v tickoch." },
+        "category": { "enum": ["container", "bulk", "liquid", "gas", "roro"], "description": "Kategória nákladu, ktorú žeriav vykladá." }
+      }
+    },
+    "noParams": {
+      "type": "object",
+      "maxProperties": 0,
+      "description": "Kind zatiaľ nemá typované parametre."
+    }
+  }
+}

@@ -6,6 +6,7 @@ import { World } from '@sim/world';
 import {
   DEFS,
   MAP,
+  MAP_GRID,
   SEED,
   TestCommand,
   adjustCash,
@@ -20,7 +21,7 @@ import {
 const create = (seed = SEED): World => World.create(DEFS, MAP, seed);
 
 /** Verejná bunka pevniny mimo parciel a bez cesty. */
-const PUBLIC_LAND = findCell(MAP.grid, (cell) => cell.terrain === 'land' && cell.parcelId === null && cell.road === 'none');
+const PUBLIC_LAND = findCell(MAP_GRID, (cell) => cell.terrain === 'land' && cell.parcelId === null && cell.road === 'none');
 
 describe('World.create', () => {
   it('nová hra: tick 0, rýchlosť INITIAL_SPEED, štartovná hotovosť, prázdna fronta', () => {
@@ -44,11 +45,12 @@ describe('World.create', () => {
 
   it('mriežka je klon šablóny mapy (terén, hĺbka, parcely, starter cesty)', () => {
     const world = create();
-    expect(world.grid).not.toBe(MAP.grid);
-    expect([world.grid.width, world.grid.height]).toEqual([MAP.grid.width, MAP.grid.height]);
-    for (let i = 0; i < MAP.grid.cellCount; i++) {
-      expect(world.grid.atIndex(i)).not.toBe(MAP.grid.atIndex(i));
-      expect(world.grid.atIndex(i)).toEqual(MAP.grid.atIndex(i));
+    const template = MAP.createGrid();
+    expect(world.grid).not.toBe(template);
+    expect([world.grid.width, world.grid.height]).toEqual([MAP.width, MAP.height]);
+    for (let i = 0; i < template.cellCount; i++) {
+      expect(world.grid.atIndex(i)).not.toBe(template.atIndex(i));
+      expect(world.grid.atIndex(i)).toEqual(template.atIndex(i));
     }
     expect(MAP.starter.roads.length).toBeGreaterThan(0);
     for (const { x, y } of MAP.starter.roads) expect(world.grid.at(x, y).road).toBe('road');
@@ -77,7 +79,7 @@ describe('World.create', () => {
 
     expect(b.grid.at(x, y).road).toBe('none');
     expect(b.grid.at(x, y).traffic).toBe(0);
-    expect(MAP.grid.at(x, y).road).toBe('none');
+    expect(MAP.createGrid().at(x, y).road).toBe('none');
     expect(b.parcels.get('west_quay')?.ownership).toBe('none');
     expect(MAP.parcels.find((p) => p.id === 'west_quay')?.ownership).toBe('none');
     // Nový svet z tej istej mapy začína znova z čistej šablóny.

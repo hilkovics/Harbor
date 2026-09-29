@@ -6,10 +6,13 @@
  * 1. `width`/`height` celé ≥ 1; terén má `height` riadkov po `width` znakoch, len znaky `~ = Q . #`.
  * 2. Zóny `depth`: kľúč `"x,y,w,h"`, celé v mape, bez prekryvu, každá obsahuje aspoň jednu bunku nábrežia.
  * 3. Parcely: unikátne id, celé v mape, bez prekryvu.
- * 4. Portály (cestné, železničné): unikátne id, na okraji mapy, na pevnine (`land`), na verejnej bunke.
+ * 4. Portály (cestné, železničné): unikátne id, na okraji mapy, na pevnine (`land`), na verejnej bunke; žiadne dva
+ *    portály (ani cestný s železničným, ADR-006) nezdieľajú bunku.
  * 5. `seaLane`: začína na okraji mapy, vrcholy aj bunky úsekov medzi nimi sú voda.
  * 6. `anchorage`: bunky hlbokej vody.
  * 7. `starter.roads`: v mape, terén unesie cestu (nie voda, nie `blocked`), verejná bunka alebo `startOwned` parcela.
+ * 8. `starter.modules`: ľavý horný roh je v mape. Existenciu defu, footprint a pravidlá umiestnenia (§8) overuje až
+ *    `World.create` (T02-04) — loader nepozná `DefRegistry`.
  */
 import harbor01Json from '@data/maps/harbor_01.json';
 import { Grid, type CellCoord, type DepthClass, type Rect } from './grid';
@@ -31,13 +34,23 @@ export interface LoadedStarter {
 }
 
 /**
- * Načítaná mapa. Všetko okrem `grid` je hlboko zmrazené.
- *
- * `grid` je **šablóna** počiatočného stavu (terén, `depthClass`, `parcelId`, starter cesty): `World` si ju musí
- * naklonovať (`map.grid.clone()`) a parcely skopírovať, aby viac svetov z jednej `LoadedMap` nezdieľalo stav.
+ * Načítaná mapa; hlboko zmrazená. Mriežka počiatočného stavu (terén, `depthClass`, `parcelId`, starter cesty) sa
+ * z nej získava iba ako **nová kópia** cez `createGrid()` — šablóna zostáva vo vnútri, takže zápis do mriežky jedného
+ * sveta sa nikdy neprenesie do ďalšieho `create`/`deserialize`. Parcely si `World` kopíruje sám (meniteľné `ownership`).
  */
 export interface LoadedMap {
   readonly id: string;
+  /** Šírka mapy v bunkách (= `createGrid().width`). */
+  readonly width: number;
+  /** Výška mapy v bunkách (= `createGrid().height`). */
+  readonly height: number;
+  /** Nová, nezávislá mriežka počiatočného stavu; každé volanie vráti inú inštanciu. */
+  readonly createGrid: () => Grid;
+  /**
+   * @deprecated Meniteľná šablóna počiatočného stavu (BACKLOG P2 „LoadedMap.grid je meniteľná šablóna“). Prechodné pole
+   * len pre `World.create`/`World.deserialize` (`map.grid.clone()`), kým ich T02-01 neprepne na `createGrid()`;
+   * potom sa pole odstráni. Nový kód používa `createGrid()`, `width` a `height`.
+   */
   readonly grid: Grid;
   /** Parcely v poradí mapy; `ownership` = `'owned'` pre `startOwned`, inak `'none'`. */
   readonly parcels: readonly Readonly<Parcel>[];
@@ -183,6 +196,8 @@ function buildGrid(def: MapDef, terrain: readonly TerrainType[], zones: readonly
 
 function checkPortals(grid: Grid, def: MapDef, fail: Fail): void {
   const seenIds = new Map<string, string>();
+  /** Bunka portálu (`"x,y"`) → cesta portálu, ktorý ju obsadil ako prvý. */
+  const seenCells = new Map<string, string>();
   const lists: readonly [string, readonly MapPortalDef[]][] = [
     ['/roadPortals', def.roadPortals],
     ['/railPortals', def.railPortals],
@@ -199,6 +214,12 @@ function checkPortals(grid: Grid, def: MapDef, fail: Fail): void {
       const { terrain, parcelId } = grid.at(cell.x, cell.y);
       if (terrain !== 'land') throw fail(cellPath, `portál ${formatCell(cell)} nie je na pevnine (terén ${terrain})`);
       if (parcelId !== null) throw fail(cellPath, `portál ${formatCell(cell)} leží v parcele '${parcelId}', musí byť na verejnej bunke`);
+      const cellKey = `${String(cell.x)},${String(cell.y)}`;
+      const firstCell = seenCells.get(cellKey);
+      if (firstCell !== undefined) {
+        throw fail(cellPath, `bunka ${formatCell(cell)} už používa portál (${firstCell}) — portály (ani cestný a železničný) nesmú zdieľať bunku`);
+      }
+      seenCells.set(cellKey, path);
     });
   }
 }
@@ -257,6 +278,15 @@ function checkStarterRoads(grid: Grid, def: MapDef, fail: Fail): void {
   });
 }
 
+/** Predpostavené moduly: ľavý horný roh v mape (zvyšok — def, footprint, pravidlá umiestnenia — overí `World.create`). */
+function checkStarterModules(grid: Grid, def: MapDef, fail: Fail): void {
+  def.starter.modules.forEach(({ defId, x, y }, i) => {
+    if (!grid.inBounds(x, y)) {
+      throw fail(`/starter/modules${pointerSegment(i)}`, `modul '${defId}': bunka ${formatCell({ x, y })} je mimo mapy`);
+    }
+  });
+}
+
 function toParcel(def: MapDef['parcels'][number]): Readonly<Parcel> {
   return Object.freeze({
     id: def.id,
@@ -287,11 +317,16 @@ export function loadMap(def: MapDef): LoadedMap {
   checkSeaLane(grid, def, fail);
   checkAnchorage(grid, def, fail);
   checkStarterRoads(grid, def, fail);
+  checkStarterModules(grid, def, fail);
 
   for (const { x, y } of def.starter.roads) grid.at(x, y).road = 'road';
 
+  // `grid` je šablóna: nikdy sa nevydáva (okrem prechodného `grid`, viď `LoadedMap`), každý svet dostane `clone()`.
   return Object.freeze({
     id: def.id,
+    width: def.width,
+    height: def.height,
+    createGrid: () => grid.clone(),
     grid,
     parcels: Object.freeze(def.parcels.map(toParcel)),
     roadPortals: toPortals(def.roadPortals),

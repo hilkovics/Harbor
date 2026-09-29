@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "items": [
+    {
+      "id": "container_teu",
+      "category": "container",
+      "unitName": "TEU",
+      "unitsPerBatch": 1,
+      "basePricePerUnitCents": 45000,
+      "xpPerUnit": 1,
+      "colorToken": "cargo-container"
+    }
+  ]
+}

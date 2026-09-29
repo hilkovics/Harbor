@@ -13,6 +13,6 @@ describe('starterParcelRect', () => {
   it('mapa bez vlastnenej parcely → celá mapa', () => {
     const map = loadBundledMap();
     const noOwned: LoadedMap = { ...map, parcels: map.parcels.map((parcel) => ({ ...parcel, ownership: 'none' })) };
-    expect(starterParcelRect(noOwned)).toEqual({ x: 0, y: 0, w: map.grid.width, h: map.grid.height });
+    expect(starterParcelRect(noOwned)).toEqual({ x: 0, y: 0, w: map.width, h: map.height });
   });
 });

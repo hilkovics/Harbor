@@ -429,6 +429,36 @@ describe('validateDefsDir', () => {
         expect(errors[0]).toContain('widht');
       });
 
+      it('harbor_01: schemaVersion 1 a Root modul v starter.modules (T02-01)', () => {
+        const map = realMap() as { schemaVersion: number; starter: { modules: unknown[] } };
+        expect(map.schemaVersion).toBe(1);
+        expect(map.starter.modules).toEqual([
+          { defId: 'berth_standard', x: 40, y: 14, rotation: 0 },
+          { defId: 'crane_container_gantry', x: 43, y: 14, rotation: 0 },
+        ]);
+      });
+
+      it('chýbajúca schemaVersion', () => {
+        const { schemaVersion: _version, ...without } = realMap();
+        void _version;
+        writeMap('bad.json', without);
+        expect(mapResult('bad.json').errors).toEqual(["maps/bad.json: / must have required property 'schemaVersion'"]);
+      });
+
+      it.each([2, 0, '1', null])('schemaVersion = %j', (value) => {
+        writeMap('bad.json', { ...realMap(), schemaVersion: value });
+        expect(mapResult('bad.json').errors).toEqual(['maps/bad.json: /schemaVersion must be equal to constant']);
+      });
+
+      it.each([
+        ['rotácia 45', { defId: 'berth_standard', x: 1, y: 1, rotation: 45 }, '/starter/modules/0/rotation must be equal to one of the allowed values'],
+        ['záporné x', { defId: 'berth_standard', x: -1, y: 1, rotation: 0 }, '/starter/modules/0/x must be >= 0'],
+        ['defId nie je snake_case', { defId: 'Berth', x: 1, y: 1, rotation: 0 }, '/starter/modules/0/defId must match pattern "^[a-z][a-z0-9_]*$"'],
+      ])('starter.modules: %s', (_name, module, message) => {
+        writeMap('bad.json', { ...realMap(), starter: { modules: [module], roads: [] } });
+        expect(mapResult('bad.json').errors).toEqual([`maps/bad.json: ${message}`]);
+      });
+
       it('starter.modules: položka bez defId', () => {
         writeMap('bad.json', { ...realMap(), starter: { modules: [{ x: 1, y: 1, rotation: 0 }], roads: [] } });
         expect(mapResult('bad.json').errors).toEqual([
@@ -482,6 +512,14 @@ describe('validateDefsDir', () => {
       expect(run.stderr).toContain('time.json: /tickGameSeconds must be integer');
     }, 30_000);
 
+    it('katalóg s duplicitným id → exit 1 a chyba s cestou v stderr', () => {
+      const ships = readRealDef('ships') as { items: unknown[] };
+      writeDef('ships.json', { ...ships, items: [...ships.items, ships.items[0]] });
+      const run = runCli(defsDir, DEFAULT_SCHEMAS_DIR);
+      expect(run.status).toBe(1);
+      expect(run.stderr).toContain("ships.json: /items/2/id duplicitné id 'feeder' (/items/0/id)");
+    }, 30_000);
+
     it('def bez schémy → exit 1', () => {
       writeDef('mystery.json', { schemaVersion: 1 });
       const run = runCli(defsDir, DEFAULT_SCHEMAS_DIR);
@@ -494,6 +532,7 @@ describe('validateDefsDir', () => {
       expect(run.status).toBe(0);
       expect(run.stdout).toContain('OK time.json');
       expect(run.stdout).toContain('OK infrastructure.json');
+      for (const file of ['cargo_types.json', 'modules.json', 'ships.json']) expect(run.stdout).toContain(`OK ${file}`);
       expect(run.stdout).toContain('OK maps/harbor_01.json');
     }, 30_000);
 

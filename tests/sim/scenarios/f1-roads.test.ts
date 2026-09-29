@@ -427,11 +427,29 @@ describe('PlaceRoad na parcelu na predaj', () => {
 
 describe('World: fronta príkazov', () => {
   it('enqueue príkaz iba zaradí — stav sa zmení až pri applyPending()/tick()', () => {
+    // Fronta nie je súčasťou WorldState v1: serialize() pri čakajúcich príkazoch zámerne hodí chybu,
+    // preto sa stav pri neprázdnej fronte nehashuje, ale porovnáva po zložkách.
     const world = World.create(defs, map, scenario.seed);
-    const before = stateHash(world);
+    const cashBefore = world.cashCents;
+    const speedBefore = world.clock.speed;
+    const roadsBefore = countRoadCells(world);
+    expect(world.pendingCommandCount).toBe(0);
+
     world.enqueue(commandFromJSON(placeRoad(starterCell)));
-    expect(stateHash(world)).toBe(before);
+
+    expect(world.pendingCommandCount).toBe(1);
+    expect(world.cashCents).toBe(cashBefore);
+    expect(world.clock.speed).toBe(speedBefore);
+    expect(world.clock.tick).toBe(0);
+    expect(countRoadCells(world)).toBe(roadsBefore);
     expect(world.grid.at(starterCell.x, starterCell.y).road).toBe('none');
+
+    world.applyPending();
+
+    expect(world.pendingCommandCount).toBe(0);
+    expect(world.grid.at(starterCell.x, starterCell.y).road).toBe('road');
+    expect(countRoadCells(world)).toBe(roadsBefore + 1);
+    expect(world.cashCents).toBe(cashBefore - ROAD_COST);
   });
 
   it('applyPending() aplikuje príkazy bez posunu času a fronta sa vyprázdni', () => {

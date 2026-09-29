@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   EM_DASH,
   MINUS_SIGN,
+  TIMES_SIGN,
+  formatFootprint,
+  formatFraction,
   formatGameTime,
   formatMoney,
   formatMoneyDelta,
+  formatPercent,
   formatSpeed,
   formatXp,
   moneySign,
@@ -131,5 +135,55 @@ describe('formatSpeed / formatXp', () => {
     expect(formatXp(340.9)).toBe('340 XP');
     expect(formatXp(-5)).toBe('0 XP');
     expect(formatXp(Number.NaN)).toBe(`${EM_DASH} XP`);
+  });
+});
+
+describe('formatFootprint', () => {
+  it('šírka × výška s U+00D7, bez medzier', () => {
+    expect(TIMES_SIGN).toBe('\u00D7');
+    expect(formatFootprint({ w: 8, h: 3 })).toBe('8×3');
+    expect(formatFootprint({ w: 2, h: 3 })).toBe('2×3');
+    expect(formatFootprint({ w: 12, h: 8 })).toBe('12×8');
+  });
+});
+
+describe('formatPercent', () => {
+  const table: ReadonlyArray<readonly [number, string]> = [
+    [0, '0 %'],
+    [7, '7 %'],
+    [72, '72 %'],
+    [72.4, '72 %'],
+    [72.5, '73 %'],
+    [100, '100 %'],
+    [-0.4, '0 %'],
+    [-12, `${MINUS}12 %`],
+  ];
+
+  it.each(table)('%d → %s', (value, expected) => {
+    expect(formatPercent(value)).toBe(expected);
+  });
+
+  it('neplatná hodnota → pomlčka, nikdy „NaN %"', () => {
+    expect(formatPercent(Number.NaN)).toBe(`${EM_DASH} %`);
+    expect(formatPercent(Number.POSITIVE_INFINITY)).toBe(`${EM_DASH} %`);
+  });
+});
+
+describe('formatFraction', () => {
+  it('časť / celok s medzerami okolo lomky, voliteľná jednotka', () => {
+    expect(formatFraction(3, 4)).toBe('3 / 4');
+    expect(formatFraction(1, 4, 'TEU')).toBe('1 / 4 TEU');
+    expect(formatFraction(0, 4, 'slotov')).toBe('0 / 4 slotov');
+    expect(formatFraction(1, 4, '')).toBe('1 / 4');
+  });
+
+  it('oddeľovač tisícov a zrezanie desatinných miest', () => {
+    expect(formatFraction(1_820, 2_400, 'TEU')).toBe('1,820 / 2,400 TEU');
+    expect(formatFraction(3.9, 4.2)).toBe('3 / 4');
+  });
+
+  it('neplatná hodnota → pomlčka', () => {
+    expect(formatFraction(Number.NaN, 4)).toBe(EM_DASH);
+    expect(formatFraction(1, Number.POSITIVE_INFINITY, 'TEU')).toBe(EM_DASH);
   });
 });

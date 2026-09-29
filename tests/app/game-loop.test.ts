@@ -237,6 +237,17 @@ describe('startRafLoop (rAF wrapper s fake hostom)', () => {
     expect(fake.pending()).toBe(1);
   });
 
+  it('onFrame dostane aj dt (reálny čas od minulého framu) — pre posun kamery klávesmi', () => {
+    const { loop } = createLoop(1);
+    const fake = createFakeHost();
+    const dts: number[] = [];
+    startRafLoop(loop, (_alpha, _events, dtMs) => dts.push(dtMs), fake.host);
+    fake.flush(1000);
+    fake.flush(1016);
+    fake.flush(1050);
+    expect(dts).toEqual([0, 16, 34]);
+  });
+
   it('záporný rozdiel pečiatok sa orezá na 0', () => {
     const { world, loop } = createLoop(1);
     const fake = createFakeHost();

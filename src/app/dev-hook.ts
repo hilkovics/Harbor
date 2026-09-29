@@ -8,7 +8,10 @@ import type { SimBridge } from './sim-bridge';
 export interface DevHook {
   readonly world: World;
   readonly bridge: SimBridge;
-  /** Stred/roh bunky v CSS px canvasu; doplní bootstrap, keď existuje kamera (T01-11). */
+  /**
+   * STRED bunky (x, y) v súradniciach stránky (CSS px, vrátane posunu canvasu) — presne tam, kam má e2e kliknúť.
+   * Doplní bootstrap z kamery (T01-11).
+   */
   cellToScreen?: (cellX: number, cellY: number) => { x: number; y: number };
 }
 

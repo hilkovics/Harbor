@@ -117,12 +117,13 @@ export const browserRafHost: RafHost = {
 
 /**
  * Spustí slučku: pri každom rAF spočíta `dt` z rozdielu časových pečiatok (prvý frame má `dt = 0`, záporný
- * rozdiel sa orezá na 0), zavolá `loop.frame(dt)` a potom `onFrame(alpha, events)` na vykreslenie.
+ * rozdiel sa orezá na 0), zavolá `loop.frame(dt)` a potom `onFrame(alpha, events, dtMs)` na vykreslenie
+ * (`dtMs` = reálny čas od minulého framu — napr. pre posun kamery klávesmi).
  * Vráti funkciu, ktorá slučku zastaví. Výnimka z `frame`/`onFrame` slučku ukončí (fail-fast).
  */
 export function startRafLoop(
   loop: GameLoop,
-  onFrame?: (alpha: number, events: readonly SimEvent[]) => void,
+  onFrame?: (alpha: number, events: readonly SimEvent[], dtMs: number) => void,
   host: RafHost = browserRafHost,
 ): () => void {
   let lastTimestamp: number | null = null;
@@ -134,7 +135,7 @@ export function startRafLoop(
     const dtMs = lastTimestamp === null ? 0 : Math.max(0, timestampMs - lastTimestamp);
     lastTimestamp = timestampMs;
     const events = loop.frame(dtMs);
-    onFrame?.(loop.alpha, events);
+    onFrame?.(loop.alpha, events, dtMs);
     if (running) handle = host.request(step);
   };
 

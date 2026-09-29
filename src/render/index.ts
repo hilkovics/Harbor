@@ -4,6 +4,10 @@ export type { WorldRendererOptions } from './world-renderer';
 export { TerrainLayer, planTerrain, terrainFillKey } from './terrain-layer';
 export type { TerrainFillKey, TerrainPlan } from './terrain-layer';
 export { RoadLayer } from './road-layer';
+export { BuildLayer, loadGhostPalette } from './build-layer';
+export type { BuildLayerCreateOptions, BuildLayerOptions, GhostCell, GhostPalette, GhostView } from './build-layer';
+export { GHOST_HATCH_PATTERN, overlayAssetUrl } from './overlay-assets';
+export type { OverlayAssetId, PatternSize } from './overlay-assets';
 export {
   AUTOTILE_SHAPE_BASE_MASK,
   AUTOTILE_TABLE,

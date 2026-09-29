@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useSimBridge, useSimSnapshot } from '@app/use-sim-snapshot';
 import type { WorldSnapshot } from '@app/sim-bridge';
+import { resolveSpeedRequest } from '@app/speed-request';
 import { commandFromJSON } from '@sim/commands';
 import { EM_DASH, formatGameTime, formatMoney, formatMoneyDelta, formatXp, moneySign } from './format';
 import { Icon, TrendIcon, type IconName } from './icon';
@@ -159,13 +160,9 @@ function sameHudSlice(a: HudSlice, b: HudSlice): boolean {
   return a.cashCents === b.cashCents && a.speed === b.speed && a.day === b.day && a.hour === b.hour && a.minute === b.minute;
 }
 
-/**
- * Rýchlosť, ktorú má klik odoslať: klik na ⏸, keď hra už stojí, hru obnoví (prototyp: ⏸ prepína ⏸ ↔ ▶) poslednou
- * nenulovou rýchlosťou; inak platí to, čo hráč vybral.
- */
-export function resolveSpeedRequest(requested: number, current: number, resumeSpeed: number | undefined): number {
-  return requested === 0 && current === 0 && resumeSpeed !== undefined ? resumeSpeed : requested;
-}
+// `resolveSpeedRequest` (klik na ⏸ pri pauze obnoví poslednú nenulovú rýchlosť) zdieľa klávesnica (Space,
+// InputController), preto žije v `@app/speed-request`; odtiaľto sa len re-exportuje.
+export { resolveSpeedRequest };
 
 /** Callback, ktorý odošle `SetGameSpeed(speed)` do simulácie (zápis len cez `dispatch`). */
 export function useSetGameSpeed(): (speed: number) => void {

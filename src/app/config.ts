@@ -4,7 +4,7 @@
  * Herné hodnoty (ceny, rýchlosti, trvania) sem nepatria — tie sú v `data/defs/*.json`. Tu je len to, čo je
  * vlastné aplikácii: ktorú hru spustiť a ako citlivé je ovládanie.
  */
-import { loadBundledMap, type LoadedMap } from '@sim/grid';
+import { isWater, loadBundledMap, type Grid, type LoadedMap, type Rect } from '@sim/grid';
 import { loadBundledDefs } from '@sim/defs';
 import { World } from '@sim/world';
 
@@ -25,6 +25,37 @@ export const WHEEL_ZOOM_PER_PX = 0.0015;
 
 /** Prepočet `WheelEvent.deltaMode` → px (0 = pixely, 1 = riadky, 2 = stránky). */
 export const WHEEL_DELTA_MODE_PX: readonly [number, number, number] = [1, 16, 100];
+
+/**
+ * Podiel výšky obrazovky (0 = horný okraj), na ktorý pri štarte pripadne pobrežie starter parcely. Nad ním ostáva
+ * pás vody (vrátane lišty HUD), pod ním parcela — na 1280×720 aj 1920×1080 je tak vidno more aj nábrežie.
+ */
+export const START_SHORE_SCREEN_FRACTION = 1 / 3;
+
+/**
+ * Prvý riadok pobrežia v obdĺžniku `focus`: horný riadok, v ktorom je aspoň jedna bunka mimo vody (nábrežie, pevnina).
+ * Obdĺžnik bez súše → jeho horný riadok.
+ */
+export function shoreRow(grid: Grid, focus: Rect): number {
+  for (let y = focus.y; y < focus.y + focus.h; y += 1) {
+    for (let x = focus.x; x < focus.x + focus.w; x += 1) {
+      if (grid.inBounds(x, y) && !isWater(grid.at(x, y).terrain)) return y;
+    }
+  }
+  return focus.y;
+}
+
+/**
+ * Stred úvodného pohľadu kamery v bunkách: vodorovne stred `focus` (starter parcely), zvislo tak, aby pobrežie
+ * ležalo na `START_SHORE_SCREEN_FRACTION` výšky obrazovky. `visibleRows` = koľko riadkov buniek sa zmestí na výšku
+ * obrazovky (`viewportHeight / (zoom × cellPx)`). Hranice mapy dorovná kamera (clamp).
+ */
+export function startViewCenter(grid: Grid, focus: Rect, visibleRows: number): { readonly x: number; readonly y: number } {
+  return {
+    x: focus.x + focus.w / 2,
+    y: shoreRow(grid, focus) + (0.5 - START_SHORE_SCREEN_FRACTION) * visibleRows,
+  };
+}
 
 /** Načíta mapu aplikácie; nesúlad s `APP_MAP_ID` je chyba konfigurácie (fail-fast). */
 export function loadAppMap(): LoadedMap {

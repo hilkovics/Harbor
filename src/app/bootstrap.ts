@@ -10,11 +10,11 @@
  */
 import { StrictMode, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
-import { WorldRenderer } from '@render/world-renderer';
+import { WorldRenderer, starterParcelRect } from '@render/world-renderer';
 import { BuildLayer } from '@render/build-layer';
 import type { World } from '@sim/world';
 import { App } from './app';
-import { createAppWorld } from './config';
+import { createAppWorld, startViewCenter } from './config';
 import { installDevHook } from './dev-hook';
 import { attachDomInput } from './dom-input';
 import { GameLoop, startRafLoop } from './game-loop';
@@ -90,6 +90,12 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
     throw error;
   }
   renderer.world.addChild(buildLayer.view);
+
+  // Úvodný pohľad: stred starter parcely, ale zvislo posunutý tak, aby bolo vidno pobrežie a more nad ním (nie len HUD).
+  const { camera } = renderer;
+  const visibleRows = camera.viewportHeight / (camera.zoom * renderer.palette.cellPx);
+  const startCenter = startViewCenter(world.grid, starterParcelRect(world.map), visibleRows);
+  camera.centerOn(startCenter.x, startCenter.y);
 
   const input = new InputController({
     bridge,

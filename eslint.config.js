@@ -8,10 +8,14 @@ import tseslint from 'typescript-eslint';
 // Vrstva 1 je kompilátor (src/sim/tsconfig.json: lib ES2023, types []) — chytá DOM/Node globály.
 // Vrstva 2 je tento súbor: importy ako ALLOWLIST + zákaz obchvatov nedeterminizmu.
 // Bez type-info (projectService) — pravidlá fungujú aj pre `--stdin` súbory, ktoré na disku neexistujú.
-const SIM_FILES = ['src/sim/**/*.{ts,tsx,mts,cts,js,mjs}'];
+// V src/sim sú povolené LEN súbory `.ts` (okrem tsconfig.json); iné prípony (.tsx/.js/.mjs/…) by unikli
+// pravidlám, preto ich existenciu zakazuje test tests/tools/sim-boundary.test.ts (T00-17).
+const SIM_FILES = ['src/sim/**/*.ts'];
 
 // Globály, ktoré sim nesmie používať: DOM, Node, časovače, nedeterministický čas/náhoda.
-// Kompilátor (lib ES2023, types []) ich chytá v .ts; toto pokrýva aj .js/.mjs a dáva jasnú správu.
+// Kompilátor (lib ES2023, types []) ich chytá tiež; toto dáva jasnú správu a chytá aj globály, ktoré ES2023 lib
+// pozná, ale sú nedeterministické alebo obchádzajú zákazy (Intl, WeakRef, FinalizationRegistry, SharedArrayBuffer,
+// Atomics; eval/Function = vyhodnotenie kódu).
 const SIM_FORBIDDEN_GLOBALS = [
   'window',
   'document',
@@ -28,6 +32,13 @@ const SIM_FORBIDDEN_GLOBALS = [
   'console',
   'structuredClone',
   'require',
+  'eval',
+  'Function',
+  'Intl',
+  'WeakRef',
+  'FinalizationRegistry',
+  'SharedArrayBuffer',
+  'Atomics',
 ];
 
 // Konkrétne správy pre najčastejšie porušenia (idú pred allowlistom, aby hlásenie bolo výstižné).
@@ -81,7 +92,7 @@ const MAX_SIM_DEPTH = 5;
 const simBoundaryBlocks = [
   { files: SIM_FILES, rules: { 'no-restricted-imports': simImportRule(MAX_SIM_DEPTH) } },
   ...Array.from({ length: MAX_SIM_DEPTH }, (_, depth) => ({
-    files: [`src/sim/${'*/'.repeat(depth)}*.{ts,tsx,mts,cts,js,mjs}`],
+    files: [`src/sim/${'*/'.repeat(depth)}*.ts`],
     rules: { 'no-restricted-imports': simImportRule(depth) },
   })),
 ];
@@ -116,11 +127,17 @@ export default defineConfig([
     // Sim core: bez DOM/Node/Pixi/React a bez nedeterminizmu (Math.random, Date, performance.now).
     files: SIM_FILES,
     rules: {
+      // Triple-slash direktívy (`/// <reference lib="dom" />`) by vrátili DOM/Node typy späť do sim.
+      '@typescript-eslint/triple-slash-reference': ['error', { lib: 'never', path: 'never', types: 'never' }],
+      // Vyhodnotenie kódu z reťazca obchádza všetky statické zákazy.
+      'no-eval': 'error',
+      'no-new-func': 'error',
+      'no-implied-eval': 'error',
       'no-restricted-globals': [
         'error',
         ...SIM_FORBIDDEN_GLOBALS.map((name) => ({
           name,
-          message: `src/sim nesmie používať globál \`${name}\` (DOM/Node/čas; pravidlá 1 a 3, ARCHITECTURE §2).`,
+          message: `src/sim nesmie používať globál \`${name}\` (DOM/Node/čas/eval/Intl…; pravidlá 1 a 3, ARCHITECTURE §2).`,
         })),
       ],
       'no-restricted-properties': [
@@ -128,6 +145,11 @@ export default defineConfig([
         { object: 'Math', property: 'random', message: 'Nedeterminizmus — použi Rng (xoshiro128**).' },
         { object: 'Date', property: 'now', message: 'Nedeterminizmus — použi SimClock.' },
         { object: 'performance', property: 'now', message: 'Nedeterminizmus — použi SimClock.' },
+        // Locale-závislé API (výsledok závisí od prostredia, nie od seedu) — akýkoľvek objekt.
+        { property: 'localeCompare', message: 'Nedeterminizmus (locale) — porovnávaj cez `<`/`>` alebo explicitný komparátor.' },
+        { property: 'toLocaleString', message: 'Nedeterminizmus (locale) — formátovanie patrí do prezentácie (src/ui).' },
+        { property: 'toLocaleDateString', message: 'Nedeterminizmus (locale) — formátovanie patrí do prezentácie (src/ui).' },
+        { property: 'toLocaleTimeString', message: 'Nedeterminizmus (locale) — formátovanie patrí do prezentácie (src/ui).' },
       ],
       'no-restricted-syntax': [
         'error',
@@ -155,6 +177,45 @@ export default defineConfig([
         {
           selector: 'TSImportEqualsDeclaration[moduleReference.type="TSExternalModuleReference"]',
           message: '`import x = require("…")` obchádza allowlist importov — použi štandardný `import` (ARCHITECTURE §2).',
+        },
+        // Ambientné deklarácie: `declare global`, `declare const fetch: any` a pod. vrátia zakázané globály späť.
+        {
+          selector: 'TSModuleDeclaration[global=true]',
+          message: '`declare global` rozširuje globálny scope a obchádza zákazy globálov (pravidlá 1 a 3, ARCHITECTURE §2).',
+        },
+        {
+          selector: 'TSModuleDeclaration[declare=true]',
+          message: 'Ambientné `declare module/namespace` je v src/sim zakázané (pravidlá 1 a 3, ARCHITECTURE §2).',
+        },
+        {
+          selector: 'VariableDeclaration[declare=true]',
+          message: 'Ambientné `declare const/let/var` vyrába falošný globál — v src/sim zakázané (pravidlá 1 a 3).',
+        },
+        {
+          selector: 'TSDeclareFunction',
+          message:
+            'Ambientné `declare function` (aj preťaženie funkcie bez tela) je v src/sim zakázané (pravidlá 1 a 3) — ' +
+            'namiesto preťaženia použi union typy alebo generiká.',
+        },
+        {
+          selector: 'ClassDeclaration[declare=true]',
+          message: 'Ambientné `declare class` je v src/sim zakázané (pravidlá 1 a 3, ARCHITECTURE §2).',
+        },
+        // Vyhodnotenie kódu cez konštruktor funkcie: `(() => 0).constructor('return this')()`.
+        {
+          selector: "MemberExpression[property.name='constructor']",
+          message: 'Prístup ku `.constructor` umožňuje získať `Function` a vyhodnotiť kód — v src/sim zakázané (pravidlo 3).',
+        },
+        // Aliasy: `const m = Math; m.random()`, `Reflect.construct(Date, [])`, `Object(Date)`, `getOwnPropertyDescriptor(Math, …)`.
+        // Povolené ostáva `Math.max/imul/…` (Math ako objekt člena), `Date` ako typ a `Date.UTC(…)`.
+        {
+          selector: "Identifier[name='Math']:not(MemberExpression > Identifier.object)",
+          message: '`Math` sa smie používať len ako `Math.<člen>` — alias obchádza zákaz `Math.random` (pravidlo 3).',
+        },
+        {
+          selector:
+            "Identifier[name='Date']:not(TSTypeReference > Identifier, MemberExpression[property.name='UTC'] > Identifier.object, MemberExpression > Identifier.property, Property > Identifier.key)",
+          message: '`Date` je v src/sim povolený len ako typ a `Date.UTC(…)` — alias/konštrukcia obchádza zákaz (pravidlo 3), čas dáva SimClock.',
         },
       ],
     },

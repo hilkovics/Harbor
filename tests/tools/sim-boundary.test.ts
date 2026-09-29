@@ -1,10 +1,12 @@
+import { readdirSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ESLint } from 'eslint';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-// Regresný test hranice src/sim (CLAUDE.md, pravidlá 1 a 3; ARCHITECTURE §2; nález T00-12 #1).
+// Regresný test hranice src/sim (CLAUDE.md, pravidlá 1 a 3; ARCHITECTURE §2; nálezy T00-12 #1, re-review T00-15).
 // Vrstva 2 (ESLint) sa testuje cez Node API nad reálnym eslint.config.js. Vrstvu 1 (src/sim/tsconfig.json)
-// kontroluje `pnpm typecheck` — tsc sondy sú v acceptance karty T00-15.
+// testuje tests/tools/sim-tsconfig.test.ts (tsc nad fixtúrou) a kontroluje `pnpm typecheck`.
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const SIM_FILE = 'src/sim/core/probe.ts';
@@ -43,7 +45,7 @@ const VIOLATIONS: Violation[] = [
   { name: 'globalThis.Math.random()', code: 'export const a = globalThis.Math.random();', rule: 'no-restricted-syntax' },
   { name: 'globalThis.window', code: 'export const a = globalThis.window;', rule: 'no-restricted-syntax' },
   { name: 'alias const g = globalThis', code: 'const g = globalThis;\nexport const a = g;', rule: 'no-restricted-syntax' },
-  // DOM / Node globály (pravidlo 1; kompilátor ich chytá tiež, ESLint pokrýva aj .js/.mjs)
+  // DOM / Node globály (pravidlo 1; kompilátor ich chytá tiež, ESLint dáva jasnú správu)
   { name: 'window', code: 'export const a = window;', rule: 'no-restricted-globals' },
   { name: 'document.title', code: 'export const a = document.title;', rule: 'no-restricted-globals' },
   { name: 'self', code: 'export const a = self;', rule: 'no-restricted-globals' },
@@ -95,11 +97,50 @@ const VIOLATIONS: Violation[] = [
     rule: 'no-restricted-imports',
     file: 'src/sim/a/b/c/d/e/f/g/x.ts',
   },
-  // Iné prípony v src/sim sa lintujú rovnako
-  { name: '.js: new Date()', code: 'export const a = new Date();', rule: 'no-restricted-syntax', file: 'src/sim/core/probe.js' },
-  { name: ".mjs: import 'lodash'", code: "import x from 'lodash';\nexport const a = x;", rule: 'no-restricted-imports', file: 'src/sim/core/probe.mjs' },
-  { name: '.mts: globalThis', code: 'export const a = globalThis.Math;', rule: 'no-restricted-syntax', file: 'src/sim/core/probe.mts' },
-  { name: '.tsx: document', code: 'export const a = document.title;', rule: 'no-restricted-globals', file: 'src/sim/core/probe.tsx' },
+  // Triple-slash direktívy (T00-17 #1)
+  { name: '/// <reference lib="dom" />', code: '/// <reference lib="dom" />\nexport const a = 1;', rule: '@typescript-eslint/triple-slash-reference' },
+  { name: '/// <reference types="node" />', code: '/// <reference types="node" />\nexport const a = 1;', rule: '@typescript-eslint/triple-slash-reference' },
+  { name: '/// <reference path="./x.d.ts" />', code: '/// <reference path="./x.d.ts" />\nexport const a = 1;', rule: '@typescript-eslint/triple-slash-reference' },
+  // Ambientné deklarácie (T00-17 #1)
+  { name: 'declare global { var x }', code: 'declare global { var x: number }\nexport {};', rule: 'no-restricted-syntax' },
+  { name: 'declare module "x"', code: "declare module 'x' {\n  export const y: number;\n}\nexport {};", rule: 'no-restricted-syntax' },
+  { name: 'declare namespace N', code: 'declare namespace N {\n  const y: number;\n}\nexport {};', rule: 'no-restricted-syntax' },
+  { name: 'declare const fetch: any', code: 'declare const fetch: unknown;\nexport const a = fetch;', rule: 'no-restricted-syntax' },
+  { name: 'declare var x', code: 'declare var x: number;\nexport const a = x;', rule: 'no-restricted-syntax' },
+  { name: 'declare let x', code: 'declare let x: number;\nexport const a = x;', rule: 'no-restricted-syntax' },
+  { name: 'declare function f()', code: 'declare function f(): number;\nexport const a = f();', rule: 'no-restricted-syntax' },
+  { name: 'export declare function f()', code: 'export declare function f(): number;', rule: 'no-restricted-syntax' },
+  { name: 'declare class C', code: 'declare class C {}\nexport const a = C;', rule: 'no-restricted-syntax' },
+  // Vyhodnotenie kódu (T00-17 #2)
+  { name: "eval('1')", code: "export const a = eval('1');", rule: 'no-eval' },
+  { name: "eval('1') (globál)", code: "export const a = eval('1');", rule: 'no-restricted-globals' },
+  { name: "Function('return this')()", code: "export const a = Function('return this')();", rule: 'no-new-func' },
+  { name: "new Function('return 1')", code: "export const a = new Function('return 1');", rule: 'no-new-func' },
+  { name: 'Function (globál)', code: "export const a = new Function('return 1');", rule: 'no-restricted-globals' },
+  // `no-implied-eval` je tu len doplnok: setTimeout nie je v sim definovaný ako globál, takže ho pravidlo nevidí;
+  // reťazec do časovača zastaví `no-restricted-globals` (setTimeout je zakázaný globál).
+  { name: "setTimeout('code', 1) (implied eval)", code: "setTimeout('1', 1);\nexport const a = 1;", rule: 'no-restricted-globals' },
+  { name: ".constructor('return this')()", code: "export const a = (() => 0).constructor('return this')();", rule: 'no-restricted-syntax' },
+  { name: '(async () => 0).constructor', code: 'export const a = (async () => 0).constructor;', rule: 'no-restricted-syntax' },
+  // Aliasy Math/Date (T00-17 #3)
+  { name: 'const m = Math; m.random()', code: 'const m = Math;\nexport const a = m.random();', rule: 'no-restricted-syntax' },
+  { name: 'const { random } = Math', code: 'const { random } = Math;\nexport const a = random();', rule: 'no-restricted-syntax' },
+  { name: 'const D = Date; new D()', code: 'const D = Date;\nexport const a = new D();', rule: 'no-restricted-syntax' },
+  { name: 'const { now } = Date', code: 'const { now } = Date;\nexport const a = now();', rule: 'no-restricted-syntax' },
+  { name: 'Reflect.construct(Date, [])', code: 'export const a = Reflect.construct(Date, []);', rule: 'no-restricted-syntax' },
+  { name: 'Object(Date)', code: 'export const a = Object(Date);', rule: 'no-restricted-syntax' },
+  { name: "Object.getOwnPropertyDescriptor(Math, 'random')", code: "export const a = Object.getOwnPropertyDescriptor(Math, 'random');", rule: 'no-restricted-syntax' },
+  { name: 'export { Date as D }', code: 'export { Date as D };', rule: 'no-restricted-syntax' },
+  // Nedeterministické API (T00-17 #4)
+  { name: 'new Intl.DateTimeFormat()', code: 'export const a = new Intl.DateTimeFormat();', rule: 'no-restricted-globals' },
+  { name: 'new WeakRef({})', code: 'export const a = new WeakRef({});', rule: 'no-restricted-globals' },
+  { name: 'new FinalizationRegistry', code: 'export const a = new FinalizationRegistry(() => undefined);', rule: 'no-restricted-globals' },
+  { name: 'new SharedArrayBuffer(8)', code: 'export const a = new SharedArrayBuffer(8);', rule: 'no-restricted-globals' },
+  { name: 'Atomics.add', code: 'export const a = Atomics.add(new Int32Array(1), 0, 1);', rule: 'no-restricted-globals' },
+  { name: "'a'.localeCompare('b')", code: "export const a = 'a'.localeCompare('b');", rule: 'no-restricted-properties' },
+  { name: '(1).toLocaleString()', code: 'export const a = (1).toLocaleString();', rule: 'no-restricted-properties' },
+  { name: 'x.toLocaleDateString()', code: 'export const f = (x: { toLocaleDateString(): string }) => x.toLocaleDateString();', rule: 'no-restricted-properties' },
+  { name: 'x.toLocaleTimeString()', code: 'export const f = (x: { toLocaleTimeString(): string }) => x.toLocaleTimeString();', rule: 'no-restricted-properties' },
 ];
 
 interface Allowed {
@@ -112,6 +153,7 @@ const ALLOWED: Allowed[] = [
   { name: 'bežný kód (Map, Set, Math, Error, JSON)', code: 'const m = new Map<number, number>();\nexport const a = [m.size, new Set([1]).size, Math.max(1, 2), JSON.stringify({}), new Error("x")];' },
   { name: 'Date ako typ', code: 'export function f(d: Date | null): number {\n  return d === null ? 0 : 1;\n}' },
   { name: 'Date.UTC (deterministické)', code: 'export const a = Date.UTC(2000, 0, 1);' },
+  { name: 'Date.UTC s premennými', code: 'export const f = (y: number) => Date.UTC(y, 0, 1);' },
   { name: "./x", code: "import { x } from './x';\nexport const a = x;" },
   { name: "./sub/x", code: "import { x } from './sub/x';\nexport const a = x;" },
   { name: "../defs", code: "import { x } from '../defs';\nexport const a = x;" },
@@ -139,10 +181,15 @@ const ALLOWED: Allowed[] = [
     code: "import { x } from '../../../../../core';\nexport const a = x;",
     file: 'src/sim/a/b/c/d/e/f/g/x.ts',
   },
-  { name: '.js: relatívny import', code: "import { x } from './x.js';\nexport const a = x;", file: 'src/sim/core/probe.js' },
+  { name: 'Math.max', code: 'export const a = Math.max(1, 2);' },
+  { name: 'Math.imul', code: 'export const a = Math.imul(1, 2);' },
+  { name: 'Math.floor + Math.PI', code: 'export const a = Math.floor(Math.PI);' },
+  { name: 'Date v poli/generiku ako typ', code: 'export const a: Date[] = [];\nexport const b: Array<Date> = [];\nexport const c: Readonly<{ at: Date }> | null = null;' },
+  { name: 'trieda s konštruktorom (kľúč `constructor` nie je člen)', code: 'export class A {\n  private readonly n: number;\n  constructor(n: number) {\n    this.n = n;\n  }\n}' },
+  { name: 'kľúč objektu Date', code: 'export const a = { Date: 1 };' },
 ];
 
-describe('hranica src/sim — ESLint allowlist a zákazy (T00-15)', () => {
+describe('hranica src/sim — ESLint allowlist a zákazy (T00-15, T00-17)', () => {
   it.each(VIOLATIONS)('chyba: $name', async ({ code, rule, file }) => {
     const rules = await errorRules(code, file ?? SIM_FILE);
     expect(rules.length).toBeGreaterThanOrEqual(1);
@@ -156,15 +203,55 @@ describe('hranica src/sim — ESLint allowlist a zákazy (T00-15)', () => {
   describe('mimo src/sim sa pravidlá hranice neaplikujú', () => {
     const OUTSIDE: { name: string; code: string; file: string }[] = [
       { name: 'src/ui: document + new Date()', code: 'export const a = document.title;\nexport const d = new Date();', file: 'src/ui/probe.tsx' },
+      { name: 'src/ui: Date/Math alias + Intl + localeCompare', code: "const D = Date;\nconst M = Math;\nexport const a = [new D(), M.random(), new Intl.NumberFormat(), 'a'.localeCompare('b')];", file: 'src/ui/probe.tsx' },
+      { name: 'src/ui: eval + Function + .constructor', code: "export const a = [eval('1'), Function('return 1')(), (() => 0).constructor];", file: 'src/ui/probe.tsx' },
+      { name: 'src/ui: declare global + declare const', code: 'declare global { var x: number }\ndeclare const y: number;\nexport const a = y;', file: 'src/ui/probe.ts' },
+      { name: 'src/ui: /// <reference lib="dom" />', code: '/// <reference lib="dom" />\nexport const a = 1;', file: 'src/ui/probe.ts' },
       { name: "src/render: import 'pixi.js'", code: "import { Sprite } from 'pixi.js';\nexport const a = Sprite;", file: 'src/render/probe.ts' },
       { name: "src/app: import '@sim/core'", code: "import { x } from '@sim/core';\nexport const a = x;", file: 'src/app/probe.ts' },
       { name: "tools: import 'node:fs' + console", code: "import fs from 'node:fs';\nconsole.log(fs);", file: 'tools/probe.ts' },
       { name: 'tests: Date.now()', code: 'export const a = Date.now();', file: 'tests/probe.test.ts' },
     ];
 
+    /** Pravidlá, ktoré platia výlučne pre src/sim (triple-slash mimo simu ostáva na predvolenej konfigurácii). */
+    const SIM_ONLY = /^(no-restricted-|no-eval$|no-new-func$|no-implied-eval$|@typescript-eslint\/triple-slash-reference$)/;
+
     it.each(OUTSIDE)('bez chýb z hranice: $name', async ({ code, file }) => {
       const rules = await errorRules(code, file);
-      expect(rules.filter((r) => r.startsWith('no-restricted-'))).toEqual([]);
+      expect(rules.filter((r) => SIM_ONLY.test(r))).toEqual([]);
     });
+  });
+});
+
+// V src/sim sú povolené len súbory `.ts` (+ tsconfig.json v koreni). Sim ESLint bloky pokrývajú iba `src/sim/**/*.ts`,
+// takže súbor `.tsx/.js/.mjs/.cts/.mts` by potichu unikol pravidlám hranice (T00-17 #5).
+/** Vráti cesty (relatívne k src/sim, oddeľovač `/`), ktoré v src/sim nesmú existovať. */
+function forbiddenSimFiles(relPaths: string[]): string[] {
+  return relPaths.filter((p) => !(p.endsWith('.ts') || p === 'tsconfig.json'));
+}
+
+/** Rekurzívne zoznam súborov (nie adresárov) pod `dir`, relatívne k `base`, s oddeľovačom `/`. */
+function listFiles(dir: string, base: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...listFiles(full, base));
+    else out.push(relative(base, full).split('\\').join('/'));
+  }
+  return out;
+}
+
+describe('src/sim obsahuje len súbory .ts (T00-17)', () => {
+  const SIM_DIR = join(ROOT, 'src', 'sim');
+
+  it('detektor označí iné prípony než .ts', () => {
+    const files = ['a.ts', 'core/b.ts', 'core/c.d.ts', 'tsconfig.json', 'x.tsx', 'core/y.js', 'z.mjs', 'w.cts', 'v.mts', 'data.json', 'core/tsconfig.json', '.gitkeep', 'README.md'];
+    expect(forbiddenSimFiles(files)).toEqual(['x.tsx', 'core/y.js', 'z.mjs', 'w.cts', 'v.mts', 'data.json', 'core/tsconfig.json', '.gitkeep', 'README.md']);
+  });
+
+  it('v src/sim/** nie je iný súbor než .ts (okrem tsconfig.json)', () => {
+    const files = listFiles(SIM_DIR, SIM_DIR);
+    expect(files.length).toBeGreaterThan(0); // sanity: zoznam nie je prázdny kvôli zlej ceste
+    expect(forbiddenSimFiles(files)).toEqual([]);
   });
 });

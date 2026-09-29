@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "tickGameSeconds": 10,
+  "ticksPerRealSecond": 10,
+  "speeds": [0, 1, 2, 4, 8]
+}

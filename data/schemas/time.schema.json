@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "time.json",
+  "description": "Časový model (ARCHITECTURE §3). Singleton def bez items[]; všetky trvania v ostatných defoch sú v tickoch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "tickGameSeconds", "ticksPerRealSecond", "speeds"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Verzia schémy defu."
+    },
+    "tickGameSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Koľko herných sekúnd trvá 1 tick."
+    },
+    "ticksPerRealSecond": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Počet tickov za reálnu sekundu pri rýchlosti 1×."
+    },
+    "speeds": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 0 },
+      "minItems": 1,
+      "uniqueItems": true,
+      "contains": { "const": 0 },
+      "description": "Povolené násobky rýchlosti simulácie; 0 = pauza (musí byť prítomná)."
+    }
+  }
+}

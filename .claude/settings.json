@@ -1,0 +1,16 @@
+{
+  "model": "opusplan",
+  "permissions": {
+    "allow": [
+      "Bash(pnpm typecheck)", "Bash(pnpm lint)", "Bash(pnpm test*)", "Bash(pnpm vitest*)",
+      "Bash(pnpm validate:defs)", "Bash(pnpm simrun*)", "Bash(pnpm test:e2e)", "Bash(git status)", "Bash(git diff*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      { "matcher": "Edit|Write", "hooks": [
+        { "type": "command", "command": "bash -c 'f=$(jq -r .tool_input.file_path); case \"$f\" in *data/defs/*) pnpm -s validate:defs;; *src/sim/*) pnpm -s vitest run --changed --reporter=dot;; esac'" }
+      ] }
+    ]
+  }
+}

@@ -109,6 +109,7 @@ const VIOLATIONS: Violation[] = [
   { name: 'declare var x', code: 'declare var x: number;\nexport const a = x;', rule: 'no-restricted-syntax' },
   { name: 'declare let x', code: 'declare let x: number;\nexport const a = x;', rule: 'no-restricted-syntax' },
   { name: 'declare function f()', code: 'declare function f(): number;\nexport const a = f();', rule: 'no-restricted-syntax' },
+  { name: 'declare function g(): void', code: 'declare function g(): void;\nexport const a = 1;', rule: 'no-restricted-syntax' },
   { name: 'export declare function f()', code: 'export declare function f(): number;', rule: 'no-restricted-syntax' },
   { name: 'declare class C', code: 'declare class C {}\nexport const a = C;', rule: 'no-restricted-syntax' },
   // Vyhodnotenie kódu (T00-17 #2)
@@ -186,6 +187,10 @@ const ALLOWED: Allowed[] = [
   { name: 'Math.floor + Math.PI', code: 'export const a = Math.floor(Math.PI);' },
   { name: 'Date v poli/generiku ako typ', code: 'export const a: Date[] = [];\nexport const b: Array<Date> = [];\nexport const c: Readonly<{ at: Date }> | null = null;' },
   { name: 'trieda s konštruktorom (kľúč `constructor` nie je člen)', code: 'export class A {\n  private readonly n: number;\n  constructor(n: number) {\n    this.n = n;\n  }\n}' },
+  {
+    name: 'preťaženia funkcie (overload signatures)',
+    code: 'export function f(x: number): number;\nexport function f(x: string): string;\nexport function f(x: number | string) {\n  return x;\n}',
+  },
   { name: 'kľúč objektu Date', code: 'export const a = { Date: 1 };' },
 ];
 

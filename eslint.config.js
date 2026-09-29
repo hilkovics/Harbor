@@ -192,10 +192,9 @@ export default defineConfig([
           message: 'Ambientné `declare const/let/var` vyrába falošný globál — v src/sim zakázané (pravidlá 1 a 3).',
         },
         {
-          selector: 'TSDeclareFunction',
-          message:
-            'Ambientné `declare function` (aj preťaženie funkcie bez tela) je v src/sim zakázané (pravidlá 1 a 3) — ' +
-            'namiesto preťaženia použi union typy alebo generiká.',
+          // Iba `declare function`; preťaženia funkcií (signatúry bez tela, `declare` = false) ostávajú povolené.
+          selector: 'TSDeclareFunction[declare=true]',
+          message: 'Ambientné `declare function` je v src/sim zakázané (pravidlá 1 a 3, ARCHITECTURE §2).',
         },
         {
           selector: 'ClassDeclaration[declare=true]',

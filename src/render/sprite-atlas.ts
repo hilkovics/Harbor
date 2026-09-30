@@ -2,7 +2,8 @@
  * SpriteAtlas (DESIGN_BRIEF §4, §7): textúry terénu, infraštruktúry a entít sveta z `assets/manifest.json`.
  *
  * Zoznam spritov a súborov sa berie z manifestu (`terrain.<id>.file`, `infra.<vrstva>.tiles.<tvar>.file` a súbory
- * entít z `entity-assets.ts`: moduly, časti žeriavov, lode, náklad), nie z kódu.
+ * entít z `entity-assets.ts`: moduly vrátane stavov skladov `fill00…fill100`, časti žeriavov, lode, vozidlá, náklad
+ * a odznaky), nie z kódu.
  * SVG sa rasterizuje pri načítaní na `SPRITE_RASTER_RESOLUTION` px na px zdroja (64 px bunka → 128 px pri zoome 2,0),
  * takže pri najväčšom zoome ostáva ostré; mipmapy držia čitateľné tenké línie (pena, obrysy) aj pri zoome 0,25.
  *
@@ -29,7 +30,7 @@ export interface SpriteTextures {
 }
 
 /**
- * Textúry entít sveta (moduly, časti žeriavov, lode, náklad) podľa cesty súboru z manifestu
+ * Textúry entít sveta (moduly, časti žeriavov, lode, vozidlá, náklad, odznaky) podľa cesty súboru z manifestu
  * (napr. `modules/berth_standard.svg`). Views závisia iba od tohto rozhrania; testy bez DOM podstrčia atrapu.
  */
 export interface EntityTextures {

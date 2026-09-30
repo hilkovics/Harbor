@@ -8,9 +8,14 @@
  * Ghost modulu (`setModuleGhost`) je footprint modulu tým istým spôsobom a navyše `overlay.connector_marker`
  * na každom konektore, otočený podľa strany vjazdu (šípka smeruje do modulu).
  *
- * Šípky smeru (`setGhostArrows`, T03-20): `overlay.path_arrow` (šípka na sever pri rotácii 0) na bunkách ghostu jednosmernej
- * cesty, otočená podľa smeru bunky. Patria k ghostu, ktorý ich nastavil — `setGhost`, `setModuleGhost` a `clearGhost`
- * ich skryjú, takže volajúci ich posiela až po `setGhost`. Bez textúry sa šípka nakreslí z `Graphics` (`--module-connector`).
+ * Šípky smeru jednosmerky (T03-19 + T03-20): `overlay.path_arrow` (šípka na sever pri rotácii 0, N 0°, E 90°, S 180°,
+ * W 270°) otočená podľa smeru bunky — hráč vidí smer ešte pred stavbou (postavená cesta ho kreslí rovnakou šípkou,
+ * `RoadMarkLayer`). Existuje JEDEN pool šípok (vrstva `arrowLayer` za výberom) a dva spôsoby, ako ho naplniť:
+ *  - `GhostCell.dir` v `setGhost` — šípka na každej bunke so smerom,
+ *  - `setGhostArrows` — explicitný zoznam šípok po `setGhost`; NAHRADÍ šípky odvodené z `dir` (nikdy sa nesčítajú, takže
+ *    bunka nemá šípku dvakrát).
+ * Šípky patria k ghostu, ktorý ich nastavil — `setGhost` (prepíše ich šípkami z `dir`), `setModuleGhost` a `clearGhost`
+ * ich skryjú. Bez textúry sa šípka nakreslí z `Graphics` (`--module-connector`).
  *
  * Výber modulu (`setSelectionRing`, T02-10): `overlay.selection_ring` (9-slice, 8 px rohy z manifestu) natiahnutý na
  * obdĺžnik vybraného modulu; leží nad ghostom (tenký rám nič nezakrýva).
@@ -22,6 +27,7 @@
 import { Assets, Container, Graphics, NineSliceSprite, Sprite, Texture, TilingSprite } from 'pixi.js';
 import type { CellCoord, Direction4Name } from '@sim/grid';
 import { GHOST_HATCH_PATTERN, SELECTION_RING_SLICE, overlayAssetUrl } from './overlay-assets';
+import { ARROW_ROTATION } from './road-mark-layer';
 import { documentTokenResolver, readColorToken, readLengthToken, type ColorValue, type TokenResolver } from './tokens';
 import type { ModuleGhostVM, ViewRotation, ViewSide } from './view-models';
 
@@ -29,6 +35,8 @@ import type { ModuleGhostVM, ViewRotation, ViewSide } from './view-models';
 export interface GhostCell extends CellCoord {
   /** `true` = príkaz by bunku prijal (zelená), `false` = odmietol by ju (červená + šrafa). */
   readonly valid: boolean;
+  /** Smer jednosmerky na bunke (`PlaceRoad.dirs`): ak je zadaný, ghost ukáže šípku `overlay.path_arrow` otočenú podľa smeru. */
+  readonly dir?: Direction4Name;
 }
 
 /** Cieľ, do ktorého `InputController` posiela ghost; `BuildLayer` ho spĺňa. */
@@ -55,6 +63,9 @@ export interface GhostArrow extends CellCoord {
   readonly dir: Direction4Name;
 }
 
+/** Bunka, z ktorej sa kreslí šípka smeru: `GhostCell` (`dir` voliteľný) aj `GhostArrow` (`dir` povinný). */
+type ArrowSource = CellCoord & { readonly dir?: Direction4Name };
+
 /** Cieľ, do ktorého `InputController` posiela šípky smeru jednosmerky; `BuildLayer` ho spĺňa. `null`/prázdne = skryť. */
 export interface GhostArrowsView {
   setGhostArrows(arrows: readonly GhostArrow[] | null): void;
@@ -78,8 +89,9 @@ export const CONNECTOR_MARKER_ROTATION: Readonly<Record<ViewSide, ViewRotation>>
 
 /**
  * Rotácia `overlay.path_arrow` (šípka na sever pri rotácii 0) podľa smeru bunky v stupňoch v smere hodinových ručičiek.
+ * Rovnaká tabuľka ako pri postavenej ceste (`ARROW_ROTATION`, `RoadMarkLayer`) — ghost a cesta sa nemôžu rozísť.
  */
-export const PATH_ARROW_ANGLE: Readonly<Record<Direction4Name, number>> = { N: 0, E: 90, S: 180, W: 270 };
+export const PATH_ARROW_ANGLE: Readonly<Record<Direction4Name, number>> = ARROW_ROTATION;
 
 /** Bunky ghostu modulu: každá bunka footprintu `w × h` od ľavého horného rohu, všetky s platnosťou ghostu. */
 export function moduleGhostCells(ghost: ModuleGhostVM): GhostCell[] {
@@ -109,7 +121,7 @@ const MARKER_RASTER_RESOLUTION = 2;
 /** Veľkosť fallbacku značky konektora (trojuholník) ako zlomok bunky. */
 const MARKER_FALLBACK_CELLS = 0.5;
 
-/** Hustota rasterizácie `path_arrow` (64 px zdroja → ostrá aj pri zoome 2). */
+/** Hustota rasterizácie `path_arrow` (1 bunka = 64 px zdroja → ostrá aj pri zoome 2). */
 const ARROW_RASTER_RESOLUTION = 2;
 
 /** Veľkosť fallbacku šípky smeru (chevron) ako zlomok bunky a jeho hrúbka čiary. */
@@ -132,7 +144,7 @@ export interface BuildLayerOptions {
   readonly connectorMarker?: Texture | null;
   /** Textúra `overlay.selection_ring` (9-slice); `null`/vynechaná = obrys výberu sa nakreslí z `Graphics`. */
   readonly selectionRing?: Texture | null;
-  /** Textúra `overlay.path_arrow` (šípka smeru jednosmerky); `null`/vynechaná = šípka sa nakreslí z `Graphics`. */
+  /** Textúra `overlay.path_arrow` (šípka smeru jednosmerky v ghoste); `null`/vynechaná = šípka sa nakreslí z `Graphics`. */
   readonly pathArrow?: Texture | null;
 }
 
@@ -201,19 +213,19 @@ export class BuildLayer implements GhostView, GhostArrowsView, SelectionRingView
   }
 
   /**
-   * Nahradí ghost novými bunkami (prázdne pole = skryť). Neplatné bunky dostanú aj šrafu; značky konektorov a šípky
-   * smeru zmiznú (šípky sa nastavujú až po `setGhost`).
+   * Nahradí ghost novými bunkami (prázdne pole = skryť). Neplatné bunky dostanú aj šrafu; značky konektorov zmiznú.
+   * Šípky smeru sa prepíšu: bunky s `dir` dostanú šípku, ostatné nie (explicitné `setGhostArrows` volaj až po `setGhost`).
    */
   setGhost(cells: readonly GhostCell[]): void {
     if (this.destroyed) return;
     this.paint(cells);
     this.showMarkers([]);
-    this.showArrows([]);
+    this.showArrows(cells);
   }
 
   /**
-   * Šípky smeru jednosmernej cesty na bunkách ghostu (`null` alebo prázdne = skryť). Nezávislé od farby bunky; volaj po
-   * `setGhost`, ktorý ich pri každej zmene ghostu skryje.
+   * Šípky smeru jednosmernej cesty na bunkách ghostu (`null` alebo prázdne = skryť). Nezávislé od farby bunky; NAHRADÍ
+   * šípky (aj tie z `GhostCell.dir`) — volaj po `setGhost`, ktorý ich pri každej zmene ghostu prepíše.
    */
   setGhostArrows(arrows: readonly GhostArrow[] | null): void {
     if (this.destroyed) return;
@@ -272,6 +284,12 @@ export class BuildLayer implements GhostView, GhostArrowsView, SelectionRingView
     let shown = 0;
     for (const arrow of this.arrowPool) if (arrow.visible) shown += 1;
     return shown;
+  }
+
+  /** Rotácia (°) zobrazenej šípky `index`-tej v poradí zobrazenia, alebo `undefined` — pre testy. */
+  arrowRotationAt(index: number): number | undefined {
+    const arrow: Container | undefined = this.arrowPool[index];
+    return arrow?.visible === true ? arrow.angle : undefined;
   }
 
   /** Počet zobrazených značiek konektorov. */
@@ -337,16 +355,22 @@ export class BuildLayer implements GhostView, GhostArrowsView, SelectionRingView
     for (let i = connectors.length; i < this.markerPool.length; i++) this.markerPool[i].visible = false;
   }
 
-  /** Zobrazí šípky smeru (pool sa rozširuje podľa potreby); nadbytočné skryje. */
-  private showArrows(arrows: readonly GhostArrow[]): void {
+  /**
+   * Jediná kresliaca cesta šípok smeru: zobrazí šípku na každej položke so `dir` (pool sa rozširuje podľa potreby),
+   * nadbytočné skryje. Volanie vždy NAHRADÍ predchádzajúcu sadu, preto nikdy nevznikne dvojitá šípka na jednej bunke.
+   */
+  private showArrows(sources: readonly ArrowSource[]): void {
     const { cellPx } = this;
-    arrows.forEach((arrow, index) => {
-      const view = this.arrowAt(index);
-      view.position.set((arrow.x + 0.5) * cellPx, (arrow.y + 0.5) * cellPx);
-      view.angle = PATH_ARROW_ANGLE[arrow.dir];
+    let used = 0;
+    for (const source of sources) {
+      if (source.dir === undefined) continue;
+      const view = this.arrowAt(used);
+      view.position.set((source.x + 0.5) * cellPx, (source.y + 0.5) * cellPx);
+      view.angle = PATH_ARROW_ANGLE[source.dir];
       view.visible = true;
-    });
-    for (let i = arrows.length; i < this.arrowPool.length; i++) this.arrowPool[i].visible = false;
+      used += 1;
+    }
+    for (let i = used; i < this.arrowPool.length; i++) this.arrowPool[i].visible = false;
   }
 
   /** Šípka `index`-tá z poolu: `Sprite` `path_arrow` (vycentrovaný na bunku) alebo chevron z `Graphics`. */

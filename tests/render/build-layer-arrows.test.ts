@@ -1,10 +1,12 @@
 // T03-20: šípky smeru jednosmernej cesty na ghoste (`BuildLayer.setGhostArrows`). Pool, rotácia podľa smeru, väzba
 // na ghost (setGhost/setModuleGhost/clearGhost ich skryjú) a fallback bez textúry.
+// Integrácia T03-19 + T03-20: `GhostCell.dir` a `setGhostArrows` plnia ten istý pool, takže sa nikdy nesčítajú.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { describe, expect, it } from 'vitest';
 import { BuildLayer, PATH_ARROW_ANGLE, loadGhostPalette, type GhostArrow } from '@render/build-layer';
+import { ARROW_ROTATION } from '@render/road-mark-layer';
 import { overlayAssetUrl } from '@render/overlay-assets';
 import { tokenResolverFromCss } from '@render/tokens';
 
@@ -84,6 +86,32 @@ describe('BuildLayer.setGhostArrows', () => {
     build.setGhostArrows(ARROWS.slice(0, 2));
     expect(arrowsOf(build)[0]).toBeInstanceOf(Graphics);
     expect(build.arrowCount).toBe(2);
+  });
+
+  it('PATH_ARROW_ANGLE je tá istá tabuľka ako ARROW_ROTATION postavenej cesty (ghost a cesta sa nerozídu)', () => {
+    expect(PATH_ARROW_ANGLE).toBe(ARROW_ROTATION);
+  });
+
+  it('`GhostCell.dir` aj `setGhostArrows` plnia jeden pool: šípka na bunke je vždy práve raz', () => {
+    const build = layer();
+    const cells = ARROWS.map((arrow) => ({ x: arrow.x, y: arrow.y, valid: true, dir: arrow.dir }));
+    build.setGhost(cells);
+    expect(build.arrowCount).toBe(4);
+    const pool = arrowsOf(build).slice();
+    // Rovnaké bunky ešte raz cez setGhostArrows: sada sa NAHRADÍ (nie 8), rovnaké objekty z poolu, rovnaké uhly.
+    build.setGhostArrows(ARROWS);
+    expect(build.arrowCount).toBe(4);
+    expect(arrowsOf(build)).toEqual(pool);
+    ARROWS.forEach((arrow, index) => {
+      expect(build.arrowRotationAt(index)).toBe(PATH_ARROW_ANGLE[arrow.dir]);
+      expect(arrowsOf(build)[index].position.x).toBe((arrow.x + 0.5) * CELL);
+    });
+    // Prázdna sada skryje aj šípky odvodené z `dir`; nový `setGhost` ich vráti len pre bunky s `dir`.
+    build.setGhostArrows(null);
+    expect(build.arrowCount).toBe(0);
+    build.setGhost([...cells.slice(0, 2), { x: 9, y: 9, valid: false }]);
+    expect(build.arrowCount).toBe(2);
+    expect(build.arrowRotationAt(2)).toBeUndefined();
   });
 
   it('po destroy() setGhostArrows nič nerobí a nehádže', () => {

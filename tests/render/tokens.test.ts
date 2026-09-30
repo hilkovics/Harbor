@@ -2,12 +2,14 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  ROAD_EDGE_SHADE,
   loadEntityPalette,
   loadRenderPalette,
   parseCssColor,
   parseCssPx,
   readColorToken,
   readLengthToken,
+  shadeColor,
   tokenResolverFromCss,
 } from '@render/tokens';
 
@@ -92,9 +94,25 @@ describe('loadRenderPalette', () => {
     expect(palette.terrain.blocked.color).toBe(0x6e6a66);
     expect(palette.road.base.color).toBe(0x4b5058);
     expect(palette.road.marking.color).toBe(0xe9e4d6);
+    expect(palette.road.arrow.color).toBe(0x3aa0ff); // `--ui-accent`: šípka smeru jednosmerky bez sprite
     expect(palette.parcel.forSale.color).toBe(0xf2b233);
     expect(palette.parcel.owned.color).toBe(0x35c27a);
     expect(palette.parcel.leased.color).toBe(0x3aa0ff);
+  });
+});
+
+describe('okraj cesty (obrubník procedurálnych úzkych ciest)', () => {
+  const palette = loadRenderPalette(tokenResolverFromCss(TOKENS_CSS));
+
+  it('odvodený z `--road-base` (token pre okraj v design/tokens.css nie je): #4B5058 × 0,215 = #101113 ako v spritoch', () => {
+    expect(palette.road.edge).toEqual({ color: 0x101113, alpha: 1 });
+    expect(ROAD_EDGE_SHADE).toBe(0.215);
+  });
+
+  it('shadeColor: kanály sa násobia a zaokrúhľujú, priehľadnosť ostáva', () => {
+    expect(shadeColor({ color: 0xff8040, alpha: 0.5 }, 0.5)).toEqual({ color: 0x804020, alpha: 0.5 });
+    expect(shadeColor({ color: 0x123456, alpha: 1 }, 1)).toEqual({ color: 0x123456, alpha: 1 });
+    expect(shadeColor({ color: 0xffffff, alpha: 1 }, 0)).toEqual({ color: 0, alpha: 1 });
   });
 });
 

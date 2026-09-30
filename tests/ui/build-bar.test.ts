@@ -2,9 +2,13 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  BUY_ITEM_LABEL,
   BuildBar,
   TOOLTIP_LOCKED_FALLBACK,
   TOOLTIP_POOR_FALLBACK,
+  canBuyItem,
+  itemAction,
+  itemDetail,
   itemStatus,
   itemTooltip,
   resolveItemSelection,
@@ -245,5 +249,151 @@ describe('BuildBar — položky', () => {
 
     click(fresh, 'arm_liquid'); // zamknutá technológiou
     expect(onSelect).toHaveBeenCalledTimes(3);
+  });
+});
+
+// --- F3 (T03-09): kategórie Sklady / Logistika, položky s akciou `buy` -----------------------------------------------
+
+/** Prototyp: BI.storage (Kontajnerový dvor S) — ceny tu sú z defov F3 ($150,000), nie z prototypu ($90,000). */
+const YARD: BuildBarItem = {
+  defId: 'container_yard_small',
+  displayName: 'Kontajnerový dvor S',
+  costCents: 15_000_000,
+  icon: 'ic_yard',
+  footprint: { w: 4, h: 4 },
+  locked: false,
+  affordable: true,
+};
+
+const DEPOT: BuildBarItem = {
+  defId: 'vehicle_depot',
+  displayName: 'Depo vozidiel',
+  costCents: 9_000_000,
+  icon: 'ic_depot',
+  footprint: { w: 3, h: 3 },
+  locked: false,
+  affordable: true,
+};
+
+/** Prototyp: BI.logistics[0] — Straddle carrier $48,000; vozidlo nemá stopu, ide sa kúpiť. */
+const CARRIER: BuildBarItem = {
+  defId: 'straddle_carrier',
+  displayName: 'Straddle carrier',
+  costCents: 4_800_000,
+  icon: 'ic_vehicle',
+  locked: false,
+  affordable: true,
+  action: 'buy',
+};
+
+const F3_CATEGORIES: readonly BuildBarCategory[] = [
+  { id: 'terminal', label: 'Terminál', icon: 'ic_berth', enabled: true, items: [BERTH] },
+  { id: 'storage', label: 'Sklady', icon: 'ic_yard', enabled: true, items: [YARD] },
+  { id: 'logistics', label: 'Logistika', icon: 'ic_vehicle', enabled: true, items: [CARRIER, DEPOT] },
+];
+
+function renderF3(activeCategoryId: string, overrides: Partial<BuildBarProps> = {}): string {
+  return render({ categories: F3_CATEGORIES, activeCategoryId, ...overrides });
+}
+
+describe('položky s akciou (build / buy)', () => {
+  it('bez `action` je položka `build`; `buy` sa nevyberá a nikdy nenesie stav vybranej', () => {
+    expect(itemAction(BERTH)).toBe('build');
+    expect(itemAction(CARRIER)).toBe('buy');
+    expect(resolveItemSelection(CARRIER, null)).toBeUndefined();
+    expect(resolveItemSelection(CARRIER, 'straddle_carrier')).toBeUndefined();
+  });
+
+  it('canBuyItem: len dostupná `buy` položka (zamknutá, drahá aj `build` nie)', () => {
+    expect(canBuyItem(CARRIER)).toBe(true);
+    expect(canBuyItem({ ...CARRIER, affordable: false })).toBe(false);
+    expect(canBuyItem({ ...CARRIER, locked: true })).toBe(false);
+    expect(canBuyItem(DEPOT)).toBe(false);
+  });
+
+  it('itemDetail: pri nákupe „kúpiť", pri stavbe rozmer, bez rozmeru nič', () => {
+    expect(itemDetail(CARRIER)).toBe(BUY_ITEM_LABEL);
+    expect(BUY_ITEM_LABEL).toBe('kúpiť');
+    expect(itemDetail(DEPOT)).toBe('3×3');
+    expect(itemDetail({ footprint: undefined })).toBeNull();
+  });
+
+  it('Sklady: dvor s cenou z formatMoney a rozmerom 4×4', () => {
+    const html = renderF3('storage');
+    expect(itemField(html, 'container_yard_small', 'item-cost')).toBe('$150,000');
+    expect(itemField(html, 'container_yard_small', 'item-size')).toBe('· 4×4');
+    expect(html).toMatch(/data-def-id="container_yard_small" data-status="available" data-action="build"/);
+  });
+
+  it('Logistika: straddle carrier $48,000 · kúpiť (bez aria-pressed), depo $90,000 · 3×3 ako stavba', () => {
+    const html = renderF3('logistics');
+    expect(itemField(html, 'straddle_carrier', 'item-cost')).toBe('$48,000');
+    expect(itemField(html, 'straddle_carrier', 'item-size')).toBe('· kúpiť');
+    expect(itemField(html, 'vehicle_depot', 'item-cost')).toBe('$90,000');
+    expect(itemField(html, 'vehicle_depot', 'item-size')).toBe('· 3×3');
+    expect(html).toMatch(/data-def-id="straddle_carrier" data-status="available" data-action="buy"/);
+    expect(html).toContain('build-bar__item--buy');
+    // `buy` je akcia, nie prepínač: len depo (stavba) má aria-pressed
+    expect(html.match(/aria-pressed=/g)).toHaveLength(1);
+    expect(html).toMatch(/aria-pressed="false"[^>]*data-def-id="vehicle_depot"/);
+  });
+
+  it('`buy` položka sa nezvýrazní ani vtedy, keď jej defId sedí s výberom (výber patrí stavbám)', () => {
+    const html = renderF3('logistics', { selectedDefId: 'straddle_carrier' });
+    expect(html).not.toContain('build-bar__item--selected');
+  });
+
+  it('položka bez rozmeru nevykreslí `item-size`', () => {
+    const noSize: BuildBarItem = { ...DEPOT, footprint: undefined };
+    const html = render({ categories: [{ id: 'logistics', label: 'Logistika', icon: 'ic_vehicle', enabled: true, items: [noSize] }], activeCategoryId: 'logistics' });
+    expect(itemField(html, 'vehicle_depot', 'item-cost')).toBe('$90,000');
+    expect(html).not.toContain('data-field="item-size"');
+  });
+
+  it('zamknutý nákup („Postav depo vozidiel") a nákup bez peňazí majú tooltip a nekupujú', () => {
+    const locked: BuildBarItem = { ...CARRIER, locked: true, lockedReason: 'Postav depo vozidiel' };
+    const poor: BuildBarItem = { ...CARRIER, affordable: false, missingCents: 4_800_000 - 1_000_000 };
+    expect(itemTooltip(locked)).toEqual({ title: 'Zamknuté', text: 'Postav depo vozidiel', icon: 'ic_lock', tone: 'locked' });
+    expect(itemTooltip(poor)).toEqual({ title: 'Nedostatok peňazí', text: 'Chýba $38,000', icon: 'ic_cash', tone: 'poor' });
+
+    const lockedHtml = render({ categories: [{ ...F3_CATEGORIES[2]!, items: [locked] }], activeCategoryId: 'logistics' });
+    expect(lockedHtml).toContain('Postav depo vozidiel');
+    expect(lockedHtml).toMatch(/aria-disabled="true"[^>]*data-def-id="straddle_carrier"[^>]*data-status="locked"[^>]*data-action="buy"/);
+    expect(lockedHtml).toContain('build-bar__item-lock');
+  });
+
+  it('klik na dostupnú `buy` položku volá onBuy(defId), nie onSelect; drahá, zamknutá a `build` ho nevolajú', () => {
+    const onBuy = vi.fn();
+    const onSelect = vi.fn();
+    const clickIn = (items: readonly BuildBarItem[], defId: string) => {
+      const tree = BuildBar(
+        makeProps({ categories: [{ id: 'logistics', label: 'Logistika', icon: 'ic_vehicle', enabled: true, items }], activeCategoryId: 'logistics', onBuy, onSelect }),
+      );
+      const [element] = findAll(tree, (candidate) => propsOf(candidate)['data-def-id'] === defId);
+      (propsOf(element!)['onClick'] as () => void)();
+    };
+
+    clickIn([CARRIER, DEPOT], 'straddle_carrier');
+    expect(onBuy).toHaveBeenCalledExactlyOnceWith('straddle_carrier');
+    expect(onSelect).not.toHaveBeenCalled();
+
+    clickIn([{ ...CARRIER, affordable: false }], 'straddle_carrier');
+    clickIn([{ ...CARRIER, locked: true }], 'straddle_carrier');
+    expect(onBuy).toHaveBeenCalledTimes(1);
+    expect(onSelect).not.toHaveBeenCalled();
+
+    clickIn([CARRIER, DEPOT], 'vehicle_depot'); // stavba ide cez onSelect
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('vehicle_depot');
+    expect(onBuy).toHaveBeenCalledTimes(1);
+  });
+
+  it('bez onBuy klik na `buy` položku nič nerobí (spätná kompatibilita s F2 rodičom)', () => {
+    const onSelect = vi.fn();
+    const tree = BuildBar(makeProps({ categories: F3_CATEGORIES, activeCategoryId: 'logistics', onSelect }));
+    const [element] = findAll(tree, (candidate) => propsOf(candidate)['data-def-id'] === 'straddle_carrier');
+    expect(() => {
+      (propsOf(element!)['onClick'] as () => void)();
+    }).not.toThrow();
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

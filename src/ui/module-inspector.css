@@ -3,9 +3,10 @@
  * Len tokeny z design/tokens.css: žiadne pevné farby ani rozmery. Rozmery prototypu bez vlastného tokenu
  * (20 / 22 / 12 / 10 px…) sú odvodené z tokenov (`calc(var(--space-*) ± …)`); pevné sú len 1 px čiary, 2 px focus
  * ring a ±2 px korekcie. Priesvitné farby prototypu (rgba) nahrádza color-mix() nad tokenmi; tmavý text na accent
- * ploche nepotrebujeme (akcia je len „Odstrániť").
+ * ploche z prototypu (#0F1B27, tlačidlo „Kúpiť vozidlo v depe") nahrádza --ui-surface (ako v top-hud.css).
  * BEM: .module-inspector, __header / __titles / __badge / __close, __body, __banner, __stats / __stat,
- * __meter / __bar, __section / __ship, __rows / __row, __actions / __btn / __reason.
+ * __meter / __bar, __section / __ship, __vehicles / __vehicle (F3, zoznam vozidiel v depe), __rows / __row,
+ * __actions / __btn / __reason.
  */
 
 .module-inspector {
@@ -64,6 +65,8 @@
   font-size: var(--fs-lg);
   font-weight: var(--fw-semibold);
   line-height: var(--lh-tight);
+  /* Dlhší názov („Kontajnerový dvor S") sa zalomí vyvážene, nie s osamelým „S" na druhom riadku. */
+  text-wrap: balance;
 }
 
 .module-inspector__sub {
@@ -153,7 +156,7 @@
   overflow-y: auto;
 }
 
-/* Upozornenie (prototyp: „Nepripojené k ceste") — tu blokovaný žeriav. */
+/* Upozornenie: „Nepripojené k ceste" (prototyp `insp_gate`, F3) alebo blokovaný žeriav (F2). */
 .module-inspector__banner {
   display: flex;
   gap: var(--mi-gap);
@@ -360,6 +363,130 @@
   white-space: nowrap;
 }
 
+/* --- Vozidlá v depe (F3; prototyp: „Vozidlá v depe" — rámovaný zoznam, striedavé pozadie riadkov) --- */
+
+.module-inspector__empty {
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+  color: var(--ui-text-2);
+  font-size: var(--fs-sm);
+}
+
+.module-inspector__vehicles {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  list-style: none;
+}
+
+.module-inspector__vehicle {
+  display: flex;
+  align-items: center;
+  gap: var(--mi-gap);
+  padding: calc(var(--space-1) + 2px) var(--mi-gap);
+  font-size: var(--fs-sm);
+}
+
+.module-inspector__vehicle:nth-child(even) {
+  background: var(--ui-surface);
+}
+
+.module-inspector__vehicle-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--ui-text-2);
+}
+
+.module-inspector__vehicle-code {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.module-inspector__vehicle-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.module-inspector__vehicle-state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+.module-inspector__vehicle-state--success {
+  color: var(--ui-success);
+}
+
+.module-inspector__vehicle-state--muted {
+  color: var(--ui-text-2);
+}
+
+.module-inspector__vehicle-state--warn {
+  color: var(--ui-warning);
+}
+
+.module-inspector__vehicle-state-icon {
+  width: var(--mi-icon-xs);
+  height: var(--mi-icon-xs);
+}
+
+/* Predaj vozidla: ikonové tlačidlo 24 px (názov a dôvod nesie title + aria-label); nečinné vozidlo sa dá predať. */
+.module-inspector__vehicle-sell {
+  box-sizing: border-box;
+  appearance: none;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--icon-md);
+  height: var(--icon-md);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ui-text-2);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+}
+
+.module-inspector__vehicle-sell:hover:not([aria-disabled='true']) {
+  background: var(--ui-surface-2);
+  color: var(--ui-text);
+}
+
+.module-inspector__vehicle-sell[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.module-inspector__vehicle-sell:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+
+.module-inspector__vehicle-sell-icon {
+  width: calc(var(--icon-sm) - 2px);
+  height: calc(var(--icon-sm) - 2px);
+}
+
 /* --- Riadky s údajmi (ako ParcelPanel prototypu) --- */
 
 .module-inspector__rows {
@@ -415,6 +542,19 @@
 .module-inspector__btn-icon {
   width: calc(var(--icon-sm) - 2px);
   height: calc(var(--icon-sm) - 2px);
+}
+
+/* Hlavná akcia (F3: „Kúpiť vozidlo v depe"): accent plocha s tmavým textom (prototyp), o 4 px vyššia ako ostatné. */
+.module-inspector__btn--primary {
+  height: calc(var(--space-8) + var(--space-1));
+  border-color: var(--ui-accent);
+  background: var(--ui-accent);
+  color: var(--ui-surface);
+}
+
+.module-inspector__btn--primary:hover:not([aria-disabled='true']) {
+  border-color: var(--ui-accent-hover);
+  background: var(--ui-accent-hover);
 }
 
 .module-inspector__btn--danger {

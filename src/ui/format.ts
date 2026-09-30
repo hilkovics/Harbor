@@ -57,6 +57,17 @@ export function formatXp(xp: number): string {
   return `${groupThousands(String(Math.max(0, Math.trunc(xp))))} XP`;
 }
 
+/**
+ * Počet kusov: `1,240`, s jednotkou `1,240 TEU` (celé číslo, čiarka ako oddeľovač tisícov, záporné s U+2212).
+ * Neplatná hodnota (`NaN`, `±Infinity`) → `—`.
+ */
+export function formatCount(count: number, unit?: string): string {
+  if (!Number.isFinite(count)) return EM_DASH;
+  const whole = Math.trunc(count);
+  const body = `${whole < 0 ? MINUS_SIGN : ''}${groupThousands(String(Math.abs(whole)))}`;
+  return unit === undefined || unit === '' ? body : `${body} ${unit}`;
+}
+
 /** Herný čas z `WorldSnapshot`/`SimClock`; `day` je 0-based. */
 export interface GameTimeParts {
   readonly day: number;

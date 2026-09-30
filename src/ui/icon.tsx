@@ -8,6 +8,11 @@ import iconsUrl from '../../assets/icons/icons.svg?url';
 /** Názov symbolu v spritu, napr. `ic_cash` (zoznam: `assets/manifest.json` → `icons`, prefix `ic_`). */
 export type IconName = `ic_${string}`;
 
+/** Názov ikony pre `<Icon>`: `berth` aj `ic_berth` → `ic_berth`. */
+export function toIconName(icon: string): IconName {
+  return icon.startsWith('ic_') ? (icon as IconName) : `ic_${icon}`;
+}
+
 /** Adresa symbolu v spritu (`<url>#ic_cash`). */
 export function iconHref(name: IconName): string {
   return `${iconsUrl}#${name}`;

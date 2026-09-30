@@ -139,3 +139,41 @@ describe('module-inspector.css — F3 (sklad, depo, vozidlá)', () => {
     expect(css.ruleBody('.module-inspector__vehicle-sell:focus-visible')).toMatch(/outline:\s*2px solid var\(--ui-accent\)/);
   });
 });
+
+describe('module-inspector.css — F4 (stojiská čakacej plochy, docky rampy)', () => {
+  it('rad stojísk: mriežka bez odrážok, políčko výšky --icon-lg s obrysom --ui-border a radiusom --radius-sm', () => {
+    const list = css.ruleBody('.module-inspector__bays');
+    expect(list).toMatch(/display:\s*grid/);
+    expect(list).toMatch(/list-style:\s*none/);
+    const bay = css.ruleBody('.module-inspector__bay');
+    expect(bay).toMatch(/height:\s*var\(--icon-lg\)/);
+    expect(bay).toMatch(/border:\s*1px solid var\(--ui-border\)/);
+    expect(bay).toMatch(/border-radius:\s*var\(--radius-sm\)/);
+  });
+
+  it('obsadené stojisko má farbu nákladu, rezervované svetlejšiu s prerušovaným obrysom (farba nie je jediný nositeľ)', () => {
+    expect(css.ruleBody('.module-inspector__bay--occupied')).toMatch(/background:\s*var\(--cargo-container\)/);
+    const reserved = css.ruleBody('.module-inspector__bay--reserved');
+    expect(reserved).toMatch(/background:\s*var\(--cargo-container-light\)/);
+    expect(reserved).toMatch(/border-style:\s*dashed/);
+  });
+
+  it('zoznam dockov: rámovaný (--ui-border, --radius-md), bez odrážok, striedavé pozadie --ui-surface', () => {
+    const list = css.ruleBody('.module-inspector__docks');
+    expect(list).toMatch(/border:\s*1px solid var\(--ui-border\)/);
+    expect(list).toMatch(/border-radius:\s*var\(--radius-md\)/);
+    expect(list).toMatch(/list-style:\s*none/);
+    expect(css.ruleBody('.module-inspector__dock:nth-child(even)')).toMatch(/background:\s*var\(--ui-surface\)/);
+  });
+
+  it('staging slot: prázdny --ui-surface-2, obsadený farba nákladu (rovnaká ako značka „obsadené")', () => {
+    expect(css.ruleBody('.module-inspector__pip')).toMatch(/background:\s*var\(--ui-surface-2\)/);
+    expect(css.ruleBody('.module-inspector__pip--filled')).toMatch(/background:\s*var\(--cargo-container\)/);
+  });
+
+  it('kamión v docku: --ui-success, bez kamióna --ui-text-2, bez zalamovania', () => {
+    expect(css.ruleBody('.module-inspector__dock-truck')).toMatch(/white-space:\s*nowrap/);
+    expect(css.ruleBody('.module-inspector__dock-truck--present')).toMatch(/color:\s*var\(--ui-success\)/);
+    expect(css.ruleBody('.module-inspector__dock-truck--absent')).toMatch(/color:\s*var\(--ui-text-2\)/);
+  });
+});

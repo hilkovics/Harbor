@@ -2,8 +2,10 @@
  * Ladiaci háčik `window.__sim` (ARCHITECTURE §16, E2E): sprístupní `World` a `SimBridge` Playwrightu a konzole.
  * Aktívny výlučne vo vývojovom builde (`import.meta.env.DEV`); v produkčnom builde je z modulu mŕtvy kód.
  */
-import type { EntitiesVM, ModuleGhostVM } from '@render/view-models';
+import type { ModuleGhostVM } from '@render/view-models';
+import { commandFromJSON, type SerializedCommand, type ValidationResult } from '@sim/commands';
 import type { World } from '@sim/world';
+import type { SimEntitiesVM } from './entities-vm';
 import type { SimBridge } from './sim-bridge';
 
 /**
@@ -14,6 +16,8 @@ export interface RenderedCounts {
   readonly modules: number;
   readonly cranes: number;
   readonly ships: number;
+  /** Vozidlá (`VehicleView`, F3). */
+  readonly vehicles: number;
   /** Bunky ghostu stavby (cesta aj modul), ktoré sú práve zobrazené. */
   readonly ghostCells: number;
   /** Značky konektorov ghostu modulu, ktoré sú práve zobrazené. */
@@ -26,10 +30,16 @@ export interface DevHook {
   readonly world: World;
   readonly bridge: SimBridge;
   /**
-   * Aktuálne render view-modely (moduly, žeriavy, lode) — presne to, čo dostáva `WorldRenderer.syncEntities`.
+   * Aktuálne render view-modely (moduly, žeriavy, lode, vozidlá) — presne to, čo dostáva `WorldRenderer.syncEntities`.
    * Bez `grid`, takže sa dá vrátiť z `page.evaluate`.
    */
-  readonly entities: () => EntitiesVM;
+  readonly entities: () => SimEntitiesVM;
+  /**
+   * Príkaz zo serializovaného tvaru (`{ type: 'PlaceRoad', cells: [...] }`, `{ type: 'BuyVehicle', … }`) — e2e ním
+   * postaví cesty, sklady a depo bez klikania. Ide cez `validate` a `dispatch` len pri `ok` (pravidlo 5); vráti výsledok
+   * validácie (`ok`, `reasons`, `costCents`), aby test videl prečo príkaz neprešiel. Aplikuje sa pri najbližšom frame.
+   */
+  readonly dispatchJSON: (command: SerializedCommand) => ValidationResult;
   /**
    * STRED bunky (x, y) v súradniciach stránky (CSS px, vrátane posunu canvasu) — presne tam, kam má e2e kliknúť.
    * Doplní bootstrap z kamery (T01-11).
@@ -66,13 +76,23 @@ export interface DevHookOptions {
   readonly centerOn?: DevHook['centerOn'];
 }
 
-/** Nainštaluje `window.__sim = { world, bridge, entities, cellToScreen?, rendered?, moduleGhost?, centerOn? }`. Vráti háčik, alebo `null`, ak je vypnutý/nie je cieľ. */
+/** Nainštaluje `window.__sim = { world, bridge, entities, dispatchJSON, cellToScreen?, rendered?, moduleGhost?, centerOn? }`. Vráti háčik, alebo `null`, ak je vypnutý/nie je cieľ. */
 export function installDevHook(bridge: SimBridge, options: DevHookOptions = {}): DevHook | null {
   const enabled = options.enabled ?? import.meta.env.DEV;
   if (!enabled) return null;
   const target = options.target === undefined ? (typeof window === 'undefined' ? null : window) : options.target;
   if (target === null) return null;
-  const hook: DevHook = { world: bridge.world, bridge, entities: () => bridge.entities() };
+  const hook: DevHook = {
+    world: bridge.world,
+    bridge,
+    entities: () => bridge.entities(),
+    dispatchJSON: (json) => {
+      const command = commandFromJSON(json);
+      const result = bridge.validate(command);
+      if (result.ok) bridge.dispatch(command);
+      return result;
+    },
+  };
   if (options.cellToScreen !== undefined) hook.cellToScreen = options.cellToScreen;
   if (options.rendered !== undefined) hook.rendered = options.rendered;
   if (options.moduleGhost !== undefined) hook.moduleGhost = options.moduleGhost;

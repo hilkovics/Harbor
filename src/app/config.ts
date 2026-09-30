@@ -64,8 +64,15 @@ export function startViewCenter(grid: Grid, focus: Rect, visibleRows: number): {
 }
 
 /**
+ * Po koľkých ms sa toast (oznámenie: „Chýba sklad“, „Nepripojené“…) zavrie sám (reálny čas, nie herný — počas pauzy
+ * hráč oznámenie stihne prečítať aj zavrieť). Naraz je viditeľných najviac `MAX_TOASTS` toastov, ostatné čakajú vo
+ * fronte a odpočet im začne, až keď sa zobrazia.
+ */
+export const TOAST_AUTO_CLOSE_MS = 8000;
+
+/**
  * Ladiaca loď z DEV tlačidla „Spawn feeder (DEV)“ (`SpawnShipDebug`, ADR-016). Jednotiek je ≤ `apronSlots` kotviska
- * (4), aby sa loď vyložila celá a odplávala — vo F2 ešte nejazdia vozidlá, ktoré by apron uvoľnili.
+ * (4), aby sa loď vyložila celá a odplávala aj bez ciest, skladu a vozidiel (tlačidlo slúži aj na ladenie bez logistiky).
  */
 export const DEV_SPAWN_SHIP = { shipClassId: 'feeder', cargoTypeId: 'container_teu', units: 4 } as const;
 

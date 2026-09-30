@@ -12,10 +12,12 @@ import { BuildFeedbackLabel, type FeedbackSource } from './build-feedback';
 import { BuildSelection } from './build-selection';
 import { ConnectedBuildBar } from './connected-build-bar';
 import { ConnectedModuleInspector } from './connected-module-inspector';
+import { ConnectedToasts } from './connected-toasts';
 import { ModuleSelection } from './module-selection';
 import { DevSpawnButton } from './dev-spawn-button';
 import { PausedBanner } from './paused-banner';
 import type { SimBridge } from './sim-bridge';
+import type { ToastCenter } from './toast-center';
 import { SimBridgeProvider } from './use-sim-snapshot';
 import './app.css';
 
@@ -27,6 +29,8 @@ export interface AppProps {
   readonly selection?: BuildSelection;
   /** Výber modulu na mape (inšpektor vpravo) zdieľaný s ovládaním mapy (T02-10); bez neho si `App` vedie vlastný. */
   readonly moduleSelection?: ModuleSelection;
+  /** Oznámenia zo simu (T03-10: „Chýba sklad“, „Nepripojené“); bez neho sa zásobník toastov nezobrazí. */
+  readonly toasts?: ToastCenter;
   /**
    * DEV nástroje (tlačidlo „Spawn feeder (DEV)“) sa zobrazia len vo vývojovom builde (`import.meta.env.DEV`); `false`
    * ich vypne aj tam (testy). V produkčnom builde ich bundler z modulu odstráni.
@@ -34,7 +38,7 @@ export interface AppProps {
   readonly devTools?: boolean;
 }
 
-export function App({ bridge, feedback, selection, moduleSelection, devTools = true }: AppProps) {
+export function App({ bridge, feedback, selection, moduleSelection, toasts, devTools = true }: AppProps) {
   // Bez zdieľaného výberu (testy, demo) si App vytvorí vlastný; `useState` drží jednu inštanciu medzi rendermi.
   const [ownSelection] = useState(() => new BuildSelection());
   const [ownModuleSelection] = useState(() => new ModuleSelection());
@@ -52,6 +56,7 @@ export function App({ bridge, feedback, selection, moduleSelection, devTools = t
         </div>
       )}
       <ConnectedModuleInspector selection={moduleSelection ?? ownModuleSelection} />
+      {toasts !== undefined && <ConnectedToasts center={toasts} />}
       <div className="app__build">
         <ConnectedBuildBar selection={selection ?? ownSelection} />
       </div>

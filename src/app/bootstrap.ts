@@ -4,7 +4,8 @@
  * Tok dát:
  *   vstup → InputController → Command → SimBridge.dispatch → World (applyPending v GameLoop)
  *   World → udalosti → SimBridge.onEvents → WorldRenderer (RoadChanged) ; snapshot → useSimSnapshot → HUD, BuildBar
- *   World → SimBridge.entities() (EntitiesVM) → WorldRenderer.syncEntities(vm, alpha) každý frame (moduly, žeriavy, lode)
+ *   World → SimBridge.entities() (EntitiesVM) → WorldRenderer.syncEntities(vm, alpha) každý frame (moduly, žeriavy, lode, vozidlá)
+ *   World → udalosti → ToastCenter → Toasts („Chýba sklad“, „Nepripojené“ s akciou „Ukázať“ = centrovanie kamery)
  *
  * Herný stav (World, GameLoop, Pixi) žije mimo Reactu — React je len vrstva nad mapou, takže StrictMode ani
  * opätovné vykreslenia hru nezdvojujú.
@@ -22,6 +23,7 @@ import { GameLoop, startRafLoop } from './game-loop';
 import { InputController } from './input-controller';
 import { ModuleSelection, bindSelectionRing } from './module-selection';
 import { SimBridge } from './sim-bridge';
+import { ToastCenter } from './toast-center';
 
 export interface AppHandle {
   readonly world: World;
@@ -33,6 +35,8 @@ export interface AppHandle {
   readonly selection: BuildSelection;
   /** Výber modulu na mape (id) pre inšpektor a obrys `selection_ring`. */
   readonly moduleSelection: ModuleSelection;
+  /** Oznámenia zo simu (toasty); odoberá udalosti `bridge.onEvents`. */
+  readonly toasts: ToastCenter;
   /** Zastaví slučku, odpojí vstup, zruší React strom a Pixi a odstráni DOM aplikácie. */
   destroy(): void;
 }
@@ -112,6 +116,14 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
   mapHost.dataset.inputState = input.state;
   const detachInput = attachDomInput(input, { host: mapHost, window, releaseFocus: releaseDocumentFocus });
 
+  // Kamera: „Ukázať“ v toaste a DEV `centerOn` (e2e) zdieľajú jednu funkciu; `zoom` (1 = bunka `--cell` px) je voliteľný.
+  const centerCamera = (cellX: number, cellY: number, zoom?: number): void => {
+    const { camera: view } = renderer;
+    if (zoom !== undefined) view.zoomAt(zoom / view.zoom, view.viewportWidth / 2, view.viewportHeight / 2);
+    view.centerOn(cellX, cellY);
+  };
+  const toasts = new ToastCenter(bridge, { centerOn: (cellX, cellY) => centerCamera(cellX, cellY) });
+
   const stopSelectionRing = bindSelectionRing(moduleSelection, bridge, renderer.build);
   const stopRenderEvents = bridge.onEvents((events) => {
     for (const event of events) {
@@ -135,20 +147,17 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
       modules: renderer.modules.moduleCount,
       cranes: renderer.cranes.craneCount,
       ships: renderer.ships.shipCount,
+      vehicles: renderer.ships.vehicleCount,
       ghostCells: renderer.build.shownCount,
       ghostConnectors: renderer.build.markerCount,
       selectionRing: renderer.build.selectionShown,
     }),
     moduleGhost: () => input.moduleGhost(),
-    centerOn: (cellX, cellY, zoom) => {
-      const { camera: view } = renderer;
-      if (zoom !== undefined) view.zoomAt(zoom / view.zoom, view.viewportWidth / 2, view.viewportHeight / 2);
-      view.centerOn(cellX, cellY);
-    },
+    centerOn: centerCamera,
   });
 
   const reactRoot = createRoot(uiHost);
-  reactRoot.render(createElement(StrictMode, null, createElement(App, { bridge, feedback: input, selection, moduleSelection })));
+  reactRoot.render(createElement(StrictMode, null, createElement(App, { bridge, feedback: input, selection, moduleSelection, toasts })));
 
   let destroyed = false;
   return {
@@ -159,12 +168,14 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
     input,
     selection,
     moduleSelection,
+    toasts,
     destroy() {
       if (destroyed) return;
       destroyed = true;
       stopLoop();
       stopRenderEvents();
       stopSelectionRing();
+      toasts.dispose();
       detachInput();
       input.dispose();
       reactRoot.unmount();

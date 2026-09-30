@@ -101,6 +101,14 @@ body {
   pointer-events: auto;
 }
 
+/*
+ * Toasty (T03-10): zásobník je `position: absolute` (poloha z src/ui/toasts.css), ale `.app__ui` prepúšťa myš —
+ * tento obal (bez vlastnej plochy) vracia toastom klikanie na „Ukázať“ a ×.
+ */
+.app__toasts {
+  pointer-events: auto;
+}
+
 /* --- DEV nástroje (len vývojový build): pod HUD vľavo, aby nezakrývali pravý panel --- */
 
 .app__dev {

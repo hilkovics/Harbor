@@ -3,23 +3,37 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import {
   CRANE_STATE_LABELS,
+  DISCONNECTED_BADGE_LABEL,
+  DISCONNECTED_TITLE,
   ModuleInspector,
+  SELL_BLOCKED_TEXT,
   UTILIZATION_DANGER_PCT,
   UTILIZATION_WARN_PCT,
+  VEHICLE_STATE_INFO,
   apronFree,
   badgeText,
   berthStats,
+  canSellVehicle,
   clampPercent,
   craneStateLabel,
   craneStateOk,
   craneStats,
   craneTimeSplit,
+  depotStats,
+  depotVehicleCounts,
+  inspectorBadge,
   moduleCode,
   moduleKindIcon,
   moduleSubtitle,
+  sellTitle,
   shareOf,
+  storageFillPct,
+  storageFree,
+  storageStats,
   utilizationTone,
+  vehicleCode,
   type CraneStateName,
+  type DepotVehicleData,
   type ModuleInspectorData,
   type ModuleInspectorProps,
 } from '@ui/module-inspector';
@@ -280,5 +294,340 @@ describe('ModuleInspector — žeriav', () => {
 
   it('bez dôvodu a s removable === true sa dôvod nevykreslí', () => {
     expect(render(CRANE_BLOCKED)).not.toContain('data-field="remove-reason"');
+  });
+});
+
+// --- F3 (T03-09): sklad, depo vozidiel, „Nepripojené" -----------------------------------------------------------------
+
+/** Prototyp `insp_yard` (Zaplnenie 72 %): 46 / 64 TEU = 71,9 % → 72 %. */
+const YARD: ModuleInspectorData = {
+  id: 3,
+  defId: 'container_yard_small',
+  displayName: 'Kontajnerový dvor S',
+  kind: 'storage',
+  footprint: { w: 4, h: 4 },
+  stateLabel: 'V prevádzke',
+  ok: true,
+  storage: { stored: 46, reserved: 3, capacity: 64, unitsIn: 1_240, unitsOut: 12, unitLabel: 'TEU' },
+  connected: true,
+  refundCents: 7_500_000,
+  removable: false,
+  removeBlockedReason: 'Sklad obsahuje náklad.',
+};
+
+const CARRIER_IDLE: DepotVehicleData = { id: 11, label: 'Straddle carrier', state: 'idle', code: 'SC-01', refundCents: 2_400_000 };
+const CARRIER_BUSY: DepotVehicleData = { id: 12, label: 'Straddle carrier', state: 'busy', code: 'SC-02' };
+const CARRIER_STUCK: DepotVehicleData = { id: 13, label: 'Straddle carrier', state: 'no_path' };
+
+/** Prototyp `insp_depot`: depo s dvoma vozidlami, nákup dostupný. */
+const DEPOT: ModuleInspectorData = {
+  id: 5,
+  defId: 'vehicle_depot',
+  displayName: 'Depo vozidiel',
+  kind: 'depot',
+  footprint: { w: 3, h: 3 },
+  stateLabel: 'V prevádzke',
+  ok: true,
+  depot: { vehicles: [CARRIER_IDLE, CARRIER_BUSY], capacity: 6, canBuy: true, buyPriceCents: 4_800_000 },
+  connected: true,
+  refundCents: 4_500_000,
+  removable: false,
+  removeBlockedReason: 'Depo s vozidlami nejde odstrániť.',
+};
+
+const tileValues = (html: string, keys: readonly string[]) => keys.map((key) => fieldText(html, `stat-${key}`));
+
+describe('sklad — čisté pomocné funkcie', () => {
+  it('storageFree: kapacita − uložené − rezervované, nikdy záporné', () => {
+    expect(storageFree({ stored: 46, reserved: 3, capacity: 64 })).toBe(15);
+    expect(storageFree({ stored: 60, reserved: 4, capacity: 64 })).toBe(0);
+    expect(storageFree({ stored: 70, reserved: 4, capacity: 64 })).toBe(0);
+  });
+
+  it('storageFillPct: len uložené jednotky, celé percentá, orezané na 0–100, prázdna kapacita = 0', () => {
+    expect(storageFillPct({ stored: 46, capacity: 64 })).toBe(72);
+    expect(storageFillPct({ stored: 0, capacity: 64 })).toBe(0);
+    expect(storageFillPct({ stored: 80, capacity: 64 })).toBe(100);
+    expect(storageFillPct({ stored: 5, capacity: 0 })).toBe(0);
+  });
+
+  it('storageStats: zaplnenie s tónom podľa prahov 75 / 90 %, voľné 0 = varovanie', () => {
+    const rows = (stored: number, reserved: number) =>
+      storageStats({ stored, reserved, capacity: 64 }).map((stat) => [stat.key, stat.value, stat.tone, stat.swatch]);
+    expect(rows(46, 3)).toEqual([
+      ['fill', '72 %', 'normal', 'used'],
+      ['reserved', '3', 'normal', 'reserved'],
+      ['free', '15', 'normal', 'free'],
+    ]);
+    expect(rows(48, 0)[0]).toEqual(['fill', '75 %', 'warn', 'used']); // 48 / 64 = 75 %
+    expect(rows(58, 6)).toEqual([
+      ['fill', '91 %', 'danger', 'used'],
+      ['reserved', '6', 'normal', 'reserved'],
+      ['free', '0', 'warn', 'free'],
+    ]);
+  });
+});
+
+describe('ModuleInspector — sklad', () => {
+  it('hlavička: ikona dvora, kód YRD-03 · 4×4, zelený badge', () => {
+    const html = render(YARD);
+    expect(fieldText(html, 'sub')).toBe('YRD-03 · 4×4');
+    expect(html).toContain('#ic_yard');
+    expect(html).toContain('module-inspector__badge--ok');
+    expect(html).toMatch(/data-field="badge" data-ok="true"[^>]*><svg[^>]*><use href="[^"]*#ic_check"/);
+    expect(html).toContain('>V prevádzke</span>');
+    expect(html).toContain('data-kind="storage"');
+  });
+
+  it('dlaždice: zaplnenie 72 %, rezervované 3, voľné 15 (swatch used / reserved / free)', () => {
+    const html = render(YARD);
+    expect(tileValues(html, ['fill', 'reserved', 'free'])).toEqual(['72 %', '3', '15']);
+    expect(html).toMatch(/data-stat="fill"[\s\S]*?module-inspector__swatch--used/);
+    expect(html).toMatch(/data-stat="reserved"[\s\S]*?module-inspector__swatch--reserved/);
+    expect(html).toContain('module-inspector__stat-value--normal" data-field="stat-fill"');
+  });
+
+  it('pruh kapacity: „46 / 64 TEU", segmenty uložené 71,875 % a rezervované 4,6875 %', () => {
+    const html = render(YARD);
+    expect(fieldText(html, 'storage-count')).toBe('46 / 64 TEU');
+    expect(html).toMatch(/aria-label="Zaplnenie skladu" aria-valuemin="0" aria-valuemax="64" aria-valuenow="46"/);
+    expect(html).toContain('module-inspector__bar-fill--used" style="width:71.875%"');
+    expect(html).toContain('module-inspector__bar-fill--reserved" style="width:4.6875%"');
+  });
+
+  it('bez jednotky sa ukáže „jedn."', () => {
+    const noUnit = { ...YARD, storage: { ...YARD.storage!, unitLabel: undefined } };
+    expect(fieldText(render(noUnit), 'storage-count')).toBe('46 / 64 jedn.');
+  });
+
+  it('prijaté / vydané celkom cez formatCount (čiarka pri tisícoch, jednotka)', () => {
+    const html = render(YARD);
+    expect(fieldText(html, 'units-in')).toBe('1,240 TEU');
+    expect(fieldText(html, 'units-out')).toBe('12 TEU');
+    const noUnit = { ...YARD, storage: { ...YARD.storage!, unitLabel: undefined } };
+    expect(fieldText(render(noUnit), 'units-in')).toBe('1,240');
+  });
+
+  it('plný a takmer plný sklad: červené zaplnenie a žlté voľné', () => {
+    const full = { ...YARD, storage: { ...YARD.storage!, stored: 58, reserved: 6 } };
+    const html = render(full);
+    expect(html).toContain('module-inspector__stat-value--danger" data-field="stat-fill"');
+    expect(html).toContain('module-inspector__stat-value--warn" data-field="stat-free"');
+  });
+
+  it('nevykreslí sekcie apronu, lode ani vozidiel; odstránenie s dôvodom „has_cargo"', () => {
+    const html = render(YARD);
+    expect(html).not.toContain('data-section="apron"');
+    expect(html).not.toContain('Zakotvená loď');
+    expect(html).not.toContain('data-section="vehicles"');
+    expect(html).not.toContain('data-action="buy-vehicle"');
+    expect(fieldText(html, 'remove-reason')).toBe('Sklad obsahuje náklad.');
+    expect(fieldText(html, 'refund')).toBe('$75,000');
+  });
+
+  it('pripojený dvor (connected: true aj bez poľa) nemá banner „Nepripojené"', () => {
+    expect(render(YARD)).not.toContain('data-section="disconnected"');
+    expect(render({ ...YARD, connected: undefined })).not.toContain('data-section="disconnected"');
+  });
+});
+
+describe('ModuleInspector — nepripojený modul (vzor insp_gate)', () => {
+  const disconnected: ModuleInspectorData = { ...YARD, connected: false };
+
+  it('inspectorBadge: „Nepripojené" má prednosť pred stavom modulu, inak skrátený stav', () => {
+    expect(DISCONNECTED_BADGE_LABEL).toBe('Nepripojené');
+    expect(inspectorBadge(disconnected)).toEqual({ label: 'Nepripojené', title: DISCONNECTED_TITLE, ok: false });
+    expect(inspectorBadge({ stateLabel: 'Blokovaný — plný apron', ok: false, connected: true })).toEqual({
+      label: 'Blokovaný',
+      title: 'Blokovaný — plný apron',
+      ok: false,
+    });
+    expect(inspectorBadge({ stateLabel: 'Voľné', ok: true })).toEqual({ label: 'Voľné', title: 'Voľné', ok: true });
+  });
+
+  it('žltý badge s ikonou varovania, banner s vysvetlením, ostatný obsah ostáva', () => {
+    const html = render(disconnected);
+    expect(html).toContain('module-inspector__badge--warn');
+    expect(html).not.toContain('module-inspector__badge--ok');
+    expect(html).toMatch(/title="Nepripojené k ceste" data-field="badge" data-ok="false"/);
+    expect(html).toMatch(/#ic_warning"><\/use><\/svg>Nepripojené<\/span>/);
+    expect(html).toContain('data-section="disconnected"');
+    expect(html).toContain('<span class="module-inspector__banner-title">Nepripojené k ceste</span>');
+    expect(html).toContain('Konektor modulu nemá cestu.');
+    expect(fieldText(html, 'stat-fill')).toBe('72 %');
+  });
+
+  it('platí aj pre depo a kotvisko; žeriav bez `connected` banner nemá', () => {
+    expect(render({ ...DEPOT, connected: false })).toContain('data-section="disconnected"');
+    expect(render({ ...BERTH, connected: false })).toContain('data-section="disconnected"');
+    expect(render(CRANE_BLOCKED)).not.toContain('data-section="disconnected"');
+  });
+
+  it('banner „Nepripojené" sa nezmieša s bannerom blokovaného žeriavu', () => {
+    const html = render({ ...CRANE_BLOCKED, connected: false });
+    expect(html).toContain('data-section="disconnected"');
+    expect(html).toContain('data-section="blocked"');
+  });
+});
+
+describe('depo — čisté pomocné funkcie', () => {
+  it('depotVehicleCounts: pracuje / nečinné / bez cesty', () => {
+    expect(depotVehicleCounts([CARRIER_IDLE, CARRIER_BUSY, CARRIER_STUCK, CARRIER_BUSY])).toEqual({ busy: 2, idle: 1, noPath: 1 });
+    expect(depotVehicleCounts([])).toEqual({ busy: 0, idle: 0, noPath: 0 });
+  });
+
+  it('depotStats: vozidlá „2 / 6", plné depo = varovanie; pracuje / nečinné', () => {
+    const rows = (vehicles: readonly DepotVehicleData[], capacity: number) =>
+      depotStats({ vehicles, capacity }).map((stat) => [stat.key, stat.value, stat.tone]);
+    expect(rows([CARRIER_IDLE, CARRIER_BUSY], 6)).toEqual([
+      ['vehicles', '2 / 6', 'normal'],
+      ['busy', '1', 'normal'],
+      ['idle', '1', 'normal'],
+    ]);
+    expect(rows([CARRIER_IDLE, CARRIER_BUSY], 2)[0]).toEqual(['vehicles', '2 / 2', 'warn']);
+    expect(rows([], 0)[0]).toEqual(['vehicles', '0 / 0', 'normal']);
+  });
+
+  it('stavy vozidla: slovenský popis, ikona a tón; predať sa dá len nečinné', () => {
+    expect(VEHICLE_STATE_INFO).toEqual({
+      busy: { label: 'Pracuje', icon: 'ic_busy', tone: 'success' },
+      idle: { label: 'Nečinné', icon: 'ic_idle', tone: 'muted' },
+      no_path: { label: 'Bez cesty', icon: 'ic_warning', tone: 'warn' },
+    });
+    expect(canSellVehicle(CARRIER_IDLE)).toBe(true);
+    expect(canSellVehicle(CARRIER_BUSY)).toBe(false);
+    expect(canSellVehicle(CARRIER_STUCK)).toBe(false);
+  });
+
+  it('vehicleCode a sellTitle: kód z dát alebo #id; refund cez formatMoney; dôvod pri zablokovaní', () => {
+    expect(vehicleCode(CARRIER_IDLE)).toBe('SC-01');
+    expect(vehicleCode(CARRIER_STUCK)).toBe('#13');
+    expect(sellTitle(CARRIER_IDLE)).toBe('Predať SC-01 · vráti $24,000');
+    expect(sellTitle({ ...CARRIER_IDLE, refundCents: undefined })).toBe('Predať SC-01');
+    expect(sellTitle(CARRIER_BUSY)).toBe(`${SELL_BLOCKED_TEXT} (SC-02)`);
+  });
+});
+
+describe('ModuleInspector — depo vozidiel', () => {
+  it('hlavička: ikona depa, DEP-05 · 3×3; dlaždice 2 / 6, pracuje 1, nečinné 1', () => {
+    const html = render(DEPOT);
+    expect(fieldText(html, 'sub')).toBe('DEP-05 · 3×3');
+    expect(html).toContain('#ic_depot');
+    expect(tileValues(html, ['vehicles', 'busy', 'idle'])).toEqual(['2 / 6', '1', '1']);
+  });
+
+  it('dlaždice depa nemajú farebné značky (depo nemá pruh); dlaždice skladu a kotviska áno', () => {
+    expect(render(DEPOT)).not.toContain('module-inspector__swatch');
+    expect(depotStats({ vehicles: [CARRIER_IDLE], capacity: 6 }).every((stat) => stat.swatch === undefined)).toBe(true);
+    expect(render(YARD).match(/module-inspector__swatch /g)).toHaveLength(3);
+    expect(render(BERTH).match(/module-inspector__swatch /g)).toHaveLength(3);
+  });
+
+  it('zoznam „Vozidlá v depe": riadok na vozidlo s kódom, druhom a stavom; striedavé pozadie rieši CSS', () => {
+    const html = render(DEPOT);
+    expect(html).toContain('Vozidlá v depe');
+    expect(html.match(/<li /g)).toHaveLength(2);
+    expect(html.match(/data-field="vehicle-code">([^<]*)</g)).toEqual(['data-field="vehicle-code">SC-01<', 'data-field="vehicle-code">SC-02<']);
+    expect(html.match(/module-inspector__vehicle-label">([^<]*)</g)).toHaveLength(2);
+    expect(html).toContain('module-inspector__vehicle-label">Straddle carrier<');
+    expect(html).toMatch(/data-vehicle-id="11" data-state="idle"/);
+    expect(html).toMatch(/data-vehicle-id="12" data-state="busy"/);
+    expect(html).toMatch(/vehicle-state--muted" data-field="vehicle-state"><svg[^>]*><use href="[^"]*#ic_idle"><\/use><\/svg>Nečinné</);
+    expect(html).toMatch(/vehicle-state--success" data-field="vehicle-state"><svg[^>]*><use href="[^"]*#ic_busy"><\/use><\/svg>Pracuje</);
+  });
+
+  it('vozidlo bez cesty: žltá ikona a text „Bez cesty"; bez kódu sa ukáže #id', () => {
+    const html = render({ ...DEPOT, depot: { ...DEPOT.depot!, vehicles: [CARRIER_STUCK] } });
+    expect(html).toMatch(/vehicle-state--warn" data-field="vehicle-state"><svg[^>]*><use href="[^"]*#ic_warning"><\/use><\/svg>Bez cesty</);
+    expect(html).toContain('data-field="vehicle-code">#13<');
+  });
+
+  it('prázdne depo: zástupný text namiesto zoznamu, dlaždice 0 / 6', () => {
+    const html = render({ ...DEPOT, depot: { ...DEPOT.depot!, vehicles: [] } });
+    expect(fieldText(html, 'vehicles-empty')).toBe('V depe zatiaľ nie sú žiadne vozidlá.');
+    expect(html).not.toContain('<li ');
+    expect(fieldText(html, 'stat-vehicles')).toBe('0 / 6');
+  });
+
+  it('tlačidlo predaja: nečinné vozidlo je aktívne s tooltipom „vráti $24,000", pracujúce a bez cesty sú aria-disabled', () => {
+    const html = render(DEPOT);
+    expect(html).toMatch(/aria-disabled="false" aria-label="Predať SC-01 · vráti \$24,000" title="Predať SC-01 · vráti \$24,000" data-action="sell-vehicle" data-vehicle-id="11"/);
+    expect(html).toMatch(/aria-disabled="true" aria-label="Predať sa dá len nečinné vozidlo\. \(SC-02\)"[^>]*data-action="sell-vehicle" data-vehicle-id="12"/);
+    const stuck = render({ ...DEPOT, depot: { ...DEPOT.depot!, vehicles: [CARRIER_STUCK] } });
+    expect(stuck).toMatch(/aria-disabled="true"[^>]*data-action="sell-vehicle" data-vehicle-id="13"/);
+  });
+
+  it('predaj volá onSellVehicle(vehicleId) len pre nečinné vozidlo', () => {
+    const onSellVehicle = vi.fn();
+    const tree = ModuleInspector(makeProps(DEPOT, { onSellVehicle }));
+    const sell = (vehicleId: number) => {
+      const [button] = findAll(tree, (element) => propsOf(element)['data-action'] === 'sell-vehicle' && propsOf(element)['data-vehicle-id'] === vehicleId);
+      (propsOf(button!)['onClick'] as () => void)();
+    };
+    sell(12); // pracuje
+    expect(onSellVehicle).not.toHaveBeenCalled();
+    sell(11); // nečinné
+    expect(onSellVehicle).toHaveBeenCalledExactlyOnceWith(11);
+  });
+
+  it('nákup: „Kúpiť vozidlo v depe · $48,000" (cena cez formatMoney), aktívne tlačidlo bez dôvodu', () => {
+    const html = render(DEPOT);
+    expect(html).toMatch(/module-inspector__btn--primary" aria-disabled="false" data-action="buy-vehicle"/);
+    expect(html).toContain('Kúpiť vozidlo v depe · <span data-field="buy-price">$48,000</span>');
+    expect(html).not.toContain('data-field="buy-reason"');
+    expect(html).toContain('#ic_vehicle');
+  });
+
+  it('bez ceny v dátach tlačidlo nemá „·" ani sumu', () => {
+    const html = render({ ...DEPOT, depot: { ...DEPOT.depot!, buyPriceCents: undefined } });
+    expect(html).not.toContain('data-field="buy-price"');
+    expect(html).toMatch(/Kúpiť vozidlo v depe<\/button>/);
+  });
+
+  it('nákup nejde (depo plné / nepripojené / bez peňazí): aria-disabled, dôvod v title aj pod tlačidlom, klik nevolá onBuyVehicle', () => {
+    const blocked: ModuleInspectorData = { ...DEPOT, depot: { ...DEPOT.depot!, canBuy: false, buyBlockedReason: 'Depo je plné.' } };
+    const html = render(blocked);
+    expect(html).toMatch(/aria-disabled="true" title="Depo je plné\." data-action="buy-vehicle"/);
+    expect(fieldText(html, 'buy-reason')).toBe('Depo je plné.');
+
+    const onBuyVehicle = vi.fn();
+    const [button] = findAll(ModuleInspector(makeProps(blocked, { onBuyVehicle })), (element) => propsOf(element)['data-action'] === 'buy-vehicle');
+    (propsOf(button!)['onClick'] as () => void)();
+    expect(onBuyVehicle).not.toHaveBeenCalled();
+  });
+
+  it('nákup volá onBuyVehicle(depotId) s id depa', () => {
+    const onBuyVehicle = vi.fn();
+    const [button] = findAll(ModuleInspector(makeProps(DEPOT, { onBuyVehicle })), (element) => propsOf(element)['data-action'] === 'buy-vehicle');
+    (propsOf(button!)['onClick'] as () => void)();
+    expect(onBuyVehicle).toHaveBeenCalledExactlyOnceWith(5);
+  });
+
+  it('bez onBuyVehicle / onSellVehicle (F2 rodič) klik nepadá', () => {
+    const tree = ModuleInspector(makeProps(DEPOT));
+    for (const action of ['buy-vehicle', 'sell-vehicle']) {
+      const [button] = findAll(tree, (element) => propsOf(element)['data-action'] === action);
+      expect(() => {
+        (propsOf(button!)['onClick'] as () => void)();
+      }).not.toThrow();
+    }
+  });
+
+  it('tlačidlo Odstrániť ostáva pod nákupom; depo nemá sekciu skladu ani apronu', () => {
+    const html = render(DEPOT);
+    expect(html.indexOf('data-action="buy-vehicle"')).toBeLessThan(html.indexOf('data-action="remove"'));
+    expect(fieldText(html, 'remove-reason')).toBe('Depo s vozidlami nejde odstrániť.');
+    expect(html).not.toContain('data-section="storage"');
+    expect(html).not.toContain('data-section="apron"');
+    expect(html).not.toContain('data-field="units-in"');
+  });
+
+  it('kotvisko a žeriav z F2 sú nedotknuté: bez tlačidla nákupu a bez zoznamu vozidiel', () => {
+    for (const data of [BERTH, CRANE_BLOCKED]) {
+      const html = render(data);
+      expect(html).not.toContain('data-action="buy-vehicle"');
+      expect(html).not.toContain('data-section="vehicles"');
+      expect(html).not.toContain('module-inspector__btn--primary');
+    }
   });
 });

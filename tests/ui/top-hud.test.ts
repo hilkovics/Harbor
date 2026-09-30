@@ -52,7 +52,8 @@ describe('TopHUD (pripojený na SimBridge)', () => {
   });
 
   it('čas sleduje snapshot: Deň 12 · 14:20 po zodpovedajúcom počte tickov', () => {
-    const app = createApp();
+    // ~100 000 tickov len kvôli kalendáru — invarianty kroku 12 by beh zbytočne naťahovali k limitu 5 s.
+    const app = createApp({ checkInvariants: false });
     const { ticksPerDay, ticksPerHour, ticksPerMinute } = app.world.clock;
     const target = 11 * ticksPerDay + 14 * ticksPerHour + 20 * ticksPerMinute;
     for (let i = 0; i < target; i++) app.world.tick();

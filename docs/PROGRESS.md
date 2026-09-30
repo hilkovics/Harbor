@@ -79,3 +79,39 @@ Stav: **hotová** (T02-01..T02-16). Plná pipeline T02-15 je zelená:
   - Karty T02-10 a T02-12 robil jeden agent.
   - Dva commity T02-04 mali dočasne červené testy mimo rozsahu agenta; orchestrátor ich hneď opravil ďalším commitom.
   - Pridané navyše: `selection_ring` a blokovanie stavby kotviska loďou v páse vody.
+
+## Fáza 3 — Vozidlá, pathfinding, dispatcher, sklad
+Karty: `docs/tasks/phase-03.md` · vetva `phase/03-vehicles-yard` (stacked nad hilkovics/Harbor#3)
+
+- [x] `vehicles.json` (`straddle_carrier`), `modules.json` (`container_yard_small`, `vehicle_depot`), konektory modulov.
+- [x] `StorageModule` (abstract, `reserve/store/take`, fill %), `ContainerYard extends StorageModule`.
+- [x] `VehicleDepot`, `BuyVehicleCommand`/`SellVehicleCommand` (vyžaduje voľné miesto v depe).
+- [x] `Pathfinder` (A*, binárna halda, `Int32Array`, bez alokácií), `PathCache` s invalidáciou na `RoadChanged`, `DistanceMatrix` konektor↔konektor (lazy).
+- [x] `TransportJob`, `Dispatcher` (§7.3 kroky 1 a 3), `StorageAllocator` (kompatibilita + najbližší), `Vehicle` FSM s `internalTicks` pri konektore, `traffic++`.
+- [x] Render: `VehicleView` (interpolácia, rotácia podľa smeru, empty/loaded), `ModuleView` fill stavy 0/25/50/75/100 %.
+- [x] UI: BuildBar kategórie Sklady/Logistika; `ModuleInspector` pre sklad (fill %, reserved, throughput) a depo (nákup vozidiel); notifikácia `NoStorageAvailable`, „modul nepripojený k ceste`.
+- [x] Doplnok od používateľa: vozidlá v pravom pruhu, jazda po oblúku v zákrute, typy ciest dvojpruhová / jednopruhová / jednosmerná (BuildBar Landside, smer ťahom, prestavba).
+
+Akceptácia: v hre vidím vozidlá jazdiť po cestách a dvor sa vizuálne zapĺňa.
+
+### Stav
+Stav: **hotová** (T03-01..T03-20).
+- Plná pipeline T03-15 je zelená:
+  - typecheck, lint, 5 213 vitest testov (172 súborov), validate:defs (10 súborov), build;
+  - `simrun apron_to_yard --ticks 15000`: 120 TEU v dvoroch, všetko uložené v ticku 5 332, 2 vozidlá, vyťaženie vozidiel 34,2 %, lostUnits 0;
+  - `f2_unload` a `f1_roads` bez zmeny (cashEnd 108 300 000 ¢);
+  - e2e 19/19. Orchestrátor prezrel screenshoty `f3-vehicles.png`, `f3-yard-filled.png`, `f3-lanes.png`, `f3-road-kinds.png` a `f3-road-build.png`: vozidlá v pravom pruhu, dvor sa zapĺňa, tri typy ciest, šípky jednosmerky, oblúky v zákrutách.
+- Review T03-13 (sim-reviewer): MERGE, 0 blocking, 1 major (šum progresu vozidla pri otočke → nenačítateľný save) a 12 minor. V T03-14 bol opravený major a väčšina minor nálezov, zvyšok ide do BACKLOG. Cena ticku v produkcii je 11–19 µs (20 vozidiel naplno), v DEV s krokom 12 zhruba 390 µs.
+- Rozhodnutia:
+  - ADR-017: sklad (rezervácie v module, obsadenie v ledgeri), pripojenie modulov, §8 bod 5;
+  - ADR-018: dispatcher, alokátor, A*;
+  - ADR-019: vozidlá (pohyb, pobyt v module, `no_path`, traffic, save);
+  - ADR-020: typy ciest, pruhy ako prezentácia;
+  - ADR-021: šum progresu, ceny ciest z PathCache, krok 12 bez alokácií.
+  - ARCHITECTURE je zosúladená s F3.
+- Odchýlky od plánu:
+  - doplnok od používateľa (karty T03-17..T03-20);
+  - karty T03-03 + T03-04 a T03-05 + T03-06 robil vždy jeden agent;
+  - `testTimeout` testov je 15 s a kalendárne testy bežia bez invariantov;
+  - ceny dvora a depa sú podľa ARCHITECTURE §5.3 (prototyp UI má iné);
+  - úzke cesty sú zatiaľ procedurálne (sprity z Claude Design sú v BACKLOG s promptom).

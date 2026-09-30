@@ -159,6 +159,11 @@ export function uniqueSlotOf(location: CargoLocation): number | null {
   return holderSpecOf(location.kind)?.uniqueSlot === true ? slotOf(location) : null;
 }
 
+/** Sú dve lokácie tá istá poloha (rovnaký druh, držiteľ a miesto)? Bez alokácie. */
+export function isSameLocation(a: CargoLocation, b: CargoLocation): boolean {
+  return a.kind === b.kind && holderIdOf(a) === holderIdOf(b) && slotOf(a) === slotOf(b);
+}
+
 /** Čitateľný opis pre chybové správy: `on_apron(berthId=3, slot=1)`, `exported`. */
 export function formatLocation(location: CargoLocation): string {
   const spec = holderSpecOf(location.kind);

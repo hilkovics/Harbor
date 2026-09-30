@@ -129,8 +129,7 @@ describe('blokovanie pri plnom aprone a throttle CraneBlocked', () => {
     const pickUp = (): void => {
       const unit = apron.oldest();
       if (unit === undefined) throw new Error('apron je prázdny');
-      world.cargo.move(unit, { kind: 'in_vehicle', vehicleId: 9000 as EntityId });
-      apron.take(unit);
+      world.cargo.move(unit, { kind: 'in_vehicle', vehicleId: 9000 as EntityId }); // slot sa uvoľní v ledgeri (ADR-017)
     };
     const hourOfBlock = c.lastBlockedHour;
 

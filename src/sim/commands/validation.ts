@@ -7,7 +7,9 @@ import type { CellCoord } from '../grid/grid';
 /**
  * Dôvody odmietnutia príkazu. Poradie je kanonické — výsledok validácie ich vracia v tomto poradí (`orderReasons`).
  * F1: prvých osem; F2 (docs/tasks/phase-02.md „Spoločné rozhrania", ADR-015): moduly (`PlaceModule`, `RemoveModule`)
- * a ladiaca loď (`SpawnShipDebug`, T02-05). Nový dôvod = nový riadok tu + slovenský popis v UI (`REASON_TEXT`).
+ * a ladiaca loď (`SpawnShipDebug`, T02-05); F3 (docs/tasks/phase-03.md „Spoločné rozhrania", ADR-017): vozidlá
+ * (`BuyVehicle`/`SellVehicle`, T03-04), depo a pripojenie modulov; typy ciest (`PlaceRoad`, T03-18, ADR-020). Nový dôvod =
+ * nový riadok tu + slovenský popis v UI (`REASON_TEXT`).
  */
 export const VALIDATION_REASONS = [
   'out_of_bounds',
@@ -50,6 +52,29 @@ export const VALIDATION_REASONS = [
   'invalid_units',
   /** `PlaceModule`: rotácia mimo 0, 90, 180, 270. */
   'invalid_rotation',
+  /** `BuyVehicle` (T03-04): def vozidla s daným id vo `vehicles.json` nie je. */
+  'unknown_vehicle_def',
+  /** `BuyVehicle` (T03-04): modul s daným id nie je depo vozidiel. */
+  'unknown_depot',
+  /** `BuyVehicle` (T03-04): depo nemá voľné státie (`params.capacity`). */
+  'depot_full',
+  /** `BuyVehicle` (T03-04): depo nie je pripojené k ceste (`World.isConnected`). */
+  'not_connected',
+  /** `SellVehicle` (T03-04): vozidlo s daným id neexistuje. */
+  'unknown_vehicle',
+  /** `SellVehicle` (T03-04): vozidlo nie je `idle` alebo má náklad či job. */
+  'vehicle_busy',
+  /** `RemoveModule`: depu patria vozidlá (ADR-017). */
+  'has_vehicles',
+  /** `PlaceModule` (§8 bod 5, ADR-017): žiadny cestný konektor nemá vonkajšiu bunku s cestou ani voľnú pre cestu. */
+  'connector_blocked',
+  /** `PlaceRoad` (T03-18, ADR-020): `kind` nie je typ cesty z `ROAD_KINDS`. */
+  'invalid_road_kind',
+  /**
+   * `PlaceRoad` (T03-18, ADR-020): `dirs` pri inom type než jednosmerka, chýbajúce `dirs` pri jednosmerke, iný počet
+   * smerov než buniek alebo smer mimo N/E/S/W.
+   */
+  'invalid_direction',
 ] as const;
 
 export type ValidationReason = (typeof VALIDATION_REASONS)[number];
@@ -61,15 +86,17 @@ export interface ValidationResult {
   readonly reasons: readonly ValidationReason[];
   /**
    * Bunky, na ktoré sa výsledok vzťahuje (ghost v UI ich zafarbí); príkazy bez buniek vracajú prázdne pole.
-   * Príkazy nad vrstvou dopravy (`RoadLayerCommand`): unikátne bunky, ktoré `apply` zmení, v poradí prvého výskytu
-   * (pri odmietnutí tie, ktoré by samy prešli) — bunky už v cieľovom stave ani neplatné bunky tu nie sú.
+   * Príkazy nad vrstvou dopravy (`RoadLayerCommand`): unikátne bunky, ktoré `apply` zmení (nové aj prestavané), v poradí
+   * prvého výskytu (pri odmietnutí tie, ktoré by samy prešli) — bunky už v cieľovom stave ani neplatné bunky tu nie sú;
+   * pri neplatnom tvare príkazu (`invalid_road_kind`, `invalid_direction`) `[]`.
    * `PlaceModule`: celý footprint po rotácii row-major (aj pri odmietnutí a aj bunky mimo mapy; `[]` pri `unknown_def`
    * alebo `invalid_rotation`). `RemoveModule`: footprint modulu (`[]` pri `unknown_module`). ADR-015.
    */
   readonly cells: readonly CellCoord[];
   /**
    * Cena príkazu v centoch (USD), ktorú by `apply` strhol z hotovosti; 0 = zadarmo, záporná = príjem
-   * (napr. refundácia `RemoveRoad`, ADR-012). Cesty: pri odmietnutí cena platnej časti (`cells`). `PlaceModule`:
+   * (napr. refundácia `RemoveRoad`, ADR-012). Cesty: pri odmietnutí cena platnej časti (`cells`); pri prestavbe
+   * `PlaceRoad` čistá cena = nové bunky − refundácia starých typov (ADR-020, rozpad `RoadLayerCommand.quote`). `PlaceModule`:
    * `def.costCents` aj pri odmietnutí (0 pri `unknown_def`); `RemoveModule`: −refundácia zo zaplatenej ceny (ADR-015).
    */
   readonly costCents: number;

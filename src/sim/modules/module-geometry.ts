@@ -88,6 +88,15 @@ export const SIDE_STEPS: { readonly [S in Side]: { readonly dx: number; readonly
   w: Object.freeze({ dx: -1, dy: 0 }),
 });
 
+/**
+ * Vonkajšia bunka konektora (rozhodnutie orchestrátora F3 č. 2, ADR-017): susedná bunka konektora na strane `side`,
+ * teda miesto, kde vozidlo stojí pri vstupe do modulu a kde musí byť cesta. Môže ležať mimo mapy.
+ */
+export function connectorOutside(connector: Pick<PlacedConnector, 'x' | 'y' | 'side'>): CellCoord {
+  const { dx, dy } = SIDE_STEPS[connector.side];
+  return Object.freeze({ x: connector.x + dx, y: connector.y + dy });
+}
+
 type Size = { readonly w: number; readonly h: number };
 
 /** Prvá bunka hrany a krok pozdĺž nej (tabuľka podľa strany, nie switch); dĺžka hrany je `w` pri n/s, `h` pri e/w. */

@@ -1,5 +1,6 @@
 /**
- * Udalosti simulácie (ARCHITECTURE §12.1, výber pre F1 + F2: `CargoMoved`, moduly, lode, žeriavy). Readonly DTO:
+ * Udalosti simulácie (ARCHITECTURE §12.1, výber pre F1 + F2: `CargoMoved`, moduly, lode, žeriavy; F3: vozidlá, joby,
+ * `NoStorageAvailable`). Readonly DTO:
  * `World` ich zbiera v `EventBus` a vracia z `tick()` / `applyPending()`; prezentácia ich len číta. Nový typ udalosti =
  * nový člen únie (+ test).
  */
@@ -9,6 +10,7 @@ import type { EntityId } from '../core/entity-id';
 import type { LedgerCategory } from '../economy/ledger-category';
 import type { CellCoord } from '../grid/grid';
 import type { Rotation } from '../grid/rotation';
+import type { VehicleState } from '../vehicles/vehicle-fsm';
 
 /** Tick sa dokončil; `tick` = nová hodnota `clock.tick` (po kroku 1). */
 export interface TickAdvancedEvent {
@@ -146,6 +148,67 @@ export interface CraneBlockedEvent {
   readonly reason: CraneBlockedReason;
 }
 
+/**
+ * `BuyVehicle` (T03-04) kúpil vozidlo: `vehicleId` s defom `defId` stojí `idle` na vonkajšej bunke konektora depa
+ * `depotId` a depo ho eviduje vo `vehicleIds`. Cena ide samostatne v `MoneyChanged(vehicle_capex)`.
+ */
+export interface VehicleBoughtEvent {
+  readonly type: 'VehicleBought';
+  readonly vehicleId: EntityId;
+  readonly defId: string;
+  readonly depotId: EntityId;
+}
+
+/** `SellVehicle` (T03-04) predal nečinné vozidlo — zmizlo z `world.vehicles` aj z depa; refundácia v `MoneyChanged(vehicle_sale)`. */
+export interface VehicleSoldEvent {
+  readonly type: 'VehicleSold';
+  readonly vehicleId: EntityId;
+}
+
+/**
+ * Dispatcher (krok 5, ADR-018) vytvoril job `open`: jednotky `unitIds` na aprone berthu `fromModuleId` majú rezervovaný
+ * slot v sklade `toModuleId`.
+ */
+export interface JobCreatedEvent {
+  readonly type: 'JobCreated';
+  readonly jobId: EntityId;
+  readonly unitIds: readonly EntityId[];
+  readonly fromModuleId: EntityId;
+  readonly toModuleId: EntityId;
+}
+
+/** Dispatcher priradil jobu voľné vozidlo (`open → assigned`); vozidlo hneď prejde do `to_pickup` (`VehicleStateChanged`). */
+export interface JobAssignedEvent {
+  readonly type: 'JobAssigned';
+  readonly jobId: EntityId;
+  readonly vehicleId: EntityId;
+}
+
+/** Vozidlo uložilo poslednú jednotku jobu do cieľa (`dropping → done`); job zmizol z `world.jobs` (ADR-018). */
+export interface JobDoneEvent {
+  readonly type: 'JobDone';
+  readonly jobId: EntityId;
+}
+
+/** Vozidlo zmenilo stav FSM (`VEHICLE_TRANSITIONS`, ADR-019); jedna udalosť na prechod. */
+export interface VehicleStateChangedEvent {
+  readonly type: 'VehicleStateChanged';
+  readonly vehicleId: EntityId;
+  readonly from: VehicleState;
+  readonly to: VehicleState;
+}
+
+/**
+ * Jednotka na aprone berthu `berthId` nemá kam ísť: žiadny pripojený a dosiahnuteľný sklad jej kategórie s voľnou
+ * kapacitou (`stored + reserved < capacity`). Najviac raz za hernú hodinu na berth (`BerthModule.lastNoStorageHour`,
+ * ADR-018); `cargoTypeId` = typ prvej takej jednotky vo FIFO.
+ */
+export interface NoStorageAvailableEvent {
+  readonly type: 'NoStorageAvailable';
+  readonly berthId: EntityId;
+  readonly cargoTypeId: string;
+}
+
 export type SimEvent =
   | TickAdvancedEvent
   | HourClosedEvent
@@ -163,7 +226,14 @@ export type SimEvent =
   | ShipUndockedEvent
   | ShipDepartedEvent
   | CraneCycleDoneEvent
-  | CraneBlockedEvent;
+  | CraneBlockedEvent
+  | VehicleBoughtEvent
+  | VehicleSoldEvent
+  | JobCreatedEvent
+  | JobAssignedEvent
+  | JobDoneEvent
+  | VehicleStateChangedEvent
+  | NoStorageAvailableEvent;
 
 /** Názov typu udalosti (`'TickAdvanced' | 'HourClosed' | …`). */
 export type SimEventType = SimEvent['type'];

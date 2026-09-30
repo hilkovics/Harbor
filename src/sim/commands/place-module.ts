@@ -6,7 +6,8 @@
  * - `unknown_def` (def nie je v `modules.json`), `invalid_rotation` (mimo 0/90/180/270) — bez nich sa footprint
  *   nedá určiť, preto sa pravidlá umiestnenia vtedy nevyhodnocujú;
  * - pravidlá umiestnenia z `findPlacementViolations` (jediný opis, zdieľaný so starter modulmi a `World.addModule`)
- *   preložené tabuľkou `PLACEMENT_REASON` (cesta vo footprinte a prekryv žeriavov = `occupied`);
+ *   preložené tabuľkou `PLACEMENT_REASON` (cesta vo footprinte a prekryv žeriavov = `occupied`; §8 bod 5 =
+ *   `connector_blocked`, ADR-017);
  * - `insufficient_funds` len pri `costCents > 0 && costCents > cashCents` (ADR-013).
  * `cells` = footprint po rotácii (row-major, aj bunky mimo mapy — ghost), `costCents` = `def.costCents` (známy def).
  *
@@ -41,6 +42,7 @@ export const PLACEMENT_REASON: { readonly [R in PlacementRule]: ValidationReason
   rotation_mismatch: 'rotation_mismatch',
   max_cranes: 'max_cranes',
   crane_overlap: 'occupied',
+  connector_blocked: 'connector_blocked',
 });
 
 /** Vstup konštruktora (rovnaké polia ako JSON bez `type`). */

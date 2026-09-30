@@ -10,6 +10,7 @@ import {
   formatLocation,
   holderIdOf,
   isCargoLocationKind,
+  isSameLocation,
   isTransitionAllowed,
   normalizeLocation,
   slotOf,
@@ -180,6 +181,18 @@ describe('holderIdOf, slotOf, uniqueSlotOf, formatLocation', () => {
     expect(slotOf(location)).toBe(slot);
     expect(uniqueSlotOf(location)).toBe(unique);
     expect(formatLocation(location)).toBe(text);
+  });
+});
+
+describe('isSameLocation (T03-05)', () => {
+  it('rovnaký druh, držiteľ aj miesto → true; iné miesto, držiteľ alebo druh → false; kópia s iným poradím kľúčov → true', () => {
+    expect(isSameLocation(at.apron(902, 1), at.apron(902, 1))).toBe(true);
+    expect(isSameLocation(at.apron(902, 1), { slot: 1, berthId: 902, kind: 'on_apron' } as CargoLocation)).toBe(true);
+    expect(isSameLocation(at.apron(902, 1), at.apron(902, 2))).toBe(false);
+    expect(isSameLocation(at.apron(902, 1), at.apron(903, 1))).toBe(false);
+    expect(isSameLocation(at.vehicle(902), at.crane(902))).toBe(false);
+    expect(isSameLocation({ kind: 'exported' }, { kind: 'exported' })).toBe(true);
+    for (const kind of CARGO_LOCATION_KINDS) expect(isSameLocation(SAMPLE_LOCATIONS[kind], SAMPLE_LOCATIONS[kind]), kind).toBe(true);
   });
 });
 

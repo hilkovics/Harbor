@@ -5,15 +5,18 @@
  *
  * - „Odstrániť“: `validate(RemoveModule)` → `dispatch` len pri `ok`; inak tlačidlo ostáva zablokované a dôvod ukazuje
  *   inšpektor (`removeBlockedReason`).
+ * - Depo (T03-10): „Kúpiť vozidlo“ → `BuyVehicle` do tohto depa (`depotVehicleDef`), „Predať“ → `SellVehicle`; oba príkazy
+ *   idú cez `validate` a `dispatch` len pri `ok` (`vehicle-purchase`).
  * - „Zavrieť“ zruší výber; zaniknutý modul (`inspectorData → null`) panel skryje (výber zruší `bindSelectionRing`).
  * - Bez výberu sa do DOM nevykreslí nič, takže pravý okraj mapy ostáva klikateľný.
  */
 import { useCallback, useSyncExternalStore } from 'react';
 import { RemoveModuleCommand } from '@sim/commands';
 import { ModuleInspector } from '@ui/module-inspector';
-import { inspectorData, sameInspectorData } from './inspector-data';
+import { depotVehicleDef, inspectorData, sameInspectorData } from './inspector-data';
 import type { ModuleSelection } from './module-selection';
 import { useSimBridge, useSimSnapshot } from './use-sim-snapshot';
+import { buyVehicleInDepot, sellVehicle } from './vehicle-purchase';
 
 export interface ConnectedModuleInspectorProps {
   readonly selection: ModuleSelection;
@@ -30,13 +33,26 @@ export function ConnectedModuleInspector({ selection }: ConnectedModuleInspector
     },
     [bridge],
   );
+  const buyVehicle = useCallback(
+    (depotId: number) => {
+      const offer = depotVehicleDef(bridge.defs);
+      if (offer !== undefined) buyVehicleInDepot(bridge, offer.id, depotId);
+    },
+    [bridge],
+  );
+  const sell = useCallback(
+    (vehicleId: number) => {
+      sellVehicle(bridge, vehicleId);
+    },
+    [bridge],
+  );
   const close = useCallback(() => {
     selection.select(null);
   }, [selection]);
   if (moduleId === null || data === null) return null;
   return (
     <div className="app__side">
-      <ModuleInspector data={data} onRemove={remove} onClose={close} />
+      <ModuleInspector data={data} onRemove={remove} onClose={close} onBuyVehicle={buyVehicle} onSellVehicle={sell} />
     </div>
   );
 }

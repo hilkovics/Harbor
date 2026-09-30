@@ -1,24 +1,87 @@
 // Spoločné pomôcky pre testy src/app (T01-07). Skutočné príkazy (PlaceRoad, SetGameSpeed) sú v T01-04 — tu sú
 // minimálne testovacie príkazy, ktoré implementujú rozhranie `Command` a menia svet priamo.
-import type { Command, SerializedCommand, ValidationResult } from '@sim/commands';
+import { commandFromJSON, type Command, type SerializedCommand, type ValidationResult } from '@sim/commands';
+import type { EntityId } from '@sim/core';
 import { loadBundledDefs } from '@sim/defs';
 import { loadBundledMap } from '@sim/grid';
-import { World } from '@sim/world';
+import { World, type WorldOptions } from '@sim/world';
 import { GameLoop } from '@app/game-loop';
 import { SimBridge } from '@app/sim-bridge';
 
 export const SEED = 20260929;
 
-export function createWorld(): World {
-  return World.create(loadBundledDefs(), loadBundledMap(), SEED);
+export function createWorld(options: WorldOptions = {}): World {
+  return World.create(loadBundledDefs(), loadBundledMap(), SEED, options);
 }
 
 /** World + SimBridge + GameLoop prepojené tak, ako ich zapojí bootstrap (loop publikuje do bridge). */
-export function createApp(): { world: World; bridge: SimBridge; loop: GameLoop } {
-  const world = createWorld();
+export function createApp(options: WorldOptions = {}): { world: World; bridge: SimBridge; loop: GameLoop } {
+  const world = createWorld(options);
   const bridge = new SimBridge(world);
   const loop = new GameLoop(world, bridge);
   return { world, bridge, loop };
+}
+
+// ---- logistika F3: cesty, dvory a depo (rozloženie scenára apron_to_yard) ----
+
+type Point = readonly [number, number];
+
+function line(from: Point, to: Point): { x: number; y: number }[] {
+  const cells: { x: number; y: number }[] = [];
+  const dx = Math.sign(to[0] - from[0]);
+  const dy = Math.sign(to[1] - from[1]);
+  for (let x = from[0], y = from[1]; ; x += dx, y += dy) {
+    cells.push({ x, y });
+    if (x === to[0] && y === to[1]) return cells;
+  }
+}
+
+/** Cesty scenára `apron_to_yard`: od výjazdov Root kotviska (41,17) a (46,17) k obom dvorom a k depu. */
+export const LOGISTICS_ROADS: readonly (readonly { x: number; y: number }[])[] = [
+  line([41, 17], [41, 22]),
+  line([46, 17], [46, 22]),
+  line([42, 22], [45, 22]),
+  line([42, 17], [45, 17]),
+  line([44, 23], [44, 30]),
+  line([45, 30], [50, 30]),
+];
+
+/** Moduly scenára `apron_to_yard` v poradí umiestnenia: depo (id 3), dvor 1 (id 4) a dvor 2 (id 5). */
+export const LOGISTICS_MODULES: readonly SerializedCommand[] = [
+  { type: 'PlaceModule', defId: 'vehicle_depot', x: 46, y: 27, rotation: 0 },
+  { type: 'PlaceModule', defId: 'container_yard_small', x: 42, y: 18, rotation: 0 },
+  { type: 'PlaceModule', defId: 'container_yard_small', x: 49, y: 26, rotation: 0 },
+];
+
+export const DEPOT_ID = 3 as EntityId;
+export const YARD_ID = 4 as EntityId;
+export const YARD_2_ID = 5 as EntityId;
+
+export type App = ReturnType<typeof createApp>;
+
+/** Odošle príkazy cez bridge a aplikuje ich (`frame(0)` = bez ticku). */
+export function runCommands(app: App, commands: readonly SerializedCommand[]): void {
+  for (const json of commands) app.bridge.dispatch(commandFromJSON(json));
+  app.loop.frame(0);
+}
+
+/** Postaví cesty (`roads`), potom moduly (depo, dvor, dvor); `roads = false` nechá moduly nepripojené. */
+export function buildLogistics(app: App, options: { readonly roads?: boolean } = {}): void {
+  if (options.roads !== false) {
+    runCommands(app, LOGISTICS_ROADS.map((cells) => ({ type: 'PlaceRoad', cells })));
+  }
+  runCommands(app, LOGISTICS_MODULES);
+}
+
+/** Kúpi `count` vozidiel do depa `DEPOT_ID` a aplikuje príkazy. */
+export function buyVehicles(app: App, count: number): void {
+  runCommands(app, Array.from({ length: count }, () => ({ type: 'BuyVehicle', vehicleDefId: 'straddle_carrier', depotId: DEPOT_ID })));
+}
+
+/** Posúva hru po framoch (jeden tick na frame), kým `done()` neplatí; strop chráni pred nekonečnou slučkou. */
+export function frameUntil(app: App, done: () => boolean, limit = 4000): void {
+  for (let i = 0; i < limit && !done(); i += 1) app.loop.frame(app.loop.tickMs);
+  if (!done()) throw new Error(`podmienka neplatí ani po ${String(limit)} frameoch`);
 }
 
 const OK: ValidationResult = Object.freeze({ ok: true, reasons: [], cells: [], costCents: 0 });

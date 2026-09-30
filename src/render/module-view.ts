@@ -1,18 +1,23 @@
 /**
- * ModuleView (ARCHITECTURE §15.1, DESIGN_BRIEF §5.3): jeden modul na mape — sprite `sprites.<defId>.file` z manifestu,
- * otočený o `rotation` okolo stredu footprintu, a (berth) náklad na obsadených apron slotoch.
+ * ModuleView (ARCHITECTURE §15.1, DESIGN_BRIEF §5.3, §5.4): jeden modul na mape — sprite `sprites.<defId>.file`
+ * z manifestu (sklad: `states.fill00…fill100` podľa zaplnenia, viď `storage-fill.ts`), otočený o `rotation` okolo
+ * stredu footprintu, (berth) náklad na obsadených apron slotoch a odznak `overlay.warning_badge`, keď modul nie je
+ * pripojený k ceste (`connected === false`).
  *
  * Kontajner views má počiatok v strede footprintu a je otočený; vnútri sú súradnice rot 0 (viď `footprint-pose.ts`),
  * takže sprite aj apron sloty z manifestu (bunky pri rot 0) sa rotujú spolu s modulom bez ďalšieho počítania.
+ * Odznak je v strede footprintu a je proti rotácii modulu vyrovnaný, takže ostáva vzpriamený.
  * Modul bez sprite (chýba v manifeste / textúra sa nenačítala) sa nakreslí ako obdĺžnik z tokenov
  * (`--module-base` s obrysom `--module-outline`).
  *
- * Views sa nealokujú pre nezmenený stav: `update` prekreslí náklad len pri zmene obsadenia slotov.
+ * Views sa nealokujú pre nezmenený stav: `update` prekreslí náklad len pri zmene obsadenia slotov, telo skladu len pri
+ * zmene fill stavu a odznak sa vytvorí lazy, prvýkrát keď je potrebný (potom sa iba skrýva / ukazuje).
  */
 import { Container, Graphics, Sprite } from 'pixi.js';
-import { moduleSprite, type ModuleSpriteEntry } from './entity-assets';
+import { WARNING_BADGE_FILE, WARNING_BADGE_SIZE, manifestScale, moduleSprite, type ModuleSpriteEntry } from './entity-assets';
 import { footprintPose, localCellCenter, type FootprintPose } from './footprint-pose';
 import { CargoSprite, type CargoSpriteDeps } from './cargo-sprite';
+import { fillState, fillStateKey, type FillState } from './storage-fill';
 import type { ModuleVM } from './view-models';
 
 /** Hrúbka obrysu fallbacku ako zlomok bunky (2 px pri 64 px, DESIGN_BRIEF §4 „Obrys“). */
@@ -26,6 +31,25 @@ export function sameModuleShape(a: ModuleVM, b: ModuleVM): boolean {
   return a.defId === b.defId && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h && a.rotation === b.rotation;
 }
 
+/**
+ * Stav zaplnenia, podľa ktorého sa vyberá sprite: `null` pre modul bez `states` v manifeste (jediný sprite `file`);
+ * sklad bez `storage` vo VM ukáže prázdny dvor.
+ */
+export function moduleFillState(entry: ModuleSpriteEntry | undefined, vm: ModuleVM): FillState | null {
+  if (entry?.states === undefined) return null;
+  return vm.storage === undefined ? 0 : fillState(vm.storage.stored, vm.storage.capacity);
+}
+
+/**
+ * Súbor tela modulu (relatívne k `assets/`): sprite pre stav zaplnenia skladu (`states.fillNN`), inak jediný `file`.
+ * `undefined`, ak modul nemá v manifeste ani jedno.
+ */
+export function moduleBodyFile(entry: ModuleSpriteEntry | undefined, fill: FillState | null): string | undefined {
+  if (entry === undefined) return undefined;
+  if (fill !== null && entry.states !== undefined) return entry.states[fillStateKey(fill)];
+  return entry.file;
+}
+
 export class ModuleView {
   /** Koreň view: počiatok = stred footprintu vo svete (px), otočený o `rotation`. */
   readonly view: Container;
@@ -34,6 +58,13 @@ export class ModuleView {
   private last: ModuleVM;
   private readonly pose: FootprintPose;
   private readonly sprite: ModuleSpriteEntry | undefined;
+  /** Telo modulu (sprite alebo `Graphics` fallback); je vždy prvým dieťaťom `view`. */
+  private body: Sprite | Graphics;
+  /** Stav zaplnenia nakresleného tela (`null` = modul bez stavov). */
+  private bodyFill: FillState | null;
+  /** Odznak „nepripojené“; vznikne až pri prvom `connected === false`. */
+  private badge: Container | null = null;
+  private badgeScale = 1;
   private readonly cargoLayer = new Container({ label: 'apron-cargo' });
   /** Náklad na aprone podľa indexu slotu. */
   private readonly cargo = new Map<number, CargoSprite>();
@@ -52,8 +83,31 @@ export class ModuleView {
     this.view = new Container({ label: `module-${String(vm.id)}` });
     this.view.position.set(this.pose.cx, this.pose.cy);
     this.view.angle = this.pose.angle;
-    this.view.addChild(this.createBody(), this.cargoLayer);
+    this.bodyFill = moduleFillState(this.sprite, vm);
+    this.body = this.createBody(moduleBodyFile(this.sprite, this.bodyFill));
+    this.view.addChild(this.body, this.cargoLayer);
     this.update(vm);
+  }
+
+  /** Stav zaplnenia nakresleného tela (`null` = modul bez stavov) — pre testy. */
+  get fill(): FillState | null {
+    return this.bodyFill;
+  }
+
+  /** Odznak „nepripojené“ (`null`, kým nebol potrebný) — pre testy. */
+  get badgeView(): Container | null {
+    return this.badge;
+  }
+
+  /** Odznak „nepripojené“ je viditeľný. */
+  get badgeVisible(): boolean {
+    return this.badge?.visible === true;
+  }
+
+  /** Nastaví veľkosť odznaku podľa zoomu kamery (`badgeScaleForZoom`); platí aj pre odznak, ktorý ešte nevznikol. */
+  setBadgeScale(scale: number): void {
+    this.badgeScale = scale;
+    this.badge?.scale.set(scale);
   }
 
   /** Počet nákladu nakresleného na aprone. */
@@ -71,9 +125,14 @@ export class ModuleView {
     return this.last;
   }
 
-  /** Synchronizuje náklad na aprone s `vm.apron` (statická časť VM sa tu nemení — to rieši vrstva). */
+  /**
+   * Synchronizuje telo (fill stav), odznak a náklad na aprone s VM (statická časť VM sa tu nemení — to rieši vrstva).
+   * Pre nezmenený stav nič nealokuje.
+   */
   update(vm: ModuleVM): void {
     this.last = vm;
+    this.syncBody(vm);
+    this.syncBadge(vm);
     const slots = this.sprite?.apronSlots ?? [];
     const seen = this.seenSlots;
     seen.clear();
@@ -102,15 +161,72 @@ export class ModuleView {
 
   destroy(): void {
     this.cargo.clear();
+    this.badge = null;
     this.view.destroy({ children: true });
   }
 
+  /** Prepne telo skladu na sprite zodpovedajúci aktuálnemu zaplneniu (iba pri zmene fill stavu). */
+  private syncBody(vm: ModuleVM): void {
+    const fill = moduleFillState(this.sprite, vm);
+    if (fill === this.bodyFill) return;
+    this.bodyFill = fill;
+    const file = moduleBodyFile(this.sprite, fill);
+    const texture = file !== undefined ? this.deps.textures?.file(file) : undefined;
+    if (texture !== undefined && this.body instanceof Sprite) {
+      this.body.texture = texture; // rovnaká veľkosť a poloha, mení sa len obsah
+      return;
+    }
+    this.body.destroy();
+    this.body = this.createBody(file);
+    this.view.addChildAt(this.body, 0); // pod náklad na aprone
+  }
+
+  /** Ukáže / skryje odznak „nepripojené“ podľa `vm.connected` (vytvorí ho lazy). */
+  private syncBadge(vm: ModuleVM): void {
+    if (vm.connected === false) {
+      this.badge ??= this.createBadge();
+      this.badge.visible = true;
+    } else if (this.badge !== null) {
+      this.badge.visible = false;
+    }
+  }
+
+  /**
+   * Odznak v strede footprintu: kontajner (jeho `scale` nesie zoom, `angle` vyrovnáva rotáciu modulu) so spritom
+   * `overlay.warning_badge` alebo kruhom z `--module-disconnected`.
+   */
+  private createBadge(): Container {
+    const { textures, palette, cellPx } = this.deps;
+    const scale = manifestScale(cellPx);
+    const width = WARNING_BADGE_SIZE.w * scale;
+    const height = WARNING_BADGE_SIZE.h * scale;
+    const badge = new Container({ label: 'module-disconnected-badge' });
+    badge.angle = -this.pose.angle;
+    badge.scale.set(this.badgeScale);
+    const texture = textures?.file(WARNING_BADGE_FILE);
+    if (texture !== undefined) {
+      const sprite = new Sprite(texture);
+      sprite.anchor.set(0.5);
+      sprite.setSize(width, height);
+      badge.addChild(sprite);
+    } else {
+      const { disconnected, module } = palette;
+      const graphics = new Graphics();
+      graphics
+        .circle(0, 0, Math.min(width, height) / 2)
+        .fill({ color: disconnected.color, alpha: disconnected.alpha })
+        .stroke({ width: OUTLINE_CELLS * cellPx, color: module.outline.color, alpha: module.outline.alpha });
+      badge.addChild(graphics);
+    }
+    this.view.addChild(badge); // navrchu: nad telom aj nákladom
+    return badge;
+  }
+
   /** Sprite modulu (rot 0, ľavý horný roh v strede − polovica footprintu), alebo `Graphics` fallback. */
-  private createBody(): Sprite | Graphics {
+  private createBody(file: string | undefined): Sprite | Graphics {
     const { cellPx, textures, palette } = this.deps;
     const width = this.pose.baseW * cellPx;
     const height = this.pose.baseH * cellPx;
-    const file = this.sprite?.file;
     const texture = file !== undefined ? textures?.file(file) : undefined;
     if (texture !== undefined) {
       const sprite = new Sprite(texture);

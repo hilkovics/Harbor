@@ -50,6 +50,12 @@ export interface CargoLedgerDeps {
   readonly clock: { readonly tick: number };
 }
 
+/**
+ * Čítanie polohy nákladu bez možnosti presunu (T03-02, review T02-13): moduly, ktoré majú sloty (apron, sklad),
+ * odvodzujú obsadenie z ledgera a držia len rezervácie — ledger ostáva jediným zdrojom polohy (pravidlo 2).
+ */
+export type CargoReader = Pick<CargoLedger, 'get' | 'unitsAt' | 'countAt' | 'firstUnitAt' | 'unitAtSlot'>;
+
 /** Index jednotiek jedného držiteľa. */
 interface Bucket {
   readonly units: EntityId[];
@@ -204,6 +210,15 @@ export class CargoLedger {
    */
   firstUnitAt(kind: CargoHolderKind, holderId: EntityId): EntityId | undefined {
     return this.buckets.get(kind)?.get(holderId)?.units[0];
+  }
+
+  /**
+   * Jednotka na pozícii `index` v poradí indexu držiteľa (`0 … countAt − 1`) bez alokácie; mimo rozsahu `undefined`.
+   * Dispatcher (T03-05) ňou prechádza aprony vo FIFO bez kópie zoznamu — počas prechodu sa nesmie volať `move`
+   * jednotiek toho istého držiteľa.
+   */
+  unitAtIndex(kind: CargoHolderKind, holderId: EntityId, index: number): EntityId | undefined {
+    return this.buckets.get(kind)?.get(holderId)?.units[index];
   }
 
   /** Jednotka na jedinečnom mieste držiteľa (slot apronu/skladu); pre druhy bez jedinečných miest vždy `undefined`. */

@@ -4,6 +4,11 @@
  *
  * Pri ghoste modulu (`kind: 'module'`, T02-10) štítok ukazuje názov, cenu a dôvody odmietnutia; pri nedostatku peňazí
  * (ghost zostáva zelený) ikonu $ (`ic_cash`) a text „Nedostatok peňazí“ (ARCHITECTURE §8 bod 6).
+ *
+ * Pri stavbe cesty (`kind: 'place'`, T03-20) štítok ukazuje typ cesty, počet buniek a cenu; pri prestavbe „Prestavba: $X,
+ * vrátené $Y“ (stavba a refundácia z `PlaceRoadCommand.quote`) a čistú cenu, ktorá je pri záporných sumách príjem
+ * (`+$Z`). Jednosmerka pridáva smer poslednej bunky (pri 1-bunkovom ťahu s nápovedou `R`). Nedostatok peňazí funguje ako
+ * pri moduloch: zelený ghost, ikona $ a text „Nedostatok peňazí“.
  */
 import { useMemo, useSyncExternalStore } from 'react';
 import type { ValidationReason } from '@sim/commands';
@@ -11,6 +16,7 @@ import { formatMoney, formatMoneyDelta } from '@ui/format';
 import { Icon, type IconName } from '@ui/icon';
 import { moduleKindIcon } from '@ui/module-inspector';
 import type { BuildFeedback } from './input-controller';
+import { DIRECTION_LABEL, ROAD_KIND_LABEL } from './road-build';
 
 /** Slovenské popisy dôvodov odmietnutia (úplná mapa: nový dôvod v sime = chyba kompilácie tu). */
 export const REASON_TEXT: Readonly<Record<ValidationReason, string>> = {
@@ -38,6 +44,16 @@ export const REASON_TEXT: Readonly<Record<ValidationReason, string>> = {
   cargo_incompatible: 'Loď tento náklad neprevezie',
   invalid_units: 'Neplatný počet jednotiek',
   invalid_rotation: 'Neplatná rotácia',
+  unknown_vehicle_def: 'Neznámy typ vozidla',
+  unknown_depot: 'Depo neexistuje',
+  depot_full: 'Depo je plné',
+  not_connected: 'Nepripojené k ceste',
+  unknown_vehicle: 'Vozidlo neexistuje',
+  vehicle_busy: 'Vozidlo práve pracuje',
+  has_vehicles: 'Depo má vozidlá',
+  connector_blocked: 'Vstup nejde pripojiť k ceste',
+  invalid_road_kind: 'Neznámy typ cesty',
+  invalid_direction: 'Neplatný smer jednosmerky',
 };
 
 /** „1 bunka“, „2 bunky“, „5 buniek“. */
@@ -54,19 +70,39 @@ function moduleFeedbackText(feedback: BuildFeedback): string {
   return `${head} · ${feedback.reasons.map((reason) => REASON_TEXT[reason]).join(' · ')}`;
 }
 
+/** Cena ťahu cesty: `$X`; pri prestavbe „Prestavba: $X, vrátené $Y (čisto $Z)“, čistý príjem ako `+$Z` (T03-20). */
+function roadMoneyText(feedback: BuildFeedback): string {
+  const refund = feedback.refundCents ?? 0;
+  if (refund <= 0) return feedback.costCents < 0 ? formatMoneyDelta(0 - feedback.costCents) : formatMoney(feedback.costCents);
+  const net = feedback.costCents < 0 ? `príjem ${formatMoneyDelta(0 - feedback.costCents)}` : `čisto ${formatMoney(feedback.costCents)}`;
+  return `Prestavba: ${formatMoney(feedback.buildCents ?? feedback.costCents + refund)}, vrátené ${formatMoney(refund)} (${net})`;
+}
+
+/** Text štítka stavby cesty: `Jednosmerná cesta · 5 buniek · $7,500 · → východ (R otočí)`; pri odmietnutí dôvody. */
+function roadFeedbackText(feedback: BuildFeedback): string {
+  if (!feedback.ok && !isFundsOnly(feedback)) return feedback.reasons.map((reason) => REASON_TEXT[reason]).join(' · ');
+  const title = feedback.roadKind === undefined ? 'Cesta' : ROAD_KIND_LABEL[feedback.roadKind];
+  const parts = [title, cellCountLabel(feedback.cellCount), roadMoneyText(feedback)];
+  if (feedback.direction !== undefined) parts.push(feedback.rotatable === true ? `${DIRECTION_LABEL[feedback.direction]} (R otočí)` : DIRECTION_LABEL[feedback.direction]);
+  if (!feedback.ok) parts.push(feedback.reasons.map((reason) => REASON_TEXT[reason]).join(' · '));
+  return parts.join(' · ');
+}
+
 /** Text štítka pre spätnú väzbu (čistá funkcia — testovateľná bez DOM). */
 export function feedbackText(feedback: BuildFeedback): string {
   if (feedback.kind === 'module') return moduleFeedbackText(feedback);
+  if (feedback.kind === 'place') return roadFeedbackText(feedback);
   if (!feedback.ok) return feedback.reasons.map((reason) => REASON_TEXT[reason]).join(' · ');
-  const title = feedback.kind === 'place' ? 'Cesta' : 'Odstrániť';
   // Pri odstránení je cena záporná (refundácia) — zobrazí sa ako príjem so znamienkom.
-  const money = feedback.kind === 'place' ? formatMoney(feedback.costCents) : formatMoneyDelta(0 - feedback.costCents);
-  return `${title} · ${cellCountLabel(feedback.cellCount)} · ${money}`;
+  return `Odstrániť · ${cellCountLabel(feedback.cellCount)} · ${formatMoneyDelta(0 - feedback.costCents)}`;
 }
 
-/** Ghost modulu je zelený, ale hráč nemá na cenu — jediný dôvod odmietnutia je `insufficient_funds` (§8 bod 6). */
+/**
+ * Ghost je zelený, ale hráč nemá na cenu — jediný dôvod odmietnutia je `insufficient_funds` (§8 bod 6). Platí pre moduly
+ * aj stavbu ciest (od T03-20).
+ */
 export function isFundsOnly(feedback: BuildFeedback): boolean {
-  return feedback.kind === 'module' && !feedback.ok && feedback.fundsShort === true && feedback.reasons.every((reason) => reason === 'insufficient_funds');
+  return !feedback.ok && feedback.fundsShort === true && feedback.reasons.every((reason) => reason === 'insufficient_funds');
 }
 
 /** Ikona štítka: platný ťah/modul → ikona druhu, chýbajúce peniaze → `$`, inak varovanie (stav nesie ikona aj text). */

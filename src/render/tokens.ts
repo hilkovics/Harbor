@@ -100,10 +100,22 @@ export interface TerrainPalette {
   readonly blocked: ColorValue;
 }
 
+/**
+ * Podiel farby asfaltu (`--road-base`), ktorý ostane v okraji cesty (obrubník): sprity `road_*.svg` majú okraj #101113
+ * pri asfalte #4B5058 (16/75, 17/80, 19/88 ≈ 0,215). Token pre okraj v `design/tokens.css` nie je (backlog), preto sa
+ * okraj procedurálnych úzkych ciest odvodzuje z `--road-base`; `tests/render/road-layer-narrow.test.ts` hlási, ak sa
+ * odvodená farba rozíde od okraja v spritoch.
+ */
+export const ROAD_EDGE_SHADE = 0.215;
+
 /** Farby ciest (DESIGN_BRIEF §3 „Infraštruktúra“). */
 export interface RoadPalette {
   readonly base: ColorValue;
   readonly marking: ColorValue;
+  /** Okraj (obrubník) procedurálnych úzkych ciest: `--road-base` stmavený o `ROAD_EDGE_SHADE`. */
+  readonly edge: ColorValue;
+  /** Šípka smeru jednosmerky bez sprite `overlay.path_arrow` (`--ui-accent`, farba sprite). */
+  readonly arrow: ColorValue;
 }
 
 /** Farby obrysov parciel podľa vlastníctva (DESIGN_BRIEF §3 „Herný svet“). */
@@ -122,9 +134,16 @@ export interface RenderPalette {
   readonly parcel: ParcelPalette;
 }
 
+/** Stmaví farbu na `factor` (0…1) jej jasu — každý kanál sa vynásobí a zaokrúhli; priehľadnosť ostáva. */
+export function shadeColor(value: ColorValue, factor: number): ColorValue {
+  const channel = (shift: number): number => Math.round(((value.color >> shift) & 0xff) * factor);
+  return { color: (channel(16) << 16) | (channel(8) << 8) | channel(0), alpha: value.alpha };
+}
+
 /** Načíta paletu sveta z tokenov; chýbajúci token → chyba s jeho menom. */
 export function loadRenderPalette(resolve: TokenResolver = documentTokenResolver): RenderPalette {
   const color = (name: string): ColorValue => readColorToken(name, resolve);
+  const roadBase = color('--road-base');
   return {
     cellPx: readLengthToken('--cell', resolve),
     terrain: {
@@ -138,8 +157,10 @@ export function loadRenderPalette(resolve: TokenResolver = documentTokenResolver
       blocked: color('--terrain-blocked'),
     },
     road: {
-      base: color('--road-base'),
+      base: roadBase,
       marking: color('--road-marking'),
+      edge: shadeColor(roadBase, ROAD_EDGE_SHADE),
+      arrow: color('--ui-accent'),
     },
     parcel: {
       forSale: color('--parcel-for-sale'),
@@ -149,16 +170,20 @@ export function loadRenderPalette(resolve: TokenResolver = documentTokenResolver
   };
 }
 
-/** Farby fallbacku entít sveta (moduly, žeriavy, lode, náklad) — používajú sa, len keď chýba sprite. */
+/** Farby fallbacku entít sveta (moduly, žeriavy, lode, vozidlá, náklad) — používajú sa, len keď chýba sprite. */
 export interface EntityPalette {
   readonly module: { readonly base: ColorValue; readonly outline: ColorValue };
   readonly crane: { readonly frame: ColorValue; readonly boom: ColorValue };
   readonly ship: { readonly hull: ColorValue; readonly deck: ColorValue };
+  /** Vozidlá na cestách (`--vehicle-body`, `--vehicle-dark`). */
+  readonly vehicle: { readonly body: ColorValue; readonly dark: ColorValue };
   readonly cargo: { readonly base: ColorValue; readonly dark: ColorValue };
   /** Odznak zablokovania a stavový signál chyby (`--ui-danger`). */
   readonly danger: ColorValue;
   /** Značka konektora v build móde (`--module-connector`). */
   readonly connector: ColorValue;
+  /** Odznak „nepripojené“ (`--module-disconnected`). */
+  readonly disconnected: ColorValue;
 }
 
 /**
@@ -171,8 +196,10 @@ export function loadEntityPalette(resolve: TokenResolver = documentTokenResolver
     module: { base: color('--module-base'), outline: color('--module-outline') },
     crane: { frame: color('--crane-frame'), boom: color('--crane-boom') },
     ship: { hull: color('--ship-hull'), deck: color('--ship-deck') },
+    vehicle: { body: color('--vehicle-body'), dark: color('--vehicle-dark') },
     cargo: { base: color('--cargo-container'), dark: color('--cargo-container-dark') },
     danger: color('--ui-danger'),
     connector: color('--module-connector'),
+    disconnected: color('--module-disconnected'),
   };
 }

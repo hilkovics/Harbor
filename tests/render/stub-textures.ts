@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Texture } from 'pixi.js';
 import type { TerrainSpriteId } from '@render/coast';
-import type { EntityTextures, InfraLayerId, InfraTileId, SpriteTextures } from '@render/sprite-atlas';
+import type { EntityTextures, InfraLayerId, InfraTileId, SpriteTextures, WorldOverlayId } from '@render/sprite-atlas';
 import {
   loadEntityPalette,
   loadRenderPalette,
@@ -24,6 +24,7 @@ export const ENTITY_PALETTE: EntityPalette = loadEntityPalette(TOKENS);
 
 /**
  * Atrapa `SpriteTextures` a `EntityTextures` pre testy bez DOM: pre každý kľúč (`terrain/<id>`, `infra/<vrstva>/<tvar>`,
+ * `overlay/<id>`,
  * `file/<cesta súboru z manifestu>`) vráti vlastnú prázdnu `Texture`, takže test vie overiť, KTORÝ sprite vrstva
  * vybrala (`sprite.texture === stub.textureFor(kľúč)`).
  */
@@ -38,6 +39,10 @@ export class StubTextures implements SpriteTextures, EntityTextures {
 
   infra<L extends InfraLayerId>(layer: L, tile: InfraTileId<L>): Texture {
     return this.request(`infra/${layer}/${String(tile)}`);
+  }
+
+  overlay(id: WorldOverlayId): Texture {
+    return this.request(`overlay/${id}`);
   }
 
   file(path: string): Texture {

@@ -10,11 +10,12 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - Agent test-runner doslova volá simrun data/scenarios/vertical_slice.json, ktorý neexistuje do F5; dovtedy sa používa smoke.json. — pôvod: T00-13 · fáza: F5
 - §14 SaveGame obálka duplikuje version/seed/tick z WorldState v1 → rozhodnúť ADR-om. — pôvod: T01-17 · fáza: F6
 - CraneSystem natvrdo počíta s cyklom kontajnerového importu → krok cyklu presunúť do podtried CraneModule alebo stratégie (§17 bod 5), inak bulk/liquid žeriav (flowUnitsPerTick) vynúti zásah do systému. — pôvod: review T02-13 · fáza: pred F7
+- Idle vozidlo ostáva stáť na prístupovej bunke (návrat do depa chýba) a blokuje RemoveRoad tej bunky; open joby s odpojeným cieľovým skladom držia sloty a naložené vozidlo cyklí v no_path → návrat do depa + preradenie jobov + udalosť pre toast. — pôvod: T03-06, T03-13 · fáza: F4
 
 ## P2
 - Štartové cesty z mapy (starter.roads, 30 buniek) sú zadarmo, ale RemoveRoad za ne vráti 50 % aktuálnej ceny (~$30k) — drobný exploit; pri moduloch vyriešené refundáciou zo zaplatenej ceny (ADR-015), pri cestách zvážiť to isté. — pôvod: T01-04, T02-04 · fáza: F13 (balans)
 - Sprite AGV nemá „nižší, modrý pás“ z DESIGN_BRIEF §5.6 — je žltý ako straddle carrier; pri 32 px sú rozlíšiteľné len tvarom. Iterovať v Claude Design (vzorový prompt v §8) pred F8 (odomknutie AGV). — pôvod: Claude Design relácia 4 · fáza: F8
-- Konektory modulov: kanonický zdroj sú assets/manifest.json → sprites.*.connectors; berth_standard a crane_container_gantry sú prevzaté (F2), ostatné moduly prevziať do modules.json pri ich zavedení (F3–F4). — pôvod: Claude Design relácie 3 a 6 · fáza: F3
+- Konektory modulov: kanonický zdroj sú assets/manifest.json → sprites.*.connectors; berth, crane (F2), container_yard_small a vehicle_depot (F3) sú prevzaté, ostatné moduly prevziať pri ich zavedení. — pôvod: Claude Design relácie 3 a 6 · fáza: F4
 - Počty slotov v spritoch dvorov (medium 76×3 = 228, large 129×3 = 387) nesedia s capacityUnits v ARCHITECTURE §5.3 (180 / 384); small sedí (32×2 = 64). Sprity sú len vizualizácia 5 stavov, ale zosúladiť pri F3/F13 (balans) alebo požiadať Claude Design o úpravu. — pôvod: Claude Design relácia 3 · fáza: F3
 - Zlomkový flowUnitsPerTick (0.5/0.3) vs diskrétne CargoUnit batche (ADR-003) — delenie jednotky alebo akumulácia? — pôvod: T00-05 · fáza: pred F9
 - DAYS_PER_MONTH v sim-clock.ts je privátne — exportovať (vzorec prenájmu §9.2 /30); do ADR-002 dopísať, že kalendár je konštanta v kóde. — pôvod: T00-12 · fáza: F7
@@ -28,7 +29,6 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - Selektor Identifier[name='Math'] falošne hlási aj { Math: 1 } a x.Math (časť so selektorom .constructor vyriešil ModuleRegistry registráciou, ADR-014). — pôvod: re-review T00-17 · fáza: podľa potreby
 - Import './' a '../' (s lomkou na konci) je v src/sim falošne zakázaný — povoliť alebo zdokumentovať. — pôvod: re-review T00-15 · fáza: podľa potreby
 - World-state parseRoads nekontroluje ADR-008 (save s cestou na parcele na predaj sa načíta, cestu potom nejde odstrániť) → WorldStateError. — pôvod: review T01-13 (world-state.ts:124) · fáza: F6
-- Grid.neighbors4 alokuje pole → A* má iterovať DIRECTIONS_4 + inBounds/index. — pôvod: review T01-13 (grid.ts:163) · fáza: F3
 - map-loader segmentInterior (Math.round) je asymetrický a pripúšťa diagonálu → zdieľaný 4-súvislý Bresenham pre loader aj ShipSystem. — pôvod: review T01-13 (map-loader.ts:207) · fáza: F3
 - Globálny meniteľný commandRegistry → seal() po registrácii vstavaných príkazov. — pôvod: review T01-13 (command-registry.ts:59) · fáza: podľa potreby
 - CommandRejected nenesie index záznamu scenára (len typ) → simrun hlási typ + tick + dôvody. — pôvod: T01-06 · fáza: podľa potreby
@@ -39,9 +39,7 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - parcel_outline_for_sale cez 9-slice natiahne čiarkovanie nepravidelne → okrajová dlaždica pre TilingSprite alebo procedurálne čiarkovanie. — pôvod: T01-16 · fáza: F7
 - Výkon renderu overiť na reálnom GPU (headless SwiftShader so spritmi ~100–120 ms/frame, CPU JS 16–26 ms/3 s). — pôvod: T01-16 · fáza: F6
 - Alokácie v každom ticku (ship-route trasa inbound/outbound, Set čakajúcich lodí, kópia ships, polia/closures v berth-allocator, filter v StatResolver.resolve, fázy žeriavu) → predpočítať trasy mapy, znovupoužívať pracovné polia. — pôvod: review T02-13 · fáza: F6
-- ApronBuffer drží obsadenie aj rezervácie (druhý zápis polohy vedľa ledgera) → nech drží len rezervácie a obsadenie číta z ledgera (unitAtSlot/unitsAt). — pôvod: review T02-13 · fáza: F3
-- CargoLedger.unitsOnShip/unitsAt alokujú kópiu pri každom volaní → pre hot path (Dispatcher) firstUnitAt/iterátor bez alokácie. — pôvod: T02-02 · fáza: F3
-- findWorldViolation (krok 12, DEV) prechádza celú mriežku každý tick → merať vo F6, prípadne inkrementálne. — pôvod: T02-03 · fáza: F6
+- Krok 12 (DEV) stojí ~390 µs/tick: assertConservation 130–190 µs a prechod mriežky ~25 µs → zrýchliť assertConservation (mapa seenIn), inkrementálny prechod mriežky, read-only iterácia jednotiek skladu v ledgeri. — pôvod: T02-03, T03-13, T03-14 · fáza: F6
 - Trajektória lode k kotvisku sa neoveruje voči súši (mapy s mólami) a lode sa môžu vizuálne prekrývať (spawn, súčasný príchod a odchod). — pôvod: T02-05 · fáza: F12
 - Skoková rotácia lode pri berthing → docked; plynulé natáčanie v renderi. — pôvod: T02-05 · fáza: F13
 - Úvodná kamera (zoom 0.5, breh na 1/3 výšky) skrýva príjazd lode po seaLane → rámovanie alebo tlačidlo „zamerať loď". — pôvod: T02-09 · fáza: F5
@@ -50,8 +48,18 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - UI: build-tip zvislý flip pri kurzore nad BuildBarom; text has_cargo pre žeriav („Žeriav drží kontajner"); selection_ring hrúbka pri zoome < 1 (frameScale); nápoveda/Del skratka na odstránenie. — pôvod: T02-10 · fáza: F13
 - UI: .hud-icon (flex: none) je v top-hud.css, ale používa ho icon.tsx → vlastný icon.css; formatSpeed literál × → TIMES_SIGN; tooltip aj pre dostupné položky BuildBaru. — pôvod: T02-08 · fáza: F13
 - Render: tilt výložníka k cieľovému slotu apronu; lazy načítanie textúr variantov lodí; culling/ParticleContainer pre entity. — pôvod: T02-07 · fáza: F6
-- Docs: doplnkové ADR-017 pre zmeny ARCHITECTURE bez vlastného ADR (kalendár SimClock, vypustenie berth_edge, displayName, schemaVersion/createGrid, snapshot v2); §17 bod 5 text register(kind, factory); §4.5 TechEffect.target 'crane' vs StatResolver 'module'. — pôvod: T02-14 · fáza: F3 (docs), F9
+- Docs: doplnkový ADR pre zmeny ARCHITECTURE bez vlastného ADR (kalendár SimClock, vypustenie berth_edge, displayName, schemaVersion/createGrid, snapshot v2/v3); §17 bod 5 text register(kind, factory); §4.5 TechEffect.target 'crane' vs StatResolver 'module'. — pôvod: T02-14 · fáza: F4 (docs), F9
 - Zaokrúhľovanie celočíselných štatistík v StatResolver po mul (napr. cycleTicks × 0.85) → rozhodnúť ADR-om. — pôvod: T02-03 · fáza: F8
+- Sprity úzkych ciest z Claude Design (road_one_lane_*, road_one_way_* s lievikmi) namiesto procedurálneho kreslenia; prompt: „Doplň sety spritov road_one_lane_{straight,corner,t,cross,end}.svg a road_one_way_{straight,corner,t,cross,end}.svg v štýle assets/infra/road_*.svg (64×64). Asfalt jedného pruhu 26 px (x 19–45), --road-base #4B5058, okraj 2 px #101113, bez stredovej čiary; roh štvrťkruh okolo (64;0) s polomermi 19 a 45 px; end polkruh r 13; one-way bez šípky (engine kreslí overlay.path_arrow); ramená pri širokej ceste 45° lievik 26→52 px hĺbky 13 px; do manifestu infra.road_one_lane a infra.road_one_way s connectsAtRot0." + token --road-edge v tokens.css a DESIGN_BRIEF §3 + ikony ic_road_two_lane/one_lane/one_way. — pôvod: T03-19, T03-20 · fáza: F13
+- Render ciest a vozidiel: oblúky aj v T/krížových križovatkách (VehicleVM.nextHeading), šípka ghostu jednosmerky v zákrute na oblúku, plynulý prechod pruhu pri zmene typu cesty, zub pri širokej zákrute susediacej s úzkou, snap kurzu stojaceho vozidla v zákrute, čitateľnosť vozidiel pri zoome ≤ 0,5, vizuál no_path a path_arrow trasy, reserved sloty skladu vo vizuále. — pôvod: T03-17, T03-19, T03-08 · fáza: F13
+- Zmena smeru jednosmerky stojí plnú cenu one_way − 50 % refund (konzistentné s prestavbou) → zvážiť lacnejšie otočenie smeru; alias infrastructure.road.costPerCellCents odstrániť (UI už používa roadKinds). — pôvod: T03-18, T03-20 · fáza: F13 (balans)
+- Kongescia F11 mení cenu bunky bez zmeny roadVersion → PathCache/DistanceMatrix potrebujú ďalší spúšťač invalidácie; PathCache bez limitu veľkosti a kľúč nad SMI pri mapách > 46k buniek; cache priradenia vozidla pri nedosiahnuteľnom jobe podľa roadVersion. — pôvod: T03-03, T03-05, T03-13 · fáza: F11
+- SlotReservations.reserve je O(capacity) — hint prvého voľného slotu vyžaduje počítadlo odchodov v CargoLedger; presná kontrola rezervácií (bitset) namiesto súčtov v kroku 12. — pôvod: T03-13, T03-14 · fáza: F6
+- Joby s viacerými jednotkami pre vozidlá s kapacitou > 1 (AGV); počítadlá utilizácie vozidiel v sime pre štatistiky; TRAFFIC_ZERO_THRESHOLD do logistics.json. — pôvod: T03-06 · fáza: F8, F11
+- Stavba modulu môže zablokovať posledný konektor iného modulu (ostane nepripojený) → varovanie v UI alebo pravidlo; kotvisko na móle nejde pripojiť (konektory len na juhu). — pôvod: T03-02 · fáza: F12
+- UI F3: toast pre no_path a „Dvor je plný", akcia Ukázať pri „Chýba sklad" a rozlíšenie nepripojeného kotviska, herný čas pre auto-zatvorenie toastov, kódy vozidiel SC-01 v depe, sparkline vyťaženosti a fronta depa (F9), „Postaviť cestu ku konektoru" v banneri, skratka cyklovania typov ciest, hover smer existujúcej jednosmerky, DEV spawn 24 TEU; DESIGN_BRIEF §6 doplniť Toasts, buy/road položky BuildBaru a stav Nepripojené. — pôvod: T03-09, T03-10, T03-20 · fáza: F13
+- validate:defs: krížová kontrola manifest ↔ def (capacity = slots × layers, stalls, connectors, footprint) priamo v nástroji; techRequired vozidiel a modulov voči tech_tree.json. — pôvod: T03-01, T03-04 · fáza: F8
+- Geometria: cellCenter/cardinalHeading zo ships/ship-route do spoločného modulu; zdieľaný typ deps pre ShipView/VehicleView/CargoSprite; expectedSlotCapacity v invariantoch polymorfne namiesto instanceof. — pôvod: T03-02, T03-04, T03-08 · fáza: podľa potreby
 
 ## Nápady
 - Sim vo Web Workeri (ak tick > 8 ms pri 8×). — pôvod: ARCHITECTURE §18 (T00-05) · fáza: F13

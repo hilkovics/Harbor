@@ -2,11 +2,12 @@
 // vyžaduje, a `harness()` — svet + most + kamera + ovládanie prepojené tak, ako ich zapojí bootstrap.
 import type { CellCoord } from '@sim/grid';
 import { Camera } from '@render/camera';
-import type { GhostCell, GhostView } from '@render/build-layer';
+import type { GhostArrow, GhostCell, GhostView } from '@render/build-layer';
 import type { ModuleGhostVM } from '@render/view-models';
 import { BuildSelection } from '@app/build-selection';
-import { InputController, type InputState, type KeyInput, type ModuleGhostView } from '@app/input-controller';
+import { InputController, type GhostArrowsTarget, type InputState, type KeyInput, type ModuleGhostView } from '@app/input-controller';
 import { ModuleSelection } from '@app/module-selection';
+import { RoadSelection } from '@app/road-selection';
 import { createApp } from './app-fixtures';
 
 /** Zaznamenáva ghost cesty (`setGhost` / `clearGhost`). */
@@ -38,6 +39,17 @@ export class FakeModuleGhost implements ModuleGhostView {
   }
 }
 
+/** Zaznamenáva šípky smeru jednosmerky, ktoré `InputController` odovzdal rendereru (`null` = skryté). */
+export class FakeGhostArrows implements GhostArrowsTarget {
+  arrows: readonly GhostArrow[] | null = null;
+  setCalls = 0;
+
+  setGhostArrows(arrows: readonly GhostArrow[] | null): void {
+    this.arrows = arrows;
+    this.setCalls += 1;
+  }
+}
+
 /** Závislosti výberu pre `new InputController({ …, ...selectionDeps() })`. */
 export function selectionDeps(): { moduleGhost: FakeModuleGhost; buildSelection: BuildSelection; moduleSelection: ModuleSelection } {
   return { moduleGhost: new FakeModuleGhost(), buildSelection: new BuildSelection(), moduleSelection: new ModuleSelection() };
@@ -56,8 +68,18 @@ export function harness() {
   });
   const ghost = new FakeGhost();
   const deps = selectionDeps();
+  const roadSelection = new RoadSelection();
+  const arrows = new FakeGhostArrows();
   const states: InputState[] = [];
-  const controller = new InputController({ bridge, camera, ghost, ...deps, onStateChange: (state) => states.push(state) });
+  const controller = new InputController({
+    bridge,
+    camera,
+    ghost,
+    ...deps,
+    roadSelection,
+    ghostArrows: arrows,
+    onStateChange: (state) => states.push(state),
+  });
   /** Stred bunky na obrazovke (poloha kurzora v px vzhľadom na mapu). */
   const at = (x: number, y: number): { x: number; y: number } => camera.cellCenterToScreen(x, y);
   const down = (cell: CellCoord, button = 0): boolean => controller.pointerDown({ button, ...at(cell.x, cell.y) });
@@ -72,7 +94,7 @@ export function harness() {
   const frame = (): void => {
     loop.frame(0);
   };
-  return { world, bridge, loop, camera, ghost, states, controller, at, down, move, up, frame, ...deps };
+  return { world, bridge, loop, camera, ghost, arrows, roadSelection, states, controller, at, down, move, up, frame, ...deps };
 }
 
 export const key = (code: string, extra: Partial<KeyInput> = {}): KeyInput => ({

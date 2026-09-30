@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { PlaceModuleCommand, RemoveModuleCommand, SpawnShipDebugCommand, commandFromJSON, refundCents } from '@sim/commands';
 import type { EntityId } from '@sim/core';
-import { BerthModule, CraneModule } from '@sim/modules';
+import { BerthModule, CraneModule, StorageModule, VehicleDepot } from '@sim/modules';
 import type { World } from '@sim/world';
 import type { SimEvent } from '@sim/events';
 import type { Ship } from '@sim/ships';
@@ -130,8 +130,6 @@ describe('RemoveModule — odmietnutia', () => {
     const unit = world.cargo.create('container_teu', { kind: 'on_ship', shipId: id(500) }).id;
     world.cargo.move(unit, { kind: 'in_crane', craneId: crane.id });
     world.cargo.move(unit, { kind: 'on_apron', berthId: berth.id, slot: 0 });
-    berth.apron.reserveSlot(0);
-    berth.apron.commit(0, unit);
     remove(crane.id).apply(world);
     expect(remove(berth.id).validate(world).reasons).toEqual(['has_cargo']);
   });
@@ -162,6 +160,32 @@ describe('RemoveModule — odmietnutia', () => {
     expect(() => remove(99).apply(world)).toThrow(/unknown_module/);
     expect(hashState(world.serialize())).toBe(before);
     expect(world.events.pending).toBe(0);
+  });
+});
+
+describe('RemoveModule — sklad a depo (T03-02, ADR-017)', () => {
+  const YARD = 'container_yard_small';
+  const DEPOT = 'vehicle_depot';
+
+  it('sklad s rezerváciou → has_cargo; prázdny sklad ide predať za 50 % zaplatenej ceny', () => {
+    const world = buy(newBareWorld(), YARD, 50, 20);
+    const yard = world.moduleAt(50, 20);
+    if (!(yard instanceof StorageModule)) throw new Error('nie je sklad');
+    const slot = yard.reserve();
+    expect(remove(yard.id).validate(world).reasons).toEqual(['has_cargo']);
+    yard.release(slot);
+    const refund = refundCents(DEFS.modules.get(YARD).costCents, REFUND_RATE);
+    expect(remove(yard.id).validate(world)).toEqual({ ok: true, reasons: [], cells: yard.cells, costCents: -refund });
+  });
+
+  it('depo s vozidlom → has_vehicles (spolu s ostatnými dôvodmi v kanonickom poradí)', () => {
+    const world = buy(newBareWorld(), DEPOT, 34, 20);
+    const depot = world.moduleAt(34, 20);
+    if (!(depot instanceof VehicleDepot)) throw new Error('nie je depo');
+    depot.attachVehicle(id(700));
+    expect(remove(depot.id).validate(world).reasons).toEqual(['has_vehicles']);
+    depot.detachVehicle(id(700));
+    expect(remove(depot.id).validate(world).ok).toBe(true);
   });
 });
 

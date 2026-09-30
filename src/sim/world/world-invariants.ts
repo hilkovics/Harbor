@@ -6,10 +6,16 @@
  * Kontroly (prvé porušenie vyhráva, správa pomenuje entity):
  * 1. každá jednotka nákladu je u existujúceho držiteľa (`CARGO_HOLDER_SOURCES`);
  * 2. mriežka: bunky modulu (okrem žeriavu) majú `moduleId` modulu a žiadnu cestu, iné bunky nemajú `moduleId`;
+ *    typ cesty (ADR-020): koľaj má `DEFAULT_ROAD_KIND` a žiadny smer, cestná bunka má známy typ a smer práve vtedy,
+ *    keď je jednosmerná (`ROAD_KIND_TRAITS.oneWay`), a smer je N/E/S/W (prázdne bunky sa kvôli cene kroku 12
+ *    nekontrolujú — ich normalizovaný stav zaručujú zápisy `createCell`, `RemoveRoad` a `World.deserialize`);
  * 3. žeriav: stojí celý na svojom berthe, má jeho rotáciu, berth ho eviduje, držaná jednotka, rezervácia a fáza
  *    zodpovedajú ledgeru, apronu a `CRANE_STATE_TRAITS` (`cranePhaseProblem`); berth: `craneIds` = jeho žeriavy v poradí umiestnenia,
  *    najviac `maxCranes`, bez prekryvu, rezervácie apronu = rezervácie jeho žeriavov;
- * 4. apron: rovnaké jednotky, sloty aj FIFO poradie ako `on_apron` v ledgeri;
+ * 4. sloty modulov (`Module.cargoSlots()`: apron, sklad; ADR-017): obsadenie je v ledgeri, modul drží len rezervácie —
+ *    rezervovaný slot nie je obsadený, rezervácie ≤ kapacita, `stored + reserved ≤ capacity`, slot jednotky v rozsahu
+ *    (`SlotReservations.findProblem`); kapacita apronu = `apronSlots`, skladu = `capacityUnits`; v sklade len jednotky
+ *    jeho kategórie;
  * 5. `berthGroups` a `groupId` = prepočet `computeBerthGroups`;
  * 6. lode (ADR-016): kľúč = id, vzostupne podľa id, stav bez `despawned`; `berthIds` neprázdne práve pri
  *    `holdsBerths`, ležia za sebou v jednej skupine v poradí po pobreží a každý berth má `dockedShipId` = loď;
@@ -18,17 +24,44 @@
  *    `anchorageIndex` len pri `waitsForBerth`, v mape a jedinečný; na palube najviac `capacityUnits` jednotiek, všetky
  *    typu `cargoTypeId`; loď s nákladom, ktorá drží kotviská, má na nich aspoň jeden žeriav kategórie svojho nákladu
  *    (inak by pri kotvisku ostala naveky, T02-14); žeriav v `grabbing` má na kotvisku dokovanú loď s nákladom
- *    svojej kategórie a žeriavov v `grabbing` nad loďou nie je viac ako jednotiek na jej palube (každý má čo zdvihnúť).
+ *    svojej kategórie a žeriavov v `grabbing` nad loďou nie je viac ako jednotiek na jej palube (každý má čo zdvihnúť);
+ * 7. depo vozidiel (ADR-017): `vehicleIds` bez duplicít a najviac `capacity`;
+ * 8. vozidlá (T03-04): kľúč = id, vzostupne podľa id, depo existuje a je `VehicleDepot`, `vehicleIds` každého depa =
+ *    jeho vozidlá vzostupne podľa id (poradie nákupu), job zodpovedá stavu (`VEHICLE_STATE_TRAITS.hasJob`), existuje
+ *    a patrí vozidlu, stav jobu zodpovedá stavu vozidla (`jobStates`), poloha je konečná v rozsahu mapy, náklad vo
+ *    vozidle najviac `capacityUnits`, len kategórií z `cargoCategories` a len jednotky vlastného jobu v stave
+ *    s nákladom vo vozidle (`idle` vozidlo nevezie nič — rozhodnutie orchestrátora F3 č. 5); pohyb zodpovedá stavu
+ *    (`vehicleMotionProblem`, ADR-019: trasa po susedných bunkách, poloha na trase, tvar trasy a odpočet podľa stavu,
+ *    cesta pod vozidlom, jazda po ceste k prístupovej bunke modulu jobu — žiadne vozidlo v `to_*` bez platnej cesty);
+ * 9. joby (T03-05, ADR-018): kľúč = id, vzostupne podľa id, aktívny stav (hotový job sa hneď odstráni), index
+ *    `jobOfUnit` = jednotky jobov (žiadna jednotka v dvoch aktívnych joboch), jednotky ležia podľa stavu na `from`
+ *    alebo vo vozidle jobu, vozidlo podľa `JOB_STATE_TRAITS.hasVehicle` existuje a má tento job, cieľ je sklad
+ *    kategórie nákladu so slotom v rozsahu; rezervované sloty každého skladu = presne sloty `to` jeho aktívnych jobov
+ *    (slot jobu rezervovaný + počet, súčet a súčet štvorcov slotov — bez kópií a triedenia, ADR-021).
+ *
+ * Krok 12 beží v DEV/testoch každý tick, preto kontroly v bežnom (platnom) stave nealokujú, kde to ide (review T03-13):
+ * trasy vozidiel cez `Vehicle.routeCellAt`, depá kurzorom, rezervácie súčtami; podrobné správy sa skladajú až pri
+ * porušení. Jednotky skladu sa čítajú jednou kópiou (`units()`) — pri stovkách jednotiek lacnejšie než `unitAtIndex`.
  */
-import { CARGO_HOLDER_KINDS } from '../cargo/cargo-location';
+import { CARGO_HOLDER_KINDS, isSameLocation, uniqueSlotOf } from '../cargo/cargo-location';
+import { OPPOSITE_DIRECTION } from '../grid/road-direction';
+import { DEFAULT_ROAD_KIND, ROAD_KIND_TRAITS, isRoadKind } from '../grid/road-kind';
 import type { EntityId } from '../core/entity-id';
+import type { CargoCategory } from '../defs/types';
+import type { Cell } from '../grid/grid';
+import { JOB_STATE_TRAITS, type TransportJob } from '../logistics/transport-job';
 import { BerthModule } from '../modules/berth-module';
 import { computeBerthGroups } from '../modules/berth-group';
 import { CRANE_STATE_TRAITS, CraneModule, cranePhaseProblem } from '../modules/crane-module';
+import { StorageModule } from '../modules/storage-module';
+import { VehicleDepot } from '../modules/vehicle-depot';
 import { hasCompatibleCrane } from '../ships/berth-allocator';
 import type { Ship } from '../ships/ship';
 import { SHIP_STATE_TRAITS } from '../ships/ship-fsm';
 import { mooringProblem } from '../ships/ship-route';
+import type { Vehicle } from '../vehicles/vehicle';
+import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle-fsm';
+import { vehicleMotionProblem } from '../vehicles/vehicle-trip';
 import { CARGO_HOLDER_SOURCES } from './cargo-holders';
 import type { World } from './world';
 
@@ -46,7 +79,7 @@ function cellLabel(x: number, y: number): string {
   return `(${String(x)}, ${String(y)})`;
 }
 
-function sameIds(a: readonly EntityId[], b: readonly EntityId[]): boolean {
+function sameIds(a: readonly number[], b: readonly number[]): boolean {
   return a.length === b.length && a.every((id, i) => id === b[i]);
 }
 
@@ -68,6 +101,33 @@ const checkCargoHolders: Check = (world) => {
   return undefined;
 };
 
+/** Tabuľky typov ciest ako lokálne väzby modulu — slučka kroku 12 nad celou mriežkou ich číta bez importných getterov. */
+const ROAD_TRAITS: Readonly<Record<string, { readonly oneWay: boolean } | undefined>> = ROAD_KIND_TRAITS;
+const ROAD_DIRECTIONS: Readonly<Record<string, string | undefined>> = OPPOSITE_DIRECTION;
+const DEFAULT_KIND: string = DEFAULT_ROAD_KIND;
+
+/**
+ * Je typ a smer cesty bunky s vrstvou dopravy v poriadku (ADR-020)? Koľaj má predvolený typ bez smeru, cesta známy typ
+ * a smer N/E/S/W práve pri jednosmerke. Bez alokácie (každý tick nad cestnými bunkami).
+ */
+function isUsualRoadCell(cell: Readonly<Cell>): boolean {
+  const { road, roadKind, roadDir } = cell;
+  if (road !== 'road') return roadKind === DEFAULT_KIND && roadDir === null;
+  const oneWay = ROAD_TRAITS[roadKind]?.oneWay;
+  return roadDir === null ? oneWay === false : oneWay === true && ROAD_DIRECTIONS[roadDir] !== undefined;
+}
+
+/** Popis porušenia typu a smeru cesty bunky, ktorá neprešla `isUsualRoadCell`. */
+function roadCellProblem(world: World, index: number): string {
+  const { road, roadKind, roadDir } = world.grid.atIndex(index);
+  const oneWay = ROAD_TRAITS[roadKind]?.oneWay;
+  const { x, y } = world.grid.coordOf(index);
+  if (road !== 'road') return `bunka ${cellLabel(x, y)} s vrstvou '${road}' má typ cesty '${roadKind}' a smer ${String(roadDir)}`;
+  if (!isRoadKind(roadKind)) return `bunka ${cellLabel(x, y)} má neznámy typ cesty '${String(roadKind)}'`;
+  const expected = oneWay === true ? 'jednosmerka musí mať smer N/E/S/W' : 'len jednosmerka má smer';
+  return `cesta na ${cellLabel(x, y)} typu '${roadKind}' má smer ${String(roadDir)} (${expected})`;
+}
+
 const checkModuleCells: Check = (world) => {
   const { grid } = world;
   for (const [id, module] of world.modules) {
@@ -82,8 +142,13 @@ const checkModuleCells: Check = (world) => {
       if (cell.road !== 'none') return `pod modulom ${module.label} je na ${cellLabel(x, y)} vrstva '${cell.road}'`;
     }
   }
+  // Jeden prechod mriežkou pre odkazy `moduleId` aj typ a smer cesty (ADR-020). Krok 12 beží každý tick, preto sa
+  // typ kontroluje len na bunkách s vrstvou dopravy; normalizovaný stav prázdnej bunky (`DEFAULT_ROAD_KIND`, bez
+  // smeru) zaručujú jediné zápisy `road = 'none'` v sime — `createCell`, `RemoveRoad` a `World.deserialize`.
   for (let i = 0; i < grid.cellCount; i++) {
-    const { moduleId } = grid.atIndex(i);
+    const cell = grid.atIndex(i);
+    if (cell.road !== 'none' && !isUsualRoadCell(cell)) return roadCellProblem(world, i);
+    const moduleId = cell.moduleId;
     if (moduleId === null) continue;
     const { x, y } = grid.coordOf(i);
     const owner = world.modules.get(moduleId);
@@ -162,24 +227,237 @@ const checkCranes: Check = (world) => {
   return undefined;
 };
 
-const checkAprons: Check = (world) => {
-  for (const berth of berths(world)) {
-    const { apron } = berth;
-    if (apron.capacity !== berth.params.apronSlots) return `${berth.label}: kapacita apronu ${String(apron.capacity)} ≠ apronSlots`;
-    const ledgerUnits = world.cargo.unitsOnApron(berth.id);
-    const apronUnits = apron.units();
-    if (!sameIds(apronUnits, ledgerUnits)) {
-      return `${berth.label}: apron [${apronUnits.join(', ')}] ≠ ledger on_apron [${ledgerUnits.join(', ')}] (jednotky alebo FIFO poradie)`;
-    }
-    for (const unitId of ledgerUnits) {
-      const location = world.cargo.get(unitId)?.location;
-      const slot = location?.kind === 'on_apron' ? location.slot : undefined;
-      if (slot !== apron.slotOf(unitId)) {
-        return `${berth.label}: jednotka #${String(unitId)} je v ledgeri na slote ${String(slot)}, na aprone na ${String(apron.slotOf(unitId))}`;
-      }
+/** Kapacita slotov podľa triedy modulu: apron = `apronSlots`, sklad = `capacityUnits`; iné moduly sloty nemajú. */
+function expectedSlotCapacity(world: World, moduleId: EntityId): number | undefined {
+  const module = world.modules.get(moduleId);
+  if (module instanceof BerthModule) return module.params.apronSlots;
+  if (module instanceof StorageModule) return module.params.capacityUnits;
+  return undefined;
+}
+
+/** Kategória typu nákladu jednotky; neznáma jednotka alebo typ → `undefined`. */
+function unitCategory(world: World, unitId: EntityId | undefined): CargoCategory | undefined {
+  const typeId = unitId === undefined ? undefined : world.cargo.get(unitId)?.typeId;
+  return typeId === undefined || !world.defs.cargoTypes.has(typeId) ? undefined : world.defs.cargoTypes.get(typeId).category;
+}
+
+/** V sklade ležia len jednotky jeho kategórie (kompatibilitu strážia systémy, §7.1 — tu poistka). */
+function checkStorageCategory(world: World, storage: StorageModule): string | undefined {
+  for (const unitId of storage.units()) {
+    const typeId = world.cargo.get(unitId)?.typeId;
+    const category = typeId === undefined || !world.defs.cargoTypes.has(typeId) ? undefined : world.defs.cargoTypes.get(typeId).category;
+    if (category !== storage.category) {
+      return `${storage.label} (kategória '${storage.category}') drží jednotku #${String(unitId)} kategórie '${String(category)}'`;
     }
   }
   return undefined;
+}
+
+const checkCargoSlots: Check = (world) => {
+  for (const module of world.modules.values()) {
+    const slots = module.cargoSlots();
+    if (slots === undefined) continue;
+    if (slots.holderId !== module.id) return `${module.label}: sloty patria držiteľovi #${String(slots.holderId)}`;
+    const capacity = expectedSlotCapacity(world, module.id);
+    if (slots.capacity !== capacity) return `${module.label}: kapacita slotov ${String(slots.capacity)} ≠ def ${String(capacity)}`;
+    const problem = slots.findProblem();
+    if (problem !== undefined) return problem;
+    if (module instanceof StorageModule) {
+      const foreign = checkStorageCategory(world, module);
+      if (foreign !== undefined) return foreign;
+    }
+  }
+  return undefined;
+};
+
+/** Obsahuje zoznam id duplicitu? O(n²) bez alokácie — zoznam depa má najviac `capacity` položiek. */
+function hasDuplicate(ids: readonly EntityId[]): boolean {
+  for (let i = 1; i < ids.length; i++) {
+    for (let j = 0; j < i; j++) if (ids[i] === ids[j]) return true;
+  }
+  return false;
+}
+
+/** Podrobná správa, keď `vehicleIds` depa nesedí s jeho vozidlami (len pri porušení — alokuje). */
+function depotMismatch(world: World, depot: VehicleDepot): string {
+  const own = [...world.vehicles.values()].filter((vehicle) => vehicle.depotId === depot.id).map((vehicle) => vehicle.id);
+  return `${depot.label}: vehicleIds [${depot.vehicleIds.join(', ')}] ≠ vozidlá depa podľa id [${own.join(', ')}]`;
+}
+
+/**
+ * Každé depo jedným prechodom vozidiel bez kópií (review T03-13): `vehicleIds` bez duplicít, najviac `capacity`
+ * a položka po položke = vozidlá depa v poradí `world.vehicles` (vzostupne podľa id = poradie nákupu) — kurzor v
+ * `vehicleIds` postupuje s každým vozidlom depa. Pri porušení podrobná správa (`depotMismatch`).
+ */
+const checkDepots: Check = (world) => {
+  for (const module of world.modules.values()) {
+    if (!(module instanceof VehicleDepot)) continue;
+    const ids = module.vehicleIds;
+    if (hasDuplicate(ids)) return `${module.label}: vehicleIds [${ids.join(', ')}] obsahujú duplicitu`;
+    if (ids.length > module.capacity) return `${module.label} má ${String(ids.length)} vozidiel (capacity ${String(module.capacity)})`;
+    let cursor = 0;
+    for (const vehicle of world.vehicles.values()) {
+      if (vehicle.depotId !== module.id) continue;
+      if (ids[cursor] !== vehicle.id) return depotMismatch(world, module);
+      cursor += 1;
+    }
+    if (cursor !== ids.length) return depotMismatch(world, module);
+  }
+  return undefined;
+};
+
+/**
+ * Náklad vozidla: najviac `capacityUnits` jednotiek, len kategórie, ktoré vozidlo vozí, a len jednotky vlastného jobu
+ * v stave s nákladom vo vozidle (`idle` vozidlo nevezie nič).
+ */
+function checkVehicleCargo(world: World, vehicle: Vehicle): string | undefined {
+  const count = world.cargo.countAt('in_vehicle', vehicle.id);
+  if (count > vehicle.def.capacityUnits) {
+    return `${vehicle.label} vezie ${String(count)} jednotiek (capacityUnits ${String(vehicle.def.capacityUnits)})`;
+  }
+  for (let i = 0; i < count; i++) {
+    const unitId = world.cargo.unitAtIndex('in_vehicle', vehicle.id, i);
+    const category = unitCategory(world, unitId);
+    if (unitId === undefined || category === undefined || !vehicle.def.cargoCategories.includes(category)) {
+      return `${vehicle.label} vezie jednotku #${String(unitId)} kategórie '${String(category)}', ktorú nevozí`;
+    }
+    const job = world.jobOfUnit(unitId);
+    if (job?.vehicleId !== vehicle.id || JOB_STATE_TRAITS[job.state].cargoAt !== 'vehicle') {
+      return `${vehicle.label} v stave '${vehicle.state}' vezie jednotku #${String(unitId)} mimo svojho jobu s nákladom vo vozidle`;
+    }
+  }
+  return undefined;
+}
+
+/** Súradnica polohy je konečná v `[0, max]`. */
+function isWithin(value: number, max: number): boolean {
+  return Number.isFinite(value) && value >= 0 && value <= max;
+}
+
+function checkVehicle(world: World, vehicle: Vehicle): string | undefined {
+  const depot = world.modules.get(vehicle.depotId);
+  if (!(depot instanceof VehicleDepot)) return `${vehicle.label} patrí #${String(vehicle.depotId)}, ktorý nie je depo vozidiel`;
+  if (!depot.vehicleIds.includes(vehicle.id)) return `${vehicle.label} chýba vo vehicleIds depa ${depot.label}`;
+  const traits = VEHICLE_STATE_TRAITS[vehicle.state];
+  if (traits.hasJob !== (vehicle.jobId !== null)) {
+    return `${vehicle.label} v stave '${vehicle.state}' ${traits.hasJob ? 'nemá job' : `má job #${String(vehicle.jobId)}`}`;
+  }
+  const job = vehicle.jobId === null ? undefined : world.jobs.get(vehicle.jobId);
+  if (vehicle.jobId !== null && job === undefined) return `${vehicle.label}: job #${String(vehicle.jobId)} neexistuje`;
+  if (job !== undefined && job.vehicleId !== vehicle.id) return `${vehicle.label}: ${job.label} patrí vozidlu #${String(job.vehicleId)}`;
+  if (job !== undefined && !traits.jobStates.includes(job.state)) {
+    return `${vehicle.label} v stave '${vehicle.state}' má ${job.label} v stave '${job.state}' (očakávané: ${traits.jobStates.join(', ')})`;
+  }
+  const { width, height } = world.grid;
+  if (!isWithin(vehicle.x, width) || !isWithin(vehicle.y, height)) {
+    return `${vehicle.label} stojí mimo mapy (${String(vehicle.x)}, ${String(vehicle.y)})`;
+  }
+  return checkVehicleCargo(world, vehicle) ?? vehicleMotionProblem(world, vehicle)?.problem;
+}
+
+const checkVehicles: Check = (world) => {
+  let previous = 0;
+  for (const [id, vehicle] of world.vehicles) {
+    if (vehicle.id !== id) return `world.vehicles: kľúč ${String(id)} ukazuje na ${vehicle.label}`;
+    if (id <= previous) return `world.vehicles: ${vehicle.label} nie je vzostupne podľa id (po #${String(previous)})`;
+    previous = id;
+    const violation = checkVehicle(world, vehicle);
+    if (violation !== undefined) return violation;
+  }
+  return undefined;
+};
+
+/** Jednotky jobu ležia tam, kde to hovorí jeho stav (`cargoAt`: na `from` alebo vo vozidle jobu) a index ich pozná. */
+function checkJobUnits(world: World, job: TransportJob): string | undefined {
+  const place = JOB_STATE_TRAITS[job.state].cargoAt;
+  for (const unitId of job.unitIds) {
+    const unit = world.cargo.get(unitId);
+    if (unit === undefined) return `${job.label}: jednotka #${String(unitId)} v ledgeri nie je`;
+    if (world.jobOfUnit(unitId) !== job) return `${job.label}: index jobOfUnit(#${String(unitId)}) ukazuje na ${world.jobOfUnit(unitId)?.label ?? 'nič'}`;
+    const atSource = isSameLocation(unit.location, job.from);
+    const inVehicle = unit.location.kind === 'in_vehicle' && unit.location.vehicleId === job.vehicleId;
+    if ((place === 'source' && !atSource) || (place === 'vehicle' && !inVehicle)) {
+      return `${job.label} v stave '${job.state}': jednotka #${String(unitId)} nie je na ${place === 'source' ? 'zdroji' : 'vozidle'} jobu`;
+    }
+  }
+  return undefined;
+}
+
+function checkJob(world: World, job: TransportJob): string | undefined {
+  const traits = JOB_STATE_TRAITS[job.state];
+  if (!traits.active) return `${job.label} v stave '${job.state}' je stále vo world.jobs`;
+  if (traits.hasVehicle !== (job.vehicleId !== null)) return `${job.label} v stave '${job.state}' ${traits.hasVehicle ? 'nemá vozidlo' : 'má vozidlo'}`;
+  const vehicle = job.vehicleId === null ? undefined : world.vehicles.get(job.vehicleId);
+  if (job.vehicleId !== null && vehicle?.jobId !== job.id) return `${job.label}: vozidlo #${String(job.vehicleId)} tento job nemá`;
+  const storage = world.modules.get(job.toModuleId);
+  if (!(storage instanceof StorageModule)) return `${job.label}: cieľ #${String(job.toModuleId)} nie je sklad`;
+  const slot = uniqueSlotOf(job.to);
+  if (slot === null || slot >= storage.capacity || !storage.isReserved(slot)) return `${job.label}: slot ${String(slot)} nie je rezervovaný v ${storage.label}`;
+  const typeId = world.cargo.get(job.unitIds[0])?.typeId;
+  const category = typeId === undefined ? undefined : world.defs.cargoTypes.get(typeId).category;
+  if (category !== storage.category) return `${job.label}: ${storage.label} (kategória '${storage.category}') pre náklad kategórie '${String(category)}'`;
+  if (vehicle !== undefined && (category === undefined || !vehicle.def.cargoCategories.includes(category))) {
+    return `${job.label}: ${vehicle.label} nevozí náklad kategórie '${String(category)}'`;
+  }
+  return checkJobUnits(world, job);
+}
+
+/** Podrobná správa, keď rezervácie skladu nesedia so slotmi jeho aktívnych jobov (len pri porušení — alokuje). */
+function reservationMismatch(world: World, storage: StorageModule): string {
+  const want: number[] = [];
+  for (const job of world.jobs.values()) {
+    const slot = uniqueSlotOf(job.to);
+    if (job.toModuleId === storage.id && slot !== null) want.push(slot);
+  }
+  want.sort((a, b) => a - b);
+  return `${storage.label}: rezervované sloty [${storage.reservedSlots().join(', ')}] ≠ sloty aktívnych jobov [${want.join(', ')}]`;
+}
+
+/**
+ * Rezervované sloty každého skladu = presne sloty `to` aktívnych jobov s cieľom v ňom (ADR-018) — bez kópií a triedenia
+ * (review T03-13): slot každého jobu je v sklade rezervovaný (`isReserved`, `checkJob`), počet jobov = `reservedCount`
+ * a súčet aj súčet štvorcov slotov jobov = súčty rezervovaných slotov. Pri porušení podrobná správa
+ * (`reservationMismatch`).
+ */
+function checkStorageReservations(world: World): string | undefined {
+  for (const module of world.modules.values()) {
+    if (!(module instanceof StorageModule)) continue;
+    let count = 0;
+    let sum = 0;
+    let squares = 0;
+    for (const job of world.jobs.values()) {
+      const slot = uniqueSlotOf(job.to);
+      if (job.toModuleId !== module.id || slot === null) continue;
+      count += 1;
+      sum += slot;
+      squares += slot * slot;
+    }
+    const reserved = module.reservedCount;
+    let found = 0;
+    for (let slot = 0; slot < module.capacity && found < reserved; slot++) {
+      if (!module.isReserved(slot)) continue;
+      found += 1;
+      sum -= slot;
+      squares -= slot * slot;
+    }
+    if (count !== reserved || sum !== 0 || squares !== 0) return reservationMismatch(world, module);
+  }
+  return undefined;
+}
+
+const checkJobs: Check = (world) => {
+  let previous = 0;
+  let units = 0;
+  for (const [id, job] of world.jobs) {
+    if (job.id !== id) return `world.jobs: kľúč ${String(id)} ukazuje na ${job.label}`;
+    if (id <= previous) return `world.jobs: ${job.label} nie je vzostupne podľa id (po #${String(previous)})`;
+    previous = id;
+    units += job.unitIds.length;
+    const violation = checkJob(world, job);
+    if (violation !== undefined) return violation;
+  }
+  if (world.jobUnitCount !== units) return `index jobOfUnit má ${String(world.jobUnitCount)} jednotiek, joby ${String(units)}`;
+  return checkStorageReservations(world);
 };
 
 const checkBerthGroups: Check = (world) => {
@@ -293,7 +571,17 @@ const checkShips: Check = (world) => {
   return checkGrabbingCranes(world);
 };
 
-const CHECKS: readonly Check[] = [checkCargoHolders, checkModuleCells, checkCranes, checkAprons, checkBerthGroups, checkShips];
+const CHECKS: readonly Check[] = [
+  checkCargoHolders,
+  checkModuleCells,
+  checkCranes,
+  checkCargoSlots,
+  checkBerthGroups,
+  checkShips,
+  checkDepots,
+  checkVehicles,
+  checkJobs,
+];
 
 /** Prvé porušenie invariantov sveta (viď hlavička súboru), alebo `undefined`. Svet nemení. */
 export function findWorldViolation(world: World): string | undefined {

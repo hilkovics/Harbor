@@ -4,8 +4,8 @@
  * (`World.assertInvariants`), obnova zo save (`restoreEntities`) aj `World.removeModule` (modul s nákladom
  * nejde odstrániť).
  *
- * Druhy bez entít v aktuálnej fáze (vozidlá F3, kamióny, vlaky) nemajú držiteľov — jednotka v nich je chyba.
- * Nová entita = nový riadok tu (a jej poradie v save).
+ * Druhy bez entít v aktuálnej fáze (kamióny, vlaky) nemajú držiteľov — jednotka v nich je chyba. Vozidlá (T03-04)
+ * sú držiteľmi `in_vehicle`. Nová entita = nový riadok tu (a jej poradie v save).
  */
 import type { CargoHolderKind } from '../cargo/cargo-location';
 import type { EntityId } from '../core/entity-id';
@@ -16,6 +16,7 @@ import type { Module } from '../modules/module';
 export interface CargoHolderWorld {
   readonly modules: ReadonlyMap<EntityId, Module>;
   readonly ships: ReadonlyMap<EntityId, unknown>;
+  readonly vehicles: ReadonlyMap<EntityId, unknown>;
 }
 
 type HolderSource = (world: CargoHolderWorld) => Iterable<EntityId>;
@@ -36,7 +37,7 @@ export const CARGO_HOLDER_SOURCES: { readonly [K in CargoHolderKind]: HolderSour
   on_ship: (world: CargoHolderWorld) => world.ships.keys(),
   in_crane: modulesOfKinds('crane'),
   on_apron: modulesOfKinds('berth'),
-  in_vehicle: NO_HOLDERS,
+  in_vehicle: (world: CargoHolderWorld) => world.vehicles.keys(),
   in_storage: modulesOfKinds('storage'),
   in_pipeline: modulesOfKinds('pipeline'),
   at_ramp: modulesOfKinds('ramp', 'rail_station'),

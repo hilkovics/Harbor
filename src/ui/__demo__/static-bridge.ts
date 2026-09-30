@@ -47,6 +47,7 @@ export function createStaticBridge(initial: Partial<StaticState> = {}, speeds: r
       modules: [],
       cranes: [],
       ships: [],
+      vehicles: [],
     });
   let snapshot = build();
 

@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { berthParams } from '@sim/defs';
 import { ROTATIONS } from '@sim/grid';
-import { ApronBuffer, BerthModule, ModuleError, effectiveBerthDepth } from '@sim/modules';
+import { ApronBuffer, BerthModule, ModuleError, ModuleStateError, effectiveBerthDepth, type BerthRuntimeState } from '@sim/modules';
 import { MAP } from '../world/world-fixtures';
 import { BERTH, DEEP_BERTH, MODULE_DEFS, berthOn, id, quayGrid } from './module-fixtures';
 
@@ -26,7 +26,8 @@ describe('BerthModule — geometria', () => {
     expect(berth.craneIds).toEqual([]);
     expect(berth.dockedShipId).toBeNull();
     expect(berth.groupId).toBe(0);
-    expect(berth.getRuntimeState()).toEqual({});
+    expect(berth.getRuntimeState()).toEqual({ lastNoStorageHour: null });
+    expect(berth.lastNoStorageHour).toBeNull();
   });
 
   it('apron = ApronBuffer s kapacitou apronSlots defu', () => {
@@ -46,6 +47,17 @@ describe('BerthModule — geometria', () => {
     berth.detachCrane(id(5));
     expect(berth.craneIds).toEqual([3]);
     expect(() => berth.detachCrane(id(5))).toThrow(ModuleError);
+  });
+
+  it('craneIds je zmrazená snímka: volajúci ju nezmení, zmena dá novú snímku, čítanie nealokuje (review T03-13)', () => {
+    const berth = berthOn(quayGrid(20, 20), 1, { x: 0, y: 0 });
+    berth.attachCrane(id(5));
+    const first = berth.craneIds;
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(berth.craneIds).toBe(first);
+    expect(() => (first as unknown as number[]).push(7)).toThrow(TypeError);
+    berth.attachCrane(id(3));
+    expect([first, berth.craneIds]).toEqual([[5], [5, 3]]);
   });
 });
 
@@ -83,5 +95,38 @@ describe('BerthModule — efektívna hĺbka (rozhodnutie 4)', () => {
 
   it('BerthModule je trieda pre def kind berth', () => {
     expect(berthOn(MAP.createGrid(), 1, { x: 40, y: 14 })).toBeInstanceOf(BerthModule);
+  });
+});
+
+describe('BerthModule — runtime stav v save (throttle NoStorageAvailable, ADR-018)', () => {
+  it('getRuntimeState = { lastNoStorageHour }; restore na novej inštancii dá rovnakú hodinu (aj null)', () => {
+    const berth = berthOn(quayGrid(20, 20), 1, { x: 0, y: 0 });
+    berth.lastNoStorageHour = 7;
+    const state = berth.getRuntimeState();
+    expect(state).toEqual({ lastNoStorageHour: 7 } satisfies BerthRuntimeState);
+    const copy = berthOn(quayGrid(20, 20), 1, { x: 0, y: 0 });
+    copy.restoreRuntimeState(JSON.parse(JSON.stringify(state)));
+    expect(copy.lastNoStorageHour).toBe(7);
+    copy.restoreRuntimeState({ lastNoStorageHour: null });
+    expect(copy.lastNoStorageHour).toBeNull();
+  });
+
+  it.each<[string, unknown, string]>([
+    ['prázdny objekt (v2 tvar)', {}, '/lastNoStorageHour'],
+    ['záporná hodina', { lastNoStorageHour: -1 }, '/lastNoStorageHour'],
+    ['necelá hodina', { lastNoStorageHour: 1.5 }, '/lastNoStorageHour'],
+    ['neznámy kľúč', { lastNoStorageHour: null, extra: 1 }, '/extra'],
+  ])('%s → ModuleStateError na %s, stav sa nezmení', (_name, raw, path) => {
+    const berth = berthOn(quayGrid(20, 20), 1, { x: 0, y: 0 });
+    berth.lastNoStorageHour = 3;
+    let error: unknown;
+    try {
+      berth.restoreRuntimeState(raw);
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(ModuleStateError);
+    expect((error as ModuleStateError).path).toBe(path);
+    expect(berth.lastNoStorageHour).toBe(3);
   });
 });

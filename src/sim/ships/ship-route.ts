@@ -28,7 +28,7 @@ export interface ShipPoint {
 }
 
 /** Posun od ľavého horného rohu bunky k jej stredu. */
-const CELL_CENTER_OFFSET = 0.5;
+export const CELL_CENTER_OFFSET = 0.5;
 
 /** Stred bunky: (cx + 0.5, cy + 0.5). */
 export function cellCenter(cell: CellCoord): ShipPoint {

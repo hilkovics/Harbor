@@ -5,12 +5,14 @@
  * Predvolený `commandRegistry` sa naplní pri načítaní `command-registry.ts`, takže `commandFromJSON` pozná
  * všetky príkazy bez ohľadu na to, odkiaľ ho konzument importuje.
  */
+import { BuyVehicleCommand } from './buy-vehicle';
 import type { Command, SerializedCommand } from './command';
 import type { CommandRegistry } from './command-registry';
 import { PlaceModuleCommand } from './place-module';
 import { PlaceRoadCommand } from './place-road';
 import { RemoveModuleCommand } from './remove-module';
 import { RemoveRoadCommand } from './remove-road';
+import { SellVehicleCommand } from './sell-vehicle';
 import { SetGameSpeedCommand } from './set-game-speed';
 import { SpawnShipDebugCommand } from './spawn-ship-debug';
 
@@ -20,7 +22,10 @@ export interface RegistrableCommand {
   fromJSON(json: SerializedCommand): Command;
 }
 
-/** Vstavané príkazy v poradí registrácie (ARCHITECTURE §12.2): F1 + moduly F2 (T02-04) + ladiaca loď (T02-05). */
+/**
+ * Vstavané príkazy v poradí registrácie (ARCHITECTURE §12.2): F1 + moduly F2 (T02-04) + ladiaca loď (T02-05) + vozidlá
+ * F3 (T03-04).
+ */
 export const BUILTIN_COMMANDS: readonly RegistrableCommand[] = Object.freeze([
   PlaceRoadCommand,
   RemoveRoadCommand,
@@ -28,6 +33,8 @@ export const BUILTIN_COMMANDS: readonly RegistrableCommand[] = Object.freeze([
   PlaceModuleCommand,
   RemoveModuleCommand,
   SpawnShipDebugCommand,
+  BuyVehicleCommand,
+  SellVehicleCommand,
 ]);
 
 /** Zaregistruje všetky vstavané príkazy do `registry` (už registrovaný typ → `CommandError`). */

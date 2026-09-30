@@ -1,8 +1,10 @@
 /**
  * SpriteAtlas (DESIGN_BRIEF §4, §7): textúry terénu, infraštruktúry a entít sveta z `assets/manifest.json`.
  *
- * Zoznam spritov a súborov sa berie z manifestu (`terrain.<id>.file`, `infra.<vrstva>.tiles.<tvar>.file` a súbory
- * entít z `entity-assets.ts`: moduly, časti žeriavov, lode, náklad), nie z kódu.
+ * Zoznam spritov a súborov sa berie z manifestu (`terrain.<id>.file`, `infra.<vrstva>.tiles.<tvar>.file`,
+ * `overlay.path_arrow.file` (šípka jednosmerky) a súbory
+ * entít z `entity-assets.ts`: moduly vrátane stavov skladov `fill00…fill100`, časti žeriavov, lode, vozidlá, náklad
+ * a odznaky), nie z kódu.
  * SVG sa rasterizuje pri načítaní na `SPRITE_RASTER_RESOLUTION` px na px zdroja (64 px bunka → 128 px pri zoome 2,0),
  * takže pri najväčšom zoome ostáva ostré; mipmapy držia čitateľné tenké línie (pena, obrysy) aj pri zoome 0,25.
  *
@@ -10,7 +12,7 @@
  * testy bez DOM podstrčia atrapu a produkčný kód bez atlasu padá na `Graphics` fallback.
  */
 import { Assets, Texture } from 'pixi.js';
-import { infra as infraManifest, terrain as terrainManifest } from '../../assets/manifest.json';
+import { infra as infraManifest, overlay as overlayManifest, terrain as terrainManifest } from '../../assets/manifest.json';
 import { assetUrl } from './asset-urls';
 import { CAMERA_MAX_ZOOM } from './camera';
 import type { TerrainSpriteId } from './coast';
@@ -22,14 +24,18 @@ export type InfraLayerId = keyof typeof infraManifest;
 /** Tvar dlaždice infraštruktúry vrstvy `L` (`infra.<L>.tiles.<tvar>`), napr. `straight`, `corner`, `valve`. */
 export type InfraTileId<L extends InfraLayerId = InfraLayerId> = keyof (typeof infraManifest)[L]['tiles'];
 
-/** Čo vrstvy sveta potrebujú od atlasu: textúru terénu a textúru dlaždice infraštruktúry. */
+/** Overlay assety, ktoré atlas drží pre vrstvy sveta (`overlay.<id>` v manifeste): šípka smeru jednosmerky. */
+export type WorldOverlayId = 'path_arrow';
+
+/** Čo vrstvy sveta potrebujú od atlasu: textúru terénu, dlaždice infraštruktúry a overlaye sveta (cestné značky). */
 export interface SpriteTextures {
   terrain(id: TerrainSpriteId): Texture;
   infra<L extends InfraLayerId>(layer: L, tile: InfraTileId<L>): Texture;
+  overlay(id: WorldOverlayId): Texture;
 }
 
 /**
- * Textúry entít sveta (moduly, časti žeriavov, lode, náklad) podľa cesty súboru z manifestu
+ * Textúry entít sveta (moduly, časti žeriavov, lode, vozidlá, náklad, odznaky) podľa cesty súboru z manifestu
  * (napr. `modules/berth_standard.svg`). Views závisia iba od tohto rozhrania; testy bez DOM podstrčia atrapu.
  */
 export interface EntityTextures {
@@ -54,6 +60,10 @@ function terrainKey(id: string): string {
   return `terrain/${id}`;
 }
 
+function overlayKey(id: string): string {
+  return `overlay/${id}`;
+}
+
 /** Kľúč textúry entity: cesta súboru z manifestu. */
 function fileKey(path: string): string {
   return `file/${path}`;
@@ -73,6 +83,7 @@ function manifestEntries(): SpriteEntry[] {
   for (const [layer, { tiles }] of Object.entries<{ tiles: Record<string, { file: string }> }>(infraManifest)) {
     for (const [tile, entry] of Object.entries(tiles)) entries.push({ key: infraKey(layer, tile), file: entry.file });
   }
+  entries.push({ key: overlayKey('path_arrow'), file: overlayManifest.path_arrow.file });
   for (const file of entitySpriteFiles()) entries.push({ key: fileKey(file), file });
   return entries;
 }
@@ -109,6 +120,11 @@ export class SpriteAtlas implements SpriteTextures, EntityTextures {
   /** Textúra dlaždice infraštruktúry (`infra.<vrstva>.tiles.<tvar>`); tvar mimo manifestu je chyba. */
   infra<L extends InfraLayerId>(layer: L, tile: InfraTileId<L>): Texture {
     return this.texture(infraKey(layer, String(tile)));
+  }
+
+  /** Textúra overlayu sveta (`overlay.<id>`, napr. `path_arrow`); id mimo manifestu je chyba. */
+  overlay(id: WorldOverlayId): Texture {
+    return this.texture(overlayKey(id));
   }
 
   /** Textúra entity podľa cesty súboru z manifestu, alebo `undefined`, ak ju atlas nenačítal. */

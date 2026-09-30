@@ -127,6 +127,7 @@ describe('World.placeModule / addModule', () => {
     expect(errorCode(() => world.addModule(berth))).toBe('duplicate_id');
     const foreign = moduleRegistry.create(MODULE_DEFS.modules.get(BERTH), { defId: BERTH, x: 60, y: 14, rotation: 0 }, id(50), 0, {
       grid: world.grid,
+      cargo: world.cargo,
     });
     expect(errorCode(() => world.addModule(foreign))).toBe('invalid_input');
     expect(world.modules.size).toBe(1);
@@ -183,8 +184,6 @@ describe('World.removeModule', () => {
     const unit = world.cargo.create('container_teu', { kind: 'on_ship', shipId: id(500) }).id;
     world.cargo.move(unit, { kind: 'in_crane', craneId: crane.id });
     world.cargo.move(unit, { kind: 'on_apron', berthId: berth.id, slot: 0 });
-    berth.apron.reserveSlot(0);
-    berth.apron.commit(0, unit);
     world.removeModule(crane.id);
     expect(errorCode(() => world.removeModule(berth.id))).toBe('has_cargo');
   });
@@ -259,8 +258,6 @@ describe('World.assertInvariants', () => {
     const [a, b] = [0, 1].map(() => world.cargo.create('container_teu', { kind: 'on_ship', shipId: id(500) }).id);
     world.cargo.move(a, { kind: 'in_crane', craneId: crane.id });
     world.cargo.move(a, { kind: 'on_apron', berthId: berth.id, slot: 2 });
-    berth.apron.reserveSlot(2);
-    berth.apron.commit(2, a);
     const slot = berth.apron.reserve();
     world.cargo.move(b, { kind: 'in_crane', craneId: crane.id });
     restoreCrane(crane, { state: 'placing', reservedSlot: slot, phaseTicksTotal: 6, phaseTicksLeft: 3 });

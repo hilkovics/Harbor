@@ -5,7 +5,8 @@
 // CLI sa spustí len pri priamom behu súboru. Schéma mapy overuje len štruktúru; vzťahy medzi poľami mapy overuje
 // loader v sime (MapError). Schéma manifestu tiež len štruktúru; existenciu SVG súborov, ich pokrytie a rozmery
 // overuje tests/tools/asset-manifest.test.ts. `validateAssetManifest` navyše krížovo overí, že každý modul z
-// `modules.json` má `sprites[id]` a každá loď zo `ships.json` má `entities.ship_{id}`.
+// `modules.json` má `sprites[id]`, každá loď zo `ships.json` má `entities.ship_{id}` a každé vozidlo z
+// `vehicles.json` má `entities[id]`.
 // Katalógové defy (`items: [...]`, ADR-009) majú navyše kontrolu jedinečnosti `id` — JSON Schema ju nevyjadrí.
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -29,8 +30,9 @@ const ASSETS_LABEL_PREFIX = 'assets/';
 /** Katalógy defov, ktoré musia mať sprite v manifeste, a sekcia manifestu + predpona kľúča, kde ho hľadať. */
 const MODULES_DEF_FILE = `modules${JSON_SUFFIX}`;
 const SHIPS_DEF_FILE = `ships${JSON_SUFFIX}`;
+const VEHICLES_DEF_FILE = `vehicles${JSON_SUFFIX}`;
 const MODULE_SPRITES_SECTION = 'sprites';
-const SHIP_ENTITIES_SECTION = 'entities';
+const ENTITIES_SECTION = 'entities';
 const SHIP_ENTITY_PREFIX = 'ship_';
 
 export interface DefValidationResult {
@@ -164,7 +166,8 @@ function catalogEntries(defsDir: string, file: string): { id: string; index: num
 
 /**
  * Krížová kontrola manifestu voči defom: každý modul z `modules.json` má `sprites[id]`, každá loď zo `ships.json`
- * má `entities.ship_{id}`. Chyba: `<label>: /<sekcia>/<kľúč> chýba sprite pre <modul|loď> '<id>' (<def>: /items/<i>/id)`.
+ * má `entities.ship_{id}`, každé vozidlo z `vehicles.json` má `entities[id]`.
+ * Chyba: `<label>: /<sekcia>/<kľúč> chýba sprite pre <modul|loď|vozidlo> '<id>' (<def>: /items/<i>/id)`.
  * Katalóg, ktorý chýba alebo sa nedá čítať, a sekcia manifestu, ktorá nie je objekt, sa preskočia (hlási ich schéma /
  * `validateDefsDir`). Sprity bez defu (budúce moduly) chyba nie sú.
  */
@@ -172,7 +175,8 @@ function findMissingSprites(label: string, manifest: unknown, defsDir: string): 
   if (!isRecord(manifest)) return [];
   const checks = [
     { defFile: MODULES_DEF_FILE, section: MODULE_SPRITES_SECTION, keyPrefix: '', what: 'modul' },
-    { defFile: SHIPS_DEF_FILE, section: SHIP_ENTITIES_SECTION, keyPrefix: SHIP_ENTITY_PREFIX, what: 'loď' },
+    { defFile: SHIPS_DEF_FILE, section: ENTITIES_SECTION, keyPrefix: SHIP_ENTITY_PREFIX, what: 'loď' },
+    { defFile: VEHICLES_DEF_FILE, section: ENTITIES_SECTION, keyPrefix: '', what: 'vozidlo' },
   ] as const;
   const errors: string[] = [];
   for (const { defFile, section, keyPrefix, what } of checks) {

@@ -6,6 +6,7 @@
  * Prístup mimo mapy je chyba (`RangeError`), nie `undefined` — volajúci sa pýta `inBounds` vopred.
  */
 import type { EntityId } from '../core/entity-id';
+import { DEFAULT_ROAD_KIND, type RoadKind } from './road-kind';
 import type { TerrainType } from './terrain';
 
 /** Súradnice bunky (v `MapDef` §4.7 označené ako `Cell`). */
@@ -30,7 +31,7 @@ export type DepthClass = 0 | 1 | 2 | 3;
 
 /**
  * Bunka mriežky (§5.1). Statické polia (`terrain`, `depthClass`, `parcelId`) určí mapa a nemenia sa;
- * dynamické (`moduleId`, `road`, `traffic`) mení simulácia.
+ * dynamické (`moduleId`, `road`, `roadKind`, `roadDir`, `traffic`) mení simulácia.
  */
 export interface Cell {
   readonly terrain: TerrainType;
@@ -40,11 +41,22 @@ export interface Cell {
   /** Modul, ktorého footprint bunku zaberá. */
   moduleId: EntityId | null;
   road: RoadLayer;
+  /**
+   * Typ cesty (ADR-020, `road-kind.ts`) — význam má len pri `road === 'road'`. Bunka bez cesty má vždy
+   * `DEFAULT_ROAD_KIND` (normalizovaný stav, krok 12), takže priamy zápis `road = 'road'` (štartové cesty mapy,
+   * testovacie fixtúry) dá dvojpruhovú cestu. Mení ho len `PlaceRoad`/`RemoveRoad` a obnova save.
+   */
+  roadKind: RoadKind;
+  /** Smer jednosmerky (`ROAD_KIND_TRAITS[roadKind].oneWay`); pri ostatných typoch a bez cesty `null` (ADR-020). */
+  roadDir: Direction4Name | null;
   /** Akumulátor heatmapy dopravy (§7.6, decay). */
   traffic: number;
 }
 
-/** Statické polia novej bunky; dynamické začínajú prázdne (`moduleId: null`, `road: 'none'`, `traffic: 0`). */
+/**
+ * Statické polia novej bunky; dynamické začínajú prázdne (`moduleId: null`, `road: 'none'`, `roadKind:
+ * DEFAULT_ROAD_KIND`, `roadDir: null`, `traffic: 0`).
+ */
 export interface CellInit {
   readonly terrain: TerrainType;
   /** Predvolene 0. */
@@ -84,8 +96,18 @@ function createCell(init: CellInit): Cell {
     parcelId: init.parcelId ?? null,
     moduleId: null,
     road: 'none',
+    roadKind: DEFAULT_ROAD_KIND,
+    roadDir: null,
     traffic: 0,
   };
+}
+
+/** Smer kroku medzi 4-susednými bunkami (`dx`, `dy` ∈ −1…1, práve jedna os); iný krok → `undefined`. Bez alokácie. */
+export function directionOfStep(dx: number, dy: number): Direction4Name | undefined {
+  for (const direction of DIRECTIONS_4) {
+    if (direction.dx === dx && direction.dy === dy) return direction.name;
+  }
+  return undefined;
 }
 
 export class Grid {
@@ -202,6 +224,8 @@ export class Grid {
       const target = copy.cells[i];
       target.moduleId = source.moduleId;
       target.road = source.road;
+      target.roadKind = source.roadKind;
+      target.roadDir = source.roadDir;
       target.traffic = source.traffic;
     }
     return copy;

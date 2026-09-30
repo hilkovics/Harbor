@@ -31,6 +31,13 @@ describe('assetUrl (Vite ?url podľa cesty z manifestu)', () => {
   it('overlayAssetUrl používa ten istý zdroj URL', () => {
     expect(overlayAssetUrl('ghost_hatch')).toBe(assetUrl(overlay.ghost_hatch.file));
   });
+
+  it('šípka smeru jednosmerky (`overlay.path_arrow`) je v manifeste ako otáčateľný sprite 1×1 s reálnym súborom', () => {
+    expect(overlay.path_arrow.file).toBe('overlay/path_arrow.svg');
+    expect(overlay.path_arrow.rotatable).toBe(true);
+    expect(overlay.path_arrow.footprint).toEqual({ w: 1, h: 1 });
+    expect(assetUrl(overlay.path_arrow.file)).toMatch(/path_arrow.*\.svg/);
+  });
 });
 
 describe('rasterizácia SVG', () => {

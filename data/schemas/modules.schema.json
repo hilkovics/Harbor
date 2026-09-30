@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "modules.json",
-  "description": "Katalóg modulov (ARCHITECTURE §4.2, §5.3, ADR-009): { schemaVersion, items: [...] }. Tvar `params` závisí od `kind` (berth, crane; ostatné kind-y zatiaľ bez parametrov). Jedinečnosť `id` v items[] schéma nevyjadrí — kontroluje ju DefRegistry a `pnpm validate:defs`; polohu konektora vo footprinte kontroluje DefRegistry.",
+  "description": "Katalóg modulov (ARCHITECTURE §4.2, §5.3, ADR-009): { schemaVersion, items: [...] }. Tvar `params` závisí od `kind` (berth, crane, storage, depot; ostatné kind-y zatiaľ bez parametrov). Jedinečnosť `id` v items[] schéma nevyjadrí — kontroluje ju DefRegistry a `pnpm validate:defs`; polohu konektora vo footprinte kontroluje DefRegistry.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "items"],
@@ -125,10 +125,18 @@
           "then": { "properties": { "params": { "$ref": "#/$defs/craneParams" } } }
         },
         {
+          "if": { "type": "object", "properties": { "kind": { "const": "storage" } }, "required": ["kind"] },
+          "then": { "properties": { "params": { "$ref": "#/$defs/storageParams" } } }
+        },
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "depot" } }, "required": ["kind"] },
+          "then": { "properties": { "params": { "$ref": "#/$defs/depotParams" } } }
+        },
+        {
           "if": {
             "type": "object",
             "properties": {
-              "kind": { "enum": ["storage", "gate", "waiting_area", "ramp", "depot", "rail_station", "pipeline"] }
+              "kind": { "enum": ["gate", "waiting_area", "ramp", "rail_station", "pipeline"] }
             },
             "required": ["kind"]
           },
@@ -165,6 +173,25 @@
       "properties": {
         "cycleTicks": { "type": "integer", "minimum": 2, "description": "Trvanie celého cyklu žeriava v tickoch." },
         "category": { "enum": ["container", "bulk", "liquid", "gas", "roro"], "description": "Kategória nákladu, ktorú žeriav vykladá." }
+      }
+    },
+    "storageParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capacityUnits", "category"],
+      "properties": {
+        "capacityUnits": { "type": "integer", "minimum": 1, "description": "Kapacita skladu v CargoUnit (pre dvor: sloty × vrstvy v manifeste)." },
+        "category": { "enum": ["container", "bulk", "liquid", "gas", "roro"], "description": "Kategória nákladu, ktorú sklad prijíma." },
+        "internalTicks": { "type": "integer", "minimum": 0, "description": "Vnútorný čas vozidla v module; chýba = logistics.defaultInternalTicks." }
+      }
+    },
+    "depotParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capacity"],
+      "properties": {
+        "capacity": { "type": "integer", "minimum": 1, "description": "Počet státí (vozidiel) v depe (`stalls` v manifeste)." },
+        "internalTicks": { "type": "integer", "minimum": 0, "description": "Vnútorný čas vozidla v module; chýba = logistics.defaultInternalTicks." }
       }
     },
     "noParams": {

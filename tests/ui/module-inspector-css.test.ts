@@ -97,3 +97,45 @@ describe('module-inspector.css — pravidlá komponentu', () => {
     expect(source).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
   });
 });
+
+describe('module-inspector.css — F3 (sklad, depo, vozidlá)', () => {
+  it('hlavné tlačidlo (Kúpiť vozidlo): accent plocha, tmavý text --ui-surface, hover --ui-accent-hover, nedostupné stlmené', () => {
+    const body = css.ruleBody('.module-inspector__btn--primary');
+    expect(body).toMatch(/background:\s*var\(--ui-accent\)/);
+    expect(body).toMatch(/border-color:\s*var\(--ui-accent\)/);
+    expect(body).toMatch(/color:\s*var\(--ui-surface\)/);
+    expect(css.ruleBody(".module-inspector__btn--primary:hover:not([aria-disabled='true'])")).toMatch(/background:\s*var\(--ui-accent-hover\)/);
+    // nedostupné tlačidlo prebíja accent plochu (vyššia špecificita `[aria-disabled]`) — rovnaké pravidlo ako pri Odstrániť
+    expect(css.ruleBody(".module-inspector__btn[aria-disabled='true']")).toMatch(/background:\s*transparent/);
+  });
+
+  it('zoznam vozidiel: rámovaný (--ui-border, --radius-md), bez odrážok, striedavé pozadie --ui-surface', () => {
+    const list = css.ruleBody('.module-inspector__vehicles');
+    expect(list).toMatch(/border:\s*1px solid var\(--ui-border\)/);
+    expect(list).toMatch(/border-radius:\s*var\(--radius-md\)/);
+    expect(list).toMatch(/list-style:\s*none/);
+    expect(css.ruleBody('.module-inspector__vehicle:nth-child(even)')).toMatch(/background:\s*var\(--ui-surface\)/);
+  });
+
+  it('riadok vozidla: kód v mono písme, druh vozidla stlmený a orezaný, stav bez zalamovania', () => {
+    expect(css.ruleBody('.module-inspector__vehicle-code')).toMatch(/font-family:\s*var\(--font-mono\)/);
+    const label = css.ruleBody('.module-inspector__vehicle-label');
+    expect(label).toMatch(/color:\s*var\(--ui-text-2\)/);
+    expect(label).toMatch(/text-overflow:\s*ellipsis/);
+    expect(css.ruleBody('.module-inspector__vehicle-state')).toMatch(/white-space:\s*nowrap/);
+  });
+
+  it('tóny stavu vozidla: pracuje --ui-success, nečinné --ui-text-2, bez cesty --ui-warning', () => {
+    expect(css.ruleBody('.module-inspector__vehicle-state--success')).toMatch(/color:\s*var\(--ui-success\)/);
+    expect(css.ruleBody('.module-inspector__vehicle-state--muted')).toMatch(/color:\s*var\(--ui-text-2\)/);
+    expect(css.ruleBody('.module-inspector__vehicle-state--warn')).toMatch(/color:\s*var\(--ui-warning\)/);
+  });
+
+  it('tlačidlo predaja: 24 px (--icon-md), focus ring, nedostupné s kurzorom not-allowed', () => {
+    const sell = css.ruleBody('.module-inspector__vehicle-sell');
+    expect(sell).toMatch(/width:\s*var\(--icon-md\)/);
+    expect(sell).toMatch(/height:\s*var\(--icon-md\)/);
+    expect(css.ruleBody(".module-inspector__vehicle-sell[aria-disabled='true']")).toMatch(/cursor:\s*not-allowed/);
+    expect(css.ruleBody('.module-inspector__vehicle-sell:focus-visible')).toMatch(/outline:\s*2px solid var\(--ui-accent\)/);
+  });
+});

@@ -4,8 +4,10 @@
 // Mapa harbor_01: nábrežie (Q) y 14–16, x 10–85; hĺbka nábrežia x 10–29 → 2, x 30–57 → 1, x 58–59 → 1 (mimo zón),
 // x 60–85 → 3. Pevnina y ≥ 17, voda y ≤ 13.
 import modulesJson from '@data/defs/modules.json';
-import type { EntityId } from '@sim/core';
+import { CargoLedger } from '@sim/cargo';
+import { EntityIdAllocator, EventBus, type EntityId } from '@sim/core';
 import { DefRegistry } from '@sim/defs';
+import type { SimEvent } from '@sim/events';
 import { Grid, type CellCoord, type Rect, type Rotation } from '@sim/grid';
 import { BerthModule, CraneModule, moduleRegistry } from '@sim/modules';
 import { RAW_DEFS } from '../world/world-fixtures';
@@ -34,14 +36,22 @@ export const MODULE_DEFS: DefRegistry = DefRegistry.fromRaw({
 
 export const id = (value: number): EntityId => value as EntityId;
 
+/**
+ * Prázdny ledger pre moduly mimo sveta (T03-02): moduly so slotmi čítajú obsadenie z ledgera (ADR-017), preto ho
+ * `ModuleEnv` vyžaduje aj tam, kde náklad nie je.
+ */
+export function emptyCargo(defs: DefRegistry = MODULE_DEFS): CargoLedger {
+  return new CargoLedger({ cargoTypes: defs.cargoTypes, ids: new EntityIdAllocator(), events: new EventBus<SimEvent>(), clock: { tick: 0 } });
+}
+
 /** Syntetická mriežka `w×h` celá z nábrežia s jednou hĺbkou (skupiny kotvísk vo všetkých rotáciách). */
 export function quayGrid(w: number, h: number, depthClass: 1 | 2 | 3 = 3): Grid {
   return new Grid(w, h, () => ({ terrain: 'quay', depthClass }));
 }
 
 /** BerthModule na ľubovoľnej mriežke cez predvolený ModuleRegistry (id priamo, bez sveta). */
-export function berthOn(grid: Grid, moduleId: number, origin: CellCoord, rotation: Rotation = 0, defId = BERTH): BerthModule {
-  const module = moduleRegistry.create(MODULE_DEFS.modules.get(defId), { defId, x: origin.x, y: origin.y, rotation }, id(moduleId), 0, { grid });
+export function berthOn(grid: Grid, moduleId: number, origin: CellCoord, rotation: Rotation = 0, defId = BERTH, cargo = emptyCargo()): BerthModule {
+  const module = moduleRegistry.create(MODULE_DEFS.modules.get(defId), { defId, x: origin.x, y: origin.y, rotation }, id(moduleId), 0, { grid, cargo });
   if (!(module instanceof BerthModule)) throw new Error(`${defId} nie je BerthModule`);
   return module;
 }
@@ -54,8 +64,8 @@ export function markCells(grid: Grid, moduleId: number, rect: Rect): void {
 }
 
 /** CraneModule na ľubovoľnej mriežke (pod ľavým horným rohom musí byť `moduleId` berthu). */
-export function craneOn(grid: Grid, moduleId: number, origin: CellCoord, rotation: Rotation = 0, defId = CRANE): CraneModule {
-  const module = moduleRegistry.create(MODULE_DEFS.modules.get(defId), { defId, x: origin.x, y: origin.y, rotation }, id(moduleId), 0, { grid });
+export function craneOn(grid: Grid, moduleId: number, origin: CellCoord, rotation: Rotation = 0, defId = CRANE, cargo = emptyCargo()): CraneModule {
+  const module = moduleRegistry.create(MODULE_DEFS.modules.get(defId), { defId, x: origin.x, y: origin.y, rotation }, id(moduleId), 0, { grid, cargo });
   if (!(module instanceof CraneModule)) throw new Error(`${defId} nie je CraneModule`);
   return module;
 }

@@ -36,24 +36,30 @@ export type ModuleErrorCode =
   | 'has_cranes'
   /** Modul drží náklad (apron, žeriav, sklad…) alebo má rezervované miesto. */
   | 'has_cargo'
+  /** Depo, ktorému patria vozidlá, nejde odstrániť (T03-02, vozidlá od T03-04). */
+  | 'has_vehicles'
   /** Na berthe kotví (alebo je naň pridelená) loď. */
   | 'ship_docked'
   /** Žeriav je uprostred cyklu. */
   | 'busy'
-  /** Slot apronu je mimo `0 … capacity − 1`. */
+  /** Slot (apron, sklad) je mimo `0 … capacity − 1`. */
   | 'invalid_slot'
-  /** Apron nemá voľný nerezervovaný slot. */
-  | 'apron_full'
+  /** Apron alebo sklad nemá slot, ktorý nie je obsadený ani rezervovaný (T03-02; pôvodne `apron_full`). */
+  | 'no_free_slot'
   /** Slot je už rezervovaný. */
   | 'slot_reserved'
   /** Slot je obsadený jednotkou. */
   | 'slot_occupied'
   /** `commit`/`release` na slote bez rezervácie. */
   | 'slot_not_reserved'
-  /** Jednotka už na aprone je. */
-  | 'unit_on_apron'
-  /** Jednotka na aprone nie je. */
-  | 'unit_not_on_apron'
+  /** `commit` po presune: ledger nemá jednotku na tomto slote držiteľa (presun neprebehol alebo inam). */
+  | 'unit_not_at_slot'
+  /** `recordTaken`: jednotka podľa ledgera stále leží v module. */
+  | 'unit_still_held'
+  /** Depo nemá voľné státie (`params.capacity`). */
+  | 'depot_full'
+  /** Vozidlo k depu nepatrí. */
+  | 'unknown_vehicle'
   /** Neplatný serializovaný stav modulu (`restoreRuntimeState`). */
   | 'state'
   /** Prechod stavu žeriavu, ktorý tabuľka `CRANE_TRANSITIONS` nepovoľuje (ADR-016). */

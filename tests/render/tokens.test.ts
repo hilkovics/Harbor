@@ -2,12 +2,14 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  ROAD_EDGE_SHADE,
   loadEntityPalette,
   loadRenderPalette,
   parseCssColor,
   parseCssPx,
   readColorToken,
   readLengthToken,
+  shadeColor,
   tokenResolverFromCss,
 } from '@render/tokens';
 
@@ -92,14 +94,30 @@ describe('loadRenderPalette', () => {
     expect(palette.terrain.blocked.color).toBe(0x6e6a66);
     expect(palette.road.base.color).toBe(0x4b5058);
     expect(palette.road.marking.color).toBe(0xe9e4d6);
+    expect(palette.road.arrow.color).toBe(0x3aa0ff); // `--ui-accent`: šípka smeru jednosmerky bez sprite
     expect(palette.parcel.forSale.color).toBe(0xf2b233);
     expect(palette.parcel.owned.color).toBe(0x35c27a);
     expect(palette.parcel.leased.color).toBe(0x3aa0ff);
   });
 });
 
+describe('okraj cesty (obrubník procedurálnych úzkych ciest)', () => {
+  const palette = loadRenderPalette(tokenResolverFromCss(TOKENS_CSS));
+
+  it('odvodený z `--road-base` (token pre okraj v design/tokens.css nie je): #4B5058 × 0,215 = #101113 ako v spritoch', () => {
+    expect(palette.road.edge).toEqual({ color: 0x101113, alpha: 1 });
+    expect(ROAD_EDGE_SHADE).toBe(0.215);
+  });
+
+  it('shadeColor: kanály sa násobia a zaokrúhľujú, priehľadnosť ostáva', () => {
+    expect(shadeColor({ color: 0xff8040, alpha: 0.5 }, 0.5)).toEqual({ color: 0x804020, alpha: 0.5 });
+    expect(shadeColor({ color: 0x123456, alpha: 1 }, 1)).toEqual({ color: 0x123456, alpha: 1 });
+    expect(shadeColor({ color: 0xffffff, alpha: 1 }, 0)).toEqual({ color: 0, alpha: 1 });
+  });
+});
+
 describe('loadEntityPalette', () => {
-  it('tokeny fallbacku modulov, žeriavov, lodí a nákladu existujú v design/tokens.css', () => {
+  it('tokeny fallbacku modulov, žeriavov, lodí, vozidiel a nákladu existujú v design/tokens.css', () => {
     const palette = loadEntityPalette(tokenResolverFromCss(TOKENS_CSS));
     expect(palette.module.base.color).toBe(0x9da3ac);
     expect(palette.module.outline.color).toBe(0x5c626b);
@@ -109,8 +127,11 @@ describe('loadEntityPalette', () => {
     expect(palette.ship.deck.color).toBe(0x8e9aa7);
     expect(palette.cargo.base.color).toBe(0xf28c28);
     expect(palette.cargo.dark.color).toBe(0xc7680c);
+    expect(palette.vehicle.body.color).toBe(0xf4d03f);
+    expect(palette.vehicle.dark.color).toBe(0x2b2b2b);
     expect(palette.danger.color).toBe(0xe5484d);
     expect(palette.connector.color).toBe(0x3aa0ff);
+    expect(palette.disconnected.color).toBe(0xf2b233);
   });
 
   it('chýbajúci token → chyba s jeho menom', () => {

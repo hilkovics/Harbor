@@ -21,7 +21,8 @@ describe('SimBridge.snapshot', () => {
   });
 
   it('kalendár: 0-based deň, hodina dňa a minúta hodiny podľa ticku', () => {
-    const { world, bridge } = createApp();
+    // ~100 000 tickov len kvôli kalendáru — invarianty kroku 12 by beh zbytočne naťahovali k limitu 5 s.
+    const { world, bridge } = createApp({ checkInvariants: false });
     const { ticksPerDay, ticksPerHour, ticksPerMinute } = world.clock;
     // Deň 12 (0-based 11), 14:20 — príklad z formatGameTime.
     const target = 11 * ticksPerDay + 14 * ticksPerHour + 20 * ticksPerMinute;
@@ -250,7 +251,7 @@ describe('installDevHook', () => {
 
   it('rendered() (počty views a stav ghostu v rendereri) sa prenesie z bootstrapu; bez neho chýba', () => {
     const { bridge } = createApp();
-    const counts = { modules: 1, cranes: 1, ships: 0, ghostCells: 24, ghostConnectors: 2, selectionRing: false };
+    const counts = { modules: 1, cranes: 1, ships: 0, vehicles: 2, ghostCells: 24, ghostConnectors: 2, ghostArrows: 0, selectionRing: false };
     const target: { __sim?: DevHook } = {};
     expect(installDevHook(bridge, { enabled: true, target, rendered: () => counts })?.rendered?.()).toEqual(counts);
     expect(installDevHook(bridge, { enabled: true, target: {} })?.rendered).toBeUndefined();

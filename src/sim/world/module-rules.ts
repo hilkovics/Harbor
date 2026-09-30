@@ -24,11 +24,16 @@
  * - `no_berth` — pripájaný modul (`mustAttachTo`, žeriav): bunky v mape neležia všetky na jednom module
  *   povoleného druhu (berth);
  * - `rotation_mismatch`, `max_cranes`, `crane_overlap` — pripájaný modul na jednom berthe: iná rotácia než berth,
- *   berth má `params.maxCranes` žeriavov, prekryv s iným žeriavom berthu (ADR-014).
+ *   berth má `params.maxCranes` žeriavov, prekryv s iným žeriavom berthu (ADR-014);
+ * - `connector_blocked` — §8 bod 5 (ADR-017): modul s konektormi typu `road` (berth, sklad, depo…) musí mať aspoň
+ *   jeden, ktorého vonkajšia bunka má cestu alebo je voľná pre cestu (`isOutsideUsable`: v mape, terén unesie cestu,
+ *   bez modulu vrátane umiestňovaného, bez koľaje; parcela sa neoveruje). Modul bez cestných konektorov (žeriav) sa
+ *   pravidlom neriadi. Pravidlo hráča — obnova save ho neoveruje (okolie sa medzitým mohlo zastavať).
  *
- * Pravidlá odstránenia: `has_cargo` (náklad v module alebo obsadený/rezervovaný slot apronu), `has_cranes`,
- * `ship_docked` (kotvisko má loď v `berthing`/`docked` — `dockedShipId`; pri žeriave kotvisko pod ním, inak by loď
- * ostala pri kotvisku naveky s nákladom, T02-14), `busy` (žeriav mimo `idle`/`blocked`).
+ * Pravidlá odstránenia: `has_cargo` (náklad v module alebo rezervovaný slot apronu/skladu — `Module.cargoSlots()`),
+ * `has_cranes`, `has_vehicles` (depo, ktorému patria vozidlá; ADR-017), `ship_docked` (kotvisko má loď v
+ * `berthing`/`docked` — `dockedShipId`; pri žeriave kotvisko pod ním, inak by loď ostala pri kotvisku naveky
+ * s nákladom, T02-14), `busy` (žeriav mimo `idle`/`blocked`).
  */
 import type { CargoLedger } from '../cargo/cargo-ledger';
 import type { EntityId } from '../core/entity-id';
@@ -42,11 +47,13 @@ import { BerthModule } from '../modules/berth-module';
 import { CRANE_STATE_TRAITS, CraneModule } from '../modules/crane-module';
 import type { Module } from '../modules/module';
 import type { ModuleErrorCode } from '../modules/module-error';
-import { SIDE_STEPS, edgeCells, footprintOf, waterSideOf } from '../modules/module-geometry';
+import { SIDE_STEPS, connectorOutside, connectorsOf, edgeCells, footprintOf, waterSideOf } from '../modules/module-geometry';
+import { VehicleDepot } from '../modules/vehicle-depot';
 import type { Ship } from '../ships/ship';
 import { SHIP_STATE_TRAITS } from '../ships/ship-fsm';
 import { shipCells } from '../ships/ship-route';
 import { MODULE_CARGO_HOLDER_KINDS } from './cargo-holders';
+import { isOutsideUsable } from './connectivity';
 
 /** Porušenie pravidla: kód pravidla + popis prvého výskytu (do `ModuleError`, `MapError` a ladiacich správ). */
 export interface RuleViolation<R extends string> {
@@ -71,6 +78,7 @@ export const PLACEMENT_RULES = [
   'rotation_mismatch',
   'max_cranes',
   'crane_overlap',
+  'connector_blocked',
 ] as const;
 
 export type PlacementRule = (typeof PLACEMENT_RULES)[number];
@@ -91,6 +99,7 @@ export const PLACEMENT_RULE_ERROR: { readonly [R in PlacementRule]: ModuleErrorC
   rotation_mismatch: 'rotation_mismatch',
   max_cranes: 'max_cranes',
   crane_overlap: 'crane_overlap',
+  connector_blocked: null,
 });
 
 /** Časť sveta, ktorú pravidlá umiestnenia čítajú (`World` ju spĺňa). */
@@ -236,6 +245,24 @@ const checkWaterBand: PlacementCheck = (ctx) => {
   return undefined;
 };
 
+/**
+ * §8 bod 5 (ADR-017): aspoň jeden konektor typu `road` má vonkajšiu bunku s cestou alebo voľnú pre cestu. Modul bez
+ * cestných konektorov (žeriav) pravidlo nemá; konektory na bunkách mimo mapy sa nehodnotia (hlási ich `out_of_bounds`).
+ */
+const checkConnectors: PlacementCheck = (ctx) => {
+  const { grid } = ctx.world;
+  const roadConnectors = connectorsOf(ctx.def, ctx.spec.x, ctx.spec.y, ctx.spec.rotation).filter(
+    (connector) => connector.type === 'road' && grid.inBounds(connector.x, connector.y),
+  );
+  if (roadConnectors.length === 0) return undefined;
+  const { x, y } = ctx.spec;
+  const { w, h } = ctx.size;
+  const ownFootprint = (cx: number, cy: number): boolean => cx >= x && cy >= y && cx < x + w && cy < y + h;
+  const outside = roadConnectors.map(connectorOutside);
+  if (outside.some((cell) => isOutsideUsable(grid, cell, ownFootprint))) return undefined;
+  return `žiadny cestný konektor nemá vonkajšiu bunku s cestou ani voľnú pre cestu (${outside.map(cellLabel).join(', ')})`;
+};
+
 /** Pravidlo → kontrola; vráti popis prvého porušenia alebo `undefined`. */
 const PLACEMENT_CHECKS: { readonly [R in PlacementRule]: PlacementCheck } = {
   out_of_bounds: (ctx) => {
@@ -289,6 +316,7 @@ const PLACEMENT_CHECKS: { readonly [R in PlacementRule]: PlacementCheck } = {
     }
     return undefined;
   },
+  connector_blocked: checkConnectors,
 };
 
 /**
@@ -330,7 +358,7 @@ export function findPlacementViolations(
 // ---------------------------------------------------------------------------------------------------------
 
 /** Pravidlá odstránenia v poradí vyhodnotenia; kód pravidla je zároveň `ModuleErrorCode` aj `ValidationReason`. */
-export const REMOVAL_RULES = ['has_cargo', 'has_cranes', 'ship_docked', 'busy'] as const;
+export const REMOVAL_RULES = ['has_cargo', 'has_cranes', 'has_vehicles', 'ship_docked', 'busy'] as const;
 
 export type RemovalRule = (typeof REMOVAL_RULES)[number];
 
@@ -357,13 +385,15 @@ const REMOVAL_CHECKS: { readonly [R in RemovalRule]: RemovalCheck } = {
   has_cargo: (world, module) => {
     const heldKind = MODULE_CARGO_HOLDER_KINDS.find((kind) => world.cargo.countAt(kind, module.id) > 0);
     if (heldKind !== undefined) return `${module.label} drží náklad (${heldKind})`;
-    if (module instanceof BerthModule && (module.apron.usedCount > 0 || module.apron.reservedCount > 0)) {
-      return `apron ${module.label} má obsadené alebo rezervované sloty`;
-    }
-    return undefined;
+    // Obsadenie slotov (apron, sklad) je v ledgeri — pokryté vyššie; modul drží len rezervácie (ADR-017).
+    const slots = module.cargoSlots();
+    const reserved = slots?.reservedCount ?? 0;
+    return slots !== undefined && reserved > 0 ? `${module.label} má rezervované sloty (${slots.kind}): ${String(reserved)}` : undefined;
   },
   has_cranes: (_world, module) =>
     module instanceof BerthModule && module.craneIds.length > 0 ? `na ${module.label} stoja žeriavy [${module.craneIds.join(', ')}]` : undefined,
+  has_vehicles: (_world, module) =>
+    module instanceof VehicleDepot && module.vehicleIds.length > 0 ? `${module.label} má vozidlá [${module.vehicleIds.join(', ')}]` : undefined,
   ship_docked: (world, module) => {
     const berth = dockOf(world, module);
     if (berth === undefined || berth.dockedShipId === null) return undefined;

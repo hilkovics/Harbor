@@ -45,8 +45,6 @@ function moduleWorld(): ModuleWorld {
   const toApron = (unit: EntityId, berth: BerthModule, slot: number, via: CraneModule): void => {
     world.cargo.move(unit, { kind: 'in_crane', craneId: via.id });
     world.cargo.move(unit, { kind: 'on_apron', berthId: berth.id, slot });
-    berth.apron.reserveSlot(slot);
-    berth.apron.commit(slot, unit);
   };
   toApron(u5, berthA, 0, crane1);
   world.cargo.move(u6, { kind: 'in_crane', craneId: crane1.id });
@@ -71,7 +69,7 @@ describe('WorldState v2 — moduly v save', () => {
       [4, BERTH, 48, 14, 0, 0],
     ]);
     for (const entry of state.modules) expect(Object.keys(entry)).toEqual(['id', 'defId', 'x', 'y', 'rotation', 'purchaseCostCents', 'runtime']);
-    expect(state.modules[0].runtime).toEqual({});
+    expect(state.modules[0].runtime).toEqual({ lastNoStorageHour: null }); // v3: kotvisko ukladá throttle NoStorageAvailable (ADR-018)
     expect(state.modules[1].runtime).toEqual({
       state: 'placing',
       phaseTicksTotal: 6,

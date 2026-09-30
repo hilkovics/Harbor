@@ -26,6 +26,16 @@ const ROUNDTRIP_CASES: readonly [string, SerializedCommand][] = [
   ['PlaceModule s neznámym defom, rotáciou 45 a mimo mapy', { type: 'PlaceModule', defId: 'nope', x: -5, y: 900, rotation: 45 }],
   ['RemoveModule', { type: 'RemoveModule', moduleId: 7 }],
   ['RemoveModule s id, ktoré neexistuje', { type: 'RemoveModule', moduleId: 0 }],
+  // F3 (T03-04): vozidlá — existenciu defu, depa a vozidla overí až validate.
+  ['BuyVehicle', { type: 'BuyVehicle', vehicleDefId: 'straddle_carrier', depotId: 3 }],
+  ['BuyVehicle s neznámym defom a depom', { type: 'BuyVehicle', vehicleDefId: 'nope', depotId: -1 }],
+  ['SellVehicle', { type: 'SellVehicle', vehicleId: 7 }],
+  // T03-18 (ADR-020): typ cesty a smery jednosmerky sú voliteľné; hodnoty overí až validate (invalid_road_kind…).
+  ['PlaceRoad jednopruhová', { type: 'PlaceRoad', cells: [{ x: 30, y: 30 }], kind: 'one_lane' }],
+  ['PlaceRoad jednosmerná so smermi', { type: 'PlaceRoad', cells: [{ x: 30, y: 30 }, { x: 31, y: 30 }], kind: 'one_way', dirs: ['E', 'E'] }],
+  ['PlaceRoad explicitne two_lane', { type: 'PlaceRoad', cells: [], kind: 'two_lane' }],
+  ['PlaceRoad s neznámym typom a zlými smermi', { type: 'PlaceRoad', cells: [{ x: 1, y: 1 }], kind: 'four_lane', dirs: ['Q', 'N'] }],
+  ['PlaceRoad len so smermi (bez kind)', { type: 'PlaceRoad', cells: [{ x: 1, y: 1 }], dirs: ['N'] }],
 ];
 
 describe('commandFromJSON ↔ toJSON', () => {
@@ -113,6 +123,11 @@ describe('commandFromJSON — neplatný vstup → CommandError', () => {
     ['RemoveModule: necelé moduleId', { type: 'RemoveModule', moduleId: 1.5 }, /RemoveModule\/moduleId: musí byť celé číslo/],
     ['RemoveModule: moduleId ako reťazec', { type: 'RemoveModule', moduleId: '7' }, /RemoveModule\/moduleId: musí byť celé číslo/],
     ['RemoveModule s neznámym kľúčom', { type: 'RemoveModule', moduleId: 7, refund: 0 }, /RemoveModule\/refund: neznámy kľúč/],
+    ['PlaceRoad: kind nie je reťazec', { type: 'PlaceRoad', cells: [], kind: 2 }, /PlaceRoad\/kind: musí byť reťazec/],
+    ['PlaceRoad: kind null', { type: 'PlaceRoad', cells: [], kind: null }, /PlaceRoad\/kind: musí byť reťazec/],
+    ['PlaceRoad: dirs nie je pole', { type: 'PlaceRoad', cells: [], kind: 'one_way', dirs: 'E' }, /PlaceRoad\/dirs: musí byť pole reťazcov/],
+    ['PlaceRoad: smer nie je reťazec', { type: 'PlaceRoad', cells: [], kind: 'one_way', dirs: ['E', 1] }, /PlaceRoad\/dirs\/1: musí byť reťazec/],
+    ['RemoveRoad s typom cesty', { type: 'RemoveRoad', cells: [], kind: 'one_lane' }, /RemoveRoad\/kind: neznámy kľúč/],
   ];
 
   it.each(BAD)('%s', (_name, json, message) => {

@@ -4,7 +4,7 @@
  * Herné hodnoty (ceny, rýchlosti, trvania) sem nepatria — tie sú v `data/defs/*.json`. Tu je len to, čo je
  * vlastné aplikácii: ktorú hru spustiť a ako citlivé je ovládanie.
  */
-import { isWater, loadBundledMap, type Grid, type LoadedMap, type Rect } from '@sim/grid';
+import { isWater, loadBundledMap, type Direction4Name, type Grid, type LoadedMap, type Rect } from '@sim/grid';
 import { loadBundledDefs } from '@sim/defs';
 import { World, type WorldOptions } from '@sim/world';
 
@@ -25,6 +25,12 @@ export const KEY_PAN_MAX_DT_MS = 100;
  * berie ako klik (výber modulu), nie ako ťah kamery. Väčší posun je posun mapy a výber sa nemení.
  */
 export const CLICK_SLOP_PX = 4;
+
+/**
+ * Smer jednosmernej cesty pre ťah dlhý 1 bunku, kým hráč nepostavil žiadnu jednosmerku (potom platí posledný smer
+ * ťahu jednosmerky); `R` v build móde jednosmerky ho otáča N → E → S → W.
+ */
+export const DEFAULT_ONE_WAY_DIRECTION: Direction4Name = 'E';
 
 /** Citlivosť kolieska: zoom sa násobí `exp(−delta × WHEEL_ZOOM_PER_PX)`; bežný krok kolieska (100 px) ≈ ×1,16. */
 export const WHEEL_ZOOM_PER_PX = 0.0015;
@@ -64,8 +70,15 @@ export function startViewCenter(grid: Grid, focus: Rect, visibleRows: number): {
 }
 
 /**
+ * Po koľkých ms sa toast (oznámenie: „Chýba sklad“, „Nepripojené“…) zavrie sám (reálny čas, nie herný — počas pauzy
+ * hráč oznámenie stihne prečítať aj zavrieť). Naraz je viditeľných najviac `MAX_TOASTS` toastov, ostatné čakajú vo
+ * fronte a odpočet im začne, až keď sa zobrazia.
+ */
+export const TOAST_AUTO_CLOSE_MS = 8000;
+
+/**
  * Ladiaca loď z DEV tlačidla „Spawn feeder (DEV)“ (`SpawnShipDebug`, ADR-016). Jednotiek je ≤ `apronSlots` kotviska
- * (4), aby sa loď vyložila celá a odplávala — vo F2 ešte nejazdia vozidlá, ktoré by apron uvoľnili.
+ * (4), aby sa loď vyložila celá a odplávala aj bez ciest, skladu a vozidiel (tlačidlo slúži aj na ladenie bez logistiky).
  */
 export const DEV_SPAWN_SHIP = { shipClassId: 'feeder', cargoTypeId: 'container_teu', units: 4 } as const;
 

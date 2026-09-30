@@ -14,6 +14,8 @@ import type { DefRegistry } from '@sim/defs';
 import type { SimEvent, SimEventType } from '@sim/events';
 import type { Grid, Parcel } from '@sim/grid';
 import type { World } from '@sim/world';
+import type { ContractCardData } from '@ui/contracts-panel';
+import { contractCards, nextOfferInTicks } from './contract-cards';
 import { EntitiesVMBuilder, writeTruckPose, type MutableTruckPose, type SimEntitiesVM } from './entities-vm';
 import type { FrameEventSink } from './game-loop';
 
@@ -49,6 +51,16 @@ export const REVISION_EVENTS: ReadonlySet<SimEventType> = new Set<SimEventType>(
   'TruckStateChanged',
   'TruckExited',
   'NoWaitingBay',
+  // Kontrakty (F5): karty v snapshote sa skladajú len pri zmene revízie (stav, progres nákladu cez `CargoMoved`,
+  // penalizácie, zánik ponuky, koniec hry).
+  'ContractOffered',
+  'ContractAccepted',
+  'ContractStateChanged',
+  'ContractCompleted',
+  'ContractFailed',
+  'ContractExpired',
+  'PenaltyApplied',
+  'GameOver',
 ]);
 
 /**
@@ -99,6 +111,26 @@ export interface WorldSnapshot {
    * je `prev = curr`.
    */
   readonly trucks: readonly TruckVM[];
+  /**
+   * Karty kontraktov (F5; `@ui/contracts-panel`): ponuky, prebiehajúce, splnené a zlyhané (expirované zmiznú). Pole sa
+   * prepočíta len pri zmene `revision` (referencia je inak stabilná), čas na kartách sa počíta z `tick`.
+   */
+  readonly contracts: readonly ContractCardData[];
+  /** Za koľko tickov sa obnoví pool ponúk (najbližšia uzávierka dňa). */
+  readonly nextOfferInTicks: number;
+  /** Ticky za hernú hodinu / deň (mierka času pre panely; z `SimClock`). */
+  readonly ticksPerHour: number;
+  readonly ticksPerDay: number;
+  /** Čistá zmena hotovosti v aktuálnom dni v centoch (`economy.todayDeltaCents()`); HUD ju ukazuje ako `±$/deň`. */
+  readonly dailyDeltaCents: number;
+  /** Skúsenosti hráča. */
+  readonly xp: number;
+  /** Úroveň hráča (`⌊splnené / contractsPerTier⌋`). */
+  readonly tier: number;
+  /** Počet splnených kontraktov. */
+  readonly completedContracts: number;
+  /** Hra skončila bankrotom (sim netickuje, príkazy vracajú `game_over`). */
+  readonly gameOver: boolean;
 }
 
 /** Zmeniteľná predchádzajúca poloha lode (bridge ju prepisuje pred každým tickom bez alokácie). */
@@ -127,6 +159,8 @@ export class SimBridge implements FrameEventSink {
   /** `EntitiesVM` aktuálneho snapshotu (rovnaké polia ako v snapshote, ale bez `grid`, serializovateľné). */
   private currentEntities: SimEntitiesVM | null = null;
   private revisionCounter = 0;
+  /** Karty kontraktov a revízia, pre ktorú vznikli (prepočet len pri zmene revízie). */
+  private currentContracts: { readonly revision: number; readonly cards: readonly ContractCardData[] } | null = null;
   private readonly entityBuilder = new EntitiesVMBuilder();
   /** Poloha lodí pred posledným tickom (interpolácia); lode bez záznamu majú `prev = curr`. */
   private readonly prevShipPositions = new Map<EntityId, MutableShipPosition>();
@@ -178,6 +212,7 @@ export class SimBridge implements FrameEventSink {
     ) {
       return cached;
     }
+    const cards = this.contractCardsFor(this.revisionCounter);
     const entities = this.entityBuilder.build(this.world, this.revisionCounter, this.prevShipPositions, this.prevVehiclePoses, this.prevTruckPoses);
     const next: WorldSnapshot = Object.freeze({
       tick: clock.tick,
@@ -195,10 +230,28 @@ export class SimBridge implements FrameEventSink {
       ships: entities.ships,
       vehicles: entities.vehicles,
       trucks: entities.trucks,
+      contracts: cards,
+      nextOfferInTicks: nextOfferInTicks(this.world),
+      ticksPerHour: clock.ticksPerHour,
+      ticksPerDay: clock.ticksPerDay,
+      dailyDeltaCents: this.world.economy.todayDeltaCents(),
+      xp: this.world.xp,
+      tier: this.world.tier,
+      completedContracts: this.world.completedContracts,
+      gameOver: this.world.gameOver,
     });
     this.current = next;
     this.currentEntities = entities;
     return next;
+  }
+
+  /** Karty kontraktov pre `revision`; prepočítajú sa len pri jej zmene. */
+  private contractCardsFor(revision: number): readonly ContractCardData[] {
+    const cached = this.currentContracts;
+    if (cached !== null && cached.revision === revision) return cached.cards;
+    const cards = contractCards(this.world);
+    this.currentContracts = { revision, cards };
+    return cards;
   }
 
   /**

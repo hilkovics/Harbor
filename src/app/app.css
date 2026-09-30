@@ -101,48 +101,24 @@ body {
   pointer-events: auto;
 }
 
+/* Panel kontraktov (T05-07) vyplní pravý stĺpec po BuildBar (panel má `height: 100%`, výška sa tu nepočíta z obsahu). */
+.app__side--tall {
+  bottom: calc(var(--build-bar-h) + var(--space-3));
+}
+
+/* Modál konca hry (T05-07): zakryje mapu aj panely a berie myš (`.app__ui` ju prepúšťa mape). */
+.app__modal {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+}
+
 /*
  * Toasty (T03-10): zásobník je `position: absolute` (poloha z src/ui/toasts.css), ale `.app__ui` prepúšťa myš —
  * tento obal (bez vlastnej plochy) vracia toastom klikanie na „Ukázať“ a ×.
  */
 .app__toasts {
   pointer-events: auto;
-}
-
-/* --- DEV nástroje (len vývojový build): pod HUD vľavo, aby nezakrývali pravý panel --- */
-
-.app__dev {
-  position: absolute;
-  top: calc(var(--hud-top-h) + var(--space-2));
-  left: var(--space-3);
-  pointer-events: auto;
-}
-
-.dev-spawn {
-  box-sizing: border-box;
-  appearance: none;
-  margin: 0;
-  padding: var(--space-1) var(--space-3);
-  border: 1px dashed var(--ui-warning);
-  border-radius: var(--radius-md);
-  background: var(--ui-bg);
-  color: var(--ui-warning);
-  font: inherit;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  cursor: pointer;
-  transition:
-    background-color 120ms ease-out,
-    color 120ms ease-out;
-}
-
-.dev-spawn:hover {
-  background: var(--ui-surface-2);
-}
-
-.dev-spawn:focus-visible {
-  outline: 2px solid var(--ui-accent);
-  outline-offset: 2px;
 }
 
 /* Vizuálne skrytý nadpis (prístupný pre čítačky a testy). */

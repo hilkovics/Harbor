@@ -11,6 +11,15 @@ import { World, type WorldOptions } from '@sim/world';
 /** Seed novej hry (uint32, ARCHITECTURE §3 / Rng); ten istý seed + rovnaké príkazy = rovnaká hra. */
 export const GAME_SEED = 20260929;
 
+/**
+ * Seed „Novej hry“ po bankrote (T05-07): každá ďalšia hra dostane iný seed. Prezentačná vrstva smie čítať náhodu
+ * (zákaz `Math.random` platí pre `src/sim/`); sim dostane seed ako číslo a ostáva deterministický. Prvá hra po
+ * načítaní stránky používa `GAME_SEED`, aby e2e a ladenie boli opakovateľné.
+ */
+export function randomGameSeed(): number {
+  return Math.floor(Math.random() * 0x1_0000_0000) >>> 0;
+}
+
 /** Mapa, ktorú aplikácia spúšťa (zabalená v `data/maps/`). */
 export const APP_MAP_ID = 'harbor_01';
 
@@ -75,12 +84,6 @@ export function startViewCenter(grid: Grid, focus: Rect, visibleRows: number): {
  * fronte a odpočet im začne, až keď sa zobrazia.
  */
 export const TOAST_AUTO_CLOSE_MS = 8000;
-
-/**
- * Ladiaca loď z DEV tlačidla „Spawn feeder (DEV)“ (`SpawnShipDebug`, ADR-016). Jednotiek je ≤ `apronSlots` kotviska
- * (4), aby sa loď vyložila celá a odplávala aj bez ciest, skladu a vozidiel (tlačidlo slúži aj na ladenie bez logistiky).
- */
-export const DEV_SPAWN_SHIP = { shipClassId: 'feeder', cargoTypeId: 'container_teu', units: 4 } as const;
 
 /** Načíta mapu aplikácie; nesúlad s `APP_MAP_ID` je chyba konfigurácie (fail-fast). */
 export function loadAppMap(): LoadedMap {

@@ -22,6 +22,10 @@ export const DEMO_SPEEDS: readonly number[] = timeDef.speeds;
 /** Výchozí stav dema: 1 200 000 USD, Deň 12 (0-based 11), 14:20, rýchlosť 1×. */
 export const DEFAULT_STATIC_STATE: StaticState = { cashCents: 120_000_000, day: 11, hour: 14, minute: 20, speed: 1 };
 
+/** Mierka času z `time.json` (1 tick = `tickGameSeconds` herných sekúnd). */
+const TICKS_PER_HOUR = 3600 / timeDef.tickGameSeconds;
+const TICKS_PER_DAY = 24 * TICKS_PER_HOUR;
+
 const OK: ValidationResult = Object.freeze({ ok: true, reasons: [], cells: [], costCents: 0 });
 
 export interface StaticBridge {
@@ -49,6 +53,16 @@ export function createStaticBridge(initial: Partial<StaticState> = {}, speeds: r
       ships: [],
       vehicles: [],
       trucks: [],
+      // F5: prázdne kontrakty a neutrálna ekonomika (demo HUD si deltu a XP dodáva cez props).
+      contracts: [],
+      nextOfferInTicks: TICKS_PER_DAY,
+      ticksPerHour: TICKS_PER_HOUR,
+      ticksPerDay: TICKS_PER_DAY,
+      dailyDeltaCents: 0,
+      xp: 0,
+      tier: 0,
+      completedContracts: 0,
+      gameOver: false,
     });
   let snapshot = build();
 

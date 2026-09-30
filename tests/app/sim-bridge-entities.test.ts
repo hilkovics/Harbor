@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { commandFromJSON } from '@sim/commands';
-import type { EntityId } from '@sim/core';
+import type { ContractId, EntityId } from '@sim/core';
 import type { SimEvent, SimEventType } from '@sim/events';
 import { REVISION_EVENTS } from '@app/sim-bridge';
 import { createApp } from './app-fixtures';
 
 /** Vzorové id entity (id sú v simu branded). */
 const SAMPLE_ID = 9 as EntityId;
+const SAMPLE_CONTRACT = 9 as ContractId;
 
 /** Jeden vzorový výskyt každej udalosti, ktorá musí zvyšovať `revision`. */
 const REVISION_SAMPLES: readonly SimEvent[] = [
@@ -33,6 +34,14 @@ const REVISION_SAMPLES: readonly SimEvent[] = [
   { type: 'TruckStateChanged', truckId: SAMPLE_ID, from: 'to_gate', to: 'gate_queue' },
   { type: 'TruckExited', truckId: SAMPLE_ID, units: 1 },
   { type: 'NoWaitingBay', rampId: SAMPLE_ID },
+  { type: 'ContractOffered', contractId: SAMPLE_CONTRACT },
+  { type: 'ContractAccepted', contractId: SAMPLE_CONTRACT },
+  { type: 'ContractStateChanged', contractId: SAMPLE_CONTRACT, from: 'offered', to: 'accepted' },
+  { type: 'ContractCompleted', contractId: SAMPLE_CONTRACT, rewardCents: 1, penaltiesCents: 0, xp: 1, onTime: true },
+  { type: 'ContractFailed', contractId: SAMPLE_CONTRACT, penaltiesCents: 1 },
+  { type: 'ContractExpired', contractId: SAMPLE_CONTRACT, reason: 'timeout' },
+  { type: 'PenaltyApplied', contractId: SAMPLE_CONTRACT, kind: 'demurrage', amountCents: 1 },
+  { type: 'GameOver', reason: 'bankruptcy', day: 1 },
 ];
 
 /** Udalosti, ktoré štruktúru nemenia (čas a peniaze majú vlastné polia snapshotu). */
@@ -44,6 +53,8 @@ const NEUTRAL_SAMPLES: readonly SimEvent[] = [
   { type: 'MoneyChanged', cashCents: 0, deltaCents: 0, reason: 'road_capex' },
   { type: 'GameSpeedChanged', speed: 1 },
   { type: 'CommandRejected', commandType: 'PlaceRoad', reasons: [] },
+  { type: 'DayClosedSummary', day: 0, summary: { day: 0, incomeCents: {}, expenseCents: {}, cashEndCents: 0 } },
+  { type: 'MonthlyReport', month: 0, summary: { month: 0, incomeCents: {}, expenseCents: {}, cashEndCents: 0 } },
 ];
 
 const spawnFeeder = (bridge: ReturnType<typeof createApp>['bridge'], units = 4): void => {
@@ -64,7 +75,7 @@ describe('WorldSnapshot v2: speeds a defs', () => {
 });
 
 describe('WorldSnapshot v2: revision', () => {
-  it('REVISION_EVENTS obsahuje presne udalosti z kariet T02-09, T03-10 a T04-08 (vrátane Truck* a NoWaitingBay) a vzorky ich pokrývajú', () => {
+  it('REVISION_EVENTS obsahuje presne udalosti z kariet T02-09, T03-10, T04-08 a T05-07 (vrátane Truck*, NoWaitingBay a udalostí kontraktov) a vzorky ich pokrývajú', () => {
     const expected: SimEventType[] = [
       'ModulePlaced',
       'ModuleRemoved',
@@ -89,6 +100,14 @@ describe('WorldSnapshot v2: revision', () => {
       'TruckStateChanged',
       'TruckExited',
       'NoWaitingBay',
+      'ContractOffered',
+      'ContractAccepted',
+      'ContractStateChanged',
+      'ContractCompleted',
+      'ContractFailed',
+      'ContractExpired',
+      'PenaltyApplied',
+      'GameOver',
     ];
     expect([...REVISION_EVENTS].sort()).toEqual([...expected].sort());
     expect(REVISION_SAMPLES.map((event) => event.type).sort()).toEqual([...expected].sort());
@@ -138,14 +157,15 @@ describe('WorldSnapshot v2: revision', () => {
   });
 
   it('cez GameLoop: spawn lode a jej vykládka zvyšujú revision (ShipSpawned, CargoMoved, CraneCycleDone…)', () => {
-    const { bridge, loop } = createApp();
+    const { world, bridge, loop } = createApp();
     spawnFeeder(bridge);
     loop.frame(0);
     expect(bridge.snapshot().revision).toBe(1); // ShipSpawned
     for (let i = 0; i < 300; i++) loop.frame(loop.tickMs);
     // ShipSpawned + ShipDocked + 4 × (2 × CargoMoved + CraneCycleDone) + ShipUndocked + ShipDeparted
     // + NoStorageAvailable (apron má jednotky a vo svete nie je žiadny sklad; najviac 1× za hernú hodinu)
-    expect(bridge.snapshot().revision).toBe(1 + 1 + 4 * 3 + 1 + 1 + 1);
+    // + ContractOffered za každú ponuku, ktorú pool doplní v prvom ticku (F5)
+    expect(bridge.snapshot().revision).toBe(1 + 1 + 4 * 3 + 1 + 1 + 1 + world.defs.economy.offersPerDay);
   });
 });
 
@@ -160,6 +180,7 @@ describe('WorldSnapshot v2: moduly, žeriavy, lode', () => {
 
   it('pole modulov má stabilnú referenciu cez ticky bez udalostí; žeriavy a lode sa skladajú s každým tickom', () => {
     const { bridge, loop } = createApp();
+    loop.frame(loop.tickMs); // prvý tick doplní pool ponúk (ContractOffered → revision); ďalšie ticky už bez udalostí
     const first = bridge.snapshot();
     loop.frame(loop.tickMs);
     const second = bridge.snapshot();

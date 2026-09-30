@@ -42,6 +42,17 @@ export interface RenderedCounts {
   readonly selectionRing: boolean;
 }
 
+/** Kontrakt v plochom tvare pre e2e (`window.__sim.contracts()`): serializovateľné, bez vzťahov na sim. */
+export interface DevContract {
+  readonly id: number;
+  readonly state: string;
+  readonly volumeUnits: number;
+  readonly rewardCents: number;
+  readonly unitsUnloaded: number;
+  readonly unitsExported: number;
+  readonly penaltiesCents: number;
+}
+
 export interface DevHook {
   readonly world: World;
   readonly bridge: SimBridge;
@@ -56,6 +67,13 @@ export interface DevHook {
    * validácie (`ok`, `reasons`, `costCents`), aby test videl prečo príkaz neprešiel. Aplikuje sa pri najbližšom frame.
    */
   readonly dispatchJSON: (command: SerializedCommand) => ValidationResult;
+  /** Všetky kontrakty sveta (ponuky, prebiehajúce, splnené, zlyhané) vzostupne podľa id — e2e na ne čaká (`state`, progres). */
+  readonly contracts: () => DevContract[];
+  /**
+   * Prijme ponuku s najnižším id (`AcceptContract` cez `dispatchJSON`). @returns id prijatého kontraktu, alebo `null`,
+   * ak nie je čo prijať / príkaz neprešiel validáciou. Aplikuje sa pri najbližšom frame.
+   */
+  readonly acceptFirstOffer: () => number | null;
   /**
    * STRED bunky (x, y) v súradniciach stránky (CSS px, vrátane posunu canvasu) — presne tam, kam má e2e kliknúť.
    * Doplní bootstrap z kamery (T01-11).
@@ -92,21 +110,39 @@ export interface DevHookOptions {
   readonly centerOn?: DevHook['centerOn'];
 }
 
-/** Nainštaluje `window.__sim = { world, bridge, entities, dispatchJSON, cellToScreen?, rendered?, moduleGhost?, centerOn? }`. Vráti háčik, alebo `null`, ak je vypnutý/nie je cieľ. */
+/** Nainštaluje `window.__sim = { world, bridge, entities, dispatchJSON, contracts, acceptFirstOffer, cellToScreen?, rendered?, moduleGhost?, centerOn? }`. Vráti háčik, alebo `null`, ak je vypnutý/nie je cieľ. */
 export function installDevHook(bridge: SimBridge, options: DevHookOptions = {}): DevHook | null {
   const enabled = options.enabled ?? import.meta.env.DEV;
   if (!enabled) return null;
   const target = options.target === undefined ? (typeof window === 'undefined' ? null : window) : options.target;
   if (target === null) return null;
+  const dispatchJSON: DevHook['dispatchJSON'] = (json) => {
+    const command = commandFromJSON(json);
+    const result = bridge.validate(command);
+    if (result.ok) bridge.dispatch(command);
+    return result;
+  };
   const hook: DevHook = {
     world: bridge.world,
     bridge,
     entities: () => bridge.entities(),
-    dispatchJSON: (json) => {
-      const command = commandFromJSON(json);
-      const result = bridge.validate(command);
-      if (result.ok) bridge.dispatch(command);
-      return result;
+    dispatchJSON,
+    contracts: () =>
+      [...bridge.world.contracts.values()].map((contract) => ({
+        id: contract.id,
+        state: contract.state,
+        volumeUnits: contract.volumeUnits,
+        rewardCents: contract.rewardCents,
+        unitsUnloaded: contract.unitsUnloaded,
+        unitsExported: contract.unitsExported,
+        penaltiesCents: contract.penaltiesCents,
+      })),
+    acceptFirstOffer: () => {
+      for (const contract of bridge.world.contracts.values()) {
+        if (contract.state !== 'offered') continue;
+        return dispatchJSON({ type: 'AcceptContract', contractId: contract.id }).ok ? contract.id : null;
+      }
+      return null;
     },
   };
   if (options.cellToScreen !== undefined) hook.cellToScreen = options.cellToScreen;

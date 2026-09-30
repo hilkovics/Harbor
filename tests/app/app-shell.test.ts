@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
-import { SetGameSpeedCommand, SpawnShipDebugCommand, VALIDATION_REASONS } from '@sim/commands';
+import { describe, expect, it } from 'vitest';
+import { SetGameSpeedCommand, SpawnShipDebugCommand, VALIDATION_REASONS, commandFromJSON } from '@sim/commands';
 import { App } from '@app/app';
 import {
   BuildFeedbackLabel,
@@ -13,8 +13,6 @@ import {
   type FeedbackSource,
 } from '@app/build-feedback';
 import { BuildSelection } from '@app/build-selection';
-import { DEV_SPAWN_SHIP } from '@app/config';
-import { DevSpawnButton, devSpawnLabel, useSpawnDevShip } from '@app/dev-spawn-button';
 import type { BuildFeedback } from '@app/input-controller';
 import { ModuleSelection } from '@app/module-selection';
 import type { EntityId } from '@sim/core';
@@ -168,87 +166,24 @@ describe('App: BuildBar dole (kategória Terminál z defs.modules)', () => {
   });
 });
 
-describe('App: DEV nástroje', () => {
-  it('devTools: true → tlačidlo „Spawn feeder (DEV)“', () => {
+describe('App: DEV tlačidlo „Spawn feeder (DEV)“ je odstránené (T05-07)', () => {
+  it('v strome nie je žiadny DEV nástroj ani tlačidlo spawnu lode', () => {
     const { bridge } = createApp();
-    const html = renderToStaticMarkup(createElement(App, { bridge, feedback: NO_FEEDBACK, devTools: true }));
-    expect(html).toContain('class="app__dev"');
-    expect(html).toContain('data-field="dev-spawn-ship"');
-    expect(html).toContain('Spawn feeder (DEV)');
-  });
-
-  it('devTools: false (produkčný build) → tlačidlo v strome nie je', () => {
-    const { bridge } = createApp();
-    const html = renderToStaticMarkup(createElement(App, { bridge, feedback: NO_FEEDBACK, devTools: false }));
+    const html = renderToStaticMarkup(createElement(App, { bridge, feedback: NO_FEEDBACK }));
     expect(html).not.toContain('app__dev');
     expect(html).not.toContain('dev-spawn');
     expect(html).not.toContain('(DEV)');
   });
 
-  it('predvolene sa riadi import.meta.env.DEV (vo vitest = dev → tlačidlo je)', () => {
-    expect(import.meta.env.DEV).toBe(true);
+  it('modul tlačidla ani jeho konfigurácia neexistujú; príkaz SpawnShipDebug v sime ostáva', async () => {
+    const config: Record<string, unknown> = await import('@app/config');
+    expect(config['DEV_SPAWN_SHIP']).toBeUndefined();
+    const modules = import.meta.glob('/src/app/*.tsx');
+    expect(Object.keys(modules).some((path) => path.includes('dev-spawn'))).toBe(false);
     const { bridge } = createApp();
-    const html = renderToStaticMarkup(createElement(App, { bridge, feedback: NO_FEEDBACK }));
-    expect(html).toContain('dev-spawn-ship');
-  });
-
-  it('popis tlačidla je z konfigurácie triedy lode', () => {
-    expect(devSpawnLabel()).toBe('Spawn feeder (DEV)');
-    expect(devSpawnLabel('handy')).toBe('Spawn handy (DEV)');
-  });
-
-  it('DevSpawnButton je <button type="button"> s popisom počtu a nákladu v title', () => {
-    const { bridge } = createApp();
-    const html = renderToStaticMarkup(createElement(SimBridgeProvider, { bridge }, createElement(DevSpawnButton)));
-    expect(html).toMatch(/<button type="button" class="dev-spawn"/);
-    expect(html).toContain('title="Ladiaca loď: 4× container_teu"');
-  });
-});
-
-describe('DEV spawn lode (len cez dispatch)', () => {
-  function captureSpawn(app: ReturnType<typeof createApp>): () => void {
-    const holder: { spawn: (() => void) | null } = { spawn: null };
-    const Probe = (): null => {
-      holder.spawn = useSpawnDevShip();
-      return null;
-    };
-    renderToStaticMarkup(createElement(SimBridgeProvider, { bridge: app.bridge }, createElement(Probe)));
-    if (holder.spawn === null) throw new Error('Probe sa nevykreslil');
-    return holder.spawn;
-  }
-
-  it('konfigurácia: feeder, container_teu, 4 jednotky (≤ apronSlots Root berthu, aby loď odplávala)', () => {
-    const app = createApp();
-    expect(DEV_SPAWN_SHIP).toEqual({ shipClassId: 'feeder', cargoTypeId: 'container_teu', units: 4 });
-    expect(DEV_SPAWN_SHIP.units).toBeLessThanOrEqual(app.world.defs.modules.get('berth_standard').params['apronSlots'] as number);
-  });
-
-  it('klik → dispatch(SpawnShipDebug feeder container_teu 4) so serializovaným tvarom', () => {
-    const app = createApp();
-    const dispatch = vi.spyOn(app.bridge, 'dispatch');
-    captureSpawn(app)();
-    expect(dispatch).toHaveBeenCalledTimes(1);
-    const command = dispatch.mock.calls[0]?.[0];
+    const command = commandFromJSON({ type: 'SpawnShipDebug', shipClassId: 'feeder', cargoTypeId: 'container_teu', units: 4 });
     expect(command).toBeInstanceOf(SpawnShipDebugCommand);
-    expect(command?.toJSON()).toEqual({ type: 'SpawnShipDebug', shipClassId: 'feeder', cargoTypeId: 'container_teu', units: 4 });
-  });
-
-  it('UI nemení sim priamo: loď vznikne až po aplikovaní príkazu; snapshot ju ukáže s 4 kontajnermi', () => {
-    const app = createApp();
-    captureSpawn(app)();
-    expect(app.world.ships.size).toBe(0);
-    app.loop.frame(0);
-    expect(app.world.ships.size).toBe(1);
-    expect(app.bridge.snapshot().ships).toMatchObject([{ classId: 'feeder', cargoCategory: 'container', unitsOnBoard: 4, state: 'inbound' }]);
-  });
-
-  it('opakovaný klik pošle ďalšiu loď (každý klik = jeden príkaz)', () => {
-    const app = createApp();
-    const spawn = captureSpawn(app);
-    spawn();
-    spawn();
-    app.loop.frame(0);
-    expect(app.world.ships.size).toBe(2);
+    expect(bridge.validate(command).ok).toBe(true);
   });
 });
 
@@ -344,13 +279,5 @@ describe('App: inšpektor modulu vpravo (T02-10)', () => {
     expect(html).toContain('0 / 4 slotov');
     expect(html).toMatch(/aria-disabled="true"[^>]*data-action="remove"/);
     expect(html).toContain('Na kotvisku stoja žeriavy');
-  });
-
-  it('DEV tlačidlo je vľavo (mimo pravého panelu) — v strome je v samostatnom `.app__dev`', () => {
-    const selection = new ModuleSelection();
-    selection.select(1 as EntityId);
-    const html = render(selection);
-    expect(html).toContain('class="app__dev"');
-    expect(html.indexOf('app__dev')).toBeLessThan(html.indexOf('app__side'));
   });
 });

@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 
 // F3 e2e (T03-12): celý tok fázy 3 z pohľadu hráča — loď → apron → vozidlá → dvor. Hráč cez UI postaví cesty ťahom myši
 // (BuildBar Landside → „Cesta dvojpruhová“), depo a dva dvory (BuildBar: klik na položku, klik na mapu), kúpi dve vozidlá
-// (Logistika → Straddle carrier) a spawnne loď (DEV „Spawn feeder“, 4 TEU; ďalších 24 TEU cez `dispatchJSON`, aby sa dvor
+// (Logistika → Straddle carrier) a spawnne loď (`SpawnShipDebug`, 4 TEU; ďalších 24 TEU, aby sa dvor
 // zaplnil viditeľne). Na stav sa čaká cez `window.__sim` (polling v rAF stránky), nie pevnými timeoutmi:
 //   1) počas jazdy aspoň jedno vozidlo vezie kontajner → screenshot `f3-vehicles.png` (kamera na vozidlách a dvore),
 //   2) potom je všetko `in_storage`, loď odplávala, vozidlá stoja → screenshot `f3-yard-filled.png` (dvor so zaplnením > 0).
@@ -20,10 +20,10 @@ const NEAR_YARD_ID = 4;
 const FAR_YARD_ID = 5;
 const FIRST_VEHICLE_ID = 6;
 
-/** DEV tlačidlo pošle 4 TEU (`DEV_SPAWN_SHIP`), ďalšia loď cez `dispatchJSON` 24 TEU; dohromady musí skončiť v dvoroch 28 jednotiek. */
-const DEV_BUTTON_UNITS = 4;
+/** Prvá ladiaca loď má 4 TEU, ďalšia 24 TEU (oboje `SpawnShipDebug`); dohromady musí skončiť v dvoroch 28 jednotiek. */
+const FIRST_SHIP_UNITS = 4;
 const EXTRA_UNITS = 24;
-const TOTAL_UNITS = DEV_BUTTON_UNITS + EXTRA_UNITS;
+const TOTAL_UNITS = FIRST_SHIP_UNITS + EXTRA_UNITS;
 
 /** Pohľad na celé rozloženie pri stavbe: zoom 0,5 (bunka 32 px), stred posunutý o pás HUD a BuildBaru. */
 const OVERVIEW = { x: 45, y: 24.5, zoom: 0.5 } as const;
@@ -241,8 +241,8 @@ test.describe('F3: loď → apron → vozidlá → dvor (T03-12)', () => {
     expect(bought.map((vehicle) => vehicle.id)).toEqual([FIRST_VEHICLE_ID, FIRST_VEHICLE_ID + 1]);
     expect(bought.every((vehicle) => vehicle.state === 'idle' && !vehicle.loaded)).toBe(true);
 
-    // 4) DEV loď: tlačidlo „Spawn feeder (DEV)“ (4 TEU) + ďalšia loď 24 TEU cez dispatchJSON (dvor sa má zaplniť viditeľne)
-    await page.getByRole('button', { name: 'Spawn feeder (DEV)' }).click();
+    // 4) ladiaca loď 4 TEU + ďalšia loď 24 TEU, obe cez `SpawnShipDebug` (dvor sa má zaplniť viditeľne)
+    expect(await dispatch(page, { type: 'SpawnShipDebug', shipClassId: 'feeder', cargoTypeId: 'container_teu', units: 4 })).toMatchObject({ ok: true });
     await expect.poll(() => page.evaluate(() => window.__sim!.entities().ships.length)).toBe(1);
     expect(await dispatch(page, { type: 'SpawnShipDebug', shipClassId: 'feeder', cargoTypeId: 'container_teu', units: EXTRA_UNITS })).toMatchObject({ ok: true });
     await setSpeed(page, 4);

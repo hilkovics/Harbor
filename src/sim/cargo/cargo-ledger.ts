@@ -53,8 +53,10 @@ export interface CargoLedgerDeps {
 /**
  * Čítanie polohy nákladu bez možnosti presunu (T03-02, review T02-13): moduly, ktoré majú sloty (apron, sklad),
  * odvodzujú obsadenie z ledgera a držia len rezervácie — ledger ostáva jediným zdrojom polohy (pravidlo 2).
+ * `unitAtIndex` (T04-02): rampa počíta jednotky na docku prechodom svojich jednotiek bez kópie (dock nie je jedinečné
+ * miesto, ledger ho neindexuje).
  */
-export type CargoReader = Pick<CargoLedger, 'get' | 'unitsAt' | 'countAt' | 'firstUnitAt' | 'unitAtSlot'>;
+export type CargoReader = Pick<CargoLedger, 'get' | 'unitsAt' | 'countAt' | 'firstUnitAt' | 'unitAtSlot' | 'unitAtIndex'>;
 
 /** Index jednotiek jedného držiteľa. */
 interface Bucket {

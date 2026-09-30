@@ -3,7 +3,8 @@
  * druhu ani `.constructor`). Nový druh modulu = nová trieda + `register(kind, factory)`; neregistrovaný druh je
  * chyba pri vytváraní, nie tichý fallback.
  *
- * Predvolený `moduleRegistry` má vstavané druhy (`berth`, `crane`, od F3 `storage`, `depot`) zaregistrované pri
+ * Predvolený `moduleRegistry` má vstavané druhy (`berth`, `crane`, od F3 `storage`, `depot`, od F4 pozemné `gate`,
+ * `waiting_area`, `ramp` — `LandExportModule`, ADR-022) zaregistrované pri
  * načítaní modulu (staticky, rovnako ako `commandRegistry`), `World` ho používa pri stavbe aj pri obnove zo save.
  * Druh `storage` má viac tried podľa kategórie nákladu — vyberá ich tabuľka `STORAGE_MODULES` (§17: `kind`, potom
  * def → trieda), nie switch.
@@ -17,9 +18,12 @@ import type { PlacedModuleSpec } from '../grid/map-def';
 import { BerthModule } from './berth-module';
 import { ContainerYard } from './container-yard';
 import { CraneModule } from './crane-module';
+import { LoadingRamp } from './loading-ramp';
 import type { Module, ModuleInit } from './module';
 import { ModuleError } from './module-error';
+import { TruckGate } from './truck-gate';
 import { VehicleDepot } from './vehicle-depot';
+import { WaitingArea } from './waiting-area';
 
 /** Vytvorí inštanciu modulu z hotového vstupu (validáciu id, ceny, rotácie a hraníc robí `Module`). */
 export type ModuleFactory = (init: ModuleInit) => Module;
@@ -91,6 +95,9 @@ export const BUILTIN_MODULES: readonly (readonly [ModuleKind, ModuleFactory])[] 
   ['crane', (init) => new CraneModule(init)],
   ['storage', createStorage],
   ['depot', (init) => new VehicleDepot(init)],
+  ['gate', (init) => new TruckGate(init)],
+  ['waiting_area', (init) => new WaitingArea(init)],
+  ['ramp', (init) => new LoadingRamp(init)],
 ]);
 
 /** Zaregistruje vstavané druhy do `registry`. */

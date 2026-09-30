@@ -1,12 +1,14 @@
 /**
  * Modul (ARCHITECTURE §5, §5.3): entita postavená na mriežke podľa `ModuleDef`. Konkrétne druhy sú triedy
- * (`BerthModule`, `CraneModule`, `StorageModule` → `ContainerYard`, `VehicleDepot`…) zaregistrované v `ModuleRegistry`
+ * (`BerthModule`, `CraneModule`, `StorageModule` → `ContainerYard`, `VehicleDepot`, `LandExportModule` → `TruckGate`,
+ * `WaitingArea`, `LoadingRamp`…) zaregistrované v `ModuleRegistry`
  * podľa `def.kind` (pravidlo 7 — žiadne switch-e podľa druhu).
  *
  * Geometria je nemenná: `origin` = ľavý horný roh footprintu **po** rotácii, `size` a `cells` po rotácii. Mriežku
  * (`cell.moduleId`) zapisuje až `World.addModule` — samotná inštancia svet nemení.
  */
 import type { CargoReader } from '../cargo/cargo-ledger';
+import type { CargoHolderKind } from '../cargo/cargo-location';
 import type { EntityId } from '../core/entity-id';
 import type { ModuleDef, ModuleKind } from '../defs/types';
 import type { CellCoord, Grid } from '../grid/grid';
@@ -98,6 +100,25 @@ export abstract class Module {
    * (invarianty kroku 12, obnova save, pravidlo `has_cargo`) sa pýta tu, nie `instanceof` (pravidlo 7, ADR-017).
    */
   cargoSlots(): CargoSlotsView | undefined {
+    return undefined;
+  }
+
+  /**
+   * Rezervované (zatiaľ prázdne) miesta pre prichádzajúci náklad a druh lokácie, do ktorej náklad príde; `undefined` =
+   * modul také miesta nemá. Základ: sloty z `cargoSlots()` (apron, sklad); rampa (T04-02) hlási staging rezervácie
+   * dockov (`at_ramp`), ktoré nie sú jedinečné sloty. Pravidlo `has_cargo` (§8 bod 8) sa pýta tu, nie `instanceof`.
+   */
+  cargoReservations(): { readonly kind: CargoHolderKind; readonly count: number } | undefined {
+    const slots = this.cargoSlots();
+    return slots === undefined ? undefined : { kind: slots.kind, count: slots.reservedCount };
+  }
+
+  /**
+   * Prvé porušenie vnútornej konzistencie dynamického stavu modulu (krok 12, §6), alebo `undefined`. Základ: nič
+   * na kontrolu. Pozemné moduly (T04-02) kontrolujú frontu brány, bays stojiska a staging dockov rampy; väzby na iné
+   * entity (kamióny, joby) kontroluje svet. V platnom stave nesmie alokovať (ADR-021).
+   */
+  findRuntimeProblem(): string | undefined {
     return undefined;
   }
 

@@ -42,22 +42,26 @@ export type ModuleErrorCode =
   | 'ship_docked'
   /** Žeriav je uprostred cyklu. */
   | 'busy'
-  /** Slot (apron, sklad) je mimo `0 … capacity − 1`. */
+  /** Slot (apron, sklad), bay stojiska alebo dock rampy je mimo rozsahu `0 … n − 1`. */
   | 'invalid_slot'
-  /** Apron alebo sklad nemá slot, ktorý nie je obsadený ani rezervovaný (T03-02; pôvodne `apron_full`). */
+  /** Apron, sklad alebo dock rampy nemá miesto, ktoré nie je obsadené ani rezervované (T03-02; pôvodne `apron_full`). */
   | 'no_free_slot'
-  /** Slot je už rezervovaný. */
+  /** Slot je už rezervovaný (bay stojiska už drží iný kamión). */
   | 'slot_reserved'
-  /** Slot je obsadený jednotkou. */
+  /** Slot je obsadený jednotkou (bay už obsadil kamión). */
   | 'slot_occupied'
-  /** `commit`/`release` na slote bez rezervácie. */
+  /** `commit`/`release` na slote (docku, bayi) bez rezervácie. */
   | 'slot_not_reserved'
-  /** `commit` po presune: ledger nemá jednotku na tomto slote držiteľa (presun neprebehol alebo inam). */
+  /** `commit` po presune: ledger nemá jednotku na tomto slote (docku) držiteľa (presun neprebehol alebo inam). */
   | 'unit_not_at_slot'
   /** `recordTaken`: jednotka podľa ledgera stále leží v module. */
   | 'unit_still_held'
   /** Depo nemá voľné státie (`params.capacity`). */
   | 'depot_full'
+  /** Stojisko kamiónov nemá voľný bay (`params.bays`, T04-02). */
+  | 'no_free_bay'
+  /** Fronta brány kamiónov je prázdna (`TruckGate.dequeue`, T04-02). */
+  | 'queue_empty'
   /** Vozidlo k depu nepatrí. */
   | 'unknown_vehicle'
   /** Neplatný serializovaný stav modulu (`restoreRuntimeState`). */

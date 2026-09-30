@@ -1,6 +1,8 @@
 // ModuleRegistry (T02-03, pravidlo 7, ARCHITECTURE §17): kind → factory, žiadny switch; neregistrovaný kind a
 // dvojitá registrácia sú chyby; create overí spec.defId a konštruktor Module overí id, cenu, rotáciu a hranice.
 // T03-02 (ADR-017): vstavané aj `storage` (trieda podľa kategórie, `STORAGE_MODULES`) a `depot`; env nesie ledger.
+// T04-02 (ADR-022): vstavané aj pozemné `gate` → TruckGate, `waiting_area` → WaitingArea, `ramp` → LoadingRamp
+// (LandExportModule); testovací druh bez vstavanej triedy je teraz `pipeline`.
 import modulesJson from '@data/defs/modules.json';
 import { describe, expect, it } from 'vitest';
 import { DefRegistry, type ModuleDef } from '@sim/defs';
@@ -10,12 +12,16 @@ import {
   BerthModule,
   ContainerYard,
   CraneModule,
+  LandExportModule,
+  LoadingRamp,
   Module,
   ModuleError,
   ModuleRegistry,
   STORAGE_MODULES,
   StorageModule,
+  TruckGate,
   VehicleDepot,
+  WaitingArea,
   moduleRegistry,
   registerBuiltinModules,
   type ModuleEnv,
@@ -40,8 +46,8 @@ function errorCode(action: () => unknown): ModuleErrorCode | undefined {
   return undefined;
 }
 
-/** Testovacia trieda pre druh bez vstavanej triedy (gate — brány prídu vo F5). */
-class TestGate extends Module {
+/** Testovacia trieda pre druh bez vstavanej triedy (pipeline — potrubia prídu vo F7+). */
+class TestPipeline extends Module {
   constructor(init: ModuleInit) {
     super(init);
   }
@@ -64,18 +70,29 @@ const STORAGE_DEFS = DefRegistry.fromRaw({
       ...modulesJson.items,
       { ...TEST_ITEM, id: 'yard_test', kind: 'storage', params: { capacityUnits: 64, category: 'container' } },
       { ...TEST_ITEM, id: 'silo_test', kind: 'storage', params: { capacityUnits: 24, category: 'bulk' } },
-      { ...TEST_ITEM, id: 'gate_test', kind: 'gate', params: { processTicks: 18 } },
+      { ...TEST_ITEM, id: 'pipeline_test', kind: 'pipeline', params: {} },
     ],
   },
 });
 const storageDef: Readonly<ModuleDef> = STORAGE_DEFS.modules.get('yard_test');
 const siloDef: Readonly<ModuleDef> = STORAGE_DEFS.modules.get('silo_test');
-const gateDef: Readonly<ModuleDef> = STORAGE_DEFS.modules.get('gate_test');
+const pipelineDef: Readonly<ModuleDef> = STORAGE_DEFS.modules.get('pipeline_test');
 
 describe('ModuleRegistry', () => {
-  it('predvolený register má vstavané druhy berth, crane, storage a depot (BUILTIN_MODULES)', () => {
-    expect(moduleRegistry.kinds).toEqual(['berth', 'crane', 'storage', 'depot']);
-    expect(BUILTIN_MODULES.map(([kind]) => kind)).toEqual(['berth', 'crane', 'storage', 'depot']);
+  it('predvolený register má vstavané druhy berth, crane, storage, depot, gate, waiting_area a ramp (BUILTIN_MODULES)', () => {
+    const kinds = ['berth', 'crane', 'storage', 'depot', 'gate', 'waiting_area', 'ramp'];
+    expect(moduleRegistry.kinds).toEqual(kinds);
+    expect(BUILTIN_MODULES.map(([kind]) => kind)).toEqual(kinds);
+  });
+
+  it.each([
+    ['truck_gate', TruckGate],
+    ['truck_waiting_area', WaitingArea],
+    ['loading_ramp_container', LoadingRamp],
+  ] as const)('pozemný modul %s → vlastná trieda (extends LandExportModule)', (defId, cls) => {
+    const module = moduleRegistry.create(MODULE_DEFS.modules.get(defId), { defId, x: 0, y: 0, rotation: 0 }, id(1), 0, ENV);
+    expect(module).toBeInstanceOf(cls);
+    expect(module).toBeInstanceOf(LandExportModule);
   });
 
   it('storage: trieda podľa kategórie (STORAGE_MODULES) — container → ContainerYard; kategória bez triedy → unknown_kind', () => {
@@ -105,18 +122,18 @@ describe('ModuleRegistry', () => {
     const registry = new ModuleRegistry();
     expect(registry.has('berth')).toBe(false);
     expect(errorCode(() => registry.create(berthDef, { defId: BERTH, x: 0, y: 0, rotation: 0 }, id(1), 0, ENV))).toBe('unknown_kind');
-    expect(errorCode(() => moduleRegistry.create(gateDef, { defId: 'gate_test', x: 0, y: 0, rotation: 0 }, id(1), 0, ENV))).toBe('unknown_kind');
+    expect(errorCode(() => moduleRegistry.create(pipelineDef, { defId: 'pipeline_test', x: 0, y: 0, rotation: 0 }, id(1), 0, ENV))).toBe('unknown_kind');
   });
 
-  it('registrácia novej triedy (bez switch-u): gate → TestGate', () => {
+  it('registrácia novej triedy (bez switch-u): pipeline → TestPipeline', () => {
     const registry = new ModuleRegistry();
     registerBuiltinModules(registry);
-    registry.register('gate', (init) => new TestGate(init));
-    const gate = registry.create(gateDef, { defId: 'gate_test', x: 1, y: 1, rotation: 90 }, id(3), 0, ENV);
-    expect(gate).toBeInstanceOf(TestGate);
-    expect(gate.size).toEqual({ w: 4, h: 4 });
-    expect(registry.kinds).toEqual(['berth', 'crane', 'storage', 'depot', 'gate']);
-    expect(errorCode(() => registry.register('storage', (init) => new TestGate(init)))).toBe('duplicate_kind');
+    registry.register('pipeline', (init) => new TestPipeline(init));
+    const pipeline = registry.create(pipelineDef, { defId: 'pipeline_test', x: 1, y: 1, rotation: 90 }, id(3), 0, ENV);
+    expect(pipeline).toBeInstanceOf(TestPipeline);
+    expect(pipeline.size).toEqual({ w: 4, h: 4 });
+    expect(registry.kinds).toEqual(['berth', 'crane', 'storage', 'depot', 'gate', 'waiting_area', 'ramp', 'pipeline']);
+    expect(errorCode(() => registry.register('storage', (init) => new TestPipeline(init)))).toBe('duplicate_kind');
   });
 
   it('dvojitá registrácia → duplicate_kind', () => {
@@ -167,7 +184,7 @@ describe('Module — geometria a vstup', () => {
 
   it('modul bez runtime stavu: getRuntimeState() = {} a restore prijme len {}', () => {
     const yardRegistry = new ModuleRegistry();
-    yardRegistry.register('storage', (init) => new TestGate(init));
+    yardRegistry.register('storage', (init) => new TestPipeline(init));
     const yard = yardRegistry.create(storageDef, { defId: 'yard_test', x: 0, y: 0, rotation: 0 }, id(1), 0, ENV);
     expect(yard.getRuntimeState()).toEqual({});
     expect(() => yard.restoreRuntimeState({})).not.toThrow();

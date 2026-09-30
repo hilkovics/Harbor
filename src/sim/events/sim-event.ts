@@ -1,6 +1,6 @@
 /**
  * Udalosti simulácie (ARCHITECTURE §12.1, výber pre F1 + F2: `CargoMoved`, moduly, lode, žeriavy; F3: vozidlá, joby,
- * `NoStorageAvailable`). Readonly DTO:
+ * `NoStorageAvailable`; F4: `RampOperationalChanged`). Readonly DTO:
  * `World` ich zbiera v `EventBus` a vracia z `tick()` / `applyPending()`; prezentácia ich len číta. Nový typ udalosti =
  * nový člen únie (+ test).
  */
@@ -8,6 +8,7 @@ import type { CargoLocation } from '../cargo/cargo-location';
 import type { ValidationReason } from '../commands/validation';
 import type { EntityId } from '../core/entity-id';
 import type { LedgerCategory } from '../economy/ledger-category';
+import type { RampInoperativeReason } from '../modules/loading-ramp';
 import type { CellCoord } from '../grid/grid';
 import type { Rotation } from '../grid/rotation';
 import type { VehicleState } from '../vehicles/vehicle-fsm';
@@ -209,6 +210,18 @@ export interface NoStorageAvailableEvent {
   readonly cargoTypeId: string;
 }
 
+/**
+ * Zmenil sa prevádzkový stav rampy (ADR-022): prevádzkovosť alebo dôvod neprevádzkovosti — aj pri prvom vyhodnotení
+ * novej rampy. Emituje ho svet po príkaze, ktorý zmenil cesty alebo moduly (po udalostiach príkazu); `reason` je `null`
+ * práve pri `operational: true`.
+ */
+export interface RampOperationalChangedEvent {
+  readonly type: 'RampOperationalChanged';
+  readonly rampId: EntityId;
+  readonly operational: boolean;
+  readonly reason: RampInoperativeReason | null;
+}
+
 export type SimEvent =
   | TickAdvancedEvent
   | HourClosedEvent
@@ -233,7 +246,8 @@ export type SimEvent =
   | JobAssignedEvent
   | JobDoneEvent
   | VehicleStateChangedEvent
-  | NoStorageAvailableEvent;
+  | NoStorageAvailableEvent
+  | RampOperationalChangedEvent;
 
 /** Názov typu udalosti (`'TickAdvanced' | 'HourClosed' | …`). */
 export type SimEventType = SimEvent['type'];

@@ -31,6 +31,14 @@
  * a `deserialize`); `pathfinder` (A*), `paths` (`PathCache`) a `distances` (`DistanceMatrix`) vznikajú lenivo pri prvom
  * použití a cache sa pri zmene `roadVersion` samy vyprázdnia — bez odberu udalostí. Nič z toho nie je v save.
  * `markRoadsChanged` zároveň označí jazdiace vozidlá na preplánovanie (`Vehicle.replanPending`, ide do save — ADR-019).
+ *
+ * Pozemný reťazec (T04-02, ADR-022): `moduleVersion` je počítadlo zmien množiny modulov (`addModule`/`removeModule`);
+ * `landside` (`LandsideNetwork`) z ciest a modulov lenivo počíta strany brán, priechody stojiskami a prevádzkovosť rámp
+ * (zneplatní sa zmenou `roadVersion` alebo `moduleVersion`). Dotazy `isRampOperational`, `rampStatus`, `landsideRoutes`,
+ * `gateSides` sú vždy aktuálne. Po každom aplikovanom príkaze (a na konci príkazovej fázy ticku) svet výsledok
+ * **zverejní** do modulov (`TruckGate.entrySide`/`exitSide`, `LoadingRamp.operational`/`inoperativeReason`) a pri zmene
+ * stavu rampy emituje `RampOperationalChanged` — po udalostiach príkazu, ktorý zmenu spôsobil. `create` a `deserialize`
+ * zverejňujú bez udalostí.
  * Typy ciest (T03-18, ADR-020): prestavba typu alebo smeru bunky je tiež zmena siete (`markRoadsChanged`); A* ide po
  * smerových hranách s cenou bunky `roadSpeeds.cellCost` (= 1 / `speedFactor`) a vozidlá jazdia rýchlosťou
  * `roadSpeeds.speedFactor` cieľovej bunky úseku.
@@ -54,9 +62,11 @@ import type { Parcel, ParcelOwnership } from '../grid/parcel';
 import { BerthModule } from '../modules/berth-module';
 import { computeBerthGroups, type BerthGroup } from '../modules/berth-group';
 import { CraneModule } from '../modules/crane-module';
+import { LoadingRamp, type RampStatus } from '../modules/loading-ramp';
 import type { Module } from '../modules/module';
 import { ModuleError } from '../modules/module-error';
 import { moduleRegistry } from '../modules/module-registry';
+import { TruckGate } from '../modules/truck-gate';
 import { VehicleDepot } from '../modules/vehicle-depot';
 import type { Ship } from '../ships/ship';
 import { ShipError } from '../ships/ship-error';
@@ -76,6 +86,7 @@ import type { Vehicle } from '../vehicles/vehicle';
 import { VehicleError } from '../vehicles/vehicle-error';
 import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle-fsm';
 import { connectorCellsOf, isModuleConnected, type ConnectorCell } from './connectivity';
+import { LandsideNetwork, type GateSides, type LandsideRoute } from './landside';
 import { migrateWorldState } from './migrate';
 import { PLACEMENT_RULE_ERROR, attachesToHost, findPlacementViolations, findRemovalViolations } from './module-rules';
 import { WorldInvariantError, findWorldViolation } from './world-invariants';
@@ -193,6 +204,11 @@ export class World {
   private readonly vehicleSystem = new VehicleSystem();
   private readonly metricsSystem = new MetricsSystem();
   private roadChanges = 0;
+  private moduleChanges = 0;
+  /** Verzie ciest a modulov, pri ktorých svet naposledy zverejnil pozemný reťazec do modulov (`publishLandside`). */
+  private publishedRoadVersion = Number.NaN;
+  private publishedModuleVersion = Number.NaN;
+  private landsideNetwork: LandsideNetwork | undefined;
   private pathfinderInstance: Pathfinder | undefined;
   private pathCache: PathCache | undefined;
   private distanceMatrix: DistanceMatrix | undefined;
@@ -249,6 +265,7 @@ export class World {
       options,
     );
     world.placeStarterModules();
+    world.publishLandside(false);
     return world;
   }
 
@@ -299,6 +316,8 @@ export class World {
     // Cesty prišli zo save — cache ciest vytvorené počas obnovy by patrili predchádzajúcemu stavu mriežky.
     world.markRoadsChanged();
     restoreEntities(world, parsed);
+    // Zverejnený stav pozemného reťazca sa neukladá: originál ho mal zverejnený po poslednom príkaze, obnova ho odvodí ticho.
+    world.publishLandside(false);
     return world;
   }
 
@@ -314,6 +333,51 @@ export class World {
    */
   get roadVersion(): number {
     return this.roadChanges;
+  }
+
+  /**
+   * Verzia množiny modulov: rastie pri každom `addModule` / `removeModule` (neukladá sa, význam má len zmena) —
+   * `landside` podľa nej (a `roadVersion`) zistí, že sa brány, stojiská alebo rampy mohli zmeniť.
+   */
+  get moduleVersion(): number {
+    return this.moduleChanges;
+  }
+
+  /**
+   * Pozemný exportný reťazec (`LandsideNetwork`, ADR-022): strany brán, priechody stojiskami, trasy kamiónov
+   * a prevádzkovosť rámp, lenivo prepočítané pri zmene `roadVersion` alebo `moduleVersion`. Nie je v save.
+   */
+  get landside(): LandsideNetwork {
+    this.landsideNetwork ??= new LandsideNetwork(this);
+    return this.landsideNetwork;
+  }
+
+  /**
+   * Je rampa prevádzková (rozhodnutie orchestrátora F4 č. 1, ADR-022) — vždy aktuálne, bez alokácie pri nezmenenej sieti.
+   * Modul (alebo id), ktorý nie je rampou tohto sveta, → `false`.
+   */
+  isRampOperational(ramp: Module | EntityId): boolean {
+    const module = typeof ramp === 'number' ? this.moduleMap.get(ramp) : ramp;
+    return module === undefined ? false : (this.landside.rampStatus(module)?.operational ?? false);
+  }
+
+  /**
+   * Aktuálny prevádzkový stav rampy s dôvodom (`RampStatus`). Rampa, ktorá vo svete nie je → `ModuleError('unknown_module')`.
+   */
+  rampStatus(ramp: LoadingRamp): RampStatus {
+    const status = this.landside.rampStatus(ramp);
+    if (status === undefined) throw new ModuleError('unknown_module', `World.rampStatus: ${ramp.label} vo svete nie je`);
+    return status;
+  }
+
+  /** Trasy kamiónov k rampe (brána, stojisko, prístupové bunky; poradie id brány, potom stojiska); neprevádzková → `[]`. */
+  landsideRoutes(ramp: LoadingRamp): readonly LandsideRoute[] {
+    return this.landside.routes(ramp);
+  }
+
+  /** Aktuálne strany brány (konektory a prístupové bunky; `null` / `NO_ACCESS`, keď strana chýba). */
+  gateSides(gate: TruckGate): GateSides {
+    return this.landside.gateSides(gate);
   }
 
   /**
@@ -398,6 +462,7 @@ export class World {
       for (const { x, y } of module.cells) this.grid.at(x, y).moduleId = module.id;
     }
     this.moduleMap.set(module.id, module);
+    this.moduleChanges += 1;
     this.refreshBerthGroups();
   }
 
@@ -419,6 +484,7 @@ export class World {
       for (const { x, y } of module.cells) this.grid.at(x, y).moduleId = null;
     }
     this.moduleMap.delete(moduleId);
+    this.moduleChanges += 1;
     this.refreshBerthGroups();
     return module;
   }
@@ -819,8 +885,34 @@ export class World {
       const result = command.validate(this);
       if (result.ok) {
         command.apply(this);
+        this.publishLandside(true);
       } else {
         this.events.emit({ type: 'CommandRejected', commandType: command.type, reasons: Object.freeze([...result.reasons]) });
+      }
+    }
+    // Zmeny ciest alebo modulov mimo príkazov (priame volania štrukturálnych operácií) sa zverejnia najneskôr tu.
+    this.publishLandside(true);
+  }
+
+  /**
+   * Zverejní pozemný reťazec do modulov (ADR-022), ak sa od posledného zverejnenia zmenili cesty alebo moduly: bránam
+   * strany (`TruckGate.setSides`), rampám prevádzkový stav (`LoadingRamp.publishStatus`) a pri zmene stavu rampy (aj
+   * pri prvom zverejnení novej rampy) `RampOperationalChanged`, ak `emit`. Pri nezmenených verziách nerobí nič.
+   */
+  private publishLandside(emit: boolean): void {
+    if (this.roadChanges === this.publishedRoadVersion && this.moduleChanges === this.publishedModuleVersion) return;
+    this.publishedRoadVersion = this.roadChanges;
+    this.publishedModuleVersion = this.moduleChanges;
+    const { landside } = this;
+    for (const module of this.moduleMap.values()) {
+      if (module instanceof TruckGate) {
+        const sides = landside.gateSides(module);
+        module.setSides(sides.entry, sides.exit);
+      } else if (module instanceof LoadingRamp) {
+        const status = this.rampStatus(module);
+        if (module.publishStatus(status) && emit) {
+          this.events.emit({ type: 'RampOperationalChanged', rampId: module.id, operational: status.operational, reason: status.reason });
+        }
       }
     }
   }

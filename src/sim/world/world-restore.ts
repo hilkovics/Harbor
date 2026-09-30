@@ -8,7 +8,9 @@
  * `World.addJob`, rezervácia slotu v cieľovom sklade), náklad vozidla patrí jeho jobu, pohyb vozidla zodpovedá stavu
  * (trasa, odpočet, cesty — `vehicleMotionProblem`), rezervácie apronov
  * z `reservedSlot` žeriavov, držané jednotky žeriavov z `in_crane` a hodiny throttlov (`lastBlockedHour`,
- * `lastNoStorageHour`) nie sú v budúcnosti. Obsadenie apronov a skladov sa neobnovuje — čítajú ho z ledgera (ADR-017).
+ * `lastNoStorageHour`) nie sú v budúcnosti. Obsadenie apronov, skladov a dockov rámp sa neobnovuje — čítajú ho z ledgera
+ * (ADR-017, ADR-022); jednotky na rampe musia ležať na docku v rozsahu a v jeho kapacite (`checkRampUnits`). Pozemné
+ * moduly (T04-02) obnovia `runtime` (brána: fronta a počítadlá); strany brán a prevádzkovosť rámp odvodí svet po obnove.
  * Na koniec beží `findWorldViolation` ako poistka. Každá chyba je `WorldStateError` s JSON pointerom.
  */
 import { holderIdOf, holderSpecOf, isSameLocation, uniqueSlotOf } from '../cargo/cargo-location';
@@ -18,6 +20,7 @@ import { JobError, type JobErrorCode } from '../logistics/job-error';
 import { JOB_STATE_TRAITS, TransportJob, type JobState } from '../logistics/transport-job';
 import { BerthModule } from '../modules/berth-module';
 import { CRANE_STATE_TRAITS, CraneModule } from '../modules/crane-module';
+import { LoadingRamp } from '../modules/loading-ramp';
 import { ModuleError, ModuleStateError } from '../modules/module-error';
 import { moduleRegistry } from '../modules/module-registry';
 import { StorageModule } from '../modules/storage-module';
@@ -402,6 +405,29 @@ function checkUnitSlots(world: World, units: readonly CargoUnit[]): void {
   });
 }
 
+/**
+ * Jednotky na rampe (`at_ramp`, T04-02, ADR-022): dock v rozsahu `docks` a na každom docku najviac `stagingPerDock`
+ * jednotiek — ledger rozsah ani kapacitu docku nepozná. Volá sa po `checkHolders`; chyba patrí jednotke
+ * (`/cargo/units/<j>/location/dock`). Rezervácie staging miest obnovia outbound joby (T04-03).
+ */
+function checkRampUnits(world: World, units: readonly CargoUnit[]): void {
+  const perDock = new Map<string, number>();
+  units.forEach((unit, index) => {
+    if (unit.location.kind !== 'at_ramp') return;
+    const { rampId, dock } = unit.location;
+    const ramp = world.modules.get(rampId);
+    if (!(ramp instanceof LoadingRamp)) return;
+    const path = `${unitPath(index)}/location/dock`;
+    if (dock >= ramp.docks) throw new WorldStateError(path, `${ramp.label}: dock ${String(dock)} je mimo 0…${String(ramp.docks - 1)}`);
+    const key = `${String(rampId)}:${String(dock)}`;
+    const count = (perDock.get(key) ?? 0) + 1;
+    perDock.set(key, count);
+    if (count > ramp.stagingPerDock) {
+      throw new WorldStateError(path, `${ramp.label}: dock ${String(dock)} unesie ${String(ramp.stagingPerDock)} jednotiek, v save ich má viac`);
+    }
+  });
+}
+
 /** Držané jednotky žeriavov z ledgera (`in_crane`). */
 function restoreHeldCargo(world: World, units: readonly CargoUnit[]): void {
   units.forEach((unit, index) => {
@@ -449,6 +475,7 @@ export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'mo
   checkHolders(world, units);
   checkVehicleCargo(world, units);
   checkUnitSlots(world, units);
+  checkRampUnits(world, units);
   restoreJobs(world, parsed.jobs);
   checkVehicleCargoJobs(world, units);
   checkVehicleMotion(world);

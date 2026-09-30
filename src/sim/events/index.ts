@@ -16,6 +16,7 @@ export type {
   MoneyChangedEvent,
   MonthClosedEvent,
   NoStorageAvailableEvent,
+  RampOperationalChangedEvent,
   RoadChangedEvent,
   ShipDepartedEvent,
   ShipDockedEvent,

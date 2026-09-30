@@ -1,5 +1,6 @@
-// Moduly (ARCHITECTURE §5, §5.3, §5.4, §7.7; ADR-014, ADR-017): Module, ModuleRegistry, BerthModule, CraneModule,
-// BerthGroup, ApronBuffer, SlotReservations, StorageModule, ContainerYard, VehicleDepot.
+// Moduly (ARCHITECTURE §5, §5.3, §5.4, §7.5, §7.7; ADR-014, ADR-017, ADR-022): Module, ModuleRegistry, BerthModule,
+// CraneModule, BerthGroup, ApronBuffer, SlotReservations, StorageModule, ContainerYard, VehicleDepot, LandExportModule,
+// TruckGate, WaitingArea, LoadingRamp (DockStaging).
 export { Module } from './module';
 export type { ModuleInit } from './module';
 export { ModuleError, ModuleStateError } from './module-error';
@@ -14,6 +15,14 @@ export { StorageModule } from './storage-module';
 export type { StorageRuntimeState } from './storage-module';
 export { CONTAINER_YARD_CATEGORY, ContainerYard } from './container-yard';
 export { VehicleDepot } from './vehicle-depot';
+export { LandExportModule } from './land-export-module';
+export { TruckGate } from './truck-gate';
+export type { GateRuntimeState } from './truck-gate';
+export { WaitingArea } from './waiting-area';
+export { DockStaging } from './dock-staging';
+export type { DockStagingInit } from './dock-staging';
+export { LoadingRamp, RAMP_INOPERATIVE_REASONS, RAMP_OPERATIONAL } from './loading-ramp';
+export type { RampInoperativeReason, RampStatus } from './loading-ramp';
 export { BerthModule, effectiveBerthDepth } from './berth-module';
 export type { BerthRuntimeState } from './berth-module';
 export { CRANE_STATES, CRANE_STATE_TRAITS, CRANE_TRANSITIONS, CraneModule, cranePhaseProblem, isCraneTransitionAllowed } from './crane-module';

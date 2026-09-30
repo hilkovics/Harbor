@@ -30,7 +30,8 @@
  *   bez modulu vrátane umiestňovaného, bez koľaje; parcela sa neoveruje). Modul bez cestných konektorov (žeriav) sa
  *   pravidlom neriadi. Pravidlo hráča — obnova save ho neoveruje (okolie sa medzitým mohlo zastavať).
  *
- * Pravidlá odstránenia: `has_cargo` (náklad v module alebo rezervovaný slot apronu/skladu — `Module.cargoSlots()`),
+ * Pravidlá odstránenia: `has_cargo` (náklad v module alebo rezervované miesto — slot apronu/skladu, staging dock rampy;
+ * `Module.cargoReservations()`, ADR-022),
  * `has_cranes`, `has_vehicles` (depo, ktorému patria vozidlá; ADR-017), `ship_docked` (kotvisko má loď v
  * `berthing`/`docked` — `dockedShipId`; pri žeriave kotvisko pod ním, inak by loď ostala pri kotvisku naveky
  * s nákladom, T02-14), `busy` (žeriav mimo `idle`/`blocked`).
@@ -385,10 +386,12 @@ const REMOVAL_CHECKS: { readonly [R in RemovalRule]: RemovalCheck } = {
   has_cargo: (world, module) => {
     const heldKind = MODULE_CARGO_HOLDER_KINDS.find((kind) => world.cargo.countAt(kind, module.id) > 0);
     if (heldKind !== undefined) return `${module.label} drží náklad (${heldKind})`;
-    // Obsadenie slotov (apron, sklad) je v ledgeri — pokryté vyššie; modul drží len rezervácie (ADR-017).
-    const slots = module.cargoSlots();
-    const reserved = slots?.reservedCount ?? 0;
-    return slots !== undefined && reserved > 0 ? `${module.label} má rezervované sloty (${slots.kind}): ${String(reserved)}` : undefined;
+    // Obsadenie slotov a dockov (apron, sklad, rampa) je v ledgeri — pokryté vyššie; modul drží len rezervácie
+    // (ADR-017, ADR-022): sloty apronu a skladu, staging miesta dockov rampy.
+    const reservations = module.cargoReservations();
+    return reservations !== undefined && reservations.count > 0
+      ? `${module.label} má rezervované sloty (${reservations.kind}): ${String(reservations.count)}`
+      : undefined;
   },
   has_cranes: (_world, module) =>
     module instanceof BerthModule && module.craneIds.length > 0 ? `na ${module.label} stoja žeriavy [${module.craneIds.join(', ')}]` : undefined,

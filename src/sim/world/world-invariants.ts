@@ -37,7 +37,11 @@
  *    `jobOfUnit` = jednotky jobov (žiadna jednotka v dvoch aktívnych joboch), jednotky ležia podľa stavu na `from`
  *    alebo vo vozidle jobu, vozidlo podľa `JOB_STATE_TRAITS.hasVehicle` existuje a má tento job, cieľ je sklad
  *    kategórie nákladu so slotom v rozsahu; rezervované sloty každého skladu = presne sloty `to` jeho aktívnych jobov
- *    (slot jobu rezervovaný + počet, súčet a súčet štvorcov slotov — bez kópií a triedenia, ADR-021).
+ *    (slot jobu rezervovaný + počet, súčet a súčet štvorcov slotov — bez kópií a triedenia, ADR-021);
+ * 10. vnútorný stav modulov (`Module.findRuntimeProblem`, T04-02, ADR-022): fronta brány bez duplicít, bays stojiska
+ *    (počítadlá, obsadený bay má kamión, kamión drží najviac jeden bay), staging dockov rampy (jednotka na docku
+ *    v rozsahu, súčet rezervácií, `staged + reserved ≤ stagingPerDock` na každom docku); na rampe len jednotky jej
+ *    kategórie. Väzby na kamióny (fronta, bays) a rezervácie staging miest ↔ outbound joby pridajú T04-03/T04-04.
  *
  * Krok 12 beží v DEV/testoch každý tick, preto kontroly v bežnom (platnom) stave nealokujú, kde to ide (review T03-13):
  * trasy vozidiel cez `Vehicle.routeCellAt`, depá kurzorom, rezervácie súčtami; podrobné správy sa skladajú až pri
@@ -53,6 +57,7 @@ import { JOB_STATE_TRAITS, type TransportJob } from '../logistics/transport-job'
 import { BerthModule } from '../modules/berth-module';
 import { computeBerthGroups } from '../modules/berth-group';
 import { CRANE_STATE_TRAITS, CraneModule, cranePhaseProblem } from '../modules/crane-module';
+import { LoadingRamp } from '../modules/loading-ramp';
 import { StorageModule } from '../modules/storage-module';
 import { VehicleDepot } from '../modules/vehicle-depot';
 import { hasCompatibleCrane } from '../ships/berth-allocator';
@@ -571,11 +576,38 @@ const checkShips: Check = (world) => {
   return checkGrabbingCranes(world);
 };
 
+/** Na rampe ležia len jednotky jej kategórie (bez alokácie — prechod indexom ledgera). */
+function checkRampCategory(world: World, ramp: LoadingRamp): string | undefined {
+  const count = world.cargo.countAt('at_ramp', ramp.id);
+  for (let i = 0; i < count; i++) {
+    const unitId = world.cargo.unitAtIndex('at_ramp', ramp.id, i);
+    const category = unitCategory(world, unitId);
+    if (category !== ramp.category) {
+      return `${ramp.label} (kategória '${ramp.category}') drží jednotku #${String(unitId)} kategórie '${String(category)}'`;
+    }
+  }
+  return undefined;
+}
+
+/** Vnútorný stav každého modulu (`findRuntimeProblem`) a kategória nákladu na rampách (bod 10 hlavičky). */
+const checkModuleRuntime: Check = (world) => {
+  for (const module of world.modules.values()) {
+    const problem = module.findRuntimeProblem();
+    if (problem !== undefined) return problem;
+    if (module instanceof LoadingRamp) {
+      const foreign = checkRampCategory(world, module);
+      if (foreign !== undefined) return foreign;
+    }
+  }
+  return undefined;
+};
+
 const CHECKS: readonly Check[] = [
   checkCargoHolders,
   checkModuleCells,
   checkCranes,
   checkCargoSlots,
+  checkModuleRuntime,
   checkBerthGroups,
   checkShips,
   checkDepots,

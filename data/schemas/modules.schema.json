@@ -181,10 +181,11 @@
     "craneParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["cycleTicks", "category"],
+      "required": ["cycleTicks", "category", "wagePerDayCents"],
       "properties": {
         "cycleTicks": { "type": "integer", "minimum": 2, "description": "Trvanie celého cyklu žeriava v tickoch." },
-        "category": { "enum": ["container", "bulk", "liquid", "gas", "roro"], "description": "Kategória nákladu, ktorú žeriav vykladá." }
+        "category": { "enum": ["container", "bulk", "liquid", "gas", "roro"], "description": "Kategória nákladu, ktorú žeriav vykladá." },
+        "wagePerDayCents": { "type": "integer", "minimum": 0, "description": "Denná mzda obsluhy žeriava v centoch; strhne sa pri DayClosed (F5)." }
       }
     },
     "storageParams": {

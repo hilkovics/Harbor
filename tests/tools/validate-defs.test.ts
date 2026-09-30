@@ -86,6 +86,15 @@ describe('validateDefsDir', () => {
         offersPerDay: 6,
         offerExpiryDays: 2,
         removalRefundRate: 0.5,
+        // F5: kontrakty, XP a ledger (ADR-025..027).
+        urgencyFactor: 0.6,
+        arrivalDaysRange: [0.5, 2],
+        volumeScaleRange: [0.4, 1.2],
+        minCapacityHint: 24,
+        contractsPerTier: 10,
+        xpMultiplier: 1,
+        lateXpFactor: 0.5,
+        ledgerEntriesKept: 2000,
       });
     });
 

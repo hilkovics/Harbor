@@ -8,9 +8,10 @@
  * pravidlá sú tabuľky nižšie (`FieldTable`, `SpecTable`).
  *
  * Konfiguračné defy (`time`, `economy`, `infrastructure`, `logistics`) sú jeden objekt, katalógové (`cargo_types`,
- * `modules`, `ships`, `vehicles`, `trucks`) majú `items: [...]` (ADR-009) a vystavujú sa ako `Catalog`.
+ * `modules`, `ships`, `vehicles`, `trucks`, `contract_templates`) majú `items: [...]` (ADR-009) a vystavujú sa ako `Catalog`.
  */
 import cargoTypesJson from '@data/defs/cargo_types.json';
+import contractTemplatesJson from '@data/defs/contract_templates.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
 import logisticsJson from '@data/defs/logistics.json';
@@ -48,6 +49,7 @@ import {
   SUPPORTED_SCHEMA_VERSION,
   type CargoTypeDef,
   type CongestionDef,
+  type ContractTemplateDef,
   type DefBase,
   type EconomyDef,
   type InfrastructureDef,
@@ -88,7 +90,22 @@ const ECONOMY_FIELDS: FieldTable<EconomyDef> = {
   offersPerDay: { kind: 'integer', min: 0 },
   offerExpiryDays: { kind: 'integer', min: 1 },
   removalRefundRate: { kind: 'number', min: 0, max: 1 },
+  urgencyFactor: { kind: 'number', min: 0 },
+  // Rozsah dní príchodu lode: desatinné dni, ale nie záporné; horná hranica > 0, aby loď neprišla v tom istom ticku ako prijatie.
+  arrivalDaysRange: { kind: 'range', bound: { kind: 'number', min: 0 } },
+  volumeScaleRange: { kind: 'range', bound: { kind: 'number', exclusiveMin: 0 } },
+  minCapacityHint: { kind: 'integer', min: 1 },
+  contractsPerTier: { kind: 'integer', min: 1 },
+  xpMultiplier: { kind: 'number', min: 0 },
+  lateXpFactor: { kind: 'number', min: 0, max: 1 },
+  ledgerEntriesKept: { kind: 'integer', min: 1 },
 };
+
+/** Vzťah polí `economy.json` (F5): `arrivalDaysRange[1] > 0`, inak by loď kontraktu prišla v ticku prijatia. */
+function checkEconomy(def: Readonly<EconomyDef>): Problem | undefined {
+  if (def.arrivalDaysRange[1] > 0) return undefined;
+  return { path: '/arrivalDaysRange/1', message: `musí byť > 0 (loď kontraktu nesmie prísť v ticku prijatia), dostal ${String(def.arrivalDaysRange[1])}` };
+}
 
 /** Cesta aj koľaj majú rovnaké polia (ADR-010), líšia sa iba hodnotami v defe. */
 const INFRASTRUCTURE_LAYER_FIELDS: SpecTable<InfrastructureLayerDef> = {
@@ -236,7 +253,18 @@ const TRUCK_FIELDS: SpecTable<TruckDef> = {
   cargoCategories: { kind: 'array', minItems: 1, unique: true, item: { kind: 'enum', values: CARGO_CATEGORIES } },
 };
 
-type DefName = keyof typeof DEF_FIELDS | 'cargo_types' | 'modules' | 'ships' | 'vehicles' | 'trucks';
+/** Šablóna kontraktu (F5): rozsahy sú celé jednotky/dni, `min ≤ max` hlási `RangeSpec`; vzťahy na iné katalógy `checkContractTemplates`. */
+const CONTRACT_TEMPLATE_FIELDS: SpecTable<ContractTemplateDef> = {
+  id: ID_FIELD,
+  cargoTypeId: { kind: 'string', pattern: SNAKE_CASE_ID, patternName: 'snake_case identifikátor' },
+  volumeUnitsRange: { kind: 'range', bound: { kind: 'integer', min: 1 } },
+  slaDaysRange: { kind: 'range', bound: { kind: 'integer', min: 1 } },
+  shipClassIds: { kind: 'array', minItems: 1, unique: true, item: { kind: 'string', pattern: SNAKE_CASE_ID, patternName: 'snake_case identifikátor' } },
+  weight: { kind: 'integer', min: 1 },
+  minTier: { kind: 'integer', min: 0 },
+};
+
+type DefName = keyof typeof DEF_FIELDS | 'cargo_types' | 'modules' | 'ships' | 'vehicles' | 'trucks' | 'contract_templates';
 
 // ---------------------------------------------------------------------------------------------------------
 // Validácia konfiguračného defu
@@ -300,6 +328,41 @@ function checkRampTrucks(modules: Catalog<Readonly<ModuleDef>>, trucks: Catalog<
   });
 }
 
+/**
+ * Krížová kontrola `contract_templates.json` × `cargo_types.json` × `ships.json` (F5, fail-fast): `cargoTypeId` a
+ * `shipClassIds` existujú, každá loď šablóny vozí kategóriu nákladu a `volumeUnitsRange[1]` sa zmestí do najmenšej lode
+ * šablóny (ponuka nikdy nepresiahne kapacitu lode, §9.1). Chyba patrí šablóne (`contract_templates/items/<i>/...`).
+ */
+function checkContractTemplates(
+  templates: Catalog<Readonly<ContractTemplateDef>>,
+  cargoTypes: Catalog<Readonly<CargoTypeDef>>,
+  ships: Catalog<Readonly<ShipClassDef>>,
+): void {
+  const fail = (index: number, field: string, message: string): never =>
+    failWith('contract_templates', { path: `/items/${String(index)}/${field}`, message });
+  templates.items.forEach((template, index) => {
+    if (!cargoTypes.has(template.cargoTypeId)) {
+      fail(index, 'cargoTypeId', `neznámy typ nákladu '${template.cargoTypeId}' (známe: ${cargoTypes.items.map((item) => item.id).join(', ')})`);
+    }
+    const category = cargoTypes.get(template.cargoTypeId).category;
+    let smallestCapacity = Number.POSITIVE_INFINITY;
+    template.shipClassIds.forEach((shipClassId, shipIndex) => {
+      if (!ships.has(shipClassId)) {
+        fail(index, `shipClassIds/${String(shipIndex)}`, `neznáma trieda lode '${shipClassId}' (známe: ${ships.items.map((item) => item.id).join(', ')})`);
+      }
+      const ship = ships.get(shipClassId);
+      if (!ship.cargoCategories.includes(category)) {
+        fail(index, `shipClassIds/${String(shipIndex)}`, `loď '${shipClassId}' nevozí kategóriu '${category}' nákladu '${template.cargoTypeId}'`);
+      }
+      smallestCapacity = Math.min(smallestCapacity, ship.capacityUnits);
+    });
+    const maxVolume = template.volumeUnitsRange[1];
+    if (maxVolume > smallestCapacity) {
+      fail(index, 'volumeUnitsRange/1', `musí byť ≤ najmenšia kapacita lodí šablóny (${String(smallestCapacity)}), dostal ${String(maxVolume)}`);
+    }
+  });
+}
+
 // ---------------------------------------------------------------------------------------------------------
 // DefRegistry
 // ---------------------------------------------------------------------------------------------------------
@@ -318,15 +381,16 @@ export class DefRegistry {
     private readonly vehiclesCatalog: Catalog<Readonly<VehicleDef>>,
     private readonly trucksCatalog: Catalog<Readonly<TruckDef>>,
     private readonly logisticsDef: Readonly<LogisticsDef>,
+    private readonly contractTemplatesCatalog: Catalog<Readonly<ContractTemplateDef>>,
   ) {}
 
   /**
    * Zvaliduje surové defy (fail-fast, `DefError`) a zostaví register so zmrazenými objektmi. Po jednotlivých defoch
-   * krížové kontroly medzi nimi (`checkRampTrucks`).
+   * krížové kontroly medzi nimi (`checkRampTrucks`, `checkContractTemplates`).
    */
   static fromRaw(raw: RawDefs): DefRegistry {
     const time = validateDef<TimeDef>('time', raw.time, DEF_FIELDS.time);
-    const economy = validateDef<EconomyDef>('economy', raw.economy, DEF_FIELDS.economy);
+    const economy = validateDef<EconomyDef>('economy', raw.economy, DEF_FIELDS.economy, checkEconomy);
     const infrastructure = validateDef<InfrastructureDef>('infrastructure', raw.infrastructure, DEF_FIELDS.infrastructure, checkInfrastructure);
     const cargoTypes = validateCatalog<CargoTypeDef>('cargo_types', raw.cargo_types, { fields: CARGO_TYPE_FIELDS });
     const modules = validateCatalog<ModuleDef>('modules', raw.modules, { fields: MODULE_FIELDS, extraKeys: ['params'], check: checkModuleItem });
@@ -334,8 +398,10 @@ export class DefRegistry {
     const vehicles = validateCatalog<VehicleDef>('vehicles', raw.vehicles, { fields: VEHICLE_FIELDS });
     const trucks = validateCatalog<TruckDef>('trucks', raw.trucks, { fields: TRUCK_FIELDS });
     const logistics = validateDef<LogisticsDef>('logistics', raw.logistics, DEF_FIELDS.logistics);
+    const contractTemplates = validateCatalog<ContractTemplateDef>('contract_templates', raw.contract_templates, { fields: CONTRACT_TEMPLATE_FIELDS });
     checkRampTrucks(modules, trucks);
-    return new DefRegistry(time, economy, infrastructure, cargoTypes, modules, ships, vehicles, trucks, logistics);
+    checkContractTemplates(contractTemplates, cargoTypes, ships);
+    return new DefRegistry(time, economy, infrastructure, cargoTypes, modules, ships, vehicles, trucks, logistics, contractTemplates);
   }
 
   /** `time.json` (ARCHITECTURE §3); použiteľný priamo ako `SimClockConfig`. */
@@ -381,6 +447,11 @@ export class DefRegistry {
     return this.trucksCatalog;
   }
 
+  /** `contract_templates.json` (§4.6, §9.1; F5): šablóny, z ktorých pool generuje ponuky kontraktov. */
+  get contractTemplates(): Catalog<Readonly<ContractTemplateDef>> {
+    return this.contractTemplatesCatalog;
+  }
+
   /** `logistics.json` (§4.6, ADR-010): vnútorný čas v moduloch, opakovanie hľadania cesty, konštanty kongescie. */
   get logistics(): Readonly<LogisticsDef> {
     return this.logisticsDef;
@@ -399,5 +470,6 @@ export function loadBundledDefs(): DefRegistry {
     vehicles: vehiclesJson,
     trucks: trucksJson,
     logistics: logisticsJson,
+    contract_templates: contractTemplatesJson,
   });
 }

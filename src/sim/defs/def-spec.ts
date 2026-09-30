@@ -50,6 +50,16 @@ export interface IntegerArraySpec {
   readonly contains?: number;
 }
 
+/**
+ * Dvojica `[min, max]` čísel (rozsah): presne 2 položky, každá podľa `item`, `min ≤ max`. Schéma ju vyjadrí ako pole
+ * s `prefixItems`, poradie `min ≤ max` schéma nevyjadrí — kontroluje ho DefRegistry a `pnpm validate:defs`.
+ */
+export interface RangeSpec {
+  readonly kind: 'range';
+  /** Špecifikácia oboch hraníc. */
+  readonly bound: NumberSpec;
+}
+
 /** Pole s položkami podľa `item`; `unique` porovnáva primitívne hodnoty (pre pole objektov nemá účinok). */
 export interface ArraySpec<S> {
   readonly kind: 'array';
@@ -68,7 +78,9 @@ export interface ObjectSpec<V> {
 type OptionalFlag<T> = undefined extends T ? { readonly optional: true } : { readonly optional?: false };
 
 /** Špecifikácia poľa podľa typu jeho hodnoty; kompilátor tak spáruje tabuľku s typom defu. */
-type SpecFor<V> = [V] extends [readonly number[]]
+type SpecFor<V> = [V] extends [readonly [number, number]]
+  ? RangeSpec
+  : [V] extends [readonly number[]]
   ? IntegerArraySpec
   : [V] extends [readonly (infer E)[]]
     ? ArraySpec<SpecFor<E>>
@@ -94,6 +106,7 @@ export type FieldSpec = (
   | EnumSpec
   | BooleanSpec
   | IntegerArraySpec
+  | RangeSpec
   | ArraySpec<FieldSpec>
   | { readonly kind: 'object'; readonly fields: FieldRecord }
 ) & { readonly optional?: boolean };
@@ -192,6 +205,18 @@ function checkIntegerArray(value: unknown, spec: IntegerArraySpec, path: string)
   return undefined;
 }
 
+function checkRange(value: unknown, spec: RangeSpec, path: string): Problem | undefined {
+  if (!Array.isArray(value)) return { path, message: `očakávaný rozsah [min, max], dostal ${describeValue(value)}` };
+  if (value.length !== 2) return { path, message: `rozsah musí mať presne 2 položky [min, max], má ${String(value.length)}` };
+  for (const [index, item] of value.entries()) {
+    const problem = checkNumber(item, spec.bound, `${path}${pointerSegment(index)}`);
+    if (problem) return problem;
+  }
+  const [min, max] = value as [number, number];
+  if (min > max) return { path, message: `rozsah musí mať min ≤ max, dostal [${String(min)}, ${String(max)}]` };
+  return undefined;
+}
+
 function checkArray(value: unknown, spec: ArraySpec<FieldSpec>, path: string): Problem | undefined {
   if (!Array.isArray(value)) return { path, message: `očakávané pole, dostal ${describeValue(value)}` };
   if (value.length < spec.minItems) {
@@ -234,6 +259,7 @@ export function checkFields(raw: Record<string, unknown>, fields: FieldRecord, p
 
 export function checkField(value: unknown, spec: FieldSpec, path: string): Problem | undefined {
   if (spec.kind === 'integerArray') return checkIntegerArray(value, spec, path);
+  if (spec.kind === 'range') return checkRange(value, spec, path);
   if (spec.kind === 'array') return checkArray(value, spec, path);
   if (spec.kind === 'object') {
     if (!isPlainObject(value)) return { path, message: `očakávaný objekt, dostal ${describeValue(value)}` };

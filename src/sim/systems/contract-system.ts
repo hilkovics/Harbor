@@ -48,6 +48,7 @@ export const GAME_START_TICK = 1;
 
 /** Stavy lode, v ktorých už kotvila (stojí pri kotvisku alebo odchádza) — `ship_en_route → unloading`. */
 const SHIP_REACHED_BERTH: { readonly [S in ShipState]: boolean } = Object.freeze({
+  arriving: false,
   inbound: false,
   waiting_anchorage: false,
   berthing: false,

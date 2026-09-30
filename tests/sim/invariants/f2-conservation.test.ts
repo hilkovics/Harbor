@@ -14,8 +14,10 @@ import { commandFromJSON } from '@sim/commands';
 import type { EntityId } from '@sim/core';
 import { CargoTransitionError, type CargoLocation, type CargoLocationKind } from '@sim/cargo';
 import type { SimEvent } from '@sim/events';
+import modulesJson from '@data/defs/modules.json';
+import { DefRegistry } from '@sim/defs';
 import { World } from '@sim/world';
-import { DEFS, MAP } from '../world/world-fixtures';
+import { DEFS, MAP, RAW_DEFS } from '../world/world-fixtures';
 import {
   EAST_BERTH_CELL,
   ROOT_BERTH_CELL,
@@ -249,6 +251,21 @@ describe('konzervácia nákladu: 5 000 tickov (f2_unload + druhý feeder so 6 TE
 // Bohatší tok: dve lode a dva žeriavy naraz (dva aprony)
 // ---------------------------------------------------------------------------------------------------------
 
+/**
+ * Defy s 5× pomalším kontajnerovým žeriavom: prvá loď sa vykladá dlhšie, než druhá dopláva — po ADR-029 je na sea lane
+ * naraz jedna loď, takže druhá vpláva až za prvou a s bežným žeriavom by sa pri kotviskách nestretli.
+ */
+const CRANE_SLOWDOWN = 5;
+const [, craneJson] = modulesJson.items;
+const CRANE_CYCLE_TICKS = must(craneJson.params.cycleTicks, 'cycleTicks kontajnerového žeriavu');
+const SLOW_CRANE_DEFS = DefRegistry.fromRaw({
+  ...RAW_DEFS,
+  modules: {
+    ...modulesJson,
+    items: modulesJson.items.map((item) => (item.id === craneJson.id ? { ...craneJson, params: { ...craneJson.params, cycleTicks: CRANE_CYCLE_TICKS * CRANE_SLOWDOWN } } : item)),
+  },
+});
+
 describe('konzervácia nákladu: dve lode súčasne na dvoch berthoch s vlastnými žeriavmi', () => {
   /** Žeriav na východnom berthe: footprint 2×3 na x 51–52 leží celý na berthe x 48–55. */
   const EAST_CRANE_CELL = { x: EAST_BERTH_CELL.x + 3, y: EAST_BERTH_CELL.y };
@@ -268,7 +285,7 @@ describe('konzervácia nákladu: dve lode súčasne na dvoch berthoch s vlastný
   let ships: EntityId[];
 
   beforeAll(() => {
-    world = World.create(DEFS, MAP, scenario.seed);
+    world = World.create(SLOW_CRANE_DEFS, MAP, scenario.seed);
     rootId = berthAt(world, ROOT_BERTH_CELL).id;
     log = recordRun(world, scenario, RUN, { onTick: (w) => samples.push(sampleLedger(w)) });
     eastId = berthAt(world, EAST_BERTH_CELL).id;
@@ -279,6 +296,7 @@ describe('konzervácia nákladu: dve lode súčasne na dvoch berthoch s vlastný
     expect(timedOfType(log, 'CommandRejected')).toEqual([]);
     expect(timedOfType(log, 'ModulePlaced')).toHaveLength(2);
     expect(cranesOf(world)).toHaveLength(2);
+    expect(DEFS.modules.get(craneJson.id)).toMatchObject({ params: { cycleTicks: CRANE_CYCLE_TICKS } });
     expect(berthAt(world, ROOT_BERTH_CELL).craneIds).toHaveLength(1);
     expect(berthAt(world, EAST_BERTH_CELL).craneIds).toHaveLength(1);
     expect(log.ticksChecked).toBe(RUN);

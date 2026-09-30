@@ -150,14 +150,15 @@ describe('scenár f2_unload: beh 2 000 tickov', () => {
     expect(events[0].event.berthIds).toEqual([rootBerthId]);
   });
 
-  it('stavy lode idú v poradí FSM (bez návratu) cez docked a outbound; berthIds je prázdne mimo berthing/docked/undocking', () => {
+  it('stavy lode idú v poradí FSM (bez návratu) cez docked a outbound; berthIds je prázdne mimo inbound/berthing/docked/undocking', () => {
     const samples = samplesOf(log, shipId);
     const sequence = stateSequence(samples);
     expect(shipStateSequenceViolation(sequence)).toBeNull();
     expect(sequence).toContain('docked');
     expect(sequence).toContain('outbound');
 
-    const holdsBerth = new Set(['berthing', 'docked', 'undocking']);
+    // ADR-029: kotvisko je rezervované od vstupu do prístavu (inbound) a uvoľnené na konci dráhy (koniec undocking).
+    const holdsBerth = new Set(['inbound', 'berthing', 'docked', 'undocking']);
     for (const sample of samples) {
       if (!holdsBerth.has(sample.state)) {
         expect(sample.berthIds, `stav ${sample.state}, tick ${String(sample.tick)}`).toEqual([]);

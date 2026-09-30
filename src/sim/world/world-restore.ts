@@ -37,7 +37,7 @@ import { ModuleError, ModuleStateError } from '../modules/module-error';
 import { moduleRegistry } from '../modules/module-registry';
 import { Ship } from '../ships/ship';
 import { ShipError } from '../ships/ship-error';
-import { mooringProblem, shipRoute } from '../ships/ship-route';
+import { legacyShipRoute, mooringProblem } from '../ships/ship-route';
 import { TruckGate } from '../modules/truck-gate';
 import { DockSupply } from '../trucks/dock-supply';
 import { Truck } from '../trucks/truck';
@@ -103,7 +103,7 @@ function restoreShips(world: World, entries: readonly ParsedShipEntry[]): void {
     const path = shipPath(index);
     let ship: Ship;
     try {
-      ship = new Ship({
+      const init = {
         id: entry.id,
         def: world.defs.ships.get(entry.classId),
         cargoType: world.defs.cargoTypes.get(entry.cargoTypeId),
@@ -113,8 +113,13 @@ function restoreShips(world: World, entries: readonly ParsedShipEntry[]): void {
         heading: entry.heading,
         berthIds: entry.berthIds,
         anchorageIndex: entry.anchorageIndex,
-        waypointIndex: entry.waypointIndex,
-      });
+      };
+      // Save v5 trasy neukladal: odvodí sa podľa pravidiel pred ADR-029 (kotviská sú už obnovené).
+      const route = entry.route ?? legacyShipRoute(new Ship(init), world);
+      if (entry.waypointIndex > route.length) {
+        throw new WorldStateError(`${path}/waypointIndex`, `trasa stavu '${entry.state}' má ${String(route.length)} bodov, index ${String(entry.waypointIndex)}`);
+      }
+      ship = new Ship({ ...init, waypointIndex: entry.waypointIndex, route });
     } catch (error) {
       if (error instanceof ShipError) throw new WorldStateError(path, error.message);
       throw error;
@@ -126,10 +131,6 @@ function restoreShips(world: World, entries: readonly ParsedShipEntry[]): void {
       const holder = anchorages.get(ship.anchorageIndex);
       if (holder !== undefined) throw new WorldStateError(`${path}/anchorageIndex`, `anchorage ${String(ship.anchorageIndex)} už obsadila loď #${String(holder)}`);
       anchorages.set(ship.anchorageIndex, ship.id);
-    }
-    const routeLength = shipRoute(ship, world).length;
-    if (ship.waypointIndex > routeLength) {
-      throw new WorldStateError(`${path}/waypointIndex`, `trasa stavu '${ship.state}' má ${String(routeLength)} bodov, index ${String(ship.waypointIndex)}`);
     }
     try {
       world.addShip(ship);

@@ -17,11 +17,12 @@
  *    (`SlotReservations.findProblem`); kapacita apronu = `apronSlots`, skladu = `capacityUnits`; v sklade len jednotky
  *    jeho kategórie;
  * 5. `berthGroups` a `groupId` = prepočet `computeBerthGroups`;
- * 6. lode (ADR-016): kľúč = id, vzostupne podľa id, stav bez `despawned`; `berthIds` neprázdne práve pri
- *    `holdsBerths`, ležia za sebou v jednej skupine v poradí po pobreží a každý berth má `dockedShipId` = loď;
+ * 6. lode (ADR-016, ADR-029): kľúč = id, vzostupne podľa id, stav bez `despawned`; `berthIds` podľa
+ *    `SHIP_STATE_TRAITS.berths`, ležia za sebou v jednej skupine v poradí po pobreží a každý berth má `dockedShipId` = loď;
  *    dokovaná loď stojí presne v `dockPoint` s kurzom `DOCKED_HEADING` (`mooringProblem`, T02-14);
  *    každý `dockedShipId` patrí existujúcej lodi, ktorá ho má v `berthIds` (súlad `dockedShipId` ↔ `berthIds`);
- *    `anchorageIndex` len pri `waitsForBerth`, v mape a jedinečný; na palube najviac `capacityUnits` jednotiek, všetky
+ *    `anchorageIndex` podľa `anchorage` (nie spolu s kotviskami), v mape a jedinečný; **dve lode na mape nezdieľajú
+ *    bunku** (`shipOverlapProblem`, bez výnimiek); na palube najviac `capacityUnits` jednotiek, všetky
  *    typu `cargoTypeId`; loď s nákladom, ktorá drží kotviská, má na nich aspoň jeden žeriav kategórie svojho nákladu
  *    (inak by pri kotvisku ostala naveky, T02-14); žeriav v `grabbing` má na kotvisku dokovanú loď s nákladom
  *    svojej kategórie a žeriavov v `grabbing` nad loďou nie je viac ako jednotiek na jej palube (každý má čo zdvihnúť);
@@ -82,7 +83,8 @@ import { VehicleDepot } from '../modules/vehicle-depot';
 import { WaitingArea } from '../modules/waiting-area';
 import { hasCompatibleCrane } from '../ships/berth-allocator';
 import type { Ship } from '../ships/ship';
-import { SHIP_STATE_TRAITS } from '../ships/ship-fsm';
+import { SHIP_STATE_TRAITS, holdingAllows } from '../ships/ship-fsm';
+import { shipOverlapProblem } from '../ships/ship-traffic';
 import { mooringProblem } from '../ships/ship-route';
 import type { Truck } from '../trucks/truck';
 import { TRUCK_STATE_TRAITS } from '../trucks/truck-fsm';
@@ -638,12 +640,13 @@ function checkShipCranes(world: World, ship: Ship): string | undefined {
 function checkShip(world: World, ship: Ship, anchorages: Map<number, Ship>): string | undefined {
   const traits = SHIP_STATE_TRAITS[ship.state];
   if (ship.state === 'despawned') return `${ship.label} v stave 'despawned' je stále vo world.ships`;
-  if (traits.holdsBerths !== ship.berthIds.length > 0) {
-    return `${ship.label} v stave '${ship.state}' ${traits.holdsBerths ? 'nedrží kotviská' : `drží kotviská [${ship.berthIds.join(', ')}]`}`;
+  if (!holdingAllows(traits.berths, ship.berthIds.length)) {
+    return `${ship.label} v stave '${ship.state}' ${traits.berths === 'always' ? 'nedrží kotviská' : `drží kotviská [${ship.berthIds.join(', ')}]`}`;
   }
   const index = ship.anchorageIndex;
   if (index !== null) {
-    if (!traits.waitsForBerth) return `${ship.label} v stave '${ship.state}' má anchorage ${String(index)}`;
+    if (traits.anchorage === 'never') return `${ship.label} v stave '${ship.state}' má anchorage ${String(index)}`;
+    if (ship.berthIds.length > 0) return `${ship.label} drží kotviská aj anchorage ${String(index)} (ADR-029)`;
     if (index >= world.map.anchorage.length) return `${ship.label}: anchorage ${String(index)} mimo mapy`;
     const holder = anchorages.get(index);
     if (holder !== undefined) return `${ship.label} a ${holder.label} obsadili tú istú anchorage ${String(index)}`;
@@ -691,7 +694,7 @@ const checkShips: Check = (world) => {
     if (ship === undefined) return `${berth.label}: dockedShipId ${String(berth.dockedShipId)} — loď neexistuje`;
     if (!ship.berthIds.includes(berth.id)) return `${berth.label}: dockedShipId ${String(ship.id)}, ale ${ship.label} ho nemá v berthIds`;
   }
-  return checkGrabbingCranes(world);
+  return checkGrabbingCranes(world) ?? shipOverlapProblem(world.ships);
 };
 
 /** Na rampe ležia len jednotky jej kategórie (bez alokácie — prechod indexom ledgera). */

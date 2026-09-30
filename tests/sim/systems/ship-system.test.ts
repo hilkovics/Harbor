@@ -1,6 +1,8 @@
-// ShipSystem — krok 3 (T02-05, ARCHITECTURE §6, §7.4, ADR-016): celý životný cyklus feedera s prechodmi, polohami
-// a udalosťami, anchorage (prvá voľná, koniec seaLane pri plnej), FIFO alokácia podľa spawnu, loď bez kompatibilného
-// žeriavu čaká, World.addShip/removeShip a krok 12 (checkInvariants).
+// ShipSystem — krok 3 (T02-05, ARCHITECTURE §6, §7.4, ADR-016, ADR-029): celý životný cyklus feedera s prechodmi,
+// polohami a udalosťami (kotvisko rezervované pri vstupe, príplava cez bod priblíženia, kotvisko uvoľnené na konci
+// dráhy), anchorage (pridelená pred vstupom, bez nej čakanie pred mapou), FIFO alokácia podľa spawnu, loď bez
+// kompatibilného žeriavu čaká, World.addShip/removeShip a krok 12 (checkInvariants). Podrobné správanie dopravy na
+// mape s kanálom je v tests/sim/ships/ship-traffic.test.ts.
 import { describe, expect, it } from 'vitest';
 import { PlaceModuleCommand, RemoveModuleCommand } from '@sim/commands';
 import type { EntityId } from '@sim/core';
@@ -29,36 +31,46 @@ import {
 /** Dĺžka seaLane harbor_01 (7 + 4 bunky) pri 0,15 bunky/tick: 7 / 0,15 → tick 47 (zvyšok 0,05), 3,95 / 0,15 → +27. */
 const LANE_TICKS = 74;
 
-describe('ShipSystem — feeder: spawn → berthing → docked → undocking → outbound → despawned', () => {
-  it('prejde FSM s polohami, kotviskami a udalosťami podľa ADR-016', () => {
+describe('ShipSystem — feeder: spawn → inbound → berthing → docked → undocking → outbound → despawned', () => {
+  it('prejde FSM s polohami, kotviskami a udalosťami podľa ADR-016 a ADR-029', () => {
     const world = newWorld();
     const ship = spawn(world, 'feeder', 2);
-    expect(ship).toMatchObject({ state: 'inbound', x: 48.5, y: 0.5, heading: 180, berthIds: [] });
+    // Voľný Root: loď vpláva hneď pri spawne a kotvisko má rezervované od vstupu (trasa = sea lane + úsek ku kotvisku).
+    expect(ship).toMatchObject({ state: 'inbound', x: 48.5, y: 0.5, heading: 180, berthIds: [ROOT_BERTH_ID], anchorageIndex: null });
+    expect(berth(world, ROOT_BERTH_ID).dockedShipId).toBe(ship.id);
+    expect(ship.route.slice(0, 3)).toEqual([
+      { x: 48.5, y: 0.5 },
+      { x: 48.5, y: 7.5 },
+      { x: 44.5, y: 7.5 },
+    ]);
+    // Úsek ku kotvisku končí bodom priblíženia (43, 10) a posunom bokom do (43, 13) s kurzom 90.
+    expect(ship.route.slice(-2)).toEqual([
+      { x: 43, y: 10, heading: 90 },
+      { x: 43, y: 13, heading: 90 },
+    ]);
     expect(world.cargo.unitsOnShip(ship.id)).toHaveLength(2);
 
-    // inbound po seaLane; na jej konci pridelenie Root berthu → berthing (rezervácia dockedShipId).
+    // inbound po seaLane; na jej konci → berthing s úsekom z rezervácie.
     tickUntil(world, () => ship.state !== 'inbound', 200);
     expect(world.clock.tick).toBe(LANE_TICKS);
-    expect(ship).toMatchObject({ state: 'berthing', x: 44.5, y: 7.5, berthIds: [ROOT_BERTH_ID], anchorageIndex: null });
-    expect(berth(world, ROOT_BERTH_ID).dockedShipId).toBe(ship.id);
+    expect(ship).toMatchObject({ state: 'berthing', x: 44.5, y: 7.5, berthIds: [ROOT_BERTH_ID], anchorageIndex: null, waypointIndex: 0 });
 
-    // berthing: priama úsečka k (43, 13), kurz na juh; po príchode docked, kurz 90 a ShipDocked.
-    world.tick();
-    expect(ship.heading).toBe(180);
+    // berthing: po príchode docked presne v (43, 13), kurz 90 a ShipDocked.
     const dockEvents = tickUntil(world, () => ship.state === 'docked', 200);
     expect(ship).toMatchObject({ x: 43, y: 13, heading: 90 });
     expect(ofType(dockEvents, 'ShipDocked')).toEqual([{ type: 'ShipDocked', shipId: ship.id, berthIds: [ROOT_BERTH_ID] }]);
 
-    // docked, kým je náklad na palube; tick po poslednom zdvihu žeriavom → undocking, kotvisko voľné, ShipUndocked.
+    // docked, kým je náklad na palube; potom undocking (trasa von je voľná) a ShipUndocked — kotvisko drží ďalej.
     const undockEvents = tickUntil(world, () => ship.state !== 'docked', 200);
     expect(world.cargo.unitsOnShip(ship.id)).toEqual([]);
-    expect(ship).toMatchObject({ state: 'undocking', berthIds: [] });
-    expect(berth(world, ROOT_BERTH_ID).dockedShipId).toBeNull();
+    expect(ship).toMatchObject({ state: 'undocking', berthIds: [ROOT_BERTH_ID] });
+    expect(ship.route[0]).toEqual({ x: 43, y: 10, heading: 90 });
     expect(ofType(undockEvents, 'ShipUndocked')).toEqual([{ type: 'ShipUndocked', shipId: ship.id }]);
 
-    // undocking → koniec seaLane → outbound → seaLane[0] → despawned (odstránená, ShipDeparted).
+    // undocking → koniec seaLane (kotvisko sa uvoľní) → outbound → seaLane[0] → despawned (ShipDeparted).
     tickUntil(world, () => ship.state === 'outbound', 200);
-    expect(ship).toMatchObject({ x: 44.5, y: 7.5 });
+    expect(ship).toMatchObject({ x: 44.5, y: 7.5, berthIds: [] });
+    expect(berth(world, ROOT_BERTH_ID).dockedShipId).toBeNull();
     const departEvents = tickUntil(world, () => !world.ships.has(ship.id), 200);
     expect(ship).toMatchObject({ state: 'despawned', x: 48.5, y: 0.5, heading: 0 });
     expect(ofType(departEvents, 'ShipDeparted')).toEqual([{ type: 'ShipDeparted', shipId: ship.id }]);
@@ -67,57 +79,77 @@ describe('ShipSystem — feeder: spawn → berthing → docked → undocking →
   });
 });
 
-describe('ShipSystem — anchorage', () => {
-  it('lode bez kotviska obsadia anchorage v poradí mapy; keď sú všetky obsadené, piata čaká na konci seaLane', () => {
+/** Stred bunky anchorage `index` mapy sveta. */
+function anchorageCenter(world: ReturnType<typeof newWorld>, index: number): [number, number] {
+  const cell = world.map.anchorage[index];
+  return [cell.x + 0.5, cell.y + 0.5];
+}
+
+describe('ShipSystem — anchorage (ADR-029: pridelená pred vstupom, bez nej čakanie pred mapou)', () => {
+  const WAIT_TICKS = 1500;
+
+  it('handy bez kotviska: čakajúce stoja každá na inej anchorage (v jej strede), ostatné čakajú pred vstupom mimo mapy', () => {
     const world = newWorld();
-    const ships: Ship[] = [0, 1, 2, 3, 4].map(() => spawn(world, 'handy', 1));
-    tickN(world, 400);
-    expect(ships.map((s) => s.state)).toEqual(Array(5).fill('waiting_anchorage'));
-    expect(ships.map((s) => s.anchorageIndex)).toEqual([0, 1, 2, 3, null]);
-    expect(ships.map((s) => [s.x, s.y])).toEqual([
-      [44.5, 7.5],
-      [52.5, 7.5],
-      [36.5, 7.5],
-      [60.5, 7.5],
-      [44.5, 7.5], // koniec seaLane
-    ]);
+    const count = world.map.anchorage.length + 1;
+    const ships: Ship[] = Array.from({ length: count }, () => spawn(world, 'handy', 1));
+    tickN(world, WAIT_TICKS);
+    const waiting = ships.filter((s) => s.state === 'waiting_anchorage');
+    expect(waiting.length).toBeGreaterThan(0);
+    expect(ships.every((s) => s.state === 'waiting_anchorage' || s.state === 'arriving')).toBe(true);
+    // FIFO vstupu: čakajúce na anchorage majú menšie id než lode pred vstupom.
+    expect(ships.slice(0, waiting.length)).toEqual(waiting);
+    const indices = waiting.map((s) => s.anchorageIndex);
+    expect(new Set(indices).size).toBe(waiting.length);
+    for (const s of waiting) expect([s.x, s.y]).toEqual(anchorageCenter(world, s.anchorageIndex ?? -1));
+    for (const s of ships.slice(waiting.length)) expect(s).toMatchObject({ state: 'arriving', anchorageIndex: null, x: 48.5, y: 0.5 });
     expect(ships.every((s) => s.berthIds.length === 0)).toBe(true);
   });
 
-  it('druhý berth: prvá čakajúca (najmenšie id) ide kotviť, uvoľnenú anchorage obsadí loď z konca seaLane', () => {
+  it('druhý berth: prvá čakajúca (najmenšie id) ide kotviť, ostatné sa nepohnú; po jej odchode kotví ďalšia v poradí id', () => {
     const world = newWorld();
-    const ships: Ship[] = [0, 1, 2, 3, 4].map(() => spawn(world, 'handy', 1));
-    tickN(world, 400);
-    applyNow(world, new PlaceModuleCommand({ defId: 'berth_standard', x: EAST_BERTH.x, y: EAST_BERTH.y, rotation: 0 }));
+    const count = world.map.anchorage.length + 1;
+    const ships: Ship[] = Array.from({ length: count }, () => spawn(world, 'handy', 1));
+    tickN(world, WAIT_TICKS);
+    const [first, second] = ships;
+    expect(first.state).toBe('waiting_anchorage');
+    const before = ships.map((s) => [s.state, s.anchorageIndex]);
+    const placed = applyNow(world, new PlaceModuleCommand({ defId: 'berth_standard', x: EAST_BERTH.x, y: EAST_BERTH.y, rotation: 0 }));
+    const eastId = ofType(placed, 'ModulePlaced')[0].moduleId;
     world.tick();
-    expect(ships.map((s) => s.state)).toEqual(['berthing', 'waiting_anchorage', 'waiting_anchorage', 'waiting_anchorage', 'waiting_anchorage']);
-    expect(ships.map((s) => s.anchorageIndex)).toEqual([null, 1, 2, 3, 0]);
-    expect(ships[0].berthIds).toHaveLength(2);
+    expect(first).toMatchObject({ state: 'berthing', anchorageIndex: null, berthIds: [ROOT_BERTH_ID, eastId] });
+    expect(ships.slice(1).map((s) => [s.state, s.anchorageIndex])).toEqual(before.slice(1));
+
+    tickUntil(world, () => !world.ships.has(first.id), 2000);
+    tickUntil(world, () => second.berthIds.length > 0, 1500);
+    expect(second.berthIds).toEqual([ROOT_BERTH_ID, eastId]);
+    expect(ships.slice(2).every((s) => s.berthIds.length === 0)).toBe(true);
   });
 });
 
 describe('ShipSystem — FIFO a kompatibilita', () => {
-  it('dva feedre spawnuté naraz: Root dostane menšie id, druhá čaká a kotví v ticku, keď prvá začne odchádzať', () => {
+  it('dva feedre spawnuté naraz: Root dostane menšie id; druhá čaká pred vstupom, kým prvá drží dráhu, a Root dostane až po jeho uvoľnení', () => {
     const world = newWorld();
     const first = spawn(world, 'feeder', 1);
     const second = spawn(world, 'feeder', 1);
     expect(second.id).toBeGreaterThan(first.id);
-    tickUntil(world, () => first.state === 'berthing', 200);
     expect(first.berthIds).toEqual([ROOT_BERTH_ID]);
-    expect(second.state).toBe('waiting_anchorage');
-    expect(second.anchorageIndex).toBe(0);
+    tickUntil(world, () => first.state === 'berthing', 200);
+    expect(second.state).toBe('arriving');
 
-    tickUntil(world, () => first.state === 'undocking', 400);
-    expect(second.state).toBe('berthing');
+    tickUntil(world, () => second.berthIds.length > 0, 1500);
     expect(second.berthIds).toEqual([ROOT_BERTH_ID]);
     expect(berth(world, ROOT_BERTH_ID).dockedShipId).toBe(second.id);
+    // Kotvisko sa uvoľní až na konci dráhy (koniec undocking) → prvá je už na ceste von alebo preč.
+    expect(world.ships.has(first.id) ? first.state : 'despawned').toMatch(/^(outbound|despawned)$/);
+    tickUntil(world, () => second.state === 'docked', 800);
   });
 
-  it('loď so sypkým nákladom nekotví pri kontajnerovom žeriave — čaká na anchorage', () => {
+  it('loď so sypkým nákladom nekotví pri kontajnerovom žeriave — čaká na anchorage alebo pred vstupom', () => {
     const world = newWorld();
     const bulker = spawn(world, BULKER, 3, GRAIN);
     tickN(world, 300);
-    expect(bulker.state).toBe('waiting_anchorage');
+    expect(['waiting_anchorage', 'arriving']).toContain(bulker.state);
+    expect(bulker.berthIds).toEqual([]);
     expect(berth(world, ROOT_BERTH_ID).dockedShipId).toBeNull();
   });
 
@@ -136,11 +168,13 @@ describe('ShipSystem — FIFO a kompatibilita', () => {
     expect(berth(world, ROOT_BERTH_ID).apron.usedCount).toBe(0);
   });
 
-  it('berth rezervovaný loďou v berthing nejde odstrániť (ship_docked)', () => {
+  it('berth rezervovaný loďou (od vstupu do prístavu) nejde odstrániť (ship_docked)', () => {
     const world = newWorld();
     const east = applyNow(world, new PlaceModuleCommand({ defId: 'berth_standard', x: EAST_BERTH.x, y: EAST_BERTH.y, rotation: 0 }));
     const eastId = ofType(east, 'ModulePlaced')[0].moduleId;
     const handy = spawn(world, 'handy', 1);
+    expect(handy).toMatchObject({ state: 'inbound', berthIds: [ROOT_BERTH_ID, eastId] });
+    expect(new RemoveModuleCommand(eastId).validate(world).reasons).toEqual(['ship_docked']);
     tickUntil(world, () => handy.state === 'berthing', 200);
     expect(new RemoveModuleCommand(eastId).validate(world).reasons).toEqual(['ship_docked']);
   });

@@ -9,6 +9,7 @@ import {
   SHIP_TRANSITIONS,
   Ship,
   ShipError,
+  holdingAllows,
   isShipTransitionAllowed,
   type ShipInit,
   type ShipState,
@@ -22,8 +23,16 @@ function ship(overrides: Partial<ShipInit> = {}): Ship {
   return new Ship({ id: 7 as EntityId, def: FEEDER, cargoType: CONTAINER, state: 'inbound', x: 48.5, y: 0.5, heading: 180, ...overrides });
 }
 
-/** Karta T02-05: presne tieto prechody, nič iné. */
+/** Trasa s tromi bodmi (pre `waypointIndex` až 3). */
+const ROUTE3 = [
+  { x: 48.5, y: 3.5 },
+  { x: 48.5, y: 7.5 },
+  { x: 44.5, y: 7.5, heading: 270 as const },
+];
+
+/** Karta T02-05 + ADR-029 (`arriving` → `inbound`): presne tieto prechody, nič iné. */
 const EXPECTED: readonly (readonly [ShipState, ShipState])[] = [
+  ['arriving', 'inbound'],
   ['inbound', 'waiting_anchorage'],
   ['inbound', 'berthing'],
   ['waiting_anchorage', 'berthing'],
@@ -34,7 +43,7 @@ const EXPECTED: readonly (readonly [ShipState, ShipState])[] = [
 ];
 
 describe('SHIP_TRANSITIONS', () => {
-  it('obsahuje každý stav a presne prechody z karty T02-05; despawned je konečný', () => {
+  it('obsahuje každý stav a presne prechody z karty T02-05 a ADR-029; despawned je konečný', () => {
     expect([...SHIP_TRANSITIONS.keys()]).toEqual([...SHIP_STATES]);
     const listed = [...SHIP_TRANSITIONS].flatMap(([from, targets]) => targets.map((to) => [from, to] as const));
     expect(listed).toEqual(EXPECTED);
@@ -47,14 +56,19 @@ describe('SHIP_TRANSITIONS', () => {
 });
 
 describe('SHIP_STATE_TRAITS', () => {
-  it('kotviská drží loď len v berthing a docked; anchorage len pri čakaní; vodu pred kotviskom blokuje berthing/docked/undocking', () => {
-    const where = (key: 'holdsBerths' | 'waitsForBerth' | 'blocksBerthWater' | 'moored'): ShipState[] =>
-      SHIP_STATES.filter((state) => SHIP_STATE_TRAITS[state][key]);
-    expect(where('holdsBerths')).toEqual(['berthing', 'docked']);
-    expect(where('waitsForBerth')).toEqual(['waiting_anchorage']);
+  it('kotviská: vždy berthing a docked, smie inbound (rezervácia pri vstupe) a undocking (do konca dráhy); anchorage smie inbound a waiting_anchorage; vodu pred kotviskom blokuje berthing/docked/undocking', () => {
+    const where = (key: 'blocksBerthWater' | 'moored' | 'onMap'): ShipState[] => SHIP_STATES.filter((state) => SHIP_STATE_TRAITS[state][key]);
+    const holding = (key: 'berths' | 'anchorage', value: string): ShipState[] => SHIP_STATES.filter((state) => SHIP_STATE_TRAITS[state][key] === value);
+    expect(holding('berths', 'always')).toEqual(['berthing', 'docked']);
+    expect(holding('berths', 'optional')).toEqual(['inbound', 'undocking']);
+    expect(holding('anchorage', 'optional')).toEqual(['inbound', 'waiting_anchorage']);
+    expect(holding('anchorage', 'always')).toEqual([]);
     expect(where('blocksBerthWater')).toEqual(['berthing', 'docked', 'undocking']);
     // T02-14: pri kotvisku (dockPoint + DOCKED_HEADING) stojí len dokovaná loď.
     expect(where('moored')).toEqual(['docked']);
+    // ADR-029: pred vstupom (a po odchode) loď nezaberá bunky; na mape sa lode neprekrývajú bez výnimky.
+    expect(SHIP_STATES.filter((state) => !SHIP_STATE_TRAITS[state].onMap)).toEqual(['arriving', 'despawned']);
+    expect([holdingAllows('always', 0), holdingAllows('always', 1), holdingAllows('never', 1), holdingAllows('optional', 0), holdingAllows('optional', 2)]).toEqual([false, true, false, true, true]);
   });
 });
 
@@ -81,8 +95,10 @@ describe('Ship.transition', () => {
     ['berthing', 'waiting_anchorage'],
     ['outbound', 'inbound'],
     ['despawned', 'inbound'],
+    ['arriving', 'berthing'],
+    ['inbound', 'arriving'],
   ] as const)('%s → %s vyhodí ShipError(invalid_transition) a loď sa nezmení', (from, to) => {
-    const s = ship({ state: from, waypointIndex: 2 });
+    const s = ship({ state: from, waypointIndex: 2, route: ROUTE3 });
     let error: unknown;
     try {
       s.transition(to);
@@ -109,7 +125,7 @@ describe('Ship — konštruktor a toState', () => {
   });
 
   it('toState: presne kľúče SERIALIZED_SHIP_KEYS v poradí, čistý JSON', () => {
-    const s = ship({ state: 'waiting_anchorage', x: 44.5, y: 7.25, heading: 270, anchorageIndex: 1, waypointIndex: 1 });
+    const s = ship({ state: 'waiting_anchorage', x: 44.5, y: 7.25, heading: 270, anchorageIndex: 1, waypointIndex: 1, route: ROUTE3 });
     const state = s.toState();
     expect(Object.keys(state)).toEqual([...SERIALIZED_SHIP_KEYS]);
     expect(state).toEqual({
@@ -123,8 +139,28 @@ describe('Ship — konštruktor a toState', () => {
       berthIds: [],
       anchorageIndex: 1,
       waypointIndex: 1,
+      route: [
+        [48.5, 3.5],
+        [48.5, 7.5],
+        [44.5, 7.5, 270],
+      ],
     });
     expect(JSON.parse(JSON.stringify(state))).toEqual(state);
+  });
+
+  it('trasa (ADR-029): zmrazená kópia, transition ju nahradí (predvolene prázdnou) a vynuluje waypointIndex; replaceRoute bez zmeny stavu', () => {
+    const s = ship({ route: ROUTE3, waypointIndex: 1 });
+    expect(s.route).toEqual(ROUTE3);
+    expect(Object.isFrozen(s.route)).toBe(true);
+    expect(Object.isFrozen(s.route[0])).toBe(true);
+    s.transition('berthing', [{ x: 43, y: 13, heading: 90 }]);
+    expect([s.state, s.waypointIndex, s.route]).toEqual(['berthing', 0, [{ x: 43, y: 13, heading: 90 }]]);
+    s.waypointIndex = 1;
+    s.transition('docked');
+    expect([s.waypointIndex, s.route]).toEqual([0, []]);
+    const waiting = ship({ state: 'waiting_anchorage' });
+    waiting.replaceRoute(ROUTE3);
+    expect([waiting.state, waiting.waypointIndex, waiting.route.length]).toEqual(['waiting_anchorage', 0, 3]);
   });
 
   it.each<[string, Partial<ShipInit>, RegExp]>([
@@ -136,6 +172,9 @@ describe('Ship — konštruktor a toState', () => {
     ['duplicitné kotvisko', { berthIds: [1 as EntityId, 1 as EntityId] }, /duplicitné kotvisko/],
     ['záporný anchorageIndex', { anchorageIndex: -1 }, /anchorageIndex/],
     ['necelý waypointIndex', { waypointIndex: 1.5 }, /waypointIndex/],
+    ['waypointIndex za koncom trasy', { waypointIndex: 4, route: ROUTE3 }, /za koncom trasy/],
+    ['bod trasy NaN', { route: [{ x: Number.NaN, y: 1 }] }, /bod trasy/],
+    ['bod trasy s kurzom 45', { route: [{ x: 1, y: 1, heading: 45 as never }] }, /bod trasy/],
   ])('%s → ShipError(invalid_input)', (_name, overrides, message) => {
     expect(() => ship(overrides)).toThrow(ShipError);
     expect(() => ship(overrides)).toThrow(message);

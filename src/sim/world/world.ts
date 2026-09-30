@@ -101,6 +101,7 @@ import { MetricsSystem } from '../systems/metrics-system';
 import { VehicleSystem } from '../systems/vehicle-system';
 import { ShipSystem } from '../systems/ship-system';
 import { StatResolver } from '../tech/stat-resolver';
+import { ShipTraffic } from '../ships/ship-traffic';
 import type { Truck } from '../trucks/truck';
 import { TruckError } from '../trucks/truck-error';
 import { TRUCK_STATE_TRAITS } from '../trucks/truck-fsm';
@@ -253,6 +254,8 @@ export class World {
   private readonly metricsSystem = new MetricsSystem();
   private roadChanges = 0;
   private moduleChanges = 0;
+  private shipChanges = 0;
+  private shipTrafficInstance: ShipTraffic | undefined;
   /** Verzie ciest a modulov, pri ktorých svet naposledy zverejnil pozemný reťazec do modulov (`publishLandside`). */
   private publishedRoadVersion = Number.NaN;
   private publishedModuleVersion = Number.NaN;
@@ -450,6 +453,23 @@ export class World {
   }
 
   /**
+   * Verzia množiny lodí: rastie pri každom `addShip` / `removeShip` (neukladá sa — memo neúspešných pokusov lodnej
+   * dopravy, `ShipTraffic`, ADR-029).
+   */
+  get shipVersion(): number {
+    return this.shipChanges;
+  }
+
+  /**
+   * Riadenie lodnej dopravy bez prekrývania (`ShipTraffic`, ADR-029): rezervácie trás lodí, A* po vode. Vznikne pri
+   * prvom použití; nie je stav simulácie (memo navigátora a neúspešných pokusov), do save nepatrí.
+   */
+  get shipTraffic(): ShipTraffic {
+    this.shipTrafficInstance ??= new ShipTraffic(this);
+    return this.shipTrafficInstance;
+  }
+
+  /**
    * Pozemný exportný reťazec (`LandsideNetwork`, ADR-022): strany brán, priechody stojiskami, trasy kamiónov
    * a prevádzkovosť rámp, lenivo prepočítané pri zmene `roadVersion` alebo `moduleVersion`. Nie je v save.
    */
@@ -628,6 +648,7 @@ export class World {
       throw new ShipError('invalid_input', `World.addShip: ${ship.label} má menšie id ako posledná loď #${String(last)}`);
     }
     this.shipMap.set(ship.id, ship);
+    this.shipChanges += 1;
   }
 
   /**
@@ -642,6 +663,7 @@ export class World {
     if (aboard > 0) throw new ShipError('has_cargo', `World.removeShip: ${ship.label} má na palube ${String(aboard)} jednotiek`);
     if (ship.berthIds.length > 0) throw new ShipError('holds_berths', `World.removeShip: ${ship.label} drží kotviská [${ship.berthIds.join(', ')}]`);
     this.shipMap.delete(shipId);
+    this.shipChanges += 1;
     return ship;
   }
 

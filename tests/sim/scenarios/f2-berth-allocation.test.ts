@@ -4,7 +4,8 @@
  *  - Skupina = berthy s dotýkajúcimi sa krátkymi hranami na tom istom pobreží; `totalLength` = súčet dĺžok.
  *  - `handy` (10 buniek) potrebuje skupinu s `totalLength ≥ 10` → Root (8) samotný nestačí, s druhým berthom (16) áno.
  *  - `feeder` (6 buniek) stačí jeden berth.
- *  - Loď bez vhodnej skupiny čaká na anchorage (`waiting_anchorage`), nie na kotvisku.
+ *  - Loď bez vhodnej skupiny čaká na anchorage (`waiting_anchorage`), nie na kotvisku; anchorage dostane už pri vstupe
+ *    do prístavu a bez použiteľnej anchorage čaká pred mapou (`arriving`, ADR-029).
  *
  * Mapa harbor_01: Root berth x 40–47, y 14–16; voľné miesta na starter parcele (x 30–57): (48,14) tesne vedľa Rootu,
  * (32,14) tesne pred Rootom, (30,14) s medzerou x 38–39 od Rootu. Testy idú cez JSON príkazy a verejné API.
@@ -222,9 +223,9 @@ describe('alokácia: handy bez skupiny dĺžky ≥ 10 čaká na anchorage', () =
       expect(timedOfType(log, 'ShipDocked')).toEqual([]);
     });
 
-    it('čaká na prvej voľnej bunke anchorage', () => {
-      const anchor = MAP.anchorage[0];
+    it('čaká na svojej anchorage (pridelenej pri vstupe, ADR-029) — stred lode leží v jej bunke', () => {
       const ship = must(world.ships.get(shipId), 'handy vo world.ships');
+      const anchor = must(MAP.anchorage[ship.anchorageIndex ?? -1], `anchorage ${String(ship.anchorageIndex)}`);
       // Stred lode leží v bunke kotviska (alebo na jej okraji, ak sa poloha zapisuje ako roh bunky).
       expect(ship.x).toBeGreaterThanOrEqual(anchor.x);
       expect(ship.x).toBeLessThanOrEqual(anchor.x + 1);
@@ -339,7 +340,7 @@ describe('alokácia: druhý berth pribudne, kým handy už čaká na anchorage',
     const samples = samplesOf(log, shipId);
     const before = samples.filter((sample) => sample.tick <= PLACE_AT);
     expect(before.length).toBeGreaterThan(0);
-    for (const sample of before) expect(['inbound', 'waiting_anchorage'], `tick ${String(sample.tick)}`).toContain(sample.state);
+    for (const sample of before) expect(['arriving', 'inbound', 'waiting_anchorage'], `tick ${String(sample.tick)}`).toContain(sample.state);
     expect(before.at(-1)?.state).toBe('waiting_anchorage');
 
     const sequence = stateSequence(samples);
@@ -464,7 +465,7 @@ describe('alokácia: loď nezaberie skupinu bez žeriava, čakajúce lode idú F
     const holdingRoot = new Set(['berthing', 'docked']);
     for (const sample of a.filter((s) => holdingRoot.has(s.state))) {
       const other = must(b.find((s) => s.tick === sample.tick), `vzorka druhej lode v ticku ${String(sample.tick)}`);
-      expect(['inbound', 'waiting_anchorage'], `druhá loď, tick ${String(sample.tick)}`).toContain(other.state);
+      expect(['arriving', 'inbound', 'waiting_anchorage'], `druhá loď, tick ${String(sample.tick)}`).toContain(other.state);
     }
     expect(stateSequence(b)).toContain('waiting_anchorage');
   });

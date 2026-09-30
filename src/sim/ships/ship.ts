@@ -1,21 +1,29 @@
 /**
- * Loď (ARCHITECTURE §4.3, §5, §7.4; ADR-016) — entita na vode, ktorá nesie náklad jedného typu (`cargoTypeId`).
- * Jednotky nákladu na palube vedie výlučne `CargoLedger` (`on_ship`, pravidlo 2); loď si ich neeviduje.
+ * Loď (ARCHITECTURE §4.3, §5, §7.4; ADR-016, ADR-029) — entita na vode, ktorá nesie náklad jedného typu
+ * (`cargoTypeId`). Jednotky nákladu na palube vedie výlučne `CargoLedger` (`on_ship`, pravidlo 2); loď si ich neeviduje.
  *
- * - Poloha `x`, `y` = stred lode v bunkách (float); stred bunky (cx, cy) = (cx + 0.5, cy + 0.5).
+ * - Poloha `x`, `y` = stred lode v bunkách (float); stred bunky (cx, cy) = (cx + 0.5, cy + 0.5). Loď v `arriving`
+ *   stojí na `seaLane[0]`, ale je pred vstupom na mapu (nezaberá bunky).
  * - `heading` = kardinálny kurz (0 = predok na sever, v smere hodinových ručičiek) — nikdy nie uhol z trigonometrie.
- * - `berthIds` = kotviská, ktoré loď drží (v poradí po pobreží), neprázdne práve v `berthing`/`docked`.
- * - `anchorageIndex` = index bunky `map.anchorage`, ktorú loď v `waiting_anchorage` obsadila (`null` = čaká na konci
- *   `seaLane`, lebo všetky sú obsadené, alebo nečaká).
- * - `waypointIndex` = index nasledujúceho bodu trasy aktuálneho stavu (trasu odvodí `shipRoute` z mapy a kotvísk).
+ * - `berthIds` = kotviská, ktoré loď drží (v poradí po pobreží): od rezervácie (pri vstupe `inbound`, na konci dráhy
+ *   alebo na anchorage) po koniec `undocking` na konci dráhy (`SHIP_STATE_TRAITS.berths`).
+ * - `anchorageIndex` = index bunky `map.anchorage`, ktorú loď drží od rezervácie (pri vstupe `inbound`) po odchod
+ *   ku kotvisku (`SHIP_STATE_TRAITS.anchorage`); `null` v `waiting_anchorage` len v save spred ADR-029 (čaká na konci
+ *   `seaLane`).
+ * - `route` = trasa aktuálneho stavu (body na vode; ADR-029 — trasa cez prístav vzniká A* po vode pri rezervácii
+ *   a ukladá sa, lebo závisí od polohy ostatných lodí v tej chvíli), `waypointIndex` = index nasledujúceho bodu.
  *
- * Stav mení len `transition(to)` podľa `SHIP_TRANSITIONS`; pohyb a alokáciu kotvísk robí `ShipSystem` (krok 3).
+ * Stav mení len `transition(to, route)` podľa `SHIP_TRANSITIONS`; pohyb a alokáciu kotvísk robí `ShipSystem` (krok 3).
  */
 import type { EntityId } from '../core/entity-id';
 import type { CargoCategory, CargoTypeDef, ShipClassDef } from '../defs/types';
 import { isRotation, type Rotation } from '../grid/rotation';
 import { ShipError } from './ship-error';
 import { SHIP_TRANSITIONS, isShipTransitionAllowed, type ShipState } from './ship-fsm';
+import type { ShipPoint } from './ship-route';
+
+/** Bod trasy v save: `[x, y]` alebo `[x, y, pevný kurz]` (ADR-029). */
+export type SerializedShipPoint = readonly [number, number] | readonly [number, number, Rotation];
 
 /** Loď v save (`WorldState.ships[i]`, ADR-016) — čistý JSON; poradie lodí v save = vzostupne podľa id (poradie spawnu). */
 export interface SerializedShip {
@@ -29,6 +37,8 @@ export interface SerializedShip {
   readonly berthIds: readonly number[];
   readonly anchorageIndex: number | null;
   readonly waypointIndex: number;
+  /** Trasa aktuálneho stavu (WorldState v6, ADR-029). */
+  readonly route: readonly SerializedShipPoint[];
 }
 
 /** Kľúče `SerializedShip` v poradí `toState()`. */
@@ -43,7 +53,13 @@ export const SERIALIZED_SHIP_KEYS: readonly (keyof SerializedShip)[] = [
   'berthIds',
   'anchorageIndex',
   'waypointIndex',
+  'route',
 ];
+
+/** Bod trasy → tvar v save. */
+export function serializeShipPoint(point: ShipPoint): SerializedShipPoint {
+  return point.heading === undefined ? [point.x, point.y] : [point.x, point.y, point.heading];
+}
 
 /** Vstup konštruktora lode (nová loď zo spawnu aj obnova zo save). */
 export interface ShipInit {
@@ -57,9 +73,17 @@ export interface ShipInit {
   readonly berthIds?: readonly EntityId[];
   readonly anchorageIndex?: number | null;
   readonly waypointIndex?: number;
+  /** Trasa aktuálneho stavu; predvolene prázdna. */
+  readonly route?: readonly ShipPoint[];
 }
 
 const NO_BERTHS: readonly EntityId[] = Object.freeze([]);
+const NO_ROUTE: readonly ShipPoint[] = Object.freeze([]);
+
+/** Zmrazená kópia trasy (body aj pole). */
+function frozenRoute(route: readonly ShipPoint[]): readonly ShipPoint[] {
+  return route.length === 0 ? NO_ROUTE : Object.freeze(route.map((point) => Object.freeze({ ...point })));
+}
 
 function isNonNegativeInteger(value: number): boolean {
   return Number.isSafeInteger(value) && value >= 0;
@@ -80,6 +104,7 @@ export class Ship {
   berthIds: readonly EntityId[];
   anchorageIndex: number | null;
   waypointIndex: number;
+  private currentRoute: readonly ShipPoint[];
   private current: ShipState;
 
   /**
@@ -105,6 +130,13 @@ export class Ship {
     }
     const waypointIndex = init.waypointIndex ?? 0;
     if (!isNonNegativeInteger(waypointIndex)) throw new ShipError('invalid_input', `${label}: waypointIndex musí byť celé číslo ≥ 0`);
+    const route = init.route ?? NO_ROUTE;
+    for (const point of route) {
+      if (!Number.isFinite(point.x) || !Number.isFinite(point.y) || (point.heading !== undefined && !isRotation(point.heading))) {
+        throw new ShipError('invalid_input', `${label}: bod trasy (${String(point.x)}, ${String(point.y)}) musí mať konečné súradnice a platný kurz`);
+      }
+    }
+    if (waypointIndex > route.length) throw new ShipError('invalid_input', `${label}: waypointIndex ${String(waypointIndex)} je za koncom trasy (${String(route.length)} bodov)`);
 
     this.id = id;
     this.def = def;
@@ -118,6 +150,12 @@ export class Ship {
     this.berthIds = berthIds.length === 0 ? NO_BERTHS : Object.freeze([...berthIds]);
     this.anchorageIndex = anchorageIndex;
     this.waypointIndex = waypointIndex;
+    this.currentRoute = frozenRoute(route);
+  }
+
+  /** Trasa aktuálneho stavu (zmrazená); mení ju len `transition`. */
+  get route(): readonly ShipPoint[] {
+    return this.currentRoute;
   }
 
   /** Aktuálny stav FSM. */
@@ -131,16 +169,26 @@ export class Ship {
   }
 
   /**
-   * Prechod stavu podľa `SHIP_TRANSITIONS` (jediné miesto, kde sa stav mení); začne novú trasu (`waypointIndex = 0`).
-   * Nepovolený prechod → `ShipError('invalid_transition')`, loď sa nezmení.
+   * Prechod stavu podľa `SHIP_TRANSITIONS` (jediné miesto, kde sa stav mení); začne novú trasu `route`
+   * (`waypointIndex = 0`). Nepovolený prechod → `ShipError('invalid_transition')`, loď sa nezmení.
    */
-  transition(to: ShipState): void {
+  transition(to: ShipState, route: readonly ShipPoint[] = NO_ROUTE): void {
     if (!isShipTransitionAllowed(this.current, to)) {
       const allowed = SHIP_TRANSITIONS.get(this.current) ?? [];
       throw new ShipError('invalid_transition', `${this.label}: prechod ${this.current} → ${to} nie je povolený (povolené: ${allowed.join(', ') || '–'})`);
     }
     this.current = to;
     this.waypointIndex = 0;
+    this.currentRoute = frozenRoute(route);
+  }
+
+  /**
+   * Nová trasa bez zmeny stavu (`waypointIndex = 0`) — len loď v `waiting_anchorage` bez anchorage (save spred ADR-029),
+   * ktorá si anchorage pridelí neskôr (`ShipTraffic.tryClaimAnchorage`).
+   */
+  replaceRoute(route: readonly ShipPoint[]): void {
+    this.waypointIndex = 0;
+    this.currentRoute = frozenRoute(route);
   }
 
   /** Čistý JSON stav pre save (nová kópia pri každom volaní). */
@@ -156,6 +204,7 @@ export class Ship {
       berthIds: [...this.berthIds],
       anchorageIndex: this.anchorageIndex,
       waypointIndex: this.waypointIndex,
+      route: this.currentRoute.map(serializeShipPoint),
     };
   }
 }

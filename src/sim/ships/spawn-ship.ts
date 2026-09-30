@@ -1,8 +1,10 @@
 /**
  * Spawn lode s nákladom (ARCHITECTURE §7.4, §9.1; ADR-016 bod 10, ADR-026) — jediný kód pre ladiacu loď
- * (`SpawnShipDebug`) aj loď kontraktu (`ContractSystem`, krok 2): loď (`inbound`) so stredom v strede `seaLane[0]`
+ * (`SpawnShipDebug`) aj loď kontraktu (`ContractSystem`, krok 2): loď (`arriving`) so stredom v strede `seaLane[0]`
  * a kurzom prvého úseku dráhy, potom `units` jednotiek `on_ship` s daným `contractId` (`CargoLedger.create`; id lode
- * predchádza id jednotiek) a `ShipSpawned`. Hotovosť sa nemení.
+ * predchádza id jednotiek) a `ShipSpawned`. Hneď potom loď skúsi vplávať (`ShipTraffic.tryEnterOnSpawn`, ADR-029):
+ * keď nečaká iná loď a má cieľ s voľnou trasou, je `inbound` a pohne sa v kroku 3 toho istého ticku ako doteraz;
+ * inak čaká pred vstupom (`arriving`) a vstup skúša krok 3 v poradí podľa id. Hotovosť sa nemení.
  *
  * Platnosť vstupu (známa trieda a typ, kompatibilná kategória, `1 ≤ units ≤ capacityUnits`) overuje volajúci vopred
  * (`SpawnShipDebug.validate`, pool kontraktov); chybu programu tu ohlási `Ship` / `CargoLedger` výnimkou.
@@ -34,7 +36,7 @@ export function spawnShip(world: World, spec: ShipSpawnSpec): Ship {
     id: world.ids.next(),
     def: world.defs.ships.get(spec.shipClassId),
     cargoType: world.defs.cargoTypes.get(spec.cargoTypeId),
-    state: 'inbound',
+    state: 'arriving',
     x: spawn.x,
     y: spawn.y,
     heading: cardinalHeading(next.x - spawn.x, next.y - spawn.y) ?? DEFAULT_SPAWN_HEADING,
@@ -42,5 +44,6 @@ export function spawnShip(world: World, spec: ShipSpawnSpec): Ship {
   world.addShip(ship);
   for (let i = 0; i < spec.units; i++) world.cargo.create(spec.cargoTypeId, { kind: 'on_ship', shipId: ship.id }, spec.contractId);
   world.events.emit({ type: 'ShipSpawned', shipId: ship.id, classId: ship.classId, cargoTypeId: ship.cargoTypeId, units: spec.units });
+  world.shipTraffic.tryEnterOnSpawn(ship);
   return ship;
 }

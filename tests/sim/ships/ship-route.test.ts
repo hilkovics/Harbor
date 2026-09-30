@@ -11,8 +11,12 @@ import {
   cardinalHeading,
   cellCenter,
   dockPoint,
+  legacyShipRoute,
+  segmentHeading,
+  shipBox,
   shipCells,
   shipRoute,
+  approachPoint,
   type ShipPoint,
   type ShipState,
 } from '@sim/ships';
@@ -138,15 +142,16 @@ describe('advanceAlongRoute — úsečky, zvyšok kroku do ďalšieho úseku', (
   });
 });
 
-describe('shipRoute — trasa podľa stavu (harbor_01)', () => {
+describe('legacyShipRoute — trasa stavu podľa pravidiel pred ADR-029 (migrácia save v5, harbor_01)', () => {
   const lane = MAP.seaLane.map(cellCenter);
 
-  it('inbound = seaLane, undocking = koniec seaLane, outbound = seaLane odzadu, docked = prázdna', () => {
+  it('inbound = seaLane, undocking = koniec seaLane, outbound = seaLane odzadu, docked a arriving = prázdna', () => {
     const world = newWorld();
-    expect(shipRoute(freshShip('inbound'), world)).toEqual(lane);
-    expect(shipRoute(freshShip('undocking'), world)).toEqual([lane.at(-1)]);
-    expect(shipRoute(freshShip('outbound'), world)).toEqual([...lane].reverse());
-    expect(shipRoute(freshShip('docked'), world)).toEqual([]);
+    expect(legacyShipRoute(freshShip('inbound'), world)).toEqual(lane);
+    expect(legacyShipRoute(freshShip('undocking'), world)).toEqual([lane.at(-1)]);
+    expect(legacyShipRoute(freshShip('outbound'), world)).toEqual([...lane].reverse());
+    expect(legacyShipRoute(freshShip('docked'), world)).toEqual([]);
+    expect(legacyShipRoute(freshShip('arriving'), world)).toEqual([]);
     expect(lane).toEqual([
       { x: 48.5, y: 0.5 },
       { x: 48.5, y: 7.5 },
@@ -157,9 +162,9 @@ describe('shipRoute — trasa podľa stavu (harbor_01)', () => {
   it('waiting_anchorage = pridelená bunka anchorage, bez nej prázdna', () => {
     const world = newWorld();
     const waiting = freshShip('waiting_anchorage');
-    expect(shipRoute(waiting, world)).toEqual([]);
+    expect(legacyShipRoute(waiting, world)).toEqual([]);
     waiting.anchorageIndex = 1;
-    expect(shipRoute(waiting, world)).toEqual([{ x: 52.5, y: 7.5 }]);
+    expect(legacyShipRoute(waiting, world)).toEqual([cellCenter(MAP.anchorage[1])]);
   });
 
   it('berthing = dockPoint od prvého obsadeného kotviska; chýbajúce kotvisko → ShipError(inconsistent)', () => {
@@ -175,8 +180,48 @@ describe('shipRoute — trasa podľa stavu (harbor_01)', () => {
       heading: 180,
       berthIds: [ROOT_BERTH_ID, east],
     });
-    expect(shipRoute(berthing, world)).toEqual([{ x: 45, y: 13 }]);
+    expect(legacyShipRoute(berthing, world)).toEqual([{ x: 45, y: 13 }]);
     berthing.berthIds = [777 as EntityId];
-    expect(() => shipRoute(berthing, world)).toThrow(ShipError);
+    expect(() => legacyShipRoute(berthing, world)).toThrow(ShipError);
+  });
+});
+
+describe('shipRoute, approachPoint a pevný kurz bodu trasy (ADR-029)', () => {
+  it('shipRoute = uložená trasa lode (Ship.route)', () => {
+    const route = [{ x: 44.5, y: 7.5 }, { x: 43, y: 10, heading: 90 as const }];
+    const ship = new Ship({ id: 99 as EntityId, def: FEEDER, cargoType: SHIP_DEFS.cargoTypes.get(TEU), state: 'berthing', x: 48.5, y: 7.5, heading: 270, berthIds: [ROOT_BERTH_ID], route });
+    expect(shipRoute(ship)).toEqual(route);
+  });
+
+  it('approachPoint = dockPoint posunutý od brehu o frontWaterCells (Root: (43, 13) → (43, 10)); orezaný do mapy', () => {
+    const world = newWorld();
+    const root = berth(world, ROOT_BERTH_ID);
+    expect(approachPoint(root, FEEDER, MAP)).toEqual({ x: 43, y: 10 });
+    expect(approachPoint(root, HANDY, MAP)).toEqual({ x: 45, y: 10 });
+    expect(approachPoint(root, FEEDER, { width: 96, height: 11.5 })).toEqual({ x: 43, y: 10 });
+    expect(approachPoint(root, FEEDER, { width: 40, height: 64 })).toEqual({ x: 40, y: 10 });
+  });
+
+  it('bod s pevným kurzom: loď sa posúva bokom (kurz sa nemení podľa smeru úseku)', () => {
+    const s = freshShip('berthing', 43, 10, 270);
+    expect(advanceAlongRoute(s, [{ x: 43, y: 13, heading: 90 }], 1)).toBe(false);
+    expect(s).toMatchObject({ x: 43, y: 11, heading: 90 });
+    expect(segmentHeading({ x: 0, y: 5 }, 0, 5)).toBe(180);
+    expect(segmentHeading({ x: 0, y: 5, heading: 90 }, 0, 5)).toBe(90);
+    expect(segmentHeading({ x: 0, y: 0 }, 0, 0)).toBeNull();
+  });
+
+  it('advanceAlongRoute s koncom `end`: zastane v bode end − 1 a zvyšok trasy nechá', () => {
+    const s = freshShip('inbound', 0.5, 0.5, 180);
+    const route = [{ x: 0.5, y: 1.5 }, { x: 0.5, y: 2.5 }, { x: 5.5, y: 2.5 }];
+    expect(advanceAlongRoute(s, route, 10, 2)).toBe(true);
+    expect([s.x, s.y, s.waypointIndex]).toEqual([0.5, 2.5, 2]);
+  });
+
+  it('shipBox = obal shipCells (rovnaké bunky)', () => {
+    const cells = shipCells({ x: 43, y: 13, heading: 90, def: FEEDER });
+    const box = shipBox(FEEDER, 43, 13, 90);
+    expect(box).toEqual({ x0: 40, y0: 12, x1: 46, y1: 14 });
+    expect(cells).toHaveLength((box.x1 - box.x0) * (box.y1 - box.y0));
   });
 });

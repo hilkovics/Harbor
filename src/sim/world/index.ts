@@ -19,6 +19,7 @@ export type {
   WorldStateV2,
   WorldStateV3,
   WorldStateV4,
+  WorldStateV5,
 } from './world-state';
 export {
   OLDEST_WORLD_STATE_VERSION,
@@ -31,6 +32,8 @@ export {
   WORLD_STATE_V4_KEYS,
   WORLD_STATE_V5,
   WORLD_STATE_V5_KEYS,
+  WORLD_STATE_V6,
+  WORLD_STATE_V6_KEYS,
   migrateWorldState,
 } from './migrate';
 export { WorldInvariantError, findWorldViolation } from './world-invariants';

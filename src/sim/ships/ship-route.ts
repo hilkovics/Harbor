@@ -5,10 +5,14 @@
  *   úseku tej istej trasy, na konci trasy loď zastane presne v poslednom bode (zvyšok kroku prepadne).
  * - Dĺžka úseku = `Math.sqrt` (IEEE presná na všetkých enginoch). **Žiadna trigonometria** (`sin/cos/atan2` nie sú
  *   bit-presné naprieč enginmi) — kurz je kardinálny podľa dominantnej osi úseku (`cardinalHeading`).
- * - Trasa stavu (`shipRoute`) sa odvodzuje zo stavu lode, mapy (`seaLane`, `anchorage`) a obsadených kotvísk, preto sa
- *   neukladá — v save je len `waypointIndex`.
+ * - Trasa stavu je uložená v lodi (`Ship.route`, save v6, ADR-029): trasy cez prístav vznikajú pri rezervácii A* po
+ *   vode (`ShipTraffic`, `WaterNavigator`) a závisia od polohy ostatných lodí v tej chvíli, preto sa nedajú odvodiť.
+ *   Pravidlá pred ADR-029 ostali len pre migráciu save v5 (`legacyShipRoute`).
  * - Poloha pri kotvisku (`dockPoint`) = stred obdĺžnika `lengthCells × widthCells` tesne pred hranou pri vode, od prvého
  *   obsadeného kotviska po pobreží; kurz pri kotvisku je rovnobežný s hranou (`DOCKED_HEADING`).
+ * - **Bod priblíženia** (`approachPoint`, ADR-029) = `dockPoint` posunutý o `frontWaterCells` od brehu, teda tesne za
+ *   pás vody kotviska. Úsek medzi bodom priblíženia a kotviskom loď prejde **bokom** s kurzom `DOCKED_HEADING` (bod
+ *   trasy s pevným kurzom, `ShipPoint.heading`) — ostane vo vlastnom páse vody a nezasiahne susedné kotviská.
  */
 import type { EntityId } from '../core/entity-id';
 import type { ShipClassDef, Side } from '../defs/types';
@@ -25,6 +29,11 @@ import { SHIP_STATE_TRAITS, type ShipState } from './ship-fsm';
 export interface ShipPoint {
   readonly x: number;
   readonly y: number;
+  /**
+   * Pevný kurz úseku, ktorý v tomto bode končí (loď sa posúva bokom — priblíženie ku kotvisku a odchod od neho,
+   * ADR-029); chýba = kardinálny kurz podľa smeru úseku (`cardinalHeading`).
+   */
+  readonly heading?: Rotation;
 }
 
 /** Posun od ľavého horného rohu bunky k jej stredu. */
@@ -78,6 +87,21 @@ export function dockPoint(first: BerthModule, ship: ShipDimensions): ShipPoint {
   return { x: c0.x + along.dx * alongOffset + out.dx * outOffset, y: c0.y + along.dy * alongOffset + out.dy * outOffset };
 }
 
+/**
+ * Bod priblíženia ku kotvisku (ADR-029): `dockPoint` posunutý od brehu o `frontWaterCells` prvého kotviska — obdĺžnik
+ * lode tam leží tesne za pásom vody kotviska (pás má `frontWaterCells ≥ widthCells` riadkov). Súradnice sa orežú do
+ * rozsahu mapy (`bounds`), aby loď nikdy nevyplávala z mapy.
+ */
+export function approachPoint(first: BerthModule, ship: ShipDimensions, bounds: { readonly width: number; readonly height: number }): ShipPoint {
+  const dock = dockPoint(first, ship);
+  const out = SIDE_STEPS[first.waterSide];
+  const offset = first.params.frontWaterCells;
+  return {
+    x: Math.min(bounds.width, Math.max(0, dock.x + out.dx * offset)),
+    y: Math.min(bounds.height, Math.max(0, dock.y + out.dy * offset)),
+  };
+}
+
 /** Os, pozdĺž ktorej leží dĺžka lode pri danom kurze. */
 const LENGTH_AXIS: { readonly [R in Rotation]: 'x' | 'y' } = Object.freeze({ 0: 'y', 90: 'x', 180: 'y', 270: 'x' });
 
@@ -86,24 +110,49 @@ const LENGTH_AXIS: { readonly [R in Rotation]: 'x' | 'y' } = Object.freeze({ 0: 
  * kotvisku sú to presne bunky obdĺžnika z `dockPoint`. Slúži pravidlu `water_blocked` (loď v páse kotviska).
  */
 export function shipCells(ship: Pick<Ship, 'x' | 'y' | 'heading'> & { readonly def: ShipDimensions }): readonly CellCoord[] {
-  const alongX = LENGTH_AXIS[ship.heading] === 'x';
-  const w = alongX ? ship.def.lengthCells : ship.def.widthCells;
-  const h = alongX ? ship.def.widthCells : ship.def.lengthCells;
-  const x0 = Math.floor(ship.x - w / 2);
-  const x1 = Math.ceil(ship.x + w / 2);
-  const y0 = Math.floor(ship.y - h / 2);
-  const y1 = Math.ceil(ship.y + h / 2);
+  const box = shipBox(ship.def, ship.x, ship.y, ship.heading);
   const cells: CellCoord[] = [];
-  for (let y = y0; y < y1; y++) {
-    for (let x = x0; x < x1; x++) cells.push({ x, y });
+  for (let y = box.y0; y < box.y1; y++) {
+    for (let x = box.x0; x < box.x1; x++) cells.push({ x, y });
   }
   return cells;
 }
 
+/** Obdĺžnik buniek `[x0, x1) × [y0, y1)` (celé čísla). */
+export interface CellBox {
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+}
+
+/**
+ * Bunky obdĺžnika lode so stredom (`x`, `y`) a kurzom `heading` ako obdĺžnik buniek — tie isté bunky ako `shipCells`
+ * (každá bunka, do ktorej obdĺžnik zasahuje; pri strede v strede bunky a párnom rozmere aj o polbunku viac).
+ */
+export function shipBox(ship: ShipDimensions, x: number, y: number, heading: Rotation): CellBox {
+  const alongX = LENGTH_AXIS[heading] === 'x';
+  const w = alongX ? ship.lengthCells : ship.widthCells;
+  const h = alongX ? ship.widthCells : ship.lengthCells;
+  return { x0: Math.floor(x - w / 2), y0: Math.floor(y - h / 2), x1: Math.ceil(x + w / 2), y1: Math.ceil(y + h / 2) };
+}
+
 /** Čo trasa potrebuje zo sveta (`World` to spĺňa cez `map` a `modules`). */
 export interface ShipRouteEnv {
-  readonly map: { readonly seaLane: readonly CellCoord[]; readonly anchorage: readonly CellCoord[] };
+  readonly map: { readonly width: number; readonly height: number; readonly seaLane: readonly CellCoord[]; readonly anchorage: readonly CellCoord[] };
   readonly modules: ReadonlyMap<EntityId, Module>;
+}
+
+/** Koniec dráhy (stred posledného bodu `seaLane`) — vstup do prístavu a uzol všetkých trás v ňom (ADR-029). */
+export function laneEnd(env: ShipRouteEnv): ShipPoint | undefined {
+  const last = env.map.seaLane[env.map.seaLane.length - 1];
+  return last === undefined ? undefined : cellCenter(last);
+}
+
+/** Stred bunky anchorage `index`, alebo `undefined` (index mimo mapy). */
+export function anchoragePoint(env: ShipRouteEnv, index: number): ShipPoint | undefined {
+  const cell = env.map.anchorage[index];
+  return cell === undefined ? undefined : cellCenter(cell);
 }
 
 /** Prvé (po pobreží) obsadené kotvisko lode; chýbajúce → `ShipError('inconsistent')`. */
@@ -152,48 +201,65 @@ type RouteOf = (ship: Ship, env: ShipRouteEnv) => readonly ShipPoint[];
 
 const NO_ROUTE: readonly ShipPoint[] = Object.freeze([]);
 
-/** Trasa podľa stavu (tabuľka, nie switch). Loď vždy začína v prvom bode alebo na konci predošlej trasy. */
-const SHIP_ROUTES: { readonly [S in ShipState]: RouteOf } = {
-  // Spawn na seaLane[0] → po vrcholoch dráhy na jej koniec.
-  inbound: (_ship, env) => env.map.seaLane.map(cellCenter),
-  // Na pridelenú bunku anchorage; bez nej loď stojí (koniec seaLane).
-  waiting_anchorage: (ship, env) => {
-    const cell = ship.anchorageIndex === null ? undefined : env.map.anchorage[ship.anchorageIndex];
-    return cell === undefined ? NO_ROUTE : [cellCenter(cell)];
-  },
-  // Priama úsečka k polohe pri kotvisku (§7.4: voda je otvorená, bez A*).
-  berthing: (ship, env) => [dockPoint(firstBerthOf(ship, env), ship.def)],
-  docked: () => NO_ROUTE,
-  // Späť na koniec seaLane.
-  undocking: (_ship, env) => {
-    const last = env.map.seaLane[env.map.seaLane.length - 1];
-    return last === undefined ? NO_ROUTE : [cellCenter(last)];
-  },
-  // Po seaLane späť k jej začiatku (okraj mapy).
-  outbound: (_ship, env) => [...env.map.seaLane].reverse().map(cellCenter),
-  despawned: () => NO_ROUTE,
-};
-
-/** Body trasy aktuálneho stavu lode. */
-export function shipRoute(ship: Ship, env: ShipRouteEnv): readonly ShipPoint[] {
-  return SHIP_ROUTES[ship.state](ship, env);
+/** Body sea lane (stredy buniek) od okraja mapy po koniec dráhy. */
+export function laneRoute(env: ShipRouteEnv): readonly ShipPoint[] {
+  return env.map.seaLane.map(cellCenter);
 }
 
 /**
- * Posunie loď po `route` od bodu `ship.waypointIndex` najviac o `budget` buniek: úsek, na ktorý rozpočet stačí, loď
+ * Trasa stavu podľa pravidiel pred ADR-029 (tabuľka, nie switch) — len pre migráciu save v5 → v6, ktorý trasy lodí
+ * neukladal: `inbound` = sea lane, `waiting_anchorage` = pridelená anchorage (bez nej loď stojí), `berthing` = priama
+ * úsečka k polohe pri kotvisku, `undocking` = koniec sea lane, `outbound` = sea lane odzadu.
+ */
+const LEGACY_ROUTES: { readonly [S in ShipState]: RouteOf } = {
+  arriving: () => NO_ROUTE,
+  inbound: (_ship, env) => laneRoute(env),
+  waiting_anchorage: (ship, env) => {
+    const point = ship.anchorageIndex === null ? undefined : anchoragePoint(env, ship.anchorageIndex);
+    return point === undefined ? NO_ROUTE : [point];
+  },
+  berthing: (ship, env) => [dockPoint(firstBerthOf(ship, env), ship.def)],
+  docked: () => NO_ROUTE,
+  undocking: (_ship, env) => {
+    const end = laneEnd(env);
+    return end === undefined ? NO_ROUTE : [end];
+  },
+  outbound: (_ship, env) => [...laneRoute(env)].reverse(),
+  despawned: () => NO_ROUTE,
+};
+
+/** Trasa stavu lode zo save v5 (pravidlá pred ADR-029, viď `LEGACY_ROUTES`). */
+export function legacyShipRoute(ship: Ship, env: ShipRouteEnv): readonly ShipPoint[] {
+  return LEGACY_ROUTES[ship.state](ship, env);
+}
+
+/** Body trasy aktuálneho stavu lode (uložená trasa `Ship.route`, ADR-029). */
+export function shipRoute(ship: Ship): readonly ShipPoint[] {
+  return ship.route;
+}
+
+/** Kurz úseku k bodu `target` o (dx, dy): pevný kurz bodu (`ShipPoint.heading`), inak kardinálny; nulový úsek bez pevného kurzu → `null`. */
+export function segmentHeading(target: ShipPoint, dx: number, dy: number): Rotation | null {
+  return target.heading ?? cardinalHeading(dx, dy);
+}
+
+/**
+ * Posunie loď po `route` od bodu `ship.waypointIndex` (po bod `end` bez neho, predvolene celú trasu) najviac o `budget`
+ * buniek: úsek, na ktorý rozpočet stačí, loď
  * prejde celý (poloha = presne bod trasy) a zvyšok pokračuje ďalším úsekom; inak sa posunie o zvyšok pozdĺž úseku.
- * Kurz = `cardinalHeading` úseku, po ktorom sa loď pohla (nulový úsek kurz nemení). Vráti `true`, keď loď dosiahla
+ * Kurz = pevný kurz bodu alebo `cardinalHeading` úseku, po ktorom sa loď pohla (nulový úsek bez pevného kurzu kurz
+ * nemení). Vráti `true`, keď loď dosiahla
  * posledný bod trasy (aj pri prázdnej trase).
  */
-export function advanceAlongRoute(ship: Ship, route: readonly ShipPoint[], budget: number): boolean {
+export function advanceAlongRoute(ship: Ship, route: readonly ShipPoint[], budget: number, end = route.length): boolean {
   let remaining = budget;
-  while (ship.waypointIndex < route.length) {
+  while (ship.waypointIndex < end) {
     const target = route[ship.waypointIndex];
     const dx = target.x - ship.x;
     const dy = target.y - ship.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
     if (distance <= remaining) {
-      ship.heading = cardinalHeading(dx, dy) ?? ship.heading;
+      ship.heading = segmentHeading(target, dx, dy) ?? ship.heading;
       ship.x = target.x;
       ship.y = target.y;
       remaining -= distance;
@@ -201,7 +267,7 @@ export function advanceAlongRoute(ship: Ship, route: readonly ShipPoint[], budge
       continue;
     }
     if (remaining > 0) {
-      ship.heading = cardinalHeading(dx, dy) ?? ship.heading;
+      ship.heading = segmentHeading(target, dx, dy) ?? ship.heading;
       const fraction = remaining / distance;
       ship.x += dx * fraction;
       ship.y += dy * fraction;

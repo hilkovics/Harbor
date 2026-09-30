@@ -64,8 +64,8 @@ function busyWorld(): World {
   return world;
 }
 
-describe('World.serialize — WorldState v5', () => {
-  it('tvar: presne kľúče v5 (v1 + traffic, modules, cargo, ships + vehicles, jobs + trucks + economy, kontrakty) v pevnom poradí a hodnoty novej hry', () => {
+describe('World.serialize — WorldState v6', () => {
+  it('tvar: presne kľúče v6 = v5 (v1 + traffic, modules, cargo, ships + vehicles, jobs + trucks + economy, kontrakty) v pevnom poradí a hodnoty novej hry', () => {
     const world = create();
     const state = world.serialize();
     expect(Object.keys(state)).toEqual([
@@ -94,7 +94,7 @@ describe('World.serialize — WorldState v5', () => {
     expect(state.version).toBe(WORLD_STATE_VERSION);
     // Nová hra pred prvým tickom: pool sa plní až v kroku 2 prvého ticku (ADR-026).
     expect([state.contracts, state.xp, state.completedContracts, state.nextContractId]).toEqual([[], 0, 0, 1]);
-    expect(state.version).toBe(5);
+    expect(state.version).toBe(6);
     expect(state.economy).toEqual({ entries: [], today: { incomeCents: {}, expenseCents: {} }, daily: [], monthly: [], daysNegative: 0, gameOver: false });
     expect(state.traffic).toEqual([]);
     // Starter moduly mapy (Root modul, T02-04): id 1, 2, … v poradí mapy, zaplatená cena 0, žeriav nečinný.
@@ -279,7 +279,7 @@ describe('World.deserialize', () => {
   const INVALID: readonly [string, Mutation, string][] = [
     ['neznámy kľúč', set('extra', 1), '/extra'],
     ['chýba kľúč', (s) => delete s.cashCents, '/cashCents'],
-    ['neznáma budúca verzia', set('version', 6), '/version'],
+    ['neznáma budúca verzia', set('version', 7), '/version'],
     ['verzia 0', set('version', 0), '/version'],
     ['verzia ako reťazec', set('version', '3'), '/version'],
     ['v3 stav označený ako v1 → migrácia v1 odmietne kľúč v2', set('version', 1), '/traffic'],

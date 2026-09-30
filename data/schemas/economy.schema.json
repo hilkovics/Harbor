@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "economy.json",
+  "description": "Ekonomické konštanty (ARCHITECTURE §4.6 a §9.2). Singleton def bez items[]; peniaze v centoch (USD).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "startingCashCents",
+    "demurrageRateOfRewardPerHour",
+    "latePenaltyRateOfRewardPerDay",
+    "failAfterDaysLate",
+    "leaseMonthlyRateOfPrice",
+    "bankruptcyDays",
+    "offersPerDay",
+    "offerExpiryDays",
+    "removalRefundRate"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Verzia schémy defu."
+    },
+    "startingCashCents": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Počiatočná hotovosť v centoch."
+    },
+    "demurrageRateOfRewardPerHour": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Demurrage: podiel odmeny za každú hodinu státia lode nad povolený limit."
+    },
+    "latePenaltyRateOfRewardPerDay": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Penalizácia: podiel odmeny za každý deň po SLA termíne."
+    },
+    "failAfterDaysLate": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Kontrakt zlyhá, keď meškanie presiahne tento počet dní."
+    },
+    "leaseMonthlyRateOfPrice": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Mesačný nájom parcely ako podiel jej kúpnej ceny."
+    },
+    "bankruptcyDays": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Počet dní za sebou so zápornou hotovosťou do bankrotu (GameOver)."
+    },
+    "offersPerDay": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Cieľový počet ponúk kontraktov, ktoré pool dopĺňa pri DayClosed."
+    },
+    "offerExpiryDays": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Po koľkých dňoch nevybraná ponuka expiruje."
+    },
+    "removalRefundRate": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Podiel pôvodnej ceny, ktorý sa vráti pri odstránení modulu, cesty alebo koľaje (ARCHITECTURE §8 bod 8)."
+    }
+  }
+}

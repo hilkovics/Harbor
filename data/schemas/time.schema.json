@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "time.json",
+  "description": "Časový model (ARCHITECTURE §3). Singleton def bez items[]; všetky trvania v ostatných defoch sú v tickoch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "tickGameSeconds", "ticksPerRealSecond", "maxTicksPerFrame", "speeds"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Verzia schémy defu."
+    },
+    "tickGameSeconds": {
+      "type": "integer",
+      "enum": [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60],
+      "description": "Koľko herných sekúnd trvá 1 tick. Musí deliť 60 bezo zvyšku (hranice minúty/hodiny/dňa musia padnúť na celý tick, ARCHITECTURE §3), preto enum deliteľov 60; rovnaké pravidlo vynucuje DefRegistry a SimClock."
+    },
+    "ticksPerRealSecond": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Počet tickov za reálnu sekundu pri rýchlosti 1×."
+    },
+    "maxTicksPerFrame": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Strop tickov simulácie na jeden render frame (ochrana proti špirále smrti v GameLoop, ARCHITECTURE §3)."
+    },
+    "speeds": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 0 },
+      "minItems": 1,
+      "uniqueItems": true,
+      "contains": { "const": 0 },
+      "description": "Povolené násobky rýchlosti simulácie; 0 = pauza (musí byť prítomná)."
+    }
+  }
+}

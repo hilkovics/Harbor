@@ -36,7 +36,7 @@ src/sim/        core: world, grid, modules, cargo, logistics, ships, contracts, 
 src/render/     PixiJS: WorldRenderer, vrstvy, view-classes (ModuleView, ShipView, VehicleView…), kamera, overlays
 src/ui/         React: HUD, BuildBar, ContractsPanel, ModuleInspector, FinancePanel, TechTree, StatsPanel, Toasts
 src/app/        bootstrap: GameLoop (fixed tick), SimBridge (snapshot/events → render+UI), InputController, Save/Load
-data/defs/      JSON definície: cargo_types, modules, ships, vehicles, tech_tree, contract_templates, time, economy
+data/defs/      JSON definície: cargo_types, modules, ships, vehicles, tech_tree, contract_templates, time, economy, infrastructure, logistics
 data/maps/      mapy (terén, parcely, portály, sea lane)
 data/scenarios/ skriptované scenáre pre `simrun` a testy
 assets/         SVG/PNG z Claude Design + assets/manifest.json
@@ -60,7 +60,7 @@ pnpm lint && pnpm typecheck
 Po vizuálnych zmenách spusti `pnpm test:e2e` a **pozri si screenshot** (Read na PNG) — nespoliehaj sa len na to, že build prešiel.
 
 ## Tvrdé pravidlá
-1. **Sim/Presentation split.** ESLint `no-restricted-imports` zakazuje v `src/sim/` importy z `pixi.js`, `react`, `src/render`, `src/ui`, `window`/`document`. Prezentácia sim iba číta (snapshot + events) a posiela `Command`.
+1. **Sim/Presentation split.** Hranica `src/sim/` má tri vrstvy (ADR-007): `src/sim/tsconfig.json` bez DOM/Node typov; ESLint allowlist importov (len `@sim/…`, `@data/…` a relatívne v rámci `src/sim`) + zákazy obchvatov (DOM/Node globály, `eval`, inline `eslint-disable`, `@ts-*` komentáre); v `src/sim` len `.ts`. Lint chybu v `src/sim` oprav v kóde, nikdy ju neumlčuj. Prezentácia sim iba číta (snapshot + events) a posiela `Command`.
 2. **Žiadna teleportácia.** Poloha nákladu sa mení výhradne cez `CargoLedger.move(unitId, newLocation)`, ktorý overí povolený prechod (ARCHITECTURE §7.1) a emitne `CargoMoved`. Invariant `assertCargoConservation(world)` beží v každom scenárovom teste.
 3. **Determinizmus.** Fixný tick, jediný `Rng` (xoshiro128**, seed v save). Zakázané: `Math.random`, `Date.now`, `performance.now` v `src/sim/`.
 4. **Data-driven.** Žiadne magické čísla v kóde; všetko z `data/defs/*.json` cez typované `Def` rozhrania + JSON schéma. Nová hodnota = def + schéma + default.

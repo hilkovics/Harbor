@@ -67,6 +67,12 @@ Pravidlá vizuálnej hierarchie (od najvýraznejšieho k najmenej):
   --cargo-liquid: #7B4FA0;      /* glyf: kvapka */
   --cargo-gas: #2BB3A3;         /* glyf: valec s hrdlom */
   --cargo-roro: #D64545;        /* glyf: auto zhora */
+  /* svetlý / tmavý variant (base ±14 % L; 3 tonálne stupne, §2) — doplnené z Claude Design, relácia 1 */
+  --cargo-container-light: #F6B06B; --cargo-container-dark: #C7680C;
+  --cargo-bulk-light: #DFBE59;      --cargo-bulk-dark: #8D721B;
+  --cargo-liquid-light: #9E79BD;    --cargo-liquid-dark: #563770;
+  --cargo-gas-light: #50D5C5;       --cargo-gas-dark: #1D796F;
+  --cargo-roro-light: #E38080;      --cargo-roro-dark: #AD2626;
   /* svetlé/tmavé varianty: +14 % L / −14 % L od base */
 
   /* ===== Moduly ===== */
@@ -283,6 +289,13 @@ assets/
   manifest.json
 design/
   tokens.css
+  design-system.html          (relácia 1 — referenčná stránka design systému)
+  terrain-infra.html          (relácia 2 — referenčný hárok terénu a infraštruktúry; SVG sú v assets/terrain, assets/infra)
+  modules.html                (relácia 3 — referenčný hárok modulov s konektormi a pivotmi; SVG sú v assets/modules)
+  entities.html               (relácia 4 — referenčný hárok entít a nákladu; SVG sú v assets/entities, assets/cargo)
+  ui/game-ui.html             (relácia 5 — jeden interaktívny prototyp všetkých obrazoviek so prepínačom stavov; nahrádza samostatné ui/*.html)
+  ui/game-ui.source.html      (čitateľný zdroj šablóny game-ui.html pre ui-builder)
+  icons-manifest.html         (relácia 6 — referenčný hárok ikon, overlayov a manifestu; kanonický manifest je assets/manifest.json)
   ui/{top-hud,build-bar,contracts-panel,module-inspector,finance-panel,tech-tree,stats-panel,parcel-panel,monthly-report,toasts,settings,game-over,components}.html
 ```
 Názvy súborov: `{id}[_{variant}][_{state}].svg` — napr. `container_yard_small_fill50.svg`, `straddle_carrier_loaded.svg`, `ship_feeder_container_loaded.svg`, `crane_container_gantry_boom.svg`.

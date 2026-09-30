@@ -1,12 +1,13 @@
 /**
- * Obnova entít zo save (ARCHITECTURE §14, ADR-014, ADR-016): moduly v poradí save (= poradie umiestnenia) cez
- * `ModuleRegistry` a `World.addModule`, lode vzostupne podľa id cez `World.addShip` (pred kontrolou držiteľov nákladu —
- * `on_ship` číta `world.ships`) s obnovou `BerthModule.dockedShipId` z `berthIds`, potom stav odvodený z ledgera
- * a žeriavov — rezervácie apronov z `reservedSlot`, obsadenie apronov (FIFO = poradie jednotiek v save) a držané
- * jednotky žeriavov z `in_crane`. Na koniec beží `findWorldViolation` ako poistka. Každá chyba je `WorldStateError`
- * s JSON pointerom.
+ * Obnova entít zo save (ARCHITECTURE §14, ADR-014, ADR-016, ADR-017): moduly v poradí save (= poradie umiestnenia) cez
+ * `ModuleRegistry` a `World.addModule` (sklad obnoví svoje rezervácie z `runtime`), lode vzostupne podľa id cez
+ * `World.addShip` (pred kontrolou držiteľov nákladu — `on_ship` číta `world.ships`) s obnovou
+ * `BerthModule.dockedShipId` z `berthIds`, potom kontrola držiteľov a slotov nákladu (slot v kapacite apronu/skladu),
+ * rezervácie apronov z `reservedSlot` žeriavov a držané jednotky žeriavov z `in_crane`. Obsadenie apronov a skladov
+ * sa neobnovuje — čítajú ho z ledgera (ADR-017). Na koniec beží `findWorldViolation` ako poistka. Každá chyba je
+ * `WorldStateError` s JSON pointerom.
  */
-import { holderIdOf, holderSpecOf, slotOf } from '../cargo/cargo-location';
+import { holderIdOf, holderSpecOf, uniqueSlotOf } from '../cargo/cargo-location';
 import type { CargoUnit } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
 import { BerthModule } from '../modules/berth-module';
@@ -37,7 +38,7 @@ function restoreModules(world: World, entries: readonly ParsedModuleEntry[]): vo
     const path = modulePath(index);
     try {
       const def = world.defs.modules.get(entry.spec.defId);
-      const module = moduleRegistry.create(def, entry.spec, entry.id, entry.purchaseCostCents, { grid: world.grid });
+      const module = moduleRegistry.create(def, entry.spec, entry.id, entry.purchaseCostCents, { grid: world.grid, cargo: world.cargo });
       module.restoreRuntimeState(entry.runtime);
       world.addModule(module);
     } catch (error) {
@@ -109,8 +110,12 @@ function restoreShips(world: World, entries: readonly ParsedShipEntry[]): void {
   });
 }
 
-/** Rezervácie apronov z `reservedSlot` žeriavov; hodina posledného `CraneBlocked` nesmie byť v budúcnosti. */
-function restoreCraneReservations(world: World, indexOf: ReadonlyMap<EntityId, number>): void {
+/**
+ * Rezervácie apronov z `reservedSlot` žeriavov; hodina posledného `CraneBlocked` nesmie byť v budúcnosti. Rezervovaný
+ * slot, na ktorom podľa ledgera leží jednotka, je chyba **jednotky** (`/cargo/units/<j>/location/slot`) — rovnako ako
+ * pred T03-02, keď apron obsadenie ešte zrkadlil.
+ */
+function restoreCraneReservations(world: World, indexOf: ReadonlyMap<EntityId, number>, unitIndexOf: ReadonlyMap<EntityId, number>): void {
   for (const module of world.modules.values()) {
     if (!(module instanceof CraneModule)) continue;
     const path = `${modulePath(indexOf.get(module.id) ?? -1)}/runtime`;
@@ -118,9 +123,17 @@ function restoreCraneReservations(world: World, indexOf: ReadonlyMap<EntityId, n
       throw new WorldStateError(`${path}/lastBlockedHour`, `hodina ${String(module.lastBlockedHour)} je po aktuálnej ${String(world.clock.gameHour)}`);
     }
     const berth = world.modules.get(module.berthId);
-    if (module.reservedSlot === null || !(berth instanceof BerthModule)) continue;
+    const slot = module.reservedSlot;
+    if (slot === null || !(berth instanceof BerthModule)) continue;
+    const occupant = slot < berth.apron.capacity ? berth.apron.unitAt(slot) : null;
+    if (occupant !== null) {
+      throw new WorldStateError(
+        `${unitPath(unitIndexOf.get(occupant) ?? -1)}/location/slot`,
+        `apron ${berth.label}: slot ${String(slot)} je rezervovaný žeriavom ${module.label}`,
+      );
+    }
     try {
-      berth.apron.reserveSlot(module.reservedSlot);
+      berth.apron.reserveSlot(slot);
     } catch (error) {
       if (error instanceof ModuleError) throw new WorldStateError(`${path}/reservedSlot`, `apron ${berth.label}: ${error.message}`);
       throw error;
@@ -147,25 +160,31 @@ function checkHolders(world: World, units: readonly CargoUnit[]): void {
   });
 }
 
-/** Obsadenie apronov (poradie save = FIFO) a držané jednotky žeriavov z ledgera. */
-function restoreHeldCargo(world: World, units: readonly CargoUnit[]): void {
+/**
+ * Jednotky na slotoch modulov (apron, sklad — `Module.cargoSlots()`) ležia na slote v rozsahu kapacity držiteľa; ledger
+ * rozsah nepozná (ADR-017). Volá sa po `checkHolders`, takže držiteľ existuje.
+ */
+function checkUnitSlots(world: World, units: readonly CargoUnit[]): void {
   units.forEach((unit, index) => {
-    const path = `${unitPath(index)}/location`;
     const holderId = holderIdOf(unit.location);
     const holder = holderId === null ? undefined : world.modules.get(holderId);
-    if (unit.location.kind === 'on_apron' && holder instanceof BerthModule) {
-      const slot = slotOf(unit.location) ?? -1;
-      try {
-        holder.apron.reserveSlot(slot);
-        holder.apron.commit(slot, unit.id);
-      } catch (error) {
-        if (error instanceof ModuleError) throw new WorldStateError(`${path}/slot`, `apron ${holder.label}: ${error.message}`);
-        throw error;
-      }
+    const slots = holder?.cargoSlots();
+    if (holder === undefined || slots?.kind !== unit.location.kind) return;
+    const slot = uniqueSlotOf(unit.location) ?? -1;
+    if (slot >= slots.capacity) {
+      throw new WorldStateError(`${unitPath(index)}/location/slot`, `${holder.label}: slot ${String(slot)} je mimo 0…${String(slots.capacity - 1)}`);
     }
+  });
+}
+
+/** Držané jednotky žeriavov z ledgera (`in_crane`). */
+function restoreHeldCargo(world: World, units: readonly CargoUnit[]): void {
+  units.forEach((unit, index) => {
+    const holderId = holderIdOf(unit.location);
+    const holder = holderId === null ? undefined : world.modules.get(holderId);
     if (unit.location.kind === 'in_crane' && holder instanceof CraneModule) {
       if (holder.heldUnitId !== null) {
-        throw new WorldStateError(`${path}/craneId`, `${holder.label} už drží jednotku #${String(holder.heldUnitId)}`);
+        throw new WorldStateError(`${unitPath(index)}/location/craneId`, `${holder.label} už drží jednotku #${String(holder.heldUnitId)}`);
       }
       holder.heldUnitId = unit.id;
     }
@@ -201,8 +220,10 @@ export function restoreEntities(
   restoreModules(world, entries);
   restoreShips(world, ships);
   const indexOf = new Map<EntityId, number>(entries.map((entry, index) => [entry.id, index]));
-  restoreCraneReservations(world, indexOf);
+  const unitIndexOf = new Map<EntityId, number>(units.map((unit, index) => [unit.id, index]));
   checkHolders(world, units);
+  checkUnitSlots(world, units);
+  restoreCraneReservations(world, indexOf, unitIndexOf);
   restoreHeldCargo(world, units);
   checkCraneHolding(world, indexOf);
   const violation = findWorldViolation(world);

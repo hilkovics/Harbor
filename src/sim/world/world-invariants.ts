@@ -9,7 +9,10 @@
  * 3. žeriav: stojí celý na svojom berthe, má jeho rotáciu, berth ho eviduje, držaná jednotka, rezervácia a fáza
  *    zodpovedajú ledgeru, apronu a `CRANE_STATE_TRAITS` (`cranePhaseProblem`); berth: `craneIds` = jeho žeriavy v poradí umiestnenia,
  *    najviac `maxCranes`, bez prekryvu, rezervácie apronu = rezervácie jeho žeriavov;
- * 4. apron: rovnaké jednotky, sloty aj FIFO poradie ako `on_apron` v ledgeri;
+ * 4. sloty modulov (`Module.cargoSlots()`: apron, sklad; ADR-017): obsadenie je v ledgeri, modul drží len rezervácie —
+ *    rezervovaný slot nie je obsadený, rezervácie ≤ kapacita, `stored + reserved ≤ capacity`, slot jednotky v rozsahu
+ *    (`SlotReservations.findProblem`); kapacita apronu = `apronSlots`, skladu = `capacityUnits`; v sklade len jednotky
+ *    jeho kategórie;
  * 5. `berthGroups` a `groupId` = prepočet `computeBerthGroups`;
  * 6. lode (ADR-016): kľúč = id, vzostupne podľa id, stav bez `despawned`; `berthIds` neprázdne práve pri
  *    `holdsBerths`, ležia za sebou v jednej skupine v poradí po pobreží a každý berth má `dockedShipId` = loď;
@@ -18,13 +21,16 @@
  *    `anchorageIndex` len pri `waitsForBerth`, v mape a jedinečný; na palube najviac `capacityUnits` jednotiek, všetky
  *    typu `cargoTypeId`; loď s nákladom, ktorá drží kotviská, má na nich aspoň jeden žeriav kategórie svojho nákladu
  *    (inak by pri kotvisku ostala naveky, T02-14); žeriav v `grabbing` má na kotvisku dokovanú loď s nákladom
- *    svojej kategórie a žeriavov v `grabbing` nad loďou nie je viac ako jednotiek na jej palube (každý má čo zdvihnúť).
+ *    svojej kategórie a žeriavov v `grabbing` nad loďou nie je viac ako jednotiek na jej palube (každý má čo zdvihnúť);
+ * 7. depo vozidiel (ADR-017): `vehicleIds` bez duplicít a najviac `capacity` (vzťah k vozidlám doplní T03-04).
  */
 import { CARGO_HOLDER_KINDS } from '../cargo/cargo-location';
 import type { EntityId } from '../core/entity-id';
 import { BerthModule } from '../modules/berth-module';
 import { computeBerthGroups } from '../modules/berth-group';
 import { CRANE_STATE_TRAITS, CraneModule, cranePhaseProblem } from '../modules/crane-module';
+import { StorageModule } from '../modules/storage-module';
+import { VehicleDepot } from '../modules/vehicle-depot';
 import { hasCompatibleCrane } from '../ships/berth-allocator';
 import type { Ship } from '../ships/ship';
 import { SHIP_STATE_TRAITS } from '../ships/ship-fsm';
@@ -162,22 +168,49 @@ const checkCranes: Check = (world) => {
   return undefined;
 };
 
-const checkAprons: Check = (world) => {
-  for (const berth of berths(world)) {
-    const { apron } = berth;
-    if (apron.capacity !== berth.params.apronSlots) return `${berth.label}: kapacita apronu ${String(apron.capacity)} ≠ apronSlots`;
-    const ledgerUnits = world.cargo.unitsOnApron(berth.id);
-    const apronUnits = apron.units();
-    if (!sameIds(apronUnits, ledgerUnits)) {
-      return `${berth.label}: apron [${apronUnits.join(', ')}] ≠ ledger on_apron [${ledgerUnits.join(', ')}] (jednotky alebo FIFO poradie)`;
+/** Kapacita slotov podľa triedy modulu: apron = `apronSlots`, sklad = `capacityUnits`; iné moduly sloty nemajú. */
+function expectedSlotCapacity(world: World, moduleId: EntityId): number | undefined {
+  const module = world.modules.get(moduleId);
+  if (module instanceof BerthModule) return module.params.apronSlots;
+  if (module instanceof StorageModule) return module.params.capacityUnits;
+  return undefined;
+}
+
+/** V sklade ležia len jednotky jeho kategórie (kompatibilitu strážia systémy, §7.1 — tu poistka). */
+function checkStorageCategory(world: World, storage: StorageModule): string | undefined {
+  for (const unitId of storage.units()) {
+    const typeId = world.cargo.get(unitId)?.typeId;
+    const category = typeId === undefined || !world.defs.cargoTypes.has(typeId) ? undefined : world.defs.cargoTypes.get(typeId).category;
+    if (category !== storage.category) {
+      return `${storage.label} (kategória '${storage.category}') drží jednotku #${String(unitId)} kategórie '${String(category)}'`;
     }
-    for (const unitId of ledgerUnits) {
-      const location = world.cargo.get(unitId)?.location;
-      const slot = location?.kind === 'on_apron' ? location.slot : undefined;
-      if (slot !== apron.slotOf(unitId)) {
-        return `${berth.label}: jednotka #${String(unitId)} je v ledgeri na slote ${String(slot)}, na aprone na ${String(apron.slotOf(unitId))}`;
-      }
+  }
+  return undefined;
+}
+
+const checkCargoSlots: Check = (world) => {
+  for (const module of world.modules.values()) {
+    const slots = module.cargoSlots();
+    if (slots === undefined) continue;
+    if (slots.holderId !== module.id) return `${module.label}: sloty patria držiteľovi #${String(slots.holderId)}`;
+    const capacity = expectedSlotCapacity(world, module.id);
+    if (slots.capacity !== capacity) return `${module.label}: kapacita slotov ${String(slots.capacity)} ≠ def ${String(capacity)}`;
+    const problem = slots.findProblem();
+    if (problem !== undefined) return problem;
+    if (module instanceof StorageModule) {
+      const foreign = checkStorageCategory(world, module);
+      if (foreign !== undefined) return foreign;
     }
+  }
+  return undefined;
+};
+
+const checkDepots: Check = (world) => {
+  for (const module of world.modules.values()) {
+    if (!(module instanceof VehicleDepot)) continue;
+    const ids = module.vehicleIds;
+    if (new Set(ids).size !== ids.length) return `${module.label}: vehicleIds [${ids.join(', ')}] obsahujú duplicitu`;
+    if (ids.length > module.capacity) return `${module.label} má ${String(ids.length)} vozidiel (capacity ${String(module.capacity)})`;
   }
   return undefined;
 };
@@ -293,7 +326,7 @@ const checkShips: Check = (world) => {
   return checkGrabbingCranes(world);
 };
 
-const CHECKS: readonly Check[] = [checkCargoHolders, checkModuleCells, checkCranes, checkAprons, checkBerthGroups, checkShips];
+const CHECKS: readonly Check[] = [checkCargoHolders, checkModuleCells, checkCranes, checkCargoSlots, checkBerthGroups, checkShips, checkDepots];
 
 /** Prvé porušenie invariantov sveta (viď hlavička súboru), alebo `undefined`. Svet nemení. */
 export function findWorldViolation(world: World): string | undefined {

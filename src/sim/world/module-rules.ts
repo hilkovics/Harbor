@@ -357,10 +357,9 @@ const REMOVAL_CHECKS: { readonly [R in RemovalRule]: RemovalCheck } = {
   has_cargo: (world, module) => {
     const heldKind = MODULE_CARGO_HOLDER_KINDS.find((kind) => world.cargo.countAt(kind, module.id) > 0);
     if (heldKind !== undefined) return `${module.label} drží náklad (${heldKind})`;
-    if (module instanceof BerthModule && (module.apron.usedCount > 0 || module.apron.reservedCount > 0)) {
-      return `apron ${module.label} má obsadené alebo rezervované sloty`;
-    }
-    return undefined;
+    // Obsadenie slotov (apron, sklad) je v ledgeri — pokryté vyššie; modul drží len rezervácie (ADR-017).
+    const reserved = module.cargoSlots()?.reservedCount ?? 0;
+    return reserved > 0 ? `${module.label} má ${String(reserved)} rezervovaných slotov (${module.cargoSlots()?.kind ?? ''})` : undefined;
   },
   has_cranes: (_world, module) =>
     module instanceof BerthModule && module.craneIds.length > 0 ? `na ${module.label} stoja žeriavy [${module.craneIds.join(', ')}]` : undefined,

@@ -130,8 +130,6 @@ describe('RemoveModule — odmietnutia', () => {
     const unit = world.cargo.create('container_teu', { kind: 'on_ship', shipId: id(500) }).id;
     world.cargo.move(unit, { kind: 'in_crane', craneId: crane.id });
     world.cargo.move(unit, { kind: 'on_apron', berthId: berth.id, slot: 0 });
-    berth.apron.reserveSlot(0);
-    berth.apron.commit(0, unit);
     remove(crane.id).apply(world);
     expect(remove(berth.id).validate(world).reasons).toEqual(['has_cargo']);
   });

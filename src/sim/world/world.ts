@@ -15,6 +15,10 @@
  *
  * Lode (ADR-016): `addShip`/`removeShip` sú štrukturálne operácie pre `SpawnShipDebug`, `ShipSystem` a obnovu zo save;
  * pohyb, kotviská a FSM riadi `ShipSystem`.
+ *
+ * Sklady a depá (ADR-017): moduly vznikajú s ledgerom na čítanie (`ModuleEnv.cargo`) — apron a sklad držia len
+ * rezervácie, obsadenie čítajú z `cargo`. Pripojenie modulu k ceste (`isConnected`, `connectorCells`) sa počíta
+ * z mriežky pri každom volaní.
  */
 import { CargoLedger } from '../cargo/cargo-ledger';
 import type { CargoLedgerState } from '../cargo/cargo-ledger-state';
@@ -41,6 +45,7 @@ import { ShipError } from '../ships/ship-error';
 import { CraneSystem } from '../systems/crane-system';
 import { ShipSystem } from '../systems/ship-system';
 import { StatResolver } from '../tech/stat-resolver';
+import { connectorCellsOf, isModuleConnected, type ConnectorCell } from './connectivity';
 import { migrateWorldState } from './migrate';
 import { PLACEMENT_RULE_ERROR, attachesToHost, findPlacementViolations, findRemovalViolations } from './module-rules';
 import { WorldInvariantError, findWorldViolation } from './world-invariants';
@@ -237,7 +242,7 @@ export class World {
    */
   placeModule(spec: PlacedModuleSpec, purchaseCostCents: number): Module {
     const def = this.defs.modules.get(spec.defId);
-    const module = moduleRegistry.create(def, spec, this.ids.next(), purchaseCostCents, { grid: this.grid });
+    const module = moduleRegistry.create(def, spec, this.ids.next(), purchaseCostCents, { grid: this.grid, cargo: this.cargo });
     this.addModule(module);
     return module;
   }
@@ -326,6 +331,23 @@ export class World {
     if (ship.berthIds.length > 0) throw new ShipError('holds_berths', `World.removeShip: ${ship.label} drží kotviská [${ship.berthIds.join(', ')}]`);
     this.shipMap.delete(shipId);
     return ship;
+  }
+
+  /**
+   * Konektory modulu v poradí defu (po rotácii) s vonkajšou bunkou a `hasRoad` = na vonkajšej bunke v mape je cesta
+   * (ADR-017). Počíta sa z aktuálnej mriežky pri každom volaní (nová kópia) — pre UI a ladenie, nie hot path.
+   */
+  connectorCells(module: Module): readonly ConnectorCell[] {
+    return connectorCellsOf(this.grid, module);
+  }
+
+  /**
+   * Je modul pripojený k ceste: aspoň jeden konektor typu `road` má na vonkajšej bunke cestu (rozhodnutie
+   * orchestrátora F3 č. 3, ADR-017). Z mriežky, bez cache a bez alokácie — `RoadChanged` sa prejaví hneď. Nepripojený
+   * modul dispatcher ignoruje a UI ukáže „Nepripojené"; modul bez cestných konektorov (žeriav) → `false`.
+   */
+  isConnected(module: Module): boolean {
+    return isModuleConnected(this.grid, module);
   }
 
   /** Modul, ktorý bunku zaberá (pri žeriave jeho berth); mimo mapy alebo prázdna bunka → `undefined`. */

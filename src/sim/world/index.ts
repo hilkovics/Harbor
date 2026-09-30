@@ -15,6 +15,9 @@ export type {
 export { OLDEST_WORLD_STATE_VERSION, WORLD_STATE_V1_KEYS, WORLD_STATE_V2, migrateWorldState } from './migrate';
 export { WorldInvariantError, findWorldViolation } from './world-invariants';
 export { CARGO_HOLDER_SOURCES, MODULE_CARGO_HOLDER_KINDS } from './cargo-holders';
+// Pripojenie modulov k ceste (ADR-017) — World.isConnected / connectorCells a §8 bod 5 (connector_blocked).
+export { connectorCellsOf, isModuleConnected, isOutsideUsable } from './connectivity';
+export type { ConnectorCell } from './connectivity';
 export type { CargoHolderWorld } from './cargo-holders';
 // Parcela patrí mriežke/mape (src/sim/grid/parcel.ts); tu len re-export pre pohodlie konzumentov `World`.
 export type { Parcel, ParcelOwnership } from '../grid/parcel';

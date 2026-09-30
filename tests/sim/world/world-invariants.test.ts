@@ -28,13 +28,11 @@ function harbor(): Harbor {
   return { world, berth, crane, other };
 }
 
-/** Jednotka presunutá cez žeriav až na apron (ledger aj apron konzistentne). */
+/** Jednotka presunutá cez žeriav až na apron (obsadenie apronu je len v ledgeri, ADR-017). */
 function unitOnApron(world: World, berth: BerthModule, crane: CraneModule, slot: number): EntityId {
   const unit = world.cargo.create(TEU, { kind: 'on_ship', shipId: id(900) }).id;
   world.cargo.move(unit, { kind: 'in_crane', craneId: crane.id });
   world.cargo.move(unit, { kind: 'on_apron', berthId: berth.id, slot });
-  berth.apron.reserveSlot(slot);
-  berth.apron.commit(slot, unit);
   return unit;
 }
 
@@ -126,31 +124,19 @@ describe('findWorldViolation — porušenia', () => {
       },
     ],
     ['rezervácia apronu bez žeriavu', /rezervované sloty apronu \[0\]/, ({ berth }) => void berth.apron.reserve()],
+    // T03-02 (ADR-017): apron obsadenie nezrkadlí — nesúlad apron ↔ ledger nemôže vzniknúť; stráži sa rezervácia vs ledger.
     [
-      'apron má jednotku, ktorú ledger nemá na aprone',
-      /apron \[4242\] ≠ ledger on_apron \[\]/,
-      ({ berth }) => berth.apron.commit(berth.apron.reserve(), id(4242)),
-    ],
-    [
-      'FIFO apronu ≠ FIFO ledgera',
-      /FIFO/,
+      'rezervovaný slot apronu obsadila jednotka (presun bez commit)',
+      /apron berth_standard #1: rezervovaný slot 0 obsadila jednotka #\d+/,
       ({ world, berth, crane }) => {
-        const a = unitOnApron(world, berth, crane, 0);
-        unitOnApron(world, berth, crane, 1);
-        berth.apron.take(a);
-        berth.apron.reserveSlot(0);
-        berth.apron.commit(0, a);
+        restoreCrane(crane, { state: 'grabbing', reservedSlot: berth.apron.reserve(), phaseTicksTotal: 6, phaseTicksLeft: 3 });
+        unitOnApron(world, berth, crane, 0);
       },
     ],
     [
-      'slot jednotky na aprone ≠ slot v ledgeri',
-      /na slote 0, na aprone na 2/,
-      ({ world, berth, crane }) => {
-        const unit = unitOnApron(world, berth, crane, 0);
-        berth.apron.take(unit);
-        berth.apron.reserveSlot(2);
-        berth.apron.commit(2, unit);
-      },
+      'jednotka na slote mimo kapacity apronu',
+      /apron berth_standard #1: jednotka #\d+ leží na slote 7 mimo 0…3/,
+      ({ world, berth, crane }) => void unitOnApron(world, berth, crane, 7),
     ],
     ['zastarané groupId berthu', /groupId 5/, ({ other }) => (other.groupId = 5)],
   ];

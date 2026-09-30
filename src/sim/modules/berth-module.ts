@@ -8,6 +8,7 @@
  *   ponor lode obmedzuje typ kotviska aj mapa.
  * - `frontWaterBand` = pás `params.frontWaterCells` riadkov vody pred hranou pri vode (`frontBandCells`), kde kotví
  *   loď; `PlaceModule` ho overuje (ADR-015) a ShipSystem (T02-05) z neho odvodí polohu lode.
+ * - `apron` drží len rezervácie slotov; obsadenie číta z ledgera (ADR-017).
  */
 import type { EntityId } from '../core/entity-id';
 import { berthParams } from '../defs/module-def';
@@ -17,6 +18,7 @@ import { ApronBuffer } from './apron-buffer';
 import { Module, type ModuleInit } from './module';
 import { ModuleError } from './module-error';
 import { frontBandCells, waterSideOf } from './module-geometry';
+import type { CargoSlotsView } from './slot-reservations';
 
 /** Efektívna hĺbka kotviska: menšia z hĺbky typu kotviska a najplytšej bunky footprintu (rozhodnutie 4). */
 export function effectiveBerthDepth(params: BerthParams, cells: readonly { readonly x: number; readonly y: number }[], grid: Grid): DepthClass {
@@ -56,7 +58,12 @@ export class BerthModule extends Module {
     this.lengthCells = init.def.footprint.w;
     this.depthClass = effectiveBerthDepth(this.params, this.cells, init.grid);
     this.frontWaterBand = frontBandCells(this.origin, this.size, waterSide, this.params.frontWaterCells);
-    this.apron = new ApronBuffer(this.params.apronSlots);
+    this.apron = new ApronBuffer(this.params.apronSlots, this.id, init.cargo, `apron ${this.label}`);
+  }
+
+  /** Sloty apronu (obsadenie z ledgera, rezervácie žeriavov) pre generický kód — ADR-017. */
+  override cargoSlots(): CargoSlotsView {
+    return this.apron;
   }
 
   /** Žeriavy na kotvisku v poradí pripojenia (= poradie umiestnenia). Nemeň — spravuje ho `World`. */

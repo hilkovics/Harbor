@@ -4,8 +4,11 @@
  * pri načítaní ich dodá `LoadedMap` s rovnakým `mapId`.
  *
  * v2 = v1 + `traffic`, `modules`, `cargo`, `ships`. Ukladá sa len to, čo sa nedá odvodiť: `cell.moduleId` vznikne
- * z footprintov modulov, obsadenie apronov a držané jednotky žeriavov z ledgera, rezervácie slotov apronu
- * z `reservedSlot` žeriavov a skupiny kotvísk prepočtom. Staršie verzie prevedie `migrateWorldState` (migrate.ts).
+ * z footprintov modulov, obsadenie apronov a skladov a držané jednotky žeriavov z ledgera, rezervácie slotov apronu
+ * z `reservedSlot` žeriavov a skupiny kotvísk prepočtom. Sklad (T03-02, ADR-017) ukladá v `runtime` len rezervácie
+ * slotov a počítadlá `unitsIn`/`unitsOut`, depo `{}` (vozidlá depa sa odvodia z vozidiel, T03-04) — tvar `WorldState`
+ * sa tým nemení, verzia ostáva 2 (v3 s vozidlami a jobmi príde v T03-04/T03-05). Staršie verzie prevedie
+ * `migrateWorldState` (migrate.ts).
  *
  * Lode (ADR-016) sa ukladajú s polohou, stavom FSM, kotviskami, anchorage a indexom bodu trasy; trasa sa odvodí zo stavu
  * a mapy, `BerthModule.dockedShipId` z `berthIds`.

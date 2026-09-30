@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { SIDES, type Side } from '@sim/defs';
 import { DIRECTIONS_4, ROTATIONS, rotateLocalCell, type Rotation } from '@sim/grid';
-import { SIDE_STEPS, connectorsOf, edgeCells, footprintOf, frontBandCells, rotateSide, waterSideOf } from '@sim/modules';
+import { SIDE_STEPS, connectorOutside, connectorsOf, edgeCells, footprintOf, frontBandCells, rotateSide, waterSideOf } from '@sim/modules';
 import { BERTH, CRANE, MODULE_DEFS } from './module-fixtures';
 
 const berthDef = MODULE_DEFS.modules.get(BERTH);
@@ -124,6 +124,36 @@ describe('connectorsOf (§8 bod 7, T02-04)', () => {
     const placed = connectorsOf(craneDef, 0, 0, 0);
     expect(placed).toEqual([]);
     expect(Object.isFrozen(placed)).toBe(true);
+  });
+});
+
+describe('connectorOutside (vonkajšia bunka konektora, T03-02, ADR-017)', () => {
+  const yardDef = MODULE_DEFS.modules.get('container_yard_small');
+
+  it('Root berth (40, 14) rot 0: vonkajšie bunky (41, 17) a (46, 17) — pevnina pod nábrežím', () => {
+    expect(connectorsOf(berthDef, 40, 14, 0).map(connectorOutside)).toEqual([
+      { x: 41, y: 17 },
+      { x: 46, y: 17 },
+    ]);
+  });
+
+  // container_yard_small 4×4, konektor (1, 3, s): po rotácii bunka + strana, vonkajšia bunka o krok von z footprintu.
+  it.each([
+    [0, { x: 1, y: 3, side: 's' }, { x: 1, y: 4 }],
+    [90, { x: 0, y: 1, side: 'w' }, { x: -1, y: 1 }],
+    [180, { x: 2, y: 0, side: 'n' }, { x: 2, y: -1 }],
+    [270, { x: 3, y: 2, side: 'e' }, { x: 4, y: 2 }],
+  ] as const)('dvor rot %i: konektor %o → vonkajšia bunka %o (mimo footprintu)', (rotation, connector, outside) => {
+    const [placed] = connectorsOf(yardDef, 0, 0, rotation);
+    expect(placed).toMatchObject(connector);
+    expect(connectorOutside(placed)).toEqual(outside);
+    expect(footprintOf(yardDef, 0, 0, rotation).cells).not.toContainEqual(outside);
+  });
+
+  it.each(SIDES)('strana %s: krok podľa SIDE_STEPS, výsledok zmrazený', (side) => {
+    const outside = connectorOutside({ x: 5, y: 5, side });
+    expect(outside).toEqual({ x: 5 + SIDE_STEPS[side].dx, y: 5 + SIDE_STEPS[side].dy });
+    expect(Object.isFrozen(outside)).toBe(true);
   });
 });
 

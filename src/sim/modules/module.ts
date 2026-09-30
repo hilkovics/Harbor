@@ -1,18 +1,20 @@
 /**
  * Modul (ARCHITECTURE §5, §5.3): entita postavená na mriežke podľa `ModuleDef`. Konkrétne druhy sú triedy
- * (`BerthModule`, `CraneModule`, neskôr `StorageModule`…) zaregistrované v `ModuleRegistry` podľa `def.kind`
- * (pravidlo 7 — žiadne switch-e podľa druhu).
+ * (`BerthModule`, `CraneModule`, `StorageModule` → `ContainerYard`, `VehicleDepot`…) zaregistrované v `ModuleRegistry`
+ * podľa `def.kind` (pravidlo 7 — žiadne switch-e podľa druhu).
  *
  * Geometria je nemenná: `origin` = ľavý horný roh footprintu **po** rotácii, `size` a `cells` po rotácii. Mriežku
  * (`cell.moduleId`) zapisuje až `World.addModule` — samotná inštancia svet nemení.
  */
+import type { CargoReader } from '../cargo/cargo-ledger';
 import type { EntityId } from '../core/entity-id';
 import type { ModuleDef, ModuleKind } from '../defs/types';
 import type { CellCoord, Grid } from '../grid/grid';
 import { isRotation, type Rotation } from '../grid/rotation';
 import { ModuleError } from './module-error';
-import { footprintOf } from './module-geometry';
+import { connectorsOf, footprintOf, type PlacedConnector } from './module-geometry';
 import { checkRuntimeKeys, type ModuleRuntimeState } from './runtime-state';
+import type { CargoSlotsView } from './slot-reservations';
 
 /** Vstup konštruktora modulu (factory v `ModuleRegistry` ho dostane hotový). */
 export interface ModuleInit {
@@ -25,6 +27,11 @@ export interface ModuleInit {
   readonly purchaseCostCents: number;
   /** Mriežka sveta, do ktorého modul patrí — len na čítanie (hranice, hĺbka, berth pod žeriavom). */
   readonly grid: Grid;
+  /**
+   * Ledger sveta len na čítanie (T03-02): moduly so slotmi (apron, sklad) z neho odvodzujú obsadenie a držia len
+   * rezervácie — poloha nákladu má jediný zápis (pravidlo 2, review T02-13).
+   */
+  readonly cargo: CargoReader;
 }
 
 function isEntityId(value: number): boolean {
@@ -41,6 +48,8 @@ export abstract class Module {
   readonly size: { readonly w: number; readonly h: number };
   /** Bunky footprintu row-major. */
   readonly cells: readonly CellCoord[];
+  /** Konektory vo svete po rotácii (`connectorsOf`) v poradí defu; vonkajšiu bunku dáva `connectorOutside`. */
+  readonly connectors: readonly PlacedConnector[];
   readonly purchaseCostCents: number;
 
   /**
@@ -70,6 +79,7 @@ export abstract class Module {
     this.rotation = rotation;
     this.size = size;
     this.cells = cells;
+    this.connectors = connectorsOf(def, origin.x, origin.y, rotation);
     this.purchaseCostCents = purchaseCostCents;
   }
 
@@ -81,6 +91,14 @@ export abstract class Module {
   /** Popis do chybových správ: `berth_standard #3`. */
   get label(): string {
     return `${this.def.id} #${String(this.id)}`;
+  }
+
+  /**
+   * Sloty nákladu modulu len na čítanie (apron kotviska, sklad), alebo `undefined` pre modul bez slotov. Generický kód
+   * (invarianty kroku 12, obnova save, pravidlo `has_cargo`) sa pýta tu, nie `instanceof` (pravidlo 7, ADR-017).
+   */
+  cargoSlots(): CargoSlotsView | undefined {
+    return undefined;
   }
 
   /**

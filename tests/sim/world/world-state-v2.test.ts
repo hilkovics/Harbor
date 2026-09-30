@@ -45,8 +45,6 @@ function moduleWorld(): ModuleWorld {
   const toApron = (unit: EntityId, berth: BerthModule, slot: number, via: CraneModule): void => {
     world.cargo.move(unit, { kind: 'in_crane', craneId: via.id });
     world.cargo.move(unit, { kind: 'on_apron', berthId: berth.id, slot });
-    berth.apron.reserveSlot(slot);
-    berth.apron.commit(slot, unit);
   };
   toApron(u5, berthA, 0, crane1);
   world.cargo.move(u6, { kind: 'in_crane', craneId: crane1.id });

@@ -203,6 +203,21 @@ describe('invarianty lodí (findWorldViolation)', () => {
       berth(world, placeModule(world, 'berth_standard', EAST_BERTH)).dockedShipId = 999 as EntityId;
     }],
     ['berthIds bez dockedShipId', /má dockedShipId null/, ({ world }) => (berth(world, ROOT_BERTH_ID).dockedShipId = null)],
+    // T02-14 (review T02-13): vetva „dockedShipId existujúcej lode, ktorá kotvisko nemá v berthIds“.
+    [
+      'dockedShipId existujúcej čakajúcej lode, ktorá kotvisko nemá v berthIds',
+      /berth_standard #\d+: dockedShipId \d+, ale feeder #\d+ ho nemá v berthIds/,
+      ({ world, b }) => {
+        berth(world, placeModule(world, 'berth_standard', EAST_BERTH)).dockedShipId = b.id;
+      },
+    ],
+    [
+      'dockedShipId lode, ktorá drží iné kotvisko',
+      /dockedShipId \d+, ale feeder #\d+ ho nemá v berthIds/,
+      ({ world, a }) => {
+        berth(world, placeModule(world, 'berth_standard', EAST_BERTH)).dockedShipId = a.id;
+      },
+    ],
     ['berthing bez kotvísk', /nedrží kotviská/, ({ a }) => (a.berthIds = [])],
     ['čakajúca loď s kotviskom', /drží kotviská/, ({ b }) => (b.berthIds = [ROOT_BERTH_ID])],
     ['anchorage mimo čakania', /má anchorage 3/, ({ a }) => (a.anchorageIndex = 3)],

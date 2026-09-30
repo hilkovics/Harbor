@@ -40,8 +40,12 @@ test('F2 UI demo: BuildBar a ModuleInspector sa vykreslia a reagujú', async ({ 
   await expect(berth).toHaveAttribute('aria-pressed', 'false');
   await berth.click();
   await expect(berth).toHaveAttribute('aria-pressed', 'true');
-  // aria-disabled: Playwright ho berie ako nepovolený, klik preto vynútime (komponent ho musí ignorovať)
-  await crane.click({ force: true });
+  // žeriav bez peňazí (nezamknutý) sa vybrať dá: ghost bude zelený s ikonou $ a klik do mapy nič nepostaví (§8 bod 6)
+  await crane.click();
+  await expect(crane).toHaveAttribute('aria-pressed', 'true');
+  await expect(berth).toHaveAttribute('aria-pressed', 'false');
+  await berth.click();
+  await expect(berth).toHaveAttribute('aria-pressed', 'true');
   await expect(crane).toHaveAttribute('aria-pressed', 'false');
 
   // ModuleInspector v hre: kotvisko, apron 3/4, loď Feeder 1/4 TEU, odstránenie zablokované s dôvodom
@@ -82,6 +86,9 @@ test('F2 UI demo: BuildBar a ModuleInspector sa vykreslia a reagujú', async ({ 
   await locked.hover();
   await expect(locked.getByRole('tooltip')).toContainText('Vyžaduje technológiu Kvapalné terminály');
   await expect(locked.getByRole('tooltip')).toHaveCSS('opacity', '1');
+  // zamknutá technológiou sa vybrať nedá (aria-disabled: Playwright ju berie ako nepovolenú, klik preto vynútime)
+  await locked.click({ force: true });
+  await expect(locked).toHaveAttribute('aria-pressed', 'false');
   await page.getByTestId('states').screenshot({ path: 'tests/e2e/__screenshots__/f2-ui-demo-states.png' });
 
   expect(errors).toEqual([]);

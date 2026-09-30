@@ -21,7 +21,7 @@ export { SpeedControl } from './speed-control';
 export type { SpeedControlProps } from './speed-control';
 export { HUD_PANEL_BUTTONS, HUD_THROTTLE_MS, TopHUD, TopHUDView, resolveSpeedRequest, useSetGameSpeed } from './top-hud';
 export type { TopHUDProps, TopHUDViewProps } from './top-hud';
-export { BuildBar, categoryKey, itemStatus, itemTooltip, resolveItemSelection, toIconName } from './build-bar';
+export { BuildBar, itemStatus, itemTooltip, resolveItemSelection, toIconName } from './build-bar';
 export type { BuildBarCategory, BuildBarItem, BuildBarItemStatus, BuildBarProps, ItemTooltip } from './build-bar';
 export {
   CRANE_STATE_LABELS,

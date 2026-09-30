@@ -1,8 +1,10 @@
 /**
  * BuildBar (DESIGN_BRIEF §6.1–§6.2; rozloženie z prototypu design/ui/game-ui.source.html, <footer>): spodný pás
- * `--build-bar-h` (96 px) — hore riadok kategórií (taby s klávesou 1–n, vpravo nápoveda R / Esc), pod ním položky
- * aktívnej kategórie: ikona + názov + cena · rozmer. Stavy položky: dostupná / nedostatok peňazí (cena
- * `--ui-money-neg`, tooltip „Chýba …") / zamknutá (zámok, tooltip s dôvodom). Vybraná položka má accent obrys.
+ * `--build-bar-h` (96 px) — hore riadok kategórií (taby, vpravo nápoveda R / Esc), pod ním položky aktívnej
+ * kategórie: ikona + názov + cena · rozmer. Klávesy 1–4 patria rýchlostiam hry (ARCHITECTURE §15.2), preto taby
+ * nemajú číselnú nápovedu. Stavy položky: dostupná / nedostatok peňazí (cena `--ui-money-neg`, tooltip „Chýba …";
+ * položku ide vybrať — ghost je zelený s ikonou $ a klik nič nepostaví, ARCHITECTURE §8 bod 6) / zamknutá (zámok,
+ * tooltip s dôvodom, nevyberateľná). Vybraná položka má accent obrys.
  *
  * Komponent je čisto prezentačný (props → DOM, bez hookov a bez prístupu k simulácii): zoznam kategórií, ceny
  * a `affordable`/`locked` mu dodá rodič zo snapshotu (`useSimSnapshot(selector, 100)`) a výber zapisuje ďalej cez
@@ -27,7 +29,7 @@ export interface BuildBarItem {
   readonly footprint: { readonly w: number; readonly h: number };
   /** Zamknuté technológiou. */
   readonly locked: boolean;
-  /** Hráč má na cenu hotovosť; `false` → cena červená, položku nejde vybrať. */
+  /** Hráč má na cenu hotovosť; `false` → cena červená a tooltip „Chýba …", položku ale ide vybrať (ghost s ikonou $). */
   readonly affordable: boolean;
   /**
    * Doplnok oproti karte T02-08 (voliteľný): dôvod zámku pre tooltip, napr. `Vyžaduje technológiu Kvapalné terminály
@@ -100,17 +102,13 @@ export function itemTooltip(item: BuildBarItem): ItemTooltip | null {
 }
 
 /**
- * Čo sa stane po kliku na položku: `undefined` = nič (zamknutá / bez peňazí), `null` = zrušenie výberu (klik na už
- * vybranú položku), inak `defId` novej voľby.
+ * Čo sa stane po kliku na položku: `undefined` = nič (zamknutá technológiou), `null` = zrušenie výberu (klik na už
+ * vybranú položku), inak `defId` novej voľby. Drahá (`affordable: false`), ale nezamknutá položka sa vybrať dá:
+ * hráč vidí ghost a cenu, len klik do mapy nič nepostaví (rozhodnutie orchestrátora k §8 bodu 6).
  */
 export function resolveItemSelection(item: BuildBarItem, selectedDefId: string | null): string | null | undefined {
-  if (itemStatus(item) !== 'available') return undefined;
+  if (itemStatus(item) === 'locked') return undefined;
   return item.defId === selectedDefId ? null : item.defId;
-}
-
-/** Klávesa kategórie: poradie od 1 (prototyp: `1`–`6`). */
-export function categoryKey(index: number): string {
-  return String(index + 1);
 }
 
 /** Tooltip pre zamknutú kategóriu (mimo fázy). */
@@ -130,7 +128,7 @@ export function BuildBar({
   return (
     <footer className="build-bar" aria-label="Stavba" data-active-category={activeCategoryId}>
       <div className="build-bar__tabs" role="tablist" aria-label="Kategórie stavby">
-        {categories.map((category, index) => {
+        {categories.map((category) => {
           const isActive = category.id === activeCategoryId;
           const classes = ['build-bar__tab'];
           if (isActive) classes.push('build-bar__tab--active');
@@ -151,7 +149,6 @@ export function BuildBar({
             >
               <Icon name={toIconName(category.icon)} className="build-bar__tab-icon" />
               <span>{category.label}</span>
-              <kbd className="build-bar__key">{categoryKey(index)}</kbd>
               {!category.enabled && <Icon name="ic_lock" className="build-bar__tab-lock" />}
             </button>
           );
@@ -181,7 +178,7 @@ export function BuildBar({
                 type="button"
                 className={classes.join(' ')}
                 aria-pressed={selected}
-                aria-disabled={status !== 'available'}
+                aria-disabled={status === 'locked'}
                 aria-describedby={tip === null ? undefined : tipId}
                 data-def-id={item.defId}
                 data-status={status}

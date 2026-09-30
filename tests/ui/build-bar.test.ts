@@ -5,7 +5,6 @@ import {
   BuildBar,
   TOOLTIP_LOCKED_FALLBACK,
   TOOLTIP_POOR_FALLBACK,
-  categoryKey,
   itemStatus,
   itemTooltip,
   resolveItemSelection,
@@ -120,21 +119,23 @@ describe('resolveItemSelection', () => {
     expect(resolveItemSelection(BERTH, 'berth_standard')).toBeNull();
   });
 
-  it('zamknutá alebo nekúpiteľná položka sa ignoruje (undefined), aj keď je práve vybraná', () => {
-    expect(resolveItemSelection(CRANE, null)).toBeUndefined();
+  it('drahá (affordable: false), ale nezamknutá položka sa vybrať dá; opätovný klik výber zruší', () => {
+    expect(resolveItemSelection(CRANE, null)).toBe('crane_container_gantry');
+    expect(resolveItemSelection(CRANE, 'berth_standard')).toBe('crane_container_gantry');
+    expect(resolveItemSelection(CRANE, 'crane_container_gantry')).toBeNull();
+  });
+
+  it('zamknutá technológiou sa ignoruje (undefined), aj keď je práve vybraná a hráč má peniaze', () => {
     expect(resolveItemSelection(LOCKED, null)).toBeUndefined();
-    expect(resolveItemSelection(CRANE, 'crane_container_gantry')).toBeUndefined();
+    expect(resolveItemSelection(LOCKED, 'arm_liquid')).toBeUndefined();
+    expect(resolveItemSelection({ ...LOCKED, affordable: false }, null)).toBeUndefined();
   });
 });
 
-describe('toIconName / categoryKey', () => {
+describe('toIconName', () => {
   it('názov ikony s prefixom `ic_` aj bez neho', () => {
     expect(toIconName('ic_berth')).toBe('ic_berth');
     expect(toIconName('berth')).toBe('ic_berth');
-  });
-
-  it('klávesa kategórie je poradie od 1', () => {
-    expect([0, 1, 5].map(categoryKey)).toEqual(['1', '2', '6']);
   });
 });
 
@@ -151,9 +152,10 @@ describe('BuildBar — kategórie', () => {
     expect(html).toContain('title="Sklady · čoskoro"');
   });
 
-  it('klávesové skratky 1–6 pri tabov a nápoveda R / Esc vpravo', () => {
+  it('taby nemajú číselné nápovedy (klávesy 1–4 sú rýchlosti hry); vpravo ostáva nápoveda R / Esc', () => {
     const html = render();
-    expect([...html.matchAll(/build-bar__key">(\d)</g)].map((match) => match[1])).toEqual(['1', '2', '3', '4', '5', '6']);
+    expect(html).not.toMatch(/build-bar__key">\d</);
+    expect(html.match(/<kbd /g)).toHaveLength(2);
     expect(html).toMatch(/build-bar__key">R<\/kbd><span>otočiť<\/span>/);
     expect(html).toMatch(/build-bar__key build-bar__key--gap">Esc<\/kbd><span>zrušiť<\/span>/);
   });
@@ -181,10 +183,10 @@ describe('BuildBar — položky', () => {
     expect(html).toContain('Kotvisko štandard');
   });
 
-  it('stav položky: data-status, trieda a aria-disabled', () => {
+  it('stav položky: data-status, trieda a aria-disabled (len zamknutá je nedostupná, drahá sa dá vybrať)', () => {
     const html = render();
     expect(html).toMatch(/aria-disabled="false"[^>]*data-def-id="berth_standard"[^>]*data-status="available"/);
-    expect(html).toMatch(/aria-disabled="true"[^>]*data-def-id="crane_container_gantry"[^>]*data-status="unaffordable"/);
+    expect(html).toMatch(/aria-disabled="false"[^>]*data-def-id="crane_container_gantry"[^>]*data-status="unaffordable"/);
     expect(html).toMatch(/aria-disabled="true"[^>]*data-def-id="arm_liquid"[^>]*data-status="locked"/);
     expect(html).toContain('build-bar__item--unaffordable');
     expect(html).toContain('build-bar__item--locked');
@@ -221,7 +223,7 @@ describe('BuildBar — položky', () => {
     expect(render()).not.toContain('build-bar__empty');
   });
 
-  it('klik: dostupná položka volá onSelect(defId), vybraná onSelect(null), nekúpiteľná a zamknutá nič', () => {
+  it('klik: dostupná aj drahá položka volá onSelect(defId), vybraná onSelect(null), zamknutá nič', () => {
     const onSelect = vi.fn();
     const item = (tree: ReturnType<typeof BuildBar>, defId: string) =>
       findAll(tree, (element) => propsOf(element)['data-def-id'] === defId)[0]!;
@@ -237,8 +239,11 @@ describe('BuildBar — položky', () => {
     expect(onSelect).toHaveBeenLastCalledWith(null);
     expect(onSelect).toHaveBeenCalledTimes(2);
 
-    click(fresh, 'crane_container_gantry');
-    click(fresh, 'arm_liquid');
-    expect(onSelect).toHaveBeenCalledTimes(2);
+    click(fresh, 'crane_container_gantry'); // bez peňazí, ale nezamknutá: ghost s ikonou $ (ARCHITECTURE §8 bod 6)
+    expect(onSelect).toHaveBeenLastCalledWith('crane_container_gantry');
+    expect(onSelect).toHaveBeenCalledTimes(3);
+
+    click(fresh, 'arm_liquid'); // zamknutá technológiou
+    expect(onSelect).toHaveBeenCalledTimes(3);
   });
 });

@@ -101,10 +101,6 @@
   line-height: var(--lh-normal);
 }
 
-.build-bar__tab--locked .build-bar__key {
-  color: var(--ui-text-3);
-}
-
 .build-bar__spacer {
   flex: 1;
 }
@@ -165,18 +161,19 @@
   background: var(--ui-surface-2);
 }
 
-/* Nedostupná (zámok / bez peňazí): hover nemení obrys na accent, kurzor hovorí „nejde". */
-.build-bar__item--locked,
-.build-bar__item--unaffordable {
+/*
+ * Zamknutá položka: hover nemení obrys na accent, kurzor hovorí „nejde". Položka bez peňazí je vyberateľná (ghost
+ * s ikonou $), preto si necháva bežný kurzor aj hover — jej stav nesie červená cena a tooltip „Chýba …".
+ */
+.build-bar__item--locked {
   cursor: not-allowed;
 }
 
-.build-bar__item--locked:hover,
-.build-bar__item--unaffordable:hover {
+.build-bar__item--locked:hover {
   border-color: var(--ui-border);
 }
 
-/* Vybraná položka (prototyp ju nemá — výber prinášajú T02-09/T02-10): accent obrys 2 px. */
+/* Vybraná položka (prototyp ju nemá — výber prináša T02-10): accent obrys 2 px. */
 .build-bar__item--selected,
 .build-bar__item--selected:hover {
   border-color: var(--ui-accent);

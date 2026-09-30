@@ -54,6 +54,11 @@ describe('build-bar.css — pravidlá komponentu', () => {
     expect(css.ruleBody('.build-bar__item--locked .build-bar__item-icon')).toMatch(/color:\s*var\(--ui-text-3\)/);
   });
 
+  it('kurzor not-allowed má len zamknutá položka; drahá je vyberateľná (ghost s ikonou $), takže ho nemá', () => {
+    expect(css.ruleBody('.build-bar__item--locked')).toMatch(/cursor:\s*not-allowed/);
+    expect(source).not.toMatch(/\.build-bar__item--unaffordable(?::hover)?\s*[,{]/);
+  });
+
   it('vybraná položka má accent obrys; hover a focus taktiež', () => {
     expect(css.ruleBody('.build-bar__item--selected,\n.build-bar__item--selected:hover')).toMatch(/border-color:\s*var\(--ui-accent\)/);
     expect(css.ruleBody('.build-bar__item:hover,\n.build-bar__item:focus-visible')).toMatch(/border-color:\s*var\(--ui-accent\)/);

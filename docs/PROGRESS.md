@@ -155,3 +155,16 @@ Stav: **hotová** (T04-01..T04-14). Plná pipeline T04-13 je zelená:
   - reštart kontajnera prerušil T04-08B a T04-11 — práca bola obnovená z patchu, resp. spustená znova;
   - ADR kamiónov má číslo 024, lebo T04-03 potrebovala vlastné ADR-023;
   - PR hilkovics/Harbor#5 založil používateľ proti `main`, obsahuje fázy 0–4.
+
+## Fáza 5 — Kontrakty, ledger, HUD → VERTICAL SLICE (M1)
+Karty: `docs/tasks/phase-05.md` · vetva `phase/05-contracts-vertical-slice` (stacked nad hilkovics/Harbor#5)
+
+- [ ] `contract_templates.json` (3 šablóny container), `economy.json` hodnoty.
+- [ ] `Contract` FSM (§9.1), `ContractSystem` (pool denne, expiry, spawn lode pri prijatí, SLA, demurrage, late penalty, fail, completion payout, XP).
+- [ ] `Economy` + `Ledger` (kategórie, `DaySummary`), `MoneyChanged`, `PenaltyApplied`; CAPEX pri stavaní, `module_sale` pri odstránení.
+- [ ] Odstrániť debug spawn; `AcceptContractCommand`, `DeclineContractCommand`.
+- [ ] Dispatcher krok 2 filtruje jednotky podľa kontraktu v stave `exporting`, prioritizuje podľa SLA.
+- [ ] UI: `ContractsPanel`, `TopHUD` skutočný cash + dnešná delta + XP, `Toasts` pre eventy, `GameOver` modal.
+- [ ] `data/scenarios/vertical_slice.json` + golden report v `tests/sim/__golden__/`.
+
+Akceptácia (**M1**): novú hru sa dá odohrať od prijatia kontraktu po výplatu bez debug príkazov; `/sim-check` zelený, `lostUnits = 0`.

@@ -6,9 +6,9 @@ import { DefRegistry } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
 import type { CellCoord, Cell } from '@sim/grid';
 import { World } from '@sim/world';
-import { DEFS, MAP, MAP_GRID, RAW_DEFS, SEED, findCell, hashState } from '../world/world-fixtures';
+import { BARE_MAP, DEFS, MAP, MAP_GRID, RAW_DEFS, SEED, findCell, hashState } from '../world/world-fixtures';
 
-export { DEFS, MAP, SEED, findCell, hashState };
+export { BARE_MAP, DEFS, MAP, SEED, findCell, hashState };
 
 export const ROAD_COST = DEFS.infrastructure.road.costPerCellCents;
 export const REFUND_RATE = DEFS.economy.removalRefundRate;
@@ -16,6 +16,11 @@ export const START_CASH = DEFS.economy.startingCashCents;
 
 export function newWorld(defs: DefRegistry = DEFS): World {
   return World.create(defs, MAP, SEED);
+}
+
+/** Svet na harbor_01 bez Root modulu (T02-04) — príkazy modulov stavajú na (40, 14) samy. */
+export function newBareWorld(defs: DefRegistry = DEFS): World {
+  return World.create(defs, BARE_MAP, SEED);
 }
 
 /** Defy s upravenou cenou cesty a/alebo mierou refundácie (ostatné hodnoty z data/defs). */

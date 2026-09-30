@@ -4,7 +4,11 @@
  */
 import type { CellCoord } from '../grid/grid';
 
-/** Dôvody odmietnutia príkazu (F1 výber; ďalšie pribudnú s ďalšími príkazmi). */
+/**
+ * Dôvody odmietnutia príkazu. Poradie je kanonické — výsledok validácie ich vracia v tomto poradí (`orderReasons`).
+ * F1: prvých osem; F2 (docs/tasks/phase-02.md „Spoločné rozhrania", ADR-015): moduly (`PlaceModule`, `RemoveModule`)
+ * a ladiaca loď (`SpawnShipDebug`, T02-05). Nový dôvod = nový riadok tu + slovenský popis v UI (`REASON_TEXT`).
+ */
 export const VALIDATION_REASONS = [
   'out_of_bounds',
   'terrain',
@@ -14,6 +18,38 @@ export const VALIDATION_REASONS = [
   'no_road',
   'invalid_speed',
   'empty',
+  /** `PlaceModule`: def s daným id v `modules.json` nie je. */
+  'unknown_def',
+  /** Kotvisko: bunka hrany pri vode (`waterSide` po rotácii) nesusedí s vodou. */
+  'no_water_side',
+  /** Kotvisko: pás `frontWaterCells` pred hranou nie je celý voľná voda v mape (modul, pás iného kotviska, okraj). */
+  'water_blocked',
+  /** Žeriav: footprint neleží celý na jednom kotvisku. */
+  'no_berth',
+  /** Žeriav: rotácia sa líši od rotácie kotviska. */
+  'rotation_mismatch',
+  /** Žeriav: kotvisko už má `maxCranes` žeriavov. */
+  'max_cranes',
+  /** `RemoveModule`: na kotvisku stoja žeriavy. */
+  'has_cranes',
+  /** `RemoveModule`: modul drží náklad alebo má obsadený/rezervovaný slot. */
+  'has_cargo',
+  /** `RemoveModule`: pri kotvisku kotví loď. */
+  'ship_docked',
+  /** `RemoveModule`: žeriav je uprostred cyklu. */
+  'busy',
+  /** `RemoveModule`: modul s daným id neexistuje. */
+  'unknown_module',
+  /** `SpawnShipDebug` (T02-05): neznáma trieda lode. */
+  'unknown_ship_class',
+  /** `SpawnShipDebug` (T02-05): neznámy typ nákladu. */
+  'unknown_cargo',
+  /** `SpawnShipDebug` (T02-05): loď daný náklad neprevezie (kategória). */
+  'cargo_incompatible',
+  /** `SpawnShipDebug` (T02-05): počet jednotiek mimo rozsahu. */
+  'invalid_units',
+  /** `PlaceModule`: rotácia mimo 0, 90, 180, 270. */
+  'invalid_rotation',
 ] as const;
 
 export type ValidationReason = (typeof VALIDATION_REASONS)[number];
@@ -34,4 +70,9 @@ export interface ValidationResult {
    * (napr. refundácia `RemoveRoad`, ADR-012). Pri odmietnutí cena platnej časti (`cells`).
    */
   readonly costCents: number;
+}
+
+/** Dôvody z množiny v kanonickom poradí `VALIDATION_REASONS` (deterministické, bez duplicít), zmrazené. */
+export function orderReasons(found: ReadonlySet<ValidationReason>): readonly ValidationReason[] {
+  return Object.freeze(VALIDATION_REASONS.filter((reason) => found.has(reason)));
 }

@@ -51,7 +51,7 @@ export function readPayload(json: SerializedCommand, type: string, keys: readonl
 }
 
 /** Súradnica bunky musí byť bezpečné celé číslo (aj záporné — mimo mapy je `out_of_bounds` vo `validate`). */
-function checkCoordinate(value: unknown, type: string, path: string): number {
+export function checkCoordinate(value: unknown, type: string, path: string): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
     throw new CommandError(`${type}${path}: súradnica musí byť celé číslo, dostal ${describeValue(value)}`);
   }
@@ -89,5 +89,19 @@ export function checkFiniteNumber(value: unknown, type: string, path: string): n
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     throw new CommandError(`${type}${path}: musí byť konečné číslo, dostal ${describeValue(value)}`);
   }
+  return value;
+}
+
+/** Bezpečné celé číslo (napr. id entity); či entita existuje, hlási až `validate`. */
+export function checkInteger(value: unknown, type: string, path: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
+    throw new CommandError(`${type}${path}: musí byť celé číslo, dostal ${describeValue(value)}`);
+  }
+  return value;
+}
+
+/** Reťazec (napr. id defu); či def existuje, hlási až `validate`. */
+export function checkString(value: unknown, type: string, path: string): string {
+  if (typeof value !== 'string') throw new CommandError(`${type}${path}: musí byť reťazec, dostal ${describeValue(value)}`);
   return value;
 }

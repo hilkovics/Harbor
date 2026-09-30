@@ -2,8 +2,8 @@
  * Register typov príkazov: `type` → factory (CLAUDE.md, pravidlo 7 — žiadny `switch`). Základ replay scenárov
  * a save (ARCHITECTURE §12.2): `commandFromJSON(cmd.toJSON())` vytvorí ekvivalentný príkaz.
  *
- * Nová `CommandRegistry` je prázdna; predvolený `commandRegistry` má vstavané príkazy (`PlaceRoad`, `RemoveRoad`,
- * `SetGameSpeed` — `builtin-commands.ts`) zaregistrované pri načítaní tohto modulu (staticky), nie počas hry.
+ * Nová `CommandRegistry` je prázdna; predvolený `commandRegistry` má vstavané príkazy (`BUILTIN_COMMANDS` v
+ * `builtin-commands.ts`) zaregistrované pri načítaní tohto modulu (staticky), nie počas hry.
  */
 import { registerBuiltinCommands } from './builtin-commands';
 import type { Command, SerializedCommand } from './command';

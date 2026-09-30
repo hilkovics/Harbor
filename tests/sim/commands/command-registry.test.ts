@@ -7,8 +7,11 @@ import {
   RemoveRoadCommand,
   SetGameSpeedCommand,
   VALIDATION_REASONS,
+  PlaceModuleCommand,
+  RemoveModuleCommand,
   commandFromJSON,
   commandRegistry,
+  orderReasons,
   registerBuiltinCommands,
   type Command,
   type SerializedCommand,
@@ -75,7 +78,7 @@ describe('CommandRegistry (kostra T01-03)', () => {
     expect(new CommandRegistry().types).toEqual([]);
   });
 
-  it('VALIDATION_REASONS zodpovedajú „Spoločným rozhraniam" F1', () => {
+  it('VALIDATION_REASONS zodpovedajú „Spoločným rozhraniam" F1 + F2 (F1 ostáva na začiatku v pôvodnom poradí)', () => {
     expect([...VALIDATION_REASONS]).toEqual([
       'out_of_bounds',
       'terrain',
@@ -85,21 +88,54 @@ describe('CommandRegistry (kostra T01-03)', () => {
       'no_road',
       'invalid_speed',
       'empty',
+      'unknown_def',
+      'no_water_side',
+      'water_blocked',
+      'no_berth',
+      'rotation_mismatch',
+      'max_cranes',
+      'has_cranes',
+      'has_cargo',
+      'ship_docked',
+      'busy',
+      'unknown_module',
+      'unknown_ship_class',
+      'unknown_cargo',
+      'cargo_incompatible',
+      'invalid_units',
+      'invalid_rotation',
     ]);
+    expect(new Set(VALIDATION_REASONS).size).toBe(VALIDATION_REASONS.length);
+  });
+
+  it('orderReasons: kanonické poradie VALIDATION_REASONS, bez duplicít, zmrazené', () => {
+    const ordered = orderReasons(new Set(['invalid_rotation', 'occupied', 'unknown_def', 'out_of_bounds'] as const));
+    expect(ordered).toEqual(['out_of_bounds', 'occupied', 'unknown_def', 'invalid_rotation']);
+    expect(Object.isFrozen(ordered)).toBe(true);
+    expect(orderReasons(new Set())).toEqual([]);
   });
 });
 
-describe('vstavané príkazy (T01-04)', () => {
-  it('predvolený register pozná PlaceRoad, RemoveRoad, SetGameSpeed v poradí BUILTIN_COMMANDS', () => {
-    expect(commandRegistry.types).toEqual(['PlaceRoad', 'RemoveRoad', 'SetGameSpeed']);
+describe('vstavané príkazy (T01-04, T02-04)', () => {
+  it('predvolený register pozná PlaceRoad, RemoveRoad, SetGameSpeed, PlaceModule, RemoveModule v poradí BUILTIN_COMMANDS', () => {
+    expect(commandRegistry.types).toEqual(['PlaceRoad', 'RemoveRoad', 'SetGameSpeed', 'PlaceModule', 'RemoveModule']);
     expect(BUILTIN_COMMANDS.map((command) => command.TYPE)).toEqual(commandRegistry.types);
   });
 
   it('TYPE triedy = type inštancie = toJSON().type', () => {
-    const instances = [new PlaceRoadCommand([]), new RemoveRoadCommand([]), new SetGameSpeedCommand(1)];
-    expect(instances.map((command) => command.type)).toEqual(['PlaceRoad', 'RemoveRoad', 'SetGameSpeed']);
-    expect(instances.map((command) => command.toJSON().type)).toEqual(['PlaceRoad', 'RemoveRoad', 'SetGameSpeed']);
-    expect([PlaceRoadCommand.TYPE, RemoveRoadCommand.TYPE, SetGameSpeedCommand.TYPE]).toEqual(instances.map((c) => c.type));
+    const instances = [
+      new PlaceRoadCommand([]),
+      new RemoveRoadCommand([]),
+      new SetGameSpeedCommand(1),
+      new PlaceModuleCommand({ defId: 'berth_standard', x: 0, y: 0, rotation: 0 }),
+      new RemoveModuleCommand(1),
+    ];
+    const types = ['PlaceRoad', 'RemoveRoad', 'SetGameSpeed', 'PlaceModule', 'RemoveModule'];
+    expect(instances.map((command) => command.type)).toEqual(types);
+    expect(instances.map((command) => command.toJSON().type)).toEqual(types);
+    expect([PlaceRoadCommand.TYPE, RemoveRoadCommand.TYPE, SetGameSpeedCommand.TYPE, PlaceModuleCommand.TYPE, RemoveModuleCommand.TYPE]).toEqual(
+      instances.map((c) => c.type),
+    );
   });
 
   it('registerBuiltinCommands naplní nový register; opakovaná registrácia → CommandError', () => {
@@ -116,7 +152,7 @@ describe('vstavané príkazy (T01-04)', () => {
     vi.resetModules();
     const direct = await import('@sim/commands/command-registry');
     expect(direct.commandRegistry).not.toBe(commandRegistry);
-    expect(direct.commandRegistry.types).toEqual(['PlaceRoad', 'RemoveRoad', 'SetGameSpeed']);
+    expect(direct.commandRegistry.types).toEqual(['PlaceRoad', 'RemoveRoad', 'SetGameSpeed', 'PlaceModule', 'RemoveModule']);
     expect(direct.commandFromJSON({ type: 'RemoveRoad', cells: [] }).type).toBe('RemoveRoad');
   });
 });

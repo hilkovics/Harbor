@@ -59,8 +59,9 @@ describe('Grid — konštrukcia', () => {
     expect(grid.width).toBe(W);
     expect(grid.height).toBe(H);
     expect(grid.cellCount).toBe(W * H);
-    expect(grid.at(0, 0)).toEqual({ terrain: 'deep_water', depthClass: 0, parcelId: null, moduleId: null, road: 'none', traffic: 0 });
-    expect(grid.at(4, 2)).toEqual({ terrain: 'quay', depthClass: 2, parcelId: 'p', moduleId: null, road: 'none', traffic: 0 });
+    const empty = { moduleId: null, road: 'none', roadKind: 'two_lane', roadDir: null, traffic: 0 };
+    expect(grid.at(0, 0)).toEqual({ terrain: 'deep_water', depthClass: 0, parcelId: null, ...empty });
+    expect(grid.at(4, 2)).toEqual({ terrain: 'quay', depthClass: 2, parcelId: 'p', ...empty });
   });
 
   it('predvolené depthClass 0 a parcelId null', () => {
@@ -249,10 +250,13 @@ describe('Grid.clone', () => {
   it('hlboká kópia vrátane dynamických polí, nezávislá od originálu', () => {
     const grid = sampleGrid();
     grid.at(1, 3).road = 'road';
+    grid.at(1, 3).roadKind = 'one_way';
+    grid.at(1, 3).roadDir = 'E';
     grid.at(2, 3).moduleId = 5 as EntityId;
     grid.at(3, 3).traffic = 1.5;
 
     const copy = grid.clone();
+    expect([copy.at(1, 3).roadKind, copy.at(1, 3).roadDir]).toEqual(['one_way', 'E']);
     expect(copy).not.toBe(grid);
     expect(copy.width).toBe(W);
     expect(copy.height).toBe(H);
@@ -262,8 +266,11 @@ describe('Grid.clone', () => {
     }
 
     copy.at(1, 3).road = 'rail';
+    copy.at(1, 3).roadKind = 'two_lane';
+    copy.at(1, 3).roadDir = null;
     copy.at(0, 3).road = 'road';
     expect(grid.at(1, 3).road).toBe('road');
+    expect([grid.at(1, 3).roadKind, grid.at(1, 3).roadDir]).toEqual(['one_way', 'E']);
     expect(grid.at(0, 3).road).toBe('none');
   });
 });

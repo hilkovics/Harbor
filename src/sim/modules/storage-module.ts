@@ -89,6 +89,11 @@ export abstract class StorageModule extends Module {
     return this.outCount;
   }
 
+  /** `params.internalTicks` (chýba → `undefined`, platí `logistics.defaultInternalTicks`). */
+  override vehicleInternalTicks(): number | undefined {
+    return this.params.internalTicks;
+  }
+
   override cargoSlots(): CargoSlotsView {
     return this.slots;
   }

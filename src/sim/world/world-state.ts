@@ -8,8 +8,9 @@
  * z `reservedSlot` žeriavov a skupiny kotvísk prepočtom. Sklad (T03-02, ADR-017) ukladal v `runtime` rezervácie slotov
  * a počítadlá `unitsIn`/`unitsOut`, depo `{}` (v3: rezervácie sa odvodia z jobov, ADR-018).
  *
- * v3 (T03-04, T03-05, docs/tasks/phase-03.md rozhodnutie 10) = v2 + `vehicles` (vzostupne podľa id: id, def, depo,
- * stav, poloha, kurz, job, zaplatená cena) a `jobs` (aktívne joby vzostupne podľa id: id, jednotky, `from`, `to`,
+ * v3 (T03-04…T03-06, docs/tasks/phase-03.md rozhodnutie 10) = v2 + `vehicles` (vzostupne podľa id: id, def, depo,
+ * stav, poloha, kurz, job, zaplatená cena, zvyšok trasy, progres úseku, odpočet a príznak preplánovania — ADR-019)
+ * a `jobs` (aktívne joby vzostupne podľa id: id, jednotky, `from`, `to`,
  * `createdTick` — ADR-018). `VehicleDepot.vehicleIds` sa neukladá — odvodí sa z `depotId` vozidiel v poradí id
  * (= poradie nákupu). Vozidlo jobu a jeho stav sa odvodia z vozidla s daným `jobId` a z polohy nákladu, rezervácie
  * slotov skladu z `to` aktívnych jobov (runtime skladu = len počítadlá) a kotvisko ukladá hodinu posledného
@@ -38,7 +39,7 @@ import { SERIALIZED_JOB_KEYS, isJobRoute, type SerializedJob } from '../logistic
 import type { ModuleRuntimeState } from '../modules/runtime-state';
 import { SERIALIZED_SHIP_KEYS, type SerializedShip } from '../ships/ship';
 import { SHIP_STATES, SHIP_STATE_TRAITS, type ShipState } from '../ships/ship-fsm';
-import { SERIALIZED_VEHICLE_KEYS, type SerializedVehicle } from '../vehicles/vehicle';
+import { SERIALIZED_VEHICLE_KEYS, vehiclePosition, type SerializedVehicle } from '../vehicles/vehicle';
 import { VEHICLE_STATES, VEHICLE_STATE_TRAITS, isVehicleState, type VehicleState } from '../vehicles/vehicle-fsm';
 import { WORLD_STATE_V2, WORLD_STATE_V3_KEYS, WORLD_STATE_VERSION } from './migrate';
 import { WorldStateError, checkArray, checkInteger, checkKeys, describeValue, isPlainObject, pointerSegment } from './state-check';
@@ -134,7 +135,10 @@ export interface ParsedShipEntry {
   readonly waypointIndex: number;
 }
 
-/** Vozidlo zo save s overeným tvarom (známy def, stav, job podľa stavu); depo a náklad overí `restoreEntities`. */
+/**
+ * Vozidlo zo save s overeným tvarom (známy def, stav, job podľa stavu, trasa po susedných bunkách, poloha na trase,
+ * tvar trasy a odpočet podľa stavu); depo, job, náklad a cesty pod trasou overí `restoreEntities`.
+ */
 export interface ParsedVehicleEntry {
   readonly id: EntityId;
   readonly defId: string;
@@ -145,6 +149,10 @@ export interface ParsedVehicleEntry {
   readonly heading: Rotation;
   readonly jobId: EntityId | null;
   readonly purchaseCostCents: number;
+  readonly route: readonly number[];
+  readonly progress: number;
+  readonly waitTicks: number;
+  readonly replan: boolean;
 }
 
 /** Job zo save s overeným tvarom (lokácie, dvojica druhov, jednotky); stav, vozidlo a vzťahy k svetu odvodí obnova. */
@@ -376,13 +384,33 @@ function parseShips(value: unknown, defs: DefRegistry, map: LoadedMap, nextId: n
   });
 }
 
+/** Trasa vozidla: neprázdny zoznam indexov buniek v mape, susedné za sebou (4-susednosť). */
+function parseRoute(value: unknown, path: string, grid: Grid): number[] {
+  const route = checkArray(value, path).map((raw: unknown, i) => {
+    const cell = checkInteger(raw, 0, `${path}${pointerSegment(i)}`);
+    if (cell >= grid.cellCount) throw new WorldStateError(`${path}${pointerSegment(i)}`, `index bunky musí byť 0…${String(grid.cellCount - 1)}, dostal ${String(cell)}`);
+    return cell;
+  });
+  if (route.length === 0) throw new WorldStateError(path, 'trasa musí obsahovať aspoň bunku vozidla');
+  for (let i = 1; i < route.length; i++) {
+    const a = grid.coordOf(route[i - 1]);
+    const b = grid.coordOf(route[i]);
+    if (Math.abs(a.x - b.x) + Math.abs(a.y - b.y) !== 1) {
+      throw new WorldStateError(`${path}${pointerSegment(i)}`, `bunka ${String(route[i])} nesusedí s predchádzajúcou ${String(route[i - 1])}`);
+    }
+  }
+  return route;
+}
+
 /**
  * Tvar vozidiel: presne kľúče `SerializedVehicle`, id celé 1…`nextId − 1` a ostro rastúce (poradie nákupu = poradie
- * v depe), známy def, `depotId` celé ≥ 1, stav z `VEHICLE_STATES`, poloha v rozsahu mapy, platný kurz, `jobId` `null`
- * alebo celé ≥ 1 a zodpovedajúci stavu (`VEHICLE_STATE_TRAITS.hasJob`), `purchaseCostCents` celé ≥ 0. Depo, job
- * a náklad overí obnova (`restoreEntities`).
+ * v depe), známy def, `depotId` celé ≥ 1, stav z `VEHICLE_STATES`, platný kurz, `jobId` `null` alebo celé ≥ 1
+ * a zodpovedajúci stavu (`VEHICLE_STATE_TRAITS.hasJob`), `purchaseCostCents` celé ≥ 0, trasa (`parseRoute`), progres
+ * v `[0, 1)` (> 0 len s ďalšou bunkou), `waitTicks` celé ≥ 0, `replan` boolean; poloha `x`, `y` = poloha na trase
+ * (`vehiclePosition`). Tvar trasy, odpočet a príznak podľa stavu, depo, job, náklad a cesty pod trasou overí obnova
+ * (`restoreEntities`, `vehicleMotionProblem`).
  */
-function parseVehicles(value: unknown, defs: DefRegistry, map: LoadedMap, nextId: number): ParsedVehicleEntry[] {
+function parseVehicles(value: unknown, defs: DefRegistry, map: LoadedMap, grid: Grid, nextId: number): ParsedVehicleEntry[] {
   let previousId = 0;
   return checkArray(value, '/vehicles').map((raw: unknown, i): ParsedVehicleEntry => {
     const path = `/vehicles${pointerSegment(i)}`;
@@ -406,7 +434,20 @@ function parseVehicles(value: unknown, defs: DefRegistry, map: LoadedMap, nextId
       throw new WorldStateError(`${path}/jobId`, VEHICLE_STATE_TRAITS[state].hasJob ? `stav '${state}' vyžaduje job` : `stav '${state}' nesmie mať job`);
     }
     const purchaseCostCents = checkInteger(entry['purchaseCostCents'], 0, `${path}/purchaseCostCents`);
-    return { id: id as EntityId, defId, depotId: depotId as EntityId, state, x, y, heading, jobId: jobId as EntityId | null, purchaseCostCents };
+    const route = parseRoute(entry['route'], `${path}/route`, grid);
+    const progress = entry['progress'];
+    if (typeof progress !== 'number' || !Number.isFinite(progress) || progress < 0 || progress >= 1) {
+      throw new WorldStateError(`${path}/progress`, `musí byť číslo v [0, 1), dostal ${describeValue(progress)}`);
+    }
+    if (progress > 0 && route.length < 2) throw new WorldStateError(`${path}/progress`, `progres ${String(progress)} bez ďalšej bunky na trase`);
+    const waitTicks = checkInteger(entry['waitTicks'], 0, `${path}/waitTicks`);
+    const replan = entry['replan'];
+    if (typeof replan !== 'boolean') throw new WorldStateError(`${path}/replan`, `musí byť boolean, dostal ${describeValue(replan)}`);
+    const expected = vehiclePosition(route[0], route[1], progress, grid.width);
+    if (expected.x !== x || expected.y !== y) {
+      throw new WorldStateError(`${path}/x`, `poloha (${String(x)}, ${String(y)}) nie je na trase — očakávaná (${String(expected.x)}, ${String(expected.y)})`);
+    }
+    return { id: id as EntityId, defId, depotId: depotId as EntityId, state, x, y, heading, jobId: jobId as EntityId | null, purchaseCostCents, route, progress, waitTicks, replan };
   });
 }
 
@@ -522,7 +563,7 @@ export function parseWorldState(raw: unknown, defs: DefRegistry, map: LoadedMap,
   const modules = parseModules(state.modules, defs, nextId);
   const cargo = parseCargo(state.cargo, defs, nextId);
   const ships = parseShips(state.ships, defs, map, nextId);
-  const vehicles = parseVehicles(state.vehicles, defs, map, nextId);
+  const vehicles = parseVehicles(state.vehicles, defs, map, grid, nextId);
   const jobs = parseJobs(state.jobs, nextId, clock.tick);
   checkIdCollisions(modules, ships, vehicles, jobs, cargo);
   return { seed, clock, rng, ids, cashCents, roads, traffic, ownership, modules, cargo, ships, vehicles, jobs };

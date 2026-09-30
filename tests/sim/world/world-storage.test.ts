@@ -91,6 +91,8 @@ describe('sklad a depo vo svete', () => {
     const { world, yard, depot } = storageWorld();
     store(world, yard);
     store(world, yard);
+    world.grid.at(35, 23).road = 'road'; // vozidlo stojí na ceste pred depom (krok 12, ADR-019)
+    world.markRoadsChanged();
     const vehicle = addVehicleTo(world, depot.id); // vozidlo cez World (T03-04) — depo ho eviduje vo vehicleIds
     expect(depot.vehicleIds).toEqual([vehicle.id]);
     expect([yard.storedCount, yard.reservedCount, yard.freeCount, yard.unitsIn]).toEqual([2, 0, 62, 2]);

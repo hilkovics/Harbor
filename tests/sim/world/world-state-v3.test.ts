@@ -1,7 +1,8 @@
-// WorldState v3 (T03-04; docs/tasks/phase-03.md rozhodnutie 10; ARCHITECTURE §14): vozidlá v save (id, def, depo,
-// stav, poloha, kurz, job, zaplatená cena) vzostupne podľa id, joby zatiaľ prázdne; roundtrip (depo dostane vehicleIds
-// v poradí nákupu, rovnaký ďalší priebeh), fail-fast parsovanie aj obnova s JSON pointermi, náklad in_vehicle sa overí
-// voči existencii, kapacite a kategóriám vozidla.
+// WorldState v3 (T03-04…T03-06; docs/tasks/phase-03.md rozhodnutie 10; ARCHITECTURE §14; ADR-018, ADR-019): vozidlá
+// v save (id, def, depo, stav, poloha, kurz, job, zaplatená cena, zvyšok trasy, progres, odpočet, príznak preplánovania)
+// vzostupne podľa id; roundtrip (depo dostane vehicleIds v poradí nákupu, rovnaký ďalší priebeh), fail-fast parsovanie
+// aj obnova s JSON pointermi, náklad in_vehicle sa overí voči existencii, kapacite, kategóriám a jobu vozidla. Joby
+// podrobne: world-jobs.test.ts.
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@sim/core';
 import type { VehicleDepot } from '@sim/modules';
@@ -12,6 +13,8 @@ import { GRAIN, GRAIN_DEFS, STRADDLE, STRADDLE_DEF, addVehicleTo, buy, carryingV
 import { DEFS, MAP, SEED, hashState, runTicks } from './world-fixtures';
 
 const id = (value: number): EntityId => value as EntityId;
+/** Index vonkajšej bunky depa (35, 23) na harbor_01 (šírka 96) — trasa nečinného vozidla z `fleetWorld`. */
+const ROUTE_CELL = 23 * 96 + 35;
 
 function viaJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -111,6 +114,19 @@ describe('World.deserialize — neplatné vozidlá (parsovanie)', () => {
     ['to_pickup bez jobu', (_s, v) => (v[0].state = 'to_pickup'), '/vehicles/0/jobId', /vyžaduje job/],
     ['záporná cena', (_s, v) => (v[0].purchaseCostCents = -1), '/vehicles/0/purchaseCostCents'],
     ['job bez kľúčov (tvar SerializedJob, T03-05)', (s) => (s.jobs = [{ id: 99 }]), '/jobs/0/unitIds', /chýba/],
+    ['trasa nie je pole (T03-06)', (_s, v) => (v[0].route = 5), '/vehicles/0/route'],
+    ['prázdna trasa', (_s, v) => (v[0].route = []), '/vehicles/0/route', /aspoň bunku/],
+    ['bunka trasy mimo mapy', (_s, v) => (v[0].route = [96 * 64]), '/vehicles/0/route/0'],
+    ['nesusedná bunka trasy', (_s, v) => (v[0].route = [ROUTE_CELL, ROUTE_CELL + 2]), '/vehicles/0/route/1', /nesusedí/],
+    ['progres 1', (_s, v) => (v[0].progress = 1), '/vehicles/0/progress'],
+    ['progres bez ďalšej bunky', (_s, v) => (v[0].progress = 0.5), '/vehicles/0/progress', /bez ďalšej bunky/],
+    ['záporný waitTicks', (_s, v) => (v[0].waitTicks = -1), '/vehicles/0/waitTicks'],
+    ['replan nie je boolean', (_s, v) => (v[0].replan = 1), '/vehicles/0/replan'],
+    ['poloha mimo trasy', (_s, v) => (v[0].x = (v[0].x as number) + 1), '/vehicles/0/x', /nie je na trase/],
+    ['idle s odpočtom', (_s, v) => (v[0].waitTicks = 3), '/vehicles/0/waitTicks', /musí byť 0/],
+    ['idle s príznakom preplánovania', (_s, v) => (v[0].replan = true), '/vehicles/0/replan'],
+    ['idle s trasou pred sebou', (_s, v) => (v[0].route = [ROUTE_CELL, ROUTE_CELL + 96]), '/vehicles/0/route', /stojí, ale má pred sebou/],
+    ['vozidlo na bunke bez cesty', (_s, v) => ((v[0].route = [ROUTE_CELL + 1]), (v[0].x = (v[0].x as number) + 1)), '/vehicles/0/route', /bez cesty/],
     ['jobs nie je pole', (s) => (s.jobs = null), '/jobs'],
   ];
 

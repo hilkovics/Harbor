@@ -120,6 +120,10 @@ describe('BuyVehicle.apply', () => {
       heading: 180,
       jobId: null,
       purchaseCostCents: STRADDLE_DEF.purchaseCents,
+      route: [world.grid.index(DEPOT_OUTSIDE.x, DEPOT_OUTSIDE.y)], // stojí na výjazde z depa (T03-06, ADR-019)
+      progress: 0,
+      waitTicks: 0,
+      replan: false,
     });
     expect(depot.vehicleIds).toEqual([nextId]);
     expect(() => world.assertInvariants()).not.toThrow();

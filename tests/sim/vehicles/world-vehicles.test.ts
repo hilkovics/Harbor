@@ -192,7 +192,7 @@ describe('invarianty vozidiel (krok 12)', () => {
   });
 });
 
-describe('vozidlá počas ticku (T03-04: bez VehicleSystem)', () => {
+describe('vozidlá počas ticku bez práce (žiadny náklad → žiadny job)', () => {
   it('kúpené vozidlá stoja idle na vonkajšej bunke depa, krok 12 prechádza, stav sa nemení', () => {
     const { world, depot } = depotWorld();
     execute(world, buy(depot.id));

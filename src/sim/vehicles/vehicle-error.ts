@@ -20,7 +20,9 @@ export type VehicleErrorCode =
   /** `World.removeVehicle`: vozidlo nie je `idle` alebo má job. */
   | 'busy'
   /** `Vehicle.transition`: prechod mimo `VEHICLE_TRANSITIONS`. */
-  | 'invalid_transition';
+  | 'invalid_transition'
+  /** `VehicleSystem`: vozidlo v stave s jobom bez jobu, modulu alebo nákladu, ktorý stav predpokladá (poškodený svet). */
+  | 'inconsistent';
 
 export class VehicleError extends Error {
   readonly code: VehicleErrorCode;

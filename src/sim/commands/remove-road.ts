@@ -1,8 +1,9 @@
 /**
  * `RemoveRoad { cells }` — odstránenie cesty z buniek (ARCHITECTURE §5.1, §12.2; ADR-006, ADR-008, ADR-012).
  *
- * Každá unikátna bunka v mape musí mať cestu (`road === 'road'`; bez cesty alebo s koľajou → `no_road`) a platí
- * pravidlo parcely ako pri stavbe (parcela na predaj → `parcel_not_owned`, ADR-008). Refundácia (ADR-012, ADR-015):
+ * Každá unikátna bunka v mape musí mať cestu (`road === 'road'`; bez cesty alebo s koľajou → `no_road`), platí
+ * pravidlo parcely ako pri stavbe (parcela na predaj → `parcel_not_owned`, ADR-008) a nesmie ju zaberať vozidlo —
+ * stojace ani ako cieľ rozbehnutého úseku (`occupied`, `World.vehicleOnCell`, ADR-019). Refundácia (ADR-012, ADR-015):
  * `refundCents(bunky × infrastructure.road.costPerCellCents, economy.removalRefundRate)` z celého príkazu naraz
  * (celočíselne v bázických bodoch), kategória `road_sale`; vo `ValidationResult.costCents` je záporná (príjem).
  * Spoločné pravidlá: `RoadLayerCommand`.
@@ -31,9 +32,10 @@ export class RemoveRoadCommand extends RoadLayerCommand {
     return new RemoveRoadCommand(parseCellCommand(json, RemoveRoadCommand.TYPE));
   }
 
-  protected inspectCell(world: World, cell: Readonly<Cell>): CellVerdict {
+  protected inspectCell(world: World, cell: Readonly<Cell>, index: number): CellVerdict {
     const reasons: ValidationReason[] = [];
     if (cell.road !== 'road') reasons.push('no_road');
+    if (world.vehicleOnCell(index) !== undefined) reasons.push('occupied');
     if (!this.parcelAllowsInfrastructure(world, cell)) reasons.push('parcel_not_owned');
     return reasons.length === 0 ? CHANGE_CELL : reasons;
   }

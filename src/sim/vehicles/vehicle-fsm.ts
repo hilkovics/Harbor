@@ -31,6 +31,16 @@ export function isVehicleTransitionAllowed(from: VehicleState, to: VehicleState)
   return VEHICLE_TRANSITIONS.get(from)?.includes(to) ?? false;
 }
 
+/**
+ * Pohyb vozidla v stave: `park` — stojí v strede bunky bez ďalšej trasy (`route = [cell]`, progres 0); `drive` — ide po
+ * platnej trase k prístupovej bunke modulu (aspoň jedna cieľová bunka); `halt` — stojí bez cesty (`no_path`): v strede
+ * bunky (`[cell]`) alebo uprostred rozbehnutého úseku (`[cell, nextCell]`, progres > 0).
+ */
+export type VehicleMotion = 'park' | 'drive' | 'halt';
+
+/** Modul jobu, ku ktorému vozidlo ide alebo pri ktorom stojí: zdroj (`from`) alebo cieľ (`to`). */
+export type VehicleDestination = 'source' | 'target';
+
 /** Čo platí pre vozidlo v danom stave. */
 export interface VehicleStateTraits {
   /** Vozidlo má aktívny job (`jobId !== null`) — všetky stavy okrem `idle`. */
@@ -40,15 +50,26 @@ export interface VehicleStateTraits {
    * vyzdvihnutím `assigned`, s nákladom `moving`; rozhodne poloha nákladu jobu (`JOB_STATE_TRAITS.cargoAt`).
    */
   readonly jobStates: readonly JobState[];
+  readonly motion: VehicleMotion;
+  /** Stav s odpočtom `waitTicks ≥ 1` (pobyt v module, nový pokus o cestu); ostatné stavy majú `waitTicks = 0`. */
+  readonly waits: boolean;
+  /** Modul jobu, ku ktorému vozidlo ide / pri ktorom stojí; `null` = žiadny (`idle`) alebo podľa jobu (`no_path`). */
+  readonly destination: VehicleDestination | null;
 }
 
 export const VEHICLE_STATE_TRAITS: { readonly [S in VehicleState]: VehicleStateTraits } = Object.freeze({
-  idle: Object.freeze({ hasJob: false, jobStates: Object.freeze([] as const) }),
-  to_pickup: Object.freeze({ hasJob: true, jobStates: Object.freeze(['assigned'] as const) }),
-  loading: Object.freeze({ hasJob: true, jobStates: Object.freeze(['picking'] as const) }),
-  to_dropoff: Object.freeze({ hasJob: true, jobStates: Object.freeze(['moving'] as const) }),
-  unloading: Object.freeze({ hasJob: true, jobStates: Object.freeze(['dropping'] as const) }),
-  no_path: Object.freeze({ hasJob: true, jobStates: Object.freeze(['assigned', 'moving'] as const) }),
+  idle: Object.freeze({ hasJob: false, jobStates: Object.freeze([] as const), motion: 'park', waits: false, destination: null }),
+  to_pickup: Object.freeze({ hasJob: true, jobStates: Object.freeze(['assigned'] as const), motion: 'drive', waits: false, destination: 'source' }),
+  loading: Object.freeze({ hasJob: true, jobStates: Object.freeze(['picking'] as const), motion: 'park', waits: true, destination: 'source' }),
+  to_dropoff: Object.freeze({ hasJob: true, jobStates: Object.freeze(['moving'] as const), motion: 'drive', waits: false, destination: 'target' }),
+  unloading: Object.freeze({ hasJob: true, jobStates: Object.freeze(['dropping'] as const), motion: 'park', waits: true, destination: 'target' }),
+  no_path: Object.freeze({ hasJob: true, jobStates: Object.freeze(['assigned', 'moving'] as const), motion: 'halt', waits: true, destination: null }),
+} as const);
+
+/** Stav jazdy, do ktorého sa vozidlo vráti z `no_path`, podľa stavu jobu (`assigned` → k zdroju, `moving` → k cieľu). */
+export const RESUME_AFTER_NO_PATH: Readonly<Partial<Record<JobState, 'to_pickup' | 'to_dropoff'>>> = Object.freeze({
+  assigned: 'to_pickup',
+  moving: 'to_dropoff',
 });
 
 /** Je hodnota jeden zo stavov vozidla? */

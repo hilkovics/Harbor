@@ -53,10 +53,10 @@ export abstract class RoadLayerCommand implements Command {
   }
 
   /**
-   * Posúdi jednu bunku v mape (volá sa raz pre každú unikátnu bunku). Nesmie meniť svet.
+   * Posúdi jednu bunku v mape s row-major indexom `index` (volá sa raz pre každú unikátnu bunku). Nesmie meniť svet.
    * `CHANGE_CELL` = bunka sa zmení, `'skip'` = bez zmeny a bez chyby, inak dôvody odmietnutia.
    */
-  protected abstract inspectCell(world: World, cell: Readonly<Cell>): CellVerdict;
+  protected abstract inspectCell(world: World, cell: Readonly<Cell>, index: number): CellVerdict;
 
   /** Cena v centoch za `cellCount` menených buniek; záporná = príjem (refundácia). Nesmie meniť svet. */
   protected abstract costForCells(world: World, cellCount: number): number;
@@ -110,7 +110,7 @@ export abstract class RoadLayerCommand implements Command {
       const index = grid.index(x, y);
       if (seen.has(index)) continue;
       seen.add(index);
-      const verdict = this.inspectCell(world, grid.at(x, y));
+      const verdict = this.inspectCell(world, grid.at(x, y), index);
       if (verdict === 'skip') continue;
       if (verdict.length === 0) changed.push(Object.freeze({ x, y }));
       for (const reason of verdict) found.add(reason);

@@ -24,6 +24,11 @@ export class VehicleDepot extends Module {
     this.params = depotParams(init.def);
   }
 
+  /** `params.internalTicks` (chýba → `undefined`, platí `logistics.defaultInternalTicks`). */
+  override vehicleInternalTicks(): number | undefined {
+    return this.params.internalTicks;
+  }
+
   /** Počet státí (`params.capacity`). */
   get capacity(): number {
     return this.params.capacity;

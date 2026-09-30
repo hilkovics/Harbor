@@ -4,8 +4,8 @@
  * a mení ho výlučne cez `Command` (pravidlo 5).
  *
  * Tick pipeline (§6): príkazy z fronty → krok 1 (`clock.advance()` + udalosti hraníc) → krok 3 (`ShipSystem`) →
- * krok 4 (`CraneSystem`) → krok 5 (`DispatcherSystem`) → krok 12 (`assertInvariants()`, ak je zapnuté
- * `checkInvariants`) → krok 13 (`events.flush()`). Ďalšie kroky pribúdajú so systémami na označenom mieste v `tick()`; poradie §6 je záväzné
+ * krok 4 (`CraneSystem`) → krok 5 (`DispatcherSystem`) → krok 6 (`VehicleSystem`) → krok 11 (`MetricsSystem`, traffic)
+ * → krok 12 (`assertInvariants()`, ak je zapnuté `checkInvariants`) → krok 13 (`events.flush()`). Ďalšie kroky pribúdajú so systémami na označenom mieste v `tick()`; poradie §6 je záväzné
  * a mení sa len cez ADR.
  *
  * Moduly (ADR-014): `addModule`/`removeModule` sú štrukturálne operácie pre príkazy (`PlaceModule`/`RemoveModule`,
@@ -16,8 +16,9 @@
  * Lode (ADR-016): `addShip`/`removeShip` sú štrukturálne operácie pre `SpawnShipDebug`, `ShipSystem` a obnovu zo save;
  * pohyb, kotviská a FSM riadi `ShipSystem`.
  *
- * Vozidlá (T03-04): `addVehicle`/`removeVehicle` sú štrukturálne operácie pre `BuyVehicle`/`SellVehicle` a obnovu zo
- * save — spravujú aj `VehicleDepot.vehicleIds`. FSM a pohyb doplní T03-06.
+ * Vozidlá (T03-04, T03-06): `addVehicle`/`removeVehicle` sú štrukturálne operácie pre `BuyVehicle`/`SellVehicle` a obnovu
+ * zo save — spravujú aj `VehicleDepot.vehicleIds`; FSM, pohyb a load/unload riadi `VehicleSystem` (krok 6, ADR-019).
+ * `vehicleOnCell` hovorí, či bunku zaberá vozidlo (`RemoveRoad` → `occupied`).
  *
  * Joby (T03-05, ADR-018): `addJob`/`removeJob` sú štrukturálne operácie pre dispatcher (krok 5), `VehicleSystem`
  * a obnovu zo save; `jobOfUnit` je index jednotka → aktívny job (odvodený, neukladá sa).
@@ -29,13 +30,14 @@
  * Cestná sieť (T03-03): `roadVersion` je počítadlo zmien vrstvy ciest (`markRoadsChanged` volá `PlaceRoad`/`RemoveRoad`
  * a `deserialize`); `pathfinder` (A*), `paths` (`PathCache`) a `distances` (`DistanceMatrix`) vznikajú lenivo pri prvom
  * použití a cache sa pri zmene `roadVersion` samy vyprázdnia — bez odberu udalostí. Nič z toho nie je v save.
+ * `markRoadsChanged` zároveň označí jazdiace vozidlá na preplánovanie (`Vehicle.replanPending`, ide do save — ADR-019).
  */
 import { CargoLedger } from '../cargo/cargo-ledger';
 import type { CargoLedgerState } from '../cargo/cargo-ledger-state';
 import { isSameLocation } from '../cargo/cargo-location';
 import { EntityIdAllocator, type EntityId } from '../core/entity-id';
 import { EventBus } from '../core/event-bus';
-import { INITIAL_SPEED, SimClock } from '../core/sim-clock';
+import { INITIAL_SPEED, SimClock, type ClockBoundaries } from '../core/sim-clock';
 import { Rng } from '../core/rng';
 import type { Command } from '../commands/command';
 import { DefError, type DefRegistry } from '../defs/def-registry';
@@ -61,10 +63,13 @@ import { Pathfinder } from '../logistics/pathfinder';
 import { JOB_STATE_TRAITS, type TransportJob } from '../logistics/transport-job';
 import { CraneSystem } from '../systems/crane-system';
 import { DispatcherSystem } from '../systems/dispatcher-system';
+import { MetricsSystem } from '../systems/metrics-system';
+import { VehicleSystem } from '../systems/vehicle-system';
 import { ShipSystem } from '../systems/ship-system';
 import { StatResolver } from '../tech/stat-resolver';
 import type { Vehicle } from '../vehicles/vehicle';
 import { VehicleError } from '../vehicles/vehicle-error';
+import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle-fsm';
 import { connectorCellsOf, isModuleConnected, type ConnectorCell } from './connectivity';
 import { migrateWorldState } from './migrate';
 import { PLACEMENT_RULE_ERROR, attachesToHost, findPlacementViolations, findRemovalViolations } from './module-rules';
@@ -161,6 +166,8 @@ export class World {
   private readonly shipSystem = new ShipSystem();
   private readonly craneSystem = new CraneSystem();
   private readonly dispatcherSystem = new DispatcherSystem();
+  private readonly vehicleSystem = new VehicleSystem();
+  private readonly metricsSystem = new MetricsSystem();
   private roadChanges = 0;
   private pathfinderInstance: Pathfinder | undefined;
   private pathCache: PathCache | undefined;
@@ -276,10 +283,14 @@ export class World {
 
   /**
    * Zapíše zmenu cestnej siete (volá `PlaceRoad`/`RemoveRoad` po zápise `cell.road` a `deserialize` po obnove ciest).
-   * Kto mení `cell.road` inou cestou, musí ho zavolať tiež, inak cache ciest ostanú zastarané.
+   * Kto mení `cell.road` inou cestou, musí ho zavolať tiež, inak cache ciest ostanú zastarané a vozidlá by jazdili
+   * po starej trase. Jazdiace vozidlá (`motion: 'drive'`) dostanú `replanPending` — preplánujú v najbližšom kroku 6.
    */
   markRoadsChanged(): void {
     this.roadChanges += 1;
+    for (const vehicle of this.vehicleMap.values()) {
+      if (VEHICLE_STATE_TRAITS[vehicle.state].motion === 'drive') vehicle.replanPending = true;
+    }
   }
 
   /** A* nad cestami tohto sveta (§7.4); vznikne pri prvom použití (pracovné polia pre celú mriežku). */
@@ -520,6 +531,18 @@ export class World {
   }
 
   /**
+   * Vozidlo, ktoré zaberá bunku s indexom `index` — stojí na nej (`vehicle.cell`), alebo je to cieľová bunka jeho
+   * rozbehnutého úseku (ADR-019); inak `undefined`. `RemoveRoad` takú bunku odmietne (`occupied`). Prechádza vozidlá
+   * vzostupne podľa id (príkazy, nie hot path).
+   */
+  vehicleOnCell(index: number): Vehicle | undefined {
+    for (const vehicle of this.vehicleMap.values()) {
+      if (vehicle.cell === index || (vehicle.progress > 0 && vehicle.nextCell === index)) return vehicle;
+    }
+    return undefined;
+  }
+
+  /**
    * Konektory modulu v poradí defu (po rotácii) s vonkajšou bunkou a `hasRoad` = na vonkajšej bunke v mape je cesta
    * (ADR-017). Počíta sa z aktuálnej mriežky pri každom volaní (nová kópia) — pre UI a ladenie, nie hot path.
    */
@@ -591,7 +614,8 @@ export class World {
   /**
    * Jeden tick simulácie (§6). Rýchlosť hry tu nehrá rolu — koľko tickov sa vykoná, riadi `GameLoop`.
    * Vráti udalosti ticku v poradí vzniku: udalosti príkazov, `TickAdvanced`, potom `HourClosed`, `DayClosed`,
-   * `MonthClosed` (od najmenšej hranice), ak sa uzavreli, a udalosti krokov 3–12 (lode, žeriavy, `CargoMoved`).
+   * `MonthClosed` (od najmenšej hranice), ak sa uzavreli, a udalosti krokov 3–12 (lode, žeriavy, joby, vozidlá,
+   * `CargoMoved`).
    * Pri zapnutom `checkInvariants` krok 12 pri porušení vyhodí `CargoConservationError` / `WorldInvariantError`.
    */
   tick(): readonly SimEvent[] {
@@ -599,7 +623,7 @@ export class World {
     this.applyQueuedCommands();
 
     // 1. clock.advance() — tick++, hranice hodiny/dňa/mesiaca.
-    this.advanceClock();
+    const closed = this.advanceClock();
 
     // 2. contractSystem — pribudne vo F4/F5.
 
@@ -612,7 +636,13 @@ export class World {
     // 5. dispatcher — inbound joby s rezerváciou skladu, priradenie voľných vozidiel (ADR-018).
     this.dispatcherSystem.tick(this);
 
-    // 6.–11. vehicle, flow, landside, economy, tech, metrics — pribudnú v ďalších fázach presne v poradí §6.
+    // 6. vehicleSystem — FSM vozidiel, pohyb po trase, pobyt v module, load/unload (ADR-019).
+    this.vehicleSystem.tick(this);
+
+    // 7.–10. flow, landside, economy, tech — pribudnú v ďalších fázach presne v poradí §6.
+
+    // 11. metricsSystem — traffic pod vozidlami po pohybe, decay pri HourClosed.
+    this.metricsSystem.tick(this, closed.hourClosed);
 
     // 12. invarianty (DEV/testy): konzervácia nákladu + konzistencia modulov, apronov, žeriavov a lodí.
     if (this.checkInvariants) this.assertInvariants();
@@ -751,13 +781,14 @@ export class World {
     }
   }
 
-  /** Krok 1: posun hodín a udalosti `TickAdvanced` + uzavreté hranice. */
-  private advanceClock(): void {
+  /** Krok 1: posun hodín a udalosti `TickAdvanced` + uzavreté hranice; vráti hranice pre neskoršie kroky (krok 11). */
+  private advanceClock(): ClockBoundaries {
     const closed = this.clock.advance();
     const tick = this.clock.tick;
     this.events.emit({ type: 'TickAdvanced', tick });
     if (closed.hourClosed) this.events.emit({ type: 'HourClosed', tick });
     if (closed.dayClosed) this.events.emit({ type: 'DayClosed', tick });
     if (closed.monthClosed) this.events.emit({ type: 'MonthClosed', tick });
+    return closed;
   }
 }

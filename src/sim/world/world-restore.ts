@@ -5,7 +5,8 @@
  * vzostupne podľa id cez `World.addVehicle` (T03-04; depo dostane `vehicleIds` v poradí id = poradí nákupu), potom
  * kontrola držiteľov a slotov nákladu (slot v kapacite apronu/skladu, náklad vozidla v jeho kapacite a kategóriách),
  * joby vzostupne podľa id (T03-05: vozidlo a stav jobu sa odvodia z vozidla s daným `jobId` a z polohy nákladu,
- * `World.addJob`, rezervácia slotu v cieľovom sklade), náklad vozidla patrí jeho jobu, rezervácie apronov
+ * `World.addJob`, rezervácia slotu v cieľovom sklade), náklad vozidla patrí jeho jobu, pohyb vozidla zodpovedá stavu
+ * (trasa, odpočet, cesty — `vehicleMotionProblem`), rezervácie apronov
  * z `reservedSlot` žeriavov, držané jednotky žeriavov z `in_crane` a hodiny throttlov (`lastBlockedHour`,
  * `lastNoStorageHour`) nie sú v budúcnosti. Obsadenie apronov a skladov sa neobnovuje — čítajú ho z ledgera (ADR-017).
  * Na koniec beží `findWorldViolation` ako poistka. Každá chyba je `WorldStateError` s JSON pointerom.
@@ -26,6 +27,7 @@ import { mooringProblem, shipRoute } from '../ships/ship-route';
 import { Vehicle } from '../vehicles/vehicle';
 import { VehicleError, type VehicleErrorCode } from '../vehicles/vehicle-error';
 import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle-fsm';
+import { vehicleMotionProblem } from '../vehicles/vehicle-trip';
 import { CARGO_HOLDER_SOURCES } from './cargo-holders';
 import { WorldStateError, pointerSegment } from './state-check';
 import type { World } from './world';
@@ -131,6 +133,7 @@ const VEHICLE_ERROR_FIELD: { readonly [C in VehicleErrorCode]: string } = {
   has_cargo: 'id',
   busy: 'state',
   invalid_transition: 'state',
+  inconsistent: 'state',
 };
 
 /**
@@ -153,6 +156,10 @@ function restoreVehicles(world: World, entries: readonly ParsedVehicleEntry[]): 
           heading: entry.heading,
           jobId: entry.jobId,
           purchaseCostCents: entry.purchaseCostCents,
+          route: entry.route,
+          progress: entry.progress,
+          waitTicks: entry.waitTicks,
+          replanPending: entry.replan,
         }),
       );
     } catch (error) {
@@ -335,6 +342,19 @@ function restoreCraneReservations(world: World, indexOf: ReadonlyMap<EntityId, n
   }
 }
 
+/**
+ * Pohyb vozidiel zodpovedá stavu (`vehicleMotionProblem`, ADR-019): tvar trasy a odpočet podľa stavu, cesty pod
+ * vozidlom a pod trasou, cieľ trasy / miesto pobytu na prístupovej bunke modulu jobu. Volá sa po `restoreJobs`.
+ */
+function checkVehicleMotion(world: World): void {
+  let index = 0;
+  for (const vehicle of world.vehicles.values()) {
+    const problem = vehicleMotionProblem(world, vehicle);
+    if (problem !== undefined) throw new WorldStateError(`${vehiclePath(index)}/${problem.field}`, problem.problem);
+    index += 1;
+  }
+}
+
 /** Hodina posledného `NoStorageAvailable` kotviska nesmie byť v budúcnosti (ADR-018). */
 function checkBerthHours(world: World, indexOf: ReadonlyMap<EntityId, number>): void {
   for (const module of world.modules.values()) {
@@ -431,6 +451,7 @@ export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'mo
   checkUnitSlots(world, units);
   restoreJobs(world, parsed.jobs);
   checkVehicleCargoJobs(world, units);
+  checkVehicleMotion(world);
   checkBerthHours(world, indexOf);
   restoreCraneReservations(world, indexOf, unitIndexOf);
   restoreHeldCargo(world, units);

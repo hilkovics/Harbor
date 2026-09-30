@@ -175,6 +175,7 @@ describe('priradenie vozidiel', () => {
       y: 17.5,
       heading: 90,
       purchaseCostCents: 0,
+      route: [world.grid.index(45, 17)],
     });
     world.addVehicle(near);
     unitsOnApron(world, [0]);

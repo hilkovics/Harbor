@@ -12,7 +12,8 @@
  * **Priradenie:** joby `open` v poradí vzniku (vzostupne podľa id); z voľných (`idle`) vozidiel, ktoré vozia kategóriu
  * nákladu jobu, vyhrá najmenšia cena cesty z bunky vozidla k prístupovej bunke zdroja (`distanceToModule`), pri zhode
  * menšie id. Vozidlo bez cesty k zdroju job nedostane; job bez vozidla ostáva `open`. Priradenie: `job.assign`,
- * `vehicle.jobId`, `JobAssigned` a vozidlo `idle → to_pickup` (`VehicleStateChanged`).
+ * `vehicle.jobId`, `JobAssigned` a jazda k zdroju (`startTrip`: `idle → to_pickup` + `VehicleStateChanged` a trasa;
+ * pohyb v kroku 6 toho istého ticku, ADR-019).
  *
  * Hot path: žiadne `filter`/`map`/closures v cykle; aprony sa čítajú cez `CargoLedger.countAt`/`unitAtIndex` bez kópie
  * a mapy sveta sa prechádzajú v poradí id. Alokuje sa len nový job (jeho zoznam jednotiek a lokácie).
@@ -20,7 +21,7 @@
 import type { CargoCategory } from '../defs/types';
 import { BerthModule } from '../modules/berth-module';
 import type { Vehicle } from '../vehicles/vehicle';
-import { changeVehicleState } from '../vehicles/vehicle-fsm';
+import { startTrip } from '../vehicles/vehicle-trip';
 import type { World } from '../world/world';
 import { distanceToModule } from './module-access';
 import { allocateStorage } from './storage-allocator';
@@ -74,11 +75,6 @@ export function createInboundJobs(world: World): void {
   }
 }
 
-/** Bunka, na ktorej stojí voľné vozidlo (stred bunky = x + 0,5). */
-function idleCellOf(world: World, vehicle: Vehicle): number {
-  return world.grid.index(Math.floor(vehicle.x), Math.floor(vehicle.y));
-}
-
 /** Počet voľných vozidiel (`idle`) — priradenie skončí, keď žiadne neostane. */
 function idleVehicleCount(world: World): number {
   let count = 0;
@@ -100,7 +96,7 @@ export function chooseVehicle(world: World, job: TransportJob): Vehicle | undefi
   let bestCost = Infinity;
   for (const vehicle of world.vehicles.values()) {
     if (vehicle.state !== 'idle' || !vehicle.def.cargoCategories.includes(category)) continue;
-    const cost = distanceToModule(world, idleCellOf(world, vehicle), source);
+    const cost = distanceToModule(world, vehicle.cell, source);
     if (cost < bestCost) {
       best = vehicle;
       bestCost = cost;
@@ -114,7 +110,7 @@ function assign(world: World, job: TransportJob, vehicle: Vehicle): void {
   job.assign(vehicle.id);
   vehicle.jobId = job.id;
   world.events.emit({ type: 'JobAssigned', jobId: job.id, vehicleId: vehicle.id });
-  changeVehicleState(world.events, vehicle, 'to_pickup');
+  startTrip(world, vehicle, 'to_pickup');
 }
 
 /** Priradenie (§7.3 bod 3): joby `open` v poradí vzniku dostanú najbližšie voľné kompatibilné vozidlo. */

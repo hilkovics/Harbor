@@ -13,8 +13,8 @@
  * `techRequired` vozidla sa zatiaľ nevyhodnocuje (tech strom príde v neskoršej fáze, ako pri moduloch).
  *
  * `apply`: vozidlo s novým id (`world.ids`), stav `idle`, v strede vonkajšej bunky prvého pripojeného cestného
- * konektora depa s kurzom von z depa (`depotExit`), `purchaseCostCents = def.purchaseCents`; `world.addVehicle` ho
- * pripojí k depu, hotovosť −= cena, `VehicleBought` a pri nenulovej cene `MoneyChanged(vehicle_capex)`.
+ * konektora depa (trasa `[táto bunka]`) s kurzom von z depa (`depotExit`), `purchaseCostCents = def.purchaseCents`;
+ * `world.addVehicle` ho pripojí k depu, hotovosť −= cena, `VehicleBought` a pri nenulovej cene `MoneyChanged(vehicle_capex)`.
  */
 import type { EntityId } from '../core/entity-id';
 import type { CellCoord } from '../grid/grid';
@@ -100,6 +100,7 @@ export class BuyVehicleCommand implements Command {
       heading: exit.heading,
       jobId: null,
       purchaseCostCents: result.costCents,
+      route: [world.grid.index(exit.cell.x, exit.cell.y)],
     });
     world.addVehicle(vehicle);
     const deltaCents = 0 - result.costCents;

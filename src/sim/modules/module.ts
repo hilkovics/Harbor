@@ -102,6 +102,15 @@ export abstract class Module {
   }
 
   /**
+   * Vnútorný čas vozidla pri vstupe do modulu (§7.3 bod 4, ADR-011) z `params.internalTicks` modulu; `undefined` =
+   * modul ho neurčuje a platí `logistics.defaultInternalTicks`. Prepíšu ho triedy, ktorých params pole majú (sklad,
+   * depo) — generický kód sa pýta tu, nie `instanceof` (pravidlo 7).
+   */
+  vehicleInternalTicks(): number | undefined {
+    return undefined;
+  }
+
+  /**
    * Dynamický stav pre save (čistý JSON, nová kópia pri každom volaní). Základ: modul bez vlastného stavu → `{}`.
    * Podtrieda so stavom prepíše `getRuntimeState` aj `restoreRuntimeState`.
    */

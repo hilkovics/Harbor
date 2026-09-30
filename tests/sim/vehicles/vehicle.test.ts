@@ -30,6 +30,7 @@ const BASE: VehicleInit = {
   y: 30.5,
   heading: 180,
   purchaseCostCents: STRADDLE_DEF.purchaseCents,
+  route: [30 * 96 + 47],
 };
 
 describe('stavy vozidla', () => {
@@ -75,7 +76,21 @@ describe('Vehicle', () => {
     const vehicle = new Vehicle({ ...BASE, state: 'to_pickup', jobId: id(12), purchaseCostCents: 0 });
     const state = vehicle.toState();
     expect(Object.keys(state)).toEqual([...SERIALIZED_VEHICLE_KEYS]);
-    expect(state).toEqual({ id: 7, defId: 'straddle_carrier', depotId: 3, state: 'to_pickup', x: 47.5, y: 30.5, heading: 180, jobId: 12, purchaseCostCents: 0 });
+    expect(state).toEqual({
+      id: 7,
+      defId: 'straddle_carrier',
+      depotId: 3,
+      state: 'to_pickup',
+      x: 47.5,
+      y: 30.5,
+      heading: 180,
+      jobId: 12,
+      purchaseCostCents: 0,
+      route: [30 * 96 + 47],
+      progress: 0,
+      waitTicks: 0,
+      replan: false,
+    });
     expect(JSON.parse(JSON.stringify(state))).toStrictEqual(state);
     expect(vehicle.toState()).not.toBe(state);
   });

@@ -75,7 +75,7 @@ export function depotWorld(options: { readonly roads?: boolean; readonly yard?: 
   return { world, depot: depot as VehicleDepot };
 }
 
-/** Vozidlo priamo do sveta (`World.addVehicle`) s novým id; predvolene `idle` na vonkajšej bunke depa. */
+/** Vozidlo priamo do sveta (`World.addVehicle`) s novým id; predvolene `idle` na vonkajšej bunke depa (trasa `[táto bunka]`). */
 export function addVehicleTo(world: World, depotId: EntityId, overrides: Partial<VehicleInit> = {}): Vehicle {
   const vehicle = new Vehicle({
     id: world.ids.next(),
@@ -86,6 +86,7 @@ export function addVehicleTo(world: World, depotId: EntityId, overrides: Partial
     y: DEPOT_OUTSIDE.y + 0.5,
     heading: 180,
     purchaseCostCents: STRADDLE_DEF.purchaseCents,
+    route: [world.grid.index(DEPOT_OUTSIDE.x, DEPOT_OUTSIDE.y)],
     ...overrides,
   });
   world.addVehicle(vehicle);
@@ -101,8 +102,9 @@ export interface CarryingVehicle {
 
 /**
  * Konzistentné vozidlo s nákladom (rozhodnutie orchestrátora F3 č. 5: náklad vezie len vozidlo s jobom): vozidlo stojí
- * na vonkajšej bunke dvora `yard` v stave `unloading`, jeho job (`dropping`, zdroj apron Root berthu) má rezervovaný
- * slot v dvore a jednotka je vo vozidle (reťaz §7.1 cez fiktívne loď/žeriav — len ledger).
+ * na vonkajšej bunke dvora `yard` (`YARD_OUTSIDE`) v stave `unloading` s pobytom `unloadTicks`, jeho job (`dropping`,
+ * zdroj apron Root berthu) má rezervovaný slot v dvore a jednotka je vo vozidle (reťaz §7.1 cez fiktívne loď/žeriav —
+ * len ledger).
  */
 export function carryingVehicle(world: World, depotId: EntityId, yard: StorageModule, overrides: Partial<VehicleInit> = {}): CarryingVehicle {
   const vehicleId = world.ids.next();
@@ -113,6 +115,8 @@ export function carryingVehicle(world: World, depotId: EntityId, yard: StorageMo
     jobId,
     x: YARD_OUTSIDE.x + 0.5,
     y: YARD_OUTSIDE.y + 0.5,
+    route: [world.grid.index(YARD_OUTSIDE.x, YARD_OUTSIDE.y)],
+    waitTicks: STRADDLE_DEF.unloadTicks,
     ...overrides,
   });
   const unit = world.cargo.create('container_teu', { kind: 'on_ship', shipId: 900 as EntityId }).id;

@@ -31,6 +31,9 @@ export { CARGO_HOLDER_SOURCES, MODULE_CARGO_HOLDER_KINDS } from './cargo-holders
 // Pripojenie modulov k ceste (ADR-017) — World.isConnected / connectorCells a §8 bod 5 (connector_blocked).
 export { connectorCellsOf, isModuleConnected, isOutsideUsable } from './connectivity';
 export type { ConnectorCell } from './connectivity';
+// Pozemný exportný reťazec (ADR-022) — strany brán, priechody stojiskami, trasy kamiónov a prevádzkovosť rámp.
+export { LandsideNetwork, NO_GATE_SIDES } from './landside';
+export type { GateSides, LandsideEnv, LandsideRoute } from './landside';
 export type { CargoHolderWorld } from './cargo-holders';
 // Parcela patrí mriežke/mape (src/sim/grid/parcel.ts); tu len re-export pre pohodlie konzumentov `World`.
 export type { Parcel, ParcelOwnership } from '../grid/parcel';

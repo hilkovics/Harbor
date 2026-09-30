@@ -68,6 +68,22 @@ describe('World.addVehicle', () => {
     expect(world.vehicles.size).toBe(1);
   });
 
+  it('poradie addVehicle porovnáva s najväčším prítomným id: po predaji posledného prejde staršie id nad ostatnými (T03-14)', () => {
+    const { world, depot } = depotWorld();
+    const first = addVehicleTo(world, depot.id);
+    const middleId = world.ids.next();
+    const newest = addVehicleTo(world, depot.id);
+    world.removeVehicle(newest.id);
+    addVehicleTo(world, depot.id, { id: middleId });
+    expect([...world.vehicles.keys()]).toEqual([first.id, middleId]);
+    expectVehicleError(() => addVehicleTo(world, depot.id, { id: first.id }), 'duplicate_id');
+    world.removeVehicle(middleId);
+    world.removeVehicle(first.id);
+    addVehicleTo(world, depot.id, { id: first.id }); // prázdna mapa → bez porovnania
+    expect(depot.vehicleIds).toEqual([first.id]);
+    expect(findWorldViolation(world)).toBeUndefined();
+  });
+
   it('depotId nie je depo (neexistuje, kotvisko) → unknown_depot; plné depo → depot_full; svet sa nemení', () => {
     const { world, depot } = depotWorld();
     expectVehicleError(() => addVehicleTo(world, id(999)), 'unknown_depot');

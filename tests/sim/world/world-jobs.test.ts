@@ -91,6 +91,32 @@ describe('World.addJob / removeJob / jobOfUnit', () => {
     expect(world.jobOfUnit(units[2])).toBeUndefined();
   });
 
+  it('poradie addJob porovnáva s najväčším prítomným id: po odstránení posledného jobu prejde staršie id nad ostatnými (T03-14)', () => {
+    const { world, yard, units } = jobWorld([0, 1, 2]);
+    const finish = (job: TransportJob): void => {
+      job.assign(id(50));
+      for (const state of ['picking', 'moving', 'dropping', 'done'] as const) job.transition(state);
+    };
+    const first = openJob(world, yard, units[0]);
+    const middleId = world.ids.next();
+    const newest = openJob(world, yard, units[1]);
+    finish(newest);
+    world.removeJob(newest.id);
+    const from = world.cargo.get(units[2])?.location;
+    if (from === undefined) throw new Error('jednotka');
+    const middle = new TransportJob({ id: middleId, unitIds: [units[2]], from, to: { kind: 'in_storage', moduleId: yard.id, slot: yard.reserve() }, createdTick: 0 });
+    world.addJob(middle);
+    expect([...world.jobs.keys()]).toEqual([first.id, middleId]);
+    finish(middle);
+    world.removeJob(middle.id);
+    finish(first);
+    world.removeJob(first.id);
+    expect(world.jobs.size).toBe(0);
+    const older = new TransportJob({ id: first.id, unitIds: [units[0]], from: { kind: 'on_apron', berthId: ROOT_BERTH_ID, slot: 0 }, to: { kind: 'in_storage', moduleId: yard.id, slot: yard.reserve() }, createdTick: 0 });
+    world.addJob(older); // prázdna mapa → bez porovnania
+    expect([...world.jobs.keys()]).toEqual([first.id]);
+  });
+
   it('removeJob hotového jobu: zmizne z world.jobs aj z indexu', () => {
     const { world, yard, units } = jobWorld([0]);
     const job = new TransportJob({ id: world.ids.next(), unitIds: [units[0]], from: { kind: 'on_apron', berthId: ROOT_BERTH_ID, slot: 0 }, to: { kind: 'in_storage', moduleId: yard.id, slot: 0 }, createdTick: 0 });

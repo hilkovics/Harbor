@@ -127,6 +127,16 @@ function copyParcels(map: LoadedMap): Map<string, Parcel> {
 
 const NO_GROUPS: readonly BerthGroup[] = Object.freeze([]);
 
+/**
+ * Posledný kľúč mapy v poradí vloženia — pri vzostupnom vkladaní najväčšie prítomné id; prázdna mapa → `undefined`.
+ * O(n), preto len pri odstránení doteraz posledného vozidla/jobu (`lastVehicleId`, `lastJobId`).
+ */
+function lastKeyOf(map: ReadonlyMap<EntityId, unknown>): EntityId | undefined {
+  let last: EntityId | undefined;
+  for (const key of map.keys()) last = key;
+  return last;
+}
+
 
 export class World {
   readonly defs: DefRegistry;
@@ -173,6 +183,9 @@ export class World {
   private readonly jobMap = new Map<EntityId, TransportJob>();
   /** Jednotka → jej aktívny job (odvodený index nad `jobMap`). */
   private readonly unitJobs = new Map<EntityId, TransportJob>();
+  /** Najväčšie id vo `vehicleMap` / `jobMap` (= posledné vložené; poradie pridania = vzostupne podľa id) bez prechodu kľúčov. */
+  private lastVehicleId: EntityId | undefined;
+  private lastJobId: EntityId | undefined;
   private groups: readonly BerthGroup[] = NO_GROUPS;
   private readonly shipSystem = new ShipSystem();
   private readonly craneSystem = new CraneSystem();
@@ -468,8 +481,7 @@ export class World {
     if (id >= this.ids.getState().nextId) {
       throw new VehicleError('invalid_input', `World.addVehicle: id ${String(id)} nepridelil alokátor sveta (nextId ${String(this.ids.getState().nextId)})`);
     }
-    let last: EntityId | undefined;
-    for (const vehicleId of this.vehicleMap.keys()) last = vehicleId;
+    const last = this.lastVehicleId;
     if (last !== undefined && id < last) {
       throw new VehicleError('invalid_input', `World.addVehicle: ${vehicle.label} má menšie id ako posledné vozidlo #${String(last)}`);
     }
@@ -479,6 +491,7 @@ export class World {
     }
     depot.attachVehicle(id);
     this.vehicleMap.set(id, vehicle);
+    this.lastVehicleId = id;
   }
 
   /**
@@ -496,6 +509,7 @@ export class World {
     }
     this.depotOf(vehicle, 'World.removeVehicle').detachVehicle(vehicleId);
     this.vehicleMap.delete(vehicleId);
+    if (vehicleId === this.lastVehicleId) this.lastVehicleId = lastKeyOf(this.vehicleMap);
     return vehicle;
   }
 
@@ -518,8 +532,7 @@ export class World {
     if (id >= this.ids.getState().nextId) {
       throw new JobError('invalid_input', `World.addJob: id ${String(id)} nepridelil alokátor sveta (nextId ${String(this.ids.getState().nextId)})`);
     }
-    let last: EntityId | undefined;
-    for (const jobId of this.jobMap.keys()) last = jobId;
+    const last = this.lastJobId;
     if (last !== undefined && id < last) throw new JobError('invalid_input', `World.addJob: ${job.label} má menšie id ako posledný job #${String(last)}`);
     const traits = JOB_STATE_TRAITS[job.state];
     if (!traits.active) throw new JobError('invalid_input', `World.addJob: ${job.label} v stave '${job.state}' nie je aktívny`);
@@ -533,6 +546,7 @@ export class World {
       if (other !== undefined) throw new JobError('unit_busy', `World.addJob: jednotka #${String(unitId)} už má ${other.label}`);
     }
     this.jobMap.set(id, job);
+    this.lastJobId = id;
     for (const unitId of job.unitIds) this.unitJobs.set(unitId, job);
   }
 
@@ -545,6 +559,7 @@ export class World {
     if (job === undefined) throw new JobError('unknown_job', `World.removeJob: job #${String(jobId)} neexistuje`);
     if (job.state !== 'done') throw new JobError('not_done', `World.removeJob: ${job.label} je v stave '${job.state}'`);
     this.jobMap.delete(jobId);
+    if (jobId === this.lastJobId) this.lastJobId = lastKeyOf(this.jobMap);
     for (const unitId of job.unitIds) this.unitJobs.delete(unitId);
     return job;
   }

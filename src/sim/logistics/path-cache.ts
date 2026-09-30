@@ -5,7 +5,7 @@
  *   `null` (aj „bez cesty" sa pamätá — vozidlo v `no_path` sa pýta opakovane).
  * - **Invalidácia bez odberu udalostí:** cache si pamätá `roadVersion` zdroja (`World`), pri ktorej vznikla; pri
  *   každom dotaze ho porovná a pri zmene sa celá vyprázdni. `World.roadVersion` zvyšuje `PlaceRoad`/`RemoveRoad`
- *   (`RoadChanged`) a `World.deserialize`.
+ *   (`RoadChanged`, aj prestavba typu alebo smeru cesty — ADR-020) a `World.deserialize`.
  * - Cache je čisté memo: `findPath` je deterministická funkcia ciest a dvojice buniek, takže zásah aj miss vrátia
  *   rovnakú cestu — obsah cache nie je stav simulácie a do save nepatrí.
  * - Veľkosť nie je obmedzená: kľúče vznikajú z polôh vozidiel pri plánovaní a vonkajších buniek konektorov

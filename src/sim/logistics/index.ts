@@ -1,9 +1,12 @@
-// Logistika (ARCHITECTURE §7.3, §7.4, §7.6): pathfinding (A*, cache ciest, matica vzdialeností) — T03-03;
+// Logistika (ARCHITECTURE §7.3, §7.4, §7.6): pathfinding (A*, cache ciest, matica vzdialeností) — T03-03; smerové
+// hrany, cena a rýchlosť podľa typu cesty (RoadSpeeds) — T03-18 (ADR-020);
 // TransportJob, prístup k modulom, StorageAllocator a Dispatcher — T03-05 (ADR-018).
 export { IndexedBinaryHeap } from './binary-heap';
 export type { HeapLess } from './binary-heap';
 export { BASE_CELL_COST, Pathfinder, assertCellIndex, unitCellCost } from './pathfinder';
 export type { CellCostFn, PathfinderDiagnostics, RoadGraph } from './pathfinder';
+export { RoadSpeeds, UNIT_SPEED_FACTOR } from './road-speed';
+export type { SpeedFactorFn } from './road-speed';
 export { PathCache, RoadPairMemo } from './path-cache';
 export type { CacheDiagnostics, RoadVersionSource } from './path-cache';
 export { DistanceMatrix } from './distance-matrix';

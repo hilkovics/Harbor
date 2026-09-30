@@ -4,12 +4,18 @@
  * a súlad pohybu so stavom (krok 12, obnova save).
  *
  * - Cieľ trasy = **prístupová bunka** modulu (vonkajšia bunka cestného konektora s cestou, `accessCellIndex`) s
- *   najkratšou cestou z **kotvy** vozidla: `cell`, pri pohybe medzi bunkami `nextCell` — rozbehnutý úsek vozidlo
+ *   najlacnejšou cestou (`Pathfinder.routeCost`: 1 / `speedFactor` za bunku, ADR-020; pri samých dvojpruhových cestách
+ *   = počet krokov) z **kotvy** vozidla: `cell`, pri pohybe medzi bunkami `nextCell` — rozbehnutý úsek vozidlo
  *   dokončí; ak nová cesta z `nextCell` vedie hneď späť do `cell`, vozidlo sa otočí uprostred úseku (`turnAround`),
- *   aby sa v ticku reálne pohlo. Pri zhode dĺžok vyhrá prvý konektor v poradí defu. Cesty dáva `PathCache`
- *   (deterministický A*, ADR-018).
+ *   aby sa v ticku reálne pohlo. Pri zhode cien vyhrá prvý konektor v poradí defu. Cesty dáva `PathCache`
+ *   (deterministický A* po smerových hranách, ADR-018, ADR-020).
+ * - Obrat uprostred úseku `cell → nextCell` nastane len vtedy, keď A* z `nextCell` smie ísť hneď do `cell` — teda keď je
+ *   povolený krok `nextCell → cell` (`isRoadStepAllowed`). Na jednosmerke sa vozidlo proti smeru neotočí; cesta z
+ *   `nextCell` potom vedie dopredu (obchádzkou), alebo nie je žiadna a vozidlo prejde do `no_path` uprostred úseku.
  * - Bez cesty vozidlo prejde do `no_path`, zahodí zvyšok trasy (`halt`) a skúsi znova o `logistics.repathIntervalTicks`.
  */
+import { directionOfStep } from '../grid/grid';
+import { isRoadStepAllowed } from '../grid/road-direction';
 import type { Module } from '../modules/module';
 import { NO_ACCESS, accessCellIndex, isAccessCell } from '../logistics/module-access';
 import type { TransportJob } from '../logistics/transport-job';
@@ -47,11 +53,17 @@ export function planRoute(world: World, vehicle: Vehicle, module: Module): boole
   const anchor = between ? vehicle.nextCell : vehicle.cell;
   if (anchor === undefined) return false;
   let best: readonly number[] | null = null;
+  let bestCost = Infinity;
   for (const connector of module.connectors) {
     const access = accessCellIndex(world.grid, connector);
     if (access === NO_ACCESS) continue;
     const path = world.paths.get(anchor, access);
-    if (path !== null && (best === null || path.length < best.length)) best = path;
+    if (path === null) continue;
+    const cost = world.pathfinder.routeCost(path);
+    if (cost < bestCost) {
+      best = path;
+      bestCost = cost;
+    }
   }
   if (best === null) return false;
   if (between && best[1] === vehicle.cell) vehicle.turnAround(best, world.grid.width);
@@ -105,6 +117,21 @@ function allRoads(world: World, route: readonly number[], from: number, to: numb
   return undefined;
 }
 
+/**
+ * Prvý krok trasy `route[i − 1] → route[i]` pre `i < to`, ktorý porušuje smer jednosmerky (`isRoadStepAllowed`, ADR-020);
+ * index jeho cieľovej bunky v trase, inak `undefined`. Susednosť overil `routeProblem`.
+ */
+function wrongWayStep(world: World, route: readonly number[], to: number): number | undefined {
+  const { width } = world.grid;
+  for (let i = 1; i < to; i++) {
+    const a = route[i - 1];
+    const b = route[i];
+    const direction = directionOfStep((b % width) - (a % width), (b - (b % width)) / width - (a - (a % width)) / width);
+    if (direction === undefined || !isRoadStepAllowed(world.grid.atIndex(a), world.grid.atIndex(b), direction)) return i;
+  }
+  return undefined;
+}
+
 /** Modul jobu, ku ktorému vozidlo v danom stave ide / pri ktorom stojí (bez vyhadzovania); inak `undefined`. */
 function destinationOf(world: World, vehicle: Vehicle): Module | undefined {
   const destination = VEHICLE_STATE_TRAITS[vehicle.state].destination;
@@ -119,7 +146,8 @@ function destinationOf(world: World, vehicle: Vehicle): Module | undefined {
  * `VEHICLE_STATE_TRAITS.motion` (`park` `[cell]`, `drive` aspoň jedna cieľová bunka — alebo žiadna, ak vozidlo už stojí
  * na prístupovej bunke cieľa a príchod spracuje najbližší krok 6, `halt` `[cell]` alebo `[cell, nextCell]` s progresom
  * > 0); `waitTicks ≥ 1` práve v stavoch s `waits`; príznak preplánovania len pri jazde; bunka vozidla (a pri pohybe
- * medzi bunkami aj cieľová bunka úseku) má cestu; jazda bez čakajúceho preplánovania vedie celá po ceste a končí na
+ * medzi bunkami aj cieľová bunka úseku) má cestu a rozbehnutý úsek smie ísť v smere jednosmerky (bunky pod vozidlom
+ * nejde prestavať, ADR-020); jazda bez čakajúceho preplánovania vedie celá po ceste v povolených smeroch a končí na
  * prístupovej bunke modulu jobu; pri `loading`/`unloading` vozidlo stojí na prístupovej bunke modulu jobu. Job musí
  * existovať (overí sa skôr, `checkVehicle` / `restoreJobs`).
  */
@@ -147,6 +175,9 @@ export function vehicleMotionProblem(world: World, vehicle: Vehicle): VehicleMot
   if (vehicle.replanPending && traits.motion !== 'drive') return { field: 'replan', problem: `${where}: preplánovanie čaká len pri jazde` };
   const offRoad = allRoads(world, route, 0, moving ? 2 : 1);
   if (offRoad !== undefined) return { field: 'route', problem: `${where} stojí na bunke ${String(offRoad)} bez cesty` };
+  if (moving && wrongWayStep(world, route, 2) !== undefined) {
+    return { field: 'route', problem: `${where}: rozbehnutý úsek ${String(route[0])} → ${String(route[1])} ide proti smeru jednosmerky` };
+  }
   if (module === undefined) return undefined;
   if (traits.motion === 'park' && !isAccessCell(world.grid, module, vehicle.cell)) {
     return { field: 'route', problem: `${where} nestojí na prístupovej bunke ${module.label}` };
@@ -154,6 +185,10 @@ export function vehicleMotionProblem(world: World, vehicle: Vehicle): VehicleMot
   if (traits.motion === 'drive' && !vehicle.replanPending) {
     const blocked = allRoads(world, route, 0, route.length);
     if (blocked !== undefined) return { field: 'route', problem: `${where}: trasa vedie cez bunku ${String(blocked)} bez cesty` };
+    const wrongWay = wrongWayStep(world, route, route.length);
+    if (wrongWay !== undefined) {
+      return { field: 'route', problem: `${where}: krok trasy ${String(route[wrongWay - 1])} → ${String(route[wrongWay])} ide proti smeru jednosmerky` };
+    }
     if (!isAccessCell(world.grid, module, route[route.length - 1])) return { field: 'route', problem: `${where}: trasa nekončí na prístupovej bunke ${module.label}` };
   }
   return undefined;

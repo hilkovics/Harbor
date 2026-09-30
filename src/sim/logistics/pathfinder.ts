@@ -3,9 +3,12 @@
  *
  * - Uzly sú bunky s `road === 'road'` (row-major index `y * width + x`), hrany vedú k 4 susedom v poradí
  *   `DIRECTIONS_4` (N, E, S, W). `Grid.neighbors4` sa nepoužíva — alokoval by pole pri každej bunke.
- * - Cena vstupu do bunky dáva `CellCostFn` (predvolene `BASE_CELL_COST` = 1; F11 pridá penalizáciu kongescie §7.6).
- *   Cena musí byť ≥ `BASE_CELL_COST`, inak `RangeError` — heuristika Manhattan × `BASE_CELL_COST` potom ostáva
- *   prípustná aj konzistentná, takže uzavretý uzol sa už nikdy neotvára a prvý výber cieľa je optimálny.
+ * - **Hrany sú smerové** (ADR-020): krok A → B je povolený len podľa `isRoadStepAllowed` (z jednosmerky len v jej smere,
+ *   do jednosmerky nie proti smeru). Bez jednosmeriek je graf symetrický ako vo F3 pred T03-18.
+ * - Cena vstupu do bunky dáva `CellCostFn` (predvolene `BASE_CELL_COST` = 1; svet dáva `1 / speedFactor` typu cesty,
+ *   ADR-020; F11 pridá penalizáciu kongescie §7.6). Cena musí byť ≥ `BASE_CELL_COST`, inak `RangeError` — heuristika
+ *   Manhattan × `BASE_CELL_COST` potom ostáva prípustná aj konzistentná (aj na smerovom grafe), takže uzavretý uzol sa
+ *   už nikdy neotvára a prvý výber cieľa je optimálny.
  * - **Deterministický výber** z open setu: menšie `f = g + h`, pri zhode menšie `h` (bližšie k cieľu), potom menší
  *   index bunky. Rovnaký vstup (cesty, `from`, `to`, cena) dá vždy tú istú cestu — nezávisle od histórie volaní,
  *   takže `PathCache` je čisté memo a determinizmus simulácie nezávisí od toho, či cache zasiahla.
@@ -16,6 +19,7 @@
  *   sa zneplatnia podľa `World.roadVersion`).
  */
 import { DIRECTIONS_4, type Cell } from '../grid/grid';
+import { isRoadStepAllowed } from '../grid/road-direction';
 import { IndexedBinaryHeap } from './binary-heap';
 
 /** Časť mriežky, ktorú A* číta (`Grid` ju spĺňa); mriežka sa počas hľadania nemení. */
@@ -134,6 +138,20 @@ export class Pathfinder {
     return this.search(from, to, 'Pathfinder.findCost') ? this.g[to] : Infinity;
   }
 
+  /**
+   * Cena danej cesty (napr. z `findPath`/`PathCache`): súčet cien vstupu do buniek po prvej, v poradí jazdy — tá istá
+   * postupnosť sčítaní ako `g` v A*, takže pre cestu z `findPath(from, to)` je výsledok bitovo rovný `findCost(from, to)`.
+   * Prázdna alebo jednoprvková cesta → 0. Susednosť ani smery nekontroluje. Bez alokácie.
+   */
+  routeCost(path: readonly number[]): number {
+    let cost = 0;
+    for (let i = 1; i < path.length; i++) {
+      assertCellIndex(path[i], this.grid.cellCount, 'Pathfinder.routeCost');
+      cost += this.stepCost(path[i]);
+    }
+    return cost;
+  }
+
   /** Diagnostika (nová kópia čísel pri každom volaní — nie pre hot path). */
   diagnostics(): PathfinderDiagnostics {
     return { capacity: this.grid.cellCount, searches: this.searchCount, bufferAllocations: this.allocations, lastExpanded: this.expanded };
@@ -167,13 +185,16 @@ export class Pathfinder {
       this.expanded += 1;
       const x = current % width;
       const y = (current - x) / width;
+      const currentCell = this.grid.atIndex(current);
       for (let k = 0; k < DIRECTIONS_4.length; k++) {
         const direction = DIRECTIONS_4[k];
         const nx = x + direction.dx;
         const ny = y + direction.dy;
         if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
         const next = ny * width + nx;
-        if (closed[next] === generation || !this.isRoad(next)) continue;
+        if (closed[next] === generation) continue;
+        const nextCell = this.grid.atIndex(next);
+        if (nextCell.road !== 'road' || !isRoadStepAllowed(currentCell, nextCell, direction.name)) continue;
         const tentative = g[current] + this.stepCost(next);
         if (seen[next] !== generation) {
           seen[next] = generation;

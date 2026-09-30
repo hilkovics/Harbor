@@ -31,6 +31,9 @@
  * a `deserialize`); `pathfinder` (A*), `paths` (`PathCache`) a `distances` (`DistanceMatrix`) vznikajú lenivo pri prvom
  * použití a cache sa pri zmene `roadVersion` samy vyprázdnia — bez odberu udalostí. Nič z toho nie je v save.
  * `markRoadsChanged` zároveň označí jazdiace vozidlá na preplánovanie (`Vehicle.replanPending`, ide do save — ADR-019).
+ * Typy ciest (T03-18, ADR-020): prestavba typu alebo smeru bunky je tiež zmena siete (`markRoadsChanged`); A* ide po
+ * smerových hranách s cenou bunky `roadSpeeds.cellCost` (= 1 / `speedFactor`) a vozidlá jazdia rýchlosťou
+ * `roadSpeeds.speedFactor` cieľovej bunky úseku.
  */
 import { CargoLedger } from '../cargo/cargo-ledger';
 import type { CargoLedgerState } from '../cargo/cargo-ledger-state';
@@ -60,6 +63,7 @@ import { DistanceMatrix } from '../logistics/distance-matrix';
 import { JobError } from '../logistics/job-error';
 import { PathCache } from '../logistics/path-cache';
 import { Pathfinder } from '../logistics/pathfinder';
+import { RoadSpeeds } from '../logistics/road-speed';
 import { JOB_STATE_TRAITS, type TransportJob } from '../logistics/transport-job';
 import { CraneSystem } from '../systems/crane-system';
 import { DispatcherSystem } from '../systems/dispatcher-system';
@@ -150,6 +154,11 @@ export class World {
   readonly jobs: ReadonlyMap<EntityId, TransportJob>;
   /** Štatistiky entít po modifikátoroch (§10); vo F2 základ z defov. */
   readonly stats: StatResolver;
+  /**
+   * Rýchlostný faktor a cena bunky podľa typu cesty (`infrastructure.roadKinds`, ADR-020) nad `grid` — A* (`pathfinder`)
+   * aj pohyb vozidiel (`VehicleSystem`) čítajú typ bunky pri každom volaní.
+   */
+  readonly roadSpeeds: RoadSpeeds;
   /** Hotovosť v centoch (USD); môže byť záporná (bankrot rieši F5). */
   cashCents: number;
   /** Krok 12 ticku zapnutý (`WorldOptions.checkInvariants`, predvolene `true`). */
@@ -190,6 +199,7 @@ export class World {
     this.vehicles = this.vehicleMap;
     this.jobs = this.jobMap;
     this.stats = new StatResolver(parts.defs);
+    this.roadSpeeds = new RoadSpeeds(parts.grid, parts.defs.infrastructure.roadKinds);
     this.checkInvariants = options.checkInvariants ?? true;
   }
 
@@ -282,9 +292,10 @@ export class World {
   }
 
   /**
-   * Zapíše zmenu cestnej siete (volá `PlaceRoad`/`RemoveRoad` po zápise `cell.road` a `deserialize` po obnove ciest).
-   * Kto mení `cell.road` inou cestou, musí ho zavolať tiež, inak cache ciest ostanú zastarané a vozidlá by jazdili
-   * po starej trase. Jazdiace vozidlá (`motion: 'drive'`) dostanú `replanPending` — preplánujú v najbližšom kroku 6.
+   * Zapíše zmenu cestnej siete (volá `PlaceRoad`/`RemoveRoad` po zápise `cell.road` / `roadKind` / `roadDir` —
+   * aj prestavba typu alebo smeru, ADR-020 — a `deserialize` po obnove ciest). Kto mení tieto polia inou cestou, musí
+   * ho zavolať tiež, inak cache ciest ostanú zastarané a vozidlá by jazdili po starej trase. Jazdiace vozidlá
+   * (`motion: 'drive'`) dostanú `replanPending` — preplánujú v najbližšom kroku 6.
    */
   markRoadsChanged(): void {
     this.roadChanges += 1;
@@ -293,9 +304,12 @@ export class World {
     }
   }
 
-  /** A* nad cestami tohto sveta (§7.4); vznikne pri prvom použití (pracovné polia pre celú mriežku). */
+  /**
+   * A* nad cestami tohto sveta (§7.4) so smerovými hranami a cenou bunky podľa typu cesty (ADR-020); vznikne pri prvom
+   * použití (pracovné polia pre celú mriežku).
+   */
   get pathfinder(): Pathfinder {
-    this.pathfinderInstance ??= new Pathfinder(this.grid);
+    this.pathfinderInstance ??= new Pathfinder(this.grid, this.roadSpeeds.cellCost);
     return this.pathfinderInstance;
   }
 

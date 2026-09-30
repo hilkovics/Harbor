@@ -8,7 +8,8 @@
  * - **Trasa** (`route`) = indexy buniek cesty: prvá je bunka, na ktorej vozidlo stojí alebo z ktorej práve vyšlo
  *   (`cell`), ďalšie sú cieľové bunky v poradí jazdy. **Progres** (`progress`, `[0, 1)`) je podiel úseku `cell →
  *   nextCell`; stojace vozidlo má trasu `[cell]` a progres 0. Pohyb (`advance`) ide po úsekoch rýchlosťou
- *   `speedCellsPerTick`, zvyšok kroku sa prenáša do ďalšieho úseku (rozhodnutie orchestrátora 1).
+ *   `speedCellsPerTick × speedFactor` typu cieľovej bunky úseku (ADR-020), zvyšok kroku sa prenáša do ďalšieho úseku
+ *   (rozhodnutie orchestrátora 1).
  * - Poloha `x`, `y` = stred vozidla v bunkách (float): stred `cell` (`+ 0,5`) posunutý o `progress` smerom k `nextCell`;
  *   prepočíta ju každý pohyb (a overuje krok 12 aj obnova save).
  * - `heading` = kardinálny kurz úseku (0 = sever, v smere hodinových ručičiek) — nikdy nie uhol z trigonometrie; stojace
@@ -26,6 +27,7 @@
 import type { EntityId } from '../core/entity-id';
 import type { VehicleDef } from '../defs/types';
 import { isRotation, type Rotation } from '../grid/rotation';
+import { UNIT_SPEED_FACTOR, type SpeedFactorFn } from '../logistics/road-speed';
 import { CELL_CENTER_OFFSET, cardinalHeading } from '../ships/ship-route';
 import { VehicleError } from './vehicle-error';
 import { VEHICLE_TRANSITIONS, isVehicleState, isVehicleTransitionAllowed, type VehicleState } from './vehicle-fsm';
@@ -283,23 +285,32 @@ export class Vehicle {
   }
 
   /**
-   * Posunie vozidlo po trase o `distance` buniek (zvyšok kroku prechádza do ďalšieho úseku; na konci trasy vozidlo
-   * zastane v strede poslednej bunky a zvyšok prepadne), prepočíta `x`, `y` a kurz. `width` = šírka mriežky (index →
-   * súradnice). Vráti `true`, keď vozidlo stojí na konci trasy. Bez alokácie.
+   * Posunie vozidlo po trase o `distance` buniek pri faktore 1 (zvyšok kroku prechádza do ďalšieho úseku; na konci trasy
+   * vozidlo zastane v strede poslednej bunky a zvyšok prepadne), prepočíta `x`, `y` a kurz. `width` = šírka mriežky
+   * (index → súradnice). Úsek `cell → nextCell` ide rýchlosťou `distance × speedFactor(nextCell)` (typ cieľovej bunky,
+   * ADR-020): zvyšok kroku sa meria v bunkách pri faktore 1, takže úsek s faktorom `f` spotrebuje `zvyšok / f`. Pri
+   * faktore 1 je výpočet bitovo rovnaký ako bez typov ciest. Vráti `true`, keď vozidlo stojí na konci trasy. Bez alokácie.
    */
-  advance(distance: number, width: number): boolean {
+  advance(distance: number, width: number, speedFactor: SpeedFactorFn = UNIT_SPEED_FACTOR): boolean {
     let budget = distance;
     while (budget > 0 && this.routeIndex + 1 < this.route.length) {
       this.heading = this.segmentHeading(width);
+      const factor = speedFactor(this.route[this.routeIndex + 1]);
       const remaining = 1 - this.segmentProgress;
-      if (budget < remaining) {
-        this.segmentProgress += budget;
+      const step = budget * factor;
+      if (step < remaining) {
         budget = 0;
+        const progressed = this.segmentProgress + step;
+        if (progressed < 1) {
+          this.segmentProgress = progressed;
+          continue;
+        }
+        // Zaokrúhlenie by dalo progres 1 — vozidlo dorazí do stredu ďalšej bunky, zvyšok (< 1 ulp) prepadne.
       } else {
-        budget -= remaining;
-        this.routeIndex += 1;
-        this.segmentProgress = 0;
+        budget -= remaining / factor;
       }
+      this.routeIndex += 1;
+      this.segmentProgress = 0;
     }
     this.place(width);
     return this.cellsAhead === 0;

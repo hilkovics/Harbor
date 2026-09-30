@@ -5,7 +5,8 @@
  *
  * - `to_pickup` / `to_dropoff`: ak sa od plánu zmenila cestná sieť (`replanPending`), vozidlo preplánuje z kotvy
  *   (bunka, pri pohybe medzi bunkami cieľová bunka úseku); bez cesty `no_path`. Potom sa posunie o `speedCellsPerTick`
- *   (`Vehicle.advance`) a na konci trasy — prístupovej bunke modulu jobu — prejde do `loading` / `unloading` s pobytom
+ *   × `speedFactor` typu cieľovej bunky každého úseku (`Vehicle.advance`, `World.roadSpeeds`, ADR-020) a na konci trasy —
+ *   prístupovej bunke modulu jobu — prejde do `loading` / `unloading` s pobytom
  *   `internalTicks` modulu (inak `logistics.defaultInternalTicks`) + `loadTicks` / `unloadTicks` prvej jednotky.
  * - `loading`: po odpočte presun jednotky `on_apron → in_vehicle` (slot apronu sa uvoľní sám — ADR-017); ďalšia jednotka
  *   jobu `loadTicks`, inak job `moving` a jazda k cieľu (`startTrip`, bez pohybu v tomto ticku).
@@ -76,7 +77,7 @@ function drive(vehicle: Vehicle, world: World): void {
       return;
     }
   }
-  if (vehicle.advance(vehicle.def.speedCellsPerTick, world.grid.width)) arrive(vehicle, world);
+  if (vehicle.advance(vehicle.def.speedCellsPerTick, world.grid.width, world.roadSpeeds.speedFactor)) arrive(vehicle, world);
 }
 
 /** Koniec manipulácie v `loading`: jednotka zo zdroja do vozidla; ďalšia jednotka alebo jazda k cieľu. */

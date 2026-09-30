@@ -8,6 +8,9 @@ export default defineConfig({
   testDir: 'tests/e2e',
   outputDir: 'test-results',
   reporter: 'list',
+  // Sériovo: WebGL beží v headless Chromiu softvérovo (SwiftShader) a paralelné stránky si berú CPU —
+  // test rýchlosti hodín (f1-roads) meria reálny čas a pri súbehu zlyhával.
+  workers: 1,
   use: {
     baseURL: BASE_URL,
   },

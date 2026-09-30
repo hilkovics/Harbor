@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "cargo_types.json",
+  "description": "Katalóg typov nákladu (ARCHITECTURE §4.1, ADR-009): { schemaVersion, items: [...] }. Jedinečnosť `id` v items[] schéma nevyjadrí — kontroluje ju DefRegistry a `pnpm validate:defs`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "items"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Verzia schémy defu."
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/cargoType" },
+      "description": "Typy nákladu v poradí súboru."
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "snake_case identifikátor."
+    },
+    "cargoType": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "category", "unitName", "unitsPerBatch", "basePricePerUnitCents", "xpPerUnit", "colorToken"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "category": {
+          "enum": ["container", "bulk", "liquid", "gas", "roro"],
+          "description": "Kategória nákladu; určuje kompatibilitu so žeriavmi, loďami a vozidlami."
+        },
+        "unitName": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Zobrazený názov jednotky (TEU, t, m³, ks)."
+        },
+        "unitsPerBatch": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Koľko jednotiek komodity tvorí jednu CargoUnit (jeden úchop žeriava)."
+        },
+        "basePricePerUnitCents": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Referenčná odmena za jednotku v centoch (USD)."
+        },
+        "xpPerUnit": {
+          "type": "number",
+          "minimum": 0,
+          "description": "XP za jednu doručenú jednotku."
+        },
+        "colorToken": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "description": "Názov farebného tokenu z design/tokens.css bez predpony `--` (napr. cargo-container)."
+        }
+      }
+    }
+  }
+}

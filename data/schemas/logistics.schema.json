@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "logistics.json",
+  "description": "Logistické konštanty (ARCHITECTURE §4.6, §7.3, §7.6; ADR-010): pobyt vozidla v module, opakovanie hľadania cesty a model kongescie. Konfiguračný def bez items[] (ADR-009); všetky trvania v tickoch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "defaultInternalTicks", "repathIntervalTicks", "congestion"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Verzia schémy defu."
+    },
+    "defaultInternalTicks": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Predvolený vnútorný čas vozidla v module pred load/unload; modul ho môže prepísať `params.internalTicks`."
+    },
+    "repathIntervalTicks": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Po koľkých tickoch skúša vozidlo bez cesty (`no_path`) hľadať cestu znova."
+    },
+    "congestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trafficDecayPerHour", "slowdownPerExtraVehicle", "penaltyTrafficDivisor", "penaltyMax"],
+      "properties": {
+        "trafficDecayPerHour": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Násobiteľ `cell.traffic` pri každom HourClosed (0 = okamžitý reset, 1 = bez útlmu)."
+        },
+        "slowdownPerExtraVehicle": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Spomalenie vozidla za každé ďalšie vozidlo na bunke (použije sa vo F11)."
+        },
+        "penaltyTrafficDivisor": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Delenie `cell.traffic` pri výpočte penalizácie ceny bunky v A* (použije sa vo F11)."
+        },
+        "penaltyMax": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Strop penalizácie ceny bunky v A* (použije sa vo F11)."
+        }
+      }
+    }
+  }
+}

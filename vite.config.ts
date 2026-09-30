@@ -24,5 +24,8 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     exclude: ['tests/e2e/**', '.claude/**', 'node_modules/**', 'dist/**'],
     passWithNoTests: true,
+    // Scenárové testy (simrun, determinizmus) bežia tisíce tickov so zapnutými invariantmi; 5 s predvolene je pri
+    // paralelnom behu na hrane. Strop 15 s necháva rezervu, pomalé testy sa aj tak sledujú (T03-15).
+    testTimeout: 15_000,
   },
 });

@@ -4,7 +4,7 @@
 // vehiclePosition bitovo zhodná s Vehicle.place.
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@sim/core';
-import { Vehicle, VehicleError, vehiclePosition, type VehicleInit } from '@sim/vehicles';
+import { PROGRESS_NOISE, Vehicle, VehicleError, isValidProgress, vehiclePosition, type VehicleInit } from '@sim/vehicles';
 import { STRADDLE_DEF } from './vehicle-fixtures';
 
 const WIDTH = 96;
@@ -149,6 +149,25 @@ describe('Vehicle — followRoute, turnAround, halt', () => {
     expect([between.remainingRoute(), between.progress]).toEqual([[idx(10, 5), idx(11, 5)], 0.5]);
   });
 
+  it('turnAround pri progrese 2^-54 (šum): poistka VehicleError(invalid_input), vozidlo sa nezmení (ADR-021)', () => {
+    const noise = 2 ** -54;
+    expect(1 - noise).toBe(1); // bez poistky by obrat dal neplatný progres 1
+    const vehicle = vehicleOn([idx(10, 5), idx(11, 5)], { progress: noise });
+    const before = [vehicle.remainingRoute(), vehicle.progress, vehicle.x, vehicle.y, vehicle.heading];
+    const error = vehicleError(() => vehicle.turnAround([idx(11, 5), idx(10, 5), idx(9, 5)], WIDTH));
+    expect(error.code).toBe('invalid_input');
+    expect(error.message).toMatch(/šum pod PROGRESS_NOISE/);
+    expect([vehicle.remainingRoute(), vehicle.progress, vehicle.x, vehicle.y, vehicle.heading]).toEqual(before);
+  });
+
+  it('turnAround tesne pred cieľom úseku (1 − p ≤ PROGRESS_NOISE): vozidlo stojí v strede nextCell s progresom 0', () => {
+    const almost = 1 - 2 ** -53; // najväčší double pod 1
+    const vehicle = vehicleOn([idx(10, 5), idx(11, 5)], { progress: almost });
+    vehicle.turnAround([idx(11, 5), idx(10, 5), idx(9, 5)], WIDTH);
+    expect([vehicle.cell, vehicle.nextCell, vehicle.progress, vehicle.x, vehicle.y]).toEqual([idx(11, 5), idx(10, 5), 0, 11.5, 5.5]);
+    expect(isValidProgress(vehicle.progress)).toBe(true);
+  });
+
   it.each<[string, Partial<VehicleInit>]>([
     ['prázdna trasa', { route: [] }],
     ['záporný index bunky', { route: [-1] }],
@@ -160,5 +179,65 @@ describe('Vehicle — followRoute, turnAround, halt', () => {
     ['necelý waitTicks', { waitTicks: 1.5 }],
   ])('konštruktor: %s → VehicleError(invalid_input)', (_name, overrides) => {
     expect(vehicleError(() => vehicleOn([idx(10, 5)], { ...overrides, x: 0.5, y: 0.5 })).code).toBe('invalid_input');
+  });
+});
+
+describe('Vehicle — šum progresu (review T03-13, ADR-021)', () => {
+  const CELLS = 12;
+  const route = Array.from({ length: CELLS + 1 }, (_, i) => idx(10 + i, 5));
+  const FACTORS = [1, 0.7, 0.8] as const;
+  /** Faktor cieľovej bunky: jednotný alebo cyklicky [1, 0,7, 0,8] posunutý o `shift` (rôzne typy ciest za sebou). */
+  const FACTOR_CASES: readonly [string, (cell: number) => number][] = [
+    ...FACTORS.map((factor): [string, (cell: number) => number] => [`faktor ${String(factor)}`, () => factor]),
+    ...[0, 1, 2].map((shift): [string, (cell: number) => number] => [`cyklus [1, 0,7, 0,8] + ${String(shift)}`, (cell) => FACTORS[(cell - route[0] + shift) % FACTORS.length]]),
+  ];
+
+  it('PROGRESS_NOISE = Number.EPSILON; isValidProgress: 0 alebo (PROGRESS_NOISE, 1)', () => {
+    expect(PROGRESS_NOISE).toBe(Number.EPSILON);
+    expect([0, 0.5, 1 - 2 ** -53, PROGRESS_NOISE * 2].map(isValidProgress)).toEqual([true, true, true, true]);
+    expect([2 ** -54, PROGRESS_NOISE, 1, -0.1, Number.NaN, Number.POSITIVE_INFINITY].map(isValidProgress)).toEqual([false, false, false, false, false, false]);
+  });
+
+  it.each([0.2, 0.25])('advance(%s) po 12 bunkách: po každom ticku progres 0 alebo > EPSILON (obrat 1 − p < 1) a roundtrip toState', (speed) => {
+    for (const [name, factorOf] of FACTOR_CASES) {
+      const vehicle = vehicleOn(route);
+      let arrived = false;
+      let ticks = 0;
+      while (!arrived) {
+        arrived = vehicle.advance(speed, WIDTH, factorOf);
+        ticks += 1;
+        const p = vehicle.progress;
+        expect(p === 0 || p > Number.EPSILON, `${name}, tick ${String(ticks)}: progres ${String(p)}`).toBe(true);
+        if (p > 0) expect(1 - p, `${name}, tick ${String(ticks)}: obrat`).toBeLessThan(1);
+        const copy = new Vehicle({ ...vehicle.toState(), id: vehicle.id, def: STRADDLE_DEF, depotId: vehicle.depotId, jobId: vehicle.jobId, replanPending: false });
+        expect(copy.toState()).toEqual(vehicle.toState());
+        expect(ticks, name).toBeLessThan(200);
+      }
+      expect([vehicle.cell, vehicle.progress, vehicle.x], name).toEqual([route[CELLS], 0, 10 + CELLS + 0.5]);
+    }
+  });
+
+  it('zvyšok kroku po strede bunky sa zahodí: rýchlosť 0,2 pri faktore 1 stojí po 5 tickoch presne v strede ďalšej bunky', () => {
+    const vehicle = vehicleOn(route);
+    for (let t = 0; t < 5; t++) vehicle.advance(0.2, WIDTH);
+    // 0,2 + 0,2 + 0,2 + 0,2 = 0,8000000000000002 v double; zvyšok 0,2 − 0,19999999999999984 by bol progres ~5,6e-17.
+    expect([vehicle.cell, vehicle.nextCell, vehicle.progress, vehicle.x]).toEqual([route[1], route[2], 0, 11.5]);
+  });
+
+  it('séria advance + obrat + advance: roundtrip new Vehicle(toState()) pokračuje bitovo rovnako', () => {
+    for (const speed of [0.2, 0.25]) {
+      const vehicle = vehicleOn(route);
+      for (let t = 0; t < 23; t++) vehicle.advance(speed, WIDTH, FACTOR_CASES[4][1]);
+      if (vehicle.progress === 0) vehicle.advance(speed, WIDTH, FACTOR_CASES[4][1]);
+      const back = [vehicle.nextCell ?? -1, vehicle.cell, vehicle.cell - 1];
+      vehicle.turnAround(back, WIDTH);
+      const copy = new Vehicle({ ...vehicle.toState(), id: vehicle.id, def: STRADDLE_DEF, depotId: vehicle.depotId, jobId: vehicle.jobId, replanPending: false });
+      for (let t = 0; t < 15; t++) {
+        vehicle.advance(speed, WIDTH, FACTOR_CASES[4][1]);
+        copy.advance(speed, WIDTH, FACTOR_CASES[4][1]);
+        expect(copy.toState()).toEqual(vehicle.toState());
+        expect(isValidProgress(vehicle.progress)).toBe(true);
+      }
+    }
   });
 });

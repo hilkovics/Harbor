@@ -126,8 +126,10 @@ describe('vehicleMotionProblem (krok 12, obnova)', () => {
     ['odpočet v jazde', (_w, v) => (v.waitTicks = 3), 'waitTicks', /musí byť 0/],
     ['cesta pod vozidlom zmizla', (w, v) => (w.grid.atIndex(v.cell).road = 'none'), 'route', /bez cesty/],
     ['trasa cez bunku bez cesty', (w) => (w.grid.at(38, 17).road = 'none'), 'route', /trasa vedie cez bunku/],
+    ['kurz rozbehnutého vozidla ≠ smer úseku (ADR-021)', (_w, v) => (v.heading = v.heading === 0 ? 180 : 0), 'heading', /nezodpovedá rozbehnutému úseku/],
   ])('%s → pole %s', (_name, corrupt, field, message) => {
     const { world, vehicle } = drivingWorld();
+    expect(vehicle.progress).toBeGreaterThan(0);
     corrupt(world, vehicle);
     const problem = vehicleMotionProblem(world, vehicle);
     expect(problem?.field).toBe(field);
@@ -145,5 +147,16 @@ describe('vehicleMotionProblem (krok 12, obnova)', () => {
     expect(vehicleMotionProblem(world, jump)?.problem).toMatch(/nie sú susedné/);
     const offRoad = vehicleAt(world, depot.id, [cell(32, 20)]);
     expect(vehicleMotionProblem(world, offRoad)?.problem).toMatch(/bez cesty/);
+  });
+
+  it('šum progresu ≤ PROGRESS_NOISE (konštruktor ho pripustí) → pole progress; stojace vozidlo kurz nekontroluje (ADR-021)', () => {
+    const { world, depot } = dispatchWorld();
+    const noisy = vehicleAt(world, depot.id, [cell(32, 17), cell(33, 17)], { progress: 2 ** -60 });
+    const problem = vehicleMotionProblem(world, noisy);
+    expect(problem?.field).toBe('progress');
+    expect(problem?.problem).toMatch(/musí byť 0 alebo v \(PROGRESS_NOISE, 1\)/);
+    expect(findWorldViolation(world)).toMatch(/PROGRESS_NOISE/);
+    const parkedAnyHeading = vehicleAt(world, depot.id, [cell(40, 17)], { heading: 0 });
+    expect(vehicleMotionProblem(world, parkedAnyHeading)).toBeUndefined();
   });
 });

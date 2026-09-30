@@ -16,13 +16,15 @@
  */
 import { directionOfStep } from '../grid/grid';
 import { isRoadStepAllowed } from '../grid/road-direction';
+import type { Rotation } from '../grid/rotation';
 import type { Module } from '../modules/module';
 import { NO_ACCESS, accessCellIndex, isAccessCell } from '../logistics/module-access';
 import type { TransportJob } from '../logistics/transport-job';
+import { cardinalHeading } from '../ships/ship-route';
 import type { World } from '../world/world';
 import { VehicleError } from './vehicle-error';
 import { VEHICLE_STATE_TRAITS, changeVehicleState, type VehicleDestination } from './vehicle-fsm';
-import { vehiclePosition, type SerializedVehicle, type Vehicle } from './vehicle';
+import { isValidProgress, vehiclePosition, type SerializedVehicle, type Vehicle } from './vehicle';
 
 /** Stav jazdy (`VEHICLE_STATE_TRAITS.motion === 'drive'`). */
 export type TravelState = 'to_pickup' | 'to_dropoff';
@@ -140,9 +142,16 @@ function destinationOf(world: World, vehicle: Vehicle): Module | undefined {
   return world.modules.get(destination === 'source' ? job.fromModuleId : job.toModuleId);
 }
 
+/** Kardinálny kurz úseku `from → to` (susedné bunky); nulový úsek → `null`. */
+function segmentHeadingOf(width: number, from: number, to: number): Rotation | null {
+  return cardinalHeading((to % width) - (from % width), (to - (to % width)) / width - (from - (from % width)) / width);
+}
+
 /**
  * Súlad pohybu vozidla so stavom (ADR-019), alebo `undefined`:
- * trasa po susedných bunkách v mape; poloha = `vehiclePosition` trasy a progresu; tvar trasy podľa
+ * progres 0 alebo v (`PROGRESS_NOISE`, 1) (`isValidProgress`, ADR-021 — šum by obrat zmenil na neplatný progres 1);
+ * trasa po susedných bunkách v mape; poloha = `vehiclePosition` trasy a progresu; rozbehnuté vozidlo má kurz svojho
+ * úseku (`cardinalHeading`, ADR-021); tvar trasy podľa
  * `VEHICLE_STATE_TRAITS.motion` (`park` `[cell]`, `drive` aspoň jedna cieľová bunka — alebo žiadna, ak vozidlo už stojí
  * na prístupovej bunke cieľa a príchod spracuje najbližší krok 6, `halt` `[cell]` alebo `[cell, nextCell]` s progresom
  * > 0); `waitTicks ≥ 1` práve v stavoch s `waits`; príznak preplánovania len pri jazde; bunka vozidla (a pri pohybe
@@ -155,6 +164,9 @@ export function vehicleMotionProblem(world: World, vehicle: Vehicle): VehicleMot
   const route = vehicle.remainingRoute();
   const traits = VEHICLE_STATE_TRAITS[vehicle.state];
   const where = `${vehicle.label} v stave '${vehicle.state}'`;
+  if (!isValidProgress(vehicle.progress)) {
+    return { field: 'progress', problem: `${where}: progres ${String(vehicle.progress)} musí byť 0 alebo v (PROGRESS_NOISE, 1)` };
+  }
   const shape = routeProblem(world, route);
   if (shape !== undefined) return { field: 'route', problem: `${where}: trasa — ${shape}` };
   const expected = vehiclePosition(vehicle.cell, vehicle.nextCell, vehicle.progress, world.grid.width);
@@ -164,6 +176,10 @@ export function vehicleMotionProblem(world: World, vehicle: Vehicle): VehicleMot
   const module = destinationOf(world, vehicle);
   const ahead = vehicle.cellsAhead;
   const moving = vehicle.progress > 0;
+  const next = vehicle.nextCell;
+  if (moving && next !== undefined && segmentHeadingOf(world.grid.width, vehicle.cell, next) !== vehicle.heading) {
+    return { field: 'heading', problem: `${where}: kurz ${String(vehicle.heading)} nezodpovedá rozbehnutému úseku ${String(vehicle.cell)} → ${String(next)}` };
+  }
   if (traits.motion === 'park' && ahead !== 0) return { field: 'route', problem: `${where} stojí, ale má pred sebou ${String(ahead)} buniek trasy` };
   if (traits.motion === 'drive' && ahead === 0 && (module === undefined || !isAccessCell(world.grid, module, vehicle.cell))) {
     return { field: 'route', problem: `${where} nemá trasu (žiadna cieľová bunka) a nestojí pri cieli` };

@@ -120,6 +120,13 @@ describe('World.deserialize — neplatné vozidlá (parsovanie)', () => {
     ['nesusedná bunka trasy', (_s, v) => (v[0].route = [ROUTE_CELL, ROUTE_CELL + 2]), '/vehicles/0/route/1', /nesusedí/],
     ['progres 1', (_s, v) => (v[0].progress = 1), '/vehicles/0/progress'],
     ['progres bez ďalšej bunky', (_s, v) => (v[0].progress = 0.5), '/vehicles/0/progress', /bez ďalšej bunky/],
+    ['progres = šum pod PROGRESS_NOISE (ADR-021)', (_s, v) => ((v[0].route = [ROUTE_CELL, ROUTE_CELL + 96]), (v[0].progress = 2 ** -60)), '/vehicles/0/progress', /PROGRESS_NOISE/],
+    [
+      'kurz rozbehnutého vozidla ≠ smer úseku (ADR-021)',
+      (_s, v) => ((v[0].route = [ROUTE_CELL, ROUTE_CELL + 96]), (v[0].progress = 0.5), (v[0].y = (v[0].y as number) + 0.5), (v[0].heading = 90)),
+      '/vehicles/0/heading',
+      /nezodpovedá rozbehnutému úseku/,
+    ],
     ['záporný waitTicks', (_s, v) => (v[0].waitTicks = -1), '/vehicles/0/waitTicks'],
     ['replan nie je boolean', (_s, v) => (v[0].replan = 1), '/vehicles/0/replan'],
     ['poloha mimo trasy', (_s, v) => (v[0].x = (v[0].x as number) + 1), '/vehicles/0/x', /nie je na trase/],

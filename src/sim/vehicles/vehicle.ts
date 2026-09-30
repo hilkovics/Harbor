@@ -10,10 +10,12 @@
  *   nextCell`; stojace vozidlo má trasu `[cell]` a progres 0. Pohyb (`advance`) ide po úsekoch rýchlosťou
  *   `speedCellsPerTick × speedFactor` typu cieľovej bunky úseku (ADR-020), zvyšok kroku sa prenáša do ďalšieho úseku
  *   (rozhodnutie orchestrátora 1).
+ * - **Šum progresu** (review T03-13, ADR-021): progres je vždy 0 alebo `> PROGRESS_NOISE` (`isValidProgress`) — zvyšok
+ *   kroku v double po prechode stredom bunky sa zahodí, takže obrat `1 − progress` nikdy nevyjde 1.
  * - Poloha `x`, `y` = stred vozidla v bunkách (float): stred `cell` (`+ 0,5`) posunutý o `progress` smerom k `nextCell`;
  *   prepočíta ju každý pohyb (a overuje krok 12 aj obnova save).
  * - `heading` = kardinálny kurz úseku (0 = sever, v smere hodinových ručičiek) — nikdy nie uhol z trigonometrie; stojace
- *   vozidlo si ponechá kurz posledného úseku.
+ *   vozidlo si ponechá kurz posledného úseku, rozbehnuté má vždy kurz svojho úseku (krok 12, ADR-021).
  * - `waitTicks` = odpočet stavu s čakaním (`VEHICLE_STATE_TRAITS.waits`): pobyt pri module (`loading`/`unloading`)
  *   alebo čas do ďalšieho pokusu o cestu (`no_path`).
  * - `replanPending` = od naplánovania trasy sa zmenila cestná sieť (`World.markRoadsChanged`); `VehicleSystem` pred
@@ -92,6 +94,21 @@ export interface VehicleInit {
   readonly replanPending?: boolean;
 }
 
+/**
+ * Šum progresu úseku (review T03-13, ADR-021). Keď vozidlo v `advance` prejde stredom bunky, zvyšok kroku
+ * `budget − remaining / factor` môže v double vyjsť rádovo 1e-17 namiesto presnej 0 a stať sa progresom ďalšieho úseku.
+ * Taký progres vozidlo reálne nepohne (posun ≪ 1 ulp polohy), ale obrat `turnAround` (`1 − p`) z neho pre `p ≤ 2^-54`
+ * spraví presne 1 — neplatný progres, ktorý obnova save odmietne. Progres ≤ `PROGRESS_NOISE` sa preto zahodí (vozidlo
+ * ostane v strede bunky), takže platí `progress === 0 || progress > PROGRESS_NOISE` a `1 − progress < 1`. Hranica je
+ * technická (presnosť double v rozsahu `[0, 1)`), nie laditeľná hodnota — preto konštanta v kóde, nie def.
+ */
+export const PROGRESS_NOISE = Number.EPSILON;
+
+/** Je progres úseku platný: presne 0 (stred bunky) alebo v (`PROGRESS_NOISE`, 1)? `NaN`/`Infinity` → `false`. */
+export function isValidProgress(progress: number): boolean {
+  return progress === 0 || (progress > PROGRESS_NOISE && progress < 1);
+}
+
 /** Poloha vozidla (stred v bunkách). */
 export interface VehiclePosition {
   readonly x: number;
@@ -151,7 +168,8 @@ export class Vehicle {
    * Chyby (`VehicleError('invalid_input')`): id alebo `depotId` nie je celé ≥ 1, poloha nie je konečné číslo, neplatný
    * kurz alebo stav, `jobId` nie je `null` ani celé ≥ 1, cena nie je celé ≥ 0, trasa nie je neprázdny zoznam indexov
    * buniek, progres mimo `[0, 1)` alebo `> 0` bez ďalšej bunky, `waitTicks` nie je celé ≥ 0. Vzťahy k svetu (depo,
-   * job, náklad, susednosť buniek trasy, súlad polohy s trasou) overuje `World` a loader save.
+   * job, náklad, susednosť buniek trasy, súlad polohy a kurzu s trasou, šum progresu `≤ PROGRESS_NOISE`) overuje
+   * `World` a loader save (`vehicleMotionProblem`).
    */
   constructor(init: VehicleInit) {
     const { id, def, depotId, state, x, y, heading, purchaseCostCents, route } = init;
@@ -259,7 +277,11 @@ export class Vehicle {
    * Obrat uprostred úseku (preplánovanie, ktorého cesta z `nextCell` vedie hneď späť do `cell`): vozidlo ostane na mieste,
    * úsek sa otočí (`route[0]` = doterajšia `nextCell`, `route[1]` = doterajšia `cell`, progres `1 − progress`), prepočíta
    * sa poloha a kurz (`width` = šírka mriežky). Bez obratu by vozidlo dorazilo do `nextCell` a vrátilo sa — v ticku by sa
-   * reálne nepohlo. Vozidlo, ktoré nie je medzi bunkami, alebo iný začiatok trasy → `VehicleError('invalid_input')`.
+   * reálne nepohlo. Vozidlo bližšie k `nextCell` než `PROGRESS_NOISE` (`1 − progress ≤ PROGRESS_NOISE`) stojí v jej strede:
+   * šum sa zahodí ako v `advance` (progres 0, poloha sa posunie najviac o `PROGRESS_NOISE`).
+   * Chyby (`VehicleError('invalid_input')`, vozidlo sa nezmení): vozidlo nie je medzi bunkami, iný začiatok trasy, alebo
+   * poistka proti šumu — progres taký malý, že `1 − progress` vyjde 1 (neplatný progres; `advance` ho už nevytvorí,
+   * ADR-021).
    */
   turnAround(route: readonly number[], width: number): void {
     const next = this.nextCell;
@@ -269,9 +291,16 @@ export class Vehicle {
         `${this.label}.turnAround: obrat vyžaduje pohyb medzi bunkami a trasu [${String(next)}, ${String(this.cell)}, …], dostal [${route.slice(0, 2).join(', ')}]`,
       );
     }
+    const turned = 1 - this.segmentProgress;
+    if (!(turned < 1)) {
+      throw new VehicleError(
+        'invalid_input',
+        `${this.label}.turnAround: progres ${String(this.segmentProgress)} je šum pod PROGRESS_NOISE — obrat by dal neplatný progres ${String(turned)}`,
+      );
+    }
     this.route = route;
     this.routeIndex = 0;
-    this.segmentProgress = 1 - this.segmentProgress;
+    this.segmentProgress = turned > PROGRESS_NOISE ? turned : 0;
     this.replanPending = false;
     this.place(width);
   }
@@ -289,7 +318,9 @@ export class Vehicle {
    * vozidlo zastane v strede poslednej bunky a zvyšok prepadne), prepočíta `x`, `y` a kurz. `width` = šírka mriežky
    * (index → súradnice). Úsek `cell → nextCell` ide rýchlosťou `distance × speedFactor(nextCell)` (typ cieľovej bunky,
    * ADR-020): zvyšok kroku sa meria v bunkách pri faktore 1, takže úsek s faktorom `f` spotrebuje `zvyšok / f`. Pri
-   * faktore 1 je výpočet bitovo rovnaký ako bez typov ciest. Vráti `true`, keď vozidlo stojí na konci trasy. Bez alokácie.
+   * faktore 1 je výpočet bitovo rovnaký ako bez typov ciest. Progres `≤ PROGRESS_NOISE` (zvyšok kroku po prechode stredom
+   * bunky) sa zahodí — vozidlo ostane v strede bunky (ADR-021). Vráti `true`, keď vozidlo stojí na konci trasy. Bez
+   * alokácie.
    */
   advance(distance: number, width: number, speedFactor: SpeedFactorFn = UNIT_SPEED_FACTOR): boolean {
     let budget = distance;
@@ -302,7 +333,8 @@ export class Vehicle {
         budget = 0;
         const progressed = this.segmentProgress + step;
         if (progressed < 1) {
-          this.segmentProgress = progressed;
+          // Šum pod PROGRESS_NOISE nastane len na začiatku úseku (progres 0) — vozidlo ostane v strede bunky.
+          if (progressed > PROGRESS_NOISE) this.segmentProgress = progressed;
           continue;
         }
         // Zaokrúhlenie by dalo progres 1 — vozidlo dorazí do stredu ďalšej bunky, zvyšok (< 1 ulp) prepadne.

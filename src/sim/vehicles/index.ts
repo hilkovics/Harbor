@@ -1,6 +1,6 @@
 // Vozidlá (ARCHITECTURE §4.4, §5, §7.3; docs/tasks/phase-03.md rozhodnutia 1, 4, 7; ADR-019): Vehicle (stav privátny
 // + getter), FSM (stavy, prechody, vlastnosti stavov), pohyb po trase, jazda k modulu jobu, save záznam, výjazd z depa.
-export { SERIALIZED_VEHICLE_KEYS, Vehicle, vehiclePosition } from './vehicle';
+export { PROGRESS_NOISE, SERIALIZED_VEHICLE_KEYS, Vehicle, isValidProgress, vehiclePosition } from './vehicle';
 export type { SerializedVehicle, VehicleInit, VehiclePosition } from './vehicle';
 export {
   RESUME_AFTER_NO_PATH,

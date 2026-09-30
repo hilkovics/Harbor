@@ -6,9 +6,25 @@ export type { TerrainFillKey, TerrainPlan } from './terrain-layer';
 export { coastTile, coastWaterMask } from './coast';
 export type { CoastTileId, TerrainSpriteId } from './coast';
 export { SPRITE_RASTER_RESOLUTION, SpriteAtlas } from './sprite-atlas';
-export type { EntityTextures, InfraLayerId, InfraTileId, SpriteAtlasOptions, SpriteTextures } from './sprite-atlas';
+export type {
+  EntityTextures,
+  InfraLayerId,
+  InfraTileId,
+  SpriteAtlasOptions,
+  SpriteTextures,
+  WorldOverlayId,
+} from './sprite-atlas';
 export { assetUrl } from './asset-urls';
 export { RoadLayer } from './road-layer';
+export { ARROW_ROTATION, RoadMarkLayer } from './road-mark-layer';
+export {
+  FLARE_DEPTH_PX,
+  NARROW_ASPHALT_PX,
+  ROAD_EDGE_PX,
+  ROAD_FILLET_PX,
+  narrowRoadPaths,
+} from './narrow-road';
+export type { NarrowRoadPaths, PathOp } from './narrow-road';
 export { ParcelLayer, outlineScaleForZoom, parcelOutlineId } from './parcel-layer';
 export type { ParcelOutlineId } from './parcel-layer';
 export { PortalLayer, portalRotation } from './portal-layer';
@@ -35,7 +51,6 @@ export type { ShipLoad, ShipPose, ShipViewDeps } from './ship-view';
 export { VehicleView, sameVehicleShape, vehicleLoad, vehiclePose, vehicleSpriteFile } from './vehicle-view';
 export type { VehicleLoad, VehiclePose, VehicleViewDeps } from './vehicle-view';
 export {
-  DEFAULT_ROAD_KIND,
   LANE_CENTER_PX,
   LANE_OFFSET_CELLS,
   LANE_WIDTH_PX,
@@ -43,11 +58,27 @@ export {
   VEHICLE_CONTENT_WIDTH_PX,
   VEHICLE_LANE_SCALE,
   createRoadKindAt,
+  createRoadMaskAt,
   defaultRoadKindAt,
+  forwardOf,
+  laneMagnitude,
   laneOffset,
+  noRoadMaskAt,
+  rightOf,
   roadKindOfCell,
 } from './lane';
-export type { RoadKind, RoadKindAt } from './lane';
+export type { RoadKindAt, RoadMaskAt } from './lane';
+export {
+  cornerAlpha,
+  cornerTurn,
+  headingDelta,
+  isQuarterTurn,
+  lerpHeading,
+  normalizeAngle,
+  turnArcPose,
+  turnArcRadius,
+} from './turn-arc';
+export type { ArcPose, CornerTurn } from './turn-arc';
 export { CraneLayer } from './crane-layer';
 export {
   BADGE_MAX_SCALE,
@@ -87,7 +118,7 @@ export type {
   ShipSpriteEntry,
   VehicleSpriteEntry,
 } from './entity-assets';
-export { GHOST_HATCH_PATTERN, overlayAssetUrl } from './overlay-assets';
+export { GHOST_HATCH_PATTERN, PATH_ARROW_FOOTPRINT, overlayAssetUrl } from './overlay-assets';
 export type { OverlayAssetId, PatternSize } from './overlay-assets';
 export {
   AUTOTILE_SHAPE_BASE_MASK,
@@ -102,12 +133,14 @@ export type { AutotileShape, AutotileTile } from './autotile';
 export { CAMERA_MAX_ZOOM, CAMERA_MIN_ZOOM, CAMERA_START_ZOOM, Camera } from './camera';
 export type { CameraOptions, CameraTransform, Point } from './camera';
 export {
+  ROAD_EDGE_SHADE,
   documentTokenResolver,
   loadRenderPalette,
   parseCssColor,
   parseCssPx,
   readColorToken,
   readLengthToken,
+  shadeColor,
   tokenResolverFromCss,
 } from './tokens';
 export { loadEntityPalette } from './tokens';

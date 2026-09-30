@@ -5,6 +5,9 @@
  * - neplatná bunka: `--ghost-invalid` (červená) + šrafa `ghost_hatch` (vzor z `assets/manifest.json`, 12×12 px)
  *   ako `TilingSprite` — stavový signál teda nie je len farba (DESIGN_BRIEF §6.4).
  *
+ * Ghost jednosmerky (T03-19): bunka s `dir` dostane navyše `overlay.path_arrow` otočený podľa smeru (N 0°, E 90°,
+ * S 180°, W 270°) — hráč vidí smer ešte pred stavbou (cesta sa potom kreslí rovnakou šípkou, `RoadMarkLayer`).
+ *
  * Ghost modulu (`setModuleGhost`) je footprint modulu tým istým spôsobom a navyše `overlay.connector_marker`
  * na každom konektore, otočený podľa strany vjazdu (šípka smeruje do modulu).
  *
@@ -16,8 +19,9 @@
  * Patrí do kontajnera sveta (`WorldRenderer.world`), takže súradnice sú v px pri zoome 1 (`x × cellPx`).
  */
 import { Assets, Container, Graphics, NineSliceSprite, Sprite, Texture, TilingSprite } from 'pixi.js';
-import type { CellCoord } from '@sim/grid';
+import type { CellCoord, Direction4Name } from '@sim/grid';
 import { GHOST_HATCH_PATTERN, SELECTION_RING_SLICE, overlayAssetUrl } from './overlay-assets';
+import { ARROW_ROTATION } from './road-mark-layer';
 import { documentTokenResolver, readColorToken, readLengthToken, type ColorValue, type TokenResolver } from './tokens';
 import type { ModuleGhostVM, ViewRotation, ViewSide } from './view-models';
 
@@ -25,6 +29,8 @@ import type { ModuleGhostVM, ViewRotation, ViewSide } from './view-models';
 export interface GhostCell extends CellCoord {
   /** `true` = príkaz by bunku prijal (zelená), `false` = odmietol by ju (červená + šrafa). */
   readonly valid: boolean;
+  /** Smer jednosmerky na bunke (`PlaceRoad.dirs`): ak je zadaný, ghost ukáže šípku `overlay.path_arrow` otočenú podľa smeru. */
+  readonly dir?: Direction4Name;
 }
 
 /** Cieľ, do ktorého `InputController` posiela ghost; `BuildLayer` ho spĺňa. */
@@ -90,6 +96,12 @@ const MARKER_RASTER_RESOLUTION = 2;
 /** Veľkosť fallbacku značky konektora (trojuholník) ako zlomok bunky. */
 const MARKER_FALLBACK_CELLS = 0.5;
 
+/** Hustota rasterizácie šípky smeru `path_arrow` (1 bunka = 64 px zdroja → ostrá aj pri zoome 2). */
+const ARROW_RASTER_RESOLUTION = 2;
+
+/** Veľkosť fallbacku šípky smeru (šípka nahor) ako zlomok bunky. */
+const ARROW_FALLBACK_CELLS = 0.4;
+
 /** Hustota rasterizácie `selection_ring` (rám 64×64 px zdroja → ostrý aj pri zoome 2). */
 const RING_RASTER_RESOLUTION = 2;
 
@@ -106,6 +118,8 @@ export interface BuildLayerOptions {
   readonly connectorMarker?: Texture | null;
   /** Textúra `overlay.selection_ring` (9-slice); `null`/vynechaná = obrys výberu sa nakreslí z `Graphics`. */
   readonly selectionRing?: Texture | null;
+  /** Textúra `overlay.path_arrow` (šípka smeru jednosmerky v ghoste); `null`/vynechaná = šípka z `Graphics`. */
+  readonly pathArrow?: Texture | null;
 }
 
 export interface BuildLayerCreateOptions {
@@ -121,13 +135,16 @@ export class BuildLayer implements GhostView, SelectionRingView {
   private readonly hatch: Texture | null;
   private readonly connectorMarker: Texture | null;
   private readonly selectionRing: Texture | null;
+  private readonly pathArrow: Texture | null;
   private readonly selectionLayer = new Container({ label: 'selection-ring' });
   private ring: NineSliceSprite | Graphics | null = null;
   private readonly fills = new Graphics({ label: 'ghost-fills' });
   private readonly hatchLayer = new Container({ label: 'ghost-hatch' });
   private readonly markerLayer = new Container({ label: 'ghost-connectors' });
+  private readonly arrowLayer = new Container({ label: 'ghost-arrows' });
   private readonly hatchPool: TilingSprite[] = [];
   private readonly markerPool: Container[] = [];
+  private readonly arrowPool: Container[] = [];
   private cellsShown = 0;
   private destroyed = false;
 
@@ -137,7 +154,8 @@ export class BuildLayer implements GhostView, SelectionRingView {
     this.hatch = options.hatch;
     this.connectorMarker = options.connectorMarker ?? null;
     this.selectionRing = options.selectionRing ?? null;
-    this.view.addChild(this.fills, this.hatchLayer, this.markerLayer, this.selectionLayer);
+    this.pathArrow = options.pathArrow ?? null;
+    this.view.addChild(this.fills, this.hatchLayer, this.markerLayer, this.selectionLayer, this.arrowLayer);
     this.view.eventMode = 'none';
   }
 
@@ -147,10 +165,11 @@ export class BuildLayer implements GhostView, SelectionRingView {
    */
   static async create(options: BuildLayerCreateOptions = {}): Promise<BuildLayer> {
     const resolve = options.resolveToken ?? documentTokenResolver;
-    const [hatch, connectorMarker, selectionRing] = await Promise.all([
+    const [hatch, connectorMarker, selectionRing, pathArrow] = await Promise.all([
       Assets.load<Texture>({ src: overlayAssetUrl('ghost_hatch'), data: { resolution: HATCH_RASTER_RESOLUTION } }),
       Assets.load<Texture>({ src: overlayAssetUrl('connector_marker'), data: { resolution: MARKER_RASTER_RESOLUTION } }),
       Assets.load<Texture>({ src: overlayAssetUrl('selection_ring'), data: { resolution: RING_RASTER_RESOLUTION } }),
+      Assets.load<Texture>({ src: overlayAssetUrl('path_arrow'), data: { resolution: ARROW_RASTER_RESOLUTION } }),
     ]);
     return new BuildLayer({
       cellPx: readLengthToken('--cell', resolve),
@@ -158,6 +177,7 @@ export class BuildLayer implements GhostView, SelectionRingView {
       hatch,
       connectorMarker,
       selectionRing,
+      pathArrow,
     });
   }
 
@@ -219,6 +239,19 @@ export class BuildLayer implements GhostView, SelectionRingView {
     return this.ring?.visible ?? false;
   }
 
+  /** Počet zobrazených šípok smeru jednosmerky. */
+  get arrowCount(): number {
+    let shown = 0;
+    for (const arrow of this.arrowPool) if (arrow.visible) shown += 1;
+    return shown;
+  }
+
+  /** Rotácia (°) zobrazenej šípky `index`-tej v poradí zobrazenia, alebo `undefined` — pre testy. */
+  arrowRotationAt(index: number): number | undefined {
+    const arrow: Container | undefined = this.arrowPool[index];
+    return arrow?.visible === true ? arrow.angle : undefined;
+  }
+
   /** Počet zobrazených značiek konektorov. */
   get markerCount(): number {
     let shown = 0;
@@ -257,7 +290,45 @@ export class BuildLayer implements GhostView, SelectionRingView {
       }
     }
     for (let i = used; i < this.hatchPool.length; i++) this.hatchPool[i].visible = false;
+    this.showArrows(cells);
     this.cellsShown = cells.length;
+  }
+
+  /** Šípky smeru pre bunky s `dir` (pool sa rozširuje podľa potreby); nadbytočné skryje. */
+  private showArrows(cells: readonly GhostCell[]): void {
+    const { cellPx } = this;
+    let used = 0;
+    for (const cell of cells) {
+      if (cell.dir === undefined) continue;
+      const arrow = this.arrowAt(used);
+      arrow.position.set((cell.x + 0.5) * cellPx, (cell.y + 0.5) * cellPx);
+      arrow.angle = ARROW_ROTATION[cell.dir];
+      arrow.visible = true;
+      used += 1;
+    }
+    for (let i = used; i < this.arrowPool.length; i++) this.arrowPool[i].visible = false;
+  }
+
+  /** Šípka smeru `index`-tá z poolu: `Sprite` `path_arrow` (vycentrovaný na bunku) alebo šípka z `Graphics`. */
+  private arrowAt(index: number): Container {
+    let arrow: Container | undefined = this.arrowPool[index];
+    if (arrow === undefined) {
+      arrow = this.pathArrow !== null ? this.markerSprite(this.pathArrow) : this.arrowFallback();
+      this.arrowPool.push(arrow);
+      this.arrowLayer.addChild(arrow);
+    }
+    return arrow;
+  }
+
+  /** Šípka nahor (`^`) z `--module-connector` (rovnaká farba ako sprite šípky), vycentrovaná na počiatok. */
+  private arrowFallback(): Graphics {
+    const half = (ARROW_FALLBACK_CELLS * this.cellPx) / 2;
+    const { connector } = this.palette;
+    return new Graphics()
+      .moveTo(-half / 2, half / 3)
+      .lineTo(0, -half / 3)
+      .lineTo(half / 2, half / 3)
+      .stroke({ width: this.cellPx * 0.06, color: connector.color, alpha: connector.alpha, cap: 'round', join: 'round' });
   }
 
   clearGhost(): void {

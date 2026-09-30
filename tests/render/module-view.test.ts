@@ -72,7 +72,7 @@ describe('ModuleView: sprite modulu', () => {
 describe('ModuleView: náklad na aprone', () => {
   const cargoFile = cargoSpriteEntry('container_teu')?.file ?? '';
 
-  it('kontajner na obsadenom slote má sprite `cargo.container_teu` (64×32) a stred v bunke slotu', () => {
+  it('kontajner na obsadenom slote má sprite `cargo.container_teu` v jednotnej veľkosti TEU 64×26 a stred v bunke slotu', () => {
     const textures = new StubTextures();
     const view = new ModuleView(berth(0, { capacity: 4, units: [teu(0, 11), teu(3, 12)] }), deps(textures));
     expect(view.cargoCount).toBe(2);
@@ -80,7 +80,7 @@ describe('ModuleView: náklad na aprone', () => {
     const sprite = first?.children[0] as Sprite;
     expect(sprite.texture).toBe(textures.textureFor(`file/${cargoFile}`));
     expect(sprite.width).toBeCloseTo(CELL, 6);
-    expect(sprite.height).toBeCloseTo(CELL / 2, 6);
+    expect(sprite.height).toBeCloseTo((CELL * 26) / 64, 6);
     expect(sprite.anchor.x).toBe(0.5);
     // slot 0 = bunka (1, 1) berthu → svet (41, 15) + 0,5
     mount(view);

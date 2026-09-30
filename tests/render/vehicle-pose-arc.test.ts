@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Grid, ROAD_KINDS, type CellCoord, type RoadKind } from '@sim/grid';
-import { VEHICLE_OFFSET_PX, VEHICLE_WIDTH_PX, createRoadKindAt, createRoadMaskAt, forwardOf } from '@render/lane';
+import { VEHICLE_OFFSET_PX, createRoadKindAt, createRoadMaskAt, forwardOf } from '@render/lane';
+import { CARRIER_WIDTH_PX, TRUCK_WIDTH_PX } from '@render/world-scale';
 import { cornerTurn, headingDelta, normalizeAngle, turnArcPose } from '@render/turn-arc';
 import { vehiclePose } from '@render/vehicle-view';
 import type { VehicleVM, ViewRotation } from '@render/view-models';
@@ -181,14 +182,19 @@ describe('vehiclePose: jazda po oblúku v zákrute (všetky kurzy, ľavá aj pra
     }
   });
 
-  it.each(CASES)('$entry° → $exit°: telo vozidla ostane v asfalte zákruty (polomery 6…58 px, ± 2 px)', ({ entry, delta }) => {
+  it.each(CASES)('$entry° → $exit°: telo kamióna (28 px) ostane v asfalte zákruty (polomery 6…58 px, ± 2 px), carrier (34 px) ± 5 px', ({ entry, delta }) => {
     const scene = scenario(entry, delta);
     const q = arcCenterWorld(scene);
-    const halfWidth = VEHICLE_WIDTH_PX / 2 / CELL;
-    for (const sample of drive(scene, 0.4).filter((s) => inCornerCell(s.sim))) {
-      const radius = Math.hypot(sample.x - q.x, sample.y - q.y);
-      expect(radius - halfWidth).toBeGreaterThanOrEqual(6 / CELL - TOLERANCE);
-      expect(radius + halfWidth).toBeLessThanOrEqual(58 / CELL + TOLERANCE);
+    for (const [width, tolerance] of [
+      [TRUCK_WIDTH_PX, TOLERANCE],
+      [CARRIER_WIDTH_PX, 5 / CELL],
+    ] as const) {
+      const halfWidth = width / 2 / CELL;
+      for (const sample of drive(scene, 0.4).filter((s) => inCornerCell(s.sim))) {
+        const radius = Math.hypot(sample.x - q.x, sample.y - q.y);
+        expect(radius - halfWidth).toBeGreaterThanOrEqual(6 / CELL - tolerance);
+        expect(radius + halfWidth).toBeLessThanOrEqual(58 / CELL + tolerance);
+      }
     }
   });
 

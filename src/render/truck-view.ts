@@ -4,8 +4,8 @@
  *
  * Pohyb a mierka sú spoločné s `VehicleView` (nie kópia): poloha je stred kamióna v bunkách, pruh a oblúky v zákrutách
  * počíta `vehiclePose` (`lane.ts`, `turn-arc.ts`) pre stred vozidla, sprite je orientovaný v smere jazdy a má mierku
- * `VEHICLE_SCALE` (rovnakú ako straddle carrier), takže kontajner v návese je rovnako veľký ako kontajner na aprone a kamión
- * je o polovicu dlhší než kontajner (100 px obsahu voči 64 px TEU). Líši sa len štýl:
+ * `VEHICLE_SCALE` (rovnakú ako straddle carrier): kamión je 28 px široký (zmestí sa do 26 px pruhu) a ~116 px dlhý (footprint
+ * 1×2), kontajner v návese je 64×26 ako TEU na aprone (`world-scale.ts`). Líši sa len štýl:
  * prefix `label` a farby fallbacku bez sprite (`--truck-trailer` telo, `--truck-cab` pruh na predku).
  */
 import { DockManeuver, type DockPhase, type PosePx, type SwingSide } from './dock-maneuver';
@@ -20,10 +20,12 @@ import {
   type VehicleViewStyle,
 } from './vehicle-view';
 import type { TruckVM, VehicleVM } from './view-models';
+import { TRUCK_WIDTH_PX } from './world-scale';
 
 /** Štýl kamióna: náves `--truck-trailer` s kabínou `--truck-cab` na predku a tmavým obrysom. */
 export const TRUCK_STYLE: VehicleViewStyle = {
   label: 'truck',
+  widthPx: TRUCK_WIDTH_PX,
   fallback: (palette) => ({ body: palette.truck.trailer, outline: palette.vehicle.dark, front: palette.truck.cab }),
 };
 

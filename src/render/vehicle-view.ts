@@ -28,9 +28,8 @@
  */
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
 import type { Point } from './camera';
-import { vehicleSprite, type CellSize } from './entity-assets';
+import { manifestScale, vehicleSprite, type CellSize } from './entity-assets';
 import {
-  VEHICLE_SCALE,
   defaultRoadKindAt,
   forwardOf,
   laneMagnitude,
@@ -45,6 +44,7 @@ import type { EntityTextures } from './sprite-atlas';
 import type { ColorValue, EntityPalette } from './tokens';
 import { cornerAlpha, cornerTurn, isQuarterTurn, lerpHeading, turnArcPose } from './turn-arc';
 import type { VehicleVM, ViewRotation } from './view-models';
+import { CARRIER_WIDTH_PX, VEHICLE_SCALE } from './world-scale';
 
 /** Hrúbka obrysu fallbacku ako zlomok bunky (2 px pri 64 px, DESIGN_BRIEF §4 „Obrys“). */
 const OUTLINE_CELLS = 2 / 64;
@@ -61,12 +61,15 @@ const FALLBACK_FRONT_STRIPE = 0.2;
 /** Štýl view: prefix `label` kontajnera a farby fallbacku (telo, obrys, pruh na predku). */
 export interface VehicleViewStyle {
   readonly label: string;
+  /** Šírka tela fallbacku v px zdroja (reálna šírka vozidla, `world-scale.ts`); dĺžka je z `footprint`. */
+  readonly widthPx: number;
   readonly fallback: (palette: EntityPalette) => { readonly body: ColorValue; readonly outline: ColorValue; readonly front: ColorValue };
 }
 
 /** Štýl vozidla na cestách: žlté telo s tmavým obrysom a tmavým pruhom na predku. */
 export const VEHICLE_STYLE: VehicleViewStyle = {
   label: 'vehicle',
+  widthPx: CARRIER_WIDTH_PX,
   fallback: (palette) => ({ body: palette.vehicle.body, outline: palette.vehicle.dark, front: palette.vehicle.dark }),
 };
 
@@ -301,13 +304,12 @@ export class VehicleView {
   /** Telo z tokenov s pruhom na predku (hore); rozmer `footprint` (vozidlo 1×1, kamión 1×2), v mierke pruhu. */
   private createFallback(footprint: CellSize): Graphics {
     const { cellPx, palette } = this.deps;
-    const width = footprint.w * cellPx;
     const height = footprint.h * cellPx;
     const inset = FALLBACK_INSET_CELLS * cellPx;
     const { body, outline, front } = this.style.fallback(palette);
-    const left = -width / 2 + inset;
+    const bodyWidth = this.style.widthPx * manifestScale(cellPx); // reálna šírka vozidla, nie celá bunka
+    const left = -bodyWidth / 2;
     const top = -height / 2 + inset;
-    const bodyWidth = width - inset * 2;
     const bodyHeight = height - inset * 2;
     const graphics = new Graphics();
     graphics

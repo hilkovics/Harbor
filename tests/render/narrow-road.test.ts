@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { AUTOTILE_SHAPE_BASE_MASK, type AutotileShape } from '@render/autotile';
 import { MANIFEST_CELL_PX } from '@render/entity-assets';
-import { ROAD_ASPHALT_PX, VEHICLE_WIDTH_PX } from '@render/lane';
+import { ROAD_ASPHALT_PX } from '@render/lane';
+import { CARRIER_WIDTH_PX } from '@render/world-scale';
 import {
   FLARE_DEPTH_PX,
   NARROW_ASPHALT_PX,
@@ -60,16 +61,16 @@ function covered(shape: AutotileShape, x: number, y: number, flareMask = 0, wide
 }
 
 describe('rozmery úzkej cesty sú odvodené zo spritov (assets/infra/road_*.svg)', () => {
-  it('asfalt je o 8 px užší než vozidlo (40 px pri vozidle 48 px; dvojpruhová cesta 52 px), okraj 2 px, zaoblenie 6 px', () => {
-    expect(NARROW_ASPHALT_PX).toBe(40);
-    expect(NARROW_ASPHALT_PX).toBe(VEHICLE_WIDTH_PX - 8);
+  it('asfalt úzkej cesty = najširšie vozidlo + 2 px (36 px pri carrieri 34 px; dvojpruhová cesta 52 px), okraj 2 px, zaoblenie 6 px', () => {
+    expect(NARROW_ASPHALT_PX).toBe(36);
+    expect(NARROW_ASPHALT_PX).toBe(CARRIER_WIDTH_PX + 2);
     expect(NARROW_ASPHALT_PX).toBeLessThan(ROAD_ASPHALT_PX);
     expect(readAsset('infra/road_straight.svg')).toContain(`stroke-width="${String(ROAD_EDGE_PX)}"`);
     expect(readAsset('infra/road_t.svg')).toContain(`A${String(ROAD_FILLET_PX)} ${String(ROAD_FILLET_PX)}`);
     expect(readAsset('infra/road_cross.svg')).toContain(`A${String(ROAD_FILLET_PX)} ${String(ROAD_FILLET_PX)}`);
   });
 
-  it('hĺbka lievika = vzdialenosť, kde sa v T a kríži začína zaoblenie (okraj asfaltu 12 − 6) = rozdiel polšírok širokej a úzkej cesty', () => {
+  it('hĺbka lievika = vzdialenosť, kde sa v T a kríži začína zaoblenie (okraj asfaltu 14 − 6) = rozdiel polšírok širokej a úzkej cesty', () => {
     expect(FLARE_DEPTH_PX).toBe((CELL - NARROW_ASPHALT_PX) / 2 - ROAD_FILLET_PX);
     expect(FLARE_DEPTH_PX).toBe((ROAD_ASPHALT_PX - NARROW_ASPHALT_PX) / 2);
   });
@@ -98,7 +99,7 @@ describe('narrowRoadPaths: tvar úzkej dlaždice (základná orientácia, bez li
     }
   });
 
-  it('straight: pás x 12–52 cez celú výšku, okraje na x 13 a 51', () => {
+  it('straight: pás x 14–50 cez celú výšku, okraje na x 15 a 49', () => {
     for (const y of [0.5, 32, 63.5]) {
       expect(covered('straight', LOW + 0.5, y)).toBe(true);
       expect(covered('straight', HIGH - 0.5, y)).toBe(true);
@@ -110,7 +111,7 @@ describe('narrowRoadPaths: tvar úzkej dlaždice (základná orientácia, bez li
     for (const line of lines) expect(line.map(([, y]) => y)).toEqual([0, 64]);
   });
 
-  it('end: rameno na sever x 12–52 a polkruh polomeru 20 okolo stredu bunky', () => {
+  it('end: rameno na sever x 14–50 a polkruh polomeru 18 okolo stredu bunky', () => {
     expect(covered('end', 32, 1)).toBe(true);
     expect(covered('end', 32, HIGH - 0.5)).toBe(true);
     expect(covered('end', 32, HIGH + 0.5)).toBe(false);
@@ -119,7 +120,7 @@ describe('narrowRoadPaths: tvar úzkej dlaždice (základná orientácia, bez li
     expect(covered('end', LOW - 0.5, 10)).toBe(false);
   });
 
-  it('corner: štvrťkruhový pás okolo rohu (64; 0), polomery 12–52', () => {
+  it('corner: štvrťkruhový pás okolo rohu (64; 0), polomery 14–50', () => {
     const at = (radius: number, degrees: number): P => [64 + radius * Math.cos((degrees * Math.PI) / 180), radius * Math.sin((degrees * Math.PI) / 180)];
     for (const degrees of [92, 110, 135, 160, 178]) {
       expect(covered('corner', ...at(LOW + 1, degrees)), `polomer ${String(LOW + 1)}, ${String(degrees)}°`).toBe(true);
@@ -127,20 +128,20 @@ describe('narrowRoadPaths: tvar úzkej dlaždice (základná orientácia, bez li
       expect(covered('corner', ...at(LOW - 1, degrees))).toBe(false);
       expect(covered('corner', ...at(HIGH + 1, degrees))).toBe(false);
     }
-    expect(covered('corner', LOW + 1, 0.5)).toBe(true); // hrana N: x 12–52
-    expect(covered('corner', 63.5, LOW + 1)).toBe(true); // hrana E: y 12–52
+    expect(covered('corner', LOW + 1, 0.5)).toBe(true); // hrana N: x 14–50
+    expect(covered('corner', 63.5, LOW + 1)).toBe(true); // hrana E: y 14–50
     expect(covered('corner', 32, 63)).toBe(false); // juh a západ nie sú pripojené
     expect(covered('corner', 1, 32)).toBe(false);
   });
 
-  it('t: vodorovný pás y 12–52 a rameno N, juh zatvorený, zaoblenie 6 px vo vnútorných rohoch', () => {
+  it('t: vodorovný pás y 14–50 a rameno N, juh zatvorený, zaoblenie 6 px vo vnútorných rohoch', () => {
     expect(covered('t', 1, 32)).toBe(true);
     expect(covered('t', 63, 32)).toBe(true);
     expect(covered('t', 32, 1)).toBe(true);
     expect(covered('t', 32, HIGH + 2)).toBe(false);
     expect(covered('t', 5, 10)).toBe(false);
     expect(covered('t', 5, HIGH + 5)).toBe(false);
-    expect(covered('t', LOW - 0.5, LOW - 0.5)).toBe(true); // výplň zaoblenia pri rohu (12; 12)
+    expect(covered('t', LOW - 0.5, LOW - 0.5)).toBe(true); // výplň zaoblenia pri rohu (14; 14)
     expect(covered('t', LOW - 2, LOW - 2)).toBe(false); // mimo výplne (v kruhu zaoblenia)
     expect(covered('t', HIGH + 1, LOW - 0.5)).toBe(true);
   });
@@ -193,7 +194,7 @@ describe('narrowRoadPaths: tvar úzkej dlaždice (základná orientácia, bez li
 });
 
 describe('narrowRoadPaths: lievik pri širokom susedovi', () => {
-  it('rameno bez lievika má na hrane asfalt len x 12–52; s lievikom x 6–58 (šírka sprite širokej cesty)', () => {
+  it('rameno bez lievika má na hrane asfalt len x 14–50; s lievikom x 6–58 (šírka sprite širokej cesty)', () => {
     expect(covered('straight', 7, 0.3)).toBe(false);
     expect(covered('straight', 7, 0.3, 1)).toBe(true);
     expect(covered('straight', 57, 0.3, 1)).toBe(true);

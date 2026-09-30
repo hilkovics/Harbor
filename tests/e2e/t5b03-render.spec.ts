@@ -3,7 +3,8 @@ import type { TruckVM } from '../../src/render/view-models';
 import type { YardCraneDecor } from '../../src/render/yard-crane-decor';
 
 // T5B-03 render demo (`src/render/__demo__/t5b03-render.html`): pevné view-modely bez simu a riadené hodiny animácií, takže
-// screenshoty sú deterministické. Scény: `scale` (audit mierky, napojenie ciest na konektory), `connect` (brána, stojisko
+// screenshoty sú deterministické. Scény: `scale` (audit mierky, napojenie ciest na konektory), `lanes` (protismerné vozidlá na
+// dvojpruhovej ceste), `connect` (brána, stojisko
 // a rampy prepojené cestami), `yard` (portálový žeriav dvora), `dock` (kamión cúva do docku).
 
 const DEMO_URL = '/src/render/__demo__/t5b03-render.html';
@@ -32,6 +33,37 @@ test('scale: celá scéna a detail vozidiel vedľa kontajnerov', async ({ page }
     return demo.focus(demo.scene, 51, 22, 2.0);
   });
   await page.screenshot({ path: 'tests/e2e/__screenshots__/t5b03-scale-trucks.png' });
+  expect(errors).toEqual([]);
+});
+
+test('lanes: protismerné vozidlá v pravých pruhoch dvojpruhovej cesty sa míňajú s prekrytím najviac o pár px', async ({ page }) => {
+  const errors = await openDemo(page, 'lanes');
+  const poses = await page.evaluate(() => {
+    const { renderer, scene } = window.__t5b03Demo!;
+    const cellPx = renderer.palette.cellPx;
+    const pose = (view: { view: { x: number; y: number; angle: number } } | undefined) => ({ x: (view?.view.x ?? Number.NaN) / cellPx, y: (view?.view.y ?? Number.NaN) / cellPx, angle: view?.view.angle ?? Number.NaN });
+    return {
+      vehicles: (scene.vehicles ?? []).map((vehicle) => ({ id: vehicle.id, heading: vehicle.heading, ...pose(renderer.entities.vehicleView(vehicle.id)) })),
+      trucks: (scene.trucks ?? []).map((truck) => ({ id: truck.id, heading: truck.heading, ...pose(renderer.entities.truckView(truck.id)) })),
+    };
+  });
+  const all = [...poses.vehicles, ...poses.trucks];
+  // východ (90°) jazdí v južnom pruhu (+13/64 od osi y = 23,5), západ (270°) v severnom (−13/64)
+  for (const vehicle of all) {
+    const expected = 23.5 + (vehicle.heading === 90 ? 13 / 64 : -13 / 64);
+    expect(vehicle.y, `vozidlo ${String(vehicle.id)}`).toBeCloseTo(expected, 6);
+  }
+  const byId = (id: number) => all.find((vehicle) => vehicle.id === id)!;
+  // protismerné dvojice: stredy od seba práve jeden pruh (26/64 bunky) a v rovnakom x
+  for (const [a, b] of [
+    [51, 52],
+    [61, 62],
+    [53, 63],
+  ] as const) {
+    expect(Math.abs(byId(a).y - byId(b).y), `dvojica ${String(a)}/${String(b)}`).toBeCloseTo(26 / 64, 6);
+    expect(byId(a).x).toBeCloseTo(byId(b).x, 6);
+  }
+  await page.screenshot({ path: 'tests/e2e/__screenshots__/t5b03-lanes.png' });
   expect(errors).toEqual([]);
 });
 

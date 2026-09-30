@@ -1,7 +1,7 @@
 /**
  * Demo renderu karty T5B-03 (spätná väzba F5b č. 3, 8, 10, 11): mapa `harbor_01` s pevnými view-modelmi
  * (`t5b03-render.fixtures.ts`) — bez simu, bez UI. Spúšťa ju stránka `t5b03-render.html`
- * (`/src/render/__demo__/t5b03-render.html?scene=scale|connect|yard|dock`); Playwright (`tests/e2e/t5b03-render.spec.ts`)
+ * (`/src/render/__demo__/t5b03-render.html?scene=scale|lanes|connect|yard|dock`); Playwright (`tests/e2e/t5b03-render.spec.ts`)
  * z nej robí screenshoty.
  *
  * Animácie (závora, žeriav dvora, manéver kamióna pri rampe) bežia podľa **riadených hodín** `window.__t5b03Demo.clock`,

@@ -57,7 +57,7 @@ export { QUEUE_BADGE_MAX, QueueBadge, createWarningBadge, queueBadgeLabel } from
 export type { QueueBadgeDeps } from './badges';
 export { BARRIER_MOTION_MS, BarrierMotion, GateDecor, queueBadgePosition } from './gate-decor';
 export { WaitingAreaDecor, occupiedStalls } from './waiting-area-decor';
-export { RampDecor, STAGED_INSET_PX, stagedPlacements } from './ramp-decor';
+export { RampDecor, STAGED_ANGLE, STAGED_INSET_PX, stagedPlacements } from './ramp-decor';
 export type { StagedPlacement } from './ramp-decor';
 export { YARD_BOX_CELLS, YARD_INSET_CELLS, YardCraneDecor, yardCraneHome, yardSlotSpot } from './yard-crane-decor';
 export { CRANE_LIFT_SCALE, CRANE_PHASE_MS, YardCraneMotion, craneOpDuration } from './yard-crane-motion';
@@ -69,7 +69,6 @@ export {
   LANE_OFFSET_CELLS,
   LANE_WIDTH_PX,
   ROAD_ASPHALT_PX,
-  VEHICLE_BODY_WIDTH_PX,
   VEHICLE_OFFSET_CELLS,
   VEHICLE_OFFSET_PX,
   VEHICLE_SCALE,
@@ -79,6 +78,7 @@ export {
   defaultRoadKindAt,
   forwardOf,
   laneMagnitude,
+  laneOverhangPx,
   laneOffset,
   noRoadMaskAt,
   rightOf,
@@ -111,6 +111,16 @@ export {
 } from './crane-view';
 export type { CraneParts, CraneState, CraneViewDeps } from './crane-view';
 export { CargoSprite, cargoSizePx } from './cargo-sprite';
+export {
+  CARRIER_LENGTH_PX,
+  CARRIER_WIDTH_PX,
+  METERS_PER_CELL,
+  PX_PER_METER,
+  TEU_PX,
+  TRUCK_LENGTH_PX,
+  TRUCK_WIDTH_PX,
+  metersToPx,
+} from './world-scale';
 export type { CargoSpriteDeps } from './cargo-sprite';
 export { SIDE_STEP, footprintPose, localCellCenter, localCellWorldCenter, rotateOffset } from './footprint-pose';
 export type { FootprintBox, FootprintPose } from './footprint-pose';
@@ -127,6 +137,7 @@ export {
   QUEUE_BADGE_SIZE,
   WARNING_BADGE_FILE,
   WARNING_BADGE_SIZE,
+  cargoDisplaySize,
   cargoSpriteEntry,
   cargoTypeOfCategory,
   entitySpriteFiles,

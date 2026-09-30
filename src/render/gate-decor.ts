@@ -6,15 +6,15 @@
  * na základni). Otáča sa okolo pivotu medzi `closedDeg` (zatvorená, cez cestu) a `openDeg` (otvorená) podľa `gate.open`;
  * prechod trvá `BARRIER_MOTION_MS` (kratšie ako 200 ms, DESIGN_BRIEF §6.4) a beží podľa hodín z `ModuleViewDeps.now`.
  *
- * **Odznak fronty** stojí pri vonkajšej bunke vstupného konektora (`gate.entryConnector`, predvolene 0) naľavo od kamióna
- * vzhľadom na smer vjazdu — kamión (`VEHICLE_WIDTH_PX` široký, takmer na osi cesty) odznak nezakrýva.
+ * **Odznak fronty** stojí pri vonkajšej bunke vstupného konektora (`gate.entryConnector`, predvolene 0) v ľavom pruhu
+ * vzhľadom na smer vjazdu — pravý pruh patrí čakajúcemu kamiónu (`lane.ts`, 28 px v 26 px pruhu), takže odznak kamión nezakrýva.
  * Číslo ostáva vzpriamené pri každej rotácii modulu a drží čitateľnú veľkosť pri zoome (`setBadgeScale`).
  */
 import { Container, Graphics, Sprite } from 'pixi.js';
 import { QueueBadge } from './badges';
-import { MANIFEST_CELL_PX, QUEUE_BADGE_SIZE, manifestScale, type ManifestPart, type ManifestPoint, type ModuleSpriteEntry } from './entity-assets';
+import { manifestScale, type ManifestPart, type ManifestPoint, type ModuleSpriteEntry } from './entity-assets';
 import { SIDE_STEP, localCellCenter, type FootprintPose } from './footprint-pose';
-import { VEHICLE_WIDTH_PX, rightOf } from './lane';
+import { LANE_OFFSET_CELLS, rightOf } from './lane';
 import type { ModuleDecor, ModuleDecorContext, ModuleDecorFactory, ModuleViewDeps } from './module-decor';
 import type { ModuleVM, ViewRotation, ViewSide } from './view-models';
 
@@ -88,7 +88,7 @@ export function queueBadgePosition(
   const step = SIDE_STEP[connector.side];
   const outside = localCellCenter({ x: connector.x + step.x, y: connector.y + step.y }, pose.baseW, pose.baseH, cellPx);
   const right = rightOf(ENTRY_HEADING[connector.side]);
-  const shift = ((VEHICLE_WIDTH_PX + QUEUE_BADGE_SIZE.w) / 2 / MANIFEST_CELL_PX) * cellPx; // okraj kamióna + polomer odznaku
+  const shift = LANE_OFFSET_CELLS * cellPx;
   return { x: outside.x - right.x * shift, y: outside.y - right.y * shift };
 }
 

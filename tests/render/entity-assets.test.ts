@@ -19,6 +19,7 @@ import {
   shipSprite,
   vehicleSprite,
 } from '@render/entity-assets';
+import { TEU_PX } from '@render/world-scale';
 import { ENTITY_PALETTE, PALETTE, StubTextures } from './stub-textures';
 
 describe('záznamy manifestu pre entity', () => {
@@ -172,7 +173,7 @@ describe('entitySpriteFiles (čo načíta atlas)', () => {
 describe('CargoSprite', () => {
   const deps = (textures: StubTextures | null) => ({ cellPx: PALETTE.cellPx, palette: ENTITY_PALETTE, textures });
 
-  it('sprite z manifestu vycentrovaný na počiatok v rozmeroch 64×32 (× cell / 64)', () => {
+  it('sprite z manifestu (64×32) vycentrovaný na počiatok a zobrazený v jednotnej veľkosti TEU 64×26 (× cell / 64)', () => {
     const textures = new StubTextures();
     const cargo = new CargoSprite(3, 'container_teu', deps(textures));
     expect(cargo.unitId).toBe(3);
@@ -182,12 +183,15 @@ describe('CargoSprite', () => {
     expect(sprite.texture).toBe(textures.textureFor('file/cargo/container_teu.svg'));
     expect(sprite.anchor.x).toBe(0.5);
     expect(sprite.width).toBeCloseTo(64 * manifestScale(PALETTE.cellPx), 6);
-    expect(sprite.height).toBeCloseTo(32 * manifestScale(PALETTE.cellPx), 6);
+    expect(sprite.height).toBeCloseTo(26 * manifestScale(PALETTE.cellPx), 6);
+    expect([TEU_PX.w, TEU_PX.h]).toEqual([64, 26]);
   });
 
-  it('cargoSizePx: manifest, neznámy typ = kontajner 1 × 0,5 bunky', () => {
-    expect(cargoSizePx('container_teu', PALETTE.cellPx)).toEqual({ w: PALETTE.cellPx, h: PALETTE.cellPx / 2 });
-    expect(cargoSizePx('neznamy', PALETTE.cellPx)).toEqual({ w: PALETTE.cellPx, h: PALETTE.cellPx / 2 });
+  it('cargoSizePx: kontajner TEU 64 × 26 (jedno miesto, `TEU_PX`), ostatný náklad z manifestu, neznámy typ = kontajner TEU', () => {
+    const unit = manifestScale(PALETTE.cellPx);
+    expect(cargoSizePx('container_teu', PALETTE.cellPx)).toEqual({ w: 64 * unit, h: 26 * unit });
+    expect(cargoSizePx('neznamy', PALETTE.cellPx)).toEqual({ w: 64 * unit, h: 26 * unit });
+    expect(cargoSizePx('bulk_pile', PALETTE.cellPx)).toEqual({ w: 32 * unit, h: 32 * unit }); // nie kontajner: rozmer z manifestu
   });
 
   it('bez textúr alebo bez záznamu → `Graphics`', () => {

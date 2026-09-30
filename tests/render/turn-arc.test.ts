@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ROAD_KINDS, type RoadKind } from '@sim/grid';
 import { MANIFEST_CELL_PX } from '@render/entity-assets';
-import { LANE_CENTER_PX, VEHICLE_OFFSET_PX, VEHICLE_WIDTH_PX, forwardOf, laneMagnitude, rightOf } from '@render/lane';
+import { LANE_CENTER_PX, VEHICLE_OFFSET_PX, forwardOf, laneMagnitude, rightOf } from '@render/lane';
 import {
   cornerAlpha,
   cornerTurn,
@@ -14,6 +14,7 @@ import {
   turnArcRadius,
 } from '@render/turn-arc';
 import type { ViewRotation } from '@render/view-models';
+import { CARRIER_WIDTH_PX, TRUCK_WIDTH_PX } from '@render/world-scale';
 
 const HEADINGS: readonly ViewRotation[] = [0, 90, 180, 270];
 const PX = MANIFEST_CELL_PX;
@@ -136,16 +137,20 @@ describe('turnArcPose: začiatok, stred a koniec oblúka (všetky kurzy, obe zá
   });
 });
 
-describe('vozidlo v zákrute ostane na asfalte cesty (± 2 px)', () => {
-  const halfWidth = VEHICLE_WIDTH_PX / 2 / PX; // polovica šírky vozidla (mierka 1 : 1, 48 px)
-
-  it.each(TURNS)('dvojpruhová cesta, $from° → $to°: telo ostane v asfalte okolo vnútorného rohu (polomery 6…58 px)', ({ from, to }) => {
+describe('vozidlo v zákrute ostane na asfalte cesty', () => {
+  it.each(TURNS)('dvojpruhová cesta, $from° → $to°: kamión (28 px) v asfalte okolo vnútorného rohu (polomery 6…58 px, ± 2 px), carrier (34 px) ± 5 px', ({ from, to }) => {
     const q = arcCenter(from, to);
-    for (let i = 0; i <= 100; i++) {
-      const pose = turnArcPose('two_lane', from, to, i / 100);
-      const radius = Math.hypot(pose.x - q.x, pose.y - q.y);
-      expect(radius - halfWidth).toBeGreaterThanOrEqual(6 / PX - TOLERANCE_CELLS); // vnútorný okraj asfaltu (6 px)
-      expect(radius + halfWidth).toBeLessThanOrEqual(58 / PX + TOLERANCE_CELLS); // vonkajší okraj asfaltu (58 px)
+    for (const [width, tolerance] of [
+      [TRUCK_WIDTH_PX, TOLERANCE_CELLS],
+      [CARRIER_WIDTH_PX, 5 / PX],
+    ] as const) {
+      const halfWidth = width / 2 / PX;
+      for (let i = 0; i <= 100; i++) {
+        const pose = turnArcPose('two_lane', from, to, i / 100);
+        const radius = Math.hypot(pose.x - q.x, pose.y - q.y);
+        expect(radius - halfWidth).toBeGreaterThanOrEqual(6 / PX - tolerance); // vnútorný okraj asfaltu (6 px)
+        expect(radius + halfWidth).toBeLessThanOrEqual(58 / PX + tolerance); // vonkajší okraj asfaltu (58 px)
+      }
     }
   });
 

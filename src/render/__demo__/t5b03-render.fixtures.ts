@@ -6,6 +6,8 @@
  *    rampa s pripravenými kontajnermi, cesty, straddle carriery (prázdny a naložený vedľa seba) a kamióny (prázdny, naložený).
  *    Cesty sa napájajú na konektory berthu, dvora a rampy (č. 3);
  *  - `connect` (č. 3): scéna F4 — brána, čakacia plocha a dve rampy prepojené cestami (bez medzier pri konektoroch);
+ *  - `lanes` (č. 10): protismerné vozidlá na dvojpruhovej ceste — dva carriery, dva kamióny, carrier proti kamiónu; každé v svojom
+ *    pravom pruhu (26 px), presah cez stredovú čiaru len o pár px;
  *  - `yard` (č. 8): kontajnerový dvor s cestou a straddle carrierom pri vstupe; animáciu žeriavu spúšťa test zmenou
  *    `lastStorageOp` (`yardScene`);
  *  - `dock` (č. 11): rampa A s dvoma kamiónmi, ktoré cúvajú do docku — jeden prichádza popri rampe (kurz kolmý na os docku),
@@ -106,6 +108,24 @@ export const SCALE_SCENE: T5b03Scene = {
   view: { centerX: 47, centerY: 20, zoom: 0.58 },
 };
 
+// ---- scéna `lanes` -------------------------------------------------------------------------------------------------
+
+/** Vodorovná dvojpruhová cesta y = 23, x 36–53. */
+export const LANES_ROADS: readonly CellCoord[] = row(23, 36, 53);
+
+/** Protismerné dvojice v jednej bunke: carrier ↔ carrier (x 40), kamión ↔ kamión (x 44), carrier ↔ kamión (x 48). */
+export const LANES_SCENE: T5b03Scene = {
+  roads: LANES_ROADS,
+  vm: {
+    modules: [],
+    cranes: [],
+    ships: [],
+    vehicles: [carrierAt(51, 40, 23, 90, false), carrierAt(52, 40, 23, 270, true), carrierAt(53, 48, 23, 90, true)],
+    trucks: [truckInCellAt(61, 44, 23, 90, false, 'to_gate'), truckInCellAt(62, 44, 23, 270, true, 'to_portal'), truckInCellAt(63, 48, 23, 270, false, 'to_gate')],
+  },
+  view: { centerX: 44.5, centerY: 23.5, zoom: 2.1 },
+};
+
 // ---- scéna `connect` -----------------------------------------------------------------------------------------------
 
 export const CONNECT_SCENE: T5b03Scene = { roads: F4_ROADS, vm: { ...F4_MAIN_SCENE, trucks: [] }, view: F4_MAIN_VIEW };
@@ -169,7 +189,7 @@ export function dockScene(trucks: readonly TruckVM[]): T5b03Scene {
 
 export const DOCK_SCENE: T5b03Scene = dockScene([dockTruckArriving(DOCK_TRUCK_SIDE, 31, 25, 270), dockTruckArriving(DOCK_TRUCK_STRAIGHT, 32, 25, 0)]);
 
-export const T5B03_SCENES = Object.freeze({ scale: SCALE_SCENE, connect: CONNECT_SCENE, yard: YARD_SCENE, dock: DOCK_SCENE });
+export const T5B03_SCENES = Object.freeze({ scale: SCALE_SCENE, lanes: LANES_SCENE, connect: CONNECT_SCENE, yard: YARD_SCENE, dock: DOCK_SCENE });
 export type T5b03SceneName = keyof typeof T5B03_SCENES;
 
 /** Mriežka pre scénu: terén mapy + štartová cesta + cesty scény. */

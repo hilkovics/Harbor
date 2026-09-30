@@ -2,10 +2,10 @@ import { expect, test, type Page } from '@playwright/test';
 
 // F3 render demo (T03-08): pevné view-modely bez simu (`src/render/__demo__/f3-render.html`). Screenshoty slúžia na
 // vizuálnu kontrolu: fill stavy dvorov, vozidlá (empty / loaded, kurzy), pripojené a odpojené depo s odznakom.
-// Scéna `lanes` (T03-17, `?scene=lanes`): vozidlá jazdia vpravo od osi cesty (`f3-lanes.png`); od T03-19 idú v zákrutách po
-// oblúku okolo vnútorného rohu. Od F5b č. 10 majú vozidlá jednotnú mierku 1 : 1 voči nákladu (48 px široké na 52 px asfaltu),
-// takže posun od osi je len rezerva asfaltu (2 px) a polomery zákrut sú 30 px (pravá) a 34 px (ľavá); protismerné sa míňajú
-// s prekrytím (sim kolízie nemá).
+// Scéna `lanes` (T03-17, `?scene=lanes`): vozidlá jazdia v pravom pruhu, protismerné sa nekrížia (`f3-lanes.png`); od T03-19 idú
+// v zákrutách po oblúku okolo vnútorného rohu (pravá zákruta polomer 19 px, ľavá 45 px). Od F5b č. 10 majú vozidlá reálnu mierku
+// (1 bunka ≈ 6 m: carrier 34 px, kamión 28 px široký) — sprite má plátno 1 bunka široké, vozidlo v ňom presahuje pruh 26 px
+// najviac o pár px (carrier 4 px, kamión 1 px).
 // Scéna `road-kinds` (T03-19, `?scene=road-kinds`): dvojpruhová, jednopruhová a jednosmerná cesta, križovatky rôznych
 // typov, jednosmerný okruh so šípkami a vozidlá aj v oblúku (`f3-road-kinds.png`).
 
@@ -92,21 +92,21 @@ test.describe('F3: render skladov, vozidiel a odznaku „nepripojené“ (demo s
 });
 
 test.describe('F3: vozidlá v pravom pruhu a po oblúku v zákrutách (scéna lanes)', () => {
-  /** Posun stredu vozidla od osi cesty (bunky) vpravo od smeru jazdy: rezerva asfaltu (52 − 48) / 2 = 2 px z 64 px bunky. */
-  const LANE = 2 / 64;
+  /** Posun stredu vozidla od osi cesty (bunky) vpravo od smeru jazdy: stred pravého pruhu, 13 px z 64 px bunky. */
+  const LANE = 13 / 64;
   const RIGHT_OF_HEADING: Record<number, readonly [number, number]> = { 0: [1, 0], 90: [0, 1], 180: [-1, 0], 270: [0, -1] };
 
   /**
-   * Vozidlá v bunkách zákrut: stred oblúka `q` (roh bunky, v ktorom sa stretávajú pripojené strany), polomer dráhy v px zdroja
-   * (pravá zákruta 30, ľavá 34), parameter oblúka `t` (podiel dráhy v bunke) a kurz vstupu s otočením (+90 / −90).
+   * Vozidlá v bunkách zákrut: stred oblúka `q` (roh bunky, v ktorom sa stretávajú pripojené strany), polomer pruhu v px zdroja
+   * (pravá zákruta 19, ľavá 45), parameter oblúka `t` (podiel dráhy v bunke) a kurz vstupu s otočením (+90 / −90).
    */
   const ARCS: Record<number, { q: readonly [number, number]; radius: number; t: number; from: number; delta: number }> = {
-    31: { q: [48, 25], radius: 30, t: 0.62, from: 90, delta: 90 }, //  (48; 24) východ → juh, pravá
-    32: { q: [43, 28], radius: 34, t: 0.62, from: 180, delta: -90 }, //  (42; 28) juh → východ, ľavá
-    33: { q: [48, 25], radius: 34, t: 0.25, from: 0, delta: -90 }, //  (48; 24) sever → západ, ľavá
-    34: { q: [43, 28], radius: 30, t: 0.3, from: 270, delta: 90 }, //  (42; 28) západ → sever, pravá
-    35: { q: [48, 28], radius: 30, t: 0.5, from: 180, delta: 90 }, //  (48; 28) juh → západ, pravá
-    36: { q: [48, 28], radius: 34, t: 0.8, from: 90, delta: -90 }, //  (48; 28) východ → sever, ľavá
+    31: { q: [48, 25], radius: 19, t: 0.62, from: 90, delta: 90 }, //  (48; 24) východ → juh, pravá
+    32: { q: [43, 28], radius: 45, t: 0.62, from: 180, delta: -90 }, //  (42; 28) juh → východ, ľavá
+    33: { q: [48, 25], radius: 45, t: 0.25, from: 0, delta: -90 }, //  (48; 24) sever → západ, ľavá
+    34: { q: [43, 28], radius: 19, t: 0.3, from: 270, delta: 90 }, //  (42; 28) západ → sever, pravá
+    35: { q: [48, 28], radius: 19, t: 0.5, from: 180, delta: 90 }, //  (48; 28) juh → západ, pravá
+    36: { q: [48, 28], radius: 45, t: 0.8, from: 90, delta: -90 }, //  (48; 28) východ → sever, ľavá
   };
 
   test('priama cesta, protismer vedľa seba, T-križovatka: každé vozidlo v pravom pruhu; v zákrutách na oblúku', async ({ page }) => {
@@ -142,7 +142,7 @@ test.describe('F3: vozidlá v pravom pruhu a po oblúku v zákrutách (scéna la
       const arc = ARCS[vehicle.id];
       if (arc === undefined) {
         const [rx, ry] = RIGHT_OF_HEADING[vm.heading];
-        // stred vozidla = poloha z VM + posun o 2/64 bunky doprava od smeru jazdy
+        // stred vozidla = poloha z VM + posun o 13/64 bunky doprava od smeru jazdy
         expect(px, `x vozidla ${String(vehicle.id)}`).toBeCloseTo(vm.x + rx * LANE, 6);
         expect(py, `y vozidla ${String(vehicle.id)}`).toBeCloseTo(vm.y + ry * LANE, 6);
         expect(vehicle.angle).toBeCloseTo(vm.heading, 6);
@@ -152,15 +152,15 @@ test.describe('F3: vozidlá v pravom pruhu a po oblúku v zákrutách (scéna la
         const expectedAngle = (((arc.from + arc.delta * arc.t) % 360) + 360) % 360;
         expect(vehicle.angle, `uhol vozidla ${String(vehicle.id)}`).toBeCloseTo(expectedAngle, 6);
       }
-      // sprite má jednotnú mierku vozidiel (VEHICLE_SCALE = 1): 1 bunka široký, kontajner na ňom = kontajner na aprone
+      // sprite má jednotnú mierku vozidiel (VEHICLE_SCALE = 1): plátno 1 bunka, vozidlo a kontajner v ňom v reálnej mierke
       expect(vehicle.spriteWidth / state.cellPx).toBeCloseTo(1, 6);
     }
 
-    // protismerná dvojica v jednej bunke: stredy sú od seba 2 × posun (4/64 bunky) kolmo na cestu
+    // protismerná dvojica v jednej bunke: stredy sú od seba práve jeden pruh (26/64 bunky) kolmo na cestu
     const at = (id: number): { x: number; y: number } => state.vehicles.find((vehicle) => vehicle.id === id)!;
-    expect(Math.abs(at(21).y - at(22).y) / state.cellPx).toBeCloseTo(4 / 64, 6);
+    expect(Math.abs(at(21).y - at(22).y) / state.cellPx).toBeCloseTo(26 / 64, 6);
     expect(at(21).x).toBeCloseTo(at(22).x, 6);
-    expect(Math.abs(at(25).x - at(26).x) / state.cellPx).toBeCloseTo(4 / 64, 6);
+    expect(Math.abs(at(25).x - at(26).x) / state.cellPx).toBeCloseTo(26 / 64, 6);
     expect(at(25).y).toBeCloseTo(at(26).y, 6);
 
     await page.screenshot({ path: 'tests/e2e/__screenshots__/f3-lanes.png' });
@@ -183,18 +183,18 @@ test.describe('F3: vozidlá v pravom pruhu a po oblúku v zákrutách (scéna la
       return result;
     });
 
-    // vozidlo 31: prev (47,95; 24,5) kurz 90° → aktuálna (48,5; 24,62) kurz 180°; zákruta (48; 24) = východ → juh, pravá (30 px)
+    // vozidlo 31: prev (47,95; 24,5) kurz 90° → aktuálna (48,5; 24,62) kurz 180°; zákruta (48; 24) = východ → juh, pravá (19 px)
     const start = samples[0];
     expect(start.x).toBeCloseTo(47.95, 6);
-    expect(start.y).toBeCloseTo(24.5 + 2 / 64, 6); // ešte na priamom úseku susednej bunky
+    expect(start.y).toBeCloseTo(24.5 + 13 / 64, 6); // ešte v priamom pravom pruhu susednej bunky
     expect(start.angle).toBeCloseTo(90, 6);
     const end = samples[samples.length - 1];
-    expect(Math.hypot(end.x - 48, end.y - 25) * 64).toBeCloseTo(30, 6);
+    expect(Math.hypot(end.x - 48, end.y - 25) * 64).toBeCloseTo(19, 6);
     expect(end.angle).toBeCloseTo(90 + 90 * 0.62, 6);
-    // po vstupe do bunky zákruty (x ≥ 48) leží vozidlo stále na oblúku s polomerom 30 px okolo rohu (48; 25)
+    // po vstupe do bunky zákruty (x ≥ 48) leží vozidlo stále na oblúku s polomerom 19 px okolo rohu (48; 25)
     const inside = samples.filter((sample) => sample.x >= 48);
     expect(inside.length).toBeGreaterThan(10);
-    for (const sample of inside) expect(Math.hypot(sample.x - 48, sample.y - 25) * 64).toBeCloseTo(30, 6);
+    for (const sample of inside) expect(Math.hypot(sample.x - 48, sample.y - 25) * 64).toBeCloseTo(19, 6);
     // plynulosť: najväčší krok medzi susednými vzorkami je len zlomok bunky a uhol sa mení monotónne
     let largest = 0;
     for (let i = 1; i < samples.length; i++) {
@@ -255,16 +255,16 @@ test.describe('F3: typy ciest, šípky jednosmerky a oblúky (scéna road-kinds)
 
     const at = (id: number) => state.vehicles.find((vehicle) => vehicle.id === id)!;
     const vm = (id: number) => scene.find((vehicle) => vehicle.id === id)!;
-    // dvojpruhová cesta y 21: vozidlo na východ je južne od osi (+2/64), na západ severne (−2/64)
-    expect(at(41).y).toBeCloseTo(vm(41).y + 2 / 64, 6);
-    expect(at(42).y).toBeCloseTo(vm(42).y - 2 / 64, 6);
+    // dvojpruhová cesta y 21: vozidlo na východ je v južnom pruhu (+13/64), na západ v severnom (−13/64)
+    expect(at(41).y).toBeCloseTo(vm(41).y + 13 / 64, 6);
+    expect(at(42).y).toBeCloseTo(vm(42).y - 13 / 64, 6);
     // jednopruhová a jednosmerná: v strede cesty
     for (const id of [43, 44, 45, 46, 51, 52, 53, 54]) {
       expect(at(id).x, `x ${String(id)}`).toBeCloseTo(vm(id).x, 6);
       expect(at(id).y, `y ${String(id)}`).toBeCloseTo(vm(id).y, 6);
     }
-    // zúženie: dvojpruhová časť (x 35–37) vpravo od osi, jednopruhová (x 38–40) v strede
-    expect(at(47).y).toBeCloseTo(vm(47).y + 2 / 64, 6);
+    // zúženie: dvojpruhová časť (x 35–37) v pruhu, jednopruhová (x 38–40) v strede
+    expect(at(47).y).toBeCloseTo(vm(47).y + 13 / 64, 6);
     expect(at(48).y).toBeCloseTo(vm(48).y, 6);
 
     // oblúky na jednosmernom okruhu: polomer 32 px (stred cesty) okolo vnútorného rohu, uhol podľa polohy v bunke

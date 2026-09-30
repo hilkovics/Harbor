@@ -7,7 +7,7 @@
  * s `connectsAtRot0` z manifestu stráži `tests/tools/asset-manifest.test.ts`.
  *
  * **Typ cesty** (`Cell.roadKind`, ADR-020): `two_lane` sa kreslí spritami. Jednopruhové cesty (`one_lane`, `one_way`;
- * `ROAD_KIND_TRAITS[kind].lanes === 1`) nemajú sprity, kreslia sa procedurálne (`narrow-road.ts`): asfalt 40 px, okraje
+ * `ROAD_KIND_TRAITS[kind].lanes === 1`) nemajú sprity, kreslia sa procedurálne (`narrow-road.ts`): asfalt 36 px, okraje
  * 2 px, bez stredovej čiary, rovnaký tvar a rotácia. Ich ramená pri širokom susedovi dostanú lievik, aby sa úzka vetva
  * napojila do stredu širokej bez schodíka. Šípky jednosmerky kreslí `RoadMarkLayer` nad touto vrstvou a pod entitami.
  *

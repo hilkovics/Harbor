@@ -2,10 +2,9 @@ import { Container, Sprite } from 'pixi.js';
 import { describe, expect, it } from 'vitest';
 import { ROTATIONS, rotateFootprint, rotateLocalCell, type Rotation } from '@sim/grid';
 import { QUEUE_BADGE_MAX, queueBadgeLabel } from '@render/badges';
-import { QUEUE_BADGE_SIZE, moduleSprite } from '@render/entity-assets';
+import { moduleSprite } from '@render/entity-assets';
 import { SIDE_STEP } from '@render/footprint-pose';
 import { BARRIER_MOTION_MS, BarrierMotion, GateDecor, queueBadgePosition } from '@render/gate-decor';
-import { VEHICLE_WIDTH_PX } from '@render/lane';
 import { footprintPose } from '@render/footprint-pose';
 import { ModuleLayer } from '@render/module-layer';
 import { ModuleView } from '@render/module-view';
@@ -14,8 +13,8 @@ import { ENTITY_PALETTE, PALETTE, StubTextures } from './stub-textures';
 
 const CELL = PALETTE.cellPx;
 
-/** Posun odznaku naľavo od osi vjazdu: okraj kamióna (polovica jeho šírky) + polomer odznaku, px. */
-const LANE_PX = (VEHICLE_WIDTH_PX + QUEUE_BADGE_SIZE.w) / 2;
+/** Posun do ľavého pruhu vzhľadom na smer vjazdu: 13 px zo 64 px bunky (pravý pruh patrí čakajúcemu kamiónu). */
+const LANE_PX = 13;
 
 /** Riadené hodiny pre animáciu závory. */
 function clock(start = 1000) {
@@ -258,7 +257,7 @@ describe('ModuleView: brána (závora a odznak fronty)', () => {
     const side = rotateSide(connector?.side ?? 's', rotation);
     const outer = { x: vm.x + local.x + SIDE_STEP[side].x, y: vm.y + local.y + SIDE_STEP[side].y };
     const step = SIDE_STEP[side];
-    // v smere vjazdu leží odznak vo vonkajšej bunke (na jej strednej priečke), bočne je odsadený o `LANE_PX` naľavo od kamióna
+    // v smere vjazdu leží odznak vo vonkajšej bunke (na jej strednej priečke), bočne je odsadený o `LANE_PX` (ľavý pruh)
     const dx = at.x - (outer.x + 0.5) * CELL;
     const dy = at.y - (outer.y + 0.5) * CELL;
     expect(dx * step.x + dy * step.y).toBeCloseTo(0, 6);

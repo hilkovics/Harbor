@@ -1,20 +1,21 @@
 /**
  * CargoSprite (DESIGN_BRIEF §5.7): jedna jednotka nákladu na aprone alebo v žeriave.
  *
- * Sprite je `cargo.<typeId>` z manifestu (kontajner `container_teu` = 64×32 px, dlhšia strana pozdĺž x pri rot 0),
- * vycentrovaný na počiatok kontajnera; rodič ho kladie na stred slotu / trolley. Bez textúry (alebo bez záznamu
+ * Sprite je `cargo.<typeId>` z manifestu (kontajner `container_teu`, dlhšia strana pozdĺž x pri rot 0) zobrazený v jednotnej
+ * veľkosti `cargoDisplaySize` (TEU 64×26 px; sprite je nakreslený 64×32 a zmenší sa na šírku 26 px), vycentrovaný na počiatok kontajnera; rodič ho kladie na stred slotu / trolley. Bez textúry (alebo bez záznamu
  * v manifeste) je to obdĺžnik z tokenov `--cargo-container` s tmavým obrysom v rovnakej veľkosti.
  */
 import { Container, Graphics, Sprite } from 'pixi.js';
-import { cargoSpriteEntry, manifestScale, type CellSize } from './entity-assets';
+import { MANIFEST_CELL_PX, cargoDisplaySize, cargoSpriteEntry, manifestScale, type CellSize } from './entity-assets';
+import { TEU_PX } from './world-scale';
 import type { EntityTextures } from './sprite-atlas';
 import type { EntityPalette } from './tokens';
 
 /** Hrúbka obrysu fallbacku ako zlomok bunky (2 px pri 64 px, DESIGN_BRIEF §4 „Obrys“). */
 const OUTLINE_CELLS = 2 / 64;
 
-/** Rozmer fallbacku pri neznámom type nákladu: kontajner 1 × 0,5 bunky (DESIGN_BRIEF §5.7). */
-const FALLBACK_SIZE: CellSize = { w: 1, h: 0.5 };
+/** Rozmer fallbacku pri neznámom type nákladu: kontajner TEU 64 × 26 px (`world-scale.ts`), v bunkách. */
+const FALLBACK_SIZE: CellSize = { w: TEU_PX.w / MANIFEST_CELL_PX, h: TEU_PX.h / MANIFEST_CELL_PX };
 
 /** Čo `CargoSprite` potrebuje od rendereru. */
 export interface CargoSpriteDeps {
@@ -25,12 +26,12 @@ export interface CargoSpriteDeps {
   readonly textures: EntityTextures | null;
 }
 
-/** Rozmer sprite nákladu `typeId` v px sveta (z manifestu; neznámy typ → kontajner 1 × 0,5 bunky). */
+/** Rozmer sprite nákladu `typeId` v px sveta (`cargoDisplaySize`: kontajner TEU 64 × 26; neznámy typ → kontajner TEU). */
 export function cargoSizePx(typeId: string, cellPx: number): CellSize {
-  const entry = cargoSpriteEntry(typeId);
-  if (entry === undefined) return { w: FALLBACK_SIZE.w * cellPx, h: FALLBACK_SIZE.h * cellPx };
+  const size = cargoDisplaySize(typeId);
+  if (size === undefined) return { w: FALLBACK_SIZE.w * cellPx, h: FALLBACK_SIZE.h * cellPx };
   const scale = manifestScale(cellPx);
-  return { w: entry.size.w * scale, h: entry.size.h * scale };
+  return { w: size.w * scale, h: size.h * scale };
 }
 
 export class CargoSprite extends Container {

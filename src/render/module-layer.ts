@@ -4,12 +4,11 @@
  * Žeriavy sa tu nekreslia: `CraneLayer` ich skladá z častí (`base`, `boom`, `trolley`) a kreslí nad loďami.
  * Ak `ModuleVM[]` obsahuje aj žeriavy (`kind === 'crane'`), vrstva ich preskočí.
  *
- * Odznaky „nepripojené“ držia čitateľnú veľkosť aj pri malom zoome (`setZoom`, rovnako ako odznaky žeriavov).
+ * Odznaky („nepripojené“, fronta brány) držia čitateľnú veľkosť aj pri malom zoome (`setZoom`, rovnako ako odznaky žeriavov).
  */
 import { Container } from 'pixi.js';
-import type { CargoSpriteDeps } from './cargo-sprite';
 import { badgeScaleForZoom } from './crane-view';
-import { ModuleView, sameModuleShape } from './module-view';
+import { ModuleView, sameModuleShape, type ModuleViewDeps } from './module-view';
 import type { ModuleVM } from './view-models';
 import { ViewSync } from './view-sync';
 
@@ -22,7 +21,7 @@ export class ModuleLayer {
   private readonly views: ViewSync<ModuleVM, ModuleView>;
   private badgeScale = 1;
 
-  constructor(deps: CargoSpriteDeps) {
+  constructor(deps: ModuleViewDeps) {
     this.views = new ViewSync<ModuleVM, ModuleView>({
       accepts: (vm) => vm.kind !== CRANE_KIND,
       create: (vm) => {

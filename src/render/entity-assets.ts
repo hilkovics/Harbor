@@ -28,6 +28,12 @@ export interface CellSize {
   readonly h: number;
 }
 
+/** Obdĺžnik v px zdrojového SVG (ľavý horný roh a rozmer): stojisko čakacej plochy, dok rampy. */
+export interface ManifestRect extends ManifestPoint {
+  readonly w: number;
+  readonly h: number;
+}
+
 /** Konektor modulu: bunka footprintu pri rot 0, strana vjazdu a typ prepojenia. */
 export interface ManifestConnector extends ManifestPoint {
   readonly side: ViewSide;
@@ -45,6 +51,12 @@ export interface ManifestPart {
   readonly mountOnBase?: ManifestPoint;
   /** Posun po osi výložníka: os a rozsah `y` pivotu v súradniciach súboru výložníka (px). */
   readonly travel?: { readonly axis: string; readonly yMin: number; readonly yMax: number };
+  /** Kam sa ľavý horný roh súboru časti kladie na základni (px od ľavého horného rohu footprintu; závora brány). */
+  readonly offset?: ManifestPoint;
+  /** Uhol časti v stupňoch (v smere hodinových ručičiek) v zatvorenej polohe; závora brány. */
+  readonly closedDeg?: number;
+  /** Uhol časti v stupňoch v otvorenej polohe; závora brány (záporný = proti smeru hodinových ručičiek). */
+  readonly openDeg?: number;
 }
 
 /** Záznam modulu v `sprites.<defId>`. */
@@ -57,6 +69,12 @@ export interface ModuleSpriteEntry {
   /** Apron sloty berthu: bunky footprintu pri rot 0 (poradie = index `slot`). */
   readonly apronSlots?: readonly ManifestPoint[];
   readonly parts?: Readonly<Record<string, ManifestPart>>;
+  /** Stojiská čakacej plochy: obdĺžniky pri rot 0 v px súboru (poradie = index `waitingArea.occupied`). */
+  readonly stalls?: readonly ManifestRect[];
+  /** Doky nakladacej rampy: obdĺžniky pri rot 0 v px súboru (poradie = index `ramp.staged`). */
+  readonly docks?: readonly ManifestRect[];
+  /** Kategória nákladu rampy (`container`, `bulk`, …); určuje typ nákladu pripraveného na doku. */
+  readonly category?: string;
   readonly connectors: readonly ManifestConnector[];
 }
 
@@ -135,6 +153,29 @@ export const WARNING_BADGE_SIZE: CellSize = overlayManifest.warning_badge.size;
 /** Súbor `overlay.warning_badge` (cesta relatívne k `assets/`). */
 export const WARNING_BADGE_FILE: string = overlayManifest.warning_badge.file;
 
+/** Rozmer odznaku `overlay.queue_badge` (fronta pred bránou) v px zdroja; stred kruhu je v strede súboru. */
+export const QUEUE_BADGE_SIZE: CellSize = overlayManifest.queue_badge.size;
+
+/** Súbor `overlay.queue_badge` (cesta relatívne k `assets/`). */
+export const QUEUE_BADGE_FILE: string = overlayManifest.queue_badge.file;
+
+/** Typ nákladu pre neznámu kategóriu: kontajner. */
+const DEFAULT_CARGO_TYPE = 'container_teu';
+
+/** Typ nákladu (`cargo.<typeId>`) pre kategóriu nákladu — čo sa kreslí na doku rampy danej kategórie. */
+const CARGO_TYPE_OF_CATEGORY: Readonly<Record<string, string>> = {
+  container: DEFAULT_CARGO_TYPE,
+  bulk: 'bulk_pile',
+  liquid: 'liquid_batch',
+  gas: 'gas_batch',
+  roro: 'car',
+};
+
+/** Typ nákladu pre kategóriu; neznáma alebo chýbajúca kategória → kontajner (`container_teu`). */
+export function cargoTypeOfCategory(category: string | undefined): string {
+  return (category === undefined ? undefined : lookup(CARGO_TYPE_OF_CATEGORY, category)) ?? DEFAULT_CARGO_TYPE;
+}
+
 /**
  * Varianty lodí, ktorých sprity sa načítajú do atlasu. Načítanie všetkých (5 kategórií × 4 triedy × 2 stavy)
  * by rasterizovalo desiatky MB textúr, ktoré F2 nepoužije; vo F2 sa vozia iba kontajnery. S ďalšou kategóriou nákladu
@@ -150,16 +191,16 @@ export const LOADED_SHIP_VARIANTS: readonly string[] = ['container'];
 export const LOADED_STATE_MODULES: readonly string[] = ['container_yard_small'];
 
 /**
- * Vozidlá, ktorých sprity (`states.empty`, `states.loaded`) sa načítajú do atlasu — vo F3 iba `straddle_carrier`.
- * Ostatné vozidlá (AGV, vysokozdvižný vozík, kamióny, vlaky) pribudnú so svojimi fázami; do vtedy nakreslí `VehicleView`
- * fallback z tokenov.
+ * Vozidlá a kamióny, ktorých sprity (`states.empty`, `states.loaded`) sa načítajú do atlasu — `straddle_carrier` (F3)
+ * a `truck_container` (F4). Ostatné (AGV, vysokozdvižný vozík, ďalšie kamióny, vlaky) pribudnú so svojimi fázami;
+ * do vtedy nakreslí `VehicleView` fallback z tokenov.
  */
-export const LOADED_VEHICLES: readonly string[] = ['straddle_carrier'];
+export const LOADED_VEHICLES: readonly string[] = ['straddle_carrier', 'truck_container'];
 
 /**
  * Súbory (relatívne k `assets/`), ktoré atlas načíta pre entity sveta: sprity modulov (`file` a `parts.*.file`),
  * stavy skladov z `LOADED_STATE_MODULES`, varianty lodí z `LOADED_SHIP_VARIANTS`, vozidlá z `LOADED_VEHICLES`,
- * všetok náklad a odznaky (zablokovania, nepripojené). Bez duplicít, v poradí manifestu.
+ * všetok náklad a odznaky (zablokovania, nepripojené, fronta). Bez duplicít, v poradí manifestu.
  */
 export function entitySpriteFiles(): string[] {
   const files = new Set<string>();
@@ -190,5 +231,6 @@ export function entitySpriteFiles(): string[] {
   for (const entry of Object.values(CARGO_SPRITES)) files.add(entry.file);
   files.add(BLOCKED_BADGE_FILE);
   files.add(WARNING_BADGE_FILE);
+  files.add(QUEUE_BADGE_FILE);
   return [...files];
 }

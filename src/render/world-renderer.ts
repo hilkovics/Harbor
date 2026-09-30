@@ -23,7 +23,7 @@ import { ParcelLayer } from './parcel-layer';
 import { PortalLayer } from './portal-layer';
 import { RoadLayer } from './road-layer';
 import { RoadMarkLayer } from './road-mark-layer';
-import { SpriteAtlas, type SpriteTextures } from './sprite-atlas';
+import { SPRITE_RASTER_RESOLUTION, SpriteAtlas, type SpriteTextures } from './sprite-atlas';
 import { TerrainLayer } from './terrain-layer';
 import {
   documentTokenResolver,
@@ -33,7 +33,7 @@ import {
   type RenderPalette,
   type TokenResolver,
 } from './tokens';
-import type { EntitiesVM, ModuleGhostVM, VehicleVM } from './view-models';
+import type { EntitiesVM, ModuleGhostVM, TruckVM, VehicleVM } from './view-models';
 
 export interface WorldRendererOptions {
   /** Prvok, do ktorého sa vloží canvas; renderer sa prispôsobí jeho veľkosti. */
@@ -69,6 +69,9 @@ export function starterParcelRect(map: LoadedMap): Rect {
 /** Prázdny zoznam vozidiel pre VM bez poľa `vehicles` (jedna zdieľaná inštancia, žiadna alokácia za frame). */
 const NO_VEHICLES: readonly VehicleVM[] = Object.freeze([]);
 
+/** Prázdny zoznam kamiónov pre VM bez poľa `trucks` (F2/F3). */
+const NO_TRUCKS: readonly TruckVM[] = Object.freeze([]);
+
 export class WorldRenderer {
   readonly app: Application;
   readonly camera: Camera;
@@ -82,7 +85,7 @@ export class WorldRenderer {
   readonly parcels: ParcelLayer;
   readonly portals: PortalLayer;
   readonly modules: ModuleLayer;
-  /** Lode aj vozidlá (`EntityLayer`): `ships.shipCount`, `ships.vehicleCount`; alias `entities`. */
+  /** Lode, vozidlá aj kamióny (`EntityLayer`): `ships.shipCount`, `ships.vehicleCount`; alias `entities`. */
   readonly ships: EntityLayer;
   readonly cranes: CraneLayer;
   /** Ghost stavby: cesty (`setGhost`, `GhostView`) aj modulu (`setModuleGhost`); je navrchu nad žeriavmi. */
@@ -125,6 +128,8 @@ export class WorldRenderer {
       textures: atlas,
       roadKindAt: createRoadKindAt(grid),
       roadMaskAt: createRoadMaskAt(grid),
+      // číslo v odznaku fronty brány sa rasterizuje pre najväčší zoom a hustotu displeja, aby ostalo ostré
+      textResolution: Math.ceil(SPRITE_RASTER_RESOLUTION * window.devicePixelRatio),
     };
     this.modules = new ModuleLayer(entityDeps);
     this.ships = new EntityLayer(entityDeps);
@@ -186,20 +191,22 @@ export class WorldRenderer {
     return new WorldRenderer(app, palette, options, atlas, textures, entityPalette, build);
   }
 
-  /** Vrstva pohyblivých entít (lode, vozidlá) — pomenovanie bez zavádzajúceho „ships“ pre vozidlá. */
+  /** Vrstva pohyblivých entít (lode, vozidlá, kamióny) — pomenovanie bez zavádzajúceho „ships“ pre vozidlá. */
   get entities(): EntityLayer {
     return this.ships;
   }
 
   /**
-   * Zosúladí moduly, lode, vozidlá a žeriavy s view-modelmi (volá sa každý frame): views vznikajú / zanikajú podľa
+   * Zosúladí moduly, lode, vozidlá, kamióny a žeriavy s view-modelmi (volá sa každý frame): views vznikajú / zanikajú podľa
    * `id`, nezmenené entity sa nealokujú. `alpha` (0…1) je podiel medzi predchádzajúcim a aktuálnym tickom simu
-   * (interpolácia polohy lodí a vozidiel). `vm.vehicles` chýbajúce vo VM z F2 sa berie ako prázdne.
+   * (interpolácia polohy lodí, vozidiel a kamiónov). `vm.vehicles` chýbajúce vo VM z F2 a `vm.trucks` chýbajúce vo VM
+   * z F2/F3 sa berú ako prázdne.
    */
   syncEntities(vm: EntitiesVM, alpha: number): void {
     this.modules.sync(vm.modules);
     this.ships.sync(vm.ships, alpha);
     this.ships.syncVehicles(vm.vehicles ?? NO_VEHICLES, alpha);
+    this.ships.syncTrucks(vm.trucks ?? NO_TRUCKS, alpha);
     this.cranes.sync(vm.cranes);
   }
 

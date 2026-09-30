@@ -78,6 +78,11 @@ function readRaw(name: string, resolve: TokenResolver): string {
   return raw;
 }
 
+/** Surová textová hodnota tokenu (`--font-ui`, `--fw-semibold`); prázdna hodnota je chyba. */
+export function readStringToken(name: string, resolve: TokenResolver = documentTokenResolver): string {
+  return readRaw(name, resolve);
+}
+
 /** Farba z tokenu (`--terrain-land`). */
 export function readColorToken(name: string, resolve: TokenResolver = documentTokenResolver): ColorValue {
   return parseCssColor(readRaw(name, resolve));
@@ -177,6 +182,19 @@ export interface EntityPalette {
   readonly ship: { readonly hull: ColorValue; readonly deck: ColorValue };
   /** Vozidlá na cestách (`--vehicle-body`, `--vehicle-dark`). */
   readonly vehicle: { readonly body: ColorValue; readonly dark: ColorValue };
+  /** Kamióny bez sprite (`--truck-cab`, `--truck-trailer`). */
+  readonly truck: { readonly cab: ColorValue; readonly trailer: ColorValue };
+  /** Zvýraznenie obsadeného stojiska a obrys odznaku fronty (`--ui-accent`). */
+  readonly accent: ColorValue;
+  /** Výplň odznaku fronty bez sprite (`--ui-surface`). */
+  readonly surface: ColorValue;
+  /** Číslo v odznaku fronty: farba (`--ui-text`), písmo (`--font-ui`, `--fw-semibold`) a veľkosť (`--fs-xs`) v px pri 64 px bunke. */
+  readonly label: {
+    readonly color: ColorValue;
+    readonly fontFamily: string;
+    readonly fontWeight: string;
+    readonly sizePx: number;
+  };
   readonly cargo: { readonly base: ColorValue; readonly dark: ColorValue };
   /** Odznak zablokovania a stavový signál chyby (`--ui-danger`). */
   readonly danger: ColorValue;
@@ -197,6 +215,15 @@ export function loadEntityPalette(resolve: TokenResolver = documentTokenResolver
     crane: { frame: color('--crane-frame'), boom: color('--crane-boom') },
     ship: { hull: color('--ship-hull'), deck: color('--ship-deck') },
     vehicle: { body: color('--vehicle-body'), dark: color('--vehicle-dark') },
+    truck: { cab: color('--truck-cab'), trailer: color('--truck-trailer') },
+    accent: color('--ui-accent'),
+    surface: color('--ui-surface'),
+    label: {
+      color: color('--ui-text'),
+      fontFamily: readStringToken('--font-ui', resolve),
+      fontWeight: readStringToken('--fw-semibold', resolve),
+      sizePx: readLengthToken('--fs-xs', resolve),
+    },
     cargo: { base: color('--cargo-container'), dark: color('--cargo-container-dark') },
     danger: color('--ui-danger'),
     connector: color('--module-connector'),

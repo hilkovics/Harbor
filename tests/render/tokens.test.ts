@@ -134,6 +134,18 @@ describe('loadEntityPalette', () => {
     expect(palette.disconnected.color).toBe(0xf2b233);
   });
 
+  it('F4: kamión (`--truck-cab`, `--truck-trailer`), zvýraznenie stojiska, odznak fronty a písmo čísla existujú v tokens.css', () => {
+    const palette = loadEntityPalette(tokenResolverFromCss(TOKENS_CSS));
+    expect(palette.truck.cab.color).toBe(0x3a6ea5);
+    expect(palette.truck.trailer.color).toBe(0xc9cdd3);
+    expect(palette.accent.color).toBe(0x3aa0ff);
+    expect(palette.surface.color).toBe(0x172736);
+    expect(palette.label.color.color).toBe(0xeef3f7);
+    expect(palette.label.fontFamily).toContain('Inter');
+    expect(palette.label.fontWeight).toBe('600');
+    expect(palette.label.sizePx).toBe(12);
+  });
+
   it('chýbajúci token → chyba s jeho menom', () => {
     expect(() => loadEntityPalette(() => '')).toThrow('--module-base');
   });

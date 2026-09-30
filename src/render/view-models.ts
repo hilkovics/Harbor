@@ -34,6 +34,23 @@ export interface ModuleVM {
    * `undefined` (F2 VM, modul bez konektorov) → bez odznaku.
    */
   connected?: boolean;
+  /**
+   * Len brána kamiónov (kind `gate`, F4): dĺžka virtuálnej fronty pred bránou a či práve púšťa kamión (závora hore).
+   * `entryConnector` je index konektora v defe modulu (= poradie `sprites.<defId>.connectors` v manifeste), na ktorom kamióny
+   * do brány vchádzajú z portálu; renderer pri ňom kreslí `overlay.queue_badge` s číslom. Renderer vstupnú stranu
+   * nepozná (závisí od ciest), preto ju dodáva sim; chýba = 0 (prvý konektor).
+   */
+  gate?: { queueLength: number; open: boolean; entryConnector?: number };
+  /**
+   * Len čakacia plocha (kind `waiting_area`, F4): počet stojísk a ich obsadenosť. `occupied[i]` patrí stojisku
+   * `sprites.<defId>.stalls[i]` v manifeste (obsadené aj rezervované sa zvýrazní).
+   */
+  waitingArea?: { bays: number; occupied: readonly boolean[] };
+  /**
+   * Len nakladacia rampa (kind `ramp`, F4): počet dokov, počet pripravených kontajnerov na každom doku (`staged[i]` patrí
+   * doku `sprites.<defId>.docks[i]`) a či je rampa prevádzková (`false` → odznak `overlay.warning_badge`).
+   */
+  ramp?: { docks: number; staged: readonly number[]; operational: boolean };
 }
 
 export interface CraneVM {
@@ -92,6 +109,29 @@ export interface VehicleVM {
   state: string;
 }
 
+/**
+ * Kamión na cestách (F4). Rovnaké pohybové polia ako `VehicleVM` (renderer ich vedie po pruhoch a oblúkoch spoločným
+ * `vehiclePose`); sprite je `entities.<defId>` (`truck_container`, 1×2 bunky, kabína v smere jazdy) so stavmi `empty` / `loaded`.
+ */
+export interface TruckVM {
+  id: number;
+  /** Id definície kamióna = kľúč `entities.<defId>` v manifeste (`truck_container`). */
+  defId: string;
+  /** Stred kamióna v bunkách; renderer interpoluje `lerp(prev, curr, alpha)`. */
+  x: number;
+  y: number;
+  prevX: number;
+  prevY: number;
+  /** 0 = kabína na sever, v smere hodinových ručičiek (kardinálny podľa smeru posledného úseku cesty). */
+  heading: 0 | 90 | 180 | 270;
+  /** Kurz v predchádzajúcom ticku; predvolene = `heading` (rovnako ako pri `VehicleVM`). */
+  prevHeading?: 0 | 90 | 180 | 270;
+  /** Vezie náklad → sprite `states.loaded`. */
+  loaded: boolean;
+  /** Stav Truck FSM (`to_gate`, `gate_queue`, `waiting`, `loading`, …); renderer ho nekreslí, nesie ho pre ladenie. */
+  state: string;
+}
+
 export interface EntitiesVM {
   modules: readonly ModuleVM[];
   cranes: readonly CraneVM[];
@@ -101,6 +141,11 @@ export interface EntitiesVM {
    * ako prázdne. `SimBridge` (T03-10) ho vyplní vždy.
    */
   vehicles?: readonly VehicleVM[];
+  /**
+   * Kamióny (F4). Voliteľné kvôli spätnej kompatibilite: VM z F2/F3 pole nemajú a renderer ho berie ako prázdne.
+   * `SimBridge` (T04-08) ho vyplní vždy.
+   */
+  trucks?: readonly TruckVM[];
 }
 
 export interface ModuleGhostVM {

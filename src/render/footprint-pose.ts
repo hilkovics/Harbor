@@ -8,6 +8,15 @@
  */
 import { rotateFootprint, type Rotation } from '@sim/grid';
 import type { ManifestPoint } from './entity-assets';
+import type { ViewSide } from './view-models';
+
+/** Krok (dx, dy) v bunkách z bunky von cez stranu `side` (`n` = hore, `e` = doprava, …). */
+export const SIDE_STEP: Readonly<Record<ViewSide, ManifestPoint>> = Object.freeze({
+  n: Object.freeze({ x: 0, y: -1 }),
+  e: Object.freeze({ x: 1, y: 0 }),
+  s: Object.freeze({ x: 0, y: 1 }),
+  w: Object.freeze({ x: -1, y: 0 }),
+});
 
 /** Footprint v svete: ľavý horný roh a rozmery PO rotácii (bunky) + rotácia. */
 export interface FootprintBox {

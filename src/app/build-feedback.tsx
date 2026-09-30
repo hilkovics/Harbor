@@ -18,6 +18,22 @@ export const REASON_TEXT: Readonly<Record<ValidationReason, string>> = {
   no_road: 'Tu nie je cesta',
   invalid_speed: 'Neplatná rýchlosť',
   empty: 'Nič na zmenu',
+  unknown_def: 'Neznámy typ stavby',
+  no_water_side: 'Dlhá hrana musí byť pri vode',
+  water_blocked: 'Voda pred kotviskom nie je voľná',
+  no_berth: 'Žeriav musí stáť na kotvisku',
+  rotation_mismatch: 'Iná rotácia než kotvisko',
+  max_cranes: 'Kotvisko má maximum žeriavov',
+  has_cranes: 'Na kotvisku stoja žeriavy',
+  has_cargo: 'Modul obsahuje náklad',
+  ship_docked: 'Pri kotvisku kotví loď',
+  busy: 'Žeriav práve pracuje',
+  unknown_module: 'Modul neexistuje',
+  unknown_ship_class: 'Neznámy typ lode',
+  unknown_cargo: 'Neznámy náklad',
+  cargo_incompatible: 'Loď tento náklad neprevezie',
+  invalid_units: 'Neplatný počet jednotiek',
+  invalid_rotation: 'Neplatná rotácia',
 };
 
 /** „1 bunka“, „2 bunky“, „5 buniek“. */

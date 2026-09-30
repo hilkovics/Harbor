@@ -278,13 +278,13 @@ describe('InputController: stavba cesty (ťah myšou)', () => {
   it('ghost farbí bunky ťahu podľa validácie: platné zelené, neplatné (voda) červené', () => {
     const h = harness();
     h.controller.keyDown(key('KeyB'));
-    h.down(c(44, 12)); // voda (riadky 0–13), potom nábrežie (14–16)
-    h.move(c(44, 15));
+    h.down(c(38, 12)); // voda (riadky 0–13), potom nábrežie (14–16) vedľa Root berthu (x 40–47)
+    h.move(c(38, 15));
     expect(h.ghost.cells.map((cell) => [cell.x, cell.y, cell.valid])).toEqual([
-      [44, 12, false],
-      [44, 13, false],
-      [44, 14, true],
-      [44, 15, true],
+      [38, 12, false],
+      [38, 13, false],
+      [38, 14, true],
+      [38, 15, true],
     ]);
     const feedback = h.controller.feedback();
     expect(feedback?.ok).toBe(false);

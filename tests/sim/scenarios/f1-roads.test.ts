@@ -4,12 +4,12 @@
  * model v tomto súbore z defov (`infrastructure`, `economy`, `time`) a zo samotného scenára — nie sú natvrdo.
  *
  * Trasa scenára (mapa harbor_01, ADR-008):
- *  - tick 0:     zvislá cesta x=44, y=14..33 po starter parcele od nábrežia k štartovej ceste (44,34)
+ *  - tick 0:     cesta od konektora Root berthu (41,17)–(43,17), potom zvislo x=44, y=17..33 k štartovej ceste (44,34)
  *  - tick 100:   vodorovná cesta y=25, x=28..59 cez starter parcelu a verejné bunky x=28..29 a x=58..59
  *                (bunka (44,25) už cestu má → preskočí sa bez ceny)
  *  - tick 200:   SetGameSpeed(4)
  *  - tick 6000:  zvislá cesta x=29, y=14..24 po verejných bunkách vrátane nábrežia
- *  - tick 12000: RemoveRoad 6 buniek (2 verejné + 4 starter); tick 15000: RemoveRoad 1 bunky nábrežia
+ *  - tick 12000: RemoveRoad 6 buniek (2 verejné + 4 starter); tick 15000: RemoveRoad 1 bunky verejného nábrežia (29,14)
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { commandFromJSON, type SerializedCommand } from '@sim/commands';

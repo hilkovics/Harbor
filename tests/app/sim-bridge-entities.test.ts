@@ -20,6 +20,13 @@ const REVISION_SAMPLES: readonly SimEvent[] = [
   { type: 'CraneCycleDone', craneId: SAMPLE_ID, unitId: SAMPLE_ID },
   { type: 'CraneBlocked', craneId: SAMPLE_ID, berthId: SAMPLE_ID, reason: 'apron_full' },
   { type: 'CargoMoved', unitId: SAMPLE_ID, from: { kind: 'exported' }, to: { kind: 'exported' }, tick: 1 },
+  { type: 'VehicleBought', vehicleId: SAMPLE_ID, defId: 'straddle_carrier', depotId: SAMPLE_ID },
+  { type: 'VehicleSold', vehicleId: SAMPLE_ID },
+  { type: 'VehicleStateChanged', vehicleId: SAMPLE_ID, from: 'idle', to: 'to_pickup' },
+  { type: 'JobCreated', jobId: SAMPLE_ID, unitIds: [], fromModuleId: SAMPLE_ID, toModuleId: SAMPLE_ID },
+  { type: 'JobAssigned', jobId: SAMPLE_ID, vehicleId: SAMPLE_ID },
+  { type: 'JobDone', jobId: SAMPLE_ID },
+  { type: 'NoStorageAvailable', berthId: SAMPLE_ID, cargoTypeId: 'container_teu' },
 ];
 
 /** Udalosti, ktoré štruktúru nemenia (čas a peniaze majú vlastné polia snapshotu). */
@@ -51,7 +58,7 @@ describe('WorldSnapshot v2: speeds a defs', () => {
 });
 
 describe('WorldSnapshot v2: revision', () => {
-  it('REVISION_EVENTS obsahuje presne udalosti z karty T02-09 a vzorky ich pokrývajú', () => {
+  it('REVISION_EVENTS obsahuje presne udalosti z kariet T02-09 a T03-10 a vzorky ich pokrývajú', () => {
     const expected: SimEventType[] = [
       'ModulePlaced',
       'ModuleRemoved',
@@ -63,6 +70,13 @@ describe('WorldSnapshot v2: revision', () => {
       'CraneCycleDone',
       'CraneBlocked',
       'CargoMoved',
+      'VehicleBought',
+      'VehicleSold',
+      'VehicleStateChanged',
+      'JobCreated',
+      'JobAssigned',
+      'JobDone',
+      'NoStorageAvailable',
     ];
     expect([...REVISION_EVENTS].sort()).toEqual([...expected].sort());
     expect(REVISION_SAMPLES.map((event) => event.type).sort()).toEqual([...expected].sort());
@@ -87,6 +101,7 @@ describe('WorldSnapshot v2: revision', () => {
   it('každá udalosť z frame sa počíta zvlášť', () => {
     const { bridge } = createApp();
     bridge.publish([REVISION_SAMPLES[0] as SimEvent, REVISION_SAMPLES[2] as SimEvent, NEUTRAL_SAMPLES[0] as SimEvent, REVISION_SAMPLES[9] as SimEvent]);
+    // (poradie vzoriek: ModulePlaced, ModuleRemoved, RoadChanged, …, CargoMoved na indexe 9)
     expect(bridge.snapshot().revision).toBe(3);
   });
 
@@ -117,7 +132,8 @@ describe('WorldSnapshot v2: revision', () => {
     expect(bridge.snapshot().revision).toBe(1); // ShipSpawned
     for (let i = 0; i < 300; i++) loop.frame(loop.tickMs);
     // ShipSpawned + ShipDocked + 4 × (2 × CargoMoved + CraneCycleDone) + ShipUndocked + ShipDeparted
-    expect(bridge.snapshot().revision).toBe(1 + 1 + 4 * 3 + 1 + 1);
+    // + NoStorageAvailable (apron má jednotky a vo svete nie je žiadny sklad; najviac 1× za hernú hodinu)
+    expect(bridge.snapshot().revision).toBe(1 + 1 + 4 * 3 + 1 + 1 + 1);
   });
 });
 
@@ -249,7 +265,7 @@ describe('prevX/prevY lodí (interpolácia)', () => {
 });
 
 describe('SimBridge.entities()', () => {
-  it('vracia moduly, žeriavy a lode aktuálneho snapshotu (rovnaké polia), bez grid a parcels', () => {
+  it('vracia moduly, žeriavy, lode a vozidlá aktuálneho snapshotu (rovnaké polia), bez grid a parcels', () => {
     const { bridge, loop } = createApp();
     spawnFeeder(bridge);
     loop.frame(loop.tickMs);
@@ -258,7 +274,8 @@ describe('SimBridge.entities()', () => {
     expect(entities.modules).toBe(snapshot.modules);
     expect(entities.cranes).toBe(snapshot.cranes);
     expect(entities.ships).toBe(snapshot.ships);
-    expect(Object.keys(entities).sort()).toEqual(['cranes', 'modules', 'ships']);
+    expect(entities.vehicles).toBe(snapshot.vehicles);
+    expect(Object.keys(entities).sort()).toEqual(['cranes', 'modules', 'ships', 'vehicles']);
   });
 
   it('referencia je stabilná, kým sa snapshot nezmení; potom sa obnoví', () => {

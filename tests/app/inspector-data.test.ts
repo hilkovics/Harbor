@@ -31,6 +31,7 @@ describe('inspectorData: Root kotvisko a žeriav pri štarte', () => {
       ok: true,
       apron: { used: 0, reserved: 0, capacity: 4 },
       dockedShip: null,
+      connected: false, // kotvisko má cestné konektory a žiadna cesta k nim ešte nevedie
       refundCents: 0,
       removable: false,
       removeBlockedReason: 'Na kotvisku stoja žeriavy',

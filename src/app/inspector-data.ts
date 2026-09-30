@@ -5,20 +5,31 @@
  *   ledgera `cargo.countAt('on_ship', id)`, jednotka z `cargoTypes`).
  * - Žeriav: stav (`crane.state`, len čítanie) a vyťaženosť = busy / (busy + idle + blocked); blokovaný podiel
  *   analogicky. Bez odpracovaných tickov sú oba podiely 0.
+ * - Sklad (F3): uložené / rezervované / kapacita z modulu, kumulatívne prijaté a vydané (`unitsIn`/`unitsOut`), jednotka
+ *   počtu z typu nákladu kategórie skladu (`TEU`).
+ * - Depo (F3): vozidlá depa (stav `idle` = nečinné, `no_path` = bez cesty, ostatné = pracuje; refundácia z
+ *   `validate(SellVehicle)`), kapacita státí a nákup: `canBuy` = `validate(BuyVehicle)` prešlo, inak `buyBlockedReason`
+ *   z `REASON_TEXT`. Kupuje sa vozidlo `depotVehicleDef` (prvý def vozidla bez technológie).
+ * - Moduly s cestným konektorom nesú `connected` (badge „Nepripojené“).
  * - Odstránenie: refundácia a odstrániteľnosť z `validate(RemoveModule)` — `costCents` záporné = refundácia, dôvody
  *   z `REASON_TEXT` (kotvisko so žeriavom `has_cranes`, žeriav pri kotvisku s loďou `ship_docked`, pracujúci `busy` …).
  *
  * Čistá funkcia nad `bridge.world` a `bridge.validate` — nič nemení, testuje sa v Node.
  */
-import { RemoveModuleCommand } from '@sim/commands';
+import { BuyVehicleCommand, RemoveModuleCommand, SellVehicleCommand } from '@sim/commands';
 import type { EntityId } from '@sim/core';
-import { BerthModule, CraneModule, type Module } from '@sim/modules';
+import type { DefRegistry, VehicleDef } from '@sim/defs';
+import { BerthModule, CraneModule, StorageModule, VehicleDepot, type Module } from '@sim/modules';
+import type { VehicleState } from '@sim/vehicles';
 import {
   craneStateLabel,
   craneStateOk,
+  type DepotVehicleData,
+  type DepotVehicleState,
   type ModuleInspectorData,
 } from '@ui/module-inspector';
 import { REASON_TEXT } from './build-feedback';
+import { hasRoadConnector } from './entities-vm';
 import type { SimBridge } from './sim-bridge';
 
 /** Časť `SimBridge`, ktorú inšpektor číta. */
@@ -30,6 +41,24 @@ export const BERTH_STATE_FREE = 'Voľné';
 
 /** Stav modulu bez vlastného obsahu (F2 ho nepoužíva: budúce druhy modulov si dodajú vlastný popis). */
 export const MODULE_STATE_ACTIVE = 'V prevádzke';
+
+/** Stav FSM vozidla → stav v zozname depa (tabuľka, nie switch): pracovné stavy sú pre hráča jedno „Pracuje“. */
+export const DEPOT_VEHICLE_STATE: Readonly<Record<VehicleState, DepotVehicleState>> = Object.freeze({
+  idle: 'idle',
+  to_pickup: 'busy',
+  loading: 'busy',
+  to_dropoff: 'busy',
+  unloading: 'busy',
+  no_path: 'no_path',
+});
+
+/**
+ * Vozidlo, ktoré ponúka nákup v depe: prvý def z `vehicles.json` bez technológie (`techRequired` sa vyhodnocuje až vo
+ * F8), inak `undefined` (nákup nemá čo ponúknuť).
+ */
+export function depotVehicleDef(defs: DefRegistry): Readonly<VehicleDef> | undefined {
+  return defs.vehicles.items.find((def) => def.techRequired === undefined);
+}
 
 /** Podiel `part / total` v percentách; `total <= 0` → 0. */
 function percentOf(part: number, total: number): number {
@@ -66,10 +95,64 @@ function craneFields(crane: CraneModule): Pick<ModuleInspectorData, 'stateLabel'
   };
 }
 
-/** Polia závislé od druhu modulu (badge stavu + sekcie kotviska / žeriavu). */
+function storageFields(bridge: InspectorBridge, storage: StorageModule): Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'storage'> {
+  const unit = bridge.world.defs.cargoTypes.items.find((type) => type.category === storage.category);
+  return {
+    stateLabel: MODULE_STATE_ACTIVE,
+    ok: true,
+    storage: {
+      stored: storage.storedCount,
+      reserved: storage.reservedCount,
+      capacity: storage.capacity,
+      unitsIn: storage.unitsIn,
+      unitsOut: storage.unitsOut,
+      ...(unit === undefined ? {} : { unitLabel: unit.unitName }),
+    },
+  };
+}
+
+/** Riadok vozidla v zozname depa; refundácia z `validate(SellVehicle)` (záporná cena = príjem). */
+function depotVehicleRow(bridge: InspectorBridge, vehicleId: EntityId): DepotVehicleData | null {
+  const vehicle = bridge.world.vehicles.get(vehicleId);
+  if (vehicle === undefined) return null;
+  const sale = bridge.validate(new SellVehicleCommand(vehicle.id));
+  return {
+    id: vehicle.id,
+    label: vehicle.def.displayName,
+    state: DEPOT_VEHICLE_STATE[vehicle.state],
+    refundCents: sale.costCents < 0 ? 0 - sale.costCents : 0,
+  };
+}
+
+function depotFields(bridge: InspectorBridge, depot: VehicleDepot): Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'depot'> {
+  const vehicles: DepotVehicleData[] = [];
+  for (const vehicleId of depot.vehicleIds) {
+    const row = depotVehicleRow(bridge, vehicleId);
+    if (row !== null) vehicles.push(row);
+  }
+  const offer = depotVehicleDef(bridge.world.defs);
+  // Bez ponuky (žiadny def vozidla) nie je čo kúpiť: rovnaký dôvod ako pri neznámom defe v `BuyVehicle`.
+  const purchase = offer === undefined ? null : bridge.validate(new BuyVehicleCommand({ vehicleDefId: offer.id, depotId: depot.id }));
+  const blocked = purchase === null ? REASON_TEXT['unknown_vehicle_def'] : purchase.reasons.map((reason) => REASON_TEXT[reason]).join(' · ');
+  return {
+    stateLabel: MODULE_STATE_ACTIVE,
+    ok: true,
+    depot: {
+      vehicles,
+      capacity: depot.capacity,
+      canBuy: purchase?.ok === true,
+      ...(purchase?.ok === true ? {} : { buyBlockedReason: blocked }),
+      ...(offer === undefined ? {} : { buyPriceCents: offer.purchaseCents }),
+    },
+  };
+}
+
+/** Polia závislé od druhu modulu (badge stavu + sekcie kotviska / žeriavu / skladu / depa). */
 function kindFields(bridge: InspectorBridge, module: Module): Pick<ModuleInspectorData, 'stateLabel' | 'ok'> & Partial<ModuleInspectorData> {
   if (module instanceof BerthModule) return berthFields(bridge, module);
   if (module instanceof CraneModule) return craneFields(module);
+  if (module instanceof StorageModule) return storageFields(bridge, module);
+  if (module instanceof VehicleDepot) return depotFields(bridge, module);
   return { stateLabel: MODULE_STATE_ACTIVE, ok: true };
 }
 
@@ -88,6 +171,7 @@ export function inspectorData(bridge: InspectorBridge, moduleId: EntityId): Modu
     kind: module.kind,
     footprint: { w: module.size.w, h: module.size.h },
     ...kindFields(bridge, module),
+    ...(hasRoadConnector(module) ? { connected: bridge.world.isConnected(module) } : {}),
     refundCents: removal.costCents < 0 ? 0 - removal.costCents : 0,
     removable: removal.ok,
     ...(removal.ok ? {} : { removeBlockedReason: removal.reasons.map((reason) => REASON_TEXT[reason]).join(' · ') }),

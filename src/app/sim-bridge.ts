@@ -7,19 +7,21 @@
  * `GameLoop` po každom frame zavolá `publish(events)`. Bridge rozošle udalosti poslucháčom `onEvents`
  * (render) a ak sa medzitým zmenil snapshot, notifikuje odberateľov `subscribe` (UI cez `useSimSnapshot`).
  */
-import type { CraneVM, EntitiesVM, ModuleVM, ShipVM } from '@render/view-models';
+import type { CraneVM, ModuleVM, ShipVM, VehicleVM, ViewRotation } from '@render/view-models';
 import type { Command, ValidationResult } from '@sim/commands';
 import type { EntityId } from '@sim/core';
 import type { DefRegistry } from '@sim/defs';
 import type { SimEvent, SimEventType } from '@sim/events';
 import type { Grid, Parcel } from '@sim/grid';
 import type { World } from '@sim/world';
-import { EntitiesVMBuilder } from './entities-vm';
+import { EntitiesVMBuilder, type SimEntitiesVM } from './entities-vm';
 import type { FrameEventSink } from './game-loop';
 
 /**
- * Udalosti, ktoré menia štruktúru sveta viditeľnú v snapshote (moduly, cesty, lode, žeriavy, poloha nákladu) a zvyšujú
- * `revision`. Tabuľka (nie switch): nová udalosť = nový riadok. `MoneyChanged` tu nie je — hotovosť je v snapshote sama.
+ * Udalosti, ktoré menia štruktúru sveta viditeľnú v snapshote (moduly, cesty a z nich pripojenie modulov, lode, žeriavy,
+ * vozidlá, joby, poloha nákladu a z nej obsadenie skladov) a zvyšujú `revision`. Tabuľka (nie switch): nová udalosť =
+ * nový riadok. `MoneyChanged` tu nie je — hotovosť je v snapshote sama. Poloha vozidla tu nie je: mení sa každý tick
+ * bez udalosti, preto sa vozidlá (ako lode a žeriavy) skladajú pri každom novom snapshote.
  */
 export const REVISION_EVENTS: ReadonlySet<SimEventType> = new Set<SimEventType>([
   'ModulePlaced',
@@ -32,6 +34,13 @@ export const REVISION_EVENTS: ReadonlySet<SimEventType> = new Set<SimEventType>(
   'CraneCycleDone',
   'CraneBlocked',
   'CargoMoved',
+  'VehicleBought',
+  'VehicleSold',
+  'VehicleStateChanged',
+  'JobCreated',
+  'JobAssigned',
+  'JobDone',
+  'NoStorageAvailable',
 ]);
 
 /**
@@ -40,8 +49,8 @@ export const REVISION_EVENTS: ReadonlySet<SimEventType> = new Set<SimEventType>(
  * referencie na štruktúry sveta (žiadne kopírovanie); ich obsah mení `RoadChanged` (→ `revision`), na reakciu
  * v renderi slúži aj `onEvents`.
  *
- * `modules`, `cranes` a `ships` sú render view-modely (`@render/view-models`); pole modulov má stabilnú referenciu,
- * kým sa nezmení `revision` (žeriavy a lode sa skladajú pri každom novom snapshote).
+ * `modules`, `cranes`, `ships` a `vehicles` sú render view-modely (`@render/view-models`); pole modulov má stabilnú
+ * referenciu, kým sa nezmení `revision` (žeriavy, lode a vozidlá sa skladajú pri každom novom snapshote).
  */
 export interface WorldSnapshot {
   /** Počet dokončených tickov. */
@@ -65,18 +74,27 @@ export interface WorldSnapshot {
   readonly minute: number;
   readonly grid: Grid;
   readonly parcels: ReadonlyMap<string, Parcel>;
-  /** Moduly bez žeriavov (kotviská s apronom …) v poradí umiestnenia. */
+  /** Moduly bez žeriavov (kotviská s apronom, sklady, depá …) v poradí umiestnenia; sklady nesú `storage`, moduly s konektormi `connected`. */
   readonly modules: readonly ModuleVM[];
   /** Žeriavy v poradí umiestnenia. */
   readonly cranes: readonly CraneVM[];
   /** Lode vzostupne podľa id; `prevX/prevY` = poloha pred posledným tickom. */
   readonly ships: readonly ShipVM[];
+  /** Vozidlá vzostupne podľa id; `prevX/prevY/prevHeading` = pózy pred posledným tickom. */
+  readonly vehicles: readonly VehicleVM[];
 }
 
 /** Zmeniteľná predchádzajúca poloha lode (bridge ju prepisuje pred každým tickom bez alokácie). */
 interface MutableShipPosition {
   x: number;
   y: number;
+}
+
+/** Zmeniteľná predchádzajúca póza vozidla (poloha + kurz; prepisuje sa pred každým tickom bez alokácie). */
+interface MutableVehiclePose {
+  x: number;
+  y: number;
+  heading: ViewRotation;
 }
 
 export type Unsubscribe = () => void;
@@ -90,11 +108,13 @@ interface Registration<F> {
 export class SimBridge implements FrameEventSink {
   private current: WorldSnapshot | null = null;
   /** `EntitiesVM` aktuálneho snapshotu (rovnaké polia ako v snapshote, ale bez `grid`, serializovateľné). */
-  private currentEntities: EntitiesVM | null = null;
+  private currentEntities: SimEntitiesVM | null = null;
   private revisionCounter = 0;
   private readonly entityBuilder = new EntitiesVMBuilder();
   /** Poloha lodí pred posledným tickom (interpolácia); lode bez záznamu majú `prev = curr`. */
   private readonly prevShipPositions = new Map<EntityId, MutableShipPosition>();
+  /** Póza vozidiel pred posledným tickom (interpolácia + pruh v zákrute); vozidlá bez záznamu majú `prev = curr`. */
+  private readonly prevVehiclePoses = new Map<EntityId, MutableVehiclePose>();
   /** Posledný snapshot, o ktorom sa odberatelia dozvedeli (alebo počiatočný stav pri vzniku bridge). */
   private notified: WorldSnapshot;
   private readonly changeListeners = new Set<Registration<() => void>>();
@@ -139,7 +159,7 @@ export class SimBridge implements FrameEventSink {
     ) {
       return cached;
     }
-    const entities = this.entityBuilder.build(this.world, this.revisionCounter, this.prevShipPositions);
+    const entities = this.entityBuilder.build(this.world, this.revisionCounter, this.prevShipPositions, this.prevVehiclePoses);
     const next: WorldSnapshot = Object.freeze({
       tick: clock.tick,
       speed: clock.speed,
@@ -154,6 +174,7 @@ export class SimBridge implements FrameEventSink {
       modules: entities.modules,
       cranes: entities.cranes,
       ships: entities.ships,
+      vehicles: entities.vehicles,
     });
     this.current = next;
     this.currentEntities = entities;
@@ -161,10 +182,10 @@ export class SimBridge implements FrameEventSink {
   }
 
   /**
-   * Entity pre render (`WorldRenderer.syncEntities`) a `window.__sim.entities()`: moduly, žeriavy a lode aktuálneho
-   * snapshotu. Referencia je stabilná, kým sa snapshot nezmení. Nezahŕňa `grid`, takže sa dá serializovať.
+   * Entity pre render (`WorldRenderer.syncEntities`) a `window.__sim.entities()`: moduly, žeriavy, lode a vozidlá
+   * aktuálneho snapshotu. Referencia je stabilná, kým sa snapshot nezmení. Nezahŕňa `grid`, takže sa dá serializovať.
    */
-  entities(): EntitiesVM {
+  entities(): SimEntitiesVM {
     this.snapshot();
     const entities = this.currentEntities;
     if (entities === null) throw new Error('SimBridge.entities: snapshot nemá entity'); // nedosiahnuteľné: snapshot() ich plní
@@ -172,11 +193,12 @@ export class SimBridge implements FrameEventSink {
   }
 
   /**
-   * Volá `GameLoop` tesne pred každým `world.tick()`: zapamätá si polohu lodí, ktorá sa po ticku stane `prevX/prevY`
-   * (sim predchádzajúcu polohu nevedie). Zaniknuté lode sa zabudnú; nová loď záznam dostane až pred prvým tickom,
-   * dovtedy má `prev = curr`.
+   * Volá `GameLoop` tesne pred každým `world.tick()`: zapamätá si polohu lodí a pózu vozidiel (poloha + kurz), ktorá sa
+   * po ticku stane `prevX/prevY` (`prevHeading`) — sim predchádzajúcu polohu nevedie. Zaniknuté lode a predané vozidlá
+   * sa zabudnú; nová loď / nové vozidlo záznam dostane až pred prvým tickom, dovtedy má `prev = curr`.
    */
   beforeTick(): void {
+    this.rememberVehiclePoses();
     const { ships } = this.world;
     for (const id of this.prevShipPositions.keys()) {
       if (!ships.has(id)) this.prevShipPositions.delete(id);
@@ -188,6 +210,23 @@ export class SimBridge implements FrameEventSink {
       } else {
         known.x = ship.x;
         known.y = ship.y;
+      }
+    }
+  }
+
+  private rememberVehiclePoses(): void {
+    const { vehicles } = this.world;
+    for (const id of this.prevVehiclePoses.keys()) {
+      if (!vehicles.has(id)) this.prevVehiclePoses.delete(id);
+    }
+    for (const vehicle of vehicles.values()) {
+      const known = this.prevVehiclePoses.get(vehicle.id);
+      if (known === undefined) {
+        this.prevVehiclePoses.set(vehicle.id, { x: vehicle.x, y: vehicle.y, heading: vehicle.heading });
+      } else {
+        known.x = vehicle.x;
+        known.y = vehicle.y;
+        known.heading = vehicle.heading;
       }
     }
   }

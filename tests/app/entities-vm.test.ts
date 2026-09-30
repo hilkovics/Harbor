@@ -53,6 +53,7 @@ describe('entitiesVM: nový svet (Root modul)', () => {
         w: 8,
         h: 3,
         apron: { capacity: 4, units: [] },
+        connected: false, // kotvisko má cestné konektory, ale žiadna cesta ešte nevedie
       },
     ]);
   });
@@ -74,13 +75,14 @@ describe('entitiesVM: nový svet (Root modul)', () => {
     ]);
   });
 
-  it('bez lodí je zoznam lodí prázdny; entitiesVM skladá všetky tri polia', () => {
+  it('bez lodí je zoznam lodí prázdny; entitiesVM skladá všetky štyri polia (aj prázdne vozidlá)', () => {
     const world = createWorld();
     expect(shipVMs(world)).toEqual([]);
     const entities = entitiesVM(world);
     expect(entities.modules).toHaveLength(1);
     expect(entities.cranes).toHaveLength(1);
     expect(entities.ships).toHaveLength(0);
+    expect(entities.vehicles).toEqual([]);
   });
 
   it('kapacita apronu aj rozmery footprintu idú z defov (nie natvrdo)', () => {

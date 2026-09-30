@@ -143,12 +143,14 @@ describe('App: BuildBar dole (kategória Terminál z defs.modules)', () => {
     expect(html).toMatch(/data-def-id="berth_standard" data-status="available"/);
   });
 
-  it('ostatné kategórie sú zamknuté (disabled tab so zámkom)', () => {
+  it('kategórie mimo fázy sú zamknuté (disabled tab so zámkom); Terminál, Sklady a Logistika sú povolené', () => {
     const html = render();
-    for (const id of ['storage', 'logistics', 'landside', 'rail', 'pipes']) {
+    for (const id of ['landside', 'rail', 'pipes']) {
       expect(html, id).toMatch(new RegExp(`<button[^>]*disabled=""[^>]*data-category="${id}"`));
     }
-    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*data-category="terminal"/);
+    for (const id of ['terminal', 'storage', 'logistics']) {
+      expect(html, id).not.toMatch(new RegExp(`<button[^>]*disabled=""[^>]*data-category="${id}"`));
+    }
   });
 
   it('vybraná položka z BuildSelection je zvýraznená (aria-pressed)', () => {

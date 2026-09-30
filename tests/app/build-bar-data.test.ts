@@ -15,12 +15,12 @@ function terminalItems(cashCents: number) {
 }
 
 describe('buildBarCategories: kategórie', () => {
-  it('poradie a názvy z prototypu; vo F2 je povolený len Terminál, ostatné sú zamknuté a bez položiek', () => {
+  it('poradie a názvy z prototypu; vo F3 sú povolené Terminál, Sklady a Logistika, ostatné sú zamknuté a bez položiek', () => {
     const categories = buildBarCategories(defs, 0);
     expect(categories.map((category) => [category.id, category.label, category.enabled])).toEqual([
       ['terminal', 'Terminál', true],
-      ['storage', 'Sklady', false],
-      ['logistics', 'Logistika', false],
+      ['storage', 'Sklady', true],
+      ['logistics', 'Logistika', true],
       ['landside', 'Landside', false],
       ['rail', 'Železnica', false],
       ['pipes', 'Potrubia', false],

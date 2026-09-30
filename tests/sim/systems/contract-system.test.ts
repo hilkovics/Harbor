@@ -3,11 +3,11 @@
  * a účtovanie pri dokončení, demurrage len počas státia lode, zlyhanie ešte na ceste a počítadlá po zlyhaní.
  */
 import { describe, expect, it } from 'vitest';
-import { capacityHintOf, offerVolumeUnits } from '@sim/contracts';
+import { capacityHintOf, offerVolumeUnits, type Contract } from '@sim/contracts';
 import type { ContractId } from '@sim/core';
 import { DefRegistry } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
-import { GAME_START_TICK, refillPool } from '@sim/systems';
+import { GAME_START_TICK, expireOffers, refillPool } from '@sim/systems';
 import { World } from '@sim/world';
 import { emptyScenario, must } from '../helpers/harbor';
 import { runScenario } from '../helpers/scenario';
@@ -98,6 +98,16 @@ describe('poistka objemu ponuky: objem ≤ kapacita skladov, ale ≥ min šabló
     const offers = offeredContracts(world);
     expect(offers.length).toBe(defs.economy.offersPerDay);
     for (const offer of offers) expect(offer.volumeUnits, offer.templateId).toBe(offer.templateId === 'big_feeder' ? 72 : 64);
+  });
+});
+
+describe('krok 2: snímka neukončených kontraktov', () => {
+  it('expireOffers so znovupoužiteľným poľom: pole sa naplní snímkou neukončených kontraktov a expirujú len ponuky po termíne', () => {
+    const world = worldWithPool(fixedContractDefs(), 5609);
+    const scratch: Contract[] = [];
+    expireOffers(world, scratch);
+    expect(scratch.map((contract) => contract.id)).toEqual(offeredContracts(world).map((offer) => offer.id));
+    expect(world.events.pending).toBe(0);
   });
 });
 

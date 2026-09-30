@@ -166,24 +166,43 @@ const CONTRACT_STEPS: { readonly [S in ContractState]: ContractStep } = {
   expired: () => undefined,
 };
 
+/**
+ * Neukončené kontrakty vzostupne podľa id do znovupoužiteľného poľa `into` (najprv ho vyprázdni). Snímka je nutná:
+ * prechody do konečného stavu mažú kontrakt z prebiehajúcich počas prechodu.
+ */
+function snapshotOpen(world: World, into: Contract[]): Contract[] {
+  into.length = 0;
+  for (const contract of world.contractBook.openContracts.values()) into.push(contract);
+  return into;
+}
+
 export class ContractSystem {
+  /** Znovupoužiteľná snímka neukončených kontraktov (hot path bez alokácie; nie je stav simulácie). */
+  private readonly open: Contract[] = [];
+
   /** Krok 2 (viď hlavička súboru). */
   tick(world: World, closed: ClockBoundaries): void {
-    const book = world.contractBook;
-    // Kópia: prechody do konečného stavu mažú kontrakt z prebiehajúcich počas prechodu.
-    for (const contract of [...book.openContracts.values()]) {
+    const open = snapshotOpen(world, this.open);
+    for (let i = 0; i < open.length; i++) {
+      const contract = open[i];
       CONTRACT_STEPS[contract.state](contract, world);
     }
-    if (closed.dayClosed) expireOffers(world);
+    if (closed.dayClosed) expireOffers(world, open);
+    open.length = 0;
     if (closed.dayClosed || world.clock.tick === GAME_START_TICK) refillPool(world);
   }
 }
 
-/** Ponuky s `offerExpiresTick ≤ tick` vzostupne podľa id → `expired` + `ContractExpired { reason: 'timeout' }`. */
-export function expireOffers(world: World): void {
+/**
+ * Ponuky s `offerExpiresTick ≤ tick` vzostupne podľa id → `expired` + `ContractExpired { reason: 'timeout' }`.
+ * `scratch` = znovupoužiteľné pole na snímku neukončených kontraktov (bez neho nové).
+ */
+export function expireOffers(world: World, scratch: Contract[] = []): void {
   const book = world.contractBook;
   const { tick } = world.clock;
-  for (const contract of [...book.openContracts.values()]) {
+  const open = snapshotOpen(world, scratch);
+  for (let i = 0; i < open.length; i++) {
+    const contract = open[i];
     if (contract.state !== 'offered' || tick < contract.offerExpiresTick) continue;
     book.changeState(contract, 'expired');
     world.events.emit({ type: 'ContractExpired', contractId: contract.id, reason: 'timeout' });

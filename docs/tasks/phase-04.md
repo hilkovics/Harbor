@@ -49,7 +49,7 @@
 - [x] T04-05 · Testy (TDD): scenár `full_import_chain`, brána, bay, neplatná rampa
 - [x] T04-06 · Render: `TruckView`, závora brány, `queue_badge`, obsadenosť stojísk, staging na rampe, badge „neprevádzková"
 - [x] T04-07 · UI: inspector brány (fronta, priepustnosť/h), stojiska (bays), rampy (docks, staging, dôvod neprevádzkovosti); BuildBar Landside moduly
-- [ ] T04-08 · App: snapshot v4 (kamióny, brána, stojiská, rampy), napojenie, toasty (`NoWaitingBay`, neprevádzková rampa)
+- [x] T04-08 · App: snapshot v4 (kamióny, brána, stojiská, rampy), napojenie, toasty (`NoWaitingBay`, neprevádzková rampa)
 - [x] T04-09 · Tooling: `simrun` metriky kamiónov a exportu
 - [ ] T04-10 · E2E: celý reťazec loď → dvor → rampa → kamión → export, screenshoty
 - [ ] T04-11 · Review `src/sim/**`

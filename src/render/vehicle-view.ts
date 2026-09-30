@@ -1,14 +1,18 @@
 /**
  * VehicleView (DESIGN_BRIEF §5.6): vozidlo na cestách — sprite `entities.<defId>.states.{empty|loaded}` z manifestu,
- * predok hore pri `heading` 0, otočený okolo stredu bunky.
+ * predok hore pri `heading` 0, otočený okolo stredu vozidla.
  *
- * Poloha je `lerp(prev, curr, alpha)` v bunkách × `--cell` (stred vozidla; stred bunky = `x + 0,5`). `loaded` platí,
- * kým vozidlo vezie jednotku nákladu (kontajner medzi nohami je súčasť spritu). Vozidlo bez sprite (def chýba
- * v manifeste / textúra nie je načítaná) sa nakreslí ako telo z tokenov `--vehicle-body` s obrysom `--vehicle-dark`
- * a tmavým pruhom na predku, aby bol vidieť smer jazdy.
+ * Poloha je `lerp(prev + posun pruhu, curr + posun pruhu, alpha)` v bunkách × `--cell` (stred vozidla; stred bunky =
+ * `x + 0,5`). Sim vedie vozidlo stredom bunky, pruh je prezentačný (`lane.ts`): na dvojpruhovej ceste sa vozidlo posunie
+ * kolmo na smer jazdy vpravo o 13/64 bunky a sprite sa zmenší na šírku pruhu (`VEHICLE_LANE_SCALE`). Posun sa berie
+ * podľa typu cesty a kurzu predchádzajúcej aj aktuálnej polohy (`prevHeading`), takže v zákrute nie je skok cez
+ * stredovú čiaru. `loaded` platí, kým vozidlo vezie jednotku nákladu (kontajner medzi nohami je súčasť spritu).
+ * Vozidlo bez sprite (def chýba v manifeste / textúra nie je načítaná) sa nakreslí ako telo z tokenov `--vehicle-body`
+ * s obrysom `--vehicle-dark` a tmavým pruhom na predku, aby bol vidieť smer jazdy; má rovnakú mierku ako sprite.
  */
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
 import { vehicleSprite, type CellSize } from './entity-assets';
+import { VEHICLE_LANE_SCALE, defaultRoadKindAt, laneOffset, type RoadKindAt } from './lane';
 import { lerp } from './ship-view';
 import type { EntityTextures } from './sprite-atlas';
 import type { EntityPalette } from './tokens';
@@ -46,9 +50,19 @@ export interface VehiclePose {
   readonly angle: number;
 }
 
-/** Poloha vozidla v čase `alpha` medzi predchádzajúcim a aktuálnym tickom, v px sveta. */
-export function vehiclePose(vm: VehicleVM, alpha: number, cellPx: number): VehiclePose {
-  return { x: lerp(vm.prevX, vm.x, alpha) * cellPx, y: lerp(vm.prevY, vm.y, alpha) * cellPx, angle: vm.heading };
+/**
+ * Poloha vozidla v čase `alpha` medzi predchádzajúcim a aktuálnym tickom, v px sveta:
+ * `lerp(prev + posunPruhu(prevKind, prevHeading), curr + posunPruhu(kind, heading), alpha)`. Typ cesty sa berie z bunky
+ * pod predchádzajúcou a pod aktuálnou polohou (`roadKindAt`), `prevHeading` chýbajúci vo VM = `heading`.
+ */
+export function vehiclePose(vm: VehicleVM, alpha: number, cellPx: number, roadKindAt: RoadKindAt = defaultRoadKindAt): VehiclePose {
+  const from = laneOffset(roadKindAt(Math.floor(vm.prevX), Math.floor(vm.prevY)), vm.prevHeading ?? vm.heading);
+  const to = laneOffset(roadKindAt(Math.floor(vm.x), Math.floor(vm.y)), vm.heading);
+  return {
+    x: lerp(vm.prevX + from.x, vm.x + to.x, alpha) * cellPx,
+    y: lerp(vm.prevY + from.y, vm.y + to.y, alpha) * cellPx,
+    angle: vm.heading,
+  };
 }
 
 /** Zhoda statickej časti VM (kým sa nezmení, view sa nevytvára nanovo): poloha a kurz sa menia každý tick, def nie. */
@@ -62,6 +76,8 @@ export interface VehicleViewDeps {
   readonly palette: EntityPalette;
   /** Textúry entít; `null` = vždy fallback `Graphics`. */
   readonly textures: EntityTextures | null;
+  /** Typ cesty v bunke (pruh vozidla, `lane.ts`); `WorldRenderer` ho čerpá z gridu, predvolene všade `two_lane`. */
+  readonly roadKindAt?: RoadKindAt;
 }
 
 export class VehicleView {
@@ -73,6 +89,7 @@ export class VehicleView {
   private readonly sprite: Sprite | null;
   private readonly textures: { readonly empty: Texture; readonly loaded: Texture } | null;
   private load: VehicleLoad;
+  private readonly roadKindAt: RoadKindAt;
 
   constructor(
     vm: VehicleVM,
@@ -81,6 +98,7 @@ export class VehicleView {
   ) {
     this.id = vm.id;
     this.last = vm;
+    this.roadKindAt = deps.roadKindAt ?? defaultRoadKindAt;
     this.view = new Container({ label: `vehicle-${String(vm.id)}` });
     this.load = vehicleLoad(vm.loaded);
     this.textures = this.resolveTextures(vm.defId);
@@ -88,7 +106,7 @@ export class VehicleView {
     if (this.textures !== null && entry !== undefined) {
       this.sprite = new Sprite(this.textures[this.load]);
       this.sprite.anchor.set(0.5);
-      this.sprite.setSize(entry.footprint.w * deps.cellPx, entry.footprint.h * deps.cellPx);
+      this.sprite.setSize(entry.footprint.w * deps.cellPx * VEHICLE_LANE_SCALE, entry.footprint.h * deps.cellPx * VEHICLE_LANE_SCALE);
       this.view.addChild(this.sprite);
     } else {
       this.sprite = null;
@@ -109,7 +127,7 @@ export class VehicleView {
   /** Nastaví polohu (interpolovanú), kurz a stav naloženia. Pre nezmenený stav nič nealokuje. */
   update(vm: VehicleVM, alpha: number): void {
     this.last = vm;
-    const pose = vehiclePose(vm, alpha, this.deps.cellPx);
+    const pose = vehiclePose(vm, alpha, this.deps.cellPx, this.roadKindAt);
     if (this.view.x !== pose.x || this.view.y !== pose.y) this.view.position.set(pose.x, pose.y);
     if (this.view.angle !== pose.angle) this.view.angle = pose.angle;
     const load = vehicleLoad(vm.loaded);
@@ -133,7 +151,7 @@ export class VehicleView {
     return { empty, loaded };
   }
 
-  /** Telo z tokenov s tmavým pruhom na predku (hore); rozmer 1 bunka bez odsadenia od okraja. */
+  /** Telo z tokenov s tmavým pruhom na predku (hore); rozmer 1 bunka bez odsadenia od okraja, v mierke pruhu. */
   private createFallback(): Graphics {
     const { cellPx, palette } = this.deps;
     const width = FALLBACK_FOOTPRINT.w * cellPx;
@@ -150,6 +168,7 @@ export class VehicleView {
       .fill({ color: body.color, alpha: body.alpha })
       .stroke({ width: OUTLINE_CELLS * cellPx, color: dark.color, alpha: dark.alpha, alignment: 1 });
     graphics.rect(left, top, bodyWidth, bodyHeight * FALLBACK_FRONT_STRIPE).fill({ color: dark.color, alpha: dark.alpha });
+    graphics.scale.set(VEHICLE_LANE_SCALE); // rovnaká mierka ako sprite: telo (56/64 bunky) sa zmestí do pruhu
     return graphics;
   }
 }

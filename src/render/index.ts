@@ -34,6 +34,20 @@ export {
 export type { ShipLoad, ShipPose, ShipViewDeps } from './ship-view';
 export { VehicleView, sameVehicleShape, vehicleLoad, vehiclePose, vehicleSpriteFile } from './vehicle-view';
 export type { VehicleLoad, VehiclePose, VehicleViewDeps } from './vehicle-view';
+export {
+  DEFAULT_ROAD_KIND,
+  LANE_CENTER_PX,
+  LANE_OFFSET_CELLS,
+  LANE_WIDTH_PX,
+  ROAD_ASPHALT_PX,
+  VEHICLE_CONTENT_WIDTH_PX,
+  VEHICLE_LANE_SCALE,
+  createRoadKindAt,
+  defaultRoadKindAt,
+  laneOffset,
+  roadKindOfCell,
+} from './lane';
+export type { RoadKind, RoadKindAt } from './lane';
 export { CraneLayer } from './crane-layer';
 export {
   BADGE_MAX_SCALE,

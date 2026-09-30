@@ -2,11 +2,18 @@ import { Container, Graphics, Sprite } from 'pixi.js';
 import { describe, expect, it } from 'vitest';
 import { vehicleSprite } from '@render/entity-assets';
 import { EntityLayer } from '@render/entity-layer';
+import { VEHICLE_LANE_SCALE, type RoadKind, type RoadKindAt } from '@render/lane';
 import { VehicleView, sameVehicleShape, vehicleLoad, vehiclePose, vehicleSpriteFile } from '@render/vehicle-view';
 import type { ShipVM, VehicleVM } from '@render/view-models';
 import { ENTITY_PALETTE, PALETTE, StubTextures } from './stub-textures';
 
 const CELL = PALETTE.cellPx;
+
+/** Posun do pravého pruhu dvojpruhovej cesty: 13 px zo 64 px bunky (stredová čiara x 32, stred pruhu x 45). */
+const LANE = 13 / 64;
+
+/** Šírka pruhu v bunkách: 26 px zo 64. */
+const LANE_WIDTH = 26 / 64;
 
 function deps(textures: StubTextures | null) {
   return { cellPx: CELL, palette: ENTITY_PALETTE, textures };
@@ -74,21 +81,115 @@ describe('záznam vozidla v manifeste', () => {
   });
 });
 
-describe('vehiclePose (lerp(prev, curr, alpha) × cell, rotácia = heading)', () => {
-  it('poloha medzi predchádzajúcim a aktuálnym tickom; stred bunky je x + 0,5', () => {
+describe('vehiclePose (lerp(prev + pruh, curr + pruh, alpha) × cell, rotácia = heading)', () => {
+  it('poloha medzi predchádzajúcim a aktuálnym tickom; stred bunky je x + 0,5; kurz 90° jazdí v južnom pruhu (+y)', () => {
     const pose = vehiclePose(carrier({ prevX: 36.5, x: 37.5, prevY: 24.5, y: 24.5, heading: 90 }), 0.25, CELL);
-    expect(pose).toEqual({ x: 36.75 * CELL, y: 24.5 * CELL, angle: 90 });
+    expect(pose.x).toBeCloseTo(36.75 * CELL, 9);
+    expect(pose.y).toBeCloseTo((24.5 + LANE) * CELL, 9);
+    expect(pose.angle).toBe(90);
   });
 
-  it('alpha 0 → predchádzajúca poloha, alpha 1 → aktuálna', () => {
+  it('alpha 0 → predchádzajúca poloha, alpha 1 → aktuálna (obe v pruhu); kurz 180° jazdí v západnom pruhu (−x)', () => {
     const vm = carrier({ prevX: 10.5, x: 11.5, prevY: 20.5, y: 21.5, heading: 180 });
-    expect(vehiclePose(vm, 0, CELL)).toEqual({ x: 10.5 * CELL, y: 20.5 * CELL, angle: 180 });
-    expect(vehiclePose(vm, 1, CELL)).toEqual({ x: 11.5 * CELL, y: 21.5 * CELL, angle: 180 });
+    const start = vehiclePose(vm, 0, CELL);
+    const end = vehiclePose(vm, 1, CELL);
+    expect(start.x).toBeCloseTo((10.5 - LANE) * CELL, 9);
+    expect(start.y).toBeCloseTo(20.5 * CELL, 9);
+    expect(end.x).toBeCloseTo((11.5 - LANE) * CELL, 9);
+    expect(end.y).toBeCloseTo(21.5 * CELL, 9);
+    expect(end.angle).toBe(180);
+  });
+
+  it.each([
+    [0, LANE, 0],
+    [90, 0, LANE],
+    [180, -LANE, 0],
+    [270, 0, -LANE],
+  ] as const)('stojace vozidlo v strede bunky, kurz %i°: pravý pruh je posun (%f; %f) bunky kolmo na smer jazdy', (heading, dx, dy) => {
+    const pose = vehiclePose(carrier({ heading }), 1, CELL);
+    expect(pose.x).toBeCloseTo((36.5 + dx) * CELL, 9);
+    expect(pose.y).toBeCloseTo((24.5 + dy) * CELL, 9);
+  });
+
+  it('jednopruhová a jednosmerná cesta: vozidlo jazdí v strede bunky', () => {
+    for (const kind of ['one_lane', 'one_way'] as const) {
+      const pose = vehiclePose(carrier({ heading: 270 }), 1, CELL, () => kind);
+      expect(pose).toEqual({ x: 36.5 * CELL, y: 24.5 * CELL, angle: 270 });
+    }
+  });
+
+  it('typ cesty sa pýta pre bunku pod predchádzajúcou aj aktuálnou polohou (podlaha súradníc)', () => {
+    const calls: string[] = [];
+    const roadKindAt: RoadKindAt = (x, y) => {
+      calls.push(`${String(x)};${String(y)}`);
+      return 'two_lane';
+    };
+    vehiclePose(carrier({ prevX: 36.9, prevY: 24.5, x: 37.1, y: 24.5 }), 0.5, CELL, roadKindAt);
+    expect(calls).toEqual(['36;24', '37;24']);
+  });
+
+  it('prechod medzi typmi ciest: posun sa interpoluje z pruhu (dvojpruhová) do stredu (jednopruhová)', () => {
+    const roadKindAt: RoadKindAt = (x): RoadKind => (x < 10 ? 'two_lane' : 'one_lane');
+    const vm = carrier({ prevX: 9.9, x: 10.1, prevY: 24.5, y: 24.5, heading: 90 });
+    expect(vehiclePose(vm, 0, CELL, roadKindAt).y).toBeCloseTo((24.5 + LANE) * CELL, 9);
+    expect(vehiclePose(vm, 0.5, CELL, roadKindAt).y).toBeCloseTo((24.5 + LANE / 2) * CELL, 9);
+    expect(vehiclePose(vm, 1, CELL, roadKindAt).y).toBeCloseTo(24.5 * CELL, 9);
+  });
+
+  it('zákruta: pruh sa interpoluje medzi kurzom predchádzajúceho a aktuálneho úseku (prevHeading)', () => {
+    // východ → juh v zákrute (48; 24): pred zákrutou južný pruh (+y), po nej západný pruh (−x)
+    const vm = carrier({ prevX: 47.9, prevY: 24.5, x: 48.5, y: 24.6, prevHeading: 90, heading: 180 });
+    const start = vehiclePose(vm, 0, CELL);
+    const middle = vehiclePose(vm, 0.5, CELL);
+    const end = vehiclePose(vm, 1, CELL);
+    expect(start.x).toBeCloseTo(47.9 * CELL, 9);
+    expect(start.y).toBeCloseTo((24.5 + LANE) * CELL, 9);
+    expect(end.x).toBeCloseTo((48.5 - LANE) * CELL, 9);
+    expect(end.y).toBeCloseTo(24.6 * CELL, 9);
+    expect(middle.x).toBeCloseTo(((47.9 + 48.5 - LANE) / 2) * CELL, 9);
+    expect(middle.y).toBeCloseTo(((24.5 + LANE + 24.6) / 2) * CELL, 9);
+    expect(end.angle).toBe(180); // kurz sa nemení plynulo, iba poloha
+  });
+
+  it('bez prevHeading sa berie aktuálny kurz (staré VM)', () => {
+    const vm = carrier({ prevX: 36.5, x: 37.5, heading: 90 });
+    expect(vehiclePose(vm, 0, CELL)).toEqual(vehiclePose({ ...vm, prevHeading: 90 }, 0, CELL));
+  });
+
+  it('jazda cez zákrutu nemá skok: krok medzi susednými vzorkami polohy je malý aj na hranici ticku', () => {
+    // trasa: východ po y = 24,5 do stredu bunky (48; 24), potom juh po x = 48,5; krok 0,25 bunky za tick
+    const step = 0.25;
+    const points: { x: number; y: number; heading: 90 | 180 }[] = [];
+    for (let x = 46.5; x < 48.5; x += step) points.push({ x, y: 24.5, heading: 90 });
+    for (let y = 24.5; y <= 26.5; y += step) points.push({ x: 48.5, y, heading: 180 });
+    const samples: { x: number; y: number }[] = [];
+    for (let i = 1; i < points.length; i += 1) {
+      const prev = points[i - 1];
+      const curr = points[i];
+      const vm = carrier({ prevX: prev.x, prevY: prev.y, prevHeading: prev.heading, x: curr.x, y: curr.y, heading: curr.heading });
+      for (let alpha = 0; alpha <= 1.0001; alpha += 0.05) samples.push(vehiclePose(vm, alpha, CELL));
+    }
+    let largest = 0;
+    for (let i = 1; i < samples.length; i += 1) {
+      largest = Math.max(largest, Math.hypot(samples[i].x - samples[i - 1].x, samples[i].y - samples[i - 1].y) / CELL);
+    }
+    // bez prevHeading by v zákrute vznikol skok LANE·√2 ≈ 0,29 bunky; s ním je najväčší krok ≈ krok ticku / 20 + zmena pruhu / 20
+    expect(largest).toBeLessThan(0.05);
+  });
+
+  it('kontrola testu: bez prevHeading by tá istá zákruta skočila cez stredovú čiaru', () => {
+    const withHeading = carrier({ prevX: 47.9, prevY: 24.5, x: 48.5, y: 24.6, prevHeading: 90, heading: 180 });
+    const without = { ...withHeading, prevHeading: undefined };
+    const jump = Math.hypot(
+      vehiclePose(without, 0, CELL).x - vehiclePose(withHeading, 0, CELL).x,
+      vehiclePose(without, 0, CELL).y - vehiclePose(withHeading, 0, CELL).y,
+    );
+    expect(jump / CELL).toBeCloseTo(Math.SQRT2 * LANE, 9);
   });
 });
 
 describe('VehicleView', () => {
-  it('prázdne vozidlo: sprite `empty`, vycentrovaný, 1×1 bunka, poloha = stred bunky v px', () => {
+  it('prázdne vozidlo: sprite `empty`, vycentrovaný, v mierke pruhu, poloha = stred bunky posunutý do pravého pruhu', () => {
     const textures = new StubTextures();
     const view = new VehicleView(carrier(), deps(textures));
     const sprite = view.view.children[0] as Sprite;
@@ -96,10 +197,12 @@ describe('VehicleView', () => {
     expect(sprite.texture).toBe(textures.textureFor('file/entities/straddle_carrier_empty.svg'));
     expect(sprite.anchor.x).toBe(0.5);
     expect(sprite.anchor.y).toBe(0.5);
-    expect(sprite.width).toBeCloseTo(CELL, 6);
-    expect(sprite.height).toBeCloseTo(CELL, 6);
+    // sprite 1×1 bunka × (26 / 56): šírka obsahu spritu (56 z 64 px) = šírka pruhu (26 z 64 px)
+    expect(sprite.width).toBeCloseTo((CELL * 26) / 56, 6);
+    expect(sprite.height).toBeCloseTo((CELL * 26) / 56, 6);
+    expect(sprite.width).toBeCloseTo(CELL * VEHICLE_LANE_SCALE, 9);
     expect(view.view.position.x).toBe(36.5 * CELL);
-    expect(view.view.position.y).toBe(24.5 * CELL);
+    expect(view.view.position.y).toBeCloseTo((24.5 + LANE) * CELL, 9); // kurz 90°: pravý pruh je južne
     expect(view.view.angle).toBeCloseTo(90, 9);
   });
 
@@ -114,27 +217,32 @@ describe('VehicleView', () => {
   });
 
   it.each([
-    [0, 0, -1],
-    [90, 1, 0],
-    [180, 0, 1],
-    [270, -1, 0],
-  ] as const)('kurz %i°: predok (hore v sprite) smeruje o (%i; %i) bunky od stredu', (heading, dx, dy) => {
+    [0, 0, -1, LANE, 0],
+    [90, 1, 0, 0, LANE],
+    [180, 0, 1, -LANE, 0],
+    [270, -1, 0, 0, -LANE],
+  ] as const)('kurz %i°: predok (hore v sprite) smeruje o (%i; %i) bunky od stredu vozidla v pravom pruhu', (heading, dx, dy, laneX, laneY) => {
     const view = new VehicleView(carrier({ heading }), deps(new StubTextures()));
     const root = new Container();
     root.addChild(view.view);
     const front = view.view.toGlobal({ x: 0, y: -0.5 * CELL });
-    expect(front.x).toBeCloseTo(36.5 * CELL + dx * 0.5 * CELL, 6);
-    expect(front.y).toBeCloseTo(24.5 * CELL + dy * 0.5 * CELL, 6);
+    expect(front.x).toBeCloseTo((36.5 + laneX + dx * 0.5) * CELL, 6);
+    expect(front.y).toBeCloseTo((24.5 + laneY + dy * 0.5) * CELL, 6);
   });
 
-  it('rotácia je okolo stredu bunky: stred spritu ostáva na (x; y) pri každom kurze', () => {
-    for (const heading of [0, 90, 180, 270] as const) {
+  it('rotácia je okolo stredu vozidla: stred spritu je v pravom pruhu bunky (x; y) pri každom kurze', () => {
+    for (const [heading, laneX, laneY] of [
+      [0, LANE, 0],
+      [90, 0, LANE],
+      [180, -LANE, 0],
+      [270, 0, -LANE],
+    ] as const) {
       const view = new VehicleView(carrier({ heading }), deps(new StubTextures()));
       const root = new Container();
       root.addChild(view.view);
       const center = view.view.toGlobal({ x: 0, y: 0 });
-      expect(center.x).toBeCloseTo(36.5 * CELL, 6);
-      expect(center.y).toBeCloseTo(24.5 * CELL, 6);
+      expect(center.x).toBeCloseTo((36.5 + laneX) * CELL, 6);
+      expect(center.y).toBeCloseTo((24.5 + laneY) * CELL, 6);
     }
   });
 
@@ -149,6 +257,7 @@ describe('VehicleView', () => {
     view.update({ ...vm, heading: 180, prevX: 37.5, x: 37.5, prevY: 24.5, y: 25.5 }, 0.5);
     expect(view.view.angle).toBeCloseTo(180, 9);
     expect(view.view.y).toBe(25 * CELL);
+    expect(view.view.x).toBeCloseTo((37.5 - LANE) * CELL, 9); // kurz 180°: západný pruh
   });
 
   it('neznáme vozidlo alebo bez textúr → `Graphics` z tokenov (jedna bunka), bez textúry', () => {
@@ -159,6 +268,23 @@ describe('VehicleView', () => {
     expect(bare.view.children[0]).toBeInstanceOf(Graphics);
     bare.update(carrier({ loaded: true }), 1); // prepnutie naloženia bez sprite nespadne
     bare.update(carrier({ loaded: false }), 1);
+  });
+
+  it('fallback `Graphics` má rovnakú mierku pruhu ako sprite (telo 56/64 bunky = šírka pruhu)', () => {
+    const view = new VehicleView(carrier({ defId: 'hovercraft' }), deps(new StubTextures()));
+    const body = view.view.children[0];
+    expect(body.scale.x).toBeCloseTo(VEHICLE_LANE_SCALE, 9);
+    expect(body.scale.y).toBeCloseTo(VEHICLE_LANE_SCALE, 9);
+    expect(((CELL - (8 / 64) * CELL) * body.scale.x) / CELL).toBeCloseTo(LANE_WIDTH, 9);
+  });
+
+  it('typ cesty z `roadKindAt` v deps: jednopruhová cesta = stred bunky; po prestavbe na dvojpruhovú skočí do pruhu', () => {
+    let kind: RoadKind = 'one_lane';
+    const view = new VehicleView(carrier({ heading: 0 }), { ...deps(new StubTextures()), roadKindAt: () => kind });
+    expect(view.view.x).toBe(36.5 * CELL);
+    kind = 'two_lane';
+    view.update(carrier({ heading: 0 }), 1);
+    expect(view.view.x).toBeCloseTo((36.5 + LANE) * CELL, 9);
   });
 
   it('zhoda tvaru: iba defId (poloha a kurz sa menia každý tick)', () => {

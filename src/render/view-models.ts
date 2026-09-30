@@ -80,6 +80,12 @@ export interface VehicleVM {
   prevY: number;
   /** 0 = predok na sever, v smere hodinových ručičiek (kardinálny podľa smeru posledného úseku cesty). */
   heading: 0 | 90 | 180 | 270;
+  /**
+   * Kurz v predchádzajúcom ticku (rovnako ako `prevX`, `prevY`); predvolene = `heading`. V zákrute sa jazdný pruh
+   * (kolmý posun od osi cesty, `lane.ts`) interpoluje medzi pruhom predchádzajúceho a aktuálneho úseku, takže vozidlo
+   * neskočí cez stredovú čiaru. `SimBridge` (T03-10) ho vyplní kurzom z predošlého snapshotu.
+   */
+  prevHeading?: 0 | 90 | 180 | 270;
   /** Vezie jednotku nákladu → sprite `states.loaded`. */
   loaded: boolean;
   /** Stav FSM vozidla (`idle`, `to_pickup`, …); renderer ho zatiaľ nekreslí, nesie ho pre ladenie a budúce odznaky. */

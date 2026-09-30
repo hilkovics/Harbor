@@ -43,8 +43,9 @@
  * (zneplatní sa zmenou `roadVersion` alebo `moduleVersion`). Dotazy `isRampOperational`, `rampStatus`, `landsideRoutes`,
  * `gateSides` sú vždy aktuálne. Po každom aplikovanom príkaze (a na konci príkazovej fázy ticku) svet výsledok
  * **zverejní** do modulov (`TruckGate.entrySide`/`exitSide`, `LoadingRamp.operational`/`inoperativeReason`) a pri zmene
- * stavu rampy emituje `RampOperationalChanged` — po udalostiach príkazu, ktorý zmenu spôsobil. `create` a `deserialize`
- * zverejňujú bez udalostí.
+ * stavu rampy emituje `RampOperationalChanged` — po udalostiach príkazu, ktorý zmenu spôsobil — a urovná fronty brán
+ * (`settleGateQueues`, dodatok ADR-024). `create` a `deserialize` zverejňujú bez udalostí. Register pozemných modulov
+ * `landsideModules` (brány, stojiská, rampy podľa `LandExportModule.enlist`) sa obnoví pri zmene `moduleVersion`.
  * Typy ciest (T03-18, ADR-020): prestavba typu alebo smeru bunky je tiež zmena siete (`markRoadsChanged`); A* ide po
  * smerových hranách s cenou bunky `roadSpeeds.cellCost` (= 1 / `speedFactor`) a vozidlá jazdia rýchlosťou
  * `roadSpeeds.speedFactor` cieľovej bunky úseku.

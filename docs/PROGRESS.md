@@ -159,12 +159,32 @@ Stav: **hotová** (T04-01..T04-14). Plná pipeline T04-13 je zelená:
 ## Fáza 5 — Kontrakty, ledger, HUD → VERTICAL SLICE (M1)
 Karty: `docs/tasks/phase-05.md` · vetva `phase/05-contracts-vertical-slice` (stacked nad hilkovics/Harbor#5)
 
-- [ ] `contract_templates.json` (3 šablóny container), `economy.json` hodnoty.
-- [ ] `Contract` FSM (§9.1), `ContractSystem` (pool denne, expiry, spawn lode pri prijatí, SLA, demurrage, late penalty, fail, completion payout, XP).
-- [ ] `Economy` + `Ledger` (kategórie, `DaySummary`), `MoneyChanged`, `PenaltyApplied`; CAPEX pri stavaní, `module_sale` pri odstránení.
-- [ ] Odstrániť debug spawn; `AcceptContractCommand`, `DeclineContractCommand`.
-- [ ] Dispatcher krok 2 filtruje jednotky podľa kontraktu v stave `exporting`, prioritizuje podľa SLA.
-- [ ] UI: `ContractsPanel`, `TopHUD` skutočný cash + dnešná delta + XP, `Toasts` pre eventy, `GameOver` modal.
-- [ ] `data/scenarios/vertical_slice.json` + golden report v `tests/sim/__golden__/`.
+- [x] `contract_templates.json` (3 šablóny container), `economy.json` hodnoty.
+- [x] `Contract` FSM (§9.1), `ContractSystem` (pool denne, expiry, spawn lode pri prijatí, SLA, demurrage, late penalty, fail, completion payout, XP).
+- [x] `Economy` + `Ledger` (kategórie, `DaySummary`), `MoneyChanged`, `PenaltyApplied`; CAPEX pri stavaní, `module_sale` pri odstránení.
+- [x] Odstrániť debug spawn; `AcceptContractCommand`, `DeclineContractCommand`.
+- [x] Dispatcher krok 2 filtruje jednotky podľa kontraktu v stave `exporting`, prioritizuje podľa SLA.
+- [x] UI: `ContractsPanel`, `TopHUD` skutočný cash + dnešná delta + XP, `Toasts` pre eventy, `GameOver` modal.
+- [x] `data/scenarios/vertical_slice.json` + golden report v `tests/sim/__golden__/`.
 
-Akceptácia (**M1**): novú hru sa dá odohrať od prijatia kontraktu po výplatu bez debug príkazov; `/sim-check` zelený, `lostUnits = 0`.
+### Stav
+Stav: **hotová (T05-01..T05-13), míľnik M1 splnený**. Novú hru možno odohrať od prijatia kontraktu v UI po výplatu bez debug príkazov.
+
+**Pipeline T05-12 je zelená:**
+- typecheck, lint, 6 540 testov (234 súborov), validate:defs, build.
+- `simrun vertical_slice --ticks 60000`: kontrakt 78 TEU dokončený včas v ticku 15 011, `cashEnd` 40 617 000 ¢, tržba 4 563 000 ¢, penalizácie 0, údržba 1 980 000 ¢, mzdy 366 000 ¢, XP 78, `lostUnits` 0. Zhoda s golden `tests/sim/__golden__/vertical_slice.json`.
+- Regresia bez chýb s novými hodnotami podľa ADR-025 (údržba a mzdy): `full_import_chain` 31 964 000, `apron_to_yard` 64 254 000, `f1_roads` 107 830 000.
+- Plná e2e sada zelená (raz za fázu, úsporný režim). E2E M1 `f5-vertical-slice` prijme kontrakt cez UI a dôjde po výplatu (+$8,483, +13 XP) za približne 3 min.
+- Orchestrátor prezrel screenshoty `f5-ui-demo-stage.png` a `f5-payout.png`.
+
+**Review T05-10:** MERGE, 0 blocking, 3 major, 5 minor. Hlavný nález bol deadlock: kontrakt s objemom nad kapacitu skladu sa nemohol dokončiť. T05-11 ho opravila exportom počas vykládky a poistkou objemu ponuky (dodatok ADR-027). Ďalej opravila alokáciu v kroku 2, dispatcher, mŕtvu vetvu a konštanty. T05-08 dokončila metriky.
+
+**Rozhodnutia:** ADR-025 (Economy, Ledger, údržba a mzdy, bankrot, v5), ADR-026 (kontrakty: FSM, vlastné id, pool, loď, penalizácie, výplata), ADR-027 (dispatcher podľa kontraktu, `failed` exportovateľné, centrálne `game_over`, dodatok). ARCHITECTURE je zosúladená.
+
+**Odchýlky:**
+- T05-06 (UI) sa robila v predstihu už počas F4;
+- kontrakty majú vlastnú postupnosť id;
+- ponuky expirujú pri dennej obnove;
+- uskladnené jednotky kontraktu idú na rampu už počas vykládky;
+- plná e2e beží raz za fázu (úsporný režim na žiadosť používateľa);
+- PR hilkovics/Harbor#6 založil používateľ proti `claude/laughing-galileo-2ctnlq`.

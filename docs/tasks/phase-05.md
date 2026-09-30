@@ -66,12 +66,12 @@
 - [x] T05-05 · Testy (TDD): vzorce, penalizácie, pool, scenár `vertical_slice` + golden report
 - [x] T05-06 · UI: `ContractsPanel`, TopHUD (delta/deň, XP), `GameOverModal`, tóny toastov (predstih, worktree)
 - [x] T05-07 · App: snapshot v5, Accept/Decline, HUD, toasty kontraktov, GameOver, odstránenie DEV spawn tlačidla
-- [ ] T05-08 · Tooling: `simrun` metriky kontraktov a ekonomiky, golden report
-- [ ] T05-09 · E2E: nová hra → prijatie kontraktu → výplata, screenshoty
-- [ ] T05-10 · Review `src/sim/**`
-- [ ] T05-11 · Opravy z review + ARCHITECTURE zosúladenie
-- [ ] T05-12 · `/sim-check` s `vertical_slice` (M1) + plná pipeline
-- [ ] T05-13 · Uzavretie fázy (PROGRESS, BACKLOG) + PR
+- [x] T05-08 · Tooling: `simrun` metriky kontraktov a ekonomiky, golden report
+- [x] T05-09 · E2E: nová hra → prijatie kontraktu → výplata, screenshoty
+- [x] T05-10 · Review `src/sim/**`
+- [x] T05-11 · Opravy z review + ARCHITECTURE zosúladenie
+- [x] T05-12 · `/sim-check` s `vertical_slice` (M1) + plná pipeline
+- [x] T05-13 · Uzavretie fázy (PROGRESS, BACKLOG) + PR
 
 **Úsporný režim (rozhodnutie používateľa):** plná e2e sada beží raz za fázu (T05-12); ostatné karty spúšťajú len dotknuté špecifikácie.
 

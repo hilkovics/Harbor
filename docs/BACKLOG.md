@@ -13,8 +13,20 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - Idle vozidlo ostáva stáť na prístupovej bunke (návrat do depa chýba) a blokuje RemoveRoad tej bunky; open joby s odpojeným cieľovým skladom držia sloty a naložené vozidlo cyklí v no_path → návrat do depa + preradenie jobov + udalosť pre toast. — pôvod: T03-06, T03-13 · fáza: F4
 - `has_trucks` validácia pri odstránení brány/stojiska/rampy s kamiónmi (T04-02 nechal hook, T04-04 dodá logiku); odčítavanie trudy pri obnove modulov. — pôvod: T04-02, T04-12 · fáza: F4 (zásuvka existuje)
 - Kamión v `no_path` s rezervovaným bay a dock: buď vrátiť do depa a zrušiť job, alebo vypršať a despawnúť; možno nový stav `stuck` a ADR; event `TruckNoPath` pre toast. — pôvod: T04-04, T04-11 · fáza: F5
+- **AcceptContract bez overenia pripravenosti prístavu:** žeriav kategórie kontraktu a dĺžka brežu; loď sa môže zablokať na kotvisku. — pôvod: T05-10 review · fáza: F5–F6
 
 ## P2
+- **Hladovanie `free`** (T05-10 review, minor, staging share): vol. priestor v sklade sa neprideluje pri `failed` kontraktoch → sklad zablokovaný; voľné sloty sa prideľujú pri výklade aj v stave `unloading`, nie len pri `exporting`. — pôvod: T05-10 review · fáza: F5–F6
+- **Neohraničené penalizácie:** demurrage a late by mali byť ohraničené ≤ reward; pri bankrote. — pôvod: T05-10 review · fáza: F5–F6
+- **`StoredCargoIndex` O(skupina):** splice pri odstránení kontraktu je O(n); použiť heap alebo bitset. — pôvod: T05-10 review · fáza: F6
+- **Pool po načítaní v4:** po migráciida v4→v5 je pool prázdny, väčší skok k prvej ponuke (až nasledujúca DayClosed); vyplniť pool pri migácii. — pôvod: T05-10 review · fáza: F6
+- **Free/failed wait behind SLA** (outbound priority): jednotky bez kontraktu a `failed` sa nemajú odohrať pred SLA jednotkami. — pôvod: T05-10 review · fáza: F5–F6
+- **TopHUD panel icons bez funkcie:** ikony Financie/Štatistiky/Tech (Finance/Stats/Tech) sú clickable no-op → zablokiť alebo schová. — pôvod: T05-07 · fáza: F5–F6
+- **contractsRevision** oddelené od REVISION_EVENTS → sledovanie zmien kontraktu. — pôvod: T05-07 · fáza: F6
+- **E2E pre bankrot a novú hru:** test GameOver modalu a reštartu. — pôvod: T05-07 · fáza: F5
+- **Toast sa zatvára aj počas pauzy:** auto-close by mal byť deaktivovaný (paused game). — pôvod: T05-12 · fáza: F5–F6
+- **Orezaný výrez mapy pri paneli:** pri otvorení ContractsPanel sa mapa kreslí cez ľavý okraj panelu. — pôvod: T05-06 · fáza: F13 (vizuál)
+- **Údržba ciest a modifikátory miezd:** road maintenance (nonzero v F5), wage tech modifiers (tech modifikátory pre mzdy vozidiel). — pôvod: T05-02 · fáza: F7–F8
 - Štartové cesty z mapy (starter.roads, 30 buniek) sú zadarmo, ale RemoveRoad za ne vráti 50 % aktuálnej ceny (~$30k) — drobný exploit; pri moduloch vyriešené refundáciou zo zaplatenej ceny (ADR-015), pri cestách zvážiť to isté. — pôvod: T01-04, T02-04 · fáza: F13 (balans)
 - Späť cez stojisko (čakacia plocha) nemá čas prechodu → kamión v `gate_queue_out` sa okamžite ocitne na výstupe. — pôvod: T04-04, T04-11 · fáza: F5
 - Spätný prechod bránou v `gate_queue_out`: ak sa strana brány odstráni/obnoví pri prechode, fronta sa počíta znova a `trucksProcessed` sa zdvojí. — pôvod: T04-04, T04-11 · fáza: F6

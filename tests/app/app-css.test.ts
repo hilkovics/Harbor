@@ -34,11 +34,26 @@ describe('app.css — rozloženie', () => {
     expect(body).toMatch(/pointer-events:\s*auto/);
   });
 
-  it('DEV nástroje sú pod HUD vpravo (výška HUD z tokenu) a berú myš', () => {
+  it('DEV nástroje sú pod HUD vľavo (výška HUD z tokenu), aby nezakrývali pravý panel, a berú myš', () => {
     const body = css.ruleBody('.app__dev');
     expect(body).toMatch(/top:\s*calc\(var\(--hud-top-h\)/);
-    expect(body).toMatch(/right:\s*var\(--space-3\)/);
+    expect(body).toMatch(/left:\s*var\(--space-3\)/);
+    expect(body).not.toMatch(/right:/);
     expect(body).toMatch(/pointer-events:\s*auto/);
+  });
+
+  it('pravý panel (inšpektor) je pod HUD a nad BuildBar, šírka z --side-panel-w, berie myš', () => {
+    const body = css.ruleBody('.app__side');
+    expect(body).toMatch(/top:\s*calc\(var\(--hud-top-h\)/);
+    expect(body).toMatch(/right:\s*var\(--space-3\)/);
+    expect(body).toMatch(/width:\s*var\(--side-panel-w\)/);
+    expect(body).toMatch(/max-height:\s*calc\([^;]*var\(--hud-top-h\)[^;]*var\(--build-bar-h\)/);
+    expect(body).toMatch(/pointer-events:\s*auto/);
+  });
+
+  it('štítok „chýbajú peniaze“ má varovnú farbu a ikonu, nie farbu chyby', () => {
+    expect(css.ruleBody('.build-tip--funds')).toMatch(/border-color:\s*var\(--ui-warning\)/);
+    expect(css.ruleBody('.build-tip--funds .build-tip__icon')).toMatch(/color:\s*var\(--ui-warning\)/);
   });
 
   it('DEV tlačidlo má focus ring z --ui-accent', () => {

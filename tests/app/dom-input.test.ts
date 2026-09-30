@@ -5,6 +5,7 @@ import type { GhostCell, GhostView } from '@render/build-layer';
 import { attachDomInput, keyboardTargetBelongsToUi, type DomInputHost, type DomInputWindow } from '@app/dom-input';
 import { InputController } from '@app/input-controller';
 import { createApp } from './app-fixtures';
+import { selectionDeps } from './input-fixtures';
 
 // ---- falošné DOM prvky (Node má EventTarget a Event) ----
 
@@ -79,7 +80,7 @@ function setup() {
     zoom: 1,
     focus: { x: 40, y: 18, w: 8, h: 4 },
   });
-  const controller = new InputController({ bridge, camera, ghost: new FakeGhost() });
+  const controller = new InputController({ bridge, camera, ghost: new FakeGhost(), ...selectionDeps() });
   const host = new FakeHost();
   const win = new FakeWindow();
   const releaseFocus = vi.fn();

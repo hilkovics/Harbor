@@ -1,79 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { PlaceRoadCommand, SetGameSpeedCommand } from '@sim/commands';
 import type { CellCoord } from '@sim/grid';
-import { Camera } from '@render/camera';
-import type { GhostCell, GhostView } from '@render/build-layer';
 import {
   INPUT_TRANSITIONS,
-  InputController,
   isBuildState,
+  isModuleState,
   transition,
   type InputState,
   type InputTrigger,
-  type KeyInput,
 } from '@app/input-controller';
 import { KEY_PAN_MAX_DT_MS, KEY_PAN_PX_PER_SECOND } from '@app/config';
-import { createApp } from './app-fixtures';
+import { c, harness, key } from './input-fixtures';
 
-// ---- pomôcky ----
-
-class FakeGhost implements GhostView {
-  cells: readonly GhostCell[] = [];
-  setCalls = 0;
-  clearCalls = 0;
-
-  setGhost(cells: readonly GhostCell[]): void {
-    this.cells = cells;
-    this.setCalls += 1;
-  }
-
-  clearGhost(): void {
-    this.cells = [];
-    this.clearCalls += 1;
-  }
-}
-
-function harness() {
-  const { world, bridge, loop } = createApp();
-  const camera = new Camera({
-    cellPx: 64,
-    mapWidth: world.grid.width,
-    mapHeight: world.grid.height,
-    viewportWidth: 1280,
-    viewportHeight: 720,
-    zoom: 1,
-    focus: { x: 40, y: 18, w: 8, h: 4 },
-  });
-  const ghost = new FakeGhost();
-  const states: InputState[] = [];
-  const controller = new InputController({ bridge, camera, ghost, onStateChange: (state) => states.push(state) });
-  /** Stred bunky na obrazovke (poloha kurzora v px vzhľadom na mapu). */
-  const at = (x: number, y: number): { x: number; y: number } => camera.cellCenterToScreen(x, y);
-  const down = (cell: CellCoord, button = 0): boolean => controller.pointerDown({ button, ...at(cell.x, cell.y) });
-  const move = (cell: CellCoord): void => {
-    const p = at(cell.x, cell.y);
-    controller.pointerMove(p.x, p.y);
-  };
-  const up = (cell: CellCoord, button = 0): void => {
-    controller.pointerUp({ button, ...at(cell.x, cell.y) });
-  };
-  /** Frame bez plynutia času: aplikuje príkazy z fronty a rozpošle udalosti. */
-  const frame = (): void => {
-    loop.frame(0);
-  };
-  return { world, bridge, loop, camera, ghost, states, controller, at, down, move, up, frame };
-}
-
-const key = (code: string, extra: Partial<KeyInput> = {}): KeyInput => ({
-  code,
-  repeat: false,
-  ctrlKey: false,
-  altKey: false,
-  metaKey: false,
-  ...extra,
-});
-
-const c = (x: number, y: number): CellCoord => ({ x, y });
+// ---- pomôcky (harness, falošné ghosty, key/c: tests/app/input-fixtures.ts) ----
 
 const roadCells = (world: { grid: { width: number; height: number; at(x: number, y: number): { road: string } } }): CellCoord[] => {
   const cells: CellCoord[] = [];
@@ -89,14 +28,34 @@ const ROW = 20;
 // ---- stavový automat ----
 
 describe('InputState: prechodová tabuľka', () => {
-  const STATES: readonly InputState[] = ['idle', 'pan', 'build', 'build_place', 'build_remove', 'build_pan'];
-  const TRIGGERS: readonly InputTrigger[] = ['toggle_build', 'cancel', 'primary_down', 'secondary_down', 'middle_down', 'release'];
+  const STATES: readonly InputState[] = [
+    'idle',
+    'pan',
+    'build',
+    'build_place',
+    'build_remove',
+    'build_pan',
+    'build_module',
+    'build_module_place',
+    'build_module_pan',
+  ];
+  const TRIGGERS: readonly InputTrigger[] = [
+    'toggle_build',
+    'cancel',
+    'primary_down',
+    'secondary_down',
+    'middle_down',
+    'release',
+    'module_selected',
+    'module_cleared',
+  ];
 
   /** Všetky povolené prechody; čokoľvek iné sa ignoruje (`null`). */
   const ALLOWED: ReadonlyArray<readonly [InputState, InputTrigger, InputState]> = [
     ['idle', 'toggle_build', 'build'],
     ['idle', 'primary_down', 'pan'],
     ['idle', 'middle_down', 'pan'],
+    ['idle', 'module_selected', 'build_module'],
     ['pan', 'release', 'idle'],
     ['pan', 'cancel', 'idle'],
     ['build', 'toggle_build', 'idle'],
@@ -104,12 +63,26 @@ describe('InputState: prechodová tabuľka', () => {
     ['build', 'primary_down', 'build_place'],
     ['build', 'secondary_down', 'build_remove'],
     ['build', 'middle_down', 'build_pan'],
+    ['build', 'module_selected', 'build_module'],
     ['build_place', 'release', 'build'],
     ['build_place', 'cancel', 'build'],
     ['build_remove', 'release', 'build'],
     ['build_remove', 'cancel', 'build'],
     ['build_pan', 'release', 'build'],
     ['build_pan', 'cancel', 'build'],
+    ['build_module', 'toggle_build', 'build'],
+    ['build_module', 'cancel', 'idle'],
+    ['build_module', 'primary_down', 'build_module_place'],
+    ['build_module', 'secondary_down', 'idle'],
+    ['build_module', 'middle_down', 'build_module_pan'],
+    ['build_module', 'module_selected', 'build_module'],
+    ['build_module', 'module_cleared', 'idle'],
+    ['build_module_place', 'release', 'build_module'],
+    ['build_module_place', 'cancel', 'build_module'],
+    ['build_module_place', 'module_cleared', 'idle'],
+    ['build_module_pan', 'release', 'build_module'],
+    ['build_module_pan', 'cancel', 'build_module'],
+    ['build_module_pan', 'module_cleared', 'idle'],
   ];
 
   it.each(ALLOWED)('%s + %s → %s', (from, trigger, to) => {
@@ -128,6 +101,10 @@ describe('InputState: prechodová tabuľka', () => {
   it('tabuľka pokrýva všetky stavy a build stavy sú práve tie s prefixom build', () => {
     expect(Object.keys(INPUT_TRANSITIONS).sort()).toEqual([...STATES].sort());
     for (const state of STATES) expect(isBuildState(state)).toBe(state.startsWith('build'));
+  });
+
+  it('módy modulu sú práve stavy build_module*', () => {
+    for (const state of STATES) expect(isModuleState(state)).toBe(state.startsWith('build_module'));
   });
 });
 

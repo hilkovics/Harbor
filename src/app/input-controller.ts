@@ -14,10 +14,18 @@
  * | `build_place`  | ľavý ťah: zbiera bunky pre `PlaceRoad`                    |
  * | `build_remove` | pravý ťah: zbiera bunky pre `RemoveRoad`                  |
  * | `build_pan`    | stredný ťah v build móde: posun kamery, mód ostáva        |
+ * | `build_module` | vybraný modul z BuildBaru; ghost footprintu sleduje kurzor |
+ * | `build_module_place` | ľavé tlačidlo stlačené: pustenie umiestni modul     |
+ * | `build_module_pan`   | stredný ťah v móde modulu: posun kamery, mód ostáva |
  *
- * Ovládanie: `B` build mód, `Esc` zruší ťah, potom mód, `Space` pauza/obnova poslednej nenulovej rýchlosti
- * (rovnaká logika ako klik na ⏸: `resolveSpeedRequest`), `1–4` rýchlosti podľa poradia v `time.speeds`,
- * WASD/šípky posun kamery, koleso zoom s pivotom pod kurzorom.
+ * Ovládanie: `B` build mód ciest, `Esc` zruší ťah, potom mód (v `idle` zruší výber modulu v inšpektore), `Space`
+ * pauza/obnova poslednej nenulovej rýchlosti (rovnaká logika ako klik na ⏸: `resolveSpeedRequest`), `1–4` rýchlosti
+ * podľa poradia v `time.speeds`, WASD/šípky posun kamery, koleso zoom s pivotom pod kurzorom.
+ *
+ * Build mód modulov (T02-10): výber v BuildBare (`BuildSelection`) prepne do `build_module`; `R` otočí ghost
+ * 0 → 90 → 180 → 270, ľavý klik umiestni modul (`validate` → `dispatch(PlaceModule)` len pri `ok`), Esc alebo pravý klik
+ * mód zruší (výber sa vynuluje). Po umiestnení mód ostáva aktívny. V `idle` klik (bez ťahu) na bunku modulu vyberie
+ * modul (`ModuleSelection`; žeriav má prednosť pred kotviskom pod ním), klik do prázdna výber zruší.
  *
  * Zásada „nič sa nemení bez validácie“: ghost sa farbí podľa `bridge.validate`, `dispatch` ide len po úspešnej
  * validácii celého ťahu (príkazy sú atomické — jedna neplatná bunka odmietne celý ťah).
@@ -30,24 +38,48 @@ import {
   type ValidationReason,
   type ValidationResult,
 } from '@sim/commands';
-import type { CellCoord } from '@sim/grid';
+import type { EntityId } from '@sim/core';
+import type { CellCoord, Rotation } from '@sim/grid';
 import type { Camera } from '@render/camera';
-import type { GhostCell, GhostView } from '@render/build-layer';
+import type { BuildLayer, GhostCell, GhostView } from '@render/build-layer';
+import type { ModuleGhostVM } from '@render/view-models';
 import { interpolateCells } from './cell-line';
-import { KEY_PAN_MAX_DT_MS, KEY_PAN_PX_PER_SECOND, WHEEL_DELTA_MODE_PX, WHEEL_ZOOM_PER_PX } from './config';
+import { CLICK_SLOP_PX, KEY_PAN_MAX_DT_MS, KEY_PAN_PX_PER_SECOND, WHEEL_DELTA_MODE_PX, WHEEL_ZOOM_PER_PX } from './config';
+import { nextRotation, placeCommand, previewModule, type ModulePreview } from './module-build';
+import type { SelectionSource } from './selection-cell';
 import type { SimBridge } from './sim-bridge';
 import { resolveSpeedRequest } from './speed-request';
 
 // ---- stavový automat ----
 
-export type InputState = 'idle' | 'pan' | 'build' | 'build_place' | 'build_remove' | 'build_pan';
+export type InputState =
+  | 'idle'
+  | 'pan'
+  | 'build'
+  | 'build_place'
+  | 'build_remove'
+  | 'build_pan'
+  | 'build_module'
+  | 'build_module_place'
+  | 'build_module_pan';
 
-/** Udalosti, ktoré menia stav (nie pohyb myši ani zoom — tie stav nemenia). */
-export type InputTrigger = 'toggle_build' | 'cancel' | 'primary_down' | 'secondary_down' | 'middle_down' | 'release';
+/**
+ * Udalosti, ktoré menia stav (nie pohyb myši ani zoom — tie stav nemenia). `module_selected` / `module_cleared` prichádzajú
+ * zo zmeny výberu v BuildBare (`BuildSelection`).
+ */
+export type InputTrigger =
+  | 'toggle_build'
+  | 'cancel'
+  | 'primary_down'
+  | 'secondary_down'
+  | 'middle_down'
+  | 'release'
+  | 'module_selected'
+  | 'module_cleared';
 
 /** Prechodová tabuľka; chýbajúci záznam = trigger sa v stave ignoruje (žiadne skryté prechody). */
 export const INPUT_TRANSITIONS: Readonly<Record<InputState, Readonly<Partial<Record<InputTrigger, InputState>>>>> = Object.freeze({
-  idle: { toggle_build: 'build', primary_down: 'pan', middle_down: 'pan' },
+  idle: { toggle_build: 'build', primary_down: 'pan', middle_down: 'pan', module_selected: 'build_module' },
   pan: { release: 'idle', cancel: 'idle' },
   build: {
     toggle_build: 'idle',
@@ -55,10 +87,23 @@ export const INPUT_TRANSITIONS: Readonly<Record<InputState, Readonly<Partial<Rec
     primary_down: 'build_place',
     secondary_down: 'build_remove',
     middle_down: 'build_pan',
+    module_selected: 'build_module',
   },
   build_place: { release: 'build', cancel: 'build' },
   build_remove: { release: 'build', cancel: 'build' },
   build_pan: { release: 'build', cancel: 'build' },
+  // Mód modulu: `B` prepne na stavbu ciest, pravé tlačidlo a Esc ho zrušia (výber v BuildBare sa vynuluje).
+  build_module: {
+    toggle_build: 'build',
+    cancel: 'idle',
+    primary_down: 'build_module_place',
+    secondary_down: 'idle',
+    middle_down: 'build_module_pan',
+    module_selected: 'build_module',
+    module_cleared: 'idle',
+  },
+  build_module_place: { release: 'build_module', cancel: 'build_module', module_cleared: 'idle' },
+  build_module_pan: { release: 'build_module', cancel: 'build_module', module_cleared: 'idle' },
 });
 
 /** Nový stav po `trigger`, alebo `null`, ak sa v stave `from` ignoruje. */
@@ -66,9 +111,14 @@ export function transition(from: InputState, trigger: InputTrigger): InputState 
   return INPUT_TRANSITIONS[from][trigger] ?? null;
 }
 
-/** Stavy, v ktorých je build mód zapnutý. */
+/** Stavy, v ktorých je build mód modulu zapnutý (je vybraná položka BuildBaru). */
+export function isModuleState(state: InputState): boolean {
+  return state === 'build_module' || state === 'build_module_place' || state === 'build_module_pan';
+}
+
+/** Stavy, v ktorých je zapnutý niektorý build mód (cesty alebo moduly). */
 export function isBuildState(state: InputState): boolean {
-  return state === 'build' || state === 'build_place' || state === 'build_remove' || state === 'build_pan';
+  return state === 'build' || state === 'build_place' || state === 'build_remove' || state === 'build_pan' || isModuleState(state);
 }
 
 /** `MouseEvent.button` → trigger. */
@@ -109,10 +159,19 @@ export type InputCamera = Pick<Camera, 'pan' | 'zoomAt' | 'screenToCell'>;
 /** Časť `SimBridge`, ktorú ovládanie používa. */
 export type InputBridge = Pick<SimBridge, 'world' | 'dispatch' | 'validate' | 'snapshot' | 'onEvents'>;
 
+/** Cieľ ghostu modulu (`BuildLayer.setModuleGhost`). */
+export type ModuleGhostView = Pick<BuildLayer, 'setModuleGhost'>;
+
 export interface InputControllerOptions {
   readonly bridge: InputBridge;
   readonly camera: InputCamera;
   readonly ghost: GhostView;
+  /** Ghost modulu (footprint + konektory); typicky tá istá `BuildLayer` ako `ghost`. */
+  readonly moduleGhost: ModuleGhostView;
+  /** Výber položky v BuildBare (`defId`): jeho zmena zapína a vypína build mód modulov. */
+  readonly buildSelection: SelectionSource<string>;
+  /** Výber modulu na mape (id) pre inšpektor: nastavuje ho klik v `idle` móde, Esc ho zruší. */
+  readonly moduleSelection: SelectionSource<EntityId>;
   /** Zmena režimu (kurzor, indikátor); volá sa len pri skutočnej zmene stavu. */
   readonly onStateChange?: (state: InputState) => void;
 }
@@ -122,12 +181,15 @@ export interface InputControllerOptions {
 /** Druh stavby, ktorý ťah zbiera. */
 export type BuildKind = 'place' | 'remove';
 
+/** Druh spätnej väzby: ťah cesty (`place` / `remove`) alebo ghost modulu (`module`). */
+export type FeedbackKind = BuildKind | 'module';
+
 /**
  * Popis ghostu pre DOM (cena, dôvody) — kreslí ho React, nie Pixi. Nový objekt pri každej zmene; `null` = nič
  * nezobrazovať.
  */
 export interface BuildFeedback {
-  readonly kind: BuildKind;
+  readonly kind: FeedbackKind;
   /** Celý ťah (alebo hover bunka) by prešiel validáciou. */
   readonly ok: boolean;
   readonly reasons: readonly ValidationReason[];
@@ -140,6 +202,12 @@ export interface BuildFeedback {
   readonly y: number;
   /** `true` počas ťahu, `false` pri hoveri. */
   readonly dragging: boolean;
+  /** Len `module`: názov modulu (`displayName` defu). */
+  readonly label?: string;
+  /** Len `module`: druh modulu (`ModuleKind`) — určuje ikonu štítka. */
+  readonly moduleKind?: string;
+  /** Len `module`: hráč nemá na cenu — ghost môže byť zelený, ale klik nič nepostaví (ikona $). */
+  readonly fundsShort?: boolean;
 }
 
 // ---- interné ----
@@ -175,6 +243,17 @@ const PAN_KEYS: Readonly<Record<string, PanDirection | undefined>> = {
 
 const SPEED_KEY = /^(?:Digit|Numpad)([1-9])$/;
 
+/** Udalosti sveta, po ktorých je ghost (platnosť, cena) zastaraný, hoci sa kurzor nepohol. */
+const GHOST_STALE_EVENTS: ReadonlySet<string> = new Set([
+  'RoadChanged',
+  'MoneyChanged',
+  'ModulePlaced',
+  'ModuleRemoved',
+  'ShipDocked',
+  'ShipUndocked',
+  'ShipDeparted',
+]);
+
 /** Ťah, ktorý nič nemení (bunka už má cestu), sa v ghoste ukazuje ako platný. */
 function isNothingToDo(result: ValidationResult): boolean {
   return result.reasons.length === 1 && result.reasons[0] === 'empty';
@@ -184,9 +263,19 @@ export class InputController {
   private readonly bridge: InputBridge;
   private readonly camera: InputCamera;
   private readonly ghost: GhostView;
+  private readonly moduleGhostView: ModuleGhostView;
+  private readonly buildSelection: SelectionSource<string>;
+  private readonly moduleSelection: SelectionSource<EntityId>;
   private readonly onStateChange: ((state: InputState) => void) | undefined;
 
   private stateValue: InputState = 'idle';
+  /** Vybraná definícia modulu v módoch `build_module*` (zrkadlo `buildSelection`), inak `null`. */
+  private moduleDefId: string | null = null;
+  private moduleRotation: Rotation = 0;
+  /** Posledný ghost modulu odovzdaný rendereru (`null` = nezobrazený). */
+  private moduleGhostValue: ModuleGhostVM | null = null;
+  /** Poloha stlačenia ľavého tlačidla v `pan` móde, kým ťah nepresiahol `CLICK_SLOP_PX` (potom je to posun, nie klik). */
+  private clickStart: Point | null = null;
   private stroke: Stroke | null = null;
   /** Tlačidlo myši, ktoré drží aktuálny ťah/posun; ďalšie tlačidlá sa ignorujú, kým sa nepustí. */
   private activeButton: number | null = null;
@@ -199,12 +288,16 @@ export class InputController {
   private feedbackValue: BuildFeedback | null = null;
   private readonly feedbackListeners = new Set<() => void>();
   private readonly stopEvents: () => void;
+  private readonly stopSelection: () => void;
   private disposed = false;
 
   constructor(options: InputControllerOptions) {
     this.bridge = options.bridge;
     this.camera = options.camera;
     this.ghost = options.ghost;
+    this.moduleGhostView = options.moduleGhost;
+    this.buildSelection = options.buildSelection;
+    this.moduleSelection = options.moduleSelection;
     this.onStateChange = options.onStateChange;
     const speed = this.bridge.snapshot().speed;
     if (speed !== 0) this.lastRunningSpeed = speed;
@@ -214,10 +307,15 @@ export class InputController {
       let worldChanged = false;
       for (const event of events) {
         if (event.type === 'GameSpeedChanged' && event.speed !== 0) this.lastRunningSpeed = event.speed;
-        if (event.type === 'RoadChanged' || event.type === 'MoneyChanged') worldChanged = true;
+        if (GHOST_STALE_EVENTS.has(event.type)) worldChanged = true;
       }
       if (worldChanged) this.refreshGhost();
     });
+    // Výber v BuildBare zapína a vypína build mód modulov; výber, ktorý už pri vzniku existuje, sa uplatní hneď.
+    this.stopSelection = this.buildSelection.subscribe(() => {
+      this.onBuildSelectionChanged();
+    });
+    if (this.buildSelection.get() !== null) this.onBuildSelectionChanged();
   }
 
   // ---- čítanie stavu ----
@@ -228,6 +326,21 @@ export class InputController {
 
   get buildMode(): boolean {
     return isBuildState(this.stateValue);
+  }
+
+  /** Definícia modulu vybraná v build móde modulov (`null` mimo neho). */
+  get selectedDefId(): string | null {
+    return this.moduleDefId;
+  }
+
+  /** Rotácia ghostu modulu (`R`). */
+  get rotation(): Rotation {
+    return this.moduleRotation;
+  }
+
+  /** Ghost modulu, ktorý práve zobrazuje renderer (`null` = žiadny); pre ladenie a e2e. */
+  moduleGhost(): ModuleGhostVM | null {
+    return this.moduleGhostValue;
   }
 
   /** Aktuálna spätná väzba ghostu pre DOM (`useSyncExternalStore`: stabilná referencia medzi zmenami). */
@@ -253,8 +366,10 @@ export class InputController {
     this.activeButton = input.button;
     this.pointer = { x: input.x, y: input.y };
     this.setState(next);
-    if (next === 'pan' || next === 'build_pan') {
+    if (next === 'pan' || next === 'build_pan' || next === 'build_module_pan') {
       this.dragLast = this.pointer;
+      // Ľavý ťah v `idle` je posun kamery, ale ak sa myš nepohla, je to klik = výber modulu.
+      this.clickStart = next === 'pan' && input.button === 0 ? this.pointer : null;
     } else if (next === 'build_place' || next === 'build_remove') {
       this.stroke = { kind: next === 'build_place' ? 'place' : 'remove', cells: [], seen: new Set(), verdicts: new Map(), last: null };
       this.extendStroke(this.cellAt(input.x, input.y));
@@ -268,6 +383,8 @@ export class InputController {
     if (this.dragLast !== null) {
       this.camera.pan(x - this.dragLast.x, y - this.dragLast.y);
       this.dragLast = this.pointer;
+      const start = this.clickStart;
+      if (start !== null && Math.hypot(x - start.x, y - start.y) > CLICK_SLOP_PX) this.clickStart = null;
     } else if (this.stroke !== null) {
       this.extendStroke(this.cellAt(x, y));
     }
@@ -288,8 +405,12 @@ export class InputController {
     if (stroke !== null) {
       this.extendStroke(this.cellAt(input.x, input.y));
       this.commit(stroke);
+    } else if (this.stateValue === 'build_module_place') {
+      this.commitModule();
     }
+    const click = this.stateValue === 'pan' && this.clickStart !== null;
     this.endInteraction('release');
+    if (click) this.pickModule(this.cellAt(input.x, input.y));
   }
 
   /** Prerušenie ťahu zvonku (stratené zachytenie myši, `pointercancel`). Nič sa neodošle. */
@@ -319,6 +440,7 @@ export class InputController {
     }
     if (input.repeat) return this.isCommandKey(input.code);
     if (input.code === 'KeyB') return this.handleTrigger('toggle_build');
+    if (input.code === 'KeyR') return this.rotateModule();
     if (input.code === 'Escape') return this.handleTrigger('cancel');
     if (input.code === 'Space') {
       this.togglePause();
@@ -359,6 +481,7 @@ export class InputController {
     if (this.disposed) return;
     this.disposed = true;
     this.stopEvents();
+    this.stopSelection();
     this.stroke = null;
     this.hideGhost();
     this.feedbackListeners.clear();
@@ -367,13 +490,17 @@ export class InputController {
   // ---- interné: klávesy ----
 
   private isCommandKey(code: string): boolean {
-    return code === 'KeyB' || code === 'Escape' || code === 'Space' || SPEED_KEY.test(code);
+    return code === 'KeyB' || (code === 'KeyR' && isModuleState(this.stateValue)) || code === 'Escape' || code === 'Space' || SPEED_KEY.test(code);
   }
 
   private handleTrigger(trigger: InputTrigger): boolean {
     if (trigger === 'cancel' && this.activeButton !== null) {
       // Esc počas ťahu zruší ťah; tlačidlo je ešte stlačené, jeho neskoršie pustenie sa ignoruje.
       this.endInteraction('cancel');
+      return true;
+    }
+    if (trigger === 'cancel' && this.stateValue === 'idle' && this.moduleSelection.get() !== null) {
+      this.moduleSelection.select(null); // Esc v pokoji zavrie inšpektor
       return true;
     }
     const next = transition(this.stateValue, trigger);
@@ -405,9 +532,70 @@ export class InputController {
   // ---- interné: ťah ----
 
   private setState(next: InputState): void {
-    if (next === this.stateValue) return;
+    const previous = this.stateValue;
+    if (next === previous) return;
     this.stateValue = next;
+    if (isModuleState(previous) && !isModuleState(next)) {
+      // Odchod z módu modulu (Esc, pravý klik, `B`) vynuluje výber v BuildBare, aby položka nesvietila ďalej.
+      this.moduleDefId = null;
+      this.buildSelection.select(null);
+    }
     this.onStateChange?.(next);
+  }
+
+  // ---- interné: build mód modulov ----
+
+  /** Zmena výberu v BuildBare: nová položka zapne mód modulu (aj z módu ciest), `null` ho vypne. */
+  private onBuildSelectionChanged(): void {
+    if (this.disposed) return;
+    const defId = this.buildSelection.get();
+    if (defId === null) {
+      this.moduleDefId = null;
+      const cleared = transition(this.stateValue, 'module_cleared');
+      if (cleared !== null) this.setState(cleared);
+      this.refreshGhost();
+      return;
+    }
+    if (this.activeButton !== null) this.endInteraction('cancel'); // rozpracovaný ťah / klik sa zahodí
+    if (defId !== this.moduleDefId) this.moduleRotation = 0;
+    this.moduleDefId = defId;
+    const next = transition(this.stateValue, 'module_selected');
+    if (next !== null) this.setState(next);
+    this.refreshGhost();
+  }
+
+  /** `R`: otočí ghost o 90° v smere hodinových ručičiek; mimo módu modulu kláves nerobí nič. */
+  private rotateModule(): boolean {
+    if (!isModuleState(this.stateValue)) return false;
+    this.moduleRotation = nextRotation(this.moduleRotation);
+    this.refreshGhost();
+    return true;
+  }
+
+  /** Náhľad modulu pod kurzorom (`null` = nie je vybraný def, kurzor je mimo mapy alebo def neexistuje). */
+  private currentPreview(): ModulePreview | null {
+    const defId = this.moduleDefId;
+    const pointer = this.pointer;
+    if (defId === null || pointer === null) return null;
+    const { defs } = this.bridge.world;
+    if (!defs.modules.has(defId)) return null;
+    const cell = this.cellAt(pointer.x, pointer.y);
+    if (!this.bridge.snapshot().grid.inBounds(cell.x, cell.y)) return null;
+    return previewModule(defs.modules.get(defId), cell, this.moduleRotation, (command) => this.bridge.validate(command));
+  }
+
+  /** Pustenie ľavého tlačidla: odošle `PlaceModule` len ak ho validácia prijme (pri nedostatku peňazí nič). */
+  private commitModule(): void {
+    const preview = this.currentPreview();
+    if (preview === null || !preview.placeable) return;
+    this.bridge.dispatch(placeCommand(preview.placement));
+  }
+
+  /** Klik v `idle` móde: vyberie modul pod kurzorom (žeriav pred kotviskom), klik do prázdna výber zruší. */
+  private pickModule(cell: CellCoord): void {
+    const { world } = this.bridge;
+    const module = world.craneAt(cell.x, cell.y) ?? world.moduleAt(cell.x, cell.y);
+    this.moduleSelection.select(module === undefined ? null : module.id);
   }
 
   /** Ukončí ťah/posun tlačidlom (`release`) alebo zrušením (`cancel`); ťah sa pritom nikdy neodošle sám. */
@@ -415,6 +603,7 @@ export class InputController {
     const next = transition(this.stateValue, trigger);
     this.stroke = null;
     this.dragLast = null;
+    this.clickStart = null;
     this.activeButton = null;
     if (next !== null) this.setState(next);
     this.refreshGhost();
@@ -463,6 +652,10 @@ export class InputController {
   /** Prekreslí ghost a spätnú väzbu podľa stavu: ťah > hover v build móde > nič. */
   private refreshGhost(): void {
     if (this.disposed) return;
+    if (isModuleState(this.stateValue)) {
+      this.refreshModuleGhost();
+      return;
+    }
     const { grid } = this.bridge.snapshot();
     const stroke = this.stroke;
     let kind: BuildKind;
@@ -497,6 +690,7 @@ export class InputController {
     // Nedostatok peňazí je vlastnosť celého ťahu, nie jednej bunky: preto sa označí celý ghost.
     const fundsShort = whole.reasons.includes('insufficient_funds');
     const ghostCells: GhostCell[] = cells.map((cell) => ({ x: cell.x, y: cell.y, valid: !fundsShort && verdict(cell) }));
+    this.clearModuleGhost();
     this.ghost.setGhost(ghostCells);
     this.ghostShown = true;
     const at = this.pointer ?? { x: 0, y: 0 };
@@ -512,11 +706,48 @@ export class InputController {
     });
   }
 
+  /** Ghost a štítok modulu pod kurzorom (mód `build_module*`); mimo mapy ich skryje. */
+  private refreshModuleGhost(): void {
+    const preview = this.currentPreview();
+    if (preview === null) {
+      this.hideGhost();
+      return;
+    }
+    if (this.ghostShown) {
+      this.ghost.clearGhost();
+      this.ghostShown = false;
+    }
+    this.moduleGhostView.setModuleGhost(preview.ghost);
+    this.moduleGhostValue = preview.ghost;
+    const def = this.bridge.world.defs.modules.get(preview.placement.defId);
+    const at = this.pointer ?? { x: 0, y: 0 };
+    this.setFeedback({
+      kind: 'module',
+      ok: preview.result.ok,
+      reasons: preview.result.reasons,
+      costCents: preview.result.costCents,
+      cellCount: preview.result.cells.length,
+      x: at.x,
+      y: at.y,
+      dragging: this.stateValue === 'build_module_place',
+      label: def.displayName,
+      moduleKind: def.kind,
+      fundsShort: preview.fundsShort,
+    });
+  }
+
+  private clearModuleGhost(): void {
+    if (this.moduleGhostValue === null) return;
+    this.moduleGhostView.setModuleGhost(null);
+    this.moduleGhostValue = null;
+  }
+
   private hideGhost(): void {
     if (this.ghostShown) {
       this.ghost.clearGhost();
       this.ghostShown = false;
     }
+    this.clearModuleGhost();
     this.setFeedback(null);
   }
 

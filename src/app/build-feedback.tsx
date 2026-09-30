@@ -1,11 +1,15 @@
 /**
  * Štítok pri kurzore v build móde: počet buniek a cena, prípadne dôvody odmietnutia (ghost je v Pixi bez textu,
  * ARCHITECTURE §15.1 — popisy sú v DOM). Stav nesie ikona a text, nie len farba (DESIGN_BRIEF §6.4).
+ *
+ * Pri ghoste modulu (`kind: 'module'`, T02-10) štítok ukazuje názov, cenu a dôvody odmietnutia; pri nedostatku peňazí
+ * (ghost zostáva zelený) ikonu $ (`ic_cash`) a text „Nedostatok peňazí“ (ARCHITECTURE §8 bod 6).
  */
 import { useMemo, useSyncExternalStore } from 'react';
 import type { ValidationReason } from '@sim/commands';
 import { formatMoney, formatMoneyDelta } from '@ui/format';
-import { Icon } from '@ui/icon';
+import { Icon, type IconName } from '@ui/icon';
+import { moduleKindIcon } from '@ui/module-inspector';
 import type { BuildFeedback } from './input-controller';
 
 /** Slovenské popisy dôvodov odmietnutia (úplná mapa: nový dôvod v sime = chyba kompilácie tu). */
@@ -43,13 +47,34 @@ export function cellCountLabel(count: number): string {
   return `${String(count)} buniek`;
 }
 
+/** Text štítka modulu: `Kotvisko · $400,000`, pri odmietnutí navyše dôvody (`· Dlhá hrana musí byť pri vode`). */
+function moduleFeedbackText(feedback: BuildFeedback): string {
+  const head = `${feedback.label ?? 'Modul'} · ${formatMoney(feedback.costCents)}`;
+  if (feedback.ok) return head;
+  return `${head} · ${feedback.reasons.map((reason) => REASON_TEXT[reason]).join(' · ')}`;
+}
+
 /** Text štítka pre spätnú väzbu (čistá funkcia — testovateľná bez DOM). */
 export function feedbackText(feedback: BuildFeedback): string {
+  if (feedback.kind === 'module') return moduleFeedbackText(feedback);
   if (!feedback.ok) return feedback.reasons.map((reason) => REASON_TEXT[reason]).join(' · ');
   const title = feedback.kind === 'place' ? 'Cesta' : 'Odstrániť';
   // Pri odstránení je cena záporná (refundácia) — zobrazí sa ako príjem so znamienkom.
   const money = feedback.kind === 'place' ? formatMoney(feedback.costCents) : formatMoneyDelta(0 - feedback.costCents);
   return `${title} · ${cellCountLabel(feedback.cellCount)} · ${money}`;
+}
+
+/** Ghost modulu je zelený, ale hráč nemá na cenu — jediný dôvod odmietnutia je `insufficient_funds` (§8 bod 6). */
+export function isFundsOnly(feedback: BuildFeedback): boolean {
+  return feedback.kind === 'module' && !feedback.ok && feedback.fundsShort === true && feedback.reasons.every((reason) => reason === 'insufficient_funds');
+}
+
+/** Ikona štítka: platný ťah/modul → ikona druhu, chýbajúce peniaze → `$`, inak varovanie (stav nesie ikona aj text). */
+export function feedbackIcon(feedback: BuildFeedback): IconName {
+  if (isFundsOnly(feedback)) return 'ic_cash';
+  if (!feedback.ok) return 'ic_warning';
+  if (feedback.kind === 'module') return moduleKindIcon(feedback.moduleKind ?? '');
+  return feedback.kind === 'place' ? 'ic_road' : 'ic_demolish';
 }
 
 export interface FeedbackSource {
@@ -63,17 +88,25 @@ export function BuildFeedbackLabel({ source }: { source: FeedbackSource }) {
   const feedback = useSyncExternalStore(store.subscribe, store.get, store.get);
   if (feedback === null) return null;
   const flip = typeof window !== 'undefined' && feedback.x > window.innerWidth / 2;
+  const fundsOnly = isFundsOnly(feedback);
   const className = [
     'build-tip',
-    feedback.ok ? 'build-tip--ok' : 'build-tip--bad',
+    feedback.ok ? 'build-tip--ok' : fundsOnly ? 'build-tip--funds' : 'build-tip--bad',
     flip ? 'build-tip--flip' : '',
   ]
     .filter((part) => part !== '')
     .join(' ');
-  const icon = feedback.ok ? (feedback.kind === 'place' ? 'ic_road' : 'ic_demolish') : 'ic_warning';
   return (
-    <div className={className} style={{ left: feedback.x, top: feedback.y }} role="status" data-field="build-tip" data-ok={feedback.ok}>
-      <Icon name={icon} className="build-tip__icon" />
+    <div
+      className={className}
+      style={{ left: feedback.x, top: feedback.y }}
+      role="status"
+      data-field="build-tip"
+      data-kind={feedback.kind}
+      data-ok={feedback.ok}
+      data-funds-short={fundsOnly}
+    >
+      <Icon name={feedbackIcon(feedback)} className="build-tip__icon" />
       <span className="build-tip__text">{feedbackText(feedback)}</span>
     </div>
   );

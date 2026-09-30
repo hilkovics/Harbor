@@ -3,11 +3,21 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { SetGameSpeedCommand, SpawnShipDebugCommand, VALIDATION_REASONS } from '@sim/commands';
 import { App } from '@app/app';
-import { BuildFeedbackLabel, REASON_TEXT, cellCountLabel, feedbackText, type FeedbackSource } from '@app/build-feedback';
+import {
+  BuildFeedbackLabel,
+  REASON_TEXT,
+  cellCountLabel,
+  feedbackIcon,
+  feedbackText,
+  isFundsOnly,
+  type FeedbackSource,
+} from '@app/build-feedback';
 import { BuildSelection } from '@app/build-selection';
 import { DEV_SPAWN_SHIP } from '@app/config';
 import { DevSpawnButton, devSpawnLabel, useSpawnDevShip } from '@app/dev-spawn-button';
 import type { BuildFeedback } from '@app/input-controller';
+import { ModuleSelection } from '@app/module-selection';
+import type { EntityId } from '@sim/core';
 import { PausedBanner } from '@app/paused-banner';
 import { SimBridgeProvider } from '@app/use-sim-snapshot';
 import { createApp } from './app-fixtures';
@@ -236,5 +246,105 @@ describe('DEV spawn lode (len cez dispatch)', () => {
     spawn();
     app.loop.frame(0);
     expect(app.world.ships.size).toBe(2);
+  });
+});
+
+describe('BuildFeedbackLabel: ghost modulu (T02-10)', () => {
+  const module = (overrides: Partial<BuildFeedback> = {}): BuildFeedback =>
+    sample({ kind: 'module', label: 'Kotvisko', moduleKind: 'berth', costCents: 40_000_000, cellCount: 24, dragging: false, fundsShort: false, ...overrides });
+  const html = (feedback: BuildFeedback): string =>
+    renderToStaticMarkup(createElement(BuildFeedbackLabel, { source: { feedback: () => feedback, subscribeFeedback: () => () => undefined } }));
+
+  it('platný ghost: názov a cena, ikona druhu modulu, zelený štítok', () => {
+    const feedback = module();
+    expect(feedbackText(feedback)).toBe('Kotvisko · $400,000');
+    expect(feedbackIcon(feedback)).toBe('ic_berth');
+    const markup = html(feedback);
+    expect(markup).toContain('build-tip--ok');
+    expect(markup).toContain('data-kind="module"');
+    expect(markup).toContain('data-funds-short="false"');
+    expect(markup).toContain('ic_berth');
+  });
+
+  it('žeriav dostane ikonu žeriavu', () => {
+    expect(feedbackIcon(module({ label: 'Kontajnerový žeriav', moduleKind: 'crane' }))).toBe('ic_crane');
+  });
+
+  it('neplatný ghost: názov, cena a slovenské dôvody; varovná ikona, červený štítok', () => {
+    const feedback = module({ ok: false, reasons: ['terrain', 'no_water_side'] });
+    expect(feedbackText(feedback)).toBe('Kotvisko · $400,000 · Nevhodný terén · Dlhá hrana musí byť pri vode');
+    expect(feedbackIcon(feedback)).toBe('ic_warning');
+    expect(isFundsOnly(feedback)).toBe(false);
+    const markup = html(feedback);
+    expect(markup).toContain('build-tip--bad');
+    expect(markup).toContain('ic_warning');
+    expect(markup).toContain('Dlhá hrana musí byť pri vode');
+  });
+
+  it('len nedostatok peňazí: ikona $ a varovný (nie chybový) štítok, klik ale nič nepostaví', () => {
+    const feedback = module({ ok: false, reasons: ['insufficient_funds'], fundsShort: true });
+    expect(isFundsOnly(feedback)).toBe(true);
+    expect(feedbackIcon(feedback)).toBe('ic_cash');
+    expect(feedbackText(feedback)).toBe('Kotvisko · $400,000 · Nedostatok peňazí');
+    const markup = html(feedback);
+    expect(markup).toContain('build-tip--funds');
+    expect(markup).not.toContain('build-tip--bad');
+    expect(markup).toContain('data-funds-short="true"');
+    expect(markup).toContain('ic_cash');
+  });
+
+  it('nedostatok peňazí spolu s iným dôvodom je chyba (ikona varovania)', () => {
+    const feedback = module({ ok: false, reasons: ['insufficient_funds', 'occupied'], fundsShort: true });
+    expect(isFundsOnly(feedback)).toBe(false);
+    expect(feedbackIcon(feedback)).toBe('ic_warning');
+    expect(html(feedback)).toContain('build-tip--bad');
+  });
+
+  it('cesty ostávajú bez zmeny: ikona cesty / búrania / varovania, isFundsOnly len pre moduly', () => {
+    expect(feedbackIcon(sample())).toBe('ic_road');
+    expect(feedbackIcon(sample({ kind: 'remove' }))).toBe('ic_demolish');
+    expect(feedbackIcon(sample({ ok: false, reasons: ['insufficient_funds'] }))).toBe('ic_warning');
+    expect(isFundsOnly(sample({ ok: false, reasons: ['insufficient_funds'], fundsShort: true }))).toBe(false);
+  });
+});
+
+describe('App: inšpektor modulu vpravo (T02-10)', () => {
+  const render = (moduleSelection?: ModuleSelection): string => {
+    const { bridge } = createApp();
+    return renderToStaticMarkup(createElement(App, { bridge, feedback: NO_FEEDBACK, ...(moduleSelection === undefined ? {} : { moduleSelection }) }));
+  };
+
+  it('bez výberu panel v DOM nie je', () => {
+    const html = render();
+    expect(html).not.toContain('app__side');
+    expect(html).not.toContain('Inšpektor modulu');
+  });
+
+  it('vybraný Root žeriav: panel s názvom, stavom Nečinný, vrátením $0 a aktívnym Odstrániť', () => {
+    const selection = new ModuleSelection();
+    selection.select(2 as EntityId);
+    const html = render(selection);
+    expect(html).toContain('class="app__side"');
+    expect(html).toContain('aria-label="Inšpektor modulu"');
+    expect(html).toContain('Kontajnerový žeriav');
+    expect(html).toContain('Nečinný');
+    expect(html).toMatch(/aria-disabled="false"[^>]*data-action="remove"/);
+  });
+
+  it('vybrané Root kotvisko: apron 0 / 4 a zablokované Odstrániť s dôvodom', () => {
+    const selection = new ModuleSelection();
+    selection.select(1 as EntityId);
+    const html = render(selection);
+    expect(html).toContain('0 / 4 slotov');
+    expect(html).toMatch(/aria-disabled="true"[^>]*data-action="remove"/);
+    expect(html).toContain('Na kotvisku stoja žeriavy');
+  });
+
+  it('DEV tlačidlo je vľavo (mimo pravého panelu) — v strome je v samostatnom `.app__dev`', () => {
+    const selection = new ModuleSelection();
+    selection.select(1 as EntityId);
+    const html = render(selection);
+    expect(html).toContain('class="app__dev"');
+    expect(html.indexOf('app__dev')).toBeLessThan(html.indexOf('app__side'));
   });
 });

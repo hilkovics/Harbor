@@ -20,6 +20,7 @@ import { installDevHook } from './dev-hook';
 import { attachDomInput } from './dom-input';
 import { GameLoop, startRafLoop } from './game-loop';
 import { InputController } from './input-controller';
+import { ModuleSelection, bindSelectionRing } from './module-selection';
 import { SimBridge } from './sim-bridge';
 
 export interface AppHandle {
@@ -28,8 +29,10 @@ export interface AppHandle {
   readonly loop: GameLoop;
   readonly renderer: WorldRenderer;
   readonly input: InputController;
-  /** Výber v BuildBar (`selectedDefId`); build mód modulov (T02-10) ho odoberá cez `subscribe`. */
+  /** Výber v BuildBar (`selectedDefId`); `InputController` ho odoberá cez `subscribe` (build mód modulov). */
   readonly selection: BuildSelection;
+  /** Výber modulu na mape (id) pre inšpektor a obrys `selection_ring`. */
+  readonly moduleSelection: ModuleSelection;
   /** Zastaví slučku, odpojí vstup, zruší React strom a Pixi a odstráni DOM aplikácie. */
   destroy(): void;
 }
@@ -92,12 +95,16 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
   const startCenter = startViewCenter(world.grid, starterParcelRect(world.map), visibleRows);
   camera.centerOn(startCenter.x, startCenter.y);
 
-  // Ghost stavby kreslí `renderer.build` (jediná `BuildLayer`, nad žeriavmi); cesty aj moduly.
+  // Ghost stavby kreslí `renderer.build` (jediná `BuildLayer`, nad žeriavmi); cesty aj moduly, ňou aj obrys výberu.
   const selection = new BuildSelection();
+  const moduleSelection = new ModuleSelection();
   const input = new InputController({
     bridge,
     camera: renderer.camera,
     ghost: renderer.build,
+    moduleGhost: renderer.build,
+    buildSelection: selection,
+    moduleSelection,
     onStateChange: (state) => {
       mapHost.dataset.inputState = state;
     },
@@ -105,6 +112,7 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
   mapHost.dataset.inputState = input.state;
   const detachInput = attachDomInput(input, { host: mapHost, window, releaseFocus: releaseDocumentFocus });
 
+  const stopSelectionRing = bindSelectionRing(moduleSelection, bridge, renderer.build);
   const stopRenderEvents = bridge.onEvents((events) => {
     for (const event of events) {
       if (event.type === 'RoadChanged') renderer.updateRoads(event.cells);
@@ -127,11 +135,20 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
       modules: renderer.modules.moduleCount,
       cranes: renderer.cranes.craneCount,
       ships: renderer.ships.shipCount,
+      ghostCells: renderer.build.shownCount,
+      ghostConnectors: renderer.build.markerCount,
+      selectionRing: renderer.build.selectionShown,
     }),
+    moduleGhost: () => input.moduleGhost(),
+    centerOn: (cellX, cellY, zoom) => {
+      const { camera: view } = renderer;
+      if (zoom !== undefined) view.zoomAt(zoom / view.zoom, view.viewportWidth / 2, view.viewportHeight / 2);
+      view.centerOn(cellX, cellY);
+    },
   });
 
   const reactRoot = createRoot(uiHost);
-  reactRoot.render(createElement(StrictMode, null, createElement(App, { bridge, feedback: input, selection })));
+  reactRoot.render(createElement(StrictMode, null, createElement(App, { bridge, feedback: input, selection, moduleSelection })));
 
   let destroyed = false;
   return {
@@ -141,11 +158,13 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
     renderer,
     input,
     selection,
+    moduleSelection,
     destroy() {
       if (destroyed) return;
       destroyed = true;
       stopLoop();
       stopRenderEvents();
+      stopSelectionRing();
       detachInput();
       input.dispose();
       reactRoot.unmount();

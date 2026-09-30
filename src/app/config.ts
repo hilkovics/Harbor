@@ -20,6 +20,12 @@ export const KEY_PAN_PX_PER_SECOND = 720;
 /** Najdlhší krok posunu klávesmi v ms: po návrate z neaktívnej karty (dlhý dt) kamera neskočí cez pol mapy. */
 export const KEY_PAN_MAX_DT_MS = 100;
 
+/**
+ * Najväčší posun myši v obrazovkových px medzi stlačením a pustením ľavého tlačidla v `idle` móde, ktorý sa ešte
+ * berie ako klik (výber modulu), nie ako ťah kamery. Väčší posun je posun mapy a výber sa nemení.
+ */
+export const CLICK_SLOP_PX = 4;
+
 /** Citlivosť kolieska: zoom sa násobí `exp(−delta × WHEEL_ZOOM_PER_PX)`; bežný krok kolieska (100 px) ≈ ×1,16. */
 export const WHEEL_ZOOM_PER_PX = 0.0015;
 

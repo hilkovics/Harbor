@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import modulesJson from '@data/defs/modules.json';
 import { PlaceModuleCommand, commandFromJSON, type ValidationReason } from '@sim/commands';
 import { DefRegistry } from '@sim/defs';
-import { BerthModule, CraneModule, footprintOf } from '@sim/modules';
+import { BerthModule, ContainerYard, CraneModule, VehicleDepot, footprintOf } from '@sim/modules';
 import { World } from '@sim/world';
 import { PIER_MAP } from '../world/pier-map';
 import { RAW_DEFS } from '../world/world-fixtures';
@@ -56,9 +56,9 @@ describe('PlaceModule — kotvisko', () => {
   });
 
   it.each<[string, number, number, number, ValidationReason[]]>([
-    ['na vode', 40, 10, 0, ['terrain', 'parcel_not_owned']],
+    ['na vode (konektory vedú do vody)', 40, 10, 0, ['terrain', 'parcel_not_owned', 'connector_blocked']],
     ['mimo pobrežia (vnútrozemie)', 40, 20, 0, ['terrain', 'no_water_side']],
-    ['hrana pri vode otočená na pevninu (180°)', 40, 14, 180, ['no_water_side']],
+    ['hrana pri vode otočená na pevninu (180°), konektory na severe vo vode', 40, 14, 180, ['no_water_side', 'connector_blocked']],
     ['cudzia parcela (west_quay na predaj)', 12, 14, 0, ['parcel_not_owned']],
     ['presah mimo mapy — všetky dôvody naraz', 90, 14, 0, ['out_of_bounds', 'terrain', 'parcel_not_owned', 'no_water_side']],
   ])('%s → %j, cells = footprint, costCents = cena', (_name, x, y, rotation, reasons) => {
@@ -81,8 +81,9 @@ describe('PlaceModule — kotvisko', () => {
 
   it('pás vody pretína pás kotviska s inou orientáciou → water_blocked (mapa pier_test)', () => {
     const world = built(World.create(DEFS, PIER_MAP, SEED), BERTH, 10, 10, 0);
-    expect(place(BERTH, 5, 2, 90).validate(world).reasons).toEqual(['water_blocked']);
-    expect(place(BERTH, 5, 2, 270).validate(world).ok).toBe(true);
+    // Kotvisko zaberá celé mólo W, konektory vedú do vody → navyše connector_blocked (§8 bod 5, ADR-017).
+    expect(place(BERTH, 5, 2, 90).validate(world).reasons).toEqual(['water_blocked', 'connector_blocked']);
+    expect(place(BERTH, 5, 2, 270).validate(world).reasons).toEqual(['connector_blocked']);
   });
 
   it('rotácia 90: cells = otočený footprint 3×8', () => {
@@ -125,6 +126,48 @@ describe('PlaceModule — žeriav', () => {
     expect(place(CRANE, 41, 14, 90).validate(world).reasons).toEqual(['occupied', 'rotation_mismatch']);
     built(world, CRANE, 45, 14);
     expect(place(CRANE, 40, 14).validate(world).reasons).toEqual(['max_cranes']);
+  });
+});
+
+describe('PlaceModule — sklad a depo (T03-02, §8 bod 5, ADR-017)', () => {
+  const YARD = 'container_yard_small';
+  const DEPOT = 'vehicle_depot';
+
+  it('dvor na starter parcele: ok, cena defu; apply postaví ContainerYard (nepripojený, kým nie je cesta)', () => {
+    const world = newBareWorld();
+    const command = place(YARD, 50, 20);
+    expect(command.validate(world)).toEqual({ ok: true, reasons: [], cells: footprint(YARD, 50, 20), costCents: DEFS.modules.get(YARD).costCents });
+    command.apply(world);
+    const yard = world.moduleAt(50, 20);
+    expect(yard).toBeInstanceOf(ContainerYard);
+    expect(yard?.purchaseCostCents).toBe(15_000_000);
+    expect(world.isConnected(yard as ContainerYard)).toBe(false);
+    expect(ofType(world.events.flush(), 'ModulePlaced')).toHaveLength(1);
+    expect(() => world.assertInvariants()).not.toThrow();
+  });
+
+  it('depo: apply postaví VehicleDepot', () => {
+    const world = built(newBareWorld(), DEPOT, 34, 20);
+    expect(world.moduleAt(35, 21)).toBeInstanceOf(VehicleDepot);
+  });
+
+  it('jediný konektor vedie do vody alebo do iného modulu → connector_blocked (cells a cena ostávajú pre ghost)', () => {
+    const world = built(newBareWorld(), DEPOT, 50, 24);
+    expect(place(YARD, 50, 20).validate(world)).toEqual({
+      ok: false,
+      reasons: ['connector_blocked'],
+      cells: footprint(YARD, 50, 20),
+      costCents: DEFS.modules.get(YARD).costCents,
+    });
+    expect(place(YARD, 50, 14, 180).validate(world).reasons).toEqual(['connector_blocked']);
+  });
+
+  it('cez frontu: odmietnutie connector_blocked → CommandRejected, svet sa nezmení', () => {
+    const world = built(newBareWorld(), DEPOT, 50, 24);
+    const before = hashState(world.serialize());
+    world.enqueue(commandFromJSON({ type: 'PlaceModule', defId: YARD, x: 50, y: 20, rotation: 0 }));
+    expect(ofType(world.applyPending(), 'CommandRejected')).toEqual([{ type: 'CommandRejected', commandType: 'PlaceModule', reasons: ['connector_blocked'] }]);
+    expect(hashState(world.serialize())).toBe(before);
   });
 });
 

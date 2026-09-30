@@ -78,7 +78,7 @@ describe('CommandRegistry (kostra T01-03)', () => {
     expect(new CommandRegistry().types).toEqual([]);
   });
 
-  it('VALIDATION_REASONS zodpovedajú „Spoločným rozhraniam" F1 + F2 (F1 ostáva na začiatku v pôvodnom poradí)', () => {
+  it('VALIDATION_REASONS zodpovedajú „Spoločným rozhraniam" F1 + F2 + F3 (staršie ostávajú na začiatku v pôvodnom poradí)', () => {
     expect([...VALIDATION_REASONS]).toEqual([
       'out_of_bounds',
       'terrain',
@@ -104,6 +104,15 @@ describe('CommandRegistry (kostra T01-03)', () => {
       'cargo_incompatible',
       'invalid_units',
       'invalid_rotation',
+      // F3 (docs/tasks/phase-03.md „Spoločné rozhrania", T03-02, ADR-017)
+      'unknown_vehicle_def',
+      'unknown_depot',
+      'depot_full',
+      'not_connected',
+      'unknown_vehicle',
+      'vehicle_busy',
+      'has_vehicles',
+      'connector_blocked',
     ]);
     expect(new Set(VALIDATION_REASONS).size).toBe(VALIDATION_REASONS.length);
   });

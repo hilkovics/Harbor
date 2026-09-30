@@ -7,7 +7,9 @@ import type { CellCoord } from '../grid/grid';
 /**
  * Dôvody odmietnutia príkazu. Poradie je kanonické — výsledok validácie ich vracia v tomto poradí (`orderReasons`).
  * F1: prvých osem; F2 (docs/tasks/phase-02.md „Spoločné rozhrania", ADR-015): moduly (`PlaceModule`, `RemoveModule`)
- * a ladiaca loď (`SpawnShipDebug`, T02-05). Nový dôvod = nový riadok tu + slovenský popis v UI (`REASON_TEXT`).
+ * a ladiaca loď (`SpawnShipDebug`, T02-05); F3 (docs/tasks/phase-03.md „Spoločné rozhrania", ADR-017): vozidlá
+ * (`BuyVehicle`/`SellVehicle`, T03-04), depo a pripojenie modulov. Nový dôvod = nový riadok tu + slovenský popis v UI
+ * (`REASON_TEXT`).
  */
 export const VALIDATION_REASONS = [
   'out_of_bounds',
@@ -50,6 +52,22 @@ export const VALIDATION_REASONS = [
   'invalid_units',
   /** `PlaceModule`: rotácia mimo 0, 90, 180, 270. */
   'invalid_rotation',
+  /** `BuyVehicle` (T03-04): def vozidla s daným id vo `vehicles.json` nie je. */
+  'unknown_vehicle_def',
+  /** `BuyVehicle` (T03-04): modul s daným id nie je depo vozidiel. */
+  'unknown_depot',
+  /** `BuyVehicle` (T03-04): depo nemá voľné státie (`params.capacity`). */
+  'depot_full',
+  /** `BuyVehicle` (T03-04): depo nie je pripojené k ceste (`World.isConnected`). */
+  'not_connected',
+  /** `SellVehicle` (T03-04): vozidlo s daným id neexistuje. */
+  'unknown_vehicle',
+  /** `SellVehicle` (T03-04): vozidlo nie je `idle` alebo má náklad či job. */
+  'vehicle_busy',
+  /** `RemoveModule`: depu patria vozidlá (ADR-017). */
+  'has_vehicles',
+  /** `PlaceModule` (§8 bod 5, ADR-017): žiadny cestný konektor nemá vonkajšiu bunku s cestou ani voľnú pre cestu. */
+  'connector_blocked',
 ] as const;
 
 export type ValidationReason = (typeof VALIDATION_REASONS)[number];

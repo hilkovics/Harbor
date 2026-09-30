@@ -2,9 +2,9 @@
  * `RemoveModule { moduleId }` — odstránenie modulu (ARCHITECTURE §8 bod 8; ADR-014, ADR-015).
  *
  * `validate`: neznáme id → `unknown_module` (bez buniek a ceny); inak všetky porušenia z `findRemovalViolations`
- * (rovnaká funkcia stráži `World.removeModule`): `has_cargo` (náklad v module, obsadený/rezervovaný slot apronu),
- * `has_cranes`, `ship_docked` (kotvisko alebo žeriav na kotvisku, ktoré drží loď), `busy` (žeriav mimo
- * `idle`/`blocked`). `cells` = footprint modulu, `costCents` =
+ * (rovnaká funkcia stráži `World.removeModule`): `has_cargo` (náklad v module, rezervovaný slot apronu alebo skladu),
+ * `has_cranes`, `has_vehicles` (depo s vozidlami, ADR-017), `ship_docked` (kotvisko alebo žeriav na kotvisku, ktoré
+ * drží loď), `busy` (žeriav mimo `idle`/`blocked`). `cells` = footprint modulu, `costCents` =
  * −refundácia (záporná = príjem, ADR-013).
  *
  * Refundácia (rozhodnutie 2) = `refundCents(purchaseCostCents, economy.removalRefundRate)` zo **zaplatenej** ceny,

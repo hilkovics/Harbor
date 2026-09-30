@@ -13,10 +13,14 @@ import type { DepotParams } from '../defs/types';
 import { Module, type ModuleInit } from './module';
 import { ModuleError } from './module-error';
 
+const NO_VEHICLES: readonly EntityId[] = Object.freeze([]);
+
 export class VehicleDepot extends Module {
   /** Typované `params` defu (`depotParams`). */
   readonly params: DepotParams;
+  /** Vozidlá depa (meniteľná kópia len pre `attachVehicle` / `detachVehicle`); von ide zmrazená snímka `view`. */
   private readonly vehicles: EntityId[] = [];
+  private view: readonly EntityId[] = NO_VEHICLES;
 
   /** Def iného druhu než `depot` → `DefError`. */
   constructor(init: ModuleInit) {
@@ -34,9 +38,12 @@ export class VehicleDepot extends Module {
     return this.params.capacity;
   }
 
-  /** Vozidlá depa v poradí pripojenia. Nemeň — spravuje ho `World`. */
+  /**
+   * Vozidlá depa v poradí pripojenia — zmrazená snímka (review T03-13): mení sa len pri `attachVehicle` /
+   * `detachVehicle`, čítanie nealokuje a volajúci interný zoznam zmeniť nemôže.
+   */
   get vehicleIds(): readonly EntityId[] {
-    return this.vehicles;
+    return this.view;
   }
 
   /** Voľné státia (`capacity − vehicleIds.length`). */
@@ -54,6 +61,7 @@ export class VehicleDepot extends Module {
       throw new ModuleError('depot_full', `${this.label}: depo je plné (${String(this.vehicles.length)}/${String(this.params.capacity)})`);
     }
     this.vehicles.push(vehicleId);
+    this.view = Object.freeze([...this.vehicles]);
   }
 
   /** Odpojí vozidlo; volá výlučne `World` (T03-04). Vozidlo k depu nepatrí → `ModuleError('unknown_vehicle')`. */
@@ -61,5 +69,6 @@ export class VehicleDepot extends Module {
     const index = this.vehicles.indexOf(vehicleId);
     if (index < 0) throw new ModuleError('unknown_vehicle', `${this.label}: vozidlo #${String(vehicleId)} k depu nepatrí`);
     this.vehicles.splice(index, 1);
+    this.view = Object.freeze([...this.vehicles]);
   }
 }

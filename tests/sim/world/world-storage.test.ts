@@ -125,14 +125,15 @@ describe('invarianty skladu a depa (krok 12)', () => {
       'depo s duplicitným vozidlom',
       /vehicleIds \[7, 7\] obsahujú duplicitu/,
       ({ depot }) => {
-        (depot.vehicleIds as EntityId[]).push(id(7), id(7));
+        // vehicleIds je zmrazená snímka (T03-14) — poškodenie len cez privátne pole v teste
+        (depot as unknown as { view: readonly EntityId[] }).view = [id(7), id(7)];
       },
     ],
     [
       'depo s viac vozidlami než státí',
       /má 7 vozidiel \(capacity 6\)/,
       ({ depot }) => {
-        (depot.vehicleIds as EntityId[]).push(...[1, 2, 3, 4, 5, 6, 7].map(id));
+        (depot as unknown as { view: readonly EntityId[] }).view = [1, 2, 3, 4, 5, 6, 7].map(id);
       },
     ],
   ];

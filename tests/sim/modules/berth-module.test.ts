@@ -48,6 +48,17 @@ describe('BerthModule — geometria', () => {
     expect(berth.craneIds).toEqual([3]);
     expect(() => berth.detachCrane(id(5))).toThrow(ModuleError);
   });
+
+  it('craneIds je zmrazená snímka: volajúci ju nezmení, zmena dá novú snímku, čítanie nealokuje (review T03-13)', () => {
+    const berth = berthOn(quayGrid(20, 20), 1, { x: 0, y: 0 });
+    berth.attachCrane(id(5));
+    const first = berth.craneIds;
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(berth.craneIds).toBe(first);
+    expect(() => (first as unknown as number[]).push(7)).toThrow(TypeError);
+    berth.attachCrane(id(3));
+    expect([first, berth.craneIds]).toEqual([[5], [5, 3]]);
+  });
 });
 
 describe('BerthModule — efektívna hĺbka (rozhodnutie 4)', () => {

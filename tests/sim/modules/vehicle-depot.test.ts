@@ -48,6 +48,21 @@ describe('VehicleDepot', () => {
     expect([depot.vehicleIds, depot.freeStalls]).toEqual([[20, 22], 4]);
   });
 
+  it('vehicleIds je zmrazená snímka: volajúci ju nezmení, zmena depa dá novú snímku, čítanie nealokuje (review T03-13)', () => {
+    const depot = depotOf();
+    const empty = depot.vehicleIds;
+    depot.attachVehicle(id(20));
+    const one = depot.vehicleIds;
+    expect([empty, one]).toEqual([[], [20]]);
+    expect(Object.isFrozen(one)).toBe(true);
+    expect(depot.vehicleIds).toBe(one);
+    expect(() => (one as unknown as number[]).push(99)).toThrow(TypeError);
+    depot.attachVehicle(id(21));
+    expect([one, depot.vehicleIds, depot.freeStalls]).toEqual([[20], [20, 21], depot.capacity - 2]);
+    depot.detachVehicle(id(20));
+    expect(depot.vehicleIds).toEqual([21]);
+  });
+
   it('duplicitné vozidlo → duplicate_id, plné depo → depot_full, cudzie vozidlo → unknown_vehicle; stav sa nezmení', () => {
     const depot = depotOf();
     for (let i = 0; i < depot.capacity; i++) depot.attachVehicle(id(30 + i));

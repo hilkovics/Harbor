@@ -8,7 +8,7 @@ import { Ship, ShipError } from '@sim/ships';
 import { VehicleError, type Vehicle } from '@sim/vehicles';
 import { CARGO_HOLDER_SOURCES, World, findWorldViolation } from '@sim/world';
 import { DEFS, MAP, SEED, hashState, runTicks } from '../world/world-fixtures';
-import type { StorageModule } from '@sim/modules';
+import type { StorageModule, VehicleDepot } from '@sim/modules';
 import { DEPOT_OUTSIDE, GRAIN, GRAIN_DEFS, STRADDLE_DEF, addVehicleTo, buy, carryingVehicle, depotWorld, execute, loadInto } from './vehicle-fixtures';
 
 const id = (value: number): EntityId => value as EntityId;
@@ -176,12 +176,10 @@ describe('invarianty vozidiel (krok 12)', () => {
     ['poloha mimo mapy', /stojí mimo mapy/, (_w, vehicle) => (vehicle.x = -0.5)],
     ['poloha NaN', /stojí mimo mapy/, (_w, vehicle) => (vehicle.y = Number.NaN)],
     ['depo eviduje cudzie vozidlo', /vehicleIds \[\d+, 999\] ≠ vozidlá depa podľa id/, (world, _v, depotId) => {
-      const depot = world.modules.get(depotId) as unknown as { vehicleIds: EntityId[] };
-      depot.vehicleIds.push(id(999));
+      (world.modules.get(depotId) as VehicleDepot).attachVehicle(id(999)); // vehicleIds je zmrazená snímka (T03-14)
     }],
     ['depo vozidlo neeviduje', /chýba vo vehicleIds depa|≠ vozidlá depa/, (world, vehicle, depotId) => {
-      const depot = world.modules.get(depotId) as unknown as { vehicleIds: EntityId[] };
-      depot.vehicleIds.splice(depot.vehicleIds.indexOf(vehicle.id), 1);
+      (world.modules.get(depotId) as VehicleDepot).detachVehicle(vehicle.id);
     }],
     ['náklad nad kapacitu', /vezie 2 jednotiek \(capacityUnits 1\)/, (world, vehicle) => {
       loadInto(world, vehicle.id);

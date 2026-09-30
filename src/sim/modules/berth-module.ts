@@ -31,6 +31,8 @@ export type BerthRuntimeState = {
 
 const BERTH_RUNTIME_KEYS: readonly (keyof BerthRuntimeState)[] = ['lastNoStorageHour'];
 
+const NO_CRANES: readonly EntityId[] = Object.freeze([]);
+
 /** Efektívna hĺbka kotviska: menšia z hĺbky typu kotviska a najplytšej bunky footprintu (rozhodnutie 4). */
 export function effectiveBerthDepth(params: BerthParams, cells: readonly { readonly x: number; readonly y: number }[], grid: Grid): DepthClass {
   let depth: DepthClass = params.depthClass;
@@ -57,7 +59,9 @@ export class BerthModule extends Module {
   groupId = 0;
   /** Herná hodina posledného `NoStorageAvailable` (throttle 1×/h, ADR-018); mení ho len dispatcher, `null` = nikdy. */
   lastNoStorageHour: number | null = null;
+  /** Žeriavy (meniteľná kópia len pre `attachCrane` / `detachCrane`); von ide zmrazená snímka `craneView`. */
   private readonly cranes: EntityId[] = [];
+  private craneView: readonly EntityId[] = NO_CRANES;
 
   /** Def iného druhu než `berth` → `DefError`; def bez `placement.waterSide` → `ModuleError('invalid_input')`. */
   constructor(init: ModuleInit) {
@@ -79,9 +83,12 @@ export class BerthModule extends Module {
     return this.apron;
   }
 
-  /** Žeriavy na kotvisku v poradí pripojenia (= poradie umiestnenia). Nemeň — spravuje ho `World`. */
+  /**
+   * Žeriavy na kotvisku v poradí pripojenia (= poradie umiestnenia) — zmrazená snímka (review T03-13): mení sa len pri
+   * `attachCrane` / `detachCrane`, čítanie nealokuje a volajúci interný zoznam zmeniť nemôže.
+   */
   get craneIds(): readonly EntityId[] {
-    return this.cranes;
+    return this.craneView;
   }
 
   /** Pripojí žeriav; volá výlučne `World.addModule` po overení pravidiel. Duplicitné id → `ModuleError('duplicate_id')`. */
@@ -90,6 +97,7 @@ export class BerthModule extends Module {
       throw new ModuleError('duplicate_id', `${this.label}: žeriav #${String(craneId)} je už pripojený`);
     }
     this.cranes.push(craneId);
+    this.craneView = Object.freeze([...this.cranes]);
   }
 
   /** Odpojí žeriav; volá výlučne `World.removeModule`. Nepripojený žeriav → `ModuleError('unknown_module')`. */
@@ -97,6 +105,7 @@ export class BerthModule extends Module {
     const index = this.cranes.indexOf(craneId);
     if (index < 0) throw new ModuleError('unknown_module', `${this.label}: žeriav #${String(craneId)} nie je pripojený`);
     this.cranes.splice(index, 1);
+    this.craneView = Object.freeze([...this.cranes]);
   }
 
   override getRuntimeState(): BerthRuntimeState {

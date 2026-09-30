@@ -51,8 +51,8 @@
 - [x] T04-07 · UI: inspector brány (fronta, priepustnosť/h), stojiska (bays), rampy (docks, staging, dôvod neprevádzkovosti); BuildBar Landside moduly
 - [x] T04-08 · App: snapshot v4 (kamióny, brána, stojiská, rampy), napojenie, toasty (`NoWaitingBay`, neprevádzková rampa)
 - [x] T04-09 · Tooling: `simrun` metriky kamiónov a exportu
-- [ ] T04-10 · E2E: celý reťazec loď → dvor → rampa → kamión → export, screenshoty
-- [ ] T04-11 · Review `src/sim/**`
+- [x] T04-10 · E2E: celý reťazec loď → dvor → rampa → kamión → export, screenshoty
+- [x] T04-11 · Review `src/sim/**`
 - [ ] T04-12 · Opravy z review + ARCHITECTURE zosúladenie
 - [ ] T04-13 · Plná pipeline + triáž
 - [ ] T04-14 · Uzavretie fázy (PROGRESS, BACKLOG) + PR

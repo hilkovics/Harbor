@@ -9,8 +9,9 @@
  * 2. Podtrieda posúdi bunku (`inspectCell`): zmeniť / preskočiť bez chyby a bez ceny / dôvody odmietnutia.
  * 3. Žiadna bunka na zmenu a žiadny iný dôvod (prázdny zoznam, všetko preskočené) → `empty`.
  * 4. Cena (`costForCells`) > 0 a vyššia než hotovosť → `insufficient_funds`. Záporná cena = príjem (refundácia).
- * 5. `apply`: vrstva zmenených buniek = `targetLayer`, hotovosť −= cena, práve jeden `RoadChanged` (presne zmenené
- *    bunky) a práve jeden `MoneyChanged` (`deltaCents = −cena`, kategória `ledgerCategory`).
+ * 5. `apply`: vrstva zmenených buniek = `targetLayer`, `world.markRoadsChanged()` (zneplatní cache ciest, T03-03),
+ *    hotovosť −= cena, práve jeden `RoadChanged` (presne zmenené bunky) a práve jeden `MoneyChanged`
+ *    (`deltaCents = −cena`, kategória `ledgerCategory`).
  */
 import type { Cell, CellCoord, RoadLayer } from '../grid/grid';
 import type { LedgerCategory } from '../economy/ledger-category';
@@ -75,6 +76,7 @@ export abstract class RoadLayerCommand implements Command {
       throw new Error(`${this.type}.apply: príkaz nie je platný (${plan.reasons.join(', ')}) — volaj apply len po úspešnom validate`);
     }
     for (const { x, y } of plan.cells) world.grid.at(x, y).road = this.targetLayer;
+    world.markRoadsChanged();
     const deltaCents = 0 - plan.costCents;
     world.cashCents += deltaCents;
     world.events.emit({ type: 'RoadChanged', cells: plan.cells });

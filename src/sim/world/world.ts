@@ -19,6 +19,10 @@
  * Sklady a depá (ADR-017): moduly vznikajú s ledgerom na čítanie (`ModuleEnv.cargo`) — apron a sklad držia len
  * rezervácie, obsadenie čítajú z `cargo`. Pripojenie modulu k ceste (`isConnected`, `connectorCells`) sa počíta
  * z mriežky pri každom volaní.
+ *
+ * Cestná sieť (T03-03): `roadVersion` je počítadlo zmien vrstvy ciest (`markRoadsChanged` volá `PlaceRoad`/`RemoveRoad`
+ * a `deserialize`); `pathfinder` (A*), `paths` (`PathCache`) a `distances` (`DistanceMatrix`) vznikajú lenivo pri prvom
+ * použití a cache sa pri zmene `roadVersion` samy vyprázdnia — bez odberu udalostí. Nič z toho nie je v save.
  */
 import { CargoLedger } from '../cargo/cargo-ledger';
 import type { CargoLedgerState } from '../cargo/cargo-ledger-state';
@@ -42,6 +46,9 @@ import { ModuleError } from '../modules/module-error';
 import { moduleRegistry } from '../modules/module-registry';
 import type { Ship } from '../ships/ship';
 import { ShipError } from '../ships/ship-error';
+import { DistanceMatrix } from '../logistics/distance-matrix';
+import { PathCache } from '../logistics/path-cache';
+import { Pathfinder } from '../logistics/pathfinder';
 import { CraneSystem } from '../systems/crane-system';
 import { ShipSystem } from '../systems/ship-system';
 import { StatResolver } from '../tech/stat-resolver';
@@ -131,6 +138,10 @@ export class World {
   private groups: readonly BerthGroup[] = NO_GROUPS;
   private readonly shipSystem = new ShipSystem();
   private readonly craneSystem = new CraneSystem();
+  private roadChanges = 0;
+  private pathfinderInstance: Pathfinder | undefined;
+  private pathCache: PathCache | undefined;
+  private distanceMatrix: DistanceMatrix | undefined;
 
   private constructor(parts: WorldParts, options: WorldOptions) {
     this.defs = parts.defs;
@@ -217,6 +228,8 @@ export class World {
       },
       options,
     );
+    // Cesty prišli zo save — cache ciest vytvorené počas obnovy by patrili predchádzajúcemu stavu mriežky.
+    world.markRoadsChanged();
     restoreEntities(world, parsed.modules, parsed.ships, parsed.cargo.units);
     return world;
   }
@@ -224,6 +237,41 @@ export class World {
   /** Skupiny kotvísk (§5.4) v poradí id; prepočítajú sa pri každom `addModule`/`removeModule`. */
   get berthGroups(): readonly BerthGroup[] {
     return this.groups;
+  }
+
+  /**
+   * Verzia cestnej siete: rastie pri každej zmene vrstvy ciest (`markRoadsChanged`). Význam má len zmena, nie hodnota
+   * (neukladá sa; nový aj obnovený svet začínajú od svojej hodnoty) — `PathCache`/`DistanceMatrix` a plánovanie
+   * vozidiel podľa nej zistia, že cesta mohla zaniknúť alebo vzniknúť.
+   */
+  get roadVersion(): number {
+    return this.roadChanges;
+  }
+
+  /**
+   * Zapíše zmenu cestnej siete (volá `PlaceRoad`/`RemoveRoad` po zápise `cell.road` a `deserialize` po obnove ciest).
+   * Kto mení `cell.road` inou cestou, musí ho zavolať tiež, inak cache ciest ostanú zastarané.
+   */
+  markRoadsChanged(): void {
+    this.roadChanges += 1;
+  }
+
+  /** A* nad cestami tohto sveta (§7.4); vznikne pri prvom použití (pracovné polia pre celú mriežku). */
+  get pathfinder(): Pathfinder {
+    this.pathfinderInstance ??= new Pathfinder(this.grid);
+    return this.pathfinderInstance;
+  }
+
+  /** Cache ciest (`PathCache`) nad `pathfinder`, zneplatnená podľa `roadVersion`; vznikne pri prvom použití. */
+  get paths(): PathCache {
+    this.pathCache ??= new PathCache(this.pathfinder, this);
+    return this.pathCache;
+  }
+
+  /** Lazy matica cien ciest (`DistanceMatrix`) nad `pathfinder`, zneplatnená podľa `roadVersion`. */
+  get distances(): DistanceMatrix {
+    this.distanceMatrix ??= new DistanceMatrix(this.pathfinder, this);
+    return this.distanceMatrix;
   }
 
   /** Počet príkazov čakajúcich vo fronte. */

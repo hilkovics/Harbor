@@ -5,9 +5,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  DEFAULT_ASSET_MANIFEST,
   DEFAULT_DEFS_DIR,
   DEFAULT_MAPS_DIR,
   DEFAULT_SCHEMAS_DIR,
+  validateAssetManifest,
   validateDefsDir,
   validateMapsDir,
 } from '../../tools/validate-defs';
@@ -534,6 +536,7 @@ describe('validateDefsDir', () => {
       expect(run.stdout).toContain('OK infrastructure.json');
       for (const file of ['cargo_types.json', 'modules.json', 'ships.json']) expect(run.stdout).toContain(`OK ${file}`);
       expect(run.stdout).toContain('OK maps/harbor_01.json');
+      expect(run.stdout).toContain('OK assets/manifest.json');
     }, 30_000);
 
     it('neplatná mapa → exit 1 a chyba s cestou v stderr; platné defy ostávajú OK', () => {
@@ -555,6 +558,227 @@ describe('validateDefsDir', () => {
       const run = runCli(defsDir, DEFAULT_SCHEMAS_DIR, mapsDir);
       expect(run.status).toBe(0);
       expect(run.stdout).toContain('OK maps/copy.json');
+    }, 30_000);
+  });
+});
+
+describe('validateAssetManifest (assets/manifest.json → asset-manifest.schema.json + krížová kontrola defov)', () => {
+  type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+  type JsonObject = { [key: string]: Json };
+  interface Catalog {
+    schemaVersion: number;
+    items: { id: string }[];
+  }
+
+  let tmpRoot: string;
+  let defsDir: string;
+  let manifestPath: string;
+
+  const realManifest = (): JsonObject => JSON.parse(readFileSync(DEFAULT_ASSET_MANIFEST, 'utf8')) as JsonObject;
+  const realCatalog = (name: string): Catalog =>
+    JSON.parse(readFileSync(join(DEFAULT_DEFS_DIR, `${name}.json`), 'utf8')) as Catalog;
+  const writeManifest = (value: unknown): void => {
+    writeFileSync(manifestPath, typeof value === 'string' ? value : JSON.stringify(value));
+  };
+  const writeDef = (name: string, value: unknown): void => {
+    writeFileSync(join(defsDir, name), JSON.stringify(value));
+  };
+  const errorsOf = (): string[] => validateAssetManifest(manifestPath, DEFAULT_SCHEMAS_DIR, defsDir).errors;
+  /** Zapíše skutočný manifest po úprave `change` (hlboká kópia, originál ostáva nedotknutý). */
+  const writeMutated = (change: (manifest: JsonObject) => void): void => {
+    const manifest = realManifest();
+    change(manifest);
+    writeManifest(manifest);
+  };
+
+  beforeEach(() => {
+    tmpRoot = mkdtempSync(join(tmpdir(), 'validate-manifest-'));
+    defsDir = join(tmpRoot, 'defs');
+    mkdirSync(defsDir);
+    manifestPath = join(tmpRoot, 'manifest.json');
+    writeDef('modules.json', realCatalog('modules'));
+    writeDef('ships.json', realCatalog('ships'));
+  });
+  afterEach(() => {
+    rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  it('skutočný manifest proti skutočným defom: bez chýb, výsledok pomenovaný assets/manifest.json', () => {
+    expect(validateAssetManifest(DEFAULT_ASSET_MANIFEST, DEFAULT_SCHEMAS_DIR, DEFAULT_DEFS_DIR)).toEqual({
+      file: 'assets/manifest.json',
+      errors: [],
+    });
+  });
+
+  it('každý modul aj loď zo skutočných defov má sprite (nie je to prázdna kontrola)', () => {
+    const manifest = realManifest();
+    const modules = realCatalog('modules').items.map((item) => item.id);
+    const ships = realCatalog('ships').items.map((item) => item.id);
+    expect(modules.length).toBeGreaterThan(0);
+    expect(ships.length).toBeGreaterThan(0);
+    for (const id of modules) expect(Object.keys(manifest.sprites as JsonObject), id).toContain(id);
+    for (const id of ships) expect(Object.keys(manifest.entities as JsonObject), id).toContain(`ship_${id}`);
+  });
+
+  it('názov výsledku sa odvodí od súboru: assets/<basename>', () => {
+    writeManifest(realManifest());
+    expect(validateAssetManifest(manifestPath, DEFAULT_SCHEMAS_DIR, defsDir).file).toBe('assets/manifest.json');
+  });
+
+  describe('schéma', () => {
+    it('platná kópia manifestu → bez chýb', () => {
+      writeManifest(realManifest());
+      expect(errorsOf()).toEqual([]);
+    });
+
+    it('chýbajúca sekcia → cesta "/" a názov poľa', () => {
+      writeMutated((m) => delete m.overlay);
+      expect(errorsOf()).toEqual(["assets/manifest.json: / must have required property 'overlay'"]);
+    });
+
+    it('iná verzia schémy', () => {
+      writeMutated((m) => (m.schemaVersion = 2));
+      expect(errorsOf()).toEqual(['assets/manifest.json: /schemaVersion must be equal to constant']);
+    });
+
+    it('neznáma sekcia je pomenovaná v správe', () => {
+      writeMutated((m) => (m.audio = {}));
+      const errors = errorsOf();
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toMatch(/^assets\/manifest\.json: \/ must NOT have additional properties/);
+      expect(errors[0]).toContain('audio');
+    });
+
+    it('cesta súboru mimo vzoru {adresár}/{id}.svg → cesta do vnoreného poľa', () => {
+      writeMutated((m) => ((m.terrain as { quay: JsonObject }).quay.file = 'Terrain/Quay.svg'));
+      expect(errorsOf().some((line) => line.startsWith('assets/manifest.json: /terrain/quay/file '))).toBe(true);
+    });
+
+    it('nevalidný JSON je chyba (nie výnimka)', () => {
+      writeManifest('{ "schemaVersion": ');
+      const errors = errorsOf();
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toMatch(/^assets\/manifest\.json: \/ neplatný JSON/);
+    });
+
+    it('chýbajúci súbor manifestu je chyba s cestou', () => {
+      const errors = errorsOf();
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toMatch(/^assets\/manifest\.json: \/ chýba súbor/);
+      expect(errors[0]).toContain(manifestPath);
+    });
+
+    it('chýbajúca asset-manifest.schema.json je chyba pomenovaná podľa súboru', () => {
+      const emptySchemas = join(tmpRoot, 'schemas');
+      mkdirSync(emptySchemas);
+      writeManifest(realManifest());
+      const errors = validateAssetManifest(manifestPath, emptySchemas, defsDir).errors;
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toMatch(/^assets\/manifest\.json: \/ chýba schéma asset-manifest\.schema\.json/);
+    });
+  });
+
+  describe('krížová kontrola: každý modul má sprites[id], každá loď entities.ship_{id}', () => {
+    it('chýbajúci sprite modulu → chyba s cestou v manifeste a odkazom na def', () => {
+      writeMutated((m) => delete (m.sprites as JsonObject).berth_standard);
+      expect(errorsOf()).toEqual([
+        "assets/manifest.json: /sprites/berth_standard chýba sprite pre modul 'berth_standard' (modules.json: /items/0/id)",
+      ]);
+    });
+
+    it('chýbajúci sprite lode → chyba s cestou /entities/ship_{id}', () => {
+      writeMutated((m) => delete (m.entities as JsonObject).ship_feeder);
+      expect(errorsOf()).toEqual([
+        "assets/manifest.json: /entities/ship_feeder chýba sprite pre loď 'feeder' (ships.json: /items/0/id)",
+      ]);
+    });
+
+    it('viac chýb naraz sa vypíše všetko (allErrors)', () => {
+      writeMutated((m) => {
+        delete (m.sprites as JsonObject).crane_container_gantry;
+        delete (m.entities as JsonObject).ship_handy;
+      });
+      const errors = errorsOf();
+      expect(errors).toHaveLength(2);
+      expect(errors.some((line) => line.includes('/sprites/crane_container_gantry'))).toBe(true);
+      expect(errors.some((line) => line.includes('/entities/ship_handy'))).toBe(true);
+    });
+
+    it('nový modul v modules.json bez sprite → chyba (index položky v ceste)', () => {
+      const modules = realCatalog('modules');
+      writeDef('modules.json', { ...modules, items: [...modules.items, { ...modules.items[0], id: 'container_yard_small_x' }] });
+      writeManifest(realManifest());
+      expect(errorsOf()).toEqual([
+        `assets/manifest.json: /sprites/container_yard_small_x chýba sprite pre modul 'container_yard_small_x' (modules.json: /items/${String(modules.items.length)}/id)`,
+      ]);
+    });
+
+    it('nová trieda lode v ships.json bez entity ship_{id} → chyba', () => {
+      const ships = realCatalog('ships');
+      writeDef('ships.json', { ...ships, items: [...ships.items, { ...ships.items[0], id: 'barge' }] });
+      writeManifest(realManifest());
+      expect(errorsOf()).toEqual([
+        `assets/manifest.json: /entities/ship_barge chýba sprite pre loď 'barge' (ships.json: /items/${String(ships.items.length)}/id)`,
+      ]);
+    });
+
+    it('sprite bez defu (budúce moduly) nie je chyba', () => {
+      writeManifest(realManifest());
+      writeDef('modules.json', { schemaVersion: 1, items: [] });
+      writeDef('ships.json', { schemaVersion: 1, items: [] });
+      expect(errorsOf()).toEqual([]);
+    });
+
+    it('chýbajúci modules.json / ships.json v defsDir → kontrola sa preskočí (hlási ju validateDefsDir)', () => {
+      rmSync(join(defsDir, 'modules.json'));
+      rmSync(join(defsDir, 'ships.json'));
+      writeMutated((m) => delete (m.sprites as JsonObject).berth_standard);
+      expect(errorsOf()).toEqual([]);
+    });
+
+    it('nečitateľný modules.json sa preskočí bez výnimky', () => {
+      writeFileSync(join(defsDir, 'modules.json'), '{ nie json');
+      writeManifest(realManifest());
+      expect(errorsOf()).toEqual([]);
+    });
+
+    it('pri chýbajúcej sekcii sprites hlási len schéma (krížová kontrola nespamuje)', () => {
+      writeMutated((m) => delete m.sprites);
+      expect(errorsOf()).toEqual(["assets/manifest.json: / must have required property 'sprites'"]);
+    });
+  });
+
+  describe('CLI (tools/validate-defs.ts)', () => {
+    const runCli = (manifest: string, defs: string = DEFAULT_DEFS_DIR) =>
+      spawnSync(process.execPath, ['--import', 'tsx', VALIDATE_SCRIPT, defs, DEFAULT_SCHEMAS_DIR, DEFAULT_MAPS_DIR, manifest], {
+        encoding: 'utf8',
+      });
+
+    it('bez argumentov: exit 0 a "OK assets/manifest.json"', () => {
+      const run = spawnSync(process.execPath, ['--import', 'tsx', VALIDATE_SCRIPT], { encoding: 'utf8' });
+      expect(run.status).toBe(0);
+      expect(run.stdout).toContain('OK assets/manifest.json');
+    }, 30_000);
+
+    it('chýbajúci sprite v odovzdanom manifeste → exit 1 a chyba s cestou v stderr; defy ostávajú OK', () => {
+      writeMutated((m) => delete (m.sprites as JsonObject).berth_standard);
+      const run = runCli(manifestPath);
+      expect(run.status).toBe(1);
+      expect(run.stdout).toContain('OK modules.json');
+      expect(run.stderr).toContain("assets/manifest.json: /sprites/berth_standard chýba sprite pre modul 'berth_standard'");
+    }, 30_000);
+
+    it('chýbajúci súbor manifestu → exit 1', () => {
+      const run = runCli(join(tmpRoot, 'nope', 'manifest.json'));
+      expect(run.status).toBe(1);
+      expect(run.stderr).toContain('assets/manifest.json: / chýba súbor');
+    }, 30_000);
+
+    it('platná kópia manifestu → exit 0 a "OK assets/manifest.json"', () => {
+      writeManifest(realManifest());
+      const run = runCli(manifestPath);
+      expect(run.status).toBe(0);
+      expect(run.stdout).toContain('OK assets/manifest.json');
     }, 30_000);
   });
 });

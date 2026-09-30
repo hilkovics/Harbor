@@ -99,7 +99,13 @@ function restoreShips(world: World, entries: readonly ParsedShipEntry[]): void {
     if (ship.waypointIndex > routeLength) {
       throw new WorldStateError(`${path}/waypointIndex`, `trasa stavu '${ship.state}' má ${String(routeLength)} bodov, index ${String(ship.waypointIndex)}`);
     }
-    world.addShip(ship);
+    try {
+      world.addShip(ship);
+    } catch (error) {
+      // Tvar id overil `parseWorldState`; toto je posledná poistka, aby aj tu vznikla chyba save s cestou.
+      if (error instanceof ShipError) throw new WorldStateError(`${path}/id`, error.message);
+      throw error;
+    }
   });
 }
 

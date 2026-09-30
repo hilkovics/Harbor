@@ -37,6 +37,7 @@ import type { Module } from '../modules/module';
 import { ModuleError } from '../modules/module-error';
 import { moduleRegistry } from '../modules/module-registry';
 import type { Ship } from '../ships/ship';
+import { ShipError } from '../ships/ship-error';
 import { CraneSystem } from '../systems/crane-system';
 import { ShipSystem } from '../systems/ship-system';
 import { StatResolver } from '../tech/stat-resolver';
@@ -295,31 +296,34 @@ export class World {
   // -------------------------------------------------------------------------------------------------------
 
   /**
-   * Pridá loď (spawn `SpawnShipDebug`, obnova zo save). Chyby (`Error`, svet sa nezmení): id už vo svete, id
-   * nepridelené alokátorom, id nie je väčšie ako id poslednej lode (poradie spawnu = FIFO alokácie kotvísk).
-   * Kotviská (`dockedShipId`) a náklad zapisuje volajúci.
+   * Pridá loď (spawn `SpawnShipDebug`, obnova zo save). Chyby (`ShipError`, svet sa nezmení): id už vo svete má loď
+   * alebo modul (`duplicate_id`), id nepridelené alokátorom alebo menšie ako id poslednej lode — poradie spawnu = FIFO
+   * alokácie kotvísk (`invalid_input`). Kotviská (`dockedShipId`) a náklad zapisuje volajúci.
    */
   addShip(ship: Ship): void {
-    if (this.shipMap.has(ship.id) || this.moduleMap.has(ship.id)) throw new Error(`World.addShip: id ${String(ship.id)} už vo svete je`);
+    if (this.shipMap.has(ship.id) || this.moduleMap.has(ship.id)) throw new ShipError('duplicate_id', `World.addShip: id ${String(ship.id)} už vo svete je`);
     if (ship.id >= this.ids.getState().nextId) {
-      throw new Error(`World.addShip: id ${String(ship.id)} nepridelil alokátor sveta (nextId ${String(this.ids.getState().nextId)})`);
+      throw new ShipError('invalid_input', `World.addShip: id ${String(ship.id)} nepridelil alokátor sveta (nextId ${String(this.ids.getState().nextId)})`);
     }
     let last: EntityId | undefined;
     for (const id of this.shipMap.keys()) last = id;
-    if (last !== undefined && ship.id < last) throw new Error(`World.addShip: ${ship.label} má menšie id ako posledná loď #${String(last)}`);
+    if (last !== undefined && ship.id < last) {
+      throw new ShipError('invalid_input', `World.addShip: ${ship.label} má menšie id ako posledná loď #${String(last)}`);
+    }
     this.shipMap.set(ship.id, ship);
   }
 
   /**
-   * Odstráni loď (odchod z mapy, `ShipSystem`) a vráti ju. Chyby (`Error`, svet sa nezmení): neznáme id, loď má na
-   * palube náklad (jednotky `on_ship` by stratili držiteľa) alebo drží kotviská.
+   * Odstráni loď (odchod z mapy, `ShipSystem`) a vráti ju. Chyby (`ShipError`, svet sa nezmení): neznáme id
+   * (`unknown_ship`), loď má na palube náklad — jednotky `on_ship` by stratili držiteľa (`has_cargo`), drží kotviská
+   * (`holds_berths`).
    */
   removeShip(shipId: EntityId): Ship {
     const ship = this.shipMap.get(shipId);
-    if (ship === undefined) throw new Error(`World.removeShip: loď #${String(shipId)} neexistuje`);
+    if (ship === undefined) throw new ShipError('unknown_ship', `World.removeShip: loď #${String(shipId)} neexistuje`);
     const aboard = this.cargo.countAt('on_ship', shipId);
-    if (aboard > 0) throw new Error(`World.removeShip: ${ship.label} má na palube ${String(aboard)} jednotiek`);
-    if (ship.berthIds.length > 0) throw new Error(`World.removeShip: ${ship.label} drží kotviská [${ship.berthIds.join(', ')}]`);
+    if (aboard > 0) throw new ShipError('has_cargo', `World.removeShip: ${ship.label} má na palube ${String(aboard)} jednotiek`);
+    if (ship.berthIds.length > 0) throw new ShipError('holds_berths', `World.removeShip: ${ship.label} drží kotviská [${ship.berthIds.join(', ')}]`);
     this.shipMap.delete(shipId);
     return ship;
   }

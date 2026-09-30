@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { PlaceModuleCommand, RemoveModuleCommand } from '@sim/commands';
 import type { EntityId } from '@sim/core';
-import { Ship } from '@sim/ships';
+import { Ship, ShipError, type ShipErrorCode } from '@sim/ships';
 import { WorldInvariantError } from '@sim/world';
 import {
   BULKER,
@@ -160,6 +160,17 @@ describe('World.addShip / removeShip', () => {
     });
   }
 
+  /** Kód `ShipError`, ktorú akcia vyhodí (T02-14: `addShip`/`removeShip` hádžu `ShipError`, nie holý `Error`). */
+  function shipErrorCode(action: () => unknown): ShipErrorCode | undefined {
+    try {
+      action();
+    } catch (error) {
+      if (error instanceof ShipError) return error.code;
+      throw error;
+    }
+    return undefined;
+  }
+
   it('addShip odmietne duplicitné id, id mimo alokátora a id menšie ako posledná loď (poradie spawnu)', () => {
     const world = newWorld();
     const a = spawn(world, 'feeder', 1); // loď 3, jednotka 4
@@ -167,6 +178,10 @@ describe('World.addShip / removeShip', () => {
     expect(() => world.addShip(a)).toThrow(/už vo svete je/);
     expect(() => world.addShip(shipWithId(world, 9999 as EntityId))).toThrow(/nepridelil alokátor/);
     expect(() => world.addShip(shipWithId(world, 4 as EntityId))).toThrow(/menšie id ako posledná loď/);
+    expect(shipErrorCode(() => world.addShip(a))).toBe('duplicate_id');
+    expect(shipErrorCode(() => world.addShip(shipWithId(world, ROOT_BERTH_ID)))).toBe('duplicate_id');
+    expect(shipErrorCode(() => world.addShip(shipWithId(world, 9999 as EntityId)))).toBe('invalid_input');
+    expect(shipErrorCode(() => world.addShip(shipWithId(world, 4 as EntityId)))).toBe('invalid_input');
     expect(world.ships.size).toBe(2);
   });
 
@@ -175,9 +190,13 @@ describe('World.addShip / removeShip', () => {
     const loaded = spawn(world, 'feeder', 1);
     expect(() => world.removeShip(12345 as EntityId)).toThrow(/neexistuje/);
     expect(() => world.removeShip(loaded.id)).toThrow(/na palube 1 jednotiek/);
+    expect(shipErrorCode(() => world.removeShip(12345 as EntityId))).toBe('unknown_ship');
+    expect(shipErrorCode(() => world.removeShip(loaded.id))).toBe('has_cargo');
     const holding = shipWithId(world, world.ids.next(), 'berthing', [ROOT_BERTH_ID]);
     world.addShip(holding);
     expect(() => world.removeShip(holding.id)).toThrow(/drží kotviská/);
+    expect(shipErrorCode(() => world.removeShip(holding.id))).toBe('holds_berths');
+    expect(world.ships.has(holding.id)).toBe(true);
     const empty = shipWithId(world, world.ids.next(), 'outbound');
     world.addShip(empty);
     expect(world.removeShip(empty.id)).toBe(empty);

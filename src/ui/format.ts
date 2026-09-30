@@ -117,3 +117,28 @@ export function formatFraction(part: number, total: number, unit?: string): stri
   const body = `${groupThousands(String(Math.trunc(part)))} / ${groupThousands(String(Math.trunc(total)))}`;
   return unit === undefined || unit === '' ? body : `${body} ${unit}`;
 }
+
+/** Mierka herného času v tickoch (z `SimClock`/`time` defu; UI si ju nechá dodať, nezná dĺžku ticku). */
+export interface TimeScale {
+  readonly ticksPerHour: number;
+  readonly ticksPerDay: number;
+}
+
+/** Slovenské skloňovanie dní: 1 deň, 2–4 dni, inak dní. */
+function dayWord(days: number): string {
+  if (days === 1) return 'deň';
+  return days >= 2 && days <= 4 ? 'dni' : 'dní';
+}
+
+/**
+ * Trvanie v tickoch pre SLA a expiráciu: `6 dní`, `1 deň`, `2 d 5 h`, `5 h`, `< 1 h` (zaokrúhlené nadol, záporné ako 0).
+ * Bez `Intl`, aby výstup nezávisel od locale. Neplatná hodnota alebo mierka → `—`.
+ */
+export function formatDuration(ticks: number, scale: TimeScale): string {
+  if (!Number.isFinite(ticks) || !(scale.ticksPerDay > 0) || !(scale.ticksPerHour > 0)) return EM_DASH;
+  const total = Math.max(0, ticks);
+  const days = Math.floor(total / scale.ticksPerDay);
+  const hours = Math.floor((total - days * scale.ticksPerDay) / scale.ticksPerHour);
+  if (days > 0) return hours === 0 ? `${String(days)} ${dayWord(days)}` : `${String(days)} d ${String(hours)} h`;
+  return hours > 0 ? `${String(hours)} h` : '< 1 h';
+}

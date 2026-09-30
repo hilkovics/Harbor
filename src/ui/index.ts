@@ -5,6 +5,7 @@ export {
   PLUS_SIGN,
   TIMES_SIGN,
   formatCount,
+  formatDuration,
   formatFootprint,
   formatFraction,
   formatGameTime,
@@ -15,7 +16,7 @@ export {
   formatXp,
   moneySign,
 } from './format';
-export type { GameTimeParts } from './format';
+export type { GameTimeParts, TimeScale } from './format';
 export { Icon, TrendIcon, iconHref, toIconName } from './icon';
 export type { IconName, IconProps } from './icon';
 export { SpeedControl } from './speed-control';
@@ -84,3 +85,37 @@ export type {
 } from './module-inspector';
 export { MAX_TOASTS, TOAST_SHOW_LABEL, Toasts, visibleToasts } from './toasts';
 export type { ToastData, ToastId, ToastTone, ToastsProps } from './toasts';
+export {
+  AT_RISK_DAYS,
+  CONTRACT_TAB_LABELS,
+  ContractCard,
+  ContractsPanel,
+  SLA_OK_DAYS,
+  SLA_WARN_DAYS,
+  contractPayoutCents,
+  contractSla,
+  contractStatus,
+  contractTab,
+  contractsForTab,
+  emptyState,
+  offerExpiresSoon,
+  offerExpiryText,
+  progressPercent,
+  shipText,
+  tabCounts,
+} from './contracts-panel';
+export type {
+  ContractCardData,
+  ContractCardId,
+  ContractCardProps,
+  ContractCardState,
+  ContractCargoCategory,
+  ContractSla,
+  ContractStatus,
+  ContractTone,
+  ContractsPanelProps,
+  ContractsTab,
+  ContractsTimeScale,
+} from './contracts-panel';
+export { GameOverModal, bankruptcyText } from './game-over-modal';
+export type { GameOverModalProps } from './game-over-modal';

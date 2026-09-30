@@ -4,6 +4,7 @@ import {
   MINUS_SIGN,
   TIMES_SIGN,
   formatCount,
+  formatDuration,
   formatFootprint,
   formatFraction,
   formatGameTime,
@@ -207,5 +208,31 @@ describe('formatCount', () => {
   it('neplatná hodnota → pomlčka', () => {
     expect(formatCount(Number.NaN)).toBe(EM_DASH);
     expect(formatCount(Number.POSITIVE_INFINITY, 'TEU')).toBe(EM_DASH);
+  });
+});
+
+describe('formatDuration', () => {
+  const scale = { ticksPerHour: 360, ticksPerDay: 8640 };
+  const table: ReadonlyArray<readonly [number, string]> = [
+    [0, '< 1 h'],
+    [359, '< 1 h'],
+    [360, '1 h'],
+    [5 * 360, '5 h'],
+    [8640, '1 deň'],
+    [2 * 8640, '2 dni'],
+    [4 * 8640, '4 dni'],
+    [5 * 8640, '5 dní'],
+    [6 * 8640, '6 dní'],
+    [8640 + 4 * 360, '1 d 4 h'],
+    [2 * 8640 + 5 * 360 + 100, '2 d 5 h'],
+    [-500, '< 1 h'],
+  ];
+  it.each(table)('%i tickov → %s', (ticks, expected) => {
+    expect(formatDuration(ticks, scale)).toBe(expected);
+  });
+
+  it('neplatná hodnota alebo mierka → —', () => {
+    expect(formatDuration(Number.NaN, scale)).toBe(EM_DASH);
+    expect(formatDuration(100, { ticksPerHour: 0, ticksPerDay: 8640 })).toBe(EM_DASH);
   });
 });

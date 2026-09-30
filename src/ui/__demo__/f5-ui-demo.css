@@ -1,0 +1,134 @@
+/*
+ * Kulisa dema F5 UI: stránka, „mapa" z tokenov (mriežka 1 bunka = --cell na hlbokej vode) a rozloženie ukážok.
+ * Len tokeny z design/tokens.css. Nie je súčasťou hry (src/ui/__demo__), slúži na screenshot a vizuálnu kontrolu.
+ */
+
+body {
+  margin: 0;
+  background: var(--ui-surface);
+}
+
+.f5-demo {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-height: 100vh;
+  padding: var(--space-6);
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
+}
+
+.f5-demo__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.f5-demo__caption {
+  color: var(--ui-text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.f5-demo__log {
+  color: var(--ui-text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+/* „Mapa": hlboká voda + mriežka po bunkách (prototyp kreslí rovnakú mriežku bielou 3,5 %). */
+.f5-demo__map {
+  position: relative;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(color-mix(in srgb, var(--ui-text) 4%, transparent) 1px, transparent 1px) 0 0 / var(--cell) var(--cell),
+    linear-gradient(90deg, color-mix(in srgb, var(--ui-text) 4%, transparent) 1px, transparent 1px) 0 0 / var(--cell) var(--cell),
+    var(--terrain-water-deep);
+}
+
+.f5-demo__map-label {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  color: var(--ui-text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+
+/* Hra: 11 buniek na výšku; HUD hore, panel vpravo (12 px od okrajov, medzi HUD a BuildBar), toasty vľavo od panelu. */
+.f5-demo__stage {
+  height: calc(var(--cell) * 11);
+}
+
+.f5-demo__stage-hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.f5-demo__stage-panel {
+  position: absolute;
+  top: calc(var(--hud-top-h) + var(--space-3));
+  right: var(--space-3);
+  bottom: calc(var(--build-bar-h) + var(--space-3));
+}
+
+/* Kontrolný rad panelov: každý vo vlastnom rámci s výškou ako v hre. */
+.f5-demo__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+}
+
+.f5-demo__figure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.f5-demo__map--panel {
+  box-sizing: content-box;
+  width: var(--side-panel-w);
+  height: calc(var(--cell) * 8);
+  padding: var(--space-3);
+}
+
+/* Pás HUD: každý stav vo vlastnom rámiku s výškou lišty. */
+.f5-demo__map--hud {
+  height: var(--hud-top-h);
+}
+
+.f5-demo__map--hud > * {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+/* Rámik so scénou pre GameOver: modál zakrýva celú „mapu" (position: absolute; inset: 0). */
+.f5-demo__map--modal {
+  height: calc(var(--cell) * 9);
+}
+
+/* Galéria samostatných kariet: šírka obsahu panelu (panel − 2 × --space-4 vnútorný odstup). */
+.f5-demo__gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.f5-demo__gallery > * {
+  width: calc(var(--side-panel-w) - var(--space-4) * 2);
+}

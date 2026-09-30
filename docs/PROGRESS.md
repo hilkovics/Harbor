@@ -119,12 +119,39 @@ Stav: **hotová** (T03-01..T03-20).
 ## Fáza 4 — Export reťazec: brána, stojiská, rampa, kamióny
 Karty: `docs/tasks/phase-04.md` · vetva `phase/04-export-trucks` (stacked nad hilkovics/Harbor#4)
 
-- [ ] `modules.json`: `truck_gate`, `truck_waiting_area`, `loading_ramp_container`; `trucks.json` (`truck_container`: capacity 1, speed 0.6).
-- [ ] `LandExportModule` (abstract), `TruckGate` (FIFO fronta, `processTicks`), `WaitingArea` (bays), `LoadingRamp` (docks, `at_ramp` sloty).
-- [ ] Validácia §8 bod 5 + „cesta portál → brána → rampa existuje" (prevádzkovosť rampy, ADR-022).
-- [ ] `Dispatcher` krok 2 (outbound joby `in_storage → at_ramp`) — zatiaľ pre všetky jednotky (kontrakty vo F5).
-- [ ] `TruckSpawner` + `Truck` FSM (§7.5), `RoadPortal` vstup/výstup, `CargoLedger` prechody `at_ramp → in_truck → exported`.
-- [ ] Render: `TruckView`, stojiská s obsadenosťou, fronta pred bránou ako číslo.
-- [ ] UI: inspector pre bránu (fronta, priepustnosť), rampu (docks), stojisko (bays).
+- [x] `modules.json`: `truck_gate`, `truck_waiting_area`, `loading_ramp_container`; `trucks.json` (`truck_container`: capacity 1, speed 0.6).
+- [x] `LandExportModule` (abstract), `TruckGate` (FIFO fronta, `processTicks`), `WaitingArea` (bays), `LoadingRamp` (docks, `at_ramp` sloty).
+- [x] Validácia §8 bod 5 + „cesta portál → brána → rampa existuje" (prevádzkovosť rampy, ADR-022).
+- [x] `Dispatcher` krok 2 (outbound joby `in_storage → at_ramp`) — zatiaľ pre všetky jednotky (kontrakty vo F5).
+- [x] `TruckSpawner` + `Truck` FSM (§7.5), `RoadPortal` vstup/výstup, `CargoLedger` prechody `at_ramp → in_truck → exported`.
+- [x] Render: `TruckView`, stojiská s obsadenosťou, fronta pred bránou ako číslo.
+- [x] UI: inspector pre bránu (fronta, priepustnosť), rampu (docks), stojisko (bays).
 
 Akceptácia: vidím kamióny prichádzať bránou, čakať, nakladať a odchádzať z mapy.
+
+### Stav
+Stav: **hotová** (T04-01..T04-14). Plná pipeline T04-13 je zelená:
+  - typecheck, lint, 5 951 vitest testov (199 súborov), validate:defs (11 súborov), build;
+  - `simrun full_import_chain --ticks 40000`: 120 TEU exportovaných v ticku 9 836, 120 kamiónov spawnutých aj odídených, najdlhšia fronta pred bránou 2, všetko uložené v ticku 3 644, lostUnits 0;
+  - `apron_to_yard`, `f2_unload`, `f1_roads` bez regresie (cashEnd 108 300 000 ¢);
+  - e2e 24/24;
+  - orchestrátor prezrel screenshoty `f4-trucks-gate.png`, `f4-exported.png`, `f4-render-demo.png`, `f4-ui-demo.png` a sériu 15 záberov z bežiacej hry.
+- Review T04-11 (sim-reviewer): MERGE, 0 blocking, 2 major a 9 minor. Nálezy:
+  1. prevádzkovosť rampy neoverovala cestu späť — pri jednosmerke kamióny uviazli;
+  2. kamión za bránou závisel od cesty pred bránou.
+
+  T04-12 opravila oba majory aj minor nálezy: nový dôvod `no_return_path`, register pozemných modulov namiesto `instanceof`, krok 12 v O(n), `trucksProcessed` počíta len dokončené prechody, krížová kontrola kamión × rampa, validácia obnovy brány a kamióna. Zvyšok ide do BACKLOG.
+- Rozhodnutia:
+  - ADR-022: pozemné moduly, priechody, prevádzkovosť rampy namiesto validácie pri stavbe;
+  - ADR-023: outbound joby, priorita inbound, zrušenie `open` jobu;
+  - ADR-024: kamióny, zdieľaný `Carrier`, brána, stojisko, spawner, export, WorldState v4 + dodatok po review;
+  - ARCHITECTURE je zosúladená s F4.
+- Odchýlky od plánu:
+  - rampa je neplatná prevádzkovo, nie pri stavbe (ADR-022);
+  - brána púšťa 1 kamión za `processTicks + internalTicks`;
+  - spätný priechod stojiskom je okamžitý;
+  - fronta sa kreslí pri vstupe brány, nie pri portáli;
+  - T04-08 bola rozdelená na časti A a B;
+  - reštart kontajnera prerušil T04-08B a T04-11 — práca bola obnovená z patchu, resp. spustená znova;
+  - ADR kamiónov má číslo 024, lebo T04-03 potrebovala vlastné ADR-023;
+  - PR hilkovics/Harbor#5 založil používateľ proti `main`, obsahuje fázy 0–4.

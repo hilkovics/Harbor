@@ -54,8 +54,8 @@
 - [x] T04-10 · E2E: celý reťazec loď → dvor → rampa → kamión → export, screenshoty
 - [x] T04-11 · Review `src/sim/**`
 - [x] T04-12 · Opravy z review + ARCHITECTURE zosúladenie
-- [ ] T04-13 · Plná pipeline + triáž
-- [ ] T04-14 · Uzavretie fázy (PROGRESS, BACKLOG) + PR
+- [x] T04-13 · Plná pipeline + triáž
+- [x] T04-14 · Uzavretie fázy (PROGRESS, BACKLOG) + PR
 
 Vlny: 01 → 02 → 03 → 04 (sim sériovo) ‖ {05 (TDD, worktree od 01), 06 (worktree od 01), 07 (worktree od 01)} → {08 ‖ 09} → 10 → 11 → 12 → 13 → 14.
 Single writer `src/sim/**`: T04-01 (defs), potom T04-02..T04-04 sériovo, T04-12.

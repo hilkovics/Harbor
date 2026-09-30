@@ -11,9 +11,21 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - §14 SaveGame obálka duplikuje version/seed/tick z WorldState v1 → rozhodnúť ADR-om. — pôvod: T01-17 · fáza: F6
 - CraneSystem natvrdo počíta s cyklom kontajnerového importu → krok cyklu presunúť do podtried CraneModule alebo stratégie (§17 bod 5), inak bulk/liquid žeriav (flowUnitsPerTick) vynúti zásah do systému. — pôvod: review T02-13 · fáza: pred F7
 - Idle vozidlo ostáva stáť na prístupovej bunke (návrat do depa chýba) a blokuje RemoveRoad tej bunky; open joby s odpojeným cieľovým skladom držia sloty a naložené vozidlo cyklí v no_path → návrat do depa + preradenie jobov + udalosť pre toast. — pôvod: T03-06, T03-13 · fáza: F4
+- `has_trucks` validácia pri odstránení brány/stojiska/rampy s kamiónmi (T04-02 nechal hook, T04-04 dodá logiku); odčítavanie trudy pri obnove modulov. — pôvod: T04-02, T04-12 · fáza: F4 (zásuvka existuje)
+- Kamión v `no_path` s rezervovaným bay a dock: buď vrátiť do depa a zrušiť job, alebo vypršať a despawnúť; možno nový stav `stuck` a ADR; event `TruckNoPath` pre toast. — pôvod: T04-04, T04-11 · fáza: F5
 
 ## P2
 - Štartové cesty z mapy (starter.roads, 30 buniek) sú zadarmo, ale RemoveRoad za ne vráti 50 % aktuálnej ceny (~$30k) — drobný exploit; pri moduloch vyriešené refundáciou zo zaplatenej ceny (ADR-015), pri cestách zvážiť to isté. — pôvod: T01-04, T02-04 · fáza: F13 (balans)
+- Späť cez stojisko (čakacia plocha) nemá čas prechodu → kamión v `gate_queue_out` sa okamžite ocitne na výstupe. — pôvod: T04-04, T04-11 · fáza: F5
+- Spätný prechod bránou v `gate_queue_out`: ak sa strana brány odstráni/obnoví pri prechode, fronta sa počíta znova a `trucksProcessed` sa zdvojí. — pôvod: T04-04, T04-11 · fáza: F6
+- Brána čakala na cestu spoza seba (za portálom) pri určovaní prevádzkovosti rampy → t.č. sa oveľuje len cesta ku bráne; spätná cesta je optická. Rozhodnúť. — pôvod: T04-11 · fáza: F5
+- Fronta brány sa kreslí čísle pri vstupnej strane (cell konektora), nie pri portáli; pri vizuálnych úpravách asset brány skontrolovať kolíziu s kabínou kamióna v `gate_queue`. — pôvod: T04-10, T04-06 · fáza: F13 (vizuál)
+- Dlhý kamión v ľavej zákrute prečnieva asfaltu. — pôvod: T04-06, T04-11 · fáza: F13 (vizuál)
+- Dispatcher paркuje idle vozidlá mimo depa na bunke docku; môžu sa prekrývať s kamiónmi v stojisku. — pôvod: T04-10 · fáza: F13
+- Ramp operability cache v dispatcheri (F6 profiling): krok 8 opakuje isRampOperational za každý rampu. — pôvod: T04-11, T04-12 · fáza: F6
+- DefRegistry: cross-validation kamión.cargoCategories vs ramp.params.category (vzor ALU manifest); schéma pre truck_container footprint. — pôvod: T04-01, T04-05 · fáza: F8
+- WorldState v4 restore: validácia gates, waiting areas, ramps, trucks pri parse — omamené konektory, chýbajúce moduly. — pôvod: T04-04, T04-11 · fáza: F6
+- Viacero road portálov na mape (F10 landsideSystemu, T04-04 spawner používa portals[0]); dispatch determinismu cez DeviceRegistry. — pôvod: T04-04, T04-11 · fáza: F10
 - Sprite AGV nemá „nižší, modrý pás“ z DESIGN_BRIEF §5.6 — je žltý ako straddle carrier; pri 32 px sú rozlíšiteľné len tvarom. Iterovať v Claude Design (vzorový prompt v §8) pred F8 (odomknutie AGV). — pôvod: Claude Design relácia 4 · fáza: F8
 - Konektory modulov: kanonický zdroj sú assets/manifest.json → sprites.*.connectors; berth, crane (F2), container_yard_small a vehicle_depot (F3) sú prevzaté, ostatné moduly prevziať pri ich zavedení. — pôvod: Claude Design relácie 3 a 6 · fáza: F4
 - Počty slotov v spritoch dvorov (medium 76×3 = 228, large 129×3 = 387) nesedia s capacityUnits v ARCHITECTURE §5.3 (180 / 384); small sedí (32×2 = 64). Sprity sú len vizualizácia 5 stavov, ale zosúladiť pri F3/F13 (balans) alebo požiadať Claude Design o úpravu. — pôvod: Claude Design relácia 3 · fáza: F3

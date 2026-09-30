@@ -20,7 +20,8 @@
 import type { Cell, CellCoord } from '../grid/grid';
 import type { LedgerCategory } from '../economy/ledger-category';
 import type { World } from '../world/world';
-import type { Command, SerializedCommand } from './command';
+import type { SerializedCommand } from './command';
+import { SimCommand, withGameOver } from './sim-command';
 import { copyCellList, parseCellList, readPayload } from './payload';
 import { orderReasons, type ValidationReason, type ValidationResult } from './validation';
 
@@ -78,7 +79,7 @@ export function parseCellCommand(json: SerializedCommand, type: string): readonl
   return parseCellList(readPayload(json, type, CELL_COMMAND_KEYS)['cells'], type, '/cells');
 }
 
-export abstract class RoadLayerCommand implements Command {
+export abstract class RoadLayerCommand extends SimCommand {
   abstract readonly type: string;
   /** Bunky v poradí zadania, vrátane duplicít (zmrazená kópia vstupu — `toJSON` ho vráti bez zmeny). */
   readonly cells: readonly CellCoord[];
@@ -88,6 +89,7 @@ export abstract class RoadLayerCommand implements Command {
    * @param cells bunky s celočíselnými súradnicami (mimo mapy smú byť — to hlási `validate`); inak `CommandError`
    */
   protected constructor(type: string, cells: readonly CellCoord[]) {
+    super();
     this.cells = copyCellList(cells, type, '/cells');
   }
 
@@ -115,19 +117,24 @@ export abstract class RoadLayerCommand implements Command {
    * `ok` len bez dôvodov; `cells` = unikátne bunky, ktoré `apply` zmení (v poradí prvého výskytu) — pri odmietnutí
    * tie z nich, ktoré by samy prešli; `costCents` = ich čistá cena. Svet sa nemení, `Rng` sa nepoužije.
    */
-  validate(world: World): ValidationResult {
+  protected check(world: World): ValidationResult {
     const { ok, reasons, cells, costCents } = this.plan(world).quote;
     return Object.freeze({ ok, reasons, cells, costCents });
   }
 
-  /** Ako `validate`, navyše s rozpadom ceny na stavbu a refundáciu (`costCents = buildCents − refundCents`). */
+  /**
+   * Ako `validate`, navyše s rozpadom ceny na stavbu a refundáciu (`costCents = buildCents − refundCents`); po `GameOver`
+   * odmietnutie `game_over` ako `validate` (`withGameOver`).
+   */
   quote(world: World): RoadQuote {
-    return this.plan(world).quote;
+    return withGameOver(world, this.plan(world).quote);
   }
 
   /** Vykoná príkaz; svet ho volá len po úspešnom `validate` nad tým istým stavom (inak `Error`, nič nezmení). */
   apply(world: World): void {
-    const { quote, changes } = this.plan(world);
+    const planned = this.plan(world);
+    const { changes } = planned;
+    const quote = withGameOver(world, planned.quote);
     if (!quote.ok) {
       throw new Error(`${this.type}.apply: príkaz nie je platný (${quote.reasons.join(', ')}) — volaj apply len po úspešnom validate`);
     }

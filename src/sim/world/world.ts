@@ -60,6 +60,7 @@ import { EventBus } from '../core/event-bus';
 import { INITIAL_SPEED, SimClock, type ClockBoundaries } from '../core/sim-clock';
 import { Rng } from '../core/rng';
 import type { Command } from '../commands/command';
+import { withGameOver } from '../commands/sim-command';
 import { ContractBook, type ContractBookState } from '../contracts/contract-book';
 import type { Contract } from '../contracts/contract';
 import { DefError, type DefRegistry } from '../defs/def-registry';
@@ -1091,16 +1092,17 @@ export class World {
   }
 
   /**
-   * Príkazy vo fronte v poradí vloženia: `validate` nad aktuálnym stavom (vidí účinok predchádzajúcich príkazov),
-   * pri úspechu `apply`, inak `CommandRejected` bez zmeny stavu. Spracujú sa len príkazy zaradené pred začiatkom
-   * kola; príkaz zaradený počas `apply` počká na ďalšie kolo.
+   * Príkazy vo fronte v poradí vloženia: `validate` nad aktuálnym stavom (vidí účinok predchádzajúcich príkazov; po
+   * `GameOver` vždy `game_over`, `withGameOver`), pri úspechu `apply`, inak `CommandRejected` bez zmeny stavu.
+   * Spracujú sa len príkazy zaradené pred začiatkom kola; príkaz zaradený počas `apply` počká na ďalšie kolo.
    */
   private applyQueuedCommands(): void {
     const count = this.pendingCommands.length;
     for (let i = 0; i < count; i++) {
       // `shift` po jednom: ak `apply` vyhodí výnimku, zvyšné príkazy ostanú vo fronte.
       const command = this.pendingCommands.shift() as Command;
-      const result = command.validate(this);
+      // Po GameOver sa neaplikuje nič — aj príkaz mimo základu `SimCommand` (ADR-027).
+      const result = withGameOver(this, command.validate(this));
       if (result.ok) {
         command.apply(this);
         this.publishLandside(true);

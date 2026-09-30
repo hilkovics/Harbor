@@ -13,7 +13,8 @@
 import type { EntityId } from '../core/entity-id';
 import type { CellCoord } from '../grid/grid';
 import type { World } from '../world/world';
-import type { Command, SerializedCommand } from './command';
+import type { SerializedCommand } from './command';
+import { SimCommand } from './sim-command';
 import { checkInteger, readPayload } from './payload';
 import { refundCents } from './refund';
 import { orderReasons, type ValidationReason, type ValidationResult } from './validation';
@@ -30,7 +31,7 @@ const UNKNOWN_VEHICLE: ValidationResult = Object.freeze({
   costCents: 0,
 });
 
-export class SellVehicleCommand implements Command {
+export class SellVehicleCommand extends SimCommand {
   static readonly TYPE = 'SellVehicle';
 
   readonly type = SellVehicleCommand.TYPE;
@@ -38,6 +39,7 @@ export class SellVehicleCommand implements Command {
 
   /** @param vehicleId bezpečné celé číslo (inak `CommandError`); či vozidlo existuje, overí `validate`. */
   constructor(vehicleId: number) {
+    super();
     this.vehicleId = checkInteger(vehicleId, SellVehicleCommand.TYPE, '/vehicleId') as EntityId;
   }
 
@@ -48,7 +50,7 @@ export class SellVehicleCommand implements Command {
   }
 
   /** Viď hlavička súboru. Svet sa nemení, `Rng` sa nepoužije. */
-  validate(world: World): ValidationResult {
+  protected check(world: World): ValidationResult {
     const vehicle = world.vehicles.get(this.vehicleId);
     if (vehicle === undefined) return UNKNOWN_VEHICLE;
     const found = new Set<ValidationReason>();

@@ -3,7 +3,7 @@
  * ADR-026): payload `{ contractId }` (celé číslo), presný tvar JSON a validácia ponuky.
  *
  * `validate` (nemení svet, nespotrebuje `Rng`, `cells = []`, `costCents = 0`) vráti práve jeden dôvod:
- * - `game_over` — hra skončila bankrotom (`World.gameOver`);
+ * - `game_over` — hra skončila bankrotom (`World.gameOver`; spoločne pre všetky príkazy v `SimCommand`, ADR-027);
  * - `unknown_contract` — kontrakt s daným id vo `world.contracts` nie je (neznáme id, expirovaná ponuka);
  * - `contract_not_offered` — kontrakt nie je ponuka (`CONTRACT_STATE_TRAITS.offer`).
  */
@@ -12,8 +12,9 @@ import type { Contract } from '../contracts/contract';
 import { CONTRACT_STATE_TRAITS } from '../contracts/contract-fsm';
 import type { ContractId } from '../core/entity-id';
 import type { World } from '../world/world';
-import type { Command, SerializedCommand } from './command';
+import type { SerializedCommand } from './command';
 import { checkInteger, readPayload } from './payload';
+import { SimCommand } from './sim-command';
 import type { ValidationReason, ValidationResult } from './validation';
 
 const NO_CELLS: readonly CellCoord[] = Object.freeze([]);
@@ -23,7 +24,6 @@ function result(reason: ValidationReason | null): ValidationResult {
 }
 
 const VALID = result(null);
-const GAME_OVER = result('game_over');
 const UNKNOWN_CONTRACT = result('unknown_contract');
 const NOT_OFFERED = result('contract_not_offered');
 
@@ -36,19 +36,19 @@ export function readContractId(json: SerializedCommand, type: string): number {
   return checkInteger(raw['contractId'], type, '/contractId');
 }
 
-export abstract class ContractOfferCommand implements Command {
+export abstract class ContractOfferCommand extends SimCommand {
   abstract readonly type: string;
   /** Id kontraktu (celé číslo; či existuje, hlási `validate`). */
   readonly contractId: number;
 
   /** @param contractId celé číslo, inak `CommandError`. */
   protected constructor(type: string, contractId: number) {
+    super();
     this.contractId = checkInteger(contractId, type, '/contractId');
   }
 
-  /** Viď hlavička súboru. */
-  validate(world: World): ValidationResult {
-    if (world.gameOver) return GAME_OVER;
+  /** Viď hlavička súboru (`game_over` dopĺňa `SimCommand.validate`). */
+  protected check(world: World): ValidationResult {
     const contract = world.contracts.get(this.contractId as ContractId);
     if (contract === undefined) return UNKNOWN_CONTRACT;
     return CONTRACT_STATE_TRAITS[contract.state].offer ? VALID : NOT_OFFERED;

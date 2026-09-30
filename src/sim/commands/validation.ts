@@ -83,7 +83,7 @@ export const VALIDATION_REASONS = [
   'unknown_contract',
   /** `AcceptContract` / `DeclineContract` (T05-03, ADR-026): kontrakt nie je ponuka v stave `offered`. */
   'contract_not_offered',
-  /** Hra skončila bankrotom (`World.gameOver`, ADR-025); príkazy kontraktov ho hlásia od T05-03, ostatné doplní T05-04. */
+  /** Hra skončila bankrotom (`World.gameOver`, ADR-025); po `GameOver` ho hlási každý príkaz (`SimCommand`, ADR-027) ako jediný dôvod. */
   'game_over',
 ] as const;
 

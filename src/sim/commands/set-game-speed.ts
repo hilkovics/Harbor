@@ -5,7 +5,8 @@
  * Koľko tickov sa vykoná za frame, riadi `GameLoop` podľa `clock.speed`; sim tu nič iné nemení.
  */
 import type { World } from '../world/world';
-import type { Command, SerializedCommand } from './command';
+import type { SerializedCommand } from './command';
+import { SimCommand } from './sim-command';
 import { checkFiniteNumber, readPayload } from './payload';
 import type { ValidationResult } from './validation';
 
@@ -20,7 +21,7 @@ const INVALID_SPEED: ValidationResult = Object.freeze({
   costCents: 0,
 });
 
-export class SetGameSpeedCommand implements Command {
+export class SetGameSpeedCommand extends SimCommand {
   static readonly TYPE = 'SetGameSpeed';
 
   readonly type = SetGameSpeedCommand.TYPE;
@@ -29,6 +30,7 @@ export class SetGameSpeedCommand implements Command {
 
   /** @param speed konečné číslo (inak `CommandError`); či je v `time.speeds`, overí `validate`. */
   constructor(speed: number) {
+    super();
     this.speed = checkFiniteNumber(speed, SetGameSpeedCommand.TYPE, '/speed');
   }
 
@@ -38,7 +40,7 @@ export class SetGameSpeedCommand implements Command {
     return new SetGameSpeedCommand(checkFiniteNumber(raw['speed'], SetGameSpeedCommand.TYPE, '/speed'));
   }
 
-  validate(world: World): ValidationResult {
+  protected check(world: World): ValidationResult {
     return world.defs.time.speeds.includes(this.speed) ? VALID : INVALID_SPEED;
   }
 

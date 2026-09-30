@@ -21,7 +21,8 @@ import { isRotation } from '../grid/rotation';
 import { footprintOf } from '../modules/module-geometry';
 import { findPlacementViolations, type PlacementRule } from '../world/module-rules';
 import type { World } from '../world/world';
-import type { Command, SerializedCommand } from './command';
+import type { SerializedCommand } from './command';
+import { SimCommand } from './sim-command';
 import { CommandError } from './command-error';
 import { checkCoordinate, checkFiniteNumber, checkString, readPayload } from './payload';
 import { orderReasons, type ValidationReason, type ValidationResult } from './validation';
@@ -56,7 +57,7 @@ export interface PlaceModuleInput {
 
 const NO_CELLS: readonly CellCoord[] = Object.freeze([]);
 
-export class PlaceModuleCommand implements Command {
+export class PlaceModuleCommand extends SimCommand {
   static readonly TYPE = 'PlaceModule';
 
   readonly type = PlaceModuleCommand.TYPE;
@@ -70,6 +71,7 @@ export class PlaceModuleCommand implements Command {
    *   konečné číslo; inak `CommandError`.
    */
   constructor(input: PlaceModuleInput) {
+    super();
     const type = PlaceModuleCommand.TYPE;
     if (typeof input !== 'object' || input === null) throw new CommandError(`${type}: vstup musí byť objekt { defId, x, y, rotation }`);
     this.defId = checkString(input.defId, type, '/defId');
@@ -90,7 +92,7 @@ export class PlaceModuleCommand implements Command {
   }
 
   /** Viď hlavička súboru. Svet sa nemení, `Rng` sa nepoužije (UI volá pri každom pohybe ghostu). */
-  validate(world: World): ValidationResult {
+  protected check(world: World): ValidationResult {
     const found = new Set<ValidationReason>();
     const def: Readonly<ModuleDef> | undefined = world.defs.modules.has(this.defId) ? world.defs.modules.get(this.defId) : undefined;
     if (def === undefined) found.add('unknown_def');

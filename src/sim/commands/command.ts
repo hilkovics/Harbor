@@ -4,6 +4,8 @@
  * Tok: `world.enqueue(cmd)` → pred ďalším krokom 1 ticku (alebo v `world.applyPending()`) `World` zavolá
  * `validate(world)`; pri `ok === false` emituje `CommandRejected` a stav nemení, inak zavolá `apply(world)`.
  * Príkazy sú serializovateľné (`toJSON` ↔ `commandFromJSON`) → replay scenárov a save.
+ * Príkazy hry dedia `SimCommand` (spoločné odmietnutie `game_over` po bankrote, ADR-027); `World` ho vynúti aj pre iné
+ * implementácie `Command`.
  */
 import type { World } from '../world/world';
 import type { ValidationResult } from './validation';

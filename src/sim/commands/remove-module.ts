@@ -17,7 +17,8 @@ import type { EntityId } from '../core/entity-id';
 import type { CellCoord } from '../grid/grid';
 import { findRemovalViolations } from '../world/module-rules';
 import type { World } from '../world/world';
-import type { Command, SerializedCommand } from './command';
+import type { SerializedCommand } from './command';
+import { SimCommand } from './sim-command';
 import { checkInteger, readPayload } from './payload';
 import { refundCents } from './refund';
 import { orderReasons, type ValidationReason, type ValidationResult } from './validation';
@@ -32,7 +33,7 @@ const UNKNOWN_MODULE: ValidationResult = Object.freeze({
   costCents: 0,
 });
 
-export class RemoveModuleCommand implements Command {
+export class RemoveModuleCommand extends SimCommand {
   static readonly TYPE = 'RemoveModule';
 
   readonly type = RemoveModuleCommand.TYPE;
@@ -40,6 +41,7 @@ export class RemoveModuleCommand implements Command {
 
   /** @param moduleId bezpečné celé číslo (inak `CommandError`); či modul existuje, overí `validate`. */
   constructor(moduleId: number) {
+    super();
     this.moduleId = checkInteger(moduleId, RemoveModuleCommand.TYPE, '/moduleId') as EntityId;
   }
 
@@ -50,7 +52,7 @@ export class RemoveModuleCommand implements Command {
   }
 
   /** Viď hlavička súboru. Svet sa nemení, `Rng` sa nepoužije. */
-  validate(world: World): ValidationResult {
+  protected check(world: World): ValidationResult {
     const module = world.modules.get(this.moduleId);
     if (module === undefined) return UNKNOWN_MODULE;
     const found = new Set<ValidationReason>(findRemovalViolations(world, module).map((violation) => violation.rule));

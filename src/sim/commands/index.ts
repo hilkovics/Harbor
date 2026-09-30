@@ -2,6 +2,7 @@
 // a vstavané príkazy (F1: PlaceRoad, RemoveRoad, SetGameSpeed; F2: PlaceModule, RemoveModule, SpawnShipDebug;
 // F3: BuyVehicle, SellVehicle; F5: AcceptContract, DeclineContract). Predvolený register ich pozná od načítania.
 export type { Command, SerializedCommand } from './command';
+export { SimCommand, withGameOver } from './sim-command';
 export { VALIDATION_REASONS, orderReasons } from './validation';
 export type { ValidationReason, ValidationResult } from './validation';
 export { CommandError } from './command-error';

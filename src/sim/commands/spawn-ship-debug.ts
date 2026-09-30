@@ -16,7 +16,8 @@
 import type { CellCoord } from '../grid/grid';
 import { spawnShip } from '../ships/spawn-ship';
 import type { World } from '../world/world';
-import type { Command, SerializedCommand } from './command';
+import type { SerializedCommand } from './command';
+import { SimCommand } from './sim-command';
 import { CommandError } from './command-error';
 import { checkFiniteNumber, checkString, readPayload } from './payload';
 import { orderReasons, type ValidationReason, type ValidationResult } from './validation';
@@ -37,7 +38,7 @@ export interface SpawnShipDebugInput {
   readonly units: number;
 }
 
-export class SpawnShipDebugCommand implements Command {
+export class SpawnShipDebugCommand extends SimCommand {
   static readonly TYPE = 'SpawnShipDebug';
 
   readonly type = SpawnShipDebugCommand.TYPE;
@@ -47,6 +48,7 @@ export class SpawnShipDebugCommand implements Command {
 
   /** @param input reťazce `shipClassId`, `cargoTypeId` a konečné číslo `units`; inak `CommandError`. */
   constructor(input: SpawnShipDebugInput) {
+    super();
     const type = SpawnShipDebugCommand.TYPE;
     if (typeof input !== 'object' || input === null) throw new CommandError(`${type}: vstup musí byť objekt { shipClassId, cargoTypeId, units }`);
     this.shipClassId = checkString(input.shipClassId, type, '/shipClassId');
@@ -66,7 +68,7 @@ export class SpawnShipDebugCommand implements Command {
   }
 
   /** Viď hlavička súboru. Svet sa nemení, `Rng` sa nepoužije. */
-  validate(world: World): ValidationResult {
+  protected check(world: World): ValidationResult {
     const found = new Set<ValidationReason>();
     const shipClass = world.defs.ships.has(this.shipClassId) ? world.defs.ships.get(this.shipClassId) : undefined;
     const cargoType = world.defs.cargoTypes.has(this.cargoTypeId) ? world.defs.cargoTypes.get(this.cargoTypeId) : undefined;

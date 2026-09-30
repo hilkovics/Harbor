@@ -22,7 +22,8 @@ import { VehicleDepot } from '../modules/vehicle-depot';
 import { depotExit } from '../vehicles/depot-exit';
 import { Vehicle } from '../vehicles/vehicle';
 import type { World } from '../world/world';
-import type { Command, SerializedCommand } from './command';
+import type { SerializedCommand } from './command';
+import { SimCommand } from './sim-command';
 import { CommandError } from './command-error';
 import { checkInteger, checkString, readPayload } from './payload';
 import { orderReasons, type ValidationReason, type ValidationResult } from './validation';
@@ -39,7 +40,7 @@ export interface BuyVehicleInput {
   readonly depotId: number;
 }
 
-export class BuyVehicleCommand implements Command {
+export class BuyVehicleCommand extends SimCommand {
   static readonly TYPE = 'BuyVehicle';
 
   readonly type = BuyVehicleCommand.TYPE;
@@ -48,6 +49,7 @@ export class BuyVehicleCommand implements Command {
 
   /** @param input reťazec `vehicleDefId` a celé číslo `depotId`; inak `CommandError`. */
   constructor(input: BuyVehicleInput) {
+    super();
     const type = BuyVehicleCommand.TYPE;
     if (typeof input !== 'object' || input === null) throw new CommandError(`${type}: vstup musí byť objekt { vehicleDefId, depotId }`);
     this.vehicleDefId = checkString(input.vehicleDefId, type, '/vehicleDefId');
@@ -65,7 +67,7 @@ export class BuyVehicleCommand implements Command {
   }
 
   /** Viď hlavička súboru. Svet sa nemení, `Rng` sa nepoužije. */
-  validate(world: World): ValidationResult {
+  protected check(world: World): ValidationResult {
     const found = new Set<ValidationReason>();
     const def = world.defs.vehicles.has(this.vehicleDefId) ? world.defs.vehicles.get(this.vehicleDefId) : undefined;
     if (def === undefined) found.add('unknown_vehicle_def');

@@ -190,7 +190,7 @@ describe('EconomySystem — bankrot (GameOver)', () => {
     expect(world.gameOver).toBe(false);
   });
 
-  it('po GameOver tick neposúva čas ani netickuje systémy (loď stojí, ďalší deň sa neúčtuje); príkazy sa ešte aplikujú (T05-04 doplní game_over)', () => {
+  it('po GameOver tick neposúva čas ani netickuje systémy (loď stojí, ďalší deň sa neúčtuje); príkazy sa odmietnu s game_over (T05-04, ADR-027)', () => {
     const world = World.create(defs, MAP, SEED);
     world.enqueue(commandFromJSON({ type: 'SpawnShipDebug', shipClassId: 'feeder', cargoTypeId: 'container_teu', units: 4 }));
     world.tick();
@@ -203,8 +203,9 @@ describe('EconomySystem — bankrot (GameOver)', () => {
     expect(world.clock.tick).toBe(tick);
     expect(hashState(world.serialize())).toBe(frozen);
     world.enqueue(commandFromJSON({ type: 'SetGameSpeed', speed: 0 }));
-    expect(world.tick()).toEqual([{ type: 'GameSpeedChanged', speed: 0 }]);
+    expect(world.tick()).toEqual([{ type: 'CommandRejected', commandType: 'SetGameSpeed', reasons: ['game_over'] }]);
     expect(world.clock.tick).toBe(tick);
+    expect(hashState(world.serialize())).toBe(frozen);
   });
 
   it('gameOver a počítadlo prežijú save/load; obnovený svet tiež netickuje', () => {

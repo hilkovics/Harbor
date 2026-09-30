@@ -104,6 +104,8 @@ export { CargoSprite, cargoSizePx } from './cargo-sprite';
 export type { CargoSpriteDeps } from './cargo-sprite';
 export { SIDE_STEP, footprintPose, localCellCenter, localCellWorldCenter, rotateOffset } from './footprint-pose';
 export type { FootprintBox, FootprintPose } from './footprint-pose';
+export { dockCenter, findDockCenter, findStallCenter, rectCenterCells, stallCenter } from './module-slots';
+export type { SlotHost } from './module-slots';
 export { ViewSync } from './view-sync';
 export type { SyncedView, ViewSyncHooks } from './view-sync';
 export {

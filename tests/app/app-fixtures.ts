@@ -2,7 +2,16 @@
 // minimálne testovacie príkazy, ktoré implementujú rozhranie `Command` a menia svet priamo.
 import { commandFromJSON, type Command, type SerializedCommand, type ValidationResult } from '@sim/commands';
 import type { EntityId } from '@sim/core';
-import { loadBundledDefs } from '@sim/defs';
+import cargoTypesJson from '@data/defs/cargo_types.json';
+import economyJson from '@data/defs/economy.json';
+import infrastructureJson from '@data/defs/infrastructure.json';
+import logisticsJson from '@data/defs/logistics.json';
+import modulesJson from '@data/defs/modules.json';
+import shipsJson from '@data/defs/ships.json';
+import timeJson from '@data/defs/time.json';
+import trucksJson from '@data/defs/trucks.json';
+import vehiclesJson from '@data/defs/vehicles.json';
+import { DefRegistry, loadBundledDefs } from '@sim/defs';
 import { loadBundledMap } from '@sim/grid';
 import { World, type WorldOptions } from '@sim/world';
 import { GameLoop } from '@app/game-loop';
@@ -12,6 +21,35 @@ export const SEED = 20260929;
 
 export function createWorld(options: WorldOptions = {}): World {
   return World.create(loadBundledDefs(), loadBundledMap(), SEED, options);
+}
+
+/**
+ * Defy s upraveným počtom stojísk čakacej plochy (`truck_waiting_area.params.bays`). Pri menej stojiskách než dockoch rampy
+ * sa druhý kamión nespawnuje, kým prvý neodíde zo stojiska → sim hlási `NoWaitingBay`.
+ */
+export function defsWithBays(bays: number): DefRegistry {
+  return DefRegistry.fromRaw({
+    time: timeJson,
+    economy: economyJson,
+    infrastructure: infrastructureJson,
+    cargo_types: cargoTypesJson,
+    modules: {
+      ...modulesJson,
+      items: modulesJson.items.map((item) => (item.id === 'truck_waiting_area' ? { ...item, params: { ...item.params, bays } } : item)),
+    },
+    ships: shipsJson,
+    vehicles: vehiclesJson,
+    trucks: trucksJson,
+    logistics: logisticsJson,
+  });
+}
+
+/** Ako `createApp`, ale s čakacou plochou o `bays` stojiskách (viď `defsWithBays`). */
+export function createAppWithBays(bays: number): App {
+  const world = World.create(defsWithBays(bays), loadBundledMap(), SEED);
+  const bridge = new SimBridge(world);
+  const loop = new GameLoop(world, bridge);
+  return { world, bridge, loop };
 }
 
 /** World + SimBridge + GameLoop prepojené tak, ako ich zapojí bootstrap (loop publikuje do bridge). */
@@ -113,6 +151,25 @@ export function buildLandside(app: App, options: { readonly roads?: boolean; rea
     app,
     parts.map((part) => LANDSIDE_MODULE_COMMANDS[part]),
   );
+}
+
+// ---- celý reťazec F4: loď → dvory → rampa → kamióny → export (rozloženie scenára full_import_chain) ----
+
+/** Id pozemných modulov v celom reťazci: depo 3, dvory 4 a 5, potom brána, stojisko a rampa. */
+export const CHAIN_GATE_ID = 6 as EntityId;
+export const CHAIN_AREA_ID = 7 as EntityId;
+export const CHAIN_RAMP_ID = 8 as EntityId;
+
+/**
+ * Postaví celý reťazec scenára `full_import_chain` (cesty a moduly F3 + pozemná časť), kúpi `vehicles` vozidiel a
+ * spawnne feeder s `units` TEU. Kamióny potom vznikajú skutočným tickom sveta (`frameUntil`), nie fiktívnymi id.
+ */
+export function buildFullChain(app: App, options: { readonly units?: number; readonly vehicles?: number } = {}): void {
+  const { units = 6, vehicles = 3 } = options;
+  buildLogistics(app);
+  buildLandside(app);
+  buyVehicles(app, vehicles);
+  runCommands(app, [{ type: 'SpawnShipDebug', shipClassId: 'feeder', cargoTypeId: 'container_teu', units }]);
 }
 
 /** Posúva hru po framoch (jeden tick na frame), kým `done()` neplatí; strop chráni pred nekonečnou slučkou. */

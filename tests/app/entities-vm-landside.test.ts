@@ -1,6 +1,6 @@
 // T04-08: snapshot modulov F4 — `gate`, `waitingArea` a `ramp` vo view-modeloch modulov (tvary z T04-06), plnené len pre
-// moduly daného druhu; prevádzkovosť rampy sa premietne cez `RampOperationalChanged` (revision), stav brány a stojiska
-// sa skladá pri každom snapshote (mení sa aj bez udalosti).
+// moduly daného druhu; prevádzkovosť rampy sa premietne cez `RampOperationalChanged` (revision), VM brány a stojiska sa
+// pri každom snapshote porovnáva so živým modulom (môže sa zmeniť aj bez udalosti) a pole modulov je nové len pri zmene.
 import { describe, expect, it } from 'vitest';
 import type { ModuleVM } from '@render/view-models';
 import type { EntityId } from '@sim/core';
@@ -155,7 +155,20 @@ describe('EntitiesVMBuilder: živé pozemné moduly', () => {
     expect(builder.build(app.world, 1).modules).toBe(builder.build(app.world, 1).modules);
   });
 
-  it('s bránou sa VM brány a stojiska skladajú znova aj pri rovnakej revision, ostatné VM ostávajú tie isté objekty', () => {
+  it('bez zmeny hodnôt ostáva pole modulov s bránou a stojiskom pri rovnakej revision tá istá referencia (aj VM brány a stojiska)', () => {
+    const app = landsideApp();
+    const builder = new EntitiesVMBuilder();
+    const first = builder.build(app.world, 5).modules;
+    expect(builder.build(app.world, 5).modules).toBe(first);
+    gateOf(app).enqueue(TRUCK_A); // zmena hodnoty → nové pole
+    const second = builder.build(app.world, 5).modules;
+    expect(second).not.toBe(first);
+    expect(builder.build(app.world, 5).modules).toBe(second); // a znova stabilné
+    expect(second.find((vm) => vm.id === GATE_ID)?.gate?.queueLength).toBe(1);
+    expect(second.find((vm) => vm.id === AREA_ID)).toBe(first.find((vm) => vm.id === AREA_ID)); // stojisko sa nezmenilo
+  });
+
+  it('zmena hodnôt brány a stojiska pri rovnakej revision nahradí pole modulov, ostatné VM ostávajú tie isté objekty', () => {
     const app = landsideApp();
     const builder = new EntitiesVMBuilder();
     const first = builder.build(app.world, 5).modules;

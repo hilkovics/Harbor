@@ -1,11 +1,12 @@
 // T04-08: dáta inšpektora pre bránu, stojisko a rampu (F4) — fronta a priepustnosť za hodinu, obsadenie stojísk,
-// docky rampy so staging sloty a text dôvodu neprevádzkovosti. Pole `truck` docku je do príchodu kamiónov (časť B) `false`.
+// docky rampy so staging sloty a text dôvodu neprevádzkovosti. Pole `truck` docku = kamión drží dock a práve nakladá
+// (stav `loading`); kamióny vznikajú skutočným tickom celého reťazca.
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@sim/core';
 import { LoadingRamp, TruckGate, WaitingArea } from '@sim/modules';
 import { inspectorData } from '@app/inspector-data';
 import { RAMP_INOPERATIVE_TEXTS } from '@ui/module-inspector';
-import { AREA_ID, GATE_ID, RAMP_ID, buildLandside, createApp, type App } from './app-fixtures';
+import { AREA_ID, CHAIN_RAMP_ID, GATE_ID, RAMP_ID, buildFullChain, buildLandside, createApp, frameUntil, type App } from './app-fixtures';
 
 const TRUCK_A = 901 as EntityId;
 const TRUCK_B = 902 as EntityId;
@@ -169,5 +170,42 @@ describe('inspectorData: rampa', () => {
     const after = inspectorData(app.bridge, ramp.id);
     expect(after?.ramp?.operational).toBe(true);
     expect(Object.keys(after?.ramp ?? {})).not.toContain('inoperativeReason');
+  });
+});
+
+describe('inspectorData: rampa, kamión v docku (celý reťazec)', () => {
+  const truckFlags = (app: App): boolean[] => (inspectorData(app.bridge, CHAIN_RAMP_ID)?.ramp?.docks ?? []).map((dock) => dock.truck);
+  const trucksOf = (app: App): { readonly dock: number; readonly state: string }[] => [...app.world.trucks.values()].filter((truck) => truck.rampId === CHAIN_RAMP_ID);
+
+  it('`truck` je true len na docku, kde kamión práve nakladá (loading); na ceste k docku, v stojisku ani po odchode nie', () => {
+    const app = createApp();
+    buildFullChain(app, { units: 6 });
+    const seen = { loadingTrue: 0, other: 0 };
+    frameUntil(
+      app,
+      () => {
+        const flags = truckFlags(app);
+        const loading = new Set(trucksOf(app).filter((truck) => truck.state === 'loading').map((truck) => truck.dock));
+        expect(flags).toEqual([0, 1].map((dock) => loading.has(dock)));
+        if (loading.size > 0) seen.loadingTrue += 1;
+        else seen.other += 1;
+        return app.world.cargo.exportedCount === 6;
+      },
+      6000,
+    );
+    expect(seen.loadingTrue).toBeGreaterThan(0);
+    expect(seen.other).toBeGreaterThan(0);
+    expect(truckFlags(app)).toEqual([false, false]); // po exporte nikto nenakladá
+  });
+
+  it('kamión, ktorý dock drží, ale ešte k nemu ide (to_dock), sa neráta; rampa s nakladajúcim kamiónom sa nedá odstrániť', () => {
+    const app = createApp();
+    buildFullChain(app, { units: 6 });
+    frameUntil(app, () => trucksOf(app).some((truck) => truck.state === 'to_dock'), 3000);
+    const heading = trucksOf(app).find((truck) => truck.state === 'to_dock');
+    expect(app.world.modules.get(CHAIN_RAMP_ID)).toBeInstanceOf(LoadingRamp);
+    expect(truckFlags(app)[heading?.dock ?? 0]).toBe(false);
+    frameUntil(app, () => trucksOf(app).some((truck) => truck.state === 'loading'), 3000);
+    expect(inspectorData(app.bridge, CHAIN_RAMP_ID)).toMatchObject({ removable: false });
   });
 });

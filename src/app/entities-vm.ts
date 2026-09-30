@@ -1,9 +1,10 @@
 /**
  * Plnenie render view-modelov zo simu (ARCHITECTURE §13, docs/tasks/phase-02.md „Render view-modely“).
  *
- * Renderer nikdy nečíta `World`: `SimBridge` z neho každý tick zloží `EntitiesVM` (moduly, žeriavy, lode, vozidlá) a renderer
- * ich synchronizuje podľa `id`. Tu sú čisté funkcie (svet → ploché DTO) a `EntitiesVMBuilder`, ktorý VM modulov
- * cachuje podľa `revision` (moduly sa menia len udalosťami; žeriavy a lode sa menia každý tick, preto sa skladajú vždy).
+ * Renderer nikdy nečíta `World`: `SimBridge` z neho každý tick zloží `EntitiesVM` (moduly, žeriavy, lode, vozidlá,
+ * kamióny) a renderer ich synchronizuje podľa `id`. Tu sú čisté funkcie (svet → ploché DTO) a `EntitiesVMBuilder`,
+ * ktorý VM modulov cachuje podľa `revision` (moduly sa menia len udalosťami; žeriavy, lode, vozidlá a kamióny sa menia
+ * každý tick, preto sa skladajú vždy).
  *
  * - Moduly: všetko okrem žeriavov (tie idú do `cranes`, `ModuleLayer` ich aj tak preskakuje). Berth nesie apron:
  *   obsadené sloty v poradí FIFO (`apron.units()`) so slotom (`slotOf`) a typom nákladu z ledgera.
@@ -13,23 +14,31 @@
  *   pole nemajú.
  * - Pozemné moduly F4 (T04-08), každý len svoje pole:
  *   - brána (`TruckGate`): `gate = { queueLength, open, entryConnector }`; `open` = brána práve púšťa kamión (závora
- *     hore), `entryConnector` = index konektora v defe, ktorý sedí s `entrySide` (svet ho určuje z ciest; neurčená
- *     strana → 0, prvý konektor);
+ *     hore), `entryConnector` = index konektora v defe, ktorý je vstupnou stranou (`entrySide`, určuje ju svet z ciest;
+ *     neurčená strana → 0, prvý konektor);
  *   - stojisko (`WaitingArea`): `waitingArea = { bays, occupied[] }`, `occupied[i]` = bay `i` je obsadený alebo rezervovaný;
  *   - rampa (`LoadingRamp`): `ramp = { docks, staged[], operational }`, `staged[i]` = jednotky na docku `i` (ledger),
  *     `operational` = `World.isRampOperational`.
- *   Fronta brány a obsadenie stojiska sa menia s kamiónmi (`Truck*` udalosti), `open` navyše samo behom prechodu bez
- *   udalosti — preto VM týchto dvoch modulov (`isLiveModule`) `EntitiesVMBuilder` skladá pri každom snapshote,
- *   nie podľa `revision`.
- * - Lode a vozidlá: `prevX/prevY` (a `prevHeading` vozidla) sim nevedie — dodá ich volajúci (`SimBridge` si polohu
- *   pamätá pred každým tickom); nová loď / nové vozidlo bez záznamu má `prev = curr`.
+ *   Fronta brány a obsadenie stojiska sprevádzajú `Truck*` udalosti, ale nie všetky zmeny: `open` sa po prechode, ktorému
+ *   zanikla výstupná strana (prestavba ciest za behu), vypne bez udalosti. Preto VM týchto dvoch modulov (`isLiveModule`)
+ *   `EntitiesVMBuilder` porovnáva so živým modulom pri každom snapshote (plytko) a pole modulov je nové len pri skutočnej
+ *   zmene hodnôt.
+ * - Lode, vozidlá a kamióny: `prevX/prevY` (a `prevHeading` vozidla a kamióna) sim nevedie — dodá ich volajúci
+ *   (`SimBridge` si polohu pamätá pred každým tickom); nová loď / vozidlo / kamión bez záznamu má `prev = curr`.
  * - Vozidlá: `loaded` = v ledgeri je aspoň jedna jednotka `in_vehicle` u tohto vozidla.
+ * - Kamióny (`TruckVM`): `loaded` = aspoň jedna jednotka `in_truck`. Sim vedie kamión vždy na bunke cesty (v `waiting`
+ *   na vstupnej bunke stojiska, v `loading` na vonkajšej bunke konektora docku); prezentovaná poloha (`truckPose`) je však
+ *   v `waiting` stred stojiska `stalls[truck.bay]` a v `loading` stred docku `docks[truck.dock]` z manifestu (kurz podľa
+ *   rotácie modulu). Pri zmene stavu z/do týchto dvoch (skok do stojiska / z docku) je `prev = curr`, aby sa kamión
+ *   neinterpoloval naprieč mapou.
  *
  * Bez side-effectov a bez závislosti na DOM/Pixi/React.
  */
-import type { CraneVM, EntitiesVM, ModuleVM, ShipVM, VehicleVM, ViewRotation } from '@render/view-models';
+import { findDockCenter, findStallCenter, type SlotHost } from '@render/module-slots';
+import type { CraneVM, EntitiesVM, ModuleVM, ShipVM, TruckVM, VehicleVM, ViewRotation } from '@render/view-models';
 import type { EntityId } from '@sim/core';
-import { BerthModule, CraneModule, LoadingRamp, StorageModule, TruckGate, WaitingArea, type Module, type PlacedConnector } from '@sim/modules';
+import { BerthModule, CraneModule, LoadingRamp, StorageModule, TruckGate, WaitingArea, type Module } from '@sim/modules';
+import type { Truck } from '@sim/trucks';
 import type { World } from '@sim/world';
 
 /** Poloha stredu lode v bunkách (predchádzajúci tick). */
@@ -55,12 +64,26 @@ export type VehiclePoses = ReadonlyMap<number, VehiclePose>;
 
 const NO_VEHICLE_POSES: VehiclePoses = new Map();
 
+/** Póza kamióna pred posledným tickom: prezentovaná poloha a kurz plus stav FSM (podľa neho sa pozná skok do/zo stojiska a docku). */
+export interface TruckPose {
+  readonly x: number;
+  readonly y: number;
+  readonly heading: ViewRotation;
+  readonly state: string;
+}
+
+/** Predchádzajúce pózy kamiónov podľa `id` kamióna; chýbajúci záznam = nový kamión (`prev = curr`). */
+export type TruckPoses = ReadonlyMap<number, TruckPose>;
+
+const NO_TRUCK_POSES: TruckPoses = new Map();
+
 /**
- * `EntitiesVM` zo SimBridge: `vehicles` je vždy vyplnené (v `EntitiesVM` ostáva voliteľné kvôli F2 fixtures v
- * `src/render/__demo__`, ktoré ho nemajú — sprísnenie by vyžadovalo zásah mimo `src/app`).
+ * `EntitiesVM` zo SimBridge: `vehicles` a `trucks` sú vždy vyplnené (v `EntitiesVM` ostávajú voliteľné kvôli F2/F3
+ * fixtures v `src/render/__demo__`, ktoré ich nemajú — sprísnenie by vyžadovalo zásah do nich).
  */
 export interface SimEntitiesVM extends EntitiesVM {
   readonly vehicles: readonly VehicleVM[];
+  readonly trucks: readonly TruckVM[];
 }
 
 /** Druh modulu, ktorý sa prezentuje samostatne v `EntitiesVM.cranes`. */
@@ -79,18 +102,17 @@ export function hasRoadConnector(module: Module): boolean {
 }
 
 /**
- * Index konektora modulu (v poradí defu), ktorý sedí s `side`; `side === null` alebo bez zhody → 0 (renderer berie
- * chýbajúci `entryConnector` ako prvý konektor).
+ * Index vstupného konektora brány v defe (`gate.connectors`, poradie ako `sprites.<defId>.connectors` v manifeste);
+ * neurčená strana (svet ju ešte nevyhodnotil) → 0, prvý konektor.
  */
-function connectorIndexOf(module: Module, side: Pick<PlacedConnector, 'x' | 'y' | 'side'> | null): number {
-  if (side === null) return 0;
-  const index = module.connectors.findIndex((connector) => connector.x === side.x && connector.y === side.y && connector.side === side.side);
-  return index < 0 ? 0 : index;
+function entryConnectorOf(gate: TruckGate): number {
+  const { entrySide } = gate;
+  return entrySide === null ? 0 : Math.max(0, gate.connectors.indexOf(entrySide));
 }
 
 /** VM brány: fronta, závora a vstupný konektor. */
 function gateVM(gate: TruckGate): NonNullable<ModuleVM['gate']> {
-  return { queueLength: gate.queueLength, open: gate.isOpen, entryConnector: connectorIndexOf(gate, gate.entrySide) };
+  return { queueLength: gate.queueLength, open: gate.isOpen, entryConnector: entryConnectorOf(gate) };
 }
 
 /** VM stojiska: `occupied[i]` = bay `i` drží kamión (obsadený alebo rezervovaný). */
@@ -107,7 +129,7 @@ function rampVM(world: World, ramp: LoadingRamp): NonNullable<ModuleVM['ramp']> 
   return { docks: ramp.docks, staged, operational: world.isRampOperational(ramp) };
 }
 
-/** Modul, ktorého VM sa mení aj bez udalosti v `REVISION_EVENTS` (pozemné moduly s kamiónmi): skladá sa pri každom snapshote. */
+/** Modul, ktorého VM sa môže zmeniť aj bez udalosti v `REVISION_EVENTS` (pozemné moduly s kamiónmi): porovnáva sa so živým modulom pri každom snapshote. */
 export function isLiveModule(module: Module): boolean {
   return module instanceof TruckGate || module instanceof WaitingArea;
 }
@@ -221,37 +243,143 @@ export function vehicleVMs(world: World, prev: VehiclePoses = NO_VEHICLE_POSES):
   return result;
 }
 
-/** Všetky entity sveta (bez cachovania); `prev` viď `shipVMs` a `vehicleVMs`. */
-export function entitiesVM(world: World, prev: ShipPositions = NO_POSITIONS, prevVehicles: VehiclePoses = NO_VEHICLE_POSES): SimEntitiesVM {
+/** Modul ako hostiteľ stojísk / dokov: id defu (kľúč v manifeste) a footprint po rotácii. */
+function slotHostOf(module: Module): SlotHost {
+  return { defId: module.def.id, x: module.origin.x, y: module.origin.y, w: module.size.w, h: module.size.h, rotation: module.rotation };
+}
+
+/** Stav kamióna, v ktorom sa kreslí v strede stojiska (`waiting`) alebo docku (`loading`), nie na bunke cesty, kde ho vedie sim. */
+const SLOT_STATES: ReadonlySet<string> = new Set<string>(['waiting', 'loading']);
+
+/** Zmeniteľná póza (bridge ju prepisuje pred každým tickom bez alokácie). */
+export interface MutableTruckPose {
+  x: number;
+  y: number;
+  heading: ViewRotation;
+  state: string;
+}
+
+/**
+ * Zapíše prezentovanú pózu kamióna do `out`: v `waiting` stred stojiska `stalls[truck.bay]` čakacej plochy, v `loading`
+ * stred docku `docks[truck.dock]` rampy (kurz = rotácia modulu); inak (aj keď modul alebo slot v manifeste chýba) poloha
+ * a kurz zo simu.
+ */
+export function writeTruckPose(world: World, truck: Truck, out: MutableTruckPose): void {
+  let slot: { x: number; y: number } | undefined;
+  let host: Module | undefined;
+  if (truck.state === 'waiting' && truck.bay !== null) {
+    host = world.modules.get(truck.waitingAreaId);
+    slot = host instanceof WaitingArea ? findStallCenter(slotHostOf(host), truck.bay) : undefined;
+  } else if (truck.state === 'loading') {
+    host = world.modules.get(truck.rampId);
+    slot = host instanceof LoadingRamp ? findDockCenter(slotHostOf(host), truck.dock) : undefined;
+  }
+  out.x = slot?.x ?? truck.x;
+  out.y = slot?.y ?? truck.y;
+  out.heading = slot === undefined || host === undefined ? truck.heading : host.rotation;
+  out.state = truck.state;
+}
+
+/** Prezentovaná póza kamióna (viď `writeTruckPose`) ako nový objekt. */
+export function truckPose(world: World, truck: Truck): TruckPose {
+  const pose: MutableTruckPose = { x: 0, y: 0, heading: 0, state: truck.state };
+  writeTruckPose(world, truck, pose);
+  return pose;
+}
+
+/**
+ * Predchádzajúca póza pre `TruckVM`: zapamätaná póza pred posledným tickom; bez záznamu (nový kamión) alebo pri zmene
+ * stavu z/do `waiting` / `loading` (sim kamión presunul zo stojiska / na výjazd, resp. z cesty do stojiska / docku)
+ * je to aktuálna póza, aby sa kamión neinterpoloval naprieč mapou.
+ */
+function previousTruckPose(before: TruckPose | undefined, current: TruckPose): TruckPose {
+  if (before === undefined) return current;
+  if (before.state !== current.state && (SLOT_STATES.has(before.state) || SLOT_STATES.has(current.state))) return current;
+  return before;
+}
+
+/** Kamióny sveta vzostupne podľa id (`world.trucks`); `prev` z predchádzajúceho ticku (chýba → `prev = curr`). */
+export function truckVMs(world: World, prev: TruckPoses = NO_TRUCK_POSES): TruckVM[] {
+  const result: TruckVM[] = [];
+  for (const truck of world.trucks.values()) {
+    const pose = truckPose(world, truck);
+    const before = previousTruckPose(prev.get(truck.id), pose);
+    result.push({
+      id: truck.id,
+      defId: truck.defId,
+      x: pose.x,
+      y: pose.y,
+      prevX: before.x,
+      prevY: before.y,
+      heading: pose.heading,
+      prevHeading: before.heading,
+      loaded: world.cargo.countAt('in_truck', truck.id) > 0,
+      state: truck.state,
+    });
+  }
+  return result;
+}
+
+/** Všetky entity sveta (bez cachovania); `prev` viď `shipVMs`, `vehicleVMs` a `truckVMs`. */
+export function entitiesVM(
+  world: World,
+  prev: ShipPositions = NO_POSITIONS,
+  prevVehicles: VehiclePoses = NO_VEHICLE_POSES,
+  prevTrucks: TruckPoses = NO_TRUCK_POSES,
+): SimEntitiesVM {
   return Object.freeze({
     modules: Object.freeze(moduleVMs(world)),
     cranes: Object.freeze(craneVMs(world)),
     ships: Object.freeze(shipVMs(world, prev)),
     vehicles: Object.freeze(vehicleVMs(world, prevVehicles)),
+    trucks: Object.freeze(truckVMs(world, prevTrucks)),
   });
 }
 
-/** Modul s VM, ktorý sa skladá pri každom snapshote (`isLiveModule`), a jeho index v poli `ModuleVM`. */
+/** Živý modul (`isLiveModule`) a index jeho VM v poli `ModuleVM`. */
 interface LiveModule {
   readonly index: number;
   readonly module: Module;
+}
+
+/** Plytká zhoda VM brány / stojiska so živým modulom (nič nealokuje); iné moduly sa nemenia bez udalosti. */
+function liveModuleChanged(vm: ModuleVM, module: Module): boolean {
+  if (module instanceof TruckGate) {
+    const { gate } = vm;
+    return gate === undefined || gate.queueLength !== module.queueLength || gate.open !== module.isOpen || gate.entryConnector !== entryConnectorOf(module);
+  }
+  if (module instanceof WaitingArea) {
+    const area = vm.waitingArea;
+    if (area === undefined || area.bays !== module.bays) return true;
+    for (let bay = 0; bay < module.bays; bay++) {
+      if (area.occupied[bay] !== (module.bayHolder(bay) !== null)) return true;
+    }
+  }
+  return false;
 }
 
 /**
  * Skladá `EntitiesVM` s cachovaním VM modulov podľa `revision`: pole modulov sa prepočíta len pri zmene revízie
  * (`ModulePlaced/Removed`, `RoadChanged`, `CargoMoved`… — pozri `SimBridge`), inak sa vráti tá istá referencia. Žeriavy,
  * lode, vozidlá a kamióny sa skladajú pri každom volaní (menia sa každý tick, polohu nenesie žiadna udalosť). Výnimka
- * z cache sú pozemné moduly, ktorých stav sa mení aj bez udalosti (`isLiveModule`, napr. závora brány): ak nejaké
- * sú, vráti sa pri každom volaní nové pole, v ktorom sú len ich VM nahradené čerstvými (ostatné ostávajú tie isté
- * objekty). Volajúci musí revíziu zvyšovať pri každej udalosti, ktorá mení ostatné moduly, ich pripojenie, obsah
- * apronov, skladov alebo rámp.
+ * z cache sú pozemné moduly, ktorých stav sa môže zmeniť aj bez udalosti (`isLiveModule`, napr. závora brány po prestavbe
+ * ciest): ich VM sa pri každom volaní porovná so živým modulom a len pri skutočnej zmene hodnôt sa pole modulov nahradí
+ * novým (s čerstvými VM zmenených modulov, ostatné ostávajú tie isté objekty) — inak ostáva referencia stabilná.
+ * Volajúci musí revíziu zvyšovať pri každej udalosti, ktorá mení ostatné moduly, ich pripojenie, obsah apronov, skladov
+ * alebo rámp.
  */
 export class EntitiesVMBuilder {
   private modulesRevision: number | null = null;
   private modules: readonly ModuleVM[] = Object.freeze([]);
   private live: readonly LiveModule[] = [];
 
-  build(world: World, revision: number, prev: ShipPositions = NO_POSITIONS, prevVehicles: VehiclePoses = NO_VEHICLE_POSES): SimEntitiesVM {
+  build(
+    world: World,
+    revision: number,
+    prev: ShipPositions = NO_POSITIONS,
+    prevVehicles: VehiclePoses = NO_VEHICLE_POSES,
+    prevTrucks: TruckPoses = NO_TRUCK_POSES,
+  ): SimEntitiesVM {
     if (this.modulesRevision !== revision) {
       const modules: ModuleVM[] = [];
       const live: LiveModule[] = [];
@@ -263,19 +391,26 @@ export class EntitiesVMBuilder {
       this.modules = Object.freeze(modules);
       this.live = live;
       this.modulesRevision = revision;
+    } else if (this.live.length > 0) {
+      this.refreshLiveModules(world);
     }
     return Object.freeze({
-      modules: this.live.length === 0 ? this.modules : this.withFreshLiveModules(world),
+      modules: this.modules,
       cranes: Object.freeze(craneVMs(world)),
       ships: Object.freeze(shipVMs(world, prev)),
       vehicles: Object.freeze(vehicleVMs(world, prevVehicles)),
+      trucks: Object.freeze(truckVMs(world, prevTrucks)),
     });
   }
 
-  /** Kópia cachovaného poľa s čerstvými VM live modulov. */
-  private withFreshLiveModules(world: World): readonly ModuleVM[] {
-    const modules = [...this.modules];
-    for (const { index, module } of this.live) modules[index] = moduleVM(world, module);
-    return Object.freeze(modules);
+  /** Nahradí pole modulov novým, ak sa hodnoty niektorého živého modulu zmenili (inak nechá tú istú referenciu). */
+  private refreshLiveModules(world: World): void {
+    let next: ModuleVM[] | null = null;
+    for (const { index, module } of this.live) {
+      if (!liveModuleChanged(this.modules[index], module)) continue;
+      next ??= [...this.modules];
+      next[index] = moduleVM(world, module);
+    }
+    if (next !== null) this.modules = Object.freeze(next);
   }
 }

@@ -19,8 +19,8 @@
  */
 import type { CellCoord, Grid, LoadedMap } from '@sim/grid';
 import { rotateFootprint, type Rotation } from '@sim/grid';
-import { moduleSprite, type ManifestRect } from '../entity-assets';
-import { footprintPose, rotateOffset } from '../footprint-pose';
+import { moduleSprite } from '../entity-assets';
+import { dockCenter, stallCenter } from '../module-slots';
 import type { EntitiesVM, ModuleVM, TruckVM } from '../view-models';
 
 export const DEMO_GATE_DEF = 'truck_gate';
@@ -102,27 +102,6 @@ export function truckInCell(
   prev: TruckPrev = { x: cellX + 0.5, y: cellY + 0.5 },
 ): TruckVM {
   return truckAt(id, cellX + 0.5, cellY + 0.5, heading, loaded, state, prev);
-}
-
-/** Stred obdĺžnika `rect` (px súboru pri rot 0) modulu `vm` vo svete v bunkách — stred stojiska / doku po rotácii modulu. */
-export function rectCenterCells(vm: ModuleVM, rect: ManifestRect): { x: number; y: number } {
-  const pose = footprintPose(vm, 1);
-  const rotated = rotateOffset((rect.x + rect.w / 2) / 64 - pose.baseW / 2, (rect.y + rect.h / 2) / 64 - pose.baseH / 2, vm.rotation);
-  return { x: pose.cx + rotated.x, y: pose.cy + rotated.y };
-}
-
-/** Stred stojiska `index` čakacej plochy vo svete (bunky). */
-export function stallCenter(vm: ModuleVM, index: number): { x: number; y: number } {
-  const stall = moduleSprite(vm.defId)?.stalls?.[index];
-  if (stall === undefined) throw new Error(`demo: ${vm.defId} nemá stojisko ${String(index)}`);
-  return rectCenterCells(vm, stall);
-}
-
-/** Stred doku `index` rampy vo svete (bunky). */
-export function dockCenter(vm: ModuleVM, index: number): { x: number; y: number } {
-  const dock = moduleSprite(vm.defId)?.docks?.[index];
-  if (dock === undefined) throw new Error(`demo: ${vm.defId} nemá dok ${String(index)}`);
-  return rectCenterCells(vm, dock);
 }
 
 function row(y: number, x1: number, x2: number): CellCoord[] {

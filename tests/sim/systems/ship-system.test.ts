@@ -8,13 +8,19 @@ import { Ship } from '@sim/ships';
 import { WorldInvariantError } from '@sim/world';
 import {
   BULKER,
+  CRANE,
+  DEEP_BERTH,
+  DEEP_SHIP,
+  DEEP_ZONE_BERTH,
   EAST_BERTH,
+  GAP_BERTH,
   GRAIN,
   ROOT_BERTH_ID,
   applyNow,
   berth,
   newWorld,
   ofType,
+  placeModule,
   spawn,
   tickN,
   tickUntil,
@@ -113,6 +119,21 @@ describe('ShipSystem — FIFO a kompatibilita', () => {
     tickN(world, 300);
     expect(bulker.state).toBe('waiting_anchorage');
     expect(berth(world, ROOT_BERTH_ID).dockedShipId).toBeNull();
+  });
+
+  it('hlboká loď (draftClass 2) zakotví na hlbokom kotvisku skupiny s plytkým susedom a vyloží sa (T02-14)', () => {
+    const world = newWorld();
+    const deep = placeModule(world, DEEP_BERTH, DEEP_ZONE_BERTH);
+    placeModule(world, 'berth_standard', GAP_BERTH);
+    const deepCrane = placeModule(world, CRANE, { x: 25, y: 14 });
+    const ship = spawn(world, DEEP_SHIP, 2);
+    tickUntil(world, () => ship.state === 'docked', 400);
+    expect(ship.berthIds).toEqual([deep]);
+    expect([ship.x, ship.y, ship.heading]).toEqual([25, 13, 90]);
+    const events = tickUntil(world, () => !world.ships.has(ship.id), 1000);
+    expect(ofType(events, 'CraneCycleDone').map((event) => event.craneId)).toEqual([deepCrane, deepCrane]);
+    expect(world.cargo.unitsOnApron(deep)).toHaveLength(2);
+    expect(berth(world, ROOT_BERTH_ID).apron.usedCount).toBe(0);
   });
 
   it('berth rezervovaný loďou v berthing nejde odstrániť (ship_docked)', () => {

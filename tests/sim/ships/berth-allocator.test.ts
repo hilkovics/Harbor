@@ -1,6 +1,6 @@
-// BerthAllocator (T02-05, ARCHITECTURE §5.4, ADR-016 bod alokácie): skupina s dĺžkou, hĺbkou a kompatibilným
-// žeriavom; v skupine najmenší počet kotvísk, potom najmenší index po pobreží; úsek musí byť voľný, mať kompatibilný
-// žeriav a pás vody pre šírku lode. Čistá funkcia — svet nemení.
+// BerthAllocator (T02-05, ARCHITECTURE §5.4, ADR-016 bod alokácie): skupina s dĺžkou a kompatibilným žeriavom;
+// v skupine najmenší počet kotvísk, potom najmenší index po pobreží; úsek musí byť voľný, mať kompatibilný žeriav,
+// pás vody pre šírku lode a každé kotvisko dosť hlboké pre ponor (T02-14). Čistá funkcia — svet nemení.
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@sim/core';
 import { allocateBerths, hasCompatibleCrane, type BerthRequest } from '@sim/ships';
@@ -8,7 +8,9 @@ import type { World } from '@sim/world';
 import {
   BULK_CRANE,
   CRANE,
+  DEEP_BERTH,
   DEEP_SHIP,
+  DEEP_ZONE_BERTH,
   EAST_BERTH,
   GAP_BERTH,
   ROOT_BERTH_ID,
@@ -98,6 +100,31 @@ describe('allocateBerths — žeriav, obsadenosť, hĺbka, šírka', () => {
     const world = newWorld();
     expect(world.berthGroups[0].minDepth).toBe(1);
     expect(ids(world, request(DEEP_SHIP))).toBeNull();
+  });
+
+  it('ponor po kotviskách (T02-14): hlboký úsek vyhovuje aj vedľa plytkého suseda v tej istej skupine', () => {
+    const world = newWorld();
+    const deep = placeModule(world, DEEP_BERTH, DEEP_ZONE_BERTH);
+    const shallow = placeModule(world, 'berth_standard', GAP_BERTH);
+    placeModule(world, CRANE, { x: 25, y: 14 });
+    const group = world.berthGroups.find((candidate) => candidate.berthIds.includes(deep));
+    expect(group).toMatchObject({ berthIds: [deep, shallow], totalLength: 16, minDepth: 1 });
+    expect([berth(world, deep).depthClass, berth(world, shallow).depthClass]).toEqual([2, 1]);
+    // Skupina s minDepth 1 sa pre ponor 2 nevyradí — rozhoduje hĺbka kotvísk úseku.
+    expect(ids(world, request(DEEP_SHIP))).toEqual([deep]);
+    expect(ids(world, request('feeder'))).toEqual([deep]);
+    // Loď dlhšia než hlboké kotvisko by potrebovala aj plytkého suseda → žiadny úsek.
+    const longDeep: BerthRequest = { def: { lengthCells: 10, widthCells: 2, draftClass: 2 }, cargoCategory: 'container' };
+    expect(ids(world, longDeep)).toBeNull();
+  });
+
+  it('ponor po kotviskách: žeriav len na plytkom kotvisku → hlboká loď null, plytká dostane plytké kotvisko', () => {
+    const world = newWorld();
+    placeModule(world, DEEP_BERTH, DEEP_ZONE_BERTH);
+    const shallow = placeModule(world, 'berth_standard', GAP_BERTH);
+    placeModule(world, CRANE, { x: 33, y: 14 });
+    expect(ids(world, request(DEEP_SHIP))).toBeNull();
+    expect(ids(world, request('feeder'))).toEqual([shallow]);
   });
 
   it('šírka: loď širšia než pás vody kotviska (frontWaterCells 3) → null', () => {

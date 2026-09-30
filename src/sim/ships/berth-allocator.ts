@@ -3,12 +3,15 @@
  * pre loď nájde súvislý úsek voľných kotvísk. Svet nemení; rezerváciu (`dockedShipId`, `berthIds`) zapíše `ShipSystem`.
  *
  * Pravidlá (v poradí vyhodnotenia):
- * 1. skupiny `world.berthGroups` v poradí id; skupina prichádza do úvahy, keď `totalLength ≥ lengthCells`,
- *    `minDepth ≥ draftClass` a má aspoň jeden žeriav kategórie nákladu lode;
+ * 1. skupiny `world.berthGroups` v poradí id; skupina prichádza do úvahy, keď `totalLength ≥ lengthCells`, má aspoň
+ *    jedno kotvisko s `depthClass ≥ draftClass` a aspoň jeden žeriav kategórie nákladu lode (len rýchle vyradenie —
+ *    `minDepth ≥ draftClass` je skratka „celá skupina je dosť hlboká", nie podmienka, T02-14);
  * 2. v skupine súvislé úseky kotvísk (poradie po pobreží) od najmenšieho počtu kotvísk, pri rovnakom počte od
  *    najmenšieho indexu po pobreží; úsek musí byť celý voľný (`dockedShipId === null` — bez lode aj rezervácie),
- *    so súčtom `lengthCells ≥ lengthCells` lode, s pásom vody hlbokým aspoň `widthCells` lode (loď sa zmestí na vodu)
- *    a s aspoň jedným kompatibilným žeriavom (inak by loď na kotvisku nikdy nevyložila);
+ *    každé jeho kotvisko musí mať efektívnu hĺbku `depthClass ≥ draftClass` lode (ARCHITECTURE §4.3; hlboký úsek
+ *    vyhovuje aj vedľa plytkého suseda v tej istej skupine), súčet `lengthCells ≥ lengthCells` lode, pás vody hlboký
+ *    aspoň `widthCells` lode (loď sa zmestí na vodu) a aspoň jeden kompatibilný žeriav (inak by loď na kotvisku nikdy
+ *    nevyložila);
  * 3. prvý vyhovujúci úsek vyhráva; žiadny → `null` (loď čaká na anchorage).
  *
  * Poradie čakajúcich lodí (FIFO podľa spawnu) zabezpečuje `ShipSystem`, ktorý lode spracúva vzostupne podľa id.
@@ -48,13 +51,26 @@ function berthsOf(world: BerthAllocationWorld, group: BerthGroup): readonly Bert
   });
 }
 
+/** Kotvisko unesie ponor lode (efektívna hĺbka, ADR-014 bod 2)? */
+function isDeepEnough(berth: BerthModule, request: BerthRequest): boolean {
+  return berth.depthClass >= request.def.draftClass;
+}
+
+/**
+ * Môže mať skupina úsek s dosť hlbokými kotviskami? `minDepth ≥ draftClass` je rýchla cesta (hlboká je celá skupina),
+ * inak rozhodne aspoň jedno dosť hlboké kotvisko. Presnú podmienku pre úsek overí `fitsRun`.
+ */
+function mayFitDepth(group: BerthGroup, berths: readonly BerthModule[], request: BerthRequest): boolean {
+  return group.minDepth >= request.def.draftClass || berths.some((berth) => isDeepEnough(berth, request));
+}
+
 /** Úsek `berths[start … start + count)` vyhovuje lodi (bod 2 hlavičky)? */
 function fitsRun(world: BerthAllocationWorld, berths: readonly BerthModule[], start: number, count: number, request: BerthRequest): boolean {
   let length = 0;
   let crane = false;
   for (let i = start; i < start + count; i++) {
     const berth = berths[i];
-    if (berth.dockedShipId !== null || berth.params.frontWaterCells < request.def.widthCells) return false;
+    if (berth.dockedShipId !== null || !isDeepEnough(berth, request) || berth.params.frontWaterCells < request.def.widthCells) return false;
     length += berth.lengthCells;
     crane ||= hasCompatibleCrane(world, berth, request.cargoCategory);
   }
@@ -67,8 +83,9 @@ function fitsRun(world: BerthAllocationWorld, berths: readonly BerthModule[], st
  */
 export function allocateBerths(world: BerthAllocationWorld, request: BerthRequest): readonly BerthModule[] | null {
   for (const group of world.berthGroups) {
-    if (group.totalLength < request.def.lengthCells || group.minDepth < request.def.draftClass) continue;
+    if (group.totalLength < request.def.lengthCells) continue;
     const berths = berthsOf(world, group);
+    if (!mayFitDepth(group, berths, request)) continue;
     if (!berths.some((berth) => hasCompatibleCrane(world, berth, request.cargoCategory))) continue;
     for (let count = 1; count <= berths.length; count++) {
       for (let start = 0; start + count <= berths.length; start++) {

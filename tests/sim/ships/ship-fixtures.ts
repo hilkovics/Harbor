@@ -28,11 +28,13 @@ export const DEEP_SHIP = 'deep_test';
 export const WIDE_SHIP = 'wide_test';
 /** Žeriav na sypký náklad. */
 export const BULK_CRANE = 'crane_bulk_test';
+/** Hlboké kotvisko (`depthClass 3`); efektívna hĺbka = min s hĺbkou zóny mapy (harbor_01: x 10–29 → 2, x 30–57 → 1). */
+export const DEEP_BERTH = 'berth_deep_test';
 export const BERTH = 'berth_standard';
 export const CRANE = 'crane_container_gantry';
 
 const [feederJson] = shipsJson.items;
-const [, craneJson] = modulesJson.items;
+const [berthJson, craneJson] = modulesJson.items;
 
 /** Bundled defy + testovacie triedy lodí, sypký náklad a sypký žeriav. */
 export const SHIP_DEFS: DefRegistry = DefRegistry.fromRaw({
@@ -55,7 +57,11 @@ export const SHIP_DEFS: DefRegistry = DefRegistry.fromRaw({
   },
   modules: {
     ...modulesJson,
-    items: [...modulesJson.items, { ...craneJson, id: BULK_CRANE, params: { ...craneJson.params, category: 'bulk' } }],
+    items: [
+      ...modulesJson.items,
+      { ...craneJson, id: BULK_CRANE, params: { ...craneJson.params, category: 'bulk' } },
+      { ...berthJson, id: DEEP_BERTH, params: { ...berthJson.params, depthClass: 3 } },
+    ],
   },
 });
 
@@ -65,6 +71,8 @@ export const ROOT_CRANE_ID = 2 as EntityId;
 export const EAST_BERTH: CellCoord = { x: 48, y: 14 };
 export const WEST_BERTH: CellCoord = { x: 32, y: 14 };
 export const GAP_BERTH: CellCoord = { x: 30, y: 14 };
+/** Hlboké kotvisko x 22–29 (zóna hĺbky 2) — dotýka sa `GAP_BERTH` (x 30–37, hĺbka 1): jedna skupina s `minDepth` 1. */
+export const DEEP_ZONE_BERTH: CellCoord = { x: 22, y: 14 };
 
 export function newWorld(options: WorldOptions = {}, map: LoadedMap = MAP): World {
   return World.create(SHIP_DEFS, map, SEED, options);

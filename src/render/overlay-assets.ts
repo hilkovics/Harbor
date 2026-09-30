@@ -26,3 +26,6 @@ export const GHOST_HATCH_PATTERN: PatternSize = overlayManifest.ghost_hatch.patt
 /** Okraje 9-slice `selection_ring` v px zdrojovej textúry (`overlay.selection_ring.nineSlice`). */
 export const SELECTION_RING_SLICE: { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number } =
   overlayManifest.selection_ring.nineSlice;
+
+/** Rozmer `overlay.path_arrow` v bunkách (manifest: `footprint`, 1×1; šípka smeruje na sever pri rotácii 0). */
+export const PATH_ARROW_FOOTPRINT: { readonly w: number; readonly h: number } = overlayManifest.path_arrow.footprint;

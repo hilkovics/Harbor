@@ -4,8 +4,9 @@
  * (`tests/e2e/f3-render.spec.ts`) z nej robí screenshot.
  *
  * Scéna `main` (predvolená): 2 kontajnerové dvory (fill 0 a 75), pripojené depo, 3 straddle carriery po ceste a odpojené
- * depo s odznakom. Scéna `lanes` (`?scene=lanes`, T03-17): vozidlá v pravom pruhu na priamej ceste, v zákrutách a pri
- * T-križovatke. Po vykreslení nastaví `data-demo-ready="true"` na `<body>` a vystaví `window.__f3RenderDemo` (renderer, VM scény
+ * depo s odznakom. Scéna `lanes` (`?scene=lanes`, T03-17): vozidlá v pravom pruhu na priamej ceste, v zákrutách (po oblúku,
+ * T03-19) a pri T-križovatke. Scéna `road-kinds` (`?scene=road-kinds`, T03-19): dvojpruhová, jednopruhová a jednosmerná cesta,
+ * križovatky rôznych typov, jednosmerný okruh so šípkami a vozidlá aj uprostred oblúka. Po vykreslení nastaví `data-demo-ready="true"` na `<body>` a vystaví `window.__f3RenderDemo` (renderer, VM scény
  * a `show(vm, alpha)` na prekreslenie zmeneným view-modelom — test tak overí aj aktualizáciu za behu).
  */
 import '../../../design/tokens.css';

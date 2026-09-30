@@ -4,8 +4,8 @@
  * Vstup je `LoadedMap` (a živá mriežka sveta), nie `World` — renderer sim iba číta. Zmeny sveta sa prenášajú
  * verejnými metódami (`updateRoads` z udalosti `RoadChanged`); napojenie na SimBridge robí bootstrap (T01-11).
  *
- * Vrstvy (zdola, ARCHITECTURE §15.1): terén → cesty → obrysy parciel → portály → moduly → lode a vozidlá →
- * žeriavy → ghost stavby (`BuildLayer`). Entity (moduly, lode, vozidlá, žeriavy) sa synchronizujú z view-modelov cez
+ * Vrstvy (zdola, ARCHITECTURE §15.1): terén → cesty → cestné značky (šípky jednosmeriek) → obrysy parciel → portály →
+ * moduly → lode a vozidlá → žeriavy → ghost stavby (`BuildLayer`). Entity (moduly, lode, vozidlá, žeriavy) sa synchronizujú z view-modelov cez
  * `syncEntities(vm, alpha)`,
  * ghost modulu cez `setModuleGhost`. Sprity sa načítajú z `assets/manifest.json` (`SpriteAtlas`); bez nich
  * (`textures: null`) vrstvy kreslia dočasné `Graphics` z tokenov.
@@ -17,11 +17,12 @@ import { BuildLayer, loadGhostPalette } from './build-layer';
 import { Camera } from './camera';
 import { CraneLayer } from './crane-layer';
 import { EntityLayer } from './entity-layer';
-import { createRoadKindAt } from './lane';
+import { createRoadKindAt, createRoadMaskAt } from './lane';
 import { ModuleLayer } from './module-layer';
 import { ParcelLayer } from './parcel-layer';
 import { PortalLayer } from './portal-layer';
 import { RoadLayer } from './road-layer';
+import { RoadMarkLayer } from './road-mark-layer';
 import { SpriteAtlas, type SpriteTextures } from './sprite-atlas';
 import { TerrainLayer } from './terrain-layer';
 import {
@@ -76,6 +77,8 @@ export class WorldRenderer {
   readonly world = new Container({ label: 'world' });
   readonly terrain: TerrainLayer;
   readonly roads: RoadLayer;
+  /** Cestné značky nad cestami a pod entitami: šípky smeru jednosmeriek. */
+  readonly roadMarks: RoadMarkLayer;
   readonly parcels: ParcelLayer;
   readonly portals: PortalLayer;
   readonly modules: ModuleLayer;
@@ -111,11 +114,18 @@ export class WorldRenderer {
     });
     this.terrain = new TerrainLayer(grid, palette, textures);
     this.roads = new RoadLayer(grid, palette, textures);
+    this.roadMarks = new RoadMarkLayer(grid, palette, textures?.overlay('path_arrow') ?? null);
     this.parcels = new ParcelLayer(options.parcels ?? options.map.parcels, palette, textures);
     this.portals = new PortalLayer(options.map, grid.width, grid.height, palette, textures);
     this.entityPalette = entityPalette;
-    // Typ cesty pod vozidlom (pruh) sa číta z živej mriežky; vozidlá vidia zmeny ciest hneď.
-    const entityDeps = { cellPx: palette.cellPx, palette: entityPalette, textures: atlas, roadKindAt: createRoadKindAt(grid) };
+    // Typ cesty pod vozidlom (pruh) a tvar zákrut (oblúk) sa čítajú z živej mriežky; vozidlá vidia zmeny ciest hneď.
+    const entityDeps = {
+      cellPx: palette.cellPx,
+      palette: entityPalette,
+      textures: atlas,
+      roadKindAt: createRoadKindAt(grid),
+      roadMaskAt: createRoadMaskAt(grid),
+    };
     this.modules = new ModuleLayer(entityDeps);
     this.ships = new EntityLayer(entityDeps);
     this.cranes = new CraneLayer(entityDeps);
@@ -123,6 +133,7 @@ export class WorldRenderer {
     this.world.addChild(
       this.terrain.view,
       this.roads.view,
+      this.roadMarks.view,
       this.parcels.view,
       this.portals.view,
       this.modules.view,
@@ -197,8 +208,12 @@ export class WorldRenderer {
     this.build.setModuleGhost(ghost);
   }
 
-  /** Prekreslí cesty po `RoadChanged`: zmenené bunky a ich susedov. @returns počet zmenených dlaždíc */
+  /**
+   * Prekreslí cesty po `RoadChanged`: zmenené bunky a ich susedov (tvar, typ cesty, lieviky) a šípky jednosmeriek zmenených
+   * buniek. @returns počet zmenených dlaždíc ciest
+   */
   updateRoads(cells: readonly CellCoord[]): number {
+    this.roadMarks.updateCells(cells);
     return this.roads.updateRoads(cells);
   }
 
@@ -226,6 +241,7 @@ export class WorldRenderer {
     this.app.ticker.remove(this.onTick, this);
     this.terrain.destroy();
     this.roads.destroy();
+    this.roadMarks.destroy();
     this.parcels.destroy();
     this.portals.destroy();
     this.modules.destroy();

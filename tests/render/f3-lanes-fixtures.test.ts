@@ -9,9 +9,14 @@ import {
   MAIN_SCENE,
   createDemoGrid,
   createLanesGrid,
+  ROAD_KINDS_SCENE,
+  ROAD_KINDS_VIEW,
+  createRoadKindsGrid,
   vehicleAt,
   vehicleVM,
 } from '@render/__demo__/f3-render.fixtures';
+import { createRoadMaskAt } from '@render/lane';
+import { cornerTurn } from '@render/turn-arc';
 import type { VehicleVM } from '@render/view-models';
 
 const map = loadBundledMap();
@@ -19,12 +24,14 @@ const grid: Grid = createLanesGrid(map);
 const hasRoad = (x: number, y: number): boolean => grid.inBounds(x, y) && grid.at(x, y).road === 'road';
 const step: Record<VehicleVM['heading'], readonly [number, number]> = { 0: [0, -1], 90: [1, 0], 180: [0, 1], 270: [-1, 0] };
 const vehicles = LANES_SCENE.vehicles ?? [];
+const maskAt = createRoadMaskAt(grid);
 
 describe('scéna lanes (karta T03-17, screenshot f3-lanes.png)', () => {
-  it('registr scén: main a lanes; každá má VM, pohľad a mriežku', () => {
-    expect(Object.keys(DEMO_SCENES)).toEqual(['main', 'lanes']);
+  it('registr scén: main, lanes a road-kinds; každá má VM, pohľad a mriežku', () => {
+    expect(Object.keys(DEMO_SCENES)).toEqual(['main', 'lanes', 'road-kinds']);
     expect(DEMO_SCENES.main).toEqual({ vm: MAIN_SCENE, view: SCENE_VIEW, createGrid: createDemoGrid });
     expect(DEMO_SCENES.lanes).toEqual({ vm: LANES_SCENE, view: LANES_VIEW, createGrid: createLanesGrid });
+    expect(DEMO_SCENES['road-kinds']).toEqual({ vm: ROAD_KINDS_SCENE, view: ROAD_KINDS_VIEW, createGrid: createRoadKindsGrid });
   });
 
   it('bez modulov, lodí a žeriavov; id vozidiel sú jedinečné', () => {
@@ -32,7 +39,7 @@ describe('scéna lanes (karta T03-17, screenshot f3-lanes.png)', () => {
     expect(LANES_SCENE.ships).toEqual([]);
     expect(LANES_SCENE.cranes).toEqual([]);
     expect(new Set(vehicles.map((vehicle) => vehicle.id)).size).toBe(vehicles.length);
-    expect(vehicles.length).toBeGreaterThanOrEqual(10);
+    expect(vehicles.length).toBeGreaterThanOrEqual(16);
   });
 
   it('cesty ležia na stavateľnom teréne starter parcely a bez duplicít', () => {
@@ -67,20 +74,36 @@ describe('scéna lanes (karta T03-17, screenshot f3-lanes.png)', () => {
     const cellX = Math.floor(vehicle.x);
     const cellY = Math.floor(vehicle.y);
     expect(hasRoad(cellX, cellY)).toBe(true);
+    if (cornerTurn(maskAt(cellX, cellY), vehicle.heading) !== null) return; // v zákrute kurz sedí s oblúkom (test nižšie)
     const [dx, dy] = step[vehicle.heading];
     expect(hasRoad(cellX + dx, cellY + dy)).toBe(true); // vpredu pokračuje cesta
   });
 
-  it('vozidlá s prevHeading sú v zákrute: predchádzajúca bunka je pred nimi vo smere predchádzajúceho kurzu', () => {
+  it('vozidlá s prevHeading sú v zákrute: koleno ticku je stred bunky zákruty so vstupným a výstupným kurzom', () => {
     const turning = vehicles.filter((vehicle) => vehicle.prevHeading !== undefined && vehicle.prevHeading !== vehicle.heading);
-    expect(turning.length).toBeGreaterThanOrEqual(2);
+    expect(turning.length).toBeGreaterThanOrEqual(3);
     for (const vehicle of turning) {
-      const prevCell = [Math.floor(vehicle.prevX), Math.floor(vehicle.prevY)];
-      const cell = [Math.floor(vehicle.x), Math.floor(vehicle.y)];
-      expect(hasRoad(prevCell[0], prevCell[1])).toBe(true);
-      const [dx, dy] = step[vehicle.prevHeading ?? vehicle.heading];
-      expect([prevCell[0] + dx, prevCell[1] + dy]).toEqual(cell); // úsek predchádzajúceho kurzu vedie do zákruty
+      const prevHeading = vehicle.prevHeading ?? vehicle.heading;
+      // koleno = priesečník osi predchádzajúceho úseku (cez prev) a aktuálneho (cez curr)
+      const vertical = prevHeading === 0 || prevHeading === 180;
+      const knee = { x: vertical ? vehicle.prevX : vehicle.x, y: vertical ? vehicle.y : vehicle.prevY };
+      expect(knee.x - Math.floor(knee.x)).toBeCloseTo(0.5, 9);
+      expect(knee.y - Math.floor(knee.y)).toBeCloseTo(0.5, 9);
+      const turn = cornerTurn(maskAt(Math.floor(knee.x), Math.floor(knee.y)), prevHeading);
+      expect(turn, `vozidlo ${String(vehicle.id)}`).toEqual({ from: prevHeading, to: vehicle.heading });
     }
+  });
+
+  it('oblúky (T03-19): vozidlá v bunkách zákrut sú v pravej aj ľavej zákrute, vo vstupnej aj výstupnej polovici', () => {
+    const inCorner = vehicles.filter((vehicle) => cornerTurn(maskAt(Math.floor(vehicle.x), Math.floor(vehicle.y)), vehicle.heading) !== null);
+    expect(inCorner.length).toBeGreaterThanOrEqual(6);
+    const turns = new Set(
+      inCorner.map((vehicle) => {
+        const turn = cornerTurn(maskAt(Math.floor(vehicle.x), Math.floor(vehicle.y)), vehicle.heading);
+        return ((((turn?.to ?? 0) - (turn?.from ?? 0)) % 360) + 360) % 360 === 90 ? 'pravá' : 'ľavá';
+      }),
+    );
+    expect(turns).toEqual(new Set(['pravá', 'ľavá']));
   });
 
   it('protismerné dvojice stoja v tej istej bunke (dôkaz, že sa v pruhoch nekrížia)', () => {

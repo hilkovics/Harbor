@@ -2,21 +2,45 @@
  * VehicleView (DESIGN_BRIEF §5.6): vozidlo na cestách — sprite `entities.<defId>.states.{empty|loaded}` z manifestu,
  * predok hore pri `heading` 0, otočený okolo stredu vozidla.
  *
- * Poloha je `lerp(prev + posun pruhu, curr + posun pruhu, alpha)` v bunkách × `--cell` (stred vozidla; stred bunky =
- * `x + 0,5`). Sim vedie vozidlo stredom bunky, pruh je prezentačný (`lane.ts`): na dvojpruhovej ceste sa vozidlo posunie
- * kolmo na smer jazdy vpravo o 13/64 bunky a sprite sa zmenší na šírku pruhu (`VEHICLE_LANE_SCALE`). Posun sa berie
- * podľa typu cesty a kurzu predchádzajúcej aj aktuálnej polohy (`prevHeading`), takže v zákrute nie je skok cez
- * stredovú čiaru. `loaded` platí, kým vozidlo vezie jednotku nákladu (kontajner medzi nohami je súčasť spritu).
+ * Poloha je v bunkách × `--cell` (stred vozidla; stred bunky = `x + 0,5`). Sim vedie vozidlo stredom bunky, pruh je
+ * prezentačný (`lane.ts`): na dvojpruhovej ceste sa vozidlo posunie kolmo na smer jazdy vpravo o 13/64 bunky, na
+ * jednopruhovej (`one_lane`, `one_way`) jazdí v strede, a sprite sa zmenší na šírku pruhu (`VEHICLE_LANE_SCALE`).
+ *
+ * **Priama jazda:** `lerp(prev, curr, alpha)` + posun pruhu; posun sa mieša podľa typu cesty pod predchádzajúcou a pod
+ * aktuálnou polohou (prechod dvojpruhová → jednopruhová sa nerobí skokom).
+ *
+ * **Zákruta:** sim mení kurz skokom v strede bunky zákruty (`Vehicle.advance`: kurz podľa úseku `cell → nextCell`), takže
+ * `prevHeading ≠ heading` platí len v jedinom ticku a vozidlo pred stredom bunky ešte kurz zákruty nemá. Renderer preto
+ * berie zákrutu z tvaru cesty (`RoadMaskAt`: bunka s dvoma kolmými susedmi) a v jej vnútri vedie vozidlo po oblúku
+ * (`turn-arc.ts`) podľa POLOHY: parameter oblúka je podiel dráhy v bunke (hrana → stred → hrana), nie `alpha` ticku.
+ * V ticku, v ktorom sa kurz zmenil, sa dráha ticku rekonštruuje ako písmeno L cez stred bunky (`prev → stred → curr`),
+ * nie ako úsečka `prev → curr`, ktorá by zákrutu rezala. Uhol spritu sa plynulo otáča z kurzu vstupu na kurz výstupu.
+ * Zmena kurzu inde než v zákrute (križovatka, obrat) sa rieši ako predtým: pruh sa interpoluje medzi predchádzajúcim
+ * a aktuálnym úsekom a uhol sa otáča najkratším oblúkom počas ticku.
+ *
+ * `loaded` platí, kým vozidlo vezie jednotku nákladu (kontajner medzi nohami je súčasť spritu).
  * Vozidlo bez sprite (def chýba v manifeste / textúra nie je načítaná) sa nakreslí ako telo z tokenov `--vehicle-body`
  * s obrysom `--vehicle-dark` a tmavým pruhom na predku, aby bol vidieť smer jazdy; má rovnakú mierku ako sprite.
  */
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
+import type { Point } from './camera';
 import { vehicleSprite, type CellSize } from './entity-assets';
-import { VEHICLE_LANE_SCALE, defaultRoadKindAt, laneOffset, type RoadKindAt } from './lane';
+import {
+  VEHICLE_LANE_SCALE,
+  defaultRoadKindAt,
+  forwardOf,
+  laneMagnitude,
+  laneOffset,
+  noRoadMaskAt,
+  rightOf,
+  type RoadKindAt,
+  type RoadMaskAt,
+} from './lane';
 import { lerp } from './ship-view';
 import type { EntityTextures } from './sprite-atlas';
 import type { EntityPalette } from './tokens';
-import type { VehicleVM } from './view-models';
+import { cornerAlpha, cornerTurn, isQuarterTurn, lerpHeading, turnArcPose } from './turn-arc';
+import type { VehicleVM, ViewRotation } from './view-models';
 
 /** Hrúbka obrysu fallbacku ako zlomok bunky (2 px pri 64 px, DESIGN_BRIEF §4 „Obrys“). */
 const OUTLINE_CELLS = 2 / 64;
@@ -50,19 +74,104 @@ export interface VehiclePose {
   readonly angle: number;
 }
 
+/** Tolerancia, s ktorou je bod „v strede bunky“ (sim ho počíta ako `cx + 0,5`, takže je presný; rezerva pre ručné VM). */
+const CENTER_TOLERANCE = 1e-6;
+
+/** Bod dráhy vozidla vo svete simu (bunky) a kurz, ktorým tam vozidlo ide. */
+interface TravelPoint extends Point {
+  readonly heading: ViewRotation;
+}
+
 /**
- * Poloha vozidla v čase `alpha` medzi predchádzajúcim a aktuálnym tickom, v px sveta:
- * `lerp(prev + posunPruhu(prevKind, prevHeading), curr + posunPruhu(kind, heading), alpha)`. Typ cesty sa berie z bunky
- * pod predchádzajúcou a pod aktuálnou polohou (`roadKindAt`), `prevHeading` chýbajúci vo VM = `heading`.
+ * Stred bunky zákruty (koleno písmena L), cez ktorý prešlo vozidlo v ticku `prev → curr` so zmenou kurzu o 90°, alebo
+ * `null`. Koleno je priesečník osi predchádzajúceho úseku (cez `prev` v smere `prevHeading`) a osi aktuálneho úseku
+ * (cez `curr` v smere `heading`); musí byť stredom bunky, ležať pred vozidlom na oboch úsekoch a bunka musí byť podľa
+ * `roadMaskAt` zákruta s rovnakým vstupným a výstupným kurzom. Inak (križovatka, obrat, nesúlad s cestou) `null`.
  */
-export function vehiclePose(vm: VehicleVM, alpha: number, cellPx: number, roadKindAt: RoadKindAt = defaultRoadKindAt): VehiclePose {
-  const from = laneOffset(roadKindAt(Math.floor(vm.prevX), Math.floor(vm.prevY)), vm.prevHeading ?? vm.heading);
-  const to = laneOffset(roadKindAt(Math.floor(vm.x), Math.floor(vm.y)), vm.heading);
-  return {
-    x: lerp(vm.prevX + from.x, vm.x + to.x, alpha) * cellPx,
-    y: lerp(vm.prevY + from.y, vm.y + to.y, alpha) * cellPx,
-    angle: vm.heading,
-  };
+function turnKnee(vm: VehicleVM, prevHeading: ViewRotation, roadMaskAt: RoadMaskAt): Point | null {
+  if (!isQuarterTurn(prevHeading, vm.heading)) return null;
+  const vertical = prevHeading === 0 || prevHeading === 180;
+  const x = vertical ? vm.prevX : vm.x;
+  const y = vertical ? vm.y : vm.prevY;
+  const cellX = Math.floor(x);
+  const cellY = Math.floor(y);
+  if (Math.abs(x - (cellX + 0.5)) > CENTER_TOLERANCE || Math.abs(y - (cellY + 0.5)) > CENTER_TOLERANCE) return null;
+  const inbound = forwardOf(prevHeading);
+  const outbound = forwardOf(vm.heading);
+  if ((x - vm.prevX) * inbound.x + (y - vm.prevY) * inbound.y < -CENTER_TOLERANCE) return null;
+  if ((vm.x - x) * outbound.x + (vm.y - y) * outbound.y < -CENTER_TOLERANCE) return null;
+  const turn = cornerTurn(roadMaskAt(cellX, cellY), prevHeading);
+  if (turn === null || turn.to !== vm.heading) return null;
+  return { x, y };
+}
+
+/** Bod dráhy v čase `alpha`: úsečka `prev → curr`, alebo pri zákrute lomená čiara `prev → koleno → curr` (rovnomerne). */
+function travelPoint(vm: VehicleVM, prevHeading: ViewRotation, knee: Point | null, alpha: number): TravelPoint {
+  if (knee === null) {
+    return { x: lerp(vm.prevX, vm.x, alpha), y: lerp(vm.prevY, vm.y, alpha), heading: vm.heading };
+  }
+  const first = Math.abs(knee.x - vm.prevX) + Math.abs(knee.y - vm.prevY);
+  const second = Math.abs(vm.x - knee.x) + Math.abs(vm.y - knee.y);
+  const distance = alpha * (first + second);
+  if (distance < first) {
+    const share = distance / first;
+    return { x: vm.prevX + (knee.x - vm.prevX) * share, y: vm.prevY + (knee.y - vm.prevY) * share, heading: prevHeading };
+  }
+  const share = second === 0 ? 0 : (distance - first) / second;
+  return { x: knee.x + (vm.x - knee.x) * share, y: knee.y + (vm.y - knee.y) * share, heading: vm.heading };
+}
+
+/**
+ * Poloha vozidla v čase `alpha` medzi predchádzajúcim a aktuálnym tickom, v px sveta (podrobnosti v hlavičke súboru):
+ *  - priama jazda: `lerp(prev, curr, alpha)` + posun pruhu (`lane.ts`), typ cesty z bunky pod predchádzajúcou a pod
+ *    aktuálnou polohou (`roadKindAt`), `prevHeading` chýbajúci vo VM = `heading`;
+ *  - bunka so zákrutou (`roadMaskAt`: dvaja kolmí susedia): oblúk `turnArcPose` s parametrom podľa polohy v bunke;
+ *  - zmena kurzu mimo zákruty: `lerp(prev + pruh(prevHeading), curr + pruh(heading), alpha)`, uhol najkratším oblúkom.
+ * Bez `roadMaskAt` (predvolene) sa oblúky nekreslia.
+ */
+export function vehiclePose(
+  vm: VehicleVM,
+  alpha: number,
+  cellPx: number,
+  roadKindAt: RoadKindAt = defaultRoadKindAt,
+  roadMaskAt: RoadMaskAt = noRoadMaskAt,
+): VehiclePose {
+  const prevHeading = vm.prevHeading ?? vm.heading;
+  const kindFrom = roadKindAt(Math.floor(vm.prevX), Math.floor(vm.prevY));
+  const kindTo = roadKindAt(Math.floor(vm.x), Math.floor(vm.y));
+  const turned = prevHeading !== vm.heading;
+  const knee = turned ? turnKnee(vm, prevHeading, roadMaskAt) : null;
+  if (turned && knee === null) {
+    // zmena kurzu mimo zákruty: pruh sa interpoluje medzi predchádzajúcim a aktuálnym úsekom
+    const from = laneOffset(kindFrom, prevHeading);
+    const to = laneOffset(kindTo, vm.heading);
+    return {
+      x: lerp(vm.prevX + from.x, vm.x + to.x, alpha) * cellPx,
+      y: lerp(vm.prevY + from.y, vm.y + to.y, alpha) * cellPx,
+      angle: lerpHeading(prevHeading, vm.heading, alpha),
+    };
+  }
+  const at = travelPoint(vm, prevHeading, knee, alpha);
+  const right = rightOf(at.heading);
+  const lane = lerp(laneMagnitude(kindFrom), laneMagnitude(kindTo), alpha);
+  let x = at.x + right.x * lane;
+  let y = at.y + right.y * lane;
+  let angle: number = at.heading;
+  const cellX = Math.floor(at.x);
+  const cellY = Math.floor(at.y);
+  const turn = cornerTurn(roadMaskAt(cellX, cellY), at.heading);
+  if (turn !== null) {
+    // Oblúk začína a končí na hrane bunky v strede pruhu tejto bunky; zvyšok miešania typov (`lane` − vlastný posun)
+    // sa pripočíta, takže pri rôznych typoch susedných ciest nevzniká skok.
+    const center: Point = { x: cellX + 0.5, y: cellY + 0.5 };
+    const kind = roadKindAt(cellX, cellY);
+    const arc = turnArcPose(kind, turn.from, turn.to, cornerAlpha(at, center, at.heading));
+    const rest = lane - laneMagnitude(kind);
+    x = center.x + arc.x + rest * right.x;
+    y = center.y + arc.y + rest * right.y;
+    angle = arc.angle;
+  }
+  return { x: x * cellPx, y: y * cellPx, angle };
 }
 
 /** Zhoda statickej časti VM (kým sa nezmení, view sa nevytvára nanovo): poloha a kurz sa menia každý tick, def nie. */
@@ -78,6 +187,8 @@ export interface VehicleViewDeps {
   readonly textures: EntityTextures | null;
   /** Typ cesty v bunke (pruh vozidla, `lane.ts`); `WorldRenderer` ho čerpá z gridu, predvolene všade `two_lane`. */
   readonly roadKindAt?: RoadKindAt;
+  /** Maska susedov cestnej bunky (zákruty, `lane.ts`); `WorldRenderer` ju čerpá z gridu, predvolene bez oblúkov. */
+  readonly roadMaskAt?: RoadMaskAt;
 }
 
 export class VehicleView {
@@ -90,6 +201,7 @@ export class VehicleView {
   private readonly textures: { readonly empty: Texture; readonly loaded: Texture } | null;
   private load: VehicleLoad;
   private readonly roadKindAt: RoadKindAt;
+  private readonly roadMaskAt: RoadMaskAt;
 
   constructor(
     vm: VehicleVM,
@@ -99,6 +211,7 @@ export class VehicleView {
     this.id = vm.id;
     this.last = vm;
     this.roadKindAt = deps.roadKindAt ?? defaultRoadKindAt;
+    this.roadMaskAt = deps.roadMaskAt ?? noRoadMaskAt;
     this.view = new Container({ label: `vehicle-${String(vm.id)}` });
     this.load = vehicleLoad(vm.loaded);
     this.textures = this.resolveTextures(vm.defId);
@@ -127,7 +240,7 @@ export class VehicleView {
   /** Nastaví polohu (interpolovanú), kurz a stav naloženia. Pre nezmenený stav nič nealokuje. */
   update(vm: VehicleVM, alpha: number): void {
     this.last = vm;
-    const pose = vehiclePose(vm, alpha, this.deps.cellPx, this.roadKindAt);
+    const pose = vehiclePose(vm, alpha, this.deps.cellPx, this.roadKindAt, this.roadMaskAt);
     if (this.view.x !== pose.x || this.view.y !== pose.y) this.view.position.set(pose.x, pose.y);
     if (this.view.angle !== pose.angle) this.view.angle = pose.angle;
     const load = vehicleLoad(vm.loaded);

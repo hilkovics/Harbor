@@ -1,10 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { Container, Sprite } from 'pixi.js';
 import { describe, expect, it } from 'vitest';
-import { loadBundledMap } from '@sim/grid';
+import { DEFAULT_ROAD_KIND, ROAD_KINDS, ROAD_KIND_TRAITS, loadBundledMap, type RoadKind } from '@sim/grid';
 import { MANIFEST_CELL_PX } from '@render/entity-assets';
 import {
-  DEFAULT_ROAD_KIND,
   LANE_CENTER_PX,
   LANE_OFFSET_CELLS,
   LANE_WIDTH_PX,
@@ -12,10 +11,12 @@ import {
   VEHICLE_CONTENT_WIDTH_PX,
   VEHICLE_LANE_SCALE,
   createRoadKindAt,
+  createRoadMaskAt,
   defaultRoadKindAt,
+  laneMagnitude,
   laneOffset,
+  noRoadMaskAt,
   roadKindOfCell,
-  type RoadKind,
 } from '@render/lane';
 import { VehicleView } from '@render/vehicle-view';
 import type { VehicleVM, ViewRotation } from '@render/view-models';
@@ -23,7 +24,7 @@ import { ENTITY_PALETTE, PALETTE, StubTextures } from './stub-textures';
 
 const CELL = PALETTE.cellPx;
 const HEADINGS: readonly ViewRotation[] = [0, 90, 180, 270];
-const KINDS: readonly RoadKind[] = ['two_lane', 'one_lane', 'one_way'];
+const KINDS: readonly RoadKind[] = ROAD_KINDS;
 
 function readAsset(path: string): string {
   return readFileSync(new URL(`../../assets/${path}`, import.meta.url), 'utf8');
@@ -133,28 +134,68 @@ describe('laneOffset (pravostranná premávka, posun v bunkách kolmo na smer ja
 describe('typ cesty pod vozidlom (`roadKindAt`)', () => {
   const map = loadBundledMap();
 
-  it('predvolená funkcia vráti všade dvojpruhovú cestu (sim zatiaľ nemá `roadKind`)', () => {
+  it('predvolená funkcia vráti všade dvojpruhovú cestu (renderer bez mriežky)', () => {
     expect(DEFAULT_ROAD_KIND).toBe('two_lane');
     expect(defaultRoadKindAt(3, 4)).toBe('two_lane');
     expect(defaultRoadKindAt(-1, 9999)).toBe('two_lane');
   });
 
-  it('bunka s cestou = two_lane, bunka bez cesty a koľaj = stred (one_lane)', () => {
-    expect(roadKindOfCell({ road: 'road' })).toBe('two_lane');
-    expect(roadKindOfCell({ road: 'none' })).toBe('one_lane');
-    expect(roadKindOfCell({ road: 'rail' })).toBe('one_lane');
+  it('bunka s cestou čerpá typ z `Cell.roadKind`, bunka bez cesty a koľaj = stred (one_lane)', () => {
+    for (const roadKind of ROAD_KINDS) expect(roadKindOfCell({ road: 'road', roadKind })).toBe(roadKind);
+    expect(roadKindOfCell({ road: 'none', roadKind: 'two_lane' })).toBe('one_lane');
+    expect(roadKindOfCell({ road: 'rail', roadKind: 'two_lane' })).toBe('one_lane');
   });
 
-  it('`createRoadKindAt` číta živú mriežku: nová cesta je two_lane hneď, mimo mapy stred', () => {
+  it('`createRoadKindAt` číta živú mriežku: štartová cesta je two_lane, prestavba na iný typ sa prejaví hneď, mimo mapy stred', () => {
     const grid = map.createGrid();
     const roadKindAt = createRoadKindAt(grid);
     const { x, y } = map.starter.roads[0];
+    expect(roadKindAt(x, y)).toBe('two_lane');
     grid.at(x, y).road = 'none';
     expect(roadKindAt(x, y)).toBe('one_lane');
     grid.at(x, y).road = 'road';
     expect(roadKindAt(x, y)).toBe('two_lane');
+    grid.at(x, y).roadKind = 'one_way';
+    grid.at(x, y).roadDir = 'N';
+    expect(roadKindAt(x, y)).toBe('one_way');
+    grid.at(x, y).roadKind = 'one_lane';
+    grid.at(x, y).roadDir = null;
+    expect(roadKindAt(x, y)).toBe('one_lane');
     expect(roadKindAt(-1, 0)).toBe('one_lane');
     expect(roadKindAt(grid.width, grid.height)).toBe('one_lane');
+  });
+
+  it('počet pruhov typu je zo simu (`ROAD_KIND_TRAITS.lanes`): posun je 13/64 len pri dvoch pruhoch', () => {
+    for (const kind of ROAD_KINDS) {
+      expect(laneMagnitude(kind)).toBe(ROAD_KIND_TRAITS[kind].lanes === 2 ? 13 / 64 : 0);
+    }
+  });
+});
+
+describe('maska susedov cestnej bunky (`roadMaskAt`, tvar zákrut)', () => {
+  const map = loadBundledMap();
+
+  it('bez mriežky nemá žiadna bunka susedov', () => {
+    expect(noRoadMaskAt(3, 4)).toBe(0);
+  });
+
+  it('`createRoadMaskAt`: N = 1, E = 2, S = 4, W = 8 len pre cestné bunky; mimo mapy a bez cesty 0', () => {
+    const grid = map.createGrid();
+    const cells = [
+      [40, 20],
+      [41, 20],
+      [40, 21],
+    ] as const;
+    for (const [x, y] of cells) grid.at(x, y).road = 'road';
+    const maskAt = createRoadMaskAt(grid);
+    expect(maskAt(40, 20)).toBe(2 | 4); // zákruta: východ + juh
+    expect(maskAt(41, 20)).toBe(8);
+    expect(maskAt(40, 21)).toBe(1);
+    expect(maskAt(50, 20)).toBe(0); // bez cesty
+    expect(maskAt(-1, 0)).toBe(0);
+    expect(maskAt(grid.width, grid.height)).toBe(0);
+    grid.at(41, 20).road = 'rail'; // koľaj sa s cestou nespája
+    expect(maskAt(40, 20)).toBe(4);
   });
 });
 

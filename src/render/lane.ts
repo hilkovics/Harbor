@@ -1,6 +1,8 @@
 /**
- * Pruhy (docs/tasks/phase-03.md, „Doplnok od používateľa“, rozhodnutie 11): sim vedie vozidlo stredom bunky, pruh je
- * čisto prezentačný — renderer posunie vozidlo kolmo na smer jazdy do pravého pruhu (premávka je pravostranná).
+ * Pruhy (docs/tasks/phase-03.md, „Doplnok od používateľa“, rozhodnutie 11; ADR-020): sim vedie vozidlo stredom bunky,
+ * pruh je čisto prezentačný — renderer posunie vozidlo kolmo na smer jazdy do pravého pruhu (premávka je pravostranná).
+ * Počet pruhov určuje typ cesty (`ROAD_KIND_TRAITS[kind].lanes` zo simu): `two_lane` = 2 (pravý pruh), `one_lane` a
+ * `one_way` = 1 (stred).
  *
  * Geometria sa odvodzuje zo spritov (`assets/infra/road_*.svg`, `assets/entities/straddle_carrier_*.svg`, obe 64×64 px,
  * `cellPx` manifestu), nie z odhadu; `tests/render/lane.test.ts` porovnáva konštanty priamo so SVG:
@@ -8,19 +10,14 @@
  *  - jeden pruh má teda 26 px a jeho stred je ±13 px od osi (x 19 a x 45) = ±13/64 bunky;
  *  - obsah spritu vozidla je 56 px široký (kolesá x 4–60), takže sa škáluje na šírku pruhu: 26 / 56.
  *
- * Typ cesty (`RoadKind`) vo F3 sim ešte nemá (príde v T03-18); `createRoadKindAt` je jediné miesto, kde renderer typ
- * cesty číta — T03-19 ho prepne na `cell.roadKind`.
+ * Typ cesty renderer číta z `Cell.roadKind` (`createRoadKindAt` → `roadKindOfCell`, jediné miesto). Tvar bunky pre oblúky
+ * v zákrutách (`turn-arc.ts`) dáva `createRoadMaskAt` (maska susedov ako autotile).
  */
-import type { Cell, Grid } from '@sim/grid';
+import { DEFAULT_ROAD_KIND, ROAD_KIND_TRAITS, type Cell, type Grid, type RoadKind } from '@sim/grid';
+import { autotileMask } from './autotile';
 import type { Point } from './camera';
 import { MANIFEST_CELL_PX } from './entity-assets';
 import type { ViewRotation } from './view-models';
-
-/** Typ cesty (ADR-020, T03-18): dvojpruhová obojsmerná, jednopruhová obojsmerná, jednosmerná jednopruhová. */
-export type RoadKind = 'two_lane' | 'one_lane' | 'one_way';
-
-/** Typ cesty, ktorý platí, kým ho sim nezapisuje (F3 pred T03-18): štartové aj hráčove cesty sú dvojpruhové. */
-export const DEFAULT_ROAD_KIND: RoadKind = 'two_lane';
 
 /** Šírka asfaltu sprite `road_*` v px zdroja (x 6–58). */
 export const ROAD_ASPHALT_PX = 52;
@@ -40,13 +37,39 @@ export const VEHICLE_CONTENT_WIDTH_PX = 56;
 /** Mierka spritu vozidla, aby šírka jeho obsahu zodpovedala šírke pruhu (26 / 56). */
 export const VEHICLE_LANE_SCALE = LANE_WIDTH_PX / VEHICLE_CONTENT_WIDTH_PX;
 
-/** Vektor „vpravo od smeru jazdy“ pre kurz (0 = sever, v smere hodinových ručičiek; +x doprava, +y nadol). */
-const RIGHT_OF_HEADING: Readonly<Record<ViewRotation, Point>> = {
-  0: { x: 1, y: 0 },
-  90: { x: 0, y: 1 },
-  180: { x: -1, y: 0 },
-  270: { x: 0, y: -1 },
-};
+/** Jednotkový vektor „dopredu“ pre kurz (0 = sever, v smere hodinových ručičiek; +x doprava, +y nadol). */
+const FORWARD_OF_HEADING: Readonly<Record<ViewRotation, Point>> = Object.freeze({
+  0: Object.freeze({ x: 0, y: -1 }),
+  90: Object.freeze({ x: 1, y: 0 }),
+  180: Object.freeze({ x: 0, y: 1 }),
+  270: Object.freeze({ x: -1, y: 0 }),
+});
+
+/** Vektor „vpravo od smeru jazdy“ pre kurz. */
+const RIGHT_OF_HEADING: Readonly<Record<ViewRotation, Point>> = Object.freeze({
+  0: Object.freeze({ x: 1, y: 0 }),
+  90: Object.freeze({ x: 0, y: 1 }),
+  180: Object.freeze({ x: -1, y: 0 }),
+  270: Object.freeze({ x: 0, y: -1 }),
+});
+
+/** Jednotkový vektor smeru jazdy pre kurz (bez alokácie). */
+export function forwardOf(heading: ViewRotation): Point {
+  return FORWARD_OF_HEADING[heading];
+}
+
+/** Jednotkový vektor kolmo vpravo od smeru jazdy pre kurz (bez alokácie). */
+export function rightOf(heading: ViewRotation): Point {
+  return RIGHT_OF_HEADING[heading];
+}
+
+/**
+ * Posun stredu vozidla od osi cesty v bunkách kolmo vpravo od smeru jazdy podľa typu cesty: dvojpruhová cesta 13/64,
+ * jednopruhové cesty (`one_lane`, `one_way`) 0 — vozidlo jazdí v strede. Odvodené z `ROAD_KIND_TRAITS[kind].lanes`.
+ */
+export function laneMagnitude(kind: RoadKind): number {
+  return ROAD_KIND_TRAITS[kind].lanes === 2 ? LANE_OFFSET_CELLS : 0;
+}
 
 const CENTERED: Point = Object.freeze({ x: 0, y: 0 });
 
@@ -64,9 +87,9 @@ function offsetsAt(distance: number): Readonly<Record<ViewRotation, Point>> {
  * Dvojpruhová cesta má pruh (13/64 vpravo od osi), jednopruhové cesty jazdia v strede.
  */
 const LANE_OFFSETS: Readonly<Record<RoadKind, Readonly<Record<ViewRotation, Point>>>> = {
-  two_lane: offsetsAt(LANE_OFFSET_CELLS),
-  one_lane: offsetsAt(0),
-  one_way: offsetsAt(0),
+  two_lane: offsetsAt(laneMagnitude('two_lane')),
+  one_lane: offsetsAt(laneMagnitude('one_lane')),
+  one_way: offsetsAt(laneMagnitude('one_way')),
 };
 
 /**
@@ -84,15 +107,30 @@ export type RoadKindAt = (cellX: number, cellY: number) => RoadKind;
 export const defaultRoadKindAt: RoadKindAt = () => DEFAULT_ROAD_KIND;
 
 /**
- * Typ cesty v bunke. **Jediné miesto, kde renderer typ cesty číta**: T03-19 ho prepne na `cell.roadKind`.
- * Kým ho sim nemá (T03-18), má každá bunka s cestou `two_lane`; bunka bez cesty pruh nemá, vozidlo tam jazdí v strede
- * (`one_lane`) — nastať to nemá (vozidlo jazdí po cestách, `RemoveRoad` pod ním je `occupied`, ADR-019).
+ * Typ cesty v bunke: `Cell.roadKind` (ADR-020). **Jediné miesto, kde renderer typ cesty číta.** Bunka bez cesty (alebo
+ * s koľajou) pruh nemá, vozidlo tam jazdí v strede (`one_lane`) — nastať to nemá (vozidlo jazdí po cestách, `RemoveRoad`
+ * pod ním je `occupied`, ADR-019).
  */
-export function roadKindOfCell(cell: Readonly<Pick<Cell, 'road'>>): RoadKind {
-  return cell.road === 'road' ? DEFAULT_ROAD_KIND : 'one_lane';
+export function roadKindOfCell(cell: Readonly<Pick<Cell, 'road' | 'roadKind'>>): RoadKind {
+  return cell.road === 'road' ? cell.roadKind : 'one_lane';
 }
 
 /** Vytvorí `RoadKindAt` nad živou mriežkou sveta (číta sa pri každom volaní, takže zmeny ciest sa prejavia hneď). */
 export function createRoadKindAt(grid: Grid): RoadKindAt {
   return (cellX, cellY) => (grid.inBounds(cellX, cellY) ? roadKindOfCell(grid.at(cellX, cellY)) : 'one_lane');
+}
+
+/**
+ * Maska pripojených susedov cestnej bunky (autotile: N = 1, E = 2, S = 4, W = 8), 0 pre bunku bez cesty alebo mimo
+ * mapy. Z masky vie renderer, či je bunka zákruta (dva kolmé susedia) a kade vozidlo prejde (`turn-arc.ts`).
+ */
+export type RoadMaskAt = (cellX: number, cellY: number) => number;
+
+/** `RoadMaskAt` bez gridu: žiadna bunka nemá pripojených susedov, takže sa oblúky nekreslia (vozidlo jazdí po priamkach). */
+export const noRoadMaskAt: RoadMaskAt = () => 0;
+
+/** Vytvorí `RoadMaskAt` nad živou mriežkou sveta (zmeny ciest sa prejavia hneď, bez cache). */
+export function createRoadMaskAt(grid: Grid): RoadMaskAt {
+  return (cellX, cellY) =>
+    grid.inBounds(cellX, cellY) && grid.at(cellX, cellY).road === 'road' ? autotileMask(grid, cellX, cellY, 'road') : 0;
 }

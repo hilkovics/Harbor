@@ -100,10 +100,22 @@ export interface TerrainPalette {
   readonly blocked: ColorValue;
 }
 
+/**
+ * Podiel farby asfaltu (`--road-base`), ktorý ostane v okraji cesty (obrubník): sprity `road_*.svg` majú okraj #101113
+ * pri asfalte #4B5058 (16/75, 17/80, 19/88 ≈ 0,215). Token pre okraj v `design/tokens.css` nie je (backlog), preto sa
+ * okraj procedurálnych úzkych ciest odvodzuje z `--road-base`; `tests/render/road-layer-narrow.test.ts` hlási, ak sa
+ * odvodená farba rozíde od okraja v spritoch.
+ */
+export const ROAD_EDGE_SHADE = 0.215;
+
 /** Farby ciest (DESIGN_BRIEF §3 „Infraštruktúra“). */
 export interface RoadPalette {
   readonly base: ColorValue;
   readonly marking: ColorValue;
+  /** Okraj (obrubník) procedurálnych úzkych ciest: `--road-base` stmavený o `ROAD_EDGE_SHADE`. */
+  readonly edge: ColorValue;
+  /** Šípka smeru jednosmerky bez sprite `overlay.path_arrow` (`--ui-accent`, farba sprite). */
+  readonly arrow: ColorValue;
 }
 
 /** Farby obrysov parciel podľa vlastníctva (DESIGN_BRIEF §3 „Herný svet“). */
@@ -122,9 +134,16 @@ export interface RenderPalette {
   readonly parcel: ParcelPalette;
 }
 
+/** Stmaví farbu na `factor` (0…1) jej jasu — každý kanál sa vynásobí a zaokrúhli; priehľadnosť ostáva. */
+export function shadeColor(value: ColorValue, factor: number): ColorValue {
+  const channel = (shift: number): number => Math.round(((value.color >> shift) & 0xff) * factor);
+  return { color: (channel(16) << 16) | (channel(8) << 8) | channel(0), alpha: value.alpha };
+}
+
 /** Načíta paletu sveta z tokenov; chýbajúci token → chyba s jeho menom. */
 export function loadRenderPalette(resolve: TokenResolver = documentTokenResolver): RenderPalette {
   const color = (name: string): ColorValue => readColorToken(name, resolve);
+  const roadBase = color('--road-base');
   return {
     cellPx: readLengthToken('--cell', resolve),
     terrain: {
@@ -138,8 +157,10 @@ export function loadRenderPalette(resolve: TokenResolver = documentTokenResolver
       blocked: color('--terrain-blocked'),
     },
     road: {
-      base: color('--road-base'),
+      base: roadBase,
       marking: color('--road-marking'),
+      edge: shadeColor(roadBase, ROAD_EDGE_SHADE),
+      arrow: color('--ui-accent'),
     },
     parcel: {
       forSale: color('--parcel-for-sale'),

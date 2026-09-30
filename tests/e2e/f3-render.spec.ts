@@ -2,7 +2,10 @@ import { expect, test, type Page } from '@playwright/test';
 
 // F3 render demo (T03-08): pevné view-modely bez simu (`src/render/__demo__/f3-render.html`). Screenshoty slúžia na
 // vizuálnu kontrolu: fill stavy dvorov, vozidlá (empty / loaded, kurzy), pripojené a odpojené depo s odznakom.
-// Scéna `lanes` (T03-17, `?scene=lanes`): vozidlá jazdia v pravom pruhu, protismerné sa nekrížia (`f3-lanes.png`).
+// Scéna `lanes` (T03-17, `?scene=lanes`): vozidlá jazdia v pravom pruhu, protismerné sa nekrížia (`f3-lanes.png`);
+// od T03-19 idú v zákrutách po oblúku okolo vnútorného rohu (pravá zákruta polomer 19 px, ľavá 45 px).
+// Scéna `road-kinds` (T03-19, `?scene=road-kinds`): dvojpruhová, jednopruhová a jednosmerná cesta, križovatky rôznych
+// typov, jednosmerný okruh so šípkami a vozidlá aj v oblúku (`f3-road-kinds.png`).
 
 const DEMO_URL = '/src/render/__demo__/f3-render.html';
 
@@ -86,12 +89,25 @@ test.describe('F3: render skladov, vozidiel a odznaku „nepripojené“ (demo s
   });
 });
 
-test.describe('F3: vozidlá v pravom pruhu (scéna lanes)', () => {
+test.describe('F3: vozidlá v pravom pruhu a po oblúku v zákrutách (scéna lanes)', () => {
   /** Posun stredu vozidla od osi cesty (bunky) vpravo od smeru jazdy: 13 px z 64 px bunky. */
   const LANE = 13 / 64;
   const RIGHT_OF_HEADING: Record<number, readonly [number, number]> = { 0: [1, 0], 90: [0, 1], 180: [-1, 0], 270: [0, -1] };
 
-  test('priama cesta, protismer vedľa seba, T-križovatka a zákruty: každé vozidlo v pravom pruhu', async ({ page }) => {
+  /**
+   * Vozidlá v bunkách zákrut: stred oblúka `q` (roh bunky, v ktorom sa stretávajú pripojené strany), polomer pruhu v px zdroja
+   * (pravá zákruta 19, ľavá 45), parameter oblúka `t` (podiel dráhy v bunke) a kurz vstupu s otočením (+90 / −90).
+   */
+  const ARCS: Record<number, { q: readonly [number, number]; radius: number; t: number; from: number; delta: number }> = {
+    31: { q: [48, 25], radius: 19, t: 0.62, from: 90, delta: 90 }, //  (48; 24) východ → juh, pravá
+    32: { q: [43, 28], radius: 45, t: 0.62, from: 180, delta: -90 }, //  (42; 28) juh → východ, ľavá
+    33: { q: [48, 25], radius: 45, t: 0.25, from: 0, delta: -90 }, //  (48; 24) sever → západ, ľavá
+    34: { q: [43, 28], radius: 19, t: 0.3, from: 270, delta: 90 }, //  (42; 28) západ → sever, pravá
+    35: { q: [48, 28], radius: 19, t: 0.5, from: 180, delta: 90 }, //  (48; 28) juh → západ, pravá
+    36: { q: [48, 28], radius: 45, t: 0.8, from: 90, delta: -90 }, //  (48; 28) východ → sever, ľavá
+  };
+
+  test('priama cesta, protismer vedľa seba, T-križovatka: každé vozidlo v pravom pruhu; v zákrutách na oblúku', async ({ page }) => {
     const errors = await openDemo(page, 'lanes');
 
     const state = await page.evaluate(() => {
@@ -104,7 +120,7 @@ test.describe('F3: vozidlá v pravom pruhu (scéna lanes)', () => {
           id: vehicle.id,
           x: view?.view.x ?? Number.NaN,
           y: view?.view.y ?? Number.NaN,
-          angle: Math.round((((view?.view.angle ?? 0) % 360) + 360) % 360),
+          angle: (((view?.view.angle ?? 0) % 360) + 360) % 360,
           spriteWidth: sprite?.width ?? Number.NaN,
           textured: view?.texture !== null,
         };
@@ -119,11 +135,21 @@ test.describe('F3: vozidlá v pravom pruhu (scéna lanes)', () => {
 
     for (const vehicle of state.vehicles) {
       const vm = scene.find((candidate) => candidate.id === vehicle.id)!;
-      const [rx, ry] = RIGHT_OF_HEADING[vm.heading];
-      // stred vozidla = poloha z VM + posun o 13/64 bunky doprava od smeru jazdy (zákruta: alpha 1 = aktuálny úsek)
-      expect(vehicle.x / state.cellPx, `x vozidla ${String(vehicle.id)}`).toBeCloseTo(vm.x + rx * LANE, 6);
-      expect(vehicle.y / state.cellPx, `y vozidla ${String(vehicle.id)}`).toBeCloseTo(vm.y + ry * LANE, 6);
-      expect(vehicle.angle).toBe(vm.heading);
+      const px = vehicle.x / state.cellPx;
+      const py = vehicle.y / state.cellPx;
+      const arc = ARCS[vehicle.id];
+      if (arc === undefined) {
+        const [rx, ry] = RIGHT_OF_HEADING[vm.heading];
+        // stred vozidla = poloha z VM + posun o 13/64 bunky doprava od smeru jazdy
+        expect(px, `x vozidla ${String(vehicle.id)}`).toBeCloseTo(vm.x + rx * LANE, 6);
+        expect(py, `y vozidla ${String(vehicle.id)}`).toBeCloseTo(vm.y + ry * LANE, 6);
+        expect(vehicle.angle).toBeCloseTo(vm.heading, 6);
+      } else {
+        // zákruta: vozidlo leží na oblúku okolo vnútorného rohu, uhol sa otáča plynulo z kurzu vstupu na kurz výstupu
+        expect(Math.hypot(px - arc.q[0], py - arc.q[1]) * 64, `polomer oblúka vozidla ${String(vehicle.id)}`).toBeCloseTo(arc.radius, 6);
+        const expectedAngle = (((arc.from + arc.delta * arc.t) % 360) + 360) % 360;
+        expect(vehicle.angle, `uhol vozidla ${String(vehicle.id)}`).toBeCloseTo(expectedAngle, 6);
+      }
       // sprite je zmenšený na šírku pruhu: obsah 56 z 64 px → 26 px pruh
       expect(vehicle.spriteWidth / state.cellPx).toBeCloseTo(26 / 56, 6);
     }
@@ -139,31 +165,145 @@ test.describe('F3: vozidlá v pravom pruhu (scéna lanes)', () => {
     expect(errors).toEqual([]);
   });
 
-  test('zákruta za behu: pruh sa interpoluje medzi predchádzajúcim a aktuálnym úsekom (alpha 0, 0,5 a 1)', async ({ page }) => {
+  test('zákruta za behu: vozidlo prejde hranu bunky a stred po oblúku (alpha 0, 0,5 a 1), bez skoku cez stredovú čiaru', async ({ page }) => {
     const errors = await openDemo(page, 'lanes');
 
-    const poses = await page.evaluate(async () => {
+    const samples = await page.evaluate(async () => {
       const { renderer, scene, show } = window.__f3RenderDemo!;
       const cellPx = renderer.palette.cellPx;
-      const result: { alpha: number; x: number; y: number }[] = [];
-      for (const alpha of [0, 0.5, 1]) {
+      const result: { alpha: number; x: number; y: number; angle: number }[] = [];
+      for (let i = 0; i <= 20; i++) {
+        const alpha = i / 20;
         await show(scene, alpha);
         const view = renderer.entities.vehicleView(31)!;
-        result.push({ alpha, x: view.view.x / cellPx, y: view.view.y / cellPx });
+        result.push({ alpha, x: view.view.x / cellPx, y: view.view.y / cellPx, angle: (((view.view.angle % 360) + 360) % 360) });
       }
       return result;
     });
 
-    // vozidlo 31: prev (47,95; 24,5) kurz 90° → aktuálna (48,5; 24,62) kurz 180°
-    const LANE_CELLS = 13 / 64;
-    const start = { x: 47.95, y: 24.5 + LANE_CELLS }; // južný pruh východnej jazdy
-    const end = { x: 48.5 - LANE_CELLS, y: 24.62 }; // západný pruh južnej jazdy
-    expect(poses[0].x).toBeCloseTo(start.x, 6);
-    expect(poses[0].y).toBeCloseTo(start.y, 6);
-    expect(poses[1].x).toBeCloseTo((start.x + end.x) / 2, 6);
-    expect(poses[1].y).toBeCloseTo((start.y + end.y) / 2, 6);
-    expect(poses[2].x).toBeCloseTo(end.x, 6);
-    expect(poses[2].y).toBeCloseTo(end.y, 6);
+    // vozidlo 31: prev (47,95; 24,5) kurz 90° → aktuálna (48,5; 24,62) kurz 180°; zákruta (48; 24) = východ → juh, pravá (19 px)
+    const start = samples[0];
+    expect(start.x).toBeCloseTo(47.95, 6);
+    expect(start.y).toBeCloseTo(24.5 + 13 / 64, 6); // ešte v priamom pravom pruhu susednej bunky
+    expect(start.angle).toBeCloseTo(90, 6);
+    const end = samples[samples.length - 1];
+    expect(Math.hypot(end.x - 48, end.y - 25) * 64).toBeCloseTo(19, 6);
+    expect(end.angle).toBeCloseTo(90 + 90 * 0.62, 6);
+    // po vstupe do bunky zákruty (x ≥ 48) leží vozidlo stále na oblúku s polomerom 19 px okolo rohu (48; 25)
+    const inside = samples.filter((sample) => sample.x >= 48);
+    expect(inside.length).toBeGreaterThan(10);
+    for (const sample of inside) expect(Math.hypot(sample.x - 48, sample.y - 25) * 64).toBeCloseTo(19, 6);
+    // plynulosť: najväčší krok medzi susednými vzorkami je len zlomok bunky a uhol sa mení monotónne
+    let largest = 0;
+    for (let i = 1; i < samples.length; i++) {
+      largest = Math.max(largest, Math.hypot(samples[i].x - samples[i - 1].x, samples[i].y - samples[i - 1].y));
+      expect(samples[i].angle).toBeGreaterThanOrEqual(samples[i - 1].angle - 1e-9);
+    }
+    expect(largest).toBeLessThan(0.05);
+    expect(errors).toEqual([]);
+  });
+});
+
+test.describe('F3: typy ciest, šípky jednosmerky a oblúky (scéna road-kinds)', () => {
+  test('dvojpruhová, jednopruhová a jednosmerná cesta: vozidlá v pruhu / v strede, šípky, lieviky a vozidlá v oblúku', async ({ page }) => {
+    const errors = await openDemo(page, 'road-kinds');
+
+    const state = await page.evaluate(() => {
+      const { renderer, scene } = window.__f3RenderDemo!;
+      const cellPx = renderer.palette.cellPx;
+      const vehicles = (scene.vehicles ?? []).map((vehicle) => {
+        const view = renderer.entities.vehicleView(vehicle.id);
+        return {
+          id: vehicle.id,
+          x: (view?.view.x ?? Number.NaN) / cellPx,
+          y: (view?.view.y ?? Number.NaN) / cellPx,
+          angle: (((view?.view.angle ?? 0) % 360) + 360) % 360,
+          textured: view?.texture !== null,
+        };
+      });
+      const style = (x: number, y: number): string | undefined => renderer.roads.tileStyleAt(x, y);
+      return {
+        vehicles,
+        vehicleCount: renderer.entities.vehicleCount,
+        styles: {
+          wide: style(36, 21),
+          narrow: style(36, 23),
+          oneWay: style(36, 25),
+          taper: style(38, 27),
+          crossArm: style(42, 22),
+        },
+        tiles: renderer.roads.tileCount,
+        arrows: renderer.roadMarks.arrowCount,
+        arrowE: renderer.roadMarks.arrowAt(36, 25),
+        arrowS: renderer.roadMarks.arrowAt(54, 24),
+        arrowNone: renderer.roadMarks.arrowAt(36, 23),
+        layers: renderer.world.children.map((child) => child.label),
+      };
+    });
+    const scene = await page.evaluate(() => window.__f3RenderDemo!.scene.vehicles ?? []);
+
+    expect(state.vehicleCount).toBe(scene.length);
+    expect(state.vehicles.every((vehicle) => vehicle.textured)).toBe(true);
+    expect(state.styles).toEqual({ wide: 'wide', narrow: 'narrow:0', oneWay: 'narrow:0', taper: expect.stringMatching(/^narrow:[1-9]/), crossArm: expect.stringMatching(/^narrow:[1-9]/) });
+    expect(state.arrows).toBe(30); // okruh 20 + rovná cesta 6 + odbočka 4
+    expect([state.arrowE, state.arrowS, state.arrowNone]).toEqual([90, 180, undefined]);
+    // vrstva značiek je nad cestami a pod entitami (šípky nezakryjú vozidlá)
+    expect(state.layers.indexOf('road-marks')).toBe(state.layers.indexOf('roads') + 1);
+    expect(state.layers.indexOf('road-marks')).toBeLessThan(state.layers.indexOf('entities'));
+
+    const at = (id: number) => state.vehicles.find((vehicle) => vehicle.id === id)!;
+    const vm = (id: number) => scene.find((vehicle) => vehicle.id === id)!;
+    // dvojpruhová cesta y 21: vozidlo na východ je v južnom pruhu (+13/64), na západ v severnom (−13/64)
+    expect(at(41).y).toBeCloseTo(vm(41).y + 13 / 64, 6);
+    expect(at(42).y).toBeCloseTo(vm(42).y - 13 / 64, 6);
+    // jednopruhová a jednosmerná: v strede cesty
+    for (const id of [43, 44, 45, 46, 51, 52, 53, 54]) {
+      expect(at(id).x, `x ${String(id)}`).toBeCloseTo(vm(id).x, 6);
+      expect(at(id).y, `y ${String(id)}`).toBeCloseTo(vm(id).y, 6);
+    }
+    // zúženie: dvojpruhová časť (x 35–37) v pruhu, jednopruhová (x 38–40) v strede
+    expect(at(47).y).toBeCloseTo(vm(47).y + 13 / 64, 6);
+    expect(at(48).y).toBeCloseTo(vm(48).y, 6);
+
+    // oblúky na jednosmernom okruhu: polomer 32 px (stred cesty) okolo vnútorného rohu, uhol podľa polohy v bunke
+    const ARCS: Record<number, { q: readonly [number, number]; from: number; t: number }> = {
+      56: { q: [54, 22], from: 90, t: 0.25 }, //  (54; 21) východ → juh, štvrtina oblúka
+      58: { q: [54, 26], from: 180, t: 0.5 }, //  (54; 26) juh → západ, stred oblúka
+      60: { q: [50, 26], from: 270, t: 0.75 }, //  (49; 26) západ → sever, tesne po strede
+    };
+    for (const [id, arc] of Object.entries(ARCS)) {
+      const vehicle = at(Number(id));
+      expect(Math.hypot(vehicle.x - arc.q[0], vehicle.y - arc.q[1]) * 64, `polomer vozidla ${id}`).toBeCloseTo(32, 6);
+      const expected = (((arc.from + 90 * arc.t) % 360) + 360) % 360;
+      expect(vehicle.angle, `uhol vozidla ${id}`).toBeCloseTo(expected, 6);
+    }
+
+    await page.screenshot({ path: 'tests/e2e/__screenshots__/f3-road-kinds.png' });
+    expect(errors).toEqual([]);
+  });
+
+  test('zblízka a z diaľky: križovatka širokej a úzkych ciest s lievikmi, okruh so šípkami pri zoome 0,5 a 2', async ({ page }) => {
+    const errors = await openDemo(page, 'road-kinds');
+
+    const zoomTo = async (zoom: number, cellX: number, cellY: number): Promise<void> => {
+      await page.evaluate(async ({ zoom: z, cellX: cx, cellY: cy }) => {
+        const { renderer, show, scene } = window.__f3RenderDemo!;
+        const { camera } = renderer;
+        camera.zoomAt(z / camera.zoom, camera.viewportWidth / 2, camera.viewportHeight / 2);
+        camera.centerOn(cx, cy);
+        renderer.syncCamera();
+        await show(scene);
+      }, { zoom, cellX, cellY });
+    };
+
+    await zoomTo(2, 44, 24);
+    await page.screenshot({ path: 'tests/e2e/__screenshots__/f3-road-kinds-junction.png' });
+    await zoomTo(2, 51.5, 23.5);
+    await page.screenshot({ path: 'tests/e2e/__screenshots__/f3-road-kinds-ring.png' });
+    await zoomTo(2, 42, 27.5);
+    await page.screenshot({ path: 'tests/e2e/__screenshots__/f3-road-kinds-bend.png' });
+    await zoomTo(0.5, 44.5, 25);
+    await page.screenshot({ path: 'tests/e2e/__screenshots__/f3-road-kinds-far.png' });
     expect(errors).toEqual([]);
   });
 });

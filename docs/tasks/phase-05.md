@@ -59,7 +59,7 @@
 12. **Čo sa neukladá:** priority dispatchera sa odvodzujú, neukladajú.
 
 ## Checklist
-- [ ] T05-01 · Defy: `contract_templates.json` (3 šablóny), `economy.json` rozšírenie, `params.wagePerDayCents` žeriavu, schémy, DefRegistry
+- [x] T05-01 · Defy: `contract_templates.json` (3 šablóny), `economy.json` rozšírenie, `params.wagePerDayCents` žeriavu, schémy, DefRegistry
 - [ ] T05-02 · Sim: `Economy` + `Ledger` (post, DaySummary/MonthSummary, maintenance, wages, bankrot) — prevedenie všetkých zmien hotovosti; ADR-025
 - [ ] T05-03 · Sim: `Contract` FSM + `ContractSystem` (pool, Accept/Decline, loď kontraktu, SLA, demurrage, late, fail, completion, XP); ADR-026
 - [ ] T05-04 · Sim: dispatcher krok 2 podľa kontraktu + SLA priorita; WorldState v5 + migrácia; `GameOver`; ADR-027

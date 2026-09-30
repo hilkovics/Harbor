@@ -78,7 +78,7 @@ test.describe('F3: výber typu cesty a jednosmerný ťah (T03-20)', () => {
     await page.evaluate(() => window.__sim!.centerOn!(37, 23, 1));
     await settle(page);
 
-    // 1) BuildBar: Landside je povolená; tri typy ciest s cenou za bunku, ostatné položky zamknuté „čoskoro (F4)“
+    // 1) BuildBar: Landside je povolená; tri typy ciest s cenou za bunku, potom moduly z defov (F4: brána, stojisko, rampa)
     await bar(page).locator('[data-category="landside"]').click();
     await expect(bar(page).locator('[data-category="landside"]')).toBeEnabled();
     const item = (defId: string): Locator => bar(page).locator(`[data-def-id="${defId}"]`);
@@ -88,10 +88,18 @@ test.describe('F3: výber typu cesty a jednosmerný ťah (T03-20)', () => {
     await expect(item('road_one_lane')).toContainText('$1,200 / bunka');
     await expect(item('road_one_way')).toContainText('Jednosmerná cesta');
     await expect(item('road_one_way')).toContainText(ONE_WAY_PRICE);
-    for (const defId of ['gate', 'waiting_area', 'ramp']) {
-      await expect(item(defId)).toHaveAttribute('data-status', 'locked');
-      await expect(item(defId)).toContainText('čoskoro (F4)');
+    // F4 (T04-08): brána, stojisko a rampa sú skutočné položky z defov (nie zástupné „čoskoro (F4)“)
+    for (const [defId, name, price] of [
+      ['truck_gate', 'Brána kamiónov', '$80,000'],
+      ['truck_waiting_area', 'Čakacia plocha', '$60,000'],
+      ['loading_ramp_container', 'Rampa · kontajnery', '$100,000'],
+    ] as const) {
+      await expect(item(defId)).toHaveAttribute('data-status', 'available');
+      await expect(item(defId)).toContainText(name);
+      await expect(item(defId)).toContainText(price);
+      await expect(item(defId)).not.toContainText('čoskoro');
     }
+    for (const placeholderId of ['gate', 'waiting_area', 'ramp']) await expect(item(placeholderId)).toHaveCount(0);
     await expect(map(page)).toHaveAttribute('data-input-state', 'idle');
 
     // 2) klik na „Jednosmerná cesta“ zapne build mód ciest; položka svieti; opakovaný klik ho vypne

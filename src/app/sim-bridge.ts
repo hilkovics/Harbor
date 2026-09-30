@@ -19,7 +19,8 @@ import type { FrameEventSink } from './game-loop';
 
 /**
  * Udalosti, ktoré menia štruktúru sveta viditeľnú v snapshote (moduly, cesty a z nich pripojenie modulov, lode, žeriavy,
- * vozidlá, joby, poloha nákladu a z nej obsadenie skladov) a zvyšujú `revision`. Tabuľka (nie switch): nová udalosť =
+ * vozidlá, joby vrátane zrušených (uvoľnia rezervácie skladu a rampy), poloha nákladu a z nej obsadenie skladov a rámp,
+ * prevádzkovosť rámp) a zvyšujú `revision`. Tabuľka (nie switch): nová udalosť =
  * nový riadok. `MoneyChanged` tu nie je — hotovosť je v snapshote sama. Poloha vozidla tu nie je: mení sa každý tick
  * bez udalosti, preto sa vozidlá (ako lode a žeriavy) skladajú pri každom novom snapshote.
  */
@@ -40,7 +41,9 @@ export const REVISION_EVENTS: ReadonlySet<SimEventType> = new Set<SimEventType>(
   'JobCreated',
   'JobAssigned',
   'JobDone',
+  'JobCancelled',
   'NoStorageAvailable',
+  'RampOperationalChanged',
 ]);
 
 /**
@@ -50,7 +53,9 @@ export const REVISION_EVENTS: ReadonlySet<SimEventType> = new Set<SimEventType>(
  * v renderi slúži aj `onEvents`.
  *
  * `modules`, `cranes`, `ships` a `vehicles` sú render view-modely (`@render/view-models`); pole modulov má stabilnú
- * referenciu, kým sa nezmení `revision` (žeriavy, lode a vozidlá sa skladajú pri každom novom snapshote).
+ * referenciu, kým sa nezmení `revision` (žeriavy, lode a vozidlá sa skladajú pri každom novom snapshote). Výnimka: kým
+ * svet má bránu alebo stojisko kamiónov, ich VM sa mení bez udalosti, takže pole modulov je nové s každým snapshotom
+ * (VM ostatných modulov ostávajú tie isté objekty; `EntitiesVMBuilder`).
  */
 export interface WorldSnapshot {
   /** Počet dokončených tickov. */
@@ -74,7 +79,7 @@ export interface WorldSnapshot {
   readonly minute: number;
   readonly grid: Grid;
   readonly parcels: ReadonlyMap<string, Parcel>;
-  /** Moduly bez žeriavov (kotviská s apronom, sklady, depá …) v poradí umiestnenia; sklady nesú `storage`, moduly s konektormi `connected`. */
+  /** Moduly bez žeriavov (kotviská s apronom, sklady, depá, brány, stojiská, rampy …) v poradí umiestnenia; sklady nesú `storage`, moduly s konektormi `connected`, pozemné moduly `gate`/`waitingArea`/`ramp`. */
   readonly modules: readonly ModuleVM[];
   /** Žeriavy v poradí umiestnenia. */
   readonly cranes: readonly CraneVM[];

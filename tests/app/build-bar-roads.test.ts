@@ -1,11 +1,11 @@
-// T03-20: BuildBar kategória Landside — typy ciest z defov (cena za bunku), zamknuté zástupné položky (čoskoro F4)
-// a napojenie ConnectedBuildBar na RoadSelection (klik na položku → výber typu, zvýraznenie, opakovaný klik ruší).
+// T03-20: BuildBar kategória Landside — typy ciest z defov (cena za bunku) a napojenie ConnectedBuildBar na RoadSelection
+// (klik na položku → výber typu, zvýraznenie, opakovaný klik ruší). T04-08: za cestami nasledujú moduly z defov, bez zástupných položiek.
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ROAD_KINDS } from '@sim/grid';
 import { loadBundledDefs } from '@sim/defs';
-import { COMING_SOON_F4, ROAD_PRICE_UNIT, buildBarCategories, placeholderItem, roadKindItem } from '@app/build-bar-data';
+import { ROAD_PRICE_UNIT, buildBarCategories, roadKindItem } from '@app/build-bar-data';
 import { BuildSelection } from '@app/build-selection';
 import { ConnectedBuildBar } from '@app/connected-build-bar';
 import { roadItemId } from '@app/road-build';
@@ -41,11 +41,9 @@ function landside(cash = defs.economy.startingCashCents) {
 }
 
 describe('BuildBar Landside: typy ciest z defov', () => {
-  it('kategória je povolená a ponúka tri typy ciest, potom moduly z defov a tri zamknuté zástupné položky', () => {
+  it('kategória je povolená a ponúka tri typy ciest, potom moduly z defov (bez zástupných položiek)', () => {
     const category = landside();
     expect(category.enabled).toBe(true);
-    // T04-01: defy brány, čakacej plochy a rampy už existujú, takže sa objavia popri zástupných položkách (kind → kategória).
-    // Zástupné položky (a tým aj duplicitu) odstráni T04-07 (BuildBar Landside moduly) — vtedy sa táto očakávaná hodnota zmení.
     expect(category.items.map((item) => item.defId)).toEqual([
       'road_two_lane',
       'road_one_lane',
@@ -53,9 +51,6 @@ describe('BuildBar Landside: typy ciest z defov', () => {
       'truck_gate',
       'truck_waiting_area',
       'loading_ramp_container',
-      'gate',
-      'waiting_area',
-      'ramp',
     ]);
   });
 
@@ -88,16 +83,32 @@ describe('BuildBar Landside: typy ciest z defov', () => {
     expect(roadKindItem(defs, 'one_way', -500)).toMatchObject({ affordable: false, missingCents: 150_000 + 500 });
   });
 
-  it('Vrátnica, Čakacia plocha a Rampa ostávajú zamknuté s textom „čoskoro (F4)“ (bez ceny)', () => {
-    const placeholders = landside().items.slice(6);
-    expect(placeholders.map((item) => item.displayName)).toEqual(['Vrátnica', 'Čakacia plocha', 'Rampa']);
-    for (const item of placeholders) {
-      expect(item).toMatchObject({ locked: true, lockedReason: 'čoskoro (F4)', priceText: 'čoskoro (F4)' });
+  it('moduly Landside z defov: názov, cena, ikona druhu, rozmer; nie sú zamknuté a majú akciu stavby', () => {
+    const modules = landside().items.slice(3);
+    expect(modules.map((item) => [item.displayName, item.costCents, item.icon, item.footprint])).toEqual([
+      ['Brána kamiónov', 8_000_000, 'ic_gate', { w: 2, h: 2 }],
+      ['Čakacia plocha', 6_000_000, 'ic_waiting', { w: 4, h: 3 }],
+      ['Rampa · kontajnery', 10_000_000, 'ic_ramp', { w: 4, h: 2 }],
+    ]);
+    for (const item of modules) {
+      expect(item).toMatchObject({ locked: false, affordable: true });
+      expect(item.lockedReason).toBeUndefined();
+      expect(item.priceText).toBeUndefined();
       expect(item.action ?? 'build').toBe('build');
-      expect(itemStatus(item)).toBe('locked');
+      expect(itemStatus(item)).toBe('available');
     }
-    expect(COMING_SOON_F4).toBe('čoskoro (F4)');
-    expect(placeholderItem({ id: 'x', displayName: 'X', icon: 'ic_gate' })).toMatchObject({ defId: 'x', locked: true });
+  });
+
+  it('moduly Landside bez peňazí: nedostupné (unaffordable) s chýbajúcou sumou, nie zamknuté', () => {
+    const modules = landside(0).items.slice(3);
+    expect(modules.map((item) => item.missingCents)).toEqual([8_000_000, 6_000_000, 10_000_000]);
+    for (const item of modules) expect(itemStatus(item)).toBe('unaffordable');
+  });
+
+  it('ponuka nemá zástupné položky (gate, waiting_area, ramp, „čoskoro (F4)“)', () => {
+    const items = buildBarCategories(defs, defs.economy.startingCashCents).flatMap((category) => category.items);
+    for (const defId of ['gate', 'waiting_area', 'ramp']) expect(items.some((item) => item.defId === defId)).toBe(false);
+    expect(items.some((item) => item.priceText === 'čoskoro (F4)' || item.lockedReason === 'čoskoro (F4)')).toBe(false);
   });
 
   it('zamknuté zostávajú Železnica a Potrubia', () => {

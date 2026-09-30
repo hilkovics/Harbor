@@ -78,6 +78,43 @@ export function buyVehicles(app: App, count: number): void {
   runCommands(app, Array.from({ length: count }, () => ({ type: 'BuyVehicle', vehicleDefId: 'straddle_carrier', depotId: DEPOT_ID })));
 }
 
+// ---- pozemná časť F4: brána, stojisko, rampa (rozloženie TDD scenára full_import_chain, bez dvorov) ----
+
+/**
+ * Cesty pozemnej časti na `harbor_01`: (44, 33) vstup brány (nadväzuje na verejnú cestu x = 44, y 34..63 od portálu),
+ * (47..48, 33) výstup brány → západ stojiska, (53, 31..33) východ stojiska → rampa, (51..55, 30) k dokom rampy.
+ */
+export const LANDSIDE_ROAD_CELLS: readonly (readonly { x: number; y: number }[])[] = [
+  line([44, 33], [44, 33]),
+  line([47, 33], [48, 33]),
+  line([53, 33], [53, 31]),
+  line([51, 30], [55, 30]),
+];
+
+export type LandsidePart = 'gate' | 'waiting_area' | 'ramp';
+
+/** Príkazy stavby pozemných modulov: brána (45, 32) rot 270, stojisko (49, 31), rampa (53, 28). */
+export const LANDSIDE_MODULE_COMMANDS: Readonly<Record<LandsidePart, SerializedCommand>> = {
+  gate: { type: 'PlaceModule', defId: 'truck_gate', x: 45, y: 32, rotation: 270 },
+  waiting_area: { type: 'PlaceModule', defId: 'truck_waiting_area', x: 49, y: 31, rotation: 0 },
+  ramp: { type: 'PlaceModule', defId: 'loading_ramp_container', x: 53, y: 28, rotation: 0 },
+};
+
+/** Id pozemných modulov, keď sa stavajú ako prvé po štartovnom kotvisku (1) a žeriave (2) v poradí brána, stojisko, rampa. */
+export const GATE_ID = 3 as EntityId;
+export const AREA_ID = 4 as EntityId;
+export const RAMP_ID = 5 as EntityId;
+
+/** Postaví cesty pozemnej časti (`roads = false` ich vynechá) a potom moduly `parts` v danom poradí. */
+export function buildLandside(app: App, options: { readonly roads?: boolean; readonly parts?: readonly LandsidePart[] } = {}): void {
+  const { roads = true, parts = ['gate', 'waiting_area', 'ramp'] } = options;
+  if (roads) runCommands(app, LANDSIDE_ROAD_CELLS.map((cells) => ({ type: 'PlaceRoad', cells })));
+  runCommands(
+    app,
+    parts.map((part) => LANDSIDE_MODULE_COMMANDS[part]),
+  );
+}
+
 /** Posúva hru po framoch (jeden tick na frame), kým `done()` neplatí; strop chráni pred nekonečnou slučkou. */
 export function frameUntil(app: App, done: () => boolean, limit = 4000): void {
   for (let i = 0; i < limit && !done(); i += 1) app.loop.frame(app.loop.tickMs);

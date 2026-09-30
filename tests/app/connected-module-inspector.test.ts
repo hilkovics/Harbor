@@ -7,7 +7,7 @@ import { ConnectedModuleInspector } from '@app/connected-module-inspector';
 import { ModuleSelection } from '@app/module-selection';
 import { SimBridgeProvider } from '@app/use-sim-snapshot';
 import type { ModuleInspectorProps } from '@ui/module-inspector';
-import { createApp } from './app-fixtures';
+import { GATE_ID, RAMP_ID, buildLandside, createApp } from './app-fixtures';
 
 // `ModuleInspector` je čisto prezentačný (jeho vzhľad testuje tests/ui) — tu ho nahradíme atrapou, ktorá zachytí props,
 // aby sme overili napojenie: dáta zo sveta, „Odstrániť“ cez validate + dispatch a „Zavrieť“ cez výber.
@@ -65,6 +65,18 @@ describe('ConnectedModuleInspector', () => {
       removable: false,
       removeBlockedReason: 'Na kotvisku stoja žeriavy',
     });
+  });
+
+  it('vybraná brána a rampa (F4): panel dostane pozemné dáta zo sveta', () => {
+    const app = createApp();
+    buildLandside(app);
+    const selection = new ModuleSelection();
+    selection.select(GATE_ID);
+    render(app, selection);
+    expect(inspectorProps().data).toMatchObject({ kind: 'gate', gate: { queueLength: 0, processTicks: 18 }, connected: true });
+    selection.select(RAMP_ID);
+    render(app, selection);
+    expect(inspectorProps().data).toMatchObject({ kind: 'ramp', ramp: { operational: true, docks: [{ staged: 0, capacity: 2, truck: false }, { staged: 0, capacity: 2, truck: false }] } });
   });
 
   it('výber modulu, ktorý vo svete nie je, nevykreslí nič', () => {

@@ -14,7 +14,7 @@
  *   nie je koľaj (→ `occupied`), je verejná alebo na parcele `owned`/`leased` (na predaj → `parcel_not_owned`);
  * - **s cestou rovnakého typu aj smeru**: preskočí sa bez chyby a bez ceny (ako doteraz);
  * - **s cestou iného typu alebo smeru**: **prestavba** — atomický ekvivalent `RemoveRoad + PlaceRoad` (rozhodnutie 12):
- *   nesmie ju zaberať vozidlo — stojace ani ako cieľ rozbehnutého úseku (`occupied`, `World.vehicleOnCell`, ADR-019)
+ *   nesmie ju zaberať vozidlo ani kamión — stojace ani ako cieľ rozbehnutého úseku (`occupied`, `World.carrierOnCell`, ADR-019, ADR-024)
  *   a platí pravidlo parcely (ADR-008).
  * Napojenie na existujúcu cestu sa nevyžaduje.
  *
@@ -112,7 +112,7 @@ export class PlaceRoadCommand extends RoadLayerCommand {
     if (cell.road === 'road') {
       if (cell.roadKind === this.targetKind() && cell.roadDir === this.dirAt(position)) return 'skip';
       // Prestavba = RemoveRoad + PlaceRoad v jednom kroku: rovnaké pravidlá ako odstránenie (vozidlo, parcela).
-      if (world.vehicleOnCell(index) !== undefined) reasons.push('occupied');
+      if (world.carrierOnCell(index) !== undefined) reasons.push('occupied');
     } else {
       if (!isRoadBuildable(cell.terrain)) reasons.push('terrain');
       if (cell.moduleId !== null || cell.road === 'rail') reasons.push('occupied');

@@ -111,9 +111,10 @@ describe('save v3 — cesty [index, vrstva, typ?, smer?] (ADR-020)', () => {
 
   it('save v1/v2 (len dvojice) sa načíta s dvojpruhovými cestami', () => {
     const state = viaJson(World.create(DEFS, MAP, SEED).serialize()) as unknown as Record<string, unknown>;
-    const { vehicles: _v, jobs: _j, ...v2 } = state;
+    const { vehicles: _v, jobs: _j, trucks: _t, ...v2 } = state;
     void _v;
     void _j;
+    void _t;
     const restored = World.deserialize(DEFS, MAP, { ...v2, version: 2 } as unknown as WorldState);
     for (const { x, y } of MAP.starter.roads) expect(restored.grid.at(x, y).roadKind).toBe('two_lane');
   });

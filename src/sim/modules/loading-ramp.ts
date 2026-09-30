@@ -15,8 +15,14 @@
  *   drží rezerváciu celý život a vozidlo pri vykládke `assertCommittable → CargoLedger.move → commit` (cez
  *   `cargoDropTarget()`); zrušený `open` job (rampa stratila prevádzkovosť) `release(dock)`.
  *
- * `runtime` v save je `{}`: rezervácie staging miest patria outbound jobom a obnovia sa z nich (T04-03), obsadenie je
- * v ledgeri a prevádzkovosť sa odvodí z ciest a modulov.
+ * - **Docky pre kamióny** (T04-04, ADR-024): na každý dock mieri najviac jeden kamión — od spawnu po koniec nakládky
+ *   ho drží (`assignDock` / `releaseDock`, `dockTruck`). Držiteľ docku sa neukladá: obnoví sa z kamiónov (`rampId`,
+ *   `dock`, stav) ako bays stojiska.
+ * - **`NoWaitingBay`** (T04-04): hodina posledného hlásenia rampy `lastNoWaitingBayHour` (najviac 1× za hodinu, vzor
+ *   `BerthModule.lastNoStorageHour`, ADR-018) — ide do save, aby obnovený svet nehlásil v tej istej hodine znova.
+ *
+ * `runtime` v save je `{ lastNoWaitingBayHour }`: rezervácie staging miest patria outbound jobom a obnovia sa z nich
+ * (T04-03), držitelia dockov z kamiónov, obsadenie je v ledgeri a prevádzkovosť sa odvodí z ciest a modulov.
  */
 import type { EntityId } from '../core/entity-id';
 import { rampParams } from '../defs/module-def';
@@ -25,6 +31,8 @@ import type { CargoDropTarget } from './cargo-drop-target';
 import { DockStaging } from './dock-staging';
 import { LandExportModule } from './land-export-module';
 import type { ModuleInit } from './module';
+import { ModuleError } from './module-error';
+import { checkRuntimeKeys, readOptionalCount } from './runtime-state';
 
 /**
  * Dôvody neprevádzkovosti rampy v poradí vyhodnotenia (ADR-022): `not_connected` — konektor rampy nemá cestu alebo
@@ -44,6 +52,14 @@ export interface RampStatus {
 /** Prevádzková rampa. */
 export const RAMP_OPERATIONAL: RampStatus = Object.freeze({ operational: true, reason: null });
 
+/** Dynamický stav rampy v save (`WorldState.modules[i].runtime`, v4, ADR-024). */
+export type RampRuntimeState = {
+  /** Herná hodina posledného `NoWaitingBay` tejto rampy; `null` = ešte nebol. */
+  readonly lastNoWaitingBayHour: number | null;
+};
+
+const RUNTIME_KEYS: readonly (keyof RampRuntimeState)[] = ['lastNoWaitingBayHour'];
+
 /** Stav rampy, ktorej svet prevádzkovosť ešte nezverejnil (napr. mimo sveta): neprevádzková, nepripojená. */
 const RAMP_UNPUBLISHED: RampStatus = Object.freeze({ operational: false, reason: 'not_connected' });
 
@@ -55,6 +71,11 @@ export class LoadingRamp extends LandExportModule {
   private readonly drop: CargoDropTarget;
   private status: RampStatus = RAMP_UNPUBLISHED;
   private published = false;
+  /** Dock → kamión, ktorý naň mieri alebo na ňom nakladá; `null` = voľný. */
+  private readonly dockTrucks: (EntityId | null)[];
+  private assigned = 0;
+  /** Herná hodina posledného `NoWaitingBay` (throttle 1×/h); mení ju `landsideSystem`. */
+  lastNoWaitingBayHour: number | null = null;
 
   /** Def iného druhu než `ramp` → `DefError`. */
   constructor(init: ModuleInit) {
@@ -67,6 +88,7 @@ export class LoadingRamp extends LandExportModule {
       cargo: init.cargo,
       label: `rampa ${this.label}`,
     });
+    this.dockTrucks = new Array<EntityId | null>(this.params.docks).fill(null);
     const { staging } = this;
     this.drop = Object.freeze({
       kind: 'at_ramp',
@@ -211,13 +233,79 @@ export class LoadingRamp extends LandExportModule {
     return this.drop;
   }
 
+  /** Kamión, ktorý dock drží (mieri naň alebo na ňom nakladá); `null` = voľný. Dock mimo rozsahu → `invalid_slot`. */
+  dockTruck(dock: number): EntityId | null {
+    this.assertDock(dock, 'dockTruck');
+    return this.dockTrucks[dock];
+  }
+
+  /** Počet dockov, ktoré drží kamión. */
+  get assignedDocks(): number {
+    return this.assigned;
+  }
+
+  /**
+   * Kamión si drží dock (spawn alebo obnova, T04-04). Chyby (`ModuleError`, nič sa nezmení): dock mimo rozsahu →
+   * `invalid_slot`, id nie je celé ≥ 1 → `invalid_input`, dock drží iný kamión → `slot_reserved`, kamión už drží iný
+   * dock tejto rampy → `duplicate_id`.
+   */
+  assignDock(dock: number, truckId: EntityId): void {
+    this.assertDock(dock, 'assignDock');
+    if (!Number.isSafeInteger(truckId) || truckId < 1) {
+      throw new ModuleError('invalid_input', `${this.label}.assignDock: id kamióna musí byť celé číslo ≥ 1, dostal ${String(truckId)}`);
+    }
+    const holder = this.dockTrucks[dock];
+    if (holder !== null) throw new ModuleError('slot_reserved', `${this.label}.assignDock: dock ${String(dock)} drží kamión #${String(holder)}`);
+    const other = this.dockTrucks.indexOf(truckId);
+    if (other >= 0) throw new ModuleError('duplicate_id', `${this.label}.assignDock: kamión #${String(truckId)} už drží dock ${String(other)}`);
+    this.dockTrucks[dock] = truckId;
+    this.assigned += 1;
+  }
+
+  /** Kamión dock uvoľní (koniec nakládky). Chyby: mimo rozsahu → `invalid_slot`, dock nedrží tento kamión → `slot_not_reserved`. */
+  releaseDock(dock: number, truckId: EntityId): void {
+    this.assertDock(dock, 'releaseDock');
+    if (this.dockTrucks[dock] !== truckId) {
+      throw new ModuleError('slot_not_reserved', `${this.label}.releaseDock: dock ${String(dock)} nedrží kamión #${String(truckId)} (drží ${String(this.dockTrucks[dock])})`);
+    }
+    this.dockTrucks[dock] = null;
+    this.assigned -= 1;
+  }
+
   /** Staging rezervácie hlási pravidlu `has_cargo` (§8 bod 8). */
   override cargoReservations(): { readonly kind: 'at_ramp'; readonly count: number } {
     return { kind: 'at_ramp', count: this.staging.reservedCount };
   }
 
-  /** Súlad staging rezervácií s ledgerom (krok 12). */
+  /** Súlad staging rezervácií s ledgerom a počítadlo držiteľov dockov (krok 12, bez alokácie). */
   override findRuntimeProblem(): string | undefined {
-    return this.staging.findProblem();
+    const staging = this.staging.findProblem();
+    if (staging !== undefined) return staging;
+    let assigned = 0;
+    for (let dock = 0; dock < this.dockTrucks.length; dock++) {
+      const holder = this.dockTrucks[dock];
+      if (holder === null) continue;
+      assigned += 1;
+      for (let other = 0; other < dock; other++) {
+        if (this.dockTrucks[other] === holder) return `${this.label}: kamión #${String(holder)} drží docky ${String(other)} aj ${String(dock)}`;
+      }
+    }
+    return assigned === this.assigned ? undefined : `${this.label}: počítadlo držaných dockov ${String(this.assigned)} ≠ ${String(assigned)}`;
+  }
+
+  override getRuntimeState(): RampRuntimeState {
+    return { lastNoWaitingBayHour: this.lastNoWaitingBayHour };
+  }
+
+  /** Kontroly: presne kľúče `RampRuntimeState`, hodina `null` alebo celé ≥ 0 (`ModuleStateError`, obnova je atomická). */
+  override restoreRuntimeState(raw: unknown): void {
+    const fields = checkRuntimeKeys(raw, RUNTIME_KEYS);
+    this.lastNoWaitingBayHour = readOptionalCount(fields['lastNoWaitingBayHour'], '/lastNoWaitingBayHour');
+  }
+
+  private assertDock(dock: number, method: string): void {
+    if (!Number.isInteger(dock) || dock < 0 || dock >= this.params.docks) {
+      throw new ModuleError('invalid_slot', `${this.label}.${method}: dock musí byť celé číslo 0…${String(this.params.docks - 1)}, dostal ${String(dock)}`);
+    }
   }
 }

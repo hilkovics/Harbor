@@ -11,6 +11,10 @@
  * joby nemal — dispatcher neexistoval, takže rezervácia by nemala vlastníka) a kotvisko dostane
  * `lastNoStorageHour: null` (throttle `NoStorageAvailable`). Modul s neznámym defom prejde bez zmeny — odmietne ho
  * `parseWorldState`. Ostatné polia prejdú bez zmeny.
+ *
+ * v3 → v4 (T04-04, ADR-024): v3 nepoznal kamióny, preto dostane prázdne `trucks`. Rampa (`kind: 'ramp'`, v3 od T04-02
+ * s `runtime` `{}`) dostane `lastNoWaitingBayHour: null` (throttle `NoWaitingBay`). Brána ukladala frontu už vo v3 —
+ * bez kamiónov je prázdna (neprázdnu odmietne obnova, lebo jej kamióny neexistujú); stojisko ostáva `{}`.
  */
 import type { CargoLedgerState } from '../cargo/cargo-ledger-state';
 import type { DefRegistry } from '../defs/def-registry';
@@ -26,8 +30,11 @@ export const WORLD_STATE_V2 = 2;
 /** Verzia `WorldState` v3 (F3: `vehicles`, `jobs`) — cieľ kroku v2 → v3. */
 export const WORLD_STATE_V3 = 3;
 
+/** Verzia `WorldState` v4 (F4: `trucks`, runtime rampy s `lastNoWaitingBayHour`) — cieľ kroku v3 → v4. */
+export const WORLD_STATE_V4 = 4;
+
 /** Aktuálna verzia `WorldState` — `serialize()` vždy vracia ju. */
-export const WORLD_STATE_VERSION = WORLD_STATE_V3;
+export const WORLD_STATE_VERSION = WORLD_STATE_V4;
 
 /** Kľúče `WorldState` v1 v poradí `serialize()` (F1, ADR-013). */
 export const WORLD_STATE_V1_KEYS = ['version', 'mapId', 'seed', 'rng', 'clock', 'ids', 'cashCents', 'roads', 'parcels'] as const;
@@ -37,6 +44,9 @@ export const WORLD_STATE_V2_KEYS = [...WORLD_STATE_V1_KEYS, 'traffic', 'modules'
 
 /** Kľúče `WorldState` v3 v poradí `serialize()` (F3, T03-04): v2 + `vehicles`, `jobs`. */
 export const WORLD_STATE_V3_KEYS = [...WORLD_STATE_V2_KEYS, 'vehicles', 'jobs'] as const;
+
+/** Kľúče `WorldState` v4 v poradí `serialize()` (F4, T04-04): v3 + `trucks`. */
+export const WORLD_STATE_V4_KEYS = [...WORLD_STATE_V3_KEYS, 'trucks'] as const;
 
 type RawState = Record<string, unknown>;
 type Migration = (state: RawState, defs: DefRegistry) => RawState;
@@ -66,14 +76,22 @@ const RUNTIME_V2_TO_V3: Partial<Record<ModuleKind, (runtime: RawState) => RawSta
   berth: (runtime) => ({ ...runtime, lastNoStorageHour: null }),
 };
 
-/** Moduly v2 → v3: nové objekty s upraveným `runtime` (vstup sa nemení); iný tvar nechá na `parseWorldState`. */
-function migrateModulesV2ToV3(modules: unknown, defs: DefRegistry): unknown {
+/** Úprava `runtime` modulu v3 → v4 podľa druhu (tabuľka); druhy mimo tabuľky ostanú bez zmeny. */
+const RUNTIME_V3_TO_V4: Partial<Record<ModuleKind, (runtime: RawState) => RawState>> = {
+  ramp: (runtime) => ({ ...runtime, lastNoWaitingBayHour: null }),
+};
+
+/**
+ * Moduly: nové objekty s `runtime` upraveným podľa tabuľky druhov (vstup sa nemení); iný tvar nechá na
+ * `parseWorldState`, modul s neznámym defom prejde bez zmeny.
+ */
+function migrateModuleRuntimes(modules: unknown, defs: DefRegistry, upgrades: Partial<Record<ModuleKind, (runtime: RawState) => RawState>>): unknown {
   if (!Array.isArray(modules)) return modules;
   return modules.map((entry: unknown) => {
     if (!isPlainObject(entry) || !isPlainObject(entry['runtime'])) return entry;
     const defId = entry['defId'];
     const kind = typeof defId === 'string' && defs.modules.has(defId) ? defs.modules.get(defId).kind : undefined;
-    const upgrade = kind === undefined ? undefined : RUNTIME_V2_TO_V3[kind];
+    const upgrade = kind === undefined ? undefined : upgrades[kind];
     return upgrade === undefined ? entry : { ...entry, runtime: upgrade(entry['runtime']) };
   });
 }
@@ -84,9 +102,20 @@ function migrateV2ToV3(state: RawState, defs: DefRegistry): RawState {
   const migrated: RawState = {};
   for (const key of WORLD_STATE_V2_KEYS) migrated[key] = state[key];
   migrated['version'] = WORLD_STATE_V3;
-  migrated['modules'] = migrateModulesV2ToV3(state['modules'], defs);
+  migrated['modules'] = migrateModuleRuntimes(state['modules'], defs, RUNTIME_V2_TO_V3);
   migrated['vehicles'] = [];
   migrated['jobs'] = [];
+  return migrated;
+}
+
+/** v3 (presne kľúče v3) → v4: pôvodné polia + `runtime` rampy s `lastNoWaitingBayHour` + prázdne `trucks`. */
+function migrateV3ToV4(state: RawState, defs: DefRegistry): RawState {
+  checkKeys(state, WORLD_STATE_V3_KEYS, '');
+  const migrated: RawState = {};
+  for (const key of WORLD_STATE_V3_KEYS) migrated[key] = state[key];
+  migrated['version'] = WORLD_STATE_V4;
+  migrated['modules'] = migrateModuleRuntimes(state['modules'], defs, RUNTIME_V3_TO_V4);
+  migrated['trucks'] = [];
   return migrated;
 }
 
@@ -94,6 +123,7 @@ function migrateV2ToV3(state: RawState, defs: DefRegistry): RawState {
 const WORLD_STATE_MIGRATIONS: ReadonlyMap<number, Migration> = new Map([
   [1, migrateV1ToV2],
   [2, migrateV2ToV3],
+  [3, migrateV3ToV4],
 ]);
 
 /** Najstaršia verzia, ktorú vie `migrateWorldState` načítať. */
@@ -102,7 +132,7 @@ export const OLDEST_WORLD_STATE_VERSION = 1;
 /**
  * Stav ľubovoľnej podporovanej verzie → tvar aktuálnej verzie (`WORLD_STATE_VERSION`). Aktuálnu verziu vráti bez
  * zmeny (tú istú referenciu); staršiu migruje po krokoch do **nového** objektu (vstup nemení). `defs` určia druh
- * modulu podľa `defId` (krok v2 → v3). Chyby (`WorldStateError`): nie objekt → `''`, neznáma verzia → `/version`,
+ * modulu podľa `defId` (kroky v2 → v3 a v3 → v4). Chyby (`WorldStateError`): nie objekt → `''`, neznáma verzia → `/version`,
  * tvar staršej verzie → cesta v nej.
  */
 export function migrateWorldState(raw: unknown, defs: DefRegistry): unknown {

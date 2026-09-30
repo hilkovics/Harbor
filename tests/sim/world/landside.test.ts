@@ -318,7 +318,7 @@ describe('save / load', () => {
     const gateEntry = state.modules.find((entry) => entry.defId === 'truck_gate');
     expect(gateEntry?.runtime).toEqual({ queue: [], busyTicksLeft: 0, trucksProcessed: 0 });
     const runtimeOf = (defId: string): unknown => state.modules.find((entry) => entry.defId === defId)?.runtime;
-    expect([runtimeOf('truck_waiting_area'), runtimeOf('loading_ramp_container')]).toEqual([{}, {}]);
+    expect([runtimeOf('truck_waiting_area'), runtimeOf('loading_ramp_container')]).toEqual([{}, { lastNoWaitingBayHour: null }]);
     const restored = World.deserialize(DEFS, MAP, JSON.parse(JSON.stringify(state)) as WorldState);
     const ramp = only(restored, LoadingRamp);
     expect([ramp.operational, ramp.inoperativeReason]).toEqual([true, null]);

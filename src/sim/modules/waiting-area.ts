@@ -7,8 +7,9 @@
  * len držiteľa každého bay a príznak obsadenia (`reserveBay` / `occupyBay` / `releaseBay`); poradie a pohyb kamiónov
  * riadi systém (T04-04). Rezervovaný bay nepoužije iný kamión, preto sa „voľné miesto" pýta cez `freeBays`.
  *
- * `runtime` v save je `{}`: bays patria kamiónom a obnovia sa z nich (`reserveBayAt`, T04-04), tak ako rezervácie
- * skladu z jobov (ADR-018). Priechod (vstupný a výstupný konektor voči bráne a rampe) určuje svet (`LandsideNetwork`).
+ * `runtime` v save je `{}`: bays patria kamiónom — kamión v save nesie index svojho bay (`SerializedTruck.bay`) a obnova
+ * ho rezervuje (`reserveBayAt`, pri `waiting` aj `occupyBay`, T04-04, ADR-024), tak ako rezervácie skladu z jobov
+ * (ADR-018). Priechod (vstupný a výstupný konektor voči bráne a rampe) určuje svet (`LandsideNetwork`).
  */
 import type { EntityId } from '../core/entity-id';
 import { waitingAreaParams } from '../defs/module-def';
@@ -69,6 +70,11 @@ export class WaitingArea extends LandExportModule {
   isBayOccupied(bay: number): boolean {
     this.assertBay(bay, 'isBayOccupied');
     return this.occupiedFlags[bay];
+  }
+
+  /** Najnižší voľný bay (ten, ktorý by dal `reserveBay`), alebo −1. Bez alokácie. */
+  firstFreeBay(): number {
+    return this.holders.indexOf(null);
   }
 
   /** Bay, ktorý kamión drží; `undefined`, ak žiadny. */

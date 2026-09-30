@@ -38,6 +38,8 @@ export type ModuleErrorCode =
   | 'has_cargo'
   /** Depo, ktorému patria vozidlá, nejde odstrániť (T03-02, vozidlá od T03-04). */
   | 'has_vehicles'
+  /** Bránu, stojisko alebo rampu používa kamión (T04-04) — nejde odstrániť. */
+  | 'has_trucks'
   /** Na berthe kotví (alebo je naň pridelená) loď. */
   | 'ship_docked'
   /** Žeriav je uprostred cyklu. */

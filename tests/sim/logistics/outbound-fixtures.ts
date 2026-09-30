@@ -6,15 +6,25 @@
 // Cesty pozemnej časti: (44, 33); (47..48, 33); (53, 31..33); predĺženie vetvy y = 30 z (51, 30) po (55, 30). Z ďalekého
 // dvora k rampe sú 4 kroky, z blízkeho 19 (vozidlá rampu dosiahnu aj bez brány — prevádzkovosť je vec kamiónov).
 // Jednotky v sklade vznikajú priamo cez ledger (fiktívna loď 900, žeriav 901, vozidlo 902 — len prechody §7.1).
+// Outbound testy T04-03 izolujú joby sklad → rampa bez odvozu kamiónmi: predvolené defy (`NO_CONTAINER_TRUCK_DEFS`)
+// nemajú kamión pre kontajnery, takže spawner (T04-04) nič nespawne a staging ostane plný. Kamióny testujú
+// f4-full-import-chain, f4-landside a systems/landside-system.
+import trucksJson from '@data/defs/trucks.json';
 import { commandFromJSON, type SerializedCommand } from '@sim/commands';
 import type { EntityId } from '@sim/core';
-import type { DefRegistry } from '@sim/defs';
+import { DefRegistry } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
 import type { CellCoord } from '@sim/grid';
 import type { LoadingRamp, StorageModule, TruckGate, VehicleDepot, WaitingArea } from '@sim/modules';
 import { World } from '@sim/world';
 import { DEPOT_ORIGIN, FAR_YARD_ORIGIN, NEAR_YARD_ORIGIN, ROAD_SEGMENTS, segment } from '../helpers/f3-layout';
-import { DEFS, MAP } from '../world/world-fixtures';
+import { MAP, RAW_DEFS } from '../world/world-fixtures';
+
+/** Defy, v ktorých žiadny kamión nevozí kontajnery (`truck_container` len `bulk`) — rampa ostane bez odvozu. */
+export const NO_CONTAINER_TRUCK_DEFS: DefRegistry = DefRegistry.fromRaw({
+  ...RAW_DEFS,
+  trucks: { ...trucksJson, items: trucksJson.items.map((item) => ({ ...item, cargoCategories: ['bulk'] })) },
+});
 
 export const GATE_ORIGIN: CellCoord = { x: 45, y: 32 };
 export const AREA_ORIGIN: CellCoord = { x: 49, y: 31 };
@@ -78,7 +88,7 @@ const sameCell = (a: CellCoord, b: CellCoord): boolean => a.x === b.x && a.y ===
 
 /** Svet s rozložením (cesty, depo 3, dvory 4 a 5, pozemné moduly) bez vozidiel a nákladu. */
 export function outboundWorld(options: OutboundOptions = {}): OutboundWorld {
-  const { landside = ['gate', 'waiting_area', 'ramp'], before = [], after = [], omitRoads = [], defs = DEFS, seed = 4030 } = options;
+  const { landside = ['gate', 'waiting_area', 'ramp'], before = [], after = [], omitRoads = [], defs = NO_CONTAINER_TRUCK_DEFS, seed = 4030 } = options;
   const world = World.create(defs, MAP, seed);
   for (const segmentCells of [...Object.values(ROAD_SEGMENTS), ...Object.values(LANDSIDE_ROADS)]) {
     const cells = segmentCells.filter((cell) => !omitRoads.some((omitted) => sameCell(cell, omitted)));

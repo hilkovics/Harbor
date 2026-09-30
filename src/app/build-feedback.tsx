@@ -54,6 +54,7 @@ export const REASON_TEXT: Readonly<Record<ValidationReason, string>> = {
   connector_blocked: 'Vstup nejde pripojiť k ceste',
   invalid_road_kind: 'Neznámy typ cesty',
   invalid_direction: 'Neplatný smer jednosmerky',
+  has_trucks: 'Modul používa kamión',
 };
 
 /** „1 bunka“, „2 bunky“, „5 buniek“. */

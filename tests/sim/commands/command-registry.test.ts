@@ -78,7 +78,7 @@ describe('CommandRegistry (kostra T01-03)', () => {
     expect(new CommandRegistry().types).toEqual([]);
   });
 
-  it('VALIDATION_REASONS zodpovedajú „Spoločným rozhraniam" F1 + F2 + F3 (staršie ostávajú na začiatku v pôvodnom poradí)', () => {
+  it('VALIDATION_REASONS zodpovedajú „Spoločným rozhraniam" F1 + F2 + F3 + F4 (staršie ostávajú na začiatku v pôvodnom poradí)', () => {
     expect([...VALIDATION_REASONS]).toEqual([
       'out_of_bounds',
       'terrain',
@@ -116,6 +116,7 @@ describe('CommandRegistry (kostra T01-03)', () => {
       // T03-18 (docs/tasks/phase-03.md „Doplnok od používateľa" rozhodnutie 12, ADR-020): typy ciest
       'invalid_road_kind',
       'invalid_direction',
+      'has_trucks',
     ]);
     expect(new Set(VALIDATION_REASONS).size).toBe(VALIDATION_REASONS.length);
   });

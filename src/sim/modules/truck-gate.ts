@@ -11,11 +11,13 @@
  *   čakajúci kamión stojí na vonkajšej bunke konektora, render ukáže `queue_badge` (§7.5, §7.8 bod 3, nikdy gridlock).
  * - **Priepustnosť:** 1 kamión za `processTicks` (tvrdý bottleneck): `beginPass(ticks)` začne prechod kamióna
  *   (`busyTicksLeft = ticks`, `trucksProcessed += 1`), `advancePass()` odpočíta tick. Kým `busyTicksLeft > 0`, závora je
- *   hore (`isOpen`) a ďalší kamión nesmie začať. Koľko tickov prechod trvá (`processTicks` + `internalTicks`,
- *   modifikátory techu), rozhoduje systém (T04-04).
+ *   hore (`isOpen`) a ďalší kamión nesmie začať. Prechod trvá `passTicks` = `processTicks` + `internalTicks` (chýbajúci
+ *   `internalTicks` = 0 — priepustnosť brány určuje `processTicks`, ADR-024). Púšťa sa vždy kamión na čele fronty a
+ *   z fronty vypadne až po dokončení prechodu (`landsideSystem`, T04-04).
  *
- * `runtime` v save: `{ queue, busyTicksLeft, trucksProcessed }`. Súlad fronty s kamiónmi (každé id je kamión
- * v `gate_queue*`) overuje svet od T04-04; strany sa neukladajú (odvodia sa z ciest a modulov).
+ * `runtime` v save: `{ queue, busyTicksLeft, trucksProcessed }`. Súlad fronty s kamiónmi (fronta = presne kamióny
+ * v `gate_queue*` tejto brány) overuje svet (krok 12, ADR-024); strany sa neukladajú (odvodia sa z ciest a modulov).
+ * Členstvo vo fronte je okrem poradia (pole) vedené aj v množine — `isQueued` je O(1) a duplicita nemôže vzniknúť.
  */
 import type { EntityId } from '../core/entity-id';
 import { describeValue } from '../defs/def-spec';
@@ -48,6 +50,8 @@ export class TruckGate extends LandExportModule {
   /** Typované `params` defu (`gateParams`). */
   readonly params: GateParams;
   private readonly queue: EntityId[] = [];
+  /** Tie isté id ako `queue` (bez poradia) — O(1) členstvo a kontrola duplicít bez alokácie. */
+  private readonly members = new Set<EntityId>();
   private queueView: readonly EntityId[] = NO_TRUCKS;
   private busy = 0;
   private processed = 0;
@@ -99,6 +103,11 @@ export class TruckGate extends LandExportModule {
     return this.processed;
   }
 
+  /** Trvanie prechodu jedného kamióna v tickoch: `processTicks` + `internalTicks` (chýbajúci = 0, ADR-024). */
+  get passTicks(): number {
+    return this.params.processTicks + (this.params.internalTicks ?? 0);
+  }
+
   /**
    * Zverejní strany brány (volá len `World` po zmene ciest alebo modulov, ADR-022). `exit` bez `entry` je chyba
    * programu (`ModuleError('invalid_input')`) — výstup sa určuje až k vstupu.
@@ -109,16 +118,17 @@ export class TruckGate extends LandExportModule {
     this.exit = exit;
   }
 
-  /** Je kamión vo fronte? */
+  /** Je kamión vo fronte? O(1). */
   isQueued(truckId: EntityId): boolean {
-    return this.queue.includes(truckId);
+    return this.members.has(truckId);
   }
 
   /** Zaradí kamión na koniec fronty; už zaradený → `ModuleError('duplicate_id')` (fronta sa nezmení). */
   enqueue(truckId: EntityId): void {
     if (!isTruckId(truckId)) throw new ModuleError('invalid_input', `${this.label}.enqueue: id kamióna musí byť celé číslo ≥ 1, dostal ${String(truckId)}`);
-    if (this.queue.includes(truckId)) throw new ModuleError('duplicate_id', `${this.label}: kamión #${String(truckId)} je už vo fronte`);
+    if (this.members.has(truckId)) throw new ModuleError('duplicate_id', `${this.label}: kamión #${String(truckId)} je už vo fronte`);
     this.queue.push(truckId);
+    this.members.add(truckId);
     this.queueView = Object.freeze([...this.queue]);
   }
 
@@ -131,6 +141,7 @@ export class TruckGate extends LandExportModule {
   dequeue(): EntityId {
     const truckId = this.queue.shift();
     if (truckId === undefined) throw new ModuleError('queue_empty', `${this.label}.dequeue: fronta je prázdna`);
+    this.members.delete(truckId);
     this.queueView = Object.freeze([...this.queue]);
     return truckId;
   }
@@ -153,15 +164,14 @@ export class TruckGate extends LandExportModule {
     if (this.busy > 0) this.busy -= 1;
   }
 
-  /** Fronta bez duplicít a s platnými id (krok 12, bez alokácie). */
+  /** Fronta bez duplicít a s platnými id, množina členov = fronta (krok 12, O(dĺžka fronty), bez alokácie). */
   override findRuntimeProblem(): string | undefined {
     const { queue } = this;
     for (let i = 0; i < queue.length; i++) {
       if (!isTruckId(queue[i])) return `${this.label}: fronta obsahuje neplatné id ${String(queue[i])}`;
-      for (let j = 0; j < i; j++) {
-        if (queue[i] === queue[j]) return `${this.label}: kamión #${String(queue[i])} je vo fronte dvakrát`;
-      }
+      if (!this.members.has(queue[i])) return `${this.label}: kamión #${String(queue[i])} z fronty chýba v množine členov`;
     }
+    if (this.members.size !== queue.length) return `${this.label}: fronta má ${String(queue.length)} položiek, ale ${String(this.members.size)} rôznych kamiónov (duplicita)`;
     return undefined;
   }
 
@@ -186,6 +196,8 @@ export class TruckGate extends LandExportModule {
     const busyTicksLeft = readCount(fields['busyTicksLeft'], '/busyTicksLeft');
     const trucksProcessed = readCount(fields['trucksProcessed'], '/trucksProcessed');
     this.queue.splice(0, this.queue.length, ...queue);
+    this.members.clear();
+    for (const truckId of queue) this.members.add(truckId);
     this.queueView = queue.length === 0 ? NO_TRUCKS : Object.freeze([...queue]);
     this.busy = busyTicksLeft;
     this.processed = trucksProcessed;

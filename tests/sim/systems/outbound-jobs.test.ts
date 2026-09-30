@@ -398,7 +398,7 @@ describe('save a invarianty kroku 12', () => {
     expect(states.some((state) => state !== 'open')).toBe(true);
     const saved = viaJson(world.serialize());
     expect(saved.jobs.every((job) => job.to.kind === 'at_ramp' && job.from.kind === 'in_storage')).toBe(true);
-    const restored = World.deserialize(DEFS, MAP, saved);
+    const restored = World.deserialize(world.defs, MAP, saved);
     expect(JSON.stringify(restored.serialize())).toBe(JSON.stringify(saved));
     expect(stagingOf(rampOf(restored))).toEqual(stagingOf(rampOf(world)));
     expect([...restored.jobs.values()].map((job) => [job.id, job.state, job.vehicleId])).toEqual([...world.jobs.values()].map((job) => [job.id, job.state, job.vehicleId]));

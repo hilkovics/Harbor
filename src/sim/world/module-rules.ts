@@ -359,14 +359,23 @@ export function findPlacementViolations(
 // ---------------------------------------------------------------------------------------------------------
 
 /** Pravidlá odstránenia v poradí vyhodnotenia; kód pravidla je zároveň `ModuleErrorCode` aj `ValidationReason`. */
-export const REMOVAL_RULES = ['has_cargo', 'has_cranes', 'has_vehicles', 'ship_docked', 'busy'] as const;
+export const REMOVAL_RULES = ['has_cargo', 'has_cranes', 'has_vehicles', 'has_trucks', 'ship_docked', 'busy'] as const;
 
 export type RemovalRule = (typeof REMOVAL_RULES)[number];
+
+/** Väzby kamióna na moduly, ktoré pravidlo `has_trucks` číta (`Truck` ich spĺňa). */
+export interface TruckModuleRefs {
+  readonly id: EntityId;
+  readonly gateId: EntityId;
+  readonly waitingAreaId: EntityId;
+  readonly rampId: EntityId;
+}
 
 /** Časť sveta, ktorú pravidlá odstránenia čítajú (`World` ju spĺňa). */
 export interface RemovalWorld {
   readonly cargo: Pick<CargoLedger, 'countAt'>;
   readonly modules: ReadonlyMap<EntityId, Module>;
+  readonly trucks: ReadonlyMap<EntityId, TruckModuleRefs>;
 }
 
 /**
@@ -397,6 +406,14 @@ const REMOVAL_CHECKS: { readonly [R in RemovalRule]: RemovalCheck } = {
     module instanceof BerthModule && module.craneIds.length > 0 ? `na ${module.label} stoja žeriavy [${module.craneIds.join(', ')}]` : undefined,
   has_vehicles: (_world, module) =>
     module instanceof VehicleDepot && module.vehicleIds.length > 0 ? `${module.label} má vozidlá [${module.vehicleIds.join(', ')}]` : undefined,
+  // Brána, stojisko alebo rampa, ktorú používa kamión (T04-04, ADR-024): kamión by stratil trasu, bay alebo dock.
+  has_trucks: (world, module) => {
+    const users: EntityId[] = [];
+    for (const truck of world.trucks.values()) {
+      if (truck.gateId === module.id || truck.waitingAreaId === module.id || truck.rampId === module.id) users.push(truck.id);
+    }
+    return users.length > 0 ? `${module.label} používajú kamióny [${users.join(', ')}]` : undefined;
+  },
   ship_docked: (world, module) => {
     const berth = dockOf(world, module);
     if (berth === undefined || berth.dockedShipId === null) return undefined;

@@ -51,10 +51,10 @@ describe('tabuľky pravidiel', () => {
     for (const rule of structural) expect(PLACEMENT_RULE_ERROR[rule]).toBe(rule);
   });
 
-  it('connector_blocked (§8 bod 5, ADR-017) je pravidlo hráča na konci poradia; odstránenie pozná has_vehicles', () => {
+  it('connector_blocked (§8 bod 5, ADR-017) je pravidlo hráča na konci poradia; odstránenie pozná has_vehicles a has_trucks (ADR-024)', () => {
     expect(PLACEMENT_RULES.at(-1)).toBe('connector_blocked');
     expect(PLACEMENT_RULE_ERROR.connector_blocked).toBeNull();
-    expect([...REMOVAL_RULES]).toEqual(['has_cargo', 'has_cranes', 'has_vehicles', 'ship_docked', 'busy']);
+    expect([...REMOVAL_RULES]).toEqual(['has_cargo', 'has_cranes', 'has_vehicles', 'has_trucks', 'ship_docked', 'busy']);
   });
 
   it('attachesToHost podľa placement.mustAttachTo (žeriav áno, kotvisko nie)', () => {

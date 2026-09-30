@@ -13,6 +13,10 @@
  * (ADR-017, ADR-022); jednotky na rampe musia ležať na docku v rozsahu a v jeho kapacite (`checkRampUnits`), staging
  * rezervácie dockov obnovia outbound joby (`staged + reserved ≤ stagingPerDock`, inak chyba jobu). Pozemné
  * moduly (T04-02) obnovia `runtime` (brána: fronta a počítadlá); strany brán a prevádzkovosť rámp odvodí svet po obnove.
+ * Kamióny (T04-04, ADR-024) vzostupne podľa id cez `World.addTruck` po vozidlách (pred kontrolou držiteľov — `in_truck`
+ * číta `world.trucks`): kamión znovu drží svoj bay (index zo save) a dock podľa stavu; potom náklad kamióna (kapacita,
+ * kategória, stav prázdny/nakládka/plný), fronta brány = presne kamióny v `gate_queue*` tejto brány, pohyb
+ * (`truckMotionProblem`) a hodina posledného `NoWaitingBay` rampy nie je v budúcnosti.
  * Na koniec beží `findWorldViolation` ako poistka. Každá chyba je `WorldStateError` s JSON pointerom.
  */
 import { holderIdOf, holderSpecOf, isSameLocation, slotOf, uniqueSlotOf } from '../cargo/cargo-location';
@@ -29,6 +33,11 @@ import { moduleRegistry } from '../modules/module-registry';
 import { Ship } from '../ships/ship';
 import { ShipError } from '../ships/ship-error';
 import { mooringProblem, shipRoute } from '../ships/ship-route';
+import { TruckGate } from '../modules/truck-gate';
+import { Truck } from '../trucks/truck';
+import { TruckError, type TruckErrorCode } from '../trucks/truck-error';
+import { TRUCK_STATE_TRAITS } from '../trucks/truck-fsm';
+import { truckMotionProblem } from '../trucks/truck-trip';
 import { Vehicle } from '../vehicles/vehicle';
 import { VehicleError, type VehicleErrorCode } from '../vehicles/vehicle-error';
 import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle-fsm';
@@ -37,7 +46,7 @@ import { CARGO_HOLDER_SOURCES } from './cargo-holders';
 import { WorldStateError, pointerSegment } from './state-check';
 import type { World } from './world';
 import { findWorldViolation } from './world-invariants';
-import type { ParsedJobEntry, ParsedModuleEntry, ParsedShipEntry, ParsedVehicleEntry, ParsedWorldState } from './world-state';
+import type { ParsedJobEntry, ParsedModuleEntry, ParsedShipEntry, ParsedTruckEntry, ParsedVehicleEntry, ParsedWorldState } from './world-state';
 
 const modulePath = (index: number): string => `/modules${pointerSegment(index)}`;
 const unitPath = (index: number): string => `/cargo/units${pointerSegment(index)}`;
@@ -172,6 +181,138 @@ function restoreVehicles(world: World, entries: readonly ParsedVehicleEntry[]): 
       throw error;
     }
   });
+}
+
+const truckPath = (index: number): string => `/trucks${pointerSegment(index)}`;
+
+/** Pole záznamu kamióna, ku ktorému patrí chyba `Truck` / `World.addTruck`. */
+const TRUCK_ERROR_FIELD: { readonly [C in TruckErrorCode]: string } = {
+  invalid_input: 'id',
+  duplicate_id: 'id',
+  unknown_module: 'rampId',
+  bay_taken: 'bay',
+  dock_taken: 'dock',
+  unknown_truck: 'id',
+  has_cargo: 'id',
+  busy: 'state',
+  invalid_transition: 'state',
+  inconsistent: 'state',
+};
+
+/**
+ * Kamióny vzostupne podľa id: inštancia `Truck` (def, stav, `resume` a `bay` podľa stavu overil `parseWorldState`),
+ * potom `World.addTruck` (brána, stojisko a rampa existujú, dock a bay v rozsahu a voľné; kamión znovu drží bay —
+ * v `waiting` obsadený — a dock podľa stavu). `TruckError` → `WorldStateError` s poľom záznamu.
+ */
+function restoreTrucks(world: World, entries: readonly ParsedTruckEntry[]): void {
+  entries.forEach((entry, index) => {
+    const path = truckPath(index);
+    try {
+      world.addTruck(
+        new Truck({
+          id: entry.id,
+          def: world.defs.trucks.get(entry.defId),
+          state: entry.state,
+          x: entry.x,
+          y: entry.y,
+          heading: entry.heading,
+          rampId: entry.rampId,
+          dock: entry.dock,
+          gateId: entry.gateId,
+          waitingAreaId: entry.waitingAreaId,
+          bay: entry.bay,
+          resume: entry.resume,
+          route: entry.route,
+          progress: entry.progress,
+          waitTicks: entry.waitTicks,
+          replanPending: entry.replan,
+        }),
+      );
+    } catch (error) {
+      if (error instanceof TruckError) throw new WorldStateError(`${path}/${TRUCK_ERROR_FIELD[error.code]}`, error.message);
+      throw error;
+    }
+  });
+}
+
+/**
+ * Náklad kamiónov (`in_truck`): najviac `capacityUnits` jednotiek, len kategórie z `cargoCategories` defu a počet podľa
+ * stavu (`TRUCK_STATE_TRAITS.cargo` efektívneho stavu: pred nakládkou 0, počas nej ≤ kapacita, po nej = kapacita). Volá
+ * sa po `checkHolders` (kamión existuje); chyba patrí jednotke (`/cargo/units/<j>/location/truckId`), chýbajúci náklad
+ * plného kamióna kamiónu (`/trucks/<i>/state`).
+ */
+function checkTruckCargo(world: World, units: readonly CargoUnit[]): void {
+  const loaded = new Map<EntityId, number>();
+  units.forEach((unit, index) => {
+    if (unit.location.kind !== 'in_truck') return;
+    const truck = world.trucks.get(unit.location.truckId);
+    if (truck === undefined) return;
+    const path = `${unitPath(index)}/location/truckId`;
+    const count = (loaded.get(truck.id) ?? 0) + 1;
+    loaded.set(truck.id, count);
+    const { cargo } = truck.bonds;
+    const limit = cargo === 'empty' ? 0 : truck.def.capacityUnits;
+    if (count > limit) throw new WorldStateError(path, `${truck.label} v stave '${truck.state}' unesie ${String(limit)} jednotiek, v save ich má viac`);
+    const { category } = world.defs.cargoTypes.get(unit.typeId);
+    if (!truck.def.cargoCategories.includes(category)) {
+      throw new WorldStateError(path, `${truck.label} nevozí náklad kategórie '${category}' (jednotka #${String(unit.id)})`);
+    }
+  });
+  let index = 0;
+  for (const truck of world.trucks.values()) {
+    if (truck.bonds.cargo === 'full' && (loaded.get(truck.id) ?? 0) !== truck.def.capacityUnits) {
+      throw new WorldStateError(`${truckPath(index)}/state`, `${truck.label} v stave '${truck.state}' má byť plný (${String(truck.def.capacityUnits)} jednotiek), vezie ${String(loaded.get(truck.id) ?? 0)}`);
+    }
+    index += 1;
+  }
+}
+
+/**
+ * Fronta každej brány = presne kamióny v `gate_queue*` tejto brány (ADR-024): id vo fronte je kamión vo fronte svojej
+ * brány (`/modules/<i>/runtime/queue/<k>`), kamión vo fronte je vo fronte svojej brány (`/trucks/<i>/state`).
+ */
+function checkGateQueues(world: World, indexOf: ReadonlyMap<EntityId, number>): void {
+  for (const module of world.modules.values()) {
+    if (!(module instanceof TruckGate)) continue;
+    module.queuedTruckIds.forEach((truckId, k) => {
+      const truck = world.trucks.get(truckId);
+      if (truck === undefined || truck.gateId !== module.id || !TRUCK_STATE_TRAITS[truck.state].queued) {
+        throw new WorldStateError(
+          `${modulePath(indexOf.get(module.id) ?? -1)}/runtime/queue${pointerSegment(k)}`,
+          `${module.label}: kamión #${String(truckId)} vo fronte ${truck === undefined ? 'vo svete neexistuje' : `je v stave '${truck.state}' s bránou #${String(truck.gateId)}`}`,
+        );
+      }
+    });
+  }
+  let index = 0;
+  for (const truck of world.trucks.values()) {
+    const gate = world.modules.get(truck.gateId);
+    if (TRUCK_STATE_TRAITS[truck.state].queued && !(gate instanceof TruckGate && gate.isQueued(truck.id))) {
+      throw new WorldStateError(`${truckPath(index)}/state`, `${truck.label} v stave '${truck.state}' nie je vo fronte brány #${String(truck.gateId)}`);
+    }
+    index += 1;
+  }
+}
+
+/** Pohyb kamiónov zodpovedá stavu (`truckMotionProblem`, ADR-019, ADR-024). */
+function checkTruckMotion(world: World): void {
+  let index = 0;
+  for (const truck of world.trucks.values()) {
+    const problem = truckMotionProblem(world, truck);
+    if (problem !== undefined) throw new WorldStateError(`${truckPath(index)}/${problem.field}`, problem.problem);
+    index += 1;
+  }
+}
+
+/** Hodina posledného `NoWaitingBay` rampy nesmie byť v budúcnosti (ADR-024). */
+function checkRampHours(world: World, indexOf: ReadonlyMap<EntityId, number>): void {
+  for (const module of world.modules.values()) {
+    if (!(module instanceof LoadingRamp) || module.lastNoWaitingBayHour === null || module.lastNoWaitingBayHour <= world.clock.gameHour) continue;
+    throw new WorldStateError(
+      `${modulePath(indexOf.get(module.id) ?? -1)}/runtime/lastNoWaitingBayHour`,
+      `hodina ${String(module.lastNoWaitingBayHour)} je po aktuálnej ${String(world.clock.gameHour)}`,
+    );
+  }
 }
 
 const jobPath = (index: number): string => `/jobs${pointerSegment(index)}`;
@@ -473,29 +614,35 @@ function checkCraneHolding(world: World, indexOf: ReadonlyMap<EntityId, number>)
 }
 
 /**
- * Obnoví moduly, lode, vozidlá, joby a stav odvodený z ledgera do čerstvého `world` (prázdne moduly, lode, vozidlá aj
- * joby, ledger už obnovený z `parsed.cargo`). Chyby → `WorldStateError`: modul (hranice, obsadenie, žeriav na berthe,
+ * Obnoví moduly, lode, vozidlá, kamióny, joby a stav odvodený z ledgera do čerstvého `world` (prázdne moduly, lode,
+ * vozidlá, kamióny aj joby, ledger už obnovený z `parsed.cargo`). Chyby → `WorldStateError`: modul (hranice, obsadenie, žeriav na berthe,
  * `runtime`) → `/modules/<i>…`, loď (kotvisko, anchorage, index trasy) → `/ships/<k>…`, vozidlo (depo, státie, job) →
- * `/vehicles/<v>…`, job (jednotky, stav, sklad, slot) → `/jobs/<i>…`, náklad u neexistujúceho držiteľa (aj `in_vehicle`
- * bez vozidla), nad kapacitou vozidla, vo vozidle bez jobu alebo na neplatnom/rezervovanom slote →
- * `/cargo/units/<j>/location…`, iné porušenie invariantov → `''`.
+ * `/vehicles/<v>…`, kamión (moduly, bay, dock, fronta, pohyb) → `/trucks/<i>…`, job (jednotky, stav, sklad, slot) →
+ * `/jobs/<i>…`, náklad u neexistujúceho držiteľa (aj `in_vehicle` bez vozidla, `in_truck` bez kamióna), nad kapacitou
+ * vozidla či kamióna, vo vozidle bez jobu alebo na neplatnom/rezervovanom slote → `/cargo/units/<j>/location…`, iné
+ * porušenie invariantov → `''`.
  */
-export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'modules' | 'ships' | 'vehicles' | 'jobs' | 'cargo'>): void {
+export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'modules' | 'ships' | 'vehicles' | 'jobs' | 'trucks' | 'cargo'>): void {
   const entries = parsed.modules;
   const { units } = parsed.cargo;
   restoreModules(world, entries);
   restoreShips(world, parsed.ships);
   restoreVehicles(world, parsed.vehicles);
+  restoreTrucks(world, parsed.trucks);
   const indexOf = new Map<EntityId, number>(entries.map((entry, index) => [entry.id, index]));
   const unitIndexOf = new Map<EntityId, number>(units.map((unit, index) => [unit.id, index]));
   checkHolders(world, units);
   checkVehicleCargo(world, units);
   checkUnitSlots(world, units);
   checkRampUnits(world, units);
+  checkTruckCargo(world, units);
+  checkGateQueues(world, indexOf);
   restoreJobs(world, parsed.jobs);
   checkVehicleCargoJobs(world, units);
   checkVehicleMotion(world);
+  checkTruckMotion(world);
   checkBerthHours(world, indexOf);
+  checkRampHours(world, indexOf);
   restoreCraneReservations(world, indexOf, unitIndexOf);
   restoreHeldCargo(world, units);
   checkCraneHolding(world, indexOf);

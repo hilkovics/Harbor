@@ -8,7 +8,8 @@ import type { CellCoord } from '../grid/grid';
  * Dôvody odmietnutia príkazu. Poradie je kanonické — výsledok validácie ich vracia v tomto poradí (`orderReasons`).
  * F1: prvých osem; F2 (docs/tasks/phase-02.md „Spoločné rozhrania", ADR-015): moduly (`PlaceModule`, `RemoveModule`)
  * a ladiaca loď (`SpawnShipDebug`, T02-05); F3 (docs/tasks/phase-03.md „Spoločné rozhrania", ADR-017): vozidlá
- * (`BuyVehicle`/`SellVehicle`, T03-04), depo a pripojenie modulov; typy ciest (`PlaceRoad`, T03-18, ADR-020). Nový dôvod =
+ * (`BuyVehicle`/`SellVehicle`, T03-04), depo a pripojenie modulov; typy ciest (`PlaceRoad`, T03-18, ADR-020); F4:
+ * `has_trucks` (`RemoveModule` pozemného modulu, ktorý používa kamión, T04-04, ADR-024). Nový dôvod =
  * nový riadok tu + slovenský popis v UI (`REASON_TEXT`).
  */
 export const VALIDATION_REASONS = [
@@ -75,6 +76,8 @@ export const VALIDATION_REASONS = [
    * smerov než buniek alebo smer mimo N/E/S/W.
    */
   'invalid_direction',
+  /** `RemoveModule` (T04-04, ADR-024): bránu, stojisko alebo rampu používa kamión (trasa, bay, dock). */
+  'has_trucks',
 ] as const;
 
 export type ValidationReason = (typeof VALIDATION_REASONS)[number];

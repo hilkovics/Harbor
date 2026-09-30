@@ -12,10 +12,12 @@ export type {
   SerializedRoadLayer,
   SerializedShip,
   SerializedTraffic,
+  SerializedTruck,
   SerializedVehicle,
   WorldState,
   WorldStateV1,
   WorldStateV2,
+  WorldStateV3,
 } from './world-state';
 export {
   OLDEST_WORLD_STATE_VERSION,
@@ -24,6 +26,8 @@ export {
   WORLD_STATE_V2_KEYS,
   WORLD_STATE_V3,
   WORLD_STATE_V3_KEYS,
+  WORLD_STATE_V4,
+  WORLD_STATE_V4_KEYS,
   migrateWorldState,
 } from './migrate';
 export { WorldInvariantError, findWorldViolation } from './world-invariants';
@@ -54,4 +58,5 @@ export type {
   RemovalRule,
   RemovalWorld,
   RuleViolation,
+  TruckModuleRefs,
 } from './module-rules';

@@ -11,7 +11,7 @@ import { isRoadStepAllowed } from '../grid/road-direction';
 import type { Rotation } from '../grid/rotation';
 import { isAccessCell } from '../logistics/module-access';
 import type { Module } from '../modules/module';
-import { cardinalHeading } from '../ships/ship-route';
+import { CELL_CENTER_OFFSET, cardinalHeading } from '../ships/ship-route';
 import { carrierPosition, isValidProgress, type Carrier } from './carrier';
 import type { MovementWorld } from './route-planning';
 
@@ -51,6 +51,11 @@ function routeCell(carrier: Carrier, offset: number): number {
 /** Je bunka cieľom (prístupová bunka modulu, resp. presne cieľová bunka)? */
 function isAtTarget(world: MovementWorld, target: MotionTarget, cell: number): boolean {
   return typeof target === 'number' ? cell === target : isAccessCell(world.grid, target, cell);
+}
+
+/** Je bunka cieľom jazdy alebo medzicieľom `via`? */
+function isAtGoal(world: MovementWorld, target: MotionTarget, via: MotionTarget | undefined, cell: number): boolean {
+  return isAtTarget(world, target, cell) || (via !== undefined && isAtTarget(world, via, cell));
 }
 
 /** Popis cieľa do správy o porušení. */
@@ -103,6 +108,21 @@ function wrongWayStep(world: MovementWorld, carrier: Carrier, to: number): numbe
   return undefined;
 }
 
+const AXIS_X = 0;
+const AXIS_Y = 1;
+
+/**
+ * Jedna súradnica polohy na úseku bez alokácie (krok 12): `start` = súradnica bunky, `+ 0,5`, pri pohybe `+ (cieľ −
+ * start) × progres` — rovnaké poradie operácií ako `Carrier.place` / `carrierPosition`, takže výsledok je bitovo zhodný.
+ */
+function routeAxis(start: number, next: number | undefined, progress: number, width: number, axis: number): number {
+  let value = start + CELL_CENTER_OFFSET;
+  if (next === undefined || progress === 0) return value;
+  const target = axis === AXIS_X ? next % width : (next - (next % width)) / width;
+  value += (target - start) * progress;
+  return value;
+}
+
 /** Kardinálny kurz úseku `from → to` (susedné bunky); nulový úsek → `null`. */
 function segmentHeadingOf(width: number, from: number, to: number): Rotation | null {
   return cardinalHeading((to % width) - (from % width), (to - (to % width)) / width - (from - (from % width)) / width);
@@ -111,7 +131,8 @@ function segmentHeadingOf(width: number, from: number, to: number): Rotation | n
 /**
  * Súlad pohybu nosiča so stavom (ADR-019), alebo `undefined`. `state` slúži len do správy (`… v stave 'to_pickup'`),
  * `traits` = vlastnosti stavu, `target` = cieľ jazdy / miesto pobytu podľa stavu (`undefined` = stav cieľ nemá alebo
- * závisí od niečoho, čo tu nie je — napr. `no_path`):
+ * závisí od niečoho, čo tu nie je — napr. `no_path`), `via` = voliteľný medzicieľ jazdy (trasa smie končiť aj na ňom —
+ * kamión pred spätným priechodom stojiskom, ADR-024):
  * progres 0 alebo v (`PROGRESS_NOISE`, 1) (`isValidProgress`, ADR-021 — šum by obrat zmenil na neplatný progres 1);
  * trasa po susedných bunkách v mape; poloha = `carrierPosition` trasy a progresu; rozbehnutý nosič má kurz svojho úseku
  * (`cardinalHeading`, ADR-021); tvar trasy podľa `traits.motion` (`park` `[cell]`, `drive` aspoň jedna cieľová bunka —
@@ -127,14 +148,18 @@ export function carrierMotionProblem(
   state: string,
   traits: MotionTraits,
   target: MotionTarget | undefined,
+  via?: MotionTarget,
 ): MotionProblem | undefined {
   if (!isValidProgress(carrier.progress)) {
     return { field: 'progress', problem: `${whereOf(carrier, state)}: progres ${String(carrier.progress)} musí byť 0 alebo v (PROGRESS_NOISE, 1)` };
   }
   const shape = routeProblem(world, carrier);
   if (shape !== undefined) return { field: 'route', problem: `${whereOf(carrier, state)}: trasa — ${shape}` };
-  const expected = carrierPosition(carrier.cell, carrier.nextCell, carrier.progress, world.grid.width);
-  if (expected.x !== carrier.x || expected.y !== carrier.y) {
+  const { width } = world.grid;
+  const expectedX = routeAxis(carrier.cell % width, carrier.nextCell, carrier.progress, width, AXIS_X);
+  const expectedY = routeAxis((carrier.cell - (carrier.cell % width)) / width, carrier.nextCell, carrier.progress, width, AXIS_Y);
+  if (expectedX !== carrier.x || expectedY !== carrier.y) {
+    const expected = carrierPosition(carrier.cell, carrier.nextCell, carrier.progress, width);
     return { field: 'x', problem: `${whereOf(carrier, state)}: poloha (${String(carrier.x)}, ${String(carrier.y)}) ≠ poloha na trase (${String(expected.x)}, ${String(expected.y)})` };
   }
   const ahead = carrier.cellsAhead;
@@ -145,7 +170,7 @@ export function carrierMotionProblem(
     return { field: 'heading', problem: `${whereOf(carrier, state)}: kurz ${String(carrier.heading)} nezodpovedá rozbehnutému úseku ${String(carrier.cell)} → ${String(next)}` };
   }
   if (traits.motion === 'park' && ahead !== 0) return { field: 'route', problem: `${whereOf(carrier, state)} stojí, ale má pred sebou ${String(ahead)} buniek trasy` };
-  if (traits.motion === 'drive' && ahead === 0 && (target === undefined || !isAtTarget(world, target, carrier.cell))) {
+  if (traits.motion === 'drive' && ahead === 0 && (target === undefined || !isAtGoal(world, target, via, carrier.cell))) {
     return { field: 'route', problem: `${whereOf(carrier, state)} nemá trasu (žiadna cieľová bunka) a nestojí pri cieli` };
   }
   if (traits.motion === 'halt' && (ahead > 1 || (ahead === 1) !== moving)) {
@@ -169,7 +194,7 @@ export function carrierMotionProblem(
     if (wrongWay !== undefined) {
       return { field: 'route', problem: `${whereOf(carrier, state)}: krok trasy ${String(routeCell(carrier, wrongWay - 1))} → ${String(routeCell(carrier, wrongWay))} ide proti smeru jednosmerky` };
     }
-    if (!isAtTarget(world, target, routeCell(carrier, ahead))) return { field: 'route', problem: `${whereOf(carrier, state)}: trasa nekončí na ${targetLabel(target)}` };
+    if (!isAtGoal(world, target, via, routeCell(carrier, ahead))) return { field: 'route', problem: `${whereOf(carrier, state)}: trasa nekončí na ${targetLabel(target)}` };
   }
   return undefined;
 }

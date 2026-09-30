@@ -260,7 +260,7 @@ describe('LoadingRamp', () => {
     expect(ramp.inoperativeReason).toBe('no_gate');
     expect(ramp.publishStatus(RAMP_OPERATIONAL)).toBe(true);
     expect([ramp.operational, ramp.inoperativeReason, ramp.operationalStatus]).toEqual([true, null, RAMP_OPERATIONAL]);
-    expect(ramp.getRuntimeState()).toEqual({});
+    expect(ramp.getRuntimeState()).toEqual({ lastNoWaitingBayHour: null });
   });
 
   it('rezervácie na dockoch: reserve / freeAt / firstFreeDock / release; plný dock → no_free_slot', () => {

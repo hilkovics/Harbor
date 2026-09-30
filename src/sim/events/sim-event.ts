@@ -1,6 +1,7 @@
 /**
  * Udalosti simulácie (ARCHITECTURE §12.1, výber pre F1 + F2: `CargoMoved`, moduly, lode, žeriavy; F3: vozidlá, joby,
- * `NoStorageAvailable`; F4: `RampOperationalChanged`, `JobCancelled`). Readonly DTO:
+ * `NoStorageAvailable`; F4: `RampOperationalChanged`, `JobCancelled`, kamióny `TruckSpawned`, `TruckStateChanged`,
+ * `TruckExited`, `NoWaitingBay`). Readonly DTO:
  * `World` ich zbiera v `EventBus` a vracia z `tick()` / `applyPending()`; prezentácia ich len číta. Nový typ udalosti =
  * nový člen únie (+ test).
  */
@@ -12,6 +13,7 @@ import type { JobCancelReason } from '../logistics/transport-job';
 import type { RampInoperativeReason } from '../modules/loading-ramp';
 import type { CellCoord } from '../grid/grid';
 import type { Rotation } from '../grid/rotation';
+import type { TruckState } from '../trucks/truck-fsm';
 import type { VehicleState } from '../vehicles/vehicle-fsm';
 
 /** Tick sa dokončil; `tick` = nová hodnota `clock.tick` (po kroku 1). */
@@ -234,6 +236,44 @@ export interface RampOperationalChangedEvent {
   readonly reason: RampInoperativeReason | null;
 }
 
+/**
+ * `landsideSystem` (krok 8, ADR-024) spawnol kamión `truckId` na road portáli (`roadPortals[0]`) v stave `to_gate`: dock
+ * `dock` rampy `rampId` mal pripravený náklad a kamión drží tento dock a rezervovaný bay stojiska svojej trasy.
+ */
+export interface TruckSpawnedEvent {
+  readonly type: 'TruckSpawned';
+  readonly truckId: EntityId;
+  readonly rampId: EntityId;
+  readonly dock: number;
+}
+
+/** Kamión zmenil stav FSM (`TRUCK_TRANSITIONS`, ADR-024); jedna udalosť na prechod (aj posledný `to_portal → exited`). */
+export interface TruckStateChangedEvent {
+  readonly type: 'TruckStateChanged';
+  readonly truckId: EntityId;
+  readonly from: TruckState;
+  readonly to: TruckState;
+}
+
+/**
+ * Kamión opustil mapu na road portáli: jeho `units` jednotiek prešlo `in_truck → exported` (každá s `CargoMoved`
+ * v tom istom ticku) a kamión zmizol z `world.trucks` (ADR-024). `exported` je konečný stav (§7.1).
+ */
+export interface TruckExitedEvent {
+  readonly type: 'TruckExited';
+  readonly truckId: EntityId;
+  readonly units: number;
+}
+
+/**
+ * Dock prevádzkovej rampy `rampId` má pripravený náklad a voľný, ale žiadne stojisko na jej trasách nemá voľný bay —
+ * kamión sa nespawnuje (§7.8 bod 3). Najviac raz za hernú hodinu na rampu (`LoadingRamp.lastNoWaitingBayHour`, ADR-024).
+ */
+export interface NoWaitingBayEvent {
+  readonly type: 'NoWaitingBay';
+  readonly rampId: EntityId;
+}
+
 export type SimEvent =
   | TickAdvancedEvent
   | HourClosedEvent
@@ -260,7 +300,11 @@ export type SimEvent =
   | JobCancelledEvent
   | VehicleStateChangedEvent
   | NoStorageAvailableEvent
-  | RampOperationalChangedEvent;
+  | RampOperationalChangedEvent
+  | TruckSpawnedEvent
+  | TruckStateChangedEvent
+  | TruckExitedEvent
+  | NoWaitingBayEvent;
 
 /** Názov typu udalosti (`'TickAdvanced' | 'HourClosed' | …`). */
 export type SimEventType = SimEvent['type'];

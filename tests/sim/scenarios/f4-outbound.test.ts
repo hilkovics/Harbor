@@ -1,7 +1,9 @@
 /**
  * Scenár outbound (T04-03; ARCHITECTURE §6 krok 5, §7.1, §7.3 body 2–4; rozhodnutia orchestrátora F4 č. 1 a 4;
  * ADR-023): feeder s 12 TEU → Root žeriav → apron → dve vozidlá → dvory → tie isté vozidlá → staging dock prevádzkovej
- * rampy. Kamióny prídu v T04-04, preto sa staging zaplní (2 docky × 2 = 4 jednotky) a zvyšok ostane v skladoch.
+ * rampy. Scenár izoluje outbound joby bez odvozu: defy bez kamiónu pre kontajnery (`NO_CONTAINER_TRUCK_DEFS`, kamióny
+ * T04-04 testujú f4-full-import-chain a f4-landside), preto sa staging zaplní (2 docky × 2 = 4 jednotky) a zvyšok
+ * ostane v skladoch.
  *
  * Rozloženie: `helpers/f3-layout.ts` (cesty, depo 3, dvory 4 a 5, dve vozidlá, loď) + pozemná časť z
  * `logistics/outbound-fixtures.ts` (cesty, brána, stojisko, rampa) — všetko na ticku 0 cez JSON príkazy. Po každom ticku
@@ -16,8 +18,11 @@ import { World } from '@sim/world';
 import { f3Scenario } from '../helpers/f3-layout';
 import { assertCargoConservation } from '../helpers/invariants';
 import { runScenario, stateHash, type Scenario, type ScenarioEntry } from '../helpers/scenario';
-import { LANDSIDE_ROADS, landsideCommand, rampOf, stagingOf, type LandsidePart } from '../logistics/outbound-fixtures';
-import { DEFS, MAP } from '../world/world-fixtures';
+import { LANDSIDE_ROADS, NO_CONTAINER_TRUCK_DEFS, landsideCommand, rampOf, stagingOf, type LandsidePart } from '../logistics/outbound-fixtures';
+import { MAP } from '../world/world-fixtures';
+
+/** Defy bez kamiónu pre kontajnery (viď hlavička). */
+const DEFS = NO_CONTAINER_TRUCK_DEFS;
 
 const UNITS = 12;
 const STAGING = 4;

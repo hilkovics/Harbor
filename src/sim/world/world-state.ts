@@ -16,6 +16,11 @@
  * slotov skladu z `to` aktívnych jobov (runtime skladu = len počítadlá) a kotvisko ukladá hodinu posledného
  * `NoStorageAvailable` (ADR-018). Staršie verzie prevedie `migrateWorldState` (migrate.ts).
  *
+ * v4 (T04-04, ADR-024) = v3 + `trucks` (vzostupne podľa id: id, def, stav, poloha, kurz, rampa a dock, brána,
+ * stojisko, držaný bay, stav na návrat z `no_path`, zvyšok trasy, progres, odpočet, príznak preplánovania). Brána
+ * ukladá frontu, odpočet prechodu a počítadlo v `runtime` (už od v3), rampa `lastNoWaitingBayHour`. Neukladá sa
+ * odvoditeľné: držitelia bays a dockov (z kamiónov), strany brán a trasy (z ciest a modulov).
+ *
  * Lode (ADR-016) sa ukladajú s polohou, stavom FSM, kotviskami, anchorage a indexom bodu trasy; trasa sa odvodí zo stavu
  * a mapy, `BerthModule.dockedShipId` z `berthIds`.
  *
@@ -45,9 +50,11 @@ import { SERIALIZED_JOB_KEYS, isJobRoute, type SerializedJob } from '../logistic
 import type { ModuleRuntimeState } from '../modules/runtime-state';
 import { SERIALIZED_SHIP_KEYS, type SerializedShip } from '../ships/ship';
 import { SHIP_STATES, SHIP_STATE_TRAITS, type ShipState } from '../ships/ship-fsm';
+import { SERIALIZED_TRUCK_KEYS, type SerializedTruck } from '../trucks/truck';
+import { TRUCK_STATES, TRUCK_STATE_TRAITS, TRUCK_TRAVEL_STATES, isTruckState, isTruckTravelState, type TruckState, type TruckTravelState } from '../trucks/truck-fsm';
 import { SERIALIZED_VEHICLE_KEYS, vehiclePosition, type SerializedVehicle } from '../vehicles/vehicle';
 import { VEHICLE_STATES, VEHICLE_STATE_TRAITS, isVehicleState, type VehicleState } from '../vehicles/vehicle-fsm';
-import { WORLD_STATE_V2, WORLD_STATE_V3_KEYS, WORLD_STATE_VERSION } from './migrate';
+import { WORLD_STATE_V2, WORLD_STATE_V3, WORLD_STATE_V4_KEYS, WORLD_STATE_VERSION } from './migrate';
 import { WorldStateError, checkArray, checkInteger, checkKeys, describeValue, isPlainObject, pointerSegment } from './state-check';
 
 export { WORLD_STATE_VERSION } from './migrate';
@@ -100,6 +107,8 @@ export type { SerializedVehicle } from '../vehicles/vehicle';
 
 export type { SerializedJob } from '../logistics/transport-job';
 
+export type { SerializedTruck } from '../trucks/truck';
+
 /** `WorldState` v1 (F1, ADR-013) — vstup migrácie. */
 export interface WorldStateV1 {
   readonly version: 1;
@@ -125,9 +134,9 @@ export interface WorldStateV2 extends Omit<WorldStateV1, 'version'> {
   readonly ships: readonly SerializedShip[];
 }
 
-/** Aktuálny `WorldState` (v3). */
-export interface WorldState extends Omit<WorldStateV2, 'version' | 'roads'> {
-  readonly version: typeof WORLD_STATE_VERSION;
+/** `WorldState` v3 (F3, ADR-017 až ADR-021) — vstup migrácie v3 → v4. */
+export interface WorldStateV3 extends Omit<WorldStateV2, 'version' | 'roads'> {
+  readonly version: typeof WORLD_STATE_V3;
   /** Cesty a koľaje vzostupne podľa indexu bunky; typ cesty a smer jednosmerky len mimo predvoleného stavu (ADR-020). */
   readonly roads: readonly SerializedRoad[];
   /** Vozidlá vzostupne podľa id (`Vehicle.toState()`, T03-04); `VehicleDepot.vehicleIds` sa odvodí pri obnove. */
@@ -136,8 +145,15 @@ export interface WorldState extends Omit<WorldStateV2, 'version' | 'roads'> {
   readonly jobs: readonly SerializedJob[];
 }
 
+/** Aktuálny `WorldState` (v4, ADR-024). */
+export interface WorldState extends Omit<WorldStateV3, 'version'> {
+  readonly version: typeof WORLD_STATE_VERSION;
+  /** Kamióny na mape vzostupne podľa id (`Truck.toState()`); bays a docky ich držiteľov sa odvodia pri obnove. */
+  readonly trucks: readonly SerializedTruck[];
+}
+
 /** Ľubovoľná podporovaná verzia (vstup `World.deserialize`). */
-export type AnyWorldState = WorldState | WorldStateV2 | WorldStateV1;
+export type AnyWorldState = WorldState | WorldStateV3 | WorldStateV2 | WorldStateV1;
 
 /** Modul zo save s overeným tvarom; vzťahy k mriežke a iným modulom overí `restoreEntities`. */
 export interface ParsedModuleEntry {
@@ -182,6 +198,29 @@ export interface ParsedVehicleEntry {
   readonly replan: boolean;
 }
 
+/**
+ * Kamión zo save s overeným tvarom (známy def, stav bez `exited`, `resume` práve v `no_path`, `bay` podľa stavu, trasa
+ * po susedných bunkách, poloha na trase); moduly, bay, dock, fronta brány, náklad a cesty pod trasou overí obnova.
+ */
+export interface ParsedTruckEntry {
+  readonly id: EntityId;
+  readonly defId: string;
+  readonly state: TruckState;
+  readonly x: number;
+  readonly y: number;
+  readonly heading: Rotation;
+  readonly rampId: EntityId;
+  readonly dock: number;
+  readonly gateId: EntityId;
+  readonly waitingAreaId: EntityId;
+  readonly bay: number | null;
+  readonly resume: TruckTravelState | null;
+  readonly route: readonly number[];
+  readonly progress: number;
+  readonly waitTicks: number;
+  readonly replan: boolean;
+}
+
 /** Job zo save s overeným tvarom (lokácie, dvojica druhov, jednotky); stav, vozidlo a vzťahy k svetu odvodí obnova. */
 export interface ParsedJobEntry {
   readonly id: EntityId;
@@ -211,10 +250,12 @@ export interface ParsedWorldState {
   readonly vehicles: readonly ParsedVehicleEntry[];
   /** Aktívne joby vzostupne podľa id (= poradie vzniku). */
   readonly jobs: readonly ParsedJobEntry[];
+  /** Kamióny vzostupne podľa id (= poradie spawnu). */
+  readonly trucks: readonly ParsedTruckEntry[];
 }
 
-/** Kľúče aktuálnej verzie (v3) v poradí `serialize()`; iné kľúče sú chyba (stav nemá voliteľné polia). */
-export const WORLD_STATE_KEYS: readonly (keyof WorldState)[] = WORLD_STATE_V3_KEYS;
+/** Kľúče aktuálnej verzie (v4) v poradí `serialize()`; iné kľúče sú chyba (stav nemá voliteľné polia). */
+export const WORLD_STATE_KEYS: readonly (keyof WorldState)[] = WORLD_STATE_V4_KEYS;
 const CLOCK_KEYS: readonly (keyof SimClockState)[] = ['tick', 'speed'];
 const IDS_KEYS: readonly (keyof EntityIdAllocatorState)[] = ['nextId'];
 const MODULE_KEYS: readonly (keyof SerializedModule)[] = ['id', 'defId', 'x', 'y', 'rotation', 'purchaseCostCents', 'runtime'];
@@ -514,6 +555,82 @@ function parseVehicles(value: unknown, defs: DefRegistry, map: LoadedMap, grid: 
   });
 }
 
+/** Progres úseku zo save: číslo v `[0, 1)`, `> 0` len s ďalšou bunkou trasy. */
+function checkProgress(value: unknown, route: readonly number[], path: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value >= 1) {
+    throw new WorldStateError(path, `musí byť číslo v [0, 1), dostal ${describeValue(value)}`);
+  }
+  if (value > 0 && route.length < 2) throw new WorldStateError(path, `progres ${String(value)} bez ďalšej bunky na trase`);
+  return value;
+}
+
+/**
+ * Tvar kamiónov (ADR-024): presne kľúče `SerializedTruck`, id celé 1…`nextId − 1` a ostro rastúce (poradie spawnu),
+ * známy def z `trucks.json`, stav z `TRUCK_STATES` okrem `exited`, platný kurz, `rampId` / `gateId` / `waitingAreaId`
+ * celé ≥ 1, `dock` celé ≥ 0, `resume` jazdný stav práve v `no_path`, `bay` celé ≥ 0 práve v stavoch s `holdsBay`
+ * (v `no_path` podľa `resume`), trasa (`parseRoute`), progres v `[0, 1)` (> 0 len s ďalšou bunkou), `waitTicks` celé ≥ 0,
+ * `replan` boolean, poloha = poloha na trase. Moduly, bay, dock, fronta brány, náklad a cesty overí obnova.
+ */
+function parseTrucks(value: unknown, defs: DefRegistry, map: LoadedMap, grid: Grid, nextId: number): ParsedTruckEntry[] {
+  let previousId = 0;
+  return checkArray(value, '/trucks').map((raw: unknown, i): ParsedTruckEntry => {
+    const path = `/trucks${pointerSegment(i)}`;
+    const entry = checkKeys(raw, SERIALIZED_TRUCK_KEYS, path);
+    const id = checkInteger(entry['id'], 1, `${path}/id`);
+    if (id >= nextId) throw new WorldStateError(`${path}/id`, `id ${String(id)} musí byť menšie ako ids.nextId ${String(nextId)}`);
+    if (id <= previousId) throw new WorldStateError(`${path}/id`, `kamióny musia byť vzostupne podľa id (poradie spawnu), ${String(id)} ≤ ${String(previousId)}`);
+    previousId = id;
+    const { defId, state, heading, resume } = entry;
+    if (typeof defId !== 'string' || !defs.trucks.has(defId)) throw new WorldStateError(`${path}/defId`, `neznámy kamión ${describeValue(defId)}`);
+    if (!isTruckState(state) || state === 'exited') {
+      throw new WorldStateError(`${path}/state`, `stav musí byť jeden z: ${TRUCK_STATES.filter((s) => s !== 'exited').join(', ')}, dostal ${describeValue(state)}`);
+    }
+    const x = checkCoordinate(entry['x'], map.width, `${path}/x`);
+    const y = checkCoordinate(entry['y'], map.height, `${path}/y`);
+    if (!isRotation(heading)) throw new WorldStateError(`${path}/heading`, `kurz musí byť 0, 90, 180 alebo 270, dostal ${describeValue(heading)}`);
+    const rampId = checkInteger(entry['rampId'], 1, `${path}/rampId`);
+    const dock = checkInteger(entry['dock'], 0, `${path}/dock`);
+    const gateId = checkInteger(entry['gateId'], 1, `${path}/gateId`);
+    const waitingAreaId = checkInteger(entry['waitingAreaId'], 1, `${path}/waitingAreaId`);
+    if (state === 'no_path' ? !isTruckTravelState(resume) : resume !== null) {
+      throw new WorldStateError(`${path}/resume`, state === 'no_path' ? `stav no_path vyžaduje jeden z: ${TRUCK_TRAVEL_STATES.join(', ')}` : `stav '${state}' musí mať resume null`);
+    }
+    const effective: TruckState = isTruckTravelState(resume) ? resume : state;
+    const rawBay = entry['bay'];
+    const bay = rawBay === null ? null : checkInteger(rawBay, 0, `${path}/bay`);
+    if (TRUCK_STATE_TRAITS[effective].holdsBay !== (bay !== null)) {
+      throw new WorldStateError(`${path}/bay`, TRUCK_STATE_TRAITS[effective].holdsBay ? `stav '${effective}' vyžaduje bay` : `stav '${effective}' nesmie držať bay`);
+    }
+    const route = parseRoute(entry['route'], `${path}/route`, grid);
+    const progress = checkProgress(entry['progress'], route, `${path}/progress`);
+    const waitTicks = checkInteger(entry['waitTicks'], 0, `${path}/waitTicks`);
+    const replan = entry['replan'];
+    if (typeof replan !== 'boolean') throw new WorldStateError(`${path}/replan`, `musí byť boolean, dostal ${describeValue(replan)}`);
+    const expected = vehiclePosition(route[0], route[1], progress, grid.width);
+    if (expected.x !== x || expected.y !== y) {
+      throw new WorldStateError(`${path}/x`, `poloha (${String(x)}, ${String(y)}) nie je na trase — očakávaná (${String(expected.x)}, ${String(expected.y)})`);
+    }
+    return {
+      id: id as EntityId,
+      defId,
+      state,
+      x,
+      y,
+      heading,
+      rampId: rampId as EntityId,
+      dock,
+      gateId: gateId as EntityId,
+      waitingAreaId: waitingAreaId as EntityId,
+      bay,
+      resume: isTruckTravelState(resume) ? resume : null,
+      route,
+      progress,
+      waitTicks,
+      replan,
+    };
+  });
+}
+
 /** Lokácia jobu v kanonickom tvare (`normalizeLocation`) s držiteľom; inak `WorldStateError` s cestou v nej. */
 function parseJobLocation(value: unknown, path: string): CargoLocation {
   const normalized = normalizeLocation(value);
@@ -557,6 +674,7 @@ function checkIdCollisions(
   ships: readonly ParsedShipEntry[],
   vehicles: readonly ParsedVehicleEntry[],
   jobs: readonly ParsedJobEntry[],
+  trucks: readonly ParsedTruckEntry[],
   cargo: CargoLedgerState,
 ): void {
   const owners = new Map<number, string>(modules.map((entry) => [entry.id, 'modulu'] as const));
@@ -574,6 +692,11 @@ function checkIdCollisions(
     if (owner !== undefined) throw new WorldStateError(`/jobs${pointerSegment(i)}/id`, `id ${String(job.id)} už patrí ${owner} (id entít sú jedinečné)`);
     owners.set(job.id, 'jobu');
   });
+  trucks.forEach((truck, i) => {
+    const owner = owners.get(truck.id);
+    if (owner !== undefined) throw new WorldStateError(`/trucks${pointerSegment(i)}/id`, `id ${String(truck.id)} už patrí ${owner} (id entít sú jedinečné)`);
+    owners.set(truck.id, 'kamiónu');
+  });
   cargo.units.forEach((unit, i) => {
     const owner = owners.get(unit.id);
     if (owner !== undefined) {
@@ -584,13 +707,14 @@ function checkIdCollisions(
 
 /**
  * Overí `raw` ako `WorldState` **aktuálnej** verzie (staršie najprv prevedie `migrateWorldState`) pre danú mapu
- * a defy a obnoví jadrové objekty. Kontroly v poradí kľúčov: tvar (presne kľúče v3), `version`, `mapId === map.id`,
+ * a defy a obnoví jadrové objekty. Kontroly v poradí kľúčov: tvar (presne kľúče v4), `version`, `mapId === map.id`,
  * `seed` uint32, `rng` (4× uint32, nie nulový), `clock` (tick ≥ 0, rýchlosť v `time.speeds`), `ids`, `cashCents`
  * (bezpečné celé číslo), `roads` (index v mape, vrstva, bez duplicít, terén unesie cestu, typ a smer cesty v kanonickom
  * tvare — ADR-020), `traffic` (index v mape,
  * bez duplicít, hodnota > 0), `parcels` (presne parcely mapy, platné vlastníctvo, `leased` len pri `leasable`),
  * `modules` (tvar), `cargo` (`parseCargoLedgerState`), `ships` (tvar, `parseShips`), `vehicles` (tvar,
- * `parseVehicles`), `jobs` (tvar, `parseJobs`), id modulov, lodí, vozidiel, jobov a nákladu sa neprekrývajú.
+ * `parseVehicles`), `jobs` (tvar, `parseJobs`), `trucks` (tvar, `parseTrucks`), id modulov, lodí, vozidiel, jobov,
+ * kamiónov a nákladu sa neprekrývajú.
  * Vstup sa nemení a výsledok s ním nezdieľa meniteľné objekty.
  *
  * `grid` je mriežka počiatočného stavu tej istej mapy (`map.createGrid()`) — z nej sa overuje terén pod cestami;
@@ -629,6 +753,7 @@ export function parseWorldState(raw: unknown, defs: DefRegistry, map: LoadedMap,
   const ships = parseShips(state.ships, defs, map, nextId);
   const vehicles = parseVehicles(state.vehicles, defs, map, grid, nextId);
   const jobs = parseJobs(state.jobs, nextId, clock.tick);
-  checkIdCollisions(modules, ships, vehicles, jobs, cargo);
-  return { seed, clock, rng, ids, cashCents, roads, traffic, ownership, modules, cargo, ships, vehicles, jobs };
+  const trucks = parseTrucks(state.trucks, defs, map, grid, nextId);
+  checkIdCollisions(modules, ships, vehicles, jobs, trucks, cargo);
+  return { seed, clock, rng, ids, cashCents, roads, traffic, ownership, modules, cargo, ships, vehicles, jobs, trucks };
 }

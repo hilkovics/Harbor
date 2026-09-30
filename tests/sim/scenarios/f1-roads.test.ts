@@ -44,6 +44,9 @@ const scenario = loadScenarioFile('f1_roads');
 const ROAD_COST = defs.infrastructure.road.costPerCellCents;
 const REFUND_RATE = defs.economy.removalRefundRate;
 
+/** Refundácia za `cells` buniek (ADR-012 v znení ADR-015): celočíselne v bázických bodoch, nadol z celého príkazu. */
+const refundOf = (cells: number): number => Number((BigInt(cells * ROAD_COST) * BigInt(Math.round(REFUND_RATE * 10_000))) / 10_000n);
+
 // ---------------------------------------------------------------------------------------------------------
 // Referenčný model (nezávislý od implementácie: množina buniek + hotovosť + rýchlosť)
 // ---------------------------------------------------------------------------------------------------------
@@ -89,7 +92,7 @@ function modelAt(commands: readonly ScenarioEntry[], tick: number): Model {
       model.steps.push({ atTick, type: command.type, deltaCents, changed: fresh });
     } else if (command.type === 'RemoveRoad') {
       const existing = [...new Set(cellsOf(command).map(cellKey))].filter((key) => model.roads.has(key));
-      const deltaCents = Math.floor(existing.length * ROAD_COST * REFUND_RATE);
+      const deltaCents = refundOf(existing.length);
       existing.forEach((key) => model.roads.delete(key));
       model.cashCents += deltaCents;
       model.steps.push({ atTick, type: command.type, deltaCents, changed: existing });
@@ -208,7 +211,7 @@ describe('scenár f1_roads: beh 20 000 tickov', () => {
     const expected =
       defs.economy.startingCashCents -
       placedCells * ROAD_COST +
-      Math.floor(removedCells * ROAD_COST * REFUND_RATE);
+      refundOf(removedCells);
     expect(placedCells).toBeGreaterThan(0);
     expect(removedCells).toBeGreaterThan(0);
     expect(world.cashCents).toBe(expected);
@@ -491,7 +494,7 @@ describe('World: fronta príkazov', () => {
     expect(eventsOfType(events, 'CommandRejected')).toEqual([]);
     expect(world.grid.at(starterCell.x, starterCell.y).road).toBe('none');
     expect(world.cashCents).toBe(
-      defs.economy.startingCashCents - ROAD_COST + Math.floor(ROAD_COST * REFUND_RATE),
+      defs.economy.startingCashCents - ROAD_COST + refundOf(1),
     );
   });
 

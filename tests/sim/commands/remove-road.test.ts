@@ -28,12 +28,27 @@ function worldWithRoads(cells: readonly CellCoord[], world: World = newWorld()):
   return world;
 }
 
-/** ADR-012: floor(bunky × costPerCellCents × removalRefundRate). */
-const refundFor = (cells: number, cost = ROAD_COST, rate = REFUND_RATE): number => Math.floor(cells * cost * rate);
+/**
+ * ADR-012 v znení ADR-015: floor(bunky × costPerCellCents × round(rate × 10 000) / 10 000), celočíselne
+ * (BigInt ako nezávislý referenčný výpočet).
+ */
+const refundFor = (cells: number, cost = ROAD_COST, rate = REFUND_RATE): number =>
+  Number((BigInt(cells * cost) * BigInt(Math.round(rate * 10_000))) / 10_000n);
 
-describe('RemoveRoad — refundácia (ADR-012)', () => {
+describe('RemoveRoad — refundácia (ADR-012, ADR-015)', () => {
   it('removalRefundRate z defu je 50 %', () => {
     expect(REFUND_RATE).toBe(0.5);
+  });
+
+  it('miera 0.29 pri cene bunky 200 000 ¢ vráti presne 58 000 ¢ (v double by bolo 57 999)', () => {
+    const defs = defsWith({ roadCostPerCellCents: 200_000, removalRefundRate: 0.29 });
+    const world = worldWithRoads([CELLS.publicLand], newWorld(defs));
+    expect(Math.floor(200_000 * 0.29)).toBe(57_999); // pôvodný vzorec ADR-012 v double
+    const command = remove(CELLS.publicLand);
+    expect(command.validate(world).costCents).toBe(-58_000);
+    const cash = world.cashCents;
+    command.apply(world);
+    expect(world.cashCents).toBe(cash + 58_000);
   });
 
   it('odstránenie 3 buniek vráti 50 % ceny, kategória road_sale, práve RoadChanged + MoneyChanged', () => {

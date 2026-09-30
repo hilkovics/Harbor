@@ -19,9 +19,9 @@
  * | `build_module_pan`   | stredný ťah v móde modulu: posun kamery, mód ostáva |
  *
  * Ovládanie: `B` build mód ciest (naposledy použitý typ), `Esc` zruší ťah, potom mód (v `idle` zruší výber modulu
- * v inšpektore), `Space`
- * pauza/obnova poslednej nenulovej rýchlosti (rovnaká logika ako klik na ⏸: `resolveSpeedRequest`), `1–4` rýchlosti
- * podľa poradia v `time.speeds`, WASD/šípky posun kamery, koleso zoom s pivotom pod kurzorom.
+ * v inšpektore), `Space` pauza/obnova poslednej nenulovej rýchlosti (rovnaká logika ako klik na ⏸:
+ * `resolveSpeedRequest`), `1–4` rýchlosti podľa poradia v `time.speeds`, WASD/šípky posun kamery, koleso zoom
+ * s pivotom pod kurzorom.
  *
  * Build mód modulov (T02-10): výber v BuildBare (`BuildSelection`) prepne do `build_module`; `R` otočí ghost
  * 0 → 90 → 180 → 270, ľavý klik umiestni modul (`validate` → `dispatch(PlaceModule)` len pri `ok`), Esc alebo pravý klik

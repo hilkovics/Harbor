@@ -67,7 +67,8 @@ describe('DistanceMatrix (bez sveta)', () => {
   it('lazy: cena = dĺžka cesty − 1, bez cesty Infinity, tá istá bunka 0; hodnota sa spočíta raz', () => {
     const grid = roadGrid(['....#.', '.##.#.', '......']);
     const pathfinder = new Pathfinder(grid);
-    const matrix = new DistanceMatrix(pathfinder, new Version());
+    const version = new Version();
+    const matrix = new DistanceMatrix(new PathCache(pathfinder, version), version);
     expect(matrix.diagnostics().size).toBe(0);
     const d = matrix.distance(0, 5);
     expect(d).toBe((pathfinder.findPath(0, 5) ?? []).length - 1);
@@ -78,10 +79,30 @@ describe('DistanceMatrix (bez sveta)', () => {
     expect(matrix.distance(0, 4)).toBe(Infinity); // (4, 0) nie je cesta
   });
 
+  it('cena z cesty PathCache: jeden A* pre cenu aj cestu tej istej dvojice, bitovo = findCost (aj pri cene 1 / 0,7)', () => {
+    const grid = roadGrid(['......', '.####.', '......']);
+    const slow = new Set([grid.index(3, 0), grid.index(2, 2), grid.index(3, 2)]); // horná cesta 6 + 1/0,7 < dolná 5 + 2/0,7
+    const pathfinder = new Pathfinder(grid, (i) => (slow.has(i) ? 1 / 0.7 : 1));
+    const version = new Version();
+    const paths = new PathCache(pathfinder, version);
+    const matrix = new DistanceMatrix(paths, version);
+    const from = grid.index(0, 0);
+    const to = grid.index(5, 2);
+    const searches = pathfinder.diagnostics().searches;
+    const cost = matrix.distance(from, to);
+    const path = paths.get(from, to);
+    expect(pathfinder.diagnostics().searches).toBe(searches + 1);
+    expect(paths.diagnostics()).toMatchObject({ hits: 1, misses: 1 });
+    expect(Object.is(cost, pathfinder.findCost(from, to))).toBe(true);
+    expect(cost).toBe(pathfinder.routeCost(path ?? []));
+    expect(path?.[1]).toBe(grid.index(1, 0)); // horná cesta
+    expect(cost).toBeCloseTo(6 + 1 / 0.7, 12);
+  });
+
   it('zneplatní sa pri zmene roadVersion', () => {
     const grid = roadGrid(['..#..']);
     const version = new Version();
-    const matrix = new DistanceMatrix(new Pathfinder(grid), version);
+    const matrix = new DistanceMatrix(new PathCache(new Pathfinder(grid), version), version);
     expect(matrix.distance(0, 4)).toBe(Infinity);
     grid.at(2, 0).road = 'road';
     version.roadVersion += 1;

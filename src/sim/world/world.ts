@@ -331,9 +331,12 @@ export class World {
     return this.pathCache;
   }
 
-  /** Lazy matica cien ciest (`DistanceMatrix`) nad `pathfinder`, zneplatnená podľa `roadVersion`. */
+  /**
+   * Lazy matica cien ciest (`DistanceMatrix`) nad cestami z `paths` (cena = `routeCost` tej istej cesty, jeden A* na
+   * dvojicu), zneplatnená podľa `roadVersion`.
+   */
   get distances(): DistanceMatrix {
-    this.distanceMatrix ??= new DistanceMatrix(this.pathfinder, this);
+    this.distanceMatrix ??= new DistanceMatrix(this.paths, this);
     return this.distanceMatrix;
   }
 

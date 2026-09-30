@@ -4,9 +4,9 @@
  * vonkajšia bunka v mape s `road === 'road'` — tá istá podmienka ako `World.isConnected`, takže nepripojený modul nemá
  * žiadnu prístupovú bunku a dispatcher ho ignoruje.
  *
- * Vzdialenosti idú cez `DistanceMatrix` (lazy memo nad A*, zneplatnené cez `roadVersion`); pri viacerých konektoroch
- * sa berie najlacnejšia dvojica, pri zhode prvý konektor v poradí defu. Funkcie nealokujú (dispatcher ich volá každý
- * tick) a svet nemenia.
+ * Vzdialenosti idú cez `DistanceMatrix` (lazy memo nad cestami z `PathCache`, zneplatnené cez `roadVersion`); pri
+ * viacerých konektoroch sa berie najlacnejšia dvojica, pri zhode prvý konektor v poradí defu. Funkcie nealokujú okrem
+ * cesty pri prvom dotaze na dvojicu (dispatcher ich volá každý tick) a svet nemenia.
  */
 import type { Grid } from '../grid/grid';
 import type { Module } from '../modules/module';
@@ -60,10 +60,19 @@ export function nearestAccessCell(env: ModuleAccessEnv, from: number, module: Mo
   return best;
 }
 
-/** Cena cesty z bunky `from` k najbližšej prístupovej bunke modulu; `Infinity` bez prístupu alebo bez cesty. */
+/**
+ * Cena cesty z bunky `from` k najbližšej prístupovej bunke modulu (= cena bunky z `nearestAccessCell`, jeden dotaz do
+ * matice na konektor); `Infinity` bez prístupu alebo bez cesty.
+ */
 export function distanceToModule(env: ModuleAccessEnv, from: number, module: Module): number {
-  const access = nearestAccessCell(env, from, module);
-  return access === NO_ACCESS ? Infinity : env.distances.distance(from, access);
+  let best = Infinity;
+  for (const connector of module.connectors) {
+    const access = accessCellIndex(env.grid, connector);
+    if (access === NO_ACCESS) continue;
+    const cost = env.distances.distance(from, access);
+    if (cost < best) best = cost;
+  }
+  return best;
 }
 
 /**

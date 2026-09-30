@@ -46,15 +46,19 @@ export class RoadPairMemo<T> {
     this.version = roads.roadVersion;
   }
 
-  /** Hodnota pre dvojicu (`from`, `to`); pri miss ju spočíta `compute`. Index mimo mriežky → `RangeError`. */
+  /**
+   * Hodnota pre dvojicu (`from`, `to`); pri miss ju spočíta `compute`. Index mimo mriežky → `RangeError`. Zásah = jedno
+   * `Map.get`; `has` sa pýta len vtedy, keď `get` vráti `undefined` (hodnota `undefined` by bola zapamätaná, nie miss).
+   */
   get(from: number, to: number, compute: (from: number, to: number) => T): T {
     assertCellIndex(from, this.cellCount, this.caller);
     assertCellIndex(to, this.cellCount, this.caller);
     this.refresh();
     const key = from * this.cellCount + to;
-    if (this.entries.has(key)) {
+    const cached = this.entries.get(key);
+    if (cached !== undefined || this.entries.has(key)) {
       this.hitCount += 1;
-      return this.entries.get(key) as T;
+      return cached as T;
     }
     this.missCount += 1;
     const value = compute(from, to);
@@ -78,6 +82,8 @@ export class RoadPairMemo<T> {
 }
 
 export class PathCache {
+  /** A*, z ktorého cache berie cesty; `DistanceMatrix` ním počíta cenu cesty (`routeCost`). */
+  readonly pathfinder: Pathfinder;
   private readonly memo: RoadPairMemo<readonly number[] | null>;
   private readonly compute: (from: number, to: number) => readonly number[] | null;
 
@@ -86,6 +92,7 @@ export class PathCache {
    * @param roads zdroj `roadVersion` (svet); cache vzniká platná pre aktuálnu verziu
    */
   constructor(pathfinder: Pathfinder, roads: RoadVersionSource) {
+    this.pathfinder = pathfinder;
     this.memo = new RoadPairMemo(pathfinder.cellCount, roads, 'PathCache.get');
     this.compute = (from, to) => pathfinder.findPath(from, to);
   }

@@ -63,11 +63,14 @@ export interface ValidationResult {
    * Bunky, na ktoré sa výsledok vzťahuje (ghost v UI ich zafarbí); príkazy bez buniek vracajú prázdne pole.
    * Príkazy nad vrstvou dopravy (`RoadLayerCommand`): unikátne bunky, ktoré `apply` zmení, v poradí prvého výskytu
    * (pri odmietnutí tie, ktoré by samy prešli) — bunky už v cieľovom stave ani neplatné bunky tu nie sú.
+   * `PlaceModule`: celý footprint po rotácii row-major (aj pri odmietnutí a aj bunky mimo mapy; `[]` pri `unknown_def`
+   * alebo `invalid_rotation`). `RemoveModule`: footprint modulu (`[]` pri `unknown_module`). ADR-015.
    */
   readonly cells: readonly CellCoord[];
   /**
    * Cena príkazu v centoch (USD), ktorú by `apply` strhol z hotovosti; 0 = zadarmo, záporná = príjem
-   * (napr. refundácia `RemoveRoad`, ADR-012). Pri odmietnutí cena platnej časti (`cells`).
+   * (napr. refundácia `RemoveRoad`, ADR-012). Cesty: pri odmietnutí cena platnej časti (`cells`). `PlaceModule`:
+   * `def.costCents` aj pri odmietnutí (0 pri `unknown_def`); `RemoveModule`: −refundácia zo zaplatenej ceny (ADR-015).
    */
   readonly costCents: number;
 }

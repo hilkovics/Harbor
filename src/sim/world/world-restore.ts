@@ -696,6 +696,8 @@ export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'mo
   restoreHeldCargo(world, units);
   checkCraneHolding(world, indexOf);
   checkContracts(world, units);
+  // Index uskladneného nákladu (ADR-027) sa neukladá: poradie sklad ↑, FIFO sa odvodí z obnoveného ledgera.
+  world.storedCargo.rebuild(world.cargo, world.modules.keys());
   const violation = findWorldViolation(world);
   if (violation !== undefined) throw new WorldStateError('', violation);
 }

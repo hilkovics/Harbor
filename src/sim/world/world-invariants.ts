@@ -846,7 +846,8 @@ const checkTrucks: Check = (world) => {
  * Kontrakty (ADR-026), O(neukončené kontrakty) bez alokácie: počet ponúk ≤ `offersPerDay`; počítadlá
  * `unitsExported ≤ unitsUnloaded ≤ volumeUnits`; kontrakt s loďou pred vyložením (`ship_en_route`, `unloading`) má loď
  * na mape s triedou a nákladom kontraktu a na jej palube práve `volumeUnits − unitsUnloaded` jednotiek; `exporting` má
- * vyložený celý objem. Väzbu jednotka → kontrakt overuje obnova save (`checkContracts` vo world-restore).
+ * vyložený celý objem; index uskladneného nákladu (`World.storedCargo`, ADR-027) má toľko jednotiek, koľko ich je
+ * `in_storage`. Väzbu jednotka → kontrakt overuje obnova save (`checkContracts` vo world-restore).
  */
 const checkContracts: Check = (world) => {
   let offers = 0;
@@ -867,7 +868,9 @@ const checkContracts: Check = (world) => {
     }
   }
   const limit = world.defs.economy.offersPerDay;
-  return offers > limit ? `pool má ${String(offers)} ponúk > offersPerDay ${String(limit)}` : undefined;
+  if (offers > limit) return `pool má ${String(offers)} ponúk > offersPerDay ${String(limit)}`;
+  const stored = world.cargo.countByKind('in_storage');
+  return world.storedCargo.size === stored ? undefined : `index uskladneného nákladu má ${String(world.storedCargo.size)} jednotiek, sklady ${String(stored)}`;
 };
 
 const CHECKS: readonly Check[] = [

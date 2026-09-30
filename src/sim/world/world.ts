@@ -53,7 +53,8 @@
  */
 import { CargoLedger } from '../cargo/cargo-ledger';
 import type { CargoLedgerState } from '../cargo/cargo-ledger-state';
-import { isSameLocation } from '../cargo/cargo-location';
+import { isSameLocation, type CargoLocation } from '../cargo/cargo-location';
+import type { CargoUnit } from '../cargo/cargo-unit';
 import { EntityIdAllocator, type ContractId, type EntityId } from '../core/entity-id';
 import { EventBus } from '../core/event-bus';
 import { INITIAL_SPEED, SimClock, type ClockBoundaries } from '../core/sim-clock';
@@ -87,6 +88,7 @@ import { JobError } from '../logistics/job-error';
 import { PathCache } from '../logistics/path-cache';
 import { Pathfinder } from '../logistics/pathfinder';
 import { RoadSpeeds } from '../logistics/road-speed';
+import { StoredCargoIndex } from '../logistics/stored-cargo-index';
 import { JOB_STATE_TRAITS, type TransportJob } from '../logistics/transport-job';
 import { Economy, type EconomyState } from '../economy/economy';
 import { ContractSystem } from '../systems/contract-system';
@@ -219,6 +221,11 @@ export class World {
    * `completedContracts`, `tier`.
    */
   readonly contractBook: ContractBook;
+  /**
+   * Uskladnené jednotky podľa kontraktu v poradí sklad ↑, FIFO (ADR-027) — odvodená cache pre outbound joby dispatchera,
+   * nie je v save (obnova ju zostaví z ledgera). Udržiava ju háčik `CargoLedger.move`.
+   */
+  readonly storedCargo = new StoredCargoIndex();
   /** Krok 12 ticku zapnutý (`WorldOptions.checkInvariants`, predvolene `true`). */
   readonly checkInvariants: boolean;
 
@@ -271,9 +278,15 @@ export class World {
         : Economy.fromState(economyEnv, parts.cashCents, entriesKept, parts.economy);
     const bookEnv = { events: this.events, clock: parts.clock };
     this.contractBook = parts.contracts === null ? new ContractBook(bookEnv) : ContractBook.fromState(bookEnv, parts.contracts);
-    const { contractBook } = this;
-    // Počítadlá jednotiek kontraktov z háčika ledgera (ADR-026) — bez skenu nákladu v ticku.
-    const observer = { cargoMoved: contractBook.cargoMoved.bind(contractBook) };
+    const { contractBook, storedCargo } = this;
+    // Počítadlá jednotiek kontraktov (ADR-026) a index uskladneného nákladu pre outbound (ADR-027) z háčika ledgera —
+    // bez skenu nákladu v ticku.
+    const observer = {
+      cargoMoved(unit: CargoUnit, to: CargoLocation): void {
+        contractBook.cargoMoved(unit, to);
+        storedCargo.cargoMoved(unit, to);
+      },
+    };
     const deps = { cargoTypes: parts.defs.cargoTypes, ids: parts.ids, events: this.events, clock: parts.clock, observer };
     this.cargo = parts.cargo === null ? new CargoLedger(deps) : CargoLedger.fromState(parts.cargo, deps);
     this.modules = this.moduleMap;

@@ -1,7 +1,7 @@
 // Logistika (ARCHITECTURE §7.3, §7.4, §7.6): pathfinding (A*, cache ciest, matica vzdialeností) — T03-03; smerové
 // hrany, cena a rýchlosť podľa typu cesty (RoadSpeeds) — T03-18 (ADR-020);
 // TransportJob, prístup k modulom, StorageAllocator a Dispatcher — T03-05 (ADR-018); outbound joby, RampAllocator,
-// zrušenie a priorita priradenia — T04-03 (ADR-023).
+// zrušenie a priorita priradenia — T04-03 (ADR-023); outbound podľa kontraktu a SLA, StoredCargoIndex — T05-04 (ADR-027).
 export { IndexedBinaryHeap } from './binary-heap';
 export type { HeapLess } from './binary-heap';
 export { BASE_CELL_COST, Pathfinder, assertCellIndex, unitCellCost } from './pathfinder';
@@ -34,4 +34,6 @@ export { allocateStorage } from './storage-allocator';
 export type { StorageAllocatorEnv } from './storage-allocator';
 export { acceptsOutbound, allocateRamp } from './ramp-allocator';
 export type { RampAllocatorEnv } from './ramp-allocator';
+export { StoredCargoIndex } from './stored-cargo-index';
+export type { StoredCargoGroup, StoredCargoSource } from './stored-cargo-index';
 export { assignOpenJobs, cancelUnusableOutboundJobs, chooseVehicle, createInboundJobs, createOutboundJobs } from './dispatcher';

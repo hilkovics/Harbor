@@ -171,16 +171,21 @@ describe('vznik outbound jobov (dispatcher krok 5, §7.3 bod 2)', () => {
     expect(ramp.reservedCount).toBe(0);
   });
 
-  describe('výkon: sklady sa neprechádzajú bez voľného staging miesta na prevádzkovej rampe', () => {
+  describe('výkon: uskladnené jednotky sa neprechádzajú bez voľného staging miesta na prevádzkovej rampe', () => {
     afterEach(() => {
       vi.restoreAllMocks();
     });
 
-    const storageReads = (world: World, action: () => void): number => {
-      const spy = vi.spyOn(world.cargo, 'unitAtIndex');
+    // Od T05-04 (ADR-027) dispatcher číta uskladnené jednotky zo skupín `World.storedCargo`, nie z ledgera skladu —
+    // prečítaná jednotka = jedno volanie `jobOfUnit` (má už job?). Ledger skladu sa nečíta vôbec.
+    const unitReads = (world: World, action: () => void): number => {
+      const jobs = vi.spyOn(world, 'jobOfUnit');
+      const ledger = vi.spyOn(world.cargo, 'unitAtIndex');
       action();
-      const reads = spy.mock.calls.filter(([kind]) => kind === 'in_storage').length;
-      spy.mockRestore();
+      const reads = jobs.mock.calls.length;
+      expect(ledger.mock.calls.filter(([kind]) => kind === 'in_storage')).toEqual([]);
+      jobs.mockRestore();
+      ledger.mockRestore();
       return reads;
     };
 
@@ -189,11 +194,11 @@ describe('vznik outbound jobov (dispatcher krok 5, §7.3 bod 2)', () => {
       stockYard(world, far, 60);
       world.tick();
       expect(rampOf(world).freeCount).toBe(0);
-      expect(storageReads(world, () => createOutboundJobs(world))).toBe(0);
+      expect(unitReads(world, () => createOutboundJobs(world))).toBe(0);
 
       const inoperative = outboundWorld({ landside: ['waiting_area', 'ramp'] });
       stockYard(inoperative.world, inoperative.far, 60);
-      expect(storageReads(inoperative.world, () => createOutboundJobs(inoperative.world))).toBe(0);
+      expect(unitReads(inoperative.world, () => createOutboundJobs(inoperative.world))).toBe(0);
     });
 
     it('voľné miesto na rampe: prečítajú sa len jednotky s aktívnym outbound jobom a jednotka, ktorá job dostane', () => {
@@ -202,8 +207,8 @@ describe('vznik outbound jobov (dispatcher krok 5, §7.3 bod 2)', () => {
       world.tick();
       const [first] = [...world.jobs.values()];
       rampOf(world).release(first.to.kind === 'at_ramp' ? first.to.dock : -1);
-      // Rezervácia uvoľnená mimo jobu (len pre meranie): voľné miesto → sklad sa prejde po prvú jednotku bez jobu.
-      expect(storageReads(world, () => createOutboundJobs(world))).toBe(5);
+      // Rezervácia uvoľnená mimo jobu (len pre meranie): voľné miesto → skupina sa prejde po prvú jednotku bez jobu.
+      expect(unitReads(world, () => createOutboundJobs(world))).toBe(5);
     });
   });
 });

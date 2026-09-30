@@ -31,6 +31,15 @@ export function isContractTransitionAllowed(from: ContractState, to: ContractSta
   return CONTRACT_TRANSITIONS[from].includes(to);
 }
 
+/**
+ * Outbound jednotiek kontraktu v danom stave (dispatcher krok 5, rozhodnutie 9, ADR-027):
+ * - `sla` — smú na rampu ako prvé, kontrakty v poradí `slaDeadlineTick` ↑, potom id ↑ (`exporting`);
+ * - `free` — smú na rampu po všetkých `sla`, kontrakty v poradí id ↑, za nimi jednotky bez kontraktu (`failed`:
+ *   náklad už kontraktu nepomôže, ale nesmie navždy zaberať sklad);
+ * - `held` — zostávajú v sklade (kontrakt ešte vykladá; ostatné stavy uskladnené jednotky nemajú).
+ */
+export type ContractOutbound = 'sla' | 'free' | 'held';
+
 /** Či pole kontraktu v danom stave musí byť nastavené (`required`), nesmie (`absent`) alebo môže (`optional`). */
 export type FieldPresence = 'required' | 'absent' | 'optional';
 
@@ -50,19 +59,21 @@ export interface ContractStateTraits {
   readonly slaRunning: boolean;
   /** Kontrakt s bežiacim demurrage: loď kontraktu stojí pri kotvisku. */
   readonly demurrage: boolean;
+  /** Smú uskladnené jednotky kontraktu na rampu a s akou prioritou (dispatcher, `ContractOutbound`, ADR-027). */
+  readonly outbound: ContractOutbound;
 }
 
 const traits = (value: ContractStateTraits): ContractStateTraits => Object.freeze(value);
 
 export const CONTRACT_STATE_TRAITS: { readonly [S in ContractState]: ContractStateTraits } = Object.freeze({
-  offered: traits({ terminal: false, offer: true, plan: 'absent', ship: 'absent', docked: 'absent', slaRunning: false, demurrage: false }),
-  accepted: traits({ terminal: false, offer: false, plan: 'required', ship: 'absent', docked: 'absent', slaRunning: false, demurrage: false }),
-  ship_en_route: traits({ terminal: false, offer: false, plan: 'required', ship: 'required', docked: 'absent', slaRunning: true, demurrage: false }),
-  unloading: traits({ terminal: false, offer: false, plan: 'required', ship: 'required', docked: 'required', slaRunning: true, demurrage: true }),
-  exporting: traits({ terminal: false, offer: false, plan: 'required', ship: 'required', docked: 'required', slaRunning: true, demurrage: false }),
-  completed: traits({ terminal: true, offer: false, plan: 'required', ship: 'required', docked: 'required', slaRunning: false, demurrage: false }),
-  failed: traits({ terminal: true, offer: false, plan: 'required', ship: 'required', docked: 'optional', slaRunning: false, demurrage: false }),
-  expired: traits({ terminal: true, offer: false, plan: 'absent', ship: 'absent', docked: 'absent', slaRunning: false, demurrage: false }),
+  offered: traits({ terminal: false, offer: true, plan: 'absent', ship: 'absent', docked: 'absent', slaRunning: false, demurrage: false, outbound: 'held' }),
+  accepted: traits({ terminal: false, offer: false, plan: 'required', ship: 'absent', docked: 'absent', slaRunning: false, demurrage: false, outbound: 'held' }),
+  ship_en_route: traits({ terminal: false, offer: false, plan: 'required', ship: 'required', docked: 'absent', slaRunning: true, demurrage: false, outbound: 'held' }),
+  unloading: traits({ terminal: false, offer: false, plan: 'required', ship: 'required', docked: 'required', slaRunning: true, demurrage: true, outbound: 'held' }),
+  exporting: traits({ terminal: false, offer: false, plan: 'required', ship: 'required', docked: 'required', slaRunning: true, demurrage: false, outbound: 'sla' }),
+  completed: traits({ terminal: true, offer: false, plan: 'required', ship: 'required', docked: 'required', slaRunning: false, demurrage: false, outbound: 'held' }),
+  failed: traits({ terminal: true, offer: false, plan: 'required', ship: 'required', docked: 'optional', slaRunning: false, demurrage: false, outbound: 'free' }),
+  expired: traits({ terminal: true, offer: false, plan: 'absent', ship: 'absent', docked: 'absent', slaRunning: false, demurrage: false, outbound: 'held' }),
 });
 
 /** Je hodnota známy stav kontraktu (parsovanie save)? */

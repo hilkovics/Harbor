@@ -1,5 +1,6 @@
 /**
- * Dispatcher (ARCHITECTURE §6 krok 5, §7.3 body 1–3; rozhodnutie orchestrátora F3 č. 6 a F4 č. 4; ADR-018, ADR-023) —
+ * Dispatcher (ARCHITECTURE §6 krok 5, §7.3 body 1–3; rozhodnutie orchestrátora F3 č. 6, F4 č. 4 a F5 č. 9; ADR-018,
+ * ADR-023, ADR-027) —
  * tvorba, zrušenie a priradenie jobov. `DispatcherSystem` (krok 5) volá v každom ticku `cancelUnusableOutboundJobs` →
  * `createInboundJobs` → `createOutboundJobs` → `assignOpenJobs`.
  *
@@ -9,13 +10,21 @@
  * a jednotka čaká na aprone; kotvisko emituje `NoStorageAvailable` najviac raz za hernú hodinu
  * (`BerthModule.lastNoStorageHour`).
  *
- * **Outbound** (F4, T04-03; kontrakty `exporting` a SLA prídu vo F5): sklady vzostupne podľa id, jednotky v sklade vo
- * FIFO; jednotka bez aktívneho jobu dostane rampu z `allocateRamp` (prevádzková, kategórie skladu, s voľným staging
- * miestom, najbližšia zo skladu podľa `DistanceMatrix`, pri zhode menšie id), rampa jej rezervuje miesto na najnižšom
- * docku s voľnom miestom (`reserve(firstFreeDock())`) a vznikne job `in_storage → at_ramp` (`JobCreated`). Rampy, ktoré
- * môžu job dostať, sa zbierajú raz za tick do znovupoužiteľného poľa; bez nich sa sklady vôbec neprechádzajú a plná
- * rampa z poľa vypadne — outbound jobov vznikne za tick najviac toľko, koľko je voľných staging miest, a skladom sa
- * prechádza len cez jednotky s aktívnym outbound jobom (tých je najviac toľko, koľko je staging miest).
+ * **Outbound** (F4 ADR-023, F5 ADR-027): na rampu smú len uskladnené jednotky kontraktov v stave `exporting`
+ * (`CONTRACT_STATE_TRAITS.outbound = 'sla'`), kontraktov v stave `failed` (`free` — náklad nesmie navždy zaberať sklad,
+ * kontraktu sa už nezapočíta) a jednotky bez kontraktu (`contractId === null`, scenáre F2–F4 a `SpawnShipDebug`).
+ * Jednotky kontraktu, ktorý ešte vykladá, zostávajú v sklade. Poradie: skupiny `sla` podľa `slaDeadlineTick` ↑, potom
+ * id kontraktu ↑; potom `free` kontrakty podľa id ↑ a nakoniec jednotky bez kontraktu; v rámci skupiny FIFO (sklad ↑,
+ * v sklade poradie príchodu). Jednotky číta z odvodenej cache `World.storedCargo` (`StoredCargoIndex`, udržiava ju
+ * háčik ledgera, nie je v save), takže prechádza len jednotky skupín, ktoré smú na rampu — nie jednotky × kontrakty.
+ * Jednotka bez aktívneho jobu dostane rampu z `allocateRamp` pre svoj sklad (prevádzková, kategórie skladu, s voľným
+ * staging miestom, najbližšia zo skladu podľa `DistanceMatrix`, pri zhode menšie id), rampa jej rezervuje miesto na
+ * najnižšom docku s voľným miestom (`reserve(firstFreeDock())`) a vznikne job `in_storage → at_ramp` (`JobCreated`).
+ * Rampy, ktoré môžu job dostať, sa zbierajú raz za tick do znovupoužiteľného poľa; bez nich sa skupiny ani nezbierajú
+ * a plná rampa z poľa vypadne — outbound jobov vznikne za tick najviac toľko, koľko je voľných staging miest, a skupinou
+ * sa prechádza len cez jej jednotky s aktívnym outbound jobom (najviac toľko, koľko je staging miest), jednotky
+ * skladov bez vhodnej rampy a po prvú jednotku, ktorá job dostane. Pri samých jednotkách bez kontraktu je poradie
+ * jobov rovnaké ako vo F4 (sklady ↑, FIFO).
  *
  * **Zrušenie** (ADR-023): `open` outbound job, ktorého rampa už nie je prevádzková alebo k nej zo skladu nevedie cesta
  * (podmienky vzniku), sa zruší — rezervácia na docku sa uvoľní, job prejde do `cancelled`, zmizne a emituje
@@ -30,11 +39,13 @@
  * Priradenie: `job.assign`, `vehicle.jobId`, `JobAssigned` a jazda k zdroju (`startTrip`: `idle → to_pickup` +
  * `VehicleStateChanged` a trasa; pohyb v kroku 6 toho istého ticku, ADR-019).
  *
- * Hot path: žiadne `filter`/`map`/closures v cykle; aprony a sklady sa čítajú cez `CargoLedger.countAt`/`unitAtIndex`
- * bez kópie a mapy sveta sa prechádzajú v poradí id; voľné vozidlá a rampy sa zbierajú raz za tick do znovupoužiteľných
- * polí. Alokuje sa len nový job (jeho zoznam jednotiek a lokácie).
+ * Hot path: žiadne `filter`/`map`/closures v cykle; aprony sa čítajú cez `CargoLedger.countAt`/`unitAtIndex` bez kópie,
+ * sklady cez skupiny `StoredCargoIndex` a mapy sveta sa prechádzajú v poradí id; voľné vozidlá, rampy a outbound skupiny
+ * sa zbierajú raz za tick do znovupoužiteľných polí. Alokuje sa len nový job (jeho zoznam jednotiek a lokácie).
  */
 import { slotOf } from '../cargo/cargo-location';
+import { CONTRACT_STATE_TRAITS, type ContractOutbound } from '../contracts/contract-fsm';
+import type { EntityId } from '../core/entity-id';
 import type { CargoCategory } from '../defs/types';
 import { BerthModule } from '../modules/berth-module';
 import type { LoadingRamp } from '../modules/loading-ramp';
@@ -46,6 +57,7 @@ import { JobError } from './job-error';
 import { distanceBetweenModules, distanceToModule } from './module-access';
 import { allocateRamp } from './ramp-allocator';
 import { allocateStorage } from './storage-allocator';
+import type { StoredCargoGroup } from './stored-cargo-index';
 import { JOB_PRIORITY_LEVELS, TransportJob, type JobCancelReason } from './transport-job';
 
 /** Kategória nákladu jobu (podľa typu prvej jednotky — job nesie jednotky jedného typu). */
@@ -106,36 +118,100 @@ function collectOutboundRamps(world: World, into: LoadingRamp[]): void {
   }
 }
 
+/** Outbound skupiny uskladneného nákladu (`StoredCargoIndex`): kontrakt jednotiek, alebo bez kontraktu → `free`. */
+function outboundOf(world: World, group: StoredCargoGroup): ContractOutbound {
+  if (group.contractId === null) return 'free';
+  const contract = world.contractBook.get(group.contractId);
+  // Kontrakt mimo knihy obnova save odmietne; náklad by inak navždy zaberal sklad.
+  return contract === undefined ? 'free' : CONTRACT_STATE_TRAITS[contract.state].outbound;
+}
+
+/** Termín kontraktu skupiny (`slaDeadlineTick`), bez neho `Infinity`. */
+function deadlineOf(world: World, group: StoredCargoGroup): number {
+  return group.contractId === null ? Infinity : (world.contractBook.get(group.contractId)?.slaDeadlineTick ?? Infinity);
+}
+
 /**
- * Joby pre jednotky jedného skladu (FIFO), ktoré ešte job nemajú, k najbližšej vhodnej rampe z `ramps`. Plná rampa
- * z `ramps` vypadne a hľadá sa ďalšia; keď pre sklad rampa nie je, prechod skončí.
+ * Má skupina `a` prednosť pred `b` (obe smú na rampu)? `sla` pred `free`; v `sla` menší `slaDeadlineTick`, potom menšie
+ * id kontraktu; vo `free` menšie id kontraktu a jednotky bez kontraktu na koniec (rozhodnutie 9, ADR-027). Kľúče sú
+ * rôzne pre rôzne skupiny, takže poradie nezávisí od poradia indexu (obnova save).
  */
-function outboundFromStorage(world: World, storage: StorageModule, ramps: LoadingRamp[]): void {
-  const count = world.cargo.countAt('in_storage', storage.id);
-  if (count === 0) return;
-  let ramp = allocateRamp(world, storage, storage.category, ramps);
-  for (let i = 0; ramp !== undefined && i < count; i++) {
-    const unitId = world.cargo.unitAtIndex('in_storage', storage.id, i);
-    const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
+function precedes(world: World, a: StoredCargoGroup, b: StoredCargoGroup): boolean {
+  const outboundA = outboundOf(world, a);
+  const outboundB = outboundOf(world, b);
+  if (outboundA !== outboundB) return outboundA === 'sla';
+  if (a.contractId === null) return false;
+  if (b.contractId === null) return true;
+  if (outboundA === 'sla') {
+    const deadlineA = deadlineOf(world, a);
+    const deadlineB = deadlineOf(world, b);
+    if (deadlineA !== deadlineB) return deadlineA < deadlineB;
+  }
+  return a.contractId < b.contractId;
+}
+
+/**
+ * Skupiny uskladneného nákladu, ktoré smú na rampu (`ContractOutbound` ≠ `held`), v poradí priority do
+ * znovupoužiteľného poľa `into` (najprv ho vyprázdni) — raz za tick, len pri voľnom staging mieste. Skupín je toľko,
+ * koľko kontraktov má niečo v sklade (+ jednotky bez kontraktu), preto stačí triedenie vkladaním bez alokácie.
+ */
+function collectOutboundGroups(world: World, into: StoredCargoGroup[]): void {
+  into.length = 0;
+  for (const group of world.storedCargo.entries) {
+    if (outboundOf(world, group) === 'held') continue;
+    into.push(group);
+    for (let i = into.length - 1; i > 0 && precedes(world, into[i], into[i - 1]); i--) {
+      const swap = into[i];
+      into[i] = into[i - 1];
+      into[i - 1] = swap;
+    }
+  }
+}
+
+/** Najbližšia vhodná rampa z `ramps` pre sklad `storageId` (`allocateRamp`), alebo `undefined`. */
+function rampForStorage(world: World, storageId: EntityId, ramps: readonly LoadingRamp[]): LoadingRamp | undefined {
+  const storage = world.modules.get(storageId);
+  return storage instanceof StorageModule ? allocateRamp(world, storage, storage.category, ramps) : undefined;
+}
+
+/**
+ * Joby pre jednotky jednej skupiny (sklad ↑, FIFO), ktoré ešte job nemajú, k najbližšej vhodnej rampe z `ramps` pre ich
+ * sklad. Plná rampa z `ramps` vypadne a hľadá sa ďalšia; jednotky skladu, pre ktorý rampa nie je, sa preskočia.
+ * Vráti `false`, keď `ramps` ostalo prázdne (ďalšie skupiny už job nedostanú).
+ */
+function outboundFromGroup(world: World, group: StoredCargoGroup, ramps: LoadingRamp[]): boolean {
+  let storageId: EntityId | undefined;
+  let ramp: LoadingRamp | undefined;
+  for (let i = 0; i < group.units.length; i++) {
+    const unitStorage = group.storages[i];
+    if (unitStorage !== storageId) {
+      storageId = unitStorage;
+      ramp = rampForStorage(world, unitStorage, ramps);
+    }
+    if (ramp === undefined) continue;
+    const unit = world.cargo.get(group.units[i]);
     if (unit === undefined || world.jobOfUnit(unit.id) !== undefined) continue;
     const dock = ramp.firstFreeDock();
     ramp.reserve(dock);
     openJob(world, { unitIds: [unit.id], from: unit.location, to: { kind: 'at_ramp', rampId: ramp.id, dock } });
     if (ramp.freeCount > 0) continue;
     ramps.splice(ramps.indexOf(ramp), 1);
-    ramp = allocateRamp(world, storage, storage.category, ramps);
+    if (ramps.length === 0) return false;
+    ramp = rampForStorage(world, unitStorage, ramps);
   }
+  return true;
 }
 
 /**
- * Outbound (§7.3 bod 2, ADR-023): joby pre jednotky vo všetkých skladoch (viď hlavička súboru). `ramps` je
- * znovupoužiteľné pole `DispatcherSystem` (bez neho nové).
+ * Outbound (§7.3 bod 2, ADR-023, ADR-027): joby pre uskladnené jednotky, ktoré smú na rampu, v poradí priority skupín
+ * (viď hlavička súboru). `ramps` a `groups` sú znovupoužiteľné polia `DispatcherSystem` (bez nich nové).
  */
-export function createOutboundJobs(world: World, ramps: LoadingRamp[] = []): void {
+export function createOutboundJobs(world: World, ramps: LoadingRamp[] = [], groups: StoredCargoGroup[] = []): void {
   collectOutboundRamps(world, ramps);
-  for (const module of world.modules.values()) {
-    if (ramps.length === 0) return;
-    if (module instanceof StorageModule) outboundFromStorage(world, module, ramps);
+  if (ramps.length === 0) return;
+  collectOutboundGroups(world, groups);
+  for (const group of groups) {
+    if (!outboundFromGroup(world, group, ramps)) return;
   }
 }
 

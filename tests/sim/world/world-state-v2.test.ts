@@ -203,7 +203,15 @@ describe('WorldState v2 — neplatné moduly a náklad → WorldStateError', () 
     ],
     ['neznámy stav žeriavu', '/modules/1/runtime/state', (s) => (runtime(s, 1).state = 'x')],
     ['rezervovaný slot mimo apronu', '/modules/1/runtime/reservedSlot', (s) => (runtime(s, 1).reservedSlot = 9)],
-    ['dva žeriavy rezervujú ten istý slot', '/modules/2/runtime/reservedSlot', (s) => Object.assign(runtime(s, 2), { state: 'grabbing', reservedSlot: 1 })],
+    [
+      'dva žeriavy rezervujú ten istý slot',
+      '/modules/2/runtime/reservedSlot',
+      (s) => Object.assign(runtime(s, 2), { state: 'grabbing', reservedSlot: 1, phaseTicksTotal: 6, phaseTicksLeft: 6 }),
+    ],
+    // T02-14: nekonzistentná fáza žeriavu → WorldStateError pri deserialize (nie pád až v tick()).
+    ['žeriav v placing so skončenou fázou', '/modules/1/runtime/phaseTicksLeft', (s) => (runtime(s, 1).phaseTicksLeft = 0)],
+    ['blokovaný žeriav s bežiacou fázou', '/modules/2/runtime/phaseTicksLeft', (s) => Object.assign(runtime(s, 2), { phaseTicksTotal: 6, phaseTicksLeft: 2 })],
+    ['žeriav v okamžitom stave swinging', '/modules/1/runtime/state', (s) => (runtime(s, 1).state = 'swinging')],
     ['hodina CraneBlocked v budúcnosti', '/modules/2/runtime/lastBlockedHour', (s) => (runtime(s, 2).lastBlockedHour = 99)],
     ['žeriav v placing bez jednotky in_crane', '/modules/1/runtime/state', (s) => (s.cargo.units[0].location = { kind: 'on_apron', berthId: 4, slot: 1 })],
     ['blokovaný žeriav drží jednotku', '/modules/2/runtime/state', (s) => (s.cargo.units[1].location = { kind: 'in_crane', craneId: 3 })],

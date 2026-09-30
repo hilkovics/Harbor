@@ -22,6 +22,16 @@ export type CraneState = (typeof CRANE_STATES)[number];
 /** Do ktorého počítadla utilizácie (§11) patrí tick v danom stave. */
 export type CraneCounter = 'idle' | 'busy' | 'blocked';
 
+/**
+ * Vzťah stavu k fáze cyklu (`phaseTicksTotal`/`phaseTicksLeft`) na konci ticku, teda aj v save (T02-14):
+ * - `none` — mimo fázy: `phaseTicksTotal = phaseTicksLeft = 0` (`enterPhase(0)`);
+ * - `timed` — fáza beží: `1 ≤ phaseTicksLeft ≤ phaseTicksTotal` (fáza končí v ticku, keď `phaseTicksLeft` klesne na 0,
+ *   a žeriav v tom istom ticku prejde ďalej);
+ * - `instant` — okamžitý prechod v rámci jedného kroku (`swinging`: `grabbing → swinging → placing`), tick v ňom nikdy
+ *   nekončí, preto sa neukladá.
+ */
+export type CranePhaseKind = 'none' | 'timed' | 'instant';
+
 /** Čo platí pre žeriav v danom stave (rozhodnutie 7 v docs/tasks/phase-02.md). */
 export interface CraneStateTraits {
   /** Žeriav drží jednotku (`in_crane`) — `heldUnitId !== null`. */
@@ -29,6 +39,8 @@ export interface CraneStateTraits {
   /** Žeriav má rezervovaný slot apronu svojho berthu — `reservedSlot !== null`. */
   readonly hasReservation: boolean;
   readonly counter: CraneCounter;
+  /** Vzťah k fáze cyklu (`CranePhaseKind`). */
+  readonly phase: CranePhaseKind;
 }
 
 /**
@@ -37,12 +49,40 @@ export interface CraneStateTraits {
  * Kontroluje ju `World.assertInvariants()` aj loader save.
  */
 export const CRANE_STATE_TRAITS: { readonly [S in CraneState]: CraneStateTraits } = Object.freeze({
-  idle: Object.freeze({ holdsUnit: false, hasReservation: false, counter: 'idle' }),
-  grabbing: Object.freeze({ holdsUnit: false, hasReservation: true, counter: 'busy' }),
-  swinging: Object.freeze({ holdsUnit: true, hasReservation: true, counter: 'busy' }),
-  placing: Object.freeze({ holdsUnit: true, hasReservation: true, counter: 'busy' }),
-  blocked: Object.freeze({ holdsUnit: false, hasReservation: false, counter: 'blocked' }),
+  idle: Object.freeze({ holdsUnit: false, hasReservation: false, counter: 'idle', phase: 'none' }),
+  grabbing: Object.freeze({ holdsUnit: false, hasReservation: true, counter: 'busy', phase: 'timed' }),
+  swinging: Object.freeze({ holdsUnit: true, hasReservation: true, counter: 'busy', phase: 'instant' }),
+  placing: Object.freeze({ holdsUnit: true, hasReservation: true, counter: 'busy', phase: 'timed' }),
+  blocked: Object.freeze({ holdsUnit: false, hasReservation: false, counter: 'blocked', phase: 'none' }),
 });
+
+/** Porušenie vzťahu stavu a fázy: pole runtime stavu (JSON pointer v `CraneRuntimeState`) + popis. */
+export interface CranePhaseProblem {
+  readonly path: '/state' | '/phaseTicksTotal' | '/phaseTicksLeft';
+  readonly problem: string;
+}
+
+type PhaseRule = (state: CraneState, total: number, left: number) => CranePhaseProblem | undefined;
+
+/** Kontrola fázy podľa `CranePhaseKind` (tabuľka, nie switch). */
+const PHASE_RULES: { readonly [K in CranePhaseKind]: PhaseRule } = {
+  none: (state, total, left) => {
+    if (left > 0) return { path: '/phaseTicksLeft', problem: `stav '${state}' je mimo fázy, phaseTicksLeft musí byť 0, dostal ${String(left)}` };
+    if (total > 0) return { path: '/phaseTicksTotal', problem: `stav '${state}' je mimo fázy, phaseTicksTotal musí byť 0, dostal ${String(total)}` };
+    return undefined;
+  },
+  timed: (state, _total, left) =>
+    left >= 1 ? undefined : { path: '/phaseTicksLeft', problem: `stav '${state}' má bežiacu fázu, phaseTicksLeft musí byť ≥ 1 (fáza pri 0 už skončila)` },
+  instant: (state) => ({ path: '/state', problem: `stav '${state}' je okamžitý prechod (grabbing → placing v jednom ticku) a neukladá sa` }),
+};
+
+/**
+ * Súlad stavu a fázy na konci ticku (`CRANE_STATE_TRAITS[state].phase`); `undefined` = v poriadku. Používa ho
+ * `restoreRuntimeState` (fail-fast pri obnove) aj `World.assertInvariants()`. Predpokladá `phaseTicksLeft ≤ total`.
+ */
+export function cranePhaseProblem(state: CraneState, phaseTicksTotal: number, phaseTicksLeft: number): CranePhaseProblem | undefined {
+  return PHASE_RULES[CRANE_STATE_TRAITS[state].phase](state, phaseTicksTotal, phaseTicksLeft);
+}
 
 /**
  * Povolené prechody FSM žeriavu (§7.2, ADR-016): `idle → grabbing | blocked`, `grabbing → swinging` (okamžitý:
@@ -174,13 +214,18 @@ export class CraneModule extends Module {
   }
 
   /**
-   * Kontroly: presne kľúče `CraneRuntimeState`, `state` z `CRANE_STATES`, počítadlá celé ≥ 0,
-   * `phaseTicksLeft ≤ phaseTicksTotal`, `reservedSlot` a `lastBlockedHour` null alebo celé ≥ 0 a rezervácia
-   * zodpovedá stavu (`CRANE_STATE_TRAITS.hasReservation`). Súlad so slotmi berthu a s ledgerom overí loader.
+   * Kontroly: presne kľúče `CraneRuntimeState`, `state` z `CRANE_STATES` okrem okamžitého `swinging` (neukladá sa),
+   * počítadlá celé ≥ 0, `phaseTicksLeft ≤ phaseTicksTotal`, `reservedSlot` a `lastBlockedHour` null alebo celé ≥ 0,
+   * rezervácia zodpovedá stavu (`CRANE_STATE_TRAITS.hasReservation`) a fáza tiež (`cranePhaseProblem`: `idle`/`blocked`
+   * 0/0, `grabbing`/`placing` `phaseTicksLeft ≥ 1`), T02-14. Nekonzistentný stav je `ModuleStateError` už pri
+   * `deserialize`, nie pád až v `tick()`. Súlad so slotmi berthu, s ledgerom a s loďou overí loader.
    */
   override restoreRuntimeState(raw: unknown): void {
     const fields = checkRuntimeKeys(raw, RUNTIME_KEYS);
     const state = readEnum(fields['state'], CRANE_STATES, '/state');
+    // Okamžitý stav sa odmietne hneď (skôr než polia, ktoré preň nemajú zmysel).
+    const instant = CRANE_STATE_TRAITS[state].phase === 'instant' ? cranePhaseProblem(state, 0, 0) : undefined;
+    if (instant !== undefined) throw new ModuleStateError(instant.path, instant.problem);
     const phaseTicksTotal = readCount(fields['phaseTicksTotal'], '/phaseTicksTotal');
     const phaseTicksLeft = readCount(fields['phaseTicksLeft'], '/phaseTicksLeft');
     if (phaseTicksLeft > phaseTicksTotal) {
@@ -193,6 +238,8 @@ export class CraneModule extends Module {
         CRANE_STATE_TRAITS[state].hasReservation ? `stav '${state}' vyžaduje rezervovaný slot` : `stav '${state}' nesmie mať rezervovaný slot`,
       );
     }
+    const phase = cranePhaseProblem(state, phaseTicksTotal, phaseTicksLeft);
+    if (phase !== undefined) throw new ModuleStateError(phase.path, phase.problem);
     const busyTicks = readCount(fields['busyTicks'], '/busyTicks');
     const idleTicks = readCount(fields['idleTicks'], '/idleTicks');
     const blockedTicks = readCount(fields['blockedTicks'], '/blockedTicks');

@@ -106,6 +106,25 @@ describe('findWorldViolation — porušenia', () => {
         crane.reservedSlot = 2;
       },
     ],
+    [
+      'fáza nesedí so stavom: placing so skončenou fázou (T02-14)',
+      /'placing' má bežiacu fázu, phaseTicksLeft musí byť ≥ 1/,
+      ({ world, berth, crane }) => {
+        const held = world.cargo.create(TEU, { kind: 'on_ship', shipId: id(900) }).id;
+        world.cargo.move(held, { kind: 'in_crane', craneId: crane.id });
+        restoreCrane(crane, { state: 'placing', reservedSlot: berth.apron.reserve(), phaseTicksTotal: 6, phaseTicksLeft: 3 });
+        crane.heldUnitId = held;
+        crane.phaseTicksLeft = 0;
+      },
+    ],
+    [
+      'fáza nesedí so stavom: blocked s bežiacou fázou (T02-14)',
+      /'blocked' je mimo fázy, phaseTicksLeft musí byť 0/,
+      ({ crane }) => {
+        driveCrane(crane, 'blocked');
+        crane.enterPhase(4);
+      },
+    ],
     ['rezervácia apronu bez žeriavu', /rezervované sloty apronu \[0\]/, ({ berth }) => void berth.apron.reserve()],
     [
       'apron má jednotku, ktorú ledger nemá na aprone',

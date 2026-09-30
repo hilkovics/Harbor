@@ -6,8 +6,8 @@
  * Kontroly (prvé porušenie vyhráva, správa pomenuje entity):
  * 1. každá jednotka nákladu je u existujúceho držiteľa (`CARGO_HOLDER_SOURCES`);
  * 2. mriežka: bunky modulu (okrem žeriavu) majú `moduleId` modulu a žiadnu cestu, iné bunky nemajú `moduleId`;
- * 3. žeriav: stojí celý na svojom berthe, má jeho rotáciu, berth ho eviduje, držaná jednotka a rezervácia
- *    zodpovedajú ledgeru, apronu a `CRANE_STATE_TRAITS`; berth: `craneIds` = jeho žeriavy v poradí umiestnenia,
+ * 3. žeriav: stojí celý na svojom berthe, má jeho rotáciu, berth ho eviduje, držaná jednotka, rezervácia a fáza
+ *    zodpovedajú ledgeru, apronu a `CRANE_STATE_TRAITS` (`cranePhaseProblem`); berth: `craneIds` = jeho žeriavy v poradí umiestnenia,
  *    najviac `maxCranes`, bez prekryvu, rezervácie apronu = rezervácie jeho žeriavov;
  * 4. apron: rovnaké jednotky, sloty aj FIFO poradie ako `on_apron` v ledgeri;
  * 5. `berthGroups` a `groupId` = prepočet `computeBerthGroups`;
@@ -16,14 +16,14 @@
  *    každý `dockedShipId` patrí existujúcej lodi, ktorá ho má v `berthIds` (súlad `dockedShipId` ↔ `berthIds`);
  *    `anchorageIndex` len pri `waitsForBerth`, v mape a jedinečný; na palube najviac `capacityUnits` jednotiek, všetky
  *    typu `cargoTypeId`; loď s nákladom, ktorá drží kotviská, má na nich aspoň jeden žeriav kategórie svojho nákladu
- *    (inak by pri kotvisku ostala naveky, T02-14); žeriav v `grabbing` má na kotvisku dokovanú loď a žeriavov
- *    v `grabbing` nad loďou nie je viac ako jednotiek na jej palube (každý má čo zdvihnúť).
+ *    (inak by pri kotvisku ostala naveky, T02-14); žeriav v `grabbing` má na kotvisku dokovanú loď s nákladom
+ *    svojej kategórie a žeriavov v `grabbing` nad loďou nie je viac ako jednotiek na jej palube (každý má čo zdvihnúť).
  */
 import { CARGO_HOLDER_KINDS } from '../cargo/cargo-location';
 import type { EntityId } from '../core/entity-id';
 import { BerthModule } from '../modules/berth-module';
 import { computeBerthGroups } from '../modules/berth-group';
-import { CRANE_STATE_TRAITS, CraneModule } from '../modules/crane-module';
+import { CRANE_STATE_TRAITS, CraneModule, cranePhaseProblem } from '../modules/crane-module';
 import { hasCompatibleCrane } from '../ships/berth-allocator';
 import type { Ship } from '../ships/ship';
 import { SHIP_STATE_TRAITS } from '../ships/ship-fsm';
@@ -117,7 +117,11 @@ function checkCrane(world: World, crane: CraneModule): string | undefined {
   if (slot !== null && (slot >= berth.apron.capacity || !berth.apron.isReserved(slot))) {
     return `${crane.label}: slot ${String(slot)} nie je rezervovaný na aprone ${berth.label}`;
   }
-  return undefined;
+  if (crane.phaseTicksLeft > crane.phaseTicksTotal) {
+    return `${crane.label}: phaseTicksLeft ${String(crane.phaseTicksLeft)} > phaseTicksTotal ${String(crane.phaseTicksTotal)}`;
+  }
+  const phase = cranePhaseProblem(crane.state, crane.phaseTicksTotal, crane.phaseTicksLeft);
+  return phase === undefined ? undefined : `${crane.label}: ${phase.problem}`;
 }
 
 function checkBerthCranes(world: World, berth: BerthModule, all: readonly CraneModule[]): string | undefined {
@@ -245,7 +249,10 @@ function checkShip(world: World, ship: Ship, anchorages: Map<number, Ship>): str
   return checkShipBerths(world, ship) ?? checkShipCargo(world, ship) ?? checkShipCranes(world, ship);
 }
 
-/** Žeriav v `grabbing` má čo zdvihnúť: dokovaná loď na jeho kotvisku s dosť jednotkami pre všetky zdvíhajúce žeriavy. */
+/**
+ * Žeriav v `grabbing` má čo zdvihnúť: dokovaná loď na jeho kotvisku s nákladom jeho kategórie (inak by koniec fázy
+ * v `tick()` nenašiel jednotku, T02-14) a s dosť jednotkami pre všetky zdvíhajúce žeriavy.
+ */
 function checkGrabbingCranes(world: World): string | undefined {
   const claims = new Map<Ship, number>();
   for (const crane of cranes(world)) {
@@ -253,6 +260,9 @@ function checkGrabbingCranes(world: World): string | undefined {
     const berth = world.modules.get(crane.berthId);
     const ship = berth instanceof BerthModule && berth.dockedShipId !== null ? world.ships.get(berth.dockedShipId) : undefined;
     if (ship?.state !== 'docked') return `${crane.label} v stave 'grabbing' nemá na kotvisku dokovanú loď`;
+    if (ship.cargoCategory !== crane.category) {
+      return `${crane.label} (kategória '${crane.category}') v stave 'grabbing' nad ${ship.label} s nákladom kategórie '${ship.cargoCategory}'`;
+    }
     claims.set(ship, (claims.get(ship) ?? 0) + 1);
   }
   for (const [ship, count] of claims) {

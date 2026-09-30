@@ -10,6 +10,7 @@ import { MAP } from '../world/world-fixtures';
 import { restoreCrane } from '../helpers/crane-state';
 import {
   BULKER,
+  BULK_CRANE,
   CRANE,
   EAST_BERTH,
   GRAIN,
@@ -120,6 +121,30 @@ describe('WorldState v2 — loď s nákladom bez žeriavu (T02-14)', () => {
     (state.modules as unknown[]).splice(1, 1);
     expect(() => World.deserialize(SHIP_DEFS, MAP, state as unknown as WorldState)).toThrow(
       new RegExp(`WorldState: .*feeder #${String(a.id)} s nákladom drží kotviská \\[${String(ROOT_BERTH_ID)}\\], na ktorých nie je žeriav kategórie 'container'`),
+    );
+  });
+});
+
+describe('WorldState v2 — žeriav v grabbing nad loďou inej kategórie (T02-14)', () => {
+  it('save → WorldStateError pri deserialize (koniec grabbing by v tick() nenašiel jednotku svojej kategórie)', () => {
+    const world = newWorld();
+    placeModule(world, BULK_CRANE, { x: 45, y: 14 });
+    const ship = spawn(world, BULKER, 3, GRAIN);
+    tickUntil(world, () => ship.state === 'docked', 300);
+    expect(crane(world, ROOT_CRANE_ID).state).toBe('idle');
+    const state = mutable(world);
+    const modules = state.modules as { runtime: Record<string, unknown> }[];
+    Object.assign(modules[1].runtime, { state: 'grabbing', reservedSlot: 1, phaseTicksTotal: 6, phaseTicksLeft: 6 });
+    let error: unknown;
+    try {
+      World.deserialize(SHIP_DEFS, MAP, state as unknown as WorldState);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(WorldStateError);
+    expect((error as WorldStateError).path).toBe('');
+    expect((error as Error).message).toMatch(
+      new RegExp(`crane_container_gantry #2 \\(kategória 'container'\\) v stave 'grabbing' nad bulker_test #${String(ship.id)} s nákladom kategórie 'bulk'`),
     );
   });
 });

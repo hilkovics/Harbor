@@ -10,6 +10,7 @@ import {
   CraneModule,
   ModuleError,
   ModuleStateError,
+  cranePhaseProblem,
   isCraneTransitionAllowed,
   type CraneRuntimeState,
   type CraneState,
@@ -54,11 +55,11 @@ describe('CraneModule', () => {
   it('CRANE_STATE_TRAITS pokrýva všetky stavy podľa rozhodnutia 7', () => {
     expect(Object.keys(CRANE_STATE_TRAITS)).toEqual([...CRANE_STATES]);
     expect(CRANE_STATE_TRAITS).toEqual({
-      idle: { holdsUnit: false, hasReservation: false, counter: 'idle' },
-      grabbing: { holdsUnit: false, hasReservation: true, counter: 'busy' },
-      swinging: { holdsUnit: true, hasReservation: true, counter: 'busy' },
-      placing: { holdsUnit: true, hasReservation: true, counter: 'busy' },
-      blocked: { holdsUnit: false, hasReservation: false, counter: 'blocked' },
+      idle: { holdsUnit: false, hasReservation: false, counter: 'idle', phase: 'none' },
+      grabbing: { holdsUnit: false, hasReservation: true, counter: 'busy', phase: 'timed' },
+      swinging: { holdsUnit: true, hasReservation: true, counter: 'busy', phase: 'instant' },
+      placing: { holdsUnit: true, hasReservation: true, counter: 'busy', phase: 'timed' },
+      blocked: { holdsUnit: false, hasReservation: false, counter: 'blocked', phase: 'none' },
     });
   });
 });
@@ -109,6 +110,15 @@ describe('CraneModule — runtime stav', () => {
     ['blocked s rezerváciou', { ...VALID, state: 'blocked' }, '/reservedSlot'],
     ['záporný slot', { ...VALID, reservedSlot: -1 }, '/reservedSlot'],
     ['zlomková hodina', { ...VALID, lastBlockedHour: 0.5 }, '/lastBlockedHour'],
+    // T02-14: fáza musí sedieť so stavom (fail-fast pri deserialize, nie až v tick()).
+    ['idle s bežiacou fázou', { ...VALID, state: 'idle', reservedSlot: null, phaseTicksLeft: 2 }, '/phaseTicksLeft'],
+    ['blocked s bežiacou fázou', { ...VALID, state: 'blocked', reservedSlot: null, phaseTicksLeft: 1 }, '/phaseTicksLeft'],
+    ['idle so skončenou fázou, ale phaseTicksTotal > 0', { ...VALID, state: 'idle', reservedSlot: null, phaseTicksLeft: 0 }, '/phaseTicksTotal'],
+    ['grabbing so skončenou fázou (phaseTicksLeft 0)', { ...VALID, state: 'grabbing', phaseTicksLeft: 0 }, '/phaseTicksLeft'],
+    ['placing so skončenou fázou (phaseTicksLeft 0)', { ...VALID, phaseTicksLeft: 0 }, '/phaseTicksLeft'],
+    ['placing bez fázy (0/0)', { ...VALID, phaseTicksTotal: 0, phaseTicksLeft: 0 }, '/phaseTicksLeft'],
+    ['swinging sa neukladá (okamžitý stav)', { ...VALID, state: 'swinging' }, '/state'],
+    ['swinging sa neukladá ani s nekonzistentnými poliami', { ...VALID, state: 'swinging', reservedSlot: null, phaseTicksLeft: 0 }, '/state'],
   ];
   it.each(INVALID)('%s → ModuleStateError na %s, stav sa nezmení', (_name, raw, path) => {
     const crane = freshCrane();
@@ -123,6 +133,29 @@ describe('CraneModule — runtime stav', () => {
     expect(error).toBeInstanceOf(ModuleStateError);
     expect((error as ModuleStateError).path).toBe(path);
     expect(crane.getRuntimeState()).toEqual(before);
+  });
+
+  it('konzistentné fázy prejdú: idle/blocked 0/0, grabbing/placing 1 ≤ left ≤ total (T02-14)', () => {
+    const ok: readonly Partial<CraneRuntimeState>[] = [
+      { state: 'idle', reservedSlot: null, phaseTicksTotal: 0, phaseTicksLeft: 0 },
+      { state: 'blocked', reservedSlot: null, phaseTicksTotal: 0, phaseTicksLeft: 0 },
+      { state: 'grabbing', phaseTicksTotal: 6, phaseTicksLeft: 6 },
+      { state: 'grabbing', phaseTicksTotal: 6, phaseTicksLeft: 1 },
+      { state: 'placing', phaseTicksTotal: 1, phaseTicksLeft: 1 },
+    ];
+    for (const patch of ok) {
+      const crane = freshCrane();
+      crane.restoreRuntimeState({ ...VALID, ...patch });
+      expect(crane.getRuntimeState()).toEqual({ ...VALID, ...patch });
+    }
+  });
+
+  it('cranePhaseProblem: tabuľka podľa CRANE_STATE_TRAITS.phase', () => {
+    expect(cranePhaseProblem('idle', 0, 0)).toBeUndefined();
+    expect(cranePhaseProblem('blocked', 3, 0)?.path).toBe('/phaseTicksTotal');
+    expect(cranePhaseProblem('grabbing', 6, 0)?.path).toBe('/phaseTicksLeft');
+    expect(cranePhaseProblem('placing', 6, 6)).toBeUndefined();
+    expect(cranePhaseProblem('swinging', 6, 3)?.path).toBe('/state');
   });
 
   it('runtime, ktorý nie je objekt → ModuleStateError na koreni', () => {

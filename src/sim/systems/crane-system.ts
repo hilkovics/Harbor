@@ -153,8 +153,11 @@ const CRANE_STEPS: { readonly [S in CraneState]: CraneStep } = {
   grabbing: (crane, world) => {
     if (countDown(crane)) swing(crane, world);
   },
-  // `swinging` je okamžitý (v rámci `swing`); žeriav v ňom tick nekončí — len ak by prišiel zo save, pokračuje placing.
-  swinging: beginPlacing,
+  // `swinging` je okamžitý (v rámci `swing`) a neukladá sa (`restoreRuntimeState` ho odmietne) — žeriav v ňom tick
+  // nikdy nezačne; ak áno, svet je poškodený mimo simulácie (T02-14).
+  swinging: (crane) => {
+    throw new ModuleError('invalid_transition', `${crane.label}: tick začal v okamžitom stave 'swinging' (poškodený stav žeriavu)`);
+  },
   placing: (crane, world) => {
     if (countDown(crane)) place(crane, world);
   },

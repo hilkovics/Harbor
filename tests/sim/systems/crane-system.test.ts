@@ -9,6 +9,7 @@ import { MIN_CRANE_PHASE_TICKS, cranePhaseTicks } from '@sim/systems';
 import { StatResolver } from '@sim/tech';
 import { World, type WorldState } from '@sim/world';
 import { MAP } from '../world/world-fixtures';
+import { driveCrane } from '../helpers/crane-state';
 import {
   BULKER,
   BULK_CRANE,
@@ -205,6 +206,22 @@ describe('koniec placing — ledger a apron sa nerozídu (T02-14)', () => {
     expect(world.cargo.unitsOnApron(ROOT_BERTH_ID)).toEqual([]);
     expect(ofType(world.events.flush(), 'CargoMoved').filter((event) => event.to.kind === 'on_apron')).toEqual([]);
     expect(ship.state).toBe('docked');
+  });
+});
+
+describe('okamžitý stav swinging (T02-14)', () => {
+  it('tick nikdy nezačne v swinging — poškodený žeriav → ModuleError(invalid_transition), nie tichý placing', () => {
+    const world = newWorld({ checkInvariants: false });
+    driveCrane(crane(world, ROOT_CRANE_ID), 'swinging');
+    let error: unknown;
+    try {
+      world.tick();
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(ModuleError);
+    expect((error as ModuleError).code).toBe('invalid_transition');
+    expect(crane(world, ROOT_CRANE_ID).state).toBe('swinging');
   });
 });
 

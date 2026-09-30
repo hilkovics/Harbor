@@ -23,6 +23,8 @@ const HARBOR_MAP = fileURLToPath(new URL('../../data/maps/harbor_01.json', impor
 const F2_UNLOAD_SCENARIO = fileURLToPath(new URL('../../data/scenarios/f2_unload.json', import.meta.url));
 const APRON_TO_YARD_SCENARIO = fileURLToPath(new URL('../../data/scenarios/apron_to_yard.json', import.meta.url));
 const FULL_IMPORT_CHAIN_SCENARIO = fileURLToPath(new URL('../../data/scenarios/full_import_chain.json', import.meta.url));
+const VERTICAL_SLICE_SCENARIO = fileURLToPath(new URL('../../data/scenarios/vertical_slice.json', import.meta.url));
+const VERTICAL_SLICE_GOLDEN = fileURLToPath(new URL('../sim/__golden__/vertical_slice.json', import.meta.url));
 
 const SMOKE: Scenario = { id: 'smoke', seed: 42, commands: [] };
 // Hodnota z data/defs/time.json (tickGameSeconds 10) → 8 640 tickov = 1 herný deň.
@@ -232,6 +234,8 @@ describe('runScenario', () => {
       noWaitingBayEvents: 0,
       gateQueueMax: 0,
       ticksToAllExported: null,
+      contractsCompleted: 0,
+      xp: 0,
     });
     expect(Object.keys(report)).toEqual([
       'scenario',
@@ -263,6 +267,8 @@ describe('runScenario', () => {
       'noWaitingBayEvents',
       'gateQueueMax',
       'ticksToAllExported',
+      'contractsCompleted',
+      'xp',
     ]);
   });
 
@@ -566,6 +572,35 @@ describe('runScenario', () => {
     });
   });
 
+  describe('metriky kontraktov (F5, T05-04: onTimeRate, contractsCompleted, xp; plné metriky T05-08)', () => {
+    // vertical_slice: rozloženie F4, AcceptContract prvej ponuky (id 1), bez SpawnShipDebug; golden report
+    // tests/sim/__golden__/vertical_slice.json vygeneroval T05-04 z `pnpm simrun … --ticks 60000 --report`.
+    const SLICE_TICKS = 60_000;
+    let slice: SimrunReport;
+
+    beforeAll(() => {
+      slice = runScenario(loadScenario(VERTICAL_SLICE_SCENARIO), SLICE_TICKS, defs);
+    });
+
+    it('vertical_slice (60 000 tickov) sa zhoduje s golden reportom (cashEnd, exportedUnits, onTimeRate, contractsCompleted, xp)', () => {
+      const golden = JSON.parse(readFileSync(VERTICAL_SLICE_GOLDEN, 'utf8')) as Record<string, unknown>;
+      expect(Object.keys(golden)).toEqual(['cashEnd', 'exportedUnits', 'onTimeRate', 'contractsCompleted', 'xp']);
+      const { cashEnd, exportedUnits, onTimeRate, contractsCompleted, xp } = slice;
+      expect({ cashEnd, exportedUnits, onTimeRate, contractsCompleted, xp }).toEqual(golden);
+    });
+
+    it('vertical_slice: kontrakt dokončený včas, nič stratené, všetok náklad kontraktu exportovaný', () => {
+      expect(slice).toMatchObject({ lostUnits: 0, contractsCompleted: 1, onTimeRate: 1, shipsSpawned: 1, unitsInStorage: 0 });
+      expect(slice.xp).toBeGreaterThan(0);
+      expect(slice.commandsSkipped).toBe(0);
+    });
+
+    it('scenáre bez kontraktov: onTimeRate null, contractsCompleted 0, xp 0', () => {
+      const report = runScenario(loadScenario(FULL_IMPORT_CHAIN_SCENARIO), 1000, defs);
+      expect([report.onTimeRate, report.contractsCompleted, report.xp]).toEqual([null, 0, 0]);
+    });
+  });
+
   describe('vehicleUtilPercent', () => {
     it('bez vozidlo-tickov (žiadne vozidlá alebo ešte žiadny tick) → 0, nie NaN', () => {
       expect(vehicleUtilPercent({ activeTicks: 0, totalTicks: 0 })).toBe(0);
@@ -843,6 +878,8 @@ describe('CLI (tools/simrun.ts)', () => {
       noWaitingBayEvents: 0,
       gateQueueMax: 0,
       ticksToAllExported: null,
+      contractsCompleted: 0,
+      xp: 0,
     });
   }, 30_000);
 

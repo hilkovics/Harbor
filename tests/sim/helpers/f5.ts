@@ -415,8 +415,11 @@ export const SLICE_SEED = 5005;
 /** Tick príkazu `AcceptContract` vo `vertical_slice.json`: pool existuje po prvom ticku najneskôr (pozri T05-04, otvorený bod). */
 export const SLICE_ACCEPT_TICK = 1;
 export const SLICE_TICKS = 60_000;
-/** Placeholder id prvej ponuky; presné id dopočíta T05-04 (test `f5-vertical-slice` hlási, ktoré to je). */
-export const SLICE_PLACEHOLDER_CONTRACT_ID = 11;
+/**
+ * Id prvej ponuky vo `vertical_slice` (T05-04): kontrakty majú vlastnú postupnosť id od 1 (ADR-026 bod 4), nie
+ * `world.ids`, takže odhad T05-05 (11 = po 6 moduloch a 2 vozidlách) neplatí. Test `f5-vertical-slice` ho overuje.
+ */
+export const SLICE_CONTRACT_ID = 1;
 
 /** Rozloženie prístavu F4 (cesty, dvory, depo, brána, stojisko, rampa) bez lode; `units` sa nikdy nepoužije. */
 export function portScenario(id: string, seed: number, options: Omit<F4Options, 'units'> = {}): Scenario {

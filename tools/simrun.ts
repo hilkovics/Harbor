@@ -71,7 +71,10 @@ export interface SimrunReport {
   readonly exportedUnits: number;
   /** Stratené jednotky nákladu = vytvorené − (živé + exportované); musí byť 0 (CLAUDE.md, `/sim-check`). */
   readonly lostUnits: number;
-  /** Podiel kontraktov splnených včas; `null` do fázy 4 (kontrakty). */
+  /**
+   * Podiel kontraktov dokončených včas: počet `ContractCompleted` s `onTime` / počet `ContractCompleted` počas behu;
+   * `null`, ak sa v behu nedokončil žiadny kontrakt (T05-04, plné metriky kontraktov T05-08).
+   */
   readonly onTimeRate: number | null;
   /**
    * Podiel ticků žeriavov v stave `blocked`: Σ blocked / Σ (busy + idle + blocked) × 100, na 1 desatinné miesto.
@@ -131,6 +134,10 @@ export interface SimrunReport {
    * a `createdCount > 0` (všetok vytvorený náklad opustil mapu); `null`, ak taký tick v behu nenastal.
    */
   readonly ticksToAllExported: number | null;
+  /** Počet dokončených kontraktov za hru na konci behu (`world.completedContracts`, F5). */
+  readonly contractsCompleted: number;
+  /** Nazbierané XP na konci behu (`world.xp`, F5). */
+  readonly xp: number;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -361,6 +368,8 @@ interface EventTally {
   trucksExited: number;
   unitsExportedByTrucks: number;
   noWaitingBayEvents: number;
+  contractsCompleted: number;
+  contractsOnTime: number;
 }
 
 function tallyEvents(tally: EventTally, events: readonly SimEvent[]): void {
@@ -375,6 +384,10 @@ function tallyEvents(tally: EventTally, events: readonly SimEvent[]): void {
       tally.trucksExited += 1;
       tally.unitsExportedByTrucks += event.units;
     } else if (event.type === 'NoWaitingBay') tally.noWaitingBayEvents += 1;
+    else if (event.type === 'ContractCompleted') {
+      tally.contractsCompleted += 1;
+      if (event.onTime) tally.contractsOnTime += 1;
+    }
   }
 }
 
@@ -443,6 +456,8 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     trucksExited: 0,
     unitsExportedByTrucks: 0,
     noWaitingBayEvents: 0,
+    contractsCompleted: 0,
+    contractsOnTime: 0,
   };
   const vehicleTicks = { activeTicks: 0, totalTicks: 0 };
   let ticksToAllStored: number | null = null;
@@ -477,7 +492,7 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     cashEnd: world.cashCents,
     exportedUnits: world.cargo.exportedCount,
     lostUnits: world.cargo.createdCount - (world.cargo.liveCount + world.cargo.exportedCount),
-    onTimeRate: null, // kontrakty až od fázy 4
+    onTimeRate: tally.contractsCompleted === 0 ? null : tally.contractsOnTime / tally.contractsCompleted,
     craneBlockedPct: craneBlockedPercent(craneModules(world)),
     roads: countRoads(world),
     commandsApplied: next,
@@ -499,6 +514,8 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     noWaitingBayEvents: tally.noWaitingBayEvents,
     gateQueueMax,
     ticksToAllExported,
+    contractsCompleted: world.completedContracts,
+    xp: world.xp,
   };
 }
 
@@ -517,7 +534,8 @@ export function formatSummary(report: SimrunReport): string {
     `všetko uložené ${metric(report.ticksToAllStored)}, ` +
     `kamióny ${String(report.trucksSpawned)}/${String(report.trucksExited)} (spawn/odchod), ` +
     `odvezené kamiónmi ${String(report.unitsExportedByTrucks)}, bez stojiska ${String(report.noWaitingBayEvents)}, ` +
-    `fronta brány max ${String(report.gateQueueMax)}, všetko exportované ${metric(report.ticksToAllExported)}`
+    `fronta brány max ${String(report.gateQueueMax)}, všetko exportované ${metric(report.ticksToAllExported)}, ` +
+    `kontrakty dokončené ${String(report.contractsCompleted)}, XP ${String(report.xp)}`
   );
 }
 

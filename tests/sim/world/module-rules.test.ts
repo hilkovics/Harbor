@@ -238,6 +238,16 @@ describe('findRemovalViolations', () => {
     expect(findRemovalViolations(world, berth).map((v) => v.rule)).toEqual(['has_cargo', 'has_cranes', 'ship_docked']);
   });
 
+  it('žeriav na kotvisku, ktoré drží loď (dockedShipId) → ship_docked s popisom kotviska (T02-14)', () => {
+    const { world, berth, crane } = harbor();
+    berth.dockedShipId = id(77);
+    expect(findRemovalViolations(world, crane)).toEqual([
+      { rule: 'ship_docked', detail: `${crane.label} stojí na ${berth.label}, ktoré drží loď #77` },
+    ]);
+    berth.dockedShipId = null;
+    expect(findRemovalViolations(world, crane)).toEqual([]);
+  });
+
   it('žeriav s jednotkou uprostred cyklu → has_cargo aj busy', () => {
     const { world, berth, crane } = harbor();
     const unit = world.cargo.create('container_teu', { kind: 'on_ship', shipId: id(500) }).id;

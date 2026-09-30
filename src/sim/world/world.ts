@@ -272,8 +272,8 @@ export class World {
    * Odstráni modul a vráti ho: uvoľní bunky (žeriav: odpojí sa od berthu) a prepočíta `berthGroups`. Príkaz
    * (`RemoveModule`) validuje dôvody vopred rovnakou funkciou `findRemovalViolations`; tu je poistka konzistencie
    * (`ModuleError` s kódom prvého porušenia, svet sa nezmení): neznáme id (`unknown_module`), modul s nákladom alebo
-   * rezervovaným slotom (`has_cargo`), berth so žeriavmi (`has_cranes`) alebo s loďou (`ship_docked`), žeriav mimo
-   * `idle`/`blocked` (`busy`).
+   * rezervovaným slotom (`has_cargo`), berth so žeriavmi (`has_cranes`), berth s loďou alebo žeriav na takom berthe
+   * (`ship_docked`), žeriav mimo `idle`/`blocked` (`busy`).
    */
   removeModule(moduleId: EntityId): Module {
     const module = this.moduleMap.get(moduleId);

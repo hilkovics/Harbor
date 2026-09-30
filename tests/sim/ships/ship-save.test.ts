@@ -96,6 +96,8 @@ describe('WorldState v2 — lode', () => {
     ],
     ['dve lode na jednej anchorage', (s) => (s.ships[2]['anchorageIndex'] = 0), '/ships/2/anchorageIndex'],
     ['waypointIndex za koncom trasy', (s) => (s.ships[0]['waypointIndex'] = 2), '/ships/0/waypointIndex'],
+    // T02-14: loď s nákladom na kotvisku bez žeriavu svojej kategórie by pri kotvisku ostala naveky.
+    ['loď s nákladom na kotvisku bez žeriavu (Root žeriav chýba v save)', (s) => void (s.modules as unknown[]).splice(1, 1), ''],
   ])('%s → WorldStateError na %s', (_name, mutate, path) => {
     const state = mutable(fleet().world);
     mutate(state);
@@ -107,6 +109,17 @@ describe('WorldState v2 — lode', () => {
     }
     expect(error).toBeInstanceOf(WorldStateError);
     expect((error as WorldStateError).path).toBe(path);
+  });
+});
+
+describe('WorldState v2 — loď s nákladom bez žeriavu (T02-14)', () => {
+  it('save, v ktorom kotviská lode nemajú žeriav kategórie jej nákladu → WorldStateError pri deserialize, nie soft-lock', () => {
+    const { world, a } = fleet();
+    const state = mutable(world);
+    (state.modules as unknown[]).splice(1, 1);
+    expect(() => World.deserialize(SHIP_DEFS, MAP, state as unknown as WorldState)).toThrow(
+      new RegExp(`WorldState: .*feeder #${String(a.id)} s nákladom drží kotviská \\[${String(ROOT_BERTH_ID)}\\], na ktorých nie je žeriav kategórie 'container'`),
+    );
   });
 });
 
@@ -142,6 +155,48 @@ describe('invarianty lodí (findWorldViolation)', () => {
     const harbor = fleet();
     corrupt(harbor);
     expect(findWorldViolation(harbor.world)).toMatch(message);
+  });
+
+  it('loď s nákladom drží kotvisko bez žeriavu svojej kategórie → porušenie; bez nákladu nie (T02-14)', () => {
+    const world = newWorld();
+    const east = placeModule(world, 'berth_standard', EAST_BERTH);
+    const ship = new Ship({
+      id: world.ids.next(),
+      def: SHIP_DEFS.ships.get('feeder'),
+      cargoType: SHIP_DEFS.cargoTypes.get(TEU),
+      state: 'berthing',
+      x: 51,
+      y: 13,
+      heading: 90,
+      berthIds: [east],
+    });
+    world.addShip(ship);
+    berth(world, east).dockedShipId = ship.id;
+    expect(findWorldViolation(world)).toBeUndefined();
+    world.cargo.create(TEU, { kind: 'on_ship', shipId: ship.id });
+    expect(findWorldViolation(world)).toBe(
+      `feeder #${String(ship.id)} s nákladom drží kotviská [${String(east)}], na ktorých nie je žeriav kategórie 'container'`,
+    );
+    placeModule(world, CRANE, { x: 51, y: 14 });
+    expect(findWorldViolation(world)).toBeUndefined();
+  });
+
+  it('sypká loď s nákladom pri kontajnerovom žeriave → porušenie (kategória žeriavu musí sedieť)', () => {
+    const world = newWorld();
+    const ship = new Ship({
+      id: world.ids.next(),
+      def: SHIP_DEFS.ships.get(BULKER),
+      cargoType: SHIP_DEFS.cargoTypes.get(GRAIN),
+      state: 'docked',
+      x: 43,
+      y: 13,
+      heading: 90,
+      berthIds: [ROOT_BERTH_ID],
+    });
+    world.addShip(ship);
+    berth(world, ROOT_BERTH_ID).dockedShipId = ship.id;
+    world.cargo.create(GRAIN, { kind: 'on_ship', shipId: ship.id });
+    expect(findWorldViolation(world)).toMatch(/na ktorých nie je žeriav kategórie 'bulk'/);
   });
 
   it('kotviská lode musia ležať za sebou v jednej skupine (West, East bez Rootu → porušenie)', () => {

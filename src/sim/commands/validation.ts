@@ -34,7 +34,7 @@ export const VALIDATION_REASONS = [
   'has_cranes',
   /** `RemoveModule`: modul drží náklad alebo má obsadený/rezervovaný slot. */
   'has_cargo',
-  /** `RemoveModule`: pri kotvisku kotví loď. */
+  /** `RemoveModule`: pri kotvisku (aj pri kotvisku pod žeriavom) kotví loď alebo k nemu pláva (`berthing`/`docked`). */
   'ship_docked',
   /** `RemoveModule`: žeriav je uprostred cyklu. */
   'busy',

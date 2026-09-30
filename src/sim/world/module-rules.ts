@@ -27,7 +27,8 @@
  *   berth má `params.maxCranes` žeriavov, prekryv s iným žeriavom berthu (ADR-014).
  *
  * Pravidlá odstránenia: `has_cargo` (náklad v module alebo obsadený/rezervovaný slot apronu), `has_cranes`,
- * `ship_docked`, `busy` (žeriav mimo `idle`/`blocked`).
+ * `ship_docked` (kotvisko má loď v `berthing`/`docked` — `dockedShipId`; pri žeriave kotvisko pod ním, inak by loď
+ * ostala pri kotvisku naveky s nákladom, T02-14), `busy` (žeriav mimo `idle`/`blocked`).
  */
 import type { CargoLedger } from '../cargo/cargo-ledger';
 import type { EntityId } from '../core/entity-id';
@@ -336,6 +337,18 @@ export type RemovalRule = (typeof REMOVAL_RULES)[number];
 /** Časť sveta, ktorú pravidlá odstránenia čítajú (`World` ju spĺňa). */
 export interface RemovalWorld {
   readonly cargo: Pick<CargoLedger, 'countAt'>;
+  readonly modules: ReadonlyMap<EntityId, Module>;
+}
+
+/**
+ * Kotvisko, ktorého loď by odstránenie modulu zasiahlo: berth sám, pri žeriave berth pod ním (`berthId`, ADR-014);
+ * iný modul žiadne. Loď na kotvisku bez žeriavu svojej kategórie by sa nikdy nevyložila (soft-lock, T02-14).
+ */
+function dockOf(world: RemovalWorld, module: Module): BerthModule | undefined {
+  if (module instanceof BerthModule) return module;
+  if (!(module instanceof CraneModule)) return undefined;
+  const host = world.modules.get(module.berthId);
+  return host instanceof BerthModule ? host : undefined;
 }
 
 type RemovalCheck = (world: RemovalWorld, module: Module) => string | undefined;
@@ -351,8 +364,12 @@ const REMOVAL_CHECKS: { readonly [R in RemovalRule]: RemovalCheck } = {
   },
   has_cranes: (_world, module) =>
     module instanceof BerthModule && module.craneIds.length > 0 ? `na ${module.label} stoja žeriavy [${module.craneIds.join(', ')}]` : undefined,
-  ship_docked: (_world, module) =>
-    module instanceof BerthModule && module.dockedShipId !== null ? `${module.label} má loď #${String(module.dockedShipId)}` : undefined,
+  ship_docked: (world, module) => {
+    const berth = dockOf(world, module);
+    if (berth === undefined || berth.dockedShipId === null) return undefined;
+    const ship = `#${String(berth.dockedShipId)}`;
+    return berth === module ? `${berth.label} má loď ${ship}` : `${module.label} stojí na ${berth.label}, ktoré drží loď ${ship}`;
+  },
   busy: (_world, module) => {
     if (!(module instanceof CraneModule)) return undefined;
     const { holdsUnit, hasReservation } = CRANE_STATE_TRAITS[module.state];

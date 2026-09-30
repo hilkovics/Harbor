@@ -7,6 +7,7 @@
  * Hodina udalosti = `world.clock.gameHour` po ticku, v ktorom udalosť vznikla (`TimedEvent.hour`).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
+import { commandFromJSON } from '@sim/commands';
 import type { EntityId } from '@sim/core';
 import { World } from '@sim/world';
 import {
@@ -20,6 +21,7 @@ import {
   must,
   placeModuleCommand,
   recordRun,
+  removeModuleCommand,
   samplesOf,
   spawnShipCommand,
   spawnedShipIds,
@@ -147,6 +149,19 @@ describe('žeriav sa pri plnom aprone zablokuje (jeden Root žeriav)', () => {
 
   it('nič nie je odmietnuté a hotovosť sa nezmenila', () => {
     expect(timedOfType(log, 'CommandRejected')).toEqual([]);
+    expect(world.cashCents).toBe(DEFS.economy.startingCashCents);
+  });
+
+  // T02-14 (review T02-13 MAJOR): blokovaný žeriav pod dokovanou loďou nejde odstrániť — loď by bez žeriavu ostala
+  // pri kotvisku naveky s nákladom. Posledný test bloku: pridá príkaz až po všetkých kontrolách behu.
+  it('RemoveModule(Root žeriav) pri dokovanej lodi → CommandRejected { ship_docked }, žeriav ostane blocked', () => {
+    world.enqueue(commandFromJSON(removeModuleCommand(rootCraneId)));
+    const events = world.applyPending();
+    expect(events.filter((event) => event.type === 'CommandRejected')).toEqual([
+      { type: 'CommandRejected', commandType: 'RemoveModule', reasons: ['ship_docked'] },
+    ]);
+    expect(craneById(world, rootCraneId).state).toBe('blocked');
+    expect(berthAt(world, ROOT_BERTH_CELL).craneIds).toEqual([rootCraneId]);
     expect(world.cashCents).toBe(DEFS.economy.startingCashCents);
   });
 });

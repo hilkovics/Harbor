@@ -200,6 +200,22 @@ describe('World.removeModule', () => {
     expect(errorCode(() => world.removeModule(crane.id))).toBe('has_cargo');
   });
 
+  it('žeriav na kotvisku s dokovanou loďou → ship_docked (T02-14), svet sa nezmení', () => {
+    const { world, berth, crane } = harbor();
+    world.enqueue(new SpawnShipDebugCommand({ shipClassId: 'feeder', cargoTypeId: 'container_teu', units: 2 }));
+    world.applyPending();
+    const [ship] = world.ships.values();
+    for (let i = 0; i < 1000 && ship.state !== 'docked'; i++) world.tick();
+    expect(ship.state).toBe('docked');
+    expect(berth.dockedShipId).toBe(ship.id);
+    const before = JSON.stringify(world.serialize());
+    expect(errorCode(() => world.removeModule(crane.id))).toBe('ship_docked');
+    expect(() => world.removeModule(crane.id)).toThrow(/stojí na berth_standard #1, ktoré drží loď #\d+/);
+    expect(JSON.stringify(world.serialize())).toBe(before);
+    expect(berth.craneIds).toEqual([crane.id]);
+    expect(() => world.assertInvariants()).not.toThrow();
+  });
+
   it('blokovaný žeriav bez jednotky ide odstrániť', () => {
     const { world, crane } = harbor();
     crane.state = 'blocked';

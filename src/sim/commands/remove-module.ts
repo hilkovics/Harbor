@@ -3,7 +3,8 @@
  *
  * `validate`: neznáme id → `unknown_module` (bez buniek a ceny); inak všetky porušenia z `findRemovalViolations`
  * (rovnaká funkcia stráži `World.removeModule`): `has_cargo` (náklad v module, obsadený/rezervovaný slot apronu),
- * `has_cranes`, `ship_docked`, `busy` (žeriav mimo `idle`/`blocked`). `cells` = footprint modulu, `costCents` =
+ * `has_cranes`, `ship_docked` (kotvisko alebo žeriav na kotvisku, ktoré drží loď), `busy` (žeriav mimo
+ * `idle`/`blocked`). `cells` = footprint modulu, `costCents` =
  * −refundácia (záporná = príjem, ADR-013).
  *
  * Refundácia (rozhodnutie 2) = `refundCents(purchaseCostCents, economy.removalRefundRate)` zo **zaplatenej** ceny,

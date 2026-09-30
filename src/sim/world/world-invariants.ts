@@ -15,14 +15,16 @@
  *    `holdsBerths`, ležia za sebou v jednej skupine v poradí po pobreží a každý berth má `dockedShipId` = loď;
  *    každý `dockedShipId` patrí existujúcej lodi, ktorá ho má v `berthIds` (súlad `dockedShipId` ↔ `berthIds`);
  *    `anchorageIndex` len pri `waitsForBerth`, v mape a jedinečný; na palube najviac `capacityUnits` jednotiek, všetky
- *    typu `cargoTypeId`; žeriav v `grabbing` má na kotvisku dokovanú loď a žeriavov v `grabbing` nad loďou nie je viac
- *    ako jednotiek na jej palube (každý má čo zdvihnúť).
+ *    typu `cargoTypeId`; loď s nákladom, ktorá drží kotviská, má na nich aspoň jeden žeriav kategórie svojho nákladu
+ *    (inak by pri kotvisku ostala naveky, T02-14); žeriav v `grabbing` má na kotvisku dokovanú loď a žeriavov
+ *    v `grabbing` nad loďou nie je viac ako jednotiek na jej palube (každý má čo zdvihnúť).
  */
 import { CARGO_HOLDER_KINDS } from '../cargo/cargo-location';
 import type { EntityId } from '../core/entity-id';
 import { BerthModule } from '../modules/berth-module';
 import { computeBerthGroups } from '../modules/berth-group';
 import { CRANE_STATE_TRAITS, CraneModule } from '../modules/crane-module';
+import { hasCompatibleCrane } from '../ships/berth-allocator';
 import type { Ship } from '../ships/ship';
 import { SHIP_STATE_TRAITS } from '../ships/ship-fsm';
 import { CARGO_HOLDER_SOURCES } from './cargo-holders';
@@ -212,6 +214,20 @@ function checkShipCargo(world: World, ship: Ship): string | undefined {
   return foreign === undefined ? undefined : `${ship.label}: jednotka #${String(foreign)} nie je typu '${ship.cargoTypeId}'`;
 }
 
+/**
+ * Loď s nákladom, ktorá drží kotviská, má na nich žeriav kategórie svojho nákladu — alokátor to zaručí pri pridelení
+ * a `ship_docked` zakáže odstrániť žeriav pod loďou; save v rozpore by loď nechal pri kotvisku naveky (T02-14).
+ */
+function checkShipCranes(world: World, ship: Ship): string | undefined {
+  if (ship.berthIds.length === 0 || world.cargo.countAt('on_ship', ship.id) === 0) return undefined;
+  const served = ship.berthIds.some((berthId) => {
+    const berth = world.modules.get(berthId);
+    return berth instanceof BerthModule && hasCompatibleCrane(world, berth, ship.cargoCategory);
+  });
+  if (served) return undefined;
+  return `${ship.label} s nákladom drží kotviská [${ship.berthIds.join(', ')}], na ktorých nie je žeriav kategórie '${ship.cargoCategory}'`;
+}
+
 function checkShip(world: World, ship: Ship, anchorages: Map<number, Ship>): string | undefined {
   const traits = SHIP_STATE_TRAITS[ship.state];
   if (ship.state === 'despawned') return `${ship.label} v stave 'despawned' je stále vo world.ships`;
@@ -226,7 +242,7 @@ function checkShip(world: World, ship: Ship, anchorages: Map<number, Ship>): str
     if (holder !== undefined) return `${ship.label} a ${holder.label} obsadili tú istú anchorage ${String(index)}`;
     anchorages.set(index, ship);
   }
-  return checkShipBerths(world, ship) ?? checkShipCargo(world, ship);
+  return checkShipBerths(world, ship) ?? checkShipCargo(world, ship) ?? checkShipCranes(world, ship);
 }
 
 /** Žeriav v `grabbing` má čo zdvihnúť: dokovaná loď na jeho kotvisku s dosť jednotkami pre všetky zdvíhajúce žeriavy. */

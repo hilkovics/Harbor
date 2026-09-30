@@ -1,13 +1,15 @@
 // RemoveModule (T02-04, ARCHITECTURE §8 bod 8; ADR-015, rozhodnutie 2): odmietne unknown_module, has_cargo,
 // ship_docked, has_cranes, busy; refundácia = refundCents(purchaseCostCents, removalRefundRate) zo ZAPLATENEJ ceny,
 // cells = footprint modulu, costCents = −refundácia; apply uvoľní bunky, emituje ModuleRemoved a pri refundácii > 0
-// MoneyChanged(module_sale).
+// MoneyChanged(module_sale). T02-14: ship_docked platí aj pre žeriav na kotvisku, ktoré drží loď (berthing/docked).
 import { describe, expect, it } from 'vitest';
-import { PlaceModuleCommand, RemoveModuleCommand, commandFromJSON, refundCents } from '@sim/commands';
+import { PlaceModuleCommand, RemoveModuleCommand, SpawnShipDebugCommand, commandFromJSON, refundCents } from '@sim/commands';
 import type { EntityId } from '@sim/core';
 import { BerthModule, CraneModule } from '@sim/modules';
 import type { World } from '@sim/world';
-import { DEFS, REFUND_RATE, START_CASH, defsWith, hashState, newBareWorld, ofType } from './command-fixtures';
+import type { SimEvent } from '@sim/events';
+import type { Ship } from '@sim/ships';
+import { DEFS, REFUND_RATE, START_CASH, defsWith, hashState, newBareWorld, newWorld, ofType } from './command-fixtures';
 
 const BERTH = 'berth_standard';
 const CRANE = 'crane_container_gantry';
@@ -189,5 +191,85 @@ describe('RemoveModule — cez frontu sveta', () => {
     expect(world.modules.size).toBe(0);
     expect(world.berthGroups).toEqual([]);
     expect(() => world.assertInvariants()).not.toThrow();
+  });
+});
+
+describe('RemoveModule — žeriav pri lodi na kotvisku (T02-14, review T02-13 MAJOR)', () => {
+  /** Root berth #1, Root žeriav #2 (starter moduly harbor_01). */
+  const ROOT_BERTH = id(1);
+  const ROOT_CRANE = id(2);
+
+  /** Spawn lode cez frontu sveta (bez posunu času); vráti loď. */
+  function spawnFeeder(world: World, units: number): Ship {
+    world.enqueue(new SpawnShipDebugCommand({ shipClassId: 'feeder', cargoTypeId: 'container_teu', units }));
+    const [spawned] = ofType(world.applyPending(), 'ShipSpawned');
+    const ship = world.ships.get(spawned.shipId);
+    if (ship === undefined) throw new Error('loď chýba vo world.ships');
+    return ship;
+  }
+
+  /** Tickuje, kým `done` neplatí (najviac `max` tickov); vráti udalosti. */
+  function tickUntil(world: World, done: () => boolean, max = 2000): SimEvent[] {
+    const events: SimEvent[] = [];
+    for (let i = 0; i < max && !done(); i++) events.push(...world.tick());
+    if (!done()) throw new Error(`podmienka nenastala do ${String(max)} tickov`);
+    return events;
+  }
+
+  function crane(world: World, craneId: EntityId): CraneModule {
+    const module = world.modules.get(craneId);
+    if (!(module instanceof CraneModule)) throw new Error(`#${String(craneId)} nie je žeriav`);
+    return module;
+  }
+
+  /** Root modul + druhý kúpený žeriav na (45, 14) na tom istom berthe. */
+  function rootWithSecondCrane(): { world: World; second: CraneModule } {
+    const world = newWorld();
+    const second = buy(world, CRANE, 45).modules.get(id(3));
+    if (!(second instanceof CraneModule)) throw new Error('druhý žeriav chýba');
+    expect((world.modules.get(ROOT_BERTH) as BerthModule).craneIds).toEqual([ROOT_CRANE, second.id]);
+    return { world, second };
+  }
+
+  it('loď v berthing (kotvisko rezervované): oba žeriavy na berthe → ship_docked', () => {
+    const { world, second } = rootWithSecondCrane();
+    const ship = spawnFeeder(world, 2);
+    tickUntil(world, () => ship.state === 'berthing');
+    expect(crane(world, ROOT_CRANE).state).toBe('idle');
+    expect(remove(ROOT_CRANE).validate(world)).toEqual({ ok: false, reasons: ['ship_docked'], cells: crane(world, ROOT_CRANE).cells, costCents: 0 });
+    expect(remove(second.id).validate(world)).toMatchObject({ ok: false, reasons: ['ship_docked'] });
+  });
+
+  it('loď docked a žeriav blocked (plný apron): starter aj druhý žeriav → ship_docked, loď by inak ostala naveky', () => {
+    const { world, second } = rootWithSecondCrane();
+    const ship = spawnFeeder(world, 6);
+    tickUntil(world, () => crane(world, ROOT_CRANE).state === 'blocked' && second.state === 'blocked');
+    expect(ship.state).toBe('docked');
+    expect(world.cargo.countAt('on_ship', ship.id)).toBe(2);
+    expect(remove(ROOT_CRANE).validate(world)).toMatchObject({ ok: false, reasons: ['ship_docked'] });
+    expect(remove(second.id).validate(world)).toMatchObject({ ok: false, reasons: ['ship_docked'] });
+  });
+
+  it('cez frontu: CommandRejected { ship_docked } a žeriav ostane; po ShipDeparted ide odstrániť', () => {
+    const world = newWorld();
+    const ship = spawnFeeder(world, 1);
+    tickUntil(world, () => ship.state === 'berthing');
+    world.enqueue(remove(ROOT_CRANE));
+    expect(ofType(world.applyPending(), 'CommandRejected')).toEqual([{ type: 'CommandRejected', commandType: 'RemoveModule', reasons: ['ship_docked'] }]);
+    expect(world.modules.has(ROOT_CRANE)).toBe(true);
+
+    const events = tickUntil(world, () => !world.ships.has(ship.id));
+    expect(ofType(events, 'ShipDeparted').map((event) => event.shipId)).toEqual([ship.id]);
+    expect(remove(ROOT_CRANE).validate(world).ok).toBe(true);
+  });
+
+  it('žeriav na inom berthe než loď ide odstrániť', () => {
+    const world = newWorld();
+    buy(buy(world, BERTH, 48), CRANE, 51);
+    const ship = spawnFeeder(world, 1);
+    tickUntil(world, () => ship.state === 'berthing');
+    expect(ship.berthIds).toEqual([ROOT_BERTH]);
+    expect(remove(4).validate(world).ok).toBe(true);
+    expect(remove(ROOT_CRANE).validate(world).reasons).toEqual(['ship_docked']);
   });
 });

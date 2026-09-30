@@ -17,7 +17,7 @@ import type { LedgerCategory } from '../economy/ledger-category';
 import type { World } from '../world/world';
 import type { Command, SerializedCommand } from './command';
 import { copyCellList, parseCellList, readPayload } from './payload';
-import { VALIDATION_REASONS, type ValidationReason, type ValidationResult } from './validation';
+import { orderReasons, type ValidationReason, type ValidationResult } from './validation';
 
 /** Kľúče serializovaného tvaru `{ type, cells }`. */
 const CELL_COMMAND_KEYS: readonly string[] = ['type', 'cells'];
@@ -27,11 +27,6 @@ export type CellVerdict = readonly ValidationReason[] | 'skip';
 
 /** Posúdenie bunky, ktorá sa zmení (bez dôvodov odmietnutia). */
 export const CHANGE_CELL: CellVerdict = Object.freeze([]);
-
-/** Poradie dôvodov vo výsledku = poradie `VALIDATION_REASONS` (deterministické, bez duplicít). */
-function orderedReasons(found: ReadonlySet<ValidationReason>): readonly ValidationReason[] {
-  return Object.freeze(VALIDATION_REASONS.filter((reason) => found.has(reason)));
-}
 
 /** Zoznam buniek `{ type, cells }` zo serializovaného tvaru (pre statické `fromJSON` podtried). */
 export function parseCellCommand(json: SerializedCommand, type: string): readonly CellCoord[] {
@@ -123,7 +118,7 @@ export abstract class RoadLayerCommand implements Command {
     if (costCents > 0 && costCents > world.cashCents) found.add('insufficient_funds');
     return Object.freeze({
       ok: found.size === 0,
-      reasons: orderedReasons(found),
+      reasons: orderReasons(found),
       cells: Object.freeze(changed),
       costCents,
     });

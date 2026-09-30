@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "items": [
+    {
+      "id": "berth_standard",
+      "kind": "berth",
+      "displayName": "Kotvisko",
+      "footprint": { "w": 8, "h": 3 },
+      "placement": {
+        "requiredTerrain": ["quay"],
+        "waterSide": "north",
+        "requiresParcelOwnership": true
+      },
+      "connectors": [
+        { "x": 1, "y": 2, "side": "s", "type": "road" },
+        { "x": 6, "y": 2, "side": "s", "type": "road" }
+      ],
+      "costCents": 40000000,
+      "maintenancePerDayCents": 120000,
+      "params": { "depthClass": 1, "apronSlots": 4, "maxCranes": 2, "frontWaterCells": 3 }
+    },
+    {
+      "id": "crane_container_gantry",
+      "kind": "crane",
+      "displayName": "Kontajnerový žeriav",
+      "footprint": { "w": 2, "h": 3 },
+      "placement": {
+        "requiredTerrain": ["quay"],
+        "requiresParcelOwnership": true,
+        "mustAttachTo": ["berth"]
+      },
+      "connectors": [],
+      "costCents": 60000000,
+      "maintenancePerDayCents": 90000,
+      "params": { "cycleTicks": 12, "category": "container" }
+    }
+  ]
+}

@@ -166,7 +166,7 @@ describe('coastWaterMask', () => {
 });
 
 describe('coastTile: harbor_01', () => {
-  const grid = loadBundledMap().grid;
+  const grid = loadBundledMap().createGrid();
 
   it.each([
     [0, 11, 'water_edge_n'],

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import harbor01Json from '@data/maps/harbor_01.json';
+import type { EntityId } from '@sim/core/entity-id';
 import {
+  Grid,
   MapError,
   loadBundledMap,
   loadMap,
@@ -60,7 +62,7 @@ function expectMapError(fn: () => unknown, path: string, mapId = 'harbor_01'): M
 
 describe('loadMap(harbor_01)', () => {
   const map = load(harbor01Json);
-  const { grid } = map;
+  const grid = map.createGrid();
 
   it('id a rozmery 96×64 (§4.7)', () => {
     expect(map.id).toBe('harbor_01');
@@ -149,7 +151,18 @@ describe('loadMap(harbor_01)', () => {
     expect(grid.at(44, 34).road).toBe('road');
     expect(grid.at(44, 33).road).toBe('none');
     expect(map.starter.roads).toEqual(harbor01Json.starter.roads);
-    expect(map.starter.modules).toEqual([]);
+  });
+
+  it('starter moduly = Root modul: berth_standard (40, 14) a crane_container_gantry (43, 14), rotácia 0 (T02-01)', () => {
+    expect(map.starter.modules).toEqual([
+      { defId: 'berth_standard', x: 40, y: 14, rotation: 0 },
+      { defId: 'crane_container_gantry', x: 43, y: 14, rotation: 0 },
+    ]);
+    expect(map.starter.modules).toEqual(harbor01Json.starter.modules);
+  });
+
+  it('loader moduly do mriežky nezapisuje (umiestni ich World.create)', () => {
+    for (const [x, y] of [[40, 14], [43, 14], [47, 16]] as const) expect(grid.at(x, y).moduleId).toBeNull();
   });
 
   it('portály, seaLane a anchorage prevzaté z mapy', () => {
@@ -159,8 +172,15 @@ describe('loadMap(harbor_01)', () => {
     expect(map.anchorage).toEqual(harbor01Json.anchorage);
   });
 
-  it('všetko okrem grid je hlboko zmrazené', () => {
+  it('width a height zodpovedajú mapě a mriežke', () => {
+    expect([map.width, map.height]).toEqual([96, 64]);
+    expect([grid.width, grid.height]).toEqual([map.width, map.height]);
+  });
+
+  it('mapa je hlboko zmrazená', () => {
     expect(Object.isFrozen(map)).toBe(true);
+    expect(Object.isFrozen(map.starter.modules)).toBe(true);
+    expect(Object.isFrozen(map.starter.modules[0])).toBe(true);
     expect(Object.isFrozen(map.parcels)).toBe(true);
     expect(Object.isFrozen(map.parcels[0])).toBe(true);
     expect(Object.isFrozen(map.parcels[0].rect)).toBe(true);
@@ -173,12 +193,53 @@ describe('loadMap(harbor_01)', () => {
 
 describe('loadMap — čistota a determinizmus', () => {
   it('dve načítania → nezávislé mriežky s rovnakým obsahom', () => {
-    const a = load(harbor01Json);
-    const b = load(harbor01Json);
-    expect(a.grid).not.toBe(b.grid);
-    for (let i = 0; i < a.grid.cellCount; i++) expect(b.grid.atIndex(i)).toEqual(a.grid.atIndex(i));
-    a.grid.at(40, 30).road = 'road';
-    expect(b.grid.at(40, 30).road).toBe('none');
+    const a = load(harbor01Json).createGrid();
+    const b = load(harbor01Json).createGrid();
+    expect(a).not.toBe(b);
+    for (let i = 0; i < a.cellCount; i++) expect(b.atIndex(i)).toEqual(a.atIndex(i));
+    a.at(40, 30).road = 'road';
+    expect(b.at(40, 30).road).toBe('none');
+  });
+
+  describe('createGrid — šablóna počiatočného stavu sa nikdy nevydáva', () => {
+    it('každé volanie vráti novú mriežku s rovnakým obsahom (terén, depthClass, parcelId, starter cesty)', () => {
+      const map = load(harbor01Json);
+      const first = map.createGrid();
+      const second = map.createGrid();
+      expect(second).not.toBe(first);
+      expect(second.cellCount).toBe(first.cellCount);
+      for (let i = 0; i < first.cellCount; i++) {
+        expect(second.atIndex(i)).not.toBe(first.atIndex(i));
+        expect(second.atIndex(i)).toEqual(first.atIndex(i));
+      }
+      expect(first.at(44, 63).road).toBe('road');
+    });
+
+    it('zápis do vydanej mriežky (cesta, modul, doprava) sa neprenesie do ďalšej', () => {
+      const map = load(harbor01Json);
+      const dirty = map.createGrid();
+      dirty.at(40, 30).road = 'rail';
+      dirty.at(44, 63).road = 'none';
+      dirty.at(40, 14).moduleId = 7 as EntityId;
+      dirty.at(41, 30).traffic = 99;
+      const clean = map.createGrid();
+      expect(clean.at(40, 30).road).toBe('none');
+      expect(clean.at(44, 63).road).toBe('road');
+      expect(clean.at(40, 14).moduleId).toBeNull();
+      expect(clean.at(41, 30).traffic).toBe(0);
+    });
+
+    it('LoadedMap nevystavuje meniteľnú šablónu — žiadne pole `grid`, len `createGrid()` (BACKLOG P2)', () => {
+      const map = load(harbor01Json);
+      expect(Object.hasOwn(map, 'grid')).toBe(false);
+      expect(Object.values(map).some((value) => value instanceof Grid)).toBe(false);
+    });
+
+    it('funguje aj po rozklade mapy ({ ...map }) — nepoužíva `this`', () => {
+      const map = load(harbor01Json);
+      const copy = { ...map };
+      expect(copy.createGrid().at(44, 63).road).toBe('road');
+    });
   });
 
   it('výsledok nezdieľa objekty so vstupom; vstup sa nemení', () => {
@@ -198,8 +259,14 @@ describe('loadMap — čistota a determinizmus', () => {
     const bundled = loadBundledMap();
     const direct = load(harbor01Json);
     expect(bundled.id).toBe('harbor_01');
-    expect({ ...bundled, grid: null }).toEqual({ ...direct, grid: null });
-    for (let i = 0; i < direct.grid.cellCount; i++) expect(bundled.grid.atIndex(i)).toEqual(direct.grid.atIndex(i));
+    const withoutGrids = ({ createGrid: _create, ...rest }: LoadedMap) => {
+      void _create;
+      return rest;
+    };
+    expect(withoutGrids(bundled)).toEqual(withoutGrids(direct));
+    const bundledGrid = bundled.createGrid();
+    const directGrid = direct.createGrid();
+    for (let i = 0; i < directGrid.cellCount; i++) expect(bundledGrid.atIndex(i)).toEqual(directGrid.atIndex(i));
   });
 });
 
@@ -207,9 +274,9 @@ describe('loadMap — povolené prípady', () => {
   it('starter cesta na startOwned parcele a na verejnom nábreží', () => {
     const raw = rawMap();
     raw.starter.roads.push({ x: 44, y: 30 }, { x: 28, y: 14 });
-    const map = load(raw);
-    expect(map.grid.at(44, 30).road).toBe('road');
-    expect(map.grid.at(28, 14).road).toBe('road');
+    const grid = load(raw).createGrid();
+    expect(grid.at(44, 30).road).toBe('road');
+    expect(grid.at(28, 14).road).toBe('road');
   });
 
   it('starter cesta na parcele, ktorá je startOwned (nie na predaj)', () => {
@@ -217,7 +284,7 @@ describe('loadMap — povolené prípady', () => {
     setAt(raw, '/parcels/1/startOwned', true);
     raw.starter.roads.push({ x: 20, y: 20 });
     const map = load(raw);
-    expect(map.grid.at(20, 20).road).toBe('road');
+    expect(map.createGrid().at(20, 20).road).toBe('road');
     expect(map.parcels[1].ownership).toBe('owned');
   });
 
@@ -230,10 +297,10 @@ describe('loadMap — povolené prípady', () => {
   it('zóna depth môže zahŕňať aj bunky mimo nábrežia (tie majú triedu 0)', () => {
     const raw = rawMap();
     setAt(raw, '/depth/58,12,2,6', 2);
-    const map = load(raw);
-    expect(map.grid.at(58, 14).depthClass).toBe(2);
-    expect(map.grid.at(58, 12).depthClass).toBe(0);
-    expect(map.grid.at(58, 17).depthClass).toBe(0);
+    const grid = load(raw).createGrid();
+    expect(grid.at(58, 14).depthClass).toBe(2);
+    expect(grid.at(58, 12).depthClass).toBe(0);
+    expect(grid.at(58, 17).depthClass).toBe(0);
   });
 });
 
@@ -277,6 +344,21 @@ const INVARIANT_CASES: readonly InvariantCase[] = [
   },
   { name: 'portál v parcele (parcela rozšírená k okraju)', mutate: (m) => void (m.parcels[2].rect.w = 36), path: '/railPortals/0/cell' },
   { name: 'duplicitné id portálu', mutate: (m) => void (m.railPortals[0].id = 'road_south'), path: '/railPortals/0/id' },
+  {
+    name: 'železničný portál na bunke cestného portálu',
+    mutate: (m) => void (m.railPortals[0].cell = { x: 44, y: 63 }),
+    path: '/railPortals/0/cell',
+  },
+  {
+    name: 'dva cestné portály na jednej bunke',
+    mutate: (m) => void m.roadPortals.push({ id: 'road_south_2', cell: { x: 44, y: 63 } }),
+    path: '/roadPortals/1/cell',
+  },
+  {
+    name: 'cestný portál na bunke železničného (id sa líši)',
+    mutate: (m) => void m.roadPortals.push({ id: 'road_east', cell: { x: 95, y: 24 } }),
+    path: '/railPortals/0/cell',
+  },
   // Plavebná dráha a kotvisko
   { name: 'seaLane začína mimo okraja', mutate: (m) => void (m.seaLane[0] = { x: 48, y: 3 }), path: '/seaLane/0' },
   { name: 'vrchol seaLane na pevnine', mutate: (m) => void (m.seaLane[1] = { x: 48, y: 20 }), path: '/seaLane/1' },
@@ -290,6 +372,17 @@ const INVARIANT_CASES: readonly InvariantCase[] = [
   { name: 'anchorage na plytkej vode', mutate: (m) => void (m.anchorage[1] = { x: 52, y: 11 }), path: '/anchorage/1' },
   { name: 'anchorage na nábreží', mutate: (m) => void (m.anchorage[3] = { x: 60, y: 14 }), path: '/anchorage/3' },
   { name: 'anchorage mimo mapy', mutate: (m) => void (m.anchorage[1] = { x: 200, y: 7 }), path: '/anchorage/1' },
+  // Starter moduly (def a placement overí World.create)
+  {
+    name: 'starter modul mimo mapy (x)',
+    mutate: (m) => setAt(m, '/starter/modules/-', { defId: 'berth_standard', x: 96, y: 14, rotation: 0 }),
+    path: '/starter/modules/2',
+  },
+  {
+    name: 'starter modul mimo mapy (y)',
+    mutate: (m) => setAt(m, '/starter/modules/-', { defId: 'berth_standard', x: 40, y: 64, rotation: 0 }),
+    path: '/starter/modules/2',
+  },
   // Starter cesty
   { name: 'starter cesta na vode', mutate: (m) => void (m.starter.roads[29] = { x: 44, y: 12 }), path: '/starter/roads/29' },
   { name: 'starter cesta na blocked', mutate: (m) => void (m.starter.roads[0] = { x: 2, y: 40 }), path: '/starter/roads/0' },
@@ -346,7 +439,11 @@ describe('parseMapDef — tvar podľa map.schema.json', () => {
   it('platný starter modul prejde', () => {
     const raw = rawMap();
     setAt(raw, '/starter/modules/-', { defId: 'berth_standard', x: 30, y: 14, rotation: 90 });
-    expect(parseMapDef(raw).starter.modules).toEqual([{ defId: 'berth_standard', x: 30, y: 14, rotation: 90 }]);
+    expect(parseMapDef(raw).starter.modules).toEqual([
+      { defId: 'berth_standard', x: 40, y: 14, rotation: 0 },
+      { defId: 'crane_container_gantry', x: 43, y: 14, rotation: 0 },
+      { defId: 'berth_standard', x: 30, y: 14, rotation: 90 },
+    ]);
   });
 
   it.each([[null], [[]], ['harbor'], [42], [undefined]])('koreň nie je objekt (%j) → MapError s mapId "map"', (raw) => {
@@ -356,7 +453,11 @@ describe('parseMapDef — tvar podľa map.schema.json', () => {
   const SHAPE_CASES: readonly { name: string; mutate: (raw: MapJson) => void; path: string }[] = [
     { name: 'chýba anchorage', mutate: (m) => deleteAt(m, '/anchorage'), path: '/anchorage' },
     { name: 'chýba starter.roads', mutate: (m) => deleteAt(m, '/starter/roads'), path: '/starter/roads' },
-    { name: 'neznámy kľúč v koreni', mutate: (m) => setAt(m, '/schemaVersion', 1), path: '/schemaVersion' },
+    { name: 'neznámy kľúč v koreni', mutate: (m) => setAt(m, '/version', 1), path: '/version' },
+    { name: 'chýba schemaVersion', mutate: (m) => deleteAt(m, '/schemaVersion'), path: '/schemaVersion' },
+    { name: 'schemaVersion 2', mutate: (m) => setAt(m, '/schemaVersion', 2), path: '/schemaVersion' },
+    { name: 'schemaVersion ako reťazec', mutate: (m) => setAt(m, '/schemaVersion', '1'), path: '/schemaVersion' },
+    { name: 'schemaVersion null', mutate: (m) => setAt(m, '/schemaVersion', null), path: '/schemaVersion' },
     { name: 'neznámy kľúč v parcele', mutate: (m) => setAt(m, '/parcels/0/owner', 'me'), path: '/parcels/0/owner' },
     { name: 'width ako reťazec', mutate: (m) => setAt(m, '/width', '96'), path: '/width' },
     { name: 'height 0', mutate: (m) => setAt(m, '/height', 0), path: '/height' },
@@ -381,12 +482,12 @@ describe('parseMapDef — tvar podľa map.schema.json', () => {
     {
       name: 'rotácia starter modulu 45',
       mutate: (m) => setAt(m, '/starter/modules/-', { defId: 'berth_standard', x: 30, y: 14, rotation: 45 }),
-      path: '/starter/modules/0/rotation',
+      path: '/starter/modules/2/rotation',
     },
     {
       name: 'defId starter modulu nie je snake_case',
       mutate: (m) => setAt(m, '/starter/modules/-', { defId: 'Berth', x: 30, y: 14, rotation: 0 }),
-      path: '/starter/modules/0/defId',
+      path: '/starter/modules/2/defId',
     },
   ];
 

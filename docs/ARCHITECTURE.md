@@ -55,7 +55,7 @@ Pravidlá toku dát:
 | Odvodené | 6 tickov = 1 herná minúta; 360 = hodina; 8 640 = deň; 259 200 = mesiac (30 dní) | |
 | Reálny čas | 1 herný deň ≈ 14,4 min pri 1×, 3,6 min pri 4× | tycoon pacing |
 
-- `SimClock { tick, speed }`; odvodené `gameMinute/Hour/Day/Month`. `clock.advance()` vráti uzavreté hranice a `World` v kroku 1 (§6) emituje `TickAdvanced`, potom `HourClosed`, `DayClosed`, `MonthClosed` (ADR-013).
+- `SimClock { tick, speed }` — stav do save `getState()` / `fromState()`, `setSpeed()`; odvodené konštanty `ticksPerMinute/Hour/Day/Month` z `tickGameSeconds` (musí deliť 60). Dve sady odvodených hodnôt, obe 0-based: **celkové počty** od začiatku hry `gameMinute`, `gameHour`, `gameDay`, `gameMonth` (napr. throttle `CraneBlocked` podľa `gameHour`, ADR-016) a **kalendárne zložky** pre HUD `minuteOfHour` (0–59), `hourOfDay` (0–23), `dayOfMonth` (0–29; herný mesiac má vždy 30 dní — kalendár je konštanta v kóde, nie def). Nová hra začína pri `INITIAL_SPEED` = 1, ktorá musí byť v `time.speeds` (overuje `World.create`). `clock.advance()` vráti uzavreté hranice a `World` v kroku 1 (§6) emituje `TickAdvanced`, potom `HourClosed`, `DayClosed`, `MonthClosed` (ADR-013).
 - `GameLoop` (app): každý frame najprv `world.applyPending()` (príkazy sa aplikujú aj počas pauzy), potom akumulátor `acc += dt × speed`; vykoná `n = min(floor(acc / tickDuration), time.maxTicksPerFrame)` tickov (64, proti spirále smrti; pri zásahu limitu sa `acc` oreže na najviac `tickDuration`); prezentácia interpoluje polohy medzi `prevTick` a `currTick` pomocou `alpha = acc / tickDuration` (ADR-013).
 - Všetky trvania v defoch sú **v tickoch** (nie v sekundách).
 
@@ -81,34 +81,40 @@ interface CargoTypeDef {
 
 ### 4.2 `modules.json`
 ```ts
+type ModuleKind = 'berth' | 'crane' | 'storage' | 'gate' | 'waiting_area' | 'ramp' | 'depot' | 'rail_station' | 'pipeline';
+type Side = 'n' | 'e' | 's' | 'w';
 interface ModuleDef {
   id: string;
-  kind: 'berth' | 'crane' | 'storage' | 'gate' | 'waiting_area' | 'ramp' | 'depot'
-      | 'rail_station' | 'pipeline';
-  displayName: string;
+  kind: ModuleKind;
+  displayName: string;                        // 'Kotvisko', 'Kontajnerový žeriav' (BuildBar, inspector)
   footprint: { w: number; h: number };        // v bunkách, pri rotácii 0°
   placement: {
     requiredTerrain: TerrainType[];           // napr. ['quay'] pre berth, ['land','quay'] pre sklad
-    waterSide?: 'north';                      // berth: dlhá hrana musí susediť s vodou (pri rot 0 = sever)
+    waterSide?: 'north';                      // berth (povinné): dlhá hrana pri vode pri rot 0; po rotácii `waterSideOf` (ADR-014)
     requiresParcelOwnership: boolean;         // vždy true — cesty nie sú moduly (ADR-006), pravidlo pre cesty viď §5.2 (ADR-008)
-    mustAttachTo?: ModuleKind[];              // crane → ['berth']; ramp → nič (cesta stačí)
+    mustAttachTo?: ModuleKind[];              // crane → ['berth']: stojí na bunkách hostiteľa (ADR-014, ADR-015); ramp → nič
   };
-  connectors: { x: number; y: number; type: 'road' | 'rail' | 'pipe' | 'berth_edge' }[];
+  connectors: { x: number; y: number; side: Side; type: 'road' | 'rail' | 'pipe' }[];  // bunka footprintu pri rot 0 + strana vstupu
   costCents: number;
   maintenancePerDayCents: number;
   techRequired?: string;                      // id uzla tech tree
-  params: Record<string, number | string>;    // typ-špecifické (capacityUnits, cycleTicks, bays, docks…)
+  params: Readonly<Record<string, number | string>>;   // tvar podľa `kind` = MODULE_PARAM_SPECS (nižšie)
 }
+interface BerthParams { depthClass: 1 | 2 | 3; apronSlots: number; maxCranes: number; frontWaterCells: number }
+interface CraneParams { cycleTicks: number /* ≥ 2: dve fázy po ≥ 1 tick */; category: CargoCategory }
 ```
-Konektory sú **jediné bunky, cez ktoré vozidlá vchádzajú/vychádzajú** z modulu. Vnútorný pohyb v module je abstrahovaný na `internalTicks` (viď §7.3).
+- Typované parametre podľa `kind` sú v tabuľke `MODULE_PARAM_SPECS: { [K in ModuleKind]: SpecTable<ModuleParamsByKind[K]> }` (nie switch): berth vyžaduje `BerthParams`, crane `CraneParams`, ostatné druhy zatiaľ `{}`; nový druh s parametrami = nový typ v `ModuleParamsByKind` + riadok tabuľky. Sim číta parametre len cez typované gettery `berthParams(def)` / `craneParams(def)` (nikdy `params['x'] as number`) a laditeľné štatistiky (`cycleTicks`) cez `StatResolver` (§7.2, §10). `DefRegistry` je fail-fast (`DefError` s cestou): duplicitné id, neznámy kľúč, zlý typ alebo rozsah parametra, neznámy druh v `mustAttachTo` či terén v `requiredTerrain`, berth bez `waterSide`, konektor mimo footprintu (T02-01).
+- Konektory sú **jediné bunky, cez ktoré vozidlá vchádzajú/vychádzajú** z modulu; `side` je strana bunky, ktorou sa vchádza. Kanonický zdroj je `assets/manifest.json` (`sprites.*.connectors`); vo svete ich po rotácii dáva `connectorsOf(def, x, y, rotation)` (`rotateLocalCell` + `rotateSide`, ADR-015). Vnútorný pohyb v module je abstrahovaný na `internalTicks` (viď §7.3).
+- Typ konektora `berth_edge` z pôvodného návrhu sa **nepoužíva**: hranu kotviska pri vode určuje `placement.waterSide` otočená o rotáciu (`edgeCells`) a miesto lode pás `BerthModule.frontWaterBand` (`params.frontWaterCells` riadkov vody pred hranou). Loď nie je vozidlo, nevchádza cez bunku konektora a hrana kotviska nie je jedna bunka (ADR-014, ADR-015; T02-01).
 
 ### 4.3 `ships.json`
 ```ts
 interface ShipClassDef {
   id: 'feeder' | 'handy' | 'panamax' | 'mega' | string;
-  lengthCells: number;   // 6 / 10 / 14 / 20
-  widthCells: number;    // 2 / 2 / 3 / 3
-  draftClass: 1 | 2 | 3; // kotvisko musí mať depthClass >= draftClass
+  displayName: string;   // 'Feeder', 'Handysize' (UI, inspector)
+  lengthCells: number;   // 6 / 10 / 14 / 20 — zhodné s entities.ship_<id>.footprint.h v manifeste
+  widthCells: number;    // 2 / 2 / 3 / 3 — zhodné s footprint.w; musí sa zmestiť do frontWaterCells kotviska
+  draftClass: 1 | 2 | 3; // každé obsadené kotvisko musí mať (efektívnu, §5) depthClass >= draftClass
   capacityUnits: number; // 120 / 300 / 700 / 1500 (v CargoUnit)
   speedCellsPerTick: number; // 0.15
   cargoCategories: CargoCategory[];
@@ -148,7 +154,7 @@ type TechEffect =
 
 ### 4.6 `contract_templates.json`, `economy.json`, `time.json`
 - `contract_templates`: `cargoTypeId, volumeUnitsRange, slaDaysRange, shipClassIds[], weight, minTier`.
-- `economy`: `startingCashCents, demurrageRateOfRewardPerHour (0.005), latePenaltyRateOfRewardPerDay (0.05), failAfterDaysLate (3), leaseMonthlyRateOfPrice (0.015), bankruptcyDays (30), offersPerDay (6), offerExpiryDays (2), removalRefundRate (0.5)` — `removalRefundRate` je podiel ceny vrátený pri odstránení modulu (§8 bod 8) aj cesty/koľaje (ADR-012) (ADR-013).
+- `economy`: `startingCashCents, demurrageRateOfRewardPerHour (0.005), latePenaltyRateOfRewardPerDay (0.05), failAfterDaysLate (3), leaseMonthlyRateOfPrice (0.015), bankruptcyDays (30), offersPerDay (6), offerExpiryDays (2), removalRefundRate (0.5)` — `removalRefundRate` je podiel ceny vrátený pri odstránení modulu (§8 bod 8) aj cesty/koľaje (ADR-012) (ADR-013), počítaný celočíselne v bázických bodoch (`refundCents`, ADR-015).
 - `time`: viď §3, vrátane `maxTicksPerFrame (64)` — strop tickov za frame v `GameLoop` (ADR-013).
 - `infrastructure` (`data/defs/infrastructure.json`, konfiguračný, vznikne vo F1): `road: { costPerCellCents (200 000), maintenancePerDayCents (0) }`, `rail: { costPerCellCents (600 000), maintenancePerDayCents (0) }` (ADR-010).
 - `logistics` (`data/defs/logistics.json`, konfiguračný, vznikne vo F3): `defaultInternalTicks (6)` — modul ho môže prepísať `params.internalTicks`; `congestion: { trafficDecayPerHour (0.9), slowdownPerExtraVehicle (0.25), penaltyTrafficDivisor (200), penaltyMax (3) }` — použité vo F3/F11 (§7.6) (ADR-010).
@@ -156,17 +162,22 @@ type TechEffect =
 ### 4.7 Mapa (`data/maps/*.json`)
 ```ts
 interface MapDef {
+  schemaVersion: 1;                            // jediná podporovaná verzia formátu mapy (T02-01)
   id: string; width: number; height: number;
   terrain: string[];   // riadky; znaky: '~' deep water, '=' shallow water, 'Q' quay, '.' land, '#' blocked
-  depth: Record<string, 1|2|3>;  // depthClass pre quay bunky podľa zóny (default 1)
+  depth: Record<string, 1|2|3>;  // kľúč "x,y,w,h" = zóna nábrežia → depthClass; Q mimo zón má 1
   parcels: { id: string; rect: Rect; priceCents: number; leasable: boolean; startOwned?: boolean }[];
   roadPortals: { id: string; cell: Cell }[];   // vstup/výstup kamiónov na okraji
-  railPortals: { id: string; cell: Cell }[];
+  railPortals: { id: string; cell: Cell }[];   // road a rail portál nesmú zdieľať bunku (ADR-006)
   seaLane: Cell[];                             // polyline od okraja k anchorage
   anchorage: Cell[];                           // čakacie pozície lodí
-  starter: { modules: PlacedModuleSpec[]; roads: Cell[] };  // predpostavený Root modul atď.
+  starter: { modules: PlacedModuleSpec[]; roads: Cell[] };  // Root modul (ADR-015), starter cesty
 }
+interface PlacedModuleSpec { defId: string; x: number; y: number; rotation: 0 | 90 | 180 | 270 }  // x, y = ľavý horný roh po rotácii
 ```
+- `parseMapDef(raw)` overí tvar podľa `map.schema.json`, `loadMap(def)` vzťahy (rozmery terénu, znaky, zóny hĺbky celé v mape, bez prekryvu a s bunkou nábrežia, parcely, portály na okraji a na rôznych bunkách, voda, cesty) a vráti hlboko zmrazenú `LoadedMap`. Chyba = `MapError` s JSON pointerom.
+- `LoadedMap` nevystavuje meniteľnú mriežku: `createGrid()` vráti pri každom volaní **novú** kópiu počiatočného stavu (terén, `depthClass`, `parcelId`, starter cesty), takže zápis do mriežky jedného sveta sa neprenesie do ďalšieho `World.create`/`deserialize` (T02-01).
+- Starter moduly (`harbor_01`: `berth_standard` (40, 14) + `crane_container_gantry` (43, 14), rot 0) umiestni `World.create` v poradí mapy pravidlami `PlaceModule` bez ceny, bez udalostí a s `purchaseCostCents 0`; neznámy def alebo porušené pravidlo je `MapError` na `/starter/modules/<i>` (ADR-015).
 
 ---
 
@@ -174,10 +185,10 @@ interface MapDef {
 
 ```mermaid
 classDiagram
-  class World { +clock: SimClock +grid: Grid +parcels +modules +cargo: CargoLedger +ships +vehicles +trucks +trains +contracts +economy +tech +metrics +events: EventBus +rng: Rng +tick() }
-  class Module { <<abstract>> id defId origin rotation cells parcelId +onTick() }
-  class BerthModule { lengthCells depthClass groupId dockedShipId cranes apron: ApronBuffer }
-  class CraneModule { craneType berthId state cycleTicks }
+  class World { +defs +map +clock: SimClock +grid: Grid +parcels +rng: Rng +ids +events: EventBus +cargo: CargoLedger +modules +berthGroups +ships +stats: StatResolver +cashCents +vehicles +trucks +trains +contracts +economy +tech +metrics +tick() +assertInvariants() }
+  class Module { <<abstract>> id def kind origin rotation size cells purchaseCostCents +getRuntimeState() +restoreRuntimeState() }
+  class BerthModule { waterSide lengthCells depthClass frontWaterBand groupId dockedShipId craneIds apron: ApronBuffer }
+  class CraneModule { berthId category state phaseTicksTotal phaseTicksLeft heldUnitId reservedSlot busyTicks idleTicks blockedTicks lastBlockedHour }
   class StorageModule { <<abstract>> category capacityUnits slots +reserve() +store() +take() }
   class ContainerYard
   class Silo
@@ -206,7 +217,7 @@ classDiagram
   LandExportModule <|-- WaitingArea
   LandExportModule <|-- LoadingRamp
   LandExportModule <|-- RailStation
-  class Carrier { <<abstract>> id capacity cargoUnitIds }
+  class Carrier { <<abstract>> id capacity }
   Carrier <|-- Ship
   Carrier <|-- Vehicle
   Carrier <|-- Truck
@@ -214,6 +225,14 @@ classDiagram
   class CargoUnit { id typeId contractId quantity location: CargoLocation }
   class Contract { id cargoTypeId volumeUnits rewardCents slaDeadlineTick state shipId }
 ```
+Diagram opisuje cieľový model. Po F2 existujú `World`, `Module`, `BerthModule`, `CraneModule`, `Ship` (zatiaľ bez spoločnej triedy `Carrier`) a `CargoUnit`; náklad na palube či vo vozidle vedie výlučne `CargoLedger` — nosiče ani moduly si id jednotiek neevidujú (pravidlo 2, ADR-014).
+
+**`World` po F2** (ADR-013, ADR-014, ADR-016): `defs`, `map` (`LoadedMap`, len čítanie), `seed`, `clock`, `grid` (vlastná kópia z `map.createGrid()`), `parcels`, `rng`, `ids` (`EntityIdAllocator` — jedna sekvencia id pre moduly, lode aj náklad), `events`, `cargo` (`CargoLedger`, jediný zdroj polohy nákladu, §7.1), `modules: ReadonlyMap<EntityId, Module>` (poradie umiestnenia = vzostupne podľa id), `berthGroups: readonly BerthGroup[]` (§5.4), `ships: ReadonlyMap<EntityId, Ship>` (vzostupne podľa id = poradie spawnu), `stats: StatResolver` (§10), `cashCents`, `checkInvariants` (§6). Štrukturálne operácie pre príkazy a obnovu save: `placeModule` / `addModule` / `removeModule` (poistka `ModuleError`, pravidlá §8 z `module-rules.ts`) a `addShip` / `removeShip` (`ShipError` s kódom); dotazy `moduleAt`, `berthOfCell`, `craneAt`; `assertInvariants()`. Vozidlá, kamióny, vlaky, kontrakty, ekonomika, tech a metriky pribudnú vo svojich fázach.
+- Triedu modulu vyberá `ModuleRegistry.register(kind, factory)` → `create(def, spec, id, purchaseCostCents, env)`, nie switch ani `.constructor`; neregistrovaný druh je `ModuleError` (ADR-014). `Module.purchaseCostCents` je skutočne zaplatená cena (starter moduly 0) — základ refundácie (ADR-015); `getRuntimeState()` / `restoreRuntimeState()` nesú dynamický stav triedy do save (§14).
+- **Žeriav stojí na bunkách berthu** (ADR-014 bod 1): `cell.moduleId` ostáva id berthu, `CraneModule.berthId` je berth pod ľavým horným rohom žeriavu, berth eviduje žeriavy v `craneIds` (poradie umiestnenia, najviac `params.maxCranes`), žeriav má rotáciu berthu a neprekrýva iný žeriav. Žeriav na bunke nájde `world.craneAt(x, y)`. `CraneModule.state` je len getter (FSM §7.2).
+- **Efektívna hĺbka** berthu `depthClass = min(params.depthClass, min(cell.depthClass) footprintu)` — ponor obmedzuje typ kotviska aj mapa (ADR-014 bod 2). `waterSide` = `placement.waterSide` otočená o rotáciu (rot 0 = `n`, v smere hodinových ručičiek), `lengthCells = footprint.w` (dlhá hrana pri vode), `frontWaterBand` = pás `frontWaterCells` riadkov vody pred ňou (miesto lode, §7.4).
+- `ApronBuffer` je zrkadlo ledgera s rezerváciami: `reserve()` vráti najnižší voľný nerezervovaný slot, `commit(slot, unit)` odloží jednotku po `CargoLedger.move(… on_apron)` (overiteľné vopred `assertCommittable`, T02-14), `take(unit)` ju odoberie; FIFO = poradie commitu; UI číta `usedCount` / `reservedCount` / `capacity` (ADR-014).
+- `Ship` (§4.3, §7.4; ADR-016): `id, classId, def, cargoTypeId, cargoCategory`, `state` (getter, mení ho len `transition`), `x, y` (float stred v bunkách; stred bunky = `(cx + 0.5, cy + 0.5)`), `heading` (kardinálny 0/90/180/270), `berthIds` (obsadené kotviská po pobreží), `anchorageIndex`, `waypointIndex`.
 
 ### 5.1 Grid
 ```ts
@@ -235,7 +254,7 @@ interface Cell {
 ### 5.3 Moduly — rozmery a parametre (počiatočné hodnoty, podliehajú balansu)
 | id | kind | footprint | kľúčové params | cena | údržba/deň |
 |---|---|---|---|---|---|
-| `berth_standard` | berth | 8×3 (dlhá hrana k vode) | `depthClass 1`, `apronSlots 4` | 400k | 1 200 |
+| `berth_standard` | berth | 8×3 (dlhá hrana k vode) | `depthClass 1`, `apronSlots 4`, `maxCranes 2`, `frontWaterCells 3` | 400k | 1 200 |
 | `berth_deepwater` | berth | 8×3 | `depthClass 3`, `apronSlots 6` | 900k | 2 000 |
 | `crane_container_gantry` | crane | 2×3 (na berth) | `cycleTicks 12` (2 min), `category container` | 600k | 900 |
 | `crane_bulk_grab` | crane | 2×3 | `cycleTicks 18`, `bulk` | 450k | 700 |
@@ -256,12 +275,14 @@ interface Cell {
 | `rail_station_small` | rail_station | 12×4 | `tracks 1`, `trainCapacity 60`, `loadTicksPerUnit 2` | 1.2M | 2 500 |
 | cesta / koľaj | vrstva | 1×1 | — | 2k / 6k za bunku (`infrastructure.json`, ADR-010) | 0 |
 
-Root modul zo štartovej mapy = `berth_standard` + `crane_container_gantry` predpostavené na `starter` parcele.
+Root modul zo štartovej mapy = `berth_standard` na (40, 14) + `crane_container_gantry` na (43, 14), rot 0, na `starter` parcele (`harbor_01.starter.modules`); `World.create` ho umiestni pravidlami `PlaceModule` bez ceny a udalostí s `purchaseCostCents 0` (id 1, 2), takže `RemoveModule` zaň nevráti nič (ADR-015).
 
 ### 5.4 Kotviská a skupiny (BerthGroup)
-- Kotviská s **dotýkajúcimi sa krátkymi hranami na tom istom pobreží** tvoria `BerthGroup { berthIds[], totalLength, minDepth }`. Prepočet pri každom place/remove.
-- Loď potrebuje skupinu s `totalLength ≥ ship.lengthCells` a `minDepth ≥ ship.draftClass` a aspoň jeden kompatibilný žeriav v skupine. Loď, ktorá zaberá viac kotvísk, je obsluhovaná **všetkými žeriavmi na obsadených kotviskách** (motivácia stavať viac žeriavov).
-- `ApronBuffer` = per-berth FIFO slotov na quay, kam žeriav ukladá jednotky; vozidlá ich vyzdvihujú. Odpája takt žeriava od dostupnosti vozidiel.
+- Kotviská s **dotýkajúcimi sa krátkymi hranami na tom istom pobreží** tvoria `BerthGroup { id, berthIds[], totalLength, minDepth }` (ADR-014 bod 3): rovnaká `waterSide`, hrany pri vode na tej istej línii pobrežia (n: `origin.y`, s: `origin.y + h − 1`, e: `origin.x + w − 1`, w: `origin.x`) a koniec jedného (`start + lengthCells`) je začiatkom druhého. **Poradie po pobreží** v skupine: stúpajúco podľa `x` (n/s) alebo `y` (e/w). Skupiny sú zoradené podľa (`waterSide` v poradí n, e, s, w; línia; začiatok) a číslované od 1 — id závisia od geometrie, nie od histórie stavby. `totalLength = Σ lengthCells`, `minDepth` = minimum efektívnej hĺbky (§5). Prepočet pri každom `addModule`/`removeModule`, berth dostane `groupId`.
+- **Alokácia** (`allocateBerths`, čistá funkcia; ADR-016 bod 5, aktualizované T02-14): skupiny v poradí id s `totalLength ≥ ship.lengthCells` a aspoň jedným žeriavom kategórie nákladu lode. V skupine sa hľadá súvislý **úsek** berthov s najmenším počtom berthov, pri zhode s najmenším indexom po pobreží. Úsek musí byť celý voľný (`dockedShipId === null` — bez lode aj rezervácie), **každý** jeho berth musí mať efektívnu hĺbku `≥ ship.draftClass` (hlboký úsek vyhovuje aj vedľa plytkého suseda; `minDepth ≥ draftClass` je len skratka „hlboká je celá skupina"), `Σ lengthCells ≥ ship.lengthCells`, `frontWaterCells ≥ ship.widthCells` každého berthu a úsek musí obsahovať **kompatibilný žeriav** (loď na berthe bez žeriavu by sa nikdy nevyložila). Prvý vyhovujúci úsek sa rezervuje už pri `berthing` (`dockedShipId`, `berthIds` v poradí po pobreží). Čakajúce lode idú vo FIFO podľa id bez head-of-line blokovania (§7.4).
+- Loď, ktorá zaberá viac kotvísk, je obsluhovaná **všetkými žeriavmi na obsadených kotviskách** (motivácia stavať viac žeriavov); každý žeriav odkladá na apron svojho berthu.
+- Loď s nákladom, ktorá drží kotviská, má na nich vždy aspoň jeden žeriav svojej kategórie: alokátor ho vyžaduje, `RemoveModule` žeriav pod loďou odmietne (`ship_docked`, §8 bod 8) a invariant kroku 12 to stráži (T02-14).
+- `ApronBuffer` = per-berth sloty (`apronSlots`) na quay, kam žeriav ukladá jednotky (FIFO); vozidlá ich vyzdvihujú. Odpája takt žeriava od dostupnosti vozidiel.
 
 ---
 
@@ -279,9 +300,11 @@ Root modul zo štartovej mapy = `berth_standard` + `crane_container_gantry` pred
 9. economySystem.tick()                  // pri DayClosed: údržba, mzdy, prenájmy; pri MonthClosed: report
 10. techSystem.tick()                    // len spracovanie čakajúcich unlockov (efekty sú okamžité pri príkaze)
 11. metricsSystem.tick()                 // utilization sample, decay traffic (pri HourClosed), fill %
-12. cargo.assertConservation()           // v DEV/testoch: každá jednotka má presne 1 lokáciu; súčet = konstantný
+12. world.assertInvariants()             // ak checkInvariants: cargo.assertConservation() + invarianty sveta (ADR-014, ADR-016)
 13. events.flush() → SimBridge           // udalosti za tick sú k dispozícii prezentácii
 ```
+Krok 12 = `world.assertInvariants()`: najprv `cargo.assertConservation()` (každá jednotka má presne 1 lokáciu, `createdCount = živé + exported`, žiadny slot dvakrát → `CargoConservationError`), potom `findWorldViolation` (→ `WorldInvariantError`): mriežka ↔ moduly, žeriavy (berth, rotácia, držaná jednotka, rezervácia a fáza podľa `CRANE_STATE_TRAITS`), aprony ↔ ledger (jednotky, sloty, FIFO), skupiny kotvísk = prepočet, lode (`dockedShipId` ↔ `berthIds`, súvislý úsek, anchorage, dokovaná loď v `dockPoint`, náklad na palube, žeriav svojej kategórie pod loďou s nákladom, žeriav v `grabbing` len nad dokovanou loďou s nákladom svojej kategórie). Zapína ho voľba `World.create(defs, map, seed, { checkInvariants })` / `World.deserialize(defs, map, state, { checkInvariants })` — predvolene `true` (testy, `simrun`, DEV), aplikácia v produkcii `false` (výkon F6); voľba nie je súčasťou save (ADR-016 bod 8). Po F2 sú implementované kroky 1, 3 (`ShipSystem`), 4 (`CraneSystem`), 12 a 13; ostatné pribudnú na označenom mieste v `World.tick()` v tomto poradí.
+
 Príkazy (`Command`) sa aplikujú **pred krokom 1** z fronty `pendingCommands` v poradí vloženia: každý sa validuje nad aktuálnym stavom (vidí účinok predchádzajúcich), pri úspechu sa aplikuje, inak `World` emituje `CommandRejected` a stav sa nemení; príkaz zaradený počas `apply` čaká na ďalšie kolo (ADR-013). Rovnakú príkazovú časť bez posunu času vykoná `World.applyPending()` (stavba počas pauzy; `applyPending(); tick()` ≡ `tick()`, replay ekvivalentný) (ADR-013). Udalosti ticku idú v poradí vzniku: udalosti príkazov → `TickAdvanced` → `HourClosed` → `DayClosed` → `MonthClosed` → udalosti krokov 2–12 (ADR-013).
 
 ---
@@ -304,14 +327,23 @@ type CargoLocation =
 ```
 Povolené prechody (import): `on_ship → in_crane → on_apron → in_vehicle → in_storage → in_vehicle → at_ramp → in_truck | in_train → exported`. Pre liquid/gas: `on_ship → in_pipeline → in_storage → in_pipeline → at_ramp …`. Pre RoRo: autá sú zároveň `CargoUnit` aj dočasné `Vehicle` (`selfPropelled: true`) — `on_ship → in_vehicle(self) → in_storage(lot) → in_vehicle(self) → at_ramp → in_truck(car transporter) → exported`.
 `CargoLedger.move()` vyhodí chybu pri nepovolenom prechode. Každý pohyb emituje `CargoMoved { unitId, from, to, tick }`.
+- Tabuľka povolených prechodov je dáta (`CARGO_TRANSITIONS`, podľa druhu lokácie, nie kategórie nákladu — kompatibilitu kategórie strážia systémy); `CARGO_HOLDER_SPECS` hovorí, ktoré pole nesie držiteľa a slot. Ledger je **jediný zdroj polohy**: indexy podľa držiteľa udržiava sám, `move` je atomický (pri chybe nezmení nič a nič neemituje) a slot `on_apron`/`in_storage` je jedinečný na držiteľa (ADR-014).
+- `create(typeId, location)` smie len v `CARGO_SPAWN_KINDS` (F2: `on_ship`), pridelí id z `world.ids`, `quantity = unitsPerBatch` a `CargoMoved` neemituje — vznik ohlási zdroj (`ShipSpawned`). `CargoMoved.tick` = `clock.tick` v okamihu presunu (počas príkazov pred krokom 1 ešte predchádzajúci tick; ADR-016 bod 12).
+- `exported` je konečný stav: jednotka, ktorá doň prejde, sa z ledgera **odstráni** a ostane len v počítadle `exportedCount`, aby save nerástol s každým vyvezeným kontajnerom; kontrakty (F4/F5) budú export počítať z `CargoMoved → exported` alebo z vlastného počítadla (ADR-014 bod 7).
 
 ### 7.2 Žeriav — stavový automat
 ```
-idle → grabbing(cycleTicks/2) → swinging → placing(cycleTicks/2) → idle
-podmienky: loď dokovaná & má jednotky kompatibilnej kategórie & apron má voľný slot
-blocked: apron plný (→ utilization počíta 'blocked'), emit CraneBlocked(reason) max 1× za hodinu
+idle|blocked ─ štart: loď docked, náklad kategórie žeriavu, nezabraná jednotka, voľný nerezervovaný slot ─▶ reserve(slot), grabbing(g)
+idle|blocked ─ štart: to isté, ale apron bez voľného nerezervovaného slotu ──────────────────────────────▶ blocked (+ CraneBlocked ≤ 1×/h)
+idle|blocked ─ štart: bez práce ─────────────────────────────────────────────────────────────────────────▶ idle
+grabbing(g) ─ koniec: jednotka s najmenším id on_ship → in_crane ─▶ swinging (okamžitý) ─▶ placing(p)
+placing(p)  ─ koniec: in_crane → on_apron(slot) + apron.commit, CraneCycleDone ─▶ idle ─▶ v tom istom ticku nový štart
 ```
-`cycleTicks` prechádza cez `StatResolver.resolve('crane', craneDefId, 'cycleTicks')`, ktorý aplikuje tech modifikátory.
+- `c = round(StatResolver.resolve('module', craneDefId, 'cycleTicks'))` — cieľ je `module` (štatistika z typovaných `params`, §10 add → mul, ADR-014); `g = max(1, ⌊c/2⌋)`, `p = max(1, c − ⌊c/2⌋)` (`MIN_CRANE_PHASE_TICKS`). Tick vstupu do fázy je jej nultý tick a fáza končí v ticku, keď `phaseTicksLeft` klesne na 0, takže cyklus trvá presne `c` tickov (ADR-016 bod 7).
+- Prechody sú tabuľka `CRANE_TRANSITIONS` (`idle → grabbing | blocked`, `grabbing → swinging`, `swinging → placing`, `placing → idle`, `blocked → idle | grabbing`), krok podľa stavu tabuľka `CRANE_STEPS` (nie switch); žeriavy sa spracúvajú vzostupne podľa id. Stav je privátny s getterom `CraneModule.state` — mení ho len `transition()` (CraneSystem) a `restoreRuntimeState()` (save) (T02-14).
+- `CRANE_STATE_TRAITS` určuje pre každý stav: drží jednotku (`swinging`, `placing` — `heldUnitId` = zrkadlo `in_crane` v ledgeri), má rezervovaný slot (`grabbing`–`placing`), počítadlo utilizácie (§11: `busy` pre `grabbing`–`placing`, `idle`, `blocked`; tick sa pripočíta po kroku podľa výsledného stavu) a fázu: `idle`/`blocked` mimo fázy (0/0), `grabbing`/`placing` bežiaca fáza (`1 ≤ phaseTicksLeft ≤ phaseTicksTotal`), `swinging` okamžitý — tick v ňom nikdy nekončí, preto sa neukladá a obnova ho odmietne (T02-14).
+- **Rezervácia slotu** apronu vzniká pri štarte (`→ grabbing`), takže dva žeriavy na jednom berthe nemôžu prebookovať ten istý slot; „nezabraná jednotka" = jednotky `on_ship` − žeriavy v `grabbing` nad kotviskami lode (bez uloženého cieľa). Na konci `placing` sa pred presunom v ledgeri overí všetko, čo by `apron.commit` odmietol (`assertCommittable`), aby sa ledger a apron nerozišli (T02-14). Žeriav odkladá len na apron svojho berthu; loď na viacerých berthoch obsluhujú všetky žeriavy na nich (§5.4).
+- **blocked** = loď má kompatibilný náklad, ale apron nemá voľný nerezervovaný slot; žeriav nič nedrží ani nerezervuje (§7.8 bod 1). `CraneBlocked { craneId, berthId, reason: 'apron_full' }` sa emituje len pri prechode do `blocked` a najviac raz za hernú hodinu na žeriav (`lastBlockedHour ≠ clock.gameHour`, uložené v save); žeriav, ktorý v `blocked` zostáva, udalosť neopakuje — pripomienku rieši UI (ADR-016 bod 7).
 
 ### 7.3 Dispatcher a TransportJob
 ```ts
@@ -328,7 +360,10 @@ Algoritmus každý tick (O(n) nad malými zoznamami, bez alokácií v hot path):
 - A* na 4-susednosti nad bunkami `road === 'road'` + cieľový konektor. Heuristika Manhattan, cena bunky `1 + congestionPenalty(cell)` (§7.6). Implementácia s binárnou haldou a znovupoužiteľnými poľami (`Int32Array` open/closed), bez alokácií na volanie.
 - `PathCache: Map<key(fromCell,toCell), Cell[]>`, invalidácia pri `RoadChanged`. Vozidlá si držia index na ceste; pri invalidácii preplánujú z aktuálnej bunky.
 - Kamióny: A* od `RoadPortal` k `TruckGate.connector` (povinný waypoint), potom k `WaitingArea`, potom k `LoadingRamp`, späť cez `TruckGate` k portálu. Vlaky: A* po `rail` bunkách od `RailPortal` k `RailStation`.
-- Lode: **nie A***, pohybujú sa po `seaLane` polyline → anchorage → priama cesta k pozícii pri kotvisku (voda je otvorená). Loď rotuje podľa segmentu.
+- Lode: **nie A*** a **bez trigonometrie** (ADR-016 bod 1–4). FSM je tabuľka `SHIP_TRANSITIONS` (`inbound → waiting_anchorage | berthing`, `waiting_anchorage → berthing`, `berthing → docked`, `docked → undocking`, `undocking → outbound`, `outbound → despawned`), stav mení len `Ship.transition` a `ShipSystem` (krok 3) spracúva lode vzostupne podľa id tabuľkou krokov. Trasa stavu sa odvodí, neukladá sa (`shipRoute`): `inbound` = stredy buniek `seaLane`, `waiting_anchorage` = stred pridelenej bunky anchorage, `berthing` = priama úsečka k `dockPoint` (voda je otvorená), `undocking` = koniec `seaLane`, `outbound` = `seaLane` odzadu po `seaLane[0]`.
+- Pohyb `speedCellsPerTick` po úsečkách (dĺžka cez `Math.sqrt`, IEEE presná); zvyšok kroku pokračuje ďalším úsekom tej istej trasy, na konci trasy loď zastane presne v poslednom bode a prechod stavu ukončí pohyb v danom ticku. **Kurz je kardinálny** podľa dominantnej osi úseku (`|dx| ≥ |dy|` → 90/270, inak 180/0; nulový úsek kurz nemení) — `Math.sin/cos/atan2` sú v `src/sim` zakázané (nie sú bit-presné naprieč enginmi), plynulé natáčanie je vec renderu.
+- **Poloha pri kotvisku** (`dockPoint`): obdĺžnik `lengthCells` buniek pozdĺž pobrežia od prvej bunky hrany prvého obsadeného berthu × `widthCells` riadkov pásu `frontWaterBand`; stred = `c0 + a·(L − 1)/2 + o·(W + 1)/2` (násobky 0,5 — presné v double, nezaokrúhľujú sa; Root berth: feeder (43, 13)). Kurz pri kotvisku je rovnobežný s hranou, nábrežie po pravoboku (`DOCKED_HEADING`: n → 90, e → 180, s → 270, w → 0). Dokovaná loď stojí presne tam (`SHIP_STATE_TRAITS.moored`; overuje obnova save aj krok 12, T02-14).
+- Alokácia kotvísk (§5.4) sa skúša na konci `seaLane` a potom každý tick v `waiting_anchorage`, lode vzostupne podľa id (FIFO bez head-of-line blokovania). Neúspešná loď dostane prvú bunku `map.anchorage`, ktorú nemá iná loď; ak sú obsadené všetky, čaká na konci `seaLane`. `docked → undocking` nastane, keď na palube nie je žiadna jednotka `on_ship` (kotviská sa uvoľnia, `ShipUndocked`); na `seaLane[0]` loď prejde do `despawned`, odstráni sa zo sveta a emituje `ShipDeparted`. Lode sa môžu fyzicky prekrývať a trajektória sa neoveruje voči súši — zámerný „soft" model ako §7.6 (ADR-016).
 
 ### 7.5 Landside reťazec (kamióny)
 ```
@@ -362,14 +397,15 @@ Truck FSM: spawned → to_gate → gate_queue(processTicks, FIFO za bránu) → 
 
 ## 8. Pravidlá umiestňovania (`PlaceModuleCommand.validate`)
 Vracia `ValidationResult { ok: boolean; reasons: ValidationReason[]; cells: CellCoord[]; costCents: number }` — rovnaký tvar ako všetky príkazy; UI ho používa na farbu ghostu a `costCents` je cena, ktorú by `apply` strhol (záporná = príjem) (ADR-013).
-1. Všetky footprint bunky `inBounds`, terén ∈ `requiredTerrain`, `moduleId === null`, `road === 'none'`.
-2. Parcela vlastnená/prenajatá pre všetky bunky (ak `requiresParcelOwnership`).
-3. `berth`: všetky bunky dlhej hrany (po rotácii) susedia s vodou; vodné bunky pred kotviskom voľné od iných lodí/berthov.
-4. `crane`: footprint musí ležať celý v bunkách nejakého `berth` (`mustAttachTo`); berth môže mať max `params.maxCranes` (default 2 na 8 buniek).
-5. `ramp`, `gate`, `waiting_area`, `depot`, `storage`: aspoň jeden konektor typu `road` musí susediť s bunkou `road` **alebo** byť voľný (sklad postavený skôr než cesta je OK — dispatcher ho ignoruje, kým nie je pripojený; UI zobrazí „nepripojené").
-6. Tech: `techRequired` odomknutý. Peniaze: pri `costCents > 0` musí platiť `cash >= costCents` (inak `insufficient_funds`, ghost stále zelený s ikonou $); bezplatné akcie a refundácie (`costCents ≤ 0`) prejdú aj pri zápornej hotovosti (ADR-013).
-7. Rotácia: 0/90/180/270 — footprint a konektory sa transformujú `rotate(cell, rotation)`.
-8. `RemoveModuleCommand`: modul nesmie obsahovať náklad (`stored > 0`), nesmie mať dokovanú loď, ani prebiehajúce joby; vráti `economy.removalRefundRate` (0.5 = 50 %) ceny (ADR-013).
+Pravidlá majú **jediný opis** v `src/sim/world/module-rules.ts`: čisté funkcie `findPlacementViolations` / `findRemovalViolations` nad tabuľkami `PLACEMENT_CHECKS` / `REMOVAL_CHECKS`. Zdieľa ich príkaz (všetky porušenia naraz, bez duplicít, v kanonickom poradí `VALIDATION_REASONS`), `World.create` pre starter moduly a `World.addModule` / `removeModule` ako poistka (`ModuleError` s kódom prvého porušenia; pri umiestnení len štrukturálne pravidlá, takže obnova save neoveruje terén, parcelu ani vodu) (ADR-015). `PlaceModule`: `cells` = celý footprint po rotácii row-major (aj bunky mimo mapy — ghost), `costCents = def.costCents` aj pri odmietnutí; pri `unknown_def` / `invalid_rotation` sa pravidlá nevyhodnocujú (`cells = []`). `RemoveModule`: `cells` = footprint modulu, `costCents` = −refundácia.
+1. Všetky footprint bunky `inBounds` (bunky mimo mapy hlási len `out_of_bounds`), terén ∈ `requiredTerrain` (`terrain`), `moduleId === null` (`occupied`), `road === 'none'` (cesta vo footprinte je tiež `occupied`). **Žeriav** (`mustAttachTo: ['berth']`) stojí na bunkách berthu, preto sa preň `moduleId === null` číta ako „všetky bunky patria jednému berthu" (ADR-014 bod 1).
+2. Parcela vlastnená/prenajatá pre všetky bunky (ak `requiresParcelOwnership`) (`parcel_not_owned`, ADR-008).
+3. `berth` so stranou `waterSide` po rotácii (ADR-015 bod 3): `no_water_side` = niektorá bunka hrany pri vode nesusedí s vodou v mape; `water_blocked` = pre bunky hrany, ktoré s vodou susedia, **pás** `params.frontWaterCells` riadkov pred nimi (`BerthModule.frontWaterBand`) nie je celý v mape a vo vode, zasahuje do footprintu modulu, do pásu kotviska s inou `waterSide` (pásy kotvísk s rovnakou stranou ležia vedľa seba a nekonfliktujú) alebo do obdĺžnika lode v stave `berthing` / `docked` / `undocking` (ADR-016 bod 11).
+4. `crane`: footprint musí ležať celý na jednom `berth` (`no_berth`), mať jeho rotáciu (`rotation_mismatch`), neprekrývať iný žeriav berthu (`occupied`) a berth môže mať najviac `params.maxCranes` žeriavov (`max_cranes`, default 2 na 8 buniek) (ADR-014, ADR-015).
+5. `ramp`, `gate`, `waiting_area`, `depot`, `storage`: aspoň jeden konektor typu `road` musí susediť s bunkou `road` **alebo** byť voľný (sklad postavený skôr než cesta je OK — dispatcher ho ignoruje, kým nie je pripojený; UI zobrazí „nepripojené"). Vo F2 sa nevyhodnocuje — žiadny def ho nepoužíva (ADR-015 bod 8).
+6. Tech: `techRequired` odomknutý (vo F2 sa nevyhodnocuje). Peniaze: pri `costCents > 0` musí platiť `cash >= costCents` (inak `insufficient_funds`, ghost stále zelený s ikonou $); bezplatné akcie a refundácie (`costCents ≤ 0`) prejdú aj pri zápornej hotovosti (ADR-013).
+7. Rotácia: 0/90/180/270 (iná konečná hodnota = `invalid_rotation`) — footprint a konektory sa transformujú `rotateLocalCell` / `rotateSide` (`footprintOf`, `connectorsOf`); x, y príkazu = ľavý horný roh footprintu **po** rotácii.
+8. `RemoveModuleCommand` odmietne `unknown_module`, `has_cargo` (náklad v module, obsadený alebo rezervovaný slot apronu), `has_cranes` (berth so žeriavmi), `ship_docked` (berth, ktorý drží loď v `berthing` / `docked`, **aj žeriav stojaci na takom berthe** — loď bez žeriavu svojej kategórie by pri kotvisku ostala naveky s nákladom; T02-14, ADR-015 bod 4) a `busy` (žeriav mimo `idle` / `blocked`); prebiehajúce joby pribudnú vo F3. Refundácia = `refundCents(purchaseCostCents, economy.removalRefundRate)` = `floor(price × round(rate × 10 000) / 10 000)` počítaná celočíselne v **bázických bodoch** zo **zaplatenej** ceny, takže starter moduly (`purchaseCostCents 0`) nevrátia nič (ADR-013, ADR-015 bod 5); `MoneyChanged(module_sale)` len pri refundácii > 0. Rovnaký helper používa `RemoveRoad` s aktuálnou cenou vrstvy (ADR-012).
 
 ---
 
@@ -431,28 +467,58 @@ interface LedgerEntry { tick; amountCents; category; refId?: string }
 
 ## 12. Udalosti a príkazy
 
-### 12.1 `SimEvent` (výber)
-`TickAdvanced, HourClosed, DayClosed, MonthClosed, ContractOffered, ContractAccepted, ContractCompleted, ContractFailed, ShipSpawned, ShipDocked, ShipDeparted, CraneCycleDone, CraneBlocked, CargoMoved, JobCreated, JobAssigned, JobDone, VehicleStateChanged, TruckSpawned, TruckExited, TrainArrived, TrainDeparted, ModulePlaced, ModuleRemoved, RoadChanged, ParcelOwnershipChanged, MoneyChanged, PenaltyApplied, TechUnlocked, NoStorageAvailable, NoVehicleAvailable, GameOver`.
-Udalosti sú `readonly` DTO; `EventBus` ich zbiera do poľa za tick; prezentácia ich číta a nikdy nemení.
+### 12.1 `SimEvent`
+Implementované (F1 + F2, `src/sim/events/sim-event.ts`):
+
+| Udalosť | Payload | Kedy |
+|---|---|---|
+| `TickAdvanced` | `tick` | krok 1, každý tick |
+| `HourClosed` / `DayClosed` / `MonthClosed` | `tick` | krok 1 pri uzavretí hranice, v tomto poradí (ADR-013) |
+| `RoadChanged` | `cells` | `PlaceRoad` / `RemoveRoad` |
+| `MoneyChanged` | `cashCents, deltaCents, reason: LedgerCategory` | každá zmena hotovosti (`road_capex`, `road_sale`, `module_capex`, `module_sale`, …) |
+| `GameSpeedChanged` | `speed` | `SetGameSpeed` |
+| `CommandRejected` | `commandType, reasons` | príkaz z fronty neprešiel `validate` pri aplikácii, stav sa nezmenil (ADR-013) |
+| `CargoMoved` | `unitId, from, to, tick` | každý `CargoLedger.move` (§7.1) |
+| `ModulePlaced` | `moduleId, defId, x, y, rotation, cells` | `PlaceModule` (starter moduly udalosť nemajú) (ADR-015) |
+| `ModuleRemoved` | `moduleId, defId, cells` | `RemoveModule` (ADR-015) |
+| `ShipSpawned` | `shipId, classId, cargoTypeId, units` | `SpawnShipDebug` (neskôr kontrakty) (ADR-016) |
+| `ShipDocked` | `shipId, berthIds` | `berthing → docked` |
+| `ShipUndocked` | `shipId` | `docked → undocking`, kotviská sú voľné |
+| `ShipDeparted` | `shipId` | `outbound → despawned`, loď odstránená z `world.ships` |
+| `CraneCycleDone` | `craneId, unitId` | koniec `placing` — jednotka leží na aprone |
+| `CraneBlocked` | `craneId, berthId, reason: 'apron_full'` | prechod do `blocked`, najviac 1× za hernú hodinu na žeriav (§7.2) |
+
+Plánované (výber): `ContractOffered, ContractAccepted, ContractCompleted, ContractFailed, JobCreated, JobAssigned, JobDone, VehicleStateChanged, TruckSpawned, TruckExited, TrainArrived, TrainDeparted, ParcelOwnershipChanged, PenaltyApplied, TechUnlocked, NoStorageAvailable, NoVehicleAvailable, GameOver`.
+Udalosti sú `readonly` DTO; `EventBus` ich zbiera do poľa za tick v poradí vzniku (§6); prezentácia ich číta a nikdy nemení. Nový typ = nový člen únie `SimEvent` (+ test).
 
 ### 12.2 `Command`
-`PlaceModule, RemoveModule, PlaceRoad, RemoveRoad, PlaceRail, RemoveRail, BuyParcel, LeaseParcel, ReleaseParcel, AcceptContract, DeclineContract, BuyVehicle, SellVehicle, ResearchTech, SetGameSpeed, SetStoragePolicy`.
-Každý `Command` má `type`, payload, `validate(world)`, `apply(world)`; serializovateľný do JSON → základ **replay** (`data/scenarios/*.json` = zoznam `{ atTick, command }`).
+Implementované: `PlaceRoad`, `RemoveRoad`, `SetGameSpeed` (F1), `PlaceModule`, `RemoveModule`, `SpawnShipDebug` (F2). Plánované: `PlaceRail, RemoveRail, BuyParcel, LeaseParcel, ReleaseParcel, AcceptContract, DeclineContract, BuyVehicle, SellVehicle, ResearchTech, SetStoragePolicy`.
+Každý `Command` má `type`, payload, `validate(world): ValidationResult` (nemení svet, nespotrebuje `Rng` — UI ho volá pri každom pohybe ghostu), `apply(world)` a `toJSON(): SerializedCommand` (`{ type, …payload }`, len JSON hodnoty). `commandFromJSON(json)` cez `commandRegistry` (tabuľka `BUILTIN_COMMANDS`, nie switch) vytvorí ekvivalentný príkaz — `commandFromJSON(cmd.toJSON())` ≡ `cmd`; neplatný tvar je `CommandError`. Serializovateľnosť je základ **replay** (`data/scenarios/*.json` = `{ id, seed, map, commands: [{ atTick, command }] }`).
+`SpawnShipDebug { shipClassId, cargoTypeId, units }` je ladiaca loď — kým nie sú kontrakty (F4/F5), jediný zdroj lodí a nákladu. Je registrovaný **vždy** (scenáre, replay, `simrun`) a stojí 0, tlačidlo v UI je **len v DEV** (`import.meta.env.DEV`). `validate` vráti naraz `unknown_ship_class`, `unknown_cargo`, `cargo_incompatible` (kategória ∉ `cargoCategories`) a `invalid_units` (celé `1 … capacityUnits`); `apply` vytvorí loď na `seaLane[0]` (id pred id jednotiek), `units` jednotiek `on_ship` a `ShipSpawned` (ADR-016 bod 10).
 
 ---
 
 ## 13. Snapshot pre prezentáciu
-`SimBridge.snapshot(): WorldSnapshot` — **plytký read-only view** (žiadne kopírovanie veľkých polí každý frame):
-- `clock, cash, xp, reputation`, `modules: Iterable<ModuleView>`, `entities` s `prevPos/currPos` pre interpoláciu, `contracts`, `metrics`, `grid` (referencia, immutable rozhranie).
-- Render si udržuje `Map<EntityId, PixiView>`; vytvára/ničí podľa `ShipSpawned/ShipDeparted`, `ModulePlaced/Removed` atď., a každý frame volá `view.sync(entity, alpha)`.
+`SimBridge.snapshot(): WorldSnapshot` — **plytký read-only view** (žiadne kopírovanie veľkých polí každý frame). Snapshot **v2** (F2, karta T02-09; ADR-016 Dôsledky):
+- F1 polia: `tick`, `speed`, `cashCents`, `day`, `hour`, `minute` (z kalendárnych getterov §3), `grid` a `parcels` (živé referencie, immutable rozhranie);
+- `speeds` = `time.speeds` — HUD ich číta zo snapshotu, nie zo sveta;
+- `revision` — počítadlo štrukturálnych zmien: rastie pri každej udalosti, ktorá mení obsah sveta mimo ticku a hotovosti (`ModulePlaced` / `ModuleRemoved`, `RoadChanged`, `Ship*`, `CargoMoved`, `CraneBlocked`, `CraneCycleDone`), takže panely lacno zistia zmenu `grid` alebo modulov;
+- `modules: ModuleVM[]` (moduly okrem žeriavov v poradí umiestnenia; berth s `apron { capacity, units: [{ slot, unitId, typeId }] }`), `cranes: CraneVM[]` (`berthId`, `state`, `progress` = `CraneModule.phaseProgress`, `holding`), `ships: ShipVM[]` (vzostupne podľa id; `x, y, prevX, prevY, heading, lengthCells, widthCells, unitsOnBoard` = `cargo.countAt('on_ship', id)`, `capacityUnits`, `cargoCategory`, `state`) — typy z `src/render/view-models.ts`;
+- `prevX` / `prevY` = poloha lode pred posledným tickom — vedie ju **bridge** (zapamätá si ju pred každým tickom), sim predchádzajúcu polohu nevedie (ADR-016). Render interpoluje `lerp(prev, curr, alpha)` s `alpha` z `GameLoop` (§3).
+- Render si udržuje `Map<EntityId, View>`; každý frame `renderer.syncEntities(entitiesVM, alpha)` vytvára a ničí view podľa `id` a pre nezmenené entity nič nealokuje; ghost modulu `setModuleGhost(ghost | null)` (§15.1).
+- `World.create(…, { checkInvariants: import.meta.env.DEV })` — krok 12 (§6) beží v DEV, v produkcii nie.
 - UI (React) číta cez `useSimSnapshot(selector, throttleMs = 100)` — panely sa neprekresľujú každý frame.
 
 ---
 
 ## 14. Save/Load
-- `SaveGame { version: 1, createdAt, seed, tick, world: WorldState }` — `WorldState` je čistý JSON (bez tried): `World.serialize()` / `World.deserialize(defs, map, state)`; v1 = `{ version: 1, mapId, seed, rng, clock, ids, cashCents, roads, parcels }`, terén ani geometria a ceny parciel sa neukladajú (dodá ich `LoadedMap` s `id === mapId`) a `serialize()` s neprázdnou frontou príkazov vyhodí chybu (fronta nie je súčasťou v1) (ADR-013).
-- Uložiť do `localStorage` (autosave každý herný deň) + export/import ako `.json` súbor. Migrácie `migrate(save, fromVersion)`.
-- Test: `World.deserialize(defs, map, w.serialize())` po 1000 tickoch ≡ `w` po 1000 tickoch (hash `serialize()`; determinizmus + roundtrip) (ADR-013).
+- `SaveGame { version: 1, createdAt, seed, tick, world: WorldState }` — `WorldState` je čistý JSON (bez tried): `World.serialize()` / `World.deserialize(defs, map, state, options?)`. Terén ani geometria a ceny parciel sa neukladajú (dodá ich `LoadedMap` s `id === mapId`) a `serialize()` s neprázdnou frontou príkazov vyhodí chybu (fronta nie je súčasťou save) (ADR-013).
+- **`WorldState` v2** (`WORLD_STATE_VERSION`, ADR-014, ADR-016) = v1 `{ version, mapId, seed, rng, clock, ids, cashCents, roads, parcels }` (ADR-013) + `traffic` (riedke `[index, hodnota > 0]`), `modules` (`{ id, defId, x, y, rotation, purchaseCostCents, runtime }` v poradí umiestnenia; `runtime` = stav triedy: berth `{}`, žeriav `{ state, phaseTicksTotal, phaseTicksLeft, reservedSlot, busyTicks, idleTicks, blockedTicks, lastBlockedHour }`), `cargo` (`CargoLedgerState { createdCount, exportedCount, units }` — len živé jednotky v kanonickom poradí) a `ships` (`{ id, classId, cargoTypeId, state, x, y, heading, berthIds, anchorageIndex, waypointIndex }` vzostupne podľa id). `serialize()` vždy vracia v2.
+- Neukladá sa nič odvoditeľné: `cell.moduleId` (z footprintov), obsadenie apronov a `heldUnitId` žeriavu (z ledgera), rezervácie apronov (z `reservedSlot` žeriavov), skupiny kotvísk (prepočet), `dockedShipId` (z `berthIds` lodí) a trasa lode (zo stavu a mapy) — jeden zdroj pravdy, nesúladný save sa nedá ani zapísať (pravidlo 2).
+- **Migrácia:** `migrateWorldState` prevedie staršiu verziu po krokoch z tabuľky `verzia → migrácia` (nie switch); každý krok zapíše svoju pomenovanú cieľovú verziu (`WORLD_STATE_V2`), nie aktuálnu. v1 → v2 prevezme polia v1 a doplní prázdne `traffic`, `modules`, `cargo`, `ships`; starter moduly mapy sa do starého save **nedoplnia** (ADR-014 bod 6).
+- **Obnova** je fail-fast: `parseWorldState` overí tvar a hodnoty, `restoreEntities` prehrá moduly cez `ModuleRegistry` + `addModule` (a `restoreRuntimeState`), lode cez `addShip` (kotviská, anchorage, index trasy, dokovaná loď presne v `dockPoint` s `DOCKED_HEADING`), rezervácie a náklad a skončí `findWorldViolation` (§6 krok 12). Každá chyba je `WorldStateError` s JSON pointerom, takže nekonzistentný save (napr. žeriav s fázou, ktorá nesedí so stavom, uložený okamžitý `swinging`, žeriav v `grabbing` nad loďou inej kategórie, loď s nákladom na kotvisku bez žeriavu svojej kategórie) zlyhá už pri `deserialize`, nie až v `tick()` (ADR-016 bod 9, T02-14).
+- Uložiť do `localStorage` (autosave každý herný deň) + export/import ako `.json` súbor; pred uložením vyprázdniť frontu (`applyPending()`).
+- Test: `World.deserialize(defs, map, w.serialize())` po 1000 tickoch ≡ `w` po 1000 tickoch (hash `serialize()`; determinizmus + roundtrip) (ADR-013); roundtrip uprostred vykládky → identický ďalší priebeh aj udalosti (ADR-016).
 
 ---
 
@@ -506,11 +572,23 @@ Camera: pan (drag/WASD), zoom 0.25–2.0 (wheel, pivot pod kurzorom), clamp na m
 
 ---
 
-## 18. Otvorené rozhodnutia (kandidáti na ADR)
-- **ADR-001** Stack TS + PixiJS + React (rozhodnuté v CLAUDE.md; zapísať dôvody).
+## 18. Rozhodnutia (ADR) a otvorené otázky
+Prijaté ADR — plné znenie (kontext, rozhodnutie, alternatívy, dôsledky) je v [`docs/DECISIONS.md`](DECISIONS.md):
+- **ADR-001** Stack TypeScript + PixiJS + React (§1, §2, §15).
 - **ADR-002** Tick = 10 herných sekúnd, 10 tickov/s (§3).
 - **ADR-003** Sypké/tekuté komodity diskretizované do `CargoUnit` batchov (§4.1).
 - **ADR-004** Vnútorný pohyb v moduloch abstrahovaný na `internalTicks` (§7.3).
 - **ADR-005** Soft kongescia namiesto kolízií (§7.6).
 - **ADR-006** Cesty/koľaje ako vrstva bunky, nie moduly (§5.1).
-- Otvorené: sim v Web Workeri (áno, ak tick > 8 ms pri 8×); export kontrakty (land → ship) vo fáze 12; pôžičky; level crossing; kontajnerové stacky ako 3D vizualizácia zaplnenosti vs. 5 stavov spritu.
+- **ADR-007** Trojvrstvová hranica `src/sim`: kompilátor, ESLint allowlist a zákazy obchvatov, len `.ts` (§2).
+- **ADR-008** Cesty/koľaje aj na verejných bunkách, moduly len na vlastnej/prenajatej parcele (§5.2, §8).
+- **ADR-009** Konfiguračné vs katalógové defy (§4).
+- **ADR-010** Domov konštánt bez defu — `infrastructure.json` a `logistics.json` (§4.6).
+- **ADR-011** Pobyt vozidla pri konektore = `internalTicks` + load/unload za jednotku (§7.3).
+- **ADR-012** Refundácia pri odstránení cesty/koľaje, kategória `road_sale` (§8, §9.2).
+- **ADR-013** Rozhrania `World` a príkazov z F1: `create`/`deserialize`, `applyPending`, `ValidationResult`, poradie udalostí, `WorldState` v1 (§3, §4.6, §6, §8, §14).
+- **ADR-014** Moduly, kotviská a `WorldState` v2: žeriav na berthe, efektívna hĺbka, `BerthGroup`, `ModuleRegistry`, `ApronBuffer`, migrácia, `exported` mimo ledgera (§5, §5.4, §7.1, §14).
+- **ADR-015** `PlaceModule`/`RemoveModule`, zdieľané pravidlá umiestnenia, starter moduly, refundácia v bázických bodoch (§5.3, §8, §12).
+- **ADR-016** Lode, alokácia kotvísk, cyklus žeriavu a krok 12 (§5.4, §6, §7.2, §7.4, §12, §14).
+
+Otvorené (kandidáti na ADR, detail v `docs/BACKLOG.md`): sim vo Web Workeri (áno, ak tick > 8 ms pri 8×); export kontrakty (land → ship) vo fáze 12; pôžičky; level crossing; kontajnerové stacky ako 3D vizualizácia zaplnenosti vs. 5 stavov spritu.

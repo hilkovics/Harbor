@@ -42,8 +42,12 @@ export interface MapStarterDef {
   readonly roads: readonly CellCoord[];
 }
 
-/** Mapa podľa §4.7 (bez `schemaVersion`); `Cell` z §4.7 = `CellCoord`. */
+/** Jediná podporovaná verzia formátu mapy (`schemaVersion` v `data/maps/*.json`, `map.schema.json`). */
+export const SUPPORTED_MAP_SCHEMA_VERSION = 1;
+
+/** Mapa podľa §4.7; `Cell` z §4.7 = `CellCoord`. */
 export interface MapDef {
+  readonly schemaVersion: typeof SUPPORTED_MAP_SCHEMA_VERSION;
   readonly id: string;
   readonly width: number;
   readonly height: number;
@@ -68,6 +72,7 @@ const ID_PATTERN = /^[a-z][a-z0-9_]*$/;
 const DEPTH_ZONE_CLASSES: readonly DepthZoneClass[] = [1, 2, 3];
 
 const MAP_KEYS = [
+  'schemaVersion',
   'id',
   'width',
   'height',
@@ -128,6 +133,7 @@ class MapDefParser {
     const root = this.object(raw, '', MAP_KEYS);
     // Poradie vlastností = poradie kontrol = poradie v schéme (prvá chyba vyhráva).
     return Object.freeze({
+      schemaVersion: this.schemaVersion(root['schemaVersion'], '/schemaVersion'),
       id: this.id(root['id'], '/id'),
       width: this.integer(root['width'], '/width', MIN_SIZE),
       height: this.integer(root['height'], '/height', MIN_SIZE),
@@ -170,6 +176,16 @@ class MapDefParser {
       throw this.error(path, `pole musí mať aspoň ${String(minItems)} položiek, má ${String(value.length)}`);
     }
     return Object.freeze(value.map((entry: unknown, index) => item(entry, `${path}${pointerSegment(index)}`)));
+  }
+
+  private schemaVersion(value: unknown, path: string): typeof SUPPORTED_MAP_SCHEMA_VERSION {
+    if (value !== SUPPORTED_MAP_SCHEMA_VERSION) {
+      throw this.error(
+        path,
+        `nepodporovaná verzia schémy mapy, očakávaná ${String(SUPPORTED_MAP_SCHEMA_VERSION)}, dostal ${describeValue(value)}`,
+      );
+    }
+    return SUPPORTED_MAP_SCHEMA_VERSION;
   }
 
   private integer(value: unknown, path: string, min: number): number {

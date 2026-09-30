@@ -1,0 +1,16 @@
+{
+  "id": "f2_unload",
+  "seed": 2002,
+  "map": "data/maps/harbor_01.json",
+  "commands": [
+    {
+      "atTick": 0,
+      "command": {
+        "type": "SpawnShipDebug",
+        "shipClassId": "feeder",
+        "cargoTypeId": "container_teu",
+        "units": 4
+      }
+    }
+  ]
+}

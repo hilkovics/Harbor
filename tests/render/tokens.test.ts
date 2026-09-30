@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  loadEntityPalette,
   loadRenderPalette,
   parseCssColor,
   parseCssPx,
@@ -94,5 +95,25 @@ describe('loadRenderPalette', () => {
     expect(palette.parcel.forSale.color).toBe(0xf2b233);
     expect(palette.parcel.owned.color).toBe(0x35c27a);
     expect(palette.parcel.leased.color).toBe(0x3aa0ff);
+  });
+});
+
+describe('loadEntityPalette', () => {
+  it('tokeny fallbacku modulov, žeriavov, lodí a nákladu existujú v design/tokens.css', () => {
+    const palette = loadEntityPalette(tokenResolverFromCss(TOKENS_CSS));
+    expect(palette.module.base.color).toBe(0x9da3ac);
+    expect(palette.module.outline.color).toBe(0x5c626b);
+    expect(palette.crane.frame.color).toBe(0xe3b23c);
+    expect(palette.crane.boom.color).toBe(0xc88b1f);
+    expect(palette.ship.hull.color).toBe(0x2c3e50);
+    expect(palette.ship.deck.color).toBe(0x8e9aa7);
+    expect(palette.cargo.base.color).toBe(0xf28c28);
+    expect(palette.cargo.dark.color).toBe(0xc7680c);
+    expect(palette.danger.color).toBe(0xe5484d);
+    expect(palette.connector.color).toBe(0x3aa0ff);
+  });
+
+  it('chýbajúci token → chyba s jeho menom', () => {
+    expect(() => loadEntityPalette(() => '')).toThrow('--module-base');
   });
 });

@@ -2,14 +2,13 @@
 // (terén, parcela, cesta), nie natvrdo — okrem bunky (0, 11), ktorú menuje karta T01-04.
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
-import timeJson from '@data/defs/time.json';
 import { DefRegistry } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
 import type { CellCoord, Cell } from '@sim/grid';
 import { World } from '@sim/world';
-import { DEFS, MAP, SEED, findCell, hashState } from '../world/world-fixtures';
+import { BARE_MAP, DEFS, MAP, MAP_GRID, RAW_DEFS, SEED, findCell, hashState } from '../world/world-fixtures';
 
-export { DEFS, MAP, SEED, findCell, hashState };
+export { BARE_MAP, DEFS, MAP, SEED, findCell, hashState };
 
 export const ROAD_COST = DEFS.infrastructure.road.costPerCellCents;
 export const REFUND_RATE = DEFS.economy.removalRefundRate;
@@ -19,10 +18,15 @@ export function newWorld(defs: DefRegistry = DEFS): World {
   return World.create(defs, MAP, SEED);
 }
 
+/** Svet na harbor_01 bez Root modulu (T02-04) — príkazy modulov stavajú na (40, 14) samy. */
+export function newBareWorld(defs: DefRegistry = DEFS): World {
+  return World.create(defs, BARE_MAP, SEED);
+}
+
 /** Defy s upravenou cenou cesty a/alebo mierou refundácie (ostatné hodnoty z data/defs). */
 export function defsWith(options: { readonly roadCostPerCellCents?: number; readonly removalRefundRate?: number }): DefRegistry {
   return DefRegistry.fromRaw({
-    time: timeJson,
+    ...RAW_DEFS,
     economy: { ...economyJson, removalRefundRate: options.removalRefundRate ?? economyJson.removalRefundRate },
     infrastructure: {
       ...infrastructureJson,
@@ -31,7 +35,7 @@ export function defsWith(options: { readonly roadCostPerCellCents?: number; read
   });
 }
 
-const cellWhere = (predicate: (cell: Cell) => boolean): CellCoord => findCell(MAP.grid, (cell) => predicate(cell));
+const cellWhere = (predicate: (cell: Cell) => boolean): CellCoord => findCell(MAP_GRID, (cell) => predicate(cell));
 
 /** Parcela na predaj (ownership `none`) — prvá v poradí mapy. */
 export const FOR_SALE_PARCEL_ID = (() => {

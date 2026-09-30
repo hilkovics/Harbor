@@ -3,7 +3,8 @@
  *
  * Tok dát:
  *   vstup → InputController → Command → SimBridge.dispatch → World (applyPending v GameLoop)
- *   World → udalosti → SimBridge.onEvents → WorldRenderer (RoadChanged) ; snapshot → useSimSnapshot → HUD
+ *   World → udalosti → SimBridge.onEvents → WorldRenderer (RoadChanged) ; snapshot → useSimSnapshot → HUD, BuildBar
+ *   World → SimBridge.entities() (EntitiesVM) → WorldRenderer.syncEntities(vm, alpha) každý frame (moduly, žeriavy, lode)
  *
  * Herný stav (World, GameLoop, Pixi) žije mimo Reactu — React je len vrstva nad mapou, takže StrictMode ani
  * opätovné vykreslenia hru nezdvojujú.
@@ -11,14 +12,15 @@
 import { StrictMode, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { WorldRenderer, starterParcelRect } from '@render/world-renderer';
-import { BuildLayer } from '@render/build-layer';
 import type { World } from '@sim/world';
 import { App } from './app';
+import { BuildSelection } from './build-selection';
 import { createAppWorld, startViewCenter } from './config';
 import { installDevHook } from './dev-hook';
 import { attachDomInput } from './dom-input';
 import { GameLoop, startRafLoop } from './game-loop';
 import { InputController } from './input-controller';
+import { ModuleSelection, bindSelectionRing } from './module-selection';
 import { SimBridge } from './sim-bridge';
 
 export interface AppHandle {
@@ -27,6 +29,10 @@ export interface AppHandle {
   readonly loop: GameLoop;
   readonly renderer: WorldRenderer;
   readonly input: InputController;
+  /** Výber v BuildBar (`selectedDefId`); `InputController` ho odoberá cez `subscribe` (build mód modulov). */
+  readonly selection: BuildSelection;
+  /** Výber modulu na mape (id) pre inšpektor a obrys `selection_ring`. */
+  readonly moduleSelection: ModuleSelection;
   /** Zastaví slučku, odpojí vstup, zruší React strom a Pixi a odstráni DOM aplikácie. */
   destroy(): void;
 }
@@ -70,7 +76,6 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
   root.replaceChildren(shell);
 
   let renderer: WorldRenderer;
-  let buildLayer: BuildLayer;
   try {
     // Renderer kreslí ŽIVÚ mriežku sveta (vrátane postavených ciest) a živé parcely, nie šablónu mapy `world.map`.
     renderer = await WorldRenderer.create({
@@ -79,17 +84,10 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
       grid: world.grid,
       parcels: [...world.parcels.values()], // živé parcely: obrysy podľa aktuálneho `ownership`
     });
-    try {
-      buildLayer = await BuildLayer.create();
-    } catch (error) {
-      renderer.destroy();
-      throw error;
-    }
   } catch (error) {
     showFatal(shell, error);
     throw error;
   }
-  renderer.world.addChild(buildLayer.view);
 
   // Úvodný pohľad: stred starter parcely, ale zvislo posunutý tak, aby bolo vidno pobrežie a more nad ním (nie len HUD).
   const { camera } = renderer;
@@ -97,10 +95,16 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
   const startCenter = startViewCenter(world.grid, starterParcelRect(world.map), visibleRows);
   camera.centerOn(startCenter.x, startCenter.y);
 
+  // Ghost stavby kreslí `renderer.build` (jediná `BuildLayer`, nad žeriavmi); cesty aj moduly, ňou aj obrys výberu.
+  const selection = new BuildSelection();
+  const moduleSelection = new ModuleSelection();
   const input = new InputController({
     bridge,
     camera: renderer.camera,
-    ghost: buildLayer,
+    ghost: renderer.build,
+    moduleGhost: renderer.build,
+    buildSelection: selection,
+    moduleSelection,
     onStateChange: (state) => {
       mapHost.dataset.inputState = state;
     },
@@ -108,13 +112,17 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
   mapHost.dataset.inputState = input.state;
   const detachInput = attachDomInput(input, { host: mapHost, window, releaseFocus: releaseDocumentFocus });
 
+  const stopSelectionRing = bindSelectionRing(moduleSelection, bridge, renderer.build);
   const stopRenderEvents = bridge.onEvents((events) => {
     for (const event of events) {
       if (event.type === 'RoadChanged') renderer.updateRoads(event.cells);
     }
   });
-  const stopLoop = startRafLoop(loop, (_alpha, _events, dtMs) => {
+  // Starter moduly (Root berth + žeriav) nemajú udalosť `ModulePlaced` — prvý stav sa číta priamo zo sveta.
+  renderer.syncEntities(bridge.entities(), 0);
+  const stopLoop = startRafLoop(loop, (alpha, _events, dtMs) => {
     input.update(dtMs);
+    renderer.syncEntities(bridge.entities(), alpha);
   });
 
   installDevHook(bridge, {
@@ -123,10 +131,24 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
       const rect = renderer.app.canvas.getBoundingClientRect();
       return { x: rect.left + center.x, y: rect.top + center.y };
     },
+    rendered: () => ({
+      modules: renderer.modules.moduleCount,
+      cranes: renderer.cranes.craneCount,
+      ships: renderer.ships.shipCount,
+      ghostCells: renderer.build.shownCount,
+      ghostConnectors: renderer.build.markerCount,
+      selectionRing: renderer.build.selectionShown,
+    }),
+    moduleGhost: () => input.moduleGhost(),
+    centerOn: (cellX, cellY, zoom) => {
+      const { camera: view } = renderer;
+      if (zoom !== undefined) view.zoomAt(zoom / view.zoom, view.viewportWidth / 2, view.viewportHeight / 2);
+      view.centerOn(cellX, cellY);
+    },
   });
 
   const reactRoot = createRoot(uiHost);
-  reactRoot.render(createElement(StrictMode, null, createElement(App, { bridge, feedback: input })));
+  reactRoot.render(createElement(StrictMode, null, createElement(App, { bridge, feedback: input, selection, moduleSelection })));
 
   let destroyed = false;
   return {
@@ -135,15 +157,17 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
     loop,
     renderer,
     input,
+    selection,
+    moduleSelection,
     destroy() {
       if (destroyed) return;
       destroyed = true;
       stopLoop();
       stopRenderEvents();
+      stopSelectionRing();
       detachInput();
       input.dispose();
       reactRoot.unmount();
-      buildLayer.destroy();
       renderer.destroy();
       shell.remove();
       if (window.__sim?.bridge === bridge) delete window.__sim;

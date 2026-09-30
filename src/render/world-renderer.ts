@@ -4,27 +4,40 @@
  * Vstup je `LoadedMap` (a živá mriežka sveta), nie `World` — renderer sim iba číta. Zmeny sveta sa prenášajú
  * verejnými metódami (`updateRoads` z udalosti `RoadChanged`); napojenie na SimBridge robí bootstrap (T01-11).
  *
- * Vrstvy (zdola): terén → cesty → obrysy parciel → portály. Ďalšie (moduly, entity, ghost) pridávajú neskoršie fázy
- * do `world`. Sprity terénu a ciest sa načítajú z `assets/manifest.json` (`SpriteAtlas`); bez nich (`textures: null`)
- * vrstvy kreslia dočasné `Graphics` z tokenov.
+ * Vrstvy (zdola, ARCHITECTURE §15.1): terén → cesty → obrysy parciel → portály → moduly → lode → žeriavy → ghost
+ * stavby (`BuildLayer`). Entity (moduly, lode, žeriavy) sa synchronizujú z view-modelov cez `syncEntities(vm, alpha)`,
+ * ghost modulu cez `setModuleGhost`. Sprity sa načítajú z `assets/manifest.json` (`SpriteAtlas`); bez nich
+ * (`textures: null`) vrstvy kreslia dočasné `Graphics` z tokenov.
  * Kamera je čistá matematika (`camera.ts`); tu sa jej `transform()` prenáša na `world`, keď sa pohľad zmení.
  */
 import { Application, Container } from 'pixi.js';
 import type { CellCoord, Grid, LoadedMap, Parcel, Rect } from '@sim/grid';
+import { BuildLayer, loadGhostPalette } from './build-layer';
 import { Camera } from './camera';
+import { CraneLayer } from './crane-layer';
+import { EntityLayer } from './entity-layer';
+import { ModuleLayer } from './module-layer';
 import { ParcelLayer } from './parcel-layer';
 import { PortalLayer } from './portal-layer';
 import { RoadLayer } from './road-layer';
 import { SpriteAtlas, type SpriteTextures } from './sprite-atlas';
 import { TerrainLayer } from './terrain-layer';
-import { documentTokenResolver, loadRenderPalette, type RenderPalette, type TokenResolver } from './tokens';
+import {
+  documentTokenResolver,
+  loadEntityPalette,
+  loadRenderPalette,
+  type EntityPalette,
+  type RenderPalette,
+  type TokenResolver,
+} from './tokens';
+import type { EntitiesVM, ModuleGhostVM } from './view-models';
 
 export interface WorldRendererOptions {
   /** Prvok, do ktorého sa vloží canvas; renderer sa prispôsobí jeho veľkosti. */
   readonly host: HTMLElement;
   /** Načítaná mapa: úvodný pohľad sa centruje na starter parcelu. */
   readonly map: LoadedMap;
-  /** Živá mriežka sveta (`World.grid`) — z nej sa kreslia cesty; predvolene `map.grid` (šablóna). */
+  /** Živá mriežka sveta (`World.grid`) — z nej sa kreslia cesty; predvolene nová `map.createGrid()` (počiatočný stav mapy). */
   readonly grid?: Grid;
   /**
    * Živé parcely sveta (`[...World.parcels.values()]`) — z nich sa kreslia obrysy podľa `ownership`;
@@ -33,7 +46,8 @@ export interface WorldRendererOptions {
   readonly parcels?: readonly Readonly<Parcel>[];
   /**
    * Sprity terénu a ciest: `undefined` = načíta sa `SpriteAtlas` z manifestu (chyba načítania je chyba spustenia),
-   * `null` = bez spritov, vrstvy kreslia `Graphics` z tokenov, alebo hotové textúry (testy).
+   * `null` = bez spritov, vrstvy kreslia `Graphics` z tokenov, alebo hotové textúry (testy). Sprity entít (moduly,
+   * lode, žeriavy, náklad) sa berú z atlasu len pri `undefined`; inak sa kreslia `Graphics` z tokenov.
    */
   readonly textures?: SpriteTextures | null;
   /** Čítanie CSS tokenov; predvolene `getComputedStyle(document.documentElement)`. */
@@ -46,7 +60,7 @@ export interface WorldRendererOptions {
  */
 export function starterParcelRect(map: LoadedMap): Rect {
   const owned = map.parcels.find((parcel) => parcel.ownership === 'owned');
-  return owned ? owned.rect : { x: 0, y: 0, w: map.grid.width, h: map.grid.height };
+  return owned ? owned.rect : { x: 0, y: 0, w: map.width, h: map.height };
 }
 
 export class WorldRenderer {
@@ -59,6 +73,12 @@ export class WorldRenderer {
   readonly roads: RoadLayer;
   readonly parcels: ParcelLayer;
   readonly portals: PortalLayer;
+  readonly modules: ModuleLayer;
+  readonly ships: EntityLayer;
+  readonly cranes: CraneLayer;
+  /** Ghost stavby: cesty (`setGhost`, `GhostView`) aj modulu (`setModuleGhost`); je navrchu nad žeriavmi. */
+  readonly build: BuildLayer;
+  readonly entityPalette: EntityPalette;
   private syncedVersion = -1;
   private destroyed = false;
 
@@ -69,8 +89,10 @@ export class WorldRenderer {
     options: WorldRendererOptions,
     private readonly atlas: SpriteAtlas | null,
     textures: SpriteTextures | null,
+    entityPalette: EntityPalette,
+    build: BuildLayer,
   ) {
-    const grid = options.grid ?? options.map.grid;
+    const grid = options.grid ?? options.map.createGrid();
     this.app = app;
     this.palette = palette;
     this.camera = new Camera({
@@ -85,7 +107,22 @@ export class WorldRenderer {
     this.roads = new RoadLayer(grid, palette, textures);
     this.parcels = new ParcelLayer(options.parcels ?? options.map.parcels, palette, textures);
     this.portals = new PortalLayer(options.map, grid.width, grid.height, palette, textures);
-    this.world.addChild(this.terrain.view, this.roads.view, this.parcels.view, this.portals.view);
+    this.entityPalette = entityPalette;
+    const entityDeps = { cellPx: palette.cellPx, palette: entityPalette, textures: atlas };
+    this.modules = new ModuleLayer(entityDeps);
+    this.ships = new EntityLayer(entityDeps);
+    this.cranes = new CraneLayer(entityDeps);
+    this.build = build;
+    this.world.addChild(
+      this.terrain.view,
+      this.roads.view,
+      this.parcels.view,
+      this.portals.view,
+      this.modules.view,
+      this.ships.view,
+      this.cranes.view,
+      this.build.view,
+    );
     app.stage.addChild(this.world);
     this.syncCamera();
     app.ticker.add(this.onTick, this);
@@ -93,7 +130,9 @@ export class WorldRenderer {
 
   /** Vytvorí Pixi aplikáciu v `host`, načíta tokeny a sprity a nakreslí terén, cesty, obrysy parciel a portály. */
   static async create(options: WorldRendererOptions): Promise<WorldRenderer> {
-    const palette = loadRenderPalette(options.resolveToken ?? documentTokenResolver);
+    const resolveToken = options.resolveToken ?? documentTokenResolver;
+    const palette = loadRenderPalette(resolveToken);
+    const entityPalette = loadEntityPalette(resolveToken);
     const app = new Application();
     await app.init({
       resizeTo: options.host,
@@ -104,19 +143,45 @@ export class WorldRenderer {
     });
     let atlas: SpriteAtlas | null = null;
     let textures: SpriteTextures | null;
-    if (options.textures === undefined) {
-      try {
+    let build: BuildLayer;
+    try {
+      if (options.textures === undefined) {
         atlas = await SpriteAtlas.load({ deviceScale: window.devicePixelRatio });
-      } catch (error) {
-        app.destroy({ removeView: true }, { children: true });
-        throw error;
+        textures = atlas;
+      } else {
+        textures = options.textures;
       }
-      textures = atlas;
-    } else {
-      textures = options.textures;
+      // Bez spritov (`textures: null`, testy) sa ghost kreslí bez šrafy a s `Graphics` značkami konektorov.
+      build =
+        textures === null
+          ? new BuildLayer({
+              cellPx: palette.cellPx,
+              palette: loadGhostPalette(resolveToken),
+              hatch: null,
+            })
+          : await BuildLayer.create({ resolveToken });
+    } catch (error) {
+      app.destroy({ removeView: true }, { children: true });
+      throw error;
     }
     options.host.appendChild(app.canvas);
-    return new WorldRenderer(app, palette, options, atlas, textures);
+    return new WorldRenderer(app, palette, options, atlas, textures, entityPalette, build);
+  }
+
+  /**
+   * Zosúladí moduly, lode a žeriavy s view-modelmi (volá sa každý frame): views vznikajú / zanikajú podľa `id`,
+   * nezmenené entity sa nealokujú. `alpha` (0…1) je podiel medzi predchádzajúcim a aktuálnym tickom simu
+   * (interpolácia polohy lodí).
+   */
+  syncEntities(vm: EntitiesVM, alpha: number): void {
+    this.modules.sync(vm.modules);
+    this.ships.sync(vm.ships, alpha);
+    this.cranes.sync(vm.cranes);
+  }
+
+  /** Zobrazí ghost modulu (footprint + konektory), alebo ho skryje (`null`). */
+  setModuleGhost(ghost: ModuleGhostVM | null): void {
+    this.build.setModuleGhost(ghost);
   }
 
   /** Prekreslí cesty po `RoadChanged`: zmenené bunky a ich susedov. @returns počet zmenených dlaždíc */
@@ -137,6 +202,7 @@ export class WorldRenderer {
     this.world.position.set(x, y);
     this.world.scale.set(scale);
     this.parcels.setZoom(this.camera.zoom); // obrysy parciel držia hrúbku na obrazovke aj pri malom zoome
+    this.cranes.setZoom(this.camera.zoom); // odznaky žeriavov ostávajú čitateľné pri malom zoome
     this.syncedVersion = this.camera.version;
   }
 
@@ -148,6 +214,10 @@ export class WorldRenderer {
     this.roads.destroy();
     this.parcels.destroy();
     this.portals.destroy();
+    this.modules.destroy();
+    this.ships.destroy();
+    this.cranes.destroy();
+    this.build.destroy();
     this.app.destroy({ removeView: true }, { children: true });
     void this.atlas?.destroy();
   }

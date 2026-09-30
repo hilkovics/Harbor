@@ -1,5 +1,8 @@
-// Typované načítanie dátových definícií (DefRegistry).
-// Explicitný zoznam: pomocné validačné funkcie z `def-registry.ts` (napr. `checkNumber`) nie sú verejné API simu.
+// Typované načítanie dátových definícií (DefRegistry) a katalógy (ADR-009).
+// Explicitný zoznam: pomocné validačné funkcie (`def-spec.ts`, napr. `checkNumber`) nie sú verejné API simu.
 export * from './types';
-export { DefError, DefRegistry, loadBundledDefs } from './def-registry';
+export { DefError } from './def-error';
+export { DefRegistry, loadBundledDefs } from './def-registry';
 export type { RawDefs } from './def-registry';
+export type { Catalog } from './catalog';
+export { MODULE_PARAM_SPECS, berthParams, craneParams } from './module-def';

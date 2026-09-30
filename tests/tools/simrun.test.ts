@@ -5,19 +5,22 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadBundledDefs } from '@sim/defs';
-import { SimrunError, formatSummary, loadScenario, parseArgs, runScenario } from '../../tools/simrun';
+import { SimrunError, craneBlockedPercent, formatSummary, loadScenario, parseArgs, runScenario } from '../../tools/simrun';
 import type { Scenario, ScenarioEntry } from '../../tools/simrun';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const SIMRUN_SCRIPT = fileURLToPath(new URL('../../tools/simrun.ts', import.meta.url));
 const SMOKE_SCENARIO = fileURLToPath(new URL('../../data/scenarios/smoke.json', import.meta.url));
 const HARBOR_MAP = fileURLToPath(new URL('../../data/maps/harbor_01.json', import.meta.url));
+const F2_UNLOAD_SCENARIO = fileURLToPath(new URL('../../data/scenarios/f2_unload.json', import.meta.url));
 
 const SMOKE: Scenario = { id: 'smoke', seed: 42, commands: [] };
 // Hodnota z data/defs/time.json (tickGameSeconds 10) → 8 640 tickov = 1 herný deň.
 const TICKS_PER_DAY = 8640;
 // harbor_01: 30 štartovacích ciest (x = 44, y 34…63).
 const STARTER_ROADS = 30;
+// harbor_01: štartovacie moduly = berth_standard + crane_container_gantry.
+const STARTER_MODULES = 2;
 
 // Príkazy nad mapou harbor_01: parcela `starter` (30,14,28×20) patrí hráčovi, `west_quay` (6,14,22×20) je na predaj.
 const ROAD_CELLS = [20, 21, 22, 23, 24, 25].map((y) => ({ x: 44, y }));
@@ -198,10 +201,15 @@ describe('runScenario', () => {
       exportedUnits: 0,
       lostUnits: 0,
       onTimeRate: null,
-      craneBlockedPct: null,
+      craneBlockedPct: 0,
       roads: STARTER_ROADS,
       commandsApplied: 0,
       commandsSkipped: 0,
+      modules: STARTER_MODULES,
+      shipsSpawned: 0,
+      shipsDeparted: 0,
+      unitsOnApron: 0,
+      craneCycles: 0,
     });
     expect(Object.keys(report)).toEqual([
       'scenario',
@@ -216,6 +224,11 @@ describe('runScenario', () => {
       'roads',
       'commandsApplied',
       'commandsSkipped',
+      'modules',
+      'shipsSpawned',
+      'shipsDeparted',
+      'unitsOnApron',
+      'craneCycles',
     ]);
   });
 
@@ -249,6 +262,81 @@ describe('runScenario', () => {
     expect(line).toContain('smoke');
     expect(line).toContain('1000 tickov');
     expect(line).toContain('cesty 30');
+    expect(line).toContain('lode 0/0');
+    expect(line).toContain('cykly žeriavov 0');
+  });
+
+  describe('metriky žeriavov a lodí (F2)', () => {
+    const spawn = (units: number): ScenarioEntry => ({
+      atTick: 0,
+      command: { type: 'SpawnShipDebug', shipClassId: 'feeder', cargoTypeId: 'container_teu', units },
+    });
+    const f2 = (units: number): Scenario => ({ id: 'f2', seed: 2002, commands: [spawn(units)] });
+
+    it('f2_unload (5000 tickov): loď vyložená a odplávala, 4 jednotky na aprone, nič stratené ani exportované', () => {
+      const report = runScenario(loadScenario(F2_UNLOAD_SCENARIO), 5000, defs);
+      expect(report).toMatchObject({
+        scenario: 'f2_unload',
+        lostUnits: 0,
+        exportedUnits: 0,
+        modules: STARTER_MODULES,
+        shipsSpawned: 1,
+        shipsDeparted: 1,
+        unitsOnApron: 4,
+        craneCycles: 4,
+        craneBlockedPct: 0,
+        commandsApplied: 1,
+        commandsSkipped: 0,
+      });
+    });
+
+    it('loď je po spawne v evidencii, ale ešte neodplávala (10 tickov)', () => {
+      const report = runScenario(f2(4), 10, defs);
+      expect(report).toMatchObject({ shipsSpawned: 1, shipsDeparted: 0, unitsOnApron: 0, craneCycles: 0, lostUnits: 0 });
+    });
+
+    it('plný apron zablokuje žeriav: craneBlockedPct > 0, na aprone najviac 4 jednotky, nič sa nestratí', () => {
+      const report = runScenario(f2(6), 5000, defs);
+      expect(report.unitsOnApron).toBe(4);
+      expect(report.craneCycles).toBe(4);
+      expect(report.shipsDeparted).toBe(0);
+      expect(report.craneBlockedPct).toBeGreaterThan(0);
+      expect(report.craneBlockedPct).toBeLessThanOrEqual(100);
+      expect(report.lostUnits).toBe(0);
+    });
+
+    it('craneBlockedPct má najviac 1 desatinné miesto', () => {
+      const pct = runScenario(f2(6), 5000, defs).craneBlockedPct;
+      expect(Math.round(pct * 10) / 10).toBe(pct);
+    });
+
+    it('rovnaký scenár → identický report (metriky F2 sú deterministické)', () => {
+      expect(runScenario(f2(6), 3000, defs)).toEqual(runScenario(f2(6), 3000, defs));
+    });
+  });
+
+  describe('craneBlockedPercent', () => {
+    const crane = (busyTicks: number, idleTicks: number, blockedTicks: number) => ({ busyTicks, idleTicks, blockedTicks });
+
+    it('bez žeriavov 0', () => {
+      expect(craneBlockedPercent([])).toBe(0);
+    });
+
+    it('žeriav bez jediného ticku (0/0) → 0, nie NaN', () => {
+      expect(craneBlockedPercent([crane(0, 0, 0)])).toBe(0);
+    });
+
+    it.each<[string, ReturnType<typeof crane>[], number]>([
+      ['nikdy blokovaný', [crane(30, 70, 0)], 0],
+      ['stále blokovaný', [crane(0, 0, 50)], 100],
+      ['štvrtina', [crane(25, 25, 50), crane(50, 50, 0)], 25],
+      ['1/3 → 33.3', [crane(1, 1, 1)], 33.3],
+      ['2/3 → 66.7', [crane(1, 0, 2)], 66.7],
+      ['súčty naprieč žeriavmi, nie priemer percent', [crane(0, 0, 1), crane(0, 99, 0)], 1],
+      ['zaokrúhlenie hore: 16.666… → 16.7', [crane(0, 5, 1)], 16.7],
+    ])('%s', (_name, cranes, expected) => {
+      expect(craneBlockedPercent(cranes)).toBe(expected);
+    });
   });
 
   describe('replay príkazov', () => {
@@ -423,6 +511,22 @@ describe('CLI (tools/simrun.ts)', () => {
     expect(lines[0]).toContain('smoke');
     expect(lines[0]).toContain('8640 tickov');
     expect(() => JSON.parse(run.stdout)).toThrow();
+  }, 30_000);
+
+  it('f2_unload --report → čistý JSON s metrikami žeriavov a lodí, exit 0', () => {
+    const run = runCli(F2_UNLOAD_SCENARIO, '--ticks', '5000', '--report');
+    expect(run.status).toBe(0);
+    expect(run.stderr).toBe('');
+    expect(JSON.parse(run.stdout)).toMatchObject({
+      scenario: 'f2_unload',
+      lostUnits: 0,
+      modules: STARTER_MODULES,
+      shipsSpawned: 1,
+      shipsDeparted: 1,
+      unitsOnApron: 4,
+      craneCycles: 4,
+      craneBlockedPct: 0,
+    });
   }, 30_000);
 
   it('replay: PlaceRoad zo scenára → viac ciest, nižšia hotovosť, commandsSkipped pre atTick ≥ ticks', () => {

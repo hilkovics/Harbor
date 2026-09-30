@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { commandFromJSON } from '@sim/commands';
 import type { SimEvent } from '@sim/events';
 import { installDevHook, type DevHook } from '@app/dev-hook';
 import { SimBridge } from '@app/sim-bridge';
@@ -232,6 +233,49 @@ describe('installDevHook', () => {
     expect(target.__sim?.world).toBe(world);
     expect(target.__sim?.bridge).toBe(bridge);
     expect(target.__sim?.cellToScreen).toBeUndefined();
+  });
+
+  it('entities() vráti aktuálne view-modely (moduly, žeriavy, lode) — presne to, čo dostáva renderer', () => {
+    const { bridge, loop } = createApp();
+    const target: { __sim?: DevHook } = {};
+    const hook = installDevHook(bridge, { enabled: true, target });
+    expect(hook?.entities()).toBe(bridge.entities());
+    expect(hook?.entities().modules.map((module) => module.defId)).toEqual(['berth_standard']);
+    expect(hook?.entities().cranes.map((crane) => crane.defId)).toEqual(['crane_container_gantry']);
+    expect(hook?.entities().ships).toEqual([]);
+    bridge.dispatch(commandFromJSON({ type: 'SpawnShipDebug', shipClassId: 'feeder', cargoTypeId: 'container_teu', units: 4 }));
+    loop.frame(loop.tickMs);
+    expect(hook?.entities().ships).toHaveLength(1); // vždy aktuálne, nie snímka z inštalácie
+  });
+
+  it('rendered() (počty views a stav ghostu v rendereri) sa prenesie z bootstrapu; bez neho chýba', () => {
+    const { bridge } = createApp();
+    const counts = { modules: 1, cranes: 1, ships: 0, ghostCells: 24, ghostConnectors: 2, selectionRing: false };
+    const target: { __sim?: DevHook } = {};
+    expect(installDevHook(bridge, { enabled: true, target, rendered: () => counts })?.rendered?.()).toEqual(counts);
+    expect(installDevHook(bridge, { enabled: true, target: {} })?.rendered).toBeUndefined();
+  });
+
+  it('moduleGhost() a centerOn() sa prenesú z bootstrapu; bez neho chýbajú', () => {
+    const { bridge } = createApp();
+    const centered: [number, number, number | undefined][] = [];
+    const target: { __sim?: DevHook } = {};
+    const hook = installDevHook(bridge, {
+      enabled: true,
+      target,
+      moduleGhost: () => null,
+      centerOn: (x, y, zoom) => centered.push([x, y, zoom]),
+    });
+    expect(hook?.moduleGhost?.()).toBeNull();
+    hook?.centerOn?.(44, 15);
+    hook?.centerOn?.(44, 15, 1);
+    expect(centered).toEqual([
+      [44, 15, undefined],
+      [44, 15, 1],
+    ]);
+    const bare = installDevHook(bridge, { enabled: true, target: {} });
+    expect(bare?.moduleGhost).toBeUndefined();
+    expect(bare?.centerOn).toBeUndefined();
   });
 
   it('cellToScreen sa prenesie; bootstrap ho môže doplniť aj neskôr', () => {

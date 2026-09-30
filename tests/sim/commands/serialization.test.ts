@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   CommandError,
+  PlaceModuleCommand,
   PlaceRoadCommand,
+  RemoveModuleCommand,
   RemoveRoadCommand,
   SetGameSpeedCommand,
   commandFromJSON,
@@ -18,6 +20,12 @@ const ROUNDTRIP_CASES: readonly [string, SerializedCommand][] = [
   ['SetGameSpeed 4', { type: 'SetGameSpeed', speed: 4 }],
   ['SetGameSpeed 0', { type: 'SetGameSpeed', speed: 0 }],
   ['SetGameSpeed mimo time.speeds (overí až validate)', { type: 'SetGameSpeed', speed: 3 }],
+  // F2 (T02-04): tvary zo „Spoločných rozhraní" F2 — hodnoty mimo sveta overí až validate (unknown_def, invalid_rotation…).
+  ['PlaceModule', { type: 'PlaceModule', defId: 'berth_standard', x: 48, y: 14, rotation: 0 }],
+  ['PlaceModule žeriav otočený', { type: 'PlaceModule', defId: 'crane_container_gantry', x: 43, y: 14, rotation: 270 }],
+  ['PlaceModule s neznámym defom, rotáciou 45 a mimo mapy', { type: 'PlaceModule', defId: 'nope', x: -5, y: 900, rotation: 45 }],
+  ['RemoveModule', { type: 'RemoveModule', moduleId: 7 }],
+  ['RemoveModule s id, ktoré neexistuje', { type: 'RemoveModule', moduleId: 0 }],
 ];
 
 describe('commandFromJSON ↔ toJSON', () => {
@@ -36,12 +44,22 @@ describe('commandFromJSON ↔ toJSON', () => {
     expect(commandFromJSON({ type: 'PlaceRoad', cells: [] })).toBeInstanceOf(PlaceRoadCommand);
     expect(commandFromJSON({ type: 'RemoveRoad', cells: [] })).toBeInstanceOf(RemoveRoadCommand);
     expect(commandFromJSON({ type: 'SetGameSpeed', speed: 1 })).toBeInstanceOf(SetGameSpeedCommand);
+    expect(commandFromJSON({ type: 'PlaceModule', defId: 'berth_standard', x: 1, y: 2, rotation: 90 })).toBeInstanceOf(PlaceModuleCommand);
+    expect(commandFromJSON({ type: 'RemoveModule', moduleId: 3 })).toBeInstanceOf(RemoveModuleCommand);
   });
 
   it('príkaz vytvorený v kóde má rovnaký tvar ako zo JSON', () => {
     expect(new PlaceRoadCommand([{ x: 1, y: 2 }]).toJSON()).toEqual({ type: 'PlaceRoad', cells: [{ x: 1, y: 2 }] });
     expect(new RemoveRoadCommand([{ x: 1, y: 2 }]).toJSON()).toEqual({ type: 'RemoveRoad', cells: [{ x: 1, y: 2 }] });
     expect(new SetGameSpeedCommand(2).toJSON()).toEqual({ type: 'SetGameSpeed', speed: 2 });
+    expect(new PlaceModuleCommand({ defId: 'berth_standard', x: 48, y: 14, rotation: 0 }).toJSON()).toEqual({
+      type: 'PlaceModule',
+      defId: 'berth_standard',
+      x: 48,
+      y: 14,
+      rotation: 0,
+    });
+    expect(new RemoveModuleCommand(7).toJSON()).toEqual({ type: 'RemoveModule', moduleId: 7 });
   });
 
   it('príkaz nezdieľa stav so vstupom ani s výstupom toJSON', () => {
@@ -65,7 +83,8 @@ describe('commandFromJSON ↔ toJSON', () => {
 
 describe('commandFromJSON — neplatný vstup → CommandError', () => {
   it('neznámy typ', () => {
-    expect(() => commandFromJSON({ type: 'PlaceModule', defId: 'x' })).toThrow(CommandError);
+    expect(() => commandFromJSON({ type: 'BuyParcel', parcelId: 'x' })).toThrow(CommandError);
+    expect(() => commandFromJSON({ type: 'BuyParcel', parcelId: 'x' })).toThrow(/neznámy typ príkazu 'BuyParcel'/);
     expect(() => commandFromJSON({ type: 'placeRoad', cells: [] })).toThrow(/neznámy typ príkazu 'placeRoad'/);
   });
 
@@ -83,6 +102,17 @@ describe('commandFromJSON — neplatný vstup → CommandError', () => {
     ['speed ako reťazec', { type: 'SetGameSpeed', speed: '4' }, /SetGameSpeed\/speed: musí byť konečné číslo/],
     ['speed null', { type: 'SetGameSpeed', speed: null }, /SetGameSpeed\/speed: musí byť konečné číslo/],
     ['SetGameSpeed s neznámym kľúčom', { type: 'SetGameSpeed', speed: 4, pause: true }, /SetGameSpeed\/pause: neznámy kľúč/],
+    ['PlaceModule bez rotation', { type: 'PlaceModule', defId: 'berth_standard', x: 1, y: 2 }, /PlaceModule\/rotation: chýba povinný kľúč/],
+    ['PlaceModule s neznámym kľúčom', { type: 'PlaceModule', defId: 'berth_standard', x: 1, y: 2, rotation: 0, cost: 1 }, /PlaceModule\/cost: neznámy kľúč/],
+    ['PlaceModule: rotácia ako reťazec (štrukturálne)', { type: 'PlaceModule', defId: 'berth_standard', x: 1, y: 2, rotation: '90' }, /PlaceModule\/rotation: musí byť konečné číslo/],
+    ['PlaceModule: rotácia null', { type: 'PlaceModule', defId: 'berth_standard', x: 1, y: 2, rotation: null }, /PlaceModule\/rotation: musí byť konečné číslo/],
+    ['PlaceModule: defId nie je reťazec', { type: 'PlaceModule', defId: 7, x: 1, y: 2, rotation: 0 }, /PlaceModule\/defId: musí byť reťazec/],
+    ['PlaceModule: necelé x', { type: 'PlaceModule', defId: 'berth_standard', x: 1.5, y: 2, rotation: 0 }, /PlaceModule\/x: súradnica musí byť celé číslo/],
+    ['PlaceModule: y ako reťazec', { type: 'PlaceModule', defId: 'berth_standard', x: 1, y: '2', rotation: 0 }, /PlaceModule\/y: súradnica musí byť celé číslo/],
+    ['RemoveModule bez moduleId', { type: 'RemoveModule' }, /RemoveModule\/moduleId: chýba povinný kľúč/],
+    ['RemoveModule: necelé moduleId', { type: 'RemoveModule', moduleId: 1.5 }, /RemoveModule\/moduleId: musí byť celé číslo/],
+    ['RemoveModule: moduleId ako reťazec', { type: 'RemoveModule', moduleId: '7' }, /RemoveModule\/moduleId: musí byť celé číslo/],
+    ['RemoveModule s neznámym kľúčom', { type: 'RemoveModule', moduleId: 7, refund: 0 }, /RemoveModule\/refund: neznámy kľúč/],
   ];
 
   it.each(BAD)('%s', (_name, json, message) => {
@@ -94,11 +124,16 @@ describe('commandFromJSON — neplatný vstup → CommandError', () => {
     expect(() => PlaceRoadCommand.fromJSON({ type: 'RemoveRoad', cells: [] })).toThrow(/PlaceRoad\/type: očakávaný typ 'PlaceRoad'/);
     expect(() => RemoveRoadCommand.fromJSON({ type: 'PlaceRoad', cells: [] })).toThrow(CommandError);
     expect(() => SetGameSpeedCommand.fromJSON({ type: 'PlaceRoad', speed: 1 })).toThrow(CommandError);
+    expect(() => PlaceModuleCommand.fromJSON({ type: 'RemoveModule', defId: 'x', x: 0, y: 0, rotation: 0 })).toThrow(/PlaceModule\/type/);
+    expect(() => RemoveModuleCommand.fromJSON({ type: 'PlaceModule', moduleId: 1 })).toThrow(/RemoveModule\/type/);
   });
 
   it('konštruktor odmietne necelé súradnice (príkaz vždy prežije toJSON → commandFromJSON)', () => {
     expect(() => new PlaceRoadCommand([{ x: 0.5, y: 0 }])).toThrow(/PlaceRoad\/cells\/0\/x/);
     expect(() => new RemoveRoadCommand([{ x: 0, y: Number.NaN }])).toThrow(CommandError);
     expect(() => new PlaceRoadCommand([{ x: Number.MAX_SAFE_INTEGER + 1, y: 0 }])).toThrow(CommandError);
+    expect(() => new PlaceModuleCommand({ defId: 'berth_standard', x: 0.5, y: 0, rotation: 0 })).toThrow(/PlaceModule\/x/);
+    expect(() => new PlaceModuleCommand({ defId: 'berth_standard', x: 0, y: 0, rotation: Number.NaN })).toThrow(/PlaceModule\/rotation/);
+    expect(() => new RemoveModuleCommand(Number.POSITIVE_INFINITY)).toThrow(/RemoveModule\/moduleId/);
   });
 });

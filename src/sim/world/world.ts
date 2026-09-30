@@ -1,11 +1,24 @@
 /**
  * World — koreň simulácie (ARCHITECTURE §5, §6). Vlastní hodiny, mriežku, parcely, hotovosť, jediný `Rng`,
- * alokátor ID a zbernicu udalostí; prezentácia ho len číta a mení ho výlučne cez `Command` (pravidlo 5).
+ * alokátor ID, zbernicu udalostí, `CargoLedger`, moduly so skupinami kotvísk a lode; prezentácia ho len číta
+ * a mení ho výlučne cez `Command` (pravidlo 5).
  *
- * Tick pipeline vo F1: príkazy z fronty → krok 1 (`clock.advance()` + udalosti hraníc) → krok 13 (`events.flush()`).
- * Kroky 2–12 pribudnú so systémami na označenom mieste v `tick()`; poradie §6 je záväzné a mení sa len cez ADR.
+ * Tick pipeline (§6): príkazy z fronty → krok 1 (`clock.advance()` + udalosti hraníc) → krok 3 (`ShipSystem`) →
+ * krok 4 (`CraneSystem`) → krok 12 (`assertInvariants()`, ak je zapnuté `checkInvariants`) → krok 13
+ * (`events.flush()`). Ďalšie kroky pribúdajú so systémami na označenom mieste v `tick()`; poradie §6 je záväzné
+ * a mení sa len cez ADR.
+ *
+ * Moduly (ADR-014): `addModule`/`removeModule` sú štrukturálne operácie pre príkazy (`PlaceModule`/`RemoveModule`,
+ * T02-04) a obnovu zo save — zapisujú `cell.moduleId`, spravujú `craneIds` berthov a prepočítajú `berthGroups`.
+ * Pravidlá umiestnenia (§8: terén, parcela, voda, cena) overuje príkaz vopred; tieto metódy strážia len
+ * konzistenciu sveta a pri porušení vyhodia `ModuleError` bez zmeny stavu. Udalosti emituje príkaz.
+ *
+ * Lode (ADR-016): `addShip`/`removeShip` sú štrukturálne operácie pre `SpawnShipDebug`, `ShipSystem` a obnovu zo save;
+ * pohyb, kotviská a FSM riadi `ShipSystem`.
  */
-import { EntityIdAllocator } from '../core/entity-id';
+import { CargoLedger } from '../cargo/cargo-ledger';
+import type { CargoLedgerState } from '../cargo/cargo-ledger-state';
+import { EntityIdAllocator, type EntityId } from '../core/entity-id';
 import { EventBus } from '../core/event-bus';
 import { INITIAL_SPEED, SimClock } from '../core/sim-clock';
 import { Rng } from '../core/rng';
@@ -13,9 +26,34 @@ import type { Command } from '../commands/command';
 import { DefError, type DefRegistry } from '../defs/def-registry';
 import type { SimEvent } from '../events/sim-event';
 import type { Grid } from '../grid/grid';
+import type { PlacedModuleSpec } from '../grid/map-def';
+import { MapError, pointerSegment } from '../grid/map-error';
 import type { LoadedMap } from '../grid/map-loader';
 import type { Parcel, ParcelOwnership } from '../grid/parcel';
-import { WORLD_STATE_VERSION, parseWorldState, type SerializedRoad, type WorldState } from './world-state';
+import { BerthModule } from '../modules/berth-module';
+import { computeBerthGroups, type BerthGroup } from '../modules/berth-group';
+import { CraneModule } from '../modules/crane-module';
+import type { Module } from '../modules/module';
+import { ModuleError } from '../modules/module-error';
+import { moduleRegistry } from '../modules/module-registry';
+import type { Ship } from '../ships/ship';
+import { ShipError } from '../ships/ship-error';
+import { CraneSystem } from '../systems/crane-system';
+import { ShipSystem } from '../systems/ship-system';
+import { StatResolver } from '../tech/stat-resolver';
+import { migrateWorldState } from './migrate';
+import { PLACEMENT_RULE_ERROR, attachesToHost, findPlacementViolations, findRemovalViolations } from './module-rules';
+import { WorldInvariantError, findWorldViolation } from './world-invariants';
+import { restoreEntities } from './world-restore';
+import {
+  WORLD_STATE_VERSION,
+  parseWorldState,
+  type AnyWorldState,
+  type SerializedModule,
+  type SerializedRoad,
+  type SerializedTraffic,
+  type WorldState,
+} from './world-state';
 
 /** Všetko, z čoho sa svet skladá — spoločné pre `create` aj `deserialize`. */
 interface WorldParts {
@@ -28,6 +66,17 @@ interface WorldParts {
   readonly grid: Grid;
   readonly parcels: ReadonlyMap<string, Parcel>;
   readonly cashCents: number;
+  /** Uložený stav ledgera (overený `parseWorldState`); `null` = prázdny ledger novej hry. */
+  readonly cargo: CargoLedgerState | null;
+}
+
+/** Voľby sveta pri `World.create` / `World.deserialize` (nie sú súčasťou save). */
+export interface WorldOptions {
+  /**
+   * Krok 12 ticku (§6): `assertInvariants()` po každom ticku. Predvolene `true` (testy, `simrun`, DEV); aplikácia
+   * v produkcii ho vypne (`false`) kvôli výkonu (ADR-016).
+   */
+  readonly checkInvariants?: boolean;
 }
 
 /** Nezávislé kópie parciel mapy (meniteľné `ownership`); geometria je zmrazená, takže `rect` sa môže zdieľať. */
@@ -40,14 +89,16 @@ function copyParcels(map: LoadedMap): Map<string, Parcel> {
   );
 }
 
+const NO_GROUPS: readonly BerthGroup[] = Object.freeze([]);
+
 export class World {
   readonly defs: DefRegistry;
-  /** Načítaná mapa — len na čítanie; `map.grid` je šablóna počiatočného stavu, živá mriežka sveta je `grid`. */
+  /** Načítaná mapa — len na čítanie; počiatočný stav mriežky dáva `map.createGrid()`, živá mriežka sveta je `grid`. */
   readonly map: LoadedMap;
   /** Seed novej hry (uint32); ďalší priebeh určuje stav `rng`. */
   readonly seed: number;
   readonly clock: SimClock;
-  /** Vlastná kópia `map.grid` — menia ju len príkazy a systémy tohto sveta. */
+  /** Vlastná mriežka z `map.createGrid()` — menia ju len príkazy a systémy tohto sveta. */
   readonly grid: Grid;
   /** Parcely v poradí mapy; meniteľné je len `ownership` (príkazy kúpy/prenájmu). */
   readonly parcels: ReadonlyMap<string, Parcel>;
@@ -56,12 +107,27 @@ export class World {
   readonly ids: EntityIdAllocator;
   /** Udalosti aktuálneho ticku; príkazy a systémy volajú `emit`, `tick()`/`applyPending()` ich vrátia. */
   readonly events = new EventBus<SimEvent>();
+  /** Jediný zdroj polohy nákladu (§7.1, pravidlo 2): id jednotiek z `ids`, `CargoMoved` do `events` s `clock.tick`. */
+  readonly cargo: CargoLedger;
+  /** Moduly v poradí umiestnenia (= vzostupne podľa id); meniť len cez `addModule`/`removeModule`. */
+  readonly modules: ReadonlyMap<EntityId, Module>;
+  /** Lode vzostupne podľa id (= poradie spawnu); meniť len cez `addShip`/`removeShip`. */
+  readonly ships: ReadonlyMap<EntityId, Ship>;
+  /** Štatistiky entít po modifikátoroch (§10); vo F2 základ z defov. */
+  readonly stats: StatResolver;
   /** Hotovosť v centoch (USD); môže byť záporná (bankrot rieši F5). */
   cashCents: number;
+  /** Krok 12 ticku zapnutý (`WorldOptions.checkInvariants`, predvolene `true`). */
+  readonly checkInvariants: boolean;
 
   private readonly pendingCommands: Command[] = [];
+  private readonly moduleMap = new Map<EntityId, Module>();
+  private readonly shipMap = new Map<EntityId, Ship>();
+  private groups: readonly BerthGroup[] = NO_GROUPS;
+  private readonly shipSystem = new ShipSystem();
+  private readonly craneSystem = new CraneSystem();
 
-  private constructor(parts: WorldParts) {
+  private constructor(parts: WorldParts, options: WorldOptions) {
     this.defs = parts.defs;
     this.map = parts.map;
     this.seed = parts.seed;
@@ -71,64 +137,234 @@ export class World {
     this.grid = parts.grid;
     this.parcels = parts.parcels;
     this.cashCents = parts.cashCents;
+    const deps = { cargoTypes: parts.defs.cargoTypes, ids: parts.ids, events: this.events, clock: parts.clock };
+    this.cargo = parts.cargo === null ? new CargoLedger(deps) : CargoLedger.fromState(parts.cargo, deps);
+    this.modules = this.moduleMap;
+    this.ships = this.shipMap;
+    this.stats = new StatResolver(parts.defs);
+    this.checkInvariants = options.checkInvariants ?? true;
   }
 
   /**
    * Nová hra: tick 0 pri rýchlosti `INITIAL_SPEED`, hotovosť `economy.startingCashCents`, `Rng(seed)`, ID od 1,
-   * mriežka = klon `map.grid` (so starter cestami), parcely skopírované (`startOwned` → `owned`).
-   * Chyby: seed nie je uint32 → `RangeError`; `INITIAL_SPEED` chýba v `time.speeds` → `DefError`.
+   * mriežka = nová `map.createGrid()` (so starter cestami), parcely skopírované (`startOwned` → `owned`) a starter
+   * moduly mapy (Root modul, ADR-015) umiestnené v poradí mapy s `purchaseCostCents 0` — rovnakými pravidlami ako
+   * `PlaceModule` okrem ceny, bez udalostí a bez zmeny hotovosti (dostanú id 1, 2, …).
+   * `options.checkInvariants` (predvolene `true`) zapína krok 12 ticku.
+   * Chyby: seed nie je uint32 → `RangeError`; `INITIAL_SPEED` chýba v `time.speeds` → `DefError`; starter modul
+   * s neznámym defom alebo porušeným pravidlom umiestnenia → `MapError` s cestou `/starter/modules/<i>`.
    */
-  static create(defs: DefRegistry, map: LoadedMap, seed: number): World {
+  static create(defs: DefRegistry, map: LoadedMap, seed: number, options: WorldOptions = {}): World {
     const rng = new Rng(seed);
     const clock = new SimClock(defs.time);
     if (!defs.time.speeds.includes(clock.speed)) {
       throw new DefError('time', '/speeds', `musí obsahovať počiatočnú rýchlosť ${String(INITIAL_SPEED)} (World.create)`);
     }
-    return new World({
-      defs,
-      map,
-      seed,
-      clock,
-      rng,
-      ids: new EntityIdAllocator(),
-      grid: map.grid.clone(),
-      parcels: copyParcels(map),
-      cashCents: defs.economy.startingCashCents,
-    });
+    const world = new World(
+      {
+        defs,
+        map,
+        seed,
+        clock,
+        rng,
+        ids: new EntityIdAllocator(),
+        grid: map.createGrid(),
+        parcels: copyParcels(map),
+        cashCents: defs.economy.startingCashCents,
+        cargo: null,
+      },
+      options,
+    );
+    world.placeStarterModules();
+    return world;
   }
 
   /**
-   * Obnoví svet zo `serialize()` (aj po `JSON.parse`). Terén a parcely berie z `map` (musí mať `id === state.mapId`),
-   * vrstvu dopravy celú z `state.roads` — starter cesta, ktorú hráč odstránil, sa neobnoví. Neplatný stav →
-   * `WorldStateError` (pozri `parseWorldState`). Výsledok nezdieľa meniteľný stav so `state` ani s `map`.
+   * Obnoví svet zo `serialize()` (aj po `JSON.parse`); staršiu verziu najprv prevedie `migrateWorldState` (v1 → v2:
+   * bez modulov, lodí a nákladu). Terén a parcely berie z `map` (musí mať `id === state.mapId`), vrstvu dopravy celú
+   * z `state.roads` — starter cesta, ktorú hráč odstránil, sa neobnoví; moduly, lode, náklad a odvodený stav obnoví
+   * `restoreEntities`. Neplatný stav → `WorldStateError` (pozri `parseWorldState`, `restoreEntities`). Výsledok
+   * nezdieľa meniteľný stav so `state` ani s `map`. `options` ako pri `create`.
    */
-  static deserialize(defs: DefRegistry, map: LoadedMap, state: WorldState): World {
-    const parsed = parseWorldState(state, defs, map);
-    const grid = map.grid.clone();
+  static deserialize(defs: DefRegistry, map: LoadedMap, state: AnyWorldState, options: WorldOptions = {}): World {
+    const grid = map.createGrid();
+    const parsed = parseWorldState(migrateWorldState(state), defs, map, grid);
     for (let i = 0; i < grid.cellCount; i++) grid.atIndex(i).road = 'none';
     for (const [index, layer] of parsed.roads) grid.atIndex(index).road = layer;
+    for (const [index, value] of parsed.traffic) grid.atIndex(index).traffic = value;
     const parcels = copyParcels(map);
     for (const [id, ownership] of parsed.ownership) {
       const parcel = parcels.get(id);
       if (parcel !== undefined) parcel.ownership = ownership;
     }
-    return new World({
-      defs,
-      map,
-      seed: parsed.seed,
-      clock: parsed.clock,
-      rng: parsed.rng,
-      ids: parsed.ids,
-      grid,
-      parcels,
-      cashCents: parsed.cashCents,
-    });
+    const world = new World(
+      {
+        defs,
+        map,
+        seed: parsed.seed,
+        clock: parsed.clock,
+        rng: parsed.rng,
+        ids: parsed.ids,
+        grid,
+        parcels,
+        cashCents: parsed.cashCents,
+        cargo: parsed.cargo,
+      },
+      options,
+    );
+    restoreEntities(world, parsed.modules, parsed.ships, parsed.cargo.units);
+    return world;
+  }
+
+  /** Skupiny kotvísk (§5.4) v poradí id; prepočítajú sa pri každom `addModule`/`removeModule`. */
+  get berthGroups(): readonly BerthGroup[] {
+    return this.groups;
   }
 
   /** Počet príkazov čakajúcich vo fronte. */
   get pendingCommandCount(): number {
     return this.pendingCommands.length;
   }
+
+  // -------------------------------------------------------------------------------------------------------
+  // Moduly (ADR-014)
+  // -------------------------------------------------------------------------------------------------------
+
+  /**
+   * Postaví modul: nová inštancia z `moduleRegistry` s id z `ids` a zaplatenou cenou, potom `addModule`.
+   * Pravidlá umiestnenia (§8) musí volajúci overiť vopred (`PlaceModule.validate`). Chyby: `ModuleError`
+   * (svet sa nezmení, id sa môže spotrebovať) alebo `DefError` pre neznámy `defId`.
+   */
+  placeModule(spec: PlacedModuleSpec, purchaseCostCents: number): Module {
+    const def = this.defs.modules.get(spec.defId);
+    const module = moduleRegistry.create(def, spec, this.ids.next(), purchaseCostCents, { grid: this.grid });
+    this.addModule(module);
+    return module;
+  }
+
+  /**
+   * Pridá hotový modul do sveta: zapíše `cell.moduleId` (pripájaný modul — žeriav — sa pripojí k berthu a bunky
+   * ostávajú berthu) a prepočíta `berthGroups`. Štrukturálne chyby (`ModuleError`, svet sa nezmení): id už vo svete
+   * alebo nepridelené alokátorom (`duplicate_id`, `invalid_input`) a prvé porušenie štrukturálnych pravidiel
+   * umiestnenia z `findPlacementViolations` (rovnaká funkcia ako `PlaceModule.validate`): footprint mimo mapy
+   * (`out_of_bounds`), bunka obsadená (`occupied`) alebo s cestou (`road`); žeriav nestojí celý na jednom berthe
+   * (`no_berth`), iná rotácia (`rotation_mismatch`), berth má `maxCranes` (`max_cranes`), prekryv s iným žeriavom
+   * (`crane_overlap`). Pravidlá hráča (terén, parcela, voda, cena) tu nie sú — tie overuje príkaz vopred.
+   */
+  addModule(module: Module): void {
+    if (this.moduleMap.has(module.id)) throw new ModuleError('duplicate_id', `World.addModule: modul #${String(module.id)} už vo svete je`);
+    if (module.id >= this.ids.getState().nextId) {
+      throw new ModuleError('invalid_input', `World.addModule: id ${String(module.id)} nepridelil alokátor sveta (nextId ${String(this.ids.getState().nextId)})`);
+    }
+    const spec = { x: module.origin.x, y: module.origin.y, rotation: module.rotation };
+    const [violation] = findPlacementViolations(this, module.def, spec, 'structural');
+    const code = violation === undefined ? null : PLACEMENT_RULE_ERROR[violation.rule];
+    if (violation !== undefined && code !== null) throw new ModuleError(code, `World.addModule: ${module.label}: ${violation.detail}`);
+    if (attachesToHost(module.def)) {
+      this.hostOf(module).attachCrane(module.id);
+    } else {
+      for (const { x, y } of module.cells) this.grid.at(x, y).moduleId = module.id;
+    }
+    this.moduleMap.set(module.id, module);
+    this.refreshBerthGroups();
+  }
+
+  /**
+   * Odstráni modul a vráti ho: uvoľní bunky (žeriav: odpojí sa od berthu) a prepočíta `berthGroups`. Príkaz
+   * (`RemoveModule`) validuje dôvody vopred rovnakou funkciou `findRemovalViolations`; tu je poistka konzistencie
+   * (`ModuleError` s kódom prvého porušenia, svet sa nezmení): neznáme id (`unknown_module`), modul s nákladom alebo
+   * rezervovaným slotom (`has_cargo`), berth so žeriavmi (`has_cranes`), berth s loďou alebo žeriav na takom berthe
+   * (`ship_docked`), žeriav mimo `idle`/`blocked` (`busy`).
+   */
+  removeModule(moduleId: EntityId): Module {
+    const module = this.moduleMap.get(moduleId);
+    if (module === undefined) throw new ModuleError('unknown_module', `World.removeModule: modul #${String(moduleId)} neexistuje`);
+    const [violation] = findRemovalViolations(this, module);
+    if (violation !== undefined) throw new ModuleError(violation.rule, `World.removeModule: ${violation.detail}`);
+    if (attachesToHost(module.def)) {
+      this.hostOf(module).detachCrane(module.id);
+    } else {
+      for (const { x, y } of module.cells) this.grid.at(x, y).moduleId = null;
+    }
+    this.moduleMap.delete(moduleId);
+    this.refreshBerthGroups();
+    return module;
+  }
+
+  // -------------------------------------------------------------------------------------------------------
+  // Lode (ADR-016)
+  // -------------------------------------------------------------------------------------------------------
+
+  /**
+   * Pridá loď (spawn `SpawnShipDebug`, obnova zo save). Chyby (`ShipError`, svet sa nezmení): id už vo svete má loď
+   * alebo modul (`duplicate_id`), id nepridelené alokátorom alebo menšie ako id poslednej lode — poradie spawnu = FIFO
+   * alokácie kotvísk (`invalid_input`). Kotviská (`dockedShipId`) a náklad zapisuje volajúci.
+   */
+  addShip(ship: Ship): void {
+    if (this.shipMap.has(ship.id) || this.moduleMap.has(ship.id)) throw new ShipError('duplicate_id', `World.addShip: id ${String(ship.id)} už vo svete je`);
+    if (ship.id >= this.ids.getState().nextId) {
+      throw new ShipError('invalid_input', `World.addShip: id ${String(ship.id)} nepridelil alokátor sveta (nextId ${String(this.ids.getState().nextId)})`);
+    }
+    let last: EntityId | undefined;
+    for (const id of this.shipMap.keys()) last = id;
+    if (last !== undefined && ship.id < last) {
+      throw new ShipError('invalid_input', `World.addShip: ${ship.label} má menšie id ako posledná loď #${String(last)}`);
+    }
+    this.shipMap.set(ship.id, ship);
+  }
+
+  /**
+   * Odstráni loď (odchod z mapy, `ShipSystem`) a vráti ju. Chyby (`ShipError`, svet sa nezmení): neznáme id
+   * (`unknown_ship`), loď má na palube náklad — jednotky `on_ship` by stratili držiteľa (`has_cargo`), drží kotviská
+   * (`holds_berths`).
+   */
+  removeShip(shipId: EntityId): Ship {
+    const ship = this.shipMap.get(shipId);
+    if (ship === undefined) throw new ShipError('unknown_ship', `World.removeShip: loď #${String(shipId)} neexistuje`);
+    const aboard = this.cargo.countAt('on_ship', shipId);
+    if (aboard > 0) throw new ShipError('has_cargo', `World.removeShip: ${ship.label} má na palube ${String(aboard)} jednotiek`);
+    if (ship.berthIds.length > 0) throw new ShipError('holds_berths', `World.removeShip: ${ship.label} drží kotviská [${ship.berthIds.join(', ')}]`);
+    this.shipMap.delete(shipId);
+    return ship;
+  }
+
+  /** Modul, ktorý bunku zaberá (pri žeriave jeho berth); mimo mapy alebo prázdna bunka → `undefined`. */
+  moduleAt(x: number, y: number): Module | undefined {
+    if (!this.grid.inBounds(x, y)) return undefined;
+    const id = this.grid.at(x, y).moduleId;
+    return id === null ? undefined : this.moduleMap.get(id);
+  }
+
+  /** Berth, ktorého footprint bunku zaberá; inak `undefined`. */
+  berthOfCell(x: number, y: number): BerthModule | undefined {
+    const module = this.moduleAt(x, y);
+    return module instanceof BerthModule ? module : undefined;
+  }
+
+  /** Žeriav, ktorého footprint leží na bunke (stojí na berthe pod ňou); inak `undefined`. */
+  craneAt(x: number, y: number): CraneModule | undefined {
+    const berth = this.berthOfCell(x, y);
+    if (berth === undefined) return undefined;
+    for (const craneId of berth.craneIds) {
+      const crane = this.moduleMap.get(craneId);
+      if (crane instanceof CraneModule && crane.containsCell(x, y)) return crane;
+    }
+    return undefined;
+  }
+
+  /**
+   * Invarianty sveta (§6 krok 12, §16): `cargo.assertConservation()` (→ `CargoConservationError`) a potom moduly,
+   * mriežka, žeriavy, aprony, skupiny kotvísk a lode voči sebe aj ledgeru (→ `WorldInvariantError`). Svet nemení.
+   */
+  assertInvariants(): void {
+    this.cargo.assertConservation();
+    const violation = findWorldViolation(this);
+    if (violation !== undefined) throw new WorldInvariantError(violation);
+  }
+
+  // -------------------------------------------------------------------------------------------------------
+  // Príkazy a tick
+  // -------------------------------------------------------------------------------------------------------
 
   /** Zaradí príkaz na koniec fronty; aplikuje sa pri najbližšom `applyPending()` alebo `tick()` (pred krokom 1). */
   enqueue(command: Command): void {
@@ -147,7 +383,8 @@ export class World {
   /**
    * Jeden tick simulácie (§6). Rýchlosť hry tu nehrá rolu — koľko tickov sa vykoná, riadi `GameLoop`.
    * Vráti udalosti ticku v poradí vzniku: udalosti príkazov, `TickAdvanced`, potom `HourClosed`, `DayClosed`,
-   * `MonthClosed` (od najmenšej hranice), ak sa uzavreli.
+   * `MonthClosed` (od najmenšej hranice), ak sa uzavreli, a udalosti krokov 3–12 (lode, žeriavy, `CargoMoved`).
+   * Pri zapnutom `checkInvariants` krok 12 pri porušení vyhodí `CargoConservationError` / `WorldInvariantError`.
    */
   tick(): readonly SimEvent[] {
     // Príkazy z fronty sa aplikujú pred krokom 1 (§6).
@@ -156,16 +393,27 @@ export class World {
     // 1. clock.advance() — tick++, hranice hodiny/dňa/mesiaca.
     this.advanceClock();
 
-    // 2.–12. systémy (contract, ship, crane, dispatcher, vehicle, flow, landside, economy, tech, metrics,
-    //        assertConservation) — pribudnú od F2 presne v poradí §6.
+    // 2. contractSystem — pribudne vo F4/F5.
+
+    // 3. shipSystem — pohyb po sea lane, alokácia kotvísk, docking/undocking.
+    this.shipSystem.tick(this);
+
+    // 4. craneSystem — cyklus žeriavov loď → apron.
+    this.craneSystem.tick(this);
+
+    // 5.–11. dispatcher, vehicle, flow, landside, economy, tech, metrics — pribudnú v ďalších fázach presne v poradí §6.
+
+    // 12. invarianty (DEV/testy): konzervácia nákladu + konzistencia modulov, apronov, žeriavov a lodí.
+    if (this.checkInvariants) this.assertInvariants();
 
     // 13. events.flush() — udalosti ticku pre prezentáciu.
     return this.events.flush();
   }
 
   /**
-   * Čistý JSON stav v1 (§14; tvar pozri `WorldState`). Fronta príkazov sa neukladá, preto musí byť prázdna —
-   * inak `Error` (zavolaj najprv `applyPending()` alebo `tick()`).
+   * Čistý JSON stav v2 (§14; tvar pozri `WorldState`): v1 polia + `traffic`, `modules` (poradie umiestnenia),
+   * `cargo` (`cargo.getState()`) a `ships` (vzostupne podľa id, `Ship.toState()`). Fronta príkazov sa neukladá,
+   * preto musí byť prázdna — inak `Error` (zavolaj najprv `applyPending()` alebo `tick()`).
    */
   serialize(): WorldState {
     if (this.pendingCommands.length > 0) {
@@ -174,12 +422,25 @@ export class World {
       );
     }
     const roads: SerializedRoad[] = [];
+    const traffic: SerializedTraffic[] = [];
     for (let i = 0; i < this.grid.cellCount; i++) {
-      const { road } = this.grid.atIndex(i);
-      if (road !== 'none') roads.push([i, road]);
+      const cell = this.grid.atIndex(i);
+      if (cell.road !== 'none') roads.push([i, cell.road]);
+      if (cell.traffic !== 0) traffic.push([i, cell.traffic]);
     }
     const parcels: Record<string, ParcelOwnership> = {};
     for (const [id, parcel] of this.parcels) parcels[id] = parcel.ownership;
+    const modules = [...this.moduleMap.values()].map(
+      (module): SerializedModule => ({
+        id: module.id,
+        defId: module.def.id,
+        x: module.origin.x,
+        y: module.origin.y,
+        rotation: module.rotation,
+        purchaseCostCents: module.purchaseCostCents,
+        runtime: module.getRuntimeState(),
+      }),
+    );
     return {
       version: WORLD_STATE_VERSION,
       mapId: this.map.id,
@@ -190,7 +451,62 @@ export class World {
       cashCents: this.cashCents,
       roads,
       parcels,
+      traffic,
+      modules,
+      cargo: this.cargo.getState(),
+      ships: [...this.shipMap.values()].map((ship) => ship.toState()),
     };
+  }
+
+  // -------------------------------------------------------------------------------------------------------
+  // Vnútro
+  // -------------------------------------------------------------------------------------------------------
+
+  /**
+   * Berth, na ktorom stojí pripájaný modul (žeriav, ADR-014): len `CraneModule` s berthom pod ľavým horným rohom.
+   * Iný modul s `mustAttachTo` alebo chýbajúci berth → `ModuleError` (`invalid_input` / `no_berth`).
+   */
+  private hostOf(module: Module): BerthModule {
+    if (!(module instanceof CraneModule)) {
+      throw new ModuleError('invalid_input', `World: ${module.label} má placement.mustAttachTo, ale nie je žeriav (craneIds eviduje len žeriavy)`);
+    }
+    const berth = this.moduleMap.get(module.berthId);
+    if (!(berth instanceof BerthModule)) {
+      throw new ModuleError('no_berth', `World: ${module.label} stojí na #${String(module.berthId)}, ktorý nie je berth`);
+    }
+    return berth;
+  }
+
+  /**
+   * Starter moduly mapy v poradí mapy (`World.create`): každý musí mať def v `modules.json` a spĺňať všetky pravidlá
+   * umiestnenia (`findPlacementViolations`, ako `PlaceModule` bez ceny); inak `MapError` s indexom modulu.
+   */
+  private placeStarterModules(): void {
+    this.map.starter.modules.forEach((spec, index) => {
+      const path = `/starter/modules${pointerSegment(index)}`;
+      if (!this.defs.modules.has(spec.defId)) {
+        throw new MapError(this.map.id, `${path}/defId`, `starter modul '${spec.defId}' nie je v modules.json`);
+      }
+      const violations = findPlacementViolations(this, this.defs.modules.get(spec.defId), spec);
+      if (violations.length > 0) {
+        const at = `(${String(spec.x)}, ${String(spec.y)}) rot ${String(spec.rotation)}`;
+        const why = violations.map(({ rule, detail }) => `${rule}: ${detail}`).join('; ');
+        throw new MapError(this.map.id, path, `starter modul '${spec.defId}' na ${at} nespĺňa pravidlá umiestnenia (§8) — ${why}`);
+      }
+      this.placeModule(spec, 0);
+    });
+  }
+
+  /** Prepočet skupín kotvísk a `groupId` každého berthu. */
+  private refreshBerthGroups(): void {
+    const berths = [...this.moduleMap.values()].filter((module): module is BerthModule => module instanceof BerthModule);
+    this.groups = computeBerthGroups(berths);
+    for (const group of this.groups) {
+      for (const berthId of group.berthIds) {
+        const berth = this.moduleMap.get(berthId);
+        if (berth instanceof BerthModule) berth.groupId = group.id;
+      }
+    }
   }
 
   /**

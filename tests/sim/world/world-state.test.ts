@@ -3,6 +3,7 @@ import { World, WorldStateError, WORLD_STATE_VERSION, type WorldState } from '@s
 import {
   DEFS,
   MAP,
+  MAP_GRID,
   SEED,
   TestCommand,
   adjustCash,
@@ -15,14 +16,14 @@ import {
 
 const create = (): World => World.create(DEFS, MAP, SEED);
 
-const PUBLIC_LAND = findCell(MAP.grid, (cell) => cell.terrain === 'land' && cell.parcelId === null && cell.road === 'none');
+const PUBLIC_LAND = findCell(MAP_GRID, (cell) => cell.terrain === 'land' && cell.parcelId === null && cell.road === 'none');
 const OTHER_PUBLIC_LAND = findCell(
-  MAP.grid,
+  MAP_GRID,
   (cell, x, y) => cell.terrain === 'land' && cell.parcelId === null && cell.road === 'none' && (x !== PUBLIC_LAND.x || y !== PUBLIC_LAND.y),
 );
 const WATER_INDEX = (() => {
-  const { x, y } = findCell(MAP.grid, (cell) => cell.terrain === 'deep_water');
-  return MAP.grid.index(x, y);
+  const { x, y } = findCell(MAP_GRID, (cell) => cell.terrain === 'deep_water');
+  return MAP_GRID.index(x, y);
 })();
 const STARTER_ROAD = MAP.starter.roads[0];
 
@@ -50,22 +51,52 @@ function busyWorld(): World {
   );
   world.enqueue(adjustCash(-420_000));
   world.enqueue(consumeRng());
+  world.enqueue(
+    new TestCommand({
+      apply: (w) => {
+        // Heatmapa dopravy (§7.6) — vo F2 ju ešte nič nepíše, ale v2 ju ukladá (BACKLOG P1 z review T01-13).
+        w.grid.at(PUBLIC_LAND.x, PUBLIC_LAND.y).traffic = 12.5;
+        w.grid.at(STARTER_ROAD.x, STARTER_ROAD.y).traffic = 0.1 + 0.2;
+      },
+    }),
+  );
   world.applyPending();
   return world;
 }
 
-describe('World.serialize — WorldState v1', () => {
-  it('tvar: presne kľúče v1 v pevnom poradí a hodnoty novej hry', () => {
+describe('World.serialize — WorldState v2', () => {
+  it('tvar: presne kľúče v2 (v1 + traffic, modules, cargo, ships) v pevnom poradí a hodnoty novej hry', () => {
     const world = create();
     const state = world.serialize();
-    expect(Object.keys(state)).toEqual(['version', 'mapId', 'seed', 'rng', 'clock', 'ids', 'cashCents', 'roads', 'parcels']);
+    expect(Object.keys(state)).toEqual([
+      'version',
+      'mapId',
+      'seed',
+      'rng',
+      'clock',
+      'ids',
+      'cashCents',
+      'roads',
+      'parcels',
+      'traffic',
+      'modules',
+      'cargo',
+      'ships',
+    ]);
     expect(state.version).toBe(WORLD_STATE_VERSION);
-    expect(state.version).toBe(1);
+    expect(state.version).toBe(2);
+    expect(state.traffic).toEqual([]);
+    // Starter moduly mapy (Root modul, T02-04): id 1, 2, … v poradí mapy, zaplatená cena 0, žeriav nečinný.
+    expect(state.modules.map(({ id, defId, x, y, rotation, purchaseCostCents }) => ({ id, defId, x, y, rotation, purchaseCostCents }))).toEqual(
+      MAP.starter.modules.map((spec, i) => ({ id: i + 1, ...spec, purchaseCostCents: 0 })),
+    );
+    expect(state.cargo).toEqual({ createdCount: 0, exportedCount: 0, units: [] });
+    expect(state.ships).toEqual([]);
     expect(state.mapId).toBe(MAP.id);
     expect(state.seed).toBe(SEED);
     expect(state.rng).toEqual(world.rng.getState());
     expect(state.clock).toEqual({ tick: 0, speed: 1 });
-    expect(state.ids).toEqual({ nextId: 1 });
+    expect(state.ids).toEqual({ nextId: MAP.starter.modules.length + 1 });
     expect(state.cashCents).toBe(DEFS.economy.startingCashCents);
     expect(state.parcels).toEqual({ starter: 'owned', west_quay: 'none', east_yard: 'none' });
     expect(Object.keys(state.parcels)).toEqual(MAP.parcels.map((p) => p.id));
@@ -82,10 +113,24 @@ describe('World.serialize — WorldState v1', () => {
     expect(state.roads).toEqual(expected);
     const indexes = state.roads.map(([index]) => index);
     expect(indexes).toEqual([...indexes].sort((a, b) => a - b));
-    expect(state.roads).toContainEqual([MAP.grid.index(PUBLIC_LAND.x, PUBLIC_LAND.y), 'road']);
-    expect(state.roads).toContainEqual([MAP.grid.index(OTHER_PUBLIC_LAND.x, OTHER_PUBLIC_LAND.y), 'rail']);
-    expect(indexes).not.toContain(MAP.grid.index(STARTER_ROAD.x, STARTER_ROAD.y));
-    expect(state.roads).toContainEqual([MAP.grid.index(MAP.starter.roads[1].x, MAP.starter.roads[1].y), 'road']);
+    expect(state.roads).toContainEqual([MAP_GRID.index(PUBLIC_LAND.x, PUBLIC_LAND.y), 'road']);
+    expect(state.roads).toContainEqual([MAP_GRID.index(OTHER_PUBLIC_LAND.x, OTHER_PUBLIC_LAND.y), 'rail']);
+    expect(indexes).not.toContain(MAP_GRID.index(STARTER_ROAD.x, STARTER_ROAD.y));
+    expect(state.roads).toContainEqual([MAP_GRID.index(MAP.starter.roads[1].x, MAP.starter.roads[1].y), 'road']);
+  });
+
+  it('traffic = bunky s nenulovým traffic ako [index, hodnota] vzostupne; roundtrip je presný', () => {
+    const world = busyWorld();
+    const state = world.serialize();
+    const expected = [
+      [MAP_GRID.index(STARTER_ROAD.x, STARTER_ROAD.y), 0.1 + 0.2],
+      [MAP_GRID.index(PUBLIC_LAND.x, PUBLIC_LAND.y), 12.5],
+    ].sort((a, b) => a[0] - b[0]);
+    expect(state.traffic).toEqual(expected);
+    const restored = World.deserialize(DEFS, MAP, viaJson(state));
+    expect(restored.grid.at(STARTER_ROAD.x, STARTER_ROAD.y).traffic).toBe(0.1 + 0.2);
+    expect(restored.grid.at(PUBLIC_LAND.x, PUBLIC_LAND.y).traffic).toBe(12.5);
+    expect(restored.serialize().traffic).toEqual(state.traffic);
   });
 
   it('čistý JSON: JSON roundtrip je hlboko rovný a nie sú v ňom inštancie tried', () => {
@@ -159,7 +204,7 @@ describe('World.deserialize', () => {
     expect(restored.cashCents).toBe(original.cashCents);
     expect(restored.seed).toBe(SEED);
     expect(restored.parcels.get('west_quay')?.ownership).toBe('leased');
-    for (let i = 0; i < MAP.grid.cellCount; i++) {
+    for (let i = 0; i < MAP_GRID.cellCount; i++) {
       expect(restored.grid.atIndex(i)).toEqual(original.grid.atIndex(i));
     }
     // Odstránená starter cesta sa z mapy neobnoví.
@@ -178,8 +223,9 @@ describe('World.deserialize', () => {
     if (parcel === undefined) throw new Error('mapa nemá east_yard');
     parcel.ownership = 'owned';
     expect(hashState(state)).toBe(stateHash);
-    expect(MAP.grid.at(PUBLIC_LAND.x, PUBLIC_LAND.y).road).toBe('none');
-    expect(MAP.grid.at(STARTER_ROAD.x, STARTER_ROAD.y).road).toBe('road');
+    const template = MAP.createGrid();
+    expect(template.at(PUBLIC_LAND.x, PUBLIC_LAND.y).road).toBe('none');
+    expect(template.at(STARTER_ROAD.x, STARTER_ROAD.y).road).toBe('road');
     expect(MAP.parcels.find((p) => p.id === 'east_yard')?.ownership).toBe('none');
     expect(MAP.parcels.find((p) => p.id === 'west_quay')?.ownership).toBe('none');
 
@@ -212,7 +258,10 @@ describe('World.deserialize', () => {
   const INVALID: readonly [string, Mutation, string][] = [
     ['neznámy kľúč', set('extra', 1), '/extra'],
     ['chýba kľúč', (s) => delete s.cashCents, '/cashCents'],
-    ['iná verzia', set('version', 2), '/version'],
+    ['neznáma budúca verzia', set('version', 3), '/version'],
+    ['verzia 0', set('version', 0), '/version'],
+    ['verzia ako reťazec', set('version', '2'), '/version'],
+    ['v2 stav označený ako v1 → migrácia v1 odmietne kľúč v2', set('version', 1), '/traffic'],
     ['iná mapa', set('mapId', 'harbor_99'), '/mapId'],
     ['záporný seed', set('seed', -1), '/seed'],
     ['seed ≥ 2^32', set('seed', 2 ** 32), '/seed'],
@@ -231,7 +280,7 @@ describe('World.deserialize', () => {
     ['roads nie je pole', set('roads', {}), '/roads'],
     ['záznam cesty nie je dvojica', set('roads', [[1]]), '/roads/0'],
     ['záporný index bunky', set('roads', [[-1, 'road']]), '/roads/0/0'],
-    ['index mimo mapy', set('roads', [[MAP.grid.cellCount, 'road']]), '/roads/0/0'],
+    ['index mimo mapy', set('roads', [[MAP_GRID.cellCount, 'road']]), '/roads/0/0'],
     ['vrstva none', (s) => set('roads', [[firstRoadIndex(s), 'none']])(s), '/roads/0/1'],
     ['duplicitná bunka', (s) => set('roads', [[firstRoadIndex(s), 'road'], [firstRoadIndex(s), 'rail']])(s), '/roads/1/0'],
     ['cesta na vode', set('roads', [[WATER_INDEX, 'road']]), '/roads/0/0'],
@@ -240,6 +289,19 @@ describe('World.deserialize', () => {
     ['chýba parcela', (s) => delete (s.parcels as Record<string, string>).east_yard, '/parcels/east_yard'],
     ['neplatné vlastníctvo', (s) => ((s.parcels as Record<string, string>).west_quay = 'sold'), '/parcels/west_quay'],
     ['prenájom neprenajímateľnej parcely', (s) => ((s.parcels as Record<string, string>).starter = 'leased'), '/parcels/starter'],
+    ['traffic nie je pole', set('traffic', {}), '/traffic'],
+    ['záznam traffic nie je dvojica', set('traffic', [[1]]), '/traffic/0'],
+    ['traffic index mimo mapy', set('traffic', [[MAP_GRID.cellCount, 1]]), '/traffic/0/0'],
+    ['traffic nulový (neukladá sa)', set('traffic', [[5, 0]]), '/traffic/0/1'],
+    ['traffic záporný', set('traffic', [[5, -1]]), '/traffic/0/1'],
+    ['traffic ako reťazec', set('traffic', [[5, '1']]), '/traffic/0/1'],
+    ['traffic duplicitná bunka', set('traffic', [[5, 1], [5, 2]]), '/traffic/1/0'],
+    ['modules nie je pole', set('modules', {}), '/modules'],
+    ['cargo nie je objekt', set('cargo', []), '/cargo'],
+    ['cargo bez units', set('cargo', { createdCount: 0, exportedCount: 0 }), '/cargo/units'],
+    ['cargo porušená konzervácia', set('cargo', { createdCount: 1, exportedCount: 0, units: [] }), '/cargo/createdCount'],
+    ['ships nie je pole', set('ships', {}), '/ships'],
+    ['loď bez povinných kľúčov (tvar SerializedShip, T02-05)', set('ships', [{ id: 1 }]), '/ships/0/classId'],
   ];
 
   it.each(INVALID)('%s → WorldStateError na %s', (_name, mutate, path) => {

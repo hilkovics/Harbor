@@ -6,7 +6,7 @@
  */
 import { isWater, loadBundledMap, type Grid, type LoadedMap, type Rect } from '@sim/grid';
 import { loadBundledDefs } from '@sim/defs';
-import { World } from '@sim/world';
+import { World, type WorldOptions } from '@sim/world';
 
 /** Seed novej hry (uint32, ARCHITECTURE §3 / Rng); ten istý seed + rovnaké príkazy = rovnaká hra. */
 export const GAME_SEED = 20260929;
@@ -19,6 +19,12 @@ export const KEY_PAN_PX_PER_SECOND = 720;
 
 /** Najdlhší krok posunu klávesmi v ms: po návrate z neaktívnej karty (dlhý dt) kamera neskočí cez pol mapy. */
 export const KEY_PAN_MAX_DT_MS = 100;
+
+/**
+ * Najväčší posun myši v obrazovkových px medzi stlačením a pustením ľavého tlačidla v `idle` móde, ktorý sa ešte
+ * berie ako klik (výber modulu), nie ako ťah kamery. Väčší posun je posun mapy a výber sa nemení.
+ */
+export const CLICK_SLOP_PX = 4;
 
 /** Citlivosť kolieska: zoom sa násobí `exp(−delta × WHEEL_ZOOM_PER_PX)`; bežný krok kolieska (100 px) ≈ ×1,16. */
 export const WHEEL_ZOOM_PER_PX = 0.0015;
@@ -57,6 +63,12 @@ export function startViewCenter(grid: Grid, focus: Rect, visibleRows: number): {
   };
 }
 
+/**
+ * Ladiaca loď z DEV tlačidla „Spawn feeder (DEV)“ (`SpawnShipDebug`, ADR-016). Jednotiek je ≤ `apronSlots` kotviska
+ * (4), aby sa loď vyložila celá a odplávala — vo F2 ešte nejazdia vozidlá, ktoré by apron uvoľnili.
+ */
+export const DEV_SPAWN_SHIP = { shipClassId: 'feeder', cargoTypeId: 'container_teu', units: 4 } as const;
+
 /** Načíta mapu aplikácie; nesúlad s `APP_MAP_ID` je chyba konfigurácie (fail-fast). */
 export function loadAppMap(): LoadedMap {
   const map = loadBundledMap();
@@ -66,7 +78,13 @@ export function loadAppMap(): LoadedMap {
   return map;
 }
 
-/** Nová hra aplikácie: zabalené defy + mapa aplikácie + `GAME_SEED`. */
-export function createAppWorld(seed: number = GAME_SEED): World {
-  return World.create(loadBundledDefs(), loadAppMap(), seed);
+/**
+ * Voľby sveta aplikácie: invarianty (krok 12 ticku: konzervácia nákladu, konzistencia modulov a lodí) sú zapnuté len
+ * vo vývojovom builde (`import.meta.env.DEV`), v produkcii ich vypína kvôli výkonu (ADR-016).
+ */
+export const APP_WORLD_OPTIONS: WorldOptions = Object.freeze({ checkInvariants: import.meta.env.DEV });
+
+/** Nová hra aplikácie: zabalené defy + mapa aplikácie + `GAME_SEED` + `APP_WORLD_OPTIONS`. */
+export function createAppWorld(seed: number = GAME_SEED, options: WorldOptions = APP_WORLD_OPTIONS): World {
+  return World.create(loadBundledDefs(), loadAppMap(), seed, options);
 }

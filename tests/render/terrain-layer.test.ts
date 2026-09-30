@@ -102,13 +102,13 @@ describe('planTerrain', () => {
   });
 
   it('harbor_01: výplne pokrývajú každú bunku presne raz', () => {
-    const map = loadBundledMap();
-    const full = planTerrain(map.grid);
+    const grid = loadBundledMap().createGrid();
+    const full = planTerrain(grid);
     const total = TERRAIN_FILL_KEYS.reduce((sum, key) => sum + area(full.fills[key]), 0);
-    expect(total).toBe(map.grid.width * map.grid.height);
+    expect(total).toBe(grid.width * grid.height);
     // súčet plôch podľa typu zodpovedá počtu buniek terénu
     let water = 0;
-    for (let i = 0; i < map.grid.cellCount; i++) if (isWater(map.grid.atIndex(i).terrain)) water++;
+    for (let i = 0; i < grid.cellCount; i++) if (isWater(grid.atIndex(i).terrain)) water++;
     expect(area(full.fills.waterDeep) + area(full.fills.waterShallow)).toBe(water);
     expect(full.foam.length).toBeGreaterThan(0);
     expect(full.quayEdge.length).toBeGreaterThan(0);
@@ -117,8 +117,7 @@ describe('planTerrain', () => {
 
 describe('TerrainLayer (Pixi scene graph bez renderera)', () => {
   it('nakreslí terén do jedného Graphics; rebuild ho nahradí (nie pridá)', () => {
-    const map = loadBundledMap();
-    const layer = new TerrainLayer(map.grid, PALETTE);
+    const layer = new TerrainLayer(loadBundledMap().createGrid(), PALETTE);
     expect(layer.view).toBeInstanceOf(Container);
     expect(layer.view.children).toHaveLength(1);
     expect(layer.view.children[0]).toBeInstanceOf(Graphics);
@@ -129,12 +128,12 @@ describe('TerrainLayer (Pixi scene graph bez renderera)', () => {
   });
 
   it('rozmer vrstvy = mapa × `--cell`', () => {
-    const map = loadBundledMap();
-    const layer = new TerrainLayer(map.grid, PALETTE);
+    const grid = loadBundledMap().createGrid();
+    const layer = new TerrainLayer(grid, PALETTE);
     const bounds = layer.view.getLocalBounds();
     expect(bounds.minX).toBeCloseTo(0, 6);
     expect(bounds.minY).toBeCloseTo(0, 6);
-    expect(bounds.maxX).toBeCloseTo(map.grid.width * PALETTE.cellPx, 6);
-    expect(bounds.maxY).toBeCloseTo(map.grid.height * PALETTE.cellPx, 6);
+    expect(bounds.maxX).toBeCloseTo(grid.width * PALETTE.cellPx, 6);
+    expect(bounds.maxY).toBeCloseTo(grid.height * PALETTE.cellPx, 6);
   });
 });

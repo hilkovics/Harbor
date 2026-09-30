@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { Container, Texture, TilingSprite } from 'pixi.js';
+import { Container, Graphics, NineSliceSprite, Texture, TilingSprite } from 'pixi.js';
 import { describe, expect, it } from 'vitest';
 import { BuildLayer, loadGhostPalette, type GhostCell } from '@render/build-layer';
-import { GHOST_HATCH_PATTERN, overlayAssetUrl } from '@render/overlay-assets';
+import { GHOST_HATCH_PATTERN, SELECTION_RING_SLICE, overlayAssetUrl } from '@render/overlay-assets';
 import { tokenResolverFromCss } from '@render/tokens';
 
 const TOKENS = tokenResolverFromCss(readFileSync(fileURLToPath(new URL('../../design/tokens.css', import.meta.url)), 'utf8'));
@@ -114,6 +114,76 @@ describe('BuildLayer', () => {
     }).not.toThrow();
     expect(() => {
       build.destroy();
+    }).not.toThrow();
+  });
+});
+
+describe('BuildLayer — obrys výberu modulu (selection_ring)', () => {
+  const RECT = { x: 40, y: 14, w: 8, h: 3 };
+  const ringOf = (build: BuildLayer): NineSliceSprite | Graphics => {
+    const container = build.view.children[3] as Container; // fills, hatch, markery, výber
+    return container.children[0] as NineSliceSprite | Graphics;
+  };
+
+  it('okraje 9-slice a asset sú z manifestu (8 px, overlay/selection_ring.svg)', () => {
+    expect(SELECTION_RING_SLICE).toEqual({ left: 8, top: 8, right: 8, bottom: 8 });
+    expect(overlayAssetUrl('selection_ring')).toContain('selection_ring');
+  });
+
+  it('bez výberu sa nič nekreslí', () => {
+    const build = layer();
+    expect(build.selectionShown).toBe(false);
+    expect((build.view.children[3] as Container).children).toHaveLength(0);
+  });
+
+  it('s textúrou: NineSliceSprite natiahnutý na footprint modulu (px = bunka × cellPx), rohy z manifestu', () => {
+    const build = new BuildLayer({ cellPx: CELL, palette: loadGhostPalette(TOKENS), hatch: null, selectionRing: Texture.WHITE });
+    build.setSelectionRing(RECT);
+    const ring = ringOf(build);
+    expect(ring).toBeInstanceOf(NineSliceSprite);
+    const sprite = ring as NineSliceSprite;
+    expect([sprite.position.x, sprite.position.y]).toEqual([RECT.x * CELL, RECT.y * CELL]);
+    expect([sprite.width, sprite.height]).toEqual([RECT.w * CELL, RECT.h * CELL]);
+    expect([sprite.leftWidth, sprite.topHeight, sprite.rightWidth, sprite.bottomHeight]).toEqual([8, 8, 8, 8]);
+    expect(build.selectionShown).toBe(true);
+  });
+
+  it('bez textúry: Graphics obrys z tokenu --ui-accent', () => {
+    const build = layer();
+    expect(loadGhostPalette(TOKENS).selection).toEqual({ color: 0x3aa0ff, alpha: 1 });
+    build.setSelectionRing(RECT);
+    expect(ringOf(build)).toBeInstanceOf(Graphics);
+    expect(build.selectionShown).toBe(true);
+  });
+
+  it('presun výberu znovupoužije ten istý sprite; null ho skryje, nezničí', () => {
+    const build = new BuildLayer({ cellPx: CELL, palette: loadGhostPalette(TOKENS), hatch: null, selectionRing: Texture.WHITE });
+    build.setSelectionRing(RECT);
+    const first = ringOf(build);
+    build.setSelectionRing({ x: 43, y: 14, w: 2, h: 3 });
+    expect(ringOf(build)).toBe(first);
+    expect([first.width, first.height]).toEqual([2 * CELL, 3 * CELL]);
+    build.setSelectionRing(null);
+    expect(build.selectionShown).toBe(false);
+    expect(ringOf(build)).toBe(first);
+    build.setSelectionRing(RECT);
+    expect(build.selectionShown).toBe(true);
+  });
+
+  it('obrys je nezávislý od ghostu (setGhost / clearGhost ho nemenia)', () => {
+    const build = layer();
+    build.setSelectionRing(RECT);
+    build.setGhost([{ x: 1, y: 1, valid: true }]);
+    expect(build.selectionShown).toBe(true);
+    build.clearGhost();
+    expect(build.selectionShown).toBe(true);
+  });
+
+  it('po destroy() setSelectionRing nič nerobí a nehádže', () => {
+    const build = layer();
+    build.destroy();
+    expect(() => {
+      build.setSelectionRing(RECT);
     }).not.toThrow();
   });
 });

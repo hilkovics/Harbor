@@ -1,5 +1,6 @@
 /**
- * Adresy SVG assetov sveta (`assets/{terrain,infra,overlay}/*.svg`) podľa cesty zo `assets/manifest.json`.
+ * Adresy SVG assetov sveta (`assets/{terrain,infra,overlay,modules,entities,cargo}/*.svg`) podľa cesty zo
+ * `assets/manifest.json`.
  *
  * Názvy súborov sa nepíšu do kódu: berú sa z manifestu (`<sekcia>.<id>.file`, napr. `terrain/quay.svg`). URL rieši Vite
  * (`?url` cez `import.meta.glob`), takže funguje v dev aj v builde (s hashom v názve). Jediné miesto, kde sa
@@ -7,7 +8,7 @@
  */
 
 /** Kľúč = cesta relatívne k tomuto súboru, hodnota = URL, ktorú vydá Vite. */
-const ASSET_URLS = import.meta.glob<string>('../../assets/{terrain,infra,overlay}/*.svg', {
+const ASSET_URLS = import.meta.glob<string>('../../assets/{terrain,infra,overlay,modules,entities,cargo}/*.svg', {
   query: '?url',
   import: 'default',
   eager: true,

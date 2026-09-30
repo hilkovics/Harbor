@@ -7,9 +7,12 @@
  */
 import type { Command, SerializedCommand } from './command';
 import type { CommandRegistry } from './command-registry';
+import { PlaceModuleCommand } from './place-module';
 import { PlaceRoadCommand } from './place-road';
+import { RemoveModuleCommand } from './remove-module';
 import { RemoveRoadCommand } from './remove-road';
 import { SetGameSpeedCommand } from './set-game-speed';
+import { SpawnShipDebugCommand } from './spawn-ship-debug';
 
 /** Trieda príkazu, ktorú možno registrovať: typ v registri + factory zo serializovaného tvaru. */
 export interface RegistrableCommand {
@@ -17,11 +20,14 @@ export interface RegistrableCommand {
   fromJSON(json: SerializedCommand): Command;
 }
 
-/** Príkazy F1 v poradí registrácie (ARCHITECTURE §12.2). */
+/** Vstavané príkazy v poradí registrácie (ARCHITECTURE §12.2): F1 + moduly F2 (T02-04) + ladiaca loď (T02-05). */
 export const BUILTIN_COMMANDS: readonly RegistrableCommand[] = Object.freeze([
   PlaceRoadCommand,
   RemoveRoadCommand,
   SetGameSpeedCommand,
+  PlaceModuleCommand,
+  RemoveModuleCommand,
+  SpawnShipDebugCommand,
 ]);
 
 /** Zaregistruje všetky vstavané príkazy do `registry` (už registrovaný typ → `CommandError`). */

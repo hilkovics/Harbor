@@ -1,7 +1,12 @@
-// Validácia data/defs/*.json voči data/schemas/<názov>.schema.json a data/maps/*.json voči data/schemas/map.schema.json
-// (JSON Schema draft 2020-12). Spustenie: `pnpm validate:defs` [defsDir schemasDir mapsDir]. Exit 1 pri akejkoľvek chybe.
-// Logika je exportovaná ako `validateDefsDir` a `validateMapsDir` (testovateľné bez procesu), CLI sa spustí len pri
-// priamom behu súboru. Schéma mapy overuje len štruktúru; vzťahy medzi poľami mapy overuje loader v sime (MapError).
+// Validácia data/defs/*.json voči data/schemas/<názov>.schema.json, data/maps/*.json voči data/schemas/map.schema.json
+// a assets/manifest.json voči data/schemas/asset-manifest.schema.json (JSON Schema draft 2020-12).
+// Spustenie: `pnpm validate:defs` [defsDir schemasDir mapsDir manifestPath]. Exit 1 pri akejkoľvek chybe.
+// Logika je exportovaná ako `validateDefsDir`, `validateMapsDir` a `validateAssetManifest` (testovateľné bez procesu),
+// CLI sa spustí len pri priamom behu súboru. Schéma mapy overuje len štruktúru; vzťahy medzi poľami mapy overuje
+// loader v sime (MapError). Schéma manifestu tiež len štruktúru; existenciu SVG súborov, ich pokrytie a rozmery
+// overuje tests/tools/asset-manifest.test.ts. `validateAssetManifest` navyše krížovo overí, že každý modul z
+// `modules.json` má `sprites[id]` a každá loď zo `ships.json` má `entities.ship_{id}`.
+// Katalógové defy (`items: [...]`, ADR-009) majú navyše kontrolu jedinečnosti `id` — JSON Schema ju nevyjadrí.
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
@@ -12,12 +17,21 @@ import type { ErrorObject } from 'ajv';
 export const DEFAULT_DEFS_DIR = fileURLToPath(new URL('../data/defs', import.meta.url));
 export const DEFAULT_SCHEMAS_DIR = fileURLToPath(new URL('../data/schemas', import.meta.url));
 export const DEFAULT_MAPS_DIR = fileURLToPath(new URL('../data/maps', import.meta.url));
+export const DEFAULT_ASSET_MANIFEST = fileURLToPath(new URL('../assets/manifest.json', import.meta.url));
 
 const JSON_SUFFIX = '.json';
 const SCHEMA_SUFFIX = '.schema.json';
 /** Všetky mapy zdieľajú jednu schému, na rozdiel od defov (schéma podľa názvu súboru). */
 const MAP_SCHEMA_NAME = `map${SCHEMA_SUFFIX}`;
 const MAPS_LABEL_PREFIX = 'maps/';
+const ASSET_MANIFEST_SCHEMA_NAME = `asset-manifest${SCHEMA_SUFFIX}`;
+const ASSETS_LABEL_PREFIX = 'assets/';
+/** Katalógy defov, ktoré musia mať sprite v manifeste, a sekcia manifestu + predpona kľúča, kde ho hľadať. */
+const MODULES_DEF_FILE = `modules${JSON_SUFFIX}`;
+const SHIPS_DEF_FILE = `ships${JSON_SUFFIX}`;
+const MODULE_SPRITES_SECTION = 'sprites';
+const SHIP_ENTITIES_SECTION = 'entities';
+const SHIP_ENTITY_PREFIX = 'ship_';
 
 export interface DefValidationResult {
   /** Názov súboru defu (bez adresára), napr. `time.json`; pri mapách s predponou, napr. `maps/harbor_01.json`. */
@@ -39,8 +53,31 @@ function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-/** Overí JSON súbor `filePath` voči schéme `schemaName` z `schemasDir`; `label` je predpona každej chyby. */
-function validateJsonFile(label: string, filePath: string, schemaName: string, schemasDir: string): string[] {
+/**
+ * Duplicitné `id` v `items[]` katalógového defu (ADR-009): `<label>: /items/<i>/id duplicitné id 'x' (/items/<j>/id)`.
+ * Súbory bez `items` (konfiguračné defy, mapy) a položky bez reťazcového `id` sa preskakujú — tvar hlási schéma.
+ */
+function findDuplicateIds(label: string, json: unknown): string[] {
+  if (typeof json !== 'object' || json === null || Array.isArray(json)) return [];
+  const items: unknown = (json as { items?: unknown }).items;
+  if (!Array.isArray(items)) return [];
+  const firstSeen = new Map<string, number>();
+  const errors: string[] = [];
+  items.forEach((item: unknown, index) => {
+    const id = typeof item === 'object' && item !== null ? (item as { id?: unknown }).id : undefined;
+    if (typeof id !== 'string') return;
+    const first = firstSeen.get(id);
+    if (first === undefined) firstSeen.set(id, index);
+    else errors.push(`${label}: /items/${String(index)}/id duplicitné id '${id}' (/items/${String(first)}/id)`);
+  });
+  return errors;
+}
+
+/**
+ * Overí JSON súbor `filePath` voči schéme `schemaName` z `schemasDir`; `label` je predpona každej chyby.
+ * `catalog` zapne kontrolu jedinečnosti `id` v `items[]` (chyby schémy sa hlásia pred duplicitami).
+ */
+function validateJsonFile(label: string, filePath: string, schemaName: string, schemasDir: string, catalog: boolean): string[] {
   const schemaPath = join(schemasDir, schemaName);
   if (!existsSync(schemaPath)) {
     return [`${label}: / chýba schéma ${schemaName} v ${schemasDir}`];
@@ -57,11 +94,14 @@ function validateJsonFile(label: string, filePath: string, schemaName: string, s
     const schema: unknown = JSON.parse(readFileSync(schemaPath, 'utf8'));
     // Nová inštancia na každý súbor: schémy s rovnakým `$id` sa medzi behmi nezrazia.
     const validate = new Ajv2020({ allErrors: true }).compile(schema as object);
-    if (validate(json)) return [];
+    const duplicates = catalog ? findDuplicateIds(label, json) : [];
+    if (validate(json)) return duplicates;
     // Chyby zo subschémy `contains` (jedna na každý nevyhovujúci prvok) sú šum — ostáva len chyba samotného `contains`.
-    return (validate.errors ?? [])
-      .filter((error) => !error.schemaPath.includes('/contains/'))
+    // Sprievodná chyba `if` („must match "then" schema“) je šum — konkrétne chyby z vetvy `then` ostávajú.
+    const schemaErrors = (validate.errors ?? [])
+      .filter((error) => !error.schemaPath.includes('/contains/') && error.keyword !== 'if')
       .map((error) => describeAjvError(label, error));
+    return [...schemaErrors, ...duplicates];
   } catch (cause) {
     return [`${label}: / neplatná schéma ${schemaName}: ${errorMessage(cause)}`];
   }
@@ -78,7 +118,7 @@ export function validateDefsDir(defsDir: string, schemasDir: string): DefValidat
     .sort()
     .map((file) => ({
       file,
-      errors: validateJsonFile(file, join(defsDir, file), `${basename(file, JSON_SUFFIX)}${SCHEMA_SUFFIX}`, schemasDir),
+      errors: validateJsonFile(file, join(defsDir, file), `${basename(file, JSON_SUFFIX)}${SCHEMA_SUFFIX}`, schemasDir, true),
     }));
 }
 
@@ -92,14 +132,80 @@ export function validateMapsDir(mapsDir: string, schemasDir: string): DefValidat
     .sort()
     .map((name) => {
       const file = `${MAPS_LABEL_PREFIX}${name}`;
-      return { file, errors: validateJsonFile(file, join(mapsDir, name), MAP_SCHEMA_NAME, schemasDir) };
+      return { file, errors: validateJsonFile(file, join(mapsDir, name), MAP_SCHEMA_NAME, schemasDir, false) };
     });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** JSON súbor alebo `undefined`, ak sa nedá prečítať / parsovať (chybu vtedy hlási samotná validácia súboru). */
+function readJsonOrUndefined(path: string): unknown {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
+/** `{ id, index }` položiek katalógu `defsDir/file`; `null` = súbor chýba, je nečitateľný alebo nemá `items[]`. */
+function catalogEntries(defsDir: string, file: string): { id: string; index: number }[] | null {
+  const json = readJsonOrUndefined(join(defsDir, file));
+  const items = isRecord(json) ? json['items'] : undefined;
+  if (!Array.isArray(items)) return null;
+  const entries: { id: string; index: number }[] = [];
+  items.forEach((item: unknown, index) => {
+    const id = isRecord(item) ? item['id'] : undefined;
+    if (typeof id === 'string') entries.push({ id, index });
+  });
+  return entries;
+}
+
+/**
+ * Krížová kontrola manifestu voči defom: každý modul z `modules.json` má `sprites[id]`, každá loď zo `ships.json`
+ * má `entities.ship_{id}`. Chyba: `<label>: /<sekcia>/<kľúč> chýba sprite pre <modul|loď> '<id>' (<def>: /items/<i>/id)`.
+ * Katalóg, ktorý chýba alebo sa nedá čítať, a sekcia manifestu, ktorá nie je objekt, sa preskočia (hlási ich schéma /
+ * `validateDefsDir`). Sprity bez defu (budúce moduly) chyba nie sú.
+ */
+function findMissingSprites(label: string, manifest: unknown, defsDir: string): string[] {
+  if (!isRecord(manifest)) return [];
+  const checks = [
+    { defFile: MODULES_DEF_FILE, section: MODULE_SPRITES_SECTION, keyPrefix: '', what: 'modul' },
+    { defFile: SHIPS_DEF_FILE, section: SHIP_ENTITIES_SECTION, keyPrefix: SHIP_ENTITY_PREFIX, what: 'loď' },
+  ] as const;
+  const errors: string[] = [];
+  for (const { defFile, section, keyPrefix, what } of checks) {
+    const sprites = manifest[section];
+    const entries = catalogEntries(defsDir, defFile);
+    if (!isRecord(sprites) || entries === null) continue;
+    for (const { id, index } of entries) {
+      const key = `${keyPrefix}${id}`;
+      if (!(key in sprites)) {
+        errors.push(`${label}: /${section}/${key} chýba sprite pre ${what} '${id}' (${defFile}: /items/${String(index)}/id)`);
+      }
+    }
+  }
+  return errors;
+}
+
+/**
+ * Overí `manifestPath` (`assets/manifest.json`) voči `asset-manifest.schema.json` v `schemasDir` a krížovo voči
+ * defom v `defsDir` (pozri `findMissingSprites`). `file` výsledku je `assets/<názov súboru>`. Chýbajúci súbor,
+ * nevalidný JSON, chýbajúca schéma aj porušenie sú chyby v `errors` (nie výnimky).
+ */
+export function validateAssetManifest(manifestPath: string, schemasDir: string, defsDir: string): DefValidationResult {
+  const file = `${ASSETS_LABEL_PREFIX}${basename(manifestPath)}`;
+  if (!existsSync(manifestPath)) return { file, errors: [`${file}: / chýba súbor ${manifestPath}`] };
+  const schemaErrors = validateJsonFile(file, manifestPath, ASSET_MANIFEST_SCHEMA_NAME, schemasDir, false);
+  return { file, errors: [...schemaErrors, ...findMissingSprites(file, readJsonOrUndefined(manifestPath), defsDir)] };
 }
 
 function main(argv: readonly string[]): number {
   const defsDir = argv[0] ? resolve(argv[0]) : DEFAULT_DEFS_DIR;
   const schemasDir = argv[1] ? resolve(argv[1]) : DEFAULT_SCHEMAS_DIR;
   const mapsDir = argv[2] ? resolve(argv[2]) : DEFAULT_MAPS_DIR;
+  const manifestPath = argv[3] ? resolve(argv[3]) : DEFAULT_ASSET_MANIFEST;
 
   const results: DefValidationResult[] = [];
   for (const [dir, validate] of [
@@ -113,6 +219,7 @@ function main(argv: readonly string[]): number {
       return 1;
     }
   }
+  results.push(validateAssetManifest(manifestPath, schemasDir, defsDir));
 
   let failed = 0;
   for (const { file, errors } of results) {
@@ -124,7 +231,7 @@ function main(argv: readonly string[]): number {
     for (const line of errors) console.error(line);
   }
   if (failed > 0) {
-    console.error(`validate-defs: ${failed} z ${results.length} súborov (defy a mapy) je neplatných.`);
+    console.error(`validate-defs: ${failed} z ${results.length} súborov (defy, mapy a asset manifest) je neplatných.`);
     return 1;
   }
   return 0;

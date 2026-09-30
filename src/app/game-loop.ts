@@ -10,7 +10,8 @@
  *    ekvivalentné príkazovej časti `tick()`, takže poradie udalostí sa nemení;
  * 2. rýchlosť 0 (pauza) → nič viac; akumulátor sa nemení (neakumuluje sa, ale ani nemaže → `alpha` ostane, obraz
  *    nepoškočí a po obnove plynulo pokračuje);
- * 3. inak `acc += dtMs × speed`, `n = min(floor(acc / tickMs), maxTicksPerFrame)`, vykoná sa `n` tickov;
+ * 3. inak `acc += dtMs × speed`, `n = min(floor(acc / tickMs), maxTicksPerFrame)`, vykoná sa `n` tickov
+ *    (pred každým z nich `sink.beforeTick?.()`);
  * 4. `acc -= n × tickMs`; ak sa zasiahol limit (proti špirále smrti), prebytok sa zahodí: `acc = min(acc, tickMs)`;
  * 5. `alpha = acc / tickMs` (0..1) — interpolácia medzi predošlým a aktuálnym tickom v renderi.
  */
@@ -21,6 +22,11 @@ import type { World } from '@sim/world';
 export interface FrameEventSink {
   /** Volá sa po každom frame (aj s prázdnym poľom), aby sink mohol obnoviť odvodený stav. */
   publish(events: readonly SimEvent[]): void;
+  /**
+   * Voliteľné: volá sa tesne PRED každým `world.tick()` (nie pri pauze ani pri frame bez ticku). Sink si tu zapamätá
+   * stav, ktorý sim nevedie (predchádzajúcu polohu lodí pre interpoláciu `lerp(prev, curr, alpha)`).
+   */
+  beforeTick?(): void;
 }
 
 const NO_EVENTS: readonly SimEvent[] = Object.freeze([]);
@@ -84,7 +90,10 @@ export class GameLoop {
       this.accMs += dtMs * speed;
       const due = Math.floor(this.accMs / this.tickMs);
       ticks = Math.min(due, this.maxTicksPerFrame);
-      for (let i = 0; i < ticks; i++) collect(world.tick());
+      for (let i = 0; i < ticks; i++) {
+        this.sink?.beforeTick?.();
+        collect(world.tick());
+      }
       this.accMs -= ticks * this.tickMs;
       // Zásah limitu: zvyšné ticky sa zahodia, aby sa hra po zdržaní nesnažila dobehnúť backlog.
       if (due > ticks) this.accMs = Math.min(this.accMs, this.tickMs);

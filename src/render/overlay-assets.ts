@@ -22,3 +22,7 @@ export function overlayAssetUrl(id: OverlayAssetId): string {
 
 /** Rozmer vzoru `ghost_hatch` z manifestu (šrafa nad `--ghost-invalid`). */
 export const GHOST_HATCH_PATTERN: PatternSize = overlayManifest.ghost_hatch.pattern;
+
+/** Okraje 9-slice `selection_ring` v px zdrojovej textúry (`overlay.selection_ring.nineSlice`). */
+export const SELECTION_RING_SLICE: { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number } =
+  overlayManifest.selection_ring.nineSlice;

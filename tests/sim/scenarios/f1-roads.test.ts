@@ -4,12 +4,12 @@
  * model v tomto súbore z defov (`infrastructure`, `economy`, `time`) a zo samotného scenára — nie sú natvrdo.
  *
  * Trasa scenára (mapa harbor_01, ADR-008):
- *  - tick 0:     zvislá cesta x=44, y=14..33 po starter parcele od nábrežia k štartovej ceste (44,34)
+ *  - tick 0:     cesta od konektora Root berthu (41,17)–(43,17), potom zvislo x=44, y=17..33 k štartovej ceste (44,34)
  *  - tick 100:   vodorovná cesta y=25, x=28..59 cez starter parcelu a verejné bunky x=28..29 a x=58..59
  *                (bunka (44,25) už cestu má → preskočí sa bez ceny)
  *  - tick 200:   SetGameSpeed(4)
  *  - tick 6000:  zvislá cesta x=29, y=14..24 po verejných bunkách vrátane nábrežia
- *  - tick 12000: RemoveRoad 6 buniek (2 verejné + 4 starter); tick 15000: RemoveRoad 1 bunky nábrežia
+ *  - tick 12000: RemoveRoad 6 buniek (2 verejné + 4 starter); tick 15000: RemoveRoad 1 bunky verejného nábrežia (29,14)
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { commandFromJSON, type SerializedCommand } from '@sim/commands';
@@ -37,10 +37,15 @@ const DAYS_PER_MONTH = 30;
 
 const defs = loadBundledDefs();
 const map = loadBundledMap();
+/** Počiatočný stav mriežky mapy len na čítanie (svety majú vlastné kópie). */
+const mapGrid = map.createGrid();
 const scenario = loadScenarioFile('f1_roads');
 
 const ROAD_COST = defs.infrastructure.road.costPerCellCents;
 const REFUND_RATE = defs.economy.removalRefundRate;
+
+/** Refundácia za `cells` buniek (ADR-012 v znení ADR-015): celočíselne v bázických bodoch, nadol z celého príkazu. */
+const refundOf = (cells: number): number => Number((BigInt(cells * ROAD_COST) * BigInt(Math.round(REFUND_RATE * 10_000))) / 10_000n);
 
 // ---------------------------------------------------------------------------------------------------------
 // Referenčný model (nezávislý od implementácie: množina buniek + hotovosť + rýchlosť)
@@ -87,7 +92,7 @@ function modelAt(commands: readonly ScenarioEntry[], tick: number): Model {
       model.steps.push({ atTick, type: command.type, deltaCents, changed: fresh });
     } else if (command.type === 'RemoveRoad') {
       const existing = [...new Set(cellsOf(command).map(cellKey))].filter((key) => model.roads.has(key));
-      const deltaCents = Math.floor(existing.length * ROAD_COST * REFUND_RATE);
+      const deltaCents = refundOf(existing.length);
       existing.forEach((key) => model.roads.delete(key));
       model.cashCents += deltaCents;
       model.steps.push({ atTick, type: command.type, deltaCents, changed: existing });
@@ -135,7 +140,7 @@ describe('scenár f1_roads: súbor', () => {
     expect(placed).toBeGreaterThanOrEqual(20);
 
     const cells = scenario.commands.filter((e) => e.command.type === 'PlaceRoad').flatMap((e) => cellsOf(e.command));
-    const parcelIds = new Set(cells.map((c) => map.grid.at(c.x, c.y).parcelId));
+    const parcelIds = new Set(cells.map((c) => mapGrid.at(c.x, c.y).parcelId));
     expect(parcelIds).toContain('starter');
     expect(parcelIds).toContain(null); // aj verejné bunky
   });
@@ -206,7 +211,7 @@ describe('scenár f1_roads: beh 20 000 tickov', () => {
     const expected =
       defs.economy.startingCashCents -
       placedCells * ROAD_COST +
-      Math.floor(removedCells * ROAD_COST * REFUND_RATE);
+      refundOf(removedCells);
     expect(placedCells).toBeGreaterThan(0);
     expect(removedCells).toBeGreaterThan(0);
     expect(world.cashCents).toBe(expected);
@@ -288,9 +293,10 @@ describe('scenár f1_roads: invarianty po každom ticku', () => {
     expect(countRoadCells(world)).toBeGreaterThan(before);
 
     let templateRoads = 0;
-    for (let y = 0; y < map.grid.height; y++) {
-      for (let x = 0; x < map.grid.width; x++) {
-        if (map.grid.at(x, y).road === 'road') templateRoads += 1;
+    const template = map.createGrid();
+    for (let y = 0; y < template.height; y++) {
+      for (let x = 0; x < template.width; x++) {
+        if (template.at(x, y).road === 'road') templateRoads += 1;
       }
     }
     expect(templateRoads).toBe(before);
@@ -308,7 +314,7 @@ function firstLandCell(parcelId: string): CellCoord {
   if (parcel === undefined) throw new Error(`mapa nemá parcelu '${parcelId}'`);
   for (let y = parcel.rect.y; y < parcel.rect.y + parcel.rect.h; y++) {
     for (let x = parcel.rect.x; x < parcel.rect.x + parcel.rect.w; x++) {
-      const cell = map.grid.at(x, y);
+      const cell = mapGrid.at(x, y);
       if (cell.terrain === 'land' && cell.road === 'none') return { x, y };
     }
   }
@@ -317,9 +323,9 @@ function firstLandCell(parcelId: string): CellCoord {
 
 /** Prvá voľná verejná bunka pevniny. */
 function firstPublicLandCell(): CellCoord {
-  for (let y = 0; y < map.grid.height; y++) {
-    for (let x = 0; x < map.grid.width; x++) {
-      const cell = map.grid.at(x, y);
+  for (let y = 0; y < mapGrid.height; y++) {
+    for (let x = 0; x < mapGrid.width; x++) {
+      const cell = mapGrid.at(x, y);
       if (cell.terrain === 'land' && cell.parcelId === null && cell.road === 'none') return { x, y };
     }
   }
@@ -488,7 +494,7 @@ describe('World: fronta príkazov', () => {
     expect(eventsOfType(events, 'CommandRejected')).toEqual([]);
     expect(world.grid.at(starterCell.x, starterCell.y).road).toBe('none');
     expect(world.cashCents).toBe(
-      defs.economy.startingCashCents - ROAD_COST + Math.floor(ROAD_COST * REFUND_RATE),
+      defs.economy.startingCashCents - ROAD_COST + refundOf(1),
     );
   });
 

@@ -1,10 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "data/maps/*.json",
-  "description": "Mapa sveta (ARCHITECTURE §4.7). Schéma popisuje štruktúru a rozsahy; vzťahy medzi poľami (počet riadkov terénu = height, dĺžka riadku = width, parcely v mape a bez prekryvu, portály na okraji na pevnine, seaLane a anchorage na vode, starter cesty) overuje loader mapy v sime (MapError).",
+  "description": "Mapa sveta (ARCHITECTURE §4.7). Schéma popisuje štruktúru a rozsahy; vzťahy medzi poľami (počet riadkov terénu = height, dĺžka riadku = width, parcely v mape a bez prekryvu, portály na okraji na pevnine a bez zdieľanej bunky, seaLane a anchorage na vode, starter cesty a moduly v mape) overuje loader mapy v sime (MapError); existenciu defu starter modulu a pravidlá jeho umiestnenia overuje World.create.",
   "type": "object",
   "additionalProperties": false,
   "required": [
+    "schemaVersion",
     "id",
     "width",
     "height",
@@ -18,6 +19,10 @@
     "starter"
   ],
   "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Verzia formátu mapy."
+    },
     "id": {
       "$ref": "#/$defs/id",
       "description": "Identifikátor mapy (zhodný s názvom súboru bez .json)."
@@ -105,7 +110,7 @@
         "modules": {
           "type": "array",
           "items": { "$ref": "#/$defs/placedModule" },
-          "description": "Predpostavené moduly (Root modul od fázy 2)."
+          "description": "Predpostavené moduly (Root modul od fázy 2); x, y = ľavý horný roh footprintu po rotácii. Umiestňuje ich World.create rovnakou validáciou ako PlaceModule (okrem ceny)."
         },
         "roads": {
           "type": "array",

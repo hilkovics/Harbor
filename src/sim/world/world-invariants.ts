@@ -6,6 +6,9 @@
  * Kontroly (prvé porušenie vyhráva, správa pomenuje entity):
  * 1. každá jednotka nákladu je u existujúceho držiteľa (`CARGO_HOLDER_SOURCES`);
  * 2. mriežka: bunky modulu (okrem žeriavu) majú `moduleId` modulu a žiadnu cestu, iné bunky nemajú `moduleId`;
+ *    typ cesty (ADR-020): koľaj má `DEFAULT_ROAD_KIND` a žiadny smer, cestná bunka má známy typ a smer práve vtedy,
+ *    keď je jednosmerná (`ROAD_KIND_TRAITS.oneWay`), a smer je N/E/S/W (prázdne bunky sa kvôli cene kroku 12
+ *    nekontrolujú — ich normalizovaný stav zaručujú zápisy `createCell`, `RemoveRoad` a `World.deserialize`);
  * 3. žeriav: stojí celý na svojom berthe, má jeho rotáciu, berth ho eviduje, držaná jednotka, rezervácia a fáza
  *    zodpovedajú ledgeru, apronu a `CRANE_STATE_TRAITS` (`cranePhaseProblem`); berth: `craneIds` = jeho žeriavy v poradí umiestnenia,
  *    najviac `maxCranes`, bez prekryvu, rezervácie apronu = rezervácie jeho žeriavov;
@@ -36,7 +39,10 @@
  *    kategórie nákladu so slotom v rozsahu; rezervované sloty každého skladu = presne sloty `to` jeho aktívnych jobov.
  */
 import { CARGO_HOLDER_KINDS, isSameLocation, uniqueSlotOf } from '../cargo/cargo-location';
+import { OPPOSITE_DIRECTION } from '../grid/road-direction';
+import { DEFAULT_ROAD_KIND, ROAD_KIND_TRAITS, isRoadKind } from '../grid/road-kind';
 import type { EntityId } from '../core/entity-id';
+import type { Cell } from '../grid/grid';
 import { JOB_STATE_TRAITS, type TransportJob } from '../logistics/transport-job';
 import { BerthModule } from '../modules/berth-module';
 import { computeBerthGroups } from '../modules/berth-group';
@@ -89,6 +95,33 @@ const checkCargoHolders: Check = (world) => {
   return undefined;
 };
 
+/** Tabuľky typov ciest ako lokálne väzby modulu — slučka kroku 12 nad celou mriežkou ich číta bez importných getterov. */
+const ROAD_TRAITS: Readonly<Record<string, { readonly oneWay: boolean } | undefined>> = ROAD_KIND_TRAITS;
+const ROAD_DIRECTIONS: Readonly<Record<string, string | undefined>> = OPPOSITE_DIRECTION;
+const DEFAULT_KIND: string = DEFAULT_ROAD_KIND;
+
+/**
+ * Je typ a smer cesty bunky s vrstvou dopravy v poriadku (ADR-020)? Koľaj má predvolený typ bez smeru, cesta známy typ
+ * a smer N/E/S/W práve pri jednosmerke. Bez alokácie (každý tick nad cestnými bunkami).
+ */
+function isUsualRoadCell(cell: Readonly<Cell>): boolean {
+  const { road, roadKind, roadDir } = cell;
+  if (road !== 'road') return roadKind === DEFAULT_KIND && roadDir === null;
+  const oneWay = ROAD_TRAITS[roadKind]?.oneWay;
+  return roadDir === null ? oneWay === false : oneWay === true && ROAD_DIRECTIONS[roadDir] !== undefined;
+}
+
+/** Popis porušenia typu a smeru cesty bunky, ktorá neprešla `isUsualRoadCell`. */
+function roadCellProblem(world: World, index: number): string {
+  const { road, roadKind, roadDir } = world.grid.atIndex(index);
+  const oneWay = ROAD_TRAITS[roadKind]?.oneWay;
+  const { x, y } = world.grid.coordOf(index);
+  if (road !== 'road') return `bunka ${cellLabel(x, y)} s vrstvou '${road}' má typ cesty '${roadKind}' a smer ${String(roadDir)}`;
+  if (!isRoadKind(roadKind)) return `bunka ${cellLabel(x, y)} má neznámy typ cesty '${String(roadKind)}'`;
+  const expected = oneWay === true ? 'jednosmerka musí mať smer N/E/S/W' : 'len jednosmerka má smer';
+  return `cesta na ${cellLabel(x, y)} typu '${roadKind}' má smer ${String(roadDir)} (${expected})`;
+}
+
 const checkModuleCells: Check = (world) => {
   const { grid } = world;
   for (const [id, module] of world.modules) {
@@ -103,8 +136,13 @@ const checkModuleCells: Check = (world) => {
       if (cell.road !== 'none') return `pod modulom ${module.label} je na ${cellLabel(x, y)} vrstva '${cell.road}'`;
     }
   }
+  // Jeden prechod mriežkou pre odkazy `moduleId` aj typ a smer cesty (ADR-020). Krok 12 beží každý tick, preto sa
+  // typ kontroluje len na bunkách s vrstvou dopravy; normalizovaný stav prázdnej bunky (`DEFAULT_ROAD_KIND`, bez
+  // smeru) zaručujú jediné zápisy `road = 'none'` v sime — `createCell`, `RemoveRoad` a `World.deserialize`.
   for (let i = 0; i < grid.cellCount; i++) {
-    const { moduleId } = grid.atIndex(i);
+    const cell = grid.atIndex(i);
+    if (cell.road !== 'none' && !isUsualRoadCell(cell)) return roadCellProblem(world, i);
+    const moduleId = cell.moduleId;
     if (moduleId === null) continue;
     const { x, y } = grid.coordOf(i);
     const owner = world.modules.get(moduleId);

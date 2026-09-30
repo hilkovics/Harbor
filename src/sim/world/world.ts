@@ -46,6 +46,7 @@ import type { Command } from '../commands/command';
 import { DefError, type DefRegistry } from '../defs/def-registry';
 import type { SimEvent } from '../events/sim-event';
 import type { Grid } from '../grid/grid';
+import { DEFAULT_ROAD_KIND } from '../grid/road-kind';
 import type { PlacedModuleSpec } from '../grid/map-def';
 import { MapError, pointerSegment } from '../grid/map-error';
 import type { LoadedMap } from '../grid/map-loader';
@@ -82,6 +83,7 @@ import { restoreEntities } from './world-restore';
 import {
   WORLD_STATE_VERSION,
   parseWorldState,
+  serializeRoad,
   type AnyWorldState,
   type SerializedModule,
   type SerializedRoad,
@@ -241,15 +243,25 @@ export class World {
    * Obnoví svet zo `serialize()` (aj po `JSON.parse`); staršiu verziu najprv prevedie `migrateWorldState` (v1 → v2:
    * bez modulov, lodí a nákladu; v2 → v3: bez vozidiel a jobov, `runtime` skladu bez rezervácií, kotviska s
    * `lastNoStorageHour`). Terén a parcely berie z `map` (musí mať
-   * `id === state.mapId`), vrstvu dopravy celú z `state.roads` — starter cesta, ktorú hráč odstránil, sa neobnoví;
+   * `id === state.mapId`), vrstvu dopravy celú z `state.roads` (aj typ a smer cesty, ADR-020) — starter cesta, ktorú hráč odstránil, sa neobnoví;
    * moduly, lode, vozidlá, náklad a odvodený stav obnoví `restoreEntities`. Neplatný stav → `WorldStateError` (pozri `parseWorldState`, `restoreEntities`). Výsledok
    * nezdieľa meniteľný stav so `state` ani s `map`. `options` ako pri `create`.
    */
   static deserialize(defs: DefRegistry, map: LoadedMap, state: AnyWorldState, options: WorldOptions = {}): World {
     const grid = map.createGrid();
     const parsed = parseWorldState(migrateWorldState(state, defs), defs, map, grid);
-    for (let i = 0; i < grid.cellCount; i++) grid.atIndex(i).road = 'none';
-    for (const [index, layer] of parsed.roads) grid.atIndex(index).road = layer;
+    for (let i = 0; i < grid.cellCount; i++) {
+      const cell = grid.atIndex(i);
+      cell.road = 'none';
+      cell.roadKind = DEFAULT_ROAD_KIND;
+      cell.roadDir = null;
+    }
+    for (const { index, layer, kind, dir } of parsed.roads) {
+      const cell = grid.atIndex(index);
+      cell.road = layer;
+      cell.roadKind = kind;
+      cell.roadDir = dir;
+    }
     for (const [index, value] of parsed.traffic) grid.atIndex(index).traffic = value;
     const parcels = copyParcels(map);
     for (const [id, ownership] of parsed.ownership) {
@@ -666,7 +678,7 @@ export class World {
   }
 
   /**
-   * Čistý JSON stav v3 (§14; tvar pozri `WorldState`): v1 polia + `traffic`, `modules` (poradie umiestnenia),
+   * Čistý JSON stav v3 (§14; tvar pozri `WorldState`): v1 polia (cesty s typom a smerom, ADR-020) + `traffic`, `modules` (poradie umiestnenia),
    * `cargo` (`cargo.getState()`), `ships` (vzostupne podľa id, `Ship.toState()`), `vehicles` (vzostupne podľa id,
    * `Vehicle.toState()`) a `jobs` (aktívne joby vzostupne podľa id, `TransportJob.toState()`, ADR-018). Fronta príkazov sa neukladá, preto musí byť prázdna —
    * inak `Error` (zavolaj najprv `applyPending()` alebo `tick()`).
@@ -681,7 +693,7 @@ export class World {
     const traffic: SerializedTraffic[] = [];
     for (let i = 0; i < this.grid.cellCount; i++) {
       const cell = this.grid.atIndex(i);
-      if (cell.road !== 'none') roads.push([i, cell.road]);
+      if (cell.road !== 'none') roads.push(serializeRoad(i, cell.road, cell.roadKind, cell.roadDir));
       if (cell.traffic !== 0) traffic.push([i, cell.traffic]);
     }
     const parcels: Record<string, ParcelOwnership> = {};

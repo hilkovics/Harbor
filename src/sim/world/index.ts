@@ -1,12 +1,14 @@
 // World — koreň simulácie (tick pipeline §6, serialize/deserialize §14, moduly a invarianty ADR-014).
 export { World } from './world';
 export type { WorldOptions } from './world';
-export { WORLD_STATE_VERSION, WORLD_STATE_KEYS, WorldStateError } from './world-state';
+export { WORLD_STATE_VERSION, WORLD_STATE_KEYS, WorldStateError, serializeRoad } from './world-state';
 export type {
   AnyWorldState,
+  ParsedRoadEntry,
   SerializedJob,
   SerializedModule,
   SerializedRoad,
+  SerializedRoadV1,
   SerializedRoadLayer,
   SerializedShip,
   SerializedTraffic,

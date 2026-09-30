@@ -19,6 +19,10 @@
  * Lode (ADR-016) sa ukladajú s polohou, stavom FSM, kotviskami, anchorage a indexom bodu trasy; trasa sa odvodí zo stavu
  * a mapy, `BerthModule.dockedShipId` z `berthIds`.
  *
+ * Cesty (T03-18, ADR-020): záznam `[index, vrstva, typ?, smer?]` — dvojpruhová cesta a koľaj ako doteraz `[index, vrstva]`,
+ * iný typ cesty `[index, 'road', typ]`, jednosmerka `[index, 'road', 'one_way', smer]`. v3 ešte nebola vydaná, preto sa
+ * formát rozšíril bez migrácie; save v1/v2 majú len dvojice = dvojpruhové cesty (štartové cesty mapy sú `two_lane`).
+ *
  * `parseWorldState` overí tvar a hodnoty (fail-fast, `WorldStateError` s JSON pointerom); vzťahy medzi modulmi,
  * nákladom a loďami overí pri obnove `restoreEntities` (world-restore.ts).
  */
@@ -29,7 +33,9 @@ import { EntityIdAllocator, type EntityId, type EntityIdAllocatorState } from '.
 import { Rng, type RngState } from '../core/rng';
 import { SimClock, type SimClockState } from '../core/sim-clock';
 import type { DefRegistry } from '../defs/def-registry';
-import type { Grid, RoadLayer } from '../grid/grid';
+import type { Direction4Name, Grid, RoadLayer } from '../grid/grid';
+import { isDirection4Name } from '../grid/road-direction';
+import { DEFAULT_ROAD_KIND, ROAD_KINDS, ROAD_KIND_TRAITS, isRoadKind, type RoadKind } from '../grid/road-kind';
 import type { PlacedModuleSpec } from '../grid/map-def';
 import type { LoadedMap } from '../grid/map-loader';
 import type { ParcelOwnership } from '../grid/parcel';
@@ -50,8 +56,27 @@ export { WorldStateError } from './state-check';
 /** Vrstva dopravy v save — bunky s `road: 'none'` sa neukladajú. */
 export type SerializedRoadLayer = Exclude<RoadLayer, 'none'>;
 
-/** Bunka s cestou alebo koľajou: `[row-major index bunky, vrstva]`. */
-export type SerializedRoad = readonly [index: number, layer: SerializedRoadLayer];
+/** Bunka s cestou alebo koľajou v save v1/v2: `[row-major index bunky, vrstva]`. */
+export type SerializedRoadV1 = readonly [index: number, layer: SerializedRoadLayer];
+
+/**
+ * Bunka s cestou alebo koľajou (v3, ADR-020): `[index, vrstva]` pre koľaj a dvojpruhovú cestu, `[index, 'road', typ]`
+ * pre iný obojsmerný typ, `[index, 'road', 'one_way', smer]` pre jednosmerku. Typ sa uvádza len mimo
+ * `DEFAULT_ROAD_KIND` a smer len pri jednosmerke — kanonický tvar (`serialize` iný nevytvorí, `parseWorldState` iný
+ * neprijme).
+ */
+export type SerializedRoad =
+  | SerializedRoadV1
+  | readonly [index: number, layer: 'road', kind: RoadKind]
+  | readonly [index: number, layer: 'road', kind: RoadKind, dir: Direction4Name];
+
+/** Cesta alebo koľaj zo save s overeným tvarom a normalizovaným typom (bez typu = predvolený, smer len pri jednosmerke). */
+export interface ParsedRoadEntry {
+  readonly index: number;
+  readonly layer: SerializedRoadLayer;
+  readonly kind: RoadKind;
+  readonly dir: Direction4Name | null;
+}
 
 /** Bunka s nenulovým `traffic` (heatmapa §7.6): `[row-major index bunky, hodnota > 0]`. */
 export type SerializedTraffic = readonly [index: number, value: number];
@@ -84,7 +109,7 @@ export interface WorldStateV1 {
   readonly clock: SimClockState;
   readonly ids: EntityIdAllocatorState;
   readonly cashCents: number;
-  readonly roads: readonly SerializedRoad[];
+  readonly roads: readonly SerializedRoadV1[];
   readonly parcels: Readonly<Record<string, ParcelOwnership>>;
 }
 
@@ -101,8 +126,10 @@ export interface WorldStateV2 extends Omit<WorldStateV1, 'version'> {
 }
 
 /** Aktuálny `WorldState` (v3). */
-export interface WorldState extends Omit<WorldStateV2, 'version'> {
+export interface WorldState extends Omit<WorldStateV2, 'version' | 'roads'> {
   readonly version: typeof WORLD_STATE_VERSION;
+  /** Cesty a koľaje vzostupne podľa indexu bunky; typ cesty a smer jednosmerky len mimo predvoleného stavu (ADR-020). */
+  readonly roads: readonly SerializedRoad[];
   /** Vozidlá vzostupne podľa id (`Vehicle.toState()`, T03-04); `VehicleDepot.vehicleIds` sa odvodí pri obnove. */
   readonly vehicles: readonly SerializedVehicle[];
   /** Aktívne transportné joby vzostupne podľa id (`TransportJob.toState()`, ADR-018). */
@@ -171,7 +198,7 @@ export interface ParsedWorldState {
   readonly rng: Rng;
   readonly ids: EntityIdAllocator;
   readonly cashCents: number;
-  readonly roads: readonly SerializedRoad[];
+  readonly roads: readonly ParsedRoadEntry[];
   readonly traffic: readonly SerializedTraffic[];
   /** Vlastníctvo pre každú parcelu mapy. */
   readonly ownership: ReadonlyMap<string, ParcelOwnership>;
@@ -196,8 +223,13 @@ const MODULE_KEYS: readonly (keyof SerializedModule)[] = ['id', 'defId', 'x', 'y
 const SERIALIZED_ROAD_LAYERS: Readonly<Record<SerializedRoadLayer, true>> = { road: true, rail: true };
 const PARCEL_OWNERSHIPS: Readonly<Record<ParcelOwnership, true>> = { none: true, owned: true, leased: true };
 
-/** Dĺžka záznamu bunky `[index, hodnota]` (cesta aj traffic). */
+/** Dĺžka záznamu bunky `[index, hodnota]` (traffic; cesta bez typu). */
 const CELL_ENTRY_LENGTH = 2;
+/** Najdlhší záznam cesty `[index, 'road', typ, smer]` (ADR-020). */
+const ROAD_ENTRY_MAX_LENGTH = 4;
+/** Pozícia typu a smeru v zázname cesty. */
+const ROAD_KIND_POSITION = 2;
+const ROAD_DIR_POSITION = 3;
 
 /** Validáciu rozsahov robia jadrové triedy (`RangeError`); tu sa ich chyba preloží na `WorldStateError` s cestou. */
 function restore<T>(path: string, build: () => T): T {
@@ -209,10 +241,13 @@ function restore<T>(path: string, build: () => T): T {
   }
 }
 
-/** Záznam bunky `[index, hodnota]`: dvojica s platným indexom, bez duplicít (`seen`). Vráti hodnotu. */
-function parseCellEntry(entry: unknown, path: string, grid: Grid, seen: Set<number>): readonly [number, unknown] {
-  if (!Array.isArray(entry) || entry.length !== CELL_ENTRY_LENGTH) {
-    throw new WorldStateError(path, 'musí byť dvojica [index bunky, hodnota]');
+/**
+ * Záznam bunky `[index, hodnota, …]`: pole dĺžky `CELL_ENTRY_LENGTH … maxLength` s platným indexom, bez duplicít
+ * (`seen`). Vráti index a hodnotu (ďalšie položky číta volajúci).
+ */
+function parseCellEntry(entry: unknown, path: string, grid: Grid, seen: Set<number>, maxLength = CELL_ENTRY_LENGTH): readonly [number, unknown] {
+  if (!Array.isArray(entry) || entry.length < CELL_ENTRY_LENGTH || entry.length > maxLength) {
+    throw new WorldStateError(path, maxLength === CELL_ENTRY_LENGTH ? 'musí byť dvojica [index bunky, hodnota]' : 'musí byť [index bunky, vrstva, typ?, smer?]');
   }
   const [index, value] = entry as [unknown, unknown];
   if (typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index >= grid.cellCount) {
@@ -223,12 +258,33 @@ function parseCellEntry(entry: unknown, path: string, grid: Grid, seen: Set<numb
   return [index, value];
 }
 
+/**
+ * Typ a smer cesty zo záznamu `[index, vrstva, typ?, smer?]` v kanonickom tvare (ADR-020): bez typu = predvolený;
+ * typ len pri vrstve `road` a mimo `DEFAULT_ROAD_KIND`; smer práve pri jednosmerke.
+ */
+function parseRoadKind(entry: readonly unknown[], layer: SerializedRoadLayer, path: string): { kind: RoadKind; dir: Direction4Name | null } {
+  if (entry.length <= ROAD_KIND_POSITION) return { kind: DEFAULT_ROAD_KIND, dir: null };
+  const kindPath = `${path}/${String(ROAD_KIND_POSITION)}`;
+  const kind = entry[ROAD_KIND_POSITION];
+  if (layer !== 'road') throw new WorldStateError(kindPath, `typ cesty smie mať len vrstva 'road', nie '${layer}'`);
+  if (!isRoadKind(kind)) throw new WorldStateError(kindPath, `typ cesty musí byť jeden z: ${ROAD_KINDS.join(', ')}, dostal ${describeValue(kind)}`);
+  if (kind === DEFAULT_ROAD_KIND) throw new WorldStateError(kindPath, `predvolený typ '${DEFAULT_ROAD_KIND}' sa neukladá`);
+  const dirPath = `${path}/${String(ROAD_DIR_POSITION)}`;
+  if (!ROAD_KIND_TRAITS[kind].oneWay) {
+    if (entry.length > ROAD_DIR_POSITION) throw new WorldStateError(dirPath, `smer má len jednosmerka, nie '${kind}'`);
+    return { kind, dir: null };
+  }
+  const dir = entry[ROAD_DIR_POSITION];
+  if (!isDirection4Name(dir)) throw new WorldStateError(dirPath, `jednosmerka musí mať smer N, E, S alebo W, dostal ${describeValue(dir)}`);
+  return { kind, dir };
+}
+
 /** `grid` = mriežka počiatočného stavu mapy (z `map.createGrid()`); číta sa z nej len statický terén. */
-function parseRoads(value: unknown, grid: Grid): SerializedRoad[] {
+function parseRoads(value: unknown, grid: Grid): ParsedRoadEntry[] {
   const seen = new Set<number>();
-  return checkArray(value, '/roads').map((entry: unknown, i): SerializedRoad => {
+  return checkArray(value, '/roads').map((entry: unknown, i): ParsedRoadEntry => {
     const path = `/roads${pointerSegment(i)}`;
-    const [index, layer] = parseCellEntry(entry, path, grid, seen);
+    const [index, layer] = parseCellEntry(entry, path, grid, seen, ROAD_ENTRY_MAX_LENGTH);
     if (typeof layer !== 'string' || !Object.hasOwn(SERIALIZED_ROAD_LAYERS, layer)) {
       throw new WorldStateError(`${path}/1`, `vrstva musí byť 'road' alebo 'rail', dostal ${describeValue(layer)}`);
     }
@@ -237,8 +293,15 @@ function parseRoads(value: unknown, grid: Grid): SerializedRoad[] {
       const { x, y } = grid.coordOf(index);
       throw new WorldStateError(`${path}/0`, `bunka (${String(x)}, ${String(y)}) má terén ${terrain}, cesta/koľaj tam nemôže byť`);
     }
-    return [index, layer as SerializedRoadLayer];
+    const { kind, dir } = parseRoadKind(entry as readonly unknown[], layer as SerializedRoadLayer, path);
+    return { index, layer: layer as SerializedRoadLayer, kind, dir };
   });
+}
+
+/** Záznam cesty/koľaje bunky pre save v kanonickom tvare (`SerializedRoad`, ADR-020). */
+export function serializeRoad(index: number, layer: SerializedRoadLayer, kind: RoadKind, dir: Direction4Name | null): SerializedRoad {
+  if (layer !== 'road' || kind === DEFAULT_ROAD_KIND) return [index, layer];
+  return ROAD_KIND_TRAITS[kind].oneWay && dir !== null ? [index, layer, kind, dir] : [index, layer, kind];
 }
 
 function parseTraffic(value: unknown, grid: Grid): SerializedTraffic[] {
@@ -523,7 +586,8 @@ function checkIdCollisions(
  * Overí `raw` ako `WorldState` **aktuálnej** verzie (staršie najprv prevedie `migrateWorldState`) pre danú mapu
  * a defy a obnoví jadrové objekty. Kontroly v poradí kľúčov: tvar (presne kľúče v3), `version`, `mapId === map.id`,
  * `seed` uint32, `rng` (4× uint32, nie nulový), `clock` (tick ≥ 0, rýchlosť v `time.speeds`), `ids`, `cashCents`
- * (bezpečné celé číslo), `roads` (index v mape, vrstva, bez duplicít, terén unesie cestu), `traffic` (index v mape,
+ * (bezpečné celé číslo), `roads` (index v mape, vrstva, bez duplicít, terén unesie cestu, typ a smer cesty v kanonickom
+ * tvare — ADR-020), `traffic` (index v mape,
  * bez duplicít, hodnota > 0), `parcels` (presne parcely mapy, platné vlastníctvo, `leased` len pri `leasable`),
  * `modules` (tvar), `cargo` (`parseCargoLedgerState`), `ships` (tvar, `parseShips`), `vehicles` (tvar,
  * `parseVehicles`), `jobs` (tvar, `parseJobs`), id modulov, lodí, vozidiel, jobov a nákladu sa neprekrývajú.

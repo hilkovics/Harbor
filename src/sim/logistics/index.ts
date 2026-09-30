@@ -1,6 +1,7 @@
 // Logistika (ARCHITECTURE §7.3, §7.4, §7.6): pathfinding (A*, cache ciest, matica vzdialeností) — T03-03; smerové
 // hrany, cena a rýchlosť podľa typu cesty (RoadSpeeds) — T03-18 (ADR-020);
-// TransportJob, prístup k modulom, StorageAllocator a Dispatcher — T03-05 (ADR-018).
+// TransportJob, prístup k modulom, StorageAllocator a Dispatcher — T03-05 (ADR-018); outbound joby, RampAllocator,
+// zrušenie a priorita priradenia — T04-03 (ADR-023).
 export { IndexedBinaryHeap } from './binary-heap';
 export type { HeapLess } from './binary-heap';
 export { BASE_CELL_COST, Pathfinder, assertCellIndex, unitCellCost } from './pathfinder';
@@ -13,6 +14,8 @@ export { DistanceMatrix } from './distance-matrix';
 export { JobError } from './job-error';
 export type { JobErrorCode } from './job-error';
 export {
+  JOB_CANCEL_REASONS,
+  JOB_PRIORITY_LEVELS,
   JOB_ROUTES,
   JOB_STATES,
   JOB_STATE_TRAITS,
@@ -22,10 +25,13 @@ export {
   isJobRoute,
   isJobState,
   isJobTransitionAllowed,
+  jobRouteOf,
 } from './transport-job';
-export type { JobCargoPlace, JobState, JobStateTraits, SerializedJob, TransportJobInit } from './transport-job';
+export type { JobCancelReason, JobCargoPlace, JobRoute, JobState, JobStateTraits, SerializedJob, TransportJobInit } from './transport-job';
 export { NO_ACCESS, accessCellIndex, distanceBetweenModules, distanceToModule, isAccessCell, nearestAccessCell } from './module-access';
 export type { ModuleAccessEnv } from './module-access';
 export { allocateStorage } from './storage-allocator';
 export type { StorageAllocatorEnv } from './storage-allocator';
-export { assignOpenJobs, chooseVehicle, createInboundJobs } from './dispatcher';
+export { acceptsOutbound, allocateRamp } from './ramp-allocator';
+export type { RampAllocatorEnv } from './ramp-allocator';
+export { assignOpenJobs, cancelUnusableOutboundJobs, chooseVehicle, createInboundJobs, createOutboundJobs } from './dispatcher';

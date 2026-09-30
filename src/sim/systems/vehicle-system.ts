@@ -8,20 +8,20 @@
  *   × `speedFactor` typu cieľovej bunky každého úseku (`Vehicle.advance`, `World.roadSpeeds`, ADR-020) a na konci trasy —
  *   prístupovej bunke modulu jobu — prejde do `loading` / `unloading` s pobytom
  *   `internalTicks` modulu (inak `logistics.defaultInternalTicks`) + `loadTicks` / `unloadTicks` prvej jednotky.
- * - `loading`: po odpočte presun jednotky `on_apron → in_vehicle` (slot apronu sa uvoľní sám — ADR-017); ďalšia jednotka
+ * - `loading`: po odpočte presun jednotky zo zdroja do vozidla (`on_apron → in_vehicle` — slot apronu sa uvoľní sám,
+ *   ADR-017; `in_storage → in_vehicle`) a `Module.recordTaken` zdroja (sklad `unitsOut`, ADR-023); ďalšia jednotka
  *   jobu `loadTicks`, inak job `moving` a jazda k cieľu (`startTrip`, bez pohybu v tomto ticku).
- * - `unloading`: po odpočte `assertCommittable` → `in_vehicle → in_storage(slot jobu)` → `commit`; posledná jednotka =
- *   job `done`, `removeJob`, `JobDone`, vozidlo `idle` (stojí na mieste).
+ * - `unloading`: po odpočte cez `cargoDropTarget()` cieľa `assertCommittable` → `in_vehicle → job.to` (slot skladu,
+ *   dock rampy) → `commit`; posledná jednotka = job `done`, `removeJob`, `JobDone`, vozidlo `idle` (stojí na mieste).
  * - `no_path`: po odpočte nový pokus o trasu k modulu jobu (`RESUME_AFTER_NO_PATH`); úspech = návrat do pôvodného `to_*`
  *   (bez pohybu v tomto ticku), inak ďalší odpočet `repathIntervalTicks`.
  * Tick vstupu do stavu s odpočtom je jeho nultý tick a stav končí v ticku, keď `waitTicks` klesne na 0 (ako fázy
  * žeriavu, ADR-016) — pobyt v module trvá presne `internalTicks + k × loadTicks` tickov (ADR-011).
  */
-import { isSameLocation, uniqueSlotOf, type CargoLocation } from '../cargo/cargo-location';
+import { isSameLocation, slotOf, type CargoLocation } from '../cargo/cargo-location';
 import type { EntityId } from '../core/entity-id';
 import type { VehicleDef } from '../defs/types';
 import type { JobState, TransportJob } from '../logistics/transport-job';
-import { StorageModule } from '../modules/storage-module';
 import type { Vehicle } from '../vehicles/vehicle';
 import { VehicleError } from '../vehicles/vehicle-error';
 import { RESUME_AFTER_NO_PATH, VEHICLE_STATE_TRAITS, changeVehicleState, type VehicleState } from '../vehicles/vehicle-fsm';
@@ -80,12 +80,17 @@ function drive(vehicle: Vehicle, world: World): void {
   if (vehicle.advance(vehicle.def.speedCellsPerTick, world.grid.width, world.roadSpeeds.speedFactor)) arrive(vehicle, world);
 }
 
-/** Koniec manipulácie v `loading`: jednotka zo zdroja do vozidla; ďalšia jednotka alebo jazda k cieľu. */
+/**
+ * Koniec manipulácie v `loading`: jednotka zo zdroja do vozidla a zápis výdaja v module zdroja (`recordTaken` — sklad
+ * `unitsOut`, apron nič); ďalšia jednotka alebo jazda k cieľu.
+ */
 function loadUnit(vehicle: Vehicle, world: World): void {
   const job = jobOfVehicle(world, vehicle);
+  const source = jobModule(world, job, 'source');
   const unitId = firstUnitAt(world, job, job.from);
   if (unitId === undefined) throw new VehicleError('inconsistent', `${vehicle.label}: ${job.label} nemá jednotku na zdroji`);
   world.cargo.move(unitId, { kind: 'in_vehicle', vehicleId: vehicle.id });
+  source.recordTaken(unitId);
   if (firstUnitAt(world, job, job.from) !== undefined) {
     vehicle.waitTicks = vehicle.def.loadTicks;
     return;
@@ -94,19 +99,22 @@ function loadUnit(vehicle: Vehicle, world: World): void {
   startTrip(world, vehicle, 'to_dropoff');
 }
 
-/** Koniec manipulácie v `unloading`: jednotka z vozidla na rezervovaný slot; posledná jednotka dokončí job. */
+/**
+ * Koniec manipulácie v `unloading`: jednotka z vozidla na rezervované miesto cieľa (`cargoDropTarget()`: slot skladu,
+ * dock rampy — ADR-023); posledná jednotka dokončí job.
+ */
 function unloadUnit(vehicle: Vehicle, world: World): void {
   const job = jobOfVehicle(world, vehicle);
   const inVehicle: CargoLocation = { kind: 'in_vehicle', vehicleId: vehicle.id };
   const unitId = firstUnitAt(world, job, inVehicle);
-  const storage = world.modules.get(job.toModuleId);
-  const slot = uniqueSlotOf(job.to);
-  if (unitId === undefined || !(storage instanceof StorageModule) || slot === null) {
-    throw new VehicleError('inconsistent', `${vehicle.label}: ${job.label} nemá jednotku vo vozidle alebo sklad so slotom`);
+  const target = jobModule(world, job, 'target').cargoDropTarget();
+  const place = slotOf(job.to);
+  if (unitId === undefined || target === undefined || target.kind !== job.to.kind || place === null) {
+    throw new VehicleError('inconsistent', `${vehicle.label}: ${job.label} nemá jednotku vo vozidle alebo cieľ s miestom '${job.to.kind}'`);
   }
-  storage.assertCommittable(slot, unitId);
+  target.assertCommittable(place, unitId);
   world.cargo.move(unitId, job.to);
-  storage.commit(slot, unitId);
+  target.commit(place, unitId);
   if (firstUnitAt(world, job, inVehicle) !== undefined) {
     vehicle.waitTicks = vehicle.def.unloadTicks;
     return;

@@ -5,17 +5,20 @@
  * vzostupne podľa id cez `World.addVehicle` (T03-04; depo dostane `vehicleIds` v poradí id = poradí nákupu), potom
  * kontrola držiteľov a slotov nákladu (slot v kapacite apronu/skladu, náklad vozidla v jeho kapacite a kategóriách),
  * joby vzostupne podľa id (T03-05: vozidlo a stav jobu sa odvodia z vozidla s daným `jobId` a z polohy nákladu,
- * `World.addJob`, rezervácia slotu v cieľovom sklade), náklad vozidla patrí jeho jobu, pohyb vozidla zodpovedá stavu
+ * `World.addJob`, rezervácia miesta v cieli — slot skladu, staging dock rampy — cez `cargoDropTarget().restoreReservation`,
+ * ADR-018, ADR-023), náklad vozidla patrí jeho jobu, pohyb vozidla zodpovedá stavu
  * (trasa, odpočet, cesty — `vehicleMotionProblem`), rezervácie apronov
  * z `reservedSlot` žeriavov, držané jednotky žeriavov z `in_crane` a hodiny throttlov (`lastBlockedHour`,
  * `lastNoStorageHour`) nie sú v budúcnosti. Obsadenie apronov, skladov a dockov rámp sa neobnovuje — čítajú ho z ledgera
- * (ADR-017, ADR-022); jednotky na rampe musia ležať na docku v rozsahu a v jeho kapacite (`checkRampUnits`). Pozemné
+ * (ADR-017, ADR-022); jednotky na rampe musia ležať na docku v rozsahu a v jeho kapacite (`checkRampUnits`), staging
+ * rezervácie dockov obnovia outbound joby (`staged + reserved ≤ stagingPerDock`, inak chyba jobu). Pozemné
  * moduly (T04-02) obnovia `runtime` (brána: fronta a počítadlá); strany brán a prevádzkovosť rámp odvodí svet po obnove.
  * Na koniec beží `findWorldViolation` ako poistka. Každá chyba je `WorldStateError` s JSON pointerom.
  */
-import { holderIdOf, holderSpecOf, isSameLocation, uniqueSlotOf } from '../cargo/cargo-location';
+import { holderIdOf, holderSpecOf, isSameLocation, slotOf, uniqueSlotOf } from '../cargo/cargo-location';
 import type { CargoUnit } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
+import type { CargoCategory } from '../defs/types';
 import { JobError, type JobErrorCode } from '../logistics/job-error';
 import { JOB_STATE_TRAITS, TransportJob, type JobState } from '../logistics/transport-job';
 import { BerthModule } from '../modules/berth-module';
@@ -23,7 +26,6 @@ import { CRANE_STATE_TRAITS, CraneModule } from '../modules/crane-module';
 import { LoadingRamp } from '../modules/loading-ramp';
 import { ModuleError, ModuleStateError } from '../modules/module-error';
 import { moduleRegistry } from '../modules/module-registry';
-import { StorageModule } from '../modules/storage-module';
 import { Ship } from '../ships/ship';
 import { ShipError } from '../ships/ship-error';
 import { mooringProblem, shipRoute } from '../ships/ship-route';
@@ -234,9 +236,33 @@ function checkJobCargo(world: World, job: TransportJob, path: string): void {
 }
 
 /**
- * Joby vzostupne podľa id (ADR-018): vozidlo = vozidlo s týmto `jobId`, stav odvodený (`deriveJobState`), náklad na
- * mieste podľa stavu, vozidlo vozí kategóriu nákladu, `World.addJob`, cieľ je sklad kategórie nákladu a jeho slot
- * sa rezervuje (`reserveSlot`: v rozsahu, voľný, nie dvakrát). Chyby → `/jobs/<i>…` (resp. `/vehicles/<v>/jobId`).
+ * Rezervácia miesta v cieli jobu (ADR-018, ADR-023): cieľ je modul s `cargoDropTarget()` druhu `to` a kategórie nákladu,
+ * miesto sa rezervuje raz na jednotku jobu (`restoreReservation`: sklad `reserveSlot` — v rozsahu, voľný, nie dvakrát;
+ * rampa `reserve(dock)` — v rozsahu, `staged + reserved ≤ stagingPerDock`). Chyby → `/jobs/<i>/to/<držiteľ | miesto>`.
+ */
+function restoreJobReservation(world: World, job: TransportJob, category: CargoCategory | undefined, path: string): void {
+  const spec = holderSpecOf(job.to.kind);
+  const holderPath = `${path}/to/${spec?.holderKey ?? 'kind'}`;
+  const module = world.modules.get(job.toModuleId);
+  const target = module?.cargoDropTarget();
+  if (module === undefined || target?.kind !== job.to.kind) {
+    throw new WorldStateError(holderPath, `#${String(job.toModuleId)} vo svete neprijíma náklad jobu do '${job.to.kind}'`);
+  }
+  if (target.category !== category) {
+    throw new WorldStateError(holderPath, `${module.label} (kategória '${target.category}') neprijme náklad kategórie '${String(category)}'`);
+  }
+  try {
+    for (let i = 0; i < job.unitIds.length; i++) target.restoreReservation(slotOf(job.to) ?? -1);
+  } catch (error) {
+    if (error instanceof ModuleError) throw new WorldStateError(`${path}/to/${spec?.slotKey ?? 'kind'}`, error.message);
+    throw error;
+  }
+}
+
+/**
+ * Joby vzostupne podľa id (ADR-018, ADR-023): vozidlo = vozidlo s týmto `jobId`, stav odvodený (`deriveJobState`),
+ * náklad na mieste podľa stavu, vozidlo vozí kategóriu nákladu, `World.addJob` a rezervácia miesta v cieli
+ * (`restoreJobReservation`: slot skladu, staging dock rampy). Chyby → `/jobs/<i>…` (resp. `/vehicles/<v>/jobId`).
  */
 function restoreJobs(world: World, entries: readonly ParsedJobEntry[]): void {
   const byJob = vehiclesByJob(world, entries);
@@ -262,17 +288,7 @@ function restoreJobs(world: World, entries: readonly ParsedJobEntry[]): void {
       if (error instanceof JobError) throw new WorldStateError(`${path}${JOB_ERROR_FIELD[error.code]}`, error.message);
       throw error;
     }
-    const storage = world.modules.get(job.toModuleId);
-    if (!(storage instanceof StorageModule)) throw new WorldStateError(`${path}/to/moduleId`, `#${String(job.toModuleId)} nie je sklad vo svete`);
-    if (storage.category !== category) {
-      throw new WorldStateError(`${path}/to/moduleId`, `${storage.label} (kategória '${storage.category}') neprijme náklad kategórie '${String(category)}'`);
-    }
-    try {
-      storage.reserveSlot(uniqueSlotOf(job.to) ?? -1);
-    } catch (error) {
-      if (error instanceof ModuleError) throw new WorldStateError(`${path}/to/slot`, error.message);
-      throw error;
-    }
+    restoreJobReservation(world, job, category, path);
   });
 }
 

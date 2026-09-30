@@ -17,7 +17,7 @@ export type JobErrorCode =
   | 'unit_busy'
   /** `World.removeJob`: job s daným id vo svete nie je. */
   | 'unknown_job'
-  /** `World.removeJob`: job ešte nie je `done`. */
+  /** `World.removeJob`: job je ešte aktívny (nie je `done` ani `cancelled`). */
   | 'not_done';
 
 export class JobError extends Error {

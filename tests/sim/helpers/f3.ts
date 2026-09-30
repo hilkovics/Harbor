@@ -109,7 +109,10 @@ export const VEHICLE_TRANSITIONS: Readonly<Record<VehicleState, readonly Vehicle
 /** Stavy, v ktorých má vozidlo pohyb po ceste (bez cesty by nemalo byť). */
 export const MOVING_STATES: readonly VehicleState[] = ['to_pickup', 'to_dropoff'];
 
-/** Poradie stavov jobu; stav smie len rásť (preskočiť možno, vzorka po ticku nemusí zachytiť krátky stav). */
+/**
+ * Poradie stavov jobu; stav smie len rásť (preskočiť možno, vzorka po ticku nemusí zachytiť krátky stav). `cancelled`
+ * (T04-03, ADR-023) je konečný ako `done` a dosiahne sa len z `open`; vo F3 nenastane.
+ */
 export const JOB_STATE_RANK: Readonly<Record<JobState, number>> = {
   open: 0,
   assigned: 1,
@@ -117,6 +120,7 @@ export const JOB_STATE_RANK: Readonly<Record<JobState, number>> = {
   moving: 3,
   dropping: 4,
   done: 5,
+  cancelled: 5,
 };
 
 /**

@@ -1,9 +1,12 @@
-// TransportJob (T03-05; ARCHITECTURE §7.3; ADR-018): stavy, tabuľka prechodov a vlastnosti stavov, JOB_ROUTES,
-// fail-fast konštruktor, assign/transition bez skrytých prechodov a save záznam.
+// TransportJob (T03-05, T04-03; ARCHITECTURE §7.3; ADR-018, ADR-023): stavy, tabuľka prechodov a vlastnosti stavov
+// (vrátane zrušenia open → cancelled), JOB_ROUTES s prioritou (inbound pred outbound), fail-fast konštruktor,
+// assign/transition bez skrytých prechodov a save záznam.
 import { describe, expect, it } from 'vitest';
 import type { CargoLocation } from '@sim/cargo';
 import type { EntityId } from '@sim/core';
 import {
+  JOB_CANCEL_REASONS,
+  JOB_PRIORITY_LEVELS,
   JOB_ROUTES,
   JOB_STATES,
   JOB_STATE_TRAITS,
@@ -14,6 +17,7 @@ import {
   isJobRoute,
   isJobState,
   isJobTransitionAllowed,
+  jobRouteOf,
   type JobState,
   type TransportJobInit,
 } from '@sim/logistics';
@@ -22,6 +26,8 @@ const id = (value: number): EntityId => value as EntityId;
 const FROM: CargoLocation = { kind: 'on_apron', berthId: id(1), slot: 2 };
 const TO: CargoLocation = { kind: 'in_storage', moduleId: id(4), slot: 7 };
 const BASE: TransportJobInit = { id: id(20), unitIds: [id(11)], from: FROM, to: TO, createdTick: 5 };
+const RAMP_TO: CargoLocation = { kind: 'at_ramp', rampId: id(8), dock: 1 };
+const OUTBOUND: TransportJobInit = { id: id(21), unitIds: [id(12)], from: TO, to: RAMP_TO, createdTick: 6 };
 
 function jobError(action: () => unknown): JobError {
   try {
@@ -34,22 +40,27 @@ function jobError(action: () => unknown): JobError {
 }
 
 describe('stavy jobu a tabuľky', () => {
-  it('JOB_STATES v poradí životného cyklu; prechody len dopredu po jednom, done je konečný', () => {
-    expect(JOB_STATES).toEqual(['open', 'assigned', 'picking', 'moving', 'dropping', 'done']);
+  it('JOB_STATES v poradí životného cyklu; prechody dopredu po jednom až po done, zrušiť sa dá len open; done a cancelled sú konečné', () => {
+    expect(JOB_STATES).toEqual(['open', 'assigned', 'picking', 'moving', 'dropping', 'done', 'cancelled']);
     expect([...JOB_TRANSITIONS.entries()]).toEqual([
-      ['open', ['assigned']],
+      ['open', ['assigned', 'cancelled']],
       ['assigned', ['picking']],
       ['picking', ['moving']],
       ['moving', ['dropping']],
       ['dropping', ['done']],
       ['done', []],
+      ['cancelled', []],
     ]);
+    const lifecycle: readonly JobState[] = ['open', 'assigned', 'picking', 'moving', 'dropping', 'done'];
     for (const from of JOB_STATES) {
-      for (const to of JOB_STATES) expect(isJobTransitionAllowed(from, to), `${from} → ${to}`).toBe(JOB_STATES.indexOf(to) === JOB_STATES.indexOf(from) + 1);
+      for (const to of JOB_STATES) {
+        const forward = lifecycle.includes(from) && lifecycle.includes(to) && lifecycle.indexOf(to) === lifecycle.indexOf(from) + 1;
+        expect(isJobTransitionAllowed(from, to), `${from} → ${to}`).toBe(forward || (from === 'open' && to === 'cancelled'));
+      }
     }
   });
 
-  it('JOB_STATE_TRAITS: vozidlo od assigned, náklad na zdroji do picking, vo vozidle moving/dropping, done neaktívny', () => {
+  it('JOB_STATE_TRAITS: vozidlo od assigned, náklad na zdroji do picking, vo vozidle moving/dropping, done a cancelled neaktívne', () => {
     expect(Object.keys(JOB_STATE_TRAITS)).toEqual([...JOB_STATES]);
     expect(JOB_STATES.map((state) => [JOB_STATE_TRAITS[state].hasVehicle, JOB_STATE_TRAITS[state].cargoAt, JOB_STATE_TRAITS[state].active])).toEqual([
       [false, 'source', true],
@@ -58,17 +69,26 @@ describe('stavy jobu a tabuľky', () => {
       [true, 'vehicle', true],
       [true, 'vehicle', true],
       [true, 'target', false],
+      [false, 'source', false],
     ]);
     expect(Object.isFrozen(JOB_STATE_TRAITS)).toBe(true);
   });
 
-  it('JOB_ROUTES vo F3 = len apron → sklad; isJobState', () => {
-    expect(JOB_ROUTES).toEqual([{ from: 'on_apron', to: 'in_storage' }]);
+  it('JOB_ROUTES: inbound apron → sklad (priorita 0) pred outbound sklad → rampa (priorita 1); isJobState; dôvody zrušenia', () => {
+    expect(JOB_ROUTES).toEqual([
+      { from: 'on_apron', to: 'in_storage', priority: 0 },
+      { from: 'in_storage', to: 'at_ramp', priority: 1 },
+    ]);
+    expect(JOB_PRIORITY_LEVELS).toBe(2);
     expect(isJobRoute('on_apron', 'in_storage')).toBe(true);
+    expect(isJobRoute('in_storage', 'at_ramp')).toBe(true);
     expect(isJobRoute('in_storage', 'on_apron')).toBe(false);
-    expect(isJobRoute('in_storage', 'at_ramp')).toBe(false);
+    expect(isJobRoute('on_apron', 'at_ramp')).toBe(false);
+    expect(jobRouteOf('in_storage', 'at_ramp')?.priority).toBe(1);
+    expect(jobRouteOf('at_ramp', 'in_truck')).toBeUndefined();
     for (const state of JOB_STATES) expect(isJobState(state)).toBe(true);
     for (const value of ['closed', '', null, 1]) expect(isJobState(value)).toBe(false);
+    expect(JOB_CANCEL_REASONS).toEqual(['ramp_inoperative', 'ramp_unreachable']);
   });
 });
 
@@ -79,6 +99,24 @@ describe('TransportJob', () => {
     expect([job.state, job.vehicleId, job.label]).toEqual(['open', null, 'job #20']);
     expect(Object.isFrozen(job.unitIds)).toBe(true);
     expect(Object.isFrozen(job.from)).toBe(true);
+  });
+
+  it('outbound sklad → dock rampy: držitelia sklad a rampa, priorita 1 (inbound 0); job na dock nie je obmedzený jedinečným slotom', () => {
+    const job = new TransportJob(OUTBOUND);
+    expect([job.fromModuleId, job.toModuleId, job.priority, job.to]).toEqual([4, 8, 1, RAMP_TO]);
+    expect(new TransportJob(BASE).priority).toBe(0);
+    expect(new TransportJob({ ...OUTBOUND, unitIds: [id(12), id(13)] }).unitIds).toEqual([12, 13]);
+  });
+
+  it('zrušenie: open → cancelled bez vozidla (neaktívny); po priradení vozidla sa job zrušiť nedá', () => {
+    const job = new TransportJob(OUTBOUND);
+    job.transition('cancelled');
+    expect([job.state, job.vehicleId, JOB_STATE_TRAITS[job.state].active]).toEqual(['cancelled', null, false]);
+    expect(jobError(() => job.assign(id(7))).code).toBe('invalid_transition');
+    const assigned = new TransportJob(OUTBOUND);
+    assigned.assign(id(7));
+    expect(jobError(() => assigned.transition('cancelled')).code).toBe('invalid_transition');
+    expect(assigned.state).toBe('assigned');
   });
 
   it('assign: open → assigned s vozidlom; transition ďalej po tabuľke až po done', () => {

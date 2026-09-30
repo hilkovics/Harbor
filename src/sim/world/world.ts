@@ -20,8 +20,9 @@
  * zo save — spravujú aj `VehicleDepot.vehicleIds`; FSM, pohyb a load/unload riadi `VehicleSystem` (krok 6, ADR-019).
  * `vehicleOnCell` hovorí, či bunku zaberá vozidlo (`RemoveRoad` → `occupied`).
  *
- * Joby (T03-05, ADR-018): `addJob`/`removeJob` sú štrukturálne operácie pre dispatcher (krok 5), `VehicleSystem`
- * a obnovu zo save; `jobOfUnit` je index jednotka → aktívny job (odvodený, neukladá sa).
+ * Joby (T03-05, ADR-018, ADR-023): `addJob`/`removeJob` sú štrukturálne operácie pre dispatcher (krok 5: vznik inbound
+ * aj outbound jobov, zrušenie `open` outbound jobu), `VehicleSystem` a obnovu zo save; `jobOfUnit` je index jednotka →
+ * aktívny job (odvodený, neukladá sa).
  *
  * Sklady a depá (ADR-017): moduly vznikajú s ledgerom na čítanie (`ModuleEnv.cargo`) — apron a sklad držia len
  * rezervácie, obsadenie čítajú z `cargo`. Pripojenie modulu k ceste (`isConnected`, `connectorCells`) sa počíta
@@ -617,13 +618,14 @@ export class World {
   }
 
   /**
-   * Odstráni hotový job (`done`, `VehicleSystem` po vykládke) a vráti ho. Chyby (`JobError`, svet sa nezmení): neznáme id
-   * (`unknown_job`), job nie je `done` (`not_done`).
+   * Odstráni ukončený job — hotový (`done`, `VehicleSystem` po vykládke) alebo zrušený (`cancelled`, dispatcher, ADR-023)
+   * — a vráti ho. Rezerváciu v cieli uvoľňuje volajúci (pri `done` ju už premenil `commit`). Chyby (`JobError`, svet sa
+   * nezmení): neznáme id (`unknown_job`), job je ešte aktívny (`not_done`).
    */
   removeJob(jobId: EntityId): TransportJob {
     const job = this.jobMap.get(jobId);
     if (job === undefined) throw new JobError('unknown_job', `World.removeJob: job #${String(jobId)} neexistuje`);
-    if (job.state !== 'done') throw new JobError('not_done', `World.removeJob: ${job.label} je v stave '${job.state}'`);
+    if (JOB_STATE_TRAITS[job.state].active) throw new JobError('not_done', `World.removeJob: ${job.label} je v aktívnom stave '${job.state}'`);
     this.jobMap.delete(jobId);
     if (jobId === this.lastJobId) this.lastJobId = lastKeyOf(this.jobMap);
     for (const unitId of job.unitIds) this.unitJobs.delete(unitId);
@@ -743,7 +745,8 @@ export class World {
     // 4. craneSystem — cyklus žeriavov loď → apron.
     this.craneSystem.tick(this);
 
-    // 5. dispatcher — inbound joby s rezerváciou skladu, priradenie voľných vozidiel (ADR-018).
+    // 5. dispatcher — zrušenie nepoužiteľných outbound jobov, inbound joby s rezerváciou skladu, outbound joby
+    //    s rezerváciou staging miesta rampy, priradenie voľných vozidiel inbound pred outbound (ADR-018, ADR-023).
     this.dispatcherSystem.tick(this);
 
     // 6. vehicleSystem — FSM vozidiel, pohyb po trase, pobyt v module, load/unload (ADR-019).

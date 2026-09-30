@@ -1,6 +1,6 @@
 /**
  * Udalosti simulácie (ARCHITECTURE §12.1, výber pre F1 + F2: `CargoMoved`, moduly, lode, žeriavy; F3: vozidlá, joby,
- * `NoStorageAvailable`; F4: `RampOperationalChanged`). Readonly DTO:
+ * `NoStorageAvailable`; F4: `RampOperationalChanged`, `JobCancelled`). Readonly DTO:
  * `World` ich zbiera v `EventBus` a vracia z `tick()` / `applyPending()`; prezentácia ich len číta. Nový typ udalosti =
  * nový člen únie (+ test).
  */
@@ -8,6 +8,7 @@ import type { CargoLocation } from '../cargo/cargo-location';
 import type { ValidationReason } from '../commands/validation';
 import type { EntityId } from '../core/entity-id';
 import type { LedgerCategory } from '../economy/ledger-category';
+import type { JobCancelReason } from '../logistics/transport-job';
 import type { RampInoperativeReason } from '../modules/loading-ramp';
 import type { CellCoord } from '../grid/grid';
 import type { Rotation } from '../grid/rotation';
@@ -167,8 +168,8 @@ export interface VehicleSoldEvent {
 }
 
 /**
- * Dispatcher (krok 5, ADR-018) vytvoril job `open`: jednotky `unitIds` na aprone berthu `fromModuleId` majú rezervovaný
- * slot v sklade `toModuleId`.
+ * Dispatcher (krok 5, ADR-018, ADR-023) vytvoril job `open`: jednotky `unitIds` u modulu `fromModuleId` majú rezervované
+ * miesto v module `toModuleId` — inbound z apronu berthu do slotu skladu, outbound zo skladu na staging dock rampy.
  */
 export interface JobCreatedEvent {
   readonly type: 'JobCreated';
@@ -189,6 +190,17 @@ export interface JobAssignedEvent {
 export interface JobDoneEvent {
   readonly type: 'JobDone';
   readonly jobId: EntityId;
+}
+
+/**
+ * Dispatcher (krok 5, ADR-023) zrušil job bez vozidla (`open → cancelled`), lebo jeho cieľ prestal byť použiteľný
+ * (`reason`: rampa neprevádzková alebo zo zdroja nedosiahnuteľná). Rezervácia v cieli sa uvoľnila, jednotky ostali na
+ * zdroji a job zmizol z `world.jobs`; dispatcher im v tom istom kroku môže vytvoriť nový job k inej rampe.
+ */
+export interface JobCancelledEvent {
+  readonly type: 'JobCancelled';
+  readonly jobId: EntityId;
+  readonly reason: JobCancelReason;
 }
 
 /** Vozidlo zmenilo stav FSM (`VEHICLE_TRANSITIONS`, ADR-019); jedna udalosť na prechod. */
@@ -245,6 +257,7 @@ export type SimEvent =
   | JobCreatedEvent
   | JobAssignedEvent
   | JobDoneEvent
+  | JobCancelledEvent
   | VehicleStateChangedEvent
   | NoStorageAvailableEvent
   | RampOperationalChangedEvent;

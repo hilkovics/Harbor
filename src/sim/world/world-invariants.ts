@@ -33,21 +33,23 @@
  *    s nákladom vo vozidle (`idle` vozidlo nevezie nič — rozhodnutie orchestrátora F3 č. 5); pohyb zodpovedá stavu
  *    (`vehicleMotionProblem`, ADR-019: trasa po susedných bunkách, poloha na trase, tvar trasy a odpočet podľa stavu,
  *    cesta pod vozidlom, jazda po ceste k prístupovej bunke modulu jobu — žiadne vozidlo v `to_*` bez platnej cesty);
- * 9. joby (T03-05, ADR-018): kľúč = id, vzostupne podľa id, aktívny stav (hotový job sa hneď odstráni), index
- *    `jobOfUnit` = jednotky jobov (žiadna jednotka v dvoch aktívnych joboch), jednotky ležia podľa stavu na `from`
- *    alebo vo vozidle jobu, vozidlo podľa `JOB_STATE_TRAITS.hasVehicle` existuje a má tento job, cieľ je sklad
- *    kategórie nákladu so slotom v rozsahu; rezervované sloty každého skladu = presne sloty `to` jeho aktívnych jobov
- *    (slot jobu rezervovaný + počet, súčet a súčet štvorcov slotov — bez kópií a triedenia, ADR-021);
+ * 9. joby (T03-05, ADR-018, ADR-023): kľúč = id, vzostupne podľa id, aktívny stav (hotový aj zrušený job sa hneď
+ *    odstráni), index `jobOfUnit` = jednotky jobov (žiadna jednotka v dvoch aktívnych joboch), jednotky ležia podľa
+ *    stavu na `from` alebo vo vozidle jobu, vozidlo podľa `JOB_STATE_TRAITS.hasVehicle` existuje a má tento job, cieľ
+ *    je modul s `cargoDropTarget()` druhu `to` (sklad pre inbound, rampa pre outbound) kategórie nákladu a miesto `to`
+ *    (slot, dock) je rezervované; rezervované sloty každého skladu = presne sloty `to` jeho aktívnych jobov (slot jobu
+ *    rezervovaný + počet, súčet a súčet štvorcov slotov — bez kópií a triedenia, ADR-021); rezervácie každého docku
+ *    rampy = počet jednotiek aktívnych outbound jobov na tento dock (outbound job drží rezerváciu celý život, T04-03);
  * 10. vnútorný stav modulov (`Module.findRuntimeProblem`, T04-02, ADR-022): fronta brány bez duplicít, bays stojiska
  *    (počítadlá, obsadený bay má kamión, kamión drží najviac jeden bay), staging dockov rampy (jednotka na docku
  *    v rozsahu, súčet rezervácií, `staged + reserved ≤ stagingPerDock` na každom docku); na rampe len jednotky jej
- *    kategórie. Väzby na kamióny (fronta, bays) a rezervácie staging miest ↔ outbound joby pridajú T04-03/T04-04.
+ *    kategórie. Väzby na kamióny (fronta, bays) pridá T04-04.
  *
  * Krok 12 beží v DEV/testoch každý tick, preto kontroly v bežnom (platnom) stave nealokujú, kde to ide (review T03-13):
  * trasy vozidiel cez `Vehicle.routeCellAt`, depá kurzorom, rezervácie súčtami; podrobné správy sa skladajú až pri
  * porušení. Jednotky skladu sa čítajú jednou kópiou (`units()`) — pri stovkách jednotiek lacnejšie než `unitAtIndex`.
  */
-import { CARGO_HOLDER_KINDS, isSameLocation, uniqueSlotOf } from '../cargo/cargo-location';
+import { CARGO_HOLDER_KINDS, isSameLocation, slotOf, uniqueSlotOf } from '../cargo/cargo-location';
 import { OPPOSITE_DIRECTION } from '../grid/road-direction';
 import { DEFAULT_ROAD_KIND, ROAD_KIND_TRAITS, isRoadKind } from '../grid/road-kind';
 import type { EntityId } from '../core/entity-id';
@@ -388,19 +390,29 @@ function checkJobUnits(world: World, job: TransportJob): string | undefined {
   return undefined;
 }
 
+/**
+ * Cieľ jobu (ADR-018, ADR-023): modul s `cargoDropTarget()` druhu `to` (sklad pre inbound, rampa pre outbound), miesto
+ * `to` (slot, dock) má rezerváciu a cieľ prijíma kategóriu nákladu jobu.
+ */
+function checkJobTarget(world: World, job: TransportJob, category: CargoCategory | undefined): string | undefined {
+  const module = world.modules.get(job.toModuleId);
+  const target = module?.cargoDropTarget();
+  if (module === undefined || target?.kind !== job.to.kind) return `${job.label}: cieľ #${String(job.toModuleId)} neprijíma náklad do '${job.to.kind}'`;
+  const place = slotOf(job.to);
+  if (place === null || target.reservationsAt(place) < 1) return `${job.label}: miesto ${String(place)} ('${job.to.kind}') nie je rezervované v ${module.label}`;
+  if (category !== target.category) return `${job.label}: ${module.label} (kategória '${target.category}') pre náklad kategórie '${String(category)}'`;
+  return undefined;
+}
+
 function checkJob(world: World, job: TransportJob): string | undefined {
   const traits = JOB_STATE_TRAITS[job.state];
   if (!traits.active) return `${job.label} v stave '${job.state}' je stále vo world.jobs`;
   if (traits.hasVehicle !== (job.vehicleId !== null)) return `${job.label} v stave '${job.state}' ${traits.hasVehicle ? 'nemá vozidlo' : 'má vozidlo'}`;
   const vehicle = job.vehicleId === null ? undefined : world.vehicles.get(job.vehicleId);
   if (job.vehicleId !== null && vehicle?.jobId !== job.id) return `${job.label}: vozidlo #${String(job.vehicleId)} tento job nemá`;
-  const storage = world.modules.get(job.toModuleId);
-  if (!(storage instanceof StorageModule)) return `${job.label}: cieľ #${String(job.toModuleId)} nie je sklad`;
-  const slot = uniqueSlotOf(job.to);
-  if (slot === null || slot >= storage.capacity || !storage.isReserved(slot)) return `${job.label}: slot ${String(slot)} nie je rezervovaný v ${storage.label}`;
-  const typeId = world.cargo.get(job.unitIds[0])?.typeId;
-  const category = typeId === undefined ? undefined : world.defs.cargoTypes.get(typeId).category;
-  if (category !== storage.category) return `${job.label}: ${storage.label} (kategória '${storage.category}') pre náklad kategórie '${String(category)}'`;
+  const category = unitCategory(world, job.unitIds[0]);
+  const target = checkJobTarget(world, job, category);
+  if (target !== undefined) return target;
   if (vehicle !== undefined && (category === undefined || !vehicle.def.cargoCategories.includes(category))) {
     return `${job.label}: ${vehicle.label} nevozí náklad kategórie '${String(category)}'`;
   }
@@ -450,6 +462,29 @@ function checkStorageReservations(world: World): string | undefined {
   return undefined;
 }
 
+/**
+ * Staging rezervácie každej rampy = outbound joby (ADR-023): na každom docku počet rezervácií = počet jednotiek
+ * aktívnych jobov s cieľom na tomto docku (job drží rezerváciu celý život, `commit` pri vykládke ju premení na
+ * obsadenie). Bez alokácie — jeden prechod jobmi na dock (dockov je málo). `staged + reserved ≤ stagingPerDock`
+ * overuje `findRuntimeProblem` rampy (bod 10).
+ */
+function checkRampReservations(world: World): string | undefined {
+  for (const module of world.modules.values()) {
+    if (!(module instanceof LoadingRamp)) continue;
+    for (let dock = 0; dock < module.docks; dock++) {
+      let count = 0;
+      for (const job of world.jobs.values()) {
+        if (job.toModuleId === module.id && slotOf(job.to) === dock) count += job.unitIds.length;
+      }
+      const reserved = module.reservedAt(dock);
+      if (count !== reserved) {
+        return `${module.label}: dock ${String(dock)} má ${String(reserved)} staging rezervácií, aktívne outbound joby naň vezú ${String(count)} jednotiek`;
+      }
+    }
+  }
+  return undefined;
+}
+
 const checkJobs: Check = (world) => {
   let previous = 0;
   let units = 0;
@@ -462,7 +497,7 @@ const checkJobs: Check = (world) => {
     if (violation !== undefined) return violation;
   }
   if (world.jobUnitCount !== units) return `index jobOfUnit má ${String(world.jobUnitCount)} jednotiek, joby ${String(units)}`;
-  return checkStorageReservations(world);
+  return checkStorageReservations(world) ?? checkRampReservations(world);
 };
 
 const checkBerthGroups: Check = (world) => {

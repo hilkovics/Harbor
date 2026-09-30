@@ -1,15 +1,19 @@
 /**
- * TransportJob (ARCHITECTURE §7.3; docs/tasks/phase-03.md rozhodnutie 6 a „Spoločné rozhrania"; ADR-018) — úloha
- * previezť jednotky nákladu z jedného držiteľa k druhému vozidlom. Vo F3 len inbound `on_apron → in_storage`
- * (`JOB_ROUTES`); outbound `in_storage → at_ramp` pridá F4 ako nový riadok tabuľky.
+ * TransportJob (ARCHITECTURE §7.3; docs/tasks/phase-03.md rozhodnutie 6 a „Spoločné rozhrania"; ADR-018, ADR-023) —
+ * úloha previezť jednotky nákladu z jedného držiteľa k druhému vozidlom. Povolené dvojice lokácií sú tabuľka
+ * `JOB_ROUTES`: inbound `on_apron → in_storage` (F3) a outbound `in_storage → at_ramp` (F4, T04-03).
  *
- * - Job vzniká v dispatcheri (krok 5) s rezervovaným slotom v cieli (`to = in_storage(moduleId, slot)`) a jednotkami
- *   na zdroji (`from` = ich poloha pri vzniku). Rezervácia slotu trvá, kým vozidlo jednotku neuloží.
+ * - Job vzniká v dispatcheri (krok 5) s rezervovaným miestom v cieli (`to` = `in_storage(moduleId, slot)` alebo
+ *   `at_ramp(rampId, dock)`) a jednotkami na zdroji (`from` = ich poloha pri vzniku). Rezervácia trvá, kým vozidlo
+ *   jednotku neuloží (celý život jobu).
  * - Stavy a prechody sú tabuľky `JOB_TRANSITIONS` a `JOB_STATE_TRAITS` (žiadne skryté prechody): `open → assigned`
  *   (dispatcher priradí vozidlo, `assign`) `→ picking` (vozidlo nakladá) `→ moving` (vezie) `→ dropping` (vykladá)
- *   `→ done`. Stav jobu zrkadlí FSM vozidla (ADR-019); hotový job `World` hneď odstráni (`removeJob`), takže save
- *   nerastie s každým prevozom.
- * - `fromModuleId` / `toModuleId` = držitelia `from` / `to` (moduly: berth, sklad).
+ *   `→ done`; `open → cancelled` (dispatcher zruší job bez vozidla, keď cieľ prestal byť použiteľný — rampa stratila
+ *   prevádzkovosť, ADR-023). Stav jobu zrkadlí FSM vozidla (ADR-019); ukončený job (`done`, `cancelled`) `World` hneď
+ *   odstráni (`removeJob`), takže save nerastie s každým prevozom.
+ * - Priorita priradenia vozidla je v `JOB_ROUTES` (`priority`, menšie = skôr): inbound pred outbound — uvoľnenie apronu
+ *   chráni žeriav pred blokovaním (rozhodnutie orchestrátora F4 č. 4).
+ * - `fromModuleId` / `toModuleId` = držitelia `from` / `to` (moduly: berth, sklad, rampa).
  *
  * Save (`SerializedJob`) nesie len to, čo sa nedá odvodiť: id, jednotky, `from`, `to`, `createdTick`. Vozidlo jobu
  * (`vehicleId`) a stav obnova odvodí z vozidla, ktoré má job v `jobId`, a z polohy nákladu v ledgeri (ADR-018).
@@ -19,18 +23,29 @@ import type { EntityId } from '../core/entity-id';
 import { JobError } from './job-error';
 
 /** Stavy jobu v poradí životného cyklu. */
-export const JOB_STATES = ['open', 'assigned', 'picking', 'moving', 'dropping', 'done'] as const;
+export const JOB_STATES = ['open', 'assigned', 'picking', 'moving', 'dropping', 'done', 'cancelled'] as const;
 export type JobState = (typeof JOB_STATES)[number];
 
-/** Povolené prechody `from → [to…]`; `done` je konečný stav (job sa odstráni). */
+/**
+ * Povolené prechody `from → [to…]`; `done` a `cancelled` sú konečné stavy (job sa odstráni). Zrušiť sa dá len job bez
+ * vozidla (`open`) — vozidlo, ktoré job už má, ho dokončí (ADR-023).
+ */
 export const JOB_TRANSITIONS: ReadonlyMap<JobState, readonly JobState[]> = new Map<JobState, readonly JobState[]>([
-  ['open', Object.freeze(['assigned'] as const)],
+  ['open', Object.freeze(['assigned', 'cancelled'] as const)],
   ['assigned', Object.freeze(['picking'] as const)],
   ['picking', Object.freeze(['moving'] as const)],
   ['moving', Object.freeze(['dropping'] as const)],
   ['dropping', Object.freeze(['done'] as const)],
   ['done', Object.freeze([] as const)],
+  ['cancelled', Object.freeze([] as const)],
 ]);
+
+/**
+ * Prečo dispatcher zrušil job bez vozidla (`JobCancelled`, ADR-023): cieľová rampa nie je prevádzková (ADR-022), alebo
+ * k nej zo zdroja nevedie cesta. Oboje sú podmienky vzniku outbound jobu — `open` job, ktorý by už nevznikol, sa zruší.
+ */
+export const JOB_CANCEL_REASONS = ['ramp_inoperative', 'ramp_unreachable'] as const;
+export type JobCancelReason = (typeof JOB_CANCEL_REASONS)[number];
 
 /** Kde leží náklad jobu v danom stave (invarianty kroku 12, obnova save). */
 export type JobCargoPlace = 'source' | 'vehicle' | 'target';
@@ -41,7 +56,7 @@ export interface JobStateTraits {
   readonly hasVehicle: boolean;
   /** Poloha jednotiek: na `from`, vo vozidle jobu, alebo už na `to`. */
   readonly cargoAt: JobCargoPlace;
-  /** Aktívny job drží rezerváciu slotu `to` a jeho jednotky nesmú mať iný aktívny job. */
+  /** Aktívny job drží rezerváciu miesta `to` a jeho jednotky nesmú mať iný aktívny job; neaktívny sa hneď odstráni. */
   readonly active: boolean;
 }
 
@@ -52,12 +67,31 @@ export const JOB_STATE_TRAITS: { readonly [S in JobState]: JobStateTraits } = Ob
   moving: Object.freeze({ hasVehicle: true, cargoAt: 'vehicle', active: true }),
   dropping: Object.freeze({ hasVehicle: true, cargoAt: 'vehicle', active: true }),
   done: Object.freeze({ hasVehicle: true, cargoAt: 'target', active: false }),
+  cancelled: Object.freeze({ hasVehicle: false, cargoAt: 'source', active: false }),
 });
 
-/** Dvojice druhov lokácií (zdroj → cieľ), pre ktoré smie job vzniknúť; F3 = inbound apron → sklad. */
-export const JOB_ROUTES: readonly { readonly from: CargoLocationKind; readonly to: CargoLocationKind }[] = Object.freeze([
-  Object.freeze({ from: 'on_apron', to: 'in_storage' } as const),
+/** Dvojica druhov lokácií (zdroj → cieľ), pre ktorú smie job vzniknúť, s prioritou priradenia vozidla. */
+export interface JobRoute {
+  readonly from: CargoLocationKind;
+  readonly to: CargoLocationKind;
+  /**
+   * Poradie priradenia vozidla (menšie = skôr, `0 … JOB_PRIORITY_LEVELS − 1`): dispatcher prejde najprv všetky `open`
+   * joby priority 0 v poradí vzniku, potom priority 1 atď. (§7.3 bod 3, ADR-023). Štrukturálne poradie, nie balans.
+   */
+  readonly priority: number;
+}
+
+/**
+ * Povolené joby: inbound apron → sklad (F3) s prednosťou pred outbound sklad → rampa (F4, T04-03) — uvoľnenie apronu
+ * chráni žeriav pred blokovaním (rozhodnutie orchestrátora F4 č. 4).
+ */
+export const JOB_ROUTES: readonly JobRoute[] = Object.freeze([
+  Object.freeze({ from: 'on_apron', to: 'in_storage', priority: 0 } as const),
+  Object.freeze({ from: 'in_storage', to: 'at_ramp', priority: 1 } as const),
 ]);
+
+/** Počet úrovní priority (`max(priority) + 1`) — koľko prechodov jobmi robí priradenie vozidiel. */
+export const JOB_PRIORITY_LEVELS: number = JOB_ROUTES.reduce((levels, route) => Math.max(levels, route.priority + 1), 0);
 
 /** Je prechod `from → to` v tabuľke? */
 export function isJobTransitionAllowed(from: JobState, to: JobState): boolean {
@@ -69,9 +103,14 @@ export function isJobState(value: unknown): value is JobState {
   return (JOB_STATES as readonly unknown[]).includes(value);
 }
 
+/** Riadok `JOB_ROUTES` pre dvojicu druhov lokácií; mimo tabuľky `undefined`. */
+export function jobRouteOf(from: CargoLocationKind, to: CargoLocationKind): JobRoute | undefined {
+  return JOB_ROUTES.find((route) => route.from === from && route.to === to);
+}
+
 /** Smie job viesť z lokácie druhu `from` do druhu `to` (`JOB_ROUTES`)? */
 export function isJobRoute(from: CargoLocationKind, to: CargoLocationKind): boolean {
-  return JOB_ROUTES.some((route) => route.from === from && route.to === to);
+  return jobRouteOf(from, to) !== undefined;
 }
 
 /** Job v save (`WorldState.jobs[i]`, ADR-018) — čistý JSON; poradie v save = vzostupne podľa id (poradie vzniku). */
@@ -113,16 +152,18 @@ function checkLocation(raw: CargoLocation, label: string, field: string): CargoL
 
 export class TransportJob {
   readonly id: EntityId;
-  /** Jednotky jobu (zmrazené); vo F3 práve jedna — cieľ je jeden jedinečný slot. */
+  /** Jednotky jobu (zmrazené); dispatcher vytvára joby s práve jednou jednotkou (inbound: cieľ je jedinečný slot). */
   readonly unitIds: readonly EntityId[];
   /** Poloha jednotiek pri vzniku jobu (zdroj). */
   readonly from: CargoLocation;
-  /** Cieľ s rezervovaným slotom. */
+  /** Cieľ s rezervovaným miestom (slot skladu, dock rampy). */
   readonly to: CargoLocation;
-  /** Držiteľ `from` (berth). */
+  /** Držiteľ `from` (berth, sklad). */
   readonly fromModuleId: EntityId;
-  /** Držiteľ `to` (sklad). */
+  /** Držiteľ `to` (sklad, rampa). */
   readonly toModuleId: EntityId;
+  /** Priorita priradenia vozidla z `JOB_ROUTES` (menšie = skôr). */
+  readonly priority: number;
   /** Tick vzniku (`clock.tick` v kroku 5). */
   readonly createdTick: number;
   private current: JobState;
@@ -146,7 +187,8 @@ export class TransportJob {
     }
     const from = checkLocation(init.from, label, 'from');
     const to = checkLocation(init.to, label, 'to');
-    if (!isJobRoute(from.kind, to.kind)) {
+    const route = jobRouteOf(from.kind, to.kind);
+    if (route === undefined) {
       throw new JobError('invalid_input', `${label}: job ${from.kind} → ${to.kind} nie je povolený (JOB_ROUTES)`);
     }
     if (uniqueSlotOf(to) !== null && unitIds.length !== 1) {
@@ -168,6 +210,7 @@ export class TransportJob {
     this.to = to;
     this.fromModuleId = holderIdOf(from) as EntityId;
     this.toModuleId = holderIdOf(to) as EntityId;
+    this.priority = route.priority;
     this.createdTick = init.createdTick;
     this.current = state;
     this.vehicle = vehicleId;

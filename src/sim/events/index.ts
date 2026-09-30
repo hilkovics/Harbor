@@ -9,6 +9,7 @@ export type {
   GameSpeedChangedEvent,
   HourClosedEvent,
   JobAssignedEvent,
+  JobCancelledEvent,
   JobCreatedEvent,
   JobDoneEvent,
   ModulePlacedEvent,

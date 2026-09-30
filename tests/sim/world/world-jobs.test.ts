@@ -140,7 +140,7 @@ describe('invarianty jobov (krok 12)', () => {
     expect([assigned.state, open.state]).toEqual(['assigned', 'open']);
 
     yard.release(1);
-    expect(findWorldViolation(world)).toMatch(/job #\d+: slot 1 nie je rezervovaný/);
+    expect(findWorldViolation(world)).toMatch(/job #\d+: miesto 1 \('in_storage'\) nie je rezervované/);
     yard.reserveSlot(1);
     yard.reserve();
     expect(findWorldViolation(world)).toMatch(/rezervované sloty \[0, 1, 2\] ≠ sloty aktívnych jobov \[0, 1\]/);
@@ -217,7 +217,7 @@ describe('WorldState v3 — joby v save', () => {
     ['jednotka jobu v save nie je', (s) => (s.jobs[1].unitIds = [s.ids.nextId - 1]), '/jobs/1/unitIds/0'],
     ['jednotka nie je na zdroji jobu', (s) => (s.jobs[1].from = { kind: 'on_apron', berthId: 1, slot: 3 }), '/jobs/1/unitIds/0', /zdroji/],
     ['jednotka v dvoch joboch', (s) => ((s.jobs[1].unitIds = s.jobs[0].unitIds), (s.jobs[1].from = s.jobs[0].from)), '/jobs/1/unitIds', /už má/],
-    ['cieľ nie je sklad', (s) => (s.jobs[0].to = { kind: 'in_storage', moduleId: 3, slot: 0 }), '/jobs/0/to/moduleId', /nie je sklad/],
+    ['cieľ nie je sklad', (s) => (s.jobs[0].to = { kind: 'in_storage', moduleId: 3, slot: 0 }), '/jobs/0/to/moduleId', /neprijíma náklad jobu do 'in_storage'/],
     ['slot mimo kapacity', (s) => (s.jobs[0].to = { kind: 'in_storage', moduleId: 4, slot: 64 }), '/jobs/0/to/slot'],
     ['dva joby na jeden slot', (s) => (s.jobs[1].to = s.jobs[0].to), '/jobs/1/to/slot', /rezervovaný/],
     ['vozidlo s jobom, ktorý v save nie je', (s) => (s.vehicles[0].jobId = 999), '/vehicles/0/jobId', /job #999 vo svete neexistuje/],

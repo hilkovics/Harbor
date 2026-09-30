@@ -32,14 +32,14 @@
 
 ## Checklist
 - [x] T03-01 · Defy: `vehicles.json`, `logistics.json`, `container_yard_small` + `vehicle_depot` v `modules.json`, schémy, DefRegistry, manifest krížovo pre vozidlá
-- [ ] T03-02 · Sim: `StorageModule` + `ContainerYard` + `VehicleDepot`, pripojenie k ceste, §8 bod 5; ApronBuffer len rezervácie; ADR-017
+- [x] T03-02 · Sim: `StorageModule` + `ContainerYard` + `VehicleDepot`, pripojenie k ceste, §8 bod 5; ApronBuffer len rezervácie; ADR-017
 - [ ] T03-03 · Sim: `Pathfinder` (A*) + `PathCache` + `DistanceMatrix`
 - [ ] T03-04 · Sim: `Vehicle` + `BuyVehicle`/`SellVehicle` + WorldState v3 (vozidlá)
 - [ ] T03-05 · Sim: `TransportJob` + `StorageAllocator` + `Dispatcher` (krok 5) + `NoStorageAvailable`; ADR-018
 - [ ] T03-06 · Sim: Vehicle FSM + pohyb + load/unload + traffic (kroky 6, 11) + preplánovanie; ADR-019
 - [ ] T03-07 · Testy (TDD): scenár `apron_to_yard`, A*/cache/alokátor/dispatcher cez verejné API
-- [ ] T03-08 · Render: `VehicleView` + fill stavy dvora + badge „nepripojené"
-- [ ] T03-09 · UI: BuildBar Sklady/Logistika, inspector skladu a depa, `Toasts`
+- [x] T03-08 · Render: `VehicleView` + fill stavy dvora + badge „nepripojené"
+- [x] T03-09 · UI: BuildBar Sklady/Logistika, inspector skladu a depa, `Toasts`
 - [ ] T03-10 · App: snapshot v3 (vozidlá, sklady), napojenie renderu a UI, nákup/predaj vozidla, notifikácie
 - [ ] T03-11 · Tooling: `simrun` metriky vozidiel a skladov
 - [ ] T03-12 · E2E: loď → apron → vozidlá → dvor, screenshot

@@ -1,5 +1,6 @@
 // Typy udalostí SimEvent (readonly DTO, ARCHITECTURE §12.1).
 export type {
+  CargoMovedEvent,
   CommandRejectedEvent,
   DayClosedEvent,
   GameSpeedChangedEvent,

@@ -1,8 +1,10 @@
 /**
- * Udalosti simulácie (ARCHITECTURE §12.1, výber pre F1). Readonly DTO: `World` ich zbiera v `EventBus` a vracia
+ * Udalosti simulácie (ARCHITECTURE §12.1, výber pre F1 + `CargoMoved` z F2). Readonly DTO: `World` ich zbiera v `EventBus` a vracia
  * z `tick()` / `applyPending()`; prezentácia ich len číta. Nový typ udalosti = nový člen únie (+ test).
  */
+import type { CargoLocation } from '../cargo/cargo-location';
 import type { ValidationReason } from '../commands/validation';
+import type { EntityId } from '../core/entity-id';
 import type { LedgerCategory } from '../economy/ledger-category';
 import type { CellCoord } from '../grid/grid';
 
@@ -57,6 +59,19 @@ export interface CommandRejectedEvent {
   readonly reasons: readonly ValidationReason[];
 }
 
+/**
+ * Jednotka nákladu zmenila polohu (§7.1) — emituje výlučne `CargoLedger.move`, jedna udalosť na presun.
+ * `from`/`to` sú zmrazené lokácie ledgera; `tick` = `clock.tick` v okamihu presunu (počas príkazov pred krokom 1
+ * je to ešte predchádzajúci tick). Vznik jednotky (`create`) udalosť nemá — ohlási ho udalosť zdroja (`ShipSpawned`).
+ */
+export interface CargoMovedEvent {
+  readonly type: 'CargoMoved';
+  readonly unitId: EntityId;
+  readonly from: CargoLocation;
+  readonly to: CargoLocation;
+  readonly tick: number;
+}
+
 export type SimEvent =
   | TickAdvancedEvent
   | HourClosedEvent
@@ -65,7 +80,8 @@ export type SimEvent =
   | RoadChangedEvent
   | MoneyChangedEvent
   | GameSpeedChangedEvent
-  | CommandRejectedEvent;
+  | CommandRejectedEvent
+  | CargoMovedEvent;
 
 /** Názov typu udalosti (`'TickAdvanced' | 'HourClosed' | …`). */
 export type SimEventType = SimEvent['type'];

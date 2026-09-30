@@ -65,6 +65,8 @@
   font-size: var(--fs-lg);
   font-weight: var(--fw-semibold);
   line-height: var(--lh-tight);
+  /* Dlhší názov („Kontajnerový dvor S") sa zalomí vyvážene, nie s osamelým „S" na druhom riadku. */
+  text-wrap: balance;
 }
 
 .module-inspector__sub {

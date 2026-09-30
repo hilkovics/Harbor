@@ -219,8 +219,11 @@ export interface InspectorStat {
   readonly label: string;
   readonly value: string;
   readonly tone: StatTone;
-  /** Farebná značka pri popise dlaždice — prepája dlaždicu s farbou v pruhu (farba nikdy nie je jediný nositeľ). */
-  readonly swatch: StatSwatch;
+  /**
+   * Farebná značka pri hodnote dlaždice — prepája dlaždicu s farbou v pruhu (farba nikdy nie je jediný nositeľ).
+   * Dlaždice bez pruhu (depo vozidiel) ju nemajú.
+   */
+  readonly swatch?: StatSwatch;
 }
 
 /** Voľné sloty apronu (nikdy záporné). */
@@ -289,7 +292,10 @@ export function depotVehicleCounts(vehicles: readonly Pick<DepotVehicleData, 'st
   return { busy, idle, noPath };
 }
 
-/** Dlaždice depa: obsadenie stání (plné = varovanie) / pracuje / nečinné (bez cesty ide do zoznamu so žltou ikonou). */
+/**
+ * Dlaždice depa (bez farebných značiek — depo nemá pruh, ktorému by farba prislúchala): obsadenie stání (plné =
+ * varovanie) / pracuje / nečinné (vozidlo bez cesty ide do zoznamu so žltou ikonou).
+ */
 export function depotStats(depot: Pick<DepotData, 'vehicles' | 'capacity'>): InspectorStat[] {
   const counts = depotVehicleCounts(depot.vehicles);
   const total = depot.vehicles.length;
@@ -299,10 +305,9 @@ export function depotStats(depot: Pick<DepotData, 'vehicles' | 'capacity'>): Ins
       label: 'Vozidlá',
       value: formatFraction(total, depot.capacity),
       tone: depot.capacity > 0 && total >= depot.capacity ? 'warn' : 'normal',
-      swatch: 'used',
     },
-    { key: 'busy', label: 'Pracuje', value: formatCount(counts.busy), tone: 'normal', swatch: 'busy' },
-    { key: 'idle', label: 'Nečinné', value: formatCount(counts.idle), tone: 'normal', swatch: 'idle' },
+    { key: 'busy', label: 'Pracuje', value: formatCount(counts.busy), tone: 'normal' },
+    { key: 'idle', label: 'Nečinné', value: formatCount(counts.idle), tone: 'normal' },
   ];
 }
 
@@ -366,7 +371,9 @@ function renderStats(stats: readonly InspectorStat[]) {
             <span className={`module-inspector__stat-value module-inspector__stat-value--${stat.tone}`} data-field={`stat-${stat.key}`}>
               {stat.value}
             </span>
-            <span className={`module-inspector__swatch module-inspector__swatch--${stat.swatch}`} aria-hidden="true" />
+            {stat.swatch !== undefined && (
+              <span className={`module-inspector__swatch module-inspector__swatch--${stat.swatch}`} aria-hidden="true" />
+            )}
           </div>
         </div>
       ))}

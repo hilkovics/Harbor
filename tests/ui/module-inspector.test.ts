@@ -516,6 +516,13 @@ describe('ModuleInspector — depo vozidiel', () => {
     expect(tileValues(html, ['vehicles', 'busy', 'idle'])).toEqual(['2 / 6', '1', '1']);
   });
 
+  it('dlaždice depa nemajú farebné značky (depo nemá pruh); dlaždice skladu a kotviska áno', () => {
+    expect(render(DEPOT)).not.toContain('module-inspector__swatch');
+    expect(depotStats({ vehicles: [CARRIER_IDLE], capacity: 6 }).every((stat) => stat.swatch === undefined)).toBe(true);
+    expect(render(YARD).match(/module-inspector__swatch /g)).toHaveLength(3);
+    expect(render(BERTH).match(/module-inspector__swatch /g)).toHaveLength(3);
+  });
+
   it('zoznam „Vozidlá v depe": riadok na vozidlo s kódom, druhom a stavom; striedavé pozadie rieši CSS', () => {
     const html = render(DEPOT);
     expect(html).toContain('Vozidlá v depe');

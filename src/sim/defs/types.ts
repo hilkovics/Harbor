@@ -178,7 +178,7 @@ export interface ModulePlacementDef {
 
 /**
  * Voľné parametre modulu; tvar podľa `kind` overuje `MODULE_PARAM_SPECS`, typované gettery sú `berthParams`,
- * `craneParams`, `storageParams` a `depotParams`.
+ * `craneParams`, `storageParams`, `depotParams`, `gateParams`, `waitingAreaParams` a `rampParams`.
  */
 export type ModuleParams = Readonly<Record<string, number | string>>;
 
@@ -235,6 +235,36 @@ export interface DepotParams {
   readonly internalTicks?: number;
 }
 
+/** `params` brány kamiónov (`kind: 'gate'`, F4). */
+export interface GateParams {
+  /** Priepustnosť: 1 kamión za `processTicks` tickov (spoločná FIFO fronta oboch smerov, tvrdý bottleneck). */
+  readonly processTicks: number;
+  /** Vnútorný čas prechodu telom brány (ADR-011); chýba = `logistics.defaultInternalTicks`. */
+  readonly internalTicks?: number;
+}
+
+/** `params` čakacej plochy kamiónov (`kind: 'waiting_area'`, F4). */
+export interface WaitingAreaParams {
+  /** Počet stojísk (bays) pre kamióny; `stalls` v manifeste. */
+  readonly bays: number;
+  /** Vnútorný čas prechodu stojiskom (ADR-011); chýba = `logistics.defaultInternalTicks`. */
+  readonly internalTicks?: number;
+}
+
+/** `params` nakladacej rampy (`kind: 'ramp'`, F4). */
+export interface RampParams {
+  /** Počet dockov rampy; `docks` v manifeste. */
+  readonly docks: number;
+  /** Kapacita staging slotov `at_ramp` na jeden dock. */
+  readonly stagingPerDock: number;
+  /** Trvanie naloženia jednej jednotky na kamión v tickoch. */
+  readonly loadTicksPerUnit: number;
+  /** Kategória nákladu, ktorú rampa nakladá. */
+  readonly category: CargoCategory;
+  /** Vnútorný čas vstupu do docku (ADR-011); chýba = `logistics.defaultInternalTicks`. */
+  readonly internalTicks?: number;
+}
+
 /** Druh bez typovaných parametrov (zatiaľ ostatné kind-y): `params` musí byť `{}`. */
 export type NoParams = Readonly<Record<never, never>>;
 
@@ -243,9 +273,9 @@ export interface ModuleParamsByKind {
   readonly berth: BerthParams;
   readonly crane: CraneParams;
   readonly storage: StorageParams;
-  readonly gate: NoParams;
-  readonly waiting_area: NoParams;
-  readonly ramp: NoParams;
+  readonly gate: GateParams;
+  readonly waiting_area: WaitingAreaParams;
+  readonly ramp: RampParams;
   readonly depot: DepotParams;
   readonly rail_station: NoParams;
   readonly pipeline: NoParams;
@@ -285,4 +315,18 @@ export interface VehicleDef {
   readonly purchaseCents: number;
   readonly wagePerDayCents: number;
   readonly techRequired?: string;
+}
+
+/**
+ * Položka `trucks.json` (§4.2, §7.5; F4): kamión, ktorý odváža náklad z rampy mimo mapu. Kamión sa nekupuje a nemá mzdu —
+ * spawnuje ho `TruckSpawner`; čas nakládky určuje rampa (`RampParams.loadTicksPerUnit`). Sprite je `entities.<id>` v manifeste.
+ */
+export interface TruckDef {
+  readonly id: string;
+  readonly displayName: string;
+  /** Kapacita v CargoUnit (koľko jednotiek vezie naraz). */
+  readonly capacityUnits: number;
+  /** Rýchlosť jazdy v bunkách za tick. */
+  readonly speedCellsPerTick: number;
+  readonly cargoCategories: readonly CargoCategory[];
 }

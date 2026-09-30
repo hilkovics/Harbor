@@ -8,7 +8,7 @@
  * pravidlá sú tabuľky nižšie (`FieldTable`, `SpecTable`).
  *
  * Konfiguračné defy (`time`, `economy`, `infrastructure`, `logistics`) sú jeden objekt, katalógové (`cargo_types`,
- * `modules`, `ships`, `vehicles`) majú `items: [...]` (ADR-009) a vystavujú sa ako `Catalog`.
+ * `modules`, `ships`, `vehicles`, `trucks`) majú `items: [...]` (ADR-009) a vystavujú sa ako `Catalog`.
  */
 import cargoTypesJson from '@data/defs/cargo_types.json';
 import economyJson from '@data/defs/economy.json';
@@ -17,6 +17,7 @@ import logisticsJson from '@data/defs/logistics.json';
 import modulesJson from '@data/defs/modules.json';
 import shipsJson from '@data/defs/ships.json';
 import timeJson from '@data/defs/time.json';
+import trucksJson from '@data/defs/trucks.json';
 import vehiclesJson from '@data/defs/vehicles.json';
 import { SECONDS_PER_MINUTE } from '../core/sim-clock';
 import { DEFAULT_ROAD_KIND } from '../grid/road-kind';
@@ -56,6 +57,7 @@ import {
   type RoadKindDef,
   type ShipClassDef,
   type TimeDef,
+  type TruckDef,
   type VehicleDef,
 } from './types';
 
@@ -225,7 +227,16 @@ const VEHICLE_FIELDS: SpecTable<VehicleDef> = {
   techRequired: { kind: 'string', pattern: SNAKE_CASE_ID, patternName: 'snake_case identifikátor', optional: true },
 };
 
-type DefName = keyof typeof DEF_FIELDS | 'cargo_types' | 'modules' | 'ships' | 'vehicles';
+/** Kamión (F4): bez nákupu a mzdy — spawnuje ho `TruckSpawner`, čas nakládky určuje rampa. */
+const TRUCK_FIELDS: SpecTable<TruckDef> = {
+  id: ID_FIELD,
+  displayName: TEXT_FIELD,
+  capacityUnits: { kind: 'integer', min: 1 },
+  speedCellsPerTick: { kind: 'number', exclusiveMin: 0 },
+  cargoCategories: { kind: 'array', minItems: 1, unique: true, item: { kind: 'enum', values: CARGO_CATEGORIES } },
+};
+
+type DefName = keyof typeof DEF_FIELDS | 'cargo_types' | 'modules' | 'ships' | 'vehicles' | 'trucks';
 
 // ---------------------------------------------------------------------------------------------------------
 // Validácia konfiguračného defu
@@ -285,6 +296,7 @@ export class DefRegistry {
     private readonly modulesCatalog: Catalog<Readonly<ModuleDef>>,
     private readonly shipsCatalog: Catalog<Readonly<ShipClassDef>>,
     private readonly vehiclesCatalog: Catalog<Readonly<VehicleDef>>,
+    private readonly trucksCatalog: Catalog<Readonly<TruckDef>>,
     private readonly logisticsDef: Readonly<LogisticsDef>,
   ) {}
 
@@ -298,6 +310,7 @@ export class DefRegistry {
       validateCatalog<ModuleDef>('modules', raw.modules, { fields: MODULE_FIELDS, extraKeys: ['params'], check: checkModuleItem }),
       validateCatalog<ShipClassDef>('ships', raw.ships, { fields: SHIP_CLASS_FIELDS }),
       validateCatalog<VehicleDef>('vehicles', raw.vehicles, { fields: VEHICLE_FIELDS }),
+      validateCatalog<TruckDef>('trucks', raw.trucks, { fields: TRUCK_FIELDS }),
       validateDef<LogisticsDef>('logistics', raw.logistics, DEF_FIELDS.logistics),
     );
   }
@@ -324,7 +337,7 @@ export class DefRegistry {
 
   /**
    * `modules.json` (§4.2, §5.3): moduly; typované parametre cez `berthParams(def)` / `craneParams(def)` /
-   * `storageParams(def)` / `depotParams(def)`.
+   * `storageParams(def)` / `depotParams(def)` / `gateParams(def)` / `waitingAreaParams(def)` / `rampParams(def)`.
    */
   get modules(): Catalog<Readonly<ModuleDef>> {
     return this.modulesCatalog;
@@ -338,6 +351,11 @@ export class DefRegistry {
   /** `vehicles.json` (§4.4): interné vozidlá (straddle carrier, …). */
   get vehicles(): Catalog<Readonly<VehicleDef>> {
     return this.vehiclesCatalog;
+  }
+
+  /** `trucks.json` (§4.2, §7.5; F4): kamióny, ktoré odvážajú náklad z rampy. */
+  get trucks(): Catalog<Readonly<TruckDef>> {
+    return this.trucksCatalog;
   }
 
   /** `logistics.json` (§4.6, ADR-010): vnútorný čas v moduloch, opakovanie hľadania cesty, konštanty kongescie. */
@@ -356,6 +374,7 @@ export function loadBundledDefs(): DefRegistry {
     modules: modulesJson,
     ships: shipsJson,
     vehicles: vehiclesJson,
+    trucks: trucksJson,
     logistics: logisticsJson,
   });
 }

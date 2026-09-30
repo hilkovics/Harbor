@@ -64,7 +64,7 @@ const STORAGE_DEFS = DefRegistry.fromRaw({
       ...modulesJson.items,
       { ...TEST_ITEM, id: 'yard_test', kind: 'storage', params: { capacityUnits: 64, category: 'container' } },
       { ...TEST_ITEM, id: 'silo_test', kind: 'storage', params: { capacityUnits: 24, category: 'bulk' } },
-      { ...TEST_ITEM, id: 'gate_test', kind: 'gate', params: {} },
+      { ...TEST_ITEM, id: 'gate_test', kind: 'gate', params: { processTicks: 18 } },
     ],
   },
 });

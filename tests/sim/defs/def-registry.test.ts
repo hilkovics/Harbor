@@ -7,6 +7,7 @@ import logisticsJson from '@data/defs/logistics.json';
 import modulesJson from '@data/defs/modules.json';
 import shipsJson from '@data/defs/ships.json';
 import timeJson from '@data/defs/time.json';
+import trucksJson from '@data/defs/trucks.json';
 import vehiclesJson from '@data/defs/vehicles.json';
 import economySchema from '@data/schemas/economy.schema.json';
 import infrastructureSchema from '@data/schemas/infrastructure.schema.json';
@@ -26,6 +27,7 @@ interface RawBundle {
   modules: Record<string, unknown>;
   ships: Record<string, unknown>;
   vehicles: Record<string, unknown>;
+  trucks: Record<string, unknown>;
   logistics: Record<string, unknown>;
 }
 
@@ -39,6 +41,7 @@ function rawDefs(): RawBundle {
     modules: structuredClone(modulesJson),
     ships: structuredClone(shipsJson),
     vehicles: structuredClone(vehiclesJson),
+    trucks: structuredClone(trucksJson),
     logistics: structuredClone(logisticsJson),
   };
 }
@@ -77,10 +80,11 @@ describe('DefRegistry.fromRaw', () => {
     expect(registry.infrastructure.road.costPerCellCents).toBe(infrastructureJson.road.costPerCellCents);
     expect(registry.logistics.repathIntervalTicks).toBe(logisticsJson.repathIntervalTicks);
     expect(registry.vehicles.get('straddle_carrier').speedCellsPerTick).toBe(0.4);
+    expect(registry.trucks.get('truck_container').speedCellsPerTick).toBe(0.6);
   });
 
   describe('chýbajúci def → DefError s názvom defu', () => {
-    it.each(['time', 'economy', 'infrastructure', 'cargo_types', 'modules', 'ships', 'vehicles', 'logistics'] as const)('%s', (name) => {
+    it.each(['time', 'economy', 'infrastructure', 'cargo_types', 'modules', 'ships', 'vehicles', 'trucks', 'logistics'] as const)('%s', (name) => {
       const raw: Partial<ReturnType<typeof rawDefs>> = rawDefs();
       delete raw[name];
       const error = expectDefError(() => DefRegistry.fromRaw(raw), name, '');
@@ -94,6 +98,7 @@ describe('DefRegistry.fromRaw', () => {
       expectDefError(() => DefRegistry.fromRaw({ ...rawDefs(), modules: undefined }), 'modules', '');
       expectDefError(() => DefRegistry.fromRaw({ ...rawDefs(), ships: null }), 'ships', '');
       expectDefError(() => DefRegistry.fromRaw({ ...rawDefs(), vehicles: undefined }), 'vehicles', '');
+      expectDefError(() => DefRegistry.fromRaw({ ...rawDefs(), trucks: undefined }), 'trucks', '');
       expectDefError(() => DefRegistry.fromRaw({ ...rawDefs(), logistics: null }), 'logistics', '');
     });
 

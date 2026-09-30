@@ -5,4 +5,13 @@ export { DefError } from './def-error';
 export { DefRegistry, loadBundledDefs } from './def-registry';
 export type { RawDefs } from './def-registry';
 export type { Catalog } from './catalog';
-export { MODULE_PARAM_SPECS, berthParams, craneParams, depotParams, storageParams } from './module-def';
+export {
+  MODULE_PARAM_SPECS,
+  berthParams,
+  craneParams,
+  depotParams,
+  gateParams,
+  rampParams,
+  storageParams,
+  waitingAreaParams,
+} from './module-def';

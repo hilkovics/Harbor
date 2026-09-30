@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "modules.json",
-  "description": "Katalóg modulov (ARCHITECTURE §4.2, §5.3, ADR-009): { schemaVersion, items: [...] }. Tvar `params` závisí od `kind` (berth, crane, storage, depot; ostatné kind-y zatiaľ bez parametrov). Jedinečnosť `id` v items[] schéma nevyjadrí — kontroluje ju DefRegistry a `pnpm validate:defs`; polohu konektora vo footprinte kontroluje DefRegistry.",
+  "description": "Katalóg modulov (ARCHITECTURE §4.2, §5.3, ADR-009): { schemaVersion, items: [...] }. Tvar `params` závisí od `kind` (berth, crane, storage, gate, waiting_area, ramp, depot; rail_station a pipeline zatiaľ bez parametrov). Jedinečnosť `id` v items[] schéma nevyjadrí — kontroluje ju DefRegistry a `pnpm validate:defs`; polohu konektora vo footprinte kontroluje DefRegistry.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "items"],
@@ -133,10 +133,22 @@
           "then": { "properties": { "params": { "$ref": "#/$defs/depotParams" } } }
         },
         {
+          "if": { "type": "object", "properties": { "kind": { "const": "gate" } }, "required": ["kind"] },
+          "then": { "properties": { "params": { "$ref": "#/$defs/gateParams" } } }
+        },
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "waiting_area" } }, "required": ["kind"] },
+          "then": { "properties": { "params": { "$ref": "#/$defs/waitingAreaParams" } } }
+        },
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "ramp" } }, "required": ["kind"] },
+          "then": { "properties": { "params": { "$ref": "#/$defs/rampParams" } } }
+        },
+        {
           "if": {
             "type": "object",
             "properties": {
-              "kind": { "enum": ["gate", "waiting_area", "ramp", "rail_station", "pipeline"] }
+              "kind": { "enum": ["rail_station", "pipeline"] }
             },
             "required": ["kind"]
           },
@@ -192,6 +204,36 @@
       "properties": {
         "capacity": { "type": "integer", "minimum": 1, "description": "Počet státí (vozidiel) v depe (`stalls` v manifeste)." },
         "internalTicks": { "type": "integer", "minimum": 0, "description": "Vnútorný čas vozidla v module; chýba = logistics.defaultInternalTicks." }
+      }
+    },
+    "gateParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["processTicks"],
+      "properties": {
+        "processTicks": { "type": "integer", "minimum": 1, "description": "Priepustnosť brány: 1 kamión za `processTicks` tickov (spoločná FIFO fronta oboch smerov)." },
+        "internalTicks": { "type": "integer", "minimum": 0, "description": "Vnútorný čas prechodu telom brány; chýba = logistics.defaultInternalTicks." }
+      }
+    },
+    "waitingAreaParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bays"],
+      "properties": {
+        "bays": { "type": "integer", "minimum": 1, "description": "Počet stojísk (bays) kamiónov (`stalls` v manifeste)." },
+        "internalTicks": { "type": "integer", "minimum": 0, "description": "Vnútorný čas prechodu stojiskom; chýba = logistics.defaultInternalTicks." }
+      }
+    },
+    "rampParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["docks", "stagingPerDock", "loadTicksPerUnit", "category"],
+      "properties": {
+        "docks": { "type": "integer", "minimum": 1, "description": "Počet dockov rampy (`docks` v manifeste)." },
+        "stagingPerDock": { "type": "integer", "minimum": 1, "description": "Kapacita staging slotov `at_ramp` na jednom docku." },
+        "loadTicksPerUnit": { "type": "integer", "minimum": 1, "description": "Trvanie naloženia jednej jednotky na kamión v tickoch." },
+        "category": { "enum": ["container", "bulk", "liquid", "gas", "roro"], "description": "Kategória nákladu, ktorú rampa nakladá." },
+        "internalTicks": { "type": "integer", "minimum": 0, "description": "Vnútorný čas vstupu do docku; chýba = logistics.defaultInternalTicks." }
       }
     },
     "noParams": {

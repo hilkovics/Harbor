@@ -5,8 +5,9 @@
 // CLI sa spustí len pri priamom behu súboru. Schéma mapy overuje len štruktúru; vzťahy medzi poľami mapy overuje
 // loader v sime (MapError). Schéma manifestu tiež len štruktúru; existenciu SVG súborov, ich pokrytie a rozmery
 // overuje tests/tools/asset-manifest.test.ts. `validateAssetManifest` navyše krížovo overí, že každý modul z
-// `modules.json` má `sprites[id]`, každá loď zo `ships.json` má `entities.ship_{id}` a každé vozidlo z
-// `vehicles.json` má `entities[id]`.
+// `modules.json` má `sprites[id]`, každá loď zo `ships.json` má `entities.ship_{id}`, každé vozidlo z
+// `vehicles.json` a každý kamión z `trucks.json` má `entities[id]`; navyše `params.bays` čakacej plochy sa musí
+// zhodovať s počtom `stalls` a `params.docks` rampy s počtom `docks` v manifeste.
 // Katalógové defy (`items: [...]`, ADR-009) majú navyše kontrolu jedinečnosti `id` — JSON Schema ju nevyjadrí.
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -31,6 +32,7 @@ const ASSETS_LABEL_PREFIX = 'assets/';
 const MODULES_DEF_FILE = `modules${JSON_SUFFIX}`;
 const SHIPS_DEF_FILE = `ships${JSON_SUFFIX}`;
 const VEHICLES_DEF_FILE = `vehicles${JSON_SUFFIX}`;
+const TRUCKS_DEF_FILE = `trucks${JSON_SUFFIX}`;
 const MODULE_SPRITES_SECTION = 'sprites';
 const ENTITIES_SECTION = 'entities';
 const SHIP_ENTITY_PREFIX = 'ship_';
@@ -166,8 +168,8 @@ function catalogEntries(defsDir: string, file: string): { id: string; index: num
 
 /**
  * Krížová kontrola manifestu voči defom: každý modul z `modules.json` má `sprites[id]`, každá loď zo `ships.json`
- * má `entities.ship_{id}`, každé vozidlo z `vehicles.json` má `entities[id]`.
- * Chyba: `<label>: /<sekcia>/<kľúč> chýba sprite pre <modul|loď|vozidlo> '<id>' (<def>: /items/<i>/id)`.
+ * má `entities.ship_{id}`, každé vozidlo z `vehicles.json` a každý kamión z `trucks.json` má `entities[id]`.
+ * Chyba: `<label>: /<sekcia>/<kľúč> chýba sprite pre <modul|loď|vozidlo|kamión> '<id>' (<def>: /items/<i>/id)`.
  * Katalóg, ktorý chýba alebo sa nedá čítať, a sekcia manifestu, ktorá nie je objekt, sa preskočia (hlási ich schéma /
  * `validateDefsDir`). Sprity bez defu (budúce moduly) chyba nie sú.
  */
@@ -177,6 +179,7 @@ function findMissingSprites(label: string, manifest: unknown, defsDir: string): 
     { defFile: MODULES_DEF_FILE, section: MODULE_SPRITES_SECTION, keyPrefix: '', what: 'modul' },
     { defFile: SHIPS_DEF_FILE, section: ENTITIES_SECTION, keyPrefix: SHIP_ENTITY_PREFIX, what: 'loď' },
     { defFile: VEHICLES_DEF_FILE, section: ENTITIES_SECTION, keyPrefix: '', what: 'vozidlo' },
+    { defFile: TRUCKS_DEF_FILE, section: ENTITIES_SECTION, keyPrefix: '', what: 'kamión' },
   ] as const;
   const errors: string[] = [];
   for (const { defFile, section, keyPrefix, what } of checks) {
@@ -194,15 +197,57 @@ function findMissingSprites(label: string, manifest: unknown, defsDir: string): 
 }
 
 /**
+ * Parametre modulov, ktoré musia zodpovedať počtu prvkov poľa v jeho sprite (kľúč `sprites[id][spriteKey]`):
+ * `waiting_area.bays` = počet `stalls`, `ramp.docks` = počet `docks`.
+ */
+const SPRITE_COUNT_PARAMS = [
+  { kind: 'waiting_area', param: 'bays', spriteKey: 'stalls', what: 'stojísk' },
+  { kind: 'ramp', param: 'docks', spriteKey: 'docks', what: 'dockov' },
+] as const;
+
+/**
+ * Krížová kontrola počtov: modul druhu `kind` s číselným `params[param]` a sprite s poľom `spriteKey` musia mať rovnaký
+ * počet. Chyba: `<label>: /sprites/<id>/<spriteKey> počet <what> (<n>) sa nezhoduje s params.<param> (<m>) (modules.json: /items/<i>/params/<param>)`.
+ * Modul bez sprite alebo sprite bez poľa sa preskočí (chýbajúci sprite hlási `findMissingSprites`, tvar schéma).
+ */
+function findSpriteCountMismatches(label: string, manifest: unknown, defsDir: string): string[] {
+  if (!isRecord(manifest)) return [];
+  const sprites = manifest[MODULE_SPRITES_SECTION];
+  const json = readJsonOrUndefined(join(defsDir, MODULES_DEF_FILE));
+  const items = isRecord(json) ? json['items'] : undefined;
+  if (!isRecord(sprites) || !Array.isArray(items)) return [];
+  const errors: string[] = [];
+  items.forEach((item: unknown, index) => {
+    if (!isRecord(item) || typeof item['id'] !== 'string') return;
+    const sprite = sprites[item['id']];
+    const params = item['params'];
+    for (const { kind, param, spriteKey, what } of SPRITE_COUNT_PARAMS) {
+      if (item['kind'] !== kind || !isRecord(sprite) || !isRecord(params)) continue;
+      const parts = sprite[spriteKey];
+      const declared = params[param];
+      if (!Array.isArray(parts) || typeof declared !== 'number' || parts.length === declared) continue;
+      errors.push(
+        `${label}: /${MODULE_SPRITES_SECTION}/${item['id']}/${spriteKey} počet ${what} (${String(parts.length)}) sa nezhoduje s params.${param} (${String(declared)}) (${MODULES_DEF_FILE}: /items/${String(index)}/params/${param})`,
+      );
+    }
+  });
+  return errors;
+}
+
+/**
  * Overí `manifestPath` (`assets/manifest.json`) voči `asset-manifest.schema.json` v `schemasDir` a krížovo voči
- * defom v `defsDir` (pozri `findMissingSprites`). `file` výsledku je `assets/<názov súboru>`. Chýbajúci súbor,
+ * defom v `defsDir` (pozri `findMissingSprites` a `findSpriteCountMismatches`). `file` výsledku je `assets/<názov súboru>`. Chýbajúci súbor,
  * nevalidný JSON, chýbajúca schéma aj porušenie sú chyby v `errors` (nie výnimky).
  */
 export function validateAssetManifest(manifestPath: string, schemasDir: string, defsDir: string): DefValidationResult {
   const file = `${ASSETS_LABEL_PREFIX}${basename(manifestPath)}`;
   if (!existsSync(manifestPath)) return { file, errors: [`${file}: / chýba súbor ${manifestPath}`] };
   const schemaErrors = validateJsonFile(file, manifestPath, ASSET_MANIFEST_SCHEMA_NAME, schemasDir, false);
-  return { file, errors: [...schemaErrors, ...findMissingSprites(file, readJsonOrUndefined(manifestPath), defsDir)] };
+  const manifest = readJsonOrUndefined(manifestPath);
+  return {
+    file,
+    errors: [...schemaErrors, ...findMissingSprites(file, manifest, defsDir), ...findSpriteCountMismatches(file, manifest, defsDir)],
+  };
 }
 
 function main(argv: readonly string[]): number {

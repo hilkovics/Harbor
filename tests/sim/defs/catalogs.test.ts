@@ -9,10 +9,12 @@ import logisticsJson from '@data/defs/logistics.json';
 import modulesJson from '@data/defs/modules.json';
 import shipsJson from '@data/defs/ships.json';
 import timeJson from '@data/defs/time.json';
+import trucksJson from '@data/defs/trucks.json';
 import vehiclesJson from '@data/defs/vehicles.json';
 import cargoTypesSchema from '@data/schemas/cargo_types.schema.json';
 import modulesSchema from '@data/schemas/modules.schema.json';
 import shipsSchema from '@data/schemas/ships.schema.json';
+import trucksSchema from '@data/schemas/trucks.schema.json';
 import vehiclesSchema from '@data/schemas/vehicles.schema.json';
 import {
   CARGO_CATEGORIES,
@@ -23,15 +25,18 @@ import {
   berthParams,
   craneParams,
   depotParams,
+  gateParams,
   loadBundledDefs,
+  rampParams,
   storageParams,
+  waitingAreaParams,
   type Catalog,
   type ModuleDef,
 } from '@sim/defs';
 import { createCatalog } from '@sim/defs/catalog';
 
 type Json = Record<string, unknown>;
-type CatalogName = 'cargo_types' | 'modules' | 'ships' | 'vehicles';
+type CatalogName = 'cargo_types' | 'modules' | 'ships' | 'vehicles' | 'trucks';
 
 interface RawBundle {
   time: Json;
@@ -41,6 +46,7 @@ interface RawBundle {
   modules: Json;
   ships: Json;
   vehicles: Json;
+  trucks: Json;
   logistics: Json;
 }
 
@@ -54,6 +60,7 @@ function rawDefs(): RawBundle {
     modules: structuredClone(modulesJson),
     ships: structuredClone(shipsJson),
     vehicles: structuredClone(vehiclesJson),
+    trucks: structuredClone(trucksJson),
     logistics: structuredClone(logisticsJson),
   };
 }
@@ -111,6 +118,9 @@ describe('bundled katalógy (loadBundledDefs)', () => {
       'crane_container_gantry',
       'container_yard_small',
       'vehicle_depot',
+      'truck_gate',
+      'truck_waiting_area',
+      'loading_ramp_container',
     ]);
     const berth = defs.modules.get('berth_standard');
     expect(berth.kind).toBe('berth');
@@ -137,6 +147,45 @@ describe('bundled katalógy (loadBundledDefs)', () => {
     expect(depot.placement).toEqual({ requiredTerrain: ['land', 'quay'], requiresParcelOwnership: true });
     expect(depot.connectors).toEqual([{ x: 1, y: 2, side: 's', type: 'road' }]);
     expect([depot.costCents, depot.maintenancePerDayCents]).toEqual([9_000_000, 15_000]);
+  });
+
+  it('modules: brána, čakacia plocha a rampa podľa T04-01 (konektory z manifestu)', () => {
+    const gate = defs.modules.get('truck_gate');
+    expect([gate.kind, gate.displayName, gate.footprint]).toEqual(['gate', 'Brána kamiónov', { w: 2, h: 2 }]);
+    expect(gate.placement).toEqual({ requiredTerrain: ['land', 'quay'], requiresParcelOwnership: true });
+    expect(gate.connectors).toEqual([
+      { x: 0, y: 0, side: 'n', type: 'road' },
+      { x: 0, y: 1, side: 's', type: 'road' },
+    ]);
+    expect([gate.costCents, gate.maintenancePerDayCents]).toEqual([8_000_000, 15_000]);
+    expect(gate.params).toEqual({ processTicks: 18 });
+    const waiting = defs.modules.get('truck_waiting_area');
+    expect([waiting.kind, waiting.displayName, waiting.footprint]).toEqual(['waiting_area', 'Čakacia plocha', { w: 4, h: 3 }]);
+    expect(waiting.connectors).toEqual([
+      { x: 0, y: 2, side: 'w', type: 'road' },
+      { x: 3, y: 2, side: 'e', type: 'road' },
+    ]);
+    expect([waiting.costCents, waiting.maintenancePerDayCents]).toEqual([6_000_000, 10_000]);
+    expect(waiting.params).toEqual({ bays: 6 });
+    const ramp = defs.modules.get('loading_ramp_container');
+    expect([ramp.kind, ramp.displayName, ramp.footprint]).toEqual(['ramp', 'Rampa · kontajnery', { w: 4, h: 2 }]);
+    expect(ramp.connectors).toEqual([
+      { x: 1, y: 1, side: 's', type: 'road' },
+      { x: 2, y: 1, side: 's', type: 'road' },
+    ]);
+    expect([ramp.costCents, ramp.maintenancePerDayCents]).toEqual([10_000_000, 20_000]);
+    expect(ramp.params).toEqual({ docks: 2, stagingPerDock: 2, loadTicksPerUnit: 6, category: 'container' });
+  });
+
+  it('trucks: truck_container podľa T04-01', () => {
+    expect(defs.trucks.items.map((item) => item.id)).toEqual(['truck_container']);
+    expect(defs.trucks.get('truck_container')).toEqual({
+      id: 'truck_container',
+      displayName: 'Kamión kontajnerový',
+      capacityUnits: 1,
+      speedCellsPerTick: 0.6,
+      cargoCategories: ['container'],
+    });
   });
 
   it('vehicles: straddle_carrier podľa T03-01', () => {
@@ -170,6 +219,17 @@ describe('bundled katalógy (loadBundledDefs)', () => {
     expect(depotParams(defs.modules.get('vehicle_depot'))).toEqual({ capacity: 6 });
   });
 
+  it('typované gettery gateParams / waitingAreaParams / rampParams', () => {
+    expect(gateParams(defs.modules.get('truck_gate'))).toEqual({ processTicks: 18 });
+    expect(waitingAreaParams(defs.modules.get('truck_waiting_area'))).toEqual({ bays: 6 });
+    expect(rampParams(defs.modules.get('loading_ramp_container'))).toEqual({
+      docks: 2,
+      stagingPerDock: 2,
+      loadTicksPerUnit: 6,
+      category: 'container',
+    });
+  });
+
   it('typované gettery berthParams / craneParams', () => {
     expect(berthParams(defs.modules.get('berth_standard'))).toEqual({
       depthClass: 1,
@@ -198,6 +258,7 @@ describe('Catalog', () => {
     expectDefError(() => defs.cargoTypes.get('grain'), 'cargo_types', '/items');
     expectDefError(() => defs.ships.get('mega'), 'ships', '/items');
     expectDefError(() => defs.vehicles.get('agv'), 'vehicles', '/items');
+    expectDefError(() => defs.trucks.get('truck_tanker'), 'trucks', '/items');
   });
 
   it('has neznámeho id nehádže a prototypové názvy nie sú id', () => {
@@ -220,6 +281,9 @@ describe('Catalog', () => {
     expect(Object.isFrozen(defs.vehicles.items)).toBe(true);
     expect(Object.isFrozen(defs.vehicles.get('straddle_carrier'))).toBe(true);
     expect(Object.isFrozen(defs.vehicles.get('straddle_carrier').cargoCategories)).toBe(true);
+    expect(Object.isFrozen(defs.trucks.items)).toBe(true);
+    expect(Object.isFrozen(defs.trucks.get('truck_container'))).toBe(true);
+    expect(Object.isFrozen(defs.trucks.get('truck_container').cargoCategories)).toBe(true);
     expect(() => {
       (berth.params as { apronSlots: number }).apronSlots = 99;
     }).toThrow(TypeError);
@@ -252,7 +316,7 @@ describe('Catalog', () => {
 });
 
 describe('katalógy: chyba tvaru súboru → DefError', () => {
-  const NAMES: readonly CatalogName[] = ['cargo_types', 'modules', 'ships', 'vehicles'];
+  const NAMES: readonly CatalogName[] = ['cargo_types', 'modules', 'ships', 'vehicles', 'trucks'];
 
   describe.each(NAMES)('%s', (name) => {
     it('koreň nie je objekt', () => {
@@ -465,6 +529,48 @@ describe('vehicles: zlé hodnoty polí → DefError s cestou', () => {
     const raw = rawDefs();
     itemsOf(raw, 'vehicles')[0]!['cargoCategories'] = ['bulk', 'container'];
     expect(fromRaw(raw).vehicles.get('straddle_carrier').cargoCategories).toEqual(['bulk', 'container']);
+  });
+});
+
+describe('trucks: zlé hodnoty polí → DefError s cestou', () => {
+  const cases: readonly (readonly [path: string, value: unknown])[] = [
+    ['displayName', ''],
+    ['displayName', 7],
+    ['capacityUnits', 0],
+    ['capacityUnits', 1.5],
+    ['capacityUnits', '1'],
+    ['speedCellsPerTick', 0],
+    ['speedCellsPerTick', -0.6],
+    ['speedCellsPerTick', '0.6'],
+    ['speedCellsPerTick', Number.POSITIVE_INFINITY],
+    ['cargoCategories', []],
+    ['cargoCategories', 'container'],
+    ['cargoCategories', ['container', 'container']],
+    ['cargoCategories/0', 'coal'],
+    // Kamión sa nekupuje, nemá mzdu ani nakládku (na rozdiel od vozidla) — tie polia sú neznáme kľúče.
+    ['purchaseCents', 4_800_000],
+    ['wagePerDayCents', 18_000],
+    ['loadTicks', 3],
+  ];
+
+  it.each(cases)('%s = %j', (path, value) => {
+    const raw = rawDefs();
+    setAtPath(itemsOf(raw, 'trucks')[0]!, `/${path}`, value);
+    expectDefError(() => fromRaw(raw), 'trucks', `/items/0/${path}`);
+  });
+
+  it('chýbajúce povinné polia', () => {
+    for (const path of ['displayName', 'capacityUnits', 'speedCellsPerTick', 'cargoCategories']) {
+      const raw = rawDefs();
+      setAtPath(itemsOf(raw, 'trucks')[0]!, `/${path}`, undefined);
+      expectDefError(() => fromRaw(raw), 'trucks', `/items/0/${path}`);
+    }
+  });
+
+  it('viac kategórií nákladu je platných (poradie sa zachová)', () => {
+    const raw = rawDefs();
+    itemsOf(raw, 'trucks')[0]!['cargoCategories'] = ['bulk', 'container'];
+    expect(fromRaw(raw).trucks.get('truck_container').cargoCategories).toEqual(['bulk', 'container']);
   });
 });
 
@@ -693,7 +799,90 @@ describe('modules: zlé hodnoty polí → DefError s cestou', () => {
       expect(storageParams(fromRaw(raw).modules.get('container_yard_small')).category).toBe('bulk');
     });
 
-    it.each(MODULE_KINDS.filter((kind) => kind !== 'berth' && kind !== 'crane' && kind !== 'storage' && kind !== 'depot'))(
+    const gateCases: readonly (readonly [field: string, value: unknown])[] = [
+      ['processTicks', 0],
+      ['processTicks', 18.5],
+      ['processTicks', '18'],
+      ['processTicks', null],
+      ['internalTicks', -1],
+      ['internalTicks', 2.5],
+      ['internalTicks', '6'],
+    ];
+    it.each(gateCases)('gate %s = %j', (field, value) => {
+      const raw = rawDefs();
+      (itemsOf(raw, 'modules')[4]!['params'] as Json)[field] = value;
+      expectDefError(() => fromRaw(raw), 'modules', `/items/4/params/${field}`);
+    });
+
+    const waitingAreaCases: readonly (readonly [field: string, value: unknown])[] = [
+      ['bays', 0],
+      ['bays', 6.5],
+      ['bays', '6'],
+      ['bays', null],
+      ['internalTicks', -1],
+      ['internalTicks', 0.5],
+    ];
+    it.each(waitingAreaCases)('waiting_area %s = %j', (field, value) => {
+      const raw = rawDefs();
+      (itemsOf(raw, 'modules')[5]!['params'] as Json)[field] = value;
+      expectDefError(() => fromRaw(raw), 'modules', `/items/5/params/${field}`);
+    });
+
+    const rampCases: readonly (readonly [field: string, value: unknown])[] = [
+      ['docks', 0],
+      ['docks', 2.5],
+      ['docks', '2'],
+      ['stagingPerDock', 0],
+      ['stagingPerDock', 1.5],
+      ['loadTicksPerUnit', 0],
+      ['loadTicksPerUnit', 6.5],
+      ['loadTicksPerUnit', null],
+      ['category', 'coal'],
+      ['category', 1],
+      ['internalTicks', -1],
+      ['internalTicks', '6'],
+    ];
+    it.each(rampCases)('ramp %s = %j', (field, value) => {
+      const raw = rawDefs();
+      (itemsOf(raw, 'modules')[6]!['params'] as Json)[field] = value;
+      expectDefError(() => fromRaw(raw), 'modules', `/items/6/params/${field}`);
+    });
+
+    it.each([
+      ['gate', 4, 'processTicks'],
+      ['waiting_area', 5, 'bays'],
+      ['ramp', 6, 'docks'],
+    ] as const)('%s: params {} neprejdú (chýba povinný parameter), cudzí parameter je neznámy kľúč', (_kind, index, first) => {
+      const empty = rawDefs();
+      itemsOf(empty, 'modules')[index]!['params'] = {};
+      expectDefError(() => fromRaw(empty), 'modules', `/items/${String(index)}/params/${first}`);
+      const foreign = rawDefs();
+      (itemsOf(foreign, 'modules')[index]!['params'] as Json)['capacityUnits'] = 64;
+      expectDefError(() => fromRaw(foreign), 'modules', `/items/${String(index)}/params/capacityUnits`);
+    });
+
+    it('brána, čakacia plocha a rampa: internalTicks je voliteľné (0 je platné) a prejaví sa v getteri', () => {
+      const raw = rawDefs();
+      const before = fromRaw(raw);
+      expect(gateParams(before.modules.get('truck_gate')).internalTicks).toBeUndefined();
+      expect(waitingAreaParams(before.modules.get('truck_waiting_area')).internalTicks).toBeUndefined();
+      expect(rampParams(before.modules.get('loading_ramp_container')).internalTicks).toBeUndefined();
+      (itemsOf(raw, 'modules')[4]!['params'] as Json)['internalTicks'] = 0;
+      (itemsOf(raw, 'modules')[5]!['params'] as Json)['internalTicks'] = 3;
+      (itemsOf(raw, 'modules')[6]!['params'] as Json)['internalTicks'] = 4;
+      const registry = fromRaw(raw);
+      expect(gateParams(registry.modules.get('truck_gate')).internalTicks).toBe(0);
+      expect(waitingAreaParams(registry.modules.get('truck_waiting_area')).internalTicks).toBe(3);
+      expect(rampParams(registry.modules.get('loading_ramp_container')).internalTicks).toBe(4);
+    });
+
+    it('rampa môže nakladať aj inú kategóriu než container', () => {
+      const raw = rawDefs();
+      (itemsOf(raw, 'modules')[6]!['params'] as Json)['category'] = 'bulk';
+      expect(rampParams(fromRaw(raw).modules.get('loading_ramp_container')).category).toBe('bulk');
+    });
+
+    it.each(MODULE_KINDS.filter((kind) => kind === 'rail_station' || kind === 'pipeline'))(
       'kind %s zatiaľ nemá parametre: {} je platné, akýkoľvek kľúč nie',
       (kind) => {
         const raw = rawDefs();
@@ -728,8 +917,23 @@ describe('MODULE_PARAM_SPECS', () => {
     expect(MODULE_PARAM_SPECS.depot.capacity.optional).not.toBe(true);
   });
 
-  it('ostatné druhy (gate, waiting_area, ramp, rail_station, pipeline) zatiaľ bez parametrov', () => {
-    for (const kind of ['gate', 'waiting_area', 'ramp', 'rail_station', 'pipeline'] as const) {
+  it('gate, waiting_area a ramp majú presne polia GateParams, WaitingAreaParams a RampParams (internalTicks je voliteľné)', () => {
+    expect(Object.keys(MODULE_PARAM_SPECS.gate)).toEqual(['processTicks', 'internalTicks']);
+    expect(Object.keys(MODULE_PARAM_SPECS.waiting_area)).toEqual(['bays', 'internalTicks']);
+    expect(Object.keys(MODULE_PARAM_SPECS.ramp)).toEqual(['docks', 'stagingPerDock', 'loadTicksPerUnit', 'category', 'internalTicks']);
+    expect(MODULE_PARAM_SPECS.gate.internalTicks.optional).toBe(true);
+    expect(MODULE_PARAM_SPECS.waiting_area.internalTicks.optional).toBe(true);
+    expect(MODULE_PARAM_SPECS.ramp.internalTicks.optional).toBe(true);
+    expect(MODULE_PARAM_SPECS.gate.processTicks.optional).not.toBe(true);
+    expect(MODULE_PARAM_SPECS.waiting_area.bays.optional).not.toBe(true);
+    expect(MODULE_PARAM_SPECS.ramp.docks.optional).not.toBe(true);
+    expect(MODULE_PARAM_SPECS.ramp.stagingPerDock.optional).not.toBe(true);
+    expect(MODULE_PARAM_SPECS.ramp.loadTicksPerUnit.optional).not.toBe(true);
+    expect(MODULE_PARAM_SPECS.ramp.category.optional).not.toBe(true);
+  });
+
+  it('ostatné druhy (rail_station, pipeline) zatiaľ bez parametrov', () => {
+    for (const kind of ['rail_station', 'pipeline'] as const) {
       expect(Object.keys(MODULE_PARAM_SPECS[kind]), kind).toEqual([]);
     }
   });
@@ -762,6 +966,40 @@ describe('storageParams / depotParams', () => {
     expectDefError(() => depotParams(hand), 'modules', '/items');
     const missing: ModuleDef = { ...depot, params: {} };
     expectDefError(() => depotParams(missing), 'modules', '/items');
+  });
+});
+
+describe('gateParams / waitingAreaParams / rampParams', () => {
+  const defs = loadBundledDefs();
+  const gate = defs.modules.get('truck_gate');
+  const waiting = defs.modules.get('truck_waiting_area');
+  const ramp = defs.modules.get('loading_ramp_container');
+  const yard = defs.modules.get('container_yard_small');
+
+  it('def iného kind-u → DefError (aj vzájomne gate, waiting_area a ramp)', () => {
+    expectDefError(() => gateParams(waiting), 'modules', '/items');
+    expectDefError(() => gateParams(yard), 'modules', '/items');
+    expectDefError(() => waitingAreaParams(ramp), 'modules', '/items');
+    expectDefError(() => waitingAreaParams(gate), 'modules', '/items');
+    expectDefError(() => rampParams(gate), 'modules', '/items');
+    expectDefError(() => rampParams(yard), 'modules', '/items');
+    expectDefError(() => storageParams(ramp), 'modules', '/items');
+  });
+
+  it('opakované volanie vráti tú istú (overenú) inštanciu', () => {
+    expect(gateParams(gate)).toBe(gateParams(gate));
+    expect(waitingAreaParams(waiting)).toBe(waitingAreaParams(waiting));
+    expect(rampParams(ramp)).toBe(rampParams(ramp));
+  });
+
+  it('ručne zostavený def s nesprávnymi parametrami → DefError (nie tichý as-cast)', () => {
+    const brokenGate: ModuleDef = { ...gate, params: { processTicks: 'slow' } };
+    const error = expectDefError(() => gateParams(brokenGate), 'modules', '/items');
+    expect(error.problem).toContain('truck_gate');
+    const handWaiting: ModuleDef = { ...waiting, params: { bays: 6, extra: 1 } };
+    expectDefError(() => waitingAreaParams(handWaiting), 'modules', '/items');
+    const missingRamp: ModuleDef = { ...ramp, params: { docks: 2 } };
+    expectDefError(() => rampParams(missingRamp), 'modules', '/items');
   });
 });
 
@@ -803,6 +1041,7 @@ describe('katalógy: schéma ⇔ DefRegistry', () => {
     modules: new Ajv2020({ allErrors: true }).compile(modulesSchema),
     ships: new Ajv2020({ allErrors: true }).compile(shipsSchema),
     vehicles: new Ajv2020({ allErrors: true }).compile(vehiclesSchema),
+    trucks: new Ajv2020({ allErrors: true }).compile(trucksSchema),
   };
 
   const registryAccepts = (raw: RawBundle): boolean => {
@@ -948,6 +1187,55 @@ describe('katalógy: schéma ⇔ DefRegistry', () => {
     ['vehicles', '/items/0/techRequired', 'Automation 1'],
     ['vehicles', '/items/0/id', 'Straddle'],
     ['vehicles', '/items/0/extra', 1],
+    ['modules', '/items/4/params/processTicks', 1],
+    ['modules', '/items/4/params/processTicks', 0],
+    ['modules', '/items/4/params/processTicks', 18.5],
+    ['modules', '/items/4/params/processTicks', undefined],
+    ['modules', '/items/4/params/internalTicks', 0],
+    ['modules', '/items/4/params/internalTicks', -1],
+    ['modules', '/items/4/params/extra', 1],
+    ['modules', '/items/4/params', {}],
+    ['modules', '/items/5/params/bays', 1],
+    ['modules', '/items/5/params/bays', 0],
+    ['modules', '/items/5/params/bays', '6'],
+    ['modules', '/items/5/params/bays', undefined],
+    ['modules', '/items/5/params/internalTicks', 3],
+    ['modules', '/items/5/params/internalTicks', 0.5],
+    ['modules', '/items/5/params/docks', 2],
+    ['modules', '/items/6/params/docks', 1],
+    ['modules', '/items/6/params/docks', 0],
+    ['modules', '/items/6/params/stagingPerDock', 1],
+    ['modules', '/items/6/params/stagingPerDock', 0],
+    ['modules', '/items/6/params/loadTicksPerUnit', 1],
+    ['modules', '/items/6/params/loadTicksPerUnit', 0],
+    ['modules', '/items/6/params/loadTicksPerUnit', 2.5],
+    ['modules', '/items/6/params/category', 'bulk'],
+    ['modules', '/items/6/params/category', 'coal'],
+    ['modules', '/items/6/params/category', undefined],
+    ['modules', '/items/6/params/internalTicks', 4],
+    ['modules', '/items/6/params/internalTicks', '4'],
+    ['modules', '/items/6/params/bays', 6],
+    ['modules', '/items/4/kind', 'ramp'],
+    ['modules', '/items/5/kind', 'gate'],
+    ['modules', '/items/6/kind', 'waiting_area'],
+    ['modules', '/items/6/kind', 'pipeline'],
+    ['trucks', '/items/0/displayName', ''],
+    ['trucks', '/items/0/displayName', undefined],
+    ['trucks', '/items/0/capacityUnits', 2],
+    ['trucks', '/items/0/capacityUnits', 0],
+    ['trucks', '/items/0/capacityUnits', 1.5],
+    ['trucks', '/items/0/speedCellsPerTick', 0.8],
+    ['trucks', '/items/0/speedCellsPerTick', 0],
+    ['trucks', '/items/0/speedCellsPerTick', -0.6],
+    ['trucks', '/items/0/speedCellsPerTick', '0.6'],
+    ['trucks', '/items/0/cargoCategories', ['container', 'bulk']],
+    ['trucks', '/items/0/cargoCategories', []],
+    ['trucks', '/items/0/cargoCategories', ['container', 'container']],
+    ['trucks', '/items/0/cargoCategories', ['coal']],
+    ['trucks', '/items/0/cargoCategories', undefined],
+    ['trucks', '/items/0/id', 'Truck'],
+    ['trucks', '/items/0/purchaseCents', 1],
+    ['trucks', '/items/0/extra', 1],
   ];
 
   it.each(CASES)('%s %s = %j', (name, path, value) => {
@@ -958,7 +1246,7 @@ describe('katalógy: schéma ⇔ DefRegistry', () => {
 
   it('bundled katalógy prejdú schémou aj registry', () => {
     const raw = rawDefs();
-    for (const name of ['cargo_types', 'modules', 'ships', 'vehicles'] as const) expect(validators[name](raw[name])).toBe(true);
+    for (const name of ['cargo_types', 'modules', 'ships', 'vehicles', 'trucks'] as const) expect(validators[name](raw[name])).toBe(true);
     expect(registryAccepts(raw)).toBe(true);
   });
 });

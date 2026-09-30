@@ -1,6 +1,6 @@
 /**
  * Pravidlá špecifické pre `modules.json`: typované `params` podľa `kind` (`MODULE_PARAM_SPECS`, tabuľka — nie `switch`),
- * typované gettery `berthParams` / `craneParams` / `storageParams` / `depotParams` a kontroly vzťahov medzi poľami modulu (konektor vo footprinte,
+ * typované gettery `berthParams` / `craneParams` / `storageParams` / `depotParams` / `gateParams` / `waitingAreaParams` / `rampParams` a kontroly vzťahov medzi poľami modulu (konektor vo footprinte,
  * berth vyžaduje `waterSide`). Nový druh modulu s parametrami = nový typ v `ModuleParamsByKind` + riadok v tabuľke.
  */
 import { DefError } from './def-error';
@@ -21,11 +21,14 @@ import {
   type BerthParams,
   type CraneParams,
   type DepotParams,
+  type GateParams,
   type ModuleDef,
   type ModuleKind,
   type ModuleParams,
   type ModuleParamsByKind,
+  type RampParams,
   type StorageParams,
+  type WaitingAreaParams,
 } from './types';
 
 /** Tvar `params` pre každý druh modulu; kompilátor ohlási druh bez riadku aj riadok s nesprávnymi poľami. */
@@ -47,9 +50,23 @@ export const MODULE_PARAM_SPECS: { readonly [K in ModuleKind]: SpecTable<ModuleP
     // Vnútorný čas vozidla v module (§7.3 bod 4); chýba = `logistics.defaultInternalTicks`.
     internalTicks: { kind: 'integer', min: 0, optional: true },
   },
-  gate: {},
-  waiting_area: {},
-  ramp: {},
+  gate: {
+    // Priepustnosť: 1 kamión za `processTicks`; aspoň tick, inak by brána púšťala neobmedzene (F4, rozhodnutie 2).
+    processTicks: { kind: 'integer', min: 1 },
+    internalTicks: { kind: 'integer', min: 0, optional: true },
+  },
+  waiting_area: {
+    bays: { kind: 'integer', min: 1 },
+    internalTicks: { kind: 'integer', min: 0, optional: true },
+  },
+  ramp: {
+    docks: { kind: 'integer', min: 1 },
+    stagingPerDock: { kind: 'integer', min: 1 },
+    // Nakládka jednej jednotky musí trvať aspoň tick, inak by sekvencia jednotiek nemala krok.
+    loadTicksPerUnit: { kind: 'integer', min: 1 },
+    category: { kind: 'enum', values: CARGO_CATEGORIES },
+    internalTicks: { kind: 'integer', min: 0, optional: true },
+  },
   depot: {
     capacity: { kind: 'integer', min: 1 },
     internalTicks: { kind: 'integer', min: 0, optional: true },
@@ -116,12 +133,18 @@ const isBerthParams = (value: unknown): value is BerthParams => matchesFields(va
 const isCraneParams = (value: unknown): value is CraneParams => matchesFields(value, MODULE_PARAM_SPECS.crane);
 const isStorageParams = (value: unknown): value is StorageParams => matchesFields(value, MODULE_PARAM_SPECS.storage);
 const isDepotParams = (value: unknown): value is DepotParams => matchesFields(value, MODULE_PARAM_SPECS.depot);
+const isGateParams = (value: unknown): value is GateParams => matchesFields(value, MODULE_PARAM_SPECS.gate);
+const isWaitingAreaParams = (value: unknown): value is WaitingAreaParams => matchesFields(value, MODULE_PARAM_SPECS.waiting_area);
+const isRampParams = (value: unknown): value is RampParams => matchesFields(value, MODULE_PARAM_SPECS.ramp);
 
 // Defy sú zmrazené a po validácii nemenné, takže overený výsledok sa dá uložiť podľa identity `params`.
 const berthParamsCache = new WeakMap<ModuleParams, BerthParams>();
 const craneParamsCache = new WeakMap<ModuleParams, CraneParams>();
 const storageParamsCache = new WeakMap<ModuleParams, StorageParams>();
 const depotParamsCache = new WeakMap<ModuleParams, DepotParams>();
+const gateParamsCache = new WeakMap<ModuleParams, GateParams>();
+const waitingAreaParamsCache = new WeakMap<ModuleParams, WaitingAreaParams>();
+const rampParamsCache = new WeakMap<ModuleParams, RampParams>();
 
 function typedParams<K extends ModuleKind>(
   def: ModuleDef,
@@ -160,4 +183,19 @@ export function storageParams(def: ModuleDef): StorageParams {
 /** Parametre depa vozidiel; def iného druhu → `DefError`. */
 export function depotParams(def: ModuleDef): DepotParams {
   return typedParams(def, 'depot', isDepotParams, depotParamsCache);
+}
+
+/** Parametre brány kamiónov; def iného druhu → `DefError`. */
+export function gateParams(def: ModuleDef): GateParams {
+  return typedParams(def, 'gate', isGateParams, gateParamsCache);
+}
+
+/** Parametre čakacej plochy kamiónov; def iného druhu → `DefError`. */
+export function waitingAreaParams(def: ModuleDef): WaitingAreaParams {
+  return typedParams(def, 'waiting_area', isWaitingAreaParams, waitingAreaParamsCache);
+}
+
+/** Parametre nakladacej rampy; def iného druhu → `DefError`. */
+export function rampParams(def: ModuleDef): RampParams {
+  return typedParams(def, 'ramp', isRampParams, rampParamsCache);
 }

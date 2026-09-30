@@ -65,7 +65,7 @@ describe('validateDefsDir', () => {
     it('všetky data/defs/*.json prejdú svojou schémou', () => {
       const results = validateDefsDir(DEFAULT_DEFS_DIR, DEFAULT_SCHEMAS_DIR);
       expect(results.map((r) => r.file)).toEqual(
-        expect.arrayContaining(['economy.json', 'infrastructure.json', 'logistics.json', 'time.json', 'vehicles.json']),
+        expect.arrayContaining(['economy.json', 'infrastructure.json', 'logistics.json', 'time.json', 'trucks.json', 'vehicles.json']),
       );
       for (const r of results) expect(r.errors, r.file).toEqual([]);
     });
@@ -548,7 +548,7 @@ describe('validateDefsDir', () => {
       expect(run.status).toBe(0);
       expect(run.stdout).toContain('OK time.json');
       expect(run.stdout).toContain('OK infrastructure.json');
-      for (const file of ['cargo_types.json', 'modules.json', 'ships.json', 'vehicles.json', 'logistics.json']) {
+      for (const file of ['cargo_types.json', 'modules.json', 'ships.json', 'vehicles.json', 'trucks.json', 'logistics.json']) {
         expect(run.stdout).toContain(`OK ${file}`);
       }
       expect(run.stdout).toContain('OK maps/harbor_01.json');
@@ -615,6 +615,7 @@ describe('validateAssetManifest (assets/manifest.json → asset-manifest.schema.
     writeDef('modules.json', realCatalog('modules'));
     writeDef('ships.json', realCatalog('ships'));
     writeDef('vehicles.json', realCatalog('vehicles'));
+    writeDef('trucks.json', realCatalog('trucks'));
   });
   afterEach(() => {
     rmSync(tmpRoot, { recursive: true, force: true });
@@ -627,17 +628,20 @@ describe('validateAssetManifest (assets/manifest.json → asset-manifest.schema.
     });
   });
 
-  it('každý modul, loď aj vozidlo zo skutočných defov má sprite (nie je to prázdna kontrola)', () => {
+  it('každý modul, loď, vozidlo aj kamión zo skutočných defov má sprite (nie je to prázdna kontrola)', () => {
     const manifest = realManifest();
     const modules = realCatalog('modules').items.map((item) => item.id);
     const ships = realCatalog('ships').items.map((item) => item.id);
     const vehicles = realCatalog('vehicles').items.map((item) => item.id);
+    const trucks = realCatalog('trucks').items.map((item) => item.id);
     expect(modules.length).toBeGreaterThan(0);
     expect(ships.length).toBeGreaterThan(0);
     expect(vehicles.length).toBeGreaterThan(0);
+    expect(trucks.length).toBeGreaterThan(0);
     for (const id of modules) expect(Object.keys(manifest.sprites as JsonObject), id).toContain(id);
     for (const id of ships) expect(Object.keys(manifest.entities as JsonObject), id).toContain(`ship_${id}`);
     for (const id of vehicles) expect(Object.keys(manifest.entities as JsonObject), id).toContain(id);
+    for (const id of trucks) expect(Object.keys(manifest.entities as JsonObject), id).toContain(id);
   });
 
   it('názov výsledku sa odvodí od súboru: assets/<basename>', () => {
@@ -698,7 +702,7 @@ describe('validateAssetManifest (assets/manifest.json → asset-manifest.schema.
     });
   });
 
-  describe('krížová kontrola: každý modul má sprites[id], každá loď entities.ship_{id}, každé vozidlo entities[id]', () => {
+  describe('krížová kontrola: každý modul má sprites[id], každá loď entities.ship_{id}, každé vozidlo a kamión entities[id]', () => {
     it('chýbajúci sprite modulu → chyba s cestou v manifeste a odkazom na def', () => {
       writeMutated((m) => delete (m.sprites as JsonObject).berth_standard);
       expect(errorsOf()).toEqual([
@@ -718,6 +722,29 @@ describe('validateAssetManifest (assets/manifest.json → asset-manifest.schema.
       expect(errorsOf()).toEqual([
         "assets/manifest.json: /entities/straddle_carrier chýba sprite pre vozidlo 'straddle_carrier' (vehicles.json: /items/0/id)",
       ]);
+    });
+
+    it('chýbajúci sprite kamióna → chyba s cestou /entities/{id}', () => {
+      writeMutated((m) => delete (m.entities as JsonObject).truck_container);
+      expect(errorsOf()).toEqual([
+        "assets/manifest.json: /entities/truck_container chýba sprite pre kamión 'truck_container' (trucks.json: /items/0/id)",
+      ]);
+    });
+
+    it('nový kamión v trucks.json bez entity → chyba (index položky v ceste)', () => {
+      const trucks = realCatalog('trucks');
+      writeDef('trucks.json', { ...trucks, items: [...trucks.items, { ...trucks.items[0], id: 'truck_hover' }] });
+      writeManifest(realManifest());
+      expect(errorsOf()).toEqual([
+        `assets/manifest.json: /entities/truck_hover chýba sprite pre kamión 'truck_hover' (trucks.json: /items/${String(trucks.items.length)}/id)`,
+      ]);
+    });
+
+    it('kamión s entitou v manifeste (truck_bulk) je platný', () => {
+      const trucks = realCatalog('trucks');
+      writeDef('trucks.json', { ...trucks, items: [...trucks.items, { ...trucks.items[0], id: 'truck_bulk' }] });
+      writeManifest(realManifest());
+      expect(errorsOf()).toEqual([]);
     });
 
     it('sprite vozidla sa hľadá pod id bez predpony ship_ (ship_straddle_carrier nestačí)', () => {
@@ -752,12 +779,14 @@ describe('validateAssetManifest (assets/manifest.json → asset-manifest.schema.
         delete (m.sprites as JsonObject).crane_container_gantry;
         delete (m.entities as JsonObject).ship_handy;
         delete (m.entities as JsonObject).straddle_carrier;
+        delete (m.entities as JsonObject).truck_container;
       });
       const errors = errorsOf();
-      expect(errors).toHaveLength(3);
+      expect(errors).toHaveLength(4);
       expect(errors.some((line) => line.includes('/sprites/crane_container_gantry'))).toBe(true);
       expect(errors.some((line) => line.includes('/entities/ship_handy'))).toBe(true);
       expect(errors.some((line) => line.includes('/entities/straddle_carrier'))).toBe(true);
+      expect(errors.some((line) => line.includes('/entities/truck_container'))).toBe(true);
     });
 
     it('nový modul v modules.json bez sprite → chyba (index položky v ceste)', () => {
@@ -783,17 +812,26 @@ describe('validateAssetManifest (assets/manifest.json → asset-manifest.schema.
       writeDef('modules.json', { schemaVersion: 1, items: [] });
       writeDef('ships.json', { schemaVersion: 1, items: [] });
       writeDef('vehicles.json', { schemaVersion: 1, items: [] });
+      writeDef('trucks.json', { schemaVersion: 1, items: [] });
       expect(errorsOf()).toEqual([]);
     });
 
-    it('chýbajúci modules.json / ships.json / vehicles.json v defsDir → kontrola sa preskočí (hlási ju validateDefsDir)', () => {
+    it('chýbajúci modules.json / ships.json / vehicles.json / trucks.json v defsDir → kontrola sa preskočí (hlási ju validateDefsDir)', () => {
       rmSync(join(defsDir, 'modules.json'));
       rmSync(join(defsDir, 'ships.json'));
       rmSync(join(defsDir, 'vehicles.json'));
+      rmSync(join(defsDir, 'trucks.json'));
       writeMutated((m) => {
         delete (m.sprites as JsonObject).berth_standard;
         delete (m.entities as JsonObject).straddle_carrier;
+        delete (m.entities as JsonObject).truck_container;
       });
+      expect(errorsOf()).toEqual([]);
+    });
+
+    it('nečitateľný trucks.json sa preskočí bez výnimky', () => {
+      writeFileSync(join(defsDir, 'trucks.json'), '{ nie json');
+      writeMutated((m) => delete (m.entities as JsonObject).truck_container);
       expect(errorsOf()).toEqual([]);
     });
 
@@ -812,6 +850,77 @@ describe('validateAssetManifest (assets/manifest.json → asset-manifest.schema.
     it('pri chýbajúcej sekcii sprites hlási len schéma (krížová kontrola nespamuje)', () => {
       writeMutated((m) => delete m.sprites);
       expect(errorsOf()).toEqual(["assets/manifest.json: / must have required property 'sprites'"]);
+    });
+  });
+
+  describe('krížová kontrola počtov: params.bays = počet stalls, params.docks = počet docks', () => {
+    type Sprite = { stalls?: Json[]; docks?: Json[] };
+    const sprite = (m: JsonObject, id: string): Sprite => (m.sprites as { [key: string]: Sprite })[id]!;
+    /** Zapíše modules.json, v ktorom položka `id` dostane `params[param] = value`. */
+    const writeModuleParam = (id: string, param: string, value: number): number => {
+      const modules = realCatalog('modules') as unknown as { schemaVersion: number; items: { id: string; params: JsonObject }[] };
+      const index = modules.items.findIndex((item) => item.id === id);
+      modules.items[index]!.params[param] = value;
+      writeDef('modules.json', modules);
+      return index;
+    };
+
+    it('skutočné defy a manifest: počty sedia (6 stojísk, 2 docky)', () => {
+      const manifest = realManifest();
+      expect(sprite(manifest, 'truck_waiting_area').stalls).toHaveLength(6);
+      expect(sprite(manifest, 'loading_ramp_container').docks).toHaveLength(2);
+      writeManifest(manifest);
+      expect(errorsOf()).toEqual([]);
+    });
+
+    it('stojisko: menej stalls v manifeste než params.bays → chyba s cestou v manifeste a odkazom na def', () => {
+      writeMutated((m) => sprite(m, 'truck_waiting_area').stalls!.pop());
+      const index = String(realCatalog('modules').items.findIndex((item) => item.id === 'truck_waiting_area'));
+      expect(errorsOf()).toEqual([
+        `assets/manifest.json: /sprites/truck_waiting_area/stalls počet stojísk (5) sa nezhoduje s params.bays (6) (modules.json: /items/${index}/params/bays)`,
+      ]);
+    });
+
+    it('stojisko: params.bays iné než počet stalls → chyba', () => {
+      const index = writeModuleParam('truck_waiting_area', 'bays', 8);
+      writeManifest(realManifest());
+      expect(errorsOf()).toEqual([
+        `assets/manifest.json: /sprites/truck_waiting_area/stalls počet stojísk (6) sa nezhoduje s params.bays (8) (modules.json: /items/${String(index)}/params/bays)`,
+      ]);
+    });
+
+    it('rampa: viac docks v manifeste než params.docks → chyba', () => {
+      writeMutated((m) => sprite(m, 'loading_ramp_container').docks!.push({ x: 196, y: 60, w: 56, h: 62 }));
+      const index = String(realCatalog('modules').items.findIndex((item) => item.id === 'loading_ramp_container'));
+      expect(errorsOf()).toEqual([
+        `assets/manifest.json: /sprites/loading_ramp_container/docks počet dockov (3) sa nezhoduje s params.docks (2) (modules.json: /items/${index}/params/docks)`,
+      ]);
+    });
+
+    it('rampa: params.docks iné než počet docks → chyba', () => {
+      const index = writeModuleParam('loading_ramp_container', 'docks', 1);
+      writeManifest(realManifest());
+      expect(errorsOf()).toEqual([
+        `assets/manifest.json: /sprites/loading_ramp_container/docks počet dockov (2) sa nezhoduje s params.docks (1) (modules.json: /items/${String(index)}/params/docks)`,
+      ]);
+    });
+
+    it('chýbajúci sprite hlási len chýbajúci sprite (počty sa preskočia)', () => {
+      writeMutated((m) => delete (m.sprites as JsonObject).truck_waiting_area);
+      const errors = errorsOf();
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toContain("chýba sprite pre modul 'truck_waiting_area'");
+    });
+
+    it('sprite bez poľa stalls/docks sa preskočí (tvar hlási schéma manifestu)', () => {
+      writeMutated((m) => delete sprite(m, 'loading_ramp_container').docks);
+      expect(errorsOf().every((line) => !line.includes('počet dockov'))).toBe(true);
+    });
+
+    it('iné druhy modulov (depo, dvor) sa na počty nekontrolujú', () => {
+      writeModuleParam('vehicle_depot', 'capacity', 99);
+      writeManifest(realManifest());
+      expect(errorsOf()).toEqual([]);
     });
   });
 
@@ -841,6 +950,14 @@ describe('validateAssetManifest (assets/manifest.json → asset-manifest.schema.
       expect(run.status).toBe(1);
       expect(run.stdout).toContain('OK vehicles.json');
       expect(run.stderr).toContain("assets/manifest.json: /entities/straddle_carrier chýba sprite pre vozidlo 'straddle_carrier'");
+    }, 30_000);
+
+    it('chýbajúci sprite kamióna v odovzdanom manifeste → exit 1 a chyba s cestou v stderr', () => {
+      writeMutated((m) => delete (m.entities as JsonObject).truck_container);
+      const run = runCli(manifestPath);
+      expect(run.status).toBe(1);
+      expect(run.stdout).toContain('OK trucks.json');
+      expect(run.stderr).toContain("assets/manifest.json: /entities/truck_container chýba sprite pre kamión 'truck_container'");
     }, 30_000);
 
     it('chýbajúci súbor manifestu → exit 1', () => {

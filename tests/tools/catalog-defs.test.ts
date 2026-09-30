@@ -1,5 +1,5 @@
-// Katalógové defy F2 a F3 (ADR-009): cargo_types.json, modules.json, ships.json, vehicles.json a konfiguračný
-// logistics.json — hodnoty z kariet T02-01 a T03-01, schémy (`additionalProperties: false`, params podľa kind),
+// Katalógové defy F2 až F4 (ADR-009): cargo_types.json, modules.json, ships.json, vehicles.json, trucks.json a konfiguračný
+// logistics.json — hodnoty z kariet T02-01, T03-01 a T04-01, schémy (`additionalProperties: false`, params podľa kind),
 // jedinečnosť id a väzba na assets/manifest.json + design/tokens.css.
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -33,14 +33,21 @@ function item(def: Json, id: string): Json {
 interface Manifest {
   sprites: Record<
     string,
-    { footprint: { w: number; h: number }; connectors: unknown[]; slots?: number; layers?: number; stalls?: number }
+    {
+      footprint: { w: number; h: number };
+      connectors: unknown[];
+      slots?: number;
+      layers?: number;
+      stalls?: unknown[] | number;
+      docks?: unknown[];
+    }
   >;
   entities: Record<string, { footprint: { w: number; h: number } }>;
 }
 
 const manifest = readJson(join(ROOT, 'assets', 'manifest.json')) as unknown as Manifest;
 
-describe('skutočné katalógy F2 a F3', () => {
+describe('skutočné katalógy F2 až F4', () => {
   it('cargo_types.json: container_teu podľa T02-01', () => {
     const def = realDef('cargo_types');
     expect(def['schemaVersion']).toBe(1);
@@ -57,7 +64,7 @@ describe('skutočné katalógy F2 a F3', () => {
     ]);
   });
 
-  it('modules.json: berth, žeriav, kontajnerový dvor a depo (ARCHITECTURE §5.3)', () => {
+  it('modules.json: berth, žeriav, kontajnerový dvor, depo, brána, čakacia plocha a rampa (ARCHITECTURE §5.3)', () => {
     const def = realDef('modules');
     expect(def['schemaVersion']).toBe(1);
     expect(items(def).map((entry) => entry['id'])).toEqual([
@@ -65,6 +72,9 @@ describe('skutočné katalógy F2 a F3', () => {
       'crane_container_gantry',
       'container_yard_small',
       'vehicle_depot',
+      'truck_gate',
+      'truck_waiting_area',
+      'loading_ramp_container',
     ]);
     expect(item(def, 'berth_standard')).toEqual({
       id: 'berth_standard',
@@ -113,6 +123,62 @@ describe('skutočné katalógy F2 a F3', () => {
       maintenancePerDayCents: 15_000,
       params: { capacity: 6 },
     });
+    expect(item(def, 'truck_gate')).toEqual({
+      id: 'truck_gate',
+      kind: 'gate',
+      displayName: 'Brána kamiónov',
+      footprint: { w: 2, h: 2 },
+      placement: { requiredTerrain: ['land', 'quay'], requiresParcelOwnership: true },
+      connectors: [
+        { x: 0, y: 0, side: 'n', type: 'road' },
+        { x: 0, y: 1, side: 's', type: 'road' },
+      ],
+      costCents: 8_000_000,
+      maintenancePerDayCents: 15_000,
+      params: { processTicks: 18 },
+    });
+    expect(item(def, 'truck_waiting_area')).toEqual({
+      id: 'truck_waiting_area',
+      kind: 'waiting_area',
+      displayName: 'Čakacia plocha',
+      footprint: { w: 4, h: 3 },
+      placement: { requiredTerrain: ['land', 'quay'], requiresParcelOwnership: true },
+      connectors: [
+        { x: 0, y: 2, side: 'w', type: 'road' },
+        { x: 3, y: 2, side: 'e', type: 'road' },
+      ],
+      costCents: 6_000_000,
+      maintenancePerDayCents: 10_000,
+      params: { bays: 6 },
+    });
+    expect(item(def, 'loading_ramp_container')).toEqual({
+      id: 'loading_ramp_container',
+      kind: 'ramp',
+      displayName: 'Rampa · kontajnery',
+      footprint: { w: 4, h: 2 },
+      placement: { requiredTerrain: ['land', 'quay'], requiresParcelOwnership: true },
+      connectors: [
+        { x: 1, y: 1, side: 's', type: 'road' },
+        { x: 2, y: 1, side: 's', type: 'road' },
+      ],
+      costCents: 10_000_000,
+      maintenancePerDayCents: 20_000,
+      params: { docks: 2, stagingPerDock: 2, loadTicksPerUnit: 6, category: 'container' },
+    });
+  });
+
+  it('trucks.json: truck_container (ARCHITECTURE §4.2, §7.5)', () => {
+    const def = realDef('trucks');
+    expect(def['schemaVersion']).toBe(1);
+    expect(items(def)).toEqual([
+      {
+        id: 'truck_container',
+        displayName: 'Kamión kontajnerový',
+        capacityUnits: 1,
+        speedCellsPerTick: 0.6,
+        cargoCategories: ['container'],
+      },
+    ]);
   });
 
   it('vehicles.json: straddle_carrier (ARCHITECTURE §4.4)', () => {
@@ -174,14 +240,22 @@ describe('skutočné katalógy F2 a F3', () => {
 });
 
 describe('väzba na assets/manifest.json a design/tokens.css', () => {
-  it.each(['berth_standard', 'crane_container_gantry', 'container_yard_small', 'vehicle_depot'])(
+  it.each([
+    'berth_standard',
+    'crane_container_gantry',
+    'container_yard_small',
+    'vehicle_depot',
+    'truck_gate',
+    'truck_waiting_area',
+    'loading_ramp_container',
+  ])(
     'modul %s: footprint zodpovedá spritu v manifeste',
     (id) => {
       expect(item(realDef('modules'), id)['footprint']).toEqual(manifest.sprites[id]?.footprint);
     },
   );
 
-  it.each(['container_yard_small', 'vehicle_depot'])('modul %s: konektory sú presne sprites.%s.connectors', (id) => {
+  it.each(['container_yard_small', 'vehicle_depot', 'truck_gate', 'truck_waiting_area', 'loading_ramp_container'])('modul %s: konektory sú presne sprites.%s.connectors', (id) => {
     expect(item(realDef('modules'), id)['connectors']).toEqual(manifest.sprites[id]?.connectors);
   });
 
@@ -198,6 +272,35 @@ describe('väzba na assets/manifest.json a design/tokens.css', () => {
     expect(sprite?.stalls).toBe(6);
     const params = item(realDef('modules'), 'vehicle_depot')['params'] as Json;
     expect(params['capacity']).toBe(sprite?.stalls);
+  });
+
+  it('truck_waiting_area: params.bays = počet sprites.truck_waiting_area.stalls (6)', () => {
+    const stalls = manifest.sprites['truck_waiting_area']?.stalls;
+    expect(Array.isArray(stalls)).toBe(true);
+    expect((stalls as unknown[]).length).toBe(6);
+    const params = item(realDef('modules'), 'truck_waiting_area')['params'] as Json;
+    expect(params['bays']).toBe((stalls as unknown[]).length);
+  });
+
+  it('loading_ramp_container: params.docks = počet sprites.loading_ramp_container.docks (2)', () => {
+    const docks = manifest.sprites['loading_ramp_container']?.docks;
+    expect(Array.isArray(docks)).toBe(true);
+    expect(docks?.length).toBe(2);
+    const params = item(realDef('modules'), 'loading_ramp_container')['params'] as Json;
+    expect(params['docks']).toBe(docks?.length);
+  });
+
+  it('truck_gate: konektory (0,0,n) a (0,1,s) tvoria priechod (jeden stĺpec, opačné strany)', () => {
+    const connectors = item(realDef('modules'), 'truck_gate')['connectors'] as { x: number; y: number; side: string }[];
+    expect(connectors.map(({ x, y, side }) => [x, y, side])).toEqual([
+      [0, 0, 'n'],
+      [0, 1, 's'],
+    ]);
+  });
+
+  it.each(['truck_container'])('kamión %s má entitu entities.%s (1×2) v manifeste', (id) => {
+    expect(items(realDef('trucks')).map((entry) => entry['id'])).toContain(id);
+    expect(manifest.entities[id]?.footprint).toEqual({ w: 1, h: 2 });
   });
 
   it.each(['straddle_carrier'])('vozidlo %s má entitu entities.%s v manifeste', (id) => {
@@ -258,12 +361,12 @@ describe('schémy katalógov (validateDefsDir)', () => {
   });
 
   it('skutočné katalógy prejdú svojou schémou', () => {
-    for (const name of ['cargo_types', 'modules', 'ships', 'vehicles', 'logistics']) {
+    for (const name of ['cargo_types', 'modules', 'ships', 'vehicles', 'trucks', 'logistics']) {
       expect(errorsAfter(name, () => undefined), name).toEqual([]);
     }
   });
 
-  describe.each(['cargo_types', 'modules', 'ships', 'vehicles'])('%s: spoločné pravidlá katalógu', (name) => {
+  describe.each(['cargo_types', 'modules', 'ships', 'vehicles', 'trucks'])('%s: spoločné pravidlá katalógu', (name) => {
     it('chýbajúci items', () => {
       expect(errorsAfter(name, (def) => void delete def['items'])).toEqual([`${name}.json: / must have required property 'items'`]);
     });
@@ -384,6 +487,38 @@ describe('schémy katalógov (validateDefsDir)', () => {
       expect(errorsAfter('vehicles', (def) => void (items(def)[0]!['techRequired'] = 'Automation 1'))).toEqual([
         'vehicles.json: /items/0/techRequired must match pattern "^[a-z][a-z0-9_]*$"',
       ]);
+    });
+  });
+
+  describe('trucks.json', () => {
+    it.each([
+      ['displayName', '', '/items/0/displayName must NOT have fewer than 1 characters'],
+      ['capacityUnits', 0, '/items/0/capacityUnits must be >= 1'],
+      ['capacityUnits', 1.5, '/items/0/capacityUnits must be integer'],
+      ['speedCellsPerTick', 0, '/items/0/speedCellsPerTick must be > 0'],
+      ['speedCellsPerTick', '0.6', '/items/0/speedCellsPerTick must be number'],
+      ['cargoCategories', [], '/items/0/cargoCategories must NOT have fewer than 1 items'],
+      ['cargoCategories', ['container', 'container'], '/items/0/cargoCategories must NOT have duplicate items (items ## 0 and 1 are identical)'],
+      ['cargoCategories', ['coal'], '/items/0/cargoCategories/0 must be equal to one of the allowed values'],
+    ])('%s = %j', (field, value, message) => {
+      expect(errorsAfter('trucks', (def) => void (items(def)[0]![field] = value))).toEqual([`trucks.json: ${message}`]);
+    });
+
+    it('chýbajúce povinné polia', () => {
+      for (const field of ['displayName', 'capacityUnits', 'speedCellsPerTick', 'cargoCategories']) {
+        expect(errorsAfter('trucks', (def) => void delete items(def)[0]![field]), field).toEqual([
+          `trucks.json: /items/0 must have required property '${field}'`,
+        ]);
+      }
+    });
+
+    it('polia vozidla (nákup, mzda, load/unload, techRequired) kamión nemá — sú neznáme kľúče', () => {
+      for (const field of ['purchaseCents', 'wagePerDayCents', 'loadTicks', 'unloadTicks', 'techRequired']) {
+        const errors = errorsAfter('trucks', (def) => void (items(def)[0]![field] = 1));
+        expect(errors, field).toHaveLength(1);
+        expect(errors[0]).toMatch(/^trucks\.json: \/items\/0 must NOT have additional properties/);
+        expect(errors[0]).toContain(field);
+      }
     });
   });
 
@@ -583,18 +718,95 @@ describe('schémy katalógov (validateDefsDir)', () => {
         ]);
       });
 
-      it('kind bez typovaných parametrov (gate) musí mať params {}', () => {
-        const withGate = (extra: Json) => (def: Json): void => {
-          const gate = structuredClone(crane(def));
-          Object.assign(gate, { id: 'gate_test', kind: 'gate', params: extra });
-          delete placement(gate)['mustAttachTo'];
-          items(def).push(gate);
+      const gate = (def: Json): Json => item(def, 'truck_gate');
+      const waiting = (def: Json): Json => item(def, 'truck_waiting_area');
+      const ramp = (def: Json): Json => item(def, 'loading_ramp_container');
+
+      it.each([
+        ['processTicks', 0, '/items/4/params/processTicks must be >= 1'],
+        ['processTicks', 18.5, '/items/4/params/processTicks must be integer'],
+        ['processTicks', '18', '/items/4/params/processTicks must be integer'],
+        ['internalTicks', -1, '/items/4/params/internalTicks must be >= 0'],
+        ['internalTicks', 2.5, '/items/4/params/internalTicks must be integer'],
+      ])('gate %s = %j', (field, value, message) => {
+        expect(errorsAfter('modules', (def) => void (params(gate(def))[field] = value))).toEqual([`modules.json: ${message}`]);
+      });
+
+      it.each([
+        ['bays', 0, '/items/5/params/bays must be >= 1'],
+        ['bays', 6.5, '/items/5/params/bays must be integer'],
+        ['bays', '6', '/items/5/params/bays must be integer'],
+        ['internalTicks', -1, '/items/5/params/internalTicks must be >= 0'],
+        ['internalTicks', 0.5, '/items/5/params/internalTicks must be integer'],
+      ])('waiting_area %s = %j', (field, value, message) => {
+        expect(errorsAfter('modules', (def) => void (params(waiting(def))[field] = value))).toEqual([`modules.json: ${message}`]);
+      });
+
+      it.each([
+        ['docks', 0, '/items/6/params/docks must be >= 1'],
+        ['docks', 2.5, '/items/6/params/docks must be integer'],
+        ['stagingPerDock', 0, '/items/6/params/stagingPerDock must be >= 1'],
+        ['loadTicksPerUnit', 0, '/items/6/params/loadTicksPerUnit must be >= 1'],
+        ['loadTicksPerUnit', '6', '/items/6/params/loadTicksPerUnit must be integer'],
+        ['category', 'coal', '/items/6/params/category must be equal to one of the allowed values'],
+        ['internalTicks', -1, '/items/6/params/internalTicks must be >= 0'],
+      ])('ramp %s = %j', (field, value, message) => {
+        expect(errorsAfter('modules', (def) => void (params(ramp(def))[field] = value))).toEqual([`modules.json: ${message}`]);
+      });
+
+      it('gate, waiting_area a ramp: chýbajúci povinný parameter', () => {
+        expect(errorsAfter('modules', (def) => void delete params(gate(def))['processTicks'])).toEqual([
+          "modules.json: /items/4/params must have required property 'processTicks'",
+        ]);
+        expect(errorsAfter('modules', (def) => void delete params(waiting(def))['bays'])).toEqual([
+          "modules.json: /items/5/params must have required property 'bays'",
+        ]);
+        for (const field of ['docks', 'stagingPerDock', 'loadTicksPerUnit', 'category']) {
+          expect(errorsAfter('modules', (def) => void delete params(ramp(def))[field]), field).toEqual([
+            `modules.json: /items/6/params must have required property '${field}'`,
+          ]);
+        }
+      });
+
+      it('gate, waiting_area a ramp: internalTicks je voliteľné (0 je platné), cudzí parameter je chyba', () => {
+        expect(errorsAfter('modules', (def) => void (params(gate(def))['internalTicks'] = 0))).toEqual([]);
+        expect(errorsAfter('modules', (def) => void (params(waiting(def))['internalTicks'] = 3))).toEqual([]);
+        expect(errorsAfter('modules', (def) => void (params(ramp(def))['internalTicks'] = 4))).toEqual([]);
+        const unknownInGate = errorsAfter('modules', (def) => void (params(gate(def))['bays'] = 6));
+        expect(unknownInGate).toHaveLength(1);
+        expect(unknownInGate[0]).toContain('/items/4/params must NOT have additional properties');
+        const unknownInWaiting = errorsAfter('modules', (def) => void (params(waiting(def))['docks'] = 2));
+        expect(unknownInWaiting).toHaveLength(1);
+        expect(unknownInWaiting[0]).toContain('/items/5/params must NOT have additional properties');
+        const unknownInRamp = errorsAfter('modules', (def) => void (params(ramp(def))['processTicks'] = 18));
+        expect(unknownInRamp).toHaveLength(1);
+        expect(unknownInRamp[0]).toContain('/items/6/params must NOT have additional properties');
+      });
+
+      it('gate, waiting_area a ramp s params {} už schéma odmietne (povinné parametre)', () => {
+        expect(errorsAfter('modules', (def) => void (gate(def)['params'] = {}))).toEqual([
+          "modules.json: /items/4/params must have required property 'processTicks'",
+        ]);
+        expect(errorsAfter('modules', (def) => void (waiting(def)['params'] = {}))).toEqual([
+          "modules.json: /items/5/params must have required property 'bays'",
+        ]);
+        expect(errorsAfter('modules', (def) => void (ramp(def)['params'] = {}))).toHaveLength(4);
+      });
+
+      it('kind bez typovaných parametrov (rail_station, pipeline) musí mať params {}', () => {
+        const withKind = (kind: string, extra: Json) => (def: Json): void => {
+          const module = structuredClone(crane(def));
+          Object.assign(module, { id: `${kind}_test`, kind, params: extra });
+          delete placement(module)['mustAttachTo'];
+          items(def).push(module);
         };
-        const gateIndex = String(items(realDef('modules')).length);
-        expect(errorsAfter('modules', withGate({}))).toEqual([]);
-        const errors = errorsAfter('modules', withGate({ capacityUnits: 64 }));
-        expect(errors).toHaveLength(1);
-        expect(errors[0]).toContain(`/items/${gateIndex}/params must NOT have more than 0 properties`);
+        const testIndex = String(items(realDef('modules')).length);
+        for (const kind of ['rail_station', 'pipeline']) {
+          expect(errorsAfter('modules', withKind(kind, {})), kind).toEqual([]);
+          const errors = errorsAfter('modules', withKind(kind, { capacityUnits: 64 }));
+          expect(errors, kind).toHaveLength(1);
+          expect(errors[0], kind).toContain(`/items/${testIndex}/params must NOT have more than 0 properties`);
+        }
       });
     });
   });

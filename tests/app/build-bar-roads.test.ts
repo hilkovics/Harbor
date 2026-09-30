@@ -41,10 +41,22 @@ function landside(cash = defs.economy.startingCashCents) {
 }
 
 describe('BuildBar Landside: typy ciest z defov', () => {
-  it('kategória je povolená a ponúka tri typy ciest, potom tri zamknuté zástupné položky', () => {
+  it('kategória je povolená a ponúka tri typy ciest, potom moduly z defov a tri zamknuté zástupné položky', () => {
     const category = landside();
     expect(category.enabled).toBe(true);
-    expect(category.items.map((item) => item.defId)).toEqual(['road_two_lane', 'road_one_lane', 'road_one_way', 'gate', 'waiting_area', 'ramp']);
+    // T04-01: defy brány, čakacej plochy a rampy už existujú, takže sa objavia popri zástupných položkách (kind → kategória).
+    // Zástupné položky (a tým aj duplicitu) odstráni T04-07 (BuildBar Landside moduly) — vtedy sa táto očakávaná hodnota zmení.
+    expect(category.items.map((item) => item.defId)).toEqual([
+      'road_two_lane',
+      'road_one_lane',
+      'road_one_way',
+      'truck_gate',
+      'truck_waiting_area',
+      'loading_ramp_container',
+      'gate',
+      'waiting_area',
+      'ramp',
+    ]);
   });
 
   it('názvy podľa karty: Cesta dvojpruhová, Cesta jednopruhová, Jednosmerná cesta', () => {
@@ -77,7 +89,7 @@ describe('BuildBar Landside: typy ciest z defov', () => {
   });
 
   it('Vrátnica, Čakacia plocha a Rampa ostávajú zamknuté s textom „čoskoro (F4)“ (bez ceny)', () => {
-    const placeholders = landside().items.slice(3);
+    const placeholders = landside().items.slice(6);
     expect(placeholders.map((item) => item.displayName)).toEqual(['Vrátnica', 'Čakacia plocha', 'Rampa']);
     for (const item of placeholders) {
       expect(item).toMatchObject({ locked: true, lockedReason: 'čoskoro (F4)', priceText: 'čoskoro (F4)' });

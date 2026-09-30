@@ -8,6 +8,7 @@ import modulesJson from '@data/defs/modules.json';
 import harbor01Json from '@data/maps/harbor_01.json';
 import shipsJson from '@data/defs/ships.json';
 import timeJson from '@data/defs/time.json';
+import trucksJson from '@data/defs/trucks.json';
 import vehiclesJson from '@data/defs/vehicles.json';
 import type { Command, SerializedCommand, ValidationReason, ValidationResult } from '@sim/commands';
 import { DefRegistry, loadBundledDefs } from '@sim/defs';
@@ -24,6 +25,7 @@ export const RAW_DEFS = {
   modules: modulesJson,
   ships: shipsJson,
   vehicles: vehiclesJson,
+  trucks: trucksJson,
   logistics: logisticsJson,
 };
 /** Zdieľaná mapa — testy overujú, že ju žiadny svet nezmení. */

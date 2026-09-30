@@ -17,15 +17,23 @@
  * zamknutá) a tooltipy sú rovnaké; nákup bez peňazí sa ignoruje (nie je čo ukázať ako ghost), zamknutá `buy` položka
  * nesie dôvod v `lockedReason` (napr. „Postav depo vozidiel").
  *
- * Tooltipy sú čisté CSS (hover / focus-visible na položke), ale sú stále v DOM (`role="tooltip"` +
+ * Tretia akcia `road` (F3, T03-20: typy ciest v Landside): výber typu cesty ako pri `build` (prepínač s `aria-pressed`, opakovaný
+klik ho zruší), ale cez vlastný stav a callback — `selectedRoadDefId` a `onSelectRoad` —, aby výber typu cesty
+nekolidoval s výberom modulu. Cena je za bunku: položka nesie hotový text ceny `priceText` (`$2,000 / bunka`), ktorý
+nahrádza formátovanú `costCents`; rovnaké pole ukazuje aj zástupné zamknuté položky (`čoskoro (F4)`).
+
+Tooltipy sú čisté CSS (hover / focus-visible na položke), ale sú stále v DOM (`role="tooltip"` +
  * `aria-describedby`), takže ich prečíta aj asistívna technológia.
  */
 import { formatFootprint, formatMoney } from './format';
 import { Icon, toIconName, type IconName } from './icon';
 import './build-bar.css';
 
-/** Čo klik na položku robí: `build` = výber pre build mód (`onSelect`), `buy` = okamžitý nákup (`onBuy`). */
-export type BuildBarItemAction = 'build' | 'buy';
+/**
+ * Čo klik na položku robí: `build` = výber pre build mód modulov (`onSelect`), `buy` = okamžitý nákup (`onBuy`),
+ * `road` = výber typu cesty pre build mód ciest (`onSelectRoad`).
+ */
+export type BuildBarItemAction = 'build' | 'buy' | 'road';
 
 export interface BuildBarItem {
   /** Id definície (`berth_standard`, `straddle_carrier`) — to, čo sa pošle do `onSelect` / `onBuy`. */
@@ -47,8 +55,13 @@ export interface BuildBarItem {
   readonly lockedReason?: string;
   /** Doplnok oproti karte (voliteľný): koľko chýba do ceny, v centoch — tooltip „Chýba $150,000". */
   readonly missingCents?: number;
-  /** F3 (voliteľný, predvolene `build`): `buy` = okamžitý nákup (vozidlo), klik volá `onBuy`. */
+  /** F3 (voliteľný, predvolene `build`): `buy` = okamžitý nákup (vozidlo), klik volá `onBuy`; `road` = typ cesty, klik volá `onSelectRoad`. */
   readonly action?: BuildBarItemAction;
+  /**
+   * F3 (voliteľný): hotový text ceny namiesto formátovanej `costCents`, napr. `$2,000 / bunka` (cesta sa platí za bunku)
+   * alebo `čoskoro (F4)` (zástupná zamknutá položka). Bez neho sa zobrazí `formatMoney(costCents)`.
+   */
+  readonly priceText?: string;
 }
 
 export interface BuildBarCategory {
@@ -72,6 +85,13 @@ export interface BuildBarProps {
    * na cenu dosiahnuteľnú) položku; bez neho klik na `buy` položku nerobí nič.
    */
   readonly onBuy?: (defId: string) => void;
+  /** `defId` vybranej cestnej položky (`action: 'road'`), alebo `null`/vynechané = build mód ciest nie je zapnutý. */
+  readonly selectedRoadDefId?: string | null;
+  /**
+   * F3 (voliteľný): výber cestnej položky; `defId` = nový typ, `null` = zrušenie (opakovaný klik na vybranú položku).
+   * Bez neho klik na `road` položku nerobí nič.
+   */
+  readonly onSelectRoad?: (defId: string | null) => void;
   /**
    * Prefix `id` tooltipov (`aria-describedby`); pri viacerých BuildBar na jednej stránke musí byť unikátny.
    * Predvolene `build-bar`.
@@ -123,7 +143,8 @@ export function itemTooltip(item: BuildBarItem): ItemTooltip | null {
 /**
  * Čo sa stane po kliku na položku: `undefined` = nič (zamknutá technológiou), `null` = zrušenie výberu (klik na už
  * vybranú položku), inak `defId` novej voľby. Drahá (`affordable: false`), ale nezamknutá položka sa vybrať dá:
- * hráč vidí ghost a cenu, len klik do mapy nič nepostaví (rozhodnutie orchestrátora k §8 bodu 6).
+ * hráč vidí ghost a cenu, len klik do mapy nič nepostaví (rozhodnutie orchestrátora k §8 bodu 6). Pre `road` položku
+ * je `selectedDefId` aktuálny výber typu cesty (`selectedRoadDefId`), pre `build` výber modulu.
  */
 export function resolveItemSelection(item: BuildBarItem, selectedDefId: string | null): string | null | undefined {
   if (itemAction(item) === 'buy') return undefined; // nákup sa nevyberá, ide cez `onBuy`
@@ -134,6 +155,11 @@ export function resolveItemSelection(item: BuildBarItem, selectedDefId: string |
 /** Klik na `buy` položku nakupuje len dostupná položka (zamknutá ani drahá nie; `build` položky nikdy). */
 export function canBuyItem(item: Pick<BuildBarItem, 'action' | 'locked' | 'affordable'>): boolean {
   return itemAction(item) === 'buy' && itemStatus(item) === 'available';
+}
+
+/** Text ceny položky: `priceText`, inak formátovaná `costCents`. */
+export function itemPriceText(item: Pick<BuildBarItem, 'priceText' | 'costCents'>): string {
+  return item.priceText ?? formatMoney(item.costCents);
 }
 
 /** Popis akcie pri položke `buy` (v cenovom riadku namiesto rozmeru). */
@@ -157,6 +183,8 @@ export function BuildBar({
   onSelectCategory,
   onSelect,
   onBuy,
+  selectedRoadDefId = null,
+  onSelectRoad,
   idPrefix = 'build-bar',
 }: BuildBarProps) {
   const active = categories.find((category) => category.id === activeCategoryId);
@@ -205,18 +233,19 @@ export function BuildBar({
             const action = itemAction(item);
             const tip = itemTooltip(item);
             // `buy` položka je akcia, nie prepínač: nikdy nie je „vybraná" a nemá `aria-pressed`.
-            const selected = action === 'build' && item.defId === selectedDefId;
+            const selected = (action === 'build' && item.defId === selectedDefId) || (action === 'road' && item.defId === selectedRoadDefId);
             const tipId = `${idPrefix}-tip-${item.defId}`;
             const detail = itemDetail(item);
             const classes = ['build-bar__item', `build-bar__item--${status}`];
             if (action === 'buy') classes.push('build-bar__item--buy');
+            if (action === 'road') classes.push('build-bar__item--road');
             if (selected) classes.push('build-bar__item--selected');
             return (
               <button
                 key={item.defId}
                 type="button"
                 className={classes.join(' ')}
-                aria-pressed={action === 'build' ? selected : undefined}
+                aria-pressed={action === 'buy' ? undefined : selected}
                 aria-disabled={status === 'locked'}
                 aria-describedby={tip === null ? undefined : tipId}
                 data-def-id={item.defId}
@@ -225,6 +254,11 @@ export function BuildBar({
                 onClick={() => {
                   if (action === 'buy') {
                     if (canBuyItem(item)) onBuy?.(item.defId);
+                    return;
+                  }
+                  if (action === 'road') {
+                    const road = resolveItemSelection(item, selectedRoadDefId);
+                    if (road !== undefined) onSelectRoad?.(road);
                     return;
                   }
                   const next = resolveItemSelection(item, selectedDefId);
@@ -236,7 +270,7 @@ export function BuildBar({
                   <span className="build-bar__item-name">{item.displayName}</span>
                   <span className="build-bar__item-price">
                     <span className="build-bar__item-cost" data-field="item-cost">
-                      {formatMoney(item.costCents)}
+                      {itemPriceText(item)}
                     </span>
                     {detail !== null && (
                       <span className="build-bar__item-size" data-field="item-size">

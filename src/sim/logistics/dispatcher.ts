@@ -10,10 +10,11 @@
  * a jednotka čaká na aprone; kotvisko emituje `NoStorageAvailable` najviac raz za hernú hodinu
  * (`BerthModule.lastNoStorageHour`).
  *
- * **Outbound** (F4 ADR-023, F5 ADR-027): na rampu smú len uskladnené jednotky kontraktov v stave `exporting`
- * (`CONTRACT_STATE_TRAITS.outbound = 'sla'`), kontraktov v stave `failed` (`free` — náklad nesmie navždy zaberať sklad,
- * kontraktu sa už nezapočíta) a jednotky bez kontraktu (`contractId === null`, scenáre F2–F4 a `SpawnShipDebug`).
- * Jednotky kontraktu, ktorý ešte vykladá, zostávajú v sklade. Poradie: skupiny `sla` podľa `slaDeadlineTick` ↑, potom
+ * **Outbound** (F4 ADR-023, F5 ADR-027 vrátane dodatku T05-11): na rampu smú uskladnené jednotky kontraktov v stave
+ * `unloading` a `exporting` (`CONTRACT_STATE_TRAITS.outbound = 'sla'` — objem nad voľnú kapacitu skladov sa vyvezie už
+ * počas vykládky), kontraktov v stave `failed` (`free` — náklad nesmie navždy zaberať sklad, kontraktu sa už
+ * nezapočíta) a jednotky bez kontraktu (`contractId === null`, scenáre F2–F4 a `SpawnShipDebug`). Ostatné stavy
+ * (`held`) uskladnené jednotky nemajú. Poradie: skupiny `sla` podľa `slaDeadlineTick` ↑, potom
  * id kontraktu ↑; potom `free` kontrakty podľa id ↑ a nakoniec jednotky bez kontraktu; v rámci skupiny FIFO (sklad ↑,
  * v sklade poradie príchodu). Jednotky číta z odvodenej cache `World.storedCargo` (`StoredCargoIndex`, udržiava ju
  * háčik ledgera, nie je v save), takže prechádza len jednotky skupín, ktoré smú na rampu — nie jednotky × kontrakty.

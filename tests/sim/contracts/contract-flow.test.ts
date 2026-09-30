@@ -141,16 +141,16 @@ describe('kontrakt od prijatia po výplatu (12 TEU, SLA 2 dni, príchod +1 deň)
     expect(c.unitsUnloaded).toBe(FIXED_VOLUME);
   });
 
-  it('dispatcher: jednotky kontraktu sa na rampu nedostanú, kým je kontrakt v stave exporting (outbound len pre exporting)', () => {
-    const exportingAt = must(tickOfState(run.events, contractId, 'exporting'), 'exporting');
+  it('dispatcher: jednotky kontraktu smú na rampu už počas vykládky (outbound sla od unloading, ADR-027 dodatok), nikdy pred ňou', () => {
+    const unloadingAt = must(tickOfState(run.events, contractId, 'unloading'), 'unloading');
     const toRamp = run.ofSim('CargoMoved').filter((entry) => entry.event.to.kind === 'at_ramp');
     expect(toRamp).toHaveLength(FIXED_VOLUME);
     for (const entry of toRamp) {
       expect(run.contractOfUnit(entry.event.unitId)).toBe(contractId);
-      expect(entry.tick, `jednotka ${String(entry.event.unitId)} na rampe`).toBeGreaterThanOrEqual(exportingAt);
+      expect(entry.tick, `jednotka ${String(entry.event.unitId)} na rampe`).toBeGreaterThanOrEqual(unloadingAt);
     }
     const outboundJobs = run.ofSim('JobCreated').filter((entry) => world.modules.get(entry.event.toModuleId)?.kind === 'ramp');
-    for (const entry of outboundJobs) expect(entry.tick).toBeGreaterThanOrEqual(exportingAt);
+    for (const entry of outboundJobs) expect(entry.tick).toBeGreaterThanOrEqual(unloadingAt);
   });
 
   it('počítadlá: unitsUnloaded = unitsExported = volumeUnits = 12 a zodpovedajú CargoMoved', () => {

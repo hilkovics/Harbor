@@ -2,7 +2,7 @@
  * DispatcherSystem — krok 5 ticku (ARCHITECTURE §6, §7.3; rozhodnutia orchestrátora F3 č. 6, F4 č. 4 a F5 č. 9; ADR-018,
  * ADR-023, ADR-027): najprv zrušenie `open` outbound jobov, ktorých rampa už nie je použiteľná (neprevádzková alebo zo skladu
  * nedosiahnuteľná), potom inbound (joby pre jednotky na apronoch s rezerváciou slotu v sklade, `NoStorageAvailable`),
- * outbound (joby pre uskladnené jednotky kontraktov `exporting` podľa SLA, potom `failed` a bez kontraktu, s rezerváciou
+ * outbound (joby pre uskladnené jednotky kontraktov `unloading`/`exporting` podľa SLA, potom `failed` a bez kontraktu, s rezerváciou
  * staging miesta na prevádzkovej rampe) a nakoniec priradenie voľných vozidiel jobom `open` — inbound pred outbound.
  * Logika je v `logistics/dispatcher.ts`; systém len určuje poradie v rámci kroku a drží znovupoužiteľné polia.
  */

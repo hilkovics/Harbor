@@ -18,5 +18,5 @@ export {
   urgencyBp,
   wholePeriods,
 } from './contract-terms';
-export { capacityHintOf, drawOffer, eligibleTemplates } from './contract-pool';
-export type { OfferContext } from './contract-pool';
+export { capacityHintFrom, capacityHintOf, drawOffer, eligibleTemplates, offerVolumeUnits, portCapacityOf } from './contract-pool';
+export type { OfferContext, PortCapacity } from './contract-pool';

@@ -21,7 +21,9 @@
  *   hráča, zdôvodnenie ADR-026).
  * - `unloading`: demurrage — kým loď stojí pri kotvisku, každá celá hodina nad `berthAllowanceTicks` od `dockedTick`
  *   pripíše `PenaltyApplied { kind: 'demurrage' }`; SLA; `unitsUnloaded ≥ volumeUnits` → `exporting` (loď v tej chvíli
- *   už nemá náklad kontraktu a odpláva v kroku 3 toho istého ticku — najneskôr pri odchode lode).
+ *   už nemá náklad kontraktu a odpláva v kroku 3 toho istého ticku — najneskôr pri odchode lode). Uskladnené jednotky
+ *   kontraktu smú na rampu už počas vykládky (`outbound = 'sla'`, ADR-027 dodatok T05-11), takže `unitsExported` môže
+ *   rásť už v tomto stave; dokončenie však rozhoduje až `exporting`.
  * - `exporting`: SLA; `unitsExported ≥ volumeUnits` → `completed`: `economy.post(+reward, 'contract_revenue',
  *   'contract:<id>')`, pri penalizáciách `post(−penalties, 'penalty', 'contract:<id>')`, XP `round(xpReward × (včas ? 1 :
  *   lateXpFactor))`, `completedContracts += 1` a `ContractCompleted`; včas = `tick ≤ slaDeadlineTick`.
@@ -32,7 +34,7 @@
  * pripíšu penalizácie, potom sa rozhodne o dokončení a nakoniec o zlyhaní — dokončenie v ticku, keď by kontrakt zlyhal,
  * má prednosť.
  */
-import { capacityHintOf, drawOffer } from '../contracts/contract-pool';
+import { capacityHintFrom, drawOffer, portCapacityOf } from '../contracts/contract-pool';
 import type { Contract } from '../contracts/contract';
 import type { ContractState } from '../contracts/contract-fsm';
 import { contractXpGain, demurrageStepCents, lateStepCents, wholePeriods } from '../contracts/contract-terms';
@@ -193,13 +195,15 @@ export function refillPool(world: World): void {
   const { defs, clock, contractBook: book } = world;
   const missing = defs.economy.offersPerDay - book.offeredCount;
   if (missing <= 0) return;
+  const capacity = portCapacityOf(world.modules.values(), world.stats, clock.ticksPerDay);
   const context = {
     defs,
     rng: world.rng,
     tick: clock.tick,
     ticksPerDay: clock.ticksPerDay,
     tier: book.tier(defs.economy.contractsPerTier),
-    capacityHint: capacityHintOf(world.modules.values(), world.stats, clock.ticksPerDay, defs.economy.minCapacityHint),
+    capacityHint: capacityHintFrom(capacity, defs.economy.minCapacityHint),
+    storageCapacity: capacity.storageCapacity,
     nextId: () => book.allocateId(),
   };
   for (let i = 0; i < missing; i++) {

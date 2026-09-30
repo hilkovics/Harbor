@@ -5,7 +5,8 @@
  *  - hotovosť = štart + Σ `MoneyChanged` a každá nenulová zmena má záznam v ledgeri (žiadna zmena mimo `Economy.post`),
  *  - kontrakty sa hýbu len po hranách tabuľky FSM a počítadlá jednotiek zodpovedajú `CargoMoved`,
  *  - pool nikdy nemá viac než `offersPerDay` ponúk, XP neklesá, `tier = ⌊completed / contractsPerTier⌋`.
- * Navyše sa overuje pravidlo dispatchera (rozhodnutie 9): jednotky kontraktu sa dostanú na rampu až v stave `exporting`.
+ * Navyše sa overuje pravidlo dispatchera (rozhodnutie 9, ADR-027 dodatok T05-11): jednotky kontraktu sa dostanú na
+ * rampu najskôr v stave `unloading` (outbound `sla` počas vykládky aj exportu).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { World } from '@sim/world';
@@ -81,15 +82,15 @@ describe('invarianty F5: 8 dní s poolom, prijímaním a odmietaním ponúk', ()
     expect(completedOf(world)).toBe(completed.length);
   });
 
-  it('dispatcher: na rampu sa jednotky kontraktu dostanú až po prechode kontraktu do exporting', () => {
+  it('dispatcher: na rampu sa jednotky kontraktu dostanú najskôr po prechode kontraktu do unloading', () => {
     const toRamp = run.ofSim('CargoMoved').filter((entry) => entry.event.to.kind === 'at_ramp');
     expect(toRamp.length).toBeGreaterThan(0);
     for (const entry of toRamp) {
       const contractId = run.contractOfUnit(entry.event.unitId);
       if (contractId === null || contractId === undefined) continue;
-      const exportingAt = tickOfState(run.events, contractId, 'exporting');
-      expect(exportingAt, `kontrakt ${String(contractId)} nikdy nebol exporting, ale jeho jednotka je na rampe`).toBeDefined();
-      expect(entry.tick, `jednotka ${String(entry.event.unitId)} kontraktu ${String(contractId)}`).toBeGreaterThanOrEqual(exportingAt ?? Infinity);
+      const unloadingAt = tickOfState(run.events, contractId, 'unloading');
+      expect(unloadingAt, `kontrakt ${String(contractId)} nikdy nebol unloading, ale jeho jednotka je na rampe`).toBeDefined();
+      expect(entry.tick, `jednotka ${String(entry.event.unitId)} kontraktu ${String(contractId)}`).toBeGreaterThanOrEqual(unloadingAt ?? Infinity);
     }
   });
 });

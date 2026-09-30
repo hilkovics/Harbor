@@ -3,7 +3,7 @@
  * a účtovanie pri dokončení, demurrage len počas státia lode, zlyhanie ešte na ceste a počítadlá po zlyhaní.
  */
 import { describe, expect, it } from 'vitest';
-import { capacityHintOf } from '@sim/contracts';
+import { capacityHintOf, offerVolumeUnits } from '@sim/contracts';
 import type { ContractId } from '@sim/core';
 import { DefRegistry } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
@@ -18,6 +18,7 @@ import {
   RAW_DEFS,
   TICKS_PER_DAY,
   contractById,
+  defsWith,
   demurrageStepCents,
   fixedContractDefs,
   offeredContracts,
@@ -72,6 +73,31 @@ describe('capacityHint z háčikov modulov (pravidlo 7)', () => {
     const port = World.create(defs, MAP, 5603);
     runScenario(port, portScenario('f5_hint', 5603), 1);
     expect(capacityHintOf(port.modules.values(), port.stats, TICKS_PER_DAY, defs.economy.minCapacityHint)).toBe(128);
+  });
+});
+
+describe('poistka objemu ponuky: objem ≤ kapacita skladov, ale ≥ min šablóny (T05-11, ADR-027 dodatok)', () => {
+  it.each([
+    // [scale, hint, range, ship, storage, očakávaný objem]
+    [1.2, 64, [24, 96], 120, 64, 64], // 77 → strop kapacity skladov
+    [1.2, 64, [72, 72], 120, 64, 72], // min šablóny má prednosť pred poistkou
+    [0.4, 64, [24, 96], 120, 64, 26], // pod kapacitou sa nemení
+    [1.2, 24, [24, 96], 120, 0, 29], // bez skladov poistka neplatí
+    [1.2, 128, [24, 96], 120, 128, 96], // max šablóny
+    [1.2, 300, [60, 240], 120, 500, 120], // kapacita lode
+  ] as const)('scale %d × hint %d, rozsah %j, loď %d, sklady %d → %d', (scale, hint, range, ship, storage, expected) => {
+    expect(offerVolumeUnits(scale, hint, range, ship, storage)).toBe(expected);
+  });
+
+  it('pool v prístave s jediným dvorom (64): ponuky šablóny [24, 96] pri mierke 1,2 majú 64, šablóny [72, 72] majú 72', () => {
+    const wide = { ...FIXED_TEMPLATE, id: 'wide_feeder', volumeUnitsRange: [24, 96] as const };
+    const big = { ...FIXED_TEMPLATE, id: 'big_feeder', volumeUnitsRange: [72, 72] as const };
+    const defs = defsWith({ templates: [wide, big], economy: { volumeScaleRange: [1.2, 1.2] } });
+    const world = World.create(defs, MAP, 5607);
+    runScenario(world, portScenario('f5_volume_guard', 5607, { yards: ['near'] }), 1);
+    const offers = offeredContracts(world);
+    expect(offers.length).toBe(defs.economy.offersPerDay);
+    for (const offer of offers) expect(offer.volumeUnits, offer.templateId).toBe(offer.templateId === 'big_feeder' ? 72 : 64);
   });
 });
 

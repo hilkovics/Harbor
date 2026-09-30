@@ -1,9 +1,8 @@
-// Outbound joby podľa kontraktu (T05-04; rozhodnutie orchestrátora F5 č. 9; ADR-027): na rampu smú uskladnené jednotky
-// kontraktov `exporting` (poradie podľa SLA), kontraktov `failed` a jednotky bez kontraktu; jednotky kontraktu, ktorý
-// ešte vykladá, ostávajú v sklade a dispatcher ich ani nečíta. Deterministické defy `fixedContractDefs` (12 TEU, SLA
-// 2 dni, príchod +1 deň), rozloženie F4 s 2 vozidlami (`portScenario`), audit po každom ticku (`Run5`).
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ContractId } from '@sim/core';
+// Outbound joby podľa kontraktu (T05-04, T05-11; rozhodnutie orchestrátora F5 č. 9; ADR-027 s dodatkom): na rampu smú
+// uskladnené jednotky kontraktov `unloading` a `exporting` (poradie podľa SLA), kontraktov `failed` a jednotky bez
+// kontraktu. Deterministické defy `fixedContractDefs` (12 TEU, SLA 2 dni, príchod +1 deň), rozloženie F4 s 2 vozidlami
+// (`portScenario`), audit po každom ticku (`Run5`).
+import { describe, expect, it, vi } from 'vitest';
 import { createOutboundJobs } from '@sim/logistics';
 import type { World } from '@sim/world';
 import { placeLandsideCommand } from '../helpers/f4-layout';
@@ -17,6 +16,7 @@ import {
   portScenario,
   startContract,
   stateChain,
+  tickOfState,
   type Run5,
 } from '../helpers/f5';
 
@@ -33,30 +33,33 @@ const noViolations = (run: Run5): void => {
   for (const rule of ['cash_ledger', 'contract_fsm', 'contract_counters', 'pool_size', 'progress'] as const) expect(run.violationsOf(rule), rule).toEqual([]);
 };
 
-describe('jednotky kontraktu, ktorý ešte vykladá (held)', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+describe('jednotky kontraktu, ktorý ešte vykladá (outbound sla, ADR-027 dodatok T05-11)', () => {
+  it('počas vykládky dostanú uskladnené jednotky kontraktu outbound joby na voľnú prevádzkovú rampu, skôr než kontrakt prejde do exporting', () => {
+    const { world, run, contractId } = startContract({ id: 'f5_unloading_sla', seed: 5401, defs: DEFS, fullAudit: true });
+    run.runUntil((w) => contractById(w, contractId).state === 'unloading' && outboundJobs(w, run).length > 0, 3 * TICKS_PER_DAY);
+    const firstJob = must(outboundJobs(world, run)[0], 'prvý outbound job');
+    expect(contractById(world, contractId).state).toBe('unloading');
+    expect(contractById(world, contractId).unitsUnloaded).toBeLessThan(FIXED_VOLUME);
+    expect(firstJob.event.unitIds.every((unitId) => run.contractOfUnit(unitId) === contractId)).toBe(true);
 
-  it('počas vykládky majú uskladnené jednotky kontraktu voľnú prevádzkovú rampu, ale job nedostanú a dispatcher ich nečíta', () => {
-    const { world, run, contractId } = startContract({ id: 'f5_held', seed: 5401, defs: DEFS, fullAudit: true });
+    run.runUntil((w) => contractById(w, contractId).state === 'completed', 3 * TICKS_PER_DAY);
+    const exportingAt = must(tickOfState(run.events, contractId, 'exporting'), 'exporting');
+    expect(firstJob.tick).toBeLessThan(exportingAt);
+    expect(stateChain(run.events, contractId)).toEqual(['offered', 'accepted', 'ship_en_route', 'unloading', 'exporting', 'completed']);
+    expect(contractById(world, contractId).unitsExported).toBe(FIXED_VOLUME);
+    expect(lostUnits(world)).toBe(0);
+    noViolations(run);
+  }, RUN_TIMEOUT_MS);
+
+  it('dispatcher nečíta jednotky kontraktu bez voľnej prevádzkovej rampy (bez brány joby nevzniknú)', () => {
+    const scenario = portScenario('f5_unloading_no_gate', 5404, { landside: NO_GATE });
+    const { world, run, contractId } = startContract({ id: 'f5_unloading_no_gate', seed: 5404, defs: DEFS, scenario });
     run.runUntil((w) => contractById(w, contractId).state === 'unloading' && w.cargo.countByKind('in_storage') >= 2, 3 * TICKS_PER_DAY);
-    const ramp = must(world.landsideModules.ramps[0], 'rampa');
-    expect([world.isRampOperational(ramp), ramp.freeCount > 0]).toEqual([true, true]);
-    expect(world.storedCargo.groupOf(contractId as ContractId)?.units.length).toBe(world.cargo.countByKind('in_storage'));
-    expect(outboundJobs(world, run)).toEqual([]);
-
     const reads = vi.spyOn(world, 'jobOfUnit');
     createOutboundJobs(world);
     expect(reads).not.toHaveBeenCalled();
     expect(outboundJobs(world, run)).toEqual([]);
-
-    run.runUntil((w) => contractById(w, contractId).state === 'exporting', 2 * TICKS_PER_DAY);
-    const exportingAt = world.clock.tick;
-    run.step();
-    const created = outboundJobs(world, run);
-    expect(created.length).toBeGreaterThan(0);
-    expect(created.every((entry) => entry.tick >= exportingAt)).toBe(true);
+    reads.mockRestore();
     noViolations(run);
   }, RUN_TIMEOUT_MS);
 });

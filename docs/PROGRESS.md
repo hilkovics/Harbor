@@ -49,13 +49,33 @@ Stav: **hotová** (T01-01..T01-17). Plná pipeline T01-14 zelená: typecheck, li
 ## Fáza 2 — Root modul, loď, žeriav, apron
 Karty: `docs/tasks/phase-02.md` · vetva `phase/02-berth-ship-crane` (stacked nad hilkovics/Harbor#2)
 
-- [ ] `cargo_types.json` (`container_teu`), `modules.json` (`berth_standard`, `crane_container_gantry`), `ships.json` (`feeder`).
-- [ ] `Module` (abstract), `ModuleRegistry`, `BerthModule` + `BerthGroup` prepočet, `ApronBuffer`, `CraneModule` FSM (§7.2), `StatResolver` (bez modifikátorov zatiaľ).
-- [ ] `PlaceModuleCommand` / `RemoveModuleCommand` s pravidlami §8 (1–4, 7, 8); rotácia `R`; ghost s farbou validácie + zoznam dôvodov v tooltipe.
-- [ ] `CargoUnit`, `CargoLocation`, `CargoLedger` s tabuľkou povolených prechodov (§7.1) a `assertConservation`.
-- [ ] `Ship` FSM: `inbound → waiting_anchorage → berthing → docked → undocking → outbound → despawned`; pohyb po sea lane; `BerthAllocator`.
-- [ ] Debug príkaz `SpawnShipDebugCommand(shipClass, cargoType, units)` (len DEV) — kontrakty prídu vo F5.
-- [ ] Render: `ModuleView`, `ShipView` (rotácia podľa segmentu), `CraneView` (boom rotácia podľa fázy), `CargoSprite` na palube a na aprone; `BuildLayer` ghost + konektory.
-- [ ] UI: `BuildBar` (kategória Terminál: berth, crane), `ModuleInspector` (názov, stav, apron obsadenosť).
+- [x] `cargo_types.json` (`container_teu`), `modules.json` (`berth_standard`, `crane_container_gantry`), `ships.json` (`feeder`).
+- [x] `Module` (abstract), `ModuleRegistry`, `BerthModule` + `BerthGroup` prepočet, `ApronBuffer`, `CraneModule` FSM (§7.2), `StatResolver` (bez modifikátorov zatiaľ).
+- [x] `PlaceModuleCommand` / `RemoveModuleCommand` s pravidlami §8 (1–4, 7, 8); rotácia `R`; ghost s farbou validácie + zoznam dôvodov v tooltipe.
+- [x] `CargoUnit`, `CargoLocation`, `CargoLedger` s tabuľkou povolených prechodov (§7.1) a `assertConservation`.
+- [x] `Ship` FSM: `inbound → waiting_anchorage → berthing → docked → undocking → outbound → despawned`; pohyb po sea lane; `BerthAllocator`.
+- [x] Debug príkaz `SpawnShipDebugCommand(shipClass, cargoType, units)` (len DEV) — kontrakty prídu vo F5.
+- [x] Render: `ModuleView`, `ShipView` (rotácia podľa segmentu), `CraneView` (boom rotácia podľa fázy), `CargoSprite` na palube a na aprone; `BuildLayer` ghost + konektory.
+- [x] UI: `BuildBar` (kategória Terminál: berth, crane), `ModuleInspector` (názov, stav, apron obsadenosť).
 
 Akceptácia: v hre vidím loď doplávať, zakotviť, žeriav presúva kontajnery na quay; po vyložení odpláva.
+
+### Stav
+Stav: **hotová** (T02-01..T02-16). Plná pipeline T02-15 je zelená:
+  - typecheck, lint, 3495 vitest testov (113 súborov), validate:defs (8 súborov vrátane `assets/manifest.json`), build;
+  - `simrun f2_unload --ticks 5000`: 1 loď spawnutá aj odplávala, 4 TEU na aprone, 4 cykly žeriavu, lostUnits 0;
+  - `simrun f1_roads --ticks 20000`: cashEnd 108 300 000 ¢, lostUnits 0;
+  - e2e 9/9. Orchestrátor prezrel screenshoty `f2-docked.png`, `f2-departed.png` a `f2-inspector.png`: feeder pri Root kotvisku, výložník nad loďou, kontajnery na aprone, po odplávaní 4 TEU, inspector žeriavu s obrysom výberu.
+- Review T02-13 (sim-reviewer): MERGE, 0 blocking, 1 major, 10 minor. Opravené v T02-14 boli major (odstránenie žeriavu pri lodi pri kotvisku) a 9 minor; zvyšok je v BACKLOG.
+- Rozhodnutia:
+  - ADR-014: moduly, kotviská, žeriav na bunkách berthu, WorldState v2 + migrate, exportované jednotky len počtom;
+  - ADR-015: PlaceModule/RemoveModule, refund zo zaplatenej ceny v bázických bodoch, starter moduly zadarmo bez refundu;
+  - ADR-016: lode po seaLane bez trigonometrie, alokácia kotvísk (úsek so žeriavom, hĺbka per berth), cyklus žeriavu s rezerváciou slotu, throttle `CraneBlocked`, krok 12 `assertInvariants`.
+  - ARCHITECTURE je zosúladená s F1 + F2 (§3–§18).
+- Odchýlky od plánu:
+  - `ships.json` obsahuje aj `handy` (kvôli testu alokácie).
+  - Scenár `f1_roads` obchádza Root kotvisko.
+  - E2E beží sériovo (`workers: 1`), lebo test rýchlosti hodín pri súbehu so SwiftShader zlyhával.
+  - Karty T02-10 a T02-12 robil jeden agent.
+  - Dva commity T02-04 mali dočasne červené testy mimo rozsahu agenta; orchestrátor ich hneď opravil ďalším commitom.
+  - Pridané navyše: `selection_ring` a blokovanie stavby kotviska loďou v páse vody.

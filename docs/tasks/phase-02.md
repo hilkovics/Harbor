@@ -32,8 +32,8 @@
 - [x] T02-12 · E2E: loď dokuje, žeriav vykladá, loď odpláva, screenshot
 - [x] T02-13 · Review `src/sim/**`
 - [x] T02-14 · ARCHITECTURE: zosúladenie s F2 (§4.2, §5, §7.2, §8, §12, §13, §14, §18) + minor nálezy review
-- [ ] T02-15 · Plná pipeline + triáž
-- [ ] T02-16 · Uzavretie fázy (PROGRESS, BACKLOG) + PR
+- [x] T02-15 · Plná pipeline + triáž
+- [x] T02-16 · Uzavretie fázy (PROGRESS, BACKLOG) + PR
 
 Vlny: 01 → 02 → 03 → 04 → 05 (sim sériovo, single writer) ‖ {06 (TDD worktree od 01), 07 (worktree od 01), 08 (worktree od 01)} → 09 → {10 ‖ 11} → 12 → 13 → 14 → 15 → 16.
 Single writer `src/sim/**`: T02-01 (defs + map loader), potom T02-02..T02-05 sériovo, T02-14 (len docs + minor opravy po review). T02-06/07/08 do `src/sim` nepíšu.

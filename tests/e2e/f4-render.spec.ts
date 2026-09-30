@@ -63,10 +63,10 @@ test.describe('F4: render brány, čakacej plochy, rampy a kamiónov (demo s pev
     expect(state.highlighted).toEqual([0, 1, 3, 4]);
     expect(state.staged).toEqual([2, 0]);
     expect(state.badges).toEqual([false, false, false, true]); // odznak upozornenia iba na neprevádzkovej rampe B
-    // sprity (nie fallback), 1×2 v mierke pruhu (26/56 z bunky na šírku)
+    // sprity (nie fallback), plátno 1×2 bunky v jednotnej mierke vozidiel (VEHICLE_SCALE = 1; kamión v ňom 28 × 116 px, TEU v návese 64 × 26)
     expect(state.trucks.every((truck) => truck.textured)).toBe(true);
     for (const truck of state.trucks) {
-      expect(truck.width / state.cellPx, `šírka kamióna ${String(truck.id)}`).toBeCloseTo(26 / 56, 6);
+      expect(truck.width / state.cellPx, `šírka kamióna ${String(truck.id)}`).toBeCloseTo(1, 6);
       expect(truck.height / truck.width, `pomer kamióna ${String(truck.id)}`).toBeCloseTo(2, 6);
     }
     // kurz 0° / 180° a kamión v zákrute (id 104) otočený plynule medzi severom a západom

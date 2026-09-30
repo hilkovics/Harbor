@@ -15,6 +15,7 @@ import {
   sprites as spritesManifest,
 } from '../../assets/manifest.json';
 import type { ViewSide } from './view-models';
+import { TEU_PX } from './world-scale';
 
 /** Bod v px zdrojového SVG (alebo v bunkách footprintu — podľa poľa). */
 export interface ManifestPoint {
@@ -75,6 +76,9 @@ export interface ModuleSpriteEntry {
   readonly docks?: readonly ManifestRect[];
   /** Kategória nákladu rampy (`container`, `bulk`, …); určuje typ nákladu pripraveného na doku. */
   readonly category?: string;
+  /** Sklady: počet stohových pozícií na jednej vrstve (`slots`) a počet vrstiev (`layers`); kapacita = `slots × layers`. */
+  readonly slots?: number;
+  readonly layers?: number;
   readonly connectors: readonly ManifestConnector[];
 }
 
@@ -139,6 +143,19 @@ export function vehicleSprite(defId: string): VehicleSpriteEntry | undefined {
 /** Záznam nákladu typu `typeId` (`cargo.<typeId>`), alebo `undefined`. */
 export function cargoSpriteEntry(typeId: string): CargoSpriteEntry | undefined {
   return lookup(CARGO_SPRITES, typeId);
+}
+
+/** Kontajner TEU, ktorého zobrazená veľkosť sa berie zo `world-scale.ts` (manifest má sprite 64 × 32, svet 64 × 26). */
+const TEU_TYPE_ID = 'container_teu';
+
+/**
+ * Rozmer, v akom sa náklad `typeId` kreslí, v px zdroja (64 px bunka): kontajner TEU má jednotných 64 × 26 (`TEU_PX`, F5b č. 10:
+ * rovnaký na aprone, pod žeriavom, na doku rampy aj vo vozidle), ostatný náklad rozmer zo sprite v manifeste. `undefined` pre
+ * typ bez záznamu v manifeste. Jediné miesto, kde sa zobrazená veľkosť kontajnera určuje.
+ */
+export function cargoDisplaySize(typeId: string): CellSize | undefined {
+  if (typeId === TEU_TYPE_ID && cargoSpriteEntry(typeId) !== undefined) return TEU_PX;
+  return cargoSpriteEntry(typeId)?.size;
 }
 
 /** Rozmer bunky `badge` (`overlay.blocked_badge.size`) v px zdroja. */

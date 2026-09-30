@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { Container, Sprite } from 'pixi.js';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_ROAD_KIND, ROAD_KINDS, ROAD_KIND_TRAITS, loadBundledMap, type RoadKind } from '@sim/grid';
@@ -8,40 +7,29 @@ import {
   LANE_OFFSET_CELLS,
   LANE_WIDTH_PX,
   ROAD_ASPHALT_PX,
-  VEHICLE_CONTENT_WIDTH_PX,
-  VEHICLE_LANE_SCALE,
+  VEHICLE_OFFSET_CELLS,
+  VEHICLE_OFFSET_PX,
+  VEHICLE_SCALE,
+  VEHICLE_WIDTH_PX,
   createRoadKindAt,
   createRoadMaskAt,
   defaultRoadKindAt,
   laneMagnitude,
   laneOffset,
+  laneOverhangPx,
   noRoadMaskAt,
   roadKindOfCell,
 } from '@render/lane';
+import { TruckView } from '@render/truck-view';
 import { VehicleView } from '@render/vehicle-view';
-import type { VehicleVM, ViewRotation } from '@render/view-models';
+import type { TruckVM, VehicleVM, ViewRotation } from '@render/view-models';
+import { CARRIER_WIDTH_PX, TRUCK_WIDTH_PX } from '@render/world-scale';
 import { ENTITY_PALETTE, PALETTE, StubTextures } from './stub-textures';
+import { contentExtent, readAsset, svgRects } from './svg-geometry';
 
 const CELL = PALETTE.cellPx;
 const HEADINGS: readonly ViewRotation[] = [0, 90, 180, 270];
 const KINDS: readonly RoadKind[] = ROAD_KINDS;
-
-function readAsset(path: string): string {
-  return readFileSync(new URL(`../../assets/${path}`, import.meta.url), 'utf8');
-}
-
-interface SvgRect {
-  readonly x: number;
-  readonly width: number;
-}
-
-/** Všetky `<rect x=… width=…>` z SVG (súradnice v px zdroja). */
-function svgRects(svg: string): SvgRect[] {
-  return [...svg.matchAll(/<rect\s+x="(-?[\d.]+)"[^>]*?\swidth="([\d.]+)"/g)].map((match) => ({
-    x: Number(match[1]),
-    width: Number(match[2]),
-  }));
-}
 
 describe('geometria pruhu je odvodená zo spritov (assets/)', () => {
   const road = readAsset('infra/road_straight.svg');
@@ -70,26 +58,41 @@ describe('geometria pruhu je odvodená zo spritov (assets/)', () => {
     expect(LANE_OFFSET_CELLS).toBe(13 / 64);
   });
 
-  it.each(['empty', 'loaded'])('sprite `straddle_carrier_%s.svg`: obsah má šírku 56 px (x 4–60) a stred na x 32', (state) => {
-    const rects = svgRects(readAsset(`entities/straddle_carrier_${state}.svg`));
-    const left = Math.min(...rects.map((rect) => rect.x));
-    const right = Math.max(...rects.map((rect) => rect.x + rect.width));
-    expect(right - left).toBe(VEHICLE_CONTENT_WIDTH_PX);
-    expect((left + right) / 2).toBe(MANIFEST_CELL_PX / 2);
+  it.each(['empty', 'loaded'])('sprite `straddle_carrier_%s.svg`: obsah je 34 px široký (x 15–49) a vycentrovaný na x 32', (state) => {
+    const extent = contentExtent(readAsset(`entities/straddle_carrier_${state}.svg`));
+    expect(extent.width).toBe(CARRIER_WIDTH_PX); // 34
+    expect((extent.left + extent.right) / 2).toBe(MANIFEST_CELL_PX / 2);
   });
 
-  it('mierka vozidla: šírka obsahu × mierka = šírka pruhu', () => {
-    expect(VEHICLE_CONTENT_WIDTH_PX * VEHICLE_LANE_SCALE).toBeCloseTo(LANE_WIDTH_PX, 12);
-    expect(VEHICLE_LANE_SCALE).toBeCloseTo(26 / 56, 12);
+  it.each(['empty', 'loaded'])('sprite `truck_container_%s.svg`: obsah je 28 px široký (x 18–46) a vycentrovaný na x 32', (state) => {
+    const extent = contentExtent(readAsset(`entities/truck_container_${state}.svg`));
+    expect(extent.width).toBe(TRUCK_WIDTH_PX); // 28
+    expect((extent.left + extent.right) / 2).toBe(MANIFEST_CELL_PX / 2);
+  });
+
+  it('mierka vozidiel je jedna (`VEHICLE_SCALE` = 1, sprity sú v reálnej mierke); vozidlo jazdí v strede pravého pruhu', () => {
+    expect(VEHICLE_SCALE).toBe(1);
+    expect(VEHICLE_WIDTH_PX).toBe(CARRIER_WIDTH_PX * VEHICLE_SCALE); // najširšie vozidlo
+    expect(VEHICLE_OFFSET_PX).toBe(LANE_CENTER_PX); // 13: stred pruhu, protismerné vozidlá sú 26 px od seba
+    expect(VEHICLE_OFFSET_CELLS).toBe(LANE_OFFSET_CELLS);
+  });
+
+  it('`laneOverhangPx`: kamión presahuje pruh o 1 px, carrier o 4 px; úzke vozidlo nepresahuje', () => {
+    expect(laneOverhangPx(TRUCK_WIDTH_PX)).toBe(1);
+    expect(laneOverhangPx(CARRIER_WIDTH_PX)).toBe(4);
+    expect(laneOverhangPx(LANE_WIDTH_PX)).toBe(0);
+    expect(laneOverhangPx(10)).toBe(0);
   });
 });
 
 describe('laneOffset (pravostranná premávka, posun v bunkách kolmo na smer jazdy)', () => {
+  const V = VEHICLE_OFFSET_CELLS;
+
   it.each([
-    [0, 13 / 64, 0],
-    [90, 0, 13 / 64],
-    [180, -13 / 64, 0],
-    [270, 0, -13 / 64],
+    [0, V, 0],
+    [90, 0, V],
+    [180, -V, 0],
+    [270, 0, -V],
   ] as const)('two_lane, kurz %i°: (%f; %f)', (heading, x, y) => {
     expect(laneOffset('two_lane', heading)).toEqual({ x, y });
   });
@@ -105,24 +108,24 @@ describe('laneOffset (pravostranná premávka, posun v bunkách kolmo na smer ja
     for (const heading of HEADINGS) expect(laneOffset(kind, heading)).toEqual({ x: 0, y: 0 });
   });
 
-  it('posun je kolmý na smer jazdy a má veľkosť 13/64 (two_lane)', () => {
+  it('posun je kolmý na smer jazdy a má veľkosť `VEHICLE_OFFSET_CELLS` (two_lane)', () => {
     const forward: Record<ViewRotation, readonly [number, number]> = { 0: [0, -1], 90: [1, 0], 180: [0, 1], 270: [-1, 0] };
     for (const heading of HEADINGS) {
       const offset = laneOffset('two_lane', heading);
       const [fx, fy] = forward[heading];
       expect(offset.x * fx + offset.y * fy).toBeCloseTo(0, 12);
-      expect(Math.hypot(offset.x, offset.y)).toBeCloseTo(13 / 64, 12);
+      expect(Math.hypot(offset.x, offset.y)).toBeCloseTo(V, 12);
     }
   });
 
-  it('protismerné vozidlá na dvojpruhovej ceste sú od seba 26/64 bunky (jeden pruh)', () => {
+  it('protismerné vozidlá na dvojpruhovej ceste sú od seba 2 × `VEHICLE_OFFSET_CELLS` = 26/64 bunky (jeden pruh)', () => {
     for (const [a, b] of [
       [0, 180],
       [90, 270],
     ] as const) {
       const first = laneOffset('two_lane', a);
       const second = laneOffset('two_lane', b);
-      expect(Math.hypot(first.x - second.x, first.y - second.y)).toBeCloseTo(26 / 64, 12);
+      expect(Math.hypot(first.x - second.x, first.y - second.y)).toBeCloseTo(2 * V, 12);
     }
   });
 
@@ -165,9 +168,9 @@ describe('typ cesty pod vozidlom (`roadKindAt`)', () => {
     expect(roadKindAt(grid.width, grid.height)).toBe('one_lane');
   });
 
-  it('počet pruhov typu je zo simu (`ROAD_KIND_TRAITS.lanes`): posun je 13/64 len pri dvoch pruhoch', () => {
+  it('počet pruhov typu je zo simu (`ROAD_KIND_TRAITS.lanes`): posun od osi je len pri dvoch pruhoch', () => {
     for (const kind of ROAD_KINDS) {
-      expect(laneMagnitude(kind)).toBe(ROAD_KIND_TRAITS[kind].lanes === 2 ? 13 / 64 : 0);
+      expect(laneMagnitude(kind)).toBe(ROAD_KIND_TRAITS[kind].lanes === 2 ? VEHICLE_OFFSET_CELLS : 0);
     }
   });
 });
@@ -199,35 +202,29 @@ describe('maska susedov cestnej bunky (`roadMaskAt`, tvar zákrut)', () => {
   });
 });
 
-describe('sprite vozidla leží v jednom pruhu (± 2 px)', () => {
-  /** Vozidlo v strede bunky (10; 10), kurz `heading`. */
+describe('vozidlo v pravom pruhu nezasahuje do protismerného pruhu viac než o pár px', () => {
+  const deps = { cellPx: CELL, palette: ENTITY_PALETTE, textures: new StubTextures() };
+
   function carrier(heading: ViewRotation): VehicleVM {
-    return {
-      id: 1,
-      defId: 'straddle_carrier',
-      x: 10.5,
-      y: 10.5,
-      prevX: 10.5,
-      prevY: 10.5,
-      heading,
-      loaded: false,
-      state: 'to_pickup',
-    };
+    return { id: 1, defId: 'straddle_carrier', x: 10.5, y: 10.5, prevX: 10.5, prevY: 10.5, heading, loaded: false, state: 'to_pickup' };
+  }
+
+  function truck(heading: ViewRotation, loaded = false): TruckVM {
+    return { id: 2, defId: 'truck_container', x: 10.5, y: 10.5, prevX: 10.5, prevY: 10.5, heading, loaded, state: 'to_gate' };
   }
 
   /** Pravá strana od smeru jazdy pre kurz (os pruhov). */
   const right: Record<ViewRotation, readonly [number, number]> = { 0: [1, 0], 90: [0, 1], 180: [-1, 0], 270: [0, -1] };
 
   /**
-   * Bočný rozsah obsahu spritu vo „dlaždici cesty“: px zdroja (64 px na bunku), os pruhov x 32, kladný smer = vpravo od
-   * jazdy. Rozsah obsahu v súbore (x 4–60) sa premieta cez skutočnú transformáciu view (posun + rotácia).
+   * Bočný rozsah obsahu spritu vo „dlaždici cesty“: px zdroja (64 px na bunku), os cesty x 32, kladný smer = vpravo od
+   * jazdy (pravý pruh je x 32–58). Rozsah obsahu v súbore sa premieta cez skutočnú transformáciu view (posun + rotácia).
    */
-  function lateralExtent(heading: ViewRotation): { min: number; max: number } {
-    const view = new VehicleView(carrier(heading), { cellPx: CELL, palette: ENTITY_PALETTE, textures: new StubTextures() });
+  function lateralExtent(view: VehicleView, heading: ViewRotation, file: string): { min: number; max: number } {
     const root = new Container();
     root.addChild(view.view);
     const sprite = view.view.children[0] as Sprite;
-    const spriteSize = sprite.width; // čtvorcový sprite, anchor 0,5
+    const spriteSize = sprite.width; // šírka spritu (anchor 0,5); plátno kamióna je 64 × 128
     const [rx, ry] = right[heading];
     const lateral = (contentX: number): number => {
       const local = (contentX / MANIFEST_CELL_PX - 0.5) * spriteSize; // bod na osi X spritu
@@ -236,48 +233,57 @@ describe('sprite vozidla leží v jednom pruhu (± 2 px)', () => {
       const dy = ((world.y - 10.5 * CELL) * MANIFEST_CELL_PX) / CELL;
       return MANIFEST_CELL_PX / 2 + dx * rx + dy * ry;
     };
-    // pri rotácii o 180° sa sprite prevráti, preto min/max z oboch krajov
-    const ends = [lateral(4), lateral(60)];
+    const extent = contentExtent(readAsset(file));
+    const ends = [lateral(extent.left), lateral(extent.right)]; // pri rotácii o 180° sa sprite prevráti, preto min/max
     return { min: Math.min(...ends), max: Math.max(...ends) };
   }
+
+  const carrierExtent = (heading: ViewRotation): { min: number; max: number } =>
+    lateralExtent(new VehicleView(carrier(heading), deps), heading, 'entities/straddle_carrier_empty.svg');
+  const truckExtent = (heading: ViewRotation, loaded = false): { min: number; max: number } =>
+    lateralExtent(new TruckView(truck(heading, loaded), deps), heading, `entities/truck_container_${loaded ? 'loaded' : 'empty'}.svg`);
 
   // pravý pruh road sprite: od stredovej čiary x 32 po okraj asfaltu x 58
   const laneMin = MANIFEST_CELL_PX / 2;
   const laneMax = 6 + ROAD_ASPHALT_PX;
 
-  it.each(HEADINGS)('kurz %i°: obsah spritu je v pravom pruhu x 32–58 (± 2 px)', (heading) => {
-    const { min, max } = lateralExtent(heading);
-    expect(min).toBeGreaterThanOrEqual(laneMin - 2);
-    expect(max).toBeLessThanOrEqual(laneMax + 2);
-    expect(max - min).toBeCloseTo(LANE_WIDTH_PX, 6);
-    // a neprekračuje stredovú čiaru do protismerného pruhu
-    expect(min).toBeGreaterThanOrEqual(laneMin - 1e-6);
+  it.each(HEADINGS)('kurz %i°: kamión (28 px) je v pravom pruhu, do protismerného zasahuje najviac o 1 px', (heading) => {
+    for (const loaded of [false, true]) {
+      const { min, max } = truckExtent(heading, loaded);
+      expect(max - min).toBeCloseTo(TRUCK_WIDTH_PX, 6);
+      expect(laneMin - min).toBeLessThanOrEqual(1 + 1e-6); // pred stredovú čiaru
+      expect(max - laneMax).toBeLessThanOrEqual(1 + 1e-6); // cez okraj asfaltu
+      expect((min + max) / 2).toBeCloseTo(MANIFEST_CELL_PX / 2 + VEHICLE_OFFSET_PX, 6);
+    }
   });
 
-  it('protismerné vozidlá v jednej bunke sa nepretínajú: ich pruhy sa dotýkajú len na stredovej čiare', () => {
-    const across = (heading: ViewRotation): { min: number; max: number } => {
-      const view = new VehicleView(carrier(heading), { cellPx: CELL, palette: ENTITY_PALETTE, textures: new StubTextures() });
-      const root = new Container();
-      root.addChild(view.view);
-      const size = (view.view.children[0] as Sprite).width;
-      // svetová súradnica kolmo na cestu (os y pre východ/západ, os x pre sever/juh) v px zdroja od začiatku bunky
-      const axis = heading === 90 || heading === 270 ? 'y' : 'x';
-      const ends = [-28, 28].map((half) => {
-        const world = view.view.toGlobal({ x: (half / MANIFEST_CELL_PX) * size, y: 0 }); // krajné body obsahu na osi šírky spritu
-        return ((axis === 'y' ? world.y : world.x) / CELL - 10) * MANIFEST_CELL_PX;
-      });
-      return { min: Math.min(...ends), max: Math.max(...ends) };
-    };
+  it.each(HEADINGS)('kurz %i°: straddle carrier (34 px) presahuje pruh len mierne — o 4 px do protismerného pruhu aj cez okraj', (heading) => {
+    const { min, max } = carrierExtent(heading);
+    expect(max - min).toBeCloseTo(CARRIER_WIDTH_PX, 6);
+    expect(laneMin - min).toBeCloseTo(laneOverhangPx(CARRIER_WIDTH_PX), 6);
+    expect(laneMin - min).toBeLessThanOrEqual(5);
+    expect(max - laneMax).toBeCloseTo(laneOverhangPx(CARRIER_WIDTH_PX), 6);
+    expect((min + max) / 2).toBeCloseTo(MANIFEST_CELL_PX / 2 + VEHICLE_OFFSET_PX, 6);
+  });
+
+  it('protismerné vozidlá v jednej bunke: stredy sú od seba 26 px (jeden pruh)', () => {
+    const center = (view: VehicleView): { x: number; y: number } => ({ x: view.view.x, y: view.view.y });
+    const gap = (a: { x: number; y: number }, b: { x: number; y: number }): number => (Math.hypot(a.x - b.x, a.y - b.y) / CELL) * MANIFEST_CELL_PX;
     for (const [a, b] of [
       [90, 270],
       [0, 180],
     ] as const) {
-      const first = across(a);
-      const second = across(b);
-      const [low, high] = first.min < second.min ? [first, second] : [second, first];
-      expect(low.max).toBeLessThanOrEqual(high.min + 1e-6); // bez prekrytia
-      expect(high.min - low.max).toBeLessThan(1e-6); // a bez medzery: pruhy hraničia na osi cesty
-      expect(low.max).toBeCloseTo(MANIFEST_CELL_PX / 2, 6);
+      expect(gap(center(new VehicleView(carrier(a), deps)), center(new VehicleView(carrier(b), deps)))).toBeCloseTo(LANE_WIDTH_PX, 6);
+      expect(gap(center(new TruckView(truck(a), deps)), center(new TruckView(truck(b), deps)))).toBeCloseTo(LANE_WIDTH_PX, 6);
     }
+  });
+
+  it('prekrytie protismerných tiel pri míňaní = súčet presahov: dva kamióny 2 px, carrier a kamión 5 px, dva carriery 8 px', () => {
+    const overlap = (widthA: number, widthB: number): number => (widthA + widthB) / 2 - LANE_WIDTH_PX;
+    expect(overlap(TRUCK_WIDTH_PX, TRUCK_WIDTH_PX)).toBe(2);
+    expect(overlap(CARRIER_WIDTH_PX, TRUCK_WIDTH_PX)).toBe(5);
+    expect(overlap(CARRIER_WIDTH_PX, CARRIER_WIDTH_PX)).toBe(8);
+    expect(overlap(TRUCK_WIDTH_PX, TRUCK_WIDTH_PX)).toBe(2 * laneOverhangPx(TRUCK_WIDTH_PX));
+    expect(overlap(CARRIER_WIDTH_PX, CARRIER_WIDTH_PX)).toBe(2 * laneOverhangPx(CARRIER_WIDTH_PX));
   });
 });

@@ -2,8 +2,10 @@ import { expect, test, type Page } from '@playwright/test';
 
 // F3 render demo (T03-08): pevné view-modely bez simu (`src/render/__demo__/f3-render.html`). Screenshoty slúžia na
 // vizuálnu kontrolu: fill stavy dvorov, vozidlá (empty / loaded, kurzy), pripojené a odpojené depo s odznakom.
-// Scéna `lanes` (T03-17, `?scene=lanes`): vozidlá jazdia v pravom pruhu, protismerné sa nekrížia (`f3-lanes.png`);
-// od T03-19 idú v zákrutách po oblúku okolo vnútorného rohu (pravá zákruta polomer 19 px, ľavá 45 px).
+// Scéna `lanes` (T03-17, `?scene=lanes`): vozidlá jazdia v pravom pruhu, protismerné sa nekrížia (`f3-lanes.png`); od T03-19 idú
+// v zákrutách po oblúku okolo vnútorného rohu (pravá zákruta polomer 19 px, ľavá 45 px). Od F5b č. 10 majú vozidlá reálnu mierku
+// (1 bunka ≈ 6 m: carrier 34 px, kamión 28 px široký) — sprite má plátno 1 bunka široké, vozidlo v ňom presahuje pruh 26 px
+// najviac o pár px (carrier 4 px, kamión 1 px).
 // Scéna `road-kinds` (T03-19, `?scene=road-kinds`): dvojpruhová, jednopruhová a jednosmerná cesta, križovatky rôznych
 // typov, jednosmerný okruh so šípkami a vozidlá aj v oblúku (`f3-road-kinds.png`).
 
@@ -90,7 +92,7 @@ test.describe('F3: render skladov, vozidiel a odznaku „nepripojené“ (demo s
 });
 
 test.describe('F3: vozidlá v pravom pruhu a po oblúku v zákrutách (scéna lanes)', () => {
-  /** Posun stredu vozidla od osi cesty (bunky) vpravo od smeru jazdy: 13 px z 64 px bunky. */
+  /** Posun stredu vozidla od osi cesty (bunky) vpravo od smeru jazdy: stred pravého pruhu, 13 px z 64 px bunky. */
   const LANE = 13 / 64;
   const RIGHT_OF_HEADING: Record<number, readonly [number, number]> = { 0: [1, 0], 90: [0, 1], 180: [-1, 0], 270: [0, -1] };
 
@@ -150,8 +152,8 @@ test.describe('F3: vozidlá v pravom pruhu a po oblúku v zákrutách (scéna la
         const expectedAngle = (((arc.from + arc.delta * arc.t) % 360) + 360) % 360;
         expect(vehicle.angle, `uhol vozidla ${String(vehicle.id)}`).toBeCloseTo(expectedAngle, 6);
       }
-      // sprite je zmenšený na šírku pruhu: obsah 56 z 64 px → 26 px pruh
-      expect(vehicle.spriteWidth / state.cellPx).toBeCloseTo(26 / 56, 6);
+      // sprite má jednotnú mierku vozidiel (VEHICLE_SCALE = 1): plátno 1 bunka, vozidlo a kontajner v ňom v reálnej mierke
+      expect(vehicle.spriteWidth / state.cellPx).toBeCloseTo(1, 6);
     }
 
     // protismerná dvojica v jednej bunke: stredy sú od seba práve jeden pruh (26/64 bunky) kolmo na cestu

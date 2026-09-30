@@ -152,7 +152,7 @@ export const F4_TRUCKS: readonly TruckVM[] = [
   }),
   (() => {
     const at = dockCenter(RAMP_A, 1);
-    return truckAt(109, at.x, at.y, 0, false, 'loading'); //  v doku 1 rampy A
+    return truckAt(109, at.x, at.y, 180, false, 'loading'); //  v doku 1 rampy A: do docku kamión cúva, kabína von z rampy (juh)
   })(),
 ];
 

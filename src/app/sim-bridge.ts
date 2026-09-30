@@ -18,6 +18,7 @@ import type { ContractCardData } from '@ui/contracts-panel';
 import { contractCards, nextOfferInTicks } from './contract-cards';
 import { EntitiesVMBuilder, writeTruckPose, type MutableTruckPose, type SimEntitiesVM } from './entities-vm';
 import type { FrameEventSink } from './game-loop';
+import { StorageOpTracker } from './storage-ops';
 
 /**
  * Udalosti, ktoré menia štruktúru sveta viditeľnú v snapshote (moduly, cesty a z nich pripojenie modulov, lode, žeriavy,
@@ -162,6 +163,8 @@ export class SimBridge implements FrameEventSink {
   /** Karty kontraktov a revízia, pre ktorú vznikli (prepočet len pri zmene revízie). */
   private currentContracts: { readonly revision: number; readonly cards: readonly ContractCardData[] } | null = null;
   private readonly entityBuilder = new EntitiesVMBuilder();
+  /** Posledné operácie s kontajnerom na slote skladov (animácia žeriavu dvora; sim ich nevedie). */
+  private readonly storageOps = new StorageOpTracker();
   /** Poloha lodí pred posledným tickom (interpolácia); lode bez záznamu majú `prev = curr`. */
   private readonly prevShipPositions = new Map<EntityId, MutableShipPosition>();
   /** Póza vozidiel pred posledným tickom (interpolácia + pruh v zákrute); vozidlá bez záznamu majú `prev = curr`. */
@@ -213,7 +216,7 @@ export class SimBridge implements FrameEventSink {
       return cached;
     }
     const cards = this.contractCardsFor(this.revisionCounter);
-    const entities = this.entityBuilder.build(this.world, this.revisionCounter, this.prevShipPositions, this.prevVehiclePoses, this.prevTruckPoses);
+    const entities = this.entityBuilder.build(this.world, this.revisionCounter, this.prevShipPositions, this.prevVehiclePoses, this.prevTruckPoses, this.storageOps.view);
     const next: WorldSnapshot = Object.freeze({
       tick: clock.tick,
       speed: clock.speed,
@@ -348,6 +351,7 @@ export class SimBridge implements FrameEventSink {
    * od poslednej notifikácie zmenil (aj zmenou bez udalosti), notifikuje `subscribe` odberateľov.
    */
   publish(events: readonly SimEvent[]): void {
+    this.storageOps.record(events); // pred výpočtom snapshotu: CargoMoved zvyšuje revíziu, takže VM skladu sa prestavia s novou operáciou
     for (const event of events) {
       if (REVISION_EVENTS.has(event.type)) this.revisionCounter += 1;
     }

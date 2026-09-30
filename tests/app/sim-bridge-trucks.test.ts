@@ -62,7 +62,9 @@ describe('SimBridge: cache modulov s bránou a stojiskom', () => {
     frameUntil(
       app,
       () => {
-        expect(JSON.stringify(bridge.snapshot().modules)).toBe(JSON.stringify(moduleVMs(world)));
+        // `lastStorageOp` skladá bridge z udalostí (sim ju nevedie), porovnáva sa zvyšok VM
+        const withoutOp = bridge.snapshot().modules.map((vm) => ({ ...vm, lastStorageOp: undefined }));
+        expect(JSON.stringify(withoutOp)).toBe(JSON.stringify(moduleVMs(world)));
         return world.cargo.exportedCount === UNITS;
       },
       6000,

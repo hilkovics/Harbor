@@ -81,8 +81,11 @@ export function autotileShape(mask: number): AutotileTile {
 /**
  * Maska susedov bunky (x, y) pre vrstvu `layer`: bit je nastavený, ak sused v danom smere leží v mape
  * a má `road === layer`. Samotná bunka sa nekontroluje. Bunka mimo mapy je `RangeError`.
+ *
+ * `extraMask` (predvolene 0) pridá smery, v ktorých cesta nemá suseda-cestu, ale pripája sa na konektor modulu
+ * (`module-connectors.ts`): bunka pred konektorom tak dostane rameno až po okraj bunky modulu, nie zaoblený koniec.
  */
-export function autotileMask(grid: Grid, x: number, y: number, layer: RoadLayer): number {
+export function autotileMask(grid: Grid, x: number, y: number, layer: RoadLayer, extraMask = 0): number {
   if (!grid.inBounds(x, y)) {
     throw new RangeError(`autotileMask: bunka (${String(x)}, ${String(y)}) je mimo mapy ${String(grid.width)}×${String(grid.height)}`);
   }
@@ -92,13 +95,16 @@ export function autotileMask(grid: Grid, x: number, y: number, layer: RoadLayer)
     const ny = y + dy;
     if (grid.inBounds(nx, ny) && grid.at(nx, ny).road === layer) mask |= bit;
   }
-  return mask;
+  return mask | extraMask;
 }
 
-/** Tvar a rotácia dlaždice bunky (x, y), alebo `null`, ak bunka nemá vrstvu `layer` (nič sa nekreslí). */
-export function autotileTile(grid: Grid, x: number, y: number, layer: RoadLayer): AutotileTile | null {
+/**
+ * Tvar a rotácia dlaždice bunky (x, y), alebo `null`, ak bunka nemá vrstvu `layer` (nič sa nekreslí). `extraMask` viď
+ * `autotileMask` (ramená k konektorom modulov).
+ */
+export function autotileTile(grid: Grid, x: number, y: number, layer: RoadLayer, extraMask = 0): AutotileTile | null {
   if (grid.at(x, y).road !== layer) return null;
-  return autotileShape(autotileMask(grid, x, y, layer));
+  return autotileShape(autotileMask(grid, x, y, layer, extraMask));
 }
 
 /**

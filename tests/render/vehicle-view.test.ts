@@ -3,18 +3,15 @@ import { describe, expect, it } from 'vitest';
 import { vehicleSprite } from '@render/entity-assets';
 import { EntityLayer } from '@render/entity-layer';
 import type { RoadKind } from '@sim/grid';
-import { VEHICLE_LANE_SCALE, type RoadKindAt } from '@render/lane';
+import { VEHICLE_OFFSET_CELLS, VEHICLE_SCALE, type RoadKindAt } from '@render/lane';
 import { VehicleView, sameVehicleShape, vehicleLoad, vehiclePose, vehicleSpriteFile } from '@render/vehicle-view';
 import type { ShipVM, VehicleVM } from '@render/view-models';
 import { ENTITY_PALETTE, PALETTE, StubTextures } from './stub-textures';
 
 const CELL = PALETTE.cellPx;
 
-/** Posun do pravého pruhu dvojpruhovej cesty: 13 px zo 64 px bunky (stredová čiara x 32, stred pruhu x 45). */
-const LANE = 13 / 64;
-
-/** Šírka pruhu v bunkách: 26 px zo 64. */
-const LANE_WIDTH = 26 / 64;
+/** Posun vozidla od osi dvojpruhovej cesty doprava: rezerva asfaltu po stranách vozidla (2 px zo 64 px bunky). */
+const LANE = VEHICLE_OFFSET_CELLS;
 
 function deps(textures: StubTextures | null) {
   return { cellPx: CELL, palette: ENTITY_PALETTE, textures };
@@ -190,7 +187,7 @@ describe('vehiclePose (lerp(prev + pruh, curr + pruh, alpha) × cell, rotácia =
 });
 
 describe('VehicleView', () => {
-  it('prázdne vozidlo: sprite `empty`, vycentrovaný, v mierke pruhu, poloha = stred bunky posunutý do pravého pruhu', () => {
+  it('prázdne vozidlo: sprite `empty`, vycentrovaný, v jednotnej mierke vozidiel, poloha = stred bunky posunutý doprava od osi', () => {
     const textures = new StubTextures();
     const view = new VehicleView(carrier(), deps(textures));
     const sprite = view.view.children[0] as Sprite;
@@ -198,10 +195,9 @@ describe('VehicleView', () => {
     expect(sprite.texture).toBe(textures.textureFor('file/entities/straddle_carrier_empty.svg'));
     expect(sprite.anchor.x).toBe(0.5);
     expect(sprite.anchor.y).toBe(0.5);
-    // sprite 1×1 bunka × (26 / 56): šírka obsahu spritu (56 z 64 px) = šírka pruhu (26 z 64 px)
-    expect(sprite.width).toBeCloseTo((CELL * 26) / 56, 6);
-    expect(sprite.height).toBeCloseTo((CELL * 26) / 56, 6);
-    expect(sprite.width).toBeCloseTo(CELL * VEHICLE_LANE_SCALE, 9);
+    // sprite 1×1 bunka × VEHICLE_SCALE (jediná mierka vozidiel, kontajner na vozidle = TEU na aprone)
+    expect(sprite.width).toBeCloseTo(CELL * VEHICLE_SCALE, 6);
+    expect(sprite.height).toBeCloseTo(CELL * VEHICLE_SCALE, 6);
     expect(view.view.position.x).toBe(36.5 * CELL);
     expect(view.view.position.y).toBeCloseTo((24.5 + LANE) * CELL, 9); // kurz 90°: pravý pruh je južne
     expect(view.view.angle).toBeCloseTo(90, 9);
@@ -271,12 +267,23 @@ describe('VehicleView', () => {
     bare.update(carrier({ loaded: false }), 1);
   });
 
-  it('fallback `Graphics` má rovnakú mierku pruhu ako sprite (telo 56/64 bunky = šírka pruhu)', () => {
+  it('fallback `Graphics` má rovnakú mierku ako sprite (`VEHICLE_SCALE`)', () => {
     const view = new VehicleView(carrier({ defId: 'hovercraft' }), deps(new StubTextures()));
     const body = view.view.children[0];
-    expect(body.scale.x).toBeCloseTo(VEHICLE_LANE_SCALE, 9);
-    expect(body.scale.y).toBeCloseTo(VEHICLE_LANE_SCALE, 9);
-    expect(((CELL - (8 / 64) * CELL) * body.scale.x) / CELL).toBeCloseTo(LANE_WIDTH, 9);
+    expect(body.scale.x).toBeCloseTo(VEHICLE_SCALE, 9);
+    expect(body.scale.y).toBeCloseTo(VEHICLE_SCALE, 9);
+  });
+
+  it('F5b č. 10: prázdny a naložený straddle carrier majú rovnakú veľkosť sprite (naloženie ju nemení)', () => {
+    const view = new VehicleView(carrier({ loaded: false }), deps(new StubTextures()));
+    const sprite = view.view.children[0] as Sprite;
+    const empty = { width: sprite.width, height: sprite.height, scaleX: sprite.scale.x, scaleY: sprite.scale.y };
+    view.update(carrier({ loaded: true }), 1);
+    expect(view.view.children[0]).toBe(sprite); // ten istý sprite, len iná textúra
+    expect({ width: sprite.width, height: sprite.height, scaleX: sprite.scale.x, scaleY: sprite.scale.y }).toEqual(empty);
+    view.update(carrier({ loaded: false }), 1);
+    expect(sprite.width).toBe(empty.width);
+    expect(sprite.height).toBe(empty.height);
   });
 
   it('typ cesty z `roadKindAt` v deps: jednopruhová cesta = stred bunky; po prestavbe na dvojpruhovú skočí do pruhu', () => {

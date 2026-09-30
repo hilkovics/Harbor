@@ -1,8 +1,8 @@
 /**
  * Úzke cesty (`one_lane`, `one_way`; docs/tasks/phase-03.md T03-19): geometria procedurálnej dlaždice bez Pixi.
  *
- * Sprity `road_*.svg` sú len pre dvojpruhovú cestu (asfalt 52 px). Úzka cesta má jeden pruh — asfalt 26 px (x 19–45)
- * — a kreslí sa procedurálne s rovnakým autotile tvarom a rotáciou (`end` hore, `straight` zvislá, `corner` N→E, `t` bez
+ * Sprity `road_*.svg` sú len pre dvojpruhovú cestu (asfalt 52 px). Úzka cesta má jeden pruh — asfalt `NARROW_ASPHALT_PX` (36 px,
+ * x 14–50) — a kreslí sa procedurálne s rovnakým autotile tvarom a rotáciou (`end` hore, `straight` zvislá, `corner` N→E, `t` bez
  * juhu, `cross`), okrajom 2 px vo vnútri asfaltu, zaoblením 6 px v križovatkách a BEZ stredovej čiary. Rozmery sú
  * odvodené zo spritov (`tests/render/narrow-road.test.ts` ich porovnáva so SVG); súradnice sú v px zdroja (bunka 64 px),
  * kreslenie ich škáluje na `--cell`.
@@ -17,10 +17,15 @@
 import { AUTOTILE_SHAPE_BASE_MASK, type AutotileShape } from './autotile';
 import type { Point } from './camera';
 import { MANIFEST_CELL_PX } from './entity-assets';
-import { LANE_WIDTH_PX } from './lane';
+import { ROAD_ASPHALT_PX } from './lane';
+import { VEHICLE_WIDTH_PX } from './world-scale';
 
-/** Šírka asfaltu úzkej cesty v px zdroja: jeden pruh (26). */
-export const NARROW_ASPHALT_PX = LANE_WIDTH_PX;
+/**
+ * Šírka asfaltu úzkej cesty v px zdroja: jedno vozidlo s rezervou 1 px po stranách (`VEHICLE_WIDTH_PX` = 34 px carrier → 36).
+ * Pôvodných 26 px (jeden pruh dvojpruhovej cesty) by sa s vozidlami v reálnej mierke nezmestilo (F5b č. 10). Dvojpruhová
+ * cesta má 52 px, úzka je o 16 px užšia a nemá stredovú čiaru.
+ */
+export const NARROW_ASPHALT_PX = VEHICLE_WIDTH_PX + 2;
 
 /** Šírka okraja (obrubníka) v px zdroja: `stroke-width` v `road_*.svg`. */
 export const ROAD_EDGE_PX = 2;
@@ -28,8 +33,8 @@ export const ROAD_EDGE_PX = 2;
 /** Polomer zaoblenia vnútorných rohov križovatky v px zdroja (`A6 6` v `road_t.svg` a `road_cross.svg`). */
 export const ROAD_FILLET_PX = 6;
 
-/** Hĺbka lievika v rameni úzkej dlaždice, ktorá susedí so širokou cestou (px zdroja); zhodná so začiatkom zaoblenia 13 px. */
-export const FLARE_DEPTH_PX = 13;
+/** Hĺbka lievika v rameni úzkej dlaždice, ktorá susedí so širokou cestou (px zdroja): rozdiel polšírok 52 a 36 px (8), 45° zrezanie. */
+export const FLARE_DEPTH_PX = (ROAD_ASPHALT_PX - NARROW_ASPHALT_PX) / 2;
 
 /** Operácia cesty; súradnice v px zdroja. Uhly oblúka sú ako v Pixi (od +x, v smere hodinových ručičiek pri osi y nadol). */
 export type PathOp =
@@ -144,7 +149,7 @@ function endPaths(cuts: Cuts): NarrowRoadPaths {
   return { fills: [fill], strokes: [stroke] };
 }
 
-/** Zákruta N→E: štvrťkruhový pás okolo pravého horného rohu (64; 0), polomery 19…45, čiary na 20 a 44. */
+/** Zákruta N→E: štvrťkruhový pás okolo pravého horného rohu (64; 0), polomery 14…50, čiary na 15 a 49. */
 function cornerPaths(cuts: Cuts): NarrowRoadPaths {
   const outer = MID + HALF;
   const inner = MID - HALF;
@@ -164,9 +169,9 @@ function cornerPaths(cuts: Cuts): NarrowRoadPaths {
   return { fills: [fill], strokes };
 }
 
-/** T bez juhu: vodorovný pás (y 19–45) s ramenom N; zaoblenie 6 px v oboch vnútorných rohoch, južný okraj bez prerušenia. */
+/** T bez juhu: vodorovný pás (y 14–50) s ramenom N; zaoblenie 6 px v oboch vnútorných rohoch, južný okraj bez prerušenia. */
 function tPaths(cuts: Cuts): NarrowRoadPaths {
-  const top = EDGE_LOW; // horný okraj vodorovného pásu (y 19)
+  const top = EDGE_LOW; // horný okraj vodorovného pásu (y 14)
   const fill = new PathBuilder()
     .move(EDGE_LOW, 0)
     .line(EDGE_HIGH, 0)
@@ -248,7 +253,7 @@ const SHAPE_PATHS: Readonly<Record<AutotileShape, (cuts: Cuts) => NarrowRoadPath
 
 /**
  * Šikmá čiara okraja lievika: hranica asfaltu ide z (`outer`; 0) do (`inner`; hĺbka lievika); čiara leží o pol hrúbky
- * okraja kolmo dnu (asfalt je vpravo hore), začína na hrane bunky (y = 0) a končí na osi zvislej čiary ramena (x = 20).
+ * okraja kolmo dnu (asfalt je vpravo hore), začína na hrane bunky (y = 0) a končí na osi zvislej čiary ramena (x = 15).
  */
 function slantedEdgeLine(outer: number, inner: number): { start: Point; end: Point } {
   const dx = inner - outer;

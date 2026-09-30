@@ -3,9 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { ROTATIONS, rotateFootprint, type Rotation } from '@sim/grid';
 import { moduleSprite } from '@render/entity-assets';
 import { ModuleView } from '@render/module-view';
-import { RampDecor, STAGED_INSET_PX, stagedPlacements } from '@render/ramp-decor';
+import { RampDecor, STAGED_ANGLE, STAGED_INSET_PX, stagedPlacements } from '@render/ramp-decor';
 import { STALL_FILL_ALPHA, WaitingAreaDecor, occupiedStalls } from '@render/waiting-area-decor';
 import type { ModuleVM } from '@render/view-models';
+import { TEU_PX } from '@render/world-scale';
 import { ENTITY_PALETTE, PALETTE, StubTextures } from './stub-textures';
 
 const CELL = PALETTE.cellPx;
@@ -135,32 +136,38 @@ describe('ModuleView: čakacia plocha (obsadené stojiská)', () => {
 
 describe('stagedPlacements (kontajnery pripravené na doku)', () => {
   const dock = { x: 68, y: 60, w: 56, h: 62 };
-  const teu = { w: 64, h: 32 };
+  const teu = TEU_PX;
 
   it('žiadny kontajner → nič', () => {
     expect(stagedPlacements(dock, 0, teu)).toEqual([]);
     expect(stagedPlacements(dock, -1, teu)).toEqual([]);
   });
 
-  it('kontajner sa zmenší na šírku doku bez okrajov a leží pri vzdialenom (hornom) konci doku', () => {
-    const scale = (56 - 2 * STAGED_INSET_PX) / 64;
-    expect(stagedPlacements(dock, 1, teu)).toEqual([{ x: 96, y: 60 + STAGED_INSET_PX + (32 * scale) / 2, scale }]);
+  it('jeden kontajner má veľkosť TEU (64 × 26), leží dlhšou stranou pozdĺž doku a je v jeho strede', () => {
+    expect(stagedPlacements(dock, 1, teu)).toEqual([{ x: dock.x + dock.w / 2, y: dock.y + dock.h / 2, angle: STAGED_ANGLE }]);
+    expect(STAGED_ANGLE).toBe(90);
+    // dĺžka kontajnera (64 px, viditeľný obsah 62) zaberie dok 56 × 62 px pozdĺž, šírka 26 px sa zmestí naprieč
+    expect(teu.h).toBeLessThan(dock.w - 2 * STAGED_INSET_PX);
+    expect(teu.w - 2).toBeLessThanOrEqual(dock.h);
   });
 
-  it('dva kontajnery sa zmestia pod seba bez prekrytia a ostanú v doku', () => {
+  it('dva kontajnery sa zmestia vedľa seba bez prekrytia, symetricky okolo stredu doku a v jeho šírke', () => {
     const [first, second] = stagedPlacements(dock, 2, teu);
-    const height = 32 * first.scale;
-    expect(second.y - first.y).toBeCloseTo(height, 9);
-    expect(first.y - height / 2).toBeGreaterThanOrEqual(dock.y + STAGED_INSET_PX - 1e-9);
-    expect(second.y + height / 2).toBeLessThanOrEqual(dock.y + dock.h - STAGED_INSET_PX + 1e-9);
+    expect(second.x - first.x).toBeCloseTo(teu.h, 9);
+    expect((first.x + second.x) / 2).toBeCloseTo(dock.x + dock.w / 2, 9);
+    expect(first.x - teu.h / 2).toBeGreaterThanOrEqual(dock.x + STAGED_INSET_PX - 1e-9);
+    expect(second.x + teu.h / 2).toBeLessThanOrEqual(dock.x + dock.w - STAGED_INSET_PX + 1e-9);
+    expect(first.y).toBe(second.y);
   });
 
-  it('viac kusov, než sa zmestí: prekrývajú sa, ale posledný ostane v doku', () => {
+  it('viac kusov, než sa zmestí: prekrývajú sa, ale krajné ostanú v doku; užší dok než kontajner krok nezáporný', () => {
     const placements = stagedPlacements(dock, 5, teu);
     expect(placements).toHaveLength(5);
-    const height = 32 * placements[0].scale;
-    expect(placements[1].y - placements[0].y).toBeLessThan(height);
-    expect(placements[4].y + height / 2).toBeCloseTo(dock.y + dock.h - STAGED_INSET_PX, 9);
+    expect(placements[1].x - placements[0].x).toBeLessThan(teu.h);
+    expect(placements[0].x - teu.h / 2).toBeCloseTo(dock.x + STAGED_INSET_PX, 9);
+    expect(placements[4].x + teu.h / 2).toBeCloseTo(dock.x + dock.w - STAGED_INSET_PX, 9);
+    const narrow = stagedPlacements({ x: 0, y: 0, w: 20, h: 62 }, 3, teu);
+    expect(narrow.map((placement) => placement.x)).toEqual([10, 10, 10]);
   });
 });
 
@@ -175,20 +182,25 @@ describe('ModuleView: rampa (pripravené kontajnery a upozornenie)', () => {
     expect([decor.stagedDrawn(0), decor.stagedDrawn(1)]).toEqual([0, 2]);
   });
 
-  it('kontajner je `cargo.container_teu` zmenšený na šírku doku a stojí na doku (lokálny rámec modulu 4×2)', () => {
+  it('kontajner je `cargo.container_teu` v pôvodnej veľkosti TEU 64 × 26, natočený pozdĺž doku a stojí na doku (lokálny rámec modulu 4×2)', () => {
     const textures = new StubTextures();
     const view = new ModuleView(ramp([2, 0]), deps(textures));
     const cargo = rampDecor(view).stagedSprite(0, 0);
     const sprite = cargo?.children[0] as Sprite;
     expect(sprite).toBeInstanceOf(Sprite);
     expect(sprite.texture).toBe(textures.textureFor('file/cargo/container_teu.svg'));
-    const scale = (56 - 2 * STAGED_INSET_PX) / 64;
-    expect(cargo?.scale.x).toBeCloseTo(scale, 9);
-    // dok 0: x 68–124, y 60–122 px súboru; footprint 4×2 → ľavý horný roh (−128; −64)
-    expect(cargo?.position.x).toBeCloseTo(-128 + 96, 9);
-    expect(cargo?.position.y).toBeCloseTo(-64 + 60 + STAGED_INSET_PX + (32 * scale) / 2, 9);
+    // bez škálovania (rovnaká veľkosť ako na aprone, pod žeriavom a v návese kamióna) a dlhšou stranou pozdĺž doku
+    expect(cargo?.scale.x).toBe(1);
+    expect(cargo?.scale.y).toBe(1);
+    expect(sprite.width).toBeCloseTo(TEU_PX.w * (CELL / 64), 9);
+    expect(sprite.height).toBeCloseTo(TEU_PX.h * (CELL / 64), 9);
+    expect(cargo?.angle).toBe(STAGED_ANGLE);
+    // dok 0: x 68–124, y 60–122 px súboru; footprint 4×2 → ľavý horný roh (−128; −64); dva kusy vedľa seba okolo stredu doku
     const second = rampDecor(view).stagedSprite(0, 1);
-    expect((second?.position.y ?? 0) - (cargo?.position.y ?? 0)).toBeCloseTo(32 * scale, 9);
+    expect(cargo?.position.x).toBeCloseTo(-128 + 96 - TEU_PX.h / 2, 9);
+    expect(second?.position.x).toBeCloseTo(-128 + 96 + TEU_PX.h / 2, 9);
+    expect(cargo?.position.y).toBeCloseTo(-64 + 91, 9);
+    expect(second?.position.y).toBeCloseTo(-64 + 91, 9);
     // druhý dok je vpravo od prvého
     const other = new ModuleView(ramp([0, 1]), deps(textures));
     expect(rampDecor(other).stagedSprite(1, 0)?.position.x).toBeCloseTo(-128 + 160, 9);

@@ -3,17 +3,20 @@ import { describe, expect, it } from 'vitest';
 import cargoTypesJson from '@data/defs/cargo_types.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
+import logisticsJson from '@data/defs/logistics.json';
 import modulesJson from '@data/defs/modules.json';
 import shipsJson from '@data/defs/ships.json';
 import timeJson from '@data/defs/time.json';
+import vehiclesJson from '@data/defs/vehicles.json';
 import economySchema from '@data/schemas/economy.schema.json';
 import infrastructureSchema from '@data/schemas/infrastructure.schema.json';
+import logisticsSchema from '@data/schemas/logistics.schema.json';
 import timeSchema from '@data/schemas/time.schema.json';
 import { SimClock } from '@sim/core/sim-clock';
 import { DefError, DefRegistry, SUPPORTED_SCHEMA_VERSION, loadBundledDefs } from '@sim/defs';
 import { checkNumber } from '@sim/defs/def-spec';
 
-type DefName = 'time' | 'economy' | 'infrastructure';
+type DefName = 'time' | 'economy' | 'infrastructure' | 'logistics';
 
 interface RawBundle {
   time: Record<string, unknown>;
@@ -22,6 +25,8 @@ interface RawBundle {
   cargo_types: Record<string, unknown>;
   modules: Record<string, unknown>;
   ships: Record<string, unknown>;
+  vehicles: Record<string, unknown>;
+  logistics: Record<string, unknown>;
 }
 
 /** Čerstvá hlboká kópia bundled defov; negatívne testy z nej upravia jedno pole. */
@@ -33,6 +38,8 @@ function rawDefs(): RawBundle {
     cargo_types: structuredClone(cargoTypesJson),
     modules: structuredClone(modulesJson),
     ships: structuredClone(shipsJson),
+    vehicles: structuredClone(vehiclesJson),
+    logistics: structuredClone(logisticsJson),
   };
 }
 
@@ -68,10 +75,12 @@ describe('DefRegistry.fromRaw', () => {
     expect(registry.time.tickGameSeconds).toBe(timeJson.tickGameSeconds);
     expect(registry.economy.startingCashCents).toBe(economyJson.startingCashCents);
     expect(registry.infrastructure.road.costPerCellCents).toBe(infrastructureJson.road.costPerCellCents);
+    expect(registry.logistics.repathIntervalTicks).toBe(logisticsJson.repathIntervalTicks);
+    expect(registry.vehicles.get('straddle_carrier').speedCellsPerTick).toBe(0.4);
   });
 
   describe('chýbajúci def → DefError s názvom defu', () => {
-    it.each(['time', 'economy', 'infrastructure', 'cargo_types', 'modules', 'ships'] as const)('%s', (name) => {
+    it.each(['time', 'economy', 'infrastructure', 'cargo_types', 'modules', 'ships', 'vehicles', 'logistics'] as const)('%s', (name) => {
       const raw: Partial<ReturnType<typeof rawDefs>> = rawDefs();
       delete raw[name];
       const error = expectDefError(() => DefRegistry.fromRaw(raw), name, '');
@@ -84,6 +93,8 @@ describe('DefRegistry.fromRaw', () => {
       expectDefError(() => DefRegistry.fromRaw({ ...rawDefs(), infrastructure: undefined }), 'infrastructure', '');
       expectDefError(() => DefRegistry.fromRaw({ ...rawDefs(), modules: undefined }), 'modules', '');
       expectDefError(() => DefRegistry.fromRaw({ ...rawDefs(), ships: null }), 'ships', '');
+      expectDefError(() => DefRegistry.fromRaw({ ...rawDefs(), vehicles: undefined }), 'vehicles', '');
+      expectDefError(() => DefRegistry.fromRaw({ ...rawDefs(), logistics: null }), 'logistics', '');
     });
 
     it.each([[[]], ['{}'], [42]] as unknown[][])('def nie je objekt (%j)', (value) => {
@@ -137,6 +148,23 @@ describe('DefRegistry.fromRaw', () => {
       ['infrastructure', '/road/maintenancePerDayCents', -1],
       ['infrastructure', '/rail/costPerCellCents', null],
       ['infrastructure', '/rail/maintenancePerDayCents', 0.5],
+      ['logistics', '/defaultInternalTicks', -1],
+      ['logistics', '/defaultInternalTicks', 6.5],
+      ['logistics', '/defaultInternalTicks', '6'],
+      ['logistics', '/repathIntervalTicks', 0],
+      ['logistics', '/repathIntervalTicks', 30.5],
+      ['logistics', '/repathIntervalTicks', null],
+      ['logistics', '/congestion', 0.9],
+      ['logistics', '/congestion', []],
+      ['logistics', '/congestion/trafficDecayPerHour', 1.5],
+      ['logistics', '/congestion/trafficDecayPerHour', -0.1],
+      ['logistics', '/congestion/trafficDecayPerHour', '0.9'],
+      ['logistics', '/congestion/slowdownPerExtraVehicle', -0.25],
+      ['logistics', '/congestion/slowdownPerExtraVehicle', Number.NaN],
+      ['logistics', '/congestion/penaltyTrafficDivisor', 0],
+      ['logistics', '/congestion/penaltyTrafficDivisor', -200],
+      ['logistics', '/congestion/penaltyMax', -1],
+      ['logistics', '/congestion/penaltyMax', null],
     ];
 
     it.each(cases)('%s %s = %j', (def, path, value) => {
@@ -171,6 +199,9 @@ describe('DefRegistry.fromRaw', () => {
       ['time', 'maxTicksPerFrame'],
       ['economy', 'removalRefundRate'],
       ['infrastructure', 'rail'],
+      ['logistics', 'defaultInternalTicks'],
+      ['logistics', 'repathIntervalTicks'],
+      ['logistics', 'congestion'],
     ] as const)('nové povinné pole %s/%s', (def, key) => {
       const raw = rawDefs();
       delete raw[def][key];
@@ -181,6 +212,22 @@ describe('DefRegistry.fromRaw', () => {
       const raw = rawDefs();
       delete (raw.infrastructure['road'] as Record<string, unknown>)['costPerCellCents'];
       expectDefError(() => DefRegistry.fromRaw(raw), 'infrastructure', '/road/costPerCellCents');
+    });
+
+    it('chýbajúce vnorené povinné pole logistics.congestion → úplná cesta', () => {
+      const raw = rawDefs();
+      delete (raw.logistics['congestion'] as Record<string, unknown>)['penaltyMax'];
+      expectDefError(() => DefRegistry.fromRaw(raw), 'logistics', '/congestion/penaltyMax');
+    });
+
+    it('hranice logistics: defaultInternalTicks 0, trafficDecayPerHour 0 aj 1, penaltyMax 0 sú platné', () => {
+      const raw = rawDefs();
+      raw.logistics['defaultInternalTicks'] = 0;
+      Object.assign(raw.logistics['congestion'] as Record<string, unknown>, { trafficDecayPerHour: 0, penaltyMax: 0 });
+      const logistics = DefRegistry.fromRaw(raw).logistics;
+      expect([logistics.defaultInternalTicks, logistics.congestion.trafficDecayPerHour, logistics.congestion.penaltyMax]).toEqual([0, 0, 0]);
+      (raw.logistics['congestion'] as Record<string, unknown>)['trafficDecayPerHour'] = 1;
+      expect(DefRegistry.fromRaw(raw).logistics.congestion.trafficDecayPerHour).toBe(1);
     });
 
     it('hranice: maxTicksPerFrame 1 a removalRefundRate 0 aj 1 sú platné', () => {
@@ -194,7 +241,7 @@ describe('DefRegistry.fromRaw', () => {
   });
 
   describe('neznámy kľúč → DefError', () => {
-    it.each(['time', 'economy', 'infrastructure'] as const)('%s', (def) => {
+    it.each(['time', 'economy', 'infrastructure', 'logistics'] as const)('%s', (def) => {
       const raw = rawDefs();
       raw[def]['unexpectedKey'] = 1;
       expectDefError(() => DefRegistry.fromRaw(raw), def, '/unexpectedKey');
@@ -204,6 +251,12 @@ describe('DefRegistry.fromRaw', () => {
       const raw = rawDefs();
       (raw.infrastructure['rail'] as Record<string, unknown>)['costPerCel'] = 1;
       expectDefError(() => DefRegistry.fromRaw(raw), 'infrastructure', '/rail/costPerCel');
+    });
+
+    it('neznámy kľúč v logistics.congestion má úplnú cestu', () => {
+      const raw = rawDefs();
+      (raw.logistics['congestion'] as Record<string, unknown>)['penaltyMaxx'] = 1;
+      expectDefError(() => DefRegistry.fromRaw(raw), 'logistics', '/congestion/penaltyMaxx');
     });
 
     it('preklep v názve poľa sa hlási ako neznámy kľúč', () => {
@@ -221,7 +274,7 @@ describe('DefRegistry.fromRaw', () => {
   });
 
   describe('zlá schemaVersion → DefError', () => {
-    it.each(['time', 'economy', 'infrastructure'] as const)('%s: iná verzia', (def) => {
+    it.each(['time', 'economy', 'infrastructure', 'logistics'] as const)('%s: iná verzia', (def) => {
       const raw = rawDefs();
       raw[def]['schemaVersion'] = SUPPORTED_SCHEMA_VERSION + 1;
       expectDefError(() => DefRegistry.fromRaw(raw), def, '/schemaVersion');
@@ -249,6 +302,8 @@ describe('DefRegistry.fromRaw', () => {
       expect(Object.isFrozen(registry.infrastructure)).toBe(true);
       expect(Object.isFrozen(registry.infrastructure.road)).toBe(true);
       expect(Object.isFrozen(registry.infrastructure.rail)).toBe(true);
+      expect(Object.isFrozen(registry.logistics)).toBe(true);
+      expect(Object.isFrozen(registry.logistics.congestion)).toBe(true);
       expect(() => {
         (registry.time as { tickGameSeconds: number }).tickGameSeconds = 1;
       }).toThrow(TypeError);
@@ -265,6 +320,8 @@ describe('DefRegistry.fromRaw', () => {
       expect(Object.isFrozen(raw.time)).toBe(false);
       expect(Object.isFrozen(raw.time['speeds'])).toBe(false);
       expect(Object.isFrozen(raw.infrastructure['road'])).toBe(false);
+      expect(Object.isFrozen(raw.logistics['congestion'])).toBe(false);
+      expect(registry.logistics.congestion).not.toBe(raw.logistics['congestion']);
       expect(registry.time.speeds).not.toBe(raw.time['speeds']);
       expect(registry.infrastructure.road).not.toBe(raw.infrastructure['road']);
     });
@@ -277,6 +334,7 @@ describe('loadBundledDefs', () => {
     expect(registry.time).toEqual(timeJson);
     expect(registry.economy).toEqual(economyJson);
     expect(registry.infrastructure).toEqual(infrastructureJson);
+    expect(registry.logistics).toEqual(logisticsJson);
     // Kontrolné hodnoty podľa ARCHITECTURE §3, §4.6 a §8 bod 8.
     expect(registry.time.tickGameSeconds).toBe(10);
     expect(registry.time.speeds).toEqual([0, 1, 2, 4, 8]);
@@ -287,6 +345,13 @@ describe('loadBundledDefs', () => {
     // ADR-010: cesta 2 000 USD a koľaj 6 000 USD za bunku, bez údržby.
     expect(registry.infrastructure.road).toEqual({ costPerCellCents: 200_000, maintenancePerDayCents: 0 });
     expect(registry.infrastructure.rail).toEqual({ costPerCellCents: 600_000, maintenancePerDayCents: 0 });
+    // T03-01 (ADR-010): logistika podľa ARCHITECTURE §4.6.
+    expect(registry.logistics).toEqual({
+      schemaVersion: 1,
+      defaultInternalTicks: 6,
+      repathIntervalTicks: 30,
+      congestion: { trafficDecayPerHour: 0.9, slowdownPerExtraVehicle: 0.25, penaltyTrafficDivisor: 200, penaltyMax: 3 },
+    });
   });
 
   it('každé volanie vráti nezávislý register', () => {
@@ -372,6 +437,7 @@ describe('nové polia: schéma ⇔ DefRegistry', () => {
   const validateTime = new Ajv2020({ allErrors: true }).compile(timeSchema);
   const validateEconomy = new Ajv2020({ allErrors: true }).compile(economySchema);
   const validateInfrastructure = new Ajv2020({ allErrors: true }).compile(infrastructureSchema);
+  const validateLogistics = new Ajv2020({ allErrors: true }).compile(logisticsSchema);
 
   const registryAccepts = (raw: RawBundle): boolean => {
     try {
@@ -430,6 +496,54 @@ describe('nové polia: schéma ⇔ DefRegistry', () => {
       const raw = rawDefs();
       raw.infrastructure[layer] = value;
       expect(registryAccepts(raw)).toBe(validateInfrastructure(raw.infrastructure));
+    });
+  });
+
+  describe('logistics', () => {
+    const congestion = (raw: RawBundle): Record<string, unknown> => raw.logistics['congestion'] as Record<string, unknown>;
+
+    it.each(VALUES)('defaultInternalTicks = %j', (value) => {
+      const raw = rawDefs();
+      raw.logistics['defaultInternalTicks'] = value;
+      expect(registryAccepts(raw)).toBe(validateLogistics(raw.logistics));
+    });
+
+    it.each(VALUES)('repathIntervalTicks = %j', (value) => {
+      const raw = rawDefs();
+      raw.logistics['repathIntervalTicks'] = value;
+      expect(registryAccepts(raw)).toBe(validateLogistics(raw.logistics));
+    });
+
+    it.each(['trafficDecayPerHour', 'slowdownPerExtraVehicle', 'penaltyTrafficDivisor', 'penaltyMax'])('congestion.%s', (key) => {
+      for (const [value] of VALUES) {
+        const raw = rawDefs();
+        congestion(raw)[key] = value;
+        expect(registryAccepts(raw), `${key} = ${JSON.stringify(value)}`).toBe(validateLogistics(raw.logistics));
+      }
+    });
+
+    it.each(VALUES)('celý objekt congestion = %j', (value) => {
+      const raw = rawDefs();
+      raw.logistics['congestion'] = value;
+      expect(registryAccepts(raw)).toBe(validateLogistics(raw.logistics));
+    });
+
+    it('chýbajúce alebo prebytočné kľúče: rovnaký verdikt', () => {
+      const missing = rawDefs();
+      delete congestion(missing)['penaltyMax'];
+      expect(registryAccepts(missing)).toBe(validateLogistics(missing.logistics));
+      expect(registryAccepts(missing)).toBe(false);
+
+      const extra = rawDefs();
+      congestion(extra)['bonus'] = 1;
+      expect(registryAccepts(extra)).toBe(validateLogistics(extra.logistics));
+      expect(registryAccepts(extra)).toBe(false);
+    });
+
+    it('bundled logistics.json prejde schémou aj registry', () => {
+      const raw = rawDefs();
+      expect(validateLogistics(raw.logistics)).toBe(true);
+      expect(registryAccepts(raw)).toBe(true);
     });
   });
 

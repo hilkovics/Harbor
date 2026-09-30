@@ -1,6 +1,6 @@
 /**
  * Pravidlá špecifické pre `modules.json`: typované `params` podľa `kind` (`MODULE_PARAM_SPECS`, tabuľka — nie `switch`),
- * typované gettery `berthParams` / `craneParams` a kontroly vzťahov medzi poľami modulu (konektor vo footprinte,
+ * typované gettery `berthParams` / `craneParams` / `storageParams` / `depotParams` a kontroly vzťahov medzi poľami modulu (konektor vo footprinte,
  * berth vyžaduje `waterSide`). Nový druh modulu s parametrami = nový typ v `ModuleParamsByKind` + riadok v tabuľke.
  */
 import { DefError } from './def-error';
@@ -20,10 +20,12 @@ import {
   MODULE_KINDS,
   type BerthParams,
   type CraneParams,
+  type DepotParams,
   type ModuleDef,
   type ModuleKind,
   type ModuleParams,
   type ModuleParamsByKind,
+  type StorageParams,
 } from './types';
 
 /** Tvar `params` pre každý druh modulu; kompilátor ohlási druh bez riadku aj riadok s nesprávnymi poľami. */
@@ -39,11 +41,19 @@ export const MODULE_PARAM_SPECS: { readonly [K in ModuleKind]: SpecTable<ModuleP
     cycleTicks: { kind: 'integer', min: 2 },
     category: { kind: 'enum', values: CARGO_CATEGORIES },
   },
-  storage: {},
+  storage: {
+    capacityUnits: { kind: 'integer', min: 1 },
+    category: { kind: 'enum', values: CARGO_CATEGORIES },
+    // Vnútorný čas vozidla v module (§7.3 bod 4); chýba = `logistics.defaultInternalTicks`.
+    internalTicks: { kind: 'integer', min: 0, optional: true },
+  },
   gate: {},
   waiting_area: {},
   ramp: {},
-  depot: {},
+  depot: {
+    capacity: { kind: 'integer', min: 1 },
+    internalTicks: { kind: 'integer', min: 0, optional: true },
+  },
   rail_station: {},
   pipeline: {},
 };
@@ -104,10 +114,14 @@ export function checkModuleItem(item: Readonly<Record<string, unknown>>, path: s
 
 const isBerthParams = (value: unknown): value is BerthParams => matchesFields(value, MODULE_PARAM_SPECS.berth);
 const isCraneParams = (value: unknown): value is CraneParams => matchesFields(value, MODULE_PARAM_SPECS.crane);
+const isStorageParams = (value: unknown): value is StorageParams => matchesFields(value, MODULE_PARAM_SPECS.storage);
+const isDepotParams = (value: unknown): value is DepotParams => matchesFields(value, MODULE_PARAM_SPECS.depot);
 
 // Defy sú zmrazené a po validácii nemenné, takže overený výsledok sa dá uložiť podľa identity `params`.
 const berthParamsCache = new WeakMap<ModuleParams, BerthParams>();
 const craneParamsCache = new WeakMap<ModuleParams, CraneParams>();
+const storageParamsCache = new WeakMap<ModuleParams, StorageParams>();
+const depotParamsCache = new WeakMap<ModuleParams, DepotParams>();
 
 function typedParams<K extends ModuleKind>(
   def: ModuleDef,
@@ -136,4 +150,14 @@ export function berthParams(def: ModuleDef): BerthParams {
 /** Parametre žeriava; def iného druhu → `DefError`. */
 export function craneParams(def: ModuleDef): CraneParams {
   return typedParams(def, 'crane', isCraneParams, craneParamsCache);
+}
+
+/** Parametre skladu; def iného druhu → `DefError`. */
+export function storageParams(def: ModuleDef): StorageParams {
+  return typedParams(def, 'storage', isStorageParams, storageParamsCache);
+}
+
+/** Parametre depa vozidiel; def iného druhu → `DefError`. */
+export function depotParams(def: ModuleDef): DepotParams {
+  return typedParams(def, 'depot', isDepotParams, depotParamsCache);
 }

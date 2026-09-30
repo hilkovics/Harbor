@@ -7,15 +7,17 @@
  * jedinečnosť `id` v katalógoch a vzťahy medzi poľami (konektor vo footprinte). Generický kód je v `def-spec.ts`,
  * pravidlá sú tabuľky nižšie (`FieldTable`, `SpecTable`).
  *
- * Konfiguračné defy (`time`, `economy`, `infrastructure`) sú jeden objekt, katalógové (`cargo_types`, `modules`,
- * `ships`) majú `items: [...]` (ADR-009) a vystavujú sa ako `Catalog`.
+ * Konfiguračné defy (`time`, `economy`, `infrastructure`, `logistics`) sú jeden objekt, katalógové (`cargo_types`,
+ * `modules`, `ships`, `vehicles`) majú `items: [...]` (ADR-009) a vystavujú sa ako `Catalog`.
  */
 import cargoTypesJson from '@data/defs/cargo_types.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
+import logisticsJson from '@data/defs/logistics.json';
 import modulesJson from '@data/defs/modules.json';
 import shipsJson from '@data/defs/ships.json';
 import timeJson from '@data/defs/time.json';
+import vehiclesJson from '@data/defs/vehicles.json';
 import { SECONDS_PER_MINUTE } from '../core/sim-clock';
 import { TERRAIN_TYPES } from '../grid/terrain';
 import { validateCatalog, type Catalog } from './catalog';
@@ -43,13 +45,16 @@ import {
   SIDES,
   SUPPORTED_SCHEMA_VERSION,
   type CargoTypeDef,
+  type CongestionDef,
   type DefBase,
   type EconomyDef,
   type InfrastructureDef,
   type InfrastructureLayerDef,
+  type LogisticsDef,
   type ModuleDef,
   type ShipClassDef,
   type TimeDef,
+  type VehicleDef,
 } from './types';
 
 export { DefError };
@@ -92,11 +97,26 @@ const INFRASTRUCTURE_FIELDS: FieldTable<InfrastructureDef> = {
   rail: { kind: 'object', fields: INFRASTRUCTURE_LAYER_FIELDS },
 };
 
+/** Konštanty kongescie (§7.6); hodnoty použije až F11, tabuľka zrkadlí `logistics.schema.json`. */
+const CONGESTION_FIELDS: SpecTable<CongestionDef> = {
+  trafficDecayPerHour: { kind: 'number', min: 0, max: 1 },
+  slowdownPerExtraVehicle: { kind: 'number', min: 0 },
+  penaltyTrafficDivisor: { kind: 'number', exclusiveMin: 0 },
+  penaltyMax: { kind: 'number', min: 0 },
+};
+
+const LOGISTICS_FIELDS: FieldTable<LogisticsDef> = {
+  defaultInternalTicks: { kind: 'integer', min: 0 },
+  repathIntervalTicks: { kind: 'integer', min: 1 },
+  congestion: { kind: 'object', fields: CONGESTION_FIELDS },
+};
+
 /** Tabuľky konfiguračných defov; kľúč je názov defu (= názov súboru bez `.json`). */
 const DEF_FIELDS = {
   time: TIME_FIELDS,
   economy: ECONOMY_FIELDS,
   infrastructure: INFRASTRUCTURE_FIELDS,
+  logistics: LOGISTICS_FIELDS,
 } as const;
 
 // Katalógové defy (ADR-009): tabuľka polí jednej položky; `id` je vždy prvé pole.
@@ -161,7 +181,21 @@ const SHIP_CLASS_FIELDS: SpecTable<ShipClassDef> = {
   techRequired: { kind: 'string', pattern: SNAKE_CASE_ID, patternName: 'snake_case identifikátor', optional: true },
 };
 
-type DefName = keyof typeof DEF_FIELDS | 'cargo_types' | 'modules' | 'ships';
+const VEHICLE_FIELDS: SpecTable<VehicleDef> = {
+  id: ID_FIELD,
+  displayName: TEXT_FIELD,
+  capacityUnits: { kind: 'integer', min: 1 },
+  speedCellsPerTick: { kind: 'number', exclusiveMin: 0 },
+  // Load/unload jednej jednotky musí trvať aspoň tick, inak by sekvencia jednotiek (§7.3 bod 4) nemala krok.
+  loadTicks: { kind: 'integer', min: 1 },
+  unloadTicks: { kind: 'integer', min: 1 },
+  cargoCategories: { kind: 'array', minItems: 1, unique: true, item: { kind: 'enum', values: CARGO_CATEGORIES } },
+  purchaseCents: { kind: 'integer', min: 0 },
+  wagePerDayCents: { kind: 'integer', min: 0 },
+  techRequired: { kind: 'string', pattern: SNAKE_CASE_ID, patternName: 'snake_case identifikátor', optional: true },
+};
+
+type DefName = keyof typeof DEF_FIELDS | 'cargo_types' | 'modules' | 'ships' | 'vehicles';
 
 // ---------------------------------------------------------------------------------------------------------
 // Validácia konfiguračného defu
@@ -212,6 +246,8 @@ export class DefRegistry {
     private readonly cargoTypesCatalog: Catalog<Readonly<CargoTypeDef>>,
     private readonly modulesCatalog: Catalog<Readonly<ModuleDef>>,
     private readonly shipsCatalog: Catalog<Readonly<ShipClassDef>>,
+    private readonly vehiclesCatalog: Catalog<Readonly<VehicleDef>>,
+    private readonly logisticsDef: Readonly<LogisticsDef>,
   ) {}
 
   /** Zvaliduje surové defy (fail-fast, `DefError`) a zostaví register so zmrazenými objektmi. */
@@ -223,6 +259,8 @@ export class DefRegistry {
       validateCatalog<CargoTypeDef>('cargo_types', raw.cargo_types, { fields: CARGO_TYPE_FIELDS }),
       validateCatalog<ModuleDef>('modules', raw.modules, { fields: MODULE_FIELDS, extraKeys: ['params'], check: checkModuleItem }),
       validateCatalog<ShipClassDef>('ships', raw.ships, { fields: SHIP_CLASS_FIELDS }),
+      validateCatalog<VehicleDef>('vehicles', raw.vehicles, { fields: VEHICLE_FIELDS }),
+      validateDef<LogisticsDef>('logistics', raw.logistics, DEF_FIELDS.logistics),
     );
   }
 
@@ -246,7 +284,10 @@ export class DefRegistry {
     return this.cargoTypesCatalog;
   }
 
-  /** `modules.json` (§4.2, §5.3): moduly; typované parametre cez `berthParams(def)` / `craneParams(def)`. */
+  /**
+   * `modules.json` (§4.2, §5.3): moduly; typované parametre cez `berthParams(def)` / `craneParams(def)` /
+   * `storageParams(def)` / `depotParams(def)`.
+   */
   get modules(): Catalog<Readonly<ModuleDef>> {
     return this.modulesCatalog;
   }
@@ -254,6 +295,16 @@ export class DefRegistry {
   /** `ships.json` (§4.3): triedy lodí. */
   get ships(): Catalog<Readonly<ShipClassDef>> {
     return this.shipsCatalog;
+  }
+
+  /** `vehicles.json` (§4.4): interné vozidlá (straddle carrier, …). */
+  get vehicles(): Catalog<Readonly<VehicleDef>> {
+    return this.vehiclesCatalog;
+  }
+
+  /** `logistics.json` (§4.6, ADR-010): vnútorný čas v moduloch, opakovanie hľadania cesty, konštanty kongescie. */
+  get logistics(): Readonly<LogisticsDef> {
+    return this.logisticsDef;
   }
 }
 
@@ -266,5 +317,7 @@ export function loadBundledDefs(): DefRegistry {
     cargo_types: cargoTypesJson,
     modules: modulesJson,
     ships: shipsJson,
+    vehicles: vehiclesJson,
+    logistics: logisticsJson,
   });
 }

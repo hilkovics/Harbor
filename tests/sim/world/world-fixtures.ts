@@ -3,10 +3,12 @@
 import cargoTypesJson from '@data/defs/cargo_types.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
+import logisticsJson from '@data/defs/logistics.json';
 import modulesJson from '@data/defs/modules.json';
 import harbor01Json from '@data/maps/harbor_01.json';
 import shipsJson from '@data/defs/ships.json';
 import timeJson from '@data/defs/time.json';
+import vehiclesJson from '@data/defs/vehicles.json';
 import type { Command, SerializedCommand, ValidationReason, ValidationResult } from '@sim/commands';
 import { DefRegistry, loadBundledDefs } from '@sim/defs';
 import { loadBundledMap, loadMap, parseMapDef, type CellCoord, type Grid, type LoadedMap } from '@sim/grid';
@@ -21,6 +23,8 @@ export const RAW_DEFS = {
   cargo_types: cargoTypesJson,
   modules: modulesJson,
   ships: shipsJson,
+  vehicles: vehiclesJson,
+  logistics: logisticsJson,
 };
 /** Zdieľaná mapa — testy overujú, že ju žiadny svet nezmení. */
 export const MAP: LoadedMap = loadBundledMap();

@@ -55,7 +55,7 @@ const STORAGE_DEFS = DefRegistry.fromRaw({
         connectors: [],
         costCents: 1,
         maintenancePerDayCents: 0,
-        params: {},
+        params: { capacityUnits: 64, category: 'container' },
       },
     ],
   },

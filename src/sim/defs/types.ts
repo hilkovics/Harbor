@@ -66,6 +66,30 @@ export interface InfrastructureDef extends DefBase {
   readonly rail: InfrastructureLayerDef;
 }
 
+/** Konštanty kongescie (§7.6): cena bunky v A* a spomalenie vozidiel rastú s `cell.traffic` (použité od F11). */
+export interface CongestionDef {
+  /** Násobiteľ `cell.traffic` pri každom HourClosed (0 = okamžitý reset, 1 = bez útlmu). */
+  readonly trafficDecayPerHour: number;
+  /** Spomalenie vozidla za každé ďalšie vozidlo na bunke. */
+  readonly slowdownPerExtraVehicle: number;
+  /** Delenie `cell.traffic` pri výpočte penalizácie ceny bunky v A*. */
+  readonly penaltyTrafficDivisor: number;
+  /** Strop penalizácie ceny bunky v A*. */
+  readonly penaltyMax: number;
+}
+
+/**
+ * `logistics.json` — logistické konštanty (ARCHITECTURE §4.6, §7.3, §7.6; ADR-010). Konfiguračný def (ADR-009);
+ * všetky trvania sú v tickoch.
+ */
+export interface LogisticsDef extends DefBase {
+  /** Predvolený vnútorný čas vozidla v module pred load/unload; modul ho prepíše `params.internalTicks`. */
+  readonly defaultInternalTicks: number;
+  /** Po koľkých tickoch skúša vozidlo bez cesty (`no_path`) hľadať cestu znova. */
+  readonly repathIntervalTicks: number;
+  readonly congestion: CongestionDef;
+}
+
 // ---------------------------------------------------------------------------------------------------------
 // Katalógové defy (ADR-009): `{ schemaVersion, items: [...] }`, položka má `id` v snake_case.
 // ---------------------------------------------------------------------------------------------------------
@@ -134,7 +158,10 @@ export interface ModulePlacementDef {
   readonly mustAttachTo?: readonly ModuleKind[];
 }
 
-/** Voľné parametre modulu; tvar podľa `kind` overuje `MODULE_PARAM_SPECS`, typované gettery sú `berthParams` a `craneParams`. */
+/**
+ * Voľné parametre modulu; tvar podľa `kind` overuje `MODULE_PARAM_SPECS`, typované gettery sú `berthParams`,
+ * `craneParams`, `storageParams` a `depotParams`.
+ */
 export type ModuleParams = Readonly<Record<string, number | string>>;
 
 /** Položka `modules.json` (§4.2, §5.3). */
@@ -172,6 +199,24 @@ export interface CraneParams {
   readonly category: CargoCategory;
 }
 
+/** `params` skladu (`kind: 'storage'`). */
+export interface StorageParams {
+  /** Kapacita v CargoUnit; pre kontajnerový dvor `slots × layers` v manifeste. */
+  readonly capacityUnits: number;
+  /** Kategória nákladu, ktorú sklad prijíma. */
+  readonly category: CargoCategory;
+  /** Vnútorný čas vozidla v module (§7.3 bod 4); chýba = `logistics.defaultInternalTicks`. */
+  readonly internalTicks?: number;
+}
+
+/** `params` depa vozidiel (`kind: 'depot'`). */
+export interface DepotParams {
+  /** Počet státí (vozidiel) v depe; `stalls` v manifeste. */
+  readonly capacity: number;
+  /** Vnútorný čas vozidla v module (§7.3 bod 4); chýba = `logistics.defaultInternalTicks`. */
+  readonly internalTicks?: number;
+}
+
 /** Druh bez typovaných parametrov (zatiaľ ostatné kind-y): `params` musí byť `{}`. */
 export type NoParams = Readonly<Record<never, never>>;
 
@@ -179,11 +224,11 @@ export type NoParams = Readonly<Record<never, never>>;
 export interface ModuleParamsByKind {
   readonly berth: BerthParams;
   readonly crane: CraneParams;
-  readonly storage: NoParams;
+  readonly storage: StorageParams;
   readonly gate: NoParams;
   readonly waiting_area: NoParams;
   readonly ramp: NoParams;
-  readonly depot: NoParams;
+  readonly depot: DepotParams;
   readonly rail_station: NoParams;
   readonly pipeline: NoParams;
 }
@@ -203,5 +248,23 @@ export interface ShipClassDef {
   readonly cargoCategories: readonly CargoCategory[];
   /** Koľko tickov smie loď stáť pri kotvisku bez demurrage. */
   readonly berthAllowanceTicks: number;
+  readonly techRequired?: string;
+}
+
+/** Položka `vehicles.json` (§4.4): interné vozidlo (straddle carrier, …). Sprite je `entities.<id>` v manifeste. */
+export interface VehicleDef {
+  readonly id: string;
+  readonly displayName: string;
+  /** Kapacita v CargoUnit (koľko jednotiek vezie naraz). */
+  readonly capacityUnits: number;
+  /** Rýchlosť jazdy v bunkách za tick. */
+  readonly speedCellsPerTick: number;
+  /** Trvanie naloženia jednej jednotky v tickoch (sekvenčne po `internalTicks`, §7.3). */
+  readonly loadTicks: number;
+  /** Trvanie vyloženia jednej jednotky v tickoch (sekvenčne po `internalTicks`, §7.3). */
+  readonly unloadTicks: number;
+  readonly cargoCategories: readonly CargoCategory[];
+  readonly purchaseCents: number;
+  readonly wagePerDayCents: number;
   readonly techRequired?: string;
 }

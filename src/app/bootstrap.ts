@@ -3,7 +3,8 @@
  *
  * Tok dát:
  *   vstup → InputController → Command → SimBridge.dispatch → World (applyPending v GameLoop)
- *   World → udalosti → SimBridge.onEvents → WorldRenderer (RoadChanged) ; snapshot → useSimSnapshot → HUD
+ *   World → udalosti → SimBridge.onEvents → WorldRenderer (RoadChanged) ; snapshot → useSimSnapshot → HUD, BuildBar
+ *   World → SimBridge.entities() (EntitiesVM) → WorldRenderer.syncEntities(vm, alpha) každý frame (moduly, žeriavy, lode)
  *
  * Herný stav (World, GameLoop, Pixi) žije mimo Reactu — React je len vrstva nad mapou, takže StrictMode ani
  * opätovné vykreslenia hru nezdvojujú.
@@ -11,9 +12,9 @@
 import { StrictMode, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { WorldRenderer, starterParcelRect } from '@render/world-renderer';
-import { BuildLayer } from '@render/build-layer';
 import type { World } from '@sim/world';
 import { App } from './app';
+import { BuildSelection } from './build-selection';
 import { createAppWorld, startViewCenter } from './config';
 import { installDevHook } from './dev-hook';
 import { attachDomInput } from './dom-input';
@@ -27,6 +28,8 @@ export interface AppHandle {
   readonly loop: GameLoop;
   readonly renderer: WorldRenderer;
   readonly input: InputController;
+  /** Výber v BuildBar (`selectedDefId`); build mód modulov (T02-10) ho odoberá cez `subscribe`. */
+  readonly selection: BuildSelection;
   /** Zastaví slučku, odpojí vstup, zruší React strom a Pixi a odstráni DOM aplikácie. */
   destroy(): void;
 }
@@ -70,7 +73,6 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
   root.replaceChildren(shell);
 
   let renderer: WorldRenderer;
-  let buildLayer: BuildLayer;
   try {
     // Renderer kreslí ŽIVÚ mriežku sveta (vrátane postavených ciest) a živé parcely, nie šablónu mapy `world.map`.
     renderer = await WorldRenderer.create({
@@ -79,17 +81,10 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
       grid: world.grid,
       parcels: [...world.parcels.values()], // živé parcely: obrysy podľa aktuálneho `ownership`
     });
-    try {
-      buildLayer = await BuildLayer.create();
-    } catch (error) {
-      renderer.destroy();
-      throw error;
-    }
   } catch (error) {
     showFatal(shell, error);
     throw error;
   }
-  renderer.world.addChild(buildLayer.view);
 
   // Úvodný pohľad: stred starter parcely, ale zvislo posunutý tak, aby bolo vidno pobrežie a more nad ním (nie len HUD).
   const { camera } = renderer;
@@ -97,10 +92,12 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
   const startCenter = startViewCenter(world.grid, starterParcelRect(world.map), visibleRows);
   camera.centerOn(startCenter.x, startCenter.y);
 
+  // Ghost stavby kreslí `renderer.build` (jediná `BuildLayer`, nad žeriavmi); cesty aj moduly.
+  const selection = new BuildSelection();
   const input = new InputController({
     bridge,
     camera: renderer.camera,
-    ghost: buildLayer,
+    ghost: renderer.build,
     onStateChange: (state) => {
       mapHost.dataset.inputState = state;
     },
@@ -113,8 +110,11 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
       if (event.type === 'RoadChanged') renderer.updateRoads(event.cells);
     }
   });
-  const stopLoop = startRafLoop(loop, (_alpha, _events, dtMs) => {
+  // Starter moduly (Root berth + žeriav) nemajú udalosť `ModulePlaced` — prvý stav sa číta priamo zo sveta.
+  renderer.syncEntities(bridge.entities(), 0);
+  const stopLoop = startRafLoop(loop, (alpha, _events, dtMs) => {
     input.update(dtMs);
+    renderer.syncEntities(bridge.entities(), alpha);
   });
 
   installDevHook(bridge, {
@@ -123,10 +123,15 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
       const rect = renderer.app.canvas.getBoundingClientRect();
       return { x: rect.left + center.x, y: rect.top + center.y };
     },
+    rendered: () => ({
+      modules: renderer.modules.moduleCount,
+      cranes: renderer.cranes.craneCount,
+      ships: renderer.ships.shipCount,
+    }),
   });
 
   const reactRoot = createRoot(uiHost);
-  reactRoot.render(createElement(StrictMode, null, createElement(App, { bridge, feedback: input })));
+  reactRoot.render(createElement(StrictMode, null, createElement(App, { bridge, feedback: input, selection })));
 
   let destroyed = false;
   return {
@@ -135,6 +140,7 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
     loop,
     renderer,
     input,
+    selection,
     destroy() {
       if (destroyed) return;
       destroyed = true;
@@ -143,7 +149,6 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
       detachInput();
       input.dispose();
       reactRoot.unmount();
-      buildLayer.destroy();
       renderer.destroy();
       shell.remove();
       if (window.__sim?.bridge === bridge) delete window.__sim;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   APP_MAP_ID,
+  APP_WORLD_OPTIONS,
   GAME_SEED,
   KEY_PAN_MAX_DT_MS,
   KEY_PAN_PX_PER_SECOND,
@@ -30,6 +31,19 @@ describe('config aplikácie', () => {
     expect(a.cashCents).toBe(a.defs.economy.startingCashCents);
     expect(JSON.stringify(a.serialize())).toBe(JSON.stringify(b.serialize()));
     expect(a.serialize().seed).toBe(GAME_SEED);
+  });
+
+  it('invarianty sveta (krok 12) sa riadia buildom: zapnuté v DEV, v produkcii vypnuté', () => {
+    expect(APP_WORLD_OPTIONS.checkInvariants).toBe(import.meta.env.DEV);
+    expect(createAppWorld().checkInvariants).toBe(import.meta.env.DEV);
+    expect(createAppWorld(GAME_SEED, { checkInvariants: false }).checkInvariants).toBe(false);
+    expect(createAppWorld(GAME_SEED, { checkInvariants: true }).checkInvariants).toBe(true);
+  });
+
+  it('nová hra má Root modul (berth id 1 + žeriav id 2) a žiadnu loď', () => {
+    const world = createAppWorld();
+    expect([...world.modules.values()].map((module) => `${String(module.id)}:${module.def.id}`)).toEqual(['1:berth_standard', '2:crane_container_gantry']);
+    expect(world.ships.size).toBe(0);
   });
 
   it('živá mriežka sveta je samostatná kópia (šablóna mapy sa nemení)', () => {

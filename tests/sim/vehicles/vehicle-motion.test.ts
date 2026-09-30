@@ -95,6 +95,19 @@ describe('Vehicle — trasa a advance', () => {
     }
   });
 
+  it('routeCellAt(i) = remainingRoute()[i] bez kópie; mimo rozsahu undefined (T03-14)', () => {
+    const vehicle = vehicleOn([idx(10, 5), idx(11, 5), idx(12, 5), idx(13, 5)]);
+    vehicle.advance(1.25, WIDTH);
+    const rest = vehicle.remainingRoute();
+    expect(Array.from({ length: vehicle.cellsAhead + 1 }, (_, i) => vehicle.routeCellAt(i))).toEqual(rest);
+    expect([vehicle.routeCellAt(-1), vehicle.routeCellAt(rest.length), vehicle.routeCellAt(0), vehicle.routeCellAt(1)]).toEqual([
+      undefined,
+      undefined,
+      vehicle.cell,
+      vehicle.nextCell,
+    ]);
+  });
+
   it('toState nesie zvyšok trasy od aktuálnej bunky, progres, odpočet a príznak preplánovania', () => {
     const vehicle = vehicleOn([idx(10, 5), idx(11, 5), idx(12, 5), idx(13, 5)]);
     vehicle.advance(1.25, WIDTH);

@@ -152,6 +152,17 @@ describe('invarianty jobov (krok 12)', () => {
     expect(world.vehicles.get(vehicle)?.state).toBe('to_pickup');
   });
 
+  it('dva joby s tým istým slotom a rezervácia navyše: počty sedia, súčty slotov rozpor odhalia (T03-14)', () => {
+    const { world, yard, units } = jobWorld([0, 1]);
+    const first = openJob(world, yard, units[0]);
+    const from = world.cargo.get(units[1])?.location;
+    if (from === undefined) throw new Error('jednotka');
+    world.addJob(new TransportJob({ id: world.ids.next(), unitIds: [units[1]], from, to: first.to, createdTick: 0 }));
+    expect(yard.reserve()).toBe(1);
+    expect(yard.reservedCount).toBe(world.jobs.size);
+    expect(findWorldViolation(world)).toMatch(/rezervované sloty \[0, 1\] ≠ sloty aktívnych jobov \[0, 0\]/);
+  });
+
   it('jednotka jobu open mimo zdroja (presun bez vozidla) → porušenie', () => {
     const { world, yard, units } = jobWorld([0]);
     openJob(world, yard, units[0]);

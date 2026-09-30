@@ -244,6 +244,14 @@ export class Vehicle {
   }
 
   /**
+   * Bunka zvyšku trasy na pozícii `offset` bez kópie (`0` = `cell`, `1` = `nextCell`, … `cellsAhead`); mimo rozsahu
+   * `undefined`. Rovnaké bunky ako `remainingRoute()[offset]` — krok 12 ňou prechádza trasu bez alokácie.
+   */
+  routeCellAt(offset: number): number | undefined {
+    return offset < 0 ? undefined : this.route[this.routeIndex + offset];
+  }
+
+  /**
    * Prechod podľa `VEHICLE_TRANSITIONS` (dispatcher, `VehicleSystem`); udalosť `VehicleStateChanged` emituje volajúci
    * (`changeVehicleState`). Nepovolený prechod → `VehicleError('invalid_transition')`, vozidlo sa nezmení.
    */

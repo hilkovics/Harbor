@@ -98,14 +98,23 @@ export interface VehicleMotionProblem {
   readonly problem: string;
 }
 
+/**
+ * Zvyšok trasy vozidla (`[cell, …]`) sa v kroku 12 číta cez `Vehicle.routeCellAt` bez kópie (review T03-13); pozícia
+ * `i` v pomocníkoch nižšie = `routeCellAt(i)`, dĺžka = `cellsAhead + 1`. Bunka mimo rozsahu nenastane (`i < dĺžka`).
+ */
+function routeCell(vehicle: Vehicle, offset: number): number {
+  return vehicle.routeCellAt(offset) ?? -1;
+}
+
 /** Úsek trasy vedie po susedných bunkách mriežky (4-susednosť) v jej rozsahu. */
-function routeProblem(world: World, route: readonly number[]): string | undefined {
+function routeProblem(world: World, vehicle: Vehicle): string | undefined {
   const { width, cellCount } = world.grid;
-  for (let i = 0; i < route.length; i++) {
-    const cell = route[i];
+  const length = vehicle.cellsAhead + 1;
+  for (let i = 0; i < length; i++) {
+    const cell = routeCell(vehicle, i);
     if (cell >= cellCount) return `bunka ${String(cell)} je mimo mapy`;
     if (i === 0) continue;
-    const previous = route[i - 1];
+    const previous = routeCell(vehicle, i - 1);
     const dx = Math.abs((cell % width) - (previous % width));
     const dy = Math.abs((cell - (cell % width)) / width - (previous - (previous % width)) / width);
     if (dx + dy !== 1) return `bunky ${String(previous)} → ${String(cell)} nie sú susedné`;
@@ -113,21 +122,24 @@ function routeProblem(world: World, route: readonly number[]): string | undefine
   return undefined;
 }
 
-/** Sú všetky bunky trasy od `from` cestné? */
-function allRoads(world: World, route: readonly number[], from: number, to: number): number | undefined {
-  for (let i = from; i < to; i++) if (world.grid.atIndex(route[i]).road !== 'road') return route[i];
+/** Prvá bunka trasy na pozíciách `from … to − 1` bez cesty, inak `undefined`. */
+function allRoads(world: World, vehicle: Vehicle, from: number, to: number): number | undefined {
+  for (let i = from; i < to; i++) {
+    const cell = routeCell(vehicle, i);
+    if (world.grid.atIndex(cell).road !== 'road') return cell;
+  }
   return undefined;
 }
 
 /**
- * Prvý krok trasy `route[i − 1] → route[i]` pre `i < to`, ktorý porušuje smer jednosmerky (`isRoadStepAllowed`, ADR-020);
- * index jeho cieľovej bunky v trase, inak `undefined`. Susednosť overil `routeProblem`.
+ * Prvý krok trasy `i − 1 → i` pre `i < to`, ktorý porušuje smer jednosmerky (`isRoadStepAllowed`, ADR-020); pozícia
+ * jeho cieľovej bunky v trase, inak `undefined`. Susednosť overil `routeProblem`.
  */
-function wrongWayStep(world: World, route: readonly number[], to: number): number | undefined {
+function wrongWayStep(world: World, vehicle: Vehicle, to: number): number | undefined {
   const { width } = world.grid;
   for (let i = 1; i < to; i++) {
-    const a = route[i - 1];
-    const b = route[i];
+    const a = routeCell(vehicle, i - 1);
+    const b = routeCell(vehicle, i);
     const direction = directionOfStep((b % width) - (a % width), (b - (b % width)) / width - (a - (a % width)) / width);
     if (direction === undefined || !isRoadStepAllowed(world.grid.atIndex(a), world.grid.atIndex(b), direction)) return i;
   }
@@ -140,6 +152,11 @@ function destinationOf(world: World, vehicle: Vehicle): Module | undefined {
   const job = destination === null || vehicle.jobId === null ? undefined : world.jobs.get(vehicle.jobId);
   if (job === undefined || destination === null) return undefined;
   return world.modules.get(destination === 'source' ? job.fromModuleId : job.toModuleId);
+}
+
+/** Popis vozidla do správy o porušení — skladá sa až pri porušení (krok 12 overuje každé vozidlo v každom ticku). */
+function whereOf(vehicle: Vehicle): string {
+  return `${vehicle.label} v stave '${vehicle.state}'`;
 }
 
 /** Kardinálny kurz úseku `from → to` (susedné bunky); nulový úsek → `null`. */
@@ -161,51 +178,50 @@ function segmentHeadingOf(width: number, from: number, to: number): Rotation | n
  * existovať (overí sa skôr, `checkVehicle` / `restoreJobs`).
  */
 export function vehicleMotionProblem(world: World, vehicle: Vehicle): VehicleMotionProblem | undefined {
-  const route = vehicle.remainingRoute();
   const traits = VEHICLE_STATE_TRAITS[vehicle.state];
-  const where = `${vehicle.label} v stave '${vehicle.state}'`;
   if (!isValidProgress(vehicle.progress)) {
-    return { field: 'progress', problem: `${where}: progres ${String(vehicle.progress)} musí byť 0 alebo v (PROGRESS_NOISE, 1)` };
+    return { field: 'progress', problem: `${whereOf(vehicle)}: progres ${String(vehicle.progress)} musí byť 0 alebo v (PROGRESS_NOISE, 1)` };
   }
-  const shape = routeProblem(world, route);
-  if (shape !== undefined) return { field: 'route', problem: `${where}: trasa — ${shape}` };
+  const shape = routeProblem(world, vehicle);
+  if (shape !== undefined) return { field: 'route', problem: `${whereOf(vehicle)}: trasa — ${shape}` };
   const expected = vehiclePosition(vehicle.cell, vehicle.nextCell, vehicle.progress, world.grid.width);
   if (expected.x !== vehicle.x || expected.y !== vehicle.y) {
-    return { field: 'x', problem: `${where}: poloha (${String(vehicle.x)}, ${String(vehicle.y)}) ≠ poloha na trase (${String(expected.x)}, ${String(expected.y)})` };
+    return { field: 'x', problem: `${whereOf(vehicle)}: poloha (${String(vehicle.x)}, ${String(vehicle.y)}) ≠ poloha na trase (${String(expected.x)}, ${String(expected.y)})` };
   }
   const module = destinationOf(world, vehicle);
   const ahead = vehicle.cellsAhead;
+  const length = ahead + 1;
   const moving = vehicle.progress > 0;
   const next = vehicle.nextCell;
   if (moving && next !== undefined && segmentHeadingOf(world.grid.width, vehicle.cell, next) !== vehicle.heading) {
-    return { field: 'heading', problem: `${where}: kurz ${String(vehicle.heading)} nezodpovedá rozbehnutému úseku ${String(vehicle.cell)} → ${String(next)}` };
+    return { field: 'heading', problem: `${whereOf(vehicle)}: kurz ${String(vehicle.heading)} nezodpovedá rozbehnutému úseku ${String(vehicle.cell)} → ${String(next)}` };
   }
-  if (traits.motion === 'park' && ahead !== 0) return { field: 'route', problem: `${where} stojí, ale má pred sebou ${String(ahead)} buniek trasy` };
+  if (traits.motion === 'park' && ahead !== 0) return { field: 'route', problem: `${whereOf(vehicle)} stojí, ale má pred sebou ${String(ahead)} buniek trasy` };
   if (traits.motion === 'drive' && ahead === 0 && (module === undefined || !isAccessCell(world.grid, module, vehicle.cell))) {
-    return { field: 'route', problem: `${where} nemá trasu (žiadna cieľová bunka) a nestojí pri cieli` };
+    return { field: 'route', problem: `${whereOf(vehicle)} nemá trasu (žiadna cieľová bunka) a nestojí pri cieli` };
   }
   if (traits.motion === 'halt' && (ahead > 1 || (ahead === 1) !== moving)) {
-    return { field: 'route', problem: `${where}: bez cesty smie mať len rozbehnutý úsek, má ${String(ahead)} buniek pred sebou (progres ${String(vehicle.progress)})` };
+    return { field: 'route', problem: `${whereOf(vehicle)}: bez cesty smie mať len rozbehnutý úsek, má ${String(ahead)} buniek pred sebou (progres ${String(vehicle.progress)})` };
   }
-  if (traits.waits !== vehicle.waitTicks > 0) return { field: 'waitTicks', problem: `${where}: waitTicks ${String(vehicle.waitTicks)} ${traits.waits ? 'musí byť ≥ 1' : 'musí byť 0'}` };
-  if (vehicle.replanPending && traits.motion !== 'drive') return { field: 'replan', problem: `${where}: preplánovanie čaká len pri jazde` };
-  const offRoad = allRoads(world, route, 0, moving ? 2 : 1);
-  if (offRoad !== undefined) return { field: 'route', problem: `${where} stojí na bunke ${String(offRoad)} bez cesty` };
-  if (moving && wrongWayStep(world, route, 2) !== undefined) {
-    return { field: 'route', problem: `${where}: rozbehnutý úsek ${String(route[0])} → ${String(route[1])} ide proti smeru jednosmerky` };
+  if (traits.waits !== vehicle.waitTicks > 0) return { field: 'waitTicks', problem: `${whereOf(vehicle)}: waitTicks ${String(vehicle.waitTicks)} ${traits.waits ? 'musí byť ≥ 1' : 'musí byť 0'}` };
+  if (vehicle.replanPending && traits.motion !== 'drive') return { field: 'replan', problem: `${whereOf(vehicle)}: preplánovanie čaká len pri jazde` };
+  const offRoad = allRoads(world, vehicle, 0, moving ? 2 : 1);
+  if (offRoad !== undefined) return { field: 'route', problem: `${whereOf(vehicle)} stojí na bunke ${String(offRoad)} bez cesty` };
+  if (moving && wrongWayStep(world, vehicle, 2) !== undefined) {
+    return { field: 'route', problem: `${whereOf(vehicle)}: rozbehnutý úsek ${String(vehicle.cell)} → ${String(next)} ide proti smeru jednosmerky` };
   }
   if (module === undefined) return undefined;
   if (traits.motion === 'park' && !isAccessCell(world.grid, module, vehicle.cell)) {
-    return { field: 'route', problem: `${where} nestojí na prístupovej bunke ${module.label}` };
+    return { field: 'route', problem: `${whereOf(vehicle)} nestojí na prístupovej bunke ${module.label}` };
   }
   if (traits.motion === 'drive' && !vehicle.replanPending) {
-    const blocked = allRoads(world, route, 0, route.length);
-    if (blocked !== undefined) return { field: 'route', problem: `${where}: trasa vedie cez bunku ${String(blocked)} bez cesty` };
-    const wrongWay = wrongWayStep(world, route, route.length);
+    const blocked = allRoads(world, vehicle, 0, length);
+    if (blocked !== undefined) return { field: 'route', problem: `${whereOf(vehicle)}: trasa vedie cez bunku ${String(blocked)} bez cesty` };
+    const wrongWay = wrongWayStep(world, vehicle, length);
     if (wrongWay !== undefined) {
-      return { field: 'route', problem: `${where}: krok trasy ${String(route[wrongWay - 1])} → ${String(route[wrongWay])} ide proti smeru jednosmerky` };
+      return { field: 'route', problem: `${whereOf(vehicle)}: krok trasy ${String(routeCell(vehicle, wrongWay - 1))} → ${String(routeCell(vehicle, wrongWay))} ide proti smeru jednosmerky` };
     }
-    if (!isAccessCell(world.grid, module, route[route.length - 1])) return { field: 'route', problem: `${where}: trasa nekončí na prístupovej bunke ${module.label}` };
+    if (!isAccessCell(world.grid, module, routeCell(vehicle, ahead))) return { field: 'route', problem: `${whereOf(vehicle)}: trasa nekončí na prístupovej bunke ${module.label}` };
   }
   return undefined;
 }

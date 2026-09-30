@@ -190,6 +190,23 @@ describe('invarianty vozidiel (krok 12)', () => {
     }],
   ];
 
+  it('depo jedným prechodom vozidiel (T03-14): vozidlo presunuté do cudzieho depa a vehicleIds nie vzostupne → podrobná správa', () => {
+    const { world, depot } = depotWorld();
+    const a = addVehicleTo(world, depot.id);
+    const b = addVehicleTo(world, depot.id);
+    const other = world.placeModule({ defId: 'vehicle_depot', x: 40, y: 20, rotation: 0 }, 0) as VehicleDepot;
+    expect(findWorldViolation(world)).toBeUndefined();
+    depot.detachVehicle(b.id);
+    other.attachVehicle(b.id);
+    // prvé v poradí modulov je pôvodné depo, ktorému vozidlo chýba
+    expect(findWorldViolation(world)).toMatch(new RegExp(`vehicle_depot #${String(depot.id)}: vehicleIds \\[${String(a.id)}\\] ≠ vozidlá depa podľa id \\[${String(a.id)}, ${String(b.id)}\\]`));
+    other.detachVehicle(b.id);
+    depot.attachVehicle(b.id);
+    expect(findWorldViolation(world)).toBeUndefined();
+    (depot as unknown as { view: readonly EntityId[] }).view = [b.id, a.id];
+    expect(findWorldViolation(world)).toMatch(new RegExp(`vehicleIds \\[${String(b.id)}, ${String(a.id)}\\] ≠ vozidlá depa podľa id \\[${String(a.id)}, ${String(b.id)}\\]`));
+  });
+
   it.each(CASES)('%s', (_name, message, corrupt) => {
     const { world, depot } = depotWorld();
     const vehicle = addVehicleTo(world, depot.id);

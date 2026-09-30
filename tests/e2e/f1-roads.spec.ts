@@ -4,6 +4,10 @@ import { expect, test, type Page } from '@playwright/test';
 // v gride vzrastie o počet buniek ťahu a hotovosť klesne o cenu — a rýchlosť 4× zrýchli hodiny sim aj HUD.
 // Súradnice pre myš dáva `window.__sim.cellToScreen` (stred bunky v súradniciach stránky, dev hook).
 
+// Test trvá ~22 s (vlastné čakania + pomalé WebGL v SwiftShader) pri limite 30 s; pri súbehu s inými procesmi na tom istom
+// stroji (paralelné relácie, vitest) občas presiahol limit. Dlhší strop robí test odolným bez zmeny toho, čo overuje.
+test.describe.configure({ timeout: 90_000 });
+
 /** Ťah po riadku y=20 na starter parcele (x 30–57, voľná pevnina): 10 buniek. */
 const ROAD_ROW = 20;
 const ROAD_FROM_X = 32;

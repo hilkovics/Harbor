@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { commandFromJSON } from '@sim/commands';
 import type { SimEvent } from '@sim/events';
 import { GameLoop, startRafLoop, type FrameEventSink, type RafHost } from '@app/game-loop';
 import { TestAdjustCash, TestSetSpeed, createApp, createWorld } from './app-fixtures';
@@ -180,6 +181,53 @@ describe('GameLoop: sink', () => {
     expect(notified).toBe(0);
     loop.frame(100);
     expect(notified).toBe(1);
+  });
+
+  describe('beforeTick (voliteľný hák sinku)', () => {
+    /** Sink, ktorý si pri každom `beforeTick` zapíše tick sveta (ešte pred `world.tick()`). */
+    function recordingSink(world: ReturnType<typeof createWorld>): { sink: FrameEventSink; ticksSeen: number[] } {
+      const ticksSeen: number[] = [];
+      return {
+        ticksSeen,
+        sink: { publish: () => undefined, beforeTick: () => ticksSeen.push(world.clock.tick) },
+      };
+    }
+
+    it('volá sa tesne pred každým tickom: vidí tick sveta pred ním', () => {
+      const world = createWorld();
+      world.clock.setSpeed(1);
+      const { sink, ticksSeen } = recordingSink(world);
+      new GameLoop(world, sink).frame(300); // 3 ticky
+      expect(ticksSeen).toEqual([0, 1, 2]);
+      expect(world.clock.tick).toBe(3);
+    });
+
+    it('nevolá sa pri pauze ani pri frame bez dokončeného ticku', () => {
+      const world = createWorld();
+      const { sink, ticksSeen } = recordingSink(world);
+      const loop = new GameLoop(world, sink);
+      loop.frame(50); // 0,5 ticku
+      expect(ticksSeen).toEqual([]);
+      world.clock.setSpeed(0);
+      loop.frame(1000);
+      expect(ticksSeen).toEqual([]);
+    });
+
+    it('sink bez beforeTick funguje (hák je voliteľný)', () => {
+      const world = createWorld();
+      const loop = new GameLoop(world, { publish: () => undefined });
+      expect(() => loop.frame(200)).not.toThrow();
+      expect(world.clock.tick).toBe(2);
+    });
+
+    it('príkazy frame sa aplikujú pred prvým beforeTick (nová loď je pri ňom už vo svete)', () => {
+      const world = createWorld();
+      const shipsAtHook: number[] = [];
+      const sink: FrameEventSink = { publish: () => undefined, beforeTick: () => shipsAtHook.push(world.ships.size) };
+      world.enqueue(commandFromJSON({ type: 'SpawnShipDebug', shipClassId: 'feeder', cargoTypeId: 'container_teu', units: 4 }));
+      new GameLoop(world, sink).frame(100);
+      expect(shipsAtHook).toEqual([1]);
+    });
   });
 });
 

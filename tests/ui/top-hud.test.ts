@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { SetGameSpeedCommand } from '@sim/commands';
 import { SimBridgeProvider } from '@app/use-sim-snapshot';
+import { createStaticBridge } from '@ui/__demo__/static-bridge';
 import { SpeedControl } from '@ui/speed-control';
 import { HUD_PANEL_BUTTONS, TopHUD, TopHUDView, resolveSpeedRequest, useSetGameSpeed, type TopHUDProps } from '@ui/top-hud';
 import { createApp } from '../app/app-fixtures';
@@ -37,6 +38,17 @@ describe('TopHUD (pripojený na SimBridge)', () => {
     const app = createApp();
     expect(speedButtons(renderHud(app))).toEqual([...app.world.defs.time.speeds]);
     expect(speedButtons(renderHud(app, { speeds: [0, 5] }))).toEqual([0, 5]);
+  });
+
+  it('zoznam rýchlostí sa číta zo snapshotu (speeds), nie zo sveta: falošný bridge bez `world` stačí', () => {
+    const { bridge } = createStaticBridge({}, [0, 3, 6]);
+    const html = renderToStaticMarkup(createElement(SimBridgeProvider, { bridge }, createElement(TopHUD)));
+    expect(speedButtons(html)).toEqual([0, 3, 6]);
+  });
+
+  it('snapshot.speeds je time.speeds sveta (rovnaká referencia)', () => {
+    const app = createApp();
+    expect(app.bridge.snapshot().speeds).toBe(app.world.defs.time.speeds);
   });
 
   it('čas sleduje snapshot: Deň 12 · 14:20 po zodpovedajúcom počte tickov', () => {

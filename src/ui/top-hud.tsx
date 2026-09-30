@@ -146,6 +146,7 @@ export function TopHUDView({
 interface HudSlice {
   readonly cashCents: number;
   readonly speed: number;
+  readonly speeds: readonly number[];
   readonly day: number;
   readonly hour: number;
   readonly minute: number;
@@ -153,11 +154,25 @@ interface HudSlice {
 
 /** Výber pre HUD; nový objekt pri každom snapshote, preto ho `useSimSnapshot` porovnáva cez `sameHudSlice`. */
 function selectHudSlice(snapshot: WorldSnapshot): HudSlice {
-  return { cashCents: snapshot.cashCents, speed: snapshot.speed, day: snapshot.day, hour: snapshot.hour, minute: snapshot.minute };
+  return {
+    cashCents: snapshot.cashCents,
+    speed: snapshot.speed,
+    speeds: snapshot.speeds,
+    day: snapshot.day,
+    hour: snapshot.hour,
+    minute: snapshot.minute,
+  };
 }
 
 function sameHudSlice(a: HudSlice, b: HudSlice): boolean {
-  return a.cashCents === b.cashCents && a.speed === b.speed && a.day === b.day && a.hour === b.hour && a.minute === b.minute;
+  return (
+    a.cashCents === b.cashCents &&
+    a.speed === b.speed &&
+    a.speeds === b.speeds &&
+    a.day === b.day &&
+    a.hour === b.hour &&
+    a.minute === b.minute
+  );
 }
 
 // `resolveSpeedRequest` (klik na ⏸ pri pauze obnoví poslednú nenulovú rýchlosť) zdieľa klávesnica (Space,
@@ -180,7 +195,7 @@ export interface TopHUDProps {
   readonly dailyDeltaCents?: number | null;
   /** Skúsenosti (F8); vynechané = zástupný text. */
   readonly xp?: number | null;
-  /** Ponúkané rýchlosti; predvolene `world.defs.time.speeds` (nie natvrdo v UI). */
+  /** Ponúkané rýchlosti; predvolene `snapshot.speeds` (= `time.speeds` zo simu, nie natvrdo v UI). */
   readonly speeds?: readonly number[];
   readonly onOpenSettings?: () => void;
   readonly activePanel?: string | null;
@@ -189,10 +204,9 @@ export interface TopHUDProps {
 
 /** HUD pripojený na `SimBridge` (vyžaduje `<SimBridgeProvider>` vyššie v strome). */
 export function TopHUD({ dailyDeltaCents, xp, speeds, onOpenSettings, activePanel, onTogglePanel }: TopHUDProps) {
-  const bridge = useSimBridge();
   const hud = useSimSnapshot(selectHudSlice, HUD_THROTTLE_MS, sameHudSlice);
   const setSpeed = useSetGameSpeed();
-  const speedList = speeds ?? bridge.world.defs.time.speeds;
+  const speedList = speeds ?? hud.speeds;
 
   // Posledná nenulová rýchlosť: cieľ „obnoviť" po pauze. Aktualizuje sa po vykreslení, nie počas neho.
   const lastRunning = useRef<number | undefined>(undefined);

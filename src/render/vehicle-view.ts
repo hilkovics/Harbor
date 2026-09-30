@@ -21,6 +21,9 @@
  * `loaded` platí, kým vozidlo vezie jednotku nákladu (kontajner medzi nohami je súčasť spritu).
  * Vozidlo bez sprite (def chýba v manifeste / textúra nie je načítaná) sa nakreslí ako telo z tokenov `--vehicle-body`
  * s obrysom `--vehicle-dark` a tmavým pruhom na predku, aby bol vidieť smer jazdy; má rovnakú mierku ako sprite.
+ *
+ * Rovnaký pohyb (`vehiclePose`: pruhy, oblúky) a sprite používa aj `TruckView` (F4) — líši sa len štýl (`VehicleViewStyle`:
+ * prefix `label` a farby fallbacku) a rozmer, ktorý sa berie z `entities.<defId>.footprint` (kamión 1×2, vozidlo 1×1).
  */
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
 import type { Point } from './camera';
@@ -38,7 +41,7 @@ import {
 } from './lane';
 import { lerp } from './ship-view';
 import type { EntityTextures } from './sprite-atlas';
-import type { EntityPalette } from './tokens';
+import type { ColorValue, EntityPalette } from './tokens';
 import { cornerAlpha, cornerTurn, isQuarterTurn, lerpHeading, turnArcPose } from './turn-arc';
 import type { VehicleVM, ViewRotation } from './view-models';
 
@@ -48,11 +51,23 @@ const OUTLINE_CELLS = 2 / 64;
 /** Odsadenie fallbacku od okraja bunky (zlomok bunky; „hrany min. 4 px od okraja“, DESIGN_BRIEF §4). */
 const FALLBACK_INSET_CELLS = 4 / 64;
 
-/** Rozmer fallbacku vozidla bez záznamu v manifeste (bunky). */
+/** Rozmer fallbacku vozidla bez záznamu v manifeste (bunky); vozidlo so záznamom berie `footprint` z manifestu. */
 const FALLBACK_FOOTPRINT: CellSize = { w: 1, h: 1 };
 
 /** Výška tmavého pruhu na predku fallbacku ako podiel dĺžky vozidla. */
 const FALLBACK_FRONT_STRIPE = 0.2;
+
+/** Štýl view: prefix `label` kontajnera a farby fallbacku (telo, obrys, pruh na predku). */
+export interface VehicleViewStyle {
+  readonly label: string;
+  readonly fallback: (palette: EntityPalette) => { readonly body: ColorValue; readonly outline: ColorValue; readonly front: ColorValue };
+}
+
+/** Štýl vozidla na cestách: žlté telo s tmavým obrysom a tmavým pruhom na predku. */
+export const VEHICLE_STYLE: VehicleViewStyle = {
+  label: 'vehicle',
+  fallback: (palette) => ({ body: palette.vehicle.body, outline: palette.vehicle.dark, front: palette.vehicle.dark }),
+};
 
 export type VehicleLoad = 'empty' | 'loaded';
 
@@ -207,12 +222,13 @@ export class VehicleView {
     vm: VehicleVM,
     private readonly deps: VehicleViewDeps,
     alpha = 1,
+    private readonly style: VehicleViewStyle = VEHICLE_STYLE,
   ) {
     this.id = vm.id;
     this.last = vm;
     this.roadKindAt = deps.roadKindAt ?? defaultRoadKindAt;
     this.roadMaskAt = deps.roadMaskAt ?? noRoadMaskAt;
-    this.view = new Container({ label: `vehicle-${String(vm.id)}` });
+    this.view = new Container({ label: `${style.label}-${String(vm.id)}` });
     this.load = vehicleLoad(vm.loaded);
     this.textures = this.resolveTextures(vm.defId);
     const entry = vehicleSprite(vm.defId);
@@ -223,7 +239,7 @@ export class VehicleView {
       this.view.addChild(this.sprite);
     } else {
       this.sprite = null;
-      this.view.addChild(this.createFallback());
+      this.view.addChild(this.createFallback(entry?.footprint ?? FALLBACK_FOOTPRINT));
     }
     this.update(vm, alpha);
   }
@@ -264,13 +280,13 @@ export class VehicleView {
     return { empty, loaded };
   }
 
-  /** Telo z tokenov s tmavým pruhom na predku (hore); rozmer 1 bunka bez odsadenia od okraja, v mierke pruhu. */
-  private createFallback(): Graphics {
+  /** Telo z tokenov s pruhom na predku (hore); rozmer `footprint` (vozidlo 1×1, kamión 1×2), v mierke pruhu. */
+  private createFallback(footprint: CellSize): Graphics {
     const { cellPx, palette } = this.deps;
-    const width = FALLBACK_FOOTPRINT.w * cellPx;
-    const height = FALLBACK_FOOTPRINT.h * cellPx;
+    const width = footprint.w * cellPx;
+    const height = footprint.h * cellPx;
     const inset = FALLBACK_INSET_CELLS * cellPx;
-    const { body, dark } = palette.vehicle;
+    const { body, outline, front } = this.style.fallback(palette);
     const left = -width / 2 + inset;
     const top = -height / 2 + inset;
     const bodyWidth = width - inset * 2;
@@ -279,8 +295,8 @@ export class VehicleView {
     graphics
       .rect(left, top, bodyWidth, bodyHeight)
       .fill({ color: body.color, alpha: body.alpha })
-      .stroke({ width: OUTLINE_CELLS * cellPx, color: dark.color, alpha: dark.alpha, alignment: 1 });
-    graphics.rect(left, top, bodyWidth, bodyHeight * FALLBACK_FRONT_STRIPE).fill({ color: dark.color, alpha: dark.alpha });
+      .stroke({ width: OUTLINE_CELLS * cellPx, color: outline.color, alpha: outline.alpha, alignment: 1 });
+    graphics.rect(left, top, bodyWidth, bodyHeight * FALLBACK_FRONT_STRIPE).fill({ color: front.color, alpha: front.alpha });
     graphics.scale.set(VEHICLE_LANE_SCALE); // rovnaká mierka ako sprite: telo (56/64 bunky) sa zmestí do pruhu
     return graphics;
   }

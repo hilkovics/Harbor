@@ -8,12 +8,16 @@ import {
   LOADED_STATE_MODULES,
   LOADED_VEHICLES,
   MANIFEST_CELL_PX,
+  QUEUE_BADGE_FILE,
+  QUEUE_BADGE_SIZE,
   WARNING_BADGE_FILE,
   cargoSpriteEntry,
+  cargoTypeOfCategory,
   entitySpriteFiles,
   manifestScale,
   moduleSprite,
   shipSprite,
+  vehicleSprite,
 } from '@render/entity-assets';
 import { ENTITY_PALETTE, PALETTE, StubTextures } from './stub-textures';
 
@@ -37,6 +41,43 @@ describe('záznamy manifestu pre entity', () => {
     expect(moduleSprite('constructor')).toBeUndefined();
     expect(moduleSprite('toString')).toBeUndefined();
     expect(cargoSpriteEntry('__proto__')).toBeUndefined();
+  });
+
+  it('truck_gate: 2×2, závora s pivotom a uhlami, dva cestné konektory na sever a juh', () => {
+    const gate = moduleSprite('truck_gate');
+    expect(gate?.footprint).toEqual({ w: 2, h: 2 });
+    const barrier = gate?.parts?.['barrier'];
+    expect(barrier?.file).toBe('modules/truck_gate_barrier.svg');
+    expect(barrier?.pivot).toEqual({ x: 8, y: 32 });
+    expect(barrier?.offset).toEqual({ x: 0, y: 64 });
+    expect([barrier?.closedDeg, barrier?.openDeg]).toEqual([0, -90]);
+    expect(gate?.connectors.map((c) => c.side)).toEqual(['n', 's']);
+  });
+
+  it('truck_waiting_area: 6 stojísk; loading_ramp_container: 2 doky a kategória container', () => {
+    expect(moduleSprite('truck_waiting_area')?.stalls).toHaveLength(6);
+    const ramp = moduleSprite('loading_ramp_container');
+    expect(ramp?.docks).toHaveLength(2);
+    expect(ramp?.category).toBe('container');
+  });
+
+  it('truck_container: entita 1×2 so stavmi empty / loaded', () => {
+    const entry = vehicleSprite('truck_container');
+    expect(entry?.footprint).toEqual({ w: 1, h: 2 });
+    expect(entry?.states.empty).toBe('entities/truck_container_empty.svg');
+    expect(entry?.states.loaded).toBe('entities/truck_container_loaded.svg');
+  });
+
+  it('queue_badge je 24×24 px a nesie číslo kreslené enginom', () => {
+    expect(QUEUE_BADGE_SIZE).toEqual({ w: 24, h: 24 });
+  });
+
+  it('cargoTypeOfCategory: kategória → typ nákladu, neznáma / chýbajúca → kontajner', () => {
+    expect(cargoTypeOfCategory('container')).toBe('container_teu');
+    expect(cargoTypeOfCategory('bulk')).toBe('bulk_pile');
+    expect(cargoTypeOfCategory('roro')).toBe('car');
+    expect(cargoTypeOfCategory(undefined)).toBe('container_teu');
+    expect(cargoTypeOfCategory('constructor')).toBe('container_teu');
   });
 
   it('container_teu je 64×32 px', () => {
@@ -100,12 +141,31 @@ describe('entitySpriteFiles (čo načíta atlas)', () => {
 
   it('stavy skladov a vozidlá sa berú len z povoleného zoznamu (veľké sklady a ostatné vozidlá sa nerasterizujú)', () => {
     expect(LOADED_STATE_MODULES).toEqual(['container_yard_small']);
-    expect(LOADED_VEHICLES).toEqual(['straddle_carrier']);
+    expect(LOADED_VEHICLES).toEqual(['straddle_carrier', 'truck_container']);
     const fillFiles = files.filter((file) => /_fill\d+\.svg$/.test(file));
     expect(fillFiles).toHaveLength(5);
     for (const file of fillFiles) expect(file).toMatch(/^modules\/container_yard_small_fill\d+\.svg$/);
     const vehicleFiles = files.filter((file) => /^entities\/(?!ship_)/.test(file));
-    expect(vehicleFiles.sort()).toEqual(['entities/straddle_carrier_empty.svg', 'entities/straddle_carrier_loaded.svg']);
+    expect(vehicleFiles.sort()).toEqual([
+      'entities/straddle_carrier_empty.svg',
+      'entities/straddle_carrier_loaded.svg',
+      'entities/truck_container_empty.svg',
+      'entities/truck_container_loaded.svg',
+    ]);
+  });
+
+  it('F4: závora brány (časť modulu), odznak fronty a oba sprity kamióna', () => {
+    for (const expected of [
+      'modules/truck_gate.svg',
+      'modules/truck_gate_barrier.svg',
+      'modules/truck_waiting_area.svg',
+      'modules/loading_ramp_container.svg',
+      QUEUE_BADGE_FILE,
+      'entities/truck_container_empty.svg',
+      'entities/truck_container_loaded.svg',
+    ]) {
+      expect(files, expected).toContain(expected);
+    }
   });
 });
 

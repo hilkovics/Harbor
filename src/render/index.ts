@@ -31,7 +31,7 @@ export { PortalLayer, portalRotation } from './portal-layer';
 export type { PortalKind, PortalSet } from './portal-layer';
 export { BuildLayer, CONNECTOR_MARKER_ROTATION, loadGhostPalette, moduleGhostCells } from './build-layer';
 export type { BuildLayerCreateOptions, BuildLayerOptions, GhostArrow, GhostArrowsView, GhostCell, GhostPalette, GhostView } from './build-layer';
-export type { CraneVM, EntitiesVM, ModuleGhostVM, ModuleVM, ShipVM, VehicleVM, ViewRotation, ViewSide } from './view-models';
+export type { CraneVM, EntitiesVM, ModuleGhostVM, ModuleVM, ShipVM, TruckVM, VehicleVM, ViewRotation, ViewSide } from './view-models';
 export { ModuleLayer } from './module-layer';
 export { ModuleView, moduleBodyFile, moduleFillState, sameModuleShape } from './module-view';
 export { FILL_25_BELOW, FILL_50_BELOW, FILL_STATES, fillState, fillStateKey } from './storage-fill';
@@ -48,8 +48,17 @@ export {
   shipVariantKey,
 } from './ship-view';
 export type { ShipLoad, ShipPose, ShipViewDeps } from './ship-view';
-export { VehicleView, sameVehicleShape, vehicleLoad, vehiclePose, vehicleSpriteFile } from './vehicle-view';
-export type { VehicleLoad, VehiclePose, VehicleViewDeps } from './vehicle-view';
+export { VEHICLE_STYLE, VehicleView, sameVehicleShape, vehicleLoad, vehiclePose, vehicleSpriteFile } from './vehicle-view';
+export type { VehicleLoad, VehiclePose, VehicleViewDeps, VehicleViewStyle } from './vehicle-view';
+export { TRUCK_STYLE, TruckView, sameTruckShape, truckSpriteFile } from './truck-view';
+export { QUEUE_BADGE_MAX, QueueBadge, createWarningBadge, queueBadgeLabel } from './badges';
+export type { QueueBadgeDeps } from './badges';
+export { BARRIER_MOTION_MS, BarrierMotion, GateDecor, queueBadgePosition } from './gate-decor';
+export { WaitingAreaDecor, occupiedStalls } from './waiting-area-decor';
+export { RampDecor, STAGED_INSET_PX, stagedPlacements } from './ramp-decor';
+export type { StagedPlacement } from './ramp-decor';
+export { MODULE_DECORS } from './module-decors';
+export type { ModuleDecor, ModuleDecorContext, ModuleDecorFactory, ModuleViewDeps } from './module-decor';
 export {
   LANE_CENTER_PX,
   LANE_OFFSET_CELLS,
@@ -93,7 +102,7 @@ export {
 export type { CraneParts, CraneState, CraneViewDeps } from './crane-view';
 export { CargoSprite, cargoSizePx } from './cargo-sprite';
 export type { CargoSpriteDeps } from './cargo-sprite';
-export { footprintPose, localCellCenter, localCellWorldCenter, rotateOffset } from './footprint-pose';
+export { SIDE_STEP, footprintPose, localCellCenter, localCellWorldCenter, rotateOffset } from './footprint-pose';
 export type { FootprintBox, FootprintPose } from './footprint-pose';
 export { ViewSync } from './view-sync';
 export type { SyncedView, ViewSyncHooks } from './view-sync';
@@ -102,9 +111,12 @@ export {
   LOADED_STATE_MODULES,
   LOADED_VEHICLES,
   MANIFEST_CELL_PX,
+  QUEUE_BADGE_FILE,
+  QUEUE_BADGE_SIZE,
   WARNING_BADGE_FILE,
   WARNING_BADGE_SIZE,
   cargoSpriteEntry,
+  cargoTypeOfCategory,
   entitySpriteFiles,
   manifestScale,
   moduleSprite,
@@ -114,6 +126,7 @@ export {
 export type {
   ManifestConnector,
   ManifestPart,
+  ManifestRect,
   ModuleSpriteEntry,
   ShipSpriteEntry,
   VehicleSpriteEntry,

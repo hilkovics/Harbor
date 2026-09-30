@@ -10,15 +10,24 @@
  * Modul bez sprite (chýba v manifeste / textúra sa nenačítala) sa nakreslí ako obdĺžnik z tokenov
  * (`--module-base` s obrysom `--module-outline`).
  *
+ * Moduly s vlastnou dynamickou grafikou (brána, čakacia plocha, rampa) kreslia `ModuleDecor`y (`module-decors.ts`): view ich
+ * vytvorí lenivo podľa voliteľných polí `ModuleVM` (`gate`, `waitingArea`, `ramp`). Ozdoba, ktorá hlási problém (neprevádzková
+ * rampa), zapne ten istý odznak `overlay.warning_badge` ako „nepripojené“.
+ *
  * Views sa nealokujú pre nezmenený stav: `update` prekreslí náklad len pri zmene obsadenia slotov, telo skladu len pri
  * zmene fill stavu a odznak sa vytvorí lazy, prvýkrát keď je potrebný (potom sa iba skrýva / ukazuje).
  */
 import { Container, Graphics, Sprite } from 'pixi.js';
-import { WARNING_BADGE_FILE, WARNING_BADGE_SIZE, manifestScale, moduleSprite, type ModuleSpriteEntry } from './entity-assets';
+import { createWarningBadge } from './badges';
+import { moduleSprite, type ModuleSpriteEntry } from './entity-assets';
 import { footprintPose, localCellCenter, type FootprintPose } from './footprint-pose';
-import { CargoSprite, type CargoSpriteDeps } from './cargo-sprite';
+import { CargoSprite } from './cargo-sprite';
+import type { ModuleDecor, ModuleViewDeps } from './module-decor';
+import { MODULE_DECORS } from './module-decors';
 import { fillState, fillStateKey, type FillState } from './storage-fill';
 import type { ModuleVM } from './view-models';
+
+export type { ModuleViewDeps } from './module-decor';
 
 /** Hrúbka obrysu fallbacku ako zlomok bunky (2 px pri 64 px, DESIGN_BRIEF §4 „Obrys“). */
 const OUTLINE_CELLS = 2 / 64;
@@ -66,6 +75,9 @@ export class ModuleView {
   private badge: Container | null = null;
   private badgeScale = 1;
   private readonly cargoLayer = new Container({ label: 'apron-cargo' });
+  /** Ozdoby modulu (brána, čakacia plocha, rampa) podľa kľúča továrne; vznikajú lenivo. */
+  private readonly decorLayer = new Container({ label: 'module-decors' });
+  private readonly decors = new Map<string, ModuleDecor>();
   /** Náklad na aprone podľa indexu slotu. */
   private readonly cargo = new Map<number, CargoSprite>();
   /** Pracovná množina slotov videných v poslednom `update` (znovupoužitá, aby sa nealokovalo). */
@@ -73,7 +85,7 @@ export class ModuleView {
 
   constructor(
     vm: ModuleVM,
-    private readonly deps: CargoSpriteDeps,
+    private readonly deps: ModuleViewDeps,
   ) {
     const { cellPx } = deps;
     this.id = vm.id;
@@ -85,7 +97,7 @@ export class ModuleView {
     this.view.angle = this.pose.angle;
     this.bodyFill = moduleFillState(this.sprite, vm);
     this.body = this.createBody(moduleBodyFile(this.sprite, this.bodyFill));
-    this.view.addChild(this.body, this.cargoLayer);
+    this.view.addChild(this.body, this.cargoLayer, this.decorLayer);
     this.update(vm);
   }
 
@@ -99,15 +111,23 @@ export class ModuleView {
     return this.badge;
   }
 
-  /** Odznak „nepripojené“ je viditeľný. */
+  /** Odznak „nepripojené“ / „neprevádzkové“ je viditeľný. */
   get badgeVisible(): boolean {
     return this.badge?.visible === true;
   }
 
-  /** Nastaví veľkosť odznaku podľa zoomu kamery (`badgeScaleForZoom`); platí aj pre odznak, ktorý ešte nevznikol. */
+  /** Ozdoba modulu s kľúčom `id` (`gate`, `waiting_area`, `ramp`), alebo `undefined` — pre testy. */
+  decor<T extends ModuleDecor>(id: string): T | undefined {
+    return this.decors.get(id) as T | undefined;
+  }
+
+  /** Nastaví veľkosť odznakov podľa zoomu kamery (`badgeScaleForZoom`); platí aj pre odznaky, ktoré ešte nevznikli. */
   setBadgeScale(scale: number): void {
     this.badgeScale = scale;
     this.badge?.scale.set(scale);
+    this.decors.forEach((decor) => {
+      decor.setBadgeScale?.(scale);
+    });
   }
 
   /** Počet nákladu nakresleného na aprone. */
@@ -126,12 +146,13 @@ export class ModuleView {
   }
 
   /**
-   * Synchronizuje telo (fill stav), odznak a náklad na aprone s VM (statická časť VM sa tu nemení — to rieši vrstva).
+   * Synchronizuje telo (fill stav), ozdoby, odznak a náklad na aprone s VM (statická časť VM sa tu nemení — to rieši vrstva).
    * Pre nezmenený stav nič nealokuje.
    */
   update(vm: ModuleVM): void {
     this.last = vm;
     this.syncBody(vm);
+    this.syncDecors(vm);
     this.syncBadge(vm);
     const slots = this.sprite?.apronSlots ?? [];
     const seen = this.seenSlots;
@@ -161,6 +182,7 @@ export class ModuleView {
 
   destroy(): void {
     this.cargo.clear();
+    this.decors.clear();
     this.badge = null;
     this.view.destroy({ children: true });
   }
@@ -181,9 +203,28 @@ export class ModuleView {
     this.view.addChildAt(this.body, 0); // pod náklad na aprone
   }
 
-  /** Ukáže / skryje odznak „nepripojené“ podľa `vm.connected` (vytvorí ho lazy). */
+  /** Vytvorí ozdoby, ktorých dáta VM nesie (lenivo), a všetkým podá VM. */
+  private syncDecors(vm: ModuleVM): void {
+    for (const factory of MODULE_DECORS) {
+      let decor = this.decors.get(factory.id);
+      if (decor === undefined) {
+        if (!factory.applies(vm)) continue;
+        decor = factory.create(vm, { deps: this.deps, pose: this.pose, entry: this.sprite });
+        decor.setBadgeScale?.(this.badgeScale);
+        this.decors.set(factory.id, decor);
+        this.decorLayer.addChild(decor.view);
+      }
+      decor.update(vm);
+    }
+  }
+
+  /** Ukáže / skryje odznak „nepripojené“ (`vm.connected === false`) alebo problém ozdoby (vytvorí ho lazy). */
   private syncBadge(vm: ModuleVM): void {
-    if (vm.connected === false) {
+    let flagged = vm.connected === false;
+    this.decors.forEach((decor) => {
+      flagged ||= decor.warning === true;
+    });
+    if (flagged) {
       this.badge ??= this.createBadge();
       this.badge.visible = true;
     } else if (this.badge !== null) {
@@ -196,29 +237,8 @@ export class ModuleView {
    * `overlay.warning_badge` alebo kruhom z `--module-disconnected`.
    */
   private createBadge(): Container {
-    const { textures, palette, cellPx } = this.deps;
-    const scale = manifestScale(cellPx);
-    const width = WARNING_BADGE_SIZE.w * scale;
-    const height = WARNING_BADGE_SIZE.h * scale;
-    const badge = new Container({ label: 'module-disconnected-badge' });
-    badge.angle = -this.pose.angle;
-    badge.scale.set(this.badgeScale);
-    const texture = textures?.file(WARNING_BADGE_FILE);
-    if (texture !== undefined) {
-      const sprite = new Sprite(texture);
-      sprite.anchor.set(0.5);
-      sprite.setSize(width, height);
-      badge.addChild(sprite);
-    } else {
-      const { disconnected, module } = palette;
-      const graphics = new Graphics();
-      graphics
-        .circle(0, 0, Math.min(width, height) / 2)
-        .fill({ color: disconnected.color, alpha: disconnected.alpha })
-        .stroke({ width: OUTLINE_CELLS * cellPx, color: module.outline.color, alpha: module.outline.alpha });
-      badge.addChild(graphics);
-    }
-    this.view.addChild(badge); // navrchu: nad telom aj nákladom
+    const badge = createWarningBadge(this.deps, -this.pose.angle, this.badgeScale);
+    this.view.addChild(badge); // navrchu: nad telom, nákladom aj ozdobami
     return badge;
   }
 

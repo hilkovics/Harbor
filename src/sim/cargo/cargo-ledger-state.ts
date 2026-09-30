@@ -1,6 +1,6 @@
 /**
- * Serializovaný stav `CargoLedger` — čistý JSON (`JSON.parse(JSON.stringify(s))` je hlboko rovný `s`). Do `WorldState`
- * ho zaradí v2 (T02-03); dovtedy ho používa len `getState()` / `fromState()`.
+ * Serializovaný stav `CargoLedger` — čistý JSON (`JSON.parse(JSON.stringify(s))` je hlboko rovný `s`). `WorldState` v2
+ * ho ukladá ako `cargo` (ADR-014); `parseWorldState` chyby preloží na `WorldStateError` s prefixom `/cargo`.
  *
  * Tvar: `{ createdCount, exportedCount, units }`. `units` sú len živé jednotky (na mape) v kanonickom poradí:
  * druhy lokácií podľa `CARGO_HOLDER_KINDS`, držitelia vzostupne podľa id, v rámci držiteľa poradie jeho indexu

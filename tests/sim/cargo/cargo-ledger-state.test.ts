@@ -1,5 +1,5 @@
 // CargoLedgerState (T02-02): getState() je čistý JSON v kanonickom poradí, fromState() ho obnoví vrátane FIFO
-// poradia a počítadiel (roundtrip), neplatný stav → CargoStateError s JSON pointerom. Do WorldState ide až v2 (T02-03).
+// poradia a počítadiel (roundtrip), neplatný stav → CargoStateError s JSON pointerom. WorldState v2 ho ukladá ako `cargo` (T02-03).
 import { describe, expect, it } from 'vitest';
 import {
   CARGO_LOCATION_KINDS,

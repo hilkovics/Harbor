@@ -1,9 +1,9 @@
-// World.cargo (T02-02): ledger je súčasť sveta — id zo spoločného world.ids, CargoMoved do world.events s clock.tick,
-// katalóg typov z world.defs. WorldState v1 náklad neukladá, preto serialize() pri existujúcom náklade radšej zlyhá
-// (v2 = T02-03). Typovaný test helper assertCargoConservation deleguje na world.cargo.
+// World.cargo (T02-02, T02-03): ledger je súčasť sveta — id zo spoločného world.ids, CargoMoved do world.events
+// s clock.tick, katalóg typov z world.defs. WorldState v2 ukladá stav ledgera (`cargo.getState()`, ADR-014) a loader
+// odmietne jednotku u neexistujúceho držiteľa. Typovaný test helper assertCargoConservation deleguje na world.cargo.
 import { describe, expect, it, vi } from 'vitest';
 import { CargoConservationError, CargoError, CargoLedger } from '@sim/cargo';
-import { World } from '@sim/world';
+import { World, WorldStateError } from '@sim/world';
 import { assertCargoConservation } from '../helpers/invariants';
 import { DEFS, MAP, SEED, TestCommand, runTicks } from '../world/world-fixtures';
 import { CARGO_DEFS, CONTAINER_CHAIN, GRAIN, TEU, at, id, moveThrough } from './cargo-fixtures';
@@ -62,23 +62,46 @@ describe('World.cargo', () => {
   });
 });
 
-describe('World.serialize/deserialize a náklad (WorldState v1)', () => {
-  it('svet bez nákladu sa serializuje ako doteraz', () => {
-    expect(() => create().serialize()).not.toThrow();
+describe('World.serialize/deserialize a náklad (WorldState v2)', () => {
+  it('svet bez nákladu: cargo = prázdny stav ledgera', () => {
+    expect(create().serialize().cargo).toEqual({ createdCount: 0, exportedCount: 0, units: [] });
   });
 
-  it('svet s nákladom → Error namiesto tichej straty nákladu (uloží ho až v2)', () => {
+  it('serialize uloží stav ledgera (cargo.getState()) — aj pri náklade u neexistujúceho držiteľa, bez chyby', () => {
     const world = create();
     world.cargo.create(TEU, at.ship(1));
-    expect(() => world.serialize()).toThrow('World.serialize: WorldState v1 neukladá náklad a ledger eviduje 1 vytvorených jednotiek');
+    const state = world.serialize();
+    expect(state.cargo).toEqual(world.cargo.getState());
+    expect(state.cargo.createdCount).toBe(1);
   });
 
-  it('aj keď všetok náklad odišiel z mapy (createdCount/exportedCount by sa stratili)', () => {
+  it('deserialize odmietne jednotku u neexistujúceho držiteľa (loď #1 vo svete nie je)', () => {
+    const world = create();
+    world.cargo.create(TEU, at.ship(1));
+    let error: unknown;
+    try {
+      World.deserialize(DEFS, MAP, JSON.parse(JSON.stringify(world.serialize())) as ReturnType<World['serialize']>);
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(WorldStateError);
+    expect((error as WorldStateError).path).toBe('/cargo/units/0/location/shipId');
+  });
+
+  it('všetok náklad odišiel z mapy: createdCount/exportedCount prežijú roundtrip, jednotky sa neukladajú', () => {
     const world = create();
     const unitId = world.cargo.create(TEU, at.ship(1)).id;
     moveThrough(world.cargo, unitId, CONTAINER_CHAIN);
+    world.applyPending();
     expect(world.cargo.liveCount).toBe(0);
-    expect(() => world.serialize()).toThrow(/neukladá náklad/);
+    const state = world.serialize();
+    expect(state.cargo).toEqual({ createdCount: 1, exportedCount: 1, units: [] });
+    const restored = World.deserialize(DEFS, MAP, JSON.parse(JSON.stringify(state)) as typeof state);
+    expect(restored.cargo.createdCount).toBe(1);
+    expect(restored.cargo.exportedCount).toBe(1);
+    expect(restored.cargo.countByKind('exported')).toBe(1);
+    expect(restored.cargo.get(unitId)).toBeUndefined();
+    expect(restored.serialize()).toEqual(state);
   });
 
   it('deserialize dá prázdny ledger napojený na obnovené ids, events a clock', () => {

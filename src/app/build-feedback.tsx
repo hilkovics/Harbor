@@ -38,6 +38,14 @@ export const REASON_TEXT: Readonly<Record<ValidationReason, string>> = {
   cargo_incompatible: 'Loď tento náklad neprevezie',
   invalid_units: 'Neplatný počet jednotiek',
   invalid_rotation: 'Neplatná rotácia',
+  unknown_vehicle_def: 'Neznámy typ vozidla',
+  unknown_depot: 'Depo neexistuje',
+  depot_full: 'Depo je plné',
+  not_connected: 'Nepripojené k ceste',
+  unknown_vehicle: 'Vozidlo neexistuje',
+  vehicle_busy: 'Vozidlo práve pracuje',
+  has_vehicles: 'Depo má vozidlá',
+  connector_blocked: 'Vstup nejde pripojiť k ceste',
 };
 
 /** „1 bunka“, „2 bunky“, „5 buniek“. */

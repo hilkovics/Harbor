@@ -53,7 +53,7 @@
      - `storageCapacity` = Σ `capacityUnits` skladov;
      - `minCapacityHint` je v defe, aby prvá ponuka na prázdnom prístave nemala objem 0.
    - Odmena = `volumeUnits × basePricePerUnitCents × urgency`, kde `urgency = 1 + urgencyFactor × (1 − slaDays / maxSlaDays)` (bp aritmetika, `maxSlaDays` = max `slaDaysRange` šablón).
-9. **Dispatcher krok 2 (§7.3):** outbound joby vznikajú len pre jednotky kontraktu v stave `exporting`. Poradie je podľa `slaDeadlineTick` vzostupne, potom id kontraktu, potom FIFO. Jednotky bez kontraktu (`contractId === null`, scenáre F2–F4 a `SpawnShipDebug`) sú exportovateľné vždy kvôli spätnej kompatibilite.
+9. **Dispatcher krok 2 (§7.3):** outbound joby vznikajú len pre jednotky kontraktu v stave `exporting`. Poradie je podľa `slaDeadlineTick` vzostupne, potom id kontraktu, potom FIFO. Jednotky bez kontraktu (`contractId === null`, scenáre F2–F4 a `SpawnShipDebug`) sú exportovateľné vždy kvôli spätnej kompatibilite. **Zmena (T05-11, ADR-027 dodatok):** outbound smú aj jednotky kontraktu v stave `unloading` (`outbound = 'sla'`), aby objem nad voľnú kapacitu skladov nezablokoval sklad, apron a kotvisko; `completed` stále vyžaduje `unitsExported == volumeUnits` a `exporting` ostáva stavom po odchode lode.
 10. **Debug spawn:** UI tlačidlo „Spawn feeder (DEV)" sa odstráni. Príkaz `SpawnShipDebug` ostáva pre scenáre a testy a UI ho nepoužíva. `vertical_slice` ide bez neho.
 11. **WorldState v5** obsahuje `contracts`, pool, `economy` (DaySummary/MonthSummary, posledných N `LedgerEntry` podľa defu), `xp`, `completedContracts`, bankrotové počítadlo a `gameOver`. Pribudne migrácia v4 → v5 (prázdne kontrakty a pool, prázdny ledger so zachovaným `cashCents`).
 12. **Čo sa neukladá:** priority dispatchera sa odvodzujú, neukladajú.

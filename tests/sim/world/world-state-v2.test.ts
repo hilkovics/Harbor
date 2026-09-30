@@ -8,6 +8,7 @@ import { World, WorldStateError, type WorldState } from '@sim/world';
 import { newWorld, placeBerth, placeCrane } from '../modules/harbor-fixtures';
 import { BERTH, CRANE, MODULE_DEFS, id } from '../modules/module-fixtures';
 import { MAP, hashState, runTicks } from './world-fixtures';
+import { restoreCrane } from '../helpers/crane-state';
 
 const TEU = 'container_teu';
 /** Loď, ktorá vo svete neexistuje — len zdroj jednotiek (každá sa z nej hneď presunie). */
@@ -49,10 +50,11 @@ function moduleWorld(): ModuleWorld {
   };
   toApron(u5, berthA, 0, crane1);
   world.cargo.move(u6, { kind: 'in_crane', craneId: crane1.id });
-  Object.assign(crane1, { state: 'placing', heldUnitId: u6, reservedSlot: berthA.apron.reserve(), phaseTicksTotal: 6, phaseTicksLeft: 3 });
+  restoreCrane(crane1, { state: 'placing', reservedSlot: berthA.apron.reserve(), phaseTicksTotal: 6, phaseTicksLeft: 3 });
+  crane1.heldUnitId = u6;
   toApron(u7, berthB, 2, crane2);
   toApron(u8, berthB, 0, crane2);
-  Object.assign(crane2, { state: 'blocked', busyTicks: 10, idleTicks: 750, blockedTicks: 40, lastBlockedHour: 1 });
+  restoreCrane(crane2, { state: 'blocked', busyTicks: 10, idleTicks: 750, blockedTicks: 40, lastBlockedHour: 1 });
   world.applyPending();
   return { world, berthA, crane1, crane2, berthB, units };
 }

@@ -163,6 +163,22 @@ describe('FSM žeriavu — CRANE_TRANSITIONS a CraneModule.transition (T02-05)',
     }
   });
 
+  it('state je len getter (T02-14): priamy zápis zlyhá, stav mení len transition a restoreRuntimeState', () => {
+    const crane = freshCrane();
+    const descriptor = Object.getOwnPropertyDescriptor(CraneModule.prototype, 'state');
+    expect(descriptor?.get).toBeTypeOf('function');
+    expect(descriptor?.set).toBeUndefined();
+    expect(Object.keys(crane)).not.toContain('state');
+    expect(() => {
+      (crane as unknown as { state: CraneState }).state = 'blocked';
+    }).toThrow(TypeError);
+    expect(crane.state).toBe('idle');
+    crane.transition('blocked');
+    expect(crane.state).toBe('blocked');
+    crane.restoreRuntimeState({ ...VALID, state: 'idle', reservedSlot: null, phaseTicksTotal: 0, phaseTicksLeft: 0 });
+    expect(crane.state).toBe('idle');
+  });
+
   it('nepovolený prechod → ModuleError(invalid_transition), stav sa nezmení', () => {
     const crane = freshCrane();
     let error: unknown;

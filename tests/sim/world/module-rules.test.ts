@@ -21,6 +21,7 @@ import {
 import { BERTH, CRANE, MODULE_DEFS, NARROW_CRANE } from '../modules/module-fixtures';
 import { BARE_MAP, SEED, hashState } from './world-fixtures';
 import { PIER_MAP } from './pier-map';
+import { driveCrane, restoreCrane } from '../helpers/crane-state';
 
 const id = (value: number): EntityId => value as EntityId;
 
@@ -252,7 +253,8 @@ describe('findRemovalViolations', () => {
     const { world, berth, crane } = harbor();
     const unit = world.cargo.create('container_teu', { kind: 'on_ship', shipId: id(500) }).id;
     world.cargo.move(unit, { kind: 'in_crane', craneId: crane.id });
-    Object.assign(crane, { state: 'placing', heldUnitId: unit, reservedSlot: berth.apron.reserve() });
+    restoreCrane(crane, { state: 'placing', reservedSlot: berth.apron.reserve(), phaseTicksTotal: 6, phaseTicksLeft: 3 });
+    crane.heldUnitId = unit;
     expect(findRemovalViolations(world, crane)).toEqual([
       { rule: 'has_cargo', detail: `${crane.label} drží náklad (in_crane)` },
       { rule: 'busy', detail: `${crane.label} je uprostred cyklu (placing)` },
@@ -261,7 +263,7 @@ describe('findRemovalViolations', () => {
 
   it('blokovaný žeriav bez jednotky nie je busy', () => {
     const { world, crane } = harbor();
-    crane.state = 'blocked';
+    driveCrane(crane, 'blocked');
     expect(findRemovalViolations(world, crane)).toEqual([]);
   });
 });

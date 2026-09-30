@@ -7,6 +7,7 @@ import type { EntityId } from '@sim/core';
 import { Ship } from '@sim/ships';
 import { World, WorldStateError, findWorldViolation, type WorldState } from '@sim/world';
 import { MAP } from '../world/world-fixtures';
+import { restoreCrane } from '../helpers/crane-state';
 import {
   BULKER,
   CRANE,
@@ -144,7 +145,7 @@ describe('invarianty lodí (findWorldViolation)', () => {
     }],
     ['žeriav v grabbing bez dokovanej lode', /'grabbing' nemá na kotvisku dokovanú loď/, ({ world }) => {
       const c = crane(world, ROOT_CRANE_ID);
-      Object.assign(c, { state: 'grabbing', reservedSlot: berth(world, ROOT_BERTH_ID).apron.reserve() });
+      restoreCrane(c, { state: 'grabbing', reservedSlot: berth(world, ROOT_BERTH_ID).apron.reserve(), phaseTicksTotal: 6, phaseTicksLeft: 6 });
     }],
     ['despawned loď vo svete', /v stave 'despawned'/, ({ world }) => {
       const ghost = new Ship({ id: world.ids.next(), def: SHIP_DEFS.ships.get('feeder'), cargoType: SHIP_DEFS.cargoTypes.get(TEU), state: 'outbound', x: 48.5, y: 0.5, heading: 0 });
@@ -229,7 +230,7 @@ describe('invarianty lodí (findWorldViolation)', () => {
     const ship = spawn(world, 'feeder', 1);
     tickUntil(world, () => ship.state === 'docked', 300);
     expect(findWorldViolation(world)).toBeUndefined();
-    Object.assign(crane(world, second), { state: 'grabbing', reservedSlot: berth(world, ROOT_BERTH_ID).apron.reserve() });
+    restoreCrane(crane(world, second), { state: 'grabbing', reservedSlot: berth(world, ROOT_BERTH_ID).apron.reserve(), phaseTicksTotal: 6, phaseTicksLeft: 6 });
     expect(findWorldViolation(world)).toMatch(/2 žeriavov zdvíha z feeder #\d+, na palube je len 1 jednotiek/);
   });
 });

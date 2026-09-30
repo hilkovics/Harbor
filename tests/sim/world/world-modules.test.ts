@@ -8,6 +8,7 @@ import { StatResolver } from '@sim/tech';
 import { World, WorldInvariantError } from '@sim/world';
 import { newWorld, place, placeBerth, placeCrane } from '../modules/harbor-fixtures';
 import { BERTH, CRANE, MODULE_DEFS, NARROW_CRANE, id } from '../modules/module-fixtures';
+import { driveCrane, restoreCrane } from '../helpers/crane-state';
 
 function errorCode(action: () => unknown): ModuleErrorCode | undefined {
   try {
@@ -190,11 +191,9 @@ describe('World.removeModule', () => {
 
   it('žeriav uprostred cyklu → busy; žeriav s jednotkou v ledgeri → has_cargo', () => {
     const { world, crane } = harbor();
-    crane.state = 'grabbing';
-    crane.reservedSlot = 0;
+    restoreCrane(crane, { state: 'grabbing', reservedSlot: 0, phaseTicksTotal: 6, phaseTicksLeft: 6 });
     expect(errorCode(() => world.removeModule(crane.id))).toBe('busy');
-    crane.state = 'idle';
-    crane.reservedSlot = null;
+    restoreCrane(crane, { state: 'idle', reservedSlot: null, phaseTicksTotal: 0, phaseTicksLeft: 0 });
     const unit = world.cargo.create('container_teu', { kind: 'on_ship', shipId: id(500) }).id;
     world.cargo.move(unit, { kind: 'in_crane', craneId: crane.id });
     expect(errorCode(() => world.removeModule(crane.id))).toBe('has_cargo');
@@ -218,7 +217,7 @@ describe('World.removeModule', () => {
 
   it('blokovaný žeriav bez jednotky ide odstrániť', () => {
     const { world, crane } = harbor();
-    crane.state = 'blocked';
+    driveCrane(crane, 'blocked');
     expect(() => world.removeModule(crane.id)).not.toThrow();
   });
 });
@@ -264,7 +263,8 @@ describe('World.assertInvariants', () => {
     berth.apron.commit(2, a);
     const slot = berth.apron.reserve();
     world.cargo.move(b, { kind: 'in_crane', craneId: crane.id });
-    Object.assign(crane, { state: 'placing', heldUnitId: b, reservedSlot: slot });
+    restoreCrane(crane, { state: 'placing', reservedSlot: slot, phaseTicksTotal: 6, phaseTicksLeft: 3 });
+    crane.heldUnitId = b;
     // Jednotky on_ship(500) sú u lode, ktorá ešte neexistuje — tú invariant zachytí; tu už žiadna nie je.
     expect(world.cargo.countByKind('on_ship')).toBe(0);
     expect(() => world.assertInvariants()).not.toThrow();

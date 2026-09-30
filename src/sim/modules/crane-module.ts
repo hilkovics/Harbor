@@ -2,7 +2,8 @@
  * Žeriav (ARCHITECTURE §5.3, §7.2; ADR-014, ADR-016). Stojí **na** bunkách jedného berthu s rovnakou rotáciou
  * (rozhodnutie 3): `berthId` je modul pod jeho ľavým horným rohom, `cell.moduleId` ostáva id berthu a berth ho
  * eviduje v `craneIds`. Tu je stav, tabuľka prechodov FSM (`CRANE_TRANSITIONS`), jeho význam a serializácia; cyklus
- * (kedy a prečo sa prechádza) riadi `CraneSystem` (krok 4) výlučne cez `transition()` / `enterPhase()`.
+ * (kedy a prečo sa prechádza) riadi `CraneSystem` (krok 4) výlučne cez `transition()` / `enterPhase()`. Stav je
+ * privátny s getterom `state` (ako `Ship.state`): mimo `transition` ho mení len `restoreRuntimeState` (T02-14).
  *
  * Dynamický stav v save (`CraneRuntimeState`) neobsahuje `heldUnitId` — držaná jednotka je v `CargoLedger`
  * (`in_crane`) a loader ju odtiaľ doplní.
@@ -88,7 +89,6 @@ export class CraneModule extends Module {
   readonly params: CraneParams;
   /** Berth, na ktorom žeriav stojí. */
   readonly berthId: EntityId;
-  state: CraneState = 'idle';
   /** Trvanie aktuálnej fázy v tickoch (pre progres v renderi). */
   phaseTicksTotal = 0;
   /** Zostávajúce ticky aktuálnej fázy (0 … `phaseTicksTotal`). */
@@ -102,6 +102,8 @@ export class CraneModule extends Module {
   blockedTicks = 0;
   /** Index hernej hodiny (`clock.gameHour`) posledného `CraneBlocked`; `null` = ešte nebol (throttle, ADR-016). */
   lastBlockedHour: number | null = null;
+  /** Stav FSM — zapisuje ho len `transition` (CraneSystem) a `restoreRuntimeState` (save), T02-14. */
+  private current: CraneState = 'idle';
 
   /**
    * Def iného druhu než `crane` → `DefError`; pod ľavým horným rohom nie je žiadny modul → `ModuleError('no_berth')`.
@@ -117,6 +119,11 @@ export class CraneModule extends Module {
     this.berthId = hostId;
   }
 
+  /** Aktuálny stav FSM (len na čítanie; mení ho `transition`, obnovuje `restoreRuntimeState`). */
+  get state(): CraneState {
+    return this.current;
+  }
+
   /** Kategória nákladu, ktorú žeriav prekladá. */
   get category(): CargoCategory {
     return this.params.category;
@@ -124,7 +131,7 @@ export class CraneModule extends Module {
 
   /** Vlastnosti aktuálneho stavu (`CRANE_STATE_TRAITS`). */
   get traits(): CraneStateTraits {
-    return CRANE_STATE_TRAITS[this.state];
+    return CRANE_STATE_TRAITS[this.current];
   }
 
   /** Postup v aktuálnej fáze 0…1 (render: poloha vozíka); mimo fázy (`phaseTicksTotal = 0`) → 0. */
@@ -137,11 +144,11 @@ export class CraneModule extends Module {
    * `ModuleError('invalid_transition')`, žeriav sa nezmení. Fázu (`phaseTicks*`) nastaví `enterPhase`.
    */
   transition(to: CraneState): void {
-    if (!isCraneTransitionAllowed(this.state, to)) {
-      const allowed = CRANE_TRANSITIONS.get(this.state) ?? [];
-      throw new ModuleError('invalid_transition', `${this.label}: prechod ${this.state} → ${to} nie je povolený (povolené: ${allowed.join(', ')})`);
+    if (!isCraneTransitionAllowed(this.current, to)) {
+      const allowed = CRANE_TRANSITIONS.get(this.current) ?? [];
+      throw new ModuleError('invalid_transition', `${this.label}: prechod ${this.current} → ${to} nie je povolený (povolené: ${allowed.join(', ')})`);
     }
-    this.state = to;
+    this.current = to;
   }
 
   /** Začne fázu dlhú `ticks` tickov (`phaseTicksTotal = phaseTicksLeft = ticks`); 0 = mimo fázy (idle/blocked). */
@@ -155,7 +162,7 @@ export class CraneModule extends Module {
 
   override getRuntimeState(): CraneRuntimeState {
     return {
-      state: this.state,
+      state: this.current,
       phaseTicksTotal: this.phaseTicksTotal,
       phaseTicksLeft: this.phaseTicksLeft,
       reservedSlot: this.reservedSlot,
@@ -192,7 +199,7 @@ export class CraneModule extends Module {
     const lastBlockedHour = readOptionalCount(fields['lastBlockedHour'], '/lastBlockedHour');
 
     // Od tohto bodu nič nevyhadzuje — obnova je atomická.
-    this.state = state;
+    this.current = state;
     this.phaseTicksTotal = phaseTicksTotal;
     this.phaseTicksLeft = phaseTicksLeft;
     this.reservedSlot = reservedSlot;

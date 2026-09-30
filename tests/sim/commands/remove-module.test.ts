@@ -9,6 +9,7 @@ import { BerthModule, CraneModule } from '@sim/modules';
 import type { World } from '@sim/world';
 import type { SimEvent } from '@sim/events';
 import type { Ship } from '@sim/ships';
+import { driveCrane, restoreCrane } from '../helpers/crane-state';
 import { DEFS, REFUND_RATE, START_CASH, defsWith, hashState, newBareWorld, newWorld, ofType } from './command-fixtures';
 
 const BERTH = 'berth_standard';
@@ -137,16 +138,17 @@ describe('RemoveModule — odmietnutia', () => {
 
   it('žeriav uprostred cyklu → busy; s jednotkou → has_cargo aj busy; blokovaný bez jednotky ide odstrániť', () => {
     const { world, berth, crane } = harbor();
-    Object.assign(crane, { state: 'grabbing', reservedSlot: berth.apron.reserve() });
+    restoreCrane(crane, { state: 'grabbing', reservedSlot: berth.apron.reserve(), phaseTicksTotal: 6, phaseTicksLeft: 6 });
     expect(remove(crane.id).validate(world).reasons).toEqual(['busy']);
 
     const unit = world.cargo.create('container_teu', { kind: 'on_ship', shipId: id(500) }).id;
     world.cargo.move(unit, { kind: 'in_crane', craneId: crane.id });
-    Object.assign(crane, { state: 'placing', heldUnitId: unit });
+    driveCrane(crane, 'placing');
+    crane.heldUnitId = unit;
     expect(remove(crane.id).validate(world).reasons).toEqual(['has_cargo', 'busy']);
 
     const other = harbor();
-    other.crane.state = 'blocked';
+    driveCrane(other.crane, 'blocked');
     expect(remove(other.crane.id).validate(other.world).ok).toBe(true);
   });
 

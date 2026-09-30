@@ -8,6 +8,7 @@ import type { BerthModule, CraneModule } from '@sim/modules';
 import { WorldInvariantError, findWorldViolation, type World } from '@sim/world';
 import { newWorld, placeBerth, placeCrane } from '../modules/harbor-fixtures';
 import { id } from '../modules/module-fixtures';
+import { driveCrane, restoreCrane } from '../helpers/crane-state';
 
 const TEU = 'container_teu';
 
@@ -45,7 +46,8 @@ describe('findWorldViolation — konzistentný svet', () => {
     unitOnApron(world, berth, crane, 1);
     const held = world.cargo.create(TEU, { kind: 'on_ship', shipId: id(900) }).id;
     world.cargo.move(held, { kind: 'in_crane', craneId: crane.id });
-    Object.assign(crane, { state: 'placing', heldUnitId: held, reservedSlot: berth.apron.reserve() });
+    restoreCrane(crane, { state: 'placing', reservedSlot: berth.apron.reserve(), phaseTicksTotal: 6, phaseTicksLeft: 3 });
+    crane.heldUnitId = held;
     expect(findWorldViolation(world)).toBeUndefined();
     expect(() => world.assertInvariants()).not.toThrow();
   });
@@ -79,7 +81,14 @@ describe('findWorldViolation — porušenia', () => {
     ['žeriav chýba v craneIds', /chýba v craneIds|craneIds/, ({ berth, crane }) => berth.detachCrane(crane.id)],
     ['cudzí žeriav v craneIds', /craneIds/, ({ other, crane }) => other.attachCrane(crane.id)],
     ['žeriav s inou rotáciou', /rotáciu 90/, ({ crane }) => Object.assign(crane, { rotation: 90 })],
-    ['heldUnitId bez jednotky v ledgeri', /heldUnitId 55/, ({ crane }) => Object.assign(crane, { state: 'placing', heldUnitId: 55 })],
+    [
+      'heldUnitId bez jednotky v ledgeri',
+      /heldUnitId 55/,
+      ({ crane }) => {
+        driveCrane(crane, 'placing');
+        crane.heldUnitId = id(55);
+      },
+    ],
     [
       'jednotka in_crane bez heldUnitId',
       /heldUnitId null, ledger in_crane/,
@@ -88,11 +97,14 @@ describe('findWorldViolation — porušenia', () => {
         world.cargo.move(unit, { kind: 'in_crane', craneId: crane.id });
       },
     ],
-    ['grabbing bez rezervácie', /'grabbing' nemá rezervovaný slot/, ({ crane }) => (crane.state = 'grabbing')],
+    ['grabbing bez rezervácie', /'grabbing' nemá rezervovaný slot/, ({ crane }) => driveCrane(crane, 'grabbing')],
     [
       'rezervácia žeriavu, ktorú apron nemá',
       /slot 2 nie je rezervovaný/,
-      ({ crane }) => Object.assign(crane, { state: 'grabbing', reservedSlot: 2 }),
+      ({ crane }) => {
+        driveCrane(crane, 'grabbing');
+        crane.reservedSlot = 2;
+      },
     ],
     ['rezervácia apronu bez žeriavu', /rezervované sloty apronu \[0\]/, ({ berth }) => void berth.apron.reserve()],
     [

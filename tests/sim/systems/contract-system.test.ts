@@ -7,7 +7,7 @@ import { capacityHintOf, offerVolumeUnits, type Contract } from '@sim/contracts'
 import type { ContractId } from '@sim/core';
 import { DefRegistry } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
-import { ContractSystem, GAME_START_TICK, expireOffers, refillPool } from '@sim/systems';
+import { ContractSystem, GAME_START_TICK, MIN_CRANE_PHASE_TICKS, expireOffers, refillPool } from '@sim/systems';
 import { World } from '@sim/world';
 import { emptyScenario, must } from '../helpers/harbor';
 import { runScenario } from '../helpers/scenario';
@@ -73,6 +73,21 @@ describe('capacityHint z háčikov modulov (pravidlo 7)', () => {
     const port = World.create(defs, MAP, 5603);
     runScenario(port, portScenario('f5_hint', 5603), 1);
     expect(capacityHintOf(port.modules.values(), port.stats, TICKS_PER_DAY, defs.economy.minCapacityHint)).toBe(128);
+  });
+});
+
+describe('žeriav: vykládka za deň pre capacityHint (T05-11)', () => {
+  it.each([
+    [0.4, 2 * MIN_CRANE_PHASE_TICKS], // pod najkratším cyklom → dve fázy po MIN_CRANE_PHASE_TICKS
+    [1, 2 * MIN_CRANE_PHASE_TICKS],
+    [2, 2],
+    [12, 12],
+    [12.4, 12],
+  ] as const)('cycleTicks %d → ⌊ticksPerDay / %d⌋', (cycleTicks, cycle) => {
+    const world = World.create(fixedContractDefs(), MAP, 5610);
+    const crane = must([...world.modules.values()].find((module) => module.kind === 'crane'), 'žeriav');
+    const stats = { resolve: () => cycleTicks };
+    expect(crane.dailyUnloadUnits(stats, TICKS_PER_DAY)).toBe(Math.floor(TICKS_PER_DAY / cycle));
   });
 });
 

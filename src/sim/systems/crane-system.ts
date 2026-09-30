@@ -16,14 +16,14 @@
  * tick do počítadla stavu (`CRANE_STATE_TRAITS[state].counter`: busy / idle / blocked).
  */
 import { BerthModule } from '../modules/berth-module';
-import { CRANE_STATE_TRAITS, CraneModule, type CraneCounter, type CraneState } from '../modules/crane-module';
+import { CRANE_STATE_TRAITS, CraneModule, MIN_CRANE_PHASE_TICKS, type CraneCounter, type CraneState } from '../modules/crane-module';
 import { ModuleError } from '../modules/module-error';
 import type { Ship } from '../ships/ship';
 import type { StatResolver } from '../tech/stat-resolver';
 import type { World } from '../world/world';
 
-/** Najkratšia fáza cyklu v tickoch — žeriav nemôže zdvihnúť ani položiť jednotku „za nula tickov“. */
-export const MIN_CRANE_PHASE_TICKS = 1;
+// Konštanta je definovaná pri `CraneModule` (nižšia vrstva, bez cyklického importu) a verejne sa exportuje odtiaľto.
+export { MIN_CRANE_PHASE_TICKS };
 
 /** Trvanie fáz cyklu žeriavu v tickoch. */
 export interface CranePhaseTicks {

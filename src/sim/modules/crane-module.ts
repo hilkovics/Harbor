@@ -114,8 +114,11 @@ export type CraneRuntimeState = {
   readonly lastBlockedHour: number | null;
 };
 
-/** Najkratší skutočný cyklus: dve fázy (`grabbing`, `placing`) po najmenej jednom ticku (`MIN_CRANE_PHASE_TICKS`, ADR-016). */
-const MIN_CYCLE_TICKS = 2;
+/**
+ * Najkratšia fáza cyklu v tickoch — žeriav nemôže zdvihnúť ani položiť jednotku „za nula tickov“ (ADR-016; fázy počíta
+ * `cranePhaseTicks` v `CraneSystem`, ktorý konštantu reexportuje).
+ */
+export const MIN_CRANE_PHASE_TICKS = 1;
 
 const RUNTIME_KEYS: readonly (keyof CraneRuntimeState)[] = [
   'state',
@@ -180,10 +183,10 @@ export class CraneModule extends Module {
 
   /**
    * Jednotky vyložené za deň (`capacityHint`, ADR-026): `⌊ticksPerDay / c⌋`, kde `c = round(cycleTicks)` po modifikátoroch
-   * (§10) ako v `cranePhaseTicks`, najmenej `MIN_CYCLE_TICKS`.
+   * (§10) ako v `cranePhaseTicks`, najmenej skutočný cyklus `2 × MIN_CRANE_PHASE_TICKS` (dve fázy `grabbing` a `placing`).
    */
   override dailyUnloadUnits(stats: Pick<StatResolver, 'resolve'>, ticksPerDay: number): number {
-    const cycle = Math.max(MIN_CYCLE_TICKS, Math.round(stats.resolve('module', this.def.id, 'cycleTicks')));
+    const cycle = Math.max(2 * MIN_CRANE_PHASE_TICKS, Math.round(stats.resolve('module', this.def.id, 'cycleTicks')));
     return Math.floor(ticksPerDay / cycle);
   }
 

@@ -10,7 +10,9 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CommandError, commandFromJSON, type Command, type SerializedCommand } from '@sim/commands';
 import { loadBundledDefs, type DefRegistry } from '@sim/defs';
+import type { SimEvent } from '@sim/events';
 import { loadBundledMap, loadMap, parseMapDef, type LoadedMap } from '@sim/grid';
+import { CraneModule } from '@sim/modules';
 import { World } from '@sim/world';
 
 // ---------------------------------------------------------------------------------------------------------
@@ -53,8 +55,8 @@ export class SimrunError extends Error {
 // ---------------------------------------------------------------------------------------------------------
 
 /**
- * Report behu. Kľúče a ich poradie sú záväzné — číta ich `test-runner` a budúce golden reporty.
- * Metriky, ktoré ešte nie sú implementované, sú `null` (nie 0), aby sa nedali zameniť za nameranú nulu.
+ * Report behu. Kľúče a ich poradie sú záväzné — číta ich `test-runner` a budúce golden reporty; nové kľúče sa pridávajú
+ * na koniec. Metriky, ktoré ešte nie sú implementované, sú `null` (nie 0), aby sa nedali zameniť za nameranú nulu.
  */
 export interface SimrunReport {
   readonly scenario: string;
@@ -65,18 +67,33 @@ export interface SimrunReport {
   readonly gameDays: number;
   /** Hotovosť na konci v centoch (`world.cashCents`). */
   readonly cashEnd: number;
-  /** Exportované jednotky nákladu; do fázy 2 (náklad) vždy 0. */
+  /** Exportované jednotky nákladu (`world.cargo.exportedCount`); pred landside vo F3+ vždy 0. */
   readonly exportedUnits: number;
-  /** Stratené jednotky nákladu; musí byť 0 (CLAUDE.md, `/sim-check`). Do fázy 2 (náklad) vždy 0. */
+  /** Stratené jednotky nákladu = vytvorené − (živé + exportované); musí byť 0 (CLAUDE.md, `/sim-check`). */
   readonly lostUnits: number;
+  /** Podiel kontraktov splnených včas; `null` do fázy 4 (kontrakty). */
   readonly onTimeRate: number | null;
-  readonly craneBlockedPct: number | null;
+  /**
+   * Podiel ticků žeriavov v stave `blocked`: Σ blocked / Σ (busy + idle + blocked) × 100, na 1 desatinné miesto.
+   * Bez žeriavov (alebo bez jediného ticku) 0.
+   */
+  readonly craneBlockedPct: number;
   /** Počet buniek s cestou (`road === 'road'`) na konci behu, vrátane štartovacích ciest mapy. */
   readonly roads: number;
   /** Príkazy scenára aplikované pred tickom `atTick < ticks` (každý prešiel validáciou, inak beh končí chybou). */
   readonly commandsApplied: number;
   /** Príkazy s `atTick ≥ ticks` — beh skončil skôr, než na ne prišiel rad. */
   readonly commandsSkipped: number;
+  /** Počet modulov vo svete na konci behu (`world.modules.size`), vrátane štartovacích modulov mapy. */
+  readonly modules: number;
+  /** Počet udalostí `ShipSpawned` počas behu (počítadlo nie je v save — počíta sa z udalostí). */
+  readonly shipsSpawned: number;
+  /** Počet udalostí `ShipDeparted` počas behu. */
+  readonly shipsDeparted: number;
+  /** Jednotky nákladu na aprone kotvísk na konci behu (`countByKind('on_apron')`). */
+  readonly unitsOnApron: number;
+  /** Počet udalostí `CraneCycleDone` počas behu (jednotka `in_crane → on_apron`). */
+  readonly craneCycles: number;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -247,6 +264,55 @@ function resolveMap(scenario: LoadedScenario): LoadedMap {
   }
 }
 
+/** Počítadlá utilizácie jedného žeriavu (`CraneModule`): každý tick zvýši presne jedno z nich. */
+export interface CraneTickCounters {
+  readonly busyTicks: number;
+  readonly idleTicks: number;
+  readonly blockedTicks: number;
+}
+
+const PERCENT = 100;
+/** Zaokrúhlenie na 1 desatinné miesto: násobok 10 pred `Math.round`, delenie 10 po ňom. */
+const ONE_DECIMAL = 10;
+
+/**
+ * Podiel blokovaných ticků: Σ blocked / Σ (busy + idle + blocked) × 100, na 1 desatinné miesto. Sčítajú sa ticky
+ * naprieč žeriavmi (nie priemer percent jednotlivých žeriavov). Bez žeriavov alebo bez ticku (súčet 0) vráti 0.
+ */
+export function craneBlockedPercent(cranes: Iterable<CraneTickCounters>): number {
+  let blocked = 0;
+  let total = 0;
+  for (const crane of cranes) {
+    blocked += crane.blockedTicks;
+    total += crane.busyTicks + crane.idleTicks + crane.blockedTicks;
+  }
+  if (total === 0) return 0;
+  return Math.round((blocked * PERCENT * ONE_DECIMAL) / total) / ONE_DECIMAL;
+}
+
+function craneModules(world: World): CraneModule[] {
+  const cranes: CraneModule[] = [];
+  for (const module of world.modules.values()) {
+    if (module instanceof CraneModule) cranes.push(module);
+  }
+  return cranes;
+}
+
+/** Počty udalostí, ktoré simrun sčítava počas behu (nie sú v save). */
+interface EventTally {
+  shipsSpawned: number;
+  shipsDeparted: number;
+  craneCycles: number;
+}
+
+function tallyEvents(tally: EventTally, events: readonly SimEvent[]): void {
+  for (const event of events) {
+    if (event.type === 'ShipSpawned') tally.shipsSpawned += 1;
+    else if (event.type === 'ShipDeparted') tally.shipsDeparted += 1;
+    else if (event.type === 'CraneCycleDone') tally.craneCycles += 1;
+  }
+}
+
 function countRoads(world: World): number {
   let roads = 0;
   for (let i = 0; i < world.grid.cellCount; i++) {
@@ -268,6 +334,7 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
   const entries = parseCommands(scenario);
   const world = World.create(defs, resolveMap(scenario), scenario.seed);
 
+  const tally: EventTally = { shipsSpawned: 0, shipsDeparted: 0, craneCycles: 0 };
   let next = 0;
   for (let i = 0; i < ticks; i++) {
     const tick = world.clock.tick;
@@ -275,12 +342,14 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
       world.enqueue(entries[next].command);
       next += 1;
     }
-    const rejected = world.applyPending().filter((event) => event.type === 'CommandRejected');
+    const applied = world.applyPending();
+    tallyEvents(tally, applied);
+    const rejected = applied.filter((event) => event.type === 'CommandRejected');
     if (rejected.length > 0) {
       const what = rejected.map((event) => `${event.commandType}: ${event.reasons.join(', ')}`).join('; ');
       throw new SimrunError(`${scenario.id}: príkaz odmietnutý pri atTick ${String(tick)} — ${what}`);
     }
-    world.tick();
+    tallyEvents(tally, world.tick());
   }
 
   return {
@@ -289,13 +358,18 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     ticks: world.clock.tick,
     gameDays: world.clock.gameDay,
     cashEnd: world.cashCents,
-    exportedUnits: 0, // náklad až od fázy 2
-    lostUnits: 0,
-    onTimeRate: null,
-    craneBlockedPct: null,
+    exportedUnits: world.cargo.exportedCount,
+    lostUnits: world.cargo.createdCount - (world.cargo.liveCount + world.cargo.exportedCount),
+    onTimeRate: null, // kontrakty až od fázy 4
+    craneBlockedPct: craneBlockedPercent(craneModules(world)),
     roads: countRoads(world),
     commandsApplied: next,
     commandsSkipped: entries.length - next,
+    modules: world.modules.size,
+    shipsSpawned: tally.shipsSpawned,
+    shipsDeparted: tally.shipsDeparted,
+    unitsOnApron: world.cargo.countByKind('on_apron'),
+    craneCycles: tally.craneCycles,
   };
 }
 
@@ -306,7 +380,9 @@ export function formatSummary(report: SimrunReport): string {
     `simrun ${report.scenario}: seed ${String(report.seed)}, ${String(report.ticks)} tickov ` +
     `(${String(report.gameDays)} dní), cash ${String(report.cashEnd)}, exportované ${String(report.exportedUnits)}, ` +
     `stratené ${String(report.lostUnits)}, on-time ${metric(report.onTimeRate)}, žeriav blokovaný ${metric(report.craneBlockedPct)}, ` +
-    `cesty ${String(report.roads)}, príkazy ${String(report.commandsApplied)} (preskočené ${String(report.commandsSkipped)})`
+    `cesty ${String(report.roads)}, príkazy ${String(report.commandsApplied)} (preskočené ${String(report.commandsSkipped)}), ` +
+    `moduly ${String(report.modules)}, lode ${String(report.shipsSpawned)}/${String(report.shipsDeparted)} (spawn/odchod), ` +
+    `na aprone ${String(report.unitsOnApron)}, cykly žeriavov ${String(report.craneCycles)}`
   );
 }
 

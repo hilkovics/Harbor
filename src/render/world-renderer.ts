@@ -17,6 +17,7 @@ import { BuildLayer, loadGhostPalette } from './build-layer';
 import { Camera } from './camera';
 import { CraneLayer } from './crane-layer';
 import { EntityLayer } from './entity-layer';
+import { createRoadKindAt } from './lane';
 import { ModuleLayer } from './module-layer';
 import { ParcelLayer } from './parcel-layer';
 import { PortalLayer } from './portal-layer';
@@ -113,7 +114,8 @@ export class WorldRenderer {
     this.parcels = new ParcelLayer(options.parcels ?? options.map.parcels, palette, textures);
     this.portals = new PortalLayer(options.map, grid.width, grid.height, palette, textures);
     this.entityPalette = entityPalette;
-    const entityDeps = { cellPx: palette.cellPx, palette: entityPalette, textures: atlas };
+    // Typ cesty pod vozidlom (pruh) sa číta z živej mriežky; vozidlá vidia zmeny ciest hneď.
+    const entityDeps = { cellPx: palette.cellPx, palette: entityPalette, textures: atlas, roadKindAt: createRoadKindAt(grid) };
     this.modules = new ModuleLayer(entityDeps);
     this.ships = new EntityLayer(entityDeps);
     this.cranes = new CraneLayer(entityDeps);

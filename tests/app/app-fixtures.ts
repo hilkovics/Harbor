@@ -3,6 +3,7 @@
 import { commandFromJSON, type Command, type SerializedCommand, type ValidationResult } from '@sim/commands';
 import type { EntityId } from '@sim/core';
 import cargoTypesJson from '@data/defs/cargo_types.json';
+import contractTemplatesJson from '@data/defs/contract_templates.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
 import logisticsJson from '@data/defs/logistics.json';
@@ -41,6 +42,7 @@ export function defsWithBays(bays: number): DefRegistry {
     vehicles: vehiclesJson,
     trucks: trucksJson,
     logistics: logisticsJson,
+    contract_templates: contractTemplatesJson,
   });
 }
 

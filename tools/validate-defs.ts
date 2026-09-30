@@ -33,6 +33,9 @@ const MODULES_DEF_FILE = `modules${JSON_SUFFIX}`;
 const SHIPS_DEF_FILE = `ships${JSON_SUFFIX}`;
 const VEHICLES_DEF_FILE = `vehicles${JSON_SUFFIX}`;
 const TRUCKS_DEF_FILE = `trucks${JSON_SUFFIX}`;
+const CARGO_TYPES_DEF_FILE = `cargo_types${JSON_SUFFIX}`;
+const ECONOMY_DEF_FILE = `economy${JSON_SUFFIX}`;
+const CONTRACT_TEMPLATES_DEF_FILE = `contract_templates${JSON_SUFFIX}`;
 const MODULE_SPRITES_SECTION = 'sprites';
 const ENTITIES_SECTION = 'entities';
 const SHIP_ENTITY_PREFIX = 'ship_';
@@ -146,9 +149,101 @@ function findRampTruckProblems(defsDir: string): string[] {
   return errors;
 }
 
+/** Dvojica čísel `[min, max]`, inak `undefined` (tvar rozsahu hlási schéma). */
+function asRange(value: unknown): readonly [number, number] | undefined {
+  if (!Array.isArray(value) || value.length !== 2) return undefined;
+  const [min, max] = value as unknown[];
+  return typeof min === 'number' && typeof max === 'number' ? [min, max] : undefined;
+}
+
+/** `<at> rozsah musí mať min ≤ max` pre rozsah, ktorého poradie schéma nevyjadrí; neúplný rozsah sa preskočí. */
+function findRangeOrderProblem(at: string, value: unknown): string[] {
+  const range = asRange(value);
+  return range !== undefined && range[0] > range[1]
+    ? [`${at} rozsah musí mať min ≤ max, dostal [${String(range[0])}, ${String(range[1])}]`]
+    : [];
+}
+
 /**
- * Overí každý `*.json` v `defsDir` voči `<názov>.schema.json` v `schemasDir`; k `modules.json` pridá krížovú kontrolu
- * rámp a kamiónov (`findRampTruckProblems`). Chýbajúca schéma, nevalidný JSON aj porušenie schémy sú chyby v `errors`
+ * Vzťahy polí `economy.json` (F5), ktoré schéma nevyjadrí: `min ≤ max` v `arrivalDaysRange` a `volumeScaleRange`
+ * a `arrivalDaysRange[1] > 0` (loď kontraktu nesmie prísť v ticku prijatia). Chýbajúci alebo nečitateľný súbor sa preskočí.
+ */
+function findEconomyProblems(defsDir: string): string[] {
+  const economy = readJsonOrUndefined(join(defsDir, ECONOMY_DEF_FILE));
+  if (!isRecord(economy)) return [];
+  const label = ECONOMY_DEF_FILE;
+  const errors = [
+    ...findRangeOrderProblem(`${label}: /arrivalDaysRange`, economy['arrivalDaysRange']),
+    ...findRangeOrderProblem(`${label}: /volumeScaleRange`, economy['volumeScaleRange']),
+  ];
+  const arrival = asRange(economy['arrivalDaysRange']);
+  if (arrival !== undefined && arrival[1] <= 0) {
+    errors.push(`${label}: /arrivalDaysRange/1 musí byť > 0 (loď kontraktu nesmie prísť v ticku prijatia), dostal ${String(arrival[1])}`);
+  }
+  return errors;
+}
+
+/**
+ * Krížová kontrola `contract_templates.json` voči `cargo_types.json` a `ships.json` (F5; rovnaké pravidlá ako
+ * `DefRegistry.fromRaw`): `min ≤ max` v `volumeUnitsRange` a `slaDaysRange`, `cargoTypeId` a `shipClassIds` existujú,
+ * každá loď šablóny vozí kategóriu nákladu a `volumeUnitsRange[1] ≤` najmenšia `capacityUnits` lodí šablóny. Chyba:
+ * `contract_templates.json: /items/<i>/<pole> <správa>`. Chýbajúci alebo nečitateľný katalóg a položky bez očakávaného
+ * tvaru sa preskočia (hlási ich schéma).
+ */
+function findContractTemplateProblems(defsDir: string): string[] {
+  const templates = readJsonOrUndefined(join(defsDir, CONTRACT_TEMPLATES_DEF_FILE));
+  const cargoTypes = readJsonOrUndefined(join(defsDir, CARGO_TYPES_DEF_FILE));
+  const ships = readJsonOrUndefined(join(defsDir, SHIPS_DEF_FILE));
+  const templateItems = isRecord(templates) ? templates['items'] : undefined;
+  const cargoItems = isRecord(cargoTypes) ? cargoTypes['items'] : undefined;
+  const shipItems = isRecord(ships) ? ships['items'] : undefined;
+  if (!Array.isArray(templateItems) || !Array.isArray(cargoItems) || !Array.isArray(shipItems)) return [];
+  const findById = (items: unknown[], id: unknown): Record<string, unknown> | undefined => {
+    const found = items.find((candidate: unknown) => isRecord(candidate) && candidate['id'] === id);
+    return isRecord(found) ? found : undefined;
+  };
+  const errors: string[] = [];
+  templateItems.forEach((item: unknown, index) => {
+    if (!isRecord(item)) return;
+    const at = `${CONTRACT_TEMPLATES_DEF_FILE}: /items/${String(index)}`;
+    errors.push(...findRangeOrderProblem(`${at}/volumeUnitsRange`, item['volumeUnitsRange']), ...findRangeOrderProblem(`${at}/slaDaysRange`, item['slaDaysRange']));
+    const cargo = findById(cargoItems, item['cargoTypeId']);
+    if (cargo === undefined) {
+      errors.push(`${at}/cargoTypeId neznámy typ nákladu '${String(item['cargoTypeId'])}' (${CARGO_TYPES_DEF_FILE})`);
+    }
+    const shipIds = Array.isArray(item['shipClassIds']) ? (item['shipClassIds'] as unknown[]) : [];
+    let smallestCapacity = Number.POSITIVE_INFINITY;
+    shipIds.forEach((shipId: unknown, shipIndex) => {
+      const ship = findById(shipItems, shipId);
+      const shipAt = `${at}/shipClassIds/${String(shipIndex)}`;
+      if (ship === undefined) {
+        errors.push(`${shipAt} neznáma trieda lode '${String(shipId)}' (${SHIPS_DEF_FILE})`);
+        return;
+      }
+      const category = cargo?.['category'];
+      if (typeof category === 'string' && Array.isArray(ship['cargoCategories']) && !ship['cargoCategories'].includes(category)) {
+        errors.push(`${shipAt} loď '${String(shipId)}' nevozí kategóriu '${category}' nákladu '${String(item['cargoTypeId'])}'`);
+      }
+      if (typeof ship['capacityUnits'] === 'number') smallestCapacity = Math.min(smallestCapacity, ship['capacityUnits']);
+    });
+    const volume = asRange(item['volumeUnitsRange']);
+    if (volume !== undefined && volume[1] > smallestCapacity) {
+      errors.push(`${at}/volumeUnitsRange/1 musí byť ≤ najmenšia kapacita lodí šablóny (${String(smallestCapacity)}), dostal ${String(volume[1])}`);
+    }
+  });
+  return errors;
+}
+
+/** Krížové kontroly, ktoré JSON Schema nevyjadrí, podľa súboru defu (`undefined` = súbor ich nemá). */
+const DEF_FILE_CHECKS: Readonly<Record<string, (defsDir: string) => string[]>> = {
+  [MODULES_DEF_FILE]: findRampTruckProblems,
+  [ECONOMY_DEF_FILE]: findEconomyProblems,
+  [CONTRACT_TEMPLATES_DEF_FILE]: findContractTemplateProblems,
+};
+
+/**
+ * Overí každý `*.json` v `defsDir` voči `<názov>.schema.json` v `schemasDir`; k niektorým súborom pridá krížové kontroly
+ * (`DEF_FILE_CHECKS`: `modules.json` rampy × kamióny, `economy.json` rozsahy, `contract_templates.json` × cargo × lode). Chýbajúca schéma, nevalidný JSON aj porušenie schémy sú chyby v `errors`
  * (nie výnimky). Výsledky sú zoradené podľa názvu súboru. Výnimku vyhodí iba neexistujúci/nečitateľný `defsDir`.
  */
 export function validateDefsDir(defsDir: string, schemasDir: string): DefValidationResult[] {
@@ -157,7 +252,8 @@ export function validateDefsDir(defsDir: string, schemasDir: string): DefValidat
     .sort()
     .map((file) => {
       const errors = validateJsonFile(file, join(defsDir, file), `${basename(file, JSON_SUFFIX)}${SCHEMA_SUFFIX}`, schemasDir, true);
-      return { file, errors: file === MODULES_DEF_FILE ? [...errors, ...findRampTruckProblems(defsDir)] : errors };
+      const crossChecks = DEF_FILE_CHECKS[file]?.(defsDir) ?? [];
+      return { file, errors: [...errors, ...crossChecks] };
     });
 }
 

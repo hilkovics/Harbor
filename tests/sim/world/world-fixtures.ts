@@ -1,6 +1,7 @@
 // Spoločné pomôcky pre testy World (T01-03). Skutočné príkazy (PlaceRoad, …) sú v @sim/commands (T01-04, testy
 // v tests/sim/commands) — tu sú testovacie príkazy, ktoré implementujú rozhranie `Command` a menia svet priamo.
 import cargoTypesJson from '@data/defs/cargo_types.json';
+import contractTemplatesJson from '@data/defs/contract_templates.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
 import logisticsJson from '@data/defs/logistics.json';
@@ -27,6 +28,7 @@ export const RAW_DEFS = {
   vehicles: vehiclesJson,
   trucks: trucksJson,
   logistics: logisticsJson,
+  contract_templates: contractTemplatesJson,
 };
 /** Zdieľaná mapa — testy overujú, že ju žiadny svet nezmení. */
 export const MAP: LoadedMap = loadBundledMap();

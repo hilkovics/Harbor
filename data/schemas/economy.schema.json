@@ -14,7 +14,15 @@
     "bankruptcyDays",
     "offersPerDay",
     "offerExpiryDays",
-    "removalRefundRate"
+    "removalRefundRate",
+    "urgencyFactor",
+    "arrivalDaysRange",
+    "volumeScaleRange",
+    "minCapacityHint",
+    "contractsPerTier",
+    "xpMultiplier",
+    "lateXpFactor",
+    "ledgerEntriesKept"
   ],
   "properties": {
     "schemaVersion": {
@@ -69,6 +77,51 @@
       "minimum": 0,
       "maximum": 1,
       "description": "Podiel pôvodnej ceny, ktorý sa vráti pri odstránení modulu, cesty alebo koľaje (ARCHITECTURE §8 bod 8)."
+    },
+    "urgencyFactor": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Urgency odmeny (F5): 1 + urgencyFactor × (1 − slaDays / maxSlaDays); 0 = odmena nezávisí od SLA."
+    },
+    "arrivalDaysRange": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "type": "number", "minimum": 0 },
+      "description": "Rozsah [min, max] dní od prijatia kontraktu po príchod lode (desatinné dni). Poradie min ≤ max a max > 0 schéma nevyjadrí — kontroluje ich DefRegistry a `pnpm validate:defs`."
+    },
+    "volumeScaleRange": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "type": "number", "exclusiveMinimum": 0 },
+      "description": "Rozsah [min, max] násobku capacityHint pri losovaní objemu ponuky. Poradie min ≤ max schéma nevyjadrí — kontroluje ho DefRegistry a `pnpm validate:defs`."
+    },
+    "minCapacityHint": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Spodná hranica capacityHint (jednotky), aby prvá ponuka na prázdnom prístave nemala objem 0."
+    },
+    "contractsPerTier": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Počet splnených kontraktov na jeden tier: tier = floor(completed / contractsPerTier)."
+    },
+    "xpMultiplier": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Globálny násobiteľ XP odmeny kontraktu (volumeUnits × xpPerUnit × xpMultiplier)."
+    },
+    "lateXpFactor": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Násobok XP pri splnení po SLA termíne."
+    },
+    "ledgerEntriesKept": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Koľko posledných LedgerEntry sa drží v pamäti a ukladá do savu (staršie sú len v denných súhrnoch)."
     }
   }
 }

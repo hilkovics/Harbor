@@ -3,6 +3,7 @@
 import Ajv2020 from 'ajv/dist/2020';
 import { describe, expect, it } from 'vitest';
 import cargoTypesJson from '@data/defs/cargo_types.json';
+import contractTemplatesJson from '@data/defs/contract_templates.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
 import logisticsJson from '@data/defs/logistics.json';
@@ -48,6 +49,7 @@ interface RawBundle {
   vehicles: Json;
   trucks: Json;
   logistics: Json;
+  contract_templates: Json;
 }
 
 /** Čerstvá hlboká kópia bundled defov; negatívne testy z nej upravia jedno pole. */
@@ -62,6 +64,7 @@ function rawDefs(): RawBundle {
     vehicles: structuredClone(vehiclesJson),
     trucks: structuredClone(trucksJson),
     logistics: structuredClone(logisticsJson),
+    contract_templates: structuredClone(contractTemplatesJson),
   };
 }
 
@@ -237,7 +240,7 @@ describe('bundled katalógy (loadBundledDefs)', () => {
       maxCranes: 2,
       frontWaterCells: 3,
     });
-    expect(craneParams(defs.modules.get('crane_container_gantry'))).toEqual({ cycleTicks: 12, category: 'container' });
+    expect(craneParams(defs.modules.get('crane_container_gantry'))).toEqual({ cycleTicks: 12, category: 'container', wagePerDayCents: 25_000 });
   });
 
   it('každé volanie loadBundledDefs vráti nezávislé katalógy', () => {
@@ -905,7 +908,7 @@ describe('MODULE_PARAM_SPECS', () => {
 
   it('berth a crane majú presne polia BerthParams a CraneParams', () => {
     expect(Object.keys(MODULE_PARAM_SPECS.berth)).toEqual(['depthClass', 'apronSlots', 'maxCranes', 'frontWaterCells']);
-    expect(Object.keys(MODULE_PARAM_SPECS.crane)).toEqual(['cycleTicks', 'category']);
+    expect(Object.keys(MODULE_PARAM_SPECS.crane)).toEqual(['cycleTicks', 'category', 'wagePerDayCents']);
   });
 
   it('storage a depot majú presne polia StorageParams a DepotParams (internalTicks je voliteľné)', () => {
@@ -1044,9 +1047,29 @@ describe('katalógy: schéma ⇔ DefRegistry', () => {
     trucks: new Ajv2020({ allErrors: true }).compile(trucksSchema),
   };
 
+  /**
+   * Porovnanie so schémou patrí pravidlám jednej položky katalógu, nie krížovým kontrolám šablón kontraktov (F5;
+   * tie majú vlastné testy v `contract-templates.test.ts`): šablóny sa preto nahradia neutrálnou, ktorá vždy sedí na
+   * prvý typ nákladu a prvú loď upraveného katalógu.
+   */
+  const neutralTemplates = (raw: RawBundle): Json => ({
+    schemaVersion: 1,
+    items: [
+      {
+        id: 'neutral_template',
+        cargoTypeId: itemsOf(raw, 'cargo_types')[0]!['id'],
+        volumeUnitsRange: [1, 1],
+        slaDaysRange: [1, 1],
+        shipClassIds: [itemsOf(raw, 'ships')[0]!['id']],
+        weight: 1,
+        minTier: 0,
+      },
+    ],
+  });
+
   const registryAccepts = (raw: RawBundle): boolean => {
     try {
-      fromRaw(raw);
+      fromRaw({ ...raw, contract_templates: neutralTemplates(raw) });
       return true;
     } catch (error) {
       if (error instanceof DefError) return false;

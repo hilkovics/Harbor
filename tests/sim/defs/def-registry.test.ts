@@ -1,6 +1,7 @@
 import Ajv2020 from 'ajv/dist/2020';
 import { describe, expect, it } from 'vitest';
 import cargoTypesJson from '@data/defs/cargo_types.json';
+import contractTemplatesJson from '@data/defs/contract_templates.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
 import logisticsJson from '@data/defs/logistics.json';
@@ -29,6 +30,7 @@ interface RawBundle {
   vehicles: Record<string, unknown>;
   trucks: Record<string, unknown>;
   logistics: Record<string, unknown>;
+  contract_templates: Record<string, unknown>;
 }
 
 /** Čerstvá hlboká kópia bundled defov; negatívne testy z nej upravia jedno pole. */
@@ -43,6 +45,7 @@ function rawDefs(): RawBundle {
     vehicles: structuredClone(vehiclesJson),
     trucks: structuredClone(trucksJson),
     logistics: structuredClone(logisticsJson),
+    contract_templates: structuredClone(contractTemplatesJson),
   };
 }
 

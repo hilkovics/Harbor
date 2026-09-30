@@ -32,7 +32,7 @@
       "connectors": [],
       "costCents": 60000000,
       "maintenancePerDayCents": 90000,
-      "params": { "cycleTicks": 12, "category": "container" }
+      "params": { "cycleTicks": 12, "category": "container", "wagePerDayCents": 25000 }
     },
     {
       "id": "container_yard_small",

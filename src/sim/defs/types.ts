@@ -48,6 +48,22 @@ export interface EconomyDef extends DefBase {
   readonly offerExpiryDays: number;
   /** Podiel pôvodnej ceny, ktorý sa vráti pri odstránení modulu, cesty alebo koľaje (§8 bod 8). */
   readonly removalRefundRate: number;
+  /** Urgency odmeny (F5): `1 + urgencyFactor × (1 − slaDays / maxSlaDays)`; 0 = odmena nezávisí od SLA. */
+  readonly urgencyFactor: number;
+  /** Rozsah `[min, max]` dní od prijatia kontraktu po príchod lode (desatinné dni; losuje sa jediným `Rng`). */
+  readonly arrivalDaysRange: readonly [number, number];
+  /** Rozsah `[min, max]` násobku `capacityHint` pri losovaní objemu ponuky (pool, F5). */
+  readonly volumeScaleRange: readonly [number, number];
+  /** Spodná hranica `capacityHint` (jednotky), aby prvá ponuka na prázdnom prístave nemala objem 0. */
+  readonly minCapacityHint: number;
+  /** Počet splnených kontraktov na jeden tier: `tier = floor(completed / contractsPerTier)`. */
+  readonly contractsPerTier: number;
+  /** Globálny násobiteľ XP odmeny kontraktu (`volumeUnits × xpPerUnit × xpMultiplier`). */
+  readonly xpMultiplier: number;
+  /** Násobok XP pri splnení po SLA termíne (`0 ≤ lateXpFactor ≤ 1`). */
+  readonly lateXpFactor: number;
+  /** Koľko posledných `LedgerEntry` sa drží v pamäti a ukladá do savu (staršie sú len v denných súhrnoch). */
+  readonly ledgerEntriesKept: number;
 }
 
 /** Cena a údržba jednej vrstvy dopravy (cesta alebo koľaj), počítané za bunku; peniaze v centoch. */
@@ -215,6 +231,8 @@ export interface CraneParams {
   /** Trvanie celého cyklu (grabbing + placing) v tickoch. */
   readonly cycleTicks: number;
   readonly category: CargoCategory;
+  /** Denná mzda obsluhy žeriava v centoch; strhne sa pri DayClosed (§9.2, F5). */
+  readonly wagePerDayCents: number;
 }
 
 /** `params` skladu (`kind: 'storage'`). */
@@ -335,4 +353,25 @@ export interface TruckDef {
   /** Rýchlosť jazdy v bunkách za tick. */
   readonly speedCellsPerTick: number;
   readonly cargoCategories: readonly CargoCategory[];
+}
+
+/**
+ * Položka `contract_templates.json` (§4.6, §9.1; F5): šablóna, z ktorej pool generuje ponuky kontraktov.
+ * Objem ponuky leží v `volumeUnitsRange` a nikdy nepresiahne kapacitu lode šablóny (`DefRegistry` to overuje pre najmenšiu
+ * loď zo `shipClassIds`); SLA v dňoch sa losuje zo `slaDaysRange`.
+ */
+export interface ContractTemplateDef {
+  readonly id: string;
+  /** Typ nákladu z `cargo_types.json`. */
+  readonly cargoTypeId: string;
+  /** Rozsah `[min, max]` objemu kontraktu v jednotkách (`min ≤ max`). */
+  readonly volumeUnitsRange: readonly [number, number];
+  /** Rozsah `[min, max]` SLA v celých dňoch od príchodu lode (`min ≤ max`). */
+  readonly slaDaysRange: readonly [number, number];
+  /** Triedy lodí zo `ships.json`, ktoré kontrakt privezú (pool losuje jednu). */
+  readonly shipClassIds: readonly string[];
+  /** Váha pri váhovom výbere šablóny. */
+  readonly weight: number;
+  /** Minimálny tier hráča, od ktorého sa šablóna ponúka. */
+  readonly minTier: number;
 }

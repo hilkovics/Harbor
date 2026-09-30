@@ -99,7 +99,7 @@ describe('skutočné katalógy F2 až F4', () => {
       connectors: [],
       costCents: 60_000_000,
       maintenancePerDayCents: 90_000,
-      params: { cycleTicks: 12, category: 'container' },
+      params: { cycleTicks: 12, category: 'container', wagePerDayCents: 25000 },
     });
     expect(item(def, 'container_yard_small')).toEqual({
       id: 'container_yard_small',

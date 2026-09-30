@@ -43,6 +43,8 @@ export const MODULE_PARAM_SPECS: { readonly [K in ModuleKind]: SpecTable<ModuleP
     // Cyklus sa delí na dve fázy (grabbing ⌊c/2⌋, placing c − ⌊c/2⌋, §7.2), každá musí mať aspoň jeden tick.
     cycleTicks: { kind: 'integer', min: 2 },
     category: { kind: 'enum', values: CARGO_CATEGORIES },
+    // Denná mzda obsluhy (§9.2, F5); strhne sa pri DayClosed spolu s mzdami vozidiel.
+    wagePerDayCents: { kind: 'integer', min: 0 },
   },
   storage: {
     capacityUnits: { kind: 'integer', min: 1 },

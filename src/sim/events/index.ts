@@ -5,6 +5,8 @@ export type {
   DayClosedEvent,
   GameSpeedChangedEvent,
   HourClosedEvent,
+  ModulePlacedEvent,
+  ModuleRemovedEvent,
   MoneyChangedEvent,
   MonthClosedEvent,
   RoadChangedEvent,

@@ -1,12 +1,14 @@
 /**
- * Udalosti simulácie (ARCHITECTURE §12.1, výber pre F1 + `CargoMoved` z F2). Readonly DTO: `World` ich zbiera v `EventBus` a vracia
- * z `tick()` / `applyPending()`; prezentácia ich len číta. Nový typ udalosti = nový člen únie (+ test).
+ * Udalosti simulácie (ARCHITECTURE §12.1, výber pre F1 + `CargoMoved`, `ModulePlaced`, `ModuleRemoved` z F2). Readonly DTO:
+ * `World` ich zbiera v `EventBus` a vracia z `tick()` / `applyPending()`; prezentácia ich len číta. Nový typ udalosti =
+ * nový člen únie (+ test).
  */
 import type { CargoLocation } from '../cargo/cargo-location';
 import type { ValidationReason } from '../commands/validation';
 import type { EntityId } from '../core/entity-id';
 import type { LedgerCategory } from '../economy/ledger-category';
 import type { CellCoord } from '../grid/grid';
+import type { Rotation } from '../grid/rotation';
 
 /** Tick sa dokončil; `tick` = nová hodnota `clock.tick` (po kroku 1). */
 export interface TickAdvancedEvent {
@@ -72,6 +74,29 @@ export interface CargoMovedEvent {
   readonly tick: number;
 }
 
+/**
+ * Hráč postavil modul (`PlaceModule`, ADR-015). `x`, `y` = ľavý horný roh footprintu po rotácii, `cells` = footprint
+ * row-major (pri žeriave bunky berthu, na ktorých stojí). Starter moduly mapy (`World.create`) udalosť nemajú —
+ * prezentácia ich načíta zo snapshotu.
+ */
+export interface ModulePlacedEvent {
+  readonly type: 'ModulePlaced';
+  readonly moduleId: EntityId;
+  readonly defId: string;
+  readonly x: number;
+  readonly y: number;
+  readonly rotation: Rotation;
+  readonly cells: readonly CellCoord[];
+}
+
+/** Hráč odstránil modul (`RemoveModule`, ADR-015); `cells` = jeho footprint (bunky sú odteraz voľné, pri žeriave ostávajú berthu). */
+export interface ModuleRemovedEvent {
+  readonly type: 'ModuleRemoved';
+  readonly moduleId: EntityId;
+  readonly defId: string;
+  readonly cells: readonly CellCoord[];
+}
+
 export type SimEvent =
   | TickAdvancedEvent
   | HourClosedEvent
@@ -81,7 +106,9 @@ export type SimEvent =
   | MoneyChangedEvent
   | GameSpeedChangedEvent
   | CommandRejectedEvent
-  | CargoMovedEvent;
+  | CargoMovedEvent
+  | ModulePlacedEvent
+  | ModuleRemovedEvent;
 
 /** Názov typu udalosti (`'TickAdvanced' | 'HourClosed' | …`). */
 export type SimEventType = SimEvent['type'];

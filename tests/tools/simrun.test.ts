@@ -22,6 +22,7 @@ const SMOKE_SCENARIO = fileURLToPath(new URL('../../data/scenarios/smoke.json', 
 const HARBOR_MAP = fileURLToPath(new URL('../../data/maps/harbor_01.json', import.meta.url));
 const F2_UNLOAD_SCENARIO = fileURLToPath(new URL('../../data/scenarios/f2_unload.json', import.meta.url));
 const APRON_TO_YARD_SCENARIO = fileURLToPath(new URL('../../data/scenarios/apron_to_yard.json', import.meta.url));
+const FULL_IMPORT_CHAIN_SCENARIO = fileURLToPath(new URL('../../data/scenarios/full_import_chain.json', import.meta.url));
 
 const SMOKE: Scenario = { id: 'smoke', seed: 42, commands: [] };
 // Hodnota z data/defs/time.json (tickGameSeconds 10) → 8 640 tickov = 1 herný deň.
@@ -225,6 +226,12 @@ describe('runScenario', () => {
       vehicleUtilPct: 0,
       noStorageEvents: 0,
       ticksToAllStored: null,
+      trucksSpawned: 0,
+      trucksExited: 0,
+      unitsExportedByTrucks: 0,
+      noWaitingBayEvents: 0,
+      gateQueueMax: 0,
+      ticksToAllExported: null,
     });
     expect(Object.keys(report)).toEqual([
       'scenario',
@@ -250,6 +257,12 @@ describe('runScenario', () => {
       'vehicleUtilPct',
       'noStorageEvents',
       'ticksToAllStored',
+      'trucksSpawned',
+      'trucksExited',
+      'unitsExportedByTrucks',
+      'noWaitingBayEvents',
+      'gateQueueMax',
+      'ticksToAllExported',
     ]);
   });
 
@@ -291,6 +304,11 @@ describe('runScenario', () => {
     expect(line).toContain('využitie vozidiel 0');
     expect(line).toContain('bez skladu 0');
     expect(line).toContain('všetko uložené n/a');
+    expect(line).toContain('kamióny 0/0');
+    expect(line).toContain('odvezené kamiónmi 0');
+    expect(line).toContain('bez stojiska 0');
+    expect(line).toContain('fronta brány max 0');
+    expect(line).toContain('všetko exportované n/a');
   });
 
   describe('metriky žeriavov a lodí (F2)', () => {
@@ -420,6 +438,121 @@ describe('runScenario', () => {
 
     it('bez spawnu lode je ticksToAllStored null (prázdny svet nie je „všetko uložené")', () => {
       expect(runScenario(SMOKE, 1000, defs).ticksToAllStored).toBeNull();
+    });
+  });
+
+  describe('metriky kamiónov a exportu (F4)', () => {
+    // full_import_chain: loď so 120 TEU → žeriav → apron → 3 vozidlá → dvor → rampa → kamióny (kapacita 1) → brána → portál.
+    const fullChain = loadScenario(FULL_IMPORT_CHAIN_SCENARIO);
+    const EXPORT_TICKS = 40_000;
+    const UNITS = 120;
+    let full: SimrunReport;
+
+    beforeAll(() => {
+      full = runScenario(fullChain, EXPORT_TICKS, defs);
+    });
+
+    it('full_import_chain (40 000 tickov): 120 jednotiek exportovaných 120 kamiónmi (kapacita 1), nič stratené', () => {
+      expect(defs.trucks.get('truck_container').capacityUnits).toBe(1);
+      expect(full).toMatchObject({
+        scenario: 'full_import_chain',
+        lostUnits: 0,
+        exportedUnits: UNITS,
+        unitsInStorage: 0,
+        unitsOnApron: 0,
+        shipsSpawned: 1,
+        shipsDeparted: 1,
+        trucksSpawned: UNITS,
+        trucksExited: UNITS,
+        unitsExportedByTrucks: UNITS,
+      });
+    });
+
+    it('krížová kontrola: Σ TruckExited.units === exportedUnits (kamióny sú jediná cesta exportu)', () => {
+      expect(full.unitsExportedByTrucks).toBe(full.exportedUnits);
+      expect(full.trucksExited).toBe(full.trucksSpawned);
+    });
+
+    it('ticksToAllExported je číslo v (0, 40 000], neskôr než ticksToAllStored', () => {
+      const exported = full.ticksToAllExported;
+      if (exported === null) throw new Error('ticksToAllExported má byť číslo');
+      expect(exported).toBeGreaterThan(0);
+      expect(exported).toBeLessThanOrEqual(EXPORT_TICKS);
+      expect(full.ticksToAllStored).not.toBeNull();
+      expect(exported).toBeGreaterThan(full.ticksToAllStored ?? Number.POSITIVE_INFINITY);
+    });
+
+    it('ticksToAllExported je hranica: o tick skôr ešte nie je všetko exportované, presne v ňom už áno', () => {
+      const exported = full.ticksToAllExported;
+      if (exported === null) throw new Error('ticksToAllExported má byť číslo');
+
+      const before = runScenario(fullChain, exported - 1, defs);
+      expect(before.ticksToAllExported).toBeNull();
+      expect(before.exportedUnits).toBeLessThan(UNITS);
+      expect(before.lostUnits).toBe(0);
+
+      const at = runScenario(fullChain, exported, defs);
+      expect(at.ticksToAllExported).toBe(exported);
+      expect(at.exportedUnits).toBe(UNITS);
+      expect(at.trucksExited).toBe(UNITS);
+    });
+
+    it('gateQueueMax ≥ 1: aspoň jeden kamión bol vo fronte (alebo v prechode) brány', () => {
+      expect(full.gateQueueMax).toBeGreaterThanOrEqual(1);
+      expect(Number.isInteger(full.gateQueueMax)).toBe(true);
+    });
+
+    it('noWaitingBayEvents je nezáporné celé číslo (stojisko stačí → 0)', () => {
+      expect(full.noWaitingBayEvents).toBe(0);
+    });
+
+    it('beh skrátený pred koncom exportu: trucksSpawned ≥ trucksExited, ticksToAllExported null, nič stratené', () => {
+      const partial = runScenario(fullChain, 6000, defs);
+      expect(partial.ticksToAllExported).toBeNull();
+      expect(partial.trucksSpawned).toBeGreaterThan(0);
+      expect(partial.trucksSpawned).toBeGreaterThanOrEqual(partial.trucksExited);
+      expect(partial.unitsExportedByTrucks).toBe(partial.exportedUnits);
+      expect(partial.exportedUnits).toBe(partial.trucksExited);
+      expect(partial.lostUnits).toBe(0);
+    });
+
+    it('bez čakacej plochy je rampa neprevádzková: žiadne kamióny, ticksToAllExported null, náklad zostane v sklade', () => {
+      const commands = fullChain.commands.filter(
+        (entry) => (entry.command as { defId?: unknown }).defId !== 'truck_waiting_area',
+      );
+      expect(commands).toHaveLength(fullChain.commands.length - 1);
+      const report = runScenario({ ...fullChain, commands }, EXPORT_TICKS, defs);
+      expect(report).toMatchObject({
+        lostUnits: 0,
+        exportedUnits: 0,
+        unitsInStorage: UNITS,
+        trucksSpawned: 0,
+        trucksExited: 0,
+        unitsExportedByTrucks: 0,
+        gateQueueMax: 0,
+      });
+      expect(report.ticksToAllExported).toBeNull();
+    });
+
+    it('rovnaký scenár → identický report (metriky F4 sú deterministické)', () => {
+      expect(runScenario(fullChain, EXPORT_TICKS, defs)).toEqual(full);
+    });
+
+    it.each<[string, string, number]>([
+      ['smoke (bez lode a kamiónov)', SMOKE_SCENARIO, 1000],
+      ['f2_unload (loď bez skladu a kamiónov)', F2_UNLOAD_SCENARIO, 5000],
+      ['apron_to_yard (sklad bez kamiónov)', APRON_TO_YARD_SCENARIO, 15_000],
+    ])('bez kamiónov: %s → nuly a ticksToAllExported null', (_name, path, ticks) => {
+      const report = runScenario(loadScenario(path), ticks, defs);
+      expect(report).toMatchObject({
+        trucksSpawned: 0,
+        trucksExited: 0,
+        unitsExportedByTrucks: 0,
+        noWaitingBayEvents: 0,
+        gateQueueMax: 0,
+        exportedUnits: 0,
+      });
+      expect(report.ticksToAllExported).toBeNull();
     });
   });
 
@@ -671,6 +804,37 @@ describe('CLI (tools/simrun.ts)', () => {
     expect(typeof report['ticksToAllStored']).toBe('number');
     expect(typeof report['vehicleUtilPct']).toBe('number');
   }, 60_000);
+
+  it('full_import_chain --report → čistý JSON s metrikami kamiónov a exportu, exit 0', () => {
+    const run = runCli(FULL_IMPORT_CHAIN_SCENARIO, '--ticks', '40000', '--report');
+    expect(run.status).toBe(0);
+    expect(run.stderr).toBe('');
+    const report = JSON.parse(run.stdout) as Record<string, unknown>;
+    expect(report).toMatchObject({
+      scenario: 'full_import_chain',
+      lostUnits: 0,
+      exportedUnits: 120,
+      trucksSpawned: 120,
+      trucksExited: 120,
+      unitsExportedByTrucks: 120,
+      noWaitingBayEvents: 0,
+    });
+    expect(typeof report['ticksToAllExported']).toBe('number');
+    expect(report['gateQueueMax']).toBeGreaterThanOrEqual(1);
+  }, 60_000);
+
+  it('smoke --report → nové kľúče F4 sú 0 a null (nie vynechané)', () => {
+    const run = runCli(SMOKE_SCENARIO, '--ticks', '100', '--report');
+    expect(run.status).toBe(0);
+    expect(JSON.parse(run.stdout)).toMatchObject({
+      trucksSpawned: 0,
+      trucksExited: 0,
+      unitsExportedByTrucks: 0,
+      noWaitingBayEvents: 0,
+      gateQueueMax: 0,
+      ticksToAllExported: null,
+    });
+  }, 30_000);
 
   it('replay: PlaceRoad zo scenára → viac ciest, nižšia hotovosť, commandsSkipped pre atTick ≥ ticks', () => {
     const path = writeScenario([

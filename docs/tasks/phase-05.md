@@ -64,7 +64,7 @@
 - [ ] T05-03 · Sim: `Contract` FSM + `ContractSystem` (pool, Accept/Decline, loď kontraktu, SLA, demurrage, late, fail, completion, XP); ADR-026
 - [ ] T05-04 · Sim: dispatcher krok 2 podľa kontraktu + SLA priorita; WorldState v5 + migrácia; `GameOver`; ADR-027
 - [ ] T05-05 · Testy (TDD): vzorce, penalizácie, pool, scenár `vertical_slice` + golden report
-- [ ] T05-06 · UI: `ContractsPanel`, TopHUD (delta/deň, XP), `GameOverModal`, tóny toastov (predstih, worktree)
+- [x] T05-06 · UI: `ContractsPanel`, TopHUD (delta/deň, XP), `GameOverModal`, tóny toastov (predstih, worktree)
 - [ ] T05-07 · App: snapshot v5, Accept/Decline, HUD, toasty kontraktov, GameOver, odstránenie DEV spawn tlačidla
 - [ ] T05-08 · Tooling: `simrun` metriky kontraktov a ekonomiky, golden report
 - [ ] T05-09 · E2E: nová hra → prijatie kontraktu → výplata, screenshoty

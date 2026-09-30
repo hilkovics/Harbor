@@ -307,7 +307,7 @@ export class World {
   /**
    * Obnoví svet zo `serialize()` (aj po `JSON.parse`); staršiu verziu najprv prevedie `migrateWorldState` (v1 → v2:
    * bez modulov, lodí a nákladu; v2 → v3: bez vozidiel a jobov, `runtime` skladu bez rezervácií, kotviska s
-   * `lastNoStorageHour`). Terén a parcely berie z `map` (musí mať
+   * `lastNoStorageHour`; v3 → v4: bez kamiónov; v4 → v5: prázdna kniha so zachovanou hotovosťou, ADR-025). Terén a parcely berie z `map` (musí mať
    * `id === state.mapId`), vrstvu dopravy celú z `state.roads` (aj typ a smer cesty, ADR-020) — starter cesta, ktorú hráč odstránil, sa neobnoví;
    * moduly, lode, vozidlá, náklad a odvodený stav obnoví `restoreEntities`. Neplatný stav → `WorldStateError` (pozri `parseWorldState`, `restoreEntities`). Výsledok
    * nezdieľa meniteľný stav so `state` ani s `map`. `options` ako pri `create`.
@@ -920,10 +920,11 @@ export class World {
   }
 
   /**
-   * Čistý JSON stav v4 (§14; tvar pozri `WorldState`): v1 polia (cesty s typom a smerom, ADR-020) + `traffic`, `modules` (poradie umiestnenia),
+   * Čistý JSON stav v5 (§14; tvar pozri `WorldState`): v1 polia (cesty s typom a smerom, ADR-020) + `traffic`, `modules` (poradie umiestnenia),
    * `cargo` (`cargo.getState()`), `ships` (vzostupne podľa id, `Ship.toState()`), `vehicles` (vzostupne podľa id,
    * `Vehicle.toState()`), `jobs` (aktívne joby vzostupne podľa id, `TransportJob.toState()`, ADR-018) a `trucks` (vzostupne podľa
-   * id, `Truck.toState()`, ADR-024). Fronta príkazov sa neukladá, preto musí byť prázdna —
+   * id, `Truck.toState()`, ADR-024) a `economy` (`Economy.getState()`: kniha, súčty otvoreného dňa, súhrny, bankrot — ADR-025;
+   * hotovosť ostáva v `cashCents`). Fronta príkazov sa neukladá, preto musí byť prázdna —
    * inak `Error` (zavolaj najprv `applyPending()` alebo `tick()`).
    */
   serialize(): WorldState {

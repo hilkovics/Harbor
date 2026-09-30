@@ -3,7 +3,7 @@
  *
  * Sim vedie vozidlo po lomenej čiare cez stredy buniek (ADR-019). Zákruta v bunke `K` je teda písmeno L: od stredu hrany,
  * cez stred `K`, k stredu ďalšej hrany. Renderer ju nahrádza oblúkom, ktorý vychádza zo sprite `road_corner.svg`
- * (`M32 0A32 32 0 0 0 64 32`): oblúky majú stred vo vnútornom rohu bunky — v rohu, ktorý ležia obe pripojené strany —
+ * (`M32 0A32 32 0 0 0 64 32`): oblúky majú stred vo vnútornom rohu bunky — v rohu, v ktorom sa stretávajú obe pripojené strany —
  * a polomery
  *  - 32 px (stred cesty) pre `one_lane` a `one_way` (vozidlo jazdí v strede),
  *  - 19 px pre pravú zákrutu dvojpruhovej cesty (vnútorný pruh: 32 − 13),
@@ -95,7 +95,7 @@ export function turnArcPose(kind: RoadKind, from: ViewRotation, to: ViewRotation
   const dOut = forwardOf(to);
   const rIn = rightOf(from);
   const lane = laneMagnitude(kind);
-  // stred oblúka = roh bunky, ktorý ležia hrany vstupu a výstupu (počiatok = stred bunky)
+  // stred oblúka = roh bunky, v ktorom sa stretávajú hrany vstupu a výstupu (počiatok = stred bunky)
   const centerX = -0.5 * dIn.x + 0.5 * dOut.x;
   const centerY = -0.5 * dIn.y + 0.5 * dOut.y;
   // vektor stredu pruhu na hrane vstupu voči stredu oblúka; ním sa otáča o `delta · t`

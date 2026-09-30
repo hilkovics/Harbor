@@ -95,7 +95,7 @@ test.describe('F3: vozidlá v pravom pruhu a po oblúku v zákrutách (scéna la
   const RIGHT_OF_HEADING: Record<number, readonly [number, number]> = { 0: [1, 0], 90: [0, 1], 180: [-1, 0], 270: [0, -1] };
 
   /**
-   * Vozidlá v bunkách zákrut: stred oblúka `q` (roh bunky, ktorý ležia pripojené strany), polomer pruhu v px zdroja
+   * Vozidlá v bunkách zákrut: stred oblúka `q` (roh bunky, v ktorom sa stretávajú pripojené strany), polomer pruhu v px zdroja
    * (pravá zákruta 19, ľavá 45), parameter oblúka `t` (podiel dráhy v bunke) a kurz vstupu s otočením (+90 / −90).
    */
   const ARCS: Record<number, { q: readonly [number, number]; radius: number; t: number; from: number; delta: number }> = {

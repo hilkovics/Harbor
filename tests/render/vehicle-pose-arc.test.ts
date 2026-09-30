@@ -117,7 +117,7 @@ function drive(scene: Scenario, speed: number): Sample[] {
   return samples;
 }
 
-/** Stred oblúka zákruty v svete (roh bunky), ktorý ležia hrany vstupu a výstupu. */
+/** Stred oblúka zákruty v svete (roh bunky), v ktorom sa stretávajú hrany vstupu a výstupu. */
 function arcCenterWorld(scene: Scenario): { x: number; y: number } {
   const dIn = forwardOf(scene.entry);
   const dOut = forwardOf(scene.exit);

@@ -29,7 +29,7 @@ function readAsset(path: string): string {
   return readFileSync(new URL(`../../assets/${path}`, import.meta.url), 'utf8');
 }
 
-/** Stred oblúka voči stredu bunky: roh, ktorý ležia hrany vstupu a výstupu. */
+/** Stred oblúka voči stredu bunky: roh, v ktorom sa stretávajú hrany vstupu a výstupu. */
 function arcCenter(from: ViewRotation, to: ViewRotation): { x: number; y: number } {
   const dIn = forwardOf(from);
   const dOut = forwardOf(to);

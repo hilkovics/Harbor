@@ -102,7 +102,7 @@ describe('skutočné vozidlo zo simu v zákrute (karta T03-19: kurz sa mení sko
     const roadMaskAt = createRoadMaskAt(grid);
     const dIn = forwardOf(entry);
     const dOut = forwardOf(normalizeAngle(entry + delta) as ViewRotation);
-    // stred oblúka = roh bunky zákruty, ktorý ležia hrany vstupu a výstupu
+    // stred oblúka = roh bunky zákruty, v ktorom sa stretávajú hrany vstupu a výstupu
     const q = { x: CENTER.x + 0.5 - 0.5 * dIn.x + 0.5 * dOut.x, y: CENTER.y + 0.5 - 0.5 * dIn.y + 0.5 * dOut.y };
     const radius = (delta > 0 ? 19 : 45) / 64;
     let previous: { x: number; y: number } | null = null;

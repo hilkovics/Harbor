@@ -6,8 +6,9 @@
  * - `TopHUD` je pripojený: číta `useSimSnapshot(selector, 100)` a rýchlosť zapisuje výlučne cez
  *   `dispatch(commandFromJSON({ type: 'SetGameSpeed', speed }))` (CLAUDE.md, pravidlá 1 a 5).
  *
- * PLACEHOLDER (F1): sim zatiaľ nepozná denný delta ani XP (dáta prídu vo F5/F8, Economy.daily / XP), preto sú to
- * voliteľné props (`dailyDeltaCents`, `xp`) so zástupným `—`. Rovnako sú vo F1 neaktívne ikony panelov vpravo
+ * Denný delta a XP sú voliteľné props (`dailyDeltaCents`, `xp`): dáta dodá app vrstva vo F5 (Economy.daily a XP hráča),
+ * dovtedy (F1–F4) sa ukáže zástupné `—`. Kladný delta je zelený s ▲, záporný červený s ▼, nula neutrálna bez šípky.
+ * Rovnako sú vo F1 neaktívne ikony panelov vpravo
  * (kontrakty, financie, štatistiky, tech) — panely prídu neskôr; len ⚙ je aktívne (bez akcie, kým nie sú nastavenia).
  */
 import { useCallback, useEffect, useRef } from 'react';
@@ -43,9 +44,9 @@ export interface TopHUDViewProps {
   readonly speed: number;
   readonly speeds: readonly number[];
   readonly onSpeedChange: (speed: number) => void;
-  /** Denná zmena hotovosti v centoch; `null`/vynechané = zástupný text (PLACEHOLDER F1, dáta vo F5). */
+  /** Denná zmena hotovosti v centoch (znamienko + farba + ▲/▼); `null`/vynechané = zástupný text `—/deň`. */
   readonly dailyDeltaCents?: number | null;
-  /** Skúsenosti; `null`/vynechané = zástupný text (PLACEHOLDER F1, dáta vo F8). */
+  /** Skúsenosti (`340 XP`); `null`/vynechané = zástupný text `— XP`. */
   readonly xp?: number | null;
   /** Otvorí nastavenia; bez handlera je ⚙ aktívne, ale bez akcie. */
   readonly onOpenSettings?: () => void;

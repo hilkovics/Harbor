@@ -15,7 +15,7 @@ import { ModuleError, ModuleStateError } from '../modules/module-error';
 import { moduleRegistry } from '../modules/module-registry';
 import { Ship } from '../ships/ship';
 import { ShipError } from '../ships/ship-error';
-import { shipRoute } from '../ships/ship-route';
+import { mooringProblem, shipRoute } from '../ships/ship-route';
 import { CARGO_HOLDER_SOURCES } from './cargo-holders';
 import { WorldStateError, pointerSegment } from './state-check';
 import type { World } from './world';
@@ -62,7 +62,8 @@ function claimShipBerths(world: World, ship: Ship, path: string): void {
 
 /**
  * Lode vzostupne podľa id: inštancia `Ship` (triedu a náklad overil `parseWorldState`), kotviská (`claimShipBerths`),
- * jedinečná anchorage a `waypointIndex` najviac dĺžka trasy stavu; potom `World.addShip`.
+ * dokovaná loď presne v polohe a s kurzom pri kotvisku (`mooringProblem`, T02-14), jedinečná anchorage
+ * a `waypointIndex` najviac dĺžka trasy stavu; potom `World.addShip` (`ShipError` → `WorldStateError`).
  */
 function restoreShips(world: World, entries: readonly ParsedShipEntry[]): void {
   const anchorages = new Map<number, number>();
@@ -87,6 +88,8 @@ function restoreShips(world: World, entries: readonly ParsedShipEntry[]): void {
       throw error;
     }
     claimShipBerths(world, ship, path);
+    const mooring = mooringProblem(ship, world);
+    if (mooring !== undefined) throw new WorldStateError(`${path}/${mooring.field}`, mooring.problem);
     if (ship.anchorageIndex !== null) {
       const holder = anchorages.get(ship.anchorageIndex);
       if (holder !== undefined) throw new WorldStateError(`${path}/anchorageIndex`, `anchorage ${String(ship.anchorageIndex)} už obsadila loď #${String(holder)}`);

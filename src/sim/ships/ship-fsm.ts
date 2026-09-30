@@ -40,14 +40,19 @@ export interface ShipStateTraits {
    * obdĺžnik (`water_blocked`, ADR-016).
    */
   readonly blocksBerthWater: boolean;
+  /**
+   * Loď stojí pri kotvisku: presne v `dockPoint` prvého kotviska s kurzom `DOCKED_HEADING` jeho strany (trasa je
+   * prázdna, loď sa nehýbe). Overuje obnova save aj invarianty (T02-14).
+   */
+  readonly moored: boolean;
 }
 
 export const SHIP_STATE_TRAITS: { readonly [S in ShipState]: ShipStateTraits } = Object.freeze({
-  inbound: Object.freeze({ holdsBerths: false, waitsForBerth: false, blocksBerthWater: false }),
-  waiting_anchorage: Object.freeze({ holdsBerths: false, waitsForBerth: true, blocksBerthWater: false }),
-  berthing: Object.freeze({ holdsBerths: true, waitsForBerth: false, blocksBerthWater: true }),
-  docked: Object.freeze({ holdsBerths: true, waitsForBerth: false, blocksBerthWater: true }),
-  undocking: Object.freeze({ holdsBerths: false, waitsForBerth: false, blocksBerthWater: true }),
-  outbound: Object.freeze({ holdsBerths: false, waitsForBerth: false, blocksBerthWater: false }),
-  despawned: Object.freeze({ holdsBerths: false, waitsForBerth: false, blocksBerthWater: false }),
+  inbound: Object.freeze({ holdsBerths: false, waitsForBerth: false, blocksBerthWater: false, moored: false }),
+  waiting_anchorage: Object.freeze({ holdsBerths: false, waitsForBerth: true, blocksBerthWater: false, moored: false }),
+  berthing: Object.freeze({ holdsBerths: true, waitsForBerth: false, blocksBerthWater: true, moored: false }),
+  docked: Object.freeze({ holdsBerths: true, waitsForBerth: false, blocksBerthWater: true, moored: true }),
+  undocking: Object.freeze({ holdsBerths: false, waitsForBerth: false, blocksBerthWater: true, moored: false }),
+  outbound: Object.freeze({ holdsBerths: false, waitsForBerth: false, blocksBerthWater: false, moored: false }),
+  despawned: Object.freeze({ holdsBerths: false, waitsForBerth: false, blocksBerthWater: false, moored: false }),
 });

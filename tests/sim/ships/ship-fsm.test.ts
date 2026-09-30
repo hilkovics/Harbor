@@ -48,10 +48,13 @@ describe('SHIP_TRANSITIONS', () => {
 
 describe('SHIP_STATE_TRAITS', () => {
   it('kotviská drží loď len v berthing a docked; anchorage len pri čakaní; vodu pred kotviskom blokuje berthing/docked/undocking', () => {
-    const where = (key: 'holdsBerths' | 'waitsForBerth' | 'blocksBerthWater'): ShipState[] => SHIP_STATES.filter((state) => SHIP_STATE_TRAITS[state][key]);
+    const where = (key: 'holdsBerths' | 'waitsForBerth' | 'blocksBerthWater' | 'moored'): ShipState[] =>
+      SHIP_STATES.filter((state) => SHIP_STATE_TRAITS[state][key]);
     expect(where('holdsBerths')).toEqual(['berthing', 'docked']);
     expect(where('waitsForBerth')).toEqual(['waiting_anchorage']);
     expect(where('blocksBerthWater')).toEqual(['berthing', 'docked', 'undocking']);
+    // T02-14: pri kotvisku (dockPoint + DOCKED_HEADING) stojí len dokovaná loď.
+    expect(where('moored')).toEqual(['docked']);
   });
 });
 

@@ -13,9 +13,11 @@ export {
   cellCenter,
   dockPoint,
   firstBerthOf,
+  mooringOf,
+  mooringProblem,
   shipCells,
   shipRoute,
 } from './ship-route';
-export type { ShipDimensions, ShipPoint, ShipRouteEnv } from './ship-route';
+export type { ShipDimensions, ShipMooring, ShipPoint, ShipRouteEnv } from './ship-route';
 export { allocateBerths, hasCompatibleCrane } from './berth-allocator';
 export type { BerthAllocationWorld, BerthRequest } from './berth-allocator';

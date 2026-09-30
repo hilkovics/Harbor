@@ -19,7 +19,7 @@ import type { Module } from '../modules/module';
 import { SIDE_STEPS, edgeCells } from '../modules/module-geometry';
 import type { Ship } from './ship';
 import { ShipError } from './ship-error';
-import type { ShipState } from './ship-fsm';
+import { SHIP_STATE_TRAITS, type ShipState } from './ship-fsm';
 
 /** Bod na vode v bunkách (float). */
 export interface ShipPoint {
@@ -114,6 +114,38 @@ export function firstBerthOf(ship: Ship, env: ShipRouteEnv): BerthModule {
     throw new ShipError('inconsistent', `${ship.label} v stave '${ship.state}': kotvisko #${String(firstId)} z berthIds neexistuje`);
   }
   return berth;
+}
+
+/** Poloha a kurz lode pri kotvisku (ADR-016 bod 3). */
+export interface ShipMooring {
+  readonly point: ShipPoint;
+  readonly heading: Rotation;
+}
+
+/**
+ * Kde má stáť loď, ktorá drží kotviská, keď k nim dorazí: `dockPoint` prvého kotviska (po pobreží) a `DOCKED_HEADING`
+ * jeho strany. Chýbajúce kotvisko → `ShipError('inconsistent')`.
+ */
+export function mooringOf(ship: Ship, env: ShipRouteEnv): ShipMooring {
+  const first = firstBerthOf(ship, env);
+  return { point: dockPoint(first, ship.def), heading: DOCKED_HEADING[first.waterSide] };
+}
+
+/**
+ * Porušenie polohy dokovanej lode (`SHIP_STATE_TRAITS.moored`): súradnica alebo kurz, ktoré sa líšia od `mooringOf`;
+ * `undefined` = v poriadku alebo loď nie je pri kotvisku. Súradnice sú násobky 0,5 (presné v double), porovnávajú sa
+ * presne — `berthing` končí presne v bode trasy. Používa obnova save (T02-14) aj invarianty.
+ */
+export function mooringProblem(ship: Ship, env: ShipRouteEnv): { readonly field: 'x' | 'y' | 'heading'; readonly problem: string } | undefined {
+  if (!SHIP_STATE_TRAITS[ship.state].moored) return undefined;
+  const { point, heading } = mooringOf(ship, env);
+  const at = `(${String(point.x)}, ${String(point.y)})`;
+  if (ship.x !== point.x) return { field: 'x', problem: `dokovaná ${ship.label} má stáť pri kotvisku v ${at}, x je ${String(ship.x)}` };
+  if (ship.y !== point.y) return { field: 'y', problem: `dokovaná ${ship.label} má stáť pri kotvisku v ${at}, y je ${String(ship.y)}` };
+  if (ship.heading !== heading) {
+    return { field: 'heading', problem: `dokovaná ${ship.label} má pri kotvisku kurz ${String(heading)}, má ${String(ship.heading)}` };
+  }
+  return undefined;
 }
 
 type RouteOf = (ship: Ship, env: ShipRouteEnv) => readonly ShipPoint[];

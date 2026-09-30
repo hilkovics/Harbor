@@ -13,6 +13,7 @@
  * 5. `berthGroups` a `groupId` = prepočet `computeBerthGroups`;
  * 6. lode (ADR-016): kľúč = id, vzostupne podľa id, stav bez `despawned`; `berthIds` neprázdne práve pri
  *    `holdsBerths`, ležia za sebou v jednej skupine v poradí po pobreží a každý berth má `dockedShipId` = loď;
+ *    dokovaná loď stojí presne v `dockPoint` s kurzom `DOCKED_HEADING` (`mooringProblem`, T02-14);
  *    každý `dockedShipId` patrí existujúcej lodi, ktorá ho má v `berthIds` (súlad `dockedShipId` ↔ `berthIds`);
  *    `anchorageIndex` len pri `waitsForBerth`, v mape a jedinečný; na palube najviac `capacityUnits` jednotiek, všetky
  *    typu `cargoTypeId`; loď s nákladom, ktorá drží kotviská, má na nich aspoň jeden žeriav kategórie svojho nákladu
@@ -27,6 +28,7 @@ import { CRANE_STATE_TRAITS, CraneModule, cranePhaseProblem } from '../modules/c
 import { hasCompatibleCrane } from '../ships/berth-allocator';
 import type { Ship } from '../ships/ship';
 import { SHIP_STATE_TRAITS } from '../ships/ship-fsm';
+import { mooringProblem } from '../ships/ship-route';
 import { CARGO_HOLDER_SOURCES } from './cargo-holders';
 import type { World } from './world';
 
@@ -246,7 +248,7 @@ function checkShip(world: World, ship: Ship, anchorages: Map<number, Ship>): str
     if (holder !== undefined) return `${ship.label} a ${holder.label} obsadili tú istú anchorage ${String(index)}`;
     anchorages.set(index, ship);
   }
-  return checkShipBerths(world, ship) ?? checkShipCargo(world, ship) ?? checkShipCranes(world, ship);
+  return checkShipBerths(world, ship) ?? mooringProblem(ship, world)?.problem ?? checkShipCargo(world, ship) ?? checkShipCranes(world, ship);
 }
 
 /**

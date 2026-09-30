@@ -114,6 +114,50 @@ describe('WorldState v2 — lode', () => {
   });
 });
 
+/** Root + feeder so 4 TEU v stave docked pri Root berthe (poloha (43, 13), kurz 90). */
+function dockedWorld(): { world: World; ship: Ship } {
+  const world = newWorld();
+  const ship = spawn(world, 'feeder', 4);
+  tickUntil(world, () => ship.state === 'docked', 300);
+  return { world, ship };
+}
+
+describe('WorldState v2 — poloha a kurz dokovanej lode (T02-14)', () => {
+  it('dokovaná loď v save: presne dockPoint (43, 13) a DOCKED_HEADING 90; roundtrip prejde', () => {
+    const { world, ship } = dockedWorld();
+    expect([ship.x, ship.y, ship.heading]).toEqual([43, 13, 90]);
+    expect(() => World.deserialize(SHIP_DEFS, MAP, mutable(world) as unknown as WorldState)).not.toThrow();
+  });
+
+  it.each<[string, (s: MutableState) => void, string, RegExp]>([
+    ['x mimo polohy pri kotvisku', (s) => (s.ships[0]['x'] = 43.5), '/ships/0/x', /má stáť pri kotvisku v \(43, 13\), x je 43\.5/],
+    ['y mimo polohy pri kotvisku', (s) => (s.ships[0]['y'] = 12), '/ships/0/y', /má stáť pri kotvisku v \(43, 13\), y je 12/],
+    ['kurz nie je rovnobežne s hranou', (s) => (s.ships[0]['heading'] = 270), '/ships/0/heading', /má pri kotvisku kurz 90, má 270/],
+  ])('%s → WorldStateError na %s', (_name, mutate, path, message) => {
+    const state = mutable(dockedWorld().world);
+    mutate(state);
+    let error: unknown;
+    try {
+      World.deserialize(SHIP_DEFS, MAP, state as unknown as WorldState);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(WorldStateError);
+    expect((error as WorldStateError).path).toBe(path);
+    expect((error as Error).message).toMatch(message);
+  });
+
+  it('invariant: dokovaná loď posunutá mimo polohy pri kotvisku → porušenie (krok 12)', () => {
+    const { world, ship } = dockedWorld();
+    expect(findWorldViolation(world)).toBeUndefined();
+    ship.heading = 0;
+    expect(findWorldViolation(world)).toMatch(/má pri kotvisku kurz 90, má 0/);
+    ship.heading = 90;
+    ship.x = 44;
+    expect(findWorldViolation(world)).toMatch(/má stáť pri kotvisku v \(43, 13\), x je 44/);
+  });
+});
+
 describe('WorldState v2 — loď s nákladom bez žeriavu (T02-14)', () => {
   it('save, v ktorom kotviská lode nemajú žeriav kategórie jej nákladu → WorldStateError pri deserialize, nie soft-lock', () => {
     const { world, a } = fleet();

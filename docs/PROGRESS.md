@@ -115,3 +115,16 @@ Stav: **hotová** (T03-01..T03-20).
   - `testTimeout` testov je 15 s a kalendárne testy bežia bez invariantov;
   - ceny dvora a depa sú podľa ARCHITECTURE §5.3 (prototyp UI má iné);
   - úzke cesty sú zatiaľ procedurálne (sprity z Claude Design sú v BACKLOG s promptom).
+
+## Fáza 4 — Export reťazec: brána, stojiská, rampa, kamióny
+Karty: `docs/tasks/phase-04.md` · vetva `phase/04-export-trucks` (stacked nad hilkovics/Harbor#4)
+
+- [ ] `modules.json`: `truck_gate`, `truck_waiting_area`, `loading_ramp_container`; `trucks.json` (`truck_container`: capacity 1, speed 0.6).
+- [ ] `LandExportModule` (abstract), `TruckGate` (FIFO fronta, `processTicks`), `WaitingArea` (bays), `LoadingRamp` (docks, `at_ramp` sloty).
+- [ ] Validácia §8 bod 5 + „cesta portál → brána → rampa existuje" (prevádzkovosť rampy, ADR-022).
+- [ ] `Dispatcher` krok 2 (outbound joby `in_storage → at_ramp`) — zatiaľ pre všetky jednotky (kontrakty vo F5).
+- [ ] `TruckSpawner` + `Truck` FSM (§7.5), `RoadPortal` vstup/výstup, `CargoLedger` prechody `at_ramp → in_truck → exported`.
+- [ ] Render: `TruckView`, stojiská s obsadenosťou, fronta pred bránou ako číslo.
+- [ ] UI: inspector pre bránu (fronta, priepustnosť), rampu (docks), stojisko (bays).
+
+Akceptácia: vidím kamióny prichádzať bránou, čakať, nakladať a odchádzať z mapy.

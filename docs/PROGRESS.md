@@ -79,3 +79,16 @@ Stav: **hotová** (T02-01..T02-16). Plná pipeline T02-15 je zelená:
   - Karty T02-10 a T02-12 robil jeden agent.
   - Dva commity T02-04 mali dočasne červené testy mimo rozsahu agenta; orchestrátor ich hneď opravil ďalším commitom.
   - Pridané navyše: `selection_ring` a blokovanie stavby kotviska loďou v páse vody.
+
+## Fáza 3 — Vozidlá, pathfinding, dispatcher, sklad
+Karty: `docs/tasks/phase-03.md` · vetva `phase/03-vehicles-yard` (stacked nad hilkovics/Harbor#3)
+
+- [ ] `vehicles.json` (`straddle_carrier`), `modules.json` (`container_yard_small`, `vehicle_depot`), konektory modulov.
+- [ ] `StorageModule` (abstract, `reserve/store/take`, fill %), `ContainerYard extends StorageModule`.
+- [ ] `VehicleDepot`, `BuyVehicleCommand`/`SellVehicleCommand` (vyžaduje voľné miesto v depe).
+- [ ] `Pathfinder` (A*, binárna halda, `Int32Array`, bez alokácií), `PathCache` s invalidáciou na `RoadChanged`, `DistanceMatrix` konektor↔konektor (lazy).
+- [ ] `TransportJob`, `Dispatcher` (§7.3 kroky 1 a 3), `StorageAllocator` (kompatibilita + najbližší), `Vehicle` FSM s `internalTicks` pri konektore, `traffic++`.
+- [ ] Render: `VehicleView` (interpolácia, rotácia podľa smeru, empty/loaded), `ModuleView` fill stavy 0/25/50/75/100 %.
+- [ ] UI: BuildBar kategórie Sklady/Logistika; `ModuleInspector` pre sklad (fill %, reserved, throughput) a depo (nákup vozidiel); notifikácia `NoStorageAvailable`, „modul nepripojený k ceste".
+
+Akceptácia: v hre vidím vozidlá jazdiť po cestách a dvor sa vizuálne zapĺňa.

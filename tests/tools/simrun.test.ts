@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { commandFromJSON, type SerializedCommand } from '@sim/commands';
 import { loadBundledDefs } from '@sim/defs';
+import { loadBundledMap } from '@sim/grid';
+import { World } from '@sim/world';
 import {
   SimrunError,
   craneBlockedPercent,
@@ -29,6 +32,8 @@ const VERTICAL_SLICE_GOLDEN = fileURLToPath(new URL('../sim/__golden__/vertical_
 const SMOKE: Scenario = { id: 'smoke', seed: 42, commands: [] };
 // Hodnota z data/defs/time.json (tickGameSeconds 10) → 8 640 tickov = 1 herný deň.
 const TICKS_PER_DAY = 8640;
+// Dlhé behy (desaťtisíce tickov) pri paralelnom behu celej sady presiahnu predvolených 10 s pre hooky.
+const HEAVY_TIMEOUT_MS = 120_000;
 // harbor_01: 30 štartovacích ciest (x = 44, y 34…63).
 const STARTER_ROADS = 30;
 // harbor_01: štartovacie moduly = berth_standard + crane_container_gantry.
@@ -236,6 +241,16 @@ describe('runScenario', () => {
       ticksToAllExported: null,
       contractsCompleted: 0,
       xp: 0,
+      contractsOffered: 6,
+      contractsAccepted: 0,
+      contractsFailed: 0,
+      contractsExpired: 0,
+      penaltiesCents: 0,
+      revenueCents: 0,
+      maintenanceCents: 0,
+      wagesCents: 0,
+      tier: 0,
+      gameOver: false,
     });
     expect(Object.keys(report)).toEqual([
       'scenario',
@@ -269,6 +284,16 @@ describe('runScenario', () => {
       'ticksToAllExported',
       'contractsCompleted',
       'xp',
+      'contractsOffered',
+      'contractsAccepted',
+      'contractsFailed',
+      'contractsExpired',
+      'penaltiesCents',
+      'revenueCents',
+      'maintenanceCents',
+      'wagesCents',
+      'tier',
+      'gameOver',
     ]);
   });
 
@@ -374,7 +399,7 @@ describe('runScenario', () => {
 
     beforeAll(() => {
       full = runScenario(apronToYard, RUN_TICKS, defs);
-    });
+    }, HEAVY_TIMEOUT_MS);
 
     it('apron_to_yard (15 000 tickov): 120 jednotiek v sklade, 120 hotových jobov, bez chýbajúceho skladu, nič stratené', () => {
       expect(full).toMatchObject({
@@ -461,7 +486,7 @@ describe('runScenario', () => {
 
     beforeAll(() => {
       full = runScenario(fullChain, EXPORT_TICKS, defs);
-    });
+    }, HEAVY_TIMEOUT_MS);
 
     it('full_import_chain (40 000 tickov): 120 jednotiek exportovaných 120 kamiónmi (kapacita 1), nič stratené', () => {
       expect(defs.trucks.get('truck_container').capacityUnits).toBe(1);
@@ -580,7 +605,7 @@ describe('runScenario', () => {
 
     beforeAll(() => {
       slice = runScenario(loadScenario(VERTICAL_SLICE_SCENARIO), SLICE_TICKS, defs);
-    });
+    }, HEAVY_TIMEOUT_MS);
 
     it('vertical_slice (60 000 tickov) sa zhoduje s golden reportom (cashEnd, exportedUnits, onTimeRate, contractsCompleted, xp)', () => {
       const golden = JSON.parse(readFileSync(VERTICAL_SLICE_GOLDEN, 'utf8')) as Record<string, unknown>;
@@ -593,6 +618,58 @@ describe('runScenario', () => {
       expect(slice).toMatchObject({ lostUnits: 0, contractsCompleted: 1, onTimeRate: 1, shipsSpawned: 1, unitsInStorage: 0 });
       expect(slice.xp).toBeGreaterThan(0);
       expect(slice.commandsSkipped).toBe(0);
+    });
+
+    it('vertical_slice: ekonomika kontraktu (prijatý 1, dokončený 1, tržba = odmena, bez penalizácií, údržba > 0)', () => {
+      // Odmena z nezávislého behu: rovnaký scenár nad skutočným Worldom, `rewardCents` z `ContractCompleted`.
+      const scenario = loadScenario(VERTICAL_SLICE_SCENARIO);
+      const world = World.create(defs, loadBundledMap(), scenario.seed);
+      const rewards: number[] = [];
+      let next = 0;
+      for (let i = 0; i < SLICE_TICKS; i++) {
+        while (next < scenario.commands.length && scenario.commands[next].atTick === world.clock.tick) {
+          world.enqueue(commandFromJSON(scenario.commands[next].command as SerializedCommand));
+          next += 1;
+        }
+        for (const event of [...world.applyPending(), ...world.tick()]) {
+          if (event.type === 'ContractCompleted') rewards.push(event.rewardCents);
+        }
+      }
+      expect(rewards).toHaveLength(1);
+      expect(slice).toMatchObject({
+        contractsAccepted: 1,
+        contractsCompleted: 1,
+        contractsFailed: 0,
+        penaltiesCents: 0,
+        tier: 0,
+        gameOver: false,
+        revenueCents: rewards[0],
+      });
+      expect(slice.contractsOffered).toBeGreaterThanOrEqual(slice.contractsAccepted + slice.contractsExpired);
+      expect(slice.maintenanceCents).toBeGreaterThan(0);
+      expect(slice.wagesCents).toBeGreaterThanOrEqual(0);
+    }, HEAVY_TIMEOUT_MS);
+
+    it('scenáre bez kontraktov (full_import_chain): kontrakty 0, tržby 0, údržba > 0', () => {
+      const report = runScenario(loadScenario(FULL_IMPORT_CHAIN_SCENARIO), TICKS_PER_DAY * 2, defs);
+      expect(report).toMatchObject({
+        contractsAccepted: 0,
+        contractsCompleted: 0,
+        contractsFailed: 0,
+        penaltiesCents: 0,
+        revenueCents: 0,
+        tier: 0,
+        gameOver: false,
+      });
+      expect(report.maintenanceCents).toBeGreaterThan(0);
+    }, HEAVY_TIMEOUT_MS);
+
+    it('formatSummary obsahuje riadok kontraktov a ekonomiky', () => {
+      const text = formatSummary(slice);
+      expect(text).toContain(`kontrakty ponúknuté/prijaté/zlyhané/zaniknuté ${String(slice.contractsOffered)}/1/0/${String(slice.contractsExpired)}`);
+      expect(text).toContain(`tržby ${String(slice.revenueCents)}`);
+      expect(text).toContain(`údržba ${String(slice.maintenanceCents)}`);
+      expect(text).toContain('koniec hry nie');
     });
 
     it('scenáre bez kontraktov: onTimeRate null, contractsCompleted 0, xp 0', () => {

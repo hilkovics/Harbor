@@ -11,6 +11,7 @@ import type { SimEvent } from '@sim/events';
 import type { Ship } from '@sim/ships';
 import { driveCrane, restoreCrane } from '../helpers/crane-state';
 import { DEFS, REFUND_RATE, START_CASH, defsWith, hashState, newBareWorld, newWorld, ofType } from './command-fixtures';
+import { setCash } from '../helpers/economy';
 
 const BERTH = 'berth_standard';
 const CRANE = 'crane_container_gantry';
@@ -96,7 +97,7 @@ describe('RemoveModule — refundácia zo zaplatenej ceny', () => {
 
   it('odstránenie prejde aj pri zápornej hotovosti (refundácia nie je výdavok)', () => {
     const { world, crane } = harbor();
-    world.cashCents = -1_000;
+    setCash(world, -1_000);
     expect(remove(crane.id).validate(world).ok).toBe(true);
   });
 });

@@ -506,10 +506,10 @@ describe('save/load uprostred reťazca: obnovený svet pokračuje rovnako ako p�
     expect(savedTrucks.some((truck) => truck.progress > 0)).toBe(true);
   });
 
-  it('uložený stav je verzia 4 s poľom trucks a čistým JSON-om (JSON.parse(JSON.stringify(s)) sa rovná s)', () => {
+  it('uložený stav je verzia 5 s poľom trucks a čistým JSON-om (JSON.parse(JSON.stringify(s)) sa rovná s)', () => {
     expect(forks).toHaveLength(PROBES.length);
     for (const fork of forks) {
-      expect(fork.saved.version, fork.name).toBe(4);
+      expect(fork.saved.version, fork.name).toBe(5);
       const trucks = (fork.saved as unknown as Record<string, unknown>)['trucks'];
       expect(Array.isArray(trucks), `${fork.name}: trucks`).toBe(true);
       expect((trucks as unknown[]).length, `${fork.name}: počet kamiónov v save`).toBe(fork.trucks.length);
@@ -567,11 +567,15 @@ describe('migrácia WorldState v3 → v4', () => {
     const v3 = Object.fromEntries(WORLD_STATE_V3_KEYS.map((key) => [key, current[key]]));
     v3['version'] = 3;
     const migrated = World.deserialize(DEFS, MAP, v3 as unknown as WorldState);
-    expect(stateHash(migrated)).toBe(stateHash(plain));
+    // v3 nepoznal knihu (ADR-025): migrovaný svet má prázdnu históriu, hotovosť a všetko ostatné je zhodné.
+    const withoutLedger = (world: World): string => JSON.stringify({ ...world.serialize(), economy: null });
+    expect(migrated.economy.entries).toEqual([]);
+    expect(migrated.cashCents).toBe(plain.cashCents);
+    expect(withoutLedger(migrated)).toBe(withoutLedger(plain));
     for (let i = 0; i < 200; i++) {
       plain.tick();
       migrated.tick();
     }
-    expect(stateHash(migrated)).toBe(stateHash(plain));
+    expect(withoutLedger(migrated)).toBe(withoutLedger(plain));
   });
 });

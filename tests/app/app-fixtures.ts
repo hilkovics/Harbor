@@ -227,8 +227,7 @@ export class TestAdjustCash extends TestCommand {
   }
 
   protected doApply(world: World): void {
-    world.cashCents += this.deltaCents;
-    world.events.emit({ type: 'MoneyChanged', cashCents: world.cashCents, deltaCents: this.deltaCents, reason: 'road_capex' });
+    world.economy.post(this.deltaCents, 'road_capex');
   }
 }
 

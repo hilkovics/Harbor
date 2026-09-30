@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { VEHICLE_STATES } from '@sim/vehicles';
 import { DEPOT_VEHICLE_STATE, depotVehicleDef, inspectorData } from '@app/inspector-data';
 import { DEPOT_ID, YARD_ID, buildLogistics, buyVehicles, createApp, frameUntil, runCommands } from './app-fixtures';
+import { setCash } from '../sim/helpers/economy';
 
 describe('inspectorData: sklad (kontajnerový dvor)', () => {
   it('prázdny pripojený dvor: 0 / 0 / 64, počítadlá 0, jednotka TEU, pripojený, odstrániteľný s refundom polovice ceny', () => {
@@ -93,7 +94,7 @@ describe('inspectorData: depo vozidiel', () => {
   it('nedostatok peňazí: canBuy false, „Nedostatok peňazí“', () => {
     const app = createApp();
     buildLogistics(app);
-    app.world.cashCents = 1_000;
+    setCash(app.world, 1_000);
     expect(inspectorData(app.bridge, DEPOT_ID)?.depot).toMatchObject({ canBuy: false, buyBlockedReason: 'Nedostatok peňazí' });
   });
 
@@ -107,7 +108,7 @@ describe('inspectorData: depo vozidiel', () => {
   it('viac dôvodov naraz sa spojí ` · ` v poradí VALIDATION_REASONS (peniaze pred pripojením)', () => {
     const app = createApp();
     buildLogistics(app, { roads: false });
-    app.world.cashCents = 0;
+    setCash(app.world, 0);
     expect(inspectorData(app.bridge, DEPOT_ID)?.depot?.buyBlockedReason).toBe('Nedostatok peňazí · Nepripojené k ceste');
   });
 

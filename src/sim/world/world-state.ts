@@ -21,6 +21,9 @@
  * ukladá frontu, odpočet prechodu a počítadlo v `runtime` (už od v3), rampa `lastNoWaitingBayHour`. Neukladá sa
  * odvoditeľné: držitelia bays a dockov (z kamiónov), strany brán a trasy (z ciest a modulov).
  *
+ * v5 (T05-02, ADR-025) = v4 + `economy` (posledné záznamy knihy, súčty otvoreného dňa, denné a mesačné súhrny,
+ * bankrotové počítadlo, `gameOver`); hotovosť ostáva v `cashCents`. Kontrakty, pool a XP doplní T05-04 (v5 nie je vydaná).
+ *
  * Lode (ADR-016) sa ukladajú s polohou, stavom FSM, kotviskami, anchorage a indexom bodu trasy; trasa sa odvodí zo stavu
  * a mapy, `BerthModule.dockedShipId` z `berthIds`.
  *
@@ -54,7 +57,9 @@ import { SERIALIZED_TRUCK_KEYS, type SerializedTruck } from '../trucks/truck';
 import { TRUCK_STATES, TRUCK_STATE_TRAITS, TRUCK_TRAVEL_STATES, isTruckState, isTruckTravelState, type TruckState, type TruckTravelState } from '../trucks/truck-fsm';
 import { SERIALIZED_VEHICLE_KEYS, vehiclePosition, type SerializedVehicle } from '../vehicles/vehicle';
 import { VEHICLE_STATES, VEHICLE_STATE_TRAITS, isVehicleState, type VehicleState } from '../vehicles/vehicle-fsm';
-import { WORLD_STATE_V2, WORLD_STATE_V3, WORLD_STATE_V4_KEYS, WORLD_STATE_VERSION } from './migrate';
+import type { EconomyState } from '../economy/economy';
+import { parseEconomyState } from './economy-state';
+import { WORLD_STATE_V2, WORLD_STATE_V3, WORLD_STATE_V4, WORLD_STATE_V5_KEYS, WORLD_STATE_VERSION } from './migrate';
 import { WorldStateError, checkArray, checkInteger, checkKeys, describeValue, isPlainObject, pointerSegment } from './state-check';
 
 export { WORLD_STATE_VERSION } from './migrate';
@@ -145,15 +150,22 @@ export interface WorldStateV3 extends Omit<WorldStateV2, 'version' | 'roads'> {
   readonly jobs: readonly SerializedJob[];
 }
 
-/** Aktuálny `WorldState` (v4, ADR-024). */
-export interface WorldState extends Omit<WorldStateV3, 'version'> {
-  readonly version: typeof WORLD_STATE_VERSION;
+/** `WorldState` v4 (F4, ADR-024) — vstup migrácie v4 → v5. */
+export interface WorldStateV4 extends Omit<WorldStateV3, 'version'> {
+  readonly version: typeof WORLD_STATE_V4;
   /** Kamióny na mape vzostupne podľa id (`Truck.toState()`); bays a docky ich držiteľov sa odvodia pri obnove. */
   readonly trucks: readonly SerializedTruck[];
 }
 
+/** Aktuálny `WorldState` (v5, ADR-025). */
+export interface WorldState extends Omit<WorldStateV4, 'version'> {
+  readonly version: typeof WORLD_STATE_VERSION;
+  /** Kniha, súhrny období a bankrot (`Economy.getState()`); hotovosť ostáva v `cashCents`. */
+  readonly economy: EconomyState;
+}
+
 /** Ľubovoľná podporovaná verzia (vstup `World.deserialize`). */
-export type AnyWorldState = WorldState | WorldStateV3 | WorldStateV2 | WorldStateV1;
+export type AnyWorldState = WorldState | WorldStateV4 | WorldStateV3 | WorldStateV2 | WorldStateV1;
 
 /** Modul zo save s overeným tvarom; vzťahy k mriežke a iným modulom overí `restoreEntities`. */
 export interface ParsedModuleEntry {
@@ -252,10 +264,12 @@ export interface ParsedWorldState {
   readonly jobs: readonly ParsedJobEntry[];
   /** Kamióny vzostupne podľa id (= poradie spawnu). */
   readonly trucks: readonly ParsedTruckEntry[];
+  /** Stav ekonomiky (`parseEconomyState`). */
+  readonly economy: EconomyState;
 }
 
-/** Kľúče aktuálnej verzie (v4) v poradí `serialize()`; iné kľúče sú chyba (stav nemá voliteľné polia). */
-export const WORLD_STATE_KEYS: readonly (keyof WorldState)[] = WORLD_STATE_V4_KEYS;
+/** Kľúče aktuálnej verzie (v5) v poradí `serialize()`; iné kľúče sú chyba (stav nemá voliteľné polia). */
+export const WORLD_STATE_KEYS: readonly (keyof WorldState)[] = WORLD_STATE_V5_KEYS;
 const CLOCK_KEYS: readonly (keyof SimClockState)[] = ['tick', 'speed'];
 const IDS_KEYS: readonly (keyof EntityIdAllocatorState)[] = ['nextId'];
 const MODULE_KEYS: readonly (keyof SerializedModule)[] = ['id', 'defId', 'x', 'y', 'rotation', 'purchaseCostCents', 'runtime'];
@@ -707,14 +721,15 @@ function checkIdCollisions(
 
 /**
  * Overí `raw` ako `WorldState` **aktuálnej** verzie (staršie najprv prevedie `migrateWorldState`) pre danú mapu
- * a defy a obnoví jadrové objekty. Kontroly v poradí kľúčov: tvar (presne kľúče v4), `version`, `mapId === map.id`,
+ * a defy a obnoví jadrové objekty. Kontroly v poradí kľúčov: tvar (presne kľúče v5), `version`, `mapId === map.id`,
  * `seed` uint32, `rng` (4× uint32, nie nulový), `clock` (tick ≥ 0, rýchlosť v `time.speeds`), `ids`, `cashCents`
  * (bezpečné celé číslo), `roads` (index v mape, vrstva, bez duplicít, terén unesie cestu, typ a smer cesty v kanonickom
  * tvare — ADR-020), `traffic` (index v mape,
  * bez duplicít, hodnota > 0), `parcels` (presne parcely mapy, platné vlastníctvo, `leased` len pri `leasable`),
  * `modules` (tvar), `cargo` (`parseCargoLedgerState`), `ships` (tvar, `parseShips`), `vehicles` (tvar,
  * `parseVehicles`), `jobs` (tvar, `parseJobs`), `trucks` (tvar, `parseTrucks`), id modulov, lodí, vozidiel, jobov,
- * kamiónov a nákladu sa neprekrývajú.
+ * kamiónov a nákladu sa neprekrývajú, `economy` (`parseEconomyState`: záznamy knihy nie v budúcnosti, súhrny len
+ * uzavretých dní a mesiacov, ADR-025).
  * Vstup sa nemení a výsledok s ním nezdieľa meniteľné objekty.
  *
  * `grid` je mriežka počiatočného stavu tej istej mapy (`map.createGrid()`) — z nej sa overuje terén pod cestami;
@@ -755,5 +770,6 @@ export function parseWorldState(raw: unknown, defs: DefRegistry, map: LoadedMap,
   const jobs = parseJobs(state.jobs, nextId, clock.tick);
   const trucks = parseTrucks(state.trucks, defs, map, grid, nextId);
   checkIdCollisions(modules, ships, vehicles, jobs, trucks, cargo);
-  return { seed, clock, rng, ids, cashCents, roads, traffic, ownership, modules, cargo, ships, vehicles, jobs, trucks };
+  const economy = parseEconomyState(state.economy, clock);
+  return { seed, clock, rng, ids, cashCents, roads, traffic, ownership, modules, cargo, ships, vehicles, jobs, trucks, economy };
 }

@@ -21,6 +21,7 @@ import type { EntityId } from '@sim/core';
 import { PausedBanner } from '@app/paused-banner';
 import { SimBridgeProvider } from '@app/use-sim-snapshot';
 import { createApp } from './app-fixtures';
+import { setCash } from '../sim/helpers/economy';
 
 const NO_FEEDBACK: FeedbackSource = { feedback: () => null, subscribeFeedback: () => () => undefined };
 
@@ -136,7 +137,7 @@ describe('App: BuildBar dole (kategória Terminál z defs.modules)', () => {
 
   it('nedostatok peňazí: položka je „unaffordable“ s tooltipom „Chýba …“', () => {
     const { bridge, world } = createApp();
-    world.cashCents = 45_000_000;
+    setCash(world, 45_000_000);
     const html = renderToStaticMarkup(createElement(App, { bridge, feedback: NO_FEEDBACK }));
     expect(html).toMatch(/data-def-id="crane_container_gantry" data-status="unaffordable"/);
     expect(html).toContain('Chýba $150,000');

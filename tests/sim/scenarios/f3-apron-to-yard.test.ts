@@ -14,7 +14,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { commandFromJSON } from '@sim/commands';
 import type { EntityId } from '@sim/core';
-import { storageParams } from '@sim/defs';
+import { craneParams, storageParams } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
 import { footprintOf, type StorageModule, type VehicleDepot } from '@sim/modules';
 import { World } from '@sim/world';
@@ -325,7 +325,7 @@ describe('scenár apron_to_yard: beh 15 000 tickov', () => {
     }
   });
 
-  it('výdavky ticku príkazov = 34 buniek ciest + 3 moduly + 2 vozidlá (kategórie road/module/vehicle_capex) a potom už žiadna MoneyChanged', () => {
+  it('výdavky ticku príkazov = 34 buniek ciest + 3 moduly + 2 vozidlá (kategórie road/module/vehicle_capex), potom len údržba a mzdy pri DayClosed', () => {
     const money = timed3(log, 'MoneyChanged');
     const first = money.filter((entry) => entry.tick <= 1);
     const spend = 34 * ROAD_COST + DEFS.modules.get('vehicle_depot').costCents + 2 * YARD_DEF.costCents + 2 * STRADDLE.purchaseCents;
@@ -334,9 +334,17 @@ describe('scenár apron_to_yard: beh 15 000 tickov', () => {
       0 - STRADDLE.purchaseCents,
       0 - STRADDLE.purchaseCents,
     ]);
-    // Predpoklad A6: vozidlá ani dvory nič neúčtujú (údržba a mzdy prídu s economySystem).
-    expect(money.filter((entry) => entry.tick > 1)).toEqual([]);
-    expect(world.cashCents).toBe(DEFS.economy.startingCashCents - spend);
+    // ADR-025: po stavbe už len krok 9 pri uzavretí dňa (15 000 tickov = 1 DayClosed v ticku 8 640) — údržba všetkých
+    // modulov (Root berth + žeriav + depo + 2 dvory) a mzdy (žeriav + 2 straddle carriers).
+    const maintenance = [...world.modules.values()].reduce((sum, module) => sum + module.def.maintenancePerDayCents, 0);
+    const wages = craneParams(DEFS.modules.get('crane_container_gantry')).wagePerDayCents + 2 * STRADDLE.wagePerDayCents;
+    expect([maintenance, wages]).toEqual([285_000, 61_000]);
+    const day = world.clock.ticksPerDay;
+    expect(money.filter((entry) => entry.tick > 1).map((entry) => [entry.tick, entry.event.reason, entry.event.deltaCents])).toEqual([
+      [day, 'maintenance', -maintenance],
+      [day, 'wages', -wages],
+    ]);
+    expect(world.cashCents).toBe(DEFS.economy.startingCashCents - spend - maintenance - wages);
   });
 
   it('loď pripláva, zakotví na Root berthe a odpláva (ShipSpawned, ShipDocked, ShipDeparted po raz); world.ships je prázdne', () => {

@@ -169,6 +169,11 @@ export class CraneModule extends Module {
     return this.params.category;
   }
 
+  /** Denná mzda obsluhy žeriava (`params.wagePerDayCents`, §9.2, ADR-025). */
+  override dailyWageCents(): number {
+    return this.params.wagePerDayCents;
+  }
+
   /** Vlastnosti aktuálneho stavu (`CRANE_STATE_TRAITS`). */
   get traits(): CraneStateTraits {
     return CRANE_STATE_TRAITS[this.current];

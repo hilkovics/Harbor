@@ -66,9 +66,8 @@ export class RemoveModuleCommand implements Command {
     }
     const module = world.removeModule(this.moduleId);
     const deltaCents = 0 - result.costCents;
-    world.cashCents += deltaCents;
     world.events.emit({ type: 'ModuleRemoved', moduleId: module.id, defId: module.def.id, cells: module.cells });
-    if (deltaCents > 0) world.events.emit({ type: 'MoneyChanged', cashCents: world.cashCents, deltaCents, reason: 'module_sale' });
+    if (deltaCents > 0) world.economy.post(deltaCents, 'module_sale', `module:${String(module.id)}`);
   }
 
   toJSON(): SerializedCommand {

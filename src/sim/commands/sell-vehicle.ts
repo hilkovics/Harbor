@@ -66,9 +66,8 @@ export class SellVehicleCommand implements Command {
     }
     const vehicle = world.removeVehicle(this.vehicleId);
     const deltaCents = 0 - result.costCents;
-    world.cashCents += deltaCents;
     world.events.emit({ type: 'VehicleSold', vehicleId: vehicle.id });
-    if (deltaCents > 0) world.events.emit({ type: 'MoneyChanged', cashCents: world.cashCents, deltaCents, reason: 'vehicle_sale' });
+    if (deltaCents > 0) world.economy.post(deltaCents, 'vehicle_sale', `vehicle:${String(vehicle.id)}`);
   }
 
   toJSON(): SerializedCommand {

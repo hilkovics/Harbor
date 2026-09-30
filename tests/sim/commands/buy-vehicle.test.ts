@@ -10,6 +10,7 @@ import { World } from '@sim/world';
 import { eventsOfType } from '../helpers/scenario';
 import { DEPOT_OUTSIDE, LAYOUT_ROADS, STRADDLE, STRADDLE_DEF, addVehicleTo, buy, depotWorld, execute } from '../vehicles/vehicle-fixtures';
 import { DEFS, MAP, RAW_DEFS, SEED, hashState } from '../world/world-fixtures';
+import { setCash } from '../helpers/economy';
 
 const reasonsOf = (world: World, command: SerializedCommand): readonly string[] => commandFromJSON(command).validate(world).reasons;
 
@@ -76,16 +77,16 @@ describe('BuyVehicle.validate', () => {
 
   it('nedostatok hotovosti → presne insufficient_funds; presne rovnaká hotovosť stačí', () => {
     const { world, depot } = depotWorld();
-    world.cashCents = STRADDLE_DEF.purchaseCents - 1;
+    setCash(world, STRADDLE_DEF.purchaseCents - 1);
     expect(reasonsOf(world, buy(depot.id))).toEqual(['insufficient_funds']);
-    world.cashCents = STRADDLE_DEF.purchaseCents;
+    setCash(world, STRADDLE_DEF.purchaseCents);
     expect(reasonsOf(world, buy(depot.id))).toEqual([]);
   });
 
   it('viac porušení naraz v kanonickom poradí VALIDATION_REASONS', () => {
     const { world, depot } = depotWorld({ roads: false });
     for (let i = 0; i < depot.capacity; i++) addVehicleTo(world, depot.id);
-    world.cashCents = 0;
+    setCash(world, 0);
     expect(reasonsOf(world, buy(depot.id))).toEqual(['insufficient_funds', 'depot_full', 'not_connected']);
     expect(reasonsOf(world, buy(999, 'hovercraft'))).toEqual(['unknown_vehicle_def', 'unknown_depot']);
   });

@@ -21,3 +21,10 @@ export const LEDGER_CATEGORIES = [
 ] as const;
 
 export type LedgerCategory = (typeof LEDGER_CATEGORIES)[number];
+
+const CATEGORY_SET: ReadonlySet<string> = new Set(LEDGER_CATEGORIES);
+
+/** Je hodnota známa kategória knihy (parsovanie save)? */
+export function isLedgerCategory(value: unknown): value is LedgerCategory {
+  return typeof value === 'string' && CATEGORY_SET.has(value);
+}

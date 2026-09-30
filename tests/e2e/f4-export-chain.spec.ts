@@ -39,6 +39,12 @@ const GATE_COST_CENTS = 8_000_000;
 const WAITING_AREA_COST_CENTS = 6_000_000;
 const RAMP_COST_CENTS = 10_000_000;
 const CARRIER_COST_CENTS = 4_800_000;
+/**
+ * Denná údržba a mzdy postaveného prístavu (ADR-025), strhnuté pri každom uzavretí herného dňa: údržba Root berth 120 000
+ * + žeriav 90 000 + depo 15 000 + 2 dvory 60 000 + brána 15 000 + stojisko 10 000 + rampa 20 000 = 330 000, mzdy žeriav
+ * 25 000 + 3 vozidlá 54 000 = 79 000. Všetko stojí skôr, než uplynie prvý herný deň.
+ */
+const DAILY_UPKEEP_CENTS = 409_000;
 
 type Cell = { readonly x: number; readonly y: number };
 
@@ -297,6 +303,7 @@ test.describe('F4: loď → apron → vozidlá → dvor → rampa → kamión �
         onShip: cargo.countByKind('on_ship'),
         gateProcessed: gate.trucksProcessed,
         cashCents: world.cashCents,
+        closedDays: world.clock.gameDay,
         entities: window.__sim!.entities(),
         rendered: window.__sim!.rendered!(),
         seen: [...(window as unknown as { __truckStatesSeen: Set<string> }).__truckStatesSeen].sort(),
@@ -314,8 +321,9 @@ test.describe('F4: loď → apron → vozidlá → dvor → rampa → kamión �
     expect(end.entities.modules.find((module) => module.id === GATE_ID)!.gate).toMatchObject({ queueLength: 0, open: false });
     expect(end.entities.modules.find((module) => module.id === WAITING_AREA_ID)!.waitingArea!.occupied.every((occupied) => !occupied)).toBe(true);
     expect(end.entities.modules.find((module) => module.id === RAMP_ID)!.ramp).toMatchObject({ staged: [0, 0], operational: true });
-    // F4 ešte nemá príjmy z kontraktov (F5): hotovosť sa po nákupoch nezmenila a HUD ukazuje presne hotovosť sveta
-    expect(end.cashCents).toBe(cashBuilt - VEHICLES * CARRIER_COST_CENTS);
+    // Bez kontraktov nie sú príjmy: po nákupoch ubúda hotovosť len údržbou a mzdami za každý uzavretý deň (ADR-025)
+    // a HUD ukazuje presne hotovosť sveta
+    expect(end.cashCents).toBe(cashBuilt - VEHICLES * CARRIER_COST_CENTS - end.closedDays * DAILY_UPKEEP_CENTS);
     await expect(page.locator('[data-field="cash"]')).toHaveText(formatMoney(end.cashCents));
     await parkMouse(page);
     await page.screenshot({ path: 'tests/e2e/__screenshots__/f4-exported.png', fullPage: true });

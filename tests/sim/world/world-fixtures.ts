@@ -115,10 +115,7 @@ export function adjustCash(deltaCents: number): TestCommand {
   return new TestCommand({
     type: 'TestAdjustCash',
     validate: (world) => (world.cashCents + deltaCents >= 0 ? OK : rejected('insufficient_funds')),
-    apply: (world) => {
-      world.cashCents += deltaCents;
-      world.events.emit({ type: 'MoneyChanged', cashCents: world.cashCents, deltaCents, reason: 'road_capex' });
-    },
+    apply: (world) => world.economy.post(deltaCents, 'road_capex'),
   });
 }
 
@@ -139,7 +136,7 @@ export function consumeRng(): TestCommand {
     type: 'TestConsumeRng',
     apply: (world) => {
       world.ids.next();
-      world.cashCents += world.rng.int(0, 1000);
+      world.economy.post(world.rng.int(0, 1000), 'road_sale');
     },
   });
 }

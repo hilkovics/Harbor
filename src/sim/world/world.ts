@@ -1,11 +1,11 @@
 /**
- * World — koreň simulácie (ARCHITECTURE §5, §6). Vlastní hodiny, mriežku, parcely, hotovosť, jediný `Rng`,
+ * World — koreň simulácie (ARCHITECTURE §5, §6). Vlastní hodiny, mriežku, parcely, ekonomiku (hotovosť + kniha), jediný `Rng`,
  * alokátor ID, zbernicu udalostí, `CargoLedger`, moduly so skupinami kotvísk a lode; prezentácia ho len číta
  * a mení ho výlučne cez `Command` (pravidlo 5).
  *
  * Tick pipeline (§6): príkazy z fronty → krok 1 (`clock.advance()` + udalosti hraníc) → krok 3 (`ShipSystem`) →
  * krok 4 (`CraneSystem`) → krok 5 (`DispatcherSystem`) → krok 6 (`VehicleSystem`) → krok 8 (`LandsideSystem`: kamióny,
- * brány, spawn, export) → krok 11 (`MetricsSystem`, traffic) → krok 12 (`assertInvariants()`, ak je zapnuté
+ * brány, spawn, export) → krok 9 (`EconomySystem`: údržba, mzdy, súhrny, bankrot — ADR-025) → krok 11 (`MetricsSystem`, traffic) → krok 12 (`assertInvariants()`, ak je zapnuté
  * `checkInvariants`) → krok 13 (`events.flush()`). Ďalšie kroky pribúdajú so systémami na označenom mieste v `tick()`; poradie §6 je záväzné
  * a mení sa len cez ADR.
  *
@@ -85,8 +85,10 @@ import { PathCache } from '../logistics/path-cache';
 import { Pathfinder } from '../logistics/pathfinder';
 import { RoadSpeeds } from '../logistics/road-speed';
 import { JOB_STATE_TRAITS, type TransportJob } from '../logistics/transport-job';
+import { Economy, type EconomyState } from '../economy/economy';
 import { CraneSystem } from '../systems/crane-system';
 import { DispatcherSystem } from '../systems/dispatcher-system';
+import { EconomySystem } from '../systems/economy-system';
 import { LandsideSystem, settleGateQueues } from '../systems/landside-system';
 import { MetricsSystem } from '../systems/metrics-system';
 import { VehicleSystem } from '../systems/vehicle-system';
@@ -127,6 +129,8 @@ interface WorldParts {
   readonly grid: Grid;
   readonly parcels: ReadonlyMap<string, Parcel>;
   readonly cashCents: number;
+  /** Uložený stav ekonomiky (overený `parseWorldState`); `null` = prázdna kniha novej hry. */
+  readonly economy: EconomyState | null;
   /** Uložený stav ledgera (overený `parseWorldState`); `null` = prázdny ledger novej hry. */
   readonly cargo: CargoLedgerState | null;
 }
@@ -198,8 +202,11 @@ export class World {
    * aj pohyb vozidiel (`VehicleSystem`) čítajú typ bunky pri každom volaní.
    */
   readonly roadSpeeds: RoadSpeeds;
-  /** Hotovosť v centoch (USD); môže byť záporná (bankrot rieši F5). */
-  cashCents: number;
+  /**
+   * Hotovosť a účtovná kniha (§9.2, ADR-025): jediná cesta zmeny hotovosti je `economy.post(amountCents, category, refId?)`
+   * (zápis do knihy + `MoneyChanged`); denné a mesačné súhrny a bankrot uzatvára krok 9 (`EconomySystem`).
+   */
+  readonly economy: Economy;
   /** Krok 12 ticku zapnutý (`WorldOptions.checkInvariants`, predvolene `true`). */
   readonly checkInvariants: boolean;
 
@@ -221,6 +228,7 @@ export class World {
   private readonly dispatcherSystem = new DispatcherSystem();
   private readonly vehicleSystem = new VehicleSystem();
   private readonly landsideSystem = new LandsideSystem();
+  private readonly economySystem = new EconomySystem();
   private readonly metricsSystem = new MetricsSystem();
   private roadChanges = 0;
   private moduleChanges = 0;
@@ -242,7 +250,12 @@ export class World {
     this.ids = parts.ids;
     this.grid = parts.grid;
     this.parcels = parts.parcels;
-    this.cashCents = parts.cashCents;
+    const economyEnv = { events: this.events, clock: parts.clock };
+    const entriesKept = parts.defs.economy.ledgerEntriesKept;
+    this.economy =
+      parts.economy === null
+        ? new Economy(economyEnv, parts.cashCents, entriesKept)
+        : Economy.fromState(economyEnv, parts.cashCents, entriesKept, parts.economy);
     const deps = { cargoTypes: parts.defs.cargoTypes, ids: parts.ids, events: this.events, clock: parts.clock };
     this.cargo = parts.cargo === null ? new CargoLedger(deps) : CargoLedger.fromState(parts.cargo, deps);
     this.modules = this.moduleMap;
@@ -281,6 +294,7 @@ export class World {
         grid: map.createGrid(),
         parcels: copyParcels(map),
         cashCents: defs.economy.startingCashCents,
+        economy: null,
         cargo: null,
       },
       options,
@@ -330,6 +344,7 @@ export class World {
         grid,
         parcels,
         cashCents: parsed.cashCents,
+        economy: parsed.economy,
         cargo: parsed.cargo,
       },
       options,
@@ -340,6 +355,22 @@ export class World {
     // Zverejnený stav pozemného reťazca sa neukladá: originál ho mal zverejnený po poslednom príkaze, obnova ho odvodí ticho.
     world.publishLandside(false);
     return world;
+  }
+
+  /**
+   * Hotovosť v centoch (USD), môže byť záporná — fasáda nad `economy.cashCents` len na čítanie (prezentácia, validácia
+   * `insufficient_funds`). Zapisuje sa výlučne cez `economy.post` (ADR-025).
+   */
+  get cashCents(): number {
+    return this.economy.cashCents;
+  }
+
+  /**
+   * Hra skončila bankrotom (`GameOver`, ADR-025): `tick()` odvtedy aplikuje len frontu príkazov, neposúva čas
+   * a netickuje systémy. Fasáda nad `economy.gameOver` (je v save).
+   */
+  get gameOver(): boolean {
+    return this.economy.gameOver;
   }
 
   /** Skupiny kotvísk (§5.4) v poradí id; prepočítajú sa pri každom `addModule`/`removeModule`. */
@@ -839,12 +870,16 @@ export class World {
    * Jeden tick simulácie (§6). Rýchlosť hry tu nehrá rolu — koľko tickov sa vykoná, riadi `GameLoop`.
    * Vráti udalosti ticku v poradí vzniku: udalosti príkazov, `TickAdvanced`, potom `HourClosed`, `DayClosed`,
    * `MonthClosed` (od najmenšej hranice), ak sa uzavreli, a udalosti krokov 3–12 (lode, žeriavy, joby, vozidlá,
-   * `CargoMoved`).
+   * `CargoMoved`, pri uzavretí dňa `MoneyChanged` údržby a miezd, `DayClosedSummary`, `MonthlyReport`, `GameOver`).
+   * Po bankrote (`gameOver`) aplikuje len príkazy a vráti ich udalosti (čas stojí).
    * Pri zapnutom `checkInvariants` krok 12 pri porušení vyhodí `CargoConservationError` / `WorldInvariantError`.
    */
   tick(): readonly SimEvent[] {
     // Príkazy z fronty sa aplikujú pred krokom 1 (§6).
     this.applyQueuedCommands();
+
+    // Po bankrote (GameOver, ADR-025) sa čas neposúva a systémy netickujú — tick vráti len udalosti príkazov.
+    if (this.economy.gameOver) return this.events.flush();
 
     // 1. clock.advance() — tick++, hranice hodiny/dňa/mesiaca.
     const closed = this.advanceClock();
@@ -869,7 +904,10 @@ export class World {
     // 8. landsideSystem — kamióny (FSM, pohyb, nakládka, export), brány (FIFO, priepustnosť), spawn (ADR-024).
     this.landsideSystem.tick(this);
 
-    // 9.–10. economy, tech — pribudnú v ďalších fázach presne v poradí §6.
+    // 9. economySystem — pri DayClosed údržba, mzdy, DaySummary, pri MonthClosed MonthSummary, bankrot (ADR-025).
+    this.economySystem.tick(this, closed);
+
+    // 10. techSystem — pribudne s tech stromom (F8) presne na tomto mieste §6.
 
     // 11. metricsSystem — traffic pod vozidlami po pohybe, decay pri HourClosed.
     this.metricsSystem.tick(this, closed.hourClosed);
@@ -921,7 +959,7 @@ export class World {
       rng: this.rng.getState(),
       clock: this.clock.getState(),
       ids: this.ids.getState(),
-      cashCents: this.cashCents,
+      cashCents: this.economy.cashCents,
       roads,
       parcels,
       traffic,
@@ -931,6 +969,7 @@ export class World {
       vehicles: [...this.vehicleMap.values()].map((vehicle) => vehicle.toState()),
       jobs: [...this.jobMap.values()].map((job) => job.toState()),
       trucks: [...this.truckMap.values()].map((truck) => truck.toState()),
+      economy: this.economy.getState(),
     };
   }
 

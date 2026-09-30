@@ -14,7 +14,7 @@ import { DEFAULT_ROAD_KIND } from '../grid/road-kind';
 import type { World } from '../world/world';
 import type { SerializedCommand } from './command';
 import { refundCents } from './refund';
-import { CHANGE_CELL, RoadLayerCommand, parseCellCommand, type CellVerdict, type LedgerEntry, type PlannedCell, type RoadPrice } from './road-layer-command';
+import { CHANGE_CELL, RoadLayerCommand, parseCellCommand, type CellVerdict, type RoadPosting, type PlannedCell, type RoadPrice } from './road-layer-command';
 import type { ValidationReason } from './validation';
 
 export class RemoveRoadCommand extends RoadLayerCommand {
@@ -55,7 +55,7 @@ export class RemoveRoadCommand extends RoadLayerCommand {
   }
 
   /** Vždy práve jeden `MoneyChanged(road_sale)`, aj s nulovou refundáciou (ADR-015 bod 6). */
-  protected ledgerEntries(price: RoadPrice): readonly LedgerEntry[] {
+  protected ledgerEntries(price: RoadPrice): readonly RoadPosting[] {
     return [{ reason: 'road_sale', deltaCents: price.refundCents - price.buildCents }];
   }
 }

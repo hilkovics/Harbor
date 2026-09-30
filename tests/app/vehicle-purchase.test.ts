@@ -11,6 +11,7 @@ import {
   vehicleBuyTarget,
 } from '@app/vehicle-purchase';
 import { DEPOT_ID, buildLogistics, buyVehicles, createApp, runCommands } from './app-fixtures';
+import { setCash } from '../sim/helpers/economy';
 
 /** Depo číslo 2 mimo scenára: (39, 27), konektor dole → vonkajšia bunka (40, 30) je na ceste pod depom. */
 const SECOND_DEPOT = { type: 'PlaceModule', defId: 'vehicle_depot', x: 39, y: 27, rotation: 0 } as const;
@@ -96,7 +97,7 @@ describe('buyVehicleFromBuildBar / buyVehicleInDepot / sellVehicle', () => {
   it('nákup bez peňazí sa neodošle (validácia insufficient_funds)', () => {
     const app = createApp();
     buildLogistics(app);
-    app.world.cashCents = 1_000;
+    setCash(app.world, 1_000);
     const dispatch = vi.spyOn(app.bridge, 'dispatch');
     expect(buyVehicleFromBuildBar(app.bridge, 'straddle_carrier')).toBe(false);
     expect(dispatch).not.toHaveBeenCalled();

@@ -57,8 +57,8 @@ export interface RoadPrice {
 /** `validate` s rozpadom ceny — ghost v UI môže ukázať stavbu a refundáciu prestavby zvlášť (T03-20). */
 export interface RoadQuote extends ValidationResult, RoadPrice {}
 
-/** Jeden zápis do účtovnej knihy pri `apply` (`MoneyChanged`). */
-export interface LedgerEntry {
+/** Jeden pohyb peňazí pri `apply` — `Economy.post(deltaCents, reason)` (zápis do knihy + `MoneyChanged`, ADR-025). */
+export interface RoadPosting {
   readonly reason: LedgerCategory;
   /** Zmena hotovosti (záporná = výdavok). */
   readonly deltaCents: number;
@@ -109,7 +109,7 @@ export abstract class RoadLayerCommand implements Command {
   protected abstract writeCell(cell: Cell, change: PlannedCell): void;
 
   /** Zápisy `MoneyChanged` pri `apply` v poradí emitovania (súčet delt = −čistá cena). */
-  protected abstract ledgerEntries(price: RoadPrice): readonly LedgerEntry[];
+  protected abstract ledgerEntries(price: RoadPrice): readonly RoadPosting[];
 
   /**
    * `ok` len bez dôvodov; `cells` = unikátne bunky, ktoré `apply` zmení (v poradí prvého výskytu) — pri odmietnutí
@@ -135,10 +135,7 @@ export abstract class RoadLayerCommand implements Command {
     for (const change of changes) this.writeCell(world.grid.atIndex(change.index), change);
     world.markRoadsChanged();
     world.events.emit({ type: 'RoadChanged', cells: quote.cells });
-    for (const { reason, deltaCents } of entries) {
-      world.cashCents += deltaCents;
-      world.events.emit({ type: 'MoneyChanged', cashCents: world.cashCents, deltaCents, reason });
-    }
+    for (const { reason, deltaCents } of entries) world.economy.post(deltaCents, reason);
   }
 
   toJSON(): SerializedCommand {

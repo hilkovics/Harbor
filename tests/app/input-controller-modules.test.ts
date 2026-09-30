@@ -5,6 +5,7 @@ import { feedbackText } from '@app/build-feedback';
 import { CLICK_SLOP_PX } from '@app/config';
 import { InputController } from '@app/input-controller';
 import { FakeGhost, c, harness, key } from './input-fixtures';
+import { setCash } from '../sim/helpers/economy';
 
 // T02-10: build mód modulov (ghost, R, umiestnenie, Esc / pravý klik) a výber modulu klikom (inšpektor).
 // Root berth = id 1 (x 40–47, y 14–16), Root žeriav = id 2 (x 43–44, y 14–16). Berth 8×3: bunka pod kurzorom je jeho
@@ -322,7 +323,7 @@ describe('build mód modulov: umiestnenie klikom', () => {
   it('nedostatok peňazí: ghost ostáva zelený (ikona $ v štítku), ale klik nič nepostaví (§8 bod 6)', () => {
     const h = harness();
     const dispatch = vi.spyOn(h.bridge, 'dispatch');
-    h.world.cashCents = BERTH_COST - 1;
+    setCash(h.world, BERTH_COST - 1);
     h.buildSelection.select(BERTH);
     h.move(AT_FREE_QUAY);
     expect(h.moduleGhost.ghost?.valid).toBe(true);
@@ -337,7 +338,7 @@ describe('build mód modulov: umiestnenie klikom', () => {
 
   it('nedostatok peňazí spolu s iným dôvodom: ghost je červený', () => {
     const h = harness();
-    h.world.cashCents = 0;
+    setCash(h.world, 0);
     h.buildSelection.select(BERTH);
     h.move(INLAND);
     expect(h.moduleGhost.ghost?.valid).toBe(false);
@@ -346,7 +347,7 @@ describe('build mód modulov: umiestnenie klikom', () => {
 
   it('po zmene hotovosti (MoneyChanged) sa ghost prepočíta bez pohybu myši', () => {
     const h = harness();
-    h.world.cashCents = BERTH_COST; // presne na kotvisko
+    setCash(h.world, BERTH_COST); // presne na kotvisko
     h.buildSelection.select(BERTH);
     h.move(AT_FREE_QUAY);
     expect(h.controller.feedback()?.fundsShort).toBe(false);

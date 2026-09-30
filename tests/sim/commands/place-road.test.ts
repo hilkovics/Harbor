@@ -13,6 +13,7 @@ import {
   roadCount,
   starterRow,
 } from './command-fixtures';
+import { setCash } from '../helpers/economy';
 
 const place = (...cells: CellCoord[]): PlaceRoadCommand => new PlaceRoadCommand(cells);
 
@@ -131,13 +132,13 @@ describe('PlaceRoad.validate — cena a hotovosť', () => {
 
   it('hotovosť presne rovná cene stačí', () => {
     const world = newWorld();
-    world.cashCents = 3 * ROAD_COST;
+    setCash(world, 3 * ROAD_COST);
     expect(place(...starterRow(3)).validate(world).ok).toBe(true);
   });
 
   it('o cent menej → insufficient_funds (costCents ostáva cena)', () => {
     const world = newWorld();
-    world.cashCents = 3 * ROAD_COST - 1;
+    setCash(world, 3 * ROAD_COST - 1);
     expect(place(...starterRow(3)).validate(world)).toEqual({
       ok: false,
       reasons: ['insufficient_funds'],
@@ -148,13 +149,13 @@ describe('PlaceRoad.validate — cena a hotovosť', () => {
 
   it('záporná hotovosť → insufficient_funds; spolu s dôvodmi buniek', () => {
     const world = newWorld();
-    world.cashCents = -1;
+    setCash(world, -1);
     expect(place(CELLS.publicLand, CELLS.deepWater).validate(world).reasons).toEqual(['terrain', 'insufficient_funds']);
   });
 
   it('cesta zadarmo (cena 0) prejde aj pri zápornej hotovosti', () => {
     const world = newWorld(defsWith({ roadCostPerCellCents: 0 }));
-    world.cashCents = -100;
+    setCash(world, -100);
     expect(place(CELLS.publicLand).validate(world)).toEqual({ ok: true, reasons: [], cells: [CELLS.publicLand], costCents: 0 });
   });
 });
@@ -205,7 +206,7 @@ describe('PlaceRoad.apply', () => {
 
   it('hotovosť rovná cene → po stavbe 0', () => {
     const world = newWorld();
-    world.cashCents = 2 * ROAD_COST;
+    setCash(world, 2 * ROAD_COST);
     place(...starterRow(2)).apply(world);
     expect(world.cashCents).toBe(0);
   });

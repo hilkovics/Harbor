@@ -7,6 +7,7 @@ import { feedbackText, feedbackIcon, isFundsOnly } from '@app/build-feedback';
 import type { BuildFeedback } from '@app/input-controller';
 import { DEFAULT_ONE_WAY_DIRECTION } from '@app/config';
 import { c, harness, key } from './input-fixtures';
+import { setCash } from '../sim/helpers/economy';
 
 /** Riadok 20 v starter parcele (30..57 × 14..33) je pevnina bez ciest → voľné miesto na stavbu. */
 const ROW = 20;
@@ -466,7 +467,7 @@ describe('InputController: prestavba typu cesty (cena z quote)', () => {
   it('prestavba bez peňazí: zelený ghost, ikona $, ťah sa neodošle', () => {
     const h = withTwoLane();
     const sent = spyDispatch(h);
-    h.world.cashCents = 0; // stavba 3 × $1,500 − refund $3,000 = $1,500 > 0
+    setCash(h.world, 0); // stavba 3 × $1,500 − refund $3,000 = $1,500 > 0
     h.roadSelection.select('one_way');
     h.down(c(30, ROW));
     h.move(c(32, ROW));

@@ -385,6 +385,11 @@ describe('runScenario', () => {
       expect(full.ticksToAllStored).not.toBeNull();
     });
 
+    it('cashEnd (ADR-025): 64 600 000 po stavbe − 1 deň × (údržba 285 000 + mzdy 61 000) = 64 254 000', () => {
+      expect(full.gameDays).toBe(1);
+      expect(full.cashEnd).toBe(64_254_000);
+    });
+
     it('ticksToAllStored je hranica: o tick skôr ešte nie je všetko uložené, presne v ňom už áno', () => {
       const stored = full.ticksToAllStored;
       if (stored === null) throw new Error('ticksToAllStored má byť číslo');
@@ -466,6 +471,11 @@ describe('runScenario', () => {
         trucksExited: UNITS,
         unitsExportedByTrucks: UNITS,
       });
+    });
+
+    it('cashEnd (ADR-025): 33 600 000 po stavbe − 4 dni × (údržba 330 000 + mzdy 79 000) = 31 964 000', () => {
+      expect(full.gameDays).toBe(4);
+      expect(full.cashEnd).toBe(31_964_000);
     });
 
     it('krížová kontrola: Σ TruckExited.units === exportedUnits (kamióny sú jediná cesta exportu)', () => {

@@ -38,7 +38,7 @@ import {
   NO_SHAPE_PROBLEMS,
   RoadLayerCommand,
   type CellVerdict,
-  type LedgerEntry,
+  type RoadPosting,
   type PlannedCell,
   type RoadPrice,
 } from './road-layer-command';
@@ -141,8 +141,8 @@ export class PlaceRoadCommand extends RoadLayerCommand {
   }
 
   /** Prestavba: najprv refundácia starých typov (`road_sale`, len > 0), potom vždy stavba (`road_capex`). */
-  protected ledgerEntries(price: RoadPrice): readonly LedgerEntry[] {
-    const build: LedgerEntry = { reason: 'road_capex', deltaCents: 0 - price.buildCents };
+  protected ledgerEntries(price: RoadPrice): readonly RoadPosting[] {
+    const build: RoadPosting = { reason: 'road_capex', deltaCents: 0 - price.buildCents };
     return price.refundCents > 0 ? [{ reason: 'road_sale', deltaCents: price.refundCents }, build] : [build];
   }
 

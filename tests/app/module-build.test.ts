@@ -3,6 +3,7 @@ import { PlaceModuleCommand } from '@sim/commands';
 import { ROTATIONS } from '@sim/grid';
 import { nextRotation, placeCommand, placementAt, previewModule } from '@app/module-build';
 import { createApp } from './app-fixtures';
+import { setCash } from '../sim/helpers/economy';
 
 const BERTH = 'berth_standard';
 const CRANE = 'crane_container_gantry';
@@ -87,7 +88,7 @@ describe('previewModule', () => {
 
   it('len nedostatok peňazí: ghost ostáva platný (zelený), ale príkaz sa neodošle', () => {
     const poor = createApp();
-    poor.world.cashCents = 1;
+    setCash(poor.world, 1);
     const preview = previewModule(berth, { x: 52, y: 15 }, 0, poor.bridge.validate.bind(poor.bridge));
     expect(preview.result.reasons).toEqual(['insufficient_funds']);
     expect(preview.fundsShort).toBe(true);
@@ -97,7 +98,7 @@ describe('previewModule', () => {
 
   it('nedostatok peňazí + iný dôvod: ghost neplatný', () => {
     const poor = createApp();
-    poor.world.cashCents = 1;
+    setCash(poor.world, 1);
     const preview = previewModule(berth, { x: 35, y: 25 }, 0, poor.bridge.validate.bind(poor.bridge));
     expect(preview.fundsShort).toBe(true);
     expect(preview.ghost.valid).toBe(false);

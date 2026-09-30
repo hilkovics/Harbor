@@ -8,6 +8,7 @@ import type { CellCoord } from '@sim/grid';
 import type { World } from '@sim/world';
 import { DEPOT_OUTSIDE, addVehicleTo, depotWorld } from '../vehicles/vehicle-fixtures';
 import { CELLS, DEFS, REFUND_RATE, START_CASH, defsWith, hashState, newWorld, starterRow } from './command-fixtures';
+import { setCash } from '../helpers/economy';
 
 const KINDS = DEFS.infrastructure.roadKinds;
 const TWO_LANE = KINDS.two_lane.costPerCellCents;
@@ -175,7 +176,7 @@ describe('PlaceRoad — prestavba (RemoveRoad + PlaceRoad v jednom kroku)', () =
 
   it('refundácia vyššia než stavba → záporná cena (príjem), prejde aj pri zápornej hotovosti', () => {
     const world = newWorld(defsWith({ oneLaneCostPerCellCents: 50_000 }));
-    world.cashCents = -10;
+    setCash(world, -10);
     const command = place([starter], 'one_lane');
     expect(command.validate(world)).toEqual({ ok: true, reasons: [], cells: [starter], costCents: 50_000 - TWO_LANE / 2 });
     const events = applyOk(world, command);
@@ -189,9 +190,9 @@ describe('PlaceRoad — prestavba (RemoveRoad + PlaceRoad v jednom kroku)', () =
   it('insufficient_funds počíta s čistou cenou prestavby', () => {
     const world = newWorld();
     const net = ONE_LANE - TWO_LANE * REFUND_RATE;
-    world.cashCents = net;
+    setCash(world, net);
     expect(place([starter], 'one_lane').validate(world).ok).toBe(true);
-    world.cashCents = net - 1;
+    setCash(world, net - 1);
     expect(place([starter], 'one_lane').validate(world)).toEqual({ ok: false, reasons: ['insufficient_funds'], cells: [starter], costCents: net });
   });
 

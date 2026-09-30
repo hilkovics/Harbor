@@ -131,28 +131,33 @@ describe('World.tick — krok 1 a 13', () => {
     expect(ticksOf('MonthClosed')).toEqual([]);
   });
 
-  it('poradie udalostí na hranici dňa: TickAdvanced, HourClosed, DayClosed', () => {
+  it('poradie udalostí na hranici dňa: TickAdvanced, HourClosed, DayClosed, potom krok 9 (údržba, mzdy, DayClosedSummary)', () => {
     const world = create();
     runTicks(world, world.clock.ticksPerDay - 1);
     const tick = world.clock.ticksPerDay;
-    expect(world.tick()).toEqual([
+    const events = world.tick();
+    expect(events.slice(0, 3)).toEqual([
       { type: 'TickAdvanced', tick },
       { type: 'HourClosed', tick },
       { type: 'DayClosed', tick },
     ]);
+    // Krok 9 (ADR-025): starter moduly majú údržbu a žeriav mzdu.
+    expect(events.slice(3).map((event) => event.type)).toEqual(['MoneyChanged', 'MoneyChanged', 'DayClosedSummary']);
   });
 
-  it('hranica mesiaca: TickAdvanced, HourClosed, DayClosed, MonthClosed', () => {
+  it('hranica mesiaca: TickAdvanced, HourClosed, DayClosed, MonthClosed, potom krok 9 s MonthlyReport', () => {
     const base = create();
     const { ticksPerMonth } = base.clock;
     const state = base.serialize();
     const world = World.deserialize(DEFS, MAP, { ...state, clock: { ...state.clock, tick: ticksPerMonth - 1 } });
-    expect(world.tick()).toEqual([
+    const events = world.tick();
+    expect(events.slice(0, 4)).toEqual([
       { type: 'TickAdvanced', tick: ticksPerMonth },
       { type: 'HourClosed', tick: ticksPerMonth },
       { type: 'DayClosed', tick: ticksPerMonth },
       { type: 'MonthClosed', tick: ticksPerMonth },
     ]);
+    expect(events.slice(4).map((event) => event.type)).toEqual(['MoneyChanged', 'MoneyChanged', 'DayClosedSummary', 'MonthlyReport']);
     expect(world.clock.gameMonth).toBe(1);
   });
 
@@ -213,7 +218,7 @@ describe('World — fronta príkazov', () => {
       type: 'TestBad',
       validate: () => rejected('terrain', 'parcel_not_owned'),
       apply: (w) => {
-        w.cashCents = 0;
+        w.economy.post(-w.cashCents, 'road_capex');
       },
     });
     world.enqueue(bad);

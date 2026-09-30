@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SimBridgeProvider, useSimBridge, useSimSnapshot } from '@app/use-sim-snapshot';
 import { DEFAULT_SNAPSHOT_THROTTLE_MS, createSnapshotStore, createThrottle } from '@app/snapshot-store';
 import { TestAdjustCash, createApp } from './app-fixtures';
+import { setCash } from '../sim/helpers/economy';
 
 describe('createThrottle', () => {
   beforeEach(() => {
@@ -109,7 +110,7 @@ describe('createSnapshotStore', () => {
     const second = store.select((s) => ({ cash: s.cashCents }), equalHud);
     expect(second).toBe(first);
 
-    world.cashCents -= 5;
+    setCash(world, world.cashCents - 5);
     const third = store.select((s) => ({ cash: s.cashCents }), equalHud);
     expect(third).not.toBe(first);
     expect(third.cash).toBe(world.cashCents);

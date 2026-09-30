@@ -4,6 +4,7 @@ import type { SimEvent } from '@sim/events';
 import { installDevHook, type DevHook } from '@app/dev-hook';
 import { SimBridge } from '@app/sim-bridge';
 import { TestAdjustCash, TestRejected, TestSetSpeed, createApp, createWorld } from './app-fixtures';
+import { setCash } from '../sim/helpers/economy';
 
 describe('SimBridge.snapshot', () => {
   it('obsahuje clock, hotovosť, grid a parcely sveta', () => {
@@ -47,7 +48,7 @@ describe('SimBridge.snapshot', () => {
     expect(afterSpeed).not.toBe(afterTick);
     expect(afterSpeed.speed).toBe(4);
 
-    world.cashCents -= 1;
+    setCash(world, world.cashCents - 1);
     const afterCash = bridge.snapshot();
     expect(afterCash).not.toBe(afterSpeed);
     expect(afterCash.cashCents).toBe(world.cashCents);

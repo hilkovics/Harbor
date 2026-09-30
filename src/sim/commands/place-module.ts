@@ -116,7 +116,6 @@ export class PlaceModuleCommand implements Command {
     }
     const module = world.placeModule({ defId: this.defId, x: this.x, y: this.y, rotation }, result.costCents);
     const deltaCents = 0 - result.costCents;
-    world.cashCents += deltaCents;
     world.events.emit({
       type: 'ModulePlaced',
       moduleId: module.id,
@@ -126,7 +125,8 @@ export class PlaceModuleCommand implements Command {
       rotation: module.rotation,
       cells: module.cells,
     });
-    if (deltaCents !== 0) world.events.emit({ type: 'MoneyChanged', cashCents: world.cashCents, deltaCents, reason: 'module_capex' });
+    // Hotovosť sa mení až po `ModulePlaced` — poradie udalostí F2 (ADR-015) ostáva: ModulePlaced → MoneyChanged.
+    if (deltaCents !== 0) world.economy.post(deltaCents, 'module_capex', `module:${String(module.id)}`);
   }
 
   toJSON(): SerializedCommand {

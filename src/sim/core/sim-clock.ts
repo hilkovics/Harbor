@@ -36,7 +36,7 @@ const MINUTES_PER_HOUR = 60;
 /** Hodín v dni (§3). */
 const HOURS_PER_DAY = 24;
 /** Dní v mesiaci — herný mesiac má vždy 30 dní (§3). */
-const DAYS_PER_MONTH = 30;
+export const DAYS_PER_MONTH = 30;
 /**
  * Počiatočná rýchlosť novej hry: 1× = štandardná (§3). Musí byť v `time.speeds` — overuje `World.create`
  * (schéma `time` vyžaduje len 0).

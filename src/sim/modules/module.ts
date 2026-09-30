@@ -150,6 +150,14 @@ export abstract class Module {
   }
 
   /**
+   * Denná mzda obsluhy modulu v centoch, ktorú strhne `EconomySystem` pri `DayClosed` (§9.2, ADR-025). Základ: 0 —
+   * modul bez obsluhy; žeriav vracia `params.wagePerDayCents`. Generický kód sa pýta tu, nie `instanceof` (pravidlo 7).
+   */
+  dailyWageCents(): number {
+    return 0;
+  }
+
+  /**
    * Dynamický stav pre save (čistý JSON, nová kópia pri každom volaní). Základ: modul bez vlastného stavu → `{}`.
    * Podtrieda so stavom prepíše `getRuntimeState` aj `restoreRuntimeState`.
    */

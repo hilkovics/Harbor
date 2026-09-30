@@ -104,9 +104,8 @@ export class BuyVehicleCommand implements Command {
     });
     world.addVehicle(vehicle);
     const deltaCents = 0 - result.costCents;
-    world.cashCents += deltaCents;
     world.events.emit({ type: 'VehicleBought', vehicleId: vehicle.id, defId: vehicle.defId, depotId: depot.id });
-    if (deltaCents !== 0) world.events.emit({ type: 'MoneyChanged', cashCents: world.cashCents, deltaCents, reason: 'vehicle_capex' });
+    if (deltaCents !== 0) world.economy.post(deltaCents, 'vehicle_capex', `vehicle:${String(vehicle.id)}`);
   }
 
   toJSON(): SerializedCommand {

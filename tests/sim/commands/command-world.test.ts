@@ -12,6 +12,7 @@ import {
 import type { SimEvent } from '@sim/events';
 import { World } from '@sim/world';
 import { CELLS, DEFS, MAP, REFUND_RATE, ROAD_COST, START_CASH, hashState, newWorld, ofType, roadCount, starterRow } from './command-fixtures';
+import { setCash } from '../helpers/economy';
 
 function applyNow(world: World, ...commands: Command[]): readonly SimEvent[] {
   for (const command of commands) world.enqueue(command);
@@ -81,7 +82,7 @@ describe('neplatné príkazy: atomické odmietnutie cez World', () => {
 
   it('nedostatok peňazí → insufficient_funds, žiadna cesta nevznikne', () => {
     const world = newWorld();
-    world.cashCents = ROAD_COST;
+    setCash(world, ROAD_COST);
     const events = applyNow(world, new PlaceRoadCommand(starterRow(2)));
     expect(events).toEqual([{ type: 'CommandRejected', commandType: 'PlaceRoad', reasons: ['insufficient_funds'] }]);
     expect(roadCount(world)).toBe(MAP.starter.roads.length);
@@ -97,7 +98,7 @@ describe('neplatné príkazy: atomické odmietnutie cez World', () => {
 
   it('peniaze minuté prvým príkazom chýbajú druhému', () => {
     const world = newWorld();
-    world.cashCents = 3 * ROAD_COST;
+    setCash(world, 3 * ROAD_COST);
     const [a, b, c, d] = starterRow(4);
     const events = applyNow(world, new PlaceRoadCommand([a, b]), new PlaceRoadCommand([c, d]));
     expect(ofType(events, 'CommandRejected').map((e) => e.reasons)).toEqual([['insufficient_funds']]);

@@ -64,8 +64,8 @@ function busyWorld(): World {
   return world;
 }
 
-describe('World.serialize — WorldState v4', () => {
-  it('tvar: presne kľúče v4 (v1 + traffic, modules, cargo, ships + vehicles, jobs + trucks) v pevnom poradí a hodnoty novej hry', () => {
+describe('World.serialize — WorldState v5', () => {
+  it('tvar: presne kľúče v5 (v1 + traffic, modules, cargo, ships + vehicles, jobs + trucks + economy) v pevnom poradí a hodnoty novej hry', () => {
     const world = create();
     const state = world.serialize();
     expect(Object.keys(state)).toEqual([
@@ -85,9 +85,11 @@ describe('World.serialize — WorldState v4', () => {
       'vehicles',
       'jobs',
       'trucks',
+      'economy',
     ]);
     expect(state.version).toBe(WORLD_STATE_VERSION);
-    expect(state.version).toBe(4);
+    expect(state.version).toBe(5);
+    expect(state.economy).toEqual({ entries: [], today: { incomeCents: {}, expenseCents: {} }, daily: [], monthly: [], daysNegative: 0, gameOver: false });
     expect(state.traffic).toEqual([]);
     // Starter moduly mapy (Root modul, T02-04): id 1, 2, … v poradí mapy, zaplatená cena 0, žeriav nečinný.
     expect(state.modules.map(({ id, defId, x, y, rotation, purchaseCostCents }) => ({ id, defId, x, y, rotation, purchaseCostCents }))).toEqual(
@@ -254,6 +256,13 @@ describe('World.deserialize', () => {
   });
 
   type Mutation = (state: Record<string, unknown>) => void;
+  type RawTotals = Record<string, unknown>;
+  interface RawEconomy {
+    entries: Record<string, unknown>[];
+    today: { incomeCents: RawTotals; expenseCents: RawTotals };
+  }
+  const economyOf = (state: Record<string, unknown>): RawEconomy => state.economy as RawEconomy;
+  const EMPTY_ECONOMY_STATE = { entries: [], today: { incomeCents: {}, expenseCents: {} }, daily: [], monthly: [], daysNegative: 0, gameOver: false };
   const set =
     (key: string, value: unknown): Mutation =>
     (state) => {
@@ -264,7 +273,7 @@ describe('World.deserialize', () => {
   const INVALID: readonly [string, Mutation, string][] = [
     ['neznámy kľúč', set('extra', 1), '/extra'],
     ['chýba kľúč', (s) => delete s.cashCents, '/cashCents'],
-    ['neznáma budúca verzia', set('version', 5), '/version'],
+    ['neznáma budúca verzia', set('version', 6), '/version'],
     ['verzia 0', set('version', 0), '/version'],
     ['verzia ako reťazec', set('version', '3'), '/version'],
     ['v3 stav označený ako v1 → migrácia v1 odmietne kľúč v2', set('version', 1), '/traffic'],
@@ -309,6 +318,21 @@ describe('World.deserialize', () => {
     ['cargo porušená konzervácia', set('cargo', { createdCount: 1, exportedCount: 0, units: [] }), '/cargo/createdCount'],
     ['ships nie je pole', set('ships', {}), '/ships'],
     ['loď bez povinných kľúčov (tvar SerializedShip, T02-05)', set('ships', [{ id: 1 }]), '/ships/0/classId'],
+    // economy (v5, ADR-025) — busyWorld je v ticku 123 a má záznamy knihy z adjustCash a consumeRng.
+    ['economy nie je objekt', set('economy', []), '/economy'],
+    ['economy bez daysNegative', (s) => delete (s.economy as Record<string, unknown>).daysNegative, '/economy/daysNegative'],
+    ['záznam knihy s neznámou kategóriou', (s) => (economyOf(s).entries[0].category = 'bonus'), '/economy/entries/0/category'],
+    ['záznam knihy v budúcnosti', (s) => (economyOf(s).entries[0].tick = 124), '/economy/entries/0/tick'],
+    ['záznamy knihy nie vzostupne podľa ticku', (s) => (economyOf(s).entries[1].tick = 122), '/economy/entries/1/tick'],
+    ['zlomková suma záznamu', (s) => (economyOf(s).entries[0].amountCents = 0.5), '/economy/entries/0/amountCents'],
+    ['refId nie je reťazec', (s) => (economyOf(s).entries[0].refId = 7), '/economy/entries/0/refId'],
+    ['záznam s neznámym kľúčom', (s) => (economyOf(s).entries[0].note = 'x'), '/economy/entries/0/note'],
+    ['súčet otvoreného dňa s neznámou kategóriou', (s) => (economyOf(s).today.incomeCents.bonus = 1), '/economy/today/incomeCents/bonus'],
+    ['nulový súčet otvoreného dňa (neukladá sa)', (s) => (economyOf(s).today.expenseCents.maintenance = 0), '/economy/today/expenseCents/maintenance'],
+    ['súhrn ešte neuzavretého dňa', set('economy', { ...EMPTY_ECONOMY_STATE, daily: [{ day: 0, incomeCents: {}, expenseCents: {}, cashEndCents: 0 }] }), '/economy/daily/0/day'],
+    ['súhrn ešte neuzavretého mesiaca', set('economy', { ...EMPTY_ECONOMY_STATE, monthly: [{ month: 0, incomeCents: {}, expenseCents: {}, cashEndCents: 0 }] }), '/economy/monthly/0/month'],
+    ['gameOver nie je boolean', set('economy', { ...EMPTY_ECONOMY_STATE, gameOver: 1 }), '/economy/gameOver'],
+    ['záporné daysNegative', set('economy', { ...EMPTY_ECONOMY_STATE, daysNegative: -1 }), '/economy/daysNegative'],
   ];
 
   it.each(INVALID)('%s → WorldStateError na %s', (_name, mutate, path) => {

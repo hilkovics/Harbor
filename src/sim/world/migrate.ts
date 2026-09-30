@@ -15,6 +15,9 @@
  * v3 → v4 (T04-04, ADR-024): v3 nepoznal kamióny, preto dostane prázdne `trucks`. Rampa (`kind: 'ramp'`, v3 od T04-02
  * s `runtime` `{}`) dostane `lastNoWaitingBayHour: null` (throttle `NoWaitingBay`). Brána ukladala frontu už vo v3 —
  * bez kamiónov je prázdna (neprázdnu odmietne obnova, lebo jej kamióny neexistujú); stojisko ostáva `{}`.
+ *
+ * v4 → v5 (T05-02, ADR-025): v4 nepoznal knihu, preto dostane prázdnu `economy` (bez záznamov a súhrnov, `daysNegative`
+ * 0, `gameOver` false); hotovosť ostáva v `cashCents`. T05-04 rozšíri v5 o kontrakty (v5 ešte nie je vydaná).
  */
 import type { CargoLedgerState } from '../cargo/cargo-ledger-state';
 import type { DefRegistry } from '../defs/def-registry';
@@ -33,8 +36,11 @@ export const WORLD_STATE_V3 = 3;
 /** Verzia `WorldState` v4 (F4: `trucks`, runtime rampy s `lastNoWaitingBayHour`) — cieľ kroku v3 → v4. */
 export const WORLD_STATE_V4 = 4;
 
+/** Verzia `WorldState` v5 (F5: `economy` — kniha, súhrny, bankrot; ADR-025, kontrakty doplní T05-04) — cieľ kroku v4 → v5. */
+export const WORLD_STATE_V5 = 5;
+
 /** Aktuálna verzia `WorldState` — `serialize()` vždy vracia ju. */
-export const WORLD_STATE_VERSION = WORLD_STATE_V4;
+export const WORLD_STATE_VERSION = WORLD_STATE_V5;
 
 /** Kľúče `WorldState` v1 v poradí `serialize()` (F1, ADR-013). */
 export const WORLD_STATE_V1_KEYS = ['version', 'mapId', 'seed', 'rng', 'clock', 'ids', 'cashCents', 'roads', 'parcels'] as const;
@@ -47,6 +53,9 @@ export const WORLD_STATE_V3_KEYS = [...WORLD_STATE_V2_KEYS, 'vehicles', 'jobs'] 
 
 /** Kľúče `WorldState` v4 v poradí `serialize()` (F4, T04-04): v3 + `trucks`. */
 export const WORLD_STATE_V4_KEYS = [...WORLD_STATE_V3_KEYS, 'trucks'] as const;
+
+/** Kľúče `WorldState` v5 v poradí `serialize()` (F5, T05-02): v4 + `economy`. */
+export const WORLD_STATE_V5_KEYS = [...WORLD_STATE_V4_KEYS, 'economy'] as const;
 
 type RawState = Record<string, unknown>;
 type Migration = (state: RawState, defs: DefRegistry) => RawState;
@@ -119,11 +128,30 @@ function migrateV3ToV4(state: RawState, defs: DefRegistry): RawState {
   return migrated;
 }
 
+/**
+ * Prázdna ekonomika pre save bez knihy (v4 → v5): hotovosť ostáva v `cashCents`, kniha, súhrny a bankrotové počítadlo
+ * začínajú od nuly (dni so zápornou hotovosťou pred načítaním sa nezapočítajú).
+ */
+function emptyEconomyState(): RawState {
+  return { entries: [], today: { incomeCents: {}, expenseCents: {} }, daily: [], monthly: [], daysNegative: 0, gameOver: false };
+}
+
+/** v4 (presne kľúče v4) → v5: pôvodné polia + prázdna `economy`. */
+function migrateV4ToV5(state: RawState): RawState {
+  checkKeys(state, WORLD_STATE_V4_KEYS, '');
+  const migrated: RawState = {};
+  for (const key of WORLD_STATE_V4_KEYS) migrated[key] = state[key];
+  migrated['version'] = WORLD_STATE_V5;
+  migrated['economy'] = emptyEconomyState();
+  return migrated;
+}
+
 /** Verzia `n` → migrácia na `n + 1` (migrácia zapíše cieľovú verziu kroku, napr. `WORLD_STATE_V2`). */
 const WORLD_STATE_MIGRATIONS: ReadonlyMap<number, Migration> = new Map([
   [1, migrateV1ToV2],
   [2, migrateV2ToV3],
   [3, migrateV3ToV4],
+  [4, migrateV4ToV5],
 ]);
 
 /** Najstaršia verzia, ktorú vie `migrateWorldState` načítať. */

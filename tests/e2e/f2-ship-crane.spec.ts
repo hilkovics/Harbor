@@ -254,7 +254,9 @@ test.describe('F2: loď, žeriav, apron (T02-12)', () => {
 
     // 6) chýbajúce peniaze: ghost ostáva zelený s ikonou $, ale klik nič nepostaví (§8 bod 6); položka ide vybrať
     await page.evaluate((cents) => {
-      window.__sim!.world.cashCents = cents;
+      // Hotovosť sa mení len cez Economy.post (ADR-025); úprava ide do knihy ako CAPEX.
+      const { world } = window.__sim!;
+      world.economy.post(cents - world.cashCents, 'module_capex');
     }, 1_000_000);
     await hoverCell(page, WEST_QUAY_CURSOR);
     await expect.poll(() => moduleGhost(page)).toMatchObject({ x: 32, y: 14, valid: true });

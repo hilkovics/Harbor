@@ -1,13 +1,14 @@
 /**
  * Udalosti simulácie (ARCHITECTURE §12.1, výber pre F1 + F2: `CargoMoved`, moduly, lode, žeriavy; F3: vozidlá, joby,
  * `NoStorageAvailable`; F4: `RampOperationalChanged`, `JobCancelled`, kamióny `TruckSpawned`, `TruckStateChanged`,
- * `TruckExited`, `NoWaitingBay`). Readonly DTO:
+ * `TruckExited`, `NoWaitingBay`; F5: `DayClosedSummary`, `MonthlyReport`, `GameOver`). Readonly DTO:
  * `World` ich zbiera v `EventBus` a vracia z `tick()` / `applyPending()`; prezentácia ich len číta. Nový typ udalosti =
  * nový člen únie (+ test).
  */
 import type { CargoLocation } from '../cargo/cargo-location';
 import type { ValidationReason } from '../commands/validation';
 import type { EntityId } from '../core/entity-id';
+import type { DaySummary, MonthSummary } from '../economy/ledger';
 import type { LedgerCategory } from '../economy/ledger-category';
 import type { JobCancelReason } from '../logistics/transport-job';
 import type { RampInoperativeReason } from '../modules/loading-ramp';
@@ -274,6 +275,36 @@ export interface NoWaitingBayEvent {
   readonly rampId: EntityId;
 }
 
+/**
+ * `economySystem` (krok 9, ADR-025) uzavrel herný deň `day` (0-based = `clock.gameDay − 1`): po strhnutí údržby a miezd
+ * vznikol `summary` (príjmy a výdavky dňa podľa kategórie, hotovosť na konci). V ticku za `DayClosed` z kroku 1.
+ */
+export interface DayClosedSummaryEvent {
+  readonly type: 'DayClosedSummary';
+  readonly day: number;
+  readonly summary: DaySummary;
+}
+
+/** `economySystem` uzavrel herný mesiac `month` (0-based) — súčet jeho denných súhrnov (UI modal, §9.2); po `DayClosedSummary`. */
+export interface MonthlyReportEvent {
+  readonly type: 'MonthlyReport';
+  readonly month: number;
+  readonly summary: MonthSummary;
+}
+
+/** Prečo sa hra skončila; F5 pozná len bankrot (§9.2). */
+export type GameOverReason = 'bankruptcy';
+
+/**
+ * Hra skončila (ADR-025): hotovosť bola < 0 pri `economy.bankruptcyDays` uzavretiach dňa za sebou; `day` = posledný
+ * uzavretý deň. Posledná udalosť kroku 9; od ďalšieho ticku svet netickuje systémy (`World.gameOver`).
+ */
+export interface GameOverEvent {
+  readonly type: 'GameOver';
+  readonly reason: GameOverReason;
+  readonly day: number;
+}
+
 export type SimEvent =
   | TickAdvancedEvent
   | HourClosedEvent
@@ -304,7 +335,10 @@ export type SimEvent =
   | TruckSpawnedEvent
   | TruckStateChangedEvent
   | TruckExitedEvent
-  | NoWaitingBayEvent;
+  | NoWaitingBayEvent
+  | DayClosedSummaryEvent
+  | MonthlyReportEvent
+  | GameOverEvent;
 
 /** Názov typu udalosti (`'TickAdvanced' | 'HourClosed' | …`). */
 export type SimEventType = SimEvent['type'];

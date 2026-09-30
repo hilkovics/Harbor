@@ -16,6 +16,7 @@ import {
   roadCount,
   starterRow,
 } from './command-fixtures';
+import { setCash } from '../helpers/economy';
 
 const remove = (...cells: CellCoord[]): RemoveRoadCommand => new RemoveRoadCommand(cells);
 
@@ -116,7 +117,7 @@ describe('RemoveRoad — refundácia (ADR-012, ADR-015)', () => {
 
   it('odstránenie funguje aj pri zápornej hotovosti (refundácia nie je výdavok)', () => {
     const world = worldWithRoads([CELLS.publicLand]);
-    world.cashCents = -1_000;
+    setCash(world, -1_000);
     expect(remove(CELLS.publicLand).validate(world).ok).toBe(true);
   });
 

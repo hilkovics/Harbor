@@ -12,6 +12,7 @@ import {
 } from '@app/input-controller';
 import { KEY_PAN_MAX_DT_MS, KEY_PAN_PX_PER_SECOND } from '@app/config';
 import { c, harness, key } from './input-fixtures';
+import { setCash } from '../sim/helpers/economy';
 
 // ---- pomôcky (harness, falošné ghosty, key/c: tests/app/input-fixtures.ts) ----
 
@@ -296,7 +297,7 @@ describe('InputController: stavba cesty (ťah myšou)', () => {
     expect(h.controller.feedback()?.reasons).toEqual(['parcel_not_owned']);
     h.controller.pointerCancel();
 
-    h.world.cashCents = h.world.defs.infrastructure.road.costPerCellCents; // stačí na jednu bunku
+    setCash(h.world, h.world.defs.infrastructure.road.costPerCellCents); // stačí na jednu bunku
     h.down(c(30, ROW));
     h.move(c(33, ROW));
     expect(h.controller.feedback()).toMatchObject({ ok: false, reasons: ['insufficient_funds'], fundsShort: true });

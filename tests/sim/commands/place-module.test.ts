@@ -13,6 +13,7 @@ import { World } from '@sim/world';
 import { PIER_MAP } from '../world/pier-map';
 import { RAW_DEFS } from '../world/world-fixtures';
 import { DEFS, SEED, START_CASH, hashState, newBareWorld, ofType } from './command-fixtures';
+import { setCash } from '../helpers/economy';
 
 const BERTH = 'berth_standard';
 const CRANE = 'crane_container_gantry';
@@ -120,7 +121,7 @@ describe('PlaceModule — žeriav', () => {
 
   it('tretí žeriav → max_cranes; prekryv → occupied; iná rotácia → rotation_mismatch', () => {
     const rich = newBareWorld();
-    rich.cashCents = 10 * (BERTH_COST + 3 * CRANE_COST); // peniaze tu nie sú predmetom testu
+    setCash(rich, 10 * (BERTH_COST + 3 * CRANE_COST)); // peniaze tu nie sú predmetom testu
     const world = built(built(rich, BERTH, 40, 14), CRANE, 43, 14);
     expect(place(CRANE, 44, 14).validate(world).reasons).toEqual(['occupied']);
     expect(place(CRANE, 41, 14, 90).validate(world).reasons).toEqual(['occupied', 'rotation_mismatch']);
@@ -191,22 +192,22 @@ describe('PlaceModule — def, rotácia a peniaze', () => {
 
   it('insufficient_funds len keď cena > hotovosť (hranica presne na cene prejde)', () => {
     const world = newBareWorld();
-    world.cashCents = BERTH_COST;
+    setCash(world, BERTH_COST);
     expect(place(BERTH, 40, 14).validate(world).ok).toBe(true);
-    world.cashCents = BERTH_COST - 1;
+    setCash(world, BERTH_COST - 1);
     expect(place(BERTH, 40, 14).validate(world)).toEqual({
       ok: false,
       reasons: ['insufficient_funds'],
       cells: footprint(BERTH, 40, 14),
       costCents: BERTH_COST,
     });
-    world.cashCents = -1;
+    setCash(world, -1);
     expect(place(BERTH, 90, 14, 45).validate(world).reasons).toEqual(['insufficient_funds', 'invalid_rotation']);
   });
 
   it('všetky dôvody v kanonickom poradí VALIDATION_REASONS', () => {
     const world = newBareWorld();
-    world.cashCents = 0;
+    setCash(world, 0);
     expect(place(BERTH, 90, 14).validate(world).reasons).toEqual([
       'out_of_bounds',
       'terrain',
@@ -223,7 +224,7 @@ describe('PlaceModule — def, rotácia a peniaze', () => {
       modules: { ...modulesJson, items: [...modulesJson.items, { ...berthJson, id: 'berth_free_test', costCents: 0 }] },
     });
     const world = World.create(defs, newBareWorld().map, SEED);
-    world.cashCents = -500;
+    setCash(world, -500);
     const command = place('berth_free_test', 40, 14);
     expect(command.validate(world)).toMatchObject({ ok: true, costCents: 0 });
     command.apply(world);

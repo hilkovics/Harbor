@@ -9,6 +9,7 @@ import { SpeedControl } from '@ui/speed-control';
 import { HUD_PANEL_BUTTONS, TopHUD, TopHUDView, resolveSpeedRequest, useSetGameSpeed, type TopHUDProps } from '@ui/top-hud';
 import { createApp } from '../app/app-fixtures';
 import { fieldText, findAll, propsOf } from './react-tree';
+import { setCash } from '../sim/helpers/economy';
 
 const MINUS = '−';
 
@@ -62,7 +63,7 @@ describe('TopHUD (pripojený na SimBridge)', () => {
 
   it('záporná hotovosť: U+2212 v sume, varovný stav a čitateľný text pre asistívne technológie', () => {
     const app = createApp();
-    app.world.cashCents = -250_000;
+    setCash(app.world, -250_000);
     const html = renderHud(app);
     expect(fieldText(html, 'cash')).toBe(`${MINUS}$2,500`);
     expect(html).toContain('top-hud--debt');

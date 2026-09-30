@@ -18,6 +18,7 @@ export type {
   WorldStateV1,
   WorldStateV2,
   WorldStateV3,
+  WorldStateV4,
 } from './world-state';
 export {
   OLDEST_WORLD_STATE_VERSION,
@@ -28,9 +29,12 @@ export {
   WORLD_STATE_V3_KEYS,
   WORLD_STATE_V4,
   WORLD_STATE_V4_KEYS,
+  WORLD_STATE_V5,
+  WORLD_STATE_V5_KEYS,
   migrateWorldState,
 } from './migrate';
 export { WorldInvariantError, findWorldViolation } from './world-invariants';
+export { ECONOMY_STATE_KEYS, parseEconomyState } from './economy-state';
 export { CARGO_HOLDER_SOURCES, MODULE_CARGO_HOLDER_KINDS } from './cargo-holders';
 // Pripojenie modulov k ceste (ADR-017) — World.isConnected / connectorCells a §8 bod 5 (connector_blocked).
 export { connectorCellsOf, isModuleConnected, isOutsideUsable } from './connectivity';

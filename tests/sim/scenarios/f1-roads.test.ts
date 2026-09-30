@@ -10,10 +10,13 @@
  *  - tick 200:   SetGameSpeed(4)
  *  - tick 6000:  zvislá cesta x=29, y=14..24 po verejných bunkách vrátane nábrežia
  *  - tick 12000: RemoveRoad 6 buniek (2 verejné + 4 starter); tick 15000: RemoveRoad 1 bunky verejného nábrežia (29,14)
+ *
+ * Od F5 (ADR-025) krok 9 pri každom `DayClosed` (ticky 8 640 a 17 280) strhne údržbu starter modulov (Root berth +
+ * žeriav) a mzdu žeriava — model ich zaradí ako dva pohyby pred príkazy s `atTick` ≥ hranice dňa.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { commandFromJSON, type SerializedCommand } from '@sim/commands';
-import { loadBundledDefs } from '@sim/defs';
+import { craneParams, loadBundledDefs } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
 import { loadBundledMap, type CellCoord } from '@sim/grid';
 import { World } from '@sim/world';
@@ -43,6 +46,12 @@ const scenario = loadScenarioFile('f1_roads');
 
 const ROAD_COST = defs.infrastructure.road.costPerCellCents;
 const REFUND_RATE = defs.economy.removalRefundRate;
+
+const TICKS_PER_DAY = (SECONDS_PER_HOUR * HOURS_PER_DAY) / defs.time.tickGameSeconds;
+/** Denná údržba starter modulov mapy (ADR-025): Σ `maintenancePerDayCents` (Root berth + žeriav). */
+const STARTER_MAINTENANCE = map.starter.modules.reduce((sum, spec) => sum + defs.modules.get(spec.defId).maintenancePerDayCents, 0);
+/** Denné mzdy: žeriav Root modulu (`params.wagePerDayCents`); scenár vozidlá nekupuje. */
+const STARTER_WAGES = craneParams(defs.modules.get('crane_container_gantry')).wagePerDayCents;
 
 /** Refundácia za `cells` buniek (ADR-012 v znení ADR-015): celočíselne v bázických bodoch, nadol z celého príkazu. */
 const refundOf = (cells: number): number => Number((BigInt(cells * ROAD_COST) * BigInt(Math.round(REFUND_RATE * 10_000))) / 10_000n);
@@ -74,7 +83,11 @@ interface Model {
   readonly steps: ModelStep[];
 }
 
-/** Model po aplikovaní všetkých príkazov s `atTick < tick` (svet s `clock.tick === tick` ich už aplikoval). */
+/**
+ * Model po aplikovaní všetkých príkazov s `atTick < tick` (svet s `clock.tick === tick` ich už aplikoval) a po uzavretí
+ * dní s hranicou ≤ `tick` (údržba + mzdy; hranica `B` sa v poradí zaradí ako `B − 0,5`, lebo príkaz s `atTick = B` sa
+ * aplikuje až v ticku za ňou).
+ */
 function modelAt(commands: readonly ScenarioEntry[], tick: number): Model {
   const model: Model = {
     roads: new Set(map.starter.roads.map(cellKey)),
@@ -82,9 +95,18 @@ function modelAt(commands: readonly ScenarioEntry[], tick: number): Model {
     speed: STANDARD_SPEED,
     steps: [],
   };
-  for (const { atTick, command } of [...commands].sort((a, b) => a.atTick - b.atTick)) {
+  const upkeep: ScenarioEntry[] = [];
+  for (let boundary = TICKS_PER_DAY; boundary <= tick; boundary += TICKS_PER_DAY) {
+    upkeep.push({ atTick: boundary - 0.5, command: { type: 'DayUpkeep' } });
+  }
+  for (const { atTick, command } of [...commands, ...upkeep].sort((a, b) => a.atTick - b.atTick)) {
     if (atTick >= tick) break;
-    if (command.type === 'PlaceRoad') {
+    if (command.type === 'DayUpkeep') {
+      model.cashCents -= STARTER_MAINTENANCE;
+      model.steps.push({ atTick, type: 'Maintenance', deltaCents: -STARTER_MAINTENANCE, changed: [] });
+      model.cashCents -= STARTER_WAGES;
+      model.steps.push({ atTick, type: 'Wages', deltaCents: -STARTER_WAGES, changed: [] });
+    } else if (command.type === 'PlaceRoad') {
       const fresh = [...new Set(cellsOf(command).map(cellKey))].filter((key) => !model.roads.has(key));
       const deltaCents = -fresh.length * ROAD_COST;
       fresh.forEach((key) => model.roads.add(key));
@@ -204,16 +226,21 @@ describe('scenár f1_roads: beh 20 000 tickov', () => {
     expect(wrong).toEqual([]);
   });
 
-  it('hotovosť = štart − cena nových buniek + refundácia odstránených', () => {
+  it('hotovosť = štart − cena nových buniek + refundácia odstránených − (údržba + mzdy) × uzavreté dni', () => {
     const model = modelAt(scenario.commands, RUN_TICKS + 1);
     const placedCells = model.steps.filter((s) => s.type === 'PlaceRoad').reduce((sum, s) => sum + s.changed.length, 0);
     const removedCells = model.steps.filter((s) => s.type === 'RemoveRoad').reduce((sum, s) => sum + s.changed.length, 0);
+    const closedDays = Math.floor(RUN_TICKS / TICKS_PER_DAY);
     const expected =
       defs.economy.startingCashCents -
       placedCells * ROAD_COST +
-      refundOf(removedCells);
+      refundOf(removedCells) -
+      closedDays * (STARTER_MAINTENANCE + STARTER_WAGES);
     expect(placedCells).toBeGreaterThan(0);
     expect(removedCells).toBeGreaterThan(0);
+    expect([closedDays, STARTER_MAINTENANCE, STARTER_WAGES]).toEqual([2, 210_000, 25_000]);
+    // Report simrun (ADR-025): 108 300 000 bez údržby − 2 × 235 000.
+    expect(world.cashCents).toBe(107_830_000);
     expect(world.cashCents).toBe(expected);
     expect(world.cashCents).toBe(model.cashCents);
     expect(world.cashCents).toBeLessThan(defs.economy.startingCashCents);
@@ -225,7 +252,7 @@ describe('scenár f1_roads: beh 20 000 tickov', () => {
 
   it('RoadChanged pokrýva všetky zmenené bunky, jeden na každý stavebný príkaz', () => {
     const model = modelAt(scenario.commands, RUN_TICKS + 1);
-    const roadSteps = model.steps.filter((s) => s.type !== 'SetGameSpeed');
+    const roadSteps = model.steps.filter((s) => s.type === 'PlaceRoad' || s.type === 'RemoveRoad');
     const changedEvents = eventsOfType(events, 'RoadChanged');
     expect(changedEvents).toHaveLength(roadSteps.length);
 
@@ -235,7 +262,7 @@ describe('scenár f1_roads: beh 20 000 tickov', () => {
     }
   });
 
-  it('MoneyChanged nesie presné delty príkazov a konzistentný zostatok', () => {
+  it('MoneyChanged nesie presné delty príkazov, údržby a miezd v poradí vzniku a konzistentný zostatok', () => {
     const model = modelAt(scenario.commands, RUN_TICKS + 1);
     const money = eventsOfType(events, 'MoneyChanged');
     const expectedDeltas = model.steps.filter((s) => s.type !== 'SetGameSpeed').map((s) => s.deltaCents);

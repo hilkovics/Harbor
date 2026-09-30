@@ -10,6 +10,10 @@
  * - Depo (F3): vozidlá depa (stav `idle` = nečinné, `no_path` = bez cesty, ostatné = pracuje; refundácia z
  *   `validate(SellVehicle)`), kapacita státí a nákup: `canBuy` = `validate(BuyVehicle)` prešlo, inak `buyBlockedReason`
  *   z `REASON_TEXT`. Kupuje sa vozidlo `depotVehicleDef` (prvý def vozidla bez technológie).
+ * - Brána (F4): fronta, `processTicks` z defu a priepustnosť za hodinu = `ticksPerHour / processTicks` (`time.json`),
+ *   nepripojená brána nepustí nikoho → 0. Stojisko (F4): počet stojísk, obsadené (kamión stojí) a rezervované (na ceste).
+ *   Rampa (F4): docky (`staged` z ledgera / `stagingPerDock`, `truck` = kamión stojí v docku; kamióny prídu v T04-08 B,
+ *   dovtedy `false`), prevádzkovosť (`World.isRampOperational`) a text dôvodu neprevádzkovosti (`rampInoperativeText`).
  * - Moduly s cestným konektorom nesú `connected` (badge „Nepripojené“).
  * - Odstránenie: refundácia a odstrániteľnosť z `validate(RemoveModule)` — `costCents` záporné = refundácia, dôvody
  *   z `REASON_TEXT` (kotvisko so žeriavom `has_cranes`, žeriav pri kotvisku s loďou `ship_docked`, pracujúci `busy` …).
@@ -19,14 +23,16 @@
 import { BuyVehicleCommand, RemoveModuleCommand, SellVehicleCommand } from '@sim/commands';
 import type { EntityId } from '@sim/core';
 import type { DefRegistry, VehicleDef } from '@sim/defs';
-import { BerthModule, CraneModule, StorageModule, VehicleDepot, type Module } from '@sim/modules';
+import { BerthModule, CraneModule, LoadingRamp, StorageModule, TruckGate, VehicleDepot, WaitingArea, type Module } from '@sim/modules';
 import type { VehicleState } from '@sim/vehicles';
 import {
   craneStateLabel,
   craneStateOk,
+  rampInoperativeText,
   type DepotVehicleData,
   type DepotVehicleState,
   type ModuleInspectorData,
+  type RampDockData,
 } from '@ui/module-inspector';
 import { REASON_TEXT } from './build-feedback';
 import { hasRoadConnector } from './entities-vm';
@@ -147,12 +153,41 @@ function depotFields(bridge: InspectorBridge, depot: VehicleDepot): Pick<ModuleI
   };
 }
 
-/** Polia závislé od druhu modulu (badge stavu + sekcie kotviska / žeriavu / skladu / depa). */
+/** Brána: fronta a priepustnosť za herný čas jednej hodiny; nepripojená brána → 0 (nepustí nikoho). */
+function gateFields(bridge: InspectorBridge, gate: TruckGate): Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'gate'> {
+  const { world } = bridge;
+  const { processTicks } = gate.params;
+  const throughputPerHour = world.isConnected(gate) ? world.clock.ticksPerHour / processTicks : 0;
+  return { stateLabel: MODULE_STATE_ACTIVE, ok: true, gate: { queueLength: gate.queueLength, throughputPerHour, processTicks } };
+}
+
+function waitingAreaFields(area: WaitingArea): Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'waitingArea'> {
+  return { stateLabel: MODULE_STATE_ACTIVE, ok: true, waitingArea: { bays: area.bays, occupied: area.occupiedBays, reserved: area.reservedBays } };
+}
+
+/** Rampa: docky so staging sloty; neprevádzková rampa nesie text dôvodu (bez známeho dôvodu ho UI nahradí všeobecným). */
+function rampFields(bridge: InspectorBridge, ramp: LoadingRamp): Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'ramp'> {
+  const status = bridge.world.rampStatus(ramp);
+  const docks: RampDockData[] = [];
+  // Kamión v docku: `Truck` vzniká v T04-04 (časť B tejto karty ho doplní); dovtedy nikto nestojí.
+  for (let dock = 0; dock < ramp.docks; dock++) docks.push({ staged: ramp.stagedAt(dock), capacity: ramp.stagingPerDock, truck: false });
+  const reason = rampInoperativeText(status.reason);
+  return {
+    stateLabel: MODULE_STATE_ACTIVE,
+    ok: true,
+    ramp: { docks, operational: status.operational, ...(reason === undefined ? {} : { inoperativeReason: reason }) },
+  };
+}
+
+/** Polia závislé od druhu modulu (badge stavu + sekcie kotviska / žeriavu / skladu / depa / brány / stojiska / rampy). */
 function kindFields(bridge: InspectorBridge, module: Module): Pick<ModuleInspectorData, 'stateLabel' | 'ok'> & Partial<ModuleInspectorData> {
   if (module instanceof BerthModule) return berthFields(bridge, module);
   if (module instanceof CraneModule) return craneFields(module);
   if (module instanceof StorageModule) return storageFields(bridge, module);
   if (module instanceof VehicleDepot) return depotFields(bridge, module);
+  if (module instanceof TruckGate) return gateFields(bridge, module);
+  if (module instanceof WaitingArea) return waitingAreaFields(module);
+  if (module instanceof LoadingRamp) return rampFields(bridge, module);
   return { stateLabel: MODULE_STATE_ACTIVE, ok: true };
 }
 

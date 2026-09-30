@@ -27,6 +27,8 @@ const REVISION_SAMPLES: readonly SimEvent[] = [
   { type: 'JobAssigned', jobId: SAMPLE_ID, vehicleId: SAMPLE_ID },
   { type: 'JobDone', jobId: SAMPLE_ID },
   { type: 'NoStorageAvailable', berthId: SAMPLE_ID, cargoTypeId: 'container_teu' },
+  { type: 'JobCancelled', jobId: SAMPLE_ID, reason: 'ramp_inoperative' },
+  { type: 'RampOperationalChanged', rampId: SAMPLE_ID, operational: false, reason: 'no_gate' },
 ];
 
 /** Udalosti, ktoré štruktúru nemenia (čas a peniaze majú vlastné polia snapshotu). */
@@ -58,7 +60,7 @@ describe('WorldSnapshot v2: speeds a defs', () => {
 });
 
 describe('WorldSnapshot v2: revision', () => {
-  it('REVISION_EVENTS obsahuje presne udalosti z kariet T02-09 a T03-10 a vzorky ich pokrývajú', () => {
+  it('REVISION_EVENTS obsahuje presne udalosti z kariet T02-09, T03-10 a T04-08 a vzorky ich pokrývajú', () => {
     const expected: SimEventType[] = [
       'ModulePlaced',
       'ModuleRemoved',
@@ -77,6 +79,8 @@ describe('WorldSnapshot v2: revision', () => {
       'JobAssigned',
       'JobDone',
       'NoStorageAvailable',
+      'JobCancelled',
+      'RampOperationalChanged',
     ];
     expect([...REVISION_EVENTS].sort()).toEqual([...expected].sort());
     expect(REVISION_SAMPLES.map((event) => event.type).sort()).toEqual([...expected].sort());

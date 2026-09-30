@@ -7,6 +7,9 @@
  * - `NoStorageAvailable` → „Chýba sklad“ (warning): kotvisko nemá kam uložiť náklad (aj keď je len nepripojené).
  * - `ModulePlaced` modulu s cestným konektorom, ktorý nie je pripojený → „Nepripojené“ (info) s akciou „Ukázať“
  *   (centruje kameru na modul).
+ * - `RampOperationalChanged` na `false` → „Rampa neprevádzková“ (warning) s dôvodom (`RAMP_INOPERATIVE_TOAST_REASON`) a
+ *   akciou „Ukázať“ (T04-08). Návrat do prevádzky toast nevytvára: rampa postavená ako posledná v hotovom reťazci by ním
+ *   zbytočne zahltila panel.
  *
  * Pravidlá zásobníka:
  * - Rovnaký `key` (napr. `no_storage:1`) sa naraz nezobrazí dvakrát — opakovaná udalosť pre to isté kotvisko nezaplaví panel.
@@ -16,6 +19,7 @@
 import type { EntityId } from '@sim/core';
 import type { CargoCategory } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
+import type { RampInoperativeReason } from '@sim/modules';
 import type { World } from '@sim/world';
 import { moduleCode } from '@ui/module-inspector';
 import { MAX_TOASTS, type ToastData, type ToastId, type ToastTone } from '@ui/toasts';
@@ -51,6 +55,14 @@ export const TOAST_SHOW_ON_MAP_LABEL = 'Ukázať';
 
 export const NO_STORAGE_TITLE = 'Chýba sklad';
 export const DISCONNECTED_TOAST_TITLE = 'Nepripojené';
+export const RAMP_INOPERATIVE_TOAST_TITLE = 'Rampa neprevádzková';
+
+/** Dôvod neprevádzkovosti rampy (kód zo simu) → krátky text do oznámenia (úplná mapa: nový dôvod v sime = chyba kompilácie). */
+export const RAMP_INOPERATIVE_TOAST_REASON: Readonly<Record<RampInoperativeReason, string>> = Object.freeze({
+  not_connected: 'chýba súvislá cesta k rampe',
+  no_gate: 'chýba brána na ceste',
+  no_waiting_area: 'chýba stojisko',
+});
 
 /** Kód modulu pre text oznámenia (`BRT-01`); zaniknutý modul → kód z druhu `fallbackKind`. */
 function codeOf(world: World, moduleId: EntityId, fallbackKind: string): string {
@@ -80,6 +92,18 @@ export function toastSpecsForEvents(world: World, events: readonly SimEvent[]): 
         title: DISCONNECTED_TOAST_TITLE,
         text: `${module.def.displayName} ${moduleCode(module.kind, module.id)} nemá cestu k vjazdu — pripoj ho cestou`,
         focus: { x: module.origin.x + module.size.w / 2, y: module.origin.y + module.size.h / 2 },
+      });
+    } else if (event.type === 'RampOperationalChanged' && !event.operational) {
+      const ramp = world.modules.get(event.rampId);
+      if (ramp === undefined) continue;
+      const reason = event.reason === null ? undefined : RAMP_INOPERATIVE_TOAST_REASON[event.reason];
+      specs.push({
+        key: `ramp_inoperative:${String(ramp.id)}`,
+        tone: 'warning',
+        icon: 'ic_warning',
+        title: RAMP_INOPERATIVE_TOAST_TITLE,
+        text: reason === undefined ? moduleCode(ramp.kind, ramp.id) : `${moduleCode(ramp.kind, ramp.id)} — ${reason}`,
+        focus: { x: ramp.origin.x + ramp.size.w / 2, y: ramp.origin.y + ramp.size.h / 2 },
       });
     }
   }

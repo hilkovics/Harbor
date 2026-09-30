@@ -19,12 +19,12 @@
 
 ## Checklist
 - [x] T02-01 · Defy: `cargo_types`, `modules`, `ships` (katalógy, ADR-009) + schémy + DefRegistry katalógy; mapa `schemaVersion` + Root modul; unikátne bunky portálov; `LoadedMap.createGrid()`
-- [ ] T02-02 · Sim: `CargoUnit`, `CargoLocation`, `CargoLedger` (tabuľka prechodov §7.1), `assertConservation`, typovaný test helper
+- [x] T02-02 · Sim: `CargoUnit`, `CargoLocation`, `CargoLedger` (tabuľka prechodov §7.1), `assertConservation`, typovaný test helper
 - [ ] T02-03 · Sim: `Module`, `ModuleRegistry`, `BerthModule`, `CraneModule`, `BerthGroup`, `ApronBuffer`, `StatResolver`; `World.modules`; `WorldState` v2 + migrate; ADR-014
 - [ ] T02-04 · Sim: `PlaceModule` / `RemoveModule` (§8 body 1–4, 7, 8), starter moduly, celočíselná refundácia; ADR-015
 - [ ] T02-05 · Sim: `Ship` + `ShipSystem` FSM + `BerthAllocator` + `CraneSystem` FSM + `CraneBlocked` + `SpawnShipDebug`; tick kroky 3, 4, 12; ADR-016
 - [ ] T02-06 · Testy (TDD): scenár `f2_unload`, konzervácia 5 000 tickov, BerthGroup/alokácia, blokovanie žeriavu
-- [ ] T02-07 · Render: `ModuleLayer`/`ModuleView`, `CraneView`, `ShipView`, `CargoSprite`, ghost modulu + konektory
+- [x] T02-07 · Render: `ModuleLayer`/`ModuleView`, `CraneView`, `ShipView`, `CargoSprite`, ghost modulu + konektory
 - [x] T02-08 · UI: `BuildBar` (kategória Terminál) + `ModuleInspector` (kotvisko, žeriav)
 - [ ] T02-09 · App: SimBridge snapshot v2 (moduly, lode, žeriavy, apron, `revision`, `speeds`) + napojenie renderu + DEV spawn lode
 - [ ] T02-10 · App: build mód modulov (ghost, `R` rotácia, dôvody v tooltipe, umiestniť/odstrániť) + výber modulu → inspector

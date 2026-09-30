@@ -17,7 +17,7 @@
 - brána pustí najviac 1 kamión za `processTicks`;
 - **scenár** `full_import_chain.json`: 120 TEU sú všetky `exported` do 40 000 tickov, konzervácia platí a `exported` je konečný stav (žiadny ďalší `move`).
 
-**Rozhodnutia orchestrátora (zapíšu sa do ADR-022..023 v kartách sim-architecta):**
+**Rozhodnutia orchestrátora (zapíšu sa do ADR-022..024 v kartách sim-architecta; ADR-023 = outbound joby z T04-03):**
 1. **Rampa je neplatná prevádzkovo, nie pri stavbe.**
    - Rampu, bránu aj stojisko možno postaviť v ľubovoľnom poradí, ak spĺňajú §8 bod 5 (rovnako ako sklad, ADR-017).
    - Rampa je **prevádzková**, keď existuje cesta `road portal → vstupná strana brány`, `výstupná strana brány → stojisko (priechod) → konektor rampy`.
@@ -44,8 +44,8 @@
 ## Checklist
 - [x] T04-01 · Defy: `trucks.json`, `truck_gate` + `truck_waiting_area` + `loading_ramp_container` v `modules.json`, schémy, DefRegistry, manifest krížovo pre kamióny
 - [x] T04-02 · Sim: `LandExportModule` + `TruckGate` + `WaitingArea` + `LoadingRamp` (staging sloty), priechody, prevádzkovosť rampy; ADR-022
-- [ ] T04-03 · Sim: Dispatcher krok 2 — outbound joby `in_storage → at_ramp`, priorita, `recordTaken`
-- [ ] T04-04 · Sim: `Truck` + `TruckSpawner` + Truck FSM + brána (fronta, priepustnosť) + `exported` + WorldState v4; ADR-023
+- [x] T04-03 · Sim: Dispatcher krok 2 — outbound joby `in_storage → at_ramp`, priorita, `recordTaken`
+- [ ] T04-04 · Sim: `Truck` + `TruckSpawner` + Truck FSM + brána (fronta, priepustnosť) + `exported` + WorldState v4; ADR-024
 - [ ] T04-05 · Testy (TDD): scenár `full_import_chain`, brána, bay, neplatná rampa
 - [x] T04-06 · Render: `TruckView`, závora brány, `queue_badge`, obsadenosť stojísk, staging na rampe, badge „neprevádzková"
 - [x] T04-07 · UI: inspector brány (fronta, priepustnosť/h), stojiska (bays), rampy (docks, staging, dôvod neprevádzkovosti); BuildBar Landside moduly
@@ -161,13 +161,13 @@ interface TruckVM { id: number; defId: string; x: number; y: number; prevX: numb
 - do_not_touch: src/render/**, src/ui/**, src/app/**, tools/**, data/**
 - estimate: M
 
-### T04-04 · Sim: `Truck` + `TruckSpawner` + Truck FSM + brána + `exported` + WorldState v4; ADR-023
+### T04-04 · Sim: `Truck` + `TruckSpawner` + Truck FSM + brána + `exported` + WorldState v4; ADR-024
 - model: opus
 - agent: sim-architect
 - parallel: no
 - depends_on: T04-03
 - inputs: ARCHITECTURE §6 (krok 8), §7.1, §7.5, §7.8; ADR-011, ADR-019, ADR-020, ADR-021; „Rozhodnutia orchestrátora" 2, 3, 5, 6, 7; TDD testy T04-05 vo worktree
-- outputs: src/sim/trucks/**; src/sim/systems/landside-system.ts; zdieľaný pohyb (refaktor z `src/sim/vehicles` do spoločného modulu, ak treba); src/sim/world/** (v4); docs/DECISIONS.md (ADR-023); testy; zlúčené TDD testy T04-05
+- outputs: src/sim/trucks/**; src/sim/systems/landside-system.ts; zdieľaný pohyb (refaktor z `src/sim/vehicles` do spoločného modulu, ak treba); src/sim/world/** (v4); docs/DECISIONS.md (ADR-024); testy; zlúčené TDD testy T04-05
 - požiadavky:
   - `TruckSpawner` a Truck FSM podľa rozhodnutí 2, 3, 5, 6 s explicitnou tabuľkou prechodov. Brána má spoločnú FIFO frontu v oboch smeroch; priepustnosť je 1 kamión za `processTicks` (+ `internalTicks`, ak je v params).
   - Pohyb kamióna zdieľa kód s vozidlami (trasa, jednosmerky, rýchlosť podľa typu cesty, `no_path`, `replanPending`, `PROGRESS_NOISE`). Nevznikne druhá kópia pohybovej logiky.
@@ -175,12 +175,12 @@ interface TruckVM { id: number; defId: string; x: number; y: number; prevX: numb
   - Krok 8 (`landsideSystem`) v `World.tick()` podľa §6. Invarianty: kamión s nákladom je v `loading`/`to_gate_out`/`gate_queue_out`/`to_portal`; bay/dock rezervácie sedia; fronta brány obsahuje len kamióny v `gate_queue*`.
   - WorldState v4 + `migrate(v3 → v4)`, roundtrip uprostred jazdy kamióna, vo fronte brány a pri nakládke.
   - TDD testy T04-05: `git checkout <vetva> -- <súbory>` a zazeleniť bez úprav, prípadné úpravy zdôvodniť.
-  - ADR-023: kamióny, brána, spawner, export.
+  - ADR-024: kamióny, brána, spawner, export.
 - acceptance:
   - `pnpm vitest run tests/sim`
   - `pnpm -s simrun data/scenarios/full_import_chain.json --ticks 40000 --report | jq -e '.lostUnits == 0 and .exportedUnits == 120'`
   - `pnpm -s simrun data/scenarios/f1_roads.json --ticks 20000 --report | jq -e '.cashEnd == 108300000'`
-  - `grep -c '^## ADR-023:' docs/DECISIONS.md` = 1
+  - `grep -c '^## ADR-024:' docs/DECISIONS.md` = 1
   - `pnpm typecheck && pnpm lint && pnpm test`
 - do_not_touch: src/render/**, src/ui/**, src/app/**, tools/**, data/defs/**, data/maps/**
 - estimate: L
@@ -312,9 +312,9 @@ interface TruckVM { id: number; defId: string; x: number; y: number; prevX: numb
 - agent: sim-architect
 - parallel: no
 - depends_on: T04-11
-- outputs: src/sim/** (opravy s testami); docs/ARCHITECTURE.md (§4.2 moduly landside, §5, §6 krok 8, §7.3 bod 2, §7.5, §12, §13, §14, §18 do ADR-023)
+- outputs: src/sim/** (opravy s testami); docs/ARCHITECTURE.md (§4.2 moduly landside, §5, §6 krok 8, §7.3 bod 2, §7.5, §12, §13, §14, §18 do ADR-024)
 - acceptance:
-  - `grep -n 'ADR-023' docs/ARCHITECTURE.md`
+  - `grep -n 'ADR-024' docs/ARCHITECTURE.md`
   - `pnpm -s simrun data/scenarios/full_import_chain.json --ticks 40000 --report | jq -e '.lostUnits == 0 and .exportedUnits == 120'`
   - `pnpm typecheck && pnpm lint && pnpm test`
 - do_not_touch: src/render/**, src/ui/**, src/app/**, tools/**, data/**

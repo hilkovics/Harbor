@@ -1,7 +1,7 @@
 /**
  * SpeedControl (DESIGN_BRIEF §6.3, prototyp design/ui/game-ui.source.html): segmentovaná skupina ⏸ 1× 2× 4× 8×.
  * Prezentačný komponent bez hookov. Zoznam rýchlostí a aktuálnu hodnotu dostane od rodiča (TopHUD ich berie
- * z `world.defs.time.speeds` a snapshotu), zmenu hlási cez `onChange`. Aktívny stav je v `aria-pressed` + triede
+ * zo snapshotu: `snapshot.speeds` = `time.speeds`), zmenu hlási cez `onChange`. Aktívny stav je v `aria-pressed` + triede
  * `speed-control__btn--active` (vyplnené tlačidlo, nie len farba). Pri pauze ⏸ zmení ikonu na ▶ (klik = obnoviť).
  */
 import { formatSpeed } from './format';

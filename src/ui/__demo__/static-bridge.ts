@@ -40,8 +40,13 @@ export function createStaticBridge(initial: Partial<StaticState> = {}, speeds: r
     Object.freeze({
       tick: 0,
       ...state,
+      speeds,
+      revision: 0,
       grid: null as unknown as Grid,
       parcels: new Map<string, Parcel>(),
+      modules: [],
+      cranes: [],
+      ships: [],
     });
   let snapshot = build();
 
@@ -52,7 +57,6 @@ export function createStaticBridge(initial: Partial<StaticState> = {}, speeds: r
   };
 
   const fake = {
-    world: { defs: { time: { speeds } } },
     snapshot: () => snapshot,
     subscribe: (listener: () => void) => {
       listeners.add(listener);

@@ -39,7 +39,7 @@ import {
   type SpecTable,
   type StringSpec,
 } from './def-spec';
-import { checkModuleItem } from './module-def';
+import { checkModuleItem, rampParams } from './module-def';
 import {
   CARGO_CATEGORIES,
   CONNECTOR_TYPES,
@@ -280,6 +280,26 @@ function validateDef<T extends DefBase>(
   return def;
 }
 
+/**
+ * Krížová kontrola `modules.json` × `trucks.json` (review T04-11 f, dodatok ADR-024): kamión, ktorý spawner pošle na
+ * rampu (prvý v poradí `trucks.json`, ktorý vozí jej kategóriu), musí mať `capacityUnits ≤ stagingPerDock` — inak by
+ * na docku nikdy nebolo dosť jednotiek, rampa by prijímala outbound joby a nič by z nej neodišlo. Chyba patrí rampe
+ * (`modules/items/<i>/params/stagingPerDock`). Rampa bez kamióna svojej kategórie je v registri prípustná (spawner
+ * nič nepošle — syntetické defy testov tak izolujú outbound joby); v zabalených dátach ju zakáže `pnpm validate:defs`.
+ */
+function checkRampTrucks(modules: Catalog<Readonly<ModuleDef>>, trucks: Catalog<Readonly<TruckDef>>): void {
+  modules.items.forEach((def, index) => {
+    if (def.kind !== 'ramp') return;
+    const { category, stagingPerDock } = rampParams(def);
+    const truck = trucks.items.find((candidate) => candidate.cargoCategories.includes(category));
+    if (truck === undefined || truck.capacityUnits <= stagingPerDock) return;
+    failWith('modules', {
+      path: `/items/${String(index)}/params/stagingPerDock`,
+      message: `kamión '${truck.id}' (kategória '${category}') má capacityUnits ${String(truck.capacityUnits)} > stagingPerDock ${String(stagingPerDock)} rampy '${def.id}' — dock by sa nikdy nenaplnil`,
+    });
+  });
+}
+
 // ---------------------------------------------------------------------------------------------------------
 // DefRegistry
 // ---------------------------------------------------------------------------------------------------------
@@ -300,19 +320,22 @@ export class DefRegistry {
     private readonly logisticsDef: Readonly<LogisticsDef>,
   ) {}
 
-  /** Zvaliduje surové defy (fail-fast, `DefError`) a zostaví register so zmrazenými objektmi. */
+  /**
+   * Zvaliduje surové defy (fail-fast, `DefError`) a zostaví register so zmrazenými objektmi. Po jednotlivých defoch
+   * krížové kontroly medzi nimi (`checkRampTrucks`).
+   */
   static fromRaw(raw: RawDefs): DefRegistry {
-    return new DefRegistry(
-      validateDef<TimeDef>('time', raw.time, DEF_FIELDS.time),
-      validateDef<EconomyDef>('economy', raw.economy, DEF_FIELDS.economy),
-      validateDef<InfrastructureDef>('infrastructure', raw.infrastructure, DEF_FIELDS.infrastructure, checkInfrastructure),
-      validateCatalog<CargoTypeDef>('cargo_types', raw.cargo_types, { fields: CARGO_TYPE_FIELDS }),
-      validateCatalog<ModuleDef>('modules', raw.modules, { fields: MODULE_FIELDS, extraKeys: ['params'], check: checkModuleItem }),
-      validateCatalog<ShipClassDef>('ships', raw.ships, { fields: SHIP_CLASS_FIELDS }),
-      validateCatalog<VehicleDef>('vehicles', raw.vehicles, { fields: VEHICLE_FIELDS }),
-      validateCatalog<TruckDef>('trucks', raw.trucks, { fields: TRUCK_FIELDS }),
-      validateDef<LogisticsDef>('logistics', raw.logistics, DEF_FIELDS.logistics),
-    );
+    const time = validateDef<TimeDef>('time', raw.time, DEF_FIELDS.time);
+    const economy = validateDef<EconomyDef>('economy', raw.economy, DEF_FIELDS.economy);
+    const infrastructure = validateDef<InfrastructureDef>('infrastructure', raw.infrastructure, DEF_FIELDS.infrastructure, checkInfrastructure);
+    const cargoTypes = validateCatalog<CargoTypeDef>('cargo_types', raw.cargo_types, { fields: CARGO_TYPE_FIELDS });
+    const modules = validateCatalog<ModuleDef>('modules', raw.modules, { fields: MODULE_FIELDS, extraKeys: ['params'], check: checkModuleItem });
+    const ships = validateCatalog<ShipClassDef>('ships', raw.ships, { fields: SHIP_CLASS_FIELDS });
+    const vehicles = validateCatalog<VehicleDef>('vehicles', raw.vehicles, { fields: VEHICLE_FIELDS });
+    const trucks = validateCatalog<TruckDef>('trucks', raw.trucks, { fields: TRUCK_FIELDS });
+    const logistics = validateDef<LogisticsDef>('logistics', raw.logistics, DEF_FIELDS.logistics);
+    checkRampTrucks(modules, trucks);
+    return new DefRegistry(time, economy, infrastructure, cargoTypes, modules, ships, vehicles, trucks, logistics);
   }
 
   /** `time.json` (ARCHITECTURE §3); použiteľný priamo ako `SimClockConfig`. */

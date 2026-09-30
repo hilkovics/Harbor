@@ -428,12 +428,32 @@ describe('determinizmus: dva behy s rovnakým seedom a príkazmi dávajú rovnak
  * ktorý dá rovnaké udalosti a rovnaký koncový stav ako pôvodný beh.
  */
 describe('save/load uprostred reťazca: obnovený svet pokračuje rovnako ako pôvodný (WorldState v4)', () => {
+  /**
+   * Malý scenár s prerušením verejnej cesty (44, 40) v ticku `CUT_AT` a obnovou v `RESTORE_AT` (review T04-11 h):
+   * kamióny na verejnej ceste vtedy prejdú do `no_path` (sonda „no_path s resume"). Bunka v tých tickoch nie je pod
+   * kamiónom (inak by príkaz odmietlo `occupied`); prvý kamión ide k portálu okolo ticku 553.
+   */
+  const CUT_AT = 600;
+  const RESTORE_AT = 700;
+  const CUT_CELL = { x: 44, y: 40 };
+  const probeScenario = f4Scenario('f4_small_chain_cut', 4004, {
+    vehicles: STRADDLES,
+    units: SMALL_UNITS,
+    extra: [
+      { atTick: CUT_AT, command: { type: 'RemoveRoad', cells: [CUT_CELL] } },
+      { atTick: RESTORE_AT, command: { type: 'PlaceRoad', cells: [CUT_CELL] } },
+    ],
+  });
+  const liveTrucks = (w: World) => [...w.trucks.values()];
   const PROBES: readonly { readonly name: string; readonly when: (world: World) => boolean }[] = [
     { name: 'kamión čaká vo fronte brány (gate_queue)', when: (w) => trucksById(w).some((truck) => truck.state === 'gate_queue') },
     { name: 'kamión stojí v stojisku (waiting)', when: (w) => trucksById(w).some((truck) => truck.state === 'waiting') },
     { name: 'kamión nakladá (loading)', when: (w) => trucksById(w).some((truck) => truck.state === 'loading') },
     { name: 'plný kamión čaká vo fronte brány von (gate_queue_out)', when: (w) => trucksById(w).some((truck) => truck.state === 'gate_queue_out') },
     { name: 'plný kamión ide k portálu (to_portal)', when: (w) => trucksById(w).some((truck) => truck.state === 'to_portal') },
+    { name: 'kamión jazdí uprostred úseku (progress > 0)', when: (w) => liveTrucks(w).some((truck) => truck.progress > 0 && truck.state.startsWith('to_')) },
+    { name: 'brána počas prechodu (busyTicksLeft > 0)', when: (w) => gateOf(w).busyTicksLeft > 0 },
+    { name: 'kamión bez cesty v no_path s resume', when: (w) => liveTrucks(w).some((truck) => truck.state === 'no_path' && truck.resume !== null) },
   ];
 
   interface Fork {
@@ -453,8 +473,8 @@ describe('save/load uprostred reťazca: obnovený svet pokračuje rovnako ako p�
   let finalHash: string;
 
   beforeAll(() => {
-    base = World.create(DEFS, MAP, smallScenario.seed);
-    baseRecorder = new Recorder4(base, smallScenario);
+    base = World.create(DEFS, MAP, probeScenario.seed);
+    baseRecorder = new Recorder4(base, probeScenario);
     forks = [];
     for (const probe of PROBES) {
       baseRecorder.runUntil(probe.when, SMALL_MAX_TICKS);
@@ -472,6 +492,19 @@ describe('save/load uprostred reťazca: obnovený svet pokračuje rovnako ako p�
     finalTick = base.clock.tick;
     finalHash = stateHash(base);
   }, RUN_TIMEOUT_MS);
+
+  it('sondy pokryli no_path s resume po prerušení cesty (bez CommandRejected), jazdu uprostred úseku aj bránu počas prechodu', () => {
+    expect(timed4(baseRecorder.events, 'CommandRejected')).toEqual([]);
+    const noPath = forks.find((fork) => fork.name.includes('no_path'));
+    expect(noPath?.tick).toBeGreaterThan(CUT_AT);
+    expect(noPath?.trucks.some(([, state]) => state === 'no_path')).toBe(true);
+    const gateFork = forks.find((fork) => fork.name.includes('busyTicksLeft'));
+    const gateRuntime = gateFork?.saved.modules.find((entry) => entry.defId === 'truck_gate')?.runtime as { busyTicksLeft: number } | undefined;
+    expect(gateRuntime?.busyTicksLeft).toBeGreaterThan(0);
+    const moving = forks.find((fork) => fork.name.includes('progress'));
+    const savedTrucks = (moving?.saved as unknown as { trucks: { progress: number }[] } | undefined)?.trucks ?? [];
+    expect(savedTrucks.some((truck) => truck.progress > 0)).toBe(true);
+  });
 
   it('uložený stav je verzia 4 s poľom trucks a čistým JSON-om (JSON.parse(JSON.stringify(s)) sa rovná s)', () => {
     expect(forks).toHaveLength(PROBES.length);
@@ -499,7 +532,7 @@ describe('save/load uprostred reťazca: obnovený svet pokračuje rovnako ako p�
     ({ index }) => {
       const fork = forks[index];
       const clone = World.deserialize(DEFS, MAP, JSON.parse(JSON.stringify(fork.saved)) as WorldState);
-      const recorder = new Recorder4(clone, smallScenario);
+      const recorder = new Recorder4(clone, probeScenario);
       recorder.runTo(finalTick);
       expect(clone.clock.tick).toBe(finalTick);
       expect(stateHash(clone)).toBe(finalHash);

@@ -239,7 +239,10 @@ export interface DepotParams {
 export interface GateParams {
   /** Priepustnosť: 1 kamión za `processTicks` tickov (spoločná FIFO fronta oboch smerov, tvrdý bottleneck). */
   readonly processTicks: number;
-  /** Vnútorný čas prechodu telom brány (ADR-011); chýba = `logistics.defaultInternalTicks`. */
+  /**
+   * Vnútorný čas prechodu telom brány (ADR-011): prechod trvá `processTicks + internalTicks` (`TruckGate.passTicks`).
+   * Chýba = 0, nie `logistics.defaultInternalTicks` — priepustnosť brány určuje `processTicks` (ADR-024).
+   */
   readonly internalTicks?: number;
 }
 
@@ -247,7 +250,7 @@ export interface GateParams {
 export interface WaitingAreaParams {
   /** Počet stojísk (bays) pre kamióny; `stalls` v manifeste. */
   readonly bays: number;
-  /** Vnútorný čas prechodu stojiskom (ADR-011); chýba = `logistics.defaultInternalTicks`. */
+  /** Pobyt kamióna v bayi pred povelom do docku (ADR-011, ADR-024 bod 6); chýba = `logistics.defaultInternalTicks`. */
   readonly internalTicks?: number;
 }
 
@@ -261,7 +264,10 @@ export interface RampParams {
   readonly loadTicksPerUnit: number;
   /** Kategória nákladu, ktorú rampa nakladá. */
   readonly category: CargoCategory;
-  /** Vnútorný čas vstupu do docku (ADR-011); chýba = `logistics.defaultInternalTicks`. */
+  /**
+   * Pobyt **interného vozidla** v docku pred vykládkou (§7.3 bod 4, ADR-011); chýba = `logistics.defaultInternalTicks`.
+   * Kamión ho nepoužíva — nakladá `loadTicksPerUnit` na jednotku (ADR-024).
+   */
   readonly internalTicks?: number;
 }
 

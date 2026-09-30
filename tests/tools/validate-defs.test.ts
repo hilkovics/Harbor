@@ -311,6 +311,44 @@ describe('validateDefsDir', () => {
     });
   });
 
+  describe('krížová kontrola rampa × kamión (review T04-11 f)', () => {
+    const modules = (): Record<string, unknown> => readRealDef('modules');
+    const trucks = (): { items: Record<string, unknown>[] } => readRealDef('trucks') as unknown as { items: Record<string, unknown>[] };
+    const rampIndex = (): number => (modules()['items'] as { kind: string }[]).findIndex((item) => item.kind === 'ramp');
+
+    it('skutočné modules.json a trucks.json: každá rampa má kamión svojej kategórie s capacityUnits ≤ stagingPerDock', () => {
+      writeDef('modules.json', modules());
+      writeDef('trucks.json', trucks());
+      expect(resultFor('modules.json').errors).toEqual([]);
+    });
+
+    it('rampa bez kamióna svojej kategórie → chyba na params/category', () => {
+      const bulkOnly = trucks();
+      bulkOnly.items = bulkOnly.items.map((item) => ({ ...item, cargoCategories: ['bulk'] }));
+      writeDef('modules.json', modules());
+      writeDef('trucks.json', bulkOnly);
+      expect(resultFor('modules.json').errors).toEqual([
+        `modules.json: /items/${String(rampIndex())}/params/category rampa 'loading_ramp_container' nakladá kategóriu 'container', ale trucks.json nemá kamión tejto kategórie`,
+      ]);
+      expect(resultFor('trucks.json').errors).toEqual([]);
+    });
+
+    it('kamión s capacityUnits > stagingPerDock → chyba na params/stagingPerDock', () => {
+      const big = trucks();
+      big.items = big.items.map((item) => ({ ...item, capacityUnits: 3 }));
+      writeDef('modules.json', modules());
+      writeDef('trucks.json', big);
+      expect(resultFor('modules.json').errors).toEqual([
+        `modules.json: /items/${String(rampIndex())}/params/stagingPerDock kamión 'truck_container' má capacityUnits 3 > stagingPerDock 2 rampy 'loading_ramp_container' — dock by sa nikdy nenaplnil`,
+      ]);
+    });
+
+    it('bez trucks.json sa krížová kontrola preskočí (chýbajúci súbor hlási iná kontrola)', () => {
+      writeDef('modules.json', modules());
+      expect(resultFor('modules.json').errors).toEqual([]);
+    });
+  });
+
   describe('mapy (data/maps/*.json → map.schema.json)', () => {
     let mapsDir: string;
 

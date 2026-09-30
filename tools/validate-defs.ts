@@ -112,18 +112,53 @@ function validateJsonFile(label: string, filePath: string, schemaName: string, s
 }
 
 /**
- * Overí každý `*.json` v `defsDir` voči `<názov>.schema.json` v `schemasDir`.
- * Chýbajúca schéma, nevalidný JSON aj porušenie schémy sú chyby v `errors` (nie výnimky).
- * Výsledky sú zoradené podľa názvu súboru. Výnimku vyhodí iba neexistujúci/nečitateľný `defsDir`.
+ * Krížová kontrola rámp a kamiónov (review T04-11 f, dodatok ADR-024): pre každú rampu v `modules.json` musí
+ * `trucks.json` mať kamión jej kategórie (prvý v poradí — ten pošle spawner) a jeho `capacityUnits ≤ stagingPerDock`
+ * rampy; inak rampa prijíma outbound joby a nič z nej neodíde. Kapacitu overuje aj `DefRegistry.fromRaw` (fail-fast),
+ * existenciu len táto kontrola zabalených dát (syntetické defy testov rampu bez kamióna smú mať). Chyba:
+ * `modules.json: /items/<i>/params/<category|stagingPerDock> <správa>`. Chýbajúci alebo nečitateľný katalóg a položky
+ * bez očakávaného tvaru sa preskočia (hlási ich schéma).
+ */
+function findRampTruckProblems(defsDir: string): string[] {
+  const modules = readJsonOrUndefined(join(defsDir, MODULES_DEF_FILE));
+  const trucks = readJsonOrUndefined(join(defsDir, TRUCKS_DEF_FILE));
+  const moduleItems = isRecord(modules) ? modules['items'] : undefined;
+  const truckItems = isRecord(trucks) ? trucks['items'] : undefined;
+  if (!Array.isArray(moduleItems) || !Array.isArray(truckItems)) return [];
+  const errors: string[] = [];
+  moduleItems.forEach((item: unknown, index) => {
+    if (!isRecord(item) || item['kind'] !== 'ramp' || !isRecord(item['params'])) return;
+    const { category, stagingPerDock } = item['params'];
+    if (typeof category !== 'string' || typeof stagingPerDock !== 'number') return;
+    const truck = truckItems.find((candidate: unknown) => isRecord(candidate) && Array.isArray(candidate['cargoCategories']) && candidate['cargoCategories'].includes(category));
+    const at = `${MODULES_DEF_FILE}: /items/${String(index)}/params`;
+    if (!isRecord(truck)) {
+      errors.push(`${at}/category rampa '${String(item['id'])}' nakladá kategóriu '${category}', ale ${TRUCKS_DEF_FILE} nemá kamión tejto kategórie`);
+      return;
+    }
+    const capacity = truck['capacityUnits'];
+    if (typeof capacity === 'number' && capacity > stagingPerDock) {
+      errors.push(
+        `${at}/stagingPerDock kamión '${String(truck['id'])}' má capacityUnits ${String(capacity)} > stagingPerDock ${String(stagingPerDock)} rampy '${String(item['id'])}' — dock by sa nikdy nenaplnil`,
+      );
+    }
+  });
+  return errors;
+}
+
+/**
+ * Overí každý `*.json` v `defsDir` voči `<názov>.schema.json` v `schemasDir`; k `modules.json` pridá krížovú kontrolu
+ * rámp a kamiónov (`findRampTruckProblems`). Chýbajúca schéma, nevalidný JSON aj porušenie schémy sú chyby v `errors`
+ * (nie výnimky). Výsledky sú zoradené podľa názvu súboru. Výnimku vyhodí iba neexistujúci/nečitateľný `defsDir`.
  */
 export function validateDefsDir(defsDir: string, schemasDir: string): DefValidationResult[] {
   return readdirSync(defsDir)
     .filter((name) => name.endsWith(JSON_SUFFIX))
     .sort()
-    .map((file) => ({
-      file,
-      errors: validateJsonFile(file, join(defsDir, file), `${basename(file, JSON_SUFFIX)}${SCHEMA_SUFFIX}`, schemasDir, true),
-    }));
+    .map((file) => {
+      const errors = validateJsonFile(file, join(defsDir, file), `${basename(file, JSON_SUFFIX)}${SCHEMA_SUFFIX}`, schemasDir, true);
+      return { file, errors: file === MODULES_DEF_FILE ? [...errors, ...findRampTruckProblems(defsDir)] : errors };
+    });
 }
 
 /**

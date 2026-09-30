@@ -212,7 +212,7 @@
       "required": ["processTicks"],
       "properties": {
         "processTicks": { "type": "integer", "minimum": 1, "description": "Priepustnosť brány: 1 kamión za `processTicks` tickov (spoločná FIFO fronta oboch smerov)." },
-        "internalTicks": { "type": "integer", "minimum": 0, "description": "Vnútorný čas prechodu telom brány; chýba = logistics.defaultInternalTicks." }
+        "internalTicks": { "type": "integer", "minimum": 0, "description": "Vnútorný čas prechodu telom brány; prechod trvá processTicks + internalTicks. Chýba = 0 (nie logistics.defaultInternalTicks) — priepustnosť brány určuje processTicks (ADR-024)." }
       }
     },
     "waitingAreaParams": {
@@ -233,7 +233,7 @@
         "stagingPerDock": { "type": "integer", "minimum": 1, "description": "Kapacita staging slotov `at_ramp` na jednom docku." },
         "loadTicksPerUnit": { "type": "integer", "minimum": 1, "description": "Trvanie naloženia jednej jednotky na kamión v tickoch." },
         "category": { "enum": ["container", "bulk", "liquid", "gas", "roro"], "description": "Kategória nákladu, ktorú rampa nakladá." },
-        "internalTicks": { "type": "integer", "minimum": 0, "description": "Vnútorný čas vstupu do docku; chýba = logistics.defaultInternalTicks." }
+        "internalTicks": { "type": "integer", "minimum": 0, "description": "Pobyt interného vozidla v docku pred vykládkou (§7.3 bod 4); chýba = logistics.defaultInternalTicks. Kamión ho nepoužíva — nakladá loadTicksPerUnit na jednotku (ADR-024)." }
       }
     },
     "noParams": {

@@ -14,6 +14,7 @@ import { ConnectedBuildBar } from './connected-build-bar';
 import { ConnectedModuleInspector } from './connected-module-inspector';
 import { ConnectedToasts } from './connected-toasts';
 import { ModuleSelection } from './module-selection';
+import { RoadSelection } from './road-selection';
 import { DevSpawnButton } from './dev-spawn-button';
 import { PausedBanner } from './paused-banner';
 import type { SimBridge } from './sim-bridge';
@@ -29,6 +30,8 @@ export interface AppProps {
   readonly selection?: BuildSelection;
   /** Výber modulu na mape (inšpektor vpravo) zdieľaný s ovládaním mapy (T02-10); bez neho si `App` vedie vlastný. */
   readonly moduleSelection?: ModuleSelection;
+  /** Výber typu cesty (BuildBar Landside) zdieľaný s ovládaním mapy (T03-20); bez neho si `App` vedie vlastný. */
+  readonly roadSelection?: RoadSelection;
   /** Oznámenia zo simu (T03-10: „Chýba sklad“, „Nepripojené“); bez neho sa zásobník toastov nezobrazí. */
   readonly toasts?: ToastCenter;
   /**
@@ -38,10 +41,11 @@ export interface AppProps {
   readonly devTools?: boolean;
 }
 
-export function App({ bridge, feedback, selection, moduleSelection, toasts, devTools = true }: AppProps) {
+export function App({ bridge, feedback, selection, moduleSelection, roadSelection, toasts, devTools = true }: AppProps) {
   // Bez zdieľaného výberu (testy, demo) si App vytvorí vlastný; `useState` drží jednu inštanciu medzi rendermi.
   const [ownSelection] = useState(() => new BuildSelection());
   const [ownModuleSelection] = useState(() => new ModuleSelection());
+  const [ownRoadSelection] = useState(() => new RoadSelection());
   return (
     <SimBridgeProvider bridge={bridge}>
       <h1 className="app__title">Modular Harbor</h1>
@@ -58,7 +62,7 @@ export function App({ bridge, feedback, selection, moduleSelection, toasts, devT
       <ConnectedModuleInspector selection={moduleSelection ?? ownModuleSelection} />
       {toasts !== undefined && <ConnectedToasts center={toasts} />}
       <div className="app__build">
-        <ConnectedBuildBar selection={selection ?? ownSelection} />
+        <ConnectedBuildBar selection={selection ?? ownSelection} roadSelection={roadSelection ?? ownRoadSelection} />
       </div>
     </SimBridgeProvider>
   );

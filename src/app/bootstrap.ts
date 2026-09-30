@@ -22,6 +22,7 @@ import { attachDomInput } from './dom-input';
 import { GameLoop, startRafLoop } from './game-loop';
 import { InputController } from './input-controller';
 import { ModuleSelection, bindSelectionRing } from './module-selection';
+import { RoadSelection } from './road-selection';
 import { SimBridge } from './sim-bridge';
 import { ToastCenter } from './toast-center';
 
@@ -35,6 +36,8 @@ export interface AppHandle {
   readonly selection: BuildSelection;
   /** Výber modulu na mape (id) pre inšpektor a obrys `selection_ring`. */
   readonly moduleSelection: ModuleSelection;
+  /** Výber typu cesty (BuildBar Landside); `InputController` ho zrkadlí s build módom ciest. */
+  readonly roadSelection: RoadSelection;
   /** Oznámenia zo simu (toasty); odoberá udalosti `bridge.onEvents`. */
   readonly toasts: ToastCenter;
   /** Zastaví slučku, odpojí vstup, zruší React strom a Pixi a odstráni DOM aplikácie. */
@@ -102,6 +105,7 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
   // Ghost stavby kreslí `renderer.build` (jediná `BuildLayer`, nad žeriavmi); cesty aj moduly, ňou aj obrys výberu.
   const selection = new BuildSelection();
   const moduleSelection = new ModuleSelection();
+  const roadSelection = new RoadSelection();
   const input = new InputController({
     bridge,
     camera: renderer.camera,
@@ -109,6 +113,8 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
     moduleGhost: renderer.build,
     buildSelection: selection,
     moduleSelection,
+    roadSelection,
+    ghostArrows: renderer.build,
     onStateChange: (state) => {
       mapHost.dataset.inputState = state;
     },
@@ -150,6 +156,7 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
       vehicles: renderer.ships.vehicleCount,
       ghostCells: renderer.build.shownCount,
       ghostConnectors: renderer.build.markerCount,
+      ghostArrows: renderer.build.arrowCount,
       selectionRing: renderer.build.selectionShown,
     }),
     moduleGhost: () => input.moduleGhost(),
@@ -157,7 +164,7 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
   });
 
   const reactRoot = createRoot(uiHost);
-  reactRoot.render(createElement(StrictMode, null, createElement(App, { bridge, feedback: input, selection, moduleSelection, toasts })));
+  reactRoot.render(createElement(StrictMode, null, createElement(App, { bridge, feedback: input, selection, moduleSelection, roadSelection, toasts })));
 
   let destroyed = false;
   return {
@@ -168,6 +175,7 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
     input,
     selection,
     moduleSelection,
+    roadSelection,
     toasts,
     destroy() {
       if (destroyed) return;

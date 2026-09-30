@@ -143,12 +143,12 @@ describe('App: BuildBar dole (kategória Terminál z defs.modules)', () => {
     expect(html).toMatch(/data-def-id="berth_standard" data-status="available"/);
   });
 
-  it('kategórie mimo fázy sú zamknuté (disabled tab so zámkom); Terminál, Sklady a Logistika sú povolené', () => {
+  it('kategórie mimo fázy sú zamknuté (disabled tab so zámkom); Terminál, Sklady, Logistika a Landside (cesty) sú povolené', () => {
     const html = render();
-    for (const id of ['landside', 'rail', 'pipes']) {
+    for (const id of ['rail', 'pipes']) {
       expect(html, id).toMatch(new RegExp(`<button[^>]*disabled=""[^>]*data-category="${id}"`));
     }
-    for (const id of ['terminal', 'storage', 'logistics']) {
+    for (const id of ['terminal', 'storage', 'logistics', 'landside']) {
       expect(html, id).not.toMatch(new RegExp(`<button[^>]*disabled=""[^>]*data-category="${id}"`));
     }
   });
@@ -302,11 +302,14 @@ describe('BuildFeedbackLabel: ghost modulu (T02-10)', () => {
     expect(html(feedback)).toContain('build-tip--bad');
   });
 
-  it('cesty ostávajú bez zmeny: ikona cesty / búrania / varovania, isFundsOnly len pre moduly', () => {
+  it('cesty: ikona cesty / búrania / varovania; nedostatok peňazí (fundsShort) je ako pri moduloch $ a nie chyba (T03-20)', () => {
     expect(feedbackIcon(sample())).toBe('ic_road');
     expect(feedbackIcon(sample({ kind: 'remove' }))).toBe('ic_demolish');
-    expect(feedbackIcon(sample({ ok: false, reasons: ['insufficient_funds'] }))).toBe('ic_warning');
-    expect(isFundsOnly(sample({ ok: false, reasons: ['insufficient_funds'], fundsShort: true }))).toBe(false);
+    expect(feedbackIcon(sample({ ok: false, reasons: ['insufficient_funds'] }))).toBe('ic_warning'); // bez fundsShort: chyba
+    const short = sample({ ok: false, reasons: ['insufficient_funds'], fundsShort: true });
+    expect(isFundsOnly(short)).toBe(true);
+    expect(feedbackIcon(short)).toBe('ic_cash');
+    expect(isFundsOnly(sample({ ok: false, reasons: ['insufficient_funds', 'terrain'], fundsShort: true }))).toBe(false);
   });
 });
 

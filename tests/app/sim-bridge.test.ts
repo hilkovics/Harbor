@@ -251,7 +251,7 @@ describe('installDevHook', () => {
 
   it('rendered() (počty views a stav ghostu v rendereri) sa prenesie z bootstrapu; bez neho chýba', () => {
     const { bridge } = createApp();
-    const counts = { modules: 1, cranes: 1, ships: 0, vehicles: 2, ghostCells: 24, ghostConnectors: 2, selectionRing: false };
+    const counts = { modules: 1, cranes: 1, ships: 0, vehicles: 2, ghostCells: 24, ghostConnectors: 2, ghostArrows: 0, selectionRing: false };
     const target: { __sim?: DevHook } = {};
     expect(installDevHook(bridge, { enabled: true, target, rendered: () => counts })?.rendered?.()).toEqual(counts);
     expect(installDevHook(bridge, { enabled: true, target: {} })?.rendered).toBeUndefined();

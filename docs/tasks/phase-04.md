@@ -45,8 +45,8 @@
 - [x] T04-01 · Defy: `trucks.json`, `truck_gate` + `truck_waiting_area` + `loading_ramp_container` v `modules.json`, schémy, DefRegistry, manifest krížovo pre kamióny
 - [x] T04-02 · Sim: `LandExportModule` + `TruckGate` + `WaitingArea` + `LoadingRamp` (staging sloty), priechody, prevádzkovosť rampy; ADR-022
 - [x] T04-03 · Sim: Dispatcher krok 2 — outbound joby `in_storage → at_ramp`, priorita, `recordTaken`
-- [ ] T04-04 · Sim: `Truck` + `TruckSpawner` + Truck FSM + brána (fronta, priepustnosť) + `exported` + WorldState v4; ADR-024
-- [ ] T04-05 · Testy (TDD): scenár `full_import_chain`, brána, bay, neplatná rampa
+- [x] T04-04 · Sim: `Truck` + `TruckSpawner` + Truck FSM + brána (fronta, priepustnosť) + `exported` + WorldState v4; ADR-024
+- [x] T04-05 · Testy (TDD): scenár `full_import_chain`, brána, bay, neplatná rampa
 - [x] T04-06 · Render: `TruckView`, závora brány, `queue_badge`, obsadenosť stojísk, staging na rampe, badge „neprevádzková"
 - [x] T04-07 · UI: inspector brány (fronta, priepustnosť/h), stojiska (bays), rampy (docks, staging, dôvod neprevádzkovosti); BuildBar Landside moduly
 - [ ] T04-08 · App: snapshot v4 (kamióny, brána, stojiská, rampy), napojenie, toasty (`NoWaitingBay`, neprevádzková rampa)

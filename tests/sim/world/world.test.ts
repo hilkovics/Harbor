@@ -35,12 +35,13 @@ describe('World.create', () => {
     expect(world.map).toBe(MAP);
   });
 
-  it('Rng je Rng(seed) a ID sa prideľujú od 1', () => {
+  it('Rng je Rng(seed) a ID sa prideľujú od 1 (prvé dostanú starter moduly mapy)', () => {
     const world = create(42);
     const reference = new Rng(42);
     expect(world.rng.getState()).toEqual(reference.getState());
     expect(world.rng.nextU32()).toBe(reference.nextU32());
-    expect(world.ids.next()).toBe(1);
+    expect([...world.modules.keys()]).toEqual(MAP.starter.modules.map((_, i) => i + 1));
+    expect(world.ids.next()).toBe(MAP.starter.modules.length + 1);
   });
 
   it('mriežka je klon šablóny mapy (terén, hĺbka, parcely, starter cesty)', () => {
@@ -50,7 +51,8 @@ describe('World.create', () => {
     expect([world.grid.width, world.grid.height]).toEqual([MAP.width, MAP.height]);
     for (let i = 0; i < template.cellCount; i++) {
       expect(world.grid.atIndex(i)).not.toBe(template.atIndex(i));
-      expect(world.grid.atIndex(i)).toEqual(template.atIndex(i));
+      // moduleId zapísali starter moduly (T02-04); ostatné polia sú presná kópia šablóny.
+      expect({ ...world.grid.atIndex(i), moduleId: null }).toEqual(template.atIndex(i));
     }
     expect(MAP.starter.roads.length).toBeGreaterThan(0);
     for (const { x, y } of MAP.starter.roads) expect(world.grid.at(x, y).road).toBe('road');

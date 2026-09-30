@@ -22,9 +22,12 @@ describe('World.cargo', () => {
 
   it('jednotky dostávajú id zo spoločného world.ids (rovnaká postupnosť ako ostatné entity)', () => {
     const world = create();
-    expect(world.ids.next()).toBe(1);
-    expect(world.cargo.create(TEU, at.ship(1)).id).toBe(2);
-    expect(world.ids.next()).toBe(3);
+    // Starter moduly mapy (Root modul, T02-04) dostali id 1, 2, … pri World.create.
+    const first = world.ids.getState().nextId;
+    expect(first).toBe(MAP.starter.modules.length + 1);
+    expect(world.ids.next()).toBe(first);
+    expect(world.cargo.create(TEU, at.ship(1)).id).toBe(first + 1);
+    expect(world.ids.next()).toBe(first + 2);
   });
 
   it('typy nákladu berie z world.defs.cargoTypes', () => {

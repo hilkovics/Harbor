@@ -22,6 +22,7 @@ import { DefError, type DefRegistry } from '../defs/def-registry';
 import type { SimEvent } from '../events/sim-event';
 import type { Grid } from '../grid/grid';
 import type { PlacedModuleSpec } from '../grid/map-def';
+import { MapError, pointerSegment } from '../grid/map-error';
 import type { LoadedMap } from '../grid/map-loader';
 import type { Parcel, ParcelOwnership } from '../grid/parcel';
 import { BerthModule } from '../modules/berth-module';
@@ -122,8 +123,11 @@ export class World {
 
   /**
    * Nová hra: tick 0 pri rýchlosti `INITIAL_SPEED`, hotovosť `economy.startingCashCents`, `Rng(seed)`, ID od 1,
-   * mriežka = nová `map.createGrid()` (so starter cestami), parcely skopírované (`startOwned` → `owned`).
-   * Chyby: seed nie je uint32 → `RangeError`; `INITIAL_SPEED` chýba v `time.speeds` → `DefError`.
+   * mriežka = nová `map.createGrid()` (so starter cestami), parcely skopírované (`startOwned` → `owned`) a starter
+   * moduly mapy (Root modul, ADR-015) umiestnené v poradí mapy s `purchaseCostCents 0` — rovnakými pravidlami ako
+   * `PlaceModule` okrem ceny, bez udalostí a bez zmeny hotovosti (dostanú id 1, 2, …).
+   * Chyby: seed nie je uint32 → `RangeError`; `INITIAL_SPEED` chýba v `time.speeds` → `DefError`; starter modul
+   * s neznámym defom alebo porušeným pravidlom umiestnenia → `MapError` s cestou `/starter/modules/<i>`.
    */
   static create(defs: DefRegistry, map: LoadedMap, seed: number): World {
     const rng = new Rng(seed);
@@ -131,7 +135,7 @@ export class World {
     if (!defs.time.speeds.includes(clock.speed)) {
       throw new DefError('time', '/speeds', `musí obsahovať počiatočnú rýchlosť ${String(INITIAL_SPEED)} (World.create)`);
     }
-    return new World({
+    const world = new World({
       defs,
       map,
       seed,
@@ -143,6 +147,8 @@ export class World {
       cashCents: defs.economy.startingCashCents,
       cargo: null,
     });
+    world.placeStarterModules();
+    return world;
   }
 
   /**
@@ -394,6 +400,26 @@ export class World {
       throw new ModuleError('no_berth', `World: ${module.label} stojí na #${String(module.berthId)}, ktorý nie je berth`);
     }
     return berth;
+  }
+
+  /**
+   * Starter moduly mapy v poradí mapy (`World.create`): každý musí mať def v `modules.json` a spĺňať všetky pravidlá
+   * umiestnenia (`findPlacementViolations`, ako `PlaceModule` bez ceny); inak `MapError` s indexom modulu.
+   */
+  private placeStarterModules(): void {
+    this.map.starter.modules.forEach((spec, index) => {
+      const path = `/starter/modules${pointerSegment(index)}`;
+      if (!this.defs.modules.has(spec.defId)) {
+        throw new MapError(this.map.id, `${path}/defId`, `starter modul '${spec.defId}' nie je v modules.json`);
+      }
+      const violations = findPlacementViolations(this, this.defs.modules.get(spec.defId), spec);
+      if (violations.length > 0) {
+        const at = `(${String(spec.x)}, ${String(spec.y)}) rot ${String(spec.rotation)}`;
+        const why = violations.map(({ rule, detail }) => `${rule}: ${detail}`).join('; ');
+        throw new MapError(this.map.id, path, `starter modul '${spec.defId}' na ${at} nespĺňa pravidlá umiestnenia (§8) — ${why}`);
+      }
+      this.placeModule(spec, 0);
+    });
   }
 
   /** Prepočet skupín kotvísk a `groupId` každého berthu. */

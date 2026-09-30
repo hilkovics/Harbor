@@ -13,7 +13,7 @@ import {
   type WorldState,
   type WorldStateV1,
 } from '@sim/world';
-import { DEFS, MAP, MAP_GRID, SEED, adjustCash, consumeRng, findCell, hashState, runTicks, setRoad } from './world-fixtures';
+import { BARE_MAP, DEFS, MAP, MAP_GRID, SEED, adjustCash, consumeRng, findCell, hashState, runTicks, setRoad } from './world-fixtures';
 
 const PUBLIC_LAND = findCell(MAP_GRID, (cell) => cell.terrain === 'land' && cell.parcelId === null && cell.road === 'none');
 
@@ -21,9 +21,12 @@ function viaJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-/** F1-like svet (cesty, hotovosť, rng, ids, rýchlosť, prenájom) bez modulov a nákladu. */
+/**
+ * F1-like svet (cesty, hotovosť, rng, ids, rýchlosť, prenájom) bez modulov a nákladu — F1 moduly nepoznal, preto
+ * vzniká na harbor_01 bez Root modulu (`BARE_MAP`, rovnaké `id` mapy); načítava sa voči plnej `MAP`.
+ */
 function f1World(): World {
-  const world = World.create(DEFS, MAP, SEED);
+  const world = World.create(DEFS, BARE_MAP, SEED);
   runTicks(world, 500);
   world.enqueue(setRoad([PUBLIC_LAND], 'road'));
   world.enqueue(setRoad([MAP.starter.roads[0]], 'none'));

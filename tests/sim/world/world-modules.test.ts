@@ -41,7 +41,7 @@ function cellsOwnedBy(world: World, moduleId: number): number {
 }
 
 describe('World — moduly, nový svet', () => {
-  it('nový svet (bez starter modulov do T02-04): prázdne moduly, skupiny aj lode', () => {
+  it('nový svet na mape bez starter modulov (BARE_MAP; Root modul testuje starter-modules.test.ts): prázdne moduly, skupiny aj lode', () => {
     const world = newWorld();
     expect(world.modules.size).toBe(0);
     expect(world.berthGroups).toEqual([]);

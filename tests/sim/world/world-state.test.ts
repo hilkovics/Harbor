@@ -86,14 +86,17 @@ describe('World.serialize — WorldState v2', () => {
     expect(state.version).toBe(WORLD_STATE_VERSION);
     expect(state.version).toBe(2);
     expect(state.traffic).toEqual([]);
-    expect(state.modules).toEqual([]);
+    // Starter moduly mapy (Root modul, T02-04): id 1, 2, … v poradí mapy, zaplatená cena 0, žeriav nečinný.
+    expect(state.modules.map(({ id, defId, x, y, rotation, purchaseCostCents }) => ({ id, defId, x, y, rotation, purchaseCostCents }))).toEqual(
+      MAP.starter.modules.map((spec, i) => ({ id: i + 1, ...spec, purchaseCostCents: 0 })),
+    );
     expect(state.cargo).toEqual({ createdCount: 0, exportedCount: 0, units: [] });
     expect(state.ships).toEqual([]);
     expect(state.mapId).toBe(MAP.id);
     expect(state.seed).toBe(SEED);
     expect(state.rng).toEqual(world.rng.getState());
     expect(state.clock).toEqual({ tick: 0, speed: 1 });
-    expect(state.ids).toEqual({ nextId: 1 });
+    expect(state.ids).toEqual({ nextId: MAP.starter.modules.length + 1 });
     expect(state.cashCents).toBe(DEFS.economy.startingCashCents);
     expect(state.parcels).toEqual({ starter: 'owned', west_quay: 'none', east_yard: 'none' });
     expect(Object.keys(state.parcels)).toEqual(MAP.parcels.map((p) => p.id));

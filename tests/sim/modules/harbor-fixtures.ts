@@ -1,13 +1,14 @@
 // Stavba modulov vo svete pre testy (T02-03): World.placeModule bez pravidiel umiestnenia §8 (tie má PlaceModule,
-// T02-04). Defy s testovacími variantmi sú v module-fixtures.ts.
+// T02-04). Defy s testovacími variantmi sú v module-fixtures.ts. Svet je na harbor_01 bez Root modulu (BARE_MAP),
+// aby testy stavali kotvisko a žeriavy na (40, 14) samy; starter moduly testuje tests/sim/world/starter-modules.test.ts.
 import type { Rotation } from '@sim/grid';
 import { BerthModule, CraneModule, type Module } from '@sim/modules';
 import { World } from '@sim/world';
-import { MAP, SEED } from '../world/world-fixtures';
+import { BARE_MAP, SEED } from '../world/world-fixtures';
 import { BERTH, CRANE, MODULE_DEFS } from './module-fixtures';
 
 export function newWorld(defs = MODULE_DEFS): World {
-  return World.create(defs, MAP, SEED);
+  return World.create(defs, BARE_MAP, SEED);
 }
 
 /** Postaví modul cez `World.placeModule`. */

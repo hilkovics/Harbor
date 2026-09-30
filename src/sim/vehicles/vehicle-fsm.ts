@@ -10,6 +10,7 @@
  */
 import type { VehicleStateChangedEvent } from '../events/sim-event';
 import type { JobState } from '../logistics/transport-job';
+import type { CarrierMotion } from '../movement/motion-check';
 import type { Vehicle } from './vehicle';
 
 /** Stavy vozidla v poradí životného cyklu. */
@@ -32,11 +33,12 @@ export function isVehicleTransitionAllowed(from: VehicleState, to: VehicleState)
 }
 
 /**
- * Pohyb vozidla v stave: `park` — stojí v strede bunky bez ďalšej trasy (`route = [cell]`, progres 0); `drive` — ide po
- * platnej trase k prístupovej bunke modulu (aspoň jedna cieľová bunka); `halt` — stojí bez cesty (`no_path`): v strede
- * bunky (`[cell]`) alebo uprostred rozbehnutého úseku (`[cell, nextCell]`, progres > 0).
+ * Pohyb vozidla v stave (zdieľaný `CarrierMotion`, ADR-024): `park` — stojí v strede bunky bez ďalšej trasy
+ * (`route = [cell]`, progres 0); `drive` — ide po platnej trase k prístupovej bunke modulu (aspoň jedna cieľová bunka);
+ * `halt` — stojí bez cesty (`no_path`): v strede bunky (`[cell]`) alebo uprostred rozbehnutého úseku (`[cell, nextCell]`,
+ * progres > 0).
  */
-export type VehicleMotion = 'park' | 'drive' | 'halt';
+export type VehicleMotion = CarrierMotion;
 
 /** Modul jobu, ku ktorému vozidlo ide alebo pri ktorom stojí: zdroj (`from`) alebo cieľ (`to`). */
 export type VehicleDestination = 'source' | 'target';

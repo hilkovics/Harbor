@@ -5,7 +5,7 @@
  *
  * - `to_pickup` / `to_dropoff`: ak sa od plánu zmenila cestná sieť (`replanPending`), vozidlo preplánuje z kotvy
  *   (bunka, pri pohybe medzi bunkami cieľová bunka úseku); bez cesty `no_path`. Potom sa posunie o `speedCellsPerTick`
- *   × `speedFactor` typu cieľovej bunky každého úseku (`Vehicle.advance`, `World.roadSpeeds`, ADR-020) a na konci trasy —
+ *   × `speedFactor` typu cieľovej bunky každého úseku (zdieľaný `advanceCarrier`, `World.roadSpeeds`, ADR-020, ADR-024) a na konci trasy —
  *   prístupovej bunke modulu jobu — prejde do `loading` / `unloading` s pobytom
  *   `internalTicks` modulu (inak `logistics.defaultInternalTicks`) + `loadTicks` / `unloadTicks` prvej jednotky.
  * - `loading`: po odpočte presun jednotky zo zdroja do vozidla (`on_apron → in_vehicle` — slot apronu sa uvoľní sám,
@@ -22,6 +22,7 @@ import { isSameLocation, slotOf, type CargoLocation } from '../cargo/cargo-locat
 import type { EntityId } from '../core/entity-id';
 import type { VehicleDef } from '../defs/types';
 import type { JobState, TransportJob } from '../logistics/transport-job';
+import { advanceCarrier } from '../movement/route-planning';
 import type { Vehicle } from '../vehicles/vehicle';
 import { VehicleError } from '../vehicles/vehicle-error';
 import { RESUME_AFTER_NO_PATH, VEHICLE_STATE_TRAITS, changeVehicleState, type VehicleState } from '../vehicles/vehicle-fsm';
@@ -77,7 +78,7 @@ function drive(vehicle: Vehicle, world: World): void {
       return;
     }
   }
-  if (vehicle.advance(vehicle.def.speedCellsPerTick, world.grid.width, world.roadSpeeds.speedFactor)) arrive(vehicle, world);
+  if (advanceCarrier(world, vehicle, vehicle.def.speedCellsPerTick)) arrive(vehicle, world);
 }
 
 /**

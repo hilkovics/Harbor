@@ -8,6 +8,10 @@
  *  - druhé depo východne od konca cesty, ku ktorému cesta nedosahuje (`connected: false` → odznak),
  *  - 3 straddle carriery: prázdny na východ, naložený na západ a naložený na sever.
  *
+ * Scéna `lanes` (T03-17, screenshot `f3-lanes.png`, `f3-render.html?scene=lanes`): bez modulov, len cesty a vozidlá v pravom
+ * pruhu — priama cesta s protismernými vozidlami (aj vedľa seba v jednej bunke), zákruty, T-križovatka a dve vozidlá
+ * uprostred zákruty (`prevHeading`).
+ *
  * Geometria (vonkajšie bunky konektorov, vozidlá na cestách) sa počíta z manifestu a `@sim/grid` rovnako ako v sime;
  * `tests/render/f3-render-fixtures.test.ts` stráži, že scéna je konzistentná (príznak `connected` zodpovedá ceste
  * pri konektore, vozidlá stoja na cestách a smerujú po nich).
@@ -59,6 +63,27 @@ export function depotVM(id: number, x: number, y: number, rotation: Rotation, co
   return { ...moduleVM(id, DEMO_DEPOT_DEF, 'depot', x, y, rotation), connected };
 }
 
+/** Predchádzajúca poloha vozidla a voliteľne aj kurz (`heading` chýba = rovnaký ako aktuálny). */
+export interface VehiclePrev {
+  readonly x: number;
+  readonly y: number;
+  readonly heading?: VehicleVM['heading'];
+}
+
+/** Vozidlo so stredom v (x, y) v bunkách (voľná poloha, napr. v zákrute) a predchádzajúcou polohou `prev`. */
+export function vehicleAt(
+  id: number,
+  x: number,
+  y: number,
+  heading: VehicleVM['heading'],
+  loaded: boolean,
+  state: string,
+  prev: VehiclePrev = { x, y },
+): VehicleVM {
+  const vm: VehicleVM = { id, defId: DEMO_VEHICLE_DEF, x, y, prevX: prev.x, prevY: prev.y, heading, loaded, state };
+  return prev.heading === undefined ? vm : { ...vm, prevHeading: prev.heading };
+}
+
 /** Vozidlo v strede bunky (cellX, cellY); `prev` je predchádzajúca poloha (predvolene tá istá). */
 export function vehicleVM(
   id: number,
@@ -67,9 +92,9 @@ export function vehicleVM(
   heading: VehicleVM['heading'],
   loaded: boolean,
   state: string,
-  prev: { readonly x: number; readonly y: number } = { x: cellX + 0.5, y: cellY + 0.5 },
+  prev: VehiclePrev = { x: cellX + 0.5, y: cellY + 0.5 },
 ): VehicleVM {
-  return { id, defId: DEMO_VEHICLE_DEF, x: cellX + 0.5, y: cellY + 0.5, prevX: prev.x, prevY: prev.y, heading, loaded, state };
+  return vehicleAt(id, cellX + 0.5, cellY + 0.5, heading, loaded, state, prev);
 }
 
 /** Vonkajšie bunky cestných konektorov modulu (bunka mimo footprintu, na strane `side`) — tam sa napája cesta. */
@@ -122,4 +147,76 @@ export const MAIN_SCENE: EntitiesVM = {
 };
 
 /** Kam sa má nasmerovať kamera (stred v bunkách) a zoom. */
-export const SCENE_VIEW = { centerX: 43, centerY: 26, zoom: 0.75 } as const;
+export interface SceneView {
+  readonly centerX: number;
+  readonly centerY: number;
+  readonly zoom: number;
+}
+
+/** Pohľad na scénu `main`. */
+export const SCENE_VIEW: SceneView = { centerX: 43, centerY: 26, zoom: 0.75 };
+
+/**
+ * Cesty scény `lanes` (všetky `two_lane`): horná priama cesta y 24 (x 37–48), zvislá odbočka x 42 (y 25–28) a spodná
+ * cesta y 28 (x 42–48) a východná cesta x 48 (y 25–27) — spolu obdĺžnik s T-križovatkou (42; 24) a tromi zákrutami
+ * (48; 24), (48; 28), (42; 28).
+ */
+export const LANES_ROADS: readonly CellCoord[] = [
+  ...row(24, 37, 48),
+  ...column(42, 25, 28),
+  ...row(28, 43, 48),
+  ...column(48, 25, 27),
+];
+
+/** Mriežka pre scénu `lanes`: terén mapy + štartová cesta + cesty scény. */
+export function createLanesGrid(map: LoadedMap): Grid {
+  const grid = map.createGrid();
+  for (const cell of [...map.starter.roads, ...LANES_ROADS]) grid.at(cell.x, cell.y).road = 'road';
+  return grid;
+}
+
+/**
+ * Scéna `lanes`: protismerné vozidlá v oboch pruhoch (dvojice v jednej bunke ukazujú, že sa nekrížia), T-križovatka
+ * a dve vozidlá uprostred zákruty (28: (48; 24) z východu na juh, 29: (42; 28) z juhu na východ).
+ */
+export const LANES_SCENE: EntitiesVM = {
+  modules: [],
+  cranes: [],
+  ships: [],
+  vehicles: [
+    // horná cesta: dvojica vedľa seba v bunke (39; 24) a ďalšie dve v protismere
+    vehicleVM(21, 39, 24, 90, false, 'to_pickup'),
+    vehicleVM(22, 39, 24, 270, true, 'to_dropoff'),
+    vehicleVM(23, 45, 24, 90, true, 'to_dropoff'),
+    vehicleVM(24, 44, 24, 270, false, 'to_pickup'),
+    // východná cesta: dvojica vedľa seba v bunke (48; 26)
+    vehicleVM(25, 48, 26, 180, false, 'to_pickup'),
+    vehicleVM(26, 48, 26, 0, true, 'to_dropoff'),
+    // odbočka z T-križovatky
+    vehicleVM(27, 42, 26, 180, true, 'to_dropoff'),
+    vehicleVM(28, 42, 27, 0, false, 'to_pickup'),
+    // spodná cesta
+    vehicleVM(29, 46, 28, 270, true, 'to_dropoff'),
+    vehicleVM(30, 45, 28, 90, false, 'to_pickup'),
+    // zákruty: kurz sa práve zmenil, predchádzajúci úsek mal iný smer
+    vehicleAt(31, 48.5, 24.62, 180, false, 'to_pickup', { x: 47.95, y: 24.5, heading: 90 }),
+    vehicleAt(32, 42.62, 28.5, 90, true, 'to_dropoff', { x: 42.5, y: 27.95, heading: 180 }),
+  ],
+};
+
+/** Pohľad na scénu `lanes` (zoom 1,5: pruhy sú dobre vidieť). */
+export const LANES_VIEW: SceneView = { centerX: 42.5, centerY: 26.5, zoom: 1.5 };
+
+/** Pomenované scény dema (`?scene=<názov>`). */
+export interface DemoScene {
+  readonly vm: EntitiesVM;
+  readonly view: SceneView;
+  readonly createGrid: (map: LoadedMap) => Grid;
+}
+
+export const DEMO_SCENES = {
+  main: { vm: MAIN_SCENE, view: SCENE_VIEW, createGrid: createDemoGrid },
+  lanes: { vm: LANES_SCENE, view: LANES_VIEW, createGrid: createLanesGrid },
+} as const satisfies Readonly<Record<string, DemoScene>>;
+
+export type DemoSceneName = keyof typeof DEMO_SCENES;

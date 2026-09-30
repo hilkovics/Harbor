@@ -73,6 +73,8 @@
 - [ ] T05-12 · `/sim-check` s `vertical_slice` (M1) + plná pipeline
 - [ ] T05-13 · Uzavretie fázy (PROGRESS, BACKLOG) + PR
 
+**Úsporný režim (rozhodnutie používateľa):** plná e2e sada beží raz za fázu (T05-12); ostatné karty spúšťajú len dotknuté špecifikácie.
+
 Vlny: 01 → 02 → 03 → 04 (sim sériovo) ‖ {05 (TDD, worktree od 01), 06 (UI, beží od konca F4)} → {07 ‖ 08} → 09 → 10 → 11 → 12 → 13.
 Single writer `src/sim/**`: T05-01 (defs), potom T05-02..T05-04 sériovo, T05-11.
 
@@ -233,7 +235,7 @@ Nové `SimEvent`:
   - `GameOverModal` a „Nová hra" (reštart bootstrapu).
   - Odstrániť DEV tlačidlo „Spawn feeder (DEV)" a jeho konfiguráciu. Prispôsobiť dotknuté e2e testy F2–F4: použiť `dispatchJSON` so `SpawnShipDebug` alebo prijatie kontraktu.
   - `REVISION_EVENTS` rozšíriť o nové udalosti.
-- acceptance: `pnpm vitest run tests/app`; `pnpm typecheck && pnpm lint && pnpm test && pnpm build`; `CI=1 pnpm test:e2e`
+- acceptance: `pnpm vitest run tests/app`; `pnpm typecheck && pnpm lint && pnpm test && pnpm build`; len dotknuté e2e špecifikácie (`CI=1 pnpm exec playwright test tests/e2e/<spec>`), plná sada až v T05-12
 - do_not_touch: src/sim/**, data/**
 - estimate: M
 
@@ -261,7 +263,7 @@ Nové `SimEvent`:
   - Bez `SpawnShipDebug`. Zrýchlená hra, čakanie cez `window.__sim` až po `ContractCompleted`.
   - HUD hotovosť = svet, XP > 0, toast výplaty.
   - Screenshoty si prezri (Read) a popíš ich.
-- acceptance: `CI=1 pnpm test:e2e`; `test -s tests/e2e/__screenshots__/f5-contracts.png -a -s tests/e2e/__screenshots__/f5-payout.png`
+- acceptance: `CI=1 pnpm exec playwright test tests/e2e/f5-vertical-slice.spec.ts`; `test -s tests/e2e/__screenshots__/f5-contracts.png -a -s tests/e2e/__screenshots__/f5-payout.png`
 - do_not_touch: src/sim/**, data/**
 - estimate: M
 

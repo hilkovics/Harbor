@@ -30,6 +30,19 @@
 9. **Traffic:** `cell.traffic += 1` za každý tick, kým je vozidlo na bunke. Pri `HourClosed` sa násobí `logistics.congestion.trafficDecayPerHour` (krok 11, minimálny `MetricsSystem`).
 10. **WorldState v3** = v2 + `vehicles` + `jobs` (+ čo sa nedá odvodiť); `migrate(v2 → v3)`.
 
+**Doplnok od používateľa (2026-09-30): pruhy a typy ciest.** Vozidlá dnes jazdia stredom cesty cez oba pruhy. Požiadavka: nech jazdia v jednom pruhu, a potom nech sú aj jednosmerná, dvojpruhová a jednopruhová cesta. Rozhodnutia orchestrátora (→ ADR-020 v T03-18):
+11. **Pruh je prezentačný.** Sim modeluje cestu ako graf buniek (vozidlo ide stredom bunky, determinizmus aj pathfinding ostávajú); pruh je offset v renderi. Premávka je **pravostranná**.
+    - Sprite `road_*` má asfalt 52 px (x 6–58) a stredovú čiaru na x 32. Jeden pruh má teda 26 px a jeho stred je ±13/64 bunky od osi. Vozidlo sa škáluje na šírku pruhu.
+    - V zákrute sa poloha interpoluje medzi offsetom predchádzajúceho a aktuálneho úseku (`prevHeading` vo VM).
+12. **Typy ciest** (`roadKind` na bunke s `road === 'road'`), parametre v `infrastructure.json → roadKinds`:
+    - `two_lane`: obojsmerná dvojpruhová (dnešná cesta, štartové cesty mapy), vozidlá v pravom pruhu.
+    - `one_lane`: obojsmerná jednopruhová (úzka, lacnejšia, pomalšia: `speedFactor < 1`), vozidlá v strede.
+    - `one_way`: jednosmerná jednopruhová (úzka), vozidlá v strede. Bunka má smer `roadDir` (N/E/S/W) daný smerom ťahu myšou; v rohu platí smer do ďalšej bunky, na poslednej bunke smer z predchádzajúcej.
+    - Pathfinding: prechod A → B je povolený, ak `A` nie je `one_way` alebo `dir(A→B) === A.roadDir`, a zároveň `B` nie je `one_way` alebo `dir(A→B) !== opačný(B.roadDir)`. Cena bunky = `1 / speedFactor` (≥ 1, heuristika ostáva prípustná). Rýchlosť vozidla na bunke = `speedCellsPerTick × speedFactor`.
+    - `PlaceRoad { cells, kind?, dirs? }`: `kind` je predvolene `two_lane`, `dirs` sú len pri `one_way`.
+    - Položenie na bunku s cestou iného typu alebo smeru ju **prestavia** v jednom atomickom kroku, ekvivalentnom `RemoveRoad + PlaceRoad`: cena = nový typ − `refundCents(starý typ)`. Rovnaký typ aj smer sa preskočí zadarmo (ako doteraz). Bunka s vozidlom → `occupied`.
+    - Grafika: úzke cesty a šípky jednosmerky zatiaľ procedurálne z tokenov + `overlay.path_arrow`. Sprity z Claude Design ide do BACKLOG s promptom v DESIGN_BRIEF §8.
+
 ## Checklist
 - [x] T03-01 · Defy: `vehicles.json`, `logistics.json`, `container_yard_small` + `vehicle_depot` v `modules.json`, schémy, DefRegistry, manifest krížovo pre vozidlá
 - [x] T03-02 · Sim: `StorageModule` + `ContainerYard` + `VehicleDepot`, pripojenie k ceste, §8 bod 5; ApronBuffer len rezervácie; ADR-017
@@ -47,9 +60,13 @@
 - [ ] T03-14 · Opravy z review + ARCHITECTURE zosúladenie
 - [ ] T03-15 · Plná pipeline + triáž
 - [ ] T03-16 · Uzavretie fázy (PROGRESS, BACKLOG) + PR
+- [ ] T03-17 · Render: vozidlá v pravom pruhu (offset, škála na šírku pruhu, plynulá zákruta) — doplnok používateľa
+- [ ] T03-18 · Sim: typy ciest `two_lane` / `one_lane` / `one_way` (defy, PlaceRoad, prestavba, pathfinding so smerom a cenou, rýchlosť, save); ADR-020 — doplnok používateľa
+- [ ] T03-19 · Render: úzke cesty, šípky jednosmerky, pruh podľa typu cesty — doplnok používateľa
+- [ ] T03-20 · App/UI: výber typu cesty (BuildBar Landside), smer jednosmerky ťahom, tooltip ceny prestavby — doplnok používateľa
 
-Vlny: 01 → 02 → 03 → 04 → 05 → 06 (sim sériovo) ‖ {07 (TDD, worktree od 01), 08 (worktree od 01), 09 (worktree od 01)} → {10 ‖ 11} → 12 → 13 → 14 → 15 → 16.
-Single writer `src/sim/**`: T03-01 (defs), potom T03-02..T03-06 sériovo, T03-14.
+Vlny: 01 → 02 → 03 → 04 → 05 → 06 (sim sériovo) ‖ {07 (TDD, worktree od 01), 08 (worktree od 01), 09 (worktree od 01), 17 (worktree)} → {10 ‖ 11 ‖ 18 (sim)} → {19 ‖ 20} → 12 → 13 → 14 → 15 → 16.
+Single writer `src/sim/**`: T03-01 (defs), potom T03-02..T03-06 sériovo, T03-18, T03-14.
 
 ## Spoločné rozhrania (záväzné pre paralelné karty)
 
@@ -389,3 +406,82 @@ interface VehicleVM { id: number; defId: string; x: number; y: number; prevX: nu
   - `! grep -n '^- \[ \] T03-' docs/tasks/phase-03.md`
 - do_not_touch: všetko mimo outputs
 - estimate: S
+
+### T03-17 · Render: vozidlá v pravom pruhu (offset, škála, plynulá zákruta)
+- model: sonnet
+- agent: implementer
+- parallel: yes (worktree; len `src/render/**` + testy + demo)
+- depends_on: T03-08
+- inputs: „Doplnok od používateľa" (rozhodnutie 11); `assets/infra/road_*.svg` (asfalt x 6–58, os x 32); `assets/entities/straddle_carrier_*.svg` (obsah 56×52 px); `src/render/{vehicle-view,view-models,entity-layer,road-layer,world-renderer}.ts`; demo `src/render/__demo__/f3-render.*`
+- outputs: src/render/{lane,vehicle-view,view-models,…}.ts; tests/render/**; demo + tests/e2e/f3-render.spec.ts (screenshot `f3-lanes.png`)
+- požiadavky:
+  - Čistá funkcia `laneOffset(kind, heading)` → posun v bunkách kolmo na smer jazdy (pravostranne): `two_lane` = ±13/64, `one_lane`/`one_way` = 0. Konštanty sú pomenované, odvodené z geometrie spritu a zdokumentované.
+  - Renderer zistí typ cesty pod vozidlom cez funkciu `roadKindAt(cellX, cellY)`, ktorú dostane z `WorldRenderer` (grid). Kým sim nemá `roadKind` (T03-18), vráti `two_lane`. Zdroj typu sa neskôr prepne na `cell.roadKind`.
+  - `VehicleVM.prevHeading?` (predvolene = `heading`); poloha = `lerp(prev + offset(prevKind, prevHeading), curr + offset(kind, heading), alpha)`, takže v zákrute nie je skok cez stredovú čiaru.
+  - Vozidlo sa škáluje tak, aby šírka obsahu spritu ≈ šírka pruhu (konštanta `VEHICLE_LANE_SCALE`). Test overí, že pri `two_lane` celý sprite leží v jednom pruhu (± 2 px).
+  - Demo: priama cesta s protismernými vozidlami v oboch pruhoch, zákruta a T-križovatka → screenshot `f3-lanes.png`. Prezri ho (Read) a popíš.
+- acceptance:
+  - `pnpm vitest run tests/render`
+  - `pnpm typecheck && pnpm lint && pnpm test && pnpm build`
+  - `CI=1 pnpm test:e2e`
+- do_not_touch: src/sim/**, src/ui/**, src/app/**, data/**, assets/**
+- estimate: S
+
+### T03-18 · Sim: typy ciest `two_lane` / `one_lane` / `one_way`; ADR-020
+- model: opus
+- agent: sim-architect
+- parallel: no (single writer `src/sim`)
+- depends_on: T03-06
+- inputs: „Doplnok od používateľa" (rozhodnutia 11, 12); ARCHITECTURE §4.6 (`infrastructure`), §5.1, §7.4, §7.6; ADR-006, ADR-008, ADR-012, ADR-015, ADR-018, ADR-019; `src/sim/{grid,commands,logistics,vehicles,systems,world}/**`; data/defs/infrastructure.json + schéma
+- outputs: data/defs/infrastructure.json (`roadKinds`) + schéma; src/sim/defs/**; src/sim/grid/grid.ts (`Cell.roadKind`, `Cell.roadDir`); src/sim/commands/{place-road,remove-road,road-layer-command}.ts; src/sim/logistics/pathfinder.ts (smerové hrany, cena); src/sim/systems/vehicle-system.ts (rýchlosť podľa typu); src/sim/world/{world-state,world-restore}.ts; docs/DECISIONS.md (ADR-020); testy
+- požiadavky:
+  - `infrastructure.json`: `roadKinds` = `two_lane { costPerCellCents 200000, speedFactor 1 }`, `one_lane { costPerCellCents 120000, speedFactor 0.7 }`, `one_way { costPerCellCents 150000, speedFactor 1 }`. Existujúce `road.costPerCellCents` nahraď (alebo nechaj ako alias `two_lane`, zdokumentuj). Údržba ostáva 0.
+  - `PlaceRoad { cells, kind?, dirs? }`: validácia `invalid_road_kind`, `invalid_direction` (`dirs` len pri `one_way`, dĺžka = `cells`). Prestavba podľa rozhodnutia 12 (cena = nový − refund starého; `costCents` vo `validate`; kategórie `road_capex`/`road_sale`, ADR-012). Bunka s vozidlom → `occupied`. `RemoveRoad` refunduje podľa typu. `toJSON` je spätne kompatibilné (bez `kind` = `two_lane`), scenáre F1–F3 musia dať rovnaké výsledky (`f1_roads` `cashEnd 108300000`).
+  - Pathfinder: smerové hrany a cena `1/speedFactor`. Invalidácia cez `roadVersion` pri každej zmene typu alebo smeru. Rýchlosť vozidla na úseku podľa typu bunky, z ktorej vychádza (zdokumentuj).
+  - Save v3: cesty `[index, layer, kind?, dir?]` (v3 ešte nie je vydaná, takže netreba migráciu, ale over roundtrip). Starter cesty mapy sú `two_lane`.
+  - Testy: jednosmerka v protismere → cesta obchádzkou alebo `null`; jednopruhová cesta dá dlhší čas jazdy a A* ju obíde, keď existuje rovnako dlhá dvojpruhová; prestavba (ceny, udalosti `RoadChanged` + `MoneyChanged`); roundtrip; scenár `apron_to_yard` ostane zelený.
+  - ADR-020: pruhy sú prezentačné, typy ciest, pravidlá smeru, cena/rýchlosť, prestavba.
+- acceptance:
+  - `pnpm vitest run tests/sim`
+  - `pnpm -s simrun data/scenarios/f1_roads.json --ticks 20000 --report | jq -e '.cashEnd == 108300000'`
+  - `pnpm -s simrun data/scenarios/apron_to_yard.json --ticks 15000 --report | jq -e '.lostUnits == 0'`
+  - `grep -c '^## ADR-020:' docs/DECISIONS.md` = 1
+  - `pnpm validate:defs && pnpm typecheck && pnpm lint && pnpm test`
+- do_not_touch: src/render/**, src/ui/**, src/app/** (okrem `REASON_TEXT`, ak je nutné — inak zhrnutie), tools/**
+- estimate: M
+
+### T03-19 · Render: úzke cesty, šípky jednosmerky, pruh podľa typu cesty
+- model: sonnet
+- agent: implementer
+- parallel: yes (s T03-20; worktree)
+- depends_on: T03-17, T03-18
+- inputs: „Doplnok od používateľa"; `src/render/{road-layer,autotile,lane,vehicle-view,overlay-assets}.ts`; `assets/manifest.json` (`overlay.path_arrow`); DESIGN_BRIEF §4, §5.2
+- outputs: src/render/**; tests/render/**; demo `f3-road-kinds` + screenshot
+- požiadavky:
+  - `RoadLayer` kreslí `two_lane` spritami ako doteraz. `one_lane`/`one_way` kreslí procedurálne (asfalt 26 px + okraje, bez stredovej čiary) s rovnakým autotile tvarom a rotáciou. Jednosmerka dostane `overlay.path_arrow` otočenú podľa `roadDir` (každá 2. bunka alebo každá bunka, zvoľ čitateľne pri zoome 0.5–2).
+  - `roadKindAt` z T03-17 číta `cell.roadKind`.
+  - Demo so všetkými troma typmi, križovatkou rôznych typov a vozidlami → screenshot `f3-road-kinds.png`. Prezri ho (Read) a popíš.
+- acceptance:
+  - `pnpm vitest run tests/render`
+  - `pnpm typecheck && pnpm lint && pnpm test && pnpm build`
+  - `CI=1 pnpm test:e2e`
+- do_not_touch: src/sim/**, src/ui/**, src/app/**, data/**, assets/**
+- estimate: M
+
+### T03-20 · App/UI: výber typu cesty, smer jednosmerky ťahom
+- model: sonnet
+- agent: implementer
+- parallel: yes (s T03-19)
+- depends_on: T03-10, T03-18
+- inputs: „Doplnok od používateľa"; `src/app/{input-controller,cell-line,build-feedback,build-bar-data,connected-build-bar}.ts(x)`; `src/ui/build-bar.tsx`
+- outputs: src/app/**; src/ui/** (ak treba); tests/app/**, tests/ui/**
+- požiadavky:
+  - BuildBar Landside (odomknutá len pre cesty): „Cesta dvojpruhová", „Cesta jednopruhová", „Jednosmerná cesta" s cenou za bunku (z defov). Výber prepne build mód ciest s daným typom. `B` ďalej spúšťa naposledy použitý typ (predvolene `two_lane`).
+  - Ťah pri `one_way` vypočíta `dirs` podľa rozhodnutia 12. Ghost ukáže smer (šípky cez BuildLayer alebo overlay) a cenu vrátane prestavby (`costCents` z `validate`, záporné časti ako refund).
+  - `REASON_TEXT` doplniť o `invalid_road_kind`, `invalid_direction`.
+- acceptance:
+  - `pnpm vitest run tests/app tests/ui`
+  - `pnpm typecheck && pnpm lint && pnpm test && pnpm build`
+  - `CI=1 pnpm test:e2e`
+- do_not_touch: src/sim/**, data/**
+- estimate: M

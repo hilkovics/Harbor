@@ -10,13 +10,21 @@
  *    zodpovedajú ledgeru, apronu a `CRANE_STATE_TRAITS`; berth: `craneIds` = jeho žeriavy v poradí umiestnenia,
  *    najviac `maxCranes`, bez prekryvu, rezervácie apronu = rezervácie jeho žeriavov;
  * 4. apron: rovnaké jednotky, sloty aj FIFO poradie ako `on_apron` v ledgeri;
- * 5. `berthGroups` a `groupId` = prepočet `computeBerthGroups`.
+ * 5. `berthGroups` a `groupId` = prepočet `computeBerthGroups`;
+ * 6. lode (ADR-016): kľúč = id, vzostupne podľa id, stav bez `despawned`; `berthIds` neprázdne práve pri
+ *    `holdsBerths`, ležia za sebou v jednej skupine v poradí po pobreží a každý berth má `dockedShipId` = loď;
+ *    každý `dockedShipId` patrí existujúcej lodi, ktorá ho má v `berthIds` (súlad `dockedShipId` ↔ `berthIds`);
+ *    `anchorageIndex` len pri `waitsForBerth`, v mape a jedinečný; na palube najviac `capacityUnits` jednotiek, všetky
+ *    typu `cargoTypeId`; žeriav v `grabbing` má na kotvisku dokovanú loď a žeriavov v `grabbing` nad loďou nie je viac
+ *    ako jednotiek na jej palube (každý má čo zdvihnúť).
  */
 import { CARGO_HOLDER_KINDS } from '../cargo/cargo-location';
 import type { EntityId } from '../core/entity-id';
 import { BerthModule } from '../modules/berth-module';
 import { computeBerthGroups } from '../modules/berth-group';
 import { CRANE_STATE_TRAITS, CraneModule } from '../modules/crane-module';
+import type { Ship } from '../ships/ship';
+import { SHIP_STATE_TRAITS } from '../ships/ship-fsm';
 import { CARGO_HOLDER_SOURCES } from './cargo-holders';
 import type { World } from './world';
 
@@ -179,7 +187,85 @@ const checkBerthGroups: Check = (world) => {
   return undefined;
 };
 
-const CHECKS: readonly Check[] = [checkCargoHolders, checkModuleCells, checkCranes, checkAprons, checkBerthGroups];
+/** Kotviská lode ležia za sebou v jednej skupine (poradie po pobreží) a držia ju (`dockedShipId`). */
+function checkShipBerths(world: World, ship: Ship): string | undefined {
+  const [first] = ship.berthIds;
+  if (first === undefined) return undefined;
+  const group = world.berthGroups.find((candidate) => candidate.berthIds.includes(first));
+  const start = group?.berthIds.indexOf(first) ?? -1;
+  if (group === undefined || !sameIds(group.berthIds.slice(start, start + ship.berthIds.length), ship.berthIds)) {
+    return `${ship.label}: kotviská [${ship.berthIds.join(', ')}] neležia za sebou v jednej skupine kotvísk`;
+  }
+  for (const berthId of ship.berthIds) {
+    const berth = world.modules.get(berthId);
+    if (!(berth instanceof BerthModule)) return `${ship.label}: #${String(berthId)} z berthIds nie je kotvisko`;
+    if (berth.dockedShipId !== ship.id) return `${ship.label}: ${berth.label} má dockedShipId ${String(berth.dockedShipId)}`;
+  }
+  return undefined;
+}
+
+/** Náklad na palube: najviac `capacityUnits`, všetky jednotky typu lode. */
+function checkShipCargo(world: World, ship: Ship): string | undefined {
+  const aboard = world.cargo.unitsOnShip(ship.id);
+  if (aboard.length > ship.def.capacityUnits) return `${ship.label} má na palube ${String(aboard.length)} jednotiek (capacityUnits ${String(ship.def.capacityUnits)})`;
+  const foreign = aboard.find((unitId) => world.cargo.get(unitId)?.typeId !== ship.cargoTypeId);
+  return foreign === undefined ? undefined : `${ship.label}: jednotka #${String(foreign)} nie je typu '${ship.cargoTypeId}'`;
+}
+
+function checkShip(world: World, ship: Ship, anchorages: Map<number, Ship>): string | undefined {
+  const traits = SHIP_STATE_TRAITS[ship.state];
+  if (ship.state === 'despawned') return `${ship.label} v stave 'despawned' je stále vo world.ships`;
+  if (traits.holdsBerths !== ship.berthIds.length > 0) {
+    return `${ship.label} v stave '${ship.state}' ${traits.holdsBerths ? 'nedrží kotviská' : `drží kotviská [${ship.berthIds.join(', ')}]`}`;
+  }
+  const index = ship.anchorageIndex;
+  if (index !== null) {
+    if (!traits.waitsForBerth) return `${ship.label} v stave '${ship.state}' má anchorage ${String(index)}`;
+    if (index >= world.map.anchorage.length) return `${ship.label}: anchorage ${String(index)} mimo mapy`;
+    const holder = anchorages.get(index);
+    if (holder !== undefined) return `${ship.label} a ${holder.label} obsadili tú istú anchorage ${String(index)}`;
+    anchorages.set(index, ship);
+  }
+  return checkShipBerths(world, ship) ?? checkShipCargo(world, ship);
+}
+
+/** Žeriav v `grabbing` má čo zdvihnúť: dokovaná loď na jeho kotvisku s dosť jednotkami pre všetky zdvíhajúce žeriavy. */
+function checkGrabbingCranes(world: World): string | undefined {
+  const claims = new Map<Ship, number>();
+  for (const crane of cranes(world)) {
+    if (crane.state !== 'grabbing') continue;
+    const berth = world.modules.get(crane.berthId);
+    const ship = berth instanceof BerthModule && berth.dockedShipId !== null ? world.ships.get(berth.dockedShipId) : undefined;
+    if (ship?.state !== 'docked') return `${crane.label} v stave 'grabbing' nemá na kotvisku dokovanú loď`;
+    claims.set(ship, (claims.get(ship) ?? 0) + 1);
+  }
+  for (const [ship, count] of claims) {
+    const aboard = world.cargo.countAt('on_ship', ship.id);
+    if (count > aboard) return `${String(count)} žeriavov zdvíha z ${ship.label}, na palube je len ${String(aboard)} jednotiek`;
+  }
+  return undefined;
+}
+
+const checkShips: Check = (world) => {
+  const anchorages = new Map<number, Ship>();
+  let previous = 0;
+  for (const [id, ship] of world.ships) {
+    if (ship.id !== id) return `world.ships: kľúč ${String(id)} ukazuje na ${ship.label}`;
+    if (id <= previous) return `world.ships: ${ship.label} nie je vzostupne podľa id (po #${String(previous)})`;
+    previous = id;
+    const violation = checkShip(world, ship, anchorages);
+    if (violation !== undefined) return violation;
+  }
+  for (const berth of berths(world)) {
+    if (berth.dockedShipId === null) continue;
+    const ship = world.ships.get(berth.dockedShipId);
+    if (ship === undefined) return `${berth.label}: dockedShipId ${String(berth.dockedShipId)} — loď neexistuje`;
+    if (!ship.berthIds.includes(berth.id)) return `${berth.label}: dockedShipId ${String(ship.id)}, ale ${ship.label} ho nemá v berthIds`;
+  }
+  return checkGrabbingCranes(world);
+};
+
+const CHECKS: readonly Check[] = [checkCargoHolders, checkModuleCells, checkCranes, checkAprons, checkBerthGroups, checkShips];
 
 /** Prvé porušenie invariantov sveta (viď hlavička súboru), alebo `undefined`. Svet nemení. */
 export function findWorldViolation(world: World): string | undefined {

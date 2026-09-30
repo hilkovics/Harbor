@@ -36,7 +36,8 @@ describe('World.cargo', () => {
   });
 
   it('CargoMoved z príkazu pred krokom 1 má ešte predchádzajúci tick a ide pred TickAdvanced', () => {
-    const world = create();
+    // Jednotka v Root žeriave bez jeho cyklu je zámerne nekonzistentný svet — krok 12 (invarianty) sa tu vypne.
+    const world = World.create(DEFS, MAP, SEED, { checkInvariants: false });
     runTicks(world, 5);
     const unitId = world.cargo.create(TEU, at.ship(1)).id;
     world.enqueue(new TestCommand({ type: 'TestUnload', apply: (w) => w.cargo.move(unitId, at.crane(2)) }));

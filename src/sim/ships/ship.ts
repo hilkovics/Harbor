@@ -1,27 +1,161 @@
 /**
- * Loď (ARCHITECTURE §5, §7.4) — **zatiaľ len tvar** zo „Spoločných rozhraní“ (docs/tasks/phase-02.md), aby
- * `world.ships` mala typ. Triedu s FSM, pohybom a serializáciou (`WorldState.ships`) doplní T02-05; dovtedy je
- * `world.ships` vždy prázdna.
+ * Loď (ARCHITECTURE §4.3, §5, §7.4; ADR-016) — entita na vode, ktorá nesie náklad jedného typu (`cargoTypeId`).
+ * Jednotky nákladu na palube vedie výlučne `CargoLedger` (`on_ship`, pravidlo 2); loď si ich neeviduje.
+ *
+ * - Poloha `x`, `y` = stred lode v bunkách (float); stred bunky (cx, cy) = (cx + 0.5, cy + 0.5).
+ * - `heading` = kardinálny kurz (0 = predok na sever, v smere hodinových ručičiek) — nikdy nie uhol z trigonometrie.
+ * - `berthIds` = kotviská, ktoré loď drží (v poradí po pobreží), neprázdne práve v `berthing`/`docked`.
+ * - `anchorageIndex` = index bunky `map.anchorage`, ktorú loď v `waiting_anchorage` obsadila (`null` = čaká na konci
+ *   `seaLane`, lebo všetky sú obsadené, alebo nečaká).
+ * - `waypointIndex` = index nasledujúceho bodu trasy aktuálneho stavu (trasu odvodí `shipRoute` z mapy a kotvísk).
+ *
+ * Stav mení len `transition(to)` podľa `SHIP_TRANSITIONS`; pohyb a alokáciu kotvísk robí `ShipSystem` (krok 3).
  */
 import type { EntityId } from '../core/entity-id';
-import type { ShipClassDef } from '../defs/types';
-import type { Rotation } from '../grid/rotation';
+import type { CargoCategory, CargoTypeDef, ShipClassDef } from '../defs/types';
+import { isRotation, type Rotation } from '../grid/rotation';
+import { ShipError } from './ship-error';
+import { SHIP_TRANSITIONS, isShipTransitionAllowed, type ShipState } from './ship-fsm';
 
-/** Stavy lode v poradí životného cyklu (FSM prechody určí T02-05). */
-export const SHIP_STATES = ['inbound', 'waiting_anchorage', 'berthing', 'docked', 'undocking', 'outbound', 'despawned'] as const;
-export type ShipState = (typeof SHIP_STATES)[number];
-
-export interface Ship {
-  readonly id: EntityId;
+/** Loď v save (`WorldState.ships[i]`, ADR-016) — čistý JSON; poradie lodí v save = vzostupne podľa id (poradie spawnu). */
+export interface SerializedShip {
+  readonly id: number;
   readonly classId: string;
-  readonly def: Readonly<ShipClassDef>;
   readonly cargoTypeId: string;
   readonly state: ShipState;
-  /** Stred lode v bunkách (float); stred bunky (cx, cy) = (cx + 0.5, cy + 0.5). */
   readonly x: number;
   readonly y: number;
-  /** 0 = predok na sever, v smere hodinových ručičiek. */
   readonly heading: Rotation;
-  /** Obsadené kotviská (prázdne mimo `berthing`/`docked`/`undocking`). */
-  readonly berthIds: readonly EntityId[];
+  readonly berthIds: readonly number[];
+  readonly anchorageIndex: number | null;
+  readonly waypointIndex: number;
+}
+
+/** Kľúče `SerializedShip` v poradí `toState()`. */
+export const SERIALIZED_SHIP_KEYS: readonly (keyof SerializedShip)[] = [
+  'id',
+  'classId',
+  'cargoTypeId',
+  'state',
+  'x',
+  'y',
+  'heading',
+  'berthIds',
+  'anchorageIndex',
+  'waypointIndex',
+];
+
+/** Vstup konštruktora lode (nová loď zo spawnu aj obnova zo save). */
+export interface ShipInit {
+  readonly id: EntityId;
+  readonly def: Readonly<ShipClassDef>;
+  readonly cargoType: Readonly<CargoTypeDef>;
+  readonly state: ShipState;
+  readonly x: number;
+  readonly y: number;
+  readonly heading: Rotation;
+  readonly berthIds?: readonly EntityId[];
+  readonly anchorageIndex?: number | null;
+  readonly waypointIndex?: number;
+}
+
+const NO_BERTHS: readonly EntityId[] = Object.freeze([]);
+
+function isNonNegativeInteger(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
+export class Ship {
+  readonly id: EntityId;
+  readonly def: Readonly<ShipClassDef>;
+  /** Id triedy lode (`def.id`). */
+  readonly classId: string;
+  readonly cargoTypeId: string;
+  /** Kategória nákladu (`cargo_types.json`) — určuje kompatibilné žeriavy. */
+  readonly cargoCategory: CargoCategory;
+  x: number;
+  y: number;
+  heading: Rotation;
+  /** Obsadené kotviská v poradí po pobreží; mení ich `ShipSystem` spolu s `BerthModule.dockedShipId`. */
+  berthIds: readonly EntityId[];
+  anchorageIndex: number | null;
+  waypointIndex: number;
+  private current: ShipState;
+
+  /**
+   * Chyby (`ShipError('invalid_input')`): id nie je celé ≥ 1, poloha nie je konečné číslo, neplatný kurz alebo stav,
+   * kategória nákladu nie je v `def.cargoCategories`, `anchorageIndex`/`waypointIndex` nie sú celé ≥ 0, duplicitné
+   * kotvisko. Vzťahy k svetu (kotviská existujú, anchorage je v mape) overuje `ShipSystem` a loader save.
+   */
+  constructor(init: ShipInit) {
+    const { id, def, cargoType, state, x, y, heading } = init;
+    const label = `loď '${def.id}' #${String(id)}`;
+    if (!Number.isSafeInteger(id) || id < 1) throw new ShipError('invalid_input', `${label}: id musí byť celé číslo ≥ 1`);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) throw new ShipError('invalid_input', `${label}: poloha (${String(x)}, ${String(y)}) musí byť konečné čísla`);
+    if (!isRotation(heading)) throw new ShipError('invalid_input', `${label}: kurz musí byť 0, 90, 180 alebo 270, dostal ${String(heading)}`);
+    if (!SHIP_TRANSITIONS.has(state)) throw new ShipError('invalid_input', `${label}: neznámy stav '${String(state)}'`);
+    if (!def.cargoCategories.includes(cargoType.category)) {
+      throw new ShipError('invalid_input', `${label}: náklad '${cargoType.id}' (kategória '${cargoType.category}') trieda neprevezie`);
+    }
+    const berthIds = init.berthIds ?? NO_BERTHS;
+    if (new Set(berthIds).size !== berthIds.length) throw new ShipError('invalid_input', `${label}: duplicitné kotvisko v berthIds [${berthIds.join(', ')}]`);
+    const anchorageIndex = init.anchorageIndex ?? null;
+    if (anchorageIndex !== null && !isNonNegativeInteger(anchorageIndex)) {
+      throw new ShipError('invalid_input', `${label}: anchorageIndex musí byť null alebo celé číslo ≥ 0`);
+    }
+    const waypointIndex = init.waypointIndex ?? 0;
+    if (!isNonNegativeInteger(waypointIndex)) throw new ShipError('invalid_input', `${label}: waypointIndex musí byť celé číslo ≥ 0`);
+
+    this.id = id;
+    this.def = def;
+    this.classId = def.id;
+    this.cargoTypeId = cargoType.id;
+    this.cargoCategory = cargoType.category;
+    this.current = state;
+    this.x = x;
+    this.y = y;
+    this.heading = heading;
+    this.berthIds = berthIds.length === 0 ? NO_BERTHS : Object.freeze([...berthIds]);
+    this.anchorageIndex = anchorageIndex;
+    this.waypointIndex = waypointIndex;
+  }
+
+  /** Aktuálny stav FSM. */
+  get state(): ShipState {
+    return this.current;
+  }
+
+  /** Popis do chybových správ: `feeder #3`. */
+  get label(): string {
+    return `${this.classId} #${String(this.id)}`;
+  }
+
+  /**
+   * Prechod stavu podľa `SHIP_TRANSITIONS` (jediné miesto, kde sa stav mení); začne novú trasu (`waypointIndex = 0`).
+   * Nepovolený prechod → `ShipError('invalid_transition')`, loď sa nezmení.
+   */
+  transition(to: ShipState): void {
+    if (!isShipTransitionAllowed(this.current, to)) {
+      const allowed = SHIP_TRANSITIONS.get(this.current) ?? [];
+      throw new ShipError('invalid_transition', `${this.label}: prechod ${this.current} → ${to} nie je povolený (povolené: ${allowed.join(', ') || '–'})`);
+    }
+    this.current = to;
+    this.waypointIndex = 0;
+  }
+
+  /** Čistý JSON stav pre save (nová kópia pri každom volaní). */
+  toState(): SerializedShip {
+    return {
+      id: this.id,
+      classId: this.classId,
+      cargoTypeId: this.cargoTypeId,
+      state: this.current,
+      x: this.x,
+      y: this.y,
+      heading: this.heading,
+      berthIds: [...this.berthIds],
+      anchorageIndex: this.anchorageIndex,
+      waypointIndex: this.waypointIndex,
+    };
+  }
 }

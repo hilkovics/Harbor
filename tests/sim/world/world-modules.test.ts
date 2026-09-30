@@ -2,6 +2,7 @@
 // bunkách berthu (craneIds, rozhodnutie 3), dotazy moduleAt/berthOfCell/craneAt, štrukturálne chyby sú atomické,
 // world.ships je prázdna mapa, world.stats a assertInvariants.
 import { describe, expect, it } from 'vitest';
+import { SpawnShipDebugCommand } from '@sim/commands';
 import { BerthModule, CraneModule, ModuleError, moduleRegistry, type ModuleErrorCode } from '@sim/modules';
 import { StatResolver } from '@sim/tech';
 import { World, WorldInvariantError } from '@sim/world';
@@ -51,11 +52,13 @@ describe('World — moduly, nový svet', () => {
   });
 });
 
-describe('World.ships — zatiaľ bez lodí (T02-05)', () => {
-  it('serialize() so živou loďou vyhodí Error namiesto tichej straty lode (záznam lode v2 doplní T02-05)', () => {
+describe('World.ships (T02-05)', () => {
+  it('serialize() uloží živú loď (Ship.toState) — loď sa zo save ticho nestratí', () => {
     const world = newWorld();
-    (world.ships as unknown as Map<number, unknown>).set(1, {});
-    expect(() => world.serialize()).toThrow('World.serialize: WorldState v2 zatiaľ neukladá lode a svet ich má 1');
+    world.enqueue(new SpawnShipDebugCommand({ shipClassId: 'feeder', cargoTypeId: 'container_teu', units: 1 }));
+    world.applyPending();
+    const [ship] = world.ships.values();
+    expect(world.serialize().ships).toEqual([ship.toState()]);
   });
 });
 

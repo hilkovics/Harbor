@@ -7,6 +7,9 @@
  * z footprintov modulov, obsadenie apronov a držané jednotky žeriavov z ledgera, rezervácie slotov apronu
  * z `reservedSlot` žeriavov a skupiny kotvísk prepočtom. Staršie verzie prevedie `migrateWorldState` (migrate.ts).
  *
+ * Lode (ADR-016) sa ukladajú s polohou, stavom FSM, kotviskami, anchorage a indexom bodu trasy; trasa sa odvodí zo stavu
+ * a mapy, `BerthModule.dockedShipId` z `berthIds`.
+ *
  * `parseWorldState` overí tvar a hodnoty (fail-fast, `WorldStateError` s JSON pointerom); vzťahy medzi modulmi,
  * nákladom a loďami overí pri obnove `restoreEntities` (world-restore.ts).
  */
@@ -23,6 +26,8 @@ import type { ParcelOwnership } from '../grid/parcel';
 import { isRotation, type Rotation } from '../grid/rotation';
 import { isRoadBuildable } from '../grid/terrain';
 import type { ModuleRuntimeState } from '../modules/runtime-state';
+import { SERIALIZED_SHIP_KEYS, type SerializedShip } from '../ships/ship';
+import { SHIP_STATES, SHIP_STATE_TRAITS, type ShipState } from '../ships/ship-fsm';
 import { WORLD_STATE_V1_KEYS, WORLD_STATE_VERSION } from './migrate';
 import { WorldStateError, checkArray, checkInteger, checkKeys, describeValue, isPlainObject, pointerSegment } from './state-check';
 
@@ -52,13 +57,7 @@ export interface SerializedModule {
   readonly runtime: ModuleRuntimeState;
 }
 
-/**
- * Loď v save — tvar doplní T02-05 (stav FSM, poloha, cesta, berthy, anchorage). Kým lode neexistujú, `ships` je
- * vždy prázdne pole a neprázdne pole je chyba.
- */
-export interface SerializedShip {
-  readonly id: number;
-}
+export type { SerializedShip } from '../ships/ship';
 
 /** `WorldState` v1 (F1, ADR-013) — vstup migrácie. */
 export interface WorldStateV1 {
@@ -81,6 +80,7 @@ export interface WorldState extends Omit<WorldStateV1, 'version'> {
   readonly modules: readonly SerializedModule[];
   /** Stav `CargoLedger` (`getState()`): len živé jednotky, exportované sú v `exportedCount` (ADR-014). */
   readonly cargo: CargoLedgerState;
+  /** Lode vzostupne podľa id (`Ship.toState()`, ADR-016); `dockedShipId` kotvísk a trasy sa odvodia pri obnove. */
   readonly ships: readonly SerializedShip[];
 }
 
@@ -94,6 +94,20 @@ export interface ParsedModuleEntry {
   readonly purchaseCostCents: number;
   /** Surový `runtime` — overí ho `Module.restoreRuntimeState`. */
   readonly runtime: unknown;
+}
+
+/** Loď zo save s overeným tvarom (známa trieda aj náklad, stav bez `despawned`); vzťahy k svetu overí `restoreEntities`. */
+export interface ParsedShipEntry {
+  readonly id: EntityId;
+  readonly classId: string;
+  readonly cargoTypeId: string;
+  readonly state: ShipState;
+  readonly x: number;
+  readonly y: number;
+  readonly heading: Rotation;
+  readonly berthIds: readonly EntityId[];
+  readonly anchorageIndex: number | null;
+  readonly waypointIndex: number;
 }
 
 /** Overený stav pripravený na zostavenie `World` (jadrové objekty už vytvorené z uložených stavov). */
@@ -110,6 +124,8 @@ export interface ParsedWorldState {
   /** Moduly v poradí save (= poradie umiestnenia). */
   readonly modules: readonly ParsedModuleEntry[];
   readonly cargo: CargoLedgerState;
+  /** Lode vzostupne podľa id (= poradie spawnu). */
+  readonly ships: readonly ParsedShipEntry[];
 }
 
 /** Kľúče v2 v poradí `serialize()`; iné kľúče sú chyba (stav nemá voliteľné polia). */
@@ -242,19 +258,85 @@ function parseCargo(value: unknown, defs: DefRegistry, nextId: number): CargoLed
   }
 }
 
-/** Lode zatiaľ neexistujú (T02-05) — `ships` musí byť prázdne pole. */
-function parseShips(value: unknown): void {
-  if (checkArray(value, '/ships').length > 0) {
-    throw new WorldStateError('/ships/0', 'WorldState v2 zatiaľ lode neukladá (záznam lode nie je podporovaný)');
+/** Konečné číslo v rozsahu `0 … max` (poloha lode v bunkách). */
+function checkCoordinate(value: unknown, max: number, path: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > max) {
+    throw new WorldStateError(path, `musí byť konečné číslo 0 … ${String(max)}, dostal ${describeValue(value)}`);
   }
+  return value;
 }
 
-/** Id entít zdieľajú jeden alokátor — jednotka nákladu nesmie mať id modulu. */
-function checkIdCollisions(modules: readonly ParsedModuleEntry[], cargo: CargoLedgerState): void {
-  const moduleIds = new Set<number>(modules.map((entry) => entry.id));
+/** Zoznam jedinečných id (celé ≥ 1). */
+function checkIdList(value: unknown, path: string): EntityId[] {
+  const seen = new Set<number>();
+  return checkArray(value, path).map((raw: unknown, i) => {
+    const id = checkInteger(raw, 1, `${path}${pointerSegment(i)}`);
+    if (seen.has(id)) throw new WorldStateError(`${path}${pointerSegment(i)}`, `duplicitné id ${String(id)}`);
+    seen.add(id);
+    return id as EntityId;
+  });
+}
+
+/**
+ * Tvar lodí: presne kľúče `SerializedShip`, id celé 1…`nextId − 1` a ostro rastúce (poradie spawnu = FIFO alokácie),
+ * známa trieda a náklad s kategóriou triedy, stav z `SHIP_STATES` okrem `despawned`, poloha v rozsahu mapy, platný
+ * kurz, jedinečné `berthIds` neprázdne práve v stavoch s `holdsBerths`, `anchorageIndex` len v stave s `waitsForBerth`
+ * a v rozsahu `map.anchorage`, `waypointIndex` celé ≥ 0. Kotviská a dĺžku trasy overí obnova (`restoreEntities`).
+ */
+function parseShips(value: unknown, defs: DefRegistry, map: LoadedMap, nextId: number): ParsedShipEntry[] {
+  let previousId = 0;
+  return checkArray(value, '/ships').map((raw: unknown, i): ParsedShipEntry => {
+    const path = `/ships${pointerSegment(i)}`;
+    const entry = checkKeys(raw, SERIALIZED_SHIP_KEYS, path);
+    const id = checkInteger(entry['id'], 1, `${path}/id`);
+    if (id >= nextId) throw new WorldStateError(`${path}/id`, `id ${String(id)} musí byť menšie ako ids.nextId ${String(nextId)}`);
+    if (id <= previousId) throw new WorldStateError(`${path}/id`, `lode musia byť vzostupne podľa id (poradie spawnu), ${String(id)} ≤ ${String(previousId)}`);
+    previousId = id;
+    const { classId, cargoTypeId, state, heading } = entry;
+    if (typeof classId !== 'string' || !defs.ships.has(classId)) throw new WorldStateError(`${path}/classId`, `neznáma trieda lode ${describeValue(classId)}`);
+    if (typeof cargoTypeId !== 'string' || !defs.cargoTypes.has(cargoTypeId)) {
+      throw new WorldStateError(`${path}/cargoTypeId`, `neznámy typ nákladu ${describeValue(cargoTypeId)}`);
+    }
+    const category = defs.cargoTypes.get(cargoTypeId).category;
+    if (!defs.ships.get(classId).cargoCategories.includes(category)) {
+      throw new WorldStateError(`${path}/cargoTypeId`, `trieda '${classId}' neprevezie náklad kategórie '${category}'`);
+    }
+    const shipState = SHIP_STATES.find((candidate) => candidate === state);
+    if (shipState === undefined || shipState === 'despawned') {
+      throw new WorldStateError(`${path}/state`, `stav musí byť jeden z: ${SHIP_STATES.filter((s) => s !== 'despawned').join(', ')}, dostal ${describeValue(state)}`);
+    }
+    const x = checkCoordinate(entry['x'], map.width, `${path}/x`);
+    const y = checkCoordinate(entry['y'], map.height, `${path}/y`);
+    if (!isRotation(heading)) throw new WorldStateError(`${path}/heading`, `kurz musí byť 0, 90, 180 alebo 270, dostal ${describeValue(heading)}`);
+    const traits = SHIP_STATE_TRAITS[shipState];
+    const berthIds = checkIdList(entry['berthIds'], `${path}/berthIds`);
+    if (traits.holdsBerths !== berthIds.length > 0) {
+      throw new WorldStateError(`${path}/berthIds`, traits.holdsBerths ? `stav '${shipState}' vyžaduje kotviská` : `stav '${shipState}' nesmie držať kotviská`);
+    }
+    const rawAnchorage = entry['anchorageIndex'];
+    const anchorageIndex = rawAnchorage === null ? null : checkInteger(rawAnchorage, 0, `${path}/anchorageIndex`);
+    if (anchorageIndex !== null && !traits.waitsForBerth) {
+      throw new WorldStateError(`${path}/anchorageIndex`, `stav '${shipState}' nesmie mať anchorage`);
+    }
+    if (anchorageIndex !== null && anchorageIndex >= map.anchorage.length) {
+      throw new WorldStateError(`${path}/anchorageIndex`, `mapa '${map.id}' má ${String(map.anchorage.length)} buniek anchorage, dostal index ${String(anchorageIndex)}`);
+    }
+    const waypointIndex = checkInteger(entry['waypointIndex'], 0, `${path}/waypointIndex`);
+    return { id: id as EntityId, classId, cargoTypeId, state: shipState, x, y, heading, berthIds, anchorageIndex, waypointIndex };
+  });
+}
+
+/** Id entít zdieľajú jeden alokátor — modul, loď a jednotka nákladu nesmú mať rovnaké id. */
+function checkIdCollisions(modules: readonly ParsedModuleEntry[], ships: readonly ParsedShipEntry[], cargo: CargoLedgerState): void {
+  const owners = new Map<number, string>(modules.map((entry) => [entry.id, 'modulu'] as const));
+  ships.forEach((ship, i) => {
+    if (owners.has(ship.id)) throw new WorldStateError(`/ships${pointerSegment(i)}/id`, `id ${String(ship.id)} už patrí modulu (id entít sú jedinečné)`);
+    owners.set(ship.id, 'lodi');
+  });
   cargo.units.forEach((unit, i) => {
-    if (moduleIds.has(unit.id)) {
-      throw new WorldStateError(`/cargo/units${pointerSegment(i)}/id`, `id ${String(unit.id)} už patrí modulu (id entít sú jedinečné)`);
+    const owner = owners.get(unit.id);
+    if (owner !== undefined) {
+      throw new WorldStateError(`/cargo/units${pointerSegment(i)}/id`, `id ${String(unit.id)} už patrí ${owner} (id entít sú jedinečné)`);
     }
   });
 }
@@ -265,7 +347,8 @@ function checkIdCollisions(modules: readonly ParsedModuleEntry[], cargo: CargoLe
  * `seed` uint32, `rng` (4× uint32, nie nulový), `clock` (tick ≥ 0, rýchlosť v `time.speeds`), `ids`, `cashCents`
  * (bezpečné celé číslo), `roads` (index v mape, vrstva, bez duplicít, terén unesie cestu), `traffic` (index v mape,
  * bez duplicít, hodnota > 0), `parcels` (presne parcely mapy, platné vlastníctvo, `leased` len pri `leasable`),
- * `modules` (tvar), `cargo` (`parseCargoLedgerState`), `ships` (prázdne), id modulov a nákladu sa neprekrývajú.
+ * `modules` (tvar), `cargo` (`parseCargoLedgerState`), `ships` (tvar, `parseShips`), id modulov, lodí a nákladu sa
+ * neprekrývajú.
  * Vstup sa nemení a výsledok s ním nezdieľa meniteľné objekty.
  *
  * `grid` je mriežka počiatočného stavu tej istej mapy (`map.createGrid()`) — z nej sa overuje terén pod cestami;
@@ -301,7 +384,7 @@ export function parseWorldState(raw: unknown, defs: DefRegistry, map: LoadedMap,
   const ownership = parseParcels(state.parcels, map);
   const modules = parseModules(state.modules, defs, nextId);
   const cargo = parseCargo(state.cargo, defs, nextId);
-  parseShips(state.ships);
-  checkIdCollisions(modules, cargo);
-  return { seed, clock, rng, ids, cashCents, roads, traffic, ownership, modules, cargo };
+  const ships = parseShips(state.ships, defs, map, nextId);
+  checkIdCollisions(modules, ships, cargo);
+  return { seed, clock, rng, ids, cashCents, roads, traffic, ownership, modules, cargo, ships };
 }

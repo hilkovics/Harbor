@@ -1,5 +1,5 @@
 // Príkazy (Command pattern, ARCHITECTURE §12.2): rozhranie, výsledok validácie, register typ → factory
-// a vstavané príkazy (F1: PlaceRoad, RemoveRoad, SetGameSpeed; F2: PlaceModule, RemoveModule). Predvolený register
+// a vstavané príkazy (F1: PlaceRoad, RemoveRoad, SetGameSpeed; F2: PlaceModule, RemoveModule, SpawnShipDebug). Predvolený register
 // ich pozná od načítania.
 export type { Command, SerializedCommand } from './command';
 export { VALIDATION_REASONS, orderReasons } from './validation';
@@ -17,4 +17,6 @@ export { SetGameSpeedCommand } from './set-game-speed';
 export { PLACEMENT_REASON, PlaceModuleCommand } from './place-module';
 export type { PlaceModuleInput } from './place-module';
 export { RemoveModuleCommand } from './remove-module';
+export { SpawnShipDebugCommand } from './spawn-ship-debug';
+export type { SpawnShipDebugInput } from './spawn-ship-debug';
 export { BASIS_POINTS_PER_UNIT, rateToBasisPoints, refundCents } from './refund';

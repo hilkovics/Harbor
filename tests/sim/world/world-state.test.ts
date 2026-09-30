@@ -301,7 +301,7 @@ describe('World.deserialize', () => {
     ['cargo bez units', set('cargo', { createdCount: 0, exportedCount: 0 }), '/cargo/units'],
     ['cargo porušená konzervácia', set('cargo', { createdCount: 1, exportedCount: 0, units: [] }), '/cargo/createdCount'],
     ['ships nie je pole', set('ships', {}), '/ships'],
-    ['ships neprázdne (lode ukladá až T02-05)', set('ships', [{ id: 1 }]), '/ships/0'],
+    ['loď bez povinných kľúčov (tvar SerializedShip, T02-05)', set('ships', [{ id: 1 }]), '/ships/0/classId'],
   ];
 
   it.each(INVALID)('%s → WorldStateError na %s', (_name, mutate, path) => {

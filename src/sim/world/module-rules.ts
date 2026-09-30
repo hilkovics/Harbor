@@ -18,8 +18,9 @@
  * - `parcel_not_owned` — pri `requiresParcelOwnership` bunka nie je na parcele `owned`/`leased` (ADR-008);
  * - `no_water_side` — kotvisko: bunka hrany pri vode (`waterSide` po rotácii) nesusedí s vodou;
  * - `water_blocked` — kotvisko: pás `frontWaterCells` pred hranou (pre bunky hrany, ktoré s vodou susedia) nie je celý
- *   v mape a vo vode, zasahuje do footprintu modulu alebo do pásu kotviska s inou `waterSide` (pásy kotvísk
- *   s rovnakou `waterSide` ležia vedľa seba a nekonfliktujú);
+ *   v mape a vo vode, zasahuje do footprintu modulu, do pásu kotviska s inou `waterSide` (pásy kotvísk s rovnakou
+ *   `waterSide` ležia vedľa seba a nekonfliktujú) alebo do obdĺžnika lode v stave s `blocksBerthWater`
+ *   (`berthing`/`docked`/`undocking`, ADR-016);
  * - `no_berth` — pripájaný modul (`mustAttachTo`, žeriav): bunky v mape neležia všetky na jednom module
  *   povoleného druhu (berth);
  * - `rotation_mismatch`, `max_cranes`, `crane_overlap` — pripájaný modul na jednom berthe: iná rotácia než berth,
@@ -41,6 +42,9 @@ import { CRANE_STATE_TRAITS, CraneModule } from '../modules/crane-module';
 import type { Module } from '../modules/module';
 import type { ModuleErrorCode } from '../modules/module-error';
 import { SIDE_STEPS, edgeCells, footprintOf, waterSideOf } from '../modules/module-geometry';
+import type { Ship } from '../ships/ship';
+import { SHIP_STATE_TRAITS } from '../ships/ship-fsm';
+import { shipCells } from '../ships/ship-route';
 import { MODULE_CARGO_HOLDER_KINDS } from './cargo-holders';
 
 /** Porušenie pravidla: kód pravidla + popis prvého výskytu (do `ModuleError`, `MapError` a ladiacich správ). */
@@ -93,6 +97,7 @@ export interface PlacementWorld {
   readonly grid: Grid;
   readonly parcels: ReadonlyMap<string, Parcel>;
   readonly modules: ReadonlyMap<EntityId, Module>;
+  readonly ships: ReadonlyMap<EntityId, Ship>;
 }
 
 /** Miesto modulu: ľavý horný roh footprintu po rotácii a rotácia. */
@@ -176,6 +181,18 @@ function foreignBands(world: PlacementWorld, side: Side): ReadonlyMap<number, Be
   return owners;
 }
 
+/** Bunky obdĺžnikov lodí, ktoré blokujú vodu pred kotviskom (`SHIP_STATE_TRAITS.blocksBerthWater`): index bunky → loď. */
+function shipWater(world: PlacementWorld): ReadonlyMap<number, Ship> {
+  const owners = new Map<number, Ship>();
+  for (const ship of world.ships.values()) {
+    if (!SHIP_STATE_TRAITS[ship.state].blocksBerthWater) continue;
+    for (const { x, y } of shipCells(ship)) {
+      if (world.grid.inBounds(x, y) && !owners.has(world.grid.index(x, y))) owners.set(world.grid.index(x, y), ship);
+    }
+  }
+  return owners;
+}
+
 /** Bunky hrany pri vode, ktoré sú v mape (hranu mimo mapy hlási `out_of_bounds`). */
 function waterEdge(ctx: PlacementContext, side: Side): readonly CellCoord[] {
   return edgeCells({ x: ctx.spec.x, y: ctx.spec.y }, ctx.size, side).filter(({ x, y }) => ctx.world.grid.inBounds(x, y));
@@ -197,6 +214,7 @@ const checkWaterBand: PlacementCheck = (ctx) => {
   const { grid } = ctx.world;
   const depth = berthParams(ctx.def).frontWaterCells;
   let owners: ReadonlyMap<number, BerthModule> | undefined;
+  let ships: ReadonlyMap<number, Ship> | undefined;
   for (const edge of waterEdge(ctx, side)) {
     // Hrana bez vody je `no_water_side`; jej pás sa nehodnotí, aby sa jedna chyba nehlásila dvakrát.
     if (!isWaterCell(grid, stepFrom(edge, side, 1))) continue;
@@ -209,6 +227,9 @@ const checkWaterBand: PlacementCheck = (ctx) => {
       owners ??= foreignBands(ctx.world, side);
       const other = owners.get(grid.index(cell.x, cell.y));
       if (other !== undefined) return `pás vody pred kotviskom: bunka ${cellLabel(cell)} leží v páse ${other.label} (strana '${other.waterSide}')`;
+      ships ??= shipWater(ctx.world);
+      const ship = ships.get(grid.index(cell.x, cell.y));
+      if (ship !== undefined) return `pás vody pred kotviskom: bunku ${cellLabel(cell)} zaberá loď ${ship.label} (${ship.state})`;
     }
   }
   return undefined;

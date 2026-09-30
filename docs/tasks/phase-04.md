@@ -53,7 +53,7 @@
 - [x] T04-09 · Tooling: `simrun` metriky kamiónov a exportu
 - [x] T04-10 · E2E: celý reťazec loď → dvor → rampa → kamión → export, screenshoty
 - [x] T04-11 · Review `src/sim/**`
-- [ ] T04-12 · Opravy z review + ARCHITECTURE zosúladenie
+- [x] T04-12 · Opravy z review + ARCHITECTURE zosúladenie
 - [ ] T04-13 · Plná pipeline + triáž
 - [ ] T04-14 · Uzavretie fázy (PROGRESS, BACKLOG) + PR
 

@@ -1,5 +1,5 @@
 /**
- * Render view-modely (docs/tasks/phase-02.md, „Render view-modely“): jediná zmluva medzi simom a rendererom vo F2.
+ * Render view-modely (docs/tasks/phase-02.md a phase-03.md, „Render view-modely“): jediná zmluva medzi simom a rendererom.
  *
  * Renderer nikdy nečíta `World` — dostane tieto ploché, readonly-podobné DTO (naplní ich SimBridge, T02-09) a vytvára,
  * aktualizuje a ničí view podľa `id`. Všetky polohy sú v bunkách gridu; px sa počítajú až v rendereri (`--cell`).
@@ -24,6 +24,16 @@ export interface ModuleVM {
   h: number;
   /** Len berth: kapacita apronu a obsadené sloty (`slot` = index do `sprites.<defId>.apronSlots` v manifeste). */
   apron?: { capacity: number; units: { slot: number; unitId: number; typeId: string }[] };
+  /**
+   * Len sklad (kind `storage`): kapacita, uložené a rezervované jednotky. Sprite skladu sa volí podľa `stored / capacity`
+   * (`fillState`); `reserved` renderer nekreslí (je to údaj pre UI).
+   */
+  storage?: { capacity: number; stored: number; reserved: number };
+  /**
+   * Len moduly s konektormi: má aspoň jeden cestný konektor pripojený k ceste? `false` → odznak `overlay.warning_badge`;
+   * `undefined` (F2 VM, modul bez konektorov) → bez odznaku.
+   */
+  connected?: boolean;
 }
 
 export interface CraneVM {
@@ -58,10 +68,33 @@ export interface ShipVM {
   capacityUnits: number;
 }
 
+/** Vozidlo na cestách (F3: straddle carrier). Poloha je stred vozidla v bunkách (stred bunky = `x + 0.5`). */
+export interface VehicleVM {
+  id: number;
+  /** Id definície vozidla = kľúč `entities.<defId>` v manifeste (`straddle_carrier`). */
+  defId: string;
+  /** Stred vozidla v bunkách; renderer interpoluje `lerp(prev, curr, alpha)`. */
+  x: number;
+  y: number;
+  prevX: number;
+  prevY: number;
+  /** 0 = predok na sever, v smere hodinových ručičiek (kardinálny podľa smeru posledného úseku cesty). */
+  heading: 0 | 90 | 180 | 270;
+  /** Vezie jednotku nákladu → sprite `states.loaded`. */
+  loaded: boolean;
+  /** Stav FSM vozidla (`idle`, `to_pickup`, …); renderer ho zatiaľ nekreslí, nesie ho pre ladenie a budúce odznaky. */
+  state: string;
+}
+
 export interface EntitiesVM {
   modules: readonly ModuleVM[];
   cranes: readonly CraneVM[];
   ships: readonly ShipVM[];
+  /**
+   * Vozidlá (F3). Voliteľné kvôli spätnej kompatibilite: VM zložené vo F2 (`src/app`) pole nemajú a renderer ho berie
+   * ako prázdne. `SimBridge` (T03-10) ho vyplní vždy.
+   */
+  vehicles?: readonly VehicleVM[];
 }
 
 export interface ModuleGhostVM {

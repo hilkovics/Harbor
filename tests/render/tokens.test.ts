@@ -99,7 +99,7 @@ describe('loadRenderPalette', () => {
 });
 
 describe('loadEntityPalette', () => {
-  it('tokeny fallbacku modulov, žeriavov, lodí a nákladu existujú v design/tokens.css', () => {
+  it('tokeny fallbacku modulov, žeriavov, lodí, vozidiel a nákladu existujú v design/tokens.css', () => {
     const palette = loadEntityPalette(tokenResolverFromCss(TOKENS_CSS));
     expect(palette.module.base.color).toBe(0x9da3ac);
     expect(palette.module.outline.color).toBe(0x5c626b);
@@ -109,8 +109,11 @@ describe('loadEntityPalette', () => {
     expect(palette.ship.deck.color).toBe(0x8e9aa7);
     expect(palette.cargo.base.color).toBe(0xf28c28);
     expect(palette.cargo.dark.color).toBe(0xc7680c);
+    expect(palette.vehicle.body.color).toBe(0xf4d03f);
+    expect(palette.vehicle.dark.color).toBe(0x2b2b2b);
     expect(palette.danger.color).toBe(0xe5484d);
     expect(palette.connector.color).toBe(0x3aa0ff);
+    expect(palette.disconnected.color).toBe(0xf2b233);
   });
 
   it('chýbajúci token → chyba s jeho menom', () => {

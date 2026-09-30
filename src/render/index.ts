@@ -15,9 +15,11 @@ export { PortalLayer, portalRotation } from './portal-layer';
 export type { PortalKind, PortalSet } from './portal-layer';
 export { BuildLayer, CONNECTOR_MARKER_ROTATION, loadGhostPalette, moduleGhostCells } from './build-layer';
 export type { BuildLayerCreateOptions, BuildLayerOptions, GhostCell, GhostPalette, GhostView } from './build-layer';
-export type { CraneVM, EntitiesVM, ModuleGhostVM, ModuleVM, ShipVM, ViewRotation, ViewSide } from './view-models';
+export type { CraneVM, EntitiesVM, ModuleGhostVM, ModuleVM, ShipVM, VehicleVM, ViewRotation, ViewSide } from './view-models';
 export { ModuleLayer } from './module-layer';
-export { ModuleView, sameModuleShape } from './module-view';
+export { ModuleView, moduleBodyFile, moduleFillState, sameModuleShape } from './module-view';
+export { FILL_25_BELOW, FILL_50_BELOW, FILL_STATES, fillState, fillStateKey } from './storage-fill';
+export type { FillState } from './storage-fill';
 export { EntityLayer } from './entity-layer';
 export {
   SHIP_VARIANT_CANDIDATES,
@@ -30,6 +32,8 @@ export {
   shipVariantKey,
 } from './ship-view';
 export type { ShipLoad, ShipPose, ShipViewDeps } from './ship-view';
+export { VehicleView, sameVehicleShape, vehicleLoad, vehiclePose, vehicleSpriteFile } from './vehicle-view';
+export type { VehicleLoad, VehiclePose, VehicleViewDeps } from './vehicle-view';
 export { CraneLayer } from './crane-layer';
 export {
   BADGE_MAX_SCALE,
@@ -50,14 +54,25 @@ export { ViewSync } from './view-sync';
 export type { SyncedView, ViewSyncHooks } from './view-sync';
 export {
   LOADED_SHIP_VARIANTS,
+  LOADED_STATE_MODULES,
+  LOADED_VEHICLES,
   MANIFEST_CELL_PX,
+  WARNING_BADGE_FILE,
+  WARNING_BADGE_SIZE,
   cargoSpriteEntry,
   entitySpriteFiles,
   manifestScale,
   moduleSprite,
   shipSprite,
+  vehicleSprite,
 } from './entity-assets';
-export type { ManifestConnector, ManifestPart, ModuleSpriteEntry, ShipSpriteEntry } from './entity-assets';
+export type {
+  ManifestConnector,
+  ManifestPart,
+  ModuleSpriteEntry,
+  ShipSpriteEntry,
+  VehicleSpriteEntry,
+} from './entity-assets';
 export { GHOST_HATCH_PATTERN, overlayAssetUrl } from './overlay-assets';
 export type { OverlayAssetId, PatternSize } from './overlay-assets';
 export {

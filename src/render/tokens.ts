@@ -149,16 +149,20 @@ export function loadRenderPalette(resolve: TokenResolver = documentTokenResolver
   };
 }
 
-/** Farby fallbacku entít sveta (moduly, žeriavy, lode, náklad) — používajú sa, len keď chýba sprite. */
+/** Farby fallbacku entít sveta (moduly, žeriavy, lode, vozidlá, náklad) — používajú sa, len keď chýba sprite. */
 export interface EntityPalette {
   readonly module: { readonly base: ColorValue; readonly outline: ColorValue };
   readonly crane: { readonly frame: ColorValue; readonly boom: ColorValue };
   readonly ship: { readonly hull: ColorValue; readonly deck: ColorValue };
+  /** Vozidlá na cestách (`--vehicle-body`, `--vehicle-dark`). */
+  readonly vehicle: { readonly body: ColorValue; readonly dark: ColorValue };
   readonly cargo: { readonly base: ColorValue; readonly dark: ColorValue };
   /** Odznak zablokovania a stavový signál chyby (`--ui-danger`). */
   readonly danger: ColorValue;
   /** Značka konektora v build móde (`--module-connector`). */
   readonly connector: ColorValue;
+  /** Odznak „nepripojené“ (`--module-disconnected`). */
+  readonly disconnected: ColorValue;
 }
 
 /**
@@ -171,8 +175,10 @@ export function loadEntityPalette(resolve: TokenResolver = documentTokenResolver
     module: { base: color('--module-base'), outline: color('--module-outline') },
     crane: { frame: color('--crane-frame'), boom: color('--crane-boom') },
     ship: { hull: color('--ship-hull'), deck: color('--ship-deck') },
+    vehicle: { body: color('--vehicle-body'), dark: color('--vehicle-dark') },
     cargo: { base: color('--cargo-container'), dark: color('--cargo-container-dark') },
     danger: color('--ui-danger'),
     connector: color('--module-connector'),
+    disconnected: color('--module-disconnected'),
   };
 }

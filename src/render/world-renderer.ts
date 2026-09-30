@@ -4,8 +4,9 @@
  * Vstup je `LoadedMap` (a živá mriežka sveta), nie `World` — renderer sim iba číta. Zmeny sveta sa prenášajú
  * verejnými metódami (`updateRoads` z udalosti `RoadChanged`); napojenie na SimBridge robí bootstrap (T01-11).
  *
- * Vrstvy (zdola, ARCHITECTURE §15.1): terén → cesty → obrysy parciel → portály → moduly → lode → žeriavy → ghost
- * stavby (`BuildLayer`). Entity (moduly, lode, žeriavy) sa synchronizujú z view-modelov cez `syncEntities(vm, alpha)`,
+ * Vrstvy (zdola, ARCHITECTURE §15.1): terén → cesty → obrysy parciel → portály → moduly → lode a vozidlá →
+ * žeriavy → ghost stavby (`BuildLayer`). Entity (moduly, lode, vozidlá, žeriavy) sa synchronizujú z view-modelov cez
+ * `syncEntities(vm, alpha)`,
  * ghost modulu cez `setModuleGhost`. Sprity sa načítajú z `assets/manifest.json` (`SpriteAtlas`); bez nich
  * (`textures: null`) vrstvy kreslia dočasné `Graphics` z tokenov.
  * Kamera je čistá matematika (`camera.ts`); tu sa jej `transform()` prenáša na `world`, keď sa pohľad zmení.
@@ -30,7 +31,7 @@ import {
   type RenderPalette,
   type TokenResolver,
 } from './tokens';
-import type { EntitiesVM, ModuleGhostVM } from './view-models';
+import type { EntitiesVM, ModuleGhostVM, VehicleVM } from './view-models';
 
 export interface WorldRendererOptions {
   /** Prvok, do ktorého sa vloží canvas; renderer sa prispôsobí jeho veľkosti. */
@@ -63,6 +64,9 @@ export function starterParcelRect(map: LoadedMap): Rect {
   return owned ? owned.rect : { x: 0, y: 0, w: map.width, h: map.height };
 }
 
+/** Prázdny zoznam vozidiel pre VM bez poľa `vehicles` (jedna zdieľaná inštancia, žiadna alokácia za frame). */
+const NO_VEHICLES: readonly VehicleVM[] = Object.freeze([]);
+
 export class WorldRenderer {
   readonly app: Application;
   readonly camera: Camera;
@@ -74,6 +78,7 @@ export class WorldRenderer {
   readonly parcels: ParcelLayer;
   readonly portals: PortalLayer;
   readonly modules: ModuleLayer;
+  /** Lode aj vozidlá (`EntityLayer`): `ships.shipCount`, `ships.vehicleCount`; alias `entities`. */
   readonly ships: EntityLayer;
   readonly cranes: CraneLayer;
   /** Ghost stavby: cesty (`setGhost`, `GhostView`) aj modulu (`setModuleGhost`); je navrchu nad žeriavmi. */
@@ -168,14 +173,20 @@ export class WorldRenderer {
     return new WorldRenderer(app, palette, options, atlas, textures, entityPalette, build);
   }
 
+  /** Vrstva pohyblivých entít (lode, vozidlá) — pomenovanie bez zavádzajúceho „ships“ pre vozidlá. */
+  get entities(): EntityLayer {
+    return this.ships;
+  }
+
   /**
-   * Zosúladí moduly, lode a žeriavy s view-modelmi (volá sa každý frame): views vznikajú / zanikajú podľa `id`,
-   * nezmenené entity sa nealokujú. `alpha` (0…1) je podiel medzi predchádzajúcim a aktuálnym tickom simu
-   * (interpolácia polohy lodí).
+   * Zosúladí moduly, lode, vozidlá a žeriavy s view-modelmi (volá sa každý frame): views vznikajú / zanikajú podľa
+   * `id`, nezmenené entity sa nealokujú. `alpha` (0…1) je podiel medzi predchádzajúcim a aktuálnym tickom simu
+   * (interpolácia polohy lodí a vozidiel). `vm.vehicles` chýbajúce vo VM z F2 sa berie ako prázdne.
    */
   syncEntities(vm: EntitiesVM, alpha: number): void {
     this.modules.sync(vm.modules);
     this.ships.sync(vm.ships, alpha);
+    this.ships.syncVehicles(vm.vehicles ?? NO_VEHICLES, alpha);
     this.cranes.sync(vm.cranes);
   }
 
@@ -203,6 +214,7 @@ export class WorldRenderer {
     this.world.scale.set(scale);
     this.parcels.setZoom(this.camera.zoom); // obrysy parciel držia hrúbku na obrazovke aj pri malom zoome
     this.cranes.setZoom(this.camera.zoom); // odznaky žeriavov ostávajú čitateľné pri malom zoome
+    this.modules.setZoom(this.camera.zoom); // odznaky „nepripojené“ tiež
     this.syncedVersion = this.camera.version;
   }
 

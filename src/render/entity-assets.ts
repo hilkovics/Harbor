@@ -1,11 +1,11 @@
 /**
- * Prístup k spritom modulov, lodí a nákladu podľa `assets/manifest.json` (DESIGN_BRIEF §5.3, §5.6, §5.7).
+ * Prístup k spritom modulov, lodí, vozidiel a nákladu podľa `assets/manifest.json` (DESIGN_BRIEF §5.3–§5.7).
  *
  * Názvy súborov, footprinty, apron sloty, konektory a pivoty častí žeriava sa nepíšu do kódu: berú sa z manifestu
- * (`sprites.<defId>`, `entities.ship_<classId>`, `cargo.<typeId>`). Id definície modulu / triedy lode / typu nákladu
- * je zhodné s kľúčom v manifeste (konvencia `conventions.fileNames`), takže nový modul = nový záznam v manifeste bez
- * zásahu do kódu. Súradnice `pivot`, `mountOnBase` a `travel` sú v px zdrojového SVG (`cellPx` z manifestu), preto
- * `manifestScale` prepočíta na aktuálnu veľkosť bunky (`--cell`).
+ * (`sprites.<defId>`, `entities.ship_<classId>`, `entities.<vehicleDefId>`, `cargo.<typeId>`). Id definície modulu /
+ * triedy lode / vozidla / typu nákladu je zhodné s kľúčom v manifeste (konvencia `conventions.fileNames`), takže nový
+ * modul = nový záznam v manifeste bez zásahu do kódu. Súradnice `pivot`, `mountOnBase` a `travel` sú v px zdrojového
+ * SVG (`cellPx` z manifestu), preto `manifestScale` prepočíta na aktuálnu veľkosť bunky (`--cell`).
  */
 import {
   cargo as cargoManifest,
@@ -52,6 +52,8 @@ export interface ModuleSpriteEntry {
   readonly footprint: CellSize;
   /** Jediný sprite modulu; moduly zložené z častí (`parts`) alebo so stavmi (`states`) ho nemajú. */
   readonly file?: string;
+  /** Sprity podľa stavu (sklady: `fill00…fill100`, viď `storage-fill.ts`): kľúč stavu → súbor. */
+  readonly states?: Readonly<Record<string, string>>;
   /** Apron sloty berthu: bunky footprintu pri rot 0 (poradie = index `slot`). */
   readonly apronSlots?: readonly ManifestPoint[];
   readonly parts?: Readonly<Record<string, ManifestPart>>;
@@ -62,6 +64,12 @@ export interface ModuleSpriteEntry {
 export interface ShipSpriteEntry {
   readonly footprint: CellSize;
   readonly variants: Readonly<Record<string, { readonly empty: string; readonly loaded: string }>>;
+}
+
+/** Sprity vozidla v `entities.<defId>`: footprint (`w` = šírka, `h` = dĺžka, predok hore) a stavy `empty` / `loaded`. */
+export interface VehicleSpriteEntry {
+  readonly footprint: CellSize;
+  readonly states: { readonly empty: string; readonly loaded: string };
 }
 
 /** Sprite nákladu v `cargo.<typeId>`: rozmer v px zdrojového SVG. */
@@ -75,6 +83,7 @@ export const MANIFEST_CELL_PX: number = manifestCellPx;
 
 const MODULE_SPRITES = spritesManifest as unknown as Readonly<Record<string, ModuleSpriteEntry>>;
 const SHIP_SPRITES = entitiesManifest as unknown as Readonly<Record<string, ShipSpriteEntry>>;
+const VEHICLE_SPRITES = entitiesManifest as unknown as Readonly<Record<string, Partial<VehicleSpriteEntry>>>;
 const CARGO_SPRITES = cargoManifest as unknown as Readonly<Record<string, CargoSpriteEntry>>;
 
 /** Prefix záznamov lodí v `entities` (`ship_feeder`, `ship_handy`, …). */
@@ -99,6 +108,16 @@ export function shipSprite(classId: string): ShipSpriteEntry | undefined {
   return lookup(SHIP_SPRITES, `${SHIP_ENTRY_PREFIX}${classId}`);
 }
 
+/**
+ * Záznam vozidla `defId` (`entities.<defId>` so stavmi `empty` / `loaded`), alebo `undefined`. Lode (`ship_*`) majú
+ * `variants`, nie `states`, takže nie sú vozidlá.
+ */
+export function vehicleSprite(defId: string): VehicleSpriteEntry | undefined {
+  const entry = lookup(VEHICLE_SPRITES, defId);
+  if (entry?.footprint === undefined || entry.states === undefined) return undefined;
+  return { footprint: entry.footprint, states: entry.states };
+}
+
 /** Záznam nákladu typu `typeId` (`cargo.<typeId>`), alebo `undefined`. */
 export function cargoSpriteEntry(typeId: string): CargoSpriteEntry | undefined {
   return lookup(CARGO_SPRITES, typeId);
@@ -110,6 +129,12 @@ export const BLOCKED_BADGE_SIZE: CellSize = overlayManifest.blocked_badge.size;
 /** Súbor `overlay.blocked_badge` (cesta relatívne k `assets/`). */
 export const BLOCKED_BADGE_FILE: string = overlayManifest.blocked_badge.file;
 
+/** Rozmer odznaku `overlay.warning_badge` („nepripojené“) v px zdroja. */
+export const WARNING_BADGE_SIZE: CellSize = overlayManifest.warning_badge.size;
+
+/** Súbor `overlay.warning_badge` (cesta relatívne k `assets/`). */
+export const WARNING_BADGE_FILE: string = overlayManifest.warning_badge.file;
+
 /**
  * Varianty lodí, ktorých sprity sa načítajú do atlasu. Načítanie všetkých (5 kategórií × 4 triedy × 2 stavy)
  * by rasterizovalo desiatky MB textúr, ktoré F2 nepoužije; vo F2 sa vozia iba kontajnery. S ďalšou kategóriou nákladu
@@ -118,15 +143,32 @@ export const BLOCKED_BADGE_FILE: string = overlayManifest.blocked_badge.file;
 export const LOADED_SHIP_VARIANTS: readonly string[] = ['container'];
 
 /**
- * Súbory (relatívne k `assets/`), ktoré atlas načíta pre entity sveta: sprity modulov (`file` a `parts.*.file`;
- * sklady so `states` prídu s F3), varianty lodí z `LOADED_SHIP_VARIANTS`, všetok náklad a odznak zablokovania.
- * Bez duplicít, v poradí manifestu.
+ * Moduly so stavmi (`states`), ktorých sprity sa načítajú do atlasu. Sklady majú po päť SVG (`fill00…fill100`);
+ * `container_yard_large` (8×8, 5 stavov) by pri rasterizácii 128 px na bunku zabral desiatky MB, ktoré F3 nepoužije,
+ * preto sa berie iba to, čo sa dá postaviť. S novým skladom (silo, nádrže…) pribudne jeho id sem.
+ */
+export const LOADED_STATE_MODULES: readonly string[] = ['container_yard_small'];
+
+/**
+ * Vozidlá, ktorých sprity (`states.empty`, `states.loaded`) sa načítajú do atlasu — vo F3 iba `straddle_carrier`.
+ * Ostatné vozidlá (AGV, vysokozdvižný vozík, kamióny, vlaky) pribudnú so svojimi fázami; do vtedy nakreslí `VehicleView`
+ * fallback z tokenov.
+ */
+export const LOADED_VEHICLES: readonly string[] = ['straddle_carrier'];
+
+/**
+ * Súbory (relatívne k `assets/`), ktoré atlas načíta pre entity sveta: sprity modulov (`file` a `parts.*.file`),
+ * stavy skladov z `LOADED_STATE_MODULES`, varianty lodí z `LOADED_SHIP_VARIANTS`, vozidlá z `LOADED_VEHICLES`,
+ * všetok náklad a odznaky (zablokovania, nepripojené). Bez duplicít, v poradí manifestu.
  */
 export function entitySpriteFiles(): string[] {
   const files = new Set<string>();
   for (const entry of Object.values(MODULE_SPRITES)) {
     if (entry.file !== undefined) files.add(entry.file);
     for (const part of Object.values(entry.parts ?? {})) files.add(part.file);
+  }
+  for (const defId of LOADED_STATE_MODULES) {
+    for (const file of Object.values(moduleSprite(defId)?.states ?? {})) files.add(file);
   }
   for (const [id, entry] of Object.entries(SHIP_SPRITES)) {
     if (!id.startsWith(SHIP_ENTRY_PREFIX)) continue;
@@ -138,7 +180,15 @@ export function entitySpriteFiles(): string[] {
       }
     }
   }
+  for (const defId of LOADED_VEHICLES) {
+    const entry = vehicleSprite(defId);
+    if (entry !== undefined) {
+      files.add(entry.states.empty);
+      files.add(entry.states.loaded);
+    }
+  }
   for (const entry of Object.values(CARGO_SPRITES)) files.add(entry.file);
   files.add(BLOCKED_BADGE_FILE);
+  files.add(WARNING_BADGE_FILE);
   return [...files];
 }

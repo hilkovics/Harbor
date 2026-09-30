@@ -5,7 +5,10 @@ import { CargoSprite, cargoSizePx } from '@render/cargo-sprite';
 import {
   BLOCKED_BADGE_FILE,
   LOADED_SHIP_VARIANTS,
+  LOADED_STATE_MODULES,
+  LOADED_VEHICLES,
   MANIFEST_CELL_PX,
+  WARNING_BADGE_FILE,
   cargoSpriteEntry,
   entitySpriteFiles,
   manifestScale,
@@ -54,7 +57,7 @@ describe('entitySpriteFiles (čo načíta atlas)', () => {
     for (const file of files) expect(assetUrl(file), file).toMatch(/\.svg/);
   });
 
-  it('obsahuje berth, časti žeriava, kontajner, odznak a container varianty feeder / handy', () => {
+  it('obsahuje berth, časti žeriava, kontajner, odznaky a container varianty feeder / handy', () => {
     for (const expected of [
       'modules/berth_standard.svg',
       'modules/crane_container_gantry_base.svg',
@@ -62,6 +65,7 @@ describe('entitySpriteFiles (čo načíta atlas)', () => {
       'modules/crane_container_gantry_trolley.svg',
       'cargo/container_teu.svg',
       BLOCKED_BADGE_FILE,
+      WARNING_BADGE_FILE,
       'entities/ship_feeder_container_empty.svg',
       'entities/ship_feeder_container_loaded.svg',
       'entities/ship_handy_container_empty.svg',
@@ -71,13 +75,37 @@ describe('entitySpriteFiles (čo načíta atlas)', () => {
     }
   });
 
-  it('bez duplicít; z lodí iba varianty z LOADED_SHIP_VARIANTS; bez stavov skladov (fill*)', () => {
+  it('bez duplicít; z lodí iba varianty z LOADED_SHIP_VARIANTS', () => {
     expect(new Set(files).size).toBe(files.length);
     expect(LOADED_SHIP_VARIANTS).toEqual(['container']);
     const shipFiles = files.filter((file) => file.startsWith('entities/ship_'));
     expect(shipFiles.length).toBeGreaterThan(0);
     for (const file of shipFiles) expect(file).toMatch(/_container_(empty|loaded)\.svg$/);
-    expect(files.some((file) => /_fill\d+\.svg$/.test(file))).toBe(false);
+  });
+
+  it('F3: všetkých päť stavov malého kontajnerového dvora, depo a oba sprity straddle carrieru', () => {
+    for (const expected of [
+      'modules/container_yard_small_fill00.svg',
+      'modules/container_yard_small_fill25.svg',
+      'modules/container_yard_small_fill50.svg',
+      'modules/container_yard_small_fill75.svg',
+      'modules/container_yard_small_fill100.svg',
+      'modules/vehicle_depot.svg',
+      'entities/straddle_carrier_empty.svg',
+      'entities/straddle_carrier_loaded.svg',
+    ]) {
+      expect(files, expected).toContain(expected);
+    }
+  });
+
+  it('stavy skladov a vozidlá sa berú len z povoleného zoznamu (veľké sklady a ostatné vozidlá sa nerasterizujú)', () => {
+    expect(LOADED_STATE_MODULES).toEqual(['container_yard_small']);
+    expect(LOADED_VEHICLES).toEqual(['straddle_carrier']);
+    const fillFiles = files.filter((file) => /_fill\d+\.svg$/.test(file));
+    expect(fillFiles).toHaveLength(5);
+    for (const file of fillFiles) expect(file).toMatch(/^modules\/container_yard_small_fill\d+\.svg$/);
+    const vehicleFiles = files.filter((file) => /^entities\/(?!ship_)/.test(file));
+    expect(vehicleFiles.sort()).toEqual(['entities/straddle_carrier_empty.svg', 'entities/straddle_carrier_loaded.svg']);
   });
 });
 

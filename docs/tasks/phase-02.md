@@ -22,8 +22,8 @@
 - [x] T02-02 · Sim: `CargoUnit`, `CargoLocation`, `CargoLedger` (tabuľka prechodov §7.1), `assertConservation`, typovaný test helper
 - [x] T02-03 · Sim: `Module`, `ModuleRegistry`, `BerthModule`, `CraneModule`, `BerthGroup`, `ApronBuffer`, `StatResolver`; `World.modules`; `WorldState` v2 + migrate; ADR-014
 - [x] T02-04 · Sim: `PlaceModule` / `RemoveModule` (§8 body 1–4, 7, 8), starter moduly, celočíselná refundácia; ADR-015
-- [ ] T02-05 · Sim: `Ship` + `ShipSystem` FSM + `BerthAllocator` + `CraneSystem` FSM + `CraneBlocked` + `SpawnShipDebug`; tick kroky 3, 4, 12; ADR-016
-- [ ] T02-06 · Testy (TDD): scenár `f2_unload`, konzervácia 5 000 tickov, BerthGroup/alokácia, blokovanie žeriavu
+- [x] T02-05 · Sim: `Ship` + `ShipSystem` FSM + `BerthAllocator` + `CraneSystem` FSM + `CraneBlocked` + `SpawnShipDebug`; tick kroky 3, 4, 12; ADR-016
+- [x] T02-06 · Testy (TDD): scenár `f2_unload`, konzervácia 5 000 tickov, BerthGroup/alokácia, blokovanie žeriavu
 - [x] T02-07 · Render: `ModuleLayer`/`ModuleView`, `CraneView`, `ShipView`, `CargoSprite`, ghost modulu + konektory
 - [x] T02-08 · UI: `BuildBar` (kategória Terminál) + `ModuleInspector` (kotvisko, žeriav)
 - [ ] T02-09 · App: SimBridge snapshot v2 (moduly, lode, žeriavy, apron, `revision`, `speeds`) + napojenie renderu + DEV spawn lode

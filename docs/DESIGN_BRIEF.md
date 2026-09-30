@@ -159,6 +159,37 @@ Pravidlá vizuálnej hierarchie (od najvýraznejšieho k najmenej):
 | Animácie | nie. Rotujúce/pohyblivé časti (boom žeriava, trolley, závory) sú **oddelené sprity** s vlastným pivotom uvedeným v `manifest.json` |
 | Zákaz | text, logá, rastrové textúry, viac ako 3 tonálne stupne, farebné gradienty (okrem vody/heatmapy) |
 
+### 4.1 Tabuľka mierok (audit F5b č. 10)
+
+**Základ:** kontajner TEU `cargo.container_teu` = **64 × 32 px** (1 × 0,5 bunky; na lodi 32 × 64 pozdĺž lode). Všetko ostatné sa k nemu vzťahuje.
+Rozmery sú v px pri zoome 1 (64 px na bunku), platia pre sprite v rot 0; hodnoty z tabuľky stráži `tests/render/world-scale.test.ts`.
+
+| Objekt | Rozmer px (bunky) | Vzťah ku kontajneru / poznámka |
+|---|---|---|
+| Bunka | 64 × 64 (1 × 1) | jednotka |
+| Kontajner TEU (apron, spreader žeriavu, paluba lode) | 64 × 32 (1 × 0,5) | základ |
+| Kontajner na doku rampy | 52 × 26 | TEU zmenšený na šírku doku (56 px − okraje) |
+| Kontajner v políčku dvora (`container_yard_*_fill*.svg`) | 47 × 17 | 73 % × 53 % TEU; nakreslil Claude Design zvlášť, portálový žeriav dvora ho preberá |
+| Cesta dvojpruhová (asfalt) | 52 (0,81); pruh 26 | jedno vozidlo zaberá takmer celú šírku; protismerné sa pri míňaní prekrývajú (sim kolízie nemá) |
+| Cesta úzka `one_lane` / `one_way` (asfalt) | 40 (0,63) | vozidlo (48 px) presahuje o 4 px na strane |
+| **Straddle carrier** (obsah) | 48 × 58 (plátno 64 × 64) | otvor medzi nosníkmi **32 px = šírka TEU**; naložený kontajner 30 × 52 (94 % × 81 % TEU) |
+| **Kamión** `truck_container` (obsah) | 44 × 100 (plátno 64 × 128) | kontajner v návese **32 × 64 = TEU**; o 56 % dlhší než TEU; kabína 32 px |
+| Loď feeder | 128 × 384 (2 × 6) | šírka = 4 TEU, dĺžka = 6 TEU |
+| Loď handy | 128 × 640 (2 × 10) | |
+| Brána kamiónov | 128 × 128 (2 × 2) | |
+| Nakladacia rampa | 256 × 128 (4 × 2); dok 56 × 62 | zadok kamióna je v rampe (dok o niečo plytší než TEU), kabína von |
+| Stojisko čakacej plochy | 40 × 116 | kamión 44 × 100 sa zmestí s rezervou dĺžky |
+| Kotvisko `berth_standard` | 512 × 192 (8 × 3) | apron slot = 1 bunka, TEU 64 × 32 v nej |
+| Kontajnerový dvor S | 256 × 256 (4 × 4) | 32 pozícií × 2 vrstvy |
+
+**Mierka vozidiel je jedna:** `VEHICLE_SCALE` v `src/render/lane.ts` (1 = sprite v rozmere súboru) platí pre `VehicleView`, `TruckView` aj fallback
+`Graphics`. Ostatné faktory odvodzuje z nej (šírka vozidla → posun od osi cesty `VEHICLE_OFFSET_PX`, šírka úzkej cesty `NARROW_ASPHALT_PX`,
+odstup odznaku fronty brány). **Príčina chyby „vozík sa po naložení scvrkne“:** sprity vozidiel sa od F3 škálovali na šírku pruhu
+(`VEHICLE_LANE_SCALE` = 26 / 56 ≈ 0,46), zatiaľ čo kontajnery na aprone, pod žeriavom a na lodi majú mierku 1; kontajner sa pri naložení
+zmenšil na 41 % × 36 % a pri vyložení sa vrátil. Sprity `*_empty` a `*_loaded` mali vždy rovnaké plátno, problém bol v mierke, nie v súboroch.
+Dôsledok vyššej mierky: pravý pruh vozidlá už nezachovávajú (48 px vozidlo vs. 26 px pruh); ak by bolo treba oddeliť protismerné vozidlá,
+riešením sú širšie cesty (2 bunky), nie zmenšenie vozidiel (BACKLOG).
+
 ---
 
 ## 5. Zoznam assetov

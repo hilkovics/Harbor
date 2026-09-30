@@ -27,9 +27,9 @@
 - [x] T02-07 · Render: `ModuleLayer`/`ModuleView`, `CraneView`, `ShipView`, `CargoSprite`, ghost modulu + konektory
 - [x] T02-08 · UI: `BuildBar` (kategória Terminál) + `ModuleInspector` (kotvisko, žeriav)
 - [x] T02-09 · App: SimBridge snapshot v2 (moduly, lode, žeriavy, apron, `revision`, `speeds`) + napojenie renderu + DEV spawn lode
-- [ ] T02-10 · App: build mód modulov (ghost, `R` rotácia, dôvody v tooltipe, umiestniť/odstrániť) + výber modulu → inspector
+- [x] T02-10 · App: build mód modulov (ghost, `R` rotácia, dôvody v tooltipe, umiestniť/odstrániť) + výber modulu → inspector
 - [x] T02-11 · Tooling: `simrun` metriky žeriavov/lodí + `validate:defs` pre asset manifest
-- [ ] T02-12 · E2E: loď dokuje, žeriav vykladá, loď odpláva, screenshot
+- [x] T02-12 · E2E: loď dokuje, žeriav vykladá, loď odpláva, screenshot
 - [x] T02-13 · Review `src/sim/**`
 - [x] T02-14 · ARCHITECTURE: zosúladenie s F2 (§4.2, §5, §7.2, §8, §12, §13, §14, §18) + minor nálezy review
 - [ ] T02-15 · Plná pipeline + triáž

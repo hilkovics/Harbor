@@ -7,7 +7,8 @@ import type { EntityId } from '@sim/core';
 import type { VehicleDepot } from '@sim/modules';
 import { SERIALIZED_VEHICLE_KEYS, Vehicle } from '@sim/vehicles';
 import { World, WorldStateError, type WorldState } from '@sim/world';
-import { GRAIN, GRAIN_DEFS, STRADDLE, STRADDLE_DEF, addVehicleTo, buy, depotWorld, execute, loadInto, sell } from '../vehicles/vehicle-fixtures';
+import type { StorageModule } from '@sim/modules';
+import { GRAIN, GRAIN_DEFS, STRADDLE, STRADDLE_DEF, addVehicleTo, buy, carryingVehicle, depotWorld, execute, loadInto, sell } from '../vehicles/vehicle-fixtures';
 import { DEFS, MAP, SEED, hashState, runTicks } from './world-fixtures';
 
 const id = (value: number): EntityId => value as EntityId;
@@ -77,13 +78,16 @@ describe('World.deserialize — vozidlá v3', () => {
     expect(hashState(restored.serialize())).toBe(hashState(original.serialize()));
   });
 
-  it('jednotka vo vozidle (in_vehicle) sa uloží aj obnoví', () => {
-    const { world, depot } = depotWorld();
-    const vehicle = addVehicleTo(world, depot.id);
-    const unit = loadInto(world, vehicle.id);
+  it('jednotka vo vozidle (in_vehicle) sa uloží aj obnoví — vozidlo s jobom (rozhodnutie orchestrátora F3 č. 5)', () => {
+    const { world, depot } = depotWorld({ yard: true });
+    const yard = world.modules.get(id(4)) as StorageModule;
+    const { vehicle, unit, job } = carryingVehicle(world, depot.id, yard);
     const restored = World.deserialize(DEFS, MAP, viaJson(world.serialize()));
     expect(restored.cargo.unitsAt('in_vehicle', vehicle.id)).toEqual([unit]);
     expect(restored.serialize()).toEqual(world.serialize());
+    const copy = restored.jobs.get(job.id);
+    expect([copy?.state, copy?.vehicleId, (restored.modules.get(yard.id) as StorageModule).reservedSlots()]).toEqual(['dropping', vehicle.id, yard.reservedSlots()]);
+    expect(() => restored.assertInvariants()).not.toThrow();
   });
 });
 
@@ -106,7 +110,7 @@ describe('World.deserialize — neplatné vozidlá (parsovanie)', () => {
     ['idle s jobom', (_s, v) => (v[0].jobId = 12), '/vehicles/0/jobId', /nesmie mať job/],
     ['to_pickup bez jobu', (_s, v) => (v[0].state = 'to_pickup'), '/vehicles/0/jobId', /vyžaduje job/],
     ['záporná cena', (_s, v) => (v[0].purchaseCostCents = -1), '/vehicles/0/purchaseCostCents'],
-    ['joby neprázdne (T03-05)', (s) => (s.jobs = [{ id: 99 }]), '/jobs/0', /T03-05/],
+    ['job bez kľúčov (tvar SerializedJob, T03-05)', (s) => (s.jobs = [{ id: 99 }]), '/jobs/0/unitIds', /chýba/],
     ['jobs nie je pole', (s) => (s.jobs = null), '/jobs'],
   ];
 
@@ -153,7 +157,7 @@ describe('World.deserialize — neplatné vozidlá (obnova vzťahov)', () => {
     expect(error.message).toMatch(/plné/);
   });
 
-  it('vozidlo s jobom (stav s jobom) — job vo svete neexistuje (joby obnoví T03-05) → /vehicles/0/jobId', () => {
+  it('vozidlo s jobom (stav s jobom) — job v save nie je → /vehicles/0/jobId', () => {
     const state = viaJson(fleetWorld().serialize());
     const vehicles = state.vehicles as unknown as Record<string, unknown>[];
     vehicles[0].state = 'to_pickup';
@@ -164,8 +168,8 @@ describe('World.deserialize — neplatné vozidlá (obnova vzťahov)', () => {
   });
 
   it('jednotka in_vehicle bez vozidla v save → chyba jednotky s „in_vehicle" (CARGO_HOLDER_SOURCES)', () => {
-    const { world, depot } = depotWorld();
-    loadInto(world, addVehicleTo(world, depot.id).id);
+    const { world, depot } = depotWorld({ yard: true });
+    carryingVehicle(world, depot.id, world.modules.get(id(4)) as StorageModule);
     const state = viaJson(world.serialize()) as unknown as Record<string, unknown>;
     state.vehicles = [];
     const error = errorOf(() => World.deserialize(DEFS, MAP, state as unknown as WorldState));

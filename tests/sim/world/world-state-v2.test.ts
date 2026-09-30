@@ -69,7 +69,7 @@ describe('WorldState v2 — moduly v save', () => {
       [4, BERTH, 48, 14, 0, 0],
     ]);
     for (const entry of state.modules) expect(Object.keys(entry)).toEqual(['id', 'defId', 'x', 'y', 'rotation', 'purchaseCostCents', 'runtime']);
-    expect(state.modules[0].runtime).toEqual({});
+    expect(state.modules[0].runtime).toEqual({ lastNoStorageHour: null }); // v3: kotvisko ukladá throttle NoStorageAvailable (ADR-018)
     expect(state.modules[1].runtime).toEqual({
       state: 'placing',
       phaseTicksTotal: 6,

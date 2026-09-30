@@ -8,6 +8,7 @@ export {
   formatLocation,
   holderIdOf,
   isCargoLocationKind,
+  isSameLocation,
   isTransitionAllowed,
   normalizeLocation,
   slotOf,

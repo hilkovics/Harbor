@@ -8,10 +8,18 @@ import { Ship, ShipError } from '@sim/ships';
 import { VehicleError, type Vehicle } from '@sim/vehicles';
 import { CARGO_HOLDER_SOURCES, World, findWorldViolation } from '@sim/world';
 import { DEFS, MAP, SEED, hashState, runTicks } from '../world/world-fixtures';
-import { DEPOT_OUTSIDE, GRAIN, GRAIN_DEFS, STRADDLE_DEF, addVehicleTo, buy, depotWorld, execute, loadInto } from './vehicle-fixtures';
+import type { StorageModule } from '@sim/modules';
+import { DEPOT_OUTSIDE, GRAIN, GRAIN_DEFS, STRADDLE_DEF, addVehicleTo, buy, carryingVehicle, depotWorld, execute, loadInto } from './vehicle-fixtures';
 
 const id = (value: number): EntityId => value as EntityId;
 const TEU = 'container_teu';
+
+/** Dvor z `depotWorld({ yard: true })`. */
+function yardOf(world: World): StorageModule {
+  const yard = [...world.modules.values()].find((module) => module.kind === 'storage');
+  if (yard === undefined) throw new Error('svet nemá dvor');
+  return yard as StorageModule;
+}
 
 function expectVehicleError(action: () => unknown, code: VehicleError['code']): void {
   let error: unknown;
@@ -103,10 +111,9 @@ describe('World.removeVehicle', () => {
   });
 
   it('neznáme id → unknown_vehicle; vozidlo s nákladom → has_cargo; s jobom / mimo idle → busy; svet sa nemení', () => {
-    const { world, depot } = depotWorld();
+    const { world, depot } = depotWorld({ yard: true });
     expectVehicleError(() => world.removeVehicle(id(999)), 'unknown_vehicle');
-    const loaded = addVehicleTo(world, depot.id);
-    loadInto(world, loaded.id);
+    const loaded = carryingVehicle(world, depot.id, yardOf(world)).vehicle;
     expectVehicleError(() => world.removeVehicle(loaded.id), 'has_cargo');
     const busy = addVehicleTo(world, depot.id, { state: 'to_pickup', jobId: id(77) });
     expectVehicleError(() => world.removeVehicle(busy.id), 'busy');
@@ -136,9 +143,8 @@ describe('vozidlo ako držiteľ nákladu (in_vehicle)', () => {
   });
 
   it('jednotka vo vozidle je u existujúceho držiteľa — krok 12 prejde; vo vozidle, ktoré neexistuje, nie', () => {
-    const { world, depot } = depotWorld();
-    const vehicle = addVehicleTo(world, depot.id);
-    loadInto(world, vehicle.id);
+    const { world, depot } = depotWorld({ yard: true });
+    carryingVehicle(world, depot.id, yardOf(world)); // náklad vezie len vozidlo s jobom (rozhodnutie orchestrátora F3 č. 5)
     expect(() => world.assertInvariants()).not.toThrow();
     loadInto(world, id(4040));
     expect(findWorldViolation(world)).toMatch(/1 jednotiek v 'in_vehicle' je u neexistujúceho držiteľa/);
@@ -163,6 +169,9 @@ describe('invarianty vozidiel (krok 12)', () => {
     }],
     ['náklad nad kapacitu', /vezie 2 jednotiek \(capacityUnits 1\)/, (world, vehicle) => {
       loadInto(world, vehicle.id);
+      loadInto(world, vehicle.id);
+    }],
+    ['idle vozidlo s nákladom (rozhodnutie orchestrátora F3 č. 5)', /v stave 'idle' vezie jednotku #\d+ mimo svojho jobu/, (world, vehicle) => {
       loadInto(world, vehicle.id);
     }],
   ];

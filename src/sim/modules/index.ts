@@ -15,6 +15,7 @@ export type { StorageRuntimeState } from './storage-module';
 export { CONTAINER_YARD_CATEGORY, ContainerYard } from './container-yard';
 export { VehicleDepot } from './vehicle-depot';
 export { BerthModule, effectiveBerthDepth } from './berth-module';
+export type { BerthRuntimeState } from './berth-module';
 export { CRANE_STATES, CRANE_STATE_TRAITS, CRANE_TRANSITIONS, CraneModule, cranePhaseProblem, isCraneTransitionAllowed } from './crane-module';
 export type { CraneCounter, CranePhaseKind, CranePhaseProblem, CraneRuntimeState, CraneState, CraneStateTraits } from './crane-module';
 export { computeBerthGroups } from './berth-group';

@@ -9,6 +9,8 @@
  * - `frontWaterBand` = pás `params.frontWaterCells` riadkov vody pred hranou pri vode (`frontBandCells`), kde kotví
  *   loď; `PlaceModule` ho overuje (ADR-015) a ShipSystem (T02-05) z neho odvodí polohu lode.
  * - `apron` drží len rezervácie slotov; obsadenie číta z ledgera (ADR-017).
+ * - `lastNoStorageHour` = herná hodina posledného `NoStorageAvailable` z tohto kotviska (throttle dispatchera
+ *   1× za hodinu, ADR-018); jediný dynamický stav v save (`runtime`), ostatné sa odvodí.
  */
 import type { EntityId } from '../core/entity-id';
 import { berthParams } from '../defs/module-def';
@@ -18,7 +20,16 @@ import { ApronBuffer } from './apron-buffer';
 import { Module, type ModuleInit } from './module';
 import { ModuleError } from './module-error';
 import { frontBandCells, waterSideOf } from './module-geometry';
+import { checkRuntimeKeys, readOptionalCount } from './runtime-state';
 import type { CargoSlotsView } from './slot-reservations';
+
+/** Dynamický stav kotviska v save (`WorldState.modules[i].runtime`, ADR-018). */
+export type BerthRuntimeState = {
+  /** Herná hodina posledného `NoStorageAvailable` z kotviska; `null` = zatiaľ nikdy. */
+  readonly lastNoStorageHour: number | null;
+};
+
+const BERTH_RUNTIME_KEYS: readonly (keyof BerthRuntimeState)[] = ['lastNoStorageHour'];
 
 /** Efektívna hĺbka kotviska: menšia z hĺbky typu kotviska a najplytšej bunky footprintu (rozhodnutie 4). */
 export function effectiveBerthDepth(params: BerthParams, cells: readonly { readonly x: number; readonly y: number }[], grid: Grid): DepthClass {
@@ -44,6 +55,8 @@ export class BerthModule extends Module {
   dockedShipId: EntityId | null = null;
   /** Id `BerthGroup` (od 1); prepisuje ho `World` pri každom prepočte skupín. 0 = modul ešte nie je vo svete. */
   groupId = 0;
+  /** Herná hodina posledného `NoStorageAvailable` (throttle 1×/h, ADR-018); mení ho len dispatcher, `null` = nikdy. */
+  lastNoStorageHour: number | null = null;
   private readonly cranes: EntityId[] = [];
 
   /** Def iného druhu než `berth` → `DefError`; def bez `placement.waterSide` → `ModuleError('invalid_input')`. */
@@ -84,5 +97,18 @@ export class BerthModule extends Module {
     const index = this.cranes.indexOf(craneId);
     if (index < 0) throw new ModuleError('unknown_module', `${this.label}: žeriav #${String(craneId)} nie je pripojený`);
     this.cranes.splice(index, 1);
+  }
+
+  override getRuntimeState(): BerthRuntimeState {
+    return { lastNoStorageHour: this.lastNoStorageHour };
+  }
+
+  /**
+   * Presne kľúče `BerthRuntimeState`, `lastNoStorageHour` `null` alebo celé ≥ 0 (že nie je v budúcnosti, overí obnova
+   * sveta — modul hodiny nepozná). Neplatný stav → `ModuleStateError`, kotvisko sa nezmení.
+   */
+  override restoreRuntimeState(raw: unknown): void {
+    const fields = checkRuntimeKeys(raw, BERTH_RUNTIME_KEYS);
+    this.lastNoStorageHour = readOptionalCount(fields['lastNoStorageHour'], '/lastNoStorageHour');
   }
 }

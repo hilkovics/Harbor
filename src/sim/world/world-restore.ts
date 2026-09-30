@@ -1,31 +1,36 @@
 /**
- * Obnova entít zo save (ARCHITECTURE §14, ADR-014, ADR-016, ADR-017): moduly v poradí save (= poradie umiestnenia) cez
- * `ModuleRegistry` a `World.addModule` (sklad obnoví svoje rezervácie z `runtime`), lode vzostupne podľa id cez
- * `World.addShip` (pred kontrolou držiteľov nákladu — `on_ship` číta `world.ships`) s obnovou
- * `BerthModule.dockedShipId` z `berthIds`, vozidlá vzostupne podľa id cez `World.addVehicle` (T03-04; depo dostane
- * `vehicleIds` v poradí id = poradí nákupu), potom kontrola držiteľov a slotov nákladu (slot v kapacite apronu/skladu,
- * náklad vozidla v jeho kapacite a kategóriách),
- * rezervácie apronov z `reservedSlot` žeriavov a držané jednotky žeriavov z `in_crane`. Obsadenie apronov a skladov
- * sa neobnovuje — čítajú ho z ledgera (ADR-017). Na koniec beží `findWorldViolation` ako poistka. Každá chyba je
- * `WorldStateError` s JSON pointerom.
+ * Obnova entít zo save (ARCHITECTURE §14, ADR-014, ADR-016, ADR-017, ADR-018): moduly v poradí save (= poradie
+ * umiestnenia) cez `ModuleRegistry` a `World.addModule`, lode vzostupne podľa id cez `World.addShip` (pred kontrolou
+ * držiteľov nákladu — `on_ship` číta `world.ships`) s obnovou `BerthModule.dockedShipId` z `berthIds`, vozidlá
+ * vzostupne podľa id cez `World.addVehicle` (T03-04; depo dostane `vehicleIds` v poradí id = poradí nákupu), potom
+ * kontrola držiteľov a slotov nákladu (slot v kapacite apronu/skladu, náklad vozidla v jeho kapacite a kategóriách),
+ * joby vzostupne podľa id (T03-05: vozidlo a stav jobu sa odvodia z vozidla s daným `jobId` a z polohy nákladu,
+ * `World.addJob`, rezervácia slotu v cieľovom sklade), náklad vozidla patrí jeho jobu, rezervácie apronov
+ * z `reservedSlot` žeriavov, držané jednotky žeriavov z `in_crane` a hodiny throttlov (`lastBlockedHour`,
+ * `lastNoStorageHour`) nie sú v budúcnosti. Obsadenie apronov a skladov sa neobnovuje — čítajú ho z ledgera (ADR-017).
+ * Na koniec beží `findWorldViolation` ako poistka. Každá chyba je `WorldStateError` s JSON pointerom.
  */
-import { holderIdOf, holderSpecOf, uniqueSlotOf } from '../cargo/cargo-location';
+import { holderIdOf, holderSpecOf, isSameLocation, uniqueSlotOf } from '../cargo/cargo-location';
 import type { CargoUnit } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
+import { JobError, type JobErrorCode } from '../logistics/job-error';
+import { JOB_STATE_TRAITS, TransportJob, type JobState } from '../logistics/transport-job';
 import { BerthModule } from '../modules/berth-module';
 import { CRANE_STATE_TRAITS, CraneModule } from '../modules/crane-module';
 import { ModuleError, ModuleStateError } from '../modules/module-error';
 import { moduleRegistry } from '../modules/module-registry';
+import { StorageModule } from '../modules/storage-module';
 import { Ship } from '../ships/ship';
 import { ShipError } from '../ships/ship-error';
 import { mooringProblem, shipRoute } from '../ships/ship-route';
 import { Vehicle } from '../vehicles/vehicle';
 import { VehicleError, type VehicleErrorCode } from '../vehicles/vehicle-error';
+import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle-fsm';
 import { CARGO_HOLDER_SOURCES } from './cargo-holders';
 import { WorldStateError, pointerSegment } from './state-check';
 import type { World } from './world';
 import { findWorldViolation } from './world-invariants';
-import type { ParsedModuleEntry, ParsedShipEntry, ParsedVehicleEntry, ParsedWorldState } from './world-state';
+import type { ParsedJobEntry, ParsedModuleEntry, ParsedShipEntry, ParsedVehicleEntry, ParsedWorldState } from './world-state';
 
 const modulePath = (index: number): string => `/modules${pointerSegment(index)}`;
 const unitPath = (index: number): string => `/cargo/units${pointerSegment(index)}`;
@@ -125,19 +130,17 @@ const VEHICLE_ERROR_FIELD: { readonly [C in VehicleErrorCode]: string } = {
   unknown_vehicle: 'id',
   has_cargo: 'id',
   busy: 'state',
+  invalid_transition: 'state',
 };
 
 /**
- * Vozidlá vzostupne podľa id: inštancia `Vehicle` (def a stav overil `parseWorldState`), job musí existovať (v T03-04
- * žiadne joby nie sú — `jobId` iný ako `null` je chyba; tvar job ↔ vozidlo doplní T03-05), potom `World.addVehicle`
- * (depo existuje a má voľné státie; `VehicleError` → `WorldStateError` s poľom záznamu).
+ * Vozidlá vzostupne podľa id: inštancia `Vehicle` (def a stav overil `parseWorldState`), potom `World.addVehicle`
+ * (depo existuje a má voľné státie; `VehicleError` → `WorldStateError` s poľom záznamu). Job vozidla overí
+ * `restoreJobs`.
  */
 function restoreVehicles(world: World, entries: readonly ParsedVehicleEntry[]): void {
   entries.forEach((entry, index) => {
     const path = vehiclePath(index);
-    if (entry.jobId !== null) {
-      throw new WorldStateError(`${path}/jobId`, `job #${String(entry.jobId)} vo svete neexistuje (joby obnoví až T03-05)`);
-    }
     try {
       world.addVehicle(
         new Vehicle({
@@ -155,6 +158,125 @@ function restoreVehicles(world: World, entries: readonly ParsedVehicleEntry[]): 
     } catch (error) {
       if (error instanceof VehicleError) throw new WorldStateError(`${path}/${VEHICLE_ERROR_FIELD[error.code]}`, error.message);
       throw error;
+    }
+  });
+}
+
+const jobPath = (index: number): string => `/jobs${pointerSegment(index)}`;
+
+/** Pole záznamu jobu, ku ktorému patrí chyba `World.addJob` / `TransportJob`. */
+const JOB_ERROR_FIELD: { readonly [C in JobErrorCode]: string } = {
+  invalid_input: '',
+  invalid_transition: '',
+  duplicate_id: '/id',
+  unknown_unit: '/unitIds',
+  unit_busy: '/unitIds',
+  unknown_job: '/id',
+  not_done: '',
+};
+
+/**
+ * Vozidlá podľa jobu v `jobId` (vzostupne podľa id); dve vozidlá s tým istým jobom a vozidlo s jobom, ktorý v save nie
+ * je, sú chyba vozidla (`/vehicles/<v>/jobId`).
+ */
+function vehiclesByJob(world: World, entries: readonly ParsedJobEntry[]): Map<EntityId, Vehicle> {
+  const known = new Set<EntityId>(entries.map((entry) => entry.id));
+  const byJob = new Map<EntityId, Vehicle>();
+  let index = 0;
+  for (const vehicle of world.vehicles.values()) {
+    const { jobId } = vehicle;
+    if (jobId !== null) {
+      const path = `${vehiclePath(index)}/jobId`;
+      if (!known.has(jobId)) throw new WorldStateError(path, `job #${String(jobId)} vo svete neexistuje`);
+      const other = byJob.get(jobId);
+      if (other !== undefined) throw new WorldStateError(path, `job #${String(jobId)} už má vozidlo ${other.label}`);
+      byJob.set(jobId, vehicle);
+    }
+    index += 1;
+  }
+  return byJob;
+}
+
+/**
+ * Stav jobu odvodený z vozidla (ADR-018): bez vozidla `open`, inak jediný stav z `VEHICLE_STATE_TRAITS.jobStates`
+ * stavu vozidla, pri `no_path` ten, ktorého `cargoAt` zodpovedá polohe prvej jednotky (vo vozidle → `moving`).
+ */
+function deriveJobState(world: World, entry: ParsedJobEntry, vehicle: Vehicle | undefined): JobState {
+  if (vehicle === undefined) return 'open';
+  const candidates = VEHICLE_STATE_TRAITS[vehicle.state].jobStates;
+  const location = world.cargo.get(entry.unitIds[0])?.location;
+  const place = location?.kind === 'in_vehicle' && location.vehicleId === vehicle.id ? 'vehicle' : 'source';
+  return candidates.find((state) => JOB_STATE_TRAITS[state].cargoAt === place) ?? candidates[0] ?? 'open';
+}
+
+/** Jednotky jobu existujú a ležia tam, kde ich stav jobu hovorí (`cargoAt`: na `from` alebo vo vozidle jobu). */
+function checkJobCargo(world: World, job: TransportJob, path: string): void {
+  const place = JOB_STATE_TRAITS[job.state].cargoAt;
+  job.unitIds.forEach((unitId, k) => {
+    const unitPathInJob = `${path}/unitIds${pointerSegment(k)}`;
+    const unit = world.cargo.get(unitId);
+    if (unit === undefined) throw new WorldStateError(unitPathInJob, `jednotka #${String(unitId)} v save nie je`);
+    const expected = place === 'vehicle' && job.vehicleId !== null ? { kind: 'in_vehicle' as const, vehicleId: job.vehicleId } : job.from;
+    if (!isSameLocation(unit.location, expected)) {
+      throw new WorldStateError(unitPathInJob, `jednotka #${String(unitId)} jobu v stave '${job.state}' má byť na ${place === 'vehicle' ? 'vozidle jobu' : 'zdroji jobu'}`);
+    }
+  });
+}
+
+/**
+ * Joby vzostupne podľa id (ADR-018): vozidlo = vozidlo s týmto `jobId`, stav odvodený (`deriveJobState`), náklad na
+ * mieste podľa stavu, vozidlo vozí kategóriu nákladu, `World.addJob`, cieľ je sklad kategórie nákladu a jeho slot
+ * sa rezervuje (`reserveSlot`: v rozsahu, voľný, nie dvakrát). Chyby → `/jobs/<i>…` (resp. `/vehicles/<v>/jobId`).
+ */
+function restoreJobs(world: World, entries: readonly ParsedJobEntry[]): void {
+  const byJob = vehiclesByJob(world, entries);
+  entries.forEach((entry, index) => {
+    const path = jobPath(index);
+    const vehicle = byJob.get(entry.id);
+    let job: TransportJob;
+    try {
+      job = new TransportJob({ ...entry, state: deriveJobState(world, entry, vehicle), vehicleId: vehicle?.id ?? null });
+    } catch (error) {
+      if (error instanceof JobError) throw new WorldStateError(path, error.message);
+      throw error;
+    }
+    checkJobCargo(world, job, path);
+    const unit = world.cargo.get(job.unitIds[0]);
+    const category = unit === undefined ? undefined : world.defs.cargoTypes.get(unit.typeId).category;
+    if (vehicle !== undefined && (category === undefined || !vehicle.def.cargoCategories.includes(category))) {
+      throw new WorldStateError(`${path}/unitIds/0`, `${vehicle.label} nevozí náklad kategórie '${String(category)}'`);
+    }
+    try {
+      world.addJob(job);
+    } catch (error) {
+      if (error instanceof JobError) throw new WorldStateError(`${path}${JOB_ERROR_FIELD[error.code]}`, error.message);
+      throw error;
+    }
+    const storage = world.modules.get(job.toModuleId);
+    if (!(storage instanceof StorageModule)) throw new WorldStateError(`${path}/to/moduleId`, `#${String(job.toModuleId)} nie je sklad vo svete`);
+    if (storage.category !== category) {
+      throw new WorldStateError(`${path}/to/moduleId`, `${storage.label} (kategória '${storage.category}') neprijme náklad kategórie '${String(category)}'`);
+    }
+    try {
+      storage.reserveSlot(uniqueSlotOf(job.to) ?? -1);
+    } catch (error) {
+      if (error instanceof ModuleError) throw new WorldStateError(`${path}/to/slot`, error.message);
+      throw error;
+    }
+  });
+}
+
+/**
+ * Náklad vozidla patrí jeho jobu v stave s nákladom vo vozidle (rozhodnutie orchestrátora F3 č. 5: `idle` vozidlo
+ * nevezie nič). Volá sa po `restoreJobs`; chyba patrí jednotke (`/cargo/units/<j>/location/vehicleId`).
+ */
+function checkVehicleCargoJobs(world: World, units: readonly CargoUnit[]): void {
+  units.forEach((unit, index) => {
+    if (unit.location.kind !== 'in_vehicle') return;
+    const { vehicleId } = unit.location;
+    const job = world.jobOfUnit(unit.id);
+    if (job?.vehicleId !== vehicleId || JOB_STATE_TRAITS[job.state].cargoAt !== 'vehicle') {
+      throw new WorldStateError(`${unitPath(index)}/location/vehicleId`, `vozidlo #${String(vehicleId)} vezie jednotku #${String(unit.id)} bez svojho jobu s nákladom vo vozidle`);
     }
   });
 }
@@ -210,6 +332,17 @@ function restoreCraneReservations(world: World, indexOf: ReadonlyMap<EntityId, n
       if (error instanceof ModuleError) throw new WorldStateError(`${path}/reservedSlot`, `apron ${berth.label}: ${error.message}`);
       throw error;
     }
+  }
+}
+
+/** Hodina posledného `NoStorageAvailable` kotviska nesmie byť v budúcnosti (ADR-018). */
+function checkBerthHours(world: World, indexOf: ReadonlyMap<EntityId, number>): void {
+  for (const module of world.modules.values()) {
+    if (!(module instanceof BerthModule) || module.lastNoStorageHour === null || module.lastNoStorageHour <= world.clock.gameHour) continue;
+    throw new WorldStateError(
+      `${modulePath(indexOf.get(module.id) ?? -1)}/runtime/lastNoStorageHour`,
+      `hodina ${String(module.lastNoStorageHour)} je po aktuálnej ${String(world.clock.gameHour)}`,
+    );
   }
 }
 
@@ -278,13 +411,14 @@ function checkCraneHolding(world: World, indexOf: ReadonlyMap<EntityId, number>)
 }
 
 /**
- * Obnoví moduly, lode, vozidlá a stav odvodený z ledgera do čerstvého `world` (prázdne moduly, lode aj vozidlá, ledger
- * už obnovený z `parsed.cargo`). Chyby → `WorldStateError`: modul (hranice, obsadenie, žeriav na berthe, `runtime`) →
- * `/modules/<i>…`, loď (kotvisko, anchorage, index trasy) → `/ships/<k>…`, vozidlo (depo, státie, job) →
- * `/vehicles/<v>…`, náklad u neexistujúceho držiteľa (aj `in_vehicle` bez vozidla), nad kapacitou vozidla alebo na
- * neplatnom/rezervovanom slote → `/cargo/units/<j>/location…`, iné porušenie invariantov → `''`.
+ * Obnoví moduly, lode, vozidlá, joby a stav odvodený z ledgera do čerstvého `world` (prázdne moduly, lode, vozidlá aj
+ * joby, ledger už obnovený z `parsed.cargo`). Chyby → `WorldStateError`: modul (hranice, obsadenie, žeriav na berthe,
+ * `runtime`) → `/modules/<i>…`, loď (kotvisko, anchorage, index trasy) → `/ships/<k>…`, vozidlo (depo, státie, job) →
+ * `/vehicles/<v>…`, job (jednotky, stav, sklad, slot) → `/jobs/<i>…`, náklad u neexistujúceho držiteľa (aj `in_vehicle`
+ * bez vozidla), nad kapacitou vozidla, vo vozidle bez jobu alebo na neplatnom/rezervovanom slote →
+ * `/cargo/units/<j>/location…`, iné porušenie invariantov → `''`.
  */
-export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'modules' | 'ships' | 'vehicles' | 'cargo'>): void {
+export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'modules' | 'ships' | 'vehicles' | 'jobs' | 'cargo'>): void {
   const entries = parsed.modules;
   const { units } = parsed.cargo;
   restoreModules(world, entries);
@@ -295,6 +429,9 @@ export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'mo
   checkHolders(world, units);
   checkVehicleCargo(world, units);
   checkUnitSlots(world, units);
+  restoreJobs(world, parsed.jobs);
+  checkVehicleCargoJobs(world, units);
+  checkBerthHours(world, indexOf);
   restoreCraneReservations(world, indexOf, unitIndexOf);
   restoreHeldCargo(world, units);
   checkCraneHolding(world, indexOf);

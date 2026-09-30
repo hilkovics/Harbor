@@ -97,7 +97,7 @@ describe('ContainerYard — z defu container_yard_small', () => {
     expect(yard.params).toEqual({ capacityUnits: 64, category: 'container' });
     const slots = yard.cargoSlots();
     expect([slots.kind, slots.holderId, slots.capacity]).toEqual(['in_storage', YARD_ID, 64]);
-    expect(yard.getRuntimeState()).toEqual({ reservedSlots: [], unitsIn: 0, unitsOut: 0 } satisfies StorageRuntimeState);
+    expect(yard.getRuntimeState()).toEqual({ unitsIn: 0, unitsOut: 0 } satisfies StorageRuntimeState);
   });
 
   it('konektor po rotácii je vo `connectors` (1, 3, s) → svet (3, 5, s)', () => {
@@ -179,31 +179,38 @@ describe('StorageModule — rezervácie a obsadenie z ledgera', () => {
 });
 
 describe('StorageModule — runtime stav v save', () => {
-  it('getRuntimeState = rezervované sloty vzostupne + počítadlá; restore na novej inštancii dá rovnaký stav', () => {
+  it('getRuntimeState = len počítadlá (rezervácie patria jobom, ADR-018); restore na novej inštancii dá rovnaké počítadlá bez rezervácií', () => {
     const { yard, cargo } = yardOf();
-    const [a, b, c] = [yard.reserve(), yard.reserve(), yard.reserve()];
+    const [, b] = [yard.reserve(), yard.reserve(), yard.reserve()];
     const unit = store(yard, cargo, b);
     cargo.move(unit, { kind: 'in_vehicle', vehicleId: id(903) });
     yard.recordTaken(unit);
     const state = yard.getRuntimeState();
-    expect(state).toEqual({ reservedSlots: [a, c], unitsIn: 1, unitsOut: 1 });
+    expect(state).toEqual({ unitsIn: 1, unitsOut: 1 });
     const copy = yardOf(YARD, cargo).yard;
     copy.restoreRuntimeState(JSON.parse(JSON.stringify(state)));
-    expect(snapshot(copy)).toEqual(snapshot(yard));
+    expect([copy.unitsIn, copy.unitsOut, copy.reservedCount, copy.storedCount]).toEqual([1, 1, 0, 0]);
+    expect(copy.getRuntimeState()).toEqual(state);
+  });
+
+  it('reserveSlot (obnova rezervácie jobu): konkrétny voľný slot; mimo rozsahu, obsadený alebo už rezervovaný → ModuleError', () => {
+    const { yard, cargo } = yardOf(TINY_YARD);
+    yard.reserveSlot(1);
+    expect([yard.reservedSlots(), yard.reservedCount, yard.freeCount]).toEqual([[1], 1, 1]);
+    expectModuleError(() => yard.reserveSlot(1), 'slot_reserved');
+    expectModuleError(() => yard.reserveSlot(2), 'invalid_slot');
+    cargo.move(unitInVehicle(cargo), { kind: 'in_storage', moduleId: yard.id, slot: 0 });
+    expectModuleError(() => yard.reserveSlot(0), 'slot_occupied');
+    expect(yard.reservedSlots()).toEqual([1]);
   });
 
   const INVALID: readonly [string, unknown, string][] = [
     ['nie objekt', null, ''],
-    ['chýba unitsOut', { reservedSlots: [], unitsIn: 0 }, '/unitsOut'],
-    ['neznámy kľúč', { reservedSlots: [], unitsIn: 0, unitsOut: 0, stored: [] }, '/stored'],
-    ['reservedSlots nie pole', { reservedSlots: 1, unitsIn: 0, unitsOut: 0 }, '/reservedSlots'],
-    ['slot záporný', { reservedSlots: [-1], unitsIn: 0, unitsOut: 0 }, '/reservedSlots/0'],
-    ['slot zlomkový', { reservedSlots: [0.5], unitsIn: 0, unitsOut: 0 }, '/reservedSlots/0'],
-    ['slot ≥ kapacita', { reservedSlots: [0, 2], unitsIn: 0, unitsOut: 0 }, '/reservedSlots/1'],
-    ['sloty nie vzostupne', { reservedSlots: [1, 0], unitsIn: 0, unitsOut: 0 }, '/reservedSlots/1'],
-    ['duplicitný slot', { reservedSlots: [1, 1], unitsIn: 0, unitsOut: 0 }, '/reservedSlots/1'],
-    ['unitsIn záporné', { reservedSlots: [], unitsIn: -1, unitsOut: 0 }, '/unitsIn'],
-    ['unitsOut zlomkové', { reservedSlots: [], unitsIn: 0, unitsOut: 1.5 }, '/unitsOut'],
+    ['chýba unitsOut', { unitsIn: 0 }, '/unitsOut'],
+    ['neznámy kľúč', { unitsIn: 0, unitsOut: 0, stored: [] }, '/stored'],
+    ['reservedSlots (v2 tvar, v3 ho nepozná)', { reservedSlots: [], unitsIn: 0, unitsOut: 0 }, '/reservedSlots'],
+    ['unitsIn záporné', { unitsIn: -1, unitsOut: 0 }, '/unitsIn'],
+    ['unitsOut zlomkové', { unitsIn: 0, unitsOut: 1.5 }, '/unitsOut'],
   ];
 
   it.each(INVALID)('%s → ModuleStateError na %s, stav sa nezmení', (_name, raw, path) => {
@@ -214,14 +221,5 @@ describe('StorageModule — runtime stav v save', () => {
     expect(error).toBeInstanceOf(ModuleStateError);
     expect((error as ModuleStateError).path).toBe(path);
     expect(snapshot(yard)).toEqual(before);
-  });
-
-  it('rezervovaný slot, ktorý ledger už obsadil → ModuleStateError na /reservedSlots/<k>', () => {
-    const { yard, cargo } = yardOf(TINY_YARD);
-    cargo.move(unitInVehicle(cargo), { kind: 'in_storage', moduleId: yard.id, slot: 1 });
-    const error = errorOf(() => yard.restoreRuntimeState({ reservedSlots: [0, 1], unitsIn: 0, unitsOut: 0 }));
-    expect(error).toBeInstanceOf(ModuleStateError);
-    expect((error as ModuleStateError).path).toBe('/reservedSlots/1');
-    expect(yard.reservedCount).toBe(0);
   });
 });

@@ -4,8 +4,8 @@
  * a mení ho výlučne cez `Command` (pravidlo 5).
  *
  * Tick pipeline (§6): príkazy z fronty → krok 1 (`clock.advance()` + udalosti hraníc) → krok 3 (`ShipSystem`) →
- * krok 4 (`CraneSystem`) → krok 12 (`assertInvariants()`, ak je zapnuté `checkInvariants`) → krok 13
- * (`events.flush()`). Ďalšie kroky pribúdajú so systémami na označenom mieste v `tick()`; poradie §6 je záväzné
+ * krok 4 (`CraneSystem`) → krok 5 (`DispatcherSystem`) → krok 12 (`assertInvariants()`, ak je zapnuté
+ * `checkInvariants`) → krok 13 (`events.flush()`). Ďalšie kroky pribúdajú so systémami na označenom mieste v `tick()`; poradie §6 je záväzné
  * a mení sa len cez ADR.
  *
  * Moduly (ADR-014): `addModule`/`removeModule` sú štrukturálne operácie pre príkazy (`PlaceModule`/`RemoveModule`,
@@ -19,6 +19,9 @@
  * Vozidlá (T03-04): `addVehicle`/`removeVehicle` sú štrukturálne operácie pre `BuyVehicle`/`SellVehicle` a obnovu zo
  * save — spravujú aj `VehicleDepot.vehicleIds`. FSM a pohyb doplní T03-06.
  *
+ * Joby (T03-05, ADR-018): `addJob`/`removeJob` sú štrukturálne operácie pre dispatcher (krok 5), `VehicleSystem`
+ * a obnovu zo save; `jobOfUnit` je index jednotka → aktívny job (odvodený, neukladá sa).
+ *
  * Sklady a depá (ADR-017): moduly vznikajú s ledgerom na čítanie (`ModuleEnv.cargo`) — apron a sklad držia len
  * rezervácie, obsadenie čítajú z `cargo`. Pripojenie modulu k ceste (`isConnected`, `connectorCells`) sa počíta
  * z mriežky pri každom volaní.
@@ -29,6 +32,7 @@
  */
 import { CargoLedger } from '../cargo/cargo-ledger';
 import type { CargoLedgerState } from '../cargo/cargo-ledger-state';
+import { isSameLocation } from '../cargo/cargo-location';
 import { EntityIdAllocator, type EntityId } from '../core/entity-id';
 import { EventBus } from '../core/event-bus';
 import { INITIAL_SPEED, SimClock } from '../core/sim-clock';
@@ -51,9 +55,12 @@ import { VehicleDepot } from '../modules/vehicle-depot';
 import type { Ship } from '../ships/ship';
 import { ShipError } from '../ships/ship-error';
 import { DistanceMatrix } from '../logistics/distance-matrix';
+import { JobError } from '../logistics/job-error';
 import { PathCache } from '../logistics/path-cache';
 import { Pathfinder } from '../logistics/pathfinder';
+import { JOB_STATE_TRAITS, type TransportJob } from '../logistics/transport-job';
 import { CraneSystem } from '../systems/crane-system';
+import { DispatcherSystem } from '../systems/dispatcher-system';
 import { ShipSystem } from '../systems/ship-system';
 import { StatResolver } from '../tech/stat-resolver';
 import type { Vehicle } from '../vehicles/vehicle';
@@ -109,6 +116,7 @@ function copyParcels(map: LoadedMap): Map<string, Parcel> {
 
 const NO_GROUPS: readonly BerthGroup[] = Object.freeze([]);
 
+
 export class World {
   readonly defs: DefRegistry;
   /** Načítaná mapa — len na čítanie; počiatočný stav mriežky dáva `map.createGrid()`, živá mriežka sveta je `grid`. */
@@ -133,6 +141,8 @@ export class World {
   readonly ships: ReadonlyMap<EntityId, Ship>;
   /** Vozidlá vzostupne podľa id (= poradie nákupu); meniť len cez `addVehicle`/`removeVehicle`. */
   readonly vehicles: ReadonlyMap<EntityId, Vehicle>;
+  /** Aktívne transportné joby vzostupne podľa id (= poradie vzniku); meniť len cez `addJob`/`removeJob` (ADR-018). */
+  readonly jobs: ReadonlyMap<EntityId, TransportJob>;
   /** Štatistiky entít po modifikátoroch (§10); vo F2 základ z defov. */
   readonly stats: StatResolver;
   /** Hotovosť v centoch (USD); môže byť záporná (bankrot rieši F5). */
@@ -144,9 +154,13 @@ export class World {
   private readonly moduleMap = new Map<EntityId, Module>();
   private readonly shipMap = new Map<EntityId, Ship>();
   private readonly vehicleMap = new Map<EntityId, Vehicle>();
+  private readonly jobMap = new Map<EntityId, TransportJob>();
+  /** Jednotka → jej aktívny job (odvodený index nad `jobMap`). */
+  private readonly unitJobs = new Map<EntityId, TransportJob>();
   private groups: readonly BerthGroup[] = NO_GROUPS;
   private readonly shipSystem = new ShipSystem();
   private readonly craneSystem = new CraneSystem();
+  private readonly dispatcherSystem = new DispatcherSystem();
   private roadChanges = 0;
   private pathfinderInstance: Pathfinder | undefined;
   private pathCache: PathCache | undefined;
@@ -167,6 +181,7 @@ export class World {
     this.modules = this.moduleMap;
     this.ships = this.shipMap;
     this.vehicles = this.vehicleMap;
+    this.jobs = this.jobMap;
     this.stats = new StatResolver(parts.defs);
     this.checkInvariants = options.checkInvariants ?? true;
   }
@@ -207,14 +222,15 @@ export class World {
 
   /**
    * Obnoví svet zo `serialize()` (aj po `JSON.parse`); staršiu verziu najprv prevedie `migrateWorldState` (v1 → v2:
-   * bez modulov, lodí a nákladu; v2 → v3: bez vozidiel a jobov). Terén a parcely berie z `map` (musí mať
+   * bez modulov, lodí a nákladu; v2 → v3: bez vozidiel a jobov, `runtime` skladu bez rezervácií, kotviska s
+   * `lastNoStorageHour`). Terén a parcely berie z `map` (musí mať
    * `id === state.mapId`), vrstvu dopravy celú z `state.roads` — starter cesta, ktorú hráč odstránil, sa neobnoví;
    * moduly, lode, vozidlá, náklad a odvodený stav obnoví `restoreEntities`. Neplatný stav → `WorldStateError` (pozri `parseWorldState`, `restoreEntities`). Výsledok
    * nezdieľa meniteľný stav so `state` ani s `map`. `options` ako pri `create`.
    */
   static deserialize(defs: DefRegistry, map: LoadedMap, state: AnyWorldState, options: WorldOptions = {}): World {
     const grid = map.createGrid();
-    const parsed = parseWorldState(migrateWorldState(state), defs, map, grid);
+    const parsed = parseWorldState(migrateWorldState(state, defs), defs, map, grid);
     for (let i = 0; i < grid.cellCount; i++) grid.atIndex(i).road = 'none';
     for (const [index, layer] of parsed.roads) grid.atIndex(index).road = layer;
     for (const [index, value] of parsed.traffic) grid.atIndex(index).traffic = value;
@@ -360,11 +376,11 @@ export class World {
 
   /**
    * Pridá loď (spawn `SpawnShipDebug`, obnova zo save). Chyby (`ShipError`, svet sa nezmení): id už vo svete má loď,
-   * modul alebo vozidlo (`duplicate_id`), id nepridelené alokátorom alebo menšie ako id poslednej lode — poradie spawnu = FIFO
+   * modul, vozidlo alebo job (`duplicate_id`), id nepridelené alokátorom alebo menšie ako id poslednej lode — poradie spawnu = FIFO
    * alokácie kotvísk (`invalid_input`). Kotviská (`dockedShipId`) a náklad zapisuje volajúci.
    */
   addShip(ship: Ship): void {
-    if (this.shipMap.has(ship.id) || this.moduleMap.has(ship.id) || this.vehicleMap.has(ship.id)) {
+    if (this.shipMap.has(ship.id) || this.moduleMap.has(ship.id) || this.vehicleMap.has(ship.id) || this.jobMap.has(ship.id)) {
       throw new ShipError('duplicate_id', `World.addShip: id ${String(ship.id)} už vo svete je`);
     }
     if (ship.id >= this.ids.getState().nextId) {
@@ -399,14 +415,14 @@ export class World {
 
   /**
    * Pridá vozidlo (nákup `BuyVehicle`, obnova zo save) a pripojí ho k depu (`VehicleDepot.attachVehicle`). Chyby
-   * (`VehicleError`, svet sa nezmení): id už vo svete má vozidlo, modul, loď alebo jednotka nákladu (`duplicate_id`),
+   * (`VehicleError`, svet sa nezmení): id už vo svete má vozidlo, modul, loď, job alebo jednotka nákladu (`duplicate_id`),
    * id nepridelené alokátorom alebo menšie ako id posledného vozidla — poradie nákupu (`invalid_input`), `depotId` nie
    * je depo vo svete (`unknown_depot`), depo nemá voľné státie (`depot_full`). Pravidlá hráča (pripojenie depa,
    * hotovosť) overuje príkaz vopred.
    */
   addVehicle(vehicle: Vehicle): void {
     const { id } = vehicle;
-    if (this.vehicleMap.has(id) || this.moduleMap.has(id) || this.shipMap.has(id) || this.cargo.get(id) !== undefined) {
+    if (this.vehicleMap.has(id) || this.moduleMap.has(id) || this.shipMap.has(id) || this.jobMap.has(id) || this.cargo.get(id) !== undefined) {
       throw new VehicleError('duplicate_id', `World.addVehicle: id ${String(id)} už vo svete je`);
     }
     if (id >= this.ids.getState().nextId) {
@@ -441,6 +457,66 @@ export class World {
     this.depotOf(vehicle, 'World.removeVehicle').detachVehicle(vehicleId);
     this.vehicleMap.delete(vehicleId);
     return vehicle;
+  }
+
+  // -------------------------------------------------------------------------------------------------------
+  // Joby (T03-05, ADR-018)
+  // -------------------------------------------------------------------------------------------------------
+
+  /**
+   * Pridá aktívny job (dispatcher, obnova zo save) a zaindexuje jeho jednotky. Chyby (`JobError`, svet sa nezmení):
+   * id už vo svete má job, modul, loď, vozidlo alebo jednotka (`duplicate_id`), id nepridelené alokátorom alebo menšie
+   * ako id posledného jobu — poradie vzniku (`invalid_input`), job v stave `done` (`invalid_input`), jednotka jobu
+   * v ledgeri nie je, alebo pri stave s nákladom na zdroji neleží na `from` (`unknown_unit`), jednotka už má aktívny job
+   * (`unit_busy`). Rezerváciu slotu v cieli a vozidlo spravuje volajúci.
+   */
+  addJob(job: TransportJob): void {
+    const { id } = job;
+    if (this.jobMap.has(id) || this.moduleMap.has(id) || this.shipMap.has(id) || this.vehicleMap.has(id) || this.cargo.get(id) !== undefined) {
+      throw new JobError('duplicate_id', `World.addJob: id ${String(id)} už vo svete je`);
+    }
+    if (id >= this.ids.getState().nextId) {
+      throw new JobError('invalid_input', `World.addJob: id ${String(id)} nepridelil alokátor sveta (nextId ${String(this.ids.getState().nextId)})`);
+    }
+    let last: EntityId | undefined;
+    for (const jobId of this.jobMap.keys()) last = jobId;
+    if (last !== undefined && id < last) throw new JobError('invalid_input', `World.addJob: ${job.label} má menšie id ako posledný job #${String(last)}`);
+    const traits = JOB_STATE_TRAITS[job.state];
+    if (!traits.active) throw new JobError('invalid_input', `World.addJob: ${job.label} v stave '${job.state}' nie je aktívny`);
+    for (const unitId of job.unitIds) {
+      const unit = this.cargo.get(unitId);
+      if (unit === undefined) throw new JobError('unknown_unit', `World.addJob: ${job.label}: jednotka #${String(unitId)} v ledgeri nie je`);
+      if (traits.cargoAt === 'source' && !isSameLocation(unit.location, job.from)) {
+        throw new JobError('unknown_unit', `World.addJob: ${job.label}: jednotka #${String(unitId)} neleží na zdroji jobu`);
+      }
+      const other = this.unitJobs.get(unitId);
+      if (other !== undefined) throw new JobError('unit_busy', `World.addJob: jednotka #${String(unitId)} už má ${other.label}`);
+    }
+    this.jobMap.set(id, job);
+    for (const unitId of job.unitIds) this.unitJobs.set(unitId, job);
+  }
+
+  /**
+   * Odstráni hotový job (`done`, `VehicleSystem` po vykládke) a vráti ho. Chyby (`JobError`, svet sa nezmení): neznáme id
+   * (`unknown_job`), job nie je `done` (`not_done`).
+   */
+  removeJob(jobId: EntityId): TransportJob {
+    const job = this.jobMap.get(jobId);
+    if (job === undefined) throw new JobError('unknown_job', `World.removeJob: job #${String(jobId)} neexistuje`);
+    if (job.state !== 'done') throw new JobError('not_done', `World.removeJob: ${job.label} je v stave '${job.state}'`);
+    this.jobMap.delete(jobId);
+    for (const unitId of job.unitIds) this.unitJobs.delete(unitId);
+    return job;
+  }
+
+  /** Aktívny job jednotky (bez alokácie); jednotka bez jobu → `undefined`. */
+  jobOfUnit(unitId: EntityId): TransportJob | undefined {
+    return this.unitJobs.get(unitId);
+  }
+
+  /** Počet jednotiek v indexe `jobOfUnit` (invariant kroku 12: = súčet jednotiek aktívnych jobov). */
+  get jobUnitCount(): number {
+    return this.unitJobs.size;
   }
 
   /**
@@ -533,7 +609,10 @@ export class World {
     // 4. craneSystem — cyklus žeriavov loď → apron.
     this.craneSystem.tick(this);
 
-    // 5.–11. dispatcher, vehicle, flow, landside, economy, tech, metrics — pribudnú v ďalších fázach presne v poradí §6.
+    // 5. dispatcher — inbound joby s rezerváciou skladu, priradenie voľných vozidiel (ADR-018).
+    this.dispatcherSystem.tick(this);
+
+    // 6.–11. vehicle, flow, landside, economy, tech, metrics — pribudnú v ďalších fázach presne v poradí §6.
 
     // 12. invarianty (DEV/testy): konzervácia nákladu + konzistencia modulov, apronov, žeriavov a lodí.
     if (this.checkInvariants) this.assertInvariants();
@@ -545,7 +624,7 @@ export class World {
   /**
    * Čistý JSON stav v3 (§14; tvar pozri `WorldState`): v1 polia + `traffic`, `modules` (poradie umiestnenia),
    * `cargo` (`cargo.getState()`), `ships` (vzostupne podľa id, `Ship.toState()`), `vehicles` (vzostupne podľa id,
-   * `Vehicle.toState()`) a `jobs` (T03-05; zatiaľ vždy prázdne). Fronta príkazov sa neukladá, preto musí byť prázdna —
+   * `Vehicle.toState()`) a `jobs` (aktívne joby vzostupne podľa id, `TransportJob.toState()`, ADR-018). Fronta príkazov sa neukladá, preto musí byť prázdna —
    * inak `Error` (zavolaj najprv `applyPending()` alebo `tick()`).
    */
   serialize(): WorldState {
@@ -589,7 +668,7 @@ export class World {
       cargo: this.cargo.getState(),
       ships: [...this.shipMap.values()].map((ship) => ship.toState()),
       vehicles: [...this.vehicleMap.values()].map((vehicle) => vehicle.toState()),
-      jobs: [],
+      jobs: [...this.jobMap.values()].map((job) => job.toState()),
     };
   }
 

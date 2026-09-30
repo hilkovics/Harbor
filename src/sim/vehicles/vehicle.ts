@@ -17,33 +17,7 @@ import type { EntityId } from '../core/entity-id';
 import type { VehicleDef } from '../defs/types';
 import { isRotation, type Rotation } from '../grid/rotation';
 import { VehicleError } from './vehicle-error';
-
-/**
- * Stavy vozidla (rozhodnutie orchestrátora F3 č. 7): `idle → to_pickup → loading → to_dropoff → unloading → idle`
- * a `to_* ↔ no_path` (čaká na cestu, skúša znova každých `logistics.repathIntervalTicks`). Prechody doplní T03-06.
- */
-export const VEHICLE_STATES = ['idle', 'to_pickup', 'loading', 'to_dropoff', 'unloading', 'no_path'] as const;
-export type VehicleState = (typeof VEHICLE_STATES)[number];
-
-/** Čo platí pre vozidlo v danom stave (T03-06 doplní ďalšie vlastnosti, napr. pohyb a pobyt v module). */
-export interface VehicleStateTraits {
-  /** Vozidlo má aktívny job (`jobId !== null`) — všetky stavy okrem `idle`. */
-  readonly hasJob: boolean;
-}
-
-export const VEHICLE_STATE_TRAITS: { readonly [S in VehicleState]: VehicleStateTraits } = Object.freeze({
-  idle: Object.freeze({ hasJob: false }),
-  to_pickup: Object.freeze({ hasJob: true }),
-  loading: Object.freeze({ hasJob: true }),
-  to_dropoff: Object.freeze({ hasJob: true }),
-  unloading: Object.freeze({ hasJob: true }),
-  no_path: Object.freeze({ hasJob: true }),
-});
-
-/** Je hodnota jeden zo stavov vozidla? */
-export function isVehicleState(value: unknown): value is VehicleState {
-  return (VEHICLE_STATES as readonly unknown[]).includes(value);
-}
+import { VEHICLE_TRANSITIONS, isVehicleState, isVehicleTransitionAllowed, type VehicleState } from './vehicle-fsm';
 
 /** Vozidlo v save (`WorldState.vehicles[i]`, T03-04) — čistý JSON; poradie v save = vzostupne podľa id (poradie nákupu). */
 export interface SerializedVehicle {
@@ -135,9 +109,21 @@ export class Vehicle {
     this.current = state;
   }
 
-  /** Aktuálny stav FSM (mení ho len FSM vozidla, T03-06). */
+  /** Aktuálny stav FSM (mení ho len `transition`). */
   get state(): VehicleState {
     return this.current;
+  }
+
+  /**
+   * Prechod podľa `VEHICLE_TRANSITIONS` (dispatcher, `VehicleSystem`); udalosť `VehicleStateChanged` emituje volajúci.
+   * Nepovolený prechod → `VehicleError('invalid_transition')`, vozidlo sa nezmení.
+   */
+  transition(to: VehicleState): void {
+    if (!isVehicleTransitionAllowed(this.current, to)) {
+      const allowed = VEHICLE_TRANSITIONS.get(this.current) ?? [];
+      throw new VehicleError('invalid_transition', `${this.label}: prechod ${this.current} → ${to} nie je povolený (povolené: ${allowed.join(', ') || '–'})`);
+    }
+    this.current = to;
   }
 
   /** Popis do chybových správ: `straddle_carrier #7`. */

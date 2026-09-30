@@ -18,7 +18,9 @@ export type VehicleErrorCode =
   /** `World.removeVehicle`: vozidlo vezie náklad (`in_vehicle`) — jednotky by stratili držiteľa. */
   | 'has_cargo'
   /** `World.removeVehicle`: vozidlo nie je `idle` alebo má job. */
-  | 'busy';
+  | 'busy'
+  /** `Vehicle.transition`: prechod mimo `VEHICLE_TRANSITIONS`. */
+  | 'invalid_transition';
 
 export class VehicleError extends Error {
   readonly code: VehicleErrorCode;

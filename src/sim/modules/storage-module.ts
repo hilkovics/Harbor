@@ -1,11 +1,15 @@
 /**
- * Sklad (ARCHITECTURE §5, §5.3, §7.7; ADR-017) — abstraktná báza skladov podľa kategórie nákladu (pravidlo 7:
+ * Sklad (ARCHITECTURE §5, §5.3, §7.7; ADR-017, ADR-018) — abstraktná báza skladov podľa kategórie nákladu (pravidlo 7:
  * `ContainerYard` pre kontajnery, neskôr `Silo`, `TankFarm`, `GasHolder`, `VehicleLot`). Triedu vyberá tabuľka
  * `STORAGE_MODULES` podľa `params.category` (`ModuleRegistry`, druh `storage`).
  *
  * Model (review T02-13): sklad drží **len rezervácie slotov** (`SlotReservations`, druh `in_storage`) a kumulatívne
  * počítadlá `unitsIn` / `unitsOut`; obsadenie (`storedCount`, jednotky, slot jednotky) číta z `CargoLedger` — poloha
  * nákladu má jediný zápis (pravidlo 2).
+ *
+ * Rezervácie patria jobom (ADR-018): každý aktívny `TransportJob` s cieľom v sklade drží práve svoj slot `to.slot`
+ * a iné rezervácie sklad nemá (invariant kroku 12). Preto sa do save neukladajú — obnova ich vytvorí z jobov
+ * (`reserveSlot`), rovnako ako rezervácie apronu zo žeriavov (ADR-014). `runtime` = len počítadlá.
  *
  * Tok (T03-05 dispatcher, T03-06 vozidlo): `reserve()` pri vzniku jobu → pri vykládke `assertCommittable(slot, unit)` →
  * `CargoLedger.move(unit, in_storage(id, slot))` → `commit(slot, unit)` (rezervácia zaniká, `unitsIn += 1`). Výdaj (F4):
@@ -14,23 +18,23 @@
  * Kapacita pre alokátor = `stored + reserved` (`freeCount`), pre UI `stored / capacity` (§7.7).
  */
 import type { EntityId } from '../core/entity-id';
-import { describeValue, pointerSegment } from '../defs/def-spec';
 import { storageParams } from '../defs/module-def';
 import type { CargoCategory, StorageParams } from '../defs/types';
 import { Module, type ModuleInit } from './module';
-import { ModuleError, ModuleStateError } from './module-error';
+import { ModuleError } from './module-error';
 import { checkRuntimeKeys, readCount } from './runtime-state';
 import { SlotReservations, type CargoSlotsView } from './slot-reservations';
 
-/** Dynamický stav skladu v save (`WorldState.modules[i].runtime`, ADR-017); obsadenie je v ledgeri. */
+/**
+ * Dynamický stav skladu v save (`WorldState.modules[i].runtime`, ADR-017, ADR-018): len kumulatívne počítadlá —
+ * obsadenie je v ledgeri a rezervácie sa odvodia z jobov.
+ */
 export type StorageRuntimeState = {
-  /** Rezervované sloty ostro vzostupne. */
-  readonly reservedSlots: readonly number[];
   readonly unitsIn: number;
   readonly unitsOut: number;
 };
 
-const RUNTIME_KEYS: readonly (keyof StorageRuntimeState)[] = ['reservedSlots', 'unitsIn', 'unitsOut'];
+const RUNTIME_KEYS: readonly (keyof StorageRuntimeState)[] = ['unitsIn', 'unitsOut'];
 
 export abstract class StorageModule extends Module {
   /** Typované `params` defu (`storageParams`). */
@@ -117,6 +121,14 @@ export abstract class StorageModule extends Module {
     return this.slots.reserve();
   }
 
+  /**
+   * Rezervuje konkrétny slot — obnova zo save podľa aktívneho jobu (ADR-018). Chyby ako `SlotReservations.reserveSlot`
+   * (`invalid_slot`, `slot_occupied`, `slot_reserved`).
+   */
+  reserveSlot(slot: number): void {
+    this.slots.reserveSlot(slot);
+  }
+
   /** Zruší rezerváciu slotu (zrušený job); chyby ako `SlotReservations.release`. */
   release(slot: number): void {
     this.slots.release(slot);
@@ -145,35 +157,17 @@ export abstract class StorageModule extends Module {
   }
 
   override getRuntimeState(): StorageRuntimeState {
-    return { reservedSlots: [...this.slots.reservedSlots()], unitsIn: this.inCount, unitsOut: this.outCount };
+    return { unitsIn: this.inCount, unitsOut: this.outCount };
   }
 
   /**
-   * Kontroly: presne kľúče `StorageRuntimeState`, `reservedSlots` pole celých čísel ostro vzostupne v `0 … capacity − 1`,
-   * ktoré podľa ledgera nie sú obsadené (ledger sa obnovuje pred modulmi), počítadlá celé ≥ 0. Neplatný stav →
-   * `ModuleStateError`; obnova je atomická (pri chybe sa nezmení nič).
+   * Kontroly: presne kľúče `StorageRuntimeState`, počítadlá celé ≥ 0. Neplatný stav → `ModuleStateError`; obnova je
+   * atomická (pri chybe sa nezmení nič). Rezervácie obnoví svet z jobov (`reserveSlot`).
    */
   override restoreRuntimeState(raw: unknown): void {
     const fields = checkRuntimeKeys(raw, RUNTIME_KEYS);
-    const rawSlots = fields['reservedSlots'];
-    if (!Array.isArray(rawSlots)) throw new ModuleStateError('/reservedSlots', `musí byť pole, dostal ${describeValue(rawSlots)}`);
-    const slots: number[] = [];
-    rawSlots.forEach((value: unknown, i) => {
-      const path = `/reservedSlots${pointerSegment(i)}`;
-      const slot = readCount(value, path);
-      if (slot >= this.capacity) throw new ModuleStateError(path, `slot ${String(slot)} je mimo 0…${String(this.capacity - 1)}`);
-      const previous = slots.at(-1);
-      if (previous !== undefined && slot <= previous) throw new ModuleStateError(path, `sloty musia byť ostro vzostupne, ${String(slot)} ≤ ${String(previous)}`);
-      const occupant = this.slots.unitAt(slot);
-      if (occupant !== null) throw new ModuleStateError(path, `rezervovaný slot ${String(slot)} obsadila jednotka #${String(occupant)}`);
-      slots.push(slot);
-    });
     const unitsIn = readCount(fields['unitsIn'], '/unitsIn');
     const unitsOut = readCount(fields['unitsOut'], '/unitsOut');
-
-    // Od tohto bodu nič nevyhadzuje — obnova je atomická (sloty sú overené, vzostupné a voľné).
-    for (const slot of this.slots.reservedSlots()) this.slots.release(slot);
-    for (const slot of slots) this.slots.reserveSlot(slot);
     this.inCount = unitsIn;
     this.outCount = unitsOut;
   }

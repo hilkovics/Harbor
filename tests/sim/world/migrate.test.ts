@@ -1,7 +1,8 @@
-// Migrácia WorldState (T02-03, T03-04; ARCHITECTURE §14, ADR-014): v1 → v2 (v1 polia ostanú, pribudnú prázdne
-// traffic/modules/cargo/ships, starter moduly mapy sa nedoplnia) → v3 (v2 polia ostanú, pribudnú prázdne vehicles/jobs);
-// aktuálna verzia prejde bez zmeny; neznáma verzia a zlý tvar staršej verzie → WorldStateError. World.deserialize prijme
-// v1, v2 aj v3, serialize() vždy vráti v3.
+// Migrácia WorldState (T02-03, T03-04, T03-05; ARCHITECTURE §14, ADR-014, ADR-018): v1 → v2 (v1 polia ostanú, pribudnú
+// prázdne traffic/modules/cargo/ships, starter moduly mapy sa nedoplnia) → v3 (v2 polia ostanú, pribudnú prázdne
+// vehicles/jobs, runtime skladu stratí reservedSlots a kotvisko dostane lastNoStorageHour: null); aktuálna verzia prejde
+// bez zmeny; neznáma verzia a zlý tvar staršej verzie → WorldStateError. World.deserialize prijme v1, v2 aj v3,
+// serialize() vždy vráti v3.
 import { describe, expect, it } from 'vitest';
 import {
   OLDEST_WORLD_STATE_VERSION,
@@ -56,11 +57,21 @@ function toV1(state: WorldState): WorldStateV1 {
   return viaJson(v1) as unknown as WorldStateV1;
 }
 
-/** Save vo formáte v2 (F2 / T03-02): len kľúče v2, `version: 2` — presne to, čo zapisoval F2 `serialize()`. */
+/** `runtime` modulu tak, ako ho zapisoval v2 (T03-02): kotvisko `{}`, sklad s `reservedSlots` pred počítadlami. */
+const RUNTIME_AS_V2: Partial<Record<string, (runtime: Record<string, unknown>) => Record<string, unknown>>> = {
+  berth: () => ({}),
+  storage: (runtime) => ({ reservedSlots: [], ...runtime }),
+};
+
+/** Save vo formáte v2 (F2 / T03-02): len kľúče v2, `version: 2`, `runtime` modulov ako v2 — presne to, čo zapisoval F2/T03-02 `serialize()`. */
 function toV2(state: WorldState): WorldStateV2 {
   const v2: Record<string, unknown> = {};
   for (const key of WORLD_STATE_V2_KEYS) v2[key] = state[key];
   v2.version = 2;
+  v2.modules = state.modules.map((entry) => {
+    const downgrade = RUNTIME_AS_V2[DEFS.modules.get(entry.defId).kind];
+    return downgrade === undefined ? entry : { ...entry, runtime: downgrade({ ...entry.runtime }) };
+  });
   return viaJson(v2) as unknown as WorldStateV2;
 }
 
@@ -77,19 +88,19 @@ describe('migrateWorldState', () => {
     expect(WORLD_STATE_V2).toBe(OLDEST_WORLD_STATE_VERSION + 1);
     expect(WORLD_STATE_V3).toBe(WORLD_STATE_V2 + 1);
     expect(WORLD_STATE_VERSION).toBe(WORLD_STATE_V3);
-    const migrated = migrateWorldState(toV1(f1World().serialize())) as Record<string, unknown>;
+    const migrated = migrateWorldState(toV1(f1World().serialize()), DEFS) as Record<string, unknown>;
     expect(migrated.version).toBe(WORLD_STATE_V3);
   });
 
   it('aktuálna verzia prejde bez zmeny (tá istá referencia)', () => {
     const state = World.create(DEFS, MAP, SEED).serialize();
-    expect(migrateWorldState(state)).toBe(state);
+    expect(migrateWorldState(state, DEFS)).toBe(state);
   });
 
   it('v1 → v2 → v3: nový objekt, kľúče v3 v poradí serialize(), v1 hodnoty bez zmeny, prázdne nové polia', () => {
     const v1 = toV1(f1World().serialize());
     const before = viaJson(v1);
-    const migrated = migrateWorldState(v1) as Record<string, unknown>;
+    const migrated = migrateWorldState(v1, DEFS) as Record<string, unknown>;
     expect(migrated).not.toBe(v1);
     expect(Object.keys(migrated)).toEqual([...WORLD_STATE_KEYS]);
     for (const key of WORLD_STATE_V1_KEYS) {
@@ -105,27 +116,48 @@ describe('migrateWorldState', () => {
     expect(v1).toEqual(before); // vstup sa nezmenil
   });
 
-  it('v2 → v3: nový objekt, kľúče v3, všetky v2 hodnoty bez zmeny (moduly, náklad, lode), prázdne vehicles a jobs', () => {
+  it('v2 → v3: nový objekt, kľúče v3, v2 hodnoty bez zmeny (náklad, lode…) okrem runtime modulov, prázdne vehicles a jobs', () => {
     const world = World.create(DEFS, MAP, SEED);
     runTicks(world, 50);
-    const v2 = toV2(world.serialize());
+    const v3 = world.serialize();
+    const v2 = toV2(v3);
     const before = viaJson(v2);
-    const migrated = migrateWorldState(v2) as Record<string, unknown>;
+    const migrated = migrateWorldState(v2, DEFS) as Record<string, unknown>;
     expect(migrated).not.toBe(v2);
     expect(Object.keys(migrated)).toEqual([...WORLD_STATE_V3_KEYS]);
     for (const key of WORLD_STATE_V2_KEYS) {
-      if (key !== 'version') expect(migrated[key]).toEqual((v2 as unknown as Record<string, unknown>)[key]);
+      if (key !== 'version' && key !== 'modules') expect(migrated[key]).toEqual((v2 as unknown as Record<string, unknown>)[key]);
     }
     expect((migrated.modules as unknown[]).length).toBe(MAP.starter.modules.length);
+    expect(migrated.modules).toEqual(v3.modules); // kotvisko dostalo lastNoStorageHour: null, žeriav bez zmeny
     expect(migrated.version).toBe(WORLD_STATE_V3);
     expect(migrated.vehicles).toEqual([]);
     expect(migrated.jobs).toEqual([]);
     expect(v2).toEqual(before);
   });
 
+  it('v2 → v3 runtime modulov podľa druhu (ADR-018): sklad stratí reservedSlots, kotvisko dostane lastNoStorageHour null, iné a neznáme defy bez zmeny', () => {
+    const v2 = toV2(World.create(DEFS, MAP, SEED).serialize()) as unknown as { modules: Record<string, unknown>[] };
+    v2.modules.push(
+      { id: 90, defId: 'container_yard_small', x: 30, y: 20, rotation: 0, purchaseCostCents: 0, runtime: { reservedSlots: [1, 2], unitsIn: 3, unitsOut: 1 } },
+      { id: 91, defId: 'vehicle_depot', x: 36, y: 20, rotation: 0, purchaseCostCents: 0, runtime: {} },
+      { id: 92, defId: 'neznamy_modul', x: 40, y: 20, rotation: 0, purchaseCostCents: 0, runtime: { reservedSlots: [0] } },
+    );
+    const before = viaJson(v2);
+    const migrated = migrateWorldState(v2, DEFS) as { modules: { defId: string; runtime: unknown }[] };
+    expect(migrated.modules.map((entry) => [entry.defId, entry.runtime])).toEqual([
+      ['berth_standard', { lastNoStorageHour: null }],
+      ['crane_container_gantry', (before.modules[1] as { runtime: unknown }).runtime],
+      ['container_yard_small', { unitsIn: 3, unitsOut: 1 }],
+      ['vehicle_depot', {}],
+      ['neznamy_modul', { reservedSlots: [0] }],
+    ]);
+    expect(v2).toEqual(before); // vstup (ani vnorené runtime) sa nezmenil
+  });
+
   it('stav, ktorý nie je objekt → WorldStateError na koreni', () => {
     for (const raw of [null, 1, 'x', []]) {
-      expect(() => migrateWorldState(raw)).toThrow(WorldStateError);
+      expect(() => migrateWorldState(raw, DEFS)).toThrow(WorldStateError);
     }
   });
 
@@ -139,7 +171,7 @@ describe('migrateWorldState', () => {
   it.each(INVALID)('%s → WorldStateError na %s', (_name, path, raw) => {
     let error: unknown;
     try {
-      migrateWorldState(raw);
+      migrateWorldState(raw, DEFS);
     } catch (e) {
       error = e;
     }
@@ -149,18 +181,18 @@ describe('migrateWorldState', () => {
 
   it('v1 s neznámym alebo chýbajúcim kľúčom → cesta v tvare v1', () => {
     const v1 = toV1(f1World().serialize()) as unknown as Record<string, unknown>;
-    expect(() => migrateWorldState({ ...v1, modules: [] })).toThrow(expect.objectContaining({ path: '/modules' }) as Error);
+    expect(() => migrateWorldState({ ...v1, modules: [] }, DEFS)).toThrow(expect.objectContaining({ path: '/modules' }) as Error);
     const missing = { ...v1 };
     delete missing.cashCents;
-    expect(() => migrateWorldState(missing)).toThrow(expect.objectContaining({ path: '/cashCents' }) as Error);
+    expect(() => migrateWorldState(missing, DEFS)).toThrow(expect.objectContaining({ path: '/cashCents' }) as Error);
   });
 
   it('v2 s neznámym (napr. vehicles) alebo chýbajúcim kľúčom → cesta v tvare v2', () => {
     const v2 = toV2(World.create(DEFS, MAP, SEED).serialize()) as unknown as Record<string, unknown>;
-    expect(() => migrateWorldState({ ...v2, vehicles: [] })).toThrow(expect.objectContaining({ path: '/vehicles' }) as Error);
+    expect(() => migrateWorldState({ ...v2, vehicles: [] }, DEFS)).toThrow(expect.objectContaining({ path: '/vehicles' }) as Error);
     const missing = { ...v2 };
     delete missing.ships;
-    expect(() => migrateWorldState(missing)).toThrow(expect.objectContaining({ path: '/ships' }) as Error);
+    expect(() => migrateWorldState(missing, DEFS)).toThrow(expect.objectContaining({ path: '/ships' }) as Error);
   });
 });
 
@@ -237,7 +269,14 @@ describe('World.deserialize — v2 save (F2 so skladom a depom) → migrate → 
     expect(fromV2.vehicles.size).toBe(0);
     const depot = [...fromV2.modules.values()].find((module) => module.kind === 'depot') as VehicleDepot | undefined;
     expect(depot?.vehicleIds).toEqual([]);
-    expect(fromV2.serialize()).toEqual(original.serialize());
+    // v2 nepoznal throttle `NoStorageAvailable` (ADR-018): kotvisko z v2 začína s lastNoStorageHour null, pôvodný svet
+    // (s dispatcherom, jednotky na aprone bez skladu) už v hodine 1 hlásil. Inak je stav zhodný.
+    const expected = original.serialize();
+    expect((expected.modules[0].runtime as { lastNoStorageHour: unknown }).lastNoStorageHour).toBe(1);
+    expect(fromV2.serialize()).toEqual({
+      ...expected,
+      modules: expected.modules.map((entry, i) => (i === 0 ? { ...entry, runtime: { lastNoStorageHour: null } } : entry)),
+    });
     runTicks(original, 500);
     runTicks(fromV2, 500);
     expect(hashState(fromV2.serialize())).toBe(hashState(original.serialize()));

@@ -338,6 +338,21 @@ describe('CargoLedger — indexy podľa držiteľa', () => {
     expect(harness.ledger.firstUnitAt('on_ship', id(SHIP))).toBe(ids[1]);
   });
 
+  it('unitAtIndex: pozícia v poradí indexu (apron FIFO) bez kópie; mimo rozsahu a neznámy držiteľ → undefined (T03-05)', () => {
+    const harness = withUnits(3);
+    const [a, b, c] = harness.units;
+    moveThrough(harness.ledger, c, [at.crane(CRANE), at.apron(BERTH, 0)]);
+    moveThrough(harness.ledger, a, [at.crane(CRANE), at.apron(BERTH, 3)]);
+    moveThrough(harness.ledger, b, [at.crane(CRANE), at.apron(BERTH, 1)]);
+    const count = harness.ledger.countAt('on_apron', id(BERTH));
+    const seen = Array.from({ length: count }, (_, i) => harness.ledger.unitAtIndex('on_apron', id(BERTH), i));
+    expect(seen).toEqual(harness.ledger.unitsOnApron(id(BERTH)));
+    expect(seen).toEqual([c, a, b]);
+    expect(harness.ledger.unitAtIndex('on_apron', id(BERTH), count)).toBeUndefined();
+    expect(harness.ledger.unitAtIndex('on_apron', id(BERTH), -1)).toBeUndefined();
+    expect(harness.ledger.unitAtIndex('on_apron', id(12345), 0)).toBeUndefined();
+  });
+
   it('unitAtSlot funguje len pre jedinečné miesta (apron, sklad)', () => {
     const harness = withUnits(1);
     const [unitId] = harness.units;

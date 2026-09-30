@@ -212,6 +212,15 @@ export class CargoLedger {
     return this.buckets.get(kind)?.get(holderId)?.units[0];
   }
 
+  /**
+   * Jednotka na pozícii `index` v poradí indexu držiteľa (`0 … countAt − 1`) bez alokácie; mimo rozsahu `undefined`.
+   * Dispatcher (T03-05) ňou prechádza aprony vo FIFO bez kópie zoznamu — počas prechodu sa nesmie volať `move`
+   * jednotiek toho istého držiteľa.
+   */
+  unitAtIndex(kind: CargoHolderKind, holderId: EntityId, index: number): EntityId | undefined {
+    return this.buckets.get(kind)?.get(holderId)?.units[index];
+  }
+
   /** Jednotka na jedinečnom mieste držiteľa (slot apronu/skladu); pre druhy bez jedinečných miest vždy `undefined`. */
   unitAtSlot(kind: CargoHolderKind, holderId: EntityId, slot: number): EntityId | undefined {
     return this.buckets.get(kind)?.get(holderId)?.slots?.get(slot);

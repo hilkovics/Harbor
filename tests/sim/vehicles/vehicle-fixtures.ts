@@ -1,11 +1,12 @@
-// Pomôcky testov vozidiel (T03-04): svet s pripojeným depom a dvorom na starter parcele harbor_01, vozidlo priamo cez
-// World.addVehicle (bez príkazu) a vykonanie JSON príkazu.
+// Pomôcky testov vozidiel (T03-04, T03-05): svet s pripojeným depom a dvorom na starter parcele harbor_01, vozidlo priamo
+// cez World.addVehicle (bez príkazu), vozidlo s nákladom uprostred jobu a vykonanie JSON príkazu.
 import cargoTypesJson from '@data/defs/cargo_types.json';
 import { commandFromJSON, type SerializedCommand } from '@sim/commands';
 import type { EntityId } from '@sim/core';
 import { DefRegistry } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
-import type { VehicleDepot } from '@sim/modules';
+import { TransportJob } from '@sim/logistics';
+import type { StorageModule, VehicleDepot } from '@sim/modules';
 import { Vehicle, type VehicleInit } from '@sim/vehicles';
 import { World } from '@sim/world';
 import { DEFS, MAP, RAW_DEFS, SEED } from '../world/world-fixtures';
@@ -89,4 +90,44 @@ export function addVehicleTo(world: World, depotId: EntityId, overrides: Partial
   });
   world.addVehicle(vehicle);
   return vehicle;
+}
+
+/** Vozidlo s nákladom uprostred jobu (`carryingVehicle`). */
+export interface CarryingVehicle {
+  readonly vehicle: Vehicle;
+  readonly job: TransportJob;
+  readonly unit: EntityId;
+}
+
+/**
+ * Konzistentné vozidlo s nákladom (rozhodnutie orchestrátora F3 č. 5: náklad vezie len vozidlo s jobom): vozidlo stojí
+ * na vonkajšej bunke dvora `yard` v stave `unloading`, jeho job (`dropping`, zdroj apron Root berthu) má rezervovaný
+ * slot v dvore a jednotka je vo vozidle (reťaz §7.1 cez fiktívne loď/žeriav — len ledger).
+ */
+export function carryingVehicle(world: World, depotId: EntityId, yard: StorageModule, overrides: Partial<VehicleInit> = {}): CarryingVehicle {
+  const vehicleId = world.ids.next();
+  const jobId = world.ids.next();
+  const vehicle = addVehicleTo(world, depotId, {
+    id: vehicleId,
+    state: 'unloading',
+    jobId,
+    x: YARD_OUTSIDE.x + 0.5,
+    y: YARD_OUTSIDE.y + 0.5,
+    ...overrides,
+  });
+  const unit = world.cargo.create('container_teu', { kind: 'on_ship', shipId: 900 as EntityId }).id;
+  world.cargo.move(unit, { kind: 'in_crane', craneId: 901 as EntityId });
+  world.cargo.move(unit, { kind: 'on_apron', berthId: 902 as EntityId, slot: 0 });
+  world.cargo.move(unit, { kind: 'in_vehicle', vehicleId });
+  const job = new TransportJob({
+    id: jobId,
+    unitIds: [unit],
+    from: { kind: 'on_apron', berthId: 1 as EntityId, slot: 0 },
+    to: { kind: 'in_storage', moduleId: yard.id, slot: yard.reserve() },
+    createdTick: world.clock.tick,
+    state: 'dropping',
+    vehicleId,
+  });
+  world.addJob(job);
+  return { vehicle, job, unit };
 }

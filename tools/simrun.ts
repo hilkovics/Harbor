@@ -12,7 +12,7 @@ import { CommandError, commandFromJSON, type Command, type SerializedCommand } f
 import { loadBundledDefs, type DefRegistry } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
 import { loadBundledMap, loadMap, parseMapDef, type LoadedMap } from '@sim/grid';
-import { CraneModule } from '@sim/modules';
+import { CraneModule, TruckGate } from '@sim/modules';
 import { World } from '@sim/world';
 
 // ---------------------------------------------------------------------------------------------------------
@@ -113,6 +113,24 @@ export interface SimrunReport {
    * `null`, ak taký tick v behu nenastal (vrátane behu bez spawnu lode).
    */
   readonly ticksToAllStored: number | null;
+  /** Počet udalostí `TruckSpawned` počas behu (kamión vyšiel na road portáli s nákladom z docku rampy, F4). */
+  readonly trucksSpawned: number;
+  /** Počet udalostí `TruckExited` počas behu (kamión opustil mapu cez road portál). */
+  readonly trucksExited: number;
+  /** Σ `TruckExited.units` — jednotky odvezené kamiónmi; krížová kontrola voči `exportedUnits` (bez iného exportu sú rovnaké). */
+  readonly unitsExportedByTrucks: number;
+  /** Počet udalostí `NoWaitingBay` počas behu (rampa má náklad, ale žiadne stojisko nemá voľný bay; najviac raz za hernú hodinu na rampu). */
+  readonly noWaitingBayEvents: number;
+  /**
+   * Maximum Σ `TruckGate.queueLength` cez všetky brány (moduly druhu `gate`) meraného po každom ticku; do fronty sa
+   * počíta aj kamión, ktorý bránou práve prechádza (z fronty vypadne až po dokončení prechodu). Bez brány 0.
+   */
+  readonly gateQueueMax: number;
+  /**
+   * `world.clock.tick` po prvom ticku, v ktorom po aspoň jednom `ShipSpawned` platí `cargo.exportedCount === cargo.createdCount`
+   * a `createdCount > 0` (všetok vytvorený náklad opustil mapu); `null`, ak taký tick v behu nenastal.
+   */
+  readonly ticksToAllExported: number | null;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -339,6 +357,10 @@ interface EventTally {
   craneCycles: number;
   jobsDone: number;
   noStorageEvents: number;
+  trucksSpawned: number;
+  trucksExited: number;
+  unitsExportedByTrucks: number;
+  noWaitingBayEvents: number;
 }
 
 function tallyEvents(tally: EventTally, events: readonly SimEvent[]): void {
@@ -348,6 +370,11 @@ function tallyEvents(tally: EventTally, events: readonly SimEvent[]): void {
     else if (event.type === 'CraneCycleDone') tally.craneCycles += 1;
     else if (event.type === 'JobDone') tally.jobsDone += 1;
     else if (event.type === 'NoStorageAvailable') tally.noStorageEvents += 1;
+    else if (event.type === 'TruckSpawned') tally.trucksSpawned += 1;
+    else if (event.type === 'TruckExited') {
+      tally.trucksExited += 1;
+      tally.unitsExportedByTrucks += event.units;
+    } else if (event.type === 'NoWaitingBay') tally.noWaitingBayEvents += 1;
   }
 }
 
@@ -368,6 +395,21 @@ function isAllStored(world: World): boolean {
     cargo.countByKind('in_crane') +
     cargo.countByKind('in_vehicle');
   return inTransit === 0;
+}
+
+/** Všetok vytvorený náklad opustil mapu (`exportedCount === createdCount`); prázdny svet (`createdCount === 0`) nie. */
+function isAllExported(world: World): boolean {
+  const { cargo } = world;
+  return cargo.createdCount > 0 && cargo.exportedCount === cargo.createdCount;
+}
+
+/** Σ dĺžok frontov všetkých brán kamiónov (vrátane kamióna, ktorý bránou práve prechádza). */
+function totalGateQueue(world: World): number {
+  let queued = 0;
+  for (const module of world.modules.values()) {
+    if (module instanceof TruckGate) queued += module.queueLength;
+  }
+  return queued;
 }
 
 function countRoads(world: World): number {
@@ -391,9 +433,21 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
   const entries = parseCommands(scenario);
   const world = World.create(defs, resolveMap(scenario), scenario.seed);
 
-  const tally: EventTally = { shipsSpawned: 0, shipsDeparted: 0, craneCycles: 0, jobsDone: 0, noStorageEvents: 0 };
+  const tally: EventTally = {
+    shipsSpawned: 0,
+    shipsDeparted: 0,
+    craneCycles: 0,
+    jobsDone: 0,
+    noStorageEvents: 0,
+    trucksSpawned: 0,
+    trucksExited: 0,
+    unitsExportedByTrucks: 0,
+    noWaitingBayEvents: 0,
+  };
   const vehicleTicks = { activeTicks: 0, totalTicks: 0 };
   let ticksToAllStored: number | null = null;
+  let ticksToAllExported: number | null = null;
+  let gateQueueMax = 0;
   let next = 0;
   for (let i = 0; i < ticks; i++) {
     const tick = world.clock.tick;
@@ -411,6 +465,8 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     tallyEvents(tally, world.tick());
     tallyVehicleTicks(world, vehicleTicks);
     if (ticksToAllStored === null && tally.shipsSpawned > 0 && isAllStored(world)) ticksToAllStored = world.clock.tick;
+    gateQueueMax = Math.max(gateQueueMax, totalGateQueue(world));
+    if (ticksToAllExported === null && tally.shipsSpawned > 0 && isAllExported(world)) ticksToAllExported = world.clock.tick;
   }
 
   return {
@@ -437,6 +493,12 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     vehicleUtilPct: vehicleUtilPercent(vehicleTicks),
     noStorageEvents: tally.noStorageEvents,
     ticksToAllStored,
+    trucksSpawned: tally.trucksSpawned,
+    trucksExited: tally.trucksExited,
+    unitsExportedByTrucks: tally.unitsExportedByTrucks,
+    noWaitingBayEvents: tally.noWaitingBayEvents,
+    gateQueueMax,
+    ticksToAllExported,
   };
 }
 
@@ -452,7 +514,10 @@ export function formatSummary(report: SimrunReport): string {
     `na aprone ${String(report.unitsOnApron)}, cykly žeriavov ${String(report.craneCycles)}, ` +
     `vozidlá ${String(report.vehicles)}, v sklade ${String(report.unitsInStorage)}, joby hotové ${String(report.jobsDone)}, ` +
     `využitie vozidiel ${String(report.vehicleUtilPct)} %, bez skladu ${String(report.noStorageEvents)}, ` +
-    `všetko uložené ${metric(report.ticksToAllStored)}`
+    `všetko uložené ${metric(report.ticksToAllStored)}, ` +
+    `kamióny ${String(report.trucksSpawned)}/${String(report.trucksExited)} (spawn/odchod), ` +
+    `odvezené kamiónmi ${String(report.unitsExportedByTrucks)}, bez stojiska ${String(report.noWaitingBayEvents)}, ` +
+    `fronta brány max ${String(report.gateQueueMax)}, všetko exportované ${metric(report.ticksToAllExported)}`
   );
 }
 

@@ -11,12 +11,17 @@
  *   `inoperativeReason` sú teda zverejnený stav (pre UI a render); systémy sa pýtajú `World.isRampOperational`, ktorý
  *   je vždy aktuálny. Neprevádzková rampa nedostane outbound joby ani kamióny.
  *
+ * - **Outbound joby** (T04-03, ADR-023): dispatcher pri vzniku jobu rezervuje miesto `reserve(firstFreeDock())`, job
+ *   drží rezerváciu celý život a vozidlo pri vykládke `assertCommittable → CargoLedger.move → commit` (cez
+ *   `cargoDropTarget()`); zrušený `open` job (rampa stratila prevádzkovosť) `release(dock)`.
+ *
  * `runtime` v save je `{}`: rezervácie staging miest patria outbound jobom a obnovia sa z nich (T04-03), obsadenie je
  * v ledgeri a prevádzkovosť sa odvodí z ciest a modulov.
  */
 import type { EntityId } from '../core/entity-id';
 import { rampParams } from '../defs/module-def';
 import type { CargoCategory, RampParams } from '../defs/types';
+import type { CargoDropTarget } from './cargo-drop-target';
 import { DockStaging } from './dock-staging';
 import { LandExportModule } from './land-export-module';
 import type { ModuleInit } from './module';
@@ -46,6 +51,8 @@ export class LoadingRamp extends LandExportModule {
   /** Typované `params` defu (`rampParams`). */
   readonly params: RampParams;
   private readonly staging: DockStaging;
+  /** Cieľ doručenia outbound jobu (`at_ramp`, dock = miesto) — jeden objekt na rampu, vracia ho `cargoDropTarget()`. */
+  private readonly drop: CargoDropTarget;
   private status: RampStatus = RAMP_UNPUBLISHED;
   private published = false;
 
@@ -59,6 +66,25 @@ export class LoadingRamp extends LandExportModule {
       perDock: this.params.stagingPerDock,
       cargo: init.cargo,
       label: `rampa ${this.label}`,
+    });
+    const { staging } = this;
+    this.drop = Object.freeze({
+      kind: 'at_ramp',
+      category: this.params.category,
+      places: this.params.docks,
+      reservationsAt: (dock: number): number => (Number.isInteger(dock) && dock >= 0 && dock < staging.docks ? staging.reservedAt(dock) : 0),
+      restoreReservation: (dock: number): void => {
+        staging.reserve(dock);
+      },
+      release: (dock: number): void => {
+        staging.release(dock);
+      },
+      assertCommittable: (dock: number, unitId: EntityId): void => {
+        staging.assertCommittable(dock, unitId);
+      },
+      commit: (dock: number, unitId: EntityId): void => {
+        staging.commit(dock, unitId);
+      },
     });
   }
 
@@ -175,6 +201,14 @@ export class LoadingRamp extends LandExportModule {
   /** Po presune na dock: rezervácia zaniká; chyby ako `DockStaging.commit`. */
   commit(dock: number, unitId: EntityId): void {
     this.staging.commit(dock, unitId);
+  }
+
+  /**
+   * Cieľ outbound jobu: dock rampy (`at_ramp`, ADR-023). Obnova rezervácie zo save = `reserve(dock)` — zlyhá
+   * (`no_free_slot`), ak by dock prekročil `stagingPerDock`.
+   */
+  override cargoDropTarget(): CargoDropTarget {
+    return this.drop;
   }
 
   /** Staging rezervácie hlási pravidlu `has_cargo` (§8 bod 8). */

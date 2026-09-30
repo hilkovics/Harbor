@@ -12,14 +12,16 @@
  * (`reserveSlot`), rovnako ako rezervácie apronu zo žeriavov (ADR-014). `runtime` = len počítadlá.
  *
  * Tok (T03-05 dispatcher, T03-06 vozidlo): `reserve()` pri vzniku jobu → pri vykládke `assertCommittable(slot, unit)` →
- * `CargoLedger.move(unit, in_storage(id, slot))` → `commit(slot, unit)` (rezervácia zaniká, `unitsIn += 1`). Výdaj (F4):
- * `CargoLedger.move(unit, in_vehicle…)` → `recordTaken(unit)` (`unitsOut += 1`). Zrušený job: `release(slot)`.
+ * `CargoLedger.move(unit, in_storage(id, slot))` → `commit(slot, unit)` (rezervácia zaniká, `unitsIn += 1`). Výdaj
+ * (outbound job, T04-03): `CargoLedger.move(unit, in_vehicle…)` → `recordTaken(unit)` (`unitsOut += 1`). Zrušený job:
+ * `release(slot)`. Vozidlo a svet pristupujú k slotu cieľa genericky cez `cargoDropTarget()` (ADR-023).
  *
  * Kapacita pre alokátor = `stored + reserved` (`freeCount`), pre UI `stored / capacity` (§7.7).
  */
 import type { EntityId } from '../core/entity-id';
 import { storageParams } from '../defs/module-def';
 import type { CargoCategory, StorageParams } from '../defs/types';
+import type { CargoDropTarget } from './cargo-drop-target';
 import { Module, type ModuleInit } from './module';
 import { ModuleError } from './module-error';
 import { checkRuntimeKeys, readCount } from './runtime-state';
@@ -42,6 +44,8 @@ export abstract class StorageModule extends Module {
   /** Počet slotov = `params.capacityUnits`. */
   readonly capacity: number;
   private readonly slots: SlotReservations;
+  /** Cieľ doručenia jobu (`in_storage`, slot = miesto) — jeden objekt na sklad, vracia ho `cargoDropTarget()`. */
+  private readonly drop: CargoDropTarget;
   private inCount = 0;
   private outCount = 0;
 
@@ -57,6 +61,25 @@ export abstract class StorageModule extends Module {
     }
     this.capacity = this.params.capacityUnits;
     this.slots = new SlotReservations({ kind: 'in_storage', holderId: this.id, capacity: this.capacity, cargo: init.cargo, label: `sklad ${this.label}` });
+    const { capacity, slots } = this;
+    this.drop = Object.freeze({
+      kind: 'in_storage',
+      category: this.params.category,
+      places: capacity,
+      reservationsAt: (slot: number): number => (Number.isInteger(slot) && slot >= 0 && slot < capacity && slots.isReserved(slot) ? 1 : 0),
+      restoreReservation: (slot: number): void => {
+        this.reserveSlot(slot);
+      },
+      release: (slot: number): void => {
+        this.release(slot);
+      },
+      assertCommittable: (slot: number, unitId: EntityId): void => {
+        this.assertCommittable(slot, unitId);
+      },
+      commit: (slot: number, unitId: EntityId): void => {
+        this.commit(slot, unitId);
+      },
+    });
   }
 
   /** Kategória nákladu, ktorú sklad prijíma. */
@@ -96,6 +119,11 @@ export abstract class StorageModule extends Module {
 
   override cargoSlots(): CargoSlotsView {
     return this.slots;
+  }
+
+  /** Cieľ inbound jobu: slot skladu (`in_storage`, ADR-018, ADR-023). */
+  override cargoDropTarget(): CargoDropTarget {
+    return this.drop;
   }
 
   /** Jednotka na slote podľa ledgera; `null` = prázdny. Slot mimo rozsahu → `ModuleError('invalid_slot')`. */
@@ -151,10 +179,10 @@ export abstract class StorageModule extends Module {
   }
 
   /**
-   * Po presune jednotky zo skladu (`in_storage → in_vehicle | in_pipeline`, F4): `unitsOut += 1`. Jednotka, ktorá
-   * podľa ledgera v sklade stále leží → `ModuleError('unit_still_held')`, počítadlo sa nezmení.
+   * Po presune jednotky zo skladu (`in_storage → in_vehicle | in_pipeline`, outbound job T04-03): `unitsOut += 1`.
+   * Jednotka, ktorá podľa ledgera v sklade stále leží → `ModuleError('unit_still_held')`, počítadlo sa nezmení.
    */
-  recordTaken(unitId: EntityId): void {
+  override recordTaken(unitId: EntityId): void {
     if (this.slots.slotOf(unitId) !== undefined) {
       throw new ModuleError('unit_still_held', `${this.label}.recordTaken: jednotka #${String(unitId)} podľa ledgera stále leží v sklade`);
     }

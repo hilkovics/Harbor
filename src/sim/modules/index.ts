@@ -3,6 +3,7 @@
 // TruckGate, WaitingArea, LoadingRamp (DockStaging).
 export { Module } from './module';
 export type { ModuleInit } from './module';
+export type { CargoDropTarget } from './cargo-drop-target';
 export { ModuleError, ModuleStateError } from './module-error';
 export type { ModuleErrorCode } from './module-error';
 export { SIDE_STEPS, connectorOutside, connectorsOf, edgeCells, footprintOf, frontBandCells, rotateSide, waterSideOf } from './module-geometry';

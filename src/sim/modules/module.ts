@@ -13,6 +13,7 @@ import type { EntityId } from '../core/entity-id';
 import type { ModuleDef, ModuleKind } from '../defs/types';
 import type { CellCoord, Grid } from '../grid/grid';
 import { isRotation, type Rotation } from '../grid/rotation';
+import type { CargoDropTarget } from './cargo-drop-target';
 import { ModuleError } from './module-error';
 import { connectorsOf, footprintOf, type PlacedConnector } from './module-geometry';
 import { checkRuntimeKeys, type ModuleRuntimeState } from './runtime-state';
@@ -111,6 +112,23 @@ export abstract class Module {
   cargoReservations(): { readonly kind: CargoHolderKind; readonly count: number } | undefined {
     const slots = this.cargoSlots();
     return slots === undefined ? undefined : { kind: slots.kind, count: slots.reservedCount };
+  }
+
+  /**
+   * Cieľ doručenia jednotky vozidlom (`CargoDropTarget`: slot skladu, dock rampy — ADR-023), alebo `undefined` pre
+   * modul, ktorý nemôže byť cieľom jobu. Vykládka, zrušenie jobu, obnova rezervácií a invarianty sa pýtajú tu, nie
+   * `instanceof` (pravidlo 7). Vracia vždy ten istý objekt (bez alokácie).
+   */
+  cargoDropTarget(): CargoDropTarget | undefined {
+    return undefined;
+  }
+
+  /**
+   * Vozidlo odviezlo jednotku z modulu (`CargoLedger.move` von už prebehol, §7.3 bod 4) — modul si to môže zapísať.
+   * Základ: nič (apron — slot sa uvoľní sám presunom v ledgeri, ADR-017); sklad počíta `unitsOut` (ADR-023).
+   */
+  recordTaken(unitId: EntityId): void {
+    void unitId;
   }
 
   /**

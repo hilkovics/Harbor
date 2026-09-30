@@ -138,6 +138,26 @@ export interface SimrunReport {
   readonly contractsCompleted: number;
   /** Nazbierané XP na konci behu (`world.xp`, F5). */
   readonly xp: number;
+  /** Počet udalostí `ContractOffered` počas behu (vrátane úvodných ponúk pri štarte hry). */
+  readonly contractsOffered: number;
+  /** Počet udalostí `ContractAccepted` počas behu. */
+  readonly contractsAccepted: number;
+  /** Počet udalostí `ContractFailed` počas behu. */
+  readonly contractsFailed: number;
+  /** Počet udalostí `ContractExpired` počas behu (timeout aj odmietnutie). */
+  readonly contractsExpired: number;
+  /** Σ `PenaltyApplied.amountCents` počas behu (penalizácie nazbierané na kontraktoch, nie nutne už strhnuté z hotovosti). */
+  readonly penaltiesCents: number;
+  /** Σ príjmov kategórie `contract_revenue` (z `MoneyChanged`) počas behu. */
+  readonly revenueCents: number;
+  /** Σ výdavkov kategórie `maintenance` počas behu, kladná veľkosť. */
+  readonly maintenanceCents: number;
+  /** Σ výdavkov kategórie `wages` počas behu, kladná veľkosť. */
+  readonly wagesCents: number;
+  /** Tier hráča na konci behu (`world.tier`). */
+  readonly tier: number;
+  /** Bankrot nastal (`world.gameOver`). */
+  readonly gameOver: boolean;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -370,6 +390,14 @@ interface EventTally {
   noWaitingBayEvents: number;
   contractsCompleted: number;
   contractsOnTime: number;
+  contractsOffered: number;
+  contractsAccepted: number;
+  contractsFailed: number;
+  contractsExpired: number;
+  penaltiesCents: number;
+  revenueCents: number;
+  maintenanceCents: number;
+  wagesCents: number;
 }
 
 function tallyEvents(tally: EventTally, events: readonly SimEvent[]): void {
@@ -387,6 +415,16 @@ function tallyEvents(tally: EventTally, events: readonly SimEvent[]): void {
     else if (event.type === 'ContractCompleted') {
       tally.contractsCompleted += 1;
       if (event.onTime) tally.contractsOnTime += 1;
+    } else if (event.type === 'ContractOffered') tally.contractsOffered += 1;
+    else if (event.type === 'ContractAccepted') tally.contractsAccepted += 1;
+    else if (event.type === 'ContractFailed') tally.contractsFailed += 1;
+    else if (event.type === 'ContractExpired') tally.contractsExpired += 1;
+    else if (event.type === 'PenaltyApplied') tally.penaltiesCents += event.amountCents;
+    else if (event.type === 'MoneyChanged') {
+      // Kategórie účtovnej knihy: príjem kontraktu je kladný, údržba a mzdy záporné → kladná veľkosť.
+      if (event.reason === 'contract_revenue') tally.revenueCents += event.deltaCents;
+      else if (event.reason === 'maintenance') tally.maintenanceCents -= event.deltaCents;
+      else if (event.reason === 'wages') tally.wagesCents -= event.deltaCents;
     }
   }
 }
@@ -458,6 +496,14 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     noWaitingBayEvents: 0,
     contractsCompleted: 0,
     contractsOnTime: 0,
+    contractsOffered: 0,
+    contractsAccepted: 0,
+    contractsFailed: 0,
+    contractsExpired: 0,
+    penaltiesCents: 0,
+    revenueCents: 0,
+    maintenanceCents: 0,
+    wagesCents: 0,
   };
   const vehicleTicks = { activeTicks: 0, totalTicks: 0 };
   let ticksToAllStored: number | null = null;
@@ -516,6 +562,16 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     ticksToAllExported,
     contractsCompleted: world.completedContracts,
     xp: world.xp,
+    contractsOffered: tally.contractsOffered,
+    contractsAccepted: tally.contractsAccepted,
+    contractsFailed: tally.contractsFailed,
+    contractsExpired: tally.contractsExpired,
+    penaltiesCents: tally.penaltiesCents,
+    revenueCents: tally.revenueCents,
+    maintenanceCents: tally.maintenanceCents,
+    wagesCents: tally.wagesCents,
+    tier: world.tier,
+    gameOver: world.gameOver,
   };
 }
 
@@ -535,7 +591,11 @@ export function formatSummary(report: SimrunReport): string {
     `kamióny ${String(report.trucksSpawned)}/${String(report.trucksExited)} (spawn/odchod), ` +
     `odvezené kamiónmi ${String(report.unitsExportedByTrucks)}, bez stojiska ${String(report.noWaitingBayEvents)}, ` +
     `fronta brány max ${String(report.gateQueueMax)}, všetko exportované ${metric(report.ticksToAllExported)}, ` +
-    `kontrakty dokončené ${String(report.contractsCompleted)}, XP ${String(report.xp)}`
+    `kontrakty dokončené ${String(report.contractsCompleted)}, XP ${String(report.xp)}, ` +
+    `kontrakty ponúknuté/prijaté/zlyhané/zaniknuté ${String(report.contractsOffered)}/${String(report.contractsAccepted)}/` +
+    `${String(report.contractsFailed)}/${String(report.contractsExpired)}, tier ${String(report.tier)}, ` +
+    `tržby ${String(report.revenueCents)}, penalizácie ${String(report.penaltiesCents)}, ` +
+    `údržba ${String(report.maintenanceCents)}, mzdy ${String(report.wagesCents)}, koniec hry ${report.gameOver ? 'áno' : 'nie'}`
   );
 }
 

@@ -3,16 +3,25 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { loadBundledDefs } from '@sim/defs';
-import { SimrunError, craneBlockedPercent, formatSummary, loadScenario, parseArgs, runScenario } from '../../tools/simrun';
-import type { Scenario, ScenarioEntry } from '../../tools/simrun';
+import {
+  SimrunError,
+  craneBlockedPercent,
+  formatSummary,
+  loadScenario,
+  parseArgs,
+  runScenario,
+  vehicleUtilPercent,
+} from '../../tools/simrun';
+import type { Scenario, ScenarioEntry, SimrunReport } from '../../tools/simrun';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const SIMRUN_SCRIPT = fileURLToPath(new URL('../../tools/simrun.ts', import.meta.url));
 const SMOKE_SCENARIO = fileURLToPath(new URL('../../data/scenarios/smoke.json', import.meta.url));
 const HARBOR_MAP = fileURLToPath(new URL('../../data/maps/harbor_01.json', import.meta.url));
 const F2_UNLOAD_SCENARIO = fileURLToPath(new URL('../../data/scenarios/f2_unload.json', import.meta.url));
+const APRON_TO_YARD_SCENARIO = fileURLToPath(new URL('../../data/scenarios/apron_to_yard.json', import.meta.url));
 
 const SMOKE: Scenario = { id: 'smoke', seed: 42, commands: [] };
 // Hodnota z data/defs/time.json (tickGameSeconds 10) → 8 640 tickov = 1 herný deň.
@@ -210,6 +219,12 @@ describe('runScenario', () => {
       shipsDeparted: 0,
       unitsOnApron: 0,
       craneCycles: 0,
+      vehicles: 0,
+      unitsInStorage: 0,
+      jobsDone: 0,
+      vehicleUtilPct: 0,
+      noStorageEvents: 0,
+      ticksToAllStored: null,
     });
     expect(Object.keys(report)).toEqual([
       'scenario',
@@ -229,6 +244,12 @@ describe('runScenario', () => {
       'shipsDeparted',
       'unitsOnApron',
       'craneCycles',
+      'vehicles',
+      'unitsInStorage',
+      'jobsDone',
+      'vehicleUtilPct',
+      'noStorageEvents',
+      'ticksToAllStored',
     ]);
   });
 
@@ -264,6 +285,12 @@ describe('runScenario', () => {
     expect(line).toContain('cesty 30');
     expect(line).toContain('lode 0/0');
     expect(line).toContain('cykly žeriavov 0');
+    expect(line).toContain('vozidlá 0');
+    expect(line).toContain('v sklade 0');
+    expect(line).toContain('joby hotové 0');
+    expect(line).toContain('využitie vozidiel 0');
+    expect(line).toContain('bez skladu 0');
+    expect(line).toContain('všetko uložené n/a');
   });
 
   describe('metriky žeriavov a lodí (F2)', () => {
@@ -312,6 +339,105 @@ describe('runScenario', () => {
 
     it('rovnaký scenár → identický report (metriky F2 sú deterministické)', () => {
       expect(runScenario(f2(6), 3000, defs)).toEqual(runScenario(f2(6), 3000, defs));
+    });
+  });
+
+  describe('metriky vozidiel a skladov (F3)', () => {
+    // apron_to_yard: 2 × straddle_carrier (BuyVehicle), 1 loď so 120 TEU, dvor s kapacitou ≥ 120 (viď scenár).
+    const apronToYard = loadScenario(APRON_TO_YARD_SCENARIO);
+    const RUN_TICKS = 15_000;
+    let full: SimrunReport;
+
+    beforeAll(() => {
+      full = runScenario(apronToYard, RUN_TICKS, defs);
+    });
+
+    it('apron_to_yard (15 000 tickov): 120 jednotiek v sklade, 120 hotových jobov, bez chýbajúceho skladu, nič stratené', () => {
+      expect(full).toMatchObject({
+        scenario: 'apron_to_yard',
+        lostUnits: 0,
+        exportedUnits: 0,
+        shipsSpawned: 1,
+        unitsOnApron: 0,
+        vehicles: 2,
+        unitsInStorage: 120,
+        jobsDone: 120,
+        noStorageEvents: 0,
+      });
+      expect(full.ticksToAllStored).not.toBeNull();
+    });
+
+    it('ticksToAllStored je hranica: o tick skôr ešte nie je všetko uložené, presne v ňom už áno', () => {
+      const stored = full.ticksToAllStored;
+      if (stored === null) throw new Error('ticksToAllStored má byť číslo');
+      expect(stored).toBeGreaterThan(0);
+      expect(stored).toBeLessThan(RUN_TICKS);
+
+      const before = runScenario(apronToYard, stored - 1, defs);
+      expect(before.ticksToAllStored).toBeNull();
+      expect(before.unitsInStorage).toBeLessThan(120);
+
+      const at = runScenario(apronToYard, stored, defs);
+      expect(at.ticksToAllStored).toBe(stored);
+      expect(at.unitsInStorage).toBe(120);
+    });
+
+    it('vehicleUtilPct je podiel vozidlo-tickov mimo idle: v (0, 100), najviac 1 desatinné miesto', () => {
+      expect(full.vehicleUtilPct).toBeGreaterThan(0);
+      expect(full.vehicleUtilPct).toBeLessThan(100);
+      expect(Math.round(full.vehicleUtilPct * 10) / 10).toBe(full.vehicleUtilPct);
+    });
+
+    it('vehicleUtilPct sa po uložení všetkého už len riedi (dlhší beh = nižšie využitie, rovnaké joby)', () => {
+      const longer = runScenario(apronToYard, RUN_TICKS * 2, defs);
+      expect(longer.jobsDone).toBe(full.jobsDone);
+      expect(longer.unitsInStorage).toBe(full.unitsInStorage);
+      expect(longer.ticksToAllStored).toBe(full.ticksToAllStored);
+      expect(longer.vehicleUtilPct).toBeLessThan(full.vehicleUtilPct);
+    });
+
+    it('rovnaký scenár → identický report (metriky F3 sú deterministické)', () => {
+      expect(runScenario(apronToYard, RUN_TICKS, defs)).toEqual(full);
+    });
+
+    it('bez vozidiel a skladu (f2_unload): vehicles 0, util 0, ticksToAllStored null napriek spawnu lode', () => {
+      const report = runScenario(loadScenario(F2_UNLOAD_SCENARIO), 5000, defs);
+      expect(report).toMatchObject({
+        shipsSpawned: 1,
+        unitsOnApron: 4,
+        vehicles: 0,
+        unitsInStorage: 0,
+        jobsDone: 0,
+        vehicleUtilPct: 0,
+      });
+      expect(report.ticksToAllStored).toBeNull();
+    });
+
+    it('jednotky na aprone bez skladu → noStorageEvents > 0 (dispatcher hlási nedostatok skladu)', () => {
+      const report = runScenario(loadScenario(F2_UNLOAD_SCENARIO), 5000, defs);
+      expect(report.noStorageEvents).toBeGreaterThan(0);
+    });
+
+    it('bez spawnu lode je ticksToAllStored null (prázdny svet nie je „všetko uložené")', () => {
+      expect(runScenario(SMOKE, 1000, defs).ticksToAllStored).toBeNull();
+    });
+  });
+
+  describe('vehicleUtilPercent', () => {
+    it('bez vozidlo-tickov (žiadne vozidlá alebo ešte žiadny tick) → 0, nie NaN', () => {
+      expect(vehicleUtilPercent({ activeTicks: 0, totalTicks: 0 })).toBe(0);
+    });
+
+    it.each<[string, number, number, number]>([
+      ['vozidlá stále idle', 0, 500, 0],
+      ['vozidlá stále v práci', 500, 500, 100],
+      ['polovica', 50, 100, 50],
+      ['1/3 → 33.3', 1, 3, 33.3],
+      ['2/3 → 66.7', 2, 3, 66.7],
+      ['zaokrúhlenie hore: 16.666… → 16.7', 1, 6, 16.7],
+      ['zaokrúhlenie dole: 34.24 → 34.2', 3424, 10_000, 34.2],
+    ])('%s', (_name, activeTicks, totalTicks, expected) => {
+      expect(vehicleUtilPercent({ activeTicks, totalTicks })).toBe(expected);
     });
   });
 
@@ -528,6 +654,23 @@ describe('CLI (tools/simrun.ts)', () => {
       craneBlockedPct: 0,
     });
   }, 30_000);
+
+  it('apron_to_yard --report → čistý JSON s metrikami vozidiel a skladov, exit 0', () => {
+    const run = runCli(APRON_TO_YARD_SCENARIO, '--ticks', '15000', '--report');
+    expect(run.status).toBe(0);
+    expect(run.stderr).toBe('');
+    const report = JSON.parse(run.stdout) as Record<string, unknown>;
+    expect(report).toMatchObject({
+      scenario: 'apron_to_yard',
+      lostUnits: 0,
+      vehicles: 2,
+      unitsInStorage: 120,
+      jobsDone: 120,
+      noStorageEvents: 0,
+    });
+    expect(typeof report['ticksToAllStored']).toBe('number');
+    expect(typeof report['vehicleUtilPct']).toBe('number');
+  }, 60_000);
 
   it('replay: PlaceRoad zo scenára → viac ciest, nižšia hotovosť, commandsSkipped pre atTick ≥ ticks', () => {
     const path = writeScenario([

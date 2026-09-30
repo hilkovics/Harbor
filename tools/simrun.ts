@@ -94,6 +94,25 @@ export interface SimrunReport {
   readonly unitsOnApron: number;
   /** Počet udalostí `CraneCycleDone` počas behu (jednotka `in_crane → on_apron`). */
   readonly craneCycles: number;
+  /** Počet vozidiel vo svete na konci behu (`world.vehicles.size`). */
+  readonly vehicles: number;
+  /** Jednotky nákladu uložené v skladoch na konci behu (`countByKind('in_storage')`). */
+  readonly unitsInStorage: number;
+  /** Počet udalostí `JobDone` počas behu (vozidlo uložilo poslednú jednotku jobu do cieľa). */
+  readonly jobsDone: number;
+  /**
+   * Využitie vozidiel: Σ vozidlo-tickov so `state !== 'idle'` / Σ všetkých vozidlo-tickov × 100, na 1 desatinné miesto.
+   * Vozidlo-tick = jedno vozidlo po jednom `tick()`; po uložení všetkého sa podiel len riedi. Bez vozidiel 0.
+   */
+  readonly vehicleUtilPct: number;
+  /** Počet udalostí `NoStorageAvailable` počas behu (najviac raz za hernú hodinu na berth). */
+  readonly noStorageEvents: number;
+  /**
+   * `world.clock.tick` po prvom ticku, v ktorom po aspoň jednom `ShipSpawned` platí
+   * `on_ship + on_apron + in_crane + in_vehicle === 0` (všetok náklad je už mimo lodí, apronu, žeriavov a vozidiel);
+   * `null`, ak taký tick v behu nenastal (vrátane behu bez spawnu lode).
+   */
+  readonly ticksToAllStored: number | null;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -290,6 +309,21 @@ export function craneBlockedPercent(cranes: Iterable<CraneTickCounters>): number
   return Math.round((blocked * PERCENT * ONE_DECIMAL) / total) / ONE_DECIMAL;
 }
 
+/** Vozidlo-ticky: `activeTicks` (stav ≠ `idle`) z `totalTicks` (každé vozidlo po každom ticku). */
+export interface VehicleTickCounters {
+  readonly activeTicks: number;
+  readonly totalTicks: number;
+}
+
+/**
+ * Využitie vozidiel: activeTicks / totalTicks × 100, na 1 desatinné miesto. Bez vozidlo-tickov (žiadne vozidlá alebo
+ * ešte žiadny tick) vráti 0.
+ */
+export function vehicleUtilPercent(counters: VehicleTickCounters): number {
+  if (counters.totalTicks === 0) return 0;
+  return Math.round((counters.activeTicks * PERCENT * ONE_DECIMAL) / counters.totalTicks) / ONE_DECIMAL;
+}
+
 function craneModules(world: World): CraneModule[] {
   const cranes: CraneModule[] = [];
   for (const module of world.modules.values()) {
@@ -303,6 +337,8 @@ interface EventTally {
   shipsSpawned: number;
   shipsDeparted: number;
   craneCycles: number;
+  jobsDone: number;
+  noStorageEvents: number;
 }
 
 function tallyEvents(tally: EventTally, events: readonly SimEvent[]): void {
@@ -310,7 +346,28 @@ function tallyEvents(tally: EventTally, events: readonly SimEvent[]): void {
     if (event.type === 'ShipSpawned') tally.shipsSpawned += 1;
     else if (event.type === 'ShipDeparted') tally.shipsDeparted += 1;
     else if (event.type === 'CraneCycleDone') tally.craneCycles += 1;
+    else if (event.type === 'JobDone') tally.jobsDone += 1;
+    else if (event.type === 'NoStorageAvailable') tally.noStorageEvents += 1;
   }
+}
+
+/** Vozidlá (`state !== 'idle'`) po jednom ticku pripočíta do počítadiel využitia. */
+function tallyVehicleTicks(world: World, counters: { activeTicks: number; totalTicks: number }): void {
+  for (const vehicle of world.vehicles.values()) {
+    counters.totalTicks += 1;
+    if (vehicle.state !== 'idle') counters.activeTicks += 1;
+  }
+}
+
+/** Všetok náklad je mimo lodí, aprona, žeriavov a vozidiel (= uložený v sklade, prípadne ďalej v toku F4+). */
+function isAllStored(world: World): boolean {
+  const { cargo } = world;
+  const inTransit =
+    cargo.countByKind('on_ship') +
+    cargo.countByKind('on_apron') +
+    cargo.countByKind('in_crane') +
+    cargo.countByKind('in_vehicle');
+  return inTransit === 0;
 }
 
 function countRoads(world: World): number {
@@ -334,7 +391,9 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
   const entries = parseCommands(scenario);
   const world = World.create(defs, resolveMap(scenario), scenario.seed);
 
-  const tally: EventTally = { shipsSpawned: 0, shipsDeparted: 0, craneCycles: 0 };
+  const tally: EventTally = { shipsSpawned: 0, shipsDeparted: 0, craneCycles: 0, jobsDone: 0, noStorageEvents: 0 };
+  const vehicleTicks = { activeTicks: 0, totalTicks: 0 };
+  let ticksToAllStored: number | null = null;
   let next = 0;
   for (let i = 0; i < ticks; i++) {
     const tick = world.clock.tick;
@@ -350,6 +409,8 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
       throw new SimrunError(`${scenario.id}: príkaz odmietnutý pri atTick ${String(tick)} — ${what}`);
     }
     tallyEvents(tally, world.tick());
+    tallyVehicleTicks(world, vehicleTicks);
+    if (ticksToAllStored === null && tally.shipsSpawned > 0 && isAllStored(world)) ticksToAllStored = world.clock.tick;
   }
 
   return {
@@ -370,6 +431,12 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     shipsDeparted: tally.shipsDeparted,
     unitsOnApron: world.cargo.countByKind('on_apron'),
     craneCycles: tally.craneCycles,
+    vehicles: world.vehicles.size,
+    unitsInStorage: world.cargo.countByKind('in_storage'),
+    jobsDone: tally.jobsDone,
+    vehicleUtilPct: vehicleUtilPercent(vehicleTicks),
+    noStorageEvents: tally.noStorageEvents,
+    ticksToAllStored,
   };
 }
 
@@ -382,7 +449,10 @@ export function formatSummary(report: SimrunReport): string {
     `stratené ${String(report.lostUnits)}, on-time ${metric(report.onTimeRate)}, žeriav blokovaný ${metric(report.craneBlockedPct)}, ` +
     `cesty ${String(report.roads)}, príkazy ${String(report.commandsApplied)} (preskočené ${String(report.commandsSkipped)}), ` +
     `moduly ${String(report.modules)}, lode ${String(report.shipsSpawned)}/${String(report.shipsDeparted)} (spawn/odchod), ` +
-    `na aprone ${String(report.unitsOnApron)}, cykly žeriavov ${String(report.craneCycles)}`
+    `na aprone ${String(report.unitsOnApron)}, cykly žeriavov ${String(report.craneCycles)}, ` +
+    `vozidlá ${String(report.vehicles)}, v sklade ${String(report.unitsInStorage)}, joby hotové ${String(report.jobsDone)}, ` +
+    `využitie vozidiel ${String(report.vehicleUtilPct)} %, bez skladu ${String(report.noStorageEvents)}, ` +
+    `všetko uložené ${metric(report.ticksToAllStored)}`
   );
 }
 

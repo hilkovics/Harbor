@@ -170,7 +170,9 @@ describe('rampa — čisté pomocné funkcie', () => {
       no_gate: 'Chýba brána na ceste.',
       no_waiting_area: 'Chýba stojisko na ceste.',
       not_connected: 'Chýba súvislá cesta k rampe.',
+      no_return_path: 'Kamióny sa nemajú ako vrátiť cez bránu k portálu.',
     });
+    expect(rampInoperativeText('no_return_path')).toBe('Kamióny sa nemajú ako vrátiť cez bránu k portálu.');
     expect(rampInoperativeText('no_gate')).toBe('Chýba brána na ceste.');
     expect(rampInoperativeText('no_waiting_area')).toBe('Chýba stojisko na ceste.');
     expect(rampInoperativeText('nieco_nove')).toBeUndefined();

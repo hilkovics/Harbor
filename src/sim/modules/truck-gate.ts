@@ -9,11 +9,15 @@
  *   svet neurčí alebo keď strana chýba. Brána bez oboch strán nie je platná a rampu za ňou neoživí.
  * - **Fronta:** spoločná FIFO fronta kamiónov oboch smerov (`enqueue` / `peekQueue` / `dequeue`); je **virtuálna** —
  *   čakajúci kamión stojí na vonkajšej bunke konektora, render ukáže `queue_badge` (§7.5, §7.8 bod 3, nikdy gridlock).
- * - **Priepustnosť:** 1 kamión za `processTicks` (tvrdý bottleneck): `beginPass(ticks)` začne prechod kamióna
- *   (`busyTicksLeft = ticks`, `trucksProcessed += 1`), `advancePass()` odpočíta tick. Kým `busyTicksLeft > 0`, závora je
- *   hore (`isOpen`) a ďalší kamión nesmie začať. Prechod trvá `passTicks` = `processTicks` + `internalTicks` (chýbajúci
- *   `internalTicks` = 0 — priepustnosť brány určuje `processTicks`, ADR-024). Púšťa sa vždy kamión na čele fronty a
- *   z fronty vypadne až po dokončení prechodu (`landsideSystem`, T04-04).
+ * - **Priepustnosť:** 1 kamión za `processTicks` (tvrdý bottleneck): `beginPass(ticks)` začne prechod kamióna na čele
+ *   fronty (`busyTicksLeft = ticks`), `advancePass()` odpočíta tick. Kým `busyTicksLeft > 0`, závora je hore (`isOpen`)
+ *   a ďalší kamión nesmie začať. Prechod trvá `passTicks` = `processTicks` + `internalTicks` (chýbajúci `internalTicks`
+ *   = 0 — priepustnosť brány určuje `processTicks`, ADR-024). Púšťa sa vždy kamión na čele fronty a z fronty vypadne až
+ *   po dokončení prechodu (`completePass`: vyberie čelo a `trucksProcessed += 1` — počíta sa len **dokončený** prechod,
+ *   zopakovaný prechod po obnove strany sa nezapočíta dvakrát; review T04-11). `withdraw` vyradí kamión z fronty bez
+ *   prechodu (strany brány sa pod ním preklopili, dodatok ADR-024); čelo počas prechodu zruší aj prechod.
+ * - **Súlad prechodu s frontou** (`gatePassProblem`, krok 12 aj obnova): `busyTicksLeft ≤ passTicks` a prebiehajúci
+ *   prechod má kamión na čele fronty (`busyTicksLeft > 0 ⇒ queueLength > 0`).
  *
  * `runtime` v save: `{ queue, busyTicksLeft, trucksProcessed }`. Súlad fronty s kamiónmi (fronta = presne kamióny
  * v `gate_queue*` tejto brány) overuje svet (krok 12, ADR-024); strany sa neukladajú (odvodia sa z ciest a modulov).
@@ -35,7 +39,7 @@ export type GateRuntimeState = {
   readonly queue: readonly number[];
   /** Zostávajúce ticky prechodu práve púšťaného kamióna (0 = brána voľná). */
   readonly busyTicksLeft: number;
-  /** Kumulatívny počet kamiónov, ktoré začali prechod bránou. */
+  /** Kumulatívny počet kamiónov, ktoré dokončili prechod bránou. */
   readonly trucksProcessed: number;
 };
 
@@ -44,6 +48,16 @@ const NO_TRUCKS: readonly EntityId[] = Object.freeze([]);
 
 function isTruckId(value: unknown): value is EntityId {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;
+}
+
+/**
+ * Súlad prechodu s frontou (krok 12 aj obnova, vzor `cranePhaseProblem`): odpočet najviac `passTicks` a prebiehajúci
+ * prechod má kamión na čele fronty. Problém s poľom `runtime`, alebo `undefined`. Bez alokácie v platnom stave.
+ */
+export function gatePassProblem(busyTicksLeft: number, passTicks: number, queueLength: number): { readonly path: string; readonly problem: string } | undefined {
+  if (busyTicksLeft > passTicks) return { path: '/busyTicksLeft', problem: `odpočet prechodu ${String(busyTicksLeft)} je nad passTicks ${String(passTicks)}` };
+  if (busyTicksLeft > 0 && queueLength === 0) return { path: '/busyTicksLeft', problem: `prechod beží (${String(busyTicksLeft)} tickov), ale fronta je prázdna` };
+  return undefined;
 }
 
 export class TruckGate extends LandExportModule {
@@ -106,7 +120,7 @@ export class TruckGate extends LandExportModule {
     return this.busy > 0;
   }
 
-  /** Kumulatívny počet kamiónov, ktoré začali prechod. */
+  /** Kumulatívny počet kamiónov, ktoré dokončili prechod (`completePass`). */
   get trucksProcessed(): number {
     return this.processed;
   }
@@ -155,21 +169,46 @@ export class TruckGate extends LandExportModule {
   }
 
   /**
-   * Začne prechod kamióna na `ticks` tickov (celé ≥ 1, inak `invalid_input`): `busyTicksLeft = ticks`,
-   * `trucksProcessed += 1`. Brána, ktorá ešte púšťa predchádzajúci kamión → `ModuleError('busy')` (priepustnosť).
+   * Začne prechod kamióna na čele fronty na `ticks` tickov (celé ≥ 1, inak `invalid_input`): `busyTicksLeft = ticks`.
+   * Brána, ktorá ešte púšťa predchádzajúci kamión → `ModuleError('busy')` (priepustnosť), prázdna fronta →
+   * `ModuleError('queue_empty')` (prechod patrí kamiónu na čele).
    */
   beginPass(ticks: number): void {
     if (!Number.isSafeInteger(ticks) || ticks < 1) {
       throw new ModuleError('invalid_input', `${this.label}.beginPass: trvanie musí byť celé číslo ≥ 1, dostal ${String(ticks)}`);
     }
     if (this.busy > 0) throw new ModuleError('busy', `${this.label}.beginPass: brána ešte púšťa kamión (${String(this.busy)} tickov)`);
+    if (this.queue.length === 0) throw new ModuleError('queue_empty', `${this.label}.beginPass: vo fronte nie je kamión`);
     this.busy = ticks;
-    this.processed += 1;
   }
 
   /** Odpočíta tick prebiehajúceho prechodu (voľná brána sa nemení). */
   advancePass(): void {
     if (this.busy > 0) this.busy -= 1;
+  }
+
+  /**
+   * Dokončí prechod: vyberie kamión z čela fronty, `trucksProcessed += 1` a vráti ho. Prechod ešte beží → `busy`,
+   * prázdna fronta → `queue_empty` (nič sa nezmení).
+   */
+  completePass(): EntityId {
+    if (this.busy > 0) throw new ModuleError('busy', `${this.label}.completePass: prechod ešte beží (${String(this.busy)} tickov)`);
+    const truckId = this.dequeue();
+    this.processed += 1;
+    return truckId;
+  }
+
+  /**
+   * Vyradí kamión z fronty bez prechodu (strany brány sa pod ním preklopili, dodatok ADR-024); kamión na čele počas
+   * prechodu zruší aj prechod (`busyTicksLeft = 0`). Kamión nie je vo fronte → `ModuleError('invalid_input')`.
+   */
+  withdraw(truckId: EntityId): void {
+    const index = this.queue.indexOf(truckId);
+    if (index < 0) throw new ModuleError('invalid_input', `${this.label}.withdraw: kamión #${String(truckId)} nie je vo fronte`);
+    if (index === 0) this.busy = 0;
+    this.queue.splice(index, 1);
+    this.members.delete(truckId);
+    this.queueView = this.queue.length === 0 ? NO_TRUCKS : Object.freeze([...this.queue]);
   }
 
   /** Fronta bez duplicít a s platnými id, množina členov = fronta (krok 12, O(dĺžka fronty), bez alokácie). */
@@ -180,7 +219,8 @@ export class TruckGate extends LandExportModule {
       if (!this.members.has(queue[i])) return `${this.label}: kamión #${String(queue[i])} z fronty chýba v množine členov`;
     }
     if (this.members.size !== queue.length) return `${this.label}: fronta má ${String(queue.length)} položiek, ale ${String(this.members.size)} rôznych kamiónov (duplicita)`;
-    return undefined;
+    const pass = gatePassProblem(this.busy, this.passTicks, queue.length);
+    return pass === undefined ? undefined : `${this.label}: ${pass.problem}`;
   }
 
   override getRuntimeState(): GateRuntimeState {
@@ -188,8 +228,9 @@ export class TruckGate extends LandExportModule {
   }
 
   /**
-   * Kontroly: presne kľúče `GateRuntimeState`, `queue` pole rôznych celých id ≥ 1, počítadlá celé ≥ 0. Neplatný stav
-   * → `ModuleStateError`; obnova je atomická. Existenciu a stav kamiónov vo fronte overí svet (T04-04).
+   * Kontroly: presne kľúče `GateRuntimeState`, `queue` pole rôznych celých id ≥ 1, počítadlá celé ≥ 0, súlad prechodu
+   * s frontou (`gatePassProblem`). Neplatný stav → `ModuleStateError`; obnova je atomická. Existenciu a stav kamiónov
+   * vo fronte overí svet (T04-04).
    */
   override restoreRuntimeState(raw: unknown): void {
     const fields = checkRuntimeKeys(raw, RUNTIME_KEYS);
@@ -203,6 +244,8 @@ export class TruckGate extends LandExportModule {
     });
     const busyTicksLeft = readCount(fields['busyTicksLeft'], '/busyTicksLeft');
     const trucksProcessed = readCount(fields['trucksProcessed'], '/trucksProcessed');
+    const pass = gatePassProblem(busyTicksLeft, this.passTicks, queue.length);
+    if (pass !== undefined) throw new ModuleStateError(pass.path, pass.problem);
     this.queue.splice(0, this.queue.length, ...queue);
     this.members.clear();
     for (const truckId of queue) this.members.add(truckId);

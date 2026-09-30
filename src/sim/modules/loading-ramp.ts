@@ -5,11 +5,12 @@
  *
  * - **Docky a staging:** `params.docks` dockov, na každom `params.stagingPerDock` miest (`DockStaging`: obsadenie
  *   v ledgeri, modul drží len rezervácie outbound jobov). Kategóriu nákladu určuje `params.category`.
- * - **Prevádzkovosť** (rozhodnutie 1, ADR-022): rampa je prevádzková, keď vedie cesta road portál → vstupná strana
- *   brány a výstupná strana brány → stojisko (priechod) → konektor rampy. Počíta ju svet (`LandsideNetwork`) pri zmene
- *   ciest alebo množiny modulov a po každom príkaze zverejní sem (`publishStatus`) — `operational` a
- *   `inoperativeReason` sú teda zverejnený stav (pre UI a render); systémy sa pýtajú `World.isRampOperational`, ktorý
- *   je vždy aktuálny. Neprevádzková rampa nedostane outbound joby ani kamióny.
+ * - **Prevádzkovosť** (rozhodnutie 1, ADR-022, dodatok ADR-024): rampa je prevádzková, keď vedie cesta road portál →
+ *   vstupná strana brány a výstupná strana brány → stojisko (priechod) → konektor rampy a odtiaľ aj späť k výstupnej
+ *   strane brány (priamo alebo spätným priechodom stojiska) a zo vstupnej strany brány k portálu. Počíta ju svet
+ *   (`LandsideNetwork`) pri zmene ciest alebo množiny modulov a po každom príkaze zverejní sem (`publishStatus`) —
+ *   `operational` a `inoperativeReason` sú teda zverejnený stav (pre UI a render); systémy sa pýtajú
+ *   `World.isRampOperational`, ktorý je vždy aktuálny. Neprevádzková rampa nedostane outbound joby ani kamióny.
  *
  * - **Outbound joby** (T04-03, ADR-023): dispatcher pri vzniku jobu rezervuje miesto `reserve(firstFreeDock())`, job
  *   drží rezerváciu celý život a vozidlo pri vykládke `assertCommittable → CargoLedger.move → commit` (cez
@@ -35,11 +36,13 @@ import { ModuleError } from './module-error';
 import { checkRuntimeKeys, readOptionalCount } from './runtime-state';
 
 /**
- * Dôvody neprevádzkovosti rampy v poradí vyhodnotenia (ADR-022): `not_connected` — konektor rampy nemá cestu alebo
- * k rampe nevedie cesta zo žiadneho stojiska za bránou; `no_gate` — nie je platná brána (vstup z portálu + výstup
- * s cestou); `no_waiting_area` — za žiadnou platnou bránou nie je dosiahnuteľné stojisko.
+ * Dôvody neprevádzkovosti rampy (ADR-022, dodatok ADR-024): `not_connected` — konektor rampy nemá cestu alebo k rampe
+ * nevedie cesta zo žiadneho stojiska za bránou; `no_gate` — nie je platná brána (vstup z portálu + výstup s cestou);
+ * `no_waiting_area` — za žiadnou platnou bránou nie je dosiahnuteľné stojisko; `no_return_path` — k rampe cesta vedie,
+ * ale od nej nie späť k bráne (priamo ani spätným priechodom stojiska) alebo od brány k portálu (review T04-11).
+ * Poradie vyhodnotenia popisuje `world/landside.ts`; nový dôvod sa pridáva na koniec (úplné mapy textov v app/UI).
  */
-export const RAMP_INOPERATIVE_REASONS = ['not_connected', 'no_gate', 'no_waiting_area'] as const;
+export const RAMP_INOPERATIVE_REASONS = ['not_connected', 'no_gate', 'no_waiting_area', 'no_return_path'] as const;
 
 export type RampInoperativeReason = (typeof RAMP_INOPERATIVE_REASONS)[number];
 

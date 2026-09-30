@@ -1,26 +1,39 @@
 /**
- * Pozemný exportný reťazec na cestnej sieti (ARCHITECTURE §7.4, §7.5; rozhodnutia orchestrátora F4 č. 1–3; ADR-022):
- * strany brán, priechody stojiskami a prevádzkovosť rámp. Čistý výpočet nad cestami a modulmi sveta, zapamätaný do
- * zmeny `roadVersion` alebo `moduleVersion` (lenivo pri prvom dotaze) — nie je stav simulácie a do save nepatrí.
+ * Pozemný exportný reťazec na cestnej sieti (ARCHITECTURE §7.4, §7.5; rozhodnutia orchestrátora F4 č. 1–3; ADR-022,
+ * ADR-024 a jeho dodatok T04-12): strany brán, okruhy kamiónov za bránou, trasy a prevádzkovosť rámp. Čistý výpočet nad
+ * cestami a modulmi sveta, zapamätaný do zmeny `roadVersion` alebo `moduleVersion` (lenivo pri prvom dotaze) — nie je
+ * stav simulácie a do save nepatrí.
  *
  * Pojmy (bunky sú **prístupové bunky** = vonkajšie bunky cestných konektorov s cestou, `accessCellIndex`; cena cesty
- * z `DistanceMatrix`):
+ * z `DistanceMatrix`, „dosiahnuteľná" = konečná cena po cestách so smermi jednosmeriek):
  * - **Portál** = `map.roadPortals[0]` (tam sa spawnujú kamióny, rozhodnutie 5); bez cesty na ňom nevedie odnikiaľ nič.
  * - **Strany brány** (rozhodnutie 2): vstupná = prístupová bunka brány dosiahnuteľná z portálu s najnižšou cenou (pri
  *   zhode prvý konektor v poradí defu). Cesty nevedú telom modulov, takže každá cesta z portálu je „bez prechodu
  *   bránou". Výstupná = prvý ďalší konektor s prístupovou bunkou. **Platná** brána má obe; brány za sebou (brána
- *   dosiahnuteľná len cez inú bránu) platné nie sú.
- * - **Priechod stojiskom** z bunky `from` (výstup brány) k rampe: dvojica konektorov stojiska (vstup, výstup), kde vstup
- *   je z `from` dosiahnuteľný a z výstupu je dosiahnuteľná prístupová bunka rampy; vyhráva najnižší súčet cien (pri
+ *   dosiahnuteľná len cez inú bránu) platné nie sú. Tieto strany svet zverejňuje bráne (`TruckGate.setSides`).
+ * - **Strany brány pre kamión** (`truckGateSides`, dodatok ADR-024): strany z portálu, ak je vstupná určená; inak (portál
+ *   bránu nedosiahne — prerušená cesta pred bránou) vnútorná = prvá prístupová bunka brány v poradí defu, z ktorej je
+ *   dosiahnuteľná niektorá prístupová bunka stojiska kamióna, a vonkajšia = prvá ďalšia. Kamión za bránou tak dokončí
+ *   svoj okruh a čaká pri bráne, kým sa cesta von neobnoví (review T04-11, major 2).
+ * - **Priechod stojiskom** z vnútornej strany brány `inner` k rampe: dvojica konektorov stojiska (vstup, výstup), kde vstup
+ *   je z `inner` dosiahnuteľný a z výstupu je dosiahnuteľná prístupová bunka rampy; vyhráva najnižší súčet cien (pri
  *   zhode poradie defu: vstup, potom výstup). Najprv sa hľadá skutočný priechod (vstup ≠ výstup), ak nie je, stojisko
  *   s jediným použiteľným konektorom poslúži ako slepé parkovisko (vstup = výstup).
- * - **Trasa** rampy = (platná brána, stojisko s priechodom); trasy sú v poradí id brány, potom id stojiska.
+ * - **Cesta späť** z bunky rampy `R` (review T04-11, major 1): z `R` je dosiahnuteľná vnútorná strana brány priamo, alebo
+ *   výstup priechodu a zo vstupu priechodu vnútorná strana (spätný priechod stojiskom, ADR-024 bod 8).
+ * - **Okruh** (`LandsideCircuit`) brány, stojiska a rampy = vnútorná strana brány + priechod + bunka rampy. Najprv sa
+ *   hľadá priechod s bunkou rampy, z ktorej vedie cesta späť (bunky bez nej sa preskočia); ak taký nie je, okruh má len
+ *   cestu tam (`returns: false`) — kamión za bránou tak aspoň naloží a čaká (major 2).
+ * - **Trasa** rampy = (platná brána, stojisko), ktorých okruh má cestu späť a zo vstupnej strany brány je dosiahnuteľný
+ *   portál; trasy sú v poradí id brány, potom id stojiska.
  * - **Prevádzková rampa** má aspoň jednu trasu. Inak dôvod (prvý platný): `not_connected` (rampa nemá prístupovú bunku),
- *   `no_gate` (žiadna platná brána), `no_waiting_area` (za žiadnou platnou bránou nie je dosiahnuteľné stojisko),
- *   `not_connected` (stojiská za bránou sú, ale k rampe z nich cesta nevedie).
+ *   `no_gate` (žiadna platná brána), `no_return_path` (za platnou bránou vedie okruh k rampe, ale nie späť k bráne alebo
+ *   od brány k portálu), `no_waiting_area` (za žiadnou platnou bránou nie je dosiahnuteľné stojisko), `not_connected`
+ *   (stojiská za bránou sú, ale k rampe z nich cesta nevedie).
  *
- * Výpočet sa robí len pri zmene verzií; dotazy (`rampStatus`, `gateSides`, `routes`) sú potom jedno `Map.get` bez
- * alokácie. Bez brán, stojísk a rámp nerobí žiadne A*.
+ * Výpočet trás sa robí len pri zmene verzií; dotazy (`rampStatus`, `gateSides`, `routes`) sú potom jedno `Map.get` bez
+ * alokácie. Strany pre kamión a okruhy sa dopočítajú lenivo pri prvom dotaze na dvojicu / trojicu modulov a pamätajú sa do
+ * zmeny verzií (opakovaný dotaz je niekoľko `Map.get`). Bez brán, stojísk a rámp nerobí žiadne A*.
  */
 import type { EntityId } from '../core/entity-id';
 import type { CellCoord, Grid } from '../grid/grid';
@@ -45,7 +58,10 @@ export interface LandsideEnv {
   readonly moduleVersion: number;
 }
 
-/** Strany brány: konektory a ich prístupové bunky (`NO_ACCESS`, keď strana chýba). */
+/**
+ * Strany brány: konektory a ich prístupové bunky (`NO_ACCESS`, keď strana chýba). Strany z portálu majú výstup len
+ * so vstupom; strany pre kamión bez vstupu z portálu (`truckGateSides`) môžu mať len výstup (vnútornú stranu).
+ */
 export interface GateSides {
   readonly entry: PlacedConnector | null;
   readonly exit: PlacedConnector | null;
@@ -65,8 +81,20 @@ export interface LandsideRoute {
   readonly waitingEntryCell: number;
   /** Prístupová bunka výstupného konektora stojiska (rovná vstupnej pri slepom parkovisku). */
   readonly waitingExitCell: number;
-  /** Prístupová bunka rampy najlacnejšie dosiahnuteľná z výstupu stojiska. */
+  /** Prístupová bunka rampy najlacnejšie dosiahnuteľná z výstupu stojiska (s cestou späť k bráne). */
   readonly rampCell: number;
+}
+
+/** Okruh kamióna za bránou: vnútorná strana brány → priechod stojiskom → rampa (a späť, ak `returns`). */
+export interface LandsideCircuit {
+  /** Prístupová bunka vnútornej (výstupnej) strany brány — tu sa kamión objaví po prechode dnu a čaká na cestu von. */
+  readonly gateInnerCell: number;
+  readonly waitingEntryCell: number;
+  readonly waitingExitCell: number;
+  /** Bunka rampy najlacnejšie dosiahnuteľná z výstupu stojiska (pri `returns` len spomedzi buniek s cestou späť). */
+  readonly rampCell: number;
+  /** Z `rampCell` vedie cesta späť k vnútornej strane brány (priamo alebo spätným priechodom stojiskom). */
+  readonly returns: boolean;
 }
 
 /** Brána bez určených strán. */
@@ -79,6 +107,7 @@ const INOPERATIVE: { readonly [R in RampInoperativeReason]: RampStatus } = Objec
   not_connected: Object.freeze({ operational: false, reason: 'not_connected' }),
   no_gate: Object.freeze({ operational: false, reason: 'no_gate' }),
   no_waiting_area: Object.freeze({ operational: false, reason: 'no_waiting_area' }),
+  no_return_path: Object.freeze({ operational: false, reason: 'no_return_path' }),
 });
 
 interface RampAccess {
@@ -86,13 +115,38 @@ interface RampAccess {
   readonly routes: readonly LandsideRoute[];
 }
 
+/** Hodnota pre kľúč z mapy, pri prvom dotaze spočítaná (`compute`) a uložená — aj `null`. */
+function memoized<K, V>(map: Map<K, V>, key: K, compute: () => V): V {
+  const cached = map.get(key);
+  if (cached !== undefined || map.has(key)) return cached as V;
+  const value = compute();
+  map.set(key, value);
+  return value;
+}
+
 interface LandsideState {
   readonly portalCell: number;
   readonly gates: ReadonlyMap<EntityId, GateSides>;
-  readonly ramps: ReadonlyMap<EntityId, RampAccess>;
+  readonly ramps: Map<EntityId, RampAccess>;
+  /** Strany brány pre kamióny stojiska: brána → stojisko → strany (dopĺňa sa lenivo). */
+  readonly truckSides: Map<EntityId, Map<EntityId, GateSides>>;
+  /** Okruhy: brána → stojisko → rampa → okruh alebo `null` (dopĺňa sa lenivo). */
+  readonly circuits: Map<EntityId, Map<EntityId, Map<EntityId, LandsideCircuit | null>>>;
 }
 
-const EMPTY_STATE: LandsideState = Object.freeze({ portalCell: NO_ACCESS, gates: new Map(), ramps: new Map() });
+function emptyState(portalCell: number, gates: ReadonlyMap<EntityId, GateSides>): LandsideState {
+  return { portalCell, gates, ramps: new Map(), truckSides: new Map(), circuits: new Map() };
+}
+
+/** Okruh z pamäte stavu (brána, stojisko, rampa), pri prvom dotaze spočítaný `compute`. */
+function cachedCircuit(state: LandsideState, gateId: EntityId, areaId: EntityId, rampId: EntityId, compute: () => LandsideCircuit | null): LandsideCircuit | null {
+  const byArea = memoized(state.circuits, gateId, () => new Map<EntityId, Map<EntityId, LandsideCircuit | null>>());
+  return memoized(
+    memoized(byArea, areaId, () => new Map<EntityId, LandsideCircuit | null>()),
+    rampId,
+    compute,
+  );
+}
 
 /** Cestný konektor s prístupovou bunkou. */
 interface Access {
@@ -110,6 +164,11 @@ function accessesOf(grid: Grid, module: Module): Access[] {
   return accesses;
 }
 
+/** Vedie z `from` do `to` cesta (konečná cena)? */
+function reaches(env: LandsideEnv, from: number, to: number): boolean {
+  return env.distances.distance(from, to) < Infinity;
+}
+
 /** Bunka portálu `roadPortals[0]`, ak je v mape a má cestu; inak `NO_ACCESS`. */
 function portalCellOf(env: LandsideEnv): number {
   const portal = env.map.roadPortals[0];
@@ -118,7 +177,7 @@ function portalCellOf(env: LandsideEnv): number {
   return env.grid.atIndex(index).road === 'road' ? index : NO_ACCESS;
 }
 
-/** Strany brány (rozhodnutie 2). */
+/** Strany brány z portálu (rozhodnutie 2). */
 function gateSidesOf(env: LandsideEnv, gate: TruckGate, portal: number): GateSides {
   if (portal === NO_ACCESS) return NO_GATE_SIDES;
   const accesses = accessesOf(env.grid, gate);
@@ -141,18 +200,27 @@ function gateSidesOf(env: LandsideEnv, gate: TruckGate, portal: number): GateSid
   });
 }
 
-/** Najlacnejšia prístupová bunka rampy z `from` (pri zhode prvá v poradí defu) a jej cena. */
-function nearestRampCell(env: LandsideEnv, from: number, rampCells: readonly number[]): { readonly cell: number; readonly cost: number } {
-  let cell = NO_ACCESS;
-  let cost = Infinity;
-  for (const candidate of rampCells) {
-    const candidateCost = env.distances.distance(from, candidate);
-    if (candidateCost < cost) {
-      cell = candidate;
-      cost = candidateCost;
-    }
-  }
-  return { cell, cost };
+/**
+ * Strany brány bez vstupu z portálu pre kamióny stojiska `area` (viď hlavička): vnútorná = prvá prístupová bunka brány,
+ * z ktorej je dosiahnuteľná niektorá prístupová bunka stojiska; vonkajšia = prvá ďalšia. Bez takej bunky `NO_GATE_SIDES`.
+ */
+function detachedSidesOf(env: LandsideEnv, gate: Module, area: Module): GateSides {
+  const accesses = accessesOf(env.grid, gate);
+  const areaCells = accessesOf(env.grid, area).map((access) => access.cell);
+  const inner = accesses.findIndex((access) => areaCells.some((cell) => reaches(env, access.cell, cell)));
+  if (inner < 0) return NO_GATE_SIDES;
+  const outer = accesses.findIndex((_access, i) => i !== inner);
+  return Object.freeze({
+    entry: outer < 0 ? null : accesses[outer].connector,
+    exit: accesses[inner].connector,
+    entryCell: outer < 0 ? NO_ACCESS : accesses[outer].cell,
+    exitCell: accesses[inner].cell,
+  });
+}
+
+/** Vedie z bunky `cell` cesta späť k vnútornej strane brány `inner` — priamo, alebo spätným priechodom stojiskom? */
+function returnsFrom(env: LandsideEnv, cell: number, waitingEntryCell: number, waitingExitCell: number, inner: number): boolean {
+  return reaches(env, cell, inner) || (reaches(env, cell, waitingExitCell) && reaches(env, waitingEntryCell, inner));
 }
 
 interface Passage {
@@ -161,21 +229,33 @@ interface Passage {
   readonly rampCell: number;
 }
 
-/** Priechod stojiskom z bunky `from` k rampe (viď hlavička); `null`, ak neexistuje. */
-function waitingPassage(env: LandsideEnv, area: WaitingArea, from: number, rampCells: readonly number[]): Passage | null {
+/**
+ * Priechod stojiskom z vnútornej strany brány `inner` k rampe (viď hlavička); pri `requireReturn` len s bunkou rampy,
+ * z ktorej vedie cesta späť (`returnsFrom`). `null`, ak neexistuje.
+ */
+function waitingPassage(env: LandsideEnv, area: Module, inner: number, rampCells: readonly number[], requireReturn: boolean): Passage | null {
   const accesses = accessesOf(env.grid, area);
   for (const distinct of [true, false]) {
     let best: Passage | null = null;
     let bestCost = Infinity;
     for (let i = 0; i < accesses.length; i++) {
-      const costIn = env.distances.distance(from, accesses[i].cell);
+      const costIn = env.distances.distance(inner, accesses[i].cell);
       if (costIn === Infinity) continue;
       for (let j = 0; j < accesses.length; j++) {
         if ((i !== j) !== distinct) continue;
-        const out = nearestRampCell(env, accesses[j].cell, rampCells);
-        if (out.cost === Infinity || costIn + out.cost >= bestCost) continue;
-        best = { entryCell: accesses[i].cell, exitCell: accesses[j].cell, rampCell: out.cell };
-        bestCost = costIn + out.cost;
+        // Najlacnejšia bunka rampy z výstupu (pri zhode prvá v poradí defu), pri `requireReturn` len s cestou späť.
+        let rampCell = NO_ACCESS;
+        let costOut = Infinity;
+        for (const candidate of rampCells) {
+          const cost = env.distances.distance(accesses[j].cell, candidate);
+          if (cost >= costOut) continue;
+          if (requireReturn && !returnsFrom(env, candidate, accesses[i].cell, accesses[j].cell, inner)) continue;
+          rampCell = candidate;
+          costOut = cost;
+        }
+        if (costOut === Infinity || costIn + costOut >= bestCost) continue;
+        best = { entryCell: accesses[i].cell, exitCell: accesses[j].cell, rampCell };
+        bestCost = costIn + costOut;
       }
     }
     if (best !== null) return best;
@@ -183,48 +263,74 @@ function waitingPassage(env: LandsideEnv, area: WaitingArea, from: number, rampC
   return null;
 }
 
+/** Okruh z vnútornej strany brány `inner` cez stojisko k rampe s bunkami `rampCells` (viď hlavička), alebo `null`. */
+function circuitOf(env: LandsideEnv, area: Module, inner: number, rampCells: readonly number[]): LandsideCircuit | null {
+  if (inner === NO_ACCESS || rampCells.length === 0) return null;
+  const full = waitingPassage(env, area, inner, rampCells, true);
+  const passage = full ?? waitingPassage(env, area, inner, rampCells, false);
+  if (passage === null) return null;
+  return Object.freeze({
+    gateInnerCell: inner,
+    waitingEntryCell: passage.entryCell,
+    waitingExitCell: passage.exitCell,
+    rampCell: passage.rampCell,
+    returns: full !== null,
+  });
+}
+
+interface ValidGate {
+  readonly gate: TruckGate;
+  readonly sides: GateSides;
+  /** Zo vstupnej strany brány je dosiahnuteľný portál (cesta von z mapy). */
+  readonly returnsToPortal: boolean;
+}
+
 /** Je z niektorej platnej brány dosiahnuteľná prístupová bunka niektorého stojiska? */
-function hasAreaBehindGate(env: LandsideEnv, gates: readonly GateSides[], areas: readonly WaitingArea[]): boolean {
-  for (const sides of gates) {
+function hasAreaBehindGate(env: LandsideEnv, gates: readonly ValidGate[], areas: readonly WaitingArea[]): boolean {
+  for (const { sides } of gates) {
     for (const area of areas) {
       for (const access of accessesOf(env.grid, area)) {
-        if (env.distances.distance(sides.exitCell, access.cell) < Infinity) return true;
+        if (reaches(env, sides.exitCell, access.cell)) return true;
       }
     }
   }
   return false;
 }
 
-interface ValidGate {
-  readonly gate: TruckGate;
-  readonly sides: GateSides;
+/** Prístupové bunky rampy v poradí defu. */
+function rampCellsOf(env: LandsideEnv, ramp: Module): number[] {
+  return accessesOf(env.grid, ramp).map((access) => access.cell);
 }
 
-/** Prevádzkovosť a trasy jednej rampy (viď hlavička). */
-function rampAccessOf(env: LandsideEnv, ramp: LoadingRamp, gates: readonly ValidGate[], areas: readonly WaitingArea[], areaBehindGate: boolean): RampAccess {
-  const rampCells = accessesOf(env.grid, ramp).map((access) => access.cell);
+/** Prevádzkovosť a trasy jednej rampy (viď hlavička); okruhy platných brán zostanú v pamäti stavu. */
+function rampAccessOf(env: LandsideEnv, state: LandsideState, ramp: LoadingRamp, gates: readonly ValidGate[], areas: readonly WaitingArea[]): RampAccess {
+  const rampCells = rampCellsOf(env, ramp);
   if (rampCells.length === 0) return { status: INOPERATIVE.not_connected, routes: NO_ROUTES };
   if (gates.length === 0) return { status: INOPERATIVE.no_gate, routes: NO_ROUTES };
   const routes: LandsideRoute[] = [];
-  for (const { gate, sides } of gates) {
+  let forward = false;
+  for (const { gate, sides, returnsToPortal } of gates) {
     for (const area of areas) {
-      const passage = waitingPassage(env, area, sides.exitCell, rampCells);
-      if (passage === null) continue;
+      const circuit = cachedCircuit(state, gate.id, area.id, ramp.id, () => circuitOf(env, area, sides.exitCell, rampCells));
+      if (circuit === null) continue;
+      forward = true;
+      if (!circuit.returns || !returnsToPortal) continue;
       routes.push(
         Object.freeze({
           gateId: gate.id,
           gateEntryCell: sides.entryCell,
           gateExitCell: sides.exitCell,
           waitingAreaId: area.id,
-          waitingEntryCell: passage.entryCell,
-          waitingExitCell: passage.exitCell,
-          rampCell: passage.rampCell,
+          waitingEntryCell: circuit.waitingEntryCell,
+          waitingExitCell: circuit.waitingExitCell,
+          rampCell: circuit.rampCell,
         }),
       );
     }
   }
   if (routes.length > 0) return { status: RAMP_OPERATIONAL, routes: Object.freeze(routes) };
-  return { status: areaBehindGate ? INOPERATIVE.not_connected : INOPERATIVE.no_waiting_area, routes: NO_ROUTES };
+  if (forward) return { status: INOPERATIVE.no_return_path, routes: NO_ROUTES };
+  return { status: hasAreaBehindGate(env, gates, areas) ? INOPERATIVE.not_connected : INOPERATIVE.no_waiting_area, routes: NO_ROUTES };
 }
 
 /** Celý výpočet reťazca nad aktuálnymi cestami a modulmi. */
@@ -236,25 +342,18 @@ function computeLandside(env: LandsideEnv): LandsideState {
   for (const gate of gateModules) {
     const sides = gateSidesOf(env, gate, portal);
     gates.set(gate.id, sides);
-    if (sides.exit !== null) valid.push({ gate, sides });
+    if (sides.exit !== null) valid.push({ gate, sides, returnsToPortal: reaches(env, sides.entryCell, portal) });
   }
-  const rampAccess = new Map<EntityId, RampAccess>();
-  if (ramps.length > 0) {
-    const areaBehindGate = hasAreaBehindGate(
-      env,
-      valid.map((entry) => entry.sides),
-      areas,
-    );
-    for (const ramp of ramps) rampAccess.set(ramp.id, rampAccessOf(env, ramp, valid, areas, areaBehindGate));
-  }
-  return { portalCell: portal, gates, ramps: rampAccess };
+  const state = emptyState(portal, gates);
+  for (const ramp of ramps) state.ramps.set(ramp.id, rampAccessOf(env, state, ramp, valid, areas));
+  return state;
 }
 
 export class LandsideNetwork {
   private readonly env: LandsideEnv;
   private roadVersion = Number.NaN;
   private moduleVersion = Number.NaN;
-  private state: LandsideState = EMPTY_STATE;
+  private state: LandsideState = emptyState(NO_ACCESS, new Map());
   private computations = 0;
 
   constructor(env: LandsideEnv) {
@@ -271,9 +370,46 @@ export class LandsideNetwork {
     return this.computations;
   }
 
-  /** Strany brány; modul, ktorý nie je bránou sveta, → `NO_GATE_SIDES`. */
+  /** Strany brány z portálu; modul, ktorý nie je bránou sveta, → `NO_GATE_SIDES`. */
   gateSides(gate: Module): GateSides {
     return this.current().gates.get(gate.id) ?? NO_GATE_SIDES;
+  }
+
+  /**
+   * Strany brány pre kamión so stojiskom `area` (viď hlavička): strany z portálu, ak je vstupná určená, inak strany podľa
+   * stojiska (vnútorná = prvá prístupová bunka brány, z ktorej je stojisko dosiahnuteľné). Modul, ktorý nie je bránou
+   * sveta, → `NO_GATE_SIDES`.
+   */
+  truckGateSides(gate: Module, area: Module): GateSides {
+    const state = this.current();
+    const sides = state.gates.get(gate.id);
+    if (sides === undefined) return NO_GATE_SIDES;
+    if (sides.entry !== null) return sides;
+    const byArea = memoized(state.truckSides, gate.id, () => new Map<EntityId, GateSides>());
+    return memoized(byArea, area.id, () => detachedSidesOf(this.env, gate, area));
+  }
+
+  /**
+   * Okruh kamióna za bránou (viď hlavička) pre bránu, stojisko a rampu — z vnútornej strany `truckGateSides`, nezávisle
+   * od toho, či je brána dosiahnuteľná z portálu. `undefined` = okruh nie je (brána bez vnútornej strany, stojisko
+   * nedosiahnuteľné alebo z neho k rampe nevedie cesta) alebo rampa nie je rampou sveta.
+   */
+  circuit(gate: Module, area: Module, ramp: Module): LandsideCircuit | undefined {
+    const state = this.current();
+    if (!state.ramps.has(ramp.id)) return undefined;
+    const circuit = cachedCircuit(state, gate.id, area.id, ramp.id, () =>
+      circuitOf(this.env, area, this.truckGateSides(gate, area).exitCell, rampCellsOf(this.env, ramp)),
+    );
+    return circuit ?? undefined;
+  }
+
+  /**
+   * Obslúži okruh bunku rampy `cell` rovnako dobre ako jeho `rampCell`? Bunka je dosiahnuteľná z výstupu stojiska a pri
+   * okruhu s cestou späť vedie cesta späť aj z nej (dock kamióna, dodatok ADR-024).
+   */
+  circuitServesCell(circuit: LandsideCircuit, cell: number): boolean {
+    if (cell === NO_ACCESS || !reaches(this.env, circuit.waitingExitCell, cell)) return false;
+    return !circuit.returns || returnsFrom(this.env, cell, circuit.waitingEntryCell, circuit.waitingExitCell, circuit.gateInnerCell);
   }
 
   /** Aktuálny stav rampy; modul, ktorý nie je rampou sveta, → `undefined`. */

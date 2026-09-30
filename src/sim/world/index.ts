@@ -37,7 +37,9 @@ export { connectorCellsOf, isModuleConnected, isOutsideUsable } from './connecti
 export type { ConnectorCell } from './connectivity';
 // Pozemný exportný reťazec (ADR-022) — strany brán, priechody stojiskami, trasy kamiónov a prevádzkovosť rámp.
 export { LandsideNetwork, NO_GATE_SIDES } from './landside';
-export type { GateSides, LandsideEnv, LandsideRoute } from './landside';
+export type { GateSides, LandsideCircuit, LandsideEnv, LandsideRoute } from './landside';
+export { LandsideRosterCache } from './landside-roster';
+export type { LandsideModules } from './landside-roster';
 export type { CargoHolderWorld } from './cargo-holders';
 // Parcela patrí mriežke/mape (src/sim/grid/parcel.ts); tu len re-export pre pohodlie konzumentov `World`.
 export type { Parcel, ParcelOwnership } from '../grid/parcel';

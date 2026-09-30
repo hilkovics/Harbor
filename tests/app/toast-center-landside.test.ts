@@ -47,11 +47,16 @@ describe('toastSpecsForEvents: rampa neprevádzková', () => {
     ]);
   });
 
-  it('každý dôvod zo simu má vlastný text (no_gate, no_waiting_area, not_connected)', () => {
+  it('každý dôvod zo simu má vlastný text (no_gate, no_waiting_area, not_connected, no_return_path)', () => {
     const { world } = withRamp();
     expect(Object.keys(RAMP_INOPERATIVE_TOAST_REASON).sort()).toEqual([...RAMP_INOPERATIVE_REASONS].sort());
     const texts = RAMP_INOPERATIVE_REASONS.map((reason) => toastSpecsForEvents(world, [rampEvent({ reason })])[0]?.text);
-    expect(texts).toEqual(['RMP-05 — chýba súvislá cesta k rampe', 'RMP-05 — chýba brána na ceste', 'RMP-05 — chýba stojisko']);
+    expect(texts).toEqual([
+      'RMP-05 — chýba súvislá cesta k rampe',
+      'RMP-05 — chýba brána na ceste',
+      'RMP-05 — chýba stojisko',
+      'RMP-05 — kamióny sa nemajú ako vrátiť cez bránu k portálu',
+    ]);
     expect(new Set(texts).size).toBe(RAMP_INOPERATIVE_REASONS.length);
   });
 

@@ -15,8 +15,10 @@
  * moduly (T04-02) obnovia `runtime` (brána: fronta a počítadlá); strany brán a prevádzkovosť rámp odvodí svet po obnove.
  * Kamióny (T04-04, ADR-024) vzostupne podľa id cez `World.addTruck` po vozidlách (pred kontrolou držiteľov — `in_truck`
  * číta `world.trucks`): kamión znovu drží svoj bay (index zo save) a dock podľa stavu; potom náklad kamióna (kapacita,
- * kategória, stav prázdny/nakládka/plný), fronta brány = presne kamióny v `gate_queue*` tejto brány, pohyb
- * (`truckMotionProblem`) a hodina posledného `NoWaitingBay` rampy nie je v budúcnosti.
+ * kategória, stav prázdny/nakládka/plný), väzba na rampu (def vozí jej kategóriu, kamión s dockom má na docku a v sebe
+ * aspoň kapacitu), fronta brány = presne kamióny v `gate_queue*` tejto brány, súlad prechodu brány s frontou (runtime
+ * brány), pohyb (`truckMotionProblem`), kamión vo fronte na svojej strane brány a hodina posledného `NoWaitingBay`
+ * rampy nie je v budúcnosti.
  * Na koniec beží `findWorldViolation` ako poistka. Každá chyba je `WorldStateError` s JSON pointerom.
  */
 import { holderIdOf, holderSpecOf, isSameLocation, slotOf, uniqueSlotOf } from '../cargo/cargo-location';
@@ -45,7 +47,7 @@ import { vehicleMotionProblem } from '../vehicles/vehicle-trip';
 import { CARGO_HOLDER_SOURCES } from './cargo-holders';
 import { WorldStateError, pointerSegment } from './state-check';
 import type { World } from './world';
-import { findWorldViolation } from './world-invariants';
+import { findWorldViolation, truckQueueSideProblem, truckRampProblem } from './world-invariants';
 import type { ParsedJobEntry, ParsedModuleEntry, ParsedShipEntry, ParsedTruckEntry, ParsedVehicleEntry, ParsedWorldState } from './world-state';
 
 const modulePath = (index: number): string => `/modules${pointerSegment(index)}`;
@@ -293,11 +295,30 @@ function checkGateQueues(world: World, indexOf: ReadonlyMap<EntityId, number>): 
   }
 }
 
-/** Pohyb kamiónov zodpovedá stavu (`truckMotionProblem`, ADR-019, ADR-024). */
+/**
+ * Pohyb kamiónov zodpovedá stavu (`truckMotionProblem`, ADR-019, ADR-024) a kamión vo fronte stojí na svojej strane
+ * brány (`truckQueueSideProblem`, dodatok ADR-024 — `/trucks/<i>/route`).
+ */
 function checkTruckMotion(world: World): void {
   let index = 0;
   for (const truck of world.trucks.values()) {
     const problem = truckMotionProblem(world, truck);
+    if (problem !== undefined) throw new WorldStateError(`${truckPath(index)}/${problem.field}`, problem.problem);
+    const side = truckQueueSideProblem(world, truck);
+    if (side !== undefined) throw new WorldStateError(`${truckPath(index)}/route`, side);
+    index += 1;
+  }
+}
+
+/**
+ * Väzba kamióna na rampu (`truckRampProblem`, review T04-11): def vozí kategóriu rampy (`/trucks/<i>/defId`) a kamión
+ * s dockom má na docku a v sebe spolu aspoň `capacityUnits` jednotiek (`/trucks/<i>/dock`). Po `checkTruckCargo`.
+ */
+function checkTruckRamps(world: World): void {
+  let index = 0;
+  for (const truck of world.trucks.values()) {
+    const ramp = world.modules.get(truck.rampId);
+    const problem = ramp instanceof LoadingRamp ? truckRampProblem(world, truck, ramp) : undefined;
     if (problem !== undefined) throw new WorldStateError(`${truckPath(index)}/${problem.field}`, problem.problem);
     index += 1;
   }
@@ -635,6 +656,7 @@ export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'mo
   checkUnitSlots(world, units);
   checkRampUnits(world, units);
   checkTruckCargo(world, units);
+  checkTruckRamps(world);
   checkGateQueues(world, indexOf);
   restoreJobs(world, parsed.jobs);
   checkVehicleCargoJobs(world, units);

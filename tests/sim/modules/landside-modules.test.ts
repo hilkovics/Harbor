@@ -14,6 +14,7 @@ import {
   RAMP_OPERATIONAL,
   TruckGate,
   WaitingArea,
+  gatePassProblem,
   moduleRegistry,
   type ModuleErrorCode,
   type PlacedConnector,
@@ -120,10 +121,13 @@ describe('TruckGate', () => {
     expect(gate.queuedTruckIds).toEqual([5]);
   });
 
-  it('priepustnosť: beginPass nastaví busyTicksLeft a počíta kamióny, počas prechodu ďalší nezačne (busy)', () => {
+  it('priepustnosť: beginPass pre čelo fronty nastaví busyTicksLeft, počas prechodu ďalší nezačne (busy); bez fronty queue_empty', () => {
     const gate = create('truck_gate', TruckGate);
+    expect(errorCode(() => gate.beginPass(3))).toBe('queue_empty');
+    gate.enqueue(truck(7));
+    gate.enqueue(truck(8));
     gate.beginPass(3);
-    expect([gate.busyTicksLeft, gate.trucksProcessed, gate.isOpen]).toEqual([3, 1, true]);
+    expect([gate.busyTicksLeft, gate.trucksProcessed, gate.isOpen]).toEqual([3, 0, true]);
     expect(errorCode(() => gate.beginPass(3))).toBe('busy');
     gate.advancePass();
     gate.advancePass();
@@ -133,12 +137,59 @@ describe('TruckGate', () => {
     gate.advancePass();
     expect(gate.busyTicksLeft).toBe(0);
     gate.beginPass(1);
-    expect(gate.trucksProcessed).toBe(2);
+    expect(gate.trucksProcessed).toBe(0);
     for (const ticks of [0, -1, 2.5, Number.NaN]) {
       const fresh = create('truck_gate', TruckGate);
+      fresh.enqueue(truck(1));
       expect(errorCode(() => fresh.beginPass(ticks)), String(ticks)).toBe('invalid_input');
-      expect(fresh.trucksProcessed).toBe(0);
+      expect(fresh.busyTicksLeft).toBe(0);
     }
+  });
+
+  it('completePass: vyberie čelo a započíta dokončený prechod; zopakovaný začiatok prechodu sa nezapočíta dvakrát (review T04-11 d)', () => {
+    const gate = create('truck_gate', TruckGate);
+    gate.enqueue(truck(7));
+    gate.enqueue(truck(8));
+    gate.beginPass(2);
+    expect(errorCode(() => gate.completePass())).toBe('busy');
+    gate.advancePass();
+    gate.advancePass();
+    // Druhá strana chýbala — prechod sa zopakuje (landsideSystem), počítadlo sa nemení.
+    gate.beginPass(2);
+    gate.advancePass();
+    gate.advancePass();
+    expect(gate.trucksProcessed).toBe(0);
+    expect(gate.completePass()).toBe(7);
+    expect([gate.trucksProcessed, gate.queuedTruckIds]).toEqual([1, [8]]);
+    expect(gate.completePass()).toBe(8);
+    expect(errorCode(() => gate.completePass())).toBe('queue_empty');
+    expect(gate.trucksProcessed).toBe(2);
+  });
+
+  it('withdraw: vyradí kamión z fronty bez prechodu; čelo počas prechodu zruší aj prechod; mimo fronty invalid_input', () => {
+    const gate = create('truck_gate', TruckGate);
+    for (const id of [3, 4, 5]) gate.enqueue(truck(id));
+    gate.beginPass(5);
+    gate.withdraw(truck(4));
+    expect([gate.queuedTruckIds, gate.busyTicksLeft, gate.isQueued(truck(4))]).toEqual([[3, 5], 5, false]);
+    gate.withdraw(truck(3));
+    expect([gate.queuedTruckIds, gate.busyTicksLeft, gate.trucksProcessed]).toEqual([[5], 0, 0]);
+    expect(errorCode(() => gate.withdraw(truck(3)))).toBe('invalid_input');
+    gate.withdraw(truck(5));
+    expect([gate.queueLength, gate.findRuntimeProblem()]).toEqual([0, undefined]);
+  });
+
+  it('gatePassProblem / findRuntimeProblem: odpočet nad passTicks alebo prechod bez kamióna vo fronte (review T04-11 a)', () => {
+    const gate = create('truck_gate', TruckGate);
+    expect(gatePassProblem(0, 18, 0)).toBeUndefined();
+    expect(gatePassProblem(18, 18, 1)).toBeUndefined();
+    expect(gatePassProblem(19, 18, 1)).toMatchObject({ path: '/busyTicksLeft' });
+    expect(gatePassProblem(1, 18, 0)).toMatchObject({ path: '/busyTicksLeft' });
+    gate.enqueue(truck(2));
+    gate.beginPass(gate.passTicks);
+    expect(gate.findRuntimeProblem()).toBeUndefined();
+    gate.dequeue();
+    expect(gate.findRuntimeProblem()).toMatch(/prechod beží \(18 tickov\), ale fronta je prázdna/);
   });
 
   it('setSides zverejní strany; výstup bez vstupu je chyba programu', () => {
@@ -162,7 +213,7 @@ describe('TruckGate', () => {
     const state = JSON.parse(JSON.stringify(gate.getRuntimeState())) as unknown;
     const copy = create('truck_gate', TruckGate);
     copy.restoreRuntimeState(state);
-    expect(copy.getRuntimeState()).toEqual({ queue: [9, 4], busyTicksLeft: 7, trucksProcessed: 1 });
+    expect(copy.getRuntimeState()).toEqual({ queue: [9, 4], busyTicksLeft: 7, trucksProcessed: 0 });
     expect(copy.queuedTruckIds).toEqual([9, 4]);
     expect(copy.dequeue()).toBe(9);
     expect(gate.queuedTruckIds).toEqual([9, 4]);
@@ -177,6 +228,8 @@ describe('TruckGate', () => {
     ['duplicitný kamión', { queue: [4, 4], busyTicksLeft: 0, trucksProcessed: 0 }, '/queue/1'],
     ['záporný odpočet', { queue: [], busyTicksLeft: -1, trucksProcessed: 0 }, '/busyTicksLeft'],
     ['necelé počítadlo', { queue: [], busyTicksLeft: 0, trucksProcessed: 1.5 }, '/trucksProcessed'],
+    ['odpočet nad passTicks', { queue: [2], busyTicksLeft: 19, trucksProcessed: 0 }, '/busyTicksLeft'],
+    ['prechod bez kamióna vo fronte', { queue: [], busyTicksLeft: 5, trucksProcessed: 0 }, '/busyTicksLeft'],
   ];
   it.each(BAD_RUNTIME)('restoreRuntimeState: %s → ModuleStateError %s, stav sa nezmení', (_name, raw, path) => {
     const gate = create('truck_gate', TruckGate);

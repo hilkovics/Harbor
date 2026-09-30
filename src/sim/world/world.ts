@@ -86,7 +86,7 @@ import { RoadSpeeds } from '../logistics/road-speed';
 import { JOB_STATE_TRAITS, type TransportJob } from '../logistics/transport-job';
 import { CraneSystem } from '../systems/crane-system';
 import { DispatcherSystem } from '../systems/dispatcher-system';
-import { LandsideSystem } from '../systems/landside-system';
+import { LandsideSystem, settleGateQueues } from '../systems/landside-system';
 import { MetricsSystem } from '../systems/metrics-system';
 import { VehicleSystem } from '../systems/vehicle-system';
 import { ShipSystem } from '../systems/ship-system';
@@ -1018,7 +1018,10 @@ export class World {
   /**
    * Zverejní pozemný reťazec do modulov (ADR-022), ak sa od posledného zverejnenia zmenili cesty alebo moduly: bránam
    * strany (`TruckGate.setSides`), rampám prevádzkový stav (`LoadingRamp.publishStatus`) a pri zmene stavu rampy (aj
-   * pri prvom zverejnení novej rampy) `RampOperationalChanged`, ak `emit`. Pri nezmenených verziách nerobí nič.
+   * pri prvom zverejnení novej rampy) `RampOperationalChanged`, ak `emit`. V príkazovej fáze (`emit`) potom urovná
+   * fronty brán (`settleGateQueues`, dodatok ADR-024): kamión vo fronte, pod ktorým sa strany brány preklopili, ide
+   * ďalej bez prechodu — invariant „kamión vo fronte stojí na svojej strane" tak platí po každom príkaze aj ticku.
+   * `create` a `deserialize` (bez `emit`) fronty nemenia (obnova overila strany front). Pri nezmenených verziách nerobí nič.
    */
   private publishLandside(emit: boolean): void {
     if (this.roadChanges === this.publishedRoadVersion && this.moduleChanges === this.publishedModuleVersion) return;
@@ -1037,6 +1040,7 @@ export class World {
         this.events.emit({ type: 'RampOperationalChanged', rampId: ramp.id, operational: status.operational, reason: status.reason });
       }
     }
+    if (emit) settleGateQueues(this);
   }
 
   /** Krok 1: posun hodín a udalosti `TickAdvanced` + uzavreté hranice; vráti hranice pre neskoršie kroky (krok 11). */

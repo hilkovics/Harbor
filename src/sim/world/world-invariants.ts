@@ -51,7 +51,10 @@
  *    držaných dockov všetkých rámp = počet takých kamiónov; **fronta ↔ kamióny v `gate_queue*`**: kamión je vo fronte
  *    svojej brány práve v stavoch vo fronte, súčet dĺžok front = počet takých kamiónov (fronta je bez duplicít);
  *    **`in_truck` ↔ kamión**: náklad len v existujúcom kamióne (bod 1), najviac `capacityUnits`, len jeho kategórie
- *    a podľa stavu (pred nakládkou 0, po nej plný); pohyb zodpovedá stavu (`truckMotionProblem`). O(kamióny + moduly).
+ *    a podľa stavu (pred nakládkou 0, po nej plný); **rampa**: def kamióna vozí kategóriu rampy a kamión s dockom má
+ *    na docku a v sebe spolu aspoň `capacityUnits` jednotiek (`truckRampProblem`); pohyb zodpovedá stavu
+ *    (`truckMotionProblem`); kamión vo fronte stojí na svojej strane brány (`truckQueueSideProblem`, dodatok
+ *    ADR-024); súlad prechodu brány s frontou kontroluje brána (`gatePassProblem`, bod 10). O(kamióny + moduly).
  *
  * Krok 12 beží v DEV/testoch každý tick, preto kontroly v bežnom (platnom) stave nealokujú, kde to ide (review T03-13):
  * trasy vozidiel cez `Vehicle.routeCellAt`, depá kurzorom, rezervácie súčtami; podrobné správy sa skladajú až pri
@@ -78,7 +81,7 @@ import { SHIP_STATE_TRAITS } from '../ships/ship-fsm';
 import { mooringProblem } from '../ships/ship-route';
 import type { Truck } from '../trucks/truck';
 import { TRUCK_STATE_TRAITS } from '../trucks/truck-fsm';
-import { truckMotionProblem } from '../trucks/truck-trip';
+import { gateNearSideCell, isOffQueueSide, truckMotionProblem } from '../trucks/truck-trip';
 import type { Vehicle } from '../vehicles/vehicle';
 import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle-fsm';
 import { vehicleMotionProblem } from '../vehicles/vehicle-trip';
@@ -705,6 +708,31 @@ function checkTruckBonds(world: World, truck: Truck, gate: TruckGate, area: Wait
   return undefined;
 }
 
+/**
+ * Väzba kamióna na rampu (review T04-11): def kamióna vozí kategóriu rampy a kamión, ktorý drží dock (pred koncom
+ * nakládky), má na docku a v sebe spolu aspoň `capacityUnits` jednotiek — spawn to vyžaduje a jednotky docku odchádza
+ * len nakládkou tohto kamióna, takže `loadUnit` jednotku vždy nájde. Problém s poľom záznamu v save, alebo `undefined`.
+ */
+export function truckRampProblem(world: World, truck: Truck, ramp: LoadingRamp): { readonly field: 'defId' | 'dock'; readonly problem: string } | undefined {
+  if (!truck.def.cargoCategories.includes(ramp.category)) {
+    return { field: 'defId', problem: `${truck.label} nevozí kategóriu '${ramp.category}' rampy ${ramp.label}` };
+  }
+  if (!truck.bonds.holdsDock) return undefined;
+  const staged = ramp.stagedAt(truck.dock);
+  const aboard = world.cargo.countAt('in_truck', truck.id);
+  if (staged + aboard >= truck.def.capacityUnits) return undefined;
+  return {
+    field: 'dock',
+    problem: `${truck.label} drží dock ${String(truck.dock)} ${ramp.label}, ale na docku je ${String(staged)} a v kamióne ${String(aboard)} jednotiek (capacityUnits ${String(truck.def.capacityUnits)})`,
+  };
+}
+
+/** Kamión vo fronte stojí na svojej strane brány, ak je určená (`isOffQueueSide`, dodatok ADR-024). */
+export function truckQueueSideProblem(world: World, truck: Truck): string | undefined {
+  if (!isOffQueueSide(world, truck)) return undefined;
+  return `${truck.label} v stave '${truck.state}' stojí na bunke ${String(truck.cell)}, nie na svojej strane brány (${String(gateNearSideCell(world, truck))})`;
+}
+
 function checkTruck(world: World, truck: Truck): string | undefined {
   if (truck.state === 'exited') return `${truck.label} v stave 'exited' je stále vo world.trucks`;
   const gate = world.modules.get(truck.gateId);
@@ -716,7 +744,13 @@ function checkTruck(world: World, truck: Truck): string | undefined {
   if (truck.dock >= ramp.docks) return `${truck.label}: dock ${String(truck.dock)} mimo 0…${String(ramp.docks - 1)} ${ramp.label}`;
   const { width, height } = world.grid;
   if (!isWithin(truck.x, width) || !isWithin(truck.y, height)) return `${truck.label} stojí mimo mapy (${String(truck.x)}, ${String(truck.y)})`;
-  return checkTruckBonds(world, truck, gate, area, ramp) ?? checkTruckCargo(world, truck) ?? truckMotionProblem(world, truck)?.problem;
+  return (
+    checkTruckBonds(world, truck, gate, area, ramp) ??
+    checkTruckCargo(world, truck) ??
+    truckRampProblem(world, truck, ramp)?.problem ??
+    truckMotionProblem(world, truck)?.problem ??
+    truckQueueSideProblem(world, truck)
+  );
 }
 
 /**

@@ -3,6 +3,8 @@
  * ADR-011, ADR-024): kamióny, brány a spawn. Poradie v kroku je pevné:
  * 1. **Kamióny** vzostupne podľa id, krok podľa stavu z tabuľky `TRUCK_STEPS` (nie switch), stav mení len
  *    `changeTruckState`:
+ *    Ciele za bránou dáva okruh kamióna (`truckCircuit`: brána, stojisko a rampa kamióna nezávisle od cesty pred
+ *    bránou — review T04-11, major 2), takže kamión za bránou pri prerušení cesty von naloží a čaká pri bráne.
  *    - jazda (`to_*`): po zmene ciest preplánovanie z kotvy (bez cesty `no_path`), pohyb zdieľaným `advanceCarrier`
  *      a na konci trasy príchod podľa `ARRIVALS` — do fronty brány (`gate_queue`, pri `to_gate_out` na výstupnej strane
  *      brány `gate_queue_out`, pred spätným priechodom stojiskom prechod telom a ďalšia jazda k bráne), do stojiska
@@ -14,8 +16,9 @@
  *      `capacityUnits` uvoľní dock a ide k výstupnej strane brány;
  *    - `no_path`: po odpočte nový pokus o cestu, úspech = návrat do stavu, z ktorého kamión vypadol.
  * 2. **Brány** vzostupne podľa id: spoločná FIFO fronta oboch smerov, púšťa sa kamión na čele fronty. Prechod trvá
- *    `passTicks` (`processTicks` + `internalTicks`); po ňom kamión vypadne z fronty, objaví sa na druhej strane brány
- *    a ide ďalej (`to_bay` / `to_portal`). Ďalší prechod začne najskôr v tom istom ticku — medzi dvoma prechodmi je
+ *    `passTicks` (`processTicks` + `internalTicks`); po ňom kamión vypadne z fronty (`completePass`, `trucksProcessed`
+ *    počíta dokončené prechody), objaví sa na druhej strane brány (strany pre kamión — bez vstupu z portálu podľa
+ *    stojiska, dodatok ADR-024) a ide ďalej (`to_bay` / `to_portal`). Ďalší prechod začne najskôr v tom istom ticku — medzi dvoma prechodmi je
  *    teda aspoň `passTicks ≥ processTicks` tickov (tvrdý bottleneck). Fronta je virtuálna: čakajúci kamión stojí na
  *    vonkajšej bunke konektora, kamióny sa navzájom neblokujú (§7.8 bod 2, 3).
  * 3. **Spawn** (`spawnTrucks`): rampy vzostupne podľa id, docky vzostupne.
@@ -36,11 +39,12 @@ import {
   gateFarSideCell,
   gateOfTruck,
   isAtTravelTarget,
+  isOffQueueSide,
   passageBackOf,
   planTruckRoute,
   rampOfTruck,
   startTruckTrip,
-  truckRoute,
+  truckCircuit,
   waitingAreaOfTruck,
 } from '../trucks/truck-trip';
 import type { World } from '../world/world';
@@ -127,11 +131,12 @@ function drive(truck: Truck, world: World): void {
 
 /**
  * Koniec pobytu v stojisku (povel do docku): dock kamióna je jeho od spawnu, takže kamión ide hneď. Uvoľní bay, objaví
- * sa na výstupnej bunke stojiska svojej trasy a ide k docku (bez cesty `no_path`). Keď trasa (výstup stojiska) zanikla,
- * kamión čaká v bayi ďalej a skúsi to o `repathIntervalTicks`.
+ * sa na výstupnej bunke stojiska svojho okruhu (`truckCircuit` — nezávisle od cesty pred bránou) a ide k docku (bez
+ * cesty `no_path`). Keď okruh (priechod stojiskom k rampe) zanikol, kamión čaká v bayi ďalej a skúsi to o
+ * `repathIntervalTicks`.
  */
 function leaveWaitingArea(truck: Truck, world: World): void {
-  const exit = truckRoute(world, truck)?.waitingExitCell ?? NO_ACCESS;
+  const exit = truckCircuit(world, truck)?.waitingExitCell ?? NO_ACCESS;
   if (exit === NO_ACCESS) {
     truck.waitTicks = world.defs.logistics.repathIntervalTicks;
     return;
@@ -201,16 +206,17 @@ function headOf(world: World, gate: TruckGate): Truck | undefined {
 }
 
 /**
- * Koniec prechodu: kamión na čele vypadne z fronty, objaví sa na druhej strane brány a ide ďalej (`afterGate`). Keď
- * druhá strana medzitým zanikla (prestavba ciest), kamión ostane na čele a prechod sa zopakuje, keď bude strana späť.
+ * Koniec prechodu: kamión na čele vypadne z fronty (`completePass`, počíta sa dokončený prechod), objaví sa na druhej
+ * strane brány (strany pre kamión, `gateFarSideCell`) a ide ďalej (`afterGate`). Keď druhá strana medzitým zanikla
+ * (prestavba ciest), kamión ostane na čele a prechod sa zopakuje, keď bude strana späť.
  */
 function finishPass(world: World, gate: TruckGate): void {
   const truck = headOf(world, gate);
   if (truck === undefined) return;
-  const far = gateFarSideCell(world, gate, truck.state);
+  const far = gateFarSideCell(world, truck);
   const next = TRUCK_STATE_TRAITS[truck.state].afterGate;
   if (far === NO_ACCESS || next === null) return;
-  gate.dequeue();
+  gate.completePass();
   truck.jumpTo(far, world.grid.width);
   startTruckTrip(world, truck, next);
 }
@@ -218,7 +224,7 @@ function finishPass(world: World, gate: TruckGate): void {
 /** Začiatok prechodu kamióna na čele fronty (len keď druhá strana brány existuje). */
 function beginPass(world: World, gate: TruckGate): void {
   const truck = headOf(world, gate);
-  if (truck === undefined || gateFarSideCell(world, gate, truck.state) === NO_ACCESS) return;
+  if (truck === undefined || gateFarSideCell(world, truck) === NO_ACCESS) return;
   gate.beginPass(gate.passTicks);
 }
 
@@ -229,6 +235,27 @@ function stepGate(world: World, gate: TruckGate): void {
     if (gate.busyTicksLeft === 0) finishPass(world, gate);
   }
   if (gate.busyTicksLeft === 0) beginPass(world, gate);
+}
+
+/**
+ * Urovnanie front po zmene siete (dodatok ADR-024; volá `World` po zverejnení reťazca v príkazovej fáze): kamión vo
+ * fronte, pod ktorým sa strany brány preklopili (`isOffQueueSide` — stojí na inej prístupovej bunke brány, než je jeho
+ * strana), už je na druhej strane: vypadne z fronty bez prechodu (`TruckGate.withdraw`, čelo zruší aj prechod) a ide
+ * ďalej (`afterGate`, `TruckStateChanged`). Brány vzostupne podľa id, kamióny v poradí fronty; bez takých kamiónov
+ * nič nemení ani nealokuje.
+ */
+export function settleGateQueues(world: World): void {
+  for (const gate of world.landsideModules.gates) {
+    const queued = gate.queuedTruckIds;
+    for (const truckId of queued) {
+      const truck = world.trucks.get(truckId);
+      if (truck === undefined || !isOffQueueSide(world, truck)) continue;
+      const next = TRUCK_STATE_TRAITS[truck.state].afterGate;
+      if (next === null) continue;
+      gate.withdraw(truck.id);
+      startTruckTrip(world, truck, next);
+    }
+  }
 }
 
 export class LandsideSystem {

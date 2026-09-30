@@ -66,6 +66,7 @@ export const RAMP_INOPERATIVE_TOAST_REASON: Readonly<Record<RampInoperativeReaso
   not_connected: 'chýba súvislá cesta k rampe',
   no_gate: 'chýba brána na ceste',
   no_waiting_area: 'chýba stojisko',
+  no_return_path: 'kamióny sa nemajú ako vrátiť cez bránu k portálu',
 });
 
 /** Kód modulu pre text oznámenia (`BRT-01`); zaniknutý modul → kód z druhu `fallbackKind`. */

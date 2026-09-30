@@ -18,7 +18,7 @@ import type { SimEvent } from '@sim/events';
 import type { CellCoord } from '@sim/grid';
 import { NO_ACCESS } from '@sim/logistics';
 import { LoadingRamp, TruckGate, WaitingArea, type Module, type RampInoperativeReason } from '@sim/modules';
-import { World, WorldStateError, findRemovalViolations, findWorldViolation, type WorldState } from '@sim/world';
+import { NO_GATE_SIDES, World, WorldStateError, findRemovalViolations, findWorldViolation, type WorldState } from '@sim/world';
 import { DEFS, MAP, RAW_DEFS, SEED } from './world-fixtures';
 
 const GATE = { defId: 'truck_gate', x: 45, y: 32, rotation: 270 } as const;
@@ -226,6 +226,89 @@ describe('prevádzkovosť rampy (rozhodnutie 1): dôvody a trasy', () => {
     apply(world, place(RAMP), place(GATE), place(AREA));
     expect(world.rampStatus(only(world, LoadingRamp)).reason).toBe('not_connected');
     expect(world.gateSides(only(world, TruckGate)).entry).toBeNull();
+  });
+});
+
+describe('cesta späť (review T04-11, major 1): trasa len s cestou rampa → brána → portál', () => {
+  const oneWay = (cell: CellCoord, dir: 'N' | 'E' | 'S' | 'W'): SerializedCommand => ({ type: 'PlaceRoad', cells: [cell], kind: 'one_way', dirs: [dir] });
+
+  it.each<[string, CellCoord, 'N' | 'E' | 'S' | 'W']>([
+    ['jednosmerka na výstupe brány (47, 33) smerom od brány (E): od rampy sa k bráne nedá vrátiť', { x: 47, y: 33 }, 'E'],
+    ['jednosmerka na vstupe brány (44, 33) smerom k bráne (N): od brány sa k portálu nedá vrátiť', { x: 44, y: 33 }, 'N'],
+  ])('%s → no_return_path bez trás; po oprave cesty prevádzková', (_name, cell, dir) => {
+    const world = build();
+    const ramp = only(world, LoadingRamp);
+    const cut = apply(world, oneWay(cell, dir));
+    expect(world.rampStatus(ramp)).toEqual({ operational: false, reason: 'no_return_path' });
+    expect(world.landsideRoutes(ramp)).toEqual([]);
+    expect(rampEvents(cut)).toEqual([{ type: 'RampOperationalChanged', rampId: ramp.id, operational: false, reason: 'no_return_path' }]);
+    expectPublished(world, ramp);
+    const fixed = apply(world, { type: 'PlaceRoad', cells: [cell], kind: 'two_lane' });
+    expect(rampEvents(fixed)).toEqual([{ type: 'RampOperationalChanged', rampId: ramp.id, operational: true, reason: null }]);
+    expect(world.landsideRoutes(ramp)).toHaveLength(1);
+  });
+
+  it('no_return_path až keď cesta tam existuje; bez nej platia pôvodné dôvody (stojisko, not_connected)', () => {
+    const noArea = build({ modules: [GATE, RAMP] });
+    apply(noArea, oneWay({ x: 47, y: 33 }, 'E'));
+    expect(noArea.rampStatus(only(noArea, LoadingRamp)).reason).toBe('no_waiting_area');
+    const noLink = build({ omit: ROADS.truckLink });
+    apply(noLink, oneWay({ x: 47, y: 33 }, 'E'));
+    expect(noLink.rampStatus(only(noLink, LoadingRamp)).reason).toBe('not_connected');
+  });
+
+  it('okruh: s cestou späť returns = true a trasa = okruh; jednosmerka (47, 33) E → okruh len tam (returns = false)', () => {
+    const world = build();
+    const [gate, area, ramp] = [only(world, TruckGate), only(world, WaitingArea), only(world, LoadingRamp)];
+    const [route] = world.landsideRoutes(ramp);
+    expect(world.landside.circuit(gate, area, ramp)).toEqual({
+      gateInnerCell: route.gateExitCell,
+      waitingEntryCell: route.waitingEntryCell,
+      waitingExitCell: route.waitingExitCell,
+      rampCell: route.rampCell,
+      returns: true,
+    });
+    apply(world, oneWay({ x: 47, y: 33 }, 'E'));
+    expect(world.landside.circuit(gate, area, ramp)).toMatchObject({ gateInnerCell: idx(world, { x: 47, y: 33 }), returns: false });
+    expect(world.landside.circuit(gate, area, gate)).toBeUndefined();
+  });
+
+  it('bunka rampy bez cesty späť (slepá jednosmerka na (55, 30)) sa v okruhu preskočí; okruh ju neobslúži, (54, 30) áno', () => {
+    const world = build();
+    const [gate, area, ramp] = [only(world, TruckGate), only(world, WaitingArea), only(world, LoadingRamp)];
+    apply(world, oneWay({ x: 55, y: 30 }, 'E'));
+    expect(world.isRampOperational(ramp)).toBe(true);
+    const circuit = world.landside.circuit(gate, area, ramp);
+    if (circuit === undefined) throw new Error('okruh chýba');
+    expect([circuit.rampCell, circuit.returns]).toEqual([idx(world, { x: 54, y: 30 }), true]);
+    expect(world.landside.circuitServesCell(circuit, idx(world, { x: 54, y: 30 }))).toBe(true);
+    expect(world.landside.circuitServesCell(circuit, idx(world, { x: 55, y: 30 }))).toBe(false);
+    expect(world.landside.circuitServesCell(circuit, NO_ACCESS)).toBe(false);
+  });
+});
+
+describe('strany brány pre kamión (review T04-11, major 2)', () => {
+  it('so vstupom z portálu = strany brány; bez neho vnútorná = prvá strana, z ktorej je stojisko dosiahnuteľné', () => {
+    const world = build();
+    const [gate, area, ramp] = [only(world, TruckGate), only(world, WaitingArea), only(world, LoadingRamp)];
+    expect(world.landside.truckGateSides(gate, area)).toBe(world.gateSides(gate));
+
+    apply(world, { type: 'RemoveRoad', cells: ROADS.gateApproach });
+    expect(world.gateSides(gate)).toEqual(NO_GATE_SIDES);
+    expect(world.landside.truckGateSides(gate, area)).toMatchObject({ entry: null, entryCell: NO_ACCESS, exitCell: idx(world, { x: 47, y: 33 }) });
+    // Okruh za bránou ostáva aj bez cesty z portálu (rampa je neprevádzková — no_gate).
+    expect(world.rampStatus(ramp).reason).toBe('no_gate');
+    expect(world.landside.circuit(gate, area, ramp)).toMatchObject({ gateInnerCell: idx(world, { x: 47, y: 33 }), returns: true });
+  });
+
+  it('prerušenie ďalej na verejnej ceste: vonkajšia strana (44, 33) ostane, vnútorná (47, 33); stojisko nedosiahnuteľné → bez strán', () => {
+    const world = build();
+    const [gate, area] = [only(world, TruckGate), only(world, WaitingArea)];
+    apply(world, { type: 'RemoveRoad', cells: [{ x: 44, y: 50 }] });
+    expect(world.landside.truckGateSides(gate, area)).toMatchObject({ entryCell: idx(world, { x: 44, y: 33 }), exitCell: idx(world, { x: 47, y: 33 }) });
+    apply(world, { type: 'RemoveRoad', cells: [{ x: 48, y: 33 }] });
+    expect(world.landside.truckGateSides(gate, area)).toEqual(NO_GATE_SIDES);
+    expect(world.landside.truckGateSides(only(world, LoadingRamp), area)).toEqual(NO_GATE_SIDES);
   });
 });
 

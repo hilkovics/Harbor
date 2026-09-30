@@ -17,18 +17,22 @@ export { TruckError } from './truck-error';
 export type { TruckErrorCode } from './truck-error';
 export {
   dockAccessCell,
+  dockTargetCell,
   enterTruckNoPath,
   faceRoute,
   gateFarSideCell,
+  gateNearSideCell,
   gateOfTruck,
   isAtTravelTarget,
+  isOffQueueSide,
   passageBackOf,
   planTruckRoute,
   rampOfTruck,
   startTruckTrip,
+  truckCircuit,
+  truckGateSides,
   truckMotionProblem,
   truckMotionTarget,
-  truckRoute,
   waitingAreaOfTruck,
 } from './truck-trip';
 export type { PassageBack } from './truck-trip';

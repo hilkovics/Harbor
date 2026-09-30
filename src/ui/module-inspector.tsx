@@ -477,6 +477,7 @@ export const RAMP_INOPERATIVE_TEXTS: Readonly<Record<string, string>> = {
   no_gate: 'Chýba brána na ceste.',
   no_waiting_area: 'Chýba stojisko na ceste.',
   not_connected: 'Chýba súvislá cesta k rampe.',
+  no_return_path: 'Kamióny sa nemajú ako vrátiť cez bránu k portálu.',
 };
 
 /** Všeobecný text, keď rampa je neprevádzková, ale dôvod nie je známy. */

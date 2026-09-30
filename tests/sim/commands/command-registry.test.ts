@@ -113,6 +113,9 @@ describe('CommandRegistry (kostra T01-03)', () => {
       'vehicle_busy',
       'has_vehicles',
       'connector_blocked',
+      // T03-18 (docs/tasks/phase-03.md „Doplnok od používateľa" rozhodnutie 12, ADR-020): typy ciest
+      'invalid_road_kind',
+      'invalid_direction',
     ]);
     expect(new Set(VALIDATION_REASONS).size).toBe(VALIDATION_REASONS.length);
   });

@@ -26,11 +26,14 @@ function describeValue(value: unknown): string {
   return typeof value === 'string' ? JSON.stringify(value) : String(value);
 }
 
-/** Objekt s presne danými kľúčmi: najprv neznámy kľúč, potom chýbajúci (rovnako ako `DefRegistry`, `parseMapDef`). */
-function checkKeys(value: unknown, keys: readonly string[], type: string, path: string): Record<string, unknown> {
+/**
+ * Objekt s presne danými povinnými kľúčmi (+ voliteľné `optional`): najprv neznámy kľúč, potom chýbajúci povinný
+ * (rovnako ako `DefRegistry`, `parseMapDef`).
+ */
+function checkKeys(value: unknown, keys: readonly string[], type: string, path: string, optional: readonly string[] = []): Record<string, unknown> {
   if (!isPlainObject(value)) throw new CommandError(`${type}${path}: musí byť objekt, dostal ${describeValue(value)}`);
   for (const key of Object.keys(value)) {
-    if (!keys.includes(key)) throw new CommandError(`${type}${path}${pointerSegment(key)}: neznámy kľúč`);
+    if (!keys.includes(key) && !optional.includes(key)) throw new CommandError(`${type}${path}${pointerSegment(key)}: neznámy kľúč`);
   }
   for (const key of keys) {
     if (!Object.hasOwn(value, key)) throw new CommandError(`${type}${path}${pointerSegment(key)}: chýba povinný kľúč`);
@@ -39,11 +42,12 @@ function checkKeys(value: unknown, keys: readonly string[], type: string, path: 
 }
 
 /**
- * Overí, že `json` je príkaz typu `type` s presne kľúčmi `keys` (vrátane `type`), a vráti ho ako záznam.
- * Iný `type` (napr. priame volanie `PlaceRoadCommand.fromJSON` s `RemoveRoad`) → `CommandError`.
+ * Overí, že `json` je príkaz typu `type` s presne povinnými kľúčmi `keys` (vrátane `type`) a najviac kľúčmi
+ * `optional` navyše, a vráti ho ako záznam. Iný `type` (napr. priame volanie `PlaceRoadCommand.fromJSON`
+ * s `RemoveRoad`) → `CommandError`. Voliteľný kľúč sa v `toJSON` vracia len vtedy, keď bol na vstupe (roundtrip).
  */
-export function readPayload(json: SerializedCommand, type: string, keys: readonly string[]): Record<string, unknown> {
-  const raw = checkKeys(json, keys, type, '');
+export function readPayload(json: SerializedCommand, type: string, keys: readonly string[], optional: readonly string[] = []): Record<string, unknown> {
+  const raw = checkKeys(json, keys, type, '', optional);
   if (raw['type'] !== type) {
     throw new CommandError(`${type}/type: očakávaný typ '${type}', dostal ${describeValue(raw['type'])}`);
   }
@@ -104,4 +108,10 @@ export function checkInteger(value: unknown, type: string, path: string): number
 export function checkString(value: unknown, type: string, path: string): string {
   if (typeof value !== 'string') throw new CommandError(`${type}${path}: musí byť reťazec, dostal ${describeValue(value)}`);
   return value;
+}
+
+/** Zoznam reťazcov (napr. smery `dirs`); či hodnoty dávajú zmysel, hlási až `validate`. Vráti zmrazenú kópiu. */
+export function checkStringList(value: unknown, type: string, path: string): readonly string[] {
+  if (!Array.isArray(value)) throw new CommandError(`${type}${path}: musí byť pole reťazcov, dostal ${describeValue(value)}`);
+  return Object.freeze(value.map((item: unknown, i) => checkString(item, type, `${path}${pointerSegment(i)}`)));
 }

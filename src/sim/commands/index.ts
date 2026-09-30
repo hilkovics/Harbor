@@ -10,7 +10,7 @@ export type { CommandFactory } from './command-registry';
 export { BUILTIN_COMMANDS, registerBuiltinCommands } from './builtin-commands';
 export type { RegistrableCommand } from './builtin-commands';
 export { RoadLayerCommand } from './road-layer-command';
-export type { CellVerdict } from './road-layer-command';
+export type { CellVerdict, LedgerEntry, PlannedCell, RoadPrice, RoadQuote } from './road-layer-command';
 export { PlaceRoadCommand } from './place-road';
 export { RemoveRoadCommand } from './remove-road';
 export { SetGameSpeedCommand } from './set-game-speed';

@@ -86,6 +86,7 @@ import type { Vehicle } from '../vehicles/vehicle';
 import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle-fsm';
 import { vehicleMotionProblem } from '../vehicles/vehicle-trip';
 import { CARGO_HOLDER_SOURCES } from './cargo-holders';
+import type { LandsideModules } from './landside-roster';
 import type { World } from './world';
 
 /** Porušený invariant sveta (moduly, mriežka, aprony, žeriavy, skupiny kotvísk). */
@@ -478,9 +479,51 @@ function checkStorageReservations(world: World): string | undefined {
   return undefined;
 }
 
-/** Znovupoužiteľné pracovné polia kroku 12 (nie sú stav simulácie): počty jednotiek jobov na dock a začiatok rampy. */
-let dockUnitCounts = new Int32Array(0);
+/**
+ * Znovupoužiteľné pracovné polia kroku 12 (nie sú stav simulácie): začiatok docku 0 každej rampy (podľa `rampOrdinal`),
+ * počty jednotiek outbound jobov na dock a počty pripravených jednotiek na docku.
+ */
 let rampDockOffsets = new Int32Array(0);
+let dockUnitCounts = new Int32Array(0);
+let dockStagedCounts = new Int32Array(0);
+
+/** Naplní `rampDockOffsets` pre rampy registra a vráti počet dockov všetkých rámp (polia počtov zväčší podľa potreby). */
+function layoutRampDocks(ramps: readonly LoadingRamp[]): number {
+  if (rampDockOffsets.length < ramps.length) rampDockOffsets = new Int32Array(ramps.length);
+  let docks = 0;
+  for (let ordinal = 0; ordinal < ramps.length; ordinal++) {
+    rampDockOffsets[ordinal] = docks;
+    docks += ramps[ordinal].docks;
+  }
+  if (dockUnitCounts.length < docks) dockUnitCounts = new Int32Array(docks);
+  if (dockStagedCounts.length < docks) dockStagedCounts = new Int32Array(docks);
+  return docks;
+}
+
+/**
+ * Pripravené jednotky na každom docku všetkých rámp jedným prechodom jednotiek `at_ramp` (O(jednotky na rampách), bez
+ * alokácie) do `dockStagedCounts` — pre väzbu kamióna na dock (`truckRampProblem`), ktorá by inak pre každý kamión
+ * prechádzala jednotky svojej rampy. Dock mimo rozsahu hlási `findRuntimeProblem` rampy (bod 10).
+ */
+function countStagedUnits(world: World): void {
+  const roster = world.landsideModules;
+  const { ramps } = roster;
+  const docks = layoutRampDocks(ramps);
+  dockStagedCounts.fill(0, 0, docks);
+  stagedRoster = roster;
+  for (let ordinal = 0; ordinal < ramps.length; ordinal++) {
+    const ramp = ramps[ordinal];
+    const count = world.cargo.countAt('at_ramp', ramp.id);
+    for (let i = 0; i < count; i++) {
+      const unitId = world.cargo.unitAtIndex('at_ramp', ramp.id, i);
+      const location = unitId === undefined ? undefined : world.cargo.get(unitId)?.location;
+      if (location?.kind === 'at_ramp' && location.dock < ramp.docks) dockStagedCounts[rampDockOffsets[ordinal] + location.dock] += 1;
+    }
+  }
+}
+
+/** Register, pre ktorý `countStagedUnits` naposledy naplnil `dockStagedCounts` (poradie rámp pre `stagedFromScratch`). */
+let stagedRoster: LandsideModules | undefined;
 
 /**
  * Staging rezervácie každej rampy = outbound joby (ADR-023): na každom docku počet rezervácií = počet jednotiek
@@ -493,13 +536,7 @@ let rampDockOffsets = new Int32Array(0);
 function checkRampReservations(world: World): string | undefined {
   const { ramps } = world.landsideModules;
   if (ramps.length === 0) return undefined;
-  if (rampDockOffsets.length < ramps.length) rampDockOffsets = new Int32Array(ramps.length);
-  let docks = 0;
-  for (let ordinal = 0; ordinal < ramps.length; ordinal++) {
-    rampDockOffsets[ordinal] = docks;
-    docks += ramps[ordinal].docks;
-  }
-  if (dockUnitCounts.length < docks) dockUnitCounts = new Int32Array(docks);
+  const docks = layoutRampDocks(ramps);
   dockUnitCounts.fill(0, 0, docks);
   for (const job of world.jobs.values()) {
     const { to } = job;
@@ -711,15 +748,23 @@ function checkTruckBonds(world: World, truck: Truck, gate: TruckGate, area: Wait
 /**
  * Väzba kamióna na rampu (review T04-11): def kamióna vozí kategóriu rampy a kamión, ktorý drží dock (pred koncom
  * nakládky), má na docku a v sebe spolu aspoň `capacityUnits` jednotiek — spawn to vyžaduje a jednotky docku odchádza
- * len nakládkou tohto kamióna, takže `loadUnit` jednotku vždy nájde. Problém s poľom záznamu v save, alebo `undefined`.
+ * len nakládkou tohto kamióna, takže `loadUnit` jednotku vždy nájde. `stagedOnDock` = počet pripravených jednotiek na
+ * docku (predvolene `LoadingRamp.stagedAt`; krok 12 dodá predpočítané počty). Problém s poľom záznamu v save, alebo
+ * `undefined`.
  */
-export function truckRampProblem(world: World, truck: Truck, ramp: LoadingRamp): { readonly field: 'defId' | 'dock'; readonly problem: string } | undefined {
+export function truckRampProblem(
+  world: World,
+  truck: Truck,
+  ramp: LoadingRamp,
+  stagedOnDock: (ramp: LoadingRamp, dock: number) => number = (target, dock) => target.stagedAt(dock),
+): { readonly field: 'defId' | 'dock'; readonly problem: string } | undefined {
   if (!truck.def.cargoCategories.includes(ramp.category)) {
     return { field: 'defId', problem: `${truck.label} nevozí kategóriu '${ramp.category}' rampy ${ramp.label}` };
   }
   if (!truck.bonds.holdsDock) return undefined;
-  const staged = ramp.stagedAt(truck.dock);
   const aboard = world.cargo.countAt('in_truck', truck.id);
+  if (aboard >= truck.def.capacityUnits) return undefined;
+  const staged = stagedOnDock(ramp, truck.dock);
   if (staged + aboard >= truck.def.capacityUnits) return undefined;
   return {
     field: 'dock',
@@ -731,6 +776,15 @@ export function truckRampProblem(world: World, truck: Truck, ramp: LoadingRamp):
 export function truckQueueSideProblem(world: World, truck: Truck): string | undefined {
   if (!isOffQueueSide(world, truck)) return undefined;
   return `${truck.label} v stave '${truck.state}' stojí na bunke ${String(truck.cell)}, nie na svojej strane brány (${String(gateNearSideCell(world, truck))})`;
+}
+
+/**
+ * Pripravené jednotky na docku z `dockStagedCounts` (naplnil `countStagedUnits` na začiatku `checkTrucks`); rampa mimo
+ * registra (nemá nastať — väzby overil `checkTruck`) → priamy dotaz rampy.
+ */
+function stagedFromScratch(ramp: LoadingRamp, dock: number): number {
+  const ordinal = stagedRoster?.rampOrdinal(ramp.id) ?? -1;
+  return ordinal < 0 ? ramp.stagedAt(dock) : dockStagedCounts[rampDockOffsets[ordinal] + dock];
 }
 
 function checkTruck(world: World, truck: Truck): string | undefined {
@@ -747,7 +801,7 @@ function checkTruck(world: World, truck: Truck): string | undefined {
   return (
     checkTruckBonds(world, truck, gate, area, ramp) ??
     checkTruckCargo(world, truck) ??
-    truckRampProblem(world, truck, ramp)?.problem ??
+    truckRampProblem(world, truck, ramp, stagedFromScratch)?.problem ??
     truckMotionProblem(world, truck)?.problem ??
     truckQueueSideProblem(world, truck)
   );
@@ -759,6 +813,7 @@ function checkTruck(world: World, truck: Truck): string | undefined {
  * rovnajú počtom kamiónov — žiadny modul nedrží miesto pre kamión, ktorý neexistuje alebo ho nemá.
  */
 const checkTrucks: Check = (world) => {
+  countStagedUnits(world);
   let previous = 0;
   let bays = 0;
   let docks = 0;

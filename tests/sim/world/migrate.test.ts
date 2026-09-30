@@ -6,6 +6,7 @@ import {
   OLDEST_WORLD_STATE_VERSION,
   WORLD_STATE_KEYS,
   WORLD_STATE_V1_KEYS,
+  WORLD_STATE_V2,
   WORLD_STATE_VERSION,
   World,
   WorldStateError,
@@ -52,6 +53,13 @@ describe('migrateWorldState', () => {
   it('verzie: najstaršia 1, aktuálna 2', () => {
     expect(OLDEST_WORLD_STATE_VERSION).toBe(1);
     expect(WORLD_STATE_VERSION).toBe(2);
+  });
+
+  it('krok v1 → v2 zapíše pomenovanú cieľovú verziu WORLD_STATE_V2 = najstaršia + 1 (T02-14, nie natvrdo 2)', () => {
+    expect(WORLD_STATE_V2).toBe(OLDEST_WORLD_STATE_VERSION + 1);
+    expect(WORLD_STATE_VERSION).toBe(WORLD_STATE_V2);
+    const migrated = migrateWorldState(toV1(f1World().serialize())) as Record<string, unknown>;
+    expect(migrated.version).toBe(WORLD_STATE_V2);
   });
 
   it('aktuálna verzia prejde bez zmeny (tá istá referencia)', () => {

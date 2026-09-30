@@ -12,7 +12,7 @@ export type {
   WorldState,
   WorldStateV1,
 } from './world-state';
-export { OLDEST_WORLD_STATE_VERSION, WORLD_STATE_V1_KEYS, migrateWorldState } from './migrate';
+export { OLDEST_WORLD_STATE_VERSION, WORLD_STATE_V1_KEYS, WORLD_STATE_V2, migrateWorldState } from './migrate';
 export { WorldInvariantError, findWorldViolation } from './world-invariants';
 export { CARGO_HOLDER_SOURCES, MODULE_CARGO_HOLDER_KINDS } from './cargo-holders';
 export type { CargoHolderWorld } from './cargo-holders';

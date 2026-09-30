@@ -8,8 +8,14 @@
 import type { CargoLedgerState } from '../cargo/cargo-ledger-state';
 import { WorldStateError, checkKeys, describeValue, isPlainObject } from './state-check';
 
+/**
+ * Verzia `WorldState` v2 (F2: `traffic`, `modules`, `cargo`, `ships`) — cieľ kroku v1 → v2. Každý krok migrácie má
+ * vlastnú pomenovanú cieľovú verziu, aby sa krok nezmenil, keď `WORLD_STATE_VERSION` neskôr porastie (T02-14).
+ */
+export const WORLD_STATE_V2 = 2;
+
 /** Aktuálna verzia `WorldState` — `serialize()` vždy vracia ju. */
-export const WORLD_STATE_VERSION = 2;
+export const WORLD_STATE_VERSION = WORLD_STATE_V2;
 
 /** Kľúče `WorldState` v1 v poradí `serialize()` (F1, ADR-013). */
 export const WORLD_STATE_V1_KEYS = ['version', 'mapId', 'seed', 'rng', 'clock', 'ids', 'cashCents', 'roads', 'parcels'] as const;
@@ -24,7 +30,7 @@ function migrateV1ToV2(state: RawState): RawState {
   checkKeys(state, WORLD_STATE_V1_KEYS, '');
   const migrated: RawState = {};
   for (const key of WORLD_STATE_V1_KEYS) migrated[key] = state[key];
-  migrated['version'] = 2;
+  migrated['version'] = WORLD_STATE_V2;
   migrated['traffic'] = [];
   migrated['modules'] = [];
   migrated['cargo'] = { ...EMPTY_CARGO, units: [] };
@@ -32,7 +38,7 @@ function migrateV1ToV2(state: RawState): RawState {
   return migrated;
 }
 
-/** Verzia `n` → migrácia na `n + 1`. */
+/** Verzia `n` → migrácia na `n + 1` (migrácia zapíše cieľovú verziu kroku, napr. `WORLD_STATE_V2`). */
 const WORLD_STATE_MIGRATIONS: ReadonlyMap<number, Migration> = new Map([[1, migrateV1ToV2]]);
 
 /** Najstaršia verzia, ktorú vie `migrateWorldState` načítať. */

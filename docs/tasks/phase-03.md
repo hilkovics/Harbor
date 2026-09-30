@@ -31,7 +31,7 @@
 10. **WorldState v3** = v2 + `vehicles` + `jobs` (+ čo sa nedá odvodiť); `migrate(v2 → v3)`.
 
 ## Checklist
-- [ ] T03-01 · Defy: `vehicles.json`, `logistics.json`, `container_yard_small` + `vehicle_depot` v `modules.json`, schémy, DefRegistry, manifest krížovo pre vozidlá
+- [x] T03-01 · Defy: `vehicles.json`, `logistics.json`, `container_yard_small` + `vehicle_depot` v `modules.json`, schémy, DefRegistry, manifest krížovo pre vozidlá
 - [ ] T03-02 · Sim: `StorageModule` + `ContainerYard` + `VehicleDepot`, pripojenie k ceste, §8 bod 5; ApronBuffer len rezervácie; ADR-017
 - [ ] T03-03 · Sim: `Pathfinder` (A*) + `PathCache` + `DistanceMatrix`
 - [ ] T03-04 · Sim: `Vehicle` + `BuyVehicle`/`SellVehicle` + WorldState v3 (vozidlá)

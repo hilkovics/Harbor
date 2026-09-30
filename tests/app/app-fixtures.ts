@@ -4,19 +4,19 @@ import { commandFromJSON, type Command, type SerializedCommand, type ValidationR
 import type { EntityId } from '@sim/core';
 import { loadBundledDefs } from '@sim/defs';
 import { loadBundledMap } from '@sim/grid';
-import { World } from '@sim/world';
+import { World, type WorldOptions } from '@sim/world';
 import { GameLoop } from '@app/game-loop';
 import { SimBridge } from '@app/sim-bridge';
 
 export const SEED = 20260929;
 
-export function createWorld(): World {
-  return World.create(loadBundledDefs(), loadBundledMap(), SEED);
+export function createWorld(options: WorldOptions = {}): World {
+  return World.create(loadBundledDefs(), loadBundledMap(), SEED, options);
 }
 
 /** World + SimBridge + GameLoop prepojené tak, ako ich zapojí bootstrap (loop publikuje do bridge). */
-export function createApp(): { world: World; bridge: SimBridge; loop: GameLoop } {
-  const world = createWorld();
+export function createApp(options: WorldOptions = {}): { world: World; bridge: SimBridge; loop: GameLoop } {
+  const world = createWorld(options);
   const bridge = new SimBridge(world);
   const loop = new GameLoop(world, bridge);
   return { world, bridge, loop };

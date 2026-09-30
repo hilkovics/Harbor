@@ -21,7 +21,8 @@ describe('SimBridge.snapshot', () => {
   });
 
   it('kalendár: 0-based deň, hodina dňa a minúta hodiny podľa ticku', () => {
-    const { world, bridge } = createApp();
+    // ~100 000 tickov len kvôli kalendáru — invarianty kroku 12 by beh zbytočne naťahovali k limitu 5 s.
+    const { world, bridge } = createApp({ checkInvariants: false });
     const { ticksPerDay, ticksPerHour, ticksPerMinute } = world.clock;
     // Deň 12 (0-based 11), 14:20 — príklad z formatGameTime.
     const target = 11 * ticksPerDay + 14 * ticksPerHour + 20 * ticksPerMinute;

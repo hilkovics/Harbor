@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@sim/core';
 import type { SimEvent } from '@sim/events';
 import type { BerthModule, StorageModule } from '@sim/modules';
+import { assignOpenJobs, chooseVehicle, createInboundJobs } from '@sim/logistics';
 import { Vehicle } from '@sim/vehicles';
 import { World } from '@sim/world';
 import { DEFS, MAP } from '../world/world-fixtures';
@@ -211,6 +212,22 @@ describe('priradenie vozidiel', () => {
     expect(events.filter((event) => event.type === 'JobAssigned')).toEqual([]);
     expect(world.vehicles.get(cutOff)?.state).toBe('idle');
     expect([...world.jobs.values()][0].state).toBe('open');
+  });
+
+  it('assignOpenJobs so znovupoužiteľným poľom voľných vozidiel: pole sa vyprázdni a naplní, priradené vypadnú (T03-14)', () => {
+    const { world, depot } = dispatchWorld(dispatchDefs());
+    placeYard(world, YARD_W);
+    const bulk = buyVehicle(world, depot, BULK_VEHICLE);
+    const [a, b] = [buyVehicle(world, depot), buyVehicle(world, depot)];
+    unitsOnApron(world, [0]);
+    createInboundJobs(world);
+    const idle: Vehicle[] = [world.vehicles.get(b) as Vehicle, world.vehicles.get(b) as Vehicle]; // staré položky zmiznú
+    assignOpenJobs(world, idle);
+    expect([...world.jobs.values()].map((job) => [job.state, job.vehicleId])).toEqual([['assigned', a]]);
+    expect(idle.map((vehicle) => vehicle.id)).toEqual([bulk, b]); // voľné vzostupne podľa id, bez priradeného
+    assignOpenJobs(world, idle);
+    expect(idle.map((vehicle) => vehicle.id)).toEqual([bulk, b]);
+    expect(chooseVehicle(world, [...world.jobs.values()][0])?.id).toBe(b); // celý park: obsadené a a nekompatibilné bulk sa preskočia
   });
 
   it('bez voľného vozidla ostávajú joby open; v ďalšom ticku sa nič nemení (deterministicky)', () => {

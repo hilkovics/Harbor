@@ -4,12 +4,16 @@
  * jobom `open`. Logika je v `logistics/dispatcher.ts`; systém len určuje poradie v rámci kroku.
  */
 import { assignOpenJobs, createInboundJobs } from '../logistics/dispatcher';
+import type { Vehicle } from '../vehicles/vehicle';
 import type { World } from '../world/world';
 
 export class DispatcherSystem {
+  /** Znovupoužiteľné pole voľných vozidiel (plní ho `assignOpenJobs` každý tick; nie je stav simulácie). */
+  private readonly idle: Vehicle[] = [];
+
   /** Krok 5: `createInboundJobs` → `assignOpenJobs`. */
   tick(world: World): void {
     createInboundJobs(world);
-    assignOpenJobs(world);
+    assignOpenJobs(world, this.idle);
   }
 }

@@ -16,7 +16,8 @@
  * pohyb v kroku 6 toho istého ticku, ADR-019).
  *
  * Hot path: žiadne `filter`/`map`/closures v cykle; aprony sa čítajú cez `CargoLedger.countAt`/`unitAtIndex` bez kópie
- * a mapy sveta sa prechádzajú v poradí id. Alokuje sa len nový job (jeho zoznam jednotiek a lokácie).
+ * a mapy sveta sa prechádzajú v poradí id; voľné vozidlá sa zbierajú raz za tick do znovupoužiteľného poľa. Alokuje sa
+ * len nový job (jeho zoznam jednotiek a lokácie).
  */
 import type { CargoCategory } from '../defs/types';
 import { BerthModule } from '../modules/berth-module';
@@ -75,26 +76,25 @@ export function createInboundJobs(world: World): void {
   }
 }
 
-/** Počet voľných vozidiel (`idle`) — priradenie skončí, keď žiadne neostane. */
-function idleVehicleCount(world: World): number {
-  let count = 0;
+/** Voľné vozidlá (`idle`) vzostupne podľa id do znovupoužiteľného poľa `into` (najprv ho vyprázdni) — raz za tick. */
+function collectIdleVehicles(world: World, into: Vehicle[]): void {
+  into.length = 0;
   for (const vehicle of world.vehicles.values()) {
-    if (vehicle.state === 'idle') count += 1;
+    if (vehicle.state === 'idle') into.push(vehicle);
   }
-  return count;
 }
 
 /**
- * Voľné vozidlo pre job: vozí kategóriu nákladu, cena cesty k zdroju je konečná a najmenšia, pri zhode menšie id
- * (vozidlá idú vzostupne podľa id, berie sa len ostro menšia cena). Inak `undefined`.
+ * Najlepšie voľné vozidlo z `candidates` (vzostupne podľa id) pre job: vozí kategóriu nákladu, cena cesty k zdroju je
+ * konečná a najmenšia, pri zhode menšie id (berie sa len ostro menšia cena). Inak `undefined`.
  */
-export function chooseVehicle(world: World, job: TransportJob): Vehicle | undefined {
+function pickVehicle(world: World, job: TransportJob, candidates: Iterable<Vehicle>): Vehicle | undefined {
   const source = world.modules.get(job.fromModuleId);
   const category = jobCategory(world, job);
   if (source === undefined || category === undefined) return undefined;
   let best: Vehicle | undefined;
   let bestCost = Infinity;
-  for (const vehicle of world.vehicles.values()) {
+  for (const vehicle of candidates) {
     if (vehicle.state !== 'idle' || !vehicle.def.cargoCategories.includes(category)) continue;
     const cost = distanceToModule(world, vehicle.cell, source);
     if (cost < bestCost) {
@@ -105,6 +105,14 @@ export function chooseVehicle(world: World, job: TransportJob): Vehicle | undefi
   return best;
 }
 
+/**
+ * Voľné vozidlo pre job zo všetkých vozidiel sveta: vozí kategóriu nákladu, cena cesty k zdroju je konečná a najmenšia,
+ * pri zhode menšie id (vozidlá idú vzostupne podľa id, berie sa len ostro menšia cena). Inak `undefined`.
+ */
+export function chooseVehicle(world: World, job: TransportJob): Vehicle | undefined {
+  return pickVehicle(world, job, world.vehicles.values());
+}
+
 /** Priradí job vozidlu a pošle ho k zdroju (viď hlavička súboru). */
 function assign(world: World, job: TransportJob, vehicle: Vehicle): void {
   job.assign(vehicle.id);
@@ -113,15 +121,19 @@ function assign(world: World, job: TransportJob, vehicle: Vehicle): void {
   startTrip(world, vehicle, 'to_pickup');
 }
 
-/** Priradenie (§7.3 bod 3): joby `open` v poradí vzniku dostanú najbližšie voľné kompatibilné vozidlo. */
-export function assignOpenJobs(world: World): void {
-  let idle = idleVehicleCount(world);
+/**
+ * Priradenie (§7.3 bod 3): joby `open` v poradí vzniku dostanú najbližšie voľné kompatibilné vozidlo. Voľné vozidlá sa
+ * zozbierajú raz za tick do `idle` (znovupoužiteľné pole `DispatcherSystem`; bez neho nové), priradené vozidlo z neho
+ * vypadne a priradenie skončí, keď je prázdne — jeden job prejde len voľné vozidlá, nie celý vozový park.
+ */
+export function assignOpenJobs(world: World, idle: Vehicle[] = []): void {
+  collectIdleVehicles(world, idle);
   for (const job of world.jobs.values()) {
-    if (idle === 0) return;
+    if (idle.length === 0) return;
     if (job.state !== 'open') continue;
-    const vehicle = chooseVehicle(world, job);
+    const vehicle = pickVehicle(world, job, idle);
     if (vehicle === undefined) continue;
     assign(world, job, vehicle);
-    idle -= 1;
+    idle.splice(idle.indexOf(vehicle), 1);
   }
 }

@@ -8,13 +8,16 @@
  * Ghost modulu (`setModuleGhost`) je footprint modulu tým istým spôsobom a navyše `overlay.connector_marker`
  * na každom konektore, otočený podľa strany vjazdu (šípka smeruje do modulu).
  *
+ * Výber modulu (`setSelectionRing`, T02-10): `overlay.selection_ring` (9-slice, 8 px rohy z manifestu) natiahnutý na
+ * obdĺžnik vybraného modulu; leží nad ghostom (tenký rám nič nezakrýva).
+ *
  * Vrstva iba kreslí; o tom, ktoré bunky sú platné, rozhoduje volajúci (`InputController` cez `Command.validate`).
  * Žiadny text — popisy a ceny patria do React/DOM (CLAUDE.md, ARCHITECTURE §15.1).
  * Patrí do kontajnera sveta (`WorldRenderer.world`), takže súradnice sú v px pri zoome 1 (`x × cellPx`).
  */
-import { Assets, Container, Graphics, Sprite, Texture, TilingSprite } from 'pixi.js';
+import { Assets, Container, Graphics, NineSliceSprite, Sprite, Texture, TilingSprite } from 'pixi.js';
 import type { CellCoord } from '@sim/grid';
-import { GHOST_HATCH_PATTERN, overlayAssetUrl } from './overlay-assets';
+import { GHOST_HATCH_PATTERN, SELECTION_RING_SLICE, overlayAssetUrl } from './overlay-assets';
 import { documentTokenResolver, readColorToken, readLengthToken, type ColorValue, type TokenResolver } from './tokens';
 import type { ModuleGhostVM, ViewRotation, ViewSide } from './view-models';
 
@@ -30,12 +33,27 @@ export interface GhostView {
   clearGhost(): void;
 }
 
+/** Obdĺžnik v bunkách mapy (ľavý horný roh + rozmer), napr. footprint vybraného modulu. */
+export interface SelectionRect {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+}
+
+/** Cieľ, do ktorého aplikácia posiela obrys výberu modulu; `BuildLayer` ho spĺňa. `null` = žiadny výber. */
+export interface SelectionRingView {
+  setSelectionRing(rect: SelectionRect | null): void;
+}
+
 /** Farby ghostu z tokenov (DESIGN_BRIEF §3 „Stavy na mape“). */
 export interface GhostPalette {
   readonly valid: ColorValue;
   readonly invalid: ColorValue;
   /** Značka konektora bez sprite (`--module-connector`). */
   readonly connector: ColorValue;
+  /** Obrys výberu bez sprite (`--ui-accent`, rovnaká farba ako `selection_ring`). */
+  readonly selection: ColorValue;
 }
 
 /**
@@ -59,6 +77,7 @@ export function loadGhostPalette(resolve: TokenResolver = documentTokenResolver)
     valid: readColorToken('--ghost-valid', resolve),
     invalid: readColorToken('--ghost-invalid', resolve),
     connector: readColorToken('--module-connector', resolve),
+    selection: readColorToken('--ui-accent', resolve),
   };
 }
 
@@ -71,6 +90,12 @@ const MARKER_RASTER_RESOLUTION = 2;
 /** Veľkosť fallbacku značky konektora (trojuholník) ako zlomok bunky. */
 const MARKER_FALLBACK_CELLS = 0.5;
 
+/** Hustota rasterizácie `selection_ring` (rám 64×64 px zdroja → ostrý aj pri zoome 2). */
+const RING_RASTER_RESOLUTION = 2;
+
+/** Hrúbka fallbacku obrysu výberu (Graphics) ako zlomok bunky. */
+const RING_FALLBACK_CELLS = 0.05;
+
 export interface BuildLayerOptions {
   /** Veľkosť bunky v px pri zoome 1 (`--cell`). */
   readonly cellPx: number;
@@ -79,13 +104,15 @@ export interface BuildLayerOptions {
   readonly hatch: Texture | null;
   /** Textúra `overlay.connector_marker`; `null`/vynechaná = značka konektora sa nakreslí z `Graphics`. */
   readonly connectorMarker?: Texture | null;
+  /** Textúra `overlay.selection_ring` (9-slice); `null`/vynechaná = obrys výberu sa nakreslí z `Graphics`. */
+  readonly selectionRing?: Texture | null;
 }
 
 export interface BuildLayerCreateOptions {
   readonly resolveToken?: TokenResolver;
 }
 
-export class BuildLayer implements GhostView {
+export class BuildLayer implements GhostView, SelectionRingView {
   /** Koreň vrstvy; pridaj ho do `WorldRenderer.world`. */
   readonly view = new Container({ label: 'build-layer' });
 
@@ -93,6 +120,9 @@ export class BuildLayer implements GhostView {
   private readonly palette: GhostPalette;
   private readonly hatch: Texture | null;
   private readonly connectorMarker: Texture | null;
+  private readonly selectionRing: Texture | null;
+  private readonly selectionLayer = new Container({ label: 'selection-ring' });
+  private ring: NineSliceSprite | Graphics | null = null;
   private readonly fills = new Graphics({ label: 'ghost-fills' });
   private readonly hatchLayer = new Container({ label: 'ghost-hatch' });
   private readonly markerLayer = new Container({ label: 'ghost-connectors' });
@@ -106,7 +136,8 @@ export class BuildLayer implements GhostView {
     this.palette = options.palette;
     this.hatch = options.hatch;
     this.connectorMarker = options.connectorMarker ?? null;
-    this.view.addChild(this.fills, this.hatchLayer, this.markerLayer);
+    this.selectionRing = options.selectionRing ?? null;
+    this.view.addChild(this.fills, this.hatchLayer, this.markerLayer, this.selectionLayer);
     this.view.eventMode = 'none';
   }
 
@@ -116,15 +147,17 @@ export class BuildLayer implements GhostView {
    */
   static async create(options: BuildLayerCreateOptions = {}): Promise<BuildLayer> {
     const resolve = options.resolveToken ?? documentTokenResolver;
-    const [hatch, connectorMarker] = await Promise.all([
+    const [hatch, connectorMarker, selectionRing] = await Promise.all([
       Assets.load<Texture>({ src: overlayAssetUrl('ghost_hatch'), data: { resolution: HATCH_RASTER_RESOLUTION } }),
       Assets.load<Texture>({ src: overlayAssetUrl('connector_marker'), data: { resolution: MARKER_RASTER_RESOLUTION } }),
+      Assets.load<Texture>({ src: overlayAssetUrl('selection_ring'), data: { resolution: RING_RASTER_RESOLUTION } }),
     ]);
     return new BuildLayer({
       cellPx: readLengthToken('--cell', resolve),
       palette: loadGhostPalette(resolve),
       hatch,
       connectorMarker,
+      selectionRing,
     });
   }
 
@@ -152,6 +185,38 @@ export class BuildLayer implements GhostView {
     }
     this.paint(moduleGhostCells(ghost));
     this.showMarkers(ghost.connectors);
+  }
+
+  /**
+   * Obrys výberu modulu okolo `rect` (v bunkách), alebo skryje obrys (`null`). Obrys je nezávislý od ghostu
+   * (`setGhost` / `setModuleGhost` ho nemenia) a leží nad ním.
+   */
+  setSelectionRing(rect: SelectionRect | null): void {
+    if (this.destroyed) return;
+    if (rect === null) {
+      if (this.ring !== null) this.ring.visible = false;
+      return;
+    }
+    const { cellPx } = this;
+    const ring = this.ring ?? this.createRing();
+    ring.visible = true;
+    if (ring instanceof NineSliceSprite) {
+      ring.position.set(rect.x * cellPx, rect.y * cellPx);
+      ring.width = rect.w * cellPx;
+      ring.height = rect.h * cellPx;
+    } else {
+      const { color, alpha } = this.palette.selection;
+      const width = RING_FALLBACK_CELLS * cellPx;
+      ring
+        .clear()
+        .rect(rect.x * cellPx + width / 2, rect.y * cellPx + width / 2, rect.w * cellPx - width, rect.h * cellPx - width)
+        .stroke({ width, color, alpha });
+    }
+  }
+
+  /** Je obrys výberu zobrazený? */
+  get selectionShown(): boolean {
+    return this.ring?.visible ?? false;
   }
 
   /** Počet zobrazených značiek konektorov. */
@@ -215,6 +280,24 @@ export class BuildLayer implements GhostView {
       marker.visible = true;
     });
     for (let i = connectors.length; i < this.markerPool.length; i++) this.markerPool[i].visible = false;
+  }
+
+  /** Jediný obrys výberu: `NineSliceSprite` (`selection_ring`) alebo `Graphics` (fallback bez textúry). */
+  private createRing(): NineSliceSprite | Graphics {
+    const texture = this.selectionRing;
+    const ring =
+      texture === null
+        ? new Graphics({ label: 'selection-ring-fallback' })
+        : new NineSliceSprite({
+            texture,
+            leftWidth: SELECTION_RING_SLICE.left,
+            topHeight: SELECTION_RING_SLICE.top,
+            rightWidth: SELECTION_RING_SLICE.right,
+            bottomHeight: SELECTION_RING_SLICE.bottom,
+          });
+    this.ring = ring;
+    this.selectionLayer.addChild(ring);
+    return ring;
   }
 
   /** Značka konektora `index`-tá z poolu: `Sprite` `connector_marker` (vycentrovaný na bunku) alebo trojuholník. */

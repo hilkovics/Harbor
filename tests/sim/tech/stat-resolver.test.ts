@@ -11,7 +11,7 @@ describe('StatResolver — základ z defu', () => {
   const BASES: readonly [string, ModuleStat, number][] = [
     [CRANE, 'cycleTicks', 12],
     [BERTH, 'depthClass', 1],
-    [BERTH, 'apronSlots', 4],
+    [BERTH, 'apronSlots', 8],
     [BERTH, 'maxCranes', 2],
     [BERTH, 'frontWaterCells', 3],
     [DEEP_BERTH, 'depthClass', 3],
@@ -67,7 +67,7 @@ describe('StatResolver — modifikátory (§10: base → add → mul)', () => {
     ];
     const resolver = new StatResolver(MODULE_DEFS, modifiers);
     expect(resolver.resolve('module', CRANE, 'cycleTicks')).toBe(8); // (12 + 4) × 0.5
-    expect(resolver.resolve('module', BERTH, 'apronSlots')).toBe(4);
+    expect(resolver.resolve('module', BERTH, 'apronSlots')).toBe(8);
   });
 
   it('zoznam modifikátorov sa pri konštrukcii skopíruje', () => {

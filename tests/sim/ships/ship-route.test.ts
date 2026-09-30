@@ -159,7 +159,8 @@ describe('shipRoute — trasa podľa stavu (harbor_01)', () => {
     const waiting = freshShip('waiting_anchorage');
     expect(shipRoute(waiting, world)).toEqual([]);
     waiting.anchorageIndex = 1;
-    expect(shipRoute(waiting, world)).toEqual([{ x: 52.5, y: 7.5 }]);
+    const cell = world.map.anchorage[1];
+    expect(shipRoute(waiting, world)).toEqual([{ x: cell.x + 0.5, y: cell.y + 0.5 }]);
   });
 
   it('berthing = dockPoint od prvého obsadeného kotviska; chýbajúce kotvisko → ShipError(inconsistent)', () => {

@@ -29,10 +29,10 @@ function expectModuleError(action: () => unknown, code: ModuleErrorCode): void {
 }
 
 describe('VehicleDepot', () => {
-  it('z defu: 6 státí, bez vozidiel, bez slotov nákladu, runtime {}; konektor (1, 2, s) → svet (2, 3, s)', () => {
+  it('z defu: 10 státí, bez vozidiel, bez slotov nákladu, runtime {}; konektor (1, 2, s) → svet (2, 3, s)', () => {
     const depot = depotOf();
-    expect([depot.capacity, depot.freeStalls, depot.vehicleIds]).toEqual([6, 6, []]);
-    expect(depot.params).toEqual({ capacity: 6 });
+    expect([depot.capacity, depot.freeStalls, depot.vehicleIds]).toEqual([10, 10, []]);
+    expect(depot.params).toEqual({ capacity: 10 });
     expect(depot.cargoSlots()).toBeUndefined();
     expect(depot.getRuntimeState()).toEqual({});
     expect(depot.connectors).toEqual([{ x: 2, y: 3, side: 's', type: 'road' }]);
@@ -43,9 +43,9 @@ describe('VehicleDepot', () => {
     depot.attachVehicle(id(20));
     depot.attachVehicle(id(21));
     depot.attachVehicle(id(22));
-    expect([depot.vehicleIds, depot.freeStalls]).toEqual([[20, 21, 22], 3]);
+    expect([depot.vehicleIds, depot.freeStalls]).toEqual([[20, 21, 22], 7]);
     depot.detachVehicle(id(21));
-    expect([depot.vehicleIds, depot.freeStalls]).toEqual([[20, 22], 4]);
+    expect([depot.vehicleIds, depot.freeStalls]).toEqual([[20, 22], 8]);
   });
 
   it('vehicleIds je zmrazená snímka: volajúci ju nezmení, zmena depa dá novú snímku, čítanie nealokuje (review T03-13)', () => {

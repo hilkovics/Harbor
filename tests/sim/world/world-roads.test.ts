@@ -139,7 +139,7 @@ describe('save v3 — cesty [index, vrstva, typ?, smer?] (ADR-020)', () => {
 
   it.each(INVALID)('%s → WorldStateError s cestou', (_name, mutate, pathOf) => {
     const world = kindsWorld();
-    world.grid.at(60, 30).road = 'rail';
+    world.grid.at(40, 40).road = 'rail';
     const state = viaJson(world.serialize()) as unknown as Record<string, unknown>;
     const roads = state.roads as unknown[][];
     mutate(roads);
@@ -151,7 +151,7 @@ describe('save v3 — cesty [index, vrstva, typ?, smer?] (ADR-020)', () => {
 describe('krok 12 — typ a smer cesty na bunke', () => {
   it('prázdnu bunku krok 12 nekontroluje (cena ticku) — normalizovaný stav zaručujú zápisy; prestavba ho neporuší', () => {
     const world = kindsWorld();
-    world.grid.at(60, 30).roadKind = 'one_lane';
+    world.grid.at(40, 40).roadKind = 'one_lane';
     expect(findWorldViolation(world)).toBeUndefined();
   });
 
@@ -160,8 +160,8 @@ describe('krok 12 — typ a smer cesty na bunke', () => {
   });
 
   it.each<[string, (world: World) => void, RegExp]>([
-    ['koľaj s typom', (w) => Object.assign(w.grid.at(60, 30), { road: 'rail', roadKind: 'one_way', roadDir: 'N' }), /vrstvou 'rail' má typ cesty 'one_way'/],
-    ['koľaj so smerom', (w) => Object.assign(w.grid.at(60, 30), { road: 'rail', roadDir: 'E' }), /vrstvou 'rail' .* smer E/],
+    ['koľaj s typom', (w) => Object.assign(w.grid.at(40, 40), { road: 'rail', roadKind: 'one_way', roadDir: 'N' }), /vrstvou 'rail' má typ cesty 'one_way'/],
+    ['koľaj so smerom', (w) => Object.assign(w.grid.at(40, 40), { road: 'rail', roadDir: 'E' }), /vrstvou 'rail' .* smer E/],
     ['neznámy typ cesty', (w) => void (w.grid.at(40, 17).roadKind = 'four_lane' as never), /neznámy typ cesty 'four_lane'/],
     ['jednosmerka bez smeru', (w) => void (w.grid.at(50, 17).roadDir = null), /jednosmerka musí mať smer/],
     ['dvojpruhová so smerom', (w) => void (w.grid.at(40, 17).roadDir = 'W'), /len jednosmerka má smer/],

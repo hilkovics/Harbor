@@ -88,7 +88,7 @@ describe('skutočné katalógy F2 až F4', () => {
       ],
       costCents: 40_000_000,
       maintenancePerDayCents: 120_000,
-      params: { depthClass: 1, apronSlots: 4, maxCranes: 2, frontWaterCells: 3 },
+      params: { depthClass: 1, apronSlots: 8, maxCranes: 2, frontWaterCells: 3 },
     });
     expect(item(def, 'crane_container_gantry')).toEqual({
       id: 'crane_container_gantry',
@@ -121,7 +121,7 @@ describe('skutočné katalógy F2 až F4', () => {
       connectors: [{ x: 1, y: 2, side: 's', type: 'road' }],
       costCents: 9_000_000,
       maintenancePerDayCents: 15_000,
-      params: { capacity: 6 },
+      params: { capacity: 10 },
     });
     expect(item(def, 'truck_gate')).toEqual({
       id: 'truck_gate',
@@ -163,7 +163,7 @@ describe('skutočné katalógy F2 až F4', () => {
       ],
       costCents: 10_000_000,
       maintenancePerDayCents: 20_000,
-      params: { docks: 2, stagingPerDock: 2, loadTicksPerUnit: 6, category: 'container' },
+      params: { docks: 2, stagingPerDock: 4, loadTicksPerUnit: 6, category: 'container' },
     });
   });
 
@@ -267,9 +267,9 @@ describe('väzba na assets/manifest.json a design/tokens.css', () => {
     expect(params['capacityUnits']).toBe((sprite?.slots ?? 0) * (sprite?.layers ?? 0));
   });
 
-  it('vehicle_depot: params.capacity = sprites.vehicle_depot.stalls (6)', () => {
+  it('vehicle_depot: params.capacity = sprites.vehicle_depot.stalls (10)', () => {
     const sprite = manifest.sprites['vehicle_depot'];
-    expect(sprite?.stalls).toBe(6);
+    expect(sprite?.stalls).toBe(10);
     const params = item(realDef('modules'), 'vehicle_depot')['params'] as Json;
     expect(params['capacity']).toBe(sprite?.stalls);
   });

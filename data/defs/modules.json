@@ -17,7 +17,7 @@
       ],
       "costCents": 40000000,
       "maintenancePerDayCents": 120000,
-      "params": { "depthClass": 1, "apronSlots": 4, "maxCranes": 2, "frontWaterCells": 3 }
+      "params": { "depthClass": 1, "apronSlots": 8, "maxCranes": 2, "frontWaterCells": 3 }
     },
     {
       "id": "crane_container_gantry",
@@ -60,7 +60,7 @@
       "connectors": [{ "x": 1, "y": 2, "side": "s", "type": "road" }],
       "costCents": 9000000,
       "maintenancePerDayCents": 15000,
-      "params": { "capacity": 6 }
+      "params": { "capacity": 10 }
     },
     {
       "id": "truck_gate",
@@ -111,7 +111,7 @@
       ],
       "costCents": 10000000,
       "maintenancePerDayCents": 20000,
-      "params": { "docks": 2, "stagingPerDock": 2, "loadTicksPerUnit": 6, "category": "container" }
+      "params": { "docks": 2, "stagingPerDock": 4, "loadTicksPerUnit": 6, "category": "container" }
     }
   ]
 }

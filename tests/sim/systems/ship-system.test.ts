@@ -13,7 +13,7 @@ import {
   DEEP_SHIP,
   DEEP_ZONE_BERTH,
   EAST_BERTH,
-  GAP_BERTH,
+  SHALLOW_NEIGHBOR_BERTH,
   GRAIN,
   ROOT_BERTH_ID,
   applyNow,
@@ -68,17 +68,16 @@ describe('ShipSystem — feeder: spawn → berthing → docked → undocking →
 });
 
 describe('ShipSystem — anchorage', () => {
-  it('lode bez kotviska obsadia anchorage v poradí mapy; keď sú všetky obsadené, piata čaká na konci seaLane', () => {
+  it('lode bez kotviska obsadia anchorage v poradí mapy; keď sú všetky obsadené, posledná čaká na konci seaLane', () => {
     const world = newWorld();
-    const ships: Ship[] = [0, 1, 2, 3, 4].map(() => spawn(world, 'handy', 1));
-    tickN(world, 400);
-    expect(ships.map((s) => s.state)).toEqual(Array(5).fill('waiting_anchorage'));
-    expect(ships.map((s) => s.anchorageIndex)).toEqual([0, 1, 2, 3, null]);
+    const { anchorage } = world.map;
+    const count = anchorage.length + 1;
+    const ships: Ship[] = Array.from({ length: count }, () => spawn(world, 'handy', 1));
+    tickN(world, 1200);
+    expect(ships.map((s) => s.state)).toEqual(Array(count).fill('waiting_anchorage'));
+    expect(ships.map((s) => s.anchorageIndex)).toEqual([...anchorage.map((_, index) => index), null]);
     expect(ships.map((s) => [s.x, s.y])).toEqual([
-      [44.5, 7.5],
-      [52.5, 7.5],
-      [36.5, 7.5],
-      [60.5, 7.5],
+      ...anchorage.map((cell) => [cell.x + 0.5, cell.y + 0.5]),
       [44.5, 7.5], // koniec seaLane
     ]);
     expect(ships.every((s) => s.berthIds.length === 0)).toBe(true);
@@ -86,12 +85,13 @@ describe('ShipSystem — anchorage', () => {
 
   it('druhý berth: prvá čakajúca (najmenšie id) ide kotviť, uvoľnenú anchorage obsadí loď z konca seaLane', () => {
     const world = newWorld();
-    const ships: Ship[] = [0, 1, 2, 3, 4].map(() => spawn(world, 'handy', 1));
-    tickN(world, 400);
+    const count = world.map.anchorage.length + 1;
+    const ships: Ship[] = Array.from({ length: count }, () => spawn(world, 'handy', 1));
+    tickN(world, 1200);
     applyNow(world, new PlaceModuleCommand({ defId: 'berth_standard', x: EAST_BERTH.x, y: EAST_BERTH.y, rotation: 0 }));
     world.tick();
-    expect(ships.map((s) => s.state)).toEqual(['berthing', 'waiting_anchorage', 'waiting_anchorage', 'waiting_anchorage', 'waiting_anchorage']);
-    expect(ships.map((s) => s.anchorageIndex)).toEqual([null, 1, 2, 3, 0]);
+    expect(ships.map((s) => s.state)).toEqual(['berthing', ...Array(count - 1).fill('waiting_anchorage')]);
+    expect(ships.map((s) => s.anchorageIndex)).toEqual([null, ...Array.from({ length: count - 2 }, (_, index) => index + 1), 0]);
     expect(ships[0].berthIds).toHaveLength(2);
   });
 });
@@ -124,12 +124,12 @@ describe('ShipSystem — FIFO a kompatibilita', () => {
   it('hlboká loď (draftClass 2) zakotví na hlbokom kotvisku skupiny s plytkým susedom a vyloží sa (T02-14)', () => {
     const world = newWorld();
     const deep = placeModule(world, DEEP_BERTH, DEEP_ZONE_BERTH);
-    placeModule(world, 'berth_standard', GAP_BERTH);
-    const deepCrane = placeModule(world, CRANE, { x: 25, y: 14 });
+    placeModule(world, 'berth_standard', SHALLOW_NEIGHBOR_BERTH);
+    const deepCrane = placeModule(world, CRANE, { x: 9, y: 12 });
     const ship = spawn(world, DEEP_SHIP, 2);
     tickUntil(world, () => ship.state === 'docked', 400);
     expect(ship.berthIds).toEqual([deep]);
-    expect([ship.x, ship.y, ship.heading]).toEqual([25, 13, 90]);
+    expect([ship.x, ship.y, ship.heading]).toEqual([9, 11, 90]);
     const events = tickUntil(world, () => !world.ships.has(ship.id), 1000);
     expect(ofType(events, 'CraneCycleDone').map((event) => event.craneId)).toEqual([deepCrane, deepCrane]);
     expect(world.cargo.unitsOnApron(deep)).toHaveLength(2);

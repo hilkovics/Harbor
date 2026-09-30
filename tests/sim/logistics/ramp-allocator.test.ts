@@ -27,10 +27,11 @@ describe('allocateRamp / acceptsOutbound', () => {
     expect(allocateRamp(world, far, 'bulk')).toBeUndefined();
     expect(allocateRamp(world, far, 'container', [])).toBeUndefined();
 
-    for (const dock of [0, 0, 1, 1]) ramp.reserve(dock);
+    const allSlots = [0, 1].flatMap((dock) => Array<number>(ramp.stagingPerDock).fill(dock));
+    for (const dock of allSlots) ramp.reserve(dock);
     expect([ramp.freeCount, acceptsOutbound(world, ramp, 'container')]).toEqual([0, false]);
     expect(allocateRamp(world, far, 'container')).toBeUndefined();
-    for (const dock of [0, 0, 1, 1]) ramp.release(dock);
+    for (const dock of allSlots) ramp.release(dock);
 
     execute(world, { type: 'RemoveModule', moduleId: gateOf(world).id });
     expect([world.isRampOperational(ramp), acceptsOutbound(world, ramp, 'container')]).toEqual([false, false]);

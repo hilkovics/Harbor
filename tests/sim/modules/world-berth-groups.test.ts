@@ -41,13 +41,17 @@ describe('BerthGroup vo svete (harbor_01, nábrežie y 14–16)', () => {
     expect(world.berthGroups).toEqual([{ id: 1, berthIds: [a.id, b.id, c.id], totalLength: 24, minDepth: 1 }]);
   });
 
-  it('minDepth = najmenšia efektívna hĺbka v skupine', () => {
+  it('minDepth = najmenšia efektívna hĺbka v skupine (hlava móla E1: hĺbka 3; hlava móla W1: x 6–13 → 2, x 14–21 → 1)', () => {
     const world = newWorld();
-    const deepA = placeBerth(world, 60, 14, 0, DEEP_BERTH); // hĺbka 3
-    const deepB = placeBerth(world, 68, 14, 0, DEEP_BERTH); // hĺbka 3
+    const deepA = placeBerth(world, 66, 12, 0, DEEP_BERTH); // hĺbka 3
+    const deepB = placeBerth(world, 74, 12, 0, DEEP_BERTH); // hĺbka 3
     expect(world.berthGroups).toEqual([{ id: 1, berthIds: [deepA.id, deepB.id], totalLength: 16, minDepth: 3 }]);
-    const shallow = placeBerth(world, 52, 14, 0, DEEP_BERTH); // x 52–59: hĺbka 1
-    expect(world.berthGroups).toEqual([{ id: 1, berthIds: [shallow.id, deepA.id, deepB.id], totalLength: 24, minDepth: 1 }]);
+    const middle = placeBerth(world, 6, 12, 0, DEEP_BERTH); // hĺbka 2
+    const shallow = placeBerth(world, 14, 12, 0, DEEP_BERTH); // hĺbka 1
+    expect(world.berthGroups).toEqual([
+      { id: 1, berthIds: [middle.id, shallow.id], totalLength: 16, minDepth: 1 },
+      { id: 2, berthIds: [deepA.id, deepB.id], totalLength: 16, minDepth: 3 },
+    ]);
   });
 
   it('odstránenie stredného berthu rozdelí skupinu a prečísluje id', () => {

@@ -248,7 +248,7 @@ describe('World.stats — StatResolver (§10)', () => {
   it('cycleTicks žeriavu = základ z defu (bez modifikátorov)', () => {
     const { world, crane } = harbor();
     expect(world.stats.resolve('module', crane.def.id, 'cycleTicks')).toBe(12);
-    expect(world.stats.resolve('module', BERTH, 'apronSlots')).toBe(4);
+    expect(world.stats.resolve('module', BERTH, 'apronSlots')).toBe(8);
   });
 });
 

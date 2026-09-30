@@ -31,12 +31,13 @@ describe('TerrainLayer so spritmi (Pixi scene graph bez renderera)', () => {
   });
 
   it('príklady harbor_01 z karty T01-16', () => {
-    expect(layer.tileIdAt(0, 11)).toBe('water_edge_n');
-    expect(layer.tileIdAt(5, 11)).toBe('water_inner_ne');
-    expect(layer.tileIdAt(5, 12)).toBe('water_corner_ne');
-    expect(layer.tileIdAt(9, 13)).toBe('water_edge_e');
-    expect(layer.tileIdAt(10, 14)).toBe('quay_edge_n');
-    expect(layer.tileIdAt(80, 28)).toBe('blocked');
+    expect(layer.tileIdAt(0, 0)).toBe('water_deep');
+    expect(layer.tileIdAt(28, 17)).toBe('water_edge_w');
+    expect(layer.tileIdAt(59, 17)).toBe('water_edge_e');
+    expect(layer.tileIdAt(92, 18)).toBe('water_inner_nw');
+    expect(layer.tileIdAt(34, 33)).toBe('water_corner_sw');
+    expect(layer.tileIdAt(6, 12)).toBe('quay_edge_n');
+    expect(layer.tileIdAt(12, 47)).toBe('blocked');
     expect(layer.tileIdAt(-1, 0)).toBeUndefined();
     expect(layer.tileIdAt(grid.width, 0)).toBeUndefined();
   });
@@ -70,7 +71,7 @@ describe('TerrainLayer so spritmi (Pixi scene graph bez renderera)', () => {
     local.rebuild();
     expect(local.view.children).toHaveLength(grid.width * grid.height);
     expect(local.view.children[0]).not.toBe(first);
-    expect(local.tileIdAt(5, 11)).toBe('water_inner_ne');
+    expect(local.tileIdAt(92, 18)).toBe('water_inner_nw');
   });
 
   it('bez textúr ostáva `Graphics` fallback (jeden Graphics, žiadne sprity)', () => {

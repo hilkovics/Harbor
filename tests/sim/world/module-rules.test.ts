@@ -2,8 +2,9 @@
 // porušené pravidlá naraz v poradí PLACEMENT_RULES, štrukturálny rozsah je presne to, čo stráži World.addModule,
 // a findRemovalViolations zdieľa World.removeModule aj RemoveModule.validate.
 //
-// harbor_01 (BARE_MAP bez Root modulu): voda y ≤ 13, nábrežie y 14–16 x 10–85, pevnina y ≥ 17; parcela starter
-// x 30–57 y 14–33 (vlastnená), west_quay x 6–27 a east_yard x 60–87 (na predaj), x 28–29 verejné.
+// harbor_01 (BARE_MAP bez Root modulu, Fáza 5b): severné nábrežie starteru y 14–16 x 28–59 (x 28–29 a 58–59 verejné ostrôžky),
+// voda y ≤ 13; parcela starter x 30–57 y 14–33 (vlastnená); west_quay (mólo W1) x 6–21 y 12–49 a east_yard (mólo E1)
+// x 66–81 y 12–49 (na predaj), nábrežie hlavy a okrajov mól, kanály x 22–27 a x 60–65 sú voda.
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@sim/core';
 import type { Rotation } from '@sim/grid';
@@ -75,9 +76,9 @@ describe('findPlacementViolations — kotvisko na harbor_01', () => {
     ['o riadok nižšie: hrana y 15 susedí s nábrežím, spodok na pevnine', 40, 15, 0, ['terrain', 'no_water_side']],
     ['otočené o 180° (voda na juhu = pevnina; konektory na severe vedú do vody)', 40, 14, 180, ['no_water_side', 'connector_blocked']],
     ['otočené o 90° (3×8 sa na nábrežie nezmestí)', 40, 14, 90, ['terrain', 'no_water_side']],
-    ['cudzia parcela west_quay (na predaj)', 12, 14, 0, ['parcel_not_owned']],
-    ['cez verejné bunky x 28–29 a cudziu parcelu', 24, 14, 0, ['parcel_not_owned']],
-    ['presah mimo mapy: všetky dôvody naraz, bunky mimo mapy len out_of_bounds', 90, 14, 0, ['out_of_bounds', 'terrain', 'parcel_not_owned', 'no_water_side']],
+    ['cudzia parcela west_quay (na predaj)', 6, 12, 0, ['parcel_not_owned']],
+    ['cez verejné bunky x 28–29 a parcelu starter', 28, 14, 0, ['parcel_not_owned']],
+    ['presah mimo mapy: všetky dôvody naraz, bunky mimo mapy len out_of_bounds', 90, 20, 0, ['out_of_bounds', 'terrain', 'parcel_not_owned', 'no_water_side', 'connector_blocked']],
     ['celé mimo mapy', -20, -20, 0, ['out_of_bounds']],
   ])('%s → %j', (_name, x, y, rotation, expected) => {
     expect(rules(bareWorld(), BERTH, x, y, rotation)).toEqual(expected);
@@ -88,7 +89,7 @@ describe('findPlacementViolations — kotvisko na harbor_01', () => {
     const parcel = world.parcels.get('west_quay');
     if (parcel === undefined) throw new Error('chýba west_quay');
     parcel.ownership = 'leased';
-    expect(rules(world, BERTH, 12, 14)).toEqual([]);
+    expect(rules(world, BERTH, 6, 12)).toEqual([]);
   });
 
   it('prekryv s iným kotviskom → occupied; susedné kotvisko (pásy vedľa seba) je platné', () => {
@@ -116,20 +117,20 @@ describe('findPlacementViolations — kotvisko na harbor_01', () => {
   it('štrukturálny rozsah ignoruje terén, parcelu a vodu', () => {
     const world = bareWorld();
     expect(rules(world, BERTH, 40, 10, 0, 'structural')).toEqual([]);
-    expect(rules(world, BERTH, 12, 14, 0, 'structural')).toEqual([]);
+    expect(rules(world, BERTH, 6, 12, 0, 'structural')).toEqual([]);
     expect(rules(world, BERTH, 90, 14, 0, 'structural')).toEqual(['out_of_bounds']);
   });
 
   it('popis porušenia pomenuje bunku', () => {
-    const [violation] = findPlacementViolations(bareWorld(), MODULE_DEFS.modules.get(BERTH), { x: 12, y: 14, rotation: 0 });
-    expect(violation).toEqual({ rule: 'parcel_not_owned', detail: 'bunka (12, 14) nie je na vlastnej ani prenajatej parcele' });
+    const [violation] = findPlacementViolations(bareWorld(), MODULE_DEFS.modules.get(BERTH), { x: 6, y: 12, rotation: 0 });
+    expect(violation).toEqual({ rule: 'parcel_not_owned', detail: 'bunka (6, 12) nie je na vlastnej ani prenajatej parcele' });
   });
 
   it('svet nemení (ani pri porušeniach)', () => {
     const world = bareWorld();
     build(world, BERTH, 40, 14);
     const before = hashState(world.serialize());
-    for (const [x, y] of [[44, 14], [90, 14], [40, 10], [12, 14]]) rules(world, BERTH, x, y);
+    for (const [x, y] of [[44, 14], [90, 14], [40, 10], [6, 12]]) rules(world, BERTH, x, y);
     rules(world, CRANE, 47, 14);
     expect(hashState(world.serialize())).toBe(before);
     expect(world.events.pending).toBe(0);

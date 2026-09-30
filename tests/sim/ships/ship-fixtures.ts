@@ -71,8 +71,10 @@ export const ROOT_CRANE_ID = 2 as EntityId;
 export const EAST_BERTH: CellCoord = { x: 48, y: 14 };
 export const WEST_BERTH: CellCoord = { x: 32, y: 14 };
 export const GAP_BERTH: CellCoord = { x: 30, y: 14 };
-/** Hlboké kotvisko x 22–29 (zóna hĺbky 2) — dotýka sa `GAP_BERTH` (x 30–37, hĺbka 1): jedna skupina s `minDepth` 1. */
-export const DEEP_ZONE_BERTH: CellCoord = { x: 22, y: 14 };
+/** Hlboké kotvisko na hlave móla W1, x 6–13 (zóna hĺbky 2) — dotýka sa `SHALLOW_NEIGHBOR_BERTH`: jedna skupina s `minDepth` 1. */
+export const DEEP_ZONE_BERTH: CellCoord = { x: 6, y: 12 };
+/** Plytké kotvisko na hlave móla W1, x 14–21 (zóna hĺbky 1), susedí s `DEEP_ZONE_BERTH`. */
+export const SHALLOW_NEIGHBOR_BERTH: CellCoord = { x: 14, y: 12 };
 
 export function newWorld(options: WorldOptions = {}, map: LoadedMap = MAP): World {
   return World.create(SHIP_DEFS, map, SEED, options);

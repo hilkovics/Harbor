@@ -66,7 +66,7 @@ describe('inspectorData: depo vozidiel', () => {
       kind: 'depot',
       stateLabel: 'V prevádzke',
       connected: true,
-      depot: { capacity: 6, canBuy: true, buyPriceCents: app.world.defs.vehicles.get('straddle_carrier').purchaseCents },
+      depot: { capacity: 10, canBuy: true, buyPriceCents: app.world.defs.vehicles.get('straddle_carrier').purchaseCents },
       removable: false,
       removeBlockedReason: 'Depo má vozidlá',
     });
@@ -88,7 +88,7 @@ describe('inspectorData: depo vozidiel', () => {
     buyVehicles(app, app.world.defs.modules.get('vehicle_depot').params['capacity'] as number);
     const data = inspectorData(app.bridge, DEPOT_ID);
     expect(data?.depot).toMatchObject({ canBuy: false, buyBlockedReason: 'Depo je plné' });
-    expect(data?.depot?.vehicles).toHaveLength(6);
+    expect(data?.depot?.vehicles).toHaveLength(app.world.defs.modules.get('vehicle_depot').params['capacity'] as number);
   });
 
   it('nedostatok peňazí: canBuy false, „Nedostatok peňazí“', () => {

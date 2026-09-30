@@ -19,7 +19,7 @@ const place = (...cells: CellCoord[]): PlaceRoadCommand => new PlaceRoadCommand(
 
 describe('PlaceRoad.validate — povolené bunky (ADR-008)', () => {
   it.each([
-    ['verejná pevnina (0, 11)', CELLS.publicLandNamed],
+    ['verejná pevnina (0, 54)', CELLS.publicLandNamed],
     ['verejná pevnina', CELLS.publicLand],
     ['verejné nábrežie (Q)', CELLS.publicQuay],
     ['pevnina starter parcely', CELLS.starterLand],
@@ -30,8 +30,8 @@ describe('PlaceRoad.validate — povolené bunky (ADR-008)', () => {
     expect(place(cell).validate(world)).toEqual({ ok: true, reasons: [], cells: [cell], costCents: ROAD_COST });
   });
 
-  it('bunka (0, 11) je verejná pevnina harbor_01', () => {
-    const cell = newWorld().grid.at(0, 11);
+  it('bunka (0, 54) je verejná pevnina harbor_01', () => {
+    const cell = newWorld().grid.at(0, 54);
     expect(cell.terrain).toBe('land');
     expect(cell.parcelId).toBeNull();
   });

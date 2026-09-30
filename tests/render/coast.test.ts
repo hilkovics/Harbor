@@ -169,18 +169,23 @@ describe('coastTile: harbor_01', () => {
   const grid = loadBundledMap().createGrid();
 
   it.each([
-    [0, 11, 'water_edge_n'],
-    [5, 11, 'water_inner_ne'],
-    [9, 12, 'water_inner_ne'],
-    [5, 12, 'water_corner_ne'],
-    [9, 13, 'water_edge_e'],
-    [86, 13, 'water_edge_w'],
-    [90, 11, 'water_inner_nw'],
-    [10, 14, 'quay_edge_n'],
-    [10, 15, 'quay'],
-    [80, 28, 'blocked'],
-    [0, 12, 'land'],
-    [2, 12, 'land_alt'],
+    [0, 0, 'water_deep'],
+    [2, 8, 'water_shallow'],
+    [6, 12, 'quay_edge_n'],
+    [6, 13, 'quay'],
+    [10, 15, 'land'],
+    [9, 15, 'land_alt'],
+    [28, 17, 'water_edge_w'],
+    [59, 17, 'water_edge_e'],
+    [29, 33, 'water_edge_s'],
+    [92, 18, 'water_inner_nw'],
+    [28, 33, 'water_inner_sw'],
+    [59, 33, 'water_inner_se'],
+    [34, 33, 'water_corner_sw'],
+    [53, 33, 'water_corner_se'],
+    [6, 50, 'water_corner_nw'],
+    [21, 50, 'water_corner_ne'],
+    [12, 47, 'blocked'],
   ] as const)('(%i, %i) → %s', (x, y, expected) => {
     expect(coastTile(grid, x, y)).toBe(expected);
   });
@@ -192,17 +197,22 @@ describe('coastTile: harbor_01', () => {
       for (let x = 0; x < grid.width; x++) used.add(coastTile(grid, x, y));
     }
     for (const id of used) expect(known.has(id), id).toBe(true);
-    // Mapa má pobrežie zo všetkých strán, obidva rohy a nábrežie: aspoň tieto prechody sa reálne použijú.
+    // Mapa má pobrežie zo všetkých strán, vnútorné aj vonkajšie rohy a nábrežie mól: aspoň tieto prechody sa reálne použijú.
     expect([...used]).toEqual(
       expect.arrayContaining([
         'water_deep',
         'water_shallow',
         'water_edge_n',
         'water_edge_e',
+        'water_edge_s',
         'water_edge_w',
-        'water_inner_ne',
         'water_inner_nw',
+        'water_inner_se',
+        'water_inner_sw',
         'water_corner_ne',
+        'water_corner_nw',
+        'water_corner_se',
+        'water_corner_sw',
         'quay',
         'quay_edge_n',
         'land',

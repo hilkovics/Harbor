@@ -207,7 +207,7 @@ describe('rozloženie F4: brána, čakacia plocha a rampa na starter parcele sú
   it('defy, na ktoré sa testy odvolávajú: brána processTicks 18, plocha 6 bays, rampa 2 docks × 2 staging, 6 tickov na jednotku, kamión kapacita 1', () => {
     expect(PROCESS_TICKS).toBe(18);
     expect(BAYS).toBe(6);
-    expect(RAMP_PARAMS).toMatchObject({ docks: 2, stagingPerDock: 2, loadTicksPerUnit: 6, category: 'container' });
+    expect(RAMP_PARAMS).toMatchObject({ docks: 2, stagingPerDock: 4, loadTicksPerUnit: 6, category: 'container' });
     expect(DEFS.trucks.get('truck_container').capacityUnits).toBe(1);
   });
 });

@@ -82,29 +82,39 @@ describe('loadMap(harbor_01)', () => {
   it('vzorky terénu: voda na severe, nábrežie, pevnina, blocked', () => {
     expect(grid.at(0, 0).terrain).toBe('deep_water');
     expect(grid.at(48, 9).terrain).toBe('deep_water');
-    expect(grid.at(0, 10).terrain).toBe('shallow_water');
-    expect(grid.at(0, 11).terrain).toBe('land');
-    expect(grid.at(10, 14).terrain).toBe('quay');
-    expect(grid.at(85, 16).terrain).toBe('quay');
-    expect(grid.at(86, 14).terrain).toBe('land');
-    expect(grid.at(80, 28).terrain).toBe('blocked');
+    expect(grid.at(10, 10).terrain).toBe('shallow_water');
+    expect(grid.at(0, 12).terrain).toBe('shallow_water'); // západné more vedľa móla W1
+    expect(grid.at(0, 54).terrain).toBe('land'); // južná pevnina
+    expect(grid.at(6, 12).terrain).toBe('quay'); // hlava móla W1
+    expect(grid.at(10, 25).terrain).toBe('land'); // vnútro móla W1
+    expect(grid.at(81, 30).terrain).toBe('quay'); // východný okraj móla E1
+    expect(grid.at(82, 30).terrain).toBe('shallow_water'); // zátoka východne od móla E1
+    expect(grid.at(28, 14).terrain).toBe('quay'); // verejný ostrôžok nábrežia pri starteri
+    expect(grid.at(25, 20).terrain).toBe('shallow_water'); // kanál medzi mólom W1 a výbežkom
+    expect(grid.at(12, 47).terrain).toBe('blocked');
+    expect(grid.at(14, 56).terrain).toBe('blocked');
   });
 
   it('depthClass: nábrežie podľa zón depth (mimo zón 1), voda a pevnina 0', () => {
-    const expectedQuayDepth = (x: number): number => {
-      if (x >= 10 && x < 30) return 2; // "10,14,20,3": 2
-      if (x >= 30 && x < 58) return 1; // "30,14,28,3": 1
-      if (x >= 60 && x < 86) return 3; // "60,14,26,3": 3
-      return 1; // x 58–59: mimo zón → predvolená trieda 1
+    const expectedQuayDepth = (x: number, y: number): number => {
+      if (x >= 6 && x < 14 && y >= 12 && y < 15) return 2; // "6,12,8,3": 2 (hlava móla W1, západná polovica)
+      if (x >= 14 && x < 22 && y >= 12 && y < 15) return 1; // "14,12,8,3": 1 (hlava móla W1, východná polovica)
+      if (x >= 6 && x < 9 && y >= 15 && y < 47) return 2; // "6,15,3,32": 2 (západný okraj móla W1)
+      if (x >= 19 && x < 22 && y >= 15 && y < 47) return 1; // "19,15,3,32": 1 (východný okraj móla W1, kanál)
+      if (x >= 30 && x < 58 && y >= 14 && y < 17) return 1; // "30,14,28,3": 1 (starter)
+      if (x >= 66 && x < 82 && y >= 12 && y < 47) return 3; // "66,12,16,35": 3 (mólo E1)
+      return 1; // mimo zón → predvolená trieda 1 (verejné ostrôžky x 28–29 a 58–59)
     };
     for (let y = 0; y < grid.height; y++) {
       for (let x = 0; x < grid.width; x++) {
         const cell = grid.at(x, y);
-        expect(cell.depthClass).toBe(cell.terrain === 'quay' ? expectedQuayDepth(x) : 0);
+        expect(cell.depthClass).toBe(cell.terrain === 'quay' ? expectedQuayDepth(x, y) : 0);
       }
     }
     expect(grid.at(58, 15).depthClass).toBe(1);
-    expect(grid.at(60, 15).depthClass).toBe(3);
+    expect(grid.at(10, 13).depthClass).toBe(2);
+    expect(grid.at(18, 13).depthClass).toBe(1);
+    expect(grid.at(70, 13).depthClass).toBe(3);
   });
 
   it('parcelId každej bunky podľa obdĺžnikov parciel, inak null', () => {
@@ -119,7 +129,9 @@ describe('loadMap(harbor_01)', () => {
     expect(grid.at(30, 14).parcelId).toBe('starter');
     expect(grid.at(57, 33).parcelId).toBe('starter');
     expect(grid.at(29, 14).parcelId).toBeNull();
-    expect(grid.at(60, 14).parcelId).toBe('east_yard');
+    expect(grid.at(66, 12).parcelId).toBe('east_yard');
+    expect(grid.at(6, 12).parcelId).toBe('west_quay');
+    expect(grid.at(60, 14).parcelId).toBeNull();
   });
 
   it('parcely s ownership zo startOwned', () => {
@@ -342,7 +354,7 @@ const INVARIANT_CASES: readonly InvariantCase[] = [
     mutate: (m) => void (m.terrain[24] = `${m.terrain[24].slice(0, 95)}#`),
     path: '/railPortals/0/cell',
   },
-  { name: 'portál v parcele (parcela rozšírená k okraju)', mutate: (m) => void (m.parcels[2].rect.w = 36), path: '/railPortals/0/cell' },
+  { name: 'portál v parcele (parcela rozšírená k okraju)', mutate: (m) => void (m.parcels[2].rect.w = 30), path: '/railPortals/0/cell' },
   { name: 'duplicitné id portálu', mutate: (m) => void (m.railPortals[0].id = 'road_south'), path: '/railPortals/0/id' },
   {
     name: 'železničný portál na bunke cestného portálu',
@@ -365,7 +377,7 @@ const INVARIANT_CASES: readonly InvariantCase[] = [
   { name: 'vrchol seaLane mimo mapy', mutate: (m) => void (m.seaLane[1] = { x: 48, y: 70 }), path: '/seaLane/1' },
   {
     name: 'úsek seaLane prechádza pevninou (vrcholy na vode)',
-    mutate: (m) => void m.seaLane.push({ x: 7, y: 11 }, { x: 12, y: 13 }),
+    mutate: (m) => void m.seaLane.push({ x: 3, y: 11 }, { x: 24, y: 30 }),
     path: '/seaLane/4',
   },
   { name: 'anchorage na pevnine', mutate: (m) => void (m.anchorage[1] = { x: 52, y: 20 }), path: '/anchorage/1' },
@@ -400,10 +412,10 @@ describe('loadMap — každé porušenie invariantu → MapError s cestou', () =
 
   it('úsek seaLane cez pevninu: správa uvádza bunku a terén', () => {
     const raw = rawMap();
-    raw.seaLane.push({ x: 7, y: 11 }, { x: 12, y: 13 });
+    raw.seaLane.push({ x: 3, y: 11 }, { x: 24, y: 30 });
     const error = expectMapError(() => load(raw), '/seaLane/4');
-    expect(error.problem).toContain('(9, 12)');
-    expect(error.problem).toContain('land');
+    expect(error.problem).toContain('(6, 14)');
+    expect(error.problem).toContain('quay');
   });
 
   it('prekryv parciel: správa uvádza druhú parcelu', () => {

@@ -55,7 +55,9 @@ export type ModuleErrorCode =
   /** Jednotka na aprone nie je. */
   | 'unit_not_on_apron'
   /** Neplatný serializovaný stav modulu (`restoreRuntimeState`). */
-  | 'state';
+  | 'state'
+  /** Prechod stavu žeriavu, ktorý tabuľka `CRANE_TRANSITIONS` nepovoľuje (ADR-016). */
+  | 'invalid_transition';
 
 export class ModuleError extends Error {
   readonly code: ModuleErrorCode;

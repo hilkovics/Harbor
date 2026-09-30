@@ -8,7 +8,7 @@ export type { ModuleFootprint, PlacedConnector } from './module-geometry';
 export type { JsonPrimitive, JsonValue, ModuleRuntimeState } from './runtime-state';
 export { ApronBuffer } from './apron-buffer';
 export { BerthModule, effectiveBerthDepth } from './berth-module';
-export { CRANE_STATES, CRANE_STATE_TRAITS, CraneModule } from './crane-module';
+export { CRANE_STATES, CRANE_STATE_TRAITS, CRANE_TRANSITIONS, CraneModule, isCraneTransitionAllowed } from './crane-module';
 export type { CraneCounter, CraneRuntimeState, CraneState, CraneStateTraits } from './crane-module';
 export { computeBerthGroups } from './berth-group';
 export type { BerthGroup } from './berth-group';

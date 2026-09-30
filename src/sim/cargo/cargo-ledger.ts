@@ -198,6 +198,14 @@ export class CargoLedger {
     return this.buckets.get(kind)?.get(holderId)?.units.length ?? 0;
   }
 
+  /**
+   * Prvá jednotka v poradí indexu držiteľa (loď: najmenšie id, ostatní: najstaršia) bez alokácie; prázdny držiteľ →
+   * `undefined`. Žeriav ňou vyberá jednotku z lode (ADR-016).
+   */
+  firstUnitAt(kind: CargoHolderKind, holderId: EntityId): EntityId | undefined {
+    return this.buckets.get(kind)?.get(holderId)?.units[0];
+  }
+
   /** Jednotka na jedinečnom mieste držiteľa (slot apronu/skladu); pre druhy bez jedinečných miest vždy `undefined`. */
   unitAtSlot(kind: CargoHolderKind, holderId: EntityId, slot: number): EntityId | undefined {
     return this.buckets.get(kind)?.get(holderId)?.slots?.get(slot);

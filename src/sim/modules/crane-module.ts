@@ -1,7 +1,8 @@
 /**
- * Žeriav (ARCHITECTURE §5.3, §7.2; ADR-014). Stojí **na** bunkách jedného berthu s rovnakou rotáciou
+ * Žeriav (ARCHITECTURE §5.3, §7.2; ADR-014, ADR-016). Stojí **na** bunkách jedného berthu s rovnakou rotáciou
  * (rozhodnutie 3): `berthId` je modul pod jeho ľavým horným rohom, `cell.moduleId` ostáva id berthu a berth ho
- * eviduje v `craneIds`. Cyklus (FSM, `CraneSystem`) doplní T02-05; tu je stav, jeho význam a serializácia.
+ * eviduje v `craneIds`. Tu je stav, tabuľka prechodov FSM (`CRANE_TRANSITIONS`), jeho význam a serializácia; cyklus
+ * (kedy a prečo sa prechádza) riadi `CraneSystem` (krok 4) výlučne cez `transition()` / `enterPhase()`.
  *
  * Dynamický stav v save (`CraneRuntimeState`) neobsahuje `heldUnitId` — držaná jednotka je v `CargoLedger`
  * (`in_crane`) a loader ju odtiaľ doplní.
@@ -41,6 +42,23 @@ export const CRANE_STATE_TRAITS: { readonly [S in CraneState]: CraneStateTraits 
   placing: Object.freeze({ holdsUnit: true, hasReservation: true, counter: 'busy' }),
   blocked: Object.freeze({ holdsUnit: false, hasReservation: false, counter: 'blocked' }),
 });
+
+/**
+ * Povolené prechody FSM žeriavu (§7.2, ADR-016): `idle → grabbing | blocked`, `grabbing → swinging` (okamžitý:
+ * `on_ship → in_crane`), `swinging → placing`, `placing → idle` (`in_crane → on_apron`), `blocked → idle | grabbing`.
+ */
+export const CRANE_TRANSITIONS: ReadonlyMap<CraneState, readonly CraneState[]> = new Map<CraneState, readonly CraneState[]>([
+  ['idle', Object.freeze(['grabbing', 'blocked'] as const)],
+  ['grabbing', Object.freeze(['swinging'] as const)],
+  ['swinging', Object.freeze(['placing'] as const)],
+  ['placing', Object.freeze(['idle'] as const)],
+  ['blocked', Object.freeze(['idle', 'grabbing'] as const)],
+]);
+
+/** Je prechod `from → to` v tabuľke? */
+export function isCraneTransitionAllowed(from: CraneState, to: CraneState): boolean {
+  return CRANE_TRANSITIONS.get(from)?.includes(to) ?? false;
+}
 
 /** Dynamický stav žeriavu v save (`WorldState.modules[i].runtime`). */
 export type CraneRuntimeState = {
@@ -82,7 +100,7 @@ export class CraneModule extends Module {
   busyTicks = 0;
   idleTicks = 0;
   blockedTicks = 0;
-  /** Index hernej hodiny (`clock.gameHour`) posledného `CraneBlocked`; `null` = ešte nebol (throttle, T02-05). */
+  /** Index hernej hodiny (`clock.gameHour`) posledného `CraneBlocked`; `null` = ešte nebol (throttle, ADR-016). */
   lastBlockedHour: number | null = null;
 
   /**
@@ -107,6 +125,32 @@ export class CraneModule extends Module {
   /** Vlastnosti aktuálneho stavu (`CRANE_STATE_TRAITS`). */
   get traits(): CraneStateTraits {
     return CRANE_STATE_TRAITS[this.state];
+  }
+
+  /** Postup v aktuálnej fáze 0…1 (render: poloha vozíka); mimo fázy (`phaseTicksTotal = 0`) → 0. */
+  get phaseProgress(): number {
+    return this.phaseTicksTotal === 0 ? 0 : 1 - this.phaseTicksLeft / this.phaseTicksTotal;
+  }
+
+  /**
+   * Prechod FSM podľa `CRANE_TRANSITIONS` (jediné miesto, kde `CraneSystem` mení stav). Nepovolený prechod →
+   * `ModuleError('invalid_transition')`, žeriav sa nezmení. Fázu (`phaseTicks*`) nastaví `enterPhase`.
+   */
+  transition(to: CraneState): void {
+    if (!isCraneTransitionAllowed(this.state, to)) {
+      const allowed = CRANE_TRANSITIONS.get(this.state) ?? [];
+      throw new ModuleError('invalid_transition', `${this.label}: prechod ${this.state} → ${to} nie je povolený (povolené: ${allowed.join(', ')})`);
+    }
+    this.state = to;
+  }
+
+  /** Začne fázu dlhú `ticks` tickov (`phaseTicksTotal = phaseTicksLeft = ticks`); 0 = mimo fázy (idle/blocked). */
+  enterPhase(ticks: number): void {
+    if (!Number.isSafeInteger(ticks) || ticks < 0) {
+      throw new ModuleError('invalid_input', `${this.label}: trvanie fázy musí byť celé číslo ≥ 0, dostal ${String(ticks)}`);
+    }
+    this.phaseTicksTotal = ticks;
+    this.phaseTicksLeft = ticks;
   }
 
   override getRuntimeState(): CraneRuntimeState {

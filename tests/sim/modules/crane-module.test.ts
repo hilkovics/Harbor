@@ -1,8 +1,19 @@
-// CraneModule (T02-03, ARCHITECTURE §7.2, rozhodnutie 3 a 7): berthId z berthu pod žeriavom, počiatočný stav,
-// tabuľka CRANE_STATE_TRAITS, serializácia runtime stavu (roundtrip + validácia s cestou).
+// CraneModule (T02-03, T02-05, ARCHITECTURE §7.2, rozhodnutie 3 a 7, ADR-016): berthId z berthu pod žeriavom,
+// počiatočný stav, tabuľky CRANE_STATE_TRAITS a CRANE_TRANSITIONS (transition, enterPhase, phaseProgress),
+// serializácia runtime stavu (roundtrip + validácia s cestou).
 import { describe, expect, it } from 'vitest';
 import { craneParams } from '@sim/defs';
-import { CRANE_STATES, CRANE_STATE_TRAITS, CraneModule, ModuleStateError, type CraneRuntimeState } from '@sim/modules';
+import {
+  CRANE_STATES,
+  CRANE_STATE_TRAITS,
+  CRANE_TRANSITIONS,
+  CraneModule,
+  ModuleError,
+  ModuleStateError,
+  isCraneTransitionAllowed,
+  type CraneRuntimeState,
+  type CraneState,
+} from '@sim/modules';
 import { CRANE, MODULE_DEFS, craneOn, markCells, quayGrid } from './module-fixtures';
 
 /** Berth #7 na x 2–9, y 2–4 syntetickej mriežky; žeriav #8 na (4, 2). */
@@ -118,5 +129,64 @@ describe('CraneModule — runtime stav', () => {
     for (const raw of [null, 3, 'idle', []]) {
       expect(() => freshCrane().restoreRuntimeState(raw)).toThrow(ModuleStateError);
     }
+  });
+});
+
+/** ADR-016: presne tieto prechody FSM žeriavu. */
+const EXPECTED_TRANSITIONS: readonly (readonly [CraneState, CraneState])[] = [
+  ['idle', 'grabbing'],
+  ['idle', 'blocked'],
+  ['grabbing', 'swinging'],
+  ['swinging', 'placing'],
+  ['placing', 'idle'],
+  ['blocked', 'idle'],
+  ['blocked', 'grabbing'],
+];
+
+describe('FSM žeriavu — CRANE_TRANSITIONS a CraneModule.transition (T02-05)', () => {
+  it('tabuľka obsahuje každý stav a presne prechody §7.2 / ADR-016', () => {
+    expect([...CRANE_TRANSITIONS.keys()].sort()).toEqual([...CRANE_STATES].sort());
+    const listed = [...CRANE_TRANSITIONS].flatMap(([from, targets]) => targets.map((to) => [from, to] as const));
+    expect(listed).toEqual(EXPECTED_TRANSITIONS);
+    for (const from of CRANE_STATES) {
+      for (const to of CRANE_STATES) {
+        expect(isCraneTransitionAllowed(from, to), `${from} → ${to}`).toBe(EXPECTED_TRANSITIONS.some(([a, b]) => a === from && b === to));
+      }
+    }
+  });
+
+  it('povolený prechod zmení stav; celý cyklus idle → grabbing → swinging → placing → idle → blocked → idle', () => {
+    const crane = freshCrane();
+    for (const to of ['grabbing', 'swinging', 'placing', 'idle', 'blocked', 'idle'] as const) {
+      crane.transition(to);
+      expect(crane.state).toBe(to);
+    }
+  });
+
+  it('nepovolený prechod → ModuleError(invalid_transition), stav sa nezmení', () => {
+    const crane = freshCrane();
+    let error: unknown;
+    try {
+      crane.transition('placing');
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(ModuleError);
+    expect((error as ModuleError).code).toBe('invalid_transition');
+    expect((error as ModuleError).message).toContain('idle → placing');
+    expect(crane.state).toBe('idle');
+  });
+
+  it('enterPhase nastaví trvanie fázy, phaseProgress = 1 − left/total (mimo fázy 0); neplatné trvanie → ModuleError', () => {
+    const crane = freshCrane();
+    expect(crane.phaseProgress).toBe(0);
+    crane.enterPhase(6);
+    expect([crane.phaseTicksTotal, crane.phaseTicksLeft, crane.phaseProgress]).toEqual([6, 6, 0]);
+    crane.phaseTicksLeft = 3;
+    expect(crane.phaseProgress).toBe(0.5);
+    crane.enterPhase(0);
+    expect([crane.phaseTicksTotal, crane.phaseTicksLeft, crane.phaseProgress]).toEqual([0, 0, 0]);
+    expect(() => crane.enterPhase(-1)).toThrow(ModuleError);
+    expect(() => crane.enterPhase(1.5)).toThrow(ModuleError);
   });
 });

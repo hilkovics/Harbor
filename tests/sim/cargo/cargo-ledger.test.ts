@@ -317,13 +317,25 @@ describe('CargoLedger — indexy podľa držiteľa', () => {
     expect(harness.ledger.countAt('on_ship', id(SHIP))).toBe(0);
   });
 
-  it('neznámy držiteľ: prázdny zoznam, počet 0, žiadna jednotka na slote', () => {
+  it('neznámy držiteľ: prázdny zoznam, počet 0, žiadna jednotka na slote ani prvá jednotka', () => {
     const { ledger } = withUnits(1);
     for (const kind of CARGO_HOLDER_KINDS) {
       expect(ledger.unitsAt(kind, id(12345))).toEqual([]);
       expect(ledger.countAt(kind, id(12345))).toBe(0);
       expect(ledger.unitAtSlot(kind, id(12345), 0)).toBeUndefined();
+      expect(ledger.firstUnitAt(kind, id(12345))).toBeUndefined();
     }
+  });
+
+  it('firstUnitAt: loď → najmenšie id (aj po presune zo stredu), apron → najstaršia jednotka (T02-05)', () => {
+    const harness = createHarness();
+    const ids = [SHIP, SHIP, SHIP].map((ship) => harness.ledger.create(TEU, at.ship(ship)).id);
+    expect(harness.ledger.firstUnitAt('on_ship', id(SHIP))).toBe(ids[0]);
+    moveThrough(harness.ledger, ids[0], [at.crane(CRANE), at.apron(BERTH, 3)]);
+    expect(harness.ledger.firstUnitAt('on_ship', id(SHIP))).toBe(ids[1]);
+    moveThrough(harness.ledger, ids[2], [at.crane(CRANE), at.apron(BERTH, 0)]);
+    expect(harness.ledger.firstUnitAt('on_apron', id(BERTH))).toBe(ids[0]);
+    expect(harness.ledger.firstUnitAt('on_ship', id(SHIP))).toBe(ids[1]);
   });
 
   it('unitAtSlot funguje len pre jedinečné miesta (apron, sklad)', () => {

@@ -22,6 +22,8 @@ export interface RenderedCounts {
   readonly ghostCells: number;
   /** Značky konektorov ghostu modulu, ktoré sú práve zobrazené. */
   readonly ghostConnectors: number;
+  /** Šípky smeru jednosmernej cesty na ghoste, ktoré sú práve zobrazené (T03-20). */
+  readonly ghostArrows: number;
   /** Obrys výberu modulu (`selection_ring`) je zobrazený. */
   readonly selectionRing: boolean;
 }

@@ -18,14 +18,22 @@
  * | `build_module_place` | ľavé tlačidlo stlačené: pustenie umiestni modul     |
  * | `build_module_pan`   | stredný ťah v móde modulu: posun kamery, mód ostáva |
  *
- * Ovládanie: `B` build mód ciest, `Esc` zruší ťah, potom mód (v `idle` zruší výber modulu v inšpektore), `Space`
- * pauza/obnova poslednej nenulovej rýchlosti (rovnaká logika ako klik na ⏸: `resolveSpeedRequest`), `1–4` rýchlosti
- * podľa poradia v `time.speeds`, WASD/šípky posun kamery, koleso zoom s pivotom pod kurzorom.
+ * Ovládanie: `B` build mód ciest (naposledy použitý typ), `Esc` zruší ťah, potom mód (v `idle` zruší výber modulu
+ * v inšpektore), `Space` pauza/obnova poslednej nenulovej rýchlosti (rovnaká logika ako klik na ⏸:
+ * `resolveSpeedRequest`), `1–4` rýchlosti podľa poradia v `time.speeds`, WASD/šípky posun kamery, koleso zoom
+ * s pivotom pod kurzorom.
  *
  * Build mód modulov (T02-10): výber v BuildBare (`BuildSelection`) prepne do `build_module`; `R` otočí ghost
  * 0 → 90 → 180 → 270, ľavý klik umiestni modul (`validate` → `dispatch(PlaceModule)` len pri `ok`), Esc alebo pravý klik
  * mód zruší (výber sa vynuluje). Po umiestnení mód ostáva aktívny. V `idle` klik (bez ťahu) na bunku modulu vyberie
  * modul (`ModuleSelection`; žeriav má prednosť pred kotviskom pod ním), klik do prázdna výber zruší.
+ *
+ * Typy ciest (T03-20, ADR-020): build mód ciest nesie typ cesty (`roadKind`: `two_lane` / `one_lane` / `one_way`). Zapína ho
+ * `B` (naposledy použitý typ, predvolene `two_lane`) alebo klik na cestnú položku v BuildBare (`RoadSelection`, opakovaný
+ * klik ho vypne). Ovládanie výber zrkadlí späť, takže položka v BuildBare svieti presne vtedy, keď mód beží. Ťah
+ * jednosmerky posiela `dirs` z ťahu (`strokeDirections`); pri ťahu dlhom 1 bunku platí posledný smer ťahu jednosmerky
+ * (predvolene `DEFAULT_ONE_WAY_DIRECTION`), ktorý otáča `R` (N → E → S → W). Ghost ukazuje šípky smeru
+ * (`GhostArrowsView`) a štítok typ, počet buniek a cenu; pri prestavbe stavbu a refundáciu z `PlaceRoadCommand.quote`.
  *
  * Zásada „nič sa nemení bez validácie“: ghost sa farbí podľa `bridge.validate`, `dispatch` ide len po úspešnej
  * validácii celého ťahu (príkazy sú atomické — jedna neplatná bunka odmietne celý ťah).
@@ -39,13 +47,22 @@ import {
   type ValidationResult,
 } from '@sim/commands';
 import type { EntityId } from '@sim/core';
-import type { CellCoord, Rotation } from '@sim/grid';
+import { DEFAULT_ROAD_KIND, type CellCoord, type Direction4Name, type RoadKind, type Rotation } from '@sim/grid';
 import type { Camera } from '@render/camera';
-import type { BuildLayer, GhostCell, GhostView } from '@render/build-layer';
+import type { BuildLayer, GhostArrow, GhostCell, GhostView } from '@render/build-layer';
 import type { ModuleGhostVM } from '@render/view-models';
 import { interpolateCells } from './cell-line';
-import { CLICK_SLOP_PX, KEY_PAN_MAX_DT_MS, KEY_PAN_PX_PER_SECOND, WHEEL_DELTA_MODE_PX, WHEEL_ZOOM_PER_PX } from './config';
+import {
+  CLICK_SLOP_PX,
+  DEFAULT_ONE_WAY_DIRECTION,
+  KEY_PAN_MAX_DT_MS,
+  KEY_PAN_PX_PER_SECOND,
+  WHEEL_DELTA_MODE_PX,
+  WHEEL_ZOOM_PER_PX,
+} from './config';
 import { nextRotation, placeCommand, previewModule, type ModulePreview } from './module-build';
+import { isOneWayKind, nextDirection, placeRoadCommand, strokeDirections } from './road-build';
+import { RoadSelection } from './road-selection';
 import type { SelectionSource } from './selection-cell';
 import type { SimBridge } from './sim-bridge';
 import { resolveSpeedRequest } from './speed-request';
@@ -75,11 +92,13 @@ export type InputTrigger =
   | 'middle_down'
   | 'release'
   | 'module_selected'
-  | 'module_cleared';
+  | 'module_cleared'
+  | 'road_selected'
+  | 'road_cleared';
 
 /** Prechodová tabuľka; chýbajúci záznam = trigger sa v stave ignoruje (žiadne skryté prechody). */
 export const INPUT_TRANSITIONS: Readonly<Record<InputState, Readonly<Partial<Record<InputTrigger, InputState>>>>> = Object.freeze({
-  idle: { toggle_build: 'build', primary_down: 'pan', middle_down: 'pan', module_selected: 'build_module' },
+  idle: { toggle_build: 'build', primary_down: 'pan', middle_down: 'pan', module_selected: 'build_module', road_selected: 'build' },
   pan: { release: 'idle', cancel: 'idle' },
   build: {
     toggle_build: 'idle',
@@ -88,6 +107,8 @@ export const INPUT_TRANSITIONS: Readonly<Record<InputState, Readonly<Partial<Rec
     secondary_down: 'build_remove',
     middle_down: 'build_pan',
     module_selected: 'build_module',
+    road_selected: 'build', // iný typ cesty: mód ostáva, mení sa `roadKind`
+    road_cleared: 'idle',
   },
   build_place: { release: 'build', cancel: 'build' },
   build_remove: { release: 'build', cancel: 'build' },
@@ -101,6 +122,7 @@ export const INPUT_TRANSITIONS: Readonly<Record<InputState, Readonly<Partial<Rec
     middle_down: 'build_module_pan',
     module_selected: 'build_module',
     module_cleared: 'idle',
+    road_selected: 'build',
   },
   build_module_place: { release: 'build_module', cancel: 'build_module', module_cleared: 'idle' },
   build_module_pan: { release: 'build_module', cancel: 'build_module', module_cleared: 'idle' },
@@ -116,9 +138,14 @@ export function isModuleState(state: InputState): boolean {
   return state === 'build_module' || state === 'build_module_place' || state === 'build_module_pan';
 }
 
+/** Stavy, v ktorých je zapnutý build mód ciest (`build*` okrem módov modulov). */
+export function isRoadState(state: InputState): boolean {
+  return state === 'build' || state === 'build_place' || state === 'build_remove' || state === 'build_pan';
+}
+
 /** Stavy, v ktorých je zapnutý niektorý build mód (cesty alebo moduly). */
 export function isBuildState(state: InputState): boolean {
-  return state === 'build' || state === 'build_place' || state === 'build_remove' || state === 'build_pan' || isModuleState(state);
+  return isRoadState(state) || isModuleState(state);
 }
 
 /** `MouseEvent.button` → trigger. */
@@ -162,6 +189,9 @@ export type InputBridge = Pick<SimBridge, 'world' | 'dispatch' | 'validate' | 's
 /** Cieľ ghostu modulu (`BuildLayer.setModuleGhost`). */
 export type ModuleGhostView = Pick<BuildLayer, 'setModuleGhost'>;
 
+/** Cieľ šípok smeru jednosmerky (`BuildLayer.setGhostArrows`). */
+export type GhostArrowsTarget = Pick<BuildLayer, 'setGhostArrows'>;
+
 export interface InputControllerOptions {
   readonly bridge: InputBridge;
   readonly camera: InputCamera;
@@ -172,6 +202,13 @@ export interface InputControllerOptions {
   readonly buildSelection: SelectionSource<string>;
   /** Výber modulu na mape (id) pre inšpektor: nastavuje ho klik v `idle` móde, Esc ho zruší. */
   readonly moduleSelection: SelectionSource<EntityId>;
+  /**
+   * Výber typu cesty (T03-20): zmena zapína a vypína build mód ciest; ovládanie ho zrkadlí (`B`, Esc). Bez neho si
+   * ovládanie vedie vlastný (testy).
+   */
+  readonly roadSelection?: SelectionSource<RoadKind>;
+  /** Šípky smeru jednosmerky na ghoste (typicky tá istá `BuildLayer`); bez neho sa smer ukazuje len v štítku. */
+  readonly ghostArrows?: GhostArrowsTarget;
   /** Zmena režimu (kurzor, indikátor); volá sa len pri skutočnej zmene stavu. */
   readonly onStateChange?: (state: InputState) => void;
 }
@@ -206,8 +243,18 @@ export interface BuildFeedback {
   readonly label?: string;
   /** Len `module`: druh modulu (`ModuleKind`) — určuje ikonu štítka. */
   readonly moduleKind?: string;
-  /** Len `module`: hráč nemá na cenu — ghost môže byť zelený, ale klik nič nepostaví (ikona $). */
+  /** Len `module` a `place`: hráč nemá na cenu — ghost môže byť zelený, ale klik nič nepostaví (ikona $). */
   readonly fundsShort?: boolean;
+  /** Len `place`: typ cesty, ktorý ťah stavia. */
+  readonly roadKind?: RoadKind;
+  /** Len `place`: cena stavby (nových aj prestavaných buniek) v centoch (`PlaceRoadCommand.quote`). */
+  readonly buildCents?: number;
+  /** Len `place`: refundácia prestavaných buniek v centoch; > 0 = ťah je (aj) prestavba. */
+  readonly refundCents?: number;
+  /** Len `place` jednosmerky: smer poslednej bunky ťahu (pri 1-bunkovom ťahu smer, ktorý otáča `R`). */
+  readonly direction?: Direction4Name;
+  /** Len `place` jednosmerky: ťah je dlhý 1 bunku, jeho smer sa dá otočiť klávesom `R`. */
+  readonly rotatable?: boolean;
 }
 
 // ---- interné ----
@@ -254,6 +301,11 @@ const GHOST_STALE_EVENTS: ReadonlySet<string> = new Set([
   'ShipDeparted',
 ]);
 
+/** Jediný dôvod, ktorý neznamená zlé miesto: hráč nemá na cenu. */
+function isFundsReason(reason: ValidationReason): boolean {
+  return reason === 'insufficient_funds';
+}
+
 /** Ťah, ktorý nič nemení (bunka už má cestu), sa v ghoste ukazuje ako platný. */
 function isNothingToDo(result: ValidationResult): boolean {
   return result.reasons.length === 1 && result.reasons[0] === 'empty';
@@ -266,12 +318,19 @@ export class InputController {
   private readonly moduleGhostView: ModuleGhostView;
   private readonly buildSelection: SelectionSource<string>;
   private readonly moduleSelection: SelectionSource<EntityId>;
+  private readonly roadSelection: SelectionSource<RoadKind>;
+  private readonly ghostArrows: GhostArrowsTarget | undefined;
   private readonly onStateChange: ((state: InputState) => void) | undefined;
 
   private stateValue: InputState = 'idle';
   /** Vybraná definícia modulu v módoch `build_module*` (zrkadlo `buildSelection`), inak `null`. */
   private moduleDefId: string | null = null;
   private moduleRotation: Rotation = 0;
+  /** Typ cesty, ktorý stavia build mód ciest; po vypnutí módu ostáva ako „naposledy použitý“ pre `B`. */
+  private roadKindValue: RoadKind = DEFAULT_ROAD_KIND;
+  /** Smer jednosmerky pre ťah dlhý 1 bunku: posledný smer ťahu jednosmerky, `R` ho otáča. */
+  private singleDirection: Direction4Name = DEFAULT_ONE_WAY_DIRECTION;
+  private arrowsShown = false;
   /** Posledný ghost modulu odovzdaný rendereru (`null` = nezobrazený). */
   private moduleGhostValue: ModuleGhostVM | null = null;
   /** Poloha stlačenia ľavého tlačidla v `pan` móde, kým ťah nepresiahol `CLICK_SLOP_PX` (potom je to posun, nie klik). */
@@ -289,6 +348,7 @@ export class InputController {
   private readonly feedbackListeners = new Set<() => void>();
   private readonly stopEvents: () => void;
   private readonly stopSelection: () => void;
+  private readonly stopRoadSelection: () => void;
   private disposed = false;
 
   constructor(options: InputControllerOptions) {
@@ -298,6 +358,8 @@ export class InputController {
     this.moduleGhostView = options.moduleGhost;
     this.buildSelection = options.buildSelection;
     this.moduleSelection = options.moduleSelection;
+    this.roadSelection = options.roadSelection ?? new RoadSelection();
+    this.ghostArrows = options.ghostArrows;
     this.onStateChange = options.onStateChange;
     const speed = this.bridge.snapshot().speed;
     if (speed !== 0) this.lastRunningSpeed = speed;
@@ -316,6 +378,10 @@ export class InputController {
       this.onBuildSelectionChanged();
     });
     if (this.buildSelection.get() !== null) this.onBuildSelectionChanged();
+    this.stopRoadSelection = this.roadSelection.subscribe(() => {
+      this.onRoadSelectionChanged();
+    });
+    if (this.roadSelection.get() !== null) this.onRoadSelectionChanged();
   }
 
   // ---- čítanie stavu ----
@@ -336,6 +402,16 @@ export class InputController {
   /** Rotácia ghostu modulu (`R`). */
   get rotation(): Rotation {
     return this.moduleRotation;
+  }
+
+  /** Typ cesty build módu ciest; mimo neho naposledy použitý typ (`B` ho spustí znova). */
+  get roadKind(): RoadKind {
+    return this.roadKindValue;
+  }
+
+  /** Smer jednosmerky pre ťah dlhý 1 bunku (posledný smer ťahu jednosmerky, `R` ho otáča). */
+  get oneWayDirection(): Direction4Name {
+    return this.singleDirection;
   }
 
   /** Ghost modulu, ktorý práve zobrazuje renderer (`null` = žiadny); pre ladenie a e2e. */
@@ -440,7 +516,7 @@ export class InputController {
     }
     if (input.repeat) return this.isCommandKey(input.code);
     if (input.code === 'KeyB') return this.handleTrigger('toggle_build');
-    if (input.code === 'KeyR') return this.rotateModule();
+    if (input.code === 'KeyR') return this.rotate();
     if (input.code === 'Escape') return this.handleTrigger('cancel');
     if (input.code === 'Space') {
       this.togglePause();
@@ -482,6 +558,7 @@ export class InputController {
     this.disposed = true;
     this.stopEvents();
     this.stopSelection();
+    this.stopRoadSelection();
     this.stroke = null;
     this.hideGhost();
     this.feedbackListeners.clear();
@@ -490,7 +567,7 @@ export class InputController {
   // ---- interné: klávesy ----
 
   private isCommandKey(code: string): boolean {
-    return code === 'KeyB' || (code === 'KeyR' && isModuleState(this.stateValue)) || code === 'Escape' || code === 'Space' || SPEED_KEY.test(code);
+    return code === 'KeyB' || (code === 'KeyR' && this.canRotate()) || code === 'Escape' || code === 'Space' || SPEED_KEY.test(code);
   }
 
   private handleTrigger(trigger: InputTrigger): boolean {
@@ -540,6 +617,9 @@ export class InputController {
       this.moduleDefId = null;
       this.buildSelection.select(null);
     }
+    // Výber typu cesty v BuildBare zrkadlí build mód ciest: svieti presne vtedy, keď mód beží (aj po `B` a Esc).
+    if (!isRoadState(previous) && isRoadState(next)) this.roadSelection.select(this.roadKindValue);
+    else if (isRoadState(previous) && !isRoadState(next)) this.roadSelection.select(null);
     this.onStateChange?.(next);
   }
 
@@ -564,12 +644,54 @@ export class InputController {
     this.refreshGhost();
   }
 
-  /** `R`: otočí ghost o 90° v smere hodinových ručičiek; mimo módu modulu kláves nerobí nič. */
-  private rotateModule(): boolean {
-    if (!isModuleState(this.stateValue)) return false;
-    this.moduleRotation = nextRotation(this.moduleRotation);
+  /** Je zapnutý build mód jednosmerky (`R` otáča jej smer)? */
+  private inOneWayMode(): boolean {
+    return isRoadState(this.stateValue) && isOneWayKind(this.roadKindValue);
+  }
+
+  /** `R` niečo otáča: ghost modulu, alebo smer jednosmerky pre 1-bunkový ťah. */
+  private canRotate(): boolean {
+    return isModuleState(this.stateValue) || this.inOneWayMode();
+  }
+
+  /**
+   * `R`: v móde modulu otočí ghost o 90° v smere hodinových ručičiek, v móde jednosmerky otočí smer 1-bunkového ťahu
+   * (N → E → S → W); inde kláves nerobí nič.
+   */
+  private rotate(): boolean {
+    if (isModuleState(this.stateValue)) {
+      this.moduleRotation = nextRotation(this.moduleRotation);
+    } else if (this.inOneWayMode()) {
+      this.singleDirection = nextDirection(this.singleDirection);
+    } else {
+      return false;
+    }
     this.refreshGhost();
     return true;
+  }
+
+  // ---- interné: typ cesty ----
+
+  /**
+   * Zmena výberu typu cesty (klik v BuildBare, alebo zrkadlenie módu): typ zapne build mód ciest (aj z módu modulu),
+   * `null` ho vypne. Rozpracovaný ťah sa zahodí (ťah s iným typom by mal iné bunky aj ceny).
+   */
+  private onRoadSelectionChanged(): void {
+    if (this.disposed) return;
+    const kind = this.roadSelection.get();
+    if (this.activeButton !== null && (kind === null ? isRoadState(this.stateValue) : kind !== this.roadKindValue)) {
+      this.endInteraction('cancel');
+    }
+    if (kind === null) {
+      const cleared = transition(this.stateValue, 'road_cleared');
+      if (cleared !== null) this.setState(cleared);
+      this.refreshGhost();
+      return;
+    }
+    this.roadKindValue = kind;
+    const next = transition(this.stateValue, 'road_selected');
+    if (next !== null) this.setState(next);
+    this.refreshGhost();
   }
 
   /** Náhľad modulu pod kurzorom (`null` = nie je vybraný def, kurzor je mimo mapy alebo def neexistuje). */
@@ -614,12 +736,21 @@ export class InputController {
   }
 
   private makeCommand(kind: BuildKind, cells: readonly CellCoord[]): Command {
-    return kind === 'place' ? new PlaceRoadCommand(cells) : new RemoveRoadCommand(cells);
+    return kind === 'place' ? this.placeCommand(cells) : new RemoveRoadCommand(cells);
   }
 
+  /** `PlaceRoad` s aktuálnym typom cesty (a smermi pri jednosmerke). */
+  private placeCommand(cells: readonly CellCoord[]): PlaceRoadCommand {
+    return placeRoadCommand(cells, this.roadKindValue, this.singleDirection);
+  }
+
+  /**
+   * Platnosť jednej bunky pre farbu ghostu. Nedostatok peňazí sa nepočíta: je vlastnosťou celého ťahu a ghost ostáva
+   * zelený s ikonou $ (ARCHITECTURE §8 bod 6), ako pri moduloch.
+   */
   private cellVerdict(kind: BuildKind, cell: CellCoord): boolean {
     const result = this.bridge.validate(this.makeCommand(kind, [cell]));
-    return result.ok || (kind === 'place' && isNothingToDo(result));
+    return result.ok || (kind === 'place' && isNothingToDo(result)) || (result.reasons.length > 0 && result.reasons.every(isFundsReason));
   }
 
   /** Pridá do ťahu bunku pod kurzorom a všetky bunky medzi ňou a poslednou (4-súvislo), mimo mapy ignoruje. */
@@ -643,6 +774,10 @@ export class InputController {
   /** Odošle ťah, ak celý prejde validáciou; inak nič (ghost už ukázal prečo). */
   private commit(stroke: Stroke): void {
     if (stroke.cells.length === 0) return;
+    // Posledný smer ťahu jednosmerky sa stáva smerom pre ďalší 1-bunkový ťah (bez ohľadu na výsledok validácie).
+    if (stroke.kind === 'place' && stroke.cells.length >= 2 && isOneWayKind(this.roadKindValue)) {
+      this.singleDirection = strokeDirections(stroke.cells, this.singleDirection).at(-1) ?? this.singleDirection;
+    }
     const command = this.makeCommand(stroke.kind, stroke.cells);
     if (this.bridge.validate(command).ok) this.bridge.dispatch(command);
   }
@@ -682,17 +817,23 @@ export class InputController {
       return;
     }
 
-    const whole = this.bridge.validate(this.makeCommand(kind, cells));
+    // Stavba ide cez `quote` (rovnaké `ok`/`reasons`/`cells`/`costCents` ako `validate`, navyše stavba a refundácia
+    // prestavby zvlášť); odstránenie cez `validate` mosta.
+    const placing = kind === 'place' ? this.placeCommand(cells) : null;
+    const quote = placing === null ? null : placing.quote(this.bridge.world);
+    const whole: ValidationResult = quote ?? this.bridge.validate(this.makeCommand(kind, cells));
     if (!dragging && isNothingToDo(whole)) {
       this.hideGhost(); // hover nad hotovou cestou: nič sa nestane, ghost ani štítok by len rušili
       return;
     }
-    // Nedostatok peňazí je vlastnosť celého ťahu, nie jednej bunky: preto sa označí celý ghost.
     const fundsShort = whole.reasons.includes('insufficient_funds');
-    const ghostCells: GhostCell[] = cells.map((cell) => ({ x: cell.x, y: cell.y, valid: !fundsShort && verdict(cell) }));
+    const ghostCells: GhostCell[] = cells.map((cell) => ({ x: cell.x, y: cell.y, valid: verdict(cell) }));
     this.clearModuleGhost();
     this.ghost.setGhost(ghostCells);
     this.ghostShown = true;
+    const oneWay = placing !== null && isOneWayKind(this.roadKindValue);
+    const dirs = oneWay ? strokeDirections(cells, this.singleDirection) : [];
+    this.setArrows(oneWay ? cells.map((cell, index) => ({ x: cell.x, y: cell.y, dir: dirs[index] })) : null);
     const at = this.pointer ?? { x: 0, y: 0 };
     this.setFeedback({
       kind,
@@ -703,7 +844,28 @@ export class InputController {
       x: at.x,
       y: at.y,
       dragging,
+      ...(quote === null
+        ? {}
+        : {
+            roadKind: this.roadKindValue,
+            buildCents: quote.buildCents,
+            refundCents: quote.refundCents,
+            fundsShort,
+            ...(oneWay ? { direction: dirs[dirs.length - 1], rotatable: cells.length === 1 } : {}),
+          }),
     });
+  }
+
+  /** Šípky smeru jednosmerky na ghoste (`null` = skryť); bez cieľa (testy, staré zapojenie) sa nič nedeje. */
+  private setArrows(arrows: readonly GhostArrow[] | null): void {
+    if (arrows === null) {
+      if (!this.arrowsShown) return;
+      this.arrowsShown = false;
+      this.ghostArrows?.setGhostArrows(null);
+      return;
+    }
+    this.arrowsShown = true;
+    this.ghostArrows?.setGhostArrows(arrows);
   }
 
   /** Ghost a štítok modulu pod kurzorom (mód `build_module*`); mimo mapy ich skryje. */
@@ -717,6 +879,7 @@ export class InputController {
       this.ghost.clearGhost();
       this.ghostShown = false;
     }
+    this.setArrows(null);
     this.moduleGhostView.setModuleGhost(preview.ghost);
     this.moduleGhostValue = preview.ghost;
     const def = this.bridge.world.defs.modules.get(preview.placement.defId);
@@ -747,6 +910,7 @@ export class InputController {
       this.ghost.clearGhost();
       this.ghostShown = false;
     }
+    this.setArrows(null);
     this.clearModuleGhost();
     this.setFeedback(null);
   }

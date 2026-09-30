@@ -5,6 +5,7 @@ import {
   INPUT_TRANSITIONS,
   isBuildState,
   isModuleState,
+  isRoadState,
   transition,
   type InputState,
   type InputTrigger,
@@ -48,6 +49,8 @@ describe('InputState: prechodová tabuľka', () => {
     'release',
     'module_selected',
     'module_cleared',
+    'road_selected',
+    'road_cleared',
   ];
 
   /** Všetky povolené prechody; čokoľvek iné sa ignoruje (`null`). */
@@ -56,6 +59,7 @@ describe('InputState: prechodová tabuľka', () => {
     ['idle', 'primary_down', 'pan'],
     ['idle', 'middle_down', 'pan'],
     ['idle', 'module_selected', 'build_module'],
+    ['idle', 'road_selected', 'build'],
     ['pan', 'release', 'idle'],
     ['pan', 'cancel', 'idle'],
     ['build', 'toggle_build', 'idle'],
@@ -64,6 +68,8 @@ describe('InputState: prechodová tabuľka', () => {
     ['build', 'secondary_down', 'build_remove'],
     ['build', 'middle_down', 'build_pan'],
     ['build', 'module_selected', 'build_module'],
+    ['build', 'road_selected', 'build'],
+    ['build', 'road_cleared', 'idle'],
     ['build_place', 'release', 'build'],
     ['build_place', 'cancel', 'build'],
     ['build_remove', 'release', 'build'],
@@ -77,6 +83,7 @@ describe('InputState: prechodová tabuľka', () => {
     ['build_module', 'middle_down', 'build_module_pan'],
     ['build_module', 'module_selected', 'build_module'],
     ['build_module', 'module_cleared', 'idle'],
+    ['build_module', 'road_selected', 'build'],
     ['build_module_place', 'release', 'build_module'],
     ['build_module_place', 'cancel', 'build_module'],
     ['build_module_place', 'module_cleared', 'idle'],
@@ -103,8 +110,9 @@ describe('InputState: prechodová tabuľka', () => {
     for (const state of STATES) expect(isBuildState(state)).toBe(state.startsWith('build'));
   });
 
-  it('módy modulu sú práve stavy build_module*', () => {
+  it('módy modulu sú práve stavy build_module*, módy ciest ostatné build stavy', () => {
     for (const state of STATES) expect(isModuleState(state)).toBe(state.startsWith('build_module'));
+    for (const state of STATES) expect(isRoadState(state)).toBe(state.startsWith('build') && !state.startsWith('build_module'));
   });
 });
 
@@ -281,7 +289,7 @@ describe('InputController: stavba cesty (ťah myšou)', () => {
     expect(h.ghost.cells).toEqual([{ x: 44, y: 18, valid: true }]); // ťah zmizol; ostal len hover ghost pod kurzorom
   });
 
-  it('parcela na predaj je neplatná (parcel_not_owned) a nedostatok peňazí zafarbí celý ťah', () => {
+  it('parcela na predaj je neplatná (parcel_not_owned); nedostatok peňazí nechá ghost zelený s $ (§8 bod 6) a ťah sa neodošle', () => {
     const h = harness();
     h.controller.keyDown(key('KeyB'));
     h.down(c(10, ROW)); // west_quay, na predaj
@@ -291,8 +299,8 @@ describe('InputController: stavba cesty (ťah myšou)', () => {
     h.world.cashCents = h.world.defs.infrastructure.road.costPerCellCents; // stačí na jednu bunku
     h.down(c(30, ROW));
     h.move(c(33, ROW));
-    expect(h.controller.feedback()?.reasons).toContain('insufficient_funds');
-    expect(h.ghost.cells.every((cell) => !cell.valid)).toBe(true);
+    expect(h.controller.feedback()).toMatchObject({ ok: false, reasons: ['insufficient_funds'], fundsShort: true });
+    expect(h.ghost.cells.every((cell) => cell.valid)).toBe(true); // ako pri moduloch: peniaze nie sú vada miesta
     h.up(c(33, ROW));
     h.frame();
     expect(roadCells(h.world)).toHaveLength(30);

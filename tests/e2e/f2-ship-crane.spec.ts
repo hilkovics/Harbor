@@ -125,10 +125,12 @@ test.describe('F2: loď, žeriav, apron (T02-12)', () => {
     await expect(berthItem).toContainText('Kotvisko');
     await expect(berthItem).toContainText('$400,000');
     await expect(bar.locator('[data-def-id="crane_container_gantry"]')).toContainText('$600,000');
-    // F3 (T03-10): Sklady a Logistika sú povolené, kategórie ďalších fáz ostávajú zamknuté
+    // F3 (T03-10, T03-20): Sklady, Logistika a Landside (typy ciest) sú povolené, kategórie ďalších fáz ostávajú zamknuté
     await expect(bar.locator('[data-category="storage"]')).toBeEnabled();
     await expect(bar.locator('[data-category="logistics"]')).toBeEnabled();
-    await expect(bar.locator('[data-category="landside"]')).toBeDisabled();
+    await expect(bar.locator('[data-category="landside"]')).toBeEnabled();
+    await expect(bar.locator('[data-category="rail"]')).toBeDisabled();
+    await expect(bar.locator('[data-category="pipes"]')).toBeDisabled();
     await expect(bar.locator('.build-bar__tabs .build-bar__tab kbd')).toHaveCount(0);
     await expect(berthItem).toHaveAttribute('aria-pressed', 'false');
     await berthItem.click();

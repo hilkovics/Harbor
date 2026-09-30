@@ -14,7 +14,7 @@ export type { ParcelOutlineId } from './parcel-layer';
 export { PortalLayer, portalRotation } from './portal-layer';
 export type { PortalKind, PortalSet } from './portal-layer';
 export { BuildLayer, CONNECTOR_MARKER_ROTATION, loadGhostPalette, moduleGhostCells } from './build-layer';
-export type { BuildLayerCreateOptions, BuildLayerOptions, GhostCell, GhostPalette, GhostView } from './build-layer';
+export type { BuildLayerCreateOptions, BuildLayerOptions, GhostArrow, GhostArrowsView, GhostCell, GhostPalette, GhostView } from './build-layer';
 export type { CraneVM, EntitiesVM, ModuleGhostVM, ModuleVM, ShipVM, VehicleVM, ViewRotation, ViewSide } from './view-models';
 export { ModuleLayer } from './module-layer';
 export { ModuleView, moduleBodyFile, moduleFillState, sameModuleShape } from './module-view';

@@ -4,7 +4,7 @@
  * Herné hodnoty (ceny, rýchlosti, trvania) sem nepatria — tie sú v `data/defs/*.json`. Tu je len to, čo je
  * vlastné aplikácii: ktorú hru spustiť a ako citlivé je ovládanie.
  */
-import { isWater, loadBundledMap, type Grid, type LoadedMap, type Rect } from '@sim/grid';
+import { isWater, loadBundledMap, type Direction4Name, type Grid, type LoadedMap, type Rect } from '@sim/grid';
 import { loadBundledDefs } from '@sim/defs';
 import { World, type WorldOptions } from '@sim/world';
 
@@ -25,6 +25,12 @@ export const KEY_PAN_MAX_DT_MS = 100;
  * berie ako klik (výber modulu), nie ako ťah kamery. Väčší posun je posun mapy a výber sa nemení.
  */
 export const CLICK_SLOP_PX = 4;
+
+/**
+ * Smer jednosmernej cesty pre ťah dlhý 1 bunku, kým hráč nepostavil žiadnu jednosmerku (potom platí posledný smer
+ * ťahu jednosmerky); `R` v build móde jednosmerky ho otáča N → E → S → W.
+ */
+export const DEFAULT_ONE_WAY_DIRECTION: Direction4Name = 'E';
 
 /** Citlivosť kolieska: zoom sa násobí `exp(−delta × WHEEL_ZOOM_PER_PX)`; bežný krok kolieska (100 px) ≈ ×1,16. */
 export const WHEEL_ZOOM_PER_PX = 0.0015;

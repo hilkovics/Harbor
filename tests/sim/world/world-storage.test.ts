@@ -148,7 +148,7 @@ describe('odstránenie skladu', () => {
   it('sklad s uloženou jednotkou alebo s rezerváciou → has_cargo; prázdny ide odstrániť', () => {
     const { world, yard } = storageWorld();
     const slot = yard.reserve();
-    expect(() => world.removeModule(yard.id)).toThrow(/rezervovaných slotov/);
+    expect(() => world.removeModule(yard.id)).toThrow(/má rezervované sloty \(in_storage\): 1/);
     const unit = store(world, yard, slot);
     expect(() => world.removeModule(yard.id)).toThrow(/drží náklad \(in_storage\)/);
     world.cargo.move(unit, { kind: 'in_vehicle', vehicleId: id(903) });

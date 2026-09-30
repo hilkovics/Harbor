@@ -345,7 +345,7 @@ describe('findRemovalViolations', () => {
     if (!(yard instanceof StorageModule)) throw new Error('nie je sklad');
     expect(findRemovalViolations(world, yard)).toEqual([]);
     const slot = yard.reserve();
-    expect(findRemovalViolations(world, yard)).toEqual([{ rule: 'has_cargo', detail: `${yard.label} má 1 rezervovaných slotov (in_storage)` }]);
+    expect(findRemovalViolations(world, yard)).toEqual([{ rule: 'has_cargo', detail: `${yard.label} má rezervované sloty (in_storage): 1` }]);
     const unit = world.cargo.create('container_teu', { kind: 'on_ship', shipId: id(500) }).id;
     for (const location of [
       { kind: 'in_crane', craneId: id(501) },

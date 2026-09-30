@@ -4,20 +4,22 @@
  * Tok dát:
  *   vstup → InputController → Command → SimBridge.dispatch → World (applyPending v GameLoop)
  *   World → udalosti → SimBridge.onEvents → WorldRenderer (RoadChanged) ; snapshot → useSimSnapshot → HUD, BuildBar
- *   World → SimBridge.entities() (EntitiesVM) → WorldRenderer.syncEntities(vm, alpha) každý frame (moduly, žeriavy, lode, vozidlá)
- *   World → udalosti → ToastCenter → Toasts („Chýba sklad“, „Nepripojené“ s akciou „Ukázať“ = centrovanie kamery)
+ *   World → SimBridge.entities() (EntitiesVM) → WorldRenderer.syncEntities(vm, alpha) každý frame (moduly, žeriavy, lode, vozidlá, kamióny)
+ *   World → udalosti → ToastCenter → Toasts („Chýba sklad“, „Nepripojené“, „Rampa neprevádzková“, „Stojisko je plné“ … s akciou
+ *   „Ukázať“ = centrovanie kamery)
  *
  * Herný stav (World, GameLoop, Pixi) žije mimo Reactu — React je len vrstva nad mapou, takže StrictMode ani
  * opätovné vykreslenia hru nezdvojujú.
  */
 import { StrictMode, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
+import type { TruckVM } from '@render/view-models';
 import { WorldRenderer, starterParcelRect } from '@render/world-renderer';
 import type { World } from '@sim/world';
 import { App } from './app';
 import { BuildSelection } from './build-selection';
 import { createAppWorld, startViewCenter } from './config';
-import { installDevHook } from './dev-hook';
+import { installDevHook, truckStateCounts } from './dev-hook';
 import { attachDomInput } from './dom-input';
 import { GameLoop, startRafLoop } from './game-loop';
 import { InputController } from './input-controller';
@@ -137,10 +139,13 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
     }
   });
   // Starter moduly (Root berth + žeriav) nemajú udalosť `ModulePlaced` — prvý stav sa číta priamo zo sveta.
+  let syncedTrucks: readonly TruckVM[] = bridge.entities().trucks;
   renderer.syncEntities(bridge.entities(), 0);
   const stopLoop = startRafLoop(loop, (alpha, _events, dtMs) => {
     input.update(dtMs);
-    renderer.syncEntities(bridge.entities(), alpha);
+    const entities = bridge.entities();
+    syncedTrucks = entities.trucks;
+    renderer.syncEntities(entities, alpha);
   });
 
   installDevHook(bridge, {
@@ -154,6 +159,8 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
       cranes: renderer.cranes.craneCount,
       ships: renderer.ships.shipCount,
       vehicles: renderer.ships.vehicleCount,
+      trucks: renderer.ships.truckCount,
+      truckStates: truckStateCounts(syncedTrucks),
       ghostCells: renderer.build.shownCount,
       ghostConnectors: renderer.build.markerCount,
       ghostArrows: renderer.build.arrowCount,

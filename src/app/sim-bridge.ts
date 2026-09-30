@@ -7,22 +7,23 @@
  * `GameLoop` po každom frame zavolá `publish(events)`. Bridge rozošle udalosti poslucháčom `onEvents`
  * (render) a ak sa medzitým zmenil snapshot, notifikuje odberateľov `subscribe` (UI cez `useSimSnapshot`).
  */
-import type { CraneVM, ModuleVM, ShipVM, VehicleVM, ViewRotation } from '@render/view-models';
+import type { CraneVM, ModuleVM, ShipVM, TruckVM, VehicleVM, ViewRotation } from '@render/view-models';
 import type { Command, ValidationResult } from '@sim/commands';
 import type { EntityId } from '@sim/core';
 import type { DefRegistry } from '@sim/defs';
 import type { SimEvent, SimEventType } from '@sim/events';
 import type { Grid, Parcel } from '@sim/grid';
 import type { World } from '@sim/world';
-import { EntitiesVMBuilder, type SimEntitiesVM } from './entities-vm';
+import { EntitiesVMBuilder, writeTruckPose, type MutableTruckPose, type SimEntitiesVM } from './entities-vm';
 import type { FrameEventSink } from './game-loop';
 
 /**
  * Udalosti, ktoré menia štruktúru sveta viditeľnú v snapshote (moduly, cesty a z nich pripojenie modulov, lode, žeriavy,
  * vozidlá, joby vrátane zrušených (uvoľnia rezervácie skladu a rampy), poloha nákladu a z nej obsadenie skladov a rámp,
- * prevádzkovosť rámp) a zvyšujú `revision`. Tabuľka (nie switch): nová udalosť =
- * nový riadok. `MoneyChanged` tu nie je — hotovosť je v snapshote sama. Poloha vozidla tu nie je: mení sa každý tick
- * bez udalosti, preto sa vozidlá (ako lode a žeriavy) skladajú pri každom novom snapshote.
+ * prevádzkovosť rámp, kamióny — vznik, zmena stavu (vstup a výstup z fronty brány, príchod do stojiska …), odchod z mapy
+ * a chýbajúci bay stojiska) a zvyšujú `revision`. Tabuľka (nie switch): nová udalosť =
+ * nový riadok. `MoneyChanged` tu nie je — hotovosť je v snapshote sama. Poloha vozidla a kamióna tu nie je: mení sa
+ * každý tick bez udalosti, preto sa vozidlá a kamióny (ako lode a žeriavy) skladajú pri každom novom snapshote.
  */
 export const REVISION_EVENTS: ReadonlySet<SimEventType> = new Set<SimEventType>([
   'ModulePlaced',
@@ -44,6 +45,10 @@ export const REVISION_EVENTS: ReadonlySet<SimEventType> = new Set<SimEventType>(
   'JobCancelled',
   'NoStorageAvailable',
   'RampOperationalChanged',
+  'TruckSpawned',
+  'TruckStateChanged',
+  'TruckExited',
+  'NoWaitingBay',
 ]);
 
 /**
@@ -52,10 +57,11 @@ export const REVISION_EVENTS: ReadonlySet<SimEventType> = new Set<SimEventType>(
  * referencie na štruktúry sveta (žiadne kopírovanie); ich obsah mení `RoadChanged` (→ `revision`), na reakciu
  * v renderi slúži aj `onEvents`.
  *
- * `modules`, `cranes`, `ships` a `vehicles` sú render view-modely (`@render/view-models`); pole modulov má stabilnú
- * referenciu, kým sa nezmení `revision` (žeriavy, lode a vozidlá sa skladajú pri každom novom snapshote). Výnimka: kým
- * svet má bránu alebo stojisko kamiónov, ich VM sa mení bez udalosti, takže pole modulov je nové s každým snapshotom
- * (VM ostatných modulov ostávajú tie isté objekty; `EntitiesVMBuilder`).
+ * `modules`, `cranes`, `ships`, `vehicles` a `trucks` sú render view-modely (`@render/view-models`); pole modulov má
+ * stabilnú referenciu, kým sa nezmení `revision` (žeriavy, lode, vozidlá a kamióny sa skladajú pri každom novom
+ * snapshote). Výnimka: VM brány a stojiska kamiónov sa môže zmeniť aj bez udalosti (závora po prestavbe ciest), preto sa
+ * pri každom snapshote porovná so živým modulom a pole modulov je nové len pri skutočnej zmene ich hodnôt
+ * (`EntitiesVMBuilder`; VM ostatných modulov ostávajú tie isté objekty).
  */
 export interface WorldSnapshot {
   /** Počet dokončených tickov. */
@@ -87,6 +93,12 @@ export interface WorldSnapshot {
   readonly ships: readonly ShipVM[];
   /** Vozidlá vzostupne podľa id; `prevX/prevY/prevHeading` = pózy pred posledným tickom. */
   readonly vehicles: readonly VehicleVM[];
+  /**
+   * Kamióny vzostupne podľa id; `prevX/prevY/prevHeading` = pózy pred posledným tickom. V stave `waiting` stoja v strede
+   * stojiska a v `loading` v strede docku (nie na bunke cesty, kde ich vedie sim); pri skoku do/zo stojiska a docku
+   * je `prev = curr`.
+   */
+  readonly trucks: readonly TruckVM[];
 }
 
 /** Zmeniteľná predchádzajúca poloha lode (bridge ju prepisuje pred každým tickom bez alokácie). */
@@ -120,6 +132,8 @@ export class SimBridge implements FrameEventSink {
   private readonly prevShipPositions = new Map<EntityId, MutableShipPosition>();
   /** Póza vozidiel pred posledným tickom (interpolácia + pruh v zákrute); vozidlá bez záznamu majú `prev = curr`. */
   private readonly prevVehiclePoses = new Map<EntityId, MutableVehiclePose>();
+  /** Prezentovaná póza kamiónov (aj stav FSM) pred posledným tickom; kamióny bez záznamu majú `prev = curr`. */
+  private readonly prevTruckPoses = new Map<EntityId, MutableTruckPose>();
   /** Posledný snapshot, o ktorom sa odberatelia dozvedeli (alebo počiatočný stav pri vzniku bridge). */
   private notified: WorldSnapshot;
   private readonly changeListeners = new Set<Registration<() => void>>();
@@ -164,7 +178,7 @@ export class SimBridge implements FrameEventSink {
     ) {
       return cached;
     }
-    const entities = this.entityBuilder.build(this.world, this.revisionCounter, this.prevShipPositions, this.prevVehiclePoses);
+    const entities = this.entityBuilder.build(this.world, this.revisionCounter, this.prevShipPositions, this.prevVehiclePoses, this.prevTruckPoses);
     const next: WorldSnapshot = Object.freeze({
       tick: clock.tick,
       speed: clock.speed,
@@ -180,6 +194,7 @@ export class SimBridge implements FrameEventSink {
       cranes: entities.cranes,
       ships: entities.ships,
       vehicles: entities.vehicles,
+      trucks: entities.trucks,
     });
     this.current = next;
     this.currentEntities = entities;
@@ -187,7 +202,7 @@ export class SimBridge implements FrameEventSink {
   }
 
   /**
-   * Entity pre render (`WorldRenderer.syncEntities`) a `window.__sim.entities()`: moduly, žeriavy, lode a vozidlá
+   * Entity pre render (`WorldRenderer.syncEntities`) a `window.__sim.entities()`: moduly, žeriavy, lode, vozidlá a kamióny
    * aktuálneho snapshotu. Referencia je stabilná, kým sa snapshot nezmení. Nezahŕňa `grid`, takže sa dá serializovať.
    */
   entities(): SimEntitiesVM {
@@ -198,12 +213,14 @@ export class SimBridge implements FrameEventSink {
   }
 
   /**
-   * Volá `GameLoop` tesne pred každým `world.tick()`: zapamätá si polohu lodí a pózu vozidiel (poloha + kurz), ktorá sa
-   * po ticku stane `prevX/prevY` (`prevHeading`) — sim predchádzajúcu polohu nevedie. Zaniknuté lode a predané vozidlá
-   * sa zabudnú; nová loď / nové vozidlo záznam dostane až pred prvým tickom, dovtedy má `prev = curr`.
+   * Volá `GameLoop` tesne pred každým `world.tick()`: zapamätá si polohu lodí a pózu vozidiel a kamiónov (poloha + kurz),
+   * ktorá sa po ticku stane `prevX/prevY` (`prevHeading`) — sim predchádzajúcu polohu nevedie. Zaniknuté lode, predané
+   * vozidlá a kamióny, ktoré odišli z mapy, sa zabudnú; nová loď / vozidlo / kamión záznam dostane až pred prvým tickom,
+   * dovtedy má `prev = curr`.
    */
   beforeTick(): void {
     this.rememberVehiclePoses();
+    this.rememberTruckPoses();
     const { ships } = this.world;
     for (const id of this.prevShipPositions.keys()) {
       if (!ships.has(id)) this.prevShipPositions.delete(id);
@@ -233,6 +250,25 @@ export class SimBridge implements FrameEventSink {
         known.y = vehicle.y;
         known.heading = vehicle.heading;
       }
+    }
+  }
+
+  /**
+   * Pózy kamiónov: prezentovaná poloha (v `waiting` / `loading` stred stojiska / docku) a kurz spolu so stavom FSM —
+   * z porovnania stavov pred a po ticku `truckVMs` pozná skok do/zo stojiska a docku (vtedy `prev = curr`).
+   */
+  private rememberTruckPoses(): void {
+    const { trucks } = this.world;
+    for (const id of this.prevTruckPoses.keys()) {
+      if (!trucks.has(id)) this.prevTruckPoses.delete(id);
+    }
+    for (const truck of trucks.values()) {
+      let known = this.prevTruckPoses.get(truck.id);
+      if (known === undefined) {
+        known = { x: 0, y: 0, heading: 0, state: truck.state };
+        this.prevTruckPoses.set(truck.id, known);
+      }
+      writeTruckPose(this.world, truck, known);
     }
   }
 

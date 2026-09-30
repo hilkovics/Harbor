@@ -8,6 +8,13 @@ import type { World } from '@sim/world';
 import type { SimEntitiesVM } from './entities-vm';
 import type { SimBridge } from './sim-bridge';
 
+/** Počty kamiónov podľa stavu FSM (`RenderedCounts.truckStates`); stav bez kamiónov kľúč nemá. */
+export function truckStateCounts(trucks: readonly { readonly state: string }[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const truck of trucks) counts[truck.state] = (counts[truck.state] ?? 0) + 1;
+  return counts;
+}
+
 /**
  * Čo renderer práve kreslí (`window.__sim.rendered()`): počty views (e2e overí, že `syncEntities` naozaj vytvorilo
  * views) a stav vrstvy stavby (ghost, obrys výberu).
@@ -18,6 +25,13 @@ export interface RenderedCounts {
   readonly ships: number;
   /** Vozidlá (`VehicleView`, F3). */
   readonly vehicles: number;
+  /** Kamióny (`TruckView`, F4). */
+  readonly trucks: number;
+  /**
+   * Počty kamiónov podľa stavu FSM (`to_gate`, `gate_queue`, `waiting`, `loading` …) v entitách, ktoré renderer dostal
+   * naposledy; stav bez kamiónov kľúč nemá. E2E podľa nich počká na kamión vo fronte, v stojisku či v docku.
+   */
+  readonly truckStates: Readonly<Record<string, number>>;
   /** Bunky ghostu stavby (cesta aj modul), ktoré sú práve zobrazené. */
   readonly ghostCells: number;
   /** Značky konektorov ghostu modulu, ktoré sú práve zobrazené. */
@@ -32,8 +46,8 @@ export interface DevHook {
   readonly world: World;
   readonly bridge: SimBridge;
   /**
-   * Aktuálne render view-modely (moduly, žeriavy, lode, vozidlá) — presne to, čo dostáva `WorldRenderer.syncEntities`.
-   * Bez `grid`, takže sa dá vrátiť z `page.evaluate`.
+   * Aktuálne render view-modely (moduly, žeriavy, lode, vozidlá, kamióny so stavom FSM) — presne to, čo dostáva
+   * `WorldRenderer.syncEntities`. Bez `grid`, takže sa dá vrátiť z `page.evaluate`.
    */
   readonly entities: () => SimEntitiesVM;
   /**
@@ -47,7 +61,7 @@ export interface DevHook {
    * Doplní bootstrap z kamery (T01-11).
    */
   cellToScreen?: (cellX: number, cellY: number) => { x: number; y: number };
-  /** Počet views vo vrstvách rendereru (moduly, žeriavy, lode) a stav ghostu; doplní bootstrap z rendereru. */
+  /** Počet views vo vrstvách rendereru (moduly, žeriavy, lode, vozidlá, kamióny) a stav ghostu; doplní bootstrap z rendereru. */
   rendered?: () => RenderedCounts;
   /**
    * Ghost modulu, ktorý ovládanie práve odovzdalo rendereru (`valid`, konektory po rotácii), alebo `null`, keď žiadny

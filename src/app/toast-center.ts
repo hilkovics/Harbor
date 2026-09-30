@@ -10,6 +10,8 @@
  * - `RampOperationalChanged` na `false` → „Rampa neprevádzková“ (warning) s dôvodom (`RAMP_INOPERATIVE_TOAST_REASON`) a
  *   akciou „Ukázať“ (T04-08). Návrat do prevádzky toast nevytvára: rampa postavená ako posledná v hotovom reťazci by ním
  *   zbytočne zahltila panel.
+ * - `NoWaitingBay` → „Chýba čakacia plocha“ (k rampe nevedie trasa cez stojisko), inak „Stojisko je plné“ (warning) s akciou
+ *   „Ukázať“ na rampu (T04-08). Kľúč `no_waiting_bay:<rampId>`; sim ju hlási najviac raz za hernú hodinu.
  *
  * Pravidlá zásobníka:
  * - Rovnaký `key` (napr. `no_storage:1`) sa naraz nezobrazí dvakrát — opakovaná udalosť pre to isté kotvisko nezaplaví panel.
@@ -19,7 +21,7 @@
 import type { EntityId } from '@sim/core';
 import type { CargoCategory } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
-import type { RampInoperativeReason } from '@sim/modules';
+import { LoadingRamp, type RampInoperativeReason } from '@sim/modules';
 import type { World } from '@sim/world';
 import { moduleCode } from '@ui/module-inspector';
 import { MAX_TOASTS, type ToastData, type ToastId, type ToastTone } from '@ui/toasts';
@@ -56,6 +58,8 @@ export const TOAST_SHOW_ON_MAP_LABEL = 'Ukázať';
 export const NO_STORAGE_TITLE = 'Chýba sklad';
 export const DISCONNECTED_TOAST_TITLE = 'Nepripojené';
 export const RAMP_INOPERATIVE_TOAST_TITLE = 'Rampa neprevádzková';
+export const NO_WAITING_AREA_TITLE = 'Chýba čakacia plocha';
+export const WAITING_AREA_FULL_TITLE = 'Stojisko je plné';
 
 /** Dôvod neprevádzkovosti rampy (kód zo simu) → krátky text do oznámenia (úplná mapa: nový dôvod v sime = chyba kompilácie). */
 export const RAMP_INOPERATIVE_TOAST_REASON: Readonly<Record<RampInoperativeReason, string>> = Object.freeze({
@@ -103,6 +107,22 @@ export function toastSpecsForEvents(world: World, events: readonly SimEvent[]): 
         icon: 'ic_warning',
         title: RAMP_INOPERATIVE_TOAST_TITLE,
         text: reason === undefined ? moduleCode(ramp.kind, ramp.id) : `${moduleCode(ramp.kind, ramp.id)} — ${reason}`,
+        focus: { x: ramp.origin.x + ramp.size.w / 2, y: ramp.origin.y + ramp.size.h / 2 },
+      });
+    } else if (event.type === 'NoWaitingBay') {
+      const ramp = world.modules.get(event.rampId);
+      if (!(ramp instanceof LoadingRamp)) continue;
+      const code = moduleCode(ramp.kind, ramp.id);
+      // Bez trasy cez stojisko chýba čakacia plocha na ceste k rampe; s trasou sú všetky jej stojiská plné.
+      const missing = world.landsideRoutes(ramp).length === 0;
+      specs.push({
+        key: `no_waiting_bay:${String(ramp.id)}`,
+        tone: 'warning',
+        icon: 'ic_warning',
+        title: missing ? NO_WAITING_AREA_TITLE : WAITING_AREA_FULL_TITLE,
+        text: missing
+          ? `${code} — k rampe nevedie trasa cez čakaciu plochu, kamión sa nemá kde zastaviť`
+          : `${code} — všetky stojiská sú obsadené, ďalší kamión vznikne, keď sa jedno uvoľní`,
         focus: { x: ramp.origin.x + ramp.size.w / 2, y: ramp.origin.y + ramp.size.h / 2 },
       });
     }

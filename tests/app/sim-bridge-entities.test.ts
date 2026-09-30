@@ -29,6 +29,10 @@ const REVISION_SAMPLES: readonly SimEvent[] = [
   { type: 'NoStorageAvailable', berthId: SAMPLE_ID, cargoTypeId: 'container_teu' },
   { type: 'JobCancelled', jobId: SAMPLE_ID, reason: 'ramp_inoperative' },
   { type: 'RampOperationalChanged', rampId: SAMPLE_ID, operational: false, reason: 'no_gate' },
+  { type: 'TruckSpawned', truckId: SAMPLE_ID, rampId: SAMPLE_ID, dock: 0 },
+  { type: 'TruckStateChanged', truckId: SAMPLE_ID, from: 'to_gate', to: 'gate_queue' },
+  { type: 'TruckExited', truckId: SAMPLE_ID, units: 1 },
+  { type: 'NoWaitingBay', rampId: SAMPLE_ID },
 ];
 
 /** Udalosti, ktoré štruktúru nemenia (čas a peniaze majú vlastné polia snapshotu). */
@@ -60,7 +64,7 @@ describe('WorldSnapshot v2: speeds a defs', () => {
 });
 
 describe('WorldSnapshot v2: revision', () => {
-  it('REVISION_EVENTS obsahuje presne udalosti z kariet T02-09, T03-10 a T04-08 a vzorky ich pokrývajú', () => {
+  it('REVISION_EVENTS obsahuje presne udalosti z kariet T02-09, T03-10 a T04-08 (vrátane Truck* a NoWaitingBay) a vzorky ich pokrývajú', () => {
     const expected: SimEventType[] = [
       'ModulePlaced',
       'ModuleRemoved',
@@ -81,6 +85,10 @@ describe('WorldSnapshot v2: revision', () => {
       'NoStorageAvailable',
       'JobCancelled',
       'RampOperationalChanged',
+      'TruckSpawned',
+      'TruckStateChanged',
+      'TruckExited',
+      'NoWaitingBay',
     ];
     expect([...REVISION_EVENTS].sort()).toEqual([...expected].sort());
     expect(REVISION_SAMPLES.map((event) => event.type).sort()).toEqual([...expected].sort());
@@ -269,7 +277,7 @@ describe('prevX/prevY lodí (interpolácia)', () => {
 });
 
 describe('SimBridge.entities()', () => {
-  it('vracia moduly, žeriavy, lode a vozidlá aktuálneho snapshotu (rovnaké polia), bez grid a parcels', () => {
+  it('vracia moduly, žeriavy, lode, vozidlá a kamióny aktuálneho snapshotu (rovnaké polia), bez grid a parcels', () => {
     const { bridge, loop } = createApp();
     spawnFeeder(bridge);
     loop.frame(loop.tickMs);
@@ -279,7 +287,8 @@ describe('SimBridge.entities()', () => {
     expect(entities.cranes).toBe(snapshot.cranes);
     expect(entities.ships).toBe(snapshot.ships);
     expect(entities.vehicles).toBe(snapshot.vehicles);
-    expect(Object.keys(entities).sort()).toEqual(['cranes', 'modules', 'ships', 'vehicles']);
+    expect(entities.trucks).toBe(snapshot.trucks);
+    expect(Object.keys(entities).sort()).toEqual(['cranes', 'modules', 'ships', 'trucks', 'vehicles']);
   });
 
   it('referencia je stabilná, kým sa snapshot nezmení; potom sa obnoví', () => {

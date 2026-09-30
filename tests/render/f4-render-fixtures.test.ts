@@ -14,15 +14,14 @@ import {
   RAMP_B,
   WAITING_AREA,
   createF4Grid,
-  dockCenter,
   gateVM,
   rampVM,
-  stallCenter,
   truckAt,
   truckInCell,
   waitingAreaVM,
 } from '@render/__demo__/f4-render.fixtures';
 import { moduleSprite } from '@render/entity-assets';
+import { dockCenter, stallCenter } from '@render/module-slots';
 import type { ModuleVM, TruckVM } from '@render/view-models';
 
 const map = loadBundledMap();

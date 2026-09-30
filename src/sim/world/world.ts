@@ -26,14 +26,14 @@ import type { LoadedMap } from '../grid/map-loader';
 import type { Parcel, ParcelOwnership } from '../grid/parcel';
 import { BerthModule } from '../modules/berth-module';
 import { computeBerthGroups, type BerthGroup } from '../modules/berth-group';
-import { CRANE_STATE_TRAITS, CraneModule } from '../modules/crane-module';
+import { CraneModule } from '../modules/crane-module';
 import type { Module } from '../modules/module';
 import { ModuleError } from '../modules/module-error';
 import { moduleRegistry } from '../modules/module-registry';
 import type { Ship } from '../ships/ship';
 import { StatResolver } from '../tech/stat-resolver';
-import { MODULE_CARGO_HOLDER_KINDS } from './cargo-holders';
 import { migrateWorldState } from './migrate';
+import { PLACEMENT_RULE_ERROR, attachesToHost, findPlacementViolations, findRemovalViolations } from './module-rules';
 import { WorldInvariantError, findWorldViolation } from './world-invariants';
 import { restoreEntities } from './world-restore';
 import {
@@ -72,10 +72,6 @@ function copyParcels(map: LoadedMap): Map<string, Parcel> {
 }
 
 const NO_GROUPS: readonly BerthGroup[] = Object.freeze([]);
-
-function cellLabel(x: number, y: number): string {
-  return `(${String(x)}, ${String(y)})`;
-}
 
 export class World {
   readonly defs: DefRegistry;
@@ -210,24 +206,27 @@ export class World {
   }
 
   /**
-   * Pridá hotový modul do sveta: zapíše `cell.moduleId` (žeriav: pripojí sa k berthu, bunky ostávajú berthu)
-   * a prepočíta `berthGroups`. Štrukturálne chyby (`ModuleError`, svet sa nezmení): id už vo svete alebo nepridelené
-   * alokátorom (`duplicate_id`, `invalid_input`), footprint mimo mapy (`out_of_bounds`), bunka obsadená (`occupied`)
-   * alebo s cestou (`road`); žeriav: nestojí celý na jednom berthe (`no_berth`), iná rotácia (`rotation_mismatch`),
-   * berth má `maxCranes` (`max_cranes`), prekryv s iným žeriavom (`crane_overlap`).
+   * Pridá hotový modul do sveta: zapíše `cell.moduleId` (pripájaný modul — žeriav — sa pripojí k berthu a bunky
+   * ostávajú berthu) a prepočíta `berthGroups`. Štrukturálne chyby (`ModuleError`, svet sa nezmení): id už vo svete
+   * alebo nepridelené alokátorom (`duplicate_id`, `invalid_input`) a prvé porušenie štrukturálnych pravidiel
+   * umiestnenia z `findPlacementViolations` (rovnaká funkcia ako `PlaceModule.validate`): footprint mimo mapy
+   * (`out_of_bounds`), bunka obsadená (`occupied`) alebo s cestou (`road`); žeriav nestojí celý na jednom berthe
+   * (`no_berth`), iná rotácia (`rotation_mismatch`), berth má `maxCranes` (`max_cranes`), prekryv s iným žeriavom
+   * (`crane_overlap`). Pravidlá hráča (terén, parcela, voda, cena) tu nie sú — tie overuje príkaz vopred.
    */
   addModule(module: Module): void {
     if (this.moduleMap.has(module.id)) throw new ModuleError('duplicate_id', `World.addModule: modul #${String(module.id)} už vo svete je`);
     if (module.id >= this.ids.getState().nextId) {
       throw new ModuleError('invalid_input', `World.addModule: id ${String(module.id)} nepridelil alokátor sveta (nextId ${String(this.ids.getState().nextId)})`);
     }
-    if (!this.grid.rectInBounds({ x: module.origin.x, y: module.origin.y, w: module.size.w, h: module.size.h })) {
-      throw new ModuleError('out_of_bounds', `World.addModule: ${module.label} presahuje mapu`);
-    }
-    if (module instanceof CraneModule) {
-      this.mountCrane(module);
+    const spec = { x: module.origin.x, y: module.origin.y, rotation: module.rotation };
+    const [violation] = findPlacementViolations(this, module.def, spec, 'structural');
+    const code = violation === undefined ? null : PLACEMENT_RULE_ERROR[violation.rule];
+    if (violation !== undefined && code !== null) throw new ModuleError(code, `World.addModule: ${module.label}: ${violation.detail}`);
+    if (attachesToHost(module.def)) {
+      this.hostOf(module).attachCrane(module.id);
     } else {
-      this.claimCells(module);
+      for (const { x, y } of module.cells) this.grid.at(x, y).moduleId = module.id;
     }
     this.moduleMap.set(module.id, module);
     this.refreshBerthGroups();
@@ -235,17 +234,18 @@ export class World {
 
   /**
    * Odstráni modul a vráti ho: uvoľní bunky (žeriav: odpojí sa od berthu) a prepočíta `berthGroups`. Príkaz
-   * (`RemoveModule`) validuje dôvody vopred; tu sú poistky konzistencie (`ModuleError`, svet sa nezmení):
-   * neznáme id (`unknown_module`), berth so žeriavmi (`has_cranes`) alebo s loďou (`ship_docked`), žeriav mimo
-   * `idle`/`blocked` (`busy`), modul s nákladom alebo rezervovaným slotom (`has_cargo`).
+   * (`RemoveModule`) validuje dôvody vopred rovnakou funkciou `findRemovalViolations`; tu je poistka konzistencie
+   * (`ModuleError` s kódom prvého porušenia, svet sa nezmení): neznáme id (`unknown_module`), modul s nákladom alebo
+   * rezervovaným slotom (`has_cargo`), berth so žeriavmi (`has_cranes`) alebo s loďou (`ship_docked`), žeriav mimo
+   * `idle`/`blocked` (`busy`).
    */
   removeModule(moduleId: EntityId): Module {
     const module = this.moduleMap.get(moduleId);
     if (module === undefined) throw new ModuleError('unknown_module', `World.removeModule: modul #${String(moduleId)} neexistuje`);
-    this.assertRemovable(module);
-    if (module instanceof CraneModule) {
-      const berth = this.moduleMap.get(module.berthId);
-      if (berth instanceof BerthModule) berth.detachCrane(module.id);
+    const [violation] = findRemovalViolations(this, module);
+    if (violation !== undefined) throw new ModuleError(violation.rule, `World.removeModule: ${violation.detail}`);
+    if (attachesToHost(module.def)) {
+      this.hostOf(module).detachCrane(module.id);
     } else {
       for (const { x, y } of module.cells) this.grid.at(x, y).moduleId = null;
     }
@@ -381,70 +381,19 @@ export class World {
   // Vnútro
   // -------------------------------------------------------------------------------------------------------
 
-  /** Modul vlastní svoje bunky: všetky voľné a bez cesty; potom zapíše `moduleId`. */
-  private claimCells(module: Module): void {
-    for (const { x, y } of module.cells) {
-      const cell = this.grid.at(x, y);
-      if (cell.moduleId !== null) {
-        throw new ModuleError('occupied', `World.addModule: ${module.label}: bunka ${cellLabel(x, y)} patrí modulu #${String(cell.moduleId)}`);
-      }
-      if (cell.road !== 'none') throw new ModuleError('road', `World.addModule: ${module.label}: na bunke ${cellLabel(x, y)} je '${cell.road}'`);
+  /**
+   * Berth, na ktorom stojí pripájaný modul (žeriav, ADR-014): len `CraneModule` s berthom pod ľavým horným rohom.
+   * Iný modul s `mustAttachTo` alebo chýbajúci berth → `ModuleError` (`invalid_input` / `no_berth`).
+   */
+  private hostOf(module: Module): BerthModule {
+    if (!(module instanceof CraneModule)) {
+      throw new ModuleError('invalid_input', `World: ${module.label} má placement.mustAttachTo, ale nie je žeriav (craneIds eviduje len žeriavy)`);
     }
-    for (const { x, y } of module.cells) this.grid.at(x, y).moduleId = module.id;
-  }
-
-  /** Žeriav stojí celý na jednom berthe s rovnakou rotáciou, bez prekryvu, najviac `maxCranes` (rozhodnutie 3). */
-  private mountCrane(crane: CraneModule): void {
-    const berth = this.moduleMap.get(crane.berthId);
+    const berth = this.moduleMap.get(module.berthId);
     if (!(berth instanceof BerthModule)) {
-      throw new ModuleError('no_berth', `World.addModule: ${crane.label} stojí na #${String(crane.berthId)}, ktorý nie je berth`);
+      throw new ModuleError('no_berth', `World: ${module.label} stojí na #${String(module.berthId)}, ktorý nie je berth`);
     }
-    const outside = crane.cells.find(({ x, y }) => this.grid.at(x, y).moduleId !== berth.id);
-    if (outside !== undefined) {
-      throw new ModuleError('no_berth', `World.addModule: ${crane.label}: bunka ${cellLabel(outside.x, outside.y)} nepatrí berthu ${berth.label}`);
-    }
-    if (crane.rotation !== berth.rotation) {
-      throw new ModuleError(
-        'rotation_mismatch',
-        `World.addModule: ${crane.label} má rotáciu ${String(crane.rotation)}, berth ${berth.label} ${String(berth.rotation)}`,
-      );
-    }
-    if (berth.craneIds.length >= berth.params.maxCranes) {
-      throw new ModuleError('max_cranes', `World.addModule: ${berth.label} už má ${String(berth.craneIds.length)} žeriavov (maxCranes)`);
-    }
-    for (const otherId of berth.craneIds) {
-      const other = this.moduleMap.get(otherId);
-      const overlap = other === undefined ? undefined : crane.cells.find(({ x, y }) => other.containsCell(x, y));
-      if (overlap !== undefined && other !== undefined) {
-        throw new ModuleError('crane_overlap', `World.addModule: ${crane.label} sa prekrýva s ${other.label} na ${cellLabel(overlap.x, overlap.y)}`);
-      }
-    }
-    berth.attachCrane(crane.id);
-  }
-
-  /** Poistky pred odstránením (viď `removeModule`). */
-  private assertRemovable(module: Module): void {
-    const heldKind = MODULE_CARGO_HOLDER_KINDS.find((kind) => this.cargo.countAt(kind, module.id) > 0);
-    if (heldKind !== undefined) {
-      throw new ModuleError('has_cargo', `World.removeModule: ${module.label} drží náklad (${heldKind})`);
-    }
-    if (module instanceof BerthModule) {
-      if (module.craneIds.length > 0) {
-        throw new ModuleError('has_cranes', `World.removeModule: na ${module.label} stoja žeriavy [${module.craneIds.join(', ')}]`);
-      }
-      if (module.dockedShipId !== null) {
-        throw new ModuleError('ship_docked', `World.removeModule: ${module.label} má loď #${String(module.dockedShipId)}`);
-      }
-      if (module.apron.usedCount > 0 || module.apron.reservedCount > 0) {
-        throw new ModuleError('has_cargo', `World.removeModule: apron ${module.label} má obsadené alebo rezervované sloty`);
-      }
-    }
-    if (module instanceof CraneModule) {
-      const { holdsUnit, hasReservation } = CRANE_STATE_TRAITS[module.state];
-      if (holdsUnit || hasReservation || module.heldUnitId !== null || module.reservedSlot !== null) {
-        throw new ModuleError('busy', `World.removeModule: ${module.label} je uprostred cyklu (${module.state})`);
-      }
-    }
+    return berth;
   }
 
   /** Prepočet skupín kotvísk a `groupId` každého berthu. */

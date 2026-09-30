@@ -6,15 +6,17 @@
  * - `lengthCells` = dĺžka hrany pri vode (= `def.footprint.w`, dlhá hrana pri rotácii 0) — príspevok do `BerthGroup`.
  * - `depthClass` = efektívna hĺbka `min(params.depthClass, min(cell.depthClass) footprintu)` (rozhodnutie 4):
  *   ponor lode obmedzuje typ kotviska aj mapa.
+ * - `frontWaterBand` = pás `params.frontWaterCells` riadkov vody pred hranou pri vode (`frontBandCells`), kde kotví
+ *   loď; `PlaceModule` ho overuje (ADR-015) a ShipSystem (T02-05) z neho odvodí polohu lode.
  */
 import type { EntityId } from '../core/entity-id';
 import { berthParams } from '../defs/module-def';
 import type { BerthParams, Side } from '../defs/types';
-import type { DepthClass, Grid } from '../grid/grid';
+import type { CellCoord, DepthClass, Grid } from '../grid/grid';
 import { ApronBuffer } from './apron-buffer';
 import { Module, type ModuleInit } from './module';
 import { ModuleError } from './module-error';
-import { waterSideOf } from './module-geometry';
+import { frontBandCells, waterSideOf } from './module-geometry';
 
 /** Efektívna hĺbka kotviska: menšia z hĺbky typu kotviska a najplytšej bunky footprintu (rozhodnutie 4). */
 export function effectiveBerthDepth(params: BerthParams, cells: readonly { readonly x: number; readonly y: number }[], grid: Grid): DepthClass {
@@ -33,6 +35,8 @@ export class BerthModule extends Module {
   readonly lengthCells: number;
   /** Efektívna hĺbka (rozhodnutie 4); 0 len pri berthe mimo nábrežia (neplatné umiestnenie). */
   readonly depthClass: DepthClass;
+  /** Pás vody pred hranou pri vode (`frontBandCells`, hĺbka `params.frontWaterCells`); bunky môžu byť mimo mapy len pri neplatnom umiestnení. */
+  readonly frontWaterBand: readonly CellCoord[];
   readonly apron: ApronBuffer;
   /** Loď, ktorá na kotvisku kotví alebo je naň pridelená (`berthing`); spravuje ShipSystem (T02-05). */
   dockedShipId: EntityId | null = null;
@@ -51,6 +55,7 @@ export class BerthModule extends Module {
     this.waterSide = waterSide;
     this.lengthCells = init.def.footprint.w;
     this.depthClass = effectiveBerthDepth(this.params, this.cells, init.grid);
+    this.frontWaterBand = frontBandCells(this.origin, this.size, waterSide, this.params.frontWaterCells);
     this.apron = new ApronBuffer(this.params.apronSlots);
   }
 

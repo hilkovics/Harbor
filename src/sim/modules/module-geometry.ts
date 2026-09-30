@@ -1,14 +1,15 @@
 /**
- * Geometria modulov (ARCHITECTURE §8 bod 7): footprint po rotácii a otáčanie strán. Čisté funkcie bez stavu —
- * rovnako ich používa `Module` (bunky), `PlaceModule.validate` (ghost, T02-04) aj výpočet `BerthGroup`.
+ * Geometria modulov (ARCHITECTURE §8 bod 7): footprint po rotácii, otáčanie strán, konektory vo svete, hrana
+ * modulu a pás vody pred ňou. Čisté funkcie bez stavu — rovnako ich používa `Module` (bunky), pravidlá
+ * umiestnenia (`PlaceModule.validate`, T02-04), výpočet `BerthGroup` aj ghost v UI.
  *
  * Konvencia (docs/tasks/phase-02.md): `x`, `y` = ľavý horný roh footprintu **po** rotácii; rotácia v smere
  * hodinových ručičiek (`rotateLocalCell`), preto strana `n` sa pri 90° stane `e`, pri 180° `s`, pri 270° `w`.
  */
-import type { ModuleDef, ModulePlacementDef, Side } from '../defs/types';
+import type { ConnectorType, ModuleDef, ModulePlacementDef, Side } from '../defs/types';
 import { SIDES } from '../defs/types';
 import type { CellCoord } from '../grid/grid';
-import { ROTATIONS, rotateFootprint, type Rotation } from '../grid/rotation';
+import { ROTATIONS, rotateFootprint, rotateLocalCell, type Rotation } from '../grid/rotation';
 
 /** Rozmery a bunky footprintu vo svete. */
 export interface ModuleFootprint {
@@ -55,4 +56,71 @@ export function footprintOf(def: Readonly<ModuleDef>, x: number, y: number, rota
     for (let cx = x; cx < x + size.w; cx++) cells.push(Object.freeze({ x: cx, y: cy }));
   }
   return { size: Object.freeze(size), cells: Object.freeze(cells) };
+}
+
+/** Konektor vo svete: bunka footprintu po rotácii a strana, ktorou sa do nej vchádza (po rotácii). */
+export interface PlacedConnector {
+  readonly x: number;
+  readonly y: number;
+  readonly side: Side;
+  readonly type: ConnectorType;
+}
+
+/**
+ * Konektory defu pre modul s ľavým horným rohom (po rotácii) na `(x, y)`: lokálna bunka cez `rotateLocalCell`
+ * + `(x, y)`, strana cez `rotateSide` (§8 bod 7). Poradie = poradie v defe. Neplatná rotácia → `RangeError`.
+ */
+export function connectorsOf(def: Readonly<ModuleDef>, x: number, y: number, rotation: Rotation): readonly PlacedConnector[] {
+  const { w, h } = def.footprint;
+  return Object.freeze(
+    def.connectors.map((connector): PlacedConnector => {
+      const cell = rotateLocalCell(connector.x, connector.y, w, h, rotation);
+      return Object.freeze({ x: x + cell.x, y: y + cell.y, side: rotateSide(connector.side, rotation), type: connector.type });
+    }),
+  );
+}
+
+/** Krok o jednu bunku von z modulu cez danú stranu (sever = menšie `y`, rovnako ako `DIRECTIONS_4`). */
+export const SIDE_STEPS: { readonly [S in Side]: { readonly dx: number; readonly dy: number } } = Object.freeze({
+  n: Object.freeze({ dx: 0, dy: -1 }),
+  e: Object.freeze({ dx: 1, dy: 0 }),
+  s: Object.freeze({ dx: 0, dy: 1 }),
+  w: Object.freeze({ dx: -1, dy: 0 }),
+});
+
+type Size = { readonly w: number; readonly h: number };
+
+/** Prvá bunka hrany a krok pozdĺž nej (tabuľka podľa strany, nie switch); dĺžka hrany je `w` pri n/s, `h` pri e/w. */
+const EDGE_LINES: {
+  readonly [S in Side]: (origin: CellCoord, size: Size) => { readonly start: CellCoord; readonly dx: number; readonly dy: number; readonly length: number };
+} = {
+  n: (origin, size) => ({ start: { x: origin.x, y: origin.y }, dx: 1, dy: 0, length: size.w }),
+  e: (origin, size) => ({ start: { x: origin.x + size.w - 1, y: origin.y }, dx: 0, dy: 1, length: size.h }),
+  s: (origin, size) => ({ start: { x: origin.x, y: origin.y + size.h - 1 }, dx: 1, dy: 0, length: size.w }),
+  w: (origin, size) => ({ start: { x: origin.x, y: origin.y }, dx: 0, dy: 1, length: size.h }),
+};
+
+/**
+ * Bunky hrany footprintu (`origin` = ľavý horný roh, `size` po rotácii) na strane `side`, stúpajúco po osi hrany
+ * (`x` pri n/s, `y` pri e/w). Pri kotvisku je to dlhá hrana pri vode (`waterSide`).
+ */
+export function edgeCells(origin: CellCoord, size: Size, side: Side): readonly CellCoord[] {
+  const { start, dx, dy, length } = EDGE_LINES[side](origin, size);
+  return Object.freeze(Array.from({ length }, (_, i) => Object.freeze({ x: start.x + i * dx, y: start.y + i * dy })));
+}
+
+/**
+ * Pás `depth` riadkov buniek pred hranou `side` (pri kotvisku: voda, kde kotví loď, `params.frontWaterCells`).
+ * Poradie: vzdialenosť `d = 1 … depth` od hrany, v rámci nej ako `edgeCells`. Bunky môžu ležať mimo mapy —
+ * hranice overuje volajúci.
+ */
+export function frontBandCells(origin: CellCoord, size: Size, side: Side, depth: number): readonly CellCoord[] {
+  if (!Number.isSafeInteger(depth) || depth < 0) throw new RangeError(`frontBandCells: hĺbka pásu musí byť celé číslo ≥ 0, dostal ${String(depth)}`);
+  const { dx, dy } = SIDE_STEPS[side];
+  const edge = edgeCells(origin, size, side);
+  const band: CellCoord[] = [];
+  for (let d = 1; d <= depth; d++) {
+    for (const cell of edge) band.push(Object.freeze({ x: cell.x + d * dx, y: cell.y + d * dy }));
+  }
+  return Object.freeze(band);
 }

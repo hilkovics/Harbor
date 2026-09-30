@@ -17,3 +17,21 @@ export { CARGO_HOLDER_SOURCES, MODULE_CARGO_HOLDER_KINDS } from './cargo-holders
 export type { CargoHolderWorld } from './cargo-holders';
 // Parcela patrí mriežke/mape (src/sim/grid/parcel.ts); tu len re-export pre pohodlie konzumentov `World`.
 export type { Parcel, ParcelOwnership } from '../grid/parcel';
+// Pravidlá umiestnenia/odstránenia modulov (§8, ADR-015) — zdieľajú ich príkazy, World.create (starter) aj World.addModule/removeModule.
+export {
+  PLACEMENT_RULES,
+  PLACEMENT_RULE_ERROR,
+  REMOVAL_RULES,
+  attachesToHost,
+  findPlacementViolations,
+  findRemovalViolations,
+} from './module-rules';
+export type {
+  PlacementRule,
+  PlacementScope,
+  PlacementSpec,
+  PlacementWorld,
+  RemovalRule,
+  RemovalWorld,
+  RuleViolation,
+} from './module-rules';

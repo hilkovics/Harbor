@@ -4,11 +4,12 @@ import cargoTypesJson from '@data/defs/cargo_types.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
 import modulesJson from '@data/defs/modules.json';
+import harbor01Json from '@data/maps/harbor_01.json';
 import shipsJson from '@data/defs/ships.json';
 import timeJson from '@data/defs/time.json';
 import type { Command, SerializedCommand, ValidationReason, ValidationResult } from '@sim/commands';
 import { DefRegistry, loadBundledDefs } from '@sim/defs';
-import { loadBundledMap, type CellCoord, type Grid, type LoadedMap } from '@sim/grid';
+import { loadBundledMap, loadMap, parseMapDef, type CellCoord, type Grid, type LoadedMap } from '@sim/grid';
 import type { World, WorldState } from '@sim/world';
 
 export const DEFS: DefRegistry = loadBundledDefs();
@@ -25,6 +26,11 @@ export const RAW_DEFS = {
 export const MAP: LoadedMap = loadBundledMap();
 /** Mriežka počiatočného stavu mapy len na čítanie (hľadanie buniek, indexy); svety majú vlastné kópie, nezapisovať. */
 export const MAP_GRID: Grid = MAP.createGrid();
+/**
+ * harbor_01 bez `starter.modules` (T02-04): nový svet nemá Root modul, takže testy modulov (T02-03) a pravidiel
+ * umiestnenia stavajú na (40, 14) samy. Terén, parcely, cesty a id mapy sú rovnaké ako `MAP`.
+ */
+export const BARE_MAP: LoadedMap = loadMap(parseMapDef({ ...harbor01Json, starter: { ...harbor01Json.starter, modules: [] } }));
 export const SEED = 20260929;
 
 /** Defy s upraveným `time.json` (napr. `speeds` bez 1). */

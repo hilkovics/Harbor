@@ -55,6 +55,14 @@ async function setSpeed(page: Page, speed: number): Promise<void> {
   await expect(button).toHaveAttribute('aria-pressed', 'true');
 }
 
+/** Ladiaca loď (feeder, 4 TEU) cez `SpawnShipDebug`; DEV tlačidlo v UI už nie je (kontrakty, T05-07). */
+async function spawnDevShip(page: Page): Promise<void> {
+  const result = await page.evaluate(() =>
+    window.__sim!.dispatchJSON({ type: 'SpawnShipDebug', shipClassId: 'feeder', cargoTypeId: 'container_teu', units: 4 }),
+  );
+  expect(result.ok).toBe(true);
+}
+
 /** Dva vykreslené snímky za sebou: renderer stihol prekresliť stav sveta a UI. */
 async function settle(page: Page): Promise<void> {
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
@@ -143,9 +151,9 @@ test.describe('F2: loď, žeriav, apron (T02-12)', () => {
     // 3) HUD: rýchlosti zo snapshotu
     await expect(page.locator('[data-field="speed"] button')).toHaveCount(5);
 
-    // 4) DEV spawn + 4×: loď doplaví a zakotví (podmienka sa vyhodnotí v rAF stránky a pri zhode hneď spomalí hru na 1×,
+    // 4) SpawnShipDebug + 4×: loď doplaví a zakotví (podmienka sa vyhodnotí v rAF stránky a pri zhode hneď spomalí hru na 1×,
     // aby vykládka nepreletela medzi dvoma snímkami)
-    await page.getByRole('button', { name: 'Spawn feeder (DEV)' }).click();
+    await spawnDevShip(page);
     await setSpeed(page, 4);
     await page.waitForFunction(() => window.__sim!.entities().ships.length === 1);
     await expect.poll(() => page.evaluate(() => window.__sim!.rendered!().ships)).toBe(1);
@@ -307,7 +315,7 @@ test.describe('F2: loď, žeriav, apron (T02-12)', () => {
     const { errors } = await openGame(page);
 
     // loď zakotví a žeriav vykladá (hra sa v tom istom kroku pozastaví, aby bol stav stabilný)
-    await page.getByRole('button', { name: 'Spawn feeder (DEV)' }).click();
+    await spawnDevShip(page);
     await setSpeed(page, 4);
     await waitInPage(page, () => {
       const docked = window.__sim!.entities().ships[0]?.state === 'docked';

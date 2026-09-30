@@ -86,7 +86,8 @@ const entities = (page: Page) => page.evaluate(() => window.__sim!.entities());
 const rendered = (page: Page) => page.evaluate(() => window.__sim!.rendered!());
 const cashCents = (page: Page) => page.evaluate(() => window.__sim!.world.cashCents);
 const inspector = (page: Page): Locator => page.getByRole('complementary', { name: 'Inšpektor modulu' });
-const toasts = (page: Page): Locator => page.locator('.toasts .toast');
+/** Toasty okrem „Nové ponuky kontraktov“ (pool ponúk ich dopĺňa na štarte a pri každej uzávierke dňa; F5). */
+const toasts = (page: Page): Locator => page.locator('.toasts .toast').filter({ hasNotText: 'Nové ponuky kontraktov' });
 
 async function waitInPage(page: Page, condition: () => boolean): Promise<void> {
   await page.waitForFunction(condition, undefined, { timeout: WAIT_LIMIT_MS });

@@ -6,7 +6,9 @@
  *   World → udalosti → SimBridge.onEvents → WorldRenderer (RoadChanged) ; snapshot → useSimSnapshot → HUD, BuildBar
  *   World → SimBridge.entities() (EntitiesVM) → WorldRenderer.syncEntities(vm, alpha) každý frame (moduly, žeriavy, lode, vozidlá, kamióny)
  *   World → udalosti → ToastCenter → Toasts („Chýba sklad“, „Nepripojené“, „Rampa neprevádzková“, „Stojisko je plné“ … s akciou
- *   „Ukázať“ = centrovanie kamery)
+ *   „Ukázať“ = centrovanie kamery; kontrakty: nové ponuky, prijatie, výplata, penalizácie, zlyhanie, mesačný výkaz
+ *   s akciou „Zobraziť“ = otvorenie panelu kontraktov)
+ *   snapshot (kontrakty, XP, delta dňa, gameOver) → ContractsPanel, TopHUD, GameOverModal; „Nová hra“ → `onNewGame`
  *
  * Herný stav (World, GameLoop, Pixi) žije mimo Reactu — React je len vrstva nad mapou, takže StrictMode ani
  * opätovné vykreslenia hru nezdvojujú.
@@ -24,6 +26,7 @@ import { attachDomInput } from './dom-input';
 import { GameLoop, startRafLoop } from './game-loop';
 import { InputController } from './input-controller';
 import { ModuleSelection, bindSelectionRing } from './module-selection';
+import { PanelSelection } from './panel-selection';
 import { RoadSelection } from './road-selection';
 import { SimBridge } from './sim-bridge';
 import { ToastCenter } from './toast-center';
@@ -40,6 +43,8 @@ export interface AppHandle {
   readonly moduleSelection: ModuleSelection;
   /** Výber typu cesty (BuildBar Landside); `InputController` ho zrkadlí s build módom ciest. */
   readonly roadSelection: RoadSelection;
+  /** Otvorený pravý panel (kontrakty); zdieľajú ho HUD, klávesnica a akcia „Zobraziť“ v toastoch. */
+  readonly panels: PanelSelection;
   /** Oznámenia zo simu (toasty); odoberá udalosti `bridge.onEvents`. */
   readonly toasts: ToastCenter;
   /** Zastaví slučku, odpojí vstup, zruší React strom a Pixi a odstráni DOM aplikácie. */
@@ -49,6 +54,11 @@ export interface AppHandle {
 export interface BootstrapOptions {
   /** Vlastný svet (testy, načítanie uloženej hry); predvolene nová hra z `config` (seed, mapa). */
   readonly world?: World;
+  /**
+   * „Nová hra“ v modále konca hry (bankrot). Volá ho UI z klikacieho handlera — zrušenie a nový `bootstrap` zariadi
+   * volajúci (`runGame`); bez neho sa stránka načíta odznova.
+   */
+  readonly onNewGame?: () => void;
 }
 
 /** Zloží fokus z aktívneho prvku UI (klik do mapy vráti klávesy hre). */
@@ -130,7 +140,13 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
     if (zoom !== undefined) view.zoomAt(zoom / view.zoom, view.viewportWidth / 2, view.viewportHeight / 2);
     view.centerOn(cellX, cellY);
   };
-  const toasts = new ToastCenter(bridge, { centerOn: (cellX, cellY) => centerCamera(cellX, cellY) });
+  const panels = new PanelSelection();
+  const toasts = new ToastCenter(bridge, {
+    centerOn: (cellX, cellY) => centerCamera(cellX, cellY),
+    openPanel: (panel) => {
+      panels.select(panel);
+    },
+  });
 
   const stopSelectionRing = bindSelectionRing(moduleSelection, bridge, renderer.build);
   const stopRenderEvents = bridge.onEvents((events) => {
@@ -171,7 +187,7 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
   });
 
   const reactRoot = createRoot(uiHost);
-  reactRoot.render(createElement(StrictMode, null, createElement(App, { bridge, feedback: input, selection, moduleSelection, roadSelection, toasts })));
+  reactRoot.render(createElement(StrictMode, null, createElement(App, { bridge, feedback: input, selection, moduleSelection, roadSelection, toasts, panels, onNewGame: options.onNewGame })));
 
   let destroyed = false;
   return {
@@ -183,6 +199,7 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
     selection,
     moduleSelection,
     roadSelection,
+    panels,
     toasts,
     destroy() {
       if (destroyed) return;

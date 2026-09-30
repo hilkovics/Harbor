@@ -1,22 +1,24 @@
 /**
- * Koreňový React komponent: UI vrstva nad mapou (HUD, banner pauzy, štítok ghostu, BuildBar dole, inšpektor modulu
- * vpravo, DEV nástroje).
+ * Koreňový React komponent: UI vrstva nad mapou (HUD, banner pauzy, štítok ghostu, BuildBar dole, vpravo inšpektor modulu
+ * alebo panel kontraktov, toasty, modál konca hry).
  * Mapa (Pixi canvas) žije v samostatnom prvku pod ním, pripája ho `bootstrap`; táto vrstva nezachytáva myš mimo
  * svojich prvkov.
  *
  * Nadpis „Modular Harbor“ je vizuálne skrytý, ale ostáva v strome (čítačky obrazovky, smoke test).
  */
-import { useState } from 'react';
-import { TopHUD } from '@ui/top-hud';
+import { useEffect, useState } from 'react';
 import { BuildFeedbackLabel, type FeedbackSource } from './build-feedback';
 import { BuildSelection } from './build-selection';
 import { ConnectedBuildBar } from './connected-build-bar';
+import { ConnectedContractsPanel } from './connected-contracts-panel';
+import { ConnectedGameOver } from './connected-game-over';
+import { ConnectedTopHUD } from './connected-hud';
 import { ConnectedModuleInspector } from './connected-module-inspector';
 import { ConnectedToasts } from './connected-toasts';
 import { ModuleSelection } from './module-selection';
 import { RoadSelection } from './road-selection';
-import { DevSpawnButton } from './dev-spawn-button';
 import { PausedBanner } from './paused-banner';
+import { PanelSelection, bindPanelExclusion } from './panel-selection';
 import type { SimBridge } from './sim-bridge';
 import type { ToastCenter } from './toast-center';
 import { SimBridgeProvider } from './use-sim-snapshot';
@@ -34,36 +36,42 @@ export interface AppProps {
   readonly roadSelection?: RoadSelection;
   /** Oznámenia zo simu (T03-10: „Chýba sklad“, „Nepripojené“); bez neho sa zásobník toastov nezobrazí. */
   readonly toasts?: ToastCenter;
-  /**
-   * DEV nástroje (tlačidlo „Spawn feeder (DEV)“) sa zobrazia len vo vývojovom builde (`import.meta.env.DEV`); `false`
-   * ich vypne aj tam (testy). V produkčnom builde ich bundler z modulu odstráni.
-   */
-  readonly devTools?: boolean;
+  /** Otvorený pravý panel (kontrakty) zdieľaný s toastami („Zobraziť“); bez neho si `App` vedie vlastný. */
+  readonly panels?: PanelSelection;
+  /** „Nová hra“ v modále konca hry (bootstrap postaví nový svet); bez neho sa stránka načíta odznova. */
+  readonly onNewGame?: () => void;
 }
 
-export function App({ bridge, feedback, selection, moduleSelection, roadSelection, toasts, devTools = true }: AppProps) {
+/** Predvolená „Nová hra“: načítanie stránky odznova (bootstrap zostaví nový svet). */
+function reloadPage(): void {
+  window.location.reload();
+}
+
+export function App({ bridge, feedback, selection, moduleSelection, roadSelection, toasts, panels, onNewGame }: AppProps) {
   // Bez zdieľaného výberu (testy, demo) si App vytvorí vlastný; `useState` drží jednu inštanciu medzi rendermi.
   const [ownSelection] = useState(() => new BuildSelection());
   const [ownModuleSelection] = useState(() => new ModuleSelection());
   const [ownRoadSelection] = useState(() => new RoadSelection());
+  const [ownPanels] = useState(() => new PanelSelection());
+  const panelSelection = panels ?? ownPanels;
+  const inspectedModules = moduleSelection ?? ownModuleSelection;
+  // Panel kontraktov a inšpektor sa delia o pravý okraj: otvorený panel má prednosť (zruší výber modulu).
+  useEffect(() => bindPanelExclusion(panelSelection, inspectedModules), [panelSelection, inspectedModules]);
   return (
     <SimBridgeProvider bridge={bridge}>
       <h1 className="app__title">Modular Harbor</h1>
       <PausedBanner />
       <BuildFeedbackLabel source={feedback} />
       <div className="app__hud">
-        <TopHUD />
+        <ConnectedTopHUD panels={panelSelection} />
       </div>
-      {import.meta.env.DEV && devTools && (
-        <div className="app__dev">
-          <DevSpawnButton />
-        </div>
-      )}
-      <ConnectedModuleInspector selection={moduleSelection ?? ownModuleSelection} />
+      <ConnectedModuleInspector selection={inspectedModules} />
+      <ConnectedContractsPanel panels={panelSelection} />
       {toasts !== undefined && <ConnectedToasts center={toasts} />}
       <div className="app__build">
         <ConnectedBuildBar selection={selection ?? ownSelection} roadSelection={roadSelection ?? ownRoadSelection} />
       </div>
+      <ConnectedGameOver onNewGame={onNewGame ?? reloadPage} />
     </SimBridgeProvider>
   );
 }

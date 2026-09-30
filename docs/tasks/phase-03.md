@@ -53,15 +53,15 @@
 - [x] T03-07 · Testy (TDD): scenár `apron_to_yard`, A*/cache/alokátor/dispatcher cez verejné API
 - [x] T03-08 · Render: `VehicleView` + fill stavy dvora + badge „nepripojené"
 - [x] T03-09 · UI: BuildBar Sklady/Logistika, inspector skladu a depa, `Toasts`
-- [ ] T03-10 · App: snapshot v3 (vozidlá, sklady), napojenie renderu a UI, nákup/predaj vozidla, notifikácie
-- [ ] T03-11 · Tooling: `simrun` metriky vozidiel a skladov
+- [x] T03-10 · App: snapshot v3 (vozidlá, sklady), napojenie renderu a UI, nákup/predaj vozidla, notifikácie
+- [x] T03-11 · Tooling: `simrun` metriky vozidiel a skladov
 - [ ] T03-12 · E2E: loď → apron → vozidlá → dvor, screenshot
 - [ ] T03-13 · Review `src/sim/**` (hot path alokácie)
 - [ ] T03-14 · Opravy z review + ARCHITECTURE zosúladenie
 - [ ] T03-15 · Plná pipeline + triáž
 - [ ] T03-16 · Uzavretie fázy (PROGRESS, BACKLOG) + PR
-- [ ] T03-17 · Render: vozidlá v pravom pruhu (offset, škála na šírku pruhu, plynulá zákruta) — doplnok používateľa
-- [ ] T03-18 · Sim: typy ciest `two_lane` / `one_lane` / `one_way` (defy, PlaceRoad, prestavba, pathfinding so smerom a cenou, rýchlosť, save); ADR-020 — doplnok používateľa
+- [x] T03-17 · Render: vozidlá v pravom pruhu (offset, škála na šírku pruhu, plynulá zákruta) — doplnok používateľa
+- [x] T03-18 · Sim: typy ciest `two_lane` / `one_lane` / `one_way` (defy, PlaceRoad, prestavba, pathfinding so smerom a cenou, rýchlosť, save); ADR-020 — doplnok používateľa
 - [ ] T03-19 · Render: úzke cesty, šípky jednosmerky, pruh podľa typu cesty — doplnok používateľa
 - [ ] T03-20 · App/UI: výber typu cesty (BuildBar Landside), smer jednosmerky ťahom, tooltip ceny prestavby — doplnok používateľa
 

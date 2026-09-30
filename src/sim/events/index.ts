@@ -21,4 +21,6 @@ export type {
   SimEventOf,
   SimEventType,
   TickAdvancedEvent,
+  VehicleBoughtEvent,
+  VehicleSoldEvent,
 } from './sim-event';

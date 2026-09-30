@@ -26,6 +26,10 @@ const ROUNDTRIP_CASES: readonly [string, SerializedCommand][] = [
   ['PlaceModule s neznámym defom, rotáciou 45 a mimo mapy', { type: 'PlaceModule', defId: 'nope', x: -5, y: 900, rotation: 45 }],
   ['RemoveModule', { type: 'RemoveModule', moduleId: 7 }],
   ['RemoveModule s id, ktoré neexistuje', { type: 'RemoveModule', moduleId: 0 }],
+  // F3 (T03-04): vozidlá — existenciu defu, depa a vozidla overí až validate.
+  ['BuyVehicle', { type: 'BuyVehicle', vehicleDefId: 'straddle_carrier', depotId: 3 }],
+  ['BuyVehicle s neznámym defom a depom', { type: 'BuyVehicle', vehicleDefId: 'nope', depotId: -1 }],
+  ['SellVehicle', { type: 'SellVehicle', vehicleId: 7 }],
 ];
 
 describe('commandFromJSON ↔ toJSON', () => {

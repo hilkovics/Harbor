@@ -2,7 +2,9 @@
  * Obnova entít zo save (ARCHITECTURE §14, ADR-014, ADR-016, ADR-017): moduly v poradí save (= poradie umiestnenia) cez
  * `ModuleRegistry` a `World.addModule` (sklad obnoví svoje rezervácie z `runtime`), lode vzostupne podľa id cez
  * `World.addShip` (pred kontrolou držiteľov nákladu — `on_ship` číta `world.ships`) s obnovou
- * `BerthModule.dockedShipId` z `berthIds`, potom kontrola držiteľov a slotov nákladu (slot v kapacite apronu/skladu),
+ * `BerthModule.dockedShipId` z `berthIds`, vozidlá vzostupne podľa id cez `World.addVehicle` (T03-04; depo dostane
+ * `vehicleIds` v poradí id = poradí nákupu), potom kontrola držiteľov a slotov nákladu (slot v kapacite apronu/skladu,
+ * náklad vozidla v jeho kapacite a kategóriách),
  * rezervácie apronov z `reservedSlot` žeriavov a držané jednotky žeriavov z `in_crane`. Obsadenie apronov a skladov
  * sa neobnovuje — čítajú ho z ledgera (ADR-017). Na koniec beží `findWorldViolation` ako poistka. Každá chyba je
  * `WorldStateError` s JSON pointerom.
@@ -17,11 +19,13 @@ import { moduleRegistry } from '../modules/module-registry';
 import { Ship } from '../ships/ship';
 import { ShipError } from '../ships/ship-error';
 import { mooringProblem, shipRoute } from '../ships/ship-route';
+import { Vehicle } from '../vehicles/vehicle';
+import { VehicleError, type VehicleErrorCode } from '../vehicles/vehicle-error';
 import { CARGO_HOLDER_SOURCES } from './cargo-holders';
 import { WorldStateError, pointerSegment } from './state-check';
 import type { World } from './world';
 import { findWorldViolation } from './world-invariants';
-import type { ParsedModuleEntry, ParsedShipEntry } from './world-state';
+import type { ParsedModuleEntry, ParsedShipEntry, ParsedVehicleEntry, ParsedWorldState } from './world-state';
 
 const modulePath = (index: number): string => `/modules${pointerSegment(index)}`;
 const unitPath = (index: number): string => `/cargo/units${pointerSegment(index)}`;
@@ -106,6 +110,74 @@ function restoreShips(world: World, entries: readonly ParsedShipEntry[]): void {
       // Tvar id overil `parseWorldState`; toto je posledná poistka, aby aj tu vznikla chyba save s cestou.
       if (error instanceof ShipError) throw new WorldStateError(`${path}/id`, error.message);
       throw error;
+    }
+  });
+}
+
+const vehiclePath = (index: number): string => `/vehicles${pointerSegment(index)}`;
+
+/** Pole záznamu vozidla, ku ktorému patrí chyba `World.addVehicle` (depo vs. id). */
+const VEHICLE_ERROR_FIELD: { readonly [C in VehicleErrorCode]: string } = {
+  invalid_input: 'id',
+  duplicate_id: 'id',
+  unknown_depot: 'depotId',
+  depot_full: 'depotId',
+  unknown_vehicle: 'id',
+  has_cargo: 'id',
+  busy: 'state',
+};
+
+/**
+ * Vozidlá vzostupne podľa id: inštancia `Vehicle` (def a stav overil `parseWorldState`), job musí existovať (v T03-04
+ * žiadne joby nie sú — `jobId` iný ako `null` je chyba; tvar job ↔ vozidlo doplní T03-05), potom `World.addVehicle`
+ * (depo existuje a má voľné státie; `VehicleError` → `WorldStateError` s poľom záznamu).
+ */
+function restoreVehicles(world: World, entries: readonly ParsedVehicleEntry[]): void {
+  entries.forEach((entry, index) => {
+    const path = vehiclePath(index);
+    if (entry.jobId !== null) {
+      throw new WorldStateError(`${path}/jobId`, `job #${String(entry.jobId)} vo svete neexistuje (joby obnoví až T03-05)`);
+    }
+    try {
+      world.addVehicle(
+        new Vehicle({
+          id: entry.id,
+          def: world.defs.vehicles.get(entry.defId),
+          depotId: entry.depotId,
+          state: entry.state,
+          x: entry.x,
+          y: entry.y,
+          heading: entry.heading,
+          jobId: entry.jobId,
+          purchaseCostCents: entry.purchaseCostCents,
+        }),
+      );
+    } catch (error) {
+      if (error instanceof VehicleError) throw new WorldStateError(`${path}/${VEHICLE_ERROR_FIELD[error.code]}`, error.message);
+      throw error;
+    }
+  });
+}
+
+/**
+ * Náklad vozidiel (`in_vehicle`): najviac `capacityUnits` jednotiek na vozidlo a len kategórie z `cargoCategories`
+ * defu. Volá sa po `checkHolders` (vozidlo existuje); chyba patrí jednotke (`/cargo/units/<j>/location/vehicleId`).
+ */
+function checkVehicleCargo(world: World, units: readonly CargoUnit[]): void {
+  const loaded = new Map<EntityId, number>();
+  units.forEach((unit, index) => {
+    if (unit.location.kind !== 'in_vehicle') return;
+    const vehicle = world.vehicles.get(unit.location.vehicleId);
+    if (vehicle === undefined) return;
+    const path = `${unitPath(index)}/location/vehicleId`;
+    const count = (loaded.get(vehicle.id) ?? 0) + 1;
+    loaded.set(vehicle.id, count);
+    if (count > vehicle.def.capacityUnits) {
+      throw new WorldStateError(path, `${vehicle.label} unesie ${String(vehicle.def.capacityUnits)} jednotiek, v save ich má viac`);
+    }
+    const { category } = world.defs.cargoTypes.get(unit.typeId);
+    if (!vehicle.def.cargoCategories.includes(category)) {
+      throw new WorldStateError(path, `${vehicle.label} nevozí náklad kategórie '${category}' (jednotka #${String(unit.id)})`);
     }
   });
 }
@@ -206,22 +278,22 @@ function checkCraneHolding(world: World, indexOf: ReadonlyMap<EntityId, number>)
 }
 
 /**
- * Obnoví moduly, lode a stav odvodený z ledgera do čerstvého `world` (prázdne moduly aj lode, ledger už obnovený
- * z `units`). Chyby → `WorldStateError`: modul (hranice, obsadenie, žeriav na berthe, `runtime`) → `/modules/<i>…`,
- * loď (kotvisko, anchorage, index trasy) → `/ships/<k>…`, náklad u neexistujúceho držiteľa alebo na neplatnom/
- * rezervovanom slote → `/cargo/units/<j>/location…`, iné porušenie invariantov → `''`.
+ * Obnoví moduly, lode, vozidlá a stav odvodený z ledgera do čerstvého `world` (prázdne moduly, lode aj vozidlá, ledger
+ * už obnovený z `parsed.cargo`). Chyby → `WorldStateError`: modul (hranice, obsadenie, žeriav na berthe, `runtime`) →
+ * `/modules/<i>…`, loď (kotvisko, anchorage, index trasy) → `/ships/<k>…`, vozidlo (depo, státie, job) →
+ * `/vehicles/<v>…`, náklad u neexistujúceho držiteľa (aj `in_vehicle` bez vozidla), nad kapacitou vozidla alebo na
+ * neplatnom/rezervovanom slote → `/cargo/units/<j>/location…`, iné porušenie invariantov → `''`.
  */
-export function restoreEntities(
-  world: World,
-  entries: readonly ParsedModuleEntry[],
-  ships: readonly ParsedShipEntry[],
-  units: readonly CargoUnit[],
-): void {
+export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'modules' | 'ships' | 'vehicles' | 'cargo'>): void {
+  const entries = parsed.modules;
+  const { units } = parsed.cargo;
   restoreModules(world, entries);
-  restoreShips(world, ships);
+  restoreShips(world, parsed.ships);
+  restoreVehicles(world, parsed.vehicles);
   const indexOf = new Map<EntityId, number>(entries.map((entry, index) => [entry.id, index]));
   const unitIndexOf = new Map<EntityId, number>(units.map((unit, index) => [unit.id, index]));
   checkHolders(world, units);
+  checkVehicleCargo(world, units);
   checkUnitSlots(world, units);
   restoreCraneReservations(world, indexOf, unitIndexOf);
   restoreHeldCargo(world, units);

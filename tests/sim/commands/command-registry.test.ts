@@ -126,8 +126,17 @@ describe('CommandRegistry (kostra T01-03)', () => {
 });
 
 describe('vstavané príkazy (T01-04, T02-04, T02-05)', () => {
-  it('predvolený register pozná PlaceRoad, RemoveRoad, SetGameSpeed, PlaceModule, RemoveModule, SpawnShipDebug v poradí BUILTIN_COMMANDS', () => {
-    expect(commandRegistry.types).toEqual(['PlaceRoad', 'RemoveRoad', 'SetGameSpeed', 'PlaceModule', 'RemoveModule', 'SpawnShipDebug']);
+  it('predvolený register pozná PlaceRoad, RemoveRoad, SetGameSpeed, PlaceModule, RemoveModule, SpawnShipDebug, BuyVehicle, SellVehicle v poradí BUILTIN_COMMANDS', () => {
+    expect(commandRegistry.types).toEqual([
+      'PlaceRoad',
+      'RemoveRoad',
+      'SetGameSpeed',
+      'PlaceModule',
+      'RemoveModule',
+      'SpawnShipDebug',
+      'BuyVehicle',
+      'SellVehicle',
+    ]);
     expect(BUILTIN_COMMANDS.map((command) => command.TYPE)).toEqual(commandRegistry.types);
   });
 
@@ -161,7 +170,16 @@ describe('vstavané príkazy (T01-04, T02-04, T02-05)', () => {
     vi.resetModules();
     const direct = await import('@sim/commands/command-registry');
     expect(direct.commandRegistry).not.toBe(commandRegistry);
-    expect(direct.commandRegistry.types).toEqual(['PlaceRoad', 'RemoveRoad', 'SetGameSpeed', 'PlaceModule', 'RemoveModule', 'SpawnShipDebug']);
+    expect(direct.commandRegistry.types).toEqual([
+      'PlaceRoad',
+      'RemoveRoad',
+      'SetGameSpeed',
+      'PlaceModule',
+      'RemoveModule',
+      'SpawnShipDebug',
+      'BuyVehicle',
+      'SellVehicle',
+    ]);
     expect(direct.commandFromJSON({ type: 'RemoveRoad', cells: [] }).type).toBe('RemoveRoad');
   });
 });

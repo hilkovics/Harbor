@@ -22,7 +22,11 @@
  *    typu `cargoTypeId`; loď s nákladom, ktorá drží kotviská, má na nich aspoň jeden žeriav kategórie svojho nákladu
  *    (inak by pri kotvisku ostala naveky, T02-14); žeriav v `grabbing` má na kotvisku dokovanú loď s nákladom
  *    svojej kategórie a žeriavov v `grabbing` nad loďou nie je viac ako jednotiek na jej palube (každý má čo zdvihnúť);
- * 7. depo vozidiel (ADR-017): `vehicleIds` bez duplicít a najviac `capacity` (vzťah k vozidlám doplní T03-04).
+ * 7. depo vozidiel (ADR-017): `vehicleIds` bez duplicít a najviac `capacity`;
+ * 8. vozidlá (T03-04): kľúč = id, vzostupne podľa id, depo existuje a je `VehicleDepot`, `vehicleIds` každého depa =
+ *    jeho vozidlá vzostupne podľa id (poradie nákupu), job zodpovedá stavu (`VEHICLE_STATE_TRAITS.hasJob`) a existuje
+ *    (joby pribudnú v T03-05 — dovtedy je každý `jobId` visiaci), poloha je konečná v rozsahu mapy, náklad vo vozidle
+ *    najviac `capacityUnits` a len kategórií z `cargoCategories`.
  */
 import { CARGO_HOLDER_KINDS } from '../cargo/cargo-location';
 import type { EntityId } from '../core/entity-id';
@@ -35,6 +39,8 @@ import { hasCompatibleCrane } from '../ships/berth-allocator';
 import type { Ship } from '../ships/ship';
 import { SHIP_STATE_TRAITS } from '../ships/ship-fsm';
 import { mooringProblem } from '../ships/ship-route';
+import type { Vehicle } from '../vehicles/vehicle';
+import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle';
 import { CARGO_HOLDER_SOURCES } from './cargo-holders';
 import type { World } from './world';
 
@@ -211,6 +217,54 @@ const checkDepots: Check = (world) => {
     const ids = module.vehicleIds;
     if (new Set(ids).size !== ids.length) return `${module.label}: vehicleIds [${ids.join(', ')}] obsahujú duplicitu`;
     if (ids.length > module.capacity) return `${module.label} má ${String(ids.length)} vozidiel (capacity ${String(module.capacity)})`;
+    const own = [...world.vehicles.values()].filter((vehicle) => vehicle.depotId === module.id).map((vehicle) => vehicle.id);
+    if (!sameIds(ids, own)) return `${module.label}: vehicleIds [${ids.join(', ')}] ≠ vozidlá depa podľa id [${own.join(', ')}]`;
+  }
+  return undefined;
+};
+
+/** Náklad vozidla: najviac `capacityUnits` jednotiek a len kategórie, ktoré vozidlo vozí. */
+function checkVehicleCargo(world: World, vehicle: Vehicle): string | undefined {
+  const held = world.cargo.unitsAt('in_vehicle', vehicle.id);
+  if (held.length > vehicle.def.capacityUnits) {
+    return `${vehicle.label} vezie ${String(held.length)} jednotiek (capacityUnits ${String(vehicle.def.capacityUnits)})`;
+  }
+  for (const unitId of held) {
+    const typeId = world.cargo.get(unitId)?.typeId;
+    const category = typeId === undefined || !world.defs.cargoTypes.has(typeId) ? undefined : world.defs.cargoTypes.get(typeId).category;
+    if (category === undefined || !vehicle.def.cargoCategories.includes(category)) {
+      return `${vehicle.label} vezie jednotku #${String(unitId)} kategórie '${String(category)}', ktorú nevozí`;
+    }
+  }
+  return undefined;
+}
+
+function checkVehicle(world: World, vehicle: Vehicle): string | undefined {
+  const depot = world.modules.get(vehicle.depotId);
+  if (!(depot instanceof VehicleDepot)) return `${vehicle.label} patrí #${String(vehicle.depotId)}, ktorý nie je depo vozidiel`;
+  if (!depot.vehicleIds.includes(vehicle.id)) return `${vehicle.label} chýba vo vehicleIds depa ${depot.label}`;
+  const { hasJob } = VEHICLE_STATE_TRAITS[vehicle.state];
+  if (hasJob !== (vehicle.jobId !== null)) {
+    return `${vehicle.label} v stave '${vehicle.state}' ${hasJob ? 'nemá job' : `má job #${String(vehicle.jobId)}`}`;
+  }
+  // Joby pribudnú v T03-05 (`world.jobs`); dovtedy každý jobId odkazuje na neexistujúci job.
+  if (vehicle.jobId !== null) return `${vehicle.label}: job #${String(vehicle.jobId)} neexistuje`;
+  const { width, height } = world.grid;
+  const inMap = (value: number, max: number): boolean => Number.isFinite(value) && value >= 0 && value <= max;
+  if (!inMap(vehicle.x, width) || !inMap(vehicle.y, height)) {
+    return `${vehicle.label} stojí mimo mapy (${String(vehicle.x)}, ${String(vehicle.y)})`;
+  }
+  return checkVehicleCargo(world, vehicle);
+}
+
+const checkVehicles: Check = (world) => {
+  let previous = 0;
+  for (const [id, vehicle] of world.vehicles) {
+    if (vehicle.id !== id) return `world.vehicles: kľúč ${String(id)} ukazuje na ${vehicle.label}`;
+    if (id <= previous) return `world.vehicles: ${vehicle.label} nie je vzostupne podľa id (po #${String(previous)})`;
+    previous = id;
+    const violation = checkVehicle(world, vehicle);
+    if (violation !== undefined) return violation;
   }
   return undefined;
 };
@@ -326,7 +380,16 @@ const checkShips: Check = (world) => {
   return checkGrabbingCranes(world);
 };
 
-const CHECKS: readonly Check[] = [checkCargoHolders, checkModuleCells, checkCranes, checkCargoSlots, checkBerthGroups, checkShips, checkDepots];
+const CHECKS: readonly Check[] = [
+  checkCargoHolders,
+  checkModuleCells,
+  checkCranes,
+  checkCargoSlots,
+  checkBerthGroups,
+  checkShips,
+  checkDepots,
+  checkVehicles,
+];
 
 /** Prvé porušenie invariantov sveta (viď hlavička súboru), alebo `undefined`. Svet nemení. */
 export function findWorldViolation(world: World): string | undefined {

@@ -1,5 +1,5 @@
 /**
- * Udalosti simulácie (ARCHITECTURE §12.1, výber pre F1 + F2: `CargoMoved`, moduly, lode, žeriavy). Readonly DTO:
+ * Udalosti simulácie (ARCHITECTURE §12.1, výber pre F1 + F2: `CargoMoved`, moduly, lode, žeriavy; F3: vozidlá). Readonly DTO:
  * `World` ich zbiera v `EventBus` a vracia z `tick()` / `applyPending()`; prezentácia ich len číta. Nový typ udalosti =
  * nový člen únie (+ test).
  */
@@ -146,6 +146,23 @@ export interface CraneBlockedEvent {
   readonly reason: CraneBlockedReason;
 }
 
+/**
+ * `BuyVehicle` (T03-04) kúpil vozidlo: `vehicleId` s defom `defId` stojí `idle` na vonkajšej bunke konektora depa
+ * `depotId` a depo ho eviduje vo `vehicleIds`. Cena ide samostatne v `MoneyChanged(vehicle_capex)`.
+ */
+export interface VehicleBoughtEvent {
+  readonly type: 'VehicleBought';
+  readonly vehicleId: EntityId;
+  readonly defId: string;
+  readonly depotId: EntityId;
+}
+
+/** `SellVehicle` (T03-04) predal nečinné vozidlo — zmizlo z `world.vehicles` aj z depa; refundácia v `MoneyChanged(vehicle_sale)`. */
+export interface VehicleSoldEvent {
+  readonly type: 'VehicleSold';
+  readonly vehicleId: EntityId;
+}
+
 export type SimEvent =
   | TickAdvancedEvent
   | HourClosedEvent
@@ -163,7 +180,9 @@ export type SimEvent =
   | ShipUndockedEvent
   | ShipDepartedEvent
   | CraneCycleDoneEvent
-  | CraneBlockedEvent;
+  | CraneBlockedEvent
+  | VehicleBoughtEvent
+  | VehicleSoldEvent;
 
 /** Názov typu udalosti (`'TickAdvanced' | 'HourClosed' | …`). */
 export type SimEventType = SimEvent['type'];

@@ -64,8 +64,8 @@ function busyWorld(): World {
   return world;
 }
 
-describe('World.serialize — WorldState v2', () => {
-  it('tvar: presne kľúče v2 (v1 + traffic, modules, cargo, ships) v pevnom poradí a hodnoty novej hry', () => {
+describe('World.serialize — WorldState v3', () => {
+  it('tvar: presne kľúče v3 (v1 + traffic, modules, cargo, ships + vehicles, jobs) v pevnom poradí a hodnoty novej hry', () => {
     const world = create();
     const state = world.serialize();
     expect(Object.keys(state)).toEqual([
@@ -82,9 +82,11 @@ describe('World.serialize — WorldState v2', () => {
       'modules',
       'cargo',
       'ships',
+      'vehicles',
+      'jobs',
     ]);
     expect(state.version).toBe(WORLD_STATE_VERSION);
-    expect(state.version).toBe(2);
+    expect(state.version).toBe(3);
     expect(state.traffic).toEqual([]);
     // Starter moduly mapy (Root modul, T02-04): id 1, 2, … v poradí mapy, zaplatená cena 0, žeriav nečinný.
     expect(state.modules.map(({ id, defId, x, y, rotation, purchaseCostCents }) => ({ id, defId, x, y, rotation, purchaseCostCents }))).toEqual(
@@ -92,6 +94,8 @@ describe('World.serialize — WorldState v2', () => {
     );
     expect(state.cargo).toEqual({ createdCount: 0, exportedCount: 0, units: [] });
     expect(state.ships).toEqual([]);
+    expect(state.vehicles).toEqual([]);
+    expect(state.jobs).toEqual([]);
     expect(state.mapId).toBe(MAP.id);
     expect(state.seed).toBe(SEED);
     expect(state.rng).toEqual(world.rng.getState());
@@ -258,10 +262,11 @@ describe('World.deserialize', () => {
   const INVALID: readonly [string, Mutation, string][] = [
     ['neznámy kľúč', set('extra', 1), '/extra'],
     ['chýba kľúč', (s) => delete s.cashCents, '/cashCents'],
-    ['neznáma budúca verzia', set('version', 3), '/version'],
+    ['neznáma budúca verzia', set('version', 4), '/version'],
     ['verzia 0', set('version', 0), '/version'],
-    ['verzia ako reťazec', set('version', '2'), '/version'],
-    ['v2 stav označený ako v1 → migrácia v1 odmietne kľúč v2', set('version', 1), '/traffic'],
+    ['verzia ako reťazec', set('version', '3'), '/version'],
+    ['v3 stav označený ako v1 → migrácia v1 odmietne kľúč v2', set('version', 1), '/traffic'],
+    ['v3 stav označený ako v2 → migrácia v2 odmietne kľúč v3', set('version', 2), '/vehicles'],
     ['iná mapa', set('mapId', 'harbor_99'), '/mapId'],
     ['záporný seed', set('seed', -1), '/seed'],
     ['seed ≥ 2^32', set('seed', 2 ** 32), '/seed'],

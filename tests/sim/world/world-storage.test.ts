@@ -10,6 +10,7 @@ import type { EntityId } from '@sim/core';
 import { DefRegistry } from '@sim/defs';
 import { ContainerYard, StorageModule, VehicleDepot, type Module, type StorageRuntimeState } from '@sim/modules';
 import { World, WorldStateError, findWorldViolation, type WorldState } from '@sim/world';
+import { addVehicleTo } from '../vehicles/vehicle-fixtures';
 import { BARE_MAP, DEFS, RAW_DEFS, SEED, hashState, runTicks } from './world-fixtures';
 
 const YARD = 'container_yard_small';
@@ -90,7 +91,8 @@ describe('sklad a depo vo svete', () => {
     store(world, yard);
     store(world, yard);
     yard.reserve();
-    depot.attachVehicle(id(700));
+    const vehicle = addVehicleTo(world, depot.id); // vozidlo cez World (T03-04) — depo ho eviduje vo vehicleIds
+    expect(depot.vehicleIds).toEqual([vehicle.id]);
     expect([yard.storedCount, yard.reservedCount, yard.freeCount, yard.unitsIn]).toEqual([2, 1, 61, 2]);
     expect(findWorldViolation(world)).toBeUndefined();
     expect(() => world.tick()).not.toThrow();

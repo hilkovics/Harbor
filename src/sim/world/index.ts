@@ -4,15 +4,26 @@ export type { WorldOptions } from './world';
 export { WORLD_STATE_VERSION, WORLD_STATE_KEYS, WorldStateError } from './world-state';
 export type {
   AnyWorldState,
+  SerializedJob,
   SerializedModule,
   SerializedRoad,
   SerializedRoadLayer,
   SerializedShip,
   SerializedTraffic,
+  SerializedVehicle,
   WorldState,
   WorldStateV1,
+  WorldStateV2,
 } from './world-state';
-export { OLDEST_WORLD_STATE_VERSION, WORLD_STATE_V1_KEYS, WORLD_STATE_V2, migrateWorldState } from './migrate';
+export {
+  OLDEST_WORLD_STATE_VERSION,
+  WORLD_STATE_V1_KEYS,
+  WORLD_STATE_V2,
+  WORLD_STATE_V2_KEYS,
+  WORLD_STATE_V3,
+  WORLD_STATE_V3_KEYS,
+  migrateWorldState,
+} from './migrate';
 export { WorldInvariantError, findWorldViolation } from './world-invariants';
 export { CARGO_HOLDER_SOURCES, MODULE_CARGO_HOLDER_KINDS } from './cargo-holders';
 // Pripojenie modulov k ceste (ADR-017) — World.isConnected / connectorCells a §8 bod 5 (connector_blocked).

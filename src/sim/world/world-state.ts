@@ -6,8 +6,11 @@
  * v2 = v1 + `traffic`, `modules`, `cargo`, `ships`. Ukladá sa len to, čo sa nedá odvodiť: `cell.moduleId` vznikne
  * z footprintov modulov, obsadenie apronov a skladov a držané jednotky žeriavov z ledgera, rezervácie slotov apronu
  * z `reservedSlot` žeriavov a skupiny kotvísk prepočtom. Sklad (T03-02, ADR-017) ukladá v `runtime` len rezervácie
- * slotov a počítadlá `unitsIn`/`unitsOut`, depo `{}` (vozidlá depa sa odvodia z vozidiel, T03-04) — tvar `WorldState`
- * sa tým nemení, verzia ostáva 2 (v3 s vozidlami a jobmi príde v T03-04/T03-05). Staršie verzie prevedie
+ * slotov a počítadlá `unitsIn`/`unitsOut`, depo `{}`.
+ *
+ * v3 (T03-04, docs/tasks/phase-03.md rozhodnutie 10) = v2 + `vehicles` (vzostupne podľa id: id, def, depo, stav,
+ * poloha, kurz, job, zaplatená cena) a `jobs` (tvar doplní T03-05, dovtedy vždy prázdne). `VehicleDepot.vehicleIds`
+ * sa neukladá — odvodí sa z `depotId` vozidiel v poradí id (= poradie nákupu). Staršie verzie prevedie
  * `migrateWorldState` (migrate.ts).
  *
  * Lode (ADR-016) sa ukladajú s polohou, stavom FSM, kotviskami, anchorage a indexom bodu trasy; trasa sa odvodí zo stavu
@@ -31,7 +34,8 @@ import { isRoadBuildable } from '../grid/terrain';
 import type { ModuleRuntimeState } from '../modules/runtime-state';
 import { SERIALIZED_SHIP_KEYS, type SerializedShip } from '../ships/ship';
 import { SHIP_STATES, SHIP_STATE_TRAITS, type ShipState } from '../ships/ship-fsm';
-import { WORLD_STATE_V1_KEYS, WORLD_STATE_VERSION } from './migrate';
+import { SERIALIZED_VEHICLE_KEYS, VEHICLE_STATES, VEHICLE_STATE_TRAITS, isVehicleState, type SerializedVehicle, type VehicleState } from '../vehicles/vehicle';
+import { WORLD_STATE_V2, WORLD_STATE_V3_KEYS, WORLD_STATE_VERSION } from './migrate';
 import { WorldStateError, checkArray, checkInteger, checkKeys, describeValue, isPlainObject, pointerSegment } from './state-check';
 
 export { WORLD_STATE_VERSION } from './migrate';
@@ -61,6 +65,13 @@ export interface SerializedModule {
 }
 
 export type { SerializedShip } from '../ships/ship';
+export type { SerializedVehicle } from '../vehicles/vehicle';
+
+/**
+ * Job v save — tvar doplní T03-05 (`TransportJob`); v T03-04 je pole `jobs` vždy prázdne (`never[]`), `parseWorldState`
+ * neprázdne pole odmietne.
+ */
+export type SerializedJob = never;
 
 /** `WorldState` v1 (F1, ADR-013) — vstup migrácie. */
 export interface WorldStateV1 {
@@ -75,9 +86,9 @@ export interface WorldStateV1 {
   readonly parcels: Readonly<Record<string, ParcelOwnership>>;
 }
 
-/** Aktuálny `WorldState` (v2). */
-export interface WorldState extends Omit<WorldStateV1, 'version'> {
-  readonly version: typeof WORLD_STATE_VERSION;
+/** `WorldState` v2 (F2, ADR-014) — vstup migrácie v2 → v3. */
+export interface WorldStateV2 extends Omit<WorldStateV1, 'version'> {
+  readonly version: typeof WORLD_STATE_V2;
   /** Bunky s nenulovým `cell.traffic` vzostupne podľa indexu (vo F2 vždy prázdne; F3 vozidlá). */
   readonly traffic: readonly SerializedTraffic[];
   readonly modules: readonly SerializedModule[];
@@ -87,8 +98,17 @@ export interface WorldState extends Omit<WorldStateV1, 'version'> {
   readonly ships: readonly SerializedShip[];
 }
 
+/** Aktuálny `WorldState` (v3). */
+export interface WorldState extends Omit<WorldStateV2, 'version'> {
+  readonly version: typeof WORLD_STATE_VERSION;
+  /** Vozidlá vzostupne podľa id (`Vehicle.toState()`, T03-04); `VehicleDepot.vehicleIds` sa odvodí pri obnove. */
+  readonly vehicles: readonly SerializedVehicle[];
+  /** Transportné joby (T03-05); zatiaľ vždy prázdne. */
+  readonly jobs: readonly SerializedJob[];
+}
+
 /** Ľubovoľná podporovaná verzia (vstup `World.deserialize`). */
-export type AnyWorldState = WorldState | WorldStateV1;
+export type AnyWorldState = WorldState | WorldStateV2 | WorldStateV1;
 
 /** Modul zo save s overeným tvarom; vzťahy k mriežke a iným modulom overí `restoreEntities`. */
 export interface ParsedModuleEntry {
@@ -113,6 +133,19 @@ export interface ParsedShipEntry {
   readonly waypointIndex: number;
 }
 
+/** Vozidlo zo save s overeným tvarom (známy def, stav, job podľa stavu); depo a náklad overí `restoreEntities`. */
+export interface ParsedVehicleEntry {
+  readonly id: EntityId;
+  readonly defId: string;
+  readonly depotId: EntityId;
+  readonly state: VehicleState;
+  readonly x: number;
+  readonly y: number;
+  readonly heading: Rotation;
+  readonly jobId: EntityId | null;
+  readonly purchaseCostCents: number;
+}
+
 /** Overený stav pripravený na zostavenie `World` (jadrové objekty už vytvorené z uložených stavov). */
 export interface ParsedWorldState {
   readonly seed: number;
@@ -129,10 +162,12 @@ export interface ParsedWorldState {
   readonly cargo: CargoLedgerState;
   /** Lode vzostupne podľa id (= poradie spawnu). */
   readonly ships: readonly ParsedShipEntry[];
+  /** Vozidlá vzostupne podľa id (= poradie nákupu). */
+  readonly vehicles: readonly ParsedVehicleEntry[];
 }
 
-/** Kľúče v2 v poradí `serialize()`; iné kľúče sú chyba (stav nemá voliteľné polia). */
-export const WORLD_STATE_KEYS: readonly (keyof WorldState)[] = [...WORLD_STATE_V1_KEYS, 'traffic', 'modules', 'cargo', 'ships'];
+/** Kľúče aktuálnej verzie (v3) v poradí `serialize()`; iné kľúče sú chyba (stav nemá voliteľné polia). */
+export const WORLD_STATE_KEYS: readonly (keyof WorldState)[] = WORLD_STATE_V3_KEYS;
 const CLOCK_KEYS: readonly (keyof SimClockState)[] = ['tick', 'speed'];
 const IDS_KEYS: readonly (keyof EntityIdAllocatorState)[] = ['nextId'];
 const MODULE_KEYS: readonly (keyof SerializedModule)[] = ['id', 'defId', 'x', 'y', 'rotation', 'purchaseCostCents', 'runtime'];
@@ -329,12 +364,62 @@ function parseShips(value: unknown, defs: DefRegistry, map: LoadedMap, nextId: n
   });
 }
 
-/** Id entít zdieľajú jeden alokátor — modul, loď a jednotka nákladu nesmú mať rovnaké id. */
-function checkIdCollisions(modules: readonly ParsedModuleEntry[], ships: readonly ParsedShipEntry[], cargo: CargoLedgerState): void {
+/**
+ * Tvar vozidiel: presne kľúče `SerializedVehicle`, id celé 1…`nextId − 1` a ostro rastúce (poradie nákupu = poradie
+ * v depe), známy def, `depotId` celé ≥ 1, stav z `VEHICLE_STATES`, poloha v rozsahu mapy, platný kurz, `jobId` `null`
+ * alebo celé ≥ 1 a zodpovedajúci stavu (`VEHICLE_STATE_TRAITS.hasJob`), `purchaseCostCents` celé ≥ 0. Depo, job
+ * a náklad overí obnova (`restoreEntities`).
+ */
+function parseVehicles(value: unknown, defs: DefRegistry, map: LoadedMap, nextId: number): ParsedVehicleEntry[] {
+  let previousId = 0;
+  return checkArray(value, '/vehicles').map((raw: unknown, i): ParsedVehicleEntry => {
+    const path = `/vehicles${pointerSegment(i)}`;
+    const entry = checkKeys(raw, SERIALIZED_VEHICLE_KEYS, path);
+    const id = checkInteger(entry['id'], 1, `${path}/id`);
+    if (id >= nextId) throw new WorldStateError(`${path}/id`, `id ${String(id)} musí byť menšie ako ids.nextId ${String(nextId)}`);
+    if (id <= previousId) throw new WorldStateError(`${path}/id`, `vozidlá musia byť vzostupne podľa id (poradie nákupu), ${String(id)} ≤ ${String(previousId)}`);
+    previousId = id;
+    const { defId, state, heading } = entry;
+    if (typeof defId !== 'string' || !defs.vehicles.has(defId)) throw new WorldStateError(`${path}/defId`, `neznáme vozidlo ${describeValue(defId)}`);
+    const depotId = checkInteger(entry['depotId'], 1, `${path}/depotId`);
+    if (!isVehicleState(state)) {
+      throw new WorldStateError(`${path}/state`, `stav musí byť jeden z: ${VEHICLE_STATES.join(', ')}, dostal ${describeValue(state)}`);
+    }
+    const x = checkCoordinate(entry['x'], map.width, `${path}/x`);
+    const y = checkCoordinate(entry['y'], map.height, `${path}/y`);
+    if (!isRotation(heading)) throw new WorldStateError(`${path}/heading`, `kurz musí byť 0, 90, 180 alebo 270, dostal ${describeValue(heading)}`);
+    const rawJob = entry['jobId'];
+    const jobId = rawJob === null ? null : checkInteger(rawJob, 1, `${path}/jobId`);
+    if (VEHICLE_STATE_TRAITS[state].hasJob !== (jobId !== null)) {
+      throw new WorldStateError(`${path}/jobId`, VEHICLE_STATE_TRAITS[state].hasJob ? `stav '${state}' vyžaduje job` : `stav '${state}' nesmie mať job`);
+    }
+    const purchaseCostCents = checkInteger(entry['purchaseCostCents'], 0, `${path}/purchaseCostCents`);
+    return { id: id as EntityId, defId, depotId: depotId as EntityId, state, x, y, heading, jobId: jobId as EntityId | null, purchaseCostCents };
+  });
+}
+
+/** Joby (T03-05): v3 zatiaľ len prázdne pole — tvar jobu a jeho obnovu doplní T03-05. */
+function parseJobs(value: unknown): void {
+  const jobs = checkArray(value, '/jobs');
+  if (jobs.length > 0) throw new WorldStateError('/jobs/0', 'joby (TransportJob) táto verzia ešte neobnovuje — tvar doplní T03-05');
+}
+
+/** Id entít zdieľajú jeden alokátor — modul, loď, vozidlo a jednotka nákladu nesmú mať rovnaké id. */
+function checkIdCollisions(
+  modules: readonly ParsedModuleEntry[],
+  ships: readonly ParsedShipEntry[],
+  vehicles: readonly ParsedVehicleEntry[],
+  cargo: CargoLedgerState,
+): void {
   const owners = new Map<number, string>(modules.map((entry) => [entry.id, 'modulu'] as const));
   ships.forEach((ship, i) => {
     if (owners.has(ship.id)) throw new WorldStateError(`/ships${pointerSegment(i)}/id`, `id ${String(ship.id)} už patrí modulu (id entít sú jedinečné)`);
     owners.set(ship.id, 'lodi');
+  });
+  vehicles.forEach((vehicle, i) => {
+    const owner = owners.get(vehicle.id);
+    if (owner !== undefined) throw new WorldStateError(`/vehicles${pointerSegment(i)}/id`, `id ${String(vehicle.id)} už patrí ${owner} (id entít sú jedinečné)`);
+    owners.set(vehicle.id, 'vozidlu');
   });
   cargo.units.forEach((unit, i) => {
     const owner = owners.get(unit.id);
@@ -346,12 +431,12 @@ function checkIdCollisions(modules: readonly ParsedModuleEntry[], ships: readonl
 
 /**
  * Overí `raw` ako `WorldState` **aktuálnej** verzie (staršie najprv prevedie `migrateWorldState`) pre danú mapu
- * a defy a obnoví jadrové objekty. Kontroly v poradí kľúčov: tvar (presne kľúče v2), `version`, `mapId === map.id`,
+ * a defy a obnoví jadrové objekty. Kontroly v poradí kľúčov: tvar (presne kľúče v3), `version`, `mapId === map.id`,
  * `seed` uint32, `rng` (4× uint32, nie nulový), `clock` (tick ≥ 0, rýchlosť v `time.speeds`), `ids`, `cashCents`
  * (bezpečné celé číslo), `roads` (index v mape, vrstva, bez duplicít, terén unesie cestu), `traffic` (index v mape,
  * bez duplicít, hodnota > 0), `parcels` (presne parcely mapy, platné vlastníctvo, `leased` len pri `leasable`),
- * `modules` (tvar), `cargo` (`parseCargoLedgerState`), `ships` (tvar, `parseShips`), id modulov, lodí a nákladu sa
- * neprekrývajú.
+ * `modules` (tvar), `cargo` (`parseCargoLedgerState`), `ships` (tvar, `parseShips`), `vehicles` (tvar,
+ * `parseVehicles`), `jobs` (zatiaľ prázdne), id modulov, lodí, vozidiel a nákladu sa neprekrývajú.
  * Vstup sa nemení a výsledok s ním nezdieľa meniteľné objekty.
  *
  * `grid` je mriežka počiatočného stavu tej istej mapy (`map.createGrid()`) — z nej sa overuje terén pod cestami;
@@ -388,6 +473,8 @@ export function parseWorldState(raw: unknown, defs: DefRegistry, map: LoadedMap,
   const modules = parseModules(state.modules, defs, nextId);
   const cargo = parseCargo(state.cargo, defs, nextId);
   const ships = parseShips(state.ships, defs, map, nextId);
-  checkIdCollisions(modules, ships, cargo);
-  return { seed, clock, rng, ids, cashCents, roads, traffic, ownership, modules, cargo, ships };
+  const vehicles = parseVehicles(state.vehicles, defs, map, nextId);
+  parseJobs(state.jobs);
+  checkIdCollisions(modules, ships, vehicles, cargo);
+  return { seed, clock, rng, ids, cashCents, roads, traffic, ownership, modules, cargo, ships, vehicles };
 }

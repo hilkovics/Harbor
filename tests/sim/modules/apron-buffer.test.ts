@@ -130,6 +130,20 @@ describe('ApronBuffer — commit, take a FIFO', () => {
     expect(snapshot(apron)).toEqual(before);
   });
 
+  it('assertCommittable: rovnaké chyby ako commit, stav nemení; na platnom vstupe prejde a commit potom tiež (T02-14)', () => {
+    const apron = new ApronBuffer(3);
+    apron.commit(apron.reserve(), id(1));
+    const slot = apron.reserve();
+    const before = snapshot(apron);
+    expectModuleError(() => apron.assertCommittable(7, id(2)), 'invalid_slot');
+    expectModuleError(() => apron.assertCommittable(2, id(2)), 'slot_not_reserved');
+    expectModuleError(() => apron.assertCommittable(slot, id(1)), 'unit_on_apron');
+    expect(() => apron.assertCommittable(slot, id(2))).not.toThrow();
+    expect(snapshot(apron)).toEqual(before);
+    apron.commit(slot, id(2));
+    expect(apron.units()).toEqual([1, 2]);
+  });
+
   it('FIFO = poradie commitu, nie poradie slotov; take zachová poradie ostatných', () => {
     const apron = new ApronBuffer(4);
     const [s0, s1, s2] = [apron.reserve(), apron.reserve(), apron.reserve()];

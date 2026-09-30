@@ -123,16 +123,25 @@ export class ApronBuffer {
   }
 
   /**
-   * Odloží jednotku na **rezervovaný** slot (rezervácia zaniká) a zaradí ju na koniec FIFO. Volá sa po
-   * `CargoLedger.move(unit, on_apron(berth, slot))`. Chyby: mimo rozsahu → `invalid_slot`, slot bez rezervácie →
-   * `slot_not_reserved`, jednotka už na aprone → `unit_on_apron`.
+   * Overí, že `commit(slot, unitId)` prejde, bez zmeny stavu — rovnaké chyby ako `commit`. Volajúci ho zavolá **pred**
+   * `CargoLedger.move(unit, on_apron(berth, slot))`, aby presun v ledgeri a `commit` nemohli rozísť ledger a apron
+   * (presun by prebehol a `commit` by potom zlyhal, T02-14).
    */
-  commit(slot: number, unitId: EntityId): void {
+  assertCommittable(slot: number, unitId: EntityId): void {
     this.assertSlot(slot, 'commit');
     this.assertReserved(slot, 'commit');
     if (this.occupant.includes(unitId)) {
       throw new ModuleError('unit_on_apron', `ApronBuffer.commit: jednotka #${String(unitId)} už leží na slote ${String(this.slotOf(unitId))}`);
     }
+  }
+
+  /**
+   * Odloží jednotku na **rezervovaný** slot (rezervácia zaniká) a zaradí ju na koniec FIFO. Volá sa po
+   * `CargoLedger.move(unit, on_apron(berth, slot))`; kontroly (`assertCommittable`) patria pred presun. Chyby: mimo
+   * rozsahu → `invalid_slot`, slot bez rezervácie → `slot_not_reserved`, jednotka už na aprone → `unit_on_apron`.
+   */
+  commit(slot: number, unitId: EntityId): void {
+    this.assertCommittable(slot, unitId);
     this.reservedFlags[slot] = false;
     this.reserved -= 1;
     this.occupant[slot] = unitId;

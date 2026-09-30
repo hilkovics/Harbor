@@ -116,7 +116,11 @@ function swing(crane: CraneModule, world: World): void {
   beginPlacing(crane, world);
 }
 
-/** Koniec `placing`: jednotka na rezervovaný slot apronu, `CraneCycleDone`, `idle` a nový štart. */
+/**
+ * Koniec `placing`: jednotka na rezervovaný slot apronu, `CraneCycleDone`, `idle` a nový štart. Všetko, čo by
+ * `apron.commit` odmietol (slot mimo apronu, bez rezervácie, jednotka už na aprone), sa overí **pred** presunom
+ * v ledgeri — pri chybe sa nezmení ledger ani apron (T02-14).
+ */
 function place(crane: CraneModule, world: World): void {
   const berth = berthOf(world, crane);
   const unitId = crane.heldUnitId;
@@ -124,6 +128,7 @@ function place(crane: CraneModule, world: World): void {
   if (unitId === null || slot === null) {
     throw new ModuleError('invalid_transition', `${crane.label}: koniec placing bez jednotky (${String(unitId)}) alebo slotu (${String(slot)})`);
   }
+  berth.apron.assertCommittable(slot, unitId);
   world.cargo.move(unitId, { kind: 'on_apron', berthId: berth.id, slot });
   berth.apron.commit(slot, unitId);
   crane.heldUnitId = null;

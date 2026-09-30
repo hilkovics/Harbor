@@ -4,6 +4,7 @@
 // vykládky. Tabuľku prechodov FSM žeriavu testuje tests/sim/modules/crane-module.test.ts.
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@sim/core';
+import { ModuleError } from '@sim/modules';
 import { MIN_CRANE_PHASE_TICKS, cranePhaseTicks } from '@sim/systems';
 import { StatResolver } from '@sim/tech';
 import { World, type WorldState } from '@sim/world';
@@ -176,6 +177,34 @@ describe('kategória a viac žeriavov na jednej lodi', () => {
     expect(crane(world, ROOT_CRANE_ID).state).toBe('grabbing');
     expect(crane(world, second).state).toBe('idle');
     expect(berth(world, ROOT_BERTH_ID).apron.reservedSlots()).toEqual([0]);
+  });
+});
+
+describe('koniec placing — ledger a apron sa nerozídu (T02-14)', () => {
+  it('slot bez rezervácie: ModuleError(slot_not_reserved) pred presunom — jednotka ostane in_crane, žiadny CargoMoved na apron', () => {
+    const world = newWorld({ checkInvariants: false });
+    const ship = spawn(world, 'feeder', 2);
+    const c = crane(world, ROOT_CRANE_ID);
+    const apron = berth(world, ROOT_BERTH_ID).apron;
+    tickUntil(world, () => c.state === 'placing' && c.phaseTicksLeft === 1, 400);
+    const unit = c.heldUnitId as EntityId;
+    const slot = c.reservedSlot as number;
+    apron.release(slot); // poškodenie mimo simulácie: rezervácia zmizla, žeriav o tom nevie
+
+    let error: unknown;
+    try {
+      world.tick();
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(ModuleError);
+    expect((error as ModuleError).code).toBe('slot_not_reserved');
+    expect(world.cargo.get(unit)?.location).toEqual({ kind: 'in_crane', craneId: ROOT_CRANE_ID });
+    expect(apron.unitAt(slot)).toBeNull();
+    expect(apron.units()).toEqual([]);
+    expect(world.cargo.unitsOnApron(ROOT_BERTH_ID)).toEqual([]);
+    expect(ofType(world.events.flush(), 'CargoMoved').filter((event) => event.to.kind === 'on_apron')).toEqual([]);
+    expect(ship.state).toBe('docked');
   });
 });
 

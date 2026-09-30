@@ -272,14 +272,13 @@ function checkTruckCargo(world: World, units: readonly CargoUnit[]): void {
  * brány (`/modules/<i>/runtime/queue/<k>`), kamión vo fronte je vo fronte svojej brány (`/trucks/<i>/state`).
  */
 function checkGateQueues(world: World, indexOf: ReadonlyMap<EntityId, number>): void {
-  for (const module of world.modules.values()) {
-    if (!(module instanceof TruckGate)) continue;
-    module.queuedTruckIds.forEach((truckId, k) => {
+  for (const gate of world.landsideModules.gates) {
+    gate.queuedTruckIds.forEach((truckId, k) => {
       const truck = world.trucks.get(truckId);
-      if (truck === undefined || truck.gateId !== module.id || !TRUCK_STATE_TRAITS[truck.state].queued) {
+      if (truck === undefined || truck.gateId !== gate.id || !TRUCK_STATE_TRAITS[truck.state].queued) {
         throw new WorldStateError(
-          `${modulePath(indexOf.get(module.id) ?? -1)}/runtime/queue${pointerSegment(k)}`,
-          `${module.label}: kamión #${String(truckId)} vo fronte ${truck === undefined ? 'vo svete neexistuje' : `je v stave '${truck.state}' s bránou #${String(truck.gateId)}`}`,
+          `${modulePath(indexOf.get(gate.id) ?? -1)}/runtime/queue${pointerSegment(k)}`,
+          `${gate.label}: kamión #${String(truckId)} vo fronte ${truck === undefined ? 'vo svete neexistuje' : `je v stave '${truck.state}' s bránou #${String(truck.gateId)}`}`,
         );
       }
     });
@@ -306,11 +305,11 @@ function checkTruckMotion(world: World): void {
 
 /** Hodina posledného `NoWaitingBay` rampy nesmie byť v budúcnosti (ADR-024). */
 function checkRampHours(world: World, indexOf: ReadonlyMap<EntityId, number>): void {
-  for (const module of world.modules.values()) {
-    if (!(module instanceof LoadingRamp) || module.lastNoWaitingBayHour === null || module.lastNoWaitingBayHour <= world.clock.gameHour) continue;
+  for (const ramp of world.landsideModules.ramps) {
+    if (ramp.lastNoWaitingBayHour === null || ramp.lastNoWaitingBayHour <= world.clock.gameHour) continue;
     throw new WorldStateError(
-      `${modulePath(indexOf.get(module.id) ?? -1)}/runtime/lastNoWaitingBayHour`,
-      `hodina ${String(module.lastNoWaitingBayHour)} je po aktuálnej ${String(world.clock.gameHour)}`,
+      `${modulePath(indexOf.get(ramp.id) ?? -1)}/runtime/lastNoWaitingBayHour`,
+      `hodina ${String(ramp.lastNoWaitingBayHour)} je po aktuálnej ${String(world.clock.gameHour)}`,
     );
   }
 }

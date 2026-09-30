@@ -23,8 +23,7 @@
  * pohne až v ďalšom ticku. Tick vstupu do stavu s odpočtom je jeho nultý tick (ADR-016).
  */
 import type { EntityId } from '../core/entity-id';
-import { LoadingRamp } from '../modules/loading-ramp';
-import { TruckGate } from '../modules/truck-gate';
+import type { TruckGate } from '../modules/truck-gate';
 import { NO_ACCESS } from '../logistics/module-access';
 import { advanceCarrier } from '../movement/route-planning';
 import type { Truck } from '../trucks/truck';
@@ -233,28 +232,11 @@ function stepGate(world: World, gate: TruckGate): void {
 }
 
 export class LandsideSystem {
-  /** Znovupoužiteľné zoznamy brán a rámp vzostupne podľa id (nie sú stav simulácie; obnovia sa pri zmene modulov). */
-  private readonly gates: TruckGate[] = [];
-  private readonly ramps: LoadingRamp[] = [];
-  private moduleVersion = Number.NaN;
-
-  /** Krok 8: kamióny → brány → spawn (viď hlavička). */
+  /** Krok 8: kamióny → brány → spawn (viď hlavička); brány a rampy z registra sveta (`World.landsideModules`). */
   tick(world: World): void {
-    this.refreshModules(world);
     for (const truck of world.trucks.values()) TRUCK_STEPS[truck.state](truck, world);
-    for (const gate of this.gates) stepGate(world, gate);
-    spawnTrucks(world, this.ramps);
-  }
-
-  /** Brány a rampy sveta prejde len pri zmene množiny modulov (`moduleVersion`). */
-  private refreshModules(world: World): void {
-    if (world.moduleVersion === this.moduleVersion) return;
-    this.moduleVersion = world.moduleVersion;
-    this.gates.length = 0;
-    this.ramps.length = 0;
-    for (const module of world.modules.values()) {
-      if (module instanceof TruckGate) this.gates.push(module);
-      else if (module instanceof LoadingRamp) this.ramps.push(module);
-    }
+    const { gates, ramps } = world.landsideModules;
+    for (const gate of gates) stepGate(world, gate);
+    spawnTrucks(world, ramps);
   }
 }

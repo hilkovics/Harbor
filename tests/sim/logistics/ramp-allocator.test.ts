@@ -11,6 +11,9 @@ describe('allocateRamp / acceptsOutbound', () => {
     const ramp = rampOf(world);
     expect(acceptsOutbound(world, ramp, 'container')).toBe(true);
     expect(allocateRamp(world, far, 'container')).toBe(ramp);
+    // Predvolení kandidáti = rampy z registra sveta (review T04-11, pravidlo 7: bez `instanceof` nad všetkými modulmi).
+    expect(world.landsideModules.ramps).toEqual([ramp]);
+    expect(allocateRamp(world, far, 'container', world.landsideModules.ramps)).toBe(ramp);
     expect(stagingOf(ramp)).toEqual([
       [0, 0],
       [0, 0],
@@ -23,7 +26,6 @@ describe('allocateRamp / acceptsOutbound', () => {
     expect(acceptsOutbound(world, ramp, 'bulk')).toBe(false);
     expect(allocateRamp(world, far, 'bulk')).toBeUndefined();
     expect(allocateRamp(world, far, 'container', [])).toBeUndefined();
-    expect(allocateRamp(world, far, 'container', [far])).toBeUndefined();
 
     for (const dock of [0, 0, 1, 1]) ramp.reserve(dock);
     expect([ramp.freeCount, acceptsOutbound(world, ramp, 'container')]).toEqual([0, false]);

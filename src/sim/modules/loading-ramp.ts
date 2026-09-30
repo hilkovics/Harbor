@@ -29,7 +29,7 @@ import { rampParams } from '../defs/module-def';
 import type { CargoCategory, RampParams } from '../defs/types';
 import type { CargoDropTarget } from './cargo-drop-target';
 import { DockStaging } from './dock-staging';
-import { LandExportModule } from './land-export-module';
+import { LandExportModule, type LandsideRole, type LandsideRoster } from './land-export-module';
 import type { ModuleInit } from './module';
 import { ModuleError } from './module-error';
 import { checkRuntimeKeys, readOptionalCount } from './runtime-state';
@@ -110,8 +110,16 @@ export class LoadingRamp extends LandExportModule {
     });
   }
 
+  override get landsideRole(): LandsideRole {
+    return 'ramp';
+  }
+
   override get internalTicks(): number | undefined {
     return this.params.internalTicks;
+  }
+
+  override enlist(roster: LandsideRoster): void {
+    roster.ramps.push(this);
   }
 
   /** Počet dockov (`params.docks`). */
@@ -277,18 +285,17 @@ export class LoadingRamp extends LandExportModule {
     return { kind: 'at_ramp', count: this.staging.reservedCount };
   }
 
-  /** Súlad staging rezervácií s ledgerom a počítadlo držiteľov dockov (krok 12, bez alokácie). */
+  /**
+   * Súlad staging rezervácií s ledgerom a počítadlo držiteľov dockov (krok 12, O(docky), bez alokácie). Že kamión drží
+   * najviac jeden dock a dock drží existujúci kamión, overí svet (`checkTrucks`: držiteľ docku každého kamióna + súčet
+   * držaných dockov = počet kamiónov s `holdsDock`, review T04-11) — `assignDock` duplicitu nepustí.
+   */
   override findRuntimeProblem(): string | undefined {
     const staging = this.staging.findProblem();
     if (staging !== undefined) return staging;
     let assigned = 0;
     for (let dock = 0; dock < this.dockTrucks.length; dock++) {
-      const holder = this.dockTrucks[dock];
-      if (holder === null) continue;
-      assigned += 1;
-      for (let other = 0; other < dock; other++) {
-        if (this.dockTrucks[other] === holder) return `${this.label}: kamión #${String(holder)} drží docky ${String(other)} aj ${String(dock)}`;
-      }
+      if (this.dockTrucks[dock] !== null) assigned += 1;
     }
     return assigned === this.assigned ? undefined : `${this.label}: počítadlo držaných dockov ${String(this.assigned)} ≠ ${String(assigned)}`;
   }

@@ -17,6 +17,7 @@ export type { StorageRuntimeState } from './storage-module';
 export { CONTAINER_YARD_CATEGORY, ContainerYard } from './container-yard';
 export { VehicleDepot } from './vehicle-depot';
 export { LandExportModule } from './land-export-module';
+export type { LandsideRole, LandsideRoster } from './land-export-module';
 export { TruckGate } from './truck-gate';
 export type { GateRuntimeState } from './truck-gate';
 export { WaitingArea } from './waiting-area';

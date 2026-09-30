@@ -37,7 +37,7 @@
 import { slotOf } from '../cargo/cargo-location';
 import type { CargoCategory } from '../defs/types';
 import { BerthModule } from '../modules/berth-module';
-import { LoadingRamp } from '../modules/loading-ramp';
+import type { LoadingRamp } from '../modules/loading-ramp';
 import { StorageModule } from '../modules/storage-module';
 import type { Vehicle } from '../vehicles/vehicle';
 import { startTrip } from '../vehicles/vehicle-trip';
@@ -101,8 +101,8 @@ function openJob(world: World, init: Pick<TransportJob, 'unitIds' | 'from' | 'to
  */
 function collectOutboundRamps(world: World, into: LoadingRamp[]): void {
   into.length = 0;
-  for (const module of world.modules.values()) {
-    if (module instanceof LoadingRamp && module.freeCount > 0 && world.isRampOperational(module)) into.push(module);
+  for (const ramp of world.landsideModules.ramps) {
+    if (ramp.freeCount > 0 && world.isRampOperational(ramp)) into.push(ramp);
   }
 }
 
@@ -144,9 +144,10 @@ export function createOutboundJobs(world: World, ramps: LoadingRamp[] = []): voi
  * použiteľná. Job s iným cieľom než rampa → `undefined` (inbound sa takto neruší).
  */
 function outboundCancelReason(world: World, job: TransportJob): JobCancelReason | undefined {
+  if (job.to.kind !== 'at_ramp') return undefined;
   const ramp = world.modules.get(job.toModuleId);
   const source = world.modules.get(job.fromModuleId);
-  if (!(ramp instanceof LoadingRamp) || source === undefined) return undefined;
+  if (ramp === undefined || source === undefined) return undefined;
   if (!world.isRampOperational(ramp)) return 'ramp_inoperative';
   return distanceBetweenModules(world, source, ramp) === Infinity ? 'ramp_unreachable' : undefined;
 }

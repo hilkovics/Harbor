@@ -23,7 +23,7 @@ import type { EntityId } from '../core/entity-id';
 import { describeValue } from '../defs/def-spec';
 import { gateParams } from '../defs/module-def';
 import type { GateParams } from '../defs/types';
-import { LandExportModule } from './land-export-module';
+import { LandExportModule, type LandsideRole, type LandsideRoster } from './land-export-module';
 import type { ModuleInit } from './module';
 import { ModuleError, ModuleStateError } from './module-error';
 import type { PlacedConnector } from './module-geometry';
@@ -64,8 +64,16 @@ export class TruckGate extends LandExportModule {
     this.params = gateParams(init.def);
   }
 
+  override get landsideRole(): LandsideRole {
+    return 'gate';
+  }
+
   override get internalTicks(): number | undefined {
     return this.params.internalTicks;
+  }
+
+  override enlist(roster: LandsideRoster): void {
+    roster.gates.push(this);
   }
 
   /** Vstupná strana (konektor pred bránou, z portálu); `null` = neurčená. Zverejňuje ju svet (`setSides`). */

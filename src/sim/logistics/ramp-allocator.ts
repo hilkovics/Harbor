@@ -9,15 +9,15 @@
  * ostro menšia vzdialenosť). Rezerváciu miesta robí volajúci (`LoadingRamp.reserve(firstFreeDock())`) — výber sám svet
  * nemení a nealokuje.
  */
-import type { EntityId } from '../core/entity-id';
 import type { CargoCategory } from '../defs/types';
-import { LoadingRamp } from '../modules/loading-ramp';
+import type { LoadingRamp } from '../modules/loading-ramp';
 import type { Module } from '../modules/module';
 import { distanceBetweenModules, type ModuleAccessEnv } from './module-access';
 
 /** Časť sveta, ktorú alokátor číta (`World` ju spĺňa). */
 export interface RampAllocatorEnv extends ModuleAccessEnv {
-  readonly modules: ReadonlyMap<EntityId, Module>;
+  /** Register pozemných modulov — rampy vzostupne podľa id (`World.landsideModules`, pravidlo 7). */
+  readonly landsideModules: { readonly ramps: readonly LoadingRamp[] };
   /** Aktuálna prevádzkovosť rampy (ADR-022) — bez alokácie pri nezmenenej sieti. */
   isRampOperational(ramp: Module): boolean;
 }
@@ -29,22 +29,22 @@ export function acceptsOutbound(env: RampAllocatorEnv, ramp: LoadingRamp, catego
 
 /**
  * Najbližšia vhodná rampa (viď hlavička) pre náklad kategórie `category` zo skladu `source`; inak `undefined`.
- * `candidates` (predvolene všetky moduly sveta vzostupne podľa id) môže byť predvýber rámp v tom istom poradí —
- * dispatcher ich zbiera raz za tick (`collectOutboundRamps`); podmienky kandidáta sa overia aj tak.
+ * `candidates` (predvolene všetky rampy sveta z registra, vzostupne podľa id) môže byť predvýber rámp v tom istom
+ * poradí — dispatcher ich zbiera raz za tick (`collectOutboundRamps`); podmienky kandidáta sa overia aj tak.
  */
 export function allocateRamp(
   env: RampAllocatorEnv,
   source: Module,
   category: CargoCategory,
-  candidates: Iterable<Module> = env.modules.values(),
+  candidates: Iterable<LoadingRamp> = env.landsideModules.ramps,
 ): LoadingRamp | undefined {
   let best: LoadingRamp | undefined;
   let bestDistance = Infinity;
-  for (const module of candidates) {
-    if (!(module instanceof LoadingRamp) || !acceptsOutbound(env, module, category)) continue;
-    const distance = distanceBetweenModules(env, source, module);
+  for (const ramp of candidates) {
+    if (!acceptsOutbound(env, ramp, category)) continue;
+    const distance = distanceBetweenModules(env, source, ramp);
     if (distance < bestDistance) {
-      best = module;
+      best = ramp;
       bestDistance = distance;
     }
   }

@@ -26,18 +26,19 @@ import type { EntityId } from '../core/entity-id';
 import type { CellCoord, Grid } from '../grid/grid';
 import type { DistanceMatrix } from '../logistics/distance-matrix';
 import { NO_ACCESS, accessCellIndex } from '../logistics/module-access';
-import { LoadingRamp, RAMP_OPERATIONAL, type RampInoperativeReason, type RampStatus } from '../modules/loading-ramp';
+import { RAMP_OPERATIONAL, type LoadingRamp, type RampInoperativeReason, type RampStatus } from '../modules/loading-ramp';
 import type { Module } from '../modules/module';
 import type { PlacedConnector } from '../modules/module-geometry';
-import { TruckGate } from '../modules/truck-gate';
-import { WaitingArea } from '../modules/waiting-area';
+import type { TruckGate } from '../modules/truck-gate';
+import type { WaitingArea } from '../modules/waiting-area';
+import type { LandsideModules } from './landside-roster';
 
 /** Časť sveta, z ktorej sa reťazec počíta (`World` ju spĺňa). */
 export interface LandsideEnv {
   readonly grid: Grid;
   readonly map: { readonly roadPortals: readonly { readonly cell: CellCoord }[] };
-  /** Moduly vzostupne podľa id. */
-  readonly modules: ReadonlyMap<EntityId, Module>;
+  /** Register pozemných modulov (brány, stojiská, rampy vzostupne podľa id). */
+  readonly landsideModules: LandsideModules;
   /** Ceny ciest (lenivé — číta sa len pri výpočte s bránami, stojiskami alebo rampami). */
   readonly distances: DistanceMatrix;
   readonly roadVersion: number;
@@ -228,14 +229,7 @@ function rampAccessOf(env: LandsideEnv, ramp: LoadingRamp, gates: readonly Valid
 
 /** Celý výpočet reťazca nad aktuálnymi cestami a modulmi. */
 function computeLandside(env: LandsideEnv): LandsideState {
-  const gateModules: TruckGate[] = [];
-  const areas: WaitingArea[] = [];
-  const ramps: LoadingRamp[] = [];
-  for (const module of env.modules.values()) {
-    if (module instanceof TruckGate) gateModules.push(module);
-    else if (module instanceof WaitingArea) areas.push(module);
-    else if (module instanceof LoadingRamp) ramps.push(module);
-  }
+  const { gates: gateModules, waitingAreas: areas, ramps } = env.landsideModules;
   const portal = portalCellOf(env);
   const gates = new Map<EntityId, GateSides>();
   const valid: ValidGate[] = [];

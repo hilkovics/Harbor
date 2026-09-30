@@ -14,7 +14,7 @@
 import type { EntityId } from '../core/entity-id';
 import { waitingAreaParams } from '../defs/module-def';
 import type { WaitingAreaParams } from '../defs/types';
-import { LandExportModule } from './land-export-module';
+import { LandExportModule, type LandsideRole, type LandsideRoster } from './land-export-module';
 import type { ModuleInit } from './module';
 import { ModuleError } from './module-error';
 
@@ -36,8 +36,16 @@ export class WaitingArea extends LandExportModule {
     this.occupiedFlags = new Array<boolean>(this.params.bays).fill(false);
   }
 
+  override get landsideRole(): LandsideRole {
+    return 'waiting_area';
+  }
+
   override get internalTicks(): number | undefined {
     return this.params.internalTicks;
+  }
+
+  override enlist(roster: LandsideRoster): void {
+    roster.waitingAreas.push(this);
   }
 
   /** Počet stojísk (`params.bays`). */
@@ -135,7 +143,11 @@ export class WaitingArea extends LandExportModule {
     return bay;
   }
 
-  /** Počítadlá sedia s bays, obsadený bay má držiteľa, kamión drží najviac jeden bay (krok 12, bez alokácie). */
+  /**
+   * Počítadlá sedia s bays a obsadený bay má držiteľa (krok 12, O(bays), bez alokácie). Že kamión drží najviac jeden
+   * bay a bay drží existujúci kamión, overí svet (`checkTrucks`: držiteľ bay každého kamióna + súčet držaných bays =
+   * počet kamiónov s bay, review T04-11) — `reserveBay*` duplicitu nepustí.
+   */
   override findRuntimeProblem(): string | undefined {
     let held = 0;
     let occupied = 0;
@@ -145,11 +157,7 @@ export class WaitingArea extends LandExportModule {
         occupied += 1;
         if (holder === null) return `${this.label}: bay ${String(bay)} je obsadený bez kamióna`;
       }
-      if (holder === null) continue;
-      held += 1;
-      for (let other = 0; other < bay; other++) {
-        if (this.holders[other] === holder) return `${this.label}: kamión #${String(holder)} drží bays ${String(other)} aj ${String(bay)}`;
-      }
+      if (holder !== null) held += 1;
     }
     if (held !== this.held || occupied !== this.occupied) {
       return `${this.label}: počítadlá bays (držané ${String(this.held)}, obsadené ${String(this.occupied)}) ≠ bays (${String(held)}, ${String(occupied)})`;

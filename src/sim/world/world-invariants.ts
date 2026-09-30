@@ -475,23 +475,43 @@ function checkStorageReservations(world: World): string | undefined {
   return undefined;
 }
 
+/** Znovupoužiteľné pracovné polia kroku 12 (nie sú stav simulácie): počty jednotiek jobov na dock a začiatok rampy. */
+let dockUnitCounts = new Int32Array(0);
+let rampDockOffsets = new Int32Array(0);
+
 /**
  * Staging rezervácie každej rampy = outbound joby (ADR-023): na každom docku počet rezervácií = počet jednotiek
  * aktívnych jobov s cieľom na tomto docku (job drží rezerváciu celý život, `commit` pri vykládke ju premení na
- * obsadenie). Bez alokácie — jeden prechod jobmi na dock (dockov je málo). `staged + reserved ≤ stagingPerDock`
- * overuje `findRuntimeProblem` rampy (bod 10).
+ * obsadenie). O(joby + docky) bez alokácie v platnom stave (review T04-11): jeden prechod jobmi (`to.kind === 'at_ramp'`)
+ * do znovupoužiteľného poľa počtov (rampa podľa `rampOrdinal` registra, dock ako posun), potom jeden prechod dockami.
+ * Cieľ jobu a dock v rozsahu overil `checkJob`. `staged + reserved ≤ stagingPerDock` overuje `findRuntimeProblem`
+ * rampy (bod 10).
  */
 function checkRampReservations(world: World): string | undefined {
-  for (const module of world.modules.values()) {
-    if (!(module instanceof LoadingRamp)) continue;
-    for (let dock = 0; dock < module.docks; dock++) {
-      let count = 0;
-      for (const job of world.jobs.values()) {
-        if (job.toModuleId === module.id && slotOf(job.to) === dock) count += job.unitIds.length;
-      }
-      const reserved = module.reservedAt(dock);
+  const { ramps } = world.landsideModules;
+  if (ramps.length === 0) return undefined;
+  if (rampDockOffsets.length < ramps.length) rampDockOffsets = new Int32Array(ramps.length);
+  let docks = 0;
+  for (let ordinal = 0; ordinal < ramps.length; ordinal++) {
+    rampDockOffsets[ordinal] = docks;
+    docks += ramps[ordinal].docks;
+  }
+  if (dockUnitCounts.length < docks) dockUnitCounts = new Int32Array(docks);
+  dockUnitCounts.fill(0, 0, docks);
+  for (const job of world.jobs.values()) {
+    const { to } = job;
+    if (to.kind !== 'at_ramp') continue;
+    const ordinal = world.landsideModules.rampOrdinal(to.rampId);
+    if (ordinal < 0 || to.dock >= ramps[ordinal].docks) return `${job.label}: cieľ at_ramp #${String(to.rampId)} dock ${String(to.dock)} nie je dock rampy sveta`;
+    dockUnitCounts[rampDockOffsets[ordinal] + to.dock] += job.unitIds.length;
+  }
+  for (let ordinal = 0; ordinal < ramps.length; ordinal++) {
+    const ramp = ramps[ordinal];
+    for (let dock = 0; dock < ramp.docks; dock++) {
+      const count = dockUnitCounts[rampDockOffsets[ordinal] + dock];
+      const reserved = ramp.reservedAt(dock);
       if (count !== reserved) {
-        return `${module.label}: dock ${String(dock)} má ${String(reserved)} staging rezervácií, aktívne outbound joby naň vezú ${String(count)} jednotiek`;
+        return `${ramp.label}: dock ${String(dock)} má ${String(reserved)} staging rezervácií, aktívne outbound joby naň vezú ${String(count)} jednotiek`;
       }
     }
   }
@@ -642,10 +662,10 @@ const checkModuleRuntime: Check = (world) => {
   for (const module of world.modules.values()) {
     const problem = module.findRuntimeProblem();
     if (problem !== undefined) return problem;
-    if (module instanceof LoadingRamp) {
-      const foreign = checkRampCategory(world, module);
-      if (foreign !== undefined) return foreign;
-    }
+  }
+  for (const ramp of world.landsideModules.ramps) {
+    const foreign = checkRampCategory(world, ramp);
+    if (foreign !== undefined) return foreign;
   }
   return undefined;
 };
@@ -722,11 +742,10 @@ const checkTrucks: Check = (world) => {
   let heldBays = 0;
   let heldDocks = 0;
   let queueLength = 0;
-  for (const module of world.modules.values()) {
-    if (module instanceof WaitingArea) heldBays += module.bays - module.freeBays;
-    else if (module instanceof LoadingRamp) heldDocks += module.assignedDocks;
-    else if (module instanceof TruckGate) queueLength += module.queueLength;
-  }
+  const { gates, waitingAreas, ramps } = world.landsideModules;
+  for (const area of waitingAreas) heldBays += area.bays - area.freeBays;
+  for (const ramp of ramps) heldDocks += ramp.assignedDocks;
+  for (const gate of gates) queueLength += gate.queueLength;
   if (heldBays !== bays) return `stojiská držia ${String(heldBays)} bays, kamióny ${String(bays)}`;
   if (heldDocks !== docks) return `rampy majú ${String(heldDocks)} držaných dockov, kamióny ${String(docks)}`;
   if (queueLength !== queued) return `fronty brán majú ${String(queueLength)} kamiónov, v gate_queue* je ${String(queued)}`;

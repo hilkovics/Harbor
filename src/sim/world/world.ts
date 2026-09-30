@@ -99,6 +99,7 @@ import { VehicleError } from '../vehicles/vehicle-error';
 import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle-fsm';
 import { connectorCellsOf, isModuleConnected, type ConnectorCell } from './connectivity';
 import { LandsideNetwork, type GateSides, type LandsideRoute } from './landside';
+import { LandsideRosterCache, type LandsideModules } from './landside-roster';
 import { migrateWorldState } from './migrate';
 import { PLACEMENT_RULE_ERROR, attachesToHost, findPlacementViolations, findRemovalViolations } from './module-rules';
 import { WorldInvariantError, findWorldViolation } from './world-invariants';
@@ -226,6 +227,7 @@ export class World {
   private publishedRoadVersion = Number.NaN;
   private publishedModuleVersion = Number.NaN;
   private landsideNetwork: LandsideNetwork | undefined;
+  private readonly landsideRoster = new LandsideRosterCache();
   private pathfinderInstance: Pathfinder | undefined;
   private pathCache: PathCache | undefined;
   private distanceMatrix: DistanceMatrix | undefined;
@@ -368,6 +370,14 @@ export class World {
   get landside(): LandsideNetwork {
     this.landsideNetwork ??= new LandsideNetwork(this);
     return this.landsideNetwork;
+  }
+
+  /**
+   * Register pozemných modulov (brány, stojiská, rampy vzostupne podľa id; `LandExportModule.enlist`, pravidlo 7) —
+   * obnoví sa lenivo pri zmene `moduleVersion`, čítanie pri nezmenených moduloch nealokuje. Nie je v save.
+   */
+  get landsideModules(): LandsideModules {
+    return this.landsideRoster.refresh(this.moduleMap, this.moduleChanges);
   }
 
   /**
@@ -1015,15 +1025,16 @@ export class World {
     this.publishedRoadVersion = this.roadChanges;
     this.publishedModuleVersion = this.moduleChanges;
     const { landside } = this;
-    for (const module of this.moduleMap.values()) {
-      if (module instanceof TruckGate) {
-        const sides = landside.gateSides(module);
-        module.setSides(sides.entry, sides.exit);
-      } else if (module instanceof LoadingRamp) {
-        const status = this.rampStatus(module);
-        if (module.publishStatus(status) && emit) {
-          this.events.emit({ type: 'RampOperationalChanged', rampId: module.id, operational: status.operational, reason: status.reason });
-        }
+    const { gates, ramps } = this.landsideModules;
+    for (const gate of gates) {
+      const sides = landside.gateSides(gate);
+      gate.setSides(sides.entry, sides.exit);
+    }
+    // Rampy vzostupne podľa id — rovnaké poradie udalostí ako prechod všetkými modulmi (brány udalosti nemajú).
+    for (const ramp of ramps) {
+      const status = this.rampStatus(ramp);
+      if (ramp.publishStatus(status) && emit) {
+        this.events.emit({ type: 'RampOperationalChanged', rampId: ramp.id, operational: status.operational, reason: status.reason });
       }
     }
   }

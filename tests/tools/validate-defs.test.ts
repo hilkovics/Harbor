@@ -28,6 +28,11 @@ const INFRASTRUCTURE_OK = {
   schemaVersion: 1,
   road: { costPerCellCents: 200000, maintenancePerDayCents: 0 },
   rail: { costPerCellCents: 600000, maintenancePerDayCents: 0 },
+  roadKinds: {
+    two_lane: { costPerCellCents: 200000, speedFactor: 1 },
+    one_lane: { costPerCellCents: 120000, speedFactor: 0.7 },
+    one_way: { costPerCellCents: 150000, speedFactor: 1 },
+  },
 };
 
 function readRealDef(name: string): Record<string, unknown> {

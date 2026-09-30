@@ -153,12 +153,7 @@ Akceptácia: scenár s importom aj exportom na jednej lodi — export príde pre
 
 ---
 
-## Fáza 6b — Sklad: stohy, rehandling, pre-marshalling (vložená, ≈2,5 SD)
-Referencia: `docs/PORT_OPERATIONS.md` §2.4. Pozície bay–row–tier, poradie v stohu, rehandling (čas stroja), pre-marshalling exportov k nábrežiu deň pred loďou, metriky `rehandlesPerMove`.
-
----
-
-## Fáza 6c — Prázdne kontajnery a tranship (vložená, ≈2,5 SD) → **M2 „živý terminál"**
+## Fáza 6c — Prázdne kontajnery a tranship (vložená, ≈2,5 SD) → **M2 „živý terminál"** (spolu s 6a)
 Referencia: `docs/PORT_OPERATIONS.md` §2.2–2.3. `lineId`, návrat prázdnych z vnútrozemia, depot prázdnych + empty handler, kontrola a M&R, výdaj prázdneho exportérovi, repositioning kontrakty, tranship loď → loď (nikdy cez bránu).
 Akceptácia (M2): všetky štyri toky (import, export, prázdne, tranship) v jednom scenári, konzervácia OK.
 
@@ -269,6 +264,11 @@ Testy: export scenár končí s `on_ship` všetkými jednotkami a odplávaním l
 - [ ] Vyčistiť `BACKLOG.md`, aktualizovať docs, `README.md` s GIF/screenshot z Playwright.
 
 Akceptácia (**M4**): 2 herné mesiace bez pádu, FPS ≥ 60 pri 8× s 3 loďami/ 12 vozidlami/ 20 kamiónmi; e2e zelené; golden reporty aktualizované so zámerným diffom.
+
+---
+
+## Fáza 14 — Sklad: stohy, rehandling, pre-marshalling (voliteľná, po release, ≈2,5 SD)
+Presunuté na úplný koniec na žiadosť používateľa (nie je nevyhnutné). Do F14 sa sklad modeluje kapacitou bez poradia v stohu; RTG vo F10a bez rehandlingu. Referencia: `docs/PORT_OPERATIONS.md` §2.4. Pozície bay–row–tier, poradie v stohu, rehandling (čas stroja), pre-marshalling exportov k nábrežiu deň pred loďou, metriky `rehandlesPerMove`.
 
 ---
 

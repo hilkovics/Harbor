@@ -53,7 +53,6 @@ Nevyžaduje extra kód, vznikne z vyššie uvedeného: exporty prichádzajú v �
 | **5b** (beží) | spätná väzba z hrania — tok kamiónov, lode bez prekryvu, mapa s mólami, mierka | — |
 | **6** | Save/Load, čas, nastavenia, stabilizácia (bez zmeny) | 1,5 SD |
 | **6a — Export a booking** *(nová; presunuté „export kontrakty" z F12)* | booking (loď + cieľový prístav + cut-off), rozložené príchody exportov, brána s VGM hold, exportný sklad zoskupený podľa lode/prístavu/hmotnosti, nakládka lode podľa zjednodušeného stowage plánu, dual cycling žeriavu, lashing + papiere pred odchodom, dual transaction kamiónov | 3 SD |
-| **6b — Sklad: stohy a rehandling** *(nová)* | pozície bay–row–tier v dvore, poradie v stohu, rehandling (čas), pre-marshalling pred loďou, metriky rehandlingu | 2,5 SD |
 | **6c — Prázdne a tranship** *(nová)* | `lineId`, návrat prázdnych z vnútrozemia, depot prázdnych + empty handler, kontrola a M&R, výdaj prázdneho exportérovi, repositioning kontrakty, tranship kontrakty (loď → loď) | 2,5 SD |
 | 7 | Parcely, OPEX, grafy (bez zmeny) | 2 SD |
 | 8 | XP a tech tree — odomyká RTG/shuttle/AGV/empty depot | 1,5 SD |
@@ -63,8 +62,9 @@ Nevyžaduje extra kód, vznikne z vyššie uvedeného: exporty prichádzajú v �
 | 11 | Analytika, heatmapa, kongescia (+ metriky rehandlingu, dual transaction/cycling) | 1,5 SD |
 | 12 | Lode naplno, reputácia; **stowage plán naplno** (40'/20', posledný prístav, prázdne navrch); **stavanie móla/zásyp (ADR-028)** | 2,5 SD |
 | 13 | Balans, UX, tutoriál, výkon, release | 3 SD |
+| **14 — Sklad: stohy a rehandling** *(nová, voliteľná, úplne na konci — rozhodnutie používateľa)* | pozície bay–row–tier, poradie v stohu, rehandling (čas stroja), pre-marshalling pred loďou, metriky rehandlingu; dovtedy sklad = kapacita bez poradia, RTG bez rehandlingu | 2,5 SD |
 
-Plán sa tým predĺži o ≈ 11 SD (spolu ≈ 40 SD). Poradie: 5b → 6 → 6a → 6b → 6c → 7 → … Fázy 6a–6c spolu tvoria **M2 „živý terminál"**: všetky štyri toky kontajnerov.
+Plán sa tým predĺži o ≈ 11 SD (spolu ≈ 40 SD). Poradie: 5b → 6 → 6a → 6c → 7 → … → 13 → 14 (voliteľná). Fázy 6a a 6c spolu tvoria **M2 „živý terminál"**: všetky štyri toky kontajnerov.
 
 ## 4. Dopady na architektúru (na rozhodnutie v ADR fáz)
 - `CargoUnit` dostane `direction: 'import' | 'export' | 'tranship' | 'empty'`, `bookingId?`, `lineId`, `destinationPort?`, `weightClass`, `status` (napr. `vgm_hold`, `damaged`).

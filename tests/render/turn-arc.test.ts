@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ROAD_KINDS, type RoadKind } from '@sim/grid';
 import { MANIFEST_CELL_PX } from '@render/entity-assets';
-import { LANE_CENTER_PX, forwardOf, laneMagnitude, rightOf } from '@render/lane';
+import { LANE_CENTER_PX, VEHICLE_OFFSET_PX, VEHICLE_WIDTH_PX, forwardOf, laneMagnitude, rightOf } from '@render/lane';
 import {
   cornerAlpha,
   cornerTurn,
@@ -45,10 +45,10 @@ describe('geometria oblúka je odvodená zo sprite `road_corner.svg`', () => {
     expect(corner).toContain('A6 6 0 0 1 58 0'); // vnútorný okraj: polomer 6
   });
 
-  it('polomery pruhov: pravá zákruta 19 px, ľavá 45 px (dvojpruhová), stred 32 px (jednopruhová)', () => {
+  it('polomery dráhy vozidla: pravá zákruta 32 − posun px, ľavá 32 + posun px (dvojpruhová), stred 32 px (jednopruhová)', () => {
     for (const { from, to, delta } of TURNS) {
       const right = turnArcRadius('two_lane', from, to) * PX;
-      expect(right, `${String(from)}→${String(to)}`).toBeCloseTo(delta > 0 ? 19 : 45, 9);
+      expect(right, `${String(from)}→${String(to)}`).toBeCloseTo(delta > 0 ? 32 - VEHICLE_OFFSET_PX : 32 + VEHICLE_OFFSET_PX, 9);
       for (const kind of ['one_lane', 'one_way'] as const) expect(turnArcRadius(kind, from, to) * PX).toBeCloseTo(32, 9);
     }
   });
@@ -136,33 +136,29 @@ describe('turnArcPose: začiatok, stred a koniec oblúka (všetky kurzy, obe zá
   });
 });
 
-describe('vozidlo nesmie prekročiť stredovú čiaru (± 2 px)', () => {
-  it.each(TURNS)('dvojpruhová cesta, $from° → $to°: telo (± 13 px od stredu pruhu) ostane v pruhu okolo vnútorného rohu', ({ from, to, delta }) => {
+describe('vozidlo v zákrute ostane na asfalte cesty (± 2 px)', () => {
+  const halfWidth = VEHICLE_WIDTH_PX / 2 / PX; // polovica šírky vozidla (mierka 1 : 1, 48 px)
+
+  it.each(TURNS)('dvojpruhová cesta, $from° → $to°: telo ostane v asfalte okolo vnútorného rohu (polomery 6…58 px)', ({ from, to }) => {
     const q = arcCenter(from, to);
-    const halfWidth = LANE_CENTER_PX / PX; // šírka pruhu / 2: sprite 26 px
     for (let i = 0; i <= 100; i++) {
       const pose = turnArcPose('two_lane', from, to, i / 100);
       const radius = Math.hypot(pose.x - q.x, pose.y - q.y);
-      if (delta > 0) {
-        // pravá zákruta = vnútorný pruh: polomery 6…32 px; vonkajší okraj tela sa nesmie dostať za stredovú čiaru (32 px)
-        expect(radius + halfWidth).toBeLessThanOrEqual(0.5 + TOLERANCE_CELLS);
-        expect(radius - halfWidth).toBeGreaterThanOrEqual(6 / PX - TOLERANCE_CELLS); // a nie do vnútorného okraja asfaltu (6 px)
-      } else {
-        // ľavá zákruta = vonkajší pruh: polomery 32…58 px
-        expect(radius - halfWidth).toBeGreaterThanOrEqual(0.5 - TOLERANCE_CELLS);
-        expect(radius + halfWidth).toBeLessThanOrEqual(58 / PX + TOLERANCE_CELLS);
-      }
+      expect(radius - halfWidth).toBeGreaterThanOrEqual(6 / PX - TOLERANCE_CELLS); // vnútorný okraj asfaltu (6 px)
+      expect(radius + halfWidth).toBeLessThanOrEqual(58 / PX + TOLERANCE_CELLS); // vonkajší okraj asfaltu (58 px)
     }
   });
 
-  it.each(TURNS)('jednopruhová cesta, $from° → $to°: telo je v asfalte 19…45 px', ({ from, to }) => {
+  it.each(TURNS)('jednopruhová cesta, $from° → $to°: dráha stredu je na osi (polomer 32 px)', ({ from, to }) => {
     const q = arcCenter(from, to);
     for (let i = 0; i <= 100; i++) {
       const pose = turnArcPose('one_lane', from, to, i / 100);
-      const radius = Math.hypot(pose.x - q.x, pose.y - q.y);
-      expect(radius - LANE_CENTER_PX / PX).toBeGreaterThanOrEqual(19 / PX - TOLERANCE_CELLS);
-      expect(radius + LANE_CENTER_PX / PX).toBeLessThanOrEqual(45 / PX + TOLERANCE_CELLS);
+      expect(Math.hypot(pose.x - q.x, pose.y - q.y) * PX).toBeCloseTo(32, 9);
     }
+  });
+
+  it('pravidlo pruhu: posun dráhy od osi nikdy nepresiahne stred pruhu (13 px)', () => {
+    expect(VEHICLE_OFFSET_PX).toBeLessThanOrEqual(LANE_CENTER_PX);
   });
 });
 

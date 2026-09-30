@@ -1,14 +1,25 @@
 /**
- * Pruhy (docs/tasks/phase-03.md, „Doplnok od používateľa“, rozhodnutie 11; ADR-020): sim vedie vozidlo stredom bunky,
- * pruh je čisto prezentačný — renderer posunie vozidlo kolmo na smer jazdy do pravého pruhu (premávka je pravostranná).
- * Počet pruhov určuje typ cesty (`ROAD_KIND_TRAITS[kind].lanes` zo simu): `two_lane` = 2 (pravý pruh), `one_lane` a
- * `one_way` = 1 (stred).
+ * Pruhy a mierka vozidiel (docs/tasks/phase-03.md, „Doplnok od používateľa“, rozhodnutie 11; ADR-020; docs/tasks/phase-05b.md,
+ * spätná väzba 10): sim vedie vozidlo stredom bunky, pruh je čisto prezentačný — renderer posunie vozidlo kolmo na smer
+ * jazdy doprava (premávka je pravostranná). Počet pruhov určuje typ cesty (`ROAD_KIND_TRAITS[kind].lanes` zo simu):
+ * `two_lane` = 2 (pravá strana), `one_lane` a `one_way` = 1 (stred).
  *
- * Geometria sa odvodzuje zo spritov (`assets/infra/road_*.svg`, `assets/entities/straddle_carrier_*.svg`, obe 64×64 px,
- * `cellPx` manifestu), nie z odhadu; `tests/render/lane.test.ts` porovnáva konštanty priamo so SVG:
+ * **Jediné miesto mierky vozidiel.** Všetky sprity vozidiel a kamiónov (`VehicleView`, `TruckView`, fallback `Graphics`) sa
+ * škálujú jediným činiteľom `VEHICLE_SCALE`. Sprity sú nakreslené v mierke náklad : vozidlo = 1 : 1 — kontajner v návese
+ * kamióna má 32 × 64 px, rovnako ako `cargo.container_teu` (64 × 32 px) na aprone či pod žeriavom, a otvor straddle carriera
+ * (32 px) obkročí jeden takýto kontajner. Kým sa vozidlo zmenšovalo na šírku pruhu (26 / 56 ≈ 0,46, verzia F3), kontajner
+ * sa pri naložení zmenšil na menej než polovicu a pri vyložení sa zväčšil späť (F5b č. 10). Tabuľka mierok celej hry je
+ * v `docs/DESIGN_BRIEF.md` §4.1.
+ *
+ * Geometria sa odvodzuje zo spritov (`assets/infra/road_*.svg`, `assets/entities/{straddle_carrier,truck_container}_*.svg`,
+ * 64 px bunka manifestu), nie z odhadu; `tests/render/lane.test.ts` porovnáva konštanty priamo so SVG:
  *  - asfalt cesty má šírku 52 px (x 6–58), okraje 2 px na x 7 a 57, stredová čiara je na x 32;
  *  - jeden pruh má teda 26 px a jeho stred je ±13 px od osi (x 19 a x 45) = ±13/64 bunky;
- *  - obsah spritu vozidla je 56 px široký (kolesá x 4–60), takže sa škáluje na šírku pruhu: 26 / 56.
+ *  - obsah spritov vozidiel je 48 px široký (kolesá straddle carriera x 8–56, kolesá kamióna x 10–54).
+ *
+ * Vozidlo v mierke 1 : 1 je širšie než pruh (48 > 26), a tak sa na dvojpruhovej ceste posúva od osi len o toľko, koľko
+ * dovolí rezerva asfaltu (`VEHICLE_OFFSET_PX` = (52 − 48) / 2 = 2 px); protismerné vozidlá sa pri míňaní prekrývajú (sim
+ * kolízie nemá, ARCHITECTURE §7.6). Zmena `VEHICLE_SCALE` na menšiu hodnotu posun automaticky zväčší až na stred pruhu (13 px).
  *
  * Typ cesty renderer číta z `Cell.roadKind` (`createRoadKindAt` → `roadKindOfCell`, jediné miesto). Tvar bunky pre oblúky
  * v zákrutách (`turn-arc.ts`) dáva `createRoadMaskAt` (maska susedov ako autotile).
@@ -17,6 +28,7 @@ import { DEFAULT_ROAD_KIND, ROAD_KIND_TRAITS, type Cell, type Grid, type RoadKin
 import { autotileMask } from './autotile';
 import type { Point } from './camera';
 import { MANIFEST_CELL_PX } from './entity-assets';
+import { noConnectorMask, type ConnectorMaskAt } from './module-connectors';
 import type { ViewRotation } from './view-models';
 
 /** Šírka asfaltu sprite `road_*` v px zdroja (x 6–58). */
@@ -31,11 +43,26 @@ export const LANE_CENTER_PX = LANE_WIDTH_PX / 2;
 /** Posun stredu pruhu od osi cesty v bunkách: 13/64. */
 export const LANE_OFFSET_CELLS = LANE_CENTER_PX / MANIFEST_CELL_PX;
 
-/** Šírka obsahu spritu vozidla v px zdroja (`straddle_carrier_*.svg`: kolesá x 4–60). */
-export const VEHICLE_CONTENT_WIDTH_PX = 56;
+/** Šírka obsahu spritov vozidiel a kamiónov v px zdroja (kolesá): straddle carrier x 8–56, kamión x 10–54. */
+export const VEHICLE_BODY_WIDTH_PX = 48;
 
-/** Mierka spritu vozidla, aby šírka jeho obsahu zodpovedala šírke pruhu (26 / 56). */
-export const VEHICLE_LANE_SCALE = LANE_WIDTH_PX / VEHICLE_CONTENT_WIDTH_PX;
+/**
+ * Mierka všetkých spritov vozidiel a kamiónov voči súboru (manifest `entities.<def>.footprint` × 64 px × mierka):
+ * 1 = sprite v pôvodnej veľkosti, teda kontajner na vozidle je rovnako veľký ako kontajner na aprone (`cargo.container_teu`).
+ */
+export const VEHICLE_SCALE = 1;
+
+/** Šírka obsahu vozidla po mierke, px zdroja. */
+export const VEHICLE_WIDTH_PX = VEHICLE_BODY_WIDTH_PX * VEHICLE_SCALE;
+
+/**
+ * Posun stredu vozidla od osi dvojpruhovej cesty v px zdroja: stred pruhu (13), najviac však rezerva asfaltu po stranách
+ * vozidla `(52 − šírka) / 2`, aby vozidlo nečnelo z cesty. Pri `VEHICLE_SCALE` 1 je to 2 px.
+ */
+export const VEHICLE_OFFSET_PX = Math.min(LANE_CENTER_PX, Math.max(0, (ROAD_ASPHALT_PX - VEHICLE_WIDTH_PX) / 2));
+
+/** Posun stredu vozidla od osi dvojpruhovej cesty v bunkách (`VEHICLE_OFFSET_PX` / 64). */
+export const VEHICLE_OFFSET_CELLS = VEHICLE_OFFSET_PX / MANIFEST_CELL_PX;
 
 /** Jednotkový vektor „dopredu“ pre kurz (0 = sever, v smere hodinových ručičiek; +x doprava, +y nadol). */
 const FORWARD_OF_HEADING: Readonly<Record<ViewRotation, Point>> = Object.freeze({
@@ -64,11 +91,12 @@ export function rightOf(heading: ViewRotation): Point {
 }
 
 /**
- * Posun stredu vozidla od osi cesty v bunkách kolmo vpravo od smeru jazdy podľa typu cesty: dvojpruhová cesta 13/64,
- * jednopruhové cesty (`one_lane`, `one_way`) 0 — vozidlo jazdí v strede. Odvodené z `ROAD_KIND_TRAITS[kind].lanes`.
+ * Posun stredu vozidla od osi cesty v bunkách kolmo vpravo od smeru jazdy podľa typu cesty: dvojpruhová cesta
+ * `VEHICLE_OFFSET_CELLS` (stred pruhu, najviac rezerva asfaltu po stranách vozidla), jednopruhové cesty (`one_lane`, `one_way`)
+ * 0 — vozidlo jazdí v strede. Odvodené z `ROAD_KIND_TRAITS[kind].lanes`.
  */
 export function laneMagnitude(kind: RoadKind): number {
-  return ROAD_KIND_TRAITS[kind].lanes === 2 ? LANE_OFFSET_CELLS : 0;
+  return ROAD_KIND_TRAITS[kind].lanes === 2 ? VEHICLE_OFFSET_CELLS : 0;
 }
 
 const CENTERED: Point = Object.freeze({ x: 0, y: 0 });
@@ -94,7 +122,7 @@ const LANE_OFFSETS: Readonly<Record<RoadKind, Readonly<Record<ViewRotation, Poin
 
 /**
  * Posun stredu vozidla od stredu bunky v bunkách (`x` doprava, `y` nadol), kolmo na smer jazdy vpravo:
- * `two_lane` = 13/64 bunky (kurz 0° → +x, 90° → +y, 180° → −x, 270° → −y), `one_lane` a `one_way` = 0 (stred).
+ * `two_lane` = `VEHICLE_OFFSET_CELLS` (kurz 0° → +x, 90° → +y, 180° → −x, 270° → −y), `one_lane` a `one_way` = 0 (stred).
  */
 export function laneOffset(kind: RoadKind, heading: ViewRotation): Point {
   return LANE_OFFSETS[kind][heading];
@@ -129,8 +157,13 @@ export type RoadMaskAt = (cellX: number, cellY: number) => number;
 /** `RoadMaskAt` bez gridu: žiadna bunka nemá pripojených susedov, takže sa oblúky nekreslia (vozidlo jazdí po priamkach). */
 export const noRoadMaskAt: RoadMaskAt = () => 0;
 
-/** Vytvorí `RoadMaskAt` nad živou mriežkou sveta (zmeny ciest sa prejavia hneď, bez cache). */
-export function createRoadMaskAt(grid: Grid): RoadMaskAt {
+/**
+ * Vytvorí `RoadMaskAt` nad živou mriežkou sveta (zmeny ciest sa prejavia hneď, bez cache). `connectorMask` pridá ramená
+ * k konektorom modulov (rovnaké ako pri kreslení cesty), takže vozidlo vchádzajúce do modulu zo zákruty ide po oblúku.
+ */
+export function createRoadMaskAt(grid: Grid, connectorMask: ConnectorMaskAt = noConnectorMask): RoadMaskAt {
   return (cellX, cellY) =>
-    grid.inBounds(cellX, cellY) && grid.at(cellX, cellY).road === 'road' ? autotileMask(grid, cellX, cellY, 'road') : 0;
+    grid.inBounds(cellX, cellY) && grid.at(cellX, cellY).road === 'road'
+      ? autotileMask(grid, cellX, cellY, 'road', connectorMask(cellX, cellY))
+      : 0;
 }

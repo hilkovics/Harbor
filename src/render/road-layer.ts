@@ -7,13 +7,17 @@
  * s `connectsAtRot0` z manifestu stráži `tests/tools/asset-manifest.test.ts`.
  *
  * **Typ cesty** (`Cell.roadKind`, ADR-020): `two_lane` sa kreslí spritami. Jednopruhové cesty (`one_lane`, `one_way`;
- * `ROAD_KIND_TRAITS[kind].lanes === 1`) nemajú sprity, kreslia sa procedurálne (`narrow-road.ts`): asfalt 26 px, okraje
+ * `ROAD_KIND_TRAITS[kind].lanes === 1`) nemajú sprity, kreslia sa procedurálne (`narrow-road.ts`): asfalt 40 px, okraje
  * 2 px, bez stredovej čiary, rovnaký tvar a rotácia. Ich ramená pri širokom susedovi dostanú lievik, aby sa úzka vetva
  * napojila do stredu širokej bez schodíka. Šípky jednosmerky kreslí `RoadMarkLayer` nad touto vrstvou a pod entitami.
  *
  * Bez textúr (`textures === null`, napr. testy bez DOM alebo chýbajúci sprite) padá na dočasné kreslenie z tokenov
  * (`--road-base`, `--road-marking`): každý tvar má jeden zdieľaný `GraphicsContext`, dlaždica je `Graphics` nad ním
  * (pozícia + `angle`), takže tisíc ciest = tisíc ľahkých objektov nad piatimi geometriami.
+ *
+ * **Napojenie na moduly** (F5b č. 3): bunka cesty pred konektorom modulu (brána, stojisko, rampa, dvor, kotvisko…) dostane
+ * rameno k modulu (`connectorMask`, `module-connectors.ts`), takže cesta končí na okraji bunky modulu namiesto zaobleného
+ * konca s medzerou. Maska sa číta pri každom prekreslení bunky; zmenu modulov oznamuje volajúci cez `updateRoads`.
  *
  * Vrstva je vlastná render group: posun kamery (transformácia rodiča) neprepočítava dlaždice a zmena ciest
  * prestavia len túto vrstvu, nie terén.
@@ -33,6 +37,7 @@ import {
 import type { Point } from './camera';
 import { MANIFEST_CELL_PX } from './entity-assets';
 import { ROAD_ASPHALT_PX } from './lane';
+import { noConnectorMask, type ConnectorMaskAt } from './module-connectors';
 import { ROAD_EDGE_PX, narrowRoadPaths, type PathOp } from './narrow-road';
 import type { SpriteTextures } from './sprite-atlas';
 import type { RenderPalette } from './tokens';
@@ -121,11 +126,13 @@ export class RoadLayer {
 
   /**
    * @param textures sprity ciest z `SpriteAtlas`; `null` = dočasné `Graphics` z tokenov
+   * @param connectorMask ramená k konektorom modulov podľa bunky (`ConnectorArmIndex.maskAt`); predvolene žiadne
    */
   constructor(
     private readonly grid: Grid,
     private readonly palette: RenderPalette,
     private readonly textures: SpriteTextures | null = null,
+    private readonly connectorMask: ConnectorMaskAt = noConnectorMask,
   ) {
     this.rebuild();
   }
@@ -185,7 +192,7 @@ export class RoadLayer {
   private refresh(x: number, y: number): boolean {
     const index = this.grid.index(x, y);
     const existing = this.tiles.get(index);
-    const wanted = autotileTile(this.grid, x, y, LAYER);
+    const wanted = autotileTile(this.grid, x, y, LAYER, this.connectorMask(x, y));
     const style = wanted ? this.styleOf(x, y, wanted) : WIDE_STYLE;
     if (existing && wanted && existing.shape === wanted.shape && existing.rotation === wanted.rotation && existing.style === style) {
       return false;

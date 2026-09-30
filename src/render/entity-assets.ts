@@ -75,6 +75,9 @@ export interface ModuleSpriteEntry {
   readonly docks?: readonly ManifestRect[];
   /** Kategória nákladu rampy (`container`, `bulk`, …); určuje typ nákladu pripraveného na doku. */
   readonly category?: string;
+  /** Sklady: počet stohových pozícií na jednej vrstve (`slots`) a počet vrstiev (`layers`); kapacita = `slots × layers`. */
+  readonly slots?: number;
+  readonly layers?: number;
   readonly connectors: readonly ManifestConnector[];
 }
 

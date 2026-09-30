@@ -2,9 +2,10 @@ import { Container, Sprite } from 'pixi.js';
 import { describe, expect, it } from 'vitest';
 import { ROTATIONS, rotateFootprint, rotateLocalCell, type Rotation } from '@sim/grid';
 import { QUEUE_BADGE_MAX, queueBadgeLabel } from '@render/badges';
-import { moduleSprite } from '@render/entity-assets';
+import { QUEUE_BADGE_SIZE, moduleSprite } from '@render/entity-assets';
 import { SIDE_STEP } from '@render/footprint-pose';
 import { BARRIER_MOTION_MS, BarrierMotion, GateDecor, queueBadgePosition } from '@render/gate-decor';
+import { VEHICLE_WIDTH_PX } from '@render/lane';
 import { footprintPose } from '@render/footprint-pose';
 import { ModuleLayer } from '@render/module-layer';
 import { ModuleView } from '@render/module-view';
@@ -13,8 +14,8 @@ import { ENTITY_PALETTE, PALETTE, StubTextures } from './stub-textures';
 
 const CELL = PALETTE.cellPx;
 
-/** Posun do ľavého pruhu vzhľadom na smer vjazdu: 13 px zo 64 px bunky. */
-const LANE_PX = 13;
+/** Posun odznaku naľavo od osi vjazdu: okraj kamióna (polovica jeho šírky) + polomer odznaku, px. */
+const LANE_PX = (VEHICLE_WIDTH_PX + QUEUE_BADGE_SIZE.w) / 2;
 
 /** Riadené hodiny pre animáciu závory. */
 function clock(start = 1000) {
@@ -256,10 +257,12 @@ describe('ModuleView: brána (závora a odznak fronty)', () => {
     const local = rotateLocalCell(connector?.x ?? 0, connector?.y ?? 0, footprint.w, footprint.h, rotation);
     const side = rotateSide(connector?.side ?? 's', rotation);
     const outer = { x: vm.x + local.x + SIDE_STEP[side].x, y: vm.y + local.y + SIDE_STEP[side].y };
-    expect(Math.floor(at.x / CELL)).toBe(outer.x);
-    expect(Math.floor(at.y / CELL)).toBe(outer.y);
-    // odsadenie od stredu bunky = jeden pruh (13 px), kolmo na smer vjazdu
-    expect(Math.hypot(at.x - (outer.x + 0.5) * CELL, at.y - (outer.y + 0.5) * CELL)).toBeCloseTo(LANE_PX, 6);
+    const step = SIDE_STEP[side];
+    // v smere vjazdu leží odznak vo vonkajšej bunke (na jej strednej priečke), bočne je odsadený o `LANE_PX` naľavo od kamióna
+    const dx = at.x - (outer.x + 0.5) * CELL;
+    const dy = at.y - (outer.y + 0.5) * CELL;
+    expect(dx * step.x + dy * step.y).toBeCloseTo(0, 6);
+    expect(Math.hypot(dx, dy)).toBeCloseTo(LANE_PX, 6);
     // číslo je vzpriamené: uhol odznaku vyrovnáva rotáciu modulu
     expect((((view.view.angle + badge.angle) % 360) + 360) % 360).toBeCloseTo(0, 9);
   });

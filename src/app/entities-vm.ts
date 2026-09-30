@@ -9,7 +9,9 @@
  * - Moduly: všetko okrem žeriavov (tie idú do `cranes`, `ModuleLayer` ich aj tak preskakuje). Berth nesie apron:
  *   obsadené sloty v poradí FIFO (`apron.units()`) so slotom (`slotOf`) a typom nákladu z ledgera.
  * - Žeriavy: `progress` = `phaseProgress` fázy (0 v `idle`/`blocked`), `holding` = držaná jednotka z ledgera.
- * - Sklady (`StorageModule`): `storage = { capacity, stored, reserved }` z modulu (obsadenie číta modul z ledgera).
+ * - Sklady (`StorageModule`): `storage = { capacity, stored, reserved }` z modulu (obsadenie číta modul z ledgera) a
+ *   `lastStorageOp = { slot, tick, kind }` — posledné uloženie / vzatie kontajnera na slote (F5b č. 8, animácia portálového
+ *   žeriavu dvora). Sim ju nevedie: skladá ju `SimBridge` z udalostí `CargoMoved` (`storage-ops.ts`) a podáva builderu.
  *   Moduly s cestným konektorom nesú `connected = world.isConnected(module)` (odznak „nepripojené“); ostatné (žeriav)
  *   pole nemajú.
  * - Pozemné moduly F4 (T04-08), každý len svoje pole:
@@ -28,18 +30,22 @@
  * - Vozidlá: `loaded` = v ledgeri je aspoň jedna jednotka `in_vehicle` u tohto vozidla.
  * - Kamióny (`TruckVM`): `loaded` = aspoň jedna jednotka `in_truck`. Sim vedie kamión vždy na bunke cesty (v `waiting`
  *   na vstupnej bunke stojiska, v `loading` na vonkajšej bunke konektora docku); prezentovaná poloha (`truckPose`) je však
- *   v `waiting` stred stojiska `stalls[truck.bay]` a v `loading` stred docku `docks[truck.dock]` z manifestu (kurz podľa
- *   rotácie modulu). Pri zmene stavu z/do týchto dvoch (skok do stojiska / z docku) je `prev = curr`, aby sa kamión
- *   neinterpoloval naprieč mapou.
+ *   v `waiting` stred stojiska `stalls[truck.bay]` (kurz podľa rotácie modulu) a v `loading` stred docku `docks[truck.dock]`
+ *   z manifestu s kabínou von z rampy (kamión do docku cúva, F5b č. 11; `dockHeading`). V `loading` nesie VM aj `approach` — sim
+ *   polohu (vonkajšia bunka konektora) a kurz príjazdu, z ktorých renderer kamión plynule vedie do docku (`dock-maneuver.ts`),
+ *   a `prevState` (stav pred posledným tickom), z ktorého pozná práve dokončený príjazd (`to_dock` → `loading`). Pri zmene
+ *   stavu z/do `waiting` / `loading` (skok do stojiska / z docku) je `prev = curr`, aby sa kamión neinterpoloval naprieč mapou;
+ *   výjazd z docku (`loading` → `to_gate_out`) vedie renderer časom, nie interpoláciou ticku.
  *
  * Bez side-effectov a bez závislosti na DOM/Pixi/React.
  */
-import { findDockCenter, findStallCenter, type SlotHost } from '@render/module-slots';
+import { dockHeading, findDockCenter, findStallCenter, type SlotHost } from '@render/module-slots';
 import type { CraneVM, EntitiesVM, ModuleVM, ShipVM, TruckVM, VehicleVM, ViewRotation } from '@render/view-models';
 import type { EntityId } from '@sim/core';
 import { BerthModule, CraneModule, LoadingRamp, StorageModule, TruckGate, WaitingArea, type Module } from '@sim/modules';
 import type { Truck } from '@sim/trucks';
 import type { World } from '@sim/world';
+import type { StorageOps } from './storage-ops';
 
 /** Poloha stredu lode v bunkách (predchádzajúci tick). */
 export interface ShipPosition {
@@ -76,6 +82,9 @@ export interface TruckPose {
 export type TruckPoses = ReadonlyMap<number, TruckPose>;
 
 const NO_TRUCK_POSES: TruckPoses = new Map();
+
+/** Bez zaznamenaných operácií skladov (F2–F5 testy, `moduleVMs(world)`). */
+const NO_STORAGE_OPS: StorageOps = new Map();
 
 /**
  * `EntitiesVM` zo SimBridge: `vehicles` a `trucks` sú vždy vyplnené (v `EntitiesVM` ostávajú voliteľné kvôli F2/F3
@@ -134,8 +143,8 @@ export function isLiveModule(module: Module): boolean {
   return module instanceof TruckGate || module instanceof WaitingArea;
 }
 
-/** VM jedného modulu (mimo žeriavov). */
-function moduleVM(world: World, module: Module): ModuleVM {
+/** VM jedného modulu (mimo žeriavov); `storageOps` dopĺňa `lastStorageOp` skladom (animácia žeriavu dvora). */
+function moduleVM(world: World, module: Module, storageOps: StorageOps = NO_STORAGE_OPS): ModuleVM {
   const vm: ModuleVM = {
     id: module.id,
     defId: module.def.id,
@@ -158,6 +167,8 @@ function moduleVM(world: World, module: Module): ModuleVM {
   }
   if (module instanceof StorageModule) {
     vm.storage = { capacity: module.capacity, stored: module.storedCount, reserved: module.reservedCount };
+    const op = storageOps.get(module.id);
+    if (op !== undefined) vm.lastStorageOp = { slot: op.slot, tick: op.tick, kind: op.kind };
   }
   if (module instanceof TruckGate) vm.gate = gateVM(module);
   if (module instanceof WaitingArea) vm.waitingArea = waitingAreaVM(module);
@@ -167,11 +178,11 @@ function moduleVM(world: World, module: Module): ModuleVM {
 }
 
 /** Moduly sveta v poradí umiestnenia, bez žeriavov. */
-export function moduleVMs(world: World): ModuleVM[] {
+export function moduleVMs(world: World, storageOps: StorageOps = NO_STORAGE_OPS): ModuleVM[] {
   const result: ModuleVM[] = [];
   for (const module of world.modules.values()) {
     if (module.kind === CRANE_KIND) continue;
-    result.push(moduleVM(world, module));
+    result.push(moduleVM(world, module, storageOps));
   }
   return result;
 }
@@ -276,7 +287,9 @@ export function writeTruckPose(world: World, truck: Truck, out: MutableTruckPose
   }
   out.x = slot?.x ?? truck.x;
   out.y = slot?.y ?? truck.y;
-  out.heading = slot === undefined || host === undefined ? truck.heading : host.rotation;
+  if (slot === undefined || host === undefined) out.heading = truck.heading;
+  else if (truck.state === 'loading') out.heading = dockHeading(truck, slot); // do docku kamión cúva: kabína von z rampy
+  else out.heading = host.rotation;
   out.state = truck.state;
 }
 
@@ -303,8 +316,9 @@ export function truckVMs(world: World, prev: TruckPoses = NO_TRUCK_POSES): Truck
   const result: TruckVM[] = [];
   for (const truck of world.trucks.values()) {
     const pose = truckPose(world, truck);
-    const before = previousTruckPose(prev.get(truck.id), pose);
-    result.push({
+    const last = prev.get(truck.id);
+    const before = previousTruckPose(last, pose);
+    const vm: TruckVM = {
       id: truck.id,
       defId: truck.defId,
       x: pose.x,
@@ -315,7 +329,13 @@ export function truckVMs(world: World, prev: TruckPoses = NO_TRUCK_POSES): Truck
       prevHeading: before.heading,
       loaded: world.cargo.countAt('in_truck', truck.id) > 0,
       state: truck.state,
-    });
+    };
+    if (last !== undefined) vm.prevState = last.state;
+    // v doku je cieľová póza v `x`, `y`, `heading`; sim poloha (vonkajšia bunka konektora) je východisko manévru cúvania
+    if (truck.state === 'loading' && (pose.x !== truck.x || pose.y !== truck.y)) {
+      vm.approach = { x: truck.x, y: truck.y, heading: truck.heading };
+    }
+    result.push(vm);
   }
   return result;
 }
@@ -326,9 +346,10 @@ export function entitiesVM(
   prev: ShipPositions = NO_POSITIONS,
   prevVehicles: VehiclePoses = NO_VEHICLE_POSES,
   prevTrucks: TruckPoses = NO_TRUCK_POSES,
+  storageOps: StorageOps = NO_STORAGE_OPS,
 ): SimEntitiesVM {
   return Object.freeze({
-    modules: Object.freeze(moduleVMs(world)),
+    modules: Object.freeze(moduleVMs(world, storageOps)),
     cranes: Object.freeze(craneVMs(world)),
     ships: Object.freeze(shipVMs(world, prev)),
     vehicles: Object.freeze(vehicleVMs(world, prevVehicles)),
@@ -379,6 +400,7 @@ export class EntitiesVMBuilder {
     prev: ShipPositions = NO_POSITIONS,
     prevVehicles: VehiclePoses = NO_VEHICLE_POSES,
     prevTrucks: TruckPoses = NO_TRUCK_POSES,
+    storageOps: StorageOps = NO_STORAGE_OPS,
   ): SimEntitiesVM {
     if (this.modulesRevision !== revision) {
       const modules: ModuleVM[] = [];
@@ -386,7 +408,7 @@ export class EntitiesVMBuilder {
       for (const module of world.modules.values()) {
         if (module.kind === CRANE_KIND) continue;
         if (isLiveModule(module)) live.push({ index: modules.length, module });
-        modules.push(moduleVM(world, module));
+        modules.push(moduleVM(world, module, storageOps));
       }
       this.modules = Object.freeze(modules);
       this.live = live;

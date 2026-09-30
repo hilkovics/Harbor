@@ -8,6 +8,7 @@
  */
 import { MANIFEST_CELL_PX, moduleSprite, type ManifestRect } from './entity-assets';
 import { footprintPose, rotateOffset, type FootprintBox } from './footprint-pose';
+import type { ViewRotation } from './view-models';
 
 /** Modul, ktorého stojiská / doky sa hľadajú: id defu (kľúč v manifeste) a footprint PO rotácii (ľavý horný roh, rozmery). */
 export interface SlotHost extends FootprintBox {
@@ -49,4 +50,16 @@ export function dockCenter(host: SlotHost, index: number): { x: number; y: numbe
   const center = findDockCenter(host, index);
   if (center === undefined) throw new Error(`module-slots: ${host.defId} nemá dok ${String(index)}`);
   return center;
+}
+
+/**
+ * Kurz kamióna zaparkovaného v doku (F5b č. 11): kamión do docku cúva, takže zadok mieri k rampe a kabína von. Smer cúvania
+ * je od vonkajšej bunky konektora (`outside`, tam ho vedie sim) ku stredu docku (`dock`) — kardinálny smer väčšej zložky;
+ * kurz kabíny je opačný (dok na sever od bunky → kabína na juh = 180°).
+ */
+export function dockHeading(outside: { readonly x: number; readonly y: number }, dock: { readonly x: number; readonly y: number }): ViewRotation {
+  const dx = dock.x - outside.x;
+  const dy = dock.y - outside.y;
+  if (Math.abs(dy) >= Math.abs(dx)) return dy < 0 ? 180 : 0; // dok na sever → kabína na juh; dok na juh → kabína na sever
+  return dx > 0 ? 270 : 90; // dok na východ → kabína na západ; dok na západ → kabína na východ
 }

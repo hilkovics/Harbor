@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Grid, ROAD_KINDS, type CellCoord, type RoadKind } from '@sim/grid';
-import { LANE_CENTER_PX, createRoadKindAt, createRoadMaskAt, forwardOf } from '@render/lane';
+import { VEHICLE_OFFSET_PX, VEHICLE_WIDTH_PX, createRoadKindAt, createRoadMaskAt, forwardOf } from '@render/lane';
 import { cornerTurn, headingDelta, normalizeAngle, turnArcPose } from '@render/turn-arc';
 import { vehiclePose } from '@render/vehicle-view';
 import type { VehicleVM, ViewRotation } from '@render/view-models';
@@ -134,7 +134,7 @@ describe('vehiclePose: jazda po oblúku v zákrute (všetky kurzy, ľavá aj pra
     ({ entry, delta, speed }) => {
       const scene = scenario(entry, delta);
       const q = arcCenterWorld(scene);
-      const radius = (delta > 0 ? 19 : 45) / CELL;
+      const radius = (32 + (delta > 0 ? -VEHICLE_OFFSET_PX : VEHICLE_OFFSET_PX)) / CELL;
       const inside = drive(scene, speed).filter((sample) => inCornerCell(sample.sim));
       expect(inside.length).toBeGreaterThan(10);
       for (const sample of inside) {
@@ -158,14 +158,14 @@ describe('vehiclePose: jazda po oblúku v zákrute (všetky kurzy, ľavá aj pra
         largest = Math.max(largest, Math.hypot(samples[i].x - samples[i - 1].x, samples[i].y - samples[i - 1].y));
         largestAngle = Math.max(largestAngle, Math.abs(headingDelta(samples[i - 1].angle as ViewRotation, samples[i].angle as ViewRotation)));
       }
-      // krok jazdy je speed / 20; oblúk ľavej zákruty je o 10 % dlhší než dráha simu (π/2 · 45/64 ≈ 1,10), pravej kratší
+      // krok jazdy je speed / 20; oblúk (π/2 · polomer ≈ 0,75–0,83 bunky) je kratší než dráha simu (1 bunka)
       expect(largest).toBeLessThan((speed / SAMPLES_PER_TICK) * 1.15);
       // uhol sa otáča len v bunke zákruty, o 90° za jednu bunku dráhy: najviac speed / 20 × 90° na vzorku
       expect(largestAngle).toBeLessThanOrEqual((speed / SAMPLES_PER_TICK) * 90 + 1e-6);
     },
   );
 
-  it.each(CASES)('$entry° → $exit°: mimo zákruty vozidlo jazdí v pravom pruhu priamo (13/64 vpravo od osi)', ({ entry, delta }) => {
+  it.each(CASES)('$entry° → $exit°: mimo zákruty vozidlo jazdí priamo vpravo od osi o `VEHICLE_OFFSET_PX`', ({ entry, delta }) => {
     const scene = scenario(entry, delta);
     const samples = drive(scene, 0.4);
     const outside = samples.filter((sample) => !inCornerCell(sample.sim));
@@ -175,20 +175,20 @@ describe('vehiclePose: jazda po oblúku v zákrute (všetky kurzy, ľavá aj pra
       const right = { x: -forward.y, y: forward.x }; // vpravo od smeru jazdy pri osi y nadol
       const offset = (sample.x - sample.sim.x) * right.x + (sample.y - sample.sim.y) * right.y;
       const along = (sample.x - sample.sim.x) * forward.x + (sample.y - sample.sim.y) * forward.y;
-      expect(offset, `tick ${String(sample.tick)}`).toBeCloseTo(LANE_CENTER_PX / CELL, 9);
+      expect(offset, `tick ${String(sample.tick)}`).toBeCloseTo(VEHICLE_OFFSET_PX / CELL, 9);
       expect(along).toBeCloseTo(0, 9);
       expect(sample.angle).toBe(sample.sim.heading);
     }
   });
 
-  it.each(CASES)('$entry° → $exit°: telo vozidla neprekročí stredovú čiaru (± 2 px)', ({ entry, delta }) => {
+  it.each(CASES)('$entry° → $exit°: telo vozidla ostane v asfalte zákruty (polomery 6…58 px, ± 2 px)', ({ entry, delta }) => {
     const scene = scenario(entry, delta);
     const q = arcCenterWorld(scene);
-    const halfWidth = LANE_CENTER_PX / CELL;
+    const halfWidth = VEHICLE_WIDTH_PX / 2 / CELL;
     for (const sample of drive(scene, 0.4).filter((s) => inCornerCell(s.sim))) {
       const radius = Math.hypot(sample.x - q.x, sample.y - q.y);
-      if (delta > 0) expect(radius + halfWidth).toBeLessThanOrEqual(0.5 + TOLERANCE);
-      else expect(radius - halfWidth).toBeGreaterThanOrEqual(0.5 - TOLERANCE);
+      expect(radius - halfWidth).toBeGreaterThanOrEqual(6 / CELL - TOLERANCE);
+      expect(radius + halfWidth).toBeLessThanOrEqual(58 / CELL + TOLERANCE);
     }
   });
 
@@ -236,7 +236,7 @@ describe('vehiclePose: jazda po oblúku v zákrute (všetky kurzy, ľavá aj pra
         if (!inCornerCell(sim) || Math.abs(sim.x - 10.5) + Math.abs(sim.y - 10.5) < 0.2) continue;
         const pose = vehiclePose(vm, alpha, CELL, roadKindAt);
         inside += 1;
-        if (Math.abs(Math.hypot(pose.x / CELL - q.x, pose.y / CELL - q.y) - 45 / CELL) < 1e-6) onArc += 1;
+        if (Math.abs(Math.hypot(pose.x / CELL - q.x, pose.y / CELL - q.y) - (32 + VEHICLE_OFFSET_PX) / CELL) < 1e-6) onArc += 1;
       }
     }
     expect(inside).toBeGreaterThan(5);
@@ -279,7 +279,7 @@ describe('vehiclePose: zmena kurzu mimo zákruty a nezhoda s tvarom cesty', () =
     const start = vehiclePose(turning, 0, CELL, roadKindAt, roadMaskAt);
     const middle = vehiclePose(turning, 0.5, CELL, roadKindAt, roadMaskAt);
     const end = vehiclePose(turning, 1, CELL, roadKindAt, roadMaskAt);
-    const lane = LANE_CENTER_PX / CELL;
+    const lane = VEHICLE_OFFSET_PX / CELL;
     expect(start.x).toBeCloseTo((10.5 - lane) * CELL, 9); // kurz 180° (juh): západný pruh
     expect(start.y).toBeCloseTo(10.3 * CELL, 9);
     expect(end.x).toBeCloseTo(10.7 * CELL, 9);
@@ -293,7 +293,7 @@ describe('vehiclePose: zmena kurzu mimo zákruty a nezhoda s tvarom cesty', () =
     const vm: VehicleVM = { ...turning, prevX: 10.5, prevY: 10.3, x: 10.5, y: 10.3, prevHeading: 180, heading: 0 };
     const pose = vehiclePose(vm, 0.5, CELL, createRoadKindAt(grid), createRoadMaskAt(grid));
     expect(pose.angle).toBe(0);
-    expect(pose.x / CELL).toBeCloseTo(10.5, 9); // (−13/64 + 13/64) / 2: uprostred medzi pruhmi
+    expect(pose.x / CELL).toBeCloseTo(10.5, 9); // (−posun + posun) / 2: uprostred medzi pruhmi
   });
 
   it('zákruta v bunke, ale VM nesedí s tvarom cesty (koleno nie je stred bunky) → bez oblúka, ako T-križovatka', () => {
@@ -302,7 +302,7 @@ describe('vehiclePose: zmena kurzu mimo zákruty a nezhoda s tvarom cesty', () =
     const roadMaskAt = createRoadMaskAt(scene.grid);
     const vm: VehicleVM = { ...turning, prevX: 10.3, prevY: 10.2, x: 10.7, y: 10.5, prevHeading: 180, heading: 90 };
     const pose = vehiclePose(vm, 1, CELL, roadKindAt, roadMaskAt);
-    const lane = LANE_CENTER_PX / CELL;
+    const lane = VEHICLE_OFFSET_PX / CELL;
     expect(pose.x).toBeCloseTo(10.7 * CELL, 9);
     expect(pose.y).toBeCloseTo((10.5 + lane) * CELL, 9);
   });

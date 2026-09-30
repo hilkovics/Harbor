@@ -18,6 +18,7 @@ import { Camera } from './camera';
 import { CraneLayer } from './crane-layer';
 import { EntityLayer } from './entity-layer';
 import { createRoadKindAt, createRoadMaskAt } from './lane';
+import { ConnectorArmIndex } from './module-connectors';
 import { ModuleLayer } from './module-layer';
 import { ParcelLayer } from './parcel-layer';
 import { PortalLayer } from './portal-layer';
@@ -55,6 +56,13 @@ export interface WorldRendererOptions {
   readonly textures?: SpriteTextures | null;
   /** Čítanie CSS tokenov; predvolene `getComputedStyle(document.documentElement)`. */
   readonly resolveToken?: TokenResolver;
+  /**
+   * Hodiny v ms pre animácie, ktoré nejdú podľa ticku simu (závora brány, žeriav dvora, manéver kamióna pri rampe);
+   * predvolene `performance.now`. Demo a testy podávajú riadené hodiny, aby boli screenshoty deterministické.
+   */
+  readonly now?: () => number;
+  /** `true` = bez dekoratívnych animácií (`prefers-reduced-motion`); predvolene sa číta z `matchMedia`. */
+  readonly reducedMotion?: () => boolean;
 }
 
 /**
@@ -91,6 +99,8 @@ export class WorldRenderer {
   /** Ghost stavby: cesty (`setGhost`, `GhostView`) aj modulu (`setModuleGhost`); je navrchu nad žeriavmi. */
   readonly build: BuildLayer;
   readonly entityPalette: EntityPalette;
+  /** Ramená ciest k konektorom modulov (cesta sa na modul napája, nekončí zaoblene pred ním). */
+  private readonly connectorArms: ConnectorArmIndex;
   private syncedVersion = -1;
   private destroyed = false;
 
@@ -116,7 +126,8 @@ export class WorldRenderer {
       focus: starterParcelRect(options.map),
     });
     this.terrain = new TerrainLayer(grid, palette, textures);
-    this.roads = new RoadLayer(grid, palette, textures);
+    this.connectorArms = new ConnectorArmIndex(grid);
+    this.roads = new RoadLayer(grid, palette, textures, this.connectorArms.maskAt);
     this.roadMarks = new RoadMarkLayer(grid, palette, textures?.overlay('path_arrow') ?? null);
     this.parcels = new ParcelLayer(options.parcels ?? options.map.parcels, palette, textures);
     this.portals = new PortalLayer(options.map, grid.width, grid.height, palette, textures);
@@ -126,8 +137,10 @@ export class WorldRenderer {
       cellPx: palette.cellPx,
       palette: entityPalette,
       textures: atlas,
+      ...(options.now === undefined ? {} : { now: options.now }),
+      ...(options.reducedMotion === undefined ? {} : { reducedMotion: options.reducedMotion }),
       roadKindAt: createRoadKindAt(grid),
-      roadMaskAt: createRoadMaskAt(grid),
+      roadMaskAt: createRoadMaskAt(grid, this.connectorArms.maskAt),
       // číslo v odznaku fronty brány sa rasterizuje pre najväčší zoom a hustotu displeja, aby ostalo ostré
       textResolution: Math.ceil(SPRITE_RASTER_RESOLUTION * window.devicePixelRatio),
     };
@@ -203,6 +216,7 @@ export class WorldRenderer {
    * z F2/F3 sa berú ako prázdne.
    */
   syncEntities(vm: EntitiesVM, alpha: number): void {
+    this.roads.updateRoads(this.connectorArms.update(vm.modules)); // nový / odstránený modul zmení rameno cesty pred konektorom
     this.modules.sync(vm.modules);
     this.ships.sync(vm.ships, alpha);
     this.ships.syncVehicles(vm.vehicles ?? NO_VEHICLES, alpha);

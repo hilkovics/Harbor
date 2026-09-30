@@ -3,7 +3,7 @@
 // (loď → dvory → rampa → kamión → export, `buildFullChain`), nie fiktívnymi id.
 import { describe, expect, it } from 'vitest';
 import type { TruckVM } from '@render/view-models';
-import { dockCenter, stallCenter, type SlotHost } from '@render/module-slots';
+import { dockCenter, dockHeading, stallCenter, type SlotHost } from '@render/module-slots';
 import type { EntityId } from '@sim/core';
 import { LoadingRamp, WaitingArea, type Module } from '@sim/modules';
 import { Truck } from '@sim/trucks';
@@ -114,11 +114,17 @@ describe('TruckVM: celý beh reťazca, každý frame', () => {
             const ramp = rampOf(app);
             const center = dockCenter(hostOf(ramp), truck.dock);
             expect([vm.x, vm.y]).toEqual([center.x, center.y]);
-            expect(vm.heading).toBe(ramp.rotation);
+            // do docku kamión cúva: kabína smeruje von z rampy (proti smeru od vonkajšej bunky ku dokom)
+            expect(vm.heading).toBe(((ramp.rotation + 180) % 360) as TruckVM['heading']);
+            expect(vm.heading).toBe(dockHeading(truck, center));
             expect(inside(ramp, vm.x, vm.y)).toBe(true);
+            // sim poloha (vonkajšia bunka konektora) je východisko cúvania
+            expect(vm.approach).toEqual({ x: truck.x, y: truck.y, heading: truck.heading });
+            expect(inside(ramp, truck.x, truck.y)).toBe(false);
             docked += 1;
           } else {
             expect([vm.x, vm.y, vm.heading]).toEqual([truck.x, truck.y, truck.heading]);
+            expect(vm.approach).toBeUndefined(); // manéver pri rampe je len v stave `loading`
           }
         }
         return world.cargo.exportedCount === UNITS;
@@ -253,10 +259,35 @@ describe('truckVMs: predchádzajúce pózy ako vstup', () => {
     const queuedVm = truckVMs(app.world, beforeQueue).find((candidate) => candidate.id === queued.id) as TruckVM;
     expect([queuedVm.prevX, queuedVm.prevY, queuedVm.prevHeading]).toEqual([far.x, far.y, far.heading]);
   });
+
+  it('F5b č. 11: `prevState` je stav z pamätanej pózy pred posledným tickom; nový kamión ho nemá', () => {
+    const app = chainApp();
+    const loading = truckInState(app, 'loading');
+    const fresh = truckVMs(app.world).find((candidate) => candidate.id === loading.id) as TruckVM;
+    expect(fresh.prevState).toBeUndefined();
+    const arrived = truckVMs(app.world, new Map([[loading.id, { ...far, state: 'to_dock' }]])).find((candidate) => candidate.id === loading.id) as TruckVM;
+    expect(arrived.prevState).toBe('to_dock'); // práve dokončený príjazd k rampe
+    expect(arrived.state).toBe('loading');
+    // bez zmeny stavu je prevState rovnaký ako state
+    const same = truckVMs(app.world, new Map([[loading.id, { ...far, state: 'loading' }]])).find((candidate) => candidate.id === loading.id) as TruckVM;
+    expect(same.prevState).toBe('loading');
+  });
+
+  it('F5b č. 11: `approach` má len kamión v `loading` — sim poloha na vonkajšej bunke a kurz príjazdu; x, y, heading sú cieľ v doku', () => {
+    const app = chainApp();
+    const loading = truckInState(app, 'loading');
+    const vm = truckVMs(app.world).find((candidate) => candidate.id === loading.id) as TruckVM;
+    expect(vm.approach).toEqual({ x: loading.x, y: loading.y, heading: loading.heading });
+    expect(inside(rampOf(app), loading.x, loading.y)).toBe(false); // východisko cúvania je na ceste pred rampou
+    expect(inside(rampOf(app), vm.x, vm.y)).toBe(true); // cieľ je v doku
+    expect(vm.heading).toBe(dockHeading(loading, { x: vm.x, y: vm.y }));
+    const driving = truckInState(app, 'to_gate_out');
+    expect((truckVMs(app.world).find((candidate) => candidate.id === driving.id) as TruckVM).approach).toBeUndefined();
+  });
 });
 
 describe('truckPose: rotácia modulu určuje kurz a polohu slotu', () => {
-  it.each([0, 90, 180, 270] as const)('čakacia plocha a rampa otočené o %i°: kamión v slote stojí v strede footprintu a smeruje ako modul', (rotation) => {
+  it.each([0, 90, 180, 270] as const)('čakacia plocha a rampa otočené o %i°: kamión v slote stojí v strede footprintu (v stojisku smeruje ako modul, v doku kabínou von)', (rotation) => {
     const app = createApp();
     // moduly bez ciest (poloha kamióna sa berie zo slotu manifestu, nie z cesty); dostatočne ďaleko od seba
     runCommands(app, [
@@ -292,7 +323,8 @@ describe('truckPose: rotácia modulu určuje kurz a polohu slotu', () => {
     for (let dock = 0; dock < ramp.docks; dock += 1) {
       const pose = truckPose(app.world, make('loading', null, dock));
       const center = dockCenter(hostOf(ramp), dock);
-      expect([pose.x, pose.y, pose.heading, pose.state]).toEqual([center.x, center.y, rotation, 'loading']);
+      // kurz: kabína von z docku = opak smeru od vonkajšej bunky (tu fiktívna poloha kamióna 44,5; 40,5) ku dokom
+      expect([pose.x, pose.y, pose.heading, pose.state]).toEqual([center.x, center.y, dockHeading({ x: 44.5, y: 40.5 }, center), 'loading']);
       expect(inside(ramp, pose.x, pose.y)).toBe(true);
     }
     // ostatné stavy: poloha a kurz zo simu

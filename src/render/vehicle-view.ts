@@ -3,8 +3,9 @@
  * predok hore pri `heading` 0, otočený okolo stredu vozidla.
  *
  * Poloha je v bunkách × `--cell` (stred vozidla; stred bunky = `x + 0,5`). Sim vedie vozidlo stredom bunky, pruh je
- * prezentačný (`lane.ts`): na dvojpruhovej ceste sa vozidlo posunie kolmo na smer jazdy vpravo o 13/64 bunky, na
- * jednopruhovej (`one_lane`, `one_way`) jazdí v strede, a sprite sa zmenší na šírku pruhu (`VEHICLE_LANE_SCALE`).
+ * prezentačný (`lane.ts`): na dvojpruhovej ceste sa vozidlo posunie kolmo na smer jazdy vpravo o `VEHICLE_OFFSET_CELLS`
+ * (stred pruhu, najviac rezerva asfaltu), na jednopruhovej (`one_lane`, `one_way`) jazdí v strede. Sprite má rozmer
+ * `footprint` z manifestu × `VEHICLE_SCALE` (jediná mierka vozidiel; kontajner na vozidle je rovnako veľký ako na aprone).
  *
  * **Priama jazda:** `lerp(prev, curr, alpha)` + posun pruhu; posun sa mieša podľa typu cesty pod predchádzajúcou a pod
  * aktuálnou polohou (prechod dvojpruhová → jednopruhová sa nerobí skokom).
@@ -29,7 +30,7 @@ import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
 import type { Point } from './camera';
 import { vehicleSprite, type CellSize } from './entity-assets';
 import {
-  VEHICLE_LANE_SCALE,
+  VEHICLE_SCALE,
   defaultRoadKindAt,
   forwardOf,
   laneMagnitude,
@@ -194,6 +195,14 @@ export function sameVehicleShape(a: VehicleVM, b: VehicleVM): boolean {
   return a.defId === b.defId;
 }
 
+/**
+ * „Režisér“ pózy: nadstavba nad bežnou pózou zo simu, ktorá môže zobrazenú pózu nahradiť prezentačným manévrom (kamión pri
+ * rampe, `dock-maneuver.ts`). Dostane VM, `alpha` a funkciu `poseOf` (bežná póza ľubovoľného VM, napr. východiskovej polohy).
+ */
+export interface PoseDirector {
+  pose(vm: VehicleVM, alpha: number, poseOf: (vm: VehicleVM, alpha: number) => VehiclePose): VehiclePose;
+}
+
 export interface VehicleViewDeps {
   /** Veľkosť bunky v px pri zoome 1 (`--cell`). */
   readonly cellPx: number;
@@ -204,6 +213,8 @@ export interface VehicleViewDeps {
   readonly roadKindAt?: RoadKindAt;
   /** Maska susedov cestnej bunky (zákruty, `lane.ts`); `WorldRenderer` ju čerpá z gridu, predvolene bez oblúkov. */
   readonly roadMaskAt?: RoadMaskAt;
+  /** Hodiny v ms pre manéver kamióna pri rampe (`dock-maneuver.ts`); predvolene `performance.now`, v testoch riadené. */
+  readonly now?: () => number;
 }
 
 export class VehicleView {
@@ -223,6 +234,7 @@ export class VehicleView {
     private readonly deps: VehicleViewDeps,
     alpha = 1,
     private readonly style: VehicleViewStyle = VEHICLE_STYLE,
+    private readonly director: PoseDirector | null = null,
   ) {
     this.id = vm.id;
     this.last = vm;
@@ -235,7 +247,7 @@ export class VehicleView {
     if (this.textures !== null && entry !== undefined) {
       this.sprite = new Sprite(this.textures[this.load]);
       this.sprite.anchor.set(0.5);
-      this.sprite.setSize(entry.footprint.w * deps.cellPx * VEHICLE_LANE_SCALE, entry.footprint.h * deps.cellPx * VEHICLE_LANE_SCALE);
+      this.sprite.setSize(entry.footprint.w * deps.cellPx * VEHICLE_SCALE, entry.footprint.h * deps.cellPx * VEHICLE_SCALE);
       this.view.addChild(this.sprite);
     } else {
       this.sprite = null;
@@ -248,6 +260,7 @@ export class VehicleView {
     return this.last;
   }
 
+
   /** Aktuálna textúra sprite (`null` pri fallbacku) — pre testy. */
   get texture(): Texture | null {
     return this.sprite?.texture ?? null;
@@ -256,7 +269,7 @@ export class VehicleView {
   /** Nastaví polohu (interpolovanú), kurz a stav naloženia. Pre nezmenený stav nič nealokuje. */
   update(vm: VehicleVM, alpha: number): void {
     this.last = vm;
-    const pose = vehiclePose(vm, alpha, this.deps.cellPx, this.roadKindAt, this.roadMaskAt);
+    const pose = this.director === null ? this.simPose(vm, alpha) : this.director.pose(vm, alpha, (other, at) => this.simPose(other, at));
     if (this.view.x !== pose.x || this.view.y !== pose.y) this.view.position.set(pose.x, pose.y);
     if (this.view.angle !== pose.angle) this.view.angle = pose.angle;
     const load = vehicleLoad(vm.loaded);
@@ -268,6 +281,11 @@ export class VehicleView {
 
   destroy(): void {
     this.view.destroy({ children: true });
+  }
+
+  /** Póza vozidla podľa simu (pruh, oblúky) v čase `alpha` (px sveta). */
+  private simPose(vm: VehicleVM, alpha: number): VehiclePose {
+    return vehiclePose(vm, alpha, this.deps.cellPx, this.roadKindAt, this.roadMaskAt);
   }
 
   /** Textúry `empty` / `loaded` pre vozidlo, alebo `null` (fallback). */
@@ -297,7 +315,7 @@ export class VehicleView {
       .fill({ color: body.color, alpha: body.alpha })
       .stroke({ width: OUTLINE_CELLS * cellPx, color: outline.color, alpha: outline.alpha, alignment: 1 });
     graphics.rect(left, top, bodyWidth, bodyHeight * FALLBACK_FRONT_STRIPE).fill({ color: front.color, alpha: front.alpha });
-    graphics.scale.set(VEHICLE_LANE_SCALE); // rovnaká mierka ako sprite: telo (56/64 bunky) sa zmestí do pruhu
+    graphics.scale.set(VEHICLE_SCALE); // rovnaká mierka ako sprite
     return graphics;
   }
 }

@@ -3,20 +3,36 @@
  * „Inspector"): hlavička (ikona modulu, názov, mono podtitul, badge stavu, zavrieť), telo (upozornenie, tri
  * číselné dlaždice, pruh kapacity, sekcia lode, riadky s údajmi) a dole akcia „Odstrániť".
  *
- * F2 pozná dva druhy obsahu, ktoré sa vykreslia podľa prítomnosti polí v `ModuleInspectorData`, nie podľa `kind`
- * (ten určuje len ikonu): kotvisko (`apron`, `dockedShip`) a žeriav (`crane`). Prototypová akcia „Presunúť" vo F2
- * nie je (žiadny príkaz na presun), ostatné sekcie prototypu (sparkline 24 h, politika skladu, vozidlá v depe)
- * prídu s fázami, ktoré ich dáta prinesú.
+ * Druhy obsahu sa vykreslia podľa prítomnosti polí v `ModuleInspectorData`, nie podľa `kind` (ten určuje len
+ * ikonu): kotvisko (`apron`, `dockedShip`) a žeriav (`crane`) z F2, sklad (`storage`) a depo vozidiel (`depot`,
+ * zoznam vozidiel s predajom a tlačidlo „Kúpiť vozidlo v depe") z F3. `connected === false` pridá banner „Nepripojené
+ * k ceste" a žltý badge „Nepripojené" (vzor `insp_gate` z prototypu) — má prednosť pred `stateLabel`. Prototypová akcia
+ * „Presunúť" nie je (žiadny príkaz na presun), sparkline 24 h a politika skladu prídu s fázami, ktoré ich dáta prinesú.
  *
  * Komponent je čisto prezentačný (props → DOM, bez hookov): dáta zostaví rodič zo snapshotu
- * (`useSimSnapshot(selector, 100)`, T02-09/T02-10), odstránenie ide cez `onRemove(id)` → `dispatch(RemoveModule)`.
+ * (`useSimSnapshot(selector, 100)`, T02-09/T02-10, T03-10), odstránenie ide cez `onRemove(id)` → `dispatch(RemoveModule)`,
+ * nákup / predaj vozidla cez `onBuyVehicle(depotId)` / `onSellVehicle(vehicleId)` → `dispatch(BuyVehicle | SellVehicle)`.
  * Šírku dáva `--side-panel-w`, výšku kontajner (panel vyplní 100 % výšky rodiča, telo sa posúva).
  */
-import { formatFootprint, formatFraction, formatMoney, formatPercent } from './format';
+import { formatCount, formatFootprint, formatFraction, formatMoney, formatPercent } from './format';
 import { Icon, type IconName } from './icon';
 import './module-inspector.css';
 
 export type CraneStateName = 'idle' | 'grabbing' | 'swinging' | 'placing' | 'blocked';
+
+/** Stav vozidla pre zoznam v depe: `busy` = akýkoľvek pracovný stav (na ceste, nakladá, vykladá). */
+export type DepotVehicleState = 'idle' | 'busy' | 'no_path';
+
+export interface DepotVehicleData {
+  readonly id: number;
+  /** Názov druhu vozidla (`Straddle carrier`) — sekundárny text riadku. */
+  readonly label: string;
+  readonly state: DepotVehicleState;
+  /** Voliteľný mono kód riadku (prototyp: `SC-01`); bez neho `#<id>`. */
+  readonly code?: string;
+  /** Voliteľný: čo hráč pri predaji dostane, v centoch — do tooltipu tlačidla predaja. */
+  readonly refundCents?: number;
+}
 
 export interface ModuleInspectorData {
   readonly id: number;
@@ -47,6 +63,30 @@ export interface ModuleInspectorData {
     readonly utilizationPct: number;
     readonly blockedPct: number;
   };
+  /** F3: sklad. `stored` sú fyzicky uložené jednotky (ledger), `reserved` rezervácie jobov, `unitsIn/Out` kumulatívne. */
+  readonly storage?: {
+    readonly stored: number;
+    readonly reserved: number;
+    readonly capacity: number;
+    readonly unitsIn: number;
+    readonly unitsOut: number;
+    /** Voliteľná jednotka počtu, napr. `TEU`; bez nej `jedn.`. */
+    readonly unitLabel?: string;
+  };
+  /** F3: depo vozidiel. `canBuy` + `buyBlockedReason` (depo plné, nepripojené, nedostatok peňazí…) určuje rodič. */
+  readonly depot?: {
+    readonly vehicles: readonly DepotVehicleData[];
+    readonly capacity: number;
+    readonly canBuy: boolean;
+    readonly buyBlockedReason?: string;
+    /** Voliteľný: cena vozidla v centoch — ukáže sa v tlačidle nákupu (prototyp: „Kúpiť vozidlo v depe · $48,000"). */
+    readonly buyPriceCents?: number;
+  };
+  /**
+   * F3 (voliteľný): modul s cestným konektorom má cestu. `false` = banner „Nepripojené k ceste" a badge „Nepripojené"
+   * (má prednosť pred `stateLabel`); `undefined` / `true` = bez zmeny (moduly bez konektorov pole nemajú).
+   */
+  readonly connected?: boolean;
   /** Suma, ktorú hráč dostane pri odstránení, v centoch (zo zaplatenej ceny). */
   readonly refundCents: number;
   readonly removable: boolean;
@@ -58,6 +98,10 @@ export interface ModuleInspectorProps {
   readonly data: ModuleInspectorData;
   readonly onRemove: (id: number) => void;
   readonly onClose: () => void;
+  /** F3 (voliteľný): nákup vozidla v depe `depotId`; volá sa len pri `depot.canBuy`. */
+  readonly onBuyVehicle?: (depotId: number) => void;
+  /** F3 (voliteľný): predaj vozidla `vehicleId`; volá sa len pri vozidle v stave `idle`. */
+  readonly onSellVehicle?: (vehicleId: number) => void;
 }
 
 // --- Stav žeriavu -------------------------------------------------------------------------------------------------
@@ -204,6 +248,112 @@ export function craneStats(crane: { readonly utilizationPct: number; readonly bl
   ];
 }
 
+type StorageData = NonNullable<ModuleInspectorData['storage']>;
+type DepotData = NonNullable<ModuleInspectorData['depot']>;
+
+/** Voľné sloty skladu: `kapacita − uložené − rezervované` (nikdy záporné). */
+export function storageFree(storage: Pick<StorageData, 'stored' | 'reserved' | 'capacity'>): number {
+  return Math.max(0, storage.capacity - storage.stored - storage.reserved);
+}
+
+/** Zaplnenie skladu v celých percentách (len fyzicky uložené jednotky; rezervácie sa nerátajú), orezané na 0–100. */
+export function storageFillPct(storage: Pick<StorageData, 'stored' | 'capacity'>): number {
+  return Math.round(shareOf(storage.stored, storage.capacity));
+}
+
+/** Dlaždice skladu: zaplnenie (farba podľa prahov 75 / 90 %) / rezervované / voľné (0 = varovanie). */
+export function storageStats(storage: Pick<StorageData, 'stored' | 'reserved' | 'capacity'>): InspectorStat[] {
+  const fill = storageFillPct(storage);
+  const free = storageFree(storage);
+  return [
+    { key: 'fill', label: 'Zaplnenie', value: formatPercent(fill), tone: utilizationTone(fill), swatch: 'used' },
+    { key: 'reserved', label: 'Rezervované', value: formatCount(storage.reserved), tone: 'normal', swatch: 'reserved' },
+    { key: 'free', label: 'Voľné', value: formatCount(free), tone: free === 0 ? 'warn' : 'normal', swatch: 'free' },
+  ];
+}
+
+/** Počty vozidiel podľa stavu (`busy` = pracuje, `idle` = nečinné, `noPath` = bez cesty). */
+export function depotVehicleCounts(vehicles: readonly Pick<DepotVehicleData, 'state'>[]): {
+  readonly busy: number;
+  readonly idle: number;
+  readonly noPath: number;
+} {
+  let busy = 0;
+  let idle = 0;
+  let noPath = 0;
+  for (const vehicle of vehicles) {
+    if (vehicle.state === 'busy') busy += 1;
+    else if (vehicle.state === 'idle') idle += 1;
+    else noPath += 1;
+  }
+  return { busy, idle, noPath };
+}
+
+/** Dlaždice depa: obsadenie stání (plné = varovanie) / pracuje / nečinné (bez cesty ide do zoznamu so žltou ikonou). */
+export function depotStats(depot: Pick<DepotData, 'vehicles' | 'capacity'>): InspectorStat[] {
+  const counts = depotVehicleCounts(depot.vehicles);
+  const total = depot.vehicles.length;
+  return [
+    {
+      key: 'vehicles',
+      label: 'Vozidlá',
+      value: formatFraction(total, depot.capacity),
+      tone: depot.capacity > 0 && total >= depot.capacity ? 'warn' : 'normal',
+      swatch: 'used',
+    },
+    { key: 'busy', label: 'Pracuje', value: formatCount(counts.busy), tone: 'normal', swatch: 'busy' },
+    { key: 'idle', label: 'Nečinné', value: formatCount(counts.idle), tone: 'normal', swatch: 'idle' },
+  ];
+}
+
+/** Popis a vzhľad stavu vozidla v zozname depa (prototyp: „Pracuje" / „Nečinné"; `no_path` je varovanie). */
+export interface VehicleStateInfo {
+  readonly label: string;
+  readonly icon: IconName;
+  readonly tone: 'success' | 'muted' | 'warn';
+}
+
+export const VEHICLE_STATE_INFO: Readonly<Record<DepotVehicleState, VehicleStateInfo>> = {
+  busy: { label: 'Pracuje', icon: 'ic_busy', tone: 'success' },
+  idle: { label: 'Nečinné', icon: 'ic_idle', tone: 'muted' },
+  no_path: { label: 'Bez cesty', icon: 'ic_warning', tone: 'warn' },
+};
+
+/** Predať sa dá len nečinné vozidlo (`SellVehicle` → `vehicle_busy`, ARCHITECTURE F3); ostatné zablokuje dôvod v tooltipe. */
+export function canSellVehicle(vehicle: Pick<DepotVehicleData, 'state'>): boolean {
+  return vehicle.state === 'idle';
+}
+
+export const SELL_BLOCKED_TEXT = 'Predať sa dá len nečinné vozidlo.';
+
+/** Mono kód riadku vozidla: zadaný `code`, inak `#<id>`. */
+export function vehicleCode(vehicle: Pick<DepotVehicleData, 'id' | 'code'>): string {
+  return vehicle.code ?? `#${String(vehicle.id)}`;
+}
+
+/** Tooltip a `aria-label` tlačidla predaja: `Predať SC-01 · vráti $2,400` / dôvod zablokovania. */
+export function sellTitle(vehicle: DepotVehicleData): string {
+  const code = vehicleCode(vehicle);
+  if (!canSellVehicle(vehicle)) return `${SELL_BLOCKED_TEXT} (${code})`;
+  return vehicle.refundCents === undefined ? `Predať ${code}` : `Predať ${code} · vráti ${formatMoney(vehicle.refundCents)}`;
+}
+
+/** Text a vzhľad badge v hlavičke; „Nepripojené" (`connected === false`) má prednosť pred stavom modulu. */
+export const DISCONNECTED_BADGE_LABEL = 'Nepripojené';
+export const DISCONNECTED_TITLE = 'Nepripojené k ceste';
+
+export interface InspectorBadge {
+  readonly label: string;
+  /** Text pre `title` (celý popis). */
+  readonly title: string;
+  readonly ok: boolean;
+}
+
+export function inspectorBadge(data: Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'connected'>): InspectorBadge {
+  if (data.connected === false) return { label: DISCONNECTED_BADGE_LABEL, title: DISCONNECTED_TITLE, ok: false };
+  return { label: badgeText(data.stateLabel), title: data.stateLabel, ok: data.ok };
+}
+
 // --- Vykresľovanie ------------------------------------------------------------------------------------------------
 
 function renderStats(stats: readonly InspectorStat[]) {
@@ -314,9 +464,85 @@ function renderNoShip() {
   );
 }
 
-export function ModuleInspector({ data, onRemove, onClose }: ModuleInspectorProps) {
-  const { apron, crane, dockedShip } = data;
+function renderStorage(storage: StorageData) {
+  return (
+    <div className="module-inspector__meter" data-section="storage">
+      <div className="module-inspector__meter-head">
+        <span className="module-inspector__meter-label">Kapacita</span>
+        <span data-field="storage-count">{formatFraction(storage.stored, storage.capacity, storage.unitLabel ?? 'jedn.')}</span>
+      </div>
+      {renderBar('Zaplnenie skladu', storage.stored, storage.capacity, [
+        { key: 'used', percent: shareOf(storage.stored, storage.capacity) },
+        { key: 'reserved', percent: shareOf(storage.reserved, storage.capacity) },
+      ])}
+    </div>
+  );
+}
+
+function renderDisconnectedBanner() {
+  return (
+    <div className="module-inspector__banner" role="status" data-section="disconnected">
+      <Icon name="ic_warning" className="module-inspector__banner-icon" />
+      <div className="module-inspector__banner-text">
+        <span className="module-inspector__banner-title">{DISCONNECTED_TITLE}</span>
+        <span className="module-inspector__banner-desc">Konektor modulu nemá cestu. Vozidlá sa k nemu nedostanú.</span>
+      </div>
+    </div>
+  );
+}
+
+function renderVehicles(depot: DepotData, onSellVehicle: ModuleInspectorProps['onSellVehicle']) {
+  return (
+    <div className="module-inspector__section" data-section="vehicles">
+      <span className="module-inspector__section-title">Vozidlá v depe</span>
+      {depot.vehicles.length === 0 ? (
+        <p className="module-inspector__empty" data-field="vehicles-empty">
+          V depe zatiaľ nie sú žiadne vozidlá.
+        </p>
+      ) : (
+        <ul className="module-inspector__vehicles">
+          {depot.vehicles.map((vehicle) => {
+            const info = VEHICLE_STATE_INFO[vehicle.state];
+            const sellable = canSellVehicle(vehicle);
+            const title = sellTitle(vehicle);
+            return (
+              <li key={vehicle.id} className="module-inspector__vehicle" data-vehicle-id={vehicle.id} data-state={vehicle.state}>
+                <Icon name="ic_vehicle" className="module-inspector__vehicle-icon" />
+                <span className="module-inspector__vehicle-code" data-field="vehicle-code">
+                  {vehicleCode(vehicle)}
+                </span>
+                <span className="module-inspector__vehicle-label">{vehicle.label}</span>
+                <span className={`module-inspector__vehicle-state module-inspector__vehicle-state--${info.tone}`} data-field="vehicle-state">
+                  <Icon name={info.icon} className="module-inspector__vehicle-state-icon" />
+                  {info.label}
+                </span>
+                <button
+                  type="button"
+                  className="module-inspector__vehicle-sell"
+                  aria-disabled={!sellable}
+                  aria-label={title}
+                  title={title}
+                  data-action="sell-vehicle"
+                  data-vehicle-id={vehicle.id}
+                  onClick={() => {
+                    if (sellable) onSellVehicle?.(vehicle.id);
+                  }}
+                >
+                  <Icon name="ic_cash" className="module-inspector__vehicle-sell-icon" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+export function ModuleInspector({ data, onRemove, onClose, onBuyVehicle, onSellVehicle }: ModuleInspectorProps) {
+  const { apron, crane, dockedShip, storage, depot } = data;
   const blocked = crane?.state === 'blocked';
+  const badge = inspectorBadge(data);
   return (
     <aside className="module-inspector" aria-label="Inšpektor modulu" data-module-id={data.id} data-def-id={data.defId} data-kind={data.kind}>
       <div className="module-inspector__header">
@@ -330,13 +556,13 @@ export function ModuleInspector({ data, onRemove, onClose }: ModuleInspectorProp
           </span>
         </div>
         <span
-          className={data.ok ? 'module-inspector__badge module-inspector__badge--ok' : 'module-inspector__badge module-inspector__badge--warn'}
-          title={data.stateLabel}
+          className={badge.ok ? 'module-inspector__badge module-inspector__badge--ok' : 'module-inspector__badge module-inspector__badge--warn'}
+          title={badge.title}
           data-field="badge"
-          data-ok={data.ok}
+          data-ok={badge.ok}
         >
-          <Icon name={data.ok ? 'ic_check' : 'ic_warning'} className="module-inspector__badge-icon" />
-          {badgeText(data.stateLabel)}
+          <Icon name={badge.ok ? 'ic_check' : 'ic_warning'} className="module-inspector__badge-icon" />
+          {badge.label}
         </span>
         <button type="button" className="module-inspector__close" title="Zavrieť (Esc)" aria-label="Zavrieť inšpektor" onClick={onClose}>
           <Icon name="ic_close" className="module-inspector__close-icon" />
@@ -354,23 +580,69 @@ export function ModuleInspector({ data, onRemove, onClose }: ModuleInspectorProp
             </div>
           </div>
         )}
+        {data.connected === false && renderDisconnectedBanner()}
         {apron !== undefined && renderStats(berthStats(apron))}
         {crane !== undefined && renderStats(craneStats(crane))}
+        {storage !== undefined && renderStats(storageStats(storage))}
+        {depot !== undefined && renderStats(depotStats(depot))}
         {apron !== undefined && renderApron(apron)}
         {crane !== undefined && renderCraneTime(crane)}
+        {storage !== undefined && renderStorage(storage)}
         {dockedShip !== undefined && (
           <div className="module-inspector__section">
             <span className="module-inspector__section-title">Zakotvená loď</span>
             {dockedShip === null ? renderNoShip() : renderShip(dockedShip)}
           </div>
         )}
+        {depot !== undefined && renderVehicles(depot, onSellVehicle)}
         <div className="module-inspector__rows">
+          {storage !== undefined && (
+            <>
+              <div className="module-inspector__row">
+                <span className="module-inspector__row-label">Prijaté celkom</span>
+                <span data-field="units-in">{formatCount(storage.unitsIn, storage.unitLabel)}</span>
+              </div>
+              <div className="module-inspector__row">
+                <span className="module-inspector__row-label">Vydané celkom</span>
+                <span data-field="units-out">{formatCount(storage.unitsOut, storage.unitLabel)}</span>
+              </div>
+            </>
+          )}
           <div className="module-inspector__row">
             <span className="module-inspector__row-label">Vrátenie pri odstránení</span>
             <span data-field="refund">{formatMoney(data.refundCents)}</span>
           </div>
         </div>
         <div className="module-inspector__actions">
+          {depot !== undefined && (
+            <>
+              <button
+                type="button"
+                className="module-inspector__btn module-inspector__btn--primary"
+                aria-disabled={!depot.canBuy}
+                title={depot.canBuy ? undefined : depot.buyBlockedReason}
+                data-action="buy-vehicle"
+                onClick={() => {
+                  if (depot.canBuy) onBuyVehicle?.(data.id);
+                }}
+              >
+                <Icon name="ic_vehicle" className="module-inspector__btn-icon" />
+                Kúpiť vozidlo v depe
+                {depot.buyPriceCents !== undefined && (
+                  <>
+                    {' · '}
+                    <span data-field="buy-price">{formatMoney(depot.buyPriceCents)}</span>
+                  </>
+                )}
+              </button>
+              {!depot.canBuy && depot.buyBlockedReason !== undefined && (
+                <p className="module-inspector__reason">
+                  <Icon name="ic_lock" className="module-inspector__reason-icon" />
+                  <span data-field="buy-reason">{depot.buyBlockedReason}</span>
+                </p>
+              )}
+            </>
+          )}
           <button
             type="button"
             className="module-inspector__btn module-inspector__btn--danger"

@@ -3,6 +3,7 @@ import {
   EM_DASH,
   MINUS_SIGN,
   TIMES_SIGN,
+  formatCount,
   formatFootprint,
   formatFraction,
   formatGameTime,
@@ -185,5 +186,26 @@ describe('formatFraction', () => {
   it('neplatná hodnota → pomlčka', () => {
     expect(formatFraction(Number.NaN, 4)).toBe(EM_DASH);
     expect(formatFraction(1, Number.POSITIVE_INFINITY, 'TEU')).toBe(EM_DASH);
+  });
+});
+
+describe('formatCount', () => {
+  it('celé číslo s čiarkou ako oddeľovačom tisícov, voliteľná jednotka', () => {
+    expect(formatCount(0)).toBe('0');
+    expect(formatCount(46)).toBe('46');
+    expect(formatCount(1_240)).toBe('1,240');
+    expect(formatCount(1_240, 'TEU')).toBe('1,240 TEU');
+    expect(formatCount(12, '')).toBe('12');
+  });
+
+  it('zrezanie desatinných miest, záporné s U+2212, nula bez znamienka', () => {
+    expect(formatCount(3.9)).toBe('3');
+    expect(formatCount(-1_500)).toBe(`${MINUS}1,500`);
+    expect(formatCount(-0.4)).toBe('0');
+  });
+
+  it('neplatná hodnota → pomlčka', () => {
+    expect(formatCount(Number.NaN)).toBe(EM_DASH);
+    expect(formatCount(Number.POSITIVE_INFINITY, 'TEU')).toBe(EM_DASH);
   });
 });

@@ -1,10 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "infrastructure.json",
-  "description": "Cesty a koľaje ako vrstva na bunke, nie moduly (ARCHITECTURE §4.6, §5.1; ADR-006, ADR-010). Konfiguračný def bez items[] (ADR-009); peniaze v centoch (USD).",
+  "description": "Cesty a koľaje ako vrstva na bunke, nie moduly (ARCHITECTURE §4.6, §5.1; ADR-006, ADR-010); typy ciest (ADR-020). Konfiguračný def bez items[] (ADR-009); peniaze v centoch (USD).",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "road", "rail"],
+  "required": ["schemaVersion", "road", "rail", "roadKinds"],
   "properties": {
     "schemaVersion": {
       "const": 1,
@@ -12,11 +12,31 @@
     },
     "road": {
       "$ref": "#/$defs/layer",
-      "description": "Cesta (PlaceRoad / RemoveRoad)."
+      "description": "Cesta (PlaceRoad / RemoveRoad): údržba za bunku. costPerCellCents je alias ceny predvoleného typu roadKinds.two_lane — DefRegistry vyžaduje zhodu, sim číta cenu cesty len z roadKinds (ADR-020)."
     },
     "rail": {
       "$ref": "#/$defs/layer",
       "description": "Koľaj (PlaceRail / RemoveRail, fáza 10)."
+    },
+    "roadKinds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["two_lane", "one_lane", "one_way"],
+      "description": "Typy ciest na bunke s cestou (ADR-020): cena za bunku a rýchlostný faktor.",
+      "properties": {
+        "two_lane": {
+          "$ref": "#/$defs/roadKind",
+          "description": "Obojsmerná dvojpruhová cesta — predvolený typ PlaceRoad a štartové cesty mapy."
+        },
+        "one_lane": {
+          "$ref": "#/$defs/roadKind",
+          "description": "Obojsmerná jednopruhová cesta (úzka, lacnejšia, pomalšia)."
+        },
+        "one_way": {
+          "$ref": "#/$defs/roadKind",
+          "description": "Jednosmerná jednopruhová cesta (úzka); smer bunky určuje PlaceRoad.dirs."
+        }
+      }
     }
   },
   "$defs": {
@@ -34,6 +54,24 @@
           "type": "integer",
           "minimum": 0,
           "description": "Denná údržba za jednu bunku v centoch (v MVP 0)."
+        }
+      }
+    },
+    "roadKind": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["costPerCellCents", "speedFactor"],
+      "properties": {
+        "costPerCellCents": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Cena za jednu novú alebo prestavanú bunku v centoch."
+        },
+        "speedFactor": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "description": "Násobok rýchlosti vozidla na úseku do bunky tohto typu; cena bunky v A* = 1 / speedFactor (≥ 1, heuristika ostáva prípustná)."
         }
       }
     }

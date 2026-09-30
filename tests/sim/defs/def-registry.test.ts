@@ -148,6 +148,14 @@ describe('DefRegistry.fromRaw', () => {
       ['infrastructure', '/road/maintenancePerDayCents', -1],
       ['infrastructure', '/rail/costPerCellCents', null],
       ['infrastructure', '/rail/maintenancePerDayCents', 0.5],
+      ['infrastructure', '/roadKinds', null],
+      ['infrastructure', '/roadKinds/one_lane', 7],
+      ['infrastructure', '/roadKinds/one_lane/costPerCellCents', -1],
+      ['infrastructure', '/roadKinds/one_way/costPerCellCents', 1.5],
+      ['infrastructure', '/roadKinds/one_lane/speedFactor', 0],
+      ['infrastructure', '/roadKinds/one_lane/speedFactor', -0.5],
+      ['infrastructure', '/roadKinds/one_lane/speedFactor', 1.01],
+      ['infrastructure', '/roadKinds/one_way/speedFactor', '1'],
       ['logistics', '/defaultInternalTicks', -1],
       ['logistics', '/defaultInternalTicks', 6.5],
       ['logistics', '/defaultInternalTicks', '6'],
@@ -199,6 +207,7 @@ describe('DefRegistry.fromRaw', () => {
       ['time', 'maxTicksPerFrame'],
       ['economy', 'removalRefundRate'],
       ['infrastructure', 'rail'],
+      ['infrastructure', 'roadKinds'],
       ['logistics', 'defaultInternalTicks'],
       ['logistics', 'repathIntervalTicks'],
       ['logistics', 'congestion'],
@@ -212,6 +221,37 @@ describe('DefRegistry.fromRaw', () => {
       const raw = rawDefs();
       delete (raw.infrastructure['road'] as Record<string, unknown>)['costPerCellCents'];
       expectDefError(() => DefRegistry.fromRaw(raw), 'infrastructure', '/road/costPerCellCents');
+    });
+
+    it.each(['two_lane', 'one_lane', 'one_way'])('chýbajúci typ cesty roadKinds/%s → úplná cesta', (kind) => {
+      const raw = rawDefs();
+      delete (raw.infrastructure['roadKinds'] as Record<string, unknown>)[kind];
+      expectDefError(() => DefRegistry.fromRaw(raw), 'infrastructure', `/roadKinds/${kind}`);
+    });
+
+    it('neznámy typ cesty v roadKinds → DefError s úplnou cestou', () => {
+      const raw = rawDefs();
+      (raw.infrastructure['roadKinds'] as Record<string, unknown>)['four_lane'] = { costPerCellCents: 1, speedFactor: 1 };
+      expectDefError(() => DefRegistry.fromRaw(raw), 'infrastructure', '/roadKinds/four_lane');
+    });
+
+    it('alias road.costPerCellCents sa musí zhodovať s roadKinds.two_lane.costPerCellCents (ADR-020)', () => {
+      const raw = rawDefs();
+      (raw.infrastructure['road'] as Record<string, unknown>)['costPerCellCents'] = 199_999;
+      const error = expectDefError(() => DefRegistry.fromRaw(raw), 'infrastructure', '/road/costPerCellCents');
+      expect(error.message).toContain('roadKinds/two_lane/costPerCellCents');
+      const kinds = raw.infrastructure['roadKinds'] as Record<string, Record<string, unknown>>;
+      kinds['two_lane']['costPerCellCents'] = 199_999;
+      expect(DefRegistry.fromRaw(raw).infrastructure.roadKinds.two_lane.costPerCellCents).toBe(199_999);
+    });
+
+    it('hranice speedFactor: 1 a malé kladné číslo sú platné', () => {
+      const raw = rawDefs();
+      const kinds = raw.infrastructure['roadKinds'] as Record<string, Record<string, unknown>>;
+      kinds['one_lane']['speedFactor'] = 1;
+      kinds['one_way']['speedFactor'] = 0.01;
+      const { roadKinds } = DefRegistry.fromRaw(raw).infrastructure;
+      expect([roadKinds.one_lane.speedFactor, roadKinds.one_way.speedFactor]).toEqual([1, 0.01]);
     });
 
     it('chýbajúce vnorené povinné pole logistics.congestion → úplná cesta', () => {
@@ -345,6 +385,13 @@ describe('loadBundledDefs', () => {
     // ADR-010: cesta 2 000 USD a koľaj 6 000 USD za bunku, bez údržby.
     expect(registry.infrastructure.road).toEqual({ costPerCellCents: 200_000, maintenancePerDayCents: 0 });
     expect(registry.infrastructure.rail).toEqual({ costPerCellCents: 600_000, maintenancePerDayCents: 0 });
+    // T03-18 (ADR-020): typy ciest podľa karty; dvojpruhová = alias road.costPerCellCents.
+    expect(registry.infrastructure.roadKinds).toEqual({
+      two_lane: { costPerCellCents: 200_000, speedFactor: 1 },
+      one_lane: { costPerCellCents: 120_000, speedFactor: 0.7 },
+      one_way: { costPerCellCents: 150_000, speedFactor: 1 },
+    });
+    expect(Object.isFrozen(registry.infrastructure.roadKinds.one_lane)).toBe(true);
     // T03-01 (ADR-010): logistika podľa ARCHITECTURE §4.6.
     expect(registry.logistics).toEqual({
       schemaVersion: 1,
@@ -479,10 +526,16 @@ describe('nové polia: schéma ⇔ DefRegistry', () => {
     expect(registryAccepts(raw)).toBe(validateEconomy(raw.economy));
   });
 
+  /** `roadKinds.<kind>` v klonovanom deffe. */
+  const roadKind = (raw: RawBundle, kind: string): Record<string, unknown> =>
+    (raw.infrastructure['roadKinds'] as Record<string, Record<string, unknown>>)[kind];
+
   describe.each([['road'], ['rail']] as const)('infrastructure.%s', (layer) => {
     it.each(VALUES)('costPerCellCents = %j', (value) => {
       const raw = rawDefs();
       (raw.infrastructure[layer] as Record<string, unknown>)['costPerCellCents'] = value;
+      // Alias ceny cesty (ADR-020) musí sedieť s dvojpruhovou — vzťah, ktorý schéma nevyjadrí, sa tu drží v súlade.
+      if (layer === 'road') roadKind(raw, 'two_lane')['costPerCellCents'] = value;
       expect(registryAccepts(raw)).toBe(validateInfrastructure(raw.infrastructure));
     });
 
@@ -497,6 +550,33 @@ describe('nové polia: schéma ⇔ DefRegistry', () => {
       raw.infrastructure[layer] = value;
       expect(registryAccepts(raw)).toBe(validateInfrastructure(raw.infrastructure));
     });
+  });
+
+  describe.each([['two_lane'], ['one_lane'], ['one_way']] as const)('infrastructure.roadKinds.%s (ADR-020)', (kind) => {
+    it.each(VALUES)('costPerCellCents = %j', (value) => {
+      const raw = rawDefs();
+      roadKind(raw, kind)['costPerCellCents'] = value;
+      if (kind === 'two_lane') (raw.infrastructure['road'] as Record<string, unknown>)['costPerCellCents'] = value;
+      expect(registryAccepts(raw)).toBe(validateInfrastructure(raw.infrastructure));
+    });
+
+    it.each(VALUES)('speedFactor = %j', (value) => {
+      const raw = rawDefs();
+      roadKind(raw, kind)['speedFactor'] = value;
+      expect(registryAccepts(raw)).toBe(validateInfrastructure(raw.infrastructure));
+    });
+
+    it.each(VALUES)('celý objekt = %j', (value) => {
+      const raw = rawDefs();
+      (raw.infrastructure['roadKinds'] as Record<string, unknown>)[kind] = value;
+      expect(registryAccepts(raw)).toBe(validateInfrastructure(raw.infrastructure));
+    });
+  });
+
+  it('bundled infrastructure.json prejde schémou aj registry', () => {
+    const raw = rawDefs();
+    expect(validateInfrastructure(raw.infrastructure)).toBe(true);
+    expect(registryAccepts(raw)).toBe(true);
   });
 
   describe('logistics', () => {

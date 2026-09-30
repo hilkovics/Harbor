@@ -2,6 +2,7 @@
  * Typy dátových definícií (ARCHITECTURE §4). Zrkadlia `data/defs/*.json` a `data/schemas/*.schema.json`
  * 1:1 — nové pole = zmena defu, schémy, tohto typu aj tabuľky polí v `def-registry.ts`.
  */
+import type { RoadKind } from '../grid/road-kind';
 import type { TerrainType } from '../grid/terrain';
 
 /** Jediná podporovaná verzia schémy defov (`schemaVersion` v každom `data/defs/*.json`). */
@@ -57,13 +58,30 @@ export interface InfrastructureLayerDef {
   readonly maintenancePerDayCents: number;
 }
 
+/** Laditeľné parametre typu cesty (ADR-020); pevné vlastnosti typu sú v `ROAD_KIND_TRAITS` (grid/road-kind.ts). */
+export interface RoadKindDef {
+  /** Cena za jednu novú alebo prestavanú bunku v centoch (refundácia pri odstránení/prestavbe z nej, ADR-012). */
+  readonly costPerCellCents: number;
+  /**
+   * Násobok `speedCellsPerTick` vozidla na úseku, ktorý do bunky tohto typu vchádza; `0 < speedFactor ≤ 1`, takže cena
+   * bunky v A* `1 / speedFactor` je ≥ `BASE_CELL_COST` a heuristika ostáva prípustná.
+   */
+  readonly speedFactor: number;
+}
+
 /**
  * `infrastructure.json` — cesty a koľaje ako vrstva na bunke, nie moduly (ARCHITECTURE §4.6, §5.1; ADR-006, ADR-010).
  * Konfiguračný def (ADR-009).
  */
 export interface InfrastructureDef extends DefBase {
+  /**
+   * Cesta: `maintenancePerDayCents` za bunku. `costPerCellCents` je alias ceny `roadKinds.two_lane` (spätná
+   * kompatibilita prezentácie; `DefRegistry` vyžaduje zhodu) — sim cenu cesty číta len z `roadKinds` (ADR-020).
+   */
   readonly road: InfrastructureLayerDef;
   readonly rail: InfrastructureLayerDef;
+  /** Typy ciest (ADR-020): cena za bunku a rýchlostný faktor pre každý `RoadKind`. */
+  readonly roadKinds: Readonly<Record<RoadKind, Readonly<RoadKindDef>>>;
 }
 
 /** Konštanty kongescie (§7.6): cena bunky v A* a spomalenie vozidiel rastú s `cell.traffic` (použité od F11). */

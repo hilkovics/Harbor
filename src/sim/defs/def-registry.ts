@@ -4,7 +4,7 @@
  * Validácia je zámerne ručná a malá (bez ajv, bez `fs`): sim ostáva bez runtime závislostí a prenositeľný
  * do Web Workera. Plnú JSON schému vynucuje `pnpm validate:defs` (tools); táto vrstva overuje to isté
  * minimum, čo potrebuje kód — prítomnosť defu, `schemaVersion`, povinné polia, typy a rozsahy, neznáme kľúče,
- * jedinečnosť `id` v katalógoch a vzťahy medzi poľami (konektor vo footprinte). Generický kód je v `def-spec.ts`,
+ * jedinečnosť `id` v katalógoch a vzťahy medzi poľami (konektor vo footprinte, alias ceny cesty v `infrastructure`). Generický kód je v `def-spec.ts`,
  * pravidlá sú tabuľky nižšie (`FieldTable`, `SpecTable`).
  *
  * Konfiguračné defy (`time`, `economy`, `infrastructure`, `logistics`) sú jeden objekt, katalógové (`cargo_types`,
@@ -19,6 +19,7 @@ import shipsJson from '@data/defs/ships.json';
 import timeJson from '@data/defs/time.json';
 import vehiclesJson from '@data/defs/vehicles.json';
 import { SECONDS_PER_MINUTE } from '../core/sim-clock';
+import { DEFAULT_ROAD_KIND } from '../grid/road-kind';
 import { TERRAIN_TYPES } from '../grid/terrain';
 import { validateCatalog, type Catalog } from './catalog';
 import { DefError } from './def-error';
@@ -52,6 +53,7 @@ import {
   type InfrastructureLayerDef,
   type LogisticsDef,
   type ModuleDef,
+  type RoadKindDef,
   type ShipClassDef,
   type TimeDef,
   type VehicleDef,
@@ -92,10 +94,38 @@ const INFRASTRUCTURE_LAYER_FIELDS: SpecTable<InfrastructureLayerDef> = {
   maintenancePerDayCents: { kind: 'integer', min: 0 },
 };
 
+/** Typ cesty (ADR-020): `speedFactor` v `(0, 1]`, aby cena bunky v A* `1 / speedFactor` bola ≥ 1. */
+const ROAD_KIND_FIELDS: SpecTable<RoadKindDef> = {
+  costPerCellCents: { kind: 'integer', min: 0 },
+  speedFactor: { kind: 'number', exclusiveMin: 0, max: 1 },
+};
+
 const INFRASTRUCTURE_FIELDS: FieldTable<InfrastructureDef> = {
   road: { kind: 'object', fields: INFRASTRUCTURE_LAYER_FIELDS },
   rail: { kind: 'object', fields: INFRASTRUCTURE_LAYER_FIELDS },
+  roadKinds: {
+    kind: 'object',
+    fields: {
+      two_lane: { kind: 'object', fields: ROAD_KIND_FIELDS },
+      one_lane: { kind: 'object', fields: ROAD_KIND_FIELDS },
+      one_way: { kind: 'object', fields: ROAD_KIND_FIELDS },
+    },
+  },
 };
+
+/**
+ * Vzťah polí `infrastructure.json` (ADR-020): `road.costPerCellCents` je alias ceny predvoleného typu cesty — obe čísla
+ * sa musia zhodovať, inak by prezentácia a sim ukazovali rôzne ceny tej istej stavby.
+ */
+function checkInfrastructure(def: Readonly<InfrastructureDef>): Problem | undefined {
+  const aliasCents = def.road.costPerCellCents;
+  const kindCents = def.roadKinds[DEFAULT_ROAD_KIND].costPerCellCents;
+  if (aliasCents === kindCents) return undefined;
+  return {
+    path: '/road/costPerCellCents',
+    message: `alias ceny roadKinds/${DEFAULT_ROAD_KIND}/costPerCellCents (${String(kindCents)}) sa musí zhodovať, dostal ${String(aliasCents)}`,
+  };
+}
 
 /** Konštanty kongescie (§7.6); hodnoty použije až F11, tabuľka zrkadlí `logistics.schema.json`. */
 const CONGESTION_FIELDS: SpecTable<CongestionDef> = {
@@ -206,7 +236,12 @@ type DefName = keyof typeof DEF_FIELDS | 'cargo_types' | 'modules' | 'ships' | '
  * Hlási prvý nájdený problém: koreň → neznáme kľúče → `schemaVersion` → polia v poradí tabuľky (vnorené objekty
  * rekurzívne rovnakým poradím, cesta je úplný JSON pointer).
  */
-function validateDef<T extends DefBase>(defName: string, raw: unknown, fields: FieldTable<T>): Readonly<T> {
+function validateDef<T extends DefBase>(
+  defName: string,
+  raw: unknown,
+  fields: FieldTable<T>,
+  check?: (def: Readonly<T>) => Problem | undefined,
+): Readonly<T> {
   const fail = (problem: Problem): never => failWith(defName, problem);
 
   if (raw === undefined) return fail({ path: '', message: 'def chýba' });
@@ -228,7 +263,10 @@ function validateDef<T extends DefBase>(defName: string, raw: unknown, fields: F
   const problem = checkFields(raw, table, '');
   if (problem) fail(problem);
   // Všetky polia tabuľky prešli kontrolou a neznáme kľúče sú vylúčené, takže tvar zodpovedá `T`.
-  return freezeCopy(raw) as Readonly<T>;
+  const def = freezeCopy(raw) as Readonly<T>;
+  const relation = check?.(def);
+  if (relation) fail(relation);
+  return def;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -255,7 +293,7 @@ export class DefRegistry {
     return new DefRegistry(
       validateDef<TimeDef>('time', raw.time, DEF_FIELDS.time),
       validateDef<EconomyDef>('economy', raw.economy, DEF_FIELDS.economy),
-      validateDef<InfrastructureDef>('infrastructure', raw.infrastructure, DEF_FIELDS.infrastructure),
+      validateDef<InfrastructureDef>('infrastructure', raw.infrastructure, DEF_FIELDS.infrastructure, checkInfrastructure),
       validateCatalog<CargoTypeDef>('cargo_types', raw.cargo_types, { fields: CARGO_TYPE_FIELDS }),
       validateCatalog<ModuleDef>('modules', raw.modules, { fields: MODULE_FIELDS, extraKeys: ['params'], check: checkModuleItem }),
       validateCatalog<ShipClassDef>('ships', raw.ships, { fields: SHIP_CLASS_FIELDS }),
@@ -274,7 +312,7 @@ export class DefRegistry {
     return this.economyDef;
   }
 
-  /** `infrastructure.json` (ARCHITECTURE §4.6, ADR-010): cena a údržba cesty a koľaje za bunku. */
+  /** `infrastructure.json` (ARCHITECTURE §4.6, ADR-010, ADR-020): cena a údržba cesty a koľaje za bunku, typy ciest. */
   get infrastructure(): Readonly<InfrastructureDef> {
     return this.infrastructureDef;
   }

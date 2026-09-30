@@ -23,14 +23,29 @@ export function newBareWorld(defs: DefRegistry = DEFS): World {
   return World.create(defs, BARE_MAP, SEED);
 }
 
-/** Defy s upravenou cenou cesty a/alebo mierou refundácie (ostatné hodnoty z data/defs). */
-export function defsWith(options: { readonly roadCostPerCellCents?: number; readonly removalRefundRate?: number }): DefRegistry {
+/**
+ * Defy s upravenou cenou dvojpruhovej cesty (aj jej alias `road.costPerCellCents`, ADR-020), cenou ďalších typov ciest
+ * a/alebo mierou refundácie (ostatné hodnoty z data/defs).
+ */
+export function defsWith(options: {
+  readonly roadCostPerCellCents?: number;
+  readonly removalRefundRate?: number;
+  readonly oneLaneCostPerCellCents?: number;
+  readonly oneWayCostPerCellCents?: number;
+}): DefRegistry {
+  const { roadKinds } = infrastructureJson;
+  const twoLaneCents = options.roadCostPerCellCents ?? roadKinds.two_lane.costPerCellCents;
   return DefRegistry.fromRaw({
     ...RAW_DEFS,
     economy: { ...economyJson, removalRefundRate: options.removalRefundRate ?? economyJson.removalRefundRate },
     infrastructure: {
       ...infrastructureJson,
-      road: { ...infrastructureJson.road, costPerCellCents: options.roadCostPerCellCents ?? infrastructureJson.road.costPerCellCents },
+      road: { ...infrastructureJson.road, costPerCellCents: twoLaneCents },
+      roadKinds: {
+        two_lane: { ...roadKinds.two_lane, costPerCellCents: twoLaneCents },
+        one_lane: { ...roadKinds.one_lane, costPerCellCents: options.oneLaneCostPerCellCents ?? roadKinds.one_lane.costPerCellCents },
+        one_way: { ...roadKinds.one_way, costPerCellCents: options.oneWayCostPerCellCents ?? roadKinds.one_way.costPerCellCents },
+      },
     },
   });
 }

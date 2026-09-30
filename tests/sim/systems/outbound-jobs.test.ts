@@ -11,9 +11,9 @@ import type { EntityId } from '@sim/core';
 import { DefRegistry } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
 import type { CellCoord } from '@sim/grid';
-import { createOutboundJobs } from '@sim/logistics';
+import { createOutboundJobs, type StoredCargoGroup } from '@sim/logistics';
 import { World, WorldStateError, findWorldViolation, type WorldState } from '@sim/world';
-import { segment } from '../helpers/f3-layout';
+import { NEAR_YARD_OUTSIDE, segment } from '../helpers/f3-layout';
 import { unitsOnApron } from '../logistics/dispatch-fixtures';
 import {
   RAMP_ORIGIN,
@@ -199,6 +199,32 @@ describe('vznik outbound jobov (dispatcher krok 5, §7.3 bod 2)', () => {
       const inoperative = outboundWorld({ landside: ['waiting_area', 'ramp'] });
       stockYard(inoperative.world, inoperative.far, 60);
       expect(unitReads(inoperative.world, () => createOutboundJobs(inoperative.world))).toBe(0);
+    });
+
+    it('sklad bez vhodnej rampy sa preskočí skokom na hranicu ďalšieho skladu skupiny, bez prechodu jeho jednotiek (T05-11)', () => {
+      // Blízky dvor (id 4) je bez cesty — rampa z neho nedosiahnuteľná; ďaleký (id 5) je pripojený. Obe partie sú v jednej
+      // skupine (bez kontraktu), blízky dvor prvý (sklady ↑).
+      const { world, near, far } = outboundWorld({ omitRoads: [NEAR_YARD_OUTSIDE] });
+      const skipped = stockYard(world, near, 40);
+      const served = stockYard(world, far, 2);
+      const group = world.storedCargo.groupOf(null);
+      if (group === undefined) throw new Error('chýba skupina bez kontraktu');
+      let storageReads = 0;
+      const storages = new Proxy(group.storages, {
+        get(target, key, receiver) {
+          if (typeof key === 'string' && /^\d+$/.test(key)) storageReads += 1;
+          return Reflect.get(target, key, receiver) as unknown;
+        },
+      });
+      const counted: StoredCargoGroup = { contractId: group.contractId, units: group.units, storages };
+      vi.spyOn(world.storedCargo, 'entries', 'get').mockReturnValue([counted]);
+      const reads = unitReads(world, () => createOutboundJobs(world));
+
+      expect(served.map((unit) => world.jobOfUnit(unit)?.toModuleId)).toEqual([rampOf(world).id, rampOf(world).id]);
+      expect(skipped.every((unit) => world.jobOfUnit(unit) === undefined)).toBe(true);
+      expect(reads).toBe(served.length);
+      // Binárny skok: rádovo log2(42) čítaní pre blízky dvor + ďaleký dvor, nie 40 + 2.
+      expect(storageReads).toBeLessThan(skipped.length / 2);
     });
 
     it('voľné miesto na rampe: prečítajú sa len jednotky s aktívnym outbound jobom a jednotka, ktorá job dostane', () => {

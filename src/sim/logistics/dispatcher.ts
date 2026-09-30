@@ -23,8 +23,8 @@
  * najnižšom docku s voľným miestom (`reserve(firstFreeDock())`) a vznikne job `in_storage → at_ramp` (`JobCreated`).
  * Rampy, ktoré môžu job dostať, sa zbierajú raz za tick do znovupoužiteľného poľa; bez nich sa skupiny ani nezbierajú
  * a plná rampa z poľa vypadne — outbound jobov vznikne za tick najviac toľko, koľko je voľných staging miest, a skupinou
- * sa prechádza len cez jej jednotky s aktívnym outbound jobom (najviac toľko, koľko je staging miest), jednotky
- * skladov bez vhodnej rampy a po prvú jednotku, ktorá job dostane. Pri samých jednotkách bez kontraktu je poradie
+ * sa prechádza len cez jej jednotky s aktívnym outbound jobom (najviac toľko, koľko je staging miest) po prvú
+ * jednotku, ktorá job dostane; sklad bez vhodnej rampy sa preskočí binárnym skokom na hranicu ďalšieho skladu skupiny. Pri samých jednotkách bez kontraktu je poradie
  * jobov rovnaké ako vo F4 (sklady ↑, FIFO).
  *
  * **Zrušenie** (ADR-023): `open` outbound job, ktorého rampa už nie je prevádzková alebo k nej zo skladu nevedie cesta
@@ -176,21 +176,43 @@ function rampForStorage(world: World, storageId: EntityId, ramps: readonly Loadi
 }
 
 /**
+ * Prvý index `≥ from` v `storages` (neklesajúce id skladov skupiny), kde začína iný sklad ako `storageId` — binárne
+ * vyhľadanie hranice skladu, bez prechodu jeho jednotiek.
+ */
+function nextStorageStart(storages: readonly EntityId[], from: number, storageId: EntityId): number {
+  let low = from;
+  let high = storages.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    if (storages[mid] <= storageId) low = mid + 1;
+    else high = mid;
+  }
+  return low;
+}
+
+/**
  * Joby pre jednotky jednej skupiny (sklad ↑, FIFO), ktoré ešte job nemajú, k najbližšej vhodnej rampe z `ramps` pre ich
- * sklad. Plná rampa z `ramps` vypadne a hľadá sa ďalšia; jednotky skladu, pre ktorý rampa nie je, sa preskočia.
- * Vráti `false`, keď `ramps` ostalo prázdne (ďalšie skupiny už job nedostanú).
+ * sklad. Plná rampa z `ramps` vypadne a hľadá sa ďalšia; sklad, pre ktorý rampa nie je, sa preskočí celý (skok na
+ * hranicu ďalšieho skladu v skupine, `nextStorageStart`). Vráti `false`, keď `ramps` ostalo prázdne (ďalšie skupiny už
+ * job nedostanú).
  */
 function outboundFromGroup(world: World, group: StoredCargoGroup, ramps: LoadingRamp[]): boolean {
   let storageId: EntityId | undefined;
   let ramp: LoadingRamp | undefined;
-  for (let i = 0; i < group.units.length; i++) {
+  let i = 0;
+  while (i < group.units.length) {
     const unitStorage = group.storages[i];
     if (unitStorage !== storageId) {
       storageId = unitStorage;
       ramp = rampForStorage(world, unitStorage, ramps);
     }
-    if (ramp === undefined) continue;
-    const unit = world.cargo.get(group.units[i]);
+    if (ramp === undefined) {
+      i = nextStorageStart(group.storages, i, unitStorage);
+      continue;
+    }
+    const index = i;
+    i += 1;
+    const unit = world.cargo.get(group.units[index]);
     if (unit === undefined || world.jobOfUnit(unit.id) !== undefined) continue;
     const dock = ramp.firstFreeDock();
     ramp.reserve(dock);

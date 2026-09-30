@@ -22,7 +22,9 @@
  * odvoditeľné: držitelia bays a dockov (z kamiónov), strany brán a trasy (z ciest a modulov).
  *
  * v5 (T05-02, ADR-025) = v4 + `economy` (posledné záznamy knihy, súčty otvoreného dňa, denné a mesačné súhrny,
- * bankrotové počítadlo, `gameOver`); hotovosť ostáva v `cashCents`. Kontrakty, pool a XP doplní T05-04 (v5 nie je vydaná).
+ * bankrotové počítadlo, `gameOver`); hotovosť ostáva v `cashCents`. T05-03 (ADR-026) pridal `contracts` (kontrakty okrem
+ * expirovaných vzostupne podľa id — pool = kontrakty v stave `offered`, samostatne sa neukladá), `xp`,
+ * `completedContracts` (`tier` sa odvodí) a `nextContractId` (vlastná postupnosť id kontraktov); v5 ešte nie je vydaná.
  *
  * Lode (ADR-016) sa ukladajú s polohou, stavom FSM, kotviskami, anchorage a indexom bodu trasy; trasa sa odvodí zo stavu
  * a mapy, `BerthModule.dockedShipId` z `berthIds`.
@@ -59,6 +61,9 @@ import { SERIALIZED_VEHICLE_KEYS, vehiclePosition, type SerializedVehicle } from
 import { VEHICLE_STATES, VEHICLE_STATE_TRAITS, isVehicleState, type VehicleState } from '../vehicles/vehicle-fsm';
 import type { EconomyState } from '../economy/economy';
 import { parseEconomyState } from './economy-state';
+import type { ContractBookState } from '../contracts/contract-book';
+import type { SerializedContract } from '../contracts/contract';
+import { parseContractsState } from './contracts-state';
 import { WORLD_STATE_V2, WORLD_STATE_V3, WORLD_STATE_V4, WORLD_STATE_V5_KEYS, WORLD_STATE_VERSION } from './migrate';
 import { WorldStateError, checkArray, checkInteger, checkKeys, describeValue, isPlainObject, pointerSegment } from './state-check';
 
@@ -162,6 +167,14 @@ export interface WorldState extends Omit<WorldStateV4, 'version'> {
   readonly version: typeof WORLD_STATE_VERSION;
   /** Kniha, súhrny období a bankrot (`Economy.getState()`); hotovosť ostáva v `cashCents`. */
   readonly economy: EconomyState;
+  /** Kontrakty okrem expirovaných vzostupne podľa id (`Contract.toState()`; ponuky poolu = stav `offered`), ADR-026. */
+  readonly contracts: readonly SerializedContract[];
+  /** Nazbierané XP. */
+  readonly xp: number;
+  /** Počet dokončených kontraktov (z neho `tier`). */
+  readonly completedContracts: number;
+  /** Id ďalšieho kontraktu (vlastná postupnosť `ContractId`, ADR-026). */
+  readonly nextContractId: number;
 }
 
 /** Ľubovoľná podporovaná verzia (vstup `World.deserialize`). */
@@ -266,6 +279,8 @@ export interface ParsedWorldState {
   readonly trucks: readonly ParsedTruckEntry[];
   /** Stav ekonomiky (`parseEconomyState`). */
   readonly economy: EconomyState;
+  /** Kniha kontraktov (`parseContractsState`). */
+  readonly contracts: ContractBookState;
 }
 
 /** Kľúče aktuálnej verzie (v5) v poradí `serialize()`; iné kľúče sú chyba (stav nemá voliteľné polia). */
@@ -729,7 +744,8 @@ function checkIdCollisions(
  * `modules` (tvar), `cargo` (`parseCargoLedgerState`), `ships` (tvar, `parseShips`), `vehicles` (tvar,
  * `parseVehicles`), `jobs` (tvar, `parseJobs`), `trucks` (tvar, `parseTrucks`), id modulov, lodí, vozidiel, jobov,
  * kamiónov a nákladu sa neprekrývajú, `economy` (`parseEconomyState`: záznamy knihy nie v budúcnosti, súhrny len
- * uzavretých dní a mesiacov, ADR-025).
+ * uzavretých dní a mesiacov, ADR-025), `contracts`, `xp`, `completedContracts`, `nextContractId` (`parseContractsState`,
+ * ADR-026; id kontraktov sú vlastná postupnosť, s id entít sa neporovnávajú).
  * Vstup sa nemení a výsledok s ním nezdieľa meniteľné objekty.
  *
  * `grid` je mriežka počiatočného stavu tej istej mapy (`map.createGrid()`) — z nej sa overuje terén pod cestami;
@@ -769,7 +785,8 @@ export function parseWorldState(raw: unknown, defs: DefRegistry, map: LoadedMap,
   const vehicles = parseVehicles(state.vehicles, defs, map, grid, nextId);
   const jobs = parseJobs(state.jobs, nextId, clock.tick);
   const trucks = parseTrucks(state.trucks, defs, map, grid, nextId);
+  const contracts = parseContractsState(state, defs, clock);
   checkIdCollisions(modules, ships, vehicles, jobs, trucks, cargo);
   const economy = parseEconomyState(state.economy, clock);
-  return { seed, clock, rng, ids, cashCents, roads, traffic, ownership, modules, cargo, ships, vehicles, jobs, trucks, economy };
+  return { seed, clock, rng, ids, cashCents, roads, traffic, ownership, modules, cargo, ships, vehicles, jobs, trucks, economy, contracts };
 }

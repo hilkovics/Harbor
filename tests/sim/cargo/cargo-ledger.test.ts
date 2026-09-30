@@ -12,7 +12,7 @@ import {
   type CargoLocation,
   type CargoLocationKind,
 } from '@sim/cargo';
-import { Rng, type EntityId } from '@sim/core';
+import { Rng, type ContractId, type EntityId } from '@sim/core';
 import {
   CONTAINER_CHAIN,
   GRAIN,
@@ -64,7 +64,7 @@ describe('CargoLedger.create', () => {
     const harness = createHarness();
     expect(harness.ids.next()).toBe(1); // iná entita (napr. loď) dostala id 1
     const teu = harness.ledger.create(TEU, at.ship(SHIP));
-    const grain = harness.ledger.create(GRAIN, at.ship(SHIP), id(77));
+    const grain = harness.ledger.create(GRAIN, at.ship(SHIP), 77 as ContractId);
     expect(teu).toEqual({ id: 2, typeId: TEU, contractId: null, quantity: 1, location: at.ship(SHIP) });
     expect(grain).toEqual({ id: 3, typeId: GRAIN, contractId: 77, quantity: GRAIN_BATCH, location: at.ship(SHIP) });
     expect(harness.ids.next()).toBe(4);
@@ -124,7 +124,7 @@ describe('CargoLedger.create', () => {
 
   it.each([0, -1, 1.5])('contractId %s → CargoError invalid_input', (contractId) => {
     const harness = withUnits(1);
-    expectAtomicFailure(harness, () => harness.ledger.create(TEU, at.ship(SHIP), contractId as EntityId), 'invalid_input');
+    expectAtomicFailure(harness, () => harness.ledger.create(TEU, at.ship(SHIP), contractId as ContractId), 'invalid_input');
   });
 });
 

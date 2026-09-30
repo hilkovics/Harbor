@@ -78,7 +78,7 @@ describe('CommandRegistry (kostra T01-03)', () => {
     expect(new CommandRegistry().types).toEqual([]);
   });
 
-  it('VALIDATION_REASONS zodpovedajú „Spoločným rozhraniam" F1 + F2 + F3 + F4 (staršie ostávajú na začiatku v pôvodnom poradí)', () => {
+  it('VALIDATION_REASONS zodpovedajú „Spoločným rozhraniam" F1 + F2 + F3 + F4 + F5 (staršie ostávajú na začiatku v pôvodnom poradí)', () => {
     expect([...VALIDATION_REASONS]).toEqual([
       'out_of_bounds',
       'terrain',
@@ -117,6 +117,10 @@ describe('CommandRegistry (kostra T01-03)', () => {
       'invalid_road_kind',
       'invalid_direction',
       'has_trucks',
+      // F5 (docs/tasks/phase-05.md „Spoločné rozhrania", T05-03, ADR-026): kontrakty a koniec hry
+      'unknown_contract',
+      'contract_not_offered',
+      'game_over',
     ]);
     expect(new Set(VALIDATION_REASONS).size).toBe(VALIDATION_REASONS.length);
   });
@@ -130,7 +134,7 @@ describe('CommandRegistry (kostra T01-03)', () => {
 });
 
 describe('vstavané príkazy (T01-04, T02-04, T02-05)', () => {
-  it('predvolený register pozná PlaceRoad, RemoveRoad, SetGameSpeed, PlaceModule, RemoveModule, SpawnShipDebug, BuyVehicle, SellVehicle v poradí BUILTIN_COMMANDS', () => {
+  it('predvolený register pozná PlaceRoad, RemoveRoad, SetGameSpeed, PlaceModule, RemoveModule, SpawnShipDebug, BuyVehicle, SellVehicle, AcceptContract, DeclineContract v poradí BUILTIN_COMMANDS', () => {
     expect(commandRegistry.types).toEqual([
       'PlaceRoad',
       'RemoveRoad',
@@ -140,6 +144,8 @@ describe('vstavané príkazy (T01-04, T02-04, T02-05)', () => {
       'SpawnShipDebug',
       'BuyVehicle',
       'SellVehicle',
+      'AcceptContract',
+      'DeclineContract',
     ]);
     expect(BUILTIN_COMMANDS.map((command) => command.TYPE)).toEqual(commandRegistry.types);
   });
@@ -183,6 +189,8 @@ describe('vstavané príkazy (T01-04, T02-04, T02-05)', () => {
       'SpawnShipDebug',
       'BuyVehicle',
       'SellVehicle',
+      'AcceptContract',
+      'DeclineContract',
     ]);
     expect(direct.commandFromJSON({ type: 'RemoveRoad', cells: [] }).type).toBe('RemoveRoad');
   });

@@ -47,13 +47,15 @@ describe('platné príkazy: presne jedna udalosť každého druhu', () => {
     expect(ofType(events, 'MoneyChanged')[0]?.reason).toBe('road_sale');
   });
 
-  it('SetGameSpeed → 1× GameSpeedChanged, cez tick() pred TickAdvanced', () => {
+  it('SetGameSpeed → 1× GameSpeedChanged, cez tick() pred TickAdvanced (potom krok 2: prvé naplnenie poolu, ADR-026)', () => {
     const world = newWorld();
     world.enqueue(new SetGameSpeedCommand(4));
-    expect(world.tick()).toEqual([
+    const events = world.tick();
+    expect(events.slice(0, 2)).toEqual([
       { type: 'GameSpeedChanged', speed: 4 },
       { type: 'TickAdvanced', tick: 1 },
     ]);
+    expect(events.slice(2).map((event) => event.type)).toEqual(Array<string>(world.defs.economy.offersPerDay).fill('ContractOffered'));
     expect(world.clock.speed).toBe(4);
   });
 

@@ -65,7 +65,7 @@ function busyWorld(): World {
 }
 
 describe('World.serialize — WorldState v5', () => {
-  it('tvar: presne kľúče v5 (v1 + traffic, modules, cargo, ships + vehicles, jobs + trucks + economy) v pevnom poradí a hodnoty novej hry', () => {
+  it('tvar: presne kľúče v5 (v1 + traffic, modules, cargo, ships + vehicles, jobs + trucks + economy, kontrakty) v pevnom poradí a hodnoty novej hry', () => {
     const world = create();
     const state = world.serialize();
     expect(Object.keys(state)).toEqual([
@@ -86,8 +86,14 @@ describe('World.serialize — WorldState v5', () => {
       'jobs',
       'trucks',
       'economy',
+      'contracts',
+      'xp',
+      'completedContracts',
+      'nextContractId',
     ]);
     expect(state.version).toBe(WORLD_STATE_VERSION);
+    // Nová hra pred prvým tickom: pool sa plní až v kroku 2 prvého ticku (ADR-026).
+    expect([state.contracts, state.xp, state.completedContracts, state.nextContractId]).toEqual([[], 0, 0, 1]);
     expect(state.version).toBe(5);
     expect(state.economy).toEqual({ entries: [], today: { incomeCents: {}, expenseCents: {} }, daily: [], monthly: [], daysNegative: 0, gameOver: false });
     expect(state.traffic).toEqual([]);

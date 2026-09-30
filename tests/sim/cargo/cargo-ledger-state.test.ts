@@ -9,7 +9,7 @@ import {
   holderIdOf,
   type CargoLedgerState,
 } from '@sim/cargo';
-import { EntityIdAllocator, EventBus } from '@sim/core';
+import { EntityIdAllocator, EventBus, type ContractId } from '@sim/core';
 import type { SimEvent } from '@sim/events';
 import {
   CARGO_DEFS,
@@ -38,7 +38,7 @@ function busyHarness(): LedgerHarness {
   const harness = createHarness();
   const { ledger } = harness;
   const units = [SHIP_B, SHIP_A, SHIP_B, SHIP_A, SHIP_A, SHIP_B, SHIP_A, SHIP_A, SHIP_B, SHIP_A].map(
-    (ship, i) => ledger.create(i % 3 === 0 ? GRAIN : TEU, at.ship(ship), i % 4 === 0 ? id(500 + i) : null).id,
+    (ship, i) => ledger.create(i % 3 === 0 ? GRAIN : TEU, at.ship(ship), i % 4 === 0 ? ((500 + i) as ContractId) : null).id,
   );
   const [u1, u2, u3, u4, u5, u6, u7] = units;
   harness.ids.next(); // iná entita medzi jednotkami — id nie sú súvislé

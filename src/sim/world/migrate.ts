@@ -16,8 +16,9 @@
  * s `runtime` `{}`) dostane `lastNoWaitingBayHour: null` (throttle `NoWaitingBay`). Brána ukladala frontu už vo v3 —
  * bez kamiónov je prázdna (neprázdnu odmietne obnova, lebo jej kamióny neexistujú); stojisko ostáva `{}`.
  *
- * v4 → v5 (T05-02, ADR-025): v4 nepoznal knihu, preto dostane prázdnu `economy` (bez záznamov a súhrnov, `daysNegative`
- * 0, `gameOver` false); hotovosť ostáva v `cashCents`. T05-04 rozšíri v5 o kontrakty (v5 ešte nie je vydaná).
+ * v4 → v5 (T05-02, ADR-025; T05-03, ADR-026): v4 nepoznal knihu ani kontrakty, preto dostane prázdnu `economy` (bez
+ * záznamov a súhrnov, `daysNegative` 0, `gameOver` false; hotovosť ostáva v `cashCents`), prázdne `contracts`, `xp` 0,
+ * `completedContracts` 0 a `nextContractId` 1. Pool sa po načítaní nedoplní hneď, ale pri najbližšom `DayClosed`.
  */
 import type { CargoLedgerState } from '../cargo/cargo-ledger-state';
 import type { DefRegistry } from '../defs/def-registry';
@@ -36,7 +37,7 @@ export const WORLD_STATE_V3 = 3;
 /** Verzia `WorldState` v4 (F4: `trucks`, runtime rampy s `lastNoWaitingBayHour`) — cieľ kroku v3 → v4. */
 export const WORLD_STATE_V4 = 4;
 
-/** Verzia `WorldState` v5 (F5: `economy` — kniha, súhrny, bankrot; ADR-025, kontrakty doplní T05-04) — cieľ kroku v4 → v5. */
+/** Verzia `WorldState` v5 (F5: `economy` — kniha, súhrny, bankrot, ADR-025; kontrakty, XP, ADR-026) — cieľ kroku v4 → v5. */
 export const WORLD_STATE_V5 = 5;
 
 /** Aktuálna verzia `WorldState` — `serialize()` vždy vracia ju. */
@@ -54,8 +55,11 @@ export const WORLD_STATE_V3_KEYS = [...WORLD_STATE_V2_KEYS, 'vehicles', 'jobs'] 
 /** Kľúče `WorldState` v4 v poradí `serialize()` (F4, T04-04): v3 + `trucks`. */
 export const WORLD_STATE_V4_KEYS = [...WORLD_STATE_V3_KEYS, 'trucks'] as const;
 
-/** Kľúče `WorldState` v5 v poradí `serialize()` (F5, T05-02): v4 + `economy`. */
-export const WORLD_STATE_V5_KEYS = [...WORLD_STATE_V4_KEYS, 'economy'] as const;
+/**
+ * Kľúče `WorldState` v5 v poradí `serialize()` (F5): v4 + `economy` (T05-02, ADR-025) + `contracts`, `xp`,
+ * `completedContracts`, `nextContractId` (T05-03, ADR-026).
+ */
+export const WORLD_STATE_V5_KEYS = [...WORLD_STATE_V4_KEYS, 'economy', 'contracts', 'xp', 'completedContracts', 'nextContractId'] as const;
 
 type RawState = Record<string, unknown>;
 type Migration = (state: RawState, defs: DefRegistry) => RawState;
@@ -136,13 +140,20 @@ function emptyEconomyState(): RawState {
   return { entries: [], today: { incomeCents: {}, expenseCents: {} }, daily: [], monthly: [], daysNegative: 0, gameOver: false };
 }
 
-/** v4 (presne kľúče v4) → v5: pôvodné polia + prázdna `economy`. */
+/**
+ * v4 (presne kľúče v4) → v5: pôvodné polia + prázdna `economy` + prázdna kniha kontraktov (žiadne ponuky ani
+ * kontrakty, XP 0, 0 dokončených — pool doplní najbližší `DayClosed`, ADR-026).
+ */
 function migrateV4ToV5(state: RawState): RawState {
   checkKeys(state, WORLD_STATE_V4_KEYS, '');
   const migrated: RawState = {};
   for (const key of WORLD_STATE_V4_KEYS) migrated[key] = state[key];
   migrated['version'] = WORLD_STATE_V5;
   migrated['economy'] = emptyEconomyState();
+  migrated['contracts'] = [];
+  migrated['xp'] = 0;
+  migrated['completedContracts'] = 0;
+  migrated['nextContractId'] = 1;
   return migrated;
 }
 

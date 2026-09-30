@@ -87,6 +87,11 @@ export abstract class StorageModule extends Module {
     return this.params.category;
   }
 
+  /** Skladovacia kapacita pre `capacityHint` poolu kontraktov (ADR-026) = `params.capacityUnits`. */
+  override storageCapacityUnits(): number {
+    return this.capacity;
+  }
+
   /** Uložené jednotky (ledger `in_storage` u tohto modulu). */
   get storedCount(): number {
     return this.slots.usedCount;

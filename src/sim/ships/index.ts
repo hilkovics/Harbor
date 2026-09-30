@@ -21,3 +21,5 @@ export {
 export type { ShipDimensions, ShipMooring, ShipPoint, ShipRouteEnv } from './ship-route';
 export { allocateBerths, hasCompatibleCrane } from './berth-allocator';
 export type { BerthAllocationWorld, BerthRequest } from './berth-allocator';
+export { spawnShip } from './spawn-ship';
+export type { ShipSpawnSpec } from './spawn-ship';

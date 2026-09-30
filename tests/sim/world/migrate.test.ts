@@ -111,16 +111,19 @@ function toV4(state: WorldState): WorldStateV4 {
 /** Ekonomika po migrácii zo save bez knihy (v4 → v5): prázdna kniha a súhrny, počítadlo 0. */
 const EMPTY_ECONOMY = { entries: [], today: { incomeCents: {}, expenseCents: {} }, daily: [], monthly: [], daysNegative: 0, gameOver: false };
 
-/** Stav bez histórie knihy — svet zo staršieho save ju nemá, ďalší priebeh (hotovosť, entity) sa porovnáva bez nej. */
+/**
+ * Stav bez histórie knihy a bez kontraktov (v4 → v5, ADR-025, ADR-026) — svet zo staršieho save ich nemá (pool doplní
+ * až najbližší `DayClosed`), ďalší priebeh (hotovosť, entity) sa porovnáva bez nich.
+ */
 function withoutLedgerHistory(state: WorldState): WorldState {
-  return { ...state, economy: EMPTY_ECONOMY };
+  return { ...state, economy: EMPTY_ECONOMY, contracts: [], xp: 0, completedContracts: 0, nextContractId: 1 };
 }
 
 describe('migrateWorldState', () => {
-  it('verzie: najstaršia 1, aktuálna 5; kľúče v5 = v4 + economy = WORLD_STATE_KEYS, v4 = v3 + trucks, v3 = v2 + vehicles, jobs', () => {
+  it('verzie: najstaršia 1, aktuálna 5; kľúče v5 = v4 + economy + kontrakty = WORLD_STATE_KEYS, v4 = v3 + trucks, v3 = v2 + vehicles, jobs', () => {
     expect(OLDEST_WORLD_STATE_VERSION).toBe(1);
     expect(WORLD_STATE_VERSION).toBe(5);
-    expect(WORLD_STATE_V5_KEYS).toEqual([...WORLD_STATE_V4_KEYS, 'economy']);
+    expect(WORLD_STATE_V5_KEYS).toEqual([...WORLD_STATE_V4_KEYS, 'economy', 'contracts', 'xp', 'completedContracts', 'nextContractId']);
     expect(WORLD_STATE_V4_KEYS).toEqual([...WORLD_STATE_V3_KEYS, 'trucks']);
     expect(WORLD_STATE_V3_KEYS).toEqual([...WORLD_STATE_V2_KEYS, 'vehicles', 'jobs']);
     expect(WORLD_STATE_V2_KEYS).toEqual([...WORLD_STATE_V1_KEYS, 'traffic', 'modules', 'cargo', 'ships']);

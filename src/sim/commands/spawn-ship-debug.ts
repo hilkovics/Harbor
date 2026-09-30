@@ -9,12 +9,12 @@
  * - `cargo_incompatible` — kategória nákladu nie je v `cargoCategories` triedy (len keď sú oba defy známe);
  * - `invalid_units` — `units` nie je celé číslo `1 … capacityUnits` (pri neznámej triede len celé ≥ 1).
  *
- * `apply`: loď (`inbound`) so stredom v strede `seaLane[0]` a kurzom prvého úseku dráhy, potom `units` jednotiek
- * `on_ship` (`CargoLedger.create`; id lode predchádza id jednotiek) a `ShipSpawned`. Hotovosť sa nemení.
+ * `apply`: `spawnShip` bez kontraktu (spoločný kód s loďou kontraktu, ADR-026) — loď (`inbound`) so stredom v strede
+ * `seaLane[0]` a kurzom prvého úseku dráhy, potom `units` jednotiek `on_ship` (`contractId: null`; id lode predchádza id
+ * jednotiek) a `ShipSpawned`. Hotovosť sa nemení.
  */
 import type { CellCoord } from '../grid/grid';
-import { Ship } from '../ships/ship';
-import { cardinalHeading, cellCenter } from '../ships/ship-route';
+import { spawnShip } from '../ships/spawn-ship';
 import type { World } from '../world/world';
 import type { Command, SerializedCommand } from './command';
 import { CommandError } from './command-error';
@@ -26,9 +26,6 @@ const SPAWN_SHIP_KEYS: readonly string[] = ['type', 'shipClassId', 'cargoTypeId'
 
 /** Najmenší počet jednotiek na ladiacej lodi. */
 const MIN_UNITS = 1;
-
-/** Kurz lode pri spawne, keď prvý úsek `seaLane` nemá dĺžku (sever). */
-const DEFAULT_SPAWN_HEADING = 0;
 
 const NO_CELLS: readonly CellCoord[] = Object.freeze([]);
 
@@ -89,21 +86,7 @@ export class SpawnShipDebugCommand implements Command {
     if (!result.ok) {
       throw new Error(`${this.type}.apply: príkaz nie je platný (${result.reasons.join(', ')}) — volaj apply len po úspešnom validate`);
     }
-    const [first, second] = world.map.seaLane;
-    const spawn = cellCenter(first);
-    const next = second === undefined ? spawn : cellCenter(second);
-    const ship = new Ship({
-      id: world.ids.next(),
-      def: world.defs.ships.get(this.shipClassId),
-      cargoType: world.defs.cargoTypes.get(this.cargoTypeId),
-      state: 'inbound',
-      x: spawn.x,
-      y: spawn.y,
-      heading: cardinalHeading(next.x - spawn.x, next.y - spawn.y) ?? DEFAULT_SPAWN_HEADING,
-    });
-    world.addShip(ship);
-    for (let i = 0; i < this.units; i++) world.cargo.create(this.cargoTypeId, { kind: 'on_ship', shipId: ship.id });
-    world.events.emit({ type: 'ShipSpawned', shipId: ship.id, classId: ship.classId, cargoTypeId: ship.cargoTypeId, units: this.units });
+    spawnShip(world, { shipClassId: this.shipClassId, cargoTypeId: this.cargoTypeId, units: this.units, contractId: null });
   }
 
   toJSON(): SerializedCommand {

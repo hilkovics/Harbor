@@ -3,8 +3,15 @@
  * rastúcim počítadlom; jeho stav je súčasťou save, aby obnovená hra pokračovala rovnakými ID.
  */
 
-/** ID entity (modul, loď, vozidlo, kontrakt, jednotka nákladu…). Obyčajné číslo sa naň nekonvertuje implicitne. */
+/** ID entity na mape (modul, loď, vozidlo, job, kamión, jednotka nákladu…). Obyčajné číslo sa naň nekonvertuje implicitne. */
 export type EntityId = number & { readonly __brand: 'EntityId' };
+
+/**
+ * ID kontraktu (ADR-026) — vlastná postupnosť knihy kontraktov (`ContractBook`, `nextContractId` v save), nie
+ * `world.ids`: pool spotrebúva id pri každej obnove, ale id entít na mape (a teda replay scenárov) od neho nezávisia.
+ * Samostatný typ bráni zámene s `EntityId` (číselne sa môžu zhodovať).
+ */
+export type ContractId = number & { readonly __brand: 'ContractId' };
 
 /** Serializovateľný stav alokátora. */
 export interface EntityIdAllocatorState {

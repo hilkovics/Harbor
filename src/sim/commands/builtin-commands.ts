@@ -5,9 +5,11 @@
  * Predvolený `commandRegistry` sa naplní pri načítaní `command-registry.ts`, takže `commandFromJSON` pozná
  * všetky príkazy bez ohľadu na to, odkiaľ ho konzument importuje.
  */
+import { AcceptContractCommand } from './accept-contract';
 import { BuyVehicleCommand } from './buy-vehicle';
 import type { Command, SerializedCommand } from './command';
 import type { CommandRegistry } from './command-registry';
+import { DeclineContractCommand } from './decline-contract';
 import { PlaceModuleCommand } from './place-module';
 import { PlaceRoadCommand } from './place-road';
 import { RemoveModuleCommand } from './remove-module';
@@ -24,7 +26,7 @@ export interface RegistrableCommand {
 
 /**
  * Vstavané príkazy v poradí registrácie (ARCHITECTURE §12.2): F1 + moduly F2 (T02-04) + ladiaca loď (T02-05) + vozidlá
- * F3 (T03-04).
+ * F3 (T03-04) + kontrakty F5 (T05-03, ADR-026).
  */
 export const BUILTIN_COMMANDS: readonly RegistrableCommand[] = Object.freeze([
   PlaceRoadCommand,
@@ -35,6 +37,8 @@ export const BUILTIN_COMMANDS: readonly RegistrableCommand[] = Object.freeze([
   SpawnShipDebugCommand,
   BuyVehicleCommand,
   SellVehicleCommand,
+  AcceptContractCommand,
+  DeclineContractCommand,
 ]);
 
 /** Zaregistruje všetky vstavané príkazy do `registry` (už registrovaný typ → `CommandError`). */

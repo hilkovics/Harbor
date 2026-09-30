@@ -1,6 +1,6 @@
 // Príkazy (Command pattern, ARCHITECTURE §12.2): rozhranie, výsledok validácie, register typ → factory
 // a vstavané príkazy (F1: PlaceRoad, RemoveRoad, SetGameSpeed; F2: PlaceModule, RemoveModule, SpawnShipDebug;
-// F3: BuyVehicle, SellVehicle). Predvolený register ich pozná od načítania.
+// F3: BuyVehicle, SellVehicle; F5: AcceptContract, DeclineContract). Predvolený register ich pozná od načítania.
 export type { Command, SerializedCommand } from './command';
 export { VALIDATION_REASONS, orderReasons } from './validation';
 export type { ValidationReason, ValidationResult } from './validation';
@@ -22,4 +22,7 @@ export type { SpawnShipDebugInput } from './spawn-ship-debug';
 export { BuyVehicleCommand } from './buy-vehicle';
 export type { BuyVehicleInput } from './buy-vehicle';
 export { SellVehicleCommand } from './sell-vehicle';
+export { ContractOfferCommand } from './contract-command';
+export { AcceptContractCommand } from './accept-contract';
+export { DeclineContractCommand } from './decline-contract';
 export { BASIS_POINTS_PER_UNIT, rateToBasisPoints, refundCents } from './refund';

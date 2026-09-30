@@ -1,13 +1,15 @@
 /**
  * Udalosti simulácie (ARCHITECTURE §12.1, výber pre F1 + F2: `CargoMoved`, moduly, lode, žeriavy; F3: vozidlá, joby,
  * `NoStorageAvailable`; F4: `RampOperationalChanged`, `JobCancelled`, kamióny `TruckSpawned`, `TruckStateChanged`,
- * `TruckExited`, `NoWaitingBay`; F5: `DayClosedSummary`, `MonthlyReport`, `GameOver`). Readonly DTO:
+ * `TruckExited`, `NoWaitingBay`; F5: `DayClosedSummary`, `MonthlyReport`, `GameOver`, kontrakty `Contract*` a
+ * `PenaltyApplied` — ADR-026). Readonly DTO:
  * `World` ich zbiera v `EventBus` a vracia z `tick()` / `applyPending()`; prezentácia ich len číta. Nový typ udalosti =
  * nový člen únie (+ test).
  */
 import type { CargoLocation } from '../cargo/cargo-location';
 import type { ValidationReason } from '../commands/validation';
-import type { EntityId } from '../core/entity-id';
+import type { ContractState } from '../contracts/contract-fsm';
+import type { ContractId, EntityId } from '../core/entity-id';
 import type { DaySummary, MonthSummary } from '../economy/ledger';
 import type { LedgerCategory } from '../economy/ledger-category';
 import type { JobCancelReason } from '../logistics/transport-job';
@@ -305,6 +307,70 @@ export interface GameOverEvent {
   readonly day: number;
 }
 
+/** Nová ponuka v poole kontraktov (krok 2: štart hry alebo `DayClosed`, ADR-026). */
+export interface ContractOfferedEvent {
+  readonly type: 'ContractOffered';
+  readonly contractId: ContractId;
+}
+
+/** `AcceptContract`: ponuka prijatá (po `ContractStateChanged offered → accepted`). */
+export interface ContractAcceptedEvent {
+  readonly type: 'ContractAccepted';
+  readonly contractId: ContractId;
+}
+
+/** Každý prechod FSM kontraktu (`CONTRACT_TRANSITIONS`, ADR-026) — vždy pred udalosťou, ktorá prechod dopĺňa. */
+export interface ContractStateChangedEvent {
+  readonly type: 'ContractStateChanged';
+  readonly contractId: ContractId;
+  readonly from: ContractState;
+  readonly to: ContractState;
+}
+
+/**
+ * Kontrakt dokončený (`exporting → completed`): `rewardCents` pripísaná (`contract_revenue`), `penaltiesCents` strhnuté
+ * (`penalty`, jedna transakcia, ak > 0), `xp` = skutočne pripísané XP, `onTime` = dokončenie najneskôr v `slaDeadlineTick`.
+ */
+export interface ContractCompletedEvent {
+  readonly type: 'ContractCompleted';
+  readonly contractId: ContractId;
+  readonly rewardCents: number;
+  readonly penaltiesCents: number;
+  readonly xp: number;
+  readonly onTime: boolean;
+}
+
+/** Kontrakt zlyhal (meškanie > `failAfterDaysLate` dní): odmena prepadá, `penaltiesCents` strhnuté jednou transakciou. */
+export interface ContractFailedEvent {
+  readonly type: 'ContractFailed';
+  readonly contractId: ContractId;
+  readonly penaltiesCents: number;
+}
+
+/** Prečo ponuka zanikla: uplynul `offerExpiresTick` alebo ju hráč odmietol (`DeclineContract`). */
+export type ContractExpiredReason = 'timeout' | 'declined';
+
+/** Ponuka zanikla (`offered → expired`); kniha kontrakt potom zabudne (ADR-026). */
+export interface ContractExpiredEvent {
+  readonly type: 'ContractExpired';
+  readonly contractId: ContractId;
+  readonly reason: ContractExpiredReason;
+}
+
+/** Druh penalizácie kontraktu (§9.1). */
+export type PenaltyKind = 'demurrage' | 'late';
+
+/**
+ * Kontraktu pribudla penalizácia (celá hodina demurrage alebo celý deň po SLA); suma sa len pripočíta do
+ * `penaltiesCents` — z hotovosti ide až pri `completed`/`failed` (rozhodnutie 6).
+ */
+export interface PenaltyAppliedEvent {
+  readonly type: 'PenaltyApplied';
+  readonly contractId: ContractId;
+  readonly kind: PenaltyKind;
+  readonly amountCents: number;
+}
+
 export type SimEvent =
   | TickAdvancedEvent
   | HourClosedEvent
@@ -338,7 +404,14 @@ export type SimEvent =
   | NoWaitingBayEvent
   | DayClosedSummaryEvent
   | MonthlyReportEvent
-  | GameOverEvent;
+  | GameOverEvent
+  | ContractOfferedEvent
+  | ContractAcceptedEvent
+  | ContractStateChangedEvent
+  | ContractCompletedEvent
+  | ContractFailedEvent
+  | ContractExpiredEvent
+  | PenaltyAppliedEvent;
 
 /** Názov typu udalosti (`'TickAdvanced' | 'HourClosed' | …`). */
 export type SimEventType = SimEvent['type'];

@@ -27,7 +27,7 @@ export type { CargoUnit } from './cargo-unit';
 export { CargoConservationError, CargoError, CargoStateError, CargoTransitionError } from './cargo-error';
 export type { CargoErrorCode } from './cargo-error';
 export { CargoLedger } from './cargo-ledger';
-export type { CargoLedgerDeps, CargoReader } from './cargo-ledger';
+export type { CargoLedgerDeps, CargoMoveObserver, CargoReader } from './cargo-ledger';
 export type { CargoLedgerState } from './cargo-ledger-state';
 export { findConservationViolation } from './cargo-conservation';
 export type { CargoBucketView, CargoLedgerView } from './cargo-conservation';

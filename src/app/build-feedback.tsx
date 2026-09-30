@@ -55,6 +55,9 @@ export const REASON_TEXT: Readonly<Record<ValidationReason, string>> = {
   invalid_road_kind: 'Neznámy typ cesty',
   invalid_direction: 'Neplatný smer jednosmerky',
   has_trucks: 'Modul používa kamión',
+  unknown_contract: 'Kontrakt neexistuje',
+  contract_not_offered: 'Kontrakt už nie je v ponuke',
+  game_over: 'Hra skončila',
 };
 
 /** „1 bunka“, „2 bunky“, „5 buniek“. */

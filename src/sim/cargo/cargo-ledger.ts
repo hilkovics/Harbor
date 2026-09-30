@@ -14,7 +14,7 @@
  * ostatní vo FIFO. Prázdny index sa odstráni. Jednotky sú zmrazené hodnoty — presun vytvorí novú jednotku, takže
  * objekt z `get()` ani lokácie v udalostiach sa už nezmenia.
  */
-import type { EntityId, EntityIdAllocator } from '../core/entity-id';
+import type { ContractId, EntityId, EntityIdAllocator } from '../core/entity-id';
 import type { Catalog } from '../defs/catalog';
 import type { CargoTypeDef } from '../defs/types';
 import type { CargoMovedEvent } from '../events/sim-event';
@@ -48,6 +48,16 @@ export interface CargoLedgerDeps {
   readonly events: { emit(event: CargoMovedEvent): void };
   /** Zdroj `CargoMoved.tick` (`world.clock`). */
   readonly clock: { readonly tick: number };
+  /**
+   * Voliteľný pozorovateľ presunov (F5, ADR-026: počítadlá kontraktov) — volá sa po každom úspešnom `move` hneď po
+   * `CargoMoved` s jednotkou **pred** presunom a cieľom. Nesmie vyhodiť ani meniť ledger (presun je už hotový).
+   */
+  readonly observer?: CargoMoveObserver;
+}
+
+/** Pozorovateľ presunov nákladu (`CargoLedgerDeps.observer`). */
+export interface CargoMoveObserver {
+  cargoMoved(unit: CargoUnit, to: CargoLocation): void;
 }
 
 /**
@@ -79,7 +89,7 @@ function insertSorted(ids: EntityId[], id: EntityId): void {
   ids.splice(low, 0, id);
 }
 
-function freezeUnit(id: EntityId, typeId: string, contractId: EntityId | null, quantity: number, location: CargoLocation): CargoUnit {
+function freezeUnit(id: EntityId, typeId: string, contractId: ContractId | null, quantity: number, location: CargoLocation): CargoUnit {
   return Object.freeze({ id, typeId, contractId, quantity, location });
 }
 
@@ -136,7 +146,7 @@ export class CargoLedger {
    * → `CargoError('invalid_input')`, lokácia mimo `CARGO_SPAWN_KINDS` → `CargoTransitionError`, obsadené miesto →
    * `CargoError('slot_occupied')`.
    */
-  create(typeId: string, location: CargoLocation, contractId: EntityId | null = null): CargoUnit {
+  create(typeId: string, location: CargoLocation, contractId: ContractId | null = null): CargoUnit {
     if (!this.deps.cargoTypes.has(typeId)) {
       throw new CargoError('unknown_cargo_type', `CargoLedger.create: neznámy typ nákladu '${typeId}'`);
     }
@@ -185,6 +195,7 @@ export class CargoLedger {
     this.unplace(unit, bucket, index);
     this.place(freezeUnit(unit.id, unit.typeId, unit.contractId, unit.quantity, target));
     this.deps.events.emit({ type: 'CargoMoved', unitId, from, to: target, tick: this.deps.clock.tick });
+    this.deps.observer?.cargoMoved(unit, target);
   }
 
   /** Jednotka na mape; `undefined` pre neznáme alebo exportované id. Vrátený objekt je zmrazená snímka. */

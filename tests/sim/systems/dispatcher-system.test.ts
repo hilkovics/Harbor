@@ -141,6 +141,8 @@ describe('priradenie vozidiel', () => {
     unitsOnApron(world, [0, 1, 2]);
     const events = world.tick();
     expect(types(events)).toEqual([
+      // krok 2 prvého ticku: prvé naplnenie poolu kontraktov (ADR-026)
+      ...Array<string>(world.defs.economy.offersPerDay).fill('ContractOffered'),
       'JobCreated',
       'JobCreated',
       'JobCreated',

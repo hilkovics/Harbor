@@ -19,11 +19,14 @@
  * aspoň kapacitu), fronta brány = presne kamióny v `gate_queue*` tejto brány, súlad prechodu brány s frontou (runtime
  * brány), pohyb (`truckMotionProblem`), kamión vo fronte na svojej strane brány a hodina posledného `NoWaitingBay`
  * rampy nie je v budúcnosti.
+ * Kontrakty (ADR-026): jednotka s `contractId` patrí kontraktu s loďou a jeho nákladu, jednotka na lodi kontraktu pred
+ * vyložením patrí tomuto kontraktu (`checkContracts`); počet jednotiek na palube a počítadlá overí krok 12.
  * Na koniec beží `findWorldViolation` ako poistka. Každá chyba je `WorldStateError` s JSON pointerom.
  */
 import { holderIdOf, holderSpecOf, isSameLocation, slotOf, uniqueSlotOf } from '../cargo/cargo-location';
 import type { CargoUnit } from '../cargo/cargo-unit';
-import type { EntityId } from '../core/entity-id';
+import { CONTRACT_STATE_TRAITS } from '../contracts/contract-fsm';
+import type { ContractId, EntityId } from '../core/entity-id';
 import type { CargoCategory } from '../defs/types';
 import { JobError, type JobErrorCode } from '../logistics/job-error';
 import { JOB_STATE_TRAITS, TransportJob, type JobState } from '../logistics/transport-job';
@@ -642,6 +645,31 @@ function checkCraneHolding(world: World, indexOf: ReadonlyMap<EntityId, number>)
  * vozidla či kamióna, vo vozidle bez jobu alebo na neplatnom/rezervovanom slote → `/cargo/units/<j>/location…`, iné
  * porušenie invariantov → `''`.
  */
+/**
+ * Väzba nákladu na kontrakty (ADR-026): jednotka s `contractId` patrí kontraktu v knihe, ktorý už má loď
+ * (`CONTRACT_STATE_TRAITS.ship`, od `ship_en_route`), a má jeho typ nákladu (`/cargo/units/<j>/contractId`); jednotka na
+ * lodi kontraktu pred vyložením patrí tomuto kontraktu (`/cargo/units/<j>/contractId`). Počet jednotiek na palube
+ * overí `findWorldViolation` (krok 12).
+ */
+function checkContracts(world: World, units: readonly CargoUnit[]): void {
+  const shipContract = new Map<EntityId, ContractId>();
+  for (const contract of world.contractBook.openContracts.values()) {
+    if (contract.shipId !== undefined && (contract.state === 'ship_en_route' || contract.state === 'unloading')) shipContract.set(contract.shipId, contract.id);
+  }
+  units.forEach((unit, index) => {
+    const path = `/cargo/units${pointerSegment(index)}/contractId`;
+    if (unit.contractId !== null) {
+      const contract = world.contracts.get(unit.contractId);
+      if (contract === undefined) throw new WorldStateError(path, `kontrakt #${String(unit.contractId)} nie je v contracts`);
+      if (CONTRACT_STATE_TRAITS[contract.state].ship !== 'required') throw new WorldStateError(path, `${contract.label} v stave ${contract.state} ešte nemá loď s nákladom`);
+      if (contract.cargoTypeId !== unit.typeId) throw new WorldStateError(path, `${contract.label} vozí '${contract.cargoTypeId}', jednotka je '${unit.typeId}'`);
+    }
+    if (unit.location.kind !== 'on_ship') return;
+    const owner = shipContract.get(unit.location.shipId);
+    if (owner !== undefined && unit.contractId !== owner) throw new WorldStateError(path, `jednotka na lodi kontraktu #${String(owner)} má contractId ${String(unit.contractId)}`);
+  });
+}
+
 export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'modules' | 'ships' | 'vehicles' | 'jobs' | 'trucks' | 'cargo'>): void {
   const entries = parsed.modules;
   const { units } = parsed.cargo;
@@ -667,6 +695,7 @@ export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'mo
   restoreCraneReservations(world, indexOf, unitIndexOf);
   restoreHeldCargo(world, units);
   checkCraneHolding(world, indexOf);
+  checkContracts(world, units);
   const violation = findWorldViolation(world);
   if (violation !== undefined) throw new WorldStateError('', violation);
 }

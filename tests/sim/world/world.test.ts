@@ -112,9 +112,11 @@ describe('World.create', () => {
 });
 
 describe('World.tick — krok 1 a 13', () => {
-  it('prvý tick: clock.tick 1 a jediná udalosť TickAdvanced', () => {
+  it('prvý tick: clock.tick 1, udalosť TickAdvanced a krok 2 naplní pool (offersPerDay × ContractOffered, ADR-026)', () => {
     const world = create();
-    expect(world.tick()).toEqual([{ type: 'TickAdvanced', tick: 1 }]);
+    const events = world.tick();
+    expect(events[0]).toEqual({ type: 'TickAdvanced', tick: 1 });
+    expect(events.slice(1).map((event) => event.type)).toEqual(Array<string>(DEFS.economy.offersPerDay).fill('ContractOffered'));
     expect(world.clock.tick).toBe(1);
   });
 
@@ -145,7 +147,7 @@ describe('World.tick — krok 1 a 13', () => {
     expect(events.slice(3).map((event) => event.type)).toEqual(['MoneyChanged', 'MoneyChanged', 'DayClosedSummary']);
   });
 
-  it('hranica mesiaca: TickAdvanced, HourClosed, DayClosed, MonthClosed, potom krok 9 s MonthlyReport', () => {
+  it('hranica mesiaca: TickAdvanced, HourClosed, DayClosed, MonthClosed, krok 2 (doplnenie poolu), potom krok 9 s MonthlyReport', () => {
     const base = create();
     const { ticksPerMonth } = base.clock;
     const state = base.serialize();
@@ -157,7 +159,13 @@ describe('World.tick — krok 1 a 13', () => {
       { type: 'DayClosed', tick: ticksPerMonth },
       { type: 'MonthClosed', tick: ticksPerMonth },
     ]);
-    expect(events.slice(4).map((event) => event.type)).toEqual(['MoneyChanged', 'MoneyChanged', 'DayClosedSummary', 'MonthlyReport']);
+    expect(events.slice(4).map((event) => event.type)).toEqual([
+      ...Array<string>(DEFS.economy.offersPerDay).fill('ContractOffered'),
+      'MoneyChanged',
+      'MoneyChanged',
+      'DayClosedSummary',
+      'MonthlyReport',
+    ]);
     expect(world.clock.gameMonth).toBe(1);
   });
 

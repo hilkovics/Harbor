@@ -12,6 +12,7 @@ import type { CargoHolderKind } from '../cargo/cargo-location';
 import type { EntityId } from '../core/entity-id';
 import type { ModuleDef, ModuleKind } from '../defs/types';
 import type { CellCoord, Grid } from '../grid/grid';
+import type { StatResolver } from '../tech/stat-resolver';
 import { isRotation, type Rotation } from '../grid/rotation';
 import type { CargoDropTarget } from './cargo-drop-target';
 import { ModuleError } from './module-error';
@@ -154,6 +155,22 @@ export abstract class Module {
    * modul bez obsluhy; žeriav vracia `params.wagePerDayCents`. Generický kód sa pýta tu, nie `instanceof` (pravidlo 7).
    */
   dailyWageCents(): number {
+    return 0;
+  }
+
+  /**
+   * Koľko jednotiek modul vyloží z lodí za herný deň (`capacityHint` poolu kontraktov, §9.1, ADR-026). Základ: 0;
+   * žeriav vracia `⌊ticksPerDay / cycleTicks⌋` s `cycleTicks` po modifikátoroch. Generický kód sa pýta tu, nie
+   * `instanceof` (pravidlo 7).
+   */
+  dailyUnloadUnits(stats: Pick<StatResolver, 'resolve'>, ticksPerDay: number): number {
+    void stats;
+    void ticksPerDay;
+    return 0;
+  }
+
+  /** Skladovacia kapacita modulu v jednotkách (`capacityHint`, ADR-026). Základ: 0; sklad vracia `params.capacityUnits`. */
+  storageCapacityUnits(): number {
     return 0;
   }
 

@@ -154,7 +154,8 @@ describe('GameLoop: pauza a príkazy', () => {
     const { world, loop } = createLoop(1);
     world.enqueue(new TestAdjustCash(-500));
     const types = loop.frame(100).map((e) => e.type);
-    expect(types).toEqual(['MoneyChanged', 'TickAdvanced']);
+    // Prvý tick naplní pool kontraktov (krok 2, ADR-026) — tie udalosti idú za TickAdvanced.
+    expect(types.filter((type) => type !== 'ContractOffered')).toEqual(['MoneyChanged', 'TickAdvanced']);
   });
 });
 
@@ -281,7 +282,8 @@ describe('startRafLoop (rAF wrapper s fake hostom)', () => {
     expect(world.clock.tick).toBe(2);
     expect(frames).toHaveLength(2);
     expect(frames[1]?.alpha).toBeCloseTo(0.5, 10);
-    expect(frames[1]?.events).toBe(2);
+    // 2× TickAdvanced + prvé naplnenie poolu kontraktov v prvom ticku (ADR-026)
+    expect(frames[1]?.events).toBe(2 + world.defs.economy.offersPerDay);
     expect(fake.pending()).toBe(1);
   });
 

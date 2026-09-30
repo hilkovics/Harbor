@@ -192,7 +192,8 @@ describe('SimBridge.onEvents', () => {
     const returned = loop.frame(200);
     expect(batches).toHaveLength(1);
     expect(batches[0]).toBe(returned);
-    expect(batches[0]?.map((e) => e.type)).toEqual(['MoneyChanged', 'TickAdvanced', 'TickAdvanced']);
+    // Prvý tick naplní pool kontraktov (krok 2, ADR-026) — tie udalosti idú za prvým TickAdvanced.
+    expect(batches[0]?.map((e) => e.type).filter((type) => type !== 'ContractOffered')).toEqual(['MoneyChanged', 'TickAdvanced', 'TickAdvanced']);
   });
 
   it('unsubscribe zastaví doručovanie', () => {

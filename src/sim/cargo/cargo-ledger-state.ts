@@ -7,7 +7,7 @@
  * (loď vzostupne podľa id, ostatní FIFO). Poradie v rámci FIFO držiteľa je súčasťou stavu — `fromState` ho obnoví.
  * Exportované jednotky sa neukladajú, ostáva len `exportedCount`.
  */
-import type { EntityId } from '../core/entity-id';
+import type { ContractId, EntityId } from '../core/entity-id';
 import type { Catalog } from '../defs/catalog';
 import { describeValue, isPlainObject, pointerSegment } from '../defs/def-spec';
 import type { CargoTypeDef } from '../defs/types';
@@ -82,7 +82,7 @@ function parseUnit(raw: unknown, path: string, context: UnitContext): CargoUnit 
   if (holderSpecOf(location.kind) === undefined) {
     throw new CargoStateError(`${path}/location/kind`, `'${location.kind}' sa neukladá — exportované jednotky sú len v exportedCount`);
   }
-  return Object.freeze({ id, typeId, contractId, quantity, location });
+  return Object.freeze({ id, typeId, contractId: contractId as ContractId | null, quantity, location });
 }
 
 /**

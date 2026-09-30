@@ -1,6 +1,13 @@
 // Typy udalostí SimEvent (readonly DTO, ARCHITECTURE §12.1).
 export type {
   CargoMovedEvent,
+  ContractAcceptedEvent,
+  ContractCompletedEvent,
+  ContractExpiredEvent,
+  ContractExpiredReason,
+  ContractFailedEvent,
+  ContractOfferedEvent,
+  ContractStateChangedEvent,
   CommandRejectedEvent,
   CraneBlockedEvent,
   CraneBlockedReason,
@@ -22,6 +29,8 @@ export type {
   MonthlyReportEvent,
   NoStorageAvailableEvent,
   NoWaitingBayEvent,
+  PenaltyAppliedEvent,
+  PenaltyKind,
   RampOperationalChangedEvent,
   RoadChangedEvent,
   ShipDepartedEvent,

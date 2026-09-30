@@ -11,6 +11,7 @@
 import type { EntityId } from '../core/entity-id';
 import { craneParams } from '../defs/module-def';
 import type { CargoCategory, CraneParams } from '../defs/types';
+import type { StatResolver } from '../tech/stat-resolver';
 import { Module, type ModuleInit } from './module';
 import { ModuleError, ModuleStateError } from './module-error';
 import { checkRuntimeKeys, readCount, readEnum, readOptionalCount } from './runtime-state';
@@ -113,6 +114,9 @@ export type CraneRuntimeState = {
   readonly lastBlockedHour: number | null;
 };
 
+/** Najkratší skutočný cyklus: dve fázy (`grabbing`, `placing`) po najmenej jednom ticku (`MIN_CRANE_PHASE_TICKS`, ADR-016). */
+const MIN_CYCLE_TICKS = 2;
+
 const RUNTIME_KEYS: readonly (keyof CraneRuntimeState)[] = [
   'state',
   'phaseTicksTotal',
@@ -172,6 +176,15 @@ export class CraneModule extends Module {
   /** Denná mzda obsluhy žeriava (`params.wagePerDayCents`, §9.2, ADR-025). */
   override dailyWageCents(): number {
     return this.params.wagePerDayCents;
+  }
+
+  /**
+   * Jednotky vyložené za deň (`capacityHint`, ADR-026): `⌊ticksPerDay / c⌋`, kde `c = round(cycleTicks)` po modifikátoroch
+   * (§10) ako v `cranePhaseTicks`, najmenej `MIN_CYCLE_TICKS`.
+   */
+  override dailyUnloadUnits(stats: Pick<StatResolver, 'resolve'>, ticksPerDay: number): number {
+    const cycle = Math.max(MIN_CYCLE_TICKS, Math.round(stats.resolve('module', this.def.id, 'cycleTicks')));
+    return Math.floor(ticksPerDay / cycle);
   }
 
   /** Vlastnosti aktuálneho stavu (`CRANE_STATE_TRAITS`). */

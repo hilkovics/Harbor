@@ -567,8 +567,9 @@ describe('migrácia WorldState v3 → v4', () => {
     const v3 = Object.fromEntries(WORLD_STATE_V3_KEYS.map((key) => [key, current[key]]));
     v3['version'] = 3;
     const migrated = World.deserialize(DEFS, MAP, v3 as unknown as WorldState);
-    // v3 nepoznal knihu (ADR-025): migrovaný svet má prázdnu históriu, hotovosť a všetko ostatné je zhodné.
-    const withoutLedger = (world: World): string => JSON.stringify({ ...world.serialize(), economy: null });
+    // v3 nepoznal knihu (ADR-025) ani kontrakty (ADR-026): migrovaný svet má prázdnu históriu a prázdny pool (doplní ho
+    // až najbližší DayClosed), hotovosť a všetko ostatné je zhodné.
+    const withoutLedger = (world: World): string => JSON.stringify({ ...world.serialize(), economy: null, contracts: null, nextContractId: null });
     expect(migrated.economy.entries).toEqual([]);
     expect(migrated.cashCents).toBe(plain.cashCents);
     expect(withoutLedger(migrated)).toBe(withoutLedger(plain));

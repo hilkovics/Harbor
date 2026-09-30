@@ -9,7 +9,8 @@ import type { CellCoord } from '../grid/grid';
  * F1: prvých osem; F2 (docs/tasks/phase-02.md „Spoločné rozhrania", ADR-015): moduly (`PlaceModule`, `RemoveModule`)
  * a ladiaca loď (`SpawnShipDebug`, T02-05); F3 (docs/tasks/phase-03.md „Spoločné rozhrania", ADR-017): vozidlá
  * (`BuyVehicle`/`SellVehicle`, T03-04), depo a pripojenie modulov; typy ciest (`PlaceRoad`, T03-18, ADR-020); F4:
- * `has_trucks` (`RemoveModule` pozemného modulu, ktorý používa kamión, T04-04, ADR-024). Nový dôvod =
+ * `has_trucks` (`RemoveModule` pozemného modulu, ktorý používa kamión, T04-04, ADR-024); F5: kontrakty
+ * (`unknown_contract`, `contract_not_offered`) a koniec hry (`game_over`, T05-03, ADR-026). Nový dôvod =
  * nový riadok tu + slovenský popis v UI (`REASON_TEXT`).
  */
 export const VALIDATION_REASONS = [
@@ -78,6 +79,12 @@ export const VALIDATION_REASONS = [
   'invalid_direction',
   /** `RemoveModule` (T04-04, ADR-024): bránu, stojisko alebo rampu používa kamión (trasa, bay, dock). */
   'has_trucks',
+  /** `AcceptContract` / `DeclineContract` (T05-03, ADR-026): kontrakt s daným id vo `world.contracts` nie je (aj expirovaný). */
+  'unknown_contract',
+  /** `AcceptContract` / `DeclineContract` (T05-03, ADR-026): kontrakt nie je ponuka v stave `offered`. */
+  'contract_not_offered',
+  /** Hra skončila bankrotom (`World.gameOver`, ADR-025); príkazy kontraktov ho hlásia od T05-03, ostatné doplní T05-04. */
+  'game_over',
 ] as const;
 
 export type ValidationReason = (typeof VALIDATION_REASONS)[number];

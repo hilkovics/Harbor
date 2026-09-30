@@ -63,6 +63,7 @@
 import { CARGO_HOLDER_KINDS, isSameLocation, slotOf, uniqueSlotOf } from '../cargo/cargo-location';
 import { OPPOSITE_DIRECTION } from '../grid/road-direction';
 import { DEFAULT_ROAD_KIND, ROAD_KIND_TRAITS, isRoadKind } from '../grid/road-kind';
+import { CONTRACT_STATE_TRAITS } from '../contracts/contract-fsm';
 import type { EntityId } from '../core/entity-id';
 import type { CargoCategory } from '../defs/types';
 import type { Cell } from '../grid/grid';
@@ -841,6 +842,34 @@ const checkTrucks: Check = (world) => {
   return undefined;
 };
 
+/**
+ * Kontrakty (ADR-026), O(neukončené kontrakty) bez alokácie: počet ponúk ≤ `offersPerDay`; počítadlá
+ * `unitsExported ≤ unitsUnloaded ≤ volumeUnits`; kontrakt s loďou pred vyložením (`ship_en_route`, `unloading`) má loď
+ * na mape s triedou a nákladom kontraktu a na jej palube práve `volumeUnits − unitsUnloaded` jednotiek; `exporting` má
+ * vyložený celý objem. Väzbu jednotka → kontrakt overuje obnova save (`checkContracts` vo world-restore).
+ */
+const checkContracts: Check = (world) => {
+  let offers = 0;
+  for (const contract of world.contractBook.openContracts.values()) {
+    const { label, state } = contract;
+    if (CONTRACT_STATE_TRAITS[state].offer) offers += 1;
+    if (!(contract.unitsExported <= contract.unitsUnloaded && contract.unitsUnloaded <= contract.volumeUnits)) {
+      return `${label}: počítadlá exported ${String(contract.unitsExported)} ≤ unloaded ${String(contract.unitsUnloaded)} ≤ volume ${String(contract.volumeUnits)} neplatia`;
+    }
+    if (state === 'exporting' && contract.unitsUnloaded !== contract.volumeUnits) return `${label}: exporting bez vyloženého celého objemu`;
+    if (state !== 'ship_en_route' && state !== 'unloading') continue;
+    const ship = contract.shipId === undefined ? undefined : world.ships.get(contract.shipId);
+    if (ship === undefined) return `${label}: loď kontraktu #${String(contract.shipId)} nie je na mape`;
+    if (ship.classId !== contract.shipClassId || ship.cargoTypeId !== contract.cargoTypeId) return `${label}: ${ship.label} nemá triedu a náklad kontraktu`;
+    const aboard = world.cargo.countAt('on_ship', ship.id);
+    if (aboard !== contract.volumeUnits - contract.unitsUnloaded) {
+      return `${label}: na ${ship.label} je ${String(aboard)} jednotiek, očakávané volume − unloaded = ${String(contract.volumeUnits - contract.unitsUnloaded)}`;
+    }
+  }
+  const limit = world.defs.economy.offersPerDay;
+  return offers > limit ? `pool má ${String(offers)} ponúk > offersPerDay ${String(limit)}` : undefined;
+};
+
 const CHECKS: readonly Check[] = [
   checkCargoHolders,
   checkModuleCells,
@@ -853,6 +882,7 @@ const CHECKS: readonly Check[] = [
   checkVehicles,
   checkJobs,
   checkTrucks,
+  checkContracts,
 ];
 
 /** Prvé porušenie invariantov sveta (viď hlavička súboru), alebo `undefined`. Svet nemení. */

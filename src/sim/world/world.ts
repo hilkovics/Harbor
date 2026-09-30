@@ -3,7 +3,8 @@
  * alokátor ID, zbernicu udalostí, `CargoLedger`, moduly so skupinami kotvísk a lode; prezentácia ho len číta
  * a mení ho výlučne cez `Command` (pravidlo 5).
  *
- * Tick pipeline (§6): príkazy z fronty → krok 1 (`clock.advance()` + udalosti hraníc) → krok 3 (`ShipSystem`) →
+ * Tick pipeline (§6): príkazy z fronty → krok 1 (`clock.advance()` + udalosti hraníc) → krok 2 (`ContractSystem`: pool,
+ * lode kontraktov, SLA, penalizácie, výplata — ADR-026) → krok 3 (`ShipSystem`) →
  * krok 4 (`CraneSystem`) → krok 5 (`DispatcherSystem`) → krok 6 (`VehicleSystem`) → krok 8 (`LandsideSystem`: kamióny,
  * brány, spawn, export) → krok 9 (`EconomySystem`: údržba, mzdy, súhrny, bankrot — ADR-025) → krok 11 (`MetricsSystem`, traffic) → krok 12 (`assertInvariants()`, ak je zapnuté
  * `checkInvariants`) → krok 13 (`events.flush()`). Ďalšie kroky pribúdajú so systémami na označenom mieste v `tick()`; poradie §6 je záväzné
@@ -53,11 +54,13 @@
 import { CargoLedger } from '../cargo/cargo-ledger';
 import type { CargoLedgerState } from '../cargo/cargo-ledger-state';
 import { isSameLocation } from '../cargo/cargo-location';
-import { EntityIdAllocator, type EntityId } from '../core/entity-id';
+import { EntityIdAllocator, type ContractId, type EntityId } from '../core/entity-id';
 import { EventBus } from '../core/event-bus';
 import { INITIAL_SPEED, SimClock, type ClockBoundaries } from '../core/sim-clock';
 import { Rng } from '../core/rng';
 import type { Command } from '../commands/command';
+import { ContractBook, type ContractBookState } from '../contracts/contract-book';
+import type { Contract } from '../contracts/contract';
 import { DefError, type DefRegistry } from '../defs/def-registry';
 import type { SimEvent } from '../events/sim-event';
 import type { Grid } from '../grid/grid';
@@ -86,6 +89,7 @@ import { Pathfinder } from '../logistics/pathfinder';
 import { RoadSpeeds } from '../logistics/road-speed';
 import { JOB_STATE_TRAITS, type TransportJob } from '../logistics/transport-job';
 import { Economy, type EconomyState } from '../economy/economy';
+import { ContractSystem } from '../systems/contract-system';
 import { CraneSystem } from '../systems/crane-system';
 import { DispatcherSystem } from '../systems/dispatcher-system';
 import { EconomySystem } from '../systems/economy-system';
@@ -131,6 +135,8 @@ interface WorldParts {
   readonly cashCents: number;
   /** Uložený stav ekonomiky (overený `parseWorldState`); `null` = prázdna kniha novej hry. */
   readonly economy: EconomyState | null;
+  /** Kniha kontraktov zo save (v5, ADR-026); `null` = nová hra bez kontraktov. */
+  readonly contracts: ContractBookState | null;
   /** Uložený stav ledgera (overený `parseWorldState`); `null` = prázdny ledger novej hry. */
   readonly cargo: CargoLedgerState | null;
 }
@@ -207,6 +213,12 @@ export class World {
    * (zápis do knihy + `MoneyChanged`); denné a mesačné súhrny a bankrot uzatvára krok 9 (`EconomySystem`).
    */
   readonly economy: Economy;
+  /**
+   * Kontrakty, XP a počet dokončených (§9.1, §10, ADR-026): ponuky poolu, prebiehajúce, dokončené a zlyhané kontrakty;
+   * stav mení `ContractSystem` (krok 2) a príkazy `AcceptContract` / `DeclineContract`. Fasády `contracts`, `xp`,
+   * `completedContracts`, `tier`.
+   */
+  readonly contractBook: ContractBook;
   /** Krok 12 ticku zapnutý (`WorldOptions.checkInvariants`, predvolene `true`). */
   readonly checkInvariants: boolean;
 
@@ -223,6 +235,7 @@ export class World {
   private lastJobId: EntityId | undefined;
   private lastTruckId: EntityId | undefined;
   private groups: readonly BerthGroup[] = NO_GROUPS;
+  private readonly contractSystem = new ContractSystem();
   private readonly shipSystem = new ShipSystem();
   private readonly craneSystem = new CraneSystem();
   private readonly dispatcherSystem = new DispatcherSystem();
@@ -256,7 +269,12 @@ export class World {
       parts.economy === null
         ? new Economy(economyEnv, parts.cashCents, entriesKept)
         : Economy.fromState(economyEnv, parts.cashCents, entriesKept, parts.economy);
-    const deps = { cargoTypes: parts.defs.cargoTypes, ids: parts.ids, events: this.events, clock: parts.clock };
+    const bookEnv = { events: this.events, clock: parts.clock };
+    this.contractBook = parts.contracts === null ? new ContractBook(bookEnv) : ContractBook.fromState(bookEnv, parts.contracts);
+    const { contractBook } = this;
+    // Počítadlá jednotiek kontraktov z háčika ledgera (ADR-026) — bez skenu nákladu v ticku.
+    const observer = { cargoMoved: contractBook.cargoMoved.bind(contractBook) };
+    const deps = { cargoTypes: parts.defs.cargoTypes, ids: parts.ids, events: this.events, clock: parts.clock, observer };
     this.cargo = parts.cargo === null ? new CargoLedger(deps) : CargoLedger.fromState(parts.cargo, deps);
     this.modules = this.moduleMap;
     this.ships = this.shipMap;
@@ -295,6 +313,7 @@ export class World {
         parcels: copyParcels(map),
         cashCents: defs.economy.startingCashCents,
         economy: null,
+        contracts: null,
         cargo: null,
       },
       options,
@@ -345,6 +364,7 @@ export class World {
         parcels,
         cashCents: parsed.cashCents,
         economy: parsed.economy,
+        contracts: parsed.contracts,
         cargo: parsed.cargo,
       },
       options,
@@ -371,6 +391,26 @@ export class World {
    */
   get gameOver(): boolean {
     return this.economy.gameOver;
+  }
+
+  /** Kontrakty okrem expirovaných vzostupne podľa id (ponuky, prebiehajúce, dokončené, zlyhané; ADR-026). */
+  get contracts(): ReadonlyMap<ContractId, Contract> {
+    return this.contractBook.contracts;
+  }
+
+  /** Nazbierané XP (§10). */
+  get xp(): number {
+    return this.contractBook.xp;
+  }
+
+  /** Počet dokončených kontraktov za hru. */
+  get completedContracts(): number {
+    return this.contractBook.completedContracts;
+  }
+
+  /** `tier = ⌊completedContracts / economy.contractsPerTier⌋` (filter `minTier` poolu). */
+  get tier(): number {
+    return this.contractBook.tier(this.defs.economy.contractsPerTier);
   }
 
   /** Skupiny kotvísk (§5.4) v poradí id; prepočítajú sa pri každom `addModule`/`removeModule`. */
@@ -884,7 +924,9 @@ export class World {
     // 1. clock.advance() — tick++, hranice hodiny/dňa/mesiaca.
     const closed = this.advanceClock();
 
-    // 2. contractSystem — pribudne vo F4/F5.
+    // 2. contractSystem — spawn lodí prijatých kontraktov, loď pri kotvisku, penalizácie, dokončenie, zlyhanie,
+    //    expirácia ponúk a doplnenie poolu pri štarte hry a pri DayClosed (ADR-026).
+    this.contractSystem.tick(this, closed);
 
     // 3. shipSystem — pohyb po sea lane, alokácia kotvísk, docking/undocking.
     this.shipSystem.tick(this);
@@ -971,6 +1013,7 @@ export class World {
       jobs: [...this.jobMap.values()].map((job) => job.toState()),
       trucks: [...this.truckMap.values()].map((truck) => truck.toState()),
       economy: this.economy.getState(),
+      ...this.contractBook.getState(),
     };
   }
 

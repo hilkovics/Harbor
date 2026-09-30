@@ -23,8 +23,8 @@
  * `vehicleOnCell` hovorí, či bunku zaberá vozidlo, `carrierOnCell` vozidlo alebo kamión (`RemoveRoad` → `occupied`).
  *
  * Kamióny (T04-04, ADR-024): `addTruck`/`removeTruck` sú štrukturálne operácie pre spawn a export v `LandsideSystem`
- * (krok 8) a obnovu zo save — kamión pri pridaní drží svoj bay stojiska (`bay`) a dock rampy podľa stavu; frontu brány
- * spravuje brána (runtime v save). Pohyb zdieľa `Carrier` s vozidlami (`src/sim/movement`).
+ * (krok 8) a obnovu zo save — kamión pri pridaní drží svoj bay stojiska (`bay`), dock rampy a nárok na náklad docku
+ * podľa stavu (ADR-029); frontu brány spravuje brána (runtime v save). Pohyb zdieľa `Carrier` s vozidlami (`src/sim/movement`).
  *
  * Joby (T03-05, ADR-018, ADR-023): `addJob`/`removeJob` sú štrukturálne operácie pre dispatcher (krok 5: vznik inbound
  * aj outbound jobov, zrušenie `open` outbound jobu), `VehicleSystem` a obnovu zo save; `jobOfUnit` je index jednotka →
@@ -764,8 +764,9 @@ export class World {
 
   /**
    * Pridá kamión (spawn v `LandsideSystem`, obnova zo save): kamión s `bay` si ho rezervuje v stojisku
-   * (`reserveBayAt`, v stave s obsadeným bay aj `occupyBay`) a v stave, ktorý drží dock (`holdsDock` efektívneho stavu),
-   * si drží dock rampy (`assignDock`). Chyby (`TruckError`, svet sa nezmení): id už vo svete má kamión, vozidlo, modul,
+   * (`reserveBayAt`, v stave s obsadeným bay aj `occupyBay`), v stave, ktorý drží dock (`holdsDock` efektívneho stavu),
+   * si drží dock rampy (`assignDock`) a v stave s nárokom na náklad (`claimsCargo`) si nárokuje zvyšok svojej kapacity
+   * na docku (`claim(dock, capacityUnits − in_truck)`, ADR-029; pri spawne celú kapacitu). Chyby (`TruckError`, svet sa nezmení): id už vo svete má kamión, vozidlo, modul,
    * loď, job alebo jednotka (`duplicate_id`), id nepridelené alokátorom alebo menšie ako id posledného kamióna — poradie
    * spawnu (`invalid_input`), brána / stojisko / rampa nie sú moduly toho druhu vo svete alebo dock či bay mimo
    * rozsahu (`unknown_module`), bay drží iný kamión (`bay_taken`), dock drží iný kamión (`dock_taken`). Frontu brány
@@ -801,14 +802,16 @@ export class World {
       if (bonds.bayOccupied) area.occupyBay(id);
     }
     if (bonds.holdsDock) ramp.assignDock(truck.dock, id);
+    const owed = truck.def.capacityUnits - this.cargo.countAt('in_truck', id);
+    if (bonds.claimsCargo && owed > 0) ramp.claim(truck.dock, owed);
     this.truckMap.set(id, truck);
     this.lastTruckId = id;
   }
 
   /**
    * Odstráni kamión (export na portáli) a vráti ho. Chyby (`TruckError`, svet sa nezmení): neznáme id (`unknown_truck`),
-   * kamión vezie náklad — jednotky `in_truck` by stratili držiteľa (`has_cargo`), kamión drží bay alebo dock alebo stojí
-   * vo fronte brány (`busy`).
+   * kamión vezie náklad — jednotky `in_truck` by stratili držiteľa (`has_cargo`), kamión drží bay alebo dock, má nárok
+   * na náklad docku (ADR-029) alebo stojí vo fronte brány (`busy`).
    */
   removeTruck(truckId: EntityId): Truck {
     const truck = this.truckMap.get(truckId);
@@ -818,8 +821,8 @@ export class World {
     const ramp = this.moduleMap.get(truck.rampId);
     const gate = this.moduleMap.get(truck.gateId);
     const holdsDock = ramp instanceof LoadingRamp && truck.dock < ramp.docks && ramp.dockTruck(truck.dock) === truckId;
-    if (truck.bay !== null || holdsDock || (gate instanceof TruckGate && gate.isQueued(truckId))) {
-      throw new TruckError('busy', `World.removeTruck: ${truck.label} v stave '${truck.state}' drží bay, dock alebo stojí vo fronte brány`);
+    if (truck.bay !== null || holdsDock || truck.bonds.claimsCargo || (gate instanceof TruckGate && gate.isQueued(truckId))) {
+      throw new TruckError('busy', `World.removeTruck: ${truck.label} v stave '${truck.state}' drží bay, dock, nárok na náklad alebo stojí vo fronte brány`);
     }
     this.truckMap.delete(truckId);
     if (truckId === this.lastTruckId) this.lastTruckId = lastKeyOf(this.truckMap);

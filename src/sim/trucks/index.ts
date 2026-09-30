@@ -37,3 +37,4 @@ export {
 } from './truck-trip';
 export type { PassageBack } from './truck-trip';
 export { spawnTruck, spawnTrucks, truckDefFor } from './truck-spawner';
+export { DockSupply } from './dock-supply';

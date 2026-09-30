@@ -10,10 +10,12 @@
  *      brány `gate_queue_out`, pred spätným priechodom stojiskom prechod telom a ďalšia jazda k bráne), do stojiska
  *      (`waiting`, obsadí bay, pobyt `internalTicks` stojiska), k docku (`loading`, `loadTicksPerUnit` na jednotku),
  *      na portál (export: všetky `in_truck → exported`, `TruckExited`, kamión zmizne);
- *    - `waiting`: po pobyte povel do docku — kamión uvoľní bay, objaví sa na výstupnej bunke stojiska (abstrahovaný
- *      prechod telom, ADR-011) a ide k docku; bez výstupu stojiska čaká ďalej (`repathIntervalTicks`);
- *    - `loading`: po `loadTicksPerUnit` presun najstaršej jednotky docku `at_ramp → in_truck`; po naložení
- *      `capacityUnits` uvoľní dock a ide k výstupnej strane brány;
+ *    - `waiting`: po pobyte povel do docku (ADR-029), keď je dock kamióna voľný a je na ňom celý jeho náklad —
+ *      kamión si vezme dock, uvoľní bay, objaví sa na výstupnej bunke stojiska (abstrahovaný prechod telom, ADR-011)
+ *      a ide k docku; inak čaká v bayi a skúsi to v ďalšom ticku (FIFO: v ticku odíde prvý pripravený kamión docku
+ *      podľa id); bez výstupu stojiska čaká ďalej (`repathIntervalTicks`);
+ *    - `loading`: po `loadTicksPerUnit` presun najstaršej jednotky docku `at_ramp → in_truck` (nárok kamióna klesne);
+ *      po naložení `capacityUnits` uvoľní dock a ide k výstupnej strane brány;
  *    - `no_path`: po odpočte nový pokus o cestu, úspech = návrat do stavu, z ktorého kamión vypadol.
  * 2. **Brány** vzostupne podľa id: spoločná FIFO fronta oboch smerov, púšťa sa kamión na čele fronty. Prechod trvá
  *    `passTicks` (`processTicks` + `internalTicks`); po ňom kamión vypadne z fronty (`completePass`, `trucksProcessed`
@@ -21,7 +23,8 @@
  *    stojiska, dodatok ADR-024) a ide ďalej (`to_bay` / `to_portal`). Ďalší prechod začne najskôr v tom istom ticku — medzi dvoma prechodmi je
  *    teda aspoň `passTicks ≥ processTicks` tickov (tvrdý bottleneck). Fronta je virtuálna: čakajúci kamión stojí na
  *    vonkajšej bunke konektora, kamióny sa navzájom neblokujú (§7.8 bod 2, 3).
- * 3. **Spawn** (`spawnTrucks`): rampy vzostupne podľa id, docky vzostupne.
+ * 3. **Spawn** (`spawnTrucks`): rampy vzostupne podľa id, docky vzostupne; nový kamión len na náklad docku bez nároku
+ *    (pripravený alebo vezený vozidlom, `DockSupply`, ADR-029).
  * Prechod stavu ukončí pohyb kamióna v danom ticku (ako vozidlá, ADR-019): nový, prepustený alebo naložený kamión sa
  * pohne až v ďalšom ticku. Tick vstupu do stavu s odpočtom je jeho nultý tick (ADR-016).
  */
@@ -32,6 +35,7 @@ import { advanceCarrier } from '../movement/route-planning';
 import type { Truck } from '../trucks/truck';
 import { TruckError } from '../trucks/truck-error';
 import { TRUCK_STATE_TRAITS, changeTruckState, isTruckTravelState, type TruckState, type TruckTravelState } from '../trucks/truck-fsm';
+import { DockSupply } from '../trucks/dock-supply';
 import { spawnTrucks } from '../trucks/truck-spawner';
 import {
   enterTruckNoPath,
@@ -130,10 +134,12 @@ function drive(truck: Truck, world: World): void {
 }
 
 /**
- * Koniec pobytu v stojisku (povel do docku): dock kamióna je jeho od spawnu, takže kamión ide hneď. Uvoľní bay, objaví
- * sa na výstupnej bunke stojiska svojho okruhu (`truckCircuit` — nezávisle od cesty pred bránou) a ide k docku (bez
- * cesty `no_path`). Keď okruh (priechod stojiskom k rampe) zanikol, kamión čaká v bayi ďalej a skúsi to o
- * `repathIntervalTicks`.
+ * Koniec pobytu v stojisku (povel do docku, ADR-029): kamión odíde, keď je jeho dock voľný (`LoadingRamp.dockTruck`) a je
+ * na ňom celý jeho náklad (`stagedAt ≥ capacityUnits` — nakládka potom nikdy nečaká a jednotky docku odchádzajú len do
+ * kamióna, ktorý dock drží). Vtedy si dock vezme, uvoľní bay, objaví sa na výstupnej bunke stojiska svojho okruhu
+ * (`truckCircuit` — nezávisle od cesty pred bránou) a ide k docku (bez cesty `no_path`). Inak čaká v bayi a skúsi to
+ * v ďalšom ticku; kamióny idú vzostupne podľa id, takže z pripravených kamiónov docku odíde prvý (FIFO podľa spawnu).
+ * Keď okruh (priechod stojiskom k rampe) zanikol, kamión čaká ďalej a skúsi to o `repathIntervalTicks`.
  */
 function leaveWaitingArea(truck: Truck, world: World): void {
   const exit = truckCircuit(world, truck)?.waitingExitCell ?? NO_ACCESS;
@@ -141,8 +147,14 @@ function leaveWaitingArea(truck: Truck, world: World): void {
     truck.waitTicks = world.defs.logistics.repathIntervalTicks;
     return;
   }
+  const ramp = rampOfTruck(world, truck);
+  if (ramp.dockTruck(truck.dock) !== null || ramp.stagedAt(truck.dock) < truck.def.capacityUnits) {
+    truck.waitTicks = MIN_STAY_TICKS;
+    return;
+  }
   waitingAreaOfTruck(world, truck).releaseBay(truck.id);
   truck.bay = null;
+  ramp.assignDock(truck.dock, truck.id);
   truck.jumpTo(exit, world.grid.width);
   startTruckTrip(world, truck, 'to_dock');
 }
@@ -156,6 +168,7 @@ function loadUnit(truck: Truck, world: World): void {
   const unitId = ramp.firstUnitAt(truck.dock);
   if (unitId === undefined) throw new TruckError('inconsistent', `${truck.label}: na docku ${String(truck.dock)} ${ramp.label} nie je jednotka na nakládku`);
   world.cargo.move(unitId, { kind: 'in_truck', truckId: truck.id });
+  ramp.settleClaim(truck.dock, 1);
   if (unitsIn(world, truck) < truck.def.capacityUnits) {
     truck.waitTicks = ramp.params.loadTicksPerUnit;
     return;
@@ -259,11 +272,14 @@ export function settleGateQueues(world: World): void {
 }
 
 export class LandsideSystem {
+  /** Znovupoužiteľné počty jednotiek, ktoré vozidlá vezú k dockom (spawner, ADR-029); nie je stav simulácie. */
+  private readonly supply = new DockSupply();
+
   /** Krok 8: kamióny → brány → spawn (viď hlavička); brány a rampy z registra sveta (`World.landsideModules`). */
   tick(world: World): void {
     for (const truck of world.trucks.values()) TRUCK_STEPS[truck.state](truck, world);
     const { gates, ramps } = world.landsideModules;
     for (const gate of gates) stepGate(world, gate);
-    spawnTrucks(world, ramps);
+    spawnTrucks(world, ramps, this.supply);
   }
 }

@@ -14,9 +14,9 @@
  * rezervácie dockov obnovia outbound joby (`staged + reserved ≤ stagingPerDock`, inak chyba jobu). Pozemné
  * moduly (T04-02) obnovia `runtime` (brána: fronta a počítadlá); strany brán a prevádzkovosť rámp odvodí svet po obnove.
  * Kamióny (T04-04, ADR-024) vzostupne podľa id cez `World.addTruck` po vozidlách (pred kontrolou držiteľov — `in_truck`
- * číta `world.trucks`): kamión znovu drží svoj bay (index zo save) a dock podľa stavu; potom náklad kamióna (kapacita,
- * kategória, stav prázdny/nakládka/plný), väzba na rampu (def vozí jej kategóriu, kamión s dockom má na docku a v sebe
- * aspoň kapacitu), fronta brány = presne kamióny v `gate_queue*` tejto brány, súlad prechodu brány s frontou (runtime
+ * číta `world.trucks`): kamión znovu drží svoj bay (index zo save), dock a nárok na náklad docku podľa stavu (ADR-029);
+ * potom náklad kamióna (kapacita, kategória, stav prázdny/nakládka/plný), väzba na rampu (def vozí jej kategóriu,
+ * kamión s dockom má na docku a v sebe aspoň kapacitu; po obnove jobov nároky docku ≤ pripravené + vezené), fronta brány = presne kamióny v `gate_queue*` tejto brány, súlad prechodu brány s frontou (runtime
  * brány), pohyb (`truckMotionProblem`), kamión vo fronte na svojej strane brány a hodina posledného `NoWaitingBay`
  * rampy nie je v budúcnosti.
  * Kontrakty (ADR-026): jednotka s `contractId` patrí kontraktu s loďou a jeho nákladu, jednotka na lodi kontraktu pred
@@ -39,6 +39,7 @@ import { Ship } from '../ships/ship';
 import { ShipError } from '../ships/ship-error';
 import { mooringProblem, shipRoute } from '../ships/ship-route';
 import { TruckGate } from '../modules/truck-gate';
+import { DockSupply } from '../trucks/dock-supply';
 import { Truck } from '../trucks/truck';
 import { TruckError, type TruckErrorCode } from '../trucks/truck-error';
 import { TRUCK_STATE_TRAITS } from '../trucks/truck-fsm';
@@ -323,6 +324,35 @@ function checkTruckRamps(world: World): void {
     const ramp = world.modules.get(truck.rampId);
     const problem = ramp instanceof LoadingRamp ? truckRampProblem(world, truck, ramp) : undefined;
     if (problem !== undefined) throw new WorldStateError(`${truckPath(index)}/${problem.field}`, problem.problem);
+    index += 1;
+  }
+}
+
+/**
+ * Nároky kamiónov na náklad dockov (ADR-029): na každom docku súčet nárokov (`capacityUnits − in_truck` kamiónov
+ * s `claimsCargo`) nepresahuje pripravené + vozidlami vezené jednotky (outbound joby s vozidlom, `DockSupply`). Chyba
+ * patrí kamiónu, ktorého nárok (vzostupne podľa id) súčet prekročí (`/trucks/<i>/dock`). Po `restoreJobs`.
+ */
+function checkTruckClaims(world: World): void {
+  const supply = new DockSupply();
+  supply.refresh(world);
+  const claimed = new Map<string, number>();
+  let index = 0;
+  for (const truck of world.trucks.values()) {
+    const ramp = world.modules.get(truck.rampId);
+    const owed = truck.def.capacityUnits - world.cargo.countAt('in_truck', truck.id);
+    if (truck.bonds.claimsCargo && owed > 0 && ramp instanceof LoadingRamp) {
+      const key = `${String(ramp.id)}:${String(truck.dock)}`;
+      const total = (claimed.get(key) ?? 0) + owed;
+      claimed.set(key, total);
+      const supplied = supply.suppliedAt(ramp, truck.dock);
+      if (total > supplied) {
+        throw new WorldStateError(
+          `${truckPath(index)}/dock`,
+          `${truck.label}: nároky kamiónov na dock ${String(truck.dock)} ${ramp.label} (${String(total)}) prevyšujú pripravené a vezené jednotky (${String(supplied)})`,
+        );
+      }
+    }
     index += 1;
   }
 }
@@ -687,6 +717,7 @@ export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'mo
   checkTruckRamps(world);
   checkGateQueues(world, indexOf);
   restoreJobs(world, parsed.jobs);
+  checkTruckClaims(world);
   checkVehicleCargoJobs(world, units);
   checkVehicleMotion(world);
   checkTruckMotion(world);

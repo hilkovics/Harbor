@@ -52,7 +52,10 @@
  *    svojej brány práve v stavoch vo fronte, súčet dĺžok front = počet takých kamiónov (fronta je bez duplicít);
  *    **`in_truck` ↔ kamión**: náklad len v existujúcom kamióne (bod 1), najviac `capacityUnits`, len jeho kategórie
  *    a podľa stavu (pred nakládkou 0, po nej plný); **rampa**: def kamióna vozí kategóriu rampy a kamión s dockom má
- *    na docku a v sebe spolu aspoň `capacityUnits` jednotiek (`truckRampProblem`); pohyb zodpovedá stavu
+ *    na docku a v sebe spolu aspoň `capacityUnits` jednotiek (`truckRampProblem`); **nároky na náklad** (ADR-029):
+ *    nárok každého docku = Σ `capacityUnits − in_truck` kamiónov docku v stavoch s `claimsCargo` a nárok nepresahuje
+ *    pripravené + vozidlami vezené jednotky docku (`DockSupply`) — žiadny kamión nečaká na jednotku, ktorá nepríde,
+ *    a dva kamióny nečakajú na tú istú; pohyb zodpovedá stavu
  *    (`truckMotionProblem`); kamión vo fronte stojí na svojej strane brány (`truckQueueSideProblem`, dodatok
  *    ADR-024); súlad prechodu brány s frontou kontroluje brána (`gatePassProblem`, bod 10). O(kamióny + moduly).
  *
@@ -68,6 +71,7 @@ import type { EntityId } from '../core/entity-id';
 import type { CargoCategory } from '../defs/types';
 import type { Cell } from '../grid/grid';
 import { JOB_STATE_TRAITS, type TransportJob } from '../logistics/transport-job';
+import { DockSupply } from '../trucks/dock-supply';
 import { BerthModule } from '../modules/berth-module';
 import { computeBerthGroups } from '../modules/berth-group';
 import { CRANE_STATE_TRAITS, CraneModule, cranePhaseProblem } from '../modules/crane-module';
@@ -487,6 +491,10 @@ function checkStorageReservations(world: World): string | undefined {
 let rampDockOffsets = new Int32Array(0);
 let dockUnitCounts = new Int32Array(0);
 let dockStagedCounts = new Int32Array(0);
+/** Súčty nárokov kamiónov na každý dock (ADR-029). */
+let dockClaimCounts = new Int32Array(0);
+/** Vezené jednotky na docky (outbound joby s vozidlom, ADR-029) — pracovné polia kroku 12. */
+const dockSupply = new DockSupply();
 
 /** Naplní `rampDockOffsets` pre rampy registra a vráti počet dockov všetkých rámp (polia počtov zväčší podľa potreby). */
 function layoutRampDocks(ramps: readonly LoadingRamp[]): number {
@@ -498,6 +506,7 @@ function layoutRampDocks(ramps: readonly LoadingRamp[]): number {
   }
   if (dockUnitCounts.length < docks) dockUnitCounts = new Int32Array(docks);
   if (dockStagedCounts.length < docks) dockStagedCounts = new Int32Array(docks);
+  if (dockClaimCounts.length < docks) dockClaimCounts = new Int32Array(docks);
   return docks;
 }
 
@@ -748,8 +757,8 @@ function checkTruckBonds(world: World, truck: Truck, gate: TruckGate, area: Wait
 
 /**
  * Väzba kamióna na rampu (review T04-11): def kamióna vozí kategóriu rampy a kamión, ktorý drží dock (pred koncom
- * nakládky), má na docku a v sebe spolu aspoň `capacityUnits` jednotiek — spawn to vyžaduje a jednotky docku odchádza
- * len nakládkou tohto kamióna, takže `loadUnit` jednotku vždy nájde. `stagedOnDock` = počet pripravených jednotiek na
+ * nakládky), má na docku a v sebe spolu aspoň `capacityUnits` jednotiek — povel do docku to vyžaduje (ADR-029; predtým
+ * spawn) a jednotky docku odchádzajú len nakládkou tohto kamióna, takže `loadUnit` jednotku vždy nájde. `stagedOnDock` = počet pripravených jednotiek na
  * docku (predvolene `LoadingRamp.stagedAt`; krok 12 dodá predpočítané počty). Problém s poľom záznamu v save, alebo
  * `undefined`.
  */
@@ -809,12 +818,38 @@ function checkTruck(world: World, truck: Truck): string | undefined {
 }
 
 /**
+ * Nároky kamiónov na náklad dockov (bod 11, ADR-029): nárok každého docku (`LoadingRamp.claimedAt`) = súčet nárokov jeho
+ * kamiónov (`dockClaimCounts`, naplnil `checkTrucks`) a nepresahuje pripravené + vozidlami vezené jednotky docku.
+ * O(joby + docky) bez alokácie.
+ */
+function checkDockClaims(world: World): string | undefined {
+  const { ramps } = world.landsideModules;
+  if (ramps.length === 0) return undefined;
+  dockSupply.refresh(world);
+  for (let ordinal = 0; ordinal < ramps.length; ordinal++) {
+    const ramp = ramps[ordinal];
+    for (let dock = 0; dock < ramp.docks; dock++) {
+      const claimed = ramp.claimedAt(dock);
+      const expected = dockClaimCounts[rampDockOffsets[ordinal] + dock];
+      if (claimed !== expected) return `${ramp.label}: dock ${String(dock)} má nárok ${String(claimed)}, kamióny docku ${String(expected)}`;
+      const supplied = dockStagedCounts[rampDockOffsets[ordinal] + dock] + dockSupply.dispatchedAt(ramp, dock);
+      if (claimed > supplied) {
+        return `${ramp.label}: dock ${String(dock)} má nárok ${String(claimed)} > pripravené a vezené jednotky ${String(supplied)}`;
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
  * Kamióny a ich väzby (bod 11 hlavičky) jedným prechodom kamiónov a jedným prechodom modulov, bez alokácie: každý
  * kamión je držiteľom svojho bay / docku / miesta vo fronte práve podľa stavu a súčty držaných miest v moduloch sa
  * rovnajú počtom kamiónov — žiadny modul nedrží miesto pre kamión, ktorý neexistuje alebo ho nemá.
  */
 const checkTrucks: Check = (world) => {
   countStagedUnits(world);
+  const layout = layoutRampDocks(world.landsideModules.ramps);
+  dockClaimCounts.fill(0, 0, layout);
   let previous = 0;
   let bays = 0;
   let docks = 0;
@@ -828,7 +863,14 @@ const checkTrucks: Check = (world) => {
     if (truck.bay !== null) bays += 1;
     if (truck.bonds.holdsDock) docks += 1;
     if (TRUCK_STATE_TRAITS[truck.state].queued) queued += 1;
+    if (truck.bonds.claimsCargo) {
+      const ordinal = world.landsideModules.rampOrdinal(truck.rampId);
+      const owed = truck.def.capacityUnits - world.cargo.countAt('in_truck', truck.id);
+      if (ordinal >= 0 && owed > 0) dockClaimCounts[rampDockOffsets[ordinal] + truck.dock] += owed;
+    }
   }
+  const claims = checkDockClaims(world);
+  if (claims !== undefined) return claims;
   let heldBays = 0;
   let heldDocks = 0;
   let queueLength = 0;

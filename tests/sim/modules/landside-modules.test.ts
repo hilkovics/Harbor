@@ -385,6 +385,27 @@ describe('LoadingRamp', () => {
     expect(errorCode(() => other.stagedAt(5))).toBe('invalid_slot');
   });
 
+  it('nároky kamiónov (ADR-029): claim / settleClaim po dockoch, počítadlo, chyby bez zmeny; findRuntimeProblem', () => {
+    const ramp = create('loading_ramp_container', LoadingRamp);
+    expect([ramp.claimedAt(0), ramp.claimedAt(1), ramp.claimedUnits]).toEqual([0, 0, 0]);
+    ramp.claim(0, 1);
+    ramp.claim(0, 2);
+    ramp.claim(1, 1);
+    expect([ramp.claimedAt(0), ramp.claimedAt(1), ramp.claimedUnits]).toEqual([3, 1, 4]);
+    ramp.settleClaim(0, 1);
+    expect([ramp.claimedAt(0), ramp.claimedUnits]).toEqual([2, 3]);
+    expect(errorCode(() => ramp.claim(2, 1))).toBe('invalid_slot');
+    expect(errorCode(() => ramp.claim(0, 0))).toBe('invalid_input');
+    expect(errorCode(() => ramp.claim(0, 1.5))).toBe('invalid_input');
+    expect(errorCode(() => ramp.settleClaim(1, 2))).toBe('invalid_input');
+    expect(errorCode(() => ramp.settleClaim(-1, 1))).toBe('invalid_slot');
+    expect(errorCode(() => ramp.claimedAt(2))).toBe('invalid_slot');
+    expect([ramp.claimedAt(0), ramp.claimedAt(1), ramp.claimedUnits]).toEqual([2, 1, 3]);
+    expect(ramp.findRuntimeProblem()).toBeUndefined();
+    // Nároky nie sú dock: dock drží kamión až od povelu do docku.
+    expect([ramp.dockTruck(0), ramp.assignedDocks]).toEqual([null, 0]);
+  });
+
   it('DockStaging: docks aj perDock musia byť celé ≥ 1', () => {
     const cargo = emptyCargo(DEFS);
     for (const [docks, perDock] of [

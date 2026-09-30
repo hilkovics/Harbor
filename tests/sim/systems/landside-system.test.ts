@@ -15,7 +15,7 @@ import type { SimEvent } from '@sim/events';
 import type { LoadingRamp, TruckGate, WaitingArea } from '@sim/modules';
 import { Truck, TruckError } from '@sim/trucks';
 import { World, WorldInvariantError, WorldStateError, type WorldState } from '@sim/world';
-import { areaOf, execute, gateOf, outboundWorld, rampOf } from '../logistics/outbound-fixtures';
+import { areaOf, buyVehicles, execute, gateOf, ofType, outboundWorld, rampOf, stockYard } from '../logistics/outbound-fixtures';
 import { DEFS, MAP, RAW_DEFS } from '../world/world-fixtures';
 
 interface Timed {
@@ -100,7 +100,7 @@ const defsWithGateInternal = (internalTicks: number): DefRegistry => defsWithPar
 const defsWithBays = (bays: number): DefRegistry => defsWithParams('truck_waiting_area', { bays });
 
 describe('spawn kamióna', () => {
-  it('dock s pripraveným nákladom → kamión na portáli v to_gate, drží bay 0 a dock; ďalší pre ten istý dock nevznikne', () => {
+  it('dock s pripraveným nákladom → kamión na portáli v to_gate, drží bay 0 a nárok na svoju kapacitu, dock ešte nie (ADR-029); na druhú jednotku vznikne druhý kamión v ďalšom ticku, tretí nie', () => {
     const { world, area, ramp } = landside();
     stage(world, ramp, 0, 2);
     const log = run(world, 1);
@@ -108,9 +108,29 @@ describe('spawn kamióna', () => {
     expect(log.filter((entry) => entry.event.type === 'TruckSpawned').map((entry) => entry.event)).toEqual([{ type: 'TruckSpawned', truckId: truck.id, rampId: ramp.id, dock: 0 }]);
     expect([truck.state, truck.cell, truck.progress, truck.x, truck.y, truck.heading]).toEqual(['to_gate', cellIndex(world, PORTAL), 0, PORTAL.x + 0.5, PORTAL.y + 0.5, 0]);
     expect(truck.remainingRoute().at(-1)).toBe(cellIndex(world, GATE_ENTRY));
-    expect([truck.gateId, truck.waitingAreaId, truck.rampId, truck.bay]).toEqual([6, 7, 8, 0]);
-    expect([area.bayHolder(0), area.reservedBays, ramp.dockTruck(0), ramp.dockTruck(1)]).toEqual([truck.id, 1, truck.id, null]);
-    run(world, 5);
+    expect([truck.gateId, truck.waitingAreaId, truck.rampId, truck.bay, truck.dock]).toEqual([6, 7, 8, 0, 0]);
+    expect([area.bayHolder(0), area.reservedBays, ramp.dockTruck(0), ramp.dockTruck(1), ramp.claimedAt(0), ramp.claimedAt(1)]).toEqual([truck.id, 1, null, null, 1, 0]);
+    const next = run(world, 5);
+    expect(next.filter((entry) => entry.event.type === 'TruckSpawned').map((entry) => [entry.tick, entry.event.type === 'TruckSpawned' ? entry.event.dock : -1])).toEqual([[2, 0]]);
+    expect([world.trucks.size, ramp.claimedAt(0), area.reservedBays]).toEqual([2, 2, 2]);
+  });
+
+  it('náklad, ktorý k docku vezie vozidlo, stačí na spawn; otvorený job bez vozidla nie (ADR-029)', () => {
+    const open = outboundWorld({ defs: DEFS });
+    stockYard(open.world, open.far, 1);
+    const withoutVehicle = run(open.world, 50);
+    expect(ofType(withoutVehicle.map((entry) => entry.event), 'JobCreated')).toHaveLength(1);
+    expect([open.world.trucks.size, rampOf(open.world).reservedAt(0)]).toEqual([0, 1]);
+
+    const { world, depot, far } = outboundWorld({ defs: DEFS });
+    stockYard(world, far, 1);
+    buyVehicles(world, depot, 1);
+    const ramp = rampOf(world);
+    const log = run(world, 1);
+    expect(ofType(log.map((entry) => entry.event), 'JobAssigned')).toHaveLength(1);
+    expect(ofType(log.map((entry) => entry.event), 'TruckSpawned')).toEqual([{ type: 'TruckSpawned', truckId: onlyTruck(world).id, rampId: ramp.id, dock: 0 }]);
+    expect([ramp.stagedAt(0), ramp.reservedAt(0), ramp.claimedAt(0), ramp.dockTruck(0)]).toEqual([0, 1, 1, null]);
+    run(world, 100);
     expect(world.trucks.size).toBe(1);
   });
 
@@ -137,6 +157,54 @@ describe('spawn kamióna', () => {
     expect(b).toEqual(a);
     expect(a.filter((entry) => entry.event.type === 'NoWaitingBay')).toEqual([]);
     expect(JSON.stringify(restored.serialize())).toBe(JSON.stringify(world.serialize()));
+  });
+});
+
+describe('povel do docku a fronta v stojisku (ADR-029)', () => {
+  it('dva kamióny na jeden dock: prvý si vezme dock až pri odchode zo stojiska, druhý čaká v bayi, kým prvý nedoloží', () => {
+    // Pomalá nakládka (60 tickov), aby druhý kamión prišiel do stojiska, kým prvý ešte nakladá.
+    const { world, area, ramp } = landside(defsWithParams('loading_ramp_container', { loadTicksPerUnit: 60 }));
+    stage(world, ramp, 0, 2);
+    const log: Timed[] = [];
+    let maxHolders = 0;
+    runUntil(
+      world,
+      (w) => {
+        maxHolders = Math.max(maxHolders, [...w.trucks.values()].filter((truck) => truck.bonds.holdsDock).length);
+        return w.cargo.exportedCount === 2;
+      },
+      2000,
+      log,
+    );
+    const [first, second] = [...new Set(log.flatMap((entry) => (entry.event.type === 'TruckSpawned' ? [entry.event.truckId] : [])))];
+    const a = changes(log, first);
+    const b = changes(log, second);
+    expect(maxHolders).toBe(1);
+    // Druhý kamión dorazí do stojiska skôr, než prvý doloží, a čaká v bayi dlhšie ako pobyt stojiska.
+    expect(tickOf(b, 'waiting')).toBeLessThan(tickOf(a, 'to_gate_out'));
+    expect(tickOf(b, 'to_dock') - tickOf(b, 'waiting')).toBeGreaterThan(INTERNAL);
+    // Dock sa uvoľní koncom nakládky prvého kamióna; druhý odíde najneskôr v ďalšom ticku (kamióny vzostupne podľa id).
+    expect(tickOf(b, 'to_dock') - tickOf(a, 'to_gate_out')).toBeGreaterThanOrEqual(0);
+    expect(tickOf(b, 'to_dock') - tickOf(a, 'to_gate_out')).toBeLessThanOrEqual(1);
+    expect([area.reservedBays + area.occupiedBays, ramp.assignedDocks, ramp.claimedUnits, world.cargo.exportedCount]).toEqual([0, 0, 0, 2]);
+  });
+
+  it('kamión na náklad, ktorý ešte vezie vozidlo, čaká v bayi a do docku ide až s celým nákladom na docku', () => {
+    const { world, depot, near } = outboundWorld({ defs: DEFS });
+    stockYard(world, near, 3);
+    buyVehicles(world, depot, 1);
+    const ramp = rampOf(world);
+    const toDock: { tick: number; staged: number; dock: number }[] = [];
+    for (let i = 0; i < 3000 && world.cargo.exportedCount < 3; i++) {
+      for (const event of world.tick()) {
+        if (event.type !== 'TruckStateChanged' || event.to !== 'to_dock') continue;
+        const truck = world.trucks.get(event.truckId);
+        if (truck !== undefined) toDock.push({ tick: world.clock.tick, staged: ramp.stagedAt(truck.dock), dock: truck.dock });
+      }
+    }
+    expect(world.cargo.exportedCount).toBe(3);
+    expect(toDock).toHaveLength(3);
+    for (const entry of toDock) expect(entry.staged, `tick ${String(entry.tick)}`).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -407,16 +475,20 @@ describe('World.addTruck / removeTruck', () => {
     const { world, area, ramp } = landside();
     const first = truckAt(world);
     world.addTruck(first);
-    expect([area.bayHolder(0), ramp.dockTruck(0)]).toEqual([first.id, first.id]);
+    // Pred povelom do docku kamión dock nedrží, len si nárokuje svoju kapacitu na docku (ADR-029).
+    expect([area.bayHolder(0), ramp.dockTruck(0), ramp.claimedAt(0)]).toEqual([first.id, null, 1]);
+    const atDock = truckAt(world, { state: 'to_dock', bay: null });
+    world.addTruck(atDock);
+    expect([ramp.dockTruck(0), ramp.claimedAt(0)]).toEqual([atDock.id, 2]);
     expect(truckErrorCode(() => world.addTruck(first))).toBe('duplicate_id');
     expect(truckErrorCode(() => world.addTruck(truckAt(world, { rampId: 6 as EntityId, bay: 1, dock: 1 })))).toBe('unknown_module');
     expect(truckErrorCode(() => world.addTruck(truckAt(world, { dock: 5, bay: 1 })))).toBe('unknown_module');
     expect(truckErrorCode(() => world.addTruck(truckAt(world, { dock: 1 })))).toBe('bay_taken');
-    expect(truckErrorCode(() => world.addTruck(truckAt(world, { bay: 1 })))).toBe('dock_taken');
-    expect([world.trucks.size, area.reservedBays, ramp.assignedDocks]).toEqual([1, 1, 1]);
+    expect(truckErrorCode(() => world.addTruck(truckAt(world, { state: 'loading', bay: null })))).toBe('dock_taken');
+    expect([world.trucks.size, area.reservedBays, ramp.assignedDocks, ramp.claimedAt(0), ramp.claimedAt(1)]).toEqual([2, 1, 1, 2, 0]);
   });
 
-  it('removeTruck: neznámy → unknown_truck; drží bay a dock → busy; s nákladom → has_cargo', () => {
+  it('removeTruck: neznámy → unknown_truck; drží bay a nárok → busy; s nákladom → has_cargo', () => {
     const { world, ramp } = landside();
     const live = truckAt(world);
     world.addTruck(live);
@@ -459,28 +531,47 @@ describe('invarianty kroku 12: kamióny ↔ bays, docky, fronta, náklad', () =>
 
   it('dock kamióna uvoľnený mimo systému → WorldInvariantError', () => {
     const { world, ramp, truck } = queued();
+    runUntil(world, () => truck.state === 'to_dock', 500);
+    expect(() => world.assertInvariants()).not.toThrow();
     ramp.releaseDock(0, truck.id);
     expect(() => world.assertInvariants()).toThrow(/nedrží dock/);
   });
 
+  it('nárok docku mimo systému → WorldInvariantError (ADR-029)', () => {
+    const { world, ramp } = queued();
+    ramp.settleClaim(0, 1);
+    expect(() => world.assertInvariants()).toThrow(/dock 0 má nárok 1, kamióny docku 2/);
+  });
+
+  function truckOnDock1(world: World, state: 'to_gate' | 'to_dock'): Truck {
+    // Kamión na portáli s trasou po x = 44 k vstupu brány (44, 33) — pohyb je v poriadku, porušený je len nárok/dock.
+    const route: number[] = [];
+    for (let y = PORTAL.y; y >= GATE_ENTRY.y; y--) route.push(cellIndex(world, { x: PORTAL.x, y }));
+    return new Truck({
+      id: world.ids.next() as EntityId,
+      def: DEFS.trucks.get('truck_container'),
+      state,
+      x: PORTAL.x + 0.5,
+      y: PORTAL.y + 0.5,
+      heading: 0,
+      route: state === 'to_gate' ? route : [cellIndex(world, PORTAL), cellIndex(world, { x: 44, y: 62 })],
+      rampId: 8 as EntityId,
+      dock: 1,
+      gateId: 6 as EntityId,
+      waitingAreaId: 7 as EntityId,
+      bay: state === 'to_gate' ? 0 : null,
+    });
+  }
+
+  it('kamión s nárokom na dock bez pripraveného ani vezeného nákladu → WorldInvariantError (ADR-029)', () => {
+    const { world } = landside();
+    world.addTruck(truckOnDock1(world, 'to_gate'));
+    expect(() => world.assertInvariants()).toThrow(/dock 1 má nárok 1 > pripravené a vezené jednotky 0/);
+  });
+
   it('kamión s dockom bez pripravených jednotiek na docku → WorldInvariantError (review T04-11 b)', () => {
     const { world } = landside();
-    world.addTruck(
-      new Truck({
-        id: world.ids.next() as EntityId,
-        def: DEFS.trucks.get('truck_container'),
-        state: 'to_gate',
-        x: PORTAL.x + 0.5,
-        y: PORTAL.y + 0.5,
-        heading: 0,
-        route: [cellIndex(world, PORTAL), cellIndex(world, { x: 44, y: 62 })],
-        rampId: 8 as EntityId,
-        dock: 1,
-        gateId: 6 as EntityId,
-        waitingAreaId: 7 as EntityId,
-        bay: 0,
-      }),
-    );
+    world.addTruck(truckOnDock1(world, 'to_dock'));
     expect(() => world.assertInvariants()).toThrow(/drží dock 1 .*na docku je 0 a v kamióne 0 jednotiek/);
   });
 
@@ -542,7 +633,8 @@ describe('save v4: chyby obnovy kamiónov', () => {
 
   it('platný save sa obnoví a serializuje rovnako', () => {
     const state = midState();
-    expect(trucksOf(state)).toHaveLength(2);
+    // Tick 1: kamión pre dock 0 aj dock 1; tick 2: druhý kamión pre druhú jednotku docku 0 (ADR-029).
+    expect(trucksOf(state).map((truck) => truck['dock'])).toEqual([0, 1, 0]);
     expect(JSON.stringify(World.deserialize(DEFS, MAP, viaJson(state)).serialize())).toBe(JSON.stringify(state));
   });
 
@@ -551,7 +643,7 @@ describe('save v4: chyby obnovy kamiónov', () => {
     ['resume mimo no_path', (s) => (trucksOf(s)[0]['resume'] = 'to_gate'), '/trucks/0/resume'],
     ['bez bay v stave s bay', (s) => (trucksOf(s)[0]['bay'] = null), '/trucks/0/bay'],
     ['dva kamióny s tým istým bay', (s) => (trucksOf(s)[1]['bay'] = trucksOf(s)[0]['bay']), '/trucks/1/bay'],
-    ['dva kamióny na tom istom docku', (s) => (trucksOf(s)[1]['dock'] = trucksOf(s)[0]['dock']), '/trucks/1/dock'],
+    ['nároky kamiónov na dock prevyšujú jeho náklad (ADR-029)', (s) => (trucksOf(s)[1]['dock'] = trucksOf(s)[0]['dock']), '/trucks/2/dock'],
     ['neznámy def', (s) => (trucksOf(s)[0]['defId'] = 'truck_x'), '/trucks/0/defId'],
     ['rampa nie je rampa', (s) => (trucksOf(s)[0]['rampId'] = 6), '/trucks/0/rampId'],
     ['kamión mimo mapy (poloha nie je na trase)', (s) => (trucksOf(s)[0]['x'] = 1), '/trucks/0/x'],
@@ -596,7 +688,7 @@ describe('save v4: chyby obnovy kamiónov', () => {
       (s) => `/trucks/${String(trucksOf(s as WorldState & Record<string, unknown>).findIndex((entry) => entry['state'] === 'gate_queue'))}/route`,
     ],
     [
-      'kamión drží dock, na ktorom nie je pripravená jednotka (review T04-11 b)',
+      'kamión má nárok na dock, na ktorom nie je pripravená ani vezená jednotka (review T04-11 b, ADR-029)',
       (s) => {
         const unit = s.cargo.units.find((entry) => entry.location.kind === 'at_ramp' && entry.location.dock === 1);
         if (unit === undefined) throw new Error('na docku 1 nie je jednotka');

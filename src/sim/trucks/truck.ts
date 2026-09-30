@@ -7,9 +7,9 @@
  * - **Pohyb** dedí zo zdieľaného `Carrier` (`src/sim/movement`) — ten istý kód ako interné vozidlá: trasa po cestách,
  *   jednosmerky, rýchlosť podľa typu cesty, `no_path` + preplánovanie, `PROGRESS_NOISE` (ADR-019, ADR-020, ADR-021).
  *   Prechod telom brány a stojiska je abstrahovaný (ADR-011): kamión sa po ňom objaví na výstupnej bunke (`jumpTo`).
- * - **Väzby** (nemenné od spawnu): rampa a dock, na ktorý ide (`rampId`, `dock`), brána (`gateId`) a stojisko
- *   (`waitingAreaId`) trasy z `World.landsideRoutes`. `bay` = rezervovaný bay stojiska, kým ho kamión drží
- *   (`TRUCK_STATE_TRAITS.holdsBay`), inak `null`.
+ * - **Väzby** (nemenné od spawnu): rampa a dock, na ktorého náklad má kamión nárok (`rampId`, `dock`; ADR-029 — dock
+ *   samotný drží až od povelu do docku), brána (`gateId`) a stojisko (`waitingAreaId`) trasy z `World.landsideRoutes`.
+ *   `bay` = rezervovaný bay stojiska, kým ho kamión drží (`TRUCK_STATE_TRAITS.holdsBay`), inak `null`.
  * - `resume` = jazdný stav, do ktorého sa kamión vráti z `no_path` (mimo `no_path` `null`). Väzby stavu (bay, dock,
  *   náklad) sa v `no_path` riadia `resume` (`effectiveState`).
  *
@@ -106,7 +106,10 @@ export class Truck extends Carrier {
   readonly defId: string;
   /** Rampa, z ktorej kamión nakladá. */
   readonly rampId: EntityId;
-  /** Dock rampy (`0 … docks − 1`), ktorý kamión drží od spawnu po koniec nakládky. */
+  /**
+   * Dock rampy (`0 … docks − 1`): od spawnu má kamión nárok na jeho náklad, dock drží od povelu do docku po koniec
+   * nakládky (ADR-029).
+   */
   readonly dock: number;
   /** Brána, ktorou kamión prechádza dnu aj von (spoločná FIFO fronta). */
   readonly gateId: EntityId;

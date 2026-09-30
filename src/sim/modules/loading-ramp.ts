@@ -16,9 +16,13 @@
  *   drží rezerváciu celý život a vozidlo pri vykládke `assertCommittable → CargoLedger.move → commit` (cez
  *   `cargoDropTarget()`); zrušený `open` job (rampa stratila prevádzkovosť) `release(dock)`.
  *
- * - **Docky pre kamióny** (T04-04, ADR-024): na každý dock mieri najviac jeden kamión — od spawnu po koniec nakládky
- *   ho drží (`assignDock` / `releaseDock`, `dockTruck`). Držiteľ docku sa neukladá: obnoví sa z kamiónov (`rampId`,
- *   `dock`, stav) ako bays stojiska.
+ * - **Docky pre kamióny** (T04-04, ADR-024, ADR-029): na každý dock mieri najviac jeden kamión — od odchodu zo
+ *   stojiska po koniec nakládky ho drží (`assignDock` / `releaseDock`, `dockTruck`). Držiteľ docku sa neukladá: obnoví
+ *   sa z kamiónov (`rampId`, `dock`, stav) ako bays stojiska.
+ * - **Nároky na náklad** (ADR-029): kamión si pri spawne nárokuje `capacityUnits` jednotiek svojho docku (`claim`) a
+ *   každou naloženou jednotkou nárok zmenší (`settleClaim`). `claimedAt(dock)` = súčet nárokov kamiónov docku; spawner
+ *   pustí ďalší kamión, len keď pripravené a vozidlami vezené jednotky docku nároky prevyšujú aspoň o kapacitu kamióna.
+ *   Nároky sa neukladajú: obnovia sa z kamiónov (`capacityUnits − in_truck`).
  * - **`NoWaitingBay`** (T04-04): hodina posledného hlásenia rampy `lastNoWaitingBayHour` (najviac 1× za hodinu, vzor
  *   `BerthModule.lastNoStorageHour`, ADR-018) — ide do save, aby obnovený svet nehlásil v tej istej hodine znova.
  *
@@ -77,6 +81,9 @@ export class LoadingRamp extends LandExportModule {
   /** Dock → kamión, ktorý naň mieri alebo na ňom nakladá; `null` = voľný. */
   private readonly dockTrucks: (EntityId | null)[];
   private assigned = 0;
+  /** Dock → jednotky, na ktoré majú nárok kamióny docku (ADR-029). */
+  private readonly dockClaims: number[];
+  private claimed = 0;
   /** Herná hodina posledného `NoWaitingBay` (throttle 1×/h); mení ju `landsideSystem`. */
   lastNoWaitingBayHour: number | null = null;
 
@@ -92,6 +99,7 @@ export class LoadingRamp extends LandExportModule {
       label: `rampa ${this.label}`,
     });
     this.dockTrucks = new Array<EntityId | null>(this.params.docks).fill(null);
+    this.dockClaims = new Array<number>(this.params.docks).fill(0);
     const { staging } = this;
     this.drop = Object.freeze({
       kind: 'at_ramp',
@@ -283,23 +291,64 @@ export class LoadingRamp extends LandExportModule {
     this.assigned -= 1;
   }
 
+  /** Jednotky docku, na ktoré majú nárok kamióny (ADR-029). Dock mimo rozsahu → `invalid_slot`. */
+  claimedAt(dock: number): number {
+    this.assertDock(dock, 'claimedAt');
+    return this.dockClaims[dock];
+  }
+
+  /** Nároky kamiónov na všetkých dockoch. */
+  get claimedUnits(): number {
+    return this.claimed;
+  }
+
+  /**
+   * Kamión si nárokuje `units` jednotiek docku (spawn: `capacityUnits`; obnova: `capacityUnits − in_truck`). Chyby
+   * (`ModuleError`, nič sa nezmení): dock mimo rozsahu → `invalid_slot`, `units` nie je celé ≥ 1 → `invalid_input`.
+   * Že nárok kryjú pripravené a vezené jednotky, rozhoduje spawner a overuje krok 12 (`checkRampReservations`).
+   */
+  claim(dock: number, units: number): void {
+    this.assertDock(dock, 'claim');
+    if (!Number.isSafeInteger(units) || units < 1) throw new ModuleError('invalid_input', `${this.label}.claim: units musí byť celé číslo ≥ 1, dostal ${String(units)}`);
+    this.dockClaims[dock] += units;
+    this.claimed += units;
+  }
+
+  /**
+   * Kamión naložil jednotku (alebo zanikol s nárokom — dnes nenastane): nárok docku klesne o `units`. Chyby: dock mimo
+   * rozsahu → `invalid_slot`, `units` nie je celé ≥ 1 alebo prevyšuje nárok docku → `invalid_input`.
+   */
+  settleClaim(dock: number, units: number): void {
+    this.assertDock(dock, 'settleClaim');
+    if (!Number.isSafeInteger(units) || units < 1 || units > this.dockClaims[dock]) {
+      throw new ModuleError('invalid_input', `${this.label}.settleClaim: dock ${String(dock)} má nárok ${String(this.dockClaims[dock])}, nedá sa znížiť o ${String(units)}`);
+    }
+    this.dockClaims[dock] -= units;
+    this.claimed -= units;
+  }
+
   /** Staging rezervácie hlási pravidlu `has_cargo` (§8 bod 8). */
   override cargoReservations(): { readonly kind: 'at_ramp'; readonly count: number } {
     return { kind: 'at_ramp', count: this.staging.reservedCount };
   }
 
   /**
-   * Súlad staging rezervácií s ledgerom a počítadlo držiteľov dockov (krok 12, O(docky), bez alokácie). Že kamión drží
-   * najviac jeden dock a dock drží existujúci kamión, overí svet (`checkTrucks`: držiteľ docku každého kamióna + súčet
-   * držaných dockov = počet kamiónov s `holdsDock`, review T04-11) — `assignDock` duplicitu nepustí.
+   * Súlad staging rezervácií s ledgerom, počítadlo držiteľov dockov a nárokov (krok 12, O(docky), bez alokácie). Že
+   * kamión drží najviac jeden dock a dock drží existujúci kamión, overí svet (`checkTrucks`: držiteľ docku každého
+   * kamióna + súčet držaných dockov = počet kamiónov s `holdsDock`, review T04-11; nároky docku = súčet nárokov jeho
+   * kamiónov, ADR-029) — `assignDock` duplicitu nepustí.
    */
   override findRuntimeProblem(): string | undefined {
     const staging = this.staging.findProblem();
     if (staging !== undefined) return staging;
     let assigned = 0;
+    let claimed = 0;
     for (let dock = 0; dock < this.dockTrucks.length; dock++) {
       if (this.dockTrucks[dock] !== null) assigned += 1;
+      if (this.dockClaims[dock] < 0) return `${this.label}: dock ${String(dock)} má záporný nárok ${String(this.dockClaims[dock])}`;
+      claimed += this.dockClaims[dock];
     }
+    if (claimed !== this.claimed) return `${this.label}: počítadlo nárokov ${String(this.claimed)} ≠ ${String(claimed)}`;
     return assigned === this.assigned ? undefined : `${this.label}: počítadlo držaných dockov ${String(this.assigned)} ≠ ${String(assigned)}`;
   }
 

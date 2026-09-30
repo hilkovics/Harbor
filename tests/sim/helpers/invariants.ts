@@ -7,21 +7,14 @@ function invariant(condition: boolean, message: () => string): void {
   if (!condition) throw new Error(`invariant porušený: ${message()}`);
 }
 
-/** Tvar, ktorý `World` získa s `CargoLedger` (fáza 2, ARCHITECTURE §6 krok 12: `cargo.assertConservation()`). */
-interface WorldWithCargo {
-  readonly cargo?: { assertConservation(): void };
-}
-
 /**
- * `assertCargoConservation(world)` — „každá jednotka nákladu má presne jednu lokáciu, súčet je konštantný".
- *
- * Vo fáze 1 `World` nemá `CargoLedger` (vzniká vo fáze 2), takže invariant je zatiaľ splnený triviálne:
- * neexistuje žiadny náklad, ktorý by sa mohol stratiť. Keď `world.cargo` existuje, deleguje sa na
- * `world.cargo.assertConservation()` — testy tak od fázy 2 kontrolujú skutočný ledger bez úpravy scenárov.
+ * `assertCargoConservation(world)` — „každá jednotka nákladu má presne jednu lokáciu, súčet je konštantný"
+ * (ARCHITECTURE §6 krok 12, §16). Deleguje na `world.cargo.assertConservation()`: každá jednotka v práve jednom
+ * indexe zodpovedajúcom jej lokácii, žiadne miesto obsadené dvakrát, `createdCount = živé + exported`.
+ * Porušenie → `CargoConservationError` so správou, ktorá pomenuje jednotku aj lokácie.
  */
 export function assertCargoConservation(world: World): void {
-  const { cargo } = world as unknown as WorldWithCargo;
-  if (cargo !== undefined) cargo.assertConservation();
+  world.cargo.assertConservation();
 }
 
 /**

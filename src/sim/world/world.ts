@@ -1,10 +1,11 @@
 /**
  * World — koreň simulácie (ARCHITECTURE §5, §6). Vlastní hodiny, mriežku, parcely, hotovosť, jediný `Rng`,
- * alokátor ID a zbernicu udalostí; prezentácia ho len číta a mení ho výlučne cez `Command` (pravidlo 5).
+ * alokátor ID, zbernicu udalostí a `CargoLedger`; prezentácia ho len číta a mení ho výlučne cez `Command` (pravidlo 5).
  *
  * Tick pipeline vo F1: príkazy z fronty → krok 1 (`clock.advance()` + udalosti hraníc) → krok 13 (`events.flush()`).
  * Kroky 2–12 pribudnú so systémami na označenom mieste v `tick()`; poradie §6 je záväzné a mení sa len cez ADR.
  */
+import { CargoLedger } from '../cargo/cargo-ledger';
 import { EntityIdAllocator } from '../core/entity-id';
 import { EventBus } from '../core/event-bus';
 import { INITIAL_SPEED, SimClock } from '../core/sim-clock';
@@ -56,6 +57,11 @@ export class World {
   readonly ids: EntityIdAllocator;
   /** Udalosti aktuálneho ticku; príkazy a systémy volajú `emit`, `tick()`/`applyPending()` ich vrátia. */
   readonly events = new EventBus<SimEvent>();
+  /**
+   * Jediný zdroj polohy nákladu (§7.1, pravidlo 2): id jednotiek z `ids`, `CargoMoved` do `events` s `clock.tick`.
+   * Zatiaľ vždy prázdny na začiatku (`create` aj `deserialize`); do `WorldState` sa dostane vo v2 (T02-03).
+   */
+  readonly cargo: CargoLedger;
   /** Hotovosť v centoch (USD); môže byť záporná (bankrot rieši F5). */
   cashCents: number;
 
@@ -71,6 +77,7 @@ export class World {
     this.grid = parts.grid;
     this.parcels = parts.parcels;
     this.cashCents = parts.cashCents;
+    this.cargo = new CargoLedger({ cargoTypes: parts.defs.cargoTypes, ids: parts.ids, events: this.events, clock: parts.clock });
   }
 
   /**
@@ -165,12 +172,18 @@ export class World {
 
   /**
    * Čistý JSON stav v1 (§14; tvar pozri `WorldState`). Fronta príkazov sa neukladá, preto musí byť prázdna —
-   * inak `Error` (zavolaj najprv `applyPending()` alebo `tick()`).
+   * inak `Error` (zavolaj najprv `applyPending()` alebo `tick()`). v1 nevie uložiť náklad, preto svet, v ktorom
+   * vznikla čo i len jedna jednotka, tiež vyhodí `Error` namiesto tichej straty nákladu (uloží ho až v2, T02-03).
    */
   serialize(): WorldState {
     if (this.pendingCommands.length > 0) {
       throw new Error(
         `World.serialize: vo fronte je ${String(this.pendingCommands.length)} neaplikovaných príkazov — najprv applyPending() alebo tick()`,
+      );
+    }
+    if (this.cargo.createdCount > 0) {
+      throw new Error(
+        `World.serialize: WorldState v${String(WORLD_STATE_VERSION)} neukladá náklad a ledger eviduje ${String(this.cargo.createdCount)} vytvorených jednotiek`,
       );
     }
     const roads: SerializedRoad[] = [];

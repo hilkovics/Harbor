@@ -2,12 +2,12 @@
  * `ContractSystem` — krok 2 (T05-03, ADR-026): kedy sa pool dopĺňa, `capacityHint` z háčikov modulov, poradie udalostí
  * a účtovanie pri dokončení, demurrage len počas státia lode, zlyhanie ešte na ceste a počítadlá po zlyhaní.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { capacityHintOf, offerVolumeUnits, type Contract } from '@sim/contracts';
 import type { ContractId } from '@sim/core';
 import { DefRegistry } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
-import { GAME_START_TICK, expireOffers, refillPool } from '@sim/systems';
+import { ContractSystem, GAME_START_TICK, expireOffers, refillPool } from '@sim/systems';
 import { World } from '@sim/world';
 import { emptyScenario, must } from '../helpers/harbor';
 import { runScenario } from '../helpers/scenario';
@@ -101,7 +101,25 @@ describe('poistka objemu ponuky: objem ≤ kapacita skladov, ale ≥ min šabló
   });
 });
 
-describe('krok 2: snímka neukončených kontraktov', () => {
+describe('krok 2: snímka neukončených kontraktov a loď kontraktu', () => {
+  const NO_BOUNDARIES = { hourClosed: false, dayClosed: false, monthClosed: false } as const;
+
+  it('ship_en_route bez lode na mape (porušenie invariantu) neprejde do unloading; s loďou pri kotvisku áno', () => {
+    const { world, run, contractId } = startContract({ id: 'f5_missing_ship', seed: 5608, defs: fixedContractDefs() });
+    run.runUntil((w) => {
+      const c = contractById(w, contractId);
+      const ship = [...w.ships.values()].find((candidate) => candidate.id === c.shipId);
+      return c.state === 'ship_en_route' && ship?.state === 'docked';
+    }, 3 * TICKS_PER_DAY);
+    const system = new ContractSystem();
+    const lookup = vi.spyOn(world.ships, 'get').mockReturnValue(undefined);
+    system.tick(world, NO_BOUNDARIES);
+    expect(contractById(world, contractId).state).toBe('ship_en_route');
+    lookup.mockRestore();
+    system.tick(world, NO_BOUNDARIES);
+    expect(contractById(world, contractId).state).toBe('unloading');
+  }, RUN_TIMEOUT_MS);
+
   it('expireOffers so znovupoužiteľným poľom: pole sa naplní snímkou neukončených kontraktov a expirujú len ponuky po termíne', () => {
     const world = worldWithPool(fixedContractDefs(), 5609);
     const scratch: Contract[] = [];

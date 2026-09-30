@@ -15,10 +15,10 @@
  * - `offered`: nič (expiráciu rieši denná obnova poolu).
  * - `accepted`: `tick ≥ shipArrivalTick` → `spawnShip` (spoločný kód so `SpawnShipDebug`) s `volumeUnits` jednotkami
  *   `contractId`, `shipId` a `accepted → ship_en_route`. Loď sa pohne v kroku 3 toho istého ticku.
- * - `ship_en_route`: SLA (nižšie); loď kontraktu stojí pri kotvisku alebo ho už opustila (`SHIP_STATE_TRAITS.moored`
- *   alebo neskorší stav, príp. loď už nie je na mape) → `dockedTick = tick` a `→ unloading`. Krok 2 predchádza kroku 3,
- *   takže `dockedTick` je tick po `ShipDocked` — od neho beží `berthAllowanceTicks` (odchýlka jedného ticku v prospech
- *   hráča, zdôvodnenie ADR-026).
+ * - `ship_en_route`: SLA (nižšie); loď kontraktu stojí pri kotvisku alebo ho už opúšťa (`docked` alebo neskorší stav
+ *   lode na mape; loď kontraktu v `ship_en_route` je podľa invariantu kroku 12 vždy na mape) → `dockedTick = tick`
+ *   a `→ unloading`. Krok 2 predchádza kroku 3, takže `dockedTick` je tick po `ShipDocked` — od neho beží
+ *   `berthAllowanceTicks` (odchýlka jedného ticku v prospech hráča, zdôvodnenie ADR-026).
  * - `unloading`: demurrage — kým loď stojí pri kotvisku, každá celá hodina nad `berthAllowanceTicks` od `dockedTick`
  *   pripíše `PenaltyApplied { kind: 'demurrage' }`; SLA; `unitsUnloaded ≥ volumeUnits` → `exporting` (loď v tej chvíli
  *   už nemá náklad kontraktu a odpláva v kroku 3 toho istého ticku — najneskôr pri odchode lode). Uskladnené jednotky
@@ -137,7 +137,9 @@ const CONTRACT_STEPS: { readonly [S in ContractState]: ContractStep } = {
   ship_en_route: (contract, world) => {
     accrueLate(world, contract);
     const ship = shipOf(world, contract);
-    if (ship === undefined || SHIP_REACHED_BERTH[ship.state]) {
+    // Loď kontraktu v `ship_en_route` je vždy na mape (invariant kroku 12 `checkContracts`): odísť môže až po vyložení,
+    // ktoré začne kotvením — a to krok 2 zachytí v nasledujúcom ticku skôr, ako sa loď stihne vyložiť.
+    if (ship !== undefined && SHIP_REACHED_BERTH[ship.state]) {
       contract.dockedTick = world.clock.tick;
       world.contractBook.changeState(contract, 'unloading');
       return;

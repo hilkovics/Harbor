@@ -55,7 +55,7 @@
 - [x] T03-09 · UI: BuildBar Sklady/Logistika, inspector skladu a depa, `Toasts`
 - [x] T03-10 · App: snapshot v3 (vozidlá, sklady), napojenie renderu a UI, nákup/predaj vozidla, notifikácie
 - [x] T03-11 · Tooling: `simrun` metriky vozidiel a skladov
-- [ ] T03-12 · E2E: loď → apron → vozidlá → dvor, screenshot
+- [x] T03-12 · E2E: loď → apron → vozidlá → dvor, screenshot
 - [x] T03-13 · Review `src/sim/**` (hot path alokácie)
 - [x] T03-14 · Opravy z review + ARCHITECTURE zosúladenie
 - [ ] T03-15 · Plná pipeline + triáž

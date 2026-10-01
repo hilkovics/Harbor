@@ -5,21 +5,25 @@
  * - Expirovaný kontrakt (`offered → expired`, timeout aj `DeclineContract`) kniha po prechode **zabudne**, aby save
  *   nerástol s každou nevybranou ponukou; udalosti `ContractStateChanged` a `ContractExpired` nesú všetko, čo potrebuje
  *   prezentácia. Dokončené a zlyhané kontrakty ostávajú (história hráča, nimi je kniha ohraničená).
- * - `cargoMoved` je háčik `CargoLedger.move` (`CargoLedgerDeps.observer`): jednotka s `contractId` zvýši kontraktu
- *   `unitsUnloaded` pri opustení lode (`on_ship → …`) a `unitsExported` pri `→ exported` — O(1) na presun, žiadne skeny
- *   ledgera v ticku. Počíta sa v každom stave kontraktu (aj po `failed`), aby počítadlá zodpovedali nákladu.
+ * - `cargoMoved` je háčik `CargoLedger.move` (`CargoLedgerDeps.observer`): jednotku s `contractId` odovzdá jej
+ *   kontraktu (`Contract.cargoMoved`, polymorfné podľa druhu — import `unitsUnloaded` / `unitsExported`, export
+ *   `loadedUnits` / vrátené, ADR-032) — O(1) na presun, žiadne skeny ledgera v ticku. Počíta sa v každom stave
+ *   kontraktu (aj po `failed`), aby počítadlá zodpovedali nákladu.
+ * - **Voyage** (ADR-032): kniha prideľuje aj id návštev lode (`allocateVoyageId`, vlastná postupnosť, `nextVoyageId`
+ *   v save) a vedie odvodený index voyage → kontrakty (vzostupne podľa id; nie je v save). Voyage nemá vlastný záznam —
+ *   jej údaje (trieda lode, príchod, loď, cieľový prístav, cut-off) nesú jej kontrakty (`voyage()` ich zloží).
  * - Stav mení `changeState` (tabuľka `CONTRACT_TRANSITIONS` + `ContractStateChanged`); prebiehajúce kontrakty
  *   (`CONTRACT_STATE_TRAITS.terminal === false`) vedie kniha zvlášť, aby krok 2 neprechádzal históriu.
  */
 import type { CargoLocation } from '../cargo/cargo-location';
 import type { CargoUnit } from '../cargo/cargo-unit';
-import type { ContractId } from '../core/entity-id';
+import type { ContractId, EntityId, VoyageId } from '../core/entity-id';
 import type { ContractStateChangedEvent } from '../events/sim-event';
 import { Contract, type SerializedContract } from './contract';
 import { ContractError } from './contract-error';
 import { CONTRACT_STATE_TRAITS, type ContractState } from './contract-fsm';
 
-/** Stav knihy v save (`WorldState.contracts`, `xp`, `completedContracts`; v5). */
+/** Stav knihy v save (`WorldState.contracts`, `xp`, `completedContracts`, `nextContractId` — v5; `nextVoyageId` — v7). */
 export interface ContractBookState {
   /** Kontrakty vzostupne podľa id (bez expirovaných). */
   readonly contracts: readonly SerializedContract[];
@@ -27,7 +31,31 @@ export interface ContractBookState {
   readonly completedContracts: number;
   /** Id, ktoré dostane ďalší kontrakt (≥ 1, väčšie ako id každého uloženého kontraktu). */
   readonly nextContractId: number;
+  /** Id, ktoré dostane ďalšia voyage (≥ 1, väčšie ako `voyageId` každého uloženého kontraktu; v7, ADR-032). */
+  readonly nextVoyageId: number;
 }
+
+/**
+ * Odvodený pohľad na voyage (návštevu lode, ADR-032) zo všetkých jej kontraktov v knihe — pre UI a systémy mimo hot
+ * path (nová kópia pri každom volaní). Údaje lode berie z prvého kontraktu (kontrakty voyage sa na nich zhodujú —
+ * overuje obnova save).
+ */
+export interface VoyageView {
+  readonly id: VoyageId;
+  /** Kontrakty voyage vzostupne podľa id (import, export booking). */
+  readonly contracts: readonly Contract[];
+  readonly shipClassId: string;
+  /** Plánovaný príchod lode (od prijatia), inak `undefined`. */
+  readonly arrivalTick: number | undefined;
+  /** Loď voyage (od spawnu), inak `undefined`. */
+  readonly shipId: EntityId | undefined;
+  /** Cieľový prístav exportu voyage (prvý export booking), bez exportu `null`. */
+  readonly destinationPort: string | null;
+  /** Najskorší cut-off exportu voyage, bez neho `undefined`. */
+  readonly cutoffTick: number | undefined;
+}
+
+const NO_CONTRACTS: readonly Contract[] = Object.freeze([]);
 
 /** Závislosti knihy od sveta (`world.events`, `world.clock`). */
 export interface ContractBookEnv {
@@ -37,6 +65,8 @@ export interface ContractBookEnv {
 
 /** Prvé id kontraktu (0 ostáva voľné ako „žiadny kontrakt“). */
 const FIRST_CONTRACT_ID = 1;
+/** Prvé id voyage (0 ostáva voľné ako „žiadna voyage“). */
+const FIRST_VOYAGE_ID = 1;
 
 export class ContractBook {
   private readonly env: ContractBookEnv;
@@ -48,6 +78,10 @@ export class ContractBook {
   private lastId: ContractId | undefined;
   /** Id, ktoré dostane ďalší kontrakt (vlastná postupnosť, `nextContractId` v save). */
   private nextContractId = FIRST_CONTRACT_ID;
+  /** Id, ktoré dostane ďalšia voyage (vlastná postupnosť, `nextVoyageId` v save, ADR-032). */
+  private nextVoyageId = FIRST_VOYAGE_ID;
+  /** Voyage → jej kontrakty v knihe vzostupne podľa id (odvodený index, nie je v save). */
+  private readonly voyageIndex = new Map<VoyageId, Contract[]>();
 
   constructor(env: ContractBookEnv) {
     this.env = env;
@@ -55,7 +89,8 @@ export class ContractBook {
 
   /**
    * Kniha zo save (tvar overil `parseContractsState`): kontrakty cez `Contract.fromState` vzostupne podľa id, XP a počet
-   * dokončených (celé ≥ 0). Chyby: `ContractError` (nekonzistentný kontrakt, id nie vzostupne).
+   * dokončených (celé ≥ 0), postupnosti id kontraktov aj voyage. Chyby: `ContractError` (nekonzistentný kontrakt, id
+   * nie vzostupne, id kontraktu ≥ `nextContractId`, voyage ≥ `nextVoyageId`).
    */
   static fromState(env: ContractBookEnv, state: ContractBookState): ContractBook {
     const book = new ContractBook(env);
@@ -63,11 +98,15 @@ export class ContractBook {
       if (serialized.id >= state.nextContractId) {
         throw new ContractError('invalid_input', `ContractBook.fromState: kontrakt #${String(serialized.id)} nie je menší ako nextContractId ${String(state.nextContractId)}`);
       }
+      if (serialized.voyageId >= state.nextVoyageId) {
+        throw new ContractError('invalid_input', `ContractBook.fromState: kontrakt #${String(serialized.id)} má voyage ${String(serialized.voyageId)}, ktorú kniha nepridelila (nextVoyageId ${String(state.nextVoyageId)})`);
+      }
       book.add(Contract.fromState(serialized));
     }
     book.xpTotal = state.xp;
     book.completedTotal = state.completedContracts;
     book.nextContractId = state.nextContractId;
+    book.nextVoyageId = state.nextVoyageId;
     return book;
   }
 
@@ -84,6 +123,54 @@ export class ContractBook {
     const id = this.nextContractId;
     this.nextContractId += 1;
     return id as ContractId;
+  }
+
+  /**
+   * Pridelí id novej voyage (1, 2, 3, … — vlastná postupnosť knihy, ADR-032). Pool ho volá pri vzniku ponuky (roundtrip:
+   * jedno id pre import aj export booking), takže pri samých import ponukách sú id voyage a kontraktov zhodné.
+   */
+  allocateVoyageId(): VoyageId {
+    const id = this.nextVoyageId;
+    this.nextVoyageId += 1;
+    return id as VoyageId;
+  }
+
+  /** Kontrakty voyage v knihe vzostupne podľa id (živé pole, bez alokácie); neznáma voyage → prázdne. */
+  voyageContracts(voyageId: VoyageId): readonly Contract[] {
+    return this.voyageIndex.get(voyageId) ?? NO_CONTRACTS;
+  }
+
+  /**
+   * Voyage lode `shipId` (neukončený kontrakt s touto loďou, prvý podľa id), alebo `undefined` (ladiaca loď, loď bez
+   * kontraktu). O(neukončené kontrakty), bez alokácie.
+   */
+  voyageIdOfShip(shipId: EntityId): VoyageId | undefined {
+    for (const contract of this.open.values()) if (contract.shipId === shipId) return contract.voyageId;
+    return undefined;
+  }
+
+  /** Odvodený pohľad na voyage (`VoyageView`), alebo `undefined`, ak v knihe nemá kontrakt. Nová kópia — nie hot path. */
+  voyage(voyageId: VoyageId): VoyageView | undefined {
+    const contracts = this.voyageIndex.get(voyageId);
+    if (contracts === undefined || contracts.length === 0) return undefined;
+    const [first] = contracts;
+    let destinationPort: string | null = null;
+    let cutoffTick: number | undefined;
+    for (const contract of contracts) {
+      const { booking } = contract;
+      if (booking === null) continue;
+      destinationPort ??= booking.destinationPort;
+      if (booking.cutoffTick !== undefined && (cutoffTick === undefined || booking.cutoffTick < cutoffTick)) cutoffTick = booking.cutoffTick;
+    }
+    return {
+      id: voyageId,
+      contracts: [...contracts],
+      shipClassId: first.shipClassId,
+      arrivalTick: first.shipArrivalTick,
+      shipId: first.shipId,
+      destinationPort,
+      cutoffTick,
+    };
   }
 
   /** Všetky kontrakty okrem expirovaných vzostupne podľa id (živá mapa len na čítanie). */
@@ -135,6 +222,9 @@ export class ContractBook {
     this.all.set(contract.id, contract);
     this.lastId = contract.id;
     if (!CONTRACT_STATE_TRAITS[contract.state].terminal) this.open.set(contract.id, contract);
+    const voyage = this.voyageIndex.get(contract.voyageId);
+    if (voyage === undefined) this.voyageIndex.set(contract.voyageId, [contract]);
+    else voyage.push(contract);
   }
 
   /**
@@ -148,7 +238,17 @@ export class ContractBook {
     this.env.events.emit({ type: 'ContractStateChanged', contractId: contract.id, from, to });
     if (!CONTRACT_STATE_TRAITS[to].terminal) return;
     this.open.delete(contract.id);
-    if (to === 'expired') this.all.delete(contract.id);
+    if (to === 'expired') this.forget(contract);
+  }
+
+  /** Expirovaný kontrakt kniha zabudne — aj z indexu voyage (prázdna voyage zanikne). */
+  private forget(contract: Contract): void {
+    this.all.delete(contract.id);
+    const voyage = this.voyageIndex.get(contract.voyageId);
+    if (voyage === undefined) return;
+    const at = voyage.indexOf(contract);
+    if (at >= 0) voyage.splice(at, 1);
+    if (voyage.length === 0) this.voyageIndex.delete(contract.voyageId);
   }
 
   /** Pripíše dokončenie: `completedContracts += 1`, `xp += gain` (celé ≥ 0). */
@@ -159,16 +259,13 @@ export class ContractBook {
   }
 
   /**
-   * Háčik `CargoLedger.move` (po presune, `unit` = jednotka pred presunom): jednotka kontraktu, ktorá opustila loď,
-   * zvýši `unitsUnloaded`, jednotka, ktorá opustila mapu, `unitsExported`. Jednotka bez kontraktu (`null`) alebo
-   * s kontraktom mimo knihy (nekonzistenciu odmietne obnova save) sa ignoruje — háčik nesmie vyhodiť (presun je atomický).
+   * Háčik `CargoLedger.move` (po presune, `unit` = jednotka pred presunom): presun jednotky kontraktu spracuje jej
+   * kontrakt (`Contract.cargoMoved`, podľa druhu). Jednotka bez kontraktu (`null`) alebo s kontraktom mimo knihy
+   * (nekonzistenciu odmietne obnova save) sa ignoruje — háčik nesmie vyhodiť (presun je atomický).
    */
   cargoMoved(unit: CargoUnit, to: CargoLocation): void {
     if (unit.contractId === null) return;
-    const contract = this.all.get(unit.contractId);
-    if (contract === undefined) return;
-    if (unit.location.kind === 'on_ship' && contract.unitsUnloaded < contract.volumeUnits) contract.unitsUnloaded += 1;
-    if (to.kind === 'exported' && contract.unitsExported < contract.unitsUnloaded) contract.unitsExported += 1;
+    this.all.get(unit.contractId)?.cargoMoved(unit, to);
   }
 
   /** Čistý JSON stav pre save (nová kópia). */
@@ -178,6 +275,7 @@ export class ContractBook {
       xp: this.xpTotal,
       completedContracts: this.completedTotal,
       nextContractId: this.nextContractId,
+      nextVoyageId: this.nextVoyageId,
     };
   }
 }

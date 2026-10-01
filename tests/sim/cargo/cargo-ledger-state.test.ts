@@ -15,11 +15,14 @@ import {
   CARGO_DEFS,
   GRAIN,
   LIQUID_CHAIN,
+  EXPORT_CONTRACT,
+  EXPORT_LABELS,
   TEU,
   at,
   createHarness,
   flushMoves,
   id,
+  importUnit,
   moveThrough,
   snapshot,
   viaJson,
@@ -66,7 +69,7 @@ function restore(harness: LedgerHarness, raw: unknown): LedgerHarness {
 
 describe('CargoLedger.getState', () => {
   it('prázdny ledger', () => {
-    expect(createHarness().ledger.getState()).toEqual({ createdCount: 0, exportedCount: 0, units: [] });
+    expect(createHarness().ledger.getState()).toEqual({ createdCount: 0, exportedCount: 0, shippedCount: 0, units: [] });
   });
 
   it('čistý JSON: JSON.parse(JSON.stringify(s)) je hlboko rovný s; exportované jednotky sa neukladajú', () => {
@@ -92,7 +95,7 @@ describe('CargoLedger.getState', () => {
       ['at_ramp', 50, 6],
       ['at_ramp', 50, 3],
     ]);
-    expect(Object.keys(units[4])).toEqual(['id', 'typeId', 'contractId', 'quantity', 'location']);
+    expect(Object.keys(units[4])).toEqual(['id', 'typeId', 'contractId', 'voyageId', 'direction', 'destinationPort', 'weightClass', 'hold', 'quantity', 'location']);
     expect(JSON.stringify(units[4].location)).toBe('{"kind":"on_apron","berthId":10,"slot":3}');
     expect(units.find((unit) => unit.id === 1)).toMatchObject({ typeId: GRAIN, contractId: 500, quantity: 25 });
   });
@@ -157,7 +160,8 @@ describe('CargoLedger.fromState — roundtrip', () => {
     const state: CargoLedgerState = {
       createdCount: 3,
       exportedCount: 0,
-      units: [7, 2, 5].map((unitId) => ({ id: id(unitId), typeId: TEU, contractId: null, quantity: 1, location: at.ship(SHIP_A) })),
+      shippedCount: 0,
+      units: [7, 2, 5].map((unitId) => importUnit({ id: id(unitId), location: at.ship(SHIP_A) })),
     };
     const ledger = CargoLedger.fromState(state, harness.deps);
     expect(ledger.unitsOnShip(id(SHIP_A))).toEqual([2, 5, 7]);
@@ -180,13 +184,21 @@ describe('CargoLedger.fromState — neplatný stav', () => {
     id: 1,
     typeId: TEU,
     contractId: null,
+    voyageId: null,
+    direction: 'import',
+    destinationPort: null,
+    weightClass: 'medium',
+    hold: null,
     quantity: 1,
     location: at.ship(SHIP_A),
     ...overrides,
   });
+  const exportUnit = (overrides: Record<string, unknown> = {}): Record<string, unknown> =>
+    unit({ contractId: EXPORT_CONTRACT, ...EXPORT_LABELS, location: at.truck(30), ...overrides });
   const state = (units: unknown[], overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
     createdCount: units.length,
     exportedCount: 0,
+    shippedCount: 0,
     units,
     ...overrides,
   });
@@ -194,13 +206,27 @@ describe('CargoLedger.fromState — neplatný stav', () => {
   it.each<[string, string, unknown, RegExp]>([
     ['stav nie je objekt', '', [], /musí byť objekt, dostal pole/],
     ['neznámy kľúč stavu', '/liveCount', { ...state([]), liveCount: 0 }, /neznámy kľúč/],
-    ['chýba exportedCount', '/exportedCount', { createdCount: 0, units: [] }, /chýba povinný kľúč/],
+    ['chýba exportedCount', '/exportedCount', { createdCount: 0, shippedCount: 0, units: [] }, /chýba povinný kľúč/],
+    ['chýba shippedCount (tvar v6)', '/shippedCount', { createdCount: 0, exportedCount: 0, units: [] }, /chýba povinný kľúč/],
+    ['záporné shippedCount', '/shippedCount', state([], { shippedCount: -1 }), /celé číslo ≥ 0, dostal -1/],
     ['záporné createdCount', '/createdCount', state([], { createdCount: -1 }), /celé číslo ≥ 0, dostal -1/],
     ['necelé exportedCount', '/exportedCount', state([], { exportedCount: 0.5 }), /celé číslo ≥ 0, dostal 0\.5/],
     ['units nie je pole', '/units', state([], { units: {} }), /musí byť pole, dostal objekt/],
     ['jednotka nie je objekt', '/units/0', state([7]), /musí byť objekt, dostal 7/],
     ['neznámy kľúč jednotky', '/units/0/owner', state([unit({ owner: 1 })]), /neznámy kľúč/],
-    ['chýba quantity', '/units/0/quantity', state([{ id: 1, typeId: TEU, contractId: null, location: at.ship(1) }]), /chýba povinný kľúč/],
+    ['chýba quantity', '/units/0/quantity', state([Object.fromEntries(Object.entries(unit()).filter(([key]) => key !== 'quantity'))]), /chýba povinný kľúč/],
+    ['chýba štítok (jednotka v6)', '/units/0/voyageId', state([{ id: 1, typeId: TEU, contractId: null, quantity: 1, location: at.ship(1) }]), /chýba povinný kľúč/],
+    ['neznámy smer', '/units/0/direction', state([unit({ direction: 'tranship' })]), /smer musí byť jeden z: import, export/],
+    ['neznáma hmotnostná trieda', '/units/0/weightClass', state([unit({ weightClass: 'huge' })]), /light, medium, heavy/],
+    ['voyageId 0', '/units/0/voyageId', state([unit({ voyageId: 0 })]), /null alebo celé číslo ≥ 1/],
+    ['import s cieľovým prístavom', '/units/0/destinationPort', state([unit({ destinationPort: 'Rotterdam' })]), /import jednotka nemá cieľový prístav/],
+    ['prázdny cieľový prístav', '/units/0/destinationPort', state([exportUnit({ destinationPort: '' })]), /neprázdny reťazec/],
+    ['export bez kontraktu', '/units/0/direction', state([exportUnit({ contractId: null })]), /patrí bookingu/],
+    ['export bez voyage', '/units/0/direction', state([exportUnit({ voyageId: null })]), /patrí bookingu/],
+    ['hold import jednotky', '/units/0/hold', state([unit({ hold: { reason: 'vgm', untilTick: 5 } })]), /len export/],
+    ['hold s neznámym dôvodom', '/units/0/hold', state([exportUnit({ hold: { reason: 'damage', untilTick: 5 } })]), /dôvod musí byť jeden z: vgm/],
+    ['hold so zlým tickom', '/units/0/hold', state([exportUnit({ hold: { reason: 'vgm', untilTick: -1 } })]), /untilTick musí byť celé číslo ≥ 0/],
+    ['hold s prebytočným kľúčom', '/units/0/hold', state([exportUnit({ hold: { reason: 'vgm', untilTick: 5, by: 1 } })]), /presne kľúče reason, untilTick/],
     ['id 0', '/units/0/id', state([unit({ id: 0 })]), /id musí byť celé číslo 1…19.*dostal 0/],
     ['id ≥ nextId', '/units/0/id', state([unit({ id: NEXT_ID })]), /menšie ako ids\.nextId.*dostal 20/],
     ['duplicitné id', '/units/1/id', state([unit(), unit({ location: at.ship(SHIP_B) })]), /duplicitné id 1 \(\/units\/0\)/],
@@ -210,6 +236,7 @@ describe('CargoLedger.fromState — neplatný stav', () => {
     ['neznámy druh lokácie', '/units/0/location/kind', state([unit({ location: { kind: 'in_warehouse' } })]), /neznámy druh/],
     ['neplatný držiteľ', '/units/0/location/shipId', state([unit({ location: { kind: 'on_ship', shipId: -2 } })]), /≥ 1/],
     ['uložená exportovaná jednotka', '/units/0/location/kind', state([unit({ location: at.exported() })]), /len v exportedCount/],
+    ['uložená odplávaná jednotka', '/units/0/location/kind', state([exportUnit({ location: at.shipped() })]), /shippedCount/],
     [
       'dvakrát obsadený slot apronu',
       '/units/1/location',
@@ -217,6 +244,7 @@ describe('CargoLedger.fromState — neplatný stav', () => {
       /miesto on_apron\(berthId=10, slot=2\) už obsadila jednotka \/units\/0/,
     ],
     ['createdCount ≠ živé + exportované', '/createdCount', state([unit()], { createdCount: 3, exportedCount: 1 }), /3 ≠ živé 1 \+ exportedCount 1/],
+    ['createdCount ≠ živé + exportované + odplávané', '/createdCount', state([unit()], { createdCount: 3, shippedCount: 1 }), /3 ≠ živé 1 \+ exportedCount 0 \+ shippedCount 1/],
   ])('%s → CargoStateError na %s', (_name, path, raw, problem) => {
     const harness = createHarness({ nextId: NEXT_ID });
     let caught: unknown;

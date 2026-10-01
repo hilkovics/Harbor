@@ -232,7 +232,8 @@ describe('CargoLedger.move: teleport v pozemnej časti reťazca sa odmietne (ARC
 
   it.each<{ name: string; target: (rampId: EntityId) => CargoLocation }>([
     { name: 'at_ramp → exported (preskočenie kamióna)', target: () => ({ kind: 'exported' }) },
-    { name: 'at_ramp → in_vehicle (späť do vozidla)', target: () => ({ kind: 'in_vehicle', vehicleId: 1 as EntityId }) },
+    // `at_ramp → in_vehicle` je od F6a povolený (export z docku do skladu, ADR-032); na apron bez vozidla nie.
+    { name: 'at_ramp → on_apron (preskočenie vozidla)', target: () => ({ kind: 'on_apron', berthId: 1 as EntityId, slot: 0 }) },
     { name: 'at_ramp → in_storage (späť do skladu)', target: () => ({ kind: 'in_storage', moduleId: 4 as EntityId, slot: 0 }) },
   ])('$name vyhodí CargoTransitionError a jednotka ostáva na rampe', ({ target }) => {
     const world = midChainWorld((w) => w.cargo.countByKind('at_ramp') >= 1);
@@ -240,7 +241,8 @@ describe('CargoLedger.move: teleport v pozemnej časti reťazca sa odmietne (ARC
   }, RUN_TIMEOUT_MS);
 
   it.each<{ name: string; target: (truckId: EntityId, rampId: EntityId) => CargoLocation }>([
-    { name: 'in_truck → at_ramp (späť na rampu)', target: (_truckId, rampId) => ({ kind: 'at_ramp', rampId, dock: 0 }) },
+    // `in_truck → at_ramp` je od F6a povolený (vykládka exportu, ADR-032); kamión → apron nie.
+    { name: 'in_truck → on_apron (preskočenie rampy)', target: () => ({ kind: 'on_apron', berthId: 1 as EntityId, slot: 0 }) },
     { name: 'in_truck → in_vehicle (späť do vozidla)', target: () => ({ kind: 'in_vehicle', vehicleId: 1 as EntityId }) },
     { name: 'in_truck → in_storage (späť do skladu)', target: () => ({ kind: 'in_storage', moduleId: 4 as EntityId, slot: 0 }) },
   ])('$name vyhodí CargoTransitionError a jednotka ostáva v kamióne', ({ target }) => {

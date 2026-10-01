@@ -12,6 +12,9 @@
  *   `bay` = rezervovaný bay stojiska, kým ho kamión drží (`TRUCK_STATE_TRAITS.holdsBay`), inak `null`.
  * - `resume` = jazdný stav, do ktorého sa kamión vráti z `no_path` (mimo `no_path` `null`). Väzby stavu (bay, dock,
  *   náklad) sa v `no_path` riadia `resume` (`effectiveState`).
+ * - `mission` (F6a, ADR-032): `pickup` (odvoz importu) alebo `delivery` (dovoz exportu); vlastnosti stavu
+ *   (`bonds`, `traits`) sú podľa misie (`truckStateTraits`). Delivery kamión sa pri dual transaction zmení na pickup
+ *   (`becomePickup`, len vo vykládke).
  *
  * Stav je privátny s getterom `state` a mení ho len `transition` podľa `TRUCK_TRANSITIONS`; trasu len metódy `Carrier`.
  */
@@ -21,11 +24,13 @@ import type { Rotation } from '../grid/rotation';
 import { Carrier, carrierPoseProblem, carrierRouteProblem, type CarrierInit } from '../movement/carrier';
 import { TruckError } from './truck-error';
 import {
-  TRUCK_STATE_TRAITS,
   TRUCK_TRANSITIONS,
+  isTruckMission,
   isTruckState,
   isTruckTransitionAllowed,
   isTruckTravelState,
+  truckStateTraits,
+  type TruckMission,
   type TruckState,
   type TruckStateTraits,
   type TruckTravelState,
@@ -35,6 +40,8 @@ import {
 export interface SerializedTruck {
   readonly id: number;
   readonly defId: string;
+  /** Misia kamióna (WorldState v7, ADR-032). */
+  readonly mission: TruckMission;
   readonly state: TruckState;
   readonly x: number;
   readonly y: number;
@@ -60,6 +67,7 @@ export interface SerializedTruck {
 export const SERIALIZED_TRUCK_KEYS: readonly (keyof SerializedTruck)[] = [
   'id',
   'defId',
+  'mission',
   'state',
   'x',
   'y',
@@ -89,6 +97,8 @@ export interface TruckInit extends CarrierInit {
   readonly bay?: number | null;
   /** Predvolene `null`; jazdný stav práve v `no_path`. */
   readonly resume?: TruckTravelState | null;
+  /** Predvolene `pickup` (F4 kamión); `delivery` = dovoz exportu (ADR-032). */
+  readonly mission?: TruckMission;
 }
 
 function isPositiveId(value: number): boolean {
@@ -117,6 +127,7 @@ export class Truck extends Carrier {
   readonly waitingAreaId: EntityId;
   /** Rezervovaný bay stojiska, kým ho kamión drží (`holdsBay`); inak `null`. Mení ho `landsideSystem`. */
   bay: number | null;
+  private currentMission: TruckMission;
   private current: TruckState;
   private resumeState: TruckTravelState | null;
 
@@ -131,9 +142,11 @@ export class Truck extends Carrier {
     const { id, def, state, rampId, dock, gateId, waitingAreaId } = init;
     const bay = init.bay ?? null;
     const resume = init.resume ?? null;
+    const mission = init.mission ?? 'pickup';
     const label = `kamión '${def.id}' #${String(id)}`;
     if (!isPositiveId(id)) throw new TruckError('invalid_input', `${label}: id musí byť celé číslo ≥ 1`);
     if (!isTruckState(state)) throw new TruckError('invalid_input', `${label}: neznámy stav '${String(state)}'`);
+    if (!isTruckMission(mission)) throw new TruckError('invalid_input', `${label}: neznáma misia '${String(mission)}'`);
     for (const [name, value] of [['rampId', rampId], ['gateId', gateId], ['waitingAreaId', waitingAreaId]] as const) {
       if (!isPositiveId(value)) throw new TruckError('invalid_input', `${label}: ${name} musí byť celé číslo ≥ 1, dostal ${String(value)}`);
     }
@@ -143,8 +156,9 @@ export class Truck extends Carrier {
     }
     const effective: TruckState = resume ?? state;
     if (bay !== null && !isIndex(bay)) throw new TruckError('invalid_input', `${label}: bay musí byť null alebo celé číslo ≥ 0, dostal ${String(bay)}`);
-    if (TRUCK_STATE_TRAITS[effective].holdsBay !== (bay !== null)) {
-      throw new TruckError('invalid_input', `${label}: v stave '${effective}' ${TRUCK_STATE_TRAITS[effective].holdsBay ? 'musí držať bay' : 'nesmie držať bay'}`);
+    const holdsBay = truckStateTraits(mission, effective).holdsBay;
+    if (holdsBay !== (bay !== null)) {
+      throw new TruckError('invalid_input', `${label}: v stave '${effective}' ${holdsBay ? 'musí držať bay' : 'nesmie držať bay'}`);
     }
     const pose = carrierPoseProblem(label, init);
     if (pose !== undefined) throw new TruckError('invalid_input', pose);
@@ -159,8 +173,25 @@ export class Truck extends Carrier {
     this.gateId = gateId;
     this.waitingAreaId = waitingAreaId;
     this.bay = bay;
+    this.currentMission = mission;
     this.current = state;
     this.resumeState = resume;
+  }
+
+  /** Misia kamióna (ADR-032); mení ju len `becomePickup` (dual transaction). */
+  get mission(): TruckMission {
+    return this.currentMission;
+  }
+
+  /**
+   * Dual transaction (ADR-032 bod 12): delivery kamión po vykládke zostane na docku a naloží import — misia sa zmení na
+   * `pickup` (volá krok 8 tesne pred `unloading → loading`). Iná misia alebo stav → `TruckError('invalid_transition')`.
+   */
+  becomePickup(): void {
+    if (this.currentMission !== 'delivery' || this.current !== 'unloading') {
+      throw new TruckError('invalid_transition', `${this.label}: na pickup sa mení len delivery kamión vo vykládke (misia ${this.currentMission}, stav ${this.current})`);
+    }
+    this.currentMission = 'pickup';
   }
 
   /** Aktuálny stav FSM (mení ho len `transition`). */
@@ -178,9 +209,14 @@ export class Truck extends Carrier {
     return this.resumeState ?? this.current;
   }
 
-  /** Vlastnosti efektívneho stavu (bay, dock, náklad, cieľ po návrate z `no_path`). */
+  /** Vlastnosti efektívneho stavu podľa misie (bay, dock, náklad, cieľ po návrate z `no_path`). */
   get bonds(): TruckStateTraits {
-    return TRUCK_STATE_TRAITS[this.effectiveState];
+    return truckStateTraits(this.currentMission, this.effectiveState);
+  }
+
+  /** Vlastnosti aktuálneho stavu podľa misie (pohyb, odpočet, fronta). */
+  get traits(): TruckStateTraits {
+    return truckStateTraits(this.currentMission, this.current);
   }
 
   /** Popis do chybových správ: `truck_container #40`. */
@@ -210,6 +246,7 @@ export class Truck extends Carrier {
     return {
       id: this.id,
       defId: this.defId,
+      mission: this.currentMission,
       state: this.current,
       x: this.x,
       y: this.y,

@@ -72,9 +72,11 @@ describe('WorldState v2 — moduly v save', () => {
     expect(state.modules[0].runtime).toEqual({ lastNoStorageHour: null }); // v3: kotvisko ukladá throttle NoStorageAvailable (ADR-018)
     expect(state.modules[1].runtime).toEqual({
       state: 'placing',
+      cycle: 'unload',
       phaseTicksTotal: 6,
       phaseTicksLeft: 3,
       reservedSlot: 1,
+      targetUnitId: null,
       busyTicks: 0,
       idleTicks: 0,
       blockedTicks: 0,
@@ -164,9 +166,11 @@ describe('WorldState v2 — neplatné moduly a náklad → WorldStateError', () 
     state.modules[index].runtime as Record<string, unknown>;
   const IDLE_CRANE: CraneRuntimeState = {
     state: 'idle',
+    cycle: 'unload',
     phaseTicksTotal: 0,
     phaseTicksLeft: 0,
     reservedSlot: null,
+    targetUnitId: null,
     busyTicks: 0,
     idleTicks: 0,
     blockedTicks: 0,

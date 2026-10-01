@@ -47,7 +47,7 @@
  * sa zbierajú raz za tick do znovupoužiteľných polí. Alokuje sa len nový job (jeho zoznam jednotiek a lokácie).
  */
 import { slotOf } from '../cargo/cargo-location';
-import { CONTRACT_STATE_TRAITS, type ContractOutbound } from '../contracts/contract-fsm';
+import type { ContractOutbound } from '../contracts/contract-fsm';
 import type { EntityId } from '../core/entity-id';
 import type { CargoCategory } from '../defs/types';
 import { BerthModule } from '../modules/berth-module';
@@ -125,8 +125,9 @@ function collectOutboundRamps(world: World, into: LoadingRamp[]): void {
 function outboundOf(world: World, group: StoredCargoGroup): ContractOutbound {
   if (group.contractId === null) return 'free';
   const contract = world.contractBook.get(group.contractId);
-  // Kontrakt mimo knihy obnova save odmietne; náklad by inak navždy zaberal sklad.
-  return contract === undefined ? 'free' : CONTRACT_STATE_TRAITS[contract.state].outbound;
+  // Kontrakt mimo knihy obnova save odmietne; náklad by inak navždy zaberal sklad. Politiku určuje druh kontraktu
+  // (`Contract.outbound`: import podľa stavu, export booking až po uzavretí — ADR-032).
+  return contract === undefined ? 'free' : contract.outbound;
 }
 
 /** Termín kontraktu skupiny (`slaDeadlineTick`), bez neho `Infinity`. */

@@ -17,7 +17,7 @@ describe('World.cargo', () => {
     expect(world.cargo.createdCount).toBe(0);
     expect(world.cargo.exportedCount).toBe(0);
     expect(world.cargo.liveCount).toBe(0);
-    expect(world.cargo.getState()).toEqual({ createdCount: 0, exportedCount: 0, units: [] });
+    expect(world.cargo.getState()).toEqual({ createdCount: 0, exportedCount: 0, shippedCount: 0, units: [] });
   });
 
   it('jednotky dostávajú id zo spoločného world.ids (rovnaká postupnosť ako ostatné entity)', () => {
@@ -68,7 +68,7 @@ describe('World.cargo', () => {
 
 describe('World.serialize/deserialize a náklad (WorldState v2)', () => {
   it('svet bez nákladu: cargo = prázdny stav ledgera', () => {
-    expect(create().serialize().cargo).toEqual({ createdCount: 0, exportedCount: 0, units: [] });
+    expect(create().serialize().cargo).toEqual({ createdCount: 0, exportedCount: 0, shippedCount: 0, units: [] });
   });
 
   it('serialize uloží stav ledgera (cargo.getState()) — aj pri náklade u neexistujúceho držiteľa, bez chyby', () => {
@@ -99,7 +99,7 @@ describe('World.serialize/deserialize a náklad (WorldState v2)', () => {
     world.applyPending();
     expect(world.cargo.liveCount).toBe(0);
     const state = world.serialize();
-    expect(state.cargo).toEqual({ createdCount: 1, exportedCount: 1, units: [] });
+    expect(state.cargo).toEqual({ createdCount: 1, exportedCount: 1, shippedCount: 0, units: [] });
     const restored = World.deserialize(DEFS, MAP, JSON.parse(JSON.stringify(state)) as typeof state);
     expect(restored.cargo.createdCount).toBe(1);
     expect(restored.cargo.exportedCount).toBe(1);

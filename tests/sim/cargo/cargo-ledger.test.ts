@@ -25,6 +25,7 @@ import {
   createHarness,
   flushMoves,
   id,
+  importUnit,
   moveThrough,
   snapshot,
   type LedgerHarness,
@@ -65,8 +66,9 @@ describe('CargoLedger.create', () => {
     expect(harness.ids.next()).toBe(1); // iná entita (napr. loď) dostala id 1
     const teu = harness.ledger.create(TEU, at.ship(SHIP));
     const grain = harness.ledger.create(GRAIN, at.ship(SHIP), 77 as ContractId);
-    expect(teu).toEqual({ id: 2, typeId: TEU, contractId: null, quantity: 1, location: at.ship(SHIP) });
-    expect(grain).toEqual({ id: 3, typeId: GRAIN, contractId: 77, quantity: GRAIN_BATCH, location: at.ship(SHIP) });
+    expect(teu).toEqual(importUnit({ id: id(2), location: at.ship(SHIP) }));
+    expect(grain).toEqual(importUnit({ id: id(3), typeId: GRAIN, contractId: 77 as ContractId, quantity: GRAIN_BATCH, location: at.ship(SHIP) }));
+    expect(Object.keys(teu)).toEqual(['id', 'typeId', 'contractId', 'voyageId', 'direction', 'destinationPort', 'weightClass', 'hold', 'quantity', 'location']);
     expect(harness.ids.next()).toBe(4);
   });
 
@@ -141,7 +143,7 @@ describe('CargoLedger.move — nepovolený prechod a atomickosť', () => {
     expect(transition.to).toEqual(at.storage(40, 0));
     expect(transition.message).toBe(
       'CargoLedger: jednotka #1: nepovolený prechod on_ship(shipId=100) → in_storage(moduleId=40, slot=0) — ' +
-        "z 'on_ship' smie ísť len do: in_crane, in_pipeline, in_vehicle",
+        "z 'on_ship' smie ísť len do: in_crane, in_pipeline, in_vehicle, shipped",
     );
   });
 
@@ -414,11 +416,12 @@ describe('CargoLedger — konzervácia', () => {
       ledger.assertConservation();
       const total = CARGO_LOCATION_KINDS.reduce((sum, kind) => sum + ledger.countByKind(kind), 0);
       expect(total).toBe(ledger.createdCount);
-      expect(ledger.liveCount + ledger.exportedCount).toBe(ledger.createdCount);
+      expect(ledger.liveCount + ledger.exportedCount + ledger.shippedCount).toBe(ledger.createdCount);
     }
     harness.events.flush();
-    // Prechádzka musí reálne pokryť export aj konflikty slotov, inak test nič nedokazuje.
+    // Prechádzka musí reálne pokryť export po súši aj odplávanie (ADR-032) a konflikty slotov, inak test nič nedokazuje.
     expect(ledger.exportedCount).toBeGreaterThan(0);
+    expect(ledger.shippedCount).toBeGreaterThan(0);
     expect(rejectedSlots).toBeGreaterThan(0);
   });
 });

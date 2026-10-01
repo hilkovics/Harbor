@@ -64,8 +64,8 @@ function busyWorld(): World {
   return world;
 }
 
-describe('World.serialize — WorldState v6', () => {
-  it('tvar: presne kľúče v6 = v5 (v1 + traffic, modules, cargo, ships + vehicles, jobs + trucks + economy, kontrakty) v pevnom poradí a hodnoty novej hry', () => {
+describe('World.serialize — WorldState v7', () => {
+  it('tvar: presne kľúče v7 = v6 (v1 + traffic, modules, cargo, ships + vehicles, jobs + trucks + economy, kontrakty) + nextVoyageId v pevnom poradí a hodnoty novej hry', () => {
     const world = create();
     const state = world.serialize();
     expect(Object.keys(state)).toEqual([
@@ -90,18 +90,19 @@ describe('World.serialize — WorldState v6', () => {
       'xp',
       'completedContracts',
       'nextContractId',
+      'nextVoyageId',
     ]);
     expect(state.version).toBe(WORLD_STATE_VERSION);
     // Nová hra pred prvým tickom: pool sa plní až v kroku 2 prvého ticku (ADR-026).
-    expect([state.contracts, state.xp, state.completedContracts, state.nextContractId]).toEqual([[], 0, 0, 1]);
-    expect(state.version).toBe(6);
+    expect([state.contracts, state.xp, state.completedContracts, state.nextContractId, state.nextVoyageId]).toEqual([[], 0, 0, 1, 1]);
+    expect(state.cargo).toEqual({ createdCount: 0, exportedCount: 0, shippedCount: 0, units: [] });
+    expect(state.version).toBe(7);
     expect(state.economy).toEqual({ entries: [], today: { incomeCents: {}, expenseCents: {} }, daily: [], monthly: [], daysNegative: 0, gameOver: false });
     expect(state.traffic).toEqual([]);
     // Starter moduly mapy (Root modul, T02-04): id 1, 2, … v poradí mapy, zaplatená cena 0, žeriav nečinný.
     expect(state.modules.map(({ id, defId, x, y, rotation, purchaseCostCents }) => ({ id, defId, x, y, rotation, purchaseCostCents }))).toEqual(
       MAP.starter.modules.map((spec, i) => ({ id: i + 1, ...spec, purchaseCostCents: 0 })),
     );
-    expect(state.cargo).toEqual({ createdCount: 0, exportedCount: 0, units: [] });
     expect(state.ships).toEqual([]);
     expect(state.vehicles).toEqual([]);
     expect(state.jobs).toEqual([]);
@@ -279,7 +280,7 @@ describe('World.deserialize', () => {
   const INVALID: readonly [string, Mutation, string][] = [
     ['neznámy kľúč', set('extra', 1), '/extra'],
     ['chýba kľúč', (s) => delete s.cashCents, '/cashCents'],
-    ['neznáma budúca verzia', set('version', 7), '/version'],
+    ['neznáma budúca verzia', set('version', 8), '/version'],
     ['verzia 0', set('version', 0), '/version'],
     ['verzia ako reťazec', set('version', '3'), '/version'],
     ['v3 stav označený ako v1 → migrácia v1 odmietne kľúč v2', set('version', 1), '/traffic'],
@@ -320,8 +321,17 @@ describe('World.deserialize', () => {
     ['traffic duplicitná bunka', set('traffic', [[5, 1], [5, 2]]), '/traffic/1/0'],
     ['modules nie je pole', set('modules', {}), '/modules'],
     ['cargo nie je objekt', set('cargo', []), '/cargo'],
-    ['cargo bez units', set('cargo', { createdCount: 0, exportedCount: 0 }), '/cargo/units'],
-    ['cargo porušená konzervácia', set('cargo', { createdCount: 1, exportedCount: 0, units: [] }), '/cargo/createdCount'],
+    ['cargo bez units', set('cargo', { createdCount: 0, exportedCount: 0, shippedCount: 0 }), '/cargo/units'],
+    ['cargo porušená konzervácia', set('cargo', { createdCount: 1, exportedCount: 0, shippedCount: 0, units: [] }), '/cargo/createdCount'],
+    ['cargo bez shippedCount (tvar v6, ADR-032)', set('cargo', { createdCount: 0, exportedCount: 0, units: [] }), '/cargo/shippedCount'],
+    [
+      'chýba nextVoyageId (ADR-032)',
+      (state) => {
+        delete state['nextVoyageId'];
+      },
+      '/nextVoyageId',
+    ],
+    ['nextVoyageId 0', set('nextVoyageId', 0), '/nextVoyageId'],
     ['ships nie je pole', set('ships', {}), '/ships'],
     ['loď bez povinných kľúčov (tvar SerializedShip, T02-05)', set('ships', [{ id: 1 }]), '/ships/0/classId'],
     // economy (v5, ADR-025) — busyWorld je v ticku 123 a má záznamy knihy z adjustCash a consumeRng.

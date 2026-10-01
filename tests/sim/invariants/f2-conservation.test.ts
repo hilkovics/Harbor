@@ -442,15 +442,17 @@ describe('CargoLedger.move: nepovolené prechody sa odmietnu a nič sa nezmení'
     assertCargoConservation(world);
   });
 
-  it('po povolenom on_ship → in_crane je späť na loď (in_crane → on_ship) nepovolené a poloha ostáva v žeriave', () => {
-    const { world, shipId, unitId, craneId } = worldWithShip();
+  it('po povolenom on_ship → in_crane je preskočenie apronu (in_crane → in_vehicle) nepovolené a poloha ostáva v žeriave', () => {
+    // `in_crane → on_ship` je od F6a povolený prechod ledgera (nakládka exportu, ADR-032); vrátenie importu na loď
+    // stráži žeriav (CraneSystem), nie tabuľka prechodov.
+    const { world, unitId, craneId } = worldWithShip();
     expect(() => world.cargo.move(unitId, { kind: 'in_crane', craneId })).not.toThrow();
     expect(world.cargo.get(unitId)?.location).toEqual({ kind: 'in_crane', craneId });
     expect(world.cargo.countByKind('in_crane')).toBe(1);
     expect(world.cargo.countByKind('on_ship')).toBe(3);
     expect(world.cargo.createdCount).toBe(4);
 
-    expect(() => world.cargo.move(unitId, { kind: 'on_ship', shipId })).toThrow(CargoTransitionError);
+    expect(() => world.cargo.move(unitId, { kind: 'in_vehicle', vehicleId: 1 as EntityId })).toThrow(CargoTransitionError);
     expect(world.cargo.get(unitId)?.location).toEqual({ kind: 'in_crane', craneId });
     expect(world.cargo.countByKind('in_crane')).toBe(1);
     expect(world.cargo.countByKind('on_ship')).toBe(3);

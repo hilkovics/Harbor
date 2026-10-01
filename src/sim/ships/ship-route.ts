@@ -251,6 +251,7 @@ const LEGACY_ROUTES: { readonly [S in ShipState]: RouteOf } = {
     return [{ ...dockPoint(first, ship.def), heading: DOCKED_HEADING[first.waterSide] }];
   },
   docked: () => NO_ROUTE,
+  lashing: () => NO_ROUTE,
   undocking: (_ship, env) => {
     const end = laneEnd(env);
     return end === undefined ? NO_ROUTE : [end];
@@ -300,6 +301,7 @@ const ROUTE_RULES: { readonly [S in ShipState]: RouteRule } = {
   waiting_anchorage: { empty: false, lanePrefix: false, end: (ship, env) => (ship.anchorageIndex === null ? undefined : anchoragePoint(env, ship.anchorageIndex)) },
   berthing: { empty: false, lanePrefix: false, end: toDock },
   docked: { empty: true, lanePrefix: false, end: toDock },
+  lashing: { empty: true, lanePrefix: false, end: toDock },
   undocking: { empty: false, lanePrefix: false, end: (_ship, env) => laneEnd(env) },
   outbound: { empty: false, lanePrefix: false, end: toLaneStart },
   despawned: { empty: true, lanePrefix: false, end: () => undefined },

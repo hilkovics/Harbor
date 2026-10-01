@@ -26,9 +26,18 @@
  * odvodí podľa pravidiel pred ADR-029 (`legacyShipRoute`; potrebuje mapu a kotviská, ktoré migrácia nemá). `null`
  * prijme parser len pri save spred v6 (`savesShipRoutes`) a loď bez cieľa najprv presunie pred vstup (`arriving`,
  * ADR-029 addendum, T5B-04b).
+ *
+ * v6 → v7 (T6A-01, ADR-032; rozhodnutie 14, deterministicky bez `Rng`): každý v6 kontrakt bol vlastnou návštevou lode —
+ * dostane `kind: 'import'`, `voyageId` = vlastné id a `booking: null`; `nextVoyageId` = `nextContractId` (žiadna voyage
+ * sa s id kontraktu nezrazí). Náklad dostane `shippedCount: 0` a každá jednotka štítky importu (`voyageId` = jej
+ * `contractId`, bez kontraktu `null`; `direction: 'import'`, `destinationPort: null`, `weightClass: 'medium'`
+ * — `DEFAULT_WEIGHT_CLASS`) a `hold: null`. Lode `lashingTicksLeft: 0` (v6 lashing nepoznal), kamióny `mission: 'pickup'`
+ * (v6 vozil len import) a žeriav v `runtime` `cycle: 'unload'`, `targetUnitId: null` (v6 len vykladal). Nové kľúče sa
+ * pridajú k pôvodným (nič sa nezahodí — iný tvar odmietne `parseWorldState`); poradie kľúčov zjednotí až `serialize()`.
  */
-import type { CargoLedgerState } from '../cargo/cargo-ledger-state';
+import { DEFAULT_WEIGHT_CLASS } from '../cargo/cargo-unit';
 import type { DefRegistry } from '../defs/def-registry';
+import { DEFAULT_CRANE_CYCLE } from '../modules/crane-module';
 import type { ModuleKind } from '../defs/types';
 import { WorldStateError, checkKeys, describeValue, isPlainObject } from './state-check';
 
@@ -50,8 +59,14 @@ export const WORLD_STATE_V5 = 5;
 /** Verzia `WorldState` v6 (F5b: trasa lode `ships[i].route`, ADR-029) — cieľ kroku v5 → v6. */
 export const WORLD_STATE_V6 = 6;
 
+/**
+ * Verzia `WorldState` v7 (F6a: export a booking — voyage, druh kontraktu a booking, štítky a `hold` jednotiek,
+ * `shippedCount`, lashing lode, misia kamióna, smer cyklu žeriavu; ADR-032) — cieľ kroku v6 → v7.
+ */
+export const WORLD_STATE_V7 = 7;
+
 /** Aktuálna verzia `WorldState` — `serialize()` vždy vracia ju. */
-export const WORLD_STATE_VERSION = WORLD_STATE_V6;
+export const WORLD_STATE_VERSION = WORLD_STATE_V7;
 
 /** Kľúče `WorldState` v1 v poradí `serialize()` (F1, ADR-013). */
 export const WORLD_STATE_V1_KEYS = ['version', 'mapId', 'seed', 'rng', 'clock', 'ids', 'cashCents', 'roads', 'parcels'] as const;
@@ -74,10 +89,14 @@ export const WORLD_STATE_V5_KEYS = [...WORLD_STATE_V4_KEYS, 'economy', 'contract
 /** Kľúče `WorldState` v6 (F5b, ADR-029) — ako v5; zmenil sa len tvar lode (`ships[i].route`). */
 export const WORLD_STATE_V6_KEYS = WORLD_STATE_V5_KEYS;
 
+/** Kľúče `WorldState` v7 v poradí `serialize()` (F6a, ADR-032): v6 + `nextVoyageId`. */
+export const WORLD_STATE_V7_KEYS = [...WORLD_STATE_V6_KEYS, 'nextVoyageId'] as const;
+
 type RawState = Record<string, unknown>;
 type Migration = (state: RawState, defs: DefRegistry) => RawState;
 
-const EMPTY_CARGO: CargoLedgerState = { createdCount: 0, exportedCount: 0, units: [] };
+/** Prázdny náklad v tvare v2 … v6 (`shippedCount` pribudol až vo v7). */
+const EMPTY_CARGO = { createdCount: 0, exportedCount: 0, units: [] } as const;
 
 /** v1 (presne kľúče v1) → v2: pôvodné polia bez zmeny + prázdne `traffic`, `modules`, `cargo`, `ships`. */
 function migrateV1ToV2(state: RawState): RawState {
@@ -184,6 +203,41 @@ function migrateV5ToV6(state: RawState): RawState {
   return migrated;
 }
 
+/** Úprava `runtime` modulu v6 → v7 podľa druhu (tabuľka): žeriav v6 poznal len vykládku. */
+const RUNTIME_V6_TO_V7: Partial<Record<ModuleKind, (runtime: RawState) => RawState>> = {
+  crane: (runtime) => ({ ...runtime, cycle: DEFAULT_CRANE_CYCLE, targetUnitId: null }),
+};
+
+/** Každý objekt poľa `value` doplnený funkciou `extend`; iný tvar nechá bez zmeny (odmietne ho `parseWorldState`). */
+function extendEach(value: unknown, extend: (entry: RawState) => RawState): unknown {
+  return Array.isArray(value) ? value.map((entry: unknown) => (isPlainObject(entry) ? extend(entry) : entry)) : value;
+}
+
+/** Štítky importu pre jednotku v6 (`voyageId` = `contractId` — v6 kontrakt = vlastná voyage). */
+function importUnitV7(unit: RawState): RawState {
+  const contractId = unit['contractId'];
+  return { ...unit, voyageId: contractId ?? null, direction: 'import', destinationPort: null, weightClass: DEFAULT_WEIGHT_CLASS, hold: null };
+}
+
+/**
+ * v6 (presne kľúče v6) → v7: pôvodné polia + `nextVoyageId`; kontrakty, náklad, lode, kamióny a žeriavy doplnené podľa
+ * hlavičky súboru (rozhodnutie 14, bez `Rng`).
+ */
+function migrateV6ToV7(state: RawState, defs: DefRegistry): RawState {
+  checkKeys(state, WORLD_STATE_V6_KEYS, '');
+  const migrated: RawState = {};
+  for (const key of WORLD_STATE_V6_KEYS) migrated[key] = state[key];
+  migrated['version'] = WORLD_STATE_V7;
+  migrated['contracts'] = extendEach(state['contracts'], (contract) => ({ ...contract, kind: 'import', voyageId: contract['id'], booking: null }));
+  migrated['nextVoyageId'] = state['nextContractId'];
+  const cargo = state['cargo'];
+  migrated['cargo'] = isPlainObject(cargo) ? { ...cargo, shippedCount: 0, units: extendEach(cargo['units'], importUnitV7) } : cargo;
+  migrated['ships'] = extendEach(state['ships'], (ship) => ({ ...ship, lashingTicksLeft: 0 }));
+  migrated['trucks'] = extendEach(state['trucks'], (truck) => ({ ...truck, mission: 'pickup' }));
+  migrated['modules'] = migrateModuleRuntimes(state['modules'], defs, RUNTIME_V6_TO_V7);
+  return migrated;
+}
+
 /** Verzia `n` → migrácia na `n + 1` (migrácia zapíše cieľovú verziu kroku, napr. `WORLD_STATE_V2`). */
 const WORLD_STATE_MIGRATIONS: ReadonlyMap<number, Migration> = new Map([
   [1, migrateV1ToV2],
@@ -191,6 +245,7 @@ const WORLD_STATE_MIGRATIONS: ReadonlyMap<number, Migration> = new Map([
   [3, migrateV3ToV4],
   [4, migrateV4ToV5],
   [5, migrateV5ToV6],
+  [6, migrateV6ToV7],
 ]);
 
 /**
@@ -209,7 +264,7 @@ export const OLDEST_WORLD_STATE_VERSION = 1;
 /**
  * Stav ľubovoľnej podporovanej verzie → tvar aktuálnej verzie (`WORLD_STATE_VERSION`). Aktuálnu verziu vráti bez
  * zmeny (tú istú referenciu); staršiu migruje po krokoch do **nového** objektu (vstup nemení). `defs` určia druh
- * modulu podľa `defId` (kroky v2 → v3 a v3 → v4). Chyby (`WorldStateError`): nie objekt → `''`, neznáma verzia → `/version`,
+ * modulu podľa `defId` (kroky v2 → v3, v3 → v4 a v6 → v7). Chyby (`WorldStateError`): nie objekt → `''`, neznáma verzia → `/version`,
  * tvar staršej verzie → cesta v nej.
  */
 export function migrateWorldState(raw: unknown, defs: DefRegistry): unknown {

@@ -250,10 +250,13 @@ export class ShipTraffic {
     if (ship.state === 'undocking') sweepRoute(out, ship.def, this.navigation.sweepStepCells, end, this.laneOutRoute, 0, this.scratchEnd);
   }
 
-  /** Obdĺžnik lode na konci jej trasy (kde bude stáť) — prekážka pre A* ostatných lodí; `undefined` = loď nestojí ani nemieri na miesto. */
+  /**
+   * Obdĺžnik lode na konci jej trasy (kde bude stáť) — prekážka pre A* ostatných lodí; `undefined` = loď nestojí ani
+   * nemieri na miesto. Loď pri kotvisku je prekážkou v každom stave s `moored` (`docked`, `lashing` — ADR-032).
+   */
   private restBox(ship: Ship): CellBox | undefined {
     const state: ShipState = ship.state;
-    if (state !== 'inbound' && state !== 'waiting_anchorage' && state !== 'berthing' && state !== 'docked') return undefined;
+    if (state !== 'inbound' && state !== 'waiting_anchorage' && state !== 'berthing' && !SHIP_STATE_TRAITS[state].moored) return undefined;
     if (state === 'inbound' && ship.berthIds.length === 0 && ship.anchorageIndex === null) return undefined;
     const end = this.endPose({ x: ship.x, y: ship.y, heading: ship.heading }, ship.route, ship.waypointIndex);
     return shipBox(ship.def, end.x, end.y, end.heading);

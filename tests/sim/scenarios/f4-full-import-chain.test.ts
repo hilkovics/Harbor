@@ -506,10 +506,10 @@ describe('save/load uprostred reťazca: obnovený svet pokračuje rovnako ako p�
     expect(savedTrucks.some((truck) => truck.progress > 0)).toBe(true);
   });
 
-  it('uložený stav je verzia 6 s poľom trucks a čistým JSON-om (JSON.parse(JSON.stringify(s)) sa rovná s)', () => {
+  it('uložený stav je verzia 7 s poľom trucks a čistým JSON-om (JSON.parse(JSON.stringify(s)) sa rovná s)', () => {
     expect(forks).toHaveLength(PROBES.length);
     for (const fork of forks) {
-      expect(fork.saved.version, fork.name).toBe(6);
+      expect(fork.saved.version, fork.name).toBe(7);
       const trucks = (fork.saved as unknown as Record<string, unknown>)['trucks'];
       expect(Array.isArray(trucks), `${fork.name}: trucks`).toBe(true);
       expect((trucks as unknown[]).length, `${fork.name}: počet kamiónov v save`).toBe(fork.trucks.length);
@@ -567,11 +567,12 @@ describe('migrácia WorldState v3 → v4', () => {
     const v3 = Object.fromEntries(WORLD_STATE_V3_KEYS.map((key) => [key, current[key]]));
     v3['version'] = 3;
     const migrated = World.deserialize(DEFS, MAP, v3 as unknown as WorldState);
-    // v3 nepoznal knihu (ADR-025) ani kontrakty (ADR-026): migrovaný svet má prázdnu históriu a prázdny pool, hotovosť
-    // a všetko ostatné je zhodné. Pool si doplní v prvom ticku po načítaní ako pri štarte hry (T06-07), takže sa odvtedy
-    // líšia ťahy `Rng` poolu — porovnanie po tickoch ich vynechá.
-    const withoutLedger = (world: World): string => JSON.stringify({ ...world.serialize(), economy: null, contracts: null, nextContractId: null });
-    const withoutDraws = (world: World): string => JSON.stringify({ ...world.serialize(), economy: null, contracts: null, nextContractId: null, rng: null });
+    // v3 nepoznal knihu (ADR-025) ani kontrakty (ADR-026) a voyage (ADR-032): migrovaný svet má prázdnu históriu
+    // a prázdny pool, hotovosť a všetko ostatné je zhodné. Pool si doplní v prvom ticku po načítaní ako pri štarte hry
+    // (T06-07), takže sa odvtedy líšia ťahy `Rng` poolu — porovnanie po tickoch ich vynechá.
+    const book = { economy: null, contracts: null, nextContractId: null, nextVoyageId: null };
+    const withoutLedger = (world: World): string => JSON.stringify({ ...world.serialize(), ...book });
+    const withoutDraws = (world: World): string => JSON.stringify({ ...world.serialize(), ...book, rng: null });
     expect(migrated.economy.entries).toEqual([]);
     expect(migrated.cashCents).toBe(plain.cashCents);
     expect(withoutLedger(migrated)).toBe(withoutLedger(plain));

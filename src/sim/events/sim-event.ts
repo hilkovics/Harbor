@@ -2,7 +2,9 @@
  * Udalosti simulácie (ARCHITECTURE §12.1, výber pre F1 + F2: `CargoMoved`, moduly, lode, žeriavy; F3: vozidlá, joby,
  * `NoStorageAvailable`; F4: `RampOperationalChanged`, `JobCancelled`, kamióny `TruckSpawned`, `TruckStateChanged`,
  * `TruckExited`, `NoWaitingBay`; F5: `DayClosedSummary`, `MonthlyReport`, `GameOver`, kontrakty `Contract*` a
- * `PenaltyApplied` — ADR-026). Readonly DTO:
+ * `PenaltyApplied` — ADR-026; F6a export a booking — ADR-032: `ExportArrived`, `UnitRolled`, `VgmHoldStarted`,
+ * `VgmHoldReleased`, `CutoffWarning`, `CutoffPassed`, `UnitLoaded`, `DualCycle`, `ShipLashingStarted`,
+ * `ExportShipped`, `TruckUnloaded`, `BookingPenaltyApplied`; T6A-01 ich len deklaruje, emitujú ich T6A-04/05). Readonly DTO:
  * `World` ich zbiera v `EventBus` a vracia z `tick()` / `applyPending()`; prezentácia ich len číta. Nový typ udalosti =
  * nový člen únie (+ test).
  */
@@ -379,6 +381,125 @@ export interface PenaltyAppliedEvent {
   readonly amountCents: number;
 }
 
+// ---------------------------------------------------------------------------------------------------------
+// F6a — export a booking (ADR-032). Poradie v ticku: krok 2 (`CutoffWarning`, `CutoffPassed`, `VgmHoldReleased`,
+// uzavretie bookingu s `BookingPenaltyApplied` pred `ContractCompleted`/`ContractFailed`), krok 3 (`ShipLashingStarted`,
+// pri odchode `CargoMoved on_ship → shipped` × n → `ExportShipped` → `ShipDeparted`), krok 4 (`UnitLoaded`, `DualCycle`),
+// krok 8 (brána dnu: `ExportArrived` → `UnitRolled`? → `VgmHoldStarted`?; dock: `TruckUnloaded`).
+// ---------------------------------------------------------------------------------------------------------
+
+/** Kamión s exportom (misia `delivery`) prešiel bránou dnu — jednotka bookingu je na termináli (krok 8). */
+export interface ExportArrivedEvent {
+  readonly type: 'ExportArrived';
+  readonly contractId: ContractId;
+  readonly unitId: EntityId;
+  readonly truckId: EntityId;
+  readonly gateId: EntityId;
+}
+
+/** Jednotka prešla bránou po cut-off (rolled, rozhodnutie 6); hneď po `ExportArrived`. */
+export interface UnitRolledEvent {
+  readonly type: 'UnitRolled';
+  readonly contractId: ContractId;
+  readonly unitId: EntityId;
+}
+
+/** Brána zistila chýbajúce VGM — jednotka je zadržaná do `untilTick` (`CargoUnit.hold`, rozhodnutie 5). */
+export interface VgmHoldStartedEvent {
+  readonly type: 'VgmHoldStarted';
+  readonly contractId: ContractId;
+  readonly unitId: EntityId;
+  readonly untilTick: number;
+}
+
+/** VGM hold jednotky sa uvoľnil (krok 2 v ticku `≥ untilTick`); jednotka smie na loď. */
+export interface VgmHoldReleasedEvent {
+  readonly type: 'VgmHoldReleased';
+  readonly contractId: ContractId;
+  readonly unitId: EntityId;
+}
+
+/** Do cut-off bookingu zostáva `economy.cutoffWarningHours` (krok 2, raz — toast „cut-off o N h"). */
+export interface CutoffWarningEvent {
+  readonly type: 'CutoffWarning';
+  readonly contractId: ContractId;
+  readonly cutoffTick: number;
+}
+
+/** Nastal cut-off bookingu (krok 2, `tick === cutoffTick`); ďalšie príchody sú rolled. */
+export interface CutoffPassedEvent {
+  readonly type: 'CutoffPassed';
+  readonly contractId: ContractId;
+  readonly arrivedUnits: number;
+  readonly bookedUnits: number;
+}
+
+/**
+ * Žeriav naložil exportnú jednotku na loď (`in_crane → on_ship`, krok 4). `lastMinute` = rolled jednotka (penalizácia),
+ * `outOfOrder` = na termináli ostala skoršia jednotka stowage plánu voyage (metrika `stowageOrderViolations`).
+ */
+export interface UnitLoadedEvent {
+  readonly type: 'UnitLoaded';
+  readonly craneId: EntityId;
+  readonly shipId: EntityId;
+  readonly unitId: EntityId;
+  readonly contractId: ContractId;
+  readonly lastMinute: boolean;
+  readonly outOfOrder: boolean;
+}
+
+/** Žeriav dokončil dual cyklus (naložil export a cestou späť vyložil import; krok 4, po `CraneCycleDone`). */
+export interface DualCycleEvent {
+  readonly type: 'DualCycle';
+  readonly craneId: EntityId;
+  readonly shipId: EntityId;
+  readonly loadedUnitId: EntityId;
+  readonly unloadedUnitId: EntityId;
+}
+
+/** Loď začala lashing a papiere (`docked → lashing`, krok 3): `ticks = lashingTicksPerUnit × loadedUnits + paperworkTicks`. */
+export interface ShipLashingStartedEvent {
+  readonly type: 'ShipLashingStarted';
+  readonly shipId: EntityId;
+  readonly loadedUnits: number;
+  readonly ticks: number;
+}
+
+/** Loď opustila mapu s exportom: `units` jednotiek `on_ship → shipped` (každá s `CargoMoved`), pred `ShipDeparted`. */
+export interface ExportShippedEvent {
+  readonly type: 'ExportShipped';
+  readonly shipId: EntityId;
+  readonly units: number;
+}
+
+/**
+ * Delivery kamión vyložil export na dock (`in_truck → at_ramp`, krok 8); `dualTransaction` = zostáva a naloží import
+ * (misia `pickup`, `unloading → loading`), inak odchádza prázdny (metrika `dualTransactionRate`).
+ */
+export interface TruckUnloadedEvent {
+  readonly type: 'TruckUnloaded';
+  readonly truckId: EntityId;
+  readonly rampId: EntityId;
+  readonly dock: number;
+  readonly unitId: EntityId;
+  readonly dualTransaction: boolean;
+}
+
+/** Druh penalizácie bookingu (ADR-032 bod 13): last-minute nakládka, vrátená (rolled) jednotka, nesplnený booking. */
+export type BookingPenaltyKind = 'last_minute' | 'rolled' | 'unfulfilled';
+
+/**
+ * Penalizácia bookingu pri jeho uzavretí (krok 2): `units` jednotiek × sadzba (pri `unfulfilled` 1); suma sa pripočíta do
+ * `penaltiesCents` a z hotovosti ide s uzavretím (ako `PenaltyApplied`, ktorý ostáva pre demurrage a late).
+ */
+export interface BookingPenaltyAppliedEvent {
+  readonly type: 'BookingPenaltyApplied';
+  readonly contractId: ContractId;
+  readonly kind: BookingPenaltyKind;
+  readonly units: number;
+  readonly amountCents: number;
+}
+
 export type SimEvent =
   | TickAdvancedEvent
   | HourClosedEvent
@@ -419,7 +540,19 @@ export type SimEvent =
   | ContractCompletedEvent
   | ContractFailedEvent
   | ContractExpiredEvent
-  | PenaltyAppliedEvent;
+  | PenaltyAppliedEvent
+  | ExportArrivedEvent
+  | UnitRolledEvent
+  | VgmHoldStartedEvent
+  | VgmHoldReleasedEvent
+  | CutoffWarningEvent
+  | CutoffPassedEvent
+  | UnitLoadedEvent
+  | DualCycleEvent
+  | ShipLashingStartedEvent
+  | ExportShippedEvent
+  | TruckUnloadedEvent
+  | BookingPenaltyAppliedEvent;
 
 /** Názov typu udalosti (`'TickAdvanced' | 'HourClosed' | …`). */
 export type SimEventType = SimEvent['type'];

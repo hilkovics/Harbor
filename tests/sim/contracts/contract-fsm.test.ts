@@ -9,6 +9,7 @@ import {
   CONTRACT_TRANSITIONS,
   Contract,
   ContractError,
+  ImportContract,
   SERIALIZED_CONTRACT_KEYS,
   isContractState,
   isContractTransitionAllowed,
@@ -16,10 +17,11 @@ import {
   type ContractTerms,
   type SerializedContract,
 } from '@sim/contracts';
-import type { ContractId } from '@sim/core';
+import type { ContractId, VoyageId } from '@sim/core';
 
 const TERMS: ContractTerms = {
   id: 7 as ContractId,
+  voyageId: 7 as VoyageId,
   templateId: 'container_feeder_express',
   cargoTypeId: 'container_teu',
   volumeUnits: 12,
@@ -33,7 +35,7 @@ const TERMS: ContractTerms = {
 
 /** Kontrakt uložený v danom stave s poliami, ktoré stav vyžaduje. */
 function saved(state: ContractState, overrides: Partial<SerializedContract> = {}): SerializedContract {
-  const base = new Contract(TERMS).toState();
+  const base = new ImportContract(TERMS).toState();
   const traits = CONTRACT_STATE_TRAITS[state];
   const plan = traits.plan === 'required';
   return {
@@ -90,7 +92,7 @@ describe('CONTRACT_TRANSITIONS (rozhodnutie 4)', () => {
 
 describe('Contract', () => {
   it('nová ponuka: offered, voliteľné polia undefined, počítadlá 0', () => {
-    const contract = new Contract(TERMS);
+    const contract = new ImportContract(TERMS);
     expect(contract.state).toBe('offered');
     expect([contract.acceptedTick, contract.shipArrivalTick, contract.slaDeadlineTick, contract.shipId, contract.dockedTick, contract.closedTick]).toEqual(
       Array<undefined>(6).fill(undefined),
@@ -100,6 +102,7 @@ describe('Contract', () => {
 
   it.each([
     ['id 0', { id: 0 as ContractId }],
+    ['voyage 0', { voyageId: 0 as VoyageId }],
     ['objem 0', { volumeUnits: 0 }],
     ['objem 1,5', { volumeUnits: 1.5 }],
     ['SLA 0', { slaDays: 0 }],
@@ -107,16 +110,16 @@ describe('Contract', () => {
     ['záporné XP', { xpReward: -1 }],
     ['expirácia pred vznikom', { offerExpiresTick: 1 }],
   ])('neplatné podmienky (%s) → ContractError invalid_input', (_label, overrides) => {
-    expect(() => new Contract({ ...TERMS, ...overrides })).toThrow(ContractError);
+    expect(() => new ImportContract({ ...TERMS, ...overrides })).toThrow(ContractError);
   });
 
   it('transition: povolený prechod mení stav, konečný zapíše closedTick; nepovolený vyhodí bez zmeny', () => {
-    const contract = new Contract(TERMS);
+    const contract = new ImportContract(TERMS);
     expect(() => contract.transition('completed', 5)).toThrow(/offered → completed/);
     expect(contract.state).toBe('offered');
     contract.transition('accepted', 5);
     expect([contract.state, contract.closedTick]).toEqual(['accepted', undefined]);
-    const offer = new Contract(TERMS);
+    const offer = new ImportContract(TERMS);
     offer.transition('expired', 9);
     expect([offer.state, offer.closedTick]).toEqual(['expired', 9]);
   });
@@ -127,7 +130,7 @@ describe('Contract', () => {
     const restored = Contract.fromState(state);
     expect(restored.toState()).toEqual(state);
     expect(restored.state).toBe('unloading');
-    const offer = new Contract(TERMS);
+    const offer = new ImportContract(TERMS);
     expect(JSON.stringify(Contract.fromState(offer.toState()))).toBe(JSON.stringify(offer));
   });
 

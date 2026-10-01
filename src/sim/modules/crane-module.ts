@@ -7,6 +7,11 @@
  *
  * Dynamický stav v save (`CraneRuntimeState`) neobsahuje `heldUnitId` — držaná jednotka je v `CargoLedger`
  * (`in_crane`) a loader ju odtiaľ doplní.
+ *
+ * **Smer cyklu** (F6a, ADR-032 bod 10): `cycle` = `unload` (loď → apron, F2), `load` (apron → loď), pri dual cyklu dve
+ * polovice `dual_load` a hneď po nej `dual_unload` (rovnaké fázy `grabbing` / `swinging` / `placing`, kratšie podľa
+ * `dualCycleFactor`). Pri nakládke žeriav od štartu drží nárok na jednotku na aprone (`targetUnitId`), pri vykládke
+ * rezervovaný slot apronu (`reservedSlot`). Mimo cyklu (`idle`, `blocked`) je `cycle` `unload` a `targetUnitId` `null`.
  */
 import type { EntityId } from '../core/entity-id';
 import { craneParams } from '../defs/module-def';
@@ -19,6 +24,27 @@ import { checkRuntimeKeys, readCount, readEnum, readOptionalCount } from './runt
 /** Stavy žeriavu (§7.2) v poradí cyklu. */
 export const CRANE_STATES = ['idle', 'grabbing', 'swinging', 'placing', 'blocked'] as const;
 export type CraneState = (typeof CRANE_STATES)[number];
+
+/** Smer cyklu žeriavu (ADR-032 bod 10): vykládka, nakládka a dve polovice dual cyklu. */
+export const CRANE_CYCLES = ['unload', 'load', 'dual_load', 'dual_unload'] as const;
+export type CraneCycle = (typeof CRANE_CYCLES)[number];
+
+/** Čo platí pre smer cyklu: odkiaľ kam ide jednotka a či je cyklus polovicou dual cyklu. */
+export interface CraneCycleTraits {
+  /** `unload` = loď → apron (rezervovaný slot), `load` = apron → loď (nárok na jednotku `targetUnitId`). */
+  readonly direction: 'unload' | 'load';
+  readonly dual: boolean;
+}
+
+export const CRANE_CYCLE_TRAITS: { readonly [C in CraneCycle]: CraneCycleTraits } = Object.freeze({
+  unload: Object.freeze({ direction: 'unload', dual: false }),
+  load: Object.freeze({ direction: 'load', dual: false }),
+  dual_load: Object.freeze({ direction: 'load', dual: true }),
+  dual_unload: Object.freeze({ direction: 'unload', dual: true }),
+});
+
+/** Smer cyklu žeriavu mimo cyklu a po obnove save spred v7 (ADR-032). */
+export const DEFAULT_CRANE_CYCLE: CraneCycle = 'unload';
 
 /** Do ktorého počítadla utilizácie (§11) patrí tick v danom stave. */
 export type CraneCounter = 'idle' | 'busy' | 'blocked';
@@ -102,12 +128,14 @@ export function isCraneTransitionAllowed(from: CraneState, to: CraneState): bool
   return CRANE_TRANSITIONS.get(from)?.includes(to) ?? false;
 }
 
-/** Dynamický stav žeriavu v save (`WorldState.modules[i].runtime`). */
+/** Dynamický stav žeriavu v save (`WorldState.modules[i].runtime`; v7 + `cycle`, `targetUnitId`, ADR-032). */
 export type CraneRuntimeState = {
   readonly state: CraneState;
+  readonly cycle: CraneCycle;
   readonly phaseTicksTotal: number;
   readonly phaseTicksLeft: number;
   readonly reservedSlot: number | null;
+  readonly targetUnitId: number | null;
   readonly busyTicks: number;
   readonly idleTicks: number;
   readonly blockedTicks: number;
@@ -120,11 +148,14 @@ export type CraneRuntimeState = {
  */
 export const MIN_CRANE_PHASE_TICKS = 1;
 
-const RUNTIME_KEYS: readonly (keyof CraneRuntimeState)[] = [
+/** Kľúče `CraneRuntimeState` v poradí `getRuntimeState()`. */
+export const CRANE_RUNTIME_KEYS: readonly (keyof CraneRuntimeState)[] = [
   'state',
+  'cycle',
   'phaseTicksTotal',
   'phaseTicksLeft',
   'reservedSlot',
+  'targetUnitId',
   'busyTicks',
   'idleTicks',
   'blockedTicks',
@@ -144,6 +175,10 @@ export class CraneModule extends Module {
   heldUnitId: EntityId | null = null;
   /** Rezervovaný slot apronu berthu (zrkadlo `berth.apron`). */
   reservedSlot: number | null = null;
+  /** Smer aktuálneho cyklu (ADR-032 bod 10); mimo cyklu `unload`. */
+  cycle: CraneCycle = DEFAULT_CRANE_CYCLE;
+  /** Jednotka na aprone, ktorú si žeriav zabral na nakládku (`load` / `dual_load` v `grabbing`), inak `null`. */
+  targetUnitId: EntityId | null = null;
   busyTicks = 0;
   idleTicks = 0;
   blockedTicks = 0;
@@ -224,9 +259,11 @@ export class CraneModule extends Module {
   override getRuntimeState(): CraneRuntimeState {
     return {
       state: this.current,
+      cycle: this.cycle,
       phaseTicksTotal: this.phaseTicksTotal,
       phaseTicksLeft: this.phaseTicksLeft,
       reservedSlot: this.reservedSlot,
+      targetUnitId: this.targetUnitId,
       busyTicks: this.busyTicks,
       idleTicks: this.idleTicks,
       blockedTicks: this.blockedTicks,
@@ -238,12 +275,21 @@ export class CraneModule extends Module {
    * Kontroly: presne kľúče `CraneRuntimeState`, `state` z `CRANE_STATES` okrem okamžitého `swinging` (neukladá sa),
    * počítadlá celé ≥ 0, `phaseTicksLeft ≤ phaseTicksTotal`, `reservedSlot` a `lastBlockedHour` null alebo celé ≥ 0,
    * rezervácia zodpovedá stavu (`CRANE_STATE_TRAITS.hasReservation`) a fáza tiež (`cranePhaseProblem`: `idle`/`blocked`
-   * 0/0, `grabbing`/`placing` `phaseTicksLeft ≥ 1`), T02-14. Nekonzistentný stav je `ModuleStateError` už pri
-   * `deserialize`, nie pád až v `tick()`. Súlad so slotmi berthu, s ledgerom a s loďou overí loader.
+   * 0/0, `grabbing`/`placing` `phaseTicksLeft ≥ 1`), T02-14; `cycle` z `CRANE_CYCLES`, `targetUnitId` null alebo celé
+   * ≥ 1 a mimo cyklu (`idle`, `blocked`) `cycle` `unload` a `targetUnitId` `null` (ADR-032). Nekonzistentný stav je
+   * `ModuleStateError` už pri `deserialize`, nie pád až v `tick()`. Súlad so slotmi berthu, s ledgerom a s loďou overí
+   * loader.
    */
   override restoreRuntimeState(raw: unknown): void {
-    const fields = checkRuntimeKeys(raw, RUNTIME_KEYS);
+    const fields = checkRuntimeKeys(raw, CRANE_RUNTIME_KEYS);
     const state = readEnum(fields['state'], CRANE_STATES, '/state');
+    const cycle = readEnum(fields['cycle'], CRANE_CYCLES, '/cycle');
+    const targetUnitId = readOptionalCount(fields['targetUnitId'], '/targetUnitId');
+    if (targetUnitId === 0) throw new ModuleStateError('/targetUnitId', 'id jednotky musí byť null alebo celé číslo ≥ 1');
+    const outside = CRANE_STATE_TRAITS[state].phase === 'none';
+    if (outside && (cycle !== DEFAULT_CRANE_CYCLE || targetUnitId !== null)) {
+      throw new ModuleStateError(cycle !== DEFAULT_CRANE_CYCLE ? '/cycle' : '/targetUnitId', `stav '${state}' je mimo cyklu — cycle '${DEFAULT_CRANE_CYCLE}' a targetUnitId null`);
+    }
     // Okamžitý stav sa odmietne hneď (skôr než polia, ktoré preň nemajú zmysel).
     const instant = CRANE_STATE_TRAITS[state].phase === 'instant' ? cranePhaseProblem(state, 0, 0) : undefined;
     if (instant !== undefined) throw new ModuleStateError(instant.path, instant.problem);
@@ -268,9 +314,11 @@ export class CraneModule extends Module {
 
     // Od tohto bodu nič nevyhadzuje — obnova je atomická.
     this.current = state;
+    this.cycle = cycle;
     this.phaseTicksTotal = phaseTicksTotal;
     this.phaseTicksLeft = phaseTicksLeft;
     this.reservedSlot = reservedSlot;
+    this.targetUnitId = targetUnitId as EntityId | null;
     this.busyTicks = busyTicks;
     this.idleTicks = idleTicks;
     this.blockedTicks = blockedTicks;

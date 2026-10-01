@@ -2,9 +2,11 @@
  * Poloha jednotky nákladu (ARCHITECTURE §7.1) a tabuľka povolených prechodov medzi druhmi lokácií.
  *
  * Všetko, čo sa o druhu lokácie dá povedať, je v dátových tabuľkách (pravidlo 7, žiadne switch-e podľa `kind`):
- * - `CARGO_TRANSITIONS` — povolené prechody `from → to` (importné reťazce §7.1; `exported` je konečný stav),
+ * - `CARGO_TRANSITIONS` — povolené prechody `from → to` (importné aj exportné reťazce §7.1, ADR-032; `exported`
+ *   a `shipped` sú konečné stavy),
  * - `CARGO_HOLDER_SPECS` — ktoré pole nesie držiteľa (loď, žeriav, berth…), ktoré slot a či je slot jedinečný,
- * - `CARGO_SPAWN_KINDS` — kde smie jednotka vzniknúť (F2: len na lodi).
+ * - `CARGO_SPAWN_KINDS` — kde smie jednotka vzniknúť (import na lodi, export v kamióne — `CARGO_SPAWN_KIND_BY_DIRECTION`
+ *   v ledgeri).
  *
  * `normalizeLocation` je jediná brána, cez ktorú vstupuje lokácia do `CargoLedger` (z kódu aj zo save): overí tvar
  * a vráti zmrazenú kópiu s kanonickým poradím kľúčov (`kind`, držiteľ, slot) — kvôli deterministickému JSON.
@@ -22,7 +24,8 @@ export type CargoLocation =
   | { readonly kind: 'at_ramp'; readonly rampId: EntityId; readonly dock: number }
   | { readonly kind: 'in_truck'; readonly truckId: EntityId }
   | { readonly kind: 'in_train'; readonly trainId: EntityId }
-  | { readonly kind: 'exported' };
+  | { readonly kind: 'exported' }
+  | { readonly kind: 'shipped' };
 
 export type CargoLocationKind = CargoLocation['kind'];
 
@@ -30,10 +33,13 @@ export type CargoLocationKind = CargoLocation['kind'];
 export type CargoLocationOf<K extends CargoLocationKind> = Extract<CargoLocation, { readonly kind: K }>;
 
 /**
- * Druhy lokácií na mape s držiteľom (entitou, v ktorej jednotka je). `exported` držiteľa nemá — jednotka opustila
- * mapu a ledger ju už neeviduje (ostáva len v počítadle `exportedCount`).
+ * Konečné stavy bez držiteľa (ADR-014, ADR-032): `exported` — jednotka opustila mapu po súši (kamión, vlak),
+ * `shipped` — odplávala na lodi (export). Ledger ich neeviduje, ostávajú len počítadlá `exportedCount` / `shippedCount`.
  */
-export type CargoHolderKind = Exclude<CargoLocationKind, 'exported'>;
+export type CargoTerminalKind = 'exported' | 'shipped';
+
+/** Druhy lokácií na mape s držiteľom (entitou, v ktorej jednotka je) — všetky okrem konečných stavov. */
+export type CargoHolderKind = Exclude<CargoLocationKind, CargoTerminalKind>;
 
 /** Poradie jednotiek v indexe držiteľa: `id` = vzostupne podľa id, `arrival` = v poradí príchodu (FIFO). */
 export type CargoIndexOrder = 'id' | 'arrival';
@@ -81,24 +87,29 @@ export const CARGO_HOLDER_SPECS: { readonly [K in CargoHolderKind]: CargoHolderS
 });
 
 /**
- * Povolené prechody (§7.1, import). Reťazce:
- * - container/bulk: `on_ship → in_crane → on_apron → in_vehicle → in_storage → in_vehicle → at_ramp → in_truck | in_train → exported`,
+ * Povolené prechody (§7.1). Reťazce:
+ * - import container/bulk: `on_ship → in_crane → on_apron → in_vehicle → in_storage → in_vehicle → at_ramp → in_truck | in_train → exported`,
  * - liquid/gas: `on_ship → in_pipeline → in_storage → in_pipeline → at_ramp → …`,
- * - RoRo: `on_ship → in_vehicle (auto samo) → in_storage (lot) → in_vehicle → at_ramp → in_truck → exported`.
- * Tabuľka je podľa druhu lokácie, nie kategórie nákladu — kompatibilitu kategórie so žeriavom/potrubím/vozidlom
- * strážia systémy. Export (land → ship, F12) pribudne ako nové riadky.
+ * - RoRo: `on_ship → in_vehicle (auto samo) → in_storage (lot) → in_vehicle → at_ramp → in_truck → exported`,
+ * - export kontajner (F6a, ADR-032 bod 3, reverzný reťazec): vznik `in_truck` → `at_ramp` (kamión vyloží na docku)
+ *   → `in_vehicle` → `in_storage` → `in_vehicle` → `on_apron` → `in_crane` → `on_ship` → `shipped` (loď opustila
+ *   mapu); „last minute" `at_ramp → in_vehicle → on_apron` bez skladu; vrátenie odosielateľovi ide importnou pozemnou
+ *   vetvou `in_storage → in_vehicle → at_ramp → in_truck → exported`.
+ * Tabuľka je podľa druhu lokácie, nie kategórie nákladu ani smeru — kompatibilitu kategórie so žeriavom/potrubím/vozidlom
+ * a smer toku strážia systémy.
  */
 const TRANSITIONS: { readonly [K in CargoLocationKind]: readonly CargoLocationKind[] } = {
-  on_ship: ['in_crane', 'in_pipeline', 'in_vehicle'],
-  in_crane: ['on_apron'],
-  on_apron: ['in_vehicle'],
-  in_vehicle: ['in_storage', 'at_ramp'],
+  on_ship: ['in_crane', 'in_pipeline', 'in_vehicle', 'shipped'],
+  in_crane: ['on_apron', 'on_ship'],
+  on_apron: ['in_vehicle', 'in_crane'],
+  in_vehicle: ['in_storage', 'at_ramp', 'on_apron'],
   in_storage: ['in_vehicle', 'in_pipeline'],
   in_pipeline: ['in_storage', 'at_ramp'],
-  at_ramp: ['in_truck', 'in_train'],
-  in_truck: ['exported'],
+  at_ramp: ['in_truck', 'in_train', 'in_vehicle'],
+  in_truck: ['exported', 'at_ramp'],
   in_train: ['exported'],
   exported: [],
+  shipped: [],
 };
 
 /** Všetky druhy lokácií v poradí §7.1 (poradie tabuľky prechodov). */
@@ -107,13 +118,19 @@ export const CARGO_LOCATION_KINDS: readonly CargoLocationKind[] = Object.freeze(
 /** Druhy lokácií s držiteľom v poradí `CARGO_LOCATION_KINDS`. */
 export const CARGO_HOLDER_KINDS: readonly CargoHolderKind[] = Object.freeze(Object.keys(CARGO_HOLDER_SPECS) as CargoHolderKind[]);
 
-/** Tabuľka povolených prechodov `from → [to…]` (dáta, nie switch); `exported` nemá výstupy. */
+/** Tabuľka povolených prechodov `from → [to…]` (dáta, nie switch); konečné stavy (`exported`, `shipped`) nemajú výstupy. */
 export const CARGO_TRANSITIONS: ReadonlyMap<CargoLocationKind, readonly CargoLocationKind[]> = new Map(
   CARGO_LOCATION_KINDS.map((kind) => [kind, Object.freeze([...TRANSITIONS[kind]])] as const),
 );
 
-/** Kde smie jednotka vzniknúť (`CargoLedger.create`). F2 = len import z lode; export (F12) pridá pozemné vstupy. */
-export const CARGO_SPAWN_KINDS: readonly CargoLocationKind[] = Object.freeze(['on_ship']);
+/**
+ * Kde smie jednotka vzniknúť (`CargoLedger.create`): import na lodi (F2), export v kamióne pri jeho spawne (F6a,
+ * ADR-032 bod 3). Konkrétny druh podľa smeru jednotky určuje `CARGO_SPAWN_KIND_BY_DIRECTION` v ledgeri.
+ */
+export const CARGO_SPAWN_KINDS: readonly CargoLocationKind[] = Object.freeze(['on_ship', 'in_truck']);
+
+/** Konečné stavy (bez držiteľa) v poradí `CARGO_LOCATION_KINDS`. */
+export const CARGO_TERMINAL_KINDS: readonly CargoTerminalKind[] = Object.freeze(['exported', 'shipped']);
 
 const HOLDER_SPECS_BY_KIND: ReadonlyMap<string, AnyCargoHolderSpec> = new Map(
   CARGO_HOLDER_KINDS.map((kind): [string, AnyCargoHolderSpec] => [kind, CARGO_HOLDER_SPECS[kind]]),
@@ -129,7 +146,7 @@ export function isTransitionAllowed(from: CargoLocationKind, to: CargoLocationKi
   return CARGO_TRANSITIONS.get(from)?.includes(to) ?? false;
 }
 
-/** Opis držiteľa pre druh lokácie; `undefined` pre lokáciu mimo mapy (`exported`). */
+/** Opis držiteľa pre druh lokácie; `undefined` pre lokáciu mimo mapy (`exported`, `shipped`). */
 export function holderSpecOf(kind: CargoLocationKind): AnyCargoHolderSpec | undefined {
   return HOLDER_SPECS_BY_KIND.get(kind);
 }
@@ -139,7 +156,7 @@ function fieldsOf(location: CargoLocation): Readonly<Record<string, unknown>> {
   return location;
 }
 
-/** Id držiteľa lokácie (loď, žeriav, berth…); `null` pre `exported`. */
+/** Id držiteľa lokácie (loď, žeriav, berth…); `null` pre konečné stavy (`exported`, `shipped`). */
 export function holderIdOf(location: CargoLocation): EntityId | null {
   const spec = holderSpecOf(location.kind);
   return spec === undefined ? null : (fieldsOf(location)[spec.holderKey] as EntityId);

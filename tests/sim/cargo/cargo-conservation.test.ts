@@ -18,7 +18,7 @@ import {
   type CargoUnit,
 } from '@sim/cargo';
 import type { EntityId } from '@sim/core';
-import { TEU, at, createHarness, id } from './cargo-fixtures';
+import { TEU, at, createHarness, id, importUnit } from './cargo-fixtures';
 
 interface MutableBucket {
   units: EntityId[];
@@ -32,13 +32,7 @@ interface MutableView {
   createdCount: number;
 }
 
-const unit = (unitId: number, location: CargoLocation): CargoUnit => ({
-  id: id(unitId),
-  typeId: TEU,
-  contractId: null,
-  quantity: 1,
-  location,
-});
+const unit = (unitId: number, location: CargoLocation): CargoUnit => importUnit({ id: id(unitId), location });
 
 /** Konzistentný pohľad ako v CargoLedger: jednotky v poradí zoznamu, `exported` len počtom. */
 function buildView(units: readonly CargoUnit[], exported = 0): MutableView {
@@ -189,7 +183,22 @@ describe('findConservationViolation', () => {
       (view) => {
         view.createdCount = 10;
       },
-      /createdCount 10 ≠ živé 7 \+ exported 1 \(rozdiel 2\)/,
+      /createdCount 10 ≠ živé 7 \+ exported 1 \+ shipped 0 \(rozdiel 2\)/,
+    ],
+    [
+      'createdCount počíta aj odplávané (shipped, ADR-032)',
+      (view) => {
+        view.counts.shipped = 2;
+      },
+      /createdCount 8 ≠ živé 7 \+ exported 1 \+ shipped 2 \(rozdiel -2\)/,
+    ],
+    [
+      'živá jednotka s lokáciou shipped',
+      (view) => {
+        view.units.set(id(9), unit(9, at.shipped()));
+        view.createdCount += 1;
+      },
+      /živá jednotka #9 má lokáciu shipped/,
     ],
     [
       'jednotka uložená pod iným id',

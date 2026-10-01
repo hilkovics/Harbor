@@ -68,12 +68,12 @@ describe('TRUCK_TRANSITIONS a TRUCK_STATE_TRAITS', () => {
     const claimsCargo = TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].claimsCargo);
     const queued = TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].queued);
     expect(holdsBay).toEqual(['to_gate', 'gate_queue', 'to_bay', 'waiting']);
-    expect(holdsDock).toEqual(['to_dock', 'loading']);
+    expect(holdsDock).toEqual(['to_dock', 'loading', 'unloading']);
     expect(claimsCargo).toEqual(['to_gate', 'gate_queue', 'to_bay', 'waiting', 'to_dock', 'loading']);
     expect(queued).toEqual(['gate_queue', 'gate_queue_out']);
     expect(TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].bayOccupied)).toEqual(['waiting']);
     expect(TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].cargo === 'loading')).toEqual(['loading']);
-    expect(TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].waits)).toEqual(['waiting', 'loading', 'no_path']);
+    expect(TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].waits)).toEqual(['waiting', 'loading', 'unloading', 'no_path']);
     expect(TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].passageBack)).toEqual(['to_gate_out']);
     expect([TRUCK_STATE_TRAITS.gate_queue.afterGate, TRUCK_STATE_TRAITS.gate_queue_out.afterGate]).toEqual(['to_bay', 'to_portal']);
     for (const state of TRUCK_TRAVEL_STATES) expect(TRUCK_STATE_TRAITS[state].motion, state).toBe('drive');
@@ -132,6 +132,7 @@ describe('Truck', () => {
     expect(state).toEqual({
       id: 40,
       defId: 'truck_container',
+      mission: 'pickup',
       state: 'no_path',
       x: 0.75,
       y: 0.5,

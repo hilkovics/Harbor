@@ -27,8 +27,28 @@ export { LoadingRamp, RAMP_INOPERATIVE_REASONS, RAMP_OPERATIONAL } from './loadi
 export type { RampInoperativeReason, RampStatus } from './loading-ramp';
 export { BerthModule, effectiveBerthDepth } from './berth-module';
 export type { BerthRuntimeState } from './berth-module';
-export { CRANE_STATES, CRANE_STATE_TRAITS, CRANE_TRANSITIONS, CraneModule, cranePhaseProblem, isCraneTransitionAllowed } from './crane-module';
-export type { CraneCounter, CranePhaseKind, CranePhaseProblem, CraneRuntimeState, CraneState, CraneStateTraits } from './crane-module';
+export {
+  CRANE_CYCLES,
+  CRANE_CYCLE_TRAITS,
+  CRANE_RUNTIME_KEYS,
+  CRANE_STATES,
+  CRANE_STATE_TRAITS,
+  CRANE_TRANSITIONS,
+  CraneModule,
+  DEFAULT_CRANE_CYCLE,
+  cranePhaseProblem,
+  isCraneTransitionAllowed,
+} from './crane-module';
+export type {
+  CraneCounter,
+  CraneCycle,
+  CraneCycleTraits,
+  CranePhaseKind,
+  CranePhaseProblem,
+  CraneRuntimeState,
+  CraneState,
+  CraneStateTraits,
+} from './crane-module';
 export { computeBerthGroups } from './berth-group';
 export type { BerthGroup } from './berth-group';
 export { BUILTIN_MODULES, ModuleRegistry, STORAGE_MODULES, moduleRegistry, registerBuiltinModules } from './module-registry';

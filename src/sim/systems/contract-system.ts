@@ -2,8 +2,8 @@
  * ContractSystem — krok 2 ticku (ARCHITECTURE §6, §9.1; docs/tasks/phase-05.md rozhodnutia 4–8; ADR-026): spawn lodí
  * prijatých kontraktov, sledovanie lode, SLA, penalizácie, dokončenie, zlyhanie, expirácia ponúk a doplnenie poolu.
  *
- * Poradie v kroku: (1) neukončené kontrakty vzostupne podľa id, každý jeden krok podľa stavu z tabuľky
- * `CONTRACT_STEPS` (nie switch); (2) **denná obnova poolu** pri `DayClosed`: ponuky s `offerExpiresTick ≤ tick`
+ * Poradie v kroku: (1) neukončené kontrakty vzostupne podľa id, každý jeden krok podľa druhu a stavu z tabuľky
+ * `CONTRACT_STEPS` (nie switch; export booking ADR-032 — kroky dopĺňa T6A-04); (2) **denná obnova poolu** pri `DayClosed`: ponuky s `offerExpiresTick ≤ tick`
  * vzostupne podľa id → `expired` + `ContractExpired { reason: 'timeout' }` (kniha ich zabudne) a potom doplnenie do
  * `offersPerDay`; (3) pri štarte hry (`GAME_START_TICK`, prvý tick po `World.create`) len doplnenie — a rovnako
  * v prvom ticku po načítaní save spred kontraktov (v1–v4: kniha po migrácii ešte nepridelila žiadne id,
@@ -41,7 +41,7 @@
  */
 import { capacityHintFrom, drawOffer, portCapacityOf } from '../contracts/contract-pool';
 import type { Contract } from '../contracts/contract';
-import type { ContractState } from '../contracts/contract-fsm';
+import type { ContractKind, ContractState } from '../contracts/contract-fsm';
 import { contractXpGain, demurrageStepCents, lateStepCents, wholePeriods } from '../contracts/contract-terms';
 import type { ClockBoundaries } from '../core/sim-clock';
 import { SHIP_STATE_TRAITS, type ShipState } from '../ships/ship-fsm';
@@ -58,6 +58,7 @@ const SHIP_REACHED_BERTH: { readonly [S in ShipState]: boolean } = Object.freeze
   waiting_anchorage: false,
   berthing: false,
   docked: true,
+  lashing: true,
   undocking: true,
   outbound: true,
   despawned: true,
@@ -132,11 +133,12 @@ function failIfOverdue(world: World, contract: Contract): boolean {
   return true;
 }
 
-const CONTRACT_STEPS: { readonly [S in ContractState]: ContractStep } = {
+/** Kroky stavov **import** kontraktu (F5, ADR-026). */
+const IMPORT_CONTRACT_STEPS: { readonly [S in ContractState]: ContractStep } = {
   offered: () => undefined,
   accepted: (contract, world) => {
     if (contract.shipArrivalTick === undefined || world.clock.tick < contract.shipArrivalTick) return;
-    const ship = spawnShip(world, { shipClassId: contract.shipClassId, cargoTypeId: contract.cargoTypeId, units: contract.volumeUnits, contractId: contract.id });
+    const ship = spawnShip(world, { shipClassId: contract.shipClassId, cargoTypeId: contract.cargoTypeId, units: contract.volumeUnits, contractId: contract.id, voyageId: contract.voyageId });
     contract.shipId = ship.id;
     world.contractBook.changeState(contract, 'ship_en_route');
   },
@@ -174,6 +176,30 @@ const CONTRACT_STEPS: { readonly [S in ContractState]: ContractStep } = {
   expired: () => undefined,
 };
 
+const idle: ContractStep = () => undefined;
+
+/**
+ * Kroky stavov **export** bookingu (ADR-032): cut-off a jeho varovanie, uvoľnenie VGM hold, loď voyage (spawn spolu
+ * s import kontraktom voyage, zakotvenie → `exporting`), demurrage a SLA, uzavretie pri odchode lode s výplatou
+ * a penalizáciami bookingu. Implementuje T6A-04 — v T6A-01 je booking v save platný, ale krok 2 ho nemení.
+ */
+const EXPORT_CONTRACT_STEPS: { readonly [S in ContractState]: ContractStep } = {
+  offered: idle,
+  accepted: idle,
+  ship_en_route: idle,
+  unloading: idle,
+  exporting: idle,
+  completed: idle,
+  failed: idle,
+  expired: idle,
+};
+
+/** Kroky podľa druhu kontraktu (tabuľka, nie switch). */
+const CONTRACT_STEPS: { readonly [K in ContractKind]: { readonly [S in ContractState]: ContractStep } } = {
+  import: IMPORT_CONTRACT_STEPS,
+  export: EXPORT_CONTRACT_STEPS,
+};
+
 /**
  * Neukončené kontrakty vzostupne podľa id do znovupoužiteľného poľa `into` (najprv ho vyprázdni). Snímka je nutná:
  * prechody do konečného stavu mažú kontrakt z prebiehajúcich počas prechodu.
@@ -195,7 +221,7 @@ export class ContractSystem {
     const open = snapshotOpen(world, this.open);
     for (let i = 0; i < open.length; i++) {
       const contract = open[i];
-      CONTRACT_STEPS[contract.state](contract, world);
+      CONTRACT_STEPS[contract.kind][contract.state](contract, world);
     }
     if (closed.dayClosed) expireOffers(world, open);
     open.length = 0;
@@ -237,6 +263,7 @@ export function refillPool(world: World): void {
     capacityHint: capacityHintFrom(capacity, defs.economy.minCapacityHint),
     storageCapacity: capacity.storageCapacity,
     nextId: () => book.allocateId(),
+    nextVoyageId: () => book.allocateVoyageId(),
   };
   for (let i = 0; i < missing; i++) {
     const offer = drawOffer(context);

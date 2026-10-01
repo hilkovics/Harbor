@@ -732,6 +732,7 @@ function checkTruckCargo(world: World, truck: Truck): string | undefined {
   if (cargo === 'empty' && count !== 0) return `${truck.label} v stave '${truck.state}' pred nakládkou vezie ${String(count)} jednotiek`;
   if (count > capacity) return `${truck.label} vezie ${String(count)} jednotiek (capacityUnits ${String(capacity)})`;
   if (cargo === 'full' && count !== capacity) return `${truck.label} v stave '${truck.state}' má byť plný (${String(capacity)}), vezie ${String(count)}`;
+  if (cargo === 'loaded' && count === 0) return `${truck.label} (${truck.mission}) v stave '${truck.state}' má viezť export, je prázdny`;
   for (let i = 0; i < count; i++) {
     const unitId = world.cargo.unitAtIndex('in_truck', truck.id, i);
     const category = unitCategory(world, unitId);
@@ -889,10 +890,11 @@ const checkTrucks: Check = (world) => {
 };
 
 /**
- * Kontrakty (ADR-026), O(neukončené kontrakty) bez alokácie: počet ponúk ≤ `offersPerDay`; počítadlá
- * `unitsExported ≤ unitsUnloaded ≤ volumeUnits`; kontrakt s loďou pred vyložením (`ship_en_route`, `unloading`) má loď
- * na mape s triedou a nákladom kontraktu a na jej palube práve `volumeUnits − unitsUnloaded` jednotiek; `exporting` má
- * vyložený celý objem; index uskladneného nákladu (`World.storedCargo`, ADR-027) má toľko jednotiek, koľko ich je
+ * Kontrakty (ADR-026, ADR-032), O(neukončené kontrakty) bez alokácie: počet ponúk ≤ `offersPerDay`; počítadlá podľa
+ * druhu (`Contract.countersProblem` — import `unitsExported ≤ unitsUnloaded ≤ volumeUnits`, `exporting` má vyložený
+ * celý objem; export booking pozri `ExportContract`); kontrakt, ktorý vlastní náklad na palube (`carriesShipCargo`:
+ * import v `ship_en_route`, `unloading`), má loď na mape s triedou a nákladom kontraktu a na jej palube práve
+ * `volumeUnits − unitsUnloaded` jednotiek; index uskladneného nákladu (`World.storedCargo`, ADR-027) má toľko jednotiek, koľko ich je
  * `in_storage`. Väzbu jednotka → kontrakt overuje obnova save (`checkContracts` vo world-restore).
  */
 const checkContracts: Check = (world) => {
@@ -900,11 +902,9 @@ const checkContracts: Check = (world) => {
   for (const contract of world.contractBook.openContracts.values()) {
     const { label, state } = contract;
     if (CONTRACT_STATE_TRAITS[state].offer) offers += 1;
-    if (!(contract.unitsExported <= contract.unitsUnloaded && contract.unitsUnloaded <= contract.volumeUnits)) {
-      return `${label}: počítadlá exported ${String(contract.unitsExported)} ≤ unloaded ${String(contract.unitsUnloaded)} ≤ volume ${String(contract.volumeUnits)} neplatia`;
-    }
-    if (state === 'exporting' && contract.unitsUnloaded !== contract.volumeUnits) return `${label}: exporting bez vyloženého celého objemu`;
-    if (state !== 'ship_en_route' && state !== 'unloading') continue;
+    const counters = contract.countersProblem();
+    if (counters !== undefined) return `${label}: ${counters}`;
+    if (!contract.carriesShipCargo) continue;
     const ship = contract.shipId === undefined ? undefined : world.ships.get(contract.shipId);
     if (ship === undefined) return `${label}: loď kontraktu #${String(contract.shipId)} nie je na mape`;
     if (ship.classId !== contract.shipClassId || ship.cargoTypeId !== contract.cargoTypeId) return `${label}: ${ship.label} nemá triedu a náklad kontraktu`;

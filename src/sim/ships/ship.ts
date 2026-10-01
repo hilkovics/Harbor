@@ -12,6 +12,7 @@
  *   pred vstup, ADR-029 addendum).
  * - `route` = trasa aktuálneho stavu (body na vode; ADR-029 — trasa cez prístav vzniká A* po vode pri rezervácii
  *   a ukladá sa, lebo závisí od polohy ostatných lodí v tej chvíli), `waypointIndex` = index nasledujúceho bodu.
+ * - `lashingTicksLeft` = odpočet lashingu a papierov v stave `lashing` (≥ 1), inak 0 (ADR-032 bod 11, WorldState v7).
  *
  * Stav mení len `transition(to, route)` podľa `SHIP_TRANSITIONS`; pohyb a alokáciu kotvísk robí `ShipSystem` (krok 3).
  */
@@ -39,6 +40,8 @@ export interface SerializedShip {
   readonly waypointIndex: number;
   /** Trasa aktuálneho stavu (WorldState v6, ADR-029). */
   readonly route: readonly SerializedShipPoint[];
+  /** Odpočet lashingu v stave `lashing` (≥ 1), inak 0 (WorldState v7, ADR-032). */
+  readonly lashingTicksLeft: number;
 }
 
 /** Kľúče `SerializedShip` v poradí `toState()`. */
@@ -54,6 +57,7 @@ export const SERIALIZED_SHIP_KEYS: readonly (keyof SerializedShip)[] = [
   'anchorageIndex',
   'waypointIndex',
   'route',
+  'lashingTicksLeft',
 ];
 
 /** Bod trasy → tvar v save. */
@@ -75,6 +79,8 @@ export interface ShipInit {
   readonly waypointIndex?: number;
   /** Trasa aktuálneho stavu; predvolene prázdna. */
   readonly route?: readonly ShipPoint[];
+  /** Odpočet lashingu (len v stave `lashing`, ≥ 1); predvolene 0. */
+  readonly lashingTicksLeft?: number;
 }
 
 const NO_BERTHS: readonly EntityId[] = Object.freeze([]);
@@ -104,6 +110,8 @@ export class Ship {
   berthIds: readonly EntityId[];
   anchorageIndex: number | null;
   waypointIndex: number;
+  /** Odpočet lashingu a papierov (`lashing`: ≥ 1, inak 0); mení ho `ShipSystem` (ADR-032 bod 11). */
+  lashingTicksLeft: number;
   private currentRoute: readonly ShipPoint[];
   private current: ShipState;
 
@@ -137,6 +145,8 @@ export class Ship {
       }
     }
     if (waypointIndex > route.length) throw new ShipError('invalid_input', `${label}: waypointIndex ${String(waypointIndex)} je za koncom trasy (${String(route.length)} bodov)`);
+    const lashingTicksLeft = init.lashingTicksLeft ?? 0;
+    if (!isNonNegativeInteger(lashingTicksLeft)) throw new ShipError('invalid_input', `${label}: lashingTicksLeft musí byť celé číslo ≥ 0`);
 
     this.id = id;
     this.def = def;
@@ -150,6 +160,7 @@ export class Ship {
     this.berthIds = berthIds.length === 0 ? NO_BERTHS : Object.freeze([...berthIds]);
     this.anchorageIndex = anchorageIndex;
     this.waypointIndex = waypointIndex;
+    this.lashingTicksLeft = lashingTicksLeft;
     this.currentRoute = frozenRoute(route);
   }
 
@@ -196,6 +207,7 @@ export class Ship {
       anchorageIndex: this.anchorageIndex,
       waypointIndex: this.waypointIndex,
       route: this.currentRoute.map(serializeShipPoint),
+      lashingTicksLeft: this.lashingTicksLeft,
     };
   }
 }

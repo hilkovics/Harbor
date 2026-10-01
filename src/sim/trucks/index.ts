@@ -3,16 +3,21 @@
 export { SERIALIZED_TRUCK_KEYS, Truck } from './truck';
 export type { SerializedTruck, TruckInit } from './truck';
 export {
+  TRUCK_DELIVERY_STATE_TRAITS,
+  TRUCK_MISSIONS,
+  TRUCK_MISSION_STATE_TRAITS,
   TRUCK_STATES,
   TRUCK_STATE_TRAITS,
   TRUCK_TRANSITIONS,
   TRUCK_TRAVEL_STATES,
   changeTruckState,
+  isTruckMission,
   isTruckState,
   isTruckTransitionAllowed,
   isTruckTravelState,
+  truckStateTraits,
 } from './truck-fsm';
-export type { TruckCargo, TruckGateSide, TruckState, TruckStateEvents, TruckStateTraits, TruckStop, TruckTravelState } from './truck-fsm';
+export type { TruckCargo, TruckGateSide, TruckMission, TruckState, TruckStateEvents, TruckStateTraits, TruckStop, TruckTravelState } from './truck-fsm';
 export { TruckError } from './truck-error';
 export type { TruckErrorCode } from './truck-error';
 export {

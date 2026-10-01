@@ -52,6 +52,11 @@ const WAIT_LIMITS: { readonly [S in TruckState]: WaitLimit } = Object.freeze({
     const ramp = world.modules.get(truck.rampId);
     return ramp instanceof LoadingRamp ? ramp.params.loadTicksPerUnit : 0;
   },
+  // Vykládka exportu ide po jednotkách rovnakým tempom ako nakládka (`loadTicksPerUnit` rampy, ADR-032).
+  unloading: (world: TruckWaitWorld, truck: Truck) => {
+    const ramp = world.modules.get(truck.rampId);
+    return ramp instanceof LoadingRamp ? ramp.params.loadTicksPerUnit : 0;
+  },
   to_gate_out: () => 0,
   gate_queue_out: () => 0,
   to_portal: () => 0,

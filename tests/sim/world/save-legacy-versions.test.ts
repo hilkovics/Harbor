@@ -1,9 +1,10 @@
 /**
  * Savy starších verzií a poškodené savy (T06-02; ADR-014, ADR-029, ADR-030; ARCHITECTURE §14, §16).
  *
- * 1. Zmrazené savy `WorldState` v1 … v5 z `tests/sim/__fixtures__/saves/` (malé JSON súbory, generuje ich jednorazovo
- *    `generate-saves.ts`; test číta súbory, nie generátor): `World.deserialize` ich prevedie migráciami na v6, hodnoty
- *    starej verzie ostanú (hodiny, `Rng`, hotovosť, cesty, náklad, lode, kontrakty…), `serialize()` vráti v6, ktorý sa načíta
+ * 1. Zmrazené savy `WorldState` v1 … v6 z `tests/sim/__fixtures__/saves/` (malé JSON súbory, generuje ich jednorazovo
+ *    `generate-saves.ts`; test číta súbory, nie generátor): `World.deserialize` ich prevedie migráciami na v7, hodnoty
+ *    starej verzie ostanú (hodiny, `Rng`, hotovosť, cesty, náklad, lode, kontrakty… — porovnané po zhodení v7 → v6,
+ *    `toV6State`), `serialize()` vráti v7, ktorý sa načíta
  *    znova na rovnaký hash, a svet beží 2 000 tickov bez porušenia invariantov (`assertCargoConservation` po každom ticku,
  *    `assertInvariants()` navyše každých 100 tickov; krok 12 ticku beží `assertInvariants()` aj sám) a cez prvú uzávierku
  *    dňa (pool kontraktov sa po migrácii doplní).
@@ -24,6 +25,7 @@ import {
   WORLD_STATE_V3_KEYS,
   WORLD_STATE_V4_KEYS,
   WORLD_STATE_V5_KEYS,
+  WORLD_STATE_V6_KEYS,
   World,
   WorldStateError,
   stateHash,
@@ -31,6 +33,7 @@ import {
   type WorldState,
 } from '@sim/world';
 import { assertCargoConservation } from '../helpers/invariants';
+import { toV6State } from '../helpers/legacy-save';
 import { loadScenarioFile, runScenario } from '../helpers/scenario';
 import { DEFS, MAP } from './world-fixtures';
 
@@ -79,12 +82,12 @@ function loadError(raw: unknown): WorldStateError {
 }
 
 // ---------------------------------------------------------------------------------------------------------
-// 1. Savy v1 … v5
+// 1. Savy v1 … v6
 // ---------------------------------------------------------------------------------------------------------
 
 interface LegacyFixture {
   readonly file: string;
-  readonly version: 1 | 2 | 3 | 4 | 5;
+  readonly version: 1 | 2 | 3 | 4 | 5 | 6;
   /** Presné kľúče savu v poradí (`WORLD_STATE_Vn_KEYS`). */
   readonly keys: readonly string[];
   /** Čo save obsahuje (kontrola, že fixture nie je prázdna). */
@@ -129,12 +132,25 @@ const FIXTURES: readonly LegacyFixture[] = [
       (s['ships'] as { state: string }[]).filter((ship) => ship.state === 'docked').length === 1 &&
       (s['ships'] as { state: string }[]).filter((ship) => ship.state === 'waiting_anchorage').length === 3,
   },
+  {
+    file: 'save-v6.json',
+    version: 6,
+    keys: WORLD_STATE_V6_KEYS,
+    has: (s) =>
+      (s['contracts'] as { state: string }[]).some((contract) => contract.state === 'unloading') &&
+      (s['ships'] as { route: unknown[] }[]).length === 1 &&
+      arrayLength(s['vehicles']) === 2 &&
+      arrayLength(s['jobs']) > 0,
+  },
 ];
 
-/** Kľúče, ktoré migrácia nemení (`modules` upraví runtime, `ships` pridá trasu, `version` sa zvýši). */
+/**
+ * Kľúče, ktoré migrácia nemení — po zhodení v7 → v6 (`toV6State`, ADR-032): `modules` upraví runtime, `ships` pridá
+ * trasu (save spred v6), `version` sa zvýši.
+ */
 const UNTOUCHED_BY_MIGRATION = (keys: readonly string[]): string[] => keys.filter((key) => key !== 'version' && key !== 'modules' && key !== 'ships');
 
-describe.each(FIXTURES)('uložený save $file (WorldState v$version) → v6', ({ file, version, keys, has }) => {
+describe.each(FIXTURES)('uložený save $file (WorldState v$version) → v7', ({ file, version, keys, has }) => {
   const raw = readFixture(file);
   const original = clone(raw);
 
@@ -142,17 +158,18 @@ describe.each(FIXTURES)('uložený save $file (WorldState v$version) → v6', ({
     expect(Object.keys(raw)).toEqual([...keys]);
     expect(raw['version']).toBe(version);
     expect(version).toBeLessThan(WORLD_STATE_VERSION);
-    expect((raw['ships'] as Json[] | undefined)?.every((ship) => !('route' in ship)) ?? true).toBe(true);
+    expect((raw['ships'] as Json[] | undefined)?.every((ship) => 'route' in ship === version >= 6) ?? true).toBe(true);
     expect(raw['mapId']).toBe(MAP.id);
     expect(has(raw)).toBe(true);
   });
 
-  it('World.deserialize prejde bez zmeny vstupu; serialize() vráti v6 a zachová hodnoty starej verzie', () => {
+  it('World.deserialize prejde bez zmeny vstupu; serialize() vráti v7 a zachová hodnoty starej verzie', () => {
     const world = World.deserialize(DEFS, MAP, asState(raw));
     expect(raw).toEqual(original);
 
-    const saved = clone(world.serialize()) as unknown as Json;
-    expect(saved['version']).toBe(WORLD_STATE_VERSION);
+    expect(world.serialize().version).toBe(WORLD_STATE_VERSION);
+    // Polia v7 (ADR-032) majú pri starom save hodnoty importu, takže zhodenie na v6 sa porovná s pôvodnými hodnotami.
+    const saved = toV6State(world.serialize());
     for (const key of UNTOUCHED_BY_MIGRATION(keys)) expect(saved[key], `kľúč '${key}'`).toEqual(raw[key]);
 
     // Moduly: rovnaké id, def, poloha a rotácia; runtime doplnia migrácie (napr. kotvisko dostane lastNoStorageHour).
@@ -169,6 +186,7 @@ describe.each(FIXTURES)('uložený save $file (WorldState v$version) → v6', ({
       });
     expect(noRoute(saved['ships'])).toEqual(noRoute(raw['ships'] ?? []));
     expect((saved['ships'] as { route: unknown }[]).every((ship) => Array.isArray(ship.route))).toBe(true);
+    if (version >= 6) expect(saved['ships']).toEqual(raw['ships']);
 
     expect(world.clock.tick).toBe((raw['clock'] as { tick: number }).tick);
     expect(world.cashCents).toBe(raw['cashCents']);
@@ -176,7 +194,7 @@ describe.each(FIXTURES)('uložený save $file (WorldState v$version) → v6', ({
     expect(() => world.assertInvariants()).not.toThrow();
   });
 
-  it('v6 vzniknuté z migrácie sa po JSON texte načíta znova na rovnaký hash (migrácia je pevný bod)', () => {
+  it('v7 vzniknuté z migrácie sa po JSON texte načíta znova na rovnaký hash (migrácia je pevný bod)', () => {
     const world = World.deserialize(DEFS, MAP, asState(raw));
     const text = JSON.stringify(world.serialize());
     const again = World.deserialize(DEFS, MAP, JSON.parse(text) as WorldState);
@@ -228,7 +246,7 @@ describe.each(FIXTURES)('uložený save $file (WorldState v$version) → v6', ({
   });
 });
 
-describe('uložené savy v2 … v5 s neznámym defom modulu → WorldStateError s cestou', () => {
+describe('uložené savy v2 … v6 s neznámym defom modulu → WorldStateError s cestou', () => {
   it.each(FIXTURES.filter((fixture) => fixture.version >= 2))('$file: modules[0].defId neexistuje → /modules/0/defId', ({ file }) => {
     const broken = readFixture(file);
     (broken['modules'] as Json[])[0]['defId'] = 'neexistujuci_modul';

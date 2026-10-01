@@ -3,9 +3,9 @@
  * expirovaných, háčik ledgera pre počítadlá jednotiek, XP, tier a stav pre save.
  */
 import { describe, expect, it } from 'vitest';
-import { Contract, ContractBook, ContractError, type ContractTerms } from '@sim/contracts';
-import type { CargoLocation, CargoUnit } from '@sim/cargo';
-import type { ContractId, EntityId } from '@sim/core';
+import { ContractBook, ContractError, ImportContract, type Contract, type ContractTerms } from '@sim/contracts';
+import { IMPORT_LABELS, type CargoLocation, type CargoUnit } from '@sim/cargo';
+import type { ContractId, EntityId, VoyageId } from '@sim/core';
 import type { SimEvent } from '@sim/events';
 
 function harness(tick = 10): { readonly book: ContractBook; readonly events: SimEvent[]; readonly clock: { tick: number } } {
@@ -14,9 +14,10 @@ function harness(tick = 10): { readonly book: ContractBook; readonly events: Sim
   return { book: new ContractBook({ events: { emit: (event) => events.push(event) }, clock }), events, clock };
 }
 
-function terms(id: number, volumeUnits = 3): ContractTerms {
+function terms(id: number, volumeUnits = 3, voyageId = id): ContractTerms {
   return {
     id: id as ContractId,
+    voyageId: voyageId as VoyageId,
     templateId: 'container_feeder_express',
     cargoTypeId: 'container_teu',
     volumeUnits,
@@ -31,24 +32,24 @@ function terms(id: number, volumeUnits = 3): ContractTerms {
 
 const SHIP = 50 as EntityId;
 function unit(contractId: number | null, location: CargoLocation = { kind: 'on_ship', shipId: SHIP }): CargoUnit {
-  return { id: 99 as EntityId, typeId: 'container_teu', contractId: contractId as ContractId | null, quantity: 1, location };
+  return { id: 99 as EntityId, typeId: 'container_teu', contractId: contractId as ContractId | null, ...IMPORT_LABELS, hold: null, quantity: 1, location };
 }
 
 describe('ContractBook: id a poradie', () => {
   it('allocateId dáva 1, 2, 3 … nezávisle od world.ids; add vyžaduje rastúce id a jedinečnosť', () => {
     const { book } = harness();
     expect([book.allocateId(), book.allocateId()]).toEqual([1, 2]);
-    book.add(new Contract(terms(1)));
-    book.add(new Contract(terms(2)));
-    expect(() => book.add(new Contract(terms(2)))).toThrow(ContractError);
-    expect(() => book.add(new Contract(terms(1)))).toThrow(ContractError);
+    book.add(new ImportContract(terms(1)));
+    book.add(new ImportContract(terms(2)));
+    expect(() => book.add(new ImportContract(terms(2)))).toThrow(ContractError);
+    expect(() => book.add(new ImportContract(terms(1)))).toThrow(ContractError);
     expect([...book.contracts.keys()]).toEqual([1, 2]);
     expect(book.getState().nextContractId).toBe(3);
   });
 
   it('offeredCount, openContracts a get', () => {
     const { book } = harness();
-    for (const id of [1, 2, 3]) book.add(new Contract(terms(id)));
+    for (const id of [1, 2, 3]) book.add(new ImportContract(terms(id)));
     expect(book.offeredCount).toBe(3);
     expect(book.get(2 as ContractId)?.id).toBe(2);
     expect(book.get(9 as ContractId)).toBeUndefined();
@@ -58,7 +59,7 @@ describe('ContractBook: id a poradie', () => {
 describe('ContractBook: prechody', () => {
   it('changeState emituje ContractStateChanged a expirovaný kontrakt zabudne (aj z prebiehajúcich)', () => {
     const { book, events } = harness(42);
-    const offer = new Contract(terms(1));
+    const offer = new ImportContract(terms(1));
     book.add(offer);
     book.changeState(offer, 'expired');
     expect(events).toEqual([{ type: 'ContractStateChanged', contractId: 1, from: 'offered', to: 'expired' }]);
@@ -66,14 +67,14 @@ describe('ContractBook: prechody', () => {
     expect(book.openContracts.size).toBe(0);
     expect(offer.closedTick).toBe(42);
     // id sa ďalej nepoužije znova
-    expect(() => book.add(new Contract(terms(1)))).toThrow(ContractError);
+    expect(() => book.add(new ImportContract(terms(1)))).toThrow(ContractError);
   });
 
   it('kontrakt mimo knihy alebo nepovolený prechod → ContractError bez udalosti', () => {
     const { book, events } = harness();
-    const stranger = new Contract(terms(5));
+    const stranger = new ImportContract(terms(5));
     expect(() => book.changeState(stranger, 'accepted')).toThrow(ContractError);
-    const offer = new Contract(terms(6));
+    const offer = new ImportContract(terms(6));
     book.add(offer);
     expect(() => book.changeState(offer, 'exporting')).toThrow(ContractError);
     expect(events).toEqual([]);
@@ -92,7 +93,7 @@ describe('ContractBook: prechody', () => {
 describe('ContractBook: háčik ledgera (cargoMoved)', () => {
   it('opustenie lode zvýši unitsUnloaded, export unitsExported; jednotka bez kontraktu alebo s neznámym kontraktom sa ignoruje', () => {
     const { book } = harness();
-    const contract = new Contract(terms(1, 2));
+    const contract = new ImportContract(terms(1, 2));
     book.add(contract);
     book.cargoMoved(unit(1), { kind: 'in_crane', craneId: 2 as EntityId });
     book.cargoMoved(unit(1, { kind: 'in_crane', craneId: 2 as EntityId }), { kind: 'on_apron', berthId: 1 as EntityId, slot: 0 });
@@ -106,7 +107,7 @@ describe('ContractBook: háčik ledgera (cargoMoved)', () => {
 
   it('počítadlá nepresiahnu objem ani vyložené (háčik nesmie vyhodiť)', () => {
     const { book } = harness();
-    const contract = new Contract(terms(1, 1));
+    const contract = new ImportContract(terms(1, 1));
     book.add(contract);
     for (let i = 0; i < 3; i++) book.cargoMoved(unit(1), { kind: 'in_crane', craneId: 2 as EntityId });
     for (let i = 0; i < 3; i++) book.cargoMoved(unit(1, { kind: 'in_truck', truckId: 3 as EntityId }), { kind: 'exported' });
@@ -117,7 +118,7 @@ describe('ContractBook: háčik ledgera (cargoMoved)', () => {
 describe('ContractBook: stav pre save', () => {
   it('getState → fromState dá rovnakú knihu (kontrakty, XP, dokončené, ďalšie id)', () => {
     const { book } = harness();
-    for (const id of [book.allocateId(), book.allocateId(), book.allocateId()]) book.add(new Contract(terms(id)));
+    for (const id of [book.allocateId(), book.allocateId(), book.allocateId()]) book.add(new ImportContract(terms(id, 3, book.allocateVoyageId())));
     book.changeState(book.get(1 as ContractId) as Contract, 'expired');
     book.recordCompletion(4);
     const state = JSON.parse(JSON.stringify(book.getState())) as ReturnType<ContractBook['getState']>;
@@ -125,12 +126,20 @@ describe('ContractBook: stav pre save', () => {
     const restored = ContractBook.fromState({ events: { emit: () => undefined }, clock: { tick: 0 } }, state);
     expect(restored.getState()).toEqual(state);
     expect(restored.allocateId()).toBe(4);
+    expect(restored.allocateVoyageId()).toBe(4);
   });
 
   it('fromState odmietne kontrakt s id ≥ nextContractId', () => {
     const { book } = harness();
-    book.add(new Contract(terms(book.allocateId())));
+    book.add(new ImportContract(terms(book.allocateId(), 3, book.allocateVoyageId())));
     const state = { ...book.getState(), nextContractId: 1 };
     expect(() => ContractBook.fromState({ events: { emit: () => undefined }, clock: { tick: 0 } }, state)).toThrow(ContractError);
+  });
+
+  it('fromState odmietne kontrakt s voyage ≥ nextVoyageId (ADR-032)', () => {
+    const { book } = harness();
+    book.add(new ImportContract(terms(book.allocateId(), 3, book.allocateVoyageId())));
+    const state = { ...book.getState(), nextVoyageId: 1 };
+    expect(() => ContractBook.fromState({ events: { emit: () => undefined }, clock: { tick: 0 } }, state)).toThrow(/nextVoyageId/);
   });
 });

@@ -99,7 +99,7 @@ describe('scenár f3_vehicle_fleet — nákup a predaj vozidiel', () => {
   });
 
   it('vo F3 bez lodí žiadny náklad nevznikol (konzervácia po každom ticku v run)', () => {
-    expect(world.cargo.getState()).toEqual({ createdCount: 0, exportedCount: 0, units: [] });
+    expect(world.cargo.getState()).toEqual({ createdCount: 0, exportedCount: 0, shippedCount: 0, units: [] });
   });
 
   it('determinizmus: druhý beh s rovnakým seedom a príkazmi → rovnaký stav', () => {

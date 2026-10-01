@@ -13,6 +13,13 @@ export type EntityId = number & { readonly __brand: 'EntityId' };
  */
 export type ContractId = number & { readonly __brand: 'ContractId' };
 
+/**
+ * ID návštevy lode — voyage (ADR-032): vlastná postupnosť knihy kontraktov (`ContractBook.allocateVoyageId`,
+ * `nextVoyageId` v save, od 1). Kontrakty jednej voyage (import + export booking) zdieľajú toto id; nesie ho aj
+ * jednotka nákladu (`CargoUnit.voyageId`). S `EntityId` ani `ContractId` sa neporovnáva.
+ */
+export type VoyageId = number & { readonly __brand: 'VoyageId' };
+
 /** Serializovateľný stav alokátora. */
 export interface EntityIdAllocatorState {
   /** ID, ktoré vráti nasledujúce `next()` (≥ 1). */

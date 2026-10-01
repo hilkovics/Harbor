@@ -15,6 +15,8 @@
  * - `berthing`: plavba po rezervovanej trase k polohe pri kotvisku; po príchode `docked` s kurzom `DOCKED_HEADING`
  *   a `ShipDocked`.
  * - `docked`: keď na lodi nie je žiadna jednotka (`on_ship`) a trasa von je voľná → `undocking` + `ShipUndocked`.
+ * - `lashing` (ADR-032 bod 11): odpočet lashingu a papierov → `undocking`; prechody `docked → lashing` a odchod
+ *   z `lashing` implementuje T6A-05 — do vtedy je stav nedosiahnuteľný a krok v ňom je chyba.
  * - `undocking` → na konci dráhy uvoľní kotviská → `outbound` → po `seaLane` k `seaLane[0]` → `despawned`: loď sa
  *   odstráni zo sveta a emituje `ShipDeparted`.
  * Prechod stavu ukončí pohyb lode v danom ticku (zvyšok kroku prepadne), okrem vstupu.
@@ -79,6 +81,9 @@ const SHIP_STEPS: { readonly [S in ShipState]: ShipStep } = {
     if (world.cargo.countAt('on_ship', ship.id) > 0) return;
     if (!world.shipTraffic.tryUndock(ship)) return;
     world.events.emit({ type: 'ShipUndocked', shipId: ship.id });
+  },
+  lashing: (ship) => {
+    throw new ShipError('inconsistent', `${ship.label}: krok v stave 'lashing' ešte nie je implementovaný (T6A-05, ADR-032 bod 11)`);
   },
   undocking: (ship, world) => {
     if (!sail(ship)) return;

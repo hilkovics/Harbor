@@ -7,10 +7,15 @@
  * Savy sa generujú **raz** a komitujú sa — test `save-legacy-versions.test.ts` ich číta zo súborov, takže sú zmrazené:
  * keď sa zmení sim alebo balans (a generátor by dal iné ticky či hodnoty), fixtures sa nemenia a migrácie sa stále
  * overujú na tých istých vstupoch. Generátor netreba púšťať znova, kým nepribudne nová verzia `WorldState`
- * (vtedy sa pridá `save-v6.json` rovnakým postupom a starší save ostane nedotknutý).
+ * (vtedy sa pridá ďalší `save-vN.json` rovnakým postupom a starší save ostane nedotknutý).
  *
- * Postup: svet aktuálnej verzie (v6) sa v zvolenom ticku (prvý tick, v ktorom platí predikát — nie natvrdo) serializuje
- * a potom sa „zhodí“ na tvar staršej verzie presne podľa migrácií v `src/sim/world/migrate.ts`:
+ * `save-v6.json` (T6A-01) vznikol **natívne** kódom v6 (commit 66f4570, pred WorldState v7) z `vertical_slice` v ticku
+ * 8 784; `toV6State` (zhodenie v7 → v6, `tests/sim/helpers/legacy-save.ts`) z toho istého ticku sveta v7 dá bajtovo
+ * rovnaký text — overené pri vzniku, takže generátor ho vie zopakovať.
+ *
+ * Postup: svet aktuálnej verzie (v7) sa v zvolenom ticku (prvý tick, v ktorom platí predikát — nie natvrdo) serializuje,
+ * zhodí na v6 (`toV6State`: bez polí exportu ADR-032) a potom na tvar staršej verzie presne podľa migrácií
+ * v `src/sim/world/migrate.ts`:
  *  - v5 = v6 bez `ships[i].route` (v5 trasy neukladal; ship keys pred T5B-02: `id … waypointIndex`),
  *  - v4 = v5 bez `economy`, `contracts`, `xp`, `completedContracts`, `nextContractId` (hotovosť ostáva v `cashCents`),
  *  - v3 = v4 bez `trucks` a s `runtime` rampy `{}` (bez `lastNoWaitingBayHour`),
@@ -21,7 +26,8 @@
  *
  * Súbory: save-v1 (F1: cesty, hotovosť, rýchlosť 8×, prenájom; bez modulov), save-v2 (vykládka, žeriav spúšťa
  * kontajner), save-v3 (vozidlo vezie kontajner po ceste), save-v4 (kamión nakladá na rampe), save-v5 (kontrakt
- * `unloading`, vyložená polovica), save-v5-anchorage (jedna loď pri kotvisku, tri na anchorage).
+ * `unloading`, vyložená polovica), save-v5-anchorage (jedna loď pri kotvisku, tri na anchorage), save-v6 (ten istý
+ * okamih ako save-v5, natívne v6 s trasou lode).
  */
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -35,6 +41,7 @@ import {
   World,
 } from '@sim/world';
 import { STRADDLES } from '../../helpers/f4';
+import { toV6State } from '../../helpers/legacy-save';
 import { f3Scenario } from '../../helpers/f3-layout';
 import { f4Scenario } from '../../helpers/f4-layout';
 import { cranesOf } from '../../helpers/harbor';
@@ -45,13 +52,13 @@ type Json = Record<string, unknown>;
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
-/** Svet po `tick()` v prvom ticku, kde platí `match`; hľadá do `limit`. Vráti tick a JSON-kópiu stavu v6. */
+/** Svet po `tick()` v prvom ticku, kde platí `match`; hľadá do `limit`. Vráti tick a stav zhodený na v6 (`toV6State`). */
 function captureFirst(scenario: Scenario, match: (world: World) => boolean, limit: number): { readonly tick: number; readonly state: Json } {
   const world = World.create(DEFS, MAP, scenario.seed);
   const result: { value?: { tick: number; state: Json } } = {};
   runScenario(world, scenario, limit, {
     afterTick: (w) => {
-      if (result.value === undefined && match(w)) result.value = { tick: w.clock.tick, state: clone(w.serialize()) as unknown as Json };
+      if (result.value === undefined && match(w)) result.value = { tick: w.clock.tick, state: toV6State(w.serialize()) };
     },
   });
   if (result.value === undefined) throw new Error(`scenár '${scenario.id}': podmienka nenastala do ticku ${String(limit)}`);
@@ -128,7 +135,7 @@ function f1State(): Json {
   const west = world.parcels.get('west_quay');
   if (west === undefined) throw new Error('mapa nemá west_quay');
   west.ownership = 'leased';
-  return clone(world.serialize()) as unknown as Json;
+  return toV6State(world.serialize());
 }
 
 interface Fixture {
@@ -180,6 +187,7 @@ function buildFixtures(): Fixture[] {
     { file: 'save-v4.json', state: toV4(v4.state), note: `F4: kamión nakladá na rampe, tick ${String(v4.tick)}` },
     { file: 'save-v5.json', state: toV5(v5.state), note: `F5: kontrakt unloading, vyložená polovica, tick ${String(v5.tick)}` },
     { file: 'save-v5-anchorage.json', state: toV5(v5Anchorage.state), note: `F5: loď pri kotvisku a tri na anchorage, tick ${String(v5Anchorage.tick)}` },
+    { file: 'save-v6.json', state: v5.state, note: `F5b/F6: kontrakt unloading, vyložená polovica, trasa lode, tick ${String(v5.tick)}` },
   ];
 }
 

@@ -13,13 +13,13 @@
  *   nad kapacitu sa náklad vyvezie počas vykládky — `unloading.outbound = 'sla'`). Poistka nemení spotrebu `Rng`.
  *   Bez vhodnej šablóny ponuka nevznikne a `Rng` sa nespotrebuje.
  */
-import type { ContractId } from '../core/entity-id';
+import type { ContractId, VoyageId } from '../core/entity-id';
 import type { Rng } from '../core/rng';
 import type { DefRegistry } from '../defs/def-registry';
 import type { ContractTemplateDef } from '../defs/types';
 import type { Module } from '../modules/module';
 import type { StatResolver } from '../tech/stat-resolver';
-import { Contract } from './contract';
+import { ImportContract, type Contract } from './contract';
 import { contractRewardCents, contractXpReward, maxSlaDaysOf, urgencyBp } from './contract-terms';
 
 /** Najkratšia platnosť ponuky v tickoch (ponuka musí prežiť aspoň tick svojho vzniku). */
@@ -77,6 +77,8 @@ export interface OfferContext {
   readonly storageCapacity: number;
   /** Pridelí id novej ponuke (volá sa až po výbere šablóny). */
   readonly nextId: () => ContractId;
+  /** Pridelí id voyage novej ponuke (ADR-032; volá sa hneď po `nextId`, `Rng` nespotrebuje). */
+  readonly nextVoyageId: () => VoyageId;
 }
 
 /** Šablóny ponúkateľné pri `tier` (poradie defu). */
@@ -84,7 +86,10 @@ export function eligibleTemplates(templates: readonly Readonly<ContractTemplateD
   return templates.filter((template) => template.minTier <= tier && template.weight > 0);
 }
 
-/** Nová ponuka (`offered`), alebo `null`, keď pri danom tieri nie je žiadna šablóna. Viď hlavička súboru. */
+/**
+ * Nová import ponuka (`offered`) s vlastnou voyage, alebo `null`, keď pri danom tieri nie je žiadna šablóna. Viď hlavička
+ * súboru. Booking ponuky (šablóny `export` / `roundtrip`) pribudnú v T6A-04 (ADR-032 bod 1).
+ */
 export function drawOffer(context: OfferContext): Contract | null {
   const { defs, rng, tick, ticksPerDay, capacityHint, storageCapacity } = context;
   const templates = defs.contractTemplates.items;
@@ -99,8 +104,9 @@ export function drawOffer(context: OfferContext): Contract | null {
   const cargoType = defs.cargoTypes.get(template.cargoTypeId);
   const { economy } = defs;
   const urgency = urgencyBp(slaDays, maxSlaDaysOf(templates), economy.urgencyFactor);
-  return new Contract({
+  return new ImportContract({
     id: context.nextId(),
+    voyageId: context.nextVoyageId(),
     templateId: template.id,
     cargoTypeId: template.cargoTypeId,
     volumeUnits,

@@ -14,6 +14,7 @@ import type { BerthModule } from '@sim/modules';
 import { DOCKED_HEADING, SHIP_STATE_TRAITS, Ship, cellCenter, dockPoint, shipBox, shipCells, type SerializedShip } from '@sim/ships';
 import { World, WorldStateError, type WorldState } from '@sim/world';
 import { DEFS, MAP } from '../world/world-fixtures';
+import { toV6State } from '../helpers/legacy-save';
 import { ANCHORAGE_AT_MOUTH, ANCHORAGE_ON_LANE, ANCHORAGE_OPEN, CHANNEL_BERTHS, CHANNEL_MAP, CHANNEL_MAP_W1 } from './channel-map';
 
 /** Toľko jednotiek, že apron sa zaplní a bez vozidiel loď pri kotvisku ostane. */
@@ -145,11 +146,11 @@ describe('1. vnútorný roh nábrežia — posun bokom je súčasťou cesty von 
 // 2. a 3. Save v5: normalizácia lode bez cieľa, trasy a rezervácie pri obnove
 // ---------------------------------------------------------------------------------------------------------------
 
-type ShipPatch = Partial<Omit<SerializedShip, 'route'>>;
+type ShipPatch = Partial<Omit<SerializedShip, 'route' | 'lashingTicksLeft'>>;
 
-/** Save v5 zo save v6: lode bez `route`, s úpravami `patch` podľa id (ostatné polia v6 sa v5 nezmenili). */
+/** Save v5 zo save v6 (zhodeného z v7): lode bez `route`, s úpravami `patch` podľa id (ostatné polia v6 sa v5 nezmenili). */
 function toV5(world: World, patch: ReadonlyMap<number, ShipPatch>): unknown {
-  const v6 = JSON.parse(JSON.stringify(world.serialize())) as WorldState;
+  const v6 = toV6State(world.serialize()) as unknown as WorldState;
   return {
     ...v6,
     version: 5,

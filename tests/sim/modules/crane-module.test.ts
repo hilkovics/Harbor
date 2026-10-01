@@ -28,9 +28,11 @@ function freshCrane(): CraneModule {
 
 const VALID: CraneRuntimeState = {
   state: 'placing',
+  cycle: 'unload',
   phaseTicksTotal: 6,
   phaseTicksLeft: 2,
   reservedSlot: 1,
+  targetUnitId: null,
   busyTicks: 120,
   idleTicks: 40,
   blockedTicks: 7,
@@ -69,9 +71,11 @@ describe('CraneModule — runtime stav', () => {
     const crane = freshCrane();
     expect(Object.keys(crane.getRuntimeState())).toEqual([
       'state',
+      'cycle',
       'phaseTicksTotal',
       'phaseTicksLeft',
       'reservedSlot',
+      'targetUnitId',
       'busyTicks',
       'idleTicks',
       'blockedTicks',

@@ -192,6 +192,10 @@ const TRUCK_STEPS: { readonly [S in TruckState]: TruckStep } = {
   loading: (truck, world) => {
     if (countDown(truck)) loadUnit(truck, world);
   },
+  // Vykládka exportu (delivery kamión, ADR-032 bod 4 a 12) — implementuje T6A-05; dovtedy je stav nedosiahnuteľný.
+  unloading: (truck) => {
+    throw new TruckError('inconsistent', `${truck.label}: krok v stave 'unloading' ešte nie je implementovaný (T6A-05, ADR-032)`);
+  },
   to_gate_out: drive,
   gate_queue_out: () => undefined,
   to_portal: drive,

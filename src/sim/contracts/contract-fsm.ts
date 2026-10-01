@@ -10,12 +10,27 @@
  * s bežiacim SLA, keď meškanie presiahne `failAfterDaysLate` dní.
  */
 
-/** Stavy kontraktu v poradí životného cyklu. */
+/** Stavy kontraktu v poradí životného cyklu (spoločné pre všetky druhy kontraktov; ADR-032 nové stavy nepridal). */
 export const CONTRACT_STATES = ['offered', 'accepted', 'ship_en_route', 'unloading', 'exporting', 'completed', 'failed', 'expired'] as const;
 export type ContractState = (typeof CONTRACT_STATES)[number];
 
-/** Povolené prechody `from → [to…]` (rozhodnutie 4). `completed`, `failed` a `expired` sú konečné. */
-export const CONTRACT_TRANSITIONS: { readonly [S in ContractState]: readonly ContractState[] } = Object.freeze({
+/**
+ * Druhy kontraktu (ADR-032 bod 1): `import` (náklad príde loďou a odíde po súši — F5) a `export` (booking: náklad
+ * príde po súši a odpláva loďou voyage). Druh určuje trieda (`ImportContract`, `ExportContract`), nie switch.
+ */
+export const CONTRACT_KINDS = ['import', 'export'] as const;
+export type ContractKind = (typeof CONTRACT_KINDS)[number];
+
+/** Je hodnota druh kontraktu (parsovanie save)? */
+export function isContractKind(value: unknown): value is ContractKind {
+  return (CONTRACT_KINDS as readonly unknown[]).includes(value);
+}
+
+/** Tabuľka povolených prechodov jedného druhu kontraktu. */
+export type ContractTransitions = { readonly [S in ContractState]: readonly ContractState[] };
+
+/** Povolené prechody **import** kontraktu `from → [to…]` (rozhodnutie 4 F5). `completed`, `failed` a `expired` sú konečné. */
+export const CONTRACT_TRANSITIONS: ContractTransitions = Object.freeze({
   offered: Object.freeze(['accepted', 'expired'] as const),
   accepted: Object.freeze(['ship_en_route'] as const),
   ship_en_route: Object.freeze(['unloading', 'failed'] as const),
@@ -26,13 +41,37 @@ export const CONTRACT_TRANSITIONS: { readonly [S in ContractState]: readonly Con
   expired: Object.freeze([] as const),
 });
 
-/** Je prechod `from → to` v tabuľke? */
-export function isContractTransitionAllowed(from: ContractState, to: ContractState): boolean {
-  return CONTRACT_TRANSITIONS[from].includes(to);
+/**
+ * Povolené prechody **export** bookingu (ADR-032 bod 1): `offered → accepted | expired`, `accepted` (kamióny s exportom
+ * prichádzajú podľa plánu) `→ ship_en_route` (loď voyage vznikla), `ship_en_route → exporting` (loď pri kotvisku:
+ * nakládka a lashing — „Exportuje sa") `| failed`, `exporting → completed` (loď odplávala s aspoň jednou naloženou
+ * jednotkou) `| failed` (SLA, alebo loď odplávala bez exportu). `unloading` export nepoužíva.
+ */
+export const EXPORT_CONTRACT_TRANSITIONS: ContractTransitions = Object.freeze({
+  offered: Object.freeze(['accepted', 'expired'] as const),
+  accepted: Object.freeze(['ship_en_route'] as const),
+  ship_en_route: Object.freeze(['exporting', 'failed'] as const),
+  unloading: Object.freeze([] as const),
+  exporting: Object.freeze(['completed', 'failed'] as const),
+  completed: Object.freeze([] as const),
+  failed: Object.freeze([] as const),
+  expired: Object.freeze([] as const),
+});
+
+/** Prechody podľa druhu kontraktu (dáta; trieda kontraktu si berie svoj riadok). */
+export const CONTRACT_TRANSITIONS_BY_KIND: { readonly [K in ContractKind]: ContractTransitions } = Object.freeze({
+  import: CONTRACT_TRANSITIONS,
+  export: EXPORT_CONTRACT_TRANSITIONS,
+});
+
+/** Je prechod `from → to` v tabuľke druhu `kind` (predvolene import)? */
+export function isContractTransitionAllowed(from: ContractState, to: ContractState, kind: ContractKind = 'import'): boolean {
+  return CONTRACT_TRANSITIONS_BY_KIND[kind][from].includes(to);
 }
 
 /**
- * Outbound jednotiek kontraktu v danom stave (dispatcher krok 5, rozhodnutie 9, ADR-027 vrátane dodatku T05-11):
+ * Outbound jednotiek **import** kontraktu v danom stave (dispatcher krok 5, rozhodnutie 9, ADR-027 vrátane dodatku
+ * T05-11); export booking má vlastné pravidlo (`ExportContract.outbound`, ADR-032):
  * - `sla` — smú na rampu ako prvé, kontrakty v poradí `slaDeadlineTick` ↑, potom id ↑ (`unloading` aj `exporting`:
  *   uskladnené jednotky smú odísť už počas vykládky — inak by objem nad voľnú kapacitu skladov zaplnil sklad aj apron,
  *   loď by blokovala kotvisko a kontrakt by nikdy neprišiel do `exporting`);

@@ -7,7 +7,7 @@
  * 1. každá živá jednotka je v práve jednom indexe držiteľa a ten zodpovedá jej `location` (druh + id držiteľa),
  * 2. index neobsahuje neexistujúcu jednotku ani tú istú jednotku dvakrát, nie je prázdny a má poradie svojho druhu,
  * 3. jedinečné miesto (slot apronu/skladu) nie je obsadené dvakrát a mapa slotov presne zodpovedá jednotkám,
- * 4. počítadlá podľa druhu sedia s indexmi a `createdCount = živé + exported`.
+ * 4. počítadlá podľa druhu sedia s indexmi a `createdCount = živé + exported + shipped` (ADR-032).
  */
 import type { EntityId } from '../core/entity-id';
 import type { CargoUnit } from './cargo-unit';
@@ -31,11 +31,11 @@ export interface CargoBucketView {
 
 /** Pohľad na vnútorný stav ledgera. */
 export interface CargoLedgerView {
-  /** Živé jednotky (na mape) podľa id; exportované ledger neeviduje. */
+  /** Živé jednotky (na mape) podľa id; exportované a odplávané ledger neeviduje. */
   readonly units: ReadonlyMap<EntityId, CargoUnit>;
   /** Druh lokácie s držiteľom → id držiteľa → index. */
   readonly buckets: ReadonlyMap<CargoLocationKind, ReadonlyMap<EntityId, CargoBucketView>>;
-  /** Počet jednotiek podľa druhu lokácie; `exported` = počet exportovaných. */
+  /** Počet jednotiek podľa druhu lokácie; `exported` / `shipped` = počet exportovaných / odplávaných. */
   readonly counts: Readonly<Record<CargoLocationKind, number>>;
   readonly createdCount: number;
 }
@@ -140,17 +140,18 @@ export function findConservationViolation(view: CargoLedgerView): string | undef
   for (const [id, unit] of view.units) {
     if (unit.id !== id) return `jednotka ${unitLabel(unit.id)} je uložená pod id ${unitLabel(id)}`;
     if (holderSpecOf(unit.location.kind) === undefined) {
-      return `živá jednotka ${unitLabel(id)} má lokáciu ${formatLocation(unit.location)} (exportované sa evidujú len počtom)`;
+      return `živá jednotka ${unitLabel(id)} má lokáciu ${formatLocation(unit.location)} (exportované a odplávané sa evidujú len počtom)`;
     }
     if (!seenIn.has(id)) return `jednotka ${unitLabel(id)} (${formatLocation(unit.location)}) nie je v žiadnom indexe`;
   }
 
   const live = view.units.size;
   const exported = view.counts.exported;
-  if (view.createdCount !== live + exported) {
+  const shipped = view.counts.shipped;
+  if (view.createdCount !== live + exported + shipped) {
     return (
-      `createdCount ${String(view.createdCount)} ≠ živé ${String(live)} + exported ${String(exported)} ` +
-      `(rozdiel ${String(view.createdCount - live - exported)})`
+      `createdCount ${String(view.createdCount)} ≠ živé ${String(live)} + exported ${String(exported)} + shipped ${String(shipped)} ` +
+      `(rozdiel ${String(view.createdCount - live - exported - shipped)})`
     );
   }
   return undefined;

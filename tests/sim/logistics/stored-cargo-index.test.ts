@@ -1,7 +1,7 @@
 // StoredCargoIndex (T05-04, ADR-027): uskladnené jednotky podľa kontraktu v poradí sklad ↑, FIFO — odvodená cache pre
 // outbound joby dispatchera, udržiavaná háčikom `CargoLedger.move`, nie je v save (obnova ju zostaví z ledgera).
 import { describe, expect, it } from 'vitest';
-import type { CargoLocation, CargoUnit } from '@sim/cargo';
+import { IMPORT_LABELS, type CargoLocation, type CargoUnit } from '@sim/cargo';
 import type { ContractId, EntityId } from '@sim/core';
 import { StoredCargoIndex, type StoredCargoGroup } from '@sim/logistics';
 import { World, findWorldViolation, type WorldState } from '@sim/world';
@@ -11,7 +11,7 @@ const id = (value: number): EntityId => value as EntityId;
 const contract = (value: number): ContractId => value as ContractId;
 
 const unitAt = (unitId: number, contractId: number | null, location: CargoLocation): CargoUnit =>
-  Object.freeze({ id: id(unitId), typeId: 'container_teu', contractId: contractId === null ? null : contract(contractId), quantity: 1, location });
+  Object.freeze({ id: id(unitId), typeId: 'container_teu', contractId: contractId === null ? null : contract(contractId), ...IMPORT_LABELS, hold: null, quantity: 1, location });
 
 const vehicle: CargoLocation = { kind: 'in_vehicle', vehicleId: id(900) };
 const storage = (moduleId: number, slot = 0): CargoLocation => ({ kind: 'in_storage', moduleId: id(moduleId), slot });

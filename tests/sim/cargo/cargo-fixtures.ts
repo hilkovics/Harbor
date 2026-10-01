@@ -3,13 +3,16 @@
 import cargoTypesJson from '@data/defs/cargo_types.json';
 import {
   CARGO_LOCATION_KINDS,
+  IMPORT_LABELS,
   CargoLedger,
+  type CargoUnit,
+  type CargoUnitLabels,
   type CargoLedgerDeps,
   type CargoLedgerState,
   type CargoLocation,
   type CargoLocationKind,
 } from '@sim/cargo';
-import { EntityIdAllocator, EventBus, type EntityId } from '@sim/core';
+import { EntityIdAllocator, EventBus, type ContractId, type EntityId, type VoyageId } from '@sim/core';
 import { DefRegistry } from '@sim/defs';
 import type { CargoMovedEvent, SimEvent } from '@sim/events';
 import { RAW_DEFS } from '../world/world-fixtures';
@@ -53,6 +56,7 @@ export const at = {
   truck: (truckId: number): CargoLocation => ({ kind: 'in_truck', truckId: id(truckId) }),
   train: (trainId: number): CargoLocation => ({ kind: 'in_train', trainId: id(trainId) }),
   exported: (): CargoLocation => ({ kind: 'exported' }),
+  shipped: (): CargoLocation => ({ kind: 'shipped' }),
 };
 
 /** Jedna ukážková lokácia každého druhu (tabuľkové testy). */
@@ -67,6 +71,7 @@ export const SAMPLE_LOCATIONS: Readonly<Record<CargoLocationKind, CargoLocation>
   in_truck: at.truck(907),
   in_train: at.train(908),
   exported: at.exported(),
+  shipped: at.shipped(),
 };
 
 /** Importné reťazce §7.1 (bez počiatočného `on_ship`, ktorý dá `create`). */
@@ -96,6 +101,29 @@ export const RORO_CHAIN: readonly CargoLocation[] = [
   at.truck(61),
   at.exported(),
 ];
+
+/** Exportný reťazec ADR-032 (bez počiatočného `in_truck`, ktorý dá `create` s exportnými štítkami). */
+export const EXPORT_CHAIN: readonly CargoLocation[] = [
+  at.ramp(50, 0),
+  at.vehicle(30),
+  at.storage(40, 4),
+  at.vehicle(31),
+  at.apron(10, 2),
+  at.crane(20),
+  at.ship(90),
+  at.shipped(),
+];
+/** „Last minute" export (ADR-032 bod 6): z docku rampy priamo na apron, bez skladu. */
+export const LAST_MINUTE_CHAIN: readonly CargoLocation[] = [at.ramp(50, 1), at.vehicle(30), at.apron(10, 3), at.crane(20), at.ship(90), at.shipped()];
+
+/** Štítky exportnej jednotky bookingu (kontrakt 77, voyage 7, Rotterdam, ťažká). */
+export const EXPORT_CONTRACT = 77 as ContractId;
+export const EXPORT_LABELS: CargoUnitLabels = { direction: 'export', voyageId: 7 as VoyageId, destinationPort: 'Rotterdam', weightClass: 'heavy' };
+
+/** Celá import jednotka bez kontraktu (štítky `IMPORT_LABELS`, bez hold) — pre ručne skladané pohľady a stavy. */
+export function importUnit(fields: Pick<CargoUnit, 'id' | 'location'> & Partial<CargoUnit>): CargoUnit {
+  return { typeId: TEU, contractId: null, ...IMPORT_LABELS, hold: null, quantity: 1, ...fields };
+}
 
 export interface LedgerHarness {
   readonly ledger: CargoLedger;

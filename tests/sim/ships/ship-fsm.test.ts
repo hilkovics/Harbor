@@ -30,7 +30,7 @@ const ROUTE3 = [
   { x: 44.5, y: 7.5, heading: 270 as const },
 ];
 
-/** Karta T02-05 + ADR-029 (`arriving` → `inbound`): presne tieto prechody, nič iné. */
+/** Karta T02-05 + ADR-029 (`arriving` → `inbound`) + ADR-032 (`lashing`): presne tieto prechody, nič iné. */
 const EXPECTED: readonly (readonly [ShipState, ShipState])[] = [
   ['arriving', 'inbound'],
   ['inbound', 'waiting_anchorage'],
@@ -38,6 +38,8 @@ const EXPECTED: readonly (readonly [ShipState, ShipState])[] = [
   ['waiting_anchorage', 'berthing'],
   ['berthing', 'docked'],
   ['docked', 'undocking'],
+  ['docked', 'lashing'],
+  ['lashing', 'undocking'],
   ['undocking', 'outbound'],
   ['outbound', 'despawned'],
 ];
@@ -56,17 +58,19 @@ describe('SHIP_TRANSITIONS', () => {
 });
 
 describe('SHIP_STATE_TRAITS', () => {
-  it('kotviská: vždy berthing a docked, smie inbound (rezervácia pri vstupe) a undocking (do konca dráhy); anchorage smie inbound, vždy waiting_anchorage (T5B-04b); vodu pred kotviskom blokuje berthing/docked/undocking', () => {
-    const where = (key: 'blocksBerthWater' | 'moored' | 'onMap'): ShipState[] => SHIP_STATES.filter((state) => SHIP_STATE_TRAITS[state][key]);
+  it('kotviská: vždy berthing, docked a lashing, smie inbound (rezervácia pri vstupe) a undocking (do konca dráhy); anchorage smie inbound, vždy waiting_anchorage (T5B-04b); vodu pred kotviskom blokuje berthing/docked/lashing/undocking', () => {
+    const where = (key: 'blocksBerthWater' | 'moored' | 'onMap' | 'lashes'): ShipState[] => SHIP_STATES.filter((state) => SHIP_STATE_TRAITS[state][key]);
     const holding = (key: 'berths' | 'anchorage', value: string): ShipState[] => SHIP_STATES.filter((state) => SHIP_STATE_TRAITS[state][key] === value);
-    expect(holding('berths', 'always')).toEqual(['berthing', 'docked']);
+    expect(holding('berths', 'always')).toEqual(['berthing', 'docked', 'lashing']);
     expect(holding('berths', 'optional')).toEqual(['inbound', 'undocking']);
     expect(holding('anchorage', 'optional')).toEqual(['inbound']);
     // Loď bez anchorage zo save v5 (čakala na konci dráhy) parser presunie pred vstup (ADR-029 addendum).
     expect(holding('anchorage', 'always')).toEqual(['waiting_anchorage']);
-    expect(where('blocksBerthWater')).toEqual(['berthing', 'docked', 'undocking']);
-    // T02-14: pri kotvisku (dockPoint + DOCKED_HEADING) stojí len dokovaná loď.
-    expect(where('moored')).toEqual(['docked']);
+    expect(where('blocksBerthWater')).toEqual(['berthing', 'docked', 'lashing', 'undocking']);
+    // T02-14: pri kotvisku (dockPoint + DOCKED_HEADING) stojí dokovaná loď a loď v lashingu (ADR-032).
+    expect(where('moored')).toEqual(['docked', 'lashing']);
+    // ADR-032 bod 11: odpočet lashingu má len stav lashing.
+    expect(where('lashes')).toEqual(['lashing']);
     // ADR-029: pred vstupom (a po odchode) loď nezaberá bunky; na mape sa lode neprekrývajú bez výnimky.
     expect(SHIP_STATES.filter((state) => !SHIP_STATE_TRAITS[state].onMap)).toEqual(['arriving', 'despawned']);
     expect([holdingAllows('always', 0), holdingAllows('always', 1), holdingAllows('never', 1), holdingAllows('optional', 0), holdingAllows('optional', 2)]).toEqual([false, true, false, true, true]);
@@ -145,6 +149,7 @@ describe('Ship — konštruktor a toState', () => {
         [48.5, 7.5],
         [44.5, 7.5, 270],
       ],
+      lashingTicksLeft: 0,
     });
     expect(JSON.parse(JSON.stringify(state))).toEqual(state);
   });

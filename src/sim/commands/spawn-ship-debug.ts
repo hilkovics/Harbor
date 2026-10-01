@@ -88,7 +88,7 @@ export class SpawnShipDebugCommand extends SimCommand {
     if (!result.ok) {
       throw new Error(`${this.type}.apply: príkaz nie je platný (${result.reasons.join(', ')}) — volaj apply len po úspešnom validate`);
     }
-    spawnShip(world, { shipClassId: this.shipClassId, cargoTypeId: this.cargoTypeId, units: this.units, contractId: null });
+    spawnShip(world, { shipClassId: this.shipClassId, cargoTypeId: this.cargoTypeId, units: this.units, contractId: null, voyageId: null });
   }
 
   toJSON(): SerializedCommand {

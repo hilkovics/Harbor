@@ -23,11 +23,12 @@
 | — | Vzdialený prečerpávací terminál (bója pre tankery) | BACKLOG (F9/F12) |
 
 ## Checklist
-- [ ] T5B-01 · Dáta: `harbor_01` s viac morom a mólami, sloty apronu (≥ 8), depo 10 vozidiel, balans rampy; manifest
-- [ ] T5B-02 · Sim: tok kamiónov (rezervácia docku až pri odchode zo stojiska, fronta na dock) + lode bez prekryvu (trasy, ankoráž)
-- [ ] T5B-03 · Render: napojenie ciest na konektory, mierka (audit + oprava vozíka), animácia žeriavu na dvore, manéver kamióna na rampe
+- [x] T5B-01 · Dáta: `harbor_01` s viac morom a mólami, sloty apronu (≥ 8), depo 10 vozidiel, balans rampy; manifest
+- [x] T5B-02 · Sim: tok kamiónov (rezervácia docku až pri odchode zo stojiska, fronta na dock) + lode bez prekryvu (trasy, ankoráž)
+- [x] T5B-03 · Render: napojenie ciest na konektory, mierka (audit + oprava vozíka), animácia žeriavu na dvore, manéver kamióna na rampe
+- [x] T5B-07 · Zosúladenie po zlúčení: testy pripínajú starý balans cez syntetické defy (LEGACY_CAPACITY_DEFS), lode v `arriving` sa nekreslia, dokončenie cúvania kamióna (DOCK_CATCH_UP), hrany nábrežia v 4 smeroch, e2e f4 toasty
 - [ ] T5B-04 · Review `src/sim/**` + opravy
-- [ ] T5B-05 · ADR-028 (pobrežie), BACKLOG, CLAUDE.md „Čo NEROBIŤ" zosúladiť
+- [x] T5B-05 · ADR-028 (pobrežie), BACKLOG, CLAUDE.md „Čo NEROBIŤ" zosúladiť
 - [ ] T5B-06 · Plná pipeline + e2e + screenshoty; uzavretie, PR popis
 
 Vlny: {T5B-01 (worktree) ‖ T5B-02 (hlavný checkout, jediný writer `src/sim`) ‖ T5B-03 (worktree)} → T5B-04 → T5B-05 → T5B-06.

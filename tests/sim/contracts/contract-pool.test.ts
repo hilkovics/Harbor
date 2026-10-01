@@ -11,7 +11,7 @@
  *     `offerExpiresTick`, najneskôr do jedného herného dňa po ňom; expirovaný kontrakt môže z mapy zmiznúť;
  *  P3 uložený stav v5 obsahuje kľúč `completedContracts` (rozhodnutie 11), z ktorého sa berie tier.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { World, type WorldState } from '@sim/world';
 import { emptyScenario, must } from '../helpers/harbor';
 import {
@@ -131,6 +131,26 @@ describe('pool: prvé naplnenie', () => {
       tickWorld(world, TICKS_PER_DAY);
     }
     expect(offeredContracts(world)).toHaveLength(0);
+  });
+
+  // T06-08b (review T06-07, minor 2): kniha bez šablóny pre tier 0 ostáva `untouched` (žiadne id) — pool sa predtým
+  // pokúšal doplniť v každom ticku. Po prvom neúspešnom pokuse sa ďalší pokus robí len pri `DayClosed`.
+  it('šablóny s minTier 1 pri tier 0: pool sa nedopĺňa v každom ticku, len pri DayClosed; save/load priebeh nemení', () => {
+    const defs = defsWith({ templates: DEFS.contractTemplates.items.map((template) => ({ ...template, minTier: 1 })) });
+    const world = worldWithPool(defs, 5005);
+    const attempts = vi.spyOn(world.contractBook, 'tier');
+    const withinDay = TICKS_PER_DAY - world.clock.tick - 1;
+    tickWorld(world, withinDay);
+    expect(attempts).toHaveBeenCalledTimes(0);
+    tickWorld(world, 1);
+    expect(world.clock.tick % TICKS_PER_DAY).toBe(0);
+    expect(attempts).toHaveBeenCalledTimes(1);
+    // Obnova: prvý tick po načítaní skúsi pool znova (no-op bez `Rng`) — pokračovanie je zhodné s pôvodným svetom.
+    const restored = World.deserialize(defs, MAP, JSON.parse(JSON.stringify(world.serialize())) as WorldState);
+    tickWorld(world, TICKS_PER_DAY);
+    tickWorld(restored, TICKS_PER_DAY);
+    expect(JSON.stringify(restored.serialize())).toBe(JSON.stringify(world.serialize()));
+    expect(offeredContracts(restored)).toHaveLength(0);
   });
 });
 

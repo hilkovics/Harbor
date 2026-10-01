@@ -8,7 +8,10 @@
  * `offersPerDay`; (3) pri štarte hry (`GAME_START_TICK`, prvý tick po `World.create`) len doplnenie — a rovnako
  * v prvom ticku po načítaní save spred kontraktov (v1–v4: kniha po migrácii ešte nepridelila žiadne id,
  * `ContractBook.untouched`; T06-07). Obnova save `Rng` nespotrebuje, pool sa doplní až v kroku 2 a podmienka je
- * odvodená zo save, takže ju neprekazí ani uloženie pred prvým tickom. Ponuka teda zanikne
+ * odvodená zo save, takže ju neprekazí ani uloženie pred prvým tickom. Pokus pre nedotknutú knihu je jeden na
+ * inštanciu systému (T06-08b): bez šablóny pre tier 0 kniha ostane `untouched` a ďalší pokus príde až s `DayClosed`
+ * (predtým v každom ticku). Príznak nie je stav simulácie — neúspešný pokus nič nezmení a `Rng` nespotrebuje
+ * (`drawOffer` vráti `null` pred prvým ťahom), takže po načítaní save ho prvý tick zopakuje bez vplyvu. Ponuka teda zanikne
  * v prvej uzávierke dňa v čase `offerExpiresTick` alebo po ňom (najneskôr o deň) a jej miesto hneď zaberie nová — tabuľa
  * ponúk sa mení raz denne (ponuky z polnoci expirujú presne v `offerExpiresTick`, prvá dávka zo štartu v najbližšej
  * polnoci po ňom, `offerClosingTick`). Pool sa nedopĺňa inokedy — ani po `DeclineContract`.
@@ -184,6 +187,8 @@ function snapshotOpen(world: World, into: Contract[]): Contract[] {
 export class ContractSystem {
   /** Znovupoužiteľná snímka neukončených kontraktov (hot path bez alokácie; nie je stav simulácie). */
   private readonly open: Contract[] = [];
+  /** Doplnenie poolu už v tejto inštancii prebehlo (pokus pre nedotknutú knihu len raz; viď hlavička, T06-08b). */
+  private refilled = false;
 
   /** Krok 2 (viď hlavička súboru). */
   tick(world: World, closed: ClockBoundaries): void {
@@ -194,7 +199,10 @@ export class ContractSystem {
     }
     if (closed.dayClosed) expireOffers(world, open);
     open.length = 0;
-    if (closed.dayClosed || world.clock.tick === GAME_START_TICK || world.contractBook.untouched) refillPool(world);
+    if (closed.dayClosed || world.clock.tick === GAME_START_TICK || (world.contractBook.untouched && !this.refilled)) {
+      this.refilled = true;
+      refillPool(world);
+    }
   }
 }
 

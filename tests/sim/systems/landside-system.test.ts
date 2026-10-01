@@ -309,6 +309,29 @@ describe('cesty pod kamiónom a bez cesty', () => {
     expect(changes(log, truck.id).map((entry) => entry.to)).toContain('to_bay');
   });
 
+  it('gate_queue_out: vonkajšia strana zanikne počas prechodu von a vráti sa → prechod sa zopakuje celý, trucksProcessed +1, nie +2; aj cez save (BACKLOG P2, T06-07)', () => {
+    const { world, gate, ramp } = landside();
+    stage(world, ramp, 0, 1);
+    const log = run(world, 1);
+    const truck = onlyTruck(world);
+    runUntil(world, () => truck.state === 'gate_queue_out', 3000, log);
+    run(world, 2, log);
+    expect([gate.trucksProcessed, gate.busyTicksLeft]).toEqual([1, PROCESS - 2]);
+    execute(world, { type: 'RemoveRoad', cells: [GATE_ENTRY] });
+    run(world, PROCESS + REPATH, log);
+    expect([truck.state, gate.queuedTruckIds, gate.busyTicksLeft, gate.trucksProcessed]).toEqual(['gate_queue_out', [truck.id], 0, 1]);
+    const restored = World.deserialize(DEFS, MAP, viaJson(world.serialize()));
+    for (const target of [world, restored]) {
+      execute(target, { type: 'PlaceRoad', cells: [GATE_ENTRY] });
+      const placedAt = target.clock.tick;
+      const tail: Timed[] = [];
+      runUntil(target, () => target.cargo.exportedCount === 1, 3000, tail);
+      expect(tickOf(changes(tail, truck.id), 'to_portal') - placedAt).toBe(PROCESS + 1);
+      expect(gateOf(target).trucksProcessed).toBe(2);
+    }
+    expect(JSON.stringify(restored.serialize())).toBe(JSON.stringify(world.serialize()));
+  });
+
   it('zaniknutý výstup stojiska: kamión čaká v bayi (repathIntervalTicks), po obnove cesty ide k docku', () => {
     const { world, area, ramp } = landside();
     stage(world, ramp, 0, 1);

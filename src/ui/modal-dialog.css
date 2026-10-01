@@ -1,0 +1,221 @@
+/*
+ * ModalDialog + tlačidlá overlayov (Nastavenia, Uložiť/načítať; vizuál z prototypu design/ui/game-ui.source.html, overlay
+ * `settings`). Len tokeny z design/tokens.css: žiadne pevné farby ani rozmery. Rozmery prototypu bez vlastného tokenu
+ * (640 / 36 / 18 / 14 px…) sú odvodené z tokenov (`calc(var(--space-*) ± …)`); pevné sú len 1 px čiary, 2 px focus ring
+ * a ±2 px korekcie. Zásterka prototypu (rgba tmavá 55 %) je 60 % --ui-bg (color-mix nad priesvitnosťou tokenu); tmavý text
+ * na accent ploche (#0F1B27) je --ui-surface. BEM: .modal-scrim, .modal-dialog (__header / __title / __close /
+ * __close-icon / __body / __footer / __footer-group), .modal-btn (--primary / --secondary / --danger / --sm).
+ */
+
+.modal-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  padding: var(--space-6);
+  background: color-mix(in srgb, var(--ui-bg) 60%, transparent);
+}
+
+.modal-dialog {
+  --md-icon-close: calc(var(--icon-sm) + var(--space-1) / 2);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: calc(var(--side-panel-w) + var(--space-8) * 8 + var(--space-6));
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+  color: var(--ui-text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-normal);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Fokus na samotnom dialógu je len záložný (bez ovládacích prvkov) — žiadny rám okolo celého okna. */
+.modal-dialog:focus {
+  outline: none;
+}
+
+.modal-dialog svg {
+  flex: none;
+}
+
+/* ===== Záhlavie ===== */
+
+.modal-dialog__header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: calc(var(--space-3) + 2px) var(--space-4) calc(var(--space-3) + 2px) var(--space-6);
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.modal-dialog__title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+}
+
+.modal-dialog__close {
+  box-sizing: border-box;
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: var(--space-8);
+  height: var(--space-8);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ui-text-2);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+}
+
+.modal-dialog__close:hover {
+  background: var(--ui-surface-2);
+  color: var(--ui-text);
+}
+
+.modal-dialog__close:focus-visible {
+  outline: 2px solid var(--ui-accent);
+}
+
+.modal-dialog__close-icon {
+  width: var(--md-icon-close);
+  height: var(--md-icon-close);
+}
+
+/* ===== Telo a päta ===== */
+
+.modal-dialog__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-4) + var(--space-1));
+  padding: calc(var(--space-4) + var(--space-1)) var(--space-6);
+  overflow: auto;
+}
+
+.modal-dialog__footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: calc(var(--space-3) + 2px) var(--space-6);
+  border-top: 1px solid var(--ui-border);
+}
+
+/* Skupina tlačidiel vľavo v päte (Export / Import); zvyšok pätky zostáva vpravo. */
+.modal-dialog__footer-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-right: auto;
+}
+
+/* ===== Tlačidlá ===== */
+
+.modal-btn {
+  box-sizing: border-box;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: calc(var(--space-8) + var(--space-1));
+  margin: 0;
+  padding: 0 var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ui-text-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    border-color 120ms ease-out,
+    color 120ms ease-out;
+}
+
+.modal-btn:hover:not(:disabled) {
+  background: var(--ui-surface-2);
+  color: var(--ui-text);
+}
+
+.modal-btn:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+
+.modal-btn:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.modal-btn--primary {
+  padding: 0 calc(var(--space-4) + var(--space-1));
+  border-color: var(--ui-accent);
+  background: var(--ui-accent);
+  color: var(--ui-surface);
+}
+
+.modal-btn--primary:hover:not(:disabled) {
+  border-color: var(--ui-accent-hover);
+  background: var(--ui-accent-hover);
+  color: var(--ui-surface);
+}
+
+.modal-btn--secondary {
+  border-color: var(--ui-border);
+  background: var(--ui-surface-2);
+  color: var(--ui-text);
+}
+
+.modal-btn--secondary:hover:not(:disabled) {
+  border-color: var(--ui-accent);
+  background: var(--ui-surface-2);
+}
+
+/* Nevratná akcia (vymazanie): svetlejšia červená z tokenov — --ui-danger má na tmavom pozadí len ~3,9 : 1. */
+.modal-btn--danger {
+  border-color: var(--ui-danger);
+  background: color-mix(in srgb, var(--ui-danger) 14%, transparent);
+  color: color-mix(in srgb, var(--ui-danger) 70%, var(--ui-text));
+}
+
+.modal-btn--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ui-danger) 26%, transparent);
+  color: var(--ui-text);
+}
+
+.modal-btn--sm {
+  height: var(--space-8);
+  padding: 0 var(--space-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-scrim,
+  .modal-scrim * {
+    animation: none;
+    transition: none;
+  }
+}

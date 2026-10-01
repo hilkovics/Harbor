@@ -4,6 +4,7 @@ import {
   MINUS_SIGN,
   TIMES_SIGN,
   formatCount,
+  formatDateTime,
   formatDuration,
   formatFootprint,
   formatFraction,
@@ -234,5 +235,24 @@ describe('formatDuration', () => {
   it('neplatná hodnota alebo mierka → —', () => {
     expect(formatDuration(Number.NaN, scale)).toBe(EM_DASH);
     expect(formatDuration(100, { ticksPerHour: 0, ticksPerDay: 8640 })).toBe(EM_DASH);
+  });
+});
+
+describe('formatDateTime', () => {
+  it('UTC: deň. mesiac. rok HH:MM bez núl vpredu pri dni a mesiaci', () => {
+    expect(formatDateTime('2026-10-01T12:35:00.000Z', 0)).toBe('1. 10. 2026 12:35');
+    expect(formatDateTime('2026-01-09T03:05:59.000Z', 0)).toBe('9. 1. 2026 03:05');
+  });
+
+  it('posun časovej zóny sa premietne aj do dňa (UTC+2 cez polnoc, UTC−5 pred polnocou)', () => {
+    expect(formatDateTime('2026-10-01T23:30:00.000Z', 120)).toBe('2. 10. 2026 01:30');
+    expect(formatDateTime('2026-10-01T02:00:00.000Z', -300)).toBe('30. 9. 2026 21:00');
+    expect(formatDateTime('2026-12-31T23:59:00.000Z', 60)).toBe('1. 1. 2027 00:59');
+  });
+
+  it('bez posunu použije časovú zónu prehliadača (výsledok je dátum s HH:MM) a neplatný reťazec → —', () => {
+    expect(formatDateTime('2026-10-01T12:35:00.000Z')).toMatch(/^\d{1,2}\. \d{1,2}\. 20\d{2} \d{2}:\d{2}$/);
+    expect(formatDateTime('nie je dátum')).toBe(EM_DASH);
+    expect(formatDateTime('')).toBe(EM_DASH);
   });
 });

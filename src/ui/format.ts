@@ -85,6 +85,20 @@ export function formatGameTime({ day, hour, minute }: GameTimeParts): string {
   return `Deň ${String(Math.trunc(day) + 1)} \u00B7 ${pad2(hour)}:${pad2(minute)}`;
 }
 
+/**
+ * Reálny dátum a čas z ISO 8601 pre zoznam uložených hier: `1. 10. 2026 14:35` (deň. mesiac. rok HH:MM, bez núl vpredu pri
+ * dni a mesiaci). Bez `Intl`, aby výstup nezávisel od locale. `utcOffsetMinutes` je posun lokálneho času oproti UTC
+ * (napr. `120` = UTC+2); vynechaný = časová zóna prehliadača. Neplatný reťazec → `—`.
+ */
+export function formatDateTime(iso: string, utcOffsetMinutes?: number): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return EM_DASH;
+  const offset = utcOffsetMinutes ?? -new Date(ms).getTimezoneOffset();
+  const local = new Date(ms + offset * 60_000);
+  const date = `${String(local.getUTCDate())}. ${String(local.getUTCMonth() + 1)}. ${String(local.getUTCFullYear())}`;
+  return `${date} ${pad2(local.getUTCHours())}:${pad2(local.getUTCMinutes())}`;
+}
+
 /** Popisok rýchlosti: `0` → `Pauza`, inak `N×` (U+00D7). */
 export function formatSpeed(speed: number): string {
   return speed === 0 ? 'Pauza' : `${String(speed)}\u00D7`;

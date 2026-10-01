@@ -49,7 +49,7 @@
 | #6 | `phase/05-contracts-vertical-slice` (F5, míľnik M1) |
 | #7 | `phase/05b-playtest-feedback` → `phase/05-…` |
 | #8 | `phase/06-save-load` → `phase/05b-…` |
-| (bez PR) | **`phase/06a-export-booking`** ← aktuálna práca, stacked nad `phase/06` |
+| #9 | **`phase/06a-export-booking`** → `phase/06-…` ← aktuálna práca (PR vytvorený z UI) |
 
 Nikdy PR neschvaľuj ani nezlučuj, nerob force-push ani rebase na cudzích vetvách a nerob prázdne commity. Na PR #7 a #8 je zapnutý odber udalostí; hodinové self check-iny sú zrušené.
 

@@ -192,12 +192,15 @@ Stav: **hotová (T05-01..T05-13), míľnik M1 splnený**. Novú hru možno odohr
 ## Fáza 5b — Spätná väzba z hrania
 Karty: `docs/tasks/phase-05b.md` · vetva `phase/05b-playtest-feedback` (stacked nad hilkovics/Harbor#6)
 
-Stav: **6 kariet hotovo** (T5B-01, T5B-02, T5B-03, T5B-05, T5B-07), **T5B-04 v review**, **T5B-06 čaká na finalizáciu**.
+Stav: **hotová** (T5B-01, T5B-02, T5B-03, T5B-04, T5B-04b, T5B-05, T5B-06, T5B-07)
 
 **Výsledky:**
-- `pnpm test`: 247 súborov, 6767 testov zelených.
-- `simrun full_import_chain --ticks 40000`: ticksToAllExported zlepšené z 9836 → 8163 (zrýchlenie zdržania na rampe a optimizácia toku kamiónov).
-- `simrun vertical_slice --ticks 60000`: `lostUnits` 0, `exportedUnits` 78, golden bez zmeny.
-- Zmeny: `data/maps/harbor_01.json` (viac móla a apronových slotov), `data/defs/modules.json` (balans veľkostí depa), `src/render/` (napojenie ciest na konektory, mierka vozidiel, manéver kamióna na rampe), `src/sim/ships/` (trasy lodí bez prekryvu).
+- review sim-reviewer: MERGE (0 blocking, 4 major opravené v T5B-04b)
+- `pnpm test`: 248 súborov, 6784 testov zelených
+- `pnpm test:e2e`: 34/34
+- `simrun vertical_slice`: cashEnd 41 790 000, exportedUnits 78, lostUnits 0, onTimeRate 1, craneBlockedPct 3,8 %
+- `simrun full_import_chain`: ticksToAllExported zlepšené z 9836 → 8166, lostUnits 0
+- Zmeny: `data/maps/harbor_01.json` (viac móla a apronových slotov), `data/defs/modules.json` (balans veľkostí depa), `src/render/` (napojenie ciest na konektory, mierka vozidiel, manéver kamióna na rampe), `src/sim/ships/` (trasy lodí bez prekryvu), validácia trás lodí pri obnove (ADR-029)
+- Hrateľná verzia zverejnená (artefakt „Fáza 5b")
 
-**Vedľajšie opravy:** 5 riadkov úprav v detailoch balansácie.
+Ďalej: **Fáza 6 — Save/Load, čas, nastavenia, stabilizácia**

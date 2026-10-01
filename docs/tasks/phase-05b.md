@@ -27,9 +27,10 @@
 - [x] T5B-02 · Sim: tok kamiónov (rezervácia docku až pri odchode zo stojiska, fronta na dock) + lode bez prekryvu (trasy, ankoráž)
 - [x] T5B-03 · Render: napojenie ciest na konektory, mierka (audit + oprava vozíka), animácia žeriavu na dvore, manéver kamióna na rampe
 - [x] T5B-07 · Zosúladenie po zlúčení: testy pripínajú starý balans cez syntetické defy (LEGACY_CAPACITY_DEFS), lode v `arriving` sa nekreslia, dokončenie cúvania kamióna (DOCK_CATCH_UP), hrany nábrežia v 4 smeroch, e2e f4 toasty
-- [ ] T5B-04 · Review `src/sim/**` + opravy
+- [x] T5B-04 · Review `src/sim/**` + opravy
+- [x] T5B-04b · Opravy z review: posun bokom v ceste von (vnútorný roh nábrežia), legacy loď bez cieľa zo save v5 → `arriving`, validácia trás lodí pri obnove, A* po vode bez alokácií (addendum ADR-029)
 - [x] T5B-05 · ADR-028 (pobrežie), BACKLOG, CLAUDE.md „Čo NEROBIŤ" zosúladiť
-- [ ] T5B-06 · Plná pipeline + e2e + screenshoty; uzavretie, PR popis
+- [x] T5B-06 · Plná pipeline + e2e + screenshoty; uzavretie, PR popis
 
 Vlny: {T5B-01 (worktree) ‖ T5B-02 (hlavný checkout, jediný writer `src/sim`) ‖ T5B-03 (worktree)} → T5B-04 → T5B-05 → T5B-06.
 
@@ -37,3 +38,10 @@ Vlny: {T5B-01 (worktree) ‖ T5B-02 (hlavný checkout, jediný writer `src/sim`)
 - Starter oblasť mapy (parcela `starter` x 30–57, y 14–33, štartová cesta x=44 y 34..63, road portál (44,63), Root berth a jeho vodná plocha) ostáva **na rovnakých súradniciach**, aby scenáre F1–F5 a e2e ostali platné. Zmeny terénu mimo nej.
 - Nové hodnoty balansu v defoch, nie v kóde (pravidlo 4). Golden `vertical_slice` sa môže zmeniť → prepísať so zdôvodnením.
 - Determinizmus a konzervácia nákladu platia; každá zmena v sime má test.
+
+## Výsledok
+- review sim-reviewer: **MERGE** (0 blocking, 4 major opravené v T5B-04b)
+- `pnpm test`: 248 súborov / 6784 testov; e2e 34/34
+- `simrun vertical_slice`: cashEnd 41 790 000, exportedUnits 78, lostUnits 0, onTimeRate 1, craneBlockedPct 3,8 %
+- `simrun full_import_chain`: ticksToAllExported 9836 → 8166, lostUnits 0
+- Hrateľná verzia zverejnená (artefakt „Fáza 5b")

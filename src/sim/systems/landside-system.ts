@@ -37,6 +37,7 @@ import { TruckError } from '../trucks/truck-error';
 import { TRUCK_STATE_TRAITS, changeTruckState, isTruckTravelState, type TruckState, type TruckTravelState } from '../trucks/truck-fsm';
 import { DockSupply } from '../trucks/dock-supply';
 import { spawnTrucks } from '../trucks/truck-spawner';
+import { MIN_STAY_TICKS, waitingStayTicks } from '../trucks/truck-wait';
 import {
   enterTruckNoPath,
   faceRoute,
@@ -52,13 +53,6 @@ import {
   waitingAreaOfTruck,
 } from '../trucks/truck-trip';
 import type { World } from '../world/world';
-
-/**
- * Najkratší pobyt v stave s odpočtom: stav trvá aspoň tick príchodu (nultý tick) a skončí najskôr v ďalšom ticku —
- * `waitTicks ≥ 1` je invariant stavov s čakaním (krok 12). Pri `internalTicks` stojiska 0 kamión odíde hneď v ďalšom
- * ticku. Štrukturálna hranica konvencie odpočtu (ADR-016), nie balans.
- */
-const MIN_STAY_TICKS = 1;
 
 /** Jeden tick odpočtu; `true`, keď práve skončil. */
 function countDown(truck: Truck): boolean {
@@ -94,7 +88,7 @@ const ARRIVALS: { readonly [S in TruckTravelState]: Arrival } = Object.freeze({
   to_bay: (truck: Truck, world: World) => {
     const area = waitingAreaOfTruck(world, truck);
     area.occupyBay(truck.id);
-    truck.waitTicks = Math.max(MIN_STAY_TICKS, area.internalTicks ?? world.defs.logistics.defaultInternalTicks);
+    truck.waitTicks = waitingStayTicks(area, world.defs.logistics);
     changeTruckState(world.events, truck, 'waiting');
   },
   to_dock: (truck: Truck, world: World) => {

@@ -127,7 +127,7 @@ describe('attachDomInput: keysBlocked (otvorený overlay)', () => {
   });
 });
 
-describe('useOverlayEscape (Esc mimo dialógu)', () => {
+describe('useOverlayEscape a usePanelKeys (okenné skratky mimo InputController)', () => {
   afterEach(() => {
     vi.doUnmock('react');
     vi.unstubAllGlobals();
@@ -148,6 +148,29 @@ describe('useOverlayEscape (Esc mimo dialógu)', () => {
     useOverlayEscape(overlays);
     return { win, unmount: () => cleanup?.() };
   }
+
+  it('skratky panelu kontraktov (C, Esc) pod otvoreným overlayom nič nerobia; po zatvorení fungujú', async () => {
+    const win = new EventTarget();
+    vi.stubGlobal('window', win);
+    vi.doMock('react', async (importOriginal) => ({ ...(await importOriginal<typeof import('react')>()), useEffect: (effect: () => void) => void effect() }));
+    const { usePanelKeys } = await import('@app/connected-contracts-panel');
+    const { PanelSelection } = await import('@app/panel-selection');
+    const panels = new PanelSelection();
+    const overlays = new OverlaySelection();
+    usePanelKeys(panels, overlays);
+    const press = (code: string): void => {
+      win.dispatchEvent(Object.assign(new Event('keydown'), { code, ctrlKey: false, altKey: false, metaKey: false, repeat: false }));
+    };
+    press('KeyC');
+    expect(panels.get()).toBe('contracts');
+    overlays.open('saves');
+    press('Escape');
+    press('KeyC');
+    expect(panels.get()).toBe('contracts'); // ani nezavrel Esc, ani neprepol C
+    overlays.close();
+    press('KeyC');
+    expect(panels.get()).toBeNull();
+  });
 
   it('Esc zatvorí otvorený overlay; iné klávesy nie', async () => {
     const overlays = new OverlaySelection();

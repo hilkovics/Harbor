@@ -92,6 +92,13 @@ describe('toasts.css — pravidlá komponentu', () => {
     expect(css.ruleBody('.toast__action:focus-visible,\n.toast__close:focus-visible')).toMatch(/outline:\s*2px solid var\(--ui-accent\)/);
   });
 
+  it('zásobník je nad zásterkou overlayov a modálov (chyby ukladania sa ukazujú pri otvorenom dialógu)', () => {
+    const zIndex = (body: string): number => Number(/z-index:\s*(\d+)/.exec(body)?.[1]);
+    const toasts = zIndex(css.ruleBody('.toasts'));
+    expect(toasts).toBeGreaterThan(zIndex(loadCss('src/ui/modal-dialog.css').ruleBody('.modal-scrim')));
+    expect(toasts).toBeGreaterThan(zIndex(loadCss('src/ui/game-over-modal.css').ruleBody('.game-over')));
+  });
+
   it('respektuje prefers-reduced-motion', () => {
     expect(source).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
   });

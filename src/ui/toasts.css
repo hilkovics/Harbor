@@ -15,7 +15,8 @@
   position: absolute;
   right: calc(var(--side-panel-w) + var(--space-6));
   bottom: calc(var(--build-bar-h) + var(--space-3));
-  z-index: 10;
+  /* Nad zásterkou overlayov a modálov (z-index 30): chyby ukladania a importu sa ukazujú práve vtedy, keď je dialóg otvorený. */
+  z-index: 40;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;

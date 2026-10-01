@@ -79,7 +79,7 @@ export function App({ bridge, feedback, selection, moduleSelection, roadSelectio
         <ConnectedTopHUD panels={panelSelection} overlays={saves === undefined ? undefined : overlaySelection} />
       </div>
       <ConnectedModuleInspector selection={inspectedModules} />
-      <ConnectedContractsPanel panels={panelSelection} />
+      <ConnectedContractsPanel panels={panelSelection} overlays={overlaySelection} />
       {toasts !== undefined && <ConnectedToasts center={toasts} />}
       <div className="app__build">
         <ConnectedBuildBar selection={selection ?? ownSelection} roadSelection={roadSelection ?? ownRoadSelection} />

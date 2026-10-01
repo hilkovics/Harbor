@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { AcceptContractCommand, DeclineContractCommand } from '@sim/commands';
 import { ContractsPanel, type ContractCardId, type ContractsTab } from '@ui/contracts-panel';
+import type { OverlaySelection } from './overlay-selection';
 import type { PanelSelection } from './panel-selection';
 import { useSimBridge, useSimSnapshot } from './use-sim-snapshot';
 
@@ -20,11 +21,15 @@ function isEditable(target: EventTarget | null): boolean {
   return target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT';
 }
 
-/** `C` prepína panel kontraktov, Esc ho zatvára (len keď je otvorený). */
-function usePanelKeys(panels: PanelSelection): void {
+/**
+ * `C` prepína panel kontraktov, Esc ho zatvára (len keď je otvorený). Kým je otvorený modálny overlay (Nastavenia,
+ * Uložiť/načítať), klávesy patria jemu (T06-03b): panel sa pod ním neprepína ani nezatvára.
+ */
+export function usePanelKeys(panels: PanelSelection, overlays?: OverlaySelection): void {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.ctrlKey || event.altKey || event.metaKey || event.repeat || isEditable(event.target)) return;
+      if (overlays?.isOpen() === true) return;
       if (event.code === 'KeyC') {
         panels.toggle('contracts');
       } else if (event.code === 'Escape' && panels.get() === 'contracts') {
@@ -35,7 +40,7 @@ function usePanelKeys(panels: PanelSelection): void {
     return () => {
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [panels]);
+  }, [panels, overlays]);
 }
 
 function OpenContractsPanel({ panels }: { readonly panels: PanelSelection }) {
@@ -83,10 +88,12 @@ function OpenContractsPanel({ panels }: { readonly panels: PanelSelection }) {
 
 export interface ConnectedContractsPanelProps {
   readonly panels: PanelSelection;
+  /** Otvorený overlay (T06-03b): kým je, skratky `C` a Esc panel neovládajú. */
+  readonly overlays?: OverlaySelection;
 }
 
-export function ConnectedContractsPanel({ panels }: ConnectedContractsPanelProps) {
+export function ConnectedContractsPanel({ panels, overlays }: ConnectedContractsPanelProps) {
   const open = useSyncExternalStore(panels.subscribe, panels.get, panels.get) === 'contracts';
-  usePanelKeys(panels);
+  usePanelKeys(panels, overlays);
   return open ? <OpenContractsPanel panels={panels} /> : null;
 }

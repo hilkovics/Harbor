@@ -51,6 +51,8 @@ export interface ToastSpec {
   readonly focus?: { readonly x: number; readonly y: number };
   /** Panel, ktorý akcia „Zobraziť“ otvorí (kontrakty); bez neho (alebo bez `openPanel`) toast túto akciu nemá. */
   readonly panel?: PanelId;
+  /** Vlastný čas do automatického zatvorenia v ms (nenápadné oznámenia, napr. „Automaticky uložené“); predvolene `autoCloseMs` zásobníka. */
+  readonly autoCloseMs?: number;
 }
 
 /** Názvy nákladu a skladu pre text „Chýba sklad“ podľa kategórie (prezentácia; F3 pozná len kontajnery). */
@@ -299,6 +301,8 @@ interface QueuedToast {
   readonly id: number;
   readonly key: string;
   readonly data: ToastData;
+  /** Čas do automatického zatvorenia v ms (vlastný z `ToastSpec.autoCloseMs`, inak predvolený zásobníka). */
+  readonly autoCloseMs: number;
   /** Časovač automatického zatvorenia; `null`, kým toast čaká vo fronte. */
   timer: unknown;
 }
@@ -372,7 +376,7 @@ export class ToastCenter {
             }
           : {}),
     };
-    this.queue.push({ id, key: spec.key, data, timer: null });
+    this.queue.push({ id, key: spec.key, data, autoCloseMs: spec.autoCloseMs ?? this.autoCloseMs, timer: null });
     this.changed();
     return true;
   }
@@ -406,7 +410,7 @@ export class ToastCenter {
       if (toast.timer !== null) continue;
       toast.timer = this.timers.setTimeout(() => {
         this.close(toast.id);
-      }, this.autoCloseMs);
+      }, toast.autoCloseMs);
     }
     this.snapshot = Object.freeze(this.queue.map((toast) => toast.data));
     for (const listener of [...this.listeners]) listener();

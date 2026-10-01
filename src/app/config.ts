@@ -7,6 +7,7 @@
 import { isWater, loadBundledMap, type Direction4Name, type Grid, type LoadedMap, type Rect } from '@sim/grid';
 import { loadBundledDefs } from '@sim/defs';
 import { World, type WorldOptions } from '@sim/world';
+import { version as packageVersion } from '../../package.json';
 
 /** Seed novej hry (uint32, ARCHITECTURE §3 / Rng); ten istý seed + rovnaké príkazy = rovnaká hra. */
 export const GAME_SEED = 20260929;
@@ -19,6 +20,9 @@ export const GAME_SEED = 20260929;
 export function randomGameSeed(): number {
   return Math.floor(Math.random() * 0x1_0000_0000) >>> 0;
 }
+
+/** Verzia hry z `package.json` — zapisuje sa do obálky savu (`SaveGame.gameVersion`, ADR-030). */
+export const GAME_VERSION: string = packageVersion;
 
 /** Mapa, ktorú aplikácia spúšťa (zabalená v `data/maps/`). */
 export const APP_MAP_ID = 'harbor_01';
@@ -84,6 +88,9 @@ export function startViewCenter(grid: Grid, focus: Rect, visibleRows: number): {
  * fronte a odpočet im začne, až keď sa zobrazia.
  */
 export const TOAST_AUTO_CLOSE_MS = 8000;
+
+/** Nenápadné oznámenie (napr. „Automaticky uložené“) sa zatvorí rýchlejšie než bežný toast. */
+export const QUIET_TOAST_AUTO_CLOSE_MS = 2500;
 
 /** Načíta mapu aplikácie; nesúlad s `APP_MAP_ID` je chyba konfigurácie (fail-fast). */
 export function loadAppMap(): LoadedMap {

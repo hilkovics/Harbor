@@ -19,6 +19,7 @@ import { ModuleSelection } from './module-selection';
 import { RoadSelection } from './road-selection';
 import { PausedBanner } from './paused-banner';
 import { PanelSelection, bindPanelExclusion } from './panel-selection';
+import type { SaveController } from './save/save-controller';
 import type { SimBridge } from './sim-bridge';
 import type { ToastCenter } from './toast-center';
 import { SimBridgeProvider } from './use-sim-snapshot';
@@ -40,6 +41,11 @@ export interface AppProps {
   readonly panels?: PanelSelection;
   /** „Nová hra“ v modále konca hry (bootstrap postaví nový svet); bez neho sa stránka načíta odznova. */
   readonly onNewGame?: () => void;
+  /**
+   * Ukladanie a načítanie hry (T06-03): sloty, export/import, nastavenia. Čaká na pripojenie panelov Nastavenia a Uložiť/Načítať
+   * (`ConnectedSaveLoad`, T06-04); `App` ho zatiaľ nepoužíva.
+   */
+  readonly saves?: SaveController;
 }
 
 /** Predvolená „Nová hra“: načítanie stránky odznova (bootstrap zostaví nový svet). */

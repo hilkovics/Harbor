@@ -16,6 +16,9 @@
  *    von); žiadny → `null` (loď čaká na anchorage).
  *
  * Poradie čakajúcich lodí (FIFO podľa spawnu) zabezpečuje `ShipSystem`, ktorý lode spracúva vzostupne podľa id.
+ *
+ * `berthReadiness` (T06-07, `AcceptContract`) posúdi tie isté úseky podľa bodu 2 bez obsadenosti a bez `accept` — či
+ * prístav loď danej triedy a nákladu vôbec obslúži.
  */
 import type { EntityId } from '../core/entity-id';
 import type { CargoCategory, ShipClassDef } from '../defs/types';
@@ -97,7 +100,8 @@ function fitsRun(world: BerthAllocationWorld, berths: readonly BerthModule[], st
  * Pripravenosť prístavu pre loď (T06-07, `AcceptContract`): `ready` = existuje úsek kotvísk, ktorý lodi vyhovuje podľa
  * bodu 2 hlavičky **bez ohľadu na obsadenosť** (loď pri kotvisku, rezervácia) a lodnú dopravu (`accept`) — loď by
  * nanajvýš počkala na anchorage; `no_crane` = úsek s dĺžkou, hĺbkou a pásom vody existuje, ale žiadny taký nemá žeriav
- * kategórie nákladu; `no_berth` = žiadny úsek nemá dosť dĺžky, hĺbky alebo vody. Svet nemení, nealokuje.
+ * kategórie nákladu; `no_berth` = žiadny úsek nemá dosť dĺžky, hĺbky alebo vody. Svet nemení (validácia príkazu,
+ * nie hot path).
  */
 export type BerthReadiness = 'ready' | 'no_crane' | 'no_berth';
 

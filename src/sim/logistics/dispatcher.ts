@@ -40,7 +40,8 @@
  * Priradenie: `job.assign`, `vehicle.jobId`, `JobAssigned` a jazda k zdroju (`startTrip`: `idle → to_pickup` +
  * `VehicleStateChanged` a trasa; pohyb v kroku 6 toho istého ticku, ADR-019).
  *
- * Hot path: žiadne `filter`/`map`/closures v cykle; aprony sa čítajú cez `CargoLedger.countAt`/`unitAtIndex` bez kópie,
+ * Hot path: zrušenie sa vyhodnocuje len po zmene ciest alebo modulov (`OutboundCancelGate`, T06-07); žiadne
+ * `filter`/`map`/closures v cykle; aprony sa čítajú cez `CargoLedger.countAt`/`unitAtIndex` bez kópie,
  * sklady cez skupiny `StoredCargoIndex` a mapy sveta sa prechádzajú v poradí id; voľné vozidlá, rampy a outbound skupiny
  * sa zbierajú raz za tick do znovupoužiteľných polí. Alokuje sa len nový job (jeho zoznam jednotiek a lokácie).
  */
@@ -268,9 +269,37 @@ function cancelJob(world: World, job: TransportJob, reason: JobCancelReason): vo
   world.events.emit({ type: 'JobCancelled', jobId: job.id, reason });
 }
 
+/** Verzie siete, od ktorých závisí zrušenie open outbound jobov (`World` ich spĺňa). */
+export interface NetworkVersions {
+  readonly roadVersion: number;
+  readonly moduleVersion: number;
+}
+
+/**
+ * Brána kontroly zrušenia (T06-07, BACKLOG P2 „cache prevádzkovosti rampy"): dôvody zrušenia (`ramp_inoperative`,
+ * `ramp_unreachable`) závisia len od ciest a modulov — prevádzkovosť rampy aj cena cesty sú memo podľa `roadVersion`
+ * a `moduleVersion` — a open outbound job vzniká len pri prevádzkovej a dosiahnuteľnej rampe. Kým sa verzie nezmenia,
+ * žiadny open job zrušiť netreba a prechod jobmi sa vynechá. Nie je stav simulácie (nový aj obnovený svet začína
+ * kontrolou v prvom ticku).
+ */
+export class OutboundCancelGate {
+  private roadVersion = Number.NaN;
+  private moduleVersion = Number.NaN;
+
+  /** `true`, keď sa od poslednej kontroly zmenili cesty alebo moduly (prvé volanie vždy); aktuálne verzie si zapamätá. */
+  due(world: NetworkVersions): boolean {
+    const { roadVersion, moduleVersion } = world;
+    if (roadVersion === this.roadVersion && moduleVersion === this.moduleVersion) return false;
+    this.roadVersion = roadVersion;
+    this.moduleVersion = moduleVersion;
+    return true;
+  }
+}
+
 /**
  * Zrušenie (ADR-023): `open` outbound joby, ktorých rampa stratila prevádzkovosť alebo k nej zo skladu nevedie cesta
- * (viď hlavička súboru), v poradí vzniku. Joby s vozidlom sa nerušia.
+ * (viď hlavička súboru), v poradí vzniku. Joby s vozidlom sa nerušia. `DispatcherSystem` ho volá len po zmene ciest
+ * alebo modulov (`OutboundCancelGate`).
  */
 export function cancelUnusableOutboundJobs(world: World): void {
   for (const job of world.jobs.values()) {

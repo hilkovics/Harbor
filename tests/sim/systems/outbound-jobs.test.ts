@@ -11,7 +11,7 @@ import type { EntityId } from '@sim/core';
 import { DefRegistry } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
 import type { CellCoord } from '@sim/grid';
-import { createOutboundJobs, type StoredCargoGroup } from '@sim/logistics';
+import { OutboundCancelGate, createOutboundJobs, type StoredCargoGroup } from '@sim/logistics';
 import { World, WorldStateError, findWorldViolation, type WorldState } from '@sim/world';
 import { NEAR_YARD_OUTSIDE, segment } from '../helpers/f3-layout';
 import { unitsOnApron } from '../logistics/dispatch-fixtures';
@@ -234,6 +234,41 @@ describe('vznik outbound jobov (dispatcher krok 5, §7.3 bod 2)', () => {
       expect(reads).toBe(served.length);
       // Binárny skok: rádovo log2(42) čítaní pre blízky dvor + ďaleký dvor, nie 40 + 2.
       expect(storageReads).toBeLessThan(skipped.length / 2);
+    });
+
+    it('zrušenie open outbound jobov sa vyhodnotí len po zmene ciest alebo modulov (T06-07, BACKLOG P2 cache prevádzkovosti rampy)', () => {
+      // Plný staging (4 open joby, bez vozidiel): v ustálenom ticku sa prevádzkovosť rampy pýta len spawner kamiónov (1×),
+      // nie znova za každý open job; po zmene ciest (aj nesúvisiacej) sa joby v najbližšom ticku prekontrolujú raz.
+      const { world, far } = outboundWorld();
+      stockYard(world, far, 6);
+      world.tick();
+      const open = [...world.jobs.values()].filter((job) => job.state === 'open' && job.to.kind === 'at_ramp');
+      expect([open.length, rampOf(world).freeCount]).toEqual([4, 0]);
+      const operabilityQueries = (): number => {
+        const spy = vi.spyOn(world, 'isRampOperational');
+        world.tick();
+        const calls = spy.mock.calls.length;
+        spy.mockRestore();
+        return calls;
+      };
+      expect(operabilityQueries()).toBe(1);
+      expect(operabilityQueries()).toBe(1);
+      execute(world, { type: 'PlaceRoad', cells: [{ x: 45, y: 42 }] });
+      expect(operabilityQueries()).toBe(1 + open.length);
+      expect(operabilityQueries()).toBe(1);
+      expect(open.map((job) => job.state)).toEqual(['open', 'open', 'open', 'open']);
+    });
+
+    it('OutboundCancelGate: prvé volanie áno, bez zmeny nie, po zmene ciest alebo modulov áno (aj nový gate obnoveného sveta)', () => {
+      const { world } = outboundWorld();
+      const gate = new OutboundCancelGate();
+      expect([gate.due(world), gate.due(world)]).toEqual([true, false]);
+      world.markRoadsChanged();
+      expect([gate.due(world), gate.due(world)]).toEqual([true, false]);
+      execute(world, { type: 'RemoveModule', moduleId: gateOf(world).id });
+      expect([gate.due(world), gate.due(world)]).toEqual([true, false]);
+      const restored = World.deserialize(DEFS, MAP, viaJson(world.serialize()));
+      expect(new OutboundCancelGate().due(restored)).toBe(true);
     });
 
     it('voľné miesto na rampe: prečítajú sa len jednotky s aktívnym outbound jobom a jednotka, ktorá job dostane', () => {

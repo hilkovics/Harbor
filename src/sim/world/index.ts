@@ -2,6 +2,8 @@
 export { World } from './world';
 export type { WorldOptions } from './world';
 export { WORLD_STATE_VERSION, WORLD_STATE_KEYS, WorldStateError, serializeRoad } from './world-state';
+// Odtlačok stavu (ADR-030): FNV-1a 32 nad JSON.stringify(serialize()) — testy, simrun --hash / --roundtrip-at.
+export { fnv1a32Hex, hashWorldState, stateHash } from './state-hash';
 export type {
   AnyWorldState,
   ParsedRoadEntry,

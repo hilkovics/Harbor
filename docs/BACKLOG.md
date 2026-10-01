@@ -85,6 +85,21 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - validate:defs: krížová kontrola manifest ↔ def (capacity = slots × layers, stalls, connectors, footprint) priamo v nástroji; techRequired vozidiel a modulov voči tech_tree.json. — pôvod: T03-01, T03-04 · fáza: F8
 - Geometria: cellCenter/cardinalHeading zo ships/ship-route do spoločného modulu; zdieľaný typ deps pre ShipView/VehicleView/CargoSprite; expectedSlotCapacity v invariantoch polymorfne namiesto instanceof. — pôvod: T03-02, T03-04, T03-08 · fáza: podľa potreby
 
+## Z Fázy 5b
+- SVG kontajnerov na dvore (`container_yard_*_fill*.svg`) má 47×17 px a nezodpovedá mierke TEU 64×26 (DESIGN_BRIEF §4.1, tabuľka mierok); SVG modulov sa v F5b nemenili. — pôvod: T5B-03 (audit mierky) · fáza: F13 (grafika)
+- Kontajnery na palube lode: vykresliť náklad na lodi podľa počtu jednotiek (`ShipVM.unitsOnBoard`); sprity lodí ho majú nakreslený staticky a nesúladne s TEU (DESIGN_BRIEF §4.1). — pôvod: T5B-03 · fáza: F12
+- Šírka pruhu cesty je v renderi 26 px (`LANE_WIDTH_PX` = polovica asfaltu 52 px), DESIGN_BRIEF uvádza aj 32 px (§4.1: pruh 32 px by vyžadoval prekresliť moduly) → zjednotiť dokument alebo render. — pôvod: T5B-03 · fáza: F13
+- Footprint straddle carrieru v sime (nosič na jednej bunke cesty) vs. vizuál 34×62 px (presahuje pruh o 4 px na stranu) → zosúladiť pri vybavení skladu. — pôvod: T5B-03 · fáza: F10a (vybavenie skladu)
+- DESIGN_BRIEF §5.6 (entity) aktualizovať podľa novej mierky (§4.1) a manévru kamióna (cúvanie do docku). — pôvod: T5B-03 · fáza: F13
+- `validate:defs`: krížová kontrola `berth.params.apronSlots` = počet slotov v `assets/manifest.json`, depo `capacity` = počet stalls a rampa `docks` = počet dockov v manifeste (rozširuje položku o kontrole manifest ↔ def v P2). — pôvod: T5B-01 · fáza: F6 (stabilizácia)
+- Tretí dock rampy (`loading_ramp_container.docks` 3) vyžaduje konektor, záznam v manifeste, SVG a manéver kamióna; riešiť podľa kongescie na rampe. — pôvod: T5B-01 · fáza: F7/F11
+- Vzdialený prečerpávací terminál (bója/SPM pre tankery mimo nábrežia). — pôvod: spätná väzba M1 (F5b) · fáza: F9/F12
+- Ceny trás lodí sú v kóde, nie v defe (pravidlo 4): `WaterNavigator` (`src/sim/ships/water-navigator.ts`) má lexikografickú cenu (pohyb, potom manévre; krok bokom a otočenie = 1 manéver) so štrukturálnou škálou z veľkosti mriežky a `logistics.json` nemá `shipNavigation` → presunúť do defu (napr. `sidewaysMoveCost`, `turnCost`) pre prirodzenejšie trasy; pokuta za blízkosť pobrežia/kotvísk v kóde zatiaľ neexistuje, zvážiť ju spolu s tým. — pôvod: T5B-02 (ADR-029) · fáza: F6 (stabilizácia)
+- Konvoje na sea lane (časovo-priestorová rezervácia namiesto rezervácie celej trasy; dnes je na dráhe naraz najviac jedna loď). — pôvod: T5B-02 (ADR-029) · fáza: podľa potreby (desiatky lodí)
+- Validácia mapy pre lodnú dopravu: anchorage mimo obálky sea lane a na otvorenej vode, šírka kanála ≥ `frontWaterCells` + šírka lode + 1. — pôvod: T5B-02 (ADR-029) · fáza: F6 (stabilizácia)
+- Memo kandidátov pre lode pred vstupom podľa triedy lode (dnes sa počíta pre každú loď zvlášť). — pôvod: T5B-02 (ADR-029) · fáza: F6 (profiling)
+- Úprava pobrežia hráčom: drahé mólo a zásyp podľa ADR-028 (príkazy `BuildPier` / `ReclaimLand`, verzia mutácie terénu, prekreslenie terénu, invalidácia `WaterNavigator`). — pôvod: spätná väzba M1 (F5b), ADR-028 · fáza: F12
+
 ## Nápady
 - Sim vo Web Workeri (ak tick > 8 ms pri 8×). — pôvod: ARCHITECTURE §18 (T00-05) · fáza: F13
 - Export kontrakty land → ship. — pôvod: ARCHITECTURE §18 (T00-05) · fáza: F12

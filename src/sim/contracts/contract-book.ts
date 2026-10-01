@@ -71,6 +71,14 @@ export class ContractBook {
     return book;
   }
 
+  /**
+   * Kniha ešte nepridelila žiadne id kontraktu — pool sa nikdy neplnil (nová hra pred prvým tickom, save spred
+   * kontraktov v1–v4 po migrácii; T06-07). Odvodené zo stavu v save (`nextContractId`), takže prežije save aj load.
+   */
+  get untouched(): boolean {
+    return this.nextContractId === FIRST_CONTRACT_ID;
+  }
+
   /** Pridelí id novému kontraktu (1, 2, 3, … — vlastná postupnosť knihy, ADR-026). */
   allocateId(): ContractId {
     const id = this.nextContractId;

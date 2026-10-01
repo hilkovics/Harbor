@@ -122,6 +122,15 @@ function withoutLedgerHistory(state: WorldState): WorldState {
   return { ...state, economy: EMPTY_ECONOMY, contracts: [], xp: 0, completedContracts: 0, nextContractId: 1 };
 }
 
+/**
+ * `withoutLedgerHistory` aj bez stavu `Rng` — na porovnanie po tickoch: svet zo save spred kontraktov si pool doplní
+ * v prvom ticku po načítaní (T06-07), pôvodný svet ho mal od ticku 1, takže sa líšia ťahy `Rng` poolu (a nič iné, kým
+ * scenár neprijme kontrakt).
+ */
+function withoutContractDraws(state: WorldState): WorldState {
+  return { ...withoutLedgerHistory(state), rng: [0, 0, 0, 0] };
+}
+
 describe('migrateWorldState', () => {
   it('verzie: najstaršia 1, aktuálna 6; kľúče v6 = v5 = v4 + economy + kontrakty = WORLD_STATE_KEYS, v4 = v3 + trucks, v3 = v2 + vehicles, jobs', () => {
     expect(OLDEST_WORLD_STATE_VERSION).toBe(1);
@@ -391,7 +400,8 @@ describe('World.deserialize — v2 save (F2 so skladom a depom) → migrate → 
     });
     runTicks(original, 500);
     runTicks(fromV2, 500);
-    expect(hashState(withoutLedgerHistory(fromV2.serialize()))).toBe(hashState(withoutLedgerHistory(original.serialize())));
+    expect(fromV2.contractBook.offeredCount).toBe(DEFS.economy.offersPerDay);
+    expect(hashState(withoutContractDraws(fromV2.serialize()))).toBe(hashState(withoutContractDraws(original.serialize())));
   });
 });
 

@@ -5,11 +5,13 @@
  * Poradie v kroku: (1) neukončené kontrakty vzostupne podľa id, každý jeden krok podľa stavu z tabuľky
  * `CONTRACT_STEPS` (nie switch); (2) **denná obnova poolu** pri `DayClosed`: ponuky s `offerExpiresTick ≤ tick`
  * vzostupne podľa id → `expired` + `ContractExpired { reason: 'timeout' }` (kniha ich zabudne) a potom doplnenie do
- * `offersPerDay`; (3) pri štarte hry (`GAME_START_TICK`, prvý tick po `World.create`) len doplnenie. Ponuka teda zanikne
+ * `offersPerDay`; (3) pri štarte hry (`GAME_START_TICK`, prvý tick po `World.create`) len doplnenie — a rovnako
+ * v prvom ticku po načítaní save spred kontraktov (v1–v4: kniha po migrácii ešte nepridelila žiadne id,
+ * `ContractBook.untouched`; T06-07). Obnova save `Rng` nespotrebuje, pool sa doplní až v kroku 2 a podmienka je
+ * odvodená zo save, takže ju neprekazí ani uloženie pred prvým tickom. Ponuka teda zanikne
  * v prvej uzávierke dňa v čase `offerExpiresTick` alebo po ňom (najneskôr o deň) a jej miesto hneď zaberie nová — tabuľa
  * ponúk sa mení raz denne (ponuky z polnoci expirujú presne v `offerExpiresTick`, prvá dávka zo štartu v najbližšej
- * polnoci po ňom, `offerClosingTick`). Pool sa nedopĺňa inokedy — ani po načítaní starého save (migrácia v4 → v5), ani
- * po `DeclineContract`.
+ * polnoci po ňom, `offerClosingTick`). Pool sa nedopĺňa inokedy — ani po `DeclineContract`.
  *
  * Kroky stavov (všetko v celých tickoch, `tick` = `clock.tick` po kroku 1):
  * - `offered`: nič (expiráciu rieši denná obnova poolu).
@@ -192,7 +194,7 @@ export class ContractSystem {
     }
     if (closed.dayClosed) expireOffers(world, open);
     open.length = 0;
-    if (closed.dayClosed || world.clock.tick === GAME_START_TICK) refillPool(world);
+    if (closed.dayClosed || world.clock.tick === GAME_START_TICK || world.contractBook.untouched) refillPool(world);
   }
 }
 

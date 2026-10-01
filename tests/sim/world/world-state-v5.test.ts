@@ -8,7 +8,9 @@
  *  W1 `WORLD_STATE_VERSION === 5`; `serialize()` vracia `version: 5` a čistý JSON;
  *  W2 `World.deserialize` prijme stav v4 (kľúče `WORLD_STATE_V4_KEYS`, `version: 4`, `cashCents` na vrchu) a prevedie ho
  *     migráciou; nový svet má prázdne kontrakty, ledger, súhrny a nulové XP/tier, ale pôvodnú hotovosť a náklad;
- *  W3 pool po migrácii je prázdny a doplní sa pri najbližšom `DayClosed` (bez nového štartu hry);
+ *  W3 pool po migrácii je hneď po načítaní prázdny (obnova nespotrebuje `Rng`) a doplní sa v kroku 2 prvého ticku po
+ *     načítaní ako pri štarte hry — kniha, ktorá ešte nepridelila žiadne id kontraktu (T06-07, BACKLOG P2 „Pool po
+ *     načítaní v4"); predtým až pri najbližšom `DayClosed`;
  *  W4 náklad bez kontraktu (`contractId === null`, staré uloženia a `SpawnShipDebug`) sa exportuje aj po migrácii.
  */
 import { describe, expect, it } from 'vitest';
@@ -103,13 +105,34 @@ describe('migrácia WorldState v4 → v5', () => {
     expect(() => migrated.assertInvariants()).not.toThrow();
   });
 
-  it('náklad bez kontraktu z v4 sa po migrácii dostane až na export (12 TEU), lostUnits 0; pool sa doplní pri najbližšom DayClosed', () => {
+  it('pool z v4 sa doplní v prvom ticku po načítaní ako pri štarte hry (T06-07): obnova nespotrebuje Rng, save pred prvým tickom ho nestratí', () => {
+    const { v4 } = legacyV4();
+    const migrated = World.deserialize(DEFS, MAP, v4 as unknown as WorldState);
+    expect(migrated.rng.getState()).toEqual(v4['rng']);
+    expect(offeredContracts(migrated)).toEqual([]);
+    // Save hneď po načítaní (hra po načítaní stojí, ADR-030) — pool sa doplní aj po jeho obnove.
+    const resaved = World.deserialize(DEFS, MAP, JSON.parse(JSON.stringify(migrated.serialize())) as WorldState);
+    const first = migrated.tick();
+    resaved.tick();
+    const offered = first.filter((event) => event.type === 'ContractOffered');
+    expect(offered).toHaveLength(DEFS.economy.offersPerDay);
+    expect(offeredContracts(migrated).map((contract) => [contract.id, contract.offeredTick])).toEqual(
+      offered.map((_event, i) => [i + 1, MID_TICK + 1]),
+    );
+    expect(migrated.rng.getState()).not.toEqual(v4['rng']);
+    expect(JSON.stringify(resaved.serialize())).toBe(JSON.stringify(migrated.serialize()));
+    // Ďalší tick pool nedopĺňa (kniha už id pridelila); ďalšie doplnenie až pri DayClosed.
+    expect(migrated.tick().filter((event) => event.type === 'ContractOffered')).toEqual([]);
+  });
+
+  it('náklad bez kontraktu z v4 sa po migrácii dostane až na export (12 TEU), lostUnits 0; pool je plný od prvého ticku', () => {
     const { v4 } = legacyV4();
     const migrated = World.deserialize(DEFS, MAP, v4 as unknown as WorldState);
     const startCash = cashOf(migrated);
     const run = new Run5(migrated, scenario, { checkCounters: false });
     run.runTo(migrated.clock.tick + 10);
-    expect(offeredContracts(migrated), 'pool sa po migrácii nesmie plniť mimo DayClosed').toEqual([]);
+    expect(offeredContracts(migrated), 'pool sa doplní v prvom ticku po načítaní').toHaveLength(DEFS.economy.offersPerDay);
+    expect(events5(run.events, 'ContractOffered')).toHaveLength(DEFS.economy.offersPerDay);
     run.runUntil((w) => w.cargo.exportedCount === UNITS, 30_000);
     expect(lostUnits(migrated)).toBe(0);
     expect(migrated.cargo.exportedCount).toBe(UNITS);
@@ -117,7 +140,6 @@ describe('migrácia WorldState v4 → v5', () => {
 
     run.runTo(Math.ceil((migrated.clock.tick + 1) / TICKS_PER_DAY) * TICKS_PER_DAY);
     expect(offeredContracts(migrated)).toHaveLength(DEFS.economy.offersPerDay);
-    expect(events5(run.events, 'ContractOffered')).toHaveLength(DEFS.economy.offersPerDay);
     expect(cashOf(migrated)).toBeLessThan(startCash);
     expect(run.violations).toEqual([]);
     expect(run.ticksChecked).toBe(migrated.clock.tick - MID_TICK);

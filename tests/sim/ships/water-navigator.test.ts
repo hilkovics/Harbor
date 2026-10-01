@@ -48,6 +48,24 @@ describe('WaterNavigator — geometria vody', () => {
   });
 });
 
+describe('WaterNavigator — tabuľka priechodnosti vody (T06-07)', () => {
+  it('tabuľka stavu (bunka × os) = isWater(boxAt) pre párne aj nepárne rozmery lode, aj pri okraji mapy a pevnine', () => {
+    const nav = new WaterNavigator(gridOf(['~~~~~~~~~', '~~.~~~~~~', '~~~~~~.~~', '~~~~~~~~~', '.~~~~~~~~', '~~~~~~~~~', '~~~~~~~..']));
+    const grid = (nav as unknown as { grid: WaterGrid }).grid;
+    const fits = (dims: { lengthCells: number; widthCells: number }): Uint8Array => (nav as unknown as { fits(d: typeof dims): Uint8Array }).fits(dims);
+    for (const dims of [FEEDER, { lengthCells: 3, widthCells: 1 }, { lengthCells: 4, widthCells: 3 }, { lengthCells: 1, widthCells: 1 }, { lengthCells: 10, widthCells: 2 }]) {
+      const table = fits(dims);
+      expect(table).toHaveLength(grid.cellCount * 2);
+      for (let cell = 0; cell < grid.cellCount; cell++) {
+        for (const axis of [0, 1] as const) {
+          expect(table[cell * 2 + axis], `${String(dims.lengthCells)}×${String(dims.widthCells)} bunka ${String(cell)} os ${String(axis)}`).toBe(nav.isWater(nav.boxAt(dims, cell, axis)) ? 1 : 0);
+        }
+      }
+      expect(fits(dims)).toBe(table);
+    }
+  });
+});
+
 describe('WaterNavigator.findRoute', () => {
   it('rovno po osi: jediný bod = stred cieľovej bunky; štart = cieľ so správnou osou → prázdna trasa', () => {
     const nav = new WaterNavigator(gridOf(water(24, 10)));

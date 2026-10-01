@@ -142,15 +142,33 @@ export class WaterNavigator {
     return y * width + x;
   }
 
-  /** Priechodnosť vody stavov pre rozmery lode (memo; terén je statický). */
+  /**
+   * Priechodnosť vody stavov pre rozmery lode (memo; terén je statický) — `isWater(boxAt(dims, bunka, os))` pre každý
+   * stav, počítané v skalároch: obdĺžnik v bunke (x, y) = obdĺžnik v bunke (0, 0) posunutý o celé x, y (rovnaký posun
+   * hrán ako pri prekážkach, `prepare`), test vody z prefixových súčtov. Bez alokácie na stav (T06-07: prvé použitie
+   * pri spawne lode stavalo obdĺžnik pre každú bunku × os).
+   */
   private fits(dims: ShipDimensions): Uint8Array {
     const key = `${String(dims.lengthCells)}x${String(dims.widthCells)}`;
     const known = this.fitsByDims.get(key);
     if (known !== undefined) return known;
-    const table = new Uint8Array(this.grid.cellCount * AXES);
-    for (let cell = 0; cell < this.grid.cellCount; cell++) {
-      for (let axis = 0 as ShipAxis; axis < AXES; axis = (axis + 1) as ShipAxis) {
-        table[cell * AXES + axis] = this.isWater(this.boxAt(dims, cell, axis)) ? 1 : 0;
+    const { width, height, cellCount } = this.grid;
+    const table = new Uint8Array(cellCount * AXES);
+    const stride = width + 1;
+    const { dry } = this;
+    for (let axis = 0 as ShipAxis; axis < AXES; axis = (axis + 1) as ShipAxis) {
+      const reference = this.boxAt(dims, 0, axis);
+      for (let y = 0; y < height; y++) {
+        const y0 = y + reference.y0;
+        const y1 = y + reference.y1;
+        if (y0 < 0 || y1 > height) continue;
+        for (let x = 0; x < width; x++) {
+          const x0 = x + reference.x0;
+          const x1 = x + reference.x1;
+          if (x0 < 0 || x1 > width) continue;
+          const wet = dry[y1 * stride + x1] - dry[y0 * stride + x1] - dry[y1 * stride + x0] + dry[y0 * stride + x0] === 0;
+          if (wet) table[(y * width + x) * AXES + axis] = 1;
+        }
       }
     }
     this.fitsByDims.set(key, table);

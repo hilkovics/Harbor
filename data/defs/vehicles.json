@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "items": [
+    {
+      "id": "straddle_carrier",
+      "displayName": "Straddle carrier",
+      "capacityUnits": 1,
+      "speedCellsPerTick": 0.4,
+      "loadTicks": 3,
+      "unloadTicks": 3,
+      "cargoCategories": ["container"],
+      "purchaseCents": 4800000,
+      "wagePerDayCents": 18000
+    }
+  ]
+}

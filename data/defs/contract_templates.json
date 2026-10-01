@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "items": [
+    {
+      "id": "container_feeder_express",
+      "cargoTypeId": "container_teu",
+      "volumeUnitsRange": [12, 48],
+      "slaDaysRange": [2, 3],
+      "shipClassIds": ["feeder"],
+      "weight": 3,
+      "minTier": 0
+    },
+    {
+      "id": "container_feeder_standard",
+      "cargoTypeId": "container_teu",
+      "volumeUnitsRange": [24, 96],
+      "slaDaysRange": [3, 5],
+      "shipClassIds": ["feeder"],
+      "weight": 5,
+      "minTier": 0
+    },
+    {
+      "id": "container_handy_run",
+      "cargoTypeId": "container_teu",
+      "volumeUnitsRange": [60, 240],
+      "slaDaysRange": [5, 8],
+      "shipClassIds": ["handy"],
+      "weight": 2,
+      "minTier": 1
+    }
+  ]
+}

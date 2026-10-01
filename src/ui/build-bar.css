@@ -1,0 +1,319 @@
+/*
+ * BuildBar (DESIGN_BRIEF §6.1–§6.2; vizuál z prototypu design/ui/game-ui.source.html, <footer> dole).
+ * Len tokeny z design/tokens.css: žiadne pevné farby ani rozmery. Rozmery prototypu bez vlastného tokenu
+ * (26 / 6 / 10 px…) sú odvodené z tokenov (`calc(var(--space-*) ± …)`); pevné sú len 1 px čiary, 2 px focus ring
+ * a ±2 px korekcie. Tmavý text na accent ploche z prototypu (#0F1B27) nahrádza --ui-surface (ako v top-hud.css).
+ * BEM: .build-bar, .build-bar__tabs / __tab / __key / __hints, .build-bar__items / __item / __tip.
+ */
+
+.build-bar {
+  /* Prototyp: riadok tabov 26 px, medzera 6 px, ikona položky 24 px = --icon-md. */
+  --bb-tab-h: calc(var(--space-6) + 2px);
+  --bb-gap: calc(var(--space-2) - 2px);
+  /* Šírka položky 226 px (prototyp: 200 px obsahu + 2 × 12 px odsadenia + 2 × 1 px obrys) a tooltipu 220 px. */
+  --bb-item-w: calc(var(--space-8) * 7 + 2px);
+  --bb-tip-w: calc(var(--space-8) * 6 + var(--space-6) + var(--space-1));
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--bb-gap);
+  width: 100%;
+  height: var(--build-bar-h);
+  padding: var(--bb-gap) var(--space-3) var(--space-2);
+  background: var(--ui-bg);
+  border-top: 1px solid var(--ui-border);
+  color: var(--ui-text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-normal);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== Riadok kategórií ===== */
+
+.build-bar__tabs {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  height: var(--bb-tab-h);
+}
+
+.build-bar__tab {
+  box-sizing: border-box;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: transparent;
+  color: var(--ui-text-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+}
+
+.build-bar__tab:hover:not(:disabled) {
+  background: var(--ui-surface-2);
+  color: var(--ui-text);
+}
+
+.build-bar__tab--active {
+  background: var(--ui-surface-2);
+  color: var(--ui-text);
+}
+
+/* Kategória mimo aktuálnej fázy: stlmená, so zámkom; klik sa ignoruje. */
+.build-bar__tab--locked,
+.build-bar__tab:disabled {
+  color: var(--ui-text-3);
+  cursor: not-allowed;
+}
+
+.build-bar__tab-icon,
+.build-bar__tab-lock {
+  flex: none;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+.build-bar__tab-lock {
+  width: var(--space-3);
+  height: var(--space-3);
+}
+
+/* KeyHint (§6.3): klávesová skratka v mono písme. */
+.build-bar__key {
+  padding: 0 var(--space-1);
+  border: 1px solid var(--ui-border);
+  border-radius: calc(var(--radius-sm) - 1px);
+  color: var(--ui-text-2);
+  font-family: var(--font-mono);
+  font-size: calc(var(--fs-xs) - 2px);
+  line-height: var(--lh-normal);
+}
+
+.build-bar__spacer {
+  flex: 1;
+}
+
+.build-bar__hints {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+}
+
+.build-bar__key--gap {
+  margin-left: calc(var(--space-2) - 2px);
+}
+
+/* ===== Položky ===== */
+
+.build-bar__items {
+  flex: 1;
+  display: flex;
+  gap: var(--space-2);
+  min-height: 0;
+}
+
+.build-bar__empty {
+  align-self: center;
+  color: var(--ui-text-2);
+  font-size: var(--fs-sm);
+}
+
+.build-bar__item {
+  position: relative;
+  box-sizing: border-box;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-2) + 2px);
+  flex: 0 1 var(--bb-item-w);
+  min-width: 0;
+  margin: 0;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    border-color 120ms ease-out;
+}
+
+.build-bar__item:hover,
+.build-bar__item:focus-visible {
+  border-color: var(--ui-accent);
+  background: var(--ui-surface-2);
+}
+
+/*
+ * Zamknutá položka: hover nemení obrys na accent, kurzor hovorí „nejde". Položka bez peňazí je vyberateľná (ghost
+ * s ikonou $), preto si necháva bežný kurzor aj hover — jej stav nesie červená cena a tooltip „Chýba …".
+ */
+.build-bar__item--locked {
+  cursor: not-allowed;
+}
+
+.build-bar__item--locked:hover {
+  border-color: var(--ui-border);
+}
+
+/* Vybraná položka (prototyp ju nemá — výber prináša T02-10): accent obrys 2 px. */
+.build-bar__item--selected,
+.build-bar__item--selected:hover {
+  border-color: var(--ui-accent);
+  background: var(--ui-surface-2);
+  box-shadow: inset 0 0 0 1px var(--ui-accent);
+}
+
+.build-bar__item:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 1px;
+}
+
+.build-bar__item-icon {
+  flex: none;
+  width: var(--icon-md);
+  height: var(--icon-md);
+  color: var(--ui-text);
+}
+
+.build-bar__item--locked .build-bar__item-icon {
+  color: var(--ui-text-3);
+}
+
+.build-bar__item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.build-bar__item-name {
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.build-bar__item--locked .build-bar__item-name {
+  color: var(--ui-text-2);
+}
+
+.build-bar__item-price {
+  display: flex;
+  gap: var(--space-1);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.build-bar__item-cost {
+  color: var(--ui-text-2);
+}
+
+/* Cena, na ktorú hráč nemá (§6.2): červená; text „Nedostatok peňazí" nesie tooltip, nie len farba. */
+.build-bar__item--unaffordable .build-bar__item-cost {
+  color: var(--ui-money-neg);
+}
+
+.build-bar__item-size {
+  color: var(--ui-text-3);
+}
+
+.build-bar__item-lock {
+  position: absolute;
+  top: calc(var(--space-2) - 2px);
+  right: calc(var(--space-2) - 2px);
+  width: calc(var(--icon-sm) - 2px);
+  height: calc(var(--icon-sm) - 2px);
+  color: var(--ui-text-2);
+}
+
+/* ===== Tooltip nad položkou (hover / focus-visible), stále v DOM pre asistívne technológie ===== */
+
+.build-bar__tip {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + var(--space-2));
+  z-index: 5;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: var(--bb-tip-w);
+  padding: calc(var(--space-2) + 2px) var(--space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface-2);
+  box-shadow: var(--shadow-panel);
+  font-weight: var(--fw-regular);
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 120ms ease-out,
+    visibility 120ms ease-out;
+}
+
+.build-bar__item:hover .build-bar__tip,
+.build-bar__item:focus-visible .build-bar__tip {
+  visibility: visible;
+  opacity: 1;
+}
+
+.build-bar__tip-title {
+  display: flex;
+  align-items: center;
+  gap: var(--bb-gap);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.build-bar__tip-icon {
+  flex: none;
+  width: calc(var(--icon-sm) - 2px);
+  height: calc(var(--icon-sm) - 2px);
+}
+
+.build-bar__tip--locked .build-bar__tip-icon {
+  color: var(--ui-text-2);
+}
+
+.build-bar__tip--poor .build-bar__tip-icon {
+  color: var(--ui-danger);
+}
+
+.build-bar__tip-text {
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.build-bar__tab:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .build-bar,
+  .build-bar * {
+    animation: none;
+    transition: none;
+  }
+}

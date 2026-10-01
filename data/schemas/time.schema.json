@@ -4,7 +4,7 @@
   "description": "Časový model (ARCHITECTURE §3). Singleton def bez items[]; všetky trvania v ostatných defoch sú v tickoch.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "tickGameSeconds", "ticksPerRealSecond", "speeds"],
+  "required": ["schemaVersion", "tickGameSeconds", "ticksPerRealSecond", "maxTicksPerFrame", "speeds"],
   "properties": {
     "schemaVersion": {
       "const": 1,
@@ -19,6 +19,11 @@
       "type": "integer",
       "minimum": 1,
       "description": "Počet tickov za reálnu sekundu pri rýchlosti 1×."
+    },
+    "maxTicksPerFrame": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Strop tickov simulácie na jeden render frame (ochrana proti špirále smrti v GameLoop, ARCHITECTURE §3)."
     },
     "speeds": {
       "type": "array",

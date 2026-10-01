@@ -1,0 +1,90 @@
+/*
+ * Kulisa dema F6 UI: stránka, „mapa" z tokenov (mriežka 1 bunka = --cell na hlbokej vode) a rozloženie ukážok.
+ * Len tokeny z design/tokens.css. Nie je súčasťou hry (src/ui/__demo__), slúži na screenshot a vizuálnu kontrolu.
+ */
+
+body {
+  margin: 0;
+  background: var(--ui-surface);
+}
+
+.f6-demo {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-height: 100vh;
+  padding: var(--space-6);
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
+}
+
+.f6-demo__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.f6-demo__caption,
+.f6-demo__log {
+  color: var(--ui-text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.f6-demo__map {
+  position: relative;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(color-mix(in srgb, var(--ui-text) 4%, transparent) 1px, transparent 1px) 0 0 / var(--cell) var(--cell),
+    linear-gradient(90deg, color-mix(in srgb, var(--ui-text) 4%, transparent) 1px, transparent 1px) 0 0 / var(--cell) var(--cell),
+    var(--terrain-water-deep);
+}
+
+.f6-demo__map-label {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  color: var(--ui-text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+
+/* Hra: 9 buniek na výšku, HUD hore; overlay (position: absolute; inset: 0) zakryje celú plochu. */
+.f6-demo__stage {
+  height: calc(var(--cell) * 9);
+}
+
+.f6-demo__stage-hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.f6-demo__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.f6-demo__figure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+/* Rámik pre dialóg: zásterka zakrýva celú „mapu"; výška podľa najvyššieho dialógu (Uložiť/načítať). */
+.f6-demo__map--modal {
+  height: calc(var(--cell) * 9);
+}

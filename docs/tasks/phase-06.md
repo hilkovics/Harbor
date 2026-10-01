@@ -52,8 +52,9 @@ Worktree karty začínajú `git reset --hard <HEAD phase/06-save-load>` (worktre
 - [x] T06-07 · Sim P1 + hot path
 - [x] T06-08 · Review src/sim + opravy
 - [x] T06-08b · Opravy z review: dosiahnuteľnosť kotviska pri AcceptContract (berth_unreachable), waitTicks pri obnove, refill poolu bez šablón, sweepStepCells 0,1–1
-- [ ] T06-09 · e2e + plná pipeline
-- [ ] T06-10 · Docs + PR
+- [x] T06-09 · e2e + plná pipeline
+- [x] T06-09b · Stabilizácia e2e: zatváranie toastov s limitom, dev hák window.__sim.advance (f6-save-load 3,3 min → 37 s), Playwright bez zdieľania cudzieho dev servera
+- [x] T06-10 · Docs + PR
 
 ## Spoločné rozhrania (záväzné pre paralelné karty)
 ```ts
@@ -155,3 +156,13 @@ Rozpad po systémoch beží bez zmeny src/sim, hook v sime netreba.
 
 ### T06-10 · Docs + PR
 - ARCHITECTURE §14 (SaveGame v1, nastavenia, autosave), PROGRESS, BACKLOG (odškrtnuté P1), PR popis.
+
+## Výsledok fázy
+
+- **sim-reviewer:** MERGE (0 blocking; 1 major + 4 minor opravené v T06-08b)
+- **Testy:** `pnpm test` 274 súborov / 7300 testov
+- **E2E:** `pnpm test:e2e` 37/37 (9,4 min)
+- **simrun vertical_slice** 30 000 tickov: cashEnd 41 790 000, exportedUnits 78, lostUnits 0, stateHash 76d0cfba (zhodný s `--roundtrip-at 9000`)
+- **stress_f6:** exportedUnits 658, lostUnits 0
+- **Benchmark:** `pnpm bench` vertical_slice priemer 0,08 ms / p95 0,18 ms, stress_f6 (bez invariantov) 0,03 ms — cieľ < 2 ms splnený
+- **Rozhodnutia:** ADR-030 (SaveGame v1), ADR-031 (P1 opravy, pripravenosť prístavu)

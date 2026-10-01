@@ -204,3 +204,21 @@ Stav: **hotová** (T5B-01, T5B-02, T5B-03, T5B-04, T5B-04b, T5B-05, T5B-06, T5B-
 - Hrateľná verzia zverejnená (artefakt „Fáza 5b")
 
 Ďalej: **Fáza 6 — Save/Load, čas, nastavenia, stabilizácia**
+
+## Fáza 6 — Save/Load, čas, nastavenia, stabilizácia
+Karty: `docs/tasks/phase-06.md` · vetva `phase/06-save-load` (stacked nad hilkovics/Harbor#7)
+
+Stav: **hotová** (T06-01, T06-02, T06-03, T06-04, T06-03b, T06-05, T06-06, T06-07, T06-08, T06-08b, T06-09, T06-09b, T06-10)
+
+**Výsledky:**
+- review sim-reviewer: MERGE (0 blocking; 1 major + 4 minor opravené v T06-08b)
+- `pnpm test`: 274 súborov, 7300 testov
+- `pnpm test:e2e`: 37/37 (9,4 min)
+- `simrun vertical_slice`: 30 000 tickov — cashEnd 41 790 000, exportedUnits 78, lostUnits 0, stateHash 76d0cfba (zhodný s `--roundtrip-at 9000`)
+- `simrun stress_f6`: exportedUnits 658, lostUnits 0
+- `pnpm bench`: vertical_slice priemer 0,08 ms / p95 0,18 ms, stress_f6 (bez invariantov) 0,03 ms — cieľ < 2 ms splnený
+- Zmeny: `src/app/save/**` (encode/decode, sloty, autosave, export/import), `src/sim/world/state-hash.ts` (FNV-1a hash na overu roundtripu), Settings úložisko v localStorage, UI panely Save/Load a Settings, `tools/bench.ts` s scenárom `stress_f6`, roundtrip test uprostred tokov, P1 bugy (dosiahnuteľnosť kotviska, validácia pri obnove, refill poolu), optimalizácia hot path
+- Čo hráč dostal: 3 sloty na uloženie, automatické uloženie, export/import súboru, Ctrl+S rýchle uloženie do slotu 1, Nastavenia (predvolená rýchlosť a interval autosave), kontrakt sa nedá prijať, ak prístav nemá potrebný žeriav a dosiahnuteľné kotvisko, hra sa zastaví po načítaní savu
+- ADR-030 (SaveGame v1 obálka v app), ADR-031 (P1 opravy, pripravenosť prístavu)
+
+Ďalej: **Fáza 6a — Export a booking**

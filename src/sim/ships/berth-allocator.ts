@@ -65,17 +65,57 @@ function mayFitDepth(group: BerthGroup, berths: readonly BerthModule[], request:
   return group.minDepth >= request.def.draftClass || berths.some((berth) => isDeepEnough(berth, request));
 }
 
-/** Úsek `berths[start … start + count)` vyhovuje lodi (bod 2 hlavičky)? */
-function fitsRun(world: BerthAllocationWorld, berths: readonly BerthModule[], start: number, count: number, request: BerthRequest): boolean {
+/**
+ * Posúdenie úseku kotvísk: `unfit` (obsadený pri `requireFree`, plytký, úzky pás vody alebo krátky), `no_crane` (tvarom
+ * lodi vyhovuje, žeriav kategórie nákladu chýba) alebo `fits`.
+ */
+type RunFit = 'unfit' | 'no_crane' | 'fits';
+
+/**
+ * Úsek `berths[start … start + count)` pre loď (bod 2 hlavičky); `requireFree` = každé kotvisko bez lode a rezervácie
+ * (alokácia), inak sa obsadenosť neposudzuje (pripravenosť prístavu, `berthReadiness`).
+ */
+function runFit(world: BerthAllocationWorld, berths: readonly BerthModule[], start: number, count: number, request: BerthRequest, requireFree: boolean): RunFit {
   let length = 0;
   let crane = false;
   for (let i = start; i < start + count; i++) {
     const berth = berths[i];
-    if (berth.dockedShipId !== null || !isDeepEnough(berth, request) || berth.params.frontWaterCells < request.def.widthCells) return false;
+    if ((requireFree && berth.dockedShipId !== null) || !isDeepEnough(berth, request) || berth.params.frontWaterCells < request.def.widthCells) return 'unfit';
     length += berth.lengthCells;
     crane ||= hasCompatibleCrane(world, berth, request.cargoCategory);
   }
-  return crane && length >= request.def.lengthCells;
+  if (length < request.def.lengthCells) return 'unfit';
+  return crane ? 'fits' : 'no_crane';
+}
+
+/** Úsek `berths[start … start + count)` vyhovuje lodi (bod 2 hlavičky)? */
+function fitsRun(world: BerthAllocationWorld, berths: readonly BerthModule[], start: number, count: number, request: BerthRequest): boolean {
+  return runFit(world, berths, start, count, request, true) === 'fits';
+}
+
+/**
+ * Pripravenosť prístavu pre loď (T06-07, `AcceptContract`): `ready` = existuje úsek kotvísk, ktorý lodi vyhovuje podľa
+ * bodu 2 hlavičky **bez ohľadu na obsadenosť** (loď pri kotvisku, rezervácia) a lodnú dopravu (`accept`) — loď by
+ * nanajvýš počkala na anchorage; `no_crane` = úsek s dĺžkou, hĺbkou a pásom vody existuje, ale žiadny taký nemá žeriav
+ * kategórie nákladu; `no_berth` = žiadny úsek nemá dosť dĺžky, hĺbky alebo vody. Svet nemení, nealokuje.
+ */
+export type BerthReadiness = 'ready' | 'no_crane' | 'no_berth';
+
+/** Pripravenosť prístavu pre loď (viď `BerthReadiness`). */
+export function berthReadiness(world: BerthAllocationWorld, request: BerthRequest): BerthReadiness {
+  let shaped = false;
+  for (const group of world.berthGroups) {
+    if (group.totalLength < request.def.lengthCells) continue;
+    const berths = berthsOf(world, group);
+    for (let count = 1; count <= berths.length; count++) {
+      for (let start = 0; start + count <= berths.length; start++) {
+        const fit = runFit(world, berths, start, count, request, false);
+        if (fit === 'fits') return 'ready';
+        shaped ||= fit === 'no_crane';
+      }
+    }
+  }
+  return shaped ? 'no_crane' : 'no_berth';
 }
 
 /**

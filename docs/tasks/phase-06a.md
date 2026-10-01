@@ -59,4 +59,111 @@ Worktree karty začínajú `git reset --hard <HEAD phase/06a-export-booking>` (w
 - [ ] T6A-11 · Docs + PR
 
 ## Spoločné rozhrania
-*(doplní T6A-01 — záväzné pre paralelné karty T6A-02, 03, 06, 07, 08)*
+*Záväzné pre T6A-02, 03, 06, 07, 08 (T6A-01, ADR-032). Skeleton je v `src/sim` (HEAD po T6A-01): typy, tabuľky, save v7 a migrácia existujú; správanie exportu (spawn bookingov, brána, VGM, dispatcher, žeriav, lashing, dual transaction) dodajú T6A-04/05.*
+
+### Sim typy (už v kóde)
+```ts
+// @sim/core
+type VoyageId = number & { __brand: 'VoyageId' };            // vlastná postupnosť knihy (nextVoyageId v save)
+// @sim/cargo
+type CargoDirection = 'import' | 'export';                   // CARGO_DIRECTIONS
+type WeightClass = 'light' | 'medium' | 'heavy';             // WEIGHT_CLASSES; DEFAULT_WEIGHT_CLASS = 'medium' (import, migrácia)
+interface CargoHold { reason: 'vgm'; untilTick: number }      // CARGO_HOLD_REASONS
+interface CargoUnitLabels { direction; voyageId: VoyageId | null; destinationPort: string | null; weightClass }
+interface CargoUnit extends CargoUnitLabels { id; typeId; contractId; hold: CargoHold | null; quantity; location }
+// poradie kľúčov v save: CARGO_UNIT_KEYS = id, typeId, contractId, voyageId, direction, destinationPort, weightClass, hold, quantity, location
+type CargoLocation = … | { kind: 'shipped' };                // 2. konečný stav (CargoTerminalKind = 'exported' | 'shipped')
+CargoLedger.create(typeId, location, contractId = null, labels = IMPORT_LABELS)  // export: location in_truck, labels exportu
+CargoLedger.setHold(unitId, hold | null): CargoUnit          // bez udalosti, poloha sa nemení
+CargoLedger.shippedCount; CargoLedgerState = { createdCount, exportedCount, shippedCount, units }
+CARGO_SPAWN_KIND_BY_DIRECTION = { import: 'on_ship', export: 'in_truck' }
+compareStowageOrder(a, b) / STOWAGE_WEIGHT_RANK = { heavy: 0, medium: 1, light: 2 }   // stowage plán = (váha, id), neukladá sa
+// @sim/contracts
+type ContractKind = 'import' | 'export';                      // stavy ContractState sa NEMENIA
+abstract class Contract { kind; voyageId; …polia F5…; outbound; carriesShipCargo; accruesDemurrage; booking: ExportBooking | null;
+  transitions; cargoMoved(unit, to); countersProblem(); static fromState(s) }
+class ImportContract extends Contract                         // F5
+class ExportContract extends Contract implements ExportBooking { recordArrival(unitId, rolled) }
+interface ExportBooking { destinationPort; cutoffTick: number | undefined; bookedUnits; arrivalPlan: readonly number[];
+  arrivedUnits; loadedUnits; lastMinuteUnits; rolledUnits; rolledUnitIds; returnedUnits; heldUnits }
+EXPORT_CONTRACT_TRANSITIONS: offered → accepted|expired; accepted → ship_en_route; ship_en_route → exporting|failed; exporting → completed|failed
+SerializedContract = { id, kind, voyageId, …F5…, lateDays, booking: SerializedBooking | null }
+SerializedBooking = { destinationPort, cutoffTick | null, arrivalPlan, arrivedUnits, loadedUnits, lastMinuteUnits, rolledUnitIds, heldUnits }
+ContractBook: allocateVoyageId(), voyageContracts(id), voyage(id): VoyageView, voyageIdOfShip(shipId)
+VoyageView = { id, contracts, shipClassId, arrivalTick?, shipId?, destinationPort: string | null, cutoffTick? }
+// @sim/ships
+type ShipState = … | 'lashing';   // docked → undocking | lashing; lashing → undocking; SHIP_STATE_TRAITS.lashes; moored: docked, lashing
+Ship.lashingTicksLeft: number     // ≥ 1 práve v lashing (save)
+// @sim/trucks
+type TruckState = … | 'unloading';  // to_dock → loading | unloading | no_path; unloading → loading | to_gate_out
+type TruckMission = 'pickup' | 'delivery';  Truck.mission, Truck.becomePickup(), Truck.traits, truckStateTraits(mission, state)
+type TruckCargo = 'empty' | 'loading' | 'unloading' | 'full' | 'loaded'   // TRUCK_DELIVERY_STATE_TRAITS
+// @sim/modules
+type CraneCycle = 'unload' | 'load' | 'dual_load' | 'dual_unload';   // CraneModule.cycle, targetUnitId; CRANE_CYCLE_TRAITS[c].direction/dual
+// CraneState sa NEMENÍ (idle/grabbing/swinging/placing/blocked) — animácia nakládky = rovnaké fázy, opačný smer
+// @sim/world
+WORLD_STATE_VERSION = 7; WORLD_STATE_V7_KEYS = v6 + 'nextVoyageId'; WorldStateV6, LegacyCargoUnitV6
+shipCargoSplit(world, shipId) / storageCargoSplit(world, moduleId) / cargoSplitAt(world, kind, id): { import, export }
+exportGroupingShare(world, contractId): number | null        // 0…1, najväčší sklad / všetky uskladnené
+```
+
+### Udalosti (`@sim/events`, deklarované; emitujú T6A-04/05)
+| Udalosť | Payload | Kedy |
+|---|---|---|
+| `ExportArrived` | `contractId, unitId, truckId, gateId` | krok 8: delivery kamión prešiel bránou dnu |
+| `UnitRolled` | `contractId, unitId` | hneď po `ExportArrived`, ak brána po cut-off |
+| `VgmHoldStarted` / `VgmHoldReleased` | `contractId, unitId, untilTick` / `contractId, unitId` | brána (krok 8) / krok 2 v `tick ≥ untilTick` |
+| `CutoffWarning` | `contractId, cutoffTick` | krok 2, `cutoffWarningHours` pred cut-off (toast „cut-off o N h") |
+| `CutoffPassed` | `contractId, arrivedUnits, bookedUnits` | krok 2 v ticku cut-off |
+| `UnitLoaded` | `craneId, shipId, unitId, contractId, lastMinute, outOfOrder` | krok 4: `in_crane → on_ship` |
+| `DualCycle` | `craneId, shipId, loadedUnitId, unloadedUnitId` | krok 4: koniec dual cyklu (po `CraneCycleDone`) |
+| `ShipLashingStarted` | `shipId, loadedUnits, ticks` | krok 3: `docked → lashing` |
+| `ExportShipped` | `shipId, units` | krok 3: pri odchode z mapy, po `CargoMoved → shipped`, pred `ShipDeparted` |
+| `TruckUnloaded` | `truckId, rampId, dock, unitId, dualTransaction` | krok 8: koniec vykládky delivery kamióna |
+| `BookingPenaltyApplied` | `contractId, kind: 'last_minute' \| 'rolled' \| 'unfulfilled', units, amountCents` | krok 2 pri uzavretí bookingu, pred `ContractCompleted` / `ContractFailed` |
+`PenaltyKind`, `ValidationReason`, `ContractState`, `CraneState` sa nemenia (app ich mapuje vyčerpávajúco). `CargoMoved` pokrýva každý presun aj `on_ship → shipped`.
+
+### Príkazy
+Nové nie sú. `AcceptContract` / `DeclineContract { contractId }` pôsobia na **skupinu ponuky** — všetky `offered` kontrakty tej istej voyage (roundtrip = import + export s jednou voyage); UI zoskupí karty podľa `contract.voyageId`. Dôvody validácie bez zmeny.
+
+### Čo app číta zo sveta (snapshot v7, T6A-06/07)
+- kontrakty: `contract.kind`, `contract.voyageId`, `contract.booking` (cieľ, cut-off, bookované / prišlo / naložené / hold / rolled / vrátené / zostávajúce príchody `arrivalPlan.length`), `world.contractBook.voyage(id)`;
+- lode: `ship.state` (+ `lashing`), `ship.lashingTicksLeft`, `shipCargoSplit` (import / export na palube), `voyageIdOfShip`;
+- sklady: `storageCargoSplit`; jednotky (`world.cargo.get`): `direction`, `weightClass`, `hold`, `destinationPort`;
+- kamióny: `truck.mission`, stav `unloading`, `loaded` (= `in_truck > 0`; delivery je naložený už pri príchode);
+- žeriavy: `crane.cycle` (`CRANE_CYCLE_TRAITS[cycle].direction` pre smer animácie);
+- `world.cargo.shippedCount`; `REVISION_EVENTS` + nové udalosti; toasty: `CutoffWarning`, `UnitRolled`, `ExportShipped`, `BookingPenaltyApplied`.
+
+### Nové polia defov (T6A-02: def + schéma + `DefRegistry` + validate-defs)
+| Def | Pole | Typ / jednotka | Odporúčané |
+|---|---|---|---|
+| `economy.json` | `bookingOffersPerDay` | celé ≥ 0, skupiny ponúk (voyage) | 2 |
+| | `exportArrivalDaysRange` | `[min, max]` dni od prijatia po príchod lode voyage s exportom; min × 24 > `cutoffHours` | [2, 3] |
+| | `cutoffHours` | h > 0 pred príchodom lode | 12 |
+| | `cutoffWarningHours` | h ≥ 0 pred cut-off | 6 |
+| | `bookingFulfilmentShare` | 0…1 podiel bookovaných TEU | 0.9 |
+| | `lastMinuteExportRateOfReward` | 0…1 z odmeny / jednotku | 0.02 |
+| | `rolledExportRateOfReward` | 0…1 z odmeny / vrátenú jednotku | 0.05 |
+| | `unfulfilledBookingRateOfReward` | 0…1 z odmeny, raz | 0.1 |
+| `logistics.json` → `exportFlow` (objekt) | `arrivalWindowDays` | d > 0 (okno príchodov pred loďou) | 2 |
+| | `vgmMissingChance` | 0…1 | 0.05 |
+| | `vgmHoldHours` | h > 0 | 6 |
+| | `weightClassShares` | `{ light, medium, heavy }` váhy ≥ 0, súčet > 0 | 0.3 / 0.5 / 0.2 |
+| `modules.json` berth `params` | `apronReserveSlots` | celé 0 … ⌊apronSlots / 2⌋ (rezerva pre opačný smer) | 2 |
+| `modules.json` crane `params` | `dualCycleFactor` | 1 … 2 (× jeden cyklus) | 1.5 |
+| `ships.json` (trieda) | `lashingTicksPerUnit` | celé ≥ 0 tickov / naložená jednotka | 6 |
+| | `paperworkTicks` | celé ≥ 0 tickov | feeder 360, handy 540 |
+| `cargo_types.json` (položka) | `exportPricePerUnitCents` | celé ≥ 0 centov (export šablóna vyžaduje > 0) | `container_teu` 40 000 |
+| `contract_templates.json` (položka) | `kind` | `'import' \| 'export' \| 'roundtrip'` (existujúce = `import`) | — |
+| | `destinationPorts` | neprázdne `string[]` pre export/roundtrip, inak chýba | ["Rotterdam", "Hamburg", "Gdańsk"] |
+| | `exportVolumeUnitsRange` | `[min, max]` bookované TEU, len roundtrip; max ≤ najmenšia kapacita lode | [12, 36] |
+Nové šablóny (odporúčanie): `container_feeder_roundtrip` (roundtrip, feeder, `volumeUnitsRange` [24, 72], `exportVolumeUnitsRange` [12, 36], SLA [3, 5], váha 4, minTier 0), `container_feeder_export` (export, feeder, booked z `volumeUnitsRange` [12, 36], SLA [3, 5], váha 2, minTier 0). Pool ich ťahá oddelene od import šablón, po nich a len pri `DayClosed` (ADR-032 bod 1): prvé naplnenie poolu a ťah príchodu pri prijatí v ticku 1 ostanú bitovo rovnaké, obsah import ponúk od prvej polnoci sa posunie o ťahy bookingov.
+
+### Metriky `simrun` (T6A-08; kľúče za `gameOver`)
+`shippedUnits` = `cargo.shippedCount`; `rolledUnits` = Σ `UnitRolled`; `vgmHolds` = Σ `VgmHoldStarted`; `dualCycleRate` = `DualCycle / (CraneCycleDone + UnitLoaded − DualCycle)` (bez cyklov `null`); `dualTransactionRate` = Σ `TruckUnloaded.dualTransaction` / Σ `TruckUnloaded` (bez vykládky `null`); `stowageOrderViolations` = Σ `UnitLoaded.outOfOrder`; `exportGroupingPct` = priemer `exportGroupingShare(world, contractId)` v ticku každého `CutoffPassed` × 100 (1 desatinné miesto, bez cut-off `null`). **`lostUnits` = `createdCount − (liveCount + exportedCount + shippedCount)`.** Hashe po T6A-01 (len tvar v7): `vertical_slice` 30 000 `6ead4b16`, `full_import_chain` `275658b2`, `stress_f6` `df95dafc`.
+
+### Čo môžu paralelné karty robiť hneď / čo čaká na T6A-04/05
+- **T6A-02** (defy): všetko z tabuľky vyššie; typy defov (`EconomyDef`, `LogisticsDef.exportFlow`, `BerthParams`, `CraneParams`, `ShipClassDef`, `CargoTypeDef`, `ContractTemplateDef`) pridá T6A-02 v `src/sim/defs` (sim ich ešte nečíta).
+- **T6A-03** (TDD): testy proti rozhraniam vyššie; save v6 → v7 a roundtrip v7 už pokrýva `tests/sim/world/save-v6-migration.test.ts` (fixture `save-v6.json`, pomocník `tests/sim/helpers/legacy-save.ts`); scenár `export_roundtrip` bude zelený až po T6A-05 (roundtrip ponuka vznikne až s T6A-02 + T6A-04; kroky `lashing` / `unloading` dovtedy vyhodia chybu).
+- **T6A-06 / T6A-07** (render, UI): view-modely a panely nad poľami a udalosťami vyššie, demo dáta; živé dáta (delivery kamióny, nakládka, lashing) až po T6A-05.
+- **T6A-08** (tooling): metriky a `lostUnits` hneď (počty sú 0 do T6A-04/05); golden `export_roundtrip` až po T6A-05.

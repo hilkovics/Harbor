@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
 
-// F6 e2e (T06-03b): ukladanie a načítanie v skutočnej hre. Nová hra → kontrakt prijatý v paneli Kontrakty → 8× kým loď
+// F6 e2e (T06-03b): ukladanie a načítanie v skutočnej hre. Nová hra → kontrakt prijatý v paneli Kontrakty → čas sa
+// posúva dev hákom `window.__sim.advance` (ticky bežia cez GameLoop ako v hre, len bez čakania na reálny čas), kým loď
 // nevykladá → pauza → Ctrl+S → reload stránky → Uložiť/načítať → Načítať slot 1 → HUD (hotovosť, deň a čas) aj celý stav
 // sveta (`world.serialize()`) sú zhodné s tým pred uložením a hra je pozastavená; potom Nastavenia (zmena sa uloží do
 // localStorage). Druhý test: export (stiahnutý súbor) → nová hra → import súboru → rovnaký HUD; chybný súbor svet nezmení.
@@ -11,9 +12,14 @@ import { expect, test, type Locator, type Page, type TestInfo } from '@playwrigh
 // (načítaná pozastavená hra s toastom „Načítané“), `f6-import-error.png` (chybný import: toast nad dialógom).
 
 const SHOTS = 'tests/e2e/__screenshots__';
-/** Loď príde o 0,5–2 herného dňa (pri 8× ≈ 108 s reálneho času na deň), potom začne vykládka. */
-const SHIP_WAIT_MS = 5.5 * 60_000;
-test.describe.configure({ timeout: 8 * 60_000 });
+/**
+ * Loď príde o 0,5–2 herného dňa (8 640 tickov/deň); pri 8× to bolo ≈ 3 min reálneho času a test záviselo od výkonu stroja.
+ * Preto sa čaká cez `advance`: po jednom ticku (žeriav je pred zablokovaním plným aprónom „v práci“ len krátko, hrubý krok
+ * by to okno preskočil), najviac `TICKS_PER_POLL` tickov na jedno vyhodnotenie, aby stránka stíhala kresliť.
+ */
+const SHIP_WAIT_MS = 60_000;
+const TICKS_PER_POLL = 1_000;
+test.describe.configure({ timeout: 3 * 60_000 });
 
 /** Chyby stránky (pageerror, console.error) zbierané počas testu; test ich na konci vyžaduje prázdne. */
 function collectErrors(page: Page): string[] {
@@ -107,15 +113,18 @@ test('F6: uloženie počas vykládky (Ctrl+S) → reload → načítanie slotu 1
   await page.keyboard.press('Escape');
   await expect(contracts).toHaveCount(0);
 
-  // 2) 8× kým žeriav nevykladá loď (kontrakt `unloading`, žeriav v niektorej fáze zdvihu), potom pauza
-  await setSpeed(page, 8);
+  // 2) čas ide dopredu, kým žeriav nevykladá loď (kontrakt `unloading`, žeriav v niektorej fáze zdvihu), potom pauza
   await page.waitForFunction(
-    () => {
+    (budget) => {
       const sim = window.__sim!;
-      const unloading = sim.contracts().some((contract) => contract.state === 'unloading');
-      return unloading && sim.entities().cranes.some((crane) => crane.state !== 'idle' && crane.state !== 'blocked');
+      for (let step = 0; step < budget; step += 1) {
+        const unloading = sim.contracts().some((contract) => contract.state === 'unloading');
+        if (unloading && sim.entities().cranes.some((crane) => crane.state !== 'idle' && crane.state !== 'blocked')) return true;
+        sim.advance!(1);
+      }
+      return false;
     },
-    null,
+    TICKS_PER_POLL,
     { polling: 'raf', timeout: SHIP_WAIT_MS },
   );
   await pauseAndSettle(page);
@@ -216,14 +225,13 @@ test('F6: export do súboru → nová hra → import súboru → rovnaký HUD a 
   await page.goto('/');
   await waitForGame(page);
 
-  // hra, ktorá sa líši od novej: postavená cesta (iná hotovosť), prijatý kontrakt, ~pol hodiny hernej hodiny na 8×
+  // hra, ktorá sa líši od novej: postavená cesta (iná hotovosť), prijatý kontrakt, 900 tickov (2,5 herných hodín) cez `advance`
   const road = await page.evaluate(() =>
     window.__sim!.dispatchJSON!({ type: 'PlaceRoad', cells: [41, 42, 43, 44].map((x) => ({ x, y: 22 })) }),
   );
   expect(road.ok).toBe(true);
   expect(await page.evaluate(() => window.__sim!.acceptFirstOffer())).not.toBeNull();
-  await setSpeed(page, 8);
-  await page.waitForFunction(() => window.__sim!.world.clock.tick > 900, null, { polling: 'raf' });
+  expect(await page.evaluate(() => window.__sim!.advance!(900))).toBe(900);
   await pauseAndSettle(page);
   const hud = await readHud(page);
   const world = await worldJson(page);

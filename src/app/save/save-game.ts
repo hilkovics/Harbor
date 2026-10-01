@@ -5,36 +5,28 @@
  * - `version`, `seed` a `tick` žijú len vo `world` (`WorldState`), obálka ich nezdvojuje;
  * - `saveVersion` verzuje len obálku, tvar sveta verzuje `world.version` a prevádza ho `World.deserialize`
  *   (`migrateWorldState`) — obálka v1 teda môže niesť `world` v1 … aktuálnu verziu;
- * - `preview` je odvodený z `world` pri uložení a slúži len na zoznam slotov; pri načítaní sa ignoruje (neoveruje sa
- *   voči `world`, nie je druhým zdrojom pravdy);
+ * - `preview` je odvodený z `world` pri uložení (`day` 0-based ako `SimClock.gameDay`, `timeLabel` = `HH:MM`, deň a čas
+ *   dňa zvlášť) a slúži len na zoznam slotov; pri načítaní sa ignoruje (neoveruje sa voči `world`, nie je druhým
+ *   zdrojom pravdy);
  * - `savedAtIso` (reálny čas) a `gameVersion` (z `package.json`) dopĺňa aplikácia — sim reálny čas čítať nesmie.
  *
  * `decodeSave` overí len obálku (formát, verziu, prítomnosť sveta a typy polí). Obsah `world` overí až
  * `World.deserialize` (`WorldStateError` s JSON pointerom), takže poškodený svet sa nikdy nepoužije napoly.
  */
 import type { World, WorldState } from '@sim/world';
-import { formatGameTime } from '@ui/format';
+import { formatClock } from '@ui/format';
+import { SAVE_SLOT_IDS, type SavePreview, type SaveSlotId } from '@ui/save-types';
 import { GAME_VERSION } from '../config';
+
+// Typy slotov a náhľadu sú definované raz, v `@ui/save-types` (UI nesmie závisieť od app); tu sa len re-exportujú.
+export { SAVE_SLOT_IDS };
+export type { SavePreview, SaveSlotId };
 
 export const SAVE_FORMAT = 'modular-harbor-save';
 export const SAVE_VERSION = 1;
 
-/** Sloty úložiska: `auto` (automatické uloženie) a tri ručné. */
-export type SaveSlotId = 'auto' | '1' | '2' | '3';
-
-/** Všetky sloty v poradí zobrazenia. */
-export const SAVE_SLOT_IDS: readonly SaveSlotId[] = Object.freeze<SaveSlotId[]>(['auto', '1', '2', '3']);
-
 export function isSaveSlotId(value: unknown): value is SaveSlotId {
   return typeof value === 'string' && (SAVE_SLOT_IDS as readonly string[]).includes(value);
-}
-
-/** Odvodené údaje pre zoznam slotov. `day` je 0-based ako `WorldSnapshot.day`; `timeLabel` je text pre hráča (`Deň N · HH:MM`). */
-export interface SavePreview {
-  readonly day: number;
-  readonly timeLabel: string;
-  readonly cashCents: number;
-  readonly xp: number;
 }
 
 export interface SaveGame {
@@ -81,7 +73,7 @@ export function encodeSave(world: World, label: string, nowIso: string): SaveGam
     label,
     preview: {
       day: clock.gameDay,
-      timeLabel: formatGameTime({ day: clock.gameDay, hour: clock.hourOfDay, minute: clock.minuteOfHour }),
+      timeLabel: formatClock(clock.hourOfDay, clock.minuteOfHour),
       cashCents: world.cashCents,
       xp: world.xp,
     },

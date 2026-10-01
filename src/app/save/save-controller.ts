@@ -16,6 +16,7 @@
  */
 import type { SimEvent } from '@sim/events';
 import { World, WorldStateError, type WorldOptions } from '@sim/world';
+import { formatDayAndClock } from '@ui/format';
 import { APP_WORLD_OPTIONS, QUIET_TOAST_AUTO_CLOSE_MS } from '../config';
 import type { Settings, SettingsStore } from '../settings';
 import { createSettingsStore } from '../settings';
@@ -196,13 +197,14 @@ export class SaveController {
       return this.fail(kind === 'auto' ? AUTOSAVE_FAILED_TOAST_TITLE : SAVE_FAILED_TOAST_TITLE, `save_failed:${slot}`, error);
     }
     this.refreshSlots();
+    const when = formatDayAndClock(save.preview.day, save.preview.timeLabel);
     if (kind === 'auto') {
       this.notify({
         key: 'autosaved',
         tone: 'info',
         icon: SAVE_ICON,
         title: AUTOSAVED_TOAST_TITLE,
-        text: save.preview.timeLabel,
+        text: when,
         autoCloseMs: QUIET_TOAST_AUTO_CLOSE_MS,
       });
     } else {
@@ -211,7 +213,7 @@ export class SaveController {
         tone: 'success',
         icon: SAVE_ICON,
         title: SAVED_TOAST_TITLE,
-        text: `${SLOT_NAMES[slot]} · ${save.preview.timeLabel}`,
+        text: `${SLOT_NAMES[slot]} · ${when}`,
       });
     }
     return OK;

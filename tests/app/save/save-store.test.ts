@@ -82,7 +82,7 @@ describe('list', () => {
       slot: 'auto',
       label: 'auto',
       savedAtIso: FIXED_NOW,
-      preview: expect.objectContaining({ day: 0, timeLabel: 'Deň 1 · 00:03' }) as unknown,
+      preview: expect.objectContaining({ day: 0, timeLabel: '00:03' }) as unknown,
     });
     expect(Object.keys(infos[0] ?? {}).sort()).toEqual(['label', 'preview', 'savedAtIso', 'slot']);
   });

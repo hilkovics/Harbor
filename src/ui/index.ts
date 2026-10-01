@@ -4,8 +4,10 @@ export {
   MINUS_SIGN,
   PLUS_SIGN,
   TIMES_SIGN,
+  formatClock,
   formatCount,
   formatDateTime,
+  formatDayAndClock,
   formatDuration,
   formatFootprint,
   formatFraction,
@@ -137,7 +139,6 @@ export type { SettingsPanelProps, SettingsPanelViewProps } from './settings-pane
 export {
   EMPTY_SLOT_TEXT,
   IMPORT_ACCEPT,
-  SAVE_SLOT_IDS,
   SaveLoadPanel,
   SaveLoadPanelView,
   findSlot,
@@ -146,4 +147,5 @@ export {
   slotReference,
 } from './save-load-panel';
 export type { SaveLoadPanelProps, SaveLoadPanelViewProps } from './save-load-panel';
+export { SAVE_SLOT_IDS } from './save-types';
 export type { SavePreview, SaveSlotId, SaveSlotInfo, Settings } from './save-types';

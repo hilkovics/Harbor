@@ -9,24 +9,22 @@
  * Načítanie je zhovievavé: chýbajúce, poškodené alebo neplatné hodnoty sa nahradia predvolenými (po poliach), nikdy
  * nevyhodí. Zápis hlási zlyhanie úložiska ako výsledok (`SettingsWriteResult`), nastavenia ostávajú v pamäti.
  */
+import type { Settings } from '@ui/save-types';
 import { StorageError, browserStorage, guardStorage, type StorageProvider } from './save/storage';
+
+// Typ `Settings` je definovaný raz, v `@ui/save-types` (UI nesmie závisieť od app); tu sa len re-exportuje.
+export type { Settings };
 
 export const SETTINGS_KEY = 'mh.settings';
 export const SETTINGS_VERSION = 1;
 
+export type DefaultSpeed = Settings['defaultSpeed'];
+
 /** Rýchlosti, ktoré možno zvoliť ako predvolené (zhodné s `time.speeds`; stráži to test). */
-export const SETTINGS_SPEEDS = Object.freeze([0, 1, 2, 4, 8] as const);
-export type DefaultSpeed = (typeof SETTINGS_SPEEDS)[number];
+export const SETTINGS_SPEEDS: readonly DefaultSpeed[] = Object.freeze<DefaultSpeed[]>([0, 1, 2, 4, 8]);
 
 /** Najdlhší interval automatického ukladania v dňoch. */
 export const MAX_AUTOSAVE_EVERY_DAYS = 30;
-
-export interface Settings {
-  readonly settingsVersion: 1;
-  readonly defaultSpeed: DefaultSpeed;
-  readonly autosaveEveryDays: number;
-  readonly sound: false;
-}
 
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
   settingsVersion: SETTINGS_VERSION,

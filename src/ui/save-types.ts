@@ -1,18 +1,24 @@
 /**
- * Typy ukladania pre UI (Fáza 6, T06-04). Zrkadlia „Spoločné rozhrania" z docs/tasks/phase-06.md presne, pretože
- * `src/app/save/save-game.ts`, `src/app/save/save-store.ts` a `src/app/settings.ts` vznikajú paralelne (T06-03).
- * UI importuje typy len odtiaľto; po zlúčení karty ich orchestrátor zjednotí (re-export z `@app/…` alebo naopak),
- * zmena je len v tomto jednom súbore. Žiadny runtime kód — UI nesmie závisieť od úložiska ani od simulácie.
+ * Typy ukladania — jediný zdroj pravdy (Fáza 6, T06-03b). UI (`SettingsPanel`, `SaveLoadPanel`) ich importuje odtiaľto
+ * a aplikačná vrstva (`src/app/save/*.ts`, `src/app/settings.ts`) ich z `@ui/save-types` len importuje a re-exportuje
+ * — smer závislosti je app → ui, nikdy opačne (UI nesmie závisieť od úložiska ani od simulácie). Jediný runtime obsah je
+ * zoznam slotov, z ktorého je odvodený typ `SaveSlotId`.
  */
 
-/** Slot uloženia: automatický (autosave) a tri ručné. */
-export type SaveSlotId = 'auto' | '1' | '2' | '3';
+/** Sloty uloženia v poradí zobrazenia: automatický (autosave) a tri ručné. */
+export const SAVE_SLOT_IDS = ['auto', '1', '2', '3'] as const;
 
-/** Odvodené údaje pre zoznam slotov (pri načítaní sa ignorujú). */
+/** Slot uloženia: automatický (autosave) a tri ručné. */
+export type SaveSlotId = (typeof SAVE_SLOT_IDS)[number];
+
+/**
+ * Odvodené údaje pre zoznam slotov (pri načítaní sa ignorujú). Dvojica `day` + `timeLabel` je dátum a čas dňa zvlášť,
+ * nie hotový popisok: UI z nich zloží `Deň N · HH:MM` (`formatDayAndClock`), rovnako ako HUD.
+ */
 export interface SavePreview {
-  /** Herný deň, 0-based ako `WorldSnapshot.day` (hráč vidí `day + 1`). */
+  /** Herný deň, 0-based ako `SimClock.gameDay` a `WorldSnapshot.day` (hráč vidí `day + 1`). */
   readonly day: number;
-  /** Čas dňa ako text, napr. `14:20`. */
+  /** Čas dňa ako `HH:MM` (napr. `14:20`), bez dňa — ten nesie `day`. */
   readonly timeLabel: string;
   readonly cashCents: number;
   readonly xp: number;

@@ -9,14 +9,14 @@
  * správu fokusu. Peniaze a XP idú cez `formatMoney`/`formatXp` (tabular-nums v CSS).
  */
 import { useEffect, useRef, useState, type ChangeEvent, type ReactElement, type RefObject } from 'react';
-import { formatDateTime, formatMoney, formatXp } from './format';
+import { formatDateTime, formatDayAndClock, formatMoney, formatXp } from './format';
 import { Icon } from './icon';
 import { ModalDialog } from './modal-dialog';
-import type { SavePreview, SaveSlotId, SaveSlotInfo } from './save-types';
+import { SAVE_SLOT_IDS, type SavePreview, type SaveSlotId, type SaveSlotInfo } from './save-types';
 import './save-load-panel.css';
 
-/** Poradie slotov v zozname. */
-export const SAVE_SLOT_IDS: readonly SaveSlotId[] = ['auto', '1', '2', '3'];
+/** Poradie slotov v zozname (zdroj: `save-types`; re-export kvôli importom z panelu). */
+export { SAVE_SLOT_IDS };
 
 /** Hodnota `accept` skrytého výberu súboru. */
 export const IMPORT_ACCEPT = '.json,application/json';
@@ -34,9 +34,9 @@ export function slotReference(slot: SaveSlotId): string {
   return slot === 'auto' ? 'automatické uloženie' : `slot ${slot}`;
 }
 
-/** Deň a čas z preview: `Deň 12 · 14:20` (`day` je 0-based ako v HUD, hráč vidí `day + 1`). */
+/** Deň a čas z preview: `Deň 12 · 14:20` (`day` je 0-based ako v HUD, hráč vidí `day + 1`; `timeLabel` je `HH:MM`). */
 export function previewTimeText(preview: SavePreview): string {
-  return `Deň ${String(Math.trunc(preview.day) + 1)} · ${preview.timeLabel}`;
+  return formatDayAndClock(preview.day, preview.timeLabel);
 }
 
 /** Obsadený slot zo zoznamu (prázdne sloty v zozname nie sú); pri duplicite vyhrá prvý. */

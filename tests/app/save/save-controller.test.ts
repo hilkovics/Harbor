@@ -460,7 +460,7 @@ function controllerSave(world: World): SaveGame {
     gameVersion: '0.0.0',
     savedAtIso: FIXED_NOW,
     label: 'x',
-    preview: { day: 0, timeLabel: 'Deň 1 · 00:00', cashCents: world.cashCents, xp: 0 },
+    preview: { day: 0, timeLabel: '00:00', cashCents: world.cashCents, xp: 0 },
     world: world.serialize(),
   };
 }

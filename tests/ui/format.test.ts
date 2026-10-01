@@ -3,8 +3,10 @@ import {
   EM_DASH,
   MINUS_SIGN,
   TIMES_SIGN,
+  formatClock,
   formatCount,
   formatDateTime,
+  formatDayAndClock,
   formatDuration,
   formatFootprint,
   formatFraction,
@@ -122,6 +124,20 @@ describe('formatGameTime', () => {
   it('viacciferný deň sa nezalamuje ani neorezáva', () => {
     expect(formatGameTime({ day: 364, hour: 9, minute: 5 })).toBe('Deň 365 · 09:05');
     expect(formatGameTime({ day: 999, hour: 12, minute: 0 })).toBe('Deň 1000 · 12:00');
+  });
+});
+
+describe('formatClock / formatDayAndClock (T06-03b: preview savu je deň a čas dňa zvlášť)', () => {
+  it('formatClock: HH:MM s nulou vpredu', () => {
+    expect(formatClock(0, 0)).toBe('00:00');
+    expect(formatClock(9, 5)).toBe('09:05');
+    expect(formatClock(23, 59)).toBe('23:59');
+  });
+
+  it('formatDayAndClock: 0-based deň + hotový čas; formatGameTime je ich zloženie', () => {
+    expect(formatDayAndClock(0, '00:00')).toBe('Deň 1 · 00:00');
+    expect(formatDayAndClock(11, '14:20')).toBe('Deň 12 · 14:20');
+    expect(formatDayAndClock(11, formatClock(14, 20))).toBe(formatGameTime({ day: 11, hour: 14, minute: 20 }));
   });
 });
 

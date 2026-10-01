@@ -80,9 +80,19 @@ function pad2(value: number): string {
   return text.length >= 2 ? text : `0${text}`;
 }
 
+/** Čas dňa `HH:MM` (hodina a minúta s nulou vpredu). */
+export function formatClock(hour: number, minute: number): string {
+  return `${pad2(hour)}:${pad2(minute)}`;
+}
+
+/** `Deň N · <čas>`, kde N = `day + 1` (SimClock je 0-based, hráč vidí od Dňa 1) a čas je hotový text (`HH:MM`). */
+export function formatDayAndClock(day: number, clock: string): string {
+  return `Deň ${String(Math.trunc(day) + 1)} \u00B7 ${clock}`;
+}
+
 /** `Deň N · HH:MM`, kde N = `day + 1` (SimClock je 0-based, hráč vidí od Dňa 1). */
 export function formatGameTime({ day, hour, minute }: GameTimeParts): string {
-  return `Deň ${String(Math.trunc(day) + 1)} \u00B7 ${pad2(hour)}:${pad2(minute)}`;
+  return formatDayAndClock(day, formatClock(hour, minute));
 }
 
 /**

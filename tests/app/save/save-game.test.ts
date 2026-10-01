@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { SetGameSpeedCommand } from '@sim/commands';
 import { GAME_VERSION } from '@app/config';
 import { SAVE_FORMAT, SAVE_SLOT_IDS, SAVE_VERSION, SaveError, decodeSave, encodeSave, isSaveSlotId, type SaveErrorReason } from '@app/save/save-game';
-import { formatGameTime } from '@ui/format';
+import { formatClock, formatGameTime } from '@ui/format';
+import { previewTimeText } from '@ui/save-load-panel';
 import { version as packageVersion } from '../../../package.json';
 import { createWorld } from '../app-fixtures';
 
@@ -32,16 +33,28 @@ describe('encodeSave', () => {
     expect(Object.keys(save).sort()).toEqual(['format', 'gameVersion', 'label', 'preview', 'saveVersion', 'savedAtIso', 'world']);
   });
 
-  it('preview: deň (0-based), čas pre hráča, hotovosť a XP', () => {
+  it('preview: deň (0-based), čas dňa HH:MM zvlášť, hotovosť a XP', () => {
     const world = createWorld();
-    expect(encodeSave(world, 'x', NOW).preview).toEqual({ day: 0, timeLabel: 'Deň 1 · 00:00', cashCents: world.cashCents, xp: 0 });
+    expect(encodeSave(world, 'x', NOW).preview).toEqual({ day: 0, timeLabel: '00:00', cashCents: world.cashCents, xp: 0 });
     const ticks = world.clock.ticksPerDay + world.clock.ticksPerHour * 2 + 7;
     for (let i = 0; i < ticks; i += 1) world.tick();
     const { preview } = encodeSave(world, 'x', NOW);
     expect(preview.day).toBe(1);
-    expect(preview.timeLabel).toBe(formatGameTime({ day: 1, hour: world.clock.hourOfDay, minute: world.clock.minuteOfHour }));
-    expect(preview.timeLabel.startsWith('Deň 2 · 02:')).toBe(true);
+    expect(preview.timeLabel).toBe(formatClock(world.clock.hourOfDay, world.clock.minuteOfHour));
+    expect(preview.timeLabel).toMatch(/^02:\d\d$/);
     expect(preview.cashCents).toBe(world.cashCents);
+  });
+
+  it('preview je v zhode s UI: zoznam slotov ukáže presne ten istý „Deň N · HH:MM“ ako HUD (bez zdvojeného dňa)', () => {
+    const world = createWorld();
+    const ticks = world.clock.ticksPerDay * 3 + world.clock.ticksPerHour * 14 + world.clock.ticksPerHour / 3;
+    for (let i = 0; i < ticks; i += 1) world.tick();
+    const { preview } = encodeSave(world, 'x', NOW);
+    const hud = formatGameTime({ day: world.clock.gameDay, hour: world.clock.hourOfDay, minute: world.clock.minuteOfHour });
+    expect(preview.day).toBe(world.clock.gameDay); // 0-based, ako `WorldSnapshot.day`
+    expect(hud.startsWith('Deň 4 · 14:')).toBe(true);
+    expect(previewTimeText(preview)).toBe(hud);
+    expect((previewTimeText(preview).match(/Deň/g) ?? []).length).toBe(1);
   });
 
   it('neprázdna fronta príkazov: serialize odmietne (volajúci ju musí najprv vyprázdniť)', () => {

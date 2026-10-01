@@ -153,8 +153,13 @@ function segmentCells([x0, y0, x1, y1]: readonly [number, number, number, number
  */
 async function dismissToasts(page: Page): Promise<void> {
   const closers = page.locator('.toasts .toast [data-action="close"]');
-  while ((await closers.count()) > 0) await closers.first().click();
-  await expect(page.locator('.toasts .toast')).toHaveCount(0);
+  // Toast sa zatvára aj sám (8 s od zobrazenia) a test sa k prvému zavretiu dostane po ~6–8 s od načítania, takže zavretie
+  // sa môže minúť s automatickým zánikom. Klik bez limitu by potom čakal na zaniknutý prvok až do konca testu (5 min,
+  // `actionTimeout` je predvolene 0), preto má každý pokus krátky limit a výsledok rozhoduje až kontrola prázdneho zásobníka.
+  await expect(async () => {
+    if ((await closers.count()) > 0) await closers.first().click({ timeout: 1_000 });
+    await expect(page.locator('.toasts .toast')).toHaveCount(0, { timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
 }
 
 /**

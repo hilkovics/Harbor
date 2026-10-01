@@ -18,12 +18,22 @@ import type { CellCoord } from '@sim/grid';
 import type { LoadingRamp, StorageModule, TruckGate, VehicleDepot, WaitingArea } from '@sim/modules';
 import { World } from '@sim/world';
 import { DEPOT_ORIGIN, FAR_YARD_ORIGIN, NEAR_YARD_ORIGIN, ROAD_SEGMENTS, segment } from '../helpers/f3-layout';
-import { MAP, RAW_DEFS } from '../world/world-fixtures';
+import { LEGACY_CAPACITY_MODULES, MAP, RAW_DEFS } from '../world/world-fixtures';
+
+/** Kamióny, z ktorých žiadny nevozí kontajnery (`truck_container` len `bulk`) — rampa ostane bez odvozu. */
+const NO_CONTAINER_TRUCKS = { ...trucksJson, items: trucksJson.items.map((item) => ({ ...item, cargoCategories: ['bulk'] })) };
 
 /** Defy, v ktorých žiadny kamión nevozí kontajnery (`truck_container` len `bulk`) — rampa ostane bez odvozu. */
-export const NO_CONTAINER_TRUCK_DEFS: DefRegistry = DefRegistry.fromRaw({
+export const NO_CONTAINER_TRUCK_DEFS: DefRegistry = DefRegistry.fromRaw({ ...RAW_DEFS, trucks: NO_CONTAINER_TRUCKS });
+
+/**
+ * `NO_CONTAINER_TRUCK_DEFS` s pôvodnými kapacitami spred Fázy 5b (staging 2 na dock, apron 4; T5B-01 ich zväčšila).
+ * Outbound testy T04-03 stoja na 2 dockoch × 2 miestach (plný staging, poradie dockov 0, 0, 1, 1), preto ich majú pripnuté.
+ */
+export const LEGACY_NO_CONTAINER_TRUCK_DEFS: DefRegistry = DefRegistry.fromRaw({
   ...RAW_DEFS,
-  trucks: { ...trucksJson, items: trucksJson.items.map((item) => ({ ...item, cargoCategories: ['bulk'] })) },
+  modules: LEGACY_CAPACITY_MODULES,
+  trucks: NO_CONTAINER_TRUCKS,
 });
 
 export const GATE_ORIGIN: CellCoord = { x: 45, y: 32 };

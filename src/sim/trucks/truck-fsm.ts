@@ -7,6 +7,8 @@
  * (brána dokončila prechod) `to_bay` → (príchod k vstupu stojiska) `waiting` → (povel do docku) `to_dock` → (príchod
  * k docku rampy) `loading` → (naložené) `to_gate_out` → (príchod k výstupnej strane brány) `gate_queue_out` → (prechod)
  * `to_portal` → (príchod na portál) `exited` — jednotky `in_truck → exported`, kamión zmizne.
+ * Povel do docku (ADR-029): po pobyte v stojisku odíde prvý pripravený kamión svojho docku (FIFO podľa id), keď je dock
+ * voľný a je na ňom celý náklad kamióna; inak čaká v bayi. Dock drží až od tohto povelu, nárok na náklad od spawnu.
  * Jazdné stavy (`to_*`) prejdú do `no_path`, keď k cieľu nevedie cesta; z `no_path` sa kamión vráti presne do stavu,
  * z ktorého vypadol (`Truck.resume`).
  */
@@ -80,12 +82,21 @@ export interface TruckStateTraits extends MotionTraits {
   readonly waits: boolean;
   /** Cieľ jazdy / miesto pobytu; `null` = žiadny (`no_path`, `exited`). */
   readonly stop: TruckStop | null;
-  /** Kamión drží rezervovaný bay stojiska (od spawnu, kým neodíde k rampe — rozhodnutie orchestrátora 3). */
+  /** Kamión drží rezervovaný bay stojiska (od spawnu, kým neodíde k docku — rozhodnutie orchestrátora F4 č. 3). */
   readonly holdsBay: boolean;
   /** Kamión v bayi stojí (inak len rezervácia). */
   readonly bayOccupied: boolean;
-  /** Kamión drží dock rampy (od spawnu, kým nedoloží — na dock mieri najviac jeden kamión). */
+  /**
+   * Kamión drží dock rampy (`LoadingRamp.dockTruck`) — od odchodu zo stojiska (`waiting → to_dock`), kým nedoloží; na
+   * dock mieri najviac jeden kamión (ADR-029, predtým od spawnu podľa ADR-024).
+   */
   readonly holdsDock: boolean;
+  /**
+   * Kamión má nárok na náklad svojho docku (`LoadingRamp.claimedAt`): od spawnu po koniec nakládky počíta
+   * `capacityUnits − in_truck` jednotiek docku, ktoré sú pripravené alebo na ceste s vozidlom (ADR-029). Dva kamióny
+   * tak nikdy nečakajú na tú istú jednotku.
+   */
+  readonly claimsCargo: boolean;
   readonly cargo: TruckCargo;
   /** Strana brány, ku ktorej kamión ide (`to_gate`, `to_gate_out`) alebo pri ktorej čaká vo fronte; inak `null`. */
   readonly gateSide: TruckGateSide | null;
@@ -107,17 +118,17 @@ function traits(spec: TruckStateTraits): TruckStateTraits {
 const ON_ROAD = { waits: false, bayOccupied: false, gateSide: null, queued: false, afterGate: null, passageBack: false } as const;
 
 export const TRUCK_STATE_TRAITS: { readonly [S in TruckState]: TruckStateTraits } = Object.freeze({
-  to_gate: traits({ ...ON_ROAD, motion: 'drive', stop: 'gate', holdsBay: true, holdsDock: true, cargo: 'empty', gateSide: 'entry' }),
-  gate_queue: traits({ ...ON_ROAD, motion: 'park', stop: 'gate', holdsBay: true, holdsDock: true, cargo: 'empty', gateSide: 'entry', queued: true, afterGate: 'to_bay' }),
-  to_bay: traits({ ...ON_ROAD, motion: 'drive', stop: 'waiting_area', holdsBay: true, holdsDock: true, cargo: 'empty' }),
-  waiting: traits({ ...ON_ROAD, motion: 'park', waits: true, stop: 'waiting_area', holdsBay: true, bayOccupied: true, holdsDock: true, cargo: 'empty' }),
-  to_dock: traits({ ...ON_ROAD, motion: 'drive', stop: 'ramp', holdsBay: false, holdsDock: true, cargo: 'empty' }),
-  loading: traits({ ...ON_ROAD, motion: 'park', waits: true, stop: 'ramp', holdsBay: false, holdsDock: true, cargo: 'loading' }),
-  to_gate_out: traits({ ...ON_ROAD, motion: 'drive', stop: 'gate', holdsBay: false, holdsDock: false, cargo: 'full', gateSide: 'exit', passageBack: true }),
-  gate_queue_out: traits({ ...ON_ROAD, motion: 'park', stop: 'gate', holdsBay: false, holdsDock: false, cargo: 'full', gateSide: 'exit', queued: true, afterGate: 'to_portal' }),
-  to_portal: traits({ ...ON_ROAD, motion: 'drive', stop: 'portal', holdsBay: false, holdsDock: false, cargo: 'full' }),
-  exited: traits({ ...ON_ROAD, motion: 'park', stop: null, holdsBay: false, holdsDock: false, cargo: 'full' }),
-  no_path: traits({ ...ON_ROAD, motion: 'halt', waits: true, stop: null, holdsBay: false, holdsDock: false, cargo: 'empty' }),
+  to_gate: traits({ ...ON_ROAD, motion: 'drive', stop: 'gate', holdsBay: true, holdsDock: false, claimsCargo: true, cargo: 'empty', gateSide: 'entry' }),
+  gate_queue: traits({ ...ON_ROAD, motion: 'park', stop: 'gate', holdsBay: true, holdsDock: false, claimsCargo: true, cargo: 'empty', gateSide: 'entry', queued: true, afterGate: 'to_bay' }),
+  to_bay: traits({ ...ON_ROAD, motion: 'drive', stop: 'waiting_area', holdsBay: true, holdsDock: false, claimsCargo: true, cargo: 'empty' }),
+  waiting: traits({ ...ON_ROAD, motion: 'park', waits: true, stop: 'waiting_area', holdsBay: true, bayOccupied: true, holdsDock: false, claimsCargo: true, cargo: 'empty' }),
+  to_dock: traits({ ...ON_ROAD, motion: 'drive', stop: 'ramp', holdsBay: false, holdsDock: true, claimsCargo: true, cargo: 'empty' }),
+  loading: traits({ ...ON_ROAD, motion: 'park', waits: true, stop: 'ramp', holdsBay: false, holdsDock: true, claimsCargo: true, cargo: 'loading' }),
+  to_gate_out: traits({ ...ON_ROAD, motion: 'drive', stop: 'gate', holdsBay: false, holdsDock: false, claimsCargo: false, cargo: 'full', gateSide: 'exit', passageBack: true }),
+  gate_queue_out: traits({ ...ON_ROAD, motion: 'park', stop: 'gate', holdsBay: false, holdsDock: false, claimsCargo: false, cargo: 'full', gateSide: 'exit', queued: true, afterGate: 'to_portal' }),
+  to_portal: traits({ ...ON_ROAD, motion: 'drive', stop: 'portal', holdsBay: false, holdsDock: false, claimsCargo: false, cargo: 'full' }),
+  exited: traits({ ...ON_ROAD, motion: 'park', stop: null, holdsBay: false, holdsDock: false, claimsCargo: false, cargo: 'full' }),
+  no_path: traits({ ...ON_ROAD, motion: 'halt', waits: true, stop: null, holdsBay: false, holdsDock: false, claimsCargo: false, cargo: 'empty' }),
 } as const);
 
 /** Cieľ udalosti prechodu (`world.events`). */

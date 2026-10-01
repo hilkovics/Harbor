@@ -107,13 +107,13 @@ describe('determinizmus: hash je citlivý (kontrolné testy, že porovnanie nie�
 });
 
 describe('serialize / deserialize', () => {
-  it('WorldState je čistý JSON (bez tried, undefined, NaN) vo verzii 5', () => {
+  it('WorldState je čistý JSON (bez tried, undefined, NaN) vo verzii 6', () => {
     const world = World.create(defs, map, scenario.seed);
     runScenario(world, scenario, 300);
     const state = world.serialize();
 
     expect(JSON.parse(JSON.stringify(state))).toStrictEqual(state);
-    expect(state).toMatchObject({ version: 5, mapId: map.id, seed: scenario.seed, cashCents: world.cashCents });
+    expect(state).toMatchObject({ version: 6, mapId: map.id, seed: scenario.seed, cashCents: world.cashCents });
   });
 
   it('serialize() nemení svet (dvojité volanie dá rovnaký výsledok a beh pokračuje ako bez neho)', () => {

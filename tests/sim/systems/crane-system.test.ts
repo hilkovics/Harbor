@@ -20,6 +20,7 @@ import {
   SHIP_DEFS,
   berth,
   crane,
+  newLegacyCapacityWorld,
   newWorld,
   ofType,
   placeModule,
@@ -93,9 +94,10 @@ describe('cyklus žeriavu — presné načasovanie (c = 12: grabbing 6, placing 
 });
 
 describe('blokovanie pri plnom aprone a throttle CraneBlocked', () => {
+  // Blok stojí na plnom aprone 4/4 → pripnutý pôvodný balans (`newLegacyCapacityWorld`; Fáza 5b zväčšila apron na 8).
   /** Root apron plný (4 jednotky z prvého feedera) a druhý feeder s 3 jednotkami dokovaný. */
   function blockedHarbor(checkInvariants = true): { world: World; second: ReturnType<typeof spawn> } {
-    const world = newWorld({ checkInvariants });
+    const world = newLegacyCapacityWorld({ checkInvariants });
     const first = spawn(world, 'feeder', 4);
     tickUntil(world, () => !world.ships.has(first.id), 1000);
     const second = spawn(world, 'feeder', 3);
@@ -104,7 +106,7 @@ describe('blokovanie pri plnom aprone a throttle CraneBlocked', () => {
   }
 
   it('dokovaná loď s nákladom + apron bez voľného slotu → blocked hneď v ticku dokovania, CraneBlocked { apron_full } raz', () => {
-    const world = newWorld();
+    const world = newLegacyCapacityWorld();
     const first = spawn(world, 'feeder', 4);
     tickUntil(world, () => !world.ships.has(first.id), 1000);
     const second = spawn(world, 'feeder', 2);

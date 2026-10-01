@@ -28,7 +28,9 @@ import {
 const VOLUME = 72;
 const SLA_DAYS = 5;
 const OVERFLOW_TEMPLATE: TemplateRaw = { ...FIXED_TEMPLATE, id: 'overflow_feeder', volumeUnitsRange: [VOLUME, VOLUME], slaDaysRange: [SLA_DAYS, SLA_DAYS] };
-const DEFS = defsWith({ templates: [OVERFLOW_TEMPLATE], economy: { arrivalDaysRange: [1, 1] } });
+// Pôvodný apron 4 (Fáza 5b ho zväčšila na 8): s 8 + 64 = 72 by sa celý kontrakt vyložil bez exportu počas vykládky,
+// kým test overuje práve export počas vykládky (objem 72 > sklad 64 + apron 4).
+const DEFS = defsWith({ templates: [OVERFLOW_TEMPLATE], economy: { arrivalDaysRange: [1, 1] }, legacyCapacities: true });
 const YARD_CAPACITY = storageParams(DEFS.modules.get('container_yard_small')).capacityUnits;
 const SEED = 5501;
 const RUN_TIMEOUT_MS = 600_000;

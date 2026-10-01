@@ -131,9 +131,9 @@ describe('invarianty skladu a depa (krok 12)', () => {
     ],
     [
       'depo s viac vozidlami než státí',
-      /má 7 vozidiel \(capacity 6\)/,
+      /má 11 vozidiel \(capacity 10\)/,
       ({ depot }) => {
-        (depot as unknown as { view: readonly EntityId[] }).view = [1, 2, 3, 4, 5, 6, 7].map(id);
+        (depot as unknown as { view: readonly EntityId[] }).view = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(id);
       },
     ],
   ];

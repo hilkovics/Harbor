@@ -1,7 +1,8 @@
 /**
  * Obnova entít zo save (ARCHITECTURE §14, ADR-014, ADR-016, ADR-017, ADR-018): moduly v poradí save (= poradie
  * umiestnenia) cez `ModuleRegistry` a `World.addModule`, lode vzostupne podľa id cez `World.addShip` (pred kontrolou
- * držiteľov nákladu — `on_ship` číta `world.ships`) s obnovou `BerthModule.dockedShipId` z `berthIds`, vozidlá
+ * držiteľov nákladu — `on_ship` číta `world.ships`) s obnovou `BerthModule.dockedShipId` z `berthIds`, hneď potom trasy
+ * lodí podľa stavu a rezervácie lodí na mape bez prekryvu (`checkShipRoutes`, ADR-029 addendum), vozidlá
  * vzostupne podľa id cez `World.addVehicle` (T03-04; depo dostane `vehicleIds` v poradí id = poradí nákupu), potom
  * kontrola držiteľov a slotov nákladu (slot v kapacite apronu/skladu, náklad vozidla v jeho kapacite a kategóriách),
  * joby vzostupne podľa id (T03-05: vozidlo a stav jobu sa odvodia z vozidla s daným `jobId` a z polohy nákladu,
@@ -14,9 +15,9 @@
  * rezervácie dockov obnovia outbound joby (`staged + reserved ≤ stagingPerDock`, inak chyba jobu). Pozemné
  * moduly (T04-02) obnovia `runtime` (brána: fronta a počítadlá); strany brán a prevádzkovosť rámp odvodí svet po obnove.
  * Kamióny (T04-04, ADR-024) vzostupne podľa id cez `World.addTruck` po vozidlách (pred kontrolou držiteľov — `in_truck`
- * číta `world.trucks`): kamión znovu drží svoj bay (index zo save) a dock podľa stavu; potom náklad kamióna (kapacita,
- * kategória, stav prázdny/nakládka/plný), väzba na rampu (def vozí jej kategóriu, kamión s dockom má na docku a v sebe
- * aspoň kapacitu), fronta brány = presne kamióny v `gate_queue*` tejto brány, súlad prechodu brány s frontou (runtime
+ * číta `world.trucks`): kamión znovu drží svoj bay (index zo save), dock a nárok na náklad docku podľa stavu (ADR-029);
+ * potom náklad kamióna (kapacita, kategória, stav prázdny/nakládka/plný), väzba na rampu (def vozí jej kategóriu,
+ * kamión s dockom má na docku a v sebe aspoň kapacitu; po obnove jobov nároky docku ≤ pripravené + vezené), fronta brány = presne kamióny v `gate_queue*` tejto brány, súlad prechodu brány s frontou (runtime
  * brány), pohyb (`truckMotionProblem`), kamión vo fronte na svojej strane brány a hodina posledného `NoWaitingBay`
  * rampy nie je v budúcnosti.
  * Kontrakty (ADR-026): jednotka s `contractId` patrí kontraktu s loďou a jeho nákladu, jednotka na lodi kontraktu pred
@@ -37,8 +38,9 @@ import { ModuleError, ModuleStateError } from '../modules/module-error';
 import { moduleRegistry } from '../modules/module-registry';
 import { Ship } from '../ships/ship';
 import { ShipError } from '../ships/ship-error';
-import { mooringProblem, shipRoute } from '../ships/ship-route';
+import { legacyShipRoute, mooringProblem, shipRouteProblem } from '../ships/ship-route';
 import { TruckGate } from '../modules/truck-gate';
+import { DockSupply } from '../trucks/dock-supply';
 import { Truck } from '../trucks/truck';
 import { TruckError, type TruckErrorCode } from '../trucks/truck-error';
 import { TRUCK_STATE_TRAITS } from '../trucks/truck-fsm';
@@ -102,7 +104,7 @@ function restoreShips(world: World, entries: readonly ParsedShipEntry[]): void {
     const path = shipPath(index);
     let ship: Ship;
     try {
-      ship = new Ship({
+      const init = {
         id: entry.id,
         def: world.defs.ships.get(entry.classId),
         cargoType: world.defs.cargoTypes.get(entry.cargoTypeId),
@@ -112,8 +114,13 @@ function restoreShips(world: World, entries: readonly ParsedShipEntry[]): void {
         heading: entry.heading,
         berthIds: entry.berthIds,
         anchorageIndex: entry.anchorageIndex,
-        waypointIndex: entry.waypointIndex,
-      });
+      };
+      // Save v5 trasy neukladal: odvodí sa podľa pravidiel pred ADR-029 (kotviská sú už obnovené).
+      const route = entry.route ?? legacyShipRoute(new Ship(init), world);
+      if (entry.waypointIndex > route.length) {
+        throw new WorldStateError(`${path}/waypointIndex`, `trasa stavu '${entry.state}' má ${String(route.length)} bodov, index ${String(entry.waypointIndex)}`);
+      }
+      ship = new Ship({ ...init, waypointIndex: entry.waypointIndex, route });
     } catch (error) {
       if (error instanceof ShipError) throw new WorldStateError(path, error.message);
       throw error;
@@ -126,10 +133,6 @@ function restoreShips(world: World, entries: readonly ParsedShipEntry[]): void {
       if (holder !== undefined) throw new WorldStateError(`${path}/anchorageIndex`, `anchorage ${String(ship.anchorageIndex)} už obsadila loď #${String(holder)}`);
       anchorages.set(ship.anchorageIndex, ship.id);
     }
-    const routeLength = shipRoute(ship, world).length;
-    if (ship.waypointIndex > routeLength) {
-      throw new WorldStateError(`${path}/waypointIndex`, `trasa stavu '${ship.state}' má ${String(routeLength)} bodov, index ${String(ship.waypointIndex)}`);
-    }
     try {
       world.addShip(ship);
     } catch (error) {
@@ -138,6 +141,32 @@ function restoreShips(world: World, entries: readonly ParsedShipEntry[]): void {
       throw error;
     }
   });
+}
+
+/**
+ * Trasy lodí po obnove (ADR-029 addendum, review T5B-04b) — fail-fast namiesto porušenia kroku 12 o pár tickov:
+ * súlad uloženej (alebo pre save v5 odvodenej) trasy so stavom (`shipRouteProblem`: prázdna trasa stojacej lode, plavba
+ * dnu po celej sea lane, koniec trasy v cieli stavu, poloha na aktuálnom úseku) a rezervácie lodí na mape (obdĺžnik
+ * a zvyšok trasy, pri `undocking` aj sea lane von) bez spoločnej bunky — `ShipTraffic.reservationConflict`, chyba na
+ * trase lode s vyšším id. Lode sú vo `world.ships` v poradí save (vzostupne podľa id), index = index v `/ships`.
+ */
+function checkShipRoutes(world: World): void {
+  const indexOf = new Map<EntityId, number>();
+  let index = 0;
+  for (const ship of world.ships.values()) {
+    const path = shipPath(index);
+    indexOf.set(ship.id, index);
+    index += 1;
+    const problem = shipRouteProblem(ship, world);
+    if (problem !== undefined) throw new WorldStateError(`${path}/${problem.field}`, problem.problem);
+  }
+  const conflict = world.shipTraffic.reservationConflict();
+  if (conflict === undefined) return;
+  const { earlier, later } = conflict;
+  throw new WorldStateError(
+    `${shipPath(indexOf.get(later.id) ?? 0)}/route`,
+    `trasa lode ${later.label} (${later.state}) sa prekrýva s rezerváciou lode ${earlier.label} (${earlier.state}) — lode by sa zrazili (ADR-029)`,
+  );
 }
 
 const vehiclePath = (index: number): string => `/vehicles${pointerSegment(index)}`;
@@ -323,6 +352,35 @@ function checkTruckRamps(world: World): void {
     const ramp = world.modules.get(truck.rampId);
     const problem = ramp instanceof LoadingRamp ? truckRampProblem(world, truck, ramp) : undefined;
     if (problem !== undefined) throw new WorldStateError(`${truckPath(index)}/${problem.field}`, problem.problem);
+    index += 1;
+  }
+}
+
+/**
+ * Nároky kamiónov na náklad dockov (ADR-029): na každom docku súčet nárokov (`capacityUnits − in_truck` kamiónov
+ * s `claimsCargo`) nepresahuje pripravené + vozidlami vezené jednotky (outbound joby s vozidlom, `DockSupply`). Chyba
+ * patrí kamiónu, ktorého nárok (vzostupne podľa id) súčet prekročí (`/trucks/<i>/dock`). Po `restoreJobs`.
+ */
+function checkTruckClaims(world: World): void {
+  const supply = new DockSupply();
+  supply.refresh(world);
+  const claimed = new Map<string, number>();
+  let index = 0;
+  for (const truck of world.trucks.values()) {
+    const ramp = world.modules.get(truck.rampId);
+    const owed = truck.def.capacityUnits - world.cargo.countAt('in_truck', truck.id);
+    if (truck.bonds.claimsCargo && owed > 0 && ramp instanceof LoadingRamp) {
+      const key = `${String(ramp.id)}:${String(truck.dock)}`;
+      const total = (claimed.get(key) ?? 0) + owed;
+      claimed.set(key, total);
+      const supplied = supply.suppliedAt(ramp, truck.dock);
+      if (total > supplied) {
+        throw new WorldStateError(
+          `${truckPath(index)}/dock`,
+          `${truck.label}: nároky kamiónov na dock ${String(truck.dock)} ${ramp.label} (${String(total)}) prevyšujú pripravené a vezené jednotky (${String(supplied)})`,
+        );
+      }
+    }
     index += 1;
   }
 }
@@ -675,6 +733,7 @@ export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'mo
   const { units } = parsed.cargo;
   restoreModules(world, entries);
   restoreShips(world, parsed.ships);
+  checkShipRoutes(world);
   restoreVehicles(world, parsed.vehicles);
   restoreTrucks(world, parsed.trucks);
   const indexOf = new Map<EntityId, number>(entries.map((entry, index) => [entry.id, index]));
@@ -687,6 +746,7 @@ export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'mo
   checkTruckRamps(world);
   checkGateQueues(world, indexOf);
   restoreJobs(world, parsed.jobs);
+  checkTruckClaims(world);
   checkVehicleCargoJobs(world, units);
   checkVehicleMotion(world);
   checkTruckMotion(world);

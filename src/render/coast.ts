@@ -89,9 +89,25 @@ function landTile(grid: Grid, x: number, y: number): CoastTileId {
 }
 
 /**
+ * Otočenie sprity bunky v štvrťotáčkach po smere hodinových ručičiek (0 = bez otočenia). Hranu nábrežia (`quay_edge_n`,
+ * voda na severe) má manifest len s jednou stranou, ostatné strany sa kreslia jej otočením: voda na východe 1, na juhu 2,
+ * na západe 3 štvrťotáčky. Iné sprity sa neotáčajú (pevnina má vlastné sprity pre všetky štyri strany).
+ */
+export type QuarterTurns = 0 | 1 | 2 | 3;
+
+/** Otočenie sprity `coastTile` pre bunku (x, y) — viď `QuarterTurns`; pri vode na viacerých stranách nábrežia platí prvá v poradí N, E, S, W. */
+export function coastQuarterTurns(grid: Grid, x: number, y: number): QuarterTurns {
+  if (grid.at(x, y).terrain !== 'quay') return 0;
+  const mask = coastWaterMask(grid, x, y);
+  const first = DIRECTIONS_4.findIndex((direction) => (mask & direction.bit) !== 0);
+  return first < 0 ? 0 : (first as QuarterTurns);
+}
+
+/**
  * Sprite terénu bunky (x, y) podľa typu a susedov:
  * - `blocked` → `blocked`; hlboká/plytká voda → `water_deep` / `water_shallow`;
- * - `quay`: voda na severe → `quay_edge_n`, inak `quay`;
+ * - `quay`: voda na ktorejkoľvek strane → `quay_edge_n` (voda na severe; ostatné strany sú jeho otočenie, `coastQuarterTurns`),
+ *   inak `quay`;
  * - `land`: maska vody v 4-susedoch (N=1, E=2, S=4, W=8) — jedna strana `water_edge_{n|e|s|w}`, dve susedné strany
  *   `water_inner_{ne|se|sw|nw}`, protiľahlé strany alebo ≥ 3 strany hrana prvej strany v poradí N, E, S, W; bez vody
  *   na stranách, ale s vodou na diagonále → `water_corner_{ne|nw|se|sw}` (prvá v poradí NE, NW, SE, SW);
@@ -103,6 +119,6 @@ export function coastTile(grid: Grid, x: number, y: number): CoastTileId {
   if (terrain === 'blocked') return 'blocked';
   if (terrain === 'deep_water') return 'water_deep';
   if (terrain === 'shallow_water') return 'water_shallow';
-  if (terrain === 'quay') return isWaterAt(grid, x, y - 1) ? 'quay_edge_n' : 'quay';
+  if (terrain === 'quay') return coastWaterMask(grid, x, y) !== 0 ? 'quay_edge_n' : 'quay';
   return landTile(grid, x, y);
 }

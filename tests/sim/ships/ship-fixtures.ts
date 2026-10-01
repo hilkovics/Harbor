@@ -15,7 +15,7 @@ import type { CellCoord, LoadedMap } from '@sim/grid';
 import type { BerthModule, CraneModule } from '@sim/modules';
 import type { Ship } from '@sim/ships';
 import { World, type WorldOptions } from '@sim/world';
-import { MAP, RAW_DEFS } from '../world/world-fixtures';
+import { LEGACY_CAPACITY_MODULES, MAP, RAW_DEFS } from '../world/world-fixtures';
 
 export const TEU = 'container_teu';
 /** Sypký testovací náklad (kategória bulk). */
@@ -34,36 +34,43 @@ export const BERTH = 'berth_standard';
 export const CRANE = 'crane_container_gantry';
 
 const [feederJson] = shipsJson.items;
-const [berthJson, craneJson] = modulesJson.items;
+
+/** Zloží defy s testovacími triedami lodí, sypkým nákladom a sypkým žeriavom nad zoznamom modulov (`modules.json` alebo jeho variant). */
+function buildShipDefs(moduleList: typeof LEGACY_CAPACITY_MODULES): DefRegistry {
+  const [berthJson, craneJson] = moduleList.items;
+  return DefRegistry.fromRaw({
+    ...RAW_DEFS,
+    cargo_types: {
+      ...cargoTypesJson,
+      items: [
+        ...cargoTypesJson.items,
+        { id: GRAIN, category: 'bulk', unitName: 't', unitsPerBatch: 25, basePricePerUnitCents: 1200, xpPerUnit: 1, colorToken: 'cargo-bulk' },
+      ],
+    },
+    ships: {
+      ...shipsJson,
+      items: [
+        ...shipsJson.items,
+        { ...feederJson, id: BULKER, displayName: 'Bulker', cargoCategories: ['bulk'] },
+        { ...feederJson, id: DEEP_SHIP, displayName: 'Deep', draftClass: 2 },
+        { ...feederJson, id: WIDE_SHIP, displayName: 'Wide', widthCells: 4 },
+      ],
+    },
+    modules: {
+      ...moduleList,
+      items: [
+        ...moduleList.items,
+        { ...craneJson, id: BULK_CRANE, params: { ...craneJson.params, category: 'bulk' } },
+        { ...berthJson, id: DEEP_BERTH, params: { ...berthJson.params, depthClass: 3 } },
+      ],
+    },
+  });
+}
 
 /** Bundled defy + testovacie triedy lodí, sypký náklad a sypký žeriav. */
-export const SHIP_DEFS: DefRegistry = DefRegistry.fromRaw({
-  ...RAW_DEFS,
-  cargo_types: {
-    ...cargoTypesJson,
-    items: [
-      ...cargoTypesJson.items,
-      { id: GRAIN, category: 'bulk', unitName: 't', unitsPerBatch: 25, basePricePerUnitCents: 1200, xpPerUnit: 1, colorToken: 'cargo-bulk' },
-    ],
-  },
-  ships: {
-    ...shipsJson,
-    items: [
-      ...shipsJson.items,
-      { ...feederJson, id: BULKER, displayName: 'Bulker', cargoCategories: ['bulk'] },
-      { ...feederJson, id: DEEP_SHIP, displayName: 'Deep', draftClass: 2 },
-      { ...feederJson, id: WIDE_SHIP, displayName: 'Wide', widthCells: 4 },
-    ],
-  },
-  modules: {
-    ...modulesJson,
-    items: [
-      ...modulesJson.items,
-      { ...craneJson, id: BULK_CRANE, params: { ...craneJson.params, category: 'bulk' } },
-      { ...berthJson, id: DEEP_BERTH, params: { ...berthJson.params, depthClass: 3 } },
-    ],
-  },
-});
+export const SHIP_DEFS: DefRegistry = buildShipDefs(modulesJson);
+/** To isté s pôvodnými kapacitami apronu (4) a stagingu (2) spred Fázy 5b — pre testy plného apronu. */
+export const LEGACY_SHIP_DEFS: DefRegistry = buildShipDefs(LEGACY_CAPACITY_MODULES);
 
 export const SEED = 5005;
 export const ROOT_BERTH_ID = 1 as EntityId;
@@ -71,11 +78,18 @@ export const ROOT_CRANE_ID = 2 as EntityId;
 export const EAST_BERTH: CellCoord = { x: 48, y: 14 };
 export const WEST_BERTH: CellCoord = { x: 32, y: 14 };
 export const GAP_BERTH: CellCoord = { x: 30, y: 14 };
-/** Hlboké kotvisko x 22–29 (zóna hĺbky 2) — dotýka sa `GAP_BERTH` (x 30–37, hĺbka 1): jedna skupina s `minDepth` 1. */
-export const DEEP_ZONE_BERTH: CellCoord = { x: 22, y: 14 };
+/** Hlboké kotvisko na hlave móla W1, x 6–13 (zóna hĺbky 2) — dotýka sa `SHALLOW_NEIGHBOR_BERTH`: jedna skupina s `minDepth` 1. */
+export const DEEP_ZONE_BERTH: CellCoord = { x: 6, y: 12 };
+/** Plytké kotvisko na hlave móla W1, x 14–21 (zóna hĺbky 1), susedí s `DEEP_ZONE_BERTH`. */
+export const SHALLOW_NEIGHBOR_BERTH: CellCoord = { x: 14, y: 12 };
 
 export function newWorld(options: WorldOptions = {}, map: LoadedMap = MAP): World {
   return World.create(SHIP_DEFS, map, SEED, options);
+}
+
+/** Svet s pôvodnými kapacitami apronu 4 / stagingu 2 (`LEGACY_SHIP_DEFS`) — pre testy, ktoré stoja na plnom aprone. */
+export function newLegacyCapacityWorld(options: WorldOptions = {}, map: LoadedMap = MAP): World {
+  return World.create(LEGACY_SHIP_DEFS, map, SEED, options);
 }
 
 /** Aplikuje príkaz hneď (bez posunu času); odmietnutie = chyba testu. Vráti udalosti. */

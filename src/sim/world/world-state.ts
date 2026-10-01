@@ -54,7 +54,8 @@ import { isRoadBuildable } from '../grid/terrain';
 import { SERIALIZED_JOB_KEYS, isJobRoute, type SerializedJob } from '../logistics/transport-job';
 import type { ModuleRuntimeState } from '../modules/runtime-state';
 import { SERIALIZED_SHIP_KEYS, type SerializedShip } from '../ships/ship';
-import { SHIP_STATES, SHIP_STATE_TRAITS, type ShipState } from '../ships/ship-fsm';
+import { SHIP_STATES, SHIP_STATE_TRAITS, holdingAllows, type ShipState } from '../ships/ship-fsm';
+import { cellCenter, laneStartHeading, type ShipPoint } from '../ships/ship-route';
 import { SERIALIZED_TRUCK_KEYS, type SerializedTruck } from '../trucks/truck';
 import { TRUCK_STATES, TRUCK_STATE_TRAITS, TRUCK_TRAVEL_STATES, isTruckState, isTruckTravelState, type TruckState, type TruckTravelState } from '../trucks/truck-fsm';
 import { SERIALIZED_VEHICLE_KEYS, vehiclePosition, type SerializedVehicle } from '../vehicles/vehicle';
@@ -64,7 +65,7 @@ import { parseEconomyState } from './economy-state';
 import type { ContractBookState } from '../contracts/contract-book';
 import type { SerializedContract } from '../contracts/contract';
 import { parseContractsState } from './contracts-state';
-import { WORLD_STATE_V2, WORLD_STATE_V3, WORLD_STATE_V4, WORLD_STATE_V5_KEYS, WORLD_STATE_VERSION } from './migrate';
+import { WORLD_STATE_V2, WORLD_STATE_V3, WORLD_STATE_V4, WORLD_STATE_V5, WORLD_STATE_V6_KEYS, WORLD_STATE_VERSION } from './migrate';
 import { WorldStateError, checkArray, checkInteger, checkKeys, describeValue, isPlainObject, pointerSegment } from './state-check';
 
 export { WORLD_STATE_VERSION } from './migrate';
@@ -162,9 +163,10 @@ export interface WorldStateV4 extends Omit<WorldStateV3, 'version'> {
   readonly trucks: readonly SerializedTruck[];
 }
 
-/** Aktuálny `WorldState` (v5, ADR-025). */
-export interface WorldState extends Omit<WorldStateV4, 'version'> {
-  readonly version: typeof WORLD_STATE_VERSION;
+/** `WorldState` v5 (F5, ADR-025 až ADR-027) — vstup migrácie v5 → v6; lode bez `route`. */
+export interface WorldStateV5 extends Omit<WorldStateV4, 'version' | 'ships'> {
+  readonly version: typeof WORLD_STATE_V5;
+  readonly ships: readonly Omit<SerializedShip, 'route'>[];
   /** Kniha, súhrny období a bankrot (`Economy.getState()`); hotovosť ostáva v `cashCents`. */
   readonly economy: EconomyState;
   /** Kontrakty okrem expirovaných vzostupne podľa id (`Contract.toState()`; ponuky poolu = stav `offered`), ADR-026. */
@@ -177,8 +179,15 @@ export interface WorldState extends Omit<WorldStateV4, 'version'> {
   readonly nextContractId: number;
 }
 
+/** Aktuálny `WorldState` (v6, ADR-029): v5 + trasa lode `ships[i].route`. */
+export interface WorldState extends Omit<WorldStateV5, 'version' | 'ships'> {
+  readonly version: typeof WORLD_STATE_VERSION;
+  /** Lode vzostupne podľa id (`Ship.toState()` s trasou aktuálneho stavu); `dockedShipId` kotvísk sa odvodí pri obnove. */
+  readonly ships: readonly SerializedShip[];
+}
+
 /** Ľubovoľná podporovaná verzia (vstup `World.deserialize`). */
-export type AnyWorldState = WorldState | WorldStateV4 | WorldStateV3 | WorldStateV2 | WorldStateV1;
+export type AnyWorldState = WorldState | WorldStateV5 | WorldStateV4 | WorldStateV3 | WorldStateV2 | WorldStateV1;
 
 /** Modul zo save s overeným tvarom; vzťahy k mriežke a iným modulom overí `restoreEntities`. */
 export interface ParsedModuleEntry {
@@ -187,6 +196,16 @@ export interface ParsedModuleEntry {
   readonly purchaseCostCents: number;
   /** Surový `runtime` — overí ho `Module.restoreRuntimeState`. */
   readonly runtime: unknown;
+}
+
+/** Voľby `parseWorldState` (`World.deserialize`). */
+export interface ParseWorldStateOptions {
+  /**
+   * Stav vznikol migráciou save spred v6 (`savesShipRoutes(raw) === false`): lode majú `route: null` — obnova trasu
+   * odvodí podľa pravidiel pred ADR-029 a loď bez cieľa sa normalizuje na `arriving` (`parseShips`). Bez tejto voľby
+   * (natívny v6) je `route: null` chyba.
+   */
+  readonly legacyShipRoutes?: boolean;
 }
 
 /** Loď zo save s overeným tvarom (známa trieda aj náklad, stav bez `despawned`); vzťahy k svetu overí `restoreEntities`. */
@@ -201,6 +220,11 @@ export interface ParsedShipEntry {
   readonly berthIds: readonly EntityId[];
   readonly anchorageIndex: number | null;
   readonly waypointIndex: number;
+  /**
+   * Trasa aktuálneho stavu; `null` = save spred v6 (len cez migráciu, `ParseWorldStateOptions.legacyShipRoutes`) —
+   * obnova ju odvodí podľa pravidiel pred ADR-029.
+   */
+  readonly route: readonly ShipPoint[] | null;
 }
 
 /**
@@ -284,7 +308,7 @@ export interface ParsedWorldState {
 }
 
 /** Kľúče aktuálnej verzie (v5) v poradí `serialize()`; iné kľúče sú chyba (stav nemá voliteľné polia). */
-export const WORLD_STATE_KEYS: readonly (keyof WorldState)[] = WORLD_STATE_V5_KEYS;
+export const WORLD_STATE_KEYS: readonly (keyof WorldState)[] = WORLD_STATE_V6_KEYS;
 const CLOCK_KEYS: readonly (keyof SimClockState)[] = ['tick', 'speed'];
 const IDS_KEYS: readonly (keyof EntityIdAllocatorState)[] = ['nextId'];
 const MODULE_KEYS: readonly (keyof SerializedModule)[] = ['id', 'defId', 'x', 'y', 'rotation', 'purchaseCostCents', 'runtime'];
@@ -469,12 +493,42 @@ function checkIdList(value: unknown, path: string): EntityId[] {
 }
 
 /**
+ * Trasa lode (ADR-029): pole bodov `[x, y]` alebo `[x, y, kurz]` so súradnicami v rozsahu mapy a platným kurzom.
+ */
+function parseShipRoute(value: unknown, map: LoadedMap, path: string): ShipPoint[] {
+  return checkArray(value, path).map((raw: unknown, i): ShipPoint => {
+    const pointPath = `${path}${pointerSegment(i)}`;
+    const point = checkArray(raw, pointPath);
+    if (point.length !== 2 && point.length !== 3) throw new WorldStateError(pointPath, `bod trasy musí byť [x, y] alebo [x, y, kurz], dostal ${String(point.length)} prvkov`);
+    const x = checkCoordinate(point[0], map.width, `${pointPath}/0`);
+    const y = checkCoordinate(point[1], map.height, `${pointPath}/1`);
+    if (point.length === 2) return { x, y };
+    const heading: unknown = point[2];
+    if (!isRotation(heading)) throw new WorldStateError(`${pointPath}/2`, `kurz musí byť 0, 90, 180 alebo 270, dostal ${describeValue(heading)}`);
+    return { x, y, heading };
+  });
+}
+
+/**
+ * Loď zo save v5 bez cieľa v zmysle ADR-029 — `inbound` bez kotvísk a anchorage alebo `waiting_anchorage` bez anchorage
+ * (podľa ADR-016 čakala na konci sea lane). Taká loď by na konci dráhy zatarasila cestu von všetkým lodiam pri
+ * kotviskách (review T5B-04b), preto ju parser presunie pred vstup (`arriving`).
+ */
+function isLegacyWithoutTarget(state: ShipState, berthIds: readonly number[], anchorageIndex: number | null): boolean {
+  return (state === 'inbound' || state === 'waiting_anchorage') && berthIds.length === 0 && anchorageIndex === null;
+}
+
+/**
  * Tvar lodí: presne kľúče `SerializedShip`, id celé 1…`nextId − 1` a ostro rastúce (poradie spawnu = FIFO alokácie),
  * známa trieda a náklad s kategóriou triedy, stav z `SHIP_STATES` okrem `despawned`, poloha v rozsahu mapy, platný
- * kurz, jedinečné `berthIds` neprázdne práve v stavoch s `holdsBerths`, `anchorageIndex` len v stave s `waitsForBerth`
- * a v rozsahu `map.anchorage`, `waypointIndex` celé ≥ 0. Kotviská a dĺžku trasy overí obnova (`restoreEntities`).
+ * kurz, jedinečné `berthIds` podľa `SHIP_STATE_TRAITS.berths`, `anchorageIndex` podľa `anchorage` (nie spolu
+ * s kotviskami) a v rozsahu `map.anchorage`, `waypointIndex` celé ≥ 0 a najviac dĺžka trasy, trasa (`route`) body
+ * v rozsahu mapy. `route: null` smie byť len v stave zo save spred v6 (`legacy`, migrácia v5 → v6): obnova trasu
+ * odvodí podľa pravidiel pred ADR-029 a loď bez cieľa (`isLegacyWithoutTarget`) sa najprv **normalizuje** — čaká pred
+ * vstupom (`arriving` na začiatku dráhy s kurzom prvého úseku, bez trasy), vplávať skúsi v poradí podľa id ako nová loď
+ * (ADR-029 addendum). Kotviská a súlad trasy so stavom overí obnova (`restoreEntities`).
  */
-function parseShips(value: unknown, defs: DefRegistry, map: LoadedMap, nextId: number): ParsedShipEntry[] {
+function parseShips(value: unknown, defs: DefRegistry, map: LoadedMap, nextId: number, legacy: boolean): ParsedShipEntry[] {
   let previousId = 0;
   return checkArray(value, '/ships').map((raw: unknown, i): ParsedShipEntry => {
     const path = `/ships${pointerSegment(i)}`;
@@ -499,21 +553,37 @@ function parseShips(value: unknown, defs: DefRegistry, map: LoadedMap, nextId: n
     const x = checkCoordinate(entry['x'], map.width, `${path}/x`);
     const y = checkCoordinate(entry['y'], map.height, `${path}/y`);
     if (!isRotation(heading)) throw new WorldStateError(`${path}/heading`, `kurz musí byť 0, 90, 180 alebo 270, dostal ${describeValue(heading)}`);
-    const traits = SHIP_STATE_TRAITS[shipState];
     const berthIds = checkIdList(entry['berthIds'], `${path}/berthIds`);
-    if (traits.holdsBerths !== berthIds.length > 0) {
-      throw new WorldStateError(`${path}/berthIds`, traits.holdsBerths ? `stav '${shipState}' vyžaduje kotviská` : `stav '${shipState}' nesmie držať kotviská`);
-    }
     const rawAnchorage = entry['anchorageIndex'];
     const anchorageIndex = rawAnchorage === null ? null : checkInteger(rawAnchorage, 0, `${path}/anchorageIndex`);
-    if (anchorageIndex !== null && !traits.waitsForBerth) {
-      throw new WorldStateError(`${path}/anchorageIndex`, `stav '${shipState}' nesmie mať anchorage`);
+    const waypointIndex = checkInteger(entry['waypointIndex'], 0, `${path}/waypointIndex`);
+    const rawRoute = entry['route'];
+    if (rawRoute === null && !legacy) {
+      throw new WorldStateError(`${path}/route`, 'trasa musí byť pole bodov — null dáva len migrácia save v5 (ADR-029)');
+    }
+    const route = rawRoute === null ? null : parseShipRoute(rawRoute, map, `${path}/route`);
+    if (route === null && isLegacyWithoutTarget(shipState, berthIds, anchorageIndex)) {
+      const start = cellCenter(map.seaLane[0]);
+      const arrival = { x: start.x, y: start.y, heading: laneStartHeading(map), berthIds: [], anchorageIndex: null, waypointIndex: 0, route: [] };
+      return { id: id as EntityId, classId, cargoTypeId, state: 'arriving', ...arrival };
+    }
+    const traits = SHIP_STATE_TRAITS[shipState];
+    if (!holdingAllows(traits.berths, berthIds.length)) {
+      throw new WorldStateError(`${path}/berthIds`, traits.berths === 'always' ? `stav '${shipState}' vyžaduje kotviská` : `stav '${shipState}' nesmie držať kotviská`);
+    }
+    if (!holdingAllows(traits.anchorage, anchorageIndex === null ? 0 : 1)) {
+      throw new WorldStateError(`${path}/anchorageIndex`, traits.anchorage === 'always' ? `stav '${shipState}' vyžaduje anchorage` : `stav '${shipState}' nesmie mať anchorage`);
+    }
+    if (anchorageIndex !== null && berthIds.length > 0) {
+      throw new WorldStateError(`${path}/anchorageIndex`, `loď nesmie držať kotviská aj anchorage naraz (ADR-029)`);
     }
     if (anchorageIndex !== null && anchorageIndex >= map.anchorage.length) {
       throw new WorldStateError(`${path}/anchorageIndex`, `mapa '${map.id}' má ${String(map.anchorage.length)} buniek anchorage, dostal index ${String(anchorageIndex)}`);
     }
-    const waypointIndex = checkInteger(entry['waypointIndex'], 0, `${path}/waypointIndex`);
-    return { id: id as EntityId, classId, cargoTypeId, state: shipState, x, y, heading, berthIds, anchorageIndex, waypointIndex };
+    if (route !== null && waypointIndex > route.length) {
+      throw new WorldStateError(`${path}/waypointIndex`, `trasa má ${String(route.length)} bodov, index ${String(waypointIndex)}`);
+    }
+    return { id: id as EntityId, classId, cargoTypeId, state: shipState, x, y, heading, berthIds, anchorageIndex, waypointIndex, route };
   });
 }
 
@@ -749,9 +819,9 @@ function checkIdCollisions(
  * Vstup sa nemení a výsledok s ním nezdieľa meniteľné objekty.
  *
  * `grid` je mriežka počiatočného stavu tej istej mapy (`map.createGrid()`) — z nej sa overuje terén pod cestami;
- * nemení sa.
+ * nemení sa. `options.legacyShipRoutes` = stav vznikol migráciou save spred v6 (lode s `route: null`, `parseShips`).
  */
-export function parseWorldState(raw: unknown, defs: DefRegistry, map: LoadedMap, grid: Grid): ParsedWorldState {
+export function parseWorldState(raw: unknown, defs: DefRegistry, map: LoadedMap, grid: Grid, options: ParseWorldStateOptions = {}): ParsedWorldState {
   const state = checkKeys(raw, WORLD_STATE_KEYS, '');
   if (state.version !== WORLD_STATE_VERSION) {
     throw new WorldStateError('/version', `nepodporovaná verzia ${describeValue(state.version)} (očakávaná ${String(WORLD_STATE_VERSION)})`);
@@ -781,7 +851,7 @@ export function parseWorldState(raw: unknown, defs: DefRegistry, map: LoadedMap,
   const ownership = parseParcels(state.parcels, map);
   const modules = parseModules(state.modules, defs, nextId);
   const cargo = parseCargo(state.cargo, defs, nextId);
-  const ships = parseShips(state.ships, defs, map, nextId);
+  const ships = parseShips(state.ships, defs, map, nextId, options.legacyShipRoutes ?? false);
   const vehicles = parseVehicles(state.vehicles, defs, map, grid, nextId);
   const jobs = parseJobs(state.jobs, nextId, clock.tick);
   const trucks = parseTrucks(state.trucks, defs, map, grid, nextId);

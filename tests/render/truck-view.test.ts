@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { Grid } from '@sim/grid';
 import { vehicleSprite } from '@render/entity-assets';
 import { EntityLayer } from '@render/entity-layer';
-import { VEHICLE_LANE_SCALE, createRoadMaskAt } from '@render/lane';
+import { VEHICLE_OFFSET_CELLS, VEHICLE_SCALE, createRoadMaskAt } from '@render/lane';
 import { TRUCK_STYLE, TruckView, sameTruckShape, truckSpriteFile } from '@render/truck-view';
 import { VehicleView, vehiclePose } from '@render/vehicle-view';
 import type { TruckVM, VehicleVM } from '@render/view-models';
@@ -11,8 +11,8 @@ import { ENTITY_PALETTE, PALETTE, StubTextures } from './stub-textures';
 
 const CELL = PALETTE.cellPx;
 
-/** Posun do pravého pruhu dvojpruhovej cesty: 13 px zo 64 px bunky. */
-const LANE = 13 / 64;
+/** Posun vozidla od osi dvojpruhovej cesty doprava (rezerva asfaltu). */
+const LANE = VEHICLE_OFFSET_CELLS;
 
 function deps(textures: StubTextures | null) {
   return { cellPx: CELL, palette: ENTITY_PALETTE, textures };
@@ -49,7 +49,7 @@ describe('záznam kamióna v manifeste', () => {
 });
 
 describe('TruckView', () => {
-  it('prázdny kamión: sprite `empty`, vycentrovaný, 1×2 bunky v mierke pruhu (rovnaká ako vozidlo), label `truck-<id>`', () => {
+  it('prázdny kamión: sprite `empty`, vycentrovaný, 1×2 bunky v jednotnej mierke vozidiel (rovnaká ako straddle carrier), label `truck-<id>`', () => {
     const textures = new StubTextures();
     const view = new TruckView(truck(), deps(textures));
     const sprite = view.view.children[0] as Sprite;
@@ -57,8 +57,8 @@ describe('TruckView', () => {
     expect(sprite.texture).toBe(textures.textureFor('file/entities/truck_container_empty.svg'));
     expect(sprite.anchor.x).toBe(0.5);
     expect(sprite.anchor.y).toBe(0.5);
-    expect(sprite.width).toBeCloseTo(CELL * VEHICLE_LANE_SCALE, 9);
-    expect(sprite.height).toBeCloseTo(2 * CELL * VEHICLE_LANE_SCALE, 9);
+    expect(sprite.width).toBeCloseTo(CELL * VEHICLE_SCALE, 9);
+    expect(sprite.height).toBeCloseTo(2 * CELL * VEHICLE_SCALE, 9);
     expect(view.view.label).toBe('truck-1');
     // dlhší ako straddle carrier v tej istej mierke
     const carrier = new VehicleView({ ...truck(), defId: 'straddle_carrier' }, deps(textures));
@@ -125,14 +125,14 @@ describe('TruckView', () => {
     expect(view.view.x).not.toBeCloseTo(straight.view.x, 3);
   });
 
-  it('neznámy kamión alebo bez textúr → `Graphics` z tokenov 1×2 v mierke pruhu, bez textúry', () => {
+  it('neznámy kamión alebo bez textúr → `Graphics` z tokenov 1×2 v jednotnej mierke vozidiel, bez textúry', () => {
     const unknown = new TruckView(truck({ defId: 'truck_hovercraft' }), deps(new StubTextures()));
     expect(unknown.view.children[0]).toBeInstanceOf(Graphics);
     expect(unknown.texture).toBeNull();
     const bare = new TruckView(truck(), deps(null));
     const body = bare.view.children[0] as Graphics;
     expect(body).toBeInstanceOf(Graphics);
-    expect(body.scale.x).toBeCloseTo(VEHICLE_LANE_SCALE, 9);
+    expect(body.scale.x).toBeCloseTo(VEHICLE_SCALE, 9);
     // fallback kamióna je 1×2: dvakrát dlhší ako široký (bez odsadenia 56 × 120 px)
     const bounds = body.getLocalBounds();
     expect(bounds.height / bounds.width).toBeGreaterThan(2);
@@ -218,5 +218,106 @@ describe('EntityLayer (kamióny podľa id)', () => {
     const view = layer.truckView(1);
     layer.destroy();
     expect(view?.view.destroyed).toBe(true);
+  });
+});
+
+describe('TruckView: manéver kamióna pri rampe (F5b č. 11)', () => {
+  /** Rampa A (30; 23): dok 0 má stred (31,5; 24,42), vonkajšia bunka konektora (31; 25). */
+  const DOCK_Y = 24 + (60 + 62 / 2) / 64 - 1;
+  let time = 0;
+  const maneuverDeps = (roadMaskAt?: (x: number, y: number) => number) => ({ ...deps(new StubTextures()), now: () => time, ...(roadMaskAt ? { roadMaskAt } : {}) });
+
+  /** Kamión v stave `loading`: cieľ v doku (kabína na juh) a sim poloha na vonkajšej bunke s kurzom príjazdu. */
+  const loading = (over: Partial<TruckVM> = {}): TruckVM =>
+    truck({ x: 31.5, y: DOCK_Y, prevX: 31.5, prevY: DOCK_Y, heading: 180, state: 'loading', prevState: 'to_dock', approach: { x: 31.5, y: 25.5, heading: 270 }, ...over });
+  const driving = (): TruckVM => truck({ x: 31.5, y: 25.5, prevX: 31.5, prevY: 25.5, heading: 270, state: 'to_dock', prevState: 'to_bay' });
+
+  it('`to_dock` → `loading`: kamión najprv stojí na vonkajšej bunke, potom cúva a skončí v strede docku s kabínou na juh', () => {
+    time = 1000;
+    const view = new TruckView(driving(), maneuverDeps(), 1);
+    expect(view.dockPhase).toBe('free');
+    const arrived = { x: view.view.x, y: view.view.y, angle: view.view.angle };
+    view.update(loading(), 1);
+    expect(view.dockPhase).toBe('entering');
+    expect([view.view.x, view.view.y, view.view.angle]).toEqual([arrived.x, arrived.y, arrived.angle]); // zastavenie: nič sa nehýbe
+    time = 1000 + 1000;
+    view.update(loading(), 1);
+    expect(Math.hypot(view.view.x - arrived.x, view.view.y - arrived.y)).toBeGreaterThan(5);
+    time = 1000 + 5000;
+    view.update(loading(), 1);
+    expect(view.dockPhase).toBe('docked');
+    expect(view.view.x).toBeCloseTo(31.5 * CELL, 9);
+    expect(view.view.y).toBeCloseTo(DOCK_Y * CELL, 9);
+    expect(view.view.angle).toBeCloseTo(180, 9);
+  });
+
+  it('výjazd `loading` → `to_gate_out`: začína v doku a plynule dobieha pózu zo simu', () => {
+    time = 0;
+    const view = new TruckView(driving(), maneuverDeps(), 1);
+    view.update(loading(), 1);
+    time = 6000;
+    view.update(loading(), 1);
+    const out = truck({ x: 31.5, y: 25.5, prevX: 31.5, prevY: 25.5, heading: 90, loaded: true, state: 'to_gate_out', prevState: 'loading' });
+    view.update(out, 1);
+    expect(view.dockPhase).toBe('leaving');
+    expect(view.view.y).toBeCloseTo(DOCK_Y * CELL, 6); // ešte v doku
+    time = 6000 + 2000;
+    view.update(out, 1);
+    expect(view.dockPhase).toBe('free');
+    expect(view.view.angle).toBeCloseTo(90, 9);
+  });
+
+  it('kamión bez `approach` alebo v iných stavoch sa kreslí ako doteraz (póza zo simu, fáza `free`)', () => {
+    time = 0;
+    const view = new TruckView(truck(), maneuverDeps(), 1);
+    expect(view.dockPhase).toBe('free');
+    expect(view.view.position.x).toBeCloseTo((44.5 + LANE) * CELL, 9);
+    view.update(loading({ approach: undefined }), 1);
+    expect(view.dockPhase).toBe('free');
+  });
+
+  it('príjazd priamo na modul: kamión vycúva do boku tam, kde pokračuje cesta (vľavo od kurzu príjazdu = západ)', () => {
+    time = 0;
+    // bunka (32; 25): cesta pokračuje na západ (31; 25) a na juh (32; 26); na východ nie
+    const W = 8;
+    const S = 4;
+    const maskAt = (x: number, y: number): number => (x === 32 && y === 25 ? W | S | 1 : 0);
+    const arrival = truck({ x: 32.5, y: 25.5, prevX: 32.5, prevY: 25.5, heading: 0, state: 'to_dock', prevState: 'to_bay' });
+    const straight = loading({ x: 32.5, approach: { x: 32.5, y: 25.5, heading: 0 } });
+    const view = new TruckView(arrival, maneuverDeps(maskAt), 1);
+    view.update(straight, 1);
+    let widest = 0;
+    let sideways = 0;
+    for (let ms = 0; ms <= 1700; ms += 50) {
+      time = ms;
+      view.update(straight, 1);
+      const offset = view.view.x / CELL - 32.5;
+      widest = Math.max(widest, Math.abs(offset));
+      sideways = Math.min(sideways, offset);
+    }
+    expect(widest).toBeGreaterThan(0.3);
+    expect(sideways).toBeLessThan(-0.3); // vybočenie na západ (−x)
+    // bez cesty na žiadnej strane vycúva vpravo (východ)
+    time = 0;
+    const plain = new TruckView(arrival, maneuverDeps(), 1);
+    plain.update(straight, 1);
+    let east = 0;
+    for (let ms = 0; ms <= 1700; ms += 50) {
+      time = ms;
+      plain.update(straight, 1);
+      east = Math.max(east, plain.view.x / CELL - 32.5);
+    }
+    expect(east).toBeGreaterThan(0.3);
+  });
+
+  it('manéver je nezávislý od alpha: rovnaký čas dá rovnakú pózu pri iných podieloch ticku', () => {
+    time = 0;
+    const view = new TruckView(driving(), maneuverDeps(), 0.25);
+    view.update(loading(), 0.25);
+    time = 1200;
+    view.update(loading(), 0.1);
+    const a = { x: view.view.x, y: view.view.y, angle: view.view.angle };
+    view.update(loading(), 0.9);
+    expect({ x: view.view.x, y: view.view.y, angle: view.view.angle }).toEqual(a);
   });
 });

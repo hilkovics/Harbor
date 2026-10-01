@@ -115,8 +115,8 @@ describe('inspectorData: rampa', () => {
       connected: true,
       ramp: {
         docks: [
-          { staged: 0, capacity: 2, truck: false },
-          { staged: 0, capacity: 2, truck: false },
+          { staged: 0, capacity: 4, truck: false },
+          { staged: 0, capacity: 4, truck: false },
         ],
         operational: true,
       },

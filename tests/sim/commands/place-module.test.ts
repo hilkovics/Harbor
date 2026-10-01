@@ -60,8 +60,8 @@ describe('PlaceModule — kotvisko', () => {
     ['na vode (konektory vedú do vody)', 40, 10, 0, ['terrain', 'parcel_not_owned', 'connector_blocked']],
     ['mimo pobrežia (vnútrozemie)', 40, 20, 0, ['terrain', 'no_water_side']],
     ['hrana pri vode otočená na pevninu (180°), konektory na severe vo vode', 40, 14, 180, ['no_water_side', 'connector_blocked']],
-    ['cudzia parcela (west_quay na predaj)', 12, 14, 0, ['parcel_not_owned']],
-    ['presah mimo mapy — všetky dôvody naraz', 90, 14, 0, ['out_of_bounds', 'terrain', 'parcel_not_owned', 'no_water_side']],
+    ['cudzia parcela (west_quay na predaj)', 6, 12, 0, ['parcel_not_owned']],
+    ['presah mimo mapy — všetky dôvody naraz', 90, 20, 0, ['out_of_bounds', 'terrain', 'parcel_not_owned', 'no_water_side', 'connector_blocked']],
   ])('%s → %j, cells = footprint, costCents = cena', (_name, x, y, rotation, reasons) => {
     const cells = footprintOf(DEFS.modules.get(BERTH), x, y, rotation as 0 | 90 | 180 | 270).cells;
     expect(place(BERTH, x, y, rotation).validate(newBareWorld())).toEqual({ ok: false, reasons, cells, costCents: BERTH_COST });
@@ -208,12 +208,13 @@ describe('PlaceModule — def, rotácia a peniaze', () => {
   it('všetky dôvody v kanonickom poradí VALIDATION_REASONS', () => {
     const world = newBareWorld();
     setCash(world, 0);
-    expect(place(BERTH, 90, 14).validate(world).reasons).toEqual([
+    expect(place(BERTH, 90, 20).validate(world).reasons).toEqual([
       'out_of_bounds',
       'terrain',
       'parcel_not_owned',
       'insufficient_funds',
       'no_water_side',
+      'connector_blocked',
     ]);
   });
 

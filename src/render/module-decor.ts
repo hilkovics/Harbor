@@ -1,6 +1,7 @@
 /**
  * Ozdoby modulu (`ModuleDecor`): dynamická grafika nad telom modulu, ktorú riadi voliteľné pole `ModuleVM` — závora a fronta
- * brány (`gate`), obsadenosť stojísk (`waitingArea`), pripravené kontajnery a stav rampy (`ramp`). `ModuleView` ich
+ * brány (`gate`), obsadenosť stojísk (`waitingArea`), pripravené kontajnery a stav rampy (`ramp`), portálový žeriav
+ * kontajnerového dvora (`storage` + `lastStorageOp`). `ModuleView` ich
  * vytvorí lenivo, keď VM pole nesie, a pri každom `update` im ho podá; nový druh modulu = nová ozdoba v `module-decors.ts`,
  * nie vetva v `ModuleView`.
  *
@@ -15,8 +16,13 @@ import type { ModuleVM } from './view-models';
 
 /** Čo `ModuleView` potrebuje od rendereru: náklad a odznaky + hodiny pre animáciu závory. */
 export interface ModuleViewDeps extends QueueBadgeDeps {
-  /** Čas v ms pre animácie závory; predvolene `performance.now`. V testoch sa podáva riadené hodiny. */
+  /** Čas v ms pre animácie závory a žeriavu dvora; predvolene `performance.now`. V testoch sa podáva riadené hodiny. */
   readonly now?: () => number;
+  /**
+   * `true` = používateľ žiada menej pohybu (`prefers-reduced-motion`): dekoratívne animácie (žeriav dvora) sa vynechajú.
+   * Predvolene sa číta `matchMedia('(prefers-reduced-motion: reduce)')` (bez DOM `false`); v testoch sa dá podať priamo.
+   */
+  readonly reducedMotion?: () => boolean;
 }
 
 /** Kontext, v ktorom sa ozdoba vytvára. */

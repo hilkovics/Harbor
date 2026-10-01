@@ -135,8 +135,8 @@ describe('findWorldViolation — porušenia', () => {
     ],
     [
       'jednotka na slote mimo kapacity apronu',
-      /apron berth_standard #1: jednotka #\d+ leží na slote 7 mimo 0…3/,
-      ({ world, berth, crane }) => void unitOnApron(world, berth, crane, 7),
+      /apron berth_standard #1: jednotka #\d+ leží na slote 8 mimo 0…7/,
+      ({ world, berth, crane }) => void unitOnApron(world, berth, crane, 8),
     ],
     ['zastarané groupId berthu', /groupId 5/, ({ other }) => (other.groupId = 5)],
   ];

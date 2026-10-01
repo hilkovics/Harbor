@@ -30,6 +30,12 @@ export interface ModuleVM {
    */
   storage?: { capacity: number; stored: number; reserved: number };
   /**
+   * Len sklad (F5b č. 8): posledná operácia s kontajnerom na slote — vozidlo ho uložilo (`put`, `CargoMoved` do `in_storage`),
+   * alebo vzalo (`take`, z `in_storage`). `tick` = tick udalosti; renderer podľa trojice (`tick`, `slot`, `kind`) pozná novú
+   * operáciu a spustí animáciu portálového žeriavu dvora nad daným slotom. `SimBridge` ju dopĺňa z udalostí (sim ju nevedie).
+   */
+  lastStorageOp?: { slot: number; tick: number; kind: 'put' | 'take' };
+  /**
    * Len moduly s konektormi: má aspoň jeden cestný konektor pripojený k ceste? `false` → odznak `overlay.warning_badge`;
    * `undefined` (F2 VM, modul bez konektorov) → bez odznaku.
    */
@@ -128,8 +134,22 @@ export interface TruckVM {
   prevHeading?: 0 | 90 | 180 | 270;
   /** Vezie náklad → sprite `states.loaded`. */
   loaded: boolean;
-  /** Stav Truck FSM (`to_gate`, `gate_queue`, `waiting`, `loading`, …); renderer ho nekreslí, nesie ho pre ladenie. */
+  /**
+   * Stav Truck FSM (`to_gate`, `gate_queue`, `waiting`, `loading`, …). Renderer podľa neho (a `prevState`) riadi len manéver
+   * kamióna pri rampe: `to_dock` → `loading` (cúvanie do docku), `loading` → `to_gate_out` (výjazd predkom).
+   */
   state: string;
+  /**
+   * Stav kamióna pred posledným tickom (`SimBridge` si ho pamätá spolu s pózou); chýba pri novom kamióne. Renderer z dvojice
+   * `prevState` → `state` pozná práve dokončený príjazd k rampe (`to_dock` → `loading`) aj keď view vznikol až teraz.
+   */
+  prevState?: string;
+  /**
+   * Len v stave `loading` (F5b č. 11): sim poloha kamióna — stred vonkajšej bunky konektora docku a kurz príjazdu. `x`, `y`,
+   * `heading` sú vtedy cieľová póza v doku (stred docku, kabína von z rampy). Kamión do docku cúva: renderer ho plynulo
+   * vedie z `approach` do `x`, `y`, `heading` (`dock-maneuver.ts`), nie skokom.
+   */
+  approach?: { x: number; y: number; heading: ViewRotation };
 }
 
 export interface EntitiesVM {

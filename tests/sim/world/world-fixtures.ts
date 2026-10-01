@@ -30,6 +30,25 @@ export const RAW_DEFS = {
   logistics: logisticsJson,
   contract_templates: contractTemplatesJson,
 };
+/**
+ * Pôvodný balans kapacít spred Fázy 5b (T5B-01 zväčšila `berth_standard.apronSlots` 4 → 8 a `loading_ramp_container.
+ * stagingPerDock` 2 → 4). Scenárové testy, ktorých zmysel stojí na malých kapacitách (plný apron blokuje žeriav,
+ * staging sa zaplní), si ich pripínajú tu — namiesto prepisu očakávaní — cez `LEGACY_CAPACITY_DEFS`.
+ */
+export const LEGACY_APRON_SLOTS = 4;
+export const LEGACY_STAGING_PER_DOCK = 2;
+
+/** Zoznam modulov bundled defov s pripnutými pôvodnými kapacitami apronu a stagingu (ostatné parametre nedotknuté). */
+export const LEGACY_CAPACITY_MODULES = {
+  ...modulesJson,
+  items: modulesJson.items.map((item) => {
+    if ('apronSlots' in item.params) return { ...item, params: { ...item.params, apronSlots: LEGACY_APRON_SLOTS } };
+    if ('stagingPerDock' in item.params) return { ...item, params: { ...item.params, stagingPerDock: LEGACY_STAGING_PER_DOCK } };
+    return item;
+  }),
+};
+/** Bundled defy s pôvodnými kapacitami apronu (4) a stagingu (2). */
+export const LEGACY_CAPACITY_DEFS: DefRegistry = DefRegistry.fromRaw({ ...RAW_DEFS, modules: LEGACY_CAPACITY_MODULES });
 /** Zdieľaná mapa — testy overujú, že ju žiadny svet nezmení. */
 export const MAP: LoadedMap = loadBundledMap();
 /** Mriežka počiatočného stavu mapy len na čítanie (hľadanie buniek, indexy); svety majú vlastné kópie, nezapisovať. */

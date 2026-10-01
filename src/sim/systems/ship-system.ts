@@ -1,24 +1,26 @@
 /**
- * ShipSystem — krok 3 ticku (ARCHITECTURE §6, §7.4; ADR-016): pohyb lodí, alokácia kotvísk, docking a undocking.
+ * ShipSystem — krok 3 ticku (ARCHITECTURE §6, §7.4; ADR-016, ADR-029): pohyb lodí, vstup do prístavu, alokácia kotvísk,
+ * docking a undocking — bez prekrývania lodí (rezervácie trás, `ShipTraffic`).
  *
- * Lode sa spracúvajú vzostupne podľa id (= poradie spawnu), takže skoršia loď má pri alokácii kotvísk prednosť
- * (FIFO). Každý stav má jeden krok v tabuľke `SHIP_STEPS` (nie switch); stav mení len `Ship.transition`.
+ * Lode sa spracúvajú vzostupne podľa id (= poradie spawnu), takže skoršia loď má pri alokácii kotvísk aj pri vstupe
+ * prednosť (FIFO bez head-of-line blokovania). Každý stav má jeden krok v tabuľke `SHIP_STEPS` (nie switch); stav mení
+ * len `Ship.transition`, trasu stavu rezervuje `ShipTraffic`.
  *
- * - `inbound`: plavba po `seaLane`; na jej konci `allocateBerths` → `berthing`, inak `waiting_anchorage` na prvej
- *   voľnej bunke anchorage (všetky obsadené → čaká na konci `seaLane`).
- * - `waiting_anchorage`: každý tick skúsi alokáciu (→ `berthing`); inak si obsadí voľnú anchorage a pláva k nej.
- * - `berthing`: kotviská sú rezervované (`dockedShipId`), loď pláva po úsečke k `dockPoint`; po príchode `docked`
- *   s kurzom rovnobežne s hranou (`DOCKED_HEADING`) a `ShipDocked`.
- * - `docked`: keď na lodi nie je žiadna jednotka (`on_ship`), kotviská sa uvoľnia → `undocking` + `ShipUndocked`.
- * - `undocking` → koniec `seaLane` → `outbound` → po `seaLane` k `seaLane[0]` → `despawned`: loď sa odstráni zo sveta
- *   a emituje `ShipDeparted`.
- * Prechod stavu ukončí pohyb lode v danom ticku (zvyšok kroku prepadne).
+ * - `arriving`: vstup, keď má loď cieľ (kotviská alebo anchorage) s voľnou trasou (`tryEnter`) — v tom istom ticku
+ *   už pláva (vstup je jediný prechod, ktorý pohyb v ticku neukončí: loď pred mapou sa nemala čo pohnúť).
+ * - `inbound`: plavba po sea lane; na jej konci `berthing` (kotviská z rezervácie alebo novo pridelené s voľnou
+ *   trasou), inak `waiting_anchorage` po rezervovanom úseku k anchorage.
+ * - `waiting_anchorage`: plavba k anchorage; na nej každý tick pokus o kotvisko (`tryStartBerthing`). Anchorage drží
+ *   vždy (loď bez cieľa zo save v5 presunie parser pred vstup — `arriving`, ADR-029 addendum).
+ * - `berthing`: plavba po rezervovanej trase k polohe pri kotvisku; po príchode `docked` s kurzom `DOCKED_HEADING`
+ *   a `ShipDocked`.
+ * - `docked`: keď na lodi nie je žiadna jednotka (`on_ship`) a trasa von je voľná → `undocking` + `ShipUndocked`.
+ * - `undocking` → na konci dráhy uvoľní kotviská → `outbound` → po `seaLane` k `seaLane[0]` → `despawned`: loď sa
+ *   odstráni zo sveta a emituje `ShipDeparted`.
+ * Prechod stavu ukončí pohyb lode v danom ticku (zvyšok kroku prepadne), okrem vstupu.
  */
-import type { EntityId } from '../core/entity-id';
-import { BerthModule } from '../modules/berth-module';
-import { allocateBerths } from '../ships/berth-allocator';
-import type { Ship } from '../ships/ship';
 import { ShipError } from '../ships/ship-error';
+import type { Ship } from '../ships/ship';
 import type { ShipState } from '../ships/ship-fsm';
 import { DOCKED_HEADING, advanceAlongRoute, firstBerthOf, shipRoute } from '../ships/ship-route';
 import type { World } from '../world/world';
@@ -26,80 +28,65 @@ import type { World } from '../world/world';
 type ShipStep = (ship: Ship, world: World) => void;
 
 /** Posunie loď po trase jej stavu o `speedCellsPerTick`; `true` = dorazila na koniec trasy. */
-function sail(ship: Ship, world: World): boolean {
-  return advanceAlongRoute(ship, shipRoute(ship, world), ship.def.speedCellsPerTick);
+function sail(ship: Ship): boolean {
+  return advanceAlongRoute(ship, shipRoute(ship), ship.def.speedCellsPerTick);
 }
 
-/** Kotvisko z `berthIds`; chýbajúce alebo iný modul → `ShipError('inconsistent')`. */
-function berthById(world: World, ship: Ship, berthId: EntityId): BerthModule {
-  const berth = world.modules.get(berthId);
-  if (!(berth instanceof BerthModule)) throw new ShipError('inconsistent', `${ship.label}: kotvisko #${String(berthId)} z berthIds neexistuje`);
-  return berth;
+/** Loď v pokoji na konci svojej trasy (anchorage, kotvisko)? */
+function atRest(ship: Ship): boolean {
+  return ship.waypointIndex >= ship.route.length;
 }
 
-/** Prvá bunka `map.anchorage`, ktorú nemá obsadenú iná loď; `null` = všetky obsadené. */
-function freeAnchorage(world: World, ship: Ship): number | null {
-  const taken = new Set<number>();
-  for (const other of world.ships.values()) {
-    if (other !== ship && other.anchorageIndex !== null) taken.add(other.anchorageIndex);
+/** `inbound` na konci sea lane: ku kotviskám z rezervácie, novo pridelené kotvisko, alebo k anchorage. */
+function reachLaneEnd(ship: Ship, world: World): void {
+  const traffic = world.shipTraffic;
+  const leg = traffic.legAfterLane(ship);
+  if (ship.berthIds.length > 0) {
+    ship.transition('berthing', leg);
+    traffic.bump();
+    return;
   }
-  for (let index = 0; index < world.map.anchorage.length; index++) {
-    if (!taken.has(index)) return index;
-  }
-  return null;
-}
-
-/** Skúsi prideliť kotviská; pri úspechu ich rezervuje a loď prejde do `berthing`. */
-function tryStartBerthing(ship: Ship, world: World): boolean {
-  const berths = allocateBerths(world, ship);
-  if (berths === null) return false;
-  for (const berth of berths) berth.dockedShipId = ship.id;
-  ship.berthIds = Object.freeze(berths.map((berth) => berth.id));
-  ship.anchorageIndex = null;
-  ship.transition('berthing');
-  return true;
-}
-
-/** Obsadí prvú voľnú anchorage (ak loď ešte žiadnu nemá) a začne k nej novú trasu. */
-function claimAnchorage(ship: Ship, world: World): void {
-  if (ship.anchorageIndex !== null) return;
-  const index = freeAnchorage(world, ship);
-  if (index === null) return;
-  ship.anchorageIndex = index;
-  ship.waypointIndex = 0;
+  if (traffic.tryStartBerthing(ship)) return;
+  ship.transition('waiting_anchorage', leg);
+  traffic.bump();
 }
 
 const SHIP_STEPS: { readonly [S in ShipState]: ShipStep } = {
+  arriving: (ship, world) => {
+    if (world.shipTraffic.tryEnter(ship)) SHIP_STEPS.inbound(ship, world);
+  },
   inbound: (ship, world) => {
-    if (!sail(ship, world)) return;
-    if (tryStartBerthing(ship, world)) return;
-    ship.transition('waiting_anchorage');
-    claimAnchorage(ship, world);
+    // Plavba len po úsek sea lane; úsek za koncom dráhy pokračuje v ďalšom stave.
+    if (!advanceAlongRoute(ship, ship.route, ship.def.speedCellsPerTick, world.shipTraffic.laneEndIndex(ship))) return;
+    reachLaneEnd(ship, world);
   },
   waiting_anchorage: (ship, world) => {
-    if (tryStartBerthing(ship, world)) return;
-    claimAnchorage(ship, world);
-    sail(ship, world);
+    if (!atRest(ship)) {
+      sail(ship);
+      return;
+    }
+    world.shipTraffic.tryStartBerthing(ship);
   },
   berthing: (ship, world) => {
-    if (!sail(ship, world)) return;
+    if (!sail(ship)) return;
     const first = firstBerthOf(ship, world);
     ship.transition('docked');
     ship.heading = DOCKED_HEADING[first.waterSide];
+    world.shipTraffic.bump();
     world.events.emit({ type: 'ShipDocked', shipId: ship.id, berthIds: ship.berthIds });
   },
   docked: (ship, world) => {
     if (world.cargo.countAt('on_ship', ship.id) > 0) return;
-    for (const berthId of ship.berthIds) berthById(world, ship, berthId).dockedShipId = null;
-    ship.berthIds = Object.freeze([]);
-    ship.transition('undocking');
+    if (!world.shipTraffic.tryUndock(ship)) return;
     world.events.emit({ type: 'ShipUndocked', shipId: ship.id });
   },
   undocking: (ship, world) => {
-    if (sail(ship, world)) ship.transition('outbound');
+    if (!sail(ship)) return;
+    world.shipTraffic.releaseBerths(ship);
+    ship.transition('outbound', world.shipTraffic.laneOutRoute);
   },
   outbound: (ship, world) => {
-    if (!sail(ship, world)) return;
+    if (!sail(ship)) return;
     ship.transition('despawned');
     world.removeShip(ship.id);
     world.events.emit({ type: 'ShipDeparted', shipId: ship.id });
@@ -112,6 +99,8 @@ const SHIP_STEPS: { readonly [S in ShipState]: ShipStep } = {
 export class ShipSystem {
   /** Krok 3: jeden krok FSM každej lode vzostupne podľa id (kópia zoznamu — lode počas kroku odchádzajú zo sveta). */
   tick(world: World): void {
+    world.shipTraffic.beginTick();
     for (const ship of [...world.ships.values()]) SHIP_STEPS[ship.state](ship, world);
+    world.shipTraffic.endTick();
   }
 }

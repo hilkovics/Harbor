@@ -290,13 +290,13 @@ test.describe('F2: loď, žeriav, apron (T02-12)', () => {
     expect(await moduleGhost(page)).toBeNull();
     expect(await rendered(page)).toMatchObject({ ghostCells: 0, ghostConnectors: 0 });
 
-    // 8) klik na postavené kotvisko ho vyberie: obrys výberu + inšpektor (Voľné, apron 0 / 4, vrátenie polovice ceny)
+    // 8) klik na postavené kotvisko ho vyberie: obrys výberu + inšpektor (Voľné, apron 0 / 8, vrátenie polovice ceny)
     await clickCell(page, { x: 50, y: 15 });
     await expect(inspector(page)).toBeVisible();
     await expect(inspector(page).locator('[data-field="title"]')).toHaveText('Kotvisko');
     // F3 (T03-10): kotvisko má cestné konektory a pri novom kotvisku ešte nevedie cesta → badge „Nepripojené“ (má prednosť pred „Voľné“)
     await expect(inspector(page).locator('[data-field="badge"]')).toHaveText('Nepripojené');
-    await expect(inspector(page).locator('[data-field="apron-count"]')).toHaveText('0 / 4 slotov');
+    await expect(inspector(page).locator('[data-field="apron-count"]')).toHaveText('0 / 8 slotov');
     await expect(inspector(page).locator('[data-field="refund"]')).toHaveText(formatUsd(BERTH_COST_CENTS / 2));
     await expect(inspector(page).locator('[data-action="remove"]')).toHaveAttribute('aria-disabled', 'false');
     expect(await rendered(page)).toMatchObject({ selectionRing: true });

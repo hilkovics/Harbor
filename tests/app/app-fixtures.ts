@@ -17,11 +17,20 @@ import { loadBundledMap } from '@sim/grid';
 import { World, type WorldOptions } from '@sim/world';
 import { GameLoop } from '@app/game-loop';
 import { SimBridge } from '@app/sim-bridge';
+import { LEGACY_CAPACITY_DEFS } from '../sim/world/world-fixtures';
 
 export const SEED = 20260929;
 
 export function createWorld(options: WorldOptions = {}): World {
   return World.create(loadBundledDefs(), loadBundledMap(), SEED, options);
+}
+
+/**
+ * Svet s pôvodnými kapacitami spred Fázy 5b (apron 4, staging 2) — pre testy, ktoré stoja na plnom aprone
+ * (T5B-01 zväčšila apron na 8 a staging na 4; zmysel testu ostáva, pripína sa balans).
+ */
+export function createLegacyCapacityWorld(options: WorldOptions = {}): World {
+  return World.create(LEGACY_CAPACITY_DEFS, loadBundledMap(), SEED, options);
 }
 
 /**

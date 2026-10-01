@@ -12,9 +12,9 @@ import { CHAIN_GATE_ID, buildFullChain, createApp, frameUntil, type App } from '
 
 const UNITS = 12;
 
-function chainApp(units = UNITS): App {
+function chainApp(units = UNITS, vehicles?: number): App {
   const app = createApp();
-  buildFullChain(app, { units });
+  buildFullChain(app, { units, vehicles });
   return app;
 }
 
@@ -62,7 +62,9 @@ describe('SimBridge: cache modulov s bránou a stojiskom', () => {
     frameUntil(
       app,
       () => {
-        expect(JSON.stringify(bridge.snapshot().modules)).toBe(JSON.stringify(moduleVMs(world)));
+        // `lastStorageOp` skladá bridge z udalostí (sim ju nevedie), porovnáva sa zvyšok VM
+        const withoutOp = bridge.snapshot().modules.map((vm) => ({ ...vm, lastStorageOp: undefined }));
+        expect(JSON.stringify(withoutOp)).toBe(JSON.stringify(moduleVMs(world)));
         return world.cargo.exportedCount === UNITS;
       },
       6000,
@@ -111,30 +113,55 @@ describe('SimBridge: cache modulov s bránou a stojiskom', () => {
     expect(seen).toEqual({ open: true, closed: true, queued: true });
   });
 
-  it('závora sa vypne aj bez udalosti: prechod dobehne po odstránení výstupnej cesty (bez revision), VM brány sa aj tak obnoví', () => {
-    const app = chainApp(30);
+  // Závora sa po odstránení výstupnej cesty dopočíta z prechodu, ktorý už beží; či jej zníženie padne do ticku s inou
+  // revíznou udalosťou (pohyb vozidla, kamión vo fronte), závisí od toku ostatných entít (ADR-029 zmenil jeho načasovanie).
+  // Test preto beží reťazec s 1…6 vozidlami (každý v čerstvom, deterministickom behu, prechod číslo 1 začne v inom ticku)
+  // a vyžaduje, aby aspoň jedno zníženie prebehlo bez revíznej udalosti — inak by sa „tichá" vetva cache nikdy neoverila.
+  const POST_REMOVAL_FRAMES = 60;
+  const VEHICLE_COUNTS = [1, 2, 3, 4, 5, 6];
+
+  interface Flips {
+    /** Zníženie závory `open → closed` v ticku bez revíznej udalosti (VM sa musí obnoviť porovnaním so živým modulom). */
+    readonly silent: number;
+    /** Zníženie závory v ticku, v ktorom revíznu udalosť (a teda novú revíziu) vyvolala iná entita. */
+    readonly withEvent: number;
+  }
+
+  /** Reťazec s `vehicles` vozidlami: odstráni výstupnú cestu brány na začiatku prvého prechodu a spočíta zníženia závory v okne po ňom. */
+  function flipsAfterExitRemoval(vehicles: number): Flips {
+    const app = chainApp(30, vehicles);
     const { world, bridge, loop } = app;
     const gate = world.modules.get(CHAIN_GATE_ID) as TruckGate;
-    frameUntil(app, () => gate.isOpen && gate.busyTicksLeft >= 10, 3000);
+    frameUntil(app, () => gate.isOpen, 3000);
     // výstupná strana brány zanikne počas prechodu: kamión ostane na čele fronty a prechod sa nedokončí
     const removal = commandFromJSON({ type: 'RemoveRoad', cells: [{ x: 47, y: 33 }, { x: 48, y: 33 }] });
     expect(bridge.validate(removal).ok).toBe(true);
     bridge.dispatch(removal);
     loop.frame(0);
     expect(gate.exitSide).toBeNull();
-    let silentFlips = 0;
-    for (let i = 0; i < 60; i += 1) {
+    let silent = 0;
+    let withEvent = 0;
+    for (let i = 0; i < POST_REMOVAL_FRAMES; i += 1) {
       const before = bridge.snapshot();
       const events = loop.frame(loop.tickMs);
       const now = bridge.snapshot();
+      // revision-only cache by pri tichom znížení nechala `open: true` až do najbližšej udalosti; porovnanie so živým modulom to opraví
       expect(gateVm(now.modules)).toMatchObject({ queueLength: gate.queueLength, open: gate.isOpen });
-      if (gateVm(before.modules)?.open === true && gateVm(now.modules)?.open === false && !events.some((event) => REVISION_EVENTS.has(event.type))) {
-        silentFlips += 1;
-        expect(now.revision).toBe(before.revision);
-        expect(now.modules).not.toBe(before.modules); // pole modulov sa nahradilo zmenou hodnôt, nie revíziou
+      if (gateVm(before.modules)?.open !== true || gateVm(now.modules)?.open !== false) continue;
+      if (events.some((event) => REVISION_EVENTS.has(event.type))) {
+        withEvent += 1;
+        continue;
       }
+      silent += 1;
+      expect(now.revision).toBe(before.revision);
+      expect(now.modules).not.toBe(before.modules); // pole modulov sa nahradilo zmenou hodnôt, nie revíziou
     }
-    // revision-only cache by tu nechala `open: true` až do najbližšej udalosti; porovnanie so živým modulom to opraví
-    expect(silentFlips).toBe(1);
-  });
+    return { silent, withEvent };
+  }
+
+  it('závora sa vypne aj bez udalosti: prechod dobehne po odstránení výstupnej cesty (bez revision), VM brány sa aj tak obnoví', () => {
+    const results = VEHICLE_COUNTS.map(flipsAfterExitRemoval);
+    for (const flips of results) expect(flips.silent + flips.withEvent).toBe(1); // každý prechod dobehne práve raz
+    expect(results.reduce((sum, flips) => sum + flips.silent, 0)).toBeGreaterThanOrEqual(1);
+  }, 60_000);
 });

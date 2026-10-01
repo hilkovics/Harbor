@@ -344,11 +344,11 @@ describe('validateDefsDir', () => {
 
     it('kamión s capacityUnits > stagingPerDock → chyba na params/stagingPerDock', () => {
       const big = trucks();
-      big.items = big.items.map((item) => ({ ...item, capacityUnits: 3 }));
+      big.items = big.items.map((item) => ({ ...item, capacityUnits: 5 }));
       writeDef('modules.json', modules());
       writeDef('trucks.json', big);
       expect(resultFor('modules.json').errors).toEqual([
-        `modules.json: /items/${String(rampIndex())}/params/stagingPerDock kamión 'truck_container' má capacityUnits 3 > stagingPerDock 2 rampy 'loading_ramp_container' — dock by sa nikdy nenaplnil`,
+        `modules.json: /items/${String(rampIndex())}/params/stagingPerDock kamión 'truck_container' má capacityUnits 5 > stagingPerDock 4 rampy 'loading_ramp_container' — dock by sa nikdy nenaplnil`,
       ]);
     });
 

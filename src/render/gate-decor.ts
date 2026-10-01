@@ -7,7 +7,7 @@
  * prechod trvá `BARRIER_MOTION_MS` (kratšie ako 200 ms, DESIGN_BRIEF §6.4) a beží podľa hodín z `ModuleViewDeps.now`.
  *
  * **Odznak fronty** stojí pri vonkajšej bunke vstupného konektora (`gate.entryConnector`, predvolene 0) v ľavom pruhu
- * vzhľadom na smer vjazdu — pravý pruh patrí čakajúcemu kamiónu (`lane.ts`), takže odznak čakajúci kamión nezakrýva.
+ * vzhľadom na smer vjazdu — pravý pruh patrí čakajúcemu kamiónu (`lane.ts`, 28 px v 26 px pruhu), takže odznak kamión nezakrýva.
  * Číslo ostáva vzpriamené pri každej rotácii modulu a drží čitateľnú veľkosť pri zoome (`setBadgeScale`).
  */
 import { Container, Graphics, Sprite } from 'pixi.js';

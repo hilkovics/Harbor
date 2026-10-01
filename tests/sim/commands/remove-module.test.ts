@@ -5,12 +5,13 @@
 import { describe, expect, it } from 'vitest';
 import { PlaceModuleCommand, RemoveModuleCommand, SpawnShipDebugCommand, commandFromJSON, refundCents } from '@sim/commands';
 import type { EntityId } from '@sim/core';
+import type { DefRegistry } from '@sim/defs';
 import { BerthModule, CraneModule, StorageModule, VehicleDepot } from '@sim/modules';
 import type { World } from '@sim/world';
 import type { SimEvent } from '@sim/events';
 import type { Ship } from '@sim/ships';
 import { driveCrane, restoreCrane } from '../helpers/crane-state';
-import { DEFS, REFUND_RATE, START_CASH, defsWith, hashState, newBareWorld, newWorld, ofType } from './command-fixtures';
+import { DEFS, LEGACY_CAPACITY_DEFS, REFUND_RATE, START_CASH, defsWith, hashState, newBareWorld, newWorld, ofType } from './command-fixtures';
 import { setCash } from '../helpers/economy';
 
 const BERTH = 'berth_standard';
@@ -250,8 +251,8 @@ describe('RemoveModule — žeriav pri lodi na kotvisku (T02-14, review T02-13 M
   }
 
   /** Root modul + druhý kúpený žeriav na (45, 14) na tom istom berthe. */
-  function rootWithSecondCrane(): { world: World; second: CraneModule } {
-    const world = newWorld();
+  function rootWithSecondCrane(defs: DefRegistry = DEFS): { world: World; second: CraneModule } {
+    const world = newWorld(defs);
     const second = buy(world, CRANE, 45).modules.get(id(3));
     if (!(second instanceof CraneModule)) throw new Error('druhý žeriav chýba');
     expect((world.modules.get(ROOT_BERTH) as BerthModule).craneIds).toEqual([ROOT_CRANE, second.id]);
@@ -268,7 +269,8 @@ describe('RemoveModule — žeriav pri lodi na kotvisku (T02-14, review T02-13 M
   });
 
   it('loď docked a žeriav blocked (plný apron): starter aj druhý žeriav → ship_docked, loď by inak ostala naveky', () => {
-    const { world, second } = rootWithSecondCrane();
+    // Zablokovanie potrebuje plný apron 4/4 (6 TEU na lodi) → pripnutý pôvodný balans (Fáza 5b: apron 8).
+    const { world, second } = rootWithSecondCrane(LEGACY_CAPACITY_DEFS);
     const ship = spawnFeeder(world, 6);
     tickUntil(world, () => crane(world, ROOT_CRANE).state === 'blocked' && second.state === 'blocked');
     expect(ship.state).toBe('docked');

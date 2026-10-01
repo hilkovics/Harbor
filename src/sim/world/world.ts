@@ -23,8 +23,8 @@
  * `vehicleOnCell` hovorí, či bunku zaberá vozidlo, `carrierOnCell` vozidlo alebo kamión (`RemoveRoad` → `occupied`).
  *
  * Kamióny (T04-04, ADR-024): `addTruck`/`removeTruck` sú štrukturálne operácie pre spawn a export v `LandsideSystem`
- * (krok 8) a obnovu zo save — kamión pri pridaní drží svoj bay stojiska (`bay`) a dock rampy podľa stavu; frontu brány
- * spravuje brána (runtime v save). Pohyb zdieľa `Carrier` s vozidlami (`src/sim/movement`).
+ * (krok 8) a obnovu zo save — kamión pri pridaní drží svoj bay stojiska (`bay`), dock rampy a nárok na náklad docku
+ * podľa stavu (ADR-029); frontu brány spravuje brána (runtime v save). Pohyb zdieľa `Carrier` s vozidlami (`src/sim/movement`).
  *
  * Joby (T03-05, ADR-018, ADR-023): `addJob`/`removeJob` sú štrukturálne operácie pre dispatcher (krok 5: vznik inbound
  * aj outbound jobov, zrušenie `open` outbound jobu), `VehicleSystem` a obnovu zo save; `jobOfUnit` je index jednotka →
@@ -101,6 +101,7 @@ import { MetricsSystem } from '../systems/metrics-system';
 import { VehicleSystem } from '../systems/vehicle-system';
 import { ShipSystem } from '../systems/ship-system';
 import { StatResolver } from '../tech/stat-resolver';
+import { ShipTraffic } from '../ships/ship-traffic';
 import type { Truck } from '../trucks/truck';
 import { TruckError } from '../trucks/truck-error';
 import { TRUCK_STATE_TRAITS } from '../trucks/truck-fsm';
@@ -110,7 +111,7 @@ import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle-fsm';
 import { connectorCellsOf, isModuleConnected, type ConnectorCell } from './connectivity';
 import { LandsideNetwork, type GateSides, type LandsideRoute } from './landside';
 import { LandsideRosterCache, type LandsideModules } from './landside-roster';
-import { migrateWorldState } from './migrate';
+import { migrateWorldState, savesShipRoutes } from './migrate';
 import { PLACEMENT_RULE_ERROR, attachesToHost, findPlacementViolations, findRemovalViolations } from './module-rules';
 import { WorldInvariantError, findWorldViolation } from './world-invariants';
 import { restoreEntities } from './world-restore';
@@ -253,6 +254,8 @@ export class World {
   private readonly metricsSystem = new MetricsSystem();
   private roadChanges = 0;
   private moduleChanges = 0;
+  private shipChanges = 0;
+  private shipTrafficInstance: ShipTraffic | undefined;
   /** Verzie ciest a modulov, pri ktorých svet naposledy zverejnil pozemný reťazec do modulov (`publishLandside`). */
   private publishedRoadVersion = Number.NaN;
   private publishedModuleVersion = Number.NaN;
@@ -347,7 +350,7 @@ export class World {
    */
   static deserialize(defs: DefRegistry, map: LoadedMap, state: AnyWorldState, options: WorldOptions = {}): World {
     const grid = map.createGrid();
-    const parsed = parseWorldState(migrateWorldState(state, defs), defs, map, grid);
+    const parsed = parseWorldState(migrateWorldState(state, defs), defs, map, grid, { legacyShipRoutes: !savesShipRoutes(state) });
     for (let i = 0; i < grid.cellCount; i++) {
       const cell = grid.atIndex(i);
       cell.road = 'none';
@@ -447,6 +450,23 @@ export class World {
    */
   get moduleVersion(): number {
     return this.moduleChanges;
+  }
+
+  /**
+   * Verzia množiny lodí: rastie pri každom `addShip` / `removeShip` (neukladá sa — memo neúspešných pokusov lodnej
+   * dopravy, `ShipTraffic`, ADR-029).
+   */
+  get shipVersion(): number {
+    return this.shipChanges;
+  }
+
+  /**
+   * Riadenie lodnej dopravy bez prekrývania (`ShipTraffic`, ADR-029): rezervácie trás lodí, A* po vode. Vznikne pri
+   * prvom použití; nie je stav simulácie (memo navigátora a neúspešných pokusov), do save nepatrí.
+   */
+  get shipTraffic(): ShipTraffic {
+    this.shipTrafficInstance ??= new ShipTraffic(this);
+    return this.shipTrafficInstance;
   }
 
   /**
@@ -628,6 +648,7 @@ export class World {
       throw new ShipError('invalid_input', `World.addShip: ${ship.label} má menšie id ako posledná loď #${String(last)}`);
     }
     this.shipMap.set(ship.id, ship);
+    this.shipChanges += 1;
   }
 
   /**
@@ -642,6 +663,7 @@ export class World {
     if (aboard > 0) throw new ShipError('has_cargo', `World.removeShip: ${ship.label} má na palube ${String(aboard)} jednotiek`);
     if (ship.berthIds.length > 0) throw new ShipError('holds_berths', `World.removeShip: ${ship.label} drží kotviská [${ship.berthIds.join(', ')}]`);
     this.shipMap.delete(shipId);
+    this.shipChanges += 1;
     return ship;
   }
 
@@ -764,8 +786,9 @@ export class World {
 
   /**
    * Pridá kamión (spawn v `LandsideSystem`, obnova zo save): kamión s `bay` si ho rezervuje v stojisku
-   * (`reserveBayAt`, v stave s obsadeným bay aj `occupyBay`) a v stave, ktorý drží dock (`holdsDock` efektívneho stavu),
-   * si drží dock rampy (`assignDock`). Chyby (`TruckError`, svet sa nezmení): id už vo svete má kamión, vozidlo, modul,
+   * (`reserveBayAt`, v stave s obsadeným bay aj `occupyBay`), v stave, ktorý drží dock (`holdsDock` efektívneho stavu),
+   * si drží dock rampy (`assignDock`) a v stave s nárokom na náklad (`claimsCargo`) si nárokuje zvyšok svojej kapacity
+   * na docku (`claim(dock, capacityUnits − in_truck)`, ADR-029; pri spawne celú kapacitu). Chyby (`TruckError`, svet sa nezmení): id už vo svete má kamión, vozidlo, modul,
    * loď, job alebo jednotka (`duplicate_id`), id nepridelené alokátorom alebo menšie ako id posledného kamióna — poradie
    * spawnu (`invalid_input`), brána / stojisko / rampa nie sú moduly toho druhu vo svete alebo dock či bay mimo
    * rozsahu (`unknown_module`), bay drží iný kamión (`bay_taken`), dock drží iný kamión (`dock_taken`). Frontu brány
@@ -801,14 +824,16 @@ export class World {
       if (bonds.bayOccupied) area.occupyBay(id);
     }
     if (bonds.holdsDock) ramp.assignDock(truck.dock, id);
+    const owed = truck.def.capacityUnits - this.cargo.countAt('in_truck', id);
+    if (bonds.claimsCargo && owed > 0) ramp.claim(truck.dock, owed);
     this.truckMap.set(id, truck);
     this.lastTruckId = id;
   }
 
   /**
    * Odstráni kamión (export na portáli) a vráti ho. Chyby (`TruckError`, svet sa nezmení): neznáme id (`unknown_truck`),
-   * kamión vezie náklad — jednotky `in_truck` by stratili držiteľa (`has_cargo`), kamión drží bay alebo dock alebo stojí
-   * vo fronte brány (`busy`).
+   * kamión vezie náklad — jednotky `in_truck` by stratili držiteľa (`has_cargo`), kamión drží bay alebo dock, má nárok
+   * na náklad docku (ADR-029) alebo stojí vo fronte brány (`busy`).
    */
   removeTruck(truckId: EntityId): Truck {
     const truck = this.truckMap.get(truckId);
@@ -818,8 +843,8 @@ export class World {
     const ramp = this.moduleMap.get(truck.rampId);
     const gate = this.moduleMap.get(truck.gateId);
     const holdsDock = ramp instanceof LoadingRamp && truck.dock < ramp.docks && ramp.dockTruck(truck.dock) === truckId;
-    if (truck.bay !== null || holdsDock || (gate instanceof TruckGate && gate.isQueued(truckId))) {
-      throw new TruckError('busy', `World.removeTruck: ${truck.label} v stave '${truck.state}' drží bay, dock alebo stojí vo fronte brány`);
+    if (truck.bay !== null || holdsDock || truck.bonds.claimsCargo || (gate instanceof TruckGate && gate.isQueued(truckId))) {
+      throw new TruckError('busy', `World.removeTruck: ${truck.label} v stave '${truck.state}' drží bay, dock, nárok na náklad alebo stojí vo fronte brány`);
     }
     this.truckMap.delete(truckId);
     if (truckId === this.lastTruckId) this.lastTruckId = lastKeyOf(this.truckMap);

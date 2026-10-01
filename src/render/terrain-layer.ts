@@ -2,7 +2,8 @@
  * TerrainLayer (ARCHITECTURE §15.1): statický terén sveta, kreslí sa raz pri načítaní mapy.
  *
  * Sprity (`textures` z `SpriteAtlas`): každá bunka dostane sprite `terrain.<id>` z manifestu podľa `coastTile`
- * (prechody pobrežia, šachovnica pevniny 2×2, hrana nábrežia — DESIGN_BRIEF §5.1). 6 144 buniek je jedna
+ * (prechody pobrežia, šachovnica pevniny 2×2, hrana nábrežia — DESIGN_BRIEF §5.1; hrana nábrežia s vodou na východe, juhu
+ * alebo západe je sprite `quay_edge_n` otočený o štvrťotáčky, `coastQuarterTurns`). 6 144 buniek je jedna
  * statická render group: batche sa zostavia raz a posun/zoom kamery ich neprepočítava (mení sa len transformácia
  * skupiny), takže výkon pri zoome 0,25 aj 2,0 je rovnaký a nezávisí od počtu buniek vo výreze.
  *
@@ -14,7 +15,7 @@
  */
 import { Container, Graphics, Sprite } from 'pixi.js';
 import { DIRECTIONS_4, isWater, type Direction4, type Grid, type Rect, type TerrainType } from '@sim/grid';
-import { coastTile, type CoastTileId } from './coast';
+import { coastQuarterTurns, coastTile, type CoastTileId } from './coast';
 import type { SpriteTextures } from './sprite-atlas';
 import type { ColorValue, RenderPalette } from './tokens';
 
@@ -39,6 +40,12 @@ export const FOAM_THICKNESS_CELLS = 1 / 32;
 
 /** Hrúbka hrany nábrežia k vode ako zlomok bunky (`--cell`); tokens.css: „hrana k vode, 4 px“ (pri 64 px). */
 export const QUAY_EDGE_THICKNESS_CELLS = 1 / 16;
+
+/** Stred bunky ako zlomok jej strany (kotva otáčaného sprite). */
+const HALF_CELL = 0.5;
+
+/** Štvrťotáčka v radiánoch. */
+const QUARTER_TURN_RAD = Math.PI / 2;
 
 /** Výplň pre typ terénu; pevnina je výnimka (šachovnica), rieši ju `terrainFillKey`. */
 const FILL_BY_TERRAIN: Readonly<Record<Exclude<TerrainType, 'land'>, TerrainFillKey>> = Object.freeze({
@@ -155,9 +162,18 @@ export class TerrainLayer {
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const id = coastTile(this.grid, x, y);
+        const turns = coastQuarterTurns(this.grid, x, y);
         const sprite = new Sprite(textures.terrain(id));
-        sprite.setSize(cellPx, cellPx);
-        sprite.position.set(x * cellPx, y * cellPx);
+        if (turns === 0) {
+          sprite.setSize(cellPx, cellPx);
+          sprite.position.set(x * cellPx, y * cellPx);
+        } else {
+          // hrana nábrežia s vodou na východe / juhu / západe: sprite hrany (voda na severe) otočený okolo stredu bunky
+          sprite.anchor.set(HALF_CELL);
+          sprite.setSize(cellPx, cellPx);
+          sprite.rotation = turns * QUARTER_TURN_RAD;
+          sprite.position.set((x + HALF_CELL) * cellPx, (y + HALF_CELL) * cellPx);
+        }
         this.view.addChild(sprite);
         this.tileIds.push(id);
       }

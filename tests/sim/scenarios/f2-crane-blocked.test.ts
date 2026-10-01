@@ -1,6 +1,6 @@
 /**
  * Blokovanie žeriavu pri plnom aprone (T02-06, TDD; ARCHITECTURE §7.2, §7.8 bod 4, karta T02-05):
- * po `f2_unload` je apron Root berthu plný (4/4). Ďalší feeder so 4 TEU zakotví, ale žeriav nemá kam odložiť →
+ * po `f2_unload` je apron Root berthu plný (4/4; testy majú pripnutý pôvodný balans `LEGACY_CAPACITY_DEFS`, Fáza 5b zväčšila apron na 8). Ďalší feeder so 4 TEU zakotví, ale žeriav nemá kam odložiť →
  * `blocked`, `CraneBlocked { reason: 'apron_full' }` najviac raz za hernú hodinu na žeriav, náklad ostáva na lodi.
  * Zámerný herný tlak (§7.8): loď stojí, kým sa apron neuvoľní — vo F2 to nikto neurobí, takže stojí až do konca behu.
  *
@@ -31,7 +31,7 @@ import {
   type TimedEvent,
 } from '../helpers/harbor';
 import { loadScenarioFile } from '../helpers/scenario';
-import { DEFS, MAP } from '../world/world-fixtures';
+import { LEGACY_CAPACITY_DEFS as DEFS, MAP } from '../world/world-fixtures';
 
 const RUN_TICKS = 5000;
 const SECOND_SHIP_TICK = 1500;

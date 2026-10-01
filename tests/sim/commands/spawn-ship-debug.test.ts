@@ -1,9 +1,10 @@
 // SpawnShipDebug (T02-05, ADR-016; docs/tasks/phase-02.md rozhodnutie 8): JSON tvar a roundtrip, validácia
 // (unknown_ship_class, unknown_cargo, cargo_incompatible, invalid_units — všetky naraz, cena 0, bez buniek), apply
-// (loď na seaLane[0], jednotky on_ship s id po lodi, ShipSpawned, hotovosť bez zmeny) a registrácia v registri.
+// (loď na seaLane[0], jednotky on_ship s id po lodi, ShipSpawned, hotovosť bez zmeny; ADR-029: loď s voľným cieľom
+// hneď vpláva, inak čaká pred vstupom) a registrácia v registri.
 import { describe, expect, it } from 'vitest';
 import { CommandError, SpawnShipDebugCommand, commandFromJSON, commandRegistry, type SerializedCommand } from '@sim/commands';
-import { BULKER, GRAIN, SHIP_DEFS, TEU, newWorld } from '../ships/ship-fixtures';
+import { BULKER, GRAIN, ROOT_BERTH_ID, SHIP_DEFS, TEU, newWorld } from '../ships/ship-fixtures';
 
 const JSON_SPAWN: SerializedCommand = { type: 'SpawnShipDebug', shipClassId: 'feeder', cargoTypeId: 'container_teu', units: 4 };
 const spawnCommand = (shipClassId: string, cargoTypeId: string, units: number): SpawnShipDebugCommand =>
@@ -68,7 +69,7 @@ describe('SpawnShipDebug — validate', () => {
 });
 
 describe('SpawnShipDebug — apply', () => {
-  it('loď inbound v strede seaLane[0] s kurzom prvého úseku, jednotky on_ship s id po lodi, ShipSpawned, hotovosť bez zmeny', () => {
+  it('loď v strede seaLane[0] s kurzom prvého úseku hneď vpláva (inbound, Root rezervovaný pri vstupe), jednotky on_ship s id po lodi, ShipSpawned, hotovosť bez zmeny', () => {
     const world = newWorld();
     const cash = world.cashCents;
     const firstId = world.ids.getState().nextId;
@@ -77,10 +78,20 @@ describe('SpawnShipDebug — apply', () => {
 
     expect(events).toEqual([{ type: 'ShipSpawned', shipId: firstId, classId: 'feeder', cargoTypeId: TEU, units: 3 }]);
     const ship = world.ships.get(firstId as never);
-    expect(ship).toMatchObject({ state: 'inbound', x: 48.5, y: 0.5, heading: 180, berthIds: [], anchorageIndex: null, waypointIndex: 0 });
+    expect(ship).toMatchObject({ state: 'inbound', x: 48.5, y: 0.5, heading: 180, berthIds: [ROOT_BERTH_ID], anchorageIndex: null, waypointIndex: 0 });
     expect(world.cargo.unitsOnShip(firstId as never)).toEqual([firstId + 1, firstId + 2, firstId + 3]);
     expect(world.cargo.createdCount).toBe(3);
     expect(world.cashCents).toBe(cash);
+    expect(() => world.assertInvariants()).not.toThrow();
+  });
+
+  it('druhá loď, kým dráhu drží prvá, čaká pred vstupom (arriving, bez kotviska aj anchorage, na seaLane[0])', () => {
+    const world = newWorld();
+    world.enqueue(spawnCommand('feeder', TEU, 1));
+    world.enqueue(spawnCommand('feeder', TEU, 1));
+    const [first, second] = world.applyPending().flatMap((event) => (event.type === 'ShipSpawned' ? [world.ships.get(event.shipId)] : []));
+    expect(first?.state).toBe('inbound');
+    expect(second).toMatchObject({ state: 'arriving', x: 48.5, y: 0.5, berthIds: [], anchorageIndex: null, route: [] });
     expect(() => world.assertInvariants()).not.toThrow();
   });
 

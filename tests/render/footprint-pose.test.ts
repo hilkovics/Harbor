@@ -49,8 +49,8 @@ describe('rotateOffset', () => {
 describe('pozícia apron slotov a konektorov po rotácii', () => {
   const berth = moduleSprite('berth_standard');
 
-  it('manifest: berth_standard má 4 apron sloty a 2 konektory', () => {
-    expect(berth?.apronSlots).toHaveLength(4);
+  it('manifest: berth_standard má 8 apron slotov a 2 konektory', () => {
+    expect(berth?.apronSlots).toHaveLength(8);
     expect(berth?.connectors).toHaveLength(2);
   });
 

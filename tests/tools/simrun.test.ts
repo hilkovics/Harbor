@@ -8,6 +8,7 @@ import { commandFromJSON, type SerializedCommand } from '@sim/commands';
 import { loadBundledDefs } from '@sim/defs';
 import { loadBundledMap } from '@sim/grid';
 import { World } from '@sim/world';
+import { LEGACY_CAPACITY_DEFS } from '../sim/world/world-fixtures';
 import {
   SimrunError,
   craneBlockedPercent,
@@ -372,7 +373,8 @@ describe('runScenario', () => {
     });
 
     it('plný apron zablokuje žeriav: craneBlockedPct > 0, na aprone najviac 4 jednotky, nič sa nestratí', () => {
-      const report = runScenario(f2(6), 5000, defs);
+      // Zablokovanie potrebuje apron 4/4 pri 6 TEU na lodi → pripnutý pôvodný balans (Fáza 5b: bundled apron 8).
+      const report = runScenario(f2(6), 5000, LEGACY_CAPACITY_DEFS);
       expect(report.unitsOnApron).toBe(4);
       expect(report.craneCycles).toBe(4);
       expect(report.shipsDeparted).toBe(0);
@@ -543,9 +545,16 @@ describe('runScenario', () => {
       expect(Number.isInteger(full.gateQueueMax)).toBe(true);
     });
 
-    it('noWaitingBayEvents je nezáporné celé číslo (stojisko stačí → 0)', () => {
-      expect(full.noWaitingBayEvents).toBe(0);
+    it('noWaitingBayEvents je nezáporné celé číslo', () => {
+      expect(Number.isInteger(full.noWaitingBayEvents)).toBe(true);
+      expect(full.noWaitingBayEvents).toBeGreaterThanOrEqual(0);
     });
+
+    // Fáza 5b: staging 2 × 4 = 8 kamiónov na 6 bayov stojiska → bundled balans hlási NoWaitingBay (balansová otázka, nie chyba simu);
+    // „stojisko stačí → 0" sa preto overuje na pôvodnom stagingu 2 × 2 (`LEGACY_CAPACITY_DEFS`).
+    it('noWaitingBayEvents je 0, keď stojisko stačí (pôvodný staging 2 × 2, 4 kamióny na 6 bayov)', () => {
+      expect(runScenario(fullChain, EXPORT_TICKS, LEGACY_CAPACITY_DEFS).noWaitingBayEvents).toBe(0);
+    }, HEAVY_TIMEOUT_MS);
 
     it('beh skrátený pred koncom exportu: trucksSpawned ≥ trucksExited, ticksToAllExported null, nič stratené', () => {
       const partial = runScenario(fullChain, 6000, defs);
@@ -939,8 +948,8 @@ describe('CLI (tools/simrun.ts)', () => {
       trucksSpawned: 120,
       trucksExited: 120,
       unitsExportedByTrucks: 120,
-      noWaitingBayEvents: 0,
     });
+    expect(Number.isInteger(report['noWaitingBayEvents'])).toBe(true); // hodnota závisí od balansu stojiska/stagingu
     expect(typeof report['ticksToAllExported']).toBe('number');
     expect(report['gateQueueMax']).toBeGreaterThanOrEqual(1);
   }, 60_000);

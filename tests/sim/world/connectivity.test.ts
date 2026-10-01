@@ -139,17 +139,17 @@ describe('isOutsideUsable (§8 bod 5)', () => {
 
   it('cesta → áno; voľná pevnina/nábrežie → áno; voda, mimo mapy, modul, vlastný footprint, koľaj → nie', () => {
     const world = rootWorld();
-    roads(world, [{ x: 30, y: 40 }]);
-    world.grid.at(31, 40).road = 'rail';
+    roads(world, [{ x: 40, y: 40 }]);
+    world.grid.at(41, 40).road = 'rail';
     const { grid } = world;
-    expect(isOutsideUsable(grid, { x: 30, y: 40 }, none)).toBe(true); // cesta
-    expect(isOutsideUsable(grid, { x: 20, y: 40 }, none)).toBe(true); // voľná verejná pevnina
+    expect(isOutsideUsable(grid, { x: 40, y: 40 }, none)).toBe(true); // cesta
+    expect(isOutsideUsable(grid, { x: 38, y: 40 }, none)).toBe(true); // voľná verejná pevnina (krk výbežku)
     expect(isOutsideUsable(grid, { x: 20, y: 25 }, none)).toBe(true); // parcela west_quay na predaj — dá sa dokúpiť
     expect(isOutsideUsable(grid, { x: 20, y: 15 }, none)).toBe(true); // nábrežie
     expect(isOutsideUsable(grid, { x: 20, y: 5 }, none)).toBe(false); // voda
     expect(isOutsideUsable(grid, { x: -1, y: 40 }, none)).toBe(false); // mimo mapy
     expect(isOutsideUsable(grid, { x: 44, y: 15 }, none)).toBe(false); // Root berth
-    expect(isOutsideUsable(grid, { x: 20, y: 40 }, (x, y) => x === 20 && y === 40)).toBe(false); // vlastný footprint
-    expect(isOutsideUsable(grid, { x: 31, y: 40 }, none)).toBe(false); // koľaj
+    expect(isOutsideUsable(grid, { x: 38, y: 40 }, (x, y) => x === 38 && y === 40)).toBe(false); // vlastný footprint
+    expect(isOutsideUsable(grid, { x: 41, y: 40 }, none)).toBe(false); // koľaj
   });
 });

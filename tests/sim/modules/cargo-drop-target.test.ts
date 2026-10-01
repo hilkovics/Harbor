@@ -119,12 +119,12 @@ describe('LoadingRamp.cargoDropTarget — staging dock rampy', () => {
   it('restoreReservation = reserve(dock): nad stagingPerDock → no_free_slot, dock mimo rozsahu → invalid_slot; release', () => {
     const ramp = rampOf();
     const target = ramp.cargoDropTarget();
-    target.restoreReservation(0);
-    target.restoreReservation(0);
+    const per = ramp.stagingPerDock;
+    for (let i = 0; i < per; i++) target.restoreReservation(0);
     expect(errorCode(() => target.restoreReservation(0))).toBe('no_free_slot');
     expect(errorCode(() => target.restoreReservation(2))).toBe('invalid_slot');
     target.release(0);
-    expect([ramp.reservedAt(0), ramp.freeAt(0)]).toEqual([1, 1]);
+    expect([ramp.reservedAt(0), ramp.freeAt(0)]).toEqual([per - 1, 1]);
   });
 });
 

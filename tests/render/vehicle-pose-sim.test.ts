@@ -3,7 +3,7 @@ import type { EntityId } from '@sim/core/entity-id';
 import type { VehicleDef } from '@sim/defs/types';
 import { Grid, type CellCoord } from '@sim/grid';
 import { Vehicle } from '@sim/vehicles';
-import { createRoadKindAt, createRoadMaskAt, forwardOf } from '@render/lane';
+import { VEHICLE_OFFSET_PX, createRoadKindAt, createRoadMaskAt, forwardOf } from '@render/lane';
 import { headingDelta, normalizeAngle } from '@render/turn-arc';
 import { vehiclePose } from '@render/vehicle-view';
 import type { VehicleVM, ViewRotation } from '@render/view-models';
@@ -104,7 +104,7 @@ describe('skutočné vozidlo zo simu v zákrute (karta T03-19: kurz sa mení sko
     const dOut = forwardOf(normalizeAngle(entry + delta) as ViewRotation);
     // stred oblúka = roh bunky zákruty, v ktorom sa stretávajú hrany vstupu a výstupu
     const q = { x: CENTER.x + 0.5 - 0.5 * dIn.x + 0.5 * dOut.x, y: CENTER.y + 0.5 - 0.5 * dIn.y + 0.5 * dOut.y };
-    const radius = (delta > 0 ? 19 : 45) / 64;
+    const radius = (32 + (delta > 0 ? -VEHICLE_OFFSET_PX : VEHICLE_OFFSET_PX)) / 64;
     let previous: { x: number; y: number } | null = null;
     let onArc = 0;
     for (const vm of driveRealVehicle(cells, entry)) {

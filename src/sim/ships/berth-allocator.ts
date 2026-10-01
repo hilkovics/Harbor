@@ -12,7 +12,8 @@
  *    vyhovuje aj vedľa plytkého suseda v tej istej skupine), súčet `lengthCells ≥ lengthCells` lode, pás vody hlboký
  *    aspoň `widthCells` lode (loď sa zmestí na vodu) a aspoň jeden kompatibilný žeriav (inak by loď na kotvisku nikdy
  *    nevyložila);
- * 3. prvý vyhovujúci úsek vyhráva; žiadny → `null` (loď čaká na anchorage).
+ * 3. prvý vyhovujúci úsek vyhráva (ak ho prijme voliteľná podmienka `accept` — ADR-029: voľná trasa k nemu a cesta
+ *    von); žiadny → `null` (loď čaká na anchorage).
  *
  * Poradie čakajúcich lodí (FIFO podľa spawnu) zabezpečuje `ShipSystem`, ktorý lode spracúva vzostupne podľa id.
  */
@@ -79,9 +80,9 @@ function fitsRun(world: BerthAllocationWorld, berths: readonly BerthModule[], st
 
 /**
  * Kotviská pre loď v poradí po pobreží (podľa pravidiel v hlavičke súboru), alebo `null`, keď žiadny úsek nevyhovuje.
- * Svet nemení.
+ * `accept` (predvolene prijme všetko) dostane každý vyhovujúci úsek v poradí a rozhodne, či ho použiť. Svet nemení.
  */
-export function allocateBerths(world: BerthAllocationWorld, request: BerthRequest): readonly BerthModule[] | null {
+export function allocateBerths(world: BerthAllocationWorld, request: BerthRequest, accept: (run: readonly BerthModule[]) => boolean = () => true): readonly BerthModule[] | null {
   for (const group of world.berthGroups) {
     if (group.totalLength < request.def.lengthCells) continue;
     const berths = berthsOf(world, group);
@@ -89,7 +90,9 @@ export function allocateBerths(world: BerthAllocationWorld, request: BerthReques
     if (!berths.some((berth) => hasCompatibleCrane(world, berth, request.cargoCategory))) continue;
     for (let count = 1; count <= berths.length; count++) {
       for (let start = 0; start + count <= berths.length; start++) {
-        if (fitsRun(world, berths, start, count, request)) return Object.freeze(berths.slice(start, start + count));
+        if (!fitsRun(world, berths, start, count, request)) continue;
+        const run = Object.freeze(berths.slice(start, start + count));
+        if (accept(run)) return run;
       }
     }
   }

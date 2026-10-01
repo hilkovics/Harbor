@@ -249,19 +249,21 @@ export function stateSequence(samples: readonly ShipSample[]): ShipSample['state
 }
 
 /**
- * Poradie stavov FSM lode (karta T02-05): `inbound → waiting_anchorage | berthing`, `waiting_anchorage → berthing`,
- * `berthing → docked`, `docked → undocking`, `undocking → outbound`, `outbound → despawned`.
+ * Poradie stavov FSM lode (karta T02-05, ADR-029): `arriving → inbound`, `inbound → waiting_anchorage | berthing`,
+ * `waiting_anchorage → berthing`, `berthing → docked`, `docked → undocking`, `undocking → outbound`,
+ * `outbound → despawned`.
  * Ostro rastúci rank = žiadny návrat a žiadne opakovanie; preskočiť stav sa smie len tak, ako to tabuľka dovoľuje
  * (vzorka po ticku nemusí zachytiť stav, ktorý trval < 1 tick), preto sa kontroluje len monotónnosť.
  */
 const SHIP_STATE_RANK: Readonly<Record<string, number>> = {
-  inbound: 0,
-  waiting_anchorage: 1,
-  berthing: 2,
-  docked: 3,
-  undocking: 4,
-  outbound: 5,
-  despawned: 6,
+  arriving: 0,
+  inbound: 1,
+  waiting_anchorage: 2,
+  berthing: 3,
+  docked: 4,
+  undocking: 5,
+  outbound: 6,
+  despawned: 7,
 };
 
 /** Vráti dôvod porušenia, alebo `null`, ak sekvencia stavov zodpovedá FSM lode. */

@@ -449,12 +449,13 @@ describe('rampa: has_cargo, obnova a invarianty at_ramp', () => {
   it('obnova: jednotky na dockoch v rozsahu a kapacite sa načítajú; dock mimo rozsahu alebo nad kapacitou je chyba jednotky', () => {
     const world = build();
     const ramp = only(world, LoadingRamp);
-    stage(world, ramp, [0, 1, 0]);
+    const per = ramp.stagingPerDock;
+    stage(world, ramp, [...Array<number>(per).fill(0), 1]);
     world.assertInvariants();
     const state = world.serialize();
     const restored = World.deserialize(DEFS, MAP, state);
     const copy = only(restored, LoadingRamp);
-    expect([copy.stagedAt(0), copy.stagedAt(1), copy.reservedAt(0)]).toEqual([2, 1, 0]);
+    expect([copy.stagedAt(0), copy.stagedAt(1), copy.reservedAt(0)]).toEqual([per, 1, 0]);
 
     const units = state.cargo.units;
     const onRamp = units.map((unit, index) => ({ unit, index })).filter(({ unit }) => unit.location.kind === 'at_ramp');
@@ -473,10 +474,11 @@ describe('rampa: has_cargo, obnova a invarianty at_ramp', () => {
   it('krok 12: dock nad kapacitou a jednotka inej kategórie na rampe sú porušenia', () => {
     const world = build();
     const ramp = only(world, LoadingRamp);
-    stage(world, ramp, [1, 1]);
+    const per = ramp.stagingPerDock;
+    stage(world, ramp, Array<number>(per).fill(1));
     expect(findWorldViolation(world)).toBeUndefined();
     stage(world, ramp, [1]);
-    expect(findWorldViolation(world)).toMatch(/dock 1: pripravené 3 \+ rezervované 0 > 2/);
+    expect(findWorldViolation(world)).toMatch(new RegExp(`dock 1: pripravené ${String(per + 1)} \\+ rezervované 0 > ${String(per)}`));
 
     const bulkDefs = DefRegistry.fromRaw({
       ...RAW_DEFS,

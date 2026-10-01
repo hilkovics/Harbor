@@ -106,7 +106,11 @@ export interface ModuleRemovedEvent {
   readonly cells: readonly CellCoord[];
 }
 
-/** `SpawnShipDebug` (ADR-016) vytvoril loď na `seaLane[0]` s `units` jednotkami nákladu `on_ship` (vznik bez `CargoMoved`). */
+/**
+ * `spawnShip` (`SpawnShipDebug`, loď kontraktu; ADR-016, ADR-026) vytvoril loď na `seaLane[0]` s `units` jednotkami
+ * nákladu `on_ship` (vznik bez `CargoMoved`). Loď s voľným cieľom hneď vpláva (`inbound`), inak čaká pred vstupom mimo
+ * mapy (`arriving`, ADR-029 — prezentácia ju nekreslí, `SHIP_STATE_TRAITS.onMap`).
+ */
 export interface ShipSpawnedEvent {
   readonly type: 'ShipSpawned';
   readonly shipId: EntityId;
@@ -122,7 +126,10 @@ export interface ShipDockedEvent {
   readonly berthIds: readonly EntityId[];
 }
 
-/** Vyložená loď opúšťa kotvisko (`docked → undocking`); jej kotviská sú odteraz voľné. */
+/**
+ * Vyložená loď opúšťa kotvisko (`docked → undocking`) po trase, ktorá je voľná až na koniec dráhy. Kotviská drží, kým
+ * nedopláva na koniec dráhy (`undocking → outbound`), potom ich uvoľní bez ďalšej udalosti (ADR-029).
+ */
 export interface ShipUndockedEvent {
   readonly type: 'ShipUndocked';
   readonly shipId: EntityId;
@@ -241,7 +248,8 @@ export interface RampOperationalChangedEvent {
 
 /**
  * `landsideSystem` (krok 8, ADR-024) spawnol kamión `truckId` na road portáli (`roadPortals[0]`) v stave `to_gate`: dock
- * `dock` rampy `rampId` mal pripravený náklad a kamión drží tento dock a rezervovaný bay stojiska svojej trasy.
+ * `dock` rampy `rampId` mal nenárokovaný náklad (pripravený alebo vezený vozidlom) a kamión má naň nárok a drží
+ * rezervovaný bay stojiska svojej trasy; samotný dock drží až od povelu do docku (`waiting → to_dock`, ADR-029).
  */
 export interface TruckSpawnedEvent {
   readonly type: 'TruckSpawned';

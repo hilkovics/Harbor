@@ -19,6 +19,12 @@
  * v4 → v5 (T05-02, ADR-025; T05-03, ADR-026): v4 nepoznal knihu ani kontrakty, preto dostane prázdnu `economy` (bez
  * záznamov a súhrnov, `daysNegative` 0, `gameOver` false; hotovosť ostáva v `cashCents`), prázdne `contracts`, `xp` 0,
  * `completedContracts` 0 a `nextContractId` 1. Pool sa po načítaní nedoplní hneď, ale pri najbližšom `DayClosed`.
+ *
+ * v5 → v6 (T5B-02, ADR-029): lode ukladajú trasu aktuálneho stavu (`route`), lebo trasy cez prístav vznikajú A* po vode
+ * pri rezervácii. v5 trasy neukladal (odvodzoval ich zo stavu), preto každá loď dostane `route: null` — obnova ju
+ * odvodí podľa pravidiel pred ADR-029 (`legacyShipRoute`; potrebuje mapu a kotviská, ktoré migrácia nemá). `null`
+ * prijme parser len pri save spred v6 (`savesShipRoutes`) a loď bez cieľa najprv presunie pred vstup (`arriving`,
+ * ADR-029 addendum, T5B-04b).
  */
 import type { CargoLedgerState } from '../cargo/cargo-ledger-state';
 import type { DefRegistry } from '../defs/def-registry';
@@ -40,8 +46,11 @@ export const WORLD_STATE_V4 = 4;
 /** Verzia `WorldState` v5 (F5: `economy` — kniha, súhrny, bankrot, ADR-025; kontrakty, XP, ADR-026) — cieľ kroku v4 → v5. */
 export const WORLD_STATE_V5 = 5;
 
+/** Verzia `WorldState` v6 (F5b: trasa lode `ships[i].route`, ADR-029) — cieľ kroku v5 → v6. */
+export const WORLD_STATE_V6 = 6;
+
 /** Aktuálna verzia `WorldState` — `serialize()` vždy vracia ju. */
-export const WORLD_STATE_VERSION = WORLD_STATE_V5;
+export const WORLD_STATE_VERSION = WORLD_STATE_V6;
 
 /** Kľúče `WorldState` v1 v poradí `serialize()` (F1, ADR-013). */
 export const WORLD_STATE_V1_KEYS = ['version', 'mapId', 'seed', 'rng', 'clock', 'ids', 'cashCents', 'roads', 'parcels'] as const;
@@ -60,6 +69,9 @@ export const WORLD_STATE_V4_KEYS = [...WORLD_STATE_V3_KEYS, 'trucks'] as const;
  * `completedContracts`, `nextContractId` (T05-03, ADR-026).
  */
 export const WORLD_STATE_V5_KEYS = [...WORLD_STATE_V4_KEYS, 'economy', 'contracts', 'xp', 'completedContracts', 'nextContractId'] as const;
+
+/** Kľúče `WorldState` v6 (F5b, ADR-029) — ako v5; zmenil sa len tvar lode (`ships[i].route`). */
+export const WORLD_STATE_V6_KEYS = WORLD_STATE_V5_KEYS;
 
 type RawState = Record<string, unknown>;
 type Migration = (state: RawState, defs: DefRegistry) => RawState;
@@ -157,13 +169,38 @@ function migrateV4ToV5(state: RawState): RawState {
   return migrated;
 }
 
+/**
+ * v5 (presne kľúče v5) → v6: pôvodné polia, každá loď (objekt) dostane `route: null` — trasu odvodí obnova podľa
+ * pravidiel pred ADR-029. Iný tvar lodí nechá bez zmeny (odmietne ho `parseWorldState`).
+ */
+function migrateV5ToV6(state: RawState): RawState {
+  checkKeys(state, WORLD_STATE_V5_KEYS, '');
+  const migrated: RawState = {};
+  for (const key of WORLD_STATE_V5_KEYS) migrated[key] = state[key];
+  migrated['version'] = WORLD_STATE_V6;
+  const ships = state['ships'];
+  migrated['ships'] = Array.isArray(ships) ? ships.map((ship: unknown) => (isPlainObject(ship) ? { ...ship, route: null } : ship)) : ships;
+  return migrated;
+}
+
 /** Verzia `n` → migrácia na `n + 1` (migrácia zapíše cieľovú verziu kroku, napr. `WORLD_STATE_V2`). */
 const WORLD_STATE_MIGRATIONS: ReadonlyMap<number, Migration> = new Map([
   [1, migrateV1ToV2],
   [2, migrateV2ToV3],
   [3, migrateV3ToV4],
   [4, migrateV4ToV5],
+  [5, migrateV5ToV6],
 ]);
+
+/**
+ * Ukladal save trasy lodí (verzia ≥ v6)? Save spred v6 (aj neplatný vstup — ten odmietne migrácia) trasy neukladal:
+ * migrácia im dá `route: null` a parser ich prijme len s voľbou `legacyShipRoutes` (ADR-029 addendum, review T5B-04b).
+ */
+export function savesShipRoutes(raw: unknown): boolean {
+  if (!isPlainObject(raw)) return true;
+  const version = raw['version'];
+  return typeof version !== 'number' || version >= WORLD_STATE_V6;
+}
 
 /** Najstaršia verzia, ktorú vie `migrateWorldState` načítať. */
 export const OLDEST_WORLD_STATE_VERSION = 1;

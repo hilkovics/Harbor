@@ -188,3 +188,19 @@ Stav: **hotová (T05-01..T05-13), míľnik M1 splnený**. Novú hru možno odohr
 - uskladnené jednotky kontraktu idú na rampu už počas vykládky;
 - plná e2e beží raz za fázu (úsporný režim na žiadosť používateľa);
 - PR hilkovics/Harbor#6 založil používateľ proti `claude/laughing-galileo-2ctnlq`.
+
+## Fáza 5b — Spätná väzba z hrania
+Karty: `docs/tasks/phase-05b.md` · vetva `phase/05b-playtest-feedback` (stacked nad hilkovics/Harbor#6)
+
+Stav: **hotová** (T5B-01, T5B-02, T5B-03, T5B-04, T5B-04b, T5B-05, T5B-06, T5B-07)
+
+**Výsledky:**
+- review sim-reviewer: MERGE (0 blocking, 4 major opravené v T5B-04b)
+- `pnpm test`: 248 súborov, 6784 testov zelených
+- `pnpm test:e2e`: 34/34
+- `simrun vertical_slice`: cashEnd 41 790 000, exportedUnits 78, lostUnits 0, onTimeRate 1, craneBlockedPct 3,8 %
+- `simrun full_import_chain`: ticksToAllExported zlepšené z 9836 → 8166, lostUnits 0
+- Zmeny: `data/maps/harbor_01.json` (viac móla a apronových slotov), `data/defs/modules.json` (balans veľkostí depa), `src/render/` (napojenie ciest na konektory, mierka vozidiel, manéver kamióna na rampe), `src/sim/ships/` (trasy lodí bez prekryvu), validácia trás lodí pri obnove (ADR-029)
+- Hrateľná verzia zverejnená (artefakt „Fáza 5b")
+
+Ďalej: **Fáza 6 — Save/Load, čas, nastavenia, stabilizácia**

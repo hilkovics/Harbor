@@ -61,7 +61,7 @@ describe('ConnectedModuleInspector', () => {
     render(createApp(), selection);
     expect(inspectorProps().data).toMatchObject({
       id: 1,
-      apron: { used: 0, reserved: 0, capacity: 4 },
+      apron: { used: 0, reserved: 0, capacity: 8 },
       removable: false,
       removeBlockedReason: 'Na kotvisku stoja žeriavy',
     });
@@ -76,7 +76,7 @@ describe('ConnectedModuleInspector', () => {
     expect(inspectorProps().data).toMatchObject({ kind: 'gate', gate: { queueLength: 0, processTicks: 18 }, connected: true });
     selection.select(RAMP_ID);
     render(app, selection);
-    expect(inspectorProps().data).toMatchObject({ kind: 'ramp', ramp: { operational: true, docks: [{ staged: 0, capacity: 2, truck: false }, { staged: 0, capacity: 2, truck: false }] } });
+    expect(inspectorProps().data).toMatchObject({ kind: 'ramp', ramp: { operational: true, docks: [{ staged: 0, capacity: 4, truck: false }, { staged: 0, capacity: 4, truck: false }] } });
   });
 
   it('výber modulu, ktorý vo svete nie je, nevykreslí nič', () => {

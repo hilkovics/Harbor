@@ -1,8 +1,9 @@
 /**
  * Dispatcher (ARCHITECTURE §6 krok 5, §7.3 body 1–3; rozhodnutie orchestrátora F3 č. 6, F4 č. 4 a F5 č. 9; ADR-018,
  * ADR-023, ADR-027) —
- * tvorba, zrušenie a priradenie jobov. `DispatcherSystem` (krok 5) volá v každom ticku `cancelUnusableOutboundJobs` →
- * `createInboundJobs` → `createOutboundJobs` → `assignOpenJobs`.
+ * tvorba, zrušenie a priradenie jobov. `DispatcherSystem` (krok 5) volá v každom ticku `createInboundJobs` →
+ * `createOutboundJobs` → `assignOpenJobs`; pred nimi `cancelUnusableOutboundJobs`, ale len keď ho pustí
+ * `OutboundCancelGate` (po zmene ciest alebo modulov, T06-07 — viď „Hot path").
  *
  * **Inbound:** kotviská vzostupne podľa id, jednotky na aprone vo FIFO (poradie príchodu v ledgeri); jednotka bez
  * aktívneho jobu dostane sklad z `allocateStorage` (najbližší pripojený s voľnou kapacitou, pri zhode menšie id),

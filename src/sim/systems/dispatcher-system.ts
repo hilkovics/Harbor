@@ -6,7 +6,7 @@
  * staging miesta na prevádzkovej rampe) a nakoniec priradenie voľných vozidiel jobom `open` — inbound pred outbound.
  * Logika je v `logistics/dispatcher.ts`; systém len určuje poradie v rámci kroku a drží znovupoužiteľné polia.
  */
-import { assignOpenJobs, cancelUnusableOutboundJobs, createInboundJobs, createOutboundJobs } from '../logistics/dispatcher';
+import { OutboundCancelGate, assignOpenJobs, cancelUnusableOutboundJobs, createInboundJobs, createOutboundJobs } from '../logistics/dispatcher';
 import type { StoredCargoGroup } from '../logistics/stored-cargo-index';
 import type { LoadingRamp } from '../modules/loading-ramp';
 import type { Vehicle } from '../vehicles/vehicle';
@@ -19,10 +19,15 @@ export class DispatcherSystem {
   private readonly ramps: LoadingRamp[] = [];
   /** Znovupoužiteľné pole outbound skupín v poradí priority (plní ho `createOutboundJobs`; nie je stav simulácie). */
   private readonly groups: StoredCargoGroup[] = [];
+  /** Kontrola zrušenia open outbound jobov len po zmene ciest alebo modulov (T06-07; nie je stav simulácie). */
+  private readonly cancelGate = new OutboundCancelGate();
 
-  /** Krok 5: `cancelUnusableOutboundJobs` → `createInboundJobs` → `createOutboundJobs` → `assignOpenJobs`. */
+  /**
+   * Krok 5: `cancelUnusableOutboundJobs` (len po zmene ciest alebo modulov, `OutboundCancelGate`) → `createInboundJobs`
+   * → `createOutboundJobs` → `assignOpenJobs`.
+   */
   tick(world: World): void {
-    cancelUnusableOutboundJobs(world);
+    if (this.cancelGate.due(world)) cancelUnusableOutboundJobs(world);
     createInboundJobs(world);
     createOutboundJobs(world, this.ramps, this.groups);
     assignOpenJobs(world, this.idle);

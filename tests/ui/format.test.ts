@@ -3,7 +3,10 @@ import {
   EM_DASH,
   MINUS_SIGN,
   TIMES_SIGN,
+  formatClock,
   formatCount,
+  formatDateTime,
+  formatDayAndClock,
   formatDuration,
   formatFootprint,
   formatFraction,
@@ -124,6 +127,20 @@ describe('formatGameTime', () => {
   });
 });
 
+describe('formatClock / formatDayAndClock (T06-03b: preview savu je deň a čas dňa zvlášť)', () => {
+  it('formatClock: HH:MM s nulou vpredu', () => {
+    expect(formatClock(0, 0)).toBe('00:00');
+    expect(formatClock(9, 5)).toBe('09:05');
+    expect(formatClock(23, 59)).toBe('23:59');
+  });
+
+  it('formatDayAndClock: 0-based deň + hotový čas; formatGameTime je ich zloženie', () => {
+    expect(formatDayAndClock(0, '00:00')).toBe('Deň 1 · 00:00');
+    expect(formatDayAndClock(11, '14:20')).toBe('Deň 12 · 14:20');
+    expect(formatDayAndClock(11, formatClock(14, 20))).toBe(formatGameTime({ day: 11, hour: 14, minute: 20 }));
+  });
+});
+
 describe('formatSpeed / formatXp', () => {
   it('0 = Pauza, ostatné N× (U+00D7)', () => {
     expect(formatSpeed(0)).toBe('Pauza');
@@ -234,5 +251,24 @@ describe('formatDuration', () => {
   it('neplatná hodnota alebo mierka → —', () => {
     expect(formatDuration(Number.NaN, scale)).toBe(EM_DASH);
     expect(formatDuration(100, { ticksPerHour: 0, ticksPerDay: 8640 })).toBe(EM_DASH);
+  });
+});
+
+describe('formatDateTime', () => {
+  it('UTC: deň. mesiac. rok HH:MM bez núl vpredu pri dni a mesiaci', () => {
+    expect(formatDateTime('2026-10-01T12:35:00.000Z', 0)).toBe('1. 10. 2026 12:35');
+    expect(formatDateTime('2026-01-09T03:05:59.000Z', 0)).toBe('9. 1. 2026 03:05');
+  });
+
+  it('posun časovej zóny sa premietne aj do dňa (UTC+2 cez polnoc, UTC−5 pred polnocou)', () => {
+    expect(formatDateTime('2026-10-01T23:30:00.000Z', 120)).toBe('2. 10. 2026 01:30');
+    expect(formatDateTime('2026-10-01T02:00:00.000Z', -300)).toBe('30. 9. 2026 21:00');
+    expect(formatDateTime('2026-12-31T23:59:00.000Z', 60)).toBe('1. 1. 2027 00:59');
+  });
+
+  it('bez posunu použije časovú zónu prehliadača (výsledok je dátum s HH:MM) a neplatný reťazec → —', () => {
+    expect(formatDateTime('2026-10-01T12:35:00.000Z')).toMatch(/^\d{1,2}\. \d{1,2}\. 20\d{2} \d{2}:\d{2}$/);
+    expect(formatDateTime('nie je dátum')).toBe(EM_DASH);
+    expect(formatDateTime('')).toBe(EM_DASH);
   });
 });

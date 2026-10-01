@@ -18,7 +18,8 @@
  *
  * v4 → v5 (T05-02, ADR-025; T05-03, ADR-026): v4 nepoznal knihu ani kontrakty, preto dostane prázdnu `economy` (bez
  * záznamov a súhrnov, `daysNegative` 0, `gameOver` false; hotovosť ostáva v `cashCents`), prázdne `contracts`, `xp` 0,
- * `completedContracts` 0 a `nextContractId` 1. Pool sa po načítaní nedoplní hneď, ale pri najbližšom `DayClosed`.
+ * `completedContracts` 0 a `nextContractId` 1. Pool doplní krok 2 v prvom ticku po načítaní ako pri štarte hry (kniha
+ * ešte nepridelila žiadne id, `ContractBook.untouched`; T06-07) — obnova sama `Rng` nespotrebuje.
  *
  * v5 → v6 (T5B-02, ADR-029): lode ukladajú trasu aktuálneho stavu (`route`), lebo trasy cez prístav vznikajú A* po vode
  * pri rezervácii. v5 trasy neukladal (odvodzoval ich zo stavu), preto každá loď dostane `route: null` — obnova ju

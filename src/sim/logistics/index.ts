@@ -36,4 +36,5 @@ export { acceptsOutbound, allocateRamp } from './ramp-allocator';
 export type { RampAllocatorEnv } from './ramp-allocator';
 export { StoredCargoIndex } from './stored-cargo-index';
 export type { StoredCargoGroup, StoredCargoSource } from './stored-cargo-index';
-export { assignOpenJobs, cancelUnusableOutboundJobs, chooseVehicle, createInboundJobs, createOutboundJobs } from './dispatcher';
+export { OutboundCancelGate, assignOpenJobs, cancelUnusableOutboundJobs, chooseVehicle, createInboundJobs, createOutboundJobs } from './dispatcher';
+export type { NetworkVersions } from './dispatcher';

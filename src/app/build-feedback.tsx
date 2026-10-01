@@ -57,6 +57,9 @@ export const REASON_TEXT: Readonly<Record<ValidationReason, string>> = {
   has_trucks: 'Modul používa kamión',
   unknown_contract: 'Kontrakt neexistuje',
   contract_not_offered: 'Kontrakt už nie je v ponuke',
+  no_berth_for_ship_class: 'Loď sa nezmestí k žiadnemu kotvisku',
+  no_crane_for_category: 'Pri kotvisku pre loď chýba žeriav na tento náklad',
+  berth_unreachable: 'Loď k vhodnému kotvisku nedopláva',
   game_over: 'Hra skončila',
 };
 

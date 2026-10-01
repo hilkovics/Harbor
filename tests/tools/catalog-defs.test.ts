@@ -205,6 +205,7 @@ describe('skutočné katalógy F2 až F4', () => {
       defaultInternalTicks: 6,
       repathIntervalTicks: 30,
       congestion: { trafficDecayPerHour: 0.9, slowdownPerExtraVehicle: 0.25, penaltyTrafficDivisor: 200, penaltyMax: 3 },
+      shipNavigation: { approachMarginCells: 1, sweepStepCells: 0.5, turnManeuvers: 1, sidewaysManeuvers: 1 },
     });
   });
 

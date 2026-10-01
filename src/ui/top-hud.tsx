@@ -9,7 +9,8 @@
  * Denný delta a XP sú voliteľné props (`dailyDeltaCents`, `xp`): dáta dodá app vrstva vo F5 (Economy.daily a XP hráča),
  * dovtedy (F1–F4) sa ukáže zástupné `—`. Kladný delta je zelený s ▲, záporný červený s ▼, nula neutrálna bez šípky.
  * Rovnako sú vo F1 neaktívne ikony panelov vpravo
- * (kontrakty, financie, štatistiky, tech) — panely prídu neskôr; len ⚙ je aktívne (bez akcie, kým nie sú nastavenia).
+ * (kontrakty, financie, štatistiky, tech) — panely prídu neskôr; ikony overlayov, Uložiť a načítať (`onOpenSaves`) a
+ * ⚙ Nastavenia (`onOpenSettings`), sú aktívne vždy (bez handlera bez akcie, kým ich app nenapojí; T06-04).
  */
 import { useCallback, useEffect, useRef } from 'react';
 import { useSimBridge, useSimSnapshot } from '@app/use-sim-snapshot';
@@ -24,14 +25,18 @@ import './top-hud.css';
 /** Odstup prekresľovania HUD (ARCHITECTURE §13: `useSimSnapshot(selector, throttleMs = 100)`). */
 export const HUD_THROTTLE_MS = 100;
 
-/** Tlačidlá panelov vpravo v poradí prototypu. `settings` je aktívne aj bez panelov. */
+/** Tlačidlá panelov vpravo v poradí prototypu. `saves` (Uložiť/načítať) a `settings` otvárajú overlay, sú aktívne aj bez panelov. */
 export const HUD_PANEL_BUTTONS: ReadonlyArray<{ readonly id: string; readonly icon: IconName; readonly title: string }> = [
   { id: 'contracts', icon: 'ic_contract', title: 'Kontrakty (C)' },
   { id: 'finance', icon: 'ic_cash', title: 'Financie (F)' },
   { id: 'stats', icon: 'ic_utilization', title: 'Štatistiky (S)' },
   { id: 'tech', icon: 'ic_xp', title: 'Strom technológií (T)' },
+  { id: 'saves', icon: 'ic_save', title: 'Uložiť a načítať hru' },
   { id: 'settings', icon: 'ic_settings', title: 'Nastavenia' },
 ];
+
+/** Tlačidlá, ktoré otvárajú overlay (nie panel): vždy aktívne, majú vlastný handler (`onOpenSaves`, `onOpenSettings`). */
+const OVERLAY_BUTTON_IDS: readonly string[] = ['saves', 'settings'];
 
 export interface TopHUDViewProps {
   /** Hotovosť v centoch; záporná hodnota zapne stav varovania. */
@@ -50,6 +55,8 @@ export interface TopHUDViewProps {
   readonly xp?: number | null;
   /** Otvorí nastavenia; bez handlera je ⚙ aktívne, ale bez akcie. */
   readonly onOpenSettings?: () => void;
+  /** Otvorí overlay Uložiť a načítať hru (ikona diskety); bez handlera je ikona aktívna, ale bez akcie. */
+  readonly onOpenSaves?: () => void;
   /** Id otvoreného panelu (zvýrazní jeho ikonu); ostatné panely sú vo F1 neaktívne. */
   readonly activePanel?: string | null;
   /** Prepnutie panelu (kontrakty/financie/štatistiky/tech). Bez handlera sú ikony panelov neaktívne placeholdery. */
@@ -85,6 +92,7 @@ export function TopHUDView({
   dailyDeltaCents = null,
   xp = null,
   onOpenSettings,
+  onOpenSaves,
   activePanel = null,
   onTogglePanel,
 }: TopHUDViewProps) {
@@ -119,16 +127,18 @@ export function TopHUDView({
       <div className="top-hud__spacer" />
       <div className="top-hud__panels" role="group" aria-label="Panely">
         {HUD_PANEL_BUTTONS.map(({ id, icon, title }) => {
-          const isSettings = id === 'settings';
-          const handler = isSettings ? onOpenSettings : onTogglePanel === undefined ? undefined : () => { onTogglePanel(id); };
-          const inactive = !isSettings && onTogglePanel === undefined;
+          const isOverlay = OVERLAY_BUTTON_IDS.includes(id);
+          const overlayHandler = id === 'saves' ? onOpenSaves : onOpenSettings;
+          const handler = isOverlay ? overlayHandler : onTogglePanel === undefined ? undefined : () => { onTogglePanel(id); };
+          const inactive = !isOverlay && onTogglePanel === undefined;
           return (
             <button
               key={id}
               type="button"
               className={activePanel === id ? 'top-hud__panel top-hud__panel--active' : 'top-hud__panel'}
               aria-label={title}
-              aria-pressed={isSettings ? undefined : activePanel === id}
+              aria-pressed={isOverlay ? undefined : activePanel === id}
+              aria-haspopup={isOverlay ? 'dialog' : undefined}
               title={inactive ? `${title} · čoskoro` : title}
               data-field={`panel-${id}`}
               data-placeholder={inactive ? 'true' : undefined}
@@ -199,12 +209,14 @@ export interface TopHUDProps {
   /** Ponúkané rýchlosti; predvolene `snapshot.speeds` (= `time.speeds` zo simu, nie natvrdo v UI). */
   readonly speeds?: readonly number[];
   readonly onOpenSettings?: () => void;
+  /** Otvorí overlay Uložiť a načítať hru (T06-04; napojenie na app robí T06-03). */
+  readonly onOpenSaves?: () => void;
   readonly activePanel?: string | null;
   readonly onTogglePanel?: (panelId: string) => void;
 }
 
 /** HUD pripojený na `SimBridge` (vyžaduje `<SimBridgeProvider>` vyššie v strome). */
-export function TopHUD({ dailyDeltaCents, xp, speeds, onOpenSettings, activePanel, onTogglePanel }: TopHUDProps) {
+export function TopHUD({ dailyDeltaCents, xp, speeds, onOpenSettings, onOpenSaves, activePanel, onTogglePanel }: TopHUDProps) {
   const hud = useSimSnapshot(selectHudSlice, HUD_THROTTLE_MS, sameHudSlice);
   const setSpeed = useSetGameSpeed();
   const speedList = speeds ?? hud.speeds;
@@ -236,6 +248,7 @@ export function TopHUD({ dailyDeltaCents, xp, speeds, onOpenSettings, activePane
       dailyDeltaCents={dailyDeltaCents}
       xp={xp}
       onOpenSettings={onOpenSettings}
+      onOpenSaves={onOpenSaves}
       activePanel={activePanel}
       onTogglePanel={onTogglePanel}
     />

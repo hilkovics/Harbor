@@ -19,13 +19,14 @@ import type { ValidationReason, ValidationResult } from './validation';
 
 const NO_CELLS: readonly CellCoord[] = Object.freeze([]);
 
-function result(reason: ValidationReason | null): ValidationResult {
+/** Zmrazený výsledok príkazu nad ponukou: bez dôvodu platný, inak práve jeden dôvod (`cells = []`, `costCents = 0`). */
+export function offerVerdict(reason: ValidationReason | null): ValidationResult {
   return Object.freeze({ ok: reason === null, reasons: Object.freeze(reason === null ? [] : [reason]), cells: NO_CELLS, costCents: 0 });
 }
 
-const VALID = result(null);
-const UNKNOWN_CONTRACT = result('unknown_contract');
-const NOT_OFFERED = result('contract_not_offered');
+const VALID = offerVerdict(null);
+const UNKNOWN_CONTRACT = offerVerdict('unknown_contract');
+const NOT_OFFERED = offerVerdict('contract_not_offered');
 
 /** Kľúče serializovaného tvaru v poradí `toJSON`. */
 const CONTRACT_COMMAND_KEYS: readonly string[] = ['type', 'contractId'];

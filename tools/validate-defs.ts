@@ -328,18 +328,29 @@ function findMissingSprites(label: string, manifest: unknown, defsDir: string): 
 }
 
 /**
- * Parametre modulov, ktoré musia zodpovedať počtu prvkov poľa v jeho sprite (kľúč `sprites[id][spriteKey]`):
- * `waiting_area.bays` = počet `stalls`, `ramp.docks` = počet `docks`.
+ * Parametre modulov, ktoré musia zodpovedať počtu prvkov poľa alebo číslu v jeho sprite:
+ * `berth.apronSlots` = počet `apronSlots`, `waiting_area.bays` = počet `stalls`,
+ * `ramp.docks` = počet `docks`, `depot.capacity` = počet `stalls` (číslo, nie pole).
  */
-const SPRITE_COUNT_PARAMS = [
-  { kind: 'waiting_area', param: 'bays', spriteKey: 'stalls', what: 'stojísk' },
-  { kind: 'ramp', param: 'docks', spriteKey: 'docks', what: 'dockov' },
-] as const;
+interface SpriteCountCheck {
+  kind: string;
+  param: string;
+  spriteKey: string;
+  what: string;
+  valueType: 'array' | 'number';
+}
+const SPRITE_COUNT_PARAMS: readonly SpriteCountCheck[] = [
+  { kind: 'berth', param: 'apronSlots', spriteKey: 'apronSlots', what: 'apronSlotov', valueType: 'array' },
+  { kind: 'waiting_area', param: 'bays', spriteKey: 'stalls', what: 'stojísk', valueType: 'array' },
+  { kind: 'ramp', param: 'docks', spriteKey: 'docks', what: 'dockov', valueType: 'array' },
+  { kind: 'depot', param: 'capacity', spriteKey: 'stalls', what: 'stajní', valueType: 'number' },
+];
 
 /**
- * Krížová kontrola počtov: modul druhu `kind` s číselným `params[param]` a sprite s poľom `spriteKey` musia mať rovnaký
- * počet. Chyba: `<label>: /sprites/<id>/<spriteKey> počet <what> (<n>) sa nezhoduje s params.<param> (<m>) (modules.json: /items/<i>/params/<param>)`.
- * Modul bez sprite alebo sprite bez poľa sa preskočí (chýbajúci sprite hlási `findMissingSprites`, tvar schéma).
+ * Krížová kontrola počtov: modul druhu `kind` s číselným `params[param]` a sprite s poľom/číslom `spriteKey`
+ * musia mať rovnaký počet. Pre polia: počet prvkov. Pre čísla: hodnota priamo.
+ * Chyba: `<label>: /sprites/<id>/<spriteKey> počet <what> (<n>) sa nezhoduje s params.<param> (<m>) (modules.json: /items/<i>/params/<param>)`.
+ * Modul bez sprite alebo sprite bez poľa/čísla sa preskočí (chýbajúci sprite hlási `findMissingSprites`, tvar schéma).
  */
 function findSpriteCountMismatches(label: string, manifest: unknown, defsDir: string): string[] {
   if (!isRecord(manifest)) return [];
@@ -352,14 +363,23 @@ function findSpriteCountMismatches(label: string, manifest: unknown, defsDir: st
     if (!isRecord(item) || typeof item['id'] !== 'string') return;
     const sprite = sprites[item['id']];
     const params = item['params'];
-    for (const { kind, param, spriteKey, what } of SPRITE_COUNT_PARAMS) {
+    for (const check of SPRITE_COUNT_PARAMS) {
+      const { kind, param, spriteKey, what, valueType } = check;
       if (item['kind'] !== kind || !isRecord(sprite) || !isRecord(params)) continue;
-      const parts = sprite[spriteKey];
+      const spriteValue = sprite[spriteKey];
       const declared = params[param];
-      if (!Array.isArray(parts) || typeof declared !== 'number' || parts.length === declared) continue;
-      errors.push(
-        `${label}: /${MODULE_SPRITES_SECTION}/${item['id']}/${spriteKey} počet ${what} (${String(parts.length)}) sa nezhoduje s params.${param} (${String(declared)}) (${MODULES_DEF_FILE}: /items/${String(index)}/params/${param})`,
-      );
+
+      if (valueType === 'array') {
+        if (!Array.isArray(spriteValue) || typeof declared !== 'number' || spriteValue.length === declared) continue;
+        errors.push(
+          `${label}: /${MODULE_SPRITES_SECTION}/${item['id']}/${spriteKey} počet ${what} (${String(spriteValue.length)}) sa nezhoduje s params.${param} (${String(declared)}) (${MODULES_DEF_FILE}: /items/${String(index)}/params/${param})`,
+        );
+      } else if (valueType === 'number') {
+        if (typeof spriteValue !== 'number' || typeof declared !== 'number' || spriteValue === declared) continue;
+        errors.push(
+          `${label}: /${MODULE_SPRITES_SECTION}/${item['id']}/${spriteKey} počet ${what} (${String(spriteValue)}) sa nezhoduje s params.${param} (${String(declared)}) (${MODULES_DEF_FILE}: /items/${String(index)}/params/${param})`,
+        );
+      }
     }
   });
   return errors;

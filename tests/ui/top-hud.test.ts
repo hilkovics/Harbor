@@ -109,14 +109,38 @@ describe('TopHUD (pripojený na SimBridge)', () => {
     for (const name of used) expect(sprite, name).toContain(`<symbol id="${name}"`);
   });
 
-  it('panely vpravo: 4 neaktívne placeholdery (disabled), ⚙ aktívne aj bez handlera', () => {
+  it('panely vpravo: 4 neaktívne placeholdery (disabled), Uložiť/načítať a ⚙ aktívne aj bez handlera', () => {
     const html = renderHud(createApp());
-    expect(HUD_PANEL_BUTTONS.map((button) => button.id)).toEqual(['contracts', 'finance', 'stats', 'tech', 'settings']);
+    expect(HUD_PANEL_BUTTONS.map((button) => button.id)).toEqual(['contracts', 'finance', 'stats', 'tech', 'saves', 'settings']);
     for (const id of ['contracts', 'finance', 'stats', 'tech']) {
       expect(html, id).toMatch(new RegExp(`<button[^>]*data-field="panel-${id}"[^>]*disabled`));
     }
     expect(html).not.toMatch(/<button[^>]*data-field="panel-settings"[^>]*disabled/);
+    expect(html).not.toMatch(/<button[^>]*data-field="panel-saves"[^>]*disabled/);
     expect(html).toContain('title="Kontrakty (C) · čoskoro"');
+  });
+
+  it('ikona uloženia (ic_save) a ⚙ otvárajú overlay cez onOpenSaves / onOpenSettings, ohlasujú dialóg', () => {
+    const onOpenSaves = vi.fn();
+    const onOpenSettings = vi.fn();
+    const tree = TopHUDView({ cashCents: 0, day: 0, hour: 0, minute: 0, speed: 1, speeds: [0, 1], onSpeedChange: vi.fn(), onOpenSaves, onOpenSettings });
+    const button = (field: string) => findAll(tree, (element) => propsOf(element)['data-field'] === field)[0];
+    const saves = button('panel-saves');
+    const settings = button('panel-settings');
+    expect(saves).toBeDefined();
+    expect(settings).toBeDefined();
+    (propsOf(saves as ReactElement).onClick as () => void)();
+    expect(onOpenSaves).toHaveBeenCalledTimes(1);
+    expect(onOpenSettings).not.toHaveBeenCalled();
+    (propsOf(settings as ReactElement).onClick as () => void)();
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+    for (const element of [saves, settings]) {
+      expect(propsOf(element as ReactElement)['aria-haspopup']).toBe('dialog');
+      expect(propsOf(element as ReactElement)['aria-pressed']).toBeUndefined();
+    }
+    const html = renderHud(createApp(), { onOpenSaves, onOpenSettings });
+    expect(html).toMatch(/<button[^>]*aria-label="Uložiť a načítať hru"[^>]*data-field="panel-saves"/);
+    expect(html).toContain('#ic_save');
   });
 
   it('s handlerom sú ikony panelov aktívne a zvýrazní sa otvorený panel', () => {

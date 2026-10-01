@@ -21,7 +21,7 @@
  * Ovládanie: `B` build mód ciest (naposledy použitý typ), `Esc` zruší ťah, potom mód (v `idle` zruší výber modulu
  * v inšpektore), `Space` pauza/obnova poslednej nenulovej rýchlosti (rovnaká logika ako klik na ⏸:
  * `resolveSpeedRequest`), `1–4` rýchlosti podľa poradia v `time.speeds`, WASD/šípky posun kamery, koleso zoom
- * s pivotom pod kurzorom.
+ * s pivotom pod kurzorom, `Ctrl+S` (na macOS `Cmd+S`) rýchle uloženie do slotu 1 (`onQuickSave`, T06-03).
  *
  * Build mód modulov (T02-10): výber v BuildBare (`BuildSelection`) prepne do `build_module`; `R` otočí ghost
  * 0 → 90 → 180 → 270, ľavý klik umiestni modul (`validate` → `dispatch(PlaceModule)` len pri `ok`), Esc alebo pravý klik
@@ -178,6 +178,11 @@ export interface KeyInput {
   readonly metaKey: boolean;
 }
 
+/** Je to `Ctrl+S` (na macOS `Cmd+S`) — rýchle uloženie; `Alt` kombináciu ruší. Rozhoduje `code`, takže funguje v ľubovoľnom rozložení. */
+export function isQuickSaveKey(input: Pick<KeyInput, 'code' | 'ctrlKey' | 'altKey' | 'metaKey'>): boolean {
+  return input.code === 'KeyS' && (input.ctrlKey || input.metaKey) && !input.altKey;
+}
+
 // ---- závislosti ----
 
 /** Časť kamery, ktorú ovládanie používa; `Camera` ju spĺňa. */
@@ -211,6 +216,11 @@ export interface InputControllerOptions {
   readonly ghostArrows?: GhostArrowsTarget;
   /** Zmena režimu (kurzor, indikátor); volá sa len pri skutočnej zmene stavu. */
   readonly onStateChange?: (state: InputState) => void;
+  /**
+   * `Ctrl+S` = rýchle uloženie (slot 1). Ovládanie kláves spracuje (vráti `true` → `preventDefault`, prehliadač neotvorí
+   * „Uložiť stránku“) aj pri opakovaní; bez tohto zadania `Ctrl+S` nerobí nič a prehliadač si ho berie.
+   */
+  readonly onQuickSave?: () => void;
 }
 
 // ---- spätná väzba pre React (tooltip pri ghoste) ----
@@ -321,6 +331,7 @@ export class InputController {
   private readonly roadSelection: SelectionSource<RoadKind>;
   private readonly ghostArrows: GhostArrowsTarget | undefined;
   private readonly onStateChange: ((state: InputState) => void) | undefined;
+  private readonly onQuickSave: (() => void) | undefined;
 
   private stateValue: InputState = 'idle';
   /** Vybraná definícia modulu v módoch `build_module*` (zrkadlo `buildSelection`), inak `null`. */
@@ -361,6 +372,7 @@ export class InputController {
     this.roadSelection = options.roadSelection ?? new RoadSelection();
     this.ghostArrows = options.ghostArrows;
     this.onStateChange = options.onStateChange;
+    this.onQuickSave = options.onQuickSave;
     const speed = this.bridge.snapshot().speed;
     if (speed !== 0) this.lastRunningSpeed = speed;
     // Udalosti sveta: posledná nenulová rýchlosť (aby ju poznal aj Space po zmene rýchlosti cez HUD) a zmena
@@ -508,6 +520,12 @@ export class InputController {
 
   /** @returns `true`, ak kláves ovládanie spracovalo (volajúci potom zavolá `preventDefault`). */
   keyDown(input: KeyInput): boolean {
+    if (isQuickSaveKey(input)) {
+      // Ctrl+S: rýchle uloženie; pri opakovaní (držaný kláves) sa neukladá znova, ale prehliadačový „Uložiť stránku“ sa potlačí.
+      if (this.onQuickSave === undefined) return false;
+      if (!input.repeat) this.onQuickSave();
+      return true;
+    }
     if (input.ctrlKey || input.altKey || input.metaKey) return false;
     const direction = PAN_KEYS[input.code];
     if (direction !== undefined) {

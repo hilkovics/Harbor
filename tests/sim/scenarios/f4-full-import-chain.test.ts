@@ -567,9 +567,11 @@ describe('migrácia WorldState v3 → v4', () => {
     const v3 = Object.fromEntries(WORLD_STATE_V3_KEYS.map((key) => [key, current[key]]));
     v3['version'] = 3;
     const migrated = World.deserialize(DEFS, MAP, v3 as unknown as WorldState);
-    // v3 nepoznal knihu (ADR-025) ani kontrakty (ADR-026): migrovaný svet má prázdnu históriu a prázdny pool (doplní ho
-    // až najbližší DayClosed), hotovosť a všetko ostatné je zhodné.
+    // v3 nepoznal knihu (ADR-025) ani kontrakty (ADR-026): migrovaný svet má prázdnu históriu a prázdny pool, hotovosť
+    // a všetko ostatné je zhodné. Pool si doplní v prvom ticku po načítaní ako pri štarte hry (T06-07), takže sa odvtedy
+    // líšia ťahy `Rng` poolu — porovnanie po tickoch ich vynechá.
     const withoutLedger = (world: World): string => JSON.stringify({ ...world.serialize(), economy: null, contracts: null, nextContractId: null });
+    const withoutDraws = (world: World): string => JSON.stringify({ ...world.serialize(), economy: null, contracts: null, nextContractId: null, rng: null });
     expect(migrated.economy.entries).toEqual([]);
     expect(migrated.cashCents).toBe(plain.cashCents);
     expect(withoutLedger(migrated)).toBe(withoutLedger(plain));
@@ -577,6 +579,7 @@ describe('migrácia WorldState v3 → v4', () => {
       plain.tick();
       migrated.tick();
     }
-    expect(withoutLedger(migrated)).toBe(withoutLedger(plain));
+    expect(migrated.contractBook.offeredCount).toBe(DEFS.economy.offersPerDay);
+    expect(withoutDraws(migrated)).toBe(withoutDraws(plain));
   });
 });

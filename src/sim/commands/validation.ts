@@ -10,7 +10,9 @@ import type { CellCoord } from '../grid/grid';
  * a ladiaca loď (`SpawnShipDebug`, T02-05); F3 (docs/tasks/phase-03.md „Spoločné rozhrania", ADR-017): vozidlá
  * (`BuyVehicle`/`SellVehicle`, T03-04), depo a pripojenie modulov; typy ciest (`PlaceRoad`, T03-18, ADR-020); F4:
  * `has_trucks` (`RemoveModule` pozemného modulu, ktorý používa kamión, T04-04, ADR-024); F5: kontrakty
- * (`unknown_contract`, `contract_not_offered`) a koniec hry (`game_over`, T05-03, ADR-026). Nový dôvod =
+ * (`unknown_contract`, `contract_not_offered`) a koniec hry (`game_over`, T05-03, ADR-026); F6: pripravenosť prístavu
+ * pri `AcceptContract` (`no_berth_for_ship_class`, `no_crane_for_category`, T06-07, ADR-031; `berth_unreachable`,
+ * T06-08b, ADR-031 dodatok). Nový dôvod =
  * nový riadok tu + slovenský popis v UI (`REASON_TEXT`).
  */
 export const VALIDATION_REASONS = [
@@ -85,6 +87,21 @@ export const VALIDATION_REASONS = [
   'contract_not_offered',
   /** Hra skončila bankrotom (`World.gameOver`, ADR-025); po `GameOver` ho hlási každý príkaz (`SimCommand`, ADR-027) ako jediný dôvod. */
   'game_over',
+  /**
+   * `AcceptContract` (T06-07, ADR-031): žiadny úsek kotvísk (§5.4) nemá pre triedu lode ponuky dosť dĺžky, hĺbky
+   * a pásu vody — bez ohľadu na obsadenosť.
+   */
+  'no_berth_for_ship_class',
+  /**
+   * `AcceptContract` (T06-07, ADR-031): úsek kotvísk, ku ktorému loď ponuky dopláva, existuje, ale žiadny nemá žeriav
+   * kategórie nákladu.
+   */
+  'no_crane_for_category',
+  /**
+   * `AcceptContract` (T06-08b, ADR-031 dodatok): úsek kotvísk s dĺžkou, hĺbkou a pásom vody pre loď ponuky existuje,
+   * ale loď k žiadnemu nedopláva ani na prázdnej vode (bod priblíženia na súši, príliš úzka cesta po vode).
+   */
+  'berth_unreachable',
 ] as const;
 
 export type ValidationReason = (typeof VALIDATION_REASONS)[number];

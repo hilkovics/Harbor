@@ -108,6 +108,7 @@ describe('validateDefsDir', () => {
         defaultInternalTicks: 6,
         repathIntervalTicks: 30,
         congestion: { trafficDecayPerHour: 0.9, slowdownPerExtraVehicle: 0.25, penaltyTrafficDivisor: 200, penaltyMax: 3 },
+        shipNavigation: { approachMarginCells: 1, sweepStepCells: 0.5, turnManeuvers: 1, sidewaysManeuvers: 1 },
       });
     });
   });
@@ -900,9 +901,11 @@ describe('validateAssetManifest (assets/manifest.json → asset-manifest.schema.
     });
   });
 
-  describe('krížová kontrola počtov: params.bays = počet stalls, params.docks = počet docks', () => {
-    type Sprite = { stalls?: Json[]; docks?: Json[] };
+  describe('krížová kontrola počtov: params → počty v manifeste', () => {
+    type Sprite = { stalls?: Json[] | number; docks?: Json[]; apronSlots?: Json[] };
+    type SpriteArrayField = { stalls?: Json[]; docks?: Json[]; apronSlots?: Json[] };
     const sprite = (m: JsonObject, id: string): Sprite => (m.sprites as { [key: string]: Sprite })[id]!;
+    const spriteArray = (m: JsonObject, id: string): SpriteArrayField => (m.sprites as { [key: string]: SpriteArrayField })[id]!;
     /** Zapíše modules.json, v ktorom položka `id` dostane `params[param] = value`. */
     const writeModuleParam = (id: string, param: string, value: number): number => {
       const modules = realCatalog('modules') as unknown as { schemaVersion: number; items: { id: string; params: JsonObject }[] };
@@ -912,16 +915,18 @@ describe('validateAssetManifest (assets/manifest.json → asset-manifest.schema.
       return index;
     };
 
-    it('skutočné defy a manifest: počty sedia (6 stojísk, 2 docky)', () => {
+    it('skutočné defy a manifest: počty sedia (8 apronSlotov, 6 stojísk, 2 docky, 10 stajní)', () => {
       const manifest = realManifest();
+      expect(sprite(manifest, 'berth_standard').apronSlots).toHaveLength(8);
       expect(sprite(manifest, 'truck_waiting_area').stalls).toHaveLength(6);
       expect(sprite(manifest, 'loading_ramp_container').docks).toHaveLength(2);
+      expect(sprite(manifest, 'vehicle_depot').stalls).toBe(10);
       writeManifest(manifest);
       expect(errorsOf()).toEqual([]);
     });
 
     it('stojisko: menej stalls v manifeste než params.bays → chyba s cestou v manifeste a odkazom na def', () => {
-      writeMutated((m) => sprite(m, 'truck_waiting_area').stalls!.pop());
+      writeMutated((m) => (spriteArray(m, 'truck_waiting_area').stalls as Json[])?.pop());
       const index = String(realCatalog('modules').items.findIndex((item) => item.id === 'truck_waiting_area'));
       expect(errorsOf()).toEqual([
         `assets/manifest.json: /sprites/truck_waiting_area/stalls počet stojísk (5) sa nezhoduje s params.bays (6) (modules.json: /items/${index}/params/bays)`,
@@ -937,7 +942,7 @@ describe('validateAssetManifest (assets/manifest.json → asset-manifest.schema.
     });
 
     it('rampa: viac docks v manifeste než params.docks → chyba', () => {
-      writeMutated((m) => sprite(m, 'loading_ramp_container').docks!.push({ x: 196, y: 60, w: 56, h: 62 }));
+      writeMutated((m) => (spriteArray(m, 'loading_ramp_container').docks as Json[])?.push({ x: 196, y: 60, w: 56, h: 62 }));
       const index = String(realCatalog('modules').items.findIndex((item) => item.id === 'loading_ramp_container'));
       expect(errorsOf()).toEqual([
         `assets/manifest.json: /sprites/loading_ramp_container/docks počet dockov (3) sa nezhoduje s params.docks (2) (modules.json: /items/${index}/params/docks)`,
@@ -960,12 +965,44 @@ describe('validateAssetManifest (assets/manifest.json → asset-manifest.schema.
     });
 
     it('sprite bez poľa stalls/docks sa preskočí (tvar hlási schéma manifestu)', () => {
-      writeMutated((m) => delete sprite(m, 'loading_ramp_container').docks);
+      writeMutated((m) => delete spriteArray(m, 'loading_ramp_container').docks);
       expect(errorsOf().every((line) => !line.includes('počet dockov'))).toBe(true);
     });
 
-    it('iné druhy modulov (depo, dvor) sa na počty nekontrolujú', () => {
-      writeModuleParam('vehicle_depot', 'capacity', 99);
+    it('berth: menej apronSlots v manifeste než params.apronSlots → chyba', () => {
+      writeMutated((m) => (spriteArray(m, 'berth_standard').apronSlots as Json[])?.pop());
+      const index = String(realCatalog('modules').items.findIndex((item) => item.id === 'berth_standard'));
+      expect(errorsOf()).toEqual([
+        `assets/manifest.json: /sprites/berth_standard/apronSlots počet apronSlotov (7) sa nezhoduje s params.apronSlots (8) (modules.json: /items/${index}/params/apronSlots)`,
+      ]);
+    });
+
+    it('berth: params.apronSlots iné než počet apronSlots → chyba', () => {
+      const index = writeModuleParam('berth_standard', 'apronSlots', 5);
+      writeManifest(realManifest());
+      expect(errorsOf()).toEqual([
+        `assets/manifest.json: /sprites/berth_standard/apronSlots počet apronSlotov (8) sa nezhoduje s params.apronSlots (5) (modules.json: /items/${String(index)}/params/apronSlots)`,
+      ]);
+    });
+
+    it('vehicle_depot: iné číslo stalls v manifeste než params.capacity → chyba', () => {
+      writeMutated((m) => ((m.sprites as JsonObject).vehicle_depot as JsonObject).stalls = 15);
+      const index = String(realCatalog('modules').items.findIndex((item) => item.id === 'vehicle_depot'));
+      expect(errorsOf()).toEqual([
+        `assets/manifest.json: /sprites/vehicle_depot/stalls počet stajní (15) sa nezhoduje s params.capacity (10) (modules.json: /items/${index}/params/capacity)`,
+      ]);
+    });
+
+    it('vehicle_depot: params.capacity iné než stalls → chyba', () => {
+      const index = writeModuleParam('vehicle_depot', 'capacity', 12);
+      writeManifest(realManifest());
+      expect(errorsOf()).toEqual([
+        `assets/manifest.json: /sprites/vehicle_depot/stalls počet stajní (10) sa nezhoduje s params.capacity (12) (modules.json: /items/${String(index)}/params/capacity)`,
+      ]);
+    });
+
+    it('iné druhy modulov sa na počty nekontrolujú', () => {
+      writeModuleParam('container_yard_small', 'storageSlots', 999);
       writeManifest(realManifest());
       expect(errorsOf()).toEqual([]);
     });

@@ -15,11 +15,13 @@
  * rezervácie dockov obnovia outbound joby (`staged + reserved ≤ stagingPerDock`, inak chyba jobu). Pozemné
  * moduly (T04-02) obnovia `runtime` (brána: fronta a počítadlá); strany brán a prevádzkovosť rámp odvodí svet po obnove.
  * Kamióny (T04-04, ADR-024) vzostupne podľa id cez `World.addTruck` po vozidlách (pred kontrolou držiteľov — `in_truck`
- * číta `world.trucks`): kamión znovu drží svoj bay (index zo save), dock a nárok na náklad docku podľa stavu (ADR-029);
+ * číta `world.trucks`); väzby na rampu, bránu a stojisko a rozsah docku a bay sa overia pred tým s cestou poľa
+ * (`checkTruckRefs`, T06-07): kamión znovu drží svoj bay (index zo save), dock a nárok na náklad docku podľa stavu (ADR-029);
  * potom náklad kamióna (kapacita, kategória, stav prázdny/nakládka/plný), väzba na rampu (def vozí jej kategóriu,
  * kamión s dockom má na docku a v sebe aspoň kapacitu; po obnove jobov nároky docku ≤ pripravené + vezené), fronta brány = presne kamióny v `gate_queue*` tejto brány, súlad prechodu brány s frontou (runtime
- * brány), pohyb (`truckMotionProblem`), kamión vo fronte na svojej strane brány a hodina posledného `NoWaitingBay`
- * rampy nie je v budúcnosti.
+ * brány), pohyb (`truckMotionProblem`), kamión vo fronte na svojej strane brány, odpočet zarovnaný najviac na taký,
+ * aký stav nastaví podľa aktuálnych defov (`truckWaitLimit`, T06-07; zarovnanie T06-08b) a hodina posledného
+ * `NoWaitingBay` rampy nie je v budúcnosti.
  * Kontrakty (ADR-026): jednotka s `contractId` patrí kontraktu s loďou a jeho nákladu, jednotka na lodi kontraktu pred
  * vyložením patrí tomuto kontraktu (`checkContracts`); počet jednotiek na palube a počítadlá overí krok 12.
  * Na koniec beží `findWorldViolation` ako poistka. Každá chyba je `WorldStateError` s JSON pointerom.
@@ -34,17 +36,20 @@ import { JOB_STATE_TRAITS, TransportJob, type JobState } from '../logistics/tran
 import { BerthModule } from '../modules/berth-module';
 import { CRANE_STATE_TRAITS, CraneModule } from '../modules/crane-module';
 import { LoadingRamp } from '../modules/loading-ramp';
+import type { Module } from '../modules/module';
 import { ModuleError, ModuleStateError } from '../modules/module-error';
 import { moduleRegistry } from '../modules/module-registry';
 import { Ship } from '../ships/ship';
 import { ShipError } from '../ships/ship-error';
 import { legacyShipRoute, mooringProblem, shipRouteProblem } from '../ships/ship-route';
 import { TruckGate } from '../modules/truck-gate';
+import { WaitingArea } from '../modules/waiting-area';
 import { DockSupply } from '../trucks/dock-supply';
 import { Truck } from '../trucks/truck';
 import { TruckError, type TruckErrorCode } from '../trucks/truck-error';
 import { TRUCK_STATE_TRAITS } from '../trucks/truck-fsm';
 import { truckMotionProblem } from '../trucks/truck-trip';
+import { truckWaitLimit } from '../trucks/truck-wait';
 import { Vehicle } from '../vehicles/vehicle';
 import { VehicleError, type VehicleErrorCode } from '../vehicles/vehicle-error';
 import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle-fsm';
@@ -233,14 +238,52 @@ const TRUCK_ERROR_FIELD: { readonly [C in TruckErrorCode]: string } = {
   inconsistent: 'state',
 };
 
+/** Modul väzby kamióna je modul daného druhu vo svete (pole záznamu, ktoré naň odkazuje). */
+interface TruckModuleRef {
+  readonly field: 'rampId' | 'gateId' | 'waitingAreaId';
+  readonly label: string;
+  readonly matches: (module: Module | undefined) => boolean;
+}
+
+/** Väzby kamióna na moduly v poradí kontroly (tabuľka, nie switch). */
+const TRUCK_MODULE_REFS: readonly TruckModuleRef[] = [
+  { field: 'rampId', label: 'rampa', matches: (module) => module instanceof LoadingRamp },
+  { field: 'gateId', label: 'brána', matches: (module) => module instanceof TruckGate },
+  { field: 'waitingAreaId', label: 'stojisko', matches: (module) => module instanceof WaitingArea },
+];
+
 /**
- * Kamióny vzostupne podľa id: inštancia `Truck` (def, stav, `resume` a `bay` podľa stavu overil `parseWorldState`),
- * potom `World.addTruck` (brána, stojisko a rampa existujú, dock a bay v rozsahu a voľné; kamión znovu drží bay —
- * v `waiting` obsadený — a dock podľa stavu). `TruckError` → `WorldStateError` s poľom záznamu.
+ * Väzby záznamu kamióna pred `World.addTruck` (T06-07): rampa, brána a stojisko sú moduly toho druhu vo svete, dock je
+ * v rozsahu `docks` rampy a bay v rozsahu `bays` stojiska. Chyba patrí poľu, ktoré odkazuje zle (`/trucks/<i>/<pole>`);
+ * obsadenosť bay a docku overí `World.addTruck`.
+ */
+function checkTruckRefs(world: World, entry: ParsedTruckEntry, path: string): void {
+  for (const ref of TRUCK_MODULE_REFS) {
+    const id = entry[ref.field];
+    const module = world.modules.get(id);
+    if (!ref.matches(module)) {
+      throw new WorldStateError(`${path}/${ref.field}`, `${ref.label} #${String(id)} vo svete nie je${module === undefined ? '' : ` (${module.label})`}`);
+    }
+  }
+  const ramp = world.modules.get(entry.rampId);
+  if (ramp instanceof LoadingRamp && entry.dock >= ramp.docks) {
+    throw new WorldStateError(`${path}/dock`, `dock ${String(entry.dock)} je mimo 0…${String(ramp.docks - 1)} ${ramp.label}`);
+  }
+  const area = world.modules.get(entry.waitingAreaId);
+  if (area instanceof WaitingArea && entry.bay !== null && entry.bay >= area.bays) {
+    throw new WorldStateError(`${path}/bay`, `bay ${String(entry.bay)} je mimo 0…${String(area.bays - 1)} ${area.label}`);
+  }
+}
+
+/**
+ * Kamióny vzostupne podľa id: väzby na moduly (`checkTruckRefs`), inštancia `Truck` (def, stav, `resume` a `bay` podľa
+ * stavu overil `parseWorldState`), potom `World.addTruck` (bay a dock voľné; kamión znovu drží bay — v `waiting`
+ * obsadený — a dock podľa stavu). `TruckError` → `WorldStateError` s poľom záznamu.
  */
 function restoreTrucks(world: World, entries: readonly ParsedTruckEntry[]): void {
   entries.forEach((entry, index) => {
     const path = truckPath(index);
+    checkTruckRefs(world, entry, path);
     try {
       world.addTruck(
         new Truck({
@@ -328,8 +371,12 @@ function checkGateQueues(world: World, indexOf: ReadonlyMap<EntityId, number>): 
 }
 
 /**
- * Pohyb kamiónov zodpovedá stavu (`truckMotionProblem`, ADR-019, ADR-024) a kamión vo fronte stojí na svojej strane
- * brány (`truckQueueSideProblem`, dodatok ADR-024 — `/trucks/<i>/route`).
+ * Pohyb kamiónov zodpovedá stavu (`truckMotionProblem`, ADR-019, ADR-024 — aj odpočet ≥ 1 práve v stavoch s čakaním)
+ * a kamión vo fronte stojí na svojej strane brány (`truckQueueSideProblem`, dodatok ADR-024 — `/trucks/<i>/route`).
+ * Odpočet nad hodnotu, akú stav nastaví podľa **aktuálnych** defov (`truckWaitLimit`, T06-07), sa zarovná na ňu
+ * (T06-08b, ADR-031 dodatok): platný save spred zmeny balansu (kratší `repathIntervalTicks`, pobyt stojiska, nakládka)
+ * sa načíta a kamión nečaká dlhšie, než stav dovolí. Hranica stavu s čakaním je ≥ 1 (`MIN_STAY_TICKS`, schéma), takže
+ * zarovnanie invariant odpočtu neporuší; záporný či neceločíselný odpočet odmietne už parser (`/trucks/<i>/waitTicks`).
  */
 function checkTruckMotion(world: World): void {
   let index = 0;
@@ -338,6 +385,7 @@ function checkTruckMotion(world: World): void {
     if (problem !== undefined) throw new WorldStateError(`${truckPath(index)}/${problem.field}`, problem.problem);
     const side = truckQueueSideProblem(world, truck);
     if (side !== undefined) throw new WorldStateError(`${truckPath(index)}/route`, side);
+    truck.waitTicks = Math.min(truck.waitTicks, truckWaitLimit(world, truck));
     index += 1;
   }
 }

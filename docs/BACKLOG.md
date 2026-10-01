@@ -8,20 +8,17 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 ## P1
 - ReleaseParcel pri cestách/koľajach na prenajatej parcele nie je určené (ADR-008 ich tam povoľuje, §5.2 blokuje ukončenie prenájmu len pri moduloch): zostanú, odstránia sa s refundáciou, alebo ukončenie zablokujú? Rozhodnúť ADR-om. — pôvod: T00-19 · fáza: pred F7
 - Agent test-runner doslova volá simrun data/scenarios/vertical_slice.json, ktorý neexistuje do F5; dovtedy sa používa smoke.json. — pôvod: T00-13 · fáza: F5
-- §14 SaveGame obálka duplikuje version/seed/tick z WorldState v1 → rozhodnúť ADR-om. — pôvod: T01-17 · fáza: F6
 - CraneSystem natvrdo počíta s cyklom kontajnerového importu → krok cyklu presunúť do podtried CraneModule alebo stratégie (§17 bod 5), inak bulk/liquid žeriav (flowUnitsPerTick) vynúti zásah do systému. — pôvod: review T02-13 · fáza: pred F7
-- Idle vozidlo ostáva stáť na prístupovej bunke (návrat do depa chýba) a blokuje RemoveRoad tej bunky; open joby s odpojeným cieľovým skladom držia sloty a naložené vozidlo cyklí v no_path → návrat do depa + preradenie jobov + udalosť pre toast. — pôvod: T03-06, T03-13 · fáza: F4
+- Idle vozidlo ostáva stáť na prístupovej bunke (návrat do depa chýba) a blokuje RemoveRoad tej bunky; open joby s odpojeným cieľovým skladom držia sloty a naložené vozidlo cyklí v no_path → návrat do depa + preradenie jobov + udalosť pre toast. Návrh v ADR-031 (Dôsledky): preradenie naloženého vozidla z `no_path` a rušenie open inbound jobov k odpojenému skladu = nový stav FSM vozidla, dôvod `JobCancelled`, udalosť pre toast (> 100 riadkov, vlastný ADR). — pôvod: T03-06, T03-13, ADR-031 · fáza: F7 pred parcelami alebo F11 (kongescia)
 - `has_trucks` validácia pri odstránení brány/stojiska/rampy s kamiónmi (T04-02 nechal hook, T04-04 dodá logiku); odčítavanie trudy pri obnove modulov. — pôvod: T04-02, T04-12 · fáza: F4 (zásuvka existuje)
-- Kamión v `no_path` s rezervovaným bay a dock: buď vrátiť do depa a zrušiť job, alebo vypršať a despawnúť; možno nový stav `stuck` a ADR; event `TruckNoPath` pre toast. — pôvod: T04-04, T04-11 · fáza: F5
-- **AcceptContract bez overenia pripravenosti prístavu:** žeriav kategórie kontraktu a dĺžka brežu; loď sa môže zablokať na kotvisku. — pôvod: T05-10 review · fáza: F5–F6
+- Kamión v `no_path` drží bay (pred stojiskom) alebo dock (`to_dock`; od ADR-029 dock nedrží od spawnu), bez návratu či despawnu a bez udalosti `TruckNoPath`: buď vrátiť do depa a zrušiť job, alebo vypršať a despawnúť (nový stav alebo vypršanie, vlastný ADR); event `TruckNoPath` pre toast. Návrh v ADR-031 (Dôsledky). — pôvod: T04-04, T04-11, ADR-031 · fáza: F7 pred parcelami alebo F11 (kongescia)
 
 ## P2
 - **Hladovanie `free`** (T05-10 review, minor, staging share): vol. priestor v sklade sa neprideluje pri `failed` kontraktoch → sklad zablokovaný; voľné sloty sa prideľujú pri výklade aj v stave `unloading`, nie len pri `exporting`. — pôvod: T05-10 review · fáza: F5–F6
 - **Neohraničené penalizácie:** demurrage a late by mali byť ohraničené ≤ reward; pri bankrote. — pôvod: T05-10 review · fáza: F5–F6
 - **`StoredCargoIndex` O(skupina):** splice pri odstránení kontraktu je O(n); použiť heap alebo bitset. — pôvod: T05-10 review · fáza: F6
-- **Pool po načítaní v4:** po migráciida v4→v5 je pool prázdny, väčší skok k prvej ponuke (až nasledujúca DayClosed); vyplniť pool pri migácii. — pôvod: T05-10 review · fáza: F6
 - **Free/failed wait behind SLA** (outbound priority): jednotky bez kontraktu a `failed` sa nemajú odohrať pred SLA jednotkami. — pôvod: T05-10 review · fáza: F5–F6
-- **TopHUD panel icons bez funkcie:** ikony Financie/Štatistiky/Tech (Finance/Stats/Tech) sú clickable no-op → zablokiť alebo schová. — pôvod: T05-07 · fáza: F5–F6
+- **TopHUD panel icons bez funkcie:** ikony Financie/Štatistiky/Tech (Finance/Stats/Tech) sú clickable no-op → zablokovať alebo schovať. — pôvod: T05-07 · fáza: F5–F6
 - **contractsRevision** oddelené od REVISION_EVENTS → sledovanie zmien kontraktu. — pôvod: T05-07 · fáza: F6
 - **E2E pre bankrot a novú hru:** test GameOver modalu a reštartu. — pôvod: T05-07 · fáza: F5
 - **Toast sa zatvára aj počas pauzy:** auto-close by mal byť deaktivovaný (paused game). — pôvod: T05-12 · fáza: F5–F6
@@ -29,14 +26,11 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - **Údržba ciest a modifikátory miezd:** road maintenance (nonzero v F5), wage tech modifiers (tech modifikátory pre mzdy vozidiel). — pôvod: T05-02 · fáza: F7–F8
 - Štartové cesty z mapy (starter.roads, 30 buniek) sú zadarmo, ale RemoveRoad za ne vráti 50 % aktuálnej ceny (~$30k) — drobný exploit; pri moduloch vyriešené refundáciou zo zaplatenej ceny (ADR-015), pri cestách zvážiť to isté. — pôvod: T01-04, T02-04 · fáza: F13 (balans)
 - Späť cez stojisko (čakacia plocha) nemá čas prechodu → kamión v `gate_queue_out` sa okamžite ocitne na výstupe. — pôvod: T04-04, T04-11 · fáza: F5
-- Spätný prechod bránou v `gate_queue_out`: ak sa strana brány odstráni/obnoví pri prechode, fronta sa počíta znova a `trucksProcessed` sa zdvojí. — pôvod: T04-04, T04-11 · fáza: F6
-- Brána čakala na cestu spoza seba (za portálom) pri určovaní prevádzkovosti rampy → t.č. sa oveľuje len cesta ku bráne; spätná cesta je optická. Rozhodnúť. — pôvod: T04-11 · fáza: F5
-- Fronta brány sa kreslí čísle pri vstupnej strane (cell konektora), nie pri portáli; pri vizuálnych úpravách asset brány skontrolovať kolíziu s kabínou kamióna v `gate_queue`. — pôvod: T04-10, T04-06 · fáza: F13 (vizuál)
+- Brána čakala na cestu spoza seba (za portálom) pri určovaní prevádzkovosti rampy → t.č. sa overuje len cesta ku bráne; spätná cesta je optická. Rozhodnúť. — pôvod: T04-11 · fáza: F5
+- Fronta brány sa kreslí číslo pri vstupnej strane (cell konektora), nie pri portáli; pri vizuálnych úpravách asset brány skontrolovať kolíziu s kabínou kamióna v `gate_queue`. — pôvod: T04-10, T04-06 · fáza: F13 (vizuál)
 - Dlhý kamión v ľavej zákrute prečnieva asfaltu. — pôvod: T04-06, T04-11 · fáza: F13 (vizuál)
-- Dispatcher paркuje idle vozidlá mimo depa na bunke docku; môžu sa prekrývať s kamiónmi v stojisku. — pôvod: T04-10 · fáza: F13
-- Ramp operability cache v dispatcheri (F6 profiling): krok 8 opakuje isRampOperational za každý rampu. — pôvod: T04-11, T04-12 · fáza: F6
+- Dispatcher parkuje idle vozidlá mimo depa na bunke docku; môžu sa prekrývať s kamiónmi v stojisku. — pôvod: T04-10 · fáza: F13
 - DefRegistry: cross-validation kamión.cargoCategories vs ramp.params.category (vzor ALU manifest); schéma pre truck_container footprint. — pôvod: T04-01, T04-05 · fáza: F8
-- WorldState v4 restore: validácia gates, waiting areas, ramps, trucks pri parse — omamené konektory, chýbajúce moduly. — pôvod: T04-04, T04-11 · fáza: F6
 - Viacero road portálov na mape (F10 landsideSystemu, T04-04 spawner používa portals[0]); dispatch determinismu cez DeviceRegistry. — pôvod: T04-04, T04-11 · fáza: F10
 - Sprite AGV nemá „nižší, modrý pás“ z DESIGN_BRIEF §5.6 — je žltý ako straddle carrier; pri 32 px sú rozlíšiteľné len tvarom. Iterovať v Claude Design (vzorový prompt v §8) pred F8 (odomknutie AGV). — pôvod: Claude Design relácia 4 · fáza: F8
 - Konektory modulov: kanonický zdroj sú assets/manifest.json → sprites.*.connectors; berth, crane (F2), container_yard_small a vehicle_depot (F3) sú prevzaté, ostatné moduly prevziať pri ich zavedení. — pôvod: Claude Design relácie 3 a 6 · fáza: F4
@@ -82,7 +76,7 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - Joby s viacerými jednotkami pre vozidlá s kapacitou > 1 (AGV); počítadlá utilizácie vozidiel v sime pre štatistiky; TRAFFIC_ZERO_THRESHOLD do logistics.json. — pôvod: T03-06 · fáza: F8, F11
 - Stavba modulu môže zablokovať posledný konektor iného modulu (ostane nepripojený) → varovanie v UI alebo pravidlo; kotvisko na móle nejde pripojiť (konektory len na juhu). — pôvod: T03-02 · fáza: F12
 - UI F3: toast pre no_path a „Dvor je plný", akcia Ukázať pri „Chýba sklad" a rozlíšenie nepripojeného kotviska, herný čas pre auto-zatvorenie toastov, kódy vozidiel SC-01 v depe, sparkline vyťaženosti a fronta depa (F9), „Postaviť cestu ku konektoru" v banneri, skratka cyklovania typov ciest, hover smer existujúcej jednosmerky, DEV spawn 24 TEU; DESIGN_BRIEF §6 doplniť Toasts, buy/road položky BuildBaru a stav Nepripojené. — pôvod: T03-09, T03-10, T03-20 · fáza: F13
-- validate:defs: krížová kontrola manifest ↔ def (capacity = slots × layers, stalls, connectors, footprint) priamo v nástroji; techRequired vozidiel a modulov voči tech_tree.json. — pôvod: T03-01, T03-04 · fáza: F8
+- validate:defs: zvyšok krížovej kontroly manifest ↔ def (capacity = slots × layers, connectors, footprint; `apronSlots`, stalls, docks a bays sú hotové v T06-06) a techRequired vozidiel a modulov voči tech_tree.json. — pôvod: T03-01, T03-04 · fáza: F8
 - Geometria: cellCenter/cardinalHeading zo ships/ship-route do spoločného modulu; zdieľaný typ deps pre ShipView/VehicleView/CargoSprite; expectedSlotCapacity v invariantoch polymorfne namiesto instanceof. — pôvod: T03-02, T03-04, T03-08 · fáza: podľa potreby
 
 ## Z Fázy 5b
@@ -91,18 +85,33 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - Šírka pruhu cesty je v renderi 26 px (`LANE_WIDTH_PX` = polovica asfaltu 52 px), DESIGN_BRIEF uvádza aj 32 px (§4.1: pruh 32 px by vyžadoval prekresliť moduly) → zjednotiť dokument alebo render. — pôvod: T5B-03 · fáza: F13
 - Footprint straddle carrieru v sime (nosič na jednej bunke cesty) vs. vizuál 34×62 px (presahuje pruh o 4 px na stranu) → zosúladiť pri vybavení skladu. — pôvod: T5B-03 · fáza: F10a (vybavenie skladu)
 - DESIGN_BRIEF §5.6 (entity) aktualizovať podľa novej mierky (§4.1) a manévru kamióna (cúvanie do docku). — pôvod: T5B-03 · fáza: F13
-- `validate:defs`: krížová kontrola `berth.params.apronSlots` = počet slotov v `assets/manifest.json`, depo `capacity` = počet stalls a rampa `docks` = počet dockov v manifeste (rozširuje položku o kontrole manifest ↔ def v P2). — pôvod: T5B-01 · fáza: F6 (stabilizácia)
 - Tretí dock rampy (`loading_ramp_container.docks` 3) vyžaduje konektor, záznam v manifeste, SVG a manéver kamióna; riešiť podľa kongescie na rampe. — pôvod: T5B-01 · fáza: F7/F11
 - Vzdialený prečerpávací terminál (bója/SPM pre tankery mimo nábrežia). — pôvod: spätná väzba M1 (F5b) · fáza: F9/F12
 - Balans: `truck_waiting_area.bays` 6 < 2 docky × `stagingPerDock` 4 = 8 kamiónov → občasné `NoWaitingBay` (vertical_slice: 2×); zvážiť 8 stojísk (asset 4×3 to unesie pri rozostupe 32 px) alebo nechať ako signál pre hráča postaviť ďalšie stojisko. — pôvod: T5B-07 · fáza: F13 (balans)
 - `loadTicksPerUnit` 6 (0,6 s pri 1×) je kratší než animácia cúvania (1,6 s); render to dobieha `DOCK_CATCH_UP`. Zvážiť dlhšiu nakládku (zmení balans a goldeny). — pôvod: T5B-07 · fáza: F13 (balans)
 - Manéver kamióna v renderi beží na reálnych hodinách → pri 4×/8× zaostáva za simom; prejsť na hodiny v simovom čase. — pôvod: T5B-07 · fáza: F13 (vizuál)
 - DESIGN_BRIEF §5.1: doplniť, že hrana nábrežia `quay_edge_n` sa otáča o 1–3 štvrťotáčky pre boky mól (žiadne nové assety). — pôvod: T5B-07 · fáza: F13 (dokumentácia)
-- Ceny trás lodí sú v kóde, nie v defe (pravidlo 4): `WaterNavigator` (`src/sim/ships/water-navigator.ts`) má lexikografickú cenu (pohyb, potom manévre; krok bokom a otočenie = 1 manéver) so štrukturálnou škálou z veľkosti mriežky a `logistics.json` nemá `shipNavigation` → presunúť do defu (napr. `sidewaysMoveCost`, `turnCost`) pre prirodzenejšie trasy; pokuta za blízkosť pobrežia/kotvísk v kóde zatiaľ neexistuje, zvážiť ju spolu s tým. — pôvod: T5B-02 (ADR-029) · fáza: F6 (stabilizácia)
 - Konvoje na sea lane (časovo-priestorová rezervácia namiesto rezervácie celej trasy; dnes je na dráhe naraz najviac jedna loď). — pôvod: T5B-02 (ADR-029) · fáza: podľa potreby (desiatky lodí)
 - Validácia mapy pre lodnú dopravu: anchorage mimo obálky sea lane a na otvorenej vode, šírka kanála ≥ `frontWaterCells` + šírka lode + 1. — pôvod: T5B-02 (ADR-029) · fáza: F6 (stabilizácia)
 - Memo kandidátov pre lode pred vstupom podľa triedy lode (dnes sa počíta pre každú loď zvlášť). — pôvod: T5B-02 (ADR-029) · fáza: F6 (profiling)
 - Úprava pobrežia hráčom: drahé mólo a zásyp podľa ADR-028 (príkazy `BuildPier` / `ReclaimLand`, verzia mutácie terénu, prekreslenie terénu, invalidácia `WaterNavigator`). — pôvod: spätná väzba M1 (F5b), ADR-028 · fáza: F12
+
+## Z Fázy 6
+- Toast prekrýva pätu modálneho dialógu: zásobník toastov má z-index nad zásterkou overlayov a modálov (aby boli chyby ukladania a importu vidno pri otvorenom dialógu), takže môže zakryť tlačidlá v päte dialógu (Nastavenia, Uložiť/načítať). — pôvod: T06-03b · fáza: F13 (vizuál)
+- Špička prvého použitia `ShipTraffic`: prvý spawn lode v relácii stojí jednorazovo ~4 ms (tabuľka priechodnosti vody pre prvú veľkosť lode 4,3 ms po úprave zo 6,4 ms, konštruktor `WaterNavigator`, ~10 A* po vode, zahrievanie kódu; ďalšia veľkosť lode ~0,1 ms). Predpočítanie pri `World.create` bolo zamietnuté (spomalilo by tvorbu každého sveta v testoch, ADR-031) → ak špička v hre prekáža, predpočítať mimo `World.create`. — pôvod: T06-07 (ADR-031 bod 6), T06-05 · fáza: F11 (výkon)
+- `truckWaitLimit` a defy ako súčasť kompatibility savu: save nenesie defy ani ich verziu; po zmene balansu (`data/defs/*.json`) obnova zarovná len `waitTicks` kamiónov na hranicu stavu podľa aktuálnych defov (`truckWaitLimit`, ADR-031 dodatok T06-08b), ostatné hodnoty závislé od defov (napr. fázy žeriavu, odpočty vozidiel) preberá zo savu a overuje len voči stavu, nie voči aktuálnym defom. Rozhodnúť politiku kompatibility (zarovnať aj ďalšie odpočty, odmietnuť, alebo napr. uložiť odtlačok defov do obálky a pri nezhode varovať). — pôvod: ADR-031 · fáza: podľa potreby (prvá zmena balansu po vydaní)
+- `AcceptContract` overuje pripravenosť prístavu len pri prijatí: odstránenie žeriavu alebo kotviska po prijatí (pred príchodom lode) sa nekontroluje. — pôvod: T06-07 (ADR-031 bod 1) · fáza: podľa potreby
+- Prirodzenejšie trasy lodí: cena posunu bokom a otočenia ako vážená cena v defe (napr. `shipNavigation.sidewaysMoveCost`, `turnCost` namiesto lexikografickej ceny manévrov, ktorú F6 len presunula do defu ako `turnManeuvers` / `sidewaysManeuvers`), prípadne pokuta za blízkosť pobrežia a kotvísk (v kóde neexistuje). — pôvod: T5B-02 (ADR-029), ADR-031 bod 7 · fáza: podľa potreby
+
+## Vyriešené vo F6
+- §14 SaveGame obálka duplikovala `version` / `seed` / `tick` z `WorldState` — obálka v app vrstve nesie len `saveVersion`, svet verzuje `world.version`. — pôvod: T01-17 · vyriešené: T06-01 (ADR-030), ARCHITECTURE §14 prepísaná v T06-10
+- **AcceptContract bez overenia pripravenosti prístavu** (žeriav kategórie kontraktu, kotvisko pre triedu lode; loď sa mohla zablokovať) — `berthReadiness` → `no_berth_for_ship_class`, `no_crane_for_category`, `berth_unreachable`. — pôvod: T05-10 review · vyriešené: T06-07, T06-08b (ADR-031)
+- **Pool po načítaní v4:** po migrácii v4 → v5 bol pool prázdny až do najbližšej `DayClosed` — pool z save spred kontraktov (v1–v4) sa doplní v prvom ticku po načítaní (`ContractBook.untouched`). — pôvod: T05-10 review · vyriešené: T06-07 (ADR-031 bod 4)
+- Spätný prechod bránou v `gate_queue_out`: dvojité `trucksProcessed` pri odstránení/obnove strany brány — nevzniká od review T04-11 (`completePass` počíta len dokončený prechod), pribudol regresný test aj so save uprostred prerušenia. — pôvod: T04-04, T04-11 · vyriešené: T06-07 (test)
+- Ramp operability cache v dispatcheri: prevádzkovosť rampy aj ceny ciest boli už memo podľa `roadVersion` / `moduleVersion`; zrušenie open outbound jobov teraz beží len po zmene verzií (`OutboundCancelGate`). — pôvod: T04-11, T04-12 · vyriešené: T06-07 (ADR-031 bod 5)
+- WorldState v4 restore: validácia brán, stojísk, rámp a kamiónov pri parse (chýbajúce konektory a moduly) — väzby kamiónov na moduly s cestou poľa (`checkTruckRefs`) a hranica odpočtu (`truckWaitLimit`, zarovnanie pri obnove); ostatné body pokrývala obnova už od T04-04 / T04-11 / ADR-029. — pôvod: T04-04, T04-11 · vyriešené: T06-07, T06-08b (ADR-031)
+- `validate:defs`: krížová kontrola manifest ↔ def — `berth.params.apronSlots` = počet slotov v `assets/manifest.json`, `vehicle_depot.capacity` = stalls, `loading_ramp_*.docks` = docks, `truck_waiting_area.bays` = stalls. — pôvod: T5B-01 · vyriešené: T06-06
+- Konštanty lodnej navigácie v kóde (pravidlo 4): `WaterNavigator` a geometria rezervácií čítajú `logistics.json` → `shipNavigation` (`approachMarginCells`, `sweepStepCells`, `turnManeuvers`, `sidewaysManeuvers`) so schémou a `ShipNavigationDef`. — pôvod: T5B-02 (ADR-029) · vyriešené: T06-07 (ADR-031 bod 7)
 
 ## Nápady
 - Sim vo Web Workeri (ak tick > 8 ms pri 8×). — pôvod: ARCHITECTURE §18 (T00-05) · fáza: F13

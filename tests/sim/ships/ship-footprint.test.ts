@@ -2,9 +2,12 @@
 // trase (`sweepRoute`) — presný pri osových úsekoch, konzervatívny pri šikmých, s natočením kurzu na začiatku úseku.
 import { describe, expect, it } from 'vitest';
 import type { Rotation } from '@sim/grid';
-import { SWEEP_STEP_CELLS, TrafficArea, areasOverlap, boxHitsArea, boxesOverlap, shipBox, sweepRoute, type CellBox, type ShipPoint } from '@sim/ships';
+import { TrafficArea, areasOverlap, boxHitsArea, boxesOverlap, shipBox, sweepRoute, type CellBox, type ShipPoint } from '@sim/ships';
+import { DEFS } from '../world/world-fixtures';
 
 const FEEDER = { lengthCells: 6, widthCells: 2 };
+/** Krok vzorkovania šikmého úseku z `logistics.shipNavigation` (T06-07, predtým `SWEEP_STEP_CELLS`). */
+const STEP = DEFS.logistics.shipNavigation.sweepStepCells;
 
 /** Bunky oblasti ako množina "x,y". */
 function cellsOf(area: TrafficArea): Set<string> {
@@ -49,13 +52,13 @@ describe('prekryv obdĺžnikov a oblastí', () => {
 describe('sweepRoute', () => {
   it('prázdna trasa = obdĺžnik v štarte; vráti štartovú pózu', () => {
     const area = new TrafficArea();
-    expect(sweepRoute(area, FEEDER, { x: 5.5, y: 5.5, heading: 90 }, [])).toEqual({ x: 5.5, y: 5.5, heading: 90 });
+    expect(sweepRoute(area, FEEDER, STEP, { x: 5.5, y: 5.5, heading: 90 }, [])).toEqual({ x: 5.5, y: 5.5, heading: 90 });
     expect(area.boxes).toEqual([shipBox(FEEDER, 5.5, 5.5, 90)]);
   });
 
   it('osový úsek: presne obal obdĺžnikov v koncoch; natočenie na začiatku úseku pridá obdĺžnik s novým kurzom', () => {
     const area = new TrafficArea();
-    const end = sweepRoute(area, FEEDER, { x: 5.5, y: 5.5, heading: 90 }, [{ x: 5.5, y: 15.5 }]);
+    const end = sweepRoute(area, FEEDER, STEP, { x: 5.5, y: 5.5, heading: 90 }, [{ x: 5.5, y: 15.5 }]);
     expect(end).toEqual({ x: 5.5, y: 15.5, heading: 180 });
     const turned = shipBox(FEEDER, 5.5, 5.5, 180);
     const arrived = shipBox(FEEDER, 5.5, 15.5, 180);
@@ -64,7 +67,7 @@ describe('sweepRoute', () => {
 
   it('pevný kurz bodu (posun bokom): kurz sa nemení podľa smeru úseku', () => {
     const area = new TrafficArea();
-    const end = sweepRoute(area, FEEDER, { x: 43, y: 10, heading: 90 }, [{ x: 43, y: 13, heading: 90 }]);
+    const end = sweepRoute(area, FEEDER, STEP, { x: 43, y: 10, heading: 90 }, [{ x: 43, y: 13, heading: 90 }]);
     expect(end.heading).toBe(90);
     // Obal obdĺžnikov v bode priblíženia (y 9–10) a pri kotvisku (y 12–13) = pás x 40–45, y 9–13.
     expect(cellsOf(area)).toEqual(new Set(cellsOfBox({ x0: 40, y0: 9, x1: 46, y1: 14 })));
@@ -74,7 +77,7 @@ describe('sweepRoute', () => {
     const area = new TrafficArea();
     const start = { x: 3.25, y: 4.5, heading: 90 as Rotation };
     const target: ShipPoint = { x: 14.75, y: 9.25 };
-    sweepRoute(area, FEEDER, start, [target]);
+    sweepRoute(area, FEEDER, STEP, start, [target]);
     const cells = cellsOf(area);
     const heading = 90; // |dx| ≥ |dy| → východ
     const samples = 997;
@@ -83,6 +86,6 @@ describe('sweepRoute', () => {
       const y = start.y + ((target.y - start.y) * k) / samples;
       for (const cell of cellsOfBox(shipBox(FEEDER, x, y, heading))) expect(cells.has(cell), `bunka ${cell} v polohe (${String(x)}, ${String(y)})`).toBe(true);
     }
-    expect(SWEEP_STEP_CELLS).toBeGreaterThan(0);
+    expect(STEP).toBeGreaterThan(0);
   });
 });

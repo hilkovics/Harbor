@@ -38,3 +38,5 @@ export {
 export type { PassageBack } from './truck-trip';
 export { spawnTruck, spawnTrucks, truckDefFor } from './truck-spawner';
 export { DockSupply } from './dock-supply';
+export { MIN_STAY_TICKS, truckWaitLimit, waitingStayTicks } from './truck-wait';
+export type { TruckWaitWorld } from './truck-wait';

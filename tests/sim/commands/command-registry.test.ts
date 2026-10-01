@@ -78,7 +78,7 @@ describe('CommandRegistry (kostra T01-03)', () => {
     expect(new CommandRegistry().types).toEqual([]);
   });
 
-  it('VALIDATION_REASONS zodpovedajú „Spoločným rozhraniam" F1 + F2 + F3 + F4 + F5 (staršie ostávajú na začiatku v pôvodnom poradí)', () => {
+  it('VALIDATION_REASONS zodpovedajú „Spoločným rozhraniam" F1 + F2 + F3 + F4 + F5 + F6 (staršie ostávajú na začiatku v pôvodnom poradí)', () => {
     expect([...VALIDATION_REASONS]).toEqual([
       'out_of_bounds',
       'terrain',
@@ -121,6 +121,11 @@ describe('CommandRegistry (kostra T01-03)', () => {
       'unknown_contract',
       'contract_not_offered',
       'game_over',
+      // F6 (T06-07, ADR-031): pripravenosť prístavu pri AcceptContract
+      'no_berth_for_ship_class',
+      'no_crane_for_category',
+      // T06-08b (ADR-031 dodatok): úsek kotvísk je, ale loď k nemu nedopláva
+      'berth_unreachable',
     ]);
     expect(new Set(VALIDATION_REASONS).size).toBe(VALIDATION_REASONS.length);
   });

@@ -9,6 +9,8 @@
  *   „Ukázať“ = centrovanie kamery; kontrakty: nové ponuky, prijatie, výplata, penalizácie, zlyhanie, mesačný výkaz
  *   s akciou „Zobraziť“ = otvorenie panelu kontraktov)
  *   snapshot (kontrakty, XP, delta dňa, gameOver) → ContractsPanel, TopHUD, GameOverModal; „Nová hra“ → `onNewGame`
+ *   World → udalosti (`DayClosed`) → SaveController.handleEvents → autosave (po framu, nikdy v ticku); `Ctrl+S` →
+ *   InputController.onQuickSave → SaveController.quickSave; načítanie/import → `onLoadGame(world)` (runGame reštartuje v pauze)
  *
  * Herný stav (World, GameLoop, Pixi) žije mimo Reactu — React je len vrstva nad mapou, takže StrictMode ani
  * opätovné vykreslenia hru nezdvojujú.
@@ -26,10 +28,13 @@ import { attachDomInput } from './dom-input';
 import { GameLoop, startRafLoop } from './game-loop';
 import { InputController } from './input-controller';
 import { ModuleSelection, bindSelectionRing } from './module-selection';
+import { OverlaySelection } from './overlay-selection';
 import { PanelSelection } from './panel-selection';
 import { RoadSelection } from './road-selection';
+import { SaveController, createPersistence, type PersistenceServices } from './save/save-controller';
 import { SimBridge } from './sim-bridge';
-import { ToastCenter } from './toast-center';
+import { applyStartSpeed } from './start-speed';
+import { ToastCenter, type ToastSpec } from './toast-center';
 
 export interface AppHandle {
   readonly world: World;
@@ -45,8 +50,12 @@ export interface AppHandle {
   readonly roadSelection: RoadSelection;
   /** Otvorený pravý panel (kontrakty); zdieľajú ho HUD, klávesnica a akcia „Zobraziť“ v toastoch. */
   readonly panels: PanelSelection;
+  /** Otvorený overlay (Nastavenia / Uložiť a načítať); kým je otvorený, `attachDomInput` ignoruje herné klávesy. */
+  readonly overlays: OverlaySelection;
   /** Oznámenia zo simu (toasty); odoberá udalosti `bridge.onEvents`. */
   readonly toasts: ToastCenter;
+  /** Ukladanie a načítanie hry (sloty, autosave, export/import, nastavenia); UI ho číta cez `getState`/`subscribe`. */
+  readonly saves: SaveController;
   /** Zastaví slučku, odpojí vstup, zruší React strom a Pixi a odstráni DOM aplikácie. */
   destroy(): void;
 }
@@ -59,6 +68,21 @@ export interface BootstrapOptions {
    * volajúci (`runGame`); bez neho sa stránka načíta odznova.
    */
   readonly onNewGame?: () => void;
+  /**
+   * Načítanie uloženej hry alebo import súboru: `SaveController` obnovil `world` (`World.deserialize`) a žiada reštart
+   * nad ním — zrušenie tejto hry a nový `bootstrap` zariadi volajúci (`runGame`), ktorý ho spustí pozastavený. Bez neho
+   * načítanie a import ohlásia chybu (toast).
+   */
+  readonly onLoadGame?: (world: World) => void;
+  /**
+   * Rýchlosť, ktorú má hra po štarte (príkaz `SetGameSpeed` v prvom frame, `applyStartSpeed`): nová hra `defaultSpeed`
+   * z nastavení, načítaná `0` (pauza). Bez neho ostáva rýchlosť sveta.
+   */
+  readonly startSpeed?: number;
+  /** Toast zaradený hneď po štarte (`runGame` ním po načítaní hry hlási „Načítané“; `ToastCenter` pôvodnej hry sa pri reštarte ruší). */
+  readonly startToast?: ToastSpec;
+  /** Úložisko slotov a nastavení zdieľané medzi reštartmi hry; predvolene `createPersistence()`. */
+  readonly persistence?: PersistenceServices;
 }
 
 /** Zloží fokus z aktívneho prvku UI (klik do mapy vráti klávesy hre). */
@@ -82,6 +106,7 @@ function showFatal(shell: HTMLElement, error: unknown): void {
  */
 export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {}): Promise<AppHandle> {
   const world = options.world ?? createAppWorld();
+  applyStartSpeed(world, options.startSpeed);
   const bridge = new SimBridge(world);
   const loop = new GameLoop(world, bridge);
 
@@ -114,6 +139,36 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
   const startCenter = startViewCenter(world.grid, starterParcelRect(world.map), visibleRows);
   camera.centerOn(startCenter.x, startCenter.y);
 
+  // Kamera: „Ukázať“ v toaste a DEV `centerOn` (e2e) zdieľajú jednu funkciu; `zoom` (1 = bunka `--cell` px) je voliteľný.
+  const centerCamera = (cellX: number, cellY: number, zoom?: number): void => {
+    const { camera: view } = renderer;
+    if (zoom !== undefined) view.zoomAt(zoom / view.zoom, view.viewportWidth / 2, view.viewportHeight / 2);
+    view.centerOn(cellX, cellY);
+  };
+  const panels = new PanelSelection();
+  const overlays = new OverlaySelection();
+  const toasts = new ToastCenter(bridge, {
+    centerOn: (cellX, cellY) => centerCamera(cellX, cellY),
+    openPanel: (panel) => {
+      panels.select(panel);
+    },
+  });
+
+  if (options.startToast !== undefined) toasts.push(options.startToast);
+
+  // Ukladanie hry (T06-03): autosave po framu (`bridge.onEvents` volá `publish` po všetkých tickoch frameu, nie v `world.tick()`).
+  const saves = new SaveController({
+    bridge,
+    persistence: options.persistence ?? createPersistence(),
+    notify: (spec) => {
+      toasts.push(spec);
+    },
+    ...(options.onLoadGame === undefined ? {} : { loadWorld: options.onLoadGame }),
+  });
+  const stopAutosave = bridge.onEvents((events) => {
+    saves.handleEvents(events);
+  });
+
   // Ghost stavby kreslí `renderer.build` (jediná `BuildLayer`, nad žeriavmi); cesty aj moduly, ňou aj obrys výberu.
   const selection = new BuildSelection();
   const moduleSelection = new ModuleSelection();
@@ -130,23 +185,12 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
     onStateChange: (state) => {
       mapHost.dataset.inputState = state;
     },
-  });
-  mapHost.dataset.inputState = input.state;
-  const detachInput = attachDomInput(input, { host: mapHost, window, releaseFocus: releaseDocumentFocus });
-
-  // Kamera: „Ukázať“ v toaste a DEV `centerOn` (e2e) zdieľajú jednu funkciu; `zoom` (1 = bunka `--cell` px) je voliteľný.
-  const centerCamera = (cellX: number, cellY: number, zoom?: number): void => {
-    const { camera: view } = renderer;
-    if (zoom !== undefined) view.zoomAt(zoom / view.zoom, view.viewportWidth / 2, view.viewportHeight / 2);
-    view.centerOn(cellX, cellY);
-  };
-  const panels = new PanelSelection();
-  const toasts = new ToastCenter(bridge, {
-    centerOn: (cellX, cellY) => centerCamera(cellX, cellY),
-    openPanel: (panel) => {
-      panels.select(panel);
+    onQuickSave: () => {
+      saves.quickSave();
     },
   });
+  mapHost.dataset.inputState = input.state;
+  const detachInput = attachDomInput(input, { host: mapHost, window, releaseFocus: releaseDocumentFocus, keysBlocked: overlays.isOpen });
 
   const stopSelectionRing = bindSelectionRing(moduleSelection, bridge, renderer.build);
   const stopRenderEvents = bridge.onEvents((events) => {
@@ -187,7 +231,7 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
   });
 
   const reactRoot = createRoot(uiHost);
-  reactRoot.render(createElement(StrictMode, null, createElement(App, { bridge, feedback: input, selection, moduleSelection, roadSelection, toasts, panels, onNewGame: options.onNewGame })));
+  reactRoot.render(createElement(StrictMode, null, createElement(App, { bridge, feedback: input, selection, moduleSelection, roadSelection, toasts, panels, overlays, saves, onNewGame: options.onNewGame })));
 
   let destroyed = false;
   return {
@@ -200,11 +244,15 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
     moduleSelection,
     roadSelection,
     panels,
+    overlays,
     toasts,
+    saves,
     destroy() {
       if (destroyed) return;
       destroyed = true;
       stopLoop();
+      stopAutosave();
+      saves.dispose();
       stopRenderEvents();
       stopSelectionRing();
       toasts.dispose();

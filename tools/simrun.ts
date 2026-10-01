@@ -1,5 +1,8 @@
 // Headless runner scenára (ARCHITECTURE §16): načíta scenár, odsimuluje N tickov a vypíše report.
-// Spustenie: `pnpm simrun <scenario.json> --ticks N [--report]`. Exit 1 pri akejkoľvek chybe (správa na stderr).
+// Spustenie: `pnpm simrun <scenario.json> --ticks N [--report] [--hash] [--roundtrip-at T]`. Exit 1 pri akejkoľvek chybe
+// (správa na stderr). `--hash` pridá odtlačok stavu na konci (`stateHash`, FNV-1a 32, ADR-030), `--roundtrip-at T` v ticku T
+// svet uloží a znovu načíta (`World.deserialize(JSON.parse(JSON.stringify(world.serialize())))`) a pokračuje — report aj
+// hash musia byť zhodné s behom bez roundtripu (T06-01).
 // Logika je exportovaná (`parseArgs`, `loadScenario`, `runScenario`), CLI sa spustí len pri priamom behu súboru.
 //
 // Beh nad skutočným `World` (od fázy 1): `World.create(defs, mapa, seed)`; príkazy scenára sa vo fronte sveta
@@ -13,7 +16,7 @@ import { loadBundledDefs, type DefRegistry } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
 import { loadBundledMap, loadMap, parseMapDef, type LoadedMap } from '@sim/grid';
 import { CraneModule, TruckGate } from '@sim/modules';
-import { World } from '@sim/world';
+import { World, stateHash, type WorldState } from '@sim/world';
 
 // ---------------------------------------------------------------------------------------------------------
 // Scenár
@@ -158,6 +161,11 @@ export interface SimrunReport {
   readonly tier: number;
   /** Bankrot nastal (`world.gameOver`). */
   readonly gameOver: boolean;
+  /**
+   * Odtlačok stavu na konci behu (`stateHash(world)`: FNV-1a 32 nad `JSON.stringify(serialize())`, 8 hex znakov; ADR-030)
+   * s voľbou `--hash`, inak `null`. Roundtrip (`--roundtrip-at`) ho nesmie zmeniť.
+   */
+  readonly stateHash: string | null;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -168,12 +176,18 @@ export interface SimrunArgs {
   readonly scenarioPath: string;
   readonly ticks: number;
   readonly report: boolean;
+  /** `--hash`: report nesie `stateHash` a zhrnutie ho vypíše na konci. */
+  readonly hash: boolean;
+  /** `--roundtrip-at T`: tick (0 ≤ T < ticks), v ktorom sa svet uloží a znovu načíta; `null` = bez roundtripu. */
+  readonly roundtripAt: number | null;
 }
 
-export const USAGE = 'použitie: pnpm simrun <scenario.json> --ticks N [--report]';
+export const USAGE = 'použitie: pnpm simrun <scenario.json> --ticks N [--report] [--hash] [--roundtrip-at T]';
 
 const TICKS_FLAG = '--ticks';
 const REPORT_FLAG = '--report';
+const HASH_FLAG = '--hash';
+const ROUNDTRIP_FLAG = '--roundtrip-at';
 
 function parseTicks(raw: string | undefined): number {
   if (raw === undefined || raw === '') throw new SimrunError(`${TICKS_FLAG} vyžaduje hodnotu. ${USAGE}`);
@@ -185,12 +199,32 @@ function parseTicks(raw: string | undefined): number {
   return ticks;
 }
 
-/** Spracuje argumenty bez `node`/skriptu. Chyba použitia → `SimrunError`. `--ticks` je povinné. */
+/** Tick roundtripu: desiatkové celé číslo ≥ 0 ("0" áno, "01", "1e3", "-1" nie). */
+function parseRoundtripAt(raw: string | undefined): number {
+  if (raw === undefined || raw === '') throw new SimrunError(`${ROUNDTRIP_FLAG} vyžaduje hodnotu. ${USAGE}`);
+  const tick = /^(?:0|[1-9]\d*)$/.test(raw) ? Number(raw) : Number.NaN;
+  if (!Number.isSafeInteger(tick)) throw new SimrunError(`${ROUNDTRIP_FLAG} musí byť celé číslo ≥ 0, dostal "${raw}"`);
+  return tick;
+}
+
+/**
+ * Spracuje argumenty bez `node`/skriptu. Chyba použitia → `SimrunError`. `--ticks` je povinné; `--roundtrip-at` najviac
+ * raz a menšie než `--ticks` (tick, ktorý beh ešte zastihne pred svojím `tick()`).
+ */
 export function parseArgs(argv: readonly string[]): SimrunArgs {
   let scenarioPath: string | undefined;
   let ticksRaw: string | undefined;
   let ticksGiven = false;
   let report = false;
+  let hash = false;
+  let roundtripRaw: string | undefined;
+  let roundtripGiven = false;
+
+  const takeRoundtrip = (raw: string | undefined): void => {
+    if (roundtripGiven) throw new SimrunError(`${ROUNDTRIP_FLAG} je zadaná viackrát. ${USAGE}`);
+    roundtripGiven = true;
+    roundtripRaw = raw;
+  };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -203,6 +237,13 @@ export function parseArgs(argv: readonly string[]): SimrunArgs {
       ticksRaw = arg.slice(TICKS_FLAG.length + 1);
     } else if (arg === REPORT_FLAG) {
       report = true;
+    } else if (arg === HASH_FLAG) {
+      hash = true;
+    } else if (arg === ROUNDTRIP_FLAG) {
+      takeRoundtrip(argv[i + 1]);
+      i += 1;
+    } else if (arg.startsWith(`${ROUNDTRIP_FLAG}=`)) {
+      takeRoundtrip(arg.slice(ROUNDTRIP_FLAG.length + 1));
     } else if (arg.startsWith('--')) {
       throw new SimrunError(`neznáma voľba ${arg}. ${USAGE}`);
     } else if (scenarioPath === undefined) {
@@ -214,7 +255,12 @@ export function parseArgs(argv: readonly string[]): SimrunArgs {
 
   if (scenarioPath === undefined) throw new SimrunError(`chýba cesta k scenáru. ${USAGE}`);
   if (!ticksGiven) throw new SimrunError(`chýba povinná voľba ${TICKS_FLAG}. ${USAGE}`);
-  return { scenarioPath, ticks: parseTicks(ticksRaw), report };
+  const ticks = parseTicks(ticksRaw);
+  const roundtripAt = roundtripGiven ? parseRoundtripAt(roundtripRaw) : null;
+  if (roundtripAt !== null && roundtripAt >= ticks) {
+    throw new SimrunError(`${ROUNDTRIP_FLAG} ${String(roundtripAt)} musí byť menší než ${TICKS_FLAG} ${String(ticks)}`);
+  }
+  return { scenarioPath, ticks, report, hash, roundtripAt };
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -471,18 +517,50 @@ function countRoads(world: World): number {
   return roads;
 }
 
+/** Voľby behu `runScenario` (CLI `--hash`, `--roundtrip-at`). */
+export interface RunOptions {
+  /** Report nesie `stateHash` (odtlačok stavu na konci); predvolene `false` → `stateHash: null`. */
+  readonly hash?: boolean;
+  /**
+   * Tick (celé číslo, 0 ≤ T < ticks), v ktorom sa svet pred zaradením príkazov s `atTick === T` uloží a znovu načíta
+   * (`roundtripWorld`) a beh pokračuje na obnovenom svete; `null`/chýba = bez roundtripu.
+   */
+  readonly roundtripAt?: number | null;
+}
+
+/**
+ * Save → load ako v hre (ADR-030): `serialize()` → JSON text → `JSON.parse` → `World.deserialize` s tými istými defmi
+ * a mapou. Neplatný stav (`WorldStateError`) alebo iná chyba obnovy → `SimrunError` s tickom.
+ */
+export function roundtripWorld(world: World, defs: DefRegistry): World {
+  const text = JSON.stringify(world.serialize());
+  try {
+    return World.deserialize(defs, world.map, JSON.parse(text) as WorldState);
+  } catch (cause) {
+    throw new SimrunError(`roundtrip v ticku ${String(world.clock.tick)} zlyhal: ${errorMessage(cause)}`);
+  }
+}
+
 /**
  * Odsimuluje `ticks` tickov (kladné celé číslo) a zostaví report. Pred každým tickom sa do fronty sveta zaradia
  * všetky príkazy s `atTick === world.clock.tick` (v poradí zo scenára) a zavolá sa `applyPending()`; odmietnutý
  * príkaz (`CommandRejected`) ukončí beh chybou. Príkazy s `atTick ≥ ticks` sa nevykonajú (`commandsSkipped`).
- * Rovnaký scenár + seed + defy + mapa → identický report.
+ * Rovnaký scenár + seed + defy + mapa → identický report. `options.roundtripAt` = T: keď `clock.tick === T`, svet
+ * sa ešte pred príkazmi ticku T uloží a znovu načíta (`roundtripWorld`); počítadlá udalostí ostávajú v simrune, takže
+ * report (aj `stateHash`) musí byť rovnaký ako bez roundtripu. Tick T beh nezastihne (bankrot zastaví hodiny skôr)
+ * → `SimrunError`.
  */
-export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRegistry): SimrunReport {
+export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRegistry, options: RunOptions = {}): SimrunReport {
   if (!Number.isSafeInteger(ticks) || ticks < 1) {
     throw new SimrunError(`ticks musí byť kladné celé číslo, dostal ${String(ticks)}`);
   }
+  const roundtripAt = options.roundtripAt ?? null;
+  if (roundtripAt !== null && (!Number.isSafeInteger(roundtripAt) || roundtripAt < 0 || roundtripAt >= ticks)) {
+    throw new SimrunError(`roundtripAt musí byť celé číslo 0…${String(ticks - 1)}, dostal ${String(roundtripAt)}`);
+  }
   const entries = parseCommands(scenario);
-  const world = World.create(defs, resolveMap(scenario), scenario.seed);
+  let world = World.create(defs, resolveMap(scenario), scenario.seed);
+  let roundtripDone = false;
 
   const tally: EventTally = {
     shipsSpawned: 0,
@@ -511,6 +589,10 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
   let gateQueueMax = 0;
   let next = 0;
   for (let i = 0; i < ticks; i++) {
+    if (!roundtripDone && world.clock.tick === roundtripAt) {
+      world = roundtripWorld(world, defs);
+      roundtripDone = true;
+    }
     const tick = world.clock.tick;
     while (next < entries.length && entries[next].atTick === tick) {
       world.enqueue(entries[next].command);
@@ -528,6 +610,9 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     if (ticksToAllStored === null && tally.shipsSpawned > 0 && isAllStored(world)) ticksToAllStored = world.clock.tick;
     gateQueueMax = Math.max(gateQueueMax, totalGateQueue(world));
     if (ticksToAllExported === null && tally.shipsSpawned > 0 && isAllExported(world)) ticksToAllExported = world.clock.tick;
+  }
+  if (roundtripAt !== null && !roundtripDone) {
+    throw new SimrunError(`${scenario.id}: roundtrip v ticku ${String(roundtripAt)} nenastal — hodiny sa zastavili v ticku ${String(world.clock.tick)} (koniec hry)`);
   }
 
   return {
@@ -572,10 +657,11 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     wagesCents: tally.wagesCents,
     tier: world.tier,
     gameOver: world.gameOver,
+    stateHash: options.hash === true ? stateHash(world) : null,
   };
 }
 
-/** Jednoriadkové ľudské zhrnutie (výstup bez `--report`). */
+/** Jednoriadkové ľudské zhrnutie (výstup bez `--report`); s `--hash` končí „hash stavu <8 hex>". */
 export function formatSummary(report: SimrunReport): string {
   const metric = (value: number | null): string => (value === null ? 'n/a' : String(value));
   return (
@@ -595,14 +681,18 @@ export function formatSummary(report: SimrunReport): string {
     `kontrakty ponúknuté/prijaté/zlyhané/zaniknuté ${String(report.contractsOffered)}/${String(report.contractsAccepted)}/` +
     `${String(report.contractsFailed)}/${String(report.contractsExpired)}, tier ${String(report.tier)}, ` +
     `tržby ${String(report.revenueCents)}, penalizácie ${String(report.penaltiesCents)}, ` +
-    `údržba ${String(report.maintenanceCents)}, mzdy ${String(report.wagesCents)}, koniec hry ${report.gameOver ? 'áno' : 'nie'}`
+    `údržba ${String(report.maintenanceCents)}, mzdy ${String(report.wagesCents)}, koniec hry ${report.gameOver ? 'áno' : 'nie'}` +
+    (report.stateHash === null ? '' : `, hash stavu ${report.stateHash}`)
   );
 }
 
 function main(argv: readonly string[]): number {
   try {
     const args = parseArgs(argv);
-    const report = runScenario(loadScenario(args.scenarioPath), args.ticks, loadBundledDefs());
+    const report = runScenario(loadScenario(args.scenarioPath), args.ticks, loadBundledDefs(), {
+      hash: args.hash,
+      roundtripAt: args.roundtripAt,
+    });
     // S `--report` ide na stdout IBA JSON (parsovateľný `JSON.parse`), inak jedno riadkové zhrnutie.
     console.log(args.report ? JSON.stringify(report, null, 2) : formatSummary(report));
     return 0;

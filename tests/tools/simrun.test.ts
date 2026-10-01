@@ -5,16 +5,17 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { commandFromJSON, type SerializedCommand } from '@sim/commands';
-import { loadBundledDefs } from '@sim/defs';
+import { DefRegistry, loadBundledDefs } from '@sim/defs';
 import { loadBundledMap } from '@sim/grid';
-import { World } from '@sim/world';
-import { LEGACY_CAPACITY_DEFS } from '../sim/world/world-fixtures';
+import { World, stateHash } from '@sim/world';
+import { LEGACY_CAPACITY_DEFS, RAW_DEFS } from '../sim/world/world-fixtures';
 import {
   SimrunError,
   craneBlockedPercent,
   formatSummary,
   loadScenario,
   parseArgs,
+  roundtripWorld,
   runScenario,
   vehicleUtilPercent,
 } from '../../tools/simrun';
@@ -52,11 +53,13 @@ describe('parseArgs', () => {
       scenarioPath: 'a.json',
       ticks: 1000,
       report: true,
+      hash: false,
+      roundtripAt: null,
     });
   });
 
   it('--report je voliteľné, poradie argumentov nie je dôležité, podporuje --ticks=N', () => {
-    expect(parseArgs(['--ticks=5', 'a.json'])).toEqual({ scenarioPath: 'a.json', ticks: 5, report: false });
+    expect(parseArgs(['--ticks=5', 'a.json'])).toEqual({ scenarioPath: 'a.json', ticks: 5, report: false, hash: false, roundtripAt: null });
   });
 
   it('chýbajúci --ticks → chyba', () => {
@@ -79,6 +82,29 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['--ticks', '5'])).toThrow(/chýba cesta k scenáru/);
     expect(() => parseArgs(['a.json', 'b.json', '--ticks', '5'])).toThrow(/nadbytočný argument "b.json"/);
     expect(() => parseArgs(['a.json', '--ticks', '5', '--verbose'])).toThrow(/neznáma voľba --verbose/);
+  });
+
+  it('--hash a --roundtrip-at T / --roundtrip-at=T (T06-01); 0 je platný tick roundtripu', () => {
+    expect(parseArgs(['a.json', '--ticks', '100', '--hash', '--roundtrip-at', '40'])).toEqual({
+      scenarioPath: 'a.json',
+      ticks: 100,
+      report: false,
+      hash: true,
+      roundtripAt: 40,
+    });
+    expect(parseArgs(['--roundtrip-at=0', 'a.json', '--ticks=1', '--report'])).toMatchObject({ ticks: 1, report: true, hash: false, roundtripAt: 0 });
+    expect(parseArgs(['a.json', '--ticks', '100', '--roundtrip-at', '99']).roundtripAt).toBe(99);
+  });
+
+  it.each(['-1', '1.5', 'abc', '1e3', '0x10', '01', ' 5', '9007199254740993'])('neplatný --roundtrip-at "%s" → chyba', (value) => {
+    expect(() => parseArgs(['a.json', '--ticks', '100', '--roundtrip-at', value])).toThrow(/--roundtrip-at musí byť celé číslo ≥ 0/);
+  });
+
+  it('--roundtrip-at bez hodnoty, zadané dvakrát alebo ≥ --ticks → chyba', () => {
+    expect(() => parseArgs(['a.json', '--ticks', '100', '--roundtrip-at'])).toThrow(/--roundtrip-at vyžaduje hodnotu/);
+    expect(() => parseArgs(['a.json', '--ticks', '100', '--roundtrip-at='])).toThrow(/--roundtrip-at vyžaduje hodnotu/);
+    expect(() => parseArgs(['a.json', '--ticks', '100', '--roundtrip-at', '5', '--roundtrip-at=6'])).toThrow(/zadaná viackrát/);
+    expect(() => parseArgs(['a.json', '--ticks', '100', '--roundtrip-at', '100'])).toThrow(/--roundtrip-at 100 musí byť menší než --ticks 100/);
   });
 });
 
@@ -252,6 +278,7 @@ describe('runScenario', () => {
       wagesCents: 0,
       tier: 0,
       gameOver: false,
+      stateHash: null,
     });
     expect(Object.keys(report)).toEqual([
       'scenario',
@@ -295,6 +322,7 @@ describe('runScenario', () => {
       'wagesCents',
       'tier',
       'gameOver',
+      'stateHash',
     ]);
   });
 
@@ -815,6 +843,77 @@ describe('runScenario', () => {
     });
   });
 
+  describe('--hash a --roundtrip-at (T06-01, ADR-030)', () => {
+    const HEX8 = /^[0-9a-f]{8}$/;
+    const roadsScenario = (): Scenario => withCommands({ atTick: 10, command: PLACE_ROAD }, { atTick: 200, command: REMOVE_ROAD });
+
+    it('hash: stateHash = stateHash sveta po rovnakom replayi (8 hex znakov); bez voľby null a ostatné metriky rovnaké', () => {
+      const scenario = roadsScenario();
+      const report = runScenario(scenario, 300, defs, { hash: true });
+      const world = World.create(defs, loadBundledMap(), scenario.seed);
+      for (let i = 0; i < 300; i++) {
+        for (const entry of scenario.commands) {
+          if (entry.atTick === world.clock.tick) world.enqueue(commandFromJSON(entry.command as SerializedCommand));
+        }
+        world.applyPending();
+        world.tick();
+      }
+      expect(report.stateHash).toMatch(HEX8);
+      expect(report.stateHash).toBe(stateHash(world));
+      const plain = runScenario(scenario, 300, defs);
+      expect(plain.stateHash).toBeNull();
+      expect({ ...report, stateHash: null }).toEqual(plain);
+    });
+
+    it.each([0, 1, 10, 11, 200, 299])('roundtrip v ticku %i (aj pred príkazom toho ticku) → report aj stateHash zhodné s behom bez roundtripu', (at) => {
+      const scenario = roadsScenario();
+      const plain = runScenario(scenario, 300, defs, { hash: true });
+      expect(runScenario(scenario, 300, defs, { hash: true, roundtripAt: at })).toEqual(plain);
+    });
+
+    it('roundtrip uprostred full_import_chain (tick 4 000: kamióny, joby, export) → celý report zhodný s behom bez roundtripu', () => {
+      const scenario = loadScenario(FULL_IMPORT_CHAIN_SCENARIO);
+      const plain = runScenario(scenario, 12_000, defs, { hash: true });
+      expect(plain.trucksSpawned).toBeGreaterThan(0);
+      expect(plain.exportedUnits).toBeGreaterThan(0);
+      expect(runScenario(scenario, 12_000, defs, { hash: true, roundtripAt: 4_000 })).toEqual(plain);
+    }, HEAVY_TIMEOUT_MS);
+
+    it('roundtripWorld: nový svet (nie ten istý objekt) s rovnakým hashom a nezávislým stavom', () => {
+      const world = World.create(defs, loadBundledMap(), SMOKE.seed);
+      for (let i = 0; i < 50; i++) world.tick();
+      const copy = roundtripWorld(world, defs);
+      expect(copy).not.toBe(world);
+      expect(stateHash(copy)).toBe(stateHash(world));
+      copy.tick();
+      expect(world.clock.tick).toBe(50);
+      expect(copy.clock.tick).toBe(51);
+    });
+
+    it.each([-1, 1.5, 10, 11])('roundtripAt %s mimo 0…ticks − 1 → SimrunError', (at) => {
+      expect(() => runScenario(SMOKE, 10, defs, { roundtripAt: at })).toThrow(SimrunError);
+      expect(() => runScenario(SMOKE, 10, defs, { roundtripAt: at })).toThrow(/roundtripAt musí byť celé číslo 0…9/);
+    });
+
+    it('bankrot zastaví hodiny pred tickom roundtripu → SimrunError; roundtrip v ticku bankrotu zachová koniec hry', () => {
+      // startingCashCents 0 a bankruptcyDays 1 → GameOver pri prvej uzávierke dňa (tick 8 640), potom hodiny stoja.
+      const broke = DefRegistry.fromRaw({ ...RAW_DEFS, economy: { ...RAW_DEFS.economy, startingCashCents: 0, bankruptcyDays: 1 } });
+      const ticks = TICKS_PER_DAY + 50;
+      expect(() => runScenario(SMOKE, ticks, broke, { roundtripAt: TICKS_PER_DAY + 10 })).toThrow(
+        new RegExp(`roundtrip v ticku ${String(TICKS_PER_DAY + 10)} nenastal — hodiny sa zastavili v ticku ${String(TICKS_PER_DAY)}`),
+      );
+      const plain = runScenario(SMOKE, ticks, broke, { hash: true });
+      expect(plain).toMatchObject({ gameOver: true, ticks: TICKS_PER_DAY });
+      expect(runScenario(SMOKE, ticks, broke, { hash: true, roundtripAt: TICKS_PER_DAY })).toEqual(plain);
+    }, HEAVY_TIMEOUT_MS);
+
+    it('formatSummary: so stateHash končí „hash stavu <hex>", bez neho hash nespomína', () => {
+      const report = runScenario(SMOKE, 10, defs, { hash: true });
+      expect(formatSummary(report).endsWith(`, hash stavu ${String(report.stateHash)}`)).toBe(true);
+      expect(formatSummary({ ...report, stateHash: null })).not.toContain('hash stavu');
+    });
+  });
+
   describe('mapa scenára', () => {
     let dir: string;
 
@@ -1021,6 +1120,27 @@ describe('CLI (tools/simrun.ts)', () => {
     expect(run.stdout).toBe('');
     expect(run.stderr).toContain('simrun:');
     expect(run.stderr).toContain('sa nedá prečítať');
+  }, 30_000);
+
+  it('--hash → zhrnutie končí hashom stavu; --report --hash → stateHash v JSON; --roundtrip-at dá bajtovo rovnaký výstup', () => {
+    const summary = runCli(SMOKE_SCENARIO, '--ticks', '1000', '--hash');
+    expect(summary.status).toBe(0);
+    const match = /, hash stavu ([0-9a-f]{8})\n$/.exec(summary.stdout);
+    expect(match).not.toBeNull();
+    const roundtrip = runCli(SMOKE_SCENARIO, '--ticks', '1000', '--hash', '--roundtrip-at', '500');
+    expect(roundtrip.status).toBe(0);
+    expect(roundtrip.stdout).toBe(summary.stdout);
+    const report = runCli(SMOKE_SCENARIO, '--ticks', '1000', '--report', '--hash', '--roundtrip-at=999');
+    expect(report.status).toBe(0);
+    expect(report.stderr).toBe('');
+    expect((JSON.parse(report.stdout) as Record<string, unknown>)['stateHash']).toBe(match?.[1]);
+  }, 60_000);
+
+  it('--roundtrip-at ≥ --ticks → exit 1 a správa na stderr', () => {
+    const run = runCli(SMOKE_SCENARIO, '--ticks', '10', '--roundtrip-at', '10');
+    expect(run.status).toBe(1);
+    expect(run.stdout).toBe('');
+    expect(run.stderr).toContain('--roundtrip-at 10 musí byť menší než --ticks 10');
   }, 30_000);
 
   it('chýbajúci --ticks → exit 1 a použitie na stderr', () => {

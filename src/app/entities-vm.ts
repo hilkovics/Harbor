@@ -43,6 +43,7 @@ import { dockHeading, findDockCenter, findStallCenter, type SlotHost } from '@re
 import type { CraneVM, EntitiesVM, ModuleVM, ShipVM, TruckVM, VehicleVM, ViewRotation } from '@render/view-models';
 import type { EntityId } from '@sim/core';
 import { BerthModule, CraneModule, LoadingRamp, StorageModule, TruckGate, WaitingArea, type Module } from '@sim/modules';
+import { SHIP_STATE_TRAITS } from '@sim/ships';
 import type { Truck } from '@sim/trucks';
 import type { World } from '@sim/world';
 import type { StorageOps } from './storage-ops';
@@ -209,10 +210,15 @@ export function craneVMs(world: World): CraneVM[] {
   return result;
 }
 
-/** Lode sveta v poradí `world.ships` (vzostupne podľa id); `prev` z predchádzajúceho ticku (chýba → `prev = curr`). */
+/**
+ * Lode na mape v poradí `world.ships` (vzostupne podľa id); `prev` z predchádzajúceho ticku (chýba → `prev = curr`).
+ * Loď, ktorá ešte nie je na mape (`arriving` — čaká pred vstupom, ADR-029; `SHIP_STATE_TRAITS.onMap`), sa nekreslí, takže
+ * do zoznamu nepatrí; vo chvíli vstupu (`arriving → inbound`) sa objaví na `seaLane[0]` s `prev = curr`.
+ */
 export function shipVMs(world: World, prev: ShipPositions = NO_POSITIONS): ShipVM[] {
   const result: ShipVM[] = [];
   for (const ship of world.ships.values()) {
+    if (!SHIP_STATE_TRAITS[ship.state].onMap) continue;
     const before = prev.get(ship.id);
     result.push({
       id: ship.id,

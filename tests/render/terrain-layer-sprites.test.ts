@@ -31,12 +31,13 @@ describe('TerrainLayer so spritmi (Pixi scene graph bez renderera)', () => {
   });
 
   it('príklady harbor_01 z karty T01-16', () => {
-    expect(layer.tileIdAt(0, 11)).toBe('water_edge_n');
-    expect(layer.tileIdAt(5, 11)).toBe('water_inner_ne');
-    expect(layer.tileIdAt(5, 12)).toBe('water_corner_ne');
-    expect(layer.tileIdAt(9, 13)).toBe('water_edge_e');
-    expect(layer.tileIdAt(10, 14)).toBe('quay_edge_n');
-    expect(layer.tileIdAt(80, 28)).toBe('blocked');
+    expect(layer.tileIdAt(0, 0)).toBe('water_deep');
+    expect(layer.tileIdAt(28, 17)).toBe('water_edge_w');
+    expect(layer.tileIdAt(59, 17)).toBe('water_edge_e');
+    expect(layer.tileIdAt(92, 18)).toBe('water_inner_nw');
+    expect(layer.tileIdAt(34, 33)).toBe('water_corner_sw');
+    expect(layer.tileIdAt(6, 12)).toBe('quay_edge_n');
+    expect(layer.tileIdAt(12, 47)).toBe('blocked');
     expect(layer.tileIdAt(-1, 0)).toBeUndefined();
     expect(layer.tileIdAt(grid.width, 0)).toBeUndefined();
   });
@@ -56,6 +57,34 @@ describe('TerrainLayer so spritmi (Pixi scene graph bez renderera)', () => {
     }
   });
 
+  it('hrana nábrežia s vodou na boku móla je sprite `quay_edge_n` otočený okolo stredu bunky; ostatné sprity sa neotáčajú', () => {
+    const cell = PALETTE.cellPx;
+    const turned = (x: number, y: number): Sprite => layer.view.children[grid.index(x, y)] as Sprite;
+    for (const [x, y, turns] of [
+      [10, 12, 0], // voda na severe
+      [21, 20, 1], // voda na východe
+      [6, 20, 3], // voda na západe
+    ] as const) {
+      const sprite = turned(x, y);
+      expect(layer.tileIdAt(x, y), `(${String(x)}, ${String(y)})`).toBe('quay_edge_n');
+      expect(sprite.rotation).toBeCloseTo((turns * Math.PI) / 2, 12);
+      expect(sprite.width).toBeCloseTo(cell, 6);
+      expect(sprite.height).toBeCloseTo(cell, 6);
+      // bunka ostáva na svojom mieste: ľavý horný roh obrysu sprite je roh bunky aj po otočení
+      const bounds = sprite.getLocalBounds();
+      const topLeft = sprite.toGlobal({ x: bounds.minX, y: bounds.minY });
+      const bottomRight = sprite.toGlobal({ x: bounds.maxX, y: bounds.maxY });
+      expect(Math.min(topLeft.x, bottomRight.x)).toBeCloseTo(x * cell, 6);
+      expect(Math.min(topLeft.y, bottomRight.y)).toBeCloseTo(y * cell, 6);
+      expect(Math.max(topLeft.x, bottomRight.x)).toBeCloseTo((x + 1) * cell, 6);
+      expect(Math.max(topLeft.y, bottomRight.y)).toBeCloseTo((y + 1) * cell, 6);
+    }
+    for (const child of layer.view.children) {
+      const sprite = child as Sprite;
+      if (sprite.texture !== textures.textureFor('terrain/quay_edge_n')) expect(sprite.rotation).toBe(0);
+    }
+  });
+
   it('rozmer vrstvy = mapa × `--cell`', () => {
     const bounds = layer.view.getLocalBounds();
     expect(bounds.minX).toBeCloseTo(0, 6);
@@ -70,7 +99,7 @@ describe('TerrainLayer so spritmi (Pixi scene graph bez renderera)', () => {
     local.rebuild();
     expect(local.view.children).toHaveLength(grid.width * grid.height);
     expect(local.view.children[0]).not.toBe(first);
-    expect(local.tileIdAt(5, 11)).toBe('water_inner_ne');
+    expect(local.tileIdAt(92, 18)).toBe('water_inner_nw');
   });
 
   it('bez textúr ostáva `Graphics` fallback (jeden Graphics, žiadne sprity)', () => {

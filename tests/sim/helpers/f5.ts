@@ -25,7 +25,7 @@ import { DefRegistry, craneParams, storageParams } from '@sim/defs';
 import type { LedgerCategory } from '@sim/economy';
 import type { SimEvent } from '@sim/events';
 import { World } from '@sim/world';
-import { DEFS, MAP, RAW_DEFS } from '../world/world-fixtures';
+import { DEFS, LEGACY_CAPACITY_MODULES, MAP, RAW_DEFS } from '../world/world-fixtures';
 import { auditJobsF4, auditLedgerF4 } from './f4';
 import { f4Scenario, type F4Options } from './f4-layout';
 import { cranesOf, type TimedEvent } from './harbor';
@@ -370,6 +370,8 @@ export interface DefOverrides {
   readonly templates?: readonly TemplateRaw[];
   /** Prepíše polia jednej lodnej triedy (`ships.json`). */
   readonly ship?: { readonly id: string; readonly fields: Readonly<Record<string, unknown>> };
+  /** Pripne pôvodné kapacity spred Fázy 5b (`apronSlots` 4, `stagingPerDock` 2) — pre testy stojace na malom apron/stagingu. */
+  readonly legacyCapacities?: boolean;
 }
 
 export function defsWith(overrides: DefOverrides): DefRegistry {
@@ -382,6 +384,7 @@ export function defsWith(overrides: DefOverrides): DefRegistry {
     economy: { ...RAW_DEFS.economy, ...overrides.economy },
     contract_templates: { ...RAW_DEFS.contract_templates, ...(overrides.templates === undefined ? {} : { items: overrides.templates }) },
     ships,
+    modules: overrides.legacyCapacities === true ? LEGACY_CAPACITY_MODULES : RAW_DEFS.modules,
   });
 }
 

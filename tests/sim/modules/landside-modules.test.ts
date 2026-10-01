@@ -305,7 +305,7 @@ function stageUnits(cargo: CargoLedger, rampId: number, docks: readonly number[]
 describe('LoadingRamp', () => {
   it('parametre z defu a nezverejnený stav: neprevádzková, nepripojená; publishStatus hlási zmenu', () => {
     const ramp = create('loading_ramp_container', LoadingRamp);
-    expect([ramp.docks, ramp.stagingPerDock, ramp.capacity, ramp.category, ramp.params.loadTicksPerUnit]).toEqual([2, 2, 4, 'container', 6]);
+    expect([ramp.docks, ramp.stagingPerDock, ramp.capacity, ramp.category, ramp.params.loadTicksPerUnit]).toEqual([2, 4, 8, 'container', 6]);
     expect([ramp.operational, ramp.inoperativeReason]).toEqual([false, 'not_connected']);
     expect(ramp.publishStatus({ operational: false, reason: 'not_connected' })).toBe(true);
     expect(ramp.publishStatus({ operational: false, reason: 'not_connected' })).toBe(false);
@@ -318,18 +318,17 @@ describe('LoadingRamp', () => {
 
   it('rezervácie na dockoch: reserve / freeAt / firstFreeDock / release; plný dock → no_free_slot', () => {
     const ramp = create('loading_ramp_container', LoadingRamp);
-    expect([ramp.freeCount, ramp.firstFreeDock()]).toEqual([4, 0]);
-    ramp.reserve(0);
-    ramp.reserve(0);
-    expect([ramp.reservedAt(0), ramp.freeAt(0), ramp.freeAt(1), ramp.firstFreeDock(), ramp.reservedCount]).toEqual([2, 0, 2, 1, 2]);
+    const per = ramp.stagingPerDock;
+    expect([ramp.freeCount, ramp.firstFreeDock()]).toEqual([2 * per, 0]);
+    for (let i = 0; i < per; i++) ramp.reserve(0);
+    expect([ramp.reservedAt(0), ramp.freeAt(0), ramp.freeAt(1), ramp.firstFreeDock(), ramp.reservedCount]).toEqual([per, 0, per, 1, per]);
     expect(errorCode(() => ramp.reserve(0))).toBe('no_free_slot');
-    ramp.reserve(1);
-    ramp.reserve(1);
+    for (let i = 0; i < per; i++) ramp.reserve(1);
     expect([ramp.freeCount, ramp.firstFreeDock()]).toEqual([0, -1]);
     ramp.release(1);
-    expect([ramp.reservedAt(1), ramp.firstFreeDock()]).toEqual([1, 1]);
-    expect(ramp.cargoReservations()).toEqual({ kind: 'at_ramp', count: 3 });
-    ramp.release(1);
+    expect([ramp.reservedAt(1), ramp.firstFreeDock()]).toEqual([per - 1, 1]);
+    expect(ramp.cargoReservations()).toEqual({ kind: 'at_ramp', count: 2 * per - 1 });
+    for (let i = 0; i < per - 1; i++) ramp.release(1);
     expect(errorCode(() => ramp.release(1))).toBe('slot_not_reserved');
     expect(errorCode(() => ramp.reserve(2))).toBe('invalid_slot');
     expect(errorCode(() => ramp.stagedAt(-1))).toBe('invalid_slot');
@@ -348,12 +347,12 @@ describe('LoadingRamp', () => {
     expect(errorCode(() => ramp.commit(1, unit.id))).toBe('unit_not_at_slot');
     cargo.move(unit.id, { kind: 'at_ramp', rampId: ramp.id, dock: 1 });
     ramp.commit(1, unit.id);
-    expect([ramp.stagedAt(1), ramp.reservedAt(1), ramp.stagedAt(0), ramp.stagedCount, ramp.freeCount]).toEqual([1, 0, 0, 1, 3]);
+    expect([ramp.stagedAt(1), ramp.reservedAt(1), ramp.stagedAt(0), ramp.stagedCount, ramp.freeCount]).toEqual([1, 0, 0, 1, 2 * ramp.stagingPerDock - 1]);
 
     const [a, b] = stageUnits(cargo, 50, [0, 0]);
     expect([ramp.firstUnitAt(0), ramp.firstUnitAt(1)]).toEqual([a, unit.id]);
     expect(ramp.unitsAt(0)).toEqual([a, b]);
-    expect([ramp.freeAt(0), ramp.firstFreeDock()]).toEqual([0, 1]);
+    expect([ramp.freeAt(0), ramp.firstFreeDock()]).toEqual([ramp.stagingPerDock - 2, 0]);
     cargo.move(a, { kind: 'in_truck', truckId: id(902) });
     expect([ramp.firstUnitAt(0), ramp.stagedAt(0)]).toEqual([b, 1]);
     expect(ramp.findRuntimeProblem()).toBeUndefined();
@@ -373,11 +372,12 @@ describe('LoadingRamp', () => {
   it('findRuntimeProblem: jednotka na docku mimo rozsahu, dock nad kapacitou (staged + reserved)', () => {
     const cargo = emptyCargo(DEFS);
     const ramp = create('loading_ramp_container', LoadingRamp, cargo, 50);
-    stageUnits(cargo, 50, [1]);
+    const per = ramp.stagingPerDock;
+    stageUnits(cargo, 50, Array<number>(per - 1).fill(1));
     ramp.reserve(1);
     expect(ramp.findRuntimeProblem()).toBeUndefined();
     stageUnits(cargo, 50, [1]);
-    expect(ramp.findRuntimeProblem()).toMatch(/dock 1: pripravené 2 \+ rezervované 1 > 2/);
+    expect(ramp.findRuntimeProblem()).toMatch(new RegExp(`dock 1: pripravené ${String(per)} \\+ rezervované 1 > ${String(per)}`));
 
     const other = create('loading_ramp_container', LoadingRamp, cargo, 60);
     const [far] = stageUnits(cargo, 60, [5]);

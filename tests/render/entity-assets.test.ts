@@ -23,7 +23,7 @@ import { TEU_PX } from '@render/world-scale';
 import { ENTITY_PALETTE, PALETTE, StubTextures } from './stub-textures';
 
 describe('záznamy manifestu pre entity', () => {
-  it('berth_standard: footprint 8×3, 4 apron sloty v strednom riadku, 2 konektory na južnej hrane', () => {
+  it('berth_standard: footprint 8×3, 8 apron slotov (prvé štyri v strednom riadku pri žeriave), 2 konektory na južnej hrane', () => {
     const berth = moduleSprite('berth_standard');
     expect(berth?.footprint).toEqual({ w: 8, h: 3 });
     expect(berth?.apronSlots).toEqual([
@@ -31,6 +31,10 @@ describe('záznamy manifestu pre entity', () => {
       { x: 2, y: 1 },
       { x: 5, y: 1 },
       { x: 6, y: 1 },
+      { x: 0, y: 1 },
+      { x: 7, y: 1 },
+      { x: 2, y: 2 },
+      { x: 5, y: 2 },
     ]);
     expect(berth?.connectors.map((c) => c.side)).toEqual(['s', 's']);
   });

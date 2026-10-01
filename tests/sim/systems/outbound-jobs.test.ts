@@ -16,18 +16,27 @@ import { World, WorldStateError, findWorldViolation, type WorldState } from '@si
 import { NEAR_YARD_OUTSIDE, segment } from '../helpers/f3-layout';
 import { unitsOnApron } from '../logistics/dispatch-fixtures';
 import {
+  LEGACY_NO_CONTAINER_TRUCK_DEFS,
   RAMP_ORIGIN,
   buyVehicles,
   execute,
   gateOf,
   landsideCommand,
   ofType,
-  outboundWorld,
+  outboundWorld as buildOutboundWorld,
   rampOf,
   stagingOf,
   stockYard,
+  type OutboundOptions,
 } from '../logistics/outbound-fixtures';
-import { DEFS, MAP, RAW_DEFS } from '../world/world-fixtures';
+import { DEFS, LEGACY_CAPACITY_DEFS, MAP, RAW_DEFS } from '../world/world-fixtures';
+
+/**
+ * Celý súbor stojí na pôvodnom stagingu 2 × 2 (plný staging, poradie dockov 0, 0, 1, 1) — Fáza 5b zväčšila
+ * `stagingPerDock` na 4, preto svet dostane pripnuté pôvodné kapacity (`LEGACY_NO_CONTAINER_TRUCK_DEFS`), ak test nedá vlastné defy.
+ */
+const outboundWorld = (options: OutboundOptions = {}): ReturnType<typeof buildOutboundWorld> =>
+  buildOutboundWorld({ defs: LEGACY_NO_CONTAINER_TRUCK_DEFS, ...options });
 
 interface Timed {
   readonly tick: number;
@@ -441,7 +450,7 @@ describe('save a invarianty kroku 12', () => {
 
   function stateError(state: unknown): WorldStateError {
     try {
-      World.deserialize(DEFS, MAP, state as WorldState);
+      World.deserialize(LEGACY_CAPACITY_DEFS, MAP, state as WorldState);
     } catch (error) {
       if (error instanceof WorldStateError) return error;
       throw error;

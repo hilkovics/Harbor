@@ -13,6 +13,7 @@ import {
   DEEP_ZONE_BERTH,
   EAST_BERTH,
   GAP_BERTH,
+  SHALLOW_NEIGHBOR_BERTH,
   ROOT_BERTH_ID,
   SHIP_DEFS,
   WEST_BERTH,
@@ -105,8 +106,8 @@ describe('allocateBerths — žeriav, obsadenosť, hĺbka, šírka', () => {
   it('ponor po kotviskách (T02-14): hlboký úsek vyhovuje aj vedľa plytkého suseda v tej istej skupine', () => {
     const world = newWorld();
     const deep = placeModule(world, DEEP_BERTH, DEEP_ZONE_BERTH);
-    const shallow = placeModule(world, 'berth_standard', GAP_BERTH);
-    placeModule(world, CRANE, { x: 25, y: 14 });
+    const shallow = placeModule(world, 'berth_standard', SHALLOW_NEIGHBOR_BERTH);
+    placeModule(world, CRANE, { x: 9, y: 12 });
     const group = world.berthGroups.find((candidate) => candidate.berthIds.includes(deep));
     expect(group).toMatchObject({ berthIds: [deep, shallow], totalLength: 16, minDepth: 1 });
     expect([berth(world, deep).depthClass, berth(world, shallow).depthClass]).toEqual([2, 1]);
@@ -121,8 +122,8 @@ describe('allocateBerths — žeriav, obsadenosť, hĺbka, šírka', () => {
   it('ponor po kotviskách: žeriav len na plytkom kotvisku → hlboká loď null, plytká dostane plytké kotvisko', () => {
     const world = newWorld();
     placeModule(world, DEEP_BERTH, DEEP_ZONE_BERTH);
-    const shallow = placeModule(world, 'berth_standard', GAP_BERTH);
-    placeModule(world, CRANE, { x: 33, y: 14 });
+    const shallow = placeModule(world, 'berth_standard', SHALLOW_NEIGHBOR_BERTH);
+    placeModule(world, CRANE, { x: 17, y: 12 });
     expect(ids(world, request(DEEP_SHIP))).toBeNull();
     expect(ids(world, request('feeder'))).toEqual([shallow]);
   });

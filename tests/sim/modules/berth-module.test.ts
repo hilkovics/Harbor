@@ -34,7 +34,7 @@ describe('BerthModule — geometria', () => {
     const standard = berthOn(quayGrid(20, 20), 1, { x: 0, y: 0 });
     const deep = berthOn(quayGrid(20, 20), 2, { x: 0, y: 5 }, 0, DEEP_BERTH);
     expect(standard.apron).toBeInstanceOf(ApronBuffer);
-    expect(standard.apron.capacity).toBe(4);
+    expect(standard.apron.capacity).toBe(8);
     expect(deep.apron.capacity).toBe(6);
   });
 
@@ -62,18 +62,20 @@ describe('BerthModule — geometria', () => {
 });
 
 describe('BerthModule — efektívna hĺbka (rozhodnutie 4)', () => {
-  // harbor_01: hĺbka nábrežia x 10–29 → 2, x 30–57 → 1, x 58–59 → 1 (mimo zón), x 60–85 → 3.
-  const CASES: readonly [string, string, number, number][] = [
-    ['štandardný (1) na hĺbke 1', BERTH, 40, 1],
-    ['štandardný (1) na hĺbke 3 — obmedzuje typ kotviska', BERTH, 70, 1],
-    ['hlboký (3) na hĺbke 3', DEEP_BERTH, 70, 3],
-    ['hlboký (3) na hĺbke 2 — obmedzuje mapa', DEEP_BERTH, 12, 2],
-    ['hlboký (3) na hĺbke 1', DEEP_BERTH, 40, 1],
-    ['hlboký (3) cez hranicu zón 2 | 1 (x 26–33) — najplytšia bunka', DEEP_BERTH, 26, 1],
-    ['hlboký (3) cez x 58–65 (1 mimo zón | 3) — najplytšia bunka', DEEP_BERTH, 58, 1],
+  // harbor_01: hĺbka nábrežia — hlava móla W1 (y 12–14): x 6–13 → 2, x 14–21 → 1; okraje móla W1 (y 15–46): západný x 6–8 → 2,
+  // východný x 19–21 → 1; starter x 30–57 → 1 (ostrôžky x 28–29 a 58–59 mimo zón → 1); mólo E1 (x 66–81, y 12–46) → 3.
+  type Place = { readonly x: number; readonly y: number; readonly rotation: 0 | 90 | 180 | 270 };
+  const CASES: readonly [string, string, Place, number][] = [
+    ['štandardný (1) na hĺbke 1', BERTH, { x: 40, y: 14, rotation: 0 }, 1],
+    ['štandardný (1) na hĺbke 3 — obmedzuje typ kotviska', BERTH, { x: 66, y: 12, rotation: 0 }, 1],
+    ['hlboký (3) na hĺbke 3', DEEP_BERTH, { x: 66, y: 12, rotation: 0 }, 3],
+    ['hlboký (3) na hĺbke 2 — obmedzuje mapa', DEEP_BERTH, { x: 6, y: 12, rotation: 0 }, 2],
+    ['hlboký (3) na hĺbke 1', DEEP_BERTH, { x: 40, y: 14, rotation: 0 }, 1],
+    ['hlboký (3) cez hranicu zón 2 | 1 (hlava móla W1, x 10–17) — najplytšia bunka', DEEP_BERTH, { x: 10, y: 12, rotation: 0 }, 1],
+    ['hlboký (3) na západnom okraji móla W1 (rot 270, y 20–27) — zóna 2', DEEP_BERTH, { x: 6, y: 20, rotation: 270 }, 2],
   ];
-  it.each(CASES)('%s', (_name, defId, x, expected) => {
-    const berth = berthOn(MAP.createGrid(), 1, { x, y: 14 }, 0, defId);
+  it.each(CASES)('%s', (_name, defId, place, expected) => {
+    const berth = berthOn(MAP.createGrid(), 1, { x: place.x, y: place.y }, place.rotation, defId);
     expect(berth.depthClass).toBe(expected);
   });
 

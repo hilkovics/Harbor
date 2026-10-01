@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Grid, loadBundledMap, terrainFromChar } from '@sim/grid';
-import { coastTile, coastWaterMask, type CoastTileId } from '@render/coast';
+import { coastQuarterTurns, coastTile, coastWaterMask, type CoastTileId } from '@render/coast';
 import { terrain as terrainManifest } from '../../assets/manifest.json';
 
 /** Mriežka podľa riadkov znakov mapy: `~` hlboká, `=` plytká voda, `Q` nábrežie, `.` pevnina, `#` blokované. */
@@ -62,9 +62,28 @@ describe('coastTile: nábrežie', () => {
     expect(coastTile(gridOf(['Q']), 0, 0)).toBe('quay');
   });
 
-  it('voda len na východe, juhu alebo západe → quay (hrana je iba na severe)', () => {
-    expect(coastTile(gridOf(['=Q=']), 1, 0)).toBe('quay');
-    expect(coastTile(gridOf(['.', 'Q', '=']), 0, 1)).toBe('quay');
+  it('voda na východe, juhu alebo západe → tiež hrana nábrežia (sprite `quay_edge_n` otočený o 1, 2, 3 štvrťotáčky)', () => {
+    const east = gridOf(['Q=']);
+    const south = gridOf(['.', 'Q', '=']);
+    const west = gridOf(['=Q']);
+    expect([coastTile(east, 0, 0), coastQuarterTurns(east, 0, 0)]).toEqual(['quay_edge_n', 1]);
+    expect([coastTile(south, 0, 1), coastQuarterTurns(south, 0, 1)]).toEqual(['quay_edge_n', 2]);
+    expect([coastTile(west, 1, 0), coastQuarterTurns(west, 1, 0)]).toEqual(['quay_edge_n', 3]);
+  });
+
+  it('voda na severe sa neotáča; pri vode na viacerých stranách platí prvá v poradí N, E, S, W', () => {
+    expect(coastQuarterTurns(gridOf(['=', 'Q']), 0, 1)).toBe(0);
+    expect(coastQuarterTurns(gridOf(['=Q=']), 1, 0)).toBe(1); // E pred W
+    expect(coastQuarterTurns(gridOf(['.=.', '=Q=', '.=.']), 1, 1)).toBe(0); // N pred E, S, W
+    expect(coastQuarterTurns(gridOf(['.', 'Q', '=']), 0, 1)).toBe(2);
+    expect(coastQuarterTurns(gridOf(['=Q']), 1, 0)).toBe(3);
+  });
+
+  it('bez vody (quay), pevnina a voda sa neotáčajú', () => {
+    expect(coastQuarterTurns(gridOf(['Q', 'Q']), 0, 1)).toBe(0);
+    expect(coastQuarterTurns(gridOf(['=.=']), 1, 0)).toBe(0); // pevnina má vlastné sprity pre všetky strany
+    expect(coastQuarterTurns(gridOf(['~=']), 1, 0)).toBe(0);
+    expect(coastQuarterTurns(gridOf(['=#=']), 1, 0)).toBe(0);
   });
 });
 
@@ -169,18 +188,24 @@ describe('coastTile: harbor_01', () => {
   const grid = loadBundledMap().createGrid();
 
   it.each([
-    [0, 11, 'water_edge_n'],
-    [5, 11, 'water_inner_ne'],
-    [9, 12, 'water_inner_ne'],
-    [5, 12, 'water_corner_ne'],
-    [9, 13, 'water_edge_e'],
-    [86, 13, 'water_edge_w'],
-    [90, 11, 'water_inner_nw'],
-    [10, 14, 'quay_edge_n'],
-    [10, 15, 'quay'],
-    [80, 28, 'blocked'],
-    [0, 12, 'land'],
-    [2, 12, 'land_alt'],
+    [0, 0, 'water_deep'],
+    [2, 8, 'water_shallow'],
+    [6, 12, 'quay_edge_n'],
+    [6, 13, 'quay_edge_n'], // voda na západe (5, 13): hrana nábrežia je aj na bokoch móla
+    [7, 20, 'quay'],
+    [10, 15, 'land'],
+    [9, 15, 'land_alt'],
+    [28, 17, 'water_edge_w'],
+    [59, 17, 'water_edge_e'],
+    [29, 33, 'water_edge_s'],
+    [92, 18, 'water_inner_nw'],
+    [28, 33, 'water_inner_sw'],
+    [59, 33, 'water_inner_se'],
+    [34, 33, 'water_corner_sw'],
+    [53, 33, 'water_corner_se'],
+    [6, 50, 'water_corner_nw'],
+    [21, 50, 'water_corner_ne'],
+    [12, 47, 'blocked'],
   ] as const)('(%i, %i) → %s', (x, y, expected) => {
     expect(coastTile(grid, x, y)).toBe(expected);
   });
@@ -192,17 +217,22 @@ describe('coastTile: harbor_01', () => {
       for (let x = 0; x < grid.width; x++) used.add(coastTile(grid, x, y));
     }
     for (const id of used) expect(known.has(id), id).toBe(true);
-    // Mapa má pobrežie zo všetkých strán, obidva rohy a nábrežie: aspoň tieto prechody sa reálne použijú.
+    // Mapa má pobrežie zo všetkých strán, vnútorné aj vonkajšie rohy a nábrežie mól: aspoň tieto prechody sa reálne použijú.
     expect([...used]).toEqual(
       expect.arrayContaining([
         'water_deep',
         'water_shallow',
         'water_edge_n',
         'water_edge_e',
+        'water_edge_s',
         'water_edge_w',
-        'water_inner_ne',
         'water_inner_nw',
+        'water_inner_se',
+        'water_inner_sw',
         'water_corner_ne',
+        'water_corner_nw',
+        'water_corner_se',
+        'water_corner_sw',
         'quay',
         'quay_edge_n',
         'land',
@@ -255,5 +285,40 @@ describe('coastTile vs. manifest (waterSides / waterCorner / landCorner)', () =>
   it('`quay_edge_n` je nábrežie s vodou na severe', () => {
     expect((terrainManifest.quay_edge_n as { waterSides: string[] }).waterSides).toEqual(['n']);
     expect(coastTile(gridOf(['=', 'Q']), 0, 1)).toBe('quay_edge_n');
+  });
+});
+
+describe('hrany nábrežia mól harbor_01 vo všetkých štyroch smeroch (Fáza 5b)', () => {
+  const grid = loadBundledMap().createGrid();
+
+  it.each([
+    [10, 12, 0], // voda na severe (hlava móla)
+    [6, 20, 3], // voda na západe (západný bok západného móla)
+    [21, 20, 1], // voda na východe (východný bok západného móla)
+    [66, 20, 3], // voda na západe (východné mólo)
+    [81, 20, 1], // voda na východe (východné mólo)
+  ] as const)('(%i, %i) → `quay_edge_n` otočený o %i štvrťotáčky', (x, y, turns) => {
+    expect(coastTile(grid, x, y)).toBe('quay_edge_n');
+    expect(coastQuarterTurns(grid, x, y)).toBe(turns);
+  });
+
+  it('nábrežie s vodou na juhu (sprite otočený o 2) sa v mape nenachádza, ostatné tri smery áno', () => {
+    const seen = new Set<number>();
+    for (let y = 0; y < grid.height; y++) {
+      for (let x = 0; x < grid.width; x++) {
+        if (grid.at(x, y).terrain === 'quay') seen.add(coastQuarterTurns(grid, x, y));
+      }
+    }
+    expect([...seen].sort()).toEqual([0, 1, 3]);
+  });
+
+  it('každé nábrežie s vodou na 4-susedovi má hranu (žiadna nábrežná bunka pri vode nezostane „plná“)', () => {
+    for (let y = 0; y < grid.height; y++) {
+      for (let x = 0; x < grid.width; x++) {
+        if (grid.at(x, y).terrain !== 'quay') continue;
+        const wet = coastWaterMask(grid, x, y) !== 0;
+        expect(coastTile(grid, x, y), `(${String(x)}, ${String(y)})`).toBe(wet ? 'quay_edge_n' : 'quay');
+      }
+    }
   });
 });

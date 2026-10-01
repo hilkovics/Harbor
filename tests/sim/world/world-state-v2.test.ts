@@ -122,7 +122,7 @@ describe('WorldState v2 — moduly v save', () => {
     expect(a.apron.reservedSlots()).toEqual([1]);
     expect(b.apron.units()).toEqual([7, 8]);
     expect([b.apron.slotOf(id(7)), b.apron.slotOf(id(8))]).toEqual([2, 0]);
-    expect([b.apron.usedCount, b.apron.reservedCount, b.apron.capacity]).toEqual([2, 0, 4]);
+    expect([b.apron.usedCount, b.apron.reservedCount, b.apron.capacity]).toEqual([2, 0, 8]);
     expect(c1.heldUnitId).toBe(6);
     expect(c1.reservedSlot).toBe(1);
     expect(c2.heldUnitId).toBeNull();
@@ -214,7 +214,7 @@ describe('WorldState v2 — neplatné moduly a náklad → WorldStateError', () 
     ['žeriav v placing bez jednotky in_crane', '/modules/1/runtime/state', (s) => (s.cargo.units[0].location = { kind: 'on_apron', berthId: 4, slot: 1 })],
     ['blokovaný žeriav drží jednotku', '/modules/2/runtime/state', (s) => (s.cargo.units[1].location = { kind: 'in_crane', craneId: 3 })],
     ['jednotka na neexistujúcom berthe', '/cargo/units/1/location/berthId', (s) => (s.cargo.units[1].location.berthId = 7)],
-    ['jednotka na slote mimo apronu', '/cargo/units/1/location/slot', (s) => (s.cargo.units[1].location.slot = 4)],
+    ['jednotka na slote mimo apronu', '/cargo/units/1/location/slot', (s) => (s.cargo.units[1].location.slot = 8)],
     ['jednotka na slote rezervovanom žeriavom', '/cargo/units/1/location/slot', (s) => (s.cargo.units[1].location.slot = 1)],
     ['jednotka „v žeriave" berthu', '/cargo/units/0/location/craneId', (s) => (s.cargo.units[0].location = { kind: 'in_crane', craneId: 1 })],
     ['dve jednotky v jednom žeriave', '/cargo/units/1/location/craneId', (s) => (s.cargo.units[1].location = { kind: 'in_crane', craneId: 2 })],

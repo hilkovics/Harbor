@@ -177,7 +177,7 @@ describe('bundled katalógy (loadBundledDefs)', () => {
       { x: 2, y: 1, side: 's', type: 'road' },
     ]);
     expect([ramp.costCents, ramp.maintenancePerDayCents]).toEqual([10_000_000, 20_000]);
-    expect(ramp.params).toEqual({ docks: 2, stagingPerDock: 2, loadTicksPerUnit: 6, category: 'container' });
+    expect(ramp.params).toEqual({ docks: 2, stagingPerDock: 4, loadTicksPerUnit: 6, category: 'container' });
   });
 
   it('trucks: truck_container podľa T04-01', () => {
@@ -219,7 +219,7 @@ describe('bundled katalógy (loadBundledDefs)', () => {
 
   it('typované gettery storageParams / depotParams', () => {
     expect(storageParams(defs.modules.get('container_yard_small'))).toEqual({ capacityUnits: 64, category: 'container' });
-    expect(depotParams(defs.modules.get('vehicle_depot'))).toEqual({ capacity: 6 });
+    expect(depotParams(defs.modules.get('vehicle_depot'))).toEqual({ capacity: 10 });
   });
 
   it('typované gettery gateParams / waitingAreaParams / rampParams', () => {
@@ -227,7 +227,7 @@ describe('bundled katalógy (loadBundledDefs)', () => {
     expect(waitingAreaParams(defs.modules.get('truck_waiting_area'))).toEqual({ bays: 6 });
     expect(rampParams(defs.modules.get('loading_ramp_container'))).toEqual({
       docks: 2,
-      stagingPerDock: 2,
+      stagingPerDock: 4,
       loadTicksPerUnit: 6,
       category: 'container',
     });
@@ -236,7 +236,7 @@ describe('bundled katalógy (loadBundledDefs)', () => {
   it('typované gettery berthParams / craneParams', () => {
     expect(berthParams(defs.modules.get('berth_standard'))).toEqual({
       depthClass: 1,
-      apronSlots: 4,
+      apronSlots: 8,
       maxCranes: 2,
       frontWaterCells: 3,
     });

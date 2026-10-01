@@ -17,7 +17,7 @@ import type { SimEvent } from '@sim/events';
 import modulesJson from '@data/defs/modules.json';
 import { DefRegistry } from '@sim/defs';
 import { World } from '@sim/world';
-import { DEFS, MAP, RAW_DEFS } from '../world/world-fixtures';
+import { DEFS, LEGACY_CAPACITY_DEFS, MAP, RAW_DEFS } from '../world/world-fixtures';
 import {
   EAST_BERTH_CELL,
   ROOT_BERTH_CELL,
@@ -160,7 +160,8 @@ describe('konzervácia nákladu: 5 000 tickov (f2_unload + druhý feeder so 6 TE
   let secondShip: EntityId;
 
   beforeAll(() => {
-    world = World.create(DEFS, MAP, scenario.seed);
+    // Test stojí na plnom aprone 4/4 (druhá loď s 6 TEU ostane nevyložená) → pripnutý pôvodný balans (Fáza 5b: apron 8).
+    world = World.create(LEGACY_CAPACITY_DEFS, MAP, scenario.seed);
     rootBerthId = berthAt(world, ROOT_BERTH_CELL).id;
     // `recordRun` po každom ticku volá `assertCargoConservation(world)` aj nezávislý `auditLedger(world)`.
     log = recordRun(world, scenario, RUN_TICKS, { onTick: (w) => samples.push(sampleLedger(w)) });

@@ -272,11 +272,11 @@ describe('App: inšpektor modulu vpravo (T02-10)', () => {
     expect(html).toMatch(/aria-disabled="false"[^>]*data-action="remove"/);
   });
 
-  it('vybrané Root kotvisko: apron 0 / 4 a zablokované Odstrániť s dôvodom', () => {
+  it('vybrané Root kotvisko: apron 0 / 8 a zablokované Odstrániť s dôvodom', () => {
     const selection = new ModuleSelection();
     selection.select(1 as EntityId);
     const html = render(selection);
-    expect(html).toContain('0 / 4 slotov');
+    expect(html).toContain('0 / 8 slotov');
     expect(html).toMatch(/aria-disabled="true"[^>]*data-action="remove"/);
     expect(html).toContain('Na kotvisku stoja žeriavy');
   });

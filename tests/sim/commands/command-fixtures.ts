@@ -1,14 +1,14 @@
 // Spoločné pomôcky pre testy príkazov (T01-04). Bunky sa hľadajú v mape harbor_01 podľa vlastností
-// (terén, parcela, cesta), nie natvrdo — okrem bunky (0, 11), ktorú menuje karta T01-04.
+// (terén, parcela, cesta), nie natvrdo — okrem bunky (0, 54), ktorú pomenúva test (pôvodne (0, 11) z karty T01-04; Fáza 5b ju zmenila na more).
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
 import { DefRegistry } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
 import type { CellCoord, Cell } from '@sim/grid';
 import { World } from '@sim/world';
-import { BARE_MAP, DEFS, MAP, MAP_GRID, RAW_DEFS, SEED, findCell, hashState } from '../world/world-fixtures';
+import { BARE_MAP, DEFS, LEGACY_CAPACITY_DEFS, MAP, MAP_GRID, RAW_DEFS, SEED, findCell, hashState } from '../world/world-fixtures';
 
-export { BARE_MAP, DEFS, MAP, SEED, findCell, hashState };
+export { BARE_MAP, DEFS, LEGACY_CAPACITY_DEFS, MAP, SEED, findCell, hashState };
 
 export const ROAD_COST = DEFS.infrastructure.road.costPerCellCents;
 export const REFUND_RATE = DEFS.economy.removalRefundRate;
@@ -69,7 +69,7 @@ export const OTHER_FOR_SALE_PARCEL_ID = (() => {
 /** Reprezentatívne bunky harbor_01 (všetky bez cesty, ak nie je uvedené inak). */
 export const CELLS = {
   /** Verejná bunka pevniny menovaná v karte T01-04. */
-  publicLandNamed: { x: 0, y: 11 },
+  publicLandNamed: { x: 0, y: 54 },
   publicLand: cellWhere((c) => c.terrain === 'land' && c.parcelId === null && c.road === 'none'),
   publicQuay: cellWhere((c) => c.terrain === 'quay' && c.parcelId === null && c.road === 'none'),
   starterLand: cellWhere((c) => c.terrain === 'land' && c.parcelId === 'starter' && c.road === 'none'),

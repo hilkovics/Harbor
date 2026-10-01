@@ -15,9 +15,9 @@ import {
   DEEP_SHIP,
   DEEP_ZONE_BERTH,
   EAST_BERTH,
-  GAP_BERTH,
   GRAIN,
   ROOT_BERTH_ID,
+  SHALLOW_NEIGHBOR_BERTH,
   applyNow,
   berth,
   newWorld,
@@ -156,12 +156,14 @@ describe('ShipSystem — FIFO a kompatibilita', () => {
   it('hlboká loď (draftClass 2) zakotví na hlbokom kotvisku skupiny s plytkým susedom a vyloží sa (T02-14)', () => {
     const world = newWorld();
     const deep = placeModule(world, DEEP_BERTH, DEEP_ZONE_BERTH);
-    placeModule(world, 'berth_standard', GAP_BERTH);
-    const deepCrane = placeModule(world, CRANE, { x: 25, y: 14 });
+    placeModule(world, 'berth_standard', SHALLOW_NEIGHBOR_BERTH);
+    // Žeriav o 3 bunky od začiatku kotviska (ako Root žeriav (43, 14) na Root berthe (40, 14)); loď stojí na vode tesne pred ním.
+    const craneCell = { x: DEEP_ZONE_BERTH.x + 3, y: DEEP_ZONE_BERTH.y };
+    const deepCrane = placeModule(world, CRANE, craneCell);
     const ship = spawn(world, DEEP_SHIP, 2);
-    tickUntil(world, () => ship.state === 'docked', 400);
+    tickUntil(world, () => ship.state === 'docked', 600);
     expect(ship.berthIds).toEqual([deep]);
-    expect([ship.x, ship.y, ship.heading]).toEqual([25, 13, 90]);
+    expect([ship.x, ship.y, ship.heading]).toEqual([craneCell.x, craneCell.y - 1, 90]);
     const events = tickUntil(world, () => !world.ships.has(ship.id), 1000);
     expect(ofType(events, 'CraneCycleDone').map((event) => event.craneId)).toEqual([deepCrane, deepCrane]);
     expect(world.cargo.unitsOnApron(deep)).toHaveLength(2);

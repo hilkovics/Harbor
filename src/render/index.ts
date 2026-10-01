@@ -3,7 +3,7 @@ export { WorldRenderer, starterParcelRect } from './world-renderer';
 export type { WorldRendererOptions } from './world-renderer';
 export { TerrainLayer, planTerrain, terrainFillKey } from './terrain-layer';
 export type { TerrainFillKey, TerrainPlan } from './terrain-layer';
-export { coastTile, coastWaterMask } from './coast';
+export { coastQuarterTurns, coastTile, coastWaterMask, type QuarterTurns } from './coast';
 export type { CoastTileId, TerrainSpriteId } from './coast';
 export { SPRITE_RASTER_RESOLUTION, SpriteAtlas } from './sprite-atlas';
 export type {
@@ -51,7 +51,7 @@ export type { ShipLoad, ShipPose, ShipViewDeps } from './ship-view';
 export { VEHICLE_STYLE, VehicleView, sameVehicleShape, vehicleLoad, vehiclePose, vehicleSpriteFile } from './vehicle-view';
 export type { PoseDirector, VehicleLoad, VehiclePose, VehicleViewDeps, VehicleViewStyle } from './vehicle-view';
 export { TRUCK_STYLE, TruckView, sameTruckShape, truckSpriteFile } from './truck-view';
-export { DOCK_LEAVE_MS, DOCK_REVERSE_MS, DOCK_STOP_MS, DockManeuver, blendPose, dockPose, planDockPath } from './dock-maneuver';
+export { DOCK_CATCH_UP, DOCK_LEAVE_MS, DOCK_REVERSE_MS, DOCK_STOP_MS, DockManeuver, blendPose, dockPose, planDockPath } from './dock-maneuver';
 export type { DockPath, DockPhase, DockPoses, PosePx, SwingSide } from './dock-maneuver';
 export { QUEUE_BADGE_MAX, QueueBadge, createWarningBadge, queueBadgeLabel } from './badges';
 export type { QueueBadgeDeps } from './badges';

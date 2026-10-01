@@ -18,6 +18,12 @@
  * **Výjazd** (`DockManeuver` fáza `leaving`): kamión odíde z docku predkom; zobrazená póza sa počas `DOCK_LEAVE_MS` plynule
  * približuje od pózy v doku k pohybujúcej sa póze zo simu (kurz sa pritom otáča najkratšie), takže nevznikne skok ani otočka
  * na mieste.
+ *
+ * **Sim je rýchlejší než manéver** (ADR-029): kamión má na dock náklad pripravený už pri povele (`waiting → to_dock`), takže
+ * `loading` trvá len `loadTicksPerUnit` tickov (pri 1× zlomok `DOCK_STOP_MS + DOCK_REVERSE_MS`) a sim kamión odíde
+ * (`loading → to_gate_out`) skôr, než sa dokončí cúvanie. Zobrazený kamión cúvanie **dokončí** (fáza `entering` pokračuje aj po
+ * odchode zo `loading`, po odchode zo simu `DOCK_CATCH_UP`-krát rýchlejšie, aby nezdržiaval nasledujúci kamión toho istého
+ * docku) a až potom vyjde; `leaving` ho plynule dobehne k pohybujúcej sa póze zo simu.
  */
 import type { VehiclePose } from './vehicle-view';
 import type { TruckVM } from './view-models';
@@ -33,6 +39,9 @@ export const DOCK_REVERSE_MS = 1300;
 
 /** Trvanie výjazdu z docku do pohybu zo simu (ms). */
 export const DOCK_LEAVE_MS = 900;
+
+/** Násobok rýchlosti, ktorým sa cúvanie dokončí, keď sim kamión už pustil z docku (viď hlavička). */
+export const DOCK_CATCH_UP = 2;
 
 /** Dĺžka vodiacich úsekov krivky ako podiel vzdialenosti medzi pózami, najmenej `MIN_ARM_CELLS` bunky. */
 const ARM_SHARE = 0.9;
@@ -146,8 +155,11 @@ export class DockManeuver {
   private path: DockPath | null = null;
   private startedAt = 0;
   private leaveFrom: PosePx | null = null;
+  /** Póza v doku (cieľ cúvania), zapamätaná počas `loading` — po odchode sim kamióna ju `TruckVM` už nenesie. */
+  private dockTarget: PosePx | null = null;
+  /** Čas, kedy sim kamión pustil z docku počas cúvania (od neho cúva `DOCK_CATCH_UP`-krát rýchlejšie); `null` = ešte nepustil. */
+  private releasedAt: number | null = null;
   private lastState: string | null = null;
-  private lastPose: PosePx | null = null;
 
   constructor(
     private readonly now: () => number,
@@ -166,18 +178,32 @@ export class DockManeuver {
     if (docking) {
       if (this.phase === 'free') this.enter(vm, poses, t);
       else if (this.phase === 'leaving') this.phase = 'docked';
-      result = this.dockedPose(vm, t);
+      this.releasedAt = null;
+      this.dockTarget = dockPose(vm, this.cellPx);
+      result = this.dockedPose(this.dockTarget, t);
     } else {
-      if (this.phase === 'entering' || this.phase === 'docked') {
-        this.phase = 'leaving';
-        this.leaveFrom = this.lastPose;
-        this.startedAt = t;
-      }
-      result = this.phase === 'leaving' ? this.leavingPose(poses, t) : poses.sim();
+      result = this.outsideDock(poses, t);
     }
     this.lastState = vm.state;
-    this.lastPose = result;
     return result;
+  }
+
+  /**
+   * Sim kamión už nie je v `loading` (odišiel z docku alebo ešte nepríšiel): rozpracované cúvanie sa najprv dokončí
+   * (sim je rýchlejší než manéver, viď hlavička), potom nasleduje výjazd, inak jazda podľa simu.
+   */
+  private outsideDock(poses: DockPoses, t: number): PosePx {
+    if (this.phase === 'entering' && this.dockTarget !== null) {
+      if (this.releasedAt === null) this.releasedAt = t;
+      const reversing = this.dockedPose(this.dockTarget, t);
+      if (this.phase === 'entering') return reversing;
+    }
+    if (this.phase === 'docked') {
+      this.phase = 'leaving';
+      this.leaveFrom = this.dockTarget;
+      this.startedAt = t;
+    }
+    return this.phase === 'leaving' ? this.leavingPose(poses, t) : poses.sim();
   }
 
   /** Kamión prišiel do `loading`: po práve dokončenej jazde k dokom (`to_dock`) cúva, inak (napr. nový view) stojí v doku. */
@@ -193,13 +219,15 @@ export class DockManeuver {
     this.path = planDockPath(approach, dockPose(vm, this.cellPx), this.cellPx, poses.swing?.() ?? 'right');
   }
 
-  private dockedPose(vm: TruckVM, t: number): PosePx {
+  /** Póza počas `entering` (stojí, potom cúva po krivke); po dokončení fáza `docked` a póza `target`. */
+  private dockedPose(target: PosePx, t: number): PosePx {
     if (this.phase === 'entering' && this.path !== null) {
-      const progress = (t - this.startedAt - DOCK_STOP_MS) / DOCK_REVERSE_MS;
+      const caughtUp = this.releasedAt === null ? 0 : (t - this.releasedAt) * (DOCK_CATCH_UP - 1);
+      const progress = (t - this.startedAt + caughtUp - DOCK_STOP_MS) / DOCK_REVERSE_MS;
       if (progress < 1) return this.path.at(Math.max(0, progress));
       this.phase = 'docked';
     }
-    return dockPose(vm, this.cellPx);
+    return target;
   }
 
   private leavingPose(poses: DockPoses, t: number): PosePx {

@@ -18,11 +18,14 @@ import { World } from '@sim/world';
 import { f3Scenario } from '../helpers/f3-layout';
 import { assertCargoConservation } from '../helpers/invariants';
 import { runScenario, stateHash, type Scenario, type ScenarioEntry } from '../helpers/scenario';
-import { LANDSIDE_ROADS, NO_CONTAINER_TRUCK_DEFS, landsideCommand, rampOf, stagingOf, type LandsidePart } from '../logistics/outbound-fixtures';
+import { LANDSIDE_ROADS, LEGACY_NO_CONTAINER_TRUCK_DEFS, landsideCommand, rampOf, stagingOf, type LandsidePart } from '../logistics/outbound-fixtures';
 import { MAP } from '../world/world-fixtures';
 
-/** Defy bez kamiónu pre kontajnery (viď hlavička). */
-const DEFS = NO_CONTAINER_TRUCK_DEFS;
+/**
+ * Defy bez kamiónu pre kontajnery (viď hlavička) s pripnutým pôvodným balansom (staging 2 × 2, apron 4 — Fáza 5b ich
+ * zväčšila na 4 × 2 a 8): scenár stojí na plnom stagingu s 8 jednotkami zvyšku v skladoch.
+ */
+const DEFS = LEGACY_NO_CONTAINER_TRUCK_DEFS;
 
 const UNITS = 12;
 const STAGING = 4;

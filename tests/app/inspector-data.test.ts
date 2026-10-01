@@ -19,7 +19,7 @@ function spawnFeeder(app: ReturnType<typeof createApp>): void {
 }
 
 describe('inspectorData: Root kotvisko a žeriav pri štarte', () => {
-  it('kotvisko bez lode: Voľné, apron 0/0/4, bez lode; odstrániť nejde (má žeriav), refundácia 0 (starter)', () => {
+  it('kotvisko bez lode: Voľné, apron 0/0/8, bez lode; odstrániť nejde (má žeriav), refundácia 0 (starter)', () => {
     const app = createApp();
     expect(inspectorData(app.bridge, ROOT_BERTH)).toEqual({
       id: 1,
@@ -29,7 +29,7 @@ describe('inspectorData: Root kotvisko a žeriav pri štarte', () => {
       footprint: { w: 8, h: 3 },
       stateLabel: BERTH_STATE_FREE,
       ok: true,
-      apron: { used: 0, reserved: 0, capacity: 4 },
+      apron: { used: 0, reserved: 0, capacity: 8 },
       dockedShip: null,
       connected: false, // kotvisko má cestné konektory a žiadna cesta k nim ešte nevedie
       refundCents: 0,
@@ -101,13 +101,13 @@ describe('inspectorData: žeriav a loď za behu', () => {
     expect(later?.dockedShip?.unitsOnBoard ?? 4).toBeLessThan(4);
   });
 
-  it('po vyložení a odplávaní: kotvisko Voľné, apron 4/4, žeriav opäť nečinný a odstrániteľný', () => {
+  it('po vyložení a odplávaní: kotvisko Voľné, apron 4/8, žeriav opäť nečinný a odstrániteľný', () => {
     const app = createApp();
     spawnFeeder(app);
     tickUntil(app, () => app.world.ships.size === 0 && app.world.cargo.countByKind('on_apron') === 4, 8000);
     expect(inspectorData(app.bridge, ROOT_BERTH)).toMatchObject({
       stateLabel: BERTH_STATE_FREE,
-      apron: { used: 4, reserved: 0, capacity: 4 },
+      apron: { used: 4, reserved: 0, capacity: 8 },
       dockedShip: null,
     });
     expect(inspectorData(app.bridge, ROOT_CRANE)).toMatchObject({ stateLabel: 'Nečinný', removable: true });

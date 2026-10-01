@@ -81,7 +81,7 @@ describe('ConnectedBuildBar: Sklady a Logistika', () => {
   it('plné depo: vozidlo zamknuté „Depá sú plné“ a onBuy nič neodošle', () => {
     const app = createApp();
     buildLogistics(app);
-    buyVehicles(app, 6);
+    buyVehicles(app, app.world.defs.modules.get('vehicle_depot').params['capacity'] as number);
     const props = renderBar(app);
     expect(carrierItem(props)).toMatchObject({ locked: true, lockedReason: 'Depá sú plné' });
     const dispatch = vi.spyOn(app.bridge, 'dispatch');
@@ -128,7 +128,7 @@ describe('ConnectedModuleInspector: sklad a depo', () => {
   it('onBuyVehicle do plného depa sa neodošle (validate)', () => {
     const app = createApp();
     buildLogistics(app);
-    buyVehicles(app, 6);
+    buyVehicles(app, app.world.defs.modules.get('vehicle_depot').params['capacity'] as number);
     const props = renderInspector(app, DEPOT_ID);
     expect(props.data.depot?.canBuy).toBe(false);
     const dispatch = vi.spyOn(app.bridge, 'dispatch');

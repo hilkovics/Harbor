@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DOCK_CATCH_UP,
   DOCK_LEAVE_MS,
   DOCK_REVERSE_MS,
   DOCK_STOP_MS,
@@ -283,20 +284,63 @@ describe('DockManeuver: zastavenie → cúvanie → nakládka → výjazd', () =
     expect(maxTurn(samples)).toBeLessThan(25);
   });
 
-  it('výjazd z rozpracovaného cúvania začína z aktuálnej zobrazenej pózy (bez skoku)', () => {
+  it('sim kamión odíde z docku uprostred cúvania (loading trvá kratšie než manéver): cúvanie sa dokončí v doku rýchlejšie, až potom výjazd (bez skoku)', () => {
+    const time = clock(0);
+    const maneuver = new DockManeuver(time.now, CELL);
+    const staying = new DockManeuver(time.now, CELL); // porovnanie: kamión, ktorý zostal v `loading` počas celého cúvania
+    for (const m of [maneuver, staying]) {
+      m.update(driving, poses(() => APPROACH));
+      m.update(loadingVm(), poses(() => APPROACH));
+    }
+    const out = loadingVm({ state: 'to_gate_out', prevState: 'loading', approach: undefined, x: 31.5, y: 25.5, heading: 90 });
+    const leaveSim = (ms: number): PosePx => ({ x: APPROACH.x + (ms - DOCK_STOP_MS) * 0.03, y: APPROACH.y, angle: 90 });
+    const switchAt = DOCK_STOP_MS + DOCK_REVERSE_MS * 0.4; // sim ukončil nakládku, kým kamión ešte cúva
+    const reverseEnd = switchAt + (DOCK_REVERSE_MS * 0.6) / DOCK_CATCH_UP; // zvyšok cúvania ide DOCK_CATCH_UP-krát rýchlejšie
+    const samples: PosePx[] = [];
+    for (let ms = DOCK_STOP_MS; ms < switchAt; ms += 20) {
+      time.set(ms);
+      samples.push(staying.update(loadingVm(), poses(() => APPROACH)));
+      expect(maneuver.update(loadingVm(), poses(() => APPROACH))).toEqual(samples[samples.length - 1]);
+    }
+    time.set(switchAt);
+    const reference = staying.update(loadingVm(), poses(() => APPROACH));
+    expect(maneuver.update(out, poses(() => leaveSim(switchAt)))).toEqual(reference); // v okamihu odchodu bez skoku
+    let lastDistance = Number.POSITIVE_INFINITY;
+    for (let ms = switchAt + 20; ms < reverseEnd; ms += 20) {
+      time.set(ms);
+      const shown = maneuver.update(out, poses(() => leaveSim(ms)));
+      expect(maneuver.currentPhase, `ms ${String(ms)}`).toBe('entering'); // kamión ešte cúva do docku, nevyšiel
+      const distance = Math.hypot(shown.x - DOCK.x, shown.y - DOCK.y);
+      expect(distance).toBeLessThan(lastDistance); // približuje sa k doku
+      lastDistance = distance;
+      samples.push(shown);
+    }
+    // dokončené cúvanie → kamión stojí v doku a od nasledujúceho okamihu vyjde predkom k póze zo simu
+    time.set(reverseEnd);
+    const atDock = maneuver.update(out, poses(() => leaveSim(reverseEnd)));
+    expect(atDock).toEqual({ x: DOCK.x, y: DOCK.y, angle: 180 });
+    expect(maneuver.currentPhase).toBe('leaving');
+    samples.push(atDock);
+    for (let ms = reverseEnd + 20; ms <= reverseEnd + DOCK_LEAVE_MS + 200; ms += 20) {
+      time.set(ms);
+      samples.push(maneuver.update(out, poses(() => leaveSim(ms))));
+    }
+    expect(maneuver.currentPhase).toBe('free');
+    expect(samples[samples.length - 1]).toEqual(leaveSim(reverseEnd + DOCK_LEAVE_MS + 200));
+    expect(maxTurn(samples)).toBeLessThan(25);
+  });
+
+  it('keď sim kamión zostane v `loading` až do konca cúvania, nič sa nezrýchľuje a fáza `docked` je pozorovateľná', () => {
     const time = clock(0);
     const maneuver = new DockManeuver(time.now, CELL);
     maneuver.update(driving, poses(() => APPROACH));
     maneuver.update(loadingVm(), poses(() => APPROACH));
-    time.set(DOCK_STOP_MS + DOCK_REVERSE_MS * 0.4);
-    const mid = maneuver.update(loadingVm(), poses(() => APPROACH));
-    // sim už skončil nakládku (rýchle ticky): stav prešiel na to_gate_out
-    const out = loadingVm({ state: 'to_gate_out', prevState: 'loading', approach: undefined, x: 31.5, y: 25.5, heading: 90 });
-    const first = maneuver.update(out, poses(() => ({ x: APPROACH.x, y: APPROACH.y, angle: 90 })));
+    time.set(DOCK_STOP_MS + DOCK_REVERSE_MS);
+    expect(maneuver.update(loadingVm(), poses(() => APPROACH))).toEqual({ x: DOCK.x, y: DOCK.y, angle: 180 });
+    expect(maneuver.currentPhase).toBe('docked');
+    const out = loadingVm({ state: 'to_gate_out', prevState: 'loading', approach: undefined });
+    maneuver.update(out, poses(() => APPROACH));
     expect(maneuver.currentPhase).toBe('leaving');
-    expect(first.x).toBeCloseTo(mid.x, 9);
-    expect(first.y).toBeCloseTo(mid.y, 9);
-    expect(first.angle).toBeCloseTo(mid.angle, 9);
   });
 
   it('po výjazde je fáza znova `free` a nový príchod do nakládky (ďalší kamión na tom istom view sa nepoužíva) spustí cúvanie', () => {

@@ -5,7 +5,7 @@ import type { EntityId } from '@sim/core';
 import { CraneModule } from '@sim/modules';
 import type { World } from '@sim/world';
 import { EntitiesVMBuilder, craneVMs, entitiesVM, moduleVMs, shipVMs, type ShipPositions } from '@app/entities-vm';
-import { createWorld } from './app-fixtures';
+import { createLegacyCapacityWorld, createWorld } from './app-fixtures';
 
 const ROOT_BERTH_ID = 1;
 const ROOT_CRANE_ID = 2;
@@ -52,7 +52,7 @@ describe('entitiesVM: nový svet (Root modul)', () => {
         rotation: 0,
         w: 8,
         h: 3,
-        apron: { capacity: 4, units: [] },
+        apron: { capacity: 8, units: [] },
         connected: false, // kotvisko má cestné konektory, ale žiadna cesta ešte nevedie
       },
     ]);
@@ -96,6 +96,27 @@ describe('entitiesVM: nový svet (Root modul)', () => {
 });
 
 describe('entitiesVM: loď', () => {
+  it('loď čakajúca pred vstupom (arriving, mimo mapy — ADR-029) sa nekreslí; do zoznamu prejde až po vstupe na seaLane[0]', () => {
+    const world = createWorld();
+    spawnFeeder(world, 2);
+    spawnFeeder(world, 2); // na sea lane je naraz jedna loď → druhá čaká pred vstupom
+    const [first, second] = [...world.ships.values()];
+    expect([first?.state, second?.state]).toEqual(['inbound', 'arriving']);
+    expect(shipVMs(world).map((vm) => vm.id)).toEqual([first?.id]);
+    expect(entitiesVM(world).ships.map((vm) => vm.id)).toEqual([first?.id]);
+
+    let entered = false;
+    for (let tick = 0; tick < 2000 && !entered; tick++) {
+      world.tick();
+      const drawn = shipVMs(world);
+      expect(drawn.every((vm) => vm.state !== 'arriving'), `tick ${String(world.clock.tick)}`).toBe(true);
+      expect(drawn.map((vm) => vm.id)).toEqual([...world.ships.values()].filter((ship) => ship.state !== 'arriving').map((ship) => ship.id));
+      entered = second !== undefined && second.state !== 'arriving';
+    }
+    expect(entered).toBe(true);
+    expect(shipVMs(world).map((vm) => vm.id)).toContain(second?.id);
+  });
+
   it('čerstvo spawnutá loď: trieda, kategória nákladu, náklad na palube, poloha v strede seaLane[0], prev = curr', () => {
     const world = createWorld();
     spawnFeeder(world, 4);
@@ -135,6 +156,8 @@ describe('entitiesVM: loď', () => {
     const world = createWorld();
     spawnFeeder(world, 2);
     spawnFeeder(world, 3);
+    // druhá loď najprv čaká pred vstupom (arriving, nekreslí sa) — počká sa, kým vpláva na mapu
+    tickUntil(world, () => [...world.ships.values()].every((ship) => ship.state !== 'arriving'));
     const ids = shipVMs(world).map((ship) => ship.id);
     expect(ids).toEqual([...world.ships.keys()]);
     expect(ids).toEqual([...ids].sort((a, b) => a - b));
@@ -225,7 +248,7 @@ describe('entitiesVM: vykládka lode žeriavom (celý cyklus)', () => {
   });
 
   it('plný apron a ďalšia loď: žeriav blocked, progress 0, nič nedrží, loď docked s nákladom', () => {
-    const world = createWorld();
+    const world = createLegacyCapacityWorld(); // apron 4/4 po prvej lodi (Fáza 5b: bundled apron 8)
     spawnFeeder(world, 4);
     tickUntil(world, () => world.ships.size === 0 && world.clock.tick > 10);
     spawnFeeder(world, 4);
@@ -249,7 +272,7 @@ describe('entitiesVM: nový modul', () => {
     const placed = modules[1] as ModuleVM;
     expect(placed).toMatchObject({ defId: 'berth_standard', kind: 'berth', x: 48, y: 14, w: 8, h: 3, rotation: 0 });
     expect(placed.id).toBeGreaterThan(ROOT_CRANE_ID);
-    expect(placed.apron).toEqual({ capacity: 4, units: [] });
+    expect(placed.apron).toEqual({ capacity: 8, units: [] });
   });
 
   it('PlaceModule žeriav sa objaví v cranes (nie v modules)', () => {

@@ -147,6 +147,17 @@ function segmentCells([x0, y0, x1, y1]: readonly [number, number, number, number
 }
 
 /**
+ * Zavrie všetky toasty. Od F5 pool ponúk hneď na štarte (a pri každej uzávierke dňa) ohlási „Nové ponuky kontraktov“ —
+ * toast leží nad strednou časťou mapy a prekrýva kurzor aj klik pri stavbe (ghost sa nezobrazí), preto ho spec pred
+ * zameraním bunky zavrie. Zavretie ostatných toastov nevadí: spec ich nekontroluje.
+ */
+async function dismissToasts(page: Page): Promise<void> {
+  const closers = page.locator('.toasts .toast [data-action="close"]');
+  while ((await closers.count()) > 0) await closers.first().click();
+  await expect(page.locator('.toasts .toast')).toHaveCount(0);
+}
+
+/**
  * Postaví modul cez UI: BuildBar kategória, klik na položku, `rotations`× klávesa R, presun myši na bunku, počkať na
  * platný ghost s očakávaným rohom a rotáciou, klik. Vráti sa až keď modul pribudol do sveta; Esc ukončí build mód.
  */
@@ -163,6 +174,7 @@ async function buildViaBar(
   await expect(map(page)).toHaveAttribute('data-input-state', 'build_module');
   await expect(item).toHaveAttribute('aria-pressed', 'true');
   for (let i = 0; i < options.rotations; i += 1) await page.keyboard.press('KeyR');
+  await dismissToasts(page); // toast nesmie ležať nad cieľovou bunkou (pozri `dismissToasts`)
   const point = await screenOf(page, options.cursor);
   await page.mouse.move(point.x, point.y);
   await expect

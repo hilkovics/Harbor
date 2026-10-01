@@ -19,8 +19,9 @@
  * (`checkTruckRefs`, T06-07): kamión znovu drží svoj bay (index zo save), dock a nárok na náklad docku podľa stavu (ADR-029);
  * potom náklad kamióna (kapacita, kategória, stav prázdny/nakládka/plný), väzba na rampu (def vozí jej kategóriu,
  * kamión s dockom má na docku a v sebe aspoň kapacitu; po obnove jobov nároky docku ≤ pripravené + vezené), fronta brány = presne kamióny v `gate_queue*` tejto brány, súlad prechodu brány s frontou (runtime
- * brány), pohyb (`truckMotionProblem`), kamión vo fronte na svojej strane brány, odpočet najviac taký, aký stav nastaví
- * (`truckWaitLimit`, T06-07) a hodina posledného `NoWaitingBay` rampy nie je v budúcnosti.
+ * brány), pohyb (`truckMotionProblem`), kamión vo fronte na svojej strane brány, odpočet zarovnaný najviac na taký,
+ * aký stav nastaví podľa aktuálnych defov (`truckWaitLimit`, T06-07; zarovnanie T06-08b) a hodina posledného
+ * `NoWaitingBay` rampy nie je v budúcnosti.
  * Kontrakty (ADR-026): jednotka s `contractId` patrí kontraktu s loďou a jeho nákladu, jednotka na lodi kontraktu pred
  * vyložením patrí tomuto kontraktu (`checkContracts`); počet jednotiek na palube a počítadlá overí krok 12.
  * Na koniec beží `findWorldViolation` ako poistka. Každá chyba je `WorldStateError` s JSON pointerom.
@@ -370,9 +371,12 @@ function checkGateQueues(world: World, indexOf: ReadonlyMap<EntityId, number>): 
 }
 
 /**
- * Pohyb kamiónov zodpovedá stavu (`truckMotionProblem`, ADR-019, ADR-024), kamión vo fronte stojí na svojej strane
- * brány (`truckQueueSideProblem`, dodatok ADR-024 — `/trucks/<i>/route`) a odpočet neprekračuje hodnotu, akú stav
- * nastaví (`truckWaitLimit`, T06-07 — `/trucks/<i>/waitTicks`).
+ * Pohyb kamiónov zodpovedá stavu (`truckMotionProblem`, ADR-019, ADR-024 — aj odpočet ≥ 1 práve v stavoch s čakaním)
+ * a kamión vo fronte stojí na svojej strane brány (`truckQueueSideProblem`, dodatok ADR-024 — `/trucks/<i>/route`).
+ * Odpočet nad hodnotu, akú stav nastaví podľa **aktuálnych** defov (`truckWaitLimit`, T06-07), sa zarovná na ňu
+ * (T06-08b, ADR-031 dodatok): platný save spred zmeny balansu (kratší `repathIntervalTicks`, pobyt stojiska, nakládka)
+ * sa načíta a kamión nečaká dlhšie, než stav dovolí. Hranica stavu s čakaním je ≥ 1 (`MIN_STAY_TICKS`, schéma), takže
+ * zarovnanie invariant odpočtu neporuší; záporný či neceločíselný odpočet odmietne už parser (`/trucks/<i>/waitTicks`).
  */
 function checkTruckMotion(world: World): void {
   let index = 0;
@@ -381,10 +385,7 @@ function checkTruckMotion(world: World): void {
     if (problem !== undefined) throw new WorldStateError(`${truckPath(index)}/${problem.field}`, problem.problem);
     const side = truckQueueSideProblem(world, truck);
     if (side !== undefined) throw new WorldStateError(`${truckPath(index)}/route`, side);
-    const limit = truckWaitLimit(world, truck);
-    if (truck.waitTicks > limit) {
-      throw new WorldStateError(`${truckPath(index)}/waitTicks`, `${truck.label} v stave '${truck.state}' čaká ${String(truck.waitTicks)} tickov, stav nastaví najviac ${String(limit)}`);
-    }
+    truck.waitTicks = Math.min(truck.waitTicks, truckWaitLimit(world, truck));
     index += 1;
   }
 }

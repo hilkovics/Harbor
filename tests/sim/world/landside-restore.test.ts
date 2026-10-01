@@ -6,7 +6,10 @@
  *   (pred T06-07 všetko hlásilo `/rampId`);
  * - `dock` v rozsahu `docks` rampy a `bay` v rozsahu `bays` stojiska (`/dock`, `/bay`);
  * - `waitTicks` najviac toľko, koľko stav môže nastaviť: `waiting` max(pobyt stojiska, `repathIntervalTicks`),
- *   `loading` `loadTicksPerUnit` rampy, `no_path` `repathIntervalTicks` (`/waitTicks`) — inak by kamión „zaspal".
+ *   `loading` `loadTicksPerUnit` rampy, `no_path` `repathIntervalTicks` — od T06-08b (review T06-07, minor 1) sa
+ *   väčší odpočet pri obnove **zarovná** na hranicu podľa aktuálnych defov (platný save spred zmeny balansu sa načíta
+ *   a kamión nezaspí); fail-fast (`/waitTicks`) ostáva pre záporný alebo neceločíselný odpočet a pre odpočet v stave
+ *   bez čakania.
  * Platný save sa obnoví a serializuje rovnako (aj s odpočtom presne na hranici).
  */
 import { describe, expect, it } from 'vitest';
@@ -16,7 +19,8 @@ import type { LoadingRamp } from '@sim/modules';
 import type { TruckState } from '@sim/trucks';
 import { World, WorldStateError, type WorldState } from '@sim/world';
 import { areaOf, execute, gateOf, outboundWorld, rampOf } from '../logistics/outbound-fixtures';
-import { DEFS, MAP } from './world-fixtures';
+import { DefRegistry } from '@sim/defs';
+import { DEFS, MAP, RAW_DEFS } from './world-fixtures';
 
 type Json = Record<string, unknown>;
 
@@ -114,8 +118,16 @@ describe('obnova kamiónov: väzby na moduly s presnou cestou (T06-07)', () => {
   });
 });
 
-describe('obnova kamiónov: odpočet stavu s čakaním najviac toľko, koľko stav nastaví (T06-07)', () => {
-  it('waiting: hranica max(pobyt stojiska, repathIntervalTicks) prejde, o 1 viac → /waitTicks', () => {
+/** Odpočet kamióna `index` po obnove upraveného save. */
+function restoredWait(saved: Saved, waitTicks: unknown, defs: DefRegistry = DEFS): number {
+  const state = viaJson(saved.state);
+  trucksOf(state)[saved.index]['waitTicks'] = waitTicks;
+  const restored = World.deserialize(defs, MAP, state);
+  return [...restored.trucks.values()][saved.index].waitTicks;
+}
+
+describe('obnova kamiónov: odpočet stavu s čakaním najviac toľko, koľko stav nastaví (T06-07, zarovnanie T06-08b)', () => {
+  it('waiting: hranica max(pobyt stojiska, repathIntervalTicks) prejde bez zmeny, väčší odpočet sa zarovná na hranicu', () => {
     const saved = savedIn('waiting');
     const world = landside();
     const area = areaOf(world);
@@ -123,21 +135,44 @@ describe('obnova kamiónov: odpočet stavu s čakaním najviac toľko, koľko st
     const valid = viaJson(saved.state);
     trucksOf(valid)[saved.index]['waitTicks'] = limit;
     expect(JSON.stringify(World.deserialize(DEFS, MAP, viaJson(valid)).serialize())).toBe(JSON.stringify(valid));
-    expect(errorPath(saved, (truck) => (truck['waitTicks'] = limit + 1))).toBe(`/trucks/${String(saved.index)}/waitTicks`);
+    expect(restoredWait(saved, limit + 1)).toBe(limit);
   });
 
-  it('loading: najviac loadTicksPerUnit rampy → inak /waitTicks', () => {
+  it('loading: najviac loadTicksPerUnit rampy, väčší odpočet sa zarovná', () => {
     const saved = savedIn('loading');
     const load = rampOf(landside()).params.loadTicksPerUnit;
-    const valid = viaJson(saved.state);
-    trucksOf(valid)[saved.index]['waitTicks'] = load;
-    expect(() => World.deserialize(DEFS, MAP, viaJson(valid))).not.toThrow();
-    expect(errorPath(saved, (truck) => (truck['waitTicks'] = load + 1))).toBe(`/trucks/${String(saved.index)}/waitTicks`);
+    expect(restoredWait(saved, load)).toBe(load);
+    expect(restoredWait(saved, load + 1)).toBe(load);
   });
 
-  it('no_path: najviac repathIntervalTicks → inak /waitTicks', () => {
+  it('no_path: najviac repathIntervalTicks, väčší odpočet sa zarovná', () => {
     const saved = savedIn('no_path', { state: 'loading', command: RAMP_LINK });
     expect(() => World.deserialize(DEFS, MAP, viaJson(saved.state))).not.toThrow();
-    expect(errorPath(saved, (truck) => (truck['waitTicks'] = REPATH + 1))).toBe(`/trucks/${String(saved.index)}/waitTicks`);
+    expect(restoredWait(saved, REPATH + 1)).toBe(REPATH);
+  });
+
+  it('platný save spred zmeny balansu (kratší repathIntervalTicks a pobyt): načíta sa, odpočet = nová hranica', () => {
+    const shorter = 5;
+    const defs = DefRegistry.fromRaw({ ...RAW_DEFS, logistics: { ...RAW_DEFS.logistics, repathIntervalTicks: shorter, defaultInternalTicks: shorter } });
+    const saved = savedIn('waiting');
+    const area = areaOf(landside());
+    const limit = Math.max(1, area.internalTicks ?? shorter, shorter);
+    expect(limit).toBeLessThan(REPATH);
+    expect(restoredWait(saved, REPATH, defs)).toBe(limit);
+    const noPath = savedIn('no_path', { state: 'loading', command: RAMP_LINK });
+    expect(restoredWait(noPath, REPATH, defs)).toBe(shorter);
+  });
+
+  it.each<[string, unknown]>([
+    ['záporný', -1],
+    ['neceločíselný', 2.5],
+  ])('%s odpočet → /trucks/<i>/waitTicks (fail-fast)', (_name, value) => {
+    const saved = savedIn('waiting');
+    expect(errorPath(saved, (truck) => (truck['waitTicks'] = value))).toBe(`/trucks/${String(saved.index)}/waitTicks`);
+  });
+
+  it('odpočet v stave bez čakania (to_gate) → /trucks/<i>/waitTicks (fail-fast, nezarovná sa)', () => {
+    const saved = savedIn('to_gate');
+    expect(errorPath(saved, (truck) => (truck['waitTicks'] = 3))).toBe(`/trucks/${String(saved.index)}/waitTicks`);
   });
 });

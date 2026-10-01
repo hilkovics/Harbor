@@ -1,7 +1,7 @@
 /**
  * Odpočty kamióna v stavoch s čakaním (ARCHITECTURE §7.5; ADR-024, ADR-029; T06-07): jediný zdroj pravidiel, koľko
- * tickov kamión čaká — používa ich krok 8 (`LandsideSystem`) aj obnova save, ktorá odmietne odpočet, aký žiadny stav
- * nenastaví (`truckWaitLimit`).
+ * tickov kamión čaká — používa ich krok 8 (`LandsideSystem`) aj obnova save, ktorá väčší odpočet zarovná na hranicu
+ * stavu podľa aktuálnych defov (`truckWaitLimit`; T06-08b — save spred zmeny balansu sa načíta).
  *
  * - `waiting`: po príchode pobyt stojiska `waitingStayTicks` = max(`MIN_STAY_TICKS`, `internalTicks` stojiska, inak
  *   `logistics.defaultInternalTicks`); pri obsadenom docku nový pokus o `MIN_STAY_TICKS`; bez okruhu o

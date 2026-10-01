@@ -42,14 +42,16 @@ Vlny: T06-01 ‖ T06-05 ‖ T06-06 → {T06-02 ‖ T06-03 ‖ T06-04} → T06-07
 Worktree karty začínajú `git reset --hard <HEAD phase/06-save-load>` (worktree sa zakladá z `main`).
 
 ## Checklist
-- [ ] T06-01 · ADR-030, state-hash, audit serialize, simrun --hash/--roundtrip-at
-- [ ] T06-02 · TDD roundtrip + determinizmus + migrácie
-- [ ] T06-03 · App save/load/autosave/export/import/Ctrl+S
-- [ ] T06-04 · UI Settings + Save/Load overlay
-- [ ] T06-05 · Bench + stress scenár
-- [ ] T06-06 · validate-defs krížová kontrola manifestu
-- [ ] T06-07 · Sim P1 + hot path
-- [ ] T06-08 · Review src/sim + opravy
+- [x] T06-01 · ADR-030, state-hash, audit serialize, simrun --hash/--roundtrip-at
+- [x] T06-02 · TDD roundtrip + determinizmus + migrácie
+- [x] T06-03 · App save/load/autosave/export/import/Ctrl+S
+- [x] T06-04 · UI Settings + Save/Load overlay
+- [x] T06-03b · Napojenie UI ukladania a nastavení, guard kláves pod overlayom, toast „Načítané", e2e f6-save-load
+- [x] T06-05 · Bench + stress scenár
+- [x] T06-06 · validate-defs krížová kontrola manifestu
+- [x] T06-07 · Sim P1 + hot path
+- [x] T06-08 · Review src/sim + opravy
+- [x] T06-08b · Opravy z review: dosiahnuteľnosť kotviska pri AcceptContract (berth_unreachable), waitTicks pri obnove, refill poolu bez šablón, sweepStepCells 0,1–1
 - [ ] T06-09 · e2e + plná pipeline
 - [ ] T06-10 · Docs + PR
 

@@ -1,0 +1,140 @@
+/*
+ * SaveLoadPanel (T06-04): zoznam slotov s preview v štýle riadkov overlayu `settings` z prototypu design/ui/game-ui.source.html
+ * (riadok s dolnou čiarou 1 px, nadpis vľavo, akcie vpravo). Obal dialógu a tlačidlá sú v modal-dialog.css. Len tokeny
+ * z design/tokens.css; pevné sú len 1 px čiary a ±2 px korekcie.
+ * BEM: .save-list, .save-slot (__info / __head / __name / __saved / __empty / __stats / __stat / __stat-label /
+ * __stat-value / __icon / __actions / __confirm-text / __sr-only), .save-load-panel__hint.
+ */
+
+.save-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.save-slot {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: calc(var(--space-8) * 2 + var(--space-2));
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.save-slot__info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.save-slot__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.save-slot__name {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+}
+
+.save-slot__saved,
+.save-slot__empty {
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+}
+
+.save-slot__empty {
+  font-size: var(--fs-sm);
+}
+
+.save-slot[data-empty="true"] .save-slot__name {
+  color: var(--ui-text-2);
+}
+
+/* ===== Preview: deň + čas, hotovosť, XP ===== */
+
+.save-slot__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  color: var(--ui-text);
+  font-size: var(--fs-sm);
+}
+
+.save-slot__stat {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.save-slot__stat-label {
+  display: inline-flex;
+  align-items: center;
+}
+
+.save-slot__stat-value {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.save-slot__icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+.save-slot__icon--time {
+  color: var(--ui-text-2);
+}
+
+.save-slot__icon--cash {
+  color: var(--ui-success);
+}
+
+.save-slot__icon--xp {
+  color: var(--ui-xp);
+}
+
+.save-slot__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ===== Akcie slotu ===== */
+
+.save-slot__actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.save-slot__confirm-text {
+  color: var(--ui-text);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+.save-load-panel__hint {
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .save-load-panel,
+  .save-load-panel * {
+    animation: none;
+    transition: none;
+  }
+}

@@ -112,6 +112,26 @@ UI (T06-04) dostane cez props/kontext: `slots: SaveSlotInfo[]`, `onSave(slot)`, 
 - acceptance: `pnpm bench data/scenarios/vertical_slice.json --ticks 30000`; `pnpm bench data/scenarios/stress_f6.json --ticks 30000`; `pnpm vitest run tests/tools`
 - do_not_touch: src/**
 
+#### Výsledok T06-05
+`pnpm bench <scenario> --ticks N [--json] [--profile] [--warmup N] [--no-invariants]` (`tools/bench.ts`; loader zdieľaný so simrun — v `tools/simrun.ts` pribudli len `export` na `parseTicks`, `parseCommands`, `resolveMap`, `errorMessage`). Meria len `world.tick()` (príkazy scenára idú cez `applyPending()` mimo merania). **Predvolene beží krok 12 (invarianty), ako simrun a DEV build**; produkčný build ich má vypnuté (`APP_WORLD_OPTIONS`) → `--no-invariants`. `--profile` = druhý beh s časovačmi okolo krokov ticku (súkromné polia `World` cez index, bez zmeny src/sim; krehké voči premenovaniu — chýbajúci krok sa vypíše v `unavailable`) + A* a `cargo.assertConservation`, plus rozpad pomalých tickov (> 2 ms).
+
+`stress_f6`: pre 2 kotviská + 4 žeriavy + 3 dvory + 2 rampy + 16 vozidiel nestačí štartovací cash (1,2 M USD; samotné kotvisko 0,4 M, žeriav 0,6 M), preto je prístav predpostavený v **novej mape `data/maps/stress_f6.json`** (terén ako `harbor_01`, moduly a cesty v `starter`, zadarmo); scenár kupuje 16 vozidiel a prijíma všetky ponuky: id 1–6 v ticku 1 a potom 6 ponúk v prvom ticku každého z ďalších 7 dní (`atTick = 8640·d + 1`, ponuky sú sekvenčné, 6 za deň). Overené do 70 000 tickov bez odmietnutého príkazu.
+
+| 30 000 tickov | priemer | p50 | p95 | max | > 2 ms | ticks/s |
+|---|---|---|---|---|---|---|
+| vertical_slice, invarianty | 0,062 ms | 0,033 | 0,153 | 17,8 | 24 | 16 100 |
+| stress_f6, invarianty | 0,253 ms | 0,244 | 0,455 | 17,7 | 52 | 3 950 |
+| vertical_slice, bez invariantov | 0,008 ms | 0,003 | 0,016 | 19,7 | 6 | 133 000 |
+| stress_f6, bez invariantov | 0,019 ms | 0,011 | 0,045 | 18,9 | 15 | 51 600 |
+
+simrun `stress_f6` 30 000 tickov: `lostUnits` 0, exportované 658, lode 17/9 (spawn/odchod), kontrakty dokončené 6 (prijaté 24), žeriav blokovaný 49,5 %, využitie vozidiel 29,1 %, `noStorageEvents` 95 (sklady plné), `noWaitingBayEvents` 135, fronta brány max 11. Prístav je nasýtený: prekážkou je pozemná strana (1 stojisko, 6 bayov) a plné dvory, nie žeriavy.
+
+Hot path (cieľ priemer < 2 ms je splnený s veľkou rezervou na oboch scenároch aj s invariantmi):
+1. **Invarianty (krok 12) = 87 % času ticku** v DEV/testoch (0,25 ms/tick na stress_f6): `cargo.assertConservation` ~0,10 ms + `findWorldViolation` ~0,15 ms, oboje O(jednotky + moduly) každý tick. V produkcii sú vypnuté; zlacnenie (inkrementálna kontrola alebo kontrola raz za N tickov v DEV) by zrýchlilo `pnpm test`, ale pre cieľ F6 netreba.
+2. Bez invariantov (stress_f6, 0,019 ms/tick): `dispatcher` 27 %, `landside` 23 %, `vehicles` 12 %, `cranes` 10 %, `contracts` 9 %. A* je zanedbateľný (58 `findPath` / 74 hľadaní za 30 000 tickov; cache ciest 9 964 zásahov / 74 miss, 0 zneplatnení).
+3. Odľahlé ticky (> 2 ms, 15–50 na 30 000): väčšina sú ticky bez udalostí (GC/JIT); prvý `ShipSpawned` stojí ~17–22 ms (vytvorenie 85–96 jednotiek + prvé vykonanie kódu) a ďalšie spawny 3–5 ms. Nie je to trvalá záťaž; kandidát na sledovanie v T06-07 je len cesta spawnu lode v `contract-system` (hromadné `cargo.create`).
+Rozpad po systémoch beží bez zmeny src/sim, hook v sime netreba.
+
 ### T06-06 · validate-defs krížová kontrola manifestu
 - model: sonnet · agent: implementer · parallel: yes (worktree) · depends_on: –
 - outputs: `tools/validate-defs.ts`, `tests/tools/validate-defs.test.ts`

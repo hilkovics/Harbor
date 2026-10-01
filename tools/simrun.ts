@@ -189,7 +189,7 @@ const REPORT_FLAG = '--report';
 const HASH_FLAG = '--hash';
 const ROUNDTRIP_FLAG = '--roundtrip-at';
 
-function parseTicks(raw: string | undefined): number {
+export function parseTicks(raw: string | undefined): number {
   if (raw === undefined || raw === '') throw new SimrunError(`${TICKS_FLAG} vyžaduje hodnotu. ${USAGE}`);
   // Len desiatkový zápis kladného celého čísla; "1e3", "0x10", "1.5", "-5" a "0" sú chyby.
   const ticks = /^[1-9]\d*$/.test(raw) ? Number(raw) : Number.NaN;
@@ -269,7 +269,7 @@ export function parseArgs(argv: readonly string[]): SimrunArgs {
 
 const SCENARIO_KEYS: ReadonlySet<string> = new Set(['id', 'seed', 'map', 'commands']);
 
-function errorMessage(cause: unknown): string {
+export function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
@@ -344,13 +344,13 @@ export function loadScenario(path: string): LoadedScenario {
 // Beh
 // ---------------------------------------------------------------------------------------------------------
 
-interface ParsedEntry {
+export interface ParsedEntry {
   readonly atTick: number;
   readonly command: Command;
 }
 
 /** Zostaví príkazy zo scenára vopred (pred prvým tickom), aby neplatný typ/payload zlyhal s cestou `/commands/i`. */
-function parseCommands(scenario: Scenario): ParsedEntry[] {
+export function parseCommands(scenario: Scenario): ParsedEntry[] {
   return scenario.commands.map((entry, index) => {
     try {
       return { atTick: entry.atTick, command: commandFromJSON(entry.command as SerializedCommand) };
@@ -364,7 +364,7 @@ function parseCommands(scenario: Scenario): ParsedEntry[] {
 }
 
 /** Mapa scenára (`map` = cesta k súboru, `mapData` = jeho obsah); bez `map` vstavaná `harbor_01`. */
-function resolveMap(scenario: LoadedScenario): LoadedMap {
+export function resolveMap(scenario: LoadedScenario): LoadedMap {
   if (scenario.map === undefined) return loadBundledMap();
   const raw = scenario.mapData ?? readJsonFile(scenario.map, 'mapa');
   try {

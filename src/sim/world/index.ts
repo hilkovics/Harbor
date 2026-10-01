@@ -35,6 +35,7 @@ export {
   WORLD_STATE_V6,
   WORLD_STATE_V6_KEYS,
   migrateWorldState,
+  savesShipRoutes,
 } from './migrate';
 export { WorldInvariantError, findWorldViolation } from './world-invariants';
 export { ECONOMY_STATE_KEYS, parseEconomyState } from './economy-state';

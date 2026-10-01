@@ -1,7 +1,8 @@
 /**
  * Obnova entít zo save (ARCHITECTURE §14, ADR-014, ADR-016, ADR-017, ADR-018): moduly v poradí save (= poradie
  * umiestnenia) cez `ModuleRegistry` a `World.addModule`, lode vzostupne podľa id cez `World.addShip` (pred kontrolou
- * držiteľov nákladu — `on_ship` číta `world.ships`) s obnovou `BerthModule.dockedShipId` z `berthIds`, vozidlá
+ * držiteľov nákladu — `on_ship` číta `world.ships`) s obnovou `BerthModule.dockedShipId` z `berthIds`, hneď potom trasy
+ * lodí podľa stavu a rezervácie lodí na mape bez prekryvu (`checkShipRoutes`, ADR-029 addendum), vozidlá
  * vzostupne podľa id cez `World.addVehicle` (T03-04; depo dostane `vehicleIds` v poradí id = poradí nákupu), potom
  * kontrola držiteľov a slotov nákladu (slot v kapacite apronu/skladu, náklad vozidla v jeho kapacite a kategóriách),
  * joby vzostupne podľa id (T03-05: vozidlo a stav jobu sa odvodia z vozidla s daným `jobId` a z polohy nákladu,
@@ -37,7 +38,7 @@ import { ModuleError, ModuleStateError } from '../modules/module-error';
 import { moduleRegistry } from '../modules/module-registry';
 import { Ship } from '../ships/ship';
 import { ShipError } from '../ships/ship-error';
-import { legacyShipRoute, mooringProblem } from '../ships/ship-route';
+import { legacyShipRoute, mooringProblem, shipRouteProblem } from '../ships/ship-route';
 import { TruckGate } from '../modules/truck-gate';
 import { DockSupply } from '../trucks/dock-supply';
 import { Truck } from '../trucks/truck';
@@ -140,6 +141,32 @@ function restoreShips(world: World, entries: readonly ParsedShipEntry[]): void {
       throw error;
     }
   });
+}
+
+/**
+ * Trasy lodí po obnove (ADR-029 addendum, review T5B-04b) — fail-fast namiesto porušenia kroku 12 o pár tickov:
+ * súlad uloženej (alebo pre save v5 odvodenej) trasy so stavom (`shipRouteProblem`: prázdna trasa stojacej lode, plavba
+ * dnu po celej sea lane, koniec trasy v cieli stavu, poloha na aktuálnom úseku) a rezervácie lodí na mape (obdĺžnik
+ * a zvyšok trasy, pri `undocking` aj sea lane von) bez spoločnej bunky — `ShipTraffic.reservationConflict`, chyba na
+ * trase lode s vyšším id. Lode sú vo `world.ships` v poradí save (vzostupne podľa id), index = index v `/ships`.
+ */
+function checkShipRoutes(world: World): void {
+  const indexOf = new Map<EntityId, number>();
+  let index = 0;
+  for (const ship of world.ships.values()) {
+    const path = shipPath(index);
+    indexOf.set(ship.id, index);
+    index += 1;
+    const problem = shipRouteProblem(ship, world);
+    if (problem !== undefined) throw new WorldStateError(`${path}/${problem.field}`, problem.problem);
+  }
+  const conflict = world.shipTraffic.reservationConflict();
+  if (conflict === undefined) return;
+  const { earlier, later } = conflict;
+  throw new WorldStateError(
+    `${shipPath(indexOf.get(later.id) ?? 0)}/route`,
+    `trasa lode ${later.label} (${later.state}) sa prekrýva s rezerváciou lode ${earlier.label} (${earlier.state}) — lode by sa zrazili (ADR-029)`,
+  );
 }
 
 const vehiclePath = (index: number): string => `/vehicles${pointerSegment(index)}`;
@@ -706,6 +733,7 @@ export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'mo
   const { units } = parsed.cargo;
   restoreModules(world, entries);
   restoreShips(world, parsed.ships);
+  checkShipRoutes(world);
   restoreVehicles(world, parsed.vehicles);
   restoreTrucks(world, parsed.trucks);
   const indexOf = new Map<EntityId, number>(entries.map((entry, index) => [entry.id, index]));

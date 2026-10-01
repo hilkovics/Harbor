@@ -12,10 +12,7 @@
 import type { ContractId } from '../core/entity-id';
 import type { World } from '../world/world';
 import { Ship } from './ship';
-import { cardinalHeading, cellCenter } from './ship-route';
-
-/** Kurz lode pri spawne, keď prvý úsek `seaLane` nemá dĺžku (sever). */
-const DEFAULT_SPAWN_HEADING = 0;
+import { cellCenter, laneStartHeading } from './ship-route';
 
 /** Čo sa spawnuje. */
 export interface ShipSpawnSpec {
@@ -29,9 +26,7 @@ export interface ShipSpawnSpec {
 
 /** Vytvorí loď s nákladom podľa `spec` (viď hlavička súboru) a vráti ju. */
 export function spawnShip(world: World, spec: ShipSpawnSpec): Ship {
-  const [first, second] = world.map.seaLane;
-  const spawn = cellCenter(first);
-  const next = second === undefined ? spawn : cellCenter(second);
+  const spawn = cellCenter(world.map.seaLane[0]);
   const ship = new Ship({
     id: world.ids.next(),
     def: world.defs.ships.get(spec.shipClassId),
@@ -39,7 +34,7 @@ export function spawnShip(world: World, spec: ShipSpawnSpec): Ship {
     state: 'arriving',
     x: spawn.x,
     y: spawn.y,
-    heading: cardinalHeading(next.x - spawn.x, next.y - spawn.y) ?? DEFAULT_SPAWN_HEADING,
+    heading: laneStartHeading(world.map),
   });
   world.addShip(ship);
   for (let i = 0; i < spec.units; i++) world.cargo.create(spec.cargoTypeId, { kind: 'on_ship', shipId: ship.id }, spec.contractId);

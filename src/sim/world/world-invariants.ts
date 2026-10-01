@@ -644,6 +644,7 @@ function checkShip(world: World, ship: Ship, anchorages: Map<number, Ship>): str
     return `${ship.label} v stave '${ship.state}' ${traits.berths === 'always' ? 'nedrží kotviská' : `drží kotviská [${ship.berthIds.join(', ')}]`}`;
   }
   const index = ship.anchorageIndex;
+  if (index === null && traits.anchorage === 'always') return `${ship.label} v stave '${ship.state}' nedrží anchorage`;
   if (index !== null) {
     if (traits.anchorage === 'never') return `${ship.label} v stave '${ship.state}' má anchorage ${String(index)}`;
     if (ship.berthIds.length > 0) return `${ship.label} drží kotviská aj anchorage ${String(index)} (ADR-029)`;

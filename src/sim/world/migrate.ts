@@ -22,7 +22,9 @@
  *
  * v5 → v6 (T5B-02, ADR-029): lode ukladajú trasu aktuálneho stavu (`route`), lebo trasy cez prístav vznikajú A* po vode
  * pri rezervácii. v5 trasy neukladal (odvodzoval ich zo stavu), preto každá loď dostane `route: null` — obnova ju
- * odvodí podľa pravidiel pred ADR-029 (`legacyShipRoute`; potrebuje mapu a kotviská, ktoré migrácia nemá).
+ * odvodí podľa pravidiel pred ADR-029 (`legacyShipRoute`; potrebuje mapu a kotviská, ktoré migrácia nemá). `null`
+ * prijme parser len pri save spred v6 (`savesShipRoutes`) a loď bez cieľa najprv presunie pred vstup (`arriving`,
+ * ADR-029 addendum, T5B-04b).
  */
 import type { CargoLedgerState } from '../cargo/cargo-ledger-state';
 import type { DefRegistry } from '../defs/def-registry';
@@ -189,6 +191,16 @@ const WORLD_STATE_MIGRATIONS: ReadonlyMap<number, Migration> = new Map([
   [4, migrateV4ToV5],
   [5, migrateV5ToV6],
 ]);
+
+/**
+ * Ukladal save trasy lodí (verzia ≥ v6)? Save spred v6 (aj neplatný vstup — ten odmietne migrácia) trasy neukladal:
+ * migrácia im dá `route: null` a parser ich prijme len s voľbou `legacyShipRoutes` (ADR-029 addendum, review T5B-04b).
+ */
+export function savesShipRoutes(raw: unknown): boolean {
+  if (!isPlainObject(raw)) return true;
+  const version = raw['version'];
+  return typeof version !== 'number' || version >= WORLD_STATE_V6;
+}
 
 /** Najstaršia verzia, ktorú vie `migrateWorldState` načítať. */
 export const OLDEST_WORLD_STATE_VERSION = 1;

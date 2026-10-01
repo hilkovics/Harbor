@@ -10,8 +10,8 @@
  *   už pláva (vstup je jediný prechod, ktorý pohyb v ticku neukončí: loď pred mapou sa nemala čo pohnúť).
  * - `inbound`: plavba po sea lane; na jej konci `berthing` (kotviská z rezervácie alebo novo pridelené s voľnou
  *   trasou), inak `waiting_anchorage` po rezervovanom úseku k anchorage.
- * - `waiting_anchorage`: plavba k anchorage; na nej každý tick pokus o kotvisko (`tryStartBerthing`). Loď bez
- *   anchorage (save spred ADR-029) si ju skúsi prideliť (`tryClaimAnchorage`).
+ * - `waiting_anchorage`: plavba k anchorage; na nej každý tick pokus o kotvisko (`tryStartBerthing`). Anchorage drží
+ *   vždy (loď bez cieľa zo save v5 presunie parser pred vstup — `arriving`, ADR-029 addendum).
  * - `berthing`: plavba po rezervovanej trase k polohe pri kotvisku; po príchode `docked` s kurzom `DOCKED_HEADING`
  *   a `ShipDocked`.
  * - `docked`: keď na lodi nie je žiadna jednotka (`on_ship`) a trasa von je voľná → `undocking` + `ShipUndocked`.
@@ -22,7 +22,7 @@
 import { ShipError } from '../ships/ship-error';
 import type { Ship } from '../ships/ship';
 import type { ShipState } from '../ships/ship-fsm';
-import { DOCKED_HEADING, advanceAlongRoute, firstBerthOf, laneRoute, shipRoute } from '../ships/ship-route';
+import { DOCKED_HEADING, advanceAlongRoute, firstBerthOf, shipRoute } from '../ships/ship-route';
 import type { World } from '../world/world';
 
 type ShipStep = (ship: Ship, world: World) => void;
@@ -61,13 +61,11 @@ const SHIP_STEPS: { readonly [S in ShipState]: ShipStep } = {
     reachLaneEnd(ship, world);
   },
   waiting_anchorage: (ship, world) => {
-    const traffic = world.shipTraffic;
     if (!atRest(ship)) {
       sail(ship);
       return;
     }
-    if (traffic.tryStartBerthing(ship)) return;
-    traffic.tryClaimAnchorage(ship);
+    world.shipTraffic.tryStartBerthing(ship);
   },
   berthing: (ship, world) => {
     if (!sail(ship)) return;
@@ -85,7 +83,7 @@ const SHIP_STEPS: { readonly [S in ShipState]: ShipStep } = {
   undocking: (ship, world) => {
     if (!sail(ship)) return;
     world.shipTraffic.releaseBerths(ship);
-    ship.transition('outbound', [...laneRoute(world)].reverse());
+    ship.transition('outbound', world.shipTraffic.laneOutRoute);
   },
   outbound: (ship, world) => {
     if (!sail(ship)) return;

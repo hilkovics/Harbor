@@ -9,7 +9,7 @@ import type { EntityId } from '@sim/core';
 import { Ship } from '@sim/ships';
 import { World, WorldStateError, findWorldViolation, type WorldState } from '@sim/world';
 import { MAP } from '../world/world-fixtures';
-import { ANCHORAGE_OPEN, ANCHORAGE_OPEN_SOUTH, CHANNEL_BERTHS, CHANNEL_MAP_W1 } from './channel-map';
+import { ANCHORAGE_AT_MOUTH, ANCHORAGE_OPEN, ANCHORAGE_OPEN_SOUTH, CHANNEL_BERTHS, CHANNEL_MAP_W1 } from './channel-map';
 import { restoreCrane } from '../helpers/crane-state';
 import {
   BULKER,
@@ -39,6 +39,12 @@ type MutableState = { -readonly [K in keyof WorldState]: unknown } & {
 
 /** Mapa flotily (kanál so štartovým kotviskom W1 = `ROOT_BERTH_ID`, žeriav `ROOT_CRANE_ID`). */
 const FLEET_MAP = CHANNEL_MAP_W1;
+
+/** Stred bunky anchorage `index` mapy flotily. */
+function center(index: number): { x: number; y: number } {
+  const cell = FLEET_MAP.anchorage[index];
+  return { x: cell.x + 0.5, y: cell.y + 0.5 };
+}
 
 /** Loď čakajúca na anchorage `index` (v jej strede, trasa dokončená) s `units` jednotkami na palube. */
 function waitingAt(world: World, classId: string, index: number, units: number): Ship {
@@ -140,8 +146,15 @@ describe('WorldState v2 — lode', () => {
     ],
     ['dve lode na jednej anchorage', (s) => (s.ships[2]['anchorageIndex'] = ANCHORAGE_OPEN), '/ships/2/anchorageIndex'],
     ['waypointIndex za koncom trasy', (s) => (s.ships[0]['waypointIndex'] = (s.ships[0]['route'] as unknown[]).length + 1), '/ships/0/waypointIndex'],
-    // ADR-029: dve lode na mape nezdieľajú bunku (poistka obnovy = invarianty kroku 12).
-    ['dve lode na rovnakom mieste', (s) => Object.assign(s.ships[2], { x: s.ships[1]['x'], y: s.ships[1]['y'] }), ''],
+    // ADR-029 addendum (T5B-04b): trasa a poloha podľa stavu, rezervácie lodí na mape bez spoločnej bunky.
+    ['čakajúca loď bez trasy mimo svojej anchorage (na mieste inej lode)', (s) => Object.assign(s.ships[2], { x: s.ships[1]['x'], y: s.ships[1]['y'] }), '/ships/2/y'],
+    ['berthing s trasou, ktorá nekončí pri kotvisku', (s) => (s.ships[0]['route'] as unknown[]).pop(), '/ships/0/route'],
+    ['dokovaná loď s trasou', (s) => Object.assign(s.ships[0], { state: 'docked', x: 14, y: 15, heading: 180, waypointIndex: 0 }), '/ships/0/route'],
+    // A stojí na začiatku úseku (30,5; 5,65) → (30,5; 6,5); s indexom 1 by mala ležať na úseku y = 6,5.
+    ['loď mimo aktuálneho úseku trasy', (s) => (s.ships[0]['waypointIndex'] = 1), '/ships/0/y'],
+    ['čakajúca loď na anchorage v trase lode na ceste ku kotvisku', (s) => Object.assign(s.ships[1], { anchorageIndex: ANCHORAGE_AT_MOUTH, ...center(ANCHORAGE_AT_MOUTH) }), '/ships/1/route'],
+    ['natívny v6 s route: null', (s) => (s.ships[1]['route'] = null), '/ships/1/route'],
+    ['čakajúca loď bez anchorage v natívnom v6', (s) => (s.ships[1]['anchorageIndex'] = null), '/ships/1/anchorageIndex'],
     // T02-14: loď s nákladom na kotvisku bez žeriavu svojej kategórie by pri kotvisku ostala naveky.
     ['loď s nákladom na kotvisku bez žeriavu (Root žeriav chýba v save)', (s) => void (s.modules as unknown[]).splice(1, 1), ''],
   ])('%s → WorldStateError na %s', (_name, mutate, path) => {

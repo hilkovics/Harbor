@@ -120,4 +120,32 @@ describe('WaterNavigator.findRoute', () => {
       previous = point;
     }
   });
+
+  it('štart: obdĺžnik lode v štarte zasahuje do prekážky → null (review T5B-04b); dotyk hranou štart neblokuje', () => {
+    const nav = new WaterNavigator(gridOf(water(30, 20)));
+    const from = 10 * 30 + 6; // stred (6,5; 10,5), feeder pozdĺž x → bunky x 3–8, y 9–10 (x0 3, x1 10 pri strede bunky)
+    const box = nav.boxAt(FEEDER, from, AXIS_OF_HEADING[90]);
+    const overlapping: CellBox = { x0: box.x1 - 1, y0: box.y0, x1: box.x1 + 2, y1: box.y1 };
+    const touching: CellBox = { x0: box.x1, y0: box.y0, x1: box.x1 + 2, y1: box.y1 };
+    expect(nav.findRoute(FEEDER, from, 90, 3 * 30 + 20, null, [overlapping])).toBeNull();
+    expect(nav.findRoute(FEEDER, from, 90, 3 * 30 + 20, null, [touching])).not.toBeNull();
+    // Štart = cieľ: prázdna trasa len vtedy, keď štart nie je v prekážke.
+    expect(nav.findRoute(FEEDER, from, 90, from, null, [])).toEqual([]);
+    expect(nav.findRoute(FEEDER, from, 90, from, null, [overlapping])).toBeNull();
+  });
+
+  it('prekážky v pracovnom poli (bez alokácií): veľa prekážok a nepárne rozmery lode — trasa sa žiadnej nedotkne a končí v cieli', () => {
+    const nav = new WaterNavigator(gridOf(water(60, 40)));
+    const odd = { lengthCells: 5, widthCells: 3 };
+    // Hrebeň 40 malých prekážok (viac než počiatočná kapacita) s medzerou v strede.
+    const obstacles: CellBox[] = Array.from({ length: 40 }, (_, i) => ({ x0: 29, y0: i, x1: 31, y1: i + 1 })).filter((b) => b.y0 < 17 || b.y0 > 23);
+    expect(obstacles.length).toBeGreaterThan(16);
+    const from = 20 * 60 + 8;
+    const route = nav.findRoute(odd, from, 90, 20 * 60 + 52, null, obstacles);
+    expect(route?.at(-1)).toEqual({ x: 52.5, y: 20.5 });
+    const start = nav.centerOf(from);
+    const area = new TrafficArea();
+    sweepRoute(area, odd, { x: start.x, y: start.y, heading: 90 }, route ?? []);
+    for (const obstacle of obstacles) expect(boxHitsArea(obstacle, area), `prekážka y ${String(obstacle.y0)}`).toBe(false);
+  });
 });

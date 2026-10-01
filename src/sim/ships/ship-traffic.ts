@@ -25,6 +25,11 @@
  *   žiadne kotvisko (pás vody + miesto na priblíženie) a nezatarasí cestu von žiadnej lodi, ktorá drží kotviská;
  * - kotvisko sa pridelí, len keď z neho vedie cesta späť na koniec dráhy a obdĺžnik lode pri ňom nezatarasí cestu
  *   von žiadnej inej lodi, ktorá drží kotviská;
+ * - cesta von = posun bokom od kotviska na bod priblíženia (obal obdĺžnikov, overí sa voči prekážkam) a A* po vode
+ *   z bodu priblíženia (štart A* tiež mimo prekážok) — review T5B-04b: obdĺžnik pri susednom kotvisku vo vnútornom
+ *   rohu nábrežia nesmie ležať v posune bokom lode, ktorá kotvisko drží;
+ * - loď, ktorá drží kotviská a cestu von nemá už teraz, sa nepreskočí: obdĺžnik sa posúdi s prekážkami, ktoré
+ *   neodplávajú samy (lode čakajúce na kotvisko na anchorage), aby sa nestal trvalou prekážkou (ADR-029 addendum);
  * - lode pred vstupom nezaberajú nič, lode na trase trasu dokončia.
  * Predpoklad mapy: anchorage leží na otvorenej vode, kde čakajúca loď nerozdelí prístav (trasu ku kotviskám obíde A*).
  *
@@ -32,11 +37,12 @@
  * kotvisko, nemôže vyplávať len preto, že jej trasu drží pohybujúca sa loď, neskoršie lode v tomto ticku nič
  * nerezervujú (okrem odchodu) — kotvisko jej nikto nepredbehne. Loď, pre ktorú kotvisko nie je, nikoho nebrzdí.
  *
- * **Memo** (výkon, nie stav simulácie): kandidáti pokusu a trasy von držiteľov kotvísk sa pamätajú pre „epochu"
- * dopravy a prepočítajú sa až po zmene lodí (prechod, príchod, odchod), kotvísk alebo modulov. Kandidáti závisia len
- * od stavu, ktorý epochu mení (pózy stojacich lodí, konce trás, kotviská, moduly), a voľnosť trasy sa overuje pri
- * každom pokuse nanovo — pokus s rovnakými vstupmi dá rovnaký výsledok, preto memo nemení priebeh (ani po načítaní
- * save, keď je prázdne).
+ * **Memo** (výkon, nie stav simulácie): kandidáti pokusu (podľa lode a druhu pokusu) a trasy von držiteľov kotvísk
+ * sa pamätajú pre „epochu" dopravy a prepočítajú sa až po zmene lodí (prechod, príchod, odchod), kotvísk alebo
+ * modulov. Kandidáti závisia len od stavu, ktorý epochu mení (pózy stojacich lodí, konce trás, kotviská, moduly),
+ * a voľnosť trasy sa overuje pri každom pokuse nanovo — pokus s rovnakými vstupmi dá rovnaký výsledok, preto memo
+ * nemení priebeh (ani po načítaní save, keď je prázdne). Overenie voľnosti (`isClear`, každý tick) nealokuje: sea lane
+ * dopredu aj odzadu je predpočítaná a rezervácie ostatných lodí sa počítajú do znovupoužiteľnej oblasti.
  */
 import type { EntityId } from '../core/entity-id';
 import { BerthModule } from '../modules/berth-module';
@@ -45,26 +51,28 @@ import type { World } from '../world/world';
 import { allocateBerths } from './berth-allocator';
 import type { Ship } from './ship';
 import { SHIP_STATE_TRAITS, type ShipState } from './ship-fsm';
-import { TrafficArea, areasOverlap, boxHitsArea, boxesOverlap, sweepRoute, type ShipPose } from './ship-footprint';
+import { TrafficArea, boxesOverlap, spanBox, sweepRoute, type MutableShipPose, type ShipPose } from './ship-footprint';
 import {
   DOCKED_HEADING,
   anchoragePoint,
   approachPoint,
-  cardinalHeading,
   dockPoint,
   firstBerthOf,
   laneEnd,
   laneRoute,
+  laneStartHeading,
   segmentHeading,
   shipBox,
+  shipExtentX,
+  shipExtentY,
   type CellBox,
   type ShipDimensions,
   type ShipPoint,
 } from './ship-route';
 import { AXIS_OF_HEADING, WaterNavigator } from './water-navigator';
 
-/** Kurz lode na začiatku sea lane, keď dráha nemá dĺžku (sever). */
-const DEFAULT_LANE_HEADING = 0;
+/** Kurz lode na konci dráhy, keď dráha chýba (sever; mapa bez sea lane nemá lode). */
+const DEFAULT_LANE_HEADING: ShipPose['heading'] = 0;
 
 /**
  * Rezerva za bodom priblíženia v páse, kam kotviaca loď nesmie (bunky): pás vody kotviska + šírka najširšej lode (obdĺžnik
@@ -74,7 +82,10 @@ const DEFAULT_LANE_HEADING = 0;
 const APPROACH_MARGIN_CELLS = 1;
 
 /** Druh pokusu o rezerváciu (kandidáti sa pamätajú podľa lode a druhu). */
-type AttemptKind = 'enter' | 'berth' | 'anchor' | 'undock';
+type AttemptKind = 'enter' | 'berth' | 'undock';
+
+/** Druhy pokusov v poradí memo. */
+const ATTEMPT_KINDS: readonly AttemptKind[] = ['enter', 'berth', 'undock'];
 
 /** Kandidát rezervácie: cieľ (kotviská, anchorage alebo nič — odchod), trasa a bunky, ktoré cestou zaberie. */
 interface Candidate {
@@ -84,11 +95,12 @@ interface Candidate {
   readonly area: TrafficArea;
 }
 
-/** Kandidáti posledného pokusu lode. */
+/** Kandidáti posledného pokusu lode daného druhu. */
 interface CachedPlans {
   readonly epoch: number;
-  readonly kind: AttemptKind;
   readonly candidates: readonly Candidate[];
+  /** Niektorý kandidát vedie ku kotviskám (pre FIFO, `heldBack`). */
+  readonly hasBerths: boolean;
 }
 
 /** Trasa von z kotviska (bod priblíženia → koniec dráhy) a bunky, ktoré loď cestou od kotviska zaberie. */
@@ -111,16 +123,39 @@ export class ShipTraffic {
   private epoch = 0;
   private seenShipVersion = Number.NaN;
   private seenModuleVersion = Number.NaN;
-  /** Loď → kandidáti posledného pokusu a epocha, v ktorej vznikli (memo, viď hlavička). */
-  private readonly plans = new Map<EntityId, CachedPlans>();
+  /** Druh pokusu → loď → kandidáti posledného pokusu a epocha, v ktorej vznikli (memo, viď hlavička). */
+  private readonly plans: { readonly [K in AttemptKind]: Map<EntityId, CachedPlans> } = { enter: new Map(), berth: new Map(), undock: new Map() };
+  /** Zostavenie kandidátov podľa druhu pokusu (tabuľka, nie switch). */
+  private readonly builders: { readonly [K in AttemptKind]: (ship: Ship, out: Candidate[]) => void } = {
+    enter: (ship, out) => {
+      const hub = this.hubPose();
+      this.berthCandidates(ship, hub, this.laneIn(), out);
+      this.anchorageCandidates(ship, hub, this.laneIn(), out);
+    },
+    berth: (ship, out) => this.berthCandidates(ship, { x: ship.x, y: ship.y, heading: ship.heading }, [], out),
+    undock: (ship, out) => {
+      const exit = this.exitOf(ship);
+      if (exit === null) return;
+      const area = new TrafficArea();
+      area.addArea(exit.area);
+      sweepRoute(area, ship.def, exit.end, this.laneOutRoute);
+      out.push({ berths: null, anchorage: null, route: exit.route, area });
+    },
+  };
   /** Loď, ktorá drží kotviská → trasa von v epoche `exitsEpoch` (`null` = cesta von nie je). */
   private readonly exits = new Map<EntityId, ExitPlan | null>();
   private exitsEpoch = Number.NaN;
   /** V tomto ticku čaká na kotvisko skoršia loď, ktorej bráni pohybujúca sa loď (FIFO, `attempt`). */
   private heldBack = false;
+  /** `heldBack` na konci posledného kroku 3 (diagnostika a testy; nie je stav simulácie, neukladá sa). */
+  private lastHeldBack = false;
   private keepOut: KeepOut | undefined;
   private laneEnvelope: TrafficArea | undefined;
+  /** Sea lane dopredu a odzadu (stredy buniek; mapa je statická — predpočítané raz). */
+  private laneForward: readonly ShipPoint[] | undefined;
+  private laneBackward: readonly ShipPoint[] | undefined;
   private readonly scratch = new TrafficArea();
+  private readonly scratchEnd: MutableShipPose = { x: 0, y: 0, heading: DEFAULT_LANE_HEADING };
 
   constructor(world: World) {
     this.world = world;
@@ -157,9 +192,19 @@ export class ShipTraffic {
 
   /** Kurz na začiatku sea lane (smer prvého úseku). */
   laneStartHeading(): ShipPose['heading'] {
-    const [first, second] = this.world.map.seaLane;
-    if (first === undefined || second === undefined) return DEFAULT_LANE_HEADING;
-    return cardinalHeading(second.x - first.x, second.y - first.y) ?? DEFAULT_LANE_HEADING;
+    return laneStartHeading(this.world.map);
+  }
+
+  /** Sea lane od začiatku po koniec dráhy (predpočítaná, zdieľaná — nemeniť). */
+  private laneIn(): readonly ShipPoint[] {
+    this.laneForward ??= Object.freeze(laneRoute(this.world));
+    return this.laneForward;
+  }
+
+  /** Sea lane od konca dráhy po jej začiatok — trasa `outbound` a koniec rezervácie `undocking` (predpočítaná). */
+  get laneOutRoute(): readonly ShipPoint[] {
+    this.laneBackward ??= Object.freeze([...this.laneIn()].reverse());
+    return this.laneBackward;
   }
 
   /** Póza lode na konci trasy `route` (od bodu `startIndex`) z pózy `from` (bez zabratia buniek). */
@@ -174,7 +219,7 @@ export class ShipTraffic {
 
   /** Póza lode na konci sea lane (vstup do prístavu). */
   private hubPose(): ShipPose {
-    const lane = laneRoute(this.world);
+    const lane = this.laneIn();
     const start = lane[0];
     if (start === undefined) return { x: 0, y: 0, heading: DEFAULT_LANE_HEADING };
     return this.endPose({ x: start.x, y: start.y, heading: this.laneStartHeading() }, lane);
@@ -192,12 +237,13 @@ export class ShipTraffic {
 
   /**
    * Rezervácia lode (viď hlavička): obdĺžnik a bunky zvyšku trasy; `undocking` navyše celá sea lane von (rezervovaná
-   * pri odchode spolu s úsekom ku koncu dráhy); loď pred vstupom nič.
+   * pri odchode spolu s úsekom ku koncu dráhy); loď pred vstupom nič. Nealokuje (trasa od indexu, koncová póza do
+   * pracovného objektu).
    */
   reservationOf(ship: Ship, out: TrafficArea): void {
     if (!SHIP_STATE_TRAITS[ship.state].onMap) return;
-    const end = sweepRoute(out, ship.def, { x: ship.x, y: ship.y, heading: ship.heading }, ship.route.slice(ship.waypointIndex));
-    if (ship.state === 'undocking') sweepRoute(out, ship.def, end, [...laneRoute(this.world)].reverse());
+    const end = sweepRoute(out, ship.def, ship, ship.route, ship.waypointIndex, this.scratchEnd);
+    if (ship.state === 'undocking') sweepRoute(out, ship.def, end, this.laneOutRoute, 0, this.scratchEnd);
   }
 
   /** Obdĺžnik lode na konci jej trasy (kde bude stáť) — prekážka pre A* ostatných lodí; `undefined` = loď nestojí ani nemieri na miesto. */
@@ -221,15 +267,50 @@ export class ShipTraffic {
     return boxes;
   }
 
-  /** Je trasa `area` lode `ship` voľná voči rezerváciám všetkých ostatných lodí? */
+  /**
+   * Prekážky, ktoré neodplávajú samy: miesta lodí, ktoré čakajú na kotvisko (držia anchorage), okrem lodí `ship`
+   * a `holder`, plus `box`. Lode pri kotviskách a na trase odplávajú bez ohľadu na držiteľa kotviska.
+   */
+  private lastingObstacles(ship: Ship, holder: Ship, box: CellBox): CellBox[] {
+    const boxes: CellBox[] = [];
+    for (const other of this.world.ships.values()) {
+      if (other === ship || other === holder || other.anchorageIndex === null) continue;
+      const rest = this.restBox(other);
+      if (rest !== undefined) boxes.push(rest);
+    }
+    boxes.push(box);
+    return boxes;
+  }
+
+  /** Je trasa `area` lode `ship` voľná voči rezerváciám všetkých ostatných lodí? (bez alokácií) */
   private isClear(ship: Ship, area: TrafficArea): boolean {
     for (const other of this.world.ships.values()) {
       if (other === ship) continue;
       this.scratch.clear();
       this.reservationOf(other, this.scratch);
-      if (areasOverlap(area, this.scratch)) return false;
+      if (area.overlaps(this.scratch)) return false;
     }
     return true;
+  }
+
+  /**
+   * Prvá dvojica lodí na mape, ktorých rezervácie (obdĺžnik a zvyšok uloženej trasy) majú spoločnú bunku — obnova save
+   * (ADR-029 addendum): pri hre sa rezervácie neprekrývajú nikdy (rezervuje sa len voľná trasa a trasy sa len
+   * skracujú), takže save s prekryvom by o pár tickov porušil krok 12. `later` = loď s vyšším id. `undefined` = OK.
+   */
+  reservationConflict(): { readonly earlier: Ship; readonly later: Ship } | undefined {
+    const ships = [...this.world.ships.values()].filter((ship) => SHIP_STATE_TRAITS[ship.state].onMap);
+    const areas = ships.map((ship) => {
+      const area = new TrafficArea();
+      this.reservationOf(ship, area);
+      return area;
+    });
+    for (let j = 1; j < ships.length; j++) {
+      for (let i = 0; i < j; i++) {
+        if (areas[i].overlaps(areas[j])) return { earlier: ships[i], later: ships[j] };
+      }
+    }
+    return undefined;
   }
 
   /** Úsek A* po vode z pózy `from` do bunky bodu `goal` (s osou `goalHeading`, ak je daná); `null` = cesta nie je. */
@@ -245,18 +326,32 @@ export class ShipTraffic {
   berthLeg(dims: ShipDimensions, from: ShipPose, first: BerthModule, obstacles: readonly CellBox[]): ShipPoint[] | null {
     const heading = DOCKED_HEADING[first.waterSide];
     const approach = approachPoint(first, dims, this.world.map);
+    if (this.sidewaysBlocked(dims, first, approach, heading, obstacles)) return null;
     const leg = this.waterLeg(dims, from, approach, heading, obstacles);
     if (leg === null) return null;
     return [...leg, { ...approach, heading }, { ...dockPoint(first, dims), heading }];
   }
 
   /**
+   * Posun bokom medzi polohou pri kotviskách `first` a bodom priblíženia (osový úsek s kurzom `heading` — obal
+   * obdĺžnikov v oboch koncoch) zasiahne niektorú prekážku? A* po vode tento úsek nevidí (začína a končí v bode
+   * priblíženia), preto ho treba overiť zvlášť (review T5B-04b, ADR-029 B5).
+   */
+  private sidewaysBlocked(dims: ShipDimensions, first: BerthModule, approach: ShipPoint, heading: ShipPose['heading'], obstacles: readonly CellBox[]): boolean {
+    const dock = dockPoint(first, dims);
+    const span = spanBox(dims, heading, dock.x, dock.y, approach.x, approach.y);
+    for (const obstacle of obstacles) if (boxesOverlap(span, obstacle)) return true;
+    return false;
+  }
+
+  /**
    * Úsek od kotvísk `first` na koniec dráhy: posun bokom na bod priblíženia (kurz `DOCKED_HEADING`), potom A* po vode.
-   * `null` = cesta nie je.
+   * `null` = cesta nie je (aj keď prekážka leží v posune bokom alebo v štarte A*).
    */
   exitLeg(dims: ShipDimensions, first: BerthModule, obstacles: readonly CellBox[]): ShipPoint[] | null {
     const heading = DOCKED_HEADING[first.waterSide];
     const approach = { ...approachPoint(first, dims, this.world.map), heading };
+    if (this.sidewaysBlocked(dims, first, approach, heading, obstacles)) return null;
     const hub = laneEnd(this.world);
     if (hub === undefined) return [approach];
     const leg = this.waterLeg(dims, approach, hub, null, obstacles);
@@ -297,14 +392,17 @@ export class ShipTraffic {
   /**
    * Nezatarasí obdĺžnik `box` (kde bude stáť loď `ship`) cestu von žiadnej inej lodi, ktorá drží kotviská? Trasa von,
    * ktorej sa obdĺžnik nedotkne, platí ďalej; inak sa hľadá nová s obdĺžnikom ako prekážkou. Loď, ktorá cestu von
-   * nemá už teraz, sa neposudzuje (obdĺžnik jej ju nevzal). Odchádzajúce lode (`undocking`) majú trasu rezervovanú.
+   * nemá už teraz (prekážka, ktorá odpláva — napr. loď pri susednom kotvisku), sa nepreskočí: cesta von sa posúdi
+   * s prekážkami, ktoré ostanú (`lastingObstacles`) — obdĺžnik nesmie byť s nimi trvalou prekážkou (ADR-029
+   * addendum). Odchádzajúce lode (`undocking`) majú trasu rezervovanú.
    */
   private keepsExits(ship: Ship, box: CellBox): boolean {
     for (const other of this.world.ships.values()) {
       if (other === ship || other.berthIds.length === 0 || other.state === 'undocking') continue;
       const exit = this.exitOf(other);
-      if (exit === null || !boxHitsArea(box, exit.area)) continue;
-      if (this.exitLeg(other.def, firstBerthOf(other, this.world), this.obstaclesFor(other, box)) === null) return false;
+      if (exit !== null && !exit.area.hits(box)) continue;
+      const obstacles = exit === null ? this.lastingObstacles(ship, other, box) : this.obstaclesFor(other, box);
+      if (this.exitLeg(other.def, firstBerthOf(other, this.world), obstacles) === null) return false;
     }
     return true;
   }
@@ -317,7 +415,7 @@ export class ShipTraffic {
   private lane(): TrafficArea {
     if (this.laneEnvelope !== undefined) return this.laneEnvelope;
     const area = new TrafficArea();
-    const lane = laneRoute(this.world);
+    const lane = this.laneIn();
     const start = lane[0];
     for (const dims of this.world.defs.ships.items) {
       if (start === undefined) break;
@@ -388,7 +486,7 @@ export class ShipTraffic {
     const route = leg.length > 0 && leg[leg.length - 1].x === point.x && leg[leg.length - 1].y === point.y ? leg : [...leg, point];
     const rest = this.endPose(from, route);
     const box = shipBox(ship.def, rest.x, rest.y, rest.heading);
-    if (boxHitsArea(box, this.lane()) || boxHitsArea(box, this.berthFronts()) || !this.keepsExits(ship, box)) return null;
+    if (this.lane().hits(box) || this.berthFronts().hits(box) || !this.keepsExits(ship, box)) return null;
     return route;
   }
 
@@ -446,30 +544,29 @@ export class ShipTraffic {
   }
 
   /**
-   * Pokus o rezerváciu (viď hlavička „Poradie" a „Memo"): kandidáti sa zostavia raz za epochu (`build`) a pri každom
-   * pokuse sa vyberie prvý, ktorého trasa je voľná voči rezerváciám ostatných lodí. `null` = žiadny (loď čaká).
-   * Ak loď s kandidátom na kotvisko nemôže vyplávať, neskoršie lode v tomto ticku nič nerezervujú (okrem odchodu).
+   * Pokus o rezerváciu (viď hlavička „Poradie" a „Memo"): kandidáti sa zostavia raz za epochu (`builders`, memo podľa
+   * lode a druhu pokusu) a pri každom pokuse sa vyberie prvý, ktorého trasa je voľná voči rezerváciám ostatných lodí.
+   * `null` = žiadny (loď čaká). Ak loď s kandidátom na kotvisko nemôže vyplávať, neskoršie lode v tomto ticku nič
+   * nerezervujú (okrem odchodu).
    */
-  private attempt(ship: Ship, kind: AttemptKind, build: (out: Candidate[]) => void): Candidate | null {
+  private attempt(ship: Ship, kind: AttemptKind): Candidate | null {
     if (this.heldBack && kind !== 'undock') return null;
     const epoch = this.currentEpoch();
-    const cached = this.plans.get(ship.id);
-    let candidates: readonly Candidate[];
-    if (cached !== undefined && cached.epoch === epoch && cached.kind === kind) {
-      candidates = cached.candidates;
-    } else {
-      const built: Candidate[] = [];
-      build(built);
-      candidates = built;
-      this.plans.set(ship.id, { epoch, kind, candidates });
+    const memo = this.plans[kind];
+    let plans = memo.get(ship.id);
+    if (plans?.epoch !== epoch) {
+      const candidates: Candidate[] = [];
+      this.builders[kind](ship, candidates);
+      plans = { epoch, candidates, hasBerths: candidates.some((candidate) => candidate.berths !== null) };
+      memo.set(ship.id, plans);
     }
-    for (const candidate of candidates) {
+    for (const candidate of plans.candidates) {
       if (this.isClear(ship, candidate.area)) {
-        this.plans.delete(ship.id);
+        for (const other of ATTEMPT_KINDS) this.plans[other].delete(ship.id);
         return candidate;
       }
     }
-    if (kind !== 'undock' && candidates.some((candidate) => candidate.berths !== null)) this.heldBack = true;
+    if (kind !== 'undock' && plans.hasBerths) this.heldBack = true;
     return null;
   }
 
@@ -500,12 +597,7 @@ export class ShipTraffic {
    */
   tryEnter(ship: Ship): boolean {
     if (ship.state !== 'arriving') return false;
-    const chosen = this.attempt(ship, 'enter', (out) => {
-      const lane = laneRoute(this.world);
-      const hub = this.hubPose();
-      this.berthCandidates(ship, hub, lane, out);
-      this.anchorageCandidates(ship, hub, lane, out);
-    });
+    const chosen = this.attempt(ship, 'enter');
     if (chosen === null) return false;
     if (chosen.berths !== null) this.reserveBerths(ship, chosen.berths);
     else ship.anchorageIndex = chosen.anchorage;
@@ -530,8 +622,7 @@ export class ShipTraffic {
    * a začne `berthing`; anchorage uvoľní. `false` = kotvisko alebo trasa nie je (loď pokračuje / čaká).
    */
   tryStartBerthing(ship: Ship): boolean {
-    const pose: ShipPose = { x: ship.x, y: ship.y, heading: ship.heading };
-    const chosen = this.attempt(ship, 'berth', (out) => this.berthCandidates(ship, pose, [], out));
+    const chosen = this.attempt(ship, 'berth');
     if (chosen === null || chosen.berths === null) return false;
     this.reserveBerths(ship, chosen.berths);
     ship.anchorageIndex = null;
@@ -541,33 +632,11 @@ export class ShipTraffic {
   }
 
   /**
-   * Loď v `waiting_anchorage` bez anchorage (save spred ADR-029 — čaká na konci dráhy) si pridelí použiteľnú anchorage
-   * s voľnou trasou a začne k nej plávať (stav ostáva, mení sa len trasa).
-   */
-  tryClaimAnchorage(ship: Ship): boolean {
-    if (ship.anchorageIndex !== null) return false;
-    const pose: ShipPose = { x: ship.x, y: ship.y, heading: ship.heading };
-    const chosen = this.attempt(ship, 'anchor', (out) => this.anchorageCandidates(ship, pose, [], out));
-    if (chosen === null || chosen.anchorage === null) return false;
-    ship.anchorageIndex = chosen.anchorage;
-    ship.replaceRoute(chosen.route);
-    this.bump();
-    return true;
-  }
-
-  /**
    * Vyložená loď pri kotvisku odpláva (`docked` → `undocking`), keď je voľná trasa od kotviska na koniec dráhy a po
    * sea lane von. Kotviská drží ďalej, uvoľní ich na konci dráhy (`releaseBerths`).
    */
   tryUndock(ship: Ship): boolean {
-    const chosen = this.attempt(ship, 'undock', (out) => {
-      const exit = this.exitOf(ship);
-      if (exit === null) return;
-      const area = new TrafficArea();
-      for (const box of exit.area.boxes) area.add(box);
-      sweepRoute(area, ship.def, exit.end, [...laneRoute(this.world)].reverse());
-      out.push({ berths: null, anchorage: null, route: exit.route, area });
-    });
+    const chosen = this.attempt(ship, 'undock');
     if (chosen === null) return false;
     ship.transition('undocking', chosen.route);
     this.bump();
@@ -581,7 +650,16 @@ export class ShipTraffic {
 
   /** Koniec kroku 3: mimo neho (spawn) sa nič nezdržiava. */
   endTick(): void {
+    this.lastHeldBack = this.heldBack;
     this.heldBack = false;
+  }
+
+  /**
+   * Zdržala v poslednom kroku 3 niektorá loď s kandidátom na kotvisko neskoršie lode (FIFO)? Diagnostika a testy
+   * (ADR-029 B6: zdržať smie len pohybujúca sa loď); nie je stav simulácie, neukladá sa.
+   */
+  get heldBackLastTick(): boolean {
+    return this.lastHeldBack;
   }
 
   /** Zvyšok trasy `inbound` za koncom dráhy (úsek k cieľu rezervovaný pri vstupe). */
@@ -595,25 +673,44 @@ export class ShipTraffic {
   }
 }
 
+/** Pracovné polia `shipOverlapProblem` (krok 12 každý tick): obdĺžniky lodí na mape a lode v tom istom poradí. */
+const overlapScratch: { boxes: Int32Array; readonly ships: Ship[] } = { boxes: new Int32Array(0), ships: [] };
+
+/** Počet čísel na obdĺžnik v `overlapScratch.boxes` (x0, y0, x1, y1). */
+const OVERLAP_BOX_FIELDS = 4;
+
 /**
  * Dve lode na mape zdieľajú bunku (obdĺžniky `shipBox` sa prekrývajú) — invariant kroku 12 a obnovy save (ADR-029),
- * bez výnimiek. Každú dvojicu posúdi raz (vnútorný prechod je nový iterátor mapy); `undefined` = v poriadku.
+ * bez výnimiek. Obdĺžniky sa spočítajú raz do znovupoužiteľného poľa (bez alokácií okrem zväčšenia poľa) a každá
+ * dvojica sa posúdi raz; `undefined` = v poriadku.
  */
 export function shipOverlapProblem(ships: ReadonlyMap<EntityId, Ship>): string | undefined {
-  for (const a of ships.values()) {
-    if (!SHIP_STATE_TRAITS[a.state].onMap) continue;
-    const boxA = shipBox(a.def, a.x, a.y, a.heading);
-    let after = false;
-    for (const b of ships.values()) {
-      if (!after) {
-        after = b === a;
-        continue;
-      }
-      if (!SHIP_STATE_TRAITS[b.state].onMap) continue;
-      if (boxesOverlap(boxA, shipBox(b.def, b.x, b.y, b.heading))) {
-        return `${a.label} (${a.state}) a ${b.label} (${b.state}) zdieľajú bunky — lode sa nesmú prekrývať (ADR-029)`;
+  const onMap = overlapScratch.ships;
+  onMap.length = 0;
+  for (const ship of ships.values()) if (SHIP_STATE_TRAITS[ship.state].onMap) onMap.push(ship);
+  if (overlapScratch.boxes.length < onMap.length * OVERLAP_BOX_FIELDS) overlapScratch.boxes = new Int32Array(onMap.length * OVERLAP_BOX_FIELDS * 2);
+  const boxes = overlapScratch.boxes;
+  for (let i = 0; i < onMap.length; i++) {
+    const { def, x, y, heading } = onMap[i];
+    const w = shipExtentX(def, heading);
+    const h = shipExtentY(def, heading);
+    const offset = i * OVERLAP_BOX_FIELDS;
+    boxes[offset] = Math.floor(x - w / 2);
+    boxes[offset + 1] = Math.floor(y - h / 2);
+    boxes[offset + 2] = Math.ceil(x + w / 2);
+    boxes[offset + 3] = Math.ceil(y + h / 2);
+  }
+  let problem: string | undefined;
+  for (let i = 0; i < onMap.length && problem === undefined; i++) {
+    const a = i * OVERLAP_BOX_FIELDS;
+    for (let j = i + 1; j < onMap.length; j++) {
+      const b = j * OVERLAP_BOX_FIELDS;
+      if (boxes[a] < boxes[b + 2] && boxes[b] < boxes[a + 2] && boxes[a + 1] < boxes[b + 3] && boxes[b + 1] < boxes[a + 3]) {
+        problem = `${onMap[i].label} (${onMap[i].state}) a ${onMap[j].label} (${onMap[j].state}) zdieľajú bunky — lode sa nesmú prekrývať (ADR-029)`;
+        break;
       }
     }
   }
-  return undefined;
+  onMap.length = 0;
+  return problem;
 }

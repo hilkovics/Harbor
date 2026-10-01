@@ -44,9 +44,9 @@ export interface ShipStateTraits {
    */
   readonly berths: ShipHolding;
   /**
-   * Bunka anchorage (`anchorageIndex`): `inbound` smie (rezervovaná pri vstupe, ADR-029), `waiting_anchorage` smie
-   * (bez nej loď čaká na konci `seaLane` — len save spred ADR-029), ostatné nikdy. `inbound` nedrží naraz kotviská aj
-   * anchorage.
+   * Bunka anchorage (`anchorageIndex`): `inbound` smie (rezervovaná pri vstupe, ADR-029), `waiting_anchorage` vždy
+   * (loď bez anchorage zo save v5 presunie parser pred vstup — `arriving`, ADR-029 addendum), ostatné nikdy.
+   * `inbound` nedrží naraz kotviská aj anchorage a jedno z nich má vždy (cieľ trasy, `shipRouteProblem`).
    */
   readonly anchorage: ShipHolding;
   /**
@@ -75,7 +75,7 @@ const OPEN_WATER = { blocksBerthWater: false, moored: false, onMap: true } as co
 export const SHIP_STATE_TRAITS: { readonly [S in ShipState]: ShipStateTraits } = Object.freeze({
   arriving: traits({ ...OPEN_WATER, berths: 'never', anchorage: 'never', onMap: false }),
   inbound: traits({ ...OPEN_WATER, berths: 'optional', anchorage: 'optional' }),
-  waiting_anchorage: traits({ ...OPEN_WATER, berths: 'never', anchorage: 'optional' }),
+  waiting_anchorage: traits({ ...OPEN_WATER, berths: 'never', anchorage: 'always' }),
   berthing: traits({ ...OPEN_WATER, berths: 'always', anchorage: 'never', blocksBerthWater: true }),
   docked: traits({ ...OPEN_WATER, berths: 'always', anchorage: 'never', blocksBerthWater: true, moored: true }),
   undocking: traits({ ...OPEN_WATER, berths: 'optional', anchorage: 'never', blocksBerthWater: true }),

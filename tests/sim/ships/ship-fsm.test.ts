@@ -56,13 +56,14 @@ describe('SHIP_TRANSITIONS', () => {
 });
 
 describe('SHIP_STATE_TRAITS', () => {
-  it('kotviská: vždy berthing a docked, smie inbound (rezervácia pri vstupe) a undocking (do konca dráhy); anchorage smie inbound a waiting_anchorage; vodu pred kotviskom blokuje berthing/docked/undocking', () => {
+  it('kotviská: vždy berthing a docked, smie inbound (rezervácia pri vstupe) a undocking (do konca dráhy); anchorage smie inbound, vždy waiting_anchorage (T5B-04b); vodu pred kotviskom blokuje berthing/docked/undocking', () => {
     const where = (key: 'blocksBerthWater' | 'moored' | 'onMap'): ShipState[] => SHIP_STATES.filter((state) => SHIP_STATE_TRAITS[state][key]);
     const holding = (key: 'berths' | 'anchorage', value: string): ShipState[] => SHIP_STATES.filter((state) => SHIP_STATE_TRAITS[state][key] === value);
     expect(holding('berths', 'always')).toEqual(['berthing', 'docked']);
     expect(holding('berths', 'optional')).toEqual(['inbound', 'undocking']);
-    expect(holding('anchorage', 'optional')).toEqual(['inbound', 'waiting_anchorage']);
-    expect(holding('anchorage', 'always')).toEqual([]);
+    expect(holding('anchorage', 'optional')).toEqual(['inbound']);
+    // Loď bez anchorage zo save v5 (čakala na konci dráhy) parser presunie pred vstup (ADR-029 addendum).
+    expect(holding('anchorage', 'always')).toEqual(['waiting_anchorage']);
     expect(where('blocksBerthWater')).toEqual(['berthing', 'docked', 'undocking']);
     // T02-14: pri kotvisku (dockPoint + DOCKED_HEADING) stojí len dokovaná loď.
     expect(where('moored')).toEqual(['docked']);
@@ -148,7 +149,7 @@ describe('Ship — konštruktor a toState', () => {
     expect(JSON.parse(JSON.stringify(state))).toEqual(state);
   });
 
-  it('trasa (ADR-029): zmrazená kópia, transition ju nahradí (predvolene prázdnou) a vynuluje waypointIndex; replaceRoute bez zmeny stavu', () => {
+  it('trasa (ADR-029): zmrazená kópia, transition ju nahradí (predvolene prázdnou) a vynuluje waypointIndex; inak sa nemení (replaceRoute zrušené, T5B-04b)', () => {
     const s = ship({ route: ROUTE3, waypointIndex: 1 });
     expect(s.route).toEqual(ROUTE3);
     expect(Object.isFrozen(s.route)).toBe(true);
@@ -158,9 +159,8 @@ describe('Ship — konštruktor a toState', () => {
     s.waypointIndex = 1;
     s.transition('docked');
     expect([s.waypointIndex, s.route]).toEqual([0, []]);
-    const waiting = ship({ state: 'waiting_anchorage' });
-    waiting.replaceRoute(ROUTE3);
-    expect([waiting.state, waiting.waypointIndex, waiting.route.length]).toEqual(['waiting_anchorage', 0, 3]);
+    // Trasu mení len prechod stavu: legacy loď bez anchorage (save v5) parser presunie pred vstup, nová trasa bez prechodu nie je.
+    expect('replaceRoute' in s).toBe(false);
   });
 
   it.each<[string, Partial<ShipInit>, RegExp]>([

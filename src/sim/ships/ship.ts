@@ -8,8 +8,8 @@
  * - `berthIds` = kotviská, ktoré loď drží (v poradí po pobreží): od rezervácie (pri vstupe `inbound`, na konci dráhy
  *   alebo na anchorage) po koniec `undocking` na konci dráhy (`SHIP_STATE_TRAITS.berths`).
  * - `anchorageIndex` = index bunky `map.anchorage`, ktorú loď drží od rezervácie (pri vstupe `inbound`) po odchod
- *   ku kotvisku (`SHIP_STATE_TRAITS.anchorage`); `null` v `waiting_anchorage` len v save spred ADR-029 (čaká na konci
- *   `seaLane`).
+ *   ku kotvisku (`SHIP_STATE_TRAITS.anchorage`; v `waiting_anchorage` vždy — loď bez cieľa zo save v5 presunie parser
+ *   pred vstup, ADR-029 addendum).
  * - `route` = trasa aktuálneho stavu (body na vode; ADR-029 — trasa cez prístav vzniká A* po vode pri rezervácii
  *   a ukladá sa, lebo závisí od polohy ostatných lodí v tej chvíli), `waypointIndex` = index nasledujúceho bodu.
  *
@@ -178,15 +178,6 @@ export class Ship {
       throw new ShipError('invalid_transition', `${this.label}: prechod ${this.current} → ${to} nie je povolený (povolené: ${allowed.join(', ') || '–'})`);
     }
     this.current = to;
-    this.waypointIndex = 0;
-    this.currentRoute = frozenRoute(route);
-  }
-
-  /**
-   * Nová trasa bez zmeny stavu (`waypointIndex = 0`) — len loď v `waiting_anchorage` bez anchorage (save spred ADR-029),
-   * ktorá si anchorage pridelí neskôr (`ShipTraffic.tryClaimAnchorage`).
-   */
-  replaceRoute(route: readonly ShipPoint[]): void {
     this.waypointIndex = 0;
     this.currentRoute = frozenRoute(route);
   }

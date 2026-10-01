@@ -180,7 +180,8 @@ describe('legacyShipRoute — trasa stavu podľa pravidiel pred ADR-029 (migrác
       heading: 180,
       berthIds: [ROOT_BERTH_ID, east],
     });
-    expect(legacyShipRoute(berthing, world)).toEqual([{ x: 45, y: 13 }]);
+    // Pevný kurz DOCKED_HEADING (T5B-04b): obdĺžnik pri kotvisku je súčasťou rezervácie, loď sa pri ňom neotočí.
+    expect(legacyShipRoute(berthing, world)).toEqual([{ x: 45, y: 13, heading: 90 }]);
     berthing.berthIds = [777 as EntityId];
     expect(() => legacyShipRoute(berthing, world)).toThrow(ShipError);
   });

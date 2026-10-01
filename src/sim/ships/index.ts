@@ -18,17 +18,22 @@ export {
   firstBerthOf,
   laneEnd,
   laneRoute,
+  laneStart,
+  laneStartHeading,
   legacyShipRoute,
   mooringOf,
   mooringProblem,
   segmentHeading,
   shipBox,
   shipCells,
+  shipExtentX,
+  shipExtentY,
   shipRoute,
+  shipRouteProblem,
 } from './ship-route';
-export type { CellBox, ShipDimensions, ShipMooring, ShipPoint, ShipRouteEnv } from './ship-route';
-export { SWEEP_STEP_CELLS, TrafficArea, areasOverlap, boxHitsArea, boxesOverlap, sweepRoute } from './ship-footprint';
-export type { ShipPose } from './ship-footprint';
+export type { CellBox, ShipDimensions, ShipMooring, ShipPoint, ShipRouteEnv, ShipRouteProblem } from './ship-route';
+export { SWEEP_STEP_CELLS, TrafficArea, areasOverlap, boxHitsArea, boxesOverlap, spanBox, sweepRoute } from './ship-footprint';
+export type { MutableShipPose, ShipPose } from './ship-footprint';
 export { ShipTraffic, shipOverlapProblem } from './ship-traffic';
 export { AXIS_OF_HEADING, WaterNavigator } from './water-navigator';
 export type { ShipAxis, WaterGrid } from './water-navigator';

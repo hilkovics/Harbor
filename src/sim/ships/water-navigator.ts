@@ -5,10 +5,12 @@
  *
  * - **Stav** = (bunka, os lode): stred lode v strede bunky, dĺžka lode pozdĺž osi `x` (kurz 90/270) alebo `y` (0/180).
  *   Stav je priechodný, keď celý obdĺžnik lode (`shipBox`) leží v mape na vode a nezasahuje do žiadnej prekážky
- *   (obdĺžniky lodí, ktoré stoja alebo sa na miesto chystajú — `obstacles`). Štartový stav je priechodný vždy (loď tam
- *   už je).
- * - **Hrany**: krok k susednej bunke pozdĺž osi (1 pohyb), krok **bokom** (kolmo na os, 1 pohyb + 1 manéver — loď
- *   s vlečnými člnmi; dlhá loď sa inak nedostane k nábrežiu v plytkej zátoke) a otočenie na mieste (1 manéver). Pri
+ *   (obdĺžniky lodí, ktoré stoja alebo sa na miesto chystajú — `obstacles`). Štartový stav sa na vodu neoveruje (loď
+ *   tam už je), ale jeho obdĺžnik nesmie zasahovať do prekážky — inak trasa nie je (`null`; review T5B-04b: loď, ktorej
+ *   by stojaca loď zasahovala do miesta štartu, sa z neho nepohne bez prekryvu).
+ * - **Hrany**: krok k susednej bunke pozdĺž osi (1 pohyb), krok **bokom** (kolmo na os, 1 pohyb + `SIDEWAYS_MANEUVERS`
+ *   — loď s vlečnými člnmi; dlhá loď sa inak nedostane k nábrežiu v plytkej zátoke) a otočenie na mieste
+ *   (`TURN_MANEUVERS`). Pri
  *   posune medzi stredmi dvoch buniek zaberie loď len bunky obdĺžnikov v oboch koncoch, takže priechodnosť stavov stačí
  *   na celú trasu; pri otočení musia byť priechodné obe osi.
  * - **Cena** je lexikografická: najprv počet pohybov, potom počet manévrov (kódovaná ako `pohyby × MANÉVRE_MAX +
@@ -20,6 +22,9 @@
  * - Výsledok sú stredy buniek, v ktorých loď mení smer, a cieľ. Úsek dopredu nemá pevný kurz (kurz dá smer úseku),
  *   úsek bokom má pevný kurz lode (`ShipPoint.heading`). Pracovné polia vzniknú raz na navigátor; tabuľky priechodnosti
  *   vody sú memo podľa rozmerov lode (terén je statický).
+ * - **Bez alokácií v cykle** (ADR-021, review T5B-04b): prekážky sa na začiatku hľadania skopírujú do typovaného poľa
+ *   a obdĺžnik stavu sa počíta v skalároch z posunov hrán pre os (`floor(x + 0,5 − w/2) = x + floor(0,5 − w/2)` pre
+ *   celé `x`, teda tie isté bunky ako `shipBox`). Hľadanie alokuje len výsledné pole bodov.
  */
 import { IndexedBinaryHeap } from '../logistics/binary-heap';
 import type { Rotation } from '../grid/rotation';
@@ -37,6 +42,16 @@ const HEADING_OF_AXIS: readonly [Rotation, Rotation] = [90, 0];
 
 /** Počet osí (stavov na bunku). */
 const AXES = 2;
+
+/**
+ * Manévre otočenia na mieste a kroku bokom (navyše k pohybu). Štrukturálne konštanty lexikografickej ceny (počítajú sa
+ * len pri rovnakom počte pohybov), nie balans — prirodzenejšia cena ako def je v BACKLOG (ADR-029).
+ */
+const TURN_MANEUVERS = 1;
+const SIDEWAYS_MANEUVERS = 1;
+
+/** Počet čísel na prekážku v pracovnom poli (x0, y0, x1, y1). */
+const BOX_FIELDS = 4;
 
 /** Čo navigátor z mriežky číta (`Grid` to spĺňa); terén sa nemení. */
 export interface WaterGrid {
@@ -63,6 +78,13 @@ export class WaterNavigator {
   private readonly open: IndexedBinaryHeap;
   private readonly turnScale: number;
   private generation = NEVER;
+  /** Prekážky aktuálneho hľadania `[x0, y0, x1, y1]…` (pracovné pole, zväčší sa podľa potreby). */
+  private obstacleBounds = new Int32Array(0);
+  private obstacleCount = 0;
+  /** Posuny hrán obdĺžnika lode od bunky pre os 0 a 1: `[dx0, dy0, dx1, dy1]` × os (aktuálne hľadanie). */
+  private readonly extents = new Int32Array(AXES * BOX_FIELDS);
+  /** Priechodnosť vody aktuálneho hľadania (`fits(dims)`). */
+  private activeFits: Uint8Array = new Uint8Array(0);
 
   constructor(grid: WaterGrid) {
     this.grid = grid;
@@ -135,15 +157,52 @@ export class WaterNavigator {
     return table;
   }
 
-  /** Je stav priechodný (voda a bez prekážky)? */
-  private passable(dims: ShipDimensions, fits: Uint8Array, state: number, obstacles: readonly CellBox[]): boolean {
-    if (fits[state] === 0) return false;
-    if (obstacles.length === 0) return true;
-    const box = this.boxAt(dims, Math.floor(state / AXES), (state % AXES) as ShipAxis);
-    for (const obstacle of obstacles) {
-      if (box.x0 < obstacle.x1 && obstacle.x0 < box.x1 && box.y0 < obstacle.y1 && obstacle.y0 < box.y1) return false;
+  /** Pripraví pracovné polia hľadania: prekážky a posuny hrán obdĺžnika lode pre obe osi. */
+  private prepare(dims: ShipDimensions, obstacles: readonly CellBox[]): void {
+    const needed = obstacles.length * BOX_FIELDS;
+    if (this.obstacleBounds.length < needed) this.obstacleBounds = new Int32Array(needed);
+    for (let i = 0; i < obstacles.length; i++) {
+      const box = obstacles[i];
+      const offset = i * BOX_FIELDS;
+      this.obstacleBounds[offset] = box.x0;
+      this.obstacleBounds[offset + 1] = box.y0;
+      this.obstacleBounds[offset + 2] = box.x1;
+      this.obstacleBounds[offset + 3] = box.y1;
     }
-    return true;
+    this.obstacleCount = obstacles.length;
+    for (let axis = 0 as ShipAxis; axis < AXES; axis = (axis + 1) as ShipAxis) {
+      // Obdĺžnik v bunke (0, 0) = posuny hrán; pre bunku (x, y) sa len pripočítajú celé x, y.
+      const reference = this.boxAt(dims, 0, axis);
+      const offset = axis * BOX_FIELDS;
+      this.extents[offset] = reference.x0;
+      this.extents[offset + 1] = reference.y0;
+      this.extents[offset + 2] = reference.x1;
+      this.extents[offset + 3] = reference.y1;
+    }
+  }
+
+  /** Zasahuje obdĺžnik lode v stave `state` do niektorej prekážky aktuálneho hľadania? */
+  private blocked(state: number): boolean {
+    if (this.obstacleCount === 0) return false;
+    const { width } = this.grid;
+    const cell = Math.floor(state / AXES);
+    const x = cell % width;
+    const y = (cell - x) / width;
+    const offset = (state % AXES) * BOX_FIELDS;
+    const x0 = x + this.extents[offset];
+    const y0 = y + this.extents[offset + 1];
+    const x1 = x + this.extents[offset + 2];
+    const y1 = y + this.extents[offset + 3];
+    const bounds = this.obstacleBounds;
+    for (let i = 0; i < this.obstacleCount * BOX_FIELDS; i += BOX_FIELDS) {
+      if (x0 < bounds[i + 2] && bounds[i] < x1 && y0 < bounds[i + 3] && bounds[i + 1] < y1) return true;
+    }
+    return false;
+  }
+
+  /** Je stav priechodný (voda a bez prekážky)? */
+  private passable(state: number): boolean {
+    return this.activeFits[state] !== 0 && !this.blocked(state);
   }
 
   private heuristic(cell: number, goal: number): number {
@@ -154,17 +213,20 @@ export class WaterNavigator {
   /**
    * Trasa stredu lode z bunky `from` s kurzom `fromHeading` do bunky `to` (s osou `toAxis`, `null` = ľubovoľná) po vode
    * mimo `obstacles`: stredy buniek, v ktorých loď mení smer, a cieľ (prvý bod je prvý zlom alebo cieľ, nie štart).
-   * `null` = cesta neexistuje. Štart = cieľ so správnou osou → prázdna trasa.
+   * `null` = cesta neexistuje alebo obdĺžnik lode v štarte zasahuje do prekážky. Štart = cieľ so správnou osou →
+   * prázdna trasa.
    */
   findRoute(dims: ShipDimensions, from: number, fromHeading: Rotation, to: number, toAxis: ShipAxis | null, obstacles: readonly CellBox[]): ShipPoint[] | null {
     const fromAxis = AXIS_OF_HEADING[fromHeading];
-    const fits = this.fits(dims);
+    this.activeFits = this.fits(dims);
+    this.prepare(dims, obstacles);
     const { width, height } = this.grid;
+    const start = from * AXES + fromAxis;
+    if (this.blocked(start)) return null;
     this.generation += 1;
     const stamp = this.generation;
     const { g, h, parent, seen, closed, open } = this;
     open.clear();
-    const start = from * AXES + fromAxis;
     seen[start] = stamp;
     g[start] = 0;
     h[start] = this.heuristic(from, to);
@@ -183,24 +245,24 @@ export class WaterNavigator {
       }
       // Otočenie na mieste.
       const turned = cell * AXES + (1 - axis);
-      this.relax(state, turned, g[state] + 1, to, dims, fits, obstacles, stamp);
+      this.relax(state, turned, g[state] + TURN_MANEUVERS, to, stamp);
       // Posun o bunku (4 smery): pozdĺž osi dopredu/dozadu, kolmo bokom s manévrom navyše.
       const x = cell % width;
       const y = Math.floor(cell / width);
       const along = g[state] + this.turnScale;
-      const sideways = along + 1;
-      if (x > 0) this.relax(state, (cell - 1) * AXES + axis, axis === 0 ? along : sideways, to, dims, fits, obstacles, stamp);
-      if (x < width - 1) this.relax(state, (cell + 1) * AXES + axis, axis === 0 ? along : sideways, to, dims, fits, obstacles, stamp);
-      if (y > 0) this.relax(state, (cell - width) * AXES + axis, axis === 1 ? along : sideways, to, dims, fits, obstacles, stamp);
-      if (y < height - 1) this.relax(state, (cell + width) * AXES + axis, axis === 1 ? along : sideways, to, dims, fits, obstacles, stamp);
+      const sideways = along + SIDEWAYS_MANEUVERS;
+      if (x > 0) this.relax(state, (cell - 1) * AXES + axis, axis === 0 ? along : sideways, to, stamp);
+      if (x < width - 1) this.relax(state, (cell + 1) * AXES + axis, axis === 0 ? along : sideways, to, stamp);
+      if (y > 0) this.relax(state, (cell - width) * AXES + axis, axis === 1 ? along : sideways, to, stamp);
+      if (y < height - 1) this.relax(state, (cell + width) * AXES + axis, axis === 1 ? along : sideways, to, stamp);
     }
     if (found < 0) return null;
     return this.points(found, fromHeading);
   }
 
-  private relax(from: number, to: number, cost: number, goal: number, dims: ShipDimensions, fits: Uint8Array, obstacles: readonly CellBox[], stamp: number): void {
+  private relax(from: number, to: number, cost: number, goal: number, stamp: number): void {
     if (this.closed[to] === stamp) return;
-    if (!this.passable(dims, fits, to, obstacles)) return;
+    if (!this.passable(to)) return;
     if (this.seen[to] === stamp && this.g[to] <= cost) return;
     this.g[to] = cost;
     this.h[to] = this.heuristic(Math.floor(to / AXES), goal);

@@ -105,6 +105,16 @@ export function approachPoint(first: BerthModule, ship: ShipDimensions, bounds: 
 /** Os, pozdĺž ktorej leží dĺžka lode pri danom kurze. */
 const LENGTH_AXIS: { readonly [R in Rotation]: 'x' | 'y' } = Object.freeze({ 0: 'y', 90: 'x', 180: 'y', 270: 'x' });
 
+/** Rozmer obdĺžnika lode pozdĺž osi `x` pri kurze `heading` (dĺžka pri 90/270, inak šírka). */
+export function shipExtentX(ship: ShipDimensions, heading: Rotation): number {
+  return LENGTH_AXIS[heading] === 'x' ? ship.lengthCells : ship.widthCells;
+}
+
+/** Rozmer obdĺžnika lode pozdĺž osi `y` pri kurze `heading` (šírka pri 90/270, inak dĺžka). */
+export function shipExtentY(ship: ShipDimensions, heading: Rotation): number {
+  return LENGTH_AXIS[heading] === 'x' ? ship.widthCells : ship.lengthCells;
+}
+
 /**
  * Bunky, ktoré prekrýva obdĺžnik lode (stred `x`, `y`, dĺžka pozdĺž osi kurzu, šírka naprieč) — row-major. Pri
  * kotvisku sú to presne bunky obdĺžnika z `dockPoint`. Slúži pravidlu `water_blocked` (loď v páse kotviska).
@@ -131,9 +141,8 @@ export interface CellBox {
  * (každá bunka, do ktorej obdĺžnik zasahuje; pri strede v strede bunky a párnom rozmere aj o polbunku viac).
  */
 export function shipBox(ship: ShipDimensions, x: number, y: number, heading: Rotation): CellBox {
-  const alongX = LENGTH_AXIS[heading] === 'x';
-  const w = alongX ? ship.lengthCells : ship.widthCells;
-  const h = alongX ? ship.widthCells : ship.lengthCells;
+  const w = shipExtentX(ship, heading);
+  const h = shipExtentY(ship, heading);
   return { x0: Math.floor(x - w / 2), y0: Math.floor(y - h / 2), x1: Math.ceil(x + w / 2), y1: Math.ceil(y + h / 2) };
 }
 
@@ -141,6 +150,22 @@ export function shipBox(ship: ShipDimensions, x: number, y: number, heading: Rot
 export interface ShipRouteEnv {
   readonly map: { readonly width: number; readonly height: number; readonly seaLane: readonly CellCoord[]; readonly anchorage: readonly CellCoord[] };
   readonly modules: ReadonlyMap<EntityId, Module>;
+}
+
+/** Kurz lode na začiatku sea lane, keď dráha nemá druhý bod alebo nulový prvý úsek (sever). */
+const DEFAULT_LANE_HEADING: Rotation = 0;
+
+/** Kurz lode na začiatku sea lane (smer prvého úseku) — kurz lode pred vstupom (`arriving`) a na začiatku plavby dnu. */
+export function laneStartHeading(map: { readonly seaLane: readonly CellCoord[] }): Rotation {
+  const [first, second] = map.seaLane;
+  if (first === undefined || second === undefined) return DEFAULT_LANE_HEADING;
+  return cardinalHeading(second.x - first.x, second.y - first.y) ?? DEFAULT_LANE_HEADING;
+}
+
+/** Začiatok dráhy (stred `seaLane[0]`) — poloha lode pred vstupom (`arriving`) a koniec plavby von (`outbound`). */
+export function laneStart(env: ShipRouteEnv): ShipPoint | undefined {
+  const first = env.map.seaLane[0];
+  return first === undefined ? undefined : cellCenter(first);
 }
 
 /** Koniec dráhy (stred posledného bodu `seaLane`) — vstup do prístavu a uzol všetkých trás v ňom (ADR-029). */
@@ -209,7 +234,10 @@ export function laneRoute(env: ShipRouteEnv): readonly ShipPoint[] {
 /**
  * Trasa stavu podľa pravidiel pred ADR-029 (tabuľka, nie switch) — len pre migráciu save v5 → v6, ktorý trasy lodí
  * neukladal: `inbound` = sea lane, `waiting_anchorage` = pridelená anchorage (bez nej loď stojí), `berthing` = priama
- * úsečka k polohe pri kotvisku, `undocking` = koniec sea lane, `outbound` = sea lane odzadu.
+ * úsečka k polohe pri kotvisku s kurzom `DOCKED_HEADING` (review T5B-04b: obdĺžnik pri kotvisku je tak súčasťou
+ * rezervácie a loď sa na konci neotočí do susedov), `undocking` = koniec sea lane, `outbound` = sea lane odzadu. Loď
+ * bez cieľa (`inbound` bez kotvísk a anchorage, `waiting_anchorage` bez anchorage) sem nepríde — parser save v5 ju
+ * presunie pred vstup (`arriving`, ADR-029 addendum).
  */
 const LEGACY_ROUTES: { readonly [S in ShipState]: RouteOf } = {
   arriving: () => NO_ROUTE,
@@ -218,7 +246,10 @@ const LEGACY_ROUTES: { readonly [S in ShipState]: RouteOf } = {
     const point = ship.anchorageIndex === null ? undefined : anchoragePoint(env, ship.anchorageIndex);
     return point === undefined ? NO_ROUTE : [point];
   },
-  berthing: (ship, env) => [dockPoint(firstBerthOf(ship, env), ship.def)],
+  berthing: (ship, env) => {
+    const first = firstBerthOf(ship, env);
+    return [{ ...dockPoint(first, ship.def), heading: DOCKED_HEADING[first.waterSide] }];
+  },
   docked: () => NO_ROUTE,
   undocking: (_ship, env) => {
     const end = laneEnd(env);
@@ -236,6 +267,97 @@ export function legacyShipRoute(ship: Ship, env: ShipRouteEnv): readonly ShipPoi
 /** Body trasy aktuálneho stavu lode (uložená trasa `Ship.route`, ADR-029). */
 export function shipRoute(ship: Ship): readonly ShipPoint[] {
   return ship.route;
+}
+
+/** Cieľ lode s rezerváciou pri vstupe: poloha pri kotviskách, inak anchorage; `undefined` = loď cieľ nemá. */
+function targetOf(ship: Ship, env: ShipRouteEnv): ShipPoint | undefined {
+  if (ship.berthIds.length > 0) return dockPoint(firstBerthOf(ship, env), ship.def);
+  return ship.anchorageIndex === null ? undefined : anchoragePoint(env, ship.anchorageIndex);
+}
+
+/** Pravidlo trasy stavu pre kontrolu obnovy save (ADR-029 addendum, review T5B-04b). */
+interface RouteRule {
+  /** Trasa musí byť prázdna (loď stojí na mieste stavu a nepláva). */
+  readonly empty: boolean;
+  /** Trasa začína celou sea lane a pokračuje k cieľu; loď je ešte na dráhe (`waypointIndex` ≤ počet bodov dráhy). */
+  readonly lanePrefix: boolean;
+  /** Kde trasa končí (pri prázdnej trase kde loď stojí); `undefined` = stav bez cieľa → chyba. */
+  readonly end: (ship: Ship, env: ShipRouteEnv) => ShipPoint | undefined;
+}
+
+const toLaneStart = (_ship: Ship, env: ShipRouteEnv): ShipPoint | undefined => laneStart(env);
+const toDock = (ship: Ship, env: ShipRouteEnv): ShipPoint => dockPoint(firstBerthOf(ship, env), ship.def);
+
+/**
+ * Trasa podľa stavu (tabuľka, nie switch): `arriving` stojí pred vstupom na začiatku dráhy bez trasy, `inbound` pláva
+ * po sea lane k cieľu z rezervácie (kotviská alebo anchorage), `waiting_anchorage` končí na svojej anchorage,
+ * `berthing` pri kotvisku, `docked` stojí pri kotvisku bez trasy, `undocking` končí na konci dráhy, `outbound` na jej
+ * začiatku.
+ */
+const ROUTE_RULES: { readonly [S in ShipState]: RouteRule } = {
+  arriving: { empty: true, lanePrefix: false, end: toLaneStart },
+  inbound: { empty: false, lanePrefix: true, end: targetOf },
+  waiting_anchorage: { empty: false, lanePrefix: false, end: (ship, env) => (ship.anchorageIndex === null ? undefined : anchoragePoint(env, ship.anchorageIndex)) },
+  berthing: { empty: false, lanePrefix: false, end: toDock },
+  docked: { empty: true, lanePrefix: false, end: toDock },
+  undocking: { empty: false, lanePrefix: false, end: (_ship, env) => laneEnd(env) },
+  outbound: { empty: false, lanePrefix: false, end: toLaneStart },
+  despawned: { empty: true, lanePrefix: false, end: () => undefined },
+};
+
+/** Porušenie súladu trasy lode so stavom: pole záznamu lode v save a popis. */
+export interface ShipRouteProblem {
+  readonly field: 'route' | 'waypointIndex' | 'x' | 'y';
+  readonly problem: string;
+}
+
+function at(point: { readonly x: number; readonly y: number }): string {
+  return `(${String(point.x)}, ${String(point.y)})`;
+}
+
+/**
+ * Súlad uloženej trasy lode so stavom (obnova save, ADR-029 addendum; review T5B-04b) — `undefined` = v poriadku:
+ * prázdna trasa v stavoch, v ktorých loď stojí (`ROUTE_RULES.empty`), plavba dnu začína celou sea lane a loď je ešte
+ * na nej, trasa končí presne v cieli stavu (pri prázdnej trase tam loď stojí; súradnice sú násobky 0,5 — presné),
+ * a poloha leží na aktuálnom úseku: po dosiahnutí bodu `waypointIndex − 1` loď stojí v ňom alebo medzi ním a ďalším
+ * bodom (obal úseku — pohyb `advanceAlongRoute` ho nikdy neopustí, kontrola je presná bez tolerancie). Začiatok
+ * prvého úseku (`waypointIndex` 0) je poloha pri prechode stavu, ktorá sa neukladá — tam sa poloha neoveruje.
+ */
+export function shipRouteProblem(ship: Ship, env: ShipRouteEnv): ShipRouteProblem | undefined {
+  const rule = ROUTE_RULES[ship.state];
+  const { route, waypointIndex } = ship;
+  const what = `${ship.label} v stave '${ship.state}'`;
+  if (rule.empty && route.length > 0) return { field: 'route', problem: `${what} má mať prázdnu trasu, má ${String(route.length)} bodov` };
+  if (rule.lanePrefix) {
+    const lane = laneRoute(env);
+    for (let i = 0; i <= lane.length; i++) {
+      const point = route[i] as ShipPoint | undefined;
+      const lanePoint = lane[i] as ShipPoint | undefined;
+      if (point === undefined || (lanePoint !== undefined && (point.x !== lanePoint.x || point.y !== lanePoint.y || point.heading !== undefined))) {
+        return { field: 'route', problem: `${what}: trasa musí začínať celou sea lane (${String(lane.length)} bodov) a pokračovať k cieľu` };
+      }
+    }
+    if (waypointIndex > lane.length) {
+      return { field: 'waypointIndex', problem: `${what} pláva len po sea lane (${String(lane.length)} bodov), index ${String(waypointIndex)}` };
+    }
+  }
+  const expected = rule.end(ship, env);
+  if (expected === undefined) return { field: 'route', problem: `${what} nemá cieľ trasy (kotviská ani anchorage)` };
+  if (route.length === 0) {
+    // Bez trasy loď stojí v cieli stavu (pred vstupom na začiatku dráhy, pri kotvisku, na anchorage).
+    if (ship.x !== expected.x) return { field: 'x', problem: `${what} bez trasy má stáť v ${at(expected)}, x je ${String(ship.x)}` };
+    if (ship.y !== expected.y) return { field: 'y', problem: `${what} bez trasy má stáť v ${at(expected)}, y je ${String(ship.y)}` };
+    return undefined;
+  }
+  const last = route[route.length - 1];
+  if (last.x !== expected.x || last.y !== expected.y) return { field: 'route', problem: `${what} má trasu do ${at(last)}, cieľ stavu je ${at(expected)}` };
+  if (waypointIndex === 0) return undefined;
+  const from = route[waypointIndex - 1];
+  const to = waypointIndex < route.length ? route[waypointIndex] : from;
+  const where = `${what} neleží na úseku trasy ${at(from)} → ${at(to)} (bod ${String(waypointIndex)})`;
+  if (ship.x < Math.min(from.x, to.x) || ship.x > Math.max(from.x, to.x)) return { field: 'x', problem: `${where}: x je ${String(ship.x)}` };
+  if (ship.y < Math.min(from.y, to.y) || ship.y > Math.max(from.y, to.y)) return { field: 'y', problem: `${where}: y je ${String(ship.y)}` };
+  return undefined;
 }
 
 /** Kurz úseku k bodu `target` o (dx, dy): pevný kurz bodu (`ShipPoint.heading`), inak kardinálny; nulový úsek bez pevného kurzu → `null`. */

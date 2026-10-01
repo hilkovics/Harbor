@@ -122,7 +122,10 @@ export interface ShipNavigationDef {
    * šírka najširšej lode + táto rezerva na otočenie a posun v bunke bodu priblíženia.
    */
   readonly approachMarginCells: number;
-  /** Krok vzorkovania šikmého úseku trasy pri výpočte zabratých buniek (bunky, > 0); konzervatívny pri každom kroku. */
+  /**
+   * Krok vzorkovania šikmého úseku trasy pri výpočte zabratých buniek (bunky, 0,1…1 — T06-08b); konzervatívny pri
+   * každom kroku, hranice držia obal tesný a počet jeho obdĺžnikov malý.
+   */
   readonly sweepStepCells: number;
   /** Manévre za otočenie lode na mieste (celé 0…100) — druhá zložka lexikografickej ceny A* po vode. */
   readonly turnManeuvers: number;

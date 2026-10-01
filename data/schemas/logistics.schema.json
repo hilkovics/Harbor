@@ -61,8 +61,9 @@
         },
         "sweepStepCells": {
           "type": "number",
-          "exclusiveMinimum": 0,
-          "description": "Krok vzorkovania šikmého úseku trasy lode pri výpočte zabratých buniek (bunky); menší = tesnejší obal, výsledok je konzervatívny pri každom kroku."
+          "minimum": 0.1,
+          "maximum": 1,
+          "description": "Krok vzorkovania šikmého úseku trasy lode pri výpočte zabratých buniek (bunky); menší = tesnejší obal, výsledok je konzervatívny pri každom kroku. Rozsah 0,1–1: nad 1 bunku obal šikmého úseku zbytočne narastie (loď si rezervuje priveľa buniek), pod 0,1 rastie počet obdĺžnikov obalu bez úžitku (rezervácie sa prepočítavajú každý tick)."
         },
         "turnManeuvers": {
           "type": "integer",

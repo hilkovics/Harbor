@@ -161,7 +161,7 @@ const CONGESTION_FIELDS: SpecTable<CongestionDef> = {
  */
 const SHIP_NAVIGATION_FIELDS: SpecTable<ShipNavigationDef> = {
   approachMarginCells: { kind: 'integer', min: 1 },
-  sweepStepCells: { kind: 'number', exclusiveMin: 0 },
+  sweepStepCells: { kind: 'number', min: 0.1, max: 1 },
   turnManeuvers: { kind: 'integer', min: 0, max: 100 },
   sidewaysManeuvers: { kind: 'integer', min: 0, max: 100 },
 };

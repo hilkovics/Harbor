@@ -188,6 +188,9 @@ describe('DefRegistry.fromRaw', () => {
       ['logistics', '/shipNavigation/sweepStepCells', 0],
       ['logistics', '/shipNavigation/sweepStepCells', -0.5],
       ['logistics', '/shipNavigation/sweepStepCells', '0.5'],
+      // T06-08b (review T06-07, minor 3): krok vzorkovania v [0,1; 1] (obal šikmého úseku ostane tesný a lacný)
+      ['logistics', '/shipNavigation/sweepStepCells', 0.05],
+      ['logistics', '/shipNavigation/sweepStepCells', 1.5],
       ['logistics', '/shipNavigation/turnManeuvers', -1],
       ['logistics', '/shipNavigation/turnManeuvers', 101],
       ['logistics', '/shipNavigation/turnManeuvers', 0.5],
@@ -667,6 +670,26 @@ describe('nové polia: schéma ⇔ DefRegistry', () => {
       congestion(extra)['bonus'] = 1;
       expect(registryAccepts(extra)).toBe(validateLogistics(extra.logistics));
       expect(registryAccepts(extra)).toBe(false);
+    });
+
+    /** T06-08b: `shipNavigation` — schéma aj registry s rovnakými hranicami (vrátane `sweepStepCells` v [0,1; 1]). */
+    const NAVIGATION_VALUES: readonly unknown[] = [...VALUES.map(([value]) => value), 0.05, 0.09, 0.1, 0.25, 0.99, 1.01, 100, 101];
+
+    it.each(['approachMarginCells', 'sweepStepCells', 'turnManeuvers', 'sidewaysManeuvers'])('shipNavigation.%s', (key) => {
+      for (const value of NAVIGATION_VALUES) {
+        const raw = rawDefs();
+        (raw.logistics['shipNavigation'] as Record<string, unknown>)[key] = value;
+        expect(registryAccepts(raw), `${key} = ${JSON.stringify(value)}`).toBe(validateLogistics(raw.logistics));
+      }
+    });
+
+    it('shipNavigation.sweepStepCells: 0,1 a 1 prejdú, 0,09 a 1,01 nie', () => {
+      const verdict = (value: number): boolean => {
+        const raw = rawDefs();
+        (raw.logistics['shipNavigation'] as Record<string, unknown>)['sweepStepCells'] = value;
+        return registryAccepts(raw) && validateLogistics(raw.logistics);
+      };
+      expect([0.09, 0.1, 0.5, 1, 1.01].map(verdict)).toEqual([false, true, true, true, false]);
     });
 
     it('bundled logistics.json prejde schémou aj registry', () => {

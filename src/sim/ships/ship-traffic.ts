@@ -39,7 +39,7 @@
  *
  * **Memo** (výkon, nie stav simulácie): kandidáti pokusu (podľa lode a druhu pokusu) a trasy von držiteľov kotvísk
  * sa pamätajú pre „epochu" dopravy a prepočítajú sa až po zmene lodí (prechod, príchod, odchod), kotvísk alebo
- * modulov. Kandidáti závisia len od stavu, ktorý epochu mení (pózy stojacich lodí, konce trás, kotviská, moduly),
+ * modulov; statická dosiahnuteľnosť kotvísk (`reachesBerth`) sa pamätá podľa verzie modulov. Kandidáti závisia len od stavu, ktorý epochu mení (pózy stojacich lodí, konce trás, kotviská, moduly),
  * a voľnosť trasy sa overuje pri každom pokuse nanovo — pokus s rovnakými vstupmi dá rovnaký výsledok, preto memo
  * nemení priebeh (ani po načítaní save, keď je prázdne). Overenie voľnosti (`isClear`, každý tick) nealokuje: sea lane
  * dopredu aj odzadu je predpočítaná a rezervácie ostatných lodí sa počítajú do znovupoužiteľnej oblasti.
@@ -105,6 +105,12 @@ interface ExitPlan {
   readonly end: ShipPose;
 }
 
+/** Statická dosiahnuteľnosť kotvísk (memo podľa verzie modulov): `L×W#id prvého kotviska` → loď tam dopláva aj odpláva. */
+interface BerthReach {
+  readonly moduleVersion: number;
+  readonly byKey: Map<string, boolean>;
+}
+
 /** Statické oblasti pre použiteľnosť anchorage (memo podľa verzie modulov). */
 interface KeepOut {
   readonly moduleVersion: number;
@@ -146,6 +152,7 @@ export class ShipTraffic {
   /** `heldBack` na konci posledného kroku 3 (diagnostika a testy; nie je stav simulácie, neukladá sa). */
   private lastHeldBack = false;
   private keepOut: KeepOut | undefined;
+  private berthReach: BerthReach | undefined;
   private laneEnvelope: TrafficArea | undefined;
   /** Sea lane dopredu a odzadu (stredy buniek; mapa je statická — predpočítané raz). */
   private laneForward: readonly ShipPoint[] | undefined;
@@ -358,6 +365,26 @@ export class ShipTraffic {
     return last !== undefined && last.x === hub.x && last.y === hub.y ? [approach, ...leg] : [approach, ...leg, hub];
   }
 
+  /**
+   * Statická dosiahnuteľnosť kotvísk `first` (T06-08b, ADR-031 dodatok): loď rozmerov `dims` dopláva z konca dráhy
+   * ku kotviskám (`berthLeg`) a odpláva späť (`exitLeg`) po prázdnej vode — lode sú dočasné prekážky a neposudzujú sa,
+   * rozhoduje terén (bod priblíženia na vode, cesta po vode dosť široká) a geometria kotviska. Mapa bez sea lane
+   * → `false` (loď nemá odkiaľ prísť). Čistá funkcia statickej mapy, kotviska a rozmerov lode: memo podľa rozmerov
+   * a kotviska, zneplatní ho zmena modulov (`moduleVersion`); nie je stav simulácie a priebeh nemení. Používa ju
+   * pripravenosť prístavu (`AcceptContract`) aj výber kandidátov na kotviská (`berthCandidates`).
+   */
+  reachesBerth(dims: ShipDimensions, first: BerthModule): boolean {
+    const version = this.world.moduleVersion;
+    if (this.berthReach?.moduleVersion !== version) this.berthReach = { moduleVersion: version, byKey: new Map() };
+    const key = `${String(dims.lengthCells)}x${String(dims.widthCells)}#${String(first.id)}`;
+    let reach = this.berthReach.byKey.get(key);
+    if (reach === undefined) {
+      reach = laneEnd(this.world) !== undefined && this.berthLeg(dims, this.hubPose(), first, []) !== null && this.exitLeg(dims, first, []) !== null;
+      this.berthReach.byKey.set(key, reach);
+    }
+    return reach;
+  }
+
   // -------------------------------------------------------------------------------------------------------------
   // Cesty von z kotvísk (memo na epochu)
   // -------------------------------------------------------------------------------------------------------------
@@ -503,9 +530,11 @@ export class ShipTraffic {
   }
 
   /**
-   * Kandidáti na kotviská z pózy `from`: v každej skupine úseky s najmenším počtom kotvísk (poradie `allocateBerths`,
-   * §5.4), ku ktorým vedie cesta po vode a ktoré spĺňajú obmedzenia proti uviaznutiu. `prefix` = trasa pred úsekom
-   * (pri vstupe sea lane). Voľnosť trasy voči rezerváciám ostatných lodí sa overuje až pri pokuse (`attempt`).
+   * Kandidáti na kotviská z pózy `from`: v každej skupine úseky s najmenším počtom kotvísk spomedzi staticky
+   * dosiahnuteľných (`reachesBerth`; poradie `allocateBerths`, §5.4), ku ktorým vedie cesta po vode a ktoré spĺňajú
+   * obmedzenia proti uviaznutiu. Nedosiahnuteľný kratší úsek teda dlhší úsek skupiny nevylúči (T06-08b); úsek, ku
+   * ktorému cesta chvíľu nevedie pre iné lode, áno — loď počká na kratší úsek. `prefix` = trasa pred úsekom (pri
+   * vstupe sea lane). Voľnosť trasy voči rezerváciám ostatných lodí sa overuje až pri pokuse (`attempt`).
    */
   private berthCandidates(ship: Ship, from: ShipPose, prefix: readonly ShipPoint[], out: Candidate[]): void {
     const obstacles = this.obstaclesFor(ship);
@@ -515,6 +544,7 @@ export class ShipTraffic {
     allocateBerths(this.world, ship, (run) => {
       const [first] = run;
       if (first === undefined || (first.groupId === groupId && run.length > fewest)) return false;
+      if (!this.reachesBerth(ship.def, first)) return false;
       groupId = first.groupId;
       fewest = run.length;
       const leg = this.berthLeg(ship.def, from, first, obstacles);

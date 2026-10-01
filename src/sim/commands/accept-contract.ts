@@ -2,9 +2,10 @@
  * `AcceptContract { contractId }` — hráč prijme ponuku (ARCHITECTURE §9.1, §12.2; docs/tasks/phase-05.md rozhodnutia
  * 4 a 5; ADR-026). Validácia: `ContractOfferCommand` (`game_over`, `unknown_contract`, `contract_not_offered`) a potom
  * **pripravenosť prístavu** (T06-07, ADR-031; `berthReadiness`): `no_berth_for_ship_class` — žiadny úsek kotvísk nemá
- * pre triedu lode ponuky dosť dĺžky, hĺbky a pásu vody; `no_crane_for_category` — taký úsek je, ale bez žeriavu
- * kategórie nákladu kontraktu. Obsadenosť kotvísk a lodná doprava sa neposudzujú (loď by počkala na anchorage).
- * Validácia svet nemení a `Rng` nespotrebuje.
+ * pre triedu lode ponuky dosť dĺžky, hĺbky a pásu vody; `berth_unreachable` (T06-08b, ADR-031 dodatok) — taký úsek je,
+ * ale loď k žiadnemu nedopláva po prázdnej vode (`ShipTraffic.reachesBerth`: plytká zátoka, úzke hrdlo);
+ * `no_crane_for_category` — dosiahnuteľný úsek je, ale bez žeriavu kategórie nákladu kontraktu. Obsadenosť kotvísk
+ * a lodná doprava (iné lode) sa neposudzujú (loď by počkala na anchorage). Validácia svet nemení a `Rng` nespotrebuje.
  *
  * `apply` (hotovosť sa nemení): plán lode — `acceptedTick = clock.tick` (v príkazovej fáze ešte predchádzajúci tick),
  * `shipArrivalTick = acceptedTick + max(1, round(rng.range(arrivalDaysRange) × ticksPerDay))` (jediný `Rng` sveta, jedno
@@ -27,6 +28,7 @@ const READINESS_VERDICT: { readonly [R in BerthReadiness]: ValidationResult } = 
   ready: offerVerdict(null),
   no_berth: offerVerdict('no_berth_for_ship_class'),
   no_crane: offerVerdict('no_crane_for_category'),
+  unreachable: offerVerdict('berth_unreachable'),
 });
 
 export class AcceptContractCommand extends ContractOfferCommand {
@@ -49,7 +51,7 @@ export class AcceptContractCommand extends ContractOfferCommand {
     if (!offer.ok) return offer;
     const contract = world.contracts.get(this.contractId as ContractId) as Contract;
     const request = { def: world.defs.ships.get(contract.shipClassId), cargoCategory: world.defs.cargoTypes.get(contract.cargoTypeId).category };
-    return READINESS_VERDICT[berthReadiness(world, request)];
+    return READINESS_VERDICT[berthReadiness(world, request, (first) => world.shipTraffic.reachesBerth(request.def, first))];
   }
 
   protected applyTo(world: World, offer: Contract): void {

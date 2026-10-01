@@ -18,7 +18,8 @@
  * Poradie čakajúcich lodí (FIFO podľa spawnu) zabezpečuje `ShipSystem`, ktorý lode spracúva vzostupne podľa id.
  *
  * `berthReadiness` (T06-07, `AcceptContract`) posúdi tie isté úseky podľa bodu 2 bez obsadenosti a bez `accept` — či
- * prístav loď danej triedy a nákladu vôbec obslúži.
+ * prístav loď danej triedy a nákladu vôbec obslúži; od T06-08b aj so statickou dosiahnuteľnosťou úseku (predikát podľa
+ * prvého kotviska úseku — `ShipTraffic.reachesBerth`, ADR-031 dodatok).
  */
 import type { EntityId } from '../core/entity-id';
 import type { CargoCategory, ShipClassDef } from '../defs/types';
@@ -97,29 +98,43 @@ function fitsRun(world: BerthAllocationWorld, berths: readonly BerthModule[], st
 }
 
 /**
- * Pripravenosť prístavu pre loď (T06-07, `AcceptContract`): `ready` = existuje úsek kotvísk, ktorý lodi vyhovuje podľa
- * bodu 2 hlavičky **bez ohľadu na obsadenosť** (loď pri kotvisku, rezervácia) a lodnú dopravu (`accept`) — loď by
- * nanajvýš počkala na anchorage; `no_crane` = úsek s dĺžkou, hĺbkou a pásom vody existuje, ale žiadny taký nemá žeriav
- * kategórie nákladu; `no_berth` = žiadny úsek nemá dosť dĺžky, hĺbky alebo vody. Svet nemení (validácia príkazu,
- * nie hot path).
+ * Pripravenosť prístavu pre loď (T06-07, `AcceptContract`; dosiahnuteľnosť T06-08b, ADR-031 dodatok) — úseky podľa
+ * bodu 2 hlavičky **bez ohľadu na obsadenosť** (loď pri kotvisku, rezervácia) a lodnú dopravu (`accept`; loď by
+ * nanajvýš počkala na anchorage), každý tvarom vyhovujúci úsek aj so statickou dosiahnuteľnosťou (`reachable` podľa
+ * prvého kotviska úseku — loď k nemu dopláva a odpláva po prázdnej vode). Verdikt je najlepší spomedzi úsekov:
+ * `ready` = dosiahnuteľný úsek so žeriavom kategórie nákladu; `no_crane` = dosiahnuteľný úsek s dĺžkou, hĺbkou a pásom
+ * vody, ale bez žeriavu; `unreachable` = taký úsek je, ale loď k žiadnemu nedopláva (kotvisko v plytkej zátoke,
+ * lagúna za úzkym hrdlom); `no_berth` = žiadny úsek nemá dosť dĺžky, hĺbky alebo vody. Svet nemení (validácia
+ * príkazu, nie hot path).
  */
-export type BerthReadiness = 'ready' | 'no_crane' | 'no_berth';
+export type BerthReadiness = 'ready' | 'no_crane' | 'unreachable' | 'no_berth';
 
-/** Pripravenosť prístavu pre loď (viď `BerthReadiness`). */
-export function berthReadiness(world: BerthAllocationWorld, request: BerthRequest): BerthReadiness {
-  let shaped = false;
+/** Poradie verdiktov (vyšší = bližšie k obslúženiu lode); `berthReadiness` vráti najvyšší. */
+const READINESS_RANK: { readonly [R in BerthReadiness]: number } = Object.freeze({ no_berth: 0, unreachable: 1, no_crane: 2, ready: 3 });
+
+/** Verdikt tvarom vyhovujúceho úseku podľa posúdenia `runFit` (dosiahnuteľnosť zvlášť). */
+const SHAPED_VERDICT: { readonly [F in Exclude<RunFit, 'unfit'>]: BerthReadiness } = Object.freeze({ fits: 'ready', no_crane: 'no_crane' });
+
+/**
+ * Pripravenosť prístavu pre loď (viď `BerthReadiness`). `reachable` (predvolene všetko) = statická dosiahnuteľnosť
+ * úseku podľa jeho prvého kotviska; volá sa len pre tvarom vyhovujúce úseky.
+ */
+export function berthReadiness(world: BerthAllocationWorld, request: BerthRequest, reachable: (first: BerthModule) => boolean = () => true): BerthReadiness {
+  let best: BerthReadiness = 'no_berth';
   for (const group of world.berthGroups) {
     if (group.totalLength < request.def.lengthCells) continue;
     const berths = berthsOf(world, group);
     for (let count = 1; count <= berths.length; count++) {
       for (let start = 0; start + count <= berths.length; start++) {
         const fit = runFit(world, berths, start, count, request, false);
-        if (fit === 'fits') return 'ready';
-        shaped ||= fit === 'no_crane';
+        if (fit === 'unfit') continue;
+        const verdict = reachable(berths[start]) ? SHAPED_VERDICT[fit] : 'unreachable';
+        if (verdict === 'ready') return verdict;
+        if (READINESS_RANK[verdict] > READINESS_RANK[best]) best = verdict;
       }
     }
   }
-  return shaped ? 'no_crane' : 'no_berth';
+  return best;
 }
 
 /**

@@ -3,7 +3,8 @@
 // pás vody pre šírku lode a každé kotvisko dosť hlboké pre ponor (T02-14). Čistá funkcia — svet nemení.
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@sim/core';
-import { allocateBerths, hasCompatibleCrane, type BerthRequest } from '@sim/ships';
+import type { BerthModule } from '@sim/modules';
+import { allocateBerths, berthReadiness, hasCompatibleCrane, type BerthRequest } from '@sim/ships';
 import type { World } from '@sim/world';
 import {
   BULK_CRANE,
@@ -140,5 +141,50 @@ describe('allocateBerths — žeriav, obsadenosť, hĺbka, šírka', () => {
     allocateBerths(world, request('feeder'));
     expect(berth(world, ROOT_BERTH_ID).dockedShipId).toBeNull();
     expect(JSON.stringify(world.serialize())).toBe(before);
+  });
+});
+
+// T06-08b (review src/sim po T06-07, ADR-031 dodatok): pripravenosť posudzuje aj statickú dosiahnuteľnosť úseku
+// (predikát podľa prvého kotviska úseku). Poradie verdiktov: ready > no_crane (dosiahnuteľný úsek bez žeriavu) >
+// unreachable (úsek tvarom vyhovuje, ale loď k nemu nedopláva) > no_berth.
+describe('berthReadiness — dosiahnuteľnosť úseku (T06-08b)', () => {
+  /** Predikát dosiahnuteľnosti: prvé kotvisko úseku je v `firsts`. */
+  const only =
+    (...firsts: EntityId[]) =>
+    (first: BerthModule): boolean =>
+      firsts.includes(first.id);
+
+  it('bez predikátu sa dosiahnuteľnosť neposudzuje (ready); nedosiahnuteľný jediný úsek so žeriavom → unreachable', () => {
+    const world = newWorld();
+    expect(berthReadiness(world, request('feeder'))).toBe('ready');
+    expect(berthReadiness(world, request('feeder'), only())).toBe('unreachable');
+    expect(berthReadiness(world, request('feeder'), only(ROOT_BERTH_ID))).toBe('ready');
+  });
+
+  it('dosiahnuteľný úsek bez žeriavu má prednosť pred nedosiahnuteľným so žeriavom → no_crane', () => {
+    const world = newWorld();
+    const east = placeModule(world, 'berth_standard', EAST_BERTH);
+    expect(berthReadiness(world, request('feeder'), only(east))).toBe('no_crane');
+  });
+
+  it('handy (10): rozhoduje prvé kotvisko dvojúseku — [Root, East] aj [West, Root] majú žeriav', () => {
+    const world = newWorld();
+    const east = placeModule(world, 'berth_standard', EAST_BERTH);
+    const west = placeModule(world, 'berth_standard', WEST_BERTH);
+    expect(berthReadiness(world, request('handy'), only(ROOT_BERTH_ID))).toBe('ready');
+    expect(berthReadiness(world, request('handy'), only(west))).toBe('ready');
+    expect(berthReadiness(world, request('handy'), only(east))).toBe('unreachable');
+  });
+
+  it('úsek, ktorý tvarom nevyhovuje, predikát nevolá; bez úseku → no_berth', () => {
+    const world = newWorld();
+    const asked: EntityId[] = [];
+    const record = (first: BerthModule): boolean => {
+      asked.push(first.id);
+      return true;
+    };
+    expect(berthReadiness(world, request('handy'), record)).toBe('no_berth');
+    expect(berthReadiness(world, request(WIDE_SHIP), record)).toBe('no_berth');
+    expect(asked).toEqual([]);
   });
 });

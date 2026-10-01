@@ -124,6 +124,8 @@ describe('CommandRegistry (kostra T01-03)', () => {
       // F6 (T06-07, ADR-031): pripravenosť prístavu pri AcceptContract
       'no_berth_for_ship_class',
       'no_crane_for_category',
+      // T06-08b (ADR-031 dodatok): úsek kotvísk je, ale loď k nemu nedopláva
+      'berth_unreachable',
     ]);
     expect(new Set(VALIDATION_REASONS).size).toBe(VALIDATION_REASONS.length);
   });

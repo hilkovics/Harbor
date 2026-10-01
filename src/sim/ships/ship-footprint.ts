@@ -7,8 +7,9 @@
  * Pohyb po trase je deterministický (ADR-016: úsečky, kurz podľa bodu trasy alebo dominantnej osi, bez trigonometrie),
  * preto sa dá zabratie spočítať vopred: na každom úseku loď najprv natočí kurz (obdĺžnik v začiatku úseku s novým
  * kurzom), potom sa posúva. Osový úsek zaberie presne obal obdĺžnikov v jeho koncoch; šikmý úsek sa vzorkuje po
- * `SWEEP_STEP_CELLS` a pridá sa obal každých dvoch susedných vzoriek — obdĺžnik pri posune medzi vzorkami leží celý
- * v tomto obale (posun je lineárny, kurz sa na úseku nemení), takže výpočet nikdy nepodhodnotí skutočné zabratie.
+ * `stepCells` a pridá sa obal každých dvoch susedných vzoriek — obdĺžnik pri posune medzi vzorkami leží celý
+ * v tomto obale (posun je lineárny, kurz sa na úseku nemení), takže výpočet nikdy nepodhodnotí skutočné zabratie. Krok
+ * vzorkovania je `logistics.shipNavigation.sweepStepCells` (T06-07; predtým konštanta `SWEEP_STEP_CELLS` = 0,5).
  *
  * **Bez alokácií** (review T5B-04b, ADR-021): rezervácie ostatných lodí sa prepočítavajú pri každom pokuse o rezerváciu
  * (krok 3, každý tick), preto `TrafficArea` drží obdĺžniky v typovanom poli (znovupoužiteľné, `clear`) a `sweepRoute`
@@ -16,12 +17,6 @@
  */
 import type { Rotation } from '../grid/rotation';
 import { segmentHeading, shipExtentX, shipExtentY, type CellBox, type ShipDimensions, type ShipPoint } from './ship-route';
-
-/**
- * Krok vzorkovania šikmého úseku trasy (bunky). Štrukturálna hranica presnosti výpočtu zabratých buniek, nie balans:
- * menší krok = tesnejší (menej konzervatívny) obal za cenu viac obdĺžnikov; výsledok je konzervatívny pri každom kroku.
- */
-export const SWEEP_STEP_CELLS = 0.5;
 
 /** Poloha a kurz lode. */
 export interface ShipPose {
@@ -162,11 +157,14 @@ function addSpan(area: TrafficArea, dims: ShipDimensions, heading: Rotation, ax:
 /**
  * Pridá do `area` bunky, ktoré loď s rozmermi `dims` zaberie cestou z pózy `start` po bodoch `points` od indexu
  * `startIndex`, a vráti koncovú pózu zapísanú do `end` (predvolene nový objekt; `end` smie byť ten istý objekt ako
- * `start`). Poloha v `start` sa pridá tiež (aj pri prázdnej trase).
+ * `start`). Poloha v `start` sa pridá tiež (aj pri prázdnej trase). `stepCells` (> 0) = krok vzorkovania šikmého úseku
+ * (`logistics.shipNavigation.sweepStepCells`): menší krok = tesnejší (menej konzervatívny) obal za cenu viac obdĺžnikov;
+ * výsledok je konzervatívny pri každom kroku.
  */
 export function sweepRoute(
   area: TrafficArea,
   dims: ShipDimensions,
+  stepCells: number,
   start: ShipPose,
   points: readonly ShipPoint[],
   startIndex = 0,
@@ -185,7 +183,7 @@ export function sweepRoute(
     if (dx === 0 || dy === 0) {
       if (dx !== 0 || dy !== 0) addSpan(area, dims, next, x, y, point.x, point.y);
     } else {
-      const steps = Math.ceil(Math.sqrt(dx * dx + dy * dy) / SWEEP_STEP_CELLS);
+      const steps = Math.ceil(Math.sqrt(dx * dx + dy * dy) / stepCells);
       let px = x;
       let py = y;
       for (let k = 1; k <= steps; k++) {

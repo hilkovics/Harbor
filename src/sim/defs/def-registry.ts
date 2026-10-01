@@ -58,6 +58,7 @@ import {
   type ModuleDef,
   type RoadKindDef,
   type ShipClassDef,
+  type ShipNavigationDef,
   type TimeDef,
   type TruckDef,
   type VehicleDef,
@@ -154,10 +155,22 @@ const CONGESTION_FIELDS: SpecTable<CongestionDef> = {
   penaltyMax: { kind: 'number', min: 0 },
 };
 
+/**
+ * Lodná navigácia (§7.4, ADR-029; T06-07), tabuľka zrkadlí `logistics.schema.json`. Strop manévrov 100 drží
+ * lexikografickú cenu A* po vode (pohyby × (stavy × manévre + 1) + manévre) v bezpečných celých číslach aj na veľkých mapách.
+ */
+const SHIP_NAVIGATION_FIELDS: SpecTable<ShipNavigationDef> = {
+  approachMarginCells: { kind: 'integer', min: 1 },
+  sweepStepCells: { kind: 'number', exclusiveMin: 0 },
+  turnManeuvers: { kind: 'integer', min: 0, max: 100 },
+  sidewaysManeuvers: { kind: 'integer', min: 0, max: 100 },
+};
+
 const LOGISTICS_FIELDS: FieldTable<LogisticsDef> = {
   defaultInternalTicks: { kind: 'integer', min: 0 },
   repathIntervalTicks: { kind: 'integer', min: 1 },
   congestion: { kind: 'object', fields: CONGESTION_FIELDS },
+  shipNavigation: { kind: 'object', fields: SHIP_NAVIGATION_FIELDS },
 };
 
 /** Tabuľky konfiguračných defov; kľúč je názov defu (= názov súboru bez `.json`). */

@@ -113,7 +113,25 @@ export interface CongestionDef {
 }
 
 /**
- * `logistics.json` — logistické konštanty (ARCHITECTURE §4.6, §7.3, §7.6; ADR-010). Konfiguračný def (ADR-009);
+ * Lodná navigácia (§7.4, ADR-029; T06-07 — predtým konštanty v `ship-traffic.ts`, `ship-footprint.ts`
+ * a `water-navigator.ts`): geometria rezervácií trás a lexikografická cena A* po vode. Štrukturálne hodnoty, nie balans.
+ */
+export interface ShipNavigationDef {
+  /**
+   * Rezerva (bunky, celé ≥ 1) za bodom priblíženia v páse pred kotviskami, kam anchorage nesmie: pás vody kotviska +
+   * šírka najširšej lode + táto rezerva na otočenie a posun v bunke bodu priblíženia.
+   */
+  readonly approachMarginCells: number;
+  /** Krok vzorkovania šikmého úseku trasy pri výpočte zabratých buniek (bunky, > 0); konzervatívny pri každom kroku. */
+  readonly sweepStepCells: number;
+  /** Manévre za otočenie lode na mieste (celé 0…100) — druhá zložka lexikografickej ceny A* po vode. */
+  readonly turnManeuvers: number;
+  /** Manévre navyše za krok bokom (celé 0…100). */
+  readonly sidewaysManeuvers: number;
+}
+
+/**
+ * `logistics.json` — logistické konštanty (ARCHITECTURE §4.6, §7.3, §7.4, §7.6; ADR-010). Konfiguračný def (ADR-009);
  * všetky trvania sú v tickoch.
  */
 export interface LogisticsDef extends DefBase {
@@ -122,6 +140,7 @@ export interface LogisticsDef extends DefBase {
   /** Po koľkých tickoch skúša vozidlo bez cesty (`no_path`) hľadať cestu znova. */
   readonly repathIntervalTicks: number;
   readonly congestion: CongestionDef;
+  readonly shipNavigation: ShipNavigationDef;
 }
 
 // ---------------------------------------------------------------------------------------------------------

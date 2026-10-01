@@ -32,11 +32,11 @@ export {
   shipRouteProblem,
 } from './ship-route';
 export type { CellBox, ShipDimensions, ShipMooring, ShipPoint, ShipRouteEnv, ShipRouteProblem } from './ship-route';
-export { SWEEP_STEP_CELLS, TrafficArea, areasOverlap, boxHitsArea, boxesOverlap, spanBox, sweepRoute } from './ship-footprint';
+export { TrafficArea, areasOverlap, boxHitsArea, boxesOverlap, spanBox, sweepRoute } from './ship-footprint';
 export type { MutableShipPose, ShipPose } from './ship-footprint';
 export { ShipTraffic, shipOverlapProblem } from './ship-traffic';
 export { AXIS_OF_HEADING, WaterNavigator } from './water-navigator';
-export type { ShipAxis, WaterGrid } from './water-navigator';
+export type { ShipAxis, ShipManeuvers, WaterGrid } from './water-navigator';
 export { allocateBerths, berthReadiness, hasCompatibleCrane } from './berth-allocator';
 export type { BerthAllocationWorld, BerthReadiness, BerthRequest } from './berth-allocator';
 export { spawnShip } from './spawn-ship';

@@ -8,15 +8,16 @@
  *   (obdĺžniky lodí, ktoré stoja alebo sa na miesto chystajú — `obstacles`). Štartový stav sa na vodu neoveruje (loď
  *   tam už je), ale jeho obdĺžnik nesmie zasahovať do prekážky — inak trasa nie je (`null`; review T5B-04b: loď, ktorej
  *   by stojaca loď zasahovala do miesta štartu, sa z neho nepohne bez prekryvu).
- * - **Hrany**: krok k susednej bunke pozdĺž osi (1 pohyb), krok **bokom** (kolmo na os, 1 pohyb + `SIDEWAYS_MANEUVERS`
+ * - **Hrany**: krok k susednej bunke pozdĺž osi (1 pohyb), krok **bokom** (kolmo na os, 1 pohyb + `sidewaysManeuvers`
  *   — loď s vlečnými člnmi; dlhá loď sa inak nedostane k nábrežiu v plytkej zátoke) a otočenie na mieste
- *   (`TURN_MANEUVERS`). Pri
+ *   (`turnManeuvers`; oba z `logistics.shipNavigation`, T06-07 — predtým konštanty 1 a 1). Pri
  *   posune medzi stredmi dvoch buniek zaberie loď len bunky obdĺžnikov v oboch koncoch, takže priechodnosť stavov stačí
  *   na celú trasu; pri otočení musia byť priechodné obe osi.
  * - **Cena** je lexikografická: najprv počet pohybov, potom počet manévrov (kódovaná ako `pohyby × MANÉVRE_MAX +
- *   manévre`, kde `MANÉVRE_MAX` > najväčší možný počet manévrov — štrukturálna konštanta z veľkosti mriežky, nie
- *   balans). Najkratšia trasa teda vyhráva vždy a z nich tá s najmenej otočeniami a krokmi bokom. Heuristika
- *   Manhattan × `MANÉVRE_MAX` je prípustná aj konzistentná.
+ *   manévre`, kde `MANÉVRE_MAX` = stavy × max(manévre za hranu) + 1 > najväčší možný počet manévrov na jednoduchej ceste
+ *   — štrukturálna hodnota z veľkosti mriežky, nie balans; pri manévroch 1 je to stavy + 1). Najkratšia trasa teda
+ *   vyhráva vždy a z nich tá s najmenej otočeniami a krokmi bokom. Heuristika Manhattan × `MANÉVRE_MAX` je prípustná
+ *   aj konzistentná.
  * - **Deterministický výber** z open setu ako pri cestách (§7.4): menšie `f`, pri zhode menšie `h`, potom menší index
  *   stavu. Rovnaký vstup dá vždy tú istú trasu.
  * - Výsledok sú stredy buniek, v ktorých loď mení smer, a cieľ. Úsek dopredu nemá pevný kurz (kurz dá smer úseku),
@@ -44,11 +45,15 @@ const HEADING_OF_AXIS: readonly [Rotation, Rotation] = [90, 0];
 const AXES = 2;
 
 /**
- * Manévre otočenia na mieste a kroku bokom (navyše k pohybu). Štrukturálne konštanty lexikografickej ceny (počítajú sa
- * len pri rovnakom počte pohybov), nie balans — prirodzenejšia cena ako def je v BACKLOG (ADR-029).
+ * Manévre otočenia na mieste a kroku bokom (navyše k pohybu) — `logistics.shipNavigation` (T06-07). Počítajú sa len
+ * pri rovnakom počte pohybov (lexikografická cena).
  */
-const TURN_MANEUVERS = 1;
-const SIDEWAYS_MANEUVERS = 1;
+export interface ShipManeuvers {
+  /** Manévre za otočenie na mieste (celé ≥ 0). */
+  readonly turnManeuvers: number;
+  /** Manévre navyše za krok bokom (celé ≥ 0). */
+  readonly sidewaysManeuvers: number;
+}
 
 /** Počet čísel na prekážku v pracovnom poli (x0, y0, x1, y1). */
 const BOX_FIELDS = 4;
@@ -77,6 +82,8 @@ export class WaterNavigator {
   private readonly closed: Int32Array;
   private readonly open: IndexedBinaryHeap;
   private readonly turnScale: number;
+  private readonly turnManeuvers: number;
+  private readonly sidewaysManeuvers: number;
   private generation = NEVER;
   /** Prekážky aktuálneho hľadania `[x0, y0, x1, y1]…` (pracovné pole, zväčší sa podľa potreby). */
   private obstacleBounds = new Int32Array(0);
@@ -86,10 +93,14 @@ export class WaterNavigator {
   /** Priechodnosť vody aktuálneho hľadania (`fits(dims)`). */
   private activeFits: Uint8Array = new Uint8Array(0);
 
-  constructor(grid: WaterGrid) {
+  /** @param maneuvers manévre otočenia a kroku bokom (`logistics.shipNavigation`, celé ≥ 0). */
+  constructor(grid: WaterGrid, maneuvers: ShipManeuvers) {
     this.grid = grid;
     const states = grid.cellCount * AXES;
-    this.turnScale = states + 1;
+    this.turnManeuvers = maneuvers.turnManeuvers;
+    this.sidewaysManeuvers = maneuvers.sidewaysManeuvers;
+    // Jednoduchá cesta má najviac `states − 1` hrán, každá najviac max(manévre) manévrov.
+    this.turnScale = states * Math.max(maneuvers.turnManeuvers, maneuvers.sidewaysManeuvers) + 1;
     this.dry = new Int32Array((grid.width + 1) * (grid.height + 1));
     const stride = grid.width + 1;
     for (let y = 0; y < grid.height; y++) {
@@ -263,12 +274,12 @@ export class WaterNavigator {
       }
       // Otočenie na mieste.
       const turned = cell * AXES + (1 - axis);
-      this.relax(state, turned, g[state] + TURN_MANEUVERS, to, stamp);
+      this.relax(state, turned, g[state] + this.turnManeuvers, to, stamp);
       // Posun o bunku (4 smery): pozdĺž osi dopredu/dozadu, kolmo bokom s manévrom navyše.
       const x = cell % width;
       const y = Math.floor(cell / width);
       const along = g[state] + this.turnScale;
-      const sideways = along + SIDEWAYS_MANEUVERS;
+      const sideways = along + this.sidewaysManeuvers;
       if (x > 0) this.relax(state, (cell - 1) * AXES + axis, axis === 0 ? along : sideways, to, stamp);
       if (x < width - 1) this.relax(state, (cell + 1) * AXES + axis, axis === 0 ? along : sideways, to, stamp);
       if (y > 0) this.relax(state, (cell - width) * AXES + axis, axis === 1 ? along : sideways, to, stamp);

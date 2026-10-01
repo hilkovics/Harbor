@@ -181,6 +181,18 @@ describe('DefRegistry.fromRaw', () => {
       ['logistics', '/congestion/penaltyTrafficDivisor', -200],
       ['logistics', '/congestion/penaltyMax', -1],
       ['logistics', '/congestion/penaltyMax', null],
+      // T06-07: lodná navigácia (predtým konštanty v src/sim/ships)
+      ['logistics', '/shipNavigation', null],
+      ['logistics', '/shipNavigation/approachMarginCells', 0],
+      ['logistics', '/shipNavigation/approachMarginCells', 1.5],
+      ['logistics', '/shipNavigation/sweepStepCells', 0],
+      ['logistics', '/shipNavigation/sweepStepCells', -0.5],
+      ['logistics', '/shipNavigation/sweepStepCells', '0.5'],
+      ['logistics', '/shipNavigation/turnManeuvers', -1],
+      ['logistics', '/shipNavigation/turnManeuvers', 101],
+      ['logistics', '/shipNavigation/turnManeuvers', 0.5],
+      ['logistics', '/shipNavigation/sidewaysManeuvers', 101],
+      ['logistics', '/shipNavigation/sidewaysManeuvers', null],
     ];
 
     it.each(cases)('%s %s = %j', (def, path, value) => {
@@ -433,6 +445,8 @@ describe('loadBundledDefs', () => {
       defaultInternalTicks: 6,
       repathIntervalTicks: 30,
       congestion: { trafficDecayPerHour: 0.9, slowdownPerExtraVehicle: 0.25, penaltyTrafficDivisor: 200, penaltyMax: 3 },
+      // T06-07: hodnoty doterajších konštánt APPROACH_MARGIN_CELLS, SWEEP_STEP_CELLS, TURN_MANEUVERS, SIDEWAYS_MANEUVERS.
+      shipNavigation: { approachMarginCells: 1, sweepStepCells: 0.5, turnManeuvers: 1, sidewaysManeuvers: 1 },
     });
   });
 

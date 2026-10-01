@@ -45,6 +45,7 @@
  * dopredu aj odzadu je predpočítaná a rezervácie ostatných lodí sa počítajú do znovupoužiteľnej oblasti.
  */
 import type { EntityId } from '../core/entity-id';
+import type { ShipNavigationDef } from '../defs/types';
 import { BerthModule } from '../modules/berth-module';
 import { frontBandCells } from '../modules/module-geometry';
 import type { World } from '../world/world';
@@ -73,13 +74,6 @@ import { AXIS_OF_HEADING, WaterNavigator } from './water-navigator';
 
 /** Kurz lode na konci dráhy, keď dráha chýba (sever; mapa bez sea lane nemá lode). */
 const DEFAULT_LANE_HEADING: ShipPose['heading'] = 0;
-
-/**
- * Rezerva za bodom priblíženia v páse, kam kotviaca loď nesmie (bunky): pás vody kotviska + šírka najširšej lode (obdĺžnik
- * v bode priblíženia) + táto rezerva na otočenie a posun v bunke bodu priblíženia. Štrukturálna hodnota geometrie A*
- * (stav lode = stred bunky), nie balans.
- */
-const APPROACH_MARGIN_CELLS = 1;
 
 /** Druh pokusu o rezerváciu (kandidáti sa pamätajú podľa lode a druhu). */
 type AttemptKind = 'enter' | 'berth' | 'undock';
@@ -119,6 +113,8 @@ interface KeepOut {
 
 export class ShipTraffic {
   private readonly world: World;
+  /** Lodná navigácia z `logistics.json` (rezerva priblíženia, krok vzorkovania, manévre; T06-07). */
+  private readonly navigation: Readonly<ShipNavigationDef>;
   private navigatorInstance: WaterNavigator | undefined;
   private epoch = 0;
   private seenShipVersion = Number.NaN;
@@ -138,7 +134,7 @@ export class ShipTraffic {
       if (exit === null) return;
       const area = new TrafficArea();
       area.addArea(exit.area);
-      sweepRoute(area, ship.def, exit.end, this.laneOutRoute);
+      sweepRoute(area, ship.def, this.navigation.sweepStepCells, exit.end, this.laneOutRoute);
       out.push({ berths: null, anchorage: null, route: exit.route, area });
     },
   };
@@ -159,11 +155,12 @@ export class ShipTraffic {
 
   constructor(world: World) {
     this.world = world;
+    this.navigation = world.defs.logistics.shipNavigation;
   }
 
-  /** A* po vode nad mriežkou sveta (vznikne pri prvom použití; terén je statický). */
+  /** A* po vode nad mriežkou sveta s manévrami z defu (vznikne pri prvom použití; terén je statický). */
   get navigator(): WaterNavigator {
-    this.navigatorInstance ??= new WaterNavigator(this.world.grid);
+    this.navigatorInstance ??= new WaterNavigator(this.world.grid, this.navigation);
     return this.navigatorInstance;
   }
 
@@ -242,8 +239,8 @@ export class ShipTraffic {
    */
   reservationOf(ship: Ship, out: TrafficArea): void {
     if (!SHIP_STATE_TRAITS[ship.state].onMap) return;
-    const end = sweepRoute(out, ship.def, ship, ship.route, ship.waypointIndex, this.scratchEnd);
-    if (ship.state === 'undocking') sweepRoute(out, ship.def, end, this.laneOutRoute, 0, this.scratchEnd);
+    const end = sweepRoute(out, ship.def, this.navigation.sweepStepCells, ship, ship.route, ship.waypointIndex, this.scratchEnd);
+    if (ship.state === 'undocking') sweepRoute(out, ship.def, this.navigation.sweepStepCells, end, this.laneOutRoute, 0, this.scratchEnd);
   }
 
   /** Obdĺžnik lode na konci jej trasy (kde bude stáť) — prekážka pre A* ostatných lodí; `undefined` = loď nestojí ani nemieri na miesto. */
@@ -382,7 +379,7 @@ export class ShipTraffic {
     let plan: ExitPlan | null = null;
     if (route !== null) {
       const area = new TrafficArea();
-      const end = sweepRoute(area, ship.def, this.dockPose(ship.def, first), route);
+      const end = sweepRoute(area, ship.def, this.navigation.sweepStepCells, this.dockPose(ship.def, first), route);
       plan = { route, area, end };
     }
     this.exits.set(ship.id, plan);
@@ -419,7 +416,7 @@ export class ShipTraffic {
     const start = lane[0];
     for (const dims of this.world.defs.ships.items) {
       if (start === undefined) break;
-      const end = sweepRoute(area, dims, { x: start.x, y: start.y, heading: this.laneStartHeading() }, lane);
+      const end = sweepRoute(area, dims, this.navigation.sweepStepCells, { x: start.x, y: start.y, heading: this.laneStartHeading() }, lane);
       for (const heading of [0, 90] as const) area.add(shipBox(dims, end.x, end.y, heading));
     }
     this.laneEnvelope = area;
@@ -428,7 +425,8 @@ export class ShipTraffic {
 
   /**
    * Bunky pred kotviskami, kam kotviaca loď nesmie: pás vody každého kotviska predĺžený o šírku najširšej lode
-   * a `APPROACH_MARGIN_CELLS` (miesto na priblíženie). Memo podľa verzie modulov.
+   * a `logistics.shipNavigation.approachMarginCells` (rezerva na otočenie a posun v bunke bodu priblíženia — stav lode
+   * je stred bunky; T06-07, predtým konštanta `APPROACH_MARGIN_CELLS` = 1). Memo podľa verzie modulov.
    */
   private berthFronts(): TrafficArea {
     const version = this.world.moduleVersion;
@@ -437,7 +435,7 @@ export class ShipTraffic {
     for (const dims of this.world.defs.ships.items) widest = Math.max(widest, dims.widthCells);
     const area = new TrafficArea();
     for (const berth of this.berths()) {
-      const cells = frontBandCells(berth.origin, berth.size, berth.waterSide, berth.params.frontWaterCells + widest + APPROACH_MARGIN_CELLS);
+      const cells = frontBandCells(berth.origin, berth.size, berth.waterSide, berth.params.frontWaterCells + widest + this.navigation.approachMarginCells);
       let x0 = Infinity;
       let y0 = Infinity;
       let x1 = -Infinity;
@@ -523,7 +521,7 @@ export class ShipTraffic {
       if (leg === null || !this.berthKeepsExits(ship, first)) return false;
       const route = [...prefix, ...leg];
       const area = new TrafficArea();
-      sweepRoute(area, ship.def, start, route);
+      sweepRoute(area, ship.def, this.navigation.sweepStepCells, start, route);
       out.push({ berths: run, anchorage: null, route, area });
       return false;
     });
@@ -538,7 +536,7 @@ export class ShipTraffic {
       if (leg === null) continue;
       const route = [...prefix, ...leg];
       const area = new TrafficArea();
-      sweepRoute(area, ship.def, start, route);
+      sweepRoute(area, ship.def, this.navigation.sweepStepCells, start, route);
       out.push({ berths: null, anchorage: index, route, area });
     }
   }

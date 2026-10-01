@@ -228,6 +228,7 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
     }),
     moduleGhost: () => input.moduleGhost(),
     centerOn: centerCamera,
+    advance: (ticks) => loop.advance(ticks),
   });
 
   const reactRoot = createRoot(uiHost);

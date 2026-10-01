@@ -232,6 +232,59 @@ describe('GameLoop: sink', () => {
   });
 });
 
+describe('GameLoop.advance (DEV/e2e: preskočenie čakania)', () => {
+  it('posunie hru o presne `ticks` tickov (aj viac framov: strop maxTicksPerFrame) a vráti ich počet', () => {
+    const { world, loop } = createLoop(1);
+    expect(loop.advance(200)).toBe(200);
+    expect(world.clock.tick).toBe(200);
+    expect(loop.advance(1)).toBe(1);
+    expect(world.clock.tick).toBe(201);
+  });
+
+  it('presnosť nezávisí od rýchlosti hry ani od zlomku ticku z predošlých framov', () => {
+    for (const speed of [1, 2, 4, 8]) {
+      const { world, loop } = createLoop(speed);
+      loop.frame(250); // zlomok ticku v akumulátore
+      const before = world.clock.tick;
+      expect(loop.advance(130)).toBe(130);
+      expect(world.clock.tick).toBe(before + 130);
+      expect(loop.alpha).toBeGreaterThanOrEqual(0);
+      expect(loop.alpha).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('sink dostane udalosti každého framu a každý tick má `beforeTick`', () => {
+    const world = createWorld();
+    world.clock.setSpeed(8);
+    let publishes = 0;
+    let beforeTicks = 0;
+    const loop = new GameLoop(world, { publish: () => (publishes += 1), beforeTick: () => (beforeTicks += 1) });
+    loop.advance(150); // 64 + 64 + 22
+    expect(publishes).toBe(3);
+    expect(beforeTicks).toBe(150);
+    expect(world.clock.tick).toBe(150);
+  });
+
+  it('pri pauze (rýchlosť 0) a pri neplatnom počte nič nevykoná', () => {
+    const { world, loop } = createLoop(0);
+    expect(loop.advance(50)).toBe(0);
+    expect(world.clock.tick).toBe(0);
+    const running = createLoop(1);
+    for (const ticks of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) expect(running.loop.advance(ticks)).toBe(0);
+    expect(running.world.clock.tick).toBe(0);
+  });
+
+  it('zhodné s bežným behom: advance(N) dá rovnaký stav sveta ako N tickov cez frame()', () => {
+    const a = createLoop(4);
+    const b = createLoop(4);
+    a.loop.advance(300);
+    for (let i = 0; i < 300; i += 1) b.loop.frame(b.loop.tickMs / 4);
+    expect(a.world.clock.tick).toBe(300);
+    expect(b.world.clock.tick).toBe(300);
+    expect(JSON.stringify(a.world.serialize())).toBe(JSON.stringify(b.world.serialize()));
+  });
+});
+
 describe('GameLoop: determinizmus', () => {
   it('rovnaký súčet dt v rôznych rozdeleniach na framy → rovnaký počet tickov', () => {
     const a = createLoop(4);

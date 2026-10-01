@@ -43,3 +43,16 @@ describe('DevHook.acceptFirstOffer', () => {
     expect(hook.acceptFirstOffer()).toBe(second?.id);
   });
 });
+
+describe('DevHook.advance', () => {
+  it('háčik ho nemá, kým ho bootstrap nedodá; s `advance` posunie hru o ticky bez čakania', () => {
+    const app = createApp();
+    expect(hookFor(app).advance).toBeUndefined();
+    const target: { __sim?: DevHook } = {};
+    const hook = installDevHook(app.bridge, { enabled: true, target, advance: (ticks) => app.loop.advance(ticks) });
+    expect(hook?.advance).toBeDefined();
+    app.world.clock.setSpeed(1);
+    expect(hook?.advance?.(100)).toBe(100);
+    expect(app.world.clock.tick).toBe(100);
+  });
+});

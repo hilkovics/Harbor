@@ -91,6 +91,12 @@ export interface DevHook {
    * Root berth. Doplní bootstrap z kamery.
    */
   centerOn?: (cellX: number, cellY: number, zoom?: number) => void;
+  /**
+   * Posunie bežiacu hru o `ticks` tickov hneď, bez čakania na reálny čas (`GameLoop.advance`): e2e ním preskočí dlhé
+   * čakanie na loď po prijatí kontraktu (0,5–2 herné dni = minúty pri 8×). Beží cez bežné framy, takže toasty, autosave
+   * aj príkazy z fronty fungujú ako v hre. @returns počet vykonaných tickov (0 pri pauze). Doplní bootstrap.
+   */
+  advance?: (ticks: number) => number;
 }
 
 declare global {
@@ -108,9 +114,10 @@ export interface DevHookOptions {
   readonly rendered?: DevHook['rendered'];
   readonly moduleGhost?: DevHook['moduleGhost'];
   readonly centerOn?: DevHook['centerOn'];
+  readonly advance?: DevHook['advance'];
 }
 
-/** Nainštaluje `window.__sim = { world, bridge, entities, dispatchJSON, contracts, acceptFirstOffer, cellToScreen?, rendered?, moduleGhost?, centerOn? }`. Vráti háčik, alebo `null`, ak je vypnutý/nie je cieľ. */
+/** Nainštaluje `window.__sim = { world, bridge, entities, dispatchJSON, contracts, acceptFirstOffer, cellToScreen?, rendered?, moduleGhost?, centerOn?, advance? }`. Vráti háčik, alebo `null`, ak je vypnutý/nie je cieľ. */
 export function installDevHook(bridge: SimBridge, options: DevHookOptions = {}): DevHook | null {
   const enabled = options.enabled ?? import.meta.env.DEV;
   if (!enabled) return null;
@@ -149,6 +156,7 @@ export function installDevHook(bridge: SimBridge, options: DevHookOptions = {}):
   if (options.rendered !== undefined) hook.rendered = options.rendered;
   if (options.moduleGhost !== undefined) hook.moduleGhost = options.moduleGhost;
   if (options.centerOn !== undefined) hook.centerOn = options.centerOn;
+  if (options.advance !== undefined) hook.advance = options.advance;
   target.__sim = hook;
   return hook;
 }

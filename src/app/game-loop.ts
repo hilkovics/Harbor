@@ -106,6 +106,28 @@ export class GameLoop {
     this.sink?.publish(events);
     return events;
   }
+
+  /**
+   * Posunie bežiacu hru o presne `ticks` tickov bez čakania na reálny čas (DEV/e2e: `window.__sim.advance`). Ide cez
+   * `frame()` — po framoch najviac `maxTicksPerFrame` tickov —, takže sink dostane udalosti každého framu (toasty,
+   * autosave, príkazy z fronty) rovnako ako pri bežnej hre; mení sa len to, koľko reálneho času frame „trvá“. Dĺžka
+   * framu sa volí tak, aby akumulátor po pripočítaní obsiahol `want` celých tickov a pol ticku navyše (odolné voči
+   * zaokrúhľovaniu floatov); zlomok ticku z minulých framov sa tým zachová.
+   * @returns počet vykonaných tickov: 0 pri pauze (rýchlosť 0) a pri `ticks` ≤ 0; inak `ticks`
+   */
+  advance(ticks: number): number {
+    if (!Number.isFinite(ticks) || ticks <= 0) return 0;
+    let done = 0;
+    while (done < ticks) {
+      const { speed } = this.world.clock;
+      if (speed <= 0) break;
+      const want = Math.min(Math.floor(ticks) - done, this.maxTicksPerFrame);
+      if (want < 1) break;
+      this.frame(((want + 0.5) * this.tickMs - this.accMs) / speed);
+      done += this.ticksInLastFrame;
+    }
+    return done;
+  }
 }
 
 // ---- rAF wrapper (jediné miesto s časovou závislosťou; v Node sa nepoužíva) ----

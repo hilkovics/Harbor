@@ -16,7 +16,7 @@
  */
 import type { SimEvent } from '@sim/events';
 import { World, WorldStateError, type WorldOptions } from '@sim/world';
-import { formatDayAndClock } from '@ui/format';
+import { formatClock, formatDayAndClock } from '@ui/format';
 import { APP_WORLD_OPTIONS, QUIET_TOAST_AUTO_CLOSE_MS } from '../config';
 import type { Settings, SettingsStore } from '../settings';
 import { createSettingsStore } from '../settings';
@@ -48,6 +48,7 @@ export const SAVE_LABELS = Object.freeze({
 export const SAVED_TOAST_TITLE = 'Uložené';
 export const AUTOSAVED_TOAST_TITLE = 'Automaticky uložené';
 export const EXPORTED_TOAST_TITLE = 'Exportované';
+export const LOADED_TOAST_TITLE = 'Načítané';
 export const SAVE_FAILED_TOAST_TITLE = 'Uloženie zlyhalo';
 export const AUTOSAVE_FAILED_TOAST_TITLE = 'Automatické uloženie zlyhalo';
 export const LOAD_FAILED_TOAST_TITLE = 'Načítanie zlyhalo';
@@ -98,6 +99,16 @@ export interface SaveControllerDeps {
   readonly downloader?: FileDownloader;
   /** Voľby obnoveného sveta; predvolene `APP_WORLD_OPTIONS` (invarianty len v DEV). */
   readonly worldOptions?: WorldOptions;
+}
+
+/**
+ * Toast po načítaní uloženej hry alebo importe súboru. Zaraďuje ho až nový `bootstrap` (`BootstrapOptions.startToast`),
+ * lebo `ToastCenter` pôvodnej hry sa pri reštarte ruší.
+ */
+export function loadedToastSpec(world: World): ToastSpec {
+  const { clock } = world;
+  const when = formatDayAndClock(clock.gameDay, formatClock(clock.hourOfDay, clock.minuteOfHour));
+  return { key: 'loaded', tone: 'success', icon: SAVE_ICON, title: LOADED_TOAST_TITLE, text: `${when} · hra je pozastavená` };
 }
 
 /** Text chyby pre hráča (toast). */

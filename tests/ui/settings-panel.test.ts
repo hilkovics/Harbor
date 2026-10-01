@@ -37,6 +37,29 @@ const click = (button: ReactElement): void => {
   (propsOf(button).onClick as () => void)();
 };
 
+describe('SettingsPanelView: ponuka od rodiča (T06-03b)', () => {
+  const speedValues = (html: string): string[] => {
+    const group = /data-field="default-speed">(.*?)<\/div>/.exec(html)?.[1] ?? '';
+    return [...group.matchAll(/data-value="(\d+)"/g)].map((match) => match[1] ?? '');
+  };
+  const autosaveValues = (html: string): string[] => {
+    const group = /data-field="autosave">(.*?)<\/div>/.exec(html)?.[1] ?? '';
+    return [...group.matchAll(/data-value="(\d+)"/g)].map((match) => match[1] ?? '');
+  };
+
+  it('`speeds` nahradí predvolenú ponuku rýchlostí (0 sa ukáže ako Pauza)', () => {
+    const html = renderView({ speeds: [0, 2, 8] });
+    expect(speedValues(html)).toEqual(['0', '2', '8']);
+    expect(html).toContain('>Pauza<');
+  });
+
+  it('`maxAutosaveDays` vynechá dlhšie intervaly; bez neho platí celá ponuka', () => {
+    expect(autosaveValues(renderView())).toEqual(['0', '1', '3', '7']);
+    expect(autosaveValues(renderView({ maxAutosaveDays: 3 }))).toEqual(['0', '1', '3']);
+    expect(autosaveValues(renderView({ maxAutosaveDays: 0 }))).toEqual(['0']);
+  });
+});
+
 describe('SettingsPanel (markup)', () => {
   it('dialóg „Nastavenia": role dialog, aria-modal, aria-label, nadpis a ✕', () => {
     const html = renderView();

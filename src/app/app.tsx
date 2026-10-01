@@ -1,6 +1,6 @@
 /**
  * Koreňový React komponent: UI vrstva nad mapou (HUD, banner pauzy, štítok ghostu, BuildBar dole, vpravo inšpektor modulu
- * alebo panel kontraktov, toasty, modál konca hry).
+ * alebo panel kontraktov, toasty, modál konca hry, overlaye Nastavenia a Uložiť/načítať).
  * Mapa (Pixi canvas) žije v samostatnom prvku pod ním, pripája ho `bootstrap`; táto vrstva nezachytáva myš mimo
  * svojich prvkov.
  *
@@ -14,9 +14,12 @@ import { ConnectedContractsPanel } from './connected-contracts-panel';
 import { ConnectedGameOver } from './connected-game-over';
 import { ConnectedTopHUD } from './connected-hud';
 import { ConnectedModuleInspector } from './connected-module-inspector';
+import { ConnectedSaveLoad } from './connected-save-load';
+import { ConnectedSettings } from './connected-settings';
 import { ConnectedToasts } from './connected-toasts';
 import { ModuleSelection } from './module-selection';
 import { RoadSelection } from './road-selection';
+import { OverlaySelection } from './overlay-selection';
 import { PausedBanner } from './paused-banner';
 import { PanelSelection, bindPanelExclusion } from './panel-selection';
 import type { SaveController } from './save/save-controller';
@@ -42,10 +45,12 @@ export interface AppProps {
   /** „Nová hra“ v modále konca hry (bootstrap postaví nový svet); bez neho sa stránka načíta odznova. */
   readonly onNewGame?: () => void;
   /**
-   * Ukladanie a načítanie hry (T06-03): sloty, export/import, nastavenia. Čaká na pripojenie panelov Nastavenia a Uložiť/Načítať
-   * (`ConnectedSaveLoad`, T06-04); `App` ho zatiaľ nepoužíva.
+   * Ukladanie a načítanie hry (T06-03): sloty, export/import, nastavenia. S ním sú ikony ⚙ a diskety v HUD funkčné
+   * (overlaye Nastavenia a Uložiť/načítať, T06-03b); bez neho (testy, demo) sú aktívne, ale bez akcie.
    */
   readonly saves?: SaveController;
+  /** Otvorený overlay (Nastavenia / Uložiť a načítať) zdieľaný s ovládaním mapy (blokuje herné klávesy); bez neho si `App` vedie vlastný. */
+  readonly overlays?: OverlaySelection;
 }
 
 /** Predvolená „Nová hra“: načítanie stránky odznova (bootstrap zostaví nový svet). */
@@ -53,13 +58,15 @@ function reloadPage(): void {
   window.location.reload();
 }
 
-export function App({ bridge, feedback, selection, moduleSelection, roadSelection, toasts, panels, onNewGame }: AppProps) {
+export function App({ bridge, feedback, selection, moduleSelection, roadSelection, toasts, panels, onNewGame, saves, overlays }: AppProps) {
   // Bez zdieľaného výberu (testy, demo) si App vytvorí vlastný; `useState` drží jednu inštanciu medzi rendermi.
   const [ownSelection] = useState(() => new BuildSelection());
   const [ownModuleSelection] = useState(() => new ModuleSelection());
   const [ownRoadSelection] = useState(() => new RoadSelection());
   const [ownPanels] = useState(() => new PanelSelection());
+  const [ownOverlays] = useState(() => new OverlaySelection());
   const panelSelection = panels ?? ownPanels;
+  const overlaySelection = overlays ?? ownOverlays;
   const inspectedModules = moduleSelection ?? ownModuleSelection;
   // Panel kontraktov a inšpektor sa delia o pravý okraj: otvorený panel má prednosť (zruší výber modulu).
   useEffect(() => bindPanelExclusion(panelSelection, inspectedModules), [panelSelection, inspectedModules]);
@@ -69,7 +76,7 @@ export function App({ bridge, feedback, selection, moduleSelection, roadSelectio
       <PausedBanner />
       <BuildFeedbackLabel source={feedback} />
       <div className="app__hud">
-        <ConnectedTopHUD panels={panelSelection} />
+        <ConnectedTopHUD panels={panelSelection} overlays={saves === undefined ? undefined : overlaySelection} />
       </div>
       <ConnectedModuleInspector selection={inspectedModules} />
       <ConnectedContractsPanel panels={panelSelection} />
@@ -78,6 +85,12 @@ export function App({ bridge, feedback, selection, moduleSelection, roadSelectio
         <ConnectedBuildBar selection={selection ?? ownSelection} roadSelection={roadSelection ?? ownRoadSelection} />
       </div>
       <ConnectedGameOver onNewGame={onNewGame ?? reloadPage} />
+      {saves !== undefined && (
+        <>
+          <ConnectedSettings overlays={overlaySelection} saves={saves} />
+          <ConnectedSaveLoad overlays={overlaySelection} saves={saves} />
+        </>
+      )}
     </SimBridgeProvider>
   );
 }

@@ -28,12 +28,13 @@ import { attachDomInput } from './dom-input';
 import { GameLoop, startRafLoop } from './game-loop';
 import { InputController } from './input-controller';
 import { ModuleSelection, bindSelectionRing } from './module-selection';
+import { OverlaySelection } from './overlay-selection';
 import { PanelSelection } from './panel-selection';
 import { RoadSelection } from './road-selection';
 import { SaveController, createPersistence, type PersistenceServices } from './save/save-controller';
 import { SimBridge } from './sim-bridge';
 import { applyStartSpeed } from './start-speed';
-import { ToastCenter } from './toast-center';
+import { ToastCenter, type ToastSpec } from './toast-center';
 
 export interface AppHandle {
   readonly world: World;
@@ -49,6 +50,8 @@ export interface AppHandle {
   readonly roadSelection: RoadSelection;
   /** Otvorený pravý panel (kontrakty); zdieľajú ho HUD, klávesnica a akcia „Zobraziť“ v toastoch. */
   readonly panels: PanelSelection;
+  /** Otvorený overlay (Nastavenia / Uložiť a načítať); kým je otvorený, `attachDomInput` ignoruje herné klávesy. */
+  readonly overlays: OverlaySelection;
   /** Oznámenia zo simu (toasty); odoberá udalosti `bridge.onEvents`. */
   readonly toasts: ToastCenter;
   /** Ukladanie a načítanie hry (sloty, autosave, export/import, nastavenia); UI ho číta cez `getState`/`subscribe`. */
@@ -76,6 +79,8 @@ export interface BootstrapOptions {
    * z nastavení, načítaná `0` (pauza). Bez neho ostáva rýchlosť sveta.
    */
   readonly startSpeed?: number;
+  /** Toast zaradený hneď po štarte (`runGame` ním po načítaní hry hlási „Načítané“; `ToastCenter` pôvodnej hry sa pri reštarte ruší). */
+  readonly startToast?: ToastSpec;
   /** Úložisko slotov a nastavení zdieľané medzi reštartmi hry; predvolene `createPersistence()`. */
   readonly persistence?: PersistenceServices;
 }
@@ -141,12 +146,15 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
     view.centerOn(cellX, cellY);
   };
   const panels = new PanelSelection();
+  const overlays = new OverlaySelection();
   const toasts = new ToastCenter(bridge, {
     centerOn: (cellX, cellY) => centerCamera(cellX, cellY),
     openPanel: (panel) => {
       panels.select(panel);
     },
   });
+
+  if (options.startToast !== undefined) toasts.push(options.startToast);
 
   // Ukladanie hry (T06-03): autosave po framu (`bridge.onEvents` volá `publish` po všetkých tickoch frameu, nie v `world.tick()`).
   const saves = new SaveController({
@@ -182,7 +190,7 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
     },
   });
   mapHost.dataset.inputState = input.state;
-  const detachInput = attachDomInput(input, { host: mapHost, window, releaseFocus: releaseDocumentFocus });
+  const detachInput = attachDomInput(input, { host: mapHost, window, releaseFocus: releaseDocumentFocus, keysBlocked: overlays.isOpen });
 
   const stopSelectionRing = bindSelectionRing(moduleSelection, bridge, renderer.build);
   const stopRenderEvents = bridge.onEvents((events) => {
@@ -223,7 +231,7 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
   });
 
   const reactRoot = createRoot(uiHost);
-  reactRoot.render(createElement(StrictMode, null, createElement(App, { bridge, feedback: input, selection, moduleSelection, roadSelection, toasts, panels, saves, onNewGame: options.onNewGame })));
+  reactRoot.render(createElement(StrictMode, null, createElement(App, { bridge, feedback: input, selection, moduleSelection, roadSelection, toasts, panels, overlays, saves, onNewGame: options.onNewGame })));
 
   let destroyed = false;
   return {
@@ -236,6 +244,7 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
     moduleSelection,
     roadSelection,
     panels,
+    overlays,
     toasts,
     saves,
     destroy() {

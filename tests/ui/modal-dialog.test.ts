@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi, type Mock } from 'vitest';
-import { FOCUSABLE_SELECTOR, ModalDialog, handleDialogKeyDown, trapTarget, type DialogKeyEvent } from '@ui/modal-dialog';
+import { FOCUSABLE_SELECTOR, ModalDialog, handleDialogKeyDown, isQuickSaveShortcut, trapTarget, type DialogKeyEvent } from '@ui/modal-dialog';
 
 interface FakeElement {
   readonly name: string;
@@ -93,6 +93,38 @@ describe('handleDialogKeyDown', () => {
     handleDialogKeyDown(event, vi.fn(), middle, middle[1]);
     expect(event.preventDefault).not.toHaveBeenCalled();
     for (const item of middle) expect(item.focus).not.toHaveBeenCalled();
+  });
+});
+
+describe('Ctrl+S v dialógu (T06-03b)', () => {
+  const combo = (props: Partial<Pick<DialogKeyEvent, 'code' | 'ctrlKey' | 'metaKey' | 'altKey'>>): FakeKeyEvent => ({ ...keyEvent('s'), code: 'KeyS', ...props });
+
+  it('isQuickSaveShortcut: Ctrl+S a Cmd+S podľa fyzickej klávesy, nie Alt a nie samotné S', () => {
+    expect(isQuickSaveShortcut(combo({ ctrlKey: true }))).toBe(true);
+    expect(isQuickSaveShortcut(combo({ metaKey: true }))).toBe(true);
+    expect(isQuickSaveShortcut(combo({ ctrlKey: true, altKey: true }))).toBe(false);
+    expect(isQuickSaveShortcut(combo({}))).toBe(false);
+    expect(isQuickSaveShortcut(combo({ ctrlKey: true, code: 'KeyD' }))).toBe(false);
+    expect(isQuickSaveShortcut(keyEvent('s'))).toBe(false); // atrapa bez `code`
+  });
+
+  it('Ctrl+S sa nezastaví ani nezruší: bubláva do okna, kde ho spracuje ovládanie hry (rýchle uloženie)', () => {
+    const [a, b] = [element('a'), element('b')] as [FakeElement, FakeElement];
+    const onClose = vi.fn();
+    const event = combo({ ctrlKey: true });
+    handleDialogKeyDown(event, onClose, [a, b], a);
+    expect(event.stopPropagation).not.toHaveBeenCalled();
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('samotné S a Ctrl+Alt+S sa zastavia ako každý iný kláves', () => {
+    const [a] = [element('a')] as [FakeElement];
+    for (const props of [{}, { ctrlKey: true, altKey: true }]) {
+      const event = combo(props);
+      handleDialogKeyDown(event, vi.fn(), [a], a);
+      expect(event.stopPropagation).toHaveBeenCalledTimes(1);
+    }
   });
 });
 

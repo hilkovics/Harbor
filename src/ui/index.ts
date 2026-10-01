@@ -122,7 +122,7 @@ export type {
 } from './contracts-panel';
 export { GameOverModal, bankruptcyText } from './game-over-modal';
 export type { GameOverModalProps } from './game-over-modal';
-export { FOCUSABLE_SELECTOR, ModalDialog, handleDialogKeyDown, listFocusables, trapTarget } from './modal-dialog';
+export { FOCUSABLE_SELECTOR, ModalDialog, handleDialogKeyDown, isQuickSaveShortcut, listFocusables, trapTarget } from './modal-dialog';
 export type { DialogKeyEvent, ModalDialogProps } from './modal-dialog';
 export {
   AUTOSAVE_OPTIONS,
@@ -135,7 +135,7 @@ export {
   withAutosave,
   withDefaultSpeed,
 } from './settings-panel';
-export type { SettingsPanelProps, SettingsPanelViewProps } from './settings-panel';
+export type { SettingsChoices, SettingsPanelProps, SettingsPanelViewProps } from './settings-panel';
 export {
   EMPTY_SLOT_TEXT,
   IMPORT_ACCEPT,

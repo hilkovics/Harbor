@@ -13,7 +13,8 @@
 import type { World } from '@sim/world';
 import { bootstrap, type AppHandle, type BootstrapOptions } from './bootstrap';
 import { createAppWorld, randomGameSeed } from './config';
-import { createPersistence, type PersistenceServices } from './save/save-controller';
+import { createPersistence, loadedToastSpec, type PersistenceServices } from './save/save-controller';
+import type { ToastSpec } from './toast-center';
 
 export interface RunGameDeps {
   /** Predvolene `bootstrap`; test dosadí falošný. */
@@ -41,9 +42,10 @@ export function runGame(root: HTMLElement, deps: RunGameDeps = {}): GameRunner {
   let disposed = false;
   let restarting = false;
 
-  const start = (world: World | undefined, startSpeed: number): Promise<AppHandle> =>
+  const start = (world: World | undefined, startSpeed: number, startToast?: ToastSpec): Promise<AppHandle> =>
     boot(root, {
       ...(world === undefined ? {} : { world }),
+      ...(startToast === undefined ? {} : { startToast }),
       startSpeed,
       persistence,
       onNewGame: restart,
@@ -51,13 +53,13 @@ export function runGame(root: HTMLElement, deps: RunGameDeps = {}): GameRunner {
     });
 
   /** Zruší bežiacu hru a spustí novú nad svetom z `makeWorld` s rýchlosťou `startSpeed`; počas reštartu ďalší nepustí. */
-  function replace(makeWorld: () => World, startSpeed: () => number): void {
+  function replace(makeWorld: () => World, startSpeed: () => number, startToast?: ToastSpec): void {
     if (disposed || restarting) return;
     restarting = true;
     current = current.then(async (handle) => {
       handle.destroy();
       try {
-        return await start(makeWorld(), startSpeed());
+        return await start(makeWorld(), startSpeed(), startToast);
       } finally {
         restarting = false;
       }
@@ -68,9 +70,12 @@ export function runGame(root: HTMLElement, deps: RunGameDeps = {}): GameRunner {
     replace(() => createWorld(nextSeed()), () => persistence.settings.get().defaultSpeed);
   }
 
-  /** Načítanie uloženej hry: svet už obnovil `SaveController` (`World.deserialize`), tu sa len reštartuje v pauze. */
+  /**
+   * Načítanie uloženej hry: svet už obnovil `SaveController` (`World.deserialize`), tu sa len reštartuje v pauze. Toast
+   * „Načítané“ nesie nový `bootstrap` (`startToast`), lebo `ToastCenter` pôvodnej hry sa pri reštarte ruší.
+   */
   function load(world: World): void {
-    replace(() => world, () => 0);
+    replace(() => world, () => 0, loadedToastSpec(world));
   }
 
   let current = start(undefined, persistence.settings.get().defaultSpeed);

@@ -6,6 +6,7 @@
  * - klávesy: počúvajú sa na okne, ale ak má fokus interaktívny prvok DOM (input, tlačidlo, odkaz, prvok s ARIA
  *   rolou ovládača), patria jemu — klávesy hry sa ignorujú, aby `Space` na fokusovanom tlačidle nerobilo dvojité veci
  *   (výnimka: `Ctrl+S`, rýchle uloženie, platí vždy),
+ * - kým je otvorený modálny overlay (`keysBlocked`), klávesy hry sa ignorujú bez ohľadu na fokus (T06-03b),
  * - po kliku myšou na tlačidlo sa fokus z tlačidla zloží (klik s `detail > 0`; klávesnicová aktivácia má `detail = 0`
  *   a fokus si ponecháva), takže po kliku na „4×“ hotkeys ďalej fungujú.
  *
@@ -36,6 +37,12 @@ export interface DomInputOptions {
    * fokus napr. tlačidlo cez Tab). Bootstrap dodá `document.activeElement.blur()`.
    */
   readonly releaseFocus?: () => void;
+  /**
+   * Je otvorený modálny overlay (Nastavenia, Uložiť/načítať)? Kým áno, herné klávesy sa nespracúvajú ani vtedy, keď cieľom
+   * udalosti je `body` (po kliku na zásterku alebo zmiznutí prvku s fokusom) — dialóg totiž zastavuje klávesy len pri
+   * fokuse vo vnútri (`ModalDialog`). Výnimka: `Ctrl+S` (rýchle uloženie) platí vždy.
+   */
+  readonly keysBlocked?: () => boolean;
 }
 
 /** Značky, ktorým patria klávesy, keď majú fokus. */
@@ -184,8 +191,8 @@ export function attachDomInput(controller: InputController, options: DomInputOpt
   listen(win, 'keydown', (event) => {
     const key = event as unknown as KeyLike;
     const input: KeyInput = { code: key.code, repeat: key.repeat, ctrlKey: key.ctrlKey, altKey: key.altKey, metaKey: key.metaKey };
-    // Ctrl+S (rýchle uloženie) platí aj s fokusom na prvku UI (tlačidlo, pole): inak by sa otvorilo „Uložiť stránku“.
-    if (!isQuickSaveKey(input) && keyboardTargetBelongsToUi(event.target)) return;
+    // Ctrl+S (rýchle uloženie) platí aj s fokusom na prvku UI (tlačidlo, pole) a pod overlayom: inak by sa otvorilo „Uložiť stránku“.
+    if (!isQuickSaveKey(input) && (options.keysBlocked?.() === true || keyboardTargetBelongsToUi(event.target))) return;
     if (controller.keyDown(input)) event.preventDefault();
   });
   // Pustenie klávesu sa spracuje vždy: hráč mohol pustiť W až po prechode fokusu na tlačidlo.

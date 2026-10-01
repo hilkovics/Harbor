@@ -5,8 +5,9 @@
  *
  * Prístupnosť: `role="dialog"` + `aria-modal` + `aria-label`; po zobrazení dostane fokus prvý ovládací prvok, po zatvorení
  * sa fokus vráti na prvok, ktorý ho mal predtým (ikona v HUD); Esc zatvára; Tab a Shift+Tab ostávajú v dialógu.
- * Klávesnica patrí dialógu: každý `keydown` sa zastaví (`stopPropagation`), takže herné skratky (medzerník, 1–8, R…)
- * nereagujú, kým je overlay otvorený. Rodič vkladá overlay do relatívne pozicovaného kontajnera hry.
+ * Klávesnica patrí dialógu: každý `keydown` (okrem `Ctrl+S`, rýchleho uloženia) sa zastaví (`stopPropagation`), takže herné
+ * skratky (medzerník, 1–8, R…) nereagujú, kým je overlay otvorený a má fokus; ak fokus nie je v dialógu, blokuje ich app
+ * (`attachDomInput` → `keysBlocked`). Rodič vkladá overlay do relatívne pozicovaného kontajnera hry.
  *
  * Logika klávesov (`handleDialogKeyDown`, `trapTarget`) je čistá a testovaná bez DOM (tests/ui/modal-dialog.test.ts).
  */
@@ -51,17 +52,32 @@ export function trapTarget<T>(focusables: readonly T[], active: unknown, shift: 
 export interface DialogKeyEvent {
   readonly key: string;
   readonly shiftKey: boolean;
+  /** Fyzická klávesa (`KeyboardEvent.code`); voliteľné len pre jednoduché atrapy v testoch. */
+  readonly code?: string;
+  readonly ctrlKey?: boolean;
+  readonly metaKey?: boolean;
+  readonly altKey?: boolean;
   preventDefault(): void;
   stopPropagation(): void;
 }
 
-/** Esc zatvára, Tab sa zalamuje v dialógu; ostatné klávesy sa len zastavia (nešíria sa do herných skratiek). */
+/** `Ctrl+S` (na macOS `Cmd+S`) = rýchle uloženie hry; pravidlo je rovnaké ako `isQuickSaveKey` v app (`Alt` ho ruší). */
+export function isQuickSaveShortcut(event: Pick<DialogKeyEvent, 'code' | 'ctrlKey' | 'metaKey' | 'altKey'>): boolean {
+  return event.code === 'KeyS' && (event.ctrlKey === true || event.metaKey === true) && event.altKey !== true;
+}
+
+/**
+ * Esc zatvára, Tab sa zalamuje v dialógu; ostatné klávesy sa len zastavia (nešíria sa do herných skratiek).
+ * Výnimka je `Ctrl+S`: ten sa nezastaví, aby ho spracovalo ovládanie hry v okne (rýchle uloženie do slotu 1 s
+ * `preventDefault`) — inak by prehliadač pri otvorenom dialógu otvoril „Uložiť stránku ako“.
+ */
 export function handleDialogKeyDown<T extends { focus(): void }>(
   event: DialogKeyEvent,
   onClose: () => void,
   focusables: readonly T[],
   active: unknown,
 ): void {
+  if (isQuickSaveShortcut(event)) return;
   event.stopPropagation();
   if (event.key === 'Escape') {
     event.preventDefault();

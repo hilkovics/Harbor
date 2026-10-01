@@ -6,7 +6,8 @@ import { SetGameSpeedCommand } from '@sim/commands';
 import { World, stateHash } from '@sim/world';
 import type { AppHandle, BootstrapOptions } from '@app/bootstrap';
 import { runGame } from '@app/run-game';
-import { SaveController, createPersistence } from '@app/save/save-controller';
+import { SaveController, createPersistence, loadedToastSpec } from '@app/save/save-controller';
+import { encodeSave } from '@app/save/save-game';
 import { DEFAULT_SETTINGS } from '@app/settings';
 import { SimBridge } from '@app/sim-bridge';
 import { applyStartSpeed } from '@app/start-speed';
@@ -112,6 +113,42 @@ describe('runGame: načítanie uloženej hry', () => {
     booted[1]?.options.onLoadGame?.(createWorld());
     await runner.current();
     expect(booted).toHaveLength(2);
+  });
+});
+
+describe('runGame: toast „Načítané“ po načítaní (T06-03b)', () => {
+  it('načítanie odovzdá novému bootstrapu `startToast` s časom hry a poznámkou o pauze; nová hra a prvý štart ho nemajú', async () => {
+    const { boot, booted } = fakeBoot();
+    const runner = runGame(ROOT, { boot, persistence: createPersistence(() => new FakeStorage()), nextSeed: () => 5 });
+    await runner.current();
+    expect(booted[0]?.options.startToast).toBeUndefined();
+
+    const loaded = createWorld();
+    for (let i = 0; i < loaded.clock.ticksPerDay + loaded.clock.ticksPerHour * 14; i += 1) loaded.tick();
+    booted[0]?.options.onLoadGame?.(loaded);
+    await runner.current();
+    expect(booted[1]?.options.startToast).toEqual(loadedToastSpec(loaded));
+    expect(booted[1]?.options.startToast).toMatchObject({ tone: 'success', icon: 'ic_save', title: 'Načítané' });
+    expect(booted[1]?.options.startToast?.text).toBe('Deň 2 · 14:00 · hra je pozastavená');
+
+    booted[1]?.options.onNewGame?.();
+    await runner.current();
+    expect(booted[2]?.options.startToast).toBeUndefined();
+  });
+
+  it('import súboru ide tou istou cestou: SaveController.importFile → loadWorld → reštart s toastom „Načítané“', async () => {
+    const { boot, booted } = fakeBoot();
+    const persistence = createPersistence(() => new FakeStorage());
+    const runner = runGame(ROOT, { boot, persistence });
+    await runner.current();
+    const source = createWorld();
+    const bridge = new SimBridge(source);
+    const controller = new SaveController({ bridge, persistence, notify: () => undefined, loadWorld: booted[0]?.options.onLoadGame });
+    const file = new Blob([JSON.stringify(encodeSave(source, 'x', '2026-10-01T00:00:00.000Z'))]);
+    await controller.importFile(file);
+    await runner.current();
+    expect(booted).toHaveLength(2);
+    expect(booted[1]?.options.startToast?.title).toBe('Načítané');
   });
 });
 

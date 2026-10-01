@@ -88,7 +88,15 @@ function renderSegmented<T extends number>(
   );
 }
 
-export interface SettingsPanelViewProps {
+/** Voliteľné obmedzenia ponuky, ktoré dodáva app podľa toho, čo úložisko nastavení prijme (`SETTINGS_SPEEDS`, `MAX_AUTOSAVE_EVERY_DAYS`). */
+export interface SettingsChoices {
+  /** Ponúkané predvolené rýchlosti; predvolene `DEFAULT_SPEED_OPTIONS`. */
+  readonly speeds?: readonly DefaultSpeed[];
+  /** Najdlhší ponúkaný interval autosave v dňoch; dlhšie možnosti z `AUTOSAVE_OPTIONS` sa vynechajú. Predvolene bez obmedzenia. */
+  readonly maxAutosaveDays?: number;
+}
+
+export interface SettingsPanelViewProps extends SettingsChoices {
   /** Rozpracovaný koncept (zobrazené hodnoty). */
   readonly draft: Settings;
   readonly onDraftChange: (next: Settings) => void;
@@ -98,9 +106,9 @@ export interface SettingsPanelViewProps {
   readonly onCancel: () => void;
 }
 
-export function SettingsPanelView({ draft, onDraftChange, onSave, onCancel }: SettingsPanelViewProps) {
-  const speedOptions = DEFAULT_SPEED_OPTIONS.map((speed) => ({ value: speed, label: formatSpeed(speed) }));
-  const autosaveOptions = AUTOSAVE_OPTIONS.map((option) => ({ value: option.days, label: option.label }));
+export function SettingsPanelView({ draft, onDraftChange, onSave, onCancel, speeds = DEFAULT_SPEED_OPTIONS, maxAutosaveDays = Infinity }: SettingsPanelViewProps) {
+  const speedOptions = speeds.map((speed) => ({ value: speed, label: formatSpeed(speed) }));
+  const autosaveOptions = AUTOSAVE_OPTIONS.filter((option) => option.days <= maxAutosaveDays).map((option) => ({ value: option.days, label: option.label }));
   return (
     <ModalDialog label="Nastavenia" title="Nastavenia" onClose={onCancel} className="settings-panel" dialogId="settings">
       <div className="modal-dialog__body">
@@ -167,7 +175,7 @@ export function SettingsPanelView({ draft, onDraftChange, onSave, onCancel }: Se
   );
 }
 
-export interface SettingsPanelProps {
+export interface SettingsPanelProps extends SettingsChoices {
   /** Uložené nastavenia; slúžia ako východisko konceptu pri otvorení. */
   readonly settings: Settings;
   /** Volá sa pri `Uložiť` s novými nastaveniami (nevolá sa, ak sa nič nezmenilo). */
@@ -175,10 +183,10 @@ export interface SettingsPanelProps {
   readonly onClose: () => void;
 }
 
-export function SettingsPanel({ settings, onChange, onClose }: SettingsPanelProps) {
+export function SettingsPanel({ settings, onChange, onClose, speeds, maxAutosaveDays }: SettingsPanelProps) {
   const [draft, setDraft] = useState<Settings>(settings);
   const onSave = (): void => {
     commitSettings(draft, settings, onChange, onClose);
   };
-  return <SettingsPanelView draft={draft} onDraftChange={setDraft} onSave={onSave} onCancel={onClose} />;
+  return <SettingsPanelView draft={draft} onDraftChange={setDraft} onSave={onSave} onCancel={onClose} speeds={speeds} maxAutosaveDays={maxAutosaveDays} />;
 }

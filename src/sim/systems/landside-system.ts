@@ -24,12 +24,14 @@
  *    teda aspoň `passTicks ≥ processTicks` tickov (tvrdý bottleneck). Fronta je virtuálna: čakajúci kamión stojí na
  *    vonkajšej bunke konektora, kamióny sa navzájom neblokujú (§7.8 bod 2, 3).
  * 3. **Spawn** (`spawnTrucks`): rampy vzostupne podľa id, docky vzostupne; nový kamión len na náklad docku bez nároku
- *    (pripravený alebo vezený vozidlom, `DockSupply`, ADR-029); potom kamióny s exportom podľa plánu príchodov bookingov
- *    (`spawnExportTrucks`, ADR-032).
+ *    (pripravený alebo vezený vozidlom, `DockSupply`, ADR-029; smie obsadiť aj stojiská rezervované kvótou pre odvoz, ADR-035); potom vjazd
+ *    kamiónov z vnútrozemia (`admitFromHinterland`, ADR-035): výdaj prázdneho, export podľa plánu príchodov bookingov (ADR-032) a návrat
+ *    prázdneho — každý s rezerváciou (stojisko nad kvótou, dock a sklad so zaručeným miestom na vyloženie).
  *
- * **Prázdne kontajnery** (F6c, ADR-034): kamión `delivery` s prázdnym kontajnerom linky (návrat z vnútrozemia, `spawnEmptyTrucks`) sa
+ * **Prázdne kontajnery** (F6c, ADR-034): kamión `delivery` s prázdnym kontajnerom linky (návrat z vnútrozemia, `admitReturnTrucks`) sa
  * správa ako export (brána `EmptyReturned`, vykládka na dock); kamión misie `collect` (výdaj prázdneho exportérovi) čaká v stojisku na
- * pridelený prázdny a naloží ho z docku, alebo sa po `giveUpTick` (od príchodu do stojiska) vzdá a odíde prázdny zo stojiska (`empty-collect.ts`). Pri odchode
+ * pridelený prázdny a naloží ho z docku, alebo sa po `giveUpTick` (od príchodu do stojiska) vzdá a odíde prázdny zo stojiska (`empty-collect.ts`; vo
+ * vnútrozemí sa vzdáva už pred vjazdom, `empty-trucks.ts`). Pri odchode
  * kamióna s importom z mapy sa naplánuje návrat prázdneho (`planEmptyReturn`, `Rng`).
  *
  * **Export** (F6a, ADR-032 bod 4, 7, 13): kamión s misiou `delivery` príde naložený jednou jednotkou, po prechode bránou
@@ -53,9 +55,8 @@ import { TRUCK_STATE_TRAITS, changeTruckState, isTruckTravelState, type TruckMis
 import { DockSupply } from '../trucks/dock-supply';
 import { collectGivesUp, collectReady, finishCollect, giveUpCollect, loadCollected, startCollectWait } from '../trucks/empty-collect';
 import { planEmptyReturn } from '../trucks/empty-plan';
-import { spawnEmptyTrucks } from '../trucks/empty-trucks';
 import { onGatePassed } from '../trucks/export-gate';
-import { spawnExportTrucks } from '../trucks/export-trucks';
+import { admitFromHinterland } from '../trucks/hinterland-admit';
 import { spawnTrucks } from '../trucks/truck-spawner';
 import { MIN_STAY_TICKS, waitingStayTicks } from '../trucks/truck-wait';
 import {
@@ -438,7 +439,6 @@ export class LandsideSystem {
     const { gates, ramps } = world.landsideModules;
     for (const gate of gates) stepGate(world, gate);
     spawnTrucks(world, ramps, this.supply);
-    spawnExportTrucks(world);
-    spawnEmptyTrucks(world);
+    admitFromHinterland(world);
   }
 }

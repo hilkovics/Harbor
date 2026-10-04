@@ -78,7 +78,7 @@ import { createEmptyIntakeJobs, createEmptyPickupJobs } from './empty-jobs';
 import { createExportIntakeJobs } from './export-intake';
 import { createExportLoadJobs as createLoadJobs, createHookUnloadJobs as createHookJobs, type LoadJobSpec } from './export-load';
 import { distanceBetweenModules, distanceToModule } from './module-access';
-import { allocateRamp } from './ramp-allocator';
+import { allocateRamp, outboundRoom } from './ramp-allocator';
 import type { StoredCargoGroup } from './stored-cargo-index';
 import { JOB_PRIORITY_LEVELS, TransportJob, type JobCancelReason } from './transport-job';
 import { allocateUnloadStorage } from './unload-storage';
@@ -217,7 +217,7 @@ function openJob(world: World, init: LoadJobSpec): void {
 function collectOutboundRamps(world: World, into: LoadingRamp[]): void {
   into.length = 0;
   for (const ramp of world.landsideModules.ramps) {
-    if (ramp.freeCount > 0 && world.isRampOperational(ramp)) into.push(ramp);
+    if (outboundRoom(world, ramp) > 0 && world.isRampOperational(ramp)) into.push(ramp);
   }
 }
 
@@ -317,10 +317,10 @@ function outboundFromGroup(world: World, group: StoredCargoGroup, ramps: Loading
     i += 1;
     const unit = world.cargo.get(group.units[index]);
     if (unit === undefined || world.jobOfUnit(unit.id) !== undefined) continue;
-    const dock = ramp.firstFreeDock();
+    const dock = world.dockIntake.firstRoomDock(ramp);
     ramp.reserve(dock);
     openJob(world, { unitIds: [unit.id], from: unit.location, to: { kind: 'at_ramp', rampId: ramp.id, dock } });
-    if (ramp.freeCount > 0) continue;
+    if (outboundRoom(world, ramp) > 0) continue;
     ramps.splice(ramps.indexOf(ramp), 1);
     if (ramps.length === 0) return false;
     ramp = rampForStorage(world, unitStorage, ramps);

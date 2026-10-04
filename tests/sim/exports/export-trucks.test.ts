@@ -22,7 +22,7 @@ import {
   tickEvents,
   tickUntil,
 } from '../helpers/f6a';
-import type { World } from '@sim/world';
+import { hinterlandQueue, type World } from '@sim/world';
 import { F4_DEPOT_ID } from '../helpers/f4-layout';
 
 const rampOf = (world: World): LoadingRamp => [...world.modules.values()].find((module): module is LoadingRamp => module instanceof LoadingRamp) as LoadingRamp;
@@ -253,24 +253,25 @@ describe('vykládka na dock rampy', () => {
     expect(moves).toEqual(['in_truck→at_ramp']);
   });
 
-  it('plný dock: kamión čaká v stojisku (nič nepreteká, kapacita docku drží) a vyloží až po uvoľnení miesta', () => {
+  it('plný dock: druhý kamión čaká vo vnútrozemí (bez zaručeného miesta na docku nevojde, nič nepreteká) a vojde, až keď sa miesto uvoľní (ADR-035)', () => {
     const defs = f6aDefs({ moduleParams: { loading_ramp_container: { docks: 1, stagingPerDock: 1 } } });
     const world = exportWorld({ defs, vehicles: [] });
     const { exportContract } = acceptedBooking(world, { kind: 'export', booked: 2 });
     planArrivals(exportContract, [5, 6]);
     tickEvents(world, 700);
     const ramp = rampOf(world);
-    // Prvá jednotka obsadila jediné staging miesto (bez vozidiel neodíde), druhý kamión stojí v stojisku s jednotkou na palube.
+    // Prvá jednotka obsadila jediné staging miesto (bez vozidiel neodíde), druhý kamión nevošiel: čaká vo vnútrozemí, položka plánu sa nespotrebovala.
     expect(ramp.intakeAt(0)).toBe(1);
-    const [waiting] = [...world.trucks.values()];
-    expect(waiting.state).toBe('waiting');
-    expect(world.cargo.countAt('in_truck', waiting.id)).toBe(1);
+    expect(world.trucks.size).toBe(0);
+    expect(exportContract.nextArrivalTick).toBe(6);
+    expect(hinterlandQueue(world)).toMatchObject({ delivery: 1, collect: 0 });
     expect(ramp.reservedAt(0)).toBe(0);
     expect(findWorldViolation(world)).toBeUndefined();
-    // Vozidlo odvezie prvú jednotku do skladu (dispatcher: job at_ramp → in_storage): miesto na docku sa uvoľní a druhý kamión vyloží.
+    // Vozidlo odvezie prvú jednotku do skladu (dispatcher: job at_ramp → in_storage): miesto na docku sa uvoľní, druhý kamión vojde a vyloží.
     send(world, { type: 'BuyVehicle', vehicleDefId: 'straddle_carrier', depotId: F4_DEPOT_ID });
-    tickUntil(world, () => world.trucks.size === 0, 1500);
-    expect(exportContract.booking.arrivedUnits).toBe(2);
+    tickUntil(world, () => exportContract.booking.arrivedUnits === 2 && world.trucks.size === 0, 2500);
+    expect(world.hinterland.admitted('delivery')).toBe(2);
+    expect(world.hinterland.waitTicksMax('delivery')).toBeGreaterThan(0);
     tickEvents(world, 300);
     expect(exportUnitsByLocation(world)).toEqual({ in_storage: 2 });
     expect(lostUnits(world)).toBe(0);

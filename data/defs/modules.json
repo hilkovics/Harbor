@@ -94,7 +94,7 @@
       ],
       "costCents": 6000000,
       "maintenancePerDayCents": 10000,
-      "params": { "bays": 6 }
+      "params": { "bays": 6, "pickupReservedBays": 2 }
     },
     {
       "id": "loading_ramp_container",

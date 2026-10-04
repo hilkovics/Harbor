@@ -65,7 +65,7 @@ function busyWorld(): World {
 }
 
 describe('World.serialize — WorldState v9', () => {
-  it('tvar: presne kľúče v9 = v8 = v7 (v1 + traffic, modules, cargo, ships + vehicles, jobs + trucks + economy, kontrakty + nextVoyageId) + emptyFlow v pevnom poradí a hodnoty novej hry', () => {
+  it('tvar: presne kľúče v9 = v8 (v1 + traffic, modules, cargo, ships + vehicles, jobs + trucks + economy, kontrakty + nextVoyageId + emptyFlow) + hinterland v pevnom poradí a hodnoty novej hry', () => {
     const world = create();
     const state = world.serialize();
     expect(Object.keys(state)).toEqual([
@@ -92,6 +92,7 @@ describe('World.serialize — WorldState v9', () => {
       'nextContractId',
       'nextVoyageId',
       'emptyFlow',
+      'hinterland',
     ]);
     expect(state.version).toBe(WORLD_STATE_VERSION);
     expect(state.emptyFlow).toEqual({ returnPlan: [], pickupPlan: [], errands: [] });
@@ -99,6 +100,11 @@ describe('World.serialize — WorldState v9', () => {
     expect([state.contracts, state.xp, state.completedContracts, state.nextContractId, state.nextVoyageId]).toEqual([[], 0, 0, 1, 1]);
     expect(state.cargo).toEqual({ createdCount: 0, exportedCount: 0, shippedCount: 0, units: [] });
     expect(state.version).toBe(9);
+    expect(state.hinterland).toEqual({
+      delivery: { admitted: 0, waitTicksTotal: 0, waitTicksMax: 0, turnedAway: 0 },
+      collect: { admitted: 0, waitTicksTotal: 0, waitTicksMax: 0, turnedAway: 0 },
+      pickupBayStarvationTicks: 0,
+    });
     expect(state.economy).toEqual({ entries: [], today: { incomeCents: {}, expenseCents: {} }, daily: [], monthly: [], daysNegative: 0, gameOver: false });
     expect(state.traffic).toEqual([]);
     // Starter moduly mapy (Root modul, T02-04): id 1, 2, … v poradí mapy, zaplatená cena 0, žeriav nečinný.

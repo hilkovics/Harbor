@@ -292,12 +292,15 @@ describe('save: v9 obnoví priebeh, v8 s loďou na starej rejde sa načíta', ()
     expect(world.cargo.liveCount + world.cargo.exportedCount).toBeGreaterThanOrEqual(units);
   });
 
-  it('migrácia v8 → v9 mení len verziu; loď pri kotvisku sa pri načítaní v8 nemení', () => {
+  it('migrácia v8 → v9 mení len verziu a dopĺňa hinterland (T6D-01); lode (rejda, T6D-03) migrácia nemení, loď pri kotvisku sa pri načítaní v8 nemení', () => {
     const { world, ships } = queuedWorld();
     const v8 = toV8State(world.serialize());
     const migrated = migrateWorldState(v8, DEFS) as Record<string, unknown>;
     expect(migrated['version']).toBe(9);
-    expect(JSON.stringify({ ...migrated, version: 8 })).toBe(JSON.stringify(v8));
+    const zero = { admitted: 0, waitTicksTotal: 0, waitTicksMax: 0, turnedAway: 0 };
+    expect(migrated['hinterland']).toEqual({ delivery: zero, collect: zero, pickupBayStarvationTicks: 0 });
+    const withoutHinterland = Object.fromEntries(Object.entries(migrated).filter(([key]) => key !== 'hinterland'));
+    expect(JSON.stringify({ ...withoutHinterland, version: 8 })).toBe(JSON.stringify(v8));
     expect(savesDirectAnchorage(migrated)).toBe(true);
     const restored = World.deserialize(DEFS, MAP, v8 as unknown as WorldState);
     const dockedShip = restored.ships.get(ships[0].id);

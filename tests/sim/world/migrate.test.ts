@@ -6,7 +6,7 @@
 // ostáva v cashCents). v5 → v6 (T5B-02, ADR-029): lode dostanú `route: null`, obnova odvodí trasu podľa pravidiel pred
 // ADR-029. v6 → v7 (T6A-01, ADR-032): kontrakty, náklad, lode, kamióny a žeriavy dostanú polia exportu s hodnotami
 // importu (detail v `save-v6-migration.test.ts`). World.deserialize prijme v1 až v9, serialize() vždy vráti v9 (v7 → v8: linka, stav kvality a plán prázdnych, T6C-01, ADR-034; detail v `save-v7-migration.test.ts`;
-// v8 → v9: len nová verzia, lode s rejdou normalizuje parser, T6D-03; detail v `anchorage-roadstead.test.ts`).
+// v8 → v9: počítadlá vnútrozemia `hinterland`, T6D-01, ADR-035; detail v `save-v8-migration.test.ts`, a lode s rejdou normalizuje parser, T6D-03; detail v `anchorage-roadstead.test.ts`).
 // Pomocníci toV1 … toV4 berú kľúče zo stavu v9 (vnorené tvary v7/v8 migrácie prevezmú bez zmeny hodnôt).
 import { describe, expect, it } from 'vitest';
 import {
@@ -43,6 +43,9 @@ import { commandFromJSON } from '@sim/commands';
 import type { VehicleDepot } from '@sim/modules';
 import { outboundWorld, rampOf } from '../logistics/outbound-fixtures';
 import { BARE_MAP, DEFS, MAP, MAP_GRID, SEED, adjustCash, consumeRng, findCell, hashState, runTicks, setRoad } from './world-fixtures';
+
+/** Nulové počítadlá čakania jednej misie vnútrozemia (výsledok migrácie v8 → v9 a nová hra). */
+const ZERO_WAIT = { admitted: 0, waitTicksTotal: 0, waitTicksMax: 0, turnedAway: 0 };
 
 const PUBLIC_LAND = findCell(MAP_GRID, (cell) => cell.terrain === 'land' && cell.parcelId === null && cell.road === 'none');
 
@@ -141,10 +144,10 @@ function withoutContractDraws(state: WorldState): WorldState {
 }
 
 describe('migrateWorldState', () => {
-  it('verzie: najstaršia 1, aktuálna 9; kľúče v9 = v8 = v7 + emptyFlow = WORLD_STATE_KEYS, v7 = v6 + nextVoyageId, v6 = v5 = v4 + economy + kontrakty, v4 = v3 + trucks, v3 = v2 + vehicles, jobs', () => {
+  it('verzie: najstaršia 1, aktuálna 9; kľúče v9 = v8 + hinterland = WORLD_STATE_KEYS, v8 = v7 + emptyFlow, v7 = v6 + nextVoyageId, v6 = v5 = v4 + economy + kontrakty, v4 = v3 + trucks, v3 = v2 + vehicles, jobs', () => {
     expect(OLDEST_WORLD_STATE_VERSION).toBe(1);
     expect(WORLD_STATE_VERSION).toBe(9);
-    expect([...WORLD_STATE_V9_KEYS]).toEqual([...WORLD_STATE_V8_KEYS]);
+    expect([...WORLD_STATE_V9_KEYS]).toEqual([...WORLD_STATE_V8_KEYS, 'hinterland']);
     expect([...WORLD_STATE_V8_KEYS]).toEqual([...WORLD_STATE_V7_KEYS, 'emptyFlow']);
     expect([...WORLD_STATE_V7_KEYS]).toEqual([...WORLD_STATE_V6_KEYS, 'nextVoyageId']);
     expect([...WORLD_STATE_V6_KEYS]).toEqual([...WORLD_STATE_V5_KEYS]);
@@ -184,6 +187,7 @@ describe('migrateWorldState', () => {
       if (key !== 'version') expect(migrated[key]).toEqual(v1[key]);
     }
     expect(migrated.version).toBe(9);
+    expect(migrated.hinterland).toEqual({ delivery: ZERO_WAIT, collect: ZERO_WAIT, pickupBayStarvationTicks: 0 });
     expect(migrated.emptyFlow).toEqual({ returnPlan: [], pickupPlan: [], errands: [] });
     expect(migrated.traffic).toEqual([]);
     expect(migrated.modules).toEqual([]);
@@ -211,7 +215,7 @@ describe('migrateWorldState', () => {
     }
     expect((migrated.modules as unknown[]).length).toBe(MAP.starter.modules.length);
     expect(migrated.modules).toEqual(v3.modules); // kotvisko dostalo lastNoStorageHour: null, žeriav bez zmeny
-    expect(migrated.version).toBe(WORLD_STATE_V9);
+    expect(migrated.version).toBe(WORLD_STATE_VERSION);
     expect(migrated.vehicles).toEqual([]);
     expect(migrated.jobs).toEqual([]);
     expect(migrated.trucks).toEqual([]);
@@ -230,7 +234,7 @@ describe('migrateWorldState', () => {
     const migrated = migrateWorldState(v3, DEFS) as { modules: { defId: string; runtime: unknown }[] } & Record<string, unknown>;
     expect(migrated).not.toBe(v3);
     expect(Object.keys(migrated)).toEqual([...WORLD_STATE_KEYS]);
-    expect(migrated.version).toBe(WORLD_STATE_V9);
+    expect(migrated.version).toBe(WORLD_STATE_VERSION);
     expect(migrated.trucks).toEqual([]);
     for (const key of WORLD_STATE_V3_KEYS) {
       if (key !== 'version' && key !== 'modules') expect(migrated[key]).toEqual(v3[key]);
@@ -252,7 +256,7 @@ describe('migrateWorldState', () => {
     const migrated = migrateWorldState(v4, DEFS) as Record<string, unknown>;
     expect(migrated).not.toBe(v4);
     expect(Object.keys(migrated)).toEqual([...WORLD_STATE_KEYS]);
-    expect(migrated.version).toBe(WORLD_STATE_V9);
+    expect(migrated.version).toBe(WORLD_STATE_VERSION);
     for (const key of WORLD_STATE_V4_KEYS) {
       if (key !== 'version') expect(migrated[key]).toEqual((v4 as unknown as Record<string, unknown>)[key]);
     }

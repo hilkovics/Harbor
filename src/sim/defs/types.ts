@@ -426,6 +426,12 @@ export interface WaitingAreaParams {
   readonly bays: number;
   /** Pobyt kamióna v bayi pred povelom do docku (ADR-011, ADR-024 bod 6); chýba = `logistics.defaultInternalTicks`. */
   readonly internalTicks?: number;
+  /**
+   * Kvóta stojísk pre odvoz (F6d, ADR-035): `pickupReservedBays` stojísk smú obsadiť len kamióny, ktoré odvážajú náklad z prístavu (import, výdaj
+   * prázdneho); kamióny, ktoré náklad privezú (export, návrat prázdneho), nesmú obsadiť posledné rezervované. Celé ≥ 0; chýba = 0 (bez rezervy). Účinná kvóta je najviac `bays − 1` (`WaitingArea.pickupReservedBays`): aspoň jedno
+   * stojisko ostáva pre dovoz, inak by kamióny s dovozom nikdy nevošli.
+   */
+  readonly pickupReservedBays?: number;
 }
 
 /** `params` nakladacej rampy (`kind: 'ramp'`, F4). */

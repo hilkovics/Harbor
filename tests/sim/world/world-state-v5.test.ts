@@ -42,7 +42,7 @@ const scenario = f4Scenario('f5_migration', 4004, { vehicles: STRADDLES, units: 
 const RUN_TIMEOUT_MS = 300_000;
 
 describe('WorldState v5', () => {
-  it('WORLD_STATE_VERSION je 9 (v5 + trasa lode ADR-029 + export ADR-032 + prázdne kontajnery ADR-034 + rejda T6D-03) a serialize() vracia verziu 9 ako čistý JSON', () => {
+  it('WORLD_STATE_VERSION je 9 (v5 + trasa lode ADR-029 + export ADR-032 + prázdne kontajnery ADR-034 + vnútrozemie ADR-035 + rejda T6D-03) a serialize() vracia verziu 9 ako čistý JSON', () => {
     expect(WORLD_STATE_VERSION).toBe(9);
     const world = World.create(DEFS, MAP, 5901);
     world.tick();

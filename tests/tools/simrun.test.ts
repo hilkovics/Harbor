@@ -304,6 +304,10 @@ describe('runScenario', () => {
       transhipRescued: 0,
       transhipSold: 0,
       emptyReturnsDeclined: 0,
+      trucksWaitingInland: { pickup: 0, delivery: 0, collect: 0, total: 0 },
+      inlandWaitTicks: 0,
+      inlandWaitTicksMax: 0,
+      pickupBayStarvationTicks: 0,
     });
     expect(Object.keys(report)).toEqual([
       'scenario',
@@ -371,6 +375,10 @@ describe('runScenario', () => {
       'transhipRescued',
       'transhipSold',
       'emptyReturnsDeclined',
+      'trucksWaitingInland',
+      'inlandWaitTicks',
+      'inlandWaitTicksMax',
+      'pickupBayStarvationTicks',
     ]);
   });
 
@@ -771,10 +779,10 @@ describe('runScenario', () => {
     it('live_terminal: všetky štyri toky sú nenulové, lostUnits 0; repositionedUnits = naložené prázdne, transhipLoaded = naložená prekládka (shipped)', () => {
       expect(report).toMatchObject({
         lostUnits: 0,
-        exportedUnits: 116,
+        exportedUnits: 115,
         shippedUnits: 96,
-        emptyReturns: 68,
-        emptyPickedUp: 7,
+        emptyReturns: 65,
+        emptyPickedUp: 6,
         repositionedUnits: 24,
         transhipLoaded: 36,
         transhipMissed: 0,

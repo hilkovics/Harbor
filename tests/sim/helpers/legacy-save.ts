@@ -1,5 +1,5 @@
 /**
- * „Zhodenie" aktuálneho `WorldState` na tvar v8 (`toV8State`, T6D-03, ADR-029 dodatok), v7 (`toV7State`, T6C-01, ADR-034) a v6
+ * „Zhodenie" aktuálneho `WorldState` na tvar v8 (`toV8State`, T6D-01 + T6D-03, ADR-035, ADR-029 dodatok), v7 (`toV7State`, T6C-01, ADR-034) a v6
  * (`toV6State`, T6A-01, ADR-032) — presný opak migrácií v8 → v9, v7 → v8 a v6 → v7 pre testy a generátor fixtures starších savov. Svet nesmie používať nič z F6c (prázdne
  * kontajnery, repositioning, prekládka, plán `emptyFlow`) ani F6a (export, voyage s viacerými kontraktmi, lashing, delivery
  * kamión, nakládka žeriavu): starší tvar by to nevedel zapísať, preto je to chyba. Odstránené kľúče nemenia relatívne poradie
@@ -23,13 +23,14 @@ function fail(what: string): never {
 }
 
 /**
- * Stav v9 (`World.serialize()` alebo jeho JSON kópia) → stav v8 (nová kópia). Tvar sa nemení (v9 zmenila len význam
- * `anchorageIndex` a trás lodí, T6D-03): lode s rejdou zostanú, ako sú — pri načítaní ich normalizuje parser (`legacyAnchorage`).
+ * Stav v9 (`World.serialize()` alebo jeho JSON kópia) → stav v8 (nová kópia): bez poľa `hinterland` (T6D-01). Počítadlá vnútrozemia sa zahodia — len ich číta UI
+ * a `simrun`, správanie sveta neovplyvňujú (plány kamiónov, ktoré v8 pozná, ostávajú), takže zhodenie nie je stratové pre nič, čo v8 vie zapísať.
+ * Lode s rejdou zostanú, ako sú (T6D-03 zmenila len význam `anchorageIndex` a trás lodí) — pri načítaní ich normalizuje parser (`legacyAnchorage`).
  */
 export function toV8State(state: unknown): Json {
   const v9 = clone(state) as Json;
   if (v9['version'] !== 9) fail(`verziu ${String(v9['version'])} (čaká sa 9, toV8State)`);
-  return { ...v9, version: 8 };
+  return { ...without(v9, ['hinterland']), version: 8 };
 }
 
 /** Stav v9 alebo v8 (`World.serialize()` alebo jeho JSON kópia; v9 sa najprv zhodí cez `toV8State`) → stav v7 (nová kópia). */

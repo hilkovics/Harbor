@@ -228,7 +228,8 @@
       "required": ["bays"],
       "properties": {
         "bays": { "type": "integer", "minimum": 1, "description": "Počet stojísk (bays) kamiónov (`stalls` v manifeste)." },
-        "internalTicks": { "type": "integer", "minimum": 0, "description": "Vnútorný čas prechodu stojiskom; chýba = logistics.defaultInternalTicks." }
+        "internalTicks": { "type": "integer", "minimum": 0, "description": "Vnútorný čas prechodu stojiskom; chýba = logistics.defaultInternalTicks." },
+        "pickupReservedBays": { "type": "integer", "minimum": 0, "description": "Kvóta stojísk pre odvoz (ADR-035): toľko stojísk smú obsadiť len kamióny odvážajúce náklad (import, výdaj prázdneho); kamióny dovážajúce náklad (export, návrat prázdneho) nesmú obsadiť posledné rezervované. Chýba = 0 (bez rezervy). Účinná kvóta je najviac `bays − 1` (aspoň jedno stojisko ostáva pre dovoz; hodnota ≥ `bays` sa orezáva)." }
       }
     },
     "rampParams": {

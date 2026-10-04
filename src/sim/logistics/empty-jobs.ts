@@ -7,7 +7,7 @@
  *   nevznikne a prázdny čaká na docku (kamión s prázdnym vtedy čaká v stojisku).
  * - **Výdaj exportérovi** (`createEmptyPickupJobs`): kamión misie `collect` bez prideleného prázdneho dostane dostupný prázdny kontajner
  *   jeho linky (`findAvailableEmpty`: depo pred dvorom, najmenšie id; poškodený a opravovaný nie; len zo skladu s cestou k rampe kamióna) — job `in_storage → at_ramp` na dock
- *   kamióna (rezervuje staging miesto) a poverenie `errand.unitId`. Zrušený job (rampa stratila prevádzkovosť) pridelenie uvoľní:
+ *   kamióna (rezervuje staging miesto, ktoré nie je prisľúbené kamiónu s dovozom — `DockIntake.roomAt`, ADR-035) a poverenie `errand.unitId`. Zrušený job (rampa stratila prevádzkovosť) pridelenie uvoľní:
  *   jednotka je stále v sklade bez jobu → poverenie sa vráti do stavu bez prideleného a prázdny sa pridelí znovu.
  *
  * Poradie: rampy vzostupne podľa id, jednotky docku vo FIFO poradí ledgera; poverenia vzostupne podľa `truckId`. Bez alokácie okrem
@@ -69,7 +69,7 @@ export function createEmptyPickupJobs(world: World, openJob: (spec: EmptyJobSpec
     }
     const truck = world.trucks.get(truckId);
     const ramp = truck === undefined ? undefined : world.modules.get(truck.rampId);
-    if (truck === undefined || !(ramp instanceof LoadingRamp) || ramp.freeAt(truck.dock) <= 0 || !world.isRampOperational(ramp)) continue;
+    if (truck === undefined || !(ramp instanceof LoadingRamp) || world.dockIntake.roomAt(ramp, truck.dock) <= 0 || !world.isRampOperational(ramp)) continue;
     RAMP_TARGET[0] = ramp;
     const unit = findAvailableEmpty(world, errand.lineId, RAMP_TARGET);
     if (unit === undefined || unit.location.kind !== 'in_storage') continue;

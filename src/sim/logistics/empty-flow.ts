@@ -164,6 +164,15 @@ export class EmptyFlow {
     this.pickups.shift();
   }
 
+  /**
+   * Odstráni výdaj na indexe `index` plánu (kamión `collect` vznikol, vzdal sa vo vnútrozemí, alebo booking zanikol — vnútrozemie preskakuje položky,
+   * ktoré čakajú na prázdny, takže spotrebuje aj iné než prvú). Index mimo plánu → `Error`.
+   */
+  dropPickupAt(index: number): void {
+    if (!Number.isInteger(index) || index < 0 || index >= this.pickups.length) throw new Error(`EmptyFlow.dropPickupAt: index ${String(index)} mimo plánu výdajov (${String(this.pickups.length)})`);
+    this.pickups.splice(index, 1);
+  }
+
   /** Odstráni všetky nesplatené výdaje bookingu `contractId` (booking sa uzavrel skôr než kamión vznikol); vráti ich počet. */
   dropPickupsOf(contractId: number): number {
     const before = this.pickups.length;

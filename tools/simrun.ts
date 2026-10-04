@@ -17,7 +17,7 @@ import { loadBundledDefs, type DefRegistry } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
 import { loadBundledMap, loadMap, parseMapDef, type LoadedMap } from '@sim/grid';
 import { CraneModule, TruckGate } from '@sim/modules';
-import { World, stateHash, type WorldState } from '@sim/world';
+import { World, hinterlandMetrics, stateHash, type HinterlandQueue, type WorldState } from '@sim/world';
 import { exportGroupingShare } from '@sim/world/cargo-queries';
 
 // ---------------------------------------------------------------------------------------------------------
@@ -221,6 +221,17 @@ export interface SimrunReport {
   readonly transhipSold: number;
   /** Počet udalostí `EmptyReturnDeclined` — návraty prázdneho zahodené bez kamióna, lebo depo prázdnych nemalo voľné miesto (T6C-07b, ADR-034 dodatok). */
   readonly emptyReturnsDeclined: number;
+  /**
+   * Kamióny čakajúce vo vnútrozemí pred vjazdom do prístavu na konci behu podľa misie (F6d, ADR-035, `hinterlandQueue`): `pickup` = dopyt po kamiónoch na odvoz
+   * importu (náklad na dockoch), `delivery` = export + návrat prázdneho, `collect` = výdaj prázdneho; `total` = súčet.
+   */
+  readonly trucksWaitingInland: Pick<HinterlandQueue, 'pickup' | 'delivery' | 'collect' | 'total'>;
+  /** Σ ticky čakania vo vnútrozemí kamiónov, ktoré boli vpustené do prístavu (misie `delivery` a `collect`, od `dueTick` po vjazd; ADR-035). */
+  readonly inlandWaitTicks: number;
+  /** Najdlhšie čakanie vo vnútrozemí vpusteného kamióna (ticky; ADR-035). */
+  readonly inlandWaitTicksMax: number;
+  /** Ticky, v ktorých dopyt po kamióne na odvoz (náklad na docku) nemal voľné stojisko (ADR-035). */
+  readonly pickupBayStarvationTicks: number;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -853,6 +864,19 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     transhipRescued: tally.transhipRescued,
     transhipSold: tally.transhipSold,
     emptyReturnsDeclined: tally.emptyReturnsDeclined,
+    ...inlandReport(world),
+  };
+}
+
+/** Metriky vnútrozemia (F6d, ADR-035) z `hinterlandMetrics` — kľúče na konci reportu. */
+function inlandReport(world: World): Pick<SimrunReport, 'trucksWaitingInland' | 'inlandWaitTicks' | 'inlandWaitTicksMax' | 'pickupBayStarvationTicks'> {
+  const metrics = hinterlandMetrics(world);
+  const { pickup, delivery, collect, total } = metrics.waiting;
+  return {
+    trucksWaitingInland: { pickup, delivery, collect, total },
+    inlandWaitTicks: world.hinterland.waitTicksTotal('delivery') + world.hinterland.waitTicksTotal('collect'),
+    inlandWaitTicksMax: metrics.waitTicks.max,
+    pickupBayStarvationTicks: metrics.pickupBayStarvationTicks,
   };
 }
 
@@ -883,7 +907,10 @@ export function formatSummary(report: SimrunReport): string {
     `prázdne vrátené/záložné/poškodené/opravené ${String(report.emptyReturns)}/${String(report.emptyFallbackStored)}/${String(report.emptyDamaged)}/${String(report.emptyRepaired)}, ` +
     `opravy ${String(report.repairCostCents)}, prázdne vydané/zmeškané ${String(report.emptyPickedUp)}/${String(report.emptyPickupMisses)}, ` +
     `repositioning ${String(report.repositionedUnits)}, prekládka naložená/zmeškaná/zachránená/predaná ${String(report.transhipLoaded)}/${String(report.transhipMissed)}/` +
-    `${String(report.transhipRescued)}/${String(report.transhipSold)}, návraty prázdnych zahodené ${String(report.emptyReturnsDeclined)}` +
+    `${String(report.transhipRescued)}/${String(report.transhipSold)}, návraty prázdnych zahodené ${String(report.emptyReturnsDeclined)}, ` +
+    `vo vnútrozemí čaká ${String(report.trucksWaitingInland.total)} (odvoz/dovoz/výdaj ${String(report.trucksWaitingInland.pickup)}/` +
+    `${String(report.trucksWaitingInland.delivery)}/${String(report.trucksWaitingInland.collect)}), čakanie vo vnútrozemí ${String(report.inlandWaitTicks)} ` +
+    `(max ${String(report.inlandWaitTicksMax)}), bez stojiska pre odvoz ${String(report.pickupBayStarvationTicks)}` +
     (report.stateHash === null ? '' : `, hash stavu ${report.stateHash}`)
   );
 }

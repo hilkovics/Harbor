@@ -34,6 +34,10 @@ export type {
 export { cargoSplitAt, depotCargoSplit, exportGroupingShare, shipCargoSplit, storageCargoSplit, terminalEmptySplit } from './cargo-queries';
 export type { CargoDirectionSplit, DepotCargoSplit, LineStatusSplit } from './cargo-queries';
 export { parseEmptyFlowState } from './empty-flow-state';
+export { parseHinterlandState } from './hinterland-state';
+// Vnútrozemie (ADR-035): čakajúce kamióny, ich počítadlá a dopyt po odvoze — čisté dotazy pre UI a metriky.
+export { hinterlandMetrics, hinterlandQueue } from './hinterland-queries';
+export type { HinterlandMetrics, HinterlandQueue, MissionWaitMetrics } from './hinterland-queries';
 export {
   OLDEST_WORLD_STATE_VERSION,
   WORLD_STATE_V1_KEYS,

@@ -7,12 +7,15 @@
  * každý tick, preto sa skladajú vždy).
  *
  * - Moduly: všetko okrem žeriavov (tie idú do `cranes`, `ModuleLayer` ich aj tak preskakuje). Berth nesie apron:
- *   obsadené sloty v poradí FIFO (`apron.units()`) so slotom (`slotOf`) a typom nákladu z ledgera.
- * - Žeriavy: `progress` = `phaseProgress` fázy (0 v `idle`/`blocked`), `holding` = držaná jednotka z ledgera, `cycle` = smer
- *   cyklu (`crane.cycle`: vykládka / nakládka / dual, F6a).
+ *   obsadené sloty v poradí FIFO (`apron.units()`) so slotom (`slotOf`) a typom nákladu z ledgera; prázdny kontajner (F6c)
+ *   navyše `empty` a `lineToken` (farba linky).
+ * - Žeriavy: `progress` = `phaseProgress` fázy (0 v `idle`/`blocked`), `holding` = držaná jednotka z ledgera (F6c: `empty` pri
+ *   prázdnom kontajneri), `cycle` = smer cyklu (`crane.cycle`: vykládka / nakládka / dual, F6a).
  * - Sklady (`StorageModule`): `storage = { capacity, stored, reserved }` z modulu (obsadenie číta modul z ledgera) a
  *   `lastStorageOp = { slot, tick, kind }` — posledné uloženie / vzatie kontajnera na slote (F5b č. 8, animácia portálového
- *   žeriavu dvora). Sim ju nevedie: skladá ju `SimBridge` z udalostí `CargoMoved` (`storage-ops.ts`) a podáva builderu.
+ *   žeriavu dvora; F6c: `empty` pri prázdnom kontajneri). Sim ju nevedie: skladá ju `SimBridge` z udalostí `CargoMoved`
+ *   (`storage-ops.ts`) a podáva builderu. Depo prázdnych (`EmptyDepot`, F6c) nesie `depot = { available, damaged, inRepair,
+ *   repairBays }` z `depotCargoSplit` (`cargo-vm.ts`).
  *   Moduly s cestným konektorom nesú `connected = world.isConnected(module)` (odznak „nepripojené“); ostatné (žeriav)
  *   pole nemajú.
  * - Pozemné moduly F4 (T04-08), každý len svoje pole:
@@ -20,19 +23,23 @@
  *     hore), `entryConnector` = index konektora v defe, ktorý je vstupnou stranou (`entrySide`, určuje ju svet z ciest;
  *     neurčená strana → 0, prvý konektor);
  *   - stojisko (`WaitingArea`): `waitingArea = { bays, occupied[] }`, `occupied[i]` = bay `i` je obsadený alebo rezervovaný;
- *   - rampa (`LoadingRamp`): `ramp = { docks, staged[], operational }`, `staged[i]` = jednotky na docku `i` (ledger),
+ *   - rampa (`LoadingRamp`): `ramp = { docks, staged[], operational, stagedEmpty? }`, `staged[i]` = jednotky na docku `i`
+ *     (ledger; F6c: vrátane prázdnych kontajnerov, ktoré sim do `stagedAt` nepočíta — `stagedEmpty[i]` ich vyčísľuje),
  *     `operational` = `World.isRampOperational`.
  *   Fronta brány a obsadenie stojiska sprevádzajú `Truck*` udalosti, ale nie všetky zmeny: `open` sa po prechode, ktorému
  *   zanikla výstupná strana (prestavba ciest za behu), vypne bez udalosti. Preto VM týchto dvoch modulov (`isLiveModule`)
  *   `EntitiesVMBuilder` porovnáva so živým modulom pri každom snapshote (plytko) a pole modulov je nové len pri skutočnej
  *   zmene hodnôt.
- * - Lode: `cargoSplit = shipCargoSplit(world, shipId)` (import / export na palube) a v stave `lashing`
+ * - Lode: `cargoSplit` (import / export / `empty` na palube; prekládka do importu na lodi A a do exportu na lodi B, `shipDeckSplit`,
+ *   `unitsOnBoard` je ich súčet; `EntitiesVMBuilder` ho cachuje podľa revízie) a v stave `lashing`
  *   `lashing = { ticksLeft, ticksTotal }` (`ticksTotal` z udalosti `ShipLashingStarted`, ktorú si pamätá `LashingTracker`;
  *   bez záznamu vzorec z defu, `lashing.ts`).
  * - Lode, vozidlá a kamióny: `prevX/prevY` (a `prevHeading` vozidla a kamióna) sim nevedie — dodá ich volajúci
  *   (`SimBridge` si polohu pamätá pred každým tickom); nová loď / vozidlo / kamión bez záznamu má `prev = curr`.
- * - Vozidlá: `loaded` = v ledgeri je aspoň jedna jednotka `in_vehicle` u tohto vozidla.
- * - Kamióny (`TruckVM`): `loaded` = aspoň jedna jednotka `in_truck`. Sim vedie kamión vždy na bunke cesty (v `waiting`
+ * - Vozidlá: `loaded` = v ledgeri je aspoň jedna jednotka `in_vehicle` u tohto vozidla; `carriesEmpty` (F6c) = je prázdny kontajner.
+ * - Kamióny (`TruckVM`): `loaded` = aspoň jedna jednotka `in_truck`, `carriesEmpty` (F6c) = je prázdny kontajner (návrat prázdnych,
+ *   výdaj exportérovi — kamión misie `collect` je pred naložením prázdny a po naložení nesie prázdny kontajner; po vyložení
+ *   prázdneho si kamión hodnotu pamätá, `truckCarriesEmpty`). Sim vedie kamión vždy na bunke cesty (v `waiting`
  *   na vstupnej bunke stojiska, v `loading` na vonkajšej bunke konektora docku); prezentovaná poloha (`truckPose`) je však
  *   v `waiting` stred stojiska `stalls[truck.bay]` (kurz podľa rotácie modulu) a v `loading` stred docku `docks[truck.dock]`
  *   z manifestu s kabínou von z rampy (kamión do docku cúva, F5b č. 11; `dockHeading`). Rovnako v `unloading` (F6a: exportný
@@ -46,12 +53,13 @@
  */
 import { dockHeading, findDockCenter, findStallCenter, type SlotHost } from '@render/module-slots';
 import type { CraneVM, EntitiesVM, ModuleVM, ShipVM, TruckVM, VehicleVM, ViewRotation } from '@render/view-models';
-import type { CargoLocation } from '@sim/cargo';
+import type { CargoLocation, CargoUnit } from '@sim/cargo';
 import type { EntityId } from '@sim/core';
-import { BerthModule, CraneModule, LoadingRamp, StorageModule, TruckGate, WaitingArea, type Module } from '@sim/modules';
-import { SHIP_STATE_TRAITS } from '@sim/ships';
+import { BerthModule, CraneModule, EmptyDepot, LoadingRamp, StorageModule, TruckGate, WaitingArea, type Module } from '@sim/modules';
+import { SHIP_STATE_TRAITS, type Ship } from '@sim/ships';
 import type { Truck } from '@sim/trucks';
-import { shipCargoSplit, type World } from '@sim/world';
+import type { World } from '@sim/world';
+import { depotVM, emptiesPerDock, emptyLook, holderCarriesEmpty, isEmptyUnit, shipDeckSplit, ShipSplitCache, truckCarriesEmpty, type DeckSplit } from './cargo-vm';
 import { lashingTicks, type LashingTotals } from './lashing';
 import type { StorageOps } from './storage-ops';
 
@@ -84,6 +92,8 @@ export interface TruckPose {
   readonly y: number;
   readonly heading: ViewRotation;
   readonly state: string;
+  /** F6c: kamión nesie (alebo naposledy niesol) prázdny kontajner (`truckCarriesEmpty`); chýba = nie. */
+  readonly carriesEmpty?: boolean;
 }
 
 /** Predchádzajúce pózy kamiónov podľa `id` kamióna; chýbajúci záznam = nový kamión (`prev = curr`). */
@@ -109,11 +119,11 @@ export interface SimEntitiesVM extends EntitiesVM {
 /** Druh modulu, ktorý sa prezentuje samostatne v `EntitiesVM.cranes`. */
 const CRANE_KIND = 'crane';
 
-/** Typ jednotky z ledgera; jednotka bez záznamu je porušený invariant (indexy apronu a ledgera sa rozišli). */
-function cargoTypeOf(world: World, unitId: EntityId, holder: string): string {
+/** Jednotka z ledgera; jednotka bez záznamu je porušený invariant (indexy apronu a ledgera sa rozišli). */
+function unitOf(world: World, unitId: EntityId, holder: string): CargoUnit {
   const unit = world.cargo.get(unitId);
   if (unit === undefined) throw new Error(`entitiesVM: jednotka #${String(unitId)} (${holder}) nie je v ledgeri`);
-  return unit.typeId;
+  return unit;
 }
 
 /** Modul má cestný konektor → má zmysel hlásiť pripojenie k ceste (žeriav konektory nemá). */
@@ -142,11 +152,17 @@ function waitingAreaVM(area: WaitingArea): NonNullable<ModuleVM['waitingArea']> 
   return { bays: area.bays, occupied };
 }
 
-/** VM rampy: pripravené jednotky po dockoch a prevádzkovosť. */
+/**
+ * VM rampy: pripravené jednotky po dockoch a prevádzkovosť. F6c: prázdne kontajnery na doku (príchod kamiónom čaká na vozidlo do depa,
+ * výdaj exportérovi čaká na kamión `collect`) sim do `stagedAt` nepočíta (prázdny nie je náklad na odvoz), renderer ich však kreslí
+ * ako kontajnery na doku — `staged[i]` ich preto obsahuje a `stagedEmpty[i]` hovorí, koľko z nich je prázdnych (pole je len vtedy,
+ * keď je na rampe aspoň jeden prázdny).
+ */
 function rampVM(world: World, ramp: LoadingRamp): NonNullable<ModuleVM['ramp']> {
+  const empties = emptiesPerDock(world, ramp);
   const staged: number[] = [];
-  for (let dock = 0; dock < ramp.docks; dock++) staged.push(ramp.stagedAt(dock));
-  return { docks: ramp.docks, staged, operational: world.isRampOperational(ramp) };
+  for (let dock = 0; dock < ramp.docks; dock++) staged.push(ramp.stagedAt(dock) + (empties?.[dock] ?? 0));
+  return { docks: ramp.docks, staged, operational: world.isRampOperational(ramp), ...(empties === null ? {} : { stagedEmpty: empties }) };
 }
 
 /** Zadržané (VGM hold) jednotky jedného modulu: všetky, po dockoch rampy a sloty apronu (utriedené vzostupne). */
@@ -225,18 +241,20 @@ function moduleVM(world: World, module: Module, storageOps: StorageOps = NO_STOR
   };
   if (module instanceof BerthModule) {
     const { apron } = module;
-    const units: { slot: number; unitId: number; typeId: string }[] = [];
+    const units: NonNullable<ModuleVM['apron']>['units'] = [];
     for (const unitId of apron.units()) {
       const slot = apron.slotOf(unitId);
       if (slot === undefined) throw new Error(`entitiesVM: jednotka #${String(unitId)} je vo FIFO apronu ${module.label}, ale nemá slot`);
-      units.push({ slot, unitId, typeId: cargoTypeOf(world, unitId, module.label) });
+      const unit = unitOf(world, unitId, module.label);
+      units.push({ slot, unitId, typeId: unit.typeId, ...emptyLook(world, unit) });
     }
     vm.apron = { capacity: apron.capacity, units };
   }
   if (module instanceof StorageModule) {
     vm.storage = { capacity: module.capacity, stored: module.storedCount, reserved: module.reservedCount };
     const op = storageOps.get(module.id);
-    if (op !== undefined) vm.lastStorageOp = { slot: op.slot, tick: op.tick, kind: op.kind };
+    if (op !== undefined) vm.lastStorageOp = { slot: op.slot, tick: op.tick, kind: op.kind, ...(op.empty === true ? { empty: true } : {}) };
+    if (module instanceof EmptyDepot) vm.depot = depotVM(world, module);
   }
   if (module instanceof TruckGate) vm.gate = gateVM(module);
   if (module instanceof WaitingArea) vm.waitingArea = waitingAreaVM(module);
@@ -264,6 +282,7 @@ export function craneVMs(world: World): CraneVM[] {
   for (const module of world.modules.values()) {
     if (!(module instanceof CraneModule)) continue;
     const held = module.heldUnitId;
+    const heldUnit = held === null ? undefined : unitOf(world, held, module.label);
     const idlePhase = module.state === 'idle' || module.state === 'blocked';
     result.push({
       id: module.id,
@@ -274,26 +293,37 @@ export function craneVMs(world: World): CraneVM[] {
       rotation: module.rotation,
       state: module.state,
       progress: idlePhase ? 0 : Math.min(1, Math.max(0, module.phaseProgress)),
-      holding: held === null ? null : { unitId: held, typeId: cargoTypeOf(world, held, module.label) },
+      holding: heldUnit === undefined ? null : { unitId: heldUnit.id, typeId: heldUnit.typeId, ...(isEmptyUnit(heldUnit) ? { empty: true } : {}) },
       cycle: module.cycle,
     });
   }
   return result;
 }
 
+/** Náklad lode pre palubu (`shipDeckSplit`); `EntitiesVMBuilder` dosadí cachovaný výpočet podľa revízie. */
+type ShipSplitOf = (world: World, ship: Ship) => DeckSplit;
+
 /**
  * Lode na mape v poradí `world.ships` (vzostupne podľa id); `prev` z predchádzajúceho ticku (chýba → `prev = curr`);
- * `lashingTotals` = celkové doby lashingu zo `SimBridge`. `cargoSplit` je O(jednotky na palube), najviac `capacityUnits` lode.
+ * `lashingTotals` = celkové doby lashingu zo `SimBridge`. `cargoSplit` je O(jednotky na palube), najviac `capacityUnits` lode
+ * (`splitOf` ho môže cachovať). F6c: `cargoSplit` nesie import (aj prekládka na lodi A), export (aj prekládka na lodi B) a `empty`
+ * (len keď sú na palube prázdne); `unitsOnBoard` je ich súčet, takže vždy sedí s `cargoSplit`.
  * Loď, ktorá ešte nie je na mape (`arriving` — čaká pred vstupom, ADR-029; `SHIP_STATE_TRAITS.onMap`), sa nekreslí, takže
  * do zoznamu nepatrí; vo chvíli vstupu (`arriving → inbound`) sa objaví na `seaLane[0]` s `prev = curr`.
  */
-export function shipVMs(world: World, prev: ShipPositions = NO_POSITIONS, lashingTotals: LashingTotals = NO_LASHING_TOTALS): ShipVM[] {
+export function shipVMs(
+  world: World,
+  prev: ShipPositions = NO_POSITIONS,
+  lashingTotals: LashingTotals = NO_LASHING_TOTALS,
+  splitOf: ShipSplitOf = shipDeckSplit,
+): ShipVM[] {
   const result: ShipVM[] = [];
   for (const ship of world.ships.values()) {
     if (!SHIP_STATE_TRAITS[ship.state].onMap) continue;
     const before = prev.get(ship.id);
-    const cargoSplit = shipCargoSplit(world, ship.id);
-    const lashing = lashingTicks(ship, cargoSplit.export, lashingTotals);
+    const split = splitOf(world, ship);
+    // lashing sa týka odchádzajúcich jednotiek: export (aj prekládka na lodi B) a prázdne na repositioning
+    const lashing = lashingTicks(ship, split.export + split.empty, lashingTotals);
     result.push({
       id: ship.id,
       classId: ship.classId,
@@ -306,9 +336,9 @@ export function shipVMs(world: World, prev: ShipPositions = NO_POSITIONS, lashin
       heading: ship.heading,
       lengthCells: ship.def.lengthCells,
       widthCells: ship.def.widthCells,
-      unitsOnBoard: world.cargo.countAt('on_ship', ship.id),
+      unitsOnBoard: split.import + split.export + split.empty,
       capacityUnits: ship.def.capacityUnits,
-      cargoSplit: { import: cargoSplit.import, export: cargoSplit.export },
+      cargoSplit: { import: split.import, export: split.export, ...(split.empty > 0 ? { empty: split.empty } : {}) },
       ...(lashing === undefined ? {} : { lashing }),
     });
   }
@@ -320,6 +350,7 @@ export function vehicleVMs(world: World, prev: VehiclePoses = NO_VEHICLE_POSES):
   const result: VehicleVM[] = [];
   for (const vehicle of world.vehicles.values()) {
     const before = prev.get(vehicle.id);
+    const loaded = world.cargo.countAt('in_vehicle', vehicle.id) > 0;
     result.push({
       id: vehicle.id,
       defId: vehicle.defId,
@@ -329,7 +360,8 @@ export function vehicleVMs(world: World, prev: VehiclePoses = NO_VEHICLE_POSES):
       prevY: before?.y ?? vehicle.y,
       heading: vehicle.heading,
       prevHeading: before?.heading ?? vehicle.heading,
-      loaded: world.cargo.countAt('in_vehicle', vehicle.id) > 0,
+      loaded,
+      ...(loaded && holderCarriesEmpty(world, 'in_vehicle', vehicle.id) ? { carriesEmpty: true } : {}),
       state: vehicle.state,
     });
   }
@@ -353,6 +385,8 @@ export interface MutableTruckPose {
   y: number;
   heading: ViewRotation;
   state: string;
+  /** Pamäť `truckCarriesEmpty` (zapisuje ju `SimBridge` pred každým tickom, `writeTruckPose` ju nemení). */
+  carriesEmpty?: boolean;
 }
 
 /**
@@ -415,6 +449,7 @@ export function truckVMs(world: World, prev: TruckPoses = NO_TRUCK_POSES): Truck
       loaded: world.cargo.countAt('in_truck', truck.id) > 0,
       state: truck.state,
     };
+    if (truckCarriesEmpty(world, truck.id, last?.carriesEmpty)) vm.carriesEmpty = true;
     if (last !== undefined) vm.prevState = last.state;
     // v doku je cieľová póza v `x`, `y`, `heading`; sim poloha (vonkajšia bunka konektora) je východisko manévru cúvania
     if (DOCK_STATES.has(truck.state) && (pose.x !== truck.x || pose.y !== truck.y)) {
@@ -479,6 +514,8 @@ export class EntitiesVMBuilder {
   private modulesRevision: number | null = null;
   private modules: readonly ModuleVM[] = Object.freeze([]);
   private live: readonly LiveModule[] = [];
+  /** Náklad lodí pre palubu (F6c): prepočíta sa len pri zmene revízie alebo počtu jednotiek na palube. */
+  private readonly shipSplits = new ShipSplitCache();
 
   build(
     world: World,
@@ -504,10 +541,11 @@ export class EntitiesVMBuilder {
     } else if (this.live.length > 0) {
       this.refreshLiveModules(world);
     }
+    this.shipSplits.prune(world);
     return Object.freeze({
       modules: this.modules,
       cranes: Object.freeze(craneVMs(world)),
-      ships: Object.freeze(shipVMs(world, prev, lashingTotals)),
+      ships: Object.freeze(shipVMs(world, prev, lashingTotals, (target, ship) => this.shipSplits.split(target, ship, revision))),
       vehicles: Object.freeze(vehicleVMs(world, prevVehicles)),
       trucks: Object.freeze(truckVMs(world, prevTrucks)),
     });

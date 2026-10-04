@@ -16,6 +16,7 @@ import type { Grid, Parcel } from '@sim/grid';
 import type { World } from '@sim/world';
 import type { ContractCardData } from '@ui/contracts-panel';
 import { contractCards, nextOfferInTicks } from './contract-cards';
+import { truckCarriesEmpty } from './cargo-vm';
 import { EntitiesVMBuilder, writeTruckPose, type MutableTruckPose, type SimEntitiesVM } from './entities-vm';
 import type { FrameEventSink } from './game-loop';
 import { LashingTracker, type LashingTotals } from './lashing';
@@ -343,7 +344,8 @@ export class SimBridge implements FrameEventSink {
 
   /**
    * Pózy kamiónov: prezentovaná poloha (v `waiting` / `loading` stred stojiska / docku) a kurz spolu so stavom FSM —
-   * z porovnania stavov pred a po ticku `truckVMs` pozná skok do/zo stojiska a docku (vtedy `prev = curr`).
+   * z porovnania stavov pred a po ticku `truckVMs` pozná skok do/zo stojiska a docku (vtedy `prev = curr`). F6c: pamätá si aj
+   * `carriesEmpty` (kamión, ktorý prázdny dovezie, ho vyloží v ticku; renderer kontajner z príchodu ešte kreslí pri cúvaní).
    */
   private rememberTruckPoses(): void {
     const { trucks } = this.world;
@@ -357,6 +359,7 @@ export class SimBridge implements FrameEventSink {
         this.prevTruckPoses.set(truck.id, known);
       }
       writeTruckPose(this.world, truck, known);
+      known.carriesEmpty = truckCarriesEmpty(this.world, truck.id, known.carriesEmpty);
     }
   }
 
@@ -384,7 +387,9 @@ export class SimBridge implements FrameEventSink {
    */
   publish(events: readonly SimEvent[]): void {
     this.lashing.record(events);
-    this.storageOps.record(events); // pred výpočtom snapshotu: CargoMoved zvyšuje revíziu, takže VM skladu sa prestavia s novou operáciou
+    // pred výpočtom snapshotu: CargoMoved zvyšuje revíziu, takže VM skladu sa prestavia s novou operáciou; smer jednotky (prázdny
+    // kontajner = sivý na spreaderi) berie z ledgera
+    this.storageOps.record(events, (unitId) => this.world.cargo.get(unitId)?.direction === 'empty');
     for (const event of events) {
       if (REVISION_EVENTS.has(event.type)) this.revisionCounter += 1;
     }

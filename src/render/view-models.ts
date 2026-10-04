@@ -62,6 +62,7 @@ export interface ModuleVM {
    * Len nakladacia rampa (kind `ramp`, F4): počet dokov, počet pripravených kontajnerov na každom doku (`staged[i]` patrí
    * doku `sprites.<defId>.docks[i]`) a či je rampa prevádzková (`false` → odznak `overlay.warning_badge`). F6c: `stagedEmpty[i]` =
    * koľko z `staged[i]` jednotiek je prázdnych kontajnerov (`direction: 'empty'`; kreslia sa sivé, za plnými); chýba = žiadne.
+   * `SimBridge` do `staged[i]` prázdne kontajnery na doku zarátava (sim ich do `LoadingRamp.stagedAt` nepočíta — prázdny nie je náklad na odvoz).
    */
   ramp?: { docks: number; staged: readonly number[]; operational: boolean; stagedEmpty?: readonly number[] };
   /**
@@ -185,7 +186,11 @@ export interface TruckVM {
    * (nakládka / vykládka sa deje v doku, sim je rýchlejší než manéver).
    */
   loaded: boolean;
-  /** F6c: vezená jednotka je prázdny kontajner (návrat prázdnych, výdaj exportérovi) → sprite `states.carries_empty`; chýba = `false`. */
+  /**
+   * F6c: vezená jednotka je prázdny kontajner (návrat prázdnych, výdaj exportérovi) → sprite `states.carries_empty`; chýba = `false`. Kamión misie
+   * `collect` je pred naložením prázdny (`loaded: false`), po naložení nesie `carriesEmpty`; kamión, ktorý prázdny dovezie, si hodnotu pamätá aj po
+   * vyložení (renderer kreslí kontajner z príchodu, kým kamión cúva do docku).
+   */
   carriesEmpty?: boolean;
   /**
    * Stav Truck FSM (`to_gate`, `gate_queue`, `waiting`, `loading`, `unloading`, …). Renderer podľa neho (a `prevState`) riadi len

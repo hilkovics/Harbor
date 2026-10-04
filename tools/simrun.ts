@@ -194,6 +194,20 @@ export interface SimrunReport {
   readonly craneWaitForVehicleTicks: number;
   /** Σ ticky vozidiel čakajúcich pod hákom žeriava (`CraneModule.vehicleWaitTicks`). */
   readonly vehicleWaitUnderCraneTicks: number;
+  /** Počet udalostí `EmptyReturned` — prázdne kontajnery, ktoré prešli bránou dnu z vnútrozemia (F6c, ADR-034). */
+  readonly emptyReturns: number;
+  /** Počet `EmptyStored` s `fallback` — prázdne uložené do bežného dvora, lebo depo prázdnych bolo plné alebo chýbalo. */
+  readonly emptyFallbackStored: number;
+  /** Počet udalostí `EmptyDamaged` — kontrola v depe našla poškodenie (`damageChance`). */
+  readonly emptyDamaged: number;
+  /** Počet udalostí `EmptyRepaired` — dokončené opravy v depe. */
+  readonly emptyRepaired: number;
+  /** Σ `EmptyRepaired.costCents` — poplatky za opravy (ledger kategória `maintenance_repair`), kladná veľkosť. */
+  readonly repairCostCents: number;
+  /** Počet udalostí `EmptyPickedUp` — prázdne kontajnery odvezené exportérmi z depa. */
+  readonly emptyPickedUp: number;
+  /** Počet udalostí `EmptyPickupMissed` — kamióny po prázdny kontajner, ktoré odišli naprázdno po `emptyPickupMaxWaitHours`. */
+  readonly emptyPickupMisses: number;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -479,6 +493,13 @@ interface EventTally {
   stowageOrderViolations: number;
   truckUnloads: number;
   dualTransactions: number;
+  emptyReturns: number;
+  emptyFallbackStored: number;
+  emptyDamaged: number;
+  emptyRepaired: number;
+  repairCostCents: number;
+  emptyPickedUp: number;
+  emptyPickupMisses: number;
   /** Súčet a počet `exportGroupingShare` v ticku `CutoffPassed` (priemer sa počíta na konci). */
   groupingShareSum: number;
   groupingShareCount: number;
@@ -513,7 +534,16 @@ function tallyEvents(tally: EventTally, events: readonly SimEvent[]): void {
     } else if (event.type === 'TruckUnloaded') {
       tally.truckUnloads += 1;
       if (event.dualTransaction) tally.dualTransactions += 1;
-    } else if (event.type === 'MoneyChanged') {
+    } else if (event.type === 'EmptyReturned') tally.emptyReturns += 1;
+    else if (event.type === 'EmptyStored') {
+      if (event.fallback) tally.emptyFallbackStored += 1;
+    } else if (event.type === 'EmptyDamaged') tally.emptyDamaged += 1;
+    else if (event.type === 'EmptyRepaired') {
+      tally.emptyRepaired += 1;
+      tally.repairCostCents += event.costCents;
+    } else if (event.type === 'EmptyPickedUp') tally.emptyPickedUp += 1;
+    else if (event.type === 'EmptyPickupMissed') tally.emptyPickupMisses += 1;
+    else if (event.type === 'MoneyChanged') {
       // Kategórie účtovnej knihy: príjem kontraktu je kladný, údržba a mzdy záporné → kladná veľkosť.
       if (event.reason === 'contract_revenue') tally.revenueCents += event.deltaCents;
       else if (event.reason === 'maintenance') tally.maintenanceCents -= event.deltaCents;
@@ -659,6 +689,13 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     stowageOrderViolations: 0,
     truckUnloads: 0,
     dualTransactions: 0,
+    emptyReturns: 0,
+    emptyFallbackStored: 0,
+    emptyDamaged: 0,
+    emptyRepaired: 0,
+    repairCostCents: 0,
+    emptyPickedUp: 0,
+    emptyPickupMisses: 0,
     groupingShareSum: 0,
     groupingShareCount: 0,
   };
@@ -750,6 +787,13 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
       tally.groupingShareCount === 0 ? null : Math.round((tally.groupingShareSum / tally.groupingShareCount) * PERCENT * ONE_DECIMAL) / ONE_DECIMAL,
     craneWaitForVehicleTicks: craneModules(world).reduce((sum, crane) => sum + crane.waitForVehicleTicks, 0),
     vehicleWaitUnderCraneTicks: craneModules(world).reduce((sum, crane) => sum + crane.vehicleWaitTicks, 0),
+    emptyReturns: tally.emptyReturns,
+    emptyFallbackStored: tally.emptyFallbackStored,
+    emptyDamaged: tally.emptyDamaged,
+    emptyRepaired: tally.emptyRepaired,
+    repairCostCents: tally.repairCostCents,
+    emptyPickedUp: tally.emptyPickedUp,
+    emptyPickupMisses: tally.emptyPickupMisses,
   };
 }
 
@@ -776,7 +820,9 @@ export function formatSummary(report: SimrunReport): string {
     `údržba ${String(report.maintenanceCents)}, mzdy ${String(report.wagesCents)}, koniec hry ${report.gameOver ? 'áno' : 'nie'}, ` +
     `odplávané ${String(report.shippedUnits)}, rolled ${String(report.rolledUnits)}, vrátené ${String(report.returnedUnits)}, VGM hold ${String(report.vgmHolds)}, ` +
     `dual cycle ${metric(report.dualCycleRate)}, dual transaction ${metric(report.dualTransactionRate)}, mimo poradia ${String(report.stowageOrderViolations)}, ` +
-    `zoskupenie exportu ${metric(report.exportGroupingPct)}, žeriav čaká ${String(report.craneWaitForVehicleTicks)}, vozidlo čaká ${String(report.vehicleWaitUnderCraneTicks)}` +
+    `zoskupenie exportu ${metric(report.exportGroupingPct)}, žeriav čaká ${String(report.craneWaitForVehicleTicks)}, vozidlo čaká ${String(report.vehicleWaitUnderCraneTicks)}, ` +
+    `prázdne vrátené/záložné/poškodené/opravené ${String(report.emptyReturns)}/${String(report.emptyFallbackStored)}/${String(report.emptyDamaged)}/${String(report.emptyRepaired)}, ` +
+    `opravy ${String(report.repairCostCents)}, prázdne vydané/zmeškané ${String(report.emptyPickedUp)}/${String(report.emptyPickupMisses)}` +
     (report.stateHash === null ? '' : `, hash stavu ${report.stateHash}`)
   );
 }

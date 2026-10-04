@@ -290,6 +290,13 @@ describe('runScenario', () => {
       exportGroupingPct: null,
       craneWaitForVehicleTicks: 0,
       vehicleWaitUnderCraneTicks: 0,
+      emptyReturns: 0,
+      emptyFallbackStored: 0,
+      emptyDamaged: 0,
+      emptyRepaired: 0,
+      repairCostCents: 0,
+      emptyPickedUp: 0,
+      emptyPickupMisses: 0,
     });
     expect(Object.keys(report)).toEqual([
       'scenario',
@@ -344,6 +351,13 @@ describe('runScenario', () => {
       'exportGroupingPct',
       'craneWaitForVehicleTicks',
       'vehicleWaitUnderCraneTicks',
+      'emptyReturns',
+      'emptyFallbackStored',
+      'emptyDamaged',
+      'emptyRepaired',
+      'repairCostCents',
+      'emptyPickedUp',
+      'emptyPickupMisses',
     ]);
   });
 

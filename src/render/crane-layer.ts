@@ -1,6 +1,10 @@
 /**
  * CraneLayer (ARCHITECTURE §15.1): žeriavy (`CraneView` podľa `id`) nad loďami — výložník sa kreslí nad palubou.
  *
+ * Dva koreňové kontajnery (F6d, T6D-02): `view` (výložník, vozík, držaný náklad, odznak) nad loďami a vozidlami, `baseView` (základňa) pod
+ * nimi — vozidlo stojace pri odovzdaní pod žeriavom je tak vidieť v portáli a nad ním vozík s kontajnerom. `WorldRenderer` ich vkladá
+ * na rôzne miesta poradia vrstiev.
+ *
  * Odznak zablokovania drží čitateľnú veľkosť aj pri malom zoome (`setZoom`, rovnako ako obrysy parciel).
  */
 import { Container } from 'pixi.js';
@@ -10,12 +14,14 @@ import { ViewSync } from './view-sync';
 
 /** Zhoda statickej časti VM (kým sa nezmení, view sa nevytvára nanovo). */
 function sameCraneShape(a: CraneVM, b: CraneVM): boolean {
-  return a.defId === b.defId && a.x === b.x && a.y === b.y && a.rotation === b.rotation;
+  return a.defId === b.defId && a.x === b.x && a.y === b.y && a.rotation === b.rotation && a.hook?.x === b.hook?.x && a.hook?.y === b.hook?.y;
 }
 
 export class CraneLayer {
-  /** Kontajner vrstvy; pridaj ho do sveta (súradnice v px pri zoome 1). */
+  /** Kontajner vrstvy (výložníky, vozíky, náklad, odznaky); pridaj ho do sveta nad lode a vozidlá (súradnice v px pri zoome 1). */
   readonly view = new Container({ label: 'cranes' });
+  /** Kontajner základní žeriavov; pridaj ho do sveta pod lode a vozidlá (F6d). */
+  readonly baseView = new Container({ label: 'crane-bases' });
   private readonly cranes: ViewSync<CraneVM, CraneView>;
   private badgeScale: number;
 
@@ -25,6 +31,7 @@ export class CraneLayer {
       create: (vm) => {
         const view = new CraneView(vm, { ...deps, badgeScale: this.badgeScale });
         this.view.addChild(view.view);
+        this.baseView.addChild(view.baseView);
         return view;
       },
       remove: (view) => {
@@ -65,5 +72,6 @@ export class CraneLayer {
   destroy(): void {
     this.cranes.clear();
     this.view.destroy({ children: true });
+    this.baseView.destroy({ children: true });
   }
 }

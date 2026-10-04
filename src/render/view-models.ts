@@ -101,6 +101,12 @@ export interface CraneVM {
    * dual cyklu. Chýba = `unload` (VM z F2–F6). `SimBridge` ho berie z `crane.cycle`.
    */
   cycle?: CraneCycleVM;
+  /**
+   * Bunka pod hákom (F6d, ADR-033 dodatok T6D-02): stred bunky vo svete (bunky, `x + 0.5`), kde pri odovzdaní stojí vozidlo — pevninský riadok
+   * footprintu žeriava na osi výložníka (`hookCellOfCrane`). Renderer podľa nej spustí držaný kontajner z vozíka na vozidlo (vykládka) a pri
+   * nakládke ho z vozidla zdvihne. Chýba = režim `apron` (vozidlo si jednotku berie z apronu, kontajner ostáva pod vozíkom). Plní `SimBridge`.
+   */
+  hook?: { x: number; y: number };
 }
 
 export interface ShipVM {

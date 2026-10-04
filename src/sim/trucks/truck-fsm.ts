@@ -74,6 +74,13 @@ export const TRUCK_TRANSITIONS: ReadonlyMap<TruckState, readonly TruckState[]> =
 export const TRUCK_MISSION_GIVES_UP: { readonly [M in TruckMission]: boolean } = Object.freeze({ pickup: false, delivery: false, collect: true });
 
 /**
+ * Smie misia obsadiť stojisko rezervované pre odvoz (kvóta `WaitingArea.pickupReservedBays`, F6d, ADR-035)? Tabuľka podľa misie (pravidlo 7): misie,
+ * ktoré náklad z prístavu **odvážajú** (`pickup` — import, `collect` — výdaj prázdneho), áno; `delivery` (export, návrat prázdneho náklad privezie)
+ * nesmie obsadiť posledné rezervované stojiská — inak by dovážajúce kamióny zaplnili stojisko a kamióny na odvoz importu by sa nedostali dnu.
+ */
+export const TRUCK_MISSION_USES_PICKUP_BAYS: { readonly [M in TruckMission]: boolean } = Object.freeze({ pickup: true, delivery: false, collect: true });
+
+/**
  * Je prechod `from → to` kamióna misie `mission` povolený? Tabuľka stavov `TRUCK_TRANSITIONS` a pre vzdanie sa čakania (`waiting → to_gate_out`)
  * navyše vlastnosť misie `TRUCK_MISSION_GIVES_UP`. (Návrat z `no_path` do správneho stavu stráži `Truck.transition`.)
  */

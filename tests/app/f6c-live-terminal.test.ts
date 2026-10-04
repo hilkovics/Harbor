@@ -227,7 +227,7 @@ describe('live_terminal: app a VM nad skutočným svetom (M2)', () => {
     expect(toasts).toEqual([`Feeder · 36 TEU → ${tranship.booking?.destinationPort ?? ''}`, `Feeder · 60 TEU → ${destination}`]);
   });
 
-  it('toasty: prijatie skupiny export + prázdne a prekládky, splnenie repositioningu a prekládky; zmeškaná prekládka ani jej penalizácia toast nemajú', () => {
+  it('toasty: prijatie skupiny export + prázdne a prekládky, splnenie repositioningu a prekládky; zmeškaná prekládka ani jej penalizácia toast nemajú; penalizácia exportu (jednotky po cut-off) je len tá za kontrakt exportu', () => {
     const { exportContract, repo, tranship } = observed.contracts;
     const toasts = observed.app.toasts.map((entry) => entry.spec);
     const accepted = toasts.filter((spec) => spec.key.startsWith('contract_accepted:'));
@@ -240,7 +240,9 @@ describe('live_terminal: app a VM nad skutočným svetom (M2)', () => {
     const completed = toasts.filter((spec) => spec.key.startsWith('contract_completed:'));
     expect(completed.map((spec) => spec.key)).toEqual(expect.arrayContaining([`contract_completed:${String(repo.id)}`, `contract_completed:${String(tranship.id)}`]));
     expect(toasts.some((spec) => spec.key.startsWith('tranship_'))).toBe(false);
-    expect(toasts.some((spec) => spec.key.startsWith('booking_penalty:'))).toBe(false);
+    // export #11: 8 jednotiek čakalo vo vnútrozemí na miesto v plnom dvore (ADR-035) a prešlo bránou po cut-off — penalizácia „rolled“ je jediná, tranship žiadnu nemá
+    const penalties = toasts.filter((spec) => spec.key.startsWith('booking_penalty:')).map((spec) => spec.key);
+    expect(penalties.every((key) => key.startsWith(`booking_penalty:${String(exportContract.id)}:`))).toBe(true);
   });
 
   it('inšpektor: depo ukázalo prázdne podľa linky počas toku (ledger = inšpektor v každom kroku) a dvor prekládku čakajúcu na loď B', () => {

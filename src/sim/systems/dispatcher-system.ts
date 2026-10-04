@@ -34,12 +34,14 @@ export class DispatcherSystem {
   private readonly cancelGate = new OutboundCancelGate();
 
   /**
-   * Krok 5: `cancelUnusableOutboundJobs` (len po zmene ciest alebo modulov, `OutboundCancelGate`) → `createInboundJobs`
+   * Krok 5: obnova prisľúbených staging miest príjmu (`DockIntake.refresh`) → `cancelUnusableOutboundJobs` (len po zmene ciest alebo modulov, `OutboundCancelGate`) → `createInboundJobs`
    * → `createHookUnloadJobs` (vykládka pod hákom, ADR-033) → `createExportJobs` (prijatie exportu z rampy, ADR-032) →
    * `createEmptyJobs` (prázdne kontajnery: prijatie do depa, výdaj kamiónu `collect`, ADR-034) → `createExportLoadJobs` (nakládka exportu
    * v poradí stowage plánu) → `createOutboundJobs` → `assignOpenJobs`.
    */
   tick(world: World): void {
+    // Staging miesta prisľúbené kamiónom s dovozom (ADR-035): outbound joby ich nesmú vziať (`DockIntake.roomAt`).
+    world.dockIntake.refresh(world);
     if (this.cancelGate.due(world)) cancelUnusableOutboundJobs(world);
     createInboundJobs(world);
     createHookUnloadJobs(world);

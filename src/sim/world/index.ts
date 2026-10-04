@@ -24,6 +24,7 @@ export type {
   WorldStateV5,
   WorldStateV6,
   WorldStateV7,
+  WorldStateV8,
   LegacyCargoUnitV6,
   LegacyCargoUnitV7,
   LegacyContractV7,
@@ -33,6 +34,10 @@ export type {
 export { cargoSplitAt, depotCargoSplit, exportGroupingShare, shipCargoSplit, storageCargoSplit, terminalEmptySplit } from './cargo-queries';
 export type { CargoDirectionSplit, DepotCargoSplit, LineStatusSplit } from './cargo-queries';
 export { parseEmptyFlowState } from './empty-flow-state';
+export { parseHinterlandState } from './hinterland-state';
+// Vnútrozemie (ADR-035): čakajúce kamióny, ich počítadlá a dopyt po odvoze — čisté dotazy pre UI a metriky.
+export { hinterlandMetrics, hinterlandQueue } from './hinterland-queries';
+export type { HinterlandMetrics, HinterlandQueue, MissionWaitMetrics } from './hinterland-queries';
 export {
   OLDEST_WORLD_STATE_VERSION,
   WORLD_STATE_V1_KEYS,
@@ -50,6 +55,8 @@ export {
   WORLD_STATE_V7_KEYS,
   WORLD_STATE_V8,
   WORLD_STATE_V8_KEYS,
+  WORLD_STATE_V9,
+  WORLD_STATE_V9_KEYS,
   migrateWorldState,
   savesShipRoutes,
 } from './migrate';

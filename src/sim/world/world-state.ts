@@ -37,6 +37,10 @@
  * exportérovi); kontrakt `lineId` (za `voyageId`) a `tranship` (plán lode B prekládky, na konci); jednotka nákladu `lineId`
  * (za `voyageId`), `status` a `repairUntilTick` (za `hold`).
  *
+ * v9 (T6D-01, ADR-035 — vnútrozemie a časové okná kamiónov) = v8 + `hinterland` (počítadlá čakania kamiónov pred vjazdom do prístavu podľa misie
+ * a ticky nedostatku stojísk pre odvoz). Čakajúce kamióny samotné sú splatné položky plánov (`emptyFlow`, `arrivalPlan` bookingov), ktoré už
+ * v save sú.
+ *
  * Lode (ADR-016, ADR-029) sa ukladajú s polohou, stavom FSM, kotviskami, anchorage, trasou a indexom bodu trasy;
  * `BerthModule.dockedShipId` sa odvodí z `berthIds`.
  *
@@ -90,7 +94,19 @@ import type { SerializedContract } from '../contracts/contract';
 import { parseContractsState } from './contracts-state';
 import { parseEmptyFlowState } from './empty-flow-state';
 import type { EmptyFlowState } from '../logistics/empty-flow';
-import { WORLD_STATE_V2, WORLD_STATE_V3, WORLD_STATE_V4, WORLD_STATE_V5, WORLD_STATE_V6, WORLD_STATE_V7, WORLD_STATE_V8_KEYS, WORLD_STATE_VERSION } from './migrate';
+import { parseHinterlandState } from './hinterland-state';
+import type { HinterlandState } from '../trucks/hinterland';
+import {
+  WORLD_STATE_V2,
+  WORLD_STATE_V3,
+  WORLD_STATE_V4,
+  WORLD_STATE_V5,
+  WORLD_STATE_V6,
+  WORLD_STATE_V7,
+  WORLD_STATE_V8,
+  WORLD_STATE_V9_KEYS,
+  WORLD_STATE_VERSION,
+} from './migrate';
 import { WorldStateError, checkArray, checkInteger, checkKeys, describeValue, isPlainObject, pointerSegment } from './state-check';
 
 export { WORLD_STATE_VERSION } from './migrate';
@@ -237,11 +253,11 @@ export interface WorldStateV7 extends Omit<WorldStateV6, 'version' | 'ships' | '
 }
 
 /**
- * Aktuálny `WorldState` (v8, ADR-034): v7 + `emptyFlow`, kontrakty s `lineId` a `tranship`, jednotky s `lineId`, `status`
+ * `WorldState` v8 (F6c, ADR-034) — vstup migrácie v8 → v9: v7 + `emptyFlow`, kontrakty s `lineId` a `tranship`, jednotky s `lineId`, `status`
  * a `repairUntilTick`.
  */
-export interface WorldState extends Omit<WorldStateV7, 'version' | 'cargo' | 'contracts'> {
-  readonly version: typeof WORLD_STATE_VERSION;
+export interface WorldStateV8 extends Omit<WorldStateV7, 'version' | 'cargo' | 'contracts'> {
+  readonly version: typeof WORLD_STATE_V8;
   /** Stav `CargoLedger` (`getState()`): živé jednotky so štítkami, linkou a stavom kvality, `exportedCount`, `shippedCount`. */
   readonly cargo: CargoLedgerState;
   /** Kontrakty okrem expirovaných vzostupne podľa id (`Contract.toState()`: druh, voyage, linka, booking, plán prekládky). */
@@ -250,8 +266,15 @@ export interface WorldState extends Omit<WorldStateV7, 'version' | 'cargo' | 'co
   readonly emptyFlow: EmptyFlowState;
 }
 
+/** Aktuálny `WorldState` (v9, ADR-035): v8 + `hinterland` (počítadlá vnútrozemia, `Hinterland.getState()`). */
+export interface WorldState extends Omit<WorldStateV8, 'version'> {
+  readonly version: typeof WORLD_STATE_VERSION;
+  /** Počítadlá čakania kamiónov pred vjazdom do prístavu a nedostatku stojísk pre odvoz (ADR-035). */
+  readonly hinterland: HinterlandState;
+}
+
 /** Ľubovoľná podporovaná verzia (vstup `World.deserialize`). */
-export type AnyWorldState = WorldState | WorldStateV7 | WorldStateV6 | WorldStateV5 | WorldStateV4 | WorldStateV3 | WorldStateV2 | WorldStateV1;
+export type AnyWorldState = WorldState | WorldStateV8 | WorldStateV7 | WorldStateV6 | WorldStateV5 | WorldStateV4 | WorldStateV3 | WorldStateV2 | WorldStateV1;
 
 /** Modul zo save s overeným tvarom; vzťahy k mriežke a iným modulom overí `restoreEntities`. */
 export interface ParsedModuleEntry {
@@ -375,10 +398,12 @@ export interface ParsedWorldState {
   readonly contracts: ContractBookState;
   /** Plán prázdnych kontajnerov (`parseEmptyFlowState`, v8). */
   readonly emptyFlow: EmptyFlowState;
+  /** Počítadlá vnútrozemia (`parseHinterlandState`, v9). */
+  readonly hinterland: HinterlandState;
 }
 
-/** Kľúče aktuálnej verzie (v8) v poradí `serialize()`; iné kľúče sú chyba (stav nemá voliteľné polia). */
-export const WORLD_STATE_KEYS: readonly (keyof WorldState)[] = WORLD_STATE_V8_KEYS;
+/** Kľúče aktuálnej verzie (v9) v poradí `serialize()`; iné kľúče sú chyba (stav nemá voliteľné polia). */
+export const WORLD_STATE_KEYS: readonly (keyof WorldState)[] = WORLD_STATE_V9_KEYS;
 const CLOCK_KEYS: readonly (keyof SimClockState)[] = ['tick', 'speed'];
 const IDS_KEYS: readonly (keyof EntityIdAllocatorState)[] = ['nextId'];
 const MODULE_KEYS: readonly (keyof SerializedModule)[] = ['id', 'defId', 'x', 'y', 'rotation', 'purchaseCostCents', 'runtime'];
@@ -901,7 +926,7 @@ function checkIdCollisions(
  * kamiónov a nákladu sa neprekrývajú, `economy` (`parseEconomyState`: záznamy knihy nie v budúcnosti, súhrny len
  * uzavretých dní a mesiacov, ADR-025), `contracts`, `xp`, `completedContracts`, `nextContractId`, `nextVoyageId`
  * (`parseContractsState`, ADR-026, ADR-032; id kontraktov aj voyage sú vlastné postupnosti, s id entít sa neporovnávajú)
- * a `emptyFlow` (`parseEmptyFlowState`, v8, ADR-034). Vstup sa nemení a výsledok s ním nezdieľa meniteľné objekty.
+ * `emptyFlow` (`parseEmptyFlowState`, v8, ADR-034) a `hinterland` (`parseHinterlandState`, v9, ADR-035). Vstup sa nemení a výsledok s ním nezdieľa meniteľné objekty.
  *
  * `grid` je mriežka počiatočného stavu tej istej mapy (`map.createGrid()`) — z nej sa overuje terén pod cestami;
  * nemení sa. `options.legacyShipRoutes` = stav vznikol migráciou save spred v6 (lode s `route: null`, `parseShips`).
@@ -944,5 +969,6 @@ export function parseWorldState(raw: unknown, defs: DefRegistry, map: LoadedMap,
   checkIdCollisions(modules, ships, vehicles, jobs, trucks, cargo);
   const economy = parseEconomyState(state.economy, clock);
   const emptyFlow = parseEmptyFlowState(state.emptyFlow, defs);
-  return { seed, clock, rng, ids, cashCents, roads, traffic, ownership, modules, cargo, ships, vehicles, jobs, trucks, economy, contracts, emptyFlow };
+  const hinterland = parseHinterlandState(state.hinterland);
+  return { seed, clock, rng, ids, cashCents, roads, traffic, ownership, modules, cargo, ships, vehicles, jobs, trucks, economy, contracts, emptyFlow, hinterland };
 }

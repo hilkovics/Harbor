@@ -45,7 +45,12 @@ export {
 export type { PassageBack } from './truck-trip';
 export { spawnTruck, spawnTrucks, truckDefFor } from './truck-spawner';
 export { planEmptyPickups, planEmptyReturn } from './empty-plan';
-export { spawnEmptyTrucks } from './empty-trucks';
+export { admitCollectTrucks, admitReturnTrucks } from './empty-trucks';
+export { admitExportTrucks } from './export-trucks';
+export { admitFromHinterland } from './hinterland-admit';
+export { Hinterland, emptyHinterlandState } from './hinterland';
+export type { HinterlandState, MissionWaitState, WaitingMission } from './hinterland';
+export { DockIntake } from './dock-intake';
 export { DockSupply } from './dock-supply';
 export { MIN_STAY_TICKS, truckWaitLimit, waitingStayTicks } from './truck-wait';
 export type { TruckWaitWorld } from './truck-wait';

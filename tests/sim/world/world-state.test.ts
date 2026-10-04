@@ -64,8 +64,8 @@ function busyWorld(): World {
   return world;
 }
 
-describe('World.serialize — WorldState v8', () => {
-  it('tvar: presne kľúče v8 = v7 (v1 + traffic, modules, cargo, ships + vehicles, jobs + trucks + economy, kontrakty + nextVoyageId) + emptyFlow v pevnom poradí a hodnoty novej hry', () => {
+describe('World.serialize — WorldState v9', () => {
+  it('tvar: presne kľúče v9 = v8 (v1 + traffic, modules, cargo, ships + vehicles, jobs + trucks + economy, kontrakty + nextVoyageId + emptyFlow) + hinterland v pevnom poradí a hodnoty novej hry', () => {
     const world = create();
     const state = world.serialize();
     expect(Object.keys(state)).toEqual([
@@ -92,13 +92,19 @@ describe('World.serialize — WorldState v8', () => {
       'nextContractId',
       'nextVoyageId',
       'emptyFlow',
+      'hinterland',
     ]);
     expect(state.version).toBe(WORLD_STATE_VERSION);
     expect(state.emptyFlow).toEqual({ returnPlan: [], pickupPlan: [], errands: [] });
     // Nová hra pred prvým tickom: pool sa plní až v kroku 2 prvého ticku (ADR-026).
     expect([state.contracts, state.xp, state.completedContracts, state.nextContractId, state.nextVoyageId]).toEqual([[], 0, 0, 1, 1]);
     expect(state.cargo).toEqual({ createdCount: 0, exportedCount: 0, shippedCount: 0, units: [] });
-    expect(state.version).toBe(8);
+    expect(state.version).toBe(9);
+    expect(state.hinterland).toEqual({
+      delivery: { admitted: 0, waitTicksTotal: 0, waitTicksMax: 0, turnedAway: 0 },
+      collect: { admitted: 0, waitTicksTotal: 0, waitTicksMax: 0, turnedAway: 0 },
+      pickupBayStarvationTicks: 0,
+    });
     expect(state.economy).toEqual({ entries: [], today: { incomeCents: {}, expenseCents: {} }, daily: [], monthly: [], daysNegative: 0, gameOver: false });
     expect(state.traffic).toEqual([]);
     // Starter moduly mapy (Root modul, T02-04): id 1, 2, … v poradí mapy, zaplatená cena 0, žeriav nečinný.
@@ -282,7 +288,7 @@ describe('World.deserialize', () => {
   const INVALID: readonly [string, Mutation, string][] = [
     ['neznámy kľúč', set('extra', 1), '/extra'],
     ['chýba kľúč', (s) => delete s.cashCents, '/cashCents'],
-    ['neznáma budúca verzia', set('version', 9), '/version'],
+    ['neznáma budúca verzia', set('version', 10), '/version'],
     ['verzia 0', set('version', 0), '/version'],
     ['verzia ako reťazec', set('version', '3'), '/version'],
     ['v3 stav označený ako v1 → migrácia v1 odmietne kľúč v2', set('version', 1), '/traffic'],

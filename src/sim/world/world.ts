@@ -93,6 +93,8 @@ import { Pathfinder } from '../logistics/pathfinder';
 import { RoadSpeeds } from '../logistics/road-speed';
 import { isPickupCargo } from '../logistics/dock-cargo';
 import { EmptyFlow, type EmptyFlowState } from '../logistics/empty-flow';
+import { DockIntake } from '../trucks/dock-intake';
+import { Hinterland, type HinterlandState } from '../trucks/hinterland';
 import { StoredCargoIndex } from '../logistics/stored-cargo-index';
 import { JOB_STATE_TRAITS, type TransportJob } from '../logistics/transport-job';
 import { Economy, type EconomyState } from '../economy/economy';
@@ -149,6 +151,8 @@ interface WorldParts {
   readonly cargo: CargoLedgerState | null;
   /** Uložený plán prázdnych kontajnerov (v8, ADR-034); `null` = prázdny plán novej hry. */
   readonly emptyFlow: EmptyFlowState | null;
+  /** Uložené počítadlá vnútrozemia (v9, ADR-035); `null` = nulové počítadlá novej hry. */
+  readonly hinterland: HinterlandState | null;
 }
 
 /** Voľby sveta pri `World.create` / `World.deserialize` (nie sú súčasťou save). */
@@ -247,6 +251,16 @@ export class World {
    */
   readonly emptyFlow: EmptyFlow;
   /**
+   * Počítadlá vnútrozemia (F6d, ADR-035): čakanie kamiónov pred vjazdom do prístavu podľa misie a nedostatok stojísk pre odvoz. Je v save
+   * (`hinterland`); čakajúce kamióny samotné sú splatné položky plánov (`emptyFlow`, `arrivalPlan`), vpúšťa ich krok 8 (`trucks/hinterland-admit.ts`).
+   */
+  readonly hinterland: Hinterland;
+  /**
+   * Staging miesta dockov prisľúbené kamiónom s dovozom, kým si ich nerezervujú (F6d, ADR-035) — odvodená cache, nie je v save; dispatcher ju
+   * obnovuje na začiatku kroku 5 a vjazd z vnútrozemia pred každým pokusom (`trucks/dock-intake.ts`).
+   */
+  readonly dockIntake = new DockIntake();
+  /**
    * Čaká jednotka `at_ramp` na kamión (náklad na odvoz — import, vrátený export bez jobu), alebo je to export na prijatie, ktorý
    * čaká na vozidlo do skladu alebo ho už vozidlo odváža (`logistics/dock-cargo.ts`, ADR-032 bod 13; export s aktívnym jobom
    * nie je náklad na odvoz ani po uzavretí bookingu, T6A-09b)? Rampy ho používajú pri počítaní pripravených jednotiek docku;
@@ -308,6 +322,7 @@ export class World {
     const bookEnv = { events: this.events, clock: parts.clock };
     this.contractBook = parts.contracts === null ? new ContractBook(bookEnv) : ContractBook.fromState(bookEnv, parts.contracts);
     this.emptyFlow = parts.emptyFlow === null ? new EmptyFlow() : EmptyFlow.fromState(parts.emptyFlow);
+    this.hinterland = parts.hinterland === null ? new Hinterland() : Hinterland.fromState(parts.hinterland);
     const { contractBook, storedCargo, holdIndex } = this;
     // Počítadlá jednotiek kontraktov (ADR-026), index uskladneného nákladu pre outbound (ADR-027) a index zadržaných
     // jednotiek (ADR-032: zadržaná jednotka, ktorá opustí mapu, z neho vypadne) z háčika ledgera — bez skenu nákladu v ticku.
@@ -360,6 +375,7 @@ export class World {
         contracts: null,
         cargo: null,
         emptyFlow: null,
+        hinterland: null,
       },
       options,
     );
@@ -372,7 +388,8 @@ export class World {
    * Obnoví svet zo `serialize()` (aj po `JSON.parse`); staršiu verziu najprv prevedie `migrateWorldState` (v1 → v2:
    * bez modulov, lodí a nákladu; v2 → v3: bez vozidiel a jobov, `runtime` skladu bez rezervácií, kotviska s
    * `lastNoStorageHour`; v3 → v4: bez kamiónov; v4 → v5: prázdna kniha so zachovanou hotovosťou, ADR-025; v5 → v6: trasa
-   * lode, ADR-029; v6 → v7: polia exportu s hodnotami importu, ADR-032; v7 → v8: prvá linka a prázdny plán prázdnych, ADR-034). Terén a parcely berie z `map` (musí mať
+   * lode, ADR-029; v6 → v7: polia exportu s hodnotami importu, ADR-032; v7 → v8: prvá linka a prázdny plán prázdnych, ADR-034; v8 → v9: nulové
+   * počítadlá vnútrozemia, ADR-035). Terén a parcely berie z `map` (musí mať
    * `id === state.mapId`), vrstvu dopravy celú z `state.roads` (aj typ a smer cesty, ADR-020) — starter cesta, ktorú hráč odstránil, sa neobnoví;
    * moduly, lode, vozidlá, náklad a odvodený stav obnoví `restoreEntities`. Neplatný stav → `WorldStateError` (pozri `parseWorldState`, `restoreEntities`). Výsledok
    * nezdieľa meniteľný stav so `state` ani s `map`. `options` ako pri `create`.
@@ -413,6 +430,7 @@ export class World {
         contracts: parsed.contracts,
         cargo: parsed.cargo,
         emptyFlow: parsed.emptyFlow,
+        hinterland: parsed.hinterland,
       },
       options,
     );
@@ -1038,12 +1056,12 @@ export class World {
   }
 
   /**
-   * Čistý JSON stav v8 (§14; tvar pozri `WorldState`, ADR-032, ADR-034): v1 polia (cesty s typom a smerom, ADR-020) + `traffic`, `modules` (poradie umiestnenia),
+   * Čistý JSON stav v9 (§14; tvar pozri `WorldState`, ADR-032, ADR-034, ADR-035): v1 polia (cesty s typom a smerom, ADR-020) + `traffic`, `modules` (poradie umiestnenia),
    * `cargo` (`cargo.getState()`), `ships` (vzostupne podľa id, `Ship.toState()`), `vehicles` (vzostupne podľa id,
    * `Vehicle.toState()`), `jobs` (aktívne joby vzostupne podľa id, `TransportJob.toState()`, ADR-018) a `trucks` (vzostupne podľa
    * id, `Truck.toState()`, ADR-024), `economy` (`Economy.getState()`: kniha, súčty otvoreného dňa, súhrny, bankrot — ADR-025;
    * hotovosť ostáva v `cashCents`) a kniha kontraktov (`contracts`, `xp`, `completedContracts`, `nextContractId`,
-   * `nextVoyageId` — ADR-026, ADR-032) a `emptyFlow` (plán prázdnych kontajnerov, ADR-034). Fronta príkazov sa neukladá, preto musí byť prázdna —
+   * `nextVoyageId` — ADR-026, ADR-032), `emptyFlow` (plán prázdnych kontajnerov, ADR-034) a `hinterland` (počítadlá vnútrozemia, ADR-035). Fronta príkazov sa neukladá, preto musí byť prázdna —
    * inak `Error` (zavolaj najprv `applyPending()` alebo `tick()`).
    */
   serialize(): WorldState {
@@ -1092,6 +1110,7 @@ export class World {
       economy: this.economy.getState(),
       ...this.contractBook.getState(),
       emptyFlow: this.emptyFlow.getState(),
+      hinterland: this.hinterland.getState(),
     };
   }
 

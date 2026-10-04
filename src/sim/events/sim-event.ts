@@ -564,12 +564,15 @@ export interface EmptyPickedUpEvent {
   readonly truckId: EntityId;
 }
 
-/** Kamión po prázdny kontajner odišiel prázdny — linka nemala dostupný prázdny do `emptyPickupMaxWaitHours` (metrika `emptyPickupMisses`). */
+/**
+ * Kamión po prázdny kontajner sa vzdal — linka nemala dostupný prázdny do `emptyPickupMaxWaitHours` (metrika `emptyPickupMisses`). `truckId` = kamión, ktorý
+ * odišiel prázdny zo stojiska; `null` = vzdal sa vo vnútrozemí a do prístavu nevošiel (F6d, ADR-035: výdaj sa vpúšťa len s dostupným prázdnym).
+ */
 export interface EmptyPickupMissedEvent {
   readonly type: 'EmptyPickupMissed';
   readonly lineId: string;
   readonly contractId: ContractId;
-  readonly truckId: EntityId;
+  readonly truckId: EntityId | null;
 }
 
 /**

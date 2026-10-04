@@ -117,7 +117,7 @@ function emptiesAwaitingDepot(world: World): number {
 }
 
 /** Súčet voľných miest dep kategórie `category` dosiahnuteľných zo zdroja `source`, alebo `undefined`, keď také depo vo svete nie je. */
-function depotFreeSlots(env: StorageAllocatorEnv, source: Module, category: CargoCategory): number | undefined {
+export function depotFreeSlots(env: StorageAllocatorEnv, source: Module, category: CargoCategory): number | undefined {
   let free = 0;
   let depots = 0;
   for (const module of env.modules.values()) {

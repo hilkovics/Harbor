@@ -4,7 +4,8 @@
  * - **import**: kontrakty #1 (45 TEU) a #4 (64 TEU) linky blue_anchor sa vyložia a odvezú kamiónmi (`exported`),
  * - **prázdne**: 60 % odvezených jednotiek sa vráti ako prázdne (brána → rampa → empty handler → depo), kontrola v depe poškodí časť (oprava 6 h),
  *   exportér (booking #11) dostane z depa prázdne svojej linky (`EmptyPickedUp`) a **repositioning** #12 naloží 24 prázdnych na loď po plných jednotkách,
- * - **export**: booking #11 (36 TEU) prejde bránou, uloží sa, naloží na loď voyage a odpláva (`shipped`),
+ * - **export**: booking #11 (36 TEU) prejde bránou, uloží sa, naloží na loď voyage a odpláva (`shipped`); dvor (64) je s 36 jednotkami prekládky plný, preto 8 posledných
+ *   exportov čaká vo vnútrozemí na miesto v sklade (ADR-035), prejde bránou až po cut-off a je „rolled“ (nie je to zámka: nakládka lode miesto uvoľní),
  * - **prekládka** #13 (36 TEU northern_star): loď A ich vyloží do skladu (zoskupene), o ~1 – 2 dni príde loď B a odvezie ich (`shipped`), nikdy cez bránu.
  * `lostUnits 0`, konzervácia v každom ticku, každá zmena stavu prázdneho má udalosť, `--roundtrip-at` uprostred prekládky aj nakládky prázdnych dá zhodný hash.
  */
@@ -27,6 +28,8 @@ const EXPORT_ID = 11;
 const REPOSITIONING_ID = 12;
 const TRANSHIP_ID = 13;
 const EXPORT_UNITS = 36;
+/** Exporty, ktoré čakali vo vnútrozemí na miesto v plnom dvore a prešli bránou po cut-off (ADR-035). */
+const EXPORTS_ROLLED = 8;
 const REPOSITIONED = 24;
 const TRANSHIP_UNITS = 36;
 const RUN_TIMEOUT_MS = 600_000;
@@ -138,7 +141,10 @@ describe('scenár live_terminal: beh', () => {
   it('export: booking #11 — 36 TEU prešlo bránou, uložilo sa, naložilo a odplávalo (in_truck → … → in_crane → on_ship → shipped)', () => {
     const booking = world.contracts.get(EXPORT_ID as never);
     expect(booking).toMatchObject({ kind: 'export', lineId: 'blue_anchor', state: 'completed', volumeUnits: EXPORT_UNITS });
-    expect(booking?.booking).toMatchObject({ arrivedUnits: EXPORT_UNITS, loadedUnits: EXPORT_UNITS, rolledUnits: 0 });
+    // vnútrozemie (ADR-035): export vojde len so zaručeným miestom v sklade; plný dvor drží 8 posledných kamiónov vo vnútrozemí do po cut-off — prejdú bránou a sú rolled
+    expect(booking?.booking).toMatchObject({ arrivedUnits: EXPORT_UNITS, loadedUnits: EXPORT_UNITS, rolledUnits: EXPORTS_ROLLED });
+    expect(of(events, 'UnitRolled').filter((entry) => entry.event.contractId === EXPORT_ID)).toHaveLength(EXPORTS_ROLLED);
+    expect(world.hinterland.waitTicksMax('delivery')).toBeGreaterThan(500);
     expect(of(events, 'ExportArrived').filter((entry) => entry.event.contractId === EXPORT_ID)).toHaveLength(EXPORT_UNITS);
     const exportLoads = loaded.filter((entry) => entry.event.contractId === EXPORT_ID);
     expect(exportLoads).toHaveLength(EXPORT_UNITS);

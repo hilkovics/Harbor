@@ -40,6 +40,11 @@
  * `lineId` = **prvá linka z `lines.json`** a `tranship: null`; jednotka s kontraktom `lineId` = prvá linka (bez kontraktu —
  * ladiaca loď — `null`), `status: 'available'` a `repairUntilTick: null`; svet dostane prázdny `emptyFlow` (žiadny plánovaný
  * návrat ani výdaj prázdneho). Import jednotky, ktoré odišli pred migráciou, sa teda prázdne nevrátia.
+ *
+ * v8 → v9 (T6D-01, ADR-035; deterministicky bez `Rng`): v8 nepoznal vnútrozemie, preto svet dostane `hinterland` s nulovými počítadlami čakania.
+ * Kamióny, ktoré v save stoja v stojisku, na bráne alebo pri docku, ostávajú ako boli (vpustené už sú); splatné položky plánov (`emptyFlow`,
+ * `arrivalPlan` bookingov) sú od v9 čakajúce kamióny vo vnútrozemí — nič sa nezahodí, zmení sa len to, že ich vjazd podlieha podmienkam
+ * ADR-035 (kvóta stojísk, zaručené miesto na vyloženie).
  */
 import { DEFAULT_WEIGHT_CLASS } from '../cargo/cargo-unit';
 import type { DefRegistry } from '../defs/def-registry';
@@ -77,8 +82,14 @@ export const WORLD_STATE_V7 = 7;
  */
 export const WORLD_STATE_V8 = 8;
 
+/**
+ * Verzia `WorldState` v9 (F6d: počítadlá vnútrozemia `hinterland` — čakanie kamiónov pred vjazdom do prístavu a nedostatok stojísk pre odvoz;
+ * ADR-035) — cieľ kroku v8 → v9.
+ */
+export const WORLD_STATE_V9 = 9;
+
 /** Aktuálna verzia `WorldState` — `serialize()` vždy vracia ju. */
-export const WORLD_STATE_VERSION = WORLD_STATE_V8;
+export const WORLD_STATE_VERSION = WORLD_STATE_V9;
 
 /** Kľúče `WorldState` v1 v poradí `serialize()` (F1, ADR-013). */
 export const WORLD_STATE_V1_KEYS = ['version', 'mapId', 'seed', 'rng', 'clock', 'ids', 'cashCents', 'roads', 'parcels'] as const;
@@ -106,6 +117,9 @@ export const WORLD_STATE_V7_KEYS = [...WORLD_STATE_V6_KEYS, 'nextVoyageId'] as c
 
 /** Kľúče `WorldState` v8 v poradí `serialize()` (F6c, ADR-034): v7 + `emptyFlow`. */
 export const WORLD_STATE_V8_KEYS = [...WORLD_STATE_V7_KEYS, 'emptyFlow'] as const;
+
+/** Kľúče `WorldState` v9 v poradí `serialize()` (F6d, ADR-035): v8 + `hinterland`. */
+export const WORLD_STATE_V9_KEYS = [...WORLD_STATE_V8_KEYS, 'hinterland'] as const;
 
 type RawState = Record<string, unknown>;
 type Migration = (state: RawState, defs: DefRegistry) => RawState;
@@ -272,6 +286,25 @@ function migrateV7ToV8(state: RawState, defs: DefRegistry): RawState {
   return migrated;
 }
 
+/**
+ * Pozemná strana v8 → v9 (T6D-01, ADR-035): doplní `hinterland` s nulovými počítadlami vnútrozemia. Samostatný krok migrácie — mení výlučne pole `hinterland`
+ * (v `migrated` ho ešte nebolo), takže ho možno skombinovať s inými zmenami tvaru v9 (napr. lode, T6D-03) bez konfliktu logiky.
+ */
+function migrateLandsideV8ToV9(migrated: RawState): void {
+  const zero = { admitted: 0, waitTicksTotal: 0, waitTicksMax: 0, turnedAway: 0 };
+  migrated['hinterland'] = { delivery: { ...zero }, collect: { ...zero }, pickupBayStarvationTicks: 0 };
+}
+
+/** v8 (presne kľúče v8) → v9: pôvodné polia, verzia a zmeny tvaru v9 po jednotlivých častiach (viď hlavička súboru). */
+function migrateV8ToV9(state: RawState): RawState {
+  checkKeys(state, WORLD_STATE_V8_KEYS, '');
+  const migrated: RawState = {};
+  for (const key of WORLD_STATE_V8_KEYS) migrated[key] = state[key];
+  migrated['version'] = WORLD_STATE_V9;
+  migrateLandsideV8ToV9(migrated);
+  return migrated;
+}
+
 /** Verzia `n` → migrácia na `n + 1` (migrácia zapíše cieľovú verziu kroku, napr. `WORLD_STATE_V2`). */
 const WORLD_STATE_MIGRATIONS: ReadonlyMap<number, Migration> = new Map([
   [1, migrateV1ToV2],
@@ -281,6 +314,7 @@ const WORLD_STATE_MIGRATIONS: ReadonlyMap<number, Migration> = new Map([
   [5, migrateV5ToV6],
   [6, migrateV6ToV7],
   [7, migrateV7ToV8],
+  [8, migrateV8ToV9],
 ]);
 
 /**

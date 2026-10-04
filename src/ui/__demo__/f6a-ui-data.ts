@@ -268,7 +268,7 @@ export const F6A_YARD: ModuleInspectorData = {
   footprint: { w: 4, h: 4 },
   stateLabel: 'V prevádzke',
   ok: true,
-  storage: { stored: 46, reserved: 3, capacity: 64, unitsIn: 1_240, unitsOut: 12, unitLabel: 'TEU', split: { import: 30, export: 16 } },
+  storage: { stored: 46, reserved: 3, capacity: 64, unitsIn: 1_240, unitsOut: 12, unitLabel: 'TEU', split: { import: 30, export: 16, tranship: 0, empty: 0 } },
   connected: true,
   refundCents: 7_500_000,
   removable: false,
@@ -293,7 +293,7 @@ const BERTH: ModuleInspectorData = {
 /** Loď vykladá import a nakladá export súčasne: 12 / 40 TEU (4 importu, 8 exportu). */
 export const F6A_BERTH_LOADING: ModuleInspectorData = {
   ...BERTH,
-  dockedShip: { classLabel: 'Feeder', unitsOnBoard: 12, capacityUnits: 40, unitLabel: 'TEU', cargoSplit: { import: 4, export: 8 } },
+  dockedShip: { classLabel: 'Feeder', unitsOnBoard: 12, capacityUnits: 40, unitLabel: 'TEU', cargoSplit: { import: 4, export: 8, tranship: 0, empty: 0 } },
 };
 
 /** Po nakládke: len export na palube, lashing a papiere s progresom 62 %. */
@@ -305,7 +305,7 @@ export const F6A_BERTH_LASHING: ModuleInspectorData = {
     unitsOnBoard: 24,
     capacityUnits: 40,
     unitLabel: 'TEU',
-    cargoSplit: { import: 0, export: 24 },
+    cargoSplit: { import: 0, export: 24, tranship: 0, empty: 0 },
     lashing: { ticksLeft: 1_020, totalTicks: 2_700, scale: SCALE },
   },
 };

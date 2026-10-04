@@ -18,6 +18,12 @@
  * voyage sa zoskupia: import-only a export-only kontrakt je samostatná karta, import + export booking (roundtrip) je
  * jedna spoločná karta voyage s časťou Import a časťou Export a jedným „Prijať" / „Odmietnuť" (sim prijme celú skupinu
  * ponuky, ADR-032 bod 1; callbacky dostanú id prvého kontraktu skupiny). Záložku skupiny určuje jej najaktívnejší kontrakt.
+ *
+ * F6c (T6C-05, ADR-034): každý kontrakt môže niesť linku (`line`: odznak s farbou z tokenu linky), pribudli druhy
+ * `empty_repositioning` (booking prázdnych kontajnerov linky na loď: linka, počet prázdnych, cieľový prístav a plavba,
+ * dostupné prázdne v prístave, naložené) a `tranship` (loď A privezie, loď B odvezie: trasa A → B s odpočtom do príchodu B,
+ * vyložené / čakajúce / naložené / zmeškané, predané). Karty druhov sa skladajú z tabuľky sekcií `KIND_SECTIONS`
+ * (nový druh = nový riadok), názvy a stavy podľa druhu sú tabuľky (`KIND_PART_NAME`, `STATUS_BY_KIND`).
  */
 import type { ReactNode } from 'react';
 import {
@@ -32,6 +38,7 @@ import {
   type TimeScale,
 } from './format';
 import { Icon, toIconName, type IconName } from './icon';
+import { lineStyle } from './line-color';
 import './contracts-panel.css';
 
 /** Stavy kontraktu presne podľa ARCHITECTURE §9.1. */
@@ -53,8 +60,35 @@ export type ContractCardId = number | string;
 
 export type ContractsTab = 'offers' | 'active' | 'history';
 
-/** Druh kontraktu (ADR-032): import = náklad príde loďou a odíde po súši; export = booking, náklad príde po súši a odpláva loďou. */
-export type ContractCardKind = 'import' | 'export';
+/**
+ * Druh kontraktu (ADR-032, ADR-034): import = náklad príde loďou a odíde po súši; export = booking, náklad príde po súši a
+ * odpláva loďou; empty_repositioning = booking prázdnych kontajnerov linky z depa na loď; tranship = loď A privezie, loď B odvezie.
+ */
+export type ContractCardKind = 'import' | 'export' | 'empty_repositioning' | 'tranship';
+
+/** Linka kontraktu (`lines.json`): názov pre hráča a názov farebného tokenu (`line-blue`, bez `--`). */
+export interface ContractLineData {
+  readonly id: string;
+  readonly label: string;
+  readonly colorToken: string;
+}
+
+/**
+ * Prekládka loď A → loď B (`TranshipLeg` zo simu pre UI). Loď A je loď karty (`shipArrivalTick`, `shipClassLabel`, `voyageId`),
+ * loď B nesie plavba `outVoyageId` a plánovaný príchod `outArrivalTick` (od prijatia).
+ */
+export interface ContractTranshipData {
+  /** Plavba lode B (po záchrane zmeškanej prekládky ďalšia plavba linky). */
+  readonly outVoyageId: ContractCardId;
+  /** Plánovaný príchod lode B (od prijatia); ponuka ho nemá a ukáže `outGapTicks`. */
+  readonly outArrivalTick?: number;
+  /** Rozstup príchodu lode B po lodi A v tickoch `[min, max]` (def `transhipGapDaysRange`); relevantné pre ponuku. */
+  readonly outGapTicks?: readonly [number, number];
+  /** Trieda lode B, ak ju app pozná (loď už vznikla); bez nej sa ukáže len „Loď B“. */
+  readonly outShipLabel?: string;
+  /** Do kedy zmeškaná prekládka čaká na záchranu; prítomné = loď B odplávala bez jednotiek (zmeškané). */
+  readonly rescueDeadlineTick?: number;
+}
 
 /**
  * Booking exportu (`ExportBooking` zo simu pre UI). `cutoffTick` je od prijatia; ponuka ho nemá a ukáže
@@ -115,8 +149,14 @@ export interface ContractCardData {
   readonly penaltiesCents: number;
   /** Dôvod, prečo sa ponuku nedá prijať (napr. „Nedostatok kapacity"); pri jeho prítomnosti je „Prijať" zablokované. */
   readonly disabledReason?: string;
-  /** Booking exportu; len kontrakt `kind: 'export'`. */
+  /** Linka kontraktu (odznak s farbou linky); bez nej sa odznak nekreslí. */
+  readonly line?: ContractLineData;
+  /** Booking exportu, repositioningu a prekládky (`kind` ≠ `import`); pri repositioningu `destinationPort` je cieľ lode. */
   readonly booking?: ContractBookingData;
+  /** Trasa prekládky A → B; len kontrakt `kind: 'tranship'`. */
+  readonly tranship?: ContractTranshipData;
+  /** Repositioning: dostupné prázdne kontajnery linky v prístave (stav `available` v skladoch), pre „V prístave je N dostupných“. */
+  readonly availableEmpties?: number;
 }
 
 /** Aktuálny čas simulácie a mierka na prevod ticku na dni/hodiny. */
@@ -200,13 +240,35 @@ export function voyageTab(group: VoyageGroup): ContractsTab {
   return tabs.includes('active') ? 'active' : 'history';
 }
 
-/** Druh karty voyage: `roundtrip` = import aj export booking v jednej voyage. */
-export type VoyageKind = ContractCardKind | 'roundtrip';
+/** Druh karty voyage: `roundtrip` = import aj export booking v jednej voyage, `combined` = iná zmes druhov (napr. export + prázdne). */
+export type VoyageKind = ContractCardKind | 'roundtrip' | 'combined';
 
 export function voyageKind(group: VoyageGroup): VoyageKind {
   const kinds = new Set(group.parts.map(contractKind));
-  if (kinds.size > 1) return 'roundtrip';
-  return kinds.has('export') ? 'export' : 'import';
+  const [only] = kinds;
+  if (only === undefined) return 'import';
+  if (kinds.size === 1) return only;
+  return kinds.size === 2 && kinds.has('import') && kinds.has('export') ? 'roundtrip' : 'combined';
+}
+
+/** Názov druhu v názve časti a v zozname objemov karty voyage (`Import`, `Export`, `Prázdne`, `Tranship`). */
+export const KIND_PART_NAME: Readonly<Record<ContractCardKind, string>> = {
+  import: 'Import',
+  export: 'Export',
+  empty_repositioning: 'Prázdne',
+  tranship: 'Tranship',
+};
+
+/** Názov karty voyage podľa jej častí: `Import + export`, `Export + prázdne` (len prvé písmeno veľké). */
+export function voyageTitle(group: VoyageGroup): string {
+  const names = group.parts.map((part) => KIND_PART_NAME[contractKind(part)]);
+  return names.map((name, index) => (index === 0 ? name : name.toLowerCase())).join(' + ');
+}
+
+/** Objem kontraktu pre hráča: `24 TEU`, pri repositioningu `24 TEU prázdnych`. */
+export function volumeText(contract: ContractCardData): string {
+  const base = formatCount(contract.volumeUnits, contract.unit);
+  return contractKind(contract) === 'empty_repositioning' ? `${base} prázdnych` : base;
 }
 
 /** Počty kariet (skupín voyage) na záložku (do popisiek záložiek). */
@@ -306,10 +368,17 @@ const IMPORT_STATUS: Readonly<Record<ContractCardState, ContractStatus>> = {
   expired: { label: 'Expirovaná', icon: 'ic_clock', tone: 'muted' },
 };
 
-/** Stavy karty podľa druhu: export booking v `exporting` nenakladá súš, ale loď („Nakladá sa"), `unloading` nepozná. */
+const LOADING_STATUS: ContractStatus = { label: 'Nakladá sa', icon: 'ic_busy', tone: 'accent' };
+
+/**
+ * Stavy karty podľa druhu: export booking (aj repositioning) v `exporting` nenakladá súš, ale loď („Nakladá sa"), `unloading`
+ * nepozná; prekládka v `exporting` čaká na loď B (nakladá sa, až keď sú jednotky na lodi B — `contractStatus`).
+ */
 const STATUS_BY_KIND: Readonly<Record<ContractCardKind, Readonly<Record<ContractCardState, ContractStatus>>>> = {
   import: IMPORT_STATUS,
-  export: { ...IMPORT_STATUS, exporting: { label: 'Nakladá sa', icon: 'ic_busy', tone: 'accent' } },
+  export: { ...IMPORT_STATUS, exporting: LOADING_STATUS },
+  empty_repositioning: { ...IMPORT_STATUS, exporting: LOADING_STATUS },
+  tranship: { ...IMPORT_STATUS, exporting: { label: 'Čaká na loď B', icon: 'ic_clock', tone: 'accent' } },
 };
 
 /** Stav karty; aktívny kontrakt blízko SLA termínu je `Ohrozené`, po termíne `Po termíne` (prototyp: Prebieha / Ohrozené). */
@@ -319,13 +388,18 @@ export function contractStatus(contract: ContractCardData, time: ContractsTimeSc
     if (remaining < 0) return { label: 'Po termíne', icon: 'ic_warning', tone: 'danger' };
     if (remaining < AT_RISK_DAYS * time.ticksPerDay) return { label: 'Ohrozené', icon: 'ic_warning', tone: 'warn' };
   }
-  return STATUS_BY_KIND[contractKind(contract)][contract.state];
+  const kind = contractKind(contract);
+  if (kind === 'tranship' && contract.state === 'exporting' && (contract.booking?.loadedUnits ?? 0) > 0) return LOADING_STATUS;
+  return STATUS_BY_KIND[kind][contract.state];
 }
 
 // --- Export booking: cut-off, pruhy, počítadlá (ADR-032) ---------------------------------------------------------------
 
 /** Cut-off s menej než toľkými hodinami je „blízko" (žltá pilulka); zhodné s predvolenou `economy.cutoffWarningHours`, určuje len farbu. */
 export const CUTOFF_SOON_HOURS = 6;
+
+/** Druhy bookingu bez cut-off a plánu príchodov kamiónov (prázdne berie depo, prekládka ide z lode na loď). */
+const NO_CUTOFF_KINDS: ReadonlySet<ContractCardKind> = new Set<ContractCardKind>(['empty_repositioning', 'tranship']);
 
 export interface CutoffInfo {
   readonly text: string;
@@ -339,7 +413,7 @@ export interface CutoffInfo {
  */
 export function cutoffInfo(contract: ContractCardData, time: ContractsTimeScale): CutoffInfo | null {
   const { booking, state } = contract;
-  if (booking === undefined || contractTab(state) === 'history') return null;
+  if (booking === undefined || contractTab(state) === 'history' || NO_CUTOFF_KINDS.has(contractKind(contract))) return null;
   if (state === 'offered' || booking.cutoffTick === undefined) {
     const lead = booking.cutoffLeadTicks;
     return {
@@ -358,7 +432,7 @@ export function cutoffInfo(contract: ContractCardData, time: ContractsTimeScale)
 }
 
 export interface BookingBar {
-  readonly field: 'arrived' | 'loaded';
+  readonly field: 'arrived' | 'loaded' | 'unloaded';
   readonly label: string;
   readonly part: number;
   readonly total: number;
@@ -373,7 +447,7 @@ export function bookingBars(booking: ContractBookingData): readonly BookingBar[]
 }
 
 export interface BookingCounter {
-  readonly key: 'held' | 'last-minute' | 'rolled' | 'returned';
+  readonly key: 'held' | 'last-minute' | 'rolled' | 'returned' | 'waiting' | 'missed' | 'sold';
   readonly label: string;
   readonly count: number;
   readonly tone: 'warn' | 'danger' | 'muted';
@@ -402,6 +476,128 @@ export function pendingArrivalsText(contract: ContractCardData): string | null {
 /** Názov časti / karty export bookingu: `Export → Rotterdam`. */
 export function exportTitle(contract: ContractCardData): string {
   return contract.booking === undefined ? 'Export' : `Export → ${contract.booking.destinationPort}`;
+}
+
+/** Názov časti karty voyage podľa druhu: `Import`, `Export → Rotterdam`, `Prázdne → Rotterdam`, `Tranship → Hamburg`. */
+export function partTitle(contract: ContractCardData): string {
+  const kind = contractKind(contract);
+  const name = KIND_PART_NAME[kind];
+  return kind === 'import' || contract.booking === undefined ? name : `${name} → ${contract.booking.destinationPort}`;
+}
+
+// --- F6c: repositioning prázdnych a prekládka (ADR-034) -----------------------------------------------------------------------
+
+/** Pruhy repositioningu: len naložené prázdne na loď voči počtu v bookingu. */
+export function repositioningBars(booking: ContractBookingData): readonly BookingBar[] {
+  return [{ field: 'loaded', label: 'Naložené', part: booking.loadedUnits, total: booking.bookedUnits }];
+}
+
+/** Pruhy prekládky: vyložené z lode A a naložené na loď B voči počtu jednotiek. */
+export function transhipBars(booking: ContractBookingData): readonly BookingBar[] {
+  return [
+    { field: 'unloaded', label: 'Vyložené', part: booking.arrivedUnits, total: booking.bookedUnits },
+    { field: 'loaded', label: 'Naložené', part: booking.loadedUnits, total: booking.bookedUnits },
+  ];
+}
+
+export interface EmptiesStock {
+  readonly text: string;
+  /** `ok` = v prístave je dosť dostupných prázdnych na zvyšok bookingu, `warn` = chýbajú. */
+  readonly tone: 'ok' | 'warn';
+  readonly title: string;
+}
+
+/**
+ * Dostupné prázdne kontajnery linky v prístave voči zvyšku bookingu repositioningu (`Dostupné 12 / 24 TEU`); bez údaju od
+ * app, v histórii a po naložení celého bookingu `null`. Dostupné = stav `available` (bez poškodených a opravovaných).
+ */
+export function availableEmptiesInfo(contract: ContractCardData): EmptiesStock | null {
+  const { availableEmpties, booking } = contract;
+  if (availableEmpties === undefined || booking === undefined || contractTab(contract.state) === 'history') return null;
+  const needed = Math.max(0, booking.bookedUnits - booking.loadedUnits);
+  if (needed === 0) return null;
+  return {
+    text: `Dostupné ${formatFraction(availableEmpties, needed, contract.unit)}`,
+    tone: availableEmpties >= needed ? 'ok' : 'warn',
+    title: 'Prázdne kontajnery linky v prístave, ktoré sa dajú naložiť (bez poškodených a opravovaných), voči zvyšku bookingu',
+  };
+}
+
+/** Jednotky prekládky, ktoré čakajú v prístave na loď B: vyložené − naložené − predané (nikdy záporné). */
+export function transhipWaitingUnits(booking: ContractBookingData): number {
+  return Math.max(0, booking.arrivedUnits - booking.loadedUnits - booking.returnedUnits);
+}
+
+export interface TranshipMissedInfo {
+  /** Zmeškané jednotky (čakajú v prístave po odchode lode B). */
+  readonly units: number;
+  /** `Na záchranu zostáva 2 d 3 h` / `Lehota záchrany uplynula`. */
+  readonly text: string;
+}
+
+/** Zmeškaná prekládka (loď B odplávala bez jednotiek, `rescueDeadlineTick` je známy) v aktívnom kontrakte, inak `null`. */
+export function transhipMissed(contract: ContractCardData, time: ContractsTimeScale): TranshipMissedInfo | null {
+  const deadline = contract.tranship?.rescueDeadlineTick;
+  if (deadline === undefined || contract.booking === undefined || contractTab(contract.state) !== 'active') return null;
+  const remaining = deadline - time.nowTick;
+  return {
+    units: transhipWaitingUnits(contract.booking),
+    text: remaining > 0 ? `Na záchranu zostáva ${formatDuration(remaining, time)}` : 'Lehota záchrany uplynula',
+  };
+}
+
+/**
+ * Počítadlá prekládky, len nenulové: čakajúce na loď B (po zmeškaní namiesto toho zmeškané) a predané (zmeškané jednotky, ktoré
+ * odišli kamiónom — penalizácia).
+ */
+export function transhipCounters(contract: ContractCardData, time: ContractsTimeScale): readonly BookingCounter[] {
+  const { booking } = contract;
+  if (booking === undefined || contractTab(contract.state) === 'offers') return [];
+  const missed = transhipMissed(contract, time);
+  const all: readonly BookingCounter[] = [
+    { key: 'waiting', label: 'Čakajú na loď B', count: missed === null ? transhipWaitingUnits(booking) : 0, tone: 'muted', icon: 'ic_clock', title: 'Vyložené jednotky v prístave, ktoré čakajú na naloženie na loď B' },
+    { key: 'missed', label: 'Zmeškané', count: missed?.units ?? 0, tone: 'danger', icon: 'ic_warning', title: 'Loď B odplávala bez týchto jednotiek — penalizácia, jednotky čakajú na ďalšiu loď linky' },
+    { key: 'sold', label: 'Predané', count: booking.returnedUnits, tone: 'muted', icon: 'ic_truck', title: 'Zmeškané jednotky odišli kamiónom ako predané — penalizácia' },
+  ];
+  return all.filter((counter) => counter.count > 0);
+}
+
+export interface TranshipLegInfo {
+  readonly key: 'a' | 'b';
+  /** Označenie lode v trase (`A`, `B`). */
+  readonly badge: 'A' | 'B';
+  /** Plavba lode: `plavba #3` (trieda lode je rovnaká ako triedy lode A — ukazuje ju odznak lode karty). */
+  readonly text: string;
+  /** Čas príchodu (`príde o 5 h`, `prišla`, `o 1 deň – 2 dni po lodi A`); v histórii prázdny. */
+  readonly timing: string;
+  readonly tone: 'normal' | 'danger';
+}
+
+/** Čas príchodu lode z plánovaného ticku: `príde o 5 h` / `prišla`; bez ticku `null`. */
+function arrivalText(arrivalTick: number | undefined, time: ContractsTimeScale): string | null {
+  if (arrivalTick === undefined) return null;
+  const left = arrivalTick - time.nowTick;
+  return left > 0 ? `príde o ${formatDuration(left, time)}` : 'prišla';
+}
+
+/**
+ * Trasa prekládky: loď A (loď karty) a loď B (plavba `outVoyageId`; jej trieda je rovnaká ako triedy lode A) s odpočtom
+ * do príchodu. Ponuka ukáže rozstup príchodu B po lodi A (`outGapTicks`), zmeškaná prekládka „odplávala bez jednotiek“. Kontrakt
+ * bez trasy (`tranship` chýba) → `null`.
+ */
+export function transhipLegs(contract: ContractCardData, time: ContractsTimeScale): readonly TranshipLegInfo[] | null {
+  const { tranship } = contract;
+  if (tranship === undefined) return null;
+  const tab = contractTab(contract.state);
+  const gap = tranship.outGapTicks;
+  const offerGap = gap === undefined ? 'príde po lodi A' : `o ${formatDuration(gap[0], time)} – ${formatDuration(gap[1], time)} po lodi A`;
+  const timingA = tab === 'history' ? '' : tab === 'offers' ? 'príde po prijatí' : (arrivalText(contract.shipArrivalTick, time) ?? '');
+  const missed = transhipMissed(contract, time) !== null;
+  const timingB = tab === 'history' ? '' : missed ? 'odplávala bez jednotiek' : tab === 'offers' ? offerGap : (arrivalText(tranship.outArrivalTick, time) ?? 'príde po lodi A');
+  return [
+    { key: 'a', badge: 'A', text: `plavba #${String(contractVoyageId(contract))}`, timing: timingA, tone: 'normal' },
+    { key: 'b', badge: 'B', text: `plavba #${String(tranship.outVoyageId)}`, timing: timingB, tone: missed ? 'danger' : 'normal' },
+  ];
 }
 
 /** Percento pre šírku pruhu: 0–100, celé číslo, objem 0 → 0. */
@@ -465,6 +661,8 @@ interface TimedProps {
   readonly time: ContractsTimeScale;
   /** Predpona `data-field` (v karte voyage `import` / `export`, v samostatnej karte prázdna). */
   readonly prefix?: string;
+  /** Linka kontraktu: sekcia ju ukáže ako prvý odznak svojho riadku (karta voyage ju má v hlavičke, preto jej ju časť nedáva). */
+  readonly line?: ContractLineData;
 }
 
 function SlaPill({ contract, time, prefix = '' }: TimedProps) {
@@ -487,9 +685,36 @@ function ShipPill({ contract, time }: TimedProps) {
   );
 }
 
+/** Odznak linky: farebná bodka (farba z tokenu linky) a názov; farba nikdy nie je jediný nositeľ (vždy aj text). */
+function LinePill({ line, prefix = '' }: { readonly line: ContractLineData | undefined; readonly prefix?: string }) {
+  if (line === undefined) return null;
+  return (
+    <span
+      className="contract-card__pill contract-card__pill--plain contract-card__line"
+      style={lineStyle(line.colorToken)}
+      title={`Linka: ${line.label}`}
+      data-field={fieldName(prefix, 'line')}
+      data-line={line.id}
+    >
+      <span className="contract-card__line-dot" aria-hidden="true" />
+      {line.label}
+    </span>
+  );
+}
+
+/** Plavba (voyage) lode kontraktu: `Plavba #7`. */
+function VoyagePill({ contract, prefix = '' }: { readonly contract: ContractCardData; readonly prefix?: string }) {
+  return (
+    <span className="contract-card__pill contract-card__pill--plain" title="Plavba lode, na ktorú sa prázdne nakladajú" data-field={fieldName(prefix, 'voyage')}>
+      <Icon name="ic_ship" className="contract-card__pill-icon" />
+      {`Plavba #${String(contractVoyageId(contract))}`}
+    </span>
+  );
+}
+
 function DestinationPill({ booking, prefix = '' }: { readonly booking: ContractBookingData; readonly prefix?: string }) {
   return (
-    <span className="contract-card__pill contract-card__pill--plain" title="Cieľový prístav exportu" data-field={fieldName(prefix, 'destination')}>
+    <span className="contract-card__pill contract-card__pill--plain" title="Cieľový prístav" data-field={fieldName(prefix, 'destination')}>
       <Icon name="ic_berth" className="contract-card__pill-icon" />
       {booking.destinationPort}
     </span>
@@ -516,20 +741,76 @@ function ImportBars({ contract, prefix = '' }: { readonly contract: ContractCard
   );
 }
 
+/** Pruhy progresu bookingu (druh určuje, ktoré: `bookingBars` / `repositioningBars` / `transhipBars`). */
+function BarList({ bars, unit, prefix }: { readonly bars: readonly BookingBar[]; readonly unit: string; readonly prefix: string }) {
+  return (
+    <div className="contract-card__bars">
+      {bars.map((bar) => (
+        <ProgressBar key={bar.field} field={fieldName(prefix, bar.field)} label={bar.label} part={bar.part} total={bar.total} unit={unit} />
+      ))}
+    </div>
+  );
+}
+
+/** Počítadlá jednotiek bookingu (len nenulové; farba tónu + ikona + text). */
+function CounterList({ counters, prefix, label }: { readonly counters: readonly BookingCounter[]; readonly prefix: string; readonly label: string }) {
+  if (counters.length === 0) return null;
+  return (
+    <ul className="contract-card__counters" aria-label={label}>
+      {counters.map((counter) => (
+        <li
+          key={counter.key}
+          className={`contract-card__counter contract-card__counter--${counter.tone}`}
+          title={counter.title}
+          data-counter={counter.key}
+          data-field={fieldName(prefix, `counter-${counter.key}`)}
+        >
+          <Icon name={counter.icon} className="contract-card__counter-icon" />
+          {counter.label}
+          <span className="contract-card__counter-value">{formatCount(counter.count)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Súhrn naložených v histórii (`Naložené 22 / 24 TEU`). */
+function LoadedSummary({ contract, booking, prefix }: { readonly contract: ContractCardData; readonly booking: ContractBookingData; readonly prefix: string }) {
+  return (
+    <span className="contract-card__summary" data-field={fieldName(prefix, 'loaded-summary')}>
+      {`Naložené ${formatFraction(booking.loadedUnits, booking.bookedUnits, contract.unit)}`}
+    </span>
+  );
+}
+
+/** Sekcia importu: odznak linky a pruhy vyložené / exportované pri aktívnom kontrakte. */
+function ImportSection({ contract, line, prefix = '' }: TimedProps) {
+  const bars = contractTab(contract.state) === 'active' ? <ImportBars contract={contract} prefix={prefix} /> : null;
+  if (line === undefined) return bars;
+  return (
+    <>
+      <div className="contract-card__chips">
+        <LinePill line={line} prefix={prefix} />
+      </div>
+      {bars}
+    </>
+  );
+}
+
 /**
  * Booking exportu: cut-off (odpočet) a plánované príchody, pri aktívnom kontrakte pruhy dovezené / naložené, v histórii
  * súhrn naložených; počítadlá zadržané (VGM) / last minute / rolled / vrátené, len keď sú nenulové.
  */
-function BookingSection({ contract, time, prefix = '' }: TimedProps) {
+function BookingSection({ contract, time, line, prefix = '' }: TimedProps) {
   const { booking } = contract;
   if (booking === undefined) return null;
   const tab = contractTab(contract.state);
   const cutoff = cutoffInfo(contract, time);
   const pending = pendingArrivalsText(contract);
-  const counters = tab === 'offers' ? [] : bookingCounters(booking);
   return (
     <div className="contract-card__booking" data-section={fieldName(prefix, 'booking')}>
       <div className="contract-card__booking-head">
+        <LinePill line={line} prefix={prefix} />
         <DestinationPill booking={booking} prefix={prefix} />
         {cutoff !== null && (
           <span className={`contract-card__pill contract-card__pill--${cutoff.tone}`} title={cutoff.title} data-field={fieldName(prefix, 'cutoff')} data-tone={cutoff.tone}>
@@ -543,46 +824,126 @@ function BookingSection({ contract, time, prefix = '' }: TimedProps) {
           </span>
         )}
       </div>
-      {tab === 'active' && (
-        <div className="contract-card__bars">
-          {bookingBars(booking).map((bar) => (
-            <ProgressBar key={bar.field} field={fieldName(prefix, bar.field)} label={bar.label} part={bar.part} total={bar.total} unit={contract.unit} />
-          ))}
-        </div>
-      )}
-      {tab === 'history' && (
-        <span className="contract-card__summary" data-field={fieldName(prefix, 'loaded-summary')}>
-          {`Naložené ${formatFraction(booking.loadedUnits, booking.bookedUnits, contract.unit)}`}
-        </span>
-      )}
-      {counters.length > 0 && (
-        <ul className="contract-card__counters" aria-label="Stav jednotiek bookingu">
-          {counters.map((counter) => (
-            <li
-              key={counter.key}
-              className={`contract-card__counter contract-card__counter--${counter.tone}`}
-              title={counter.title}
-              data-counter={counter.key}
-              data-field={fieldName(prefix, `counter-${counter.key}`)}
-            >
-              <Icon name={counter.icon} className="contract-card__counter-icon" />
-              {counter.label}
-              <span className="contract-card__counter-value">{formatCount(counter.count)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+      {tab === 'active' && <BarList bars={bookingBars(booking)} unit={contract.unit} prefix={prefix} />}
+      {tab === 'history' && <LoadedSummary contract={contract} booking={booking} prefix={prefix} />}
+      <CounterList counters={tab === 'offers' ? [] : bookingCounters(booking)} prefix={prefix} label="Stav jednotiek bookingu" />
     </div>
   );
 }
 
-/** Penalizácie karty (státie lode, meškanie, pri exporte aj rolled / last minute / nesplnený booking). */
+/**
+ * Repositioning prázdnych: cieľový prístav a plavba lode, dostupné prázdne linky v prístave voči zvyšku bookingu, pri aktívnom
+ * kontrakte pruh naložených, v histórii súhrn naložených. Bez cut-off (prázdne vydáva depo, nie kamióny na termín).
+ */
+function RepositioningSection({ contract, line, prefix = '' }: TimedProps) {
+  const { booking } = contract;
+  if (booking === undefined) return null;
+  const tab = contractTab(contract.state);
+  const stock = availableEmptiesInfo(contract);
+  return (
+    <div className="contract-card__booking" data-section={fieldName(prefix, 'booking')}>
+      <div className="contract-card__booking-head">
+        <LinePill line={line} prefix={prefix} />
+        <DestinationPill booking={booking} prefix={prefix} />
+        <VoyagePill contract={contract} prefix={prefix} />
+        {stock !== null && (
+          <span className={`contract-card__pill contract-card__pill--${stock.tone}`} title={stock.title} data-field={fieldName(prefix, 'stock')} data-tone={stock.tone}>
+            <Icon name="ic_container" className="contract-card__pill-icon" />
+            {stock.text}
+          </span>
+        )}
+      </div>
+      {tab === 'active' && <BarList bars={repositioningBars(booking)} unit={contract.unit} prefix={prefix} />}
+      {tab === 'history' && <LoadedSummary contract={contract} booking={booking} prefix={prefix} />}
+    </div>
+  );
+}
+
+/** Trasa prekládky: loď A → loď B (plavba, odpočet do príchodu); zmeškaná loď B červeno, s lehotou záchrany. */
+function TranshipRoute({ contract, time, prefix }: { readonly contract: ContractCardData; readonly time: ContractsTimeScale; readonly prefix: string }) {
+  const legs = transhipLegs(contract, time);
+  if (legs === null) return null;
+  return (
+    <ol className="contract-card__route" aria-label="Trasa prekládky: loď A privezie, loď B odvezie" data-field={fieldName(prefix, 'route')}>
+      {legs.map((leg) => (
+        <li key={leg.key} className={`contract-card__leg contract-card__leg--${leg.tone}`} data-leg={leg.key}>
+          <span className="contract-card__leg-badge" aria-hidden="true">
+            {leg.badge}
+          </span>
+          <span className="contract-card__leg-text" data-field={fieldName(prefix, `leg-${leg.key}`)}>
+            {`Loď ${leg.badge} · ${leg.text}`}
+          </span>
+          {leg.timing !== '' && (
+            <span className="contract-card__leg-time" data-field={fieldName(prefix, `leg-${leg.key}-time`)}>
+              {leg.timing}
+            </span>
+          )}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/**
+ * Prekládka: cieľový prístav lode B, trasa A → B s odpočtom do príchodu B, pri aktívnom kontrakte pruhy vyložené / naložené,
+ * v histórii súhrn naložených; počítadlá čakajúce / zmeškané (s lehotou záchrany) / predané, len keď sú nenulové.
+ */
+function TranshipSection({ contract, time, line, prefix = '' }: TimedProps) {
+  const { booking } = contract;
+  if (booking === undefined) return null;
+  const tab = contractTab(contract.state);
+  const missed = transhipMissed(contract, time);
+  return (
+    <div className="contract-card__booking" data-section={fieldName(prefix, 'booking')}>
+      <div className="contract-card__booking-head">
+        <LinePill line={line} prefix={prefix} />
+        <DestinationPill booking={booking} prefix={prefix} />
+        {missed !== null && (
+          <span className="contract-card__pill contract-card__pill--danger" title="Loď B odplávala bez jednotiek prekládky" data-field={fieldName(prefix, 'rescue')} data-tone="danger">
+            <Icon name="ic_warning" className="contract-card__pill-icon" />
+            {missed.text}
+          </span>
+        )}
+      </div>
+      <TranshipRoute contract={contract} time={time} prefix={prefix} />
+      {tab === 'active' && <BarList bars={transhipBars(booking)} unit={contract.unit} prefix={prefix} />}
+      {tab === 'history' && <LoadedSummary contract={contract} booking={booking} prefix={prefix} />}
+      <CounterList counters={transhipCounters(contract, time)} prefix={prefix} label="Stav jednotiek prekládky" />
+    </div>
+  );
+}
+
+/** Telo karty podľa druhu kontraktu (tabuľka, nie switch — nový druh = nový riadok). */
+const KIND_SECTIONS: Readonly<Record<ContractCardKind, (props: TimedProps) => ReactNode>> = {
+  import: ImportSection,
+  export: BookingSection,
+  empty_repositioning: RepositioningSection,
+  tranship: TranshipSection,
+};
+
+/** Telo karty (pruhy, booking, trasa…) podľa druhu kontraktu. */
+function KindSection({ contract, time, line, prefix = '' }: TimedProps) {
+  const Section = KIND_SECTIONS[contractKind(contract)];
+  return <Section contract={contract} time={time} line={line} prefix={prefix} />;
+}
+
+const EXPORT_PENALTY_TITLE = 'Penalizácie za státie lode, meškanie a export (last minute, rolled, nesplnený booking)';
+
+/** Popis penalizácií podľa druhu karty (tabuľka, nie switch). */
+const PENALTY_TITLE: Readonly<Record<VoyageKind, string>> = {
+  import: 'Penalizácie za státie lode a meškanie exportu',
+  export: EXPORT_PENALTY_TITLE,
+  roundtrip: EXPORT_PENALTY_TITLE,
+  combined: EXPORT_PENALTY_TITLE,
+  empty_repositioning: 'Penalizácie za státie lode, meškanie a nesplnený booking prázdnych',
+  tranship: 'Penalizácie za státie lode, meškanie a zmeškanú loď B (prekládka)',
+};
+
+/** Penalizácie karty (státie lode, meškanie, pri exporte aj rolled / last minute / nesplnený booking, pri prekládke zmeškaná loď B). */
 function PenaltyRow({ cents, kind }: { readonly cents: number; readonly kind: VoyageKind }) {
   if (cents <= 0) return null;
-  const title =
-    kind === 'import' ? 'Penalizácie za státie lode a meškanie exportu' : 'Penalizácie za státie lode, meškanie a export (last minute, rolled, nesplnený booking)';
   return (
-    <div className="contract-card__penalty" data-field="penalties" title={title}>
+    <div className="contract-card__penalty" data-field="penalties" title={PENALTY_TITLE[kind]}>
       <Icon name="ic_warning" className="contract-card__penalty-icon" />
       <span className="contract-card__penalty-label">Penalizácie</span>
       <span className="contract-card__penalty-value" data-field="penalties-value">
@@ -675,7 +1036,21 @@ export interface ContractCardProps {
   readonly onDecline: (id: ContractCardId) => void;
 }
 
-/** Jedna karta kontraktu (import alebo export booking; roundtrip skladá `VoyageCard`). */
+/** Predpona názvu karty podľa druhu: `Export · Kontajnery`; import je bez predpony (názov nákladu). */
+function cardTitle(contract: ContractCardData): string {
+  const kind = contractKind(contract);
+  return kind === 'import' ? contract.cargoLabel : `${KIND_PART_NAME[kind]} · ${contract.cargoLabel}`;
+}
+
+/** Názov druhu pre čítačku obrazovky (`aria-label` karty). */
+const KIND_ARIA_NAME: Readonly<Record<ContractCardKind, string>> = {
+  import: 'Kontrakt',
+  export: 'Export',
+  empty_repositioning: 'Prázdne kontajnery',
+  tranship: 'Prekládka',
+};
+
+/** Jedna karta kontraktu (import, export booking, repositioning alebo prekládka; roundtrip skladá `VoyageCard`). */
 export function ContractCard({ contract, time, onAccept, onDecline }: ContractCardProps) {
   const { id, state } = contract;
   const kind = contractKind(contract);
@@ -688,16 +1063,16 @@ export function ContractCard({ contract, time, onAccept, onDecline }: ContractCa
       data-kind={kind}
       data-state={state}
       data-tab={tab}
-      aria-label={`${kind === 'export' ? 'Export' : 'Kontrakt'}: ${contract.cargoLabel}, ${formatCount(contract.volumeUnits, contract.unit)}`}
+      aria-label={`${KIND_ARIA_NAME[kind]}: ${contract.cargoLabel}, ${volumeText(contract)}`}
     >
       <div className="contract-card__head">
         <CategoryTile category={contract.cargoCategory} />
         <div className="contract-card__titles">
           <span className="contract-card__title" data-field="cargo">
-            {kind === 'export' ? `Export · ${contract.cargoLabel}` : contract.cargoLabel}
+            {cardTitle(contract)}
           </span>
           <span className="contract-card__meta">
-            <span data-field="volume">{formatCount(contract.volumeUnits, contract.unit)}</span>
+            <span data-field="volume">{volumeText(contract)}</span>
             {' · '}
             <span className="contract-card__xp" data-field="xp-reward">
               {formatXp(contract.xpReward)}
@@ -714,8 +1089,7 @@ export function ContractCard({ contract, time, onAccept, onDecline }: ContractCa
         <span className="contract-card__spacer" />
         <StatusLabel contract={contract} time={time} />
       </div>
-      {kind === 'import' && tab === 'active' && <ImportBars contract={contract} />}
-      {kind === 'export' && <BookingSection contract={contract} time={time} />}
+      <KindSection contract={contract} time={time} line={contract.line} />
       <PenaltyRow cents={contract.penaltiesCents} kind={kind} />
       {state === 'offered' && renderOfferBlock({ parts: [contract], time, onAccept, onDecline })}
     </article>
@@ -727,7 +1101,7 @@ interface VoyagePartProps {
   readonly time: ContractsTimeScale;
 }
 
-/** Časť karty voyage (Import / Export): hlavička s odmenou, SLA, stav, cieľ a pruhy alebo booking. */
+/** Časť karty voyage (Import / Export / Prázdne / Tranship): hlavička s odmenou, SLA, stav, cieľ a pruhy alebo booking. */
 function VoyagePart({ contract, time }: VoyagePartProps) {
   const kind = contractKind(contract);
   const payout = contractPayoutCents(contract);
@@ -736,10 +1110,10 @@ function VoyagePart({ contract, time }: VoyagePartProps) {
     <section className="contract-card__part" data-part={kind} data-contract-id={contract.id} data-state={contract.state} data-tab={tab}>
       <div className="contract-card__part-head">
         <span className="contract-card__part-title" data-field={`${kind}-title`}>
-          {kind === 'export' ? exportTitle(contract) : 'Import'}
+          {partTitle(contract)}
         </span>
         <span className="contract-card__part-volume" data-field={`${kind}-volume`}>
-          {formatCount(contract.volumeUnits, contract.unit)}
+          {volumeText(contract)}
         </span>
         <span className="contract-card__spacer" />
         <span className={`contract-card__reward contract-card__reward--${rewardTone(payout, contract.state === 'expired')}`} data-field={`${kind}-reward`}>
@@ -751,8 +1125,7 @@ function VoyagePart({ contract, time }: VoyagePartProps) {
         <span className="contract-card__spacer" />
         <StatusLabel contract={contract} time={time} prefix={kind} />
       </div>
-      {kind === 'import' && tab === 'active' && <ImportBars contract={contract} prefix={kind} />}
-      {kind === 'export' && <BookingSection contract={contract} time={time} prefix={kind} />}
+      <KindSection contract={contract} time={time} prefix={kind} />
     </section>
   );
 }
@@ -777,7 +1150,7 @@ export function VoyageCard({ group, time, onAccept, onDecline }: VoyageCardProps
   const payout = voyagePayoutCents(group);
   const expired = parts.every((part) => part.state === 'expired');
   const xp = parts.reduce((sum, part) => sum + part.xpReward, 0);
-  const volumes = parts.map((part) => `${contractKind(part) === 'export' ? 'Export' : 'Import'} ${formatCount(part.volumeUnits, part.unit)}`).join(' · ');
+  const volumes = parts.map((part) => `${KIND_PART_NAME[contractKind(part)]} ${volumeText(part)}`).join(' · ');
   // Súčet objemu cez obe časti (rovnaká jednotka); pri rôznych jednotkách zoznam objemov podľa častí.
   const sameUnit = parts.every((part) => part.unit === lead.unit);
   const volume = sameUnit ? formatCount(parts.reduce((sum, part) => sum + part.volumeUnits, 0), lead.unit) : volumes;
@@ -794,7 +1167,7 @@ export function VoyageCard({ group, time, onAccept, onDecline }: VoyageCardProps
         <CategoryTile category={lead.cargoCategory} />
         <div className="contract-card__titles">
           <span className="contract-card__title" data-field="cargo">
-            {`Import + export · ${lead.cargoLabel}`}
+            {`${voyageTitle(group)} · ${lead.cargoLabel}`}
           </span>
           <span className="contract-card__meta">
             <span data-field="volume">{volume}</span>
@@ -809,6 +1182,7 @@ export function VoyageCard({ group, time, onAccept, onDecline }: VoyageCardProps
         </span>
       </div>
       <div className="contract-card__chips">
+        <LinePill line={lead.line} />
         <ShipPill contract={lead} time={time} />
       </div>
       {parts.map((part) => (

@@ -1,7 +1,7 @@
 /**
  * Ozdoby modulu (`ModuleDecor`): dynamická grafika nad telom modulu, ktorú riadi voliteľné pole `ModuleVM` — závora a fronta
  * brány (`gate`), obsadenosť stojísk (`waitingArea`), pripravené kontajnery a stav rampy (`ramp`), portálový žeriav
- * kontajnerového dvora (`storage` + `lastStorageOp`). `ModuleView` ich
+ * kontajnerového dvora (`storage` + `lastStorageOp`), odznaky depa prázdnych (`depot`, F6c). `ModuleView` ich
  * vytvorí lenivo, keď VM pole nesie, a pri každom `update` im ho podá; nový druh modulu = nová ozdoba v `module-decors.ts`,
  * nie vetva v `ModuleView`.
  *

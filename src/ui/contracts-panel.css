@@ -8,7 +8,9 @@
  * .contract-card (--container|bulk|liquid|gas|roro; __head / __tile / __titles / __meta / __reward / __chips / __pill /
  * __status / __bars / __bar / __penalty / __offer / __expiry / __actions / __btn / __reason); F6a (T6A-07, ADR-032):
  * .contract-card--voyage (spoločná karta import + export), __part (+ __part-head / __part-title / __part-volume),
- * __booking / __booking-head / __pending / __summary a __counters / __counter (--warn|danger|muted; __counter-icon / __counter-value).
+ * __booking / __booking-head / __pending / __summary a __counters / __counter (--warn|danger|muted; __counter-icon / __counter-value);
+ * F6c (T6C-05, ADR-034): __line / __line-dot (odznak linky; farbu dáva `--line-color` nastavená inline z tokenu linky) a __route /
+ * __leg (--normal|danger; __leg-badge / __leg-text / __leg-time) — trasa prekládky loď A → loď B.
  */
 
 /* Lokálne rozmery zdieľa panel aj samostatná karta (galéria dema). */
@@ -204,6 +206,8 @@
 
 .contract-card {
   --cc-cat: var(--ui-text-2);
+  /* Farba linky (odznak `__line`); karta s linkou ju prepíše inline z tokenu linky (`lineStyle`). */
+  --line-color: var(--ui-text-2);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -493,6 +497,80 @@
 }
 
 .contract-card__counter--danger .contract-card__counter-icon {
+  color: color-mix(in srgb, var(--ui-danger) 70%, var(--ui-text));
+}
+
+/* --- F6c: odznak linky a trasa prekládky (loď A → loď B) --- */
+
+.contract-card__line-dot {
+  flex: none;
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: 50%;
+  background: var(--line-color);
+}
+
+.contract-card__route {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.contract-card__leg {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--space-6);
+  font-size: var(--fs-xs);
+}
+
+/* Spojnica medzi lodami A a B: zvislá čiara pod odznakom prvej lode. */
+.contract-card__leg:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: calc(100% - 2px);
+  left: calc(var(--space-2) + 1px);
+  width: 2px;
+  height: var(--space-2);
+  background: var(--ui-border);
+}
+
+.contract-card__leg-badge {
+  box-sizing: border-box;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: calc(var(--space-4) + var(--space-1));
+  height: calc(var(--space-4) + var(--space-1));
+  border: 1px solid var(--ui-border);
+  border-radius: 50%;
+  background: var(--ui-surface-2);
+  color: var(--ui-text);
+  font-weight: var(--fw-bold);
+}
+
+.contract-card__leg-text {
+  min-width: 0;
+  color: var(--ui-text-2);
+}
+
+.contract-card__leg-time {
+  margin-left: auto;
+  color: var(--ui-text);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+.contract-card__leg--danger .contract-card__leg-badge {
+  border-color: var(--ui-danger);
+}
+
+.contract-card__leg--danger .contract-card__leg-time {
   color: color-mix(in srgb, var(--ui-danger) 70%, var(--ui-text));
 }
 

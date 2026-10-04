@@ -215,7 +215,8 @@ export class CraneView {
       before.progress === vm.progress &&
       before.cycle === vm.cycle &&
       before.holding?.unitId === vm.holding?.unitId &&
-      before.holding?.typeId === vm.holding?.typeId
+      before.holding?.typeId === vm.holding?.typeId &&
+      before.holding?.empty === vm.holding?.empty
     ) {
       this.last = vm;
       return;
@@ -256,9 +257,10 @@ export class CraneView {
       }
       return;
     }
-    if (this.held?.unitId === holding.unitId && this.held.typeId === holding.typeId) return;
+    const empty = holding.empty === true;
+    if (this.held?.unitId === holding.unitId && this.held.typeId === holding.typeId && (this.held.look.empty === true) === empty) return;
     this.held?.destroy();
-    this.held = new CargoSprite(holding.unitId, holding.typeId, this.deps);
+    this.held = new CargoSprite(holding.unitId, holding.typeId, this.deps, empty ? { empty: true } : {});
     this.moverGroup.addChildAt(this.held, 0); // pod sprite vozíka: vozík (spreader) je nad kontajnerom
   }
 

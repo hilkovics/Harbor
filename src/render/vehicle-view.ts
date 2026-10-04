@@ -73,16 +73,24 @@ export const VEHICLE_STYLE: VehicleViewStyle = {
   fallback: (palette) => ({ body: palette.vehicle.body, outline: palette.vehicle.dark, front: palette.vehicle.dark }),
 };
 
-export type VehicleLoad = 'empty' | 'loaded';
+/** Stav sprite vozidla: `carries_empty` = vezie prázdny (sivý) kontajner (F6c, ADR-034). */
+export type VehicleLoad = 'empty' | 'loaded' | 'carries_empty';
 
-/** Stav sprite podľa toho, či vozidlo vezie náklad. */
-export function vehicleLoad(loaded: boolean): VehicleLoad {
-  return loaded ? 'loaded' : 'empty';
+/** Stav sprite podľa toho, či vozidlo vezie náklad a či je to prázdny kontajner (`carriesEmpty` sa pri `loaded: false` ignoruje). */
+export function vehicleLoad(loaded: boolean, carriesEmpty = false): VehicleLoad {
+  if (!loaded) return 'empty';
+  return carriesEmpty ? 'carries_empty' : 'loaded';
 }
 
-/** Súbor sprite vozidla (relatívne k `assets/`), alebo `undefined`, ak def nie je vozidlo v manifeste. */
-export function vehicleSpriteFile(defId: string, loaded: boolean): string | undefined {
-  return vehicleSprite(defId)?.states[vehicleLoad(loaded)];
+/**
+ * Súbor sprite vozidla (relatívne k `assets/`), alebo `undefined`, ak def nie je vozidlo v manifeste. Stav `carries_empty` bez vlastného
+ * súboru v manifeste (def ho nemá) použije `loaded` — prázdny kontajner sa vtedy kreslí rovnako ako plný.
+ */
+export function vehicleSpriteFile(defId: string, loaded: boolean, carriesEmpty = false): string | undefined {
+  const states = vehicleSprite(defId)?.states;
+  if (states === undefined) return undefined;
+  const load = vehicleLoad(loaded, carriesEmpty);
+  return load === 'carries_empty' ? (states.carries_empty ?? states.loaded) : states[load];
 }
 
 export interface VehiclePose {
@@ -211,6 +219,9 @@ export interface PoseDirector {
   displayLoaded?(vm: VehicleVM): boolean;
 }
 
+/** Textúry vozidla podľa stavu (`carries_empty` je `loaded`, keď def sivý variant nemá). */
+type VehicleTextures = Readonly<Record<VehicleLoad, Texture>>;
+
 export interface VehicleViewDeps {
   /** Veľkosť bunky v px pri zoome 1 (`--cell`). */
   readonly cellPx: number;
@@ -232,7 +243,7 @@ export class VehicleView {
   private last: VehicleVM;
   /** Sprite vozidla (`null` pri fallbacku). */
   private readonly sprite: Sprite | null;
-  private readonly textures: { readonly empty: Texture; readonly loaded: Texture } | null;
+  private readonly textures: VehicleTextures | null;
   private load: VehicleLoad;
   private readonly roadKindAt: RoadKindAt;
   private readonly roadMaskAt: RoadMaskAt;
@@ -249,7 +260,7 @@ export class VehicleView {
     this.roadKindAt = deps.roadKindAt ?? defaultRoadKindAt;
     this.roadMaskAt = deps.roadMaskAt ?? noRoadMaskAt;
     this.view = new Container({ label: `${style.label}-${String(vm.id)}` });
-    this.load = vehicleLoad(vm.loaded);
+    this.load = vehicleLoad(vm.loaded, vm.carriesEmpty === true);
     this.textures = this.resolveTextures(vm.defId);
     const entry = vehicleSprite(vm.defId);
     if (this.textures !== null && entry !== undefined) {
@@ -269,6 +280,11 @@ export class VehicleView {
   }
 
 
+  /** Zobrazený stav sprite (`empty` / `loaded` / `carries_empty`) — pre testy. */
+  get loadState(): VehicleLoad {
+    return this.load;
+  }
+
   /** Aktuálna textúra sprite (`null` pri fallbacku) — pre testy. */
   get texture(): Texture | null {
     return this.sprite?.texture ?? null;
@@ -280,7 +296,7 @@ export class VehicleView {
     const pose = this.director === null ? this.simPose(vm, alpha) : this.director.pose(vm, alpha, (other, at) => this.simPose(other, at));
     if (this.view.x !== pose.x || this.view.y !== pose.y) this.view.position.set(pose.x, pose.y);
     if (this.view.angle !== pose.angle) this.view.angle = pose.angle;
-    const load = vehicleLoad(this.director?.displayLoaded?.(vm) ?? vm.loaded);
+    const load = vehicleLoad(this.director?.displayLoaded?.(vm) ?? vm.loaded, vm.carriesEmpty === true);
     if (load !== this.load) {
       this.load = load;
       if (this.sprite !== null && this.textures !== null) this.sprite.texture = this.textures[load];
@@ -296,14 +312,15 @@ export class VehicleView {
     return vehiclePose(vm, alpha, this.deps.cellPx, this.roadKindAt, this.roadMaskAt);
   }
 
-  /** Textúry `empty` / `loaded` pre vozidlo, alebo `null` (fallback). */
-  private resolveTextures(defId: string): { readonly empty: Texture; readonly loaded: Texture } | null {
+  /** Textúry `empty` / `loaded` / `carries_empty` pre vozidlo, alebo `null` (fallback); `carries_empty` bez súboru alebo textúry = `loaded`. */
+  private resolveTextures(defId: string): VehicleTextures | null {
     const entry = vehicleSprite(defId);
     if (entry === undefined) return null;
     const empty = this.deps.textures?.file(entry.states.empty);
     const loaded = this.deps.textures?.file(entry.states.loaded);
     if (empty === undefined || loaded === undefined) return null;
-    return { empty, loaded };
+    const carriesEmpty = entry.states.carries_empty === undefined ? undefined : this.deps.textures?.file(entry.states.carries_empty);
+    return { empty, loaded, carries_empty: carriesEmpty ?? loaded };
   }
 
   /** Telo z tokenov s pruhom na predku (hore); rozmer `footprint` (vozidlo 1×1, kamión 1×2), v mierke pruhu. */

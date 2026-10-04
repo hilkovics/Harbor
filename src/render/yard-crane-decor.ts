@@ -2,7 +2,7 @@
  * Ozdoba kontajnerového dvora: portálový žeriav (RTG/RMG, `ModuleVM.storage` + `lastStorageOp`, spätná väzba F5b č. 8).
  *
  * Kreslí sa procedurálne (`Graphics` z tokenov `--crane-frame`, `--crane-boom`, `--cargo-container`; manifest pre dvor nemá
- * časti žeriavu): dve koľajnice po dlhých stranách dvora, mostík s nohami (portál) naprieč dvorom, vozík na mostíku
+ * časti žeriavu; kontajner na spreaderi je sivý `--cargo-empty`, keď ide o depo prázdnych alebo operáciu s prázdnym kontajnerom, F6c): dve koľajnice po dlhých stranách dvora, mostík s nohami (portál) naprieč dvorom, vozík na mostíku
  * a pod ním spreader s kontajnerom. Keď vozidlo kontajner uloží alebo vezme (nová `lastStorageOp`), portál s vozíkom
  * sa presunie nad slot, spreader sa spustí a zdvihne (`yard-crane-motion.ts`, ~0,5 – 1 s). Medzi operáciami žeriav stojí
  * nad posledným slotom. Pri `prefers-reduced-motion` (`ModuleViewDeps.reducedMotion`) sa animácia vynechá a žeriav len stojí
@@ -17,6 +17,7 @@
 import { Container, Graphics } from 'pixi.js';
 import { moduleSprite, type ModuleSpriteEntry } from './entity-assets';
 import type { ModuleDecor, ModuleDecorContext, ModuleDecorFactory, ModuleViewDeps } from './module-decor';
+import type { EntityPalette } from './tokens';
 import type { ModuleVM } from './view-models';
 import { CRANE_LIFT_SCALE, YardCraneMotion, type CraneSpot, type YardCranePose } from './yard-crane-motion';
 
@@ -82,12 +83,16 @@ export class YardCraneDecor implements ModuleDecor {
   private readonly entry: ModuleSpriteEntry & { slots: number };
   private readonly motion: YardCraneMotion;
   private readonly cellPx: number;
+  private readonly palette: EntityPalette;
   /** Mostík (nohy + nosník) v polohe portálu: `y` = poloha portálu. */
   private readonly gantry = new Container({ label: 'yard-crane-gantry' });
   /** Vozík, spreader a kontajner v polohe vozíka (`x`, `y` = poloha spreadera). */
   private readonly trolley = new Container({ label: 'yard-crane-trolley' });
   private readonly spreader: Graphics;
   private readonly cargo: Graphics;
+  /** Kontajner na spreaderi je prázdny (sivý): depo prázdnych vždy, inak podľa poslednej operácie (`lastStorageOp.empty`). */
+  private emptyCargo: boolean;
+  private readonly depot: boolean;
   /** Kľúč poslednej spracovanej operácie (`tick:slot:druh`); `null` = dvor ešte nemal operáciu. */
   private seenOp: string | null = null;
   /** Naposledy nakreslená póza (zmena sa prenesie do scény, nezmenená nealokuje). */
@@ -104,8 +109,13 @@ export class YardCraneDecor implements ModuleDecor {
     const home = op === undefined ? yardCraneHome(entry) : yardSlotSpot(entry, op.slot);
     this.seenOp = op === undefined ? null : opKey(op);
     this.motion = new YardCraneMotion(home, deps.now ?? defaultNow, deps.reducedMotion ?? browserReducedMotion);
+    this.depot = vm.depot !== undefined;
+    this.emptyCargo = this.depot || op?.empty === true;
     this.spreader = this.createSpreader(deps);
-    this.cargo = this.createCargo(deps);
+    this.palette = deps.palette;
+    this.cargo = new Graphics();
+    this.cargo.visible = false;
+    this.drawCargo(this.emptyCargo);
     this.view.addChild(this.createRails(deps, entry), this.gantry, this.trolley);
     this.gantry.addChild(this.createBridge(deps, entry));
     this.trolley.addChild(this.cargo, this.spreader, this.createTrolley(deps));
@@ -137,12 +147,18 @@ export class YardCraneDecor implements ModuleDecor {
     return this.cargo;
   }
 
+  /** Kontajner na spreaderi je sivý (prázdny kontajner) — pre testy. */
+  get carriesEmpty(): boolean {
+    return this.emptyCargo;
+  }
+
   update(vm: ModuleVM): void {
     const op = vm.lastStorageOp;
     if (op !== undefined) {
       const key = opKey(op);
       if (key !== this.seenOp) {
         this.seenOp = key;
+        this.setEmptyCargo(this.depot || op.empty === true);
         this.motion.push({ kind: op.kind, target: yardSlotSpot(this.entry, op.slot) });
       }
     }
@@ -231,19 +247,24 @@ export class YardCraneDecor implements ModuleDecor {
     return graphics;
   }
 
-  /** Kontajner na spreaderi: farba kategórie s tmavším obrysom, veľkosť políčka dvora. */
-  private createCargo(deps: ModuleViewDeps): Graphics {
-    const { cellPx, palette } = deps;
-    const { base, dark } = palette.cargo;
+  /** Prefarbí kontajner na spreaderi pri zmene druhu (oranžový ↔ sivý prázdny). */
+  private setEmptyCargo(empty: boolean): void {
+    if (empty === this.emptyCargo) return;
+    this.emptyCargo = empty;
+    this.drawCargo(empty);
+  }
+
+  /** Nakreslí kontajner na spreaderi: farba kategórie (`--cargo-container`) alebo prázdneho kontajnera (`--cargo-empty`) s obrysom a rebrami. */
+  private drawCargo(empty: boolean): void {
+    const { cellPx, palette } = this;
+    const colors = empty ? palette.direction.empty : palette.cargo;
     const w = YARD_BOX_CELLS.w * cellPx;
     const h = YARD_BOX_CELLS.h * cellPx;
-    const graphics = new Graphics();
-    graphics
+    this.cargo.clear();
+    this.cargo
       .rect(-w / 2, -h / 2, w, h)
-      .fill({ color: base.color, alpha: base.alpha })
-      .stroke({ width: OUTLINE_CELLS * cellPx, color: dark.color, alpha: dark.alpha, alignment: 1 });
-    graphics.visible = false;
-    return graphics;
+      .fill({ color: colors.base.color, alpha: colors.base.alpha })
+      .stroke({ width: OUTLINE_CELLS * cellPx, color: colors.dark.color, alpha: colors.dark.alpha, alignment: 1 });
   }
 }
 

@@ -1,26 +1,26 @@
 /**
- * Náklad na palube kontajnerovej lode podľa počtu jednotiek (F6a, ADR-032 bod 4, 11): import a export sa rozlišujú farbou
- * (`EntityPalette.direction`, tokeny `--cargo-container` / `--ui-accent`).
+ * Náklad na palube kontajnerovej lode podľa počtu jednotiek (F6a, ADR-032 bod 4, 11; F6c, ADR-034): import, export a prázdne
+ * kontajnery sa rozlišujú farbou (`EntityPalette.direction`, tokeny `--cargo-import` / `--cargo-export` / `--cargo-empty`).
  *
  * Paluba má `bays × columns` miest (polia z `entities.ship_<classId>.deck` v manifeste, kontajner TEU leží dlhšou stranou pozdĺž
  * lode); kapacita lode (`capacityUnits`, desiatky až stovky jednotiek) je väčšia než počet miest, preto sa paluba kreslí ako
- * **podiel**: obsadí sa `⌈(import + export) / capacity × miest⌉` miest (aspoň jedno, kým je na palube niečo) a rozdelí sa medzi
- * smery pomerom jednotiek (každý smer s jednotkami má aspoň jedno miesto, ak sa zmestia obe). Import zaplňuje palubu od predku,
- * export od zadku, takže pri vykládke importu a nakládke exportu sa oba bloky vidia oddelene a nikdy sa neprekrývajú.
+ * **podiel**: obsadí sa `⌈(import + export + prázdne) / capacity × miest⌉` miest (aspoň jedno, kým je na palube niečo) a rozdelí sa
+ * medzi smery pomerom jednotiek (každý smer s jednotkami má aspoň jedno miesto, ak sa zmestia všetky). Import zaplňuje palubu od
+ * predku, export od zadku a prázdne tesne pred exportom (nakladajú sa po plných, stowage ADR-034 bod 10), takže pri vykládke importu
+ * a nakládke exportu a prázdnych sa bloky vidia oddelene a nikdy sa neprekrývajú. Prekládka (`tranship`) sa do počtov zarátava
+ * ako import (loď A) / export (loď B) — rozhoduje `SimBridge`.
  *
  * Čisté funkcie (`deckSlots`, `deckFill`) bez Pixi a `DeckCargo`, ktorý ich kreslí do lokálneho rámca lode (počiatok = stred lode,
  * predok hore; rodič `ShipView` ju otáča o `heading`).
  */
 import { Container, Graphics } from 'pixi.js';
+import { drawContainerBox } from './container-box';
 import { MANIFEST_CELL_PX, manifestScale, shipDeck, shipSprite } from './entity-assets';
 import type { EntityPalette } from './tokens';
 import { TEU_PX } from './world-scale';
 
 /** Hrúbka obrysu kontajnera ako zlomok bunky (2 px pri 64 px, DESIGN_BRIEF §4 „Obrys“). */
 const OUTLINE_CELLS = 2 / 64;
-
-/** Počet priečnych rebier na kontajneri (ako na sprite `container_teu`: dva pruhy). */
-const RIB_COUNT = 2;
 
 /** Miesto pre jeden kontajner na palube: stred (px sveta od stredu lode pri rot 0) a rozmer (naprieč × pozdĺž lode). */
 export interface DeckSlot {
@@ -30,13 +30,21 @@ export interface DeckSlot {
   readonly h: number;
 }
 
-/** Smer nákladu na palube. */
-export type CargoDirection = 'import' | 'export';
+/** Smer nákladu na palube (prekládka sa kreslí ako import / export podľa lode). */
+export type CargoDirection = 'import' | 'export' | 'empty';
 
 /** Počty obsadených miest paluby podľa smeru. */
 export interface DeckFill {
   readonly importSlots: number;
   readonly exportSlots: number;
+  readonly emptySlots: number;
+}
+
+/** Náklad lode podľa smeru v jednotkách (`ShipVM.cargoSplit`); `empty` chýba = žiadne prázdne kontajnery. */
+export interface DeckSplit {
+  readonly import: number;
+  readonly export: number;
+  readonly empty?: number;
 }
 
 /**
@@ -71,30 +79,60 @@ function roundHalfDown(a: number, b: number): number {
   return Math.floor((2 * a + b - 1) / (2 * b));
 }
 
+/** Žiadne obsadené miesta. */
+const NO_FILL: DeckFill = { importSlots: 0, exportSlots: 0, emptySlots: 0 };
+
 /**
- * Koľko miest paluby (z `slotCount`) obsadí import a export pri `split` jednotkách na lodi s kapacitou `capacityUnits`: podiel
- * zaplnenia lode zaokrúhlený nahor (aspoň jedno miesto, kým je na palube jednotka), rozdelenie pomerom smerov, každý neprázdny
- * smer aspoň jedno miesto (pri jedinom mieste ho dostane väčší smer, pri zhode a pri polovici import). Súčet je vždy `≤ slotCount`.
+ * Koľko miest paluby (z `slotCount`) obsadí import, export a prázdne kontajnery pri `split` jednotkách na lodi s kapacitou
+ * `capacityUnits`: podiel zaplnenia lode zaokrúhlený nahor (aspoň jedno miesto, kým je na palube jednotka), rozdelenie pomerom
+ * smerov, každý neprázdny smer aspoň jedno miesto. Ak miest nestačí pre všetky smery, dostanú po jednom tie s najväčším počtom
+ * (pri zhode import, prázdne, export). Export sa zaokrúhľuje prvý (polovica nadol), zvyšok si delia prázdne a import rovnakým
+ * pravidlom; bez prázdnych je výsledok rovnaký ako pri dvoch smeroch (F6a). Súčet je vždy `≤ slotCount`.
  */
-export function deckFill(split: { readonly import: number; readonly export: number }, capacityUnits: number, slotCount: number): DeckFill {
+export function deckFill(split: DeckSplit, capacityUnits: number, slotCount: number): DeckFill {
   const imports = Math.max(0, Math.floor(split.import));
   const exports = Math.max(0, Math.floor(split.export));
-  const total = imports + exports;
-  if (total === 0 || slotCount <= 0) return { importSlots: 0, exportSlots: 0 };
+  const empties = Math.max(0, Math.floor(split.empty ?? 0));
+  const total = imports + exports + empties;
+  if (total === 0 || slotCount <= 0) return NO_FILL;
   const share = capacityUnits > 0 ? Math.ceil((total * slotCount) / capacityUnits) : total; // celočíselne: bez chyby `(a / b) * c`
   const lit = Math.min(slotCount, Math.max(1, share));
-  if (exports === 0) return { importSlots: lit, exportSlots: 0 };
-  if (imports === 0) return { importSlots: 0, exportSlots: lit };
-  if (lit === 1) return exports > imports ? { importSlots: 0, exportSlots: 1 } : { importSlots: 1, exportSlots: 0 };
-  const exportSlots = Math.min(lit - 1, Math.max(1, roundHalfDown(lit * exports, total)));
-  return { importSlots: lit - exportSlots, exportSlots };
+  const kinds = (imports > 0 ? 1 : 0) + (exports > 0 ? 1 : 0) + (empties > 0 ? 1 : 0);
+  if (lit < kinds) {
+    // po jednom miesto pre `lit` najpočetnejších smerov (pri zhode import, prázdne, export)
+    const ranked = (
+      [
+        ['import', imports],
+        ['empty', empties],
+        ['export', exports],
+      ] as const
+    )
+      .filter(([, count]) => count > 0)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, lit)
+      .map(([direction]) => direction);
+    return { importSlots: ranked.includes('import') ? 1 : 0, exportSlots: ranked.includes('export') ? 1 : 0, emptySlots: ranked.includes('empty') ? 1 : 0 };
+  }
+  const exportSlots = exports === 0 ? 0 : Math.min(lit - (kinds - 1), Math.max(1, roundHalfDown(lit * exports, total)));
+  const rest = lit - exportSlots;
+  if (empties === 0) return { importSlots: rest, exportSlots, emptySlots: 0 };
+  if (imports === 0) return { importSlots: 0, exportSlots, emptySlots: rest };
+  const emptySlots = Math.min(rest - 1, Math.max(1, roundHalfDown(rest * empties, imports + empties)));
+  return { importSlots: rest - emptySlots, exportSlots, emptySlots };
 }
 
-/** Rozmiestnenie obsadených miest: import od predku (indexy `0 … importSlots − 1`), export od zadku (posledných `exportSlots`). */
+/**
+ * Rozmiestnenie obsadených miest: import od predku (indexy `0 … importSlots − 1`), export od zadku (posledných `exportSlots`) a prázdne
+ * tesne pred exportom (nakladajú sa po plných). Pri nedostatku miest majú prednosť import a export, prázdne sa neprekryjú.
+ */
 export function deckDirections(fill: DeckFill, slotCount: number): readonly (CargoDirection | null)[] {
   const result: (CargoDirection | null)[] = Array.from({ length: slotCount }, () => null);
   for (let index = 0; index < Math.min(fill.importSlots, slotCount); index++) result[index] = 'import';
   for (let index = 0; index < Math.min(fill.exportSlots, slotCount); index++) result[slotCount - 1 - index] = 'export';
+  for (let index = 0; index < fill.emptySlots; index++) {
+    const at = slotCount - 1 - fill.exportSlots - index;
+    if (at >= 0 && result[at] === null) result[at] = 'empty';
+  }
   return result;
 }
 
@@ -109,7 +147,7 @@ export interface DeckCargoDeps {
 export class DeckCargo extends Container {
   private readonly slots: readonly DeckSlot[];
   private readonly graphics = new Graphics();
-  private fill: DeckFill = { importSlots: 0, exportSlots: 0 };
+  private fill: DeckFill = NO_FILL;
   private drawn = '';
 
   constructor(
@@ -137,9 +175,9 @@ export class DeckCargo extends Container {
   }
 
   /** Nastaví náklad lode; prekreslí len pri zmene počtu obsadených miest. */
-  setCargo(split: { readonly import: number; readonly export: number }, capacityUnits: number): void {
+  setCargo(split: DeckSplit, capacityUnits: number): void {
     const fill = deckFill(split, capacityUnits, this.slots.length);
-    const key = `${String(fill.importSlots)}/${String(fill.exportSlots)}`;
+    const key = `${String(fill.importSlots)}/${String(fill.exportSlots)}/${String(fill.emptySlots)}`;
     if (key === this.drawn) return;
     this.drawn = key;
     this.fill = fill;
@@ -154,16 +192,7 @@ export class DeckCargo extends Container {
       if (direction === null) return;
       const slot = this.slots[index];
       const colors = palette.direction[direction];
-      const left = slot.x - slot.w / 2;
-      const top = slot.y - slot.h / 2;
-      this.graphics
-        .rect(left, top, slot.w, slot.h)
-        .fill({ color: colors.base.color, alpha: colors.base.alpha })
-        .stroke({ width: outline, color: colors.dark.color, alpha: colors.dark.alpha, alignment: 1 });
-      for (let rib = 1; rib <= RIB_COUNT; rib++) {
-        const y = top + (slot.h * rib) / (RIB_COUNT + 1);
-        this.graphics.moveTo(left + outline, y).lineTo(left + slot.w - outline, y).stroke({ width: outline / 2, color: colors.dark.color, alpha: colors.dark.alpha });
-      }
+      drawContainerBox(this.graphics, { left: slot.x - slot.w / 2, top: slot.y - slot.h / 2, w: slot.w, h: slot.h }, colors, outline, 'y');
     });
   }
 }

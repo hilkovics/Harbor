@@ -112,3 +112,32 @@ export function storeEmptyUnit(world: World, lineId: string, moduleId: EntityId,
   return unit;
 }
 
+
+/** Rozdelenie nákladu lode do troch druhov paluby (`ShipVM.cargoSplit`). */
+export interface DeckCounts {
+  import: number;
+  export: number;
+  empty: number;
+}
+
+/**
+ * Orákulum rozdelenia nákladu lode `shipId` pre testy nad skutočným svetom, nezávislé od `src/app/cargo-vm.ts` (tam sa pravidlo A / B pre
+ * prekládku rozhoduje podľa voyage jednotky a lode): smer jednotky, a pri prekládke lode kontraktu — loď A (`contract.shipId`) ju privezie
+ * (import), loď B (`tranship.outShipId`), po záchrane aj akákoľvek iná loď, ju odváža (export). Voyage sa nepoužíva vôbec.
+ */
+export function oracleDeckSplit(world: World, shipId: EntityId): DeckCounts {
+  const split: DeckCounts = { import: 0, export: 0, empty: 0 };
+  const count = world.cargo.countAt('on_ship', shipId);
+  for (let i = 0; i < count; i++) {
+    const unitId = world.cargo.unitAtIndex('on_ship', shipId, i);
+    const unit: CargoUnit | undefined = unitId === undefined ? undefined : world.cargo.get(unitId);
+    if (unit === undefined) throw new Error('jednotka na lodi chýba v ledgeri');
+    if (unit.direction === 'tranship') {
+      const contract = unit.contractId === null ? undefined : world.contracts.get(unit.contractId);
+      split[contract?.shipId === shipId ? 'import' : 'export'] += 1;
+    } else {
+      split[unit.direction] += 1;
+    }
+  }
+  return split;
+}

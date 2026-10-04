@@ -33,7 +33,7 @@
 | T6C-06a | Napojenie render/UI/app na sim 1: prázdne kontajnery, depo, empty handler a toasty nad `empty_cycle` | implementer (sonnet) | no | 02, 04, 05 |
 | T6C-06b | Napojenie na sim 2: prekládka A → B, repositioning, toast lode B, inšpektor + e2e `f6c-live-terminal` | implementer (sonnet) | no | 03, 06a |
 | T6C-07 | Review `src/sim/**` + opravy | sim-reviewer (sonnet) → sim-architect (sonnet) | no | 03 |
-| T6C-07b | Opravy z review F6c (2 major + 7 minor): limit návratov podľa miesta v depe, dosiahnuteľnosť nakládky, hot path, vzdanie sa len `collect`, overenie `pickupPlan` | sim-architect (sonnet) | no | 07 |
+| T6C-07b | Opravy z review F6c (2 major + 5 minor): limit návratov podľa miesta v depe, dosiahnuteľnosť nakládky, hot path, vzdanie sa len `collect`, overenie `pickupPlan` | sim-architect (sonnet) | no | 07 |
 | T6C-08 | Plná pipeline + e2e (test-runner, haiku), artefakt | test-runner (haiku) | no | 06, 07 |
 | T6C-09 | Docs: ARCHITECTURE (sonnet), PROGRESS/BACKLOG/checklist (haiku), PR | implementer / docs-keeper | no | 08 |
 
@@ -169,11 +169,11 @@ Míľnik **M2 „živý terminál“ splnený**: v jednom prístave bežia všet
 | T6C-01 … T6C-05 | hotové |
 | T6C-06a, T6C-06b | hotové (napojenie nad `empty_cycle` a `live_terminal`, e2e `f6c-live-terminal`) |
 | T6C-07 | hotové (review) |
-| T6C-07b | hotové (2 major + 7 minor opravené; dodatok T6C-07b k ADR-034) |
+| T6C-07b | hotové (2 major + 5 minor opravené, m3 do BACKLOG, m7 ponechané; dodatok T6C-07b k ADR-034) |
 | T6C-08 | hotové (plná pipeline, e2e, artefakt) |
 | T6C-09 | hotové (ARCHITECTURE, PORT_OPERATIONS, PROGRESS, BACKLOG) |
 
-**Review `src/sim/**`:** MERGE (2 major + 7 minor opravené v T6C-07b; nálezy odložené mimo fázu sú v `docs/BACKLOG.md` „Z Fázy 6c“).
+**Review `src/sim/**`:** MERGE (2 major + 5 minor opravené v T6C-07b, m3 do BACKLOG, m7 ponechané; nálezy odložené mimo fázu sú v `docs/BACKLOG.md` „Z Fázy 6c“).
 
 **Pipeline:** `pnpm test` zelené: 355 súborov, 8 630 testov.
 

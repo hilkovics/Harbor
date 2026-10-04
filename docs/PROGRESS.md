@@ -259,7 +259,7 @@ Karty: `docs/tasks/phase-06c.md` · vetva `phase/06c-empties-tranship` (stacked 
 Stav: **hotová** (T6C-01 … T6C-09, vrátane T6C-06a, T6C-06b a T6C-07b), **míľnik M2 „živý terminál“ splnený**
 
 **Výsledky:**
-- review sim-reviewer: MERGE (2 major + 7 minor opravené v T6C-07b)
+- review sim-reviewer: MERGE (2 major + 5 minor opravené v T6C-07b, m3 do BACKLOG, m7 ponechané)
 - `pnpm test`: 355 súborov, 8 630 testov zelených
 - `pnpm test:e2e`: 48/48
 - `simrun live_terminal` (60 000 tickov): lostUnits 0, exported 116, shipped 96, emptyReturns 68, emptyRepaired 11, repositioned 24, transhipLoaded 36, stateHash 271a07cc (zhodný s `--roundtrip-at 37000`)

@@ -13,11 +13,17 @@
  *   povolený krok `nextCell → cell` (`isRoadStepAllowed`). Na jednosmerke sa vozidlo proti smeru neotočí; cesta z
  *   `nextCell` potom vedie dopredu (obchádzkou), alebo nie je žiadna a vozidlo prejde do `no_path` uprostred úseku.
  * - Bez cesty vozidlo prejde do `no_path`, zahodí zvyšok trasy (`halt`) a skúsi znova o `logistics.repathIntervalTicks`.
+ * - **Pod hákom** (F6d, ADR-033 dodatok T6D-02): ak je koncovým bodom jobu hák žeriava v kotvisku s jazdným nábrežím, cieľom jazdy nie je
+ *   prístupová bunka kotviska, ale **bunka pod hákom** (`hookCellIndex`) — vozidlo vojde na nábrežie a zastane pod žeriavom (`planJobRoute`).
  */
+import { BerthModule } from '../modules/berth-module';
+import { CraneModule } from '../modules/crane-module';
+import { hookCellIndex } from '../modules/hook-cell';
+import type { EntityId } from '../core/entity-id';
 import type { Module } from '../modules/module';
 import type { TransportJob } from '../logistics/transport-job';
-import { carrierMotionProblem, type MotionProblem } from '../movement/motion-check';
-import { planRouteToModule } from '../movement/route-planning';
+import { carrierMotionProblem, type MotionProblem, type MotionTarget } from '../movement/motion-check';
+import { planRouteToCell, planRouteToModule } from '../movement/route-planning';
 import type { World } from '../world/world';
 import { VehicleError } from './vehicle-error';
 import { VEHICLE_STATE_TRAITS, changeVehicleState, type VehicleDestination } from './vehicle-fsm';
@@ -39,6 +45,41 @@ export function jobModule(world: World, job: TransportJob, destination: VehicleD
   const module = world.modules.get(moduleId);
   if (module === undefined) throw new VehicleError('inconsistent', `${job.label}: modul #${String(moduleId)} (${destination}) vo svete nie je`);
   return module;
+}
+
+/** Bunka pod hákom žeriava `craneId`, ak jeho kotvisko má jazdné nábrežie (F6d); inak `undefined`. */
+export function hookCellOfCrane(world: World, craneId: EntityId): number | undefined {
+  const crane = world.modules.get(craneId);
+  const berth = crane instanceof CraneModule ? world.modules.get(crane.berthId) : undefined;
+  if (!(crane instanceof CraneModule) || !(berth instanceof BerthModule)) return undefined;
+  const cell = hookCellIndex(world.grid, crane, berth);
+  return world.quay.isQuay(cell) ? cell : undefined;
+}
+
+/**
+ * Bunka pod hákom žeriava, ak je ňou cieľ jazdy `destination` jobu (zdroj `in_crane` pri `source`, cieľ `in_crane` pri `target`) a kotvisko
+ * má jazdné nábrežie; inak `undefined` (cieľom jazdy je prístupová bunka modulu jobu).
+ */
+export function hookCellOfJob(world: World, job: TransportJob, destination: VehicleDestination): number | undefined {
+  const end = destination === 'source' ? job.from : job.to;
+  return end.kind === 'in_crane' ? hookCellOfCrane(world, end.craneId) : undefined;
+}
+
+/**
+ * Cieľ jazdy alebo miesta pobytu vozidla podľa jobu a smeru (`destination`): bunka pod hákom (index), inak modul jobu (jeho prístupová
+ * bunka). Pre kontrolu pohybu (`vehicleMotionProblem`) a plánovanie (`planJobRoute`).
+ */
+export function jobTarget(world: World, job: TransportJob, destination: VehicleDestination): MotionTarget {
+  return hookCellOfJob(world, job, destination) ?? jobModule(world, job, destination);
+}
+
+/**
+ * Naplánuje trasu k cieľu jobu (`destination`): k bunke pod hákom (F6d), inak k najbližšej prístupovej bunke modulu jobu (`planRoute`).
+ * `false` = cieľ nie je dosiahnuteľný (vozidlo sa nezmení).
+ */
+export function planJobRoute(world: World, vehicle: Vehicle, job: TransportJob, destination: VehicleDestination): boolean {
+  const hook = hookCellOfJob(world, job, destination);
+  return hook === undefined ? planRoute(world, vehicle, jobModule(world, job, destination)) : planRouteToCell(world, vehicle, hook);
 }
 
 /**
@@ -65,20 +106,21 @@ export function enterNoPath(world: World, vehicle: Vehicle): void {
 export function startTrip(world: World, vehicle: Vehicle, travel: TravelState): void {
   const destination = VEHICLE_STATE_TRAITS[travel].destination;
   if (destination === null) throw new VehicleError('inconsistent', `${vehicle.label}: stav '${travel}' nemá cieľ`);
-  const module = jobModule(world, jobOfVehicle(world, vehicle), destination);
+  const job = jobOfVehicle(world, vehicle);
+  jobModule(world, job, destination); // modul jobu musí existovať (VehicleError('inconsistent') pri poškodenom svete)
   changeVehicleState(world.events, vehicle, travel);
-  if (!planRoute(world, vehicle, module)) enterNoPath(world, vehicle);
+  if (!planJobRoute(world, vehicle, job, destination)) enterNoPath(world, vehicle);
 }
 
 /** Problém pohybu vozidla s poľom záznamu v save, ku ktorému patrí (krok 12, obnova) — zdieľaný `MotionProblem`. */
 export type VehicleMotionProblem = MotionProblem;
 
-/** Modul jobu, ku ktorému vozidlo v danom stave ide / pri ktorom stojí (bez vyhadzovania); inak `undefined`. */
-function destinationOf(world: World, vehicle: Vehicle): Module | undefined {
+/** Cieľ, ku ktorému vozidlo v danom stave ide / pri ktorom stojí (bez vyhadzovania): bunka pod hákom, alebo modul jobu; inak `undefined`. */
+function destinationOf(world: World, vehicle: Vehicle): MotionTarget | undefined {
   const destination = VEHICLE_STATE_TRAITS[vehicle.state].destination;
   const job = destination === null || vehicle.jobId === null ? undefined : world.jobs.get(vehicle.jobId);
   if (job === undefined || destination === null) return undefined;
-  return world.modules.get(destination === 'source' ? job.fromModuleId : job.toModuleId);
+  return hookCellOfJob(world, job, destination) ?? world.modules.get(destination === 'source' ? job.fromModuleId : job.toModuleId);
 }
 
 /**

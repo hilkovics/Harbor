@@ -12,6 +12,11 @@
  *  - držaný náklad (`holding`) je pod vozíkom.
  * Odznak `overlay.blocked_badge` (pri `blocked`) sa neotáča so žeriavom — ostáva čitateľný.
  *
+ * **Základňa je samostatný koreň** (`baseView`, F6d, T6D-02): kreslí sa pod vozidlami (vrstva `CraneLayer.baseView`), kým výložník, vozík
+ * a náklad (`view`) nad nimi — vozidlo, ktoré pri odovzdaní stojí pod žeriavom (`CraneVM.hook`), je tak vidieť v portáli žeriava a vozík
+ * s kontajnerom nad ním. Kontajner držaný v `placing` sa pri vykládke spúšťa z vozíka na vozidlo (pri nakládke z neho stúpa), viď
+ * `hook-lowering.ts`; bez `hook` (režim `apron`) ostáva pod vozíkom.
+ *
  * Chýbajúci sprite časti → obdĺžnik z tokenov (`--crane-frame` / `--crane-boom`).
  */
 import { Container, Graphics, Sprite } from 'pixi.js';
@@ -28,6 +33,7 @@ import {
   type ModuleSpriteEntry,
 } from './entity-assets';
 import { footprintPose, type FootprintPose } from './footprint-pose';
+import { hookCargoScale, hookLocalPx, hookLowering } from './hook-lowering';
 import type { CraneCycleVM, CraneVM } from './view-models';
 
 export type CraneState = CraneVM['state'];
@@ -147,20 +153,25 @@ export interface CraneViewDeps extends CargoSpriteDeps {
 }
 
 export class CraneView {
-  /** Koreň view: počiatok = stred footprintu vo svete (px), NEotočený (odznak ostáva vzpriamený). */
+  /** Koreň view: počiatok = stred footprintu vo svete (px), NEotočený (odznak ostáva vzpriamený); výložník, vozík, náklad a odznak. */
   readonly view: Container;
+  /** Koreň základne (F6d): rovnaká poloha ako `view`, kreslí sa pod vozidlami (`CraneLayer.baseView`). */
+  readonly baseView: Container;
   readonly id: number;
   private last: CraneVM;
   private readonly pose: FootprintPose;
   private readonly entry: ModuleSpriteEntry | undefined;
   private readonly parts: CraneParts | undefined;
   private readonly scale: number;
-  /** Otočená časť (základňa + výložník + vozík). */
+  /** Otočená časť `view` (výložník + vozík). */
   private readonly body = new Container({ label: 'crane-body' });
+  /** Otočená základňa (`baseView`). */
+  private readonly baseBody = new Container({ label: 'crane-base-body' });
   private readonly boomGroup = new Container({ label: 'crane-boom' });
   private readonly moverGroup = new Container({ label: 'crane-mover' });
   private readonly badge: Container;
   private held: CargoSprite | null = null;
+  private loweringShare = 0;
 
   constructor(
     vm: CraneVM,
@@ -176,6 +187,10 @@ export class CraneView {
     this.view.position.set(this.pose.cx, this.pose.cy);
     this.body.angle = this.pose.angle;
     this.view.addChild(this.body);
+    this.baseView = new Container({ label: `crane-base-${String(vm.id)}` });
+    this.baseView.position.set(this.pose.cx, this.pose.cy);
+    this.baseBody.angle = this.pose.angle;
+    this.baseView.addChild(this.baseBody);
     this.build();
     this.badge = this.createBadge();
     this.badge.scale.set(deps.badgeScale ?? 1);
@@ -207,6 +222,11 @@ export class CraneView {
     return this.held;
   }
 
+  /** Podiel spustenia držaného nákladu na vozidlo pod hákom 0…1 (F6d; 0 bez `hook`, bez nákladu alebo pod vozíkom; testy). */
+  get lowering(): number {
+    return this.loweringShare;
+  }
+
   /** Nastaví fázu cyklu: vozík, sklon výložníka, držaný náklad, odznak. Nič nerobí (ani nealokuje) pri nezmenenom VM. */
   update(vm: CraneVM): void {
     const before = this.last;
@@ -234,7 +254,40 @@ export class CraneView {
     }
     this.boomGroup.angle = craneBoomTilt(vm.state, vm.cycle);
     this.syncHeld(vm);
+    this.placeHeld(vm);
     this.badge.visible = vm.state === 'blocked';
+  }
+
+  /**
+   * Poloha držaného nákladu voči vozíku (F6d): s `vm.hook` ho `hookLowering` posúva z vozíka na stred bunky pod hákom, kde stojí vozidlo
+   * (a zmenšuje z mierky „v zdvihu“ na 1); bez `hook` (režim `apron`) ostáva pod vozíkom v mierke 1.
+   */
+  private placeHeld(vm: CraneVM): void {
+    const held = this.held;
+    this.loweringShare = 0;
+    if (held === null) return;
+    const hook = vm.hook;
+    if (hook === undefined) {
+      held.position.set(0, 0);
+      held.scale.set(1);
+      return;
+    }
+    const lowering = hookLowering(craneCycleDirection(vm.cycle), vm.state, vm.progress);
+    this.loweringShare = lowering;
+    held.scale.set(hookCargoScale(lowering));
+    if (lowering === 0) {
+      held.position.set(0, 0); // pod vozíkom (bez záporných núl zo súčinu s 0)
+      return;
+    }
+    const target = hookLocalPx({ x: this.pose.cx, y: this.pose.cy }, vm.rotation, hook, this.deps.cellPx);
+    // Poloha vozíka v súradniciach tela (otočený výložník okolo bodu uchytenia), potom vektor k bunke pod hákom späť do súradníc vozíka.
+    const radians = (this.boomGroup.angle * Math.PI) / 180;
+    const sin = Math.sin(radians);
+    const cos = Math.cos(radians);
+    const trolleyY = this.moverGroup.y;
+    const dx = target.x - (this.boomGroup.x - trolleyY * sin);
+    const dy = target.y - (this.boomGroup.y + trolleyY * cos);
+    held.position.set((dx * cos + dy * sin) * lowering, (dy * cos - dx * sin) * lowering);
   }
 
   /** Nastaví veľkosť odznaku podľa zoomu kamery (`badgeScaleForZoom`). */
@@ -245,6 +298,7 @@ export class CraneView {
   destroy(): void {
     this.held = null;
     this.view.destroy({ children: true });
+    this.baseView.destroy({ children: true });
   }
 
   /** Náklad pod vozíkom: vytvorí / vymení / zruší podľa `vm.holding`. */
@@ -270,7 +324,7 @@ export class CraneView {
     const { baseW, baseH } = this.pose;
     const { parts } = this;
     const topLeft: ManifestPoint = { x: (-baseW * cellPx) / 2, y: (-baseH * cellPx) / 2 };
-    this.body.addChild(this.partDisplay(parts?.baseFile, { w: baseW, h: baseH }, { x: 0, y: 0 }, 'frame', topLeft));
+    this.baseBody.addChild(this.partDisplay(parts?.baseFile, { w: baseW, h: baseH }, { x: 0, y: 0 }, 'frame', topLeft));
     const boom = parts?.boom;
     if (boom === undefined) return;
     const mount = boom.mountOnBase ?? { x: 0, y: 0 };

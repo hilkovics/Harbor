@@ -6,8 +6,8 @@ import { dismissToasts } from './dismiss-toasts';
 // odstránenie). Na stav sa čaká cez `window.__sim` (polling v rAF stránky), nie pevnými timeoutmi — test rýchlosti hodín F1
 // bol citlivý na záťaž.
 //
-// Predvolený režim odovzdávania kotviska je od F6a `under_hook` (ADR-033): žeriav bez vozidla pod hákom vyloží najviac jednu
-// jednotku do bufferu na aprone a čaká, takže loď neodpláva, kým nemá kam vykladať. Testy vykládky preto pred spawnom lode
+// Predvolený režim odovzdávania kotviska je od F6a `under_hook` (ADR-033): žeriav bez vozidla pod hákom drží jednotku v háku
+// (predvolený buffer 0 od T6D-02, apron ostáva prázdny) a čaká, takže loď neodpláva, kým nemá kam vykladať. Testy vykládky preto pred spawnom lode
 // postavia sklad, cesty a depo a kúpia vozidlo (rozloženie F3, `buildUnloadLogistics`); test „bez vozidla“ overí samotné
 // čakanie (inšpektor „Čaká na vozidlo“) a že vykládka pokračuje, keď logistika pribudne.
 //
@@ -209,7 +209,7 @@ test.describe('F2: loď, žeriav, apron (T02-12)', () => {
     // 3) HUD: rýchlosti zo snapshotu
     await expect(page.locator('[data-field="speed"] button')).toHaveCount(5);
 
-    // 4) Logistika (ADR-033): cesty, depo, dvor a vozidlo ešte pred lodou, inak by žeriav po jednej jednotke v bufferu čakal na
+    // 4) Logistika (ADR-033): cesty, depo, dvor a vozidlo ešte pred lodou, inak by žeriav s jednotkou v háku čakal na
     // vozidlo. Potom SpawnShipDebug + 4×: loď doplaví a zakotví (podmienka sa vyhodnotí v rAF stránky a pri zhode hneď spomalí
     // hru na 1×, aby vykládka nepreletela medzi dvoma snímkami)
     await buildUnloadLogistics(page);
@@ -431,17 +431,17 @@ test.describe('F2: loď, žeriav, apron (T02-12)', () => {
     expect(errors).toEqual([]);
   });
 
-  test('bez vozidla (ADR-033): žeriav vyloží 1 jednotku do bufferu a čaká, inšpektor „Čaká na vozidlo“; po dodaní logistiky vykládka dokončí', async ({ page }) => {
+  test('bez vozidla (ADR-033, buffer 0 od T6D-02): žeriav drží prvú jednotku v háku a čaká, apron ostáva prázdny, inšpektor „Čaká na vozidlo“; po dodaní logistiky vykládka dokončí', async ({ page }) => {
     const { errors } = await openGame(page);
 
-    // loď bez skladu, ciest a vozidiel: žeriav odloží prvú jednotku na buffer (1 slot apronu) a druhú drží v háku
+    // loď bez skladu, ciest a vozidiel: predvolený buffer 0 — žeriav nemá kam odložiť, prvú jednotku drží v háku a apron ostáva prázdny
     await spawnDevShip(page);
     await setSpeed(page, 4);
     await waitInPage(page, () => {
       const { ships, cranes, modules } = window.__sim!.entities();
       const crane = window.__sim!.world.modules.get(2 as never) as unknown as { readonly waitForVehicleTicks: number };
       const waiting =
-        ships[0]?.state === 'docked' && cranes[0]?.state === 'placing' && cranes[0].holding !== null && (modules[0]?.apron?.units.length ?? 0) === 1 && crane.waitForVehicleTicks > 5;
+        ships[0]?.state === 'docked' && cranes[0]?.state === 'placing' && cranes[0].holding !== null && (modules[0]?.apron?.units.length ?? 0) === 0 && crane.waitForVehicleTicks > 5;
       if (waiting) window.__sim!.world.clock.setSpeed(0);
       return waiting;
     });
@@ -449,8 +449,8 @@ test.describe('F2: loď, žeriav, apron (T02-12)', () => {
       const { ships, cranes, modules } = window.__sim!.entities();
       return { held: cranes[0]?.holding?.unitId, onBoard: ships[0]?.unitsOnBoard, apron: modules[0]?.apron?.units.length, tick: window.__sim!.world.clock.tick };
     });
-    expect(waitingAt.apron).toBe(1);
-    expect(waitingAt.onBoard).toBe(2); // 4 TEU: jedna na aprone, jedna v háku, dve ešte na lodi
+    expect(waitingAt.apron).toBe(0);
+    expect(waitingAt.onBoard).toBe(3); // 4 TEU: jedna v háku, tri ešte na lodi
 
     // inšpektor žeriavu: „Čaká na vozidlo“ (žltý badge + banner), nie „Vykladá“; Odstrániť ostáva zablokované (žeriav drží jednotku)
     await dismissToasts(page);
@@ -463,14 +463,14 @@ test.describe('F2: loď, žeriav, apron (T02-12)', () => {
     await parkMouse(page);
     await page.screenshot({ path: 'tests/e2e/__screenshots__/f2-crane-waiting.png', fullPage: true });
 
-    // žeriav naozaj čaká: po ďalších tickoch drží tú istú jednotku a na lodi ostali dve (nič sa nevyloží bez vozidla)
+    // žeriav naozaj čaká: po ďalších tickoch drží tú istú jednotku a na lodi ostali tri (nič sa nevyloží bez vozidla)
     await setSpeed(page, 4);
     await page.waitForFunction((tick) => window.__sim!.world.clock.tick >= tick + 200, waitingAt.tick);
     const later = await page.evaluate(() => {
       const { ships, cranes, modules } = window.__sim!.entities();
       return { held: cranes[0]?.holding?.unitId, onBoard: ships[0]?.unitsOnBoard, apron: modules[0]?.apron?.units.length, state: cranes[0]?.state, shipState: ships[0]?.state };
     });
-    expect(later).toMatchObject({ held: waitingAt.held, onBoard: 2, apron: 1, state: 'placing', shipState: 'docked' });
+    expect(later).toMatchObject({ held: waitingAt.held, onBoard: 3, apron: 0, state: 'placing', shipState: 'docked' });
     await expect(inspector(page).locator('[data-field="badge"]')).toHaveText('Čaká na vozidlo');
 
     // dodanie logistiky (cesty, depo, dvor, vozidlo) uvoľní čakanie: všetky 4 jednotky skončia vo dvore, loď odpláva, žeriav je nečinný

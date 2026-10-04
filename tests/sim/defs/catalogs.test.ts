@@ -248,7 +248,8 @@ describe('bundled katalógy (loadBundledDefs)', () => {
       frontWaterCells: 3,
       apronReserveSlots: 2,
       handoverMode: 'under_hook',
-      craneBufferSlots: 1,
+      // Predvolený buffer 0 (T6D-02): žeriav odovzdáva vozidlu priamo pod hákom a čaká naň, apron nepoužíva.
+      craneBufferSlots: 0,
     });
     expect(craneParams(defs.modules.get('crane_container_gantry'))).toEqual({ cycleTicks: 12, category: 'container', wagePerDayCents: 25_000, dualCycleFactor: 1.5 });
   });

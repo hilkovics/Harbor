@@ -10,7 +10,8 @@
  *   obsadené sloty v poradí FIFO (`apron.units()`) so slotom (`slotOf`) a typom nákladu z ledgera; prázdny kontajner (F6c)
  *   navyše `empty` a `lineToken` (farba linky).
  * - Žeriavy: `progress` = `phaseProgress` fázy (0 v `idle`/`blocked`), `holding` = držaná jednotka z ledgera (F6c: `empty` pri
- *   prázdnom kontajneri), `cycle` = smer cyklu (`crane.cycle`: vykládka / nakládka / dual, F6a).
+ *   prázdnom kontajneri), `cycle` = smer cyklu (`crane.cycle`: vykládka / nakládka / dual, F6a), `hook` = stred bunky pod hákom,
+ *   kde stojí vozidlo pri odovzdaní (F6d, T6D-02; len kotvisko s jazdným nábrežím, režim `apron` ho nemá).
  * - Sklady (`StorageModule`): `storage = { capacity, stored, reserved }` z modulu (obsadenie číta modul z ledgera) a
  *   `lastStorageOp = { slot, tick, kind }` — posledné uloženie / vzatie kontajnera na slote (F5b č. 8, animácia portálového
  *   žeriavu dvora; F6c: `empty` pri prázdnom kontajneri). Sim ju nevedie: skladá ju `SimBridge` z udalostí `CargoMoved`
@@ -58,6 +59,7 @@ import type { EntityId } from '@sim/core';
 import { BerthModule, CraneModule, EmptyDepot, LoadingRamp, StorageModule, TruckGate, WaitingArea, type Module } from '@sim/modules';
 import { SHIP_STATE_TRAITS, type Ship } from '@sim/ships';
 import type { Truck } from '@sim/trucks';
+import { hookCellOfCrane } from '@sim/vehicles';
 import type { World } from '@sim/world';
 import { depotVM, emptiesPerDock, emptyLook, holderCarriesEmpty, isEmptyUnit, shipDeckSplit, ShipSplitCache, truckCarriesEmpty, type DeckSplit } from './cargo-vm';
 import { lashingTicks, type LashingTotals } from './lashing';
@@ -284,6 +286,7 @@ export function craneVMs(world: World): CraneVM[] {
     const held = module.heldUnitId;
     const heldUnit = held === null ? undefined : unitOf(world, held, module.label);
     const idlePhase = module.state === 'idle' || module.state === 'blocked';
+    const hook = hookCellOfCrane(world, module.id); // F6d: bunka pod hákom, len pri kotvisku s jazdným nábrežím (under_hook)
     result.push({
       id: module.id,
       defId: module.def.id,
@@ -295,6 +298,7 @@ export function craneVMs(world: World): CraneVM[] {
       progress: idlePhase ? 0 : Math.min(1, Math.max(0, module.phaseProgress)),
       holding: heldUnit === undefined ? null : { unitId: heldUnit.id, typeId: heldUnit.typeId, ...(isEmptyUnit(heldUnit) ? { empty: true } : {}) },
       cycle: module.cycle,
+      ...(hook === undefined ? {} : { hook: { x: (hook % world.grid.width) + 0.5, y: Math.floor(hook / world.grid.width) + 0.5 } }),
     });
   }
   return result;

@@ -27,7 +27,7 @@ import { CRANE_CYCLE_TRAITS, CraneModule } from '../modules/crane-module';
 import { ModuleError } from '../modules/module-error';
 import type { Contract } from '../contracts/contract';
 import type { Ship } from '../ships/ship';
-import { changeVehicleState } from '../vehicles/vehicle-fsm';
+import { VEHICLE_STATE_TRAITS, changeVehicleState } from '../vehicles/vehicle-fsm';
 import { startTrip } from '../vehicles/vehicle-trip';
 import type { World } from '../world/world';
 
@@ -41,6 +41,11 @@ export interface CraneEnv {
 
 /** Stratégia odovzdávania pre režim kotviska (viď hlavička súboru). */
 export interface Handover {
+  /**
+   * Vozidlo pri odovzdaní stojí pod žeriavom (hook: áno — nábrežie kotviska je jazdné a cieľom jazdy je bunka pod hákom, `logistics/quay-lanes.ts`,
+   * `modules/hook-cell.ts`; apron: nie — vozidlo ide na prístupovú bunku cesty a jednotku si berie z apronu).
+   */
+  readonly vehiclesUnderHook: boolean;
   /**
    * Vykládka rezervuje slot apronu od `grabbing` (`CRANE_CYCLE_TRAITS.reservesFrom`) a jednotku z lode vyberie až koniec `grabbing`
    * (apron: áno), alebo nerezervuje nič a pri štarte cyklu vyberie cieľ cyklu `targetUnitId` (hook: nie).
@@ -114,6 +119,7 @@ function apronUnloadSlot({ world, berth, ship }: CraneEnv): boolean {
 }
 
 const APRON_HANDOVER: Handover = {
+  vehiclesUnderHook: false,
   reservesUnloadSlot: true,
   plansUnloadTarget: false,
   planUnload: (env, continuation) => (continuation || apronUnloadSlot(env) ? null : undefined),
@@ -201,12 +207,17 @@ function claimImports(world: World, ship: Ship, self: CraneModule): readonly Ent
   return CLAIMED;
 }
 
-/** Čaká pod hákom žeriava vozidlo s jednotkou na nakládku (`unloading` pri jobe s cieľom `in_crane` tohto žeriava)? */
-function vehicleWaitsForLoad(world: World, crane: CraneModule): boolean {
+/**
+ * Čaká pod hákom žeriava vozidlo, ktorému žeriav práve nemôže slúžiť: s jednotkou na nakládku (`unloading` pri jobe s cieľom `in_crane`
+ * tohto žeriava), alebo na inú jednotku vykládky (`loading` pri jobe so zdrojom `in_crane` tohto žeriava, kým žeriav drží jednotku iného jobu)?
+ */
+function vehicleWaitsUnderHook(world: World, crane: CraneModule): boolean {
   for (const vehicle of world.vehicles.values()) {
-    if (vehicle.state !== 'unloading' || vehicle.jobId === null) continue;
+    if ((vehicle.state !== 'unloading' && vehicle.state !== 'loading') || vehicle.jobId === null) continue;
     const job = world.jobs.get(vehicle.jobId);
-    if (job !== undefined && job.to.kind === 'in_crane' && job.to.craneId === crane.id) return true;
+    if (job === undefined) continue;
+    const end = vehicle.state === 'unloading' ? job.to : job.from;
+    if (end.kind === 'in_crane' && end.craneId === crane.id) return true;
   }
   return false;
 }
@@ -218,13 +229,16 @@ export function hookBufferFree(world: World, berth: BerthModule): boolean {
 }
 
 const HOOK_HANDOVER: Handover = {
+  vehiclesUnderHook: true,
   reservesUnloadSlot: false,
   plansUnloadTarget: true,
   planUnload: ({ world, crane, ship }) => {
-    // Jednotka pre tento žeriav: najmenšie id s vozidlom už pod hákom (žeriav nečaká), inak s jobom na tento žeriav (vozidlo je na
-    // ceste), inak prvá voľná jednotka importu (job vznikne v kroku 5 toho istého ticku). Jednotky s jobom iného žeriava a zabrané
-    // jednotky sa preskočia.
+    // Jednotka pre tento žeriav v poradí: (1) najmenšie id s vozidlom už pod hákom (žeriav nečaká), (2) job s vozidlom na ceste k háku
+    // (priradené vozidlo príde — bez neho by žeriav s jednotkou čakal na vozidlo, ktoré nikdy nepríde, T6D-02), (3) job bez vozidla,
+    // (4) prvá voľná jednotka importu (job vznikne v kroku 5 toho istého ticku). Jednotky s jobom iného žeriava a zabrané jednotky
+    // sa preskočia.
     const claimed = claimImports(world, ship, crane);
+    let enRoute: EntityId | undefined;
     let queued: EntityId | undefined;
     let fresh: EntityId | undefined;
     const count = world.cargo.countAt('on_ship', ship.id);
@@ -240,9 +254,10 @@ const HOOK_HANDOVER: Handover = {
       if (job.from.kind !== 'in_crane' || job.from.craneId !== crane.id) continue;
       const vehicle = job.vehicleId === null ? undefined : world.vehicles.get(job.vehicleId);
       if (vehicle?.state === 'loading') return unitId;
-      queued ??= unitId;
+      if (vehicle === undefined) queued ??= unitId;
+      else enRoute ??= unitId;
     }
-    return queued ?? fresh;
+    return enRoute ?? queued ?? fresh;
   },
   reserveUnload: () => undefined,
   blocksWhenNotReady: false,
@@ -265,14 +280,18 @@ const HOOK_HANDOVER: Handover = {
       return true;
     }
     // Buffer: pod hákom nikto nečaká — jednotka na apron a job (ak vznikol) ju odtiaľ vezme vozidlo bežným spôsobom. Protideadlock:
-    // ak pod hákom čaká vozidlo s exportom, žeriav s jednotkou v ruke by ho zablokoval (vozidlá viazané na nakládku nedoplnia
-    // vozidlo pre túto jednotku) — vtedy sa použije ľubovoľný voľný slot apronu aj nad `craneBufferSlots`.
-    if (!hookBufferFree(world, berth) && !(vehicleWaitsForLoad(world, crane) && berth.apron.freeUnreservedCount > 0)) return false;
+    // ak pod hákom čaká vozidlo, ktorému tento žeriav s jednotkou v ruke neslúži (export na nakládku, alebo vozidlo iného jobu
+    // vykládky), žeriav by ho zablokoval (vozidlo nedoplní jednotku pre túto ani jeho jednotku) — vtedy sa použije ľubovoľný voľný
+    // slot apronu aj nad `craneBufferSlots` (aj pri bufferi 0, T6D-02).
+    if (!hookBufferFree(world, berth) && !(vehicleWaitsUnderHook(world, crane) && berth.apron.freeUnreservedCount > 0)) return false;
     const slot = berth.apron.reserve();
     berth.apron.assertCommittable(slot, unitId);
     world.cargo.move(unitId, { kind: 'on_apron', berthId: berth.id, slot });
     berth.apron.commit(slot, unitId);
     job?.rebindSource({ kind: 'on_apron', berthId: berth.id, slot });
+    // Vozidlo jobu jazdí k háku (nábrežie) — odteraz si jednotku berie z apronu, trasu preplánuje na prístupovú bunku kotviska.
+    const assigned = job === undefined || job.vehicleId === null ? undefined : world.vehicles.get(job.vehicleId);
+    if (assigned !== undefined && VEHICLE_STATE_TRAITS[assigned.state].motion === 'drive') assigned.replanPending = true;
     return true;
   },
   loadable: ({ world, crane }, bookings) => bestUnderHook(world, crane, bookings)?.id,

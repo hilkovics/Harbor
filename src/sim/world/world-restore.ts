@@ -56,7 +56,8 @@ import { truckWaitLimit } from '../trucks/truck-wait';
 import { Vehicle } from '../vehicles/vehicle';
 import { VehicleError, type VehicleErrorCode } from '../vehicles/vehicle-error';
 import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle-fsm';
-import { vehicleMotionProblem } from '../vehicles/vehicle-trip';
+import { hookCellOfCrane, vehicleMotionProblem } from '../vehicles/vehicle-trip';
+import { planRouteToCell } from '../movement/route-planning';
 import { CARGO_HOLDER_SOURCES } from './cargo-holders';
 import { WorldStateError, isPlainObject, pointerSegment } from './state-check';
 import type { World } from './world';
@@ -215,31 +216,70 @@ const VEHICLE_ERROR_FIELD: { readonly [C in VehicleErrorCode]: string } = {
 };
 
 /**
- * Vozidlá vzostupne podľa id: inštancia `Vehicle` (def a stav overil `parseWorldState`), potom `World.addVehicle`
- * (depo existuje a má voľné státie; `VehicleError` → `WorldStateError` s poľom záznamu). Job vozidla overí
- * `restoreJobs`.
+ * Vozidlo s jobom pod hákom zo save spred jazdného nábrežia (T6D-02, ADR-033 dodatok): vozidlo stálo (`loading` / `unloading`) alebo
+ * mieri (`to_pickup` / `to_dropoff`) na prístupovú bunku kotviska, no cieľom jazdy je teraz bunka pod hákom (`hookCellOfCrane`).
+ * Deterministický prevod bez `Rng`: čakajúce vozidlo sa vráti do jazdy (`loading → to_pickup`, `unloading → to_dropoff`; stav jobu sa odvodí
+ * z vozidla), jazdiace si zachová rozbehnutý úsek; trasa k háku sa naplánuje zo stojacej bunky (`planRouteToCell`), bez cesty vozidlo skončí
+ * v `no_path` a skúsi znova. Vozidlo, ktoré už stojí pod hákom alebo k nemu mieri, ani vozidlo bez jobu pod hákom sa nemení.
  */
-function restoreVehicles(world: World, entries: readonly ParsedVehicleEntry[]): void {
+function adaptHookVehicle(world: World, vehicle: Vehicle, entry: ParsedVehicleEntry, jobs: ReadonlyMap<EntityId, ParsedJobEntry>): Vehicle {
+  const job = entry.jobId === null ? undefined : jobs.get(entry.jobId);
+  const destination = VEHICLE_STATE_TRAITS[entry.state].destination;
+  if (job === undefined || destination === null) return vehicle;
+  const end = destination === 'source' ? job.from : job.to;
+  const hook = end.kind === 'in_crane' ? hookCellOfCrane(world, end.craneId) : undefined;
+  if (hook === undefined) return vehicle;
+  const parked = VEHICLE_STATE_TRAITS[entry.state].motion === 'park';
+  if (parked ? vehicle.cell === hook : vehicle.routeCellAt(vehicle.cellsAhead) === hook) return vehicle;
+  const resumed = entry.state === 'loading' ? 'to_pickup' : 'to_dropoff';
+  const moving = parked
+    ? new Vehicle({ ...vehicleInit(world, entry), state: resumed, route: [vehicle.cell], progress: 0, waitTicks: 0, replanPending: false })
+    : vehicle;
+  if (planRouteToCell(world, moving, hook)) return moving;
+  moving.halt();
+  return new Vehicle({
+    ...vehicleInit(world, entry),
+    state: 'no_path',
+    x: moving.x,
+    y: moving.y,
+    heading: moving.heading,
+    route: moving.remainingRoute(),
+    progress: moving.progress,
+    waitTicks: world.defs.logistics.repathIntervalTicks,
+    replanPending: false,
+  });
+}
+
+/** Vstup `Vehicle` zo záznamu v save (`restoreVehicles`, `adaptHookVehicle`). */
+function vehicleInit(world: World, entry: ParsedVehicleEntry): ConstructorParameters<typeof Vehicle>[0] {
+  return {
+    id: entry.id,
+    def: world.defs.vehicles.get(entry.defId),
+    depotId: entry.depotId,
+    state: entry.state,
+    x: entry.x,
+    y: entry.y,
+    heading: entry.heading,
+    jobId: entry.jobId,
+    purchaseCostCents: entry.purchaseCostCents,
+    route: entry.route,
+    progress: entry.progress,
+    waitTicks: entry.waitTicks,
+    replanPending: entry.replan,
+  };
+}
+
+/**
+ * Vozidlá vzostupne podľa id: inštancia `Vehicle` (def a stav overil `parseWorldState`; vozidlo pod hákom zo save spred T6D-02 prevedie
+ * `adaptHookVehicle`), potom `World.addVehicle` (depo existuje a má voľné státie; `VehicleError` → `WorldStateError` s poľom záznamu). Job
+ * vozidla overí `restoreJobs`.
+ */
+function restoreVehicles(world: World, entries: readonly ParsedVehicleEntry[], jobEntries: readonly ParsedJobEntry[]): void {
+  const jobs = new Map<EntityId, ParsedJobEntry>(jobEntries.map((job) => [job.id, job]));
   entries.forEach((entry, index) => {
     const path = vehiclePath(index);
     try {
-      world.addVehicle(
-        new Vehicle({
-          id: entry.id,
-          def: world.defs.vehicles.get(entry.defId),
-          depotId: entry.depotId,
-          state: entry.state,
-          x: entry.x,
-          y: entry.y,
-          heading: entry.heading,
-          jobId: entry.jobId,
-          purchaseCostCents: entry.purchaseCostCents,
-          route: entry.route,
-          progress: entry.progress,
-          waitTicks: entry.waitTicks,
-          replanPending: entry.replan,
-        }),
-      );
+      world.addVehicle(adaptHookVehicle(world, new Vehicle(vehicleInit(world, entry)), entry, jobs));
     } catch (error) {
       if (error instanceof VehicleError) throw new WorldStateError(`${path}/${VEHICLE_ERROR_FIELD[error.code]}`, error.message);
       throw error;
@@ -896,7 +936,7 @@ export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'mo
   restoreModules(world, entries);
   restoreShips(world, parsed.ships);
   checkShipRoutes(world);
-  restoreVehicles(world, parsed.vehicles);
+  restoreVehicles(world, parsed.vehicles, parsed.jobs);
   restoreTrucks(world, parsed.trucks);
   const indexOf = new Map<EntityId, number>(entries.map((entry, index) => [entry.id, index]));
   const unitIndexOf = new Map<EntityId, number>(units.map((unit, index) => [unit.id, index]));

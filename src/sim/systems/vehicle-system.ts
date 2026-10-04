@@ -32,7 +32,7 @@ import { advanceCarrier } from '../movement/route-planning';
 import type { Vehicle } from '../vehicles/vehicle';
 import { VehicleError } from '../vehicles/vehicle-error';
 import { HOOK_WAIT_TICKS, RESUME_AFTER_NO_PATH, VEHICLE_STATE_TRAITS, changeVehicleState, type VehicleState } from '../vehicles/vehicle-fsm';
-import { enterNoPath, jobModule, jobOfVehicle, planRoute, startTrip } from '../vehicles/vehicle-trip';
+import { enterNoPath, jobModule, jobOfVehicle, planJobRoute, startTrip } from '../vehicles/vehicle-trip';
 import type { World } from '../world/world';
 
 /** Čo sa stane pri príchode na koniec trasy (`to_*`): stav vozidla, stav jobu a trvanie manipulácie jednotky. */
@@ -93,7 +93,7 @@ function drive(vehicle: Vehicle, world: World): void {
   if (vehicle.replanPending) {
     const destination = VEHICLE_STATE_TRAITS[vehicle.state].destination;
     if (destination === null) throw new VehicleError('inconsistent', `${vehicle.label}: jazda v stave '${vehicle.state}' bez cieľa`);
-    if (!planRoute(world, vehicle, jobModule(world, jobOfVehicle(world, vehicle), destination))) {
+    if (!planJobRoute(world, vehicle, jobOfVehicle(world, vehicle), destination)) {
       enterNoPath(world, vehicle);
       return;
     }
@@ -155,7 +155,7 @@ function retry(vehicle: Vehicle, world: World): void {
   const travel = RESUME_AFTER_NO_PATH[job.state];
   const destination = travel === undefined ? null : VEHICLE_STATE_TRAITS[travel].destination;
   if (travel === undefined || destination === null) throw new VehicleError('inconsistent', `${vehicle.label}: no_path s ${job.label} v stave '${job.state}'`);
-  if (planRoute(world, vehicle, jobModule(world, job, destination))) {
+  if (planJobRoute(world, vehicle, job, destination)) {
     changeVehicleState(world.events, vehicle, travel);
   } else {
     vehicle.waitTicks = world.defs.logistics.repathIntervalTicks;

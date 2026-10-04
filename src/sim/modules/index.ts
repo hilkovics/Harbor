@@ -53,6 +53,7 @@ export type {
   CraneState,
   CraneStateTraits,
 } from './crane-module';
+export { hookCellCoord, hookCellIndex } from './hook-cell';
 export { computeBerthGroups } from './berth-group';
 export type { BerthGroup } from './berth-group';
 export { BUILTIN_MODULES, ModuleRegistry, STORAGE_MODULES, STORAGE_ROLE_MODULES, moduleRegistry, registerBuiltinModules } from './module-registry';

@@ -6,8 +6,12 @@
  * naloží 35 TEU exportu v poradí stowage plánu, lashuje a odíde (`shipped`); rolled jednotka sa vráti odosielateľovi po súši.
  *
  * Beh sa overuje v oboch režimoch odovzdávania: predvolený `under_hook` (`BUNDLED_DEFS`, ADR-033) a `apron` (`DEFS`, F2–F5).
- * Výsledky (peniaze, XP, počty) sú v oboch režimoch rovnaké — golden `tests/sim/__golden__/export_roundtrip.json`; časovanie
- * (začiatok lashingu, počet dual cyklov) a `stateHash` sa líšia podľa režimu.
+ * Režim `apron` ostáva v správaní zhodný s F6a — golden `tests/sim/__golden__/export_roundtrip.json`. Predvolený `under_hook` (od T6D-02: vozidlo
+ * stojí pod žeriavom, buffer 0 — žeriav čaká na vozidlo) má pomalšiu vykládku — vlastný golden `tests/sim/__golden__/export_roundtrip_under_hook.json`.
+ * Posledný kamión (zablokovaná cesta do 30 600) po otvorení cesty nevojde hneď: od T6D-01 (ADR-035) potrebuje zaručené staging miesto na docku,
+ * ktoré je pri znovuotvorení cesty plné importu čakajúceho na odvoz, a dostane ho až po kamiónoch na odvoz (priorita). Pod hákom (pomalšia vykládka,
+ * dock plný dlhšie) vojde až po začiatku lashingu rovnako ako na aprone — jednotka je rolled a vráti sa odosielateľovi po súši (35 odplávaných);
+ * pred T6D-01 dorazila ešte počas nakládky a naložila sa ako last minute (to pokrýva `export-loading.test.ts`). Časovanie a `stateHash` sa líšia podľa režimu.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -31,6 +35,7 @@ const REMOVE_ROAD_TICK = 22_200;
 const PLACE_ROAD_TICK = 30_600;
 const RUN_TIMEOUT_MS = 300_000;
 const GOLDEN_PATH = `${REPO_ROOT}tests/sim/__golden__/export_roundtrip.json`;
+const GOLDEN_HOOK_PATH = `${REPO_ROOT}tests/sim/__golden__/export_roundtrip_under_hook.json`;
 
 type Entries = readonly { readonly tick: number; readonly event: SimEvent }[];
 
@@ -98,10 +103,19 @@ describe('scenár export_roundtrip: súbor', () => {
   });
 });
 
-describe.each([
-  ['under_hook (predvolený režim)', BUNDLED_DEFS],
-  ['apron', DEFS],
-] as const)('scenár export_roundtrip: režim %s', (_name, defs) => {
+/**
+ * Režimy odovzdávania a ich očakávaný výsledok: `lastMinute` = rolled jednotka dorazí ešte počas nakládky a naloží sa pred lashingom,
+ * inak príde po začiatku lashingu a vráti sa odosielateľovi po súši. Od T6D-01 (vjazd z vnútrozemia len so zaručeným miestom na docku) je to v oboch
+ * režimoch to druhé; vetva `lastMinute` ostáva pre prípadný scenár s výraznejším zdržaním nakládky.
+ */
+const MODES = [
+  { name: 'under_hook (predvolený režim)', defs: BUNDLED_DEFS, lastMinute: false, goldenPath: GOLDEN_HOOK_PATH },
+  { name: 'apron', defs: DEFS, lastMinute: false, goldenPath: GOLDEN_PATH },
+] as const;
+
+describe.each(MODES)('scenár export_roundtrip: režim $name', ({ defs, lastMinute, goldenPath }) => {
+  const shippedUnits = lastMinute ? BOOKED : SHIPPED;
+  const returnedUnits = lastMinute ? 0 : 1;
   const result = run(defs);
   const { world, events } = result;
   const exportContract = world.contracts.get(EXPORT_ID as never)!;
@@ -118,7 +132,7 @@ describe.each([
     expect(world.clock.tick).toBe(TICKS);
   });
 
-  it('36 kamiónov s exportom prešlo bránou pred cut-off (4 s VGM hold), posledný prišiel po cut-off ako rolled až počas lashingu', () => {
+  it('36 kamiónov s exportom prešlo bránou, posledný prišiel po cut-off ako rolled (4 s VGM hold) až počas lashingu', () => {
     const cutoff = of(events, 'CutoffPassed');
     expect(cutoff).toHaveLength(1);
     expect(cutoff[0].event).toMatchObject({ contractId: EXPORT_ID, arrivedUnits: BOOKED - 1, bookedUnits: BOOKED });
@@ -128,36 +142,39 @@ describe.each([
     const rolled = of(events, 'UnitRolled');
     expect(rolled).toHaveLength(1);
     expect(rolled[0].tick).toBeGreaterThan(PLACE_ROAD_TICK);
-    expect(rolled[0].tick).toBeGreaterThan(of(events, 'ShipLashingStarted')[0].tick);
+    const lashingTick = of(events, 'ShipLashingStarted')[0].tick;
+    if (lastMinute) expect(rolled[0].tick).toBeLessThan(lashingTick);
+    else expect(rolled[0].tick).toBeGreaterThan(lashingTick);
     expect(of(events, 'VgmHoldStarted')).toHaveLength(4);
     expect(of(events, 'VgmHoldReleased')).toHaveLength(4);
     expect(of(events, 'TruckUnloaded')).toHaveLength(BOOKED);
   });
 
-  it('loď vyloží 57 TEU importu a naloží 35 TEU exportu v poradí stowage plánu (žiadna jednotka mimo poradia)', () => {
+  it('loď vyloží 57 TEU importu a naloží exportu v poradí stowage plánu (žiadna jednotka mimo poradia)', () => {
     expect(of(events, 'CraneCycleDone')).toHaveLength(IMPORT_UNITS);
     const loaded = of(events, 'UnitLoaded');
-    expect(loaded).toHaveLength(SHIPPED);
+    expect(loaded).toHaveLength(shippedUnits);
+    expect(loaded.filter((entry) => entry.event.lastMinute)).toHaveLength(lastMinute ? 1 : 0);
     expect(loaded.some((entry) => entry.event.outOfOrder)).toBe(false);
     expect(of(events, 'DualCycle').length).toBeGreaterThan(0);
   });
 
-  it('lashing po poslednej naloženej jednotke: lashingTicksPerUnit × 35 + paperworkTicks, potom odchod lode s ExportShipped 35', () => {
+  it('lashing po poslednej naloženej jednotke: lashingTicksPerUnit × počet naložených + paperworkTicks, potom odchod lode s ExportShipped', () => {
     const { lashingTicksPerUnit, paperworkTicks } = defs.ships.get('feeder');
     const lashing = of(events, 'ShipLashingStarted');
     expect(lashing).toHaveLength(1);
-    expect(lashing[0].event.loadedUnits).toBe(SHIPPED);
-    expect(lashing[0].event.ticks).toBe(lashingTicksPerUnit * SHIPPED + paperworkTicks);
+    expect(lashing[0].event.loadedUnits).toBe(shippedUnits);
+    expect(lashing[0].event.ticks).toBe(lashingTicksPerUnit * shippedUnits + paperworkTicks);
     const departed = of(events, 'ShipDeparted');
     expect(departed).toHaveLength(1);
     expect(of(events, 'ShipUndocked')[0].tick - lashing[0].tick).toBe(lashing[0].event.ticks);
-    expect(of(events, 'ExportShipped').map((entry) => entry.event.units)).toEqual([SHIPPED]);
+    expect(of(events, 'ExportShipped').map((entry) => entry.event.units)).toEqual([shippedUnits]);
     expect(of(events, 'ExportShipped')[0].tick).toBe(departed[0].tick);
   });
 
   it('každá naložená jednotka prešla legálnu cestu on_ship ← in_crane ← vozidlo ← sklad … → shipped (nič sa neteleportuje)', () => {
     const shipped = of(events, 'CargoMoved').filter((entry) => entry.event.to.kind === 'shipped');
-    expect(shipped).toHaveLength(SHIPPED);
+    expect(shipped).toHaveLength(shippedUnits);
     const all = chains(events);
     const expected =
       defs.modules.get('berth_standard').params['handoverMode'] === 'under_hook'
@@ -166,32 +183,39 @@ describe.each([
     for (const entry of shipped) expect(all.get(entry.event.unitId), `jednotka ${String(entry.event.unitId)}`).toEqual(expected);
   });
 
-  it('rolled jednotka prišla po začiatku lashingu: nenaložená, vráti sa odosielateľovi po súši (outbound), booking s penalizáciou rolled', () => {
+  it('rolled jednotka: prišla po začiatku lashingu, nenaložená, vráti sa odosielateľovi po súši; booking s penalizáciou rolled', () => {
     const [rolled] = of(events, 'UnitRolled');
     const id = rolled.event.unitId;
-    expect(of(events, 'UnitLoaded').some((entry) => entry.event.unitId === id)).toBe(false);
+    const loadedEntry = of(events, 'UnitLoaded').find((entry) => entry.event.unitId === id);
     const chain = chains(events).get(id) as string[];
-    expect(chain.at(-1)).toBe('exported');
-    expect(chain.includes('on_ship')).toBe(false);
+    if (lastMinute) {
+      expect(loadedEntry?.event.lastMinute).toBe(true);
+      expect(chain.at(-1)).toBe('shipped');
+    } else {
+      expect(loadedEntry).toBeUndefined();
+      expect(chain.at(-1)).toBe('exported');
+      expect(chain.includes('on_ship')).toBe(false);
+    }
     const penalties = of(events, 'BookingPenaltyApplied').map((entry) => entry.event);
     expect(penalties).toHaveLength(1);
-    expect(penalties[0]).toMatchObject({ contractId: EXPORT_ID, kind: 'rolled', units: 1 });
+    // Jednotka sa nenaložila (penalizácia rolled); pri `lastMinute` by sa naložila tesne pred lashingom (penalizácia last_minute).
+    expect(penalties[0]).toMatchObject({ contractId: EXPORT_ID, kind: lastMinute ? 'last_minute' : 'rolled', units: 1 });
     expect(penalties[0].amountCents).toBeGreaterThan(0);
     expect(exportContract.booking?.rolledUnitIds).toEqual([id]);
   });
 
-  it('žiadna jednotka sa nestratila: vytvorených 93 = 57 exportovaných importov + 1 vrátený export + 35 odoslaných lodou; invarianty bez porušenia', () => {
+  it('žiadna jednotka sa nestratila: vytvorených 93 = 57 exportovaných importov + vrátený export (1) + odoslané lodou (35); invarianty bez porušenia', () => {
     expect(world.cargo.createdCount).toBe(IMPORT_UNITS + BOOKED);
-    expect(world.cargo.exportedCount).toBe(IMPORT_UNITS + 1);
-    expect(world.cargo.shippedCount).toBe(SHIPPED);
+    expect(world.cargo.exportedCount).toBe(IMPORT_UNITS + returnedUnits);
+    expect(world.cargo.shippedCount).toBe(shippedUnits);
     expect(world.cargo.liveCount).toBe(0);
     expect(lostUnits(world)).toBe(0);
     expect(findWorldViolation(world)).toBeUndefined();
   });
 
-  it('golden report tests/sim/__golden__/export_roundtrip.json sa zhoduje s behom (v oboch režimoch rovnaký)', () => {
-    expect(existsSync(GOLDEN_PATH), 'chýba golden: pnpm simrun data/scenarios/export_roundtrip.json --ticks 40000 --report').toBe(true);
-    const golden = JSON.parse(readFileSync(GOLDEN_PATH, 'utf8')) as Record<string, unknown>;
+  it('golden report (apron: export_roundtrip.json, under_hook: export_roundtrip_under_hook.json) sa zhoduje s behom', () => {
+    expect(existsSync(goldenPath), `chýba golden ${goldenPath}: pnpm simrun data/scenarios/export_roundtrip.json --ticks 40000 --report`).toBe(true);
+    const golden = JSON.parse(readFileSync(goldenPath, 'utf8')) as Record<string, unknown>;
     expect(Object.keys(golden).sort()).toEqual(['cashEnd', 'contractsCompleted', 'exportedUnits', 'returnedUnits', 'rolledUnits', 'shippedUnits', 'xp']);
     expect(reportOf(result)).toEqual(golden);
   });
@@ -210,15 +234,24 @@ describe.each([
 });
 
 describe('scenár export_roundtrip: časovanie podľa režimu', () => {
-  it('oba režimy dajú rovnaké peniaze a počty a odlišný stateHash; pod hákom žeriav čaká na vozidlo, na aprone nie', () => {
+  it('režimy sa líšia stateHash a časovaním: pod hákom žeriav čaká na vozidlo a odovzdáva priamo, na aprone nie; rolled jednotka príde v oboch po otvorení cesty', () => {
     const hook = run(BUNDLED_DEFS);
     const apron = run(DEFS);
-    expect(reportOf(hook)).toEqual(reportOf(apron));
     expect(stateHash(hook.world)).not.toBe(stateHash(apron.world));
     const cranes = (world: World) => [...world.modules.values()].filter((module) => 'waitForVehicleTicks' in module) as unknown as { waitForVehicleTicks: number }[];
     expect(cranes(hook.world).some((crane) => crane.waitForVehicleTicks > 0)).toBe(true);
     expect(cranes(apron.world).every((crane) => crane.waitForVehicleTicks === 0)).toBe(true);
-    // Rolled jednotka prišla v oboch behoch tým istým tickom (brána a cesta nezávisia od režimu žeriava).
-    expect(of(hook.events, 'UnitRolled')[0].tick).toBe(of(apron.events, 'UnitRolled')[0].tick);
+    // Rolled jednotka prišla v oboch behoch po otvorení zablokovanej cesty (30 600); pod hákom neskôr — kamión z vnútrozemia vojde až po uvoľnení
+    // staging miesta na docku (T6D-01, ADR-035), ktoré pri pomalšej vykládke ostáva plné importu čakajúceho na odvoz dlhšie (rádovo stovky tickov).
+    const rolledTicks = [hook, apron].map((entry) => of(entry.events, 'UnitRolled')[0].tick);
+    for (const tick of rolledTicks) expect(tick).toBeGreaterThan(PLACE_ROAD_TICK);
+    expect(rolledTicks[0]).toBeGreaterThan(rolledTicks[1]);
+    expect(rolledTicks[0] - rolledTicks[1]).toBeLessThan(500);
+    // Pod hákom (buffer 0) ide vykládka priamo vozidlu, na aprone cez apron; pomalšia vykládka posunie lashing neskôr než na aprone.
+    const direct = (events: Entries): number => of(events, 'CargoMoved').filter((entry) => entry.event.from.kind === 'in_crane' && entry.event.to.kind === 'in_vehicle').length;
+    // apron slúži len ako protideadlock (vozidlo s exportom čaká pod hákom, žeriav drží import): drvivá väčšina vykládky ide priamo
+    expect(direct(hook.events)).toBeGreaterThanOrEqual(Math.floor(IMPORT_UNITS * 0.8));
+    expect(direct(apron.events)).toBe(0);
+    expect(of(hook.events, 'ShipLashingStarted')[0].tick).toBeGreaterThan(of(apron.events, 'ShipLashingStarted')[0].tick);
   }, RUN_TIMEOUT_MS);
 });

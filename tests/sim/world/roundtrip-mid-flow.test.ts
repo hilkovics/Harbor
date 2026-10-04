@@ -5,9 +5,9 @@
  * joby, kamióny, nároky dockov, počítadlá žeriavov a brán …), obnovený svet by sa niekde odchýlil.
  *
  * - `vertical_slice` (F5), roundtrip v tickoch 3 000 (kontrakt `accepted`, loď ešte nevznikla), 9 000 (`unloading`, loď
- *   pri kotvisku, žeriav v cykle, vozidlá vezú), 12 000 (`exporting`, kamióny na rampe a v bráne) a 15 000 (`completed`,
+ *   pri kotvisku, žeriav v cykle, vozidlá vezú), 12 000 (`exporting`, kamióny na rampe a v bráne) a 16 000 (`completed`,
  *   pool a ekonomika bežia ďalej) → hash na konci (30 000) = nepretržitý beh;
- * - `full_import_chain` (F4), roundtrip v ticku 4 000 (sedem kamiónov v rôznych stavoch, joby, export) → rovnako;
+ * - `full_import_chain` (F4), roundtrip v ticku 4 400 (sedem kamiónov v rôznych stavoch, joby, export) → rovnako;
  * - kontrola citlivosti: save so zmeneným stavom `Rng` dobehne inak (porovnanie by chýbajúci stav naozaj odhalilo).
  *
  * Bod roundtripu = svet po `tick()`, v ktorom `clock.tick` dosiahol T, pred príkazmi s `atTick = T` (rovnako ako
@@ -79,7 +79,7 @@ function resume(scenario: Scenario, baseline: Baseline, split: number): { firstE
 
 describe('roundtrip uprostred vertical_slice (F5) → rovnaký ďalší priebeh a hash na konci', () => {
   const scenario = loadScenarioFile('vertical_slice');
-  const SPLITS = [3_000, 9_000, 12_000, 15_000];
+  const SPLITS = [3_000, 9_000, 12_000, 16_000];
   let baseline: Baseline;
 
   beforeAll(() => {
@@ -91,7 +91,7 @@ describe('roundtrip uprostred vertical_slice (F5) → rovnaký ďalší priebeh 
     expect(baseline.probes.get(9_000)).toMatchObject({ contracts: ['unloading'], ships: ['docked'] });
     expect(baseline.probes.get(12_000)?.contracts).toEqual(['exporting']);
     expect(baseline.probes.get(12_000)?.trucks).toBeGreaterThan(0);
-    expect(baseline.probes.get(15_000)).toEqual({ contracts: ['completed'], ships: [], trucks: 0 });
+    expect(baseline.probes.get(16_000)).toEqual({ contracts: ['completed'], ships: [], trucks: 0 });
   });
 
   it.each(SPLITS)(
@@ -119,14 +119,14 @@ describe('roundtrip uprostred vertical_slice (F5) → rovnaký ďalší priebeh 
 
 describe('roundtrip uprostred full_import_chain (F4) → rovnaký ďalší priebeh a hash na konci', () => {
   const scenario = loadScenarioFile('full_import_chain');
-  const SPLIT = 4_000;
+  const SPLIT = 4_400;
   let baseline: Baseline;
 
   beforeAll(() => {
     baseline = runBaseline(scenario, [SPLIT]);
   }, HEAVY_TIMEOUT_MS);
 
-  it('roundtrip v ticku 4 000 (kamióny v bráne, pri docku aj na ceste von): udalosti aj hash v ticku 30 000 = nepretržitý beh', () => {
+  it('roundtrip v ticku 4 400 (kamióny v bráne, pri docku aj na ceste von): udalosti aj hash v ticku 30 000 = nepretržitý beh', () => {
     expect(baseline.probes.get(SPLIT)?.trucks).toBeGreaterThanOrEqual(3);
     const run = resume(scenario, baseline, SPLIT);
     expect(run.loadedHash).toBe(run.savedHash);

@@ -87,14 +87,18 @@ describe('CraneView: skladanie častí', () => {
     expect(view.view.position.x).toBe(44 * CELL); // stred footprintu 2×3 na (43, 14)
     expect(view.view.position.y).toBe(15.5 * CELL);
     const body = view.view.children[0] as Container;
-    const base = body.children[0] as Sprite;
+    // základňa je samostatný koreň `baseView` (F6d): kreslí sa pod vozidlami, výložník a vozík nad nimi
+    expect(view.baseView.position.x).toBe(44 * CELL);
+    expect(view.baseView.position.y).toBe(15.5 * CELL);
+    const base = (view.baseView.children[0] as Container).children[0] as Sprite;
     expect(base.texture).toBe(textures.textureFor('file/modules/crane_container_gantry_base.svg'));
     expect(base.position.x).toBe(-CELL);
     expect(base.position.y).toBe(-1.5 * CELL);
     expect(base.width).toBeCloseTo(2 * CELL, 6);
     expect(base.height).toBeCloseTo(3 * CELL, 6);
 
-    const boomGroup = body.children[1] as Container;
+    expect(body.children).toHaveLength(1); // len výložník (so vozíkom); základňa je v `baseView`
+    const boomGroup = body.children[0] as Container;
     const mount = SPRITE?.parts?.['boom']?.mountOnBase ?? { x: 0, y: 0 };
     expect(boomGroup.position.x).toBe(-CELL + mount.x);
     expect(boomGroup.position.y).toBe(-1.5 * CELL + mount.y);
@@ -114,13 +118,15 @@ describe('CraneView: skladanie častí', () => {
     expect(view.view.angle).toBe(0); // koreň sa neotáča (odznak ostáva vzpriamený)
     const body = view.view.children[0] as Container;
     expect(body.angle).toBeCloseTo(90, 9);
+    expect((view.baseView.children[0] as Container).angle).toBeCloseTo(90, 9); // základňa sa otáča rovnako
+    expect(view.baseView.position.x).toBe(44.5 * CELL);
   });
 
   it('bez textúr → obdĺžniky `Graphics` z tokenov', () => {
     const view = new CraneView(crane(), deps(null));
     const body = view.view.children[0] as Container;
-    expect(body.children[0]).toBeInstanceOf(Graphics);
-    const boomGroup = body.children[1] as Container;
+    expect((view.baseView.children[0] as Container).children[0]).toBeInstanceOf(Graphics);
+    const boomGroup = body.children[0] as Container;
     expect(boomGroup.children[0]).toBeInstanceOf(Graphics);
   });
 });
@@ -154,7 +160,7 @@ describe('CraneView: vozík podľa fázy', () => {
   it('trolley je dieťa skupiny výložníka: pri náklone sa natáča s ním', () => {
     const view = new CraneView(crane({ state: 'grabbing', progress: 0.5 }), deps(new StubTextures()));
     expect(view.boomAngle).toBeCloseTo(CRANE_BOOM_TILT_DEG.grabbing, 9);
-    const boomGroup = (view.view.children[0] as Container).children[1] as Container;
+    const boomGroup = (view.view.children[0] as Container).children[0] as Container;
     expect(boomGroup.children).toHaveLength(2); // sprite výložníka + skupina vozíka
   });
 
@@ -173,7 +179,7 @@ describe('CraneView: vozík podľa fázy', () => {
 
   it('náklad je pod spritom vozíka (spreader nad kontajnerom)', () => {
     const view = new CraneView(crane({ state: 'placing', progress: 0.5, holding: { unitId: 1, typeId: 'container_teu' } }), deps(new StubTextures()));
-    const boomGroup = (view.view.children[0] as Container).children[1] as Container;
+    const boomGroup = (view.view.children[0] as Container).children[0] as Container;
     const moverGroup = boomGroup.children[1] as Container;
     expect(moverGroup.children[0]).toBe(view.heldCargo);
     expect(moverGroup.children[1]).toBeInstanceOf(Sprite);

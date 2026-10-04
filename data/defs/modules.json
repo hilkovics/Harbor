@@ -17,7 +17,7 @@
       ],
       "costCents": 40000000,
       "maintenancePerDayCents": 120000,
-      "params": { "depthClass": 1, "apronSlots": 8, "maxCranes": 2, "frontWaterCells": 3, "apronReserveSlots": 2, "handoverMode": "under_hook", "craneBufferSlots": 1 }
+      "params": { "depthClass": 1, "apronSlots": 8, "maxCranes": 2, "frontWaterCells": 3, "apronReserveSlots": 2, "handoverMode": "under_hook", "craneBufferSlots": 0 }
     },
     {
       "id": "crane_container_gantry",

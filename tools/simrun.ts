@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { CommandError, commandFromJSON, type Command, type SerializedCommand } from '@sim/commands';
 import type { CargoDirection } from '@sim/cargo';
 import { loadBundledDefs, type DefRegistry } from '@sim/defs';
-import type { SimEvent } from '@sim/events';
+import type { CargoMovedEvent, SimEvent } from '@sim/events';
 import { loadBundledMap, loadMap, parseMapDef, type LoadedMap } from '@sim/grid';
 import { CraneModule, TruckGate } from '@sim/modules';
 import { World, hinterlandMetrics, stateHash, type HinterlandQueue, type WorldState } from '@sim/world';
@@ -232,6 +232,12 @@ export interface SimrunReport {
   readonly inlandWaitTicksMax: number;
   /** Ticky, v ktorých dopyt po kamióne na odvoz (náklad na docku) nemal voľné stojisko (ADR-035). */
   readonly pickupBayStarvationTicks: number;
+  /**
+   * Podiel jednotiek odovzdaných žeriavom **priamo** vozidlu (F6d, ADR-033 dodatok T6D-02): `in_crane ↔ in_vehicle` / (`in_crane ↔ in_vehicle` +
+   * `in_crane ↔ on_apron`) × 100 cez vykládku aj nakládku (`CargoMoved` s koncom `in_crane`), na 1 desatinné miesto; bez odovzdania žeriavom `null`.
+   * Režim `apron` ho má 0 (každá jednotka ide cez apron).
+   */
+  readonly directHandoverPct: number | null;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -530,14 +536,25 @@ interface EventTally {
   transhipRescued: number;
   transhipSold: number;
   emptyReturnsDeclined: number;
+  /** Odovzdania žeriavom: priamo vozidlu (`in_crane ↔ in_vehicle`) a cez apron (`in_crane ↔ on_apron`) — metrika `directHandoverPct`. */
+  directHandovers: number;
+  apronHandovers: number;
   /** Súčet a počet `exportGroupingShare` v ticku `CutoffPassed` (priemer sa počíta na konci). */
   groupingShareSum: number;
   groupingShareCount: number;
 }
 
+/** Odovzdanie žeriavom (jedna strana pohybu je `in_crane`): priamo vozidlu, alebo cez apron (buffer / režim `apron`). */
+function tallyHandover(tally: EventTally, event: CargoMovedEvent): void {
+  const other = event.from.kind === 'in_crane' ? event.to.kind : event.to.kind === 'in_crane' ? event.from.kind : undefined;
+  if (other === 'in_vehicle') tally.directHandovers += 1;
+  else if (other === 'on_apron') tally.apronHandovers += 1;
+}
+
 function tallyEvents(tally: EventTally, events: readonly SimEvent[]): void {
   for (const event of events) {
-    if (event.type === 'ShipSpawned') tally.shipsSpawned += 1;
+    if (event.type === 'CargoMoved') tallyHandover(tally, event);
+    else if (event.type === 'ShipSpawned') tally.shipsSpawned += 1;
     else if (event.type === 'ShipDeparted') tally.shipsDeparted += 1;
     else if (event.type === 'CraneCycleDone') tally.craneCycles += 1;
     else if (event.type === 'JobDone') tally.jobsDone += 1;
@@ -758,6 +775,8 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     transhipRescued: 0,
     transhipSold: 0,
     emptyReturnsDeclined: 0,
+    directHandovers: 0,
+    apronHandovers: 0,
     groupingShareSum: 0,
     groupingShareCount: 0,
   };
@@ -865,10 +884,14 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     transhipSold: tally.transhipSold,
     emptyReturnsDeclined: tally.emptyReturnsDeclined,
     ...inlandReport(world),
+    directHandoverPct:
+      tally.directHandovers + tally.apronHandovers === 0
+        ? null
+        : Math.round((tally.directHandovers * PERCENT * ONE_DECIMAL) / (tally.directHandovers + tally.apronHandovers)) / ONE_DECIMAL,
   };
 }
 
-/** Metriky vnútrozemia (F6d, ADR-035) z `hinterlandMetrics` — kľúče na konci reportu. */
+/** Metriky vnútrozemia (F6d, ADR-035) z `hinterlandMetrics` — kľúče pred `directHandoverPct`. */
 function inlandReport(world: World): Pick<SimrunReport, 'trucksWaitingInland' | 'inlandWaitTicks' | 'inlandWaitTicksMax' | 'pickupBayStarvationTicks'> {
   const metrics = hinterlandMetrics(world);
   const { pickup, delivery, collect, total } = metrics.waiting;
@@ -910,7 +933,8 @@ export function formatSummary(report: SimrunReport): string {
     `${String(report.transhipRescued)}/${String(report.transhipSold)}, návraty prázdnych zahodené ${String(report.emptyReturnsDeclined)}, ` +
     `vo vnútrozemí čaká ${String(report.trucksWaitingInland.total)} (odvoz/dovoz/výdaj ${String(report.trucksWaitingInland.pickup)}/` +
     `${String(report.trucksWaitingInland.delivery)}/${String(report.trucksWaitingInland.collect)}), čakanie vo vnútrozemí ${String(report.inlandWaitTicks)} ` +
-    `(max ${String(report.inlandWaitTicksMax)}), bez stojiska pre odvoz ${String(report.pickupBayStarvationTicks)}` +
+    `(max ${String(report.inlandWaitTicksMax)}), bez stojiska pre odvoz ${String(report.pickupBayStarvationTicks)}, ` +
+    `priame odovzdanie ${metric(report.directHandoverPct)} %` +
     (report.stateHash === null ? '' : `, hash stavu ${report.stateHash}`)
   );
 }

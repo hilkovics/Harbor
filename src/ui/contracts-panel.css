@@ -6,7 +6,9 @@
  * (#FF8A8E) je color-mix(--ui-danger, --ui-text), ako v top-hud.css; tmavý text na accent ploche (#0F1B27) je --ui-surface.
  * BEM: .contracts-panel (__header / __title / __close / __body / __tabs / __tab / __list / __empty*),
  * .contract-card (--container|bulk|liquid|gas|roro; __head / __tile / __titles / __meta / __reward / __chips / __pill /
- * __status / __bars / __bar / __penalty / __offer / __expiry / __actions / __btn / __reason).
+ * __status / __bars / __bar / __penalty / __offer / __expiry / __actions / __btn / __reason); F6a (T6A-07, ADR-032):
+ * .contract-card--voyage (spoločná karta import + export), __part (+ __part-head / __part-title / __part-volume),
+ * __booking / __booking-head / __pending / __summary a __counters / __counter (--warn|danger|muted; __counter-icon / __counter-value).
  */
 
 /* Lokálne rozmery zdieľa panel aj samostatná karta (galéria dema). */
@@ -423,6 +425,103 @@
 .contract-card__bar-fill {
   height: 100%;
   background: var(--cc-cat);
+}
+
+/* --- Export booking (F6a): cut-off, plánované príchody, súhrn a počítadlá jednotiek --- */
+
+.contract-card__booking {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.contract-card__booking-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.contract-card__pending,
+.contract-card__summary {
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+}
+
+.contract-card__counters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.contract-card__counter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: calc(var(--space-6) - 2px);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface-2);
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.contract-card__counter-icon {
+  width: var(--cp-icon-xs);
+  height: var(--cp-icon-xs);
+}
+
+.contract-card__counter-value {
+  color: var(--ui-text);
+  font-weight: var(--fw-semibold);
+}
+
+.contract-card__counter--warn {
+  background: color-mix(in srgb, var(--ui-warning) 16%, transparent);
+}
+
+.contract-card__counter--warn .contract-card__counter-icon {
+  color: var(--ui-warning);
+}
+
+.contract-card__counter--danger {
+  background: color-mix(in srgb, var(--ui-danger) 18%, transparent);
+}
+
+.contract-card__counter--danger .contract-card__counter-icon {
+  color: color-mix(in srgb, var(--ui-danger) 70%, var(--ui-text));
+}
+
+/* --- Spoločná karta voyage (roundtrip): časti Import a Export v jednej karte --- */
+
+.contract-card__part {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cp-gap);
+  padding: var(--space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--ui-surface-2) 55%, transparent);
+}
+
+.contract-card__part-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.contract-card__part-title {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.contract-card__part-volume {
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
 }
 
 /* --- Penalizácie --- */

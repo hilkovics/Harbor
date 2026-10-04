@@ -11,13 +11,16 @@
  * z prototypu) — má prednosť pred `stateLabel`; neprevádzková rampa (`ramp.operational === false`) má vlastný
  * banner s dôvodom a žltý badge „Neprevádzková" (po „Nepripojené", pred `stateLabel`). Prototypová akcia
  * „Presunúť" nie je (žiadny príkaz na presun), sparkline 24 h a politika skladu prídu s fázami, ktoré ich dáta prinesú.
+ * F6a (T6A-07, ADR-032): sklad ukáže rozdelenie uskladnených jednotiek na import a export (`storage.split`), zakotvená loď
+ * náklad na palube podľa smeru (`dockedShip.cargoSplit`: import na vykládku / naložený export) a stav lashing s progresom
+ * (`dockedShip.lashing`: zostávajúci čas a podiel z celkovej doby, ak ju app pozná).
  *
  * Komponent je čisto prezentačný (props → DOM, bez hookov): dáta zostaví rodič zo snapshotu
  * (`useSimSnapshot(selector, 100)`, T02-09/T02-10, T03-10), odstránenie ide cez `onRemove(id)` → `dispatch(RemoveModule)`,
  * nákup / predaj vozidla cez `onBuyVehicle(depotId)` / `onSellVehicle(vehicleId)` → `dispatch(BuyVehicle | SellVehicle)`.
  * Šírku dáva `--side-panel-w`, výšku kontajner (panel vyplní 100 % výšky rodiča, telo sa posúva).
  */
-import { EM_DASH, formatCount, formatFootprint, formatFraction, formatMoney, formatPercent } from './format';
+import { EM_DASH, formatCount, formatDuration, formatFootprint, formatFraction, formatMoney, formatPercent, type TimeScale } from './format';
 import { Icon, type IconName } from './icon';
 import './module-inspector.css';
 
@@ -71,6 +74,22 @@ export interface RampData {
   readonly inoperativeReason?: string;
 }
 
+/** F6a: jednotky rozdelené podľa smeru — import (príde loďou, odíde po súši) a export (príde po súši, odpláva loďou). */
+export interface CargoSplitData {
+  readonly import: number;
+  readonly export: number;
+}
+
+/**
+ * F6a: lashing a papiere lode pri kotvisku (`ship.state === 'lashing'`): zostávajúce ticky a (ak ich app pozná z defu
+ * triedy lode) celková doba na výpočet progresu; `scale` je mierka času na formátovanie zostávajúceho času.
+ */
+export interface LashingData {
+  readonly ticksLeft: number;
+  readonly totalTicks?: number;
+  readonly scale: TimeScale;
+}
+
 export interface ModuleInspectorData {
   readonly id: number;
   readonly defId: string;
@@ -94,6 +113,10 @@ export interface ModuleInspectorData {
     readonly capacityUnits: number;
     /** Doplnok oproti karte T02-08 (voliteľný): jednotka počtu, napr. `TEU`. */
     readonly unitLabel?: string;
+    /** F6a: náklad na palube podľa smeru (súčet = `unitsOnBoard`); bez neho jeden segment pruhu. */
+    readonly cargoSplit?: CargoSplitData;
+    /** F6a: loď je v stave lashing (po nakládke, pred odplávaním). */
+    readonly lashing?: LashingData;
   } | null;
   readonly crane?: {
     readonly state: CraneStateName;
@@ -109,6 +132,8 @@ export interface ModuleInspectorData {
     readonly unitsOut: number;
     /** Voliteľná jednotka počtu, napr. `TEU`; bez nej `jedn.`. */
     readonly unitLabel?: string;
+    /** F6a: uskladnené jednotky podľa smeru (import / export, súčet = `stored`); bez neho sekcia chýba. */
+    readonly split?: CargoSplitData;
   };
   /** F3: depo vozidiel. `canBuy` + `buyBlockedReason` (depo plné, nepripojené, nedostatok peňazí…) určuje rodič. */
   readonly depot?: {
@@ -255,7 +280,7 @@ export function craneTimeSplit(crane: { readonly utilizationPct: number; readonl
   return { busy, blocked, idle: 100 - busy - blocked };
 }
 
-export type StatSwatch = 'used' | 'reserved' | 'free' | 'busy' | 'blocked' | 'idle';
+export type StatSwatch = 'used' | 'reserved' | 'free' | 'busy' | 'blocked' | 'idle' | 'import' | 'export';
 
 export interface InspectorStat {
   readonly key: string;
@@ -384,6 +409,39 @@ export function sellTitle(vehicle: DepotVehicleData): string {
   const code = vehicleCode(vehicle);
   if (!canSellVehicle(vehicle)) return `${SELL_BLOCKED_TEXT} (${code})`;
   return vehicle.refundCents === undefined ? `Predať ${code}` : `Predať ${code} · vráti ${formatMoney(vehicle.refundCents)}`;
+}
+
+// --- F6a: import / export v sklade a na lodi, lashing ---------------------------------------------------------------
+
+/** Podiely importu a exportu v celkovom počte (celé percentá, súčet 100; bez jednotiek 0 / 0). */
+export function cargoSplitShares(split: CargoSplitData): { readonly import: number; readonly export: number } {
+  const total = wholeCount(split.import) + wholeCount(split.export);
+  if (total === 0) return { import: 0, export: 0 };
+  const imported = Math.round((wholeCount(split.import) / total) * 100);
+  return { import: imported, export: 100 - imported };
+}
+
+/** Súčet jednotiek oboch smerov. */
+export function cargoSplitTotal(split: CargoSplitData): number {
+  return wholeCount(split.import) + wholeCount(split.export);
+}
+
+/** Popis rozdelenia pre čítačku a tooltip: `Import 12 TEU, export 8 TEU`. */
+export function cargoSplitText(split: CargoSplitData, unitLabel?: string): string {
+  return `Import ${formatCount(wholeCount(split.import), unitLabel)}, export ${formatCount(wholeCount(split.export), unitLabel)}`;
+}
+
+/** Podiel odpracovaného lashingu v celých percentách (0–100); bez celkovej doby `null` (progres sa nekreslí). */
+export function lashingProgressPct(lashing: Pick<LashingData, 'ticksLeft' | 'totalTicks'>): number | null {
+  const { totalTicks } = lashing;
+  if (totalTicks === undefined || !(totalTicks > 0)) return null;
+  const left = Math.min(totalTicks, Math.max(0, lashing.ticksLeft));
+  return Math.round(((totalTicks - left) / totalTicks) * 100);
+}
+
+/** Text lashingu: `Lashing a papiere · zostáva 2 h` (`< 1 h`, ak zostáva menej než hodina). */
+export function lashingText(lashing: Pick<LashingData, 'ticksLeft' | 'scale'>): string {
+  return `Lashing a papiere · zostáva ${formatDuration(lashing.ticksLeft, lashing.scale)}`;
 }
 
 // --- F4: brána, čakacia plocha, rampa -----------------------------------------------------------------------------
@@ -603,9 +661,45 @@ function renderCraneTime(crane: NonNullable<ModuleInspectorData['crane']>) {
   );
 }
 
-function renderShip(ship: NonNullable<ModuleInspectorData['dockedShip']>) {
+/** Legenda rozdelenia import / export: farebná značka + popis + počet (značka nie je jediný nositeľ — vždy aj text). */
+function renderSplitLegend(section: string, split: CargoSplitData, unitLabel: string | undefined) {
   return (
-    <div className="module-inspector__ship" data-section="ship">
+    <ul className="module-inspector__legend" aria-label={cargoSplitText(split, unitLabel)} data-section={`${section}-legend`}>
+      {(['import', 'export'] as const).map((direction) => (
+        <li key={direction} className="module-inspector__legend-item" data-split={direction}>
+          <span className={`module-inspector__swatch module-inspector__swatch--${direction}`} aria-hidden="true" />
+          <span className="module-inspector__legend-label">{direction === 'import' ? 'Import' : 'Export'}</span>
+          <span className="module-inspector__legend-value" data-field={`${section}-${direction}`}>
+            {formatCount(wholeCount(split[direction]), unitLabel)}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function renderLashing(lashing: LashingData) {
+  const progress = lashingProgressPct(lashing);
+  return (
+    <div className="module-inspector__lashing" data-section="lashing">
+      <div className="module-inspector__lashing-head">
+        <Icon name="ic_busy" className="module-inspector__lashing-icon" />
+        <span data-field="lashing-text">{lashingText(lashing)}</span>
+        {progress !== null && (
+          <span className="module-inspector__lashing-value" data-field="lashing-progress">
+            {formatPercent(progress)}
+          </span>
+        )}
+      </div>
+      {progress !== null && renderBar('Priebeh lashingu', progress, 100, [{ key: 'busy', percent: progress }])}
+    </div>
+  );
+}
+
+function renderShip(ship: NonNullable<ModuleInspectorData['dockedShip']>) {
+  const { cargoSplit, lashing } = ship;
+  return (
+    <div className="module-inspector__ship" data-section="ship" data-lashing={lashing !== undefined}>
       <div className="module-inspector__ship-head">
         <Icon name="ic_ship" className="module-inspector__ship-icon" />
         <span className="module-inspector__ship-name" data-field="ship-class">
@@ -615,9 +709,14 @@ function renderShip(ship: NonNullable<ModuleInspectorData['dockedShip']>) {
           {formatFraction(ship.unitsOnBoard, ship.capacityUnits, ship.unitLabel ?? 'jedn.')}
         </span>
       </div>
-      {renderBar('Náklad na lodi', ship.unitsOnBoard, ship.capacityUnits, [
-        { key: 'used', percent: shareOf(ship.unitsOnBoard, ship.capacityUnits) },
-      ])}
+      {cargoSplit === undefined
+        ? renderBar('Náklad na lodi', ship.unitsOnBoard, ship.capacityUnits, [{ key: 'used', percent: shareOf(ship.unitsOnBoard, ship.capacityUnits) }])
+        : renderBar('Náklad na lodi', ship.unitsOnBoard, ship.capacityUnits, [
+            { key: 'import', percent: shareOf(cargoSplit.import, ship.capacityUnits) },
+            { key: 'export', percent: shareOf(cargoSplit.export, ship.capacityUnits) },
+          ])}
+      {cargoSplit !== undefined && renderSplitLegend('ship-split', cargoSplit, ship.unitLabel)}
+      {lashing !== undefined && renderLashing(lashing)}
     </div>
   );
 }
@@ -646,6 +745,25 @@ function renderStorage(storage: StorageData) {
         { key: 'used', percent: shareOf(storage.stored, storage.capacity) },
         { key: 'reserved', percent: shareOf(storage.reserved, storage.capacity) },
       ])}
+    </div>
+  );
+}
+
+/** F6a: obsah skladu podľa smeru — dvojsegmentový pruh (podiely z uskladnených jednotiek) a legenda. */
+function renderStorageSplit(storage: StorageData, split: CargoSplitData) {
+  const shares = cargoSplitShares(split);
+  const total = cargoSplitTotal(split);
+  return (
+    <div className="module-inspector__meter" data-section="storage-split">
+      <div className="module-inspector__meter-head">
+        <span className="module-inspector__meter-label">Import / export</span>
+        <span data-field="storage-split-count">{total === 0 ? 'Prázdny' : formatCount(total, storage.unitLabel ?? 'jedn.')}</span>
+      </div>
+      {renderBar('Obsah skladu: import a export', total, total, [
+        { key: 'import', percent: shares.import },
+        { key: 'export', percent: shares.export },
+      ])}
+      {renderSplitLegend('storage-split', split, storage.unitLabel)}
     </div>
   );
 }
@@ -848,6 +966,7 @@ export function ModuleInspector({ data, onRemove, onClose, onBuyVehicle, onSellV
         {apron !== undefined && renderApron(apron)}
         {crane !== undefined && renderCraneTime(crane)}
         {storage !== undefined && renderStorage(storage)}
+        {storage?.split !== undefined && renderStorageSplit(storage, storage.split)}
         {waitingArea !== undefined && renderBays(waitingArea)}
         {ramp !== undefined && renderDocks(ramp)}
         {dockedShip !== undefined && (

@@ -11,7 +11,9 @@
  *   pre jednotku, ktorú žeriav práve vykladá, aj pre ďalšie jednotky importu dokovanej lode — aby dispatcher poslal vozidlá k háku
  *   skôr, než žeriav jednotku zdvihne, a žeriav nečakal (`NoStorageAvailable`, keď sklad nie je).
  *
- * Funkcie nemenia ledger; vznik jobu rieši `openJob` z dispatchera (`JobCreated`, `World.addJob`).
+ * Funkcie nemenia ledger; vznik jobu rieši `openJob` z dispatchera (`JobCreated`, `World.addJob`). Hot path bez alokácií: jednotky
+ * nakládky sa vyberajú po jednej (najlepšia podľa stowage plánu, bez poľa a triedenia — poradie je úplné, takže je rovnaké ako pri
+ * triedení) a polia kotvísk / žeriavov sú znovupoužiteľné na úrovni modulu (vzor `BOOKINGS`).
  */
 import { compareStowageOrder } from '../cargo/stowage';
 import type { CargoUnit } from '../cargo/cargo-unit';
@@ -20,6 +22,7 @@ import type { EntityId } from '../core/entity-id';
 import type { HandoverMode } from '../defs/types';
 import { BerthModule } from '../modules/berth-module';
 import { CRANE_CYCLE_TRAITS, CraneModule } from '../modules/crane-module';
+import { HANDOVERS } from '../systems/crane-handover';
 import { apronDirectionCap, bothDirections, exportApronUsage } from './apron-usage';
 import { loadingStopped, openExportBookings } from './voyage-cargo';
 import type { CargoLocation } from '../cargo/cargo-location';
@@ -46,6 +49,12 @@ export type EmitNoStorage = (world: World, berth: BerthModule, cargoTypeId: stri
 /** Znovupoužiteľné pole bookingov lode (hot path; obsah sa vždy najprv vyprázdni). */
 const BOOKINGS: Contract[] = [];
 
+/**
+ * Najviac jobov nakládky pod hákom v obehu na žeriav, kým má loď aj import na vykládku (ADR-033 bod 4): vozidlo s exportom čaká pod
+ * hákom popri vozidlách s importom, takže žeriav robí dual cycle a nakládka nevyčerpá vozidlá vykládky.
+ */
+const PAIRED_HOOK_LOAD_JOBS_PER_CRANE = 1;
+
 /** Žeriav kotviska s kategóriou nákladu lode (obsluhuje loď). */
 function craneFor(world: World, berth: BerthModule, ship: Ship): CraneModule | undefined {
   for (const craneId of berth.craneIds) {
@@ -62,19 +71,23 @@ function hookLoadJobs(world: World, crane: CraneModule): number {
   return count;
 }
 
-/** Jednotky voyage v sklade, ktoré smú na nakládku (export, mimo hold, bez jobu) v poradí stowage plánu. */
-function loadableStored(world: World, bookings: readonly Contract[]): CargoUnit[] {
-  const units: CargoUnit[] = [];
+/**
+ * Najlepšia jednotka voyage v sklade, ktorá smie na nakládku (export, mimo hold, bez jobu), podľa stowage plánu
+ * (`compareStowageOrder`: heavy → medium → light, potom id); bez nej `undefined`. Bez poľa a triedenia (úplné usporiadanie).
+ */
+function bestLoadableStored(world: World, bookings: readonly Contract[]): CargoUnit | undefined {
+  let best: CargoUnit | undefined;
   for (const contract of bookings) {
     if (contract.state !== 'exporting' || loadingStopped(world, contract)) continue;
     const group = world.storedCargo.groupOf(contract.id);
     if (group === undefined) continue;
     for (const unitId of group.units) {
       const unit = world.cargo.get(unitId);
-      if (unit !== undefined && unit.direction === 'export' && unit.hold === null && world.jobOfUnit(unit.id) === undefined) units.push(unit);
+      if (unit === undefined || unit.direction !== 'export' || unit.hold !== null || world.jobOfUnit(unit.id) !== undefined) continue;
+      if (best === undefined || compareStowageOrder(unit, best) < 0) best = unit;
     }
   }
-  return units.sort(compareStowageOrder);
+  return best;
 }
 
 /** Zdroj → cieľ nakládky v režime `apron`: rezervuje slot apronu (limit smeru), inak `undefined`. */
@@ -86,8 +99,7 @@ function apronTarget(world: World, berth: BerthModule, ship: Ship): CargoLocatio
 
 /**
  * Cieľ nakládky v režime `under_hook`: hák žeriava s najmenším počtom jobov nakládky v obehu, inak `undefined`. Kým má loď aj import
- * na vykládku (`bothDirections`), má každý žeriav najviac jeden job nakládky v obehu — vozidlo s exportom čaká pod hákom popri
- * vozidlách s importom, takže žeriav robí dual cycle a nakládka nevyčerpá vozidlá vykládky. Bez importu je limit ako pri apron:
+ * na vykládku (`bothDirections`), má každý žeriav najviac `PAIRED_HOOK_LOAD_JOBS_PER_CRANE` jobov nakládky v obehu. Bez importu je limit ako pri apron:
  * `apronSlots` jobov na kotvisko (`apronDirectionCap`).
  */
 function hookTarget(world: World, berth: BerthModule, ship: Ship): CargoLocation | undefined {
@@ -105,7 +117,7 @@ function hookTarget(world: World, berth: BerthModule, ship: Ship): CargoLocation
       bestJobs = jobs;
     }
   }
-  if (best === undefined || (paired ? bestJobs >= 1 : total >= apronDirectionCap(berth, false))) return undefined;
+  if (best === undefined || (paired ? bestJobs >= PAIRED_HOOK_LOAD_JOBS_PER_CRANE : total >= apronDirectionCap(berth, false))) return undefined;
   return { kind: 'in_crane', craneId: best.id };
 }
 
@@ -116,8 +128,25 @@ const LOAD_TARGET: { readonly [M in HandoverMode]: (world: World, berth: BerthMo
 };
 
 /**
+ * Pre jednotku `unit` nájde kotvisko lode s cieľom nakládky (`LOAD_TARGET` podľa režimu) a otvorí job; `false` = žiadne kotvisko nemá
+ * kapacitu. Kotviská lode vzostupne, len so žeriavom kategórie nákladu; prvé s voľnou kapacitou berie jednotku.
+ */
+function openLoadJob(world: World, ship: Ship, unit: CargoUnit, openJob: OpenJob): boolean {
+  for (const berthId of ship.berthIds) {
+    const berth = world.modules.get(berthId);
+    if (!(berth instanceof BerthModule) || craneFor(world, berth, ship) === undefined) continue;
+    const target = LOAD_TARGET[berth.params.handoverMode](world, berth, ship);
+    if (target === undefined) continue;
+    openJob({ unitIds: [unit.id], from: unit.location, to: target, ...(target.kind === 'in_crane' ? { toModuleId: berth.id } : {}) });
+    return true;
+  }
+  return false;
+}
+
+/**
  * Joby nakládky exportu (viď hlavička súboru). Lode vzostupne podľa id; jednotky voyage v poradí stowage plánu sa priraďujú
- * kotviskám lode vzostupne — prvému s voľnou kapacitou; bez kapacity sa lode preskočí (jednotky počkajú v sklade).
+ * kotviskám lode vzostupne — prvému s voľnou kapacitou; bez kapacity sa lode preskočí (jednotky počkajú v sklade). Job musí
+ * zaregistrovať `openJob` (`World.addJob`) — jednotka s jobom už nie je v ďalšom výbere; inak sa lode preskočí (poistka proti slučke).
  */
 export function createExportLoadJobs(world: World, openJob: OpenJob): void {
   if (!world.contractBook.hasOpenExports) return;
@@ -125,25 +154,9 @@ export function createExportLoadJobs(world: World, openJob: OpenJob): void {
     if (ship.state !== 'docked') continue;
     const bookings = openExportBookings(world, ship.id, BOOKINGS);
     if (bookings.length === 0) continue;
-    const units = loadableStored(world, bookings);
-    if (units.length === 0) continue;
-    const berths: BerthModule[] = [];
-    for (const berthId of ship.berthIds) {
-      const berth = world.modules.get(berthId);
-      if (berth instanceof BerthModule && craneFor(world, berth, ship) !== undefined) berths.push(berth);
-    }
-    for (const unit of units) {
-      let target: CargoLocation | undefined;
-      let host: BerthModule | undefined;
-      for (const berth of berths) {
-        target = LOAD_TARGET[berth.params.handoverMode](world, berth, ship);
-        if (target !== undefined) {
-          host = berth;
-          break;
-        }
-      }
-      if (target === undefined || host === undefined) break;
-      openJob({ unitIds: [unit.id], from: unit.location, to: target, ...(target.kind === 'in_crane' ? { toModuleId: host.id } : {}) });
+    for (;;) {
+      const unit = bestLoadableStored(world, bookings);
+      if (unit === undefined || !openLoadJob(world, ship, unit, openJob) || world.jobOfUnit(unit.id) === undefined) break;
     }
   }
 }
@@ -166,13 +179,13 @@ function openUnloadJob(world: World, crane: CraneModule, berth: BerthModule, uni
   return true;
 }
 
-/** Žeriavy v režime `under_hook` s vykládkou v cykle: jednotka žeriava (cieľ cyklu / v ruke) bez jobu dostane job vždy. */
+/** Žeriavy kotvísk s vykládkou pod hákom (`Handover.plansUnloadTarget`) v cykle: jednotka žeriava (cieľ cyklu / v ruke) bez jobu dostane job vždy. */
 function ensureCurrentUnitJobs(world: World, openJob: OpenJob, emitNoStorage: EmitNoStorage): void {
   for (const module of world.modules.values()) {
     if (!(module instanceof CraneModule) || module.state === 'idle' || module.state === 'blocked') continue;
     if (CRANE_CYCLE_TRAITS[module.cycle].direction !== 'unload') continue;
     const berth = world.modules.get(module.berthId);
-    if (!(berth instanceof BerthModule) || berth.params.handoverMode !== 'under_hook') continue;
+    if (!(berth instanceof BerthModule) || !HANDOVERS[berth.params.handoverMode].plansUnloadTarget) continue;
     const unitId = module.state === 'grabbing' ? module.targetUnitId : module.heldUnitId;
     if (unitId === null || world.jobOfUnit(unitId) !== undefined) continue;
     const unit = world.cargo.get(unitId);
@@ -192,39 +205,41 @@ export function createHookUnloadJobs(world: World, openJob: OpenJob, emitNoStora
     if (ship.state !== 'docked') continue;
     for (const berthId of ship.berthIds) {
       const berth = world.modules.get(berthId);
-      if (!(berth instanceof BerthModule) || berth.params.handoverMode !== 'under_hook') continue;
+      if (!(berth instanceof BerthModule) || !HANDOVERS[berth.params.handoverMode].plansUnloadTarget) continue;
       aheadUnloadJobs(world, ship, berth, openJob, emitNoStorage);
     }
   }
 }
 
+/** Znovupoužiteľné polia žeriavov kotviska a ich jobov vykládky v obehu pre `aheadUnloadJobs` (hot path; plní sa pri každom volaní). */
+const AHEAD_CRANES: CraneModule[] = [];
+const AHEAD_JOBS: number[] = [];
+
 /** Joby vykládky vopred pre jedno kotvisko lode (viď `createHookUnloadJobs`). */
 function aheadUnloadJobs(world: World, ship: Ship, berth: BerthModule, openJob: OpenJob, emitNoStorage: EmitNoStorage): void {
-  const cranes: CraneModule[] = [];
+  const count = world.cargo.countAt('on_ship', ship.id);
+  if (count === 0) return;
+  AHEAD_CRANES.length = 0;
+  AHEAD_JOBS.length = 0;
   let inFlight = 0;
   for (const craneId of berth.craneIds) {
     const crane = world.modules.get(craneId);
     if (!(crane instanceof CraneModule) || crane.category !== ship.cargoCategory) continue;
-    cranes.push(crane);
-    inFlight += hookUnloadJobs(world, crane);
+    const jobs = hookUnloadJobs(world, crane);
+    AHEAD_CRANES.push(crane);
+    AHEAD_JOBS.push(jobs);
+    inFlight += jobs;
   }
-  if (cranes.length === 0) return;
+  if (AHEAD_CRANES.length === 0) return;
   const cap = apronDirectionCap(berth, bothDirections(world, ship));
-  const count = world.cargo.countAt('on_ship', ship.id);
   for (let i = 0; i < count && inFlight < cap; i++) {
     const unitId = world.cargo.unitAtIndex('on_ship', ship.id, i);
     const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
     if (unit === undefined || unit.direction !== 'import' || world.jobOfUnit(unit.id) !== undefined) continue;
-    let crane = cranes[0];
-    let fewest = hookUnloadJobs(world, crane);
-    for (const other of cranes) {
-      const jobs = hookUnloadJobs(world, other);
-      if (jobs < fewest) {
-        crane = other;
-        fewest = jobs;
-      }
-    }
-    if (!openUnloadJob(world, crane, berth, unit, openJob, emitNoStorage)) return;
+    let fewest = 0;
+    for (let k = 1; k < AHEAD_CRANES.length; k++) if (AHEAD_JOBS[k] < AHEAD_JOBS[fewest]) fewest = k;
+    if (!openUnloadJob(world, AHEAD_CRANES[fewest], berth, unit, openJob, emitNoStorage)) return;
+    AHEAD_JOBS[fewest] += 1;
     inFlight += 1;
   }
 }

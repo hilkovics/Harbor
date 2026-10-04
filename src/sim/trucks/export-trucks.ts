@@ -18,12 +18,16 @@ import type { LoadingRamp } from '../modules/loading-ramp';
 import type { World } from '../world/world';
 import { routeWithFreeBay, spawnTruck, truckDefFor } from './truck-spawner';
 
+/** Znovupoužiteľné pole počtu kamiónov na dock pre `leastBusyDock` (hot path bez alokácie; plní sa pri každom volaní). */
+const DOCK_TRUCKS: number[] = [];
+
 /** Dock rampy s najmenej kamiónmi (každej misie, vrátane tých na ceste k bráne); pri zhode nižší dock. */
 function leastBusyDock(world: World, ramp: LoadingRamp): number {
-  const trucks = new Array<number>(ramp.docks).fill(0);
-  for (const truck of world.trucks.values()) if (truck.rampId === ramp.id && truck.dock < ramp.docks) trucks[truck.dock] += 1;
+  DOCK_TRUCKS.length = ramp.docks;
+  DOCK_TRUCKS.fill(0);
+  for (const truck of world.trucks.values()) if (truck.rampId === ramp.id && truck.dock < ramp.docks) DOCK_TRUCKS[truck.dock] += 1;
   let best = 0;
-  for (let dock = 1; dock < ramp.docks; dock++) if (trucks[dock] < trucks[best]) best = dock;
+  for (let dock = 1; dock < ramp.docks; dock++) if (DOCK_TRUCKS[dock] < DOCK_TRUCKS[best]) best = dock;
   return best;
 }
 

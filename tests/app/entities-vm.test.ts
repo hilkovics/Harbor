@@ -71,6 +71,7 @@ describe('entitiesVM: nový svet (Root modul)', () => {
         state: 'idle',
         progress: 0,
         holding: null,
+        cycle: 'unload',
       },
     ]);
   });
@@ -131,7 +132,9 @@ describe('entitiesVM: loď', () => {
       widthCells: feeder.widthCells,
       capacityUnits: feeder.capacityUnits,
       unitsOnBoard: 4,
+      cargoSplit: { import: 4, export: 0 },
     });
+    expect(ship).not.toHaveProperty('lashing');
     expect(start).toBeDefined();
     expect(ship.x).toBe((start?.x ?? NaN) + 0.5);
     expect(ship.y).toBe((start?.y ?? NaN) + 0.5);

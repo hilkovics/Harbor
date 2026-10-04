@@ -50,11 +50,12 @@ describe('contractCards: druh a voyage', () => {
       },
     });
     expect(exportCard?.booking).not.toHaveProperty('cutoffTick');
+    expect(exportCard?.booking?.cutoffLeadTicks).toBe(12 * world.clock.ticksPerHour);
   });
 });
 
 describe('contractCards: booking prijatého exportu', () => {
-  it('cut-off, plán príchodov a počítadlá idú z živého kontraktu; ponuka cut-off odstup nemá, kým ho def nepozná', () => {
+  it('cut-off, plán príchodov a počítadlá idú z živého kontraktu; prijatý booking nesie konkrétny cut-off tick, nie odstup', () => {
     const { world } = createApp();
     const roundtrip = addRoundtripOffer(world);
     acceptRoundtrip(world, roundtrip, { arrivalIn: 2 * world.clock.ticksPerDay, cutoffBefore: 12 * world.clock.ticksPerHour, arrivalPlan: [100, 200, 300] });
@@ -79,20 +80,23 @@ describe('contractCards: booking prijatého exportu', () => {
       returnedUnits: 0,
       heldUnits: 1,
     });
+    expect(card?.booking).not.toHaveProperty('cutoffLeadTicks');
     expect(card?.shipArrivalTick).toBe(exportContract.shipArrivalTick);
     expect(exportContract.cutoffTick).toBe((exportContract.shipArrivalTick ?? 0) - 12 * world.clock.ticksPerHour);
   });
 });
 
 describe('cutoffLeadTicks', () => {
-  const fakeWorld = (economy: object): World => ({ defs: { economy }, clock: { ticksPerHour: 360 } }) as unknown as World;
+  it('z `economy.cutoffHours` (12 h) × ticky za hodinu, rovnako ako plánovanie bookingu v sime', () => {
+    const { world } = createApp();
+    expect(world.defs.economy.cutoffHours).toBe(12);
+    expect(cutoffLeadTicks(world)).toBe(12 * world.clock.ticksPerHour);
+  });
 
-  it('z `economy.cutoffHours` × ticky za hodinu, kým def pole nemá, undefined', () => {
-    expect(cutoffLeadTicks(fakeWorld({ cutoffHours: 12 }))).toBe(4320);
-    expect(cutoffLeadTicks(fakeWorld({ cutoffHours: 0.5 }))).toBe(180);
-    expect(cutoffLeadTicks(fakeWorld({}))).toBeUndefined();
-    expect(cutoffLeadTicks(fakeWorld({ cutoffHours: 'x' }))).toBeUndefined();
-    expect(cutoffLeadTicks(createApp().world)).toBeUndefined();
+  it('nezaokrúhlené hodiny sa zaokrúhlia ako v sime (`Math.round(cutoffHours × ticksPerHour)`)', () => {
+    const fakeWorld = (cutoffHours: number): World => ({ defs: { economy: { cutoffHours } }, clock: { ticksPerHour: 360 } }) as unknown as World;
+    expect(cutoffLeadTicks(fakeWorld(0.5))).toBe(180);
+    expect(cutoffLeadTicks(fakeWorld(0.0015))).toBe(1);
   });
 });
 

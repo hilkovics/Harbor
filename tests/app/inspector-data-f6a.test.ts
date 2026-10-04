@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { commandFromJSON } from '@sim/commands';
 import type { EntityId } from '@sim/core';
 import type { Ship } from '@sim/ships';
-import { BERTH_STATE_DOCKED, BERTH_STATE_LASHING, inspectorData, lashingTotalTicks } from '@app/inspector-data';
+import { BERTH_STATE_DOCKED, BERTH_STATE_LASHING, inspectorData } from '@app/inspector-data';
+import { lashingTotalTicks } from '@app/lashing';
 import { YARD_2_ID, YARD_ID, buildLogistics, buyVehicles, createApp, frameUntil, runCommands, type App } from './app-fixtures';
 import { acceptRoundtrip, addRoundtripOffer, createExportUnit, moveChain, toShipChain, toStorageChain } from './f6a-fixtures';
 
@@ -78,31 +79,46 @@ describe('inspectorData: zakotvená loď — náklad podľa smeru a lashing', ()
     expect(after).not.toHaveProperty('lashing');
   });
 
-  it('loď v stave lashing nesie zostávajúce ticky a mierku času; celková doba chýba, kým def triedy lode nemá polia lashingu', () => {
+  it('loď v stave lashing nesie zostávajúce ticky, mierku času a celkovú dobu z defu (6 ticků na exportnú jednotku + papiere)', () => {
     const app = createApp();
     const ship = dockedFeeder(app);
     expect(inspectorData(app.bridge, ROOT_BERTH)?.stateLabel).toBe(BERTH_STATE_DOCKED);
+    const roundtrip = addRoundtripOffer(app.world);
+    acceptRoundtrip(app.world, roundtrip);
+    for (let i = 0; i < 3; i += 1) moveChain(app.world, createExportUnit(app.world, roundtrip.exportContract).id, toShipChain(ship.id));
     ship.transition('lashing');
-    ship.lashingTicksLeft = 1800;
+    ship.lashingTicksLeft = 300;
     expect(inspectorData(app.bridge, ROOT_BERTH)?.stateLabel).toBe(BERTH_STATE_LASHING);
     const lashing = inspectorData(app.bridge, ROOT_BERTH)?.dockedShip?.lashing;
-    expect(lashing).toEqual({ ticksLeft: 1800, scale: { ticksPerHour: app.world.clock.ticksPerHour, ticksPerDay: app.world.clock.ticksPerDay } });
-    expect(lashing).not.toHaveProperty('totalTicks');
+    expect(lashing).toEqual({
+      ticksLeft: 300,
+      totalTicks: ship.def.lashingTicksPerUnit * 3 + ship.def.paperworkTicks,
+      scale: { ticksPerHour: app.world.clock.ticksPerHour, ticksPerDay: app.world.clock.ticksPerDay },
+    });
+  });
+
+  it('celková doba lashingu zo ShipLashingStarted má prednosť pred vzorcom z defu a zabudne sa po odsune lode', () => {
+    const app = createApp();
+    const ship = dockedFeeder(app);
+    ship.transition('lashing');
+    ship.lashingTicksLeft = 300;
+    app.bridge.publish([{ type: 'ShipLashingStarted', shipId: ship.id, loadedUnits: 0, ticks: 777 }]);
+    expect(inspectorData(app.bridge, ROOT_BERTH)?.dockedShip?.lashing?.totalTicks).toBe(777);
+    app.bridge.publish([{ type: 'ShipUndocked', shipId: ship.id }]);
+    expect(inspectorData(app.bridge, ROOT_BERTH)?.dockedShip?.lashing?.totalTicks).toBe(ship.def.paperworkTicks);
   });
 });
 
 describe('lashingTotalTicks', () => {
-  const shipWith = (def: object): Pick<Ship, 'def'> => ({ def }) as unknown as Pick<Ship, 'def'>;
-
   it('lashingTicksPerUnit × naložený export + paperworkTicks (ADR-032 bod 12)', () => {
-    expect(lashingTotalTicks(shipWith({ lashingTicksPerUnit: 6, paperworkTicks: 360 }), 8)).toBe(408);
-    expect(lashingTotalTicks(shipWith({ lashingTicksPerUnit: 0, paperworkTicks: 540 }), 12)).toBe(540);
+    expect(lashingTotalTicks({ lashingTicksPerUnit: 6, paperworkTicks: 360 }, 8)).toBe(408);
+    expect(lashingTotalTicks({ lashingTicksPerUnit: 0, paperworkTicks: 540 }, 12)).toBe(540);
   });
 
-  it('bez ktoréhokoľvek poľa defu alebo s neplatným poľom undefined (progres sa nekreslí)', () => {
-    expect(lashingTotalTicks(shipWith({}), 8)).toBeUndefined();
-    expect(lashingTotalTicks(shipWith({ lashingTicksPerUnit: 6 }), 8)).toBeUndefined();
-    expect(lashingTotalTicks(shipWith({ lashingTicksPerUnit: -1, paperworkTicks: 360 }), 8)).toBeUndefined();
-    expect(lashingTotalTicks(shipWith({ lashingTicksPerUnit: 'x', paperworkTicks: 360 }), 8)).toBeUndefined();
+  it('bez exportu na palube ostanú len papiere; zodpovedá defom feeder a handy', () => {
+    const { defs } = createApp().world;
+    expect(lashingTotalTicks(defs.ships.get('feeder'), 0)).toBe(360);
+    expect(lashingTotalTicks(defs.ships.get('feeder'), 24)).toBe(24 * 6 + 360);
+    expect(lashingTotalTicks(defs.ships.get('handy'), 10)).toBe(10 * 6 + 540);
   });
 });

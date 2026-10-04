@@ -7,7 +7,7 @@
   "emptyReturns": 27,
   "emptyPickedUp": 0,
   "emptyPickupMisses": 21,
-  "inlandWaitTicks": 10095,
-  "inlandWaitTicksMax": 2749,
-  "pickupBayStarvationTicks": 2165
+  "inlandWaitTicks": 18478,
+  "inlandWaitTicksMax": 4765,
+  "pickupBayStarvationTicks": 2190
 }

@@ -326,6 +326,16 @@
     {
       "atTick": 0,
       "command": {
+        "type": "PlaceModule",
+        "defId": "container_yard_small",
+        "x": 45,
+        "y": 23,
+        "rotation": 90
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
         "type": "BuyVehicle",
         "vehicleDefId": "straddle_carrier",
         "depotId": 3

@@ -143,7 +143,6 @@ describe('scenár live_terminal: päť lodí, štyri toky v jednom prístave, 60
       const uneven: string[] = [];
       let spawned = 0;
       let departed = 0;
-      let waitedOnRoadstead = 0;
       runScenario(world, scenario, 60_000, {
         afterTick: (w, events: readonly SimEvent[]) => {
           for (const event of events) {
@@ -154,7 +153,6 @@ describe('scenár live_terminal: päť lodí, štyri toky v jednom prístave, 60
           if (shared !== undefined) overlaps.push(`tick ${String(w.clock.tick)}: ${shared}`);
           for (const ship of w.ships.values()) {
             if (!resting(ship)) continue;
-            waitedOnRoadstead += 1;
             if (ship.heading !== MAP.anchorageHeading) uneven.push(`tick ${String(w.clock.tick)}: ${ship.label}`);
           }
           if (w.clock.tick % 500 === 0) assertCargoConservation(w);
@@ -164,7 +162,8 @@ describe('scenár live_terminal: päť lodí, štyri toky v jednom prístave, 60
       expect(uneven).toEqual([]);
       expect([spawned, departed]).toEqual([5, 5]);
       expect(world.ships.size).toBe(0);
-      expect(waitedOnRoadstead).toBeGreaterThan(0);
+      // Po druhom dvore (T6D-04) sa v live_terminal žiadna loď na rejde nezdrží (objemy kontraktov a príchody lodí sú iné); čakanie na rejde s kurzom
+      // a FIFO pokrýva scenár multi_ship_queue vyššie, tu ide o neprekrývanie, odchod všetkých lodí a nulové straty.
       expect(lostUnits(world)).toBe(0);
       expect(findWorldViolation(world)).toBeUndefined();
     },

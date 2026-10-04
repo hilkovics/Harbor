@@ -1,12 +1,13 @@
 /**
- * Scenár `live_terminal` (F6c, T6C-03, míľnik M2 „živý terminál“, ADR-034): všetky štyri toky kontajnerov v jednom prístave F4 (depo prázdnych, dvor,
- * brána, rampa, 2× straddle carrier + empty handler) za 60 000 tickov —
- * - **import**: kontrakty #1 (45 TEU) a #4 (64 TEU) linky blue_anchor sa vyložia a odvezú kamiónmi (`exported`),
+ * Scenár `live_terminal` (F6c, T6C-03, míľnik M2 „živý terminál“, ADR-034): všetky štyri toky kontajnerov v jednom prístave F4 (depo prázdnych, dva dvory,
+ * brána, rampa, 2× straddle carrier + empty handler) za 60 000 tickov; druhý dvor (T6D-04, vedľa cesty pri bráne) vznikol po T6D-01 (ADR-035): jeden dvor (64)
+ * plný prekládky (36) nemal miesto pre export, takže 8 z 36 exportov čakalo vo vnútrozemí do po cut-off (rolled) —
+ * - **import**: kontrakty #1 (48 TEU) a #4 (96 TEU) linky blue_anchor sa vyložia a odvezú kamiónmi (`exported`); objem poolu rastie s kapacitou skladov (ADR-026),
  * - **prázdne**: 60 % odvezených jednotiek sa vráti ako prázdne (brána → rampa → empty handler → depo), kontrola v depe poškodí časť (oprava 6 h),
  *   exportér (booking #11) dostane z depa prázdne svojej linky (`EmptyPickedUp`) a **repositioning** #12 naloží 24 prázdnych na loď po plných jednotkách,
- * - **export**: booking #11 (36 TEU) prejde bránou, uloží sa, naloží na loď voyage a odpláva (`shipped`); dvor (64) je s 36 jednotkami prekládky plný, preto 8 posledných
- *   exportov čaká vo vnútrozemí na miesto v sklade (ADR-035), prejde bránou až po cut-off a je „rolled“ (nie je to zámka: nakládka lode miesto uvoľní),
- * - **prekládka** #13 (36 TEU northern_star): loď A ich vyloží do skladu (zoskupene), o ~1 – 2 dni príde loď B a odvezie ich (`shipped`), nikdy cez bránu.
+ * - **export**: booking #11 (36 TEU) prejde bránou pred cut-off (žiadny „rolled“), uloží sa, naloží na loď voyage a odpláva (`shipped`); vnútrozemie (ADR-035) ho
+ *   vpustí len so zaručeným miestom v sklade — dva dvory (2 × 64) ho majú aj popri 36 jednotkách prekládky,
+ * - **prekládka** #13 (36 TEU northern_star): loď A ich vyloží do skladu (zoskupene; pri zaplnení dvora pretečie zvyšok do druhého), o ~1 – 2 dni príde loď B a odvezie ich (`shipped`), nikdy cez bránu.
  * `lostUnits 0`, konzervácia v každom ticku, každá zmena stavu prázdneho má udalosť, `--roundtrip-at` uprostred prekládky aj nakládky prázdnych dá zhodný hash.
  */
 import { existsSync, readFileSync } from 'node:fs';
@@ -28,8 +29,11 @@ const EXPORT_ID = 11;
 const REPOSITIONING_ID = 12;
 const TRANSHIP_ID = 13;
 const EXPORT_UNITS = 36;
-/** Exporty, ktoré čakali vo vnútrozemí na miesto v plnom dvore a prešli bránou po cut-off (ADR-035). */
-const EXPORTS_ROLLED = 8;
+/** Exporty, ktoré čakali vo vnútrozemí na miesto v plnom dvore a prešli bránou po cut-off (ADR-035); s druhým dvorom (T6D-04) žiadny (pred ním 8 z 36). */
+const EXPORTS_ROLLED = 0;
+/** Objemy importov po T6D-04: pool kontraktov sa škáluje kapacitou skladov (2 × 64 namiesto 64), preto #1 a #4 majú iný objem než pred druhým dvorom (45 a 64). */
+const IMPORT_A_UNITS = 48;
+const IMPORT_B_UNITS = 96;
 const REPOSITIONED = 24;
 const TRANSHIP_UNITS = 36;
 const RUN_TIMEOUT_MS = 600_000;
@@ -88,9 +92,9 @@ describe('scenár live_terminal: súbor', () => {
     expect([SCENARIO.id, SCENARIO.seed, SCENARIO.map]).toEqual(['live_terminal', 5014, 'data/maps/harbor_01.json']);
   });
 
-  it('prístav s depom prázdnych, tri vozidlá (2× straddle, empty handler) a štyri AcceptContract (1 @2, 4 @8 641, 11 a 13 @17 281)', () => {
+  it('prístav s depom prázdnych, dvoma dvormi, tri vozidlá (2× straddle, empty handler) a štyri AcceptContract (1 @2, 4 @8 641, 11 a 13 @17 281)', () => {
     const modules = SCENARIO.commands.filter((entry) => entry.command.type === 'PlaceModule').map((entry) => (entry.command as unknown as { defId: string }).defId);
-    expect(modules).toEqual(['vehicle_depot', 'empty_depot', 'container_yard_small', 'truck_gate', 'truck_waiting_area', 'loading_ramp_container']);
+    expect(modules).toEqual(['vehicle_depot', 'empty_depot', 'container_yard_small', 'truck_gate', 'truck_waiting_area', 'loading_ramp_container', 'container_yard_small']);
     const vehicles = SCENARIO.commands.filter((entry) => entry.command.type === 'BuyVehicle').map((entry) => (entry.command as unknown as { vehicleDefId: string }).vehicleDefId);
     expect(vehicles).toEqual(['straddle_carrier', 'straddle_carrier', 'empty_handler']);
     const accepts = SCENARIO.commands.filter((entry) => entry.command.type === 'AcceptContract').map((entry) => [entry.atTick, (entry.command as unknown as { contractId: number }).contractId]);
@@ -105,13 +109,13 @@ describe('scenár live_terminal: beh', () => {
   const returnedIds = new Set(returned.map((event) => event.unitId as number));
   const loaded = of(events, 'UnitLoaded');
 
-  it('import: kontrakty #1 (45 TEU) a #4 (64 TEU) sa vyložia, odvezú kamiónmi (exported) a dokončia', () => {
-    for (const [id, units] of [[IMPORT_A, 45], [IMPORT_B, 64]] as const) {
+  it('import: kontrakty #1 (48 TEU) a #4 (96 TEU) sa vyložia, odvezú kamiónmi (exported) a dokončia', () => {
+    for (const [id, units] of [[IMPORT_A, IMPORT_A_UNITS], [IMPORT_B, IMPORT_B_UNITS]] as const) {
       expect(world.contracts.get(id as never), `import #${String(id)}`).toMatchObject({ kind: 'import', lineId: 'blue_anchor', volumeUnits: units, state: 'completed', unitsExported: units });
     }
     expect(of(events, 'TruckExited').reduce((sum, entry) => sum + entry.event.units, 0)).toBe(world.cargo.exportedCount);
-    // exported = 109 importov + prázdne odvezené exportérom
-    expect(world.cargo.exportedCount).toBe(45 + 64 + of(events, 'EmptyPickedUp').length);
+    // exported = 144 importov + prázdne odvezené exportérom
+    expect(world.cargo.exportedCount).toBe(IMPORT_A_UNITS + IMPORT_B_UNITS + of(events, 'EmptyPickedUp').length);
   });
 
   it('prázdne: návrat z vnútrozemia (len linka importov) do depa, kontrola a oprava, výdaj exportérovi #11 z depa', () => {
@@ -141,7 +145,7 @@ describe('scenár live_terminal: beh', () => {
   it('export: booking #11 — 36 TEU prešlo bránou, uložilo sa, naložilo a odplávalo (in_truck → … → in_crane → on_ship → shipped)', () => {
     const booking = world.contracts.get(EXPORT_ID as never);
     expect(booking).toMatchObject({ kind: 'export', lineId: 'blue_anchor', state: 'completed', volumeUnits: EXPORT_UNITS });
-    // vnútrozemie (ADR-035): export vojde len so zaručeným miestom v sklade; plný dvor drží 8 posledných kamiónov vo vnútrozemí do po cut-off — prejdú bránou a sú rolled
+    // vnútrozemie (ADR-035): export vojde len so zaručeným miestom v sklade; dva dvory (T6D-04) ho majú, takže ani jeden kamión nezostane čakať do po cut-off (rolled 0)
     expect(booking?.booking).toMatchObject({ arrivedUnits: EXPORT_UNITS, loadedUnits: EXPORT_UNITS, rolledUnits: EXPORTS_ROLLED });
     expect(of(events, 'UnitRolled').filter((entry) => entry.event.contractId === EXPORT_ID)).toHaveLength(EXPORTS_ROLLED);
     expect(world.hinterland.waitTicksMax('delivery')).toBeGreaterThan(500);
@@ -175,7 +179,7 @@ describe('scenár live_terminal: beh', () => {
     expect(new Set([...exportTicks, ...emptyTicks].map((tick) => loaded.find((entry) => entry.tick === tick)?.event.shipId)).size).toBe(1);
   });
 
-  it('prekládka: #13 — loď A vyloží 36 TEU do jedného skladu (zoskupene), loď B o 1 – 2 dni odvezie; jednotky nikdy neprešli bránou ani rampou', () => {
+  it('prekládka: #13 — loď A vyloží 36 TEU do skladu (zoskupene, najviac dva dvory), loď B o 1 – 2 dni odvezie; jednotky nikdy neprešli bránou ani rampou', () => {
     const leg = world.contracts.get(TRANSHIP_ID as never);
     expect(leg).toMatchObject({ kind: 'tranship', lineId: 'northern_star', state: 'completed', volumeUnits: TRANSHIP_UNITS });
     expect(leg?.booking).toMatchObject({ arrivedUnits: TRANSHIP_UNITS, loadedUnits: TRANSHIP_UNITS, returnedUnits: 0 });
@@ -196,7 +200,11 @@ describe('scenár live_terminal: beh', () => {
       expect(chain, `jednotka ${String(unitId)}`).toEqual(['on_ship', 'in_crane', 'in_vehicle', 'in_storage', 'in_vehicle', 'in_crane', 'on_ship', 'shipped']);
       expect(storages.get(unitId)).toHaveLength(1);
     }
-    expect(new Set(unitIds.map((unitId) => storages.get(unitId)?.[0])).size).toBe(1);
+    // zoskupenie (ADR-032): jednotky prekládky idú do jedného dvora, kým má miesto; s dvoma dvormi (T6D-04) zvyšok pri zaplnení pretečie do druhého (nie striedavo)
+    const perStorage = new Map<number | undefined, number>();
+    for (const unitId of unitIds) perStorage.set(storages.get(unitId)?.[0], (perStorage.get(storages.get(unitId)?.[0]) ?? 0) + 1);
+    expect(perStorage.size).toBeLessThanOrEqual(2);
+    expect(Math.max(...perStorage.values())).toBeGreaterThanOrEqual(TRANSHIP_UNITS / 2);
     expect(of(events, 'TranshipMissed')).toEqual([]);
     expect(of(events, 'TranshipSold')).toEqual([]);
     expect(of(events, 'ContractCompleted').find((entry) => entry.event.contractId === TRANSHIP_ID)?.event).toMatchObject({ rewardCents: 1_234_800, penaltiesCents: 0 });

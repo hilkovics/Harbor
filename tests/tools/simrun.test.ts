@@ -781,10 +781,12 @@ describe('runScenario', () => {
     it('live_terminal: všetky štyri toky sú nenulové, lostUnits 0; repositionedUnits = naložené prázdne, transhipLoaded = naložená prekládka (shipped)', () => {
       expect(report).toMatchObject({
         lostUnits: 0,
-        exportedUnits: 115,
+        // dva dvory (T6D-04): žiadny export nezostal rolled; pool škáluje s kapacitou skladov, takže importy #1 a #4 majú 48 + 96 TEU (pred druhým dvorom 45 + 64)
+        rolledUnits: 0,
+        exportedUnits: 149,
         shippedUnits: 96,
-        emptyReturns: 65,
-        emptyPickedUp: 6,
+        emptyReturns: 91,
+        emptyPickedUp: 5,
         repositionedUnits: 24,
         transhipLoaded: 36,
         transhipMissed: 0,

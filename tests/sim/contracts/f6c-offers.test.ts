@@ -180,6 +180,7 @@ describe('ContractBook — voyage B prekládky, redirectTranship a hasOpenExport
     const mate = offerTranship(w, { units: 2 });
     expect(book.voyageContracts(leg.outVoyageId).map((c) => c.id)).toEqual([leg.id]);
     // záchrana na voyage A druhej prekládky (leg má nižšie id než mate → zaradí sa pred ňu)
+    const oldOutVoyage = leg.outVoyageId;
     book.redirectTranship(leg, mate.voyageId, 99_999, undefined);
     expect(leg.outVoyageId).toBe(mate.voyageId);
     expect(leg.outArrivalTick).toBe(99_999);
@@ -187,7 +188,7 @@ describe('ContractBook — voyage B prekládky, redirectTranship a hasOpenExport
     expect(book.voyageContracts(mate.voyageId).map((c) => c.id)).toEqual([leg.id, mate.id]);
     expect(book.voyageContracts(leg.voyageId).map((c) => c.id)).toEqual([leg.id]);
     // pôvodná voyage B zanikla (nemá kontrakt)
-    expect(book.voyage(leg.voyageId + 1)).toBeUndefined();
+    expect(book.voyage(oldOutVoyage)).toBeUndefined();
     expect(book.voyage(mate.voyageId)?.contracts.map((c) => c.id)).toEqual([leg.id, mate.id]);
   });
 

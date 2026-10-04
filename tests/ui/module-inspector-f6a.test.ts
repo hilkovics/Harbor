@@ -25,7 +25,7 @@ const YARD: ModuleInspectorData = {
   footprint: { w: 4, h: 4 },
   stateLabel: 'V prevádzke',
   ok: true,
-  storage: { stored: 46, reserved: 3, capacity: 64, unitsIn: 1_240, unitsOut: 12, unitLabel: 'TEU', split: { import: 30, export: 16 } },
+  storage: { stored: 46, reserved: 3, capacity: 64, unitsIn: 1_240, unitsOut: 12, unitLabel: 'TEU', split: { import: 30, export: 16, tranship: 0, empty: 0 } },
   refundCents: 7_500_000,
   removable: true,
 };
@@ -39,7 +39,7 @@ const BERTH: ModuleInspectorData = {
   stateLabel: 'Loď kotví',
   ok: true,
   apron: { used: 3, reserved: 0, capacity: 8 },
-  dockedShip: { classLabel: 'Feeder', unitsOnBoard: 12, capacityUnits: 40, unitLabel: 'TEU', cargoSplit: { import: 4, export: 8 } },
+  dockedShip: { classLabel: 'Feeder', unitsOnBoard: 12, capacityUnits: 40, unitLabel: 'TEU', cargoSplit: { import: 4, export: 8, tranship: 0, empty: 0 } },
   refundCents: 20_000_000,
   removable: false,
   removeBlockedReason: 'Pri kotvisku kotví loď.',
@@ -50,17 +50,17 @@ const render = (data: ModuleInspectorData): string =>
 
 describe('rozdelenie import / export: čisté funkcie', () => {
   it('cargoSplitShares: celé percentá so súčtom 100, bez jednotiek 0 / 0', () => {
-    expect(cargoSplitShares({ import: 30, export: 16 })).toEqual({ import: 65, export: 35 });
-    expect(cargoSplitShares({ import: 1, export: 2 })).toEqual({ import: 33, export: 67 });
-    expect(cargoSplitShares({ import: 0, export: 0 })).toEqual({ import: 0, export: 0 });
-    expect(cargoSplitShares({ import: 5, export: 0 })).toEqual({ import: 100, export: 0 });
+    expect(cargoSplitShares({ import: 30, export: 16, tranship: 0, empty: 0 })).toEqual({ import: 65, export: 35, tranship: 0, empty: 0 });
+    expect(cargoSplitShares({ import: 1, export: 2, tranship: 0, empty: 0 })).toEqual({ import: 33, export: 67, tranship: 0, empty: 0 });
+    expect(cargoSplitShares({ import: 0, export: 0, tranship: 0, empty: 0 })).toEqual({ import: 0, export: 0, tranship: 0, empty: 0 });
+    expect(cargoSplitShares({ import: 5, export: 0, tranship: 0, empty: 0 })).toEqual({ import: 100, export: 0, tranship: 0, empty: 0 });
   });
 
   it('cargoSplitTotal a cargoSplitText; neplatné počty sa berú ako 0', () => {
-    expect(cargoSplitTotal({ import: 30, export: 16 })).toBe(46);
-    expect(cargoSplitTotal({ import: Number.NaN, export: -3 })).toBe(0);
-    expect(cargoSplitText({ import: 30, export: 16 }, 'TEU')).toBe('Import 30 TEU, export 16 TEU');
-    expect(cargoSplitText({ import: 1, export: 0 })).toBe('Import 1, export 0');
+    expect(cargoSplitTotal({ import: 30, export: 16, tranship: 0, empty: 0 })).toBe(46);
+    expect(cargoSplitTotal({ import: Number.NaN, export: -3, tranship: 0, empty: 0 })).toBe(0);
+    expect(cargoSplitText({ import: 30, export: 16, tranship: 0, empty: 0 }, 'TEU')).toBe('Import 30 TEU, export 16 TEU');
+    expect(cargoSplitText({ import: 1, export: 0, tranship: 0, empty: 0 })).toBe('Import 1, export 0');
   });
 
   it('lashingProgressPct: podiel odpracovaného času, bez celkovej doby null', () => {
@@ -92,7 +92,7 @@ describe('sklad: import / export', () => {
   });
 
   it('prázdny sklad: „Prázdny“ a bez výplne pruhu; sklad bez `split` sekciu nemá', () => {
-    const empty = render({ ...YARD, storage: { ...YARD.storage!, stored: 0, split: { import: 0, export: 0 } } });
+    const empty = render({ ...YARD, storage: { ...YARD.storage!, stored: 0, split: { import: 0, export: 0, tranship: 0, empty: 0 } } });
     expect(fieldText(empty, 'storage-split-count')).toBe('Prázdny');
     expect(empty).toMatch(/module-inspector__bar-fill--import" style="width:0%"/);
     expect(render({ ...YARD, storage: { ...YARD.storage!, split: undefined } })).not.toContain('storage-split');
@@ -124,7 +124,7 @@ describe('zakotvená loď: náklad na palube podľa smeru', () => {
 
   it('lashing: text so zostávajúcim časom, percento a pruh progresu', () => {
     const lashing: LashingData = { ticksLeft: 600, totalTicks: 800, scale: SCALE };
-    const html = render({ ...BERTH, dockedShip: { ...BERTH.dockedShip!, cargoSplit: { import: 0, export: 12 }, lashing } });
+    const html = render({ ...BERTH, dockedShip: { ...BERTH.dockedShip!, cargoSplit: { import: 0, export: 12, tranship: 0, empty: 0 }, lashing } });
     expect(html).toContain('data-lashing="true"');
     expect(fieldText(html, 'lashing-text')).toBe('Lashing a papiere · zostáva 1 h');
     expect(fieldText(html, 'lashing-progress')).toBe('25 %');

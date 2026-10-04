@@ -8,7 +8,9 @@
  * __meter / __bar, __section / __ship, __vehicles / __vehicle (F3, zoznam vozidiel v depe), __bays / __bay (F4, rad
  * stojísk čakacej plochy), __docks / __dock / __pips / __pip (F4, docky rampy), __legend / __legend-item (F6a, import / export
  * v sklade a na lodi; swatch a bar-fill --import / --export), __lashing (F6a, lashing lode s progresom), __rows / __row,
- * __actions / __btn / __reason.
+ * __actions / __btn / __reason; F6c (T6C-05): swatch a bar-fill --tranship / --empty / --damaged / --repair (lokálne `--mi-*`),
+ * __lines / __line (+ __line-head / __line-dot / __line-name / __line-total / __line-counts / __line-count / __line-value--warn|busy;
+ * depo prázdnych: zoznam podľa linky) a __meter-note.
  */
 
 .module-inspector {
@@ -17,6 +19,14 @@
   --mi-icon-xs: var(--space-3);
   --mi-badge-h: calc(var(--space-6) - 2px);
   --mi-gap: calc(var(--space-2) + 2px);
+  /* F6c: farby segmentov (ADR-034). Prázdne = neutrálna šedá, prekládka = fialová (odlíšená od importu, exportu aj prázdnych),
+     poškodené = varovanie, oprava = accent. Po pridaní `--cargo-empty` / `--cargo-tranship` do tokens.css (T6C-04) nahradiť. */
+  --mi-empty: var(--module-base);
+  --mi-tranship: var(--ui-xp);
+  --mi-damaged: var(--ui-warning);
+  --mi-repair: var(--ui-accent);
+  /* Farba linky (bodka v tabuľke depa); riadok ju prepíše inline z tokenu linky (`lineStyle`). */
+  --line-color: var(--ui-text-2);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -284,12 +294,39 @@
   background: var(--ui-surface-2);
 }
 
+/* F6c: prekládka a prázdne (pruh a legenda skladu a lode), poškodené a oprava (depo prázdnych). Farby idú z lokálnych
+   premenných `--mi-*` (hore): kým `design/tokens.css` nemá tokeny `--cargo-empty` a `--cargo-tranship` (T6C-04), berú sa
+   z existujúcich tokenov. */
+.module-inspector__swatch--tranship,
+.module-inspector__bar-fill--tranship {
+  background: var(--mi-tranship);
+}
+
+.module-inspector__swatch--empty,
+.module-inspector__bar-fill--empty {
+  background: var(--mi-empty);
+}
+
+.module-inspector__swatch--damaged,
+.module-inspector__bar-fill--damaged {
+  background: var(--mi-damaged);
+}
+
+.module-inspector__swatch--repair,
+.module-inspector__bar-fill--repair {
+  background: var(--mi-repair);
+}
+
 .module-inspector__swatch--used,
 .module-inspector__swatch--reserved,
 .module-inspector__swatch--busy,
 .module-inspector__swatch--blocked,
 .module-inspector__swatch--import,
-.module-inspector__swatch--export {
+.module-inspector__swatch--export,
+.module-inspector__swatch--tranship,
+.module-inspector__swatch--empty,
+.module-inspector__swatch--damaged,
+.module-inspector__swatch--repair {
   border-color: transparent;
 }
 
@@ -590,6 +627,102 @@
 .module-inspector__bay-icon {
   width: var(--icon-sm);
   height: var(--icon-sm);
+}
+
+/* --- F6c: depo prázdnych — zoznam liniek (názov + súčet, pod ním tri počty) a opravárenské miesta (rad políčok ako stojiská) --- */
+
+.module-inspector__lines {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  list-style: none;
+}
+
+.module-inspector__line {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: calc(var(--space-1) + 2px) var(--mi-gap);
+  font-size: var(--fs-sm);
+}
+
+.module-inspector__line:nth-child(odd) {
+  background: var(--ui-surface);
+}
+
+.module-inspector__line-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.module-inspector__line-dot {
+  flex: none;
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: 50%;
+  background: var(--line-color);
+}
+
+.module-inspector__line-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: var(--fw-semibold);
+}
+
+.module-inspector__line-total {
+  flex: none;
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+}
+
+.module-inspector__line-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.module-inspector__line-count {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+
+.module-inspector__line-count dt {
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+}
+
+.module-inspector__line-count dd {
+  margin: 0;
+}
+
+.module-inspector__line-value--warn {
+  color: var(--ui-warning);
+  font-weight: var(--fw-semibold);
+}
+
+.module-inspector__line-value--busy {
+  color: var(--ui-accent);
+  font-weight: var(--fw-semibold);
+}
+
+.module-inspector__meter-note {
+  color: var(--ui-warning);
+  font-size: var(--fs-xs);
+}
+
+.module-inspector__meter[data-section='repair-bays'] .module-inspector__bays {
+  grid-template-columns: repeat(auto-fill, var(--icon-lg));
+}
+
+.module-inspector__meter[data-section='repair-bays'] .module-inspector__bay--occupied {
+  background: var(--mi-repair);
 }
 
 /* --- F4: docky rampy (rámovaný zoznam ako vozidlá v depe; staging sloty = farba nákladu) --- */

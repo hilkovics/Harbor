@@ -1,7 +1,8 @@
 /**
  * CraneSystem — krok 4 ticku (ARCHITECTURE §6, §7.2, §7.8; rozhodnutie orchestrátora 7; ADR-016, ADR-032 bod 9–11, ADR-033):
  * cyklus žeriavov — vykládka lode, nakládka exportu a dual cycling. Žeriavy sa spracúvajú vzostupne podľa id; každý stav má
- * krok v tabuľke `CRANE_STEPS` (nie switch) a stav mení len `CraneModule.transition`. Čo sa líši podľa režimu odovzdávania
+ * krok v tabuľke `CRANE_STEPS` (nie switch) a stav mení len `CraneModule.transition`, smer cyklu len `CraneModule.changeCycle`
+ * (tabuľka `CRANE_CYCLE_TRANSITIONS`, T6A-09b). Čo sa líši podľa režimu odovzdávania
  * kotviska (`apron` | `under_hook`), je v stratégiách `HANDOVERS` (`crane-handover.ts`).
  *
  * Cyklus (`c = round(StatResolver.resolve('module', defId, 'cycleTicks'))`, fázy `g = ⌊c/2⌋` a `p = c − ⌊c/2⌋`, každá
@@ -122,14 +123,14 @@ function emitBlocked(world: World, crane: CraneModule, berth: BerthModule): void
 function rest(crane: CraneModule): void {
   if (crane.state !== 'idle') crane.transition('idle');
   crane.enterPhase(0);
-  crane.cycle = DEFAULT_CRANE_CYCLE;
+  crane.changeCycle(DEFAULT_CRANE_CYCLE);
   crane.targetUnitId = null;
   crane.dualUnitId = null;
 }
 
 /** Vstup do `grabbing` cyklu `cycle` (z `idle`/`blocked`, alebo po `dual_load` v tom istom ticku). */
 function enterGrabbing(world: World, crane: CraneModule, cycle: CraneCycle, target: EntityId | null): void {
-  crane.cycle = cycle;
+  crane.changeCycle(cycle);
   crane.targetUnitId = target;
   crane.transition('grabbing');
   crane.enterPhase(phaseTicksOf(world, crane, cycle).grabbing);

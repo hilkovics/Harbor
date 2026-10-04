@@ -53,7 +53,7 @@ const BOOKINGS: Contract[] = [];
  * Najviac jobov nakládky pod hákom v obehu na žeriav, kým má loď aj import na vykládku (ADR-033 bod 4): vozidlo s exportom čaká pod
  * hákom popri vozidlách s importom, takže žeriav robí dual cycle a nakládka nevyčerpá vozidlá vykládky.
  */
-const PAIRED_HOOK_LOAD_JOBS_PER_CRANE = 1;
+export const PAIRED_HOOK_LOAD_JOBS_PER_CRANE = 1;
 
 /** Žeriav kotviska s kategóriou nákladu lode (obsluhuje loď). */
 function craneFor(world: World, berth: BerthModule, ship: Ship): CraneModule | undefined {

@@ -74,7 +74,7 @@ import { CARGO_HOLDER_KINDS, holderIdOf, slotOf, uniqueSlotOf } from '../cargo/c
 import { OPPOSITE_DIRECTION } from '../grid/road-direction';
 import { DEFAULT_ROAD_KIND, ROAD_KIND_TRAITS, isRoadKind } from '../grid/road-kind';
 import { CONTRACT_STATE_TRAITS } from '../contracts/contract-fsm';
-import type { EntityId } from '../core/entity-id';
+import type { ContractId, EntityId } from '../core/entity-id';
 import type { CargoCategory } from '../defs/types';
 import type { Cell } from '../grid/grid';
 import { unitAtJobSource } from '../logistics/job-source';
@@ -942,7 +942,9 @@ const checkTrucks: Check = (world) => {
  * (`Contract.countersProblem` — import `unitsExported ≤ unitsUnloaded ≤ volumeUnits`, `exporting` má vyložený celý objem;
  * export booking pozri `ExportContract`); index zadržaných jednotiek = Σ `heldUnits` bookingov; kontrakt, ktorý vlastní
  * náklad na palube (`carriesShipCargo`: import v `ship_en_route`, `unloading`), má loď na mape s triedou a nákladom
- * kontraktu a na jej palube práve `volumeUnits − unitsUnloaded` **import** jednotiek (naložený export voyage sa nepočíta); index uskladneného nákladu (`World.storedCargo`, ADR-027) má toľko jednotiek, koľko ich je
+ * kontraktu a na jej palube práve `volumeUnits − unitsUnloaded` **import** jednotiek (naložený export voyage sa nepočíta); otvorený export
+ * booking s loďou na mape má `loadedUnits` = počet jednotiek exportu `on_ship` s jeho `contractId` (T6A-09b; po odchode lode, keď sú
+ * jednotky `shipped`, sa neoveruje — booking sa uzavrie v nasledujúcom ticku); index uskladneného nákladu (`World.storedCargo`, ADR-027) má toľko jednotiek, koľko ich je
  * `in_storage`. Väzbu jednotka → kontrakt overuje obnova save (`checkContracts` vo world-restore).
  */
 /** Import jednotky na palube lode (naložený export voyage sa nepočíta, ADR-032); bez alokácie. */
@@ -956,6 +958,18 @@ function importAboard(world: World, shipId: EntityId): number {
   return imports;
 }
 
+/** Jednotky exportu kontraktu `contractId` na palube lode (bez alokácie). */
+function exportsAboardOf(world: World, shipId: EntityId, contractId: ContractId): number {
+  const count = world.cargo.countAt('on_ship', shipId);
+  let units = 0;
+  for (let i = 0; i < count; i++) {
+    const unitId = world.cargo.unitAtIndex('on_ship', shipId, i);
+    const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
+    if (unit?.direction === 'export' && unit.contractId === contractId) units += 1;
+  }
+  return units;
+}
+
 const checkContracts: Check = (world) => {
   let offers = 0;
   for (const contract of world.contractBook.openContracts.values()) {
@@ -963,6 +977,14 @@ const checkContracts: Check = (world) => {
     if (CONTRACT_STATE_TRAITS[state].offer) offers += 1;
     const counters = contract.countersProblem();
     if (counters !== undefined) return `${label}: ${counters}`;
+    const booking = contract.booking;
+    const bookedShip = booking === null || contract.shipId === undefined ? undefined : world.ships.get(contract.shipId);
+    if (booking !== null && bookedShip !== undefined) {
+      const loadedAboard = exportsAboardOf(world, bookedShip.id, contract.id);
+      if (loadedAboard !== booking.loadedUnits) {
+        return `${label}: loadedUnits ${String(booking.loadedUnits)}, na ${bookedShip.label} je ${String(loadedAboard)} jednotiek exportu bookingu`;
+      }
+    }
     if (!contract.carriesShipCargo) continue;
     const ship = contract.shipId === undefined ? undefined : world.ships.get(contract.shipId);
     if (ship === undefined) return `${label}: loď kontraktu #${String(contract.shipId)} nie je na mape`;

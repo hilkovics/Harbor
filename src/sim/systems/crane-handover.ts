@@ -10,6 +10,10 @@
  *   (`in_crane → on_apron`) a job presmeruje na slot; inak žeriav s jednotkou čaká (`craneWaitForVehicleTicks`). Nakládka — vozidlo
  *   s jednotkou čaká pod hákom (job `in_storage → in_crane`) a žeriav ju zdvihne priamo `in_vehicle → in_crane`.
  *
+ * Vlastnosti stratégie (`reservesUnloadSlot`, `plansUnloadTarget`) čítajú aj invarianty sveta (`world-invariants.ts`) a dispatcher
+ * (`logistics/export-load.ts`) — režim sa nikde mimo tejto tabuľky nevetví podľa literálu (T6A-09b, pravidlo 7). Cyklus vykládky
+ * začatý v režime `apron` a načítaný pod kotvisko `under_hook` (save spred ADR-033) prevedie obnova (`world-restore.ts`).
+ *
  * Funkcie nemenia stav FSM žeriava (to robí `CraneSystem`); presuny nákladu idú výlučne cez `CargoLedger.move` (pravidlo 2).
  */
 import { compareStowageOrder } from '../cargo/stowage';

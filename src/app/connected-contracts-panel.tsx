@@ -4,13 +4,14 @@
  * klávesová skratka `C` ho prepína (ako v titulku ikony).
  *
  * - Karty sú v snapshote (`contracts`, prepočet len pri zmene revízie), čas na kartách sa počíta z `tick`.
- * - „Prijať“ / „Odmietnuť“: `validate(AcceptContract | DeclineContract)` → `dispatch` len pri `ok` (pravidlo 5); dôvod,
- *   prečo sa ponuku nedá prijať, je v karte (`disabledReason`).
+ * - „Prijať“ / „Odmietnuť“: `validate(AcceptContract | DeclineContract)` → `dispatch` len pri `ok` (pravidlo 5,
+ *   `contract-actions.ts`); príkaz nesie `id` prvého kontraktu skupiny voyage a sim ho aplikuje na celú skupinu (roundtrip);
+ *   dôvod, prečo sa ponuku nedá prijať, je v karte (`disabledReason`).
  * - Bez otvoreného panelu sa nevykreslí nič (ani hooky nad snapshotom), takže pravý okraj mapy ostáva klikateľný.
  */
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
-import { AcceptContractCommand, DeclineContractCommand } from '@sim/commands';
 import { ContractsPanel, type ContractCardId, type ContractsTab } from '@ui/contracts-panel';
+import { acceptOffer, declineOffer } from './contract-actions';
 import type { OverlaySelection } from './overlay-selection';
 import type { PanelSelection } from './panel-selection';
 import { useSimBridge, useSimSnapshot } from './use-sim-snapshot';
@@ -54,15 +55,13 @@ function OpenContractsPanel({ panels }: { readonly panels: PanelSelection }) {
 
   const accept = useCallback(
     (id: ContractCardId) => {
-      const command = new AcceptContractCommand(Number(id));
-      if (bridge.validate(command).ok) bridge.dispatch(command);
+      acceptOffer(bridge, Number(id));
     },
     [bridge],
   );
   const decline = useCallback(
     (id: ContractCardId) => {
-      const command = new DeclineContractCommand(Number(id));
-      if (bridge.validate(command).ok) bridge.dispatch(command);
+      declineOffer(bridge, Number(id));
     },
     [bridge],
   );

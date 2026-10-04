@@ -4,7 +4,7 @@
  * - Kotvisko: apron (obsadené / rezervované / kapacita), zakotvená loď (`dockedShipId` → trieda, náklad na palube z
  *   ledgera `cargo.countAt('on_ship', id)`, jednotka z `cargoTypes`). F6a (ADR-032): náklad na palube rozdelený na
  *   import a export (`shipCargoSplit`) a stav lashing (`ship.state === 'lashing'`: zostávajúce ticky `lashingTicksLeft`;
- *   celková doba `lashingTicksPerUnit × naložený export + paperworkTicks` z defu triedy lode, ak ju def má — pre progres).
+ *   celková doba `lashingTicksPerUnit × naložený export + paperworkTicks` z defu triedy lode — pre progres).
  * - Žeriav: stav (`crane.state`, len čítanie) a vyťaženosť = busy / (busy + idle + blocked); blokovaný podiel
  *   analogicky. Bez odpracovaných tickov sú oba podiely 0.
  * - Sklad (F3): uložené / rezervované / kapacita z modulu, kumulatívne prijaté a vydané (`unitsIn`/`unitsOut`), jednotka
@@ -41,11 +41,11 @@ import {
 } from '@ui/module-inspector';
 import { REASON_TEXT } from './build-feedback';
 import { hasRoadConnector } from './entities-vm';
-import { optionalDefNumber } from './optional-def';
+import { lashingTicks } from './lashing';
 import type { SimBridge } from './sim-bridge';
 
 /** Časť `SimBridge`, ktorú inšpektor číta. */
-export type InspectorBridge = Pick<SimBridge, 'world' | 'validate'>;
+export type InspectorBridge = Pick<SimBridge, 'world' | 'validate' | 'lashingTotals'>;
 
 /** Stav kotviska v hlavičke inšpektora (badge). */
 export const BERTH_STATE_DOCKED = 'Loď kotví';
@@ -79,25 +79,12 @@ function percentOf(part: number, total: number): number {
   return total > 0 ? (part / total) * 100 : 0;
 }
 
-/**
- * Celková doba lashingu lode: `lashingTicksPerUnit × naložený export + paperworkTicks` (ADR-032 bod 12); `undefined`,
- * kým def triedy lode tieto polia nemá (progres sa potom nekreslí, ostane zostávajúci čas).
- */
-export function lashingTotalTicks(ship: Pick<Ship, 'def'>, exportOnBoard: number): number | undefined {
-  const perUnit = optionalDefNumber(ship.def, 'lashingTicksPerUnit');
-  const paperwork = optionalDefNumber(ship.def, 'paperworkTicks');
-  return perUnit === undefined || paperwork === undefined ? undefined : perUnit * exportOnBoard + paperwork;
-}
-
-/** Lashing lode (len v stave `lashing`), inak `undefined`. */
-function lashingData(world: World, ship: Ship, exportOnBoard: number): LashingData | undefined {
-  if (ship.state !== 'lashing') return undefined;
-  const totalTicks = lashingTotalTicks(ship, exportOnBoard);
-  return {
-    ticksLeft: ship.lashingTicksLeft,
-    ...(totalTicks === undefined ? {} : { totalTicks }),
-    scale: { ticksPerHour: world.clock.ticksPerHour, ticksPerDay: world.clock.ticksPerDay },
-  };
+/** Lashing lode (len v stave `lashing`), inak `undefined`; celková doba zo simu (`ShipLashingStarted`), inak z defu. */
+function lashingData(bridge: InspectorBridge, ship: Ship, exportOnBoard: number): LashingData | undefined {
+  const ticks = lashingTicks(ship, exportOnBoard, bridge.lashingTotals);
+  if (ticks === undefined) return undefined;
+  const { clock } = bridge.world;
+  return { ticksLeft: ticks.ticksLeft, totalTicks: ticks.ticksTotal, scale: { ticksPerHour: clock.ticksPerHour, ticksPerDay: clock.ticksPerDay } };
 }
 
 function berthFields(bridge: InspectorBridge, berth: BerthModule): Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'apron' | 'dockedShip'> {
@@ -108,7 +95,7 @@ function berthFields(bridge: InspectorBridge, berth: BerthModule): Pick<ModuleIn
     return { stateLabel: BERTH_STATE_FREE, ok: true, apron: { used: apron.usedCount, reserved: apron.reservedCount, capacity: apron.capacity }, dockedShip: null };
   }
   const split = shipCargoSplit(world, ship.id);
-  const lashing = lashingData(world, ship, split.export);
+  const lashing = lashingData(bridge, ship, split.export);
   return {
     stateLabel: lashing === undefined ? BERTH_STATE_DOCKED : BERTH_STATE_LASHING,
     ok: true,

@@ -17,7 +17,6 @@ import { offerClosingTick, type Contract, type ExportBooking } from '@sim/contra
 import type { World } from '@sim/world';
 import type { ContractBookingData, ContractCardData, ContractsTimeScale } from '@ui/contracts-panel';
 import { REASON_TEXT } from './build-feedback';
-import { optionalDefNumber } from './optional-def';
 import { CARGO_CATEGORY_TEXT } from './toast-center';
 
 /** Prvé písmeno veľké (`kontajnery` → `Kontajnery`). */
@@ -39,21 +38,18 @@ export function acceptDisabledReason(world: World, contract: Contract): string |
 }
 
 /**
- * Odstup cut-off od príchodu lode v tickoch (`economy.cutoffHours` × ticky za hodinu), alebo `undefined`, kým def nemá
- * pole (pribúda s T6A-02). Ponuka s ním ukáže „Cut-off 12 h pred príchodom lode“.
+ * Odstup cut-off od príchodu lode v tickoch (`economy.cutoffHours` × ticky za hodinu; rovnaké zaokrúhlenie ako pri
+ * plánovaní bookingu v `Contract.accept`). Ponuka s ním ukáže „Cut-off 12 h pred príchodom lode“.
  */
-export function cutoffLeadTicks(world: World): number | undefined {
-  const hours = optionalDefNumber(world.defs.economy, 'cutoffHours');
-  return hours === undefined ? undefined : Math.round(hours * world.clock.ticksPerHour);
+export function cutoffLeadTicks(world: World): number {
+  return Math.round(world.defs.economy.cutoffHours * world.clock.ticksPerHour);
 }
 
 /** Booking export kontraktu pre kartu; `cutoffLeadTicks` len pred prijatím (potom je cut-off konkrétny tick). */
 function bookingData(world: World, booking: ExportBooking): ContractBookingData {
-  const lead = booking.cutoffTick === undefined ? cutoffLeadTicks(world) : undefined;
   return {
     destinationPort: booking.destinationPort,
-    ...(booking.cutoffTick === undefined ? {} : { cutoffTick: booking.cutoffTick }),
-    ...(lead === undefined ? {} : { cutoffLeadTicks: lead }),
+    ...(booking.cutoffTick === undefined ? { cutoffLeadTicks: cutoffLeadTicks(world) } : { cutoffTick: booking.cutoffTick }),
     bookedUnits: booking.bookedUnits,
     pendingArrivals: booking.arrivalPlan.length,
     arrivedUnits: booking.arrivedUnits,

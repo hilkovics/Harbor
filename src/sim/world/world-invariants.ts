@@ -93,6 +93,7 @@ import type { Ship } from '../ships/ship';
 import { SHIP_STATE_TRAITS, holdingAllows } from '../ships/ship-fsm';
 import { shipOverlapProblem } from '../ships/ship-traffic';
 import { mooringProblem } from '../ships/ship-route';
+import { HANDOVERS } from '../systems/crane-handover';
 import type { Truck } from '../trucks/truck';
 import { TRUCK_STATE_TRAITS } from '../trucks/truck-fsm';
 import { gateNearSideCell, isOffQueueSide, truckMotionProblem } from '../trucks/truck-trip';
@@ -207,7 +208,7 @@ function craneTargetProblem(world: World, crane: CraneModule, berth: BerthModule
   const target = crane.targetUnitId;
   if (crane.state === 'idle' || crane.state === 'blocked') return target === null ? undefined : `${crane.label} mimo cyklu má cieľ #${String(target)}`;
   const loads = CRANE_CYCLE_TRAITS[crane.cycle].direction === 'load';
-  const expects = loads || berth.params.handoverMode === 'under_hook';
+  const expects = loads || HANDOVERS[berth.params.handoverMode].plansUnloadTarget;
   if (expects !== (target !== null)) return `${crane.label} v stave '${crane.state}' cyklu '${crane.cycle}' (${berth.params.handoverMode}) ${expects ? 'nemá' : 'má'} cieľ cyklu`;
   if (target === null) return undefined;
   if (crane.state !== 'grabbing') return crane.heldUnitId === target ? undefined : `${crane.label} drží #${String(crane.heldUnitId)}, cieľ cyklu je #${String(target)}`;
@@ -235,7 +236,7 @@ function checkCrane(world: World, crane: CraneModule): string | undefined {
     return `${crane.label} v stave '${crane.state}' ${traits.holdsUnit ? 'nedrží' : 'drží'} jednotku`;
   }
   // Rezervovaný slot apronu: v režime `apron` ho drží stav cyklu podľa `CRANE_CYCLE_TRAITS.reservesFrom`, v `under_hook` nikdy.
-  const reserves = berth.params.handoverMode === 'apron' && craneReservesApronSlot(crane.cycle, crane.state);
+  const reserves = HANDOVERS[berth.params.handoverMode].reservesUnloadSlot && craneReservesApronSlot(crane.cycle, crane.state);
   if (reserves !== (crane.reservedSlot !== null)) {
     return `${crane.label} v stave '${crane.state}' cyklu '${crane.cycle}' (${berth.params.handoverMode}) ${reserves ? 'nemá' : 'má'} rezervovaný slot`;
   }

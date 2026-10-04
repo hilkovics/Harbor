@@ -304,6 +304,7 @@ describe('runScenario', () => {
       transhipRescued: 0,
       transhipSold: 0,
       emptyReturnsDeclined: 0,
+      directHandoverPct: null,
     });
     expect(Object.keys(report)).toEqual([
       'scenario',
@@ -371,6 +372,7 @@ describe('runScenario', () => {
       'transhipRescued',
       'transhipSold',
       'emptyReturnsDeclined',
+      'directHandoverPct',
     ]);
   });
 
@@ -771,16 +773,18 @@ describe('runScenario', () => {
     it('live_terminal: všetky štyri toky sú nenulové, lostUnits 0; repositionedUnits = naložené prázdne, transhipLoaded = naložená prekládka (shipped)', () => {
       expect(report).toMatchObject({
         lostUnits: 0,
-        exportedUnits: 116,
+        exportedUnits: 114,
         shippedUnits: 96,
-        emptyReturns: 68,
-        emptyPickedUp: 7,
+        emptyReturns: 66,
+        emptyPickedUp: 5,
         repositionedUnits: 24,
         transhipLoaded: 36,
         transhipMissed: 0,
         transhipRescued: 0,
         transhipSold: 0,
         emptyReturnsDeclined: 0,
+        // vozidlo stojí pod žeriavom a buffer je 0: každé odovzdanie žeriav ↔ vozidlo je priame (pred T6D-02 49 %)
+        directHandoverPct: 100,
       });
       // odplávané = export 36 + repositioning 24 + prekládka 36
       expect(report.shippedUnits).toBe(36 + report.repositionedUnits + report.transhipLoaded);
@@ -1094,7 +1098,7 @@ describe('CLI (tools/simrun.ts)', () => {
     expect(() => JSON.parse(run.stdout)).toThrow();
   }, 30_000);
 
-  it('f2_unload --report → čistý JSON s metrikami žeriavov a lodí, exit 0 (predvolený režim under_hook: bez vozidiel žeriav čaká, buffer 1 jednotka)', () => {
+  it('f2_unload --report → čistý JSON s metrikami žeriavov a lodí, exit 0 (predvolený režim under_hook: bez vozidiel žeriav čaká s jednotkou v ruke, buffer 0)', () => {
     const run = runCli(F2_UNLOAD_SCENARIO, '--ticks', '5000', '--report');
     expect(run.status).toBe(0);
     expect(run.stderr).toBe('');
@@ -1104,10 +1108,10 @@ describe('CLI (tools/simrun.ts)', () => {
       lostUnits: 0,
       modules: STARTER_MODULES,
       shipsSpawned: 1,
-      // Pod hákom nikto nečaká a loď bez vozidiel sa nevyloží: jedna jednotka ide na buffer apronu, žeriav s druhou čaká.
+      // Pod hákom nikto nečaká a loď bez vozidiel sa nevyloží: predvolený buffer 0 (T6D-02) — apron ostane prázdny, žeriav drží prvú jednotku.
       shipsDeparted: 0,
-      unitsOnApron: 1,
-      craneCycles: 1,
+      unitsOnApron: 0,
+      craneCycles: 0,
       craneBlockedPct: 0,
     });
     expect(report['craneWaitForVehicleTicks']).toBeGreaterThan(4000);
@@ -1157,10 +1161,11 @@ describe('CLI (tools/simrun.ts)', () => {
       scenario: 'export_roundtrip',
       lostUnits: 0,
       contractsCompleted: 2,
-      exportedUnits: 58,
-      shippedUnits: 35,
+      // Predvolený under_hook (od T6D-02): rolled jednotka dorazí ešte počas nakládky a naloží sa ako last minute (36 odplávaných, nič po súši).
+      exportedUnits: 57,
+      shippedUnits: 36,
       rolledUnits: 1,
-      returnedUnits: 1,
+      returnedUnits: 0,
       vgmHolds: 4,
       dualTransactionRate: 0,
       stowageOrderViolations: 0,
@@ -1169,6 +1174,8 @@ describe('CLI (tools/simrun.ts)', () => {
     expect(report['dualCycleRate']).toBeGreaterThan(0);
     expect(report['craneWaitForVehicleTicks']).toBeGreaterThan(0);
     expect(report['vehicleWaitUnderCraneTicks']).toBeGreaterThan(0);
+    // vozidlo stojí pod žeriavom: drvivá väčšina odovzdaní žeriav ↔ vozidlo ide priamo (pred T6D-02 44,6 %)
+    expect(report['directHandoverPct']).toBeGreaterThan(90);
     expect(typeof report['stateHash']).toBe('string');
     for (const at of ['28000', '30700']) {
       const roundtrip = runCli(EXPORT_ROUNDTRIP_SCENARIO, '--ticks', '40000', '--report', '--hash', '--roundtrip-at', at);

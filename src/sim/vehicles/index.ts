@@ -16,5 +16,5 @@ export { VehicleError } from './vehicle-error';
 export type { VehicleErrorCode } from './vehicle-error';
 export { depotExit } from './depot-exit';
 export type { DepotExit } from './depot-exit';
-export { enterNoPath, jobModule, jobOfVehicle, planRoute, startTrip, vehicleMotionProblem } from './vehicle-trip';
+export { enterNoPath, hookCellOfCrane, hookCellOfJob, jobModule, jobOfVehicle, jobTarget, planJobRoute, planRoute, startTrip, vehicleMotionProblem } from './vehicle-trip';
 export type { TravelState, VehicleMotionProblem } from './vehicle-trip';

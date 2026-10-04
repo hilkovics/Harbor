@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { CommandError, commandFromJSON, type Command, type SerializedCommand } from '@sim/commands';
 import type { CargoDirection } from '@sim/cargo';
 import { loadBundledDefs, type DefRegistry } from '@sim/defs';
-import type { SimEvent } from '@sim/events';
+import type { CargoMovedEvent, SimEvent } from '@sim/events';
 import { loadBundledMap, loadMap, parseMapDef, type LoadedMap } from '@sim/grid';
 import { CraneModule, TruckGate } from '@sim/modules';
 import { World, stateHash, type WorldState } from '@sim/world';
@@ -221,6 +221,12 @@ export interface SimrunReport {
   readonly transhipSold: number;
   /** Počet udalostí `EmptyReturnDeclined` — návraty prázdneho zahodené bez kamióna, lebo depo prázdnych nemalo voľné miesto (T6C-07b, ADR-034 dodatok). */
   readonly emptyReturnsDeclined: number;
+  /**
+   * Podiel jednotiek odovzdaných žeriavom **priamo** vozidlu (F6d, ADR-033 dodatok T6D-02): `in_crane ↔ in_vehicle` / (`in_crane ↔ in_vehicle` +
+   * `in_crane ↔ on_apron`) × 100 cez vykládku aj nakládku (`CargoMoved` s koncom `in_crane`), na 1 desatinné miesto; bez odovzdania žeriavom `null`.
+   * Režim `apron` ho má 0 (každá jednotka ide cez apron).
+   */
+  readonly directHandoverPct: number | null;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -519,14 +525,25 @@ interface EventTally {
   transhipRescued: number;
   transhipSold: number;
   emptyReturnsDeclined: number;
+  /** Odovzdania žeriavom: priamo vozidlu (`in_crane ↔ in_vehicle`) a cez apron (`in_crane ↔ on_apron`) — metrika `directHandoverPct`. */
+  directHandovers: number;
+  apronHandovers: number;
   /** Súčet a počet `exportGroupingShare` v ticku `CutoffPassed` (priemer sa počíta na konci). */
   groupingShareSum: number;
   groupingShareCount: number;
 }
 
+/** Odovzdanie žeriavom (jedna strana pohybu je `in_crane`): priamo vozidlu, alebo cez apron (buffer / režim `apron`). */
+function tallyHandover(tally: EventTally, event: CargoMovedEvent): void {
+  const other = event.from.kind === 'in_crane' ? event.to.kind : event.to.kind === 'in_crane' ? event.from.kind : undefined;
+  if (other === 'in_vehicle') tally.directHandovers += 1;
+  else if (other === 'on_apron') tally.apronHandovers += 1;
+}
+
 function tallyEvents(tally: EventTally, events: readonly SimEvent[]): void {
   for (const event of events) {
-    if (event.type === 'ShipSpawned') tally.shipsSpawned += 1;
+    if (event.type === 'CargoMoved') tallyHandover(tally, event);
+    else if (event.type === 'ShipSpawned') tally.shipsSpawned += 1;
     else if (event.type === 'ShipDeparted') tally.shipsDeparted += 1;
     else if (event.type === 'CraneCycleDone') tally.craneCycles += 1;
     else if (event.type === 'JobDone') tally.jobsDone += 1;
@@ -747,6 +764,8 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     transhipRescued: 0,
     transhipSold: 0,
     emptyReturnsDeclined: 0,
+    directHandovers: 0,
+    apronHandovers: 0,
     groupingShareSum: 0,
     groupingShareCount: 0,
   };
@@ -853,6 +872,10 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     transhipRescued: tally.transhipRescued,
     transhipSold: tally.transhipSold,
     emptyReturnsDeclined: tally.emptyReturnsDeclined,
+    directHandoverPct:
+      tally.directHandovers + tally.apronHandovers === 0
+        ? null
+        : Math.round((tally.directHandovers * PERCENT * ONE_DECIMAL) / (tally.directHandovers + tally.apronHandovers)) / ONE_DECIMAL,
   };
 }
 
@@ -883,7 +906,7 @@ export function formatSummary(report: SimrunReport): string {
     `prázdne vrátené/záložné/poškodené/opravené ${String(report.emptyReturns)}/${String(report.emptyFallbackStored)}/${String(report.emptyDamaged)}/${String(report.emptyRepaired)}, ` +
     `opravy ${String(report.repairCostCents)}, prázdne vydané/zmeškané ${String(report.emptyPickedUp)}/${String(report.emptyPickupMisses)}, ` +
     `repositioning ${String(report.repositionedUnits)}, prekládka naložená/zmeškaná/zachránená/predaná ${String(report.transhipLoaded)}/${String(report.transhipMissed)}/` +
-    `${String(report.transhipRescued)}/${String(report.transhipSold)}, návraty prázdnych zahodené ${String(report.emptyReturnsDeclined)}` +
+    `${String(report.transhipRescued)}/${String(report.transhipSold)}, návraty prázdnych zahodené ${String(report.emptyReturnsDeclined)}, priame odovzdanie ${metric(report.directHandoverPct)} %` +
     (report.stateHash === null ? '' : `, hash stavu ${report.stateHash}`)
   );
 }

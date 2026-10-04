@@ -14,7 +14,7 @@ import type { Grid } from '../grid/grid';
 import type { Module } from '../modules/module';
 import { NO_ACCESS, accessCellIndex } from '../logistics/module-access';
 import type { PathCache } from '../logistics/path-cache';
-import type { Pathfinder } from '../logistics/pathfinder';
+import type { Pathfinder, QuayCells } from '../logistics/pathfinder';
 import type { RoadSpeeds } from '../logistics/road-speed';
 import type { Carrier } from './carrier';
 
@@ -24,6 +24,16 @@ export interface MovementWorld {
   readonly paths: PathCache;
   readonly pathfinder: Pathfinder;
   readonly roadSpeeds: RoadSpeeds;
+  /** Nábrežie kotvísk pod hákom (F6d, ADR-033 dodatok): jazdné bunky vozidla bez cesty; bez neho sa jazdí len po cestách. */
+  readonly quay?: QuayCells;
+}
+
+/**
+ * Smie nosič stáť a ísť po bunke `index`: bunka s cestou, alebo (F6d) nábrežie kotviska pod hákom — nábrežie je jazdné len pre
+ * hľadanie trasy s koncom v ňom (`Pathfinder`), kontrola pohybu ho pripúšťa pre každú bunku trasy.
+ */
+export function isDrivableCell(world: MovementWorld, index: number): boolean {
+  return world.grid.atIndex(index).road === 'road' || (world.quay !== undefined && world.quay.owners()[index] !== 0);
 }
 
 /** Kotva plánovania: bunka nosiča, pri pohybe medzi bunkami cieľová bunka úseku. */

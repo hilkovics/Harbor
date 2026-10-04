@@ -13,7 +13,7 @@ import { isAccessCell } from '../logistics/module-access';
 import type { Module } from '../modules/module';
 import { CELL_CENTER_OFFSET, cardinalHeading } from '../ships/ship-route';
 import { carrierPosition, isValidProgress, type Carrier } from './carrier';
-import type { MovementWorld } from './route-planning';
+import { isDrivableCell, type MovementWorld } from './route-planning';
 
 /**
  * Pohyb nosiča v stave: `park` — stojí v strede bunky bez ďalšej trasy (`route = [cell]`, progres 0); `drive` — ide po
@@ -84,11 +84,11 @@ function routeProblem(world: MovementWorld, carrier: Carrier): string | undefine
   return undefined;
 }
 
-/** Prvá bunka trasy na pozíciách `from … to − 1` bez cesty, inak `undefined`. */
+/** Prvá bunka trasy na pozíciách `from … to − 1` bez cesty (ani nábrežia kotviska pod hákom, F6d), inak `undefined`. */
 function allRoads(world: MovementWorld, carrier: Carrier, from: number, to: number): number | undefined {
   for (let i = from; i < to; i++) {
     const cell = routeCell(carrier, i);
-    if (world.grid.atIndex(cell).road !== 'road') return cell;
+    if (!isDrivableCell(world, cell)) return cell;
   }
   return undefined;
 }

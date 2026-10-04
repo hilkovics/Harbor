@@ -15,6 +15,10 @@
  * - **Bez alokácie na volanie** okrem výsledného poľa `findPath`: pracovné polia (`g`, `h`, `f`, rodič, generačné
  *   pečiatky „videný"/„uzavretý", halda s pozíciami) vzniknú raz v konštruktore pre `cellCount` buniek. Nové hľadanie
  *   len zvýši generáciu — hodnoty z minulého hľadania sú neplatné bez mazania polí.
+ * - **Nábrežie pod hákom** (F6d, ADR-033 dodatok T6D-02): voliteľné `QuayCells` — bunky kotvísk s odovzdávaním pod hákom, po ktorých smie
+ *   ísť vozidlo k žeriavu. Uzlom grafu je bunka nábrežia len v hľadaní, ktorého **začiatok alebo koniec** leží v nábreží toho istého kotviska
+ *   (`owners[from]` / `owners[to]`); hľadanie medzi dvoma cestnými bunkami nábrežím nikdy neprejde, takže cestná sieť (kamióny, vozidlá mimo
+ *   háku) sa nespája cez nábrežie a bez nábrežia je A* bitovo zhodný s F3–F6c.
  * - Cesta sa neukladá do sveta ani do save; pri zmene ciest ju treba hľadať znova (`PathCache` a `DistanceMatrix`
  *   sa zneplatnia podľa `World.roadVersion`).
  */
@@ -28,6 +32,14 @@ export interface RoadGraph {
   readonly height: number;
   readonly cellCount: number;
   atIndex(index: number): Readonly<Cell>;
+}
+
+/**
+ * Nábrežie kotvísk pod hákom (F6d): `owners()` = pole podľa indexu bunky — id kotviska, ktorého nábrežie bunku tvorí, inak 0. Pole smie
+ * zdroj pri volaní obnoviť (zmena modulov); A* ho číta počas jedného hľadania a nemení ho.
+ */
+export interface QuayCells {
+  owners(): Readonly<Int32Array>;
 }
 
 /** Cena vstupu do bunky s daným indexom; musí byť ≥ `BASE_CELL_COST` (volá sa len pre cestné bunky). */
@@ -77,6 +89,7 @@ export class Pathfinder {
   private readonly seen: Int32Array;
   private readonly closed: Int32Array;
   private readonly open: IndexedBinaryHeap;
+  private readonly quay: QuayCells | undefined;
   private generation = NEVER;
   private searchCount = 0;
   private expanded = 0;
@@ -85,10 +98,12 @@ export class Pathfinder {
   /**
    * @param grid mriežka (rozmery sa nemenia; cesty áno — hľadanie číta aktuálny stav)
    * @param cellCost cena vstupu do cestnej bunky (predvolene `unitCellCost`)
+   * @param quay nábrežie kotvísk pod hákom (F6d; viď hlavička súboru); bez neho sú uzlami len cestné bunky
    */
-  constructor(grid: RoadGraph, cellCost: CellCostFn = unitCellCost) {
+  constructor(grid: RoadGraph, cellCost: CellCostFn = unitCellCost, quay?: QuayCells) {
     this.grid = grid;
     this.cellCost = cellCost;
+    this.quay = quay;
     const n = grid.cellCount;
     this.g = new Float64Array(n);
     this.h = new Float64Array(n);
@@ -164,7 +179,11 @@ export class Pathfinder {
     assertCellIndex(to, cellCount, caller);
     this.searchCount += 1;
     this.expanded = 0;
-    if (!this.isRoad(from) || !this.isRoad(to)) return false;
+    // Nábrežie (F6d): bunky kotviska, v ktorého nábreží leží začiatok alebo koniec hľadania (0 = žiadne).
+    const owners = this.quay?.owners();
+    const quayFrom = owners === undefined ? 0 : owners[from];
+    const quayTo = owners === undefined ? 0 : owners[to];
+    if (!(this.isRoad(from) || quayFrom !== 0) || !(this.isRoad(to) || quayTo !== 0)) return false;
 
     const generation = this.nextGeneration();
     const { g, h, f, parent, seen, closed, open } = this;
@@ -194,7 +213,8 @@ export class Pathfinder {
         const next = ny * width + nx;
         if (closed[next] === generation) continue;
         const nextCell = this.grid.atIndex(next);
-        if (nextCell.road !== 'road' || !isRoadStepAllowed(currentCell, nextCell, direction.name)) continue;
+        if (nextCell.road !== 'road' && (owners === undefined || owners[next] === 0 || (owners[next] !== quayFrom && owners[next] !== quayTo))) continue;
+        if (!isRoadStepAllowed(currentCell, nextCell, direction.name)) continue;
         const tentative = g[current] + this.stepCost(next);
         if (seen[next] !== generation) {
           seen[next] = generation;

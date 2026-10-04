@@ -90,6 +90,7 @@ import { JobError } from '../logistics/job-error';
 import { unitAtJobSource } from '../logistics/job-source';
 import { PathCache } from '../logistics/path-cache';
 import { Pathfinder } from '../logistics/pathfinder';
+import { QuayLanes, hasQuayLane } from '../logistics/quay-lanes';
 import { RoadSpeeds } from '../logistics/road-speed';
 import { isPickupCargo } from '../logistics/dock-cargo';
 import { EmptyFlow, type EmptyFlowState } from '../logistics/empty-flow';
@@ -287,6 +288,7 @@ export class World {
   private landsideNetwork: LandsideNetwork | undefined;
   private readonly landsideRoster = new LandsideRosterCache();
   private pathfinderInstance: Pathfinder | undefined;
+  private quayInstance: QuayLanes | undefined;
   private pathCache: PathCache | undefined;
   private distanceMatrix: DistanceMatrix | undefined;
 
@@ -565,8 +567,17 @@ export class World {
    * použití (pracovné polia pre celú mriežku).
    */
   get pathfinder(): Pathfinder {
-    this.pathfinderInstance ??= new Pathfinder(this.grid, this.roadSpeeds.cellCost);
+    this.pathfinderInstance ??= new Pathfinder(this.grid, this.roadSpeeds.cellCost, this.quay);
     return this.pathfinderInstance;
+  }
+
+  /**
+   * Nábrežie kotvísk pod hákom (F6d, ADR-033 dodatok T6D-02): jazdné bunky vozidla pri odovzdávaní žeriavu, odvodené z modulov
+   * (`QuayLanes`, nie je v save). Režim `apron` ho nemá.
+   */
+  get quay(): QuayLanes {
+    this.quayInstance ??= new QuayLanes(this.grid.width, this.grid.cellCount, this);
+    return this.quayInstance;
   }
 
   /** Cache ciest (`PathCache`) nad `pathfinder`, zneplatnená podľa `roadVersion`; vznikne pri prvom použití. */
@@ -631,6 +642,8 @@ export class World {
     this.moduleMap.set(module.id, module);
     this.moduleChanges += 1;
     this.refreshBerthGroups();
+    // Nábrežie pod hákom (F6d) mení uzly A*: cache ciest a vzdialeností sa zneplatnia a jazdiace vozidlá preplánujú.
+    if (hasQuayLane(module)) this.markRoadsChanged();
   }
 
   /**
@@ -653,6 +666,7 @@ export class World {
     this.moduleMap.delete(moduleId);
     this.moduleChanges += 1;
     this.refreshBerthGroups();
+    if (hasQuayLane(module)) this.markRoadsChanged();
     return module;
   }
 

@@ -157,11 +157,13 @@ describe('scenár live_terminal: beh', () => {
       expect(returnedIds.has(entry.event.unitId)).toBe(true);
       expect(kinds.get(entry.event.unitId)?.slice(-5)).toEqual(['in_storage', 'in_vehicle', 'in_crane', 'on_ship', 'shipped']);
     }
-    // stowage: všetky plné jednotky exportu predchádzajú prázdnym; nikdy mimo poradia
+    // stowage: všetky plné jednotky exportu predchádzajú prázdnym; mimo poradia len výnimočne
     const exportTicks = loaded.filter((entry) => entry.event.contractId === EXPORT_ID).map((entry) => entry.tick);
     const emptyTicks = empties.map((entry) => entry.tick);
     expect(Math.max(...exportTicks)).toBeLessThan(Math.min(...emptyTicks));
-    expect(loaded.some((entry) => entry.event.outOfOrder)).toBe(false);
+    // Pod hákom (od T6D-02) vozia jednotky nakládky viaceré vozidlá a žeriav berie to, ktoré už čaká pod ním — výnimočne (menej než 2 % nakládok,
+    // metrika `stowageOrderViolations`) sa tak naloží jednotka pred skoršou jednotkou plánu, ktorá je ešte vo vozidle na ceste.
+    expect(loaded.filter((entry) => entry.event.outOfOrder).length).toBeLessThan(loaded.length * 0.02);
     expect(of(events, 'ContractCompleted').find((entry) => entry.event.contractId === REPOSITIONING_ID)?.event).toMatchObject({ rewardCents: 352_800, penaltiesCents: 0 });
     // jedna loď odviezla export aj prázdne
     expect(new Set([...exportTicks, ...emptyTicks].map((tick) => loaded.find((entry) => entry.tick === tick)?.event.shipId)).size).toBe(1);

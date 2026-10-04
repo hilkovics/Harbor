@@ -74,6 +74,19 @@ export const REVISION_EVENTS: ReadonlySet<SimEventType> = new Set<SimEventType>(
   'ShipLashingStarted',
   'ExportShipped',
   'BookingPenaltyApplied',
+  // Prázdne kontajnery a prekládka (F6c, ADR-034): inšpektor depa (prázdne podľa linky a stavu) a karty repositioningu / prekládky sa
+  // skladajú pri zmene revízie. Zmena stavu jednotky (`CargoLedger.setStatus`: poškodenie, začiatok a koniec opravy) nemá vlastný
+  // `CargoMoved`, preto ju nesú práve udalosti `EmptyDamaged` / `EmptyRepairStarted` / `EmptyRepaired`. `EmptyPickupMissed` revíziu
+  // nemení (kamión odišiel prázdny, počítadlá kariet sa nehýbu).
+  'EmptyReturned',
+  'EmptyStored',
+  'EmptyDamaged',
+  'EmptyRepairStarted',
+  'EmptyRepaired',
+  'EmptyPickedUp',
+  'TranshipMissed',
+  'TranshipRescued',
+  'TranshipSold',
 ]);
 
 /**

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { commandFromJSON } from '@sim/commands';
-import type { ContractId, EntityId } from '@sim/core';
+import type { ContractId, EntityId, VoyageId } from '@sim/core';
 import type { SimEvent, SimEventType } from '@sim/events';
 import { REVISION_EVENTS } from '@app/sim-bridge';
 import { createApp } from './app-fixtures';
@@ -8,6 +8,7 @@ import { createApp } from './app-fixtures';
 /** Vzorové id entity (id sú v simu branded). */
 const SAMPLE_ID = 9 as EntityId;
 const SAMPLE_CONTRACT = 9 as ContractId;
+const SAMPLE_VOYAGE = 9 as VoyageId;
 
 /** Jeden vzorový výskyt každej udalosti, ktorá musí zvyšovať `revision`. */
 const REVISION_SAMPLES: readonly SimEvent[] = [
@@ -51,6 +52,16 @@ const REVISION_SAMPLES: readonly SimEvent[] = [
   { type: 'ShipLashingStarted', shipId: SAMPLE_ID, loadedUnits: 1, ticks: 10 },
   { type: 'ExportShipped', shipId: SAMPLE_ID, units: 1 },
   { type: 'BookingPenaltyApplied', contractId: SAMPLE_CONTRACT, kind: 'rolled', units: 1, amountCents: 1 },
+  // F6c (T6C-05): prázdne (stav jednotky v depe bez `CargoMoved`) a prekládka menia karty a inšpektor depa.
+  { type: 'EmptyReturned', unitId: SAMPLE_ID, lineId: 'blue_anchor', truckId: SAMPLE_ID, gateId: SAMPLE_ID },
+  { type: 'EmptyStored', unitId: SAMPLE_ID, lineId: 'blue_anchor', moduleId: SAMPLE_ID, fallback: false },
+  { type: 'EmptyDamaged', unitId: SAMPLE_ID, lineId: 'blue_anchor', moduleId: SAMPLE_ID },
+  { type: 'EmptyRepairStarted', unitId: SAMPLE_ID, lineId: 'blue_anchor', moduleId: SAMPLE_ID, untilTick: 10 },
+  { type: 'EmptyRepaired', unitId: SAMPLE_ID, lineId: 'blue_anchor', moduleId: SAMPLE_ID, costCents: 1 },
+  { type: 'EmptyPickedUp', unitId: SAMPLE_ID, lineId: 'blue_anchor', contractId: SAMPLE_CONTRACT, truckId: SAMPLE_ID },
+  { type: 'TranshipMissed', contractId: SAMPLE_CONTRACT, units: 1, outVoyageId: SAMPLE_VOYAGE },
+  { type: 'TranshipRescued', contractId: SAMPLE_CONTRACT, units: 1, outVoyageId: SAMPLE_VOYAGE },
+  { type: 'TranshipSold', contractId: SAMPLE_CONTRACT, units: 1 },
 ];
 
 /** Udalosti, ktoré štruktúru nemenia (čas a peniaze majú vlastné polia snapshotu). */
@@ -69,6 +80,8 @@ const NEUTRAL_SAMPLES: readonly SimEvent[] = [
   { type: 'CutoffPassed', contractId: SAMPLE_CONTRACT, arrivedUnits: 1, bookedUnits: 2 },
   { type: 'DualCycle', craneId: SAMPLE_ID, shipId: SAMPLE_ID, loadedUnitId: SAMPLE_ID, unloadedUnitId: SAMPLE_ID },
   { type: 'TruckUnloaded', truckId: SAMPLE_ID, rampId: SAMPLE_ID, dock: 0, unitId: SAMPLE_ID, dualTransaction: false },
+  // F6c: kamión po prázdny kontajner odišiel prázdny — počítadlá kariet sa nehýbu (toast ide z udalosti).
+  { type: 'EmptyPickupMissed', lineId: 'blue_anchor', contractId: SAMPLE_CONTRACT, truckId: SAMPLE_ID },
 ];
 
 const spawnFeeder = (bridge: ReturnType<typeof createApp>['bridge'], units = 4): void => {
@@ -89,7 +102,7 @@ describe('WorldSnapshot v2: speeds a defs', () => {
 });
 
 describe('WorldSnapshot v2: revision', () => {
-  it('REVISION_EVENTS obsahuje presne udalosti z kariet T02-09, T03-10, T04-08 a T05-07 (vrátane Truck*, NoWaitingBay a udalostí kontraktov) a vzorky ich pokrývajú', () => {
+  it('REVISION_EVENTS obsahuje presne udalosti z kariet T02-09, T03-10, T04-08, T05-07 a T6C-05 (vrátane Truck*, NoWaitingBay, udalostí kontraktov, prázdnych a prekládky) a vzorky ich pokrývajú', () => {
     const expected: SimEventType[] = [
       'ModulePlaced',
       'ModuleRemoved',
@@ -130,6 +143,15 @@ describe('WorldSnapshot v2: revision', () => {
       'ShipLashingStarted',
       'ExportShipped',
       'BookingPenaltyApplied',
+      'EmptyReturned',
+      'EmptyStored',
+      'EmptyDamaged',
+      'EmptyRepairStarted',
+      'EmptyRepaired',
+      'EmptyPickedUp',
+      'TranshipMissed',
+      'TranshipRescued',
+      'TranshipSold',
     ];
     expect([...REVISION_EVENTS].sort()).toEqual([...expected].sort());
     expect(REVISION_SAMPLES.map((event) => event.type).sort()).toEqual([...expected].sort());

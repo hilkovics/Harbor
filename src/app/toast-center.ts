@@ -24,6 +24,12 @@
  *   druhu: last minute / rolled / nesplnený). `ContractAccepted` roundtripu je jeden toast za voyage; popis export kontraktu
  *   nesie cieľ (`#4 · Export 24 TEU → Rotterdam`).
  *
+ * - Prázdne kontajnery a prekládka (F6c, T6C-05, ADR-034): `EmptyReturned` → „Návrat prázdnych“ (nenápadné, info, rýchlo zmizne;
+ *   jeden toast za linku a dávku so súčtom, nie za každý kus); `EmptyRepaired` → „Oprava hotová“ (success, zlúčené podľa depa a
+ *   linky, s cenou opráv a akciou „Ukázať“ na depo); `EmptyPickupMissed` → „Výdaj prázdneho zlyhal“ (warning, kamión odišiel prázdny);
+ *   `TranshipMissed` → „Tranship zmeškaný“ (danger), `TranshipRescued` (info) a `TranshipSold` (warning) — čo sa stalo so zmeškanými
+ *   jednotkami. `EmptyStored` / `EmptyDamaged` / `EmptyRepairStarted` / `EmptyPickedUp` toast nemajú (stav je v inšpektore depa).
+ *
  * Pravidlá zásobníka:
  * - Rovnaký `key` (napr. `no_storage:1`) sa naraz nezobrazí dvakrát — opakovaná udalosť pre to isté kotvisko nezaplaví panel.
  * - Naraz sa ukáže najviac `MAX_TOASTS` (4); ďalšie čakajú a ukážu sa, keď sa niektorý zavrie.
@@ -32,13 +38,14 @@
 import { sumTotals } from '@sim/economy';
 import type { ContractId, EntityId } from '@sim/core';
 import type { CargoCategory } from '@sim/defs';
+import type { ContractKind } from '@sim/contracts';
 import type { BookingPenaltyKind, PenaltyKind, SimEvent } from '@sim/events';
 import { LoadingRamp, type RampInoperativeReason } from '@sim/modules';
 import type { World } from '@sim/world';
 import { formatDuration, formatFraction, formatMoney, formatMoneyDelta, formatXp } from '@ui/format';
 import { moduleCode } from '@ui/module-inspector';
 import { MAX_TOASTS, type ToastData, type ToastId, type ToastTone } from '@ui/toasts';
-import { TOAST_AUTO_CLOSE_MS } from './config';
+import { QUIET_TOAST_AUTO_CLOSE_MS, TOAST_AUTO_CLOSE_MS } from './config';
 import { hasRoadConnector } from './entities-vm';
 import type { PanelId } from './panel-selection';
 import type { SimBridge, Unsubscribe } from './sim-bridge';
@@ -106,10 +113,23 @@ export const BOOKING_PENALTY_TOAST_TITLE: Readonly<Record<BookingPenaltyKind, st
   unfulfilled: 'Penalizácia: nesplnený booking',
 });
 
+export const EMPTY_RETURNED_TOAST_TITLE = 'Návrat prázdnych';
+export const EMPTY_REPAIRED_TOAST_TITLE = 'Oprava hotová';
+export const EMPTY_PICKUP_MISSED_TOAST_TITLE = 'Výdaj prázdneho zlyhal';
+export const TRANSHIP_MISSED_TOAST_TITLE = 'Tranship zmeškaný';
+export const TRANSHIP_RESCUED_TOAST_TITLE = 'Tranship zachránený';
+export const TRANSHIP_SOLD_TOAST_TITLE = 'Tranship predaný';
+
 /** „1 jednotka“, „2 jednotky“, „5 jednotiek“. */
 export function unitsText(count: number): string {
   if (count === 1) return '1 jednotka';
   return count >= 2 && count <= 4 ? `${String(count)} jednotky` : `${String(count)} jednotiek`;
+}
+
+/** „1 prázdny kontajner“, „2 prázdne kontajnery“, „5 prázdnych kontajnerov“. */
+export function emptiesText(count: number): string {
+  if (count === 1) return '1 prázdny kontajner';
+  return count >= 2 && count <= 4 ? `${String(count)} prázdne kontajnery` : `${String(count)} prázdnych kontajnerov`;
 }
 
 /** Čas do cut-off pre nadpis toastu: `6 h`, `1 d 2 h`, pod hodinu `menej než hodinu`. */
@@ -137,16 +157,35 @@ function codeOf(world: World, moduleId: EntityId, fallbackKind: string): string 
   return moduleCode(world.modules.get(moduleId)?.kind ?? fallbackKind, moduleId);
 }
 
+/** Názov druhu booking kontraktu v popise (`Export 24 TEU → Rotterdam`); import booking nemá. */
+const BOOKING_LABEL: Readonly<Record<ContractKind, string>> = {
+  import: 'Import',
+  export: 'Export',
+  empty_repositioning: 'Prázdne',
+  tranship: 'Tranship',
+};
+
 /**
- * Popis kontraktu pre text oznámenia: import `#3 · 120 TEU`, export booking `#4 · Export 24 TEU → Rotterdam`
- * (zaniknutá ponuka → len `#3`).
+ * Popis kontraktu pre text oznámenia: import `#3 · 120 TEU`, export booking `#4 · Export 24 TEU → Rotterdam`, repositioning
+ * `#5 · Prázdne 24 TEU → Rotterdam`, prekládka `#6 · Tranship 24 TEU → Hamburg` (zaniknutá ponuka → len `#3`).
  */
 function contractLabel(world: World, contractId: ContractId): string {
   const contract = world.contracts.get(contractId);
   if (contract === undefined) return `#${String(contractId)}`;
   const volume = `${String(contract.volumeUnits)} ${world.defs.cargoTypes.get(contract.cargoTypeId).unitName}`;
   const { booking } = contract;
-  return booking === null ? `#${String(contractId)} · ${volume}` : `#${String(contractId)} · Export ${volume} → ${booking.destinationPort}`;
+  return booking === null ? `#${String(contractId)} · ${volume}` : `#${String(contractId)} · ${BOOKING_LABEL[contract.kind]} ${volume} → ${booking.destinationPort}`;
+}
+
+/** Názov linky z `lines.json` pre text oznámenia (neznáme id → id). */
+function lineLabel(world: World, lineId: string): string {
+  return world.defs.lines.has(lineId) ? world.defs.lines.get(lineId).displayName : lineId;
+}
+
+/** Stred modulu v bunkách pre akciu „Ukázať“; zaniknutý modul → `undefined`. */
+function focusOf(world: World, moduleId: EntityId): { readonly x: number; readonly y: number } | undefined {
+  const module = world.modules.get(moduleId);
+  return module === undefined ? undefined : { x: module.origin.x + module.size.w / 2, y: module.origin.y + module.size.h / 2 };
 }
 
 /** Popis kontraktov celej voyage (`#3 · 48 TEU + #4 · Export 24 TEU → Rotterdam`); import-only = popis kontraktu. */
@@ -292,6 +331,74 @@ function contractSpec(world: World, event: SimEvent, batch: ContractBatch): Toas
         text: `${contractLabel(world, event.contractId)} · ${event.kind === 'unfulfilled' ? '' : `${unitsText(event.units)} · `}${formatMoney(-event.amountCents)}`,
         panel: 'contracts',
       };
+    case 'EmptyReturned': {
+      // Návrat prázdneho je rutina: jeden nenápadný toast za linku a dávku so súčtom, nie za každý kus.
+      if (batch.returnsShown.has(event.lineId)) return null;
+      batch.returnsShown.add(event.lineId);
+      return {
+        key: `empty_returned:${event.lineId}`,
+        tone: 'info',
+        icon: 'ic_truck',
+        title: EMPTY_RETURNED_TOAST_TITLE,
+        text: `${lineLabel(world, event.lineId)} · ${emptiesText(batch.returns.get(event.lineId) ?? 1)} z vnútrozemia`,
+        autoCloseMs: QUIET_TOAST_AUTO_CLOSE_MS,
+      };
+    }
+    case 'EmptyRepaired': {
+      const id = `${String(event.moduleId)}:${event.lineId}`;
+      if (batch.repairsShown.has(id)) return null;
+      batch.repairsShown.add(id);
+      const repaired = batch.repairs.get(id) ?? { count: 1, costCents: event.costCents };
+      const focus = focusOf(world, event.moduleId);
+      return {
+        key: `empty_repaired:${id}`,
+        tone: 'success',
+        icon: 'ic_check',
+        title: EMPTY_REPAIRED_TOAST_TITLE,
+        text: `${codeOf(world, event.moduleId, 'storage')} · ${lineLabel(world, event.lineId)} · opravené: ${String(repaired.count)} · ${formatMoney(-repaired.costCents)}`,
+        ...(focus === undefined ? {} : { focus }),
+      };
+    }
+    case 'EmptyPickupMissed': {
+      if (batch.pickupMissesShown.has(event.contractId)) return null;
+      batch.pickupMissesShown.add(event.contractId);
+      const missed = batch.pickupMisses.get(event.contractId) ?? 1;
+      return {
+        key: `empty_pickup_missed:${String(event.contractId)}`,
+        tone: 'warning',
+        icon: 'ic_warning',
+        title: EMPTY_PICKUP_MISSED_TOAST_TITLE,
+        text: `${contractLabel(world, event.contractId)} · ${lineLabel(world, event.lineId)} nemala dostupný prázdny kontajner, kamión odišiel prázdny${missed > 1 ? ` (×${String(missed)})` : ''}`,
+        panel: 'contracts',
+      };
+    }
+    case 'TranshipMissed':
+      return {
+        key: `tranship_missed:${String(event.contractId)}`,
+        tone: 'danger',
+        icon: 'ic_warning',
+        title: TRANSHIP_MISSED_TOAST_TITLE,
+        text: `${contractLabel(world, event.contractId)} · loď B (plavba #${String(event.outVoyageId)}) odplávala, zmeškané: ${unitsText(event.units)}`,
+        panel: 'contracts',
+      };
+    case 'TranshipRescued':
+      return {
+        key: `tranship_rescued:${String(event.contractId)}`,
+        tone: 'info',
+        icon: 'ic_ship',
+        title: TRANSHIP_RESCUED_TOAST_TITLE,
+        text: `${contractLabel(world, event.contractId)} · zachránené: ${unitsText(event.units)}, čakajú na plavbu #${String(event.outVoyageId)}`,
+        panel: 'contracts',
+      };
+    case 'TranshipSold':
+      return {
+        key: `tranship_sold:${String(event.contractId)}`,
+        tone: 'warning',
+        icon: 'ic_truck',
+        title: TRANSHIP_SOLD_TOAST_TITLE,
+        text: `${contractLabel(world, event.contractId)} · predané kamiónom (penalizácia): ${unitsText(event.units)}`,
+        panel: 'contracts',
+      };
     case 'MonthlyReport':
       return {
         key: `monthly:${String(event.month)}`,
@@ -321,6 +428,15 @@ interface ContractBatch {
   /** F6a: `VgmHoldStarted` podľa kontraktu (počet jednotiek a najskorší koniec zadržania) a kontrakty s toastom. */
   readonly holds: Map<ContractId, { count: number; untilTick: number }>;
   readonly holdsShown: Set<ContractId>;
+  /** F6c: počet `EmptyReturned` podľa linky a linky, ktoré už dostali toast. */
+  readonly returns: Map<string, number>;
+  readonly returnsShown: Set<string>;
+  /** F6c: `EmptyRepaired` podľa `depo:linka` (počet a súčet cien opráv) a kľúče, ktoré už dostali toast. */
+  readonly repairs: Map<string, { count: number; costCents: number }>;
+  readonly repairsShown: Set<string>;
+  /** F6c: počet `EmptyPickupMissed` podľa kontraktu a kontrakty, ktoré už dostali toast. */
+  readonly pickupMisses: Map<ContractId, number>;
+  readonly pickupMissesShown: Set<ContractId>;
 }
 
 function contractBatch(events: readonly SimEvent[]): ContractBatch {
@@ -334,6 +450,12 @@ function contractBatch(events: readonly SimEvent[]): ContractBatch {
     rolledShown: new Set(),
     holds: new Map(),
     holdsShown: new Set(),
+    returns: new Map(),
+    returnsShown: new Set(),
+    repairs: new Map(),
+    repairsShown: new Set(),
+    pickupMisses: new Map(),
+    pickupMissesShown: new Set(),
   };
   for (const event of events) {
     if (event.type === 'ContractOffered') {
@@ -346,6 +468,14 @@ function contractBatch(events: readonly SimEvent[]): ContractBatch {
     } else if (event.type === 'VgmHoldStarted') {
       const known = batch.holds.get(event.contractId);
       batch.holds.set(event.contractId, { count: (known?.count ?? 0) + 1, untilTick: Math.min(known?.untilTick ?? event.untilTick, event.untilTick) });
+    } else if (event.type === 'EmptyReturned') {
+      batch.returns.set(event.lineId, (batch.returns.get(event.lineId) ?? 0) + 1);
+    } else if (event.type === 'EmptyRepaired') {
+      const id = `${String(event.moduleId)}:${event.lineId}`;
+      const known = batch.repairs.get(id);
+      batch.repairs.set(id, { count: (known?.count ?? 0) + 1, costCents: (known?.costCents ?? 0) + event.costCents });
+    } else if (event.type === 'EmptyPickupMissed') {
+      batch.pickupMisses.set(event.contractId, (batch.pickupMisses.get(event.contractId) ?? 0) + 1);
     }
   }
   return batch;

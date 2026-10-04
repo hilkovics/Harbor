@@ -37,6 +37,7 @@ export type {
 } from './build-bar';
 export {
   CRANE_STATE_LABELS,
+  CRANE_WAITING_LABEL,
   ModuleInspector,
   RAMP_INOPERATIVE_FALLBACK,
   RAMP_INOPERATIVE_TEXTS,

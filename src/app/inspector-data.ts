@@ -25,7 +25,7 @@
 import { BuyVehicleCommand, RemoveModuleCommand, SellVehicleCommand } from '@sim/commands';
 import type { EntityId } from '@sim/core';
 import type { DefRegistry, VehicleDef } from '@sim/defs';
-import { BerthModule, CraneModule, LoadingRamp, StorageModule, TruckGate, VehicleDepot, WaitingArea, type Module } from '@sim/modules';
+import { BerthModule, CRANE_CYCLE_TRAITS, CraneModule, LoadingRamp, StorageModule, TruckGate, VehicleDepot, WaitingArea, type Module } from '@sim/modules';
 import type { Ship } from '@sim/ships';
 import type { VehicleState } from '@sim/vehicles';
 import { shipCargoSplit, storageCargoSplit, type World } from '@sim/world';
@@ -111,13 +111,31 @@ function berthFields(bridge: InspectorBridge, berth: BerthModule): Pick<ModuleIn
   };
 }
 
-function craneFields(crane: CraneModule): Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'crane'> {
+/**
+ * Žeriav s jednotkou vykládky v ruke čaká pod hákom na vozidlo (F6a, ADR-033, režim `under_hook`)? Sim to neeviduje ako stav
+ * FSM (žeriav ostáva v `placing` s `phaseTicksLeft = 1` a rastie mu `waitForVehicleTicks`), preto to inšpektor odvodí z toho,
+ * čo rozhoduje `HOOK_HANDOVER.deliver`: pod hákom nečaká vozidlo jobu jednotky (`loading`) a buffer na aprone je plný.
+ */
+function craneWaitsForVehicle(world: World, crane: CraneModule): boolean {
+  const unitId = crane.heldUnitId;
+  if (crane.state !== 'placing' || unitId === null || crane.phaseTicksLeft > 1 || CRANE_CYCLE_TRAITS[crane.cycle].direction !== 'unload') return false;
+  const berth = world.modules.get(crane.berthId);
+  if (!(berth instanceof BerthModule) || berth.params.handoverMode !== 'under_hook') return false;
+  const job = world.jobOfUnit(unitId);
+  const vehicle = job?.vehicleId === null || job === undefined ? undefined : world.vehicles.get(job.vehicleId);
+  if (vehicle?.state === 'loading') return false;
+  const bufferSlots = berth.params.craneBufferSlots * berth.craneIds.length;
+  return !(world.cargo.countAt('on_apron', berth.id) < bufferSlots && berth.apron.freeUnreservedCount > 0);
+}
+
+function craneFields(world: World, crane: CraneModule): Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'crane'> {
   const worked = crane.busyTicks + crane.idleTicks + crane.blockedTicks;
   const { state } = crane;
+  const waiting = craneWaitsForVehicle(world, crane);
   return {
-    stateLabel: craneStateLabel(state),
-    ok: craneStateOk(state),
-    crane: { state, utilizationPct: percentOf(crane.busyTicks, worked), blockedPct: percentOf(crane.blockedTicks, worked) },
+    stateLabel: craneStateLabel(state, waiting),
+    ok: craneStateOk(state, waiting),
+    crane: { state, utilizationPct: percentOf(crane.busyTicks, worked), blockedPct: percentOf(crane.blockedTicks, worked), ...(waiting ? { waitingForVehicle: true as const } : {}) },
   };
 }
 
@@ -210,7 +228,7 @@ function rampFields(bridge: InspectorBridge, ramp: LoadingRamp): Pick<ModuleInsp
 /** Polia závislé od druhu modulu (badge stavu + sekcie kotviska / žeriavu / skladu / depa / brány / stojiska / rampy). */
 function kindFields(bridge: InspectorBridge, module: Module): Pick<ModuleInspectorData, 'stateLabel' | 'ok'> & Partial<ModuleInspectorData> {
   if (module instanceof BerthModule) return berthFields(bridge, module);
-  if (module instanceof CraneModule) return craneFields(module);
+  if (module instanceof CraneModule) return craneFields(bridge.world, module);
   if (module instanceof StorageModule) return storageFields(bridge, module);
   if (module instanceof VehicleDepot) return depotFields(bridge, module);
   if (module instanceof TruckGate) return gateFields(bridge, module);

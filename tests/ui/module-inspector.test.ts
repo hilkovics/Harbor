@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import {
   CRANE_STATE_LABELS,
+  CRANE_WAITING_LABEL,
   DISCONNECTED_BADGE_LABEL,
   DISCONNECTED_TITLE,
   ModuleInspector,
@@ -91,6 +92,16 @@ describe('stavy žeriavu', () => {
   it('badge je zelený všade okrem blocked', () => {
     expect(craneStateOk('blocked')).toBe(false);
     for (const state of ['idle', 'grabbing', 'swinging', 'placing'] as const) expect(craneStateOk(state)).toBe(true);
+  });
+
+  it('čakanie na vozidlo pod hákom (F6a, ADR-033): vlastný popis má prednosť pred fázou cyklu, badge je žltý', () => {
+    expect(CRANE_WAITING_LABEL).toBe('Čaká na vozidlo');
+    for (const state of Object.keys(CRANE_STATE_LABELS) as CraneStateName[]) {
+      expect(craneStateLabel(state, true)).toBe('Čaká na vozidlo');
+      expect(craneStateOk(state, true)).toBe(false);
+      expect(craneStateLabel(state, false)).toBe(CRANE_STATE_LABELS[state]);
+    }
+    expect(craneStateLabel('placing')).toBe('Vykladá');
   });
 });
 
@@ -240,6 +251,26 @@ describe('ModuleInspector — žeriav', () => {
     expect(html).toContain('<span class="module-inspector__banner-title">Blokovaný — plný apron</span>');
     expect(html).toContain('Apron kotviska nemá voľný slot.');
     expect(fieldText(html, 'sub')).toBe('CRN-08 · 2×3');
+  });
+
+  it('čaká na vozidlo (F6a): žltý badge „Čaká na vozidlo“, banner s vysvetlením, bez bannera blokovaného apronu', () => {
+    const waiting: ModuleInspectorData = {
+      ...CRANE_BLOCKED,
+      stateLabel: craneStateLabel('placing', true),
+      ok: craneStateOk('placing', true),
+      crane: { state: 'placing', utilizationPct: 40, blockedPct: 0, waitingForVehicle: true },
+    };
+    const html = render(waiting);
+    expect(html).toMatch(/title="Čaká na vozidlo" data-field="badge" data-ok="false"/);
+    expect(html).toMatch(/#ic_warning"><\/use><\/svg>Čaká na vozidlo<\/span>/);
+    expect(html).toContain('data-section="waiting"');
+    expect(html).toContain('<span class="module-inspector__banner-title">Čaká na vozidlo</span>');
+    expect(html).toContain('pokračuje, keď vozidlo príde pod hák');
+    expect(html).not.toContain('data-section="blocked"');
+    // pracujúci žeriav bez čakania banner nemá
+    const working = render({ ...waiting, stateLabel: craneStateLabel('placing'), ok: true, crane: { state: 'placing', utilizationPct: 40, blockedPct: 0 } });
+    expect(working).not.toContain('data-section="waiting"');
+    expect(working).toMatch(/data-field="badge" data-ok="true"/);
   });
 
   it('dlaždice 72 % / 21 % / 7 % so súčtom 100 a pruh času', () => {

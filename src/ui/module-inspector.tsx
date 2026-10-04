@@ -122,6 +122,11 @@ export interface ModuleInspectorData {
     readonly state: CraneStateName;
     readonly utilizationPct: number;
     readonly blockedPct: number;
+    /**
+     * F6a (ADR-033, režim `under_hook`): žeriav drží jednotku vykládky nad nábrežím a čaká na vozidlo pod hákom (aj buffer je
+     * plný). Pole je prítomné len pri `true`; badge a banner sú vtedy „Čaká na vozidlo“.
+     */
+    readonly waitingForVehicle?: true;
   };
   /** F3: sklad. `stored` sú fyzicky uložené jednotky (ledger), `reserved` rezervácie jobov, `unitsIn/Out` kumulatívne. */
   readonly storage?: {
@@ -183,13 +188,17 @@ export const CRANE_STATE_LABELS: Readonly<Record<CraneStateName, string>> = {
   blocked: 'Blokovaný — plný apron',
 };
 
-export function craneStateLabel(state: CraneStateName): string {
-  return CRANE_STATE_LABELS[state];
+/** F6a (ADR-033): žeriav s jednotkou v ruke čaká pod hákom na vozidlo (stav FSM ostáva `placing`, preto vlastný popis). */
+export const CRANE_WAITING_LABEL = 'Čaká na vozidlo';
+
+/** Popis stavu žeriavu; čakanie na vozidlo pod hákom má prednosť pred pracovnou fázou cyklu. */
+export function craneStateLabel(state: CraneStateName, waitingForVehicle = false): string {
+  return waitingForVehicle ? CRANE_WAITING_LABEL : CRANE_STATE_LABELS[state];
 }
 
-/** Badge je zelený, kým žeriav nie je zablokovaný (blokovaný = žltý, varovanie). */
-export function craneStateOk(state: CraneStateName): boolean {
-  return state !== 'blocked';
+/** Badge je zelený, kým žeriav nie je zablokovaný ani nečaká na vozidlo (blokovaný aj čakajúci = žltý, varovanie). */
+export function craneStateOk(state: CraneStateName, waitingForVehicle = false): boolean {
+  return state !== 'blocked' && !waitingForVehicle;
 }
 
 // --- Čisté pomocné funkcie (testované v tests/ui/module-inspector.test.ts) ---------------------------------------
@@ -916,6 +925,7 @@ function renderDocks(ramp: RampData) {
 export function ModuleInspector({ data, onRemove, onClose, onBuyVehicle, onSellVehicle }: ModuleInspectorProps) {
   const { apron, crane, dockedShip, storage, depot, gate, waitingArea, ramp } = data;
   const blocked = crane?.state === 'blocked';
+  const waiting = crane?.waitingForVehicle === true;
   const badge = inspectorBadge(data);
   return (
     <aside className="module-inspector" aria-label="Inšpektor modulu" data-module-id={data.id} data-def-id={data.defId} data-kind={data.kind}>
@@ -950,6 +960,17 @@ export function ModuleInspector({ data, onRemove, onClose, onBuyVehicle, onSellV
               <span className="module-inspector__banner-title">{craneStateLabel('blocked')}</span>
               <span className="module-inspector__banner-desc">
                 Apron kotviska nemá voľný slot. Žeriav pokračuje, keď sa apron uvoľní.
+              </span>
+            </div>
+          </div>
+        )}
+        {waiting && (
+          <div className="module-inspector__banner" role="status" data-section="waiting">
+            <Icon name="ic_warning" className="module-inspector__banner-icon" />
+            <div className="module-inspector__banner-text">
+              <span className="module-inspector__banner-title">{CRANE_WAITING_LABEL}</span>
+              <span className="module-inspector__banner-desc">
+                Žeriav drží kontajner nad nábrežím a pokračuje, keď vozidlo príde pod hák alebo sa uvoľní buffer na aprone.
               </span>
             </div>
           </div>

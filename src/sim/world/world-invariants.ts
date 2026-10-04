@@ -86,6 +86,7 @@ import type { Cell } from '../grid/grid';
 import { unitAtJobSource } from '../logistics/job-source';
 import { JOB_STATE_TRAITS, type TransportJob } from '../logistics/transport-job';
 import { DockSupply } from '../trucks/dock-supply';
+import { reachedWaitingArea } from '../trucks/empty-collect';
 import { BerthModule } from '../modules/berth-module';
 import { computeBerthGroups } from '../modules/berth-group';
 import { CRANE_CYCLE_TRAITS, CRANE_STATE_TRAITS, CraneModule, craneReservesApronSlot, cranePhaseProblem } from '../modules/crane-module';
@@ -1104,6 +1105,9 @@ const checkEmptyFlow: Check = (world) => {
     if (truck?.mission !== 'collect') return `poverenie kamióna #${String(errand.truckId)}: kamión nie je misie collect`;
     const contract = world.contractBook.get(errand.contractId as ContractId);
     if (contract === undefined || contract.lineId !== errand.lineId) return `${truck.label}: poverenie ukazuje na kontrakt #${String(errand.contractId)} inej linky alebo mimo knihy`;
+    const reached = reachedWaitingArea(truck);
+    if (errand.giveUpTick === null && reached) return `${truck.label} v stojisku (stav '${truck.effectiveState}') nemá giveUpTick poverenia`;
+    if (errand.giveUpTick !== null && !reached) return `${truck.label}: giveUpTick poverenia je nastavený pred príchodom do stojiska (stav '${truck.effectiveState}')`;
     if (errand.unitId === null) continue;
     if (taken.has(errand.unitId)) return `prázdny #${String(errand.unitId)} je pridelený dvom kamiónom`;
     taken.add(errand.unitId);

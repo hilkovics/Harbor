@@ -13,7 +13,8 @@
  *
  * - **`errands`** (dodatok T6C-02) — poverenie kamióna misie `collect`, ktorý po vzniku z `pickupPlan` čaká na prázdny kontajner linky:
  *   `{ truckId, lineId, contractId, unitId, giveUpTick }`; `unitId` je prázdny, ktorý dispatcher kamiónu pridelil (job zo skladu na jeho
- *   dock, potom jednotka na docku a v kamióne), `null` kým žiadny nie je; po `giveUpTick` bez neho kamión odíde prázdny. Položka zanikne,
+ *   dock, potom jednotka na docku a v kamióne), `null` kým žiadny nie je; po `giveUpTick` (príchod do stojiska + `emptyPickupMaxWaitHours`, `null`
+ *   kým kamión do stojiska nedorazil — T6C-07b) bez neho kamión odíde prázdny. Položka zanikne,
  *   keď kamión opustí mapu (`EmptyPickedUp`) alebo sa vzdá (`EmptyPickupMissed`).
  *
  * Plány sú v poradí `dueTick` neklesajúco, pri rovnakom ticku v poradí vzniku (stabilné). Táto trieda nepozná `Rng`, defy ani svet —
@@ -46,8 +47,12 @@ export interface ErrandEntry {
   readonly contractId: number;
   /** Prázdny kontajner pridelený kamiónu, alebo `null`, kým žiadny nie je. */
   readonly unitId: number | null;
-  /** Od tohto ticku kamión bez prideleného prázdneho odíde prázdny (`vznik + emptyPickupMaxWaitHours`, celé ≥ 0). */
-  readonly giveUpTick: number;
+  /**
+   * Od tohto ticku kamión bez prideleného prázdneho odíde prázdny: `tick príchodu do stojiska + emptyPickupMaxWaitHours`, celé ≥ 0 (T6C-07b: lehota sa počíta
+   * od príchodu do stojiska, nie od vzniku — cesta od portálu cez bránu je pri veľkej fronte dlhá a kamión by sa vzdal skôr, než začal čakať);
+   * `null`, kým kamión do stojiska nedorazil.
+   */
+  readonly giveUpTick: number | null;
 }
 
 /** Stav plánu v save (`WorldState.emptyFlow`, v8). */
@@ -74,13 +79,13 @@ function insertByDue<T extends { readonly dueTick: number }>(plan: T[], entry: T
   plan.splice(at, 0, entry);
 }
 
-/** Meniteľné poverenie (jediné meniteľné pole je `unitId`, mení ho len `EmptyFlow.assignErrandUnit`). */
+/** Meniteľné poverenie (meniteľné polia: `unitId` mení len `EmptyFlow.assignErrandUnit`, `giveUpTick` len `EmptyFlow.startErrandWait`). */
 interface MutableErrand {
   readonly truckId: number;
   readonly lineId: string;
   readonly contractId: number;
   unitId: number | null;
-  readonly giveUpTick: number;
+  giveUpTick: number | null;
 }
 
 export class EmptyFlow {
@@ -167,11 +172,21 @@ export class EmptyFlow {
   }
 
   /** Zaeviduje poverenie nového kamióna `collect` (kamióny vznikajú vzostupne podľa id; kamión už s poverením → `Error`). */
-  addErrand(truckId: number, lineId: string, contractId: number, giveUpTick: number): void {
+  addErrand(truckId: number, lineId: string, contractId: number, giveUpTick: number | null = null): void {
     if (this.byTruck.has(truckId)) throw new Error(`EmptyFlow.addErrand: kamión #${String(truckId)} už má poverenie`);
     const errand: MutableErrand = { truckId, lineId, contractId, unitId: null, giveUpTick };
     this.errandList.push(errand);
     this.index(errand);
+  }
+
+  /**
+   * Kamión `truckId` dorazil do stojiska: začína čakanie, po `giveUpTick` sa bez prideleného prázdneho vzdá. Lehota sa nastaví len raz (prvý príchod);
+   * kamión bez poverenia → `Error`.
+   */
+  startErrandWait(truckId: number, giveUpTick: number): void {
+    const errand = this.byTruck.get(truckId);
+    if (errand === undefined) throw new Error(`EmptyFlow.startErrandWait: kamión #${String(truckId)} nemá poverenie`);
+    errand.giveUpTick ??= giveUpTick;
   }
 
   /** Poverenie kamióna, alebo `undefined` (kamión nie je misie `collect`). O(1), bez alokácie. */

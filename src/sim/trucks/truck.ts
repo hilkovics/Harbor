@@ -225,13 +225,13 @@ export class Truck extends Carrier {
   }
 
   /**
-   * Prechod podľa `TRUCK_TRANSITIONS` (`landsideSystem`); udalosť `TruckStateChanged` emituje volajúci
+   * Prechod podľa `TRUCK_TRANSITIONS` a vlastností misie (`TRUCK_MISSION_GIVES_UP`: vzdať sa čakania smie len `collect`; `landsideSystem`); udalosť `TruckStateChanged` emituje volajúci
    * (`changeTruckState`). Do `no_path` si kamión zapamätá doterajší jazdný stav (`resume`) a z `no_path` sa smie vrátiť
    * len doň. Nepovolený prechod → `TruckError('invalid_transition')`, kamión sa nezmení.
    */
   transition(to: TruckState): void {
     const from = this.current;
-    const allowed = isTruckTransitionAllowed(from, to) && (from !== 'no_path' || to === this.resumeState);
+    const allowed = isTruckTransitionAllowed(from, to, this.currentMission) && (from !== 'no_path' || to === this.resumeState);
     if (!allowed) {
       const options = from === 'no_path' ? [String(this.resumeState)] : [...(TRUCK_TRANSITIONS.get(from) ?? [])];
       throw new TruckError('invalid_transition', `${this.label}: prechod ${from} → ${to} nie je povolený (povolené: ${options.join(', ') || '–'})`);

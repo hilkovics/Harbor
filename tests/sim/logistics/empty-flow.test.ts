@@ -180,6 +180,7 @@ describe('parseEmptyFlowState', () => {
     ['poverenie s kamiónom 0', { ...valid, errands: [{ truckId: 0, lineId: 'blue_anchor', contractId: 3, unitId: null, giveUpTick: 9 }] }, '/emptyFlow/errands/0/truckId'],
     ['poverenia nie vzostupne podľa kamióna', { ...valid, errands: [{ truckId: 5, lineId: 'blue_anchor', contractId: 3, unitId: null, giveUpTick: 9 }, { truckId: 5, lineId: 'blue_anchor', contractId: 3, unitId: null, giveUpTick: 9 }] }, '/emptyFlow/errands/1/truckId'],
     ['poverenie s unitId 0', { ...valid, errands: [{ truckId: 5, lineId: 'blue_anchor', contractId: 3, unitId: 0, giveUpTick: 9 }] }, '/emptyFlow/errands/0/unitId'],
+    ['poverenie s giveUpTick reťazcom', { ...valid, errands: [{ truckId: 5, lineId: 'blue_anchor', contractId: 3, unitId: null, giveUpTick: 'x' }] }, '/emptyFlow/errands/0/giveUpTick'],
     ['poverenie so záporným giveUpTick', { ...valid, errands: [{ truckId: 5, lineId: 'blue_anchor', contractId: 3, unitId: null, giveUpTick: -1 }] }, '/emptyFlow/errands/0/giveUpTick'],
     ['neznáma linka vo výdaji', { ...valid, pickupPlan: [{ dueTick: 1, lineId: 'ghost_line', contractId: 1 }] }, '/emptyFlow/pickupPlan/0/lineId'],
     ['contractId 0 vo výdaji', { ...valid, pickupPlan: [{ dueTick: 1, lineId: 'blue_anchor', contractId: 0 }] }, '/emptyFlow/pickupPlan/0/contractId'],
@@ -192,6 +193,18 @@ describe('parseEmptyFlowState', () => {
       expect(error).toBeInstanceOf(WorldStateError);
       expect((error as WorldStateError).path).toBe(path);
     }
+  });
+
+  it('giveUpTick null (kamión collect ešte nedorazil do stojiska, T6C-07b) prejde a vráti sa nezmenený; startErrandWait ho nastaví len raz', () => {
+    const waiting = { ...valid, errands: [{ truckId: 5, lineId: 'northern_star', contractId: 3, unitId: null, giveUpTick: null }] };
+    expect(parseEmptyFlowState(waiting, DEFS)).toEqual(waiting);
+    const flow = EmptyFlow.fromState(parseEmptyFlowState(waiting, DEFS));
+    expect(flow.errandOfTruck(5)?.giveUpTick).toBeNull();
+    flow.startErrandWait(5, 777);
+    expect(flow.errandOfTruck(5)?.giveUpTick).toBe(777);
+    flow.startErrandWait(5, 999); // lehota sa po príchode nepredlžuje
+    expect(flow.errandOfTruck(5)?.giveUpTick).toBe(777);
+    expect(() => flow.startErrandWait(6, 1)).toThrow(/nemá poverenie/);
   });
 
   it('poradie nezoradenosti sa kontroluje zvlášť pre návraty a výdaje (výdaj nemusí nadväzovať na návrat)', () => {

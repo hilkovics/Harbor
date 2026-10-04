@@ -81,19 +81,33 @@ describe('kamión collect — výdaj z depa', () => {
     expect(world.cargo.createdCount - world.cargo.liveCount - world.cargo.exportedCount - world.cargo.shippedCount).toBe(0);
   });
 
-  it('žiadny prázdny linky: kamión čaká emptyPickupMaxWaitHours od vzniku, potom odíde prázdny (EmptyPickupMissed, TruckExited bez jednotky)', () => {
+  it('žiadny prázdny linky: kamión čaká emptyPickupMaxWaitHours od príchodu do stojiska (nie od vzniku), potom odíde prázdny (EmptyPickupMissed, TruckExited bez jednotky)', () => {
     const { world, contractId } = pickupWorld({ maxWaitHours: 1 });
     world.emptyFlow.schedulePickup(world.clock.tick + 10, 'blue_anchor', contractId);
     const events = runUntil(world, (w) => w.emptyFlow.pickupPlan.length === 0 && w.emptyFlow.errands.length === 0 && w.trucks.size === 0, 6_000, 'odchod kamióna naprázdno');
     const spawnTick = events.find((entry) => entry.event.type === 'TruckSpawned')?.tick ?? -1;
+    const waitingTick = events.find((entry) => entry.event.type === 'TruckStateChanged' && entry.event.to === 'waiting')?.tick ?? -1;
     const missed = events.find((entry) => entry.event.type === 'EmptyPickupMissed');
     expect(missed?.event).toMatchObject({ lineId: 'blue_anchor', contractId });
-    expect((missed?.tick ?? 0) - spawnTick).toBeGreaterThanOrEqual(TICKS_PER_HOUR);
-    expect((missed?.tick ?? 0) - spawnTick).toBeLessThan(TICKS_PER_HOUR + 200);
+    // cesta od portálu cez bránu do stojiska trvá desiatky tickov — lehota sa počíta až od príchodu do stojiska (T6C-07b, m4)
+    expect(waitingTick - spawnTick).toBeGreaterThan(50);
+    expect((missed?.tick ?? 0) - waitingTick).toBeGreaterThanOrEqual(TICKS_PER_HOUR);
+    expect((missed?.tick ?? 0) - waitingTick).toBeLessThan(TICKS_PER_HOUR + 20);
     expect(eventsOf(events, 'EmptyPickedUp')).toEqual([]);
     expect(eventsOf(events, 'TruckExited').map((event) => event.units)).toEqual([0]);
     expect(world.cargo.exportedCount).toBe(0);
     expect(world.cargo.createdCount).toBe(0);
+  });
+
+  it('giveUpTick poverenia je null, kým kamión nedorazí do stojiska; od príchodu je to tick príchodu + emptyPickupMaxWaitHours', () => {
+    const { world, contractId } = pickupWorld({ maxWaitHours: 2 });
+    world.emptyFlow.schedulePickup(world.clock.tick + 10, 'blue_anchor', contractId);
+    runUntil(world, (w) => w.emptyFlow.errands.length === 1, 100, 'vznik kamióna collect');
+    expect(world.emptyFlow.errands[0].giveUpTick).toBeNull();
+    const events = runUntil(world, (w) => w.emptyFlow.errands[0]?.giveUpTick !== null, 1_000, 'príchod do stojiska');
+    const waitingTick = events.find((entry) => entry.event.type === 'TruckStateChanged' && entry.event.to === 'waiting')?.tick ?? -1;
+    expect(waitingTick).toBe(world.clock.tick);
+    expect(world.emptyFlow.errands[0].giveUpTick).toBe(waitingTick + 2 * TICKS_PER_HOUR);
   });
 
   it('prázdny inej linky sa nevydá (kamión sa po čakaní vzdá, cudzí prázdny ostane v depe)', () => {
@@ -206,7 +220,7 @@ describe('obnova a invarianty', () => {
     world.emptyFlow.schedulePickup(world.clock.tick + 5, 'blue_anchor', contractId);
     runUntil(world, (w) => w.emptyFlow.errands[0]?.unitId !== null && w.emptyFlow.errands.length === 1, 400, 'poverenie s jednotkou');
     const defs = f6cDefs({ emptyFlow: { emptyPickupRate: 0 } });
-    type Errand = { truckId: number; lineId: string; contractId: number; unitId: number | null; giveUpTick: number };
+    type Errand = { truckId: number; lineId: string; contractId: number; unitId: number | null; giveUpTick: number | null };
     const state = JSON.parse(JSON.stringify(world.serialize())) as { emptyFlow: { errands: Errand[] } };
     const load = (mutate: (errands: Errand[]) => void): World => {
       const copy = JSON.parse(JSON.stringify(state)) as typeof state;

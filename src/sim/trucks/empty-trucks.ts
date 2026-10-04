@@ -8,7 +8,7 @@
  *   návraty, `emptyReturnRoom`); bez miesta sa položka plánu len spotrebuje bez kamióna (`EmptyReturnDeclined`) — nič nevznikne, konzervácia
  *   ostáva a bežný dvor sa prázdnymi nezaplní (import by sa zablokoval). Svet bez depa (zbúrané po naplánovaní) miesto neobmedzuje (fallback).
  * - **Výdaj prázdneho** (`pickupPlan`): v `dueTick` vznikne kamión misie `collect` s poverením (`EmptyFlow.errands`: linka bookingu,
- *   kontrakt, `giveUpTick = tick + emptyPickupMaxWaitHours`). Kamión čaká v stojisku, kým mu dispatcher pridelí prázdny kontajner
+ *   kontrakt, `giveUpTick` po príchode do stojiska = tick príchodu + `emptyPickupMaxWaitHours`). Kamión čaká v stojisku, kým mu dispatcher pridelí prázdny kontajner
  *   linky (z depa na jeho dock); potom ho naloží a odíde (`EmptyPickedUp`, `in_truck → exported`), alebo sa po `giveUpTick` bez
  *   prideleného vzdá a odíde prázdny (`EmptyPickupMissed`). Plán sa spotrebuje až po vzniku kamióna; položka bookingu, ktorý medzitým
  *   zanikol (uzavretý), sa zahodí bez kamióna.
@@ -85,14 +85,12 @@ function returnSpawn(entry: ReturnPlanEntry): EmptySpawn {
   };
 }
 
-/** Výdaj prázdneho exportérovi: kamión `collect` s poverením (`giveUpTick` od vzniku kamióna). */
+/** Výdaj prázdneho exportérovi: kamión `collect` s poverením (`giveUpTick` sa nastaví až po príchode do stojiska, `trucks/empty-collect.ts`). */
 function pickupSpawn(entry: PickupPlanEntry): EmptySpawn {
   return {
     mission: 'collect',
     onSpawn: (world, truckId) => {
-      const { emptyPickupMaxWaitHours } = world.defs.logistics.emptyFlow;
-      const giveUpTick = world.clock.tick + Math.round(emptyPickupMaxWaitHours * world.clock.ticksPerHour);
-      world.emptyFlow.addErrand(truckId, entry.lineId, entry.contractId, giveUpTick);
+      world.emptyFlow.addErrand(truckId, entry.lineId, entry.contractId);
     },
   };
 }

@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { dismissToasts } from './dismiss-toasts';
 import { formatMoney, formatMoneyDelta } from '../../src/ui/format';
 
 // F6a e2e (T6A-10): export booking z pohľadu hráča — nová hra → minimálny prístav pre export → prijatie roundtripu v paneli
@@ -148,25 +149,14 @@ const panel = (page: Page): Locator => page.getByRole('complementary', { name: '
 const inspector = (page: Page): Locator => page.getByRole('complementary', { name: 'Inšpektor modulu' });
 const toasts = (page: Page): Locator => page.locator('.toasts .toast');
 
-/** Zavrie všetky toasty (ležia nad mapou a prekrývajú klik); zánik po 8 s sa môže s klikom minúť, preto krátky limit a opakovanie. */
-async function dismissToasts(page: Page): Promise<void> {
-  const closers = page.locator('.toasts .toast [data-action="close"]');
-  await expect(async () => {
-    if ((await closers.count()) > 0) await closers.first().click({ timeout: 1_000 });
-    await expect(toasts(page)).toHaveCount(0, { timeout: 1_000 });
-  }).toPass({ timeout: 15_000 });
-}
-
-/** Klik na bunku s opakovaním (klik sa môže minúť s prekreslením mapy alebo zánikom toastu), kým sa neukáže inšpektor modulu. */
+/** Klik na bunku, ktorý vyberie modul: zavrie toasty, hover + prekreslenie a až potom klik; inšpektor sa musí ukázať hneď (bez opakovania, pozri `dismissToasts`). */
 async function selectModuleAt(page: Page, cell: Cell): Promise<void> {
-  await expect(async () => {
-    await dismissToasts(page); // toast, ktorý naskočil po predošlom zavretí, by zakryl klik
-    const point = await page.evaluate(([x, y]) => window.__sim!.cellToScreen!(x, y), [cell.x, cell.y] as const);
-    await page.mouse.move(point.x, point.y);
-    await settle(page);
-    await page.mouse.click(point.x, point.y);
-    await expect(inspector(page)).toBeVisible({ timeout: 2_000 });
-  }).toPass({ timeout: 30_000 });
+  await dismissToasts(page);
+  const point = await page.evaluate(([x, y]) => window.__sim!.cellToScreen!(x, y), [cell.x, cell.y] as const);
+  await page.mouse.move(point.x, point.y);
+  await settle(page);
+  await page.mouse.click(point.x, point.y);
+  await expect(inspector(page)).toBeVisible();
 }
 
 /** Export jednotky podľa polohy v ledgeri (`in_truck`, `at_ramp`, `in_storage`, `in_vehicle`, `on_ship`, …) — a počet živých jednotiek exportu. */

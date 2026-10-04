@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { dismissToasts } from './dismiss-toasts';
 
 // F2 e2e (IMPLEMENTATION_PLAN, Fáza 2; T02-12): hráč vidí loď doplávať, zakotviť, žeriav vykladá a po vyložení loď odpláva;
 // v build móde postaví kotvisko (ghost, R, dôvody v tooltipe, cena) a klikom vyberie modul do inšpektora (živé dáta,
@@ -148,26 +149,15 @@ async function buildUnloadLogistics(page: Page): Promise<void> {
   await expect.poll(() => page.evaluate(() => window.__sim!.world.vehicles.size)).toBe(1);
 }
 
-/** Zavrie všetky toasty (ležia nad mapou a prekrývajú klik na bunku; zánik po 8 s sa môže s klikom minúť, preto krátky limit a opakovanie). */
-async function dismissToasts(page: Page): Promise<void> {
-  const closers = page.locator('.toasts .toast [data-action="close"]');
-  await expect(async () => {
-    if ((await closers.count()) > 0) await closers.first().click({ timeout: 1_000 });
-    await expect(page.locator('.toasts .toast')).toHaveCount(0, { timeout: 1_000 });
-  }).toPass({ timeout: 15_000 });
-}
-
 /**
- * Klik na bunku, ktorý vyberie modul: hover + prekreslenie a až potom klik; keď sa inšpektor neukáže (klik sa minul s prekreslením
- * mapy alebo so zánikom toastu), skúsi to znova — klik na už vybraný modul výber nemení.
+ * Klik na bunku, ktorý vyberie modul: hover + prekreslenie a až potom klik; inšpektor sa musí ukázať hneď. Bez opakovania:
+ * opakovaný klik by zakryl zlyhanie vstupu (pozri `dismissToasts`, prerušený `locator.click` spolkne ďalšie kliky myši).
  */
 async function selectModuleAt(page: Page, cell: { readonly x: number; readonly y: number }): Promise<void> {
-  await expect(async () => {
-    await hoverCell(page, cell);
-    await settle(page);
-    await clickCell(page, cell);
-    await expect(inspector(page)).toBeVisible({ timeout: 2_000 });
-  }).toPass({ timeout: 15_000 });
+  await hoverCell(page, cell);
+  await settle(page);
+  await clickCell(page, cell);
+  await expect(inspector(page)).toBeVisible();
 }
 
 /** Počet uložených jednotiek vo všetkých skladoch (ledger) — vykladaný náklad končí vo dvore, nie na aprone. */

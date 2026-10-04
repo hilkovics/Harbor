@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { dismissToasts } from './dismiss-toasts';
 import { formatMoney } from '../../src/ui/format';
 
 // F4 e2e (T04-10): celý reťazec fázy 4 z pohľadu hráča — loď → apron → vozidlá → dvor → rampa → kamión → export.
@@ -144,22 +145,6 @@ function segmentCells([x0, y0, x1, y1]: readonly [number, number, number, number
     cells.push({ x, y });
     if (x === x1 && y === y1) return cells;
   }
-}
-
-/**
- * Zavrie všetky toasty. Od F5 pool ponúk hneď na štarte (a pri každej uzávierke dňa) ohlási „Nové ponuky kontraktov“ —
- * toast leží nad strednou časťou mapy a prekrýva kurzor aj klik pri stavbe (ghost sa nezobrazí), preto ho spec pred
- * zameraním bunky zavrie. Zavretie ostatných toastov nevadí: spec ich nekontroluje.
- */
-async function dismissToasts(page: Page): Promise<void> {
-  const closers = page.locator('.toasts .toast [data-action="close"]');
-  // Toast sa zatvára aj sám (8 s od zobrazenia) a test sa k prvému zavretiu dostane po ~6–8 s od načítania, takže zavretie
-  // sa môže minúť s automatickým zánikom. Klik bez limitu by potom čakal na zaniknutý prvok až do konca testu (5 min,
-  // `actionTimeout` je predvolene 0), preto má každý pokus krátky limit a výsledok rozhoduje až kontrola prázdneho zásobníka.
-  await expect(async () => {
-    if ((await closers.count()) > 0) await closers.first().click({ timeout: 1_000 });
-    await expect(page.locator('.toasts .toast')).toHaveCount(0, { timeout: 1_000 });
-  }).toPass({ timeout: 15_000 });
 }
 
 /**

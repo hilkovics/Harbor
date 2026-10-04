@@ -53,7 +53,8 @@ export const REVISION_EVENTS: ReadonlySet<SimEventType> = new Set<SimEventType>(
   'TruckExited',
   'NoWaitingBay',
   // Kontrakty (F5): karty v snapshote sa skladajú len pri zmene revízie (stav, progres nákladu cez `CargoMoved`,
-  // penalizácie, zánik ponuky, koniec hry).
+  // penalizácie, zánik ponuky, koniec hry). Cut-off sa na kartách odpočítava z ticku, preto `CutoffWarning` / `CutoffPassed`
+  // revíziu nemenia.
   'ContractOffered',
   'ContractAccepted',
   'ContractStateChanged',
@@ -62,6 +63,16 @@ export const REVISION_EVENTS: ReadonlySet<SimEventType> = new Set<SimEventType>(
   'ContractExpired',
   'PenaltyApplied',
   'GameOver',
+  // Export a booking (F6a, ADR-032): počítadlá bookingu na kartách (dovezené, rolled, zadržané VGM — hold mení len ledger bez
+  // `CargoMoved`, naložené, penalizácie bookingu) a lashing / odchod lode s exportom.
+  'ExportArrived',
+  'UnitRolled',
+  'VgmHoldStarted',
+  'VgmHoldReleased',
+  'UnitLoaded',
+  'ShipLashingStarted',
+  'ExportShipped',
+  'BookingPenaltyApplied',
 ]);
 
 /**

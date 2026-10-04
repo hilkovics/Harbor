@@ -18,6 +18,12 @@
  *   `PenaltyApplied` → penalizácia (warning, dedup podľa kontraktu a druhu, sumy z jednej dávky sa sčítajú);
  *   `ContractFailed` (danger); `MonthlyReport` (info). Zánik ponuky (`ContractExpired`) a `GameOver` (modál) toast nemajú.
  *
+ * - Export a booking (F6a, T6A-07, ADR-032): `CutoffWarning` → „Cut-off exportu o N h“ (warning); `UnitRolled` → jednotka po
+ *   cut-off (warning, jedna za kontrakt a dávku so súčtom); `VgmHoldStarted` → „Chýba VGM“ (warning, zlučené podľa kontraktu);
+ *   `ExportShipped` → „Loď odplávala s exportom“ (success); `BookingPenaltyApplied` → penalizácia bookingu (warning, podľa
+ *   druhu: last minute / rolled / nesplnený). `ContractAccepted` roundtripu je jeden toast za voyage; popis export kontraktu
+ *   nesie cieľ (`#4 · Export 24 TEU → Rotterdam`).
+ *
  * Pravidlá zásobníka:
  * - Rovnaký `key` (napr. `no_storage:1`) sa naraz nezobrazí dvakrát — opakovaná udalosť pre to isté kotvisko nezaplaví panel.
  * - Naraz sa ukáže najviac `MAX_TOASTS` (4); ďalšie čakajú a ukážu sa, keď sa niektorý zavrie.
@@ -26,10 +32,10 @@
 import { sumTotals } from '@sim/economy';
 import type { ContractId, EntityId } from '@sim/core';
 import type { CargoCategory } from '@sim/defs';
-import type { PenaltyKind, SimEvent } from '@sim/events';
+import type { BookingPenaltyKind, PenaltyKind, SimEvent } from '@sim/events';
 import { LoadingRamp, type RampInoperativeReason } from '@sim/modules';
 import type { World } from '@sim/world';
-import { formatDuration, formatMoney, formatMoneyDelta, formatXp } from '@ui/format';
+import { formatDuration, formatFraction, formatMoney, formatMoneyDelta, formatXp } from '@ui/format';
 import { moduleCode } from '@ui/module-inspector';
 import { MAX_TOASTS, type ToastData, type ToastId, type ToastTone } from '@ui/toasts';
 import { TOAST_AUTO_CLOSE_MS } from './config';
@@ -89,6 +95,29 @@ export const PENALTY_TOAST_TITLE: Readonly<Record<PenaltyKind, string>> = Object
   late: 'Penalizácia: meškanie exportu',
 });
 
+export const CUTOFF_WARNING_TOAST_TITLE = 'Cut-off exportu';
+export const VGM_HOLD_TOAST_TITLE = 'Chýba VGM';
+export const EXPORT_SHIPPED_TOAST_TITLE = 'Loď odplávala s exportom';
+
+/** Názov penalizácie bookingu podľa druhu (last minute nakládka, vrátená rolled jednotka, nesplnený booking). */
+export const BOOKING_PENALTY_TOAST_TITLE: Readonly<Record<BookingPenaltyKind, string>> = Object.freeze({
+  last_minute: 'Penalizácia: last minute nakládka',
+  rolled: 'Penalizácia: vrátené jednotky (rolled)',
+  unfulfilled: 'Penalizácia: nesplnený booking',
+});
+
+/** „1 jednotka“, „2 jednotky“, „5 jednotiek“. */
+export function unitsText(count: number): string {
+  if (count === 1) return '1 jednotka';
+  return count >= 2 && count <= 4 ? `${String(count)} jednotky` : `${String(count)} jednotiek`;
+}
+
+/** Čas do cut-off pre nadpis toastu: `6 h`, `1 d 2 h`, pod hodinu `menej než hodinu`. */
+export function cutoffInText(ticks: number, scale: { readonly ticksPerHour: number; readonly ticksPerDay: number }): string {
+  const text = formatDuration(ticks, scale);
+  return text === '< 1 h' ? 'menej než hodinu' : text;
+}
+
 /** „1 nová ponuka“, „2 nové ponuky“, „5 nových ponúk“. */
 export function newOffersText(count: number): string {
   if (count === 1) return '1 nová ponuka';
@@ -108,11 +137,24 @@ function codeOf(world: World, moduleId: EntityId, fallbackKind: string): string 
   return moduleCode(world.modules.get(moduleId)?.kind ?? fallbackKind, moduleId);
 }
 
-/** Popis kontraktu pre text oznámenia: `#3 · 120 TEU` (zaniknutá ponuka → len `#3`). */
+/**
+ * Popis kontraktu pre text oznámenia: import `#3 · 120 TEU`, export booking `#4 · Export 24 TEU → Rotterdam`
+ * (zaniknutá ponuka → len `#3`).
+ */
 function contractLabel(world: World, contractId: ContractId): string {
   const contract = world.contracts.get(contractId);
   if (contract === undefined) return `#${String(contractId)}`;
-  return `#${String(contractId)} · ${String(contract.volumeUnits)} ${world.defs.cargoTypes.get(contract.cargoTypeId).unitName}`;
+  const volume = `${String(contract.volumeUnits)} ${world.defs.cargoTypes.get(contract.cargoTypeId).unitName}`;
+  const { booking } = contract;
+  return booking === null ? `#${String(contractId)} · ${volume}` : `#${String(contractId)} · Export ${volume} → ${booking.destinationPort}`;
+}
+
+/** Popis kontraktov celej voyage (`#3 · 48 TEU + #4 · Export 24 TEU → Rotterdam`); import-only = popis kontraktu. */
+function voyageLabel(world: World, contractId: ContractId): string {
+  const contract = world.contracts.get(contractId);
+  if (contract === undefined) return contractLabel(world, contractId);
+  const members = world.contractBook.voyageContracts(contract.voyageId);
+  return (members.length === 0 ? [contract] : members).map((member) => contractLabel(world, member.id)).join(' + ');
 }
 
 /**
@@ -134,14 +176,19 @@ function contractSpec(world: World, event: SimEvent, batch: ContractBatch): Toas
       };
     }
     case 'ContractAccepted': {
-      const arrival = world.contracts.get(event.contractId)?.shipArrivalTick;
+      const contract = world.contracts.get(event.contractId);
+      // Roundtrip prijíma celú voyage naraz: jeden toast za voyage (import-only: voyage = id kontraktu, kľúč ostáva).
+      const voyage = contract?.voyageId ?? event.contractId;
+      if (batch.acceptedVoyages.has(voyage)) return null;
+      batch.acceptedVoyages.add(voyage);
+      const arrival = contract?.shipArrivalTick;
       const eta = arrival === undefined ? '' : ` — loď príde o ${formatDuration(arrival - world.clock.tick, world.clock)}`;
       return {
-        key: `contract_accepted:${String(event.contractId)}`,
+        key: `contract_accepted:${String(voyage)}`,
         tone: 'info',
         icon: 'ic_check',
         title: ACCEPTED_TOAST_TITLE,
-        text: `${contractLabel(world, event.contractId)}${eta}`,
+        text: `${voyageLabel(world, event.contractId)}${eta}`,
         panel: 'contracts',
       };
     }
@@ -180,6 +227,71 @@ function contractSpec(world: World, event: SimEvent, batch: ContractBatch): Toas
         text: `${contractLabel(world, event.contractId)} · odmena prepadla, penalizácia ${formatMoney(-event.penaltiesCents)}`,
         panel: 'contracts',
       };
+    case 'CutoffWarning': {
+      const contract = world.contracts.get(event.contractId);
+      const booking = contract?.booking;
+      const arrived =
+        contract === undefined || booking === null || booking === undefined
+          ? ''
+          : ` · dovezené ${formatFraction(booking.arrivedUnits, booking.bookedUnits, world.defs.cargoTypes.get(contract.cargoTypeId).unitName)}`;
+      return {
+        key: `cutoff_warning:${String(event.contractId)}`,
+        tone: 'warning',
+        icon: 'ic_clock',
+        title: `${CUTOFF_WARNING_TOAST_TITLE} o ${cutoffInText(event.cutoffTick - world.clock.tick, world.clock)}`,
+        text: `${contractLabel(world, event.contractId)}${arrived}`,
+        panel: 'contracts',
+      };
+    }
+    case 'UnitRolled': {
+      if (batch.rolledShown.has(event.contractId)) return null;
+      batch.rolledShown.add(event.contractId);
+      return {
+        key: `unit_rolled:${String(event.contractId)}`,
+        tone: 'warning',
+        icon: 'ic_warning',
+        title: `${unitsText(batch.rolled.get(event.contractId) ?? 1)} po cut-off (rolled)`,
+        text: `${contractLabel(world, event.contractId)} · naloží sa len ak loď ešte nezačala lashing, inak sa vráti odosielateľovi`,
+        panel: 'contracts',
+      };
+    }
+    case 'VgmHoldStarted': {
+      if (batch.holdsShown.has(event.contractId)) return null;
+      batch.holdsShown.add(event.contractId);
+      const hold = batch.holds.get(event.contractId) ?? { count: 1, untilTick: event.untilTick };
+      return {
+        key: `vgm_hold:${String(event.contractId)}`,
+        tone: 'warning',
+        icon: 'ic_lock',
+        title: VGM_HOLD_TOAST_TITLE,
+        text: `${contractLabel(world, event.contractId)} · zadržané: ${unitsText(hold.count)}, uvoľnenie o ${formatDuration(hold.untilTick - world.clock.tick, world.clock)}`,
+        panel: 'contracts',
+      };
+    }
+    case 'ExportShipped': {
+      // Loď už zo sveta zmizla, preto triedu a cieľ berie export kontrakt lode (kniha ho drží do uzavretia bookingu).
+      const contract = [...world.contracts.values()].find((candidate) => candidate.shipId === event.shipId && candidate.booking !== null);
+      const ship = contract === undefined ? `Loď #${String(event.shipId)}` : world.defs.ships.get(contract.shipClassId).displayName;
+      const unit = contract === undefined ? 'jedn.' : world.defs.cargoTypes.get(contract.cargoTypeId).unitName;
+      const destination = contract === undefined || contract.booking === null ? '' : ` → ${contract.booking.destinationPort}`;
+      return {
+        key: `export_shipped:${String(event.shipId)}`,
+        tone: 'success',
+        icon: 'ic_ship',
+        title: EXPORT_SHIPPED_TOAST_TITLE,
+        text: `${ship} · ${String(event.units)} ${unit}${destination}`,
+        panel: 'contracts',
+      };
+    }
+    case 'BookingPenaltyApplied':
+      return {
+        key: `booking_penalty:${String(event.contractId)}:${event.kind}`,
+        tone: 'warning',
+        icon: 'ic_warning',
+        title: BOOKING_PENALTY_TOAST_TITLE[event.kind],
+        text: `${contractLabel(world, event.contractId)} · ${event.kind === 'unfulfilled' ? '' : `${unitsText(event.units)} · `}${formatMoney(-event.amountCents)}`,
+        panel: 'contracts',
+      };
     case 'MonthlyReport':
       return {
         key: `monthly:${String(event.month)}`,
@@ -201,16 +313,39 @@ interface ContractBatch {
   /** Súčet `PenaltyApplied` podľa `kontrakt:druh`. */
   readonly penalties: Map<string, number>;
   readonly penaltiesShown: Set<string>;
+  /** F6a: voyage, ktorých `ContractAccepted` už dostal toast (roundtrip = dva kontrakty, jeden toast). */
+  readonly acceptedVoyages: Set<number>;
+  /** F6a: počet `UnitRolled` podľa kontraktu a kontrakty, ktoré už dostali toast. */
+  readonly rolled: Map<ContractId, number>;
+  readonly rolledShown: Set<ContractId>;
+  /** F6a: `VgmHoldStarted` podľa kontraktu (počet jednotiek a najskorší koniec zadržania) a kontrakty s toastom. */
+  readonly holds: Map<ContractId, { count: number; untilTick: number }>;
+  readonly holdsShown: Set<ContractId>;
 }
 
 function contractBatch(events: readonly SimEvent[]): ContractBatch {
-  const batch: ContractBatch = { offers: 0, offersShown: false, penalties: new Map(), penaltiesShown: new Set() };
+  const batch: ContractBatch = {
+    offers: 0,
+    offersShown: false,
+    penalties: new Map(),
+    penaltiesShown: new Set(),
+    acceptedVoyages: new Set(),
+    rolled: new Map(),
+    rolledShown: new Set(),
+    holds: new Map(),
+    holdsShown: new Set(),
+  };
   for (const event of events) {
     if (event.type === 'ContractOffered') {
       batch.offers += 1;
     } else if (event.type === 'PenaltyApplied') {
       const id = `${String(event.contractId)}:${event.kind}`;
       batch.penalties.set(id, (batch.penalties.get(id) ?? 0) + event.amountCents);
+    } else if (event.type === 'UnitRolled') {
+      batch.rolled.set(event.contractId, (batch.rolled.get(event.contractId) ?? 0) + 1);
+    } else if (event.type === 'VgmHoldStarted') {
+      const known = batch.holds.get(event.contractId);
+      batch.holds.set(event.contractId, { count: (known?.count ?? 0) + 1, untilTick: Math.min(known?.untilTick ?? event.untilTick, event.untilTick) });
     }
   }
   return batch;

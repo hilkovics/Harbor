@@ -17,7 +17,7 @@ describe('inspectorData: sklad (kontajnerový dvor)', () => {
       footprint: { w: 4, h: 4 },
       stateLabel: 'V prevádzke',
       ok: true,
-      storage: { stored: 0, reserved: 0, capacity: 64, unitsIn: 0, unitsOut: 0, unitLabel: 'TEU' },
+      storage: { stored: 0, reserved: 0, capacity: 64, unitsIn: 0, unitsOut: 0, split: { import: 0, export: 0 }, unitLabel: 'TEU' },
       connected: true,
       refundCents: 7_500_000,
       removable: true,

@@ -8,12 +8,16 @@
  * - `disabledReason` (len ponuka) je text prvého dôvodu z `validate` príkazu `AcceptContract` (`REASON_TEXT`), takže UI
  *   neduplikuje pravidlá simu (dnes: `game_over`).
  * - Poradie: ponuky a prebiehajúce vzostupne podľa id, história (splnené / zlyhané) od najnovšej.
+ * - F6a (ADR-032): karta nesie `kind` a `voyageId` (panel zoskupí kontrakty jednej voyage do spoločnej karty roundtripu),
+ *   export booking aj `booking` (cieľ, cut-off, dovezené / naložené, zadržané VGM, rolled, vrátené, zostávajúce príchody).
+ *   `disabledReason` má každý kontrakt ponuky osobitne (panel ukáže prvý dôvod zo skupiny).
  */
 import { AcceptContractCommand } from '@sim/commands';
-import { offerClosingTick, type Contract } from '@sim/contracts';
+import { offerClosingTick, type Contract, type ExportBooking } from '@sim/contracts';
 import type { World } from '@sim/world';
-import type { ContractCardData, ContractsTimeScale } from '@ui/contracts-panel';
+import type { ContractBookingData, ContractCardData, ContractsTimeScale } from '@ui/contracts-panel';
 import { REASON_TEXT } from './build-feedback';
+import { optionalDefNumber } from './optional-def';
 import { CARGO_CATEGORY_TEXT } from './toast-center';
 
 /** Prvé písmeno veľké (`kontajnery` → `Kontajnery`). */
@@ -34,14 +38,44 @@ export function acceptDisabledReason(world: World, contract: Contract): string |
   return verdict.ok || reason === undefined ? undefined : REASON_TEXT[reason];
 }
 
+/**
+ * Odstup cut-off od príchodu lode v tickoch (`economy.cutoffHours` × ticky za hodinu), alebo `undefined`, kým def nemá
+ * pole (pribúda s T6A-02). Ponuka s ním ukáže „Cut-off 12 h pred príchodom lode“.
+ */
+export function cutoffLeadTicks(world: World): number | undefined {
+  const hours = optionalDefNumber(world.defs.economy, 'cutoffHours');
+  return hours === undefined ? undefined : Math.round(hours * world.clock.ticksPerHour);
+}
+
+/** Booking export kontraktu pre kartu; `cutoffLeadTicks` len pred prijatím (potom je cut-off konkrétny tick). */
+function bookingData(world: World, booking: ExportBooking): ContractBookingData {
+  const lead = booking.cutoffTick === undefined ? cutoffLeadTicks(world) : undefined;
+  return {
+    destinationPort: booking.destinationPort,
+    ...(booking.cutoffTick === undefined ? {} : { cutoffTick: booking.cutoffTick }),
+    ...(lead === undefined ? {} : { cutoffLeadTicks: lead }),
+    bookedUnits: booking.bookedUnits,
+    pendingArrivals: booking.arrivalPlan.length,
+    arrivedUnits: booking.arrivedUnits,
+    loadedUnits: booking.loadedUnits,
+    lastMinuteUnits: booking.lastMinuteUnits,
+    rolledUnits: booking.rolledUnits,
+    returnedUnits: booking.returnedUnits,
+    heldUnits: booking.heldUnits,
+  };
+}
+
 /** Karta jedného kontraktu (viď hlavička súboru). */
 export function contractCard(world: World, contract: Contract): ContractCardData {
   const { defs, clock } = world;
   const cargo = defs.cargoTypes.get(contract.cargoTypeId);
   const ship = defs.ships.get(contract.shipClassId);
   const disabledReason = acceptDisabledReason(world, contract);
+  const { booking } = contract;
   return {
     id: contract.id,
+    kind: contract.kind,
+    voyageId: contract.voyageId,
     state: contract.state,
     cargoCategory: cargo.category,
     cargoLabel: capitalize(CARGO_CATEGORY_TEXT[cargo.category].cargo),
@@ -60,6 +94,7 @@ export function contractCard(world: World, contract: Contract): ContractCardData
     unitsExported: contract.unitsExported,
     penaltiesCents: contract.penaltiesCents,
     ...(disabledReason === undefined ? {} : { disabledReason }),
+    ...(booking === null ? {} : { booking: bookingData(world, booking) }),
   };
 }
 

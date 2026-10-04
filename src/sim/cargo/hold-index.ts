@@ -44,6 +44,12 @@ export class HoldIndex {
     this.entries.splice(low, 0, entry);
   }
 
+  /** Vyradí zadržanú jednotku z indexu (opustila mapu: vrátenie odosielateľovi); jednotka mimo indexu sa ignoruje. */
+  remove(unitId: EntityId): void {
+    const at = this.entries.findIndex((entry) => entry.unitId === unitId);
+    if (at >= 0) this.entries.splice(at, 1);
+  }
+
   /**
    * Vyberie záznamy s `untilTick ≤ tick` (vzostupne) do `into` (najprv ho nezmení — pridáva na koniec) a z indexu ich
    * odstráni. Bez splatných záznamov nič nealokuje.

@@ -177,6 +177,24 @@ describe('HoldIndex', () => {
     expect(index.size).toBe(0);
   });
 
+  it('zadržaná jednotka, ktorá opustí mapu (vrátenie odosielateľovi), vypadne z indexu a z počítadla heldUnits', () => {
+    const world = exportWorld({ vehicles: [] });
+    const { exportContract } = acceptedBooking(world, { kind: 'export', booked: 4 });
+    const id = unitAtRamp(world, exportContract);
+    (exportContract.booking.arrivalPlan as number[]).length = 0;
+    exportContract.recordArrival(id, false);
+    world.cargo.setHold(id, { reason: 'vgm', untilTick: 5000 });
+    world.holdIndex.add(5000, id);
+    exportContract.recordHold(1);
+    expect(findWorldViolation(world)).toBeUndefined();
+    world.cargo.move(id, { kind: 'in_truck', truckId: 902 as EntityId });
+    world.cargo.move(id, { kind: 'exported' });
+    expect(world.holdIndex.size).toBe(0);
+    expect(exportContract.booking.heldUnits).toBe(0);
+    expect(world.cargo.exportedCount).toBe(1);
+    expect(findWorldViolation(world)).toBeUndefined();
+  });
+
   it('rebuild zostaví index len z jednotiek s hold', () => {
     const index = new HoldIndex();
     index.add(1, 1 as EntityId);

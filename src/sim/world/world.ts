@@ -295,13 +295,14 @@ export class World {
         : Economy.fromState(economyEnv, parts.cashCents, entriesKept, parts.economy);
     const bookEnv = { events: this.events, clock: parts.clock };
     this.contractBook = parts.contracts === null ? new ContractBook(bookEnv) : ContractBook.fromState(bookEnv, parts.contracts);
-    const { contractBook, storedCargo } = this;
-    // Počítadlá jednotiek kontraktov (ADR-026) a index uskladneného nákladu pre outbound (ADR-027) z háčika ledgera —
-    // bez skenu nákladu v ticku.
+    const { contractBook, storedCargo, holdIndex } = this;
+    // Počítadlá jednotiek kontraktov (ADR-026), index uskladneného nákladu pre outbound (ADR-027) a index zadržaných
+    // jednotiek (ADR-032: zadržaná jednotka, ktorá opustí mapu, z neho vypadne) z háčika ledgera — bez skenu nákladu v ticku.
     const observer = {
       cargoMoved(unit: CargoUnit, to: CargoLocation): void {
         contractBook.cargoMoved(unit, to);
         storedCargo.cargoMoved(unit, to);
+        if (unit.hold !== null && (to.kind === 'exported' || to.kind === 'shipped')) holdIndex.remove(unit.id);
       },
     };
     const deps = { cargoTypes: parts.defs.cargoTypes, ids: parts.ids, events: this.events, clock: parts.clock, observer };

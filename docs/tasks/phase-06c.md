@@ -63,7 +63,7 @@ CargoLedger.setStatus(unitId, status, repairUntilTick: number | null): CargoUnit
 CARGO_SPAWN_KIND_BY_DIRECTION = { import: 'on_ship', export: 'in_truck', tranship: 'on_ship', empty: 'in_truck' }
 EMPTY_WEIGHT_CLASS = 'light'
 // štítky podľa smeru (DIRECTION_LABEL_RULES): empty = bez kontraktu / voyage / prístavu, s linkou; tranship = ako export (kontrakt, voyage A, linka, cieľový prístav)
-// prázdny a tranship používajú existujúce prechody §7.1 (žiadny nový CargoLocation); konečné stavy: prázdny exported | shipped, tranship len shipped
+// prázdny a tranship používajú existujúce prechody §7.1 (žiadny nový CargoLocation); konečné stavy: prázdny exported | shipped, tranship shipped (loď B) | exported (zmeškaná prekládka predaná po lehote záchrany, `TranshipSold`; ADR-034 dodatok T6C-03 bod 6)
 // @sim/contracts
 type ContractKind = 'import' | 'export' | 'empty_repositioning' | 'tranship';   // CONTRACT_KINDS
 type OfferGroup = 'import' | 'booking' | 'repositioning' | 'tranship';          // OFFER_GROUPS; CONTRACT_KIND_TRAITS[kind] = { booking, tranship, offerGroup }

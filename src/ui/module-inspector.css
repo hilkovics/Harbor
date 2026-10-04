@@ -8,7 +8,7 @@
  * __meter / __bar, __section / __ship, __vehicles / __vehicle (F3, zoznam vozidiel v depe), __bays / __bay (F4, rad
  * stojísk čakacej plochy), __docks / __dock / __pips / __pip (F4, docky rampy), __legend / __legend-item (F6a, import / export
  * v sklade a na lodi; swatch a bar-fill --import / --export), __lashing (F6a, lashing lode s progresom), __rows / __row,
- * __actions / __btn / __reason; F6c (T6C-05): swatch a bar-fill --tranship / --empty / --damaged / --repair (lokálne `--mi-*`),
+ * __actions / __btn / __reason; F6c (T6C-05): swatch a bar-fill --tranship / --empty / --damaged / --repair (--empty a --damaged z tokenov `--cargo-empty*`, ostatné lokálne `--mi-*`),
  * __lines / __line (+ __line-head / __line-dot / __line-name / __line-total / __line-counts / __line-count / __line-value--warn|busy;
  * depo prázdnych: zoznam podľa linky) a __meter-note.
  */
@@ -19,11 +19,10 @@
   --mi-icon-xs: var(--space-3);
   --mi-badge-h: calc(var(--space-6) - 2px);
   --mi-gap: calc(var(--space-2) + 2px);
-  /* F6c: farby segmentov (ADR-034). Prázdne = `--cargo-empty` (neutrálna šedá, rovnaká ako kontajner na mape; T6C-04), prekládka =
-     fialová (odlíšená od importu, exportu aj prázdnych; token `--cargo-tranship` v tokens.css nie je, preto `--ui-xp`), poškodené =
-     varovanie, oprava = accent. */
+  /* F6c: farby segmentov (ADR-034). Prázdne = `--cargo-empty` (neutrálna šedá, rovnaká ako kontajner na mape; T6C-04), poškodené =
+     `--cargo-empty-damaged` (ten istý token ako odznak poškodených na depe v rendereri — jedna farba na mape aj v inšpektore), prekládka =
+     fialová (odlíšená od importu, exportu aj prázdnych; token `--cargo-tranship` v tokens.css nie je, preto `--ui-xp`), oprava = accent. */
   --mi-tranship: var(--ui-xp);
-  --mi-damaged: var(--ui-warning);
   --mi-repair: var(--ui-accent);
   /* Farba linky (bodka v tabuľke depa); riadok ju prepíše inline z tokenu linky (`lineStyle`). */
   --line-color: var(--ui-text-2);
@@ -294,8 +293,8 @@
   background: var(--ui-surface-2);
 }
 
-/* F6c: prekládka a prázdne (pruh a legenda skladu a lode), poškodené a oprava (depo prázdnych). Prázdne čítajú token
-   `--cargo-empty` (sivá kontajnerov na mape), ostatné lokálne premenné `--mi-*` (hore). */
+/* F6c: prekládka a prázdne (pruh a legenda skladu a lode), poškodené a oprava (depo prázdnych). Prázdne a poškodené čítajú tokeny
+   `--cargo-empty` a `--cargo-empty-damaged` (farby kontajnerov a odznaku depa na mape), ostatné lokálne premenné `--mi-*` (hore). */
 .module-inspector__swatch--tranship,
 .module-inspector__bar-fill--tranship {
   background: var(--mi-tranship);
@@ -308,7 +307,7 @@
 
 .module-inspector__swatch--damaged,
 .module-inspector__bar-fill--damaged {
-  background: var(--mi-damaged);
+  background: var(--cargo-empty-damaged);
 }
 
 .module-inspector__swatch--repair,

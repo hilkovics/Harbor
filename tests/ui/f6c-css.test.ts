@@ -1,5 +1,6 @@
 // T6C-05: štýl nových prvkov F6c (odznak linky, trasa prekládky, farby segmentov tranship / prázdne, depo prázdnych) — len tokeny,
 // bez pevných farieb a rozmerov; farby liniek idú cez `--line-color` (inline z tokenu linky), farby segmentov cez lokálne `--mi-*`.
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { TOKENS_CSS, loadCss } from './css-guard';
 
@@ -33,21 +34,28 @@ describe('contracts-panel.css: linka a trasa prekládky', () => {
 });
 
 describe('module-inspector.css: tranship, prázdne a depo', () => {
-  it('lokálne farby segmentov sú odvodené od existujúcich tokenov (každý zdroj je v design/tokens.css); prázdne čítajú `--cargo-empty` priamo', () => {
+  it('lokálne farby segmentov sú odvodené od existujúcich tokenov (každý zdroj je v design/tokens.css); prázdne a poškodené čítajú `--cargo-empty*` priamo', () => {
     const root = inspector.ruleBody('.module-inspector');
-    for (const [name, token] of [['--mi-tranship', '--ui-xp'], ['--mi-damaged', '--ui-warning'], ['--mi-repair', '--ui-accent']] as const) {
+    for (const [name, token] of [['--mi-tranship', '--ui-xp'], ['--mi-repair', '--ui-accent']] as const) {
       expect(root, name).toMatch(new RegExp(`${name}:\\s*var\\(${token}\\)`));
       expect(TOKENS_CSS, token).toContain(`${token}:`);
     }
     expect(root, 'prázdne bez lokálnej premennej').not.toContain('--mi-empty');
+    expect(root, 'poškodené bez lokálnej premennej (jeden token s rendererom)').not.toContain('--mi-damaged');
     expect(TOKENS_CSS).toContain('--cargo-empty:');
+    expect(TOKENS_CSS).toContain('--cargo-empty-damaged:');
     expect(root).toMatch(/--line-color:\s*var\(--ui-text-2\)/);
   });
 
-  it('segmenty pruhu a značky legendy: tranship / poškodené / oprava čítajú `--mi-*`, prázdne `--cargo-empty`', () => {
+  it('farba poškodeného prázdneho je jeden token `--cargo-empty-damaged` v inšpektore (pruh a legenda) aj v rendereri (odznak depa)', () => {
+    expect(inspector.ruleBody('.module-inspector__swatch--damaged,\n.module-inspector__bar-fill--damaged')).toMatch(/background:\s*var\(--cargo-empty-damaged\)/);
+    expect(readFileSync(new URL('../../src/render/tokens.ts', import.meta.url), 'utf8')).toMatch(/damaged:\s*color\('--cargo-empty-damaged'\)/);
+  });
+
+  it('segmenty pruhu a značky legendy: tranship / oprava čítajú `--mi-*`, prázdne `--cargo-empty`, poškodené `--cargo-empty-damaged`', () => {
     expect(inspector.ruleBody('.module-inspector__swatch--tranship,\n.module-inspector__bar-fill--tranship')).toMatch(/background:\s*var\(--mi-tranship\)/);
     expect(inspector.ruleBody('.module-inspector__swatch--empty,\n.module-inspector__bar-fill--empty')).toMatch(/background:\s*var\(--cargo-empty\)/);
-    expect(inspector.ruleBody('.module-inspector__swatch--damaged,\n.module-inspector__bar-fill--damaged')).toMatch(/background:\s*var\(--mi-damaged\)/);
+    expect(inspector.ruleBody('.module-inspector__swatch--damaged,\n.module-inspector__bar-fill--damaged')).toMatch(/background:\s*var\(--cargo-empty-damaged\)/);
     expect(inspector.ruleBody('.module-inspector__swatch--repair,\n.module-inspector__bar-fill--repair')).toMatch(/background:\s*var\(--mi-repair\)/);
   });
 

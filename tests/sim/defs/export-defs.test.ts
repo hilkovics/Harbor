@@ -204,6 +204,33 @@ describe('DefRegistry — fail-fast polia exportu s JSON pointerom', () => {
     expectDefError(() => DefRegistry.fromRaw(raw), 'modules', '/items/0/params/apronReserveSlots');
   });
 
+  it('modules: handoverMode apron | under_hook, craneBufferSlots 0 … 1 a craneBufferSlots × maxCranes ≤ apronSlots (ADR-033)', () => {
+    const raw = rawDefs();
+    const berth = itemsOf(raw, 'modules').find((item) => item['kind'] === 'berth') as Json;
+    const params = berth['params'] as Json;
+    for (const mode of ['apron', 'under_hook']) {
+      params['handoverMode'] = mode;
+      expect(accepts(raw), mode).toBe(true);
+    }
+    params['handoverMode'] = 'hook';
+    expectDefError(() => DefRegistry.fromRaw(raw), 'modules', '/items/0/params/handoverMode');
+    params['handoverMode'] = 'under_hook';
+    for (const bad of [-1, 2, 0.5]) {
+      params['craneBufferSlots'] = bad;
+      expectDefError(() => DefRegistry.fromRaw(raw), 'modules', '/items/0/params/craneBufferSlots');
+    }
+    for (const ok of [0, 1]) {
+      params['craneBufferSlots'] = ok;
+      expect(accepts(raw), String(ok)).toBe(true);
+    }
+    // 1 × maxCranes 2 = 2 ≤ apronSlots; pri apronSlots 1 (rezerva 0) sa už dva buffery nezmestia.
+    params['apronSlots'] = 1;
+    params['apronReserveSlots'] = 0;
+    expectDefError(() => DefRegistry.fromRaw(raw), 'modules', '/items/0/params/craneBufferSlots');
+    params['craneBufferSlots'] = 0;
+    expect(accepts(raw)).toBe(true);
+  });
+
   it('modules: dualCycleFactor v 1 … 2', () => {
     const raw = rawDefs();
     const crane = itemsOf(raw, 'modules').find((item) => item['kind'] === 'crane') as Json;

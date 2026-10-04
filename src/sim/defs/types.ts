@@ -289,6 +289,14 @@ export interface ModuleDef {
 }
 
 /** `params` kotviska (`kind: 'berth'`). */
+/**
+ * Režim odovzdávania žeriav ↔ vozidlo na kotvisku (F6a, ADR-033): `apron` = žeriav kladie jednotky na sloty apronu a vozidlá
+ * ich odtiaľ berú (F2–F5); `under_hook` = vozidlo čaká priamo pod hákom žeriava a jednotka prejde `in_crane ↔ in_vehicle`
+ * (apron ostáva len ako buffer `craneBufferSlots` na žeriav).
+ */
+export const HANDOVER_MODES = ['apron', 'under_hook'] as const;
+export type HandoverMode = (typeof HANDOVER_MODES)[number];
+
 export interface BerthParams {
   /** Najhlbší ponor, ktorý kotvisko unesie (loď: `draftClass ≤ depthClass`). */
   readonly depthClass: 1 | 2 | 3;
@@ -303,6 +311,14 @@ export interface BerthParams {
    * každý smer smie obsadiť najviac `apronSlots − apronReserveSlots` slotov. Celé `0 … ⌊apronSlots / 2⌋`.
    */
   readonly apronReserveSlots: number;
+  /** Režim odovzdávania žeriav ↔ vozidlo (`HandoverMode`, ADR-033); `apron` = správanie F2–F5. */
+  readonly handoverMode: HandoverMode;
+  /**
+   * Buffer apronu na žeriav v režime `under_hook` (ADR-033): koľko jednotiek môže žeriav (pri vykládke) odložiť na apron,
+   * keď pod hákom nečaká vozidlo; 0 = čisté priame odovzdanie (žeriav čaká na vozidlo), 1 = jedna jednotka na žeriav.
+   * Celé `0 … 1`, spolu `craneBufferSlots × maxCranes ≤ apronSlots`. V režime `apron` sa nepoužije.
+   */
+  readonly craneBufferSlots: number;
 }
 
 /** `params` žeriava (`kind: 'crane'`). */

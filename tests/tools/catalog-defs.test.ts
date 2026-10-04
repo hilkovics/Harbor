@@ -89,7 +89,7 @@ describe('skutočné katalógy F2 až F4', () => {
       ],
       costCents: 40_000_000,
       maintenancePerDayCents: 120_000,
-      params: { depthClass: 1, apronSlots: 8, maxCranes: 2, frontWaterCells: 3, apronReserveSlots: 2 },
+      params: { depthClass: 1, apronSlots: 8, maxCranes: 2, frontWaterCells: 3, apronReserveSlots: 2, handoverMode: 'apron', craneBufferSlots: 1 },
     });
     expect(item(def, 'crane_container_gantry')).toEqual({
       id: 'crane_container_gantry',
@@ -645,11 +645,18 @@ describe('schémy katalógov (validateDefsDir)', () => {
         ['frontWaterCells', '3', '/items/0/params/frontWaterCells must be integer'],
         ['apronReserveSlots', -1, '/items/0/params/apronReserveSlots must be >= 0'],
         ['apronReserveSlots', 1.5, '/items/0/params/apronReserveSlots must be integer'],
+        ['handoverMode', 'hook', '/items/0/params/handoverMode must be equal to one of the allowed values'],
+        ['craneBufferSlots', 2, '/items/0/params/craneBufferSlots must be <= 1'],
+        ['craneBufferSlots', -1, '/items/0/params/craneBufferSlots must be >= 0'],
+        ['craneBufferSlots', 0.5, '/items/0/params/craneBufferSlots must be integer'],
       ])('berth %s = %j', (field, value, message) => {
-        // `apronSlots = 0` dá aj vzťah rezervy (⌊0 / 2⌋ = 0), preto sa rezerva nuluje — kontrola vzťahov má vlastný test.
+        // `apronSlots = 0` dá aj vzťah rezervy (⌊0 / 2⌋ = 0) a buffera, preto sa nulujú — kontrola vzťahov má vlastný test.
         const mutate = (def: Json): void => {
           params(berth(def))[field] = value;
-          if (field === 'apronSlots') params(berth(def))['apronReserveSlots'] = 0;
+          if (field === 'apronSlots') {
+            params(berth(def))['apronReserveSlots'] = 0;
+            params(berth(def))['craneBufferSlots'] = 0;
+          }
         };
         expect(errorsAfter('modules', mutate)).toEqual([`modules.json: ${message}`]);
       });
@@ -659,6 +666,18 @@ describe('schémy katalógov (validateDefsDir)', () => {
           'modules.json: /items/0/params/apronReserveSlots musí byť ≤ ⌊apronSlots / 2⌋ (4), dostal 5',
         ]);
         expect(errorsAfter('modules', (def) => void (params(berth(def))['apronReserveSlots'] = 4))).toEqual([]);
+      });
+
+      it('berth: buffer apronu na žeriav × maxCranes nad apronSlots → chyba vzťahu polí', () => {
+        const tight = (def: Json): void => {
+          params(berth(def))['apronSlots'] = 2;
+          params(berth(def))['apronReserveSlots'] = 1;
+          params(berth(def))['craneBufferSlots'] = 1;
+        };
+        expect(errorsAfter('modules', tight)).toEqual([]);
+        expect(errorsAfter('modules', (def) => (tight(def), void (params(berth(def))['maxCranes'] = 3)))).toEqual([
+          'modules.json: /items/0/params/craneBufferSlots craneBufferSlots × maxCranes (3) musí byť ≤ apronSlots (2)',
+        ]);
       });
 
       it.each([

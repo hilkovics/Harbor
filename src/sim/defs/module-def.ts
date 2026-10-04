@@ -17,6 +17,7 @@ import {
 } from './def-spec';
 import {
   CARGO_CATEGORIES,
+  HANDOVER_MODES,
   MODULE_KINDS,
   type BerthParams,
   type CraneParams,
@@ -40,6 +41,9 @@ export const MODULE_PARAM_SPECS: { readonly [K in ModuleKind]: SpecTable<ModuleP
     frontWaterCells: { kind: 'integer', min: 1 },
     // Rezerva apronu pre opačný smer (F6a, ADR-032 bod 10); horná hranica `⌊apronSlots / 2⌋` je vzťah polí (`checkBerthParams`).
     apronReserveSlots: { kind: 'integer', min: 0 },
+    // Odovzdávanie žeriav ↔ vozidlo (F6a, ADR-033): režim a buffer apronu na žeriav (vzťah `craneBufferSlots × maxCranes ≤ apronSlots` je v `checkBerthParams`).
+    handoverMode: { kind: 'enum', values: HANDOVER_MODES },
+    craneBufferSlots: { kind: 'integer', min: 0, max: 1 },
   },
   crane: {
     // Cyklus sa delí na dve fázy (grabbing ⌊c/2⌋, placing c − ⌊c/2⌋, §7.2), každá musí mať aspoň jeden tick.
@@ -89,8 +93,15 @@ export const MODULE_PARAM_SPECS: { readonly [K in ModuleKind]: SpecTable<ModuleP
 function checkBerthParams(params: Readonly<Record<string, unknown>>, path: string): Problem | undefined {
   const slots = params['apronSlots'];
   const reserve = params['apronReserveSlots'];
-  if (typeof slots !== 'number' || typeof reserve !== 'number' || reserve <= Math.floor(slots / 2)) return undefined;
-  return { path: `${path}/apronReserveSlots`, message: `musí byť ≤ ⌊apronSlots / 2⌋ (${String(Math.floor(slots / 2))}), dostal ${String(reserve)}` };
+  if (typeof slots === 'number' && typeof reserve === 'number' && reserve > Math.floor(slots / 2)) {
+    return { path: `${path}/apronReserveSlots`, message: `musí byť ≤ ⌊apronSlots / 2⌋ (${String(Math.floor(slots / 2))}), dostal ${String(reserve)}` };
+  }
+  const buffer = params['craneBufferSlots'];
+  const cranes = params['maxCranes'];
+  if (typeof slots === 'number' && typeof buffer === 'number' && typeof cranes === 'number' && buffer * cranes > slots) {
+    return { path: `${path}/craneBufferSlots`, message: `craneBufferSlots × maxCranes (${String(buffer * cranes)}) musí byť ≤ apronSlots (${String(slots)})` };
+  }
+  return undefined;
 }
 
 /** `params` zodpovedá tabuľke druhu: presne jej kľúče, správne typy a rozsahy (+ vzťahy polí kotviska). Prvý problém alebo `undefined`. */

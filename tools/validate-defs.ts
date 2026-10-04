@@ -226,8 +226,9 @@ function findLogisticsProblems(defsDir: string): string[] {
 }
 
 /**
- * Vzťah polí kotviska v `modules.json` (F6a, ADR-032 bod 10): `params.apronReserveSlots ≤ ⌊apronSlots / 2⌋`. Chýbajúci alebo
- * nečitateľný katalóg a položky bez očakávaného tvaru sa preskočia (hlási ich schéma).
+ * Vzťahy polí kotviska v `modules.json` (F6a): `params.apronReserveSlots ≤ ⌊apronSlots / 2⌋` (ADR-032 bod 10) a
+ * `craneBufferSlots × maxCranes ≤ apronSlots` (buffer apronu na žeriav, ADR-033). Chýbajúci alebo nečitateľný katalóg
+ * a položky bez očakávaného tvaru sa preskočia (hlási ich schéma).
  */
 function findBerthParamProblems(defsDir: string): string[] {
   const modules = readJsonOrUndefined(join(defsDir, MODULES_DEF_FILE));
@@ -236,11 +237,18 @@ function findBerthParamProblems(defsDir: string): string[] {
   const errors: string[] = [];
   items.forEach((item: unknown, index) => {
     if (!isRecord(item) || item['kind'] !== 'berth' || !isRecord(item['params'])) return;
-    const { apronSlots, apronReserveSlots } = item['params'];
-    if (typeof apronSlots !== 'number' || typeof apronReserveSlots !== 'number' || apronReserveSlots <= Math.floor(apronSlots / 2)) return;
-    errors.push(
-      `${MODULES_DEF_FILE}: /items/${String(index)}/params/apronReserveSlots musí byť ≤ ⌊apronSlots / 2⌋ (${String(Math.floor(apronSlots / 2))}), dostal ${String(apronReserveSlots)}`,
-    );
+    const { apronSlots, apronReserveSlots, craneBufferSlots, maxCranes } = item['params'];
+    if (typeof apronSlots === 'number' && typeof apronReserveSlots === 'number' && apronReserveSlots > Math.floor(apronSlots / 2)) {
+      errors.push(
+        `${MODULES_DEF_FILE}: /items/${String(index)}/params/apronReserveSlots musí byť ≤ ⌊apronSlots / 2⌋ (${String(Math.floor(apronSlots / 2))}), dostal ${String(apronReserveSlots)}`,
+      );
+      return;
+    }
+    if (typeof apronSlots === 'number' && typeof craneBufferSlots === 'number' && typeof maxCranes === 'number' && craneBufferSlots * maxCranes > apronSlots) {
+      errors.push(
+        `${MODULES_DEF_FILE}: /items/${String(index)}/params/craneBufferSlots craneBufferSlots × maxCranes (${String(craneBufferSlots * maxCranes)}) musí byť ≤ apronSlots (${String(apronSlots)})`,
+      );
+    }
   });
   return errors;
 }

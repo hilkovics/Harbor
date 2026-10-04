@@ -241,6 +241,8 @@ describe('bundled katalógy (loadBundledDefs)', () => {
       maxCranes: 2,
       frontWaterCells: 3,
       apronReserveSlots: 2,
+      handoverMode: 'apron',
+      craneBufferSlots: 1,
     });
     expect(craneParams(defs.modules.get('crane_container_gantry'))).toEqual({ cycleTicks: 12, category: 'container', wagePerDayCents: 25_000, dualCycleFactor: 1.5 });
   });
@@ -909,7 +911,7 @@ describe('MODULE_PARAM_SPECS', () => {
   });
 
   it('berth a crane majú presne polia BerthParams a CraneParams', () => {
-    expect(Object.keys(MODULE_PARAM_SPECS.berth)).toEqual(['depthClass', 'apronSlots', 'maxCranes', 'frontWaterCells', 'apronReserveSlots']);
+    expect(Object.keys(MODULE_PARAM_SPECS.berth)).toEqual(['depthClass', 'apronSlots', 'maxCranes', 'frontWaterCells', 'apronReserveSlots', 'handoverMode', 'craneBufferSlots']);
     expect(Object.keys(MODULE_PARAM_SPECS.crane)).toEqual(['cycleTicks', 'category', 'wagePerDayCents', 'dualCycleFactor']);
   });
 

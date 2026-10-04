@@ -170,13 +170,15 @@
     "berthParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["depthClass", "apronSlots", "maxCranes", "frontWaterCells", "apronReserveSlots"],
+      "required": ["depthClass", "apronSlots", "maxCranes", "frontWaterCells", "apronReserveSlots", "handoverMode", "craneBufferSlots"],
       "properties": {
         "depthClass": { "enum": [1, 2, 3], "description": "Najhlbší ponor, ktorý kotvisko unesie." },
         "apronSlots": { "type": "integer", "minimum": 1, "description": "Počet slotov apronu (ApronBuffer)." },
         "maxCranes": { "type": "integer", "minimum": 1, "description": "Najviac žeriavov na kotvisku." },
         "frontWaterCells": { "type": "integer", "minimum": 1, "description": "Šírka pásu vody pred dlhou hranou, ktorý musí byť voľný." },
-        "apronReserveSlots": { "type": "integer", "minimum": 0, "description": "Rezerva slotov apronu pre opačný smer (F6a, ADR-032 bod 10); najviac ⌊apronSlots / 2⌋ — vzťah polí kontroluje DefRegistry a `pnpm validate:defs`." }
+        "apronReserveSlots": { "type": "integer", "minimum": 0, "description": "Rezerva slotov apronu pre opačný smer (F6a, ADR-032 bod 10); najviac ⌊apronSlots / 2⌋ — vzťah polí kontroluje DefRegistry a `pnpm validate:defs`." },
+        "handoverMode": { "enum": ["apron", "under_hook"], "description": "Odovzdávanie žeriav ↔ vozidlo (F6a, ADR-033): `apron` = žeriav kladie jednotky na sloty apronu (F2–F5), `under_hook` = vozidlo čaká pod hákom žeriava." },
+        "craneBufferSlots": { "type": "integer", "minimum": 0, "maximum": 1, "description": "Buffer apronu na žeriav v režime under_hook (ADR-033): 0 = čisté priame odovzdanie, 1 = jedna jednotka na žeriav; craneBufferSlots × maxCranes ≤ apronSlots (vzťah polí kontroluje DefRegistry a `pnpm validate:defs`)." }
       }
     },
     "craneParams": {

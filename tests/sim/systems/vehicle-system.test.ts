@@ -2,7 +2,7 @@
 // pobyt internalTicks + loadTicks/unloadTicks (tick vstupu = nultý tick), presun jednotky až po manipulácii, JobDone
 // v ticku uloženia, no_path s novým pokusom každých repathIntervalTicks, preplánovanie po zmene ciest (aj po načítaní
 // save s čakajúcim príznakom), vozidlo stojí na ceste. Rozloženie: tests/sim/logistics/dispatch-fixtures.ts.
-import modulesJson from '@data/defs/modules.json';
+import { APRON_MODULES as modulesJson } from '../helpers/apron-modules';
 import { describe, expect, it } from 'vitest';
 import { commandFromJSON } from '@sim/commands';
 import type { EntityId } from '@sim/core';

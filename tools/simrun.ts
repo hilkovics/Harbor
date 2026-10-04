@@ -17,6 +17,7 @@ import type { SimEvent } from '@sim/events';
 import { loadBundledMap, loadMap, parseMapDef, type LoadedMap } from '@sim/grid';
 import { CraneModule, TruckGate } from '@sim/modules';
 import { World, stateHash, type WorldState } from '@sim/world';
+import { exportGroupingShare } from '@sim/world/cargo-queries';
 
 // ---------------------------------------------------------------------------------------------------------
 // Scenár
@@ -72,7 +73,7 @@ export interface SimrunReport {
   readonly cashEnd: number;
   /** Exportované jednotky nákladu (`world.cargo.exportedCount`); pred landside vo F3+ vždy 0. */
   readonly exportedUnits: number;
-  /** Stratené jednotky nákladu = vytvorené − (živé + exportované); musí byť 0 (CLAUDE.md, `/sim-check`). */
+  /** Stratené jednotky nákladu = vytvorené − (živé + exportované + odplávané); musí byť 0 (CLAUDE.md, `/sim-check`). */
   readonly lostUnits: number;
   /**
    * Podiel kontraktov dokončených včas: počet `ContractCompleted` s `onTime` / počet `ContractCompleted` počas behu;
@@ -133,8 +134,9 @@ export interface SimrunReport {
    */
   readonly gateQueueMax: number;
   /**
-   * `world.clock.tick` po prvom ticku, v ktorom po aspoň jednom `ShipSpawned` platí `cargo.exportedCount === cargo.createdCount`
-   * a `createdCount > 0` (všetok vytvorený náklad opustil mapu); `null`, ak taký tick v behu nenastal.
+   * `world.clock.tick` po prvom ticku, v ktorom po aspoň jednom `ShipSpawned` platí `cargo.exportedCount + shippedCount ===
+   * cargo.createdCount` a `createdCount > 0` (všetok vytvorený náklad opustil mapu po súši alebo loďou); `null`, ak taký tick
+   * v behu nenastal.
    */
   readonly ticksToAllExported: number | null;
   /** Počet dokončených kontraktov za hru na konci behu (`world.completedContracts`, F5). */
@@ -166,6 +168,32 @@ export interface SimrunReport {
    * s voľbou `--hash`, inak `null`. Roundtrip (`--roundtrip-at`) ho nesmie zmeniť.
    */
   readonly stateHash: string | null;
+  /** Jednotky exportu, ktoré odplávali na lodi (`world.cargo.shippedCount`, F6a). Do `lostUnits` sa počítajú ako vybavené. */
+  readonly shippedUnits: number;
+  /** Počet udalostí `UnitRolled` (jednotka prešla bránou po cut-off). */
+  readonly rolledUnits: number;
+  /** Jednotky exportu vrátené odosielateľovi po súši: Σ `returnedUnits` bookingov v knihe na konci behu. */
+  readonly returnedUnits: number;
+  /** Počet udalostí `VgmHoldStarted` (jednotka s chýbajúcim VGM zadržaná). */
+  readonly vgmHolds: number;
+  /**
+   * Podiel dual cyklov: `DualCycle / (CraneCycleDone + UnitLoaded − DualCycle)` (cyklus vykládky + cyklus nakládky, dual = jeden
+   * cyklus za dve jednotky); bez cyklov `null`.
+   */
+  readonly dualCycleRate: number | null;
+  /** Podiel vykládok delivery kamiónov, po ktorých kamión naložil import (`TruckUnloaded.dualTransaction`); bez vykládky `null`. */
+  readonly dualTransactionRate: number | null;
+  /** Σ `UnitLoaded.outOfOrder` — jednotky naložené mimo poradia stowage plánu (na termináli ostala skoršia). */
+  readonly stowageOrderViolations: number;
+  /**
+   * Priemer `exportGroupingShare` bookingu v ticku každého `CutoffPassed` × 100 (podiel exportov voyage v jej najväčšom sklade),
+   * na 1 desatinné miesto; bez cut-off s uskladnenými jednotkami `null`.
+   */
+  readonly exportGroupingPct: number | null;
+  /** Σ ticky, v ktorých žeriav v režime `under_hook` čakal na vozidlo (`CraneModule.waitForVehicleTicks`). */
+  readonly craneWaitForVehicleTicks: number;
+  /** Σ ticky vozidiel čakajúcich pod hákom žeriava (`CraneModule.vehicleWaitTicks`). */
+  readonly vehicleWaitUnderCraneTicks: number;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -444,6 +472,16 @@ interface EventTally {
   revenueCents: number;
   maintenanceCents: number;
   wagesCents: number;
+  rolledUnits: number;
+  vgmHolds: number;
+  dualCycles: number;
+  unitsLoaded: number;
+  stowageOrderViolations: number;
+  truckUnloads: number;
+  dualTransactions: number;
+  /** Súčet a počet `exportGroupingShare` v ticku `CutoffPassed` (priemer sa počíta na konci). */
+  groupingShareSum: number;
+  groupingShareCount: number;
 }
 
 function tallyEvents(tally: EventTally, events: readonly SimEvent[]): void {
@@ -466,13 +504,45 @@ function tallyEvents(tally: EventTally, events: readonly SimEvent[]): void {
     else if (event.type === 'ContractFailed') tally.contractsFailed += 1;
     else if (event.type === 'ContractExpired') tally.contractsExpired += 1;
     else if (event.type === 'PenaltyApplied') tally.penaltiesCents += event.amountCents;
-    else if (event.type === 'MoneyChanged') {
+    else if (event.type === 'UnitRolled') tally.rolledUnits += 1;
+    else if (event.type === 'VgmHoldStarted') tally.vgmHolds += 1;
+    else if (event.type === 'DualCycle') tally.dualCycles += 1;
+    else if (event.type === 'UnitLoaded') {
+      tally.unitsLoaded += 1;
+      if (event.outOfOrder) tally.stowageOrderViolations += 1;
+    } else if (event.type === 'TruckUnloaded') {
+      tally.truckUnloads += 1;
+      if (event.dualTransaction) tally.dualTransactions += 1;
+    } else if (event.type === 'MoneyChanged') {
       // Kategórie účtovnej knihy: príjem kontraktu je kladný, údržba a mzdy záporné → kladná veľkosť.
       if (event.reason === 'contract_revenue') tally.revenueCents += event.deltaCents;
       else if (event.reason === 'maintenance') tally.maintenanceCents -= event.deltaCents;
       else if (event.reason === 'wages') tally.wagesCents -= event.deltaCents;
     }
   }
+}
+
+/** Podiel exportov voyage v jej najväčšom sklade v ticku každého `CutoffPassed` (metrika `exportGroupingPct`); volá sa po `world.tick()`. */
+function tallyGrouping(tally: EventTally, world: World, events: readonly SimEvent[]): void {
+  for (const event of events) {
+    if (event.type !== 'CutoffPassed') continue;
+    const share = exportGroupingShare(world, event.contractId);
+    if (share === null) continue;
+    tally.groupingShareSum += share;
+    tally.groupingShareCount += 1;
+  }
+}
+
+/** Σ jednotiek exportu vrátených odosielateľovi cez všetky bookingy v knihe (`ExportBooking.returnedUnits`). */
+function returnedUnits(world: World): number {
+  let returned = 0;
+  for (const contract of world.contractBook.contracts.values()) returned += contract.booking?.returnedUnits ?? 0;
+  return returned;
+}
+
+/** `part / whole` alebo `null` pri nulovom menovateli. */
+function ratioOrNull(part: number, whole: number): number | null {
+  return whole === 0 ? null : part / whole;
 }
 
 /** Vozidlá (`state !== 'idle'`) po jednom ticku pripočíta do počítadiel využitia. */
@@ -494,10 +564,10 @@ function isAllStored(world: World): boolean {
   return inTransit === 0;
 }
 
-/** Všetok vytvorený náklad opustil mapu (`exportedCount === createdCount`); prázdny svet (`createdCount === 0`) nie. */
+/** Všetok vytvorený náklad opustil mapu (`exportedCount + shippedCount === createdCount`); prázdny svet (`createdCount === 0`) nie. */
 function isAllExported(world: World): boolean {
   const { cargo } = world;
-  return cargo.createdCount > 0 && cargo.exportedCount === cargo.createdCount;
+  return cargo.createdCount > 0 && cargo.exportedCount + cargo.shippedCount === cargo.createdCount;
 }
 
 /** Σ dĺžok frontov všetkých brán kamiónov (vrátane kamióna, ktorý bránou práve prechádza). */
@@ -582,6 +652,15 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     revenueCents: 0,
     maintenanceCents: 0,
     wagesCents: 0,
+    rolledUnits: 0,
+    vgmHolds: 0,
+    dualCycles: 0,
+    unitsLoaded: 0,
+    stowageOrderViolations: 0,
+    truckUnloads: 0,
+    dualTransactions: 0,
+    groupingShareSum: 0,
+    groupingShareCount: 0,
   };
   const vehicleTicks = { activeTicks: 0, totalTicks: 0 };
   let ticksToAllStored: number | null = null;
@@ -605,7 +684,9 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
       const what = rejected.map((event) => `${event.commandType}: ${event.reasons.join(', ')}`).join('; ');
       throw new SimrunError(`${scenario.id}: príkaz odmietnutý pri atTick ${String(tick)} — ${what}`);
     }
-    tallyEvents(tally, world.tick());
+    const ticked = world.tick();
+    tallyEvents(tally, ticked);
+    tallyGrouping(tally, world, ticked);
     tallyVehicleTicks(world, vehicleTicks);
     if (ticksToAllStored === null && tally.shipsSpawned > 0 && isAllStored(world)) ticksToAllStored = world.clock.tick;
     gateQueueMax = Math.max(gateQueueMax, totalGateQueue(world));
@@ -622,7 +703,7 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     gameDays: world.clock.gameDay,
     cashEnd: world.cashCents,
     exportedUnits: world.cargo.exportedCount,
-    lostUnits: world.cargo.createdCount - (world.cargo.liveCount + world.cargo.exportedCount),
+    lostUnits: world.cargo.createdCount - (world.cargo.liveCount + world.cargo.exportedCount + world.cargo.shippedCount),
     onTimeRate: tally.contractsCompleted === 0 ? null : tally.contractsOnTime / tally.contractsCompleted,
     craneBlockedPct: craneBlockedPercent(craneModules(world)),
     roads: countRoads(world),
@@ -658,6 +739,17 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     tier: world.tier,
     gameOver: world.gameOver,
     stateHash: options.hash === true ? stateHash(world) : null,
+    shippedUnits: world.cargo.shippedCount,
+    rolledUnits: tally.rolledUnits,
+    returnedUnits: returnedUnits(world),
+    vgmHolds: tally.vgmHolds,
+    dualCycleRate: ratioOrNull(tally.dualCycles, tally.craneCycles + tally.unitsLoaded - tally.dualCycles),
+    dualTransactionRate: ratioOrNull(tally.dualTransactions, tally.truckUnloads),
+    stowageOrderViolations: tally.stowageOrderViolations,
+    exportGroupingPct:
+      tally.groupingShareCount === 0 ? null : Math.round((tally.groupingShareSum / tally.groupingShareCount) * PERCENT * ONE_DECIMAL) / ONE_DECIMAL,
+    craneWaitForVehicleTicks: craneModules(world).reduce((sum, crane) => sum + crane.waitForVehicleTicks, 0),
+    vehicleWaitUnderCraneTicks: craneModules(world).reduce((sum, crane) => sum + crane.vehicleWaitTicks, 0),
   };
 }
 
@@ -681,7 +773,10 @@ export function formatSummary(report: SimrunReport): string {
     `kontrakty ponúknuté/prijaté/zlyhané/zaniknuté ${String(report.contractsOffered)}/${String(report.contractsAccepted)}/` +
     `${String(report.contractsFailed)}/${String(report.contractsExpired)}, tier ${String(report.tier)}, ` +
     `tržby ${String(report.revenueCents)}, penalizácie ${String(report.penaltiesCents)}, ` +
-    `údržba ${String(report.maintenanceCents)}, mzdy ${String(report.wagesCents)}, koniec hry ${report.gameOver ? 'áno' : 'nie'}` +
+    `údržba ${String(report.maintenanceCents)}, mzdy ${String(report.wagesCents)}, koniec hry ${report.gameOver ? 'áno' : 'nie'}, ` +
+    `odplávané ${String(report.shippedUnits)}, rolled ${String(report.rolledUnits)}, vrátené ${String(report.returnedUnits)}, VGM hold ${String(report.vgmHolds)}, ` +
+    `dual cycle ${metric(report.dualCycleRate)}, dual transaction ${metric(report.dualTransactionRate)}, mimo poradia ${String(report.stowageOrderViolations)}, ` +
+    `zoskupenie exportu ${metric(report.exportGroupingPct)}, žeriav čaká ${String(report.craneWaitForVehicleTicks)}, vozidlo čaká ${String(report.vehicleWaitUnderCraneTicks)}` +
     (report.stateHash === null ? '' : `, hash stavu ${report.stateHash}`)
   );
 }

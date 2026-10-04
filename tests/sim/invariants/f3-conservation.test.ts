@@ -306,8 +306,9 @@ describe('CargoLedger.move a invarianty sveta: teleport a neexistujúci držite�
   });
 
   it.each<{ name: string; target: (ids: { berthId: EntityId; yardId: EntityId }) => CargoLocation }>([
-    // `in_vehicle → on_apron` je od F6a povolený (export na apron, ADR-032); preskočenie apronu do žeriavu nie.
-    { name: 'in_vehicle → in_crane (preskočenie apronu)', target: () => ({ kind: 'in_crane', craneId: 2 as EntityId }) },
+    // `in_vehicle → on_apron` je od F6a povolený (export na apron, ADR-032) a `in_vehicle → in_crane` od ADR-033 (nakládka
+    // pod hákom); vrátenie na loď bez žeriava nie.
+    { name: 'in_vehicle → on_ship (preskočenie žeriava)', target: () => ({ kind: 'on_ship', shipId: 2 as EntityId }) },
     { name: 'in_vehicle → exported (preskočenie celého reťazca)', target: () => ({ kind: 'exported' }) },
   ])('$name vyhodí CargoTransitionError a jednotka ostáva vo vozidle', ({ target }) => {
     const { world, vehicleUnit, vehicleId, berthId, yardId } = busyWorld();

@@ -12,7 +12,7 @@
  * Záznam pre F4 je náprotivok `recordRunF3` z `f3.ts`: ten výslovne zakazuje `at_ramp` / `in_truck` / `exported`, takže by
  * pri prvej naloženej jednotke zlyhal. F3 helper ostáva nedotknutý.
  */
-import modulesJson from '@data/defs/modules.json';
+import { APRON_MODULES as modulesJson } from './apron-modules';
 import type { CargoLocation } from '@sim/cargo';
 import { commandFromJSON, type SerializedCommand } from '@sim/commands';
 import type { EntityId } from '@sim/core';

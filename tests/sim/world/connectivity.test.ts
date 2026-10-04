@@ -4,7 +4,7 @@
 //
 // harbor_01: Root berth (40, 14) rot 0 má konektory (41, 16, s) a (46, 16, s) → vonkajšie bunky (41, 17), (46, 17);
 // starter parcela x 30–57, y 14–33 (vlastnená), pevnina y ≥ 17.
-import modulesJson from '@data/defs/modules.json';
+import { APRON_MODULES as modulesJson } from '../helpers/apron-modules';
 import { describe, expect, it } from 'vitest';
 import { PlaceRoadCommand, RemoveRoadCommand } from '@sim/commands';
 import { DefRegistry } from '@sim/defs';

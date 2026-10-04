@@ -105,6 +105,7 @@ export class LoadingRamp extends LandExportModule {
     this.drop = Object.freeze({
       kind: 'at_ramp',
       category: this.params.category,
+      reserves: true,
       places: this.params.docks,
       reservationsAt: (dock: number): number => (Number.isInteger(dock) && dock >= 0 && dock < staging.docks ? staging.reservedAt(dock) : 0),
       restoreReservation: (dock: number): void => {

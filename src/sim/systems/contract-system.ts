@@ -48,8 +48,9 @@
  *   `CutoffPassed` v ticku `cutoffTick` (bezstavovo podľa ticku);
  * - po všetkých kontraktoch uvoľnenie VGM hold: jednotky s `untilTick ≤ tick` vzostupne podľa (`untilTick`, id) →
  *   `VgmHoldReleased`.
- * Uzavretie bookingu pri odchode lode (výplata podľa naložených jednotiek, penalizácie `BookingPenaltyApplied`, `completed`
- * / `failed`) pribudne s nakládkou (T6A-05) — bez nej export nikdy nenakladá, takže booking zlyhá až po SLA.
+ * - `exporting`: keď loď opustí kotvisko (`undocking` a ďalej, alebo už nie je na mape) → `closeBooking`: penalizácie
+ *   `BookingPenaltyApplied` (last minute, rolled, nesplnený booking), `completed` s výplatou pomerne k naloženým (ak naložená
+ *   ≥ 1 jednotka), inak `failed` (ADR-032 bod 14); inak SLA ako import.
  *
  * **Pool ponúk:** import ponuky dopĺňa `refillPool` (`economy.offersPerDay` skupín, pri štarte hry aj pri DayClosed),
  * booking ponuky `refillBookings` (`economy.bookingOffersPerDay` skupín) **len pri DayClosed** a po import ponukách — prvé
@@ -58,7 +59,16 @@
 import { capacityHintFrom, drawBookingOffer, drawOffer, portCapacityOf, type OfferContext } from '../contracts/contract-pool';
 import type { Contract } from '../contracts/contract';
 import type { ContractKind, ContractState } from '../contracts/contract-fsm';
-import { contractXpGain, demurrageStepCents, lateStepCents, wholePeriods } from '../contracts/contract-terms';
+import {
+  bookingFulfilmentUnits,
+  bookingPayoutCents,
+  bookingUnitsPenaltyCents,
+  contractXpGain,
+  demurrageStepCents,
+  lateStepCents,
+  unfulfilledBookingPenaltyCents,
+  wholePeriods,
+} from '../contracts/contract-terms';
 import type { HoldEntry } from '../cargo/hold-index';
 import type { ClockBoundaries } from '../core/sim-clock';
 import { SHIP_STATE_TRAITS, type ShipState } from '../ships/ship-fsm';
@@ -67,6 +77,22 @@ import type { World } from '../world/world';
 
 /** Prvý tick hry (po `World.create` na ticku 0 ho krok 1 posunie na 1): štart hry = prvé naplnenie poolu. */
 export const GAME_START_TICK = 1;
+
+/**
+ * Stavy lode, v ktorých už skončila nakládka — loď opustila kotvisko (`undocking`, `outbound`) alebo mapu; uzavretie export bookingu
+ * (výplata pomerne k naloženým, penalizácie). `lashing` ešte nie: loď drží kotvisko, demurrage beží (ADR-032 bod 12–14).
+ */
+const SHIP_LEFT_BERTH: { readonly [S in ShipState]: boolean } = Object.freeze({
+  arriving: false,
+  inbound: false,
+  waiting_anchorage: false,
+  berthing: false,
+  docked: false,
+  lashing: false,
+  undocking: true,
+  outbound: true,
+  despawned: true,
+});
 
 /** Stavy lode, v ktorých už kotvila (stojí pri kotvisku alebo odchádza) — `ship_en_route → unloading`. */
 const SHIP_REACHED_BERTH: { readonly [S in ShipState]: boolean } = Object.freeze({
@@ -137,6 +163,53 @@ function complete(world: World, contract: Contract): void {
   const xp = contractXpGain(contract.xpReward, onTime, world.defs.economy.lateXpFactor);
   world.contractBook.recordCompletion(xp);
   world.events.emit({ type: 'ContractCompleted', contractId: contract.id, rewardCents: contract.rewardCents, penaltiesCents: contract.penaltiesCents, xp, onTime });
+}
+
+/**
+ * Uzavretie export bookingu, keď loď opustila kotvisko (ADR-032 bod 14): penalizácie podľa počítadiel (`BookingPenaltyApplied`
+ * pre last minute, rolled — prijaté a nenaložené, vrátené odosielateľovi — a nesplnený booking), potom pri ≥ 1 naloženej jednotke
+ * `completed` s výplatou `⌊reward × naložené / bookované⌋` a XP pomerne k naloženým, inak `failed`. Hotovosť sa strhne jednou
+ * transakciou (ADR-026); od uzavretia smú nenaložené jednotky v sklade na rampu (`outbound` = `free`, vrátenie odosielateľovi).
+ */
+function closeBooking(world: World, contract: Contract): void {
+  const booking = contract.booking;
+  if (booking === null) return;
+  const { economy } = world.defs;
+  const booked = contract.volumeUnits;
+  const loaded = booking.loadedUnits;
+  const reward = contract.rewardCents;
+  const penalties: readonly { readonly kind: 'last_minute' | 'rolled' | 'unfulfilled'; readonly units: number; readonly amountCents: number }[] = [
+    { kind: 'last_minute', units: booking.lastMinuteUnits, amountCents: bookingUnitsPenaltyCents(reward, booked, booking.lastMinuteUnits, economy.lastMinuteExportRateOfReward) },
+    {
+      kind: 'rolled',
+      units: Math.max(0, booking.arrivedUnits - loaded),
+      amountCents: bookingUnitsPenaltyCents(reward, booked, Math.max(0, booking.arrivedUnits - loaded), economy.rolledExportRateOfReward),
+    },
+    {
+      kind: 'unfulfilled',
+      units: loaded < bookingFulfilmentUnits(booked, economy) ? booked - loaded : 0,
+      amountCents: loaded < bookingFulfilmentUnits(booked, economy) ? unfulfilledBookingPenaltyCents(reward, economy) : 0,
+    },
+  ];
+  for (const penalty of penalties) {
+    if (penalty.units <= 0) continue;
+    contract.penaltiesCents += penalty.amountCents;
+    world.events.emit({ type: 'BookingPenaltyApplied', contractId: contract.id, kind: penalty.kind, units: penalty.units, amountCents: penalty.amountCents });
+  }
+  if (loaded === 0) {
+    world.contractBook.changeState(contract, 'failed');
+    settlePenalties(world, contract);
+    world.events.emit({ type: 'ContractFailed', contractId: contract.id, penaltiesCents: contract.penaltiesCents });
+    return;
+  }
+  const payout = bookingPayoutCents(reward, loaded, booked);
+  const onTime = contract.slaDeadlineTick !== undefined && world.clock.tick <= contract.slaDeadlineTick;
+  world.contractBook.changeState(contract, 'completed');
+  world.economy.post(payout, 'contract_revenue', contractRefId(contract));
+  settlePenalties(world, contract);
+  const xp = contractXpGain((contract.xpReward * loaded) / booked, onTime, economy.lateXpFactor);
+  world.contractBook.recordCompletion(xp);
+  world.events.emit({ type: 'ContractCompleted', contractId: contract.id, rewardCents: payout, penaltiesCents: contract.penaltiesCents, xp, onTime });
 }
 
 /** Zlyhanie po `failAfterDaysLate` dňoch meškania; `true` = kontrakt zlyhal. */
@@ -255,6 +328,11 @@ const EXPORT_CONTRACT_STEPS: { readonly [S in ContractState]: ContractStep } = {
     trackCutoff(world, contract);
     accrueDemurrage(world, contract);
     accrueLate(world, contract);
+    const ship = shipOf(world, contract);
+    if (ship === undefined || SHIP_LEFT_BERTH[ship.state]) {
+      closeBooking(world, contract);
+      return;
+    }
     failIfOverdue(world, contract);
   },
   completed: idle,

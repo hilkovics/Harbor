@@ -14,13 +14,17 @@
  *   vždy (loď bez cieľa zo save v5 presunie parser pred vstup — `arriving`, ADR-029 addendum).
  * - `berthing`: plavba po rezervovanej trase k polohe pri kotvisku; po príchode `docked` s kurzom `DOCKED_HEADING`
  *   a `ShipDocked`.
- * - `docked`: keď na lodi nie je žiadna jednotka (`on_ship`) a trasa von je voľná → `undocking` + `ShipUndocked`.
- * - `lashing` (ADR-032 bod 11): odpočet lashingu a papierov → `undocking`; prechody `docked → lashing` a odchod
- *   z `lashing` implementuje T6A-05 — do vtedy je stav nedosiahnuteľný a krok v ňom je chyba.
- * - `undocking` → na konci dráhy uvoľní kotviská → `outbound` → po `seaLane` k `seaLane[0]` → `despawned`: loď sa
- *   odstráni zo sveta a emituje `ShipDeparted`.
+ * - `docked`: keď na lodi nie je žiadna jednotka (`on_ship`) a trasa von je voľná → `undocking` + `ShipUndocked`. Loď s exportom
+ *   (ADR-032 bod 12): počká, kým je na palube import alebo na termináli nenaložená jednotka voyage mimo hold; potom pri aspoň
+ *   jednej naloženej jednotke `lashing` (`ShipLashingStarted`, `lashingTicksPerUnit × naložené + paperworkTicks`), inak
+ *   rovno `undocking`.
+ * - `lashing` (ADR-032 bod 11): loď drží kotvisko; odpočet `lashingTicksLeft`, po ňom (a keď je trasa von voľná) `undocking` +
+ *   `ShipUndocked`. Demurrage beží ďalej (loď je `moored`, ADR-026).
+ * - `undocking` → na konci dráhy uvoľní kotviská → `outbound` → po `seaLane` k `seaLane[0]` → `despawned`: naložený export
+ *   `on_ship → shipped` (každá jednotka s `CargoMoved`, potom `ExportShipped`), loď sa odstráni zo sveta a emituje `ShipDeparted`.
  * Prechod stavu ukončí pohyb lode v danom ticku (zvyšok kroku prepadne), okrem vstupu.
  */
+import { exportAboard, importAboard, pendingExportUnits } from '../logistics/voyage-cargo';
 import { ShipError } from '../ships/ship-error';
 import type { Ship } from '../ships/ship';
 import type { ShipState } from '../ships/ship-fsm';
@@ -53,6 +57,56 @@ function reachLaneEnd(ship: Ship, world: World): void {
   traffic.bump();
 }
 
+/** Čo urobí loď `docked` v tomto ticku: čaká (náklad na palube / na termináli), začne lashing, alebo odíde. */
+type DockedVerdict = 'wait' | 'lash' | 'leave';
+
+/**
+ * Verdikt lode `docked` (ADR-032 bod 12). Loď bez export bookingov v knihe: odíde, keď na palube nie je žiadna jednotka (F2–F5).
+ * Inak čaká, kým je na palube import alebo na termináli nenaložená jednotka voyage mimo hold (`pendingExportUnits`); potom pri
+ * aspoň jednej naloženej jednotke exportu `lashing`, inak odíde.
+ */
+function dockedVerdict(ship: Ship, world: World): DockedVerdict {
+  if (!world.contractBook.hasOpenExports) return world.cargo.countAt('on_ship', ship.id) > 0 ? 'wait' : 'leave';
+  if (importAboard(world, ship.id) > 0 || pendingExportUnits(world, ship.id) > 0) return 'wait';
+  return exportAboard(world, ship.id) > 0 ? 'lash' : 'leave';
+}
+
+/** `docked → lashing`: `lashingTicksPerUnit × naložené + paperworkTicks` (def triedy lode), `ShipLashingStarted`. */
+function startLashing(ship: Ship, world: World): void {
+  const loadedUnits = exportAboard(world, ship.id);
+  const ticks = ship.def.lashingTicksPerUnit * loadedUnits + ship.def.paperworkTicks;
+  ship.transition('lashing');
+  ship.lashingTicksLeft = Math.max(1, ticks);
+  world.shipTraffic.bump();
+  world.events.emit({ type: 'ShipLashingStarted', shipId: ship.id, loadedUnits, ticks: ship.lashingTicksLeft });
+}
+
+/** `docked → undocking`, keď je trasa von voľná (`ShipUndocked`). */
+function undock(ship: Ship, world: World): void {
+  if (!world.shipTraffic.tryUndock(ship)) return;
+  world.events.emit({ type: 'ShipUndocked', shipId: ship.id });
+}
+
+const DOCKED_STEPS: { readonly [V in DockedVerdict]: ShipStep } = {
+  wait: () => undefined,
+  lash: startLashing,
+  leave: undock,
+};
+
+/**
+ * Odchod z mapy (`outbound → despawned`): naložený export `on_ship → shipped` vzostupne podľa id (každá jednotka s `CargoMoved`),
+ * potom `ExportShipped`; `World.removeShip` vyžaduje prázdnu loď. Import na palube by tu zostal (loď s importom neodchádza).
+ */
+function shipExports(ship: Ship, world: World): void {
+  let shipped = 0;
+  for (const unitId of world.cargo.unitsOnShip(ship.id)) {
+    if (world.cargo.get(unitId)?.direction !== 'export') continue;
+    world.cargo.move(unitId, { kind: 'shipped' });
+    shipped += 1;
+  }
+  if (shipped > 0) world.events.emit({ type: 'ExportShipped', shipId: ship.id, units: shipped });
+}
+
 const SHIP_STEPS: { readonly [S in ShipState]: ShipStep } = {
   arriving: (ship, world) => {
     if (world.shipTraffic.tryEnter(ship)) SHIP_STEPS.inbound(ship, world);
@@ -78,12 +132,16 @@ const SHIP_STEPS: { readonly [S in ShipState]: ShipStep } = {
     world.events.emit({ type: 'ShipDocked', shipId: ship.id, berthIds: ship.berthIds });
   },
   docked: (ship, world) => {
-    if (world.cargo.countAt('on_ship', ship.id) > 0) return;
-    if (!world.shipTraffic.tryUndock(ship)) return;
-    world.events.emit({ type: 'ShipUndocked', shipId: ship.id });
+    DOCKED_STEPS[dockedVerdict(ship, world)](ship, world);
   },
-  lashing: (ship) => {
-    throw new ShipError('inconsistent', `${ship.label}: krok v stave 'lashing' ešte nie je implementovaný (T6A-05, ADR-032 bod 11)`);
+  lashing: (ship, world) => {
+    if (ship.lashingTicksLeft > 1) {
+      ship.lashingTicksLeft -= 1;
+      return;
+    }
+    if (!world.shipTraffic.tryUndock(ship)) return;
+    ship.lashingTicksLeft = 0;
+    world.events.emit({ type: 'ShipUndocked', shipId: ship.id });
   },
   undocking: (ship, world) => {
     if (!sail(ship)) return;
@@ -93,6 +151,7 @@ const SHIP_STEPS: { readonly [S in ShipState]: ShipStep } = {
   outbound: (ship, world) => {
     if (!sail(ship)) return;
     ship.transition('despawned');
+    shipExports(ship, world);
     world.removeShip(ship.id);
     world.events.emit({ type: 'ShipDeparted', shipId: ship.id });
   },

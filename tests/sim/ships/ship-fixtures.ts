@@ -5,7 +5,7 @@
 // y 14–16 (rot 0, voda y ≤ 13), Root žeriav (43,14) id 2. Poloha feedera pri Root berthe = (43, 13), handy na dvoch
 // berthoch od x 40 = (45, 13).
 import cargoTypesJson from '@data/defs/cargo_types.json';
-import modulesJson from '@data/defs/modules.json';
+import { APRON_MODULES as modulesJson } from '../helpers/apron-modules';
 import shipsJson from '@data/defs/ships.json';
 import { SpawnShipDebugCommand } from '@sim/commands';
 import type { EntityId } from '@sim/core';

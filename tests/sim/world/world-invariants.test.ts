@@ -95,7 +95,7 @@ describe('findWorldViolation — porušenia', () => {
         world.cargo.move(unit, { kind: 'in_crane', craneId: crane.id });
       },
     ],
-    ['grabbing bez rezervácie', /'grabbing' nemá rezervovaný slot/, ({ crane }) => driveCrane(crane, 'grabbing')],
+    ['grabbing bez rezervácie', /'grabbing' cyklu 'unload' \(apron\) nemá rezervovaný slot/, ({ crane }) => driveCrane(crane, 'grabbing')],
     [
       'rezervácia žeriavu, ktorú apron nemá',
       /slot 2 nie je rezervovaný/,

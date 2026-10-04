@@ -74,24 +74,63 @@ describe('stavy jobu a tabuľky', () => {
     expect(Object.isFrozen(JOB_STATE_TRAITS)).toBe(true);
   });
 
-  it('JOB_ROUTES: inbound apron → sklad (priorita 0) pred outbound sklad → rampa a prijatím exportu rampa → sklad (priorita 1); isJobState; dôvody zrušenia', () => {
+  it('JOB_ROUTES: inbound apron / hák → sklad (priorita 0) pred outbound, prijatím exportu a nakládkou (priorita 1); isJobState; dôvody zrušenia', () => {
     expect(JOB_ROUTES).toEqual([
       { from: 'on_apron', to: 'in_storage', priority: 0 },
       { from: 'in_storage', to: 'at_ramp', priority: 1 },
       { from: 'at_ramp', to: 'in_storage', priority: 1 },
+      { from: 'in_storage', to: 'on_apron', priority: 1 },
+      { from: 'in_crane', to: 'in_storage', priority: 0 },
+      { from: 'in_storage', to: 'in_crane', priority: 1 },
     ]);
     expect(JOB_PRIORITY_LEVELS).toBe(2);
     expect(isJobRoute('on_apron', 'in_storage')).toBe(true);
     expect(isJobRoute('in_storage', 'at_ramp')).toBe(true);
     expect(isJobRoute('at_ramp', 'in_storage')).toBe(true);
     expect(jobRouteOf('at_ramp', 'in_storage')?.priority).toBe(1);
-    expect(isJobRoute('in_storage', 'on_apron')).toBe(false);
+    expect(isJobRoute('in_storage', 'on_apron')).toBe(true);
+    expect(isJobRoute('in_crane', 'in_storage')).toBe(true);
+    expect(isJobRoute('in_storage', 'in_crane')).toBe(true);
     expect(isJobRoute('on_apron', 'at_ramp')).toBe(false);
+    expect(isJobRoute('in_crane', 'on_apron')).toBe(false);
     expect(jobRouteOf('in_storage', 'at_ramp')?.priority).toBe(1);
     expect(jobRouteOf('at_ramp', 'in_truck')).toBeUndefined();
     for (const state of JOB_STATES) expect(isJobState(state)).toBe(true);
     for (const value of ['closed', '', null, 1]) expect(isJobState(value)).toBe(false);
     expect(JOB_CANCEL_REASONS).toEqual(['ramp_inoperative', 'ramp_unreachable']);
+  });
+});
+
+const HOOK: CargoLocation = { kind: 'in_crane', craneId: id(2) };
+
+describe('TransportJob — hák žeriava a nakládka (F6a, ADR-033)', () => {
+  it('vykládka pod hákom: zdroj in_crane, vozidlo jazdí ku kotvisku žeriava (fromModuleId), priorita 0', () => {
+    const job = new TransportJob({ id: id(30), unitIds: [id(11)], from: HOOK, fromModuleId: id(1), to: TO, createdTick: 1 });
+    expect([job.from, job.fromModuleId, job.toModuleId, job.priority]).toEqual([HOOK, 1, 4, 0]);
+    expect(job.toState()).toEqual({ id: 30, unitIds: [11], from: HOOK, to: TO, createdTick: 1 });
+  });
+
+  it('nakládka pod hákom: cieľ in_crane (toModuleId = kotvisko), priorita 1; nakládka na apron: slot apronu', () => {
+    const hook = new TransportJob({ id: id(31), unitIds: [id(11)], from: TO, to: HOOK, toModuleId: id(1), createdTick: 1 });
+    expect([hook.toModuleId, hook.priority, hook.fromModuleId]).toEqual([1, 1, 4]);
+    const apron = new TransportJob({ id: id(32), unitIds: [id(11)], from: TO, to: FROM, createdTick: 1 });
+    expect([apron.toModuleId, apron.priority]).toEqual([1, 1]);
+  });
+
+  it('rebindSource: job zo háku sa presmeruje na slot apronu toho istého kotviska (buffer), len open/assigned', () => {
+    const job = new TransportJob({ id: id(33), unitIds: [id(11)], from: HOOK, fromModuleId: id(1), to: TO, createdTick: 1 });
+    job.rebindSource(FROM);
+    expect(job.from).toEqual(FROM);
+    expect(job.toState().from).toEqual(FROM);
+    expect(jobError(() => job.rebindSource(FROM)).code).toBe('invalid_transition');
+    const other = new TransportJob({ id: id(34), unitIds: [id(11)], from: HOOK, fromModuleId: id(1), to: TO, createdTick: 1 });
+    expect(jobError(() => other.rebindSource({ kind: 'on_apron', berthId: id(9), slot: 0 })).code).toBe('invalid_input');
+    expect(jobError(() => other.rebindSource({ kind: 'in_storage', moduleId: id(4), slot: 1 })).code).toBe('invalid_input');
+    other.assign(id(7));
+    other.transition('picking');
+    expect(jobError(() => other.rebindSource(FROM)).code).toBe('invalid_transition');
+    const plain = new TransportJob(BASE);
+    expect(jobError(() => plain.rebindSource(FROM)).code).toBe('invalid_transition');
   });
 });
 
@@ -158,7 +197,10 @@ describe('TransportJob', () => {
     ['viac jednotiek do jedinečného slotu', { unitIds: [id(11), id(12)] }],
     ['from nie je lokácia', { from: { kind: 'on_apron', berthId: id(1) } as unknown as CargoLocation }],
     ['to bez držiteľa (exported)', { to: { kind: 'exported' } }],
-    ['nepovolená dvojica (sklad → apron)', { from: TO, to: FROM }],
+    ['nepovolená dvojica (apron → rampa)', { from: FROM, to: RAMP_TO }],
+    ['hák žeriava bez modulu (in_crane vyžaduje fromModuleId)', { from: { kind: 'in_crane', craneId: id(2) } }],
+    ['fromModuleId, ktorý nie je držiteľom zdroja', { fromModuleId: id(9) }],
+    ['fromModuleId 0', { fromModuleId: id(0) }],
     ['záporný createdTick', { createdTick: -1 }],
     ['necelý createdTick', { createdTick: 1.5 }],
     ['neznámy stav', { state: 'closed' as JobState }],

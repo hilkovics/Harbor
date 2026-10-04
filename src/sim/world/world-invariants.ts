@@ -67,18 +67,19 @@
  * trasy vozidiel cez `Vehicle.routeCellAt`, depá kurzorom, rezervácie súčtami; podrobné správy sa skladajú až pri
  * porušení. Jednotky skladu sa čítajú jednou kópiou (`units()`) — pri stovkách jednotiek lacnejšie než `unitAtIndex`.
  */
-import { CARGO_HOLDER_KINDS, isSameLocation, slotOf, uniqueSlotOf } from '../cargo/cargo-location';
+import { CARGO_HOLDER_KINDS, holderIdOf, slotOf, uniqueSlotOf } from '../cargo/cargo-location';
 import { OPPOSITE_DIRECTION } from '../grid/road-direction';
 import { DEFAULT_ROAD_KIND, ROAD_KIND_TRAITS, isRoadKind } from '../grid/road-kind';
 import { CONTRACT_STATE_TRAITS } from '../contracts/contract-fsm';
 import type { EntityId } from '../core/entity-id';
 import type { CargoCategory } from '../defs/types';
 import type { Cell } from '../grid/grid';
+import { unitAtJobSource } from '../logistics/job-source';
 import { JOB_STATE_TRAITS, type TransportJob } from '../logistics/transport-job';
 import { DockSupply } from '../trucks/dock-supply';
 import { BerthModule } from '../modules/berth-module';
 import { computeBerthGroups } from '../modules/berth-group';
-import { CRANE_STATE_TRAITS, CraneModule, cranePhaseProblem } from '../modules/crane-module';
+import { CRANE_CYCLE_TRAITS, CRANE_STATE_TRAITS, CraneModule, craneReservesApronSlot, cranePhaseProblem } from '../modules/crane-module';
 import { LoadingRamp } from '../modules/loading-ramp';
 import { StorageModule } from '../modules/storage-module';
 import { TruckGate } from '../modules/truck-gate';
@@ -194,6 +195,25 @@ const checkModuleCells: Check = (world) => {
   return undefined;
 };
 
+/**
+ * Cieľ cyklu žeriava (`targetUnitId`, ADR-032/033): mimo cyklu `null`; v cykle ho má nakládka vždy (jednotka na zdroji) a vykládka
+ * len pod hákom (jednotka importu vybraná pri štarte, aby dispatcher poslal vozidlo vopred) — vykládka na apron cieľ nemá. V `grabbing`
+ * leží cieľ na zdroji cyklu (nakládka: apron kotviska alebo vozidlo; vykládka pod hákom: loď), po zdvihnutí ho žeriav drží.
+ */
+function craneTargetProblem(world: World, crane: CraneModule, berth: BerthModule): string | undefined {
+  const target = crane.targetUnitId;
+  if (crane.state === 'idle' || crane.state === 'blocked') return target === null ? undefined : `${crane.label} mimo cyklu má cieľ #${String(target)}`;
+  const loads = CRANE_CYCLE_TRAITS[crane.cycle].direction === 'load';
+  const expects = loads || berth.params.handoverMode === 'under_hook';
+  if (expects !== (target !== null)) return `${crane.label} v stave '${crane.state}' cyklu '${crane.cycle}' (${berth.params.handoverMode}) ${expects ? 'nemá' : 'má'} cieľ cyklu`;
+  if (target === null) return undefined;
+  if (crane.state !== 'grabbing') return crane.heldUnitId === target ? undefined : `${crane.label} drží #${String(crane.heldUnitId)}, cieľ cyklu je #${String(target)}`;
+  const at = world.cargo.get(target)?.location;
+  if (at === undefined) return `${crane.label}: cieľ cyklu #${String(target)} nie je v ledgeri`;
+  const onSource = loads ? (at.kind === 'on_apron' && at.berthId === berth.id) || at.kind === 'in_vehicle' : at.kind === 'on_ship';
+  return onSource ? undefined : `${crane.label}: cieľ cyklu #${String(target)} je na '${at.kind}', nie na zdroji cyklu '${crane.cycle}'`;
+}
+
 function checkCrane(world: World, crane: CraneModule): string | undefined {
   const berth = world.modules.get(crane.berthId);
   if (!(berth instanceof BerthModule)) return `${crane.label} stojí na #${String(crane.berthId)}, ktorý nie je berth`;
@@ -211,9 +231,13 @@ function checkCrane(world: World, crane: CraneModule): string | undefined {
   if (traits.holdsUnit !== (crane.heldUnitId !== null)) {
     return `${crane.label} v stave '${crane.state}' ${traits.holdsUnit ? 'nedrží' : 'drží'} jednotku`;
   }
-  if (traits.hasReservation !== (crane.reservedSlot !== null)) {
-    return `${crane.label} v stave '${crane.state}' ${traits.hasReservation ? 'nemá' : 'má'} rezervovaný slot`;
+  // Rezervovaný slot apronu: v režime `apron` ho drží stav cyklu podľa `CRANE_CYCLE_TRAITS.reservesFrom`, v `under_hook` nikdy.
+  const reserves = berth.params.handoverMode === 'apron' && craneReservesApronSlot(crane.cycle, crane.state);
+  if (reserves !== (crane.reservedSlot !== null)) {
+    return `${crane.label} v stave '${crane.state}' cyklu '${crane.cycle}' (${berth.params.handoverMode}) ${reserves ? 'nemá' : 'má'} rezervovaný slot`;
   }
+  const targetProblem = craneTargetProblem(world, crane, berth);
+  if (targetProblem !== undefined) return targetProblem;
   const slot = crane.reservedSlot;
   if (slot !== null && (slot >= berth.apron.capacity || !berth.apron.isReserved(slot))) {
     return `${crane.label}: slot ${String(slot)} nie je rezervovaný na aprone ${berth.label}`;
@@ -237,13 +261,15 @@ function checkBerthCranes(world: World, berth: BerthModule, all: readonly CraneM
       if (overlap !== undefined) return `${own[i].label} a ${own[j].label} sa prekrývajú na ${cellLabel(overlap.x, overlap.y)}`;
     }
   }
-  const expected = own
-    .map((crane) => crane.reservedSlot)
-    .filter((slot): slot is number => slot !== null)
-    .sort((a, b) => a - b);
+  // Rezervácie apronu: sloty žeriavov (vykládka na apron) + sloty jobov nakládky exportu `in_storage → on_apron` (ADR-032 bod 9).
+  const expected = own.map((crane) => crane.reservedSlot).filter((slot): slot is number => slot !== null);
+  for (const job of world.jobs.values()) {
+    if (job.to.kind === 'on_apron' && job.to.berthId === berth.id) expected.push(job.to.slot);
+  }
+  expected.sort((a, b) => a - b);
   const reserved = berth.apron.reservedSlots();
   if (reserved.length !== expected.length || reserved.some((slot, i) => slot !== expected[i])) {
-    return `${berth.label}: rezervované sloty apronu [${reserved.join(', ')}] ≠ rezervácie žeriavov [${expected.join(', ')}]`;
+    return `${berth.label}: rezervované sloty apronu [${reserved.join(', ')}] ≠ rezervácie žeriavov a jobov [${expected.join(', ')}]`;
   }
   return undefined;
 }
@@ -408,7 +434,7 @@ function checkJobUnits(world: World, job: TransportJob): string | undefined {
     const unit = world.cargo.get(unitId);
     if (unit === undefined) return `${job.label}: jednotka #${String(unitId)} v ledgeri nie je`;
     if (world.jobOfUnit(unitId) !== job) return `${job.label}: index jobOfUnit(#${String(unitId)}) ukazuje na ${world.jobOfUnit(unitId)?.label ?? 'nič'}`;
-    const atSource = isSameLocation(unit.location, job.from);
+    const atSource = unitAtJobSource(world, job, unit);
     const inVehicle = unit.location.kind === 'in_vehicle' && unit.location.vehicleId === job.vehicleId;
     if ((place === 'source' && !atSource) || (place === 'vehicle' && !inVehicle)) {
       return `${job.label} v stave '${job.state}': jednotka #${String(unitId)} nie je na ${place === 'source' ? 'zdroji' : 'vozidle'} jobu`;
@@ -422,12 +448,15 @@ function checkJobUnits(world: World, job: TransportJob): string | undefined {
  * `to` (slot, dock) má rezerváciu a cieľ prijíma kategóriu nákladu jobu.
  */
 function checkJobTarget(world: World, job: TransportJob, category: CargoCategory | undefined): string | undefined {
-  const module = world.modules.get(job.toModuleId);
+  // Držiteľ cieľa: modul `to` (sklad, rampa, berth), pri háku žeriava samotný žeriav (vozidlo jazdí ku kotvisku — `toModuleId`).
+  const module = world.modules.get(holderIdOf(job.to) ?? job.toModuleId);
   const target = module?.cargoDropTarget();
   if (module === undefined || target?.kind !== job.to.kind) return `${job.label}: cieľ #${String(job.toModuleId)} neprijíma náklad do '${job.to.kind}'`;
-  const place = slotOf(job.to);
-  if (place === null || target.reservationsAt(place) < 1) return `${job.label}: miesto ${String(place)} ('${job.to.kind}') nie je rezervované v ${module.label}`;
-  if (category !== target.category) return `${job.label}: ${module.label} (kategória '${target.category}') pre náklad kategórie '${String(category)}'`;
+  if (target.reserves) {
+    const place = slotOf(job.to);
+    if (place === null || target.reservationsAt(place) < 1) return `${job.label}: miesto ${String(place)} ('${job.to.kind}') nie je rezervované v ${module.label}`;
+  }
+  if (target.category !== null && category !== target.category) return `${job.label}: ${module.label} (kategória '${target.category}') pre náklad kategórie '${String(category)}'`;
   return undefined;
 }
 
@@ -683,11 +712,11 @@ function checkGrabbingCranes(world: World): string | undefined {
     if (ship.cargoCategory !== crane.category) {
       return `${crane.label} (kategória '${crane.category}') v stave 'grabbing' nad ${ship.label} s nákladom kategórie '${ship.cargoCategory}'`;
     }
-    claims.set(ship, (claims.get(ship) ?? 0) + 1);
+    if (CRANE_CYCLE_TRAITS[crane.cycle].direction === 'unload') claims.set(ship, (claims.get(ship) ?? 0) + 1);
   }
   for (const [ship, count] of claims) {
-    const aboard = world.cargo.countAt('on_ship', ship.id);
-    if (count > aboard) return `${String(count)} žeriavov zdvíha z ${ship.label}, na palube je len ${String(aboard)} jednotiek`;
+    const aboard = importAboard(world, ship.id);
+    if (count > aboard) return `${String(count)} žeriavov zdvíha z ${ship.label}, na palube je len ${String(aboard)} jednotiek importu`;
   }
   return undefined;
 }

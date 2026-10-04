@@ -117,6 +117,19 @@ export const EXPORT_CHAIN: readonly CargoLocation[] = [
 /** „Last minute" export (ADR-032 bod 6): z docku rampy priamo na apron, bez skladu. */
 export const LAST_MINUTE_CHAIN: readonly CargoLocation[] = [at.ramp(50, 1), at.vehicle(30), at.apron(10, 3), at.crane(20), at.ship(90), at.shipped()];
 
+/** Importný reťazec pod hákom (ADR-033): žeriav odovzdá jednotku priamo vozidlu, bez apronu. */
+export const UNDER_HOOK_IMPORT_CHAIN: readonly CargoLocation[] = [at.crane(20), at.vehicle(30), at.storage(40, 3), at.vehicle(31), at.ramp(50, 1), at.truck(60), at.exported()];
+/** Exportný reťazec pod hákom (ADR-033, bez počiatočného `in_truck`): vozidlo z príjmu čaká pod žeriavom a ten jednotku zdvihne. */
+export const UNDER_HOOK_EXPORT_CHAIN: readonly CargoLocation[] = [
+  at.ramp(50, 0),
+  at.vehicle(30),
+  at.storage(40, 4),
+  at.vehicle(31),
+  at.crane(20),
+  at.ship(90),
+  at.shipped(),
+];
+
 /** Štítky exportnej jednotky bookingu (kontrakt 77, voyage 7, Rotterdam, ťažká). */
 export const EXPORT_CONTRACT = 77 as ContractId;
 export const EXPORT_LABELS: CargoUnitLabels = { direction: 'export', voyageId: 7 as VoyageId, destinationPort: 'Rotterdam', weightClass: 'heavy' };

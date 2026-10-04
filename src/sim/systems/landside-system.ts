@@ -30,8 +30,9 @@
  * **Export** (F6a, ADR-032 bod 4, 7, 13): kamión s misiou `delivery` príde naložený jednou jednotkou, po prechode bránou
  * dnu ju brána zaregistruje (`export-gate.ts`: `ExportArrived`, rolled po cut-off, VGM hold). Po pobyte v stojisku odíde
  * k dock rampy, keď je dock voľný a má staging miesto pre jeho jednotku (dock drží a rezervuje miesto, `holdsIntake`); po
- * príchode `unloading`: po `loadTicksPerUnit` na jednotku `in_truck → at_ramp` (`TruckUnloaded`), potom uvoľní dock a odíde
- * prázdny (`to_gate_out`) — dual transaction dodá T6A-05.
+ * príchode `unloading`: po `loadTicksPerUnit` na jednotku `in_truck → at_ramp` (`TruckUnloaded`), potom buď zostane na docku
+ * a naloží import (dual transaction, ADR-032 bod 13: `becomePickup`, `unloading → loading`), alebo uvoľní dock a odíde prázdny
+ * (`to_gate_out`).
  * Prechod stavu ukončí pohyb kamióna v danom ticku (ako vozidlá, ADR-019): nový, prepustený alebo naložený kamión sa
  * pohne až v ďalšom ticku. Tick vstupu do stavu s odpočtom je jeho nultý tick (ADR-016).
  */
@@ -189,10 +190,20 @@ function leaveWaitingArea(truck: Truck, world: World): void {
 }
 
 /**
+ * Môže delivery kamión po vykládke naložiť import na tom istom docku (**dual transaction**, ADR-032 bod 13)? Na docku je náklad na
+ * odvoz, na ktorý nemá nárok iný kamión, pre celú kapacitu kamióna (`stagedAt − claimedAt ≥ capacityUnits`; export na prijatie sa
+ * do pripravených nepočíta) — nakládka tak nikdy nečaká (ako pri spawne pickup kamióna, ADR-029).
+ */
+function canDualTransact(truck: Truck, ramp: LoadingRamp): boolean {
+  return ramp.stagedAt(truck.dock) - ramp.claimedAt(truck.dock) >= truck.def.capacityUnits;
+}
+
+/**
  * Koniec vykládky jednej jednotky (delivery, ADR-032): najstaršia jednotka kamióna `in_truck → at_ramp` na jeho dock
  * (`assertCommittable → CargoLedger.move → commit` rezervovaného miesta); ďalšia jednotka `loadTicksPerUnit`, alebo
- * `TruckUnloaded`, uvoľnenie docku a jazda prázdneho kamióna k bráne von. Vykladanú jednotku prevezme dispatcher (krok 5
- * ďalšieho ticku, job `at_ramp → in_storage`).
+ * `TruckUnloaded`: pri náklade na odvoz na docku (`canDualTransact`) kamión **zostane na docku** (`becomePickup`, nárok na náklad)
+ * a naloží import (`unloading → loading`, `dualTransaction: true`), inak uvoľní dock a odíde prázdny k bráne von. Vykladanú
+ * jednotku prevezme dispatcher (krok 5 ďalšieho ticku, job `at_ramp → in_storage`).
  */
 function unloadUnit(truck: Truck, world: World): void {
   const ramp = rampOfTruck(world, truck);
@@ -205,8 +216,16 @@ function unloadUnit(truck: Truck, world: World): void {
     truck.waitTicks = ramp.params.loadTicksPerUnit;
     return;
   }
+  const dualTransaction = canDualTransact(truck, ramp);
+  world.events.emit({ type: 'TruckUnloaded', truckId: truck.id, rampId: ramp.id, dock: truck.dock, unitId, dualTransaction });
+  if (dualTransaction) {
+    truck.becomePickup();
+    ramp.claim(truck.dock, truck.def.capacityUnits);
+    truck.waitTicks = ramp.params.loadTicksPerUnit;
+    changeTruckState(world.events, truck, 'loading');
+    return;
+  }
   ramp.releaseDock(truck.dock, truck.id);
-  world.events.emit({ type: 'TruckUnloaded', truckId: truck.id, rampId: ramp.id, dock: truck.dock, unitId, dualTransaction: false });
   startTruckTrip(world, truck, 'to_gate_out');
 }
 

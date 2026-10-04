@@ -84,13 +84,21 @@ export interface JobRoute {
 
 /**
  * Povolené joby: inbound apron → sklad (F3) s prednosťou pred outbound sklad → rampa (F4, T04-03) — uvoľnenie apronu
- * chráni žeriav pred blokovaním (rozhodnutie orchestrátora F4 č. 4).
+ * chráni žeriav pred blokovaním (rozhodnutie orchestrátora F4 č. 4). F6a (ADR-032, ADR-033) pridáva prijatie exportu
+ * rampa → sklad, nakládku sklad → apron a odovzdávanie pod hákom (`in_crane ↔ sklad`, koncový bod je hák žeriava).
  */
 export const JOB_ROUTES: readonly JobRoute[] = Object.freeze([
   Object.freeze({ from: 'on_apron', to: 'in_storage', priority: 0 } as const),
   Object.freeze({ from: 'in_storage', to: 'at_ramp', priority: 1 } as const),
   // Prijatie exportu (F6a, ADR-032 bod 8): jednotku vyloženú kamiónom na docku odvezie vozidlo do skladu; uvoľňuje dock.
   Object.freeze({ from: 'at_ramp', to: 'in_storage', priority: 1 } as const),
+  // Nakládka exportu na apron (F6a, ADR-032 bod 9): vozidlo vezie jednotku zo skladu na rezervovaný slot apronu. Priorita 1 ako
+  // outbound: vykládka lode (inbound a hák, priorita 0) má prednosť, takže import nikdy nečaká za frontou nakládky.
+  Object.freeze({ from: 'in_storage', to: 'on_apron', priority: 1 } as const),
+  // Odovzdávanie pod hákom (F6a, ADR-033): vykládka — vozidlo vezme jednotku priamo od žeriava (priorita 0, žeriav nesmie čakať
+  // pri jednotke v ruke a vozidlá viazané na nakládku by ho zablokovali); nakládka — vozidlo s jednotkou čaká pod hákom (priorita 1).
+  Object.freeze({ from: 'in_crane', to: 'in_storage', priority: 0 } as const),
+  Object.freeze({ from: 'in_storage', to: 'in_crane', priority: 1 } as const),
 ]);
 
 /** Počet úrovní priority (`max(priority) + 1`) — koľko prechodov jobmi robí priradenie vozidiel. */
@@ -135,6 +143,13 @@ export interface TransportJobInit {
   readonly from: CargoLocation;
   readonly to: CargoLocation;
   readonly createdTick: number;
+  /**
+   * Modul zdroja, ku ktorému vozidlo jazdí (ADR-033). Predvolene držiteľ `from`; pre koncový bod `in_crane` (hák žeriava)
+   * je povinný — žeriav nemá prístupovú bunku, vozidlo ide ku kotvisku žeriava.
+   */
+  readonly fromModuleId?: EntityId;
+  /** Modul cieľa (viď `fromModuleId`); predvolene držiteľ `to`, pre `in_crane` povinný. */
+  readonly toModuleId?: EntityId;
   /** Predvolene `open`. */
   readonly state?: JobState;
   /** Predvolene `null`; musí zodpovedať stavu (`JOB_STATE_TRAITS.hasVehicle`). */
@@ -153,17 +168,32 @@ function checkLocation(raw: CargoLocation, label: string, field: string): CargoL
   return normalized.location;
 }
 
+/** Modul koncového bodu: explicitný (`in_crane` ho vyžaduje — kotvisko žeriava), inak držiteľ lokácie. */
+function endpointModule(label: string, field: string, location: CargoLocation, explicit: EntityId | undefined): EntityId {
+  const holder = holderIdOf(location) as EntityId;
+  if (explicit === undefined) {
+    if (location.kind === 'in_crane') throw new JobError('invalid_input', `${label}: ${field} 'in_crane' (hák žeriava) vyžaduje modul ${field}ModuleId (kotvisko žeriava)`);
+    return holder;
+  }
+  if (!isPositiveId(explicit)) throw new JobError('invalid_input', `${label}: ${field}ModuleId musí byť celé číslo ≥ 1, dostal ${String(explicit)}`);
+  if (location.kind !== 'in_crane' && explicit !== holder) {
+    throw new JobError('invalid_input', `${label}: ${field}ModuleId ${String(explicit)} sa líši od držiteľa ${location.kind} #${String(holder)}`);
+  }
+  return explicit;
+}
+
 export class TransportJob {
   readonly id: EntityId;
   /** Jednotky jobu (zmrazené); dispatcher vytvára joby s práve jednou jednotkou (inbound: cieľ je jedinečný slot). */
   readonly unitIds: readonly EntityId[];
-  /** Poloha jednotiek pri vzniku jobu (zdroj). */
-  readonly from: CargoLocation;
-  /** Cieľ s rezervovaným miestom (slot skladu, dock rampy). */
+  /** Cieľ s rezervovaným miestom (slot skladu, dock rampy, slot apronu); pri `in_crane` hák žeriava bez rezervácie. */
   readonly to: CargoLocation;
-  /** Držiteľ `from` (berth, sklad). */
+  /**
+   * Modul zdroja, ku ktorému vozidlo jazdí (sklad, berth, rampa; pri háku žeriava jeho kotvisko — ADR-033). Pri
+   * `in_crane` sa líši od držiteľa `from` (žeriav).
+   */
   readonly fromModuleId: EntityId;
-  /** Držiteľ `to` (sklad, rampa). */
+  /** Modul cieľa (sklad, rampa, berth; pri háku žeriava jeho kotvisko). */
   readonly toModuleId: EntityId;
   /** Priorita priradenia vozidla z `JOB_ROUTES` (menšie = skôr). */
   readonly priority: number;
@@ -171,6 +201,7 @@ export class TransportJob {
   readonly createdTick: number;
   private current: JobState;
   private vehicle: EntityId | null;
+  private source: CargoLocation;
 
   /**
    * Chyby (`JobError('invalid_input')`): id nie je celé ≥ 1, jednotky nie sú neprázdny zoznam jedinečných id, `from`/`to`
@@ -207,16 +238,39 @@ export class TransportJob {
     if (JOB_STATE_TRAITS[state].hasVehicle !== (vehicleId !== null)) {
       throw new JobError('invalid_input', `${label}: stav '${state}' ${JOB_STATE_TRAITS[state].hasVehicle ? 'vyžaduje vozidlo' : 'nesmie mať vozidlo'}`);
     }
+    const fromModuleId = endpointModule(label, 'from', from, init.fromModuleId);
+    const toModuleId = endpointModule(label, 'to', to, init.toModuleId);
     this.id = init.id;
     this.unitIds = Object.freeze([...unitIds]);
-    this.from = from;
+    this.source = from;
     this.to = to;
-    this.fromModuleId = holderIdOf(from) as EntityId;
-    this.toModuleId = holderIdOf(to) as EntityId;
+    this.fromModuleId = fromModuleId;
+    this.toModuleId = toModuleId;
     this.priority = route.priority;
     this.createdTick = init.createdTick;
     this.current = state;
     this.vehicle = vehicleId;
+  }
+
+  /** Poloha jednotiek pri vzniku jobu (zdroj); mení ju len `rebindSource` (žeriav pod hákom odloží jednotku na buffer). */
+  get from(): CargoLocation {
+    return this.source;
+  }
+
+  /**
+   * Presmeruje zdroj jobu z háku žeriava (`in_crane`) na slot apronu toho istého kotviska — žeriav odložil jednotku na buffer,
+   * lebo pod hákom nečakalo vozidlo (ADR-033). Povolené len pre job `open` / `assigned` so zdrojom `in_crane` a cieľ
+   * `on_apron` toho istého modulu (`fromModuleId`); inak `JobError`, job sa nezmení.
+   */
+  rebindSource(from: CargoLocation): void {
+    const target = checkLocation(from, this.label, 'from');
+    if (this.source.kind !== 'in_crane' || (this.current !== 'open' && this.current !== 'assigned')) {
+      throw new JobError('invalid_transition', `${this.label}: zdroj sa presmeruje len pri jobe open/assigned zo háku žeriava (zdroj ${this.source.kind}, stav ${this.current})`);
+    }
+    if (target.kind !== 'on_apron' || holderIdOf(target) !== this.fromModuleId || !isJobRoute(target.kind, this.to.kind)) {
+      throw new JobError('invalid_input', `${this.label}: nový zdroj ${target.kind} nie je apron kotviska #${String(this.fromModuleId)} s povolenou trasou do ${this.to.kind}`);
+    }
+    this.source = target;
   }
 
   /** Aktuálny stav (mení ho len `assign` / `transition`). */
@@ -256,6 +310,6 @@ export class TransportJob {
 
   /** Čistý JSON stav pre save (nová kópia pri každom volaní). */
   toState(): SerializedJob {
-    return { id: this.id, unitIds: [...this.unitIds], from: { ...this.from }, to: { ...this.to }, createdTick: this.createdTick };
+    return { id: this.id, unitIds: [...this.unitIds], from: { ...this.source }, to: { ...this.to }, createdTick: this.createdTick };
   }
 }

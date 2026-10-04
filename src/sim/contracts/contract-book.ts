@@ -90,6 +90,8 @@ export class ContractBook {
   private nextVoyageId = FIRST_VOYAGE_ID;
   /** Voyage → jej kontrakty v knihe vzostupne podľa id (odvodený index, nie je v save). */
   private readonly voyageIndex = new Map<VoyageId, Contract[]>();
+  /** Počet neukončených export bookingov (aj ponúk) — rýchla cesta pre systémy, keď export nie je v hre (odvodené, nie v save). */
+  private openExportCount = 0;
 
   constructor(env: ContractBookEnv) {
     this.env = env;
@@ -181,6 +183,14 @@ export class ContractBook {
     };
   }
 
+  /**
+   * Je v knihe neukončený export booking (aj ponuka)? O(1); bez neho systémy (žeriav, dispatcher, loď) export nepočítajú —
+   * import-only svet ostáva bitovo aj výkonovo rovnaký ako vo F5 (ADR-032, ADR-033).
+   */
+  get hasOpenExports(): boolean {
+    return this.openExportCount > 0;
+  }
+
   /** Všetky kontrakty okrem expirovaných vzostupne podľa id (živá mapa len na čítanie). */
   get contracts(): ReadonlyMap<ContractId, Contract> {
     return this.all;
@@ -266,7 +276,10 @@ export class ContractBook {
     if (last !== undefined && contract.id <= last) throw new ContractError('invalid_input', `ContractBook.add: ${contract.label} nemá väčšie id ako posledný kontrakt #${String(last)}`);
     this.all.set(contract.id, contract);
     this.lastId = contract.id;
-    if (!CONTRACT_STATE_TRAITS[contract.state].terminal) this.open.set(contract.id, contract);
+    if (!CONTRACT_STATE_TRAITS[contract.state].terminal) {
+      this.open.set(contract.id, contract);
+      if (contract.kind === 'export') this.openExportCount += 1;
+    }
     const voyage = this.voyageIndex.get(contract.voyageId);
     if (voyage === undefined) this.voyageIndex.set(contract.voyageId, [contract]);
     else voyage.push(contract);
@@ -283,6 +296,7 @@ export class ContractBook {
     this.env.events.emit({ type: 'ContractStateChanged', contractId: contract.id, from, to });
     if (!CONTRACT_STATE_TRAITS[to].terminal) return;
     this.open.delete(contract.id);
+    if (contract.kind === 'export') this.openExportCount -= 1;
     if (to === 'expired') this.forget(contract);
   }
 

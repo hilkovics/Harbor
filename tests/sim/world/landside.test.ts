@@ -9,7 +9,7 @@
 //   rampa (53, 28) rot 0 — konektory s (54, 29) → (54, 30) a s (55, 29) → (55, 30).
 // Cesty: (44, 33) vstup brány; (47, 33)–(48, 33) výstup brány → západ stojiska; (53, 31..33) východ stojiska → (53, 30);
 // (51..55, 30) k rampe. Brána je jediné spojenie s portálom, stojisko jediné spojenie výstupu brány s rampou.
-import modulesJson from '@data/defs/modules.json';
+import { APRON_MODULES as modulesJson } from '../helpers/apron-modules';
 import { describe, expect, it } from 'vitest';
 import { RemoveModuleCommand, commandFromJSON, type SerializedCommand } from '@sim/commands';
 import type { EntityId } from '@sim/core';

@@ -54,7 +54,7 @@
 import { CargoLedger } from '../cargo/cargo-ledger';
 import type { CargoLedgerState } from '../cargo/cargo-ledger-state';
 import { HoldIndex } from '../cargo/hold-index';
-import { isSameLocation, type CargoLocation } from '../cargo/cargo-location';
+import type { CargoLocation } from '../cargo/cargo-location';
 import type { CargoUnit } from '../cargo/cargo-unit';
 import { EntityIdAllocator, type ContractId, type EntityId } from '../core/entity-id';
 import { EventBus } from '../core/event-bus';
@@ -87,6 +87,7 @@ import type { Ship } from '../ships/ship';
 import { ShipError } from '../ships/ship-error';
 import { DistanceMatrix } from '../logistics/distance-matrix';
 import { JobError } from '../logistics/job-error';
+import { unitAtJobSource } from '../logistics/job-source';
 import { PathCache } from '../logistics/path-cache';
 import { Pathfinder } from '../logistics/pathfinder';
 import { RoadSpeeds } from '../logistics/road-speed';
@@ -759,7 +760,7 @@ export class World {
     for (const unitId of job.unitIds) {
       const unit = this.cargo.get(unitId);
       if (unit === undefined) throw new JobError('unknown_unit', `World.addJob: ${job.label}: jednotka #${String(unitId)} v ledgeri nie je`);
-      if (traits.cargoAt === 'source' && !isSameLocation(unit.location, job.from)) {
+      if (traits.cargoAt === 'source' && !unitAtJobSource(this, job, unit)) {
         throw new JobError('unknown_unit', `World.addJob: ${job.label}: jednotka #${String(unitId)} neleží na zdroji jobu`);
       }
       const other = this.unitJobs.get(unitId);

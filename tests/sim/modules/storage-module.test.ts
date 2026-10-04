@@ -1,7 +1,7 @@
 // StorageModule + ContainerYard (T03-02; ARCHITECTURE §5.3, §7.7; ADR-017): sklad drží len rezervácie slotov
 // a počítadlá unitsIn/unitsOut, obsadenie číta z CargoLedger (review T02-13). Tok job → reserve → presun do skladu →
 // commit (unitsIn), výdaj → recordTaken (unitsOut), runtime stav v save a jeho fail-fast obnova.
-import modulesJson from '@data/defs/modules.json';
+import { APRON_MODULES as modulesJson } from '../helpers/apron-modules';
 import { describe, expect, it } from 'vitest';
 import type { CargoLedger } from '@sim/cargo';
 import type { EntityId } from '@sim/core';

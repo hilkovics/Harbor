@@ -17,6 +17,7 @@ import { berthParams } from '../defs/module-def';
 import type { BerthParams, Side } from '../defs/types';
 import type { CellCoord, DepthClass, Grid } from '../grid/grid';
 import { ApronBuffer } from './apron-buffer';
+import type { CargoDropTarget } from './cargo-drop-target';
 import { Module, type ModuleInit } from './module';
 import { ModuleError } from './module-error';
 import { frontBandCells, waterSideOf } from './module-geometry';
@@ -53,6 +54,8 @@ export class BerthModule extends Module {
   /** Pás vody pred hranou pri vode (`frontBandCells`, hĺbka `params.frontWaterCells`); bunky môžu byť mimo mapy len pri neplatnom umiestnení. */
   readonly frontWaterBand: readonly CellCoord[];
   readonly apron: ApronBuffer;
+  /** Cieľ nakládky exportu: slot apronu (`on_apron`, ADR-032) — jeden objekt na kotvisko, vracia ho `cargoDropTarget()`. */
+  private readonly drop: CargoDropTarget;
   /** Loď, ktorá na kotvisku kotví alebo je naň pridelená (`berthing`); spravuje ShipSystem (T02-05). */
   dockedShipId: EntityId | null = null;
   /** Id `BerthGroup` (od 1); prepisuje ho `World` pri každom prepočte skupín. 0 = modul ešte nie je vo svete. */
@@ -76,6 +79,31 @@ export class BerthModule extends Module {
     this.depthClass = effectiveBerthDepth(this.params, this.cells, init.grid);
     this.frontWaterBand = frontBandCells(this.origin, this.size, waterSide, this.params.frontWaterCells);
     this.apron = new ApronBuffer(this.params.apronSlots, this.id, init.cargo, `apron ${this.label}`);
+    const { apron } = this;
+    this.drop = Object.freeze({
+      kind: 'on_apron',
+      category: null,
+      reserves: true,
+      places: apron.capacity,
+      reservationsAt: (slot: number): number => (Number.isInteger(slot) && slot >= 0 && slot < apron.capacity && apron.isReserved(slot) ? 1 : 0),
+      restoreReservation: (slot: number): void => {
+        apron.reserveSlot(slot);
+      },
+      release: (slot: number): void => {
+        apron.release(slot);
+      },
+      assertCommittable: (slot: number, unitId: EntityId): void => {
+        apron.assertCommittable(slot, unitId);
+      },
+      commit: (slot: number, unitId: EntityId): void => {
+        apron.commit(slot, unitId);
+      },
+    });
+  }
+
+  /** Cieľ nakládky exportu: slot apronu (`on_apron`, ADR-032 bod 9) — vozidlo ho pri vykládke premení na obsadenie. */
+  override cargoDropTarget(): CargoDropTarget {
+    return this.drop;
   }
 
   /** Sloty apronu (obsadenie z ledgera, rezervácie žeriavov) pre generický kód — ADR-017. */

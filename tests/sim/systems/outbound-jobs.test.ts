@@ -4,7 +4,7 @@
 // na dock (assertCommittable → move → commit), `open` job sa pri strate prevádzkovosti alebo dosiahnuteľnosti rampy zruší
 // (JobCancelled, uvoľnenie rezervácie), job s vozidlom sa dokončí. Rezervácie dockov sa odvodia z jobov (save) a krok
 // 12 ich previaže s jobmi. Rozloženie: tests/sim/logistics/outbound-fixtures.ts.
-import modulesJson from '@data/defs/modules.json';
+import { APRON_MODULES as modulesJson } from '../helpers/apron-modules';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { commandFromJSON } from '@sim/commands';
 import type { EntityId } from '@sim/core';

@@ -32,7 +32,8 @@
  * sa s id kontraktu nezrazí). Náklad dostane `shippedCount: 0` a každá jednotka štítky importu (`voyageId` = jej
  * `contractId`, bez kontraktu `null`; `direction: 'import'`, `destinationPort: null`, `weightClass: 'medium'`
  * — `DEFAULT_WEIGHT_CLASS`) a `hold: null`. Lode `lashingTicksLeft: 0` (v6 lashing nepoznal), kamióny `mission: 'pickup'`
- * (v6 vozil len import) a žeriav v `runtime` `cycle: 'unload'`, `targetUnitId: null` (v6 len vykladal). Nové kľúče sa
+ * (v6 vozil len import) a žeriav v `runtime` `cycle: 'unload'`, `targetUnitId: null`, `dualUnitId: null` a nulové počítadlá
+ * čakania na vozidlo `waitForVehicleTicks`, `vehicleWaitTicks` (v6 len vykladal na apron, ADR-033). Nové kľúče sa
  * pridajú k pôvodným (nič sa nezahodí — iný tvar odmietne `parseWorldState`); poradie kľúčov zjednotí až `serialize()`.
  */
 import { DEFAULT_WEIGHT_CLASS } from '../cargo/cargo-unit';
@@ -205,7 +206,7 @@ function migrateV5ToV6(state: RawState): RawState {
 
 /** Úprava `runtime` modulu v6 → v7 podľa druhu (tabuľka): žeriav v6 poznal len vykládku. */
 const RUNTIME_V6_TO_V7: Partial<Record<ModuleKind, (runtime: RawState) => RawState>> = {
-  crane: (runtime) => ({ ...runtime, cycle: DEFAULT_CRANE_CYCLE, targetUnitId: null }),
+  crane: (runtime) => ({ ...runtime, cycle: DEFAULT_CRANE_CYCLE, targetUnitId: null, dualUnitId: null, waitForVehicleTicks: 0, vehicleWaitTicks: 0 }),
 };
 
 /** Každý objekt poľa `value` doplnený funkciou `extend`; iný tvar nechá bez zmeny (odmietne ho `parseWorldState`). */

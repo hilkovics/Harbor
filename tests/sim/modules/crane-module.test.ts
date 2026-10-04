@@ -4,12 +4,15 @@
 import { describe, expect, it } from 'vitest';
 import { craneParams } from '@sim/defs';
 import {
+  CRANE_CYCLES,
+  CRANE_CYCLE_TRAITS,
   CRANE_STATES,
   CRANE_STATE_TRAITS,
   CRANE_TRANSITIONS,
   CraneModule,
   ModuleError,
   ModuleStateError,
+  craneReservesApronSlot,
   cranePhaseProblem,
   isCraneTransitionAllowed,
   type CraneRuntimeState,
@@ -33,9 +36,12 @@ const VALID: CraneRuntimeState = {
   phaseTicksLeft: 2,
   reservedSlot: 1,
   targetUnitId: null,
+  dualUnitId: null,
   busyTicks: 120,
   idleTicks: 40,
   blockedTicks: 7,
+  waitForVehicleTicks: 11,
+  vehicleWaitTicks: 13,
   lastBlockedHour: 3,
 };
 
@@ -76,9 +82,12 @@ describe('CraneModule — runtime stav', () => {
       'phaseTicksLeft',
       'reservedSlot',
       'targetUnitId',
+      'dualUnitId',
       'busyTicks',
       'idleTicks',
       'blockedTicks',
+      'waitForVehicleTicks',
+      'vehicleWaitTicks',
       'lastBlockedHour',
     ]);
   });
@@ -109,7 +118,14 @@ describe('CraneModule — runtime stav', () => {
     ['zlomkový busyTicks', { ...VALID, busyTicks: 1.5 }, '/busyTicks'],
     ['idleTicks ako reťazec', { ...VALID, idleTicks: '4' }, '/idleTicks'],
     ['záporný blockedTicks', { ...VALID, blockedTicks: -3 }, '/blockedTicks'],
-    ['placing bez rezervácie', { ...VALID, reservedSlot: null }, '/reservedSlot'],
+    // ADR-033: rezervovaný slot smie mať len stav cyklu, ktorý ho drží (nakládka ho nemá; mimo cyklu nikdy).
+    ['nakládka s rezerváciou', { ...VALID, cycle: 'load', targetUnitId: 5 }, '/reservedSlot'],
+    ['dual_load v grabbing s rezerváciou', { ...VALID, cycle: 'dual_load', state: 'grabbing', targetUnitId: 5 }, '/reservedSlot'],
+    ['dual_unload bez dualUnitId', { ...VALID, cycle: 'dual_unload' }, '/dualUnitId'],
+    ['dualUnitId mimo dual_unload', { ...VALID, dualUnitId: 9 }, '/dualUnitId'],
+    ['dualUnitId 0', { ...VALID, cycle: 'dual_unload', dualUnitId: 0 }, '/dualUnitId'],
+    ['záporné waitForVehicleTicks', { ...VALID, waitForVehicleTicks: -1 }, '/waitForVehicleTicks'],
+    ['zlomkové vehicleWaitTicks', { ...VALID, vehicleWaitTicks: 0.5 }, '/vehicleWaitTicks'],
     ['idle s rezerváciou', { ...VALID, state: 'idle' }, '/reservedSlot'],
     ['blocked s rezerváciou', { ...VALID, state: 'blocked' }, '/reservedSlot'],
     ['záporný slot', { ...VALID, reservedSlot: -1 }, '/reservedSlot'],
@@ -137,6 +153,33 @@ describe('CraneModule — runtime stav', () => {
     expect(error).toBeInstanceOf(ModuleStateError);
     expect((error as ModuleStateError).path).toBe(path);
     expect(crane.getRuntimeState()).toEqual(before);
+  });
+
+  it('rezervácia podľa smeru cyklu (ADR-033): dual_load drží slot od swinging, dual_unload od grabbing, placing bez slotu (under_hook) prejde', () => {
+    const ok: readonly Partial<CraneRuntimeState>[] = [
+      { state: 'placing', reservedSlot: null },
+      { cycle: 'load', state: 'grabbing', reservedSlot: null, targetUnitId: 5 },
+      { cycle: 'dual_load', state: 'grabbing', reservedSlot: null, targetUnitId: 5 },
+      { cycle: 'dual_load', state: 'placing', reservedSlot: 3, targetUnitId: 5 },
+      { cycle: 'dual_unload', state: 'grabbing', reservedSlot: 3, dualUnitId: 8 },
+    ];
+    for (const patch of ok) {
+      const crane = freshCrane();
+      crane.restoreRuntimeState({ ...VALID, ...patch });
+      expect(crane.getRuntimeState()).toEqual({ ...VALID, ...patch });
+    }
+  });
+
+  it('craneReservesApronSlot: tabuľka CRANE_CYCLE_TRAITS.reservesFrom', () => {
+    expect(CRANE_CYCLE_TRAITS.unload.reservesFrom).toBe('grabbing');
+    expect(CRANE_CYCLE_TRAITS.load.reservesFrom).toBeNull();
+    expect(CRANE_CYCLE_TRAITS.dual_load.reservesFrom).toBe('swinging');
+    expect(CRANE_CYCLE_TRAITS.dual_unload.reservesFrom).toBe('grabbing');
+    for (const state of ['idle', 'blocked'] as const) for (const cycle of CRANE_CYCLES) expect(craneReservesApronSlot(cycle, state), `${cycle}/${state}`).toBe(false);
+    expect(craneReservesApronSlot('unload', 'grabbing')).toBe(true);
+    expect(craneReservesApronSlot('load', 'placing')).toBe(false);
+    expect(craneReservesApronSlot('dual_load', 'grabbing')).toBe(false);
+    expect(craneReservesApronSlot('dual_load', 'placing')).toBe(true);
   });
 
   it('konzistentné fázy prejdú: idle/blocked 0/0, grabbing/placing 1 ≤ left ≤ total (T02-14)', () => {

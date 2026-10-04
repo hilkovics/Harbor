@@ -50,6 +50,7 @@
  * sa zbierajú raz za tick do znovupoužiteľných polí. Alokuje sa len nový job (jeho zoznam jednotiek a lokácie).
  */
 import { slotOf } from '../cargo/cargo-location';
+import type { CargoUnit } from '../cargo/cargo-unit';
 import type { ContractOutbound } from '../contracts/contract-fsm';
 import type { EntityId } from '../core/entity-id';
 import type { CargoCategory } from '../defs/types';
@@ -61,6 +62,7 @@ import { startTrip } from '../vehicles/vehicle-trip';
 import type { World } from '../world/world';
 import { JobError } from './job-error';
 import { createExportIntakeJobs } from './export-intake';
+import { createExportLoadJobs as createLoadJobs, createHookUnloadJobs as createHookJobs, type LoadJobSpec } from './export-load';
 import { distanceBetweenModules, distanceToModule } from './module-access';
 import { allocateRamp } from './ramp-allocator';
 import { allocateStorage } from './storage-allocator';
@@ -81,6 +83,15 @@ function emitNoStorage(world: World, berth: BerthModule, cargoTypeId: string): v
   world.events.emit({ type: 'NoStorageAvailable', berthId: berth.id, cargoTypeId });
 }
 
+/**
+ * Čaká jednotka na aprone na žeriav (export na nakládku — booking beží, `Contract.outbound === 'held'`)? Taká jednotka sa
+ * nevracia do skladu; po uzavretí bookingu (vrátenie odosielateľovi) sa spracuje ako každá jednotka na aprone (ADR-032 bod 9).
+ */
+function awaitsCrane(world: World, unit: CargoUnit): boolean {
+  if (unit.direction !== 'export' || unit.contractId === null) return false;
+  return world.contractBook.get(unit.contractId)?.outbound === 'held';
+}
+
 /** Joby pre jednotky na aprone jedného kotviska (FIFO), ktoré ešte job nemajú. */
 function inboundFromBerth(world: World, berth: BerthModule): void {
   const count = world.cargo.countAt('on_apron', berth.id);
@@ -88,7 +99,7 @@ function inboundFromBerth(world: World, berth: BerthModule): void {
   for (let i = 0; i < count; i++) {
     const unitId = world.cargo.unitAtIndex('on_apron', berth.id, i);
     const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
-    if (unit === undefined || world.jobOfUnit(unit.id) !== undefined) continue;
+    if (unit === undefined || world.jobOfUnit(unit.id) !== undefined || awaitsCrane(world, unit)) continue;
     const storage = allocateStorage(world, berth, world.defs.cargoTypes.get(unit.typeId).category);
     if (storage === undefined) {
       missingTypeId ??= unit.typeId;
@@ -117,9 +128,38 @@ export function createExportJobs(world: World): number {
   });
 }
 
+/**
+ * Nakládka exportu (ADR-032 bod 9, ADR-033): joby `in_storage → on_apron` / `in_storage → in_crane` pre jednotky voyage dokovanej
+ * lode v poradí stowage plánu (`logistics/export-load.ts`).
+ */
+export function createExportLoadJobs(world: World): void {
+  createLoadJobs(world, (spec) => {
+    openJob(world, spec);
+  });
+}
+
+/** Vykládka pod hákom (ADR-033): joby `in_crane → in_storage` pre jednotky, ktoré vykladajú žeriavy v režime `under_hook`. */
+export function createHookUnloadJobs(world: World): void {
+  createHookJobs(
+    world,
+    (spec) => {
+      openJob(world, spec);
+    },
+    emitNoStorage,
+  );
+}
+
 /** Vytvorí job `open` s už rezervovaným miestom v cieli, pridá ho do sveta a ohlási `JobCreated`. */
-function openJob(world: World, init: Pick<TransportJob, 'unitIds' | 'from' | 'to'>): void {
-  const job = new TransportJob({ id: world.ids.next(), unitIds: init.unitIds, from: init.from, to: init.to, createdTick: world.clock.tick });
+function openJob(world: World, init: LoadJobSpec): void {
+  const job = new TransportJob({
+    id: world.ids.next(),
+    unitIds: init.unitIds,
+    from: init.from,
+    to: init.to,
+    createdTick: world.clock.tick,
+    ...(init.fromModuleId === undefined ? {} : { fromModuleId: init.fromModuleId }),
+    ...(init.toModuleId === undefined ? {} : { toModuleId: init.toModuleId }),
+  });
   world.addJob(job);
   world.events.emit({ type: 'JobCreated', jobId: job.id, unitIds: job.unitIds, fromModuleId: job.fromModuleId, toModuleId: job.toModuleId });
 }

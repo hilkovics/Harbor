@@ -5,7 +5,6 @@ import contractTemplatesJson from '@data/defs/contract_templates.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
 import logisticsJson from '@data/defs/logistics.json';
-import modulesJson from '@data/defs/modules.json';
 import harbor01Json from '@data/maps/harbor_01.json';
 import shipsJson from '@data/defs/ships.json';
 import timeJson from '@data/defs/time.json';
@@ -13,17 +12,27 @@ import trucksJson from '@data/defs/trucks.json';
 import vehiclesJson from '@data/defs/vehicles.json';
 import type { Command, SerializedCommand, ValidationReason, ValidationResult } from '@sim/commands';
 import { DefRegistry, loadBundledDefs } from '@sim/defs';
+import { APRON_MODULES } from '../helpers/apron-modules';
 import { loadBundledMap, loadMap, parseMapDef, type CellCoord, type Grid, type LoadedMap } from '@sim/grid';
 import type { World, WorldState } from '@sim/world';
 
-export const DEFS: DefRegistry = loadBundledDefs();
-/** Surové bundled defy — testy z nich skladajú `DefRegistry` s jedným upraveným defom. */
+/** Bundled defy tak, ako ich hra načíta (`data/defs`) — predvolený režim odovzdávania kotviska je `under_hook` (ADR-033). */
+export const BUNDLED_DEFS: DefRegistry = loadBundledDefs();
+
+/**
+ * Zoznam modulov bundled defov s pripnutým režimom odovzdávania `apron` (F2–F5, ADR-033): testy fáz 2–6, ktorých zmysel stojí na
+ * odkladaní jednotiek na apron (apron, rezervácie slotov, `CraneCycleDone` = `on_apron`), si ho pripínajú tu — namiesto prepisu
+ * očakávaní. Režim `under_hook` testuje `tests/sim/hook` a scenár `export_roundtrip`.
+ */
+export { APRON_MODULES };
+
+/** Surové bundled defy (režim `apron`) — testy z nich skladajú `DefRegistry` s jedným upraveným defom. */
 export const RAW_DEFS = {
   time: timeJson,
   economy: economyJson,
   infrastructure: infrastructureJson,
   cargo_types: cargoTypesJson,
-  modules: modulesJson,
+  modules: APRON_MODULES,
   ships: shipsJson,
   vehicles: vehiclesJson,
   trucks: trucksJson,
@@ -40,8 +49,8 @@ export const LEGACY_STAGING_PER_DOCK = 2;
 
 /** Zoznam modulov bundled defov s pripnutými pôvodnými kapacitami apronu a stagingu (ostatné parametre nedotknuté). */
 export const LEGACY_CAPACITY_MODULES = {
-  ...modulesJson,
-  items: modulesJson.items.map((item) => {
+  ...APRON_MODULES,
+  items: APRON_MODULES.items.map((item) => {
     if ('apronSlots' in item.params) return { ...item, params: { ...item.params, apronSlots: LEGACY_APRON_SLOTS } };
     if ('stagingPerDock' in item.params) return { ...item, params: { ...item.params, stagingPerDock: LEGACY_STAGING_PER_DOCK } };
     return item;
@@ -49,6 +58,8 @@ export const LEGACY_CAPACITY_MODULES = {
 };
 /** Bundled defy s pôvodnými kapacitami apronu (4) a stagingu (2). */
 export const LEGACY_CAPACITY_DEFS: DefRegistry = DefRegistry.fromRaw({ ...RAW_DEFS, modules: LEGACY_CAPACITY_MODULES });
+/** Bundled defy s pripnutým režimom `apron` — predvolené defy väčšiny testov (`DEFS`). */
+export const DEFS: DefRegistry = DefRegistry.fromRaw(RAW_DEFS);
 /** Zdieľaná mapa — testy overujú, že ju žiadny svet nezmení. */
 export const MAP: LoadedMap = loadBundledMap();
 /** Mriežka počiatočného stavu mapy len na čítanie (hľadanie buniek, indexy); svety majú vlastné kópie, nezapisovať. */

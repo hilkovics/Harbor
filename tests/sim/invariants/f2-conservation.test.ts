@@ -14,7 +14,7 @@ import { commandFromJSON } from '@sim/commands';
 import type { EntityId } from '@sim/core';
 import { CargoTransitionError, type CargoLocation, type CargoLocationKind } from '@sim/cargo';
 import type { SimEvent } from '@sim/events';
-import modulesJson from '@data/defs/modules.json';
+import { APRON_MODULES as modulesJson } from '../helpers/apron-modules';
 import { DefRegistry } from '@sim/defs';
 import { World } from '@sim/world';
 import { DEFS, LEGACY_CAPACITY_DEFS, MAP, RAW_DEFS } from '../world/world-fixtures';
@@ -442,9 +442,9 @@ describe('CargoLedger.move: nepovolené prechody sa odmietnu a nič sa nezmení'
     assertCargoConservation(world);
   });
 
-  it('po povolenom on_ship → in_crane je preskočenie apronu (in_crane → in_vehicle) nepovolené a poloha ostáva v žeriave', () => {
-    // `in_crane → on_ship` je od F6a povolený prechod ledgera (nakládka exportu, ADR-032); vrátenie importu na loď
-    // stráži žeriav (CraneSystem), nie tabuľka prechodov.
+  it('po povolenom on_ship → in_crane je preskočenie do skladu (in_crane → in_storage) nepovolené a poloha ostáva v žeriave', () => {
+    // `in_crane → on_ship` je od F6a povolený prechod ledgera (nakládka exportu, ADR-032) a `in_crane → in_vehicle` od ADR-033
+    // (odovzdanie pod hákom); vrátenie importu na loď stráži žeriav (CraneSystem), nie tabuľka prechodov.
     const { world, unitId, craneId } = worldWithShip();
     expect(() => world.cargo.move(unitId, { kind: 'in_crane', craneId })).not.toThrow();
     expect(world.cargo.get(unitId)?.location).toEqual({ kind: 'in_crane', craneId });
@@ -452,7 +452,7 @@ describe('CargoLedger.move: nepovolené prechody sa odmietnu a nič sa nezmení'
     expect(world.cargo.countByKind('on_ship')).toBe(3);
     expect(world.cargo.createdCount).toBe(4);
 
-    expect(() => world.cargo.move(unitId, { kind: 'in_vehicle', vehicleId: 1 as EntityId })).toThrow(CargoTransitionError);
+    expect(() => world.cargo.move(unitId, { kind: 'in_storage', moduleId: 1 as EntityId, slot: 0 })).toThrow(CargoTransitionError);
     expect(world.cargo.get(unitId)?.location).toEqual({ kind: 'in_crane', craneId });
     expect(world.cargo.countByKind('in_crane')).toBe(1);
     expect(world.cargo.countByKind('on_ship')).toBe(3);

@@ -272,6 +272,14 @@ export class CargoLedger {
   }
 
   /**
+   * Živé jednotky (na mape) v poradí vzniku bez kópie — len na čítanie, pre zriedkavé dotazy (`stowageOutOfOrder`); počas
+   * iterácie sa nesmie volať `create` ani `move` (mapa by sa menila).
+   */
+  liveUnits(): IterableIterator<CargoUnit> {
+    return this.units.values();
+  }
+
+  /**
    * Id jednotiek u držiteľa v poradí jeho indexu (loď vzostupne podľa id, ostatní FIFO). Vracia **kópiu** —
    * dá sa bezpečne iterovať aj počas `move` jednotiek z nej.
    */

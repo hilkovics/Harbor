@@ -7,7 +7,7 @@
  * kamióny, trasy lodí, ekonomika).
  *
  * Svety bežia **striedavo po 100 tickoch** v jednom procese a každý má vlastné inštancie defov a mapy (svet B
- * a seed + 1 svet C dostanú čerstvé `loadBundledDefs()` / `loadBundledMap()`). Striedanie chytí stav zdieľaný medzi
+ * a seed + 1 svet C dostanú čerstvé `DefRegistry.fromRaw(RAW_DEFS)` / `loadBundledMap()` — režim `apron`). Striedanie chytí stav zdieľaný medzi
  * svetmi (modulové cache, globálne počítadlá, mutácia zdieľanej mapy/defov), ktorý by pri behu svet po svete nebolo
  * vidieť. Konzervácia nákladu (`assertCargoConservation`) beží po každom ticku všetkých svetov.
  *
@@ -15,12 +15,12 @@
  * (svet sa naozaj vyvíja, porovnanie nie je triviálne).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { loadBundledDefs } from '@sim/defs';
+import { DefRegistry } from '@sim/defs';
 import { loadBundledMap } from '@sim/grid';
 import { World, fnv1a32Hex, hashWorldState, stateHash, type WorldState } from '@sim/world';
 import { assertCargoConservation } from '../helpers/invariants';
 import { loadScenarioFile, runScenario, type Scenario } from '../helpers/scenario';
-import { DEFS, MAP } from './world-fixtures';
+import { DEFS, MAP, RAW_DEFS } from './world-fixtures';
 
 const HEAVY_TIMEOUT_MS = 180_000;
 /** Krok striedania svetov (tickov). */
@@ -51,7 +51,7 @@ interface Runner {
 }
 
 function makeRunner(scenario: Scenario, fresh: boolean): Runner {
-  const defs = fresh ? loadBundledDefs() : DEFS;
+  const defs = fresh ? DefRegistry.fromRaw(RAW_DEFS) : DEFS;
   const map = fresh ? loadBundledMap() : MAP;
   return { world: World.create(defs, map, scenario.seed), scenario, eventPrints: [], hashes: new Map() };
 }

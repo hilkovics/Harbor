@@ -3,7 +3,7 @@
 //
 // Mapa harbor_01: nábrežie (Q) y 14–16, x 10–85; hĺbka nábrežia x 10–29 → 2, x 30–57 → 1, x 58–59 → 1 (mimo zón),
 // x 60–85 → 3. Pevnina y ≥ 17, voda y ≤ 13.
-import modulesJson from '@data/defs/modules.json';
+import { APRON_MODULES as modulesJson } from '../helpers/apron-modules';
 import { CargoLedger } from '@sim/cargo';
 import { EntityIdAllocator, EventBus, type EntityId } from '@sim/core';
 import { DefRegistry } from '@sim/defs';

@@ -3,7 +3,7 @@
 // T03-02 (ADR-017): vstavané aj `storage` (trieda podľa kategórie, `STORAGE_MODULES`) a `depot`; env nesie ledger.
 // T04-02 (ADR-022): vstavané aj pozemné `gate` → TruckGate, `waiting_area` → WaitingArea, `ramp` → LoadingRamp
 // (LandExportModule); testovací druh bez vstavanej triedy je teraz `pipeline`.
-import modulesJson from '@data/defs/modules.json';
+import { APRON_MODULES as modulesJson } from '../helpers/apron-modules';
 import { describe, expect, it } from 'vitest';
 import { DefRegistry, type ModuleDef } from '@sim/defs';
 import type { Rotation } from '@sim/grid';

@@ -47,8 +47,9 @@ export function toV6State(state: unknown): Json {
   const modules = (v7['modules'] as Json[]).map((entry) => {
     if (DEFS.modules.get(entry['defId'] as string).kind !== 'crane') return entry;
     const runtime = entry['runtime'] as Json;
-    if (runtime['cycle'] !== 'unload' || runtime['targetUnitId'] !== null) fail(`žeriav #${String(entry['id'])} pri nakládke`);
-    return { ...entry, runtime: without(runtime, ['cycle', 'targetUnitId']) };
+    if (runtime['cycle'] !== 'unload' || runtime['targetUnitId'] !== null || runtime['dualUnitId'] !== null) fail(`žeriav #${String(entry['id'])} pri nakládke`);
+    if (runtime['waitForVehicleTicks'] !== 0 || runtime['vehicleWaitTicks'] !== 0) fail(`žeriav #${String(entry['id'])} s čakaním na vozidlo (pod hákom)`);
+    return { ...entry, runtime: without(runtime, ['cycle', 'targetUnitId', 'dualUnitId', 'waitForVehicleTicks', 'vehicleWaitTicks']) };
   });
   const v6 = without(v7, ['nextVoyageId']);
   return {

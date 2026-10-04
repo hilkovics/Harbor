@@ -10,7 +10,7 @@
  * Všetko ide len cez verejné API simu (`World`, `world.vehicles`, `world.jobs`, `world.modules`, `world.cargo`,
  * udalosti) — píše sa proti rozhraniu z `docs/tasks/phase-03.md` „Spoločné rozhrania", ešte pred T03-02..T03-06.
  */
-import modulesJson from '@data/defs/modules.json';
+import { APRON_MODULES as modulesJson } from './apron-modules';
 import vehiclesJson from '@data/defs/vehicles.json';
 import type { CargoLocation, CargoLocationKind } from '@sim/cargo';
 import type { EntityId } from '@sim/core';

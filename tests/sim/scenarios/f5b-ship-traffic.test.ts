@@ -11,7 +11,7 @@
  * uviaznutia); všetok náklad skončí na aprónoch.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import modulesJson from '@data/defs/modules.json';
+import { APRON_MODULES as modulesJson } from '../helpers/apron-modules';
 import type { EntityId } from '@sim/core';
 import { DefRegistry } from '@sim/defs';
 import { SHIP_STATE_TRAITS, shipCells } from '@sim/ships';

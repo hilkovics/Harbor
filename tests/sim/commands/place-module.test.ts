@@ -5,7 +5,7 @@
 // harbor_01 bez Root modulu (newBareWorld): voda y ≤ 13, nábrežie y 14–16 x 10–85, pevnina y ≥ 17; starter parcela
 // x 30–57 y 14–33 (vlastnená), west_quay x 6–27 (na predaj).
 import { describe, expect, it } from 'vitest';
-import modulesJson from '@data/defs/modules.json';
+import { APRON_MODULES as modulesJson } from '../helpers/apron-modules';
 import { PlaceModuleCommand, commandFromJSON, type ValidationReason } from '@sim/commands';
 import { DefRegistry } from '@sim/defs';
 import { BerthModule, ContainerYard, CraneModule, VehicleDepot, footprintOf } from '@sim/modules';

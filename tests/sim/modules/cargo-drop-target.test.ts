@@ -129,10 +129,16 @@ describe('LoadingRamp.cargoDropTarget — staging dock rampy', () => {
 });
 
 describe('ostatné moduly', () => {
-  it('kotvisko nie je cieľ doručenia a recordTaken nerobí nič (slot apronu uvoľní presun v ledgeri)', () => {
+  it('kotvisko je cieľ nakládky exportu (slot apronu, ľubovoľná kategória) a recordTaken nerobí nič (slot apronu uvoľní presun v ledgeri)', () => {
     const cargo = emptyCargo(DEFS);
     const berth = berthOn(GRID, 30, { x: 2, y: 2 }, 0, 'berth_standard', cargo);
-    expect(berth.cargoDropTarget()).toBeUndefined();
+    const target = berth.cargoDropTarget();
+    expect([target?.kind, target?.category, target?.reserves, target?.places]).toEqual(['on_apron', null, true, 8]);
+    // Rezervácia slotu: slot 3 sa rezervuje cez cieľ, `release` ho uvoľní, `commit` po presune premení rezerváciu na obsadenie.
+    target?.restoreReservation(3);
+    expect([target?.reservationsAt(3), target?.reservationsAt(2), target?.reservationsAt(99), berth.apron.reservedSlots()]).toEqual([1, 0, 0, [3]]);
+    target?.release(3);
+    expect(berth.apron.reservedCount).toBe(0);
     const unit = cargo.create('container_teu', { kind: 'on_ship', shipId: id(900) }).id;
     cargo.move(unit, { kind: 'in_crane', craneId: id(901) });
     cargo.move(unit, { kind: 'on_apron', berthId: berth.id, slot: 0 });

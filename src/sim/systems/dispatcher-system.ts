@@ -3,10 +3,20 @@
  * ADR-023, ADR-027): najprv zrušenie `open` outbound jobov, ktorých rampa už nie je použiteľná (neprevádzková alebo zo skladu
  * nedosiahnuteľná), potom inbound (joby pre jednotky na apronoch s rezerváciou slotu v sklade, `NoStorageAvailable`),
  * outbound (joby pre uskladnené jednotky kontraktov `unloading`/`exporting` podľa SLA, potom `failed` a bez kontraktu, s rezerváciou
- * staging miesta na prevádzkovej rampe), prijatie exportu z rampy do skladu (F6a) a nakoniec priradenie voľných vozidiel jobom `open` — inbound pred outbound.
+ * staging miesta na prevádzkovej rampe), prijatie exportu z rampy do skladu (F6a), nakládka exportu v poradí stowage plánu a vykládka pod
+ * hákom (F6a, ADR-033) a nakoniec priradenie voľných vozidiel jobom `open` — inbound a hák pred outbound a nakládkou.
  * Logika je v `logistics/dispatcher.ts`; systém len určuje poradie v rámci kroku a drží znovupoužiteľné polia.
  */
-import { OutboundCancelGate, assignOpenJobs, cancelUnusableOutboundJobs, createExportJobs, createInboundJobs, createOutboundJobs } from '../logistics/dispatcher';
+import {
+  OutboundCancelGate,
+  assignOpenJobs,
+  cancelUnusableOutboundJobs,
+  createExportJobs,
+  createExportLoadJobs,
+  createHookUnloadJobs,
+  createInboundJobs,
+  createOutboundJobs,
+} from '../logistics/dispatcher';
 import type { StoredCargoGroup } from '../logistics/stored-cargo-index';
 import type { LoadingRamp } from '../modules/loading-ramp';
 import type { Vehicle } from '../vehicles/vehicle';
@@ -24,12 +34,15 @@ export class DispatcherSystem {
 
   /**
    * Krok 5: `cancelUnusableOutboundJobs` (len po zmene ciest alebo modulov, `OutboundCancelGate`) → `createInboundJobs`
-   * → `createExportJobs` (prijatie exportu z rampy, ADR-032) → `createOutboundJobs` → `assignOpenJobs`.
+   * → `createHookUnloadJobs` (vykládka pod hákom, ADR-033) → `createExportJobs` (prijatie exportu z rampy, ADR-032) →
+   * `createExportLoadJobs` (nakládka exportu v poradí stowage plánu) → `createOutboundJobs` → `assignOpenJobs`.
    */
   tick(world: World): void {
     if (this.cancelGate.due(world)) cancelUnusableOutboundJobs(world);
     createInboundJobs(world);
+    createHookUnloadJobs(world);
     createExportJobs(world);
+    createExportLoadJobs(world);
     createOutboundJobs(world, this.ramps, this.groups);
     assignOpenJobs(world, this.idle);
   }

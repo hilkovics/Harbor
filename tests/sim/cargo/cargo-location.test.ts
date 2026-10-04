@@ -18,14 +18,14 @@ import {
   type CargoLocation,
   type CargoLocationKind,
 } from '@sim/cargo';
-import { CONTAINER_CHAIN, EXPORT_CHAIN, LAST_MINUTE_CHAIN, LIQUID_CHAIN, RORO_CHAIN, SAMPLE_LOCATIONS, at } from './cargo-fixtures';
+import { CONTAINER_CHAIN, EXPORT_CHAIN, LAST_MINUTE_CHAIN, LIQUID_CHAIN, RORO_CHAIN, SAMPLE_LOCATIONS, UNDER_HOOK_EXPORT_CHAIN, UNDER_HOOK_IMPORT_CHAIN, at } from './cargo-fixtures';
 
 /** Očakávaná tabuľka prepísaná z §7.1 a ADR-032 — zmena tabuľky v kóde musí byť vedomá (a zapísaná v ARCHITECTURE). */
 const EXPECTED_TRANSITIONS: Readonly<Record<CargoLocationKind, readonly CargoLocationKind[]>> = {
   on_ship: ['in_crane', 'in_pipeline', 'in_vehicle', 'shipped'],
-  in_crane: ['on_apron', 'on_ship'],
+  in_crane: ['on_apron', 'on_ship', 'in_vehicle'],
   on_apron: ['in_vehicle', 'in_crane'],
-  in_vehicle: ['in_storage', 'at_ramp', 'on_apron'],
+  in_vehicle: ['in_storage', 'at_ramp', 'on_apron', 'in_crane'],
   in_storage: ['in_vehicle', 'in_pipeline'],
   in_pipeline: ['in_storage', 'at_ramp'],
   at_ramp: ['in_truck', 'in_train', 'in_vehicle'],
@@ -105,18 +105,32 @@ describe('CARGO_LOCATION_KINDS a CARGO_TRANSITIONS', () => {
     expect(kinds.at(-1)).toBe('shipped');
   });
 
+  it.each([
+    ['import pod hákom (on_ship → in_crane → in_vehicle → in_storage …)', UNDER_HOOK_IMPORT_CHAIN, 'on_ship', 'exported'],
+    ['export pod hákom (… in_storage → in_vehicle → in_crane → on_ship → shipped)', UNDER_HOOK_EXPORT_CHAIN, 'in_truck', 'shipped'],
+  ] as const)('reťazec %s je povolený krok po kroku (ADR-033)', (_name, chain, first, last) => {
+    const kinds: CargoLocationKind[] = [first, ...chain.map((location) => location.kind)];
+    for (let i = 1; i < kinds.length; i++) {
+      expect(isTransitionAllowed(kinds[i - 1], kinds[i]), `${kinds[i - 1]} → ${kinds[i]}`).toBe(true);
+    }
+    expect(kinds.at(-1)).toBe(last);
+  });
+
   it.each<[CargoLocationKind, CargoLocationKind]>([
     ['on_ship', 'in_storage'],
     ['on_ship', 'on_apron'],
     ['on_ship', 'exported'],
-    ['in_crane', 'in_vehicle'],
+    ['in_crane', 'in_storage'],
+    ['in_crane', 'at_ramp'],
     ['in_crane', 'shipped'],
     ['on_apron', 'in_storage'],
     ['on_apron', 'on_ship'],
     ['in_storage', 'at_ramp'],
     ['in_storage', 'on_apron'],
     ['in_vehicle', 'exported'],
-    ['in_vehicle', 'in_crane'],
+    ['in_vehicle', 'on_ship'],
+    ['in_storage', 'in_crane'],
+    ['at_ramp', 'in_crane'],
     ['at_ramp', 'exported'],
     ['at_ramp', 'in_storage'],
     ['in_truck', 'in_train'],

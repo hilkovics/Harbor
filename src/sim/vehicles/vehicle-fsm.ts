@@ -5,6 +5,10 @@
  *
  * Cyklus: `idle` → (dispatcher priradí job) `to_pickup` → (príchod na vonkajšiu bunku konektora zdroja) `loading` →
  * (jednotky naložené) `to_dropoff` → (príchod k cieľu) `unloading` → (jednotky uložené, job hotový) `idle`.
+ * **Pod hákom** (F6a, ADR-033): ak je zdroj jobu hák žeriava (`in_crane`), vozidlo po príchode k berthu čaká v `loading`
+ * („čaká pod žeriavom") a jednotku mu odovzdá žeriav (`in_crane → in_vehicle`, krok 4), čím prejde do `to_dropoff`; ak je
+ * cieľom hák, čaká v `unloading`, kým ho žeriav zdvihne (`in_vehicle → in_crane`, job `done`, `idle`). Stavy ani prechody
+ * sa nemenia — fáza „čaká pod žeriavom" je `HOOK_WAIT_TICKS` v `waitTicks` a koncový bod `in_crane` jobu.
  * `to_* → no_path`, keď k cieľu nevedie cesta; z `no_path` sa vozidlo vráti do toho `to_*`, z ktorého vypadlo
  * (určuje ho stav jobu: `assigned` → `to_pickup`, `moving` → `to_dropoff`).
  */
@@ -16,6 +20,13 @@ import type { Vehicle } from './vehicle';
 /** Stavy vozidla v poradí životného cyklu. */
 export const VEHICLE_STATES = ['idle', 'to_pickup', 'loading', 'to_dropoff', 'unloading', 'no_path'] as const;
 export type VehicleState = (typeof VEHICLE_STATES)[number];
+
+/**
+ * Odpočet `waitTicks` vozidla, ktoré čaká **pod hákom** žeriava (ADR-033): vozidlo v `loading` (vykládka — zdroj jobu je hák) alebo
+ * `unloading` (nakládka — cieľ jobu je hák) nemá pobyt na ticky, ale čaká na odovzdanie od žeriava; `waits` stavu vyžaduje
+ * `waitTicks ≥ 1`, preto je odpočet pripnutý na 1 a `VehicleSystem` ho nezmenšuje. Štrukturálna hodnota, nie balans.
+ */
+export const HOOK_WAIT_TICKS = 1;
 
 /** Povolené prechody `from → [to…]`. */
 export const VEHICLE_TRANSITIONS: ReadonlyMap<VehicleState, readonly VehicleState[]> = new Map<VehicleState, readonly VehicleState[]>([

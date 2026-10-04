@@ -26,13 +26,14 @@
  * vyložením patrí tomuto kontraktu (`checkContracts`); počet jednotiek na palube a počítadlá overí krok 12.
  * Na koniec beží `findWorldViolation` ako poistka. Každá chyba je `WorldStateError` s JSON pointerom.
  */
-import { holderIdOf, holderSpecOf, isSameLocation, slotOf, uniqueSlotOf } from '../cargo/cargo-location';
+import { holderIdOf, holderSpecOf, isSameLocation, slotOf, uniqueSlotOf, type CargoLocation } from '../cargo/cargo-location';
 import type { CargoUnit } from '../cargo/cargo-unit';
 import type { Contract } from '../contracts/contract';
 import { CONTRACT_STATE_TRAITS, type ContractKind } from '../contracts/contract-fsm';
 import type { ContractId, EntityId } from '../core/entity-id';
 import type { CargoCategory } from '../defs/types';
 import { JobError, type JobErrorCode } from '../logistics/job-error';
+import { unitAtJobSource } from '../logistics/job-source';
 import { JOB_STATE_TRAITS, TransportJob, type JobState } from '../logistics/transport-job';
 import { BerthModule } from '../modules/berth-module';
 import { CRANE_STATE_TRAITS, CraneModule } from '../modules/crane-module';
@@ -505,8 +506,9 @@ function checkJobCargo(world: World, job: TransportJob, path: string): void {
     const unitPathInJob = `${path}/unitIds${pointerSegment(k)}`;
     const unit = world.cargo.get(unitId);
     if (unit === undefined) throw new WorldStateError(unitPathInJob, `jednotka #${String(unitId)} v save nie je`);
-    const expected = place === 'vehicle' && job.vehicleId !== null ? { kind: 'in_vehicle' as const, vehicleId: job.vehicleId } : job.from;
-    if (!isSameLocation(unit.location, expected)) {
+    const atExpected =
+      place === 'vehicle' && job.vehicleId !== null ? isSameLocation(unit.location, { kind: 'in_vehicle', vehicleId: job.vehicleId }) : unitAtJobSource(world, job, unit);
+    if (!atExpected) {
       throw new WorldStateError(unitPathInJob, `jednotka #${String(unitId)} jobu v stave '${job.state}' má byť na ${place === 'vehicle' ? 'vozidle jobu' : 'zdroji jobu'}`);
     }
   });
@@ -520,20 +522,32 @@ function checkJobCargo(world: World, job: TransportJob, path: string): void {
 function restoreJobReservation(world: World, job: TransportJob, category: CargoCategory | undefined, path: string): void {
   const spec = holderSpecOf(job.to.kind);
   const holderPath = `${path}/to/${spec?.holderKey ?? 'kind'}`;
-  const module = world.modules.get(job.toModuleId);
+  const module = world.modules.get(holderIdOf(job.to) ?? job.toModuleId);
   const target = module?.cargoDropTarget();
   if (module === undefined || target?.kind !== job.to.kind) {
     throw new WorldStateError(holderPath, `#${String(job.toModuleId)} vo svete neprijíma náklad jobu do '${job.to.kind}'`);
   }
-  if (target.category !== category) {
+  if (target.category !== null && target.category !== category) {
     throw new WorldStateError(holderPath, `${module.label} (kategória '${target.category}') neprijme náklad kategórie '${String(category)}'`);
   }
+  if (!target.reserves) return;
   try {
     for (let i = 0; i < job.unitIds.length; i++) target.restoreReservation(slotOf(job.to) ?? -1);
   } catch (error) {
     if (error instanceof ModuleError) throw new WorldStateError(`${path}/to/${spec?.slotKey ?? 'kind'}`, error.message);
     throw error;
   }
+}
+
+/**
+ * Modul koncového bodu jobu, ku ktorému vozidlo jazdí: držiteľ lokácie, pri háku žeriava (`in_crane`) kotvisko žeriava
+ * (ADR-033). Neexistujúci žeriav alebo držiteľ → `undefined` (chybu ohlási `World.addJob` / `restoreJobReservation`).
+ */
+function endpointModuleId(world: World, location: CargoLocation): EntityId | undefined {
+  const holder = holderIdOf(location);
+  if (location.kind !== 'in_crane' || holder === null) return holder ?? undefined;
+  const crane = world.modules.get(holder);
+  return crane instanceof CraneModule ? crane.berthId : undefined;
 }
 
 /**
@@ -548,7 +562,11 @@ function restoreJobs(world: World, entries: readonly ParsedJobEntry[]): void {
     const vehicle = byJob.get(entry.id);
     let job: TransportJob;
     try {
-      job = new TransportJob({ ...entry, state: deriveJobState(world, entry, vehicle), vehicleId: vehicle?.id ?? null });
+      const fromModuleId = endpointModuleId(world, entry.from);
+      const toModuleId = endpointModuleId(world, entry.to);
+      if (fromModuleId === undefined) throw new WorldStateError(`${path}/from`, `žeriav #${String(holderIdOf(entry.from))} (hák jobu) vo svete nie je`);
+      if (toModuleId === undefined) throw new WorldStateError(`${path}/to`, `žeriav #${String(holderIdOf(entry.to))} (hák jobu) vo svete nie je`);
+      job = new TransportJob({ ...entry, fromModuleId, toModuleId, state: deriveJobState(world, entry, vehicle), vehicleId: vehicle?.id ?? null });
     } catch (error) {
       if (error instanceof JobError) throw new WorldStateError(path, error.message);
       throw error;

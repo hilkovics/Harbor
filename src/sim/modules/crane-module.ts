@@ -17,6 +17,7 @@ import type { EntityId } from '../core/entity-id';
 import { craneParams } from '../defs/module-def';
 import type { CargoCategory, CraneParams } from '../defs/types';
 import type { StatResolver } from '../tech/stat-resolver';
+import type { CargoDropTarget } from './cargo-drop-target';
 import { Module, type ModuleInit } from './module';
 import { ModuleError, ModuleStateError } from './module-error';
 import { checkRuntimeKeys, readCount, readEnum, readOptionalCount } from './runtime-state';
@@ -29,19 +30,38 @@ export type CraneState = (typeof CRANE_STATES)[number];
 export const CRANE_CYCLES = ['unload', 'load', 'dual_load', 'dual_unload'] as const;
 export type CraneCycle = (typeof CRANE_CYCLES)[number];
 
-/** Čo platí pre smer cyklu: odkiaľ kam ide jednotka a či je cyklus polovicou dual cyklu. */
+/** Čo platí pre smer cyklu: odkiaľ kam ide jednotka, či je cyklus polovicou dual cyklu a od ktorého stavu drží slot apronu. */
 export interface CraneCycleTraits {
-  /** `unload` = loď → apron (rezervovaný slot), `load` = apron → loď (nárok na jednotku `targetUnitId`). */
+  /** `unload` = loď → apron / vozidlo, `load` = apron / vozidlo → loď (nárok na jednotku `targetUnitId`). */
   readonly direction: 'unload' | 'load';
   readonly dual: boolean;
+  /**
+   * Od ktorého stavu cyklu drží žeriav v režime `apron` rezervovaný slot apronu (`reservedSlot`): vykládka od `grabbing`
+   * (slot pre jednotku z lode), nakládka nikdy (jednotku berie z apronu), `dual_load` od `swinging` (slot uvoľnený zdvihnutou
+   * jednotkou sa hneď rezervuje pre import druhej polovice), `dual_unload` od `grabbing` (slot prenesený z prvej polovice).
+   * V režime `under_hook` sa slot nerezervuje nikdy (ADR-033).
+   */
+  readonly reservesFrom: CraneState | null;
 }
 
 export const CRANE_CYCLE_TRAITS: { readonly [C in CraneCycle]: CraneCycleTraits } = Object.freeze({
-  unload: Object.freeze({ direction: 'unload', dual: false }),
-  load: Object.freeze({ direction: 'load', dual: false }),
-  dual_load: Object.freeze({ direction: 'load', dual: true }),
-  dual_unload: Object.freeze({ direction: 'unload', dual: true }),
+  unload: Object.freeze({ direction: 'unload', dual: false, reservesFrom: 'grabbing' }),
+  load: Object.freeze({ direction: 'load', dual: false, reservesFrom: null }),
+  dual_load: Object.freeze({ direction: 'load', dual: true, reservesFrom: 'swinging' }),
+  dual_unload: Object.freeze({ direction: 'unload', dual: true, reservesFrom: 'grabbing' }),
 });
+
+/** Poradie stavov v cykle (`grabbing` → `swinging` → `placing`); stavy mimo cyklu majú −1. */
+const CYCLE_STATE_ORDER: { readonly [S in CraneState]: number } = Object.freeze({ idle: -1, blocked: -1, grabbing: 0, swinging: 1, placing: 2 });
+
+/**
+ * Drží žeriav v režime `apron` rezervovaný slot apronu v stave `state` cyklu `cycle`? (`CRANE_CYCLE_TRAITS.reservesFrom`);
+ * mimo cyklu (`idle`, `blocked`) nikdy. Režim `under_hook` slot nerezervuje — to rozhoduje kotvisko (invarianty sveta).
+ */
+export function craneReservesApronSlot(cycle: CraneCycle, state: CraneState): boolean {
+  const from = CRANE_CYCLE_TRAITS[cycle].reservesFrom;
+  return from !== null && CYCLE_STATE_ORDER[state] >= CYCLE_STATE_ORDER[from] && CYCLE_STATE_ORDER[state] >= 0;
+}
 
 /** Smer cyklu žeriavu mimo cyklu a po obnove save spred v7 (ADR-032). */
 export const DEFAULT_CRANE_CYCLE: CraneCycle = 'unload';
@@ -63,7 +83,10 @@ export type CranePhaseKind = 'none' | 'timed' | 'instant';
 export interface CraneStateTraits {
   /** Žeriav drží jednotku (`in_crane`) — `heldUnitId !== null`. */
   readonly holdsUnit: boolean;
-  /** Žeriav má rezervovaný slot apronu svojho berthu — `reservedSlot !== null`. */
+  /**
+   * Žeriav je v stave cyklu, v ktorom smie mať rezervovaný slot apronu (`reservedSlot !== null`); či ho naozaj má, určuje smer
+   * cyklu (`CRANE_CYCLE_TRAITS.reservesFrom`) a režim kotviska (`under_hook` slot nerezervuje) — kontroluje svet.
+   */
   readonly hasReservation: boolean;
   readonly counter: CraneCounter;
   /** Vzťah k fáze cyklu (`CranePhaseKind`). */
@@ -128,7 +151,10 @@ export function isCraneTransitionAllowed(from: CraneState, to: CraneState): bool
   return CRANE_TRANSITIONS.get(from)?.includes(to) ?? false;
 }
 
-/** Dynamický stav žeriavu v save (`WorldState.modules[i].runtime`; v7 + `cycle`, `targetUnitId`, ADR-032). */
+/**
+ * Dynamický stav žeriavu v save (`WorldState.modules[i].runtime`; v7 + `cycle`, `targetUnitId`, ADR-032; + `dualUnitId`,
+ * `waitForVehicleTicks`, `vehicleWaitTicks`, ADR-033).
+ */
 export type CraneRuntimeState = {
   readonly state: CraneState;
   readonly cycle: CraneCycle;
@@ -136,9 +162,15 @@ export type CraneRuntimeState = {
   readonly phaseTicksLeft: number;
   readonly reservedSlot: number | null;
   readonly targetUnitId: number | null;
+  /** Jednotka naložená v prvej polovici dual cyklu (`dual_load`) — v `dual_unload` pre `DualCycle`; inak `null`. */
+  readonly dualUnitId: number | null;
   readonly busyTicks: number;
   readonly idleTicks: number;
   readonly blockedTicks: number;
+  /** Ticky, v ktorých žeriav v režime `under_hook` čakal na vozidlo (metrika `craneWaitForVehicleTicks`). */
+  readonly waitForVehicleTicks: number;
+  /** Ticky vozidiel čakajúcich pod týmto žeriavom (súčet cez vozidlá; metrika `vehicleWaitUnderCraneTicks`). */
+  readonly vehicleWaitTicks: number;
   readonly lastBlockedHour: number | null;
 };
 
@@ -156,9 +188,12 @@ export const CRANE_RUNTIME_KEYS: readonly (keyof CraneRuntimeState)[] = [
   'phaseTicksLeft',
   'reservedSlot',
   'targetUnitId',
+  'dualUnitId',
   'busyTicks',
   'idleTicks',
   'blockedTicks',
+  'waitForVehicleTicks',
+  'vehicleWaitTicks',
   'lastBlockedHour',
 ];
 
@@ -179,9 +214,17 @@ export class CraneModule extends Module {
   cycle: CraneCycle = DEFAULT_CRANE_CYCLE;
   /** Jednotka na aprone, ktorú si žeriav zabral na nakládku (`load` / `dual_load` v `grabbing`), inak `null`. */
   targetUnitId: EntityId | null = null;
+  /** Jednotka naložená v prvej polovici dual cyklu (`dual_load`), kým beží `dual_unload`; inak `null`. */
+  dualUnitId: EntityId | null = null;
+  /** Cieľ odovzdania pod hákom (`cargoDropTarget()`) — jeden objekt na žeriav. */
+  private readonly drop: CargoDropTarget;
   busyTicks = 0;
   idleTicks = 0;
   blockedTicks = 0;
+  /** Ticky čakania žeriava na vozidlo pod hákom (ADR-033). */
+  waitForVehicleTicks = 0;
+  /** Ticky vozidiel čakajúcich pod hákom tohto žeriava (ADR-033). */
+  vehicleWaitTicks = 0;
   /** Index hernej hodiny (`clock.gameHour`) posledného `CraneBlocked`; `null` = ešte nebol (throttle, ADR-016). */
   lastBlockedHour: number | null = null;
   /** Stav FSM — zapisuje ho len `transition` (CraneSystem) a `restoreRuntimeState` (save), T02-14. */
@@ -199,6 +242,24 @@ export class CraneModule extends Module {
       throw new ModuleError('no_berth', `${this.label}: na (${String(init.origin.x)}, ${String(init.origin.y)}) nie je berth, žeriav musí stáť na berthe`);
     }
     this.berthId = hostId;
+    const { category } = this.params;
+    // Hák žeriava ako koncový bod jobu vozidla (ADR-033): nič sa nerezervuje, vozidlo čaká pod hákom na priame odovzdanie.
+    this.drop = Object.freeze({
+      kind: 'in_crane',
+      category,
+      reserves: false,
+      places: 1,
+      reservationsAt: (): number => 0,
+      restoreReservation: (): void => undefined,
+      release: (): void => undefined,
+      assertCommittable: (): void => undefined,
+      commit: (): void => undefined,
+    });
+  }
+
+  /** Hák žeriava ako cieľ jobu vozidla (`in_crane`, bez rezervácie — ADR-033). */
+  override cargoDropTarget(): CargoDropTarget {
+    return this.drop;
   }
 
   /** Aktuálny stav FSM (len na čítanie; mení ho `transition`, obnovuje `restoreRuntimeState`). */
@@ -264,9 +325,12 @@ export class CraneModule extends Module {
       phaseTicksLeft: this.phaseTicksLeft,
       reservedSlot: this.reservedSlot,
       targetUnitId: this.targetUnitId,
+      dualUnitId: this.dualUnitId,
       busyTicks: this.busyTicks,
       idleTicks: this.idleTicks,
       blockedTicks: this.blockedTicks,
+      waitForVehicleTicks: this.waitForVehicleTicks,
+      vehicleWaitTicks: this.vehicleWaitTicks,
       lastBlockedHour: this.lastBlockedHour,
     };
   }
@@ -274,7 +338,8 @@ export class CraneModule extends Module {
   /**
    * Kontroly: presne kľúče `CraneRuntimeState`, `state` z `CRANE_STATES` okrem okamžitého `swinging` (neukladá sa),
    * počítadlá celé ≥ 0, `phaseTicksLeft ≤ phaseTicksTotal`, `reservedSlot` a `lastBlockedHour` null alebo celé ≥ 0,
-   * rezervácia zodpovedá stavu (`CRANE_STATE_TRAITS.hasReservation`) a fáza tiež (`cranePhaseProblem`: `idle`/`blocked`
+   * rezervovaný slot len v stave cyklu, ktorý ho drží (`craneReservesApronSlot`), `dualUnitId` práve v `dual_unload`
+   * (ADR-033) a fáza tiež (`cranePhaseProblem`: `idle`/`blocked`
    * 0/0, `grabbing`/`placing` `phaseTicksLeft ≥ 1`), T02-14; `cycle` z `CRANE_CYCLES`, `targetUnitId` null alebo celé
    * ≥ 1 a mimo cyklu (`idle`, `blocked`) `cycle` `unload` a `targetUnitId` `null` (ADR-032). Nekonzistentný stav je
    * `ModuleStateError` už pri `deserialize`, nie pád až v `tick()`. Súlad so slotmi berthu, s ledgerom a s loďou overí
@@ -299,17 +364,23 @@ export class CraneModule extends Module {
       throw new ModuleStateError('/phaseTicksLeft', `${String(phaseTicksLeft)} > phaseTicksTotal ${String(phaseTicksTotal)}`);
     }
     const reservedSlot = readOptionalCount(fields['reservedSlot'], '/reservedSlot');
-    if (CRANE_STATE_TRAITS[state].hasReservation !== (reservedSlot !== null)) {
-      throw new ModuleStateError(
-        '/reservedSlot',
-        CRANE_STATE_TRAITS[state].hasReservation ? `stav '${state}' vyžaduje rezervovaný slot` : `stav '${state}' nesmie mať rezervovaný slot`,
-      );
+    // Rezervovaný slot smie mať len žeriav v stave cyklu, ktorý ho drží (`craneReservesApronSlot`); či ho v režime `apron`
+    // mať musí (a v `under_hook` nesmie), overuje svet (kotvisko pozná režim).
+    if (reservedSlot !== null && !craneReservesApronSlot(cycle, state)) {
+      throw new ModuleStateError('/reservedSlot', `stav '${state}' cyklu '${cycle}' nesmie mať rezervovaný slot`);
+    }
+    const dualUnitId = readOptionalCount(fields['dualUnitId'], '/dualUnitId');
+    if (dualUnitId === 0) throw new ModuleStateError('/dualUnitId', 'id jednotky musí byť null alebo celé číslo ≥ 1');
+    if ((cycle === 'dual_unload') !== (dualUnitId !== null)) {
+      throw new ModuleStateError('/dualUnitId', cycle === 'dual_unload' ? "cyklus 'dual_unload' vyžaduje dualUnitId (jednotka z dual_load)" : `cyklus '${cycle}' nemá dualUnitId`);
     }
     const phase = cranePhaseProblem(state, phaseTicksTotal, phaseTicksLeft);
     if (phase !== undefined) throw new ModuleStateError(phase.path, phase.problem);
     const busyTicks = readCount(fields['busyTicks'], '/busyTicks');
     const idleTicks = readCount(fields['idleTicks'], '/idleTicks');
     const blockedTicks = readCount(fields['blockedTicks'], '/blockedTicks');
+    const waitForVehicleTicks = readCount(fields['waitForVehicleTicks'], '/waitForVehicleTicks');
+    const vehicleWaitTicks = readCount(fields['vehicleWaitTicks'], '/vehicleWaitTicks');
     const lastBlockedHour = readOptionalCount(fields['lastBlockedHour'], '/lastBlockedHour');
 
     // Od tohto bodu nič nevyhadzuje — obnova je atomická.
@@ -319,9 +390,12 @@ export class CraneModule extends Module {
     this.phaseTicksLeft = phaseTicksLeft;
     this.reservedSlot = reservedSlot;
     this.targetUnitId = targetUnitId as EntityId | null;
+    this.dualUnitId = dualUnitId as EntityId | null;
     this.busyTicks = busyTicks;
     this.idleTicks = idleTicks;
     this.blockedTicks = blockedTicks;
+    this.waitForVehicleTicks = waitForVehicleTicks;
+    this.vehicleWaitTicks = vehicleWaitTicks;
     this.lastBlockedHour = lastBlockedHour;
   }
 }

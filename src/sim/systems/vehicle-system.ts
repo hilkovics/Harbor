@@ -15,17 +15,22 @@
  *   dock rampy) → `commit`; posledná jednotka = job `done`, `removeJob`, `JobDone`, vozidlo `idle` (stojí na mieste).
  * - `no_path`: po odpočte nový pokus o trasu k modulu jobu (`RESUME_AFTER_NO_PATH`); úspech = návrat do pôvodného `to_*`
  *   (bez pohybu v tomto ticku), inak ďalší odpočet `repathIntervalTicks`.
+ * **Pod hákom** (F6a, ADR-033): vozidlo, ktorého job má koncový bod `in_crane` (hák žeriava), čaká po príchode v `loading`
+ * (vykládka — jednotku mu odovzdá žeriav) alebo `unloading` (nakládka — žeriav ju zdvihne) s `waitTicks` pripnutým na
+ * `HOOK_WAIT_TICKS`; tick čakania sa pripočíta žeriavu (`vehicleWaitTicks`), samotné odovzdanie robí `CraneSystem` (krok 4).
  * Tick vstupu do stavu s odpočtom je jeho nultý tick a stav končí v ticku, keď `waitTicks` klesne na 0 (ako fázy
  * žeriavu, ADR-016) — pobyt v module trvá presne `internalTicks + k × loadTicks` tickov (ADR-011).
  */
 import { isSameLocation, slotOf, type CargoLocation } from '../cargo/cargo-location';
 import type { EntityId } from '../core/entity-id';
 import type { VehicleDef } from '../defs/types';
+import { hookCraneOf, isHookDropoff, isHookPickup } from '../logistics/job-source';
 import type { JobState, TransportJob } from '../logistics/transport-job';
+import { CraneModule } from '../modules/crane-module';
 import { advanceCarrier } from '../movement/route-planning';
 import type { Vehicle } from '../vehicles/vehicle';
 import { VehicleError } from '../vehicles/vehicle-error';
-import { RESUME_AFTER_NO_PATH, VEHICLE_STATE_TRAITS, changeVehicleState, type VehicleState } from '../vehicles/vehicle-fsm';
+import { HOOK_WAIT_TICKS, RESUME_AFTER_NO_PATH, VEHICLE_STATE_TRAITS, changeVehicleState, type VehicleState } from '../vehicles/vehicle-fsm';
 import { enterNoPath, jobModule, jobOfVehicle, planRoute, startTrip } from '../vehicles/vehicle-trip';
 import type { World } from '../world/world';
 
@@ -34,11 +39,13 @@ interface ArrivalRule {
   readonly vehicle: VehicleState;
   readonly job: JobState;
   readonly handlingTicks: (def: Readonly<VehicleDef>) => number;
+  /** Koniec trasy je hák žeriava (ADR-033): vozidlo čaká pod hákom na odovzdanie, nie na pobyt v module. */
+  readonly underHook: (job: TransportJob) => boolean;
 }
 
 const ARRIVALS: Readonly<Partial<Record<VehicleState, ArrivalRule>>> = Object.freeze({
-  to_pickup: Object.freeze({ vehicle: 'loading', job: 'picking', handlingTicks: (def: Readonly<VehicleDef>) => def.loadTicks }),
-  to_dropoff: Object.freeze({ vehicle: 'unloading', job: 'dropping', handlingTicks: (def: Readonly<VehicleDef>) => def.unloadTicks }),
+  to_pickup: Object.freeze({ vehicle: 'loading', job: 'picking', handlingTicks: (def: Readonly<VehicleDef>) => def.loadTicks, underHook: isHookPickup }),
+  to_dropoff: Object.freeze({ vehicle: 'unloading', job: 'dropping', handlingTicks: (def: Readonly<VehicleDef>) => def.unloadTicks, underHook: isHookDropoff }),
 });
 
 /** Jeden tick odpočtu; `true`, keď práve skončil. */
@@ -64,8 +71,20 @@ function arrive(vehicle: Vehicle, world: World): void {
   const job = jobOfVehicle(world, vehicle);
   const module = jobModule(world, job, destination);
   job.transition(rule.job);
-  vehicle.waitTicks = (module.vehicleInternalTicks() ?? world.defs.logistics.defaultInternalTicks) + rule.handlingTicks(vehicle.def);
+  vehicle.waitTicks = rule.underHook(job) ? HOOK_WAIT_TICKS : (module.vehicleInternalTicks() ?? world.defs.logistics.defaultInternalTicks) + rule.handlingTicks(vehicle.def);
   changeVehicleState(world.events, vehicle, rule.vehicle);
+}
+
+/**
+ * Tick čakania pod hákom (ADR-033): odpočet sa nemení (`HOOK_WAIT_TICKS`), vozidlo sa pripočíta do metriky `vehicleWaitTicks`
+ * žeriava háku. Odovzdanie robí žeriav v kroku 4 (`CraneSystem`), preto tu nie je žiadny presun nákladu.
+ */
+function waitUnderHook(vehicle: Vehicle, world: World): void {
+  const job = jobOfVehicle(world, vehicle);
+  const craneId = hookCraneOf(job);
+  const crane = craneId === undefined ? undefined : world.modules.get(craneId);
+  if (!(crane instanceof CraneModule)) throw new VehicleError('inconsistent', `${vehicle.label}: čaká pod hákom, ale ${job.label} nemá žeriav`);
+  crane.vehicleWaitTicks += 1;
 }
 
 /** Jazda: preplánovanie po zmene ciest, pohyb, príchod. */
@@ -147,10 +166,12 @@ const VEHICLE_STEPS: { readonly [S in VehicleState]: VehicleStep } = {
   to_pickup: drive,
   to_dropoff: drive,
   loading: (vehicle, world) => {
-    if (countDown(vehicle)) loadUnit(vehicle, world);
+    if (isHookPickup(jobOfVehicle(world, vehicle))) waitUnderHook(vehicle, world);
+    else if (countDown(vehicle)) loadUnit(vehicle, world);
   },
   unloading: (vehicle, world) => {
-    if (countDown(vehicle)) unloadUnit(vehicle, world);
+    if (isHookDropoff(jobOfVehicle(world, vehicle))) waitUnderHook(vehicle, world);
+    else if (countDown(vehicle)) unloadUnit(vehicle, world);
   },
   no_path: (vehicle, world) => {
     if (countDown(vehicle)) retry(vehicle, world);

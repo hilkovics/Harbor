@@ -36,6 +36,7 @@ export {
   CRANE_TRANSITIONS,
   CraneModule,
   DEFAULT_CRANE_CYCLE,
+  craneReservesApronSlot,
   cranePhaseProblem,
   isCraneTransitionAllowed,
 } from './crane-module';

@@ -5,7 +5,7 @@
 // stojiska, RemoveRoad pod kamiónom, traffic, World.addTruck / removeTruck, invarianty kroku 12 a chyby obnovy save.
 // Rozloženie: tests/sim/logistics/outbound-fixtures.ts (brána 6, stojisko 7, rampa 8); náklad sa na dock kladie priamo
 // cez ledger, vozidlá netreba.
-import modulesJson from '@data/defs/modules.json';
+import { APRON_MODULES as modulesJson } from '../helpers/apron-modules';
 import trucksJson from '@data/defs/trucks.json';
 import { describe, expect, it } from 'vitest';
 import { commandFromJSON } from '@sim/commands';

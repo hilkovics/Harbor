@@ -1,6 +1,6 @@
 // Pozemné moduly (T04-02, ADR-022): TruckGate (fronta, priepustnosť, strany, runtime), WaitingArea (bays) a LoadingRamp
 // (staging docky nad ledgerom — DockStaging, zverejnený prevádzkový stav). Moduly mimo sveta cez ModuleRegistry.
-import modulesJson from '@data/defs/modules.json';
+import { APRON_MODULES as modulesJson } from '../helpers/apron-modules';
 import { describe, expect, it } from 'vitest';
 import type { CargoLedger } from '@sim/cargo';
 import type { EntityId } from '@sim/core';

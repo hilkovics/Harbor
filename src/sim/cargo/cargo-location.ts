@@ -94,15 +94,18 @@ export const CARGO_HOLDER_SPECS: { readonly [K in CargoHolderKind]: CargoHolderS
  * - export kontajner (F6a, ADR-032 bod 3, reverzný reťazec): vznik `in_truck` → `at_ramp` (kamión vyloží na docku)
  *   → `in_vehicle` → `in_storage` → `in_vehicle` → `on_apron` → `in_crane` → `on_ship` → `shipped` (loď opustila
  *   mapu); „last minute" `at_ramp → in_vehicle → on_apron` bez skladu; vrátenie odosielateľovi ide importnou pozemnou
- *   vetvou `in_storage → in_vehicle → at_ramp → in_truck → exported`.
+ *   vetvou `in_storage → in_vehicle → at_ramp → in_truck → exported`,
+ * - odovzdávanie pod hákom (F6a, ADR-033, `handoverMode: 'under_hook'`): vykládka `on_ship → in_crane → in_vehicle →
+ *   in_storage`, nakládka `in_storage → in_vehicle → in_crane → on_ship` — jednotka sa medzi žeriavom a vozidlom odovzdá
+ *   priamo (`in_crane ↔ in_vehicle`), apron ostáva len buffer (`in_crane → on_apron`).
  * Tabuľka je podľa druhu lokácie, nie kategórie nákladu ani smeru — kompatibilitu kategórie so žeriavom/potrubím/vozidlom
  * a smer toku strážia systémy.
  */
 const TRANSITIONS: { readonly [K in CargoLocationKind]: readonly CargoLocationKind[] } = {
   on_ship: ['in_crane', 'in_pipeline', 'in_vehicle', 'shipped'],
-  in_crane: ['on_apron', 'on_ship'],
+  in_crane: ['on_apron', 'on_ship', 'in_vehicle'],
   on_apron: ['in_vehicle', 'in_crane'],
-  in_vehicle: ['in_storage', 'at_ramp', 'on_apron'],
+  in_vehicle: ['in_storage', 'at_ramp', 'on_apron', 'in_crane'],
   in_storage: ['in_vehicle', 'in_pipeline'],
   in_pipeline: ['in_storage', 'at_ramp'],
   at_ramp: ['in_truck', 'in_train', 'in_vehicle'],

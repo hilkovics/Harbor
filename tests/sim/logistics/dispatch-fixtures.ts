@@ -5,7 +5,7 @@
 //   dvor E (48, 18) → (50, 17), od berthu 4 (remíza s W);  dvor F (53, 18) → (55, 17), od berthu 9.
 // Jednotky na aprone vznikajú priamo cez ledger (fiktívna loď 900 a žeriav 901 — len prechody §7.1), bez lode.
 import vehiclesJson from '@data/defs/vehicles.json';
-import modulesJson from '@data/defs/modules.json';
+import { APRON_MODULES as modulesJson } from '../helpers/apron-modules';
 import { commandFromJSON, type SerializedCommand } from '@sim/commands';
 import type { EntityId } from '@sim/core';
 import { DefRegistry } from '@sim/defs';

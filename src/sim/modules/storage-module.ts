@@ -65,6 +65,7 @@ export abstract class StorageModule extends Module {
     this.drop = Object.freeze({
       kind: 'in_storage',
       category: this.params.category,
+      reserves: true,
       places: capacity,
       reservationsAt: (slot: number): number => (Number.isInteger(slot) && slot >= 0 && slot < capacity && slots.isReserved(slot) ? 1 : 0),
       restoreReservation: (slot: number): void => {

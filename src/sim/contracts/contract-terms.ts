@@ -8,6 +8,10 @@
  *   late      = ⌊reward × lateBp / 10 000⌋ za každý celý deň po `slaDeadlineTick`
  *   xpReward  = volume × xpPerUnit × xpMultiplier; pri dokončení round(xpReward × (včas ? 1 : lateXpFactor))
  *
+ * Export booking (ADR-032 bod 13–14): výplata pomerne k naloženým `⌊reward × loaded / booked⌋`, penalizácia za `n` jednotiek
+ * (last minute, rolled) `⌊reward × bp × n / (10 000 × booked)⌋` (sadzba je podiel odmeny **za jednotku**, jedno zaokrúhlenie
+ * nadol), za nesplnený booking `⌊reward × bp / 10 000⌋` raz; splnený je od `⌈bookingFulfilmentShare × booked⌉` naložených.
+ *
  * `maxSlaDays` = najväčšie `slaDaysRange[1]` všetkých šablón (nezávisle od tieru — rovnaké SLA má vždy rovnakú urgency).
  */
 import type { ContractTemplateDef, EconomyDef } from '../defs/types';
@@ -66,4 +70,31 @@ export function wholePeriods(now: number, since: number, period: number): number
  */
 export function offerClosingTick(offerExpiresTick: number, ticksPerDay: number): number {
   return Math.ceil(offerExpiresTick / ticksPerDay) * ticksPerDay;
+}
+
+/** Výplata exportu pomerne k naloženým: `⌊reward × loaded / booked⌋` (`loaded ≤ booked`, celé čísla). */
+export function bookingPayoutCents(rewardCents: number, loadedUnits: number, bookedUnits: number): number {
+  const product = rewardCents * loadedUnits;
+  if (!Number.isSafeInteger(product) || bookedUnits < 1) throw new RangeError(`výplata exportu: ${String(rewardCents)} × ${String(loadedUnits)} / ${String(bookedUnits)} nie je platné`);
+  return Math.floor(product / bookedUnits);
+}
+
+/**
+ * Penalizácia za `units` jednotiek bookingu so sadzbou `rate` (podiel odmeny za jednotku): `⌊reward × bp × units / (10 000 ×
+ * booked)⌋`. Súčin mimo bezpečného celého rozsahu alebo neplatný vstup → `RangeError`.
+ */
+export function bookingUnitsPenaltyCents(rewardCents: number, bookedUnits: number, units: number, rate: number): number {
+  const product = rewardCents * toBasisPoints(rate) * units;
+  if (!Number.isSafeInteger(product) || bookedUnits < 1) throw new RangeError(`penalizácia exportu: ${String(rewardCents)} × ${String(rate)} × ${String(units)} / ${String(bookedUnits)} nie je platná`);
+  return Math.floor(product / (BASIS_POINTS * bookedUnits));
+}
+
+/** Penalizácia za nesplnený booking (raz): `⌊reward × unfulfilledBookingRateOfReward⌋` v bp. */
+export function unfulfilledBookingPenaltyCents(rewardCents: number, economy: Pick<EconomyDef, 'unfulfilledBookingRateOfReward'>): number {
+  return shareOfCents(rewardCents, economy.unfulfilledBookingRateOfReward);
+}
+
+/** Najmenší počet naložených jednotiek, od ktorého je booking splnený: `⌈bookingFulfilmentShare × booked⌉` (celé bázické body). */
+export function bookingFulfilmentUnits(bookedUnits: number, economy: Pick<EconomyDef, 'bookingFulfilmentShare'>): number {
+  return Math.ceil((toBasisPoints(economy.bookingFulfilmentShare) * bookedUnits) / BASIS_POINTS);
 }

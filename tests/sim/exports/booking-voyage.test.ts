@@ -68,12 +68,17 @@ describe('loď voyage s exportom', () => {
     expect(lostUnits(world)).toBe(0);
   });
 
-  it('export-only loď bez nákladu zakotví a odpláva; booking ostane v exporting (uzavretie je T6A-05), nič sa nestratí', () => {
+  it('export-only loď bez nákladu zakotví a odpláva; nič nenaložila → booking zlyhá s penalizáciou za nesplnený booking (ADR-032 bod 14), nič sa nestratí', () => {
     const world = exportWorld({ ...noLandside });
     const { exportContract } = acceptedBooking(world, { kind: 'export' });
     const events = tickUntil(world, (w) => w.ships.size === 0 && w.clock.tick > (exportContract.shipArrivalTick as number) + 10, 3 * TICKS_PER_DAY);
     expect(ofType(events, 'ShipDeparted')).toHaveLength(1);
-    expect(exportContract.state).toBe('exporting');
+    expect(exportContract.state).toBe('failed');
+    // Penalizácia za nesplnený booking: ⌊odmena × unfulfilledBookingRateOfReward⌋ = ⌊1 000 000 × 0,1⌋, raz, pred ContractFailed.
+    expect(ofType(events, 'BookingPenaltyApplied').map((entry) => entry.event)).toEqual([
+      { type: 'BookingPenaltyApplied', contractId: exportContract.id, kind: 'unfulfilled', units: 12, amountCents: 100_000 },
+    ]);
+    expect(ofType(events, 'ContractFailed').map((entry) => entry.event)).toEqual([{ type: 'ContractFailed', contractId: exportContract.id, penaltiesCents: 100_000 }]);
     expect(lostUnits(world)).toBe(0);
   });
 });

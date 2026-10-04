@@ -8,7 +8,7 @@ import { commandFromJSON, type SerializedCommand } from '@sim/commands';
 import { DefRegistry, loadBundledDefs } from '@sim/defs';
 import { loadBundledMap } from '@sim/grid';
 import { World, stateHash } from '@sim/world';
-import { LEGACY_CAPACITY_DEFS, RAW_DEFS } from '../sim/world/world-fixtures';
+import { DEFS as APRON_DEFS, LEGACY_CAPACITY_DEFS, RAW_DEFS } from '../sim/world/world-fixtures';
 import {
   SimrunError,
   craneBlockedPercent,
@@ -279,6 +279,16 @@ describe('runScenario', () => {
       tier: 0,
       gameOver: false,
       stateHash: null,
+      shippedUnits: 0,
+      rolledUnits: 0,
+      returnedUnits: 0,
+      vgmHolds: 0,
+      dualCycleRate: null,
+      dualTransactionRate: null,
+      stowageOrderViolations: 0,
+      exportGroupingPct: null,
+      craneWaitForVehicleTicks: 0,
+      vehicleWaitUnderCraneTicks: 0,
     });
     expect(Object.keys(report)).toEqual([
       'scenario',
@@ -323,6 +333,16 @@ describe('runScenario', () => {
       'tier',
       'gameOver',
       'stateHash',
+      'shippedUnits',
+      'rolledUnits',
+      'returnedUnits',
+      'vgmHolds',
+      'dualCycleRate',
+      'dualTransactionRate',
+      'stowageOrderViolations',
+      'exportGroupingPct',
+      'craneWaitForVehicleTicks',
+      'vehicleWaitUnderCraneTicks',
     ]);
   });
 
@@ -378,8 +398,8 @@ describe('runScenario', () => {
     });
     const f2 = (units: number): Scenario => ({ id: 'f2', seed: 2002, commands: [spawn(units)] });
 
-    it('f2_unload (5000 tickov): loď vyložená a odplávala, 4 jednotky na aprone, nič stratené ani exportované', () => {
-      const report = runScenario(loadScenario(F2_UNLOAD_SCENARIO), 5000, defs);
+    it('f2_unload (5000 tickov, režim apron): loď vyložená a odplávala, 4 jednotky na aprone, nič stratené ani exportované', () => {
+      const report = runScenario(loadScenario(F2_UNLOAD_SCENARIO), 5000, APRON_DEFS);
       expect(report).toMatchObject({
         scenario: 'f2_unload',
         lostUnits: 0,
@@ -484,8 +504,8 @@ describe('runScenario', () => {
       expect(runScenario(apronToYard, RUN_TICKS, defs)).toEqual(full);
     });
 
-    it('bez vozidiel a skladu (f2_unload): vehicles 0, util 0, ticksToAllStored null napriek spawnu lode', () => {
-      const report = runScenario(loadScenario(F2_UNLOAD_SCENARIO), 5000, defs);
+    it('bez vozidiel a skladu (f2_unload, režim apron): vehicles 0, util 0, ticksToAllStored null napriek spawnu lode', () => {
+      const report = runScenario(loadScenario(F2_UNLOAD_SCENARIO), 5000, APRON_DEFS);
       expect(report).toMatchObject({
         shipsSpawned: 1,
         unitsOnApron: 4,

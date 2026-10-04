@@ -44,6 +44,7 @@ import { parseCargoLedgerState, type CargoLedgerState } from './cargo-ledger-sta
 import {
   DEFAULT_CARGO_STATUS,
   IMPORT_LABELS,
+  OUTBOUND_BY_DIRECTION,
   cargoHoldProblem,
   cargoLabelsProblem,
   cargoStatusProblem,
@@ -88,8 +89,10 @@ interface Bucket {
   readonly units: EntityId[];
   /** Miesto → jednotka; len pre druhy s `uniqueSlot`. */
   readonly slots: Map<number, EntityId> | null;
-  /** Počet jednotiek smeru `export` v `units` (`CargoLedger.countExportsAt`, O(1) — pre import / export na palube lode). */
+  /** Počet jednotiek smeru `export` a `empty` v `units` (`OUTBOUND_BY_DIRECTION`, `CargoLedger.countExportsAt`, O(1) — pre import / export na palube lode). */
   exports: number;
+  /** Počet jednotiek smeru `tranship` v `units` (`CargoLedger.countTranshipAt`, O(1)); na lodi A sú vykladané, na lodi B naložené. */
+  tranships: number;
 }
 
 const NO_UNITS: readonly EntityId[] = Object.freeze([]);
@@ -347,9 +350,17 @@ export class CargoLedger {
     return this.buckets.get(kind)?.get(holderId)?.units.length ?? 0;
   }
 
-  /** Počet jednotiek smeru `export` u držiteľa (bez alokácie, O(1)); zvyšok `countAt` sú jednotky smeru `import`. */
+  /**
+   * Počet jednotiek smeru `export` a `empty` (náklad na nakládku už podľa smeru, `OUTBOUND_BY_DIRECTION`) u držiteľa (bez alokácie,
+   * O(1)); zvyšok `countAt` sú jednotky smeru `import` a `tranship` (`countTranshipAt`).
+   */
   countExportsAt(kind: CargoHolderKind, holderId: EntityId): number {
     return this.buckets.get(kind)?.get(holderId)?.exports ?? 0;
+  }
+
+  /** Počet jednotiek smeru `tranship` u držiteľa (bez alokácie, O(1)); či je na lodi vykladaná alebo naložená, určuje kontrakt. */
+  countTranshipAt(kind: CargoHolderKind, holderId: EntityId): number {
+    return this.buckets.get(kind)?.get(holderId)?.tranships ?? 0;
   }
 
   /**
@@ -456,12 +467,13 @@ export class CargoLedger {
     this.units.set(unit.id, unit);
     let bucket = holders.get(holderId);
     if (bucket === undefined) {
-      bucket = { units: [], slots: spec.uniqueSlot ? new Map() : null, exports: 0 };
+      bucket = { units: [], slots: spec.uniqueSlot ? new Map() : null, exports: 0, tranships: 0 };
       holders.set(holderId, bucket);
     }
     if (spec.order === 'id') insertSorted(bucket.units, unit.id);
     else bucket.units.push(unit.id);
-    if (unit.direction === 'export') bucket.exports += 1;
+    if (OUTBOUND_BY_DIRECTION[unit.direction]) bucket.exports += 1;
+    if (unit.direction === 'tranship') bucket.tranships += 1;
     const slot = uniqueSlotOf(location);
     if (slot !== null) bucket.slots?.set(slot, unit.id);
   }
@@ -471,7 +483,8 @@ export class CargoLedger {
     const { location } = unit;
     this.counts[location.kind] -= 1;
     bucket.units.splice(index, 1);
-    if (unit.direction === 'export') bucket.exports -= 1;
+    if (OUTBOUND_BY_DIRECTION[unit.direction]) bucket.exports -= 1;
+    if (unit.direction === 'tranship') bucket.tranships -= 1;
     const slot = uniqueSlotOf(location);
     if (slot !== null) bucket.slots?.delete(slot);
     const holderId = holderIdOf(location);

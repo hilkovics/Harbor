@@ -33,6 +33,7 @@ export {
   DEFAULT_WEIGHT_CLASS,
   EMPTY_WEIGHT_CLASS,
   IMPORT_LABELS,
+  OUTBOUND_BY_DIRECTION,
   WEIGHT_CLASSES,
   cargoLabelsProblem,
   cargoStatusProblem,
@@ -42,7 +43,7 @@ export {
   isWeightClass,
 } from './cargo-unit';
 export type { CargoDirection, CargoHold, CargoHoldReason, CargoStatus, CargoUnit, CargoUnitLabels, WeightClass } from './cargo-unit';
-export { STOWAGE_WEIGHT_RANK, compareStowageOrder } from './stowage';
+export { STOWAGE_DIRECTION_RANK, STOWAGE_WEIGHT_RANK, compareStowageOrder } from './stowage';
 export type { StowageKey } from './stowage';
 export { CargoConservationError, CargoError, CargoStateError, CargoTransitionError } from './cargo-error';
 export type { CargoErrorCode } from './cargo-error';

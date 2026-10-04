@@ -8,10 +8,11 @@
  * 2. index neobsahuje neexistujúcu jednotku ani tú istú jednotku dvakrát, nie je prázdny a má poradie svojho druhu,
  * 3. jedinečné miesto (slot apronu/skladu) nie je obsadené dvakrát a mapa slotov presne zodpovedá jednotkám,
  * 4. počítadlá podľa druhu sedia s indexmi a `createdCount = živé + exported + shipped` (ADR-032),
- * 5. počítadlo jednotiek smeru `export` indexu (`CargoBucketView.exports`) sedí s jednotkami v ňom (T6A-09b).
+ * 5. počítadlo jednotiek smeru `export` a `empty` indexu (`CargoBucketView.exports`, `OUTBOUND_BY_DIRECTION`) a smeru `tranship`
+ *    (`CargoBucketView.tranships`) sedí s jednotkami v ňom (T6A-09b, T6C-03).
  */
 import type { EntityId } from '../core/entity-id';
-import type { CargoUnit } from './cargo-unit';
+import { OUTBOUND_BY_DIRECTION, type CargoUnit } from './cargo-unit';
 import {
   CARGO_HOLDER_KINDS,
   formatLocation,
@@ -28,8 +29,10 @@ export interface CargoBucketView {
   readonly units: readonly EntityId[];
   /** Miesto → jednotka; len pre druhy s jedinečným miestom (`uniqueSlot`), inak `null`. */
   readonly slots: ReadonlyMap<number, EntityId> | null;
-  /** Počet jednotiek smeru `export` v indexe (`CargoLedger.countExportsAt`); pohľad bez neho túto kontrolu preskočí. */
+  /** Počet jednotiek smeru `export` a `empty` v indexe (`CargoLedger.countExportsAt`); pohľad bez neho túto kontrolu preskočí. */
   readonly exports?: number;
+  /** Počet jednotiek smeru `tranship` v indexe (`CargoLedger.countTranshipAt`); pohľad bez neho túto kontrolu preskočí. */
+  readonly tranships?: number;
 }
 
 /** Pohľad na vnútorný stav ledgera. */
@@ -88,6 +91,7 @@ function checkBucket(check: BucketCheck): string | undefined {
   const slotOwners = new Map<number, EntityId>();
   let previous: EntityId | null = null;
   let exports = 0;
+  let tranships = 0;
   for (const unitId of bucket.units) {
     const other = seenIn.get(unitId);
     if (other !== undefined) {
@@ -106,7 +110,8 @@ function checkBucket(check: BucketCheck): string | undefined {
       return `${label} nie je zoradený vzostupne podľa id (${unitLabel(previous)} pred ${unitLabel(unitId)})`;
     }
     previous = unitId;
-    if (unit.direction === 'export') exports += 1;
+    if (OUTBOUND_BY_DIRECTION[unit.direction]) exports += 1;
+    if (unit.direction === 'tranship') tranships += 1;
 
     const slot = uniqueSlotOf(unit.location);
     if (slot !== null) {
@@ -119,6 +124,9 @@ function checkBucket(check: BucketCheck): string | undefined {
   }
   if (bucket.exports !== undefined && bucket.exports !== exports) {
     return `${label}: počítadlo exportných jednotiek ${String(bucket.exports)}, v indexe ich je ${String(exports)}`;
+  }
+  if (bucket.tranships !== undefined && bucket.tranships !== tranships) {
+    return `${label}: počítadlo jednotiek prekládky ${String(bucket.tranships)}, v indexe ich je ${String(tranships)}`;
   }
   return checkSlots(check, label, slotOwners);
 }

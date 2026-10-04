@@ -22,6 +22,13 @@ import type { CargoLocation } from './cargo-location';
 export const CARGO_DIRECTIONS = ['import', 'export', 'tranship', 'empty'] as const;
 export type CargoDirection = (typeof CARGO_DIRECTIONS)[number];
 
+/**
+ * Smery, ktorých jednotka na lodi je **náklad na nakládku** už podľa smeru (export a prázdny repositioningu — `CargoLedger.countExportsAt`).
+ * Prekládka (`tranship`) je na lodi A náklad na vykládku a na lodi B naložený náklad — rozlišuje ju kontrakt
+ * (`Contract.tranship.outShipId`, `isOutboundOnShip`), nie smer; počíta ju `CargoLedger.countTranshipAt`.
+ */
+export const OUTBOUND_BY_DIRECTION: { readonly [D in CargoDirection]: boolean } = Object.freeze({ import: false, export: true, tranship: false, empty: true });
+
 /** Hmotnostné triedy kontajnera (stowage plán, ADR-032 bod 8). */
 export const WEIGHT_CLASSES = ['light', 'medium', 'heavy'] as const;
 export type WeightClass = (typeof WEIGHT_CLASSES)[number];

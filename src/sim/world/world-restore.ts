@@ -780,8 +780,8 @@ function checkCraneHolding(world: World, indexOf: ReadonlyMap<EntityId, number>)
  * Väzba nákladu na kontrakty (ADR-026, ADR-032): jednotka s `contractId` patrí kontraktu v knihe, ktorý už jednotky smie
  * mať (`UNITS_FROM` podľa druhu: import od lode — `CONTRACT_STATE_TRAITS.ship`, export od prijatia — `plan`), má jeho
  * typ nákladu a štítky kontraktu (`direction` = druh, `voyageId` = voyage kontraktu, `destinationPort` = cieľ bookingu,
- * pri importe `null`) — chyba na `/cargo/units/<j>/<pole>`; jednotka bez kontraktu je import bez voyage. Jednotka na
- * lodi kontraktu, ktorý vlastní náklad na palube (`carriesShipCargo`), patrí tomuto kontraktu. Počet jednotiek v hold
+ * pri importe `null`) — chyba na `/cargo/units/<j>/<pole>`; jednotka bez kontraktu je import bez voyage. Import na lodi
+ * kontraktu, ktorý vlastní náklad na palube (`carriesShipCargo`), patrí tomuto kontraktu; naložený export patrí bookingu tej istej lode. Počet jednotiek v hold
  * bookingu = `booking.heldUnits` (`/contracts/<i>/booking/heldUnits`). Kontrakty jednej voyage sa zhodujú na triede
  * lode, príchode a lodi (`/contracts/<i>/voyageId`). Počet jednotiek na palube overí `findWorldViolation` (krok 12).
  */
@@ -798,8 +798,12 @@ function checkContracts(world: World, units: readonly CargoUnit[]): void {
   }
   units.forEach((unit, index) => {
     const path = `/cargo/units${pointerSegment(index)}`;
-    const owner = unit.location.kind === 'on_ship' ? shipContract.get(unit.location.shipId) : undefined;
+    // Import na lodi patrí kontraktu, ktorý vlastní náklad na palube; naložený export (smer `export`) patrí bookingu tej istej lode.
+    const owner = unit.location.kind === 'on_ship' && unit.direction === 'import' ? shipContract.get(unit.location.shipId) : undefined;
     if (owner !== undefined && unit.contractId !== owner) throw new WorldStateError(`${path}/contractId`, `jednotka na lodi kontraktu #${String(owner)} má contractId ${String(unit.contractId)}`);
+    if (unit.location.kind === 'on_ship' && unit.direction === 'export' && unit.contractId !== null && world.contracts.get(unit.contractId)?.shipId !== unit.location.shipId) {
+      throw new WorldStateError(`${path}/contractId`, `export na lodi #${String(unit.location.shipId)} patrí kontraktu #${String(unit.contractId)}, ktorý k tejto lodi nepatrí`);
+    }
     if (unit.contractId === null) {
       if (unit.direction !== 'import') throw new WorldStateError(`${path}/direction`, 'jednotka bez kontraktu je import');
       if (unit.voyageId !== null) throw new WorldStateError(`${path}/voyageId`, 'jednotka bez kontraktu nemá voyage');

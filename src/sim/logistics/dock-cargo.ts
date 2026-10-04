@@ -5,6 +5,10 @@
  * — `Contract.outbound === 'held'`, kým booking beží). Pripravené jednotky docku a `LoadingRamp.firstUnitAt` počítajú
  * len náklad na odvoz; kapacita docku (staging miesta) počíta oboje.
  *
+ * **Prázdny kontajner** (`direction: 'empty'`, F6c, ADR-034 dodatok T6C-02) nie je náklad na odvoz nikdy: prázdny z vnútrozemia čaká
+ * na vozidlo do depa (intake) a prázdny z depa čaká na kamión misie `collect`, ktorý naň ukazuje poverením — oba počítajú len do
+ * kapacity docku (`intakeAt`), takže ich nenárokuje a nespúšťa kamión misie `pickup`.
+ *
  * Rozhodnutie je odvodené z kontraktu jednotky (nie z novej polohy ani štítku) — rovnaké pre originál aj obnovený svet.
  */
 import type { CargoUnit } from '../cargo/cargo-unit';
@@ -31,6 +35,7 @@ const NO_JOB: HasJobTest = () => false;
  * (T6A-09b). Jednotka bez kontraktu alebo s kontraktom mimo knihy sa odváža (ako vo F4).
  */
 export function isPickupCargo(contracts: ContractLookup, unit: CargoUnit, hasJob: HasJobTest = NO_JOB): boolean {
+  if (unit.direction === 'empty') return false;
   if (unit.direction === 'import' || unit.contractId === null) return true;
   const contract = contracts.get(unit.contractId);
   if (contract !== undefined && contract.outbound === 'held') return false;

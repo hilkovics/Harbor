@@ -26,8 +26,8 @@ function fail(what: string): never {
 export function toV7State(state: unknown): Json {
   const v8 = clone(state) as Json;
   if (v8['version'] !== 8) fail(`verziu ${String(v8['version'])} (čaká sa 8, toV7State)`);
-  const flow = v8['emptyFlow'] as { returnPlan: unknown[]; pickupPlan: unknown[] };
-  if (flow.returnPlan.length > 0 || flow.pickupPlan.length > 0) fail('plán prázdnych kontajnerov (emptyFlow)');
+  const flow = v8['emptyFlow'] as { returnPlan: unknown[]; pickupPlan: unknown[]; errands: unknown[] };
+  if (flow.returnPlan.length > 0 || flow.pickupPlan.length > 0 || flow.errands.length > 0) fail('plán prázdnych kontajnerov (emptyFlow)');
   const contracts = (v8['contracts'] as Json[]).map((contract) => {
     if ((contract['kind'] !== 'import' && contract['kind'] !== 'export') || contract['tranship'] !== null) fail(`kontrakt #${String(contract['id'])} druhu ${String(contract['kind'])} (F6c)`);
     return without(contract, ['lineId', 'tranship']);

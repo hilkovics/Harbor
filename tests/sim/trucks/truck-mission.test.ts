@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@sim/core';
 import {
+  TRUCK_COLLECT_STATE_TRAITS,
   TRUCK_DELIVERY_STATE_TRAITS,
   TRUCK_MISSIONS,
   TRUCK_MISSION_STATE_TRAITS,
@@ -49,8 +50,8 @@ describe('stav unloading a misie (ADR-032)', () => {
     expect(TRUCK_TRANSITIONS.get('to_dock')).toEqual(['loading', 'unloading', 'no_path']);
     expect(TRUCK_TRANSITIONS.get('unloading')).toEqual(['loading', 'to_gate_out']);
     expect(isTruckTransitionAllowed('loading', 'unloading')).toBe(false);
-    expect(TRUCK_MISSIONS).toEqual(['pickup', 'delivery']);
-    expect(TRUCK_MISSION_STATE_TRAITS).toEqual({ pickup: TRUCK_STATE_TRAITS, delivery: TRUCK_DELIVERY_STATE_TRAITS });
+    expect(TRUCK_MISSIONS).toEqual(['pickup', 'delivery', 'collect']);
+    expect(TRUCK_MISSION_STATE_TRAITS).toEqual({ pickup: TRUCK_STATE_TRAITS, delivery: TRUCK_DELIVERY_STATE_TRAITS, collect: TRUCK_COLLECT_STATE_TRAITS });
   });
 
   it('delivery: rovnaké väzby a pohyb ako pickup, bez nároku na náklad, náklad loaded → unloading → empty', () => {
@@ -95,5 +96,32 @@ describe('stav unloading a misie (ADR-032)', () => {
     const early = delivery();
     expect(() => early.becomePickup()).toThrow(/vo vykládke/);
     expect(early.mission).toBe('delivery');
+  });
+});
+
+describe('misia collect — výdaj prázdneho exportérovi (F6c, ADR-034)', () => {
+  it('rovnaké štrukturálne väzby ako pickup, bez nároku na náklad docku; náklad collected od odchodu od docku, loading pri nakládke', () => {
+    for (const state of TRUCK_STATES) {
+      for (const key of STRUCTURAL) expect(TRUCK_COLLECT_STATE_TRAITS[state][key], `${state}.${key}`).toBe(TRUCK_STATE_TRAITS[state][key]);
+    }
+    expect(TRUCK_STATES.filter((state) => TRUCK_COLLECT_STATE_TRAITS[state].claimsCargo)).toEqual([]);
+    expect(TRUCK_STATES.filter((state) => TRUCK_COLLECT_STATE_TRAITS[state].holdsIntake)).toEqual([]);
+    const cargo = Object.fromEntries(TRUCK_STATES.map((state) => [state, truckStateTraits('collect', state).cargo]));
+    expect(cargo).toMatchObject({ to_gate: 'empty', waiting: 'empty', to_dock: 'empty', loading: 'loading', to_gate_out: 'collected', gate_queue_out: 'collected', to_portal: 'collected', exited: 'collected' });
+  });
+
+  it('waiting → to_gate_out (vzdanie sa) je v tabuľke prechodov; iné stavy bez nového prechodu', () => {
+    expect(TRUCK_TRANSITIONS.get('waiting')).toEqual(['to_dock', 'to_gate_out']);
+    expect(isTruckTransitionAllowed('to_bay', 'to_gate_out')).toBe(false);
+    expect(isTruckTransitionAllowed('loading', 'to_gate_out')).toBe(true);
+  });
+
+  it('Truck s misiou collect: bonds a traits podľa misie, misia v save zázname, becomePickup odmietne', () => {
+    const truck = delivery({ mission: 'collect', state: 'waiting', bay: 1 });
+    expect([truck.mission, truck.bonds.claimsCargo, truck.bonds.cargo, truck.bonds.holdsDock]).toEqual(['collect', false, 'empty', false]);
+    expect(truck.toState().mission).toBe('collect');
+    truck.transition('to_gate_out');
+    expect([truck.state, truck.traits.cargo]).toEqual(['to_gate_out', 'collected']);
+    expect(() => truck.becomePickup()).toThrow(TruckError);
   });
 });

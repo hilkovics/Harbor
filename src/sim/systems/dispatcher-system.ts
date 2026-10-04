@@ -11,6 +11,7 @@ import {
   OutboundCancelGate,
   assignOpenJobs,
   cancelUnusableOutboundJobs,
+  createEmptyJobs,
   createExportJobs,
   createExportLoadJobs,
   createHookUnloadJobs,
@@ -35,13 +36,15 @@ export class DispatcherSystem {
   /**
    * Krok 5: `cancelUnusableOutboundJobs` (len po zmene ciest alebo modulov, `OutboundCancelGate`) → `createInboundJobs`
    * → `createHookUnloadJobs` (vykládka pod hákom, ADR-033) → `createExportJobs` (prijatie exportu z rampy, ADR-032) →
-   * `createExportLoadJobs` (nakládka exportu v poradí stowage plánu) → `createOutboundJobs` → `assignOpenJobs`.
+   * `createEmptyJobs` (prázdne kontajnery: prijatie do depa, výdaj kamiónu `collect`, ADR-034) → `createExportLoadJobs` (nakládka exportu
+   * v poradí stowage plánu) → `createOutboundJobs` → `assignOpenJobs`.
    */
   tick(world: World): void {
     if (this.cancelGate.due(world)) cancelUnusableOutboundJobs(world);
     createInboundJobs(world);
     createHookUnloadJobs(world);
     createExportJobs(world);
+    createEmptyJobs(world);
     createExportLoadJobs(world);
     createOutboundJobs(world, this.ramps, this.groups);
     assignOpenJobs(world, this.idle);

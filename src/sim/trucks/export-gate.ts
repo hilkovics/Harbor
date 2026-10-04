@@ -9,7 +9,12 @@
  * Hook platí pre prechod z fronty dnu aj pre urovnanie fronty po zmene siete (kamión „ide ďalej bez prechodu"), takže
  * každá jednotka, ktorá vstúpi na terminál, je zaregistrovaná práve raz. Misia sa vyberá tabuľkou (pravidlo 7) — pickup
  * kamión bránou nič neregistruje.
+ *
+ * **Prázdny kontajner** (F6c, ADR-034): kamión misie `delivery` môže viezť aj prázdny kontajner linky (`direction: 'empty'`, návrat
+ * z vnútrozemia) — brána ho neregistruje na kontrakt (nemá ho), len ohlási `EmptyReturned`. Smer jednotky vyberá tabuľka
+ * `DELIVERY_REGISTRARS` (jednotka iného smeru kamión s misiou `delivery` nevezie — riadky držia úplnosť tabuľky).
  */
+import type { CargoDirection } from '../cargo/cargo-unit';
 import type { World } from '../world/world';
 import type { Truck } from './truck';
 import { TRUCK_STATE_TRAITS, type TruckMission } from './truck-fsm';
@@ -35,10 +40,36 @@ function registerExport(world: World, truck: Truck): void {
   world.events.emit({ type: 'VgmHoldStarted', contractId: contract.id, unitId: unit.id, untilTick });
 }
 
-/** Hook po prechode bránou podľa misie kamióna (tabuľka, nie switch): pickup nič, delivery registruje export. */
+/** Kamión s prázdnym kontajnerom prešiel bránou dnu: `EmptyReturned` (návrat prázdneho z vnútrozemia, ADR-034). */
+function registerEmpty(world: World, truck: Truck): void {
+  const unitId = world.cargo.firstUnitAt('in_truck', truck.id);
+  const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
+  if (unit === undefined || unit.lineId === null) return;
+  world.events.emit({ type: 'EmptyReturned', unitId: unit.id, lineId: unit.lineId, truckId: truck.id, gateId: truck.gateId });
+}
+
+const NOTHING = (): void => undefined;
+
+/** Registrácia jednotky delivery kamióna podľa jej smeru (tabuľka, nie switch): export na kontrakt, prázdny ako návrat prázdneho. */
+const DELIVERY_REGISTRARS: { readonly [D in CargoDirection]: (world: World, truck: Truck) => void } = Object.freeze({
+  import: NOTHING,
+  export: registerExport,
+  tranship: NOTHING,
+  empty: registerEmpty,
+});
+
+/** Registrácia podľa smeru prvej jednotky kamióna (delivery vezie jednotky jedného smeru). */
+function registerDelivery(world: World, truck: Truck): void {
+  const unitId = world.cargo.firstUnitAt('in_truck', truck.id);
+  const direction = unitId === undefined ? undefined : world.cargo.get(unitId)?.direction;
+  if (direction !== undefined) DELIVERY_REGISTRARS[direction](world, truck);
+}
+
+/** Hook po prechode bránou podľa misie kamióna (tabuľka, nie switch): pickup a collect nič, delivery registruje jednotku. */
 const GATE_PASS_HOOKS: { readonly [M in TruckMission]: (world: World, truck: Truck) => void } = Object.freeze({
-  pickup: () => undefined,
-  delivery: registerExport,
+  pickup: NOTHING,
+  delivery: registerDelivery,
+  collect: NOTHING,
 });
 
 /**

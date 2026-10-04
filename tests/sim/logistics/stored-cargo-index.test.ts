@@ -131,3 +131,56 @@ describe('StoredCargoIndex vo svete: save/load a krok 12', () => {
     expect(findWorldViolation(world)).toMatch(/index uskladneného nákladu má 1 jednotiek, sklady 2/);
   });
 });
+
+describe('StoredCargoIndex: prázdne kontajnery (F6c, ADR-034)', () => {
+  const empty = (unitId: number, lineId: string, location: CargoLocation): CargoUnit =>
+    Object.freeze({ ...unitAt(unitId, null, location), direction: 'empty', lineId, voyageId: null, destinationPort: null, weightClass: 'light' });
+
+  it('prázdny nepatrí do skupiny null (odchádzajúci „voľný“ prúd) — vedie ho zvlášť podľa linky; size ho počíta, emptySize len prázdne', () => {
+    const index = new StoredCargoIndex();
+    index.cargoMoved(unitAt(50, null, vehicle), storage(5, 0));
+    index.cargoMoved(empty(51, 'blue_anchor', vehicle), storage(6, 0));
+    index.cargoMoved(empty(52, 'blue_anchor', vehicle), storage(6, 1));
+    index.cargoMoved(empty(53, 'golden_wave', vehicle), storage(5, 1));
+    expect(view(index.groupOf(null))).toEqual([[50, 5]]);
+    expect([...index.entries].map((group) => group.contractId)).toEqual([null]);
+    expect([...index.emptiesOf('blue_anchor')]).toEqual([51, 52]);
+    expect([...index.emptiesOf('golden_wave')]).toEqual([53]);
+    expect(index.emptiesOf('northern_star')).toEqual([]);
+    expect([index.size, index.emptySize]).toEqual([4, 3]);
+  });
+
+  it('výdaj prázdneho zo skladu ho vyradí z indexu linky; prázdny zoznam zanikne; export a iné presuny index nemenia', () => {
+    const index = new StoredCargoIndex();
+    index.cargoMoved(empty(60, 'blue_anchor', vehicle), storage(6, 0));
+    index.cargoMoved(empty(61, 'blue_anchor', vehicle), storage(6, 1));
+    index.cargoMoved(empty(62, 'blue_anchor', { kind: 'at_ramp', rampId: id(9), dock: 0 }), { kind: 'in_truck', truckId: id(800) });
+    expect(index.emptySize).toBe(2);
+    index.cargoMoved(empty(60, 'blue_anchor', storage(6, 0)), vehicle);
+    expect([...index.emptiesOf('blue_anchor')]).toEqual([61]);
+    index.cargoMoved(empty(61, 'blue_anchor', storage(6, 1)), vehicle);
+    expect(index.emptiesOf('blue_anchor')).toEqual([]);
+    expect([index.size, index.emptySize]).toEqual([0, 0]);
+    index.cargoMoved(empty(63, 'blue_anchor', storage(6, 2)), vehicle); // jednotka mimo indexu sa ignoruje
+    expect(index.emptySize).toBe(0);
+  });
+
+  it('rebuild z ledgera zostaví prázdne podľa linky (poradie nie je významné — výber určuje najmenšie id)', () => {
+    const units = new Map<number, CargoUnit>([
+      [70, empty(70, 'blue_anchor', storage(6, 0))],
+      [71, unitAt(71, 5, storage(5, 0))],
+      [72, empty(72, 'blue_anchor', storage(5, 1))],
+    ]);
+    const holders = new Map<number, number[]>([[5, [71, 72]], [6, [70]]]);
+    const source = {
+      countAt: (_kind: 'in_storage', holderId: EntityId): number => holders.get(holderId)?.length ?? 0,
+      unitAtIndex: (_kind: 'in_storage', holderId: EntityId, index: number): EntityId | undefined => holders.get(holderId)?.[index] as EntityId | undefined,
+      get: (unitId: EntityId): CargoUnit | undefined => units.get(unitId),
+    };
+    const index = new StoredCargoIndex();
+    index.rebuild(source, [id(5), id(6)]);
+    expect([...index.emptiesOf('blue_anchor')].sort()).toEqual([70, 72]);
+    expect(view(index.groupOf(contract(5)))).toEqual([[71, 5]]);
+    expect([index.size, index.emptySize]).toEqual([3, 2]);
+  });
+});

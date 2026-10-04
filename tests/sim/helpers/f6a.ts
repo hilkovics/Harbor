@@ -30,6 +30,8 @@ export interface F6aDefsOptions {
   readonly economy?: Readonly<Record<string, unknown>>;
   /** Prepíše polia `logistics.json` → `exportFlow`. */
   readonly exportFlow?: Readonly<Record<string, unknown>>;
+  /** Prepíše polia `logistics.json` → `emptyFlow` (F6c, ADR-034). */
+  readonly emptyFlow?: Readonly<Record<string, unknown>>;
   /** Prepíše polia lodnej triedy (`ships.json`). */
   readonly ship?: { readonly id: string; readonly fields: Readonly<Record<string, unknown>> };
   /** Prepíše `params` modulov podľa id defu (napr. `truck_waiting_area: { bays: 1 }`). */
@@ -61,7 +63,11 @@ export function f6aDefs(overrides: F6aDefsOptions = {}): DefRegistry {
       cutoffHours: F6A_CUTOFF_HOURS,
       ...overrides.economy,
     },
-    logistics: { ...RAW_DEFS.logistics, exportFlow: { ...RAW_DEFS.logistics.exportFlow, arrivalWindowDays: F6A_WINDOW_DAYS, ...overrides.exportFlow } },
+    logistics: {
+      ...RAW_DEFS.logistics,
+      exportFlow: { ...RAW_DEFS.logistics.exportFlow, arrivalWindowDays: F6A_WINDOW_DAYS, ...overrides.exportFlow },
+      emptyFlow: { ...RAW_DEFS.logistics.emptyFlow, ...overrides.emptyFlow },
+    },
   });
 }
 

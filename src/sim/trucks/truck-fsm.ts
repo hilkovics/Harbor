@@ -17,6 +17,12 @@
  * naloží import na tom istom docku (**dual transaction**: misia sa zmení na `pickup`, `unloading → loading`), alebo
  * odíde prázdny (`unloading → to_gate_out`). Vlastnosti stavu závisia od misie (`truckStateTraits(mission, state)`):
  * `TRUCK_STATE_TRAITS` sú vlastnosti `pickup`, `TRUCK_DELIVERY_STATE_TRAITS` vlastnosti `delivery`.
+ *
+ * **Misia `collect`** (F6c, ADR-034 dodatok T6C-02): kamión exportéra po **prázdny kontajner** linky (výdaj z depa). Príde prázdny,
+ * v stojisku čaká, kým mu dispatcher pridelí prázdny a ten sa objaví na jeho docku (`waiting → to_dock → loading`: nakládka
+ * pridelenej jednotky `at_ramp → in_truck`), a odíde s ním (`exported`). Bez pridelenej jednotky po `emptyPickupMaxWaitHours` odíde
+ * prázdny priamo zo stojiska (`waiting → to_gate_out`, bez docku). Nemá nárok na náklad docku (`claimsCargo: false`) — prázdny na docku
+ * nie je „náklad na odvoz“ (`isPickupCargo`), kamión naň ukazuje poverením v `World.emptyFlow`.
  */
 import type { TruckStateChangedEvent } from '../events/sim-event';
 import type { CarrierMotion, MotionTraits } from '../movement/motion-check';
@@ -48,7 +54,8 @@ export const TRUCK_TRANSITIONS: ReadonlyMap<TruckState, readonly TruckState[]> =
   ['to_gate', Object.freeze(['gate_queue', 'no_path'] as const)],
   ['gate_queue', Object.freeze(['to_bay'] as const)],
   ['to_bay', Object.freeze(['waiting', 'no_path'] as const)],
-  ['waiting', Object.freeze(['to_dock'] as const)],
+  // `waiting → to_gate_out`: kamión misie `collect` bez prideleného prázdneho po čakaní odíde zo stojiska rovno k bráne (nikdy nie pickup / delivery).
+  ['waiting', Object.freeze(['to_dock', 'to_gate_out'] as const)],
   ['to_dock', Object.freeze(['loading', 'unloading', 'no_path'] as const)],
   ['loading', Object.freeze(['to_gate_out'] as const)],
   ['unloading', Object.freeze(['loading', 'to_gate_out'] as const)],
@@ -79,12 +86,16 @@ export type TruckStop = 'gate' | 'waiting_area' | 'ramp' | 'portal';
 
 /**
  * Náklad kamióna podľa stavu (§7.5): `empty` 0, `loading` / `unloading` 0 … kapacita (počas nakládky / vykládky),
- * `full` = kapacita (pickup po nakládke), `loaded` 1 … kapacita (delivery pred vykládkou — F6a, ADR-032).
+ * `full` = kapacita (pickup po nakládke), `loaded` 1 … kapacita (delivery pred vykládkou — F6a, ADR-032), `collected` 0 … kapacita
+ * (kamión misie `collect` po nakládke alebo po vzdaní sa — F6c, ADR-034).
  */
-export type TruckCargo = 'empty' | 'loading' | 'unloading' | 'full' | 'loaded';
+export type TruckCargo = 'empty' | 'loading' | 'unloading' | 'full' | 'loaded' | 'collected';
 
-/** Misia kamióna (ADR-032): odvoz importu (`pickup`, F4) alebo dovoz exportu (`delivery`, F6a). */
-export const TRUCK_MISSIONS = ['pickup', 'delivery'] as const;
+/**
+ * Misia kamióna: odvoz importu (`pickup`, F4), dovoz exportu alebo prázdneho kontajnera (`delivery`, F6a, F6c) a výdaj prázdneho
+ * kontajnera exportérovi (`collect`, F6c, ADR-034).
+ */
+export const TRUCK_MISSIONS = ['pickup', 'delivery', 'collect'] as const;
 export type TruckMission = (typeof TRUCK_MISSIONS)[number];
 
 /** Je hodnota misia kamióna? */
@@ -180,10 +191,31 @@ export const TRUCK_DELIVERY_STATE_TRAITS: { readonly [S in TruckState]: TruckSta
   no_path: traits({ ...TRUCK_STATE_TRAITS.no_path }),
 } as const);
 
+/**
+ * Vlastnosti stavov kamióna s misiou `collect` (F6c, ADR-034): väzby (bay, dock, brána, pohyb) ako `pickup`, ale bez nároku na náklad
+ * docku (prázdny, ktorý mu dispatcher pridelí, nie je náklad na odvoz) a s nákladom `collected` (0 … kapacita) od nakládky po portál —
+ * kamión, ktorý sa vzdal, odchádza prázdny. Vykládku nepozná (riadok `unloading` drží úplnosť tabuľky).
+ */
+export const TRUCK_COLLECT_STATE_TRAITS: { readonly [S in TruckState]: TruckStateTraits } = Object.freeze({
+  to_gate: traits({ ...TRUCK_STATE_TRAITS.to_gate, claimsCargo: false }),
+  gate_queue: traits({ ...TRUCK_STATE_TRAITS.gate_queue, claimsCargo: false }),
+  to_bay: traits({ ...TRUCK_STATE_TRAITS.to_bay, claimsCargo: false }),
+  waiting: traits({ ...TRUCK_STATE_TRAITS.waiting, claimsCargo: false }),
+  to_dock: traits({ ...TRUCK_STATE_TRAITS.to_dock, claimsCargo: false }),
+  loading: traits({ ...TRUCK_STATE_TRAITS.loading, claimsCargo: false }),
+  unloading: traits({ ...TRUCK_STATE_TRAITS.unloading }),
+  to_gate_out: traits({ ...TRUCK_STATE_TRAITS.to_gate_out, cargo: 'collected' }),
+  gate_queue_out: traits({ ...TRUCK_STATE_TRAITS.gate_queue_out, cargo: 'collected' }),
+  to_portal: traits({ ...TRUCK_STATE_TRAITS.to_portal, cargo: 'collected' }),
+  exited: traits({ ...TRUCK_STATE_TRAITS.exited, cargo: 'collected' }),
+  no_path: traits({ ...TRUCK_STATE_TRAITS.no_path }),
+} as const);
+
 /** Tabuľky vlastností podľa misie (dáta, nie switch). */
 export const TRUCK_MISSION_STATE_TRAITS: { readonly [M in TruckMission]: { readonly [S in TruckState]: TruckStateTraits } } = Object.freeze({
   pickup: TRUCK_STATE_TRAITS,
   delivery: TRUCK_DELIVERY_STATE_TRAITS,
+  collect: TRUCK_COLLECT_STATE_TRAITS,
 });
 
 /** Vlastnosti stavu `state` pre kamión s misiou `mission`. */

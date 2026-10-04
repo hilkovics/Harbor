@@ -17,12 +17,13 @@
  * `shipArrivalTick = acceptedTick + max(1, round(rng.range(dni) × ticksPerDay))` (jediný `Rng` sveta, jedno číslo; `dni` =
  * `exportArrivalDaysRange` pri skupine s exportom, inak `arrivalDaysRange`), `slaDeadlineTick = shipArrivalTick + slaDays ×
  * ticksPerDay` každého kontraktu; export booking naplánuje cut-off a príchody kamiónov (`Contract.accept` — ťahy `Rng`
- * po ťahu príchodu, kontrakty vzostupne podľa id). Potom každý kontrakt `offered → accepted` (`ContractStateChanged`) a
+ * po ťahu príchodu, kontrakty vzostupne podľa id; v prístave s depom prázdnych potom ťahy výdaja prázdnych, F6c). Potom každý kontrakt `offered → accepted` (`ContractStateChanged`) a
  * `ContractAccepted`. Loď spawne `ContractSystem` v ticku príchodu.
  */
 import type { Contract } from '../contracts/contract';
 import type { ContractId } from '../core/entity-id';
 import { exportLandsideReadiness, type ExportReadiness } from '../logistics/export-readiness';
+import { planEmptyPickups } from '../trucks/empty-plan';
 import { berthReadiness, type BerthReadiness } from '../ships/berth-allocator';
 import type { World } from '../world/world';
 import type { SerializedCommand } from './command';
@@ -92,6 +93,8 @@ export class AcceptContractCommand extends ContractOfferCommand {
     };
     for (const contract of group) {
       contract.accept(context);
+      // Prístav s depom prázdnych: pre časť jednotiek exportu naplánuje výdaj prázdneho kontajnera linky (ADR-034, ťahy `Rng`).
+      planEmptyPickups(world, contract);
       world.contractBook.changeState(contract, 'accepted');
       world.events.emit({ type: 'ContractAccepted', contractId: contract.id });
     }

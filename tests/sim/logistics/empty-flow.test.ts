@@ -2,7 +2,7 @@
 // konzumácia, zrušenie výdajov bookingu, stav) a `parseEmptyFlowState` (fail-fast s pointerom). Plnenie plánu dodá T6C-02.
 import { describe, expect, it } from 'vitest';
 import { DefRegistry } from '@sim/defs';
-import { EMPTY_FLOW_STATE_KEYS, EmptyFlow, PICKUP_PLAN_ENTRY_KEYS, RETURN_PLAN_ENTRY_KEYS } from '@sim/logistics';
+import { EMPTY_FLOW_STATE_KEYS, ERRAND_ENTRY_KEYS, EmptyFlow, PICKUP_PLAN_ENTRY_KEYS, RETURN_PLAN_ENTRY_KEYS } from '@sim/logistics';
 import { WorldStateError, parseEmptyFlowState } from '@sim/world';
 import { RAW_DEFS } from '../world/world-fixtures';
 
@@ -11,7 +11,7 @@ const DEFS = DefRegistry.fromRaw(RAW_DEFS);
 describe('EmptyFlow — plán návratov', () => {
   it('nový plán je prázdny; nič nie je splatné', () => {
     const flow = new EmptyFlow();
-    expect([flow.returnPlan, flow.pickupPlan]).toEqual([[], []]);
+    expect([flow.returnPlan, flow.pickupPlan, flow.errands]).toEqual([[], [], []]);
     expect([flow.dueReturn(1_000_000), flow.duePickup(1_000_000)]).toEqual([undefined, undefined]);
   });
 
@@ -72,6 +72,42 @@ describe('EmptyFlow — plán výdajov exportérovi', () => {
   });
 });
 
+describe('EmptyFlow — poverenia kamiónov misie collect (dodatok T6C-02)', () => {
+  it('addErrand / errandOfTruck / errandOfUnit / assignErrandUnit / removeErrand', () => {
+    const flow = new EmptyFlow();
+    flow.addErrand(4, 'blue_anchor', 7, 900);
+    flow.addErrand(9, 'golden_wave', 8, 950);
+    expect(flow.errands.map((errand) => [errand.truckId, errand.unitId])).toEqual([[4, null], [9, null]]);
+    expect(flow.errandOfTruck(9)).toEqual({ truckId: 9, lineId: 'golden_wave', contractId: 8, unitId: null, giveUpTick: 950 });
+    expect(flow.errandOfUnit(55)).toBeUndefined();
+    flow.assignErrandUnit(9, 55);
+    expect(flow.errandOfUnit(55)?.truckId).toBe(9);
+    flow.assignErrandUnit(9, null);
+    expect(flow.errandOfUnit(55)).toBeUndefined();
+    flow.removeErrand(4);
+    flow.removeErrand(4); // kamión bez poverenia sa ignoruje
+    expect(flow.errands.map((errand) => errand.truckId)).toEqual([9]);
+  });
+
+  it('kamión môže mať najviac jedno poverenie; pridelenie neznámemu kamiónu je chyba', () => {
+    const flow = new EmptyFlow();
+    flow.addErrand(4, 'blue_anchor', 7, 900);
+    expect(() => flow.addErrand(4, 'blue_anchor', 7, 900)).toThrow(/už má poverenie/);
+    expect(() => flow.assignErrandUnit(5, 1)).toThrow(/nemá poverenie/);
+  });
+
+  it('getState nesie poverenia v poradí kľúčov; kópia nezdieľa objekty so živým plánom', () => {
+    const flow = new EmptyFlow();
+    flow.addErrand(4, 'blue_anchor', 7, 900);
+    flow.assignErrandUnit(4, 12);
+    const state = flow.getState();
+    expect(Object.keys(state.errands[0])).toEqual([...ERRAND_ENTRY_KEYS]);
+    expect(EmptyFlow.fromState(JSON.parse(JSON.stringify(state))).getState()).toEqual(state);
+    flow.assignErrandUnit(4, null);
+    expect(state.errands[0].unitId).toBe(12);
+  });
+});
+
 describe('EmptyFlow — stav', () => {
   it('getState → JSON → fromState: rovnaký plán v rovnakom poradí; kópia nezdieľa objekty so živým plánom', () => {
     const flow = new EmptyFlow();
@@ -98,13 +134,14 @@ describe('parseEmptyFlowState', () => {
       { dueTick: 100, lineId: 'golden_wave' },
     ],
     pickupPlan: [{ dueTick: 50, lineId: 'northern_star', contractId: 3 }],
+    errands: [{ truckId: 5, lineId: 'northern_star', contractId: 3, unitId: null, giveUpTick: 900 }],
   };
 
   it('platný stav prejde a výsledok nezdieľa objekty so vstupom', () => {
     const parsed = parseEmptyFlowState(valid, DEFS);
     expect(parsed).toEqual(valid);
     expect(parsed.returnPlan[0]).not.toBe(valid.returnPlan[0]);
-    expect(parseEmptyFlowState({ returnPlan: [], pickupPlan: [] }, DEFS)).toEqual({ returnPlan: [], pickupPlan: [] });
+    expect(parseEmptyFlowState({ returnPlan: [], pickupPlan: [], errands: [] }, DEFS)).toEqual({ returnPlan: [], pickupPlan: [], errands: [] });
   });
 
   it.each<[string, unknown, string]>([
@@ -117,6 +154,12 @@ describe('parseEmptyFlowState', () => {
     ['necelý dueTick návratu', { ...valid, returnPlan: [{ dueTick: 1.5, lineId: 'blue_anchor' }] }, '/emptyFlow/returnPlan/0/dueTick'],
     ['nezoradený návrat', { ...valid, returnPlan: [valid.returnPlan[0], { dueTick: 99, lineId: 'blue_anchor' }] }, '/emptyFlow/returnPlan/1/dueTick'],
     ['cudzí kľúč v návrate', { ...valid, returnPlan: [{ dueTick: 1, lineId: 'blue_anchor', contractId: 1 }] }, '/emptyFlow/returnPlan/0/contractId'],
+    ['poverenia nie pole', { ...valid, errands: {} }, '/emptyFlow/errands'],
+    ['poverenie s neznámou linkou', { ...valid, errands: [{ truckId: 5, lineId: 'ghost_line', contractId: 3, unitId: null, giveUpTick: 9 }] }, '/emptyFlow/errands/0/lineId'],
+    ['poverenie s kamiónom 0', { ...valid, errands: [{ truckId: 0, lineId: 'blue_anchor', contractId: 3, unitId: null, giveUpTick: 9 }] }, '/emptyFlow/errands/0/truckId'],
+    ['poverenia nie vzostupne podľa kamióna', { ...valid, errands: [{ truckId: 5, lineId: 'blue_anchor', contractId: 3, unitId: null, giveUpTick: 9 }, { truckId: 5, lineId: 'blue_anchor', contractId: 3, unitId: null, giveUpTick: 9 }] }, '/emptyFlow/errands/1/truckId'],
+    ['poverenie s unitId 0', { ...valid, errands: [{ truckId: 5, lineId: 'blue_anchor', contractId: 3, unitId: 0, giveUpTick: 9 }] }, '/emptyFlow/errands/0/unitId'],
+    ['poverenie so záporným giveUpTick', { ...valid, errands: [{ truckId: 5, lineId: 'blue_anchor', contractId: 3, unitId: null, giveUpTick: -1 }] }, '/emptyFlow/errands/0/giveUpTick'],
     ['neznáma linka vo výdaji', { ...valid, pickupPlan: [{ dueTick: 1, lineId: 'ghost_line', contractId: 1 }] }, '/emptyFlow/pickupPlan/0/lineId'],
     ['contractId 0 vo výdaji', { ...valid, pickupPlan: [{ dueTick: 1, lineId: 'blue_anchor', contractId: 0 }] }, '/emptyFlow/pickupPlan/0/contractId'],
     ['nezoradený výdaj', { ...valid, pickupPlan: [{ dueTick: 9, lineId: 'blue_anchor', contractId: 1 }, { dueTick: 8, lineId: 'blue_anchor', contractId: 2 }] }, '/emptyFlow/pickupPlan/1/dueTick'],
@@ -131,6 +174,6 @@ describe('parseEmptyFlowState', () => {
   });
 
   it('poradie nezoradenosti sa kontroluje zvlášť pre návraty a výdaje (výdaj nemusí nadväzovať na návrat)', () => {
-    expect(() => parseEmptyFlowState({ returnPlan: [{ dueTick: 900, lineId: 'blue_anchor' }], pickupPlan: [{ dueTick: 5, lineId: 'blue_anchor', contractId: 1 }] }, DEFS)).not.toThrow();
+    expect(() => parseEmptyFlowState({ returnPlan: [{ dueTick: 900, lineId: 'blue_anchor' }], pickupPlan: [{ dueTick: 5, lineId: 'blue_anchor', contractId: 1 }], errands: [] }, DEFS)).not.toThrow();
   });
 });

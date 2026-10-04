@@ -67,7 +67,7 @@ describe('migrácia save v7 → v8 (ADR-034)', () => {
     expect(save).toEqual(before);
     expect(migrated['version']).toBe(8);
     expect(migrated['rng']).toEqual(save['rng']);
-    expect(migrated['emptyFlow']).toEqual({ returnPlan: [], pickupPlan: [] });
+    expect(migrated['emptyFlow']).toEqual({ returnPlan: [], pickupPlan: [], errands: [] });
     const contracts = migrated['contracts'] as Json[];
     expect(contracts.length).toBeGreaterThan(0);
     for (const contract of contracts) expect([contract['lineId'], contract['tranship']]).toEqual([FIRST_LINE, null]);
@@ -113,7 +113,7 @@ describe('migrácia save v7 → v8 (ADR-034)', () => {
   );
 
   it('v7 s kľúčom v8 (emptyFlow) → WorldStateError na /emptyFlow (tvar v7)', () => {
-    expect(loadError({ ...clone(SLICE), emptyFlow: { returnPlan: [], pickupPlan: [] } }).path).toBe('/emptyFlow');
+    expect(loadError({ ...clone(SLICE), emptyFlow: { returnPlan: [], pickupPlan: [], errands: [] } }).path).toBe('/emptyFlow');
   });
 });
 
@@ -158,6 +158,7 @@ describe('WorldState v8: polia F6c v save a roundtrip', () => {
       emptyFlow: {
         returnPlan: [{ dueTick: base.clock.tick + 100, lineId: 'blue_anchor' }, { dueTick: base.clock.tick + 100, lineId: 'golden_wave' }],
         pickupPlan: [{ dueTick: base.clock.tick + 50, lineId: 'northern_star', contractId: 3 }],
+        errands: [],
       },
     };
     const world = World.deserialize(DEFS, MAP, clone(state));
@@ -219,10 +220,10 @@ describe('WorldState v8: polia F6c v save a roundtrip', () => {
     ['jednotka kontraktu s inou linkou ako kontrakt', (s) => ({ ...s, cargo: { ...s.cargo, units: s.cargo.units.map((u, i) => (i === 0 ? { ...u, lineId: 'golden_wave' } : u)) } }), '/cargo/units/0/lineId'],
     ['poškodený import', (s) => ({ ...s, cargo: { ...s.cargo, units: s.cargo.units.map((u, i) => (i === 0 ? { ...u, status: 'damaged' } : u)) } }), '/cargo/units/0/status'],
     ['chýba emptyFlow', (s) => ({ ...s, emptyFlow: undefined as never }), '/emptyFlow'],
-    ['plán návratov nie je zoradený', (s) => ({ ...s, emptyFlow: { returnPlan: [{ dueTick: 9, lineId: 'blue_anchor' }, { dueTick: 3, lineId: 'blue_anchor' }], pickupPlan: [] } }), '/emptyFlow/returnPlan/1/dueTick'],
-    ['plán s neznámou linkou', (s) => ({ ...s, emptyFlow: { returnPlan: [{ dueTick: 9, lineId: 'ghost_line' }], pickupPlan: [] } }), '/emptyFlow/returnPlan/0/lineId'],
-    ['výdaj s kontraktom 0', (s) => ({ ...s, emptyFlow: { returnPlan: [], pickupPlan: [{ dueTick: 9, lineId: 'blue_anchor', contractId: 0 }] } }), '/emptyFlow/pickupPlan/0/contractId'],
-    ['plán s neznámym kľúčom', (s) => ({ ...s, emptyFlow: { returnPlan: [], pickupPlan: [], extra: [] } as never }), '/emptyFlow/extra'],
+    ['plán návratov nie je zoradený', (s) => ({ ...s, emptyFlow: { returnPlan: [{ dueTick: 9, lineId: 'blue_anchor' }, { dueTick: 3, lineId: 'blue_anchor' }], pickupPlan: [], errands: [] } }), '/emptyFlow/returnPlan/1/dueTick'],
+    ['plán s neznámou linkou', (s) => ({ ...s, emptyFlow: { returnPlan: [{ dueTick: 9, lineId: 'ghost_line' }], pickupPlan: [], errands: [] } }), '/emptyFlow/returnPlan/0/lineId'],
+    ['výdaj s kontraktom 0', (s) => ({ ...s, emptyFlow: { returnPlan: [], pickupPlan: [{ dueTick: 9, lineId: 'blue_anchor', contractId: 0 }], errands: [] } }), '/emptyFlow/pickupPlan/0/contractId'],
+    ['plán s neznámym kľúčom', (s) => ({ ...s, emptyFlow: { returnPlan: [], pickupPlan: [], errands: [], extra: [] } as never }), '/emptyFlow/extra'],
   ];
 
   it.each(CORRUPTIONS)('%s → WorldStateError s cestou', (_name, corrupt, path) => {
@@ -247,7 +248,7 @@ describe('toV7State — pomôcka zhodenia tvaru v8 (testový helper)', () => {
 
   it.each<[string, (state: WorldState) => unknown, RegExp]>([
     ['iná verzia než 8', (state) => ({ ...state, version: 7 }), /čaká sa 8/],
-    ['neprázdny plán prázdnych', (state) => ({ ...state, emptyFlow: { returnPlan: [{ dueTick: 1, lineId: 'blue_anchor' }], pickupPlan: [] } }), /emptyFlow/],
+    ['neprázdny plán prázdnych', (state) => ({ ...state, emptyFlow: { returnPlan: [{ dueTick: 1, lineId: 'blue_anchor' }], pickupPlan: [], errands: [] } }), /emptyFlow/],
     ['prázdna jednotka', (state) => withEmptyUnit(state), /smeru empty/],
   ])('odmietne: %s (v7 to nevie zapísať)', (_name, mutate, message) => {
     expect(() => toV7State(mutate(baseState()))).toThrow(message);

@@ -47,7 +47,9 @@
  * - vo všetkých stavoch po prijatí: `CutoffWarning` v ticku `cutoffTick − round(cutoffWarningHours × ticksPerHour)` a
  *   `CutoffPassed` v ticku `cutoffTick` (bezstavovo podľa ticku);
  * - po všetkých kontraktoch uvoľnenie VGM hold: jednotky s `untilTick ≤ tick` vzostupne podľa (`untilTick`, id) →
- *   `VgmHoldReleased`.
+ *   `VgmHoldReleased`;
+ * - potom opravy prázdnych kontajnerov v depách (F6c, ADR-034; `EmptyDepotService`): skončené opravy (`EmptyRepaired`, poplatok
+ *   `maintenance_repair`) a nové opravy poškodených jednotiek (`EmptyRepairStarted`).
  * - `exporting`: keď loď opustí kotvisko (`undocking` a ďalej, alebo už nie je na mape) → `closeBooking`: penalizácie
  *   `BookingPenaltyApplied` (last minute, rolled, nesplnený booking), `completed` s výplatou pomerne k naloženým (ak naložená
  *   ≥ 1 jednotka), inak `failed` (ADR-032 bod 14); inak SLA ako import.
@@ -71,6 +73,7 @@ import {
 } from '../contracts/contract-terms';
 import type { HoldEntry } from '../cargo/hold-index';
 import type { ClockBoundaries } from '../core/sim-clock';
+import { EmptyDepotService } from '../logistics/empty-depot-service';
 import { loadingInFlight, loadingStopped } from '../logistics/voyage-cargo';
 import { SHIP_STATE_TRAITS, type ShipState } from '../ships/ship-fsm';
 import { spawnShip } from '../ships/spawn-ship';
@@ -383,6 +386,8 @@ function snapshotOpen(world: World, into: Contract[]): Contract[] {
 export class ContractSystem {
   /** Znovupoužiteľná snímka neukončených kontraktov (hot path bez alokácie; nie je stav simulácie). */
   private readonly open: Contract[] = [];
+  /** Opravy prázdnych kontajnerov v depách (F6c, ADR-034); cache zoznamu dep, nie stav simulácie. */
+  private readonly depots = new EmptyDepotService();
   /** Doplnenie poolu už v tejto inštancii prebehlo (pokus pre nedotknutú knihu len raz; viď hlavička, T06-08b). */
   private refilled = false;
 
@@ -394,6 +399,7 @@ export class ContractSystem {
       CONTRACT_STEPS[contract.kind][contract.state](contract, world);
     }
     releaseVgmHolds(world);
+    this.depots.tick(world);
     if (closed.dayClosed) expireOffers(world, open);
     open.length = 0;
     if (closed.dayClosed || world.clock.tick === GAME_START_TICK || (world.contractBook.untouched && !this.refilled)) {

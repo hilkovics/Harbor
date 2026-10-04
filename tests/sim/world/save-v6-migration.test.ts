@@ -66,7 +66,7 @@ describe('migrácia save v6 → v7 (rozhodnutie 14, ADR-032)', () => {
     const migrated = migrateWorldState(V6, DEFS) as Json;
     expect(V6).toEqual(before);
     expect(migrated['version']).toBe(8);
-    expect(migrated['emptyFlow']).toEqual({ returnPlan: [], pickupPlan: [] });
+    expect(migrated['emptyFlow']).toEqual({ returnPlan: [], pickupPlan: [], errands: [] });
     expect(migrated['rng']).toEqual(V6['rng']);
     expect(migrated['nextVoyageId']).toBe(V6['nextContractId']);
     for (const contract of migrated['contracts'] as Json[]) {

@@ -179,7 +179,7 @@ describe('migrateWorldState', () => {
       if (key !== 'version') expect(migrated[key]).toEqual(v1[key]);
     }
     expect(migrated.version).toBe(8);
-    expect(migrated.emptyFlow).toEqual({ returnPlan: [], pickupPlan: [] });
+    expect(migrated.emptyFlow).toEqual({ returnPlan: [], pickupPlan: [], errands: [] });
     expect(migrated.traffic).toEqual([]);
     expect(migrated.modules).toEqual([]);
     expect(migrated.cargo).toEqual({ createdCount: 0, exportedCount: 0, units: [], shippedCount: 0 });

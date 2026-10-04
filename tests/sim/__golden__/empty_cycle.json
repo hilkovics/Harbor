@@ -1,0 +1,14 @@
+{
+  "cashEnd": 31815020,
+  "exportedUnits": 78,
+  "shippedUnits": 36,
+  "contractsCompleted": 2,
+  "xp": 100,
+  "emptyReturns": 40,
+  "emptyFallbackStored": 0,
+  "emptyDamaged": 4,
+  "emptyRepaired": 4,
+  "repairCostCents": 48000,
+  "emptyPickedUp": 14,
+  "emptyPickupMisses": 10
+}

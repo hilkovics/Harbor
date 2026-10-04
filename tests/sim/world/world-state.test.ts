@@ -94,7 +94,7 @@ describe('World.serialize — WorldState v8', () => {
       'emptyFlow',
     ]);
     expect(state.version).toBe(WORLD_STATE_VERSION);
-    expect(state.emptyFlow).toEqual({ returnPlan: [], pickupPlan: [] });
+    expect(state.emptyFlow).toEqual({ returnPlan: [], pickupPlan: [], errands: [] });
     // Nová hra pred prvým tickom: pool sa plní až v kroku 2 prvého ticku (ADR-026).
     expect([state.contracts, state.xp, state.completedContracts, state.nextContractId, state.nextVoyageId]).toEqual([[], 0, 0, 1, 1]);
     expect(state.cargo).toEqual({ createdCount: 0, exportedCount: 0, shippedCount: 0, units: [] });

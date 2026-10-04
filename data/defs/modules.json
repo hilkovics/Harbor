@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "items": [
+    {
+      "id": "berth_standard",
+      "kind": "berth",
+      "displayName": "Kotvisko",
+      "footprint": { "w": 8, "h": 3 },
+      "placement": {
+        "requiredTerrain": ["quay"],
+        "waterSide": "north",
+        "requiresParcelOwnership": true
+      },
+      "connectors": [
+        { "x": 1, "y": 2, "side": "s", "type": "road" },
+        { "x": 6, "y": 2, "side": "s", "type": "road" }
+      ],
+      "costCents": 40000000,
+      "maintenancePerDayCents": 120000,
+      "params": { "depthClass": 1, "apronSlots": 8, "maxCranes": 2, "frontWaterCells": 3, "apronReserveSlots": 2, "handoverMode": "under_hook", "craneBufferSlots": 1 }
+    },
+    {
+      "id": "crane_container_gantry",
+      "kind": "crane",
+      "displayName": "Kontajnerový žeriav",
+      "footprint": { "w": 2, "h": 3 },
+      "placement": {
+        "requiredTerrain": ["quay"],
+        "requiresParcelOwnership": true,
+        "mustAttachTo": ["berth"]
+      },
+      "connectors": [],
+      "costCents": 60000000,
+      "maintenancePerDayCents": 90000,
+      "params": { "cycleTicks": 12, "category": "container", "wagePerDayCents": 25000, "dualCycleFactor": 1.5 }
+    },
+    {
+      "id": "container_yard_small",
+      "kind": "storage",
+      "displayName": "Kontajnerový dvor S",
+      "footprint": { "w": 4, "h": 4 },
+      "placement": {
+        "requiredTerrain": ["land", "quay"],
+        "requiresParcelOwnership": true
+      },
+      "connectors": [{ "x": 1, "y": 3, "side": "s", "type": "road" }],
+      "costCents": 15000000,
+      "maintenancePerDayCents": 30000,
+      "params": { "capacityUnits": 64, "category": "container" }
+    },
+    {
+      "id": "vehicle_depot",
+      "kind": "depot",
+      "displayName": "Depo vozidiel",
+      "footprint": { "w": 3, "h": 3 },
+      "placement": {
+        "requiredTerrain": ["land", "quay"],
+        "requiresParcelOwnership": true
+      },
+      "connectors": [{ "x": 1, "y": 2, "side": "s", "type": "road" }],
+      "costCents": 9000000,
+      "maintenancePerDayCents": 15000,
+      "params": { "capacity": 10 }
+    },
+    {
+      "id": "truck_gate",
+      "kind": "gate",
+      "displayName": "Brána kamiónov",
+      "footprint": { "w": 2, "h": 2 },
+      "placement": {
+        "requiredTerrain": ["land", "quay"],
+        "requiresParcelOwnership": true
+      },
+      "connectors": [
+        { "x": 0, "y": 0, "side": "n", "type": "road" },
+        { "x": 0, "y": 1, "side": "s", "type": "road" }
+      ],
+      "costCents": 8000000,
+      "maintenancePerDayCents": 15000,
+      "params": { "processTicks": 18 }
+    },
+    {
+      "id": "truck_waiting_area",
+      "kind": "waiting_area",
+      "displayName": "Čakacia plocha",
+      "footprint": { "w": 4, "h": 3 },
+      "placement": {
+        "requiredTerrain": ["land", "quay"],
+        "requiresParcelOwnership": true
+      },
+      "connectors": [
+        { "x": 0, "y": 2, "side": "w", "type": "road" },
+        { "x": 3, "y": 2, "side": "e", "type": "road" }
+      ],
+      "costCents": 6000000,
+      "maintenancePerDayCents": 10000,
+      "params": { "bays": 6 }
+    },
+    {
+      "id": "loading_ramp_container",
+      "kind": "ramp",
+      "displayName": "Rampa · kontajnery",
+      "footprint": { "w": 4, "h": 2 },
+      "placement": {
+        "requiredTerrain": ["land", "quay"],
+        "requiresParcelOwnership": true
+      },
+      "connectors": [
+        { "x": 1, "y": 1, "side": "s", "type": "road" },
+        { "x": 2, "y": 1, "side": "s", "type": "road" }
+      ],
+      "costCents": 10000000,
+      "maintenancePerDayCents": 20000,
+      "params": { "docks": 2, "stagingPerDock": 4, "loadTicksPerUnit": 6, "category": "container" }
+    }
+  ]
+}

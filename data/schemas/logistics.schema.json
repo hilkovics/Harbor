@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "logistics.json",
+  "description": "Logistické konštanty (ARCHITECTURE §4.6, §7.3, §7.4, §7.6; ADR-010, ADR-029): pobyt vozidla v module, opakovanie hľadania cesty, model kongescie a lodná navigácia. Konfiguračný def bez items[] (ADR-009); všetky trvania v tickoch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "defaultInternalTicks", "repathIntervalTicks", "congestion", "shipNavigation", "exportFlow"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Verzia schémy defu."
+    },
+    "defaultInternalTicks": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Predvolený vnútorný čas vozidla v module pred load/unload; modul ho môže prepísať `params.internalTicks`."
+    },
+    "repathIntervalTicks": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Po koľkých tickoch skúša vozidlo bez cesty (`no_path`) hľadať cestu znova."
+    },
+    "congestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trafficDecayPerHour", "slowdownPerExtraVehicle", "penaltyTrafficDivisor", "penaltyMax"],
+      "properties": {
+        "trafficDecayPerHour": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Násobiteľ `cell.traffic` pri každom HourClosed (0 = okamžitý reset, 1 = bez útlmu)."
+        },
+        "slowdownPerExtraVehicle": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Spomalenie vozidla za každé ďalšie vozidlo na bunke (použije sa vo F11)."
+        },
+        "penaltyTrafficDivisor": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Delenie `cell.traffic` pri výpočte penalizácie ceny bunky v A* (použije sa vo F11)."
+        },
+        "penaltyMax": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Strop penalizácie ceny bunky v A* (použije sa vo F11)."
+        }
+      }
+    },
+    "shipNavigation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approachMarginCells", "sweepStepCells", "turnManeuvers", "sidewaysManeuvers"],
+      "description": "Lodná navigácia (ARCHITECTURE §7.4, ADR-029; T06-07): geometria rezervácií trás a lexikografická cena A* po vode. Štrukturálne hodnoty, nie balans.",
+      "properties": {
+        "approachMarginCells": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Rezerva (bunky) za bodom priblíženia v páse pred kotviskami, kam anchorage nesmie: pás vody kotviska + šírka najširšej lode + táto rezerva na otočenie a posun v bunke bodu priblíženia (stav lode = stred bunky)."
+        },
+        "sweepStepCells": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 1,
+          "description": "Krok vzorkovania šikmého úseku trasy lode pri výpočte zabratých buniek (bunky); menší = tesnejší obal, výsledok je konzervatívny pri každom kroku. Rozsah 0,1–1: nad 1 bunku obal šikmého úseku zbytočne narastie (loď si rezervuje priveľa buniek), pod 0,1 rastie počet obdĺžnikov obalu bez úžitku (rezervácie sa prepočítavajú každý tick)."
+        },
+        "turnManeuvers": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Manévre za otočenie lode na mieste — druhá zložka lexikografickej ceny A* po vode (najprv pohyby, potom manévre). Strop drží cenu v bezpečných celých číslach."
+        },
+        "sidewaysManeuvers": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Manévre navyše za krok lode bokom (kolmo na os) — druhá zložka lexikografickej ceny A* po vode."
+        }
+      }
+    },
+    "exportFlow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["arrivalWindowDays", "vgmMissingChance", "vgmHoldHours", "weightClassShares"],
+      "description": "Tok exportu po súši (F6a, ADR-032): príchody kamiónov s exportom pred loďou, brána (VGM) a hmotnostné triedy jednotiek.",
+      "properties": {
+        "arrivalWindowDays": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Okno príchodov exportu pred loďou (dni): kamióny prichádzajú od príchod lode − okno po cut-off."
+        },
+        "vgmMissingChance": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Pravdepodobnosť, že jednotka pri bráne nemá VGM a ide do hold."
+        },
+        "vgmHoldHours": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Trvanie VGM hold v hodinách; jednotka sa potom uvoľní sama."
+        },
+        "weightClassShares": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["light", "medium", "heavy"],
+          "description": "Váhy výberu hmotnostnej triedy exportnej jednotky. Súčet > 0 schéma nevyjadrí — kontroluje ho DefRegistry a `pnpm validate:defs`.",
+          "properties": {
+            "light": { "type": "number", "minimum": 0 },
+            "medium": { "type": "number", "minimum": 0 },
+            "heavy": { "type": "number", "minimum": 0 }
+          }
+        }
+      }
+    }
+  }
+}

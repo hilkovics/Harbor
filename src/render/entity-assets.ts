@@ -82,10 +82,20 @@ export interface ModuleSpriteEntry {
   readonly connectors: readonly ManifestConnector[];
 }
 
-/** Sprity lode v `entities.ship_<classId>`: footprint (`w` = šírka, `h` = dĺžka) a varianty paluby. */
+/**
+ * Paluba kontajnerovej lode (`entities.ship_<classId>.deck`, F6a): `bays` sú polia paluby od predku k zadku (obdĺžniky v px
+ * súboru pri rot 0, rovnaké ako šedé polia v sprite `empty`), `columns` je počet kontajnerov naprieč lodou v jednom poli.
+ */
+export interface ShipDeckEntry {
+  readonly columns: number;
+  readonly bays: readonly ManifestRect[];
+}
+
+/** Sprity lode v `entities.ship_<classId>`: footprint (`w` = šírka, `h` = dĺžka), varianty paluby a (kontajnerové lode) polia paluby. */
 export interface ShipSpriteEntry {
   readonly footprint: CellSize;
   readonly variants: Readonly<Record<string, { readonly empty: string; readonly loaded: string }>>;
+  readonly deck?: ShipDeckEntry;
 }
 
 /** Sprity vozidla v `entities.<defId>`: footprint (`w` = šírka, `h` = dĺžka, predok hore) a stavy `empty` / `loaded`. */
@@ -128,6 +138,11 @@ export function moduleSprite(defId: string): ModuleSpriteEntry | undefined {
 /** Záznam lode triedy `classId` (`entities.ship_<classId>`), alebo `undefined`. */
 export function shipSprite(classId: string): ShipSpriteEntry | undefined {
   return lookup(SHIP_SPRITES, `${SHIP_ENTRY_PREFIX}${classId}`);
+}
+
+/** Polia paluby kontajnerovej lode triedy `classId` (`entities.ship_<classId>.deck`), alebo `undefined` (trieda / paluba v manifeste chýba). */
+export function shipDeck(classId: string): ShipDeckEntry | undefined {
+  return shipSprite(classId)?.deck;
 }
 
 /**

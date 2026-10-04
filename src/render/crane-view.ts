@@ -28,9 +28,35 @@ import {
   type ModuleSpriteEntry,
 } from './entity-assets';
 import { footprintPose, type FootprintPose } from './footprint-pose';
-import type { CraneVM } from './view-models';
+import type { CraneCycleVM, CraneVM } from './view-models';
 
 export type CraneState = CraneVM['state'];
+
+/** Smer pohybu nákladu v cykle: `unload` = loď → apron, `load` = apron → loď. */
+export type CraneDirection = 'unload' | 'load';
+
+/**
+ * Smer a podoba cyklu (F6a, ADR-032 bod 11) podľa `CraneVM.cycle` — zrkadlo `CRANE_CYCLE_TRAITS` simu (`tests/render/crane-cycle.test.ts`
+ * stráži zhodu). `trolley` je dráha vozíka (podiel dráhy 0 = pevnina, 1 = more) vo fázach `grabbing` a `placing`: `[od, do]`.
+ *  - `unload`: `grabbing` 0 → 1 (vozík ide k lodi po kontajner), `placing` 1 → 0 (nesie ho na apron);
+ *  - `load` (opačný smer): `grabbing` 1 → 0 (vozík ide k aprone po kontajner), `placing` 0 → 1 (nesie ho k lodi). Po nakládke vozík
+ *    stojí pri lodi, takže ďalšia nakládka hneď v tom istom ticku nadväzuje bez skoku;
+ *  - dual cyklus: polovica `dual_load` začína pri aprone (predchádzajúca polovica `dual_unload` tam skončila): `grabbing` stojí 0,
+ *    `placing` 0 → 1; polovica `dual_unload` začína pri lodi (kontajner práve položil): `grabbing` stojí 1, `placing` 1 → 0.
+ */
+export const CRANE_CYCLE_STYLE: Readonly<
+  Record<CraneCycleVM, { readonly direction: CraneDirection; readonly grabbing: readonly [number, number]; readonly placing: readonly [number, number] }>
+> = Object.freeze({
+  unload: { direction: 'unload', grabbing: [0, 1], placing: [1, 0] },
+  load: { direction: 'load', grabbing: [1, 0], placing: [0, 1] },
+  dual_load: { direction: 'load', grabbing: [0, 0], placing: [0, 1] },
+  dual_unload: { direction: 'unload', grabbing: [1, 1], placing: [1, 0] },
+});
+
+/** Smer cyklu; chýbajúci `cycle` (VM z F2–F6) = vykládka. */
+export function craneCycleDirection(cycle: CraneCycleVM | undefined): CraneDirection {
+  return CRANE_CYCLE_STYLE[cycle ?? 'unload'].direction;
+}
 
 /**
  * Sklon výložníka v stupňoch (v smere hodinových ručičiek) podľa fázy: pri `grabbing` sa mierne vychýli doprava,
@@ -44,6 +70,12 @@ export const CRANE_BOOM_TILT_DEG: Readonly<Record<CraneState, number>> = {
   blocked: 0,
 };
 
+/** Sklon výložníka pre fázu a smer cyklu: pri nakládke je znamienko opačné (`grabbing` ide k aprone, `placing` k lodi). */
+export function craneBoomTilt(state: CraneState, cycle: CraneCycleVM | undefined): number {
+  const tilt = CRANE_BOOM_TILT_DEG[state];
+  return craneCycleDirection(cycle) === 'load' ? 0 - tilt : tilt; // `0 - tilt`: bez zápornej nuly pri `idle`
+}
+
 /** Najväčší násobok odznaku pri malom zoome (odznak ostáva čitateľný, ale nezaberá celý žeriav). */
 export const BADGE_MAX_SCALE = 2;
 
@@ -55,21 +87,23 @@ const FALLBACK_FOOTPRINT: CellSize = { w: 1, h: 1 };
 
 /**
  * Poloha vozíka pozdĺž výložníka ako podiel dráhy: 0 = pevninský koniec, 1 = morský koniec.
- * `idle` a `blocked` stoja na pevnine; `grabbing` ide k lodi (`progress`); `swinging` je pri lodi (práve chytil náklad);
- * `placing` sa vracia k apronu (`1 − progress`).
+ * `idle` a `blocked` stoja na pevnine. Vykládka (`cycle` `unload`, predvolené): `grabbing` ide k lodi (`progress`); `swinging` je pri
+ * lodi (práve chytil náklad); `placing` sa vracia k apronu (`1 − progress`). Nakládka a dual cyklus (`CRANE_CYCLE_STYLE`) idú opačne:
+ * `grabbing` k aprone, `placing` k lodi; `swinging` je pri mieste uchopenia (koniec `grabbing`).
  */
-export function trolleyTravelFraction(state: CraneState, progress: number): number {
+export function trolleyTravelFraction(state: CraneState, progress: number, cycle: CraneCycleVM = 'unload'): number {
   const p = Math.min(1, Math.max(0, progress));
+  const style = CRANE_CYCLE_STYLE[cycle];
   switch (state) {
     case 'idle':
     case 'blocked':
       return 0;
     case 'grabbing':
-      return p;
+      return style.grabbing[0] + (style.grabbing[1] - style.grabbing[0]) * p;
     case 'swinging':
-      return 1;
+      return style.grabbing[1];
     case 'placing':
-      return 1 - p;
+      return style.placing[0] + (style.placing[1] - style.placing[0]) * p;
   }
 }
 
@@ -179,6 +213,7 @@ export class CraneView {
     if (
       before.state === vm.state &&
       before.progress === vm.progress &&
+      before.cycle === vm.cycle &&
       before.holding?.unitId === vm.holding?.unitId &&
       before.holding?.typeId === vm.holding?.typeId
     ) {
@@ -193,10 +228,10 @@ export class CraneView {
     const travel = this.parts?.mover?.travel;
     const boomPivot = this.parts?.boom?.pivot;
     if (travel !== undefined && boomPivot !== undefined) {
-      const y = trolleyBoomY(trolleyTravelFraction(vm.state, vm.progress), travel);
+      const y = trolleyBoomY(trolleyTravelFraction(vm.state, vm.progress, vm.cycle), travel);
       this.moverGroup.y = (y - boomPivot.y) * this.scale;
     }
-    this.boomGroup.angle = CRANE_BOOM_TILT_DEG[vm.state];
+    this.boomGroup.angle = craneBoomTilt(vm.state, vm.cycle);
     this.syncHeld(vm);
     this.badge.visible = vm.state === 'blocked';
   }

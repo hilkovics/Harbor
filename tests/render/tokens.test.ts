@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  DIRECTION_OUTLINE_SHADE,
   ROAD_EDGE_SHADE,
   loadEntityPalette,
   loadRenderPalette,
@@ -144,6 +145,16 @@ describe('loadEntityPalette', () => {
     expect(palette.label.fontFamily).toContain('Inter');
     expect(palette.label.fontWeight).toBe('600');
     expect(palette.label.sizePx).toBe(12);
+  });
+
+  it('F6a: smer nákladu (import = farba kontajnera, export = --ui-accent s odvodeným obrysom) a prstenec lashingu', () => {
+    const palette = loadEntityPalette(tokenResolverFromCss(TOKENS_CSS));
+    expect(palette.direction.import.base.color).toBe(0xf28c28);
+    expect(palette.direction.import.dark.color).toBe(0xc7680c);
+    expect(palette.direction.export.base.color).toBe(0x3aa0ff);
+    expect(palette.direction.export.dark).toEqual(shadeColor(palette.direction.export.base, DIRECTION_OUTLINE_SHADE));
+    expect(palette.lashing.track.color).toBe(0x2e4760);
+    expect(palette.lashing.progress.color).toBe(0xf2b233);
   });
 
   it('chýbajúci token → chyba s jeho menom', () => {

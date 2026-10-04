@@ -252,7 +252,8 @@ export class WorldRenderer {
     this.world.scale.set(scale);
     this.parcels.setZoom(this.camera.zoom); // obrysy parciel držia hrúbku na obrazovke aj pri malom zoome
     this.cranes.setZoom(this.camera.zoom); // odznaky žeriavov ostávajú čitateľné pri malom zoome
-    this.modules.setZoom(this.camera.zoom); // odznaky „nepripojené“ tiež
+    this.modules.setZoom(this.camera.zoom); // odznaky „nepripojené“ a VGM hold tiež
+    this.ships.setZoom(this.camera.zoom); // odznak lashingu lode tiež
     this.syncedVersion = this.camera.version;
   }
 

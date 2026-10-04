@@ -8,6 +8,7 @@
  * kreslia nad loďami a kamióny nad vozidlami (`zIndex`), nezávisle od poradia, v akom views vznikli.
  */
 import { Container } from 'pixi.js';
+import { badgeScaleForZoom } from './crane-view';
 import { ShipView, sameShipShape, type ShipViewDeps } from './ship-view';
 import { TruckView, sameTruckShape } from './truck-view';
 import { VehicleView, sameVehicleShape, type VehicleViewDeps } from './vehicle-view';
@@ -27,12 +28,15 @@ export class EntityLayer {
   private readonly trucks: ViewSync<TruckVM, TruckView>;
   /** Interpolačný podiel aktuálneho `sync` / `syncVehicles` / `syncTrucks` (hooky `create` a `update` ho čítajú). */
   private alpha = 1;
+  /** Násobok odznakov lodí (lashing) pre aktuálny zoom; nové views ho dostanú pri vzniku. */
+  private badgeScale: number;
 
   constructor(deps: ShipViewDeps & VehicleViewDeps) {
+    this.badgeScale = deps.badgeScale ?? 1;
     this.view.sortableChildren = true;
     this.ships = new ViewSync<ShipVM, ShipView>({
       create: (vm) => {
-        const view = new ShipView(vm, deps, this.alpha);
+        const view = new ShipView(vm, { ...deps, badgeScale: this.badgeScale }, this.alpha);
         view.view.zIndex = SHIP_Z_INDEX;
         this.view.addChild(view.view);
         return view;
@@ -105,6 +109,16 @@ export class EntityLayer {
   /** View kamióna `id` (testy, ladenie). */
   truckView(id: number): TruckView | undefined {
     return this.trucks.get(id);
+  }
+
+  /** Prispôsobí veľkosť odznakov lodí (lashing) zoomu kamery (volá `WorldRenderer.syncCamera`). */
+  setZoom(zoom: number): void {
+    const next = badgeScaleForZoom(zoom);
+    if (next === this.badgeScale) return;
+    this.badgeScale = next;
+    this.ships.forEach((view) => {
+      view.setBadgeScale(next);
+    });
   }
 
   /** Zosúladí lode s VM a nastaví ich polohu pre `alpha` (0…1 medzi predchádzajúcim a aktuálnym tickom). */

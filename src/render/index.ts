@@ -31,32 +31,51 @@ export { PortalLayer, portalRotation } from './portal-layer';
 export type { PortalKind, PortalSet } from './portal-layer';
 export { BuildLayer, CONNECTOR_MARKER_ROTATION, loadGhostPalette, moduleGhostCells } from './build-layer';
 export type { BuildLayerCreateOptions, BuildLayerOptions, GhostArrow, GhostArrowsView, GhostCell, GhostPalette, GhostView } from './build-layer';
-export type { CraneVM, EntitiesVM, ModuleGhostVM, ModuleVM, ShipVM, TruckVM, VehicleVM, ViewRotation, ViewSide } from './view-models';
+export type {
+  CraneCycleVM,
+  CraneVM,
+  EntitiesVM,
+  ModuleGhostVM,
+  ModuleVM,
+  ShipVM,
+  TruckVM,
+  VehicleVM,
+  ViewRotation,
+  ViewSide,
+} from './view-models';
 export { ModuleLayer } from './module-layer';
 export { ModuleView, moduleBodyFile, moduleFillState, sameModuleShape } from './module-view';
 export { FILL_25_BELOW, FILL_50_BELOW, FILL_STATES, fillState, fillStateKey } from './storage-fill';
 export type { FillState } from './storage-fill';
 export { EntityLayer } from './entity-layer';
 export {
+  LASHING_STATE,
   SHIP_VARIANT_CANDIDATES,
   ShipView,
+  hasDeckCargo,
   lerp,
   sameShipShape,
+  shipDisplayLoad,
   shipLoad,
   shipPose,
   shipSpriteFile,
   shipVariantKey,
 } from './ship-view';
+export { DeckCargo, deckDirections, deckFill, deckSlots } from './ship-deck';
+export type { CargoDirection, DeckCargoDeps, DeckFill, DeckSlot } from './ship-deck';
+export { LASHING_BADGE_SCALE, LASHING_PROGRESS_STEPS, LashingBadge, lashingProgress, lashingStep } from './lashing-badge';
 export type { ShipLoad, ShipPose, ShipViewDeps } from './ship-view';
 export { VEHICLE_STYLE, VehicleView, sameVehicleShape, vehicleLoad, vehiclePose, vehicleSpriteFile } from './vehicle-view';
 export type { PoseDirector, VehicleLoad, VehiclePose, VehicleViewDeps, VehicleViewStyle } from './vehicle-view';
 export { TRUCK_STYLE, TruckView, sameTruckShape, truckSpriteFile } from './truck-view';
-export { DOCK_CATCH_UP, DOCK_LEAVE_MS, DOCK_REVERSE_MS, DOCK_STOP_MS, DockManeuver, blendPose, dockPose, planDockPath } from './dock-maneuver';
+export { DOCKED_STATES, DOCK_CATCH_UP, DOCK_LEAVE_MS, DOCK_REVERSE_MS, DOCK_STOP_MS, DockManeuver, blendPose, dockPose, planDockPath } from './dock-maneuver';
 export type { DockPath, DockPhase, DockPoses, PosePx, SwingSide } from './dock-maneuver';
-export { QUEUE_BADGE_MAX, QueueBadge, createWarningBadge, queueBadgeLabel } from './badges';
+export { HoldBadge, QUEUE_BADGE_MAX, QueueBadge, createWarningBadge, holdBadgeLabel, queueBadgeLabel } from './badges';
 export type { QueueBadgeDeps } from './badges';
 export { BARRIER_MOTION_MS, BarrierMotion, GateDecor, queueBadgePosition } from './gate-decor';
 export { WaitingAreaDecor, occupiedStalls } from './waiting-area-decor';
+export { HOLD_BADGE_INSET_PX, HoldDecor, holdDecorFactory, holdMarks } from './hold-decor';
+export type { HoldMark } from './hold-decor';
 export { RampDecor, STAGED_ANGLE, STAGED_INSET_PX, stagedPlacements } from './ramp-decor';
 export type { StagedPlacement } from './ramp-decor';
 export { YARD_BOX_CELLS, YARD_INSET_CELLS, YardCraneDecor, yardCraneHome, yardSlotSpot } from './yard-crane-decor';
@@ -102,14 +121,17 @@ export { CraneLayer } from './crane-layer';
 export {
   BADGE_MAX_SCALE,
   CRANE_BOOM_TILT_DEG,
+  CRANE_CYCLE_STYLE,
   CraneView,
   badgeScaleForZoom,
+  craneBoomTilt,
   craneBox,
+  craneCycleDirection,
   craneParts,
   trolleyBoomY,
   trolleyTravelFraction,
 } from './crane-view';
-export type { CraneParts, CraneState, CraneViewDeps } from './crane-view';
+export type { CraneDirection, CraneParts, CraneState, CraneViewDeps } from './crane-view';
 export { CargoSprite, cargoSizePx } from './cargo-sprite';
 export {
   CARRIER_LENGTH_PX,
@@ -143,6 +165,7 @@ export {
   entitySpriteFiles,
   manifestScale,
   moduleSprite,
+  shipDeck,
   shipSprite,
   vehicleSprite,
 } from './entity-assets';
@@ -151,6 +174,7 @@ export type {
   ManifestPart,
   ManifestRect,
   ModuleSpriteEntry,
+  ShipDeckEntry,
   ShipSpriteEntry,
   VehicleSpriteEntry,
 } from './entity-assets';
@@ -169,6 +193,7 @@ export type { AutotileShape, AutotileTile } from './autotile';
 export { CAMERA_MAX_ZOOM, CAMERA_MIN_ZOOM, CAMERA_START_ZOOM, Camera } from './camera';
 export type { CameraOptions, CameraTransform, Point } from './camera';
 export {
+  DIRECTION_OUTLINE_SHADE,
   ROAD_EDGE_SHADE,
   documentTokenResolver,
   loadRenderPalette,

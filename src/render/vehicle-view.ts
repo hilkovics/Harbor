@@ -204,6 +204,11 @@ export function sameVehicleShape(a: VehicleVM, b: VehicleVM): boolean {
  */
 export interface PoseDirector {
   pose(vm: VehicleVM, alpha: number, poseOf: (vm: VehicleVM, alpha: number) => VehiclePose): VehiclePose;
+  /**
+   * Zobrazené naloženie (volá sa po `pose` v tom istom `update`): režisér ho môže odložiť, kým prezentačný manéver neskončí
+   * (kamión cúvajúci do docku drží sprite z príchodu). Chýba = `vm.loaded`.
+   */
+  displayLoaded?(vm: VehicleVM): boolean;
 }
 
 export interface VehicleViewDeps {
@@ -275,7 +280,7 @@ export class VehicleView {
     const pose = this.director === null ? this.simPose(vm, alpha) : this.director.pose(vm, alpha, (other, at) => this.simPose(other, at));
     if (this.view.x !== pose.x || this.view.y !== pose.y) this.view.position.set(pose.x, pose.y);
     if (this.view.angle !== pose.angle) this.view.angle = pose.angle;
-    const load = vehicleLoad(vm.loaded);
+    const load = vehicleLoad(this.director?.displayLoaded?.(vm) ?? vm.loaded);
     if (load !== this.load) {
       this.load = load;
       if (this.sprite !== null && this.textures !== null) this.sprite.texture = this.textures[load];

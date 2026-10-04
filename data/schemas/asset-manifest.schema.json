@@ -306,6 +306,21 @@
           },
           "description": "Variant → SVG (napr. veľkosť auta) alebo variant → stavy (typ lode: empty/loaded)."
         },
+        "deck": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "bays"],
+          "properties": {
+            "columns": { "type": "integer", "minimum": 1, "description": "Počet kontajnerov (stĺpcov) naprieč lodou v jednom poli paluby." },
+            "bays": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/pxRect" },
+              "description": "Polia paluby kontajnerovej lode od predku k zadku (px súboru pri rot 0): obdĺžniky `#A5AFB9` v sprite `empty`; poradie = index poľa."
+            }
+          },
+          "description": "Paluba kontajnerovej lode (variant `container`): kam renderer kladie kontajnery podľa počtu jednotiek na palube (F6a)."
+        },
         "note": { "type": "string" }
       }
     },

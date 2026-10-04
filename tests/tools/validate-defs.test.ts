@@ -104,6 +104,13 @@ describe('validateDefsDir', () => {
         lastMinuteExportRateOfReward: 0.02,
         rolledExportRateOfReward: 0.05,
         unfulfilledBookingRateOfReward: 0.1,
+        // F6c: prázdne kontajnery, repositioning a tranship (ADR-034).
+        repositioningOffersPerDay: 1,
+        transhipOffersPerDay: 1,
+        repairCostCents: 12000,
+        transhipGapDaysRange: [1, 2],
+        transhipRescueDays: 3,
+        transhipMissedRateOfReward: 0.25,
       });
     });
 
@@ -119,6 +126,15 @@ describe('validateDefsDir', () => {
         congestion: { trafficDecayPerHour: 0.9, slowdownPerExtraVehicle: 0.25, penaltyTrafficDivisor: 200, penaltyMax: 3 },
         shipNavigation: { approachMarginCells: 1, sweepStepCells: 0.5, turnManeuvers: 1, sidewaysManeuvers: 1 },
         exportFlow: { arrivalWindowDays: 2, vgmMissingChance: 0.05, vgmHoldHours: 6, weightClassShares: { light: 0.3, medium: 0.5, heavy: 0.2 } },
+        emptyFlow: {
+          hinterlandDaysRange: [1, 3],
+          emptyReturnRate: 0.6,
+          damageChance: 0.08,
+          repairHours: 6,
+          emptyPickupRate: 0.4,
+          emptyPickupLeadHoursRange: [4, 12],
+          emptyPickupMaxWaitHours: 6,
+        },
       });
     });
   });

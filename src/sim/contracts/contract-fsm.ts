@@ -15,11 +15,39 @@ export const CONTRACT_STATES = ['offered', 'accepted', 'ship_en_route', 'unloadi
 export type ContractState = (typeof CONTRACT_STATES)[number];
 
 /**
- * Druhy kontraktu (ADR-032 bod 1): `import` (náklad príde loďou a odíde po súši — F5) a `export` (booking: náklad
- * príde po súši a odpláva loďou voyage). Druh určuje trieda (`ImportContract`, `ExportContract`), nie switch.
+ * Druhy kontraktu (ADR-032 bod 1, ADR-034): `import` (náklad príde loďou a odíde po súši — F5), `export` (booking: náklad
+ * príde po súši a odpláva loďou voyage), `empty_repositioning` (linka nalodí N dostupných prázdnych kontajnerov na loď
+ * voyage) a `tranship` (loď A privezie jednotky, loď B ich odvezie, bez prechodu bránou). Druh určuje trieda
+ * (`ImportContract`, `ExportContract`, `EmptyRepositioningContract`, `TranshipContract`), nie switch.
  */
-export const CONTRACT_KINDS = ['import', 'export'] as const;
+export const CONTRACT_KINDS = ['import', 'export', 'empty_repositioning', 'tranship'] as const;
 export type ContractKind = (typeof CONTRACT_KINDS)[number];
+
+/**
+ * Skupiny ponúk v poole (`ContractBook.offeredGroups`, ADR-034): `import` (voyage bez bookingu), `booking` (export,
+ * roundtrip), `repositioning` (voyage s kontraktom `empty_repositioning`) a `tranship`. Poradie = priorita: skupina patrí
+ * najvyššej skupine svojich kontraktov (roundtrip → `booking`, export + repositioning → `repositioning`).
+ */
+export const OFFER_GROUPS = ['import', 'booking', 'repositioning', 'tranship'] as const;
+export type OfferGroup = (typeof OFFER_GROUPS)[number];
+
+/**
+ * Vlastnosti druhu kontraktu (ADR-034; tabuľka, nie switch): či save nesie `booking` (export-podobné kontrakty: export,
+ * repositioning, tranship — počítadlá jednotiek a cieľový prístav) a `tranship` (plán lode B), a do ktorej skupiny poolu
+ * patrí ponuka (`OfferGroup`).
+ */
+export interface ContractKindTraits {
+  readonly booking: boolean;
+  readonly tranship: boolean;
+  readonly offerGroup: OfferGroup;
+}
+
+export const CONTRACT_KIND_TRAITS: { readonly [K in ContractKind]: ContractKindTraits } = Object.freeze({
+  import: Object.freeze({ booking: false, tranship: false, offerGroup: 'import' }),
+  export: Object.freeze({ booking: true, tranship: false, offerGroup: 'booking' }),
+  empty_repositioning: Object.freeze({ booking: true, tranship: false, offerGroup: 'repositioning' }),
+  tranship: Object.freeze({ booking: true, tranship: true, offerGroup: 'tranship' }),
+});
 
 /** Je hodnota druh kontraktu (parsovanie save)? */
 export function isContractKind(value: unknown): value is ContractKind {
@@ -58,10 +86,16 @@ export const EXPORT_CONTRACT_TRANSITIONS: ContractTransitions = Object.freeze({
   expired: Object.freeze([] as const),
 });
 
-/** Prechody podľa druhu kontraktu (dáta; trieda kontraktu si berie svoj riadok). */
+/**
+ * Prechody podľa druhu kontraktu (dáta; trieda kontraktu si berie svoj riadok): `empty_repositioning` ako export booking
+ * (loď voyage nakladá prázdne: `exporting`), `tranship` ako import (loď A sa vykladá: `unloading`; po vykládke `exporting` =
+ * prekládka čaká na loď B a nakladá sa na ňu; ADR-034).
+ */
 export const CONTRACT_TRANSITIONS_BY_KIND: { readonly [K in ContractKind]: ContractTransitions } = Object.freeze({
   import: CONTRACT_TRANSITIONS,
   export: EXPORT_CONTRACT_TRANSITIONS,
+  empty_repositioning: EXPORT_CONTRACT_TRANSITIONS,
+  tranship: CONTRACT_TRANSITIONS,
 });
 
 /** Je prechod `from → to` v tabuľke druhu `kind` (predvolene import)? */

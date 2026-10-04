@@ -6,6 +6,7 @@ import cargoTypesJson from '@data/defs/cargo_types.json';
 import contractTemplatesJson from '@data/defs/contract_templates.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
+import linesJson from '@data/defs/lines.json';
 import logisticsJson from '@data/defs/logistics.json';
 import modulesJson from '@data/defs/modules.json';
 import shipsJson from '@data/defs/ships.json';
@@ -31,6 +32,7 @@ function rawDefs(): Record<string, Json> {
     trucks: structuredClone(trucksJson),
     logistics: structuredClone(logisticsJson),
     contract_templates: structuredClone(contractTemplatesJson),
+    lines: structuredClone(linesJson),
   };
 }
 
@@ -64,13 +66,16 @@ const accepts = (raw: Record<string, Json>): boolean => {
 describe('contract_templates.json (bundled)', () => {
   const defs = loadBundledDefs();
 
-  it('5 šablón kontajnerov: 3 import (express, standard, handy run tier 1) a booking roundtrip + export (feeder)', () => {
+  it('8 šablón kontajnerov: 3 import (express, standard, handy run tier 1), booking roundtrip + export a F6c repositioning (2) + tranship (feeder)', () => {
     expect(defs.contractTemplates.items.map((item) => item.id)).toEqual([
       'container_feeder_express',
       'container_feeder_standard',
       'container_handy_run',
       'container_feeder_roundtrip',
       'container_feeder_export',
+      'container_feeder_repositioning',
+      'container_feeder_export_repositioning',
+      'container_feeder_tranship',
     ]);
     expect(defs.contractTemplates.items).toEqual([
       {
@@ -118,6 +123,40 @@ describe('contract_templates.json (bundled)', () => {
       {
         id: 'container_feeder_export',
         kind: 'export',
+        destinationPorts: ['Rotterdam', 'Hamburg', 'Gdańsk'],
+        cargoTypeId: 'container_teu',
+        volumeUnitsRange: [12, 36],
+        slaDaysRange: [3, 5],
+        shipClassIds: ['feeder'],
+        weight: 2,
+        minTier: 0,
+      },
+      {
+        id: 'container_feeder_repositioning',
+        kind: 'empty_repositioning',
+        destinationPorts: ['Rotterdam', 'Hamburg', 'Gdańsk'],
+        cargoTypeId: 'container_teu',
+        volumeUnitsRange: [12, 36],
+        slaDaysRange: [3, 5],
+        shipClassIds: ['feeder'],
+        weight: 2,
+        minTier: 0,
+      },
+      {
+        id: 'container_feeder_export_repositioning',
+        kind: 'empty_repositioning',
+        destinationPorts: ['Rotterdam', 'Hamburg', 'Gdańsk'],
+        cargoTypeId: 'container_teu',
+        volumeUnitsRange: [12, 24],
+        exportVolumeUnitsRange: [12, 36],
+        slaDaysRange: [3, 5],
+        shipClassIds: ['feeder'],
+        weight: 2,
+        minTier: 0,
+      },
+      {
+        id: 'container_feeder_tranship',
+        kind: 'tranship',
         destinationPorts: ['Rotterdam', 'Hamburg', 'Gdańsk'],
         cargoTypeId: 'container_teu',
         volumeUnitsRange: [12, 36],

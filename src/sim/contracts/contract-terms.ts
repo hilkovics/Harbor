@@ -17,6 +17,15 @@
 import type { ContractTemplateDef, EconomyDef } from '../defs/types';
 import { BASIS_POINTS, applyBasisPoints, shareOfCents, toBasisPoints } from '../economy/basis-points';
 
+/**
+ * Linka ponuky podľa voyage (ADR-034): `lines[(voyageId − 1) mod |lines|]` — deterministická funkcia id voyage **bez `Rng`**
+ * (ďalší ťah `Rng` pri každej ponuke by posunul prúd každého existujúceho sveta; kontrakty jednej voyage dostanú rovnakú
+ * linku a linky sa striedajú rovnomerne). Pole `lines` je neprázdne (`DefRegistry`: katalóg má aspoň jednu položku).
+ */
+export function lineForVoyage(lines: readonly { readonly id: string }[], voyageId: number): string {
+  return lines[(voyageId - 1) % lines.length].id;
+}
+
 /** Najväčšie `slaDaysRange[1]` cez šablóny (`maxSlaDays` vzorca urgency); bez šablón 0. */
 export function maxSlaDaysOf(templates: readonly Readonly<ContractTemplateDef>[]): number {
   let max = 0;

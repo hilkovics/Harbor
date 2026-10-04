@@ -15,6 +15,7 @@ export type { CargoSlotsView, SlotHolderKind, SlotReservationsInit } from './slo
 export { StorageModule } from './storage-module';
 export type { StorageRuntimeState } from './storage-module';
 export { CONTAINER_YARD_CATEGORY, ContainerYard } from './container-yard';
+export { EMPTY_DEPOT_CATEGORY, EmptyDepot } from './empty-depot';
 export { VehicleDepot } from './vehicle-depot';
 export { LandExportModule } from './land-export-module';
 export type { LandsideRole, LandsideRoster } from './land-export-module';
@@ -54,5 +55,5 @@ export type {
 } from './crane-module';
 export { computeBerthGroups } from './berth-group';
 export type { BerthGroup } from './berth-group';
-export { BUILTIN_MODULES, ModuleRegistry, STORAGE_MODULES, moduleRegistry, registerBuiltinModules } from './module-registry';
+export { BUILTIN_MODULES, ModuleRegistry, STORAGE_MODULES, STORAGE_ROLE_MODULES, moduleRegistry, registerBuiltinModules } from './module-registry';
 export type { ModuleEnv, ModuleFactory } from './module-registry';

@@ -178,7 +178,7 @@ describe('validate:defs — F6a defy exportu', () => {
 
     it('neznámy kind → schéma', () => {
       writeReal();
-      edit('contract_templates', (def) => void (template(def, 'container_feeder_express')['kind'] = 'tranship'));
+      edit('contract_templates', (def) => void (template(def, 'container_feeder_express')['kind'] = 'nope'));
       expect(errorsFor('contract_templates.json').some((line) => line.startsWith('contract_templates.json: /items/0/kind'))).toBe(true);
     });
 

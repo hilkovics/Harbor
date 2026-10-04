@@ -28,14 +28,20 @@ export type {
 export {
   CARGO_DIRECTIONS,
   CARGO_HOLD_REASONS,
+  CARGO_STATUSES,
+  DEFAULT_CARGO_STATUS,
   DEFAULT_WEIGHT_CLASS,
+  EMPTY_WEIGHT_CLASS,
   IMPORT_LABELS,
   WEIGHT_CLASSES,
+  cargoLabelsProblem,
+  cargoStatusProblem,
   isCargoDirection,
   isCargoHoldReason,
+  isCargoStatus,
   isWeightClass,
 } from './cargo-unit';
-export type { CargoDirection, CargoHold, CargoHoldReason, CargoUnit, CargoUnitLabels, WeightClass } from './cargo-unit';
+export type { CargoDirection, CargoHold, CargoHoldReason, CargoStatus, CargoUnit, CargoUnitLabels, WeightClass } from './cargo-unit';
 export { STOWAGE_WEIGHT_RANK, compareStowageOrder } from './stowage';
 export type { StowageKey } from './stowage';
 export { CargoConservationError, CargoError, CargoStateError, CargoTransitionError } from './cargo-error';

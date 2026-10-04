@@ -136,16 +136,16 @@ describe('ContractBook — skupiny ponúk', () => {
   it('offeredGroups počíta import a booking skupiny (roundtrip = jedna skupina o dvoch kontraktoch)', () => {
     const world = World.create(BUNDLED, MAP, 5005);
     const book = world.contractBook;
-    expect(book.offeredGroups()).toEqual({ import: 0, booking: 0 });
+    expect(book.offeredGroups()).toEqual({ import: 0, booking: 0, repositioning: 0, tranship: 0 });
     const { context } = contextOf(only(BUNDLED, 'container_feeder_roundtrip'), 21, { nextId: () => book.allocateId(), nextVoyageId: () => book.allocateVoyageId() });
     for (const contract of drawBookingOffer(context)) book.add(contract);
     const importContext = contextOf(only(BUNDLED, 'container_feeder_export'), 22, { nextId: () => book.allocateId(), nextVoyageId: () => book.allocateVoyageId() }).context;
     for (const contract of drawBookingOffer(importContext)) book.add(contract);
     expect(book.offeredCount).toBe(3);
-    expect(book.offeredGroups()).toEqual({ import: 0, booking: 2 });
+    expect(book.offeredGroups()).toEqual({ import: 0, booking: 2, repositioning: 0, tranship: 0 });
     const plain = drawOffer(contextOf(BUNDLED, 23, { nextId: () => book.allocateId(), nextVoyageId: () => book.allocateVoyageId() }).context);
     book.add(plain as NonNullable<typeof plain>);
-    expect(book.offeredGroups()).toEqual({ import: 1, booking: 2 });
+    expect(book.offeredGroups()).toEqual({ import: 1, booking: 2, repositioning: 0, tranship: 0 });
   });
 
   it('offeredOfVoyage vráti kópiu ponúk voyage vzostupne podľa id a len stav offered', () => {
@@ -168,13 +168,13 @@ describe('pool: booking ponuky pri DayClosed', () => {
     const world = World.create(BUNDLED, MAP, 5005);
     const start = world.tick();
     expect(start.filter((event) => event.type === 'ContractOffered')).toHaveLength(BUNDLED.economy.offersPerDay);
-    expect(world.contractBook.offeredGroups()).toEqual({ import: BUNDLED.economy.offersPerDay, booking: 0 });
+    expect(world.contractBook.offeredGroups()).toEqual({ import: BUNDLED.economy.offersPerDay, booking: 0, repositioning: 0, tranship: 0 });
     while (world.clock.tick < TICKS_PER_DAY - 1) world.tick();
     expect(world.contractBook.offeredGroups().booking).toBe(0);
     const events = world.tick();
     const offered = events.filter((event): event is Extract<typeof event, { type: 'ContractOffered' }> => event.type === 'ContractOffered');
     expect(offered.length).toBeGreaterThanOrEqual(BUNDLED.economy.bookingOffersPerDay);
-    expect(world.contractBook.offeredGroups()).toEqual({ import: BUNDLED.economy.offersPerDay, booking: BUNDLED.economy.bookingOffersPerDay });
+    expect(world.contractBook.offeredGroups()).toEqual({ import: BUNDLED.economy.offersPerDay, booking: BUNDLED.economy.bookingOffersPerDay, repositioning: 0, tranship: 0 });
     // Ponuky vznikli vzostupne podľa id a patria booking šablónam.
     expect(offered.map((event) => event.contractId)).toEqual([...offered.map((event) => event.contractId)].sort((a, b) => a - b));
     for (const event of offered) {

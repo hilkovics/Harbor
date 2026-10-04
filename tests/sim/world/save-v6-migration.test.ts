@@ -1,6 +1,8 @@
 /**
  * WorldState v7 (T6A-01, ADR-032; ARCHITECTURE §14): migrácia v6 → v7 nad natívnym save v6 (`save-v6.json` — vertical
- * slice uprostred vykládky, vznikol kódom v6 pred zmenou tvaru), roundtrip v7 a fail-fast cesty nových polí.
+ * slice uprostred vykládky, vznikol kódom v6 pred zmenou tvaru), roundtrip a fail-fast cesty nových polí. Od T6C-01
+ * (ADR-034) sa save v6 migruje celou reťazou až na v8 — svet po migrácii má všade prvú linku, referenčný svet ich rozdeľuje
+ * podľa voyage, preto sa stavy porovnávajú po zhodení linky (`toV7State`).
  *
  * 1. Migrácia je deterministická a bez `Rng` (rozhodnutie 14): kontrakty `kind: 'import'`, `voyageId` = id,
  *    `booking: null`, `nextVoyageId` = `nextContractId`; jednotky štítky importu (`voyageId` = `contractId`, `medium`,
@@ -17,7 +19,7 @@ import { ExportContract } from '@sim/contracts';
 import { DefRegistry } from '@sim/defs';
 import { World, WorldStateError, migrateWorldState, stateHash, type AnyWorldState, type WorldState } from '@sim/world';
 import { assertCargoConservation } from '../helpers/invariants';
-import { toV6State } from '../helpers/legacy-save';
+import { toV6State, toV7State } from '../helpers/legacy-save';
 import { loadScenarioFile, runScenario } from '../helpers/scenario';
 import { MAP, RAW_DEFS } from './world-fixtures';
 
@@ -36,6 +38,9 @@ const CONTINUE_TICKS = 3_000;
 const HEAVY_TIMEOUT_MS = 120_000;
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+/** Text stavu v8 bez liniek, plánu prekládky a stavu kvality (v7 tvar): svet z migrácie má prvú linku všade, referenčný svet po voyage. */
+const asV7Text = (state: unknown): string => JSON.stringify(toV7State(state));
 
 /** `vertical_slice` (v7) v ticku save v6 — rovnaký okamih, z ktorého vznikol natívny v6 save. */
 function sliceAt(tick: number): World {
@@ -56,21 +61,24 @@ function loadError(raw: unknown): WorldStateError {
 }
 
 describe('migrácia save v6 → v7 (rozhodnutie 14, ADR-032)', () => {
-  it('migrateWorldState: polia v7 s hodnotami importu, Rng a vstup bez zmeny', () => {
+  it('migrateWorldState: polia v7 a v8 s hodnotami importu, prvá linka, Rng a vstup bez zmeny', () => {
     const before = clone(V6);
     const migrated = migrateWorldState(V6, DEFS) as Json;
     expect(V6).toEqual(before);
-    expect(migrated['version']).toBe(7);
+    expect(migrated['version']).toBe(8);
+    expect(migrated['emptyFlow']).toEqual({ returnPlan: [], pickupPlan: [] });
     expect(migrated['rng']).toEqual(V6['rng']);
     expect(migrated['nextVoyageId']).toBe(V6['nextContractId']);
     for (const contract of migrated['contracts'] as Json[]) {
       expect([contract['kind'], contract['voyageId'], contract['booking']]).toEqual(['import', contract['id'], null]);
+      expect([contract['lineId'], contract['tranship']]).toEqual([DEFS.lines.items[0].id, null]);
     }
     const cargo = migrated['cargo'] as { shippedCount: number; units: Json[] };
     expect(cargo.shippedCount).toBe(0);
     expect(cargo.units.length).toBeGreaterThan(0);
     for (const unit of cargo.units) {
-      expect(unit).toMatchObject({ voyageId: unit['contractId'], direction: 'import', destinationPort: null, weightClass: 'medium', hold: null });
+      expect(unit).toMatchObject({ voyageId: unit['contractId'], direction: 'import', destinationPort: null, weightClass: 'medium', hold: null, status: 'available', repairUntilTick: null });
+      expect(unit['lineId']).toBe(unit['contractId'] === null ? null : DEFS.lines.items[0].id);
     }
     expect((migrated['ships'] as Json[]).map((ship) => ship['lashingTicksLeft'])).toEqual([0]);
     const cranes = (migrated['modules'] as { defId: string; runtime: Json }[]).filter((entry) => DEFS.modules.get(entry.defId).kind === 'crane');
@@ -79,11 +87,11 @@ describe('migrácia save v6 → v7 (rozhodnutie 14, ADR-032)', () => {
   });
 
   it(
-    'načítaný v6 = svet v7 zo scenára v tom istom ticku (bitovo rovnaký serialize) a zhodenie späť dá pôvodný v6 text',
+    'načítaný v6 = svet v8 zo scenára v tom istom ticku (rovnaký serialize po zhodení liniek) a zhodenie späť dá pôvodný v6 text',
     () => {
       const reference = sliceAt(V6_TICK);
       const migrated = World.deserialize(DEFS, MAP, clone(V6) as unknown as AnyWorldState);
-      expect(JSON.stringify(migrated.serialize())).toBe(JSON.stringify(reference.serialize()));
+      expect(asV7Text(migrated.serialize())).toBe(asV7Text(reference.serialize()));
       expect(JSON.stringify(toV6State(migrated.serialize()))).toBe(JSON.stringify(V6));
     },
     HEAVY_TIMEOUT_MS,
@@ -99,7 +107,7 @@ describe('migrácia save v6 → v7 (rozhodnutie 14, ADR-032)', () => {
       const expected = runScenario(reference, scenario, until);
       const actual = runScenario(migrated, scenario, until, { afterTick: (world) => assertCargoConservation(world) });
       expect(actual.map((event) => JSON.stringify(event))).toEqual(expected.map((event) => JSON.stringify(event)));
-      expect(stateHash(migrated)).toBe(stateHash(reference));
+      expect(asV7Text(migrated.serialize())).toBe(asV7Text(reference.serialize()));
     },
     HEAVY_TIMEOUT_MS,
   );
@@ -136,6 +144,7 @@ function stateWithBooking(): WorldState {
       offeredTick: tick - 100,
       offerExpiresTick: tick + 17_180,
       shipClassId: 'feeder',
+      lineId: 'blue_anchor',
       destinationPort: 'Rotterdam',
     }).toState(),
     state: 'accepted' as const,
@@ -177,7 +186,7 @@ describe('WorldState v7: export booking v save a roundtrip', () => {
 
   const lastContract = (state: WorldState): number => state.contracts.length - 1;
   const CORRUPTIONS: readonly [string, (state: WorldState) => unknown, (state: WorldState) => string][] = [
-    ['neznámy druh kontraktu', (s) => ({ ...s, contracts: s.contracts.map((c, i) => (i === 0 ? { ...c, kind: 'tranship' } : c)) }), () => '/contracts/0/kind'],
+    ['neznámy druh kontraktu', (s) => ({ ...s, contracts: s.contracts.map((c, i) => (i === 0 ? { ...c, kind: 'sideways' } : c)) }), () => '/contracts/0/kind'],
     ['voyage 0', (s) => ({ ...s, contracts: s.contracts.map((c, i) => (i === 0 ? { ...c, voyageId: 0 } : c)) }), () => '/contracts/0/voyageId'],
     ['voyage ≥ nextVoyageId', (s) => ({ ...s, nextVoyageId: 1 }), () => '/contracts/0/voyageId'],
     ['import s bookingom', (s) => ({ ...s, contracts: s.contracts.map((c, i) => (i === 0 ? { ...c, booking: s.contracts[lastContract(s)].booking } : c)) }), () => '/contracts/0/booking'],

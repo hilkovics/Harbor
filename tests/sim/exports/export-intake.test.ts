@@ -17,7 +17,7 @@ import { findWorldViolation } from '@sim/world/world-invariants';
 import { TICKS_PER_DAY, acceptedBooking, exportUnitIds, exportUnitsByLocation, exportWorld, f6aDefs, lostUnits, offerBooking, startLoading, tickEvents, tickUntil } from '../helpers/f6a';
 import type { ExportContract } from '@sim/contracts';
 
-const LABELS = (contract: ExportContract) => ({ direction: 'export' as const, voyageId: contract.voyageId, destinationPort: contract.booking.destinationPort, weightClass: 'medium' as const });
+const LABELS = (contract: ExportContract) => ({ direction: 'export' as const, voyageId: contract.voyageId, lineId: contract.lineId, destinationPort: contract.booking.destinationPort, weightClass: 'medium' as const });
 
 const yardsOf = (world: World): StorageModule[] => [...world.modules.values()].filter((module): module is StorageModule => module instanceof StorageModule);
 const storageOf = (world: World, job: TransportJob): StorageModule => world.modules.get(job.toModuleId) as StorageModule;

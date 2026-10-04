@@ -43,6 +43,14 @@
           "then": { "required": ["destinationPorts", "exportVolumeUnitsRange"] }
         },
         {
+          "if": { "properties": { "kind": { "const": "empty_repositioning" } }, "required": ["kind"] },
+          "then": { "required": ["destinationPorts"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "tranship" } }, "required": ["kind"] },
+          "then": { "required": ["destinationPorts"], "not": { "required": ["exportVolumeUnitsRange"] } }
+        },
+        {
           "if": { "anyOf": [{ "not": { "required": ["kind"] } }, { "properties": { "kind": { "const": "import" } } }] },
           "then": { "not": { "anyOf": [{ "required": ["destinationPorts"] }, { "required": ["exportVolumeUnitsRange"] }] } }
         }
@@ -50,19 +58,19 @@
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "kind": {
-          "enum": ["import", "export", "roundtrip"],
-          "description": "Druh šablóny (F6a, ADR-032): import (predvolené), export (booking s vlastnou voyage) alebo roundtrip (import + export jednej voyage)."
+          "enum": ["import", "export", "roundtrip", "empty_repositioning", "tranship"],
+          "description": "Druh šablóny (F6a, ADR-032; F6c, ADR-034): import (predvolené), export (booking s vlastnou voyage), roundtrip (import + export jednej voyage), empty_repositioning (linka nalodí N prázdnych; s `exportVolumeUnitsRange` ako tretí kontrakt skupiny s export bookingom jednej voyage, bez neho vlastná voyage) alebo tranship (loď A privezie `volumeUnitsRange` jednotiek, loď B ich odvezie; pool ich ponúka od T6C-03)."
         },
         "destinationPorts": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
           "items": { "type": "string", "minLength": 1 },
-          "description": "Cieľové prístavy exportu (pool losuje jeden); len export a roundtrip."
+          "description": "Cieľové prístavy exportu, repositioningu a prekládky (pool losuje jeden); export, roundtrip, empty_repositioning a tranship."
         },
         "exportVolumeUnitsRange": {
           "$ref": "#/$defs/intRange",
-          "description": "Rozsah [min, max] bookovaných TEU exportu roundtripu; max sa musí zmestiť do najmenšej lode zo shipClassIds; len roundtrip."
+          "description": "Rozsah [min, max] bookovaných TEU exportu roundtripu; max sa musí zmestiť do najmenšej lode zo shipClassIds; roundtrip (povinné) a empty_repositioning (voliteľné: prítomnosť = skupina s export bookingom jednej voyage)."
         },
         "cargoTypeId": { "$ref": "#/$defs/id" },
         "volumeUnitsRange": {

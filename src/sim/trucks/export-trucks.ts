@@ -47,6 +47,7 @@ function spawnDeliveryTruck(world: World, contract: Contract, portal: number): b
       world.cargo.create(contract.cargoTypeId, { kind: 'in_truck', truckId: truck.id as EntityId }, contract.id, {
         direction: 'export',
         voyageId: contract.voyageId,
+        lineId: contract.lineId,
         destinationPort: booking.destinationPort,
         weightClass,
       });

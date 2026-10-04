@@ -85,6 +85,7 @@ describe('AcceptContract — skupina ponuky', () => {
       offeredTick: world.clock.tick,
       offerExpiresTick: world.clock.tick + 2 * TICKS_PER_DAY,
       shipClassId: 'feeder',
+      lineId: 'blue_anchor',
     });
     book.add(contract);
     const tick = world.clock.tick;

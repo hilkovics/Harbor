@@ -281,7 +281,7 @@ function boardVoyageShip(world: World, contract: Contract): void {
     cargoTypeId: contract.cargoTypeId,
     units: contract.spawnUnits,
     contractId: contract.id,
-    voyageId: contract.voyageId,
+    labels: contract.spawnLabels,
   });
   contract.shipId = ship.id;
 }
@@ -343,10 +343,31 @@ const EXPORT_CONTRACT_STEPS: { readonly [S in ContractState]: ContractStep } = {
   expired: idle,
 };
 
-/** Kroky podľa druhu kontraktu (tabuľka, nie switch). */
+/**
+ * Kroky stavov **prekládky** (F6c, ADR-034): kostra T6C-01 ich nechá nečinné — pool prekládku neponúka a `AcceptContract` ju
+ * nemá z čoho prijať; správanie (spawn lode A s jednotkami `tranship`, vykládka, spawn lode B v `outArrivalTick`, nakládka,
+ * uzavretie, záchrana zmeškanej prekládky) dodá T6C-03.
+ */
+const TRANSHIP_CONTRACT_STEPS: { readonly [S in ContractState]: ContractStep } = {
+  offered: idle,
+  accepted: idle,
+  ship_en_route: idle,
+  unloading: idle,
+  exporting: idle,
+  completed: idle,
+  failed: idle,
+  expired: idle,
+};
+
+/**
+ * Kroky podľa druhu kontraktu (tabuľka, nie switch). Repositioning prázdnych je export booking bez cut-off (loď voyage príde,
+ * pri kotvisku nakladá a booking sa uzavrie pri jej odchode — kroky exportu sú pre neho správne), prekládka má vlastné kroky.
+ */
 const CONTRACT_STEPS: { readonly [K in ContractKind]: { readonly [S in ContractState]: ContractStep } } = {
   import: IMPORT_CONTRACT_STEPS,
   export: EXPORT_CONTRACT_STEPS,
+  empty_repositioning: EXPORT_CONTRACT_STEPS,
+  tranship: TRANSHIP_CONTRACT_STEPS,
 };
 
 /**

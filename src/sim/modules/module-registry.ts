@@ -13,12 +13,13 @@ import type { CargoReader } from '../cargo/cargo-ledger';
 import type { CargoUnit } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
 import { storageParams } from '../defs/module-def';
-import type { CargoCategory, ModuleDef, ModuleKind } from '../defs/types';
+import type { CargoCategory, ModuleDef, ModuleKind, StorageRole } from '../defs/types';
 import type { Grid } from '../grid/grid';
 import type { PlacedModuleSpec } from '../grid/map-def';
 import { BerthModule } from './berth-module';
 import { ContainerYard } from './container-yard';
 import { CraneModule } from './crane-module';
+import { EmptyDepot } from './empty-depot';
 import { LoadingRamp } from './loading-ramp';
 import type { Module, ModuleInit } from './module';
 import { ModuleError } from './module-error';
@@ -81,9 +82,15 @@ export const STORAGE_MODULES: { readonly [C in CargoCategory]?: ModuleFactory } 
   container: (init: ModuleInit) => new ContainerYard(init),
 });
 
-/** Factory druhu `storage`: trieda podľa `params.category`; kategória bez triedy → `ModuleError('unknown_kind')`. */
+/** Triedy skladov podľa roly (`params.role`, F6c, ADR-034): depo prázdnych; sklad bez roly ide podľa kategórie (`STORAGE_MODULES`). */
+export const STORAGE_ROLE_MODULES: { readonly [R in StorageRole]: ModuleFactory } = Object.freeze({
+  empty_depot: (init: ModuleInit) => new EmptyDepot(init),
+});
+
+/** Factory druhu `storage`: trieda podľa `params.role`, inak `params.category`; kategória bez triedy → `ModuleError('unknown_kind')`. */
 function createStorage(init: ModuleInit): Module {
-  const { category } = storageParams(init.def);
+  const { category, role } = storageParams(init.def);
+  if (role !== undefined) return STORAGE_ROLE_MODULES[role](init);
   const factory = STORAGE_MODULES[category];
   if (factory === undefined) {
     const known = Object.keys(STORAGE_MODULES).join(', ');

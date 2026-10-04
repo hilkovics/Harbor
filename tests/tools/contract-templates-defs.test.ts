@@ -121,6 +121,9 @@ describe('validate:defs — F5 defy', () => {
         "contract_templates.json: /items/2/shipClassIds/0 loď 'handy' nevozí kategóriu 'container' nákladu 'container_teu'",
         "contract_templates.json: /items/3/shipClassIds/0 loď 'feeder' nevozí kategóriu 'container' nákladu 'container_teu'",
         "contract_templates.json: /items/4/shipClassIds/0 loď 'feeder' nevozí kategóriu 'container' nákladu 'container_teu'",
+        "contract_templates.json: /items/5/shipClassIds/0 loď 'feeder' nevozí kategóriu 'container' nákladu 'container_teu'",
+        "contract_templates.json: /items/6/shipClassIds/0 loď 'feeder' nevozí kategóriu 'container' nákladu 'container_teu'",
+        "contract_templates.json: /items/7/shipClassIds/0 loď 'feeder' nevozí kategóriu 'container' nákladu 'container_teu'",
       ]);
     });
 

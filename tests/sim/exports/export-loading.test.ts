@@ -65,7 +65,7 @@ describe('stowage poradie nakládky (ADR-032 bod 8)', () => {
   it('stowageOutOfOrder: nenaložená jednotka voyage s menším kľúčom na termináli (mimo hold) → mimo poradia', () => {
     const world = exportWorld({ vehicles: [] });
     const contract = startLoading({ world, kind: 'export', booked: 3, arrivals: [] }).offer.exportContract;
-    const labels = (weightClass: WeightClass) => ({ direction: 'export' as const, voyageId: contract.voyageId, destinationPort: contract.booking.destinationPort, weightClass });
+    const labels = (weightClass: WeightClass) => ({ direction: 'export' as const, voyageId: contract.voyageId, lineId: contract.lineId, destinationPort: contract.booking.destinationPort, weightClass });
     const stored = (weightClass: WeightClass, slot: number): EntityId => {
       const unit = world.cargo.create('container_teu', { kind: 'in_truck', truckId: 900 as EntityId }, contract.id, labels(weightClass));
       world.cargo.move(unit.id, { kind: 'at_ramp', rampId: 8 as EntityId, dock: 0 });
@@ -119,7 +119,7 @@ describe('rezerva apronu a kapacita lode (ADR-032 bod 10, 11)', () => {
     const crane = craneOf(world);
     tickUntil(world, (w) => berth.dockedShipId !== null && w.ships.get(berth.dockedShipId)?.state === 'docked', 20_000);
     const contract = offer.exportContract;
-    const labels = { direction: 'export' as const, voyageId: contract.voyageId, destinationPort: contract.booking.destinationPort, weightClass: 'medium' as const };
+    const labels = { direction: 'export' as const, voyageId: contract.voyageId, lineId: contract.lineId, destinationPort: contract.booking.destinationPort, weightClass: 'medium' as const };
     // Sloty 5–7: nižšie rezervuje žeriav pri vykládke (rezervuje vždy najnižší voľný slot).
     for (const slot of [5, 6, 7]) {
       const unit = world.cargo.create('container_teu', { kind: 'in_truck', truckId: 900 as EntityId }, contract.id, labels);

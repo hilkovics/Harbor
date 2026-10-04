@@ -112,6 +112,20 @@
       "costCents": 10000000,
       "maintenancePerDayCents": 20000,
       "params": { "docks": 2, "stagingPerDock": 4, "loadTicksPerUnit": 6, "category": "container" }
+    },
+    {
+      "id": "empty_depot",
+      "kind": "storage",
+      "displayName": "Depo prázdnych kontajnerov",
+      "footprint": { "w": 4, "h": 4 },
+      "placement": {
+        "requiredTerrain": ["land", "quay"],
+        "requiresParcelOwnership": true
+      },
+      "connectors": [{ "x": 1, "y": 3, "side": "s", "type": "road" }],
+      "costCents": 22000000,
+      "maintenancePerDayCents": 40000,
+      "params": { "capacityUnits": 96, "category": "container", "role": "empty_depot", "repairBays": 2 }
     }
   ]
 }

@@ -26,7 +26,7 @@
     "cargoType": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "category", "unitName", "unitsPerBatch", "basePricePerUnitCents", "exportPricePerUnitCents", "xpPerUnit", "colorToken"],
+      "required": ["id", "category", "unitName", "unitsPerBatch", "basePricePerUnitCents", "exportPricePerUnitCents", "repositioningPricePerUnitCents", "transhipPricePerUnitCents", "xpPerUnit", "colorToken"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "category": {
@@ -52,6 +52,16 @@
           "type": "integer",
           "minimum": 0,
           "description": "Odmena za exportovanú jednotku v centoch (booking, F6a, ADR-032). Šablóna export / roundtrip s týmto typom nákladu vyžaduje hodnotu > 0 — kontroluje DefRegistry a `pnpm validate:defs`."
+        },
+        "repositioningPricePerUnitCents": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Odmena za jednu naloženú prázdnu jednotku repositioningu linky v centoch (kontrakt `empty_repositioning`, F6c, ADR-034). Šablóna `empty_repositioning` s týmto typom nákladu vyžaduje hodnotu > 0 — kontroluje DefRegistry a `pnpm validate:defs`."
+        },
+        "transhipPricePerUnitCents": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Odmena za jednu prekládku loď → loď v centoch (kontrakt `tranship`, F6c, ADR-034). Šablóna `tranship` s týmto typom nákladu vyžaduje hodnotu > 0 — kontroluje DefRegistry a `pnpm validate:defs`."
         },
         "xpPerUnit": {
           "type": "number",

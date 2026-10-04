@@ -11,6 +11,18 @@
       "cargoCategories": ["container"],
       "purchaseCents": 4800000,
       "wagePerDayCents": 18000
+    },
+    {
+      "id": "empty_handler",
+      "displayName": "Empty handler",
+      "capacityUnits": 1,
+      "speedCellsPerTick": 0.5,
+      "loadTicks": 2,
+      "unloadTicks": 2,
+      "cargoCategories": ["container"],
+      "cargoDirections": ["empty"],
+      "purchaseCents": 3600000,
+      "wagePerDayCents": 14000
     }
   ]
 }

@@ -62,7 +62,7 @@ export function allocateExportStorage(world: World, ramp: LoadingRamp, unit: Car
   let bestDistance = Infinity;
   for (const storageId of groupStorages(world, unit)) {
     const storage = world.modules.get(storageId);
-    if (!(storage instanceof StorageModule) || storage.category !== category || storage.freeCount <= 0) continue;
+    if (!(storage instanceof StorageModule) || storage.category !== category || !storage.acceptsDirection('export') || storage.freeCount <= 0) continue;
     const distance = distanceBetweenModules(world, ramp, storage);
     if (distance < bestDistance) {
       best = storage;

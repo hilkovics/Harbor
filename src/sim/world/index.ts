@@ -23,11 +23,16 @@ export type {
   WorldStateV4,
   WorldStateV5,
   WorldStateV6,
+  WorldStateV7,
   LegacyCargoUnitV6,
+  LegacyCargoUnitV7,
+  LegacyContractV7,
 } from './world-state';
-// Dotazy nad nákladom pre prezentáciu a metriky F6a (ADR-032): import/export na lodi a v sklade, zoskupenie exportu.
-export { cargoSplitAt, exportGroupingShare, shipCargoSplit, storageCargoSplit } from './cargo-queries';
-export type { CargoDirectionSplit } from './cargo-queries';
+// Dotazy nad nákladom pre prezentáciu a metriky F6a (ADR-032): import/export na lodi a v sklade, zoskupenie exportu;
+// F6c (ADR-034): obsah depa prázdnych podľa linky a stavu kvality, prázdne v prístave.
+export { cargoSplitAt, depotCargoSplit, exportGroupingShare, shipCargoSplit, storageCargoSplit, terminalEmptySplit } from './cargo-queries';
+export type { CargoDirectionSplit, DepotCargoSplit, LineStatusSplit } from './cargo-queries';
+export { parseEmptyFlowState } from './empty-flow-state';
 export {
   OLDEST_WORLD_STATE_VERSION,
   WORLD_STATE_V1_KEYS,
@@ -43,6 +48,8 @@ export {
   WORLD_STATE_V6_KEYS,
   WORLD_STATE_V7,
   WORLD_STATE_V7_KEYS,
+  WORLD_STATE_V8,
+  WORLD_STATE_V8_KEYS,
   migrateWorldState,
   savesShipRoutes,
 } from './migrate';

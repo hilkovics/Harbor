@@ -12,6 +12,7 @@
  *   `undefined` a ďalší `move` zlyhá (`unknown_unit`) — oba sú konečné stavy.
  * - `setHold` mení len zadržanie jednotky (VGM, ADR-032 bod 5), nie polohu — nová zmrazená jednotka na tom istom
  *   mieste indexu, bez udalosti (udalosť emituje systém, ktorý hold zmenil).
+ * - `setStatus` mení len stav kvality prázdneho kontajnera (kontrola a M&R v depe, ADR-034) rovnakým spôsobom ako `setHold`.
  *
  * Indexy: pre každý druh lokácie s držiteľom `id držiteľa → { units, slots }`; loď drží jednotky vzostupne podľa id,
  * ostatní vo FIFO. Prázdny index sa odstráni. Jednotky sú zmrazené hodnoty — presun vytvorí novú jednotku, takže
@@ -40,7 +41,18 @@ import {
   type CargoLocationKind,
 } from './cargo-location';
 import { parseCargoLedgerState, type CargoLedgerState } from './cargo-ledger-state';
-import { IMPORT_LABELS, cargoHoldProblem, cargoLabelsProblem, type CargoDirection, type CargoHold, type CargoUnit, type CargoUnitLabels } from './cargo-unit';
+import {
+  DEFAULT_CARGO_STATUS,
+  IMPORT_LABELS,
+  cargoHoldProblem,
+  cargoLabelsProblem,
+  cargoStatusProblem,
+  type CargoDirection,
+  type CargoHold,
+  type CargoStatus,
+  type CargoUnit,
+  type CargoUnitLabels,
+} from './cargo-unit';
 
 /** Závislosti ledgera od sveta (v `World` sú to `defs.cargoTypes`, `ids`, `events`, `clock`). */
 export interface CargoLedgerDeps {
@@ -95,26 +107,44 @@ function insertSorted(ids: EntityId[], id: EntityId): void {
 }
 
 /**
- * Lokácia vzniku jednotky podľa smeru (ADR-032 bod 3): import vzniká na lodi (`spawnShip`), export v kamióne pri jeho
- * spawne (krok 8). Zjednotenie hodnôt = `CARGO_SPAWN_KINDS`.
+ * Lokácia vzniku jednotky podľa smeru (ADR-032 bod 3, ADR-034): import a tranship vznikajú na lodi (`spawnShip`), export
+ * a prázdny kontajner v kamióne pri jeho spawne (krok 8). Zjednotenie hodnôt = `CARGO_SPAWN_KINDS`.
  */
-export const CARGO_SPAWN_KIND_BY_DIRECTION: { readonly [D in CargoDirection]: CargoLocationKind } = Object.freeze({ import: 'on_ship', export: 'in_truck' });
+export const CARGO_SPAWN_KIND_BY_DIRECTION: { readonly [D in CargoDirection]: CargoLocationKind } = Object.freeze({
+  import: 'on_ship',
+  export: 'in_truck',
+  tranship: 'on_ship',
+  empty: 'in_truck',
+});
 
-/** Zmrazená jednotka s kanonickým poradím kľúčov (`id, typeId, contractId, štítky, hold, quantity, location`). */
-function freezeUnit(base: Omit<CargoUnit, 'location' | 'hold'>, hold: CargoHold | null, location: CargoLocation): CargoUnit {
+/** Mutovateľný stav jednotky mimo polohy — `hold` a stav kvality (`setHold`, `setStatus`). */
+interface UnitState {
+  readonly hold: CargoHold | null;
+  readonly status: CargoStatus;
+  readonly repairUntilTick: number | null;
+}
+
+/** Zmrazená jednotka s kanonickým poradím kľúčov (`id, typeId, contractId, štítky, hold, status, repairUntilTick, quantity, location`). */
+function freezeUnit(base: Omit<CargoUnit, 'location' | 'hold' | 'status' | 'repairUntilTick'>, state: UnitState, location: CargoLocation): CargoUnit {
   return Object.freeze({
     id: base.id,
     typeId: base.typeId,
     contractId: base.contractId,
     voyageId: base.voyageId,
+    lineId: base.lineId,
     direction: base.direction,
     destinationPort: base.destinationPort,
     weightClass: base.weightClass,
-    hold,
+    hold: state.hold,
+    status: state.status,
+    repairUntilTick: state.repairUntilTick,
     quantity: base.quantity,
     location,
   });
 }
+
+/** Počiatočný stav novej jednotky: bez zadržania, `available`. */
+const FRESH_STATE: UnitState = Object.freeze({ hold: null, status: DEFAULT_CARGO_STATUS, repairUntilTick: null });
 
 function zeroCounts(): Record<CargoLocationKind, number> {
   return Object.fromEntries(CARGO_LOCATION_KINDS.map((kind) => [kind, 0])) as Record<CargoLocationKind, number>;
@@ -127,10 +157,13 @@ function unitState(unit: CargoUnit): CargoUnit {
     typeId: unit.typeId,
     contractId: unit.contractId,
     voyageId: unit.voyageId,
+    lineId: unit.lineId,
     direction: unit.direction,
     destinationPort: unit.destinationPort,
     weightClass: unit.weightClass,
     hold: unit.hold === null ? null : { reason: unit.hold.reason, untilTick: unit.hold.untilTick },
+    status: unit.status,
+    repairUntilTick: unit.repairUntilTick,
     quantity: unit.quantity,
     location: { ...unit.location },
   };
@@ -187,8 +220,8 @@ export class CargoLedger {
 
   /**
    * Nová jednotka typu `typeId` v lokácii `location` so štítkami `labels` (predvolene import bez kontraktu,
-   * `IMPORT_LABELS`); `hold` je `null`. Lokácia musí byť miesto vzniku smeru jednotky
-   * (`CARGO_SPAWN_KIND_BY_DIRECTION`: import `on_ship`, export `in_truck`). Chyby (stav sa nezmení a id sa
+   * `IMPORT_LABELS`); `hold` je `null` a stav `available`. Lokácia musí byť miesto vzniku smeru jednotky
+   * (`CARGO_SPAWN_KIND_BY_DIRECTION`: import a tranship `on_ship`, export a prázdny `in_truck`). Chyby (stav sa nezmení a id sa
    * nespotrebuje): neznámy typ → `CargoError('unknown_cargo_type')`, neplatná lokácia, `contractId` alebo štítky
    * (`cargoLabelsProblem`: export bez kontraktu, voyage alebo cieľového prístavu, import s cieľovým prístavom…) →
    * `CargoError('invalid_input')`, lokácia mimo miesta vzniku smeru → `CargoTransitionError`, obsadené miesto →
@@ -212,7 +245,7 @@ export class CargoLedger {
     const { unitsPerBatch } = this.deps.cargoTypes.get(typeId);
     // Od tohto bodu nič nevyhadzuje: id sa spotrebuje len pre skutočne vytvorenú jednotku.
     const base = { id: this.deps.ids.next(), typeId, contractId, ...labels, quantity: unitsPerBatch };
-    const unit = freezeUnit(base, null, target);
+    const unit = freezeUnit(base, FRESH_STATE, target);
     this.place(unit);
     this.created += 1;
     return unit;
@@ -231,7 +264,26 @@ export class CargoLedger {
     }
     const problem = cargoHoldProblem(hold, unit.direction);
     if (problem !== undefined) throw new CargoError('invalid_input', `CargoLedger.setHold(#${String(unitId)}): ${problem}`);
-    const next = freezeUnit(unit, hold === null ? null : Object.freeze({ reason: hold.reason, untilTick: hold.untilTick }), unit.location);
+    const next = freezeUnit(unit, { ...unit, hold: hold === null ? null : Object.freeze({ reason: hold.reason, untilTick: hold.untilTick }) }, unit.location);
+    this.units.set(unitId, next);
+    return next;
+  }
+
+  /**
+   * Zmení stav kvality jednotky (kontrola a M&R prázdneho kontajnera, ADR-034) — poloha ani poradie v indexe sa nemenia,
+   * udalosť nevzniká (`EmptyDamaged`, `EmptyRepairStarted`, `EmptyRepaired` emituje volajúci systém). `repairUntilTick` je
+   * povinný práve pri `in_repair` (inak `null`). Chyby (stav sa nezmení): neznáma alebo odídená jednotka →
+   * `CargoError('unknown_unit')`, neplatná kombinácia alebo jednotka, ktorá nie je prázdna (`cargoStatusProblem`) →
+   * `CargoError('invalid_input')`.
+   */
+  setStatus(unitId: EntityId, status: CargoStatus, repairUntilTick: number | null = null): CargoUnit {
+    const unit = this.units.get(unitId);
+    if (unit === undefined) {
+      throw new CargoError('unknown_unit', `CargoLedger.setStatus: jednotka #${String(unitId)} neexistuje (neznáme id alebo už opustila mapu)`);
+    }
+    const problem = cargoStatusProblem(status, repairUntilTick, unit.direction);
+    if (problem !== undefined) throw new CargoError('invalid_input', `CargoLedger.setStatus(#${String(unitId)}): ${problem}`);
+    const next = freezeUnit(unit, { hold: unit.hold, status, repairUntilTick }, unit.location);
     this.units.set(unitId, next);
     return next;
   }
@@ -263,7 +315,7 @@ export class CargoLedger {
 
     // Od tohto bodu nič nevyhadzuje — presun je atomický.
     this.unplace(unit, bucket, index);
-    this.place(freezeUnit(unit, unit.hold, target));
+    this.place(freezeUnit(unit, unit, target));
     this.deps.events.emit({ type: 'CargoMoved', unitId, from, to: target, tick: this.deps.clock.tick });
     this.deps.observer?.cargoMoved(unit, target);
   }

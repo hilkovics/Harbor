@@ -59,13 +59,15 @@ describe('skutočné katalógy F2 až F4', () => {
         unitsPerBatch: 1,
         basePricePerUnitCents: 45000,
         exportPricePerUnitCents: 40000,
+        repositioningPricePerUnitCents: 12000,
+        transhipPricePerUnitCents: 28000,
         xpPerUnit: 1,
         colorToken: 'cargo-container',
       },
     ]);
   });
 
-  it('modules.json: berth, žeriav, kontajnerový dvor, depo, brána, čakacia plocha a rampa (ARCHITECTURE §5.3)', () => {
+  it('modules.json: berth, žeriav, kontajnerový dvor, depo, brána, čakacia plocha, rampa (ARCHITECTURE §5.3) a depo prázdnych (ADR-034)', () => {
     const def = realDef('modules');
     expect(def['schemaVersion']).toBe(1);
     expect(items(def).map((entry) => entry['id'])).toEqual([
@@ -76,6 +78,7 @@ describe('skutočné katalógy F2 až F4', () => {
       'truck_gate',
       'truck_waiting_area',
       'loading_ramp_container',
+      'empty_depot',
     ]);
     expect(item(def, 'berth_standard')).toEqual({
       id: 'berth_standard',
@@ -182,7 +185,7 @@ describe('skutočné katalógy F2 až F4', () => {
     ]);
   });
 
-  it('vehicles.json: straddle_carrier (ARCHITECTURE §4.4)', () => {
+  it('vehicles.json: straddle_carrier (ARCHITECTURE §4.4) a empty_handler (ADR-034)', () => {
     const def = realDef('vehicles');
     expect(def['schemaVersion']).toBe(1);
     expect(items(def)).toEqual([
@@ -197,6 +200,18 @@ describe('skutočné katalógy F2 až F4', () => {
         purchaseCents: 4_800_000,
         wagePerDayCents: 18_000,
       },
+      {
+        id: 'empty_handler',
+        displayName: 'Empty handler',
+        capacityUnits: 1,
+        speedCellsPerTick: 0.5,
+        loadTicks: 2,
+        unloadTicks: 2,
+        cargoCategories: ['container'],
+        cargoDirections: ['empty'],
+        purchaseCents: 3_600_000,
+        wagePerDayCents: 14_000,
+      },
     ]);
   });
 
@@ -208,6 +223,15 @@ describe('skutočné katalógy F2 až F4', () => {
       congestion: { trafficDecayPerHour: 0.9, slowdownPerExtraVehicle: 0.25, penaltyTrafficDivisor: 200, penaltyMax: 3 },
       shipNavigation: { approachMarginCells: 1, sweepStepCells: 0.5, turnManeuvers: 1, sidewaysManeuvers: 1 },
       exportFlow: { arrivalWindowDays: 2, vgmMissingChance: 0.05, vgmHoldHours: 6, weightClassShares: { light: 0.3, medium: 0.5, heavy: 0.2 } },
+      emptyFlow: {
+        hinterlandDaysRange: [1, 3],
+        emptyReturnRate: 0.6,
+        damageChance: 0.08,
+        repairHours: 6,
+        emptyPickupRate: 0.4,
+        emptyPickupLeadHoursRange: [4, 12],
+        emptyPickupMaxWaitHours: 6,
+      },
     });
   });
 

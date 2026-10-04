@@ -637,6 +637,29 @@
       "slots": 32,
       "layers": 2
     },
+    "empty_depot": {
+      "footprint": {
+        "w": 4,
+        "h": 4
+      },
+      "states": {
+        "fill00": "modules/empty_depot_fill00.svg",
+        "fill25": "modules/empty_depot_fill25.svg",
+        "fill50": "modules/empty_depot_fill50.svg",
+        "fill75": "modules/empty_depot_fill75.svg",
+        "fill100": "modules/empty_depot_fill100.svg"
+      },
+      "connectors": [
+        {
+          "x": 1,
+          "y": 3,
+          "side": "s",
+          "type": "road"
+        }
+      ],
+      "slots": 16,
+      "layers": 6
+    },
     "container_yard_medium": {
       "footprint": {
         "w": 6,
@@ -1144,6 +1167,16 @@
       "states": {
         "empty": "entities/straddle_carrier_empty.svg",
         "loaded": "entities/straddle_carrier_loaded.svg"
+      }
+    },
+    "empty_handler": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "states": {
+        "empty": "entities/empty_handler_empty.svg",
+        "loaded": "entities/empty_handler_loaded.svg"
       }
     },
     "agv": {

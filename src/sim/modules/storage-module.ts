@@ -18,6 +18,7 @@
  *
  * Kapacita pre alokátor = `stored + reserved` (`freeCount`), pre UI `stored / capacity` (§7.7).
  */
+import type { CargoDirection } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
 import { storageParams } from '../defs/module-def';
 import type { CargoCategory, StorageParams } from '../defs/types';
@@ -86,6 +87,15 @@ export abstract class StorageModule extends Module {
   /** Kategória nákladu, ktorú sklad prijíma. */
   get category(): CargoCategory {
     return this.params.category;
+  }
+
+  /**
+   * Smie sklad prijať jednotku smeru `direction` (F6c, ADR-034)? Bežný sklad prijme každý smer (prázdne ako záložné
+   * uloženie, keď depo chýba alebo je plné); depo prázdnych (`EmptyDepot`) len `empty`. Alokátory skladu ho overujú.
+   */
+  acceptsDirection(direction: CargoDirection): boolean {
+    void direction;
+    return true;
   }
 
   /** Skladovacia kapacita pre `capacityHint` poolu kontraktov (ADR-026) = `params.capacityUnits`. */

@@ -11,7 +11,7 @@ const id = (value: number): EntityId => value as EntityId;
 const contract = (value: number): ContractId => value as ContractId;
 
 const unitAt = (unitId: number, contractId: number | null, location: CargoLocation): CargoUnit =>
-  Object.freeze({ id: id(unitId), typeId: 'container_teu', contractId: contractId === null ? null : contract(contractId), ...IMPORT_LABELS, hold: null, quantity: 1, location });
+  Object.freeze({ id: id(unitId), typeId: 'container_teu', contractId: contractId === null ? null : contract(contractId), ...IMPORT_LABELS, hold: null, status: 'available', repairUntilTick: null, quantity: 1, location });
 
 const vehicle: CargoLocation = { kind: 'in_vehicle', vehicleId: id(900) };
 const storage = (moduleId: number, slot = 0): CargoLocation => ({ kind: 'in_storage', moduleId: id(moduleId), slot });

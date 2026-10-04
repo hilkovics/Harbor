@@ -8,6 +8,8 @@
       "unitsPerBatch": 1,
       "basePricePerUnitCents": 45000,
       "exportPricePerUnitCents": 40000,
+      "repositioningPricePerUnitCents": 12000,
+      "transhipPricePerUnitCents": 28000,
       "xpPerUnit": 1,
       "colorToken": "cargo-container"
     }

@@ -199,7 +199,9 @@
       "properties": {
         "capacityUnits": { "type": "integer", "minimum": 1, "description": "Kapacita skladu v CargoUnit (pre dvor: sloty × vrstvy v manifeste)." },
         "category": { "enum": ["container", "bulk", "liquid", "gas", "roro"], "description": "Kategória nákladu, ktorú sklad prijíma." },
-        "internalTicks": { "type": "integer", "minimum": 0, "description": "Vnútorný čas vozidla v module; chýba = logistics.defaultInternalTicks." }
+        "internalTicks": { "type": "integer", "minimum": 0, "description": "Vnútorný čas vozidla v module; chýba = logistics.defaultInternalTicks." },
+        "role": { "enum": ["empty_depot"], "description": "Rola skladu (F6c, ADR-034): `empty_depot` = depo prázdnych kontajnerov (iná trieda, prijíma len prázdne, kontrola a M&R); chýba = bežný sklad. Vyžaduje kategóriu `container` a `repairBays` — kontroluje DefRegistry a `pnpm validate:defs`." },
+        "repairBays": { "type": "integer", "minimum": 1, "description": "Počet súčasných opráv v depe prázdnych (M&R); povinné práve pri `role: empty_depot`." }
       }
     },
     "depotParams": {

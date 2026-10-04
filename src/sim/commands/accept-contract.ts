@@ -87,6 +87,7 @@ export class AcceptContractCommand extends ContractOfferCommand {
       ticksPerHour,
       cutoffHours: world.defs.economy.cutoffHours,
       arrivalWindowDays: world.defs.logistics.exportFlow.arrivalWindowDays,
+      transhipGapDaysRange: world.defs.economy.transhipGapDaysRange,
       rng: world.rng,
     };
     for (const contract of group) {

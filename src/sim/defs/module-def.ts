@@ -19,6 +19,7 @@ import {
   CARGO_CATEGORIES,
   HANDOVER_MODES,
   MODULE_KINDS,
+  STORAGE_ROLES,
   type BerthParams,
   type CraneParams,
   type DepotParams,
@@ -59,6 +60,9 @@ export const MODULE_PARAM_SPECS: { readonly [K in ModuleKind]: SpecTable<ModuleP
     category: { kind: 'enum', values: CARGO_CATEGORIES },
     // Vnútorný čas vozidla v module (§7.3 bod 4); chýba = `logistics.defaultInternalTicks`.
     internalTicks: { kind: 'integer', min: 0, optional: true },
+    // Rola skladu a počet opráv (F6c, ADR-034); vzťah `role` ↔ `repairBays` ↔ kategória je v `checkStorageParams`.
+    role: { kind: 'enum', values: STORAGE_ROLES, optional: true },
+    repairBays: { kind: 'integer', min: 1, optional: true },
   },
   gate: {
     // Priepustnosť: 1 kamión za `processTicks`; aspoň tick, inak by brána púšťala neobmedzene (F4, rozhodnutie 2).
@@ -104,13 +108,29 @@ function checkBerthParams(params: Readonly<Record<string, unknown>>, path: strin
   return undefined;
 }
 
-/** `params` zodpovedá tabuľke druhu: presne jej kľúče, správne typy a rozsahy (+ vzťahy polí kotviska). Prvý problém alebo `undefined`. */
+/**
+ * Vzťah polí skladu (F6c, ADR-034): depo prázdnych (`role: 'empty_depot'`) je sklad kontajnerov a vyžaduje `repairBays`;
+ * `repairBays` bez roly depa nemá zmysel. `params` už prešli tabuľkou polí.
+ */
+function checkStorageParams(params: Readonly<Record<string, unknown>>, path: string): Problem | undefined {
+  const { role, repairBays, category } = params;
+  if (role === 'empty_depot') {
+    if (category !== 'container') return { path: `${path}/category`, message: `depo prázdnych (role empty_depot) skladuje kontajnery — kategória musí byť 'container', dostal ${describeValue(category)}` };
+    if (repairBays === undefined) return { path: `${path}/repairBays`, message: 'depo prázdnych (role empty_depot) vyžaduje repairBays' };
+    return undefined;
+  }
+  if (repairBays !== undefined) return { path: `${path}/repairBays`, message: 'repairBays má zmysel len pri role empty_depot' };
+  return undefined;
+}
+
+/** `params` zodpovedá tabuľke druhu: presne jej kľúče, správne typy a rozsahy (+ vzťahy polí kotviska a skladu). Prvý problém alebo `undefined`. */
 export function checkModuleParams(value: unknown, kind: ModuleKind, path: string): Problem | undefined {
   const table: FieldRecord = MODULE_PARAM_SPECS[kind];
   if (!isPlainObject(value)) return { path, message: `očakávaný objekt, dostal ${describeValue(value)}` };
   const problem = findUnknownKey(value, new Set(Object.keys(table)), path) ?? checkFields(value, table, path);
   if (problem !== undefined) return problem;
-  return kind === 'berth' ? checkBerthParams(value, path) : undefined;
+  if (kind === 'berth') return checkBerthParams(value, path);
+  return kind === 'storage' ? checkStorageParams(value, path) : undefined;
 }
 
 /** Číselný rozmer footprintu alebo súradnica konektora z neoverenej položky; inak `undefined`. */

@@ -22,6 +22,7 @@ import type { ContractId, VoyageId } from '@sim/core';
 const TERMS: ContractTerms = {
   id: 7 as ContractId,
   voyageId: 7 as VoyageId,
+  lineId: 'blue_anchor',
   templateId: 'container_feeder_express',
   cargoTypeId: 'container_teu',
   volumeUnits: 12,

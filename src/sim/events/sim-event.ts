@@ -11,7 +11,7 @@
 import type { CargoLocation } from '../cargo/cargo-location';
 import type { ValidationReason } from '../commands/validation';
 import type { ContractState } from '../contracts/contract-fsm';
-import type { ContractId, EntityId } from '../core/entity-id';
+import type { ContractId, EntityId, VoyageId } from '../core/entity-id';
 import type { DaySummary, MonthSummary } from '../economy/ledger';
 import type { LedgerCategory } from '../economy/ledger-category';
 import type { JobCancelReason } from '../logistics/transport-job';
@@ -500,6 +500,100 @@ export interface BookingPenaltyAppliedEvent {
   readonly amountCents: number;
 }
 
+// ---------------------------------------------------------------------------------------------------------
+// F6c — prázdne kontajnery, repositioning a tranship (ADR-034); deklarované v T6C-01, emitujú ich T6C-02 / T6C-03.
+// Poradie v ticku: krok 2 (`EmptyDamaged` → `EmptyRepairStarted` / `EmptyRepaired`, `TranshipMissed` → `TranshipRescued` /
+// `TranshipSold`), krok 5/6 (`EmptyStored` pri vykládke vozidla do skladu), krok 8 (brána dnu: `EmptyReturned`; výjazd kamióna
+// s prázdnym: `EmptyPickedUp`, odchod kamióna bez prázdneho po `emptyPickupMaxWaitHours`: `EmptyPickupMissed`).
+// ---------------------------------------------------------------------------------------------------------
+
+/** Kamión s prázdnym kontajnerom linky (misia `delivery`) prešiel bránou dnu — návrat prázdneho z vnútrozemia (krok 8). */
+export interface EmptyReturnedEvent {
+  readonly type: 'EmptyReturned';
+  readonly unitId: EntityId;
+  readonly lineId: string;
+  readonly truckId: EntityId;
+  readonly gateId: EntityId;
+}
+
+/**
+ * Prázdny kontajner je uložený (`in_vehicle → in_storage`) a prešiel kontrolou. `fallback` = uložený do bežného dvora, lebo depo
+ * prázdnych chýba alebo je plné (metrika `emptyFallbackStored`).
+ */
+export interface EmptyStoredEvent {
+  readonly type: 'EmptyStored';
+  readonly unitId: EntityId;
+  readonly lineId: string;
+  readonly moduleId: EntityId;
+  readonly fallback: boolean;
+}
+
+/** Kontrola pri uložení našla poškodenie (`damageChance`): jednotka je `damaged` a čaká na voľné miesto opravy. */
+export interface EmptyDamagedEvent {
+  readonly type: 'EmptyDamaged';
+  readonly unitId: EntityId;
+  readonly lineId: string;
+  readonly moduleId: EntityId;
+}
+
+/** Oprava poškodeného prázdneho sa začala (`damaged → in_repair`), skončí v `untilTick` (`repairHours`). */
+export interface EmptyRepairStartedEvent {
+  readonly type: 'EmptyRepairStarted';
+  readonly unitId: EntityId;
+  readonly lineId: string;
+  readonly moduleId: EntityId;
+  readonly untilTick: number;
+}
+
+/** Oprava skončila (`in_repair → available`): `costCents` sa strhli z hotovosti (ledger kategória `maintenance_repair`). */
+export interface EmptyRepairedEvent {
+  readonly type: 'EmptyRepaired';
+  readonly unitId: EntityId;
+  readonly lineId: string;
+  readonly moduleId: EntityId;
+  readonly costCents: number;
+}
+
+/** Exportér odviezol prázdny kontajner linky svojho bookingu (`in_truck → exported`, kamión misie `pickup`). */
+export interface EmptyPickedUpEvent {
+  readonly type: 'EmptyPickedUp';
+  readonly unitId: EntityId;
+  readonly lineId: string;
+  readonly contractId: ContractId;
+  readonly truckId: EntityId;
+}
+
+/** Kamión po prázdny kontajner odišiel prázdny — linka nemala dostupný prázdny do `emptyPickupMaxWaitHours` (metrika `emptyPickupMisses`). */
+export interface EmptyPickupMissedEvent {
+  readonly type: 'EmptyPickupMissed';
+  readonly lineId: string;
+  readonly contractId: ContractId;
+  readonly truckId: EntityId;
+}
+
+/** Loď B prekládky odplávala bez `units` jednotiek kontraktu (penalizácia `transhipMissedRateOfReward`); `outVoyageId` = voyage B. */
+export interface TranshipMissedEvent {
+  readonly type: 'TranshipMissed';
+  readonly contractId: ContractId;
+  readonly units: number;
+  readonly outVoyageId: VoyageId;
+}
+
+/** Zmeškané jednotky prekládky sa preadresovali na ďalšiu voyage linky `outVoyageId` (do `economy.transhipRescueDays`). */
+export interface TranshipRescuedEvent {
+  readonly type: 'TranshipRescued';
+  readonly contractId: ContractId;
+  readonly units: number;
+  readonly outVoyageId: VoyageId;
+}
+
+/** Zmeškané jednotky prekládky bez záchrany odišli kamiónom ako „predané“ (po uzavretí kontraktu, `unitsExported`). */
+export interface TranshipSoldEvent {
+  readonly type: 'TranshipSold';
+  readonly contractId: ContractId;
+  readonly units: number;
+}
+
 export type SimEvent =
   | TickAdvancedEvent
   | HourClosedEvent
@@ -552,7 +646,17 @@ export type SimEvent =
   | ShipLashingStartedEvent
   | ExportShippedEvent
   | TruckUnloadedEvent
-  | BookingPenaltyAppliedEvent;
+  | BookingPenaltyAppliedEvent
+  | EmptyReturnedEvent
+  | EmptyStoredEvent
+  | EmptyDamagedEvent
+  | EmptyRepairStartedEvent
+  | EmptyRepairedEvent
+  | EmptyPickedUpEvent
+  | EmptyPickupMissedEvent
+  | TranshipMissedEvent
+  | TranshipRescuedEvent
+  | TranshipSoldEvent;
 
 /** Názov typu udalosti (`'TickAdvanced' | 'HourClosed' | …`). */
 export type SimEventType = SimEvent['type'];

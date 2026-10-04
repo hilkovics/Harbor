@@ -1,8 +1,10 @@
 /**
- * „Zhodenie" aktuálneho `WorldState` v7 na tvar v6 (T6A-01, ADR-032) — presný opak migrácie v6 → v7 pre testy a generátor
- * fixtures starších savov. Svet nesmie používať nič z F6a (export, voyage s viacerými kontraktmi, lashing, delivery
- * kamión, nakládka žeriavu): v6 by to nevedel zapísať, preto je to chyba. Odstránené kľúče nemenia relatívne poradie
- * ostatných, takže výsledok má presne poradie kľúčov natívneho v6 `serialize()`.
+ * „Zhodenie" aktuálneho `WorldState` na tvar v7 (`toV7State`, T6C-01, ADR-034) a v6 (`toV6State`, T6A-01, ADR-032) — presný opak
+ * migrácií v7 → v8 a v6 → v7 pre testy a generátor fixtures starších savov. Svet nesmie používať nič z F6c (prázdne
+ * kontajnery, repositioning, prekládka, plán `emptyFlow`) ani F6a (export, voyage s viacerými kontraktmi, lashing, delivery
+ * kamión, nakládka žeriavu): starší tvar by to nevedel zapísať, preto je to chyba. Odstránené kľúče nemenia relatívne poradie
+ * ostatných, takže výsledok má presne poradie kľúčov natívneho `serialize()` starej verzie. Linky (`lineId`) sa zahadzujú
+ * bez kontroly (v7 ich nepozná a migrácia ich nastaví na prvú linku).
  */
 import { DEFS } from '../world/world-fixtures';
 
@@ -20,10 +22,31 @@ function fail(what: string): never {
   throw new Error(`toV6State: v6 nevie zapísať ${what}`);
 }
 
-/** Stav v7 (`World.serialize()` alebo jeho JSON kópia) → stav v6 (nová kópia). */
+/** Stav v8 (`World.serialize()` alebo jeho JSON kópia) → stav v7 (nová kópia). */
+export function toV7State(state: unknown): Json {
+  const v8 = clone(state) as Json;
+  if (v8['version'] !== 8) fail(`verziu ${String(v8['version'])} (čaká sa 8, toV7State)`);
+  const flow = v8['emptyFlow'] as { returnPlan: unknown[]; pickupPlan: unknown[] };
+  if (flow.returnPlan.length > 0 || flow.pickupPlan.length > 0) fail('plán prázdnych kontajnerov (emptyFlow)');
+  const contracts = (v8['contracts'] as Json[]).map((contract) => {
+    if ((contract['kind'] !== 'import' && contract['kind'] !== 'export') || contract['tranship'] !== null) fail(`kontrakt #${String(contract['id'])} druhu ${String(contract['kind'])} (F6c)`);
+    return without(contract, ['lineId', 'tranship']);
+  });
+  const cargo = v8['cargo'] as Json;
+  const units = (cargo['units'] as Json[]).map((unit) => {
+    if ((unit['direction'] !== 'import' && unit['direction'] !== 'export') || unit['status'] !== 'available' || unit['repairUntilTick'] !== null) {
+      fail(`jednotku #${String(unit['id'])} smeru ${String(unit['direction'])} alebo s iným stavom kvality (F6c)`);
+    }
+    return without(unit, ['lineId', 'status', 'repairUntilTick']);
+  });
+  return { ...without(v8, ['emptyFlow']), version: 7, contracts, cargo: { ...cargo, units } };
+}
+
+/** Stav v7 alebo v8 (`World.serialize()` alebo jeho JSON kópia; v8 sa najprv zhodí cez `toV7State`) → stav v6 (nová kópia). */
 export function toV6State(state: unknown): Json {
-  const v7 = clone(state) as Json;
-  if (v7['version'] !== 7) fail(`verziu ${String(v7['version'])} (čaká sa 7)`);
+  const given = clone(state) as Json;
+  const v7 = given['version'] === 8 ? toV7State(given) : given;
+  if (v7['version'] !== 7) fail(`verziu ${String(v7['version'])} (čaká sa 7 alebo 8)`);
   const contracts = v7['contracts'] as Json[];
   for (const contract of contracts) {
     if (contract['kind'] !== 'import' || contract['booking'] !== null || contract['voyageId'] !== contract['id']) fail(`kontrakt #${String(contract['id'])} (export alebo voyage ≠ id)`);

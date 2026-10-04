@@ -50,7 +50,7 @@
  * sa zbierajú raz za tick do znovupoužiteľných polí. Alokuje sa len nový job (jeho zoznam jednotiek a lokácie).
  */
 import { slotOf } from '../cargo/cargo-location';
-import type { CargoUnit } from '../cargo/cargo-unit';
+import type { CargoDirection, CargoUnit } from '../cargo/cargo-unit';
 import type { ContractOutbound } from '../contracts/contract-fsm';
 import type { EntityId } from '../core/entity-id';
 import type { CargoCategory } from '../defs/types';
@@ -68,6 +68,15 @@ import { allocateRamp } from './ramp-allocator';
 import { allocateStorage } from './storage-allocator';
 import type { StoredCargoGroup } from './stored-cargo-index';
 import { JOB_PRIORITY_LEVELS, TransportJob, type JobCancelReason } from './transport-job';
+
+/**
+ * Smie vozidlo viezť jednotku (F6c, ADR-034)? Kategória nákladu a smer: `VehicleDef.cargoDirections` (chýba = každý smer;
+ * empty handler len `empty`).
+ */
+export function vehicleCarries(vehicle: Vehicle, category: CargoCategory, direction: CargoDirection): boolean {
+  const { cargoCategories, cargoDirections } = vehicle.def;
+  return cargoCategories.includes(category) && (cargoDirections === undefined || cargoDirections.includes(direction));
+}
 
 /** Kategória nákladu jobu (podľa typu prvej jednotky — job nesie jednotky jedného typu). */
 function jobCategory(world: World, job: TransportJob): CargoCategory | undefined {
@@ -380,11 +389,12 @@ function collectIdleVehicles(world: World, into: Vehicle[]): void {
 function pickVehicle(world: World, job: TransportJob, candidates: Iterable<Vehicle>): Vehicle | undefined {
   const source = world.modules.get(job.fromModuleId);
   const category = jobCategory(world, job);
-  if (source === undefined || category === undefined) return undefined;
+  const direction = world.cargo.get(job.unitIds[0])?.direction;
+  if (source === undefined || category === undefined || direction === undefined) return undefined;
   let best: Vehicle | undefined;
   let bestCost = Infinity;
   for (const vehicle of candidates) {
-    if (vehicle.state !== 'idle' || !vehicle.def.cargoCategories.includes(category)) continue;
+    if (vehicle.state !== 'idle' || !vehicleCarries(vehicle, category, direction)) continue;
     const cost = distanceToModule(world, vehicle.cell, source);
     if (cost < bestCost) {
       best = vehicle;

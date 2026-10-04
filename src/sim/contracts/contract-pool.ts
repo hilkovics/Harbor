@@ -23,7 +23,7 @@ import { DEFAULT_TEMPLATE_KIND, type ContractTemplateDef, type ContractTemplateK
 import type { Module } from '../modules/module';
 import type { StatResolver } from '../tech/stat-resolver';
 import { ExportContract, ImportContract, type Contract } from './contract';
-import { contractRewardCents, contractXpReward, maxSlaDaysOf, urgencyBp } from './contract-terms';
+import { contractRewardCents, contractXpReward, lineForVoyage, maxSlaDaysOf, urgencyBp } from './contract-terms';
 
 /** Najkratšia platnosť ponuky v tickoch (ponuka musí prežiť aspoň tick svojho vzniku). */
 const MIN_OFFER_TICKS = 1;
@@ -87,7 +87,8 @@ export interface OfferContext {
 /**
  * Skupiny šablón, z ktorých pool losuje oddelene (ADR-032 bod 1): `import` ponuky (šablóny `import`, F5) a `booking`
  * ponuky (šablóny `export` a `roundtrip`, počet `economy.bookingOffersPerDay`). Tabuľka (nie switch) — nový druh šablóny
- * = nový prvok skupiny.
+ * = nový prvok skupiny. Šablóny F6c (`empty_repositioning`, `tranship`) v žiadnej skupine nie sú — pool ich ponúkne až po
+ * T6C-03 (ADR-034), takže svet F6a sa pridaním šablón do defov nemení.
  */
 export const TEMPLATE_GROUP_KINDS = Object.freeze({
   import: Object.freeze(['import'] as const),
@@ -155,6 +156,7 @@ function buildImport(context: OfferContext, terms: DrawnTerms, id: ContractId, v
     offeredTick: terms.offeredTick,
     offerExpiresTick: terms.offerExpiresTick,
     shipClassId: terms.shipClassId,
+    lineId: lineForVoyage(defs.lines.items, voyageId),
   });
 }
 
@@ -174,6 +176,7 @@ function buildExport(context: OfferContext, terms: DrawnTerms, id: ContractId, v
     offeredTick: terms.offeredTick,
     offerExpiresTick: terms.offerExpiresTick,
     shipClassId: terms.shipClassId,
+    lineId: lineForVoyage(defs.lines.items, voyageId),
     destinationPort,
   });
 }

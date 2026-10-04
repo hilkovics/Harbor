@@ -1,10 +1,11 @@
 /**
- * Kontrakty (ARCHITECTURE §9.1; docs/tasks/phase-05.md a phase-06a.md „Spoločné rozhrania"; ADR-026, ADR-032) — rodina
+ * Kontrakty (ARCHITECTURE §9.1; docs/tasks/phase-05.md a phase-06a.md „Spoločné rozhrania"; ADR-026, ADR-032, ADR-034) — rodina
  * tried podľa pravidla 7: abstraktný `Contract` (spoločné podmienky, plán, loď, penalizácie, FSM) a jeho druhy
- * `ImportContract` (F5: náklad príde loďou a odíde po súši) a `ExportContract` (F6a booking: náklad príde po súši
- * a odpláva loďou voyage). Čo sa medzi druhmi líši (tabuľka prechodov, outbound politika dispatchera, počítadlá
- * z háčika ledgera, kontrola počítadiel, booking časť save), je polymorfné — žiadny switch podľa `kind`; obnovu zo save
- * vyberá tabuľka `CONTRACT_RESTORERS`.
+ * `ImportContract` (F5: náklad príde loďou a odíde po súši), `ExportContract` (F6a booking: náklad príde po súši
+ * a odpláva loďou voyage) a od F6c `EmptyRepositioningContract` (booking prázdnych kontajnerov linky z depa na loď voyage)
+ * a `TranshipContract` (loď A privezie jednotky, loď B ich odvezie; obe sú export booking s vlastnými doplnkami). Čo sa
+ * medzi druhmi líši (tabuľka prechodov, outbound politika dispatchera, počítadlá z háčika ledgera, kontrola počítadiel,
+ * booking časť save), je polymorfné — žiadny switch podľa `kind`; obnovu zo save vyberá tabuľka `CONTRACT_RESTORERS`.
  *
  * Podmienky ponuky (`ContractTerms`) sa určia pri vzniku v poole a už sa nemenia: šablóna, náklad, objem (pri exporte
  * bookované TEU), SLA v celých dňoch, odmena a XP, trieda lode, expirácia ponuky a **voyage** (`voyageId`, ADR-032 —
@@ -18,11 +19,12 @@
  * (originál a obnova zo save) mali rovnaký tvar aj pri `JSON.stringify`.
  */
 import type { CargoLocation } from '../cargo/cargo-location';
-import type { CargoUnit } from '../cargo/cargo-unit';
+import { DEFAULT_WEIGHT_CLASS, IMPORT_LABELS, type CargoUnit, type CargoUnitLabels } from '../cargo/cargo-unit';
 import type { ContractId, EntityId, VoyageId } from '../core/entity-id';
 import type { Rng } from '../core/rng';
 import { ContractError } from './contract-error';
 import {
+  CONTRACT_KIND_TRAITS,
   CONTRACT_STATE_TRAITS,
   CONTRACT_TRANSITIONS_BY_KIND,
   isContractKind,
@@ -32,6 +34,7 @@ import {
   type ContractState,
   type ContractTransitions,
   type FieldPresence,
+  type OfferGroup,
 } from './contract-fsm';
 
 /** Nemenné podmienky ponuky (spoločné pre všetky druhy). */
@@ -61,11 +64,21 @@ export interface ContractTerms {
   readonly offerExpiresTick: number;
   /** Trieda lode zo `ships.json` (jedna zo `shipClassIds` šablóny; rovnaká pre všetky kontrakty voyage). */
   readonly shipClassId: string;
+  /**
+   * Linka z `lines.json` (ADR-034): odosielateľ voyage a vlastník kontajnerov jednotiek kontraktu (`CargoUnit.lineId`).
+   * Kontrakty jednej voyage majú rovnakú linku; prázdne kontajnery sa vracajú a nalodia v rámci linky.
+   */
+  readonly lineId: string;
 }
 
 /** Podmienky export bookingu: spoločné + cieľový prístav (zo `destinationPorts` šablóny). */
 export interface ExportContractTerms extends ContractTerms {
   readonly destinationPort: string;
+}
+
+/** Podmienky prekládky: export booking (výstupná noha — cieľový prístav lode B) + voyage lode B (pridelila ju kniha pri vzniku ponuky). */
+export interface TranshipContractTerms extends ExportContractTerms {
+  readonly outVoyageId: VoyageId;
 }
 
 /**
@@ -102,7 +115,25 @@ export const SERIALIZED_BOOKING_KEYS: readonly (keyof SerializedBooking)[] = [
   'heldUnits',
 ];
 
-/** Kontrakt v save (`WorldState.contracts`, v7): druh, voyage, podmienky + priebeh (`null` = nenastavené) a booking. */
+/**
+ * Plán lode B prekládky v save (`SerializedContract.tranship`, WorldState v8, ADR-034); mimo kontraktu `tranship` `null`.
+ * `outArrivalTick` a `outShipId` vznikajú postupne (príchod od prijatia, loď od jej spawnu).
+ */
+export interface SerializedTranship {
+  /** Voyage lode B (odvezie prekládku); pri záchrane zmeškanej prekládky sa preadresuje na ďalšiu voyage linky. */
+  readonly outVoyageId: number;
+  /** Plánovaný príchod lode B: `shipArrivalTick + max(1, round(gap × ticksPerDay))`, `gap` z `economy.transhipGapDaysRange`; v `offered` `null`. */
+  readonly outArrivalTick: number | null;
+  /** Loď B (od spawnu), inak `null`. */
+  readonly outShipId: number | null;
+  /** Tick, do ktorého zmeškaná prekládka čaká na záchranu (`economy.transhipRescueDays`); inak `null`. */
+  readonly rescueDeadlineTick: number | null;
+}
+
+/** Kľúče `SerializedTranship` v poradí `toState()`. */
+export const SERIALIZED_TRANSHIP_KEYS: readonly (keyof SerializedTranship)[] = ['outVoyageId', 'outArrivalTick', 'outShipId', 'rescueDeadlineTick'];
+
+/** Kontrakt v save (`WorldState.contracts`, v8): druh, voyage, linka, podmienky + priebeh (`null` = nenastavené), booking a plán prekládky. */
 export interface SerializedContract extends Omit<ContractTerms, 'id' | 'voyageId'> {
   readonly id: number;
   readonly kind: ContractKind;
@@ -119,15 +150,18 @@ export interface SerializedContract extends Omit<ContractTerms, 'id' | 'voyageId
   readonly penaltiesCents: number;
   readonly demurrageHours: number;
   readonly lateDays: number;
-  /** Booking časť exportu; import `null`. */
+  /** Booking časť export-podobných kontraktov (export, repositioning, tranship); import `null`. */
   readonly booking: SerializedBooking | null;
+  /** Plán lode B prekládky; mimo kontraktu `tranship` `null` (v8, ADR-034). */
+  readonly tranship: SerializedTranship | null;
 }
 
-/** Kľúče serializovaného kontraktu v poradí `toState()` (v7: `kind`, `voyageId` za `id`, `booking` na konci). */
+/** Kľúče serializovaného kontraktu v poradí `toState()` (v7: `kind`, `voyageId` za `id`, `booking`; v8: `lineId` za `voyageId`, `tranship` na konci). */
 export const SERIALIZED_CONTRACT_KEYS: readonly (keyof SerializedContract)[] = [
   'id',
   'kind',
   'voyageId',
+  'lineId',
   'templateId',
   'cargoTypeId',
   'volumeUnits',
@@ -150,6 +184,7 @@ export const SERIALIZED_CONTRACT_KEYS: readonly (keyof SerializedContract)[] = [
   'demurrageHours',
   'lateDays',
   'booking',
+  'tranship',
 ];
 
 /**
@@ -168,7 +203,9 @@ export interface AcceptContext {
   readonly cutoffHours: number;
   /** `logistics.exportFlow.arrivalWindowDays`. */
   readonly arrivalWindowDays: number;
-  readonly rng: Pick<Rng, 'int'>;
+  /** `economy.transhipGapDaysRange` (rozstup príchodov lodí A a B prekládky, dni; ADR-034). */
+  readonly transhipGapDaysRange: readonly [number, number];
+  readonly rng: Pick<Rng, 'int' | 'range'>;
 }
 
 /**
@@ -194,6 +231,21 @@ export interface ExportBooking {
   readonly heldUnits: number;
 }
 
+/**
+ * Pohľad na plán lode B prekládky (`Contract.tranship`; mimo kontraktu `tranship` `null`, ADR-034). Polia sú živé hodnoty
+ * kontraktu, nie kópia.
+ */
+export interface TranshipLeg {
+  /** Voyage lode B (odvezie prekládku); pri záchrane sa preadresuje na ďalšiu voyage linky. */
+  readonly outVoyageId: VoyageId;
+  /** Plánovaný príchod lode B (od prijatia), inak `undefined`. */
+  readonly outArrivalTick: number | undefined;
+  /** Loď B (od spawnu), inak `undefined`. */
+  readonly outShipId: EntityId | undefined;
+  /** Tick, do ktorého zmeškaná prekládka čaká na záchranu, inak `undefined`. */
+  readonly rescueDeadlineTick: number | undefined;
+}
+
 const isCount = (value: number): boolean => Number.isSafeInteger(value) && value >= 0;
 const isPositive = (value: number): boolean => Number.isSafeInteger(value) && value >= 1;
 
@@ -209,12 +261,13 @@ const orNull = (value: number | undefined): number | null => (value === undefine
 
 /**
  * Spoločný základ kontraktov. Konštruktor (chyby `ContractError('invalid_input')`): id nie je celé ≥ 1, voyage nie je
- * celé ≥ 1, objem alebo odmena nie je celé ≥ 1, SLA nie je celé ≥ 1, XP nie je konečné ≥ 0, ticky nie sú celé ≥ 0
+ * celé ≥ 1, linka nie je neprázdny reťazec, objem alebo odmena nie je celé ≥ 1, SLA nie je celé ≥ 1, XP nie je konečné ≥ 0, ticky nie sú celé ≥ 0
  * alebo expirácia nie je po vzniku.
  */
 export abstract class Contract {
   readonly id: ContractId;
   readonly voyageId: VoyageId;
+  readonly lineId: string;
   readonly templateId: string;
   readonly cargoTypeId: string;
   readonly volumeUnits: number;
@@ -252,6 +305,7 @@ export abstract class Contract {
     const label = `kontrakt #${String(terms.id)}`;
     if (!isPositive(terms.id)) throw new ContractError('invalid_input', `${label}: id musí byť celé číslo ≥ 1`);
     if (!isPositive(terms.voyageId)) throw new ContractError('invalid_input', `${label}: voyageId musí byť celé číslo ≥ 1, dostal ${String(terms.voyageId)}`);
+    if (typeof terms.lineId !== 'string' || terms.lineId.length === 0) throw new ContractError('invalid_input', `${label}: lineId musí byť neprázdny reťazec, dostal ${String(terms.lineId)}`);
     if (!isPositive(terms.volumeUnits)) throw new ContractError('invalid_input', `${label}: volumeUnits musí byť celé číslo ≥ 1, dostal ${String(terms.volumeUnits)}`);
     if (!isPositive(terms.slaDays)) throw new ContractError('invalid_input', `${label}: slaDays musí byť celé číslo ≥ 1, dostal ${String(terms.slaDays)}`);
     if (!isPositive(terms.rewardCents)) throw new ContractError('invalid_input', `${label}: rewardCents musí byť celé číslo ≥ 1, dostal ${String(terms.rewardCents)}`);
@@ -261,6 +315,7 @@ export abstract class Contract {
     }
     this.id = terms.id;
     this.voyageId = terms.voyageId;
+    this.lineId = terms.lineId;
     this.templateId = terms.templateId;
     this.cargoTypeId = terms.cargoTypeId;
     this.volumeUnits = terms.volumeUnits;
@@ -315,9 +370,39 @@ export abstract class Contract {
     return CONTRACT_STATE_TRAITS[this.current].demurrage;
   }
 
-  /** Booking export kontraktu (živý pohľad), import `null`. */
+  /** Booking export-podobného kontraktu (export, repositioning, tranship; živý pohľad), import `null`. */
   get booking(): ExportBooking | null {
     return null;
+  }
+
+  /** Plán lode B prekládky (živý pohľad), mimo kontraktu `tranship` `null` (ADR-034). */
+  get tranship(): TranshipLeg | null {
+    return null;
+  }
+
+  /** Skupina poolu, do ktorej ponuka patrí (`CONTRACT_KIND_TRAITS`; ADR-034). */
+  get offerGroup(): OfferGroup {
+    return CONTRACT_KIND_TRAITS[this.kind].offerGroup;
+  }
+
+  /** Voyage, ktoré kontrakt používa: vlastná; prekládka aj voyage lode B (kniha ho indexuje pod všetkými; ADR-034). */
+  get voyageIds(): readonly VoyageId[] {
+    return [this.voyageId];
+  }
+
+  /** Loď voyage `voyageId` tohto kontraktu (od spawnu), alebo `undefined`; prekládka pozná aj loď B. */
+  shipOnVoyage(voyageId: VoyageId): EntityId | undefined {
+    return voyageId === this.voyageId ? this.shipId : undefined;
+  }
+
+  /** Plánovaný príchod lode voyage `voyageId` (od prijatia), alebo `undefined`. */
+  arrivalOnVoyage(voyageId: VoyageId): number | undefined {
+    return voyageId === this.voyageId ? this.shipArrivalTick : undefined;
+  }
+
+  /** Voyage lode `shipId` z pohľadu tohto kontraktu, alebo `undefined`, ak loď nie je jeho. */
+  voyageOfShip(shipId: EntityId): VoyageId | undefined {
+    return this.shipId === shipId ? this.voyageId : undefined;
   }
 
   /** Aktuálny stav FSM (mení ho len `transition`). */
@@ -328,6 +413,14 @@ export abstract class Contract {
   /** Jednotky, s ktorými sa pri spawne lode voyage vytvorí loď tohto kontraktu: import `volumeUnits`, export 0 (náklad príde po súši). */
   get spawnUnits(): number {
     return this.volumeUnits;
+  }
+
+  /**
+   * Štítky jednotiek, ktoré loď kontraktu privezie (`spawnShip`): import — smer `import` s voyage a linkou kontraktu (hmotnostná
+   * trieda `DEFAULT_WEIGHT_CLASS` bez `Rng`, ADR-032 odchýlka 1); prekládka — smer `tranship` s cieľovým prístavom (ADR-034).
+   */
+  get spawnLabels(): CargoUnitLabels {
+    return { ...IMPORT_LABELS, voyageId: this.voyageId, lineId: this.lineId };
   }
 
   /**
@@ -407,6 +500,7 @@ export abstract class Contract {
       id: this.id,
       kind: this.kind,
       voyageId: this.voyageId,
+      lineId: this.lineId,
       templateId: this.templateId,
       cargoTypeId: this.cargoTypeId,
       volumeUnits: this.volumeUnits,
@@ -429,11 +523,17 @@ export abstract class Contract {
       demurrageHours: this.demurrageHours,
       lateDays: this.lateDays,
       booking: this.bookingState(),
+      tranship: this.transhipState(),
     };
   }
 
-  /** Booking časť save (export), inak `null`. */
+  /** Booking časť save (export-podobné kontrakty), inak `null`. */
   protected bookingState(): SerializedBooking | null {
+    return null;
+  }
+
+  /** Plán lode B prekládky v save, inak `null`. */
+  protected transhipState(): SerializedTranship | null {
     return null;
   }
 
@@ -508,6 +608,7 @@ export class ImportContract extends Contract {
   static restore(state: SerializedContract): ImportContract {
     const contract = new ImportContract({ ...state, id: state.id as ContractId, voyageId: state.voyageId as VoyageId });
     if (state.booking !== null) throw new ContractError('invalid_input', `${contract.label}: import kontrakt nemá booking`);
+    if (state.tranship !== null) throw new ContractError('invalid_input', `${contract.label}: import kontrakt nemá plán prekládky`);
     contract.restoreProgress(state);
     contract.assertCounters();
     return contract;
@@ -549,6 +650,16 @@ function isAscending(values: readonly number[], min: number, strict: boolean): b
 }
 
 /**
+ * Podmienky export-podobného kontraktu zo save (`booking` povinný, cieľový prístav z neho); `what` pomenúva druh v chybe.
+ * Spoločné pre `ExportContract.restore` a z neho odvodené druhy.
+ */
+function exportTermsOf(state: SerializedContract, what: string): ExportContractTerms {
+  const { booking } = state;
+  if (booking === null) throw new ContractError('invalid_input', `kontrakt #${String(state.id)}: ${what} musí mať booking`);
+  return { ...state, id: state.id as ContractId, voyageId: state.voyageId as VoyageId, destinationPort: booking.destinationPort };
+}
+
+/**
  * Export booking (F6a, ADR-032): `volumeUnits` TEU na voyage s cieľovým prístavom a cut-off. Kamióny s exportom
  * prichádzajú podľa `arrivalPlan` (vzniká pri prijatí z jediného `Rng`), brána ich prijme (`recordArrival`; po cut-off
  * rolled), jednotky sa uskladnia, naložia na loď voyage (`loadedUnits`) a odplávajú (`shipped`); nenaložené sa vrátia
@@ -585,13 +696,23 @@ export class ExportContract extends Contract implements ExportBooking {
    * plán príchodov neklesajúci (ticky ≥ 0), rolled id ostro rastúce, počítadlá (`countersProblem`). Chyby `ContractError`.
    */
   static restore(state: SerializedContract): ExportContract {
-    const { booking } = state;
-    if (booking === null) throw new ContractError('invalid_input', `kontrakt #${String(state.id)}: export kontrakt musí mať booking`);
-    const contract = new ExportContract({ ...state, id: state.id as ContractId, voyageId: state.voyageId as VoyageId, destinationPort: booking.destinationPort });
-    contract.restoreProgress(state);
-    const label = contract.label;
+    const contract = new ExportContract(exportTermsOf(state, 'export kontrakt'));
+    if (state.tranship !== null) throw new ContractError('invalid_input', `${contract.label}: export kontrakt nemá plán prekládky`);
+    contract.restoreBooking(state, 'by_state');
+    return contract;
+  }
+
+  /**
+   * Obnoví priebeh a booking časť zo save (spoločné pre export a z neho odvodené druhy; `state.booking` je overený volajúcim)
+   * a skontroluje počítadlá druhu. `cutoff`: `by_state` — `cutoffTick` práve od prijatia (export), `absent` — nikdy (repositioning
+   * a tranship nemajú cut-off ani plán príchodov kamiónov).
+   */
+  protected restoreBooking(state: SerializedContract, cutoff: 'by_state' | 'absent'): void {
+    const booking = state.booking as SerializedBooking;
+    this.restoreProgress(state);
+    const label = this.label;
     const planned = CONTRACT_STATE_TRAITS[state.state].plan;
-    checkPresence(label, 'booking.cutoffTick', orUndefined(booking.cutoffTick), planned === 'absent' ? 'absent' : 'required');
+    checkPresence(label, 'booking.cutoffTick', orUndefined(booking.cutoffTick), cutoff === 'absent' || planned === 'absent' ? 'absent' : 'required');
     if (booking.cutoffTick !== null && state.shipArrivalTick !== null && booking.cutoffTick >= state.shipArrivalTick) {
       throw new ContractError('invalid_input', `${label}: cut-off ${String(booking.cutoffTick)} musí byť pred príchodom lode ${String(state.shipArrivalTick)}`);
     }
@@ -600,15 +721,14 @@ export class ExportContract extends Contract implements ExportBooking {
     if (!isAscending(booking.rolledUnitIds, 1, true)) throw new ContractError('invalid_input', `${label}: rolledUnitIds musí byť ostro rastúci zoznam id ≥ 1`);
     const counters = [booking.arrivedUnits, booking.loadedUnits, booking.lastMinuteUnits, booking.heldUnits];
     if (!counters.every(isCount)) throw new ContractError('invalid_input', `${label}: počítadlá bookingu musia byť celé čísla ≥ 0`);
-    contract.cutoffTick = orUndefined(booking.cutoffTick);
-    contract.arrivalPlan = [...booking.arrivalPlan];
-    contract.arrivedUnits = booking.arrivedUnits;
-    contract.loadedUnits = booking.loadedUnits;
-    contract.lastMinuteUnits = booking.lastMinuteUnits;
-    contract.rolledUnitIds = booking.rolledUnitIds.map((id) => id as EntityId);
-    contract.heldUnits = booking.heldUnits;
-    contract.assertCounters();
-    return contract;
+    this.cutoffTick = orUndefined(booking.cutoffTick);
+    this.arrivalPlan = [...booking.arrivalPlan];
+    this.arrivedUnits = booking.arrivedUnits;
+    this.loadedUnits = booking.loadedUnits;
+    this.lastMinuteUnits = booking.lastMinuteUnits;
+    this.rolledUnitIds = booking.rolledUnitIds.map((id) => id as EntityId);
+    this.heldUnits = booking.heldUnits;
+    this.assertCounters();
   }
 
   get kind(): ContractKind {
@@ -735,8 +855,200 @@ export class ExportContract extends Contract implements ExportBooking {
   }
 }
 
+/**
+ * Repositioning prázdnych kontajnerov linky (F6c, ADR-034): booking `volumeUnits` prázdnych kontajnerov linky kontraktu na loď
+ * voyage s cieľovým prístavom — export booking, ktorého jednotky nepridú kamióny, ale depo prázdnych. Bez cut-off a plánu
+ * príchodov (`planBooking` nič neplánuje). Počítadlá bookingu: `arrivedUnits` = prázdne pridelené bookingu (vybrané z depa
+ * pre nakládku), `loadedUnits` = naložené na loď (hook ledgera podľa lode voyage a linky — prázdny kontajner nemá `contractId`),
+ * `rolledUnitIds`, `lastMinuteUnits` a `heldUnits` sú vždy prázdne / 0. Odmena `⌊N × repositioningPricePerUnitCents × urgency⌋`
+ * pomerne k naloženým, nesplnený booking ako export (`bookingFulfilmentShare`); stowage ich radí po plných jednotkách.
+ */
+export class EmptyRepositioningContract extends ExportContract {
+  /** Repositioning zo save: booking povinný, bez cut-off a plánu príchodov, bez plánu prekládky. */
+  static override restore(state: SerializedContract): EmptyRepositioningContract {
+    const contract = new EmptyRepositioningContract(exportTermsOf(state, 'repositioning kontrakt'));
+    if (state.tranship !== null) throw new ContractError('invalid_input', `${contract.label}: repositioning nemá plán prekládky`);
+    contract.restoreBooking(state, 'absent');
+    return contract;
+  }
+
+  override get kind(): ContractKind {
+    return 'empty_repositioning';
+  }
+
+  /** Repositioning nemá cut-off ani plán príchodov kamiónov — prázdne berie depo. */
+  protected override planBooking(context: AcceptContext): void {
+    void context;
+  }
+
+  override countersProblem(): string | undefined {
+    const base = super.countersProblem();
+    if (base !== undefined) return base;
+    if (this.arrivalPlan.length > 0 || this.rolledUnits > 0 || this.lastMinuteUnits > 0 || this.heldUnits > 0) {
+      return 'repositioning nemá plán príchodov, rolled, last minute ani hold';
+    }
+    return undefined;
+  }
+}
+
+/** Najmenší rozstup príchodov lodí A a B prekládky v tickoch (loď B nikdy nepríde v ticku príchodu lode A). */
+const MIN_TRANSHIP_GAP_TICKS = 1;
+
+/**
+ * Prekládka loď → loď (F6c, ADR-034): loď A (voyage kontraktu) privezie `volumeUnits` jednotiek `direction: 'tranship'`,
+ * vyložia sa, uložia a naložia na loď B (voyage `outVoyageId`, ktorá príde `transhipGapDaysRange` neskôr); jednotky **nikdy
+ * neprejdú bránou**. Je to export booking s doplnkami: `arrivedUnits` = `unitsUnloaded` = jednotky vyložené z lode A,
+ * `loadedUnits` = naložené na loď B, `unitsExported` (vrátené) = jednotky, ktoré po uzavretí odišli kamiónom ako „predané“
+ * (zmeškaná prekládka bez záchrany); bez cut-off a plánu príchodov. Stavy ako import (`ship_en_route → unloading` pri lodi A),
+ * `exporting` = jednotky čakajú na loď B / nakladajú sa. Odmena `⌊N × transhipPricePerUnitCents × urgency⌋` pomerne k naloženým.
+ * Plán lode B (`outArrivalTick`, `outShipId`, `rescueDeadlineTick`) je v save časti `tranship`.
+ */
+export class TranshipContract extends ExportContract implements TranshipLeg {
+  readonly outVoyageId: VoyageId;
+  outArrivalTick: number | undefined;
+  outShipId: EntityId | undefined;
+  rescueDeadlineTick: number | undefined;
+
+  /** Chyby ako `ExportContract` a navyše `outVoyageId` nie je celé ≥ 1 alebo sa rovná voyage lode A (`ContractError('invalid_input')`). */
+  constructor(terms: TranshipContractTerms) {
+    super(terms);
+    if (!isPositive(terms.outVoyageId) || terms.outVoyageId === terms.voyageId) {
+      throw new ContractError('invalid_input', `${this.label}: outVoyageId musí byť celé číslo ≥ 1 a iné ako voyage lode A, dostal ${String(terms.outVoyageId)}`);
+    }
+    this.outVoyageId = terms.outVoyageId;
+    this.outArrivalTick = undefined;
+    this.outShipId = undefined;
+    this.rescueDeadlineTick = undefined;
+  }
+
+  /**
+   * Prekládka zo save: booking aj plán lode B povinné; `outArrivalTick` práve od prijatia a po príchode lode A, `outShipId`
+   * len s plánom príchodu B, `rescueDeadlineTick` len po spawne B.
+   */
+  static override restore(state: SerializedContract): TranshipContract {
+    const { tranship } = state;
+    if (tranship === null) throw new ContractError('invalid_input', `kontrakt #${String(state.id)}: prekládka musí mať plán lode B (tranship)`);
+    const contract = new TranshipContract({ ...exportTermsOf(state, 'prekládka'), outVoyageId: tranship.outVoyageId as VoyageId });
+    contract.restoreBooking(state, 'absent');
+    const label = contract.label;
+    const planned = CONTRACT_STATE_TRAITS[state.state].plan;
+    checkPresence(label, 'tranship.outArrivalTick', orUndefined(tranship.outArrivalTick), planned === 'absent' ? 'absent' : 'required');
+    checkPresence(label, 'tranship.outShipId', orUndefined(tranship.outShipId), 'optional');
+    checkPresence(label, 'tranship.rescueDeadlineTick', orUndefined(tranship.rescueDeadlineTick), 'optional');
+    if (tranship.outArrivalTick !== null && state.shipArrivalTick !== null && tranship.outArrivalTick <= state.shipArrivalTick) {
+      throw new ContractError('invalid_input', `${label}: príchod lode B ${String(tranship.outArrivalTick)} musí byť po príchode lode A ${String(state.shipArrivalTick)}`);
+    }
+    if (tranship.outShipId !== null && (!isPositive(tranship.outShipId) || tranship.outArrivalTick === null)) {
+      throw new ContractError('invalid_input', `${label}: loď B (outShipId) musí byť id ≥ 1 a má ju len prijatá prekládka`);
+    }
+    if (tranship.rescueDeadlineTick !== null && tranship.outShipId === null) {
+      throw new ContractError('invalid_input', `${label}: rescueDeadlineTick má len prekládka, ktorej loď B už vznikla`);
+    }
+    contract.outArrivalTick = orUndefined(tranship.outArrivalTick);
+    contract.outShipId = orUndefined(tranship.outShipId) as EntityId | undefined;
+    contract.rescueDeadlineTick = orUndefined(tranship.rescueDeadlineTick);
+    return contract;
+  }
+
+  override get kind(): ContractKind {
+    return 'tranship';
+  }
+
+  override get tranship(): TranshipLeg {
+    return this;
+  }
+
+  /** Voyage lode A aj lode B (kniha ich indexuje obe). */
+  override get voyageIds(): readonly VoyageId[] {
+    return [this.voyageId, this.outVoyageId];
+  }
+
+  override shipOnVoyage(voyageId: VoyageId): EntityId | undefined {
+    return voyageId === this.outVoyageId ? this.outShipId : super.shipOnVoyage(voyageId);
+  }
+
+  override arrivalOnVoyage(voyageId: VoyageId): number | undefined {
+    return voyageId === this.outVoyageId ? this.outArrivalTick : super.arrivalOnVoyage(voyageId);
+  }
+
+  override voyageOfShip(shipId: EntityId): VoyageId | undefined {
+    return this.outShipId === shipId ? this.outVoyageId : super.voyageOfShip(shipId);
+  }
+
+  /** Loď A privezie všetky jednotky prekládky (ako import), náklad nakladá loď B. */
+  override get spawnUnits(): number {
+    return this.volumeUnits;
+  }
+
+  /** Jednotky prekládky: smer `tranship`, voyage lode A (kontraktu), linka a cieľový prístav lode B. */
+  override get spawnLabels(): CargoUnitLabels {
+    return { direction: 'tranship', voyageId: this.voyageId, lineId: this.lineId, destinationPort: this.destinationPort, weightClass: DEFAULT_WEIGHT_CLASS };
+  }
+
+  /** Náklad na palube lode A patrí kontraktu v `ship_en_route` a `unloading` (ako import). */
+  override get carriesShipCargo(): boolean {
+    return this.state === 'ship_en_route' || this.state === 'unloading';
+  }
+
+  /** Demurrage lode A beží v `unloading` (`CONTRACT_STATE_TRAITS`); demurrage lode B rieši T6C-03. */
+  override get accruesDemurrage(): boolean {
+    return CONTRACT_STATE_TRAITS[this.state].demurrage;
+  }
+
+  /**
+   * Plán po prijatí (ADR-034): príchod lode B = `shipArrivalTick + max(1, round(gap × ticksPerDay))`, `gap` = jeden ťah
+   * `rng.range(transhipGapDaysRange)`. Bez cut-off a plánu príchodov kamiónov.
+   */
+  protected override planBooking(context: AcceptContext): void {
+    const [minDays, maxDays] = context.transhipGapDaysRange;
+    const gapTicks = Math.max(MIN_TRANSHIP_GAP_TICKS, Math.round(context.rng.range(minDays, maxDays) * context.ticksPerDay));
+    this.outArrivalTick = context.shipArrivalTick + gapTicks;
+  }
+
+  /**
+   * Jednotka, ktorá opustila loď A (`on_ship → …`, nie `shipped`), zvýši `unitsUnloaded` aj `arrivedUnits`; naloženie na loď B
+   * (`→ on_ship`) a vrátenie (`→ exported`) počíta `ExportContract.cargoMoved` (`loadedUnits`, `unitsExported`).
+   */
+  override cargoMoved(unit: CargoUnit, to: CargoLocation): void {
+    if (unit.location.kind === 'on_ship' && to.kind !== 'shipped' && this.unitsUnloaded < this.volumeUnits) {
+      this.unitsUnloaded += 1;
+      this.arrivedUnits += 1;
+    }
+    super.cargoMoved(unit, to);
+  }
+
+  /**
+   * `unitsUnloaded = arrivedUnits ≤ booked`; `loaded + vrátené ≤ arrived`; bez plánu príchodov, rolled, last minute a hold;
+   * `exporting` má vyložený celý objem, `completed` aspoň jednu naloženú jednotku.
+   */
+  override countersProblem(): string | undefined {
+    const { arrivedUnits, loadedUnits, unitsExported, unitsUnloaded, volumeUnits } = this;
+    if (unitsUnloaded !== arrivedUnits || unitsUnloaded > volumeUnits) {
+      return `vyložené ${String(unitsUnloaded)} musí byť rovné prijatým ${String(arrivedUnits)} a nie viac ako ${String(volumeUnits)}`;
+    }
+    if (loadedUnits + unitsExported > arrivedUnits) return `naložené ${String(loadedUnits)} + vrátené ${String(unitsExported)} > vyložené ${String(arrivedUnits)}`;
+    if (this.arrivalPlan.length > 0 || this.rolledUnits > 0 || this.lastMinuteUnits > 0 || this.heldUnits > 0) {
+      return 'prekládka nemá plán príchodov, rolled, last minute ani hold';
+    }
+    if (this.state === 'exporting' && unitsUnloaded !== volumeUnits) return 'exporting bez vyloženého celého objemu';
+    if (this.state === 'completed' && loadedUnits === 0) return 'completed bez naloženej jednotky';
+    return undefined;
+  }
+
+  protected override transhipState(): SerializedTranship {
+    return {
+      outVoyageId: this.outVoyageId,
+      outArrivalTick: orNull(this.outArrivalTick),
+      outShipId: orNull(this.outShipId),
+      rescueDeadlineTick: orNull(this.rescueDeadlineTick),
+    };
+  }
+}
+
 /** Obnova kontraktu zo save podľa druhu (tabuľka, nie switch — nový druh = nový riadok a trieda). */
 const CONTRACT_RESTORERS: { readonly [K in ContractKind]: (state: SerializedContract) => Contract } = Object.freeze({
   import: (state: SerializedContract) => ImportContract.restore(state),
   export: (state: SerializedContract) => ExportContract.restore(state),
+  empty_repositioning: (state: SerializedContract) => EmptyRepositioningContract.restore(state),
+  tranship: (state: SerializedContract) => TranshipContract.restore(state),
 });

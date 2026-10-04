@@ -32,6 +32,7 @@ import type { SimEvent } from '@sim/events';
 const IMPORT_TERMS: ContractTerms = {
   id: 3 as ContractId,
   voyageId: 2 as VoyageId,
+  lineId: 'blue_anchor',
   templateId: 'container_feeder_standard',
   cargoTypeId: 'container_teu',
   volumeUnits: 20,
@@ -50,10 +51,13 @@ const unit = (unitId: number, location: CargoLocation): CargoUnit => ({
   typeId: 'container_teu',
   contractId: EXPORT_TERMS.id,
   voyageId: EXPORT_TERMS.voyageId,
+  lineId: EXPORT_TERMS.lineId,
   direction: 'export',
   destinationPort: 'Rotterdam',
   weightClass: 'medium',
   hold: null,
+  status: 'available',
+  repairUntilTick: null,
   quantity: 1,
   location,
 });
@@ -93,7 +97,7 @@ function savedExport(state: ContractState, booking: Partial<SerializedBooking> =
 
 describe('druhy kontraktu a prechody exportu (ADR-032 bod 1)', () => {
   it('druhy import/export; import tabuľka sa nezmenila, export: ship_en_route → exporting (nakládka) | failed, bez unloading', () => {
-    expect(CONTRACT_KINDS).toEqual(['import', 'export']);
+    expect(CONTRACT_KINDS).toEqual(['import', 'export', 'empty_repositioning', 'tranship']);
     expect(CONTRACT_TRANSITIONS_BY_KIND.import).toBe(CONTRACT_TRANSITIONS);
     expect(CONTRACT_TRANSITIONS_BY_KIND.export).toBe(EXPORT_CONTRACT_TRANSITIONS);
     expect(EXPORT_CONTRACT_TRANSITIONS).toEqual({
@@ -164,7 +168,7 @@ describe('ExportContract', () => {
   it.each<[string, SerializedContract]>([
     ['export bez bookingu', { ...savedExport('accepted'), booking: null }],
     ['import s bookingom', { ...new ImportContract(IMPORT_TERMS).toState(), booking: savedExport('offered').booking }],
-    ['neznámy druh', { ...savedExport('offered'), kind: 'tranship' as 'export' }],
+    ['neznámy druh', { ...savedExport('offered'), kind: 'sideways' as 'export' }],
     ['stav, ktorý export nepozná (unloading)', savedExport('unloading')],
     ['ponuka s cut-off', savedExport('offered', { cutoffTick: 50 })],
     ['ponuka s plánom príchodov', savedExport('offered', { arrivalPlan: [5] })],

@@ -53,6 +53,40 @@
       "shipClassIds": ["feeder"],
       "weight": 2,
       "minTier": 0
+    },
+    {
+      "id": "container_feeder_repositioning",
+      "kind": "empty_repositioning",
+      "destinationPorts": ["Rotterdam", "Hamburg", "Gdańsk"],
+      "cargoTypeId": "container_teu",
+      "volumeUnitsRange": [12, 36],
+      "slaDaysRange": [3, 5],
+      "shipClassIds": ["feeder"],
+      "weight": 2,
+      "minTier": 0
+    },
+    {
+      "id": "container_feeder_export_repositioning",
+      "kind": "empty_repositioning",
+      "destinationPorts": ["Rotterdam", "Hamburg", "Gdańsk"],
+      "cargoTypeId": "container_teu",
+      "volumeUnitsRange": [12, 24],
+      "exportVolumeUnitsRange": [12, 36],
+      "slaDaysRange": [3, 5],
+      "shipClassIds": ["feeder"],
+      "weight": 2,
+      "minTier": 0
+    },
+    {
+      "id": "container_feeder_tranship",
+      "kind": "tranship",
+      "destinationPorts": ["Rotterdam", "Hamburg", "Gdańsk"],
+      "cargoTypeId": "container_teu",
+      "volumeUnitsRange": [12, 36],
+      "slaDaysRange": [3, 5],
+      "shipClassIds": ["feeder"],
+      "weight": 2,
+      "minTier": 0
     }
   ]
 }

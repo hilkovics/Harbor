@@ -947,13 +947,17 @@ const checkTrucks: Check = (world) => {
  * jednotky `shipped`, sa neoveruje — booking sa uzavrie v nasledujúcom ticku); index uskladneného nákladu (`World.storedCargo`, ADR-027) má toľko jednotiek, koľko ich je
  * `in_storage`. Väzbu jednotka → kontrakt overuje obnova save (`checkContracts` vo world-restore).
  */
-/** Import jednotky na palube lode (naložený export voyage sa nepočíta, ADR-032); bez alokácie. */
+/**
+ * Jednotky na palube lode, ktoré loď privezla (smer `import`, a od F6c `tranship` na lodi A); naložený export voyage ani prázdne
+ * sa nepočítajú (ADR-032, ADR-034); bez alokácie.
+ */
 function importAboard(world: World, shipId: EntityId): number {
   const count = world.cargo.countAt('on_ship', shipId);
   let imports = 0;
   for (let i = 0; i < count; i++) {
     const unitId = world.cargo.unitAtIndex('on_ship', shipId, i);
-    if (unitId !== undefined && world.cargo.get(unitId)?.direction === 'import') imports += 1;
+    const direction = unitId === undefined ? undefined : world.cargo.get(unitId)?.direction;
+    if (direction === 'import' || direction === 'tranship') imports += 1;
   }
   return imports;
 }
@@ -978,7 +982,9 @@ const checkContracts: Check = (world) => {
     const counters = contract.countersProblem();
     if (counters !== undefined) return `${label}: ${counters}`;
     const booking = contract.booking;
-    const bookedShip = booking === null || contract.shipId === undefined ? undefined : world.ships.get(contract.shipId);
+    // Naložené jednotky exportu nesú `contractId` bookingu; prázdne repositioningu (bez `contractId`) a prekládka na lodi B majú
+    // vlastnú kontrolu (T6C-03, ADR-034).
+    const bookedShip = booking === null || contract.kind !== 'export' || contract.shipId === undefined ? undefined : world.ships.get(contract.shipId);
     if (booking !== null && bookedShip !== undefined) {
       const loadedAboard = exportsAboardOf(world, bookedShip.id, contract.id);
       if (loadedAboard !== booking.loadedUnits) {
@@ -995,9 +1001,11 @@ const checkContracts: Check = (world) => {
     }
   }
   const groups = world.contractBook.offeredGroups();
-  const { offersPerDay, bookingOffersPerDay } = world.defs.economy;
+  const { offersPerDay, bookingOffersPerDay, repositioningOffersPerDay, transhipOffersPerDay } = world.defs.economy;
   if (groups.import > offersPerDay) return `pool má ${String(groups.import)} import ponúk > offersPerDay ${String(offersPerDay)} (ponúk spolu ${String(offers)})`;
   if (groups.booking > bookingOffersPerDay) return `pool má ${String(groups.booking)} booking ponúk > bookingOffersPerDay ${String(bookingOffersPerDay)}`;
+  if (groups.repositioning > repositioningOffersPerDay) return `pool má ${String(groups.repositioning)} ponúk repositioningu > repositioningOffersPerDay ${String(repositioningOffersPerDay)}`;
+  if (groups.tranship > transhipOffersPerDay) return `pool má ${String(groups.tranship)} ponúk prekládky > transhipOffersPerDay ${String(transhipOffersPerDay)}`;
   let held = 0;
   for (const contract of world.contractBook.contracts.values()) held += contract.booking?.heldUnits ?? 0;
   if (world.holdIndex.size !== held) return `index zadržaných jednotiek má ${String(world.holdIndex.size)} záznamov, kontrakty ${String(held)} jednotiek v hold`;

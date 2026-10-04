@@ -70,7 +70,8 @@ export function contractCard(world: World, contract: Contract): ContractCardData
   const { booking } = contract;
   return {
     id: contract.id,
-    kind: contract.kind,
+    // F6c (T6C-01): `empty_repositioning` a `tranship` karty dodá T6C-05; dovtedy sa zobrazia ako export-podobný booking.
+    kind: contract.kind === 'import' ? 'import' : 'export',
     voyageId: contract.voyageId,
     state: contract.state,
     cargoCategory: cargo.category,

@@ -49,17 +49,20 @@ describe('CargoLedger.create — štítky a miesto vzniku podľa smeru (ADR-032)
       typeId: TEU,
       contractId: EXPORT_CONTRACT,
       voyageId: 7,
+      lineId: 'blue_anchor',
       direction: 'export',
       destinationPort: 'Rotterdam',
       weightClass: 'heavy',
       hold: null,
+      status: 'available',
+      repairUntilTick: null,
       quantity: 1,
       location: at.truck(TRUCK),
     });
     expect(Object.isFrozen(unit)).toBe(true);
     expect(harness.ledger.unitsAt('in_truck', id(TRUCK))).toEqual([unit.id]);
     expect(harness.events.pending).toBe(0);
-    expect(CARGO_SPAWN_KIND_BY_DIRECTION).toEqual({ import: 'on_ship', export: 'in_truck' });
+    expect(CARGO_SPAWN_KIND_BY_DIRECTION).toEqual({ import: 'on_ship', export: 'in_truck', tranship: 'on_ship', empty: 'in_truck' });
   });
 
   it.each([
@@ -75,9 +78,10 @@ describe('CargoLedger.create — štítky a miesto vzniku podľa smeru (ADR-032)
   });
 
   it.each([
-    ['export bez kontraktu', null, EXPORT_LABELS, /patrí bookingu/],
-    ['export bez voyage', EXPORT_CONTRACT, { ...EXPORT_LABELS, voyageId: null }, /patrí bookingu/],
-    ['export bez cieľového prístavu', EXPORT_CONTRACT, { ...EXPORT_LABELS, destinationPort: null }, /patrí bookingu/],
+    ['export bez kontraktu', null, EXPORT_LABELS, /export jednotka musí mať kontrakt/],
+    ['export bez voyage', EXPORT_CONTRACT, { ...EXPORT_LABELS, voyageId: null }, /export jednotka musí mať voyage/],
+    ['export bez linky', EXPORT_CONTRACT, { ...EXPORT_LABELS, lineId: null }, /export jednotka musí mať linku/],
+    ['export bez cieľového prístavu', EXPORT_CONTRACT, { ...EXPORT_LABELS, destinationPort: null }, /export jednotka musí mať cieľový prístav/],
     ['import s cieľovým prístavom', null, { ...IMPORT_LABELS, destinationPort: 'Hamburg' }, /import jednotka nemá cieľový prístav/],
     ['neznáma hmotnostná trieda', EXPORT_CONTRACT, { ...EXPORT_LABELS, weightClass: 'huge' as WeightClass }, /hmotnostná trieda/],
   ])('%s → CargoError(invalid_input), id sa nespotrebuje', (_name, contractId, labels, problem) => {

@@ -7,6 +7,7 @@ import cargoTypesJson from '@data/defs/cargo_types.json';
 import contractTemplatesJson from '@data/defs/contract_templates.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
+import linesJson from '@data/defs/lines.json';
 import logisticsJson from '@data/defs/logistics.json';
 import modulesJson from '@data/defs/modules.json';
 import shipsJson from '@data/defs/ships.json';
@@ -36,6 +37,7 @@ function rawDefs(): Record<string, Json> {
     trucks: structuredClone(trucksJson),
     logistics: structuredClone(logisticsJson),
     contract_templates: structuredClone(contractTemplatesJson),
+    lines: structuredClone(linesJson),
   };
 }
 
@@ -283,7 +285,7 @@ describe('DefRegistry — šablóny podľa druhu (kind)', () => {
 
   it('neznámy kind → DefError', () => {
     const raw = rawDefs();
-    templateOf(raw, 'container_feeder_express')['kind'] = 'tranship';
+    templateOf(raw, 'container_feeder_express')['kind'] = 'nope';
     expectDefError(() => DefRegistry.fromRaw(raw), 'contract_templates', '/items/0/kind');
   });
 

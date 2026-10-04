@@ -4,6 +4,7 @@ import cargoTypesJson from '@data/defs/cargo_types.json';
 import contractTemplatesJson from '@data/defs/contract_templates.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
+import linesJson from '@data/defs/lines.json';
 import logisticsJson from '@data/defs/logistics.json';
 import modulesJson from '@data/defs/modules.json';
 import shipsJson from '@data/defs/ships.json';
@@ -31,6 +32,7 @@ interface RawBundle {
   trucks: Record<string, unknown>;
   logistics: Record<string, unknown>;
   contract_templates: Record<string, unknown>;
+  lines: Record<string, unknown>;
 }
 
 /** Čerstvá hlboká kópia bundled defov; negatívne testy z nej upravia jedno pole. */
@@ -46,6 +48,7 @@ function rawDefs(): RawBundle {
     trucks: structuredClone(trucksJson),
     logistics: structuredClone(logisticsJson),
     contract_templates: structuredClone(contractTemplatesJson),
+    lines: structuredClone(linesJson),
   };
 }
 
@@ -452,6 +455,16 @@ describe('loadBundledDefs', () => {
       shipNavigation: { approachMarginCells: 1, sweepStepCells: 0.5, turnManeuvers: 1, sidewaysManeuvers: 1 },
       // T6A-02 (ADR-032): tok exportu po súši.
       exportFlow: { arrivalWindowDays: 2, vgmMissingChance: 0.05, vgmHoldHours: 6, weightClassShares: { light: 0.3, medium: 0.5, heavy: 0.2 } },
+      // T6C-01 (ADR-034): tok prázdnych kontajnerov.
+      emptyFlow: {
+        hinterlandDaysRange: [1, 3],
+        emptyReturnRate: 0.6,
+        damageChance: 0.08,
+        repairHours: 6,
+        emptyPickupRate: 0.4,
+        emptyPickupLeadHoursRange: [4, 12],
+        emptyPickupMaxWaitHours: 6,
+      },
     });
   });
 

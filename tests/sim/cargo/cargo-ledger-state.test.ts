@@ -95,7 +95,7 @@ describe('CargoLedger.getState', () => {
       ['at_ramp', 50, 6],
       ['at_ramp', 50, 3],
     ]);
-    expect(Object.keys(units[4])).toEqual(['id', 'typeId', 'contractId', 'voyageId', 'direction', 'destinationPort', 'weightClass', 'hold', 'quantity', 'location']);
+    expect(Object.keys(units[4])).toEqual(['id', 'typeId', 'contractId', 'voyageId', 'lineId', 'direction', 'destinationPort', 'weightClass', 'hold', 'status', 'repairUntilTick', 'quantity', 'location']);
     expect(JSON.stringify(units[4].location)).toBe('{"kind":"on_apron","berthId":10,"slot":3}');
     expect(units.find((unit) => unit.id === 1)).toMatchObject({ typeId: GRAIN, contractId: 500, quantity: 25 });
   });
@@ -185,14 +185,19 @@ describe('CargoLedger.fromState — neplatný stav', () => {
     typeId: TEU,
     contractId: null,
     voyageId: null,
+    lineId: null,
     direction: 'import',
     destinationPort: null,
     weightClass: 'medium',
     hold: null,
+    status: 'available',
+    repairUntilTick: null,
     quantity: 1,
     location: at.ship(SHIP_A),
     ...overrides,
   });
+  const emptyUnit = (overrides: Record<string, unknown> = {}): Record<string, unknown> =>
+    unit({ direction: 'empty', lineId: 'blue_anchor', weightClass: 'light', location: at.truck(30), ...overrides });
   const exportUnit = (overrides: Record<string, unknown> = {}): Record<string, unknown> =>
     unit({ contractId: EXPORT_CONTRACT, ...EXPORT_LABELS, location: at.truck(30), ...overrides });
   const state = (units: unknown[], overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
@@ -216,13 +221,23 @@ describe('CargoLedger.fromState — neplatný stav', () => {
     ['neznámy kľúč jednotky', '/units/0/owner', state([unit({ owner: 1 })]), /neznámy kľúč/],
     ['chýba quantity', '/units/0/quantity', state([Object.fromEntries(Object.entries(unit()).filter(([key]) => key !== 'quantity'))]), /chýba povinný kľúč/],
     ['chýba štítok (jednotka v6)', '/units/0/voyageId', state([{ id: 1, typeId: TEU, contractId: null, quantity: 1, location: at.ship(1) }]), /chýba povinný kľúč/],
-    ['neznámy smer', '/units/0/direction', state([unit({ direction: 'tranship' })]), /smer musí byť jeden z: import, export/],
+    ['neznámy smer', '/units/0/direction', state([unit({ direction: 'sideways' })]), /smer musí byť jeden z: import, export, tranship, empty/],
     ['neznáma hmotnostná trieda', '/units/0/weightClass', state([unit({ weightClass: 'huge' })]), /light, medium, heavy/],
     ['voyageId 0', '/units/0/voyageId', state([unit({ voyageId: 0 })]), /null alebo celé číslo ≥ 1/],
     ['import s cieľovým prístavom', '/units/0/destinationPort', state([unit({ destinationPort: 'Rotterdam' })]), /import jednotka nemá cieľový prístav/],
     ['prázdny cieľový prístav', '/units/0/destinationPort', state([exportUnit({ destinationPort: '' })]), /neprázdny reťazec/],
-    ['export bez kontraktu', '/units/0/direction', state([exportUnit({ contractId: null })]), /patrí bookingu/],
-    ['export bez voyage', '/units/0/direction', state([exportUnit({ voyageId: null })]), /patrí bookingu/],
+    ['export bez kontraktu', '/units/0/direction', state([exportUnit({ contractId: null })]), /export jednotka musí mať kontrakt/],
+    ['export bez voyage', '/units/0/voyageId', state([exportUnit({ voyageId: null })]), /export jednotka musí mať voyage/],
+    ['export bez linky', '/units/0/lineId', state([exportUnit({ lineId: null })]), /export jednotka musí mať linku/],
+    ['prázdna linka (reťazec)', '/units/0/lineId', state([emptyUnit({ lineId: '' })]), /null alebo neprázdny reťazec/],
+    ['prázdny kontajner bez linky', '/units/0/lineId', state([emptyUnit({ lineId: null })]), /empty jednotka musí mať linku/],
+    ['prázdny kontajner s kontraktom', '/units/0/direction', state([emptyUnit({ contractId: 5 })]), /empty jednotka nemá kontrakt/],
+    ['prázdny kontajner s voyage', '/units/0/voyageId', state([emptyUnit({ voyageId: 3 })]), /empty jednotka nemá voyage/],
+    ['prázdny kontajner s cieľovým prístavom', '/units/0/destinationPort', state([emptyUnit({ destinationPort: 'Rotterdam' })]), /empty jednotka nemá cieľový prístav/],
+    ['neznámy stav kvality', '/units/0/status', state([emptyUnit({ status: 'lost' })]), /stav musí byť jeden z: available, damaged, in_repair/],
+    ['oprava bez repairUntilTick', '/units/0/status', state([emptyUnit({ status: 'in_repair' })]), /repairUntilTick celé číslo ≥ 0/],
+    ['repairUntilTick mimo opravy', '/units/0/status', state([emptyUnit({ repairUntilTick: 5 })]), /repairUntilTick má len jednotka v oprave/],
+    ['poškodený import', '/units/0/status', state([unit({ status: 'damaged' })]), /len prázdny kontajner/],
     ['hold import jednotky', '/units/0/hold', state([unit({ hold: { reason: 'vgm', untilTick: 5 } })]), /len export/],
     ['hold s neznámym dôvodom', '/units/0/hold', state([exportUnit({ hold: { reason: 'damage', untilTick: 5 } })]), /dôvod musí byť jeden z: vgm/],
     ['hold so zlým tickom', '/units/0/hold', state([exportUnit({ hold: { reason: 'vgm', untilTick: -1 } })]), /untilTick musí byť celé číslo ≥ 0/],

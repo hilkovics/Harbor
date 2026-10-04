@@ -20,7 +20,7 @@ describe('inspectorData: sklad — rozdelenie import / export', () => {
   it('prázdny dvor: split 0 / 0; uložené exporty a importy sa rozdelia podľa smeru (súčet = počet jednotiek v sklade)', () => {
     const app = createApp();
     buildLogistics(app);
-    expect(inspectorData(app.bridge, YARD_ID)?.storage?.split).toEqual({ import: 0, export: 0 });
+    expect(inspectorData(app.bridge, YARD_ID)?.storage?.split).toEqual({ import: 0, export: 0, tranship: 0, empty: 0 });
 
     const roundtrip = addRoundtripOffer(app.world);
     acceptRoundtrip(app.world, roundtrip);
@@ -36,7 +36,7 @@ describe('inspectorData: sklad — rozdelenie import / export', () => {
       { kind: 'in_storage', moduleId: YARD_ID, slot: 3 },
     ]);
     const split = inspectorData(app.bridge, YARD_ID)?.storage?.split;
-    expect(split).toEqual({ import: 1, export: 3 });
+    expect(split).toEqual({ import: 1, export: 3, tranship: 0, empty: 0 });
     expect(app.world.cargo.countAt('in_storage', YARD_ID)).toBe(4);
   });
 
@@ -46,7 +46,7 @@ describe('inspectorData: sklad — rozdelenie import / export', () => {
     buyVehicles(app, 2);
     runCommands(app, [{ type: 'SpawnShipDebug', shipClassId: 'feeder', cargoTypeId: 'container_teu', units: 4 }]);
     frameUntil(app, () => app.world.cargo.countByKind('in_storage') === 4, 12000);
-    const storages = [YARD_ID, YARD_2_ID].map((id) => inspectorData(app.bridge, id)?.storage?.split ?? { import: 0, export: 0 });
+    const storages = [YARD_ID, YARD_2_ID].map((id) => inspectorData(app.bridge, id)?.storage?.split ?? { import: 0, export: 0, tranship: 0, empty: 0 });
     expect(storages.reduce((sum, split) => sum + split.import, 0)).toBe(4);
     expect(storages.every((split) => split.export === 0)).toBe(true);
   });
@@ -65,7 +65,7 @@ describe('inspectorData: zakotvená loď — náklad podľa smeru a lashing', ()
     const app = createApp();
     const ship = dockedFeeder(app);
     const before = inspectorData(app.bridge, ROOT_BERTH)?.dockedShip;
-    expect(before?.cargoSplit).toEqual({ import: before?.unitsOnBoard, export: 0 });
+    expect(before?.cargoSplit).toEqual({ import: before?.unitsOnBoard, export: 0, tranship: 0, empty: 0 });
 
     const roundtrip = addRoundtripOffer(app.world);
     acceptRoundtrip(app.world, roundtrip);
@@ -74,7 +74,7 @@ describe('inspectorData: zakotvená loď — náklad podľa smeru a lashing', ()
       moveChain(app.world, unit.id, toShipChain(ship.id));
     }
     const after = inspectorData(app.bridge, ROOT_BERTH)?.dockedShip;
-    expect(after?.cargoSplit).toEqual({ import: before?.cargoSplit?.import, export: 2 });
+    expect(after?.cargoSplit).toEqual({ import: before?.cargoSplit?.import, export: 2, tranship: 0, empty: 0 });
     expect(after?.unitsOnBoard).toBe((before?.unitsOnBoard ?? 0) + 2);
     expect(after).not.toHaveProperty('lashing');
   });

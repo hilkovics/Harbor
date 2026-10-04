@@ -14,12 +14,14 @@ import cargoTypesJson from '@data/defs/cargo_types.json';
 import contractTemplatesJson from '@data/defs/contract_templates.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
+import linesJson from '@data/defs/lines.json';
 import logisticsJson from '@data/defs/logistics.json';
 import modulesJson from '@data/defs/modules.json';
 import shipsJson from '@data/defs/ships.json';
 import timeJson from '@data/defs/time.json';
 import trucksJson from '@data/defs/trucks.json';
 import vehiclesJson from '@data/defs/vehicles.json';
+import { CARGO_DIRECTIONS } from '../cargo/cargo-unit';
 import { SECONDS_PER_MINUTE } from '../core/sim-clock';
 import { DEFAULT_ROAD_KIND } from '../grid/road-kind';
 import { TERRAIN_TYPES } from '../grid/terrain';
@@ -55,9 +57,11 @@ import {
   type ContractTemplateKind,
   type DefBase,
   type EconomyDef,
+  type EmptyFlowDef,
   type ExportFlowDef,
   type InfrastructureDef,
   type InfrastructureLayerDef,
+  type LineDef,
   type LogisticsDef,
   type ModuleDef,
   type RoadKindDef,
@@ -113,6 +117,14 @@ const ECONOMY_FIELDS: FieldTable<EconomyDef> = {
   lastMinuteExportRateOfReward: { kind: 'number', min: 0, max: 1 },
   rolledExportRateOfReward: { kind: 'number', min: 0, max: 1 },
   unfulfilledBookingRateOfReward: { kind: 'number', min: 0, max: 1 },
+  // Prázdne kontajnery, repositioning a tranship (F6c, ADR-034).
+  repositioningOffersPerDay: { kind: 'integer', min: 0 },
+  transhipOffersPerDay: { kind: 'integer', min: 0 },
+  repairCostCents: { kind: 'integer', min: 0 },
+  // Rozstup príchodov lodí A a B: ostro kladný (B nikdy nepríde v ticku príchodu A), min ≤ max hlási `RangeSpec`.
+  transhipGapDaysRange: { kind: 'range', bound: { kind: 'number', exclusiveMin: 0 } },
+  transhipRescueDays: { kind: 'number', min: 0 },
+  transhipMissedRateOfReward: { kind: 'number', min: 0, max: 1 },
 };
 
 /** Hodín v dni — prevod `exportArrivalDaysRange` (dni) na hodiny `cutoffHours` (kalendárna konštanta, nie balans). */
@@ -210,12 +222,27 @@ const EXPORT_FLOW_FIELDS: SpecTable<ExportFlowDef> = {
   },
 };
 
+/**
+ * Tok prázdnych kontajnerov (F6c, ADR-034), tabuľka zrkadlí `logistics.schema.json`: rozsah dní z vnútrozemia (≥ 0, `min ≤ max`
+ * hlási `RangeSpec`), pravdepodobnosti `0 … 1`, hodiny opravy a čakania > 0 a rozsah predstihu prázdneho kamióna (> 0).
+ */
+const EMPTY_FLOW_FIELDS: SpecTable<EmptyFlowDef> = {
+  hinterlandDaysRange: { kind: 'range', bound: { kind: 'number', min: 0 } },
+  emptyReturnRate: { kind: 'number', min: 0, max: 1 },
+  damageChance: { kind: 'number', min: 0, max: 1 },
+  repairHours: { kind: 'number', exclusiveMin: 0 },
+  emptyPickupRate: { kind: 'number', min: 0, max: 1 },
+  emptyPickupLeadHoursRange: { kind: 'range', bound: { kind: 'number', exclusiveMin: 0 } },
+  emptyPickupMaxWaitHours: { kind: 'number', exclusiveMin: 0 },
+};
+
 const LOGISTICS_FIELDS: FieldTable<LogisticsDef> = {
   defaultInternalTicks: { kind: 'integer', min: 0 },
   repathIntervalTicks: { kind: 'integer', min: 1 },
   congestion: { kind: 'object', fields: CONGESTION_FIELDS },
   shipNavigation: { kind: 'object', fields: SHIP_NAVIGATION_FIELDS },
   exportFlow: { kind: 'object', fields: EXPORT_FLOW_FIELDS },
+  emptyFlow: { kind: 'object', fields: EMPTY_FLOW_FIELDS },
 };
 
 /** Vzťah polí `logistics.json` (F6a): aspoň jedna hmotnostná trieda má kladnú váhu (inak `Rng.weighted` nemá z čoho vyberať). */
@@ -245,6 +272,8 @@ const CARGO_TYPE_FIELDS: SpecTable<CargoTypeDef> = {
   unitsPerBatch: { kind: 'integer', min: 1 },
   basePricePerUnitCents: { kind: 'integer', min: 0 },
   exportPricePerUnitCents: { kind: 'integer', min: 0 },
+  repositioningPricePerUnitCents: { kind: 'integer', min: 0 },
+  transhipPricePerUnitCents: { kind: 'integer', min: 0 },
   xpPerUnit: { kind: 'number', min: 0 },
   colorToken: { kind: 'string', pattern: TOKEN_NAME, patternName: 'názov tokenu (kebab-case, bez `--`)' },
 };
@@ -283,6 +312,13 @@ const MODULE_FIELDS: SpecTable<Omit<ModuleDef, 'params'>> = {
   techRequired: { kind: 'string', pattern: SNAKE_CASE_ID, patternName: 'snake_case identifikátor', optional: true },
 };
 
+/** Linka (F6c, ADR-034): id, zobrazený názov a farebný token (`design/tokens.css` bez `--`). */
+const LINE_FIELDS: SpecTable<LineDef> = {
+  id: ID_FIELD,
+  displayName: TEXT_FIELD,
+  colorToken: { kind: 'string', pattern: TOKEN_NAME, patternName: 'názov tokenu (kebab-case, bez `--`)' },
+};
+
 const SHIP_CLASS_FIELDS: SpecTable<ShipClassDef> = {
   id: ID_FIELD,
   displayName: TEXT_FIELD,
@@ -307,6 +343,8 @@ const VEHICLE_FIELDS: SpecTable<VehicleDef> = {
   loadTicks: { kind: 'integer', min: 1 },
   unloadTicks: { kind: 'integer', min: 1 },
   cargoCategories: { kind: 'array', minItems: 1, unique: true, item: { kind: 'enum', values: CARGO_CATEGORIES } },
+  // Smery nákladu vozidla (F6c, ADR-034): chýba = všetky.
+  cargoDirections: { kind: 'array', minItems: 1, unique: true, item: { kind: 'enum', values: CARGO_DIRECTIONS }, optional: true },
   purchaseCents: { kind: 'integer', min: 0 },
   wagePerDayCents: { kind: 'integer', min: 0 },
   techRequired: { kind: 'string', pattern: SNAKE_CASE_ID, patternName: 'snake_case identifikátor', optional: true },
@@ -336,7 +374,7 @@ const CONTRACT_TEMPLATE_FIELDS: SpecTable<ContractTemplateDef> = {
   minTier: { kind: 'integer', min: 0 },
 };
 
-type DefName = keyof typeof DEF_FIELDS | 'cargo_types' | 'modules' | 'ships' | 'vehicles' | 'trucks' | 'contract_templates';
+type DefName = keyof typeof DEF_FIELDS | 'cargo_types' | 'modules' | 'ships' | 'vehicles' | 'trucks' | 'contract_templates' | 'lines';
 
 // ---------------------------------------------------------------------------------------------------------
 // Validácia konfiguračného defu
@@ -401,14 +439,30 @@ function checkRampTrucks(modules: Catalog<Readonly<ModuleDef>>, trucks: Catalog<
 }
 
 /**
- * Pole šablóny podľa druhu (F6a, ADR-032 bod 1): `import` nemá `destinationPorts` ani `exportVolumeUnitsRange`, `export`
- * vyžaduje `destinationPorts` a nemá `exportVolumeUnitsRange`, `roundtrip` vyžaduje obe. Tabuľka (nie switch) —
- * nový druh = nový riadok. `required` / `forbidden` sú polia šablóny.
+ * Pole šablóny podľa druhu (F6a, ADR-032 bod 1; F6c, ADR-034): `import` nemá `destinationPorts` ani `exportVolumeUnitsRange`,
+ * `export` vyžaduje `destinationPorts` a nemá `exportVolumeUnitsRange`, `roundtrip` vyžaduje obe, `empty_repositioning`
+ * vyžaduje `destinationPorts` a `exportVolumeUnitsRange` smie (skupina s export bookingom jednej voyage), `tranship` vyžaduje
+ * `destinationPorts` a nemá `exportVolumeUnitsRange`. Tabuľka (nie switch) — nový druh = nový riadok. `required` / `forbidden`
+ * sú polia šablóny.
  */
 const TEMPLATE_KIND_FIELDS: { readonly [K in ContractTemplateKind]: { readonly required: readonly string[]; readonly forbidden: readonly string[] } } = {
   import: { required: [], forbidden: ['destinationPorts', 'exportVolumeUnitsRange'] },
   export: { required: ['destinationPorts'], forbidden: ['exportVolumeUnitsRange'] },
   roundtrip: { required: ['destinationPorts', 'exportVolumeUnitsRange'], forbidden: [] },
+  empty_repositioning: { required: ['destinationPorts'], forbidden: [] },
+  tranship: { required: ['destinationPorts'], forbidden: ['exportVolumeUnitsRange'] },
+};
+
+/**
+ * Pole typu nákladu, ktoré cenou odmeny za jednotku určuje druh šablóny (kladné pre každý druh okrem importu, ktorý používa
+ * `basePricePerUnitCents` — tú nekontrolujeme, F5). Tabuľka (nie switch).
+ */
+const TEMPLATE_KIND_PRICE_FIELD: { readonly [K in ContractTemplateKind]: keyof CargoTypeDef | undefined } = {
+  import: undefined,
+  export: 'exportPricePerUnitCents',
+  roundtrip: 'exportPricePerUnitCents',
+  empty_repositioning: 'repositioningPricePerUnitCents',
+  tranship: 'transhipPricePerUnitCents',
 };
 
 /**
@@ -439,8 +493,9 @@ function checkContractTemplates(
     }
     const cargoType = cargoTypes.get(template.cargoTypeId);
     const category = cargoType.category;
-    if (kind !== DEFAULT_TEMPLATE_KIND && !(cargoType.exportPricePerUnitCents > 0)) {
-      fail(index, 'cargoTypeId', `šablóna druhu '${kind}' vyžaduje typ nákladu s exportPricePerUnitCents > 0, '${cargoType.id}' má ${String(cargoType.exportPricePerUnitCents)}`);
+    const priceField = TEMPLATE_KIND_PRICE_FIELD[kind];
+    if (priceField !== undefined && !((cargoType[priceField] as number) > 0)) {
+      fail(index, 'cargoTypeId', `šablóna druhu '${kind}' vyžaduje typ nákladu s ${priceField} > 0, '${cargoType.id}' má ${String(cargoType[priceField])}`);
     }
     let smallestCapacity = Number.POSITIVE_INFINITY;
     template.shipClassIds.forEach((shipClassId, shipIndex) => {
@@ -497,6 +552,7 @@ export class DefRegistry {
     private readonly trucksCatalog: Catalog<Readonly<TruckDef>>,
     private readonly logisticsDef: Readonly<LogisticsDef>,
     private readonly contractTemplatesCatalog: Catalog<Readonly<ContractTemplateDef>>,
+    private readonly linesCatalog: Catalog<Readonly<LineDef>>,
   ) {}
 
   /**
@@ -514,10 +570,11 @@ export class DefRegistry {
     const trucks = validateCatalog<TruckDef>('trucks', raw.trucks, { fields: TRUCK_FIELDS });
     const logistics = validateDef<LogisticsDef>('logistics', raw.logistics, DEF_FIELDS.logistics, checkLogistics);
     const contractTemplates = validateCatalog<ContractTemplateDef>('contract_templates', raw.contract_templates, { fields: CONTRACT_TEMPLATE_FIELDS });
+    const lines = validateCatalog<LineDef>('lines', raw.lines, { fields: LINE_FIELDS });
     checkExportWindow(economy, logistics);
     checkRampTrucks(modules, trucks);
     checkContractTemplates(contractTemplates, cargoTypes, ships);
-    return new DefRegistry(time, economy, infrastructure, cargoTypes, modules, ships, vehicles, trucks, logistics, contractTemplates);
+    return new DefRegistry(time, economy, infrastructure, cargoTypes, modules, ships, vehicles, trucks, logistics, contractTemplates, lines);
   }
 
   /** `time.json` (ARCHITECTURE §3); použiteľný priamo ako `SimClockConfig`. */
@@ -568,6 +625,11 @@ export class DefRegistry {
     return this.contractTemplatesCatalog;
   }
 
+  /** `lines.json` (§4, F6c, ADR-034): námorné linky — vlastníci kontajnerov a odosielatelia voyage; migrácia save v7 → v8 berie prvú. */
+  get lines(): Catalog<Readonly<LineDef>> {
+    return this.linesCatalog;
+  }
+
   /** `logistics.json` (§4.6, ADR-010): vnútorný čas v moduloch, opakovanie hľadania cesty, konštanty kongescie. */
   get logistics(): Readonly<LogisticsDef> {
     return this.logisticsDef;
@@ -587,5 +649,6 @@ export function loadBundledDefs(): DefRegistry {
     trucks: trucksJson,
     logistics: logisticsJson,
     contract_templates: contractTemplatesJson,
+    lines: linesJson,
   });
 }

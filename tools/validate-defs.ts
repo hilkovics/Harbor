@@ -170,7 +170,7 @@ const HOURS_PER_DAY = 24;
 
 /**
  * Vzťahy polí `economy.json`, ktoré schéma nevyjadrí: `min ≤ max` v `arrivalDaysRange`, `volumeScaleRange` a (F6a)
- * `exportArrivalDaysRange`, `arrivalDaysRange[1] > 0` (loď kontraktu nesmie prísť v ticku prijatia) a
+ * `exportArrivalDaysRange` a (F6c) `transhipGapDaysRange`, `arrivalDaysRange[1] > 0` (loď kontraktu nesmie prísť v ticku prijatia) a
  * `exportArrivalDaysRange[0] × 24 > cutoffHours` (cut-off nesmie ležať pred prijatím bookingu). Chýbajúci alebo
  * nečitateľný súbor sa preskočí.
  */
@@ -182,6 +182,7 @@ function findEconomyProblems(defsDir: string): string[] {
     ...findRangeOrderProblem(`${label}: /arrivalDaysRange`, economy['arrivalDaysRange']),
     ...findRangeOrderProblem(`${label}: /volumeScaleRange`, economy['volumeScaleRange']),
     ...findRangeOrderProblem(`${label}: /exportArrivalDaysRange`, economy['exportArrivalDaysRange']),
+    ...findRangeOrderProblem(`${label}: /transhipGapDaysRange`, economy['transhipGapDaysRange']),
   ];
   const arrival = asRange(economy['arrivalDaysRange']);
   if (arrival !== undefined && arrival[1] <= 0) {
@@ -199,14 +200,21 @@ function findEconomyProblems(defsDir: string): string[] {
 
 /**
  * Vzťahy polí `logistics.json` (F6a): súčet váh `exportFlow.weightClassShares` > 0 a okno príchodov exportu
- * (`exportFlow.arrivalWindowDays` × 24 h) > `economy.cutoffHours` (okno pred cut-off nesmie byť prázdne). Chýbajúci alebo
- * nečitateľný súbor sa preskočí.
+ * (`exportFlow.arrivalWindowDays` × 24 h) > `economy.cutoffHours` (okno pred cut-off nesmie byť prázdne); F6c: `min ≤ max`
+ * v `emptyFlow.hinterlandDaysRange` a `emptyFlow.emptyPickupLeadHoursRange`. Chýbajúci alebo nečitateľný súbor sa preskočí.
  */
 function findLogisticsProblems(defsDir: string): string[] {
   const logistics = readJsonOrUndefined(join(defsDir, LOGISTICS_DEF_FILE));
+  const emptyFlow = isRecord(logistics) ? logistics['emptyFlow'] : undefined;
+  const emptyErrors = isRecord(emptyFlow)
+    ? [
+        ...findRangeOrderProblem(`${LOGISTICS_DEF_FILE}: /emptyFlow/hinterlandDaysRange`, emptyFlow['hinterlandDaysRange']),
+        ...findRangeOrderProblem(`${LOGISTICS_DEF_FILE}: /emptyFlow/emptyPickupLeadHoursRange`, emptyFlow['emptyPickupLeadHoursRange']),
+      ]
+    : [];
   const flow = isRecord(logistics) ? logistics['exportFlow'] : undefined;
-  if (!isRecord(flow)) return [];
-  const errors: string[] = [];
+  if (!isRecord(flow)) return emptyErrors;
+  const errors: string[] = [...emptyErrors];
   const shares = flow['weightClassShares'];
   if (isRecord(shares)) {
     const values = ['light', 'medium', 'heavy'].map((key) => shares[key]);
@@ -253,11 +261,45 @@ function findBerthParamProblems(defsDir: string): string[] {
   return errors;
 }
 
-/** Polia šablóny podľa druhu (F6a, ADR-032 bod 1; rovnaká tabuľka ako `DefRegistry`): povinné a zakázané pole. */
+/**
+ * Vzťahy polí skladu v `modules.json` (F6c, ADR-034): depo prázdnych (`params.role: 'empty_depot'`) je sklad kontajnerov
+ * a vyžaduje `repairBays`; `repairBays` bez roly depa nemá zmysel (rovnaké pravidlá ako `DefRegistry`). Chýbajúci alebo
+ * nečitateľný katalóg a položky bez očakávaného tvaru sa preskočia (hlási ich schéma).
+ */
+function findStorageParamProblems(defsDir: string): string[] {
+  const modules = readJsonOrUndefined(join(defsDir, MODULES_DEF_FILE));
+  const items = isRecord(modules) ? modules['items'] : undefined;
+  if (!Array.isArray(items)) return [];
+  const errors: string[] = [];
+  items.forEach((item: unknown, index) => {
+    if (!isRecord(item) || item['kind'] !== 'storage' || !isRecord(item['params'])) return;
+    const { role, repairBays, category } = item['params'];
+    const at = `${MODULES_DEF_FILE}: /items/${String(index)}/params`;
+    if (role === 'empty_depot') {
+      if (category !== 'container') errors.push(`${at}/category depo prázdnych (role empty_depot) skladuje kontajnery — kategória musí byť 'container', dostal ${String(category)}`);
+      else if (repairBays === undefined) errors.push(`${at}/repairBays depo prázdnych (role empty_depot) vyžaduje repairBays`);
+    } else if (repairBays !== undefined) {
+      errors.push(`${at}/repairBays repairBays má zmysel len pri role empty_depot`);
+    }
+  });
+  return errors;
+}
+
+/** Polia šablóny podľa druhu (F6a, ADR-032 bod 1; F6c, ADR-034; rovnaká tabuľka ako `DefRegistry`): povinné a zakázané pole. */
 const TEMPLATE_KIND_FIELDS: Readonly<Record<string, { readonly required: readonly string[]; readonly forbidden: readonly string[] }>> = {
   import: { required: [], forbidden: ['destinationPorts', 'exportVolumeUnitsRange'] },
   export: { required: ['destinationPorts'], forbidden: ['exportVolumeUnitsRange'] },
   roundtrip: { required: ['destinationPorts', 'exportVolumeUnitsRange'], forbidden: [] },
+  empty_repositioning: { required: ['destinationPorts'], forbidden: [] },
+  tranship: { required: ['destinationPorts'], forbidden: ['exportVolumeUnitsRange'] },
+};
+
+/** Pole typu nákladu s cenou odmeny za jednotku podľa druhu šablóny (kladné; import používa `basePricePerUnitCents`, tú nekontrolujeme). */
+const TEMPLATE_KIND_PRICE_FIELD: Readonly<Record<string, string>> = {
+  export: 'exportPricePerUnitCents',
+  roundtrip: 'exportPricePerUnitCents',
+  empty_repositioning: 'repositioningPricePerUnitCents',
+  tranship: 'transhipPricePerUnitCents',
 };
 
 /**
@@ -300,8 +342,12 @@ function findContractTemplateProblems(defsDir: string): string[] {
     const cargo = findById(cargoItems, item['cargoTypeId']);
     if (cargo === undefined) {
       errors.push(`${at}/cargoTypeId neznámy typ nákladu '${String(item['cargoTypeId'])}' (${CARGO_TYPES_DEF_FILE})`);
-    } else if (kind !== 'import' && kindFields !== undefined && typeof cargo['exportPricePerUnitCents'] === 'number' && !(cargo['exportPricePerUnitCents'] > 0)) {
-      errors.push(`${at}/cargoTypeId šablóna druhu '${String(kind)}' vyžaduje typ nákladu s exportPricePerUnitCents > 0, '${String(cargo['id'])}' má ${String(cargo['exportPricePerUnitCents'])}`);
+    } else {
+      const priceField = typeof kind === 'string' ? TEMPLATE_KIND_PRICE_FIELD[kind] : undefined;
+      const price = priceField === undefined ? undefined : cargo[priceField];
+      if (priceField !== undefined && typeof price === 'number' && !(price > 0)) {
+        errors.push(`${at}/cargoTypeId šablóna druhu '${String(kind)}' vyžaduje typ nákladu s ${priceField} > 0, '${String(cargo['id'])}' má ${String(price)}`);
+      }
     }
     const shipIds = Array.isArray(item['shipClassIds']) ? (item['shipClassIds'] as unknown[]) : [];
     let smallestCapacity = Number.POSITIVE_INFINITY;
@@ -332,7 +378,7 @@ function findContractTemplateProblems(defsDir: string): string[] {
 
 /** Krížové kontroly, ktoré JSON Schema nevyjadrí, podľa súboru defu (`undefined` = súbor ich nemá). */
 const DEF_FILE_CHECKS: Readonly<Record<string, (defsDir: string) => string[]>> = {
-  [MODULES_DEF_FILE]: (defsDir) => [...findRampTruckProblems(defsDir), ...findBerthParamProblems(defsDir)],
+  [MODULES_DEF_FILE]: (defsDir) => [...findRampTruckProblems(defsDir), ...findBerthParamProblems(defsDir), ...findStorageParamProblems(defsDir)],
   [ECONOMY_DEF_FILE]: findEconomyProblems,
   [LOGISTICS_DEF_FILE]: findLogisticsProblems,
   [CONTRACT_TEMPLATES_DEF_FILE]: findContractTemplateProblems,
@@ -340,7 +386,7 @@ const DEF_FILE_CHECKS: Readonly<Record<string, (defsDir: string) => string[]>> =
 
 /**
  * Overí každý `*.json` v `defsDir` voči `<názov>.schema.json` v `schemasDir`; k niektorým súborom pridá krížové kontroly
- * (`DEF_FILE_CHECKS`: `modules.json` rampy × kamióny a rezerva apronu, `economy.json` rozsahy a cut-off, `logistics.json` váhy tried, `contract_templates.json` × cargo × lode). Chýbajúca schéma, nevalidný JSON aj porušenie schémy sú chyby v `errors`
+ * (`DEF_FILE_CHECKS`: `modules.json` rampy × kamióny, rezerva apronu a roly skladov, `economy.json` rozsahy a cut-off, `logistics.json` váhy tried, `contract_templates.json` × cargo × lode). Chýbajúca schéma, nevalidný JSON aj porušenie schémy sú chyby v `errors`
  * (nie výnimky). Výsledky sú zoradené podľa názvu súboru. Výnimku vyhodí iba neexistujúci/nečitateľný `defsDir`.
  */
 export function validateDefsDir(defsDir: string, schemasDir: string): DefValidationResult[] {

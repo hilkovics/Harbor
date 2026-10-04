@@ -67,6 +67,13 @@
           "items": { "enum": ["container", "bulk", "liquid", "gas", "roro"] },
           "description": "Kategórie nákladu, ktoré vozidlo smie viezť."
         },
+        "cargoDirections": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["import", "export", "tranship", "empty"] },
+          "description": "Smery nákladu, ktoré vozidlo smie viezť (F6c, ADR-034): `empty_handler` len `empty`. Chýba = vozidlo vezie každý smer (bežné vozidlá vozia prázdne ako záložná možnosť)."
+        },
         "purchaseCents": {
           "type": "integer",
           "minimum": 0,

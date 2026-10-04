@@ -35,6 +35,11 @@
  * (v6 vozil len import) a žeriav v `runtime` `cycle: 'unload'`, `targetUnitId: null`, `dualUnitId: null` a nulové počítadlá
  * čakania na vozidlo `waitForVehicleTicks`, `vehicleWaitTicks` (v6 len vykladal na apron, ADR-033). Nové kľúče sa
  * pridajú k pôvodným (nič sa nezahodí — iný tvar odmietne `parseWorldState`); poradie kľúčov zjednotí až `serialize()`.
+ *
+ * v7 → v8 (T6C-01, ADR-034; deterministicky bez `Rng`): v7 nepoznal linky ani prázdne kontajnery, preto každý kontrakt dostane
+ * `lineId` = **prvá linka z `lines.json`** a `tranship: null`; jednotka s kontraktom `lineId` = prvá linka (bez kontraktu —
+ * ladiaca loď — `null`), `status: 'available'` a `repairUntilTick: null`; svet dostane prázdny `emptyFlow` (žiadny plánovaný
+ * návrat ani výdaj prázdneho). Import jednotky, ktoré odišli pred migráciou, sa teda prázdne nevrátia.
  */
 import { DEFAULT_WEIGHT_CLASS } from '../cargo/cargo-unit';
 import type { DefRegistry } from '../defs/def-registry';
@@ -66,8 +71,14 @@ export const WORLD_STATE_V6 = 6;
  */
 export const WORLD_STATE_V7 = 7;
 
+/**
+ * Verzia `WorldState` v8 (F6c: linka kontraktu a jednotky, stav kvality prázdneho, plán prekládky kontraktu a plán toku
+ * prázdnych kontajnerov `emptyFlow`; ADR-034) — cieľ kroku v7 → v8.
+ */
+export const WORLD_STATE_V8 = 8;
+
 /** Aktuálna verzia `WorldState` — `serialize()` vždy vracia ju. */
-export const WORLD_STATE_VERSION = WORLD_STATE_V7;
+export const WORLD_STATE_VERSION = WORLD_STATE_V8;
 
 /** Kľúče `WorldState` v1 v poradí `serialize()` (F1, ADR-013). */
 export const WORLD_STATE_V1_KEYS = ['version', 'mapId', 'seed', 'rng', 'clock', 'ids', 'cashCents', 'roads', 'parcels'] as const;
@@ -92,6 +103,9 @@ export const WORLD_STATE_V6_KEYS = WORLD_STATE_V5_KEYS;
 
 /** Kľúče `WorldState` v7 v poradí `serialize()` (F6a, ADR-032): v6 + `nextVoyageId`. */
 export const WORLD_STATE_V7_KEYS = [...WORLD_STATE_V6_KEYS, 'nextVoyageId'] as const;
+
+/** Kľúče `WorldState` v8 v poradí `serialize()` (F6c, ADR-034): v7 + `emptyFlow`. */
+export const WORLD_STATE_V8_KEYS = [...WORLD_STATE_V7_KEYS, 'emptyFlow'] as const;
 
 type RawState = Record<string, unknown>;
 type Migration = (state: RawState, defs: DefRegistry) => RawState;
@@ -239,6 +253,25 @@ function migrateV6ToV7(state: RawState, defs: DefRegistry): RawState {
   return migrated;
 }
 
+/**
+ * v7 (presne kľúče v7) → v8: pôvodné polia + `emptyFlow`; kontrakty a jednotky doplnené podľa hlavičky súboru (prvá linka
+ * z `lines.json`, bez `Rng`).
+ */
+function migrateV7ToV8(state: RawState, defs: DefRegistry): RawState {
+  checkKeys(state, WORLD_STATE_V7_KEYS, '');
+  const lineId = defs.lines.items[0].id;
+  const migrated: RawState = {};
+  for (const key of WORLD_STATE_V7_KEYS) migrated[key] = state[key];
+  migrated['version'] = WORLD_STATE_V8;
+  migrated['contracts'] = extendEach(state['contracts'], (contract) => ({ ...contract, lineId, tranship: null }));
+  const cargo = state['cargo'];
+  migrated['cargo'] = isPlainObject(cargo)
+    ? { ...cargo, units: extendEach(cargo['units'], (unit) => ({ ...unit, lineId: unit['contractId'] === null ? null : lineId, status: 'available', repairUntilTick: null })) }
+    : cargo;
+  migrated['emptyFlow'] = { returnPlan: [], pickupPlan: [] };
+  return migrated;
+}
+
 /** Verzia `n` → migrácia na `n + 1` (migrácia zapíše cieľovú verziu kroku, napr. `WORLD_STATE_V2`). */
 const WORLD_STATE_MIGRATIONS: ReadonlyMap<number, Migration> = new Map([
   [1, migrateV1ToV2],
@@ -247,6 +280,7 @@ const WORLD_STATE_MIGRATIONS: ReadonlyMap<number, Migration> = new Map([
   [4, migrateV4ToV5],
   [5, migrateV5ToV6],
   [6, migrateV6ToV7],
+  [7, migrateV7ToV8],
 ]);
 
 /**
@@ -265,7 +299,7 @@ export const OLDEST_WORLD_STATE_VERSION = 1;
 /**
  * Stav ľubovoľnej podporovanej verzie → tvar aktuálnej verzie (`WORLD_STATE_VERSION`). Aktuálnu verziu vráti bez
  * zmeny (tú istú referenciu); staršiu migruje po krokoch do **nového** objektu (vstup nemení). `defs` určia druh
- * modulu podľa `defId` (kroky v2 → v3, v3 → v4 a v6 → v7). Chyby (`WorldStateError`): nie objekt → `''`, neznáma verzia → `/version`,
+ * modulu podľa `defId` (kroky v2 → v3, v3 → v4 a v6 → v7); `defs.lines` určia prvú linku (krok v7 → v8). Chyby (`WorldStateError`): nie objekt → `''`, neznáma verzia → `/version`,
  * tvar staršej verzie → cesta v nej.
  */
 export function migrateWorldState(raw: unknown, defs: DefRegistry): unknown {

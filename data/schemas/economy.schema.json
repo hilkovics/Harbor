@@ -30,7 +30,13 @@
     "bookingFulfilmentShare",
     "lastMinuteExportRateOfReward",
     "rolledExportRateOfReward",
-    "unfulfilledBookingRateOfReward"
+    "unfulfilledBookingRateOfReward",
+    "repositioningOffersPerDay",
+    "transhipOffersPerDay",
+    "repairCostCents",
+    "transhipGapDaysRange",
+    "transhipRescueDays",
+    "transhipMissedRateOfReward"
   ],
   "properties": {
     "schemaVersion": {
@@ -176,6 +182,39 @@
       "minimum": 0,
       "maximum": 1,
       "description": "Penalizácia za nesplnený booking (naložené < bookingFulfilmentShare): podiel odmeny, raz za booking."
+    },
+    "repositioningOffersPerDay": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Cieľový počet ponúk repositioningu prázdnych (skupiny voyage so šablónou `empty_repositioning`), ktoré pool dopĺňa pri DayClosed (F6c, ADR-034; pool ich ponúka od T6C-03); 0 = pool repositioning neponúka."
+    },
+    "transhipOffersPerDay": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Cieľový počet ponúk prekládky loď → loď (šablóna `tranship`), ktoré pool dopĺňa pri DayClosed (F6c, ADR-034; pool ich ponúka od T6C-03); 0 = pool tranship neponúka."
+    },
+    "repairCostCents": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Cena opravy jedného poškodeného prázdneho kontajnera v centoch (M&R v depe prázdnych, ledger kategória `maintenance_repair`); strhne sa pri dokončení opravy."
+    },
+    "transhipGapDaysRange": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "type": "number", "exclusiveMinimum": 0 },
+      "description": "Rozsah [min, max] dní od príchodu lode A (privezie prekládku) po príchod lode B (odvezie ju), desatinné dni, > 0. Poradie min ≤ max schéma nevyjadrí — kontroluje ho DefRegistry a `pnpm validate:defs`."
+    },
+    "transhipRescueDays": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Záchrana zmeškanej prekládky: keď loď B odpláva bez nich, čakajú dni na ďalšiu voyage tej istej linky, ktorá príde do tohto počtu dní; inak odídu kamiónom ako „predané“ (penalizácia)."
+    },
+    "transhipMissedRateOfReward": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Penalizácia za zmeškanú prekládku (jednotka, ktorá nebola naložená na loď B): podiel odmeny za jednotku."
     }
   }
 }

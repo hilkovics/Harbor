@@ -68,6 +68,7 @@ describe('AcceptContract: pripravenosť pozemnej strany exportu (ADR-032)', () =
       offeredTick: tick,
       offerExpiresTick: tick + 2 * TICKS_PER_DAY,
       shipClassId: 'feeder',
+      lineId: 'blue_anchor',
     });
     book.add(offer);
     expect(reasonsOf(world, offer.id)).toEqual([]);

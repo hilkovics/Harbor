@@ -24,7 +24,7 @@ export function exportLandsideReadiness(world: World, category: CargoCategory): 
   const operational = ramps.filter((ramp) => world.isRampOperational(ramp));
   if (operational.length === 0) return 'ramp_inoperative';
   for (const module of world.modules.values()) {
-    if (!(module instanceof StorageModule) || module.category !== category) continue;
+    if (!(module instanceof StorageModule) || module.category !== category || !module.acceptsDirection('export')) continue;
     if (operational.some((ramp) => distanceBetweenModules(world, ramp, module) !== Infinity)) return 'ready';
   }
   return 'no_storage';

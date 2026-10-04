@@ -16,8 +16,11 @@ const exportUnit = (unitId: number, location: CargoLocation): CargoUnit => ({
   ...IMPORT_LABELS,
   direction: 'export',
   voyageId: 2 as VoyageId,
+  lineId: 'blue_anchor',
   destinationPort: 'Rotterdam',
   hold: null,
+  status: 'available',
+  repairUntilTick: null,
   quantity: 1,
   location,
 });
@@ -32,12 +35,12 @@ describe('shipCargoSplit / storageCargoSplit', () => {
     const [ship] = [...world.ships.values()];
     const aboard = world.cargo.countAt('on_ship', ship.id);
     expect(aboard).toBeGreaterThan(0);
-    expect(shipCargoSplit(world, ship.id)).toEqual({ import: aboard, export: 0 });
+    expect(shipCargoSplit(world, ship.id)).toEqual({ import: aboard, export: 0, tranship: 0, empty: 0 });
     const yards = [...world.modules.values()].filter((module) => module.kind === 'storage');
     const stored = yards.reduce((sum, module) => sum + storageCargoSplit(world, module.id).import, 0);
     expect(stored).toBe(world.cargo.countByKind('in_storage'));
     expect(yards.every((module) => storageCargoSplit(world, module.id).export === 0)).toBe(true);
-    expect(shipCargoSplit(world, 999_999 as EntityId)).toEqual({ import: 0, export: 0 });
+    expect(shipCargoSplit(world, 999_999 as EntityId)).toEqual({ import: 0, export: 0, tranship: 0, empty: 0 });
   });
 });
 

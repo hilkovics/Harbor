@@ -2,7 +2,7 @@
  * Typy dátových definícií (ARCHITECTURE §4). Zrkadlia `data/defs/*.json` a `data/schemas/*.schema.json`
  * 1:1 — nové pole = zmena defu, schémy, tohto typu aj tabuľky polí v `def-registry.ts`.
  */
-import type { WeightClass } from '../cargo/cargo-unit';
+import type { CargoDirection, WeightClass } from '../cargo/cargo-unit';
 import type { RoadKind } from '../grid/road-kind';
 import type { TerrainType } from '../grid/terrain';
 
@@ -87,6 +87,21 @@ export interface EconomyDef extends DefBase {
   readonly rolledExportRateOfReward: number;
   /** Penalizácia za nesplnený booking (naložené < `bookingFulfilmentShare`): podiel odmeny, raz za booking. */
   readonly unfulfilledBookingRateOfReward: number;
+  /**
+   * Cieľový počet ponúk repositioningu prázdnych (skupiny voyage so šablónou `empty_repositioning`), ktoré pool dopĺňa pri
+   * DayClosed (F6c, ADR-034; pool ich ponúka od T6C-03); 0 = pool repositioning neponúka.
+   */
+  readonly repositioningOffersPerDay: number;
+  /** Cieľový počet ponúk prekládky loď → loď (šablóna `tranship`), ktoré pool dopĺňa pri DayClosed (F6c, ADR-034; od T6C-03); 0 = neponúka. */
+  readonly transhipOffersPerDay: number;
+  /** Cena opravy jedného poškodeného prázdneho kontajnera v centoch (M&R, ledger kategória `maintenance_repair`); strhne sa pri dokončení opravy. */
+  readonly repairCostCents: number;
+  /** Rozsah `[min, max]` dní od príchodu lode A (privezie prekládku) po príchod lode B (odvezie ju); desatinné dni > 0, jeden ťah `Rng`. */
+  readonly transhipGapDaysRange: readonly [number, number];
+  /** Záchrana zmeškanej prekládky: po odchode lode B bez nich čakajú dni na ďalšiu voyage linky; inak odídu kamiónom ako „predané". */
+  readonly transhipRescueDays: number;
+  /** Penalizácia za zmeškanú prekládku (jednotka nenaložená na loď B): podiel odmeny za jednotku. */
+  readonly transhipMissedRateOfReward: number;
 }
 
 /** Cena a údržba jednej vrstvy dopravy (cesta alebo koľaj), počítané za bunku; peniaze v centoch. */
@@ -172,6 +187,27 @@ export interface ExportFlowDef {
 }
 
 /**
+ * Tok prázdnych kontajnerov (F6c, ADR-034): návrat z vnútrozemia, kontrola a oprava v depe, výdaj prázdneho exportérovi.
+ * Trvania sú v dňoch a hodinách (prevod na ticky robí sim z `time.json`), pravdepodobnosti v `0 … 1`.
+ */
+export interface EmptyFlowDef {
+  /** Rozsah `[min, max]` dní od odchodu importu kamiónom po návrat prázdneho kontajnera tej istej linky (jeden ťah `Rng`). */
+  readonly hinterlandDaysRange: readonly [number, number];
+  /** Pravdepodobnosť, že sa importná jednotka vráti ako prázdna do tohto prístavu (`Rng.chance`). */
+  readonly emptyReturnRate: number;
+  /** Pravdepodobnosť, že kontrola pri uložení prázdneho do depa nájde poškodenie (`Rng.chance`). */
+  readonly damageChance: number;
+  /** Trvanie opravy poškodeného prázdneho (hodiny > 0); cena `economy.repairCostCents`. */
+  readonly repairHours: number;
+  /** Podiel jednotiek export bookingu, pre ktoré exportér najprv vyzdvihne prázdny kontajner linky bookingu (`Rng.chance`). */
+  readonly emptyPickupRate: number;
+  /** Rozsah `[min, max]` hodín (> 0), o ktoré prázdny kamión po prázdny kontajner predchádza príchod naloženého exportu (jeden ťah `Rng`). */
+  readonly emptyPickupLeadHoursRange: readonly [number, number];
+  /** Ako dlho (hodiny > 0) čaká kamión po prázdny kontajner, kým linka nemá dostupný prázdny; potom odíde prázdny (`emptyPickupMisses`). */
+  readonly emptyPickupMaxWaitHours: number;
+}
+
+/**
  * `logistics.json` — logistické konštanty (ARCHITECTURE §4.6, §7.3, §7.4, §7.6; ADR-010). Konfiguračný def (ADR-009);
  * všetky trvania sú v tickoch.
  */
@@ -184,6 +220,8 @@ export interface LogisticsDef extends DefBase {
   readonly shipNavigation: ShipNavigationDef;
   /** Export po súši: príchody kamiónov, VGM, hmotnostné triedy (F6a, ADR-032). */
   readonly exportFlow: ExportFlowDef;
+  /** Tok prázdnych kontajnerov: návrat, kontrola, oprava, výdaj exportérovi (F6c, ADR-034). */
+  readonly emptyFlow: EmptyFlowDef;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -194,8 +232,11 @@ export interface LogisticsDef extends DefBase {
 export const CARGO_CATEGORIES = ['container', 'bulk', 'liquid', 'gas', 'roro'] as const;
 export type CargoCategory = (typeof CARGO_CATEGORIES)[number];
 
-/** Druhy šablón kontraktov (F6a, ADR-032 bod 1): import, export booking a roundtrip (import + export jednej voyage). */
-export const CONTRACT_TEMPLATE_KINDS = ['import', 'export', 'roundtrip'] as const;
+/**
+ * Druhy šablón kontraktov: F6a (ADR-032 bod 1) import, export booking a roundtrip (import + export jednej voyage); F6c
+ * (ADR-034) `empty_repositioning` (linka nalodí N prázdnych) a `tranship` (loď A privezie, loď B odvezie).
+ */
+export const CONTRACT_TEMPLATE_KINDS = ['import', 'export', 'roundtrip', 'empty_repositioning', 'tranship'] as const;
 export type ContractTemplateKind = (typeof CONTRACT_TEMPLATE_KINDS)[number];
 
 /** Druh šablóny bez poľa `kind` (spätná kompatibilita F5). */
@@ -238,6 +279,13 @@ export interface CargoTypeDef {
    * typom nákladu vyžaduje hodnotu > 0 (`DefRegistry`); import ju nepoužíva.
    */
   readonly exportPricePerUnitCents: number;
+  /**
+   * Odmena za jednu naloženú prázdnu jednotku repositioningu linky v centoch (kontrakt `empty_repositioning`, F6c, ADR-034).
+   * Šablóna `empty_repositioning` s týmto typom nákladu vyžaduje hodnotu > 0 (`DefRegistry`).
+   */
+  readonly repositioningPricePerUnitCents: number;
+  /** Odmena za jednu prekládku loď → loď v centoch (kontrakt `tranship`, F6c, ADR-034); šablóna `tranship` vyžaduje hodnotu > 0. */
+  readonly transhipPricePerUnitCents: number;
   readonly xpPerUnit: number;
   /** Názov farebného tokenu z `design/tokens.css` bez `--` (napr. `cargo-container`). */
   readonly colorToken: string;
@@ -335,6 +383,10 @@ export interface CraneParams {
   readonly dualCycleFactor: number;
 }
 
+/** Roly skladu (F6c, ADR-034): `empty_depot` = depo prázdnych kontajnerov (trieda `EmptyDepot`); chýbajúca rola = bežný sklad kategórie. */
+export const STORAGE_ROLES = ['empty_depot'] as const;
+export type StorageRole = (typeof STORAGE_ROLES)[number];
+
 /** `params` skladu (`kind: 'storage'`). */
 export interface StorageParams {
   /** Kapacita v CargoUnit; pre kontajnerový dvor `slots × layers` v manifeste. */
@@ -343,6 +395,10 @@ export interface StorageParams {
   readonly category: CargoCategory;
   /** Vnútorný čas vozidla v module (§7.3 bod 4); chýba = `logistics.defaultInternalTicks`. */
   readonly internalTicks?: number;
+  /** Rola skladu (`StorageRole`, F6c, ADR-034); chýba = bežný sklad. `empty_depot` vyžaduje kategóriu `container` a `repairBays`. */
+  readonly role?: StorageRole;
+  /** Počet súčasných opráv v depe prázdnych (M&R, celé ≥ 1); povinné práve pri `role: 'empty_depot'`. */
+  readonly repairBays?: number;
 }
 
 /** `params` depa vozidiel (`kind: 'depot'`). */
@@ -440,9 +496,26 @@ export interface VehicleDef {
   /** Trvanie vyloženia jednej jednotky v tickoch (sekvenčne po `internalTicks`, §7.3). */
   readonly unloadTicks: number;
   readonly cargoCategories: readonly CargoCategory[];
+  /**
+   * Smery nákladu, ktoré vozidlo smie viezť (F6c, ADR-034): `empty_handler` len `['empty']`; chýba = každý smer (bežné
+   * vozidlá vozia prázdne ako záložná možnosť). Dispatcher ho overuje spolu s kategóriou (`vehicleCarries`).
+   */
+  readonly cargoDirections?: readonly CargoDirection[];
   readonly purchaseCents: number;
   readonly wagePerDayCents: number;
   readonly techRequired?: string;
+}
+
+/**
+ * Položka `lines.json` (F6c, ADR-034): námorná linka — vlastník kontajnerov (`CargoUnit.lineId`) a odosielateľ voyage
+ * (`Contract.lineId`). Prázdne kontajnery sa vracajú, vydávajú a nalodia len v rámci linky.
+ */
+export interface LineDef {
+  readonly id: string;
+  /** Zobrazený názov linky (UI). */
+  readonly displayName: string;
+  /** Názov farebného tokenu z `design/tokens.css` bez `--` (napr. `line-blue`) — farba linky na odznakoch a v paneloch. */
+  readonly colorToken: string;
 }
 
 /**
@@ -469,12 +542,14 @@ export interface ContractTemplateDef {
   /**
    * Druh šablóny (F6a, ADR-032 bod 1): `import` (F5; chýbajúce pole = `import`), `export` (booking s vlastnou voyage;
    * bookované TEU z `volumeUnitsRange`) alebo `roundtrip` (import z `volumeUnitsRange` aj export z `exportVolumeUnitsRange`
-   * na jednej voyage). Export a roundtrip vyžadujú `destinationPorts`, roundtrip aj `exportVolumeUnitsRange`.
+   * na jednej voyage). Export a roundtrip vyžadujú `destinationPorts`, roundtrip aj `exportVolumeUnitsRange`. F6c (ADR-034):
+   * `empty_repositioning` (`volumeUnitsRange` = počet prázdnych; vyžaduje `destinationPorts`, voliteľné `exportVolumeUnitsRange` =
+   * skupina s export bookingom jednej voyage) a `tranship` (`volumeUnitsRange` = prekládané jednotky; vyžaduje `destinationPorts`).
    */
   readonly kind?: ContractTemplateKind;
-  /** Cieľové prístavy exportu (pool losuje jeden); len `export` a `roundtrip`. */
+  /** Cieľové prístavy exportu, repositioningu a prekládky (pool losuje jeden); `export`, `roundtrip`, `empty_repositioning`, `tranship`. */
   readonly destinationPorts?: readonly string[];
-  /** Rozsah `[min, max]` bookovaných TEU exportu roundtripu (`min ≤ max`, max sa zmestí do najmenšej lode); len `roundtrip`. */
+  /** Rozsah `[min, max]` bookovaných TEU exportu roundtripu (`min ≤ max`, max sa zmestí do najmenšej lode); `roundtrip` (povinné), `empty_repositioning` (voliteľné). */
   readonly exportVolumeUnitsRange?: readonly [number, number];
   /** Typ nákladu z `cargo_types.json`. */
   readonly cargoTypeId: string;

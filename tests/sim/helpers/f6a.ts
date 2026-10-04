@@ -106,7 +106,7 @@ export function offerBooking(world: World, options: BookingOptions): OfferedBook
   const { kind, booked = 12, importUnits = 6, destinationPort = 'Hamburg', slaDays = 3 } = options;
   const book = world.contractBook;
   const tick = world.clock.tick;
-  const terms = { slaDays, rewardCents: 1_000_000, xpReward: 10, offeredTick: tick, offerExpiresTick: tick + 2 * TICKS_PER_DAY, shipClassId: 'feeder', cargoTypeId: 'container_teu' };
+  const terms = { slaDays, rewardCents: 1_000_000, xpReward: 10, offeredTick: tick, offerExpiresTick: tick + 2 * TICKS_PER_DAY, shipClassId: 'feeder', cargoTypeId: 'container_teu', lineId: 'blue_anchor' };
   const voyageId = book.allocateVoyageId();
   let importContract: ImportContract | undefined;
   if (kind === 'roundtrip') {

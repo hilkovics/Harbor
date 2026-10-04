@@ -36,6 +36,8 @@ export const CARGO_DEFS: DefRegistry = DefRegistry.fromRaw({
         unitsPerBatch: GRAIN_BATCH,
         basePricePerUnitCents: 1200,
         exportPricePerUnitCents: 1000,
+        repositioningPricePerUnitCents: 300,
+        transhipPricePerUnitCents: 700,
         xpPerUnit: 1,
         colorToken: 'cargo-bulk',
       },
@@ -132,11 +134,11 @@ export const UNDER_HOOK_EXPORT_CHAIN: readonly CargoLocation[] = [
 
 /** Štítky exportnej jednotky bookingu (kontrakt 77, voyage 7, Rotterdam, ťažká). */
 export const EXPORT_CONTRACT = 77 as ContractId;
-export const EXPORT_LABELS: CargoUnitLabels = { direction: 'export', voyageId: 7 as VoyageId, destinationPort: 'Rotterdam', weightClass: 'heavy' };
+export const EXPORT_LABELS: CargoUnitLabels = { direction: 'export', voyageId: 7 as VoyageId, lineId: 'blue_anchor', destinationPort: 'Rotterdam', weightClass: 'heavy' };
 
 /** Celá import jednotka bez kontraktu (štítky `IMPORT_LABELS`, bez hold) — pre ručne skladané pohľady a stavy. */
 export function importUnit(fields: Pick<CargoUnit, 'id' | 'location'> & Partial<CargoUnit>): CargoUnit {
-  return { typeId: TEU, contractId: null, ...IMPORT_LABELS, hold: null, quantity: 1, ...fields };
+  return { typeId: TEU, contractId: null, ...IMPORT_LABELS, hold: null, status: 'available', repairUntilTick: null, quantity: 1, ...fields };
 }
 
 export interface LedgerHarness {

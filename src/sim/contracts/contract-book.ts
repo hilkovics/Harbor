@@ -11,7 +11,8 @@
  *   kontraktu (aj po `failed`), aby počítadlá zodpovedali nákladu.
  * - **Voyage** (ADR-032): kniha prideľuje aj id návštev lode (`allocateVoyageId`, vlastná postupnosť, `nextVoyageId`
  *   v save) a vedie odvodený index voyage → kontrakty (vzostupne podľa id; nie je v save). Voyage nemá vlastný záznam —
- *   jej údaje (trieda lode, príchod, loď, cieľový prístav, cut-off) nesú jej kontrakty (`voyage()` ich zloží).
+ *   jej údaje (trieda lode, príchod, loď, cieľový prístav, cut-off) nesú jej kontrakty (`voyage()` ich zloží). Prekládka
+ *   (ADR-034) je v indexe pod voyage lode A aj lode B (`Contract.voyageIds`).
  * - Stav mení `changeState` (tabuľka `CONTRACT_TRANSITIONS` + `ContractStateChanged`); prebiehajúce kontrakty
  *   (`CONTRACT_STATE_TRAITS.terminal === false`) vedie kniha zvlášť, aby krok 2 neprechádzal históriu.
  */
@@ -21,7 +22,7 @@ import type { ContractId, EntityId, VoyageId } from '../core/entity-id';
 import type { ContractStateChangedEvent } from '../events/sim-event';
 import { Contract, type SerializedContract } from './contract';
 import { ContractError } from './contract-error';
-import { CONTRACT_STATE_TRAITS, type ContractState } from './contract-fsm';
+import { CONTRACT_STATE_TRAITS, OFFER_GROUPS, type ContractState, type OfferGroup } from './contract-fsm';
 
 /** Stav knihy v save (`WorldState.contracts`, `xp`, `completedContracts`, `nextContractId` — v5; `nextVoyageId` — v7). */
 export interface ContractBookState {
@@ -57,13 +58,11 @@ export interface VoyageView {
 
 const NO_CONTRACTS: readonly Contract[] = Object.freeze([]);
 
-/** Počet ponúk v poole po skupinách voyage (`ContractBook.offeredGroups`). */
-export interface OfferedGroups {
-  /** Skupiny bez exportu (import ponuky, F5). */
-  readonly import: number;
-  /** Skupiny s export bookingom (šablóny `export` a `roundtrip`). */
-  readonly booking: number;
-}
+/**
+ * Počet ponúk v poole po skupinách voyage (`ContractBook.offeredGroups`, ADR-034): kľúč je `OfferGroup` — `import` (F5),
+ * `booking` (šablóny `export` a `roundtrip`), `repositioning` (voyage s `empty_repositioning`) a `tranship`.
+ */
+export type OfferedGroups = { readonly [G in OfferGroup]: number };
 
 /** Závislosti knihy od sveta (`world.events`, `world.clock`). */
 export interface ContractBookEnv {
@@ -111,7 +110,12 @@ export class ContractBook {
       if (serialized.voyageId >= state.nextVoyageId) {
         throw new ContractError('invalid_input', `ContractBook.fromState: kontrakt #${String(serialized.id)} má voyage ${String(serialized.voyageId)}, ktorú kniha nepridelila (nextVoyageId ${String(state.nextVoyageId)})`);
       }
-      book.add(Contract.fromState(serialized));
+      const contract = Contract.fromState(serialized);
+      const unknownVoyage = contract.voyageIds.find((voyageId) => voyageId >= state.nextVoyageId);
+      if (unknownVoyage !== undefined) {
+        throw new ContractError('invalid_input', `ContractBook.fromState: kontrakt #${String(serialized.id)} má voyage ${String(unknownVoyage)}, ktorú kniha nepridelila (nextVoyageId ${String(state.nextVoyageId)})`);
+      }
+      book.add(contract);
     }
     book.xpTotal = state.xp;
     book.completedTotal = state.completedContracts;
@@ -155,7 +159,10 @@ export class ContractBook {
    * kontraktu). O(neukončené kontrakty), bez alokácie.
    */
   voyageIdOfShip(shipId: EntityId): VoyageId | undefined {
-    for (const contract of this.open.values()) if (contract.shipId === shipId) return contract.voyageId;
+    for (const contract of this.open.values()) {
+      const voyageId = contract.voyageOfShip(shipId);
+      if (voyageId !== undefined) return voyageId;
+    }
     return undefined;
   }
 
@@ -176,8 +183,8 @@ export class ContractBook {
       id: voyageId,
       contracts: [...contracts],
       shipClassId: first.shipClassId,
-      arrivalTick: first.shipArrivalTick,
-      shipId: first.shipId,
+      arrivalTick: first.arrivalOnVoyage(voyageId),
+      shipId: first.shipOnVoyage(voyageId),
       destinationPort,
       cutoffTick,
     };
@@ -230,26 +237,23 @@ export class ContractBook {
    * (po sebe idúce id), preto stačí jeden prechod bez alokácie okrem výsledku.
    */
   offeredGroups(): OfferedGroups {
-    let importGroups = 0;
-    let bookingGroups = 0;
+    const counts: { [G in OfferGroup]: number } = { import: 0, booking: 0, repositioning: 0, tranship: 0 };
     let voyage: VoyageId | undefined;
-    let booking = false;
+    let rank = -1;
     const close = (): void => {
-      if (voyage === undefined) return;
-      if (booking) bookingGroups += 1;
-      else importGroups += 1;
+      if (voyage !== undefined) counts[OFFER_GROUPS[rank]] += 1;
     };
     for (const contract of this.open.values()) {
       if (!CONTRACT_STATE_TRAITS[contract.state].offer) continue;
       if (contract.voyageId !== voyage) {
         close();
         voyage = contract.voyageId;
-        booking = false;
+        rank = -1;
       }
-      if (contract.booking !== null) booking = true;
+      rank = Math.max(rank, OFFER_GROUPS.indexOf(contract.offerGroup));
     }
     close();
-    return { import: importGroups, booking: bookingGroups };
+    return counts;
   }
 
   /**
@@ -280,9 +284,11 @@ export class ContractBook {
       this.open.set(contract.id, contract);
       if (contract.kind === 'export') this.openExportCount += 1;
     }
-    const voyage = this.voyageIndex.get(contract.voyageId);
-    if (voyage === undefined) this.voyageIndex.set(contract.voyageId, [contract]);
-    else voyage.push(contract);
+    for (const voyageId of contract.voyageIds) {
+      const voyage = this.voyageIndex.get(voyageId);
+      if (voyage === undefined) this.voyageIndex.set(voyageId, [contract]);
+      else voyage.push(contract);
+    }
   }
 
   /**
@@ -303,11 +309,13 @@ export class ContractBook {
   /** Expirovaný kontrakt kniha zabudne — aj z indexu voyage (prázdna voyage zanikne). */
   private forget(contract: Contract): void {
     this.all.delete(contract.id);
-    const voyage = this.voyageIndex.get(contract.voyageId);
-    if (voyage === undefined) return;
-    const at = voyage.indexOf(contract);
-    if (at >= 0) voyage.splice(at, 1);
-    if (voyage.length === 0) this.voyageIndex.delete(contract.voyageId);
+    for (const voyageId of contract.voyageIds) {
+      const voyage = this.voyageIndex.get(voyageId);
+      if (voyage === undefined) continue;
+      const at = voyage.indexOf(contract);
+      if (at >= 0) voyage.splice(at, 1);
+      if (voyage.length === 0) this.voyageIndex.delete(voyageId);
+    }
   }
 
   /** Pripíše dokončenie: `completedContracts += 1`, `xp += gain` (celé ≥ 0). */

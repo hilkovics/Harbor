@@ -6,6 +6,7 @@ import cargoTypesJson from '@data/defs/cargo_types.json';
 import contractTemplatesJson from '@data/defs/contract_templates.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
+import linesJson from '@data/defs/lines.json';
 import logisticsJson from '@data/defs/logistics.json';
 import modulesJson from '@data/defs/modules.json';
 import shipsJson from '@data/defs/ships.json';
@@ -50,6 +51,7 @@ interface RawBundle {
   trucks: Json;
   logistics: Json;
   contract_templates: Json;
+  lines: Json;
 }
 
 /** Čerstvá hlboká kópia bundled defov; negatívne testy z nej upravia jedno pole. */
@@ -65,6 +67,7 @@ function rawDefs(): RawBundle {
     trucks: structuredClone(trucksJson),
     logistics: structuredClone(logisticsJson),
     contract_templates: structuredClone(contractTemplatesJson),
+    lines: structuredClone(linesJson),
   };
 }
 
@@ -111,6 +114,8 @@ describe('bundled katalógy (loadBundledDefs)', () => {
       unitsPerBatch: 1,
       basePricePerUnitCents: 45_000,
       exportPricePerUnitCents: 40_000,
+      repositioningPricePerUnitCents: 12_000,
+      transhipPricePerUnitCents: 28_000,
       xpPerUnit: 1,
       colorToken: 'cargo-container',
     });
@@ -125,6 +130,7 @@ describe('bundled katalógy (loadBundledDefs)', () => {
       'truck_gate',
       'truck_waiting_area',
       'loading_ramp_container',
+      'empty_depot',
     ]);
     const berth = defs.modules.get('berth_standard');
     expect(berth.kind).toBe('berth');
@@ -193,7 +199,7 @@ describe('bundled katalógy (loadBundledDefs)', () => {
   });
 
   it('vehicles: straddle_carrier podľa T03-01', () => {
-    expect(defs.vehicles.items.map((item) => item.id)).toEqual(['straddle_carrier']);
+    expect(defs.vehicles.items.map((item) => item.id)).toEqual(['straddle_carrier', 'empty_handler']);
     expect(defs.vehicles.get('straddle_carrier')).toEqual({
       id: 'straddle_carrier',
       displayName: 'Straddle carrier',
@@ -916,9 +922,12 @@ describe('MODULE_PARAM_SPECS', () => {
   });
 
   it('storage a depot majú presne polia StorageParams a DepotParams (internalTicks je voliteľné)', () => {
-    expect(Object.keys(MODULE_PARAM_SPECS.storage)).toEqual(['capacityUnits', 'category', 'internalTicks']);
+    expect(Object.keys(MODULE_PARAM_SPECS.storage)).toEqual(['capacityUnits', 'category', 'internalTicks', 'role', 'repairBays']);
     expect(Object.keys(MODULE_PARAM_SPECS.depot)).toEqual(['capacity', 'internalTicks']);
     expect(MODULE_PARAM_SPECS.storage.internalTicks.optional).toBe(true);
+    // F6c (ADR-034): rola a počet opráv sú voliteľné (bežný sklad ich nemá).
+    expect(MODULE_PARAM_SPECS.storage.role.optional).toBe(true);
+    expect(MODULE_PARAM_SPECS.storage.repairBays.optional).toBe(true);
     expect(MODULE_PARAM_SPECS.depot.internalTicks.optional).toBe(true);
     expect(MODULE_PARAM_SPECS.storage.capacityUnits.optional).not.toBe(true);
     expect(MODULE_PARAM_SPECS.depot.capacity.optional).not.toBe(true);

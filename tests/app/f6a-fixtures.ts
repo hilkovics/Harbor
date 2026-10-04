@@ -26,6 +26,7 @@ export function addRoundtripOffer(world: World, options: RoundtripOptions = {}):
   const voyageId = contractBook.allocateVoyageId();
   const base = {
     voyageId,
+    lineId: 'blue_anchor',
     templateId: 'container_feeder_roundtrip',
     cargoTypeId: TEU,
     slaDays: 3,
@@ -73,7 +74,7 @@ export function acceptRoundtrip(world: World, roundtrip: Roundtrip, options: Acc
 
 /** Štítky exportnej jednotky bookingu. */
 export function exportLabels(contract: ExportContract, weightClass: WeightClass = 'medium'): CargoUnitLabels {
-  return { direction: 'export', voyageId: contract.voyageId, destinationPort: contract.destinationPort, weightClass };
+  return { direction: 'export', voyageId: contract.voyageId, lineId: contract.lineId, destinationPort: contract.destinationPort, weightClass };
 }
 
 /** Exportná jednotka bookingu v kamióne (miesto vzniku exportu). */

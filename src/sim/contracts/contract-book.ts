@@ -173,7 +173,9 @@ export class ContractBook {
   voyage(voyageId: VoyageId): VoyageView | undefined {
     const contracts = this.voyageIndex.get(voyageId);
     if (contracts === undefined || contracts.length === 0) return undefined;
-    const [first] = contracts;
+    // Údaje lode berie z kontraktu, ktorému voyage patrí (prekládka zachránená na cudziu voyage je v jej indexe len ako pasažier; voyage lode B
+    // prekládky nemá vlastný kontrakt — vtedy z prvého kontraktu).
+    const first = contracts.find((contract) => contract.voyageId === voyageId) ?? contracts[0];
     let destinationPort: string | null = null;
     let cutoffTick: number | undefined;
     for (const contract of contracts) {

@@ -129,6 +129,37 @@ function missedWorld(options: { readonly rescue?: boolean } = {}): {
   return { world, contract, events, rescueContractId };
 }
 
+describe('prekládka — načasovanie lodí A a B', () => {
+  it('loď B príde o tick po lodi A (čaká pred kotviskom, kým sa A nevyloží): jednotky sa vyložia aj naložia, nič sa nezmešká', () => {
+    const world = transhipWorld({ economy: { transhipGapDaysRange: [0.0001, 0.0001] } });
+    const contract = offerTranship(world, { units: 4 });
+    send(world, acceptCommand(contract.id));
+    expect(contract.outArrivalTick).toBe((contract.shipArrivalTick as number) + 1);
+    const events = runUntil(world, closed, 60_000, 'uzavretie prekládky');
+    assertCargoConservation(world);
+    expect(contract.state).toBe('completed');
+    expect(world.cargo.shippedCount).toBe(4);
+    expect(eventsOf(events, 'TranshipMissed')).toEqual([]);
+    const spawns = ofType(events, 'ShipSpawned');
+    expect(spawns.map((entry) => entry.event.units)).toEqual([4, 0]);
+    expect(spawns[1].tick - spawns[0].tick).toBe(1);
+  });
+
+  it('loď B nepríde pred lehotou zlyhania SLA (príchod za 30 dní): predaj zvyšku — TranshipSold, kontrakt zlyhá a kamión jednotky odvezie', () => {
+    const world = transhipWorld({ economy: { transhipGapDaysRange: [30, 30] } });
+    const contract = offerTranship(world, { units: 4 });
+    send(world, acceptCommand(contract.id));
+    const events = runUntil(world, () => contract.state === 'failed' && world.cargo.exportedCount === 4, 150_000, 'predaj po lehote zlyhania SLA');
+    assertCargoConservation(world);
+    expect(eventsOf(events, 'TranshipSold')).toEqual([{ type: 'TranshipSold', contractId: contract.id, units: 4 }]);
+    expect(eventsOf(events, 'TranshipMissed')).toEqual([]);
+    expect(contract.unitsExported).toBe(4);
+    expect(world.cargo.shippedCount).toBe(0);
+    expect(lost(world)).toBe(0);
+    expect(findWorldViolation(world)).toBeUndefined();
+  });
+});
+
 describe('zmeškaná prekládka — penalizácia, záchrana, predaj', () => {
   it('B odplávala bez jednotiek: TranshipMissed + BookingPenaltyApplied rolled v sadzbe transhipMissedRateOfReward, rescueDeadlineTick = tick + transhipRescueDays', () => {
     const { world, contract, events } = missedWorld();
@@ -191,6 +222,51 @@ describe('zmeškaná prekládka — penalizácia, záchrana, predaj', () => {
     expect(eventsOf(events, 'ContractCompleted').filter((event) => event.contractId === contract.id)).toEqual([
       expect.objectContaining({ contractId: contract.id, rewardCents: 1_000_000, penaltiesCents: 250_000 }),
     ]);
+  });
+});
+
+describe('zmeškaná prekládka — obnova zo save', () => {
+  const roundtrip = (world: World): World => World.deserialize(world.defs, MAP, JSON.parse(JSON.stringify(world.serialize())) as AnyWorldState);
+
+  it('uprostred lehoty záchrany (rescueDeadlineTick nastavený): obnova dá rovnaký stateHash a predaj po lehote prebehne rovnako', () => {
+    const { world, contract } = missedWorld();
+    expect(contract.rescueDeadlineTick).toBeDefined();
+    const restored = roundtrip(world);
+    expect(stateHash(restored)).toBe(stateHash(world));
+    const deadline = contract.rescueDeadlineTick as number;
+    const left = deadline - world.clock.tick + 20;
+    tickEvents(world, left);
+    tickEvents(restored, left);
+    expect(stateHash(restored)).toBe(stateHash(world));
+    expect(restored.contracts.get(contract.id)?.state).toBe('failed');
+  });
+
+  it('po záchrane (prekládka v indexe cudzej voyage, ktorá jej nepatrí): obnova prejde (voyage kontrakty sa porovnávajú len podľa vlastnej voyage) a dá rovnaký stateHash aj po behu', () => {
+    const { world, contract } = missedWorld({ rescue: true });
+    expect(contract.rescueDeadlineTick).toBeUndefined();
+    const restored = roundtrip(world);
+    expect(stateHash(restored)).toBe(stateHash(world));
+    tickEvents(world, 30_000);
+    tickEvents(restored, 30_000);
+    expect(stateHash(restored)).toBe(stateHash(world));
+    expect(restored.contracts.get(contract.id)?.state).toBe('completed');
+    expect(restored.cargo.shippedCount).toBe(world.cargo.shippedCount);
+  });
+});
+
+describe('invariant loadedUnits bookingu (prekládka najviac, prázdne presne)', () => {
+  it('prekládka naložená na loď B: loadedUnits menšie než jednotky nákladu na lodi je porušenie, väčšie (dávka na predchádzajúcej lodi po záchrane) nie', () => {
+    const world = transhipWorld({ hook: true });
+    const contract = offerTranship(world, { units: 4 });
+    send(world, acceptCommand(contract.id));
+    runUntil(world, () => contract.loadedUnits === 2, 60_000, 'dve naložené jednotky');
+    expect(findWorldViolation(world)).toBeUndefined();
+    const loaded = contract.loadedUnits;
+    contract.loadedUnits = loaded + 1;
+    expect(findWorldViolation(world), 'viac naložených než na lodi').toBeUndefined();
+    contract.loadedUnits = loaded - 1;
+    expect(findWorldViolation(world)).toMatch(/loadedUnits \d+, na .* je 2 jednotiek nákladu bookingu/);
+    contract.loadedUnits = loaded;
   });
 });
 

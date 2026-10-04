@@ -857,7 +857,8 @@ function checkVoyages(world: World, held: ReadonlyMap<ContractId, number>): void
   let index = 0;
   for (const contract of world.contracts.values()) {
     const path = `/contracts${pointerSegment(index)}`;
-    const [first] = world.contractBook.voyageContracts(contract.voyageId);
+    // Prekládka zachránená na túto voyage (ADR-034) je v jej indexe, ale voyage jej nepatrí — porovnávajú sa len kontrakty s vlastnou voyage.
+    const first = world.contractBook.voyageContracts(contract.voyageId).find((mate) => mate.voyageId === contract.voyageId);
     if (first !== undefined && first !== contract) {
       const same = first.shipClassId === contract.shipClassId && first.shipArrivalTick === contract.shipArrivalTick && first.shipId === contract.shipId;
       if (!same) throw new WorldStateError(`${path}/voyageId`, `${contract.label} nesúhlasí s ${first.label} tej istej voyage (trieda lode, príchod, loď)`);

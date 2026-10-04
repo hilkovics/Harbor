@@ -42,6 +42,15 @@ const REVISION_SAMPLES: readonly SimEvent[] = [
   { type: 'ContractExpired', contractId: SAMPLE_CONTRACT, reason: 'timeout' },
   { type: 'PenaltyApplied', contractId: SAMPLE_CONTRACT, kind: 'demurrage', amountCents: 1 },
   { type: 'GameOver', reason: 'bankruptcy', day: 1 },
+  // F6a (T6A-07): booking a lashing menia karty kontraktov a inšpektor lode.
+  { type: 'ExportArrived', contractId: SAMPLE_CONTRACT, unitId: SAMPLE_ID, truckId: SAMPLE_ID, gateId: SAMPLE_ID },
+  { type: 'UnitRolled', contractId: SAMPLE_CONTRACT, unitId: SAMPLE_ID },
+  { type: 'VgmHoldStarted', contractId: SAMPLE_CONTRACT, unitId: SAMPLE_ID, untilTick: 10 },
+  { type: 'VgmHoldReleased', contractId: SAMPLE_CONTRACT, unitId: SAMPLE_ID },
+  { type: 'UnitLoaded', craneId: SAMPLE_ID, shipId: SAMPLE_ID, unitId: SAMPLE_ID, contractId: SAMPLE_CONTRACT, lastMinute: false, outOfOrder: false },
+  { type: 'ShipLashingStarted', shipId: SAMPLE_ID, loadedUnits: 1, ticks: 10 },
+  { type: 'ExportShipped', shipId: SAMPLE_ID, units: 1 },
+  { type: 'BookingPenaltyApplied', contractId: SAMPLE_CONTRACT, kind: 'rolled', units: 1, amountCents: 1 },
 ];
 
 /** Udalosti, ktoré štruktúru nemenia (čas a peniaze majú vlastné polia snapshotu). */
@@ -55,6 +64,11 @@ const NEUTRAL_SAMPLES: readonly SimEvent[] = [
   { type: 'CommandRejected', commandType: 'PlaceRoad', reasons: [] },
   { type: 'DayClosedSummary', day: 0, summary: { day: 0, incomeCents: {}, expenseCents: {}, cashEndCents: 0 } },
   { type: 'MonthlyReport', month: 0, summary: { month: 0, incomeCents: {}, expenseCents: {}, cashEndCents: 0 } },
+  // F6a: cut-off sa na kartách odpočítava z ticku, ostatné sú čisto pohybové (kamión / žeriav).
+  { type: 'CutoffWarning', contractId: SAMPLE_CONTRACT, cutoffTick: 10 },
+  { type: 'CutoffPassed', contractId: SAMPLE_CONTRACT, arrivedUnits: 1, bookedUnits: 2 },
+  { type: 'DualCycle', craneId: SAMPLE_ID, shipId: SAMPLE_ID, loadedUnitId: SAMPLE_ID, unloadedUnitId: SAMPLE_ID },
+  { type: 'TruckUnloaded', truckId: SAMPLE_ID, rampId: SAMPLE_ID, dock: 0, unitId: SAMPLE_ID, dualTransaction: false },
 ];
 
 const spawnFeeder = (bridge: ReturnType<typeof createApp>['bridge'], units = 4): void => {
@@ -108,6 +122,14 @@ describe('WorldSnapshot v2: revision', () => {
       'ContractExpired',
       'PenaltyApplied',
       'GameOver',
+      'ExportArrived',
+      'UnitRolled',
+      'VgmHoldStarted',
+      'VgmHoldReleased',
+      'UnitLoaded',
+      'ShipLashingStarted',
+      'ExportShipped',
+      'BookingPenaltyApplied',
     ];
     expect([...REVISION_EVENTS].sort()).toEqual([...expected].sort());
     expect(REVISION_SAMPLES.map((event) => event.type).sort()).toEqual([...expected].sort());

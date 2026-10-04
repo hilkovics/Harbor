@@ -27,6 +27,11 @@
  *    (pripravený alebo vezený vozidlom, `DockSupply`, ADR-029); potom kamióny s exportom podľa plánu príchodov bookingov
  *    (`spawnExportTrucks`, ADR-032).
  *
+ * **Prázdne kontajnery** (F6c, ADR-034): kamión `delivery` s prázdnym kontajnerom linky (návrat z vnútrozemia, `spawnEmptyTrucks`) sa
+ * správa ako export (brána `EmptyReturned`, vykládka na dock); kamión misie `collect` (výdaj prázdneho exportérovi) čaká v stojisku na
+ * pridelený prázdny a naloží ho z docku, alebo sa po `giveUpTick` vzdá a odíde prázdny zo stojiska (`empty-collect.ts`). Pri odchode
+ * kamióna s importom z mapy sa naplánuje návrat prázdneho (`planEmptyReturn`, `Rng`).
+ *
  * **Export** (F6a, ADR-032 bod 4, 7, 13): kamión s misiou `delivery` príde naložený jednou jednotkou, po prechode bránou
  * dnu ju brána zaregistruje (`export-gate.ts`: `ExportArrived`, rolled po cut-off, VGM hold). Po pobyte v stojisku odíde
  * k dock rampy, keď je dock voľný a má staging miesto pre jeho jednotku (dock drží a rezervuje miesto, `holdsIntake`); po
@@ -36,6 +41,7 @@
  * Prechod stavu ukončí pohyb kamióna v danom ticku (ako vozidlá, ADR-019): nový, prepustený alebo naložený kamión sa
  * pohne až v ďalšom ticku. Tick vstupu do stavu s odpočtom je jeho nultý tick (ADR-016).
  */
+import type { CargoUnit } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
 import type { LoadingRamp } from '../modules/loading-ramp';
 import type { TruckGate } from '../modules/truck-gate';
@@ -45,6 +51,9 @@ import type { Truck } from '../trucks/truck';
 import { TruckError } from '../trucks/truck-error';
 import { TRUCK_STATE_TRAITS, changeTruckState, isTruckTravelState, type TruckMission, type TruckState, type TruckTravelState } from '../trucks/truck-fsm';
 import { DockSupply } from '../trucks/dock-supply';
+import { collectGivesUp, collectReady, finishCollect, giveUpCollect, loadCollected } from '../trucks/empty-collect';
+import { planEmptyReturn } from '../trucks/empty-plan';
+import { spawnEmptyTrucks } from '../trucks/empty-trucks';
 import { onGatePassed } from '../trucks/export-gate';
 import { spawnExportTrucks } from '../trucks/export-trucks';
 import { spawnTrucks } from '../trucks/truck-spawner';
@@ -76,12 +85,29 @@ function unitsIn(world: World, truck: Truck): number {
   return world.cargo.countAt('in_truck', truck.id);
 }
 
+const NOTHING = (): void => undefined;
+
+/**
+ * Čo sa stane s jednotkou, ktorá opúšťa mapu s kamiónom (`unit` = snímka pred presunom `→ exported`), podľa misie (tabuľka, nie
+ * switch): kamión `pickup` odviezol import → naplánuje sa návrat prázdneho (`planEmptyReturn`, `Rng`), kamión `collect` odviezol prázdny
+ * exportérovi (`EmptyPickedUp`); `delivery` kamión odchádza prázdny.
+ */
+const EXIT_HOOKS: { readonly [M in TruckMission]: (world: World, truck: Truck, unit: CargoUnit) => void } = Object.freeze({
+  pickup: (world: World, _truck: Truck, unit: CargoUnit) => {
+    planEmptyReturn(world, unit);
+  },
+  delivery: NOTHING,
+  collect: finishCollect,
+});
+
 /** Kamión dorazil na portál: `exited`, všetky jednotky `in_truck → exported` (FIFO), `TruckExited`, kamión zmizne. */
 function exitMap(truck: Truck, world: World): void {
   changeTruckState(world.events, truck, 'exited');
   let units = 0;
   for (let unitId = world.cargo.firstUnitAt('in_truck', truck.id); unitId !== undefined; unitId = world.cargo.firstUnitAt('in_truck', truck.id)) {
+    const unit = world.cargo.get(unitId);
     world.cargo.move(unitId, { kind: 'exported' });
+    if (unit !== undefined) EXIT_HOOKS[truck.mission](world, truck, unit);
     units += 1;
   }
   world.removeTruck(truck.id);
@@ -90,8 +116,8 @@ function exitMap(truck: Truck, world: World): void {
 
 type Arrival = (truck: Truck, world: World) => void;
 
-/** Stav kamióna po príchode k docku podľa misie (tabuľka, nie switch): pickup nakladá, delivery vykladá. */
-const DOCK_STATE: { readonly [M in TruckMission]: TruckState } = Object.freeze({ pickup: 'loading', delivery: 'unloading' });
+/** Stav kamióna po príchode k docku podľa misie (tabuľka, nie switch): pickup a collect nakladajú, delivery vykladá. */
+const DOCK_STATE: { readonly [M in TruckMission]: TruckState } = Object.freeze({ pickup: 'loading', delivery: 'unloading', collect: 'loading' });
 
 /** Príchod na koniec trasy podľa jazdného stavu (tabuľka, nie switch). */
 const ARRIVALS: { readonly [S in TruckTravelState]: Arrival } = Object.freeze({
@@ -144,11 +170,14 @@ function drive(truck: Truck, world: World): void {
 /**
  * Môže kamión odísť k docku (podľa misie, tabuľka — pravidlo 7)? Pickup: na docku je celý jeho náklad na odvoz
  * (`stagedAt ≥ capacityUnits` — nakládka potom nikdy nečaká, ADR-029). Delivery: dock má staging miesto pre jednotky,
- * ktoré vezie (`freeAt ≥ in_truck`; export na prijatie na docku kapacitu zaberá, ADR-032 bod 13). Dock musí byť voľný.
+ * ktoré vezie (`freeAt ≥ in_truck`; export na prijatie na docku kapacitu zaberá, ADR-032 bod 13). Collect: pridelený prázdny leží na docku
+ * (`collectReady`). Dock musí byť voľný.
  */
 const DOCK_READY: { readonly [M in TruckMission]: (world: World, truck: Truck, ramp: LoadingRamp) => boolean } = Object.freeze({
   pickup: (_world: World, truck: Truck, ramp: LoadingRamp) => ramp.stagedAt(truck.dock) >= truck.def.capacityUnits,
   delivery: (world: World, truck: Truck, ramp: LoadingRamp) => ramp.freeAt(truck.dock) >= unitsIn(world, truck),
+  // Collect: pridelený prázdny kontajner už leží na docku kamióna (F6c, ADR-034).
+  collect: collectReady,
 });
 
 /**
@@ -156,10 +185,21 @@ const DOCK_READY: { readonly [M in TruckMission]: (world: World, truck: Truck, r
  * docku mu už nikto nezoberie (outbound joby rezervujú len voľné miesta); pickup nič.
  */
 const DOCK_DEPARTURE: { readonly [M in TruckMission]: (world: World, truck: Truck, ramp: LoadingRamp) => void } = Object.freeze({
-  pickup: () => undefined,
+  pickup: NOTHING,
   delivery: (world: World, truck: Truck, ramp: LoadingRamp) => {
     for (let i = unitsIn(world, truck); i > 0; i--) ramp.reserve(truck.dock);
   },
+  collect: NOTHING,
+});
+
+/**
+ * Vzdá sa kamión v stojisku (tabuľka podľa misie)? Len `collect` bez prideleného prázdneho po `giveUpTick` (F6c, ADR-034): odíde zo
+ * stojiska prázdny priamo k bráne von, bez docku.
+ */
+const WAITING_GIVE_UP: { readonly [M in TruckMission]: (world: World, truck: Truck) => boolean } = Object.freeze({
+  pickup: () => false,
+  delivery: () => false,
+  collect: collectGivesUp,
 });
 
 /**
@@ -176,6 +216,10 @@ function leaveWaitingArea(truck: Truck, world: World): void {
     truck.waitTicks = world.defs.logistics.repathIntervalTicks;
     return;
   }
+  if (WAITING_GIVE_UP[truck.mission](world, truck)) {
+    giveUpWaiting(truck, world, exit);
+    return;
+  }
   const ramp = rampOfTruck(world, truck);
   if (ramp.dockTruck(truck.dock) !== null || !DOCK_READY[truck.mission](world, truck, ramp)) {
     truck.waitTicks = MIN_STAY_TICKS;
@@ -187,6 +231,18 @@ function leaveWaitingArea(truck: Truck, world: World): void {
   DOCK_DEPARTURE[truck.mission](world, truck, ramp);
   truck.jumpTo(exit, world.grid.width);
   startTruckTrip(world, truck, 'to_dock');
+}
+
+/**
+ * Kamión misie `collect` sa vzdal (`EmptyPickupMissed`): uvoľní bay, objaví sa na výstupnej bunke stojiska (`exit`, okruh kamióna) a ide
+ * prázdny k bráne von (`waiting → to_gate_out`, dock nedrží) — späť k bráne cez spätný priechod stojiskom ako po nakládke.
+ */
+function giveUpWaiting(truck: Truck, world: World, exit: number): void {
+  giveUpCollect(world, truck);
+  waitingAreaOfTruck(world, truck).releaseBay(truck.id);
+  truck.bay = null;
+  truck.jumpTo(exit, world.grid.width);
+  startTruckTrip(world, truck, 'to_gate_out');
 }
 
 /**
@@ -247,6 +303,23 @@ function loadUnit(truck: Truck, world: World): void {
   startTruckTrip(world, truck, 'to_gate_out');
 }
 
+/**
+ * Koniec nakládky kamióna `collect`: pridelený prázdny `at_ramp → in_truck`, uvoľnenie docku a jazda k bráne von (F6c, ADR-034).
+ */
+function loadCollectedUnit(truck: Truck, world: World): void {
+  const ramp = rampOfTruck(world, truck);
+  loadCollected(world, truck, ramp);
+  ramp.releaseDock(truck.dock, truck.id);
+  startTruckTrip(world, truck, 'to_gate_out');
+}
+
+/** Koniec nakládky podľa misie (tabuľka, nie switch); delivery nakladá až po `becomePickup`, takže tu nikdy nie je. */
+const LOADERS: { readonly [M in TruckMission]: (truck: Truck, world: World) => void } = Object.freeze({
+  pickup: loadUnit,
+  delivery: loadUnit,
+  collect: loadCollectedUnit,
+});
+
 /** Nový pokus o cestu z `no_path`; úspech = návrat do stavu, z ktorého kamión vypadol. */
 function retry(truck: Truck, world: World): void {
   const travel = truck.resume;
@@ -266,7 +339,7 @@ const TRUCK_STEPS: { readonly [S in TruckState]: TruckStep } = {
   },
   to_dock: drive,
   loading: (truck, world) => {
-    if (countDown(truck)) loadUnit(truck, world);
+    if (countDown(truck)) LOADERS[truck.mission](truck, world);
   },
   // Vykládka exportu (delivery kamión, ADR-032 bod 4): po `loadTicksPerUnit` jednotka na dock rampy.
   unloading: (truck, world) => {
@@ -358,5 +431,6 @@ export class LandsideSystem {
     for (const gate of gates) stepGate(world, gate);
     spawnTrucks(world, ramps, this.supply);
     spawnExportTrucks(world);
+    spawnEmptyTrucks(world);
   }
 }

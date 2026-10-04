@@ -3,6 +3,7 @@
 export { SERIALIZED_TRUCK_KEYS, Truck } from './truck';
 export type { SerializedTruck, TruckInit } from './truck';
 export {
+  TRUCK_COLLECT_STATE_TRAITS,
   TRUCK_DELIVERY_STATE_TRAITS,
   TRUCK_MISSIONS,
   TRUCK_MISSION_STATE_TRAITS,
@@ -42,6 +43,8 @@ export {
 } from './truck-trip';
 export type { PassageBack } from './truck-trip';
 export { spawnTruck, spawnTrucks, truckDefFor } from './truck-spawner';
+export { planEmptyPickups, planEmptyReturn } from './empty-plan';
+export { spawnEmptyTrucks } from './empty-trucks';
 export { DockSupply } from './dock-supply';
 export { MIN_STAY_TICKS, truckWaitLimit, waitingStayTicks } from './truck-wait';
 export type { TruckWaitWorld } from './truck-wait';

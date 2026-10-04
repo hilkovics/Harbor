@@ -31,6 +31,11 @@
  * **Prijatie exportu** (F6a, ADR-032 bod 8): jednotka exportu, ktorú vyložil kamión s exportom na dock rampy (booking beží),
  * dostane sklad zoskupene podľa voyage a job `at_ramp → in_storage` (`createExportJobs`), priority ako outbound.
  *
+ * **Prázdne kontajnery** (F6c, ADR-034 + dodatok T6C-02): prázdny z vnútrozemia vyložený na dock dostane job `at_ramp → in_storage` do depa
+ * (fallback bežný sklad), kamión misie `collect` dostane job `in_storage → at_ramp` s dostupným prázdnym jeho linky (`createEmptyJobs`,
+ * `logistics/empty-jobs.ts`). Job prázdneho **prednostne** dostane vozidlo, ktoré vozí smer `empty` (`cargoDirections`, empty handler),
+ * inak bežné vozidlo (`pickVehicle`); empty handler nikdy nedostane job iného smeru (`vehicleCarries`).
+ *
  * **Zrušenie** (ADR-023): `open` outbound job, ktorého rampa už nie je prevádzková alebo k nej zo skladu nevedie cesta
  * (podmienky vzniku), sa zruší — rezervácia na docku sa uvoľní, job prejde do `cancelled`, zmizne a emituje
  * `JobCancelled`. Jednotka ostane v sklade a `createOutboundJobs` jej v tom istom kroku nájde inú rampu, ak nejaká je
@@ -49,7 +54,7 @@
  * sklady cez skupiny `StoredCargoIndex` a mapy sveta sa prechádzajú v poradí id; voľné vozidlá, rampy a outbound skupiny
  * sa zbierajú raz za tick do znovupoužiteľných polí. Alokuje sa len nový job (jeho zoznam jednotiek a lokácie).
  */
-import { slotOf } from '../cargo/cargo-location';
+import { slotOf, type CargoLocation } from '../cargo/cargo-location';
 import type { CargoDirection, CargoUnit } from '../cargo/cargo-unit';
 import type { ContractOutbound } from '../contracts/contract-fsm';
 import type { EntityId } from '../core/entity-id';
@@ -61,6 +66,7 @@ import type { Vehicle } from '../vehicles/vehicle';
 import { startTrip } from '../vehicles/vehicle-trip';
 import type { World } from '../world/world';
 import { JobError } from './job-error';
+import { createEmptyIntakeJobs, createEmptyPickupJobs } from './empty-jobs';
 import { createExportIntakeJobs } from './export-intake';
 import { createExportLoadJobs as createLoadJobs, createHookUnloadJobs as createHookJobs, type LoadJobSpec } from './export-load';
 import { distanceBetweenModules, distanceToModule } from './module-access';
@@ -135,6 +141,17 @@ export function createExportJobs(world: World): number {
   return createExportIntakeJobs(world, ({ unitId, from, to }) => {
     openJob(world, { unitIds: [unitId], from, to });
   });
+}
+
+/**
+ * Prázdne kontajnery (ADR-034): prijatie prázdnych z docku do depa a výdaj prázdneho kamiónu `collect` (`logistics/empty-jobs.ts`).
+ * Vracia počet vytvorených jobov.
+ */
+export function createEmptyJobs(world: World): number {
+  const open = ({ unitId, from, to }: { readonly unitId: EntityId; readonly from: CargoLocation; readonly to: CargoLocation }): void => {
+    openJob(world, { unitIds: [unitId], from, to });
+  };
+  return createEmptyIntakeJobs(world, open) + createEmptyPickupJobs(world, open);
 }
 
 /**
@@ -383,8 +400,17 @@ function collectIdleVehicles(world: World, into: Vehicle[]): void {
 }
 
 /**
- * Najlepšie voľné vozidlo z `candidates` (vzostupne podľa id) pre job: vozí kategóriu nákladu, cena cesty k zdroju je
- * konečná a najmenšia, pri zhode menšie id (berie sa len ostro menšia cena). Inak `undefined`.
+ * Prednosť vozidla pri jobe smeru `direction` (menšie = skôr): job prázdneho (`empty`) berie prednostne vozidlo, ktoré smery
+ * obmedzuje na `empty` (empty handler, `cargoDirections` obsahuje `empty`), inak bežné vozidlo; joby iných smerov nerozlišujú.
+ */
+function vehiclePreference(vehicle: Vehicle, direction: CargoDirection): number {
+  return direction === 'empty' && vehicle.def.cargoDirections?.includes('empty') === true ? 0 : 1;
+}
+
+/**
+ * Najlepšie voľné vozidlo z `candidates` (vzostupne podľa id) pre job: vozí kategóriu a smer nákladu (`vehicleCarries`), cena cesty
+ * k zdroju je konečná; vyhrá vyššia prednosť (`vehiclePreference`: empty handler pri jobe prázdneho), v rámci nej najmenšia cena,
+ * pri zhode menšie id (berie sa len ostro menšia cena). Inak `undefined`.
  */
 function pickVehicle(world: World, job: TransportJob, candidates: Iterable<Vehicle>): Vehicle | undefined {
   const source = world.modules.get(job.fromModuleId);
@@ -392,12 +418,16 @@ function pickVehicle(world: World, job: TransportJob, candidates: Iterable<Vehic
   const direction = world.cargo.get(job.unitIds[0])?.direction;
   if (source === undefined || category === undefined || direction === undefined) return undefined;
   let best: Vehicle | undefined;
+  let bestPreference = Infinity;
   let bestCost = Infinity;
   for (const vehicle of candidates) {
     if (vehicle.state !== 'idle' || !vehicleCarries(vehicle, category, direction)) continue;
     const cost = distanceToModule(world, vehicle.cell, source);
-    if (cost < bestCost) {
+    if (cost === Infinity) continue;
+    const preference = vehiclePreference(vehicle, direction);
+    if (preference < bestPreference || (preference === bestPreference && cost < bestCost)) {
       best = vehicle;
+      bestPreference = preference;
       bestCost = cost;
     }
   }

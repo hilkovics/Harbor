@@ -22,7 +22,7 @@ import { routeWithFreeBay, spawnTruck, truckDefFor } from './truck-spawner';
 const DOCK_TRUCKS: number[] = [];
 
 /** Dock rampy s najmenej kamiónmi (každej misie, vrátane tých na ceste k bráne); pri zhode nižší dock. */
-function leastBusyDock(world: World, ramp: LoadingRamp): number {
+export function leastBusyDock(world: World, ramp: LoadingRamp): number {
   DOCK_TRUCKS.length = ramp.docks;
   DOCK_TRUCKS.fill(0);
   for (const truck of world.trucks.values()) if (truck.rampId === ramp.id && truck.dock < ramp.docks) DOCK_TRUCKS[truck.dock] += 1;

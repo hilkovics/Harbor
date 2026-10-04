@@ -1,17 +1,21 @@
 /**
  * Parsovanie plánu prázdnych kontajnerov vo `WorldState` v8 (`emptyFlow`, F6c, ADR-034): `returnPlan` (návraty z vnútrozemia)
- * a `pickupPlan` (výdaj prázdneho exportérovi). Fail-fast `WorldStateError` s JSON pointerom pod `/emptyFlow/…`.
+ * a `pickupPlan` (výdaj prázdneho exportérovi) a `errands` (poverenia kamiónov misie `collect`, dodatok T6C-02). Fail-fast
+ * `WorldStateError` s JSON pointerom pod `/emptyFlow/…`.
  *
- * Tvar: presné kľúče `EMPTY_FLOW_STATE_KEYS` a položiek (`RETURN_PLAN_ENTRY_KEYS`, `PICKUP_PLAN_ENTRY_KEYS`), `dueTick` celé ≥ 0
- * neklesajúce, `lineId` linka z `lines.json`, `contractId` (výdaj) celé ≥ 1. Súlad s knihou kontraktov (booking existuje a patrí
- * linke) overuje T6C-02, keď sa plán začne napĺňať.
+ * Tvar: presné kľúče `EMPTY_FLOW_STATE_KEYS` a položiek (`RETURN_PLAN_ENTRY_KEYS`, `PICKUP_PLAN_ENTRY_KEYS`, `ERRAND_ENTRY_KEYS`),
+ * `dueTick` celé ≥ 0 neklesajúce, `lineId` linka z `lines.json`, `contractId` (výdaj, poverenie) celé ≥ 1, poverenia vzostupne podľa
+ * `truckId`, `unitId` `null` alebo celé ≥ 1, `giveUpTick` celé ≥ 0. Súlad s knihou kontraktov, kamiónmi a ledgerom (booking existuje
+ * a patrí linke, kamión misie `collect`, jednotka prázdna tej istej linky) overuje invariant sveta (`findWorldViolation`) pri obnove.
  */
 import type { DefRegistry } from '../defs/def-registry';
 import {
   EMPTY_FLOW_STATE_KEYS,
+  ERRAND_ENTRY_KEYS,
   PICKUP_PLAN_ENTRY_KEYS,
   RETURN_PLAN_ENTRY_KEYS,
   type EmptyFlowState,
+  type ErrandEntry,
   type PickupPlanEntry,
   type ReturnPlanEntry,
 } from '../logistics/empty-flow';
@@ -47,5 +51,20 @@ export function parseEmptyFlowState(raw: unknown, defs: DefRegistry): EmptyFlowS
     previous = checkDue(fields['dueTick'], previous, `${path}/dueTick`);
     return { dueTick: previous, lineId: checkLine(fields['lineId'], defs, `${path}/lineId`), contractId: checkInteger(fields['contractId'], 1, `${path}/contractId`) };
   });
-  return { returnPlan, pickupPlan };
+  let previousTruck = 0;
+  const errands = checkArray(state['errands'], '/emptyFlow/errands').map((entry: unknown, i): ErrandEntry => {
+    const path = `/emptyFlow/errands${pointerSegment(i)}`;
+    const fields = checkKeys(entry, ERRAND_ENTRY_KEYS, path);
+    const truckId = checkInteger(fields['truckId'], 1, `${path}/truckId`);
+    if (truckId <= previousTruck) throw new WorldStateError(`${path}/truckId`, `poverenia musia byť vzostupne podľa truckId (${String(truckId)} po ${String(previousTruck)})`);
+    previousTruck = truckId;
+    return {
+      truckId,
+      lineId: checkLine(fields['lineId'], defs, `${path}/lineId`),
+      contractId: checkInteger(fields['contractId'], 1, `${path}/contractId`),
+      unitId: fields['unitId'] === null ? null : checkInteger(fields['unitId'], 1, `${path}/unitId`),
+      giveUpTick: checkInteger(fields['giveUpTick'], 0, `${path}/giveUpTick`),
+    };
+  });
+  return { returnPlan, pickupPlan, errands };
 }

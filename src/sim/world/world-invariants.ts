@@ -64,7 +64,11 @@
  *    (`DockSupply`) — žiadny kamión nečaká na jednotku, ktorá nepríde,
  *    a dva kamióny nečakajú na tú istú; pohyb zodpovedá stavu
  *    (`truckMotionProblem`); kamión vo fronte stojí na svojej strane brány (`truckQueueSideProblem`, dodatok
- *    ADR-024); súlad prechodu brány s frontou kontroluje brána (`gatePassProblem`, bod 10). O(kamióny + moduly).
+ *    ADR-024); súlad prechodu brány s frontou kontroluje brána (`gatePassProblem`, bod 10). O(kamióny + moduly);
+ * 12. tok prázdnych kontajnerov (F6c, ADR-034 + dodatok T6C-02; `checkEmptyFlow`): každé poverenie `World.emptyFlow.errands` patrí
+ *    kamiónu misie `collect` a kamión misie `collect` má poverenie, kým neodíde naprázdno (vzdal sa, `leavesEmpty`); poverenie patrí kontraktu v knihe a jeho linke, pridelený prázdny kontajner je
+ *    prázdny tej istej linky, pridelený práve jednému kamiónu a leží v ceste na dock kamióna (v sklade / vozidle s aktívnym jobom
+ *    na jeho dock, na docku, v kamióne); depo prázdnych drží len prázdne kontajnery. O(poverenia + depá).
  *
  * Krok 12 beží v DEV/testoch každý tick, preto kontroly v bežnom (platnom) stave nealokujú, kde to ide (review T03-13):
  * trasy vozidiel cez `Vehicle.routeCellAt`, depá kurzorom, rezervácie súčtami; podrobné správy sa skladajú až pri
@@ -83,6 +87,7 @@ import { DockSupply } from '../trucks/dock-supply';
 import { BerthModule } from '../modules/berth-module';
 import { computeBerthGroups } from '../modules/berth-group';
 import { CRANE_CYCLE_TRAITS, CRANE_STATE_TRAITS, CraneModule, craneReservesApronSlot, cranePhaseProblem } from '../modules/crane-module';
+import { EmptyDepot } from '../modules/empty-depot';
 import { LoadingRamp } from '../modules/loading-ramp';
 import { StorageModule } from '../modules/storage-module';
 import { TruckGate } from '../modules/truck-gate';
@@ -823,7 +828,8 @@ export function truckRampProblem(
     return { field: 'defId', problem: `${truck.label} nevozí kategóriu '${ramp.category}' rampy ${ramp.label}` };
   }
   // Delivery kamión pred vykládkou nepotrebuje na docku náklad — drží staging miesto pre jednotky, ktoré vyloží (`holdsIntake`).
-  if (!truck.bonds.holdsDock || truck.bonds.holdsIntake) return undefined;
+  // Kamión misie `collect` berie prázdny kontajner cez poverenie (prázdny nie je náklad na odvoz) — väzbu overuje `checkEmptyFlow`.
+  if (!truck.bonds.holdsDock || truck.bonds.holdsIntake || truck.mission === 'collect') return undefined;
   const aboard = world.cargo.countAt('in_truck', truck.id);
   if (aboard >= truck.def.capacityUnits) return undefined;
   const staged = stagedOnDock(ramp, truck.dock);
@@ -1013,6 +1019,66 @@ const checkContracts: Check = (world) => {
   return world.storedCargo.size === stored ? undefined : `index uskladneného nákladu má ${String(world.storedCargo.size)} jednotiek, sklady ${String(stored)}`;
 };
 
+/** Jednotka pridelená poverenému kamiónu leží v ceste na jeho dock (viď bod 12 hlavičky); `undefined` = v poriadku. */
+function errandUnitProblem(world: World, truck: Truck, unitId: EntityId): string | undefined {
+  const unit = world.cargo.get(unitId);
+  if (unit === undefined) return `${truck.label}: pridelený prázdny #${String(unitId)} v ledgeri nie je`;
+  if (unit.direction !== 'empty') return `${truck.label}: pridelená jednotka #${String(unitId)} nie je prázdny kontajner (${unit.direction})`;
+  const { location } = unit;
+  if (location.kind === 'at_ramp') {
+    return location.rampId === truck.rampId && location.dock === truck.dock ? undefined : `${truck.label}: pridelený prázdny #${String(unitId)} leží na inom docku`;
+  }
+  if (location.kind === 'in_truck') return location.truckId === truck.id ? undefined : `${truck.label}: pridelený prázdny #${String(unitId)} vezie iný kamión`;
+  if (location.kind !== 'in_storage' && location.kind !== 'in_vehicle') return `${truck.label}: pridelený prázdny #${String(unitId)} je v '${location.kind}'`;
+  const job = world.jobOfUnit(unitId);
+  if (job?.to.kind !== 'at_ramp' || job.to.rampId !== truck.rampId || job.to.dock !== truck.dock) {
+    return `${truck.label}: pridelený prázdny #${String(unitId)} nemá job na jeho dock`;
+  }
+  return undefined;
+}
+
+/**
+ * Kamión misie `collect` odchádza naprázdno — vzdal sa a poverenie mu zaniklo (`EmptyPickupMissed`): je v jazde od stojiska k portálu bez
+ * jednotky na palube (kamión s naloženým prázdnym má poverenie až do odchodu z mapy).
+ */
+function leavesEmpty(world: World, truck: Truck): boolean {
+  const state = truck.effectiveState;
+  return (state === 'to_gate_out' || state === 'gate_queue_out' || state === 'to_portal') && world.cargo.countAt('in_truck', truck.id) === 0;
+}
+
+/** Tok prázdnych kontajnerov (bod 12 hlavičky). */
+const checkEmptyFlow: Check = (world) => {
+  const { errands } = world.emptyFlow;
+  for (const truck of world.trucks.values()) {
+    if (truck.mission === 'collect' && world.emptyFlow.errandOfTruck(truck.id) === undefined && !leavesEmpty(world, truck)) {
+      return `${truck.label} (collect) v stave '${truck.state}' nemá poverenie v emptyFlow`;
+    }
+  }
+  const taken = new Set<number>();
+  for (const errand of errands) {
+    const truck = world.trucks.get(errand.truckId as EntityId);
+    if (truck?.mission !== 'collect') return `poverenie kamióna #${String(errand.truckId)}: kamión nie je misie collect`;
+    const contract = world.contractBook.get(errand.contractId as ContractId);
+    if (contract === undefined || contract.lineId !== errand.lineId) return `${truck.label}: poverenie ukazuje na kontrakt #${String(errand.contractId)} inej linky alebo mimo knihy`;
+    if (errand.unitId === null) continue;
+    if (taken.has(errand.unitId)) return `prázdny #${String(errand.unitId)} je pridelený dvom kamiónom`;
+    taken.add(errand.unitId);
+    const problem = errandUnitProblem(world, truck, errand.unitId as EntityId);
+    if (problem !== undefined) return problem;
+    if (world.cargo.get(errand.unitId as EntityId)?.lineId !== errand.lineId) return `${truck.label}: pridelený prázdny #${String(errand.unitId)} patrí inej linke než poverenie ${errand.lineId}`;
+  }
+  for (const module of world.modules.values()) {
+    if (!(module instanceof EmptyDepot)) continue;
+    const count = world.cargo.countAt('in_storage', module.id);
+    for (let i = 0; i < count; i++) {
+      const unitId = world.cargo.unitAtIndex('in_storage', module.id, i);
+      const direction = unitId === undefined ? undefined : world.cargo.get(unitId)?.direction;
+      if (direction !== 'empty') return `${module.label} drží jednotku #${String(unitId)} smeru '${String(direction)}', depo prijíma len prázdne`;
+    }
+  }
+  return undefined;
+};
+
 const CHECKS: readonly Check[] = [
   checkCargoHolders,
   checkModuleCells,
@@ -1025,6 +1091,7 @@ const CHECKS: readonly Check[] = [
   checkVehicles,
   checkJobs,
   checkTrucks,
+  checkEmptyFlow,
   checkContracts,
 ];
 

@@ -268,7 +268,7 @@ function migrateV7ToV8(state: RawState, defs: DefRegistry): RawState {
   migrated['cargo'] = isPlainObject(cargo)
     ? { ...cargo, units: extendEach(cargo['units'], (unit) => ({ ...unit, lineId: unit['contractId'] === null ? null : lineId, status: 'available', repairUntilTick: null })) }
     : cargo;
-  migrated['emptyFlow'] = { returnPlan: [], pickupPlan: [] };
+  migrated['emptyFlow'] = { returnPlan: [], pickupPlan: [], errands: [] };
   return migrated;
 }
 

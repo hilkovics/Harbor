@@ -8,13 +8,23 @@
  * overuje `nároky ≤ pripravené + vezené` na každom docku. Otvorený job (bez vozidla) sa nepočíta: dispatcher ho smie
  * zrušiť (rampa stratila prevádzkovosť), kamión by potom čakal na jednotku, ktorá nepríde.
  *
+ * Prázdny kontajner z depa na ceste na dock (job pre kamión misie `collect`, F6c) sa nepočíta — nie je náklad na odvoz a kamión misie
+ * `pickup` naň nemá nárok (`isPickupCargo`).
+ *
  * Pracovné polia sú znovupoužiteľné (nie sú stav simulácie, do save nepatria): `refresh` je O(rampy + joby) bez alokácie
  * po prvom zväčšení polí.
  */
-import { JOB_STATE_TRAITS } from '../logistics/transport-job';
+import { JOB_STATE_TRAITS, type TransportJob } from '../logistics/transport-job';
 import type { LoadingRamp } from '../modules/loading-ramp';
 import type { LandsideModules } from '../world/landside-roster';
 import type { World } from '../world/world';
+
+/** Počet jednotiek jobu, ktoré sú náklad na odvoz (bez prázdnych kontajnerov pre kamión `collect`). */
+function carriedAway(world: World, job: TransportJob): number {
+  let units = 0;
+  for (const unitId of job.unitIds) if (world.cargo.get(unitId)?.direction !== 'empty') units += 1;
+  return units;
+}
 
 export class DockSupply {
   /** Začiatok docku 0 každej rampy (index v `dispatched`) podľa poradia registra. */
@@ -42,7 +52,7 @@ export class DockSupply {
       if (to.kind !== 'at_ramp' || !JOB_STATE_TRAITS[job.state].hasVehicle) continue;
       const ordinal = roster.rampOrdinal(to.rampId);
       if (ordinal < 0 || to.dock >= ramps[ordinal].docks) continue;
-      this.dispatched[this.offsets[ordinal] + to.dock] += job.unitIds.length;
+      this.dispatched[this.offsets[ordinal] + to.dock] += carriedAway(world, job);
     }
   }
 

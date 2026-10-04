@@ -12,7 +12,7 @@
  *   ADR-017; `in_storage → in_vehicle`) a `Module.recordTaken` zdroja (sklad `unitsOut`, ADR-023); ďalšia jednotka
  *   jobu `loadTicks`, inak job `moving` a jazda k cieľu (`startTrip`, bez pohybu v tomto ticku).
  * - `unloading`: po odpočte cez `cargoDropTarget()` cieľa `assertCommittable` → `in_vehicle → job.to` (slot skladu,
- *   dock rampy) → `commit`; posledná jednotka = job `done`, `removeJob`, `JobDone`, vozidlo `idle` (stojí na mieste).
+ *   dock rampy) → `commit` (prázdny kontajner v sklade: `EmptyStored` + kontrola v depe, F6c); posledná jednotka = job `done`, `removeJob`, `JobDone`, vozidlo `idle` (stojí na mieste).
  * - `no_path`: po odpočte nový pokus o trasu k modulu jobu (`RESUME_AFTER_NO_PATH`); úspech = návrat do pôvodného `to_*`
  *   (bez pohybu v tomto ticku), inak ďalší odpočet `repathIntervalTicks`.
  * **Pod hákom** (F6a, ADR-033): vozidlo, ktorého job má koncový bod `in_crane` (hák žeriava), čaká po príchode v `loading`
@@ -24,6 +24,7 @@
 import { isSameLocation, slotOf, type CargoLocation } from '../cargo/cargo-location';
 import type { EntityId } from '../core/entity-id';
 import type { VehicleDef } from '../defs/types';
+import { onEmptyStored } from '../logistics/empty-depot-service';
 import { hookCraneOf, isHookDropoff, isHookPickup } from '../logistics/job-source';
 import type { JobState, TransportJob } from '../logistics/transport-job';
 import { CraneModule } from '../modules/crane-module';
@@ -135,6 +136,8 @@ function unloadUnit(vehicle: Vehicle, world: World): void {
   target.assertCommittable(place, unitId);
   world.cargo.move(unitId, job.to);
   target.commit(place, unitId);
+  // Prázdny kontajner v sklade: `EmptyStored` a v depe kontrola (`damageChance`, ADR-034).
+  if (job.to.kind === 'in_storage') onEmptyStored(world, unitId, jobModule(world, job, 'target'));
   if (firstUnitAt(world, job, inVehicle) !== undefined) {
     vehicle.waitTicks = vehicle.def.unloadTicks;
     return;

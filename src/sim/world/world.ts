@@ -241,7 +241,9 @@ export class World {
   readonly holdIndex = new HoldIndex();
   /**
    * Plán toku prázdnych kontajnerov (F6c, ADR-034): naplánované návraty z vnútrozemia a výdaje prázdneho exportérovi, zoradené
-   * podľa ticku. Je v save (`emptyFlow`); plní ho krok 8 (T6C-02), kostra T6C-01 ho nechá prázdny.
+   * podľa ticku, a poverenia kamiónov misie `collect` (`errands`). Je v save (`emptyFlow`); plánuje ho krok 8 (`trucks/empty-plan.ts`:
+   * odchod importu kamiónom, `AcceptContract` export bookingu) a spotrebúva krok 8 (`trucks/empty-trucks.ts`); v prístave bez depa prázdnych
+   * ostáva prázdny.
    */
   readonly emptyFlow: EmptyFlow;
   /**

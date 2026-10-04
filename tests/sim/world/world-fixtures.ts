@@ -22,7 +22,7 @@ export const BUNDLED_DEFS: DefRegistry = loadBundledDefs();
 /**
  * Zoznam modulov bundled defov s pripnutým režimom odovzdávania `apron` (F2–F5, ADR-033): testy fáz 2–6, ktorých zmysel stojí na
  * odkladaní jednotiek na apron (apron, rezervácie slotov, `CraneCycleDone` = `on_apron`), si ho pripínajú tu — namiesto prepisu
- * očakávaní. Režim `under_hook` testuje `tests/sim/hook` a scenár `export_roundtrip`.
+ * očakávaní. Režim `under_hook` testuje `tests/sim/exports/export-hook.test.ts` a scenár `export_roundtrip`.
  */
 export { APRON_MODULES };
 

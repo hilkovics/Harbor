@@ -241,7 +241,7 @@ describe('bundled katalógy (loadBundledDefs)', () => {
       maxCranes: 2,
       frontWaterCells: 3,
       apronReserveSlots: 2,
-      handoverMode: 'apron',
+      handoverMode: 'under_hook',
       craneBufferSlots: 1,
     });
     expect(craneParams(defs.modules.get('crane_container_gantry'))).toEqual({ cycleTicks: 12, category: 'container', wagePerDayCents: 25_000, dualCycleFactor: 1.5 });

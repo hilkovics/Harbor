@@ -29,6 +29,7 @@ const F2_UNLOAD_SCENARIO = fileURLToPath(new URL('../../data/scenarios/f2_unload
 const APRON_TO_YARD_SCENARIO = fileURLToPath(new URL('../../data/scenarios/apron_to_yard.json', import.meta.url));
 const FULL_IMPORT_CHAIN_SCENARIO = fileURLToPath(new URL('../../data/scenarios/full_import_chain.json', import.meta.url));
 const VERTICAL_SLICE_SCENARIO = fileURLToPath(new URL('../../data/scenarios/vertical_slice.json', import.meta.url));
+const EXPORT_ROUNDTRIP_SCENARIO = fileURLToPath(new URL('../../data/scenarios/export_roundtrip.json', import.meta.url));
 const VERTICAL_SLICE_GOLDEN = fileURLToPath(new URL('../sim/__golden__/vertical_slice.json', import.meta.url));
 
 const SMOKE: Scenario = { id: 'smoke', seed: 42, commands: [] };
@@ -1022,20 +1023,23 @@ describe('CLI (tools/simrun.ts)', () => {
     expect(() => JSON.parse(run.stdout)).toThrow();
   }, 30_000);
 
-  it('f2_unload --report → čistý JSON s metrikami žeriavov a lodí, exit 0', () => {
+  it('f2_unload --report → čistý JSON s metrikami žeriavov a lodí, exit 0 (predvolený režim under_hook: bez vozidiel žeriav čaká, buffer 1 jednotka)', () => {
     const run = runCli(F2_UNLOAD_SCENARIO, '--ticks', '5000', '--report');
     expect(run.status).toBe(0);
     expect(run.stderr).toBe('');
-    expect(JSON.parse(run.stdout)).toMatchObject({
+    const report = JSON.parse(run.stdout) as Record<string, unknown>;
+    expect(report).toMatchObject({
       scenario: 'f2_unload',
       lostUnits: 0,
       modules: STARTER_MODULES,
       shipsSpawned: 1,
-      shipsDeparted: 1,
-      unitsOnApron: 4,
-      craneCycles: 4,
+      // Pod hákom nikto nečaká a loď bez vozidiel sa nevyloží: jedna jednotka ide na buffer apronu, žeriav s druhou čaká.
+      shipsDeparted: 0,
+      unitsOnApron: 1,
+      craneCycles: 1,
       craneBlockedPct: 0,
     });
+    expect(report['craneWaitForVehicleTicks']).toBeGreaterThan(4000);
   }, 30_000);
 
   it('apron_to_yard --report → čistý JSON s metrikami vozidiel a skladov, exit 0', () => {
@@ -1072,6 +1076,35 @@ describe('CLI (tools/simrun.ts)', () => {
     expect(typeof report['ticksToAllExported']).toBe('number');
     expect(report['gateQueueMax']).toBeGreaterThanOrEqual(1);
   }, 60_000);
+
+  it('export_roundtrip --report --hash → metriky exportu F6a (shipped, rolled, returned, VGM, dual cycle, čakanie pod hákom); obnova uprostred nakládky aj lashingu dá rovnaký hash', () => {
+    const run = runCli(EXPORT_ROUNDTRIP_SCENARIO, '--ticks', '40000', '--report', '--hash');
+    expect(run.status).toBe(0);
+    expect(run.stderr).toBe('');
+    const report = JSON.parse(run.stdout) as Record<string, unknown>;
+    expect(report).toMatchObject({
+      scenario: 'export_roundtrip',
+      lostUnits: 0,
+      contractsCompleted: 2,
+      exportedUnits: 58,
+      shippedUnits: 35,
+      rolledUnits: 1,
+      returnedUnits: 1,
+      vgmHolds: 4,
+      dualTransactionRate: 0,
+      stowageOrderViolations: 0,
+      exportGroupingPct: 100,
+    });
+    expect(report['dualCycleRate']).toBeGreaterThan(0);
+    expect(report['craneWaitForVehicleTicks']).toBeGreaterThan(0);
+    expect(report['vehicleWaitUnderCraneTicks']).toBeGreaterThan(0);
+    expect(typeof report['stateHash']).toBe('string');
+    for (const at of ['28000', '30700']) {
+      const roundtrip = runCli(EXPORT_ROUNDTRIP_SCENARIO, '--ticks', '40000', '--report', '--hash', '--roundtrip-at', at);
+      expect(roundtrip.status, `roundtrip ${at}: ${roundtrip.stderr}`).toBe(0);
+      expect(roundtrip.stdout).toBe(run.stdout);
+    }
+  }, 120_000);
 
   it('smoke --report → nové kľúče F4 sú 0 a null (nie vynechané)', () => {
     const run = runCli(SMOKE_SCENARIO, '--ticks', '100', '--report');

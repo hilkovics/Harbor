@@ -153,7 +153,7 @@ describe('skutočné katalógy F2 až F4', () => {
       ],
       costCents: 6_000_000,
       maintenancePerDayCents: 10_000,
-      params: { bays: 6 },
+      params: { bays: 6, pickupReservedBays: 2 },
     });
     expect(item(def, 'loading_ramp_container')).toEqual({
       id: 'loading_ramp_container',

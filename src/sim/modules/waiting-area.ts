@@ -10,6 +10,10 @@
  * `runtime` v save je `{}`: bays patria kamiónom — kamión v save nesie index svojho bay (`SerializedTruck.bay`) a obnova
  * ho rezervuje (`reserveBayAt`, pri `waiting` aj `occupyBay`, T04-04, ADR-024), tak ako rezervácie skladu z jobov
  * (ADR-018). Priechod (vstupný a výstupný konektor voči bráne a rampe) určuje svet (`LandsideNetwork`).
+ *
+ * **Kvóta stojísk pre odvoz** (F6d, ADR-035): `params.pickupReservedBays` stojísk smú obsadiť len kamióny, ktoré odvážajú náklad z prístavu
+ * (import, výdaj prázdneho); kamión dovážajúci náklad (export, návrat prázdneho) smie dostať bay, len keď po ňom ostane voľných aspoň toľko
+ * (`freeBaysForDelivery`). Modul len počíta voľné miesta; kto je ktorého druhu, určuje misia kamióna (`TRUCK_MISSION_USES_PICKUP_BAYS`).
  */
 import type { EntityId } from '../core/entity-id';
 import { waitingAreaParams } from '../defs/module-def';
@@ -66,6 +70,22 @@ export class WaitingArea extends LandExportModule {
   /** Voľné bays (`bays − reserved − occupied`) — koľko ďalších `reserveBay` uspeje. */
   get freeBays(): number {
     return this.params.bays - this.held;
+  }
+
+  /**
+   * Stojiská rezervované pre odvoz (`params.pickupReservedBays`, ADR-035); chýba = 0, najviac `bays − 1` (aspoň jedno stojisko ostáva pre dovoz — def s kvótou
+   * ≥ `bays` by inak nikdy nevpustil kamión s exportom ani návratom prázdneho).
+   */
+  get pickupReservedBays(): number {
+    return Math.min(this.params.pickupReservedBays ?? 0, this.params.bays - 1);
+  }
+
+  /**
+   * Voľné bays pre kamión, ktorý náklad **privezie** (export, návrat prázdneho): voľné nad rezervou pre odvoz
+   * (`max(0, freeBays − pickupReservedBays)`). Kamión odvážajúci náklad používa `freeBays`.
+   */
+  get freeBaysForDelivery(): number {
+    return Math.max(0, this.freeBays - this.pickupReservedBays);
   }
 
   /** Kamión, ktorý bay drží; `null` = voľný. Bay mimo rozsahu → `ModuleError('invalid_slot')`. */

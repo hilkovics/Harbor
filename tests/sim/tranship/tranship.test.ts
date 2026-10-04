@@ -196,6 +196,17 @@ describe('zmeškaná prekládka — penalizácia, záchrana, predaj', () => {
     expect(eventsOf(events, 'TranshipRescued')).toEqual([]);
   });
 
+  it('predaný zvyšok nesie dve penalizácie rôzneho druhu (T6C-07b, ADR-034 dodatok): „zmeškané“ 25 % pri odplávaní lode B + jednorazový poplatok za nesplnený booking 10 % (loaded < 90 %), odmena 0', () => {
+    const { world, contract } = missedWorld();
+    // pri zmeškaní lode B: ⌊1 000 000 × 0,25 × 5 / 5⌋ = 250 000 (jednotková sadzba; platí aj pri záchrane)
+    expect(contract.penaltiesCents).toBe(250_000);
+    const events = runUntil(world, () => contract.state === 'failed', 60_000, 'predaj a uzavretie');
+    // pri uzavretí: booking-level poplatok ⌊1 000 000 × 0,1⌋ = 100 000 (ako pri exporte, kde sa „rolled“ 5 % tiež sčíta s „unfulfilled“ 10 %)
+    expect(ofType(events, 'BookingPenaltyApplied').map((entry) => entry.event)).toEqual([{ type: 'BookingPenaltyApplied', contractId: contract.id, kind: 'unfulfilled', units: 5, amountCents: 100_000 }]);
+    expect(contract.penaltiesCents).toBe(350_000);
+    expect(eventsOf(events, 'ContractFailed')).toEqual([{ type: 'ContractFailed', contractId: contract.id, penaltiesCents: 350_000 }]);
+  });
+
   it('záchrana: ďalšia voyage tej istej linky v lehote → outVoyageId sa prepíše, TranshipRescued, jednotky ostanú v sklade a odplávajú na lodi tej voyage', () => {
     const { world, contract, events: first, rescueContractId } = missedWorld({ rescue: true });
     expect(ofType(first, 'TranshipMissed')).toHaveLength(1);

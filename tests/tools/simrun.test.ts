@@ -28,6 +28,7 @@ const HARBOR_MAP = fileURLToPath(new URL('../../data/maps/harbor_01.json', impor
 const F2_UNLOAD_SCENARIO = fileURLToPath(new URL('../../data/scenarios/f2_unload.json', import.meta.url));
 const APRON_TO_YARD_SCENARIO = fileURLToPath(new URL('../../data/scenarios/apron_to_yard.json', import.meta.url));
 const FULL_IMPORT_CHAIN_SCENARIO = fileURLToPath(new URL('../../data/scenarios/full_import_chain.json', import.meta.url));
+const LIVE_TERMINAL_SCENARIO = fileURLToPath(new URL('../../data/scenarios/live_terminal.json', import.meta.url));
 const VERTICAL_SLICE_SCENARIO = fileURLToPath(new URL('../../data/scenarios/vertical_slice.json', import.meta.url));
 const EXPORT_ROUNDTRIP_SCENARIO = fileURLToPath(new URL('../../data/scenarios/export_roundtrip.json', import.meta.url));
 const VERTICAL_SLICE_GOLDEN = fileURLToPath(new URL('../sim/__golden__/vertical_slice.json', import.meta.url));
@@ -758,6 +759,35 @@ describe('runScenario', () => {
       const report = runScenario(loadScenario(FULL_IMPORT_CHAIN_SCENARIO), 1000, defs);
       expect([report.onTimeRate, report.contractsCompleted, report.xp]).toEqual([null, 0, 0]);
     });
+  });
+
+  describe('metriky repositioningu a prekládky (F6c, T6C-03, míľnik M2)', () => {
+    const LIVE_TICKS = 60_000;
+    const live = loadScenario(LIVE_TERMINAL_SCENARIO);
+    const report = runScenario(live, LIVE_TICKS, defs, { hash: true });
+
+    it('live_terminal: všetky štyri toky sú nenulové, lostUnits 0; repositionedUnits = naložené prázdne, transhipLoaded = naložená prekládka (shipped)', () => {
+      expect(report).toMatchObject({
+        lostUnits: 0,
+        exportedUnits: 116,
+        shippedUnits: 96,
+        emptyReturns: 68,
+        emptyPickedUp: 7,
+        repositionedUnits: 24,
+        transhipLoaded: 36,
+        transhipMissed: 0,
+        transhipRescued: 0,
+        transhipSold: 0,
+      });
+      // odplávané = export 36 + repositioning 24 + prekládka 36
+      expect(report.shippedUnits).toBe(36 + report.repositionedUnits + report.transhipLoaded);
+    }, HEAVY_TIMEOUT_MS);
+
+    it('--roundtrip-at uprostred prekládky (jednotky čakajú na loď B) a uprostred nakládky prázdnych dá zhodný report aj hash', () => {
+      for (const roundtripAt of [30_000, 41_500]) {
+        expect(runScenario(live, LIVE_TICKS, defs, { hash: true, roundtripAt }), `roundtrip v ticku ${String(roundtripAt)}`).toEqual(report);
+      }
+    }, HEAVY_TIMEOUT_MS * 2);
   });
 
   describe('vehicleUtilPercent', () => {

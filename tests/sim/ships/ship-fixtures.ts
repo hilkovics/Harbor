@@ -1,9 +1,9 @@
 // Spoločné pomôcky pre testy lodí a systémov krokov 3–4 (T02-05): defy s testovacími triedami lodí, sypkým nákladom
 // a sypkým žeriavom, spawn cez SpawnShipDebug a behanie tickov po podmienku.
 //
-// Mapa harbor_01: seaLane (48,0) → (48,7) → (44,7); anchorage (44,7), (52,7), (36,7), (60,7); Root berth x 40–47,
-// y 14–16 (rot 0, voda y ≤ 13), Root žeriav (43,14) id 2. Poloha feedera pri Root berthe = (43, 13), handy na dvoch
-// berthoch od x 40 = (45, 13).
+// Mapa harbor_01: seaLane (48,0) → (48,7) → (44,7); rejda (T6D-03) = rad anchorage y 3, x 60, 36, 72, 24, 84, 12 s jednotným
+// kurzom lodí na kotve 90; Root berth x 40–47, y 14–16 (rot 0, voda y ≤ 13), Root žeriav (43,14) id 2. Poloha feedera pri Root
+// berthe = (43, 13), handy na dvoch berthoch od x 40 = (45, 13).
 import cargoTypesJson from '@data/defs/cargo_types.json';
 import { APRON_MODULES as modulesJson } from '../helpers/apron-modules';
 import shipsJson from '@data/defs/ships.json';

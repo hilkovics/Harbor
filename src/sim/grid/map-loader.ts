@@ -9,16 +9,17 @@
  * 4. Portály (cestné, železničné): unikátne id, na okraji mapy, na pevnine (`land`), na verejnej bunke; žiadne dva
  *    portály (ani cestný s železničným, ADR-006) nezdieľajú bunku.
  * 5. `seaLane`: začína na okraji mapy, vrcholy aj bunky úsekov medzi nimi sú voda.
- * 6. `anchorage`: bunky hlbokej vody.
+ * 6. `anchorage`: bunky hlbokej vody; `anchorageHeading` (voliteľný) kurz lodí na kotve.
  * 7. `starter.roads`: v mape, terén unesie cestu (nie voda, nie `blocked`), verejná bunka alebo `startOwned` parcela.
  * 8. `starter.modules`: ľavý horný roh je v mape. Existenciu defu, footprint a pravidlá umiestnenia (§8) overuje až
  *    `World.create` (T02-04) — loader nepozná `DefRegistry`.
  */
 import harbor01Json from '@data/maps/harbor_01.json';
 import { Grid, type CellCoord, type DepthClass, type Rect } from './grid';
-import { parseMapDef, type MapDef, type MapPortalDef, type PlacedModuleSpec } from './map-def';
+import { DEFAULT_ANCHORAGE_HEADING, parseMapDef, type MapDef, type MapPortalDef, type PlacedModuleSpec } from './map-def';
 import { MapError, pointerSegment } from './map-error';
 import type { Parcel } from './parcel';
+import type { Rotation } from './rotation';
 import { isRoadBuildable, isWater, terrainFromChar, type TerrainType } from './terrain';
 
 export interface MapPortal {
@@ -52,6 +53,8 @@ export interface LoadedMap {
   readonly railPortals: readonly MapPortal[];
   readonly seaLane: readonly CellCoord[];
   readonly anchorage: readonly CellCoord[];
+  /** Kurz lodí na kotve (jednotný, `MapDef.anchorageHeading`; predvolene `DEFAULT_ANCHORAGE_HEADING`). */
+  readonly anchorageHeading: Rotation;
   readonly starter: LoadedStarter;
 }
 
@@ -326,6 +329,7 @@ export function loadMap(def: MapDef): LoadedMap {
     railPortals: toPortals(def.railPortals),
     seaLane: Object.freeze(def.seaLane.map(freezeCell)),
     anchorage: Object.freeze(def.anchorage.map(freezeCell)),
+    anchorageHeading: def.anchorageHeading ?? DEFAULT_ANCHORAGE_HEADING,
     starter: Object.freeze({
       modules: Object.freeze(def.starter.modules.map((spec) => Object.freeze({ ...spec }))),
       roads: Object.freeze(def.starter.roads.map(freezeCell)),

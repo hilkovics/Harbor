@@ -11,6 +11,7 @@ export {
   DOCKED_HEADING,
   advanceAlongRoute,
   anchoragePoint,
+  anchoringProblem,
   approachPoint,
   cardinalHeading,
   cellCenter,

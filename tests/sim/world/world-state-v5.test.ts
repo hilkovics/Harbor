@@ -42,12 +42,12 @@ const scenario = f4Scenario('f5_migration', 4004, { vehicles: STRADDLES, units: 
 const RUN_TIMEOUT_MS = 300_000;
 
 describe('WorldState v5', () => {
-  it('WORLD_STATE_VERSION je 8 (v5 + trasa lode ADR-029 + export ADR-032 + prázdne kontajnery ADR-034) a serialize() vracia verziu 8 ako čistý JSON', () => {
-    expect(WORLD_STATE_VERSION).toBe(8);
+  it('WORLD_STATE_VERSION je 9 (v5 + trasa lode ADR-029 + export ADR-032 + prázdne kontajnery ADR-034 + rejda T6D-03) a serialize() vracia verziu 9 ako čistý JSON', () => {
+    expect(WORLD_STATE_VERSION).toBe(9);
     const world = World.create(DEFS, MAP, 5901);
     world.tick();
     const state = world.serialize();
-    expect(state.version).toBe(8);
+    expect(state.version).toBe(9);
     expect(JSON.parse(JSON.stringify(state))).toEqual(state);
   });
 
@@ -96,7 +96,7 @@ describe('migrácia WorldState v4 → v5', () => {
     expect(gameOverOf(migrated)).toBe(false);
 
     const saved = migrated.serialize();
-    expect(saved.version).toBe(8);
+    expect(saved.version).toBe(9);
     const savedRecord = saved as unknown as Record<string, unknown>;
     const plainRecord = plain.serialize() as unknown as Record<string, unknown>;
     expect(JSON.stringify(savedRecord['cargo'])).toBe(JSON.stringify(plainRecord['cargo']));

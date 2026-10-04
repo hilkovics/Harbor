@@ -33,6 +33,7 @@ import {
   type WorldState,
 } from '@sim/world';
 import { assertCargoConservation } from '../helpers/invariants';
+import { cellCenter, laneStartHeading } from '@sim/ships';
 import { toV6State } from '../helpers/legacy-save';
 import { loadScenarioFile, runScenario } from '../helpers/scenario';
 import { DEFS, MAP } from './world-fixtures';
@@ -146,6 +147,22 @@ const FIXTURES: readonly LegacyFixture[] = [
 ];
 
 /**
+ * Lode, ktoré v savoch spred v9 držia anchorage (`inbound` / `waiting_anchorage` bez kotvísk), parser pri načítaní normalizuje
+ * (T6D-03, ADR-029 dodatok): rejda harbor_01 sa presunula a plavba k nej ide priamo, takže loď čaká pred vstupom (`arriving`
+ * na začiatku sea lane, bez anchorage a trasy) a anchorage dostane znova. Ostatné lode ostanú bez zmeny.
+ */
+function normalizedShips(ships: unknown): Json[] {
+  const start = cellCenter(MAP.seaLane[0]);
+  return (ships as Json[]).map((ship) => {
+    const stale = (ship['state'] === 'inbound' || ship['state'] === 'waiting_anchorage') && (ship['berthIds'] as unknown[]).length === 0 && ship['anchorageIndex'] !== null;
+    if (!stale) return ship;
+    const arrived: Json = { ...ship, state: 'arriving', x: start.x, y: start.y, heading: laneStartHeading(MAP), anchorageIndex: null, waypointIndex: 0 };
+    if ('route' in ship) arrived['route'] = [];
+    return arrived;
+  });
+}
+
+/**
  * Kľúče, ktoré migrácia nemení — po zhodení v7 → v6 (`toV6State`, ADR-032): `modules` upraví runtime, `ships` pridá
  * trasu (save spred v6), `version` sa zvýši.
  */
@@ -185,9 +202,10 @@ describe.each(FIXTURES)('uložený save $file (WorldState v$version) → v7', ({
         delete older['route'];
         return older;
       });
-    expect(noRoute(saved['ships'])).toEqual(noRoute(raw['ships'] ?? []));
+    // T6D-03: loď s anchorage zo save spred v9 sa normalizuje na `arriving` (`normalizedShips`), ostatné lode ostanú rovnaké.
+    expect(noRoute(saved['ships'])).toEqual(noRoute(normalizedShips(raw['ships'] ?? [])));
     expect((saved['ships'] as { route: unknown }[]).every((ship) => Array.isArray(ship.route))).toBe(true);
-    if (version >= 6) expect(saved['ships']).toEqual(raw['ships']);
+    if (version >= 6) expect(saved['ships']).toEqual(normalizedShips(raw['ships']));
 
     expect(world.clock.tick).toBe((raw['clock'] as { tick: number }).tick);
     expect(world.cashCents).toBe(raw['cashCents']);
@@ -261,7 +279,7 @@ describe('uložené savy v2 … v6 s neznámym defom modulu → WorldStateError 
 // 2. Poškodené savy aktuálnej verzie
 // ---------------------------------------------------------------------------------------------------------
 
-/** Aktuálny save s loďami (`berthing`, `outbound` a tri čakajúce na anchorage) a s vozidlami, JSON-kópia. */
+/** Aktuálny save s loďami (`outbound` a tri čakajúce na anchorage — od T6D-03 priamo na rejde) a s vozidlami, JSON-kópia. */
 function shipsState(): Json {
   const scenario = loadScenarioFile('multi_ship_queue');
   const world = World.create(DEFS, MAP, scenario.seed);
@@ -270,12 +288,12 @@ function shipsState(): Json {
     afterTick: (w) => {
       if (found !== undefined) return;
       const states = [...w.ships.values()].map((ship) => ship.state);
-      if (states.includes('berthing') && states.includes('outbound') && states.filter((state) => state === 'waiting_anchorage').length >= 3) {
+      if (states.includes('outbound') && states.filter((state) => state === 'waiting_anchorage').length >= 3) {
         found = clone(w.serialize()) as unknown as Json;
       }
     },
   });
-  if (found === undefined) throw new Error('multi_ship_queue: lode berthing + outbound + 3× waiting_anchorage nenastali');
+  if (found === undefined) throw new Error('multi_ship_queue: loď outbound + 3× waiting_anchorage nenastali');
   return found;
 }
 

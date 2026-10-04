@@ -149,6 +149,36 @@ describe('ShipView', () => {
   });
 });
 
+describe('lode na kotve na rejde (T6D-03): jednotné natočenie podľa kurzu simu', () => {
+  /** Čakajúca loď na rejde (rad y 3,5 severne od prístavu): predok na východ = kurz mapy `anchorageHeading` 90. */
+  const onRoadstead = (over: Partial<ShipVM> = {}): ShipVM => feeder({ state: 'waiting_anchorage', x: 60.5, y: 3.5, prevX: 60.5, prevY: 3.5, unitsOnBoard: 40, capacityUnits: 120, ...over });
+
+  it('feeder aj handy na rôznych anchorage majú rovnaký uhol view = kurz z VM (predok smeruje na východ)', () => {
+    const textures = new StubTextures();
+    const ships = [onRoadstead({ id: 1, x: 60.5, prevX: 60.5 }), onRoadstead({ id: 2, classId: 'handy', lengthCells: 10, x: 36.5, prevX: 36.5 }), onRoadstead({ id: 3, x: 72.5, prevX: 72.5 })];
+    const views = ships.map((vm) => new ShipView(vm, deps(textures)));
+    expect(views.map((view) => view.view.angle)).toEqual([90, 90, 90]);
+    for (const view of views) {
+      const bow = view.view.toGlobal({ x: 0, y: -3 * CELL });
+      const stern = view.view.toGlobal({ x: 0, y: 3 * CELL });
+      expect(bow.x).toBeGreaterThan(stern.x); // všetky lode smerujú na východ
+      expect(bow.y).toBeCloseTo(stern.y, 6);
+    }
+  });
+
+  it('loď, ktorá priplávala na západnú anchorage kurzom 270, sa na kotve natočí na kurz mapy (update zmení uhol, poloha ostane)', () => {
+    const view = new ShipView(onRoadstead({ heading: 270, x: 40, prevX: 41 }), deps(new StubTextures()), 1);
+    expect(view.view.angle).toBe(270);
+    view.update(onRoadstead({ heading: 90, x: 36.5, prevX: 36.5 }), 1);
+    expect(view.view.angle).toBe(90);
+    expect([view.view.x, view.view.y]).toEqual([36.5 * CELL, 3.5 * CELL]);
+  });
+
+  it('shipPose: kotviaca loď stojí (prev = curr), uhol = kurz VM', () => {
+    expect(shipPose(onRoadstead(), 0.5, CELL)).toEqual({ x: 60.5 * CELL, y: 3.5 * CELL, angle: 90 });
+  });
+});
+
 describe('EntityLayer (lode podľa id)', () => {
   it('vytvára a ruší views podľa id, nezmenené ponecháva', () => {
     const layer = new EntityLayer(deps(new StubTextures()));

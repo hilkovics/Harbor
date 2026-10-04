@@ -6,12 +6,14 @@
  * prednosť (FIFO bez head-of-line blokovania). Každý stav má jeden krok v tabuľke `SHIP_STEPS` (nie switch); stav mení
  * len `Ship.transition`, trasu stavu rezervuje `ShipTraffic`.
  *
- * - `arriving`: vstup, keď má loď cieľ (kotviská alebo anchorage) s voľnou trasou (`tryEnter`) — v tom istom ticku
- *   už pláva (vstup je jediný prechod, ktorý pohyb v ticku neukončí: loď pred mapou sa nemala čo pohnúť).
- * - `inbound`: plavba po sea lane; na jej konci `berthing` (kotviská z rezervácie alebo novo pridelené s voľnou
- *   trasou), inak `waiting_anchorage` po rezervovanom úseku k anchorage.
- * - `waiting_anchorage`: plavba k anchorage; na nej každý tick pokus o kotvisko (`tryStartBerthing`). Anchorage drží
- *   vždy (loď bez cieľa zo save v5 presunie parser pred vstup — `arriving`, ADR-029 addendum).
+ * - `arriving`: vstup, keď má loď cieľ s voľnou trasou (`tryEnter`) — v tom istom ticku už pláva (vstup je jediný
+ *   prechod, ktorý pohyb v ticku neukončí: loď pred mapou sa nemala čo pohnúť). Loď s voľným kotviskom → `inbound`
+ *   (po sea lane ku kotvisku), loď bez voľného kotviska → rovno `waiting_anchorage` (anchorage pridelená pri vstupe,
+ *   plavba priamo zo vstupu na rejdu — T6D-03).
+ * - `inbound`: plavba po sea lane; na jej konci `berthing` (kotviská z rezervácie pri vstupe).
+ * - `waiting_anchorage`: priama plavba na rejdu (po rezervovanej trase), na nej jednotný kurz `anchorageHeading` a každý
+ *   tick pokus o kotvisko (`tryStartBerthing`). Anchorage drží vždy (loď bez cieľa zo save v5 presunie parser pred
+ *   vstup — `arriving`, ADR-029 addendum).
  * - `berthing`: plavba po rezervovanej trase k polohe pri kotvisku; po príchode `docked` s kurzom `DOCKED_HEADING`
  *   a `ShipDocked`.
  * - `docked`: keď na lodi nie je žiadna jednotka (`on_ship`) a trasa von je voľná → `undocking` + `ShipUndocked`. Loď s exportom
@@ -43,17 +45,10 @@ function atRest(ship: Ship): boolean {
   return ship.waypointIndex >= ship.route.length;
 }
 
-/** `inbound` na konci sea lane: ku kotviskám z rezervácie, novo pridelené kotvisko, alebo k anchorage. */
+/** `inbound` na konci sea lane: ku kotviskám z rezervácie pri vstupe (úsek za koncom dráhy). */
 function reachLaneEnd(ship: Ship, world: World): void {
   const traffic = world.shipTraffic;
-  const leg = traffic.legAfterLane(ship);
-  if (ship.berthIds.length > 0) {
-    ship.transition('berthing', leg);
-    traffic.bump();
-    return;
-  }
-  if (traffic.tryStartBerthing(ship)) return;
-  ship.transition('waiting_anchorage', leg);
+  ship.transition('berthing', traffic.legAfterLane(ship));
   traffic.bump();
 }
 
@@ -111,7 +106,7 @@ function shipExports(ship: Ship, world: World): void {
 
 const SHIP_STEPS: { readonly [S in ShipState]: ShipStep } = {
   arriving: (ship, world) => {
-    if (world.shipTraffic.tryEnter(ship)) SHIP_STEPS.inbound(ship, world);
+    if (world.shipTraffic.tryEnter(ship)) SHIP_STEPS[ship.state](ship, world);
   },
   inbound: (ship, world) => {
     // Plavba len po úsek sea lane; úsek za koncom dráhy pokračuje v ďalšom stave.

@@ -65,7 +65,7 @@ describe('migrácia save v7 → v8 (ADR-034)', () => {
     const before = clone(save);
     const migrated = migrateWorldState(save, DEFS) as Json;
     expect(save).toEqual(before);
-    expect(migrated['version']).toBe(8);
+    expect(migrated['version']).toBe(9);
     expect(migrated['rng']).toEqual(save['rng']);
     expect(migrated['emptyFlow']).toEqual({ returnPlan: [], pickupPlan: [], errands: [] });
     const contracts = migrated['contracts'] as Json[];
@@ -84,7 +84,7 @@ describe('migrácia save v7 → v8 (ADR-034)', () => {
       const world = World.deserialize(DEFS, MAP, asState(clone(save)));
       world.assertInvariants();
       const state = world.serialize();
-      expect(state.version).toBe(8);
+      expect(state.version).toBe(9);
       expect(JSON.stringify(toV7State(state))).toBe(JSON.stringify(save));
       expect(World.deserialize(DEFS, MAP, clone(state)).serialize()).toEqual(state);
     },

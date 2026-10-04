@@ -511,6 +511,17 @@ describe('validateDefsDir', () => {
         expect(mapResult('bad.json').errors).toEqual(["maps/bad.json: /anchorage/0 must have required property 'y'"]);
       });
 
+      it('anchorageHeading (T6D-03): platný kurz prejde, neplatný padne na enum, chýbajúci je v poriadku (voliteľný)', () => {
+        writeMap('ok.json', { ...realMap(), anchorageHeading: 270 });
+        expect(mapResult('ok.json').errors).toEqual([]);
+        const without: Record<string, unknown> = { ...realMap() };
+        delete without['anchorageHeading'];
+        writeMap('without.json', without);
+        expect(mapResult('without.json').errors).toEqual([]);
+        writeMap('bad.json', { ...realMap(), anchorageHeading: 45 });
+        expect(mapResult('bad.json').errors).toEqual(['maps/bad.json: /anchorageHeading must be equal to one of the allowed values']);
+      });
+
       it('neznáme pole (additionalProperties: false)', () => {
         writeMap('bad.json', { ...realMap(), widht: 96 });
         const errors = mapResult('bad.json').errors;

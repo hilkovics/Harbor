@@ -43,7 +43,7 @@ import { ModuleError, ModuleStateError } from '../modules/module-error';
 import { moduleRegistry } from '../modules/module-registry';
 import { Ship } from '../ships/ship';
 import { ShipError } from '../ships/ship-error';
-import { legacyShipRoute, mooringProblem, shipRouteProblem } from '../ships/ship-route';
+import { anchoringProblem, legacyShipRoute, mooringProblem, shipRouteProblem } from '../ships/ship-route';
 import { HANDOVERS } from '../systems/crane-handover';
 import { TruckGate } from '../modules/truck-gate';
 import { WaitingArea } from '../modules/waiting-area';
@@ -156,6 +156,8 @@ function restoreShips(world: World, entries: readonly ParsedShipEntry[]): void {
     claimShipBerths(world, ship, path);
     const mooring = mooringProblem(ship, world);
     if (mooring !== undefined) throw new WorldStateError(`${path}/${mooring.field}`, mooring.problem);
+    const anchoring = anchoringProblem(ship, world);
+    if (anchoring !== undefined) throw new WorldStateError(`${path}/${anchoring.field}`, anchoring.problem);
     if (ship.anchorageIndex !== null) {
       const holder = anchorages.get(ship.anchorageIndex);
       if (holder !== undefined) throw new WorldStateError(`${path}/anchorageIndex`, `anchorage ${String(ship.anchorageIndex)} už obsadila loď #${String(holder)}`);

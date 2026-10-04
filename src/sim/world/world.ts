@@ -115,7 +115,7 @@ import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle-fsm';
 import { connectorCellsOf, isModuleConnected, type ConnectorCell } from './connectivity';
 import { LandsideNetwork, type GateSides, type LandsideRoute } from './landside';
 import { LandsideRosterCache, type LandsideModules } from './landside-roster';
-import { migrateWorldState, savesShipRoutes } from './migrate';
+import { migrateWorldState, savesDirectAnchorage, savesShipRoutes } from './migrate';
 import { PLACEMENT_RULE_ERROR, attachesToHost, findPlacementViolations, findRemovalViolations } from './module-rules';
 import { WorldInvariantError, findWorldViolation } from './world-invariants';
 import { restoreEntities } from './world-restore';
@@ -379,7 +379,7 @@ export class World {
    */
   static deserialize(defs: DefRegistry, map: LoadedMap, state: AnyWorldState, options: WorldOptions = {}): World {
     const grid = map.createGrid();
-    const parsed = parseWorldState(migrateWorldState(state, defs), defs, map, grid, { legacyShipRoutes: !savesShipRoutes(state) });
+    const parsed = parseWorldState(migrateWorldState(state, defs), defs, map, grid, { legacyShipRoutes: !savesShipRoutes(state), legacyAnchorage: !savesDirectAnchorage(state) });
     for (let i = 0; i < grid.cellCount; i++) {
       const cell = grid.atIndex(i);
       cell.road = 'none';

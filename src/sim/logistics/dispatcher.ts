@@ -82,7 +82,7 @@ import { allocateRamp } from './ramp-allocator';
 import type { StoredCargoGroup } from './stored-cargo-index';
 import { JOB_PRIORITY_LEVELS, TransportJob, type JobCancelReason } from './transport-job';
 import { allocateUnloadStorage } from './unload-storage';
-import { isOutboundOnShip, openLoadBookings } from './voyage-cargo';
+import { anyBookingLoads, isOutboundOnShip, openLoadBookings } from './voyage-cargo';
 
 /**
  * Smie vozidlo viezť jednotku (F6c, ADR-034)? Kategória nákladu a smer: `VehicleDef.cargoDirections` (chýba = každý smer;
@@ -114,7 +114,7 @@ function emitNoStorage(world: World, berth: BerthModule, cargoTypeId: string): v
  */
 function awaitsCrane(world: World, unit: CargoUnit, berth: BerthModule): boolean {
   if (!isOutboundOnShip(world, unit, berth.dockedShipId)) return false;
-  if (unit.contractId === null) return berth.dockedShipId !== null && openLoadBookings(world, berth.dockedShipId, AWAITED_BOOKINGS).some((contract) => contract.loadsUnit(unit));
+  if (unit.contractId === null) return berth.dockedShipId !== null && anyBookingLoads(openLoadBookings(world, berth.dockedShipId, AWAITED_BOOKINGS), unit);
   return world.contractBook.get(unit.contractId)?.outbound === 'held';
 }
 

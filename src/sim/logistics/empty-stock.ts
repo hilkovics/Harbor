@@ -32,9 +32,20 @@ export function hasEmptyDepot(world: Pick<World, 'modules'>): boolean {
   return false;
 }
 
+/** Typ nákladu prázdneho kontajnera podľa registra defov (memo — `DefRegistry` je po vytvorení nemenný; krok 8 ho pýta pri každom splatnom návrate / výdaji). */
+const EMPTY_CARGO_TYPES = new WeakMap<DefRegistry, string | undefined>();
+
 /** Typ nákladu prázdneho kontajnera: prvý typ v poradí `cargo_types.json`, ktorého kategória je kategória depa prázdnych. */
 export function emptyCargoTypeId(defs: DefRegistry): string | undefined {
-  return defs.cargoTypes.items.find((def) => def.category === EMPTY_DEPOT_CATEGORY)?.id;
+  if (EMPTY_CARGO_TYPES.has(defs)) return EMPTY_CARGO_TYPES.get(defs);
+  let typeId: string | undefined;
+  for (const def of defs.cargoTypes.items) {
+    if (def.category !== EMPTY_DEPOT_CATEGORY) continue;
+    typeId = def.id;
+    break;
+  }
+  EMPTY_CARGO_TYPES.set(defs, typeId);
+  return typeId;
 }
 
 /** Štítky novej jednotky prázdneho kontajnera linky `lineId` (bez kontraktu, voyage a prístavu; hmotnostná trieda bez `Rng`). */

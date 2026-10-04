@@ -96,6 +96,27 @@ describe('EmptyFlow — poverenia kamiónov misie collect (dodatok T6C-02)', () 
     expect(() => flow.assignErrandUnit(5, 1)).toThrow(/nemá poverenie/);
   });
 
+  it('indexy kamión / jednotka (T6C-07b, hot path) ostávajú súdržné: prepis pridelenia, odstránenie pridelenej jednotky, obnova zo stavu', () => {
+    const flow = new EmptyFlow();
+    flow.addErrand(4, 'blue_anchor', 7, 900);
+    flow.addErrand(9, 'golden_wave', 8, 950);
+    flow.assignErrandUnit(4, 10);
+    flow.assignErrandUnit(9, 20);
+    flow.assignErrandUnit(4, 11); // prepis: stará jednotka už nikomu nepatrí
+    expect(flow.errandOfUnit(10)).toBeUndefined();
+    expect(flow.errandOfUnit(11)?.truckId).toBe(4);
+    const restored = EmptyFlow.fromState(JSON.parse(JSON.stringify(flow.getState())));
+    expect(restored.errandOfUnit(11)?.truckId).toBe(4);
+    expect(restored.errandOfUnit(20)?.truckId).toBe(9);
+    expect(restored.errandOfTruck(9)?.unitId).toBe(20);
+    flow.removeErrand(9); // odstránenie poverenia s pridelenou jednotkou uvoľní aj index jednotky
+    expect(flow.errandOfUnit(20)).toBeUndefined();
+    expect(flow.errandOfTruck(9)).toBeUndefined();
+    expect(flow.errands.map((errand) => errand.truckId)).toEqual([4]);
+    flow.addErrand(9, 'golden_wave', 8, 950); // kamión môže dostať nové poverenie (id sa nepoužije znova, ale index je čistý)
+    expect(flow.errandOfTruck(9)?.unitId).toBeNull();
+  });
+
   it('getState nesie poverenia v poradí kľúčov; kópia nezdieľa objekty so živým plánom', () => {
     const flow = new EmptyFlow();
     flow.addErrand(4, 'blue_anchor', 7, 900);

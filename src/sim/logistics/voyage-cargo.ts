@@ -158,6 +158,12 @@ export function isLoadable(unit: CargoUnit): boolean {
   return unit.direction !== 'import' && unit.hold === null && unit.status === 'available';
 }
 
+/** Nakladá aspoň jeden z `bookings` jednotku `unit` (`Contract.loadsUnit`)? Cyklus bez uzáveru (hot path). */
+export function anyBookingLoads(bookings: readonly Contract[], unit: CargoUnit): boolean {
+  for (const contract of bookings) if (contract.loadsUnit(unit)) return true;
+  return false;
+}
+
 /** Neukončené kontrakty, ktorých náklad je jednotka `unit` (do `SCRATCH`); používa ho `stowageOutOfOrder` bez lode. */
 function bookingsOfUnit(world: World, unit: CargoUnit): readonly Contract[] {
   SCRATCH.length = 0;
@@ -178,7 +184,7 @@ export function stowageOutOfOrder(world: World, loaded: CargoUnit, shipId?: Enti
     if (unit.id === loaded.id || !isLoadable(unit)) continue;
     const { kind } = unit.location;
     if (kind !== 'in_storage' && kind !== 'on_apron' && kind !== 'in_vehicle' && kind !== 'at_ramp' && kind !== 'in_crane') continue;
-    if (compareStowageOrder(unit, loaded) < 0 && bookings.some((contract) => contract.loadsUnit(unit))) return true;
+    if (compareStowageOrder(unit, loaded) < 0 && anyBookingLoads(bookings, unit)) return true;
   }
   return false;
 }

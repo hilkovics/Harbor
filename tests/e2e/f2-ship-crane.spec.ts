@@ -1,9 +1,14 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
-// F2 e2e (IMPLEMENTATION_PLAN, Fáza 2; T02-12): hráč vidí loď doplávať, zakotviť, žeriav presúva kontajnery na apron
-// a po vyložení loď odpláva; v build móde postaví kotvisko (ghost, R, dôvody v tooltipe, cena) a klikom vyberie modul
-// do inšpektora (živé dáta, odstránenie). Na stav sa čaká cez `window.__sim` (polling v rAF stránky), nie pevnými
-// timeoutmi — test rýchlosti hodín F1 bol citlivý na záťaž.
+// F2 e2e (IMPLEMENTATION_PLAN, Fáza 2; T02-12): hráč vidí loď doplávať, zakotviť, žeriav vykladá a po vyložení loď odpláva;
+// v build móde postaví kotvisko (ghost, R, dôvody v tooltipe, cena) a klikom vyberie modul do inšpektora (živé dáta,
+// odstránenie). Na stav sa čaká cez `window.__sim` (polling v rAF stránky), nie pevnými timeoutmi — test rýchlosti hodín F1
+// bol citlivý na záťaž.
+//
+// Predvolený režim odovzdávania kotviska je od F6a `under_hook` (ADR-033): žeriav bez vozidla pod hákom vyloží najviac jednu
+// jednotku do bufferu na aprone a čaká, takže loď neodpláva, kým nemá kam vykladať. Testy vykládky preto pred spawnom lode
+// postavia sklad, cesty a depo a kúpia vozidlo (rozloženie F3, `buildUnloadLogistics`); test „bez vozidla“ overí samotné
+// čakanie (inšpektor „Čaká na vozidlo“) a že vykládka pokračuje, keď logistika pribudne.
 //
 // Súradnice pre myš dáva `window.__sim.cellToScreen` (stred bunky v súradniciach stránky), pohľad na Root berth
 // `window.__sim.centerOn`. Root berth (id 1) = x 40–47, y 14–16; Root žeriav (id 2) = x 43–44, y 14–16.
@@ -105,8 +110,71 @@ async function waitInPage(page: Page, condition: () => boolean): Promise<void> {
   await page.waitForFunction(condition, undefined, { timeout: WAIT_LIMIT_MS });
 }
 
+/** Cesty rozloženia F3 (okruh pri Root berthe, chrbtica k depu) po úsekoch `[x0, y0, x1, y1]`; 34 buniek. */
+const LOGISTICS_ROADS: readonly (readonly [number, number, number, number])[] = [
+  [41, 17, 41, 22],
+  [46, 17, 46, 22],
+  [42, 22, 45, 22],
+  [42, 17, 45, 17],
+  [44, 23, 44, 30],
+  [45, 30, 50, 30],
+];
+
+function segmentCells([x0, y0, x1, y1]: readonly [number, number, number, number]): { x: number; y: number }[] {
+  const cells: { x: number; y: number }[] = [];
+  const dx = Math.sign(x1 - x0);
+  const dy = Math.sign(y1 - y0);
+  for (let x = x0, y = y0; ; x += dx, y += dy) {
+    cells.push({ x, y });
+    if (x === x1 && y === y1) return cells;
+  }
+}
+
+async function dispatch(page: Page, command: Record<string, unknown>): Promise<{ readonly ok: boolean; readonly reasons: readonly string[] }> {
+  return page.evaluate((json) => window.__sim!.dispatchJSON!(json as never), command);
+}
+
+/**
+ * Logistika pre vykládku pod hákom (rozloženie F3 cez `dispatchJSON`): cesty, depo, blízky dvor a jedno vozidlo (straddle
+ * carrier). Depo nájde podľa defu — id entít sú spoločná postupnosť, takže po lodi nemá id 3.
+ */
+async function buildUnloadLogistics(page: Page): Promise<void> {
+  for (const segment of LOGISTICS_ROADS) expect(await dispatch(page, { type: 'PlaceRoad', cells: segmentCells(segment) })).toMatchObject({ ok: true });
+  expect(await dispatch(page, { type: 'PlaceModule', defId: 'vehicle_depot', x: 46, y: 27, rotation: 0 })).toMatchObject({ ok: true });
+  expect(await dispatch(page, { type: 'PlaceModule', defId: 'container_yard_small', x: 42, y: 18, rotation: 0 })).toMatchObject({ ok: true });
+  await expect.poll(() => page.evaluate(() => window.__sim!.entities().modules.some((module) => module.defId === 'vehicle_depot'))).toBe(true);
+  const depotId = await page.evaluate(() => window.__sim!.entities().modules.find((module) => module.defId === 'vehicle_depot')!.id);
+  expect(await dispatch(page, { type: 'BuyVehicle', vehicleDefId: 'straddle_carrier', depotId })).toMatchObject({ ok: true });
+  await expect.poll(() => page.evaluate(() => window.__sim!.world.vehicles.size)).toBe(1);
+}
+
+/** Zavrie všetky toasty (ležia nad mapou a prekrývajú klik na bunku; zánik po 8 s sa môže s klikom minúť, preto krátky limit a opakovanie). */
+async function dismissToasts(page: Page): Promise<void> {
+  const closers = page.locator('.toasts .toast [data-action="close"]');
+  await expect(async () => {
+    if ((await closers.count()) > 0) await closers.first().click({ timeout: 1_000 });
+    await expect(page.locator('.toasts .toast')).toHaveCount(0, { timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+}
+
+/**
+ * Klik na bunku, ktorý vyberie modul: hover + prekreslenie a až potom klik; keď sa inšpektor neukáže (klik sa minul s prekreslením
+ * mapy alebo so zánikom toastu), skúsi to znova — klik na už vybraný modul výber nemení.
+ */
+async function selectModuleAt(page: Page, cell: { readonly x: number; readonly y: number }): Promise<void> {
+  await expect(async () => {
+    await hoverCell(page, cell);
+    await settle(page);
+    await clickCell(page, cell);
+    await expect(inspector(page)).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
+}
+
+/** Počet uložených jednotiek vo všetkých skladoch (ledger) — vykladaný náklad končí vo dvore, nie na aprone. */
+const storedUnits = (page: Page) => page.evaluate(() => window.__sim!.world.cargo.countByKind('in_storage'));
+
 test.describe('F2: loď, žeriav, apron (T02-12)', () => {
-  test('Root modul na nábreží, BuildBar dole, DEV spawn → loď zakotví, žeriav vykladá, loď odpláva', async ({ page }) => {
+  test('Root modul na nábreží, BuildBar dole, DEV spawn → loď zakotví, žeriav vykladá do vozidla, loď odpláva, náklad je vo dvore', async ({ page }) => {
     const { errors } = await openGame(page);
 
     // 1) štart: Root berth a žeriav sú vo view-modeloch aj v rendereri (starter moduly nemajú udalosť ModulePlaced)
@@ -151,8 +219,10 @@ test.describe('F2: loď, žeriav, apron (T02-12)', () => {
     // 3) HUD: rýchlosti zo snapshotu
     await expect(page.locator('[data-field="speed"] button')).toHaveCount(5);
 
-    // 4) SpawnShipDebug + 4×: loď doplaví a zakotví (podmienka sa vyhodnotí v rAF stránky a pri zhode hneď spomalí hru na 1×,
-    // aby vykládka nepreletela medzi dvoma snímkami)
+    // 4) Logistika (ADR-033): cesty, depo, dvor a vozidlo ešte pred lodou, inak by žeriav po jednej jednotke v bufferu čakal na
+    // vozidlo. Potom SpawnShipDebug + 4×: loď doplaví a zakotví (podmienka sa vyhodnotí v rAF stránky a pri zhode hneď spomalí
+    // hru na 1×, aby vykládka nepreletela medzi dvoma snímkami)
+    await buildUnloadLogistics(page);
     await spawnDevShip(page);
     await setSpeed(page, 4);
     await page.waitForFunction(() => window.__sim!.entities().ships.length === 1);
@@ -163,43 +233,41 @@ test.describe('F2: loď, žeriav, apron (T02-12)', () => {
       return docked;
     });
 
-    // Žeriav v grabbing|placing a aspoň jeden kontajner na aprone: hra sa v tom istom kroku pozastaví, aby screenshot
-    // ukazoval presne overený stav (loď docked, výložník uprostred cyklu).
+    // Žeriav v grabbing|placing pri zakotvenej lodi: hra sa v tom istom kroku pozastaví, aby screenshot ukazoval presne
+    // overený stav (loď docked, výložník uprostred cyklu).
     await waitInPage(page, () => {
-      const { ships, cranes, modules } = window.__sim!.entities();
+      const { ships, cranes } = window.__sim!.entities();
       const crane = cranes[0];
-      const working =
-        ships[0]?.state === 'docked' && (crane?.state === 'grabbing' || crane?.state === 'placing') && (modules[0]?.apron?.units.length ?? 0) >= 1;
+      const working = ships[0]?.state === 'docked' && (crane?.state === 'grabbing' || crane?.state === 'placing');
       if (working) window.__sim!.world.clock.setSpeed(0);
       return working;
     });
     await parkMouse(page);
 
     const docked = await page.evaluate(() => {
-      const { ships, cranes, modules } = window.__sim!.entities();
-      return { ship: ships[0], crane: cranes[0], apron: modules[0]?.apron?.units.length, rendered: window.__sim!.rendered!() };
+      const { ships, cranes, modules, vehicles } = window.__sim!.entities();
+      return { ship: ships[0], crane: cranes[0], vehicles: vehicles?.length, rendered: window.__sim!.rendered!(), modules: modules.map((module) => module.defId) };
     });
     expect(docked.ship).toMatchObject({ classId: 'feeder', cargoCategory: 'container', state: 'docked' });
     expect(docked.ship?.unitsOnBoard).toBeGreaterThan(0);
     expect(['grabbing', 'placing']).toContain(docked.crane?.state);
-    expect(docked.apron).toBeGreaterThanOrEqual(1);
-    expect(docked.rendered).toMatchObject({ modules: 1, cranes: 1, ships: 1 });
+    expect(docked.modules).toEqual(['berth_standard', 'vehicle_depot', 'container_yard_small']);
+    expect(docked.vehicles).toBe(1);
+    expect(docked.rendered).toMatchObject({ modules: 3, cranes: 1, ships: 1, vehicles: 1 });
     await page.screenshot({ path: 'tests/e2e/__screenshots__/f2-docked.png', fullPage: true });
 
-    // 5) po vyložení: loď preč (view zaniklo), na aprone 4 jednotky, žeriav opäť nečinný
+    // 5) po vyložení: loď preč (view zaniklo), všetky 4 jednotky prešli žeriav → vozidlo → dvor (apron je prázdny), žeriav opäť nečinný
     await setSpeed(page, 4);
-    await waitInPage(page, () => {
-      const { ships, modules } = window.__sim!.entities();
-      return ships.length === 0 && modules[0]?.apron?.units.length === 4;
-    });
+    await waitInPage(page, () => window.__sim!.entities().ships.length === 0 && window.__sim!.world.cargo.countByKind('in_storage') === 4);
     await expect.poll(() => page.evaluate(() => window.__sim!.rendered!().ships)).toBe(0);
     const done = await page.evaluate(() => {
       const { cranes, modules } = window.__sim!.entities();
-      return { crane: cranes[0]?.state, slots: modules[0]?.apron?.units.map((unit) => unit.slot), types: modules[0]?.apron?.units.map((unit) => unit.typeId) };
+      const yard = modules.find((module) => module.defId === 'container_yard_small');
+      return { crane: cranes[0]?.state, apron: modules[0]?.apron?.units.length, stored: yard?.storage?.stored, onApron: window.__sim!.world.cargo.countByKind('on_apron') };
     });
     expect(done.crane).toBe('idle');
-    expect(done.slots).toEqual([0, 1, 2, 3]);
-    expect(done.types).toEqual(Array<string>(4).fill('container_teu'));
+    expect(done).toMatchObject({ apron: 0, onApron: 0, stored: 4 });
+    expect(await storedUnits(page)).toBe(4);
     await setSpeed(page, 1);
     await parkMouse(page);
     await page.screenshot({ path: 'tests/e2e/__screenshots__/f2-departed.png', fullPage: true });
@@ -314,7 +382,9 @@ test.describe('F2: loď, žeriav, apron (T02-12)', () => {
   test('výber Root žeriavu počas vykládky: inšpektor „Vykladá“, Odstrániť zablokované s dôvodom; živé dáta po odchode lode', async ({ page }) => {
     const { errors } = await openGame(page);
 
-    // loď zakotví a žeriav vykladá (hra sa v tom istom kroku pozastaví, aby bol stav stabilný)
+    // logistika pred lodou (ADR-033); loď zakotví a žeriav vykladá (hra sa v tom istom kroku pozastaví, aby bol stav stabilný).
+    // Čaká sa na `grabbing`: v `placing` môže žeriav (kým vozidlo nepríde pod hák) len čakať a inšpektor by ukázal „Čaká na vozidlo“.
+    await buildUnloadLogistics(page);
     await spawnDevShip(page);
     await setSpeed(page, 4);
     await waitInPage(page, () => {
@@ -323,14 +393,14 @@ test.describe('F2: loď, žeriav, apron (T02-12)', () => {
       return docked;
     });
     await waitInPage(page, () => {
-      const crane = window.__sim!.entities().cranes[0];
-      const working = crane?.state === 'grabbing' || crane?.state === 'placing';
+      const working = window.__sim!.entities().cranes[0]?.state === 'grabbing';
       if (working) window.__sim!.world.clock.setSpeed(0);
       return working;
     });
 
-    // klik na bunku Root žeriavu (x 43–44) — žeriav má prednosť pred kotviskom pod ním
-    await clickCell(page, { x: 43, y: 15 });
+    // klik na bunku Root žeriavu (x 43–44) — žeriav má prednosť pred kotviskom pod ním; toasty (ponuky, sklad) ju nesmú prekrývať
+    await dismissToasts(page);
+    await selectModuleAt(page, { x: 43, y: 15 });
     await expect(inspector(page)).toBeVisible();
     await expect(inspector(page)).toHaveAttribute('data-module-id', '2');
     await expect(inspector(page).locator('[data-field="title"]')).toHaveText('Kontajnerový žeriav');
@@ -356,7 +426,7 @@ test.describe('F2: loď, žeriav, apron (T02-12)', () => {
 
     // živé dáta: po vyložení a odchode lode sa inšpektor sám prepne na Nečinný a Odstrániť sa odblokuje
     await setSpeed(page, 4);
-    await waitInPage(page, () => window.__sim!.entities().ships.length === 0);
+    await waitInPage(page, () => window.__sim!.entities().ships.length === 0 && window.__sim!.world.cargo.countByKind('in_storage') === 4);
     await expect(inspector(page).locator('[data-field="badge"]')).toHaveText('Nečinný');
     await expect(remove).toHaveAttribute('aria-disabled', 'false');
     await expect(inspector(page).locator('[data-field="remove-reason"]')).toHaveCount(0);
@@ -367,6 +437,60 @@ test.describe('F2: loď, žeriav, apron (T02-12)', () => {
     await page.keyboard.press('Escape');
     await expect(inspector(page)).toHaveCount(0);
     await expect.poll(() => rendered(page)).toMatchObject({ selectionRing: false });
+
+    expect(errors).toEqual([]);
+  });
+
+  test('bez vozidla (ADR-033): žeriav vyloží 1 jednotku do bufferu a čaká, inšpektor „Čaká na vozidlo“; po dodaní logistiky vykládka dokončí', async ({ page }) => {
+    const { errors } = await openGame(page);
+
+    // loď bez skladu, ciest a vozidiel: žeriav odloží prvú jednotku na buffer (1 slot apronu) a druhú drží v háku
+    await spawnDevShip(page);
+    await setSpeed(page, 4);
+    await waitInPage(page, () => {
+      const { ships, cranes, modules } = window.__sim!.entities();
+      const crane = window.__sim!.world.modules.get(2 as never) as unknown as { readonly waitForVehicleTicks: number };
+      const waiting =
+        ships[0]?.state === 'docked' && cranes[0]?.state === 'placing' && cranes[0].holding !== null && (modules[0]?.apron?.units.length ?? 0) === 1 && crane.waitForVehicleTicks > 5;
+      if (waiting) window.__sim!.world.clock.setSpeed(0);
+      return waiting;
+    });
+    const waitingAt = await page.evaluate(() => {
+      const { ships, cranes, modules } = window.__sim!.entities();
+      return { held: cranes[0]?.holding?.unitId, onBoard: ships[0]?.unitsOnBoard, apron: modules[0]?.apron?.units.length, tick: window.__sim!.world.clock.tick };
+    });
+    expect(waitingAt.apron).toBe(1);
+    expect(waitingAt.onBoard).toBe(2); // 4 TEU: jedna na aprone, jedna v háku, dve ešte na lodi
+
+    // inšpektor žeriavu: „Čaká na vozidlo“ (žltý badge + banner), nie „Vykladá“; Odstrániť ostáva zablokované (žeriav drží jednotku)
+    await dismissToasts(page);
+    await selectModuleAt(page, { x: 43, y: 15 });
+    await expect(inspector(page)).toHaveAttribute('data-module-id', '2');
+    await expect(inspector(page).locator('[data-field="badge"]')).toHaveText('Čaká na vozidlo');
+    await expect(inspector(page).locator('[data-field="badge"]')).toHaveAttribute('data-ok', 'false');
+    await expect(inspector(page).locator('[data-section="waiting"]')).toContainText('pokračuje, keď vozidlo príde pod hák');
+    await expect(inspector(page).locator('[data-action="remove"]')).toHaveAttribute('aria-disabled', 'true');
+    await parkMouse(page);
+    await page.screenshot({ path: 'tests/e2e/__screenshots__/f2-crane-waiting.png', fullPage: true });
+
+    // žeriav naozaj čaká: po ďalších tickoch drží tú istú jednotku a na lodi ostali dve (nič sa nevyloží bez vozidla)
+    await setSpeed(page, 4);
+    await page.waitForFunction((tick) => window.__sim!.world.clock.tick >= tick + 200, waitingAt.tick);
+    const later = await page.evaluate(() => {
+      const { ships, cranes, modules } = window.__sim!.entities();
+      return { held: cranes[0]?.holding?.unitId, onBoard: ships[0]?.unitsOnBoard, apron: modules[0]?.apron?.units.length, state: cranes[0]?.state, shipState: ships[0]?.state };
+    });
+    expect(later).toMatchObject({ held: waitingAt.held, onBoard: 2, apron: 1, state: 'placing', shipState: 'docked' });
+    await expect(inspector(page).locator('[data-field="badge"]')).toHaveText('Čaká na vozidlo');
+
+    // dodanie logistiky (cesty, depo, dvor, vozidlo) uvoľní čakanie: všetky 4 jednotky skončia vo dvore, loď odpláva, žeriav je nečinný
+    await buildUnloadLogistics(page);
+    await waitInPage(page, () => window.__sim!.entities().ships.length === 0 && window.__sim!.world.cargo.countByKind('in_storage') === 4);
+    await expect(inspector(page).locator('[data-field="badge"]')).toHaveText('Nečinný');
+    await expect(inspector(page).locator('[data-field="badge"]')).toHaveAttribute('data-ok', 'true');
+    await expect(inspector(page).locator('[data-section="waiting"]')).toHaveCount(0);
+    expect(await page.evaluate(() => window.__sim!.world.cargo.countByKind('on_apron'))).toBe(0);
+    expect(await page.evaluate(() => window.__sim!.world.modules.get(2 as never) !== undefined && (window.__sim!.world.modules.get(2 as never) as unknown as { waitForVehicleTicks: number }).waitForVehicleTicks)).toBeGreaterThan(5);
 
     expect(errors).toEqual([]);
   });

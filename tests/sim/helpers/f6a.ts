@@ -209,3 +209,67 @@ export function contractOf(world: World, id: ContractId | number): Contract {
 export function lostUnits(world: World): number {
   return world.cargo.createdCount - world.cargo.liveCount - world.cargo.exportedCount - world.cargo.shippedCount;
 }
+
+// ---------------------------------------------------------------------------------------------------------
+// Nakládka exportu (T6A-05, ADR-032 bod 8–14, ADR-033)
+// ---------------------------------------------------------------------------------------------------------
+
+/** Defy s režimom odovzdávania `under_hook` a bufferom `craneBufferSlots` na žeriav (`f6aDefs` + `moduleParams` kotviska). */
+export function hookDefs(craneBufferSlots = 1, overrides: F6aDefsOptions = {}): DefRegistry {
+  return f6aDefs({
+    ...overrides,
+    moduleParams: { ...overrides.moduleParams, berth_standard: { ...overrides.moduleParams?.['berth_standard'], handoverMode: 'under_hook', craneBufferSlots } },
+  });
+}
+
+/** Defy s režimom `apron` (predvolené `f6aDefs` nad pripnutými `RAW_DEFS`) — pomenované pre čitateľnosť testov. */
+export function apronDefs(overrides: F6aDefsOptions = {}): DefRegistry {
+  return f6aDefs(overrides);
+}
+
+export interface LoadingOptions extends BookingOptions {
+  /** Svet (predvolene `exportWorld({ defs })`). */
+  readonly world?: World;
+  readonly defs?: DefRegistry;
+  readonly vehicles?: readonly string[];
+  /** Plán príchodov kamiónov: ticky **od prijatia** (vzostupne); predvolene náhodne z `Rng`. */
+  readonly arrivals?: readonly number[];
+}
+
+export interface LoadingRun {
+  readonly world: World;
+  readonly offer: OfferedBooking & { readonly events: readonly SimEvent[] };
+  /** Tick prijatia bookingu. */
+  readonly acceptedTick: number;
+  /** Tick príchodu lode (`shipArrivalTick`). */
+  readonly arrivalTick: number;
+  /** Tick cut-off. */
+  readonly cutoffTick: number;
+}
+
+/** Svet s prístavom, prijatý booking a (voliteľne) pevný plán príchodov kamiónov. Nič netickuje. */
+export function startLoading(options: LoadingOptions): LoadingRun {
+  const world = options.world ?? exportWorld({ defs: options.defs, vehicles: options.vehicles });
+  const offer = acceptedBooking(world, options);
+  const { exportContract } = offer;
+  const acceptedTick = exportContract.acceptedTick as number;
+  if (options.arrivals !== undefined) {
+    (exportContract.booking.arrivalPlan as number[]).splice(0, exportContract.booking.arrivalPlan.length, ...options.arrivals.map((offset) => acceptedTick + offset));
+  }
+  return { world, offer, acceptedTick, arrivalTick: exportContract.shipArrivalTick as number, cutoffTick: exportContract.booking.cutoffTick as number };
+}
+
+/** Tickuje (so `afterTick` po každom ticku) do odchodu lode a uzavretia bookingu (`ShipDeparted`), najviac `maxTicks`. */
+export function runUntilDeparted(world: World, maxTicks: number, afterTick?: (world: World) => void): { readonly tick: number; readonly event: SimEvent }[] {
+  const out: { tick: number; event: SimEvent }[] = [];
+  let departed = false;
+  for (let i = 0; i < maxTicks && !departed; i++) {
+    for (const event of world.tick()) {
+      out.push({ tick: world.clock.tick, event });
+      if (event.type === 'ShipDeparted') departed = true;
+    }
+    afterTick?.(world);
+  }
+  if (!departed) throw new Error(`loď neodišla do ${String(maxTicks)} tickov (tick ${String(world.clock.tick)})`);
+  return out;
+}

@@ -1,8 +1,10 @@
 /**
- * Manéver kamióna pri rampe (F5b č. 11): príjazd po ceste → zastavenie vedľa docku → **cúvanie** do docku (zadok k rampe,
- * kabína von) → nakládka → výjazd predkom. Sim polohu abstrahuje (kamión stojí na vonkajšej bunke konektora docku, stavy
- * `to_dock` → `loading` → `to_gate_out`), manéver je čisto prezentačný: riadi ho čas a stav z `TruckVM` (`state`, `prevState`,
- * `approach`), nie nové polia simu.
+ * Manéver kamióna pri rampe (F5b č. 11, F6a): príjazd po ceste → zastavenie vedľa docku → **cúvanie** do docku (zadok k rampe,
+ * kabína von) → nakládka (import) alebo **vykládka** (export, F6a) → výjazd predkom. Sim polohu abstrahuje (kamión stojí na
+ * vonkajšej bunke konektora docku, stavy `to_dock` → `loading` / `unloading` → `to_gate_out`; pri dual transaction
+ * `unloading` → `loading` v tom istom doku), manéver je čisto prezentačný: riadi ho čas a stav z `TruckVM` (`state`, `prevState`,
+ * `approach`), nie nové polia simu. Vykládka exportného kamióna sa kreslí rovnakým manévrom ako nakládka — kamión cúva do docku
+ * naložený a z docku odchádza prázdny (alebo s importom).
  *
  * Čisté funkcie a trieda bez Pixi; hodiny sa podávajú zvonka (testy bez skutočného času).
  *
@@ -30,6 +32,12 @@ import type { TruckVM } from './view-models';
 
 /** Póza vozidla vo svete: stred (px) a uhol v stupňoch (0 = kabína na sever, v smere hodinových ručičiek). */
 export type PosePx = VehiclePose;
+
+/**
+ * Stavy `TruckVM.state`, v ktorých kamión stojí v doku rampy a vymieňa náklad: `loading` (import, nakládka) a `unloading` (export,
+ * vykládka; F6a). Tabuľka namiesto vetvenia — ďalší stav docku = jeden prvok (pravidlo 7).
+ */
+export const DOCKED_STATES: ReadonlySet<string> = new Set(['loading', 'unloading']);
 
 /** Zastavenie vedľa docku pred začiatkom cúvania (ms). */
 export const DOCK_STOP_MS = 300;
@@ -155,11 +163,13 @@ export class DockManeuver {
   private path: DockPath | null = null;
   private startedAt = 0;
   private leaveFrom: PosePx | null = null;
-  /** Póza v doku (cieľ cúvania), zapamätaná počas `loading` — po odchode sim kamióna ju `TruckVM` už nenesie. */
+  /** Póza v doku (cieľ cúvania), zapamätaná počas `loading` / `unloading` — po odchode sim kamióna ju `TruckVM` už nenesie. */
   private dockTarget: PosePx | null = null;
   /** Čas, kedy sim kamión pustil z docku počas cúvania (od neho cúva `DOCK_CATCH_UP`-krát rýchlejšie); `null` = ešte nepustil. */
   private releasedAt: number | null = null;
   private lastState: string | null = null;
+  /** `TruckVM.loaded` v okamihu, keď kamión prišiel k dokom (začiatok cúvania); pri `entering` sa zobrazuje namiesto aktuálneho. */
+  private loadedOnEntry = false;
 
   constructor(
     private readonly now: () => number,
@@ -170,10 +180,19 @@ export class DockManeuver {
     return this.phase;
   }
 
+  /**
+   * Či má kamión zobraziť naložený sprite: kým cúva do docku (`entering`), drží stav z príchodu — export prichádza naložený a
+   * prázdny je až po vykládke v doku, import naopak (sim je rýchlejší než manéver, jednotka sa v ňom presunie skôr, než kamión
+   * dôjde do docku). Inak (mimo docku, v doku, pri výjazde) platí `vm.loaded`.
+   */
+  displayLoaded(vm: Pick<TruckVM, 'loaded'>): boolean {
+    return this.phase === 'entering' ? this.loadedOnEntry : vm.loaded;
+  }
+
   /** Zobrazená póza kamióna pre `vm` (mimo manévru je to `poses.sim()`). */
   update(vm: TruckVM, poses: DockPoses): PosePx {
     const t = this.now();
-    const docking = vm.state === 'loading' && vm.approach !== undefined;
+    const docking = DOCKED_STATES.has(vm.state) && vm.approach !== undefined;
     let result: PosePx;
     if (docking) {
       if (this.phase === 'free') this.enter(vm, poses, t);
@@ -206,8 +225,9 @@ export class DockManeuver {
     return this.phase === 'leaving' ? this.leavingPose(poses, t) : poses.sim();
   }
 
-  /** Kamión prišiel do `loading`: po práve dokončenej jazde k dokom (`to_dock`) cúva, inak (napr. nový view) stojí v doku. */
+  /** Kamión prišiel do `loading` / `unloading`: po práve dokončenej jazde k dokom (`to_dock`) cúva, inak (napr. nový view) stojí v doku. */
   private enter(vm: TruckVM, poses: DockPoses, t: number): void {
+    this.loadedOnEntry = vm.loaded;
     const approach = poses.approach();
     const arrived = this.lastState === 'to_dock' || vm.prevState === 'to_dock';
     if (approach === null || !arrived) {

@@ -57,7 +57,17 @@ export interface ModuleVM {
    * doku `sprites.<defId>.docks[i]`) a či je rampa prevádzková (`false` → odznak `overlay.warning_badge`).
    */
   ramp?: { docks: number; staged: readonly number[]; operational: boolean };
+  /**
+   * Jednotky vo VGM hold v tomto module (F6a, ADR-032 bod 7; `world.cargo.get(id).hold !== null`): `count` = všetky takéto
+   * jednotky modulu (sklad: `in_storage`, rampa: `at_ramp`, berth: `on_apron`); renderer ukáže odznak `overlay.warning_badge`
+   * s číslom. Rampa dopĺňa `docks[i]` = počet jednotiek v hold na doku `docks[i]` (odznak pri doku), berth `slots` = indexy slotov
+   * apronu s jednotkou v hold (odznak pri slote). Chýba / `count` 0 = bez odznaku. Plní `SimBridge`.
+   */
+  held?: { count: number; docks?: readonly number[]; slots?: readonly number[] };
 }
+
+/** Smer cyklu žeriavu (`CraneModule.cycle`, ADR-032 bod 11): vykládka, nakládka a dve polovice dual cyklu. */
+export type CraneCycleVM = 'unload' | 'load' | 'dual_load' | 'dual_unload';
 
 export interface CraneVM {
   id: number;
@@ -70,6 +80,11 @@ export interface CraneVM {
   /** Postup aktuálnej fázy 0..1. */
   progress: number;
   holding: { unitId: number; typeId: string } | null;
+  /**
+   * Smer cyklu (F6a): `unload` = loď → apron (F2), `load` = apron → loď (vozík ide opačne), `dual_load` / `dual_unload` = polovice
+   * dual cyklu. Chýba = `unload` (VM z F2–F6). `SimBridge` ho berie z `crane.cycle`.
+   */
+  cycle?: CraneCycleVM;
 }
 
 export interface ShipVM {
@@ -89,6 +104,17 @@ export interface ShipVM {
   widthCells: number;
   unitsOnBoard: number;
   capacityUnits: number;
+  /**
+   * Náklad na palube podľa smeru (F6a; `shipCargoSplit(world, shipId)`): import a export v jednotkách. Keď je pole prítomné,
+   * renderer kreslí kontajnery na palube podľa počtu (import oranžovo, export modro) na prázdnom sprite paluby; chýba = F2–F6
+   * správanie (sprite `loaded`, kým je `unitsOnBoard > 0`).
+   */
+  cargoSplit?: { import: number; export: number };
+  /**
+   * Lashing lode (F6a; stav `lashing`): `ticksLeft` = `ship.lashingTicksLeft`, `ticksTotal` = celkový počet tickov lashingu
+   * (`ShipLashingStarted.ticks`, `SimBridge` si ho pamätá). Renderer ukáže odznak s prstencom postupu. Chýba = bez odznaku.
+   */
+  lashing?: { ticksLeft: number; ticksTotal: number };
 }
 
 /** Vozidlo na cestách (F3: straddle carrier). Poloha je stred vozidla v bunkách (stred bunky = `x + 0.5`). */
@@ -132,11 +158,16 @@ export interface TruckVM {
   heading: 0 | 90 | 180 | 270;
   /** Kurz v predchádzajúcom ticku; predvolene = `heading` (rovnako ako pri `VehicleVM`). */
   prevHeading?: 0 | 90 | 180 | 270;
-  /** Vezie náklad → sprite `states.loaded`. */
+  /**
+   * Vezie náklad → sprite `states.loaded`. Exportný kamión (`mission` delivery, F6a) je naložený už od spawnu (`in_truck > 0`),
+   * prázdny je až po vyložení na rampe. Pri manévri pri rampe renderer drží sprite z príchodu, kým kamión necúva do docku
+   * (nakládka / vykládka sa deje v doku, sim je rýchlejší než manéver).
+   */
   loaded: boolean;
   /**
-   * Stav Truck FSM (`to_gate`, `gate_queue`, `waiting`, `loading`, …). Renderer podľa neho (a `prevState`) riadi len manéver
-   * kamióna pri rampe: `to_dock` → `loading` (cúvanie do docku), `loading` → `to_gate_out` (výjazd predkom).
+   * Stav Truck FSM (`to_gate`, `gate_queue`, `waiting`, `loading`, `unloading`, …). Renderer podľa neho (a `prevState`) riadi len
+   * manéver kamióna pri rampe: `to_dock` → `loading` / `unloading` (cúvanie do docku; `unloading` = exportný kamión vykladá, F6a),
+   * `loading` / `unloading` → `to_gate_out` (výjazd predkom); `unloading` → `loading` (dual transaction) kamión v doku necháva.
    */
   state: string;
   /**
@@ -145,7 +176,7 @@ export interface TruckVM {
    */
   prevState?: string;
   /**
-   * Len v stave `loading` (F5b č. 11): sim poloha kamióna — stred vonkajšej bunky konektora docku a kurz príjazdu. `x`, `y`,
+   * Len v stave `loading` alebo `unloading` (F5b č. 11, F6a): sim poloha kamióna — stred vonkajšej bunky konektora docku a kurz príjazdu. `x`, `y`,
    * `heading` sú vtedy cieľová póza v doku (stred docku, kabína von z rampy). Kamión do docku cúva: renderer ho plynulo
    * vedie z `approach` do `x`, `y`, `heading` (`dock-maneuver.ts`), nie skokom.
    */

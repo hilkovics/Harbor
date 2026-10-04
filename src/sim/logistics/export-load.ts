@@ -21,7 +21,7 @@ import type { HandoverMode } from '../defs/types';
 import { BerthModule } from '../modules/berth-module';
 import { CRANE_CYCLE_TRAITS, CraneModule } from '../modules/crane-module';
 import { apronDirectionCap, bothDirections, exportApronUsage } from './apron-usage';
-import { openExportBookings } from './voyage-cargo';
+import { loadingStopped, openExportBookings } from './voyage-cargo';
 import type { CargoLocation } from '../cargo/cargo-location';
 import type { Ship } from '../ships/ship';
 import type { World } from '../world/world';
@@ -66,7 +66,7 @@ function hookLoadJobs(world: World, crane: CraneModule): number {
 function loadableStored(world: World, bookings: readonly Contract[]): CargoUnit[] {
   const units: CargoUnit[] = [];
   for (const contract of bookings) {
-    if (contract.state !== 'exporting') continue;
+    if (contract.state !== 'exporting' || loadingStopped(world, contract)) continue;
     const group = world.storedCargo.groupOf(contract.id);
     if (group === undefined) continue;
     for (const unitId of group.units) {

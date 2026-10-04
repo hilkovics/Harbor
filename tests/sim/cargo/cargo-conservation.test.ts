@@ -23,6 +23,7 @@ import { TEU, at, createHarness, id, importUnit } from './cargo-fixtures';
 interface MutableBucket {
   units: EntityId[];
   slots: Map<number, EntityId> | null;
+  exports?: number;
 }
 
 interface MutableView {
@@ -77,6 +78,14 @@ describe('findConservationViolation', () => {
   it('konzistentný pohľad (aj prázdny) nemá porušenie', () => {
     expect(violation(base())).toBeUndefined();
     expect(violation(buildView([]))).toBeUndefined();
+  });
+
+  it('počítadlo exportných jednotiek indexu (T6A-09b): zhoda prejde, nezhoda sa pomenuje; pohľad bez počítadla sa nekontroluje', () => {
+    const view = base();
+    bucketOf(view, 'on_ship', 100).exports = 0;
+    expect(violation(view)).toBeUndefined();
+    bucketOf(view, 'on_ship', 100).exports = 1;
+    expect(violation(view)).toBe('index on_ship(shipId=100): počítadlo exportných jednotiek 1, v indexe ich je 0');
   });
 
   it.each<[string, (view: MutableView) => void, RegExp]>([

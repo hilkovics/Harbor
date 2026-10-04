@@ -36,7 +36,7 @@ import {
   type CraneState,
 } from '../modules/crane-module';
 import { ModuleError } from '../modules/module-error';
-import { importAboard, openExportBookings, stowageOutOfOrder } from '../logistics/voyage-cargo';
+import { countShipCranes, importAboard, isLoadingInFlight, openExportBookings, stowageOutOfOrder } from '../logistics/voyage-cargo';
 import type { Contract } from '../contracts/contract';
 import type { EntityId } from '../core/entity-id';
 import type { Ship } from '../ships/ship';
@@ -99,23 +99,6 @@ function servedShip(world: World, crane: CraneModule, berth: BerthModule): Ship 
 
 /** Žeriav kategórie lode v `grabbing` s vykládkou — zabral si jednotku importu, ktorá je ešte na lodi. */
 const isGrabbingUnloader = (crane: CraneModule): boolean => crane.state === 'grabbing' && CRANE_CYCLE_TRAITS[crane.cycle].direction === 'unload';
-
-/** Žeriav kategórie lode s nakládkou v cykle — jednotka exportu je v ceste na loď (`grabbing`, `swinging`, `placing`). */
-const isLoadingInFlight = (crane: CraneModule): boolean => crane.state !== 'idle' && crane.state !== 'blocked' && CRANE_CYCLE_TRAITS[crane.cycle].direction === 'load';
-
-/** Počet žeriavov kategórie lode na jej kotviskách, ktoré spĺňajú `predicate` (bez alokácie okrem výsledku). */
-function countShipCranes(world: World, ship: Ship, predicate: (crane: CraneModule) => boolean): number {
-  let count = 0;
-  for (const berthId of ship.berthIds) {
-    const berth = world.modules.get(berthId);
-    if (!(berth instanceof BerthModule)) continue;
-    for (const craneId of berth.craneIds) {
-      const crane = world.modules.get(craneId);
-      if (crane instanceof CraneModule && crane.category === ship.cargoCategory && predicate(crane)) count += 1;
-    }
-  }
-  return count;
-}
 
 /** Jednotky importu na lodi, ktoré si ešte nezabral žiaden žeriav (vykládka v `grabbing` nad kotviskami lode). */
 function unclaimedImports(world: World, ship: Ship): number {

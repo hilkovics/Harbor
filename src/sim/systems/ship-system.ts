@@ -24,7 +24,7 @@
  *   `on_ship → shipped` (každá jednotka s `CargoMoved`, potom `ExportShipped`), loď sa odstráni zo sveta a emituje `ShipDeparted`.
  * Prechod stavu ukončí pohyb lode v danom ticku (zvyšok kroku prepadne), okrem vstupu.
  */
-import { exportAboard, importAboard, pendingExportUnits } from '../logistics/voyage-cargo';
+import { exportAboard, importAboard, loadsInFlight, pendingExportUnits } from '../logistics/voyage-cargo';
 import { ShipError } from '../ships/ship-error';
 import type { Ship } from '../ships/ship';
 import type { ShipState } from '../ships/ship-fsm';
@@ -61,13 +61,13 @@ function reachLaneEnd(ship: Ship, world: World): void {
 type DockedVerdict = 'wait' | 'lash' | 'leave';
 
 /**
- * Verdikt lode `docked` (ADR-032 bod 12). Loď bez export bookingov v knihe: odíde, keď na palube nie je žiadna jednotka (F2–F5).
- * Inak čaká, kým je na palube import alebo na termináli nenaložená jednotka voyage mimo hold (`pendingExportUnits`); potom pri
- * aspoň jednej naloženej jednotke exportu `lashing`, inak odíde.
+ * Verdikt lode `docked` (ADR-032 bod 12). Čaká, kým je na palube import (`importAboard`, podľa smeru jednotky), na termináli
+ * nenaložená jednotka voyage mimo hold (`pendingExportUnits`) alebo má žeriav nakládku v ceste (`loadsInFlight` — booking sa mohol
+ * uzavrieť pred jej koncom, SLA); potom pri aspoň jednej jednotke exportu na palube `lashing`, inak odíde. Loď bez exportu
+ * (F2–F5) odíde, keď na palube nie je žiadna jednotka. Export na palube uzavretého bookingu loď neblokuje — odplává ako `shipped`.
  */
 function dockedVerdict(ship: Ship, world: World): DockedVerdict {
-  if (!world.contractBook.hasOpenExports) return world.cargo.countAt('on_ship', ship.id) > 0 ? 'wait' : 'leave';
-  if (importAboard(world, ship.id) > 0 || pendingExportUnits(world, ship.id) > 0) return 'wait';
+  if (importAboard(world, ship.id) > 0 || pendingExportUnits(world, ship.id) > 0 || loadsInFlight(world, ship) > 0) return 'wait';
   return exportAboard(world, ship.id) > 0 ? 'lash' : 'leave';
 }
 

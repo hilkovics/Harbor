@@ -71,6 +71,7 @@ import {
 } from '../contracts/contract-terms';
 import type { HoldEntry } from '../cargo/hold-index';
 import type { ClockBoundaries } from '../core/sim-clock';
+import { loadingInFlight, loadingStopped } from '../logistics/voyage-cargo';
 import { SHIP_STATE_TRAITS, type ShipState } from '../ships/ship-fsm';
 import { spawnShip } from '../ships/spawn-ship';
 import type { World } from '../world/world';
@@ -214,9 +215,7 @@ function closeBooking(world: World, contract: Contract): void {
 
 /** Zlyhanie po `failAfterDaysLate` dňoch meškania; `true` = kontrakt zlyhal. */
 function failIfOverdue(world: World, contract: Contract): boolean {
-  if (contract.slaDeadlineTick === undefined) return false;
-  const limit = world.defs.economy.failAfterDaysLate * world.clock.ticksPerDay;
-  if (world.clock.tick - contract.slaDeadlineTick <= limit) return false;
+  if (!loadingStopped(world, contract)) return false;
   world.contractBook.changeState(contract, 'failed');
   settlePenalties(world, contract);
   world.events.emit({ type: 'ContractFailed', contractId: contract.id, penaltiesCents: contract.penaltiesCents });
@@ -333,7 +332,11 @@ const EXPORT_CONTRACT_STEPS: { readonly [S in ContractState]: ContractStep } = {
       closeBooking(world, contract);
       return;
     }
-    failIfOverdue(world, contract);
+    // Lehota po SLA uplynula počas nakládky: booking sa neskončí ako `failed` s nákladom na palube (výplata a vrátenie nenaložených
+    // by sa preskočili). Nové joby nakládky sa už nezačínajú (`loadingStopped`), rozbehnutá nakládka sa dokončí a potom sa booking
+    // uzavrie ako pri odchode lode — pomerná výplata, `failed` len bez naloženej jednotky; loď odíde (`dockedVerdict`) a export na
+    // palube je `shipped`.
+    if (loadingStopped(world, contract) && !loadingInFlight(world, contract, ship)) closeBooking(world, contract);
   },
   completed: idle,
   failed: idle,

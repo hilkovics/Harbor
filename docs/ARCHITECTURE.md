@@ -584,7 +584,7 @@ Implementácia F5: `src/sim/contracts/**`, krok 2 `src/sim/systems/contract-syst
 ### 9.2 Ledger a účtovné obdobia
 ```ts
 type LedgerCategory = 'contract_revenue' | 'penalty' | 'module_capex' | 'module_sale' | 'road_capex' | 'road_sale'
-  | 'parcel_purchase' | 'parcel_lease' | 'maintenance' | 'wages' | 'vehicle_capex' | 'vehicle_sale';  // road_sale (ADR-012); poradie = LEDGER_CATEGORIES
+  | 'parcel_purchase' | 'parcel_lease' | 'maintenance' | 'wages' | 'vehicle_capex' | 'vehicle_sale' | 'maintenance_repair';  // road_sale (ADR-012), maintenance_repair = oprava prázdneho v depe (F6c, ADR-034); poradie = LEDGER_CATEGORIES
 interface LedgerEntry { readonly tick; readonly amountCents; readonly category; readonly refId?: string }   // refId: 'module:<id>', 'vehicle:<id>', 'contract:<id>'
 interface DaySummary { readonly day; readonly incomeCents: Partial<Record<LedgerCategory, number>>;
   readonly expenseCents: Partial<Record<LedgerCategory, number>>; readonly cashEndCents }   // MonthSummary: month namiesto day

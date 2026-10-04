@@ -18,6 +18,8 @@ export const LEDGER_CATEGORIES = [
   'wages',
   'vehicle_capex',
   'vehicle_sale',
+  /** Oprava poškodeného prázdneho kontajnera v depe (`economy.repairCostCents`, F6c, ADR-034). */
+  'maintenance_repair',
 ] as const;
 
 export type LedgerCategory = (typeof LEDGER_CATEGORIES)[number];

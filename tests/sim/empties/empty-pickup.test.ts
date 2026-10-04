@@ -7,7 +7,7 @@ import { WorldStateError } from '@sim/world';
 import { World, stateHash } from '@sim/world';
 import { MAP } from '../world/world-fixtures';
 import { acceptedBooking, send } from '../helpers/f6a';
-import { TICKS_PER_HOUR, depotOf, emptiesByLocation, emptyWorld, eventsOf, f6cDefs, putEmpty, rampOf, run, runUntil } from '../helpers/f6c';
+import { TICKS_PER_HOUR, acceptedImport, depotOf, emptiesByLocation, emptyWorld, eventsOf, f6cDefs, putEmpty, rampOf, run, runUntil } from '../helpers/f6c';
 import { assertCargoConservation } from '../helpers/invariants';
 import { StorageModule } from '@sim/modules';
 
@@ -196,6 +196,37 @@ describe('zrušený job výdaja', () => {
     send(world, { type: 'PlaceRoad', cells: [{ x: 53, y: 31 }] });
     runUntil(world, (w) => w.emptyFlow.errands[0]?.unitId === unitId, 100, 'nové pridelenie');
     expect(world.jobs.size).toBe(1);
+  });
+});
+
+describe('obnova — plán výdajov voči knihe kontraktov a linke (T6C-07b, m5)', () => {
+  it('pickupPlan musí ukazovať na kontrakt druhu export v knihe a jeho linku: neznámy kontrakt, iná linka a iný druh kontraktu → WorldStateError s pointerom', () => {
+    const { world, contractId } = pickupWorld();
+    world.emptyFlow.schedulePickup(world.clock.tick + 5_000, 'blue_anchor', contractId);
+    const imported = acceptedImport(world, 'blue_anchor', 2);
+    const defs = f6cDefs({ emptyFlow: { emptyPickupRate: 0 } });
+    type Plan = { dueTick: number; lineId: string; contractId: number };
+    const state = JSON.parse(JSON.stringify(world.serialize())) as { emptyFlow: { pickupPlan: Plan[] } };
+    const load = (mutate: (plan: Plan[]) => void): World => {
+      const copy = JSON.parse(JSON.stringify(state)) as typeof state;
+      mutate(copy.emptyFlow.pickupPlan);
+      return World.deserialize(defs, MAP, copy as never);
+    };
+    expect(() => load(() => undefined)).not.toThrow();
+    const failing: [string, (plan: Plan[]) => void, string][] = [
+      ['kontrakt mimo knihy', (plan) => void (plan[0].contractId = 4_242), '/emptyFlow/pickupPlan/0/contractId'],
+      ['linka výdaja ≠ linka kontraktu', (plan) => void (plan[0].lineId = 'golden_wave'), '/emptyFlow/pickupPlan/0/lineId'],
+      ['kontrakt iného druhu než export (import)', (plan) => void (plan[0].contractId = imported.contractId), '/emptyFlow/pickupPlan/0/contractId'],
+    ];
+    for (const [name, mutate, path] of failing) {
+      try {
+        load(mutate);
+        throw new Error(`${name}: mal zlyhať`);
+      } catch (error) {
+        expect(error, name).toBeInstanceOf(WorldStateError);
+        expect((error as WorldStateError).path, name).toBe(path);
+      }
+    }
   });
 });
 

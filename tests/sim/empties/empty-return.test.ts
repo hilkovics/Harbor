@@ -6,7 +6,7 @@ import { planEmptyReturn } from '../../../src/sim/trucks/empty-plan';
 import { assertCargoConservation } from '../helpers/invariants';
 import { send } from '../helpers/f6a';
 import { TICKS_PER_DAY, acceptedImport, depotOf, emptiesByLocation, emptyWorld, eventsOf, f6cDefs, run, runUntil } from '../helpers/f6c';
-import { EmptyDepot, StorageModule } from '@sim/modules';
+import { EmptyDepot } from '@sim/modules';
 import type { CargoUnit } from '@sim/cargo';
 import type { EntityId } from '@sim/core';
 
@@ -116,23 +116,23 @@ describe('návrat prázdneho — kamión, brána, rampa, depo', () => {
   });
 });
 
-describe('fallback — prázdny do bežného dvora', () => {
-  it('depo plné (kapacita 1): druhý prázdny skončí vo dvore s EmptyStored.fallback = true', () => {
+describe('fallback — prázdny do bežného dvora len keď depo chýba (T6C-07b, M1)', () => {
+  it('depo plné (kapacita 1): druhý návrat sa zahodí (EmptyReturnDeclined), do dvora sa neukladá žiadny prázdny', () => {
     const defs = f6cDefs({ moduleParams: { empty_depot: { capacityUnits: 1 } } });
     const world = emptyWorld({ defs, vehicles: TWO_STRADDLES });
     const tick = world.clock.tick;
     world.emptyFlow.scheduleReturn(tick + 5, 'blue_anchor');
     world.emptyFlow.scheduleReturn(tick + 5, 'blue_anchor');
-    const events = runUntil(world, (w) => w.emptyFlow.returnPlan.length === 0 && emptiesByLocation(w)['in_storage'] === 2, 5_000, 'dva prázdne uložené');
-    const stored = eventsOf(events, 'EmptyStored');
-    expect(stored.map((event) => event.fallback).sort()).toEqual([false, true]);
-    const yard = [...world.modules.values()].find((module): module is StorageModule => module instanceof StorageModule && module.id !== depotOf(world).id && module.category === 'container');
-    expect(stored.find((event) => event.fallback)?.moduleId).toBe(yard?.id);
-    expect(world.storedCargo.emptySize).toBe(2);
-    // prázdny v dvore nie je „voľný náklad“: dispatcher ho nepošle na rampu
+    const events = run(world, 5_000);
+    expect(world.emptyFlow.returnPlan).toHaveLength(0);
+    expect(eventsOf(events, 'EmptyReturnDeclined')).toEqual([{ type: 'EmptyReturnDeclined', lineId: 'blue_anchor' }]);
+    expect(eventsOf(events, 'EmptyStored').map((event) => event.fallback)).toEqual([false]);
+    expect(world.storedCargo.emptySize).toBe(1);
+    expect(depotOf(world).storedCount).toBe(1);
+    expect(world.cargo.createdCount).toBe(1);
     run(world, 600);
     expect(world.cargo.countByKind('exported')).toBe(0);
-    expect(emptiesByLocation(world)['in_storage']).toBe(2);
+    expect(emptiesByLocation(world)).toEqual({ in_storage: 1 });
   });
 
   it('depo zbúrané po naplánovaní (svet bez depa v čase návratu): prázdny skončí vo dvore (fallback)', () => {

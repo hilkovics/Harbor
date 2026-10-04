@@ -24,6 +24,7 @@ export type {
   EmptyPickupMissedEvent,
   EmptyRepairStartedEvent,
   EmptyRepairedEvent,
+  EmptyReturnDeclinedEvent,
   EmptyReturnedEvent,
   EmptyStoredEvent,
   ExportArrivedEvent,

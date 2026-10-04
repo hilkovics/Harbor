@@ -303,6 +303,7 @@ describe('runScenario', () => {
       transhipMissed: 0,
       transhipRescued: 0,
       transhipSold: 0,
+      emptyReturnsDeclined: 0,
     });
     expect(Object.keys(report)).toEqual([
       'scenario',
@@ -369,6 +370,7 @@ describe('runScenario', () => {
       'transhipMissed',
       'transhipRescued',
       'transhipSold',
+      'emptyReturnsDeclined',
     ]);
   });
 
@@ -778,6 +780,7 @@ describe('runScenario', () => {
         transhipMissed: 0,
         transhipRescued: 0,
         transhipSold: 0,
+        emptyReturnsDeclined: 0,
       });
       // odplávané = export 36 + repositioning 24 + prekládka 36
       expect(report.shippedUnits).toBe(36 + report.repositionedUnits + report.transhipLoaded);
@@ -987,6 +990,13 @@ describe('runScenario', () => {
       const text = formatSummary({ ...report, repositionedUnits: 24, transhipLoaded: 36, transhipMissed: 5, transhipRescued: 3, transhipSold: 2 });
       expect(text).toContain(', repositioning 24, prekládka naložená/zmeškaná/zachránená/predaná 36/5/3/2');
       expect(text.endsWith(`, hash stavu ${String(report.stateHash)}`)).toBe(true);
+    });
+
+    it('formatSummary nesie počet zahodených návratov prázdnych (T6C-07b, emptyReturnsDeclined) za metrikami prekládky', () => {
+      const report = runScenario(SMOKE, 10, defs, { hash: true });
+      const text = formatSummary({ ...report, emptyReturnsDeclined: 4 });
+      expect(text).toContain('predaná 0/0/0/0, návraty prázdnych zahodené 4');
+      expect(formatSummary(report)).toContain('návraty prázdnych zahodené 0');
     });
 
     it('formatSummary: so stateHash končí „hash stavu <hex>", bez neho hash nespomína', () => {

@@ -37,7 +37,7 @@ export type { RampAllocatorEnv } from './ramp-allocator';
 export { EMPTY_FLOW_STATE_KEYS, ERRAND_ENTRY_KEYS, EmptyFlow, PICKUP_PLAN_ENTRY_KEYS, RETURN_PLAN_ENTRY_KEYS } from './empty-flow';
 export type { EmptyFlowState, ErrandEntry, PickupPlanEntry, ReturnPlanEntry } from './empty-flow';
 export { EmptyDepotService, onEmptyStored } from './empty-depot-service';
-export { allocateEmptyStorage, emptyCargoTypeId, emptyLabels, findAvailableEmpty, hasEmptyDepot } from './empty-stock';
+export { allocateEmptyStorage, allocateReturnStorage, emptyCargoTypeId, emptyLabels, emptyReturnRoom, findAvailableEmpty, hasEmptyDepot } from './empty-stock';
 export { createEmptyIntakeJobs, createEmptyPickupJobs } from './empty-jobs';
 export type { EmptyJobSpec } from './empty-jobs';
 export { StoredCargoIndex } from './stored-cargo-index';

@@ -219,6 +219,8 @@ export interface SimrunReport {
   readonly transhipRescued: number;
   /** Σ `TranshipSold.units` — zmeškané jednotky bez záchrany, ktoré odišli kamiónom ako predané. */
   readonly transhipSold: number;
+  /** Počet udalostí `EmptyReturnDeclined` — návraty prázdneho zahodené bez kamióna, lebo depo prázdnych nemalo voľné miesto (T6C-07b, ADR-034 dodatok). */
+  readonly emptyReturnsDeclined: number;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -516,6 +518,7 @@ interface EventTally {
   transhipMissed: number;
   transhipRescued: number;
   transhipSold: number;
+  emptyReturnsDeclined: number;
   /** Súčet a počet `exportGroupingShare` v ticku `CutoffPassed` (priemer sa počíta na konci). */
   groupingShareSum: number;
   groupingShareCount: number;
@@ -559,6 +562,7 @@ function tallyEvents(tally: EventTally, events: readonly SimEvent[]): void {
       tally.repairCostCents += event.costCents;
     } else if (event.type === 'EmptyPickedUp') tally.emptyPickedUp += 1;
     else if (event.type === 'EmptyPickupMissed') tally.emptyPickupMisses += 1;
+    else if (event.type === 'EmptyReturnDeclined') tally.emptyReturnsDeclined += 1;
     else if (event.type === 'TranshipMissed') tally.transhipMissed += event.units;
     else if (event.type === 'TranshipRescued') tally.transhipRescued += event.units;
     else if (event.type === 'TranshipSold') tally.transhipSold += event.units;
@@ -742,6 +746,7 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     transhipMissed: 0,
     transhipRescued: 0,
     transhipSold: 0,
+    emptyReturnsDeclined: 0,
     groupingShareSum: 0,
     groupingShareCount: 0,
   };
@@ -847,6 +852,7 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     transhipMissed: tally.transhipMissed,
     transhipRescued: tally.transhipRescued,
     transhipSold: tally.transhipSold,
+    emptyReturnsDeclined: tally.emptyReturnsDeclined,
   };
 }
 
@@ -877,7 +883,7 @@ export function formatSummary(report: SimrunReport): string {
     `prázdne vrátené/záložné/poškodené/opravené ${String(report.emptyReturns)}/${String(report.emptyFallbackStored)}/${String(report.emptyDamaged)}/${String(report.emptyRepaired)}, ` +
     `opravy ${String(report.repairCostCents)}, prázdne vydané/zmeškané ${String(report.emptyPickedUp)}/${String(report.emptyPickupMisses)}, ` +
     `repositioning ${String(report.repositionedUnits)}, prekládka naložená/zmeškaná/zachránená/predaná ${String(report.transhipLoaded)}/${String(report.transhipMissed)}/` +
-    `${String(report.transhipRescued)}/${String(report.transhipSold)}` +
+    `${String(report.transhipRescued)}/${String(report.transhipSold)}, návraty prázdnych zahodené ${String(report.emptyReturnsDeclined)}` +
     (report.stateHash === null ? '' : `, hash stavu ${report.stateHash}`)
   );
 }

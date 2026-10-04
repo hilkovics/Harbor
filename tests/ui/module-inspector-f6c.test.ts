@@ -209,7 +209,7 @@ describe('depo prázdnych: inšpektor', () => {
     expect(html.match(/data-line="/g)).toHaveLength(3);
     const blue = /<li class="module-inspector__line" data-line="blue_anchor"[^>]*>([\s\S]*?)<\/li>/.exec(html)?.[1] ?? '';
     expect(blue).toContain('Blue Anchor Lines');
-    expect(blue).toContain('style="--line-color:var(--line-blue, var(--ui-accent))"');
+    expect(blue).toContain('style="--line-color:var(--line-blue, var(--ui-text-2))"');
     expect(fieldText(blue, 'line-total')).toBe('20');
     expect(fieldText(blue, 'line-available')).toBe('18');
     expect(fieldText(blue, 'line-damaged')).toBe('1');
@@ -218,7 +218,7 @@ describe('depo prázdnych: inšpektor', () => {
     expect(blue).toContain('module-inspector__line-value--busy" data-field="line-repair"');
     const amber = /<li class="module-inspector__line" data-line="northern_star"[^>]*>([\s\S]*?)<\/li>/.exec(html)?.[1] ?? '';
     expect(amber).toContain('module-inspector__line-value--normal" data-field="line-damaged"');
-    expect(amber).toContain('style="--line-color:var(--line-amber, var(--ui-warning))"');
+    expect(amber).toContain('style="--line-color:var(--line-amber, var(--ui-text-2))"');
   });
 
   it('opravárenské miesta: obsadené s ikonou opravy, počet, upozornenie na čakajúce poškodené; voľné miesta bez upozornenia', () => {

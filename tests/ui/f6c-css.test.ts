@@ -33,18 +33,20 @@ describe('contracts-panel.css: linka a trasa prekládky', () => {
 });
 
 describe('module-inspector.css: tranship, prázdne a depo', () => {
-  it('lokálne farby segmentov sú odvodené od existujúcich tokenov (každý zdroj je v design/tokens.css)', () => {
+  it('lokálne farby segmentov sú odvodené od existujúcich tokenov (každý zdroj je v design/tokens.css); prázdne čítajú `--cargo-empty` priamo', () => {
     const root = inspector.ruleBody('.module-inspector');
-    for (const [name, token] of [['--mi-empty', '--module-base'], ['--mi-tranship', '--ui-xp'], ['--mi-damaged', '--ui-warning'], ['--mi-repair', '--ui-accent']] as const) {
+    for (const [name, token] of [['--mi-tranship', '--ui-xp'], ['--mi-damaged', '--ui-warning'], ['--mi-repair', '--ui-accent']] as const) {
       expect(root, name).toMatch(new RegExp(`${name}:\\s*var\\(${token}\\)`));
       expect(TOKENS_CSS, token).toContain(`${token}:`);
     }
+    expect(root, 'prázdne bez lokálnej premennej').not.toContain('--mi-empty');
+    expect(TOKENS_CSS).toContain('--cargo-empty:');
     expect(root).toMatch(/--line-color:\s*var\(--ui-text-2\)/);
   });
 
-  it('segmenty pruhu a značky legendy: tranship / prázdne / poškodené / oprava čítajú `--mi-*`', () => {
+  it('segmenty pruhu a značky legendy: tranship / poškodené / oprava čítajú `--mi-*`, prázdne `--cargo-empty`', () => {
     expect(inspector.ruleBody('.module-inspector__swatch--tranship,\n.module-inspector__bar-fill--tranship')).toMatch(/background:\s*var\(--mi-tranship\)/);
-    expect(inspector.ruleBody('.module-inspector__swatch--empty,\n.module-inspector__bar-fill--empty')).toMatch(/background:\s*var\(--mi-empty\)/);
+    expect(inspector.ruleBody('.module-inspector__swatch--empty,\n.module-inspector__bar-fill--empty')).toMatch(/background:\s*var\(--cargo-empty\)/);
     expect(inspector.ruleBody('.module-inspector__swatch--damaged,\n.module-inspector__bar-fill--damaged')).toMatch(/background:\s*var\(--mi-damaged\)/);
     expect(inspector.ruleBody('.module-inspector__swatch--repair,\n.module-inspector__bar-fill--repair')).toMatch(/background:\s*var\(--mi-repair\)/);
   });

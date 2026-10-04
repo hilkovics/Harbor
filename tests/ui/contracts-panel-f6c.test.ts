@@ -252,7 +252,7 @@ describe('karta repositioningu', () => {
     expect(fieldText(html, 'volume')).toBe('24 TEU prázdnych');
     expect(html).toContain('data-field="line"');
     expect(html).toContain('data-line="blue_anchor"');
-    expect(html).toContain('style="--line-color:var(--line-blue, var(--ui-accent))"');
+    expect(html).toContain('style="--line-color:var(--line-blue, var(--ui-text-2))"');
     expect(html).toContain('Blue Anchor Lines');
     expect(textOf(html, 'destination')).toBe('Rotterdam');
     expect(html).toMatch(/data-field="voyage"[^>]*>(?:<svg[^]*?<\/svg>)?Plavba #11</);

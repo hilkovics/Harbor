@@ -1,19 +1,22 @@
-// T6C-05: farby liniek z tokenu (`lines.json` → `colorToken`) s náhradou za existujúci token, kým `--line-*` nie je v tokens.css.
+// T6C-05 / T6C-06a: farby liniek z tokenu (`lines.json` → `colorToken`); tokeny `--line-*` sú v design/tokens.css (T6C-04), takže
+// UI nemá per-token náhrady, len neutrálnu pre neznámy token.
 import { describe, expect, it } from 'vitest';
-import { LINE_TOKEN_DEFAULT_FALLBACK, LINE_TOKEN_FALLBACK, lineColor, lineStyle } from '@ui/line-color';
+import * as lineColorModule from '@ui/line-color';
+import { LINE_TOKEN_DEFAULT_FALLBACK, lineColor, lineStyle } from '@ui/line-color';
 import linesJson from '@data/defs/lines.json';
 import { TOKENS_CSS } from './css-guard';
 
 describe('lineColor', () => {
-  it('token linky s náhradou za najbližší existujúci token (modrá, jantárová, tyrkysová)', () => {
-    expect(lineColor('line-blue')).toBe('var(--line-blue, var(--ui-accent))');
-    expect(lineColor('line-amber')).toBe('var(--line-amber, var(--ui-warning))');
-    expect(lineColor('line-teal')).toBe('var(--line-teal, var(--cargo-gas))');
+  it('token linky z lines.json s neutrálnou náhradou; bez tabuľky náhrad za iné tokeny', () => {
+    expect(lineColor('line-blue')).toBe('var(--line-blue, var(--ui-text-2))');
+    expect(lineColor('line-amber')).toBe('var(--line-amber, var(--ui-text-2))');
+    expect(lineColor('line-teal')).toBe('var(--line-teal, var(--ui-text-2))');
+    expect(lineColorModule).not.toHaveProperty('LINE_TOKEN_FALLBACK');
   });
 
-  it('každá linka z lines.json má token v tabuľke náhrad a každá náhrada je definovaná v design/tokens.css', () => {
-    for (const line of linesJson.items) expect(Object.keys(LINE_TOKEN_FALLBACK), line.id).toContain(line.colorToken);
-    for (const fallback of [...Object.values(LINE_TOKEN_FALLBACK), LINE_TOKEN_DEFAULT_FALLBACK]) expect(TOKENS_CSS, fallback).toContain(`--${fallback}:`);
+  it('každá linka z lines.json má token `--<colorToken>` v design/tokens.css a neutrálna náhrada je definovaná tiež', () => {
+    for (const line of linesJson.items) expect(TOKENS_CSS, line.id).toMatch(new RegExp(`--${line.colorToken}:\\s*#`));
+    expect(TOKENS_CSS).toContain(`--${LINE_TOKEN_DEFAULT_FALLBACK}:`);
   });
 
   it('neznámy token (platný názov) má predvolenú náhradu textu', () => {
@@ -29,6 +32,6 @@ describe('lineColor', () => {
 
 describe('lineStyle', () => {
   it('inline štýl nastaví premennú `--line-color` (jedinú), ktorú číta CSS komponentov', () => {
-    expect(lineStyle('line-blue')).toEqual({ '--line-color': 'var(--line-blue, var(--ui-accent))' });
+    expect(lineStyle('line-blue')).toEqual({ '--line-color': 'var(--line-blue, var(--ui-text-2))' });
   });
 });

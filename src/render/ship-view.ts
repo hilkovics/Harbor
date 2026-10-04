@@ -3,11 +3,16 @@
  * z manifestu, predok hore pri `heading` 0, otočený okolo stredu.
  *
  * Variant paluby určuje kategória nákladu lode (`cargoCategory`), `loaded` platí, kým je na palube aspoň jedna jednotka.
+ * **F6a:** keď VM nesie `cargoSplit` (import / export na palube) a trieda má v manifeste `deck`, kreslí sa sprite `empty` a náklad
+ * sa skladá z kontajnerov podľa počtu jednotiek (`DeckCargo`, import oranžovo, export modro). Stav `lashing` ukáže odznak
+ * s prstencom postupu (`LashingBadge`, vzpriamený, v strede lode).
  * Poloha je `lerp(prev, curr, alpha)` v bunkách × `--cell`. Loď bez sprite (trieda / variant chýba v manifeste alebo
  * textúra nie je načítaná) sa nakreslí ako trup z tokenov `--ship-hull` / `--ship-deck` so špicatým predkom.
  */
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
-import { shipSprite } from './entity-assets';
+import { shipDeck, shipSprite } from './entity-assets';
+import { LashingBadge, lashingProgress } from './lashing-badge';
+import { DeckCargo } from './ship-deck';
 import type { EntityTextures } from './sprite-atlas';
 import type { EntityPalette } from './tokens';
 import type { ShipVM } from './view-models';
@@ -70,6 +75,22 @@ export function shipPose(vm: ShipVM, alpha: number, cellPx: number): ShipPose {
   return { x: lerp(vm.prevX, vm.x, alpha) * cellPx, y: lerp(vm.prevY, vm.y, alpha) * cellPx, angle: vm.heading };
 }
 
+/** Stav lode, v ktorom sa kreslí odznak lashingu (`ShipState` `lashing`, ADR-032 bod 12). */
+export const LASHING_STATE = 'lashing';
+
+/**
+ * Kreslí sa náklad na palube po kontajneroch? Keď VM nesie `cargoSplit` a ide o kontajnerovú loď, ktorej trieda má v manifeste
+ * `deck`; inak platí F2–F6 správanie (sprite `loaded` / `empty` podľa `unitsOnBoard`).
+ */
+export function hasDeckCargo(vm: ShipVM): boolean {
+  return vm.cargoSplit !== undefined && vm.cargoCategory === 'container' && shipDeck(vm.classId) !== undefined;
+}
+
+/** Zobrazený stav paluby: pri kontajneroch na palube vždy `empty` (náklad sa kreslí navrch), inak podľa `unitsOnBoard`. */
+export function shipDisplayLoad(vm: ShipVM): ShipLoad {
+  return hasDeckCargo(vm) ? 'empty' : shipLoad(vm.unitsOnBoard);
+}
+
 /** Zhoda statickej časti VM (kým sa nezmení, view sa nevytvára nanovo). */
 export function sameShipShape(a: ShipVM, b: ShipVM): boolean {
   return a.classId === b.classId && a.cargoCategory === b.cargoCategory && a.widthCells === b.widthCells && a.lengthCells === b.lengthCells;
@@ -81,6 +102,8 @@ export interface ShipViewDeps {
   readonly palette: EntityPalette;
   /** Textúry entít; `null` = vždy fallback `Graphics`. */
   readonly textures: EntityTextures | null;
+  /** Násobok odznaku lashingu pre aktuálny zoom (`badgeScaleForZoom`); predvolene 1. */
+  readonly badgeScale?: number;
 }
 
 export class ShipView {
@@ -92,6 +115,11 @@ export class ShipView {
   private readonly sprite: Sprite | null;
   private readonly textures: { readonly empty: Texture; readonly loaded: Texture } | null;
   private load: ShipLoad;
+  /** Kontajnery na palube (vznikne lenivo, keď VM nesie `cargoSplit`); `null` = bez nich. */
+  private deck: DeckCargo | null = null;
+  /** Odznak lashingu (vznikne lenivo pri prvom stave `lashing`). */
+  private lashingBadge: LashingBadge | null = null;
+  private badgeScale: number;
 
   constructor(
     vm: ShipVM,
@@ -100,8 +128,9 @@ export class ShipView {
   ) {
     this.id = vm.id;
     this.last = vm;
+    this.badgeScale = deps.badgeScale ?? 1;
     this.view = new Container({ label: `ship-${String(vm.id)}` });
-    this.load = shipLoad(vm.unitsOnBoard);
+    this.load = shipDisplayLoad(vm);
     this.textures = this.resolveTextures(vm);
     if (this.textures !== null) {
       this.sprite = new Sprite(this.textures[this.load]);
@@ -124,21 +153,78 @@ export class ShipView {
     return this.sprite?.texture ?? null;
   }
 
-  /** Nastaví polohu (interpolovanú), rotáciu a stav paluby. */
+  /** Kontajnery na palube (`null`, kým VM nenesie `cargoSplit`) — pre testy. */
+  get deckCargo(): DeckCargo | null {
+    return this.deck;
+  }
+
+  /** Odznak lashingu (`null`, kým loď nebola v `lashing`) — pre testy. */
+  get lashing(): LashingBadge | null {
+    return this.lashingBadge;
+  }
+
+  /** Odznak lashingu je viditeľný — pre testy. */
+  get lashingVisible(): boolean {
+    return this.lashingBadge?.visible === true;
+  }
+
+  /** Nastaví polohu (interpolovanú), rotáciu, stav paluby, kontajnery na palube a odznak lashingu. */
   update(vm: ShipVM, alpha: number): void {
     this.last = vm;
     const pose = shipPose(vm, alpha, this.deps.cellPx);
     if (this.view.x !== pose.x || this.view.y !== pose.y) this.view.position.set(pose.x, pose.y);
     if (this.view.angle !== pose.angle) this.view.angle = pose.angle;
-    const load = shipLoad(vm.unitsOnBoard);
+    const load = shipDisplayLoad(vm);
     if (load !== this.load) {
       this.load = load;
       if (this.sprite !== null && this.textures !== null) this.sprite.texture = this.textures[load];
     }
+    this.syncDeck(vm);
+    this.syncLashing(vm, pose.angle);
+  }
+
+  /** Nastaví veľkosť odznaku lashingu podľa zoomu kamery (`badgeScaleForZoom`); platí aj pre odznak, ktorý ešte nevznikol. */
+  setBadgeScale(scale: number): void {
+    this.badgeScale = scale;
+    this.lashingBadge?.scale.set(scale);
   }
 
   destroy(): void {
+    this.deck = null;
+    this.lashingBadge = null;
     this.view.destroy({ children: true });
+  }
+
+  /** Kontajnery na palube podľa `vm.cargoSplit` (vytvorí / zruší lenivo, prekreslí len pri zmene). */
+  private syncDeck(vm: ShipVM): void {
+    if (!hasDeckCargo(vm) || vm.cargoSplit === undefined) {
+      if (this.deck !== null) {
+        this.deck.destroy({ children: true });
+        this.deck = null;
+      }
+      return;
+    }
+    if (this.deck === null) {
+      this.deck = new DeckCargo(vm.classId, this.deps);
+      this.view.addChildAt(this.deck, 1); // nad spritom / fallbackom, pod odznakom
+    }
+    this.deck.setCargo(vm.cargoSplit, vm.capacityUnits);
+  }
+
+  /** Odznak lashingu v stave `lashing`: vzpriamený (proti rotácii lode), prstenec podľa `vm.lashing`. */
+  private syncLashing(vm: ShipVM, angle: number): void {
+    if (vm.state !== LASHING_STATE) {
+      if (this.lashingBadge !== null) this.lashingBadge.visible = false;
+      return;
+    }
+    if (this.lashingBadge === null) {
+      this.lashingBadge = new LashingBadge(this.deps);
+      this.lashingBadge.scale.set(this.badgeScale);
+      this.view.addChild(this.lashingBadge); // navrchu
+    }
+    this.lashingBadge.visible = true;
+    if (this.lashingBadge.angle !== -angle) this.lashingBadge.angle = -angle;
+    this.lashingBadge.setProgress(vm.lashing === undefined ? 0 : lashingProgress(vm.lashing.ticksLeft, vm.lashing.ticksTotal));
   }
 
   /** Textúry `empty` / `loaded` pre triedu a kategóriu lode, alebo `null` (fallback). */

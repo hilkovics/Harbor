@@ -42,8 +42,9 @@ export function sameTruckShape(a: TruckVM, b: TruckVM): boolean {
 const defaultNow = (): number => performance.now();
 
 /**
- * Režisér kamióna: pri rampe nahradí pózu zo simu manévrom (`DockManeuver`). Kamión v `loading` stojí podľa simu na
- * vonkajšej bunke konektora (`vm.approach`), cieľová póza v doku je v `vm.x`, `vm.y`, `vm.heading`.
+ * Režisér kamióna: pri rampe nahradí pózu zo simu manévrom (`DockManeuver`). Kamión v `loading` (import) alebo `unloading` (export,
+ * F6a) stojí podľa simu na vonkajšej bunke konektora (`vm.approach`), cieľová póza v doku je v `vm.x`, `vm.y`, `vm.heading`.
+ * Naloženie sa počas cúvania drží z príchodu (`displayLoaded`): exportný kamión cúva naložený, vykládka sa deje v doku.
  */
 class TruckDockDirector implements PoseDirector {
   private readonly maneuver: DockManeuver;
@@ -66,6 +67,10 @@ class TruckDockDirector implements PoseDirector {
 
   get phase(): DockPhase {
     return this.maneuver.currentPhase;
+  }
+
+  displayLoaded(vm: VehicleVM): boolean {
+    return this.maneuver.displayLoaded(vm);
   }
 
   pose(vm: VehicleVM, alpha: number, poseOf: (vm: VehicleVM, alpha: number) => VehiclePose): PosePx {

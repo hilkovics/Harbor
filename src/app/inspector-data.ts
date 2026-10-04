@@ -2,11 +2,13 @@
  * Dáta pre `ModuleInspector` (`@ui/module-inspector` je čisto prezentačný) zo živého sveta (T02-10).
  *
  * - Kotvisko: apron (obsadené / rezervované / kapacita), zakotvená loď (`dockedShipId` → trieda, náklad na palube z
- *   ledgera `cargo.countAt('on_ship', id)`, jednotka z `cargoTypes`).
+ *   ledgera `cargo.countAt('on_ship', id)`, jednotka z `cargoTypes`). F6a (ADR-032): náklad na palube rozdelený na
+ *   import a export (`shipCargoSplit`) a stav lashing (`ship.state === 'lashing'`: zostávajúce ticky `lashingTicksLeft`;
+ *   celková doba `lashingTicksPerUnit × naložený export + paperworkTicks` z defu triedy lode — pre progres).
  * - Žeriav: stav (`crane.state`, len čítanie) a vyťaženosť = busy / (busy + idle + blocked); blokovaný podiel
  *   analogicky. Bez odpracovaných tickov sú oba podiely 0.
  * - Sklad (F3): uložené / rezervované / kapacita z modulu, kumulatívne prijaté a vydané (`unitsIn`/`unitsOut`), jednotka
- *   počtu z typu nákladu kategórie skladu (`TEU`).
+ *   počtu z typu nákladu kategórie skladu (`TEU`). F6a: uložené jednotky podľa smeru (`storageCargoSplit`).
  * - Depo (F3): vozidlá depa (stav `idle` = nečinné, `no_path` = bez cesty, ostatné = pracuje; refundácia z
  *   `validate(SellVehicle)`), kapacita státí a nákup: `canBuy` = `validate(BuyVehicle)` prešlo, inak `buyBlockedReason`
  *   z `REASON_TEXT`. Kupuje sa vozidlo `depotVehicleDef` (prvý def vozidla bez technológie).
@@ -24,26 +26,31 @@ import { BuyVehicleCommand, RemoveModuleCommand, SellVehicleCommand } from '@sim
 import type { EntityId } from '@sim/core';
 import type { DefRegistry, VehicleDef } from '@sim/defs';
 import { BerthModule, CraneModule, LoadingRamp, StorageModule, TruckGate, VehicleDepot, WaitingArea, type Module } from '@sim/modules';
+import type { Ship } from '@sim/ships';
 import type { VehicleState } from '@sim/vehicles';
-import type { World } from '@sim/world';
+import { shipCargoSplit, storageCargoSplit, type World } from '@sim/world';
 import {
   craneStateLabel,
   craneStateOk,
   rampInoperativeText,
   type DepotVehicleData,
+  type LashingData,
   type DepotVehicleState,
   type ModuleInspectorData,
   type RampDockData,
 } from '@ui/module-inspector';
 import { REASON_TEXT } from './build-feedback';
 import { hasRoadConnector } from './entities-vm';
+import { lashingTicks } from './lashing';
 import type { SimBridge } from './sim-bridge';
 
 /** Časť `SimBridge`, ktorú inšpektor číta. */
-export type InspectorBridge = Pick<SimBridge, 'world' | 'validate'>;
+export type InspectorBridge = Pick<SimBridge, 'world' | 'validate' | 'lashingTotals'>;
 
 /** Stav kotviska v hlavičke inšpektora (badge). */
 export const BERTH_STATE_DOCKED = 'Loď kotví';
+/** F6a: loď pri kotvisku po nakládke lashuje a vybavuje papiere (stav lode `lashing`). */
+export const BERTH_STATE_LASHING = 'Loď lashuje';
 export const BERTH_STATE_FREE = 'Voľné';
 
 /** Stav modulu bez vlastného obsahu (F2 ho nepoužíva: budúce druhy modulov si dodajú vlastný popis). */
@@ -72,23 +79,35 @@ function percentOf(part: number, total: number): number {
   return total > 0 ? (part / total) * 100 : 0;
 }
 
+/** Lashing lode (len v stave `lashing`), inak `undefined`; celková doba zo simu (`ShipLashingStarted`), inak z defu. */
+function lashingData(bridge: InspectorBridge, ship: Ship, exportOnBoard: number): LashingData | undefined {
+  const ticks = lashingTicks(ship, exportOnBoard, bridge.lashingTotals);
+  if (ticks === undefined) return undefined;
+  const { clock } = bridge.world;
+  return { ticksLeft: ticks.ticksLeft, totalTicks: ticks.ticksTotal, scale: { ticksPerHour: clock.ticksPerHour, ticksPerDay: clock.ticksPerDay } };
+}
+
 function berthFields(bridge: InspectorBridge, berth: BerthModule): Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'apron' | 'dockedShip'> {
   const { world } = bridge;
   const { apron } = berth;
   const ship = berth.dockedShipId === null ? undefined : world.ships.get(berth.dockedShipId);
+  if (ship === undefined) {
+    return { stateLabel: BERTH_STATE_FREE, ok: true, apron: { used: apron.usedCount, reserved: apron.reservedCount, capacity: apron.capacity }, dockedShip: null };
+  }
+  const split = shipCargoSplit(world, ship.id);
+  const lashing = lashingData(bridge, ship, split.export);
   return {
-    stateLabel: ship === undefined ? BERTH_STATE_FREE : BERTH_STATE_DOCKED,
+    stateLabel: lashing === undefined ? BERTH_STATE_DOCKED : BERTH_STATE_LASHING,
     ok: true,
     apron: { used: apron.usedCount, reserved: apron.reservedCount, capacity: apron.capacity },
-    dockedShip:
-      ship === undefined
-        ? null
-        : {
-            classLabel: ship.def.displayName,
-            unitsOnBoard: world.cargo.countAt('on_ship', ship.id),
-            capacityUnits: ship.def.capacityUnits,
-            unitLabel: world.defs.cargoTypes.get(ship.cargoTypeId).unitName,
-          },
+    dockedShip: {
+      classLabel: ship.def.displayName,
+      unitsOnBoard: split.import + split.export,
+      capacityUnits: ship.def.capacityUnits,
+      unitLabel: world.defs.cargoTypes.get(ship.cargoTypeId).unitName,
+      cargoSplit: split,
+      ...(lashing === undefined ? {} : { lashing }),
+    },
   };
 }
 
@@ -113,6 +132,7 @@ function storageFields(bridge: InspectorBridge, storage: StorageModule): Pick<Mo
       capacity: storage.capacity,
       unitsIn: storage.unitsIn,
       unitsOut: storage.unitsOut,
+      split: storageCargoSplit(bridge.world, storage.id),
       ...(unit === undefined ? {} : { unitLabel: unit.unitName }),
     },
   };

@@ -18,6 +18,7 @@ import type { ContractCardData } from '@ui/contracts-panel';
 import { contractCards, nextOfferInTicks } from './contract-cards';
 import { EntitiesVMBuilder, writeTruckPose, type MutableTruckPose, type SimEntitiesVM } from './entities-vm';
 import type { FrameEventSink } from './game-loop';
+import { LashingTracker, type LashingTotals } from './lashing';
 import { StorageOpTracker } from './storage-ops';
 
 /**
@@ -53,7 +54,8 @@ export const REVISION_EVENTS: ReadonlySet<SimEventType> = new Set<SimEventType>(
   'TruckExited',
   'NoWaitingBay',
   // Kontrakty (F5): karty v snapshote sa skladajú len pri zmene revízie (stav, progres nákladu cez `CargoMoved`,
-  // penalizácie, zánik ponuky, koniec hry).
+  // penalizácie, zánik ponuky, koniec hry). Cut-off sa na kartách odpočítava z ticku, preto `CutoffWarning` / `CutoffPassed`
+  // revíziu nemenia.
   'ContractOffered',
   'ContractAccepted',
   'ContractStateChanged',
@@ -62,6 +64,16 @@ export const REVISION_EVENTS: ReadonlySet<SimEventType> = new Set<SimEventType>(
   'ContractExpired',
   'PenaltyApplied',
   'GameOver',
+  // Export a booking (F6a, ADR-032): počítadlá bookingu na kartách (dovezené, rolled, zadržané VGM — hold mení len ledger bez
+  // `CargoMoved`, naložené, penalizácie bookingu) a lashing / odchod lode s exportom.
+  'ExportArrived',
+  'UnitRolled',
+  'VgmHoldStarted',
+  'VgmHoldReleased',
+  'UnitLoaded',
+  'ShipLashingStarted',
+  'ExportShipped',
+  'BookingPenaltyApplied',
 ]);
 
 /**
@@ -165,6 +177,8 @@ export class SimBridge implements FrameEventSink {
   private readonly entityBuilder = new EntitiesVMBuilder();
   /** Posledné operácie s kontajnerom na slote skladov (animácia žeriavu dvora; sim ich nevedie). */
   private readonly storageOps = new StorageOpTracker();
+  /** Celkové doby lashingu lodí z `ShipLashingStarted` (progres lashingu; sim ich vedie len ako zostávajúce ticky). */
+  private readonly lashing = new LashingTracker();
   /** Poloha lodí pred posledným tickom (interpolácia); lode bez záznamu majú `prev = curr`. */
   private readonly prevShipPositions = new Map<EntityId, MutableShipPosition>();
   /** Póza vozidiel pred posledným tickom (interpolácia + pruh v zákrute); vozidlá bez záznamu majú `prev = curr`. */
@@ -187,6 +201,11 @@ export class SimBridge implements FrameEventSink {
   /** Defy sveta (statické dáta: katalógy, časy) — UI ich číta odtiaľto, nie cez `world`. */
   get defs(): DefRegistry {
     return this.world.defs;
+  }
+
+  /** Celkové doby lashingu lodí zo `ShipLashingStarted` (inšpektor lode; chýbajúca loď = doba z defu, `lashing.ts`). */
+  get lashingTotals(): LashingTotals {
+    return this.lashing.view;
   }
 
   /** Zaradí príkaz do fronty sveta; aplikuje sa pri najbližšom frame (aj počas pauzy). */
@@ -216,7 +235,7 @@ export class SimBridge implements FrameEventSink {
       return cached;
     }
     const cards = this.contractCardsFor(this.revisionCounter);
-    const entities = this.entityBuilder.build(this.world, this.revisionCounter, this.prevShipPositions, this.prevVehiclePoses, this.prevTruckPoses, this.storageOps.view);
+    const entities = this.entityBuilder.build(this.world, this.revisionCounter, this.prevShipPositions, this.prevVehiclePoses, this.prevTruckPoses, this.storageOps.view, this.lashing.view);
     const next: WorldSnapshot = Object.freeze({
       tick: clock.tick,
       speed: clock.speed,
@@ -351,6 +370,7 @@ export class SimBridge implements FrameEventSink {
    * od poslednej notifikácie zmenil (aj zmenou bez udalosti), notifikuje `subscribe` odberateľov.
    */
   publish(events: readonly SimEvent[]): void {
+    this.lashing.record(events);
     this.storageOps.record(events); // pred výpočtom snapshotu: CargoMoved zvyšuje revíziu, takže VM skladu sa prestavia s novou operáciou
     for (const event of events) {
       if (REVISION_EVENTS.has(event.type)) this.revisionCounter += 1;

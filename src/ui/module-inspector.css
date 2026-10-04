@@ -6,7 +6,9 @@
  * ploche z prototypu (#0F1B27, tlačidlo „Kúpiť vozidlo v depe") nahrádza --ui-surface (ako v top-hud.css).
  * BEM: .module-inspector, __header / __titles / __badge / __close, __body, __banner, __stats / __stat,
  * __meter / __bar, __section / __ship, __vehicles / __vehicle (F3, zoznam vozidiel v depe), __bays / __bay (F4, rad
- * stojísk čakacej plochy), __docks / __dock / __pips / __pip (F4, docky rampy), __rows / __row, __actions / __btn / __reason.
+ * stojísk čakacej plochy), __docks / __dock / __pips / __pip (F4, docky rampy), __legend / __legend-item (F6a, import / export
+ * v sklade a na lodi; swatch a bar-fill --import / --export), __lashing (F6a, lashing lode s progresom), __rows / __row,
+ * __actions / __btn / __reason.
  */
 
 .module-inspector {
@@ -266,6 +268,17 @@
   background: var(--ui-warning);
 }
 
+/* Import (príde loďou) = farba kontajnera ako obsadený apron; export (príde po súši a odpláva) = accent. */
+.module-inspector__swatch--import,
+.module-inspector__bar-fill--import {
+  background: var(--cargo-container);
+}
+
+.module-inspector__swatch--export,
+.module-inspector__bar-fill--export {
+  background: var(--ui-accent);
+}
+
 .module-inspector__swatch--free,
 .module-inspector__swatch--idle {
   background: var(--ui-surface-2);
@@ -274,7 +287,9 @@
 .module-inspector__swatch--used,
 .module-inspector__swatch--reserved,
 .module-inspector__swatch--busy,
-.module-inspector__swatch--blocked {
+.module-inspector__swatch--blocked,
+.module-inspector__swatch--import,
+.module-inspector__swatch--export {
   border-color: transparent;
 }
 
@@ -361,6 +376,58 @@
   font-size: var(--fs-sm);
   font-weight: var(--fw-bold);
   white-space: nowrap;
+}
+
+/* --- F6a: legenda import / export (sklad, loď) a lashing lode --- */
+
+.module-inspector__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-xs);
+}
+
+.module-inspector__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.module-inspector__legend-label {
+  color: var(--ui-text-2);
+}
+
+.module-inspector__legend-value {
+  font-weight: var(--fw-semibold);
+}
+
+.module-inspector__lashing {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-2) - 2px);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--ui-border);
+  font-size: var(--fs-xs);
+}
+
+.module-inspector__lashing-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.module-inspector__lashing-icon {
+  width: var(--mi-icon-xs);
+  height: var(--mi-icon-xs);
+  color: var(--ui-accent);
+}
+
+.module-inspector__lashing-value {
+  margin-left: auto;
+  font-weight: var(--fw-semibold);
 }
 
 /* --- Vozidlá v depe (F3; prototyp: „Vozidlá v depe" — rámovaný zoznam, striedavé pozadie riadkov) --- */

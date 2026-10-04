@@ -196,6 +196,16 @@ export interface EntityPalette {
     readonly sizePx: number;
   };
   readonly cargo: { readonly base: ColorValue; readonly dark: ColorValue };
+  /**
+   * Smer nákladu na palube lode (F6a, ADR-032): import (`--cargo-container`, farba kontajnera) a export (`--ui-accent`, modrá — pár
+   * oranžová/modrá je rozlíšiteľný aj pri poruche farbocitu); `dark` = obrys, export ho má odvodený (`shadeColor`, `DIRECTION_OUTLINE_SHADE`).
+   */
+  readonly direction: {
+    readonly import: { readonly base: ColorValue; readonly dark: ColorValue };
+    readonly export: { readonly base: ColorValue; readonly dark: ColorValue };
+  };
+  /** Indikátor lashingu lode (F6a): dráha prstenca (`--ui-border`), postup (`--ui-warning`), pozadie (`--ui-surface`) a značka (`--ui-text`). */
+  readonly lashing: { readonly track: ColorValue; readonly progress: ColorValue };
   /** Odznak zablokovania a stavový signál chyby (`--ui-danger`). */
   readonly danger: ColorValue;
   /** Značka konektora v build móde (`--module-connector`). */
@@ -204,12 +214,20 @@ export interface EntityPalette {
   readonly disconnected: ColorValue;
 }
 
+/** Podiel jasu základnej farby smeru exportu, ktorý ostane v obryse kontajnera (token tmavého variantu pre modrú neexistuje, obrys sa odvodzuje; kontajner sa tak oddelí od paluby). */
+export const DIRECTION_OUTLINE_SHADE = 0.55;
+
 /**
  * Načíta farby fallbacku entít z tokenov (DESIGN_BRIEF §3 „Moduly“, „Entity“, „Kategórie nákladu“); chýbajúci token →
  * chyba s jeho menom. Náklad používa farbu kategórie kontajnerov (`--cargo-container*`) — vo F2 jediná kategória.
  */
 export function loadEntityPalette(resolve: TokenResolver = documentTokenResolver): EntityPalette {
   const color = (name: string): ColorValue => readColorToken(name, resolve);
+  /** Export: modrá `--ui-accent` s odvodeným tmavým obrysom (čítaná až pri zostavení `direction`, aby chybu hlásil prvý chýbajúci token v poradí poľa). */
+  const exportColors = (): { readonly base: ColorValue; readonly dark: ColorValue } => {
+    const base = color('--ui-accent');
+    return { base, dark: shadeColor(base, DIRECTION_OUTLINE_SHADE) };
+  };
   return {
     module: { base: color('--module-base'), outline: color('--module-outline') },
     crane: { frame: color('--crane-frame'), boom: color('--crane-boom') },
@@ -225,6 +243,11 @@ export function loadEntityPalette(resolve: TokenResolver = documentTokenResolver
       sizePx: readLengthToken('--fs-xs', resolve),
     },
     cargo: { base: color('--cargo-container'), dark: color('--cargo-container-dark') },
+    direction: {
+      import: { base: color('--cargo-container'), dark: color('--cargo-container-dark') },
+      export: exportColors(),
+    },
+    lashing: { track: color('--ui-border'), progress: color('--ui-warning') },
     danger: color('--ui-danger'),
     connector: color('--module-connector'),
     disconnected: color('--module-disconnected'),

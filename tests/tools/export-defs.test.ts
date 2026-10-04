@@ -89,6 +89,14 @@ describe('validate:defs — F6a defy exportu', () => {
       expect(errorsFor('logistics.json')).toEqual(['logistics.json: /exportFlow/weightClassShares súčet váh hmotnostných tried musí byť > 0']);
     });
 
+    it('okno príchodov exportu (arrivalWindowDays × 24 h) musí presiahnuť economy.cutoffHours', () => {
+      writeReal();
+      edit('logistics', (def) => void ((def['exportFlow'] as Json)['arrivalWindowDays'] = 0.5));
+      expect(errorsFor('logistics.json')).toEqual([
+        'logistics.json: /exportFlow/arrivalWindowDays okno príchodov (12 h) musí byť > economy.cutoffHours (12) — okno pred cut-off by bolo prázdne, dostal 0.5',
+      ]);
+    });
+
     it('schéma: vgmMissingChance nad 1 a chýbajúca trieda', () => {
       writeReal();
       edit('logistics', (def) => void ((def['exportFlow'] as Json)['vgmMissingChance'] = 1.5));

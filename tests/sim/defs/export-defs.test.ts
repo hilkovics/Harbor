@@ -184,6 +184,14 @@ describe('DefRegistry — fail-fast polia exportu s JSON pointerom', () => {
     expect(accepts(raw)).toBe(true);
   });
 
+  it('vzťah: okno príchodov exportu (arrivalWindowDays × 24 h) musí presiahnuť cutoffHours — inak je okno pred cut-off prázdne', () => {
+    const raw = rawDefs();
+    (raw['logistics']!['exportFlow'] as Json)['arrivalWindowDays'] = 0.5;
+    expectDefError(() => DefRegistry.fromRaw(raw), 'logistics', '/exportFlow/arrivalWindowDays');
+    (raw['logistics']!['exportFlow'] as Json)['arrivalWindowDays'] = 0.51;
+    expect(accepts(raw)).toBe(true);
+  });
+
   it('modules: apronReserveSlots ≤ ⌊apronSlots / 2⌋ (2 z 8 platí, 4 platí, 5 nie)', () => {
     const raw = rawDefs();
     const berth = itemsOf(raw, 'modules').find((item) => item['kind'] === 'berth') as Json;

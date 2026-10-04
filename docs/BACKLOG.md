@@ -104,6 +104,12 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - Prirodzenejšie trasy lodí: cena posunu bokom a otočenia ako vážená cena v defe (napr. `shipNavigation.sidewaysMoveCost`, `turnCost` namiesto lexikografickej ceny manévrov, ktorú F6 len presunula do defu ako `turnManeuvers` / `sidewaysManeuvers`), prípadne pokuta za blízkosť pobrežia a kotvísk (v kóde neexistuje). — pôvod: T5B-02 (ADR-029), ADR-031 bod 7 · fáza: podľa potreby
 
 ## Z Fázy 6a
+- `lostUnits()` v tests/sim/helpers/f6a.ts je tautológia (liveCount = created − exported − shipped) — nahradiť nezávislým počtom jednotiek v ledgeri. — pôvod: T6A-10a · fáza: F6c
+- Pod hákom je dual cycle zriedkavý (7 z 36 nakládok v e2e): import sa vyloží skoro celý skôr, než prídu exporty pod hák; zvážiť plánovanie dvojcyklu (priorita exportu na ceste k žeriavu) — balans/priepustnosť. — pôvod: T6A-10a · fáza: F10a/F13
+- Booking po lehote s naloženým nákladom končí `completed` s pomernou výplatou (nie `failed`) — overiť s balansom a dizajnom penalizácií. — pôvod: T6A-09b · fáza: F13
+- Tokeny `--cargo-import` / `--cargo-export` v design/tokens.css namiesto dočasného mapovania v render/UI. — pôvod: T6A-06 · fáza: F13
+
+## Nápady
 - Pripravenosť exportu pri prijatí (`AcceptContract` → `export-readiness.ts`) nekontroluje dosiahnuteľnosť po ceste sklad → kotvisko (nakládka) a rampa → sklad (prijatie): booking sa prijme aj keď sklad kategórie nemá cestu ku kotvisku lode voyage, jednotky sa potom nenaložia a booking skončí pomerne / `failed`. — pôvod: review `src/sim` po T6A-05 (T6A-09b) · fáza: podľa potreby (F6a stabilizácia)
 - Pripravenosť exportu nepočíta s rezervou stojísk (bays) pre kamióny s exportom: plán príchodov `booked` kamiónov v okne pred cut-off sa môže stretnúť s plným stojiskom (kamión počká, plán sa nespotrebuje), prijatie však overuje len existenciu rampy, jej prevádzkovosť a sklad kategórie. — pôvod: review `src/sim` po T6A-05 (T6A-09b) · fáza: podľa potreby (F6a stabilizácia)
 

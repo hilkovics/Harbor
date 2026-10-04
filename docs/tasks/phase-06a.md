@@ -52,15 +52,18 @@ Worktree karty začínajú `git reset --hard <HEAD phase/06a-export-booking>` (w
 ## Checklist
 - [x] T6A-01 · ADR-032, typy, Spoločné rozhrania, WorldState v7
 - [x] T6A-02 · Defy + schémy
-- [ ] T6A-03 · TDD export_roundtrip
+- [x] T6A-03 · TDD export_roundtrip
 - [x] T6A-04 · Sim: ledger, booking/voyage, príchody, brána, VGM, rolled
-- [ ] T6A-05 · Sim: odovzdávanie pod hákom, dispatcher export, žeriav nakládka + dual cycle, lashing, dual transaction
+- [x] T6A-05 · Sim: odovzdávanie pod hákom, dispatcher export, žeriav nakládka + dual cycle, lashing, dual transaction
 - [x] T6A-06 · Render
 - [x] T6A-07 · UI + app
 - [x] T6A-07b · Napojenie renderu a UI na sim (entities-vm unloading/cycle/cargoSplit/lashing/held, LashingTracker, typované defy namiesto optional-def, prijatie celej voyage z UI)
-- [ ] T6A-08 · simrun metriky + golden
-- [ ] T6A-09 · Review + opravy
+- [x] T6A-08 · simrun metriky + golden
+- [x] T6A-09 · Review + opravy
+  - [x] T6A-09b · Opravy z review (FIX FIRST → opravené): obnova legacy žeriava pod hákom (savy v3–v6 sa načítajú), zlyhanie bookingu s nákladom na palube → loď odpláva a booking sa uzavrie pomerne, isPickupCargo bez aktívneho jobu, hot path bez alokácií, CRANE_CYCLE_TRANSITIONS, HANDOVERS stratégia, invariant loadedUnits
 - [ ] T6A-10 · e2e + pipeline + artefakt
+  - [x] T6A-10a · e2e: f2-ship-crane pre režim pod hákom, nový f6a-export (roundtrip od prijatia po odchod lode), inšpektor „Čaká na vozidlo"
+- [ ] T6A-10b · E2E opravy (príčina občasného zlyhania výberu modulu klikom v f2-ship-crane)
 - [ ] T6A-11 · Docs + PR
 
 ## Spoločné rozhrania
@@ -172,3 +175,45 @@ Nové šablóny (odporúčanie): `container_feeder_roundtrip` (roundtrip, feeder
 - **T6A-03** (TDD): testy proti rozhraniam vyššie; save v6 → v7 a roundtrip v7 už pokrýva `tests/sim/world/save-v6-migration.test.ts` (fixture `save-v6.json`, pomocník `tests/sim/helpers/legacy-save.ts`); scenár `export_roundtrip` bude zelený až po T6A-05 (roundtrip ponuka vznikne až s T6A-02 + T6A-04; kroky `lashing` / `unloading` dovtedy vyhodia chybu).
 - **T6A-06 / T6A-07** (render, UI): view-modely a panely nad poľami a udalosťami vyššie, demo dáta; živé dáta (delivery kamióny, nakládka, lashing) až po T6A-05.
 - **T6A-08** (tooling): metriky a `lostUnits` hneď (počty sú 0 do T6A-04/05); golden `export_roundtrip` až po T6A-05.
+
+## Výsledok (priebežne)
+
+| Karta | Stav |
+|---|---|
+| T6A-01 do T6A-09b | hotové |
+| T6A-10a | hotové |
+| T6A-10b | prebieha (občasné zlyhanie výberu modulu klikom v e2e) |
+| T6A-11 | čaká |
+
+**Pipeline:** `pnpm test` zelené: 315 súborov, 7996 testov.
+
+**E2E:** 42/43 (jedna e2e v f2-ship-crane pri výbere modulu klikom sa občasne nepodarí).
+
+**Scenár export_roundtrip** (40 000 tickov, roundtrip od prijatia po odchod lode):
+- `lostUnits`: 0
+- `shippedUnits`: 35
+- `exportedUnits`: 58
+- `rolledUnits`: 1
+- `vgmHolds`: 4
+- `dualCycleRate`: 5,75 %
+- `dualTransactionRate`: –
+- `stowageOrderViolations`: 0
+- `exportGroupingPct`: –
+- Oboje kontrakty (import + roundtrip export) splnené: `completed`
+- `stateHash`: `8f8bbdaf` (zhodný s `--roundtrip-at 28000`)
+
+**Scenár vertical_slice** (30 000 tickov):
+- `cashEnd`: 41 790 000 centov
+- `exportedUnits`: 78
+- `lostUnits`: 0
+- `shippedUnits`: 0 (import-only)
+- `stateHash`: `c8a8fb43`
+
+**Scenár stress_f6:**
+- `lostUnits`: 0
+
+**Výkon:** benchmark vertical_slice: priemer 0,09 ms / tick.
+
+**Režim odovzdávania:** predvolený `under_hook` (ADR-033); starý režim `apron` je dostupný cez def na kotvisku/žeriave a používajú ho testy s legacy defami (`LEGACY_CAPACITY_DEFS`). Savy v3–v6 sa načítajú v režime `apron` a migrujú sa na v7 s novými poľami.
+
+**Ďalej:** fixy v T6A-10b, zverejnenie artefaktu, uzavretie fázy v T6A-11.

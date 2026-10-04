@@ -44,7 +44,7 @@ export type {
   ViewSide,
 } from './view-models';
 export { ModuleLayer } from './module-layer';
-export { ModuleView, moduleBodyFile, moduleFillState, sameModuleShape } from './module-view';
+export { ModuleView, moduleBodyFile, moduleFillState, sameModuleShape, unitLook } from './module-view';
 export { FILL_25_BELOW, FILL_50_BELOW, FILL_STATES, fillState, fillStateKey } from './storage-fill';
 export type { FillState } from './storage-fill';
 export { EntityLayer } from './entity-layer';
@@ -62,7 +62,9 @@ export {
   shipVariantKey,
 } from './ship-view';
 export { DeckCargo, deckDirections, deckFill, deckSlots } from './ship-deck';
-export type { CargoDirection, DeckCargoDeps, DeckFill, DeckSlot } from './ship-deck';
+export type { CargoDirection, DeckCargoDeps, DeckFill, DeckSlot, DeckSplit } from './ship-deck';
+export { RIB_COUNT, drawContainerBox } from './container-box';
+export type { BoxAxis, BoxColors, BoxRect } from './container-box';
 export { LASHING_BADGE_SCALE, LASHING_PROGRESS_STEPS, LashingBadge, lashingProgress, lashingStep } from './lashing-badge';
 export type { ShipLoad, ShipPose, ShipViewDeps } from './ship-view';
 export { VEHICLE_STYLE, VehicleView, sameVehicleShape, vehicleLoad, vehiclePose, vehicleSpriteFile } from './vehicle-view';
@@ -72,6 +74,10 @@ export { DOCKED_STATES, DOCK_CATCH_UP, DOCK_LEAVE_MS, DOCK_REVERSE_MS, DOCK_STOP
 export type { DockPath, DockPhase, DockPoses, PosePx, SwingSide } from './dock-maneuver';
 export { HoldBadge, QUEUE_BADGE_MAX, QueueBadge, createWarningBadge, holdBadgeLabel, queueBadgeLabel } from './badges';
 export type { QueueBadgeDeps } from './badges';
+export { DepotBadge, damagedBadgeLabel, repairBadgeLabel } from './depot-badge';
+export type { DepotBadgeKind } from './depot-badge';
+export { DEPOT_BADGE_GAP_PX, DEPOT_BADGE_INSET_PX, DepotDecor, depotDecorFactory, depotMarks } from './depot-decor';
+export type { DepotMark } from './depot-decor';
 export { BARRIER_MOTION_MS, BarrierMotion, GateDecor, queueBadgePosition } from './gate-decor';
 export { WaitingAreaDecor, occupiedStalls } from './waiting-area-decor';
 export { HOLD_BADGE_INSET_PX, HoldDecor, holdDecorFactory, holdMarks } from './hold-decor';
@@ -132,7 +138,8 @@ export {
   trolleyTravelFraction,
 } from './crane-view';
 export type { CraneDirection, CraneParts, CraneState, CraneViewDeps } from './crane-view';
-export { CargoSprite, cargoSizePx } from './cargo-sprite';
+export { CargoSprite, LINE_BAND_SHARE, cargoSizePx } from './cargo-sprite';
+export type { CargoLook } from './cargo-sprite';
 export {
   CARRIER_LENGTH_PX,
   CARRIER_WIDTH_PX,
@@ -194,8 +201,10 @@ export { CAMERA_MAX_ZOOM, CAMERA_MIN_ZOOM, CAMERA_START_ZOOM, Camera } from './c
 export type { CameraOptions, CameraTransform, Point } from './camera';
 export {
   DIRECTION_OUTLINE_SHADE,
+  LINE_COLOR_TOKENS,
   ROAD_EDGE_SHADE,
   documentTokenResolver,
+  lineColorOf,
   loadRenderPalette,
   parseCssColor,
   parseCssPx,

@@ -5,6 +5,9 @@
  * `world-scale.ts`) a leží dlhšou stranou pozdĺž doku, teda pozdĺž kamióna, ktorý doň cúva (dok 56 × 62 px: dĺžka
  * kontajnera zaberie dok, dva kusy sa zmestia vedľa seba) — pri viac kusoch, než sa zmestí, sa prekrývajú.
  *
+ * F6c: `ramp.stagedEmpty[i]` jednotiek doku `i` sú prázdne kontajnery (`direction: 'empty'`) — kreslia sa sivé (`--cargo-empty`) a zaraďujú sa
+ * za plné (výdaj prázdneho exportérovi, nakládka prázdnych po plných).
+ *
  * Neprevádzková rampa (`operational === false`) nekreslí vlastný odznak: `warning` vyžiada spoločný odznak
  * `overlay.warning_badge` v `ModuleView`.
  */
@@ -20,6 +23,9 @@ import {
 import type { ModuleDecor, ModuleDecorContext, ModuleDecorFactory } from './module-decor';
 import type { ModuleVM } from './view-models';
 import { TEU_PX } from './world-scale';
+
+/** Typ nákladu, ktorý môže byť prázdny kontajner (prázdne sú vždy kontajnery TEU). */
+const EMPTY_CARGO_TYPE = 'container_teu';
 
 /** Odsadenie kontajnera od okraja doku v px súboru (obrys 2 px, DESIGN_BRIEF §4). */
 export const STAGED_INSET_PX = 2;
@@ -56,6 +62,8 @@ export class RampDecor implements ModuleDecor {
   private readonly cargoType: string;
   /** Kontajnery na každom doku (index doku). */
   private readonly sprites: CargoSprite[][];
+  /** Počet prázdnych kontajnerov nakreslených na doku (index doku); zmena prekreslí dok aj pri nezmenenom počte. */
+  private readonly drawnEmpty: number[];
   private isWarning = false;
 
   constructor(
@@ -65,6 +73,7 @@ export class RampDecor implements ModuleDecor {
     this.docks = context.entry?.docks ?? [];
     this.cargoType = cargoTypeOfCategory(context.entry?.category);
     this.sprites = this.docks.map(() => []);
+    this.drawnEmpty = this.docks.map(() => 0);
     this.update(vm);
   }
 
@@ -78,6 +87,11 @@ export class RampDecor implements ModuleDecor {
     return this.sprites[dock]?.length ?? 0;
   }
 
+  /** Počet prázdnych (sivých) kontajnerov nakreslených na doku `dock` — pre testy. */
+  emptyDrawn(dock: number): number {
+    return this.drawnEmpty[dock] ?? 0;
+  }
+
   /** Nakreslený kontajner `slot` na doku `dock` — pre testy. */
   stagedSprite(dock: number, slot: number): CargoSprite | undefined {
     return this.sprites[dock]?.[slot];
@@ -87,7 +101,7 @@ export class RampDecor implements ModuleDecor {
     const ramp = vm.ramp;
     this.isWarning = ramp !== undefined && !ramp.operational;
     this.docks.forEach((dock, index) => {
-      this.syncDock(dock, index, ramp?.staged[index] ?? 0);
+      this.syncDock(dock, index, ramp?.staged[index] ?? 0, ramp?.stagedEmpty?.[index] ?? 0);
     });
   }
 
@@ -96,11 +110,13 @@ export class RampDecor implements ModuleDecor {
     this.view.destroy({ children: true });
   }
 
-  /** Prekreslí kontajnery doku len pri zmene počtu. */
-  private syncDock(dock: ManifestRect, index: number, staged: number): void {
+  /** Prekreslí kontajnery doku len pri zmene počtu (celkového alebo prázdnych). Prázdne len pri kontajnerovej rampe. */
+  private syncDock(dock: ManifestRect, index: number, staged: number, stagedEmpty: number): void {
     const drawn = this.sprites[index];
     const count = Math.max(0, Math.floor(staged));
-    if (drawn.length === count) return;
+    const empties = this.cargoType === EMPTY_CARGO_TYPE ? Math.min(count, Math.max(0, Math.floor(stagedEmpty))) : 0;
+    if (drawn.length === count && this.drawnEmpty[index] === empties) return;
+    this.drawnEmpty[index] = empties;
     for (const sprite of drawn) sprite.destroy();
     drawn.length = 0;
     const { deps, pose } = this.context;
@@ -108,7 +124,7 @@ export class RampDecor implements ModuleDecor {
     const unit = manifestScale(deps.cellPx);
     const origin: ManifestPoint = { x: (-pose.baseW * deps.cellPx) / 2, y: (-pose.baseH * deps.cellPx) / 2 };
     stagedPlacements(dock, count, size).forEach((placement, slot) => {
-      const sprite = new CargoSprite(slot, this.cargoType, deps);
+      const sprite = new CargoSprite(slot, this.cargoType, deps, slot >= count - empties ? { empty: true } : {});
       sprite.position.set(origin.x + placement.x * unit, origin.y + placement.y * unit);
       sprite.angle = placement.angle;
       this.view.addChild(sprite);

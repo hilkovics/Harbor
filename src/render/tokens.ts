@@ -197,13 +197,26 @@ export interface EntityPalette {
   };
   readonly cargo: { readonly base: ColorValue; readonly dark: ColorValue };
   /**
-   * Smer nákladu na palube lode (F6a, ADR-032): import (`--cargo-container`, farba kontajnera) a export (`--ui-accent`, modrá — pár
-   * oranžová/modrá je rozlíšiteľný aj pri poruche farbocitu); `dark` = obrys, export ho má odvodený (`shadeColor`, `DIRECTION_OUTLINE_SHADE`).
+   * Smer nákladu (F6a, F6c; ADR-032, ADR-034): import (`--cargo-import`), export (`--cargo-export`, modrá — pár oranžová/modrá je
+   * rozlíšiteľný aj pri poruche farbocitu) a prázdne kontajnery (`--cargo-empty`, neutrálna sivá); `dark` = obrys (`--cargo-empty-dark`
+   * pre prázdne, `--cargo-container-dark` pre import, odvodený `shadeColor` / `DIRECTION_OUTLINE_SHADE` pre export, ktorý token tmavého
+   * variantu nemá), `light` = svetlý odlesk (len prázdne). Prekládka (`tranship`) sa kreslí ako import (loď A) / export (loď B).
    */
   readonly direction: {
     readonly import: { readonly base: ColorValue; readonly dark: ColorValue };
     readonly export: { readonly base: ColorValue; readonly dark: ColorValue };
+    readonly empty: { readonly base: ColorValue; readonly dark: ColorValue; readonly light: ColorValue };
   };
+  /**
+   * Stav prázdneho kontajnera a odznaky depa (F6c, ADR-034): `damaged` = odznak poškodeného (`--cargo-empty-damaged`), `repair` = odznak
+   * opravy (`--ui-warning`) a `glyph` = symbol v odznaku (`--ui-text`).
+   */
+  readonly emptyState: { readonly damaged: ColorValue; readonly repair: ColorValue; readonly glyph: ColorValue };
+  /**
+   * Farby liniek (`data/defs/lines.json`, F6c): kľúč je `LineDef.colorToken` bez `--` (`line-blue`, `line-amber`, `line-teal`), hodnota
+   * farba tokenu. Neznámy kľúč → `undefined` (linka bez farby sa nekreslí).
+   */
+  readonly line: Readonly<Record<string, ColorValue>>;
   /** Indikátor lashingu lode (F6a): dráha prstenca (`--ui-border`), postup (`--ui-warning`), pozadie (`--ui-surface`) a značka (`--ui-text`). */
   readonly lashing: { readonly track: ColorValue; readonly progress: ColorValue };
   /** Odznak zablokovania a stavový signál chyby (`--ui-danger`). */
@@ -218,14 +231,25 @@ export interface EntityPalette {
 export const DIRECTION_OUTLINE_SHADE = 0.55;
 
 /**
+ * Tokeny farieb liniek (`LineDef.colorToken` v `data/defs/lines.json` bez `--`). Linka je v dátach, jej farba v tokene: pridať linku
+ * = pridať token do `design/tokens.css` a sem; `tests/render/line-palette.test.ts` stráži, že každý `colorToken` z `lines.json` je tu.
+ */
+export const LINE_COLOR_TOKENS: readonly string[] = ['line-blue', 'line-amber', 'line-teal'];
+
+/** Farba linky podľa `LineDef.colorToken` (`line-blue`, …), alebo `undefined` pre neznámy token (linka sa vtedy nekreslí farebne). */
+export function lineColorOf(palette: Pick<EntityPalette, 'line'>, token: string | undefined): ColorValue | undefined {
+  return token !== undefined && Object.hasOwn(palette.line, token) ? palette.line[token] : undefined;
+}
+
+/**
  * Načíta farby fallbacku entít z tokenov (DESIGN_BRIEF §3 „Moduly“, „Entity“, „Kategórie nákladu“); chýbajúci token →
  * chyba s jeho menom. Náklad používa farbu kategórie kontajnerov (`--cargo-container*`) — vo F2 jediná kategória.
  */
 export function loadEntityPalette(resolve: TokenResolver = documentTokenResolver): EntityPalette {
   const color = (name: string): ColorValue => readColorToken(name, resolve);
-  /** Export: modrá `--ui-accent` s odvodeným tmavým obrysom (čítaná až pri zostavení `direction`, aby chybu hlásil prvý chýbajúci token v poradí poľa). */
+  /** Export: modrá `--cargo-export` s odvodeným tmavým obrysom (čítaná až pri zostavení `direction`, aby chybu hlásil prvý chýbajúci token v poradí poľa). */
   const exportColors = (): { readonly base: ColorValue; readonly dark: ColorValue } => {
-    const base = color('--ui-accent');
+    const base = color('--cargo-export');
     return { base, dark: shadeColor(base, DIRECTION_OUTLINE_SHADE) };
   };
   return {
@@ -244,9 +268,12 @@ export function loadEntityPalette(resolve: TokenResolver = documentTokenResolver
     },
     cargo: { base: color('--cargo-container'), dark: color('--cargo-container-dark') },
     direction: {
-      import: { base: color('--cargo-container'), dark: color('--cargo-container-dark') },
+      import: { base: color('--cargo-import'), dark: color('--cargo-container-dark') },
       export: exportColors(),
+      empty: { base: color('--cargo-empty'), dark: color('--cargo-empty-dark'), light: color('--cargo-empty-light') },
     },
+    emptyState: { damaged: color('--cargo-empty-damaged'), repair: color('--ui-warning'), glyph: color('--ui-text') },
+    line: Object.fromEntries(LINE_COLOR_TOKENS.map((token) => [token, color(`--${token}`)])),
     lashing: { track: color('--ui-border'), progress: color('--ui-warning') },
     danger: color('--ui-danger'),
     connector: color('--module-connector'),

@@ -34,12 +34,12 @@ test('ships: náklad na palube podľa počtu (import / export farebne), lashing 
     const fill = (id: number) => renderer.entities.shipView(id)?.deckCargo?.currentFill ?? null;
     return { docked: fill(31), lashing: fill(32), empty: fill(41), importOnly: fill(42), exportOnly: fill(43), mixed: fill(44) };
   });
-  expect(decks.docked).toEqual({ importSlots: 2, exportSlots: 1 }); // 40 + 20 z 120 → 3 z 6 miest
-  expect(decks.lashing).toEqual({ importSlots: 0, exportSlots: 10 }); // 200 z 300 → 10 zo 14 miest
-  expect(decks.empty).toEqual({ importSlots: 0, exportSlots: 0 });
-  expect(decks.importOnly).toEqual({ importSlots: 5, exportSlots: 0 });
-  expect(decks.exportOnly).toEqual({ importSlots: 0, exportSlots: 5 });
-  expect(decks.mixed).toEqual({ importSlots: 3, exportSlots: 3 });
+  expect(decks.docked).toEqual({ importSlots: 2, exportSlots: 1, emptySlots: 0 }); // 40 + 20 z 120 → 3 z 6 miest
+  expect(decks.lashing).toEqual({ importSlots: 0, exportSlots: 10, emptySlots: 0 }); // 200 z 300 → 10 zo 14 miest
+  expect(decks.empty).toEqual({ importSlots: 0, exportSlots: 0, emptySlots: 0 });
+  expect(decks.importOnly).toEqual({ importSlots: 5, exportSlots: 0, emptySlots: 0 });
+  expect(decks.exportOnly).toEqual({ importSlots: 0, exportSlots: 5, emptySlots: 0 });
+  expect(decks.mixed).toEqual({ importSlots: 3, exportSlots: 3, emptySlots: 0 });
 
   // lashing: odznak len na lodi v stave lashing, postup z lashingTicksLeft
   const badges = await page.evaluate(() => {

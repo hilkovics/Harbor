@@ -21,10 +21,11 @@ import { Container, Graphics, Sprite } from 'pixi.js';
 import { createWarningBadge } from './badges';
 import { moduleSprite, type ModuleSpriteEntry } from './entity-assets';
 import { footprintPose, localCellCenter, type FootprintPose } from './footprint-pose';
-import { CargoSprite } from './cargo-sprite';
+import { CargoSprite, type CargoLook } from './cargo-sprite';
 import type { ModuleDecor, ModuleViewDeps } from './module-decor';
 import { MODULE_DECORS } from './module-decors';
 import { fillState, fillStateKey, type FillState } from './storage-fill';
+import { lineColorOf } from './tokens';
 import type { ModuleVM } from './view-models';
 
 export type { ModuleViewDeps } from './module-decor';
@@ -34,6 +35,13 @@ const OUTLINE_CELLS = 2 / 64;
 
 /** Odsadenie fallbacku od okraja footprintu (zlomok bunky; „hrany min. 4 px od okraja“, DESIGN_BRIEF §4). */
 const FALLBACK_INSET_CELLS = 4 / 64;
+
+/** Vzhľad jednotky na aprone: prázdny kontajner (`empty`) a farba jeho linky (`lineToken` → `palette.line`); iné jednotky bez zmeny. */
+export function unitLook(unit: { readonly empty?: boolean; readonly lineToken?: string }, deps: ModuleViewDeps): CargoLook {
+  if (unit.empty !== true) return {};
+  const lineColor = lineColorOf(deps.palette, unit.lineToken);
+  return lineColor === undefined ? { empty: true } : { empty: true, lineColor };
+}
 
 /** Zhoda statickej časti VM (kým sa nezmení, view sa nevytvára nanovo). */
 export function sameModuleShape(a: ModuleVM, b: ModuleVM): boolean {
@@ -166,7 +174,7 @@ export class ModuleView {
         const current = this.cargo.get(unit.slot);
         if (current?.unitId === unit.unitId && current.typeId === unit.typeId) continue; // nezmenené
         current?.destroy();
-        const sprite = new CargoSprite(unit.unitId, unit.typeId, this.deps);
+        const sprite = new CargoSprite(unit.unitId, unit.typeId, this.deps, unitLook(unit, this.deps));
         const at = localCellCenter(slotCell, this.pose.baseW, this.pose.baseH, this.deps.cellPx);
         sprite.position.set(at.x, at.y);
         this.cargo.set(unit.slot, sprite);

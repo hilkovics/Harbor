@@ -24,7 +24,7 @@
  *   `on_ship → shipped` (každá jednotka s `CargoMoved`, potom `ExportShipped`), loď sa odstráni zo sveta a emituje `ShipDeparted`.
  * Prechod stavu ukončí pohyb lode v danom ticku (zvyšok kroku prepadne), okrem vstupu.
  */
-import { exportAboard, importAboard, loadsInFlight, pendingExportUnits } from '../logistics/voyage-cargo';
+import { exportAboard, importAboard, isOutboundOnShip, loadsInFlight, pendingExportUnits } from '../logistics/voyage-cargo';
 import { ShipError } from '../ships/ship-error';
 import type { Ship } from '../ships/ship';
 import type { ShipState } from '../ships/ship-fsm';
@@ -94,13 +94,15 @@ const DOCKED_STEPS: { readonly [V in DockedVerdict]: ShipStep } = {
 };
 
 /**
- * Odchod z mapy (`outbound → despawned`): naložený export `on_ship → shipped` vzostupne podľa id (každá jednotka s `CargoMoved`),
- * potom `ExportShipped`; `World.removeShip` vyžaduje prázdnu loď. Import na palube by tu zostal (loď s importom neodchádza).
+ * Odchod z mapy (`outbound → despawned`): naložený náklad (export, prázdne repositioningu, prekládka na lodi B) `on_ship → shipped`
+ * vzostupne podľa id (každá jednotka s `CargoMoved`), potom `ExportShipped`; `World.removeShip` vyžaduje prázdnu loď. Náklad na
+ * vykládku (import, prekládka z lode A) na palube by tu zostal (loď s ním neodchádza).
  */
 function shipExports(ship: Ship, world: World): void {
   let shipped = 0;
   for (const unitId of world.cargo.unitsOnShip(ship.id)) {
-    if (world.cargo.get(unitId)?.direction !== 'export') continue;
+    const unit = world.cargo.get(unitId);
+    if (unit === undefined || !isOutboundOnShip(world, unit, ship.id)) continue;
     world.cargo.move(unitId, { kind: 'shipped' });
     shipped += 1;
   }

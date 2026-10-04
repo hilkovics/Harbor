@@ -59,6 +59,7 @@ import type { CargoDirection, CargoUnit } from '../cargo/cargo-unit';
 import type { ContractOutbound } from '../contracts/contract-fsm';
 import type { EntityId } from '../core/entity-id';
 import type { CargoCategory } from '../defs/types';
+import type { Contract } from '../contracts/contract';
 import { BerthModule } from '../modules/berth-module';
 import type { LoadingRamp } from '../modules/loading-ramp';
 import { StorageModule } from '../modules/storage-module';
@@ -71,9 +72,10 @@ import { createExportIntakeJobs } from './export-intake';
 import { createExportLoadJobs as createLoadJobs, createHookUnloadJobs as createHookJobs, type LoadJobSpec } from './export-load';
 import { distanceBetweenModules, distanceToModule } from './module-access';
 import { allocateRamp } from './ramp-allocator';
-import { allocateStorage } from './storage-allocator';
 import type { StoredCargoGroup } from './stored-cargo-index';
 import { JOB_PRIORITY_LEVELS, TransportJob, type JobCancelReason } from './transport-job';
+import { allocateUnloadStorage } from './unload-storage';
+import { isOutboundOnShip, openLoadBookings } from './voyage-cargo';
 
 /**
  * Smie vozidlo viezť jednotku (F6c, ADR-034)? Kategória nákladu a smer: `VehicleDef.cargoDirections` (chýba = každý smer;
@@ -99,13 +101,18 @@ function emitNoStorage(world: World, berth: BerthModule, cargoTypeId: string): v
 }
 
 /**
- * Čaká jednotka na aprone na žeriav (export na nakládku — booking beží, `Contract.outbound === 'held'`)? Taká jednotka sa
- * nevracia do skladu; po uzavretí bookingu (vrátenie odosielateľovi) sa spracuje ako každá jednotka na aprone (ADR-032 bod 9).
+ * Čaká jednotka na aprone kotviska `berth` na žeriav (náklad na nakládku dokovanej lode: export, prekládka čakajúca na loď B, prázdne
+ * repositioningu — booking beží)? Taká jednotka sa nevracia do skladu; po uzavretí bookingu (vrátenie odosielateľovi) sa spracuje ako
+ * každá jednotka na aprone (ADR-032 bod 9). Prekládka z lode A (vykládka na apron) na žeriav nečaká — dostane job do skladu.
  */
-function awaitsCrane(world: World, unit: CargoUnit): boolean {
-  if (unit.direction !== 'export' || unit.contractId === null) return false;
+function awaitsCrane(world: World, unit: CargoUnit, berth: BerthModule): boolean {
+  if (!isOutboundOnShip(world, unit, berth.dockedShipId)) return false;
+  if (unit.contractId === null) return berth.dockedShipId !== null && openLoadBookings(world, berth.dockedShipId, AWAITED_BOOKINGS).some((contract) => contract.loadsUnit(unit));
   return world.contractBook.get(unit.contractId)?.outbound === 'held';
 }
+
+/** Znovupoužiteľné pole bookingov dokovanej lode pre `awaitsCrane` (hot path; obsah sa vždy najprv vyprázdni). */
+const AWAITED_BOOKINGS: Contract[] = [];
 
 /** Joby pre jednotky na aprone jedného kotviska (FIFO), ktoré ešte job nemajú. */
 function inboundFromBerth(world: World, berth: BerthModule): void {
@@ -114,8 +121,8 @@ function inboundFromBerth(world: World, berth: BerthModule): void {
   for (let i = 0; i < count; i++) {
     const unitId = world.cargo.unitAtIndex('on_apron', berth.id, i);
     const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
-    if (unit === undefined || world.jobOfUnit(unit.id) !== undefined || awaitsCrane(world, unit)) continue;
-    const storage = allocateStorage(world, berth, world.defs.cargoTypes.get(unit.typeId).category);
+    if (unit === undefined || world.jobOfUnit(unit.id) !== undefined || awaitsCrane(world, unit, berth)) continue;
+    const storage = allocateUnloadStorage(world, berth, unit);
     if (storage === undefined) {
       missingTypeId ??= unit.typeId;
       continue;

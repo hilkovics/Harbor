@@ -77,9 +77,9 @@ describe('krok 12: loadedUnits otvoreného export bookingu (minor 8)', () => {
     expect(findWorldViolation(world)).toBeUndefined();
     const loaded = contract.loadedUnits;
     contract.loadedUnits = loaded + 1;
-    expect(findWorldViolation(world)).toMatch(new RegExp(`loadedUnits ${String(loaded + 1)}, na .* je ${String(loaded)} jednotiek exportu bookingu`));
+    expect(findWorldViolation(world)).toMatch(new RegExp(`loadedUnits ${String(loaded + 1)}, na .* je ${String(loaded)} jednotiek nákladu bookingu`));
     contract.loadedUnits = loaded - 1;
-    expect(findWorldViolation(world)).toMatch(new RegExp(`loadedUnits ${String(loaded - 1)}, na .* je ${String(loaded)} jednotiek exportu bookingu`));
+    expect(findWorldViolation(world)).toMatch(new RegExp(`loadedUnits ${String(loaded - 1)}, na .* je ${String(loaded)} jednotiek nákladu bookingu`));
     contract.loadedUnits = loaded;
     expect(findWorldViolation(world)).toBeUndefined();
   });

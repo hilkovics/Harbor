@@ -21,7 +21,7 @@ import type { CargoUnit } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
 import type { HandoverMode } from '../defs/types';
 import { apronDirectionCap, bothDirections, importApronUsage } from '../logistics/apron-usage';
-import { firstImportOnShip } from '../logistics/voyage-cargo';
+import { firstUnloadableOnShip, isLoadable, isOutboundOnShip } from '../logistics/voyage-cargo';
 import { BerthModule } from '../modules/berth-module';
 import { CRANE_CYCLE_TRAITS, CraneModule } from '../modules/crane-module';
 import { ModuleError } from '../modules/module-error';
@@ -92,8 +92,9 @@ function claimLoads(world: World, berth: BerthModule, self: CraneModule): readon
   return CLAIMED;
 }
 
+/** Je jednotka naložiteľný náklad niektorého z bookingov lode (export, prekládka podľa kontraktu, prázdne podľa linky; mimo hold, dostupná)? */
 function isBookingUnit(unit: CargoUnit, bookings: readonly Contract[]): boolean {
-  return unit.direction === 'export' && unit.hold === null && unit.contractId !== null && bookings.some((contract) => contract.id === unit.contractId);
+  return isLoadable(unit) && bookings.some((contract) => contract.loadsUnit(unit));
 }
 
 /** Lepšia z dvoch jednotiek podľa stowage plánu (`undefined` = žiadna). */
@@ -121,7 +122,7 @@ const APRON_HANDOVER: Handover = {
     crane.reservedSlot ??= berth.apron.reserve();
   },
   blocksWhenNotReady: true,
-  unloadUnit: ({ world, ship }) => firstImportOnShip(world, ship.id),
+  unloadUnit: ({ world, ship }) => firstUnloadableOnShip(world, ship.id),
   deliver: ({ world, crane, berth }) => {
     const unitId = crane.heldUnitId;
     const slot = crane.reservedSlot;
@@ -229,7 +230,8 @@ const HOOK_HANDOVER: Handover = {
     const count = world.cargo.countAt('on_ship', ship.id);
     for (let i = 0; i < count; i++) {
       const unitId = world.cargo.unitAtIndex('on_ship', ship.id, i);
-      if (unitId === undefined || world.cargo.get(unitId)?.direction !== 'import' || claimed.includes(unitId)) continue;
+      const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
+      if (unitId === undefined || unit === undefined || isOutboundOnShip(world, unit, ship.id) || claimed.includes(unitId)) continue;
       const job = world.jobOfUnit(unitId);
       if (job === undefined) {
         fresh ??= unitId;

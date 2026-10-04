@@ -8,15 +8,19 @@ import { BerthModule } from '../modules/berth-module';
 import { CraneModule } from '../modules/crane-module';
 import type { Ship } from '../ships/ship';
 import type { World } from '../world/world';
-import { importAboard, pendingExportUnits } from './voyage-cargo';
+import { importAboard, isOutboundOnShip, pendingExportUnits } from './voyage-cargo';
 
-/** Využitie apronu importom: jednotky importu na aprone + sloty rezervované žeriavmi kotviska (vykládka). */
+/**
+ * Využitie apronu vykládkou: jednotky na vykládku (import, prekládka z lode A — nie náklad na nakládku lode kotviska) na aprone + sloty
+ * rezervované žeriavmi kotviska (vykládka).
+ */
 export function importApronUsage(world: World, berth: BerthModule): number {
   let used = 0;
   const count = world.cargo.countAt('on_apron', berth.id);
   for (let i = 0; i < count; i++) {
     const unitId = world.cargo.unitAtIndex('on_apron', berth.id, i);
-    if (unitId !== undefined && world.cargo.get(unitId)?.direction === 'import') used += 1;
+    const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
+    if (unit !== undefined && !isOutboundOnShip(world, unit, berth.dockedShipId)) used += 1;
   }
   for (const craneId of berth.craneIds) {
     const crane = world.modules.get(craneId);
@@ -25,13 +29,17 @@ export function importApronUsage(world: World, berth: BerthModule): number {
   return used;
 }
 
-/** Využitie apronu exportom: jednotky exportu na aprone + sloty rezervované jobmi nakládky (rezervácie apronu mimo žeriavov). */
+/**
+ * Využitie apronu nakládkou: jednotky na nakládku (export, prázdne, prekládka čakajúca na loď kotviska) na aprone + sloty rezervované jobmi
+ * nakládky (rezervácie apronu mimo žeriavov).
+ */
 export function exportApronUsage(world: World, berth: BerthModule): number {
   let used = 0;
   const count = world.cargo.countAt('on_apron', berth.id);
   for (let i = 0; i < count; i++) {
     const unitId = world.cargo.unitAtIndex('on_apron', berth.id, i);
-    if (unitId !== undefined && world.cargo.get(unitId)?.direction === 'export') used += 1;
+    const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
+    if (unit !== undefined && isOutboundOnShip(world, unit, berth.dockedShipId)) used += 1;
   }
   let craneReserved = 0;
   for (const craneId of berth.craneIds) {

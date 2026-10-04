@@ -3,7 +3,7 @@
  * dvora) a empty handlerom — import northern_star (kontrakt #2, 64 TEU) sa odvezie kamiónmi, 60 % jednotiek sa o 1 – 3 dni vráti ako
  * prázdne (kamión `delivery`, brána `EmptyReturned`, vykládka na rampe, empty handler odvezie do depa), kontrola v depe poškodí časť
  * (`EmptyDamaged`), oprava trvá 6 h (`EmptyRepaired`, poplatok `maintenance_repair`); export booking #10 (golden_wave) nemá z čoho dostať
- * prázdny (14× `EmptyPickupMissed`), booking #18 (northern_star, prijatý v ticku 25 921) dostane prázdne z depa (`EmptyPickedUp`,
+ * prázdny (14× `EmptyPickupMissed`), booking #22 (northern_star, prijatý v ticku 25 921) dostane prázdne z depa (`EmptyPickedUp`,
  * `in_truck → exported`), vrátane už opravených. `lostUnits 0`, `--roundtrip-at` uprostred opravy dá zhodný hash.
  */
 import { existsSync, readFileSync } from 'node:fs';
@@ -21,7 +21,7 @@ const SCENARIO = loadScenarioFile('empty_cycle');
 const TICKS = 40_000;
 const IMPORT_ID = 2;
 const MISSED_BOOKING_ID = 10;
-const SERVED_BOOKING_ID = 18;
+const SERVED_BOOKING_ID = 22;
 const IMPORT_UNITS = 64;
 const RUN_TIMEOUT_MS = 300_000;
 const GOLDEN_PATH = `${REPO_ROOT}tests/sim/__golden__/empty_cycle.json`;
@@ -61,7 +61,7 @@ describe('scenár empty_cycle: súbor', () => {
     expect([SCENARIO.id, SCENARIO.seed, SCENARIO.map]).toEqual(['empty_cycle', 5011, 'data/maps/harbor_01.json']);
   });
 
-  it('prístav F4 s depom prázdnych na mieste blízkeho dvora, tri vozidlá (2× straddle, empty handler) a tri AcceptContract (2 @2, 10 @8 641, 18 @25 921)', () => {
+  it('prístav F4 s depom prázdnych na mieste blízkeho dvora, tri vozidlá (2× straddle, empty handler) a tri AcceptContract (2 @2, 10 @8 641, 22 @25 921)', () => {
     const types = SCENARIO.commands.map((entry) => entry.command.type);
     expect(types).toEqual([...Array<string>(10).fill('PlaceRoad'), ...Array<string>(6).fill('PlaceModule'), 'BuyVehicle', 'BuyVehicle', 'BuyVehicle', 'AcceptContract', 'AcceptContract', 'AcceptContract']);
     const modules = SCENARIO.commands.filter((entry) => entry.command.type === 'PlaceModule').map((entry) => (entry.command as unknown as { defId: string }).defId);
@@ -79,7 +79,7 @@ describe('scenár empty_cycle: beh', () => {
   const returnedIds = new Set(returned.map((event) => event.unitId));
   const all = chains(events);
 
-  it('import #2 (64 TEU, northern_star) sa odvezie kamiónmi a kontrakt sa dokončí; booking #10 aj #18 sú prijaté', () => {
+  it('import #2 (64 TEU, northern_star) sa odvezie kamiónmi a kontrakt sa dokončí; booking #10 aj #22 sú prijaté', () => {
     const imported = world.contracts.get(IMPORT_ID as never);
     expect(imported).toMatchObject({ kind: 'import', lineId: 'northern_star', volumeUnits: IMPORT_UNITS, state: 'completed', unitsExported: IMPORT_UNITS });
     expect(world.contracts.get(MISSED_BOOKING_ID as never)).toMatchObject({ kind: 'export', lineId: 'golden_wave', state: 'completed' });
@@ -145,7 +145,7 @@ describe('scenár empty_cycle: beh', () => {
     expect(handlerJobs.length / emptyJobs.length).toBeGreaterThan(0.5);
   });
 
-  it('výdaj exportérovi: booking #18 dostane prázdne svojej linky z depa (in_storage → in_vehicle → at_ramp → in_truck → exported), booking #10 (linka bez prázdnych) odíde naprázdno', () => {
+  it('výdaj exportérovi: booking #22 dostane prázdne svojej linky z depa (in_storage → in_vehicle → at_ramp → in_truck → exported), booking #10 (linka bez prázdnych) odíde naprázdno', () => {
     const picked = of(events, 'EmptyPickedUp').map((entry) => entry.event);
     expect(picked.length).toBeGreaterThan(0);
     for (const event of picked) {

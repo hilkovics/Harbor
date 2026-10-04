@@ -6,7 +6,7 @@
  * (`emptyReturnRate`, `damageChance`, `emptyPickupRate` na 0 alebo 1), takže `Rng` nerozhoduje o tom, čo sa overuje.
  */
 import { EMPTY_WEIGHT_CLASS, type CargoUnitLabels } from '@sim/cargo';
-import { ImportContract } from '@sim/contracts';
+import { EmptyRepositioningContract, ExportContract, ImportContract, TranshipContract } from '@sim/contracts';
 import type { EntityId } from '@sim/core';
 import type { DefRegistry } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
@@ -129,4 +129,98 @@ export function emptiesByLocation(world: World): Record<string, number> {
     if (state.direction === 'empty') counts[state.location.kind] = (counts[state.location.kind] ?? 0) + 1;
   }
   return counts;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Repositioning prázdnych a prekládka (T6C-03, ADR-034): ručne vložené ponuky a ťahanie sveta po udalostiach
+// ---------------------------------------------------------------------------------------------------------
+
+/** Spoločné podmienky ručne vloženej ponuky F6c (odmena 1 000 000, SLA 3 dni, loď `feeder`, linka `blue_anchor`). */
+function f6cTerms(world: World, lineId: string, slaDays: number) {
+  const tick = world.clock.tick;
+  return {
+    slaDays,
+    rewardCents: 1_000_000,
+    xpReward: 10,
+    offeredTick: tick,
+    offerExpiresTick: tick + 2 * TICKS_PER_DAY,
+    shipClassId: 'feeder',
+    cargoTypeId: 'container_teu',
+    lineId,
+  };
+}
+
+export interface RepositioningOptions {
+  /** Bookované prázdne (predvolene 4). */
+  readonly booked?: number;
+  readonly lineId?: string;
+  readonly slaDays?: number;
+  readonly destinationPort?: string;
+  /** Spolu s exportom jednej voyage: bookované TEU exportu (export kontrakt má nižšie id než repositioning); predvolene bez exportu. */
+  readonly withExport?: number;
+}
+
+/** Vloží do knihy ponuku repositioningu prázdnych linky (vlastná voyage, alebo spolu s exportom jednej voyage); vráti kontrakt repositioningu. */
+export function offerRepositioning(world: World, options: RepositioningOptions = {}): EmptyRepositioningContract {
+  const { booked = 4, lineId = 'blue_anchor', slaDays = 3, destinationPort = 'Hamburg', withExport } = options;
+  const book = world.contractBook;
+  const voyageId = book.allocateVoyageId();
+  if (withExport !== undefined) {
+    book.add(
+      new ExportContract({
+        ...f6cTerms(world, lineId, slaDays),
+        id: book.allocateId(),
+        voyageId,
+        templateId: 'container_feeder_export_repositioning',
+        volumeUnits: withExport,
+        destinationPort,
+      }),
+    );
+  }
+  const contract = new EmptyRepositioningContract({
+    ...f6cTerms(world, lineId, slaDays),
+    id: book.allocateId(),
+    voyageId,
+    templateId: 'container_feeder_repositioning',
+    volumeUnits: booked,
+    destinationPort,
+  });
+  book.add(contract);
+  return contract;
+}
+
+export interface TranshipOptions {
+  /** Prekladané TEU (predvolene 4). */
+  readonly units?: number;
+  readonly lineId?: string;
+  readonly slaDays?: number;
+  readonly destinationPort?: string;
+}
+
+/** Vloží do knihy ponuku prekládky (voyage lode A a voyage lode B); vráti kontrakt. */
+export function offerTranship(world: World, options: TranshipOptions = {}): TranshipContract {
+  const { units = 4, lineId = 'blue_anchor', slaDays = 3, destinationPort = 'Hamburg' } = options;
+  const book = world.contractBook;
+  const contract = new TranshipContract({
+    ...f6cTerms(world, lineId, slaDays),
+    id: book.allocateId(),
+    voyageId: book.allocateVoyageId(),
+    outVoyageId: book.allocateVoyageId(),
+    templateId: 'container_feeder_tranship',
+    volumeUnits: units,
+    destinationPort,
+  });
+  book.add(contract);
+  return contract;
+}
+
+/** Plní depo prázdnymi linky `lineId` (`putEmpty`); vráti id jednotiek. */
+export function stockDepot(world: World, lineId: string, count: number, status: 'available' | 'damaged' | 'in_repair' = 'available'): EntityId[] {
+  const depot = depotOf(world);
+  return Array.from({ length: count }, () => putEmpty(world, depot, lineId, status));
+}
+
+/** Stratené jednotky: vytvorené − živé − exportované − odplávané (musí byť vždy 0). */
+export function lost(world: World): number {
+  return world.cargo.createdCount - world.cargo.liveCount - world.cargo.exportedCount - world.cargo.shippedCount;
 }

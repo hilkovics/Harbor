@@ -8,6 +8,10 @@
  * - Booking ponuky (`drawBookingOffer`, ADR-032 bod 1) ťahá pool oddelene od import ponúk, po nich a len pri `DayClosed`
  *   (nie pri štarte hry): šablóna zo skupiny `booking` (`export`, `roundtrip`), trieda lode, mierka objemu, SLA a cieľový
  *   prístav; roundtrip vytvorí import (id n) a export (id n + 1) s jednou voyage, obom s rovnakou triedou lode a SLA.
+ * - Ponuky F6c (ADR-034) ťahá pool tiež oddelene a po booking ponukách (`drawRepositioningOffer`, `drawTranshipOffer`; `ContractSystem` ich dopĺňa
+ *   len pri `DayClosed` a len v prístave s depom prázdnych): **repositioning** (šablóna `empty_repositioning`: vlastná voyage, alebo s exportom
+ *   `exportVolumeUnitsRange` — export (id n) a repositioning (id n + 1) na jednej voyage), **prekládka** (šablóna `tranship`: voyage lode A a voyage
+ *   lode B — dve postupné voyage knihy, jeden kontrakt). Spotreba `Rng` ako pri booking ponuke: šablóna, loď, mierka, SLA, cieľový prístav.
  * - Jedna ponuka (`drawOffer`) spotrebuje zo `Rng` v tomto poradí: šablóna (`weighted` medzi šablónami s
  *   `minTier ≤ tier` a váhou > 0), trieda lode (`pick` zo `shipClassIds`), mierka objemu (`range(volumeScaleRange)`),
  *   SLA (`int(slaDaysRange)`). Objem = `clamp(round(mierka × hint), volumeUnitsRange)`, najviac kapacita lode a pri
@@ -22,7 +26,7 @@ import type { DefRegistry } from '../defs/def-registry';
 import { DEFAULT_TEMPLATE_KIND, type ContractTemplateDef, type ContractTemplateKind } from '../defs/types';
 import type { Module } from '../modules/module';
 import type { StatResolver } from '../tech/stat-resolver';
-import { ExportContract, ImportContract, type Contract } from './contract';
+import { EmptyRepositioningContract, ExportContract, ImportContract, TranshipContract, type Contract } from './contract';
 import { contractRewardCents, contractXpReward, lineForVoyage, maxSlaDaysOf, urgencyBp } from './contract-terms';
 
 /** Najkratšia platnosť ponuky v tickoch (ponuka musí prežiť aspoň tick svojho vzniku). */
@@ -85,14 +89,16 @@ export interface OfferContext {
 }
 
 /**
- * Skupiny šablón, z ktorých pool losuje oddelene (ADR-032 bod 1): `import` ponuky (šablóny `import`, F5) a `booking`
- * ponuky (šablóny `export` a `roundtrip`, počet `economy.bookingOffersPerDay`). Tabuľka (nie switch) — nový druh šablóny
- * = nový prvok skupiny. Šablóny F6c (`empty_repositioning`, `tranship`) v žiadnej skupine nie sú — pool ich ponúkne až po
- * T6C-03 (ADR-034), takže svet F6a sa pridaním šablón do defov nemení.
+ * Skupiny šablón, z ktorých pool losuje oddelene (ADR-032 bod 1, ADR-034): `import` ponuky (šablóny `import`, F5), `booking` ponuky (šablóny
+ * `export` a `roundtrip`, počet `economy.bookingOffersPerDay`), `repositioning` (šablóny `empty_repositioning`, `economy.repositioningOffersPerDay`)
+ * a `tranship` (šablóny `tranship`, `economy.transhipOffersPerDay`). Tabuľka (nie switch) — nový druh šablóny = nový prvok skupiny. Ponuky F6c
+ * pool ťahá len v prístave s depom prázdnych (`ContractSystem`), takže svet bez depa ostáva bitovo rovnaký ako vo F6a.
  */
 export const TEMPLATE_GROUP_KINDS = Object.freeze({
   import: Object.freeze(['import'] as const),
   booking: Object.freeze(['export', 'roundtrip'] as const),
+  repositioning: Object.freeze(['empty_repositioning'] as const),
+  tranship: Object.freeze(['tranship'] as const),
 } satisfies Record<string, readonly ContractTemplateKind[]>);
 export type TemplateGroup = keyof typeof TEMPLATE_GROUP_KINDS;
 
@@ -181,6 +187,57 @@ function buildExport(context: OfferContext, terms: DrawnTerms, id: ContractId, v
   });
 }
 
+/** Repositioning prázdnych kontajnerov (ADR-034): odmena za celý booking `⌊booked × repositioningPricePerUnitCents × urgency⌋`, bez cut-off. */
+function buildRepositioning(context: OfferContext, terms: DrawnTerms, id: ContractId, voyageId: VoyageId, bookedUnits: number, destinationPort: string): EmptyRepositioningContract {
+  const { defs } = context;
+  const cargoType = defs.cargoTypes.get(terms.template.cargoTypeId);
+  return new EmptyRepositioningContract({
+    id,
+    voyageId,
+    templateId: terms.template.id,
+    cargoTypeId: terms.template.cargoTypeId,
+    volumeUnits: bookedUnits,
+    slaDays: terms.slaDays,
+    rewardCents: contractRewardCents(bookedUnits, cargoType.repositioningPricePerUnitCents, terms.urgency),
+    xpReward: contractXpReward(bookedUnits, cargoType.xpPerUnit, defs.economy.xpMultiplier),
+    offeredTick: terms.offeredTick,
+    offerExpiresTick: terms.offerExpiresTick,
+    shipClassId: terms.shipClassId,
+    lineId: lineForVoyage(defs.lines.items, voyageId),
+    destinationPort,
+  });
+}
+
+/** Prekládka loď → loď (ADR-034): odmena `⌊N × transhipPricePerUnitCents × urgency⌋`; voyage lode A (`voyageId`) a lode B (`outVoyageId`). */
+function buildTranship(
+  context: OfferContext,
+  terms: DrawnTerms,
+  id: ContractId,
+  voyageId: VoyageId,
+  outVoyageId: VoyageId,
+  volumeUnits: number,
+  destinationPort: string,
+): TranshipContract {
+  const { defs } = context;
+  const cargoType = defs.cargoTypes.get(terms.template.cargoTypeId);
+  return new TranshipContract({
+    id,
+    voyageId,
+    outVoyageId,
+    templateId: terms.template.id,
+    cargoTypeId: terms.template.cargoTypeId,
+    volumeUnits,
+    slaDays: terms.slaDays,
+    rewardCents: contractRewardCents(volumeUnits, cargoType.transhipPricePerUnitCents, terms.urgency),
+    xpReward: contractXpReward(volumeUnits, cargoType.xpPerUnit, defs.economy.xpMultiplier),
+    offeredTick: terms.offeredTick,
+    offerExpiresTick: terms.offerExpiresTick,
+    shipClassId: terms.shipClassId,
+    lineId: lineForVoyage(defs.lines.items, voyageId),
+    destinationPort,
+  });
+}
+
 /**
  * Kontrakty booking ponuky podľa druhu šablóny (tabuľka, nie switch — pravidlo 7): `export` = jeden booking s vlastnou
  * voyage (bookované TEU z `volumeUnitsRange`), `roundtrip` = import z `volumeUnitsRange` (id n) a export z
@@ -234,4 +291,47 @@ export function drawBookingOffer(context: OfferContext): Contract[] {
   const destinationPort = rng.pick(template.destinationPorts as readonly string[]);
   const build = BOOKING_BUILDERS[template.kind as 'export' | 'roundtrip'];
   return build(context, drawnTerms(context, template, shipClassId, scale, slaDays), destinationPort);
+}
+
+/**
+ * Spoločné ťahy `Rng` ponuky F6c (viď hlavička súboru) a výber šablóny skupiny `group`; bez vhodnej šablóny `undefined` (a `Rng` sa nespotrebuje).
+ * Poradie: šablóna (`weighted`), trieda lode (`pick`), mierka objemu (`range`), SLA (`int`), cieľový prístav (`pick`).
+ */
+function drawF6cTerms(context: OfferContext, group: 'repositioning' | 'tranship'): { readonly terms: DrawnTerms; readonly destinationPort: string } | undefined {
+  const { defs, rng } = context;
+  const eligible = eligibleTemplates(defs.contractTemplates.items, context.tier, group);
+  if (eligible.length === 0) return undefined;
+  const template = rng.weighted(eligible, (item) => item.weight);
+  const shipClassId = rng.pick(template.shipClassIds);
+  const [minScale, maxScale] = defs.economy.volumeScaleRange;
+  const scale = rng.range(minScale, maxScale);
+  const slaDays = rng.int(template.slaDaysRange[0], template.slaDaysRange[1]);
+  const destinationPort = rng.pick(template.destinationPorts as readonly string[]);
+  return { terms: drawnTerms(context, template, shipClassId, scale, slaDays), destinationPort };
+}
+
+/**
+ * Nová ponuka repositioningu prázdnych (skupina kontraktov jednej voyage vzostupne podľa id), alebo prázdne pole, keď pri danom tieri nie je
+ * šablóna `empty_repositioning`. Šablóna s `exportVolumeUnitsRange` = export (id n) a repositioning (id n + 1) na jednej voyage, inak vlastná voyage.
+ */
+export function drawRepositioningOffer(context: OfferContext): Contract[] {
+  const drawn = drawF6cTerms(context, 'repositioning');
+  if (drawn === undefined) return [];
+  const { terms, destinationPort } = drawn;
+  const voyageId = context.nextVoyageId();
+  const exportRange = terms.template.exportVolumeUnitsRange;
+  const contracts: Contract[] = [];
+  if (exportRange !== undefined) contracts.push(buildExport(context, terms, context.nextId(), voyageId, volumeOf(context, terms, exportRange), destinationPort));
+  contracts.push(buildRepositioning(context, terms, context.nextId(), voyageId, volumeOf(context, terms, terms.template.volumeUnitsRange), destinationPort));
+  return contracts;
+}
+
+/** Nová ponuka prekládky (jeden kontrakt: voyage lode A, potom voyage lode B), alebo prázdne pole, keď pri danom tieri nie je šablóna `tranship`. */
+export function drawTranshipOffer(context: OfferContext): Contract[] {
+  const drawn = drawF6cTerms(context, 'tranship');
+  if (drawn === undefined) return [];
+  const { terms, destinationPort } = drawn;
+  const voyageId = context.nextVoyageId();
+  const outVoyageId = context.nextVoyageId();
+  return [buildTranship(context, terms, context.nextId(), voyageId, outVoyageId, volumeOf(context, terms, terms.template.volumeUnitsRange), destinationPort)];
 }

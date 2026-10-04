@@ -424,6 +424,56 @@ export abstract class Contract {
   }
 
   /**
+   * Loď, na ktorú kontrakt nakladá (od jej spawnu): export a repositioning loď voyage (`shipId`), prekládka loď B (`outShipId`); import nenakladá
+   * (`undefined`). Podľa nej `openLoadBookings` nájde bookingy lode a ledger priradí naložené prázdne repositioningu (ADR-034).
+   */
+  get loadShipId(): EntityId | undefined {
+    return undefined;
+  }
+
+  /** Smie sa pre kontrakt teraz nakladať (stav kontraktu; loď musí byť navyše dokovaná)? Import nikdy. */
+  get acceptsLoading(): boolean {
+    return false;
+  }
+
+  /** Patrí jednotka medzi náklad, ktorý kontrakt nakladá na loď (export: jeho jednotky, prekládka: jej jednotky, repositioning: prázdne jeho linky)? */
+  loadsUnit(unit: CargoUnit): boolean {
+    void unit;
+    return false;
+  }
+
+  /**
+   * Jednotka `unit` bola pridelená nakládke (dispatcher jej otvoril job `→ in_crane`): repositioning ju započíta do `arrivedUnits`
+   * (prázdne nechodia bránou, prideľuje ich depo); export a prekládka majú jednotky započítané inde (brána, vykládka lode A).
+   */
+  assignLoad(unit: CargoUnit): void {
+    void unit;
+  }
+
+  /** Najviac toľko ďalších jednotiek smie dispatcher kontraktu prideliť nakládke (`assignLoad`); bez obmedzenia `Infinity` (export, prekládka). */
+  get loadsToAssign(): number {
+    return Infinity;
+  }
+
+  /**
+   * Nakladá sa kontrakt až po plných jednotkách lode (stowage plán: prázdne po plných, ADR-034 bod 10)? Dispatcher mu nepridelí nakládku, kým má
+   * loď prijaté a nenaložené jednotky bookingov, ktoré to nemajú (export, prekládka). Repositioning áno.
+   */
+  get loadsAfterFullUnits(): boolean {
+    return false;
+  }
+
+  /** Jednotky, za ktoré sa pri uzavretí účtuje penalizácia „rolled“ (prijaté a nenaložené); prekládka a repositioning ich nemajú (ADR-034). */
+  get rolledAtClose(): number {
+    return 0;
+  }
+
+  /** Má kontrakt cut-off a plán príchodov kamiónov (export)? Podľa toho pool volí rozsah príchodu lode (`exportArrivalDaysRange`, ADR-032). */
+  get hasCutoff(): boolean {
+    return false;
+  }
+
+  /**
    * Plán po prijatí ponuky (`AcceptContract`): `acceptedTick`, `shipArrivalTick` a `slaDeadlineTick = shipArrivalTick +
    * slaDays × ticksPerDay`, potom plán špecifický pre druh (`planBooking`: export cut-off a plán príchodov z `rng`).
    * Stav `offered → accepted` mení volajúci cez `ContractBook.changeState`. Kontrakt mimo `offered` →
@@ -745,6 +795,28 @@ export class ExportContract extends Contract implements ExportBooking {
     return this.state === 'exporting';
   }
 
+  override get loadShipId(): EntityId | undefined {
+    return this.shipId;
+  }
+
+  /** Export sa nakladá na loď voyage, kým je booking v `exporting` (loď pri kotvisku). */
+  override get acceptsLoading(): boolean {
+    return this.state === 'exporting';
+  }
+
+  override loadsUnit(unit: CargoUnit): boolean {
+    return unit.direction === 'export' && unit.contractId === this.id;
+  }
+
+  /** Export: prijaté a nenaložené jednotky (vrátené odosielateľovi po uzavretí sú odpočítané počítadlom `unitsExported`). */
+  override get rolledAtClose(): number {
+    return Math.max(0, this.arrivedUnits - this.loadedUnits);
+  }
+
+  override get hasCutoff(): boolean {
+    return true;
+  }
+
   override get booking(): ExportBooking {
     return this;
   }
@@ -881,6 +953,35 @@ export class EmptyRepositioningContract extends ExportContract {
     void context;
   }
 
+  override get hasCutoff(): boolean {
+    return false;
+  }
+
+  /** Prázdny kontajner nemá `contractId` — nakladá sa ako náklad bookingu, ak je to prázdny linky kontraktu (a loď má tento booking, rozhoduje `openLoadBookings`). */
+  override loadsUnit(unit: CargoUnit): boolean {
+    return unit.direction === 'empty' && unit.lineId === this.lineId;
+  }
+
+  /** Pridelená prázdna jednotka sa počíta ako „prijatá“ (`arrivedUnits`): z nej loď vie, koľko prázdnych ešte čaká na nakládku. */
+  override assignLoad(unit: CargoUnit): void {
+    void unit;
+    this.arrivedUnits += 1;
+  }
+
+  /** Dispatcher pridelí nakládke najviac toľko prázdnych, koľko je bookovaných (`volumeUnits − arrivedUnits`). */
+  override get loadsToAssign(): number {
+    return Math.max(0, this.volumeUnits - this.arrivedUnits);
+  }
+
+  override get loadsAfterFullUnits(): boolean {
+    return true;
+  }
+
+  /** Repositioning netrestá „rolled“ jednotky — nepridelené / nenaložené prázdne rieši penalizácia za nesplnený booking. */
+  override get rolledAtClose(): number {
+    return 0;
+  }
+
   override countersProblem(): string | undefined {
     const base = super.countersProblem();
     if (base !== undefined) return base;
@@ -904,7 +1005,8 @@ const MIN_TRANSHIP_GAP_TICKS = 1;
  * Plán lode B (`outArrivalTick`, `outShipId`, `rescueDeadlineTick`) je v save časti `tranship`.
  */
 export class TranshipContract extends ExportContract implements TranshipLeg {
-  readonly outVoyageId: VoyageId;
+  /** Voyage lode B; mení ju len záchrana zmeškanej prekládky (`redirect`, `ContractBook.redirectTranship`). */
+  outVoyageId: VoyageId;
   outArrivalTick: number | undefined;
   outShipId: EntityId | undefined;
   rescueDeadlineTick: number | undefined;
@@ -978,6 +1080,40 @@ export class TranshipContract extends ExportContract implements TranshipLeg {
   /** Loď A privezie všetky jednotky prekládky (ako import), náklad nakladá loď B. */
   override get spawnUnits(): number {
     return this.volumeUnits;
+  }
+
+  /** Prekládku nakladá loď B (od jej spawnu; po záchrane zmeškanej prekládky ďalšia loď linky). */
+  override get loadShipId(): EntityId | undefined {
+    return this.outShipId;
+  }
+
+  /** Prekládka sa nakladá na loď B, keď už má vyložené jednotky (`unloading` — vykládka z A ešte beží — alebo `exporting`). */
+  override get acceptsLoading(): boolean {
+    return this.state === 'unloading' || this.state === 'exporting';
+  }
+
+  override loadsUnit(unit: CargoUnit): boolean {
+    return unit.direction === 'tranship' && unit.contractId === this.id;
+  }
+
+  override get hasCutoff(): boolean {
+    return false;
+  }
+
+  /** Zmeškané jednotky sa penalizujú hneď pri zmeškaní lode B (`TranshipMissed`), pri uzavretí sa „rolled“ neúčtuje druhýkrát. */
+  override get rolledAtClose(): number {
+    return 0;
+  }
+
+  /**
+   * Záchrana zmeškanej prekládky (ADR-034): preadresuje ju na voyage `outVoyageId` ďalšej lode linky — jej plánovaný príchod
+   * `outArrivalTick` a loď `outShipId` (ak už vznikla); záchranná lehota zaniká. Index voyage v knihe prepíše `ContractBook.redirectTranship`.
+   */
+  redirect(outVoyageId: VoyageId, outArrivalTick: number, outShipId: EntityId | undefined): void {
+    this.outVoyageId = outVoyageId;
+    this.outArrivalTick = outArrivalTick;
+    this.outShipId = outShipId;
+    this.rescueDeadlineTick = undefined;
   }
 
   /** Jednotky prekládky: smer `tranship`, voyage lode A (kontraktu), linka a cieľový prístav lode B. */

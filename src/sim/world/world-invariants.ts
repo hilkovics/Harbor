@@ -77,7 +77,9 @@
 import { CARGO_HOLDER_KINDS, holderIdOf, slotOf, uniqueSlotOf } from '../cargo/cargo-location';
 import { OPPOSITE_DIRECTION } from '../grid/road-direction';
 import { DEFAULT_ROAD_KIND, ROAD_KIND_TRAITS, isRoadKind } from '../grid/road-kind';
-import { CONTRACT_STATE_TRAITS } from '../contracts/contract-fsm';
+import type { Contract } from '../contracts/contract';
+import { CONTRACT_STATE_TRAITS, type ContractKind } from '../contracts/contract-fsm';
+import { importAboard } from '../logistics/voyage-cargo';
 import type { ContractId, EntityId } from '../core/entity-id';
 import type { CargoCategory } from '../defs/types';
 import type { Cell } from '../grid/grid';
@@ -943,41 +945,51 @@ const checkTrucks: Check = (world) => {
 };
 
 /**
- * Kontrakty (ADR-026, ADR-032), O(neukončené kontrakty) bez alokácie: počet ponúk po skupinách voyage (import ≤
- * `offersPerDay`, booking ≤ `bookingOffersPerDay`, `ContractBook.offeredGroups`); počítadlá podľa druhu
- * (`Contract.countersProblem` — import `unitsExported ≤ unitsUnloaded ≤ volumeUnits`, `exporting` má vyložený celý objem;
- * export booking pozri `ExportContract`); index zadržaných jednotiek = Σ `heldUnits` bookingov; kontrakt, ktorý vlastní
- * náklad na palube (`carriesShipCargo`: import v `ship_en_route`, `unloading`), má loď na mape s triedou a nákladom
- * kontraktu a na jej palube práve `volumeUnits − unitsUnloaded` **import** jednotiek (naložený export voyage sa nepočíta); otvorený export
- * booking s loďou na mape má `loadedUnits` = počet jednotiek exportu `on_ship` s jeho `contractId` (T6A-09b; po odchode lode, keď sú
- * jednotky `shipped`, sa neoveruje — booking sa uzavrie v nasledujúcom ticku); index uskladneného nákladu (`World.storedCargo`, ADR-027) má toľko jednotiek, koľko ich je
- * `in_storage`. Väzbu jednotka → kontrakt overuje obnova save (`checkContracts` vo world-restore).
+ * Kontrakty (ADR-026, ADR-032, ADR-034), O(neukončené kontrakty) bez alokácie: počet ponúk po skupinách voyage (import ≤
+ * `offersPerDay`, booking ≤ `bookingOffersPerDay`, repositioning ≤ `repositioningOffersPerDay`, prekládka ≤ `transhipOffersPerDay`,
+ * `ContractBook.offeredGroups`); počítadlá podľa druhu (`Contract.countersProblem` — import `unitsExported ≤ unitsUnloaded ≤ volumeUnits`,
+ * `exporting` má vyložený celý objem; export booking pozri `ExportContract`); index zadržaných jednotiek = Σ `heldUnits` bookingov;
+ * kontrakt, ktorý vlastní náklad na palube (`carriesShipCargo`: import a prekládka v `ship_en_route`, `unloading`), má loď na mape s triedou
+ * a nákladom kontraktu a na jej palube práve `volumeUnits − unitsUnloaded` jednotiek na vykládku (naložený náklad lode sa nepočíta);
+ * otvorený booking s loďou na mape, na ktorú nakladá (`loadShipId`), má `loadedUnits` = počet jednotiek jeho nákladu na jej palube
+ * (`Contract.loadsUnit`: export podľa kontraktu, prázdne repositioningu podľa linky; T6A-09b; prekládka najviac — po záchrane zmeškanej prekládky
+ * sú dávky naložené na predchádzajúcu loď už `shipped`); po odchode lode, keď sú jednotky `shipped`, sa neoveruje — booking sa uzavrie
+ * v nasledujúcom ticku); index uskladneného nákladu (`World.storedCargo`, ADR-027) má toľko jednotiek, koľko ich je `in_storage`. Väzbu
+ * jednotka → kontrakt overuje obnova save (`checkContracts` vo world-restore).
  */
-/**
- * Jednotky na palube lode, ktoré loď privezla (smer `import`, a od F6c `tranship` na lodi A); naložený export voyage ani prázdne
- * sa nepočítajú (ADR-032, ADR-034); bez alokácie.
- */
-function importAboard(world: World, shipId: EntityId): number {
-  const count = world.cargo.countAt('on_ship', shipId);
-  let imports = 0;
-  for (let i = 0; i < count; i++) {
-    const unitId = world.cargo.unitAtIndex('on_ship', shipId, i);
-    const direction = unitId === undefined ? undefined : world.cargo.get(unitId)?.direction;
-    if (direction === 'import' || direction === 'tranship') imports += 1;
-  }
-  return imports;
-}
-
-/** Jednotky exportu kontraktu `contractId` na palube lode (bez alokácie). */
-function exportsAboardOf(world: World, shipId: EntityId, contractId: ContractId): number {
+/** Počet jednotiek nákladu kontraktu `contract` na palube lode `shipId` (`Contract.loadsUnit`, bez alokácie). */
+function loadedAboardOf(world: World, shipId: EntityId, contract: Contract): number {
   const count = world.cargo.countAt('on_ship', shipId);
   let units = 0;
   for (let i = 0; i < count; i++) {
     const unitId = world.cargo.unitAtIndex('on_ship', shipId, i);
     const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
-    if (unit?.direction === 'export' && unit.contractId === contractId) units += 1;
+    if (unit !== undefined && contract.loadsUnit(unit)) units += 1;
   }
   return units;
+}
+
+/** Dva bookingy repositioningu jednej lode a linky nakladajú tie isté prázdne (prázdne nemajú kontrakt) — ich naložené jednotky sa sčítajú. */
+const sharesEmpties = (a: Contract, b: Contract): boolean => a.kind === 'empty_repositioning' && b.kind === a.kind && a.loadShipId === b.loadShipId && a.lineId === b.lineId;
+
+/** Naložené jednotky bookingu na jeho lodi: export a prázdne presne (`exact`), prekládka najviac (`at_most` — záchrana nakladá ďalšiu loď). */
+const LOADED_ABOARD_CHECK: { readonly [K in ContractKind]: 'exact' | 'at_most' } = Object.freeze({
+  import: 'exact',
+  export: 'exact',
+  empty_repositioning: 'exact',
+  tranship: 'at_most',
+});
+
+/** Porušenie vzťahu `loadedUnits` bookingu k jednotkám na jeho lodi (viď hlavička kontraktov), alebo `undefined`. */
+function loadedProblem(world: World, contract: Contract): string | undefined {
+  const booking = contract.booking;
+  const ship = contract.loadShipId === undefined ? undefined : world.ships.get(contract.loadShipId);
+  if (booking === null || ship === undefined) return undefined;
+  const aboard = loadedAboardOf(world, ship.id, contract);
+  let loaded = booking.loadedUnits;
+  for (const other of world.contractBook.openContracts.values()) if (other !== contract && sharesEmpties(contract, other)) loaded += other.booking?.loadedUnits ?? 0;
+  const ok = LOADED_ABOARD_CHECK[contract.kind] === 'exact' ? aboard === loaded : aboard <= loaded;
+  return ok ? undefined : `${contract.label}: loadedUnits ${String(loaded)}, na ${ship.label} je ${String(aboard)} jednotiek nákladu bookingu`;
 }
 
 const checkContracts: Check = (world) => {
@@ -987,16 +999,8 @@ const checkContracts: Check = (world) => {
     if (CONTRACT_STATE_TRAITS[state].offer) offers += 1;
     const counters = contract.countersProblem();
     if (counters !== undefined) return `${label}: ${counters}`;
-    const booking = contract.booking;
-    // Naložené jednotky exportu nesú `contractId` bookingu; prázdne repositioningu (bez `contractId`) a prekládka na lodi B majú
-    // vlastnú kontrolu (T6C-03, ADR-034).
-    const bookedShip = booking === null || contract.kind !== 'export' || contract.shipId === undefined ? undefined : world.ships.get(contract.shipId);
-    if (booking !== null && bookedShip !== undefined) {
-      const loadedAboard = exportsAboardOf(world, bookedShip.id, contract.id);
-      if (loadedAboard !== booking.loadedUnits) {
-        return `${label}: loadedUnits ${String(booking.loadedUnits)}, na ${bookedShip.label} je ${String(loadedAboard)} jednotiek exportu bookingu`;
-      }
-    }
+    const loaded = loadedProblem(world, contract);
+    if (loaded !== undefined) return loaded;
     if (!contract.carriesShipCargo) continue;
     const ship = contract.shipId === undefined ? undefined : world.ships.get(contract.shipId);
     if (ship === undefined) return `${label}: loď kontraktu #${String(contract.shipId)} nie je na mape`;

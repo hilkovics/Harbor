@@ -37,7 +37,7 @@ import {
   type CraneState,
 } from '../modules/crane-module';
 import { ModuleError } from '../modules/module-error';
-import { countShipCranes, importAboard, isLoadingInFlight, openExportBookings, stowageOutOfOrder } from '../logistics/voyage-cargo';
+import { countShipCranes, importAboard, isLoadingInFlight, openLoadBookings, stowageOutOfOrder } from '../logistics/voyage-cargo';
 import type { Contract } from '../contracts/contract';
 import type { EntityId } from '../core/entity-id';
 import type { Ship } from '../ships/ship';
@@ -137,7 +137,7 @@ function enterGrabbing(world: World, crane: CraneModule, cycle: CraneCycle, targ
 }
 
 /** Znovupoužiteľné pole bookingov lode pre `start` (hot path bez alokácie; obsah sa vždy najprv vyprázdni). */
-const EXPORT_BOOKINGS: Contract[] = [];
+const LOAD_BOOKINGS: Contract[] = [];
 
 /** Štart cyklu z `idle`/`blocked` (viď hlavička súboru). */
 function start(crane: CraneModule, world: World): void {
@@ -150,7 +150,7 @@ function start(crane: CraneModule, world: World): void {
   const env: CraneEnv = { world, crane, berth, ship };
   const handover = HANDOVERS[berth.params.handoverMode];
   const imports = unclaimedImports(world, ship);
-  const bookings: readonly Contract[] = openExportBookings(world, ship.id, EXPORT_BOOKINGS);
+  const bookings: readonly Contract[] = openLoadBookings(world, ship.id, LOAD_BOOKINGS);
   const loadUnit = bookings.length > 0 && shipHasRoom(world, ship) ? handover.loadable(env, bookings) : undefined;
   if (loadUnit !== undefined) {
     enterGrabbing(world, crane, imports > 0 ? 'dual_load' : 'load', loadUnit);
@@ -245,14 +245,18 @@ function placeLoaded(crane: CraneModule, world: World): void {
   const ship = servedShip(world, crane, berth);
   const unitId = crane.heldUnitId;
   const unit = unitId === null ? undefined : world.cargo.get(unitId);
-  if (ship === undefined || unit === undefined || unit.contractId === null) {
-    throw new ModuleError('invalid_transition', `${crane.label}: koniec placing nakládky bez lode (${String(ship?.id)}) alebo jednotky exportu (${String(unitId)})`);
+  if (ship === undefined || unit === undefined) {
+    throw new ModuleError('invalid_transition', `${crane.label}: koniec placing nakládky bez lode (${String(ship?.id)}) alebo jednotky (${String(unitId)})`);
   }
-  const outOfOrder = stowageOutOfOrder(world, unit);
-  const contract = world.contractBook.get(unit.contractId);
-  const lastMinute = contract?.booking?.rolledUnitIds.includes(unit.id) ?? false;
+  // Booking, ktorého náklad jednotka je (export / prekládka podľa kontraktu, prázdne podľa linky): ním sa riadi `UnitLoaded` aj last minute.
+  const booking = openLoadBookings(world, ship.id, LOAD_BOOKINGS).find((contract) => contract.loadsUnit(unit)) ?? (unit.contractId === null ? undefined : world.contractBook.get(unit.contractId));
+  if (booking === undefined) {
+    throw new ModuleError('invalid_transition', `${crane.label}: jednotka #${String(unit.id)} (${unit.direction}) nie je nákladom žiadneho bookingu lode #${String(ship.id)}`);
+  }
+  const outOfOrder = stowageOutOfOrder(world, unit, ship.id);
+  const lastMinute = booking.booking?.rolledUnitIds.includes(unit.id) ?? false;
   world.cargo.move(unit.id, { kind: 'on_ship', shipId: ship.id });
-  world.events.emit({ type: 'UnitLoaded', craneId: crane.id, shipId: ship.id, unitId: unit.id, contractId: unit.contractId, lastMinute, outOfOrder });
+  world.events.emit({ type: 'UnitLoaded', craneId: crane.id, shipId: ship.id, unitId: unit.id, contractId: booking.id, lastMinute, outOfOrder });
   crane.heldUnitId = null;
   crane.transition('idle');
   if (crane.cycle === 'dual_load' && unclaimedImports(world, ship) > 0) {

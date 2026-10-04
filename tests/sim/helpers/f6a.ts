@@ -39,7 +39,7 @@ export interface F6aDefsOptions {
 }
 
 /**
- * Defy pre svety exportu: bez ponúk poolu (`offersPerDay` 0, `bookingOffersPerDay` 0), príchod lode 1 deň po prijatí,
+ * Defy pre svety exportu: bez ponúk poolu (`offersPerDay`, `bookingOffersPerDay`, `repositioningOffersPerDay`, `transhipOffersPerDay` 0), príchod lode 1 deň po prijatí,
  * okno príchodov 1 deň (viď hlavička). `overrides` prepíšu čokoľvek z toho.
  */
 export function f6aDefs(overrides: F6aDefsOptions = {}): DefRegistry {
@@ -59,6 +59,8 @@ export function f6aDefs(overrides: F6aDefsOptions = {}): DefRegistry {
       ...RAW_DEFS.economy,
       offersPerDay: 0,
       bookingOffersPerDay: 0,
+      repositioningOffersPerDay: 0,
+      transhipOffersPerDay: 0,
       exportArrivalDaysRange: [F6A_ARRIVAL_DAYS, F6A_ARRIVAL_DAYS],
       cutoffHours: F6A_CUTOFF_HOURS,
       ...overrides.economy,

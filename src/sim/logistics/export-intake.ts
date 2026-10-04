@@ -17,6 +17,7 @@ import type { CargoUnit } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
 import type { CargoCategory } from '../defs/types';
 import type { LoadingRamp } from '../modules/loading-ramp';
+import type { Module } from '../modules/module';
 import { StorageModule } from '../modules/storage-module';
 import type { World } from '../world/world';
 import { allocateStorage } from './storage-allocator';
@@ -54,22 +55,28 @@ function groupStorages(world: World, unit: CargoUnit): readonly EntityId[] {
 }
 
 /**
- * Sklad pre jednotku exportu z rampy `ramp` (viď hlavička): najbližší sklad voyage s voľnou kapacitou a dosiahnuteľný po
+ * Sklad pre jednotku zoskupenú podľa kontraktu (export z rampy, **prekládka z kotviska lode A**, ADR-034 — „uložia zoskupene podľa B“)
+ * zo zdroja `source` (viď hlavička): najbližší sklad kontraktu s voľnou kapacitou, ktorý prijme smer jednotky a je dosiahnuteľný po
  * ceste, inak najbližší sklad s voľným miestom; inak `undefined`.
  */
-export function allocateExportStorage(world: World, ramp: LoadingRamp, unit: CargoUnit, category: CargoCategory): StorageModule | undefined {
+export function allocateGroupedStorage(world: World, source: Module, unit: CargoUnit, category: CargoCategory): StorageModule | undefined {
   let best: StorageModule | undefined;
   let bestDistance = Infinity;
   for (const storageId of groupStorages(world, unit)) {
     const storage = world.modules.get(storageId);
-    if (!(storage instanceof StorageModule) || storage.category !== category || !storage.acceptsDirection('export') || storage.freeCount <= 0) continue;
-    const distance = distanceBetweenModules(world, ramp, storage);
+    if (!(storage instanceof StorageModule) || storage.category !== category || !storage.acceptsDirection(unit.direction) || storage.freeCount <= 0) continue;
+    const distance = distanceBetweenModules(world, source, storage);
     if (distance < bestDistance) {
       best = storage;
       bestDistance = distance;
     }
   }
-  return best ?? allocateStorage(world, ramp, category);
+  return best ?? allocateStorage(world, source, category, unit.direction);
+}
+
+/** Sklad pre jednotku exportu z rampy `ramp` (`allocateGroupedStorage`). */
+export function allocateExportStorage(world: World, ramp: LoadingRamp, unit: CargoUnit, category: CargoCategory): StorageModule | undefined {
+  return allocateGroupedStorage(world, ramp, unit, category);
 }
 
 /** Podklady jobu: jednotka, zdroj (dock) a rezervovaný cieľ — dispatcher z toho vytvorí job (`openJob`). */

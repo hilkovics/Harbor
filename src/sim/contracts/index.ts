@@ -50,5 +50,16 @@ export {
   urgencyBp,
   wholePeriods,
 } from './contract-terms';
-export { TEMPLATE_GROUP_KINDS, capacityHintFrom, capacityHintOf, drawBookingOffer, drawOffer, eligibleTemplates, offerVolumeUnits, portCapacityOf } from './contract-pool';
+export {
+  TEMPLATE_GROUP_KINDS,
+  capacityHintFrom,
+  capacityHintOf,
+  drawBookingOffer,
+  drawOffer,
+  drawRepositioningOffer,
+  drawTranshipOffer,
+  eligibleTemplates,
+  offerVolumeUnits,
+  portCapacityOf,
+} from './contract-pool';
 export type { OfferContext, PortCapacity, TemplateGroup } from './contract-pool';

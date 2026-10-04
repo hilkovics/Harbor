@@ -5,6 +5,7 @@
  * - `emptyCargoTypeId` — typ nákladu prázdneho kontajnera (prvý typ kategórie depa, `container`);
  * - `allocateEmptyStorage` — kam uloží prázdny z rampy: najbližšie depo s voľným miestom; **fallback** (depo chýba, je plné alebo
  *   nedosiahnuteľné) najbližší bežný sklad kategórie s voľným miestom (`EmptyStored.fallback`);
+ * - `countAvailableEmpties` — koľko ich je (loď repositioningu na ne počká, kým nie sú pridelené nakládke);
  * - `findAvailableEmpty` — prázdny kontajner linky, ktorý možno vydať: v sklade, stav `available`, bez aktívneho jobu; depo pred
  *   bežným skladom, v rámci toho najmenšie id (nezávisí od poradia indexu, takže ho obnova save nemení).
  */
@@ -81,4 +82,14 @@ export function findAvailableEmpty(world: Pick<World, 'storedCargo' | 'cargo' | 
     }
   }
   return best;
+}
+
+/** Počet prázdnych kontajnerov linky `lineId`, ktoré možno prideliť nakládke (uskladnené, `available`, bez jobu); ako `findAvailableEmpty`, bez alokácie. */
+export function countAvailableEmpties(world: Pick<World, 'storedCargo' | 'cargo' | 'jobOfUnit'>, lineId: string): number {
+  let count = 0;
+  for (const unitId of world.storedCargo.emptiesOf(lineId)) {
+    const unit = world.cargo.get(unitId);
+    if (unit !== undefined && unit.status === 'available' && world.jobOfUnit(unitId) === undefined) count += 1;
+  }
+  return count;
 }

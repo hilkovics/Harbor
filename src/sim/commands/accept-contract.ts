@@ -9,20 +9,25 @@
  * roundtrip) sa po pripravenosti kotvísk posúdi aj **pozemná strana** (`exportLandsideReadiness`, ADR-032): `no_ramp_for_category`
  * — žiadna rampa kategórie, `ramp_inoperative` — žiadna nie je prevádzková (brána, stojisko, cesta od portálu),
  * `no_storage_for_category` — z prevádzkovej rampy nie je dosiahnuteľný sklad kategórie; bez nej by kamióny s exportom nevznikli
- * a booking by skončil penalizáciou. Validácia svet nemení a `Rng` nespotrebuje.
+ * a booking by skončil penalizáciou. Nové druhy F6c (ADR-034) majú vlastnú pripravenosť (`READINESS_BY_KIND`) a bránu ani rampu nepotrebujú:
+ * **repositioning prázdnych** vyžaduje depo prázdnych a **prekládka** sklad kategórie nákladu — inak `no_storage_for_category` (nový dôvod sa nezavádza).
+ * Validácia svet nemení a `Rng` nespotrebuje.
  *
  * `apply` (hotovosť sa nemení): príkaz pôsobí na **skupinu ponuky** (ADR-032 bod 1) — všetky `offered` kontrakty tej istej
  * voyage vzostupne podľa id (roundtrip = import + export booking; import ponuka alebo export-only je skupina o jednom
  * kontrakte). Plán lode je spoločný: `acceptedTick = clock.tick` (v príkazovej fáze ešte predchádzajúci tick),
  * `shipArrivalTick = acceptedTick + max(1, round(rng.range(dni) × ticksPerDay))` (jediný `Rng` sveta, jedno číslo; `dni` =
- * `exportArrivalDaysRange` pri skupine s exportom, inak `arrivalDaysRange`), `slaDeadlineTick = shipArrivalTick + slaDays ×
+ * `exportArrivalDaysRange` pri skupine s cut-off exportom (`Contract.hasCutoff`), inak `arrivalDaysRange`; prekládka a repositioning
+ * bez exportu cut-off nemajú), `slaDeadlineTick = shipArrivalTick + slaDays ×
  * ticksPerDay` každého kontraktu; export booking naplánuje cut-off a príchody kamiónov (`Contract.accept` — ťahy `Rng`
  * po ťahu príchodu, kontrakty vzostupne podľa id; v prístave s depom prázdnych potom ťahy výdaja prázdnych, F6c). Potom každý kontrakt `offered → accepted` (`ContractStateChanged`) a
  * `ContractAccepted`. Loď spawne `ContractSystem` v ticku príchodu.
  */
 import type { Contract } from '../contracts/contract';
 import type { ContractId } from '../core/entity-id';
-import { exportLandsideReadiness, type ExportReadiness } from '../logistics/export-readiness';
+import type { ContractKind } from '../contracts/contract-fsm';
+import type { CargoCategory } from '../defs/types';
+import { exportLandsideReadiness, repositioningReadiness, transhipReadiness, type ExportReadiness } from '../logistics/export-readiness';
 import { planEmptyPickups } from '../trucks/empty-plan';
 import { berthReadiness, type BerthReadiness } from '../ships/berth-allocator';
 import type { World } from '../world/world';
@@ -49,6 +54,17 @@ const EXPORT_READINESS_VERDICT: { readonly [R in ExportReadiness]: ValidationRes
   no_storage: offerVerdict('no_storage_for_category'),
 });
 
+/**
+ * Pripravenosť pozemnej strany / skladov podľa druhu kontraktu ponuky (tabuľka, nie switch — pravidlo 7): import nič navyše, export brána + rampa +
+ * sklad (ADR-032), repositioning depo prázdnych, prekládka sklad (ADR-034).
+ */
+const READINESS_BY_KIND: { readonly [K in ContractKind]: (world: World, category: CargoCategory) => ExportReadiness } = Object.freeze({
+  import: () => 'ready',
+  export: exportLandsideReadiness,
+  empty_repositioning: repositioningReadiness,
+  tranship: transhipReadiness,
+});
+
 export class AcceptContractCommand extends ContractOfferCommand {
   static readonly TYPE = 'AcceptContract';
 
@@ -71,15 +87,19 @@ export class AcceptContractCommand extends ContractOfferCommand {
     const request = { def: world.defs.ships.get(contract.shipClassId), cargoCategory: world.defs.cargoTypes.get(contract.cargoTypeId).category };
     const berths = READINESS_VERDICT[berthReadiness(world, request, (first) => world.shipTraffic.reachesBerth(request.def, first))];
     if (!berths.ok) return berths;
-    const withExport = world.contractBook.offeredOfVoyage(contract.voyageId).some((offered) => offered.booking !== null);
-    return withExport ? EXPORT_READINESS_VERDICT[exportLandsideReadiness(world, request.cargoCategory)] : berths;
+    // Skupina ponuky (voyage): každý jej kontrakt musí mať svoju pripravenosť (export aj repositioning jednej voyage), prvý chýbajúci článok vyhráva.
+    for (const offered of world.contractBook.offeredOfVoyage(contract.voyageId)) {
+      const verdict = EXPORT_READINESS_VERDICT[READINESS_BY_KIND[offered.kind](world, request.cargoCategory)];
+      if (!verdict.ok) return verdict;
+    }
+    return berths;
   }
 
   protected applyTo(world: World, offer: Contract): void {
     const { ticksPerDay, ticksPerHour, tick } = world.clock;
     const group = world.contractBook.offeredOfVoyage(offer.voyageId);
-    const withExport = group.some((contract) => contract.booking !== null);
-    const [minDays, maxDays] = withExport ? world.defs.economy.exportArrivalDaysRange : world.defs.economy.arrivalDaysRange;
+    const withCutoff = group.some((contract) => contract.hasCutoff);
+    const [minDays, maxDays] = withCutoff ? world.defs.economy.exportArrivalDaysRange : world.defs.economy.arrivalDaysRange;
     const arrivalTicks = Math.max(MIN_ARRIVAL_TICKS, Math.round(world.rng.range(minDays, maxDays) * ticksPerDay));
     const context = {
       tick,

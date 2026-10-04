@@ -237,11 +237,12 @@ export class World {
    */
   readonly holdIndex = new HoldIndex();
   /**
-   * Čaká jednotka `at_ramp` na kamión (náklad na odvoz — import, vrátený export), alebo je to export na prijatie, ktorý
-   * čaká na vozidlo do skladu (`logistics/dock-cargo.ts`, ADR-032 bod 13)? Rampy ho používajú pri počítaní pripravených
-   * jednotiek docku; arrow pole, aby sa dal odovzdať modulom bez väzby na `this`.
+   * Čaká jednotka `at_ramp` na kamión (náklad na odvoz — import, vrátený export bez jobu), alebo je to export na prijatie, ktorý
+   * čaká na vozidlo do skladu alebo ho už vozidlo odváža (`logistics/dock-cargo.ts`, ADR-032 bod 13; export s aktívnym jobom
+   * nie je náklad na odvoz ani po uzavretí bookingu, T6A-09b)? Rampy ho používajú pri počítaní pripravených jednotiek docku;
+   * arrow pole, aby sa dal odovzdať modulom bez väzby na `this`.
    */
-  readonly isPickupCargo = (unit: CargoUnit): boolean => isPickupCargo(this.contractBook, unit);
+  readonly isPickupCargo = (unit: CargoUnit): boolean => isPickupCargo(this.contractBook, unit, (unitId) => this.unitJobs.has(unitId));
   /** Krok 12 ticku zapnutý (`WorldOptions.checkInvariants`, predvolene `true`). */
   readonly checkInvariants: boolean;
 

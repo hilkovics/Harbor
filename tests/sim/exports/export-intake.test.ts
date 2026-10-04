@@ -14,12 +14,13 @@ import { LoadingRamp, StorageModule } from '@sim/modules';
 import { TransportJob } from '@sim/logistics';
 import type { World } from '@sim/world';
 import { findWorldViolation } from '@sim/world/world-invariants';
-import { acceptedBooking, exportUnitIds, exportUnitsByLocation, exportWorld, f6aDefs, lostUnits, offerBooking, tickEvents, tickUntil } from '../helpers/f6a';
+import { TICKS_PER_DAY, acceptedBooking, exportUnitIds, exportUnitsByLocation, exportWorld, f6aDefs, lostUnits, offerBooking, startLoading, tickEvents, tickUntil } from '../helpers/f6a';
 import type { ExportContract } from '@sim/contracts';
 
 const LABELS = (contract: ExportContract) => ({ direction: 'export' as const, voyageId: contract.voyageId, destinationPort: contract.booking.destinationPort, weightClass: 'medium' as const });
 
 const yardsOf = (world: World): StorageModule[] => [...world.modules.values()].filter((module): module is StorageModule => module instanceof StorageModule);
+const storageOf = (world: World, job: TransportJob): StorageModule => world.modules.get(job.toModuleId) as StorageModule;
 const rampOf = (world: World): LoadingRamp => [...world.modules.values()].find((module): module is LoadingRamp => module instanceof LoadingRamp) as LoadingRamp;
 
 /** Export jednotka `at_ramp` (dock 0) pre kontrakt — ako po vykládke kamiónom (fiktívny držiteľ `in_truck`). */
@@ -127,6 +128,60 @@ describe('zoskupenie exportu podľa voyage', () => {
     expect(createExportJobs(world)).toBe(0);
     expect(rampOf(world).stagedAt(1)).toBe(1);
     expect(rampOf(world).intakeAt(1)).toBe(0);
+  });
+});
+
+describe('uzavretie bookingu počas jobu na prijatie (T6A-09b, review major 3)', () => {
+  it('jednotka na docku s otvoreným jobom do skladu nie je náklad na odvoz ani po uzavretí bookingu; invarianty držia', () => {
+    const world = exportWorld({ vehicles: [] });
+    const { exportContract } = acceptedBooking(world, { kind: 'export', booked: 4 });
+    const withJob = unitAtRamp(world, exportContract, 0);
+    const without = unitAtRamp(world, exportContract, 1);
+    expect(createExportJobs(world)).toBe(2);
+    expect(world.jobOfUnit(without)).toBeDefined();
+    world.contractBook.changeState(exportContract, 'ship_en_route');
+    world.contractBook.changeState(exportContract, 'failed');
+
+    // Oba majú job: po uzavretí bookingu ostávajú exportom na prijatie, počítadlá docku ich nerátajú ako náklad na odvoz.
+    expect(world.isPickupCargo(world.cargo.get(withJob) as CargoUnit)).toBe(false);
+    expect(world.isPickupCargo(world.cargo.get(without) as CargoUnit)).toBe(false);
+    expect(rampOf(world).stagedAt(0)).toBe(0);
+    expect(rampOf(world).stagedAt(1)).toBe(0);
+    expect(rampOf(world).intakeAt(0)).toBe(1);
+    expect(findWorldViolation(world)).toBeUndefined();
+
+    // Po zrušení jobu (uzavretý booking, nič nejde do skladu) je jednotka náklad na odvoz — vrátenie odosielateľovi.
+    const job = world.jobOfUnit(without) as TransportJob;
+    storageOf(world, job).release(job.to.kind === 'in_storage' ? job.to.slot : -1);
+    job.transition('cancelled');
+    world.removeJob(job.id);
+    expect(world.isPickupCargo(world.cargo.get(without) as CargoUnit)).toBe(true);
+    expect(rampOf(world).stagedAt(1)).toBe(1);
+    expect(findWorldViolation(world)).toBeUndefined();
+  });
+
+  it('scenár: zlyhanie bookingu, kým jednotky na docku čakajú na vozidlo — pickup kamión sa nenárokuje, invarianty držia každý tick', () => {
+    const world = exportWorld({ vehicles: [] });
+    const run = startLoading({ world, kind: 'export', booked: 3, arrivals: [10, 20, 30] });
+    const contract = run.offer.exportContract;
+    tickUntil(world, (w) => contract.state === 'ship_en_route' && w.jobs.size === 3 && exportUnitsByLocation(w)['at_ramp'] === 3, 20_000);
+    contract.slaDeadlineTick = world.clock.tick - (world.defs.economy.failAfterDaysLate + 1) * TICKS_PER_DAY;
+    tickEvents(world, 3_000);
+    expect(contract.state).toBe('failed');
+    expect(exportUnitsByLocation(world)).toEqual({ at_ramp: 3 });
+    expect(world.jobs.size).toBe(3);
+    expect([...world.trucks.values()].filter((truck) => truck.mission === 'pickup')).toHaveLength(0);
+    expect(rampOf(world).stagedAt(0) + rampOf(world).stagedAt(1)).toBe(0);
+    expect(lostUnits(world)).toBe(0);
+  });
+
+  it('isPickupCargo(contracts, unit, hasJob): export s jobom nie je náklad na odvoz ani pri uzavretom kontrakte; import vždy', () => {
+    const lookupFree = { get: () => ({ outbound: 'free' }) as never };
+    const exportUnit = { id: 5 as EntityId, direction: 'export', contractId: 7 as ContractId } as CargoUnit;
+    expect(isPickupCargo(lookupFree, exportUnit, () => true)).toBe(false);
+    expect(isPickupCargo(lookupFree, exportUnit, () => false)).toBe(true);
+    expect(isPickupCargo(lookupFree, exportUnit)).toBe(true);
+    expect(isPickupCargo(lookupFree, { id: 6 as EntityId, direction: 'import', contractId: 7 as ContractId } as CargoUnit, () => true)).toBe(true);
   });
 });
 

@@ -12,17 +12,22 @@ import shipsJson from '@data/defs/ships.json';
 import timeJson from '@data/defs/time.json';
 import trucksJson from '@data/defs/trucks.json';
 import vehiclesJson from '@data/defs/vehicles.json';
-import { DefRegistry, loadBundledDefs } from '@sim/defs';
+import { DefRegistry } from '@sim/defs';
 import { loadBundledMap } from '@sim/grid';
 import { World, type WorldOptions } from '@sim/world';
 import { GameLoop } from '@app/game-loop';
 import { SimBridge } from '@app/sim-bridge';
-import { LEGACY_CAPACITY_DEFS } from '../sim/world/world-fixtures';
+import { DEFS as APRON_DEFS, LEGACY_CAPACITY_DEFS } from '../sim/world/world-fixtures';
 
 export const SEED = 20260929;
 
+/**
+ * Svet nad bundled defmi s pripnutým režimom odovzdávania kotviska `apron` (F6a, ADR-033: bundled default je `under_hook`).
+ * Testy UI/app fáz 1–6 stoja na vykladaní lode bez vozidiel na apron (`CraneCycleDone` = `in_crane → on_apron`, sloty apronu);
+ * namiesto prepisu očakávaní si pripínajú starý režim cez def — rovnako ako testy v `tests/sim` (`APRON_MODULES`).
+ */
 export function createWorld(options: WorldOptions = {}): World {
-  return World.create(loadBundledDefs(), loadBundledMap(), SEED, options);
+  return World.create(APRON_DEFS, loadBundledMap(), SEED, options);
 }
 
 /**

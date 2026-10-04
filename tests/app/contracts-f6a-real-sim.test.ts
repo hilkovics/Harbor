@@ -12,15 +12,26 @@ import { GameLoop } from '@app/game-loop';
 import { SimBridge } from '@app/sim-bridge';
 import { toastSpecsForEvents } from '@app/toast-center';
 import { exportWorld, offerBooking } from '../sim/helpers/f6a';
-import { createApp } from './app-fixtures';
+import { buildLandside, buildLogistics, createApp } from './app-fixtures';
 import { addRoundtripOffer } from './f6a-fixtures';
 import { createScenarioApp } from './f6a-scenario';
+
+/**
+ * Aplikácia s pozemnou stranou exportu (`AcceptContract` ju pri exporte overuje, ADR-032): cesty, depo, dva dvory, brána,
+ * stojisko a rampa (rozloženie F3 + F4 z `app-fixtures`) → rampa je prevádzková a z nej je dosiahnuteľný sklad.
+ */
+function createExportReadyApp(): ReturnType<typeof createApp> {
+  const app = createApp();
+  buildLogistics(app);
+  buildLandside(app);
+  return app;
+}
 
 /** Prvé kontrakty skupiny voyage tak, ako ich panel posiela do `onAccept` (`parts[0].id`). */
 const leadId = (group: ReturnType<typeof voyageGroups>[number]): number => Number(group.parts[0]?.id);
 
 describe('ponuky booking v poole od prvej polnoci (skutočný pool)', () => {
-  const app = createApp();
+  const app = createExportReadyApp();
   app.loop.advance(app.world.clock.ticksPerDay + 10);
   const cards = app.bridge.snapshot().contracts;
   const exportCards = cards.filter((card) => card.kind === 'export');
@@ -36,7 +47,7 @@ describe('ponuky booking v poole od prvej polnoci (skutočný pool)', () => {
       expect(card.booking).not.toHaveProperty('cutoffTick');
       expect(card.booking?.cutoffLeadTicks).toBe(economy.cutoffHours * app.world.clock.ticksPerHour);
       expect(card.booking?.cutoffLeadTicks).toBe(cutoffLeadTicks(app.world));
-      expect(card.disabledReason).toBeUndefined(); // štartovací prístav má kotvisko aj žeriav
+      expect(card.disabledReason).toBeUndefined(); // štartovací prístav má kotvisko aj žeriav a postavená je aj pozemná strana (rampa, sklad)
     }
   });
 
@@ -78,7 +89,7 @@ describe('Prijať a Odmietnuť cez akcie panelu nad skutočným simom', () => {
   }
 
   it('booking skupina z poolu (export-only alebo roundtrip): AcceptContract s id prvej karty prijme celú voyage', () => {
-    const app = createApp();
+    const app = createExportReadyApp();
     app.loop.advance(app.world.clock.ticksPerDay + 10);
     const groups = voyageGroups(app.bridge.snapshot().contracts).filter((candidate) => candidate.parts.some((part) => part.kind === 'export'));
     expect(groups.length).toBeGreaterThan(0);
@@ -95,7 +106,7 @@ describe('Prijať a Odmietnuť cez akcie panelu nad skutočným simom', () => {
   });
 
   it('export-only ponuka (jeden kontrakt vo voyage): príkaz s jej id prijme booking s plánom príchodov zo simu', () => {
-    const app = createApp();
+    const app = createExportReadyApp();
     const offer = offerBooking(app.world, { kind: 'export', booked: 12, destinationPort: 'Hamburg' });
     app.bridge.publish([{ type: 'ContractOffered', contractId: offer.exportContract.id }]);
     const group = voyageGroups(app.bridge.snapshot().contracts).find((candidate) => candidate.voyageId === offer.voyageId);
@@ -106,7 +117,7 @@ describe('Prijať a Odmietnuť cez akcie panelu nad skutočným simom', () => {
   });
 
   it('roundtrip: jeden príkaz s id prvého kontraktu (import) prijme celú voyage — spoločný plán lode, booking len na exporte', () => {
-    const app = createApp();
+    const app = createExportReadyApp();
     const roundtrip = addRoundtripOffer(app.world);
     app.bridge.publish([{ type: 'ContractOffered', contractId: roundtrip.importContract.id }]);
     const group = voyageGroups(app.bridge.snapshot().contracts).find((candidate) => candidate.voyageId === roundtrip.voyageId);
@@ -127,7 +138,7 @@ describe('Prijať a Odmietnuť cez akcie panelu nad skutočným simom', () => {
   });
 
   it('roundtrip: Odmietnuť s id prvého kontraktu zruší ponuku oboch kontraktov; prijatá ponuka už odmietnuť nejde', () => {
-    const app = createApp();
+    const app = createExportReadyApp();
     const declined = addRoundtripOffer(app.world);
     const kept = addRoundtripOffer(app.world);
     app.bridge.publish([{ type: 'ContractOffered', contractId: declined.importContract.id }]);
@@ -159,6 +170,38 @@ describe('Prijať a Odmietnuť cez akcie panelu nad skutočným simom', () => {
     expect(acceptDisabledReason(app.world, roundtrip.exportContract)).toBe('Pri kotvisku pre loď chýba žeriav na tento náklad');
     expect(acceptOffer(app.bridge, roundtrip.importContract.id)).toBe(false);
     expect(roundtrip.importContract.state).toBe('offered');
+  });
+
+  it('bez rampy ukáže karta exportu aj roundtripu dôvod „Pre export chýba rampa…“ a prijatie neprejde (import-only ponuka sa prijať dá)', () => {
+    const app = createApp(); // štartovací prístav: kotvisko a žeriav, ale bez rampy, brány, stojiska a skladu
+    const exportOffer = offerBooking(app.world, { kind: 'export', booked: 12, destinationPort: 'Hamburg' });
+    const roundtrip = addRoundtripOffer(app.world);
+    app.bridge.publish([exportOffer.exportContract.id, roundtrip.importContract.id].map((contractId) => ({ type: 'ContractOffered' as const, contractId })));
+    expect(REASON_TEXT.no_ramp_for_category).toMatch(/^Pre export chýba rampa/);
+    const cards = app.bridge.snapshot().contracts;
+    const exportCard = cards.find((card) => card.id === exportOffer.exportContract.id);
+    expect(exportCard?.disabledReason).toBe(REASON_TEXT.no_ramp_for_category);
+    // roundtrip: posudzuje sa celá voyage, preto je zablokovaný aj import (prvý kontrakt skupiny, ktorý panel posiela do „Prijať“)
+    for (const contract of [roundtrip.importContract, roundtrip.exportContract]) {
+      expect(cards.find((card) => card.id === contract.id)?.disabledReason).toBe(REASON_TEXT.no_ramp_for_category);
+    }
+    expect(acceptDisabledReason(app.world, roundtrip.exportContract)).toBe(REASON_TEXT.no_ramp_for_category);
+
+    const cashBefore = app.world.economy.cashCents;
+    expect(acceptOffer(app.bridge, exportOffer.exportContract.id)).toBe(false);
+    expect(acceptOffer(app.bridge, roundtrip.importContract.id)).toBe(false);
+    app.loop.frame(0);
+    expect([exportOffer.exportContract.state, roundtrip.importContract.state, roundtrip.exportContract.state]).toEqual(['offered', 'offered', 'offered']);
+    expect(exportOffer.exportContract.shipArrivalTick).toBeUndefined();
+    expect(exportOffer.exportContract.booking.arrivalPlan).toHaveLength(0);
+    expect(app.world.economy.cashCents).toBe(cashBefore);
+
+    // import-only ponuka (bez bookingu) pozemnú stranu nevyžaduje: prijme sa aj bez rampy
+    app.loop.advance(app.world.clock.ticksPerDay + 10);
+    const importOnly = voyageGroups(app.bridge.snapshot().contracts).find((group) => group.parts.length === 1 && group.parts[0]?.kind === 'import' && group.parts[0].state === 'offered');
+    const importOffer = importOnly?.parts[0];
+    expect(importOffer?.disabledReason).toBeUndefined();
+    expect(acceptOffer(app.bridge, Number(importOffer?.id))).toBe(true);
   });
 });
 

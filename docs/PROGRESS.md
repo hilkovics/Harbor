@@ -222,3 +222,24 @@ Stav: **hotová** (T06-01, T06-02, T06-03, T06-04, T06-03b, T06-05, T06-06, T06-
 - ADR-030 (SaveGame v1 obálka v app), ADR-031 (P1 opravy, pripravenosť prístavu)
 
 Ďalej: **Fáza 6a — Export a booking**
+
+## Fáza 6a — Export a booking
+Karty: `docs/tasks/phase-06a.md` · vetva `phase/06a-export-booking` (stacked nad hilkovics/Harbor#8)
+
+Stav: **prebieha** (T6A-01, T6A-02, T6A-04, T6A-06, T6A-07, T6A-07b)
+
+**Hotové:**
+- T6A-01: ADR-032, kostra, WorldState v7
+- T6A-02 + T6A-04: defy exportu, booking/roundtrip pool, prijatie celej voyage, plán príchodov, naložené kamióny, brána s VGM hold a rolled, vykládka na rampe, export do skladu zoskupene; scenár export_inbound, lostUnits 0
+- T6A-06: render
+- T6A-07 + T6A-07b: UI a napojenie
+
+**Prebieha:**
+- T6A-05: odovzdávanie pod hákom s `handoverMode`, nakládka v poradí plánu, dual cycling, lashing, `shipped`, uzavretie bookingu, dual transaction, scenár export_roundtrip, metriky simrun
+
+**Zostáva:**
+- T6A-09: review
+- T6A-10: e2e + pipeline + artefakt
+- T6A-11: dokumentácia
+
+PR hilkovics/Harbor#9.

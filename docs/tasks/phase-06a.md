@@ -34,12 +34,12 @@
 |---|---|---|---|---|---|---|
 | T6A-01 | Návrh: ADR-032, typy a „Spoločné rozhrania" (voyage, kontrakt kind, CargoUnit polia, ledger prechody, nové stavy lode/kamióna/žeriava, udalosti, snapshot), skeleton + WorldState v7 migrácia | opus | sim-architect | no | – | M |
 | T6A-02 | Defy: `contract_templates` (export/roundtrip šablóny), `economy`/`ships`/`logistics` nové polia (cut-off, okno príchodov, VGM, penalizácie, lashing, dualCycleFactor, apronExportReserve, weightClass rozdelenie), schémy, DefRegistry, validate-defs | sonnet | implementer | yes (worktree) | 01 | S |
-| T6A-03 | TDD: scenár `export_roundtrip.json` + testy (príchody pred cut-off, VGM hold, rolled, poradie nakládky, dual cycle, lashing, dual transaction, konzervácia so `shipped`, save v6→v7, roundtrip uprostred nakládky) | sonnet | test-writer | yes (worktree) | 01 | M |
+| T6A-03 | TDD: scenár `export_roundtrip.json` + testy (príchody pred cut-off, VGM hold, rolled, poradie nakládky, dual cycle, lashing, dual transaction, konzervácia so `shipped`, save v6→v7, roundtrip uprostred nakládky) — zlúčené do T6A-04 (export_inbound) a T6A-05 (export_roundtrip) | sonnet | test-writer | yes (worktree) | 01 | M |
 | T6A-04 | Sim: ledger reverzný reťazec + `shipped`, booking/voyage v ContractSystem, plán príchodov, spawn naložených kamiónov, brána + VGM + rolled | opus | sim-architect | no | 01, 02 | L |
 | T6A-05 | Sim: odovzdávanie pod hákom (rozhodnutie 16, buffer 0–1), dispatcher export (rampa → sklad zoskupene, sklad → žeriav v poradí plánu), žeriav nakládka + dual cycling, stav lode `lashing`, dual transaction kamiónov | opus | sim-architect | no | 04 | L |
 | T6A-06 | Render: naložený kamión pri príchode, vykladanie na rampe (cúvanie ako pri nakládke), žeriav nakládka (opačný smer), náklad na palube lode podľa počtu (import/export farebne), indikátor lashing | sonnet | implementer | yes (worktree) | 01 | M |
 | T6A-07 | UI + app: ContractsPanel export booking (cieľ, cut-off, prišlo/naložené/hold), inšpektor skladu import/export, inšpektor lode (náklad, lashing), toasty (cut-off o 6 h, rolled, loď odplávala s exportom), snapshot v7 | sonnet | ui-builder → implementer | yes (worktree) | 01 | M |
-| T6A-08 | Tooling: simrun metriky (shippedUnits, rolledUnits, vgmHolds, dualCycleRate, dualTransactionRate, stowageOrderViolations, exportGroupingPct), golden `export_roundtrip` | sonnet | implementer | yes (worktree) | 01 | S |
+| T6A-08 | Tooling: simrun metriky (shippedUnits, rolledUnits, vgmHolds, dualCycleRate, dualTransactionRate, stowageOrderViolations, exportGroupingPct), golden `export_roundtrip` — zlúčené do T6A-05 | sonnet | implementer | yes (worktree) | 01 | S |
 | T6A-09 | Review `src/sim/**` + opravy | opus | sim-reviewer → sim-architect | no | 05 | M |
 | T6A-10 | e2e `f6a-export` (prijať booking → kamióny s exportom → nakládka → odchod), plná e2e, screenshoty, `/sim-check`, artefakt | sonnet / haiku | implementer / test-runner | no | 03–09 | M |
 | T6A-11 | Docs: ARCHITECTURE (§7.1, §7.3, §7.5, §7.8, §9.1, §12, §14), PORT_OPERATIONS §1 stav, PROGRESS, BACKLOG, PR | haiku / sonnet | docs-keeper | no | 10 | S |
@@ -47,14 +47,17 @@
 Vlny: T6A-01 → {T6A-02 ‖ T6A-03 ‖ T6A-06 ‖ T6A-07 ‖ T6A-08} → T6A-04 → T6A-05 → T6A-09 → T6A-10 → T6A-11.
 Worktree karty začínajú `git reset --hard <HEAD phase/06a-export-booking>` (worktree sa zakladá z `main`).
 
+> Úsporný režim (2026-10-04): karty bežia na Sonnete, overovanie a dokumentácia na Haiku; T6A-02 + T6A-04 robil jeden agent, T6A-03 a T6A-08 sú zlúčené do sim kariet.
+
 ## Checklist
-- [ ] T6A-01 · ADR-032, typy, Spoločné rozhrania, WorldState v7
-- [ ] T6A-02 · Defy + schémy
+- [x] T6A-01 · ADR-032, typy, Spoločné rozhrania, WorldState v7
+- [x] T6A-02 · Defy + schémy
 - [ ] T6A-03 · TDD export_roundtrip
-- [ ] T6A-04 · Sim: ledger, booking/voyage, príchody, brána, VGM, rolled
+- [x] T6A-04 · Sim: ledger, booking/voyage, príchody, brána, VGM, rolled
 - [ ] T6A-05 · Sim: odovzdávanie pod hákom, dispatcher export, žeriav nakládka + dual cycle, lashing, dual transaction
-- [ ] T6A-06 · Render
-- [ ] T6A-07 · UI + app
+- [x] T6A-06 · Render
+- [x] T6A-07 · UI + app
+- [x] T6A-07b · Napojenie renderu a UI na sim (entities-vm unloading/cycle/cargoSplit/lashing/held, LashingTracker, typované defy namiesto optional-def, prijatie celej voyage z UI)
 - [ ] T6A-08 · simrun metriky + golden
 - [ ] T6A-09 · Review + opravy
 - [ ] T6A-10 · e2e + pipeline + artefakt

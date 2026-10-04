@@ -27,8 +27,9 @@
  * - Prázdne kontajnery a prekládka (F6c, T6C-05, ADR-034): `EmptyReturned` → „Návrat prázdnych“ (nenápadné, info, rýchlo zmizne;
  *   jeden toast za linku a dávku so súčtom, nie za každý kus); `EmptyRepaired` → „Oprava hotová“ (success, zlúčené podľa depa a
  *   linky, s cenou opráv a akciou „Ukázať“ na depo); `EmptyPickupMissed` → „Výdaj prázdneho zlyhal“ (warning, kamión odišiel prázdny);
- *   `TranshipMissed` → „Tranship zmeškaný“ (danger), `TranshipRescued` (info) a `TranshipSold` (warning) — čo sa stalo so zmeškanými
- *   jednotkami. `EmptyStored` / `EmptyDamaged` / `EmptyRepairStarted` / `EmptyPickedUp` toast nemajú (stav je v inšpektore depa).
+ *   `TranshipMissed` → „Tranship zmeškaný“ (danger, aj so sumou penalizácie; jej `BookingPenaltyApplied rolled` samostatný toast nemá),
+ *   `TranshipRescued` (info) a `TranshipSold` (warning) — čo sa stalo so zmeškanými jednotkami; `ExportShipped` lode B prekládky
+ *   ukáže triedu a cieľ z kontraktu prekládky (`tranship.outShipId`). `EmptyStored` / `EmptyDamaged` / `EmptyRepairStarted` / `EmptyPickedUp` toast nemajú (stav je v inšpektore depa).
  *
  * Pravidlá zásobníka:
  * - Rovnaký `key` (napr. `no_storage:1`) sa naraz nezobrazí dvakrát — opakovaná udalosť pre to isté kotvisko nezaplaví panel.
@@ -308,8 +309,9 @@ function contractSpec(world: World, event: SimEvent, batch: ContractBatch): Toas
       };
     }
     case 'ExportShipped': {
-      // Loď už zo sveta zmizla, preto triedu a cieľ berie export kontrakt lode (kniha ho drží do uzavretia bookingu).
-      const contract = [...world.contracts.values()].find((candidate) => candidate.shipId === event.shipId && candidate.booking !== null);
+      // Loď už zo sveta zmizla, preto triedu a cieľ berie kontrakt s bookingom, ktorý ju nakladal (kniha ho drží do uzavretia bookingu): export
+      // a repositioning majú loď voyage (`shipId`), prekládka odváža loď B (`tranship.outShipId`; `shipId` je loď A, ktorá nič neodváža).
+      const contract = [...world.contracts.values()].find((candidate) => candidate.booking !== null && (candidate.shipId === event.shipId || candidate.tranship?.outShipId === event.shipId));
       const ship = contract === undefined ? `Loď #${String(event.shipId)}` : world.defs.ships.get(contract.shipClassId).displayName;
       const unit = contract === undefined ? 'jedn.' : world.defs.cargoTypes.get(contract.cargoTypeId).unitName;
       const destination = contract === undefined || contract.booking === null ? '' : ` → ${contract.booking.destinationPort}`;
@@ -323,6 +325,8 @@ function contractSpec(world: World, event: SimEvent, batch: ContractBatch): Toas
       };
     }
     case 'BookingPenaltyApplied':
+      // Zmeškaná prekládka je v sime `rolled` penalizácia; hráč ju dostane v toaste „Tranship zmeškaný“ (aj so sumou), nie ako „vrátené jednotky“.
+      if (event.kind === 'rolled' && world.contracts.get(event.contractId)?.kind === 'tranship') return null;
       return {
         key: `booking_penalty:${String(event.contractId)}:${event.kind}`,
         tone: 'warning',
@@ -372,15 +376,18 @@ function contractSpec(world: World, event: SimEvent, batch: ContractBatch): Toas
         panel: 'contracts',
       };
     }
-    case 'TranshipMissed':
+    case 'TranshipMissed': {
+      const penaltyCents = batch.missedPenalties.get(event.contractId);
+      const penalty = penaltyCents === undefined ? '' : ` · penalizácia ${formatMoney(-penaltyCents)}`;
       return {
         key: `tranship_missed:${String(event.contractId)}`,
         tone: 'danger',
         icon: 'ic_warning',
         title: TRANSHIP_MISSED_TOAST_TITLE,
-        text: `${contractLabel(world, event.contractId)} · loď B (plavba #${String(event.outVoyageId)}) odplávala, zmeškané: ${unitsText(event.units)}`,
+        text: `${contractLabel(world, event.contractId)} · loď B (plavba #${String(event.outVoyageId)}) odplávala, zmeškané: ${unitsText(event.units)}${penalty}`,
         panel: 'contracts',
       };
+    }
     case 'TranshipRescued':
       return {
         key: `tranship_rescued:${String(event.contractId)}`,
@@ -437,6 +444,8 @@ interface ContractBatch {
   /** F6c: počet `EmptyPickupMissed` podľa kontraktu a kontrakty, ktoré už dostali toast. */
   readonly pickupMisses: Map<ContractId, number>;
   readonly pickupMissesShown: Set<ContractId>;
+  /** F6c: súčet `BookingPenaltyApplied` druhu `rolled` podľa kontraktu (penalizácia zmeškanej prekládky, ktorú ukáže toast `TranshipMissed`). */
+  readonly missedPenalties: Map<ContractId, number>;
 }
 
 function contractBatch(events: readonly SimEvent[]): ContractBatch {
@@ -456,6 +465,7 @@ function contractBatch(events: readonly SimEvent[]): ContractBatch {
     repairsShown: new Set(),
     pickupMisses: new Map(),
     pickupMissesShown: new Set(),
+    missedPenalties: new Map(),
   };
   for (const event of events) {
     if (event.type === 'ContractOffered') {
@@ -476,6 +486,8 @@ function contractBatch(events: readonly SimEvent[]): ContractBatch {
       batch.repairs.set(id, { count: (known?.count ?? 0) + 1, costCents: (known?.costCents ?? 0) + event.costCents });
     } else if (event.type === 'EmptyPickupMissed') {
       batch.pickupMisses.set(event.contractId, (batch.pickupMisses.get(event.contractId) ?? 0) + 1);
+    } else if (event.type === 'BookingPenaltyApplied' && event.kind === 'rolled') {
+      batch.missedPenalties.set(event.contractId, (batch.missedPenalties.get(event.contractId) ?? 0) + event.amountCents);
     }
   }
   return batch;

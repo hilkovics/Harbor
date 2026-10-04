@@ -171,7 +171,7 @@ describe('dôvody odmietnutia pre nové druhy', () => {
   it('reasonText: špecifický text pre druh, inak všeobecný z REASON_TEXT (import a export ho nemajú v tabuľke)', () => {
     expect(reasonText('empty_repositioning', 'no_storage_for_category')).toBe('Chýba depo prázdnych kontajnerov (postav depo prázdnych pri rampe)');
     expect(reasonText('empty_repositioning', 'game_over')).toBe(REASON_TEXT.game_over);
-    expect(reasonText('tranship', 'no_storage_for_category')).toBe('Pre prekládku nie je dosiahnuteľný sklad na tento náklad');
+    expect(reasonText('tranship', 'no_storage_for_category')).toBe('Pre prekládku chýba sklad kontajnerov (jednotky z lode A čakajú v sklade na loď B; depo prázdnych ich neprijme)');
     expect(reasonText('export', 'no_storage_for_category')).toBe(REASON_TEXT.no_storage_for_category);
     expect(reasonText('import', 'no_crane_for_category')).toBe(REASON_TEXT.no_crane_for_category);
   });

@@ -42,7 +42,9 @@ function landsideReasonText(noun: string): Readonly<Partial<Record<ValidationRea
 
 /**
  * Texty dôvodov odmietnutia špecifické pre druh kontraktu (nad rámec `REASON_TEXT`; tabuľka, nie switch): repositioning potrebuje
- * depo prázdnych (sim použil `no_storage_for_category`, ADR-034 bod 10), prekládka sklad na vyloženú prekládku.
+ * depo prázdnych (sim použil `no_storage_for_category`, ADR-034 bod 10), prekládka sklad kategórie nákladu, ktorý prijme jej smer — bežný
+ * kontajnerový dvor (`transhipReadiness`: depo prázdnych prijíma len prázdne, preto prístav len s depom prekládku neprijme). Sim žiadnu
+ * rampu ani bránu pre ne nevyžaduje, text sa teda nesmie tváriť, že ide o dosiahnuteľnosť z rampy.
  */
 export const KIND_REASON_TEXT: Readonly<Partial<Record<ContractKind, Readonly<Partial<Record<ValidationReason, string>>>>>> = {
   empty_repositioning: {
@@ -51,7 +53,7 @@ export const KIND_REASON_TEXT: Readonly<Partial<Record<ContractKind, Readonly<Pa
   },
   tranship: {
     ...landsideReasonText('prekládku'),
-    no_storage_for_category: 'Pre prekládku nie je dosiahnuteľný sklad na tento náklad',
+    no_storage_for_category: 'Pre prekládku chýba sklad kontajnerov (jednotky z lode A čakajú v sklade na loď B; depo prázdnych ich neprijme)',
   },
 };
 

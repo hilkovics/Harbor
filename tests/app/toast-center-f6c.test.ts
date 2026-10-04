@@ -18,6 +18,7 @@ import {
   emptiesText,
   toastSpecsForEvents,
 } from '@app/toast-center';
+import { formatMoney } from '@ui/format';
 import { buildLogistics, createApp, runCommands, type App } from './app-fixtures';
 import { acceptRoundtrip, addRoundtripOffer } from './f6a-fixtures';
 import { acceptContract, addRepositioningOffer, addTranshipOffer } from './f6c-fixtures';
@@ -150,6 +151,27 @@ describe('toastSpecsForEvents: tranship', () => {
     const [spec] = toastSpecsForEvents(world, [{ type: 'TranshipMissed', contractId: id, units: 24, outVoyageId }]);
     expect(spec).toMatchObject({ key: `tranship_missed:${String(id)}`, tone: 'danger', icon: 'ic_warning', title: TRANSHIP_MISSED_TOAST_TITLE, panel: 'contracts' });
     expect(spec?.text).toBe(`#${String(id)} · Tranship 36 TEU → Hamburg · loď B (plavba #${String(outVoyageId)}) odplávala, zmeškané: 24 jednotiek`);
+  });
+
+  it('zmeškaná prekládka v dávke: penalizácia `rolled` nemá vlastný toast „vrátené jednotky“, jej suma je v toaste „Tranship zmeškaný“; rolled export ostáva toastom', () => {
+    const { world, id, outVoyageId } = appWithTranship();
+    const penalty = (contractId: ContractId): SimEvent => ({ type: 'BookingPenaltyApplied', contractId, kind: 'rolled', units: 24, amountCents: 250_000 });
+    const specs = toastSpecsForEvents(world, [penalty(id), { type: 'TranshipMissed', contractId: id, units: 24, outVoyageId }]);
+    expect(specs.map((spec) => spec.key)).toEqual([`tranship_missed:${String(id)}`]);
+    expect(specs[0]?.text).toBe(`#${String(id)} · Tranship 36 TEU → Hamburg · loď B (plavba #${String(outVoyageId)}) odplávala, zmeškané: 24 jednotiek · penalizácia ${formatMoney(-250_000)}`);
+    // export: rolled je naďalej penalizácia bookingu
+    const roundtrip = addRoundtripOffer(world);
+    acceptRoundtrip(world, roundtrip);
+    expect(toastSpecsForEvents(world, [penalty(roundtrip.exportContract.id as ContractId)]).map((spec) => spec.key)).toEqual([`booking_penalty:${String(roundtrip.exportContract.id)}:rolled`]);
+  });
+
+  it('ExportShipped lode B prekládky: trieda, počet a cieľ z kontraktu prekládky (`tranship.outShipId`), nie len číslo lode; loď A (`shipId`) nič neodváža', () => {
+    const { world, tranship } = appWithTranship();
+    tranship.shipId = 55 as EntityId;
+    tranship.outShipId = 66 as EntityId;
+    const [shipped] = toastSpecsForEvents(world, [{ type: 'ExportShipped', shipId: 66 as EntityId, units: 36 }]);
+    expect(shipped?.text).toBe('Feeder · 36 TEU → Hamburg');
+    expect(shipped?.key).toBe('export_shipped:66');
   });
 
   it('TranshipRescued: info s plavbou, na ktorú jednotky čakajú; TranshipSold: warning s penalizáciou', () => {

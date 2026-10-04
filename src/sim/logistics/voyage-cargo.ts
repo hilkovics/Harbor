@@ -26,8 +26,10 @@ import { CRANE_CYCLE_TRAITS, CraneModule } from '../modules/crane-module';
 import type { Ship } from '../ships/ship';
 import type { World } from '../world/world';
 import { countAvailableEmpties } from './empty-stock';
+import { collectLoadBerths } from './load-access';
 
 const NO_BOOKINGS: readonly Contract[] = Object.freeze([]);
+const NO_BERTHS: readonly BerthModule[] = Object.freeze([]);
 
 /** Do `into` (najprv sa vyprázdni) neukončené kontrakty nakladajúce na loď `shipId` vzostupne podľa id; bez bookingu v knihe prázdne. */
 export function openLoadBookings(world: World, shipId: EntityId, into: Contract[]): readonly Contract[] {
@@ -88,15 +90,19 @@ export function firstUnloadableOnShip(world: World, shipId: EntityId): EntityId 
 
 /**
  * Jednotky bookingu `contract`, ktoré ešte nie sú pridelené nakládke, ale loď ich môže dostať (`PENDING_UNASSIGNED`): export a prekládka žiadne (ich
- * jednotky sú „prijaté“ bránou / vykládkou lode A), repositioning dostupné prázdne linky v sklade, najviac toľko, koľko booking ešte smie prideliť —
- * loď na ne počká, aby nikdy neodišla skôr, než dispatcher stihne prázdne prideliť (booking sa otvorí v ticku, keď loď zakotví).
+ * jednotky sú „prijaté“ bránou / vykládkou lode A), repositioning dostupné prázdne linky v sklade s cestou ku kotvisku lode (`load-access.ts`, T6C-07b: odrezané depo loď nezdržuje), najviac toľko, koľko
+ * booking ešte smie prideliť — loď na ne počká, aby nikdy neodišla skôr, než dispatcher stihne prázdne prideliť (booking sa otvorí v ticku, keď loď zakotví).
  */
-const PENDING_UNASSIGNED: { readonly [K in ContractKind]: (world: World, contract: Contract) => number } = {
+const PENDING_UNASSIGNED: { readonly [K in ContractKind]: (world: World, contract: Contract, berths: readonly BerthModule[]) => number } = {
   import: () => 0,
   export: () => 0,
   tranship: () => 0,
-  empty_repositioning: (world, contract) => (contract.acceptsLoading && !loadingStopped(world, contract) ? Math.min(contract.loadsToAssign, countAvailableEmpties(world, contract.lineId)) : 0),
+  empty_repositioning: (world, contract, berths) =>
+    contract.acceptsLoading && !loadingStopped(world, contract) ? Math.min(contract.loadsToAssign, countAvailableEmpties(world, contract.lineId, berths)) : 0,
 };
+
+/** Znovupoužiteľné pole kotvísk nakládky lode pre `pendingExportUnits` (hot path; obsah sa vždy najprv vyprázdni). */
+const LOAD_BERTHS: BerthModule[] = [];
 
 /**
  * Jednotky lode na termináli, ktoré sa ešte naložia: Σ (prijaté − naložené − vrátené − v hold) cez jej otvorené bookingy (nie pod 0) plus
@@ -105,11 +111,13 @@ const PENDING_UNASSIGNED: { readonly [K in ContractKind]: (world: World, contrac
  */
 export function pendingExportUnits(world: World, shipId: EntityId): number {
   if (!world.contractBook.hasOpenExports) return 0;
+  const ship = world.ships.get(shipId);
+  const berths = ship === undefined ? NO_BERTHS : collectLoadBerths(world, ship, LOAD_BERTHS);
   let pending = 0;
   for (const contract of openLoadBookings(world, shipId, SCRATCH)) {
     const booking = contract.booking;
     if (booking === null) continue;
-    pending += Math.max(0, booking.arrivedUnits - booking.loadedUnits - booking.returnedUnits - booking.heldUnits) + PENDING_UNASSIGNED[contract.kind](world, contract);
+    pending += Math.max(0, booking.arrivedUnits - booking.loadedUnits - booking.returnedUnits - booking.heldUnits) + PENDING_UNASSIGNED[contract.kind](world, contract, berths);
   }
   return pending;
 }

@@ -11,7 +11,8 @@
  *   rozbehnutých návratov, inak najbližší bežný dvor (ohraničené počtom slotov apronu — prázdny nesmie navždy blokovať apron);
  * - `countAvailableEmpties` — koľko ich je (loď repositioningu na ne počká, kým nie sú pridelené nakládke);
  * - `findAvailableEmpty` — prázdny kontajner linky, ktorý možno vydať: v sklade, stav `available`, bez aktívneho jobu; depo pred
- *   bežným skladom, v rámci toho najmenšie id (nezávisí od poradia indexu, takže ho obnova save nemení).
+ *   bežným skladom, v rámci toho najmenšie id (nezávisí od poradia indexu, takže ho obnova save nemení). Obe vedia obmedziť výber na sklady
+ *   s cestou k cieľu (`targets`: kotvisko nakládky, rampa výdaja; `load-access.ts`, T6C-07b).
  */
 import { EMPTY_WEIGHT_CLASS, type CargoUnit, type CargoUnitLabels } from '../cargo/cargo-unit';
 import type { DefRegistry } from '../defs/def-registry';
@@ -20,6 +21,8 @@ import { EMPTY_DEPOT_CATEGORY, EmptyDepot } from '../modules/empty-depot';
 import type { Module } from '../modules/module';
 import { StorageModule } from '../modules/storage-module';
 import type { World } from '../world/world';
+import type { EntityId } from '../core/entity-id';
+import { storageReaches } from './load-access';
 import { distanceBetweenModules } from './module-access';
 import type { StorageAllocatorEnv } from './storage-allocator';
 
@@ -150,29 +153,51 @@ function storageRank(world: Pick<World, 'modules'>, unit: CargoUnit): number {
 
 /**
  * Prázdny kontajner linky `lineId`, ktorý možno vydať (viď hlavička), alebo `undefined`. Poškodený a opravovaný kontajner sa
- * nevydáva (stav ≠ `available`), kontajner s aktívnym jobom (pridelený inému kamiónu / nakládke) tiež nie. Bez alokácie.
+ * nevydáva (stav ≠ `available`), kontajner s aktívnym jobom (pridelený inému kamiónu / nakládke) tiež nie. S `targets` (kotvisko nakládky lode,
+ * rampa kamióna `collect`) sa berú len kontajnery zo skladov s cestou k niektorému z nich (T6C-07b, M2: odrezané depo nie je zdrojom). Bez alokácie.
  */
-export function findAvailableEmpty(world: Pick<World, 'storedCargo' | 'cargo' | 'modules' | 'jobOfUnit'>, lineId: string): CargoUnit | undefined {
+export function findAvailableEmpty(world: Pick<World, 'storedCargo' | 'cargo' | 'modules' | 'jobOfUnit' | 'grid' | 'distances'>, lineId: string, targets?: readonly Module[]): CargoUnit | undefined {
   let best: CargoUnit | undefined;
   let bestRank = Infinity;
+  let checkedStorage: EntityId | undefined;
+  let reachable = false;
   for (const unitId of world.storedCargo.emptiesOf(lineId)) {
     const unit = world.cargo.get(unitId);
     if (unit === undefined || unit.status !== 'available' || world.jobOfUnit(unitId) !== undefined) continue;
     const rank = storageRank(world, unit);
-    if (best === undefined || rank < bestRank || (rank === bestRank && unit.id < best.id)) {
-      best = unit;
-      bestRank = rank;
+    if (best !== undefined && (rank > bestRank || (rank === bestRank && unit.id > best.id))) continue;
+    if (targets !== undefined && unit.location.kind === 'in_storage') {
+      if (unit.location.moduleId !== checkedStorage) {
+        checkedStorage = unit.location.moduleId;
+        reachable = storageReaches(world, checkedStorage, targets);
+      }
+      if (!reachable) continue;
     }
+    best = unit;
+    bestRank = rank;
   }
   return best;
 }
 
-/** Počet prázdnych kontajnerov linky `lineId`, ktoré možno prideliť nakládke (uskladnené, `available`, bez jobu); ako `findAvailableEmpty`, bez alokácie. */
-export function countAvailableEmpties(world: Pick<World, 'storedCargo' | 'cargo' | 'jobOfUnit'>, lineId: string): number {
+/**
+ * Počet prázdnych kontajnerov linky `lineId`, ktoré možno prideliť nakládke (uskladnené, `available`, bez jobu, s cestou k `targets`, ak sú
+ * zadané); ako `findAvailableEmpty`, bez alokácie.
+ */
+export function countAvailableEmpties(world: Pick<World, 'storedCargo' | 'cargo' | 'modules' | 'jobOfUnit' | 'grid' | 'distances'>, lineId: string, targets?: readonly Module[]): number {
   let count = 0;
+  let checkedStorage: EntityId | undefined;
+  let reachable = false;
   for (const unitId of world.storedCargo.emptiesOf(lineId)) {
     const unit = world.cargo.get(unitId);
-    if (unit !== undefined && unit.status === 'available' && world.jobOfUnit(unitId) === undefined) count += 1;
+    if (unit === undefined || unit.status !== 'available' || world.jobOfUnit(unitId) !== undefined) continue;
+    if (targets !== undefined && unit.location.kind === 'in_storage') {
+      if (unit.location.moduleId !== checkedStorage) {
+        checkedStorage = unit.location.moduleId;
+        reachable = storageReaches(world, checkedStorage, targets);
+      }
+      if (!reachable) continue;
+    }
+    count += 1;
   }
   return count;
 }

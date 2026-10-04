@@ -40,6 +40,9 @@
  * `logistics/empty-jobs.ts`). Job prázdneho **prednostne** dostane vozidlo, ktoré vozí smer `empty` (`cargoDirections`, empty handler),
  * inak bežné vozidlo (`pickVehicle`); empty handler nikdy nedostane job iného smeru (`vehicleCarries`).
  *
+ * **Zrušenie nakládky** (T6C-07b, M2): keď sa nakládka bookingu zastaví (`loadingStopped`), jeho `open` joby nakládky bez vozidla sa zrušia (`loading_stopped`) a
+ * booking dostane pridelenie späť (`Contract.releaseLoad`) — job, ku ktorému sa vozidlo nedostane, by inak držal loď a kotvisko (`logistics/export-load.ts`).
+ *
  * **Zrušenie** (ADR-023): `open` outbound job, ktorého rampa už nie je prevádzková alebo k nej zo skladu nevedie cesta
  * (podmienky vzniku), sa zruší — rezervácia na docku sa uvoľní, job prejde do `cancelled`, zmizne a emituje
  * `JobCancelled`. Jednotka ostane v sklade a `createOutboundJobs` jej v tom istom kroku nájde inú rampu, ak nejaká je
@@ -170,9 +173,15 @@ export function createEmptyJobs(world: World): number {
  * lode v poradí stowage plánu (`logistics/export-load.ts`).
  */
 export function createExportLoadJobs(world: World): void {
-  createLoadJobs(world, (spec) => {
-    openJob(world, spec);
-  });
+  createLoadJobs(
+    world,
+    (spec) => {
+      openJob(world, spec);
+    },
+    (job, reason) => {
+      cancelJob(world, job, reason);
+    },
+  );
 }
 
 /** Vykládka pod hákom (ADR-033): joby `in_crane → in_storage` pre jednotky, ktoré vykladajú žeriavy v režime `under_hook`. */
@@ -346,17 +355,25 @@ function outboundCancelReason(world: World, job: TransportJob): JobCancelReason 
 }
 
 /**
- * Zruší job bez vozidla: uvoľní rezerváciu v cieli (jedna na jednotku jobu, `cargoDropTarget().release`), `open →
- * cancelled`, `World.removeJob` a `JobCancelled`. Cieľ bez `cargoDropTarget` → `JobError('invalid_input')` (svet je
- * nekonzistentný), job sa nezmení.
+ * Uvoľní rezerváciu cieľa jobu bez vozidla (jedna na jednotku jobu, `cargoDropTarget().release`). Hák žeriava (`in_crane`, nakládka pod hákom,
+ * ADR-033) nič nerezervuje — nie je čo uvoľniť. Cieľ bez `cargoDropTarget` → `JobError('invalid_input')` (svet je nekonzistentný).
  */
-function cancelJob(world: World, job: TransportJob, reason: JobCancelReason): void {
+function releaseTarget(world: World, job: TransportJob): void {
+  if (job.to.kind === 'in_crane') return;
   const target = world.modules.get(job.toModuleId)?.cargoDropTarget();
   const place = slotOf(job.to);
   if (target === undefined || target.kind !== job.to.kind || place === null) {
     throw new JobError('invalid_input', `${job.label}: cieľ #${String(job.toModuleId)} nemá miesto '${job.to.kind}' na uvoľnenie`);
   }
   for (let i = 0; i < job.unitIds.length; i++) target.release(place);
+}
+
+/**
+ * Zruší job bez vozidla: uvoľní rezerváciu v cieli (`releaseTarget`), `open → cancelled`, `World.removeJob` a `JobCancelled`. Cieľ bez
+ * `cargoDropTarget` → `JobError('invalid_input')` (svet je nekonzistentný), job sa nezmení.
+ */
+function cancelJob(world: World, job: TransportJob, reason: JobCancelReason): void {
+  releaseTarget(world, job);
   job.transition('cancelled');
   world.removeJob(job.id);
   world.events.emit({ type: 'JobCancelled', jobId: job.id, reason });

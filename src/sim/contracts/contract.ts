@@ -450,6 +450,14 @@ export abstract class Contract {
     void unit;
   }
 
+  /**
+   * Pridelenie jednotky nakládke sa zrušilo (job nakládky bez vozidla zrušený po `loadingStopped`, T6C-07b): opak `assignLoad` — repositioning vráti
+   * jednotku z `arrivedUnits`; export a prekládka nič (ich jednotky sú započítané inde).
+   */
+  releaseLoad(unit: CargoUnit): void {
+    void unit;
+  }
+
   /** Najviac toľko ďalších jednotiek smie dispatcher kontraktu prideliť nakládke (`assignLoad`); bez obmedzenia `Infinity` (export, prekládka). */
   get loadsToAssign(): number {
     return Infinity;
@@ -966,6 +974,12 @@ export class EmptyRepositioningContract extends ExportContract {
   override assignLoad(unit: CargoUnit): void {
     void unit;
     this.arrivedUnits += 1;
+  }
+
+  /** Zrušený job nakládky pridelenej prázdnej jednotky: pridelenie sa vráti (`arrivedUnits − 1`, nie pod 0). */
+  override releaseLoad(unit: CargoUnit): void {
+    void unit;
+    this.arrivedUnits = Math.max(0, this.arrivedUnits - 1);
   }
 
   /** Dispatcher pridelí nakládke najviac toľko prázdnych, koľko je bookovaných (`volumeUnits − arrivedUnits`). */

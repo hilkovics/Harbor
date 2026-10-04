@@ -30,6 +30,9 @@ import { CRANE_CYCLE_TRAITS, CraneModule } from '../modules/crane-module';
 import { HANDOVERS } from '../systems/crane-handover';
 import { apronDirectionCap, bothDirections, exportApronUsage } from './apron-usage';
 import { findAvailableEmpty } from './empty-stock';
+import { collectLoadBerths, storageReaches } from './load-access';
+import { distanceBetweenModules } from './module-access';
+import type { JobCancelReason, TransportJob } from './transport-job';
 import { allocateUnloadStorage } from './unload-storage';
 import { isOutboundOnShip, loadingStopped, openLoadBookings } from './voyage-cargo';
 import type { CargoLocation } from '../cargo/cargo-location';
@@ -49,11 +52,16 @@ export interface LoadJobSpec {
 /** Vytvorí job `open` z podkladov (rezervácie cieľa už urobil volajúci). */
 export type OpenJob = (spec: LoadJobSpec) => void;
 
+/** Zruší job bez vozidla (uvoľní rezerváciu cieľa, `JobCancelled`) — `cancelJob` dispatchera. */
+export type CancelJob = (job: TransportJob, reason: JobCancelReason) => void;
+
 /** Hláška „žiadny sklad" z kotviska (`NoStorageAvailable`, najviac raz za hernú hodinu). */
 export type EmitNoStorage = (world: World, berth: BerthModule, cargoTypeId: string) => void;
 
 /** Znovupoužiteľné pole bookingov lode (hot path; obsah sa vždy najprv vyprázdni). */
 const BOOKINGS: Contract[] = [];
+/** Znovupoužiteľné pole kotvísk nakládky lode (`collectLoadBerths`; obsah sa vždy najprv vyprázdni). */
+const BERTHS: BerthModule[] = [];
 
 /**
  * Najviac jobov nakládky pod hákom v obehu na žeriav, kým má loď aj import na vykládku (ADR-033 bod 4): vozidlo s exportom čaká pod
@@ -77,28 +85,39 @@ function hookLoadJobs(world: World, crane: CraneModule): number {
   return count;
 }
 
-/** Najlepšia (min kľúč stowage plánu) uskladnená jednotka kontraktu smeru `direction` mimo hold a bez jobu, alebo `undefined`. */
-function bestStoredOf(world: World, contract: Contract, direction: CargoUnit['direction']): CargoUnit | undefined {
+/**
+ * Najlepšia (min kľúč stowage plánu) uskladnená jednotka kontraktu smeru `direction` mimo hold a bez jobu, ktorá leží v sklade s cestou
+ * ku kotvisku nakládky (`berths`, T6C-07b: odrezaný sklad nie je zdrojom), alebo `undefined`. Dosiahnuteľnosť skladu sa overuje raz za sklad
+ * (jednotky skupiny idú podľa skladu vzostupne) a len pre jednotku, ktorá by predbehla doterajšiu najlepšiu.
+ */
+function bestStoredOf(world: World, contract: Contract, direction: CargoUnit['direction'], berths: readonly BerthModule[]): CargoUnit | undefined {
   const group = world.storedCargo.groupOf(contract.id);
   if (group === undefined) return undefined;
   let best: CargoUnit | undefined;
-  for (const unitId of group.units) {
-    const unit = world.cargo.get(unitId);
+  let checkedStorage: EntityId | undefined;
+  let reachable = false;
+  for (let i = 0; i < group.units.length; i++) {
+    const unit = world.cargo.get(group.units[i]);
     if (unit === undefined || unit.direction !== direction || unit.hold !== null || world.jobOfUnit(unit.id) !== undefined) continue;
-    if (best === undefined || compareStowageOrder(unit, best) < 0) best = unit;
+    if (best !== undefined && compareStowageOrder(unit, best) >= 0) continue;
+    if (group.storages[i] !== checkedStorage) {
+      checkedStorage = group.storages[i];
+      reachable = storageReaches(world, checkedStorage, berths);
+    }
+    if (reachable) best = unit;
   }
   return best;
 }
 
-/** Najlepšia jednotka na nakládku pre kontrakt (podľa druhu bookingu; viď hlavička súboru), alebo `undefined`. */
-type LoadScan = (world: World, contract: Contract) => CargoUnit | undefined;
+/** Najlepšia jednotka na nakládku pre kontrakt (podľa druhu bookingu; viď hlavička súboru), alebo `undefined`; `berths` = kotviská nakládky lode. */
+type LoadScan = (world: World, contract: Contract, berths: readonly BerthModule[]) => CargoUnit | undefined;
 
 const LOAD_SCAN: { readonly [K in ContractKind]: LoadScan } = {
   import: () => undefined,
-  export: (world, contract) => bestStoredOf(world, contract, 'export'),
-  tranship: (world, contract) => bestStoredOf(world, contract, 'tranship'),
+  export: (world, contract, berths) => bestStoredOf(world, contract, 'export', berths),
+  tranship: (world, contract, berths) => bestStoredOf(world, contract, 'tranship', berths),
   // Prázdne nemajú kontrakt: dostupný prázdny linky z depa (alebo záložného dvora), najviac toľko, koľko je bookovaných.
-  empty_repositioning: (world, contract) => (contract.loadsToAssign > 0 ? findAvailableEmpty(world, contract.lineId) : undefined),
+  empty_repositioning: (world, contract, berths) => (contract.loadsToAssign > 0 ? findAvailableEmpty(world, contract.lineId, berths) : undefined),
 };
 
 /** Jednotky plných bookingov lode (export, prekládka), ktoré sú prijaté, ale ešte nenaložené ani vrátené (mimo hold) — pred nimi sa prázdne nenakladajú. */
@@ -118,7 +137,7 @@ function fullUnitsPending(bookings: readonly Contract[]): number {
  * plnú jednotku — vozidlá s plnými a prázdnymi jednotkami by sa inak predbiehali pod hákom a stowage „plné, potom prázdne“ by sa porušil.
  * Bez poľa a triedenia (úplné usporiadanie).
  */
-function bestLoadable(world: World, bookings: readonly Contract[]): CargoUnit | undefined {
+function bestLoadable(world: World, bookings: readonly Contract[], berths: readonly BerthModule[]): CargoUnit | undefined {
   let best: CargoUnit | undefined;
   let fullPending = -1;
   for (const contract of bookings) {
@@ -127,7 +146,7 @@ function bestLoadable(world: World, bookings: readonly Contract[]): CargoUnit | 
       fullPending = fullPending < 0 ? fullUnitsPending(bookings) : fullPending;
       if (fullPending > 0) continue;
     }
-    const unit = LOAD_SCAN[contract.kind](world, contract);
+    const unit = LOAD_SCAN[contract.kind](world, contract, berths);
     if (unit !== undefined && (best === undefined || compareStowageOrder(unit, best) < 0)) best = unit;
   }
   return best;
@@ -172,12 +191,15 @@ const LOAD_TARGET: { readonly [M in HandoverMode]: (world: World, berth: BerthMo
 
 /**
  * Pre jednotku `unit` nájde kotvisko lode s cieľom nakládky (`LOAD_TARGET` podľa režimu) a otvorí job; `false` = žiadne kotvisko nemá
- * kapacitu. Kotviská lode vzostupne, len so žeriavom kategórie nákladu; prvé s voľnou kapacitou berie jednotku.
+ * kapacitu. Kotviská lode vzostupne, len so žeriavom kategórie nákladu a s cestou zo skladu jednotky (T6C-07b); prvé s voľnou kapacitou
+ * berie jednotku.
  */
 function openLoadJob(world: World, ship: Ship, unit: CargoUnit, openJob: OpenJob): boolean {
+  const storage = unit.location.kind === 'in_storage' ? world.modules.get(unit.location.moduleId) : undefined;
   for (const berthId of ship.berthIds) {
     const berth = world.modules.get(berthId);
     if (!(berth instanceof BerthModule) || craneFor(world, berth, ship) === undefined) continue;
+    if (storage !== undefined && distanceBetweenModules(world, storage, berth) === Infinity) continue;
     const target = LOAD_TARGET[berth.params.handoverMode](world, berth, ship);
     if (target === undefined) continue;
     openJob({ unitIds: [unit.id], from: unit.location, to: target, ...(target.kind === 'in_crane' ? { toModuleId: berth.id } : {}) });
@@ -186,21 +208,61 @@ function openLoadJob(world: World, ship: Ship, unit: CargoUnit, openJob: OpenJob
   return false;
 }
 
+/** Priradí jednotku nakládke prvého bookingu, ktorý ju nakladá a smie ešte prideľovať (`Contract.assignLoad`); bookingy v poradí id, bez alokácie. */
+function assignToBooking(world: World, bookings: readonly Contract[], unit: CargoUnit): void {
+  for (const contract of bookings) {
+    if (!contract.acceptsLoading || loadingStopped(world, contract) || contract.loadsToAssign <= 0 || !contract.loadsUnit(unit)) continue;
+    contract.assignLoad(unit);
+    return;
+  }
+}
+
+/**
+ * Nakládka bookingov lode sa zastavila (`loadingStopped`: po lehote zlyhania sa nové joby nezačínajú)? Otvorené joby nakládky jednotiek týchto
+ * bookingov, ktoré ešte nemajú vozidlo (`open`), sa zrušia (`loading_stopped`) a booking dostane pridelenie späť (`Contract.releaseLoad`) — job,
+ * ku ktorému sa vozidlo nedostane (odrezaný sklad, chýbajúce vozidlá), by inak navždy držal `loadingInFlight` a loď s kotviskom by neodišli
+ * (T6C-07b, M2). Job s vozidlom sa nezruší — vozidlo ho dokončí. Prechod jobmi len keď niektorý booking lode je zastavený.
+ */
+function cancelStoppedLoadJobs(world: World, ship: Ship, bookings: readonly Contract[], cancel: CancelJob): void {
+  let stopped = false;
+  for (const contract of bookings) {
+    if (loadingStopped(world, contract)) {
+      stopped = true;
+      break;
+    }
+  }
+  if (!stopped) return;
+  for (const job of world.jobs.values()) {
+    if (job.state !== 'open' || job.from.kind !== 'in_storage' || (job.to.kind !== 'on_apron' && job.to.kind !== 'in_crane') || !ship.berthIds.includes(job.toModuleId)) continue;
+    const unit = world.cargo.get(job.unitIds[0]);
+    if (unit === undefined) continue;
+    for (const contract of bookings) {
+      if (!loadingStopped(world, contract) || !contract.loadsUnit(unit)) continue;
+      cancel(job, 'loading_stopped');
+      contract.releaseLoad(unit);
+      break;
+    }
+  }
+}
+
 /**
  * Joby nakládky exportu (viď hlavička súboru). Lode vzostupne podľa id; jednotky voyage v poradí stowage plánu sa priraďujú
- * kotviskám lode vzostupne — prvému s voľnou kapacitou; bez kapacity sa lode preskočí (jednotky počkajú v sklade). Job musí
- * zaregistrovať `openJob` (`World.addJob`) — jednotka s jobom už nie je v ďalšom výbere; inak sa lode preskočí (poistka proti slučke).
+ * kotviskám lode vzostupne — prvému s voľnou kapacitou; bez kapacity sa lode preskočí (jednotky počkajú v sklade). Jednotka sa berie len zo skladu
+ * s cestou ku kotvisku lode (`load-access.ts`). Job musí zaregistrovať `openJob` (`World.addJob`) — jednotka s jobom už nie je v ďalšom výbere;
+ * inak sa lode preskočí (poistka proti slučke). Po zastavení nakládky bookingu sa zrušia jeho otvorené joby bez vozidla (`cancelStoppedLoadJobs`).
  */
-export function createExportLoadJobs(world: World, openJob: OpenJob): void {
+export function createExportLoadJobs(world: World, openJob: OpenJob, cancel: CancelJob): void {
   if (!world.contractBook.hasOpenExports) return;
   for (const ship of world.ships.values()) {
     if (ship.state !== 'docked') continue;
     const bookings = openLoadBookings(world, ship.id, BOOKINGS);
     if (bookings.length === 0) continue;
+    cancelStoppedLoadJobs(world, ship, bookings, cancel);
+    const berths = collectLoadBerths(world, ship, BERTHS);
     for (;;) {
-      const unit = bestLoadable(world, bookings);
+      const unit = bestLoadable(world, bookings, berths);
       if (unit === undefined || !openLoadJob(world, ship, unit, openJob) || world.jobOfUnit(unit.id) === undefined) break;
-      bookings.find((contract) => contract.loadsUnit(unit))?.assignLoad(unit);
+      assignToBooking(world, bookings, unit);
     }
   }
 }

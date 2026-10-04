@@ -6,7 +6,7 @@
  *   pri vzniku kamióna povoľuje len s miestom v depe, takže prázdne dvor nezaplnia). Sklad rezervuje slot pri vzniku jobu. Bez skladu job
  *   nevznikne a prázdny čaká na docku (kamión s prázdnym vtedy čaká v stojisku).
  * - **Výdaj exportérovi** (`createEmptyPickupJobs`): kamión misie `collect` bez prideleného prázdneho dostane dostupný prázdny kontajner
- *   jeho linky (`findAvailableEmpty`: depo pred dvorom, najmenšie id; poškodený a opravovaný nie) — job `in_storage → at_ramp` na dock
+ *   jeho linky (`findAvailableEmpty`: depo pred dvorom, najmenšie id; poškodený a opravovaný nie; len zo skladu s cestou k rampe kamióna) — job `in_storage → at_ramp` na dock
  *   kamióna (rezervuje staging miesto) a poverenie `errand.unitId`. Zrušený job (rampa stratila prevádzkovosť) pridelenie uvoľní:
  *   jednotka je stále v sklade bez jobu → poverenie sa vráti do stavu bez prideleného a prázdny sa pridelí znovu.
  *
@@ -16,9 +16,9 @@
 import type { CargoLocation } from '../cargo/cargo-location';
 import type { EntityId } from '../core/entity-id';
 import { LoadingRamp } from '../modules/loading-ramp';
+import type { Module } from '../modules/module';
 import type { World } from '../world/world';
 import { allocateReturnStorage, findAvailableEmpty } from './empty-stock';
-import { distanceBetweenModules } from './module-access';
 
 /** Podklady jobu prázdneho: jednotka, zdroj a rezervovaný cieľ (dispatcher z toho vytvorí job `open`). */
 export interface EmptyJobSpec {
@@ -55,6 +55,9 @@ function releaseLostAssignment(world: World, truckId: EntityId, unitId: number):
   if (unit?.location.kind === 'in_storage' && world.jobOfUnit(unit.id) === undefined) world.emptyFlow.assignErrandUnit(truckId, null);
 }
 
+/** Znovupoužiteľné pole s rampou kamióna pre `findAvailableEmpty` (hot path; obsah sa vždy najprv prepíše). */
+const RAMP_TARGET: Module[] = [];
+
 /** Výdaj prázdnych kamiónom `collect` (viď hlavička). Vracia počet vytvorených jobov. */
 export function createEmptyPickupJobs(world: World, openJob: (spec: EmptyJobSpec) => void): number {
   let created = 0;
@@ -67,9 +70,9 @@ export function createEmptyPickupJobs(world: World, openJob: (spec: EmptyJobSpec
     const truck = world.trucks.get(truckId);
     const ramp = truck === undefined ? undefined : world.modules.get(truck.rampId);
     if (truck === undefined || !(ramp instanceof LoadingRamp) || ramp.freeAt(truck.dock) <= 0 || !world.isRampOperational(ramp)) continue;
-    const unit = findAvailableEmpty(world, errand.lineId);
-    const storage = unit?.location.kind === 'in_storage' ? world.modules.get(unit.location.moduleId) : undefined;
-    if (unit === undefined || storage === undefined || distanceBetweenModules(world, storage, ramp) === Infinity) continue;
+    RAMP_TARGET[0] = ramp;
+    const unit = findAvailableEmpty(world, errand.lineId, RAMP_TARGET);
+    if (unit === undefined || unit.location.kind !== 'in_storage') continue;
     ramp.reserve(truck.dock);
     openJob({ unitId: unit.id, from: unit.location, to: { kind: 'at_ramp', rampId: ramp.id, dock: truck.dock } });
     world.emptyFlow.assignErrandUnit(truckId, unit.id);

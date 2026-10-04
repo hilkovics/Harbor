@@ -31,6 +31,10 @@
  * **Prijatie exportu** (F6a, ADR-032 bod 8): jednotka exportu, ktorú vyložil kamión s exportom na dock rampy (booking beží),
  * dostane sklad zoskupene podľa voyage a job `at_ramp → in_storage` (`createExportJobs`), priority ako outbound.
  *
+ * **Vykládka z lode a nakládka** (F6c, ADR-034 + dodatok T6C-03): jednotka na aprone dostane sklad podľa smeru (`allocateUnloadStorage` — prekládka z lode A
+ * zoskupene podľa kontraktu); jednotka na nakládku dokovanej lode (export, prázdne repositioningu, prekládka čakajúca na loď B) na aprone čaká na žeriav
+ * (`awaitsCrane`), kým beží jej booking; joby nakládky vytvára `logistics/export-load.ts` (prázdne po plných jednotkách).
+ *
  * **Prázdne kontajnery** (F6c, ADR-034 + dodatok T6C-02): prázdny z vnútrozemia vyložený na dock dostane job `at_ramp → in_storage` do depa
  * (fallback bežný sklad), kamión misie `collect` dostane job `in_storage → at_ramp` s dostupným prázdnym jeho linky (`createEmptyJobs`,
  * `logistics/empty-jobs.ts`). Job prázdneho **prednostne** dostane vozidlo, ktoré vozí smer `empty` (`cargoDirections`, empty handler),

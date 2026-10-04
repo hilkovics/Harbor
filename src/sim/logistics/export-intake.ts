@@ -12,6 +12,9 @@
  *
  * Poradie: rampy vzostupne podľa id, jednotky docku vo FIFO poradí ledgera (bez kópie — počas prechodu sa ledger nemení,
  * vznikajú len joby).
+ *
+ * **Prekládka** (F6c, ADR-034) sa ukladá rovnakým výberom (`allocateGroupedStorage`): jednotky jednej prekládky z lode A ležia zoskupene v sklade
+ * (zdrojom je kotvisko, nie rampa), kým ich nenaloží loď B; na rampu neprichádza (nikdy neprejde bránou), kým ju kontrakt neuzavrie predajom.
  */
 import type { CargoUnit } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';

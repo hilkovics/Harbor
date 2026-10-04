@@ -11,7 +11,8 @@
  *    nekontrolujú — ich normalizovaný stav zaručujú zápisy `createCell`, `RemoveRoad` a `World.deserialize`);
  * 3. žeriav: stojí celý na svojom berthe, má jeho rotáciu, berth ho eviduje, držaná jednotka, rezervácia a fáza
  *    zodpovedajú ledgeru, apronu a `CRANE_STATE_TRAITS` (`cranePhaseProblem`); berth: `craneIds` = jeho žeriavy v poradí umiestnenia,
- *    najviac `maxCranes`, bez prekryvu, rezervácie apronu = rezervácie jeho žeriavov;
+ *    najviac `maxCranes`, bez prekryvu, rezervácie apronu = rezervácie jeho žeriavov + sloty `to` jobov nakládky na apron (F6a;
+ *    v režime `under_hook` žeriav pri vykládke slot nerezervuje, ADR-033);
  * 4. sloty modulov (`Module.cargoSlots()`: apron, sklad; ADR-017): obsadenie je v ledgeri, modul drží len rezervácie —
  *    rezervovaný slot nie je obsadený, rezervácie ≤ kapacita, `stored + reserved ≤ capacity`, slot jednotky v rozsahu
  *    (`SlotReservations.findProblem`); kapacita apronu = `apronSlots`, skladu = `capacityUnits`; v sklade len jednotky
@@ -42,7 +43,9 @@
  *    rezervovaný + počet, súčet a súčet štvorcov slotov — bez kópií a triedenia, ADR-021); rezervácie každého docku
  *    rampy = počet jednotiek aktívnych outbound jobov na tento dock (outbound job drží rezerváciu celý život, T04-03)
  *    plus jednotky, ktoré ešte vezie vykladajúci delivery kamión (`holdsIntake`, ADR-032 bod 13); job `at_ramp → in_storage`
- *    (prijatie exportu) drží rezerváciu slotu v sklade ako inbound;
+ *    (prijatie exportu) drží rezerváciu slotu v sklade ako inbound; joby pod hákom (ADR-033): zdroj `in_crane` (jednotka je
+ *    v žeriave, alebo ešte na lodi pri dispatchi vopred, alebo na aprone po presmerovaní `rebindSource`) a cieľ `in_crane`
+ *    (jednotka sa nakladá z vozidla; držiteľ = žeriav, bez rezervácie slotu);
  * 10. vnútorný stav modulov (`Module.findRuntimeProblem`, T04-02, ADR-022): fronta brány bez duplicít, bays stojiska
  *    (počítadlá, obsadený bay má kamión, kamión drží najviac jeden bay), staging dockov rampy (jednotka na docku
  *    v rozsahu, súčet rezervácií, `staged + reserved ≤ stagingPerDock` na každom docku, držitelia dockov); na rampe len

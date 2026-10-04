@@ -1,17 +1,26 @@
 # Prevádzka kontajnerového terminálu — doménový model a plán
 
-> Zdroj: doplnenie od používateľa (2026-09-30) „Štyri toky kontajnerov". Tento dokument je **referencia pre plánovanie fáz**: porovnáva realitu terminálu so stavom hry po F5b, navrhuje zjednodušený herný model a zaraďuje ho do fáz. Detaily implementácie sa rozhodnú v ADR príslušnej fázy.
+> Zdroj: doplnenie od používateľa (2026-09-30) „Štyri toky kontajnerov". Tento dokument je **referencia pre plánovanie fáz**: porovnáva realitu terminálu so stavom hry po F6a (pôvodne po F5b), navrhuje zjednodušený herný model a zaraďuje ho do fáz. Detaily implementácie sa rozhodnú v ADR príslušnej fázy.
 > Zásady ostávajú: nič sa neteleportuje (každý presun cez `CargoLedger.move`), determinizmus, data-driven, rozšírenia cez triedy a defy.
 
-## 1. Stav hry po F5b (čo už zodpovedá realite)
+## 1. Stav hry po F6a (čo už zodpovedá realite)
 | Realita | V hre dnes |
 |---|---|
 | Import: loď → sklad → kamión odvezie | **Áno** (F2–F5): kontrakt → loď → STS žeriav → apron → straddle carrier → dvor → rampa → kamión → `exported`. |
-| STS žeriav kladie kontajnery na zem, nečaká na vozidlo | **Áno**: apron pod žeriavom (8 slotov po F5b), žeriav čaká len na voľný slot (§7.8). |
+| STS žeriav kladie kontajnery na zem, nečaká na vozidlo | **Áno (režim `apron`)**: apron pod žeriavom (8 slotov po F5b), žeriav čaká len na voľný slot (§7.8); od F6a je predvolené odovzdávanie pod hákom (riadok nižšie). |
 | Straddle carrier robí celý cyklus sám (nábrežie ↔ stoh ↔ kamión) | **Áno, zjednodušene**: `straddle_carrier` vozí apron → dvor → rampa; kamión nakladá na rampe (výmenná zóna), nie priamo v uličke stohu. |
 | Brána s frontou, stojisko, kamión na dock | **Áno** (F4, F5b): FIFO brána, bays, cúvanie do docku (render). |
 | Kontrakt ↔ loď, SLA, penalizácie | **Áno** (F5): import kontrakt, demurrage, late, fail. |
 | Sklad so sotmi × vrstvami | **Čiastočne**: `container_yard_small` 32 slotov × 2 vrstvy, **bez poradia v stohu** (žiadny rehandling). |
+| Export: booking (loď/voyage + cieľový prístav + počet TEU) | **Áno (F6a)**: kontrakt `export` alebo `roundtrip` (import + export jednej návštevy lode); ponuka sa prijíma ako skupina, odmena `exportPricePerUnitCents × TEU × urgency`, výplata pomerne k naloženým. |
+| Rozložené príchody exportu a cut-off | **Áno (F6a)**: plán príchodov z `Rng` v okne pred cut-off, kamión príde naložený 1 TEU a prejde bránou; po cut-off je jednotka *rolled* (naloží sa len ako „last minute“, kým loď nelashuje, inak sa vráti odosielateľovi; penalizácia). Toast „cut-off o N h“. |
+| Brána s kontrolou VGM | **Áno (F6a)**: s pravdepodobnosťou `vgmMissingChance` dostane jednotka hold na `vgmHoldHours`, nesmie sa naložiť a loď na ňu nečaká; hold sa uvoľní sám (bez interakcie hráča). |
+| Exportný sklad zoskupený podľa lode | **Áno (F6a)**: export z docku ide do skladu, kde už leží jednotka tej istej voyage (inak najbližší s voľným miestom); import a export zdieľajú sklady, **bez poradia v stohu** (F14). |
+| Stowage poradie nakládky | **Áno (F6a), zjednodušene**: `heavy → medium → light`, pri zhode id; dispatcher aj žeriav dodržiavajú poradie, odchýlky ráta metrika `stowageOrderViolations`. Viac prístavov a 40'/20' až F12. |
+| Dual cycling žeriava | **Áno (F6a)**: loď s importom aj exportom pripraveným na nakládku → `dual_load` + `dual_unload` za `dualCycleFactor × cyklus` (metrika `dualCycleRate`). |
+| Lashing + papiere | **Áno (F6a)**: po poslednej nakládke stav lode `lashing` (`lashingTicksPerUnit × naložené + paperworkTicks`), loď drží kotvisko; pri odchode sa export presunie do `shipped`. |
+| Dual transaction | **Áno (F6a)**: kamión s exportom po vykládke na rampe zostane na docku a naloží import, ak je tam náklad na odvoz pre celú jeho kapacitu (metrika `dualTransactionRate`; v prirodzenom toku zriedkavé). |
+| Odovzdávanie žeriav ↔ vozidlo pod hákom | **Áno (F6a)**: predvolený `handoverMode: under_hook` — vozidlo čaká pod žeriavom, apron je len buffer 0–1 jednotka na žeriav; čakanie žeriava a vozidla sa meria (`craneWaitForVehicleTicks`, `vehicleWaitUnderCraneTicks`). Režim `apron` ostáva v defe. |
 
 ## 2. Čo chýba (medzery) a herný model
 ### 2.1 Export (landside → loď)
@@ -53,7 +62,7 @@ Nevyžaduje extra kód, vznikne z vyššie uvedeného: exporty prichádzajú v �
 |---|---|---|
 | **5b** (beží) | spätná väzba z hrania — tok kamiónov, lode bez prekryvu, mapa s mólami, mierka | — |
 | **6** | Save/Load, čas, nastavenia, stabilizácia (bez zmeny) | 1,5 SD |
-| **6a — Export a booking** *(nová; presunuté „export kontrakty" z F12)* | booking (loď + cieľový prístav + cut-off), rozložené príchody exportov, brána s VGM hold, exportný sklad zoskupený podľa lode/prístavu/hmotnosti, nakládka lode podľa zjednodušeného stowage plánu, dual cycling žeriavu, lashing + papiere pred odchodom, dual transaction kamiónov | 3 SD |
+| **6a — Export a booking** — **hotová** *(nová; presunuté „export kontrakty" z F12)* | booking (loď + cieľový prístav + cut-off), rozložené príchody exportov, brána s VGM hold, exportný sklad zoskupený podľa lode/prístavu/hmotnosti, nakládka lode podľa zjednodušeného stowage plánu, dual cycling žeriavu, lashing + papiere pred odchodom, dual transaction kamiónov; odovzdávanie žeriav ↔ vozidlo pod hákom (variant A, ADR-033) | 3 SD — hotové |
 | **6c — Prázdne a tranship** *(nová)* | `lineId`, návrat prázdnych z vnútrozemia, depot prázdnych + empty handler, kontrola a M&R, výdaj prázdneho exportérovi, repositioning kontrakty, tranship kontrakty (loď → loď) | 2,5 SD |
 | 7 | Parcely, OPEX, grafy (bez zmeny) | 2 SD |
 | 8 | XP a tech tree — odomyká RTG/shuttle/AGV/empty depot | 1,5 SD |

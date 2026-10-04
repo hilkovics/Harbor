@@ -226,31 +226,29 @@ Stav: **hotová** (T06-01, T06-02, T06-03, T06-04, T06-03b, T06-05, T06-06, T06-
 ## Fáza 6a — Export a booking
 Karty: `docs/tasks/phase-06a.md` · vetva `phase/06a-export-booking` (stacked nad hilkovics/Harbor#8)
 
-Stav: **priebežne hotová** (T6A-01…T6A-10a dokončené, T6A-10b fixy, T6A-11 zverejnenie a uzavretie)
+Stav: **hotová** (T6A-01 … T6A-09b, T6A-10, T6A-10a, T6A-10b, T6A-11)
 
-**Hotové (T6A-01…T6A-09b, T6A-10a):**
-- Návrh: ADR-032 (voyage, kontrakt kind, CargoUnit rozšírenie, ledger `shipped`, lashing), WorldState v7 + migrácia v6→v7
-- Defy exportu: `contract_templates` (export/roundtrip šablóny), `economy` (booking a penalizácie), `logistics.exportFlow` (príchody, VGM, váhy), `modules` (apron reserve), `ships` (lashing)
-- Sim jadro: ledger reťazec (in_truck → shipped), booking/voyage v ContractSystem, plán príchodov, naložené kamióny, brána (FIFO + VGM hold + rolled), vykládka na rampe, export do skladu zoskupene
-- Odovzdávanie pod hákom (režim `under_hook`, buffer 0–1, dispatcher export, žeriav nakládka + dual cycling, lashing, dual transaction)
-- Render: naložený kamión pri príchode, žeriav nakládka (opačný smer), náklad na palube podľa počtu
-- UI: ContractsPanel (export booking s cut-off a heldUnits), inšpektor skladu (import/export split), inšpektor lode (náklad, lashing), toasty (cut-off warning, rolled, exported)
-- TDD: scenáre export_inbound a export_roundtrip, metriky simrun (shippedUnits, rolledUnits, vgmHolds, dualCycleRate)
-- Review: all blocking opravené (legacy pod hákom, booking payload, isPickupCargo, hot path, invarianty)
-- E2E: f2-ship-crane (pod hákom), f6a-export (roundtrip od prijatia po odchod), inšpektor „Čaká na vozidlo"
-
-**Výsledky testov:**
-- `pnpm test`: 315 súborov, 7996 testov
-- e2e: 42/43 (jedna zlyhajúca v f2-ship-crane pri výbere modulu klikom)
-- `export_roundtrip` (40 k tickov): lostUnits 0, shipped 35, exported 58, rolled 1, vgmHolds 4, dualCycleRate 5,75 %, oba kontrakty completed, hash 8f8bbdaf
-- `vertical_slice` (30 k tickov): cash 41 790 000, exported 78, lostUnits 0, hash c8a8fb43
+**Výsledky:**
+- review sim-reviewer: MERGE po opravách T6A-09b (FIX FIRST: 1 blocking, 3 major, minor 5–9 opravené)
+- `pnpm test`: 315 súborov, 7996 testov zelených
+- `export_roundtrip` (40 000 tickov): lostUnits 0, shipped 35, exported 58, rolled 1, vgmHolds 4, dualCycleRate 5,75 %, stowageOrderViolations 0, oba kontrakty `completed`, hash 8f8bbdaf (zhodný s `--roundtrip-at 28000`)
+- `vertical_slice` (30 000 tickov): cash 41 790 000, exported 78, lostUnits 0, hash c8a8fb43
 - `stress_f6`: lostUnits 0
-- bench vertical_slice: priemer 0,09 ms
+- `pnpm bench`: vertical_slice priemer 0,09 ms / tick
+- e2e: 42/43 → zlyhanie výberu modulu vyriešené v T6A-10b (príčina: prerušený `locator.click` v Playwrighte nechal v stránke zachytávač pointer udalostí; spoločný `tests/e2e/dismiss-toasts.ts`, f2-ship-crane 40/40 pri `--repeat-each=10`)
+- Hrateľná verzia zverejnená (artefakt „Fáza 6a“)
 
-**Režimy odovzdávania:** `under_hook` (predvolený, ADR-033), `apron` (starý, legacy testy); savy v3–v6 sa migrujú.
+**Čo je hotové:**
+- Návrh: ADR-032 (voyage, kontrakt `kind`, štítky a `hold` jednotky, reverzný reťazec ledgera so `shipped`, lashing, dual transaction, WorldState v7 + migrácia v6 → v7), ADR-033 (odovzdávanie pod hákom)
+- Defy exportu: `contract_templates` (export/roundtrip), `economy` (booking a penalizácie), `logistics.exportFlow`, `modules` (apron reserve, handoverMode), `ships` (lashing)
+- Sim jadro: booking/voyage v ContractSystem, plán príchodov, delivery kamióny, brána (VGM hold, rolled), vykládka na rampe, prijatie do skladu zoskupene, nakládka v poradí stowage, dual cycling, lashing, dual transaction, uzavretie bookingu s pomernou výplatou a penalizáciami
+- Odovzdávanie pod hákom (režim `under_hook`, buffer 0–1, dispatch vopred, metriky čakania)
+- Render, UI a app: naložený kamión pri príchode, nakládka žeriava, náklad na palube; ContractsPanel s bookingom, inšpektor skladu a lode, toasty exportu
+- TDD a tooling: scenáre `export_inbound` a `export_roundtrip` (golden), metriky `simrun` (shippedUnits, rolledUnits, vgmHolds, dualCycleRate, dualTransactionRate, …)
+- Dokumentácia: ARCHITECTURE (§5, §6, §7.1–7.5, §7.8, §9.1, §12, §14, §16, §18), PORT_OPERATIONS §1 a §3
 
-**Prebieha:**
-- T6A-10b: fixy z e2e (občasné zlyhanie výberu modulu klikom)
-- T6A-11: zverejnenie artefaktu, uzavretie fázy
+**Režimy odovzdávania:** `under_hook` (predvolený, ADR-033), `apron` (starý, pripnutý v legacy testoch); savy v1 … v6 sa načítajú a migrujú na v7.
 
 PR hilkovics/Harbor#9.
+
+Ďalej: **Fáza 6c — Prázdne kontajnery a tranship** (spolu so 6a míľnik M2)

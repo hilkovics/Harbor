@@ -61,10 +61,10 @@ Worktree karty začínajú `git reset --hard <HEAD phase/06a-export-booking>` (w
 - [x] T6A-08 · simrun metriky + golden
 - [x] T6A-09 · Review + opravy
   - [x] T6A-09b · Opravy z review (FIX FIRST → opravené): obnova legacy žeriava pod hákom (savy v3–v6 sa načítajú), zlyhanie bookingu s nákladom na palube → loď odpláva a booking sa uzavrie pomerne, isPickupCargo bez aktívneho jobu, hot path bez alokácií, CRANE_CYCLE_TRANSITIONS, HANDOVERS stratégia, invariant loadedUnits
-- [ ] T6A-10 · e2e + pipeline + artefakt
+- [x] T6A-10 · e2e + pipeline + artefakt
   - [x] T6A-10a · e2e: f2-ship-crane pre režim pod hákom, nový f6a-export (roundtrip od prijatia po odchod lode), inšpektor „Čaká na vozidlo"
-- [ ] T6A-10b · E2E opravy (príčina občasného zlyhania výberu modulu klikom v f2-ship-crane)
-- [ ] T6A-11 · Docs + PR
+- [x] T6A-10b · E2E opravy (príčina občasného zlyhania výberu modulu klikom v f2-ship-crane)
+- [x] T6A-11 · Docs + PR
 
 ## Spoločné rozhrania
 *Záväzné pre T6A-02, 03, 06, 07, 08 (T6A-01, ADR-032). Skeleton je v `src/sim` (HEAD po T6A-01): typy, tabuľky, save v7 a migrácia existujú; správanie exportu (spawn bookingov, brána, VGM, dispatcher, žeriav, lashing, dual transaction) dodajú T6A-04/05.*
@@ -176,18 +176,20 @@ Nové šablóny (odporúčanie): `container_feeder_roundtrip` (roundtrip, feeder
 - **T6A-06 / T6A-07** (render, UI): view-modely a panely nad poľami a udalosťami vyššie, demo dáta; živé dáta (delivery kamióny, nakládka, lashing) až po T6A-05.
 - **T6A-08** (tooling): metriky a `lostUnits` hneď (počty sú 0 do T6A-04/05); golden `export_roundtrip` až po T6A-05.
 
-## Výsledok (priebežne)
+## Výsledok fázy
 
 | Karta | Stav |
 |---|---|
 | T6A-01 do T6A-09b | hotové |
 | T6A-10a | hotové |
-| T6A-10b | prebieha (občasné zlyhanie výberu modulu klikom v e2e) |
-| T6A-11 | čaká |
+| T6A-10b | hotové (príčina občasného zlyhania výberu modulu klikom nájdená a odstránená, nižšie) |
+| T6A-11 | hotové (ARCHITECTURE, PORT_OPERATIONS, PROGRESS) |
+
+**Review `src/sim/**`:** MERGE po opravách T6A-09b (verdikt FIX FIRST — 1 blocking, 3 major, minor 5–9 — opravený, ADR-032 a ADR-033 majú dodatok T6A-09b).
 
 **Pipeline:** `pnpm test` zelené: 315 súborov, 7996 testov.
 
-**E2E:** 42/43 (jedna e2e v f2-ship-crane pri výbere modulu klikom sa občasne nepodarí).
+**E2E:** 42/43 → zlyhanie výberu modulu vyriešené v T6A-10b. Príčina nebola chyba aplikácie: prerušený `locator.click` v Playwrighte (pôvodný `dismissToasts` s limitom 1 s) nechal v stránke zachytávač pointer udalostí, ktorý spolkol ďalší klik na canvas. Oprava: spoločný `tests/e2e/dismiss-toasts.ts` (kliknutie na × v stránke), `selectModuleAt` bez opakovania; f2-ship-crane 40/40 pri `--repeat-each=10`.
 
 **Scenár export_roundtrip** (40 000 tickov, roundtrip od prijatia po odchod lode):
 - `lostUnits`: 0
@@ -214,6 +216,8 @@ Nové šablóny (odporúčanie): `container_feeder_roundtrip` (roundtrip, feeder
 
 **Výkon:** benchmark vertical_slice: priemer 0,09 ms / tick.
 
-**Režim odovzdávania:** predvolený `under_hook` (ADR-033); starý režim `apron` je dostupný cez def na kotvisku/žeriave a používajú ho testy s legacy defami (`LEGACY_CAPACITY_DEFS`). Savy v3–v6 sa načítajú v režime `apron` a migrujú sa na v7 s novými poľami.
+**Režim odovzdávania:** predvolený `under_hook` (ADR-033); starý režim `apron` je dostupný cez def na kotvisku/žeriave a používajú ho testy s legacy defami (`LEGACY_CAPACITY_DEFS`). Savy v1–v6 sa načítajú pod predvoleným `under_hook` a migrujú sa na v7 s novými poľami; rozpracovanú vykládku žeriava zo savov spred ADR-033 prevedie obnova (dodatok T6A-09b).
 
-**Ďalej:** fixy v T6A-10b, zverejnenie artefaktu, uzavretie fázy v T6A-11.
+**Hrateľná verzia:** zverejnená (artefakt „Fáza 6a“).
+
+**Ďalej:** Fáza 6c — Prázdne kontajnery a tranship (spolu so 6a míľnik M2).

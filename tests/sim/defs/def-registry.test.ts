@@ -450,6 +450,8 @@ describe('loadBundledDefs', () => {
       congestion: { trafficDecayPerHour: 0.9, slowdownPerExtraVehicle: 0.25, penaltyTrafficDivisor: 200, penaltyMax: 3 },
       // T06-07: hodnoty doterajších konštánt APPROACH_MARGIN_CELLS, SWEEP_STEP_CELLS, TURN_MANEUVERS, SIDEWAYS_MANEUVERS.
       shipNavigation: { approachMarginCells: 1, sweepStepCells: 0.5, turnManeuvers: 1, sidewaysManeuvers: 1 },
+      // T6A-02 (ADR-032): tok exportu po súši.
+      exportFlow: { arrivalWindowDays: 2, vgmMissingChance: 0.05, vgmHoldHours: 6, weightClassShares: { light: 0.3, medium: 0.5, heavy: 0.2 } },
     });
   });
 

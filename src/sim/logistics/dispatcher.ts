@@ -28,6 +28,9 @@
  * jednotku, ktorá job dostane; sklad bez vhodnej rampy sa preskočí binárnym skokom na hranicu ďalšieho skladu skupiny. Pri samých jednotkách bez kontraktu je poradie
  * jobov rovnaké ako vo F4 (sklady ↑, FIFO).
  *
+ * **Prijatie exportu** (F6a, ADR-032 bod 8): jednotka exportu, ktorú vyložil kamión s exportom na dock rampy (booking beží),
+ * dostane sklad zoskupene podľa voyage a job `at_ramp → in_storage` (`createExportJobs`), priority ako outbound.
+ *
  * **Zrušenie** (ADR-023): `open` outbound job, ktorého rampa už nie je prevádzková alebo k nej zo skladu nevedie cesta
  * (podmienky vzniku), sa zruší — rezervácia na docku sa uvoľní, job prejde do `cancelled`, zmizne a emituje
  * `JobCancelled`. Jednotka ostane v sklade a `createOutboundJobs` jej v tom istom kroku nájde inú rampu, ak nejaká je
@@ -57,6 +60,7 @@ import type { Vehicle } from '../vehicles/vehicle';
 import { startTrip } from '../vehicles/vehicle-trip';
 import type { World } from '../world/world';
 import { JobError } from './job-error';
+import { createExportIntakeJobs } from './export-intake';
 import { distanceBetweenModules, distanceToModule } from './module-access';
 import { allocateRamp } from './ramp-allocator';
 import { allocateStorage } from './storage-allocator';
@@ -101,6 +105,16 @@ export function createInboundJobs(world: World): void {
   for (const module of world.modules.values()) {
     if (module instanceof BerthModule) inboundFromBerth(world, module);
   }
+}
+
+/**
+ * Prijatie exportu (ADR-032 bod 8): joby `at_ramp → in_storage` pre jednotky exportu, ktoré práve vyložil kamión na dock
+ * rampy, so zoskupením podľa voyage (`logistics/export-intake.ts`). Vracia počet vytvorených jobov.
+ */
+export function createExportJobs(world: World): number {
+  return createExportIntakeJobs(world, ({ unitId, from, to }) => {
+    openJob(world, { unitIds: [unitId], from, to });
+  });
 }
 
 /** Vytvorí job `open` s už rezervovaným miestom v cieli, pridá ho do sveta a ohlási `JobCreated`. */

@@ -76,7 +76,7 @@ function restoreModules(world: World, entries: readonly ParsedModuleEntry[]): vo
     const path = modulePath(index);
     try {
       const def = world.defs.modules.get(entry.spec.defId);
-      const module = moduleRegistry.create(def, entry.spec, entry.id, entry.purchaseCostCents, { grid: world.grid, cargo: world.cargo });
+      const module = moduleRegistry.create(def, entry.spec, entry.id, entry.purchaseCostCents, { grid: world.grid, cargo: world.cargo, pickupCargo: world.isPickupCargo });
       module.restoreRuntimeState(entry.runtime);
       world.addModule(module);
     } catch (error) {
@@ -848,6 +848,8 @@ export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'mo
   checkContracts(world, units);
   // Index uskladneného nákladu (ADR-027) sa neukladá: poradie sklad ↑, FIFO sa odvodí z obnoveného ledgera.
   world.storedCargo.rebuild(world.cargo, world.modules.keys());
+  // Index zadržaných jednotiek (VGM hold, ADR-032) sa tiež neukladá: zostaví sa z jednotiek s `hold`.
+  world.holdIndex.rebuild(units);
   const violation = findWorldViolation(world);
   if (violation !== undefined) throw new WorldStateError('', violation);
 }

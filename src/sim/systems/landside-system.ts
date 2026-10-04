@@ -24,18 +24,28 @@
  *    teda aspoň `passTicks ≥ processTicks` tickov (tvrdý bottleneck). Fronta je virtuálna: čakajúci kamión stojí na
  *    vonkajšej bunke konektora, kamióny sa navzájom neblokujú (§7.8 bod 2, 3).
  * 3. **Spawn** (`spawnTrucks`): rampy vzostupne podľa id, docky vzostupne; nový kamión len na náklad docku bez nároku
- *    (pripravený alebo vezený vozidlom, `DockSupply`, ADR-029).
+ *    (pripravený alebo vezený vozidlom, `DockSupply`, ADR-029); potom kamióny s exportom podľa plánu príchodov bookingov
+ *    (`spawnExportTrucks`, ADR-032).
+ *
+ * **Export** (F6a, ADR-032 bod 4, 7, 13): kamión s misiou `delivery` príde naložený jednou jednotkou, po prechode bránou
+ * dnu ju brána zaregistruje (`export-gate.ts`: `ExportArrived`, rolled po cut-off, VGM hold). Po pobyte v stojisku odíde
+ * k dock rampy, keď je dock voľný a má staging miesto pre jeho jednotku (dock drží a rezervuje miesto, `holdsIntake`); po
+ * príchode `unloading`: po `loadTicksPerUnit` na jednotku `in_truck → at_ramp` (`TruckUnloaded`), potom uvoľní dock a odíde
+ * prázdny (`to_gate_out`) — dual transaction dodá T6A-05.
  * Prechod stavu ukončí pohyb kamióna v danom ticku (ako vozidlá, ADR-019): nový, prepustený alebo naložený kamión sa
  * pohne až v ďalšom ticku. Tick vstupu do stavu s odpočtom je jeho nultý tick (ADR-016).
  */
 import type { EntityId } from '../core/entity-id';
+import type { LoadingRamp } from '../modules/loading-ramp';
 import type { TruckGate } from '../modules/truck-gate';
 import { NO_ACCESS } from '../logistics/module-access';
 import { advanceCarrier } from '../movement/route-planning';
 import type { Truck } from '../trucks/truck';
 import { TruckError } from '../trucks/truck-error';
-import { TRUCK_STATE_TRAITS, changeTruckState, isTruckTravelState, type TruckState, type TruckTravelState } from '../trucks/truck-fsm';
+import { TRUCK_STATE_TRAITS, changeTruckState, isTruckTravelState, type TruckMission, type TruckState, type TruckTravelState } from '../trucks/truck-fsm';
 import { DockSupply } from '../trucks/dock-supply';
+import { onGatePassed } from '../trucks/export-gate';
+import { spawnExportTrucks } from '../trucks/export-trucks';
 import { spawnTrucks } from '../trucks/truck-spawner';
 import { MIN_STAY_TICKS, waitingStayTicks } from '../trucks/truck-wait';
 import {
@@ -79,6 +89,9 @@ function exitMap(truck: Truck, world: World): void {
 
 type Arrival = (truck: Truck, world: World) => void;
 
+/** Stav kamióna po príchode k docku podľa misie (tabuľka, nie switch): pickup nakladá, delivery vykladá. */
+const DOCK_STATE: { readonly [M in TruckMission]: TruckState } = Object.freeze({ pickup: 'loading', delivery: 'unloading' });
+
 /** Príchod na koniec trasy podľa jazdného stavu (tabuľka, nie switch). */
 const ARRIVALS: { readonly [S in TruckTravelState]: Arrival } = Object.freeze({
   to_gate: (truck: Truck, world: World) => {
@@ -93,7 +106,7 @@ const ARRIVALS: { readonly [S in TruckTravelState]: Arrival } = Object.freeze({
   },
   to_dock: (truck: Truck, world: World) => {
     truck.waitTicks = rampOfTruck(world, truck).params.loadTicksPerUnit;
-    changeTruckState(world.events, truck, 'loading');
+    changeTruckState(world.events, truck, DOCK_STATE[truck.mission]);
   },
   to_gate_out: (truck: Truck, world: World) => {
     if (isAtTravelTarget(world, truck, 'to_gate_out')) {
@@ -128,12 +141,33 @@ function drive(truck: Truck, world: World): void {
 }
 
 /**
+ * Môže kamión odísť k docku (podľa misie, tabuľka — pravidlo 7)? Pickup: na docku je celý jeho náklad na odvoz
+ * (`stagedAt ≥ capacityUnits` — nakládka potom nikdy nečaká, ADR-029). Delivery: dock má staging miesto pre jednotky,
+ * ktoré vezie (`freeAt ≥ in_truck`; export na prijatie na docku kapacitu zaberá, ADR-032 bod 13). Dock musí byť voľný.
+ */
+const DOCK_READY: { readonly [M in TruckMission]: (world: World, truck: Truck, ramp: LoadingRamp) => boolean } = Object.freeze({
+  pickup: (_world: World, truck: Truck, ramp: LoadingRamp) => ramp.stagedAt(truck.dock) >= truck.def.capacityUnits,
+  delivery: (world: World, truck: Truck, ramp: LoadingRamp) => ramp.freeAt(truck.dock) >= unitsIn(world, truck),
+});
+
+/**
+ * Pri odchode k docku delivery kamión rezervuje staging miesto pre každú jednotku, ktorú vezie (`holdsIntake`) — kapacita
+ * docku mu už nikto nezoberie (outbound joby rezervujú len voľné miesta); pickup nič.
+ */
+const DOCK_DEPARTURE: { readonly [M in TruckMission]: (world: World, truck: Truck, ramp: LoadingRamp) => void } = Object.freeze({
+  pickup: () => undefined,
+  delivery: (world: World, truck: Truck, ramp: LoadingRamp) => {
+    for (let i = unitsIn(world, truck); i > 0; i--) ramp.reserve(truck.dock);
+  },
+});
+
+/**
  * Koniec pobytu v stojisku (povel do docku, ADR-029): kamión odíde, keď je jeho dock voľný (`LoadingRamp.dockTruck`) a je
- * na ňom celý jeho náklad (`stagedAt ≥ capacityUnits` — nakládka potom nikdy nečaká a jednotky docku odchádzajú len do
- * kamióna, ktorý dock drží). Vtedy si dock vezme, uvoľní bay, objaví sa na výstupnej bunke stojiska svojho okruhu
- * (`truckCircuit` — nezávisle od cesty pred bránou) a ide k docku (bez cesty `no_path`). Inak čaká v bayi a skúsi to
- * v ďalšom ticku; kamióny idú vzostupne podľa id, takže z pripravených kamiónov docku odíde prvý (FIFO podľa spawnu).
- * Keď okruh (priechod stojiskom k rampe) zanikol, kamión čaká ďalej a skúsi to o `repathIntervalTicks`.
+ * pripravený podľa misie (`DOCK_READY`: pickup má na docku celý náklad, delivery miesto na vyloženie). Vtedy si dock vezme,
+ * uvoľní bay, objaví sa na výstupnej bunke stojiska svojho okruhu (`truckCircuit` — nezávisle od cesty pred bránou) a ide
+ * k docku (bez cesty `no_path`). Inak čaká v bayi a skúsi to v ďalšom ticku; kamióny idú vzostupne podľa id, takže
+ * z pripravených kamiónov docku odíde prvý (FIFO podľa spawnu). Keď okruh (priechod stojiskom k rampe) zanikol, kamión čaká
+ * ďalej a skúsi to o `repathIntervalTicks`.
  */
 function leaveWaitingArea(truck: Truck, world: World): void {
   const exit = truckCircuit(world, truck)?.waitingExitCell ?? NO_ACCESS;
@@ -142,15 +176,38 @@ function leaveWaitingArea(truck: Truck, world: World): void {
     return;
   }
   const ramp = rampOfTruck(world, truck);
-  if (ramp.dockTruck(truck.dock) !== null || ramp.stagedAt(truck.dock) < truck.def.capacityUnits) {
+  if (ramp.dockTruck(truck.dock) !== null || !DOCK_READY[truck.mission](world, truck, ramp)) {
     truck.waitTicks = MIN_STAY_TICKS;
     return;
   }
   waitingAreaOfTruck(world, truck).releaseBay(truck.id);
   truck.bay = null;
   ramp.assignDock(truck.dock, truck.id);
+  DOCK_DEPARTURE[truck.mission](world, truck, ramp);
   truck.jumpTo(exit, world.grid.width);
   startTruckTrip(world, truck, 'to_dock');
+}
+
+/**
+ * Koniec vykládky jednej jednotky (delivery, ADR-032): najstaršia jednotka kamióna `in_truck → at_ramp` na jeho dock
+ * (`assertCommittable → CargoLedger.move → commit` rezervovaného miesta); ďalšia jednotka `loadTicksPerUnit`, alebo
+ * `TruckUnloaded`, uvoľnenie docku a jazda prázdneho kamióna k bráne von. Vykladanú jednotku prevezme dispatcher (krok 5
+ * ďalšieho ticku, job `at_ramp → in_storage`).
+ */
+function unloadUnit(truck: Truck, world: World): void {
+  const ramp = rampOfTruck(world, truck);
+  const unitId = world.cargo.firstUnitAt('in_truck', truck.id);
+  if (unitId === undefined) throw new TruckError('inconsistent', `${truck.label}: vo vykládke nie je v kamióne jednotka`);
+  ramp.assertCommittable(truck.dock, unitId);
+  world.cargo.move(unitId, { kind: 'at_ramp', rampId: ramp.id, dock: truck.dock });
+  ramp.commit(truck.dock, unitId);
+  if (unitsIn(world, truck) > 0) {
+    truck.waitTicks = ramp.params.loadTicksPerUnit;
+    return;
+  }
+  ramp.releaseDock(truck.dock, truck.id);
+  world.events.emit({ type: 'TruckUnloaded', truckId: truck.id, rampId: ramp.id, dock: truck.dock, unitId, dualTransaction: false });
+  startTruckTrip(world, truck, 'to_gate_out');
 }
 
 /**
@@ -192,9 +249,9 @@ const TRUCK_STEPS: { readonly [S in TruckState]: TruckStep } = {
   loading: (truck, world) => {
     if (countDown(truck)) loadUnit(truck, world);
   },
-  // Vykládka exportu (delivery kamión, ADR-032 bod 4 a 12) — implementuje T6A-05; dovtedy je stav nedosiahnuteľný.
-  unloading: (truck) => {
-    throw new TruckError('inconsistent', `${truck.label}: krok v stave 'unloading' ešte nie je implementovaný (T6A-05, ADR-032)`);
+  // Vykládka exportu (delivery kamión, ADR-032 bod 4): po `loadTicksPerUnit` jednotka na dock rampy.
+  unloading: (truck, world) => {
+    if (countDown(truck)) unloadUnit(truck, world);
   },
   to_gate_out: drive,
   gate_queue_out: () => undefined,
@@ -228,6 +285,7 @@ function finishPass(world: World, gate: TruckGate): void {
   const next = TRUCK_STATE_TRAITS[truck.state].afterGate;
   if (far === NO_ACCESS || next === null) return;
   gate.completePass();
+  onGatePassed(world, truck);
   truck.jumpTo(far, world.grid.width);
   startTruckTrip(world, truck, next);
 }
@@ -264,6 +322,7 @@ export function settleGateQueues(world: World): void {
       const next = TRUCK_STATE_TRAITS[truck.state].afterGate;
       if (next === null) continue;
       gate.withdraw(truck.id);
+      onGatePassed(world, truck);
       startTruckTrip(world, truck, next);
     }
   }
@@ -279,5 +338,6 @@ export class LandsideSystem {
     const { gates, ramps } = world.landsideModules;
     for (const gate of gates) stepGate(world, gate);
     spawnTrucks(world, ramps, this.supply);
+    spawnExportTrucks(world);
   }
 }

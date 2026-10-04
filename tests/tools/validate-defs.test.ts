@@ -95,6 +95,15 @@ describe('validateDefsDir', () => {
         xpMultiplier: 1,
         lateXpFactor: 0.5,
         ledgerEntriesKept: 2000,
+        // F6a: export a booking (ADR-032).
+        bookingOffersPerDay: 2,
+        exportArrivalDaysRange: [2, 3],
+        cutoffHours: 12,
+        cutoffWarningHours: 6,
+        bookingFulfilmentShare: 0.9,
+        lastMinuteExportRateOfReward: 0.02,
+        rolledExportRateOfReward: 0.05,
+        unfulfilledBookingRateOfReward: 0.1,
       });
     });
 
@@ -109,6 +118,7 @@ describe('validateDefsDir', () => {
         repathIntervalTicks: 30,
         congestion: { trafficDecayPerHour: 0.9, slowdownPerExtraVehicle: 0.25, penaltyTrafficDivisor: 200, penaltyMax: 3 },
         shipNavigation: { approachMarginCells: 1, sweepStepCells: 0.5, turnManeuvers: 1, sidewaysManeuvers: 1 },
+        exportFlow: { arrivalWindowDays: 2, vgmMissingChance: 0.05, vgmHoldHours: 6, weightClassShares: { light: 0.3, medium: 0.5, heavy: 0.2 } },
       });
     });
   });

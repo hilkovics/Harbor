@@ -1,7 +1,8 @@
 /**
  * TransportJob (ARCHITECTURE §7.3; docs/tasks/phase-03.md rozhodnutie 6 a „Spoločné rozhrania"; ADR-018, ADR-023) —
  * úloha previezť jednotky nákladu z jedného držiteľa k druhému vozidlom. Povolené dvojice lokácií sú tabuľka
- * `JOB_ROUTES`: inbound `on_apron → in_storage` (F3) a outbound `in_storage → at_ramp` (F4, T04-03).
+ * `JOB_ROUTES`: inbound `on_apron → in_storage` (F3), outbound `in_storage → at_ramp` (F4, T04-03) a prijatie exportu
+ * `at_ramp → in_storage` (F6a, ADR-032).
  *
  * - Job vzniká v dispatcheri (krok 5) s rezervovaným miestom v cieli (`to` = `in_storage(moduleId, slot)` alebo
  *   `at_ramp(rampId, dock)`) a jednotkami na zdroji (`from` = ich poloha pri vzniku). Rezervácia trvá, kým vozidlo
@@ -88,6 +89,8 @@ export interface JobRoute {
 export const JOB_ROUTES: readonly JobRoute[] = Object.freeze([
   Object.freeze({ from: 'on_apron', to: 'in_storage', priority: 0 } as const),
   Object.freeze({ from: 'in_storage', to: 'at_ramp', priority: 1 } as const),
+  // Prijatie exportu (F6a, ADR-032 bod 8): jednotku vyloženú kamiónom na docku odvezie vozidlo do skladu; uvoľňuje dock.
+  Object.freeze({ from: 'at_ramp', to: 'in_storage', priority: 1 } as const),
 ]);
 
 /** Počet úrovní priority (`max(priority) + 1`) — koľko prechodov jobmi robí priradenie vozidiel. */

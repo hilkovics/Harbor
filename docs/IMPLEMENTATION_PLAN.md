@@ -223,7 +223,7 @@ Akceptácia (**M3**): panamax loď s 700 TEU je zvládnuteľná do SLA s 2 žeri
 ---
 
 ## Fáza 10a — Vybavenie skladu: RTG/RMG, ťahače, shuttle (vložená, ≈2,5 SD)
-Referencia: `docs/PORT_OPERATIONS.md` §2.5. Bloky s RTG/RMG (vysoká hustota, stoh 5–6), terminálové ťahače/AGV (dvojfázový systém), shuttle carrier, priorita lode v bloku, pomalý presun RTG medzi blokmi.
+Referencia: `docs/PORT_OPERATIONS.md` §2.5. Bloky s RTG/RMG (vysoká hustota, stoh 5–6), terminálové ťahače/AGV (dvojfázový systém: STS položí kontajner priamo na ťahač „pod hákom", RTG ho v sklade z ťahača zloží — variant B požiadavky z 2026-10-04; variant A, straddle carrier pod hákom, je vo Fáze 6a), shuttle carrier, priorita lode v bloku, pomalý presun RTG medzi blokmi.
 
 ---
 

@@ -7,10 +7,14 @@
  * `no_crane_for_category` — dosiahnuteľný úsek je, ale bez žeriavu kategórie nákladu kontraktu. Obsadenosť kotvísk
  * a lodná doprava (iné lode) sa neposudzujú (loď by počkala na anchorage). Validácia svet nemení a `Rng` nespotrebuje.
  *
- * `apply` (hotovosť sa nemení): plán lode — `acceptedTick = clock.tick` (v príkazovej fáze ešte predchádzajúci tick),
- * `shipArrivalTick = acceptedTick + max(1, round(rng.range(arrivalDaysRange) × ticksPerDay))` (jediný `Rng` sveta, jedno
- * číslo), `slaDeadlineTick = shipArrivalTick + slaDays × ticksPerDay` — potom `offered → accepted`
- * (`ContractStateChanged`) a `ContractAccepted`. Loď spawne `ContractSystem` v ticku príchodu.
+ * `apply` (hotovosť sa nemení): príkaz pôsobí na **skupinu ponuky** (ADR-032 bod 1) — všetky `offered` kontrakty tej istej
+ * voyage vzostupne podľa id (roundtrip = import + export booking; import ponuka alebo export-only je skupina o jednom
+ * kontrakte). Plán lode je spoločný: `acceptedTick = clock.tick` (v príkazovej fáze ešte predchádzajúci tick),
+ * `shipArrivalTick = acceptedTick + max(1, round(rng.range(dni) × ticksPerDay))` (jediný `Rng` sveta, jedno číslo; `dni` =
+ * `exportArrivalDaysRange` pri skupine s exportom, inak `arrivalDaysRange`), `slaDeadlineTick = shipArrivalTick + slaDays ×
+ * ticksPerDay` každého kontraktu; export booking naplánuje cut-off a príchody kamiónov (`Contract.accept` — ťahy `Rng`
+ * po ťahu príchodu, kontrakty vzostupne podľa id). Potom každý kontrakt `offered → accepted` (`ContractStateChanged`) a
+ * `ContractAccepted`. Loď spawne `ContractSystem` v ticku príchodu.
  */
 import type { Contract } from '../contracts/contract';
 import type { ContractId } from '../core/entity-id';
@@ -55,13 +59,24 @@ export class AcceptContractCommand extends ContractOfferCommand {
   }
 
   protected applyTo(world: World, offer: Contract): void {
-    const { ticksPerDay, tick } = world.clock;
-    const [minDays, maxDays] = world.defs.economy.arrivalDaysRange;
+    const { ticksPerDay, ticksPerHour, tick } = world.clock;
+    const group = world.contractBook.offeredOfVoyage(offer.voyageId);
+    const withExport = group.some((contract) => contract.booking !== null);
+    const [minDays, maxDays] = withExport ? world.defs.economy.exportArrivalDaysRange : world.defs.economy.arrivalDaysRange;
     const arrivalTicks = Math.max(MIN_ARRIVAL_TICKS, Math.round(world.rng.range(minDays, maxDays) * ticksPerDay));
-    offer.acceptedTick = tick;
-    offer.shipArrivalTick = tick + arrivalTicks;
-    offer.slaDeadlineTick = offer.shipArrivalTick + offer.slaDays * ticksPerDay;
-    world.contractBook.changeState(offer, 'accepted');
-    world.events.emit({ type: 'ContractAccepted', contractId: offer.id });
+    const context = {
+      tick,
+      shipArrivalTick: tick + arrivalTicks,
+      ticksPerDay,
+      ticksPerHour,
+      cutoffHours: world.defs.economy.cutoffHours,
+      arrivalWindowDays: world.defs.logistics.exportFlow.arrivalWindowDays,
+      rng: world.rng,
+    };
+    for (const contract of group) {
+      contract.accept(context);
+      world.contractBook.changeState(contract, 'accepted');
+      world.events.emit({ type: 'ContractAccepted', contractId: contract.id });
+    }
   }
 }

@@ -16,5 +16,13 @@
   "contractsPerTier": 10,
   "xpMultiplier": 1,
   "lateXpFactor": 0.5,
-  "ledgerEntriesKept": 2000
+  "ledgerEntriesKept": 2000,
+  "bookingOffersPerDay": 2,
+  "exportArrivalDaysRange": [2, 3],
+  "cutoffHours": 12,
+  "cutoffWarningHours": 6,
+  "bookingFulfilmentShare": 0.9,
+  "lastMinuteExportRateOfReward": 0.02,
+  "rolledExportRateOfReward": 0.05,
+  "unfulfilledBookingRateOfReward": 0.1
 }

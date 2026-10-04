@@ -17,7 +17,7 @@
       ],
       "costCents": 40000000,
       "maintenancePerDayCents": 120000,
-      "params": { "depthClass": 1, "apronSlots": 8, "maxCranes": 2, "frontWaterCells": 3 }
+      "params": { "depthClass": 1, "apronSlots": 8, "maxCranes": 2, "frontWaterCells": 3, "apronReserveSlots": 2 }
     },
     {
       "id": "crane_container_gantry",
@@ -32,7 +32,7 @@
       "connectors": [],
       "costCents": 60000000,
       "maintenancePerDayCents": 90000,
-      "params": { "cycleTicks": 12, "category": "container", "wagePerDayCents": 25000 }
+      "params": { "cycleTicks": 12, "category": "container", "wagePerDayCents": 25000, "dualCycleFactor": 1.5 }
     },
     {
       "id": "container_yard_small",

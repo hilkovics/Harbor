@@ -13,5 +13,11 @@
     "sweepStepCells": 0.5,
     "turnManeuvers": 1,
     "sidewaysManeuvers": 1
+  },
+  "exportFlow": {
+    "arrivalWindowDays": 2,
+    "vgmMissingChance": 0.05,
+    "vgmHoldHours": 6,
+    "weightClassShares": { "light": 0.3, "medium": 0.5, "heavy": 0.2 }
   }
 }

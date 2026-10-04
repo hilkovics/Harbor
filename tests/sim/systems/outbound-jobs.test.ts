@@ -517,7 +517,7 @@ describe('save a invarianty kroku 12', () => {
     const ramp = rampOf(world);
     expect(findWorldViolation(world)).toBeUndefined();
     ramp.reserve(1);
-    expect(findWorldViolation(world)).toMatch(/dock 1 má 2 staging rezervácií, aktívne outbound joby naň vezú 1 jednotiek/);
+    expect(findWorldViolation(world)).toMatch(/dock 1 má 2 staging rezervácií, aktívne outbound joby a vykladajúce kamióny naň vezú 1 jednotiek/);
     ramp.release(1);
     ramp.release(1);
     expect(findWorldViolation(world)).toMatch(/miesto 1 \('at_ramp'\) nie je rezervované/);

@@ -26,7 +26,7 @@
     "cargoType": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "category", "unitName", "unitsPerBatch", "basePricePerUnitCents", "xpPerUnit", "colorToken"],
+      "required": ["id", "category", "unitName", "unitsPerBatch", "basePricePerUnitCents", "exportPricePerUnitCents", "xpPerUnit", "colorToken"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "category": {
@@ -47,6 +47,11 @@
           "type": "integer",
           "minimum": 0,
           "description": "Referenčná odmena za jednotku v centoch (USD)."
+        },
+        "exportPricePerUnitCents": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Odmena za exportovanú jednotku v centoch (booking, F6a, ADR-032). Šablóna export / roundtrip s týmto typom nákladu vyžaduje hodnotu > 0 — kontroluje DefRegistry a `pnpm validate:defs`."
         },
         "xpPerUnit": {
           "type": "number",

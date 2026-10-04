@@ -14,13 +14,20 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ExportContract } from '@sim/contracts';
+import { DefRegistry } from '@sim/defs';
 import { World, WorldStateError, migrateWorldState, stateHash, type AnyWorldState, type WorldState } from '@sim/world';
 import { assertCargoConservation } from '../helpers/invariants';
 import { toV6State } from '../helpers/legacy-save';
 import { loadScenarioFile, runScenario } from '../helpers/scenario';
-import { DEFS, MAP } from './world-fixtures';
+import { MAP, RAW_DEFS } from './world-fixtures';
 
 type Json = Record<string, unknown>;
+
+/**
+ * Defy bez booking ponúk: natívny save v6 vznikol kódom bez exportu, takže jeho pool (a `Rng` prúd) nemá booking ponuky,
+ * ktoré by v ticku 8 640 doplnil svet v7 (`bookingOffersPerDay` > 0, F6a). Porovnanie so svetom v7 platí pre import-only svet.
+ */
+const DEFS = DefRegistry.fromRaw({ ...RAW_DEFS, economy: { ...RAW_DEFS.economy, bookingOffersPerDay: 0 } });
 
 const FIXTURE = fileURLToPath(new URL('../__fixtures__/saves/save-v6.json', import.meta.url));
 const V6 = JSON.parse(readFileSync(FIXTURE, 'utf8')) as Json;

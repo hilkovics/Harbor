@@ -38,6 +38,8 @@ export const MODULE_PARAM_SPECS: { readonly [K in ModuleKind]: SpecTable<ModuleP
     apronSlots: { kind: 'integer', min: 1 },
     maxCranes: { kind: 'integer', min: 1 },
     frontWaterCells: { kind: 'integer', min: 1 },
+    // Rezerva apronu pre opačný smer (F6a, ADR-032 bod 10); horná hranica `⌊apronSlots / 2⌋` je vzťah polí (`checkBerthParams`).
+    apronReserveSlots: { kind: 'integer', min: 0 },
   },
   crane: {
     // Cyklus sa delí na dve fázy (grabbing ⌊c/2⌋, placing c − ⌊c/2⌋, §7.2), každá musí mať aspoň jeden tick.
@@ -45,6 +47,8 @@ export const MODULE_PARAM_SPECS: { readonly [K in ModuleKind]: SpecTable<ModuleP
     category: { kind: 'enum', values: CARGO_CATEGORIES },
     // Denná mzda obsluhy (§9.2, F5); strhne sa pri DayClosed spolu s mzdami vozidiel.
     wagePerDayCents: { kind: 'integer', min: 0 },
+    // Dual cycling (F6a, ADR-032 bod 11): 1 = dvojcyklus je zadarmo, 2 = žiadny prínos oproti dvom cyklom.
+    dualCycleFactor: { kind: 'number', min: 1, max: 2 },
   },
   storage: {
     capacityUnits: { kind: 'integer', min: 1 },
@@ -77,11 +81,25 @@ export const MODULE_PARAM_SPECS: { readonly [K in ModuleKind]: SpecTable<ModuleP
   pipeline: {},
 };
 
-/** `params` zodpovedá tabuľke druhu: presne jej kľúče, správne typy a rozsahy. Prvý problém alebo `undefined`. */
+/**
+ * Vzťah polí kotviska: rezerva apronu pre opačný smer je najviac polovica slotov (`apronReserveSlots ≤ ⌊apronSlots / 2⌋`,
+ * ADR-032 bod 10) — inak by sa dva smery o apron neposkytli rovnako a import s exportom by sa navzájom zablokovali.
+ * `params` už prešli tabuľkou polí.
+ */
+function checkBerthParams(params: Readonly<Record<string, unknown>>, path: string): Problem | undefined {
+  const slots = params['apronSlots'];
+  const reserve = params['apronReserveSlots'];
+  if (typeof slots !== 'number' || typeof reserve !== 'number' || reserve <= Math.floor(slots / 2)) return undefined;
+  return { path: `${path}/apronReserveSlots`, message: `musí byť ≤ ⌊apronSlots / 2⌋ (${String(Math.floor(slots / 2))}), dostal ${String(reserve)}` };
+}
+
+/** `params` zodpovedá tabuľke druhu: presne jej kľúče, správne typy a rozsahy (+ vzťahy polí kotviska). Prvý problém alebo `undefined`. */
 export function checkModuleParams(value: unknown, kind: ModuleKind, path: string): Problem | undefined {
   const table: FieldRecord = MODULE_PARAM_SPECS[kind];
   if (!isPlainObject(value)) return { path, message: `očakávaný objekt, dostal ${describeValue(value)}` };
-  return findUnknownKey(value, new Set(Object.keys(table)), path) ?? checkFields(value, table, path);
+  const problem = findUnknownKey(value, new Set(Object.keys(table)), path) ?? checkFields(value, table, path);
+  if (problem !== undefined) return problem;
+  return kind === 'berth' ? checkBerthParams(value, path) : undefined;
 }
 
 /** Číselný rozmer footprintu alebo súradnica konektora z neoverenej položky; inak `undefined`. */

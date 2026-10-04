@@ -289,10 +289,27 @@ describe('stress_f6', () => {
     ticks.forEach((tick, day) => {
       expect(tick).toBe(day * ticksPerDay + 1);
     });
-    // Ponuky vznikajú v poradí id: 6 za deň (offersPerDay) → id 1…6, 7…12, …
+    // Import ponuky vznikajú v poradí id, 6 za deň (offersPerDay); booking ponuky (F6a, bookingOffersPerDay) zaberajú
+    // medzi nimi ďalšie id (od druhej polnoci), preto id po dňoch nie sú súvislé, len vzostupné a po 6 za deň.
     const ids = accepts.map((entry) => (entry.command as { contractId: number }).contractId);
-    expect(ids).toEqual(ids.map((_, index) => index + 1));
+    expect(ids.slice(0, 12)).toEqual(Array.from({ length: 12 }, (_, index) => index + 1));
+    expect(ids).toEqual([...ids].sort((a, b) => a - b));
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const tick of ticks) expect(accepts.filter((entry) => entry.atTick === tick)).toHaveLength(defs.economy.offersPerDay);
   });
+
+  it('každé AcceptContract scenára je platné: uvedené id je v ten tick import ponuka poolu (booking ponuky sa neprijímajú)', () => {
+    const scenario = loadScenario(STRESS_SCENARIO);
+    const accepts = scenario.commands.filter((entry) => (entry.command as { type: string }).type === 'AcceptContract');
+    const lastTick = Math.max(...accepts.map((entry) => entry.atTick));
+    // Beh bez invariantov (len prijatia): odmietnutý príkaz by bol chyba scenára — `playScenario` ju vyhodí.
+    const { world } = playScenario(scenario, defs, { ticks: lastTick + 2, warmup: 0, checkInvariants: false });
+    for (const entry of accepts) {
+      const contract = world.contracts.get((entry.command as { contractId: number }).contractId as never);
+      expect(contract?.kind).toBe('import');
+      expect(contract?.acceptedTick).toBe(entry.atTick);
+    }
+  }, 120_000);
 
   it('rozšírený prístav: 2 kotviská, 4 žeriavy, 3 dvory, 2 rampy, brána, stojisko, 16 vozidiel', () => {
     const { world } = playScenario(loadScenario(STRESS_SCENARIO), defs, { ticks: 5, warmup: 0, checkInvariants: true });

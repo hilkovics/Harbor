@@ -39,6 +39,7 @@
 - Metriky: `rehandlesPerMove`, vyťaženie strojov bloku.
 
 ### 2.5 Vybavenie skladu (alternatívne systémy)
+- **Odovzdávací bod žeriav ↔ vozidlo** je „pod hákom" (požiadavka 2026-10-04): **variant A** (F6a) — straddle carrier čaká pod STS žeriavom, apron je len buffer 0–1; **variant B** (F10a) — STS kladie priamo na terminálový ťahač, ktorý v sklade vyloží RTG.
 - **Straddle carrier** (dnes): jeden stroj na celý cyklus, široké uličky → nižšia hustota (stoh 2–3), rýchly, drahý na údržbu.
 - **Shuttle carrier**: 1 nad 1, len nábrežie ↔ blok (blok obsluhuje RTG/RMG).
 - **RTG/RMG + terminálové ťahače/AGV**: vysoká hustota (6–7 radov + pruh, stoh 5–6); ťahač sám nezdvihne — čaká v pruhu bloku na RTG. **RTG je úzke hrdlo**: priorita lodi pred externými kamiónmi, rehandling; presun RTG medzi blokmi je pomalý. **RMG** na železnici nakladá vlaky (F10).

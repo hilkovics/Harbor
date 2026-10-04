@@ -74,14 +74,17 @@ describe('stavy jobu a tabuľky', () => {
     expect(Object.isFrozen(JOB_STATE_TRAITS)).toBe(true);
   });
 
-  it('JOB_ROUTES: inbound apron → sklad (priorita 0) pred outbound sklad → rampa (priorita 1); isJobState; dôvody zrušenia', () => {
+  it('JOB_ROUTES: inbound apron → sklad (priorita 0) pred outbound sklad → rampa a prijatím exportu rampa → sklad (priorita 1); isJobState; dôvody zrušenia', () => {
     expect(JOB_ROUTES).toEqual([
       { from: 'on_apron', to: 'in_storage', priority: 0 },
       { from: 'in_storage', to: 'at_ramp', priority: 1 },
+      { from: 'at_ramp', to: 'in_storage', priority: 1 },
     ]);
     expect(JOB_PRIORITY_LEVELS).toBe(2);
     expect(isJobRoute('on_apron', 'in_storage')).toBe(true);
     expect(isJobRoute('in_storage', 'at_ramp')).toBe(true);
+    expect(isJobRoute('at_ramp', 'in_storage')).toBe(true);
+    expect(jobRouteOf('at_ramp', 'in_storage')?.priority).toBe(1);
     expect(isJobRoute('in_storage', 'on_apron')).toBe(false);
     expect(isJobRoute('on_apron', 'at_ramp')).toBe(false);
     expect(jobRouteOf('in_storage', 'at_ramp')?.priority).toBe(1);

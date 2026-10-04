@@ -97,6 +97,7 @@ export class LoadingRamp extends LandExportModule {
       perDock: this.params.stagingPerDock,
       cargo: init.cargo,
       label: `rampa ${this.label}`,
+      isPickup: init.pickupCargo,
     });
     this.dockTrucks = new Array<EntityId | null>(this.params.docks).fill(null);
     this.dockClaims = new Array<number>(this.params.docks).fill(0);
@@ -194,9 +195,17 @@ export class LoadingRamp extends LandExportModule {
     return this.staging.freeCount;
   }
 
-  /** Jednotky na docku (ledger). Dock mimo rozsahu → `ModuleError('invalid_slot')`. */
+  /**
+   * Jednotky na docku pripravené na kamión (náklad na odvoz, ledger; export na prijatie sa nepočíta — `intakeAt`). Dock
+   * mimo rozsahu → `ModuleError('invalid_slot')`.
+   */
   stagedAt(dock: number): number {
     return this.staging.stagedAt(dock);
+  }
+
+  /** Export na docku, ktorý čaká na vozidlo do skladu (práve ho vyložil kamión s exportom, ADR-032). */
+  intakeAt(dock: number): number {
+    return this.staging.intakeAt(dock);
   }
 
   /** Rezervácie na docku. */
@@ -214,12 +223,12 @@ export class LoadingRamp extends LandExportModule {
     return this.staging.firstFreeDock();
   }
 
-  /** Najstaršia jednotka na docku (FIFO) bez alokácie. */
+  /** Najstaršia jednotka na odvoz na docku (FIFO) bez alokácie; export na prijatie sa preskočí. */
   firstUnitAt(dock: number): EntityId | undefined {
     return this.staging.firstUnitAt(dock);
   }
 
-  /** Jednotky na docku v poradí príchodu (kópia). */
+  /** Jednotky na odvoz na docku v poradí príchodu (kópia). */
   unitsAt(dock: number): readonly EntityId[] {
     return this.staging.unitsAt(dock);
   }

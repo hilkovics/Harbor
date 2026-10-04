@@ -53,6 +53,7 @@
  */
 import { CargoLedger } from '../cargo/cargo-ledger';
 import type { CargoLedgerState } from '../cargo/cargo-ledger-state';
+import { HoldIndex } from '../cargo/hold-index';
 import { isSameLocation, type CargoLocation } from '../cargo/cargo-location';
 import type { CargoUnit } from '../cargo/cargo-unit';
 import { EntityIdAllocator, type ContractId, type EntityId } from '../core/entity-id';
@@ -89,6 +90,7 @@ import { JobError } from '../logistics/job-error';
 import { PathCache } from '../logistics/path-cache';
 import { Pathfinder } from '../logistics/pathfinder';
 import { RoadSpeeds } from '../logistics/road-speed';
+import { isPickupCargo } from '../logistics/dock-cargo';
 import { StoredCargoIndex } from '../logistics/stored-cargo-index';
 import { JOB_STATE_TRAITS, type TransportJob } from '../logistics/transport-job';
 import { Economy, type EconomyState } from '../economy/economy';
@@ -228,6 +230,17 @@ export class World {
    * nie je v save (obnova ju zostaví z ledgera). Udržiava ju háčik `CargoLedger.move`.
    */
   readonly storedCargo = new StoredCargoIndex();
+  /**
+   * Zadržané jednotky (VGM hold, ADR-032) podľa `(untilTick, id)` — odvodená cache pre uvoľnenie v kroku 2, nie je v save
+   * (obnova ju zostaví z jednotiek s `hold`). Plní ju brána (krok 8), mazať z nej smie len `ContractSystem`.
+   */
+  readonly holdIndex = new HoldIndex();
+  /**
+   * Čaká jednotka `at_ramp` na kamión (náklad na odvoz — import, vrátený export), alebo je to export na prijatie, ktorý
+   * čaká na vozidlo do skladu (`logistics/dock-cargo.ts`, ADR-032 bod 13)? Rampy ho používajú pri počítaní pripravených
+   * jednotiek docku; arrow pole, aby sa dal odovzdať modulom bez väzby na `this`.
+   */
+  readonly isPickupCargo = (unit: CargoUnit): boolean => isPickupCargo(this.contractBook, unit);
   /** Krok 12 ticku zapnutý (`WorldOptions.checkInvariants`, predvolene `true`). */
   readonly checkInvariants: boolean;
 
@@ -282,13 +295,14 @@ export class World {
         : Economy.fromState(economyEnv, parts.cashCents, entriesKept, parts.economy);
     const bookEnv = { events: this.events, clock: parts.clock };
     this.contractBook = parts.contracts === null ? new ContractBook(bookEnv) : ContractBook.fromState(bookEnv, parts.contracts);
-    const { contractBook, storedCargo } = this;
-    // Počítadlá jednotiek kontraktov (ADR-026) a index uskladneného nákladu pre outbound (ADR-027) z háčika ledgera —
-    // bez skenu nákladu v ticku.
+    const { contractBook, storedCargo, holdIndex } = this;
+    // Počítadlá jednotiek kontraktov (ADR-026), index uskladneného nákladu pre outbound (ADR-027) a index zadržaných
+    // jednotiek (ADR-032: zadržaná jednotka, ktorá opustí mapu, z neho vypadne) z háčika ledgera — bez skenu nákladu v ticku.
     const observer = {
       cargoMoved(unit: CargoUnit, to: CargoLocation): void {
         contractBook.cargoMoved(unit, to);
         storedCargo.cargoMoved(unit, to);
+        if (unit.hold !== null && (to.kind === 'exported' || to.kind === 'shipped')) holdIndex.remove(unit.id);
       },
     };
     const deps = { cargoTypes: parts.defs.cargoTypes, ids: parts.ids, events: this.events, clock: parts.clock, observer };
@@ -571,7 +585,7 @@ export class World {
    */
   placeModule(spec: PlacedModuleSpec, purchaseCostCents: number): Module {
     const def = this.defs.modules.get(spec.defId);
-    const module = moduleRegistry.create(def, spec, this.ids.next(), purchaseCostCents, { grid: this.grid, cargo: this.cargo });
+    const module = moduleRegistry.create(def, spec, this.ids.next(), purchaseCostCents, { grid: this.grid, cargo: this.cargo, pickupCargo: this.isPickupCargo });
     this.addModule(module);
     return module;
   }
@@ -788,8 +802,9 @@ export class World {
   /**
    * Pridá kamión (spawn v `LandsideSystem`, obnova zo save): kamión s `bay` si ho rezervuje v stojisku
    * (`reserveBayAt`, v stave s obsadeným bay aj `occupyBay`), v stave, ktorý drží dock (`holdsDock` efektívneho stavu),
-   * si drží dock rampy (`assignDock`) a v stave s nárokom na náklad (`claimsCargo`) si nárokuje zvyšok svojej kapacity
-   * na docku (`claim(dock, capacityUnits − in_truck)`, ADR-029; pri spawne celú kapacitu). Chyby (`TruckError`, svet sa nezmení): id už vo svete má kamión, vozidlo, modul,
+   * si drží dock rampy (`assignDock`), v stave s nárokom na náklad (`claimsCargo`) si nárokuje zvyšok svojej kapacity
+   * na docku (`claim(dock, capacityUnits − in_truck)`, ADR-029; pri spawne celú kapacitu) a delivery kamión v stave
+   * `holdsIntake` drží staging miesto docku pre každú jednotku, ktorú ešte nevyložil (`reserve(dock)`, ADR-032 bod 13). Chyby (`TruckError`, svet sa nezmení): id už vo svete má kamión, vozidlo, modul,
    * loď, job alebo jednotka (`duplicate_id`), id nepridelené alokátorom alebo menšie ako id posledného kamióna — poradie
    * spawnu (`invalid_input`), brána / stojisko / rampa nie sú moduly toho druhu vo svete alebo dock či bay mimo
    * rozsahu (`unknown_module`), bay drží iný kamión (`bay_taken`), dock drží iný kamión (`dock_taken`). Frontu brány
@@ -820,11 +835,17 @@ export class World {
     if (bonds.holdsDock && ramp.dockTruck(truck.dock) !== null) {
       throw new TruckError('dock_taken', `World.addTruck: ${truck.label}: dock ${String(truck.dock)} ${ramp.label} drží kamión #${String(ramp.dockTruck(truck.dock))}`);
     }
+    // Delivery kamión pred vykládkou drží staging miesto docku pre každú jednotku, ktorú vezie (ADR-032 bod 13).
+    const intake = bonds.holdsIntake ? this.cargo.countAt('in_truck', id) : 0;
+    if (intake > ramp.freeAt(truck.dock)) {
+      throw new TruckError('inconsistent', `World.addTruck: ${truck.label}: dock ${String(truck.dock)} ${ramp.label} má ${String(ramp.freeAt(truck.dock))} voľných staging miest, kamión vezie ${String(intake)} jednotiek na vyloženie`);
+    }
     if (bay !== null) {
       area.reserveBayAt(bay, id);
       if (bonds.bayOccupied) area.occupyBay(id);
     }
     if (bonds.holdsDock) ramp.assignDock(truck.dock, id);
+    for (let i = 0; i < intake; i++) ramp.reserve(truck.dock);
     const owed = truck.def.capacityUnits - this.cargo.countAt('in_truck', id);
     if (bonds.claimsCargo && owed > 0) ramp.claim(truck.dock, owed);
     this.truckMap.set(id, truck);

@@ -40,7 +40,9 @@
  *    je modul s `cargoDropTarget()` druhu `to` (sklad pre inbound, rampa pre outbound) kategórie nákladu a miesto `to`
  *    (slot, dock) je rezervované; rezervované sloty každého skladu = presne sloty `to` jeho aktívnych jobov (slot jobu
  *    rezervovaný + počet, súčet a súčet štvorcov slotov — bez kópií a triedenia, ADR-021); rezervácie každého docku
- *    rampy = počet jednotiek aktívnych outbound jobov na tento dock (outbound job drží rezerváciu celý život, T04-03);
+ *    rampy = počet jednotiek aktívnych outbound jobov na tento dock (outbound job drží rezerváciu celý život, T04-03)
+ *    plus jednotky, ktoré ešte vezie vykladajúci delivery kamión (`holdsIntake`, ADR-032 bod 13); job `at_ramp → in_storage`
+ *    (prijatie exportu) drží rezerváciu slotu v sklade ako inbound;
  * 10. vnútorný stav modulov (`Module.findRuntimeProblem`, T04-02, ADR-022): fronta brány bez duplicít, bays stojiska
  *    (počítadlá, obsadený bay má kamión, kamión drží najviac jeden bay), staging dockov rampy (jednotka na docku
  *    v rozsahu, súčet rezervácií, `staged + reserved ≤ stagingPerDock` na každom docku, držitelia dockov); na rampe len
@@ -55,7 +57,8 @@
  *    a podľa stavu (pred nakládkou 0, po nej plný); **rampa**: def kamióna vozí kategóriu rampy a kamión s dockom má
  *    na docku a v sebe spolu aspoň `capacityUnits` jednotiek (`truckRampProblem`); **nároky na náklad** (ADR-029):
  *    nárok každého docku = Σ `capacityUnits − in_truck` kamiónov docku v stavoch s `claimsCargo` a nárok nepresahuje
- *    pripravené + vozidlami vezené jednotky docku (`DockSupply`) — žiadny kamión nečaká na jednotku, ktorá nepríde,
+ *    pripravené (náklad na odvoz — export na prijatie sa nepočíta, `World.isPickupCargo`) + vozidlami vezené jednotky docku
+ *    (`DockSupply`) — žiadny kamión nečaká na jednotku, ktorá nepríde,
  *    a dva kamióny nečakajú na tú istú; pohyb zodpovedá stavu
  *    (`truckMotionProblem`); kamión vo fronte stojí na svojej strane brány (`truckQueueSideProblem`, dodatok
  *    ADR-024); súlad prechodu brány s frontou kontroluje brána (`gatePassProblem`, bod 10). O(kamióny + moduly).
@@ -528,8 +531,12 @@ function countStagedUnits(world: World): void {
     const count = world.cargo.countAt('at_ramp', ramp.id);
     for (let i = 0; i < count; i++) {
       const unitId = world.cargo.unitAtIndex('at_ramp', ramp.id, i);
-      const location = unitId === undefined ? undefined : world.cargo.get(unitId)?.location;
-      if (location?.kind === 'at_ramp' && location.dock < ramp.docks) dockStagedCounts[rampDockOffsets[ordinal] + location.dock] += 1;
+      const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
+      const location = unit?.location;
+      // Pripravené na kamión = náklad na odvoz; export na prijatie (čaká na vozidlo do skladu) sa nepočíta (ADR-032 bod 13).
+      if (unit !== undefined && location?.kind === 'at_ramp' && location.dock < ramp.docks && world.isPickupCargo(unit)) {
+        dockStagedCounts[rampDockOffsets[ordinal] + location.dock] += 1;
+      }
     }
   }
 }
@@ -557,13 +564,19 @@ function checkRampReservations(world: World): string | undefined {
     if (ordinal < 0 || to.dock >= ramps[ordinal].docks) return `${job.label}: cieľ at_ramp #${String(to.rampId)} dock ${String(to.dock)} nie je dock rampy sveta`;
     dockUnitCounts[rampDockOffsets[ordinal] + to.dock] += job.unitIds.length;
   }
+  // Delivery kamióny pred vykládkou držia staging miesto za každú jednotku, ktorú ešte vezú (ADR-032 bod 13).
+  for (const truck of world.trucks.values()) {
+    if (!truck.bonds.holdsIntake) continue;
+    const ordinal = world.landsideModules.rampOrdinal(truck.rampId);
+    if (ordinal >= 0 && truck.dock < ramps[ordinal].docks) dockUnitCounts[rampDockOffsets[ordinal] + truck.dock] += world.cargo.countAt('in_truck', truck.id);
+  }
   for (let ordinal = 0; ordinal < ramps.length; ordinal++) {
     const ramp = ramps[ordinal];
     for (let dock = 0; dock < ramp.docks; dock++) {
       const count = dockUnitCounts[rampDockOffsets[ordinal] + dock];
       const reserved = ramp.reservedAt(dock);
       if (count !== reserved) {
-        return `${ramp.label}: dock ${String(dock)} má ${String(reserved)} staging rezervácií, aktívne outbound joby naň vezú ${String(count)} jednotiek`;
+        return `${ramp.label}: dock ${String(dock)} má ${String(reserved)} staging rezervácií, aktívne outbound joby a vykladajúce kamióny naň vezú ${String(count)} jednotiek`;
       }
     }
   }
@@ -776,7 +789,8 @@ export function truckRampProblem(
   if (!truck.def.cargoCategories.includes(ramp.category)) {
     return { field: 'defId', problem: `${truck.label} nevozí kategóriu '${ramp.category}' rampy ${ramp.label}` };
   }
-  if (!truck.bonds.holdsDock) return undefined;
+  // Delivery kamión pred vykládkou nepotrebuje na docku náklad — drží staging miesto pre jednotky, ktoré vyloží (`holdsIntake`).
+  if (!truck.bonds.holdsDock || truck.bonds.holdsIntake) return undefined;
   const aboard = world.cargo.countAt('in_truck', truck.id);
   if (aboard >= truck.def.capacityUnits) return undefined;
   const staged = stagedOnDock(ramp, truck.dock);
@@ -890,13 +904,25 @@ const checkTrucks: Check = (world) => {
 };
 
 /**
- * Kontrakty (ADR-026, ADR-032), O(neukončené kontrakty) bez alokácie: počet ponúk ≤ `offersPerDay`; počítadlá podľa
- * druhu (`Contract.countersProblem` — import `unitsExported ≤ unitsUnloaded ≤ volumeUnits`, `exporting` má vyložený
- * celý objem; export booking pozri `ExportContract`); kontrakt, ktorý vlastní náklad na palube (`carriesShipCargo`:
- * import v `ship_en_route`, `unloading`), má loď na mape s triedou a nákladom kontraktu a na jej palube práve
- * `volumeUnits − unitsUnloaded` jednotiek; index uskladneného nákladu (`World.storedCargo`, ADR-027) má toľko jednotiek, koľko ich je
+ * Kontrakty (ADR-026, ADR-032), O(neukončené kontrakty) bez alokácie: počet ponúk po skupinách voyage (import ≤
+ * `offersPerDay`, booking ≤ `bookingOffersPerDay`, `ContractBook.offeredGroups`); počítadlá podľa druhu
+ * (`Contract.countersProblem` — import `unitsExported ≤ unitsUnloaded ≤ volumeUnits`, `exporting` má vyložený celý objem;
+ * export booking pozri `ExportContract`); index zadržaných jednotiek = Σ `heldUnits` bookingov; kontrakt, ktorý vlastní
+ * náklad na palube (`carriesShipCargo`: import v `ship_en_route`, `unloading`), má loď na mape s triedou a nákladom
+ * kontraktu a na jej palube práve `volumeUnits − unitsUnloaded` **import** jednotiek (naložený export voyage sa nepočíta); index uskladneného nákladu (`World.storedCargo`, ADR-027) má toľko jednotiek, koľko ich je
  * `in_storage`. Väzbu jednotka → kontrakt overuje obnova save (`checkContracts` vo world-restore).
  */
+/** Import jednotky na palube lode (naložený export voyage sa nepočíta, ADR-032); bez alokácie. */
+function importAboard(world: World, shipId: EntityId): number {
+  const count = world.cargo.countAt('on_ship', shipId);
+  let imports = 0;
+  for (let i = 0; i < count; i++) {
+    const unitId = world.cargo.unitAtIndex('on_ship', shipId, i);
+    if (unitId !== undefined && world.cargo.get(unitId)?.direction === 'import') imports += 1;
+  }
+  return imports;
+}
+
 const checkContracts: Check = (world) => {
   let offers = 0;
   for (const contract of world.contractBook.openContracts.values()) {
@@ -908,13 +934,18 @@ const checkContracts: Check = (world) => {
     const ship = contract.shipId === undefined ? undefined : world.ships.get(contract.shipId);
     if (ship === undefined) return `${label}: loď kontraktu #${String(contract.shipId)} nie je na mape`;
     if (ship.classId !== contract.shipClassId || ship.cargoTypeId !== contract.cargoTypeId) return `${label}: ${ship.label} nemá triedu a náklad kontraktu`;
-    const aboard = world.cargo.countAt('on_ship', ship.id);
+    const aboard = importAboard(world, ship.id);
     if (aboard !== contract.volumeUnits - contract.unitsUnloaded) {
-      return `${label}: na ${ship.label} je ${String(aboard)} jednotiek, očakávané volume − unloaded = ${String(contract.volumeUnits - contract.unitsUnloaded)}`;
+      return `${label}: na ${ship.label} je ${String(aboard)} import jednotiek, očakávané volume − unloaded = ${String(contract.volumeUnits - contract.unitsUnloaded)}`;
     }
   }
-  const limit = world.defs.economy.offersPerDay;
-  if (offers > limit) return `pool má ${String(offers)} ponúk > offersPerDay ${String(limit)}`;
+  const groups = world.contractBook.offeredGroups();
+  const { offersPerDay, bookingOffersPerDay } = world.defs.economy;
+  if (groups.import > offersPerDay) return `pool má ${String(groups.import)} import ponúk > offersPerDay ${String(offersPerDay)} (ponúk spolu ${String(offers)})`;
+  if (groups.booking > bookingOffersPerDay) return `pool má ${String(groups.booking)} booking ponúk > bookingOffersPerDay ${String(bookingOffersPerDay)}`;
+  let held = 0;
+  for (const contract of world.contractBook.contracts.values()) held += contract.booking?.heldUnits ?? 0;
+  if (world.holdIndex.size !== held) return `index zadržaných jednotiek má ${String(world.holdIndex.size)} záznamov, kontrakty ${String(held)} jednotiek v hold`;
   const stored = world.cargo.countByKind('in_storage');
   return world.storedCargo.size === stored ? undefined : `index uskladneného nákladu má ${String(world.storedCargo.size)} jednotiek, sklady ${String(stored)}`;
 };

@@ -57,6 +57,14 @@ export interface VoyageView {
 
 const NO_CONTRACTS: readonly Contract[] = Object.freeze([]);
 
+/** Počet ponúk v poole po skupinách voyage (`ContractBook.offeredGroups`). */
+export interface OfferedGroups {
+  /** Skupiny bez exportu (import ponuky, F5). */
+  readonly import: number;
+  /** Skupiny s export bookingom (šablóny `export` a `roundtrip`). */
+  readonly booking: number;
+}
+
 /** Závislosti knihy od sveta (`world.events`, `world.clock`). */
 export interface ContractBookEnv {
   readonly events: { emit(event: ContractStateChangedEvent): void };
@@ -198,11 +206,48 @@ export class ContractBook {
     return Math.floor(this.completedTotal / contractsPerTier);
   }
 
-  /** Počet ponúk v poole (`offered`). */
+  /** Počet ponúk v poole (`offered`) — kontraktov; roundtrip sa počíta dvakrát (pozri `offeredGroups`). */
   get offeredCount(): number {
     let count = 0;
     for (const contract of this.open.values()) if (CONTRACT_STATE_TRAITS[contract.state].offer) count += 1;
     return count;
+  }
+
+  /**
+   * Počet ponúk v poole po **skupinách** (ADR-032 bod 1): skupina = ponuka jednej voyage (import ponuka 1 kontrakt, export
+   * booking 1, roundtrip import + export 2). `booking` skupiny majú export kontrakt, `import` skupiny nie; pool dopĺňa
+   * každý druh zvlášť (`economy.offersPerDay`, `economy.bookingOffersPerDay`). Kontrakty skupiny vznikajú za sebou
+   * (po sebe idúce id), preto stačí jeden prechod bez alokácie okrem výsledku.
+   */
+  offeredGroups(): OfferedGroups {
+    let importGroups = 0;
+    let bookingGroups = 0;
+    let voyage: VoyageId | undefined;
+    let booking = false;
+    const close = (): void => {
+      if (voyage === undefined) return;
+      if (booking) bookingGroups += 1;
+      else importGroups += 1;
+    };
+    for (const contract of this.open.values()) {
+      if (!CONTRACT_STATE_TRAITS[contract.state].offer) continue;
+      if (contract.voyageId !== voyage) {
+        close();
+        voyage = contract.voyageId;
+        booking = false;
+      }
+      if (contract.booking !== null) booking = true;
+    }
+    close();
+    return { import: importGroups, booking: bookingGroups };
+  }
+
+  /**
+   * Ponuky (`offered`) voyage `voyageId` vzostupne podľa id — kontrakty skupiny, ktoré `AcceptContract` / `DeclineContract`
+   * prijmú alebo odmietnu spolu. **Nová kópia** (prechod do `expired` kontrakt z knihy zabúda); neznáma voyage → prázdne.
+   */
+  offeredOfVoyage(voyageId: VoyageId): Contract[] {
+    return this.voyageContracts(voyageId).filter((contract) => CONTRACT_STATE_TRAITS[contract.state].offer);
   }
 
   /** Kontrakt podľa id, alebo `undefined`. */

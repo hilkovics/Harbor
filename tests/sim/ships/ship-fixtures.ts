@@ -44,7 +44,7 @@ function buildShipDefs(moduleList: typeof LEGACY_CAPACITY_MODULES): DefRegistry 
       ...cargoTypesJson,
       items: [
         ...cargoTypesJson.items,
-        { id: GRAIN, category: 'bulk', unitName: 't', unitsPerBatch: 25, basePricePerUnitCents: 1200, xpPerUnit: 1, colorToken: 'cargo-bulk' },
+        { id: GRAIN, category: 'bulk', unitName: 't', unitsPerBatch: 25, basePricePerUnitCents: 1200, exportPricePerUnitCents: 1000, xpPerUnit: 1, colorToken: 'cargo-bulk' },
       ],
     },
     ships: {

@@ -38,11 +38,28 @@
  * Penalizácie sa strhávajú z hotovosti jednou transakciou až pri `completed`/`failed` (rozhodnutie 6). V ticku sa najprv
  * pripíšu penalizácie, potom sa rozhodne o dokončení a nakoniec o zlyhaní — dokončenie v ticku, keď by kontrakt zlyhal,
  * má prednosť.
+ *
+ * **Export booking** (F6a, ADR-032; kroky `EXPORT_CONTRACT_STEPS`):
+ * - `accepted`: v ticku príchodu lode voyage kontrakt prevezme loď voyage (ak ju už spawnol import kontrakt roundtripu
+ *   s nižším id), inak spawne loď s 0 jednotkami (export-only voyage) → `ship_en_route`;
+ * - `ship_en_route`: SLA; loď pri kotvisku (alebo už odchádza) → `dockedTick`, `exporting` („Exportuje sa": nakládka);
+ * - `exporting`: demurrage (loď stojí pri kotvisku nad `berthAllowanceTicks`), SLA;
+ * - vo všetkých stavoch po prijatí: `CutoffWarning` v ticku `cutoffTick − round(cutoffWarningHours × ticksPerHour)` a
+ *   `CutoffPassed` v ticku `cutoffTick` (bezstavovo podľa ticku);
+ * - po všetkých kontraktoch uvoľnenie VGM hold: jednotky s `untilTick ≤ tick` vzostupne podľa (`untilTick`, id) →
+ *   `VgmHoldReleased`.
+ * Uzavretie bookingu pri odchode lode (výplata podľa naložených jednotiek, penalizácie `BookingPenaltyApplied`, `completed`
+ * / `failed`) pribudne s nakládkou (T6A-05) — bez nej export nikdy nenakladá, takže booking zlyhá až po SLA.
+ *
+ * **Pool ponúk:** import ponuky dopĺňa `refillPool` (`economy.offersPerDay` skupín, pri štarte hry aj pri DayClosed),
+ * booking ponuky `refillBookings` (`economy.bookingOffersPerDay` skupín) **len pri DayClosed** a po import ponukách — prvé
+ * naplnenie poolu a ťah príchodu pri prijatí v ticku 1 ostávajú bitovo rovnaké ako vo F5 (ADR-032 bod 1).
  */
-import { capacityHintFrom, drawOffer, portCapacityOf } from '../contracts/contract-pool';
+import { capacityHintFrom, drawBookingOffer, drawOffer, portCapacityOf, type OfferContext } from '../contracts/contract-pool';
 import type { Contract } from '../contracts/contract';
 import type { ContractKind, ContractState } from '../contracts/contract-fsm';
 import { contractXpGain, demurrageStepCents, lateStepCents, wholePeriods } from '../contracts/contract-terms';
+import type { HoldEntry } from '../cargo/hold-index';
 import type { ClockBoundaries } from '../core/sim-clock';
 import { SHIP_STATE_TRAITS, type ShipState } from '../ships/ship-fsm';
 import { spawnShip } from '../ships/spawn-ship';
@@ -138,8 +155,7 @@ const IMPORT_CONTRACT_STEPS: { readonly [S in ContractState]: ContractStep } = {
   offered: () => undefined,
   accepted: (contract, world) => {
     if (contract.shipArrivalTick === undefined || world.clock.tick < contract.shipArrivalTick) return;
-    const ship = spawnShip(world, { shipClassId: contract.shipClassId, cargoTypeId: contract.cargoTypeId, units: contract.volumeUnits, contractId: contract.id, voyageId: contract.voyageId });
-    contract.shipId = ship.id;
+    boardVoyageShip(world, contract);
     world.contractBook.changeState(contract, 'ship_en_route');
   },
   ship_en_route: (contract, world) => {
@@ -176,19 +192,71 @@ const IMPORT_CONTRACT_STEPS: { readonly [S in ContractState]: ContractStep } = {
   expired: () => undefined,
 };
 
+/**
+ * Loď voyage kontraktu `contract` (`accepted → ship_en_route`): loď, ktorú už spawnol kontrakt tej istej voyage v tomto
+ * ticku (roundtrip: import s nižším id), inak nová loď s `spawnUnits` jednotkami kontraktu (import `volumeUnits`, export
+ * 0) a `voyageId` (ADR-032 bod 1). Spoločné pre import aj export kroky `accepted`.
+ */
+function boardVoyageShip(world: World, contract: Contract): void {
+  for (const mate of world.contractBook.voyageContracts(contract.voyageId)) {
+    if (mate !== contract && mate.shipId !== undefined) {
+      contract.shipId = mate.shipId;
+      return;
+    }
+  }
+  const ship = spawnShip(world, {
+    shipClassId: contract.shipClassId,
+    cargoTypeId: contract.cargoTypeId,
+    units: contract.spawnUnits,
+    contractId: contract.id,
+    voyageId: contract.voyageId,
+  });
+  contract.shipId = ship.id;
+}
+
+/** `CutoffWarning` a `CutoffPassed` bezstavovo podľa ticku (viď hlavička); kontrakt bez cut-off (import) nič. */
+function trackCutoff(world: World, contract: Contract): void {
+  const booking = contract.booking;
+  if (booking === null || booking.cutoffTick === undefined) return;
+  const { tick, ticksPerHour } = world.clock;
+  const warning = booking.cutoffTick - Math.round(world.defs.economy.cutoffWarningHours * ticksPerHour);
+  if (tick === warning) world.events.emit({ type: 'CutoffWarning', contractId: contract.id, cutoffTick: booking.cutoffTick });
+  if (tick === booking.cutoffTick) {
+    world.events.emit({ type: 'CutoffPassed', contractId: contract.id, arrivedUnits: booking.arrivedUnits, bookedUnits: booking.bookedUnits });
+  }
+}
+
 const idle: ContractStep = () => undefined;
 
 /**
- * Kroky stavov **export** bookingu (ADR-032): cut-off a jeho varovanie, uvoľnenie VGM hold, loď voyage (spawn spolu
- * s import kontraktom voyage, zakotvenie → `exporting`), demurrage a SLA, uzavretie pri odchode lode s výplatou
- * a penalizáciami bookingu. Implementuje T6A-04 — v T6A-01 je booking v save platný, ale krok 2 ho nemení.
+ * Kroky stavov **export** bookingu (ADR-032; viď hlavička súboru). Uzavretie bookingu pri odchode lode dodá T6A-05.
  */
 const EXPORT_CONTRACT_STEPS: { readonly [S in ContractState]: ContractStep } = {
   offered: idle,
-  accepted: idle,
-  ship_en_route: idle,
+  accepted: (contract, world) => {
+    trackCutoff(world, contract);
+    if (contract.shipArrivalTick === undefined || world.clock.tick < contract.shipArrivalTick) return;
+    boardVoyageShip(world, contract);
+    world.contractBook.changeState(contract, 'ship_en_route');
+  },
+  ship_en_route: (contract, world) => {
+    trackCutoff(world, contract);
+    accrueLate(world, contract);
+    const ship = shipOf(world, contract);
+    if (ship !== undefined && SHIP_REACHED_BERTH[ship.state]) {
+      contract.dockedTick = world.clock.tick;
+      world.contractBook.changeState(contract, 'exporting');
+      return;
+    }
+    failIfOverdue(world, contract);
+  },
   unloading: idle,
-  exporting: idle,
+  exporting: (contract, world) => {
+    trackCutoff(world, contract);
+    accrueDemurrage(world, contract);
+    accrueLate(world, contract);
+    failIfOverdue(world, contract);
+  },
   completed: idle,
   failed: idle,
   expired: idle,
@@ -223,12 +291,14 @@ export class ContractSystem {
       const contract = open[i];
       CONTRACT_STEPS[contract.kind][contract.state](contract, world);
     }
+    releaseVgmHolds(world);
     if (closed.dayClosed) expireOffers(world, open);
     open.length = 0;
     if (closed.dayClosed || world.clock.tick === GAME_START_TICK || (world.contractBook.untouched && !this.refilled)) {
       this.refilled = true;
       refillPool(world);
     }
+    if (closed.dayClosed) refillBookings(world);
   }
 }
 
@@ -248,13 +318,11 @@ export function expireOffers(world: World, scratch: Contract[] = []): void {
   }
 }
 
-/** Doplní pool do `offersPerDay` ponúk (poradie a spotreba `Rng`: `drawOffer`); každá nová ponuka `ContractOffered`. */
-export function refillPool(world: World): void {
+/** Kontext ponuky pre `drawOffer` / `drawBookingOffer` z aktuálneho stavu sveta (kapacity prístavu, tier, id z knihy). */
+function offerContextOf(world: World): OfferContext {
   const { defs, clock, contractBook: book } = world;
-  const missing = defs.economy.offersPerDay - book.offeredCount;
-  if (missing <= 0) return;
   const capacity = portCapacityOf(world.modules.values(), world.stats, clock.ticksPerDay);
-  const context = {
+  return {
     defs,
     rng: world.rng,
     tick: clock.tick,
@@ -265,10 +333,61 @@ export function refillPool(world: World): void {
     nextId: () => book.allocateId(),
     nextVoyageId: () => book.allocateVoyageId(),
   };
+}
+
+/**
+ * Doplní pool import ponúk do `offersPerDay` skupín (poradie a spotreba `Rng`: `drawOffer`); každá nová ponuka
+ * `ContractOffered`. Booking ponuky (skupiny s exportom) sa nepočítajú — dopĺňa ich `refillBookings`.
+ */
+export function refillPool(world: World): void {
+  const { defs, contractBook: book } = world;
+  const missing = defs.economy.offersPerDay - book.offeredGroups().import;
+  if (missing <= 0) return;
+  const context = offerContextOf(world);
   for (let i = 0; i < missing; i++) {
     const offer = drawOffer(context);
     if (offer === null) return;
     book.add(offer);
     world.events.emit({ type: 'ContractOffered', contractId: offer.id });
   }
+}
+
+/**
+ * Doplní pool booking ponúk do `bookingOffersPerDay` skupín (ADR-032 bod 1): skupina = export booking alebo roundtrip
+ * (import + export jednej voyage, kontrakty vzostupne podľa id, každý `ContractOffered`). Spotreba `Rng`: `drawBookingOffer`.
+ * Volá ju krok 2 po `refillPool` a len pri `DayClosed`.
+ */
+export function refillBookings(world: World): void {
+  const { defs, contractBook: book } = world;
+  const missing = defs.economy.bookingOffersPerDay - book.offeredGroups().booking;
+  if (missing <= 0) return;
+  const context = offerContextOf(world);
+  for (let i = 0; i < missing; i++) {
+    const group = drawBookingOffer(context);
+    if (group.length === 0) return;
+    for (const offer of group) {
+      book.add(offer);
+      world.events.emit({ type: 'ContractOffered', contractId: offer.id });
+    }
+  }
+}
+
+/** Zoznam splatných VGM hold sa berie do znovupoužiteľného poľa (hot path bez alokácie; nie je stav simulácie). */
+const DUE_HOLDS: HoldEntry[] = [];
+
+/**
+ * Uvoľní VGM hold jednotiek, ktorým `untilTick ≤ tick` (`HoldIndex.takeDue`, vzostupne podľa `untilTick`, potom id):
+ * `CargoLedger.setHold(unit, null)`, počítadlo `heldUnits` kontraktu a `VgmHoldReleased`. Jednotka, ktorá medzitým
+ * opustila mapu (vrátenie odosielateľovi), alebo už nemá tento hold, sa preskočí.
+ */
+function releaseVgmHolds(world: World): void {
+  world.holdIndex.takeDue(world.clock.tick, DUE_HOLDS);
+  for (const entry of DUE_HOLDS) {
+    const unit = world.cargo.get(entry.unitId);
+    if (unit === undefined || unit.hold === null || unit.hold.untilTick !== entry.untilTick || unit.contractId === null) continue;
+    world.cargo.setHold(unit.id, null);
+    world.contractBook.get(unit.contractId)?.recordHold(-1);
+    world.events.emit({ type: 'VgmHoldReleased', contractId: unit.contractId, unitId: unit.id });
+  }
+  DUE_HOLDS.length = 0;
 }

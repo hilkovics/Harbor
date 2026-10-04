@@ -27,6 +27,8 @@
 14. **WorldState v7** + migrácia v6 → v7 (jednotky dostanú `direction: 'import'`, `weightClass` deterministicky bez Rng — napr. `medium`, `hold: null`; existujúce kontrakty `kind: 'import'`; voyage sa odvodí z lodí/kontraktov).
 15. **UI/Render (mimo sim):** ContractsPanel ukáže export booking (cieľový prístav, cut-off, prišlo/naložené/hold), loď ukáže náklad na palube (import/export) a stav `lashing`; inšpektor skladu rozdelí import/export; kamión prichádzajúci naložený má loaded sprite už pri príchode; žeriav anim. aj pri nakládke (smer opačný).
 
+16. **Odovzdávanie „pod hákom" (požiadavka používateľa, variant A):** odovzdávací bod žeriav ↔ vozidlo sa mení z apronu na **miesto pod hákom**. Straddle carrier čaká pod žeriavom; žeriav mu kontajner položí priamo (vykládka) alebo ho z neho zdvihne (nakládka). Apron ostáva len ako **buffer 0–1 jednotka na žeriav** (`craneBufferSlots`, def; 0 = čisto priame odovzdanie, žeriav čaká na vozidlo). Ledger: nové prechody `in_crane → in_vehicle` a `in_vehicle → in_crane` (§7.1), `on_apron` ostáva pre buffer. Dispatcher posiela vozidlo k žeriavu vopred (stav vozidla „čaká pod žeriavom"), aby žeriav nečakal; metriky `craneWaitForVehicleTicks`, `vehicleWaitUnderCraneTicks`. Rieši sa spolu s nakládkou a dual cyclingom v T6A-05 (jeden návrh cyklu žeriavu pre oba smery). **Starý režim apronu ostáva zachovaný cez def** (rozhodnutie používateľa 2026-10-04): `handoverMode: 'apron' | 'under_hook'` na kotvisku/žeriave — `apron` = dnešné správanie (žeriav kladie do slotov apronu, `apronSlots` 8), `under_hook` = nové predvolené; testy so starým apronom (`LEGACY_CAPACITY_DEFS`) bežia v režime `apron`. **Variant B** (terminálové ťahače + skladový RTG, ktorý ich v sklade vyloží) je nový typ vozidla a modulu → **Fáza 10a**.
+
 ## Karty
 | id | názov | model | agent | parallel | depends_on | est |
 |---|---|---|---|---|---|---|
@@ -34,7 +36,7 @@
 | T6A-02 | Defy: `contract_templates` (export/roundtrip šablóny), `economy`/`ships`/`logistics` nové polia (cut-off, okno príchodov, VGM, penalizácie, lashing, dualCycleFactor, apronExportReserve, weightClass rozdelenie), schémy, DefRegistry, validate-defs | sonnet | implementer | yes (worktree) | 01 | S |
 | T6A-03 | TDD: scenár `export_roundtrip.json` + testy (príchody pred cut-off, VGM hold, rolled, poradie nakládky, dual cycle, lashing, dual transaction, konzervácia so `shipped`, save v6→v7, roundtrip uprostred nakládky) | sonnet | test-writer | yes (worktree) | 01 | M |
 | T6A-04 | Sim: ledger reverzný reťazec + `shipped`, booking/voyage v ContractSystem, plán príchodov, spawn naložených kamiónov, brána + VGM + rolled | opus | sim-architect | no | 01, 02 | L |
-| T6A-05 | Sim: dispatcher export (rampa → sklad zoskupene, sklad → apron v poradí plánu, rezerva apronu), žeriav nakládka + dual cycling, stav lode `lashing`, dual transaction kamiónov | opus | sim-architect | no | 04 | L |
+| T6A-05 | Sim: odovzdávanie pod hákom (rozhodnutie 16, buffer 0–1), dispatcher export (rampa → sklad zoskupene, sklad → žeriav v poradí plánu), žeriav nakládka + dual cycling, stav lode `lashing`, dual transaction kamiónov | opus | sim-architect | no | 04 | L |
 | T6A-06 | Render: naložený kamión pri príchode, vykladanie na rampe (cúvanie ako pri nakládke), žeriav nakládka (opačný smer), náklad na palube lode podľa počtu (import/export farebne), indikátor lashing | sonnet | implementer | yes (worktree) | 01 | M |
 | T6A-07 | UI + app: ContractsPanel export booking (cieľ, cut-off, prišlo/naložené/hold), inšpektor skladu import/export, inšpektor lode (náklad, lashing), toasty (cut-off o 6 h, rolled, loď odplávala s exportom), snapshot v7 | sonnet | ui-builder → implementer | yes (worktree) | 01 | M |
 | T6A-08 | Tooling: simrun metriky (shippedUnits, rolledUnits, vgmHolds, dualCycleRate, dualTransactionRate, stowageOrderViolations, exportGroupingPct), golden `export_roundtrip` | sonnet | implementer | yes (worktree) | 01 | S |
@@ -50,7 +52,7 @@ Worktree karty začínajú `git reset --hard <HEAD phase/06a-export-booking>` (w
 - [ ] T6A-02 · Defy + schémy
 - [ ] T6A-03 · TDD export_roundtrip
 - [ ] T6A-04 · Sim: ledger, booking/voyage, príchody, brána, VGM, rolled
-- [ ] T6A-05 · Sim: dispatcher export, žeriav nakládka + dual cycle, lashing, dual transaction
+- [ ] T6A-05 · Sim: odovzdávanie pod hákom, dispatcher export, žeriav nakládka + dual cycle, lashing, dual transaction
 - [ ] T6A-06 · Render
 - [ ] T6A-07 · UI + app
 - [ ] T6A-08 · simrun metriky + golden

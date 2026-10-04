@@ -51,7 +51,10 @@ describe('EconomySystem — DayClosed', () => {
     const tick = TICKS_PER_DAY;
     const start = DEFS.economy.startingCashCents;
     expect([STARTER_MAINTENANCE, CRANE_WAGE]).toEqual([210_000, 25_000]);
-    const economyEvents = events.slice(events.findIndex((event) => event.type === 'DayClosed') + 1);
+    // Za DayClosed idú najprv booking ponuky poolu (krok 2, F6a), potom krok 9 (údržba, mzdy, súhrn).
+    const afterDay = events.slice(events.findIndex((event) => event.type === 'DayClosed') + 1);
+    const economyEvents = afterDay.filter((event) => event.type !== 'ContractOffered');
+    expect(afterDay.slice(0, afterDay.length - economyEvents.length).every((event) => event.type === 'ContractOffered')).toBe(true);
     expect(economyEvents).toEqual([
       { type: 'MoneyChanged', cashCents: start - 210_000, deltaCents: -210_000, reason: 'maintenance' },
       { type: 'MoneyChanged', cashCents: start - 235_000, deltaCents: -25_000, reason: 'wages' },

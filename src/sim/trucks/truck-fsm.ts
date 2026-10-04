@@ -117,6 +117,12 @@ export interface TruckStateTraits extends MotionTraits {
    * tak nikdy nečakajú na tú istú jednotku.
    */
   readonly claimsCargo: boolean;
+  /**
+   * Delivery kamión drží rezerváciu staging miesta svojho docku pre každú jednotku, ktorú ešte nevyložil (F6a, ADR-032 bod
+   * 13): od povelu do docku po koniec vykládky (`to_dock`, `unloading`). Kapacita docku tak nikdy nechýba, keď kamión
+   * vykladá; rezervácia klesá s každou vyloženou jednotkou (`commit`). Pickup kamión nikdy.
+   */
+  readonly holdsIntake: boolean;
   readonly cargo: TruckCargo;
   /** Strana brány, ku ktorej kamión ide (`to_gate`, `to_gate_out`) alebo pri ktorej čaká vo fronte; inak `null`. */
   readonly gateSide: TruckGateSide | null;
@@ -135,7 +141,7 @@ function traits(spec: TruckStateTraits): TruckStateTraits {
   return Object.freeze(spec);
 }
 
-const ON_ROAD = { waits: false, bayOccupied: false, gateSide: null, queued: false, afterGate: null, passageBack: false } as const;
+const ON_ROAD = { waits: false, bayOccupied: false, gateSide: null, queued: false, afterGate: null, passageBack: false, holdsIntake: false } as const;
 
 export const TRUCK_STATE_TRAITS: { readonly [S in TruckState]: TruckStateTraits } = Object.freeze({
   to_gate: traits({ ...ON_ROAD, motion: 'drive', stop: 'gate', holdsBay: true, holdsDock: false, claimsCargo: true, cargo: 'empty', gateSide: 'entry' }),
@@ -163,10 +169,10 @@ export const TRUCK_DELIVERY_STATE_TRAITS: { readonly [S in TruckState]: TruckSta
   gate_queue: traits({ ...TRUCK_STATE_TRAITS.gate_queue, claimsCargo: false, cargo: 'loaded' }),
   to_bay: traits({ ...TRUCK_STATE_TRAITS.to_bay, claimsCargo: false, cargo: 'loaded' }),
   waiting: traits({ ...TRUCK_STATE_TRAITS.waiting, claimsCargo: false, cargo: 'loaded' }),
-  to_dock: traits({ ...TRUCK_STATE_TRAITS.to_dock, claimsCargo: false, cargo: 'loaded' }),
+  to_dock: traits({ ...TRUCK_STATE_TRAITS.to_dock, claimsCargo: false, holdsIntake: true, cargo: 'loaded' }),
   // Delivery v nakládke nebýva (misia sa pred `loading` zmení na pickup); riadok drží úplnosť tabuľky.
   loading: traits({ ...TRUCK_STATE_TRAITS.loading }),
-  unloading: traits({ ...TRUCK_STATE_TRAITS.unloading }),
+  unloading: traits({ ...TRUCK_STATE_TRAITS.unloading, holdsIntake: true }),
   to_gate_out: traits({ ...TRUCK_STATE_TRAITS.to_gate_out, cargo: 'empty' }),
   gate_queue_out: traits({ ...TRUCK_STATE_TRAITS.gate_queue_out, cargo: 'empty' }),
   to_portal: traits({ ...TRUCK_STATE_TRAITS.to_portal, cargo: 'empty' }),

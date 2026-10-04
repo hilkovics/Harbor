@@ -20,6 +20,7 @@
 import type { CargoLocation } from '../cargo/cargo-location';
 import type { CargoUnit } from '../cargo/cargo-unit';
 import type { ContractId, EntityId, VoyageId } from '../core/entity-id';
+import type { Rng } from '../core/rng';
 import { ContractError } from './contract-error';
 import {
   CONTRACT_STATE_TRAITS,
@@ -150,6 +151,25 @@ export const SERIALIZED_CONTRACT_KEYS: readonly (keyof SerializedContract)[] = [
   'lateDays',
   'booking',
 ];
+
+/**
+ * Vstup plánovania pri prijatí ponuky (`AcceptContract`, ADR-026, ADR-032): plán lode spoločný pre voyage a plán príchodov
+ * exportu. `rng` je jediný `Rng` sveta (pravidlo 3), hodnoty z defov (`cutoffHours`, `arrivalWindowDays`) a hodín
+ * dodáva volajúci, takže kontrakt nepozná svet.
+ */
+export interface AcceptContext {
+  /** Tick prijatia (`clock.tick` v príkazovej fáze). */
+  readonly tick: number;
+  /** Príchod lode voyage (rovnaký pre všetky kontrakty skupiny). */
+  readonly shipArrivalTick: number;
+  readonly ticksPerDay: number;
+  readonly ticksPerHour: number;
+  /** `economy.cutoffHours`. */
+  readonly cutoffHours: number;
+  /** `logistics.exportFlow.arrivalWindowDays`. */
+  readonly arrivalWindowDays: number;
+  readonly rng: Pick<Rng, 'int'>;
+}
 
 /**
  * Pohľad na booking export kontraktu pre UI a systémy (`Contract.booking`; import `null`). Polia sú živé hodnoty
@@ -303,6 +323,56 @@ export abstract class Contract {
   /** Aktuálny stav FSM (mení ho len `transition`). */
   get state(): ContractState {
     return this.current;
+  }
+
+  /** Jednotky, s ktorými sa pri spawne lode voyage vytvorí loď tohto kontraktu: import `volumeUnits`, export 0 (náklad príde po súši). */
+  get spawnUnits(): number {
+    return this.volumeUnits;
+  }
+
+  /**
+   * Plán po prijatí ponuky (`AcceptContract`): `acceptedTick`, `shipArrivalTick` a `slaDeadlineTick = shipArrivalTick +
+   * slaDays × ticksPerDay`, potom plán špecifický pre druh (`planBooking`: export cut-off a plán príchodov z `rng`).
+   * Stav `offered → accepted` mení volajúci cez `ContractBook.changeState`. Kontrakt mimo `offered` →
+   * `ContractError('invalid_transition')` bez zmeny.
+   */
+  accept(context: AcceptContext): void {
+    if (this.current !== 'offered') {
+      throw new ContractError('invalid_transition', `${this.label}: prijať sa dá len ponuka (stav ${this.current})`);
+    }
+    this.acceptedTick = context.tick;
+    this.shipArrivalTick = context.shipArrivalTick;
+    this.slaDeadlineTick = context.shipArrivalTick + this.slaDays * context.ticksPerDay;
+    this.planBooking(context);
+  }
+
+  /** Najbližší plánovaný príchod kamióna s exportom (tick), alebo `undefined` (import, vyčerpaný plán). */
+  get nextArrivalTick(): number | undefined {
+    return undefined;
+  }
+
+  /** Kamión podľa plánu vznikol: odstráni najbližší plánovaný príchod (export); import nič. */
+  consumeArrival(): void {
+    // Import nemá plán príchodov.
+  }
+
+  /**
+   * Brána prijala jednotku kontraktu (krok 8): export `arrivedUnits += 1` a pri `rolled` (po cut-off) zaradí jednotku do
+   * `rolledUnitIds`; import nič.
+   */
+  recordArrival(unitId: EntityId, rolled: boolean): void {
+    void unitId;
+    void rolled;
+  }
+
+  /** Zmena počtu zadržaných (VGM hold) jednotiek kontraktu: `+1` hold začal, `−1` sa uvoľnil; import nič. */
+  recordHold(delta: 1 | -1): void {
+    void delta;
+  }
+
+  /** Plán špecifický pre druh po prijatí; import nemá nič naplánovať. */
+  protected planBooking(context: AcceptContext): void {
+    void context;
   }
 
   get label(): string {
@@ -559,6 +629,40 @@ export class ExportContract extends Contract implements ExportBooking {
     return this;
   }
 
+  override get nextArrivalTick(): number | undefined {
+    return this.arrivalPlan[0];
+  }
+
+  override consumeArrival(): void {
+    this.arrivalPlan.shift();
+  }
+
+  /** `heldUnits` sleduje jednotky v hold: hold sa začal (`+1`) alebo uvoľnil (`−1`, nie pod 0). */
+  override recordHold(delta: 1 | -1): void {
+    this.heldUnits = Math.max(0, this.heldUnits + delta);
+  }
+
+  /** Export nevytvára jednotky na lodi — kamióny ich privezú po súši (`spawnShip` s 0 jednotkami alebo loď roundtripu). */
+  override get spawnUnits(): number {
+    return 0;
+  }
+
+  /**
+   * Cut-off a plán príchodov (ADR-032 bod 6): `cutoffTick = shipArrivalTick − round(cutoffHours × ticksPerHour)`; pre
+   * každú bookovanú jednotku jeden ťah `rng.int(windowStart, cutoffTick)`, `windowStart = max(acceptedTick + 1,
+   * shipArrivalTick − round(arrivalWindowDays × ticksPerDay))`; plán sa zoradí neklesajúco. `DefRegistry` zaručuje
+   * `windowStart ≤ cutoffTick` (min × 24 > cutoffHours a okno > cutoffHours).
+   */
+  protected override planBooking(context: AcceptContext): void {
+    const cutoff = context.shipArrivalTick - Math.round(context.cutoffHours * context.ticksPerHour);
+    const windowStart = Math.max(context.tick + 1, context.shipArrivalTick - Math.round(context.arrivalWindowDays * context.ticksPerDay));
+    const plan: number[] = [];
+    for (let i = 0; i < this.volumeUnits; i++) plan.push(context.rng.int(windowStart, cutoff));
+    plan.sort((a, b) => a - b);
+    this.cutoffTick = cutoff;
+    this.arrivalPlan = plan;
+  }
+
   get bookedUnits(): number {
     return this.volumeUnits;
   }
@@ -575,7 +679,7 @@ export class ExportContract extends Contract implements ExportBooking {
    * Brána prijala jednotku bookingu (krok 8): `arrivedUnits += 1`; po cut-off (`rolled`) aj zaradenie do `rolledUnitIds`
    * (vzostupne). Udalosti (`ExportArrived`, `UnitRolled`) emituje volajúci.
    */
-  recordArrival(unitId: EntityId, rolled: boolean): void {
+  override recordArrival(unitId: EntityId, rolled: boolean): void {
     this.arrivedUnits += 1;
     if (!rolled) return;
     let at = this.rolledUnitIds.length;
@@ -594,6 +698,8 @@ export class ExportContract extends Contract implements ExportBooking {
       if (this.rolledUnitIds.includes(unit.id)) this.lastMinuteUnits += 1;
     }
     if (to.kind === 'exported' && settled < this.arrivedUnits) this.unitsExported += 1;
+    // Zadržaná jednotka, ktorá opustila mapu (vrátenie odosielateľovi po uzavretí bookingu), už nie je v hold.
+    if (unit.hold !== null && (to.kind === 'exported' || to.kind === 'shipped')) this.heldUnits = Math.max(0, this.heldUnits - 1);
   }
 
   /**

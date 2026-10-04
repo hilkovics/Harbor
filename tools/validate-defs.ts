@@ -35,6 +35,7 @@ const VEHICLES_DEF_FILE = `vehicles${JSON_SUFFIX}`;
 const TRUCKS_DEF_FILE = `trucks${JSON_SUFFIX}`;
 const CARGO_TYPES_DEF_FILE = `cargo_types${JSON_SUFFIX}`;
 const ECONOMY_DEF_FILE = `economy${JSON_SUFFIX}`;
+const LOGISTICS_DEF_FILE = `logistics${JSON_SUFFIX}`;
 const CONTRACT_TEMPLATES_DEF_FILE = `contract_templates${JSON_SUFFIX}`;
 const MODULE_SPRITES_SECTION = 'sprites';
 const ENTITIES_SECTION = 'entities';
@@ -164,9 +165,14 @@ function findRangeOrderProblem(at: string, value: unknown): string[] {
     : [];
 }
 
+/** Hodín v dni (prevod `exportArrivalDaysRange` na hodiny `cutoffHours`; kalendárna konštanta). */
+const HOURS_PER_DAY = 24;
+
 /**
- * Vzťahy polí `economy.json` (F5), ktoré schéma nevyjadrí: `min ≤ max` v `arrivalDaysRange` a `volumeScaleRange`
- * a `arrivalDaysRange[1] > 0` (loď kontraktu nesmie prísť v ticku prijatia). Chýbajúci alebo nečitateľný súbor sa preskočí.
+ * Vzťahy polí `economy.json`, ktoré schéma nevyjadrí: `min ≤ max` v `arrivalDaysRange`, `volumeScaleRange` a (F6a)
+ * `exportArrivalDaysRange`, `arrivalDaysRange[1] > 0` (loď kontraktu nesmie prísť v ticku prijatia) a
+ * `exportArrivalDaysRange[0] × 24 > cutoffHours` (cut-off nesmie ležať pred prijatím bookingu). Chýbajúci alebo
+ * nečitateľný súbor sa preskočí.
  */
 function findEconomyProblems(defsDir: string): string[] {
   const economy = readJsonOrUndefined(join(defsDir, ECONOMY_DEF_FILE));
@@ -175,20 +181,84 @@ function findEconomyProblems(defsDir: string): string[] {
   const errors = [
     ...findRangeOrderProblem(`${label}: /arrivalDaysRange`, economy['arrivalDaysRange']),
     ...findRangeOrderProblem(`${label}: /volumeScaleRange`, economy['volumeScaleRange']),
+    ...findRangeOrderProblem(`${label}: /exportArrivalDaysRange`, economy['exportArrivalDaysRange']),
   ];
   const arrival = asRange(economy['arrivalDaysRange']);
   if (arrival !== undefined && arrival[1] <= 0) {
     errors.push(`${label}: /arrivalDaysRange/1 musí byť > 0 (loď kontraktu nesmie prísť v ticku prijatia), dostal ${String(arrival[1])}`);
   }
+  const exportArrival = asRange(economy['exportArrivalDaysRange']);
+  const cutoffHours = economy['cutoffHours'];
+  if (exportArrival !== undefined && typeof cutoffHours === 'number' && exportArrival[0] * HOURS_PER_DAY <= cutoffHours) {
+    errors.push(
+      `${label}: /exportArrivalDaysRange/0 min × 24 h (${String(exportArrival[0] * HOURS_PER_DAY)}) musí byť > cutoffHours (${String(cutoffHours)}) — cut-off by ležal pred prijatím bookingu, dostal ${String(exportArrival[0])}`,
+    );
+  }
   return errors;
 }
 
 /**
- * Krížová kontrola `contract_templates.json` voči `cargo_types.json` a `ships.json` (F5; rovnaké pravidlá ako
- * `DefRegistry.fromRaw`): `min ≤ max` v `volumeUnitsRange` a `slaDaysRange`, `cargoTypeId` a `shipClassIds` existujú,
- * každá loď šablóny vozí kategóriu nákladu a `volumeUnitsRange[1] ≤` najmenšia `capacityUnits` lodí šablóny. Chyba:
- * `contract_templates.json: /items/<i>/<pole> <správa>`. Chýbajúci alebo nečitateľný katalóg a položky bez očakávaného
- * tvaru sa preskočia (hlási ich schéma).
+ * Vzťahy polí `logistics.json` (F6a): súčet váh `exportFlow.weightClassShares` > 0 a okno príchodov exportu
+ * (`exportFlow.arrivalWindowDays` × 24 h) > `economy.cutoffHours` (okno pred cut-off nesmie byť prázdne). Chýbajúci alebo
+ * nečitateľný súbor sa preskočí.
+ */
+function findLogisticsProblems(defsDir: string): string[] {
+  const logistics = readJsonOrUndefined(join(defsDir, LOGISTICS_DEF_FILE));
+  const flow = isRecord(logistics) ? logistics['exportFlow'] : undefined;
+  if (!isRecord(flow)) return [];
+  const errors: string[] = [];
+  const shares = flow['weightClassShares'];
+  if (isRecord(shares)) {
+    const values = ['light', 'medium', 'heavy'].map((key) => shares[key]);
+    if (values.every((value) => typeof value === 'number') && (values as number[]).reduce((sum, value) => sum + value, 0) <= 0) {
+      errors.push(`${LOGISTICS_DEF_FILE}: /exportFlow/weightClassShares súčet váh hmotnostných tried musí byť > 0`);
+    }
+  }
+  const economy = readJsonOrUndefined(join(defsDir, ECONOMY_DEF_FILE));
+  const cutoffHours = isRecord(economy) ? economy['cutoffHours'] : undefined;
+  const windowDays = flow['arrivalWindowDays'];
+  if (typeof windowDays === 'number' && typeof cutoffHours === 'number' && windowDays * HOURS_PER_DAY <= cutoffHours) {
+    errors.push(
+      `${LOGISTICS_DEF_FILE}: /exportFlow/arrivalWindowDays okno príchodov (${String(windowDays * HOURS_PER_DAY)} h) musí byť > economy.cutoffHours (${String(cutoffHours)}) — okno pred cut-off by bolo prázdne, dostal ${String(windowDays)}`,
+    );
+  }
+  return errors;
+}
+
+/**
+ * Vzťah polí kotviska v `modules.json` (F6a, ADR-032 bod 10): `params.apronReserveSlots ≤ ⌊apronSlots / 2⌋`. Chýbajúci alebo
+ * nečitateľný katalóg a položky bez očakávaného tvaru sa preskočia (hlási ich schéma).
+ */
+function findBerthParamProblems(defsDir: string): string[] {
+  const modules = readJsonOrUndefined(join(defsDir, MODULES_DEF_FILE));
+  const items = isRecord(modules) ? modules['items'] : undefined;
+  if (!Array.isArray(items)) return [];
+  const errors: string[] = [];
+  items.forEach((item: unknown, index) => {
+    if (!isRecord(item) || item['kind'] !== 'berth' || !isRecord(item['params'])) return;
+    const { apronSlots, apronReserveSlots } = item['params'];
+    if (typeof apronSlots !== 'number' || typeof apronReserveSlots !== 'number' || apronReserveSlots <= Math.floor(apronSlots / 2)) return;
+    errors.push(
+      `${MODULES_DEF_FILE}: /items/${String(index)}/params/apronReserveSlots musí byť ≤ ⌊apronSlots / 2⌋ (${String(Math.floor(apronSlots / 2))}), dostal ${String(apronReserveSlots)}`,
+    );
+  });
+  return errors;
+}
+
+/** Polia šablóny podľa druhu (F6a, ADR-032 bod 1; rovnaká tabuľka ako `DefRegistry`): povinné a zakázané pole. */
+const TEMPLATE_KIND_FIELDS: Readonly<Record<string, { readonly required: readonly string[]; readonly forbidden: readonly string[] }>> = {
+  import: { required: [], forbidden: ['destinationPorts', 'exportVolumeUnitsRange'] },
+  export: { required: ['destinationPorts'], forbidden: ['exportVolumeUnitsRange'] },
+  roundtrip: { required: ['destinationPorts', 'exportVolumeUnitsRange'], forbidden: [] },
+};
+
+/**
+ * Krížová kontrola `contract_templates.json` voči `cargo_types.json` a `ships.json` (F5, F6a; rovnaké pravidlá ako
+ * `DefRegistry.fromRaw`): `min ≤ max` v `volumeUnitsRange`, `exportVolumeUnitsRange` a `slaDaysRange`, polia podľa druhu
+ * šablóny, `cargoTypeId` a `shipClassIds` existujú, každá loď šablóny vozí kategóriu nákladu, `exportPricePerUnitCents > 0`
+ * pri exporte a roundtripe a `volumeUnitsRange[1]` (aj `exportVolumeUnitsRange[1]`) `≤` najmenšia `capacityUnits` lodí
+ * šablóny. Chyba: `contract_templates.json: /items/<i>/<pole> <správa>`. Chýbajúci alebo nečitateľný katalóg a položky
+ * bez očakávaného tvaru sa preskočia (hlási ich schéma).
  */
 function findContractTemplateProblems(defsDir: string): string[] {
   const templates = readJsonOrUndefined(join(defsDir, CONTRACT_TEMPLATES_DEF_FILE));
@@ -206,10 +276,24 @@ function findContractTemplateProblems(defsDir: string): string[] {
   templateItems.forEach((item: unknown, index) => {
     if (!isRecord(item)) return;
     const at = `${CONTRACT_TEMPLATES_DEF_FILE}: /items/${String(index)}`;
-    errors.push(...findRangeOrderProblem(`${at}/volumeUnitsRange`, item['volumeUnitsRange']), ...findRangeOrderProblem(`${at}/slaDaysRange`, item['slaDaysRange']));
+    errors.push(
+      ...findRangeOrderProblem(`${at}/volumeUnitsRange`, item['volumeUnitsRange']),
+      ...findRangeOrderProblem(`${at}/exportVolumeUnitsRange`, item['exportVolumeUnitsRange']),
+      ...findRangeOrderProblem(`${at}/slaDaysRange`, item['slaDaysRange']),
+    );
+    const kind = item['kind'] ?? 'import';
+    const kindFields = typeof kind === 'string' ? TEMPLATE_KIND_FIELDS[kind] : undefined;
+    for (const field of kindFields?.required ?? []) {
+      if (!(field in item)) errors.push(`${at}/${field} šablóna druhu '${String(kind)}' vyžaduje pole`);
+    }
+    for (const field of kindFields?.forbidden ?? []) {
+      if (field in item) errors.push(`${at}/${field} šablóna druhu '${String(kind)}' toto pole nemá`);
+    }
     const cargo = findById(cargoItems, item['cargoTypeId']);
     if (cargo === undefined) {
       errors.push(`${at}/cargoTypeId neznámy typ nákladu '${String(item['cargoTypeId'])}' (${CARGO_TYPES_DEF_FILE})`);
+    } else if (kind !== 'import' && kindFields !== undefined && typeof cargo['exportPricePerUnitCents'] === 'number' && !(cargo['exportPricePerUnitCents'] > 0)) {
+      errors.push(`${at}/cargoTypeId šablóna druhu '${String(kind)}' vyžaduje typ nákladu s exportPricePerUnitCents > 0, '${String(cargo['id'])}' má ${String(cargo['exportPricePerUnitCents'])}`);
     }
     const shipIds = Array.isArray(item['shipClassIds']) ? (item['shipClassIds'] as unknown[]) : [];
     let smallestCapacity = Number.POSITIVE_INFINITY;
@@ -230,20 +314,25 @@ function findContractTemplateProblems(defsDir: string): string[] {
     if (volume !== undefined && volume[1] > smallestCapacity) {
       errors.push(`${at}/volumeUnitsRange/1 musí byť ≤ najmenšia kapacita lodí šablóny (${String(smallestCapacity)}), dostal ${String(volume[1])}`);
     }
+    const exportVolume = asRange(item['exportVolumeUnitsRange']);
+    if (exportVolume !== undefined && exportVolume[1] > smallestCapacity) {
+      errors.push(`${at}/exportVolumeUnitsRange/1 musí byť ≤ najmenšia kapacita lodí šablóny (${String(smallestCapacity)}), dostal ${String(exportVolume[1])}`);
+    }
   });
   return errors;
 }
 
 /** Krížové kontroly, ktoré JSON Schema nevyjadrí, podľa súboru defu (`undefined` = súbor ich nemá). */
 const DEF_FILE_CHECKS: Readonly<Record<string, (defsDir: string) => string[]>> = {
-  [MODULES_DEF_FILE]: findRampTruckProblems,
+  [MODULES_DEF_FILE]: (defsDir) => [...findRampTruckProblems(defsDir), ...findBerthParamProblems(defsDir)],
   [ECONOMY_DEF_FILE]: findEconomyProblems,
+  [LOGISTICS_DEF_FILE]: findLogisticsProblems,
   [CONTRACT_TEMPLATES_DEF_FILE]: findContractTemplateProblems,
 };
 
 /**
  * Overí každý `*.json` v `defsDir` voči `<názov>.schema.json` v `schemasDir`; k niektorým súborom pridá krížové kontroly
- * (`DEF_FILE_CHECKS`: `modules.json` rampy × kamióny, `economy.json` rozsahy, `contract_templates.json` × cargo × lode). Chýbajúca schéma, nevalidný JSON aj porušenie schémy sú chyby v `errors`
+ * (`DEF_FILE_CHECKS`: `modules.json` rampy × kamióny a rezerva apronu, `economy.json` rozsahy a cut-off, `logistics.json` váhy tried, `contract_templates.json` × cargo × lode). Chýbajúca schéma, nevalidný JSON aj porušenie schémy sú chyby v `errors`
  * (nie výnimky). Výsledky sú zoradené podľa názvu súboru. Výnimku vyhodí iba neexistujúci/nečitateľný `defsDir`.
  */
 export function validateDefsDir(defsDir: string, schemasDir: string): DefValidationResult[] {

@@ -66,8 +66,9 @@ function runChecked(world: World, ticks: number): SimEvent[] {
   return events;
 }
 
+/** Počet import ponúk (skupín voyage bez exportu) — booking ponuky (F6a) dopĺňa pool zvlášť, `bookingOffersPerDay`. */
 function offersOf(world: World): number {
-  return [...world.contracts.values()].filter((contract) => contract.state === 'offered').length;
+  return world.contractBook.offeredGroups().import;
 }
 
 /** Chyba pri načítaní: musí to byť `WorldStateError`; inak test zlyhá (nie holý `TypeError` či `RangeError`). */

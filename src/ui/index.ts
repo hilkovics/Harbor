@@ -210,4 +210,4 @@ export {
 export type { SaveLoadPanelProps, SaveLoadPanelViewProps } from './save-load-panel';
 export { SAVE_SLOT_IDS } from './save-types';
 export type { SavePreview, SaveSlotId, SaveSlotInfo, Settings } from './save-types';
-export { LINE_TOKEN_DEFAULT_FALLBACK, LINE_TOKEN_FALLBACK, lineColor, lineStyle } from './line-color';
+export { LINE_TOKEN_DEFAULT_FALLBACK, lineColor, lineStyle } from './line-color';

@@ -19,9 +19,9 @@
   --mi-icon-xs: var(--space-3);
   --mi-badge-h: calc(var(--space-6) - 2px);
   --mi-gap: calc(var(--space-2) + 2px);
-  /* F6c: farby segmentov (ADR-034). Prázdne = neutrálna šedá, prekládka = fialová (odlíšená od importu, exportu aj prázdnych),
-     poškodené = varovanie, oprava = accent. Po pridaní `--cargo-empty` / `--cargo-tranship` do tokens.css (T6C-04) nahradiť. */
-  --mi-empty: var(--module-base);
+  /* F6c: farby segmentov (ADR-034). Prázdne = `--cargo-empty` (neutrálna šedá, rovnaká ako kontajner na mape; T6C-04), prekládka =
+     fialová (odlíšená od importu, exportu aj prázdnych; token `--cargo-tranship` v tokens.css nie je, preto `--ui-xp`), poškodené =
+     varovanie, oprava = accent. */
   --mi-tranship: var(--ui-xp);
   --mi-damaged: var(--ui-warning);
   --mi-repair: var(--ui-accent);
@@ -294,9 +294,8 @@
   background: var(--ui-surface-2);
 }
 
-/* F6c: prekládka a prázdne (pruh a legenda skladu a lode), poškodené a oprava (depo prázdnych). Farby idú z lokálnych
-   premenných `--mi-*` (hore): kým `design/tokens.css` nemá tokeny `--cargo-empty` a `--cargo-tranship` (T6C-04), berú sa
-   z existujúcich tokenov. */
+/* F6c: prekládka a prázdne (pruh a legenda skladu a lode), poškodené a oprava (depo prázdnych). Prázdne čítajú token
+   `--cargo-empty` (sivá kontajnerov na mape), ostatné lokálne premenné `--mi-*` (hore). */
 .module-inspector__swatch--tranship,
 .module-inspector__bar-fill--tranship {
   background: var(--mi-tranship);
@@ -304,7 +303,7 @@
 
 .module-inspector__swatch--empty,
 .module-inspector__bar-fill--empty {
-  background: var(--mi-empty);
+  background: var(--cargo-empty);
 }
 
 .module-inspector__swatch--damaged,

@@ -10,6 +10,10 @@
  *   (`in_crane → on_apron`) a job presmeruje na slot; inak žeriav s jednotkou čaká (`craneWaitForVehicleTicks`). Nakládka — vozidlo
  *   s jednotkou čaká pod hákom (job `in_storage → in_crane`) a žeriav ju zdvihne priamo `in_vehicle → in_crane`.
  *
+ * Vlastnosti stratégie (`reservesUnloadSlot`, `plansUnloadTarget`) čítajú aj invarianty sveta (`world-invariants.ts`) a dispatcher
+ * (`logistics/export-load.ts`) — režim sa nikde mimo tejto tabuľky nevetví podľa literálu (T6A-09b, pravidlo 7). Cyklus vykládky
+ * začatý v režime `apron` a načítaný pod kotvisko `under_hook` (save spred ADR-033) prevedie obnova (`world-restore.ts`).
+ *
  * Funkcie nemenia stav FSM žeriava (to robí `CraneSystem`); presuny nákladu idú výlučne cez `CargoLedger.move` (pravidlo 2).
  */
 import { compareStowageOrder } from '../cargo/stowage';
@@ -38,6 +42,16 @@ export interface CraneEnv {
 /** Stratégia odovzdávania pre režim kotviska (viď hlavička súboru). */
 export interface Handover {
   /**
+   * Vykládka rezervuje slot apronu od `grabbing` (`CRANE_CYCLE_TRAITS.reservesFrom`) a jednotku z lode vyberie až koniec `grabbing`
+   * (apron: áno), alebo nerezervuje nič a pri štarte cyklu vyberie cieľ cyklu `targetUnitId` (hook: nie).
+   */
+  readonly reservesUnloadSlot: boolean;
+  /**
+   * Cieľ cyklu a job `in_crane → in_storage` vopred pre vykládku (hook: áno — vozidlo príde pod hák skôr než žeriav jednotku zdvihne;
+   * apron: nie, job vznikne až pre jednotku na aprone). Invarianty sveta (cieľ cyklu) a dispatcher (`createHookUnloadJobs`) ho čítajú tu.
+   */
+  readonly plansUnloadTarget: boolean;
+  /**
    * Plán vykládky z lode: `undefined` = žeriav ju teraz nemôže začať (apron: bez voľného slotu v rámci smerového limitu, hook: na
    * lodi nie je jednotka importu pre tento žeriav); inak cieľ cyklu — jednotka importu (hook), alebo `null` (apron: jednotku
    * vyberie koniec `grabbing`). `continuation` = druhá polovica dual cyklu (apron: slot uvoľnený exportom je už rezervovaný).
@@ -62,14 +76,20 @@ export interface Handover {
   idleWaits(env: CraneEnv): boolean;
 }
 
-/** Jednotky exportu bookingov lode, ktoré si už zabral iný žeriav kotviska (`targetUnitId` cyklov nakládky v `grabbing`). */
-function claimedByOtherCranes(world: World, berth: BerthModule, self: CraneModule): ReadonlySet<EntityId> {
-  const claimed = new Set<EntityId>();
+/**
+ * Znovupoužiteľné pole „zabraných“ jednotiek (cieľ cyklu iných žeriavov) — hot path bez alokácie (vzor `BOOKINGS`). Používa ho
+ * naraz jediný dotaz (`loadable` / `planUnload`), ktorý ho najprv vyprázdni a pred návratom prestane čítať; nevnára sa.
+ */
+const CLAIMED: EntityId[] = [];
+
+/** Do `CLAIMED` zapíše jednotky exportu, ktoré si už zabral iný žeriav kotviska (`targetUnitId` cyklov nakládky v `grabbing`). */
+function claimLoads(world: World, berth: BerthModule, self: CraneModule): readonly EntityId[] {
+  CLAIMED.length = 0;
   for (const craneId of berth.craneIds) {
     const other = world.modules.get(craneId);
-    if (other instanceof CraneModule && other !== self && other.targetUnitId !== null) claimed.add(other.targetUnitId);
+    if (other instanceof CraneModule && other !== self && other.targetUnitId !== null) CLAIMED.push(other.targetUnitId);
   }
-  return claimed;
+  return CLAIMED;
 }
 
 function isBookingUnit(unit: CargoUnit, bookings: readonly Contract[]): boolean {
@@ -93,6 +113,8 @@ function apronUnloadSlot({ world, berth, ship }: CraneEnv): boolean {
 }
 
 const APRON_HANDOVER: Handover = {
+  reservesUnloadSlot: true,
+  plansUnloadTarget: false,
   planUnload: (env, continuation) => (continuation || apronUnloadSlot(env) ? null : undefined),
   reserveUnload: ({ crane, berth }) => {
     // Druhá polovica dual cyklu už nesie slot uvoľnený exportom (`lift`) — nová rezervácia len pri samostatnej vykládke.
@@ -113,13 +135,13 @@ const APRON_HANDOVER: Handover = {
     return true;
   },
   loadable: ({ world, crane, berth }, bookings) => {
-    const claimed = claimedByOtherCranes(world, berth, crane);
+    const claimed = claimLoads(world, berth, crane);
     let best: CargoUnit | undefined;
     const count = world.cargo.countAt('on_apron', berth.id);
     for (let i = 0; i < count; i++) {
       const unitId = world.cargo.unitAtIndex('on_apron', berth.id, i);
       const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
-      if (unit === undefined || claimed.has(unit.id) || !isBookingUnit(unit, bookings)) continue;
+      if (unit === undefined || claimed.includes(unit.id) || !isBookingUnit(unit, bookings)) continue;
       best = better(best, unit);
     }
     return best?.id;
@@ -162,20 +184,20 @@ function bestUnderHook(world: World, crane: CraneModule, bookings: readonly Cont
   return best;
 }
 
-/** Zabrané jednotky importu na lodi: cieľ cyklu iných žeriavov kotvísk lode v `grabbing` (vykládka pod hákom). */
-function claimedImports(world: World, ship: Ship, self: CraneModule): ReadonlySet<EntityId> {
-  const claimed = new Set<EntityId>();
+/** Do `CLAIMED` zapíše zabrané jednotky importu na lodi: cieľ cyklu iných žeriavov kotvísk lode v `grabbing` (vykládka pod hákom). */
+function claimImports(world: World, ship: Ship, self: CraneModule): readonly EntityId[] {
+  CLAIMED.length = 0;
   for (const berthId of ship.berthIds) {
     const berth = world.modules.get(berthId);
     if (!(berth instanceof BerthModule)) continue;
     for (const craneId of berth.craneIds) {
       const other = world.modules.get(craneId);
       if (other instanceof CraneModule && other !== self && other.state === 'grabbing' && CRANE_CYCLE_TRAITS[other.cycle].direction === 'unload' && other.targetUnitId !== null) {
-        claimed.add(other.targetUnitId);
+        CLAIMED.push(other.targetUnitId);
       }
     }
   }
-  return claimed;
+  return CLAIMED;
 }
 
 /** Čaká pod hákom žeriava vozidlo s jednotkou na nakládku (`unloading` pri jobe s cieľom `in_crane` tohto žeriava)? */
@@ -195,17 +217,19 @@ export function hookBufferFree(world: World, berth: BerthModule): boolean {
 }
 
 const HOOK_HANDOVER: Handover = {
+  reservesUnloadSlot: false,
+  plansUnloadTarget: true,
   planUnload: ({ world, crane, ship }) => {
     // Jednotka pre tento žeriav: najmenšie id s vozidlom už pod hákom (žeriav nečaká), inak s jobom na tento žeriav (vozidlo je na
     // ceste), inak prvá voľná jednotka importu (job vznikne v kroku 5 toho istého ticku). Jednotky s jobom iného žeriava a zabrané
     // jednotky sa preskočia.
-    const claimed = claimedImports(world, ship, crane);
+    const claimed = claimImports(world, ship, crane);
     let queued: EntityId | undefined;
     let fresh: EntityId | undefined;
     const count = world.cargo.countAt('on_ship', ship.id);
     for (let i = 0; i < count; i++) {
       const unitId = world.cargo.unitAtIndex('on_ship', ship.id, i);
-      if (unitId === undefined || world.cargo.get(unitId)?.direction !== 'import' || claimed.has(unitId)) continue;
+      if (unitId === undefined || world.cargo.get(unitId)?.direction !== 'import' || claimed.includes(unitId)) continue;
       const job = world.jobOfUnit(unitId);
       if (job === undefined) {
         fresh ??= unitId;

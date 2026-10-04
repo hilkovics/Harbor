@@ -76,6 +76,8 @@ interface Bucket {
   readonly units: EntityId[];
   /** Miesto → jednotka; len pre druhy s `uniqueSlot`. */
   readonly slots: Map<number, EntityId> | null;
+  /** Počet jednotiek smeru `export` v `units` (`CargoLedger.countExportsAt`, O(1) — pre import / export na palube lode). */
+  exports: number;
 }
 
 const NO_UNITS: readonly EntityId[] = Object.freeze([]);
@@ -293,6 +295,11 @@ export class CargoLedger {
     return this.buckets.get(kind)?.get(holderId)?.units.length ?? 0;
   }
 
+  /** Počet jednotiek smeru `export` u držiteľa (bez alokácie, O(1)); zvyšok `countAt` sú jednotky smeru `import`. */
+  countExportsAt(kind: CargoHolderKind, holderId: EntityId): number {
+    return this.buckets.get(kind)?.get(holderId)?.exports ?? 0;
+  }
+
   /**
    * Prvá jednotka v poradí indexu držiteľa (loď: najmenšie id, ostatní: najstaršia) bez alokácie; prázdny držiteľ →
    * `undefined`. Žeriav ňou vyberá jednotku z lode (ADR-016).
@@ -397,11 +404,12 @@ export class CargoLedger {
     this.units.set(unit.id, unit);
     let bucket = holders.get(holderId);
     if (bucket === undefined) {
-      bucket = { units: [], slots: spec.uniqueSlot ? new Map() : null };
+      bucket = { units: [], slots: spec.uniqueSlot ? new Map() : null, exports: 0 };
       holders.set(holderId, bucket);
     }
     if (spec.order === 'id') insertSorted(bucket.units, unit.id);
     else bucket.units.push(unit.id);
+    if (unit.direction === 'export') bucket.exports += 1;
     const slot = uniqueSlotOf(location);
     if (slot !== null) bucket.slots?.set(slot, unit.id);
   }
@@ -411,6 +419,7 @@ export class CargoLedger {
     const { location } = unit;
     this.counts[location.kind] -= 1;
     bucket.units.splice(index, 1);
+    if (unit.direction === 'export') bucket.exports -= 1;
     const slot = uniqueSlotOf(location);
     if (slot !== null) bucket.slots?.delete(slot);
     const holderId = holderIdOf(location);

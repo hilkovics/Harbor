@@ -1,7 +1,8 @@
 /**
  * CraneSystem — krok 4 ticku (ARCHITECTURE §6, §7.2, §7.8; rozhodnutie orchestrátora 7; ADR-016, ADR-032 bod 9–11, ADR-033):
  * cyklus žeriavov — vykládka lode, nakládka exportu a dual cycling. Žeriavy sa spracúvajú vzostupne podľa id; každý stav má
- * krok v tabuľke `CRANE_STEPS` (nie switch) a stav mení len `CraneModule.transition`. Čo sa líši podľa režimu odovzdávania
+ * krok v tabuľke `CRANE_STEPS` (nie switch) a stav mení len `CraneModule.transition`, smer cyklu len `CraneModule.changeCycle`
+ * (tabuľka `CRANE_CYCLE_TRANSITIONS`, T6A-09b). Čo sa líši podľa režimu odovzdávania
  * kotviska (`apron` | `under_hook`), je v stratégiách `HANDOVERS` (`crane-handover.ts`).
  *
  * Cyklus (`c = round(StatResolver.resolve('module', defId, 'cycleTicks'))`, fázy `g = ⌊c/2⌋` a `p = c − ⌊c/2⌋`, každá
@@ -36,7 +37,7 @@ import {
   type CraneState,
 } from '../modules/crane-module';
 import { ModuleError } from '../modules/module-error';
-import { importAboard, openExportBookings, stowageOutOfOrder } from '../logistics/voyage-cargo';
+import { countShipCranes, importAboard, isLoadingInFlight, openExportBookings, stowageOutOfOrder } from '../logistics/voyage-cargo';
 import type { Contract } from '../contracts/contract';
 import type { EntityId } from '../core/entity-id';
 import type { Ship } from '../ships/ship';
@@ -100,23 +101,6 @@ function servedShip(world: World, crane: CraneModule, berth: BerthModule): Ship 
 /** Žeriav kategórie lode v `grabbing` s vykládkou — zabral si jednotku importu, ktorá je ešte na lodi. */
 const isGrabbingUnloader = (crane: CraneModule): boolean => crane.state === 'grabbing' && CRANE_CYCLE_TRAITS[crane.cycle].direction === 'unload';
 
-/** Žeriav kategórie lode s nakládkou v cykle — jednotka exportu je v ceste na loď (`grabbing`, `swinging`, `placing`). */
-const isLoadingInFlight = (crane: CraneModule): boolean => crane.state !== 'idle' && crane.state !== 'blocked' && CRANE_CYCLE_TRAITS[crane.cycle].direction === 'load';
-
-/** Počet žeriavov kategórie lode na jej kotviskách, ktoré spĺňajú `predicate` (bez alokácie okrem výsledku). */
-function countShipCranes(world: World, ship: Ship, predicate: (crane: CraneModule) => boolean): number {
-  let count = 0;
-  for (const berthId of ship.berthIds) {
-    const berth = world.modules.get(berthId);
-    if (!(berth instanceof BerthModule)) continue;
-    for (const craneId of berth.craneIds) {
-      const crane = world.modules.get(craneId);
-      if (crane instanceof CraneModule && crane.category === ship.cargoCategory && predicate(crane)) count += 1;
-    }
-  }
-  return count;
-}
-
 /** Jednotky importu na lodi, ktoré si ešte nezabral žiaden žeriav (vykládka v `grabbing` nad kotviskami lode). */
 function unclaimedImports(world: World, ship: Ship): number {
   return importAboard(world, ship.id) - countShipCranes(world, ship, isGrabbingUnloader);
@@ -139,14 +123,14 @@ function emitBlocked(world: World, crane: CraneModule, berth: BerthModule): void
 function rest(crane: CraneModule): void {
   if (crane.state !== 'idle') crane.transition('idle');
   crane.enterPhase(0);
-  crane.cycle = DEFAULT_CRANE_CYCLE;
+  crane.changeCycle(DEFAULT_CRANE_CYCLE);
   crane.targetUnitId = null;
   crane.dualUnitId = null;
 }
 
 /** Vstup do `grabbing` cyklu `cycle` (z `idle`/`blocked`, alebo po `dual_load` v tom istom ticku). */
 function enterGrabbing(world: World, crane: CraneModule, cycle: CraneCycle, target: EntityId | null): void {
-  crane.cycle = cycle;
+  crane.changeCycle(cycle);
   crane.targetUnitId = target;
   crane.transition('grabbing');
   crane.enterPhase(phaseTicksOf(world, crane, cycle).grabbing);

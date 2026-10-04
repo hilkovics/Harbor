@@ -7,7 +7,8 @@
  * 1. každá živá jednotka je v práve jednom indexe držiteľa a ten zodpovedá jej `location` (druh + id držiteľa),
  * 2. index neobsahuje neexistujúcu jednotku ani tú istú jednotku dvakrát, nie je prázdny a má poradie svojho druhu,
  * 3. jedinečné miesto (slot apronu/skladu) nie je obsadené dvakrát a mapa slotov presne zodpovedá jednotkám,
- * 4. počítadlá podľa druhu sedia s indexmi a `createdCount = živé + exported + shipped` (ADR-032).
+ * 4. počítadlá podľa druhu sedia s indexmi a `createdCount = živé + exported + shipped` (ADR-032),
+ * 5. počítadlo jednotiek smeru `export` indexu (`CargoBucketView.exports`) sedí s jednotkami v ňom (T6A-09b).
  */
 import type { EntityId } from '../core/entity-id';
 import type { CargoUnit } from './cargo-unit';
@@ -27,6 +28,8 @@ export interface CargoBucketView {
   readonly units: readonly EntityId[];
   /** Miesto → jednotka; len pre druhy s jedinečným miestom (`uniqueSlot`), inak `null`. */
   readonly slots: ReadonlyMap<number, EntityId> | null;
+  /** Počet jednotiek smeru `export` v indexe (`CargoLedger.countExportsAt`); pohľad bez neho túto kontrolu preskočí. */
+  readonly exports?: number;
 }
 
 /** Pohľad na vnútorný stav ledgera. */
@@ -84,6 +87,7 @@ function checkBucket(check: BucketCheck): string | undefined {
 
   const slotOwners = new Map<number, EntityId>();
   let previous: EntityId | null = null;
+  let exports = 0;
   for (const unitId of bucket.units) {
     const other = seenIn.get(unitId);
     if (other !== undefined) {
@@ -102,6 +106,7 @@ function checkBucket(check: BucketCheck): string | undefined {
       return `${label} nie je zoradený vzostupne podľa id (${unitLabel(previous)} pred ${unitLabel(unitId)})`;
     }
     previous = unitId;
+    if (unit.direction === 'export') exports += 1;
 
     const slot = uniqueSlotOf(unit.location);
     if (slot !== null) {
@@ -111,6 +116,9 @@ function checkBucket(check: BucketCheck): string | undefined {
       }
       slotOwners.set(slot, unitId);
     }
+  }
+  if (bucket.exports !== undefined && bucket.exports !== exports) {
+    return `${label}: počítadlo exportných jednotiek ${String(bucket.exports)}, v indexe ich je ${String(exports)}`;
   }
   return checkSlots(check, label, slotOwners);
 }

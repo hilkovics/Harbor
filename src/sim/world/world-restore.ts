@@ -36,7 +36,7 @@ import { JobError, type JobErrorCode } from '../logistics/job-error';
 import { unitAtJobSource } from '../logistics/job-source';
 import { JOB_STATE_TRAITS, TransportJob, type JobState } from '../logistics/transport-job';
 import { BerthModule } from '../modules/berth-module';
-import { CRANE_STATE_TRAITS, CraneModule } from '../modules/crane-module';
+import { CRANE_STATE_TRAITS, CraneModule, DEFAULT_CRANE_CYCLE, type CraneState } from '../modules/crane-module';
 import { LoadingRamp } from '../modules/loading-ramp';
 import type { Module } from '../modules/module';
 import { ModuleError, ModuleStateError } from '../modules/module-error';
@@ -44,6 +44,7 @@ import { moduleRegistry } from '../modules/module-registry';
 import { Ship } from '../ships/ship';
 import { ShipError } from '../ships/ship-error';
 import { legacyShipRoute, mooringProblem, shipRouteProblem } from '../ships/ship-route';
+import { HANDOVERS } from '../systems/crane-handover';
 import { TruckGate } from '../modules/truck-gate';
 import { WaitingArea } from '../modules/waiting-area';
 import { DockSupply } from '../trucks/dock-supply';
@@ -57,7 +58,7 @@ import { VehicleError, type VehicleErrorCode } from '../vehicles/vehicle-error';
 import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle-fsm';
 import { vehicleMotionProblem } from '../vehicles/vehicle-trip';
 import { CARGO_HOLDER_SOURCES } from './cargo-holders';
-import { WorldStateError, pointerSegment } from './state-check';
+import { WorldStateError, isPlainObject, pointerSegment } from './state-check';
 import type { World } from './world';
 import { findWorldViolation, truckQueueSideProblem, truckRampProblem } from './world-invariants';
 import type { ParsedJobEntry, ParsedModuleEntry, ParsedShipEntry, ParsedTruckEntry, ParsedVehicleEntry, ParsedWorldState } from './world-state';
@@ -72,13 +73,33 @@ function asStateError(error: unknown, path: string): unknown {
   return error;
 }
 
+/**
+ * Cyklus vykládky žeriava začatý v režime `apron` a načítaný pod kotvisko `under_hook` (predvolený režim, ADR-033): save spred
+ * ADR-033 (v1 … v6 — žeriav držal rezervovaný slot apronu a cieľ cyklu nepoznal) alebo save kotviska s iným `handoverMode`.
+ * Deterministický prevod na stav `under_hook` bez `Rng` (T6A-09b, ADR-033 dodatok): `grabbing` (jednotka je ešte na lodi) sa zruší
+ * — žeriav je `idle` bez fázy, slot sa neobnoví a apron ho uvoľní; `placing` (jednotka v žeriave) uvoľní slot a jednotka v ruke je
+ * cieľ cyklu, takže dispatcher jej vytvorí job `in_crane → in_storage` a žeriav ju odovzdá vozidlu pod hákom / na buffer. Iný stav,
+ * iný cyklus (dual cycle pozná až v7) alebo tvar `runtime` sa nemení — overí ich `restoreRuntimeState` a invarianty sveta.
+ */
+function adaptCraneRuntime(world: World, crane: CraneModule, runtime: unknown): unknown {
+  const berth = world.modules.get(crane.berthId);
+  if (!(berth instanceof BerthModule) || HANDOVERS[berth.params.handoverMode].reservesUnloadSlot || !isPlainObject(runtime)) return runtime;
+  const { state, cycle, reservedSlot } = runtime;
+  if (cycle !== DEFAULT_CRANE_CYCLE || typeof reservedSlot !== 'number' || typeof state !== 'string' || !(state in CRANE_STATE_TRAITS)) return runtime;
+  const traits = CRANE_STATE_TRAITS[state as CraneState];
+  if (traits.phase !== 'timed') return runtime;
+  if (!traits.holdsUnit) return { ...runtime, state: 'idle', phaseTicksTotal: 0, phaseTicksLeft: 0, reservedSlot: null };
+  const held = world.cargo.unitsAt('in_crane', crane.id);
+  return held.length === 1 ? { ...runtime, reservedSlot: null, targetUnitId: held[0] } : runtime;
+}
+
 function restoreModules(world: World, entries: readonly ParsedModuleEntry[]): void {
   entries.forEach((entry, index) => {
     const path = modulePath(index);
     try {
       const def = world.defs.modules.get(entry.spec.defId);
       const module = moduleRegistry.create(def, entry.spec, entry.id, entry.purchaseCostCents, { grid: world.grid, cargo: world.cargo, pickupCargo: world.isPickupCargo });
-      module.restoreRuntimeState(entry.runtime);
+      module.restoreRuntimeState(module instanceof CraneModule ? adaptCraneRuntime(world, module, entry.runtime) : entry.runtime);
       world.addModule(module);
     } catch (error) {
       throw asStateError(error, path);

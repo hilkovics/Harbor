@@ -22,17 +22,35 @@ import type { World } from '../world/world';
 import { allocateStorage } from './storage-allocator';
 import { distanceBetweenModules } from './module-access';
 
-/** Sklady, v ktorých leží alebo kam mieri jednotka kontraktu `unit.contractId` (zoradené podľa id, bez duplicít). */
+/** Znovupoužiteľné pole skladov voyage pre `groupStorages` (hot path bez alokácie; obsah sa vždy najprv vyprázdni). */
+const GROUP_STORAGES: EntityId[] = [];
+
+/** Vloží `id` do vzostupne zoradeného `GROUP_STORAGES`, ak tam ešte nie je (vkladanie — polia majú niekoľko prvkov). */
+function addGroupStorage(id: EntityId): void {
+  if (GROUP_STORAGES.includes(id)) return;
+  let at = GROUP_STORAGES.length;
+  GROUP_STORAGES.push(id);
+  while (at > 0 && GROUP_STORAGES[at - 1] > id) {
+    GROUP_STORAGES[at] = GROUP_STORAGES[at - 1];
+    at -= 1;
+  }
+  GROUP_STORAGES[at] = id;
+}
+
+/**
+ * Sklady, v ktorých leží alebo kam mieri jednotka kontraktu `unit.contractId` (zoradené podľa id, bez duplicít). Vracia zdieľané pole
+ * (`GROUP_STORAGES`) — platí len do ďalšieho volania, volajúci ho iba prejde.
+ */
 function groupStorages(world: World, unit: CargoUnit): readonly EntityId[] {
-  const ids = new Set<EntityId>();
+  GROUP_STORAGES.length = 0;
   const group = world.storedCargo.groupOf(unit.contractId);
-  if (group !== undefined) for (const storageId of group.storages) ids.add(storageId);
+  if (group !== undefined) for (const storageId of group.storages) addGroupStorage(storageId);
   for (const job of world.jobs.values()) {
     if (job.to.kind !== 'in_storage') continue;
     const mate = world.cargo.get(job.unitIds[0]);
-    if (mate?.contractId === unit.contractId) ids.add(job.toModuleId);
+    if (mate?.contractId === unit.contractId) addGroupStorage(job.toModuleId);
   }
-  return [...ids].sort((a, b) => a - b);
+  return GROUP_STORAGES;
 }
 
 /**

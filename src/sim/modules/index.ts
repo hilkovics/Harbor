@@ -33,11 +33,13 @@ export {
   CRANE_RUNTIME_KEYS,
   CRANE_STATES,
   CRANE_STATE_TRAITS,
+  CRANE_CYCLE_TRANSITIONS,
   CRANE_TRANSITIONS,
   CraneModule,
   DEFAULT_CRANE_CYCLE,
   craneReservesApronSlot,
   cranePhaseProblem,
+  isCraneCycleTransitionAllowed,
   isCraneTransitionAllowed,
 } from './crane-module';
 export type {

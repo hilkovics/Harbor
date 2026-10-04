@@ -103,6 +103,10 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - `AcceptContract` overuje pripravenosť prístavu len pri prijatí: odstránenie žeriavu alebo kotviska po prijatí (pred príchodom lode) sa nekontroluje. — pôvod: T06-07 (ADR-031 bod 1) · fáza: podľa potreby
 - Prirodzenejšie trasy lodí: cena posunu bokom a otočenia ako vážená cena v defe (napr. `shipNavigation.sidewaysMoveCost`, `turnCost` namiesto lexikografickej ceny manévrov, ktorú F6 len presunula do defu ako `turnManeuvers` / `sidewaysManeuvers`), prípadne pokuta za blízkosť pobrežia a kotvísk (v kóde neexistuje). — pôvod: T5B-02 (ADR-029), ADR-031 bod 7 · fáza: podľa potreby
 
+## Z Fázy 6a
+- Pripravenosť exportu pri prijatí (`AcceptContract` → `export-readiness.ts`) nekontroluje dosiahnuteľnosť po ceste sklad → kotvisko (nakládka) a rampa → sklad (prijatie): booking sa prijme aj keď sklad kategórie nemá cestu ku kotvisku lode voyage, jednotky sa potom nenaložia a booking skončí pomerne / `failed`. — pôvod: review `src/sim` po T6A-05 (T6A-09b) · fáza: podľa potreby (F6a stabilizácia)
+- Pripravenosť exportu nepočíta s rezervou stojísk (bays) pre kamióny s exportom: plán príchodov `booked` kamiónov v okne pred cut-off sa môže stretnúť s plným stojiskom (kamión počká, plán sa nespotrebuje), prijatie však overuje len existenciu rampy, jej prevádzkovosť a sklad kategórie. — pôvod: review `src/sim` po T6A-05 (T6A-09b) · fáza: podľa potreby (F6a stabilizácia)
+
 ## Vyriešené vo F6
 - §14 SaveGame obálka duplikovala `version` / `seed` / `tick` z `WorldState` — obálka v app vrstve nesie len `saveVersion`, svet verzuje `world.version`. — pôvod: T01-17 · vyriešené: T06-01 (ADR-030), ARCHITECTURE §14 prepísaná v T06-10
 - **AcceptContract bez overenia pripravenosti prístavu** (žeriav kategórie kontraktu, kotvisko pre triedu lode; loď sa mohla zablokovať) — `berthReadiness` → `no_berth_for_ship_class`, `no_crane_for_category`, `berth_unreachable`. — pôvod: T05-10 review · vyriešené: T06-07, T06-08b (ADR-031)

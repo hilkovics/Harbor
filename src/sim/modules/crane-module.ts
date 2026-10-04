@@ -51,6 +51,24 @@ export const CRANE_CYCLE_TRAITS: { readonly [C in CraneCycle]: CraneCycleTraits 
   dual_unload: Object.freeze({ direction: 'unload', dual: true, reservesFrom: 'grabbing' }),
 });
 
+/**
+ * Povolené zmeny smeru cyklu `from → to` (T6A-09b; stavové automaty majú explicitnú tabuľku, žiadne skryté prechody): žeriav mimo
+ * cyklu má `DEFAULT_CRANE_CYCLE` (`unload`) a z neho začne ktorýkoľvek cyklus (`unload`, `load`, `dual_load`); dual cyklus pokračuje
+ * `dual_load → dual_unload`; každý cyklus sa končí návratom na `unload` (žeriav odpočíva alebo začína nový cyklus).
+ * `CraneModule.changeCycle` ju overuje; obnova zo save smer nastavuje priamo (stav v save overuje `restoreRuntimeState`).
+ */
+export const CRANE_CYCLE_TRANSITIONS: ReadonlyMap<CraneCycle, readonly CraneCycle[]> = new Map<CraneCycle, readonly CraneCycle[]>([
+  ['unload', Object.freeze(['unload', 'load', 'dual_load'] as const)],
+  ['load', Object.freeze(['unload'] as const)],
+  ['dual_load', Object.freeze(['dual_unload', 'unload'] as const)],
+  ['dual_unload', Object.freeze(['unload'] as const)],
+]);
+
+/** Je zmena smeru cyklu `from → to` v tabuľke `CRANE_CYCLE_TRANSITIONS`? */
+export function isCraneCycleTransitionAllowed(from: CraneCycle, to: CraneCycle): boolean {
+  return CRANE_CYCLE_TRANSITIONS.get(from)?.includes(to) ?? false;
+}
+
 /** Poradie stavov v cykle (`grabbing` → `swinging` → `placing`); stavy mimo cyklu majú −1. */
 const CYCLE_STATE_ORDER: { readonly [S in CraneState]: number } = Object.freeze({ idle: -1, blocked: -1, grabbing: 0, swinging: 1, placing: 2 });
 
@@ -306,6 +324,18 @@ export class CraneModule extends Module {
       throw new ModuleError('invalid_transition', `${this.label}: prechod ${this.current} → ${to} nie je povolený (povolené: ${allowed.join(', ')})`);
     }
     this.current = to;
+  }
+
+  /**
+   * Zmena smeru cyklu podľa `CRANE_CYCLE_TRANSITIONS` (jediné miesto, kde `CraneSystem` mení `cycle`). Nepovolená zmena →
+   * `ModuleError('invalid_transition')`, smer sa nezmení.
+   */
+  changeCycle(to: CraneCycle): void {
+    if (!isCraneCycleTransitionAllowed(this.cycle, to)) {
+      const allowed = CRANE_CYCLE_TRANSITIONS.get(this.cycle) ?? [];
+      throw new ModuleError('invalid_transition', `${this.label}: zmena smeru cyklu ${this.cycle} → ${to} nie je povolená (povolené: ${allowed.join(', ')})`);
+    }
+    this.cycle = to;
   }
 
   /** Začne fázu dlhú `ticks` tickov (`phaseTicksTotal = phaseTicksLeft = ticks`); 0 = mimo fázy (idle/blocked). */

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { craneParams } from '@sim/defs';
 import {
   CRANE_CYCLES,
+  CRANE_CYCLE_TRANSITIONS,
   CRANE_CYCLE_TRAITS,
   CRANE_STATES,
   CRANE_STATE_TRAITS,
@@ -14,6 +15,7 @@ import {
   ModuleStateError,
   craneReservesApronSlot,
   cranePhaseProblem,
+  isCraneCycleTransitionAllowed,
   isCraneTransitionAllowed,
   type CraneRuntimeState,
   type CraneState,
@@ -284,5 +286,49 @@ describe('FSM žeriavu — CRANE_TRANSITIONS a CraneModule.transition (T02-05)',
     expect([crane.phaseTicksTotal, crane.phaseTicksLeft, crane.phaseProgress]).toEqual([0, 0, 0]);
     expect(() => crane.enterPhase(-1)).toThrow(ModuleError);
     expect(() => crane.enterPhase(1.5)).toThrow(ModuleError);
+  });
+});
+
+/** Povolené zmeny smeru cyklu (T6A-09b): štart z `unload` (mimo cyklu), pokračovanie `dual_load → dual_unload`, návrat na `unload`. */
+const EXPECTED_CYCLE_TRANSITIONS: readonly (readonly [string, string])[] = [
+  ['unload', 'unload'],
+  ['unload', 'load'],
+  ['unload', 'dual_load'],
+  ['load', 'unload'],
+  ['dual_load', 'dual_unload'],
+  ['dual_load', 'unload'],
+  ['dual_unload', 'unload'],
+];
+
+describe('smer cyklu žeriavu — CRANE_CYCLE_TRANSITIONS a CraneModule.changeCycle (T6A-09b)', () => {
+  it('tabuľka obsahuje každý smer a presne povolené zmeny', () => {
+    expect([...CRANE_CYCLE_TRANSITIONS.keys()].sort()).toEqual([...CRANE_CYCLES].sort());
+    const listed = [...CRANE_CYCLE_TRANSITIONS].flatMap(([from, targets]) => targets.map((to) => [from, to] as const));
+    expect(listed).toEqual(EXPECTED_CYCLE_TRANSITIONS);
+    for (const from of CRANE_CYCLES) {
+      for (const to of CRANE_CYCLES) {
+        expect(isCraneCycleTransitionAllowed(from, to), `${from} → ${to}`).toBe(EXPECTED_CYCLE_TRANSITIONS.some(([a, b]) => a === from && b === to));
+      }
+    }
+  });
+
+  it('changeCycle: povolená zmena prejde, nepovolená → ModuleError(invalid_transition) a smer sa nezmení', () => {
+    const crane = freshCrane();
+    crane.changeCycle('dual_load');
+    expect(crane.cycle).toBe('dual_load');
+    crane.changeCycle('dual_unload');
+    crane.changeCycle('unload');
+    expect(crane.cycle).toBe('unload');
+    crane.changeCycle('load');
+    let error: unknown;
+    try {
+      crane.changeCycle('dual_unload');
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(ModuleError);
+    expect((error as ModuleError).code).toBe('invalid_transition');
+    expect((error as ModuleError).message).toContain('load → dual_unload');
+    expect(crane.cycle).toBe('load');
   });
 });

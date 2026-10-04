@@ -65,6 +65,14 @@ export function wholePeriods(now: number, since: number, period: number): number
 }
 
 /**
+ * Uplynula lehota zlyhania kontraktu: `tick − slaDeadlineTick > failAfterDaysLate × ticksPerDay` (kontrakt bez SLA nikdy).
+ * Import po nej zlyhá, export booking v nakládke sa uzavrie (ADR-032 bod 14, T6A-09b).
+ */
+export function slaLapsed(tick: number, slaDeadlineTick: number | undefined, failAfterDaysLate: number, ticksPerDay: number): boolean {
+  return slaDeadlineTick !== undefined && tick - slaDeadlineTick > failAfterDaysLate * ticksPerDay;
+}
+
+/**
  * Tick, v ktorom ponuka skutočne zanikne, ak ju hráč neprijme: prvá uzávierka dňa (násobok `ticksPerDay`) v čase
  * `offerExpiresTick` alebo po ňom — pool sa obnovuje raz denne (ADR-026). Pre prezentáciu (odpočet na karte ponuky).
  */

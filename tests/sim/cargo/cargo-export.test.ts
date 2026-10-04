@@ -142,6 +142,36 @@ describe('reverzný reťazec a shipped (ADR-032 bod 3)', () => {
   });
 });
 
+describe('CargoLedger.countExportsAt — počet jednotiek smeru export u držiteľa (T6A-09b)', () => {
+  it('rozlišuje import a export na lodi O(1) bez ohľadu na kontrakt; presun a odchod z lode počítadlo upravia', () => {
+    const { ledger } = createHarness();
+    const imp = ledger.create(TEU, at.ship(SHIP));
+    const exp = ledger.create(TEU, at.truck(TRUCK), EXPORT_CONTRACT, EXPORT_LABELS);
+    const exp2 = ledger.create(TEU, at.truck(TRUCK + 1), EXPORT_CONTRACT, { ...EXPORT_LABELS, weightClass: 'light' });
+    expect([ledger.countAt('on_ship', id(SHIP)), ledger.countExportsAt('on_ship', id(SHIP))]).toEqual([1, 0]);
+    moveThrough(ledger, exp.id, EXPORT_CHAIN.slice(0, -1));
+    expect([ledger.countAt('on_ship', id(SHIP)), ledger.countExportsAt('on_ship', id(SHIP))]).toEqual([2, 1]);
+    moveThrough(ledger, exp2.id, EXPORT_CHAIN.slice(0, -1));
+    expect([ledger.countAt('on_ship', id(SHIP)), ledger.countExportsAt('on_ship', id(SHIP))]).toEqual([3, 2]);
+    ledger.move(exp.id, { kind: 'shipped' });
+    expect([ledger.countAt('on_ship', id(SHIP)), ledger.countExportsAt('on_ship', id(SHIP))]).toEqual([2, 1]);
+    expect(ledger.countExportsAt('on_ship', id(999))).toBe(0);
+    expect(ledger.get(imp.id)?.direction).toBe('import');
+    ledger.assertConservation();
+  });
+
+  it('obnova zo save zostaví počítadlo z jednotiek', () => {
+    const harness = createHarness();
+    harness.ledger.create(TEU, at.ship(SHIP));
+    const exp = harness.ledger.create(TEU, at.truck(TRUCK), EXPORT_CONTRACT, EXPORT_LABELS);
+    moveThrough(harness.ledger, exp.id, EXPORT_CHAIN.slice(0, -1));
+    const restored = CargoLedger.fromState(viaJson(harness.ledger.getState()), harness.deps);
+    expect(restored.countExportsAt('on_ship', id(SHIP))).toBe(1);
+    expect(restored.countAt('on_ship', id(SHIP))).toBe(2);
+    restored.assertConservation();
+  });
+});
+
 describe('CargoLedger.setHold (VGM hold, ADR-032 bod 5)', () => {
   it('zmení len hold — poloha, poradie v indexe aj počty ostanú, udalosť nevzniká; null hold uvoľní', () => {
     const harness = createHarness();

@@ -60,6 +60,9 @@ export const REASON_TEXT: Readonly<Record<ValidationReason, string>> = {
   no_berth_for_ship_class: 'Loď sa nezmestí k žiadnemu kotvisku',
   no_crane_for_category: 'Pri kotvisku pre loď chýba žeriav na tento náklad',
   berth_unreachable: 'Loď k vhodnému kotvisku nedopláva',
+  no_ramp_for_category: 'Pre export chýba rampa na tento náklad',
+  ramp_inoperative: 'Pre export nie je prevádzková rampa (brána, stojisko, cesta)',
+  no_storage_for_category: 'Pre export nie je dosiahnuteľný sklad na tento náklad',
   game_over: 'Hra skončila',
 };
 

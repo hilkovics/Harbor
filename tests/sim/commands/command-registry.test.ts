@@ -126,6 +126,10 @@ describe('CommandRegistry (kostra T01-03)', () => {
       'no_crane_for_category',
       // T06-08b (ADR-031 dodatok): úsek kotvísk je, ale loď k nemu nedopláva
       'berth_unreachable',
+      // F6a (ADR-032): pripravenosť pozemnej strany pri AcceptContract export / roundtrip bookingu
+      'no_ramp_for_category',
+      'ramp_inoperative',
+      'no_storage_for_category',
     ]);
     expect(new Set(VALIDATION_REASONS).size).toBe(VALIDATION_REASONS.length);
   });

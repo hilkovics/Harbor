@@ -102,6 +102,21 @@ export const VALIDATION_REASONS = [
    * ale loď k žiadnemu nedopláva ani na prázdnej vode (bod priblíženia na súši, príliš úzka cesta po vode).
    */
   'berth_unreachable',
+  /**
+   * `AcceptContract` pri export / roundtrip bookingu (F6a, ADR-032, pripravenosť pozemnej strany ako `berthReadiness`): vo svete
+   * nie je rampa kategórie nákladu bookingu — kamióny s exportom by nemali kam vyložiť.
+   */
+  'no_ramp_for_category',
+  /**
+   * `AcceptContract` pri export / roundtrip bookingu: rampa kategórie je, ale žiadna nie je prevádzková (chýba brána, stojisko
+   * alebo cesta od portálu — `World.isRampOperational`), takže kamióny s exportom nevzniknú.
+   */
+  'ramp_inoperative',
+  /**
+   * `AcceptContract` pri export / roundtrip bookingu: prevádzková rampa je, ale žiadny sklad kategórie nákladu nie je z nej po
+   * ceste dosiahnuteľný — vyložený export by nemal kam ísť.
+   */
+  'no_storage_for_category',
 ] as const;
 
 export type ValidationReason = (typeof VALIDATION_REASONS)[number];

@@ -134,10 +134,23 @@ export function send(world: World, command: SerializedCommand): readonly SimEven
   return world.applyPending();
 }
 
-/** Ponuku vloží a prijme jedným príkazom `AcceptContract` (skupina voyage); vráti ponuku a udalosti prijatia. */
+/**
+ * Prijme ponuku skupiny bez kontroly pripravenosti pozemnej strany (`AcceptContract.validate` ju pri exporte vyžaduje,
+ * ADR-032): účinok `apply` — plán lode, cut-off a príchody — sa vykoná priamo. Pre testy lode a hodín v svete bez rampy.
+ */
+export function acceptUnchecked(world: World, contractId: number): readonly SimEvent[] {
+  const command = commandFromJSON(acceptCommand(contractId)) as unknown as { applyTo(world: World, offer: Contract): void };
+  command.applyTo(world, contractOf(world, contractId));
+  return world.applyPending();
+}
+
+/**
+ * Ponuku vloží a prijme jedným príkazom `AcceptContract` (skupina voyage); vráti ponuku a udalosti prijatia. Svet bez rampy
+ * (`landside: []`) ponuku prijme bez kontroly pripravenosti (`acceptUnchecked`) — testy lode a hodín bez pozemnej časti.
+ */
 export function acceptedBooking(world: World, options: BookingOptions): OfferedBooking & { readonly events: readonly SimEvent[] } {
   const offer = offerBooking(world, options);
-  const events = send(world, acceptCommand(offer.exportContract.id));
+  const events = world.landsideModules.ramps.length === 0 ? acceptUnchecked(world, offer.exportContract.id) : send(world, acceptCommand(offer.exportContract.id));
   return { ...offer, events };
 }
 

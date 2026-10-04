@@ -5,7 +5,11 @@
  * pre triedu lode ponuky dosť dĺžky, hĺbky a pásu vody; `berth_unreachable` (T06-08b, ADR-031 dodatok) — taký úsek je,
  * ale loď k žiadnemu nedopláva po prázdnej vode (`ShipTraffic.reachesBerth`: plytká zátoka, úzke hrdlo);
  * `no_crane_for_category` — dosiahnuteľný úsek je, ale bez žeriavu kategórie nákladu kontraktu. Obsadenosť kotvísk
- * a lodná doprava (iné lode) sa neposudzujú (loď by počkala na anchorage). Validácia svet nemení a `Rng` nespotrebuje.
+ * a lodná doprava (iné lode) sa neposudzujú (loď by počkala na anchorage). Pri skupine s export bookingom (export,
+ * roundtrip) sa po pripravenosti kotvísk posúdi aj **pozemná strana** (`exportLandsideReadiness`, ADR-032): `no_ramp_for_category`
+ * — žiadna rampa kategórie, `ramp_inoperative` — žiadna nie je prevádzková (brána, stojisko, cesta od portálu),
+ * `no_storage_for_category` — z prevádzkovej rampy nie je dosiahnuteľný sklad kategórie; bez nej by kamióny s exportom nevznikli
+ * a booking by skončil penalizáciou. Validácia svet nemení a `Rng` nespotrebuje.
  *
  * `apply` (hotovosť sa nemení): príkaz pôsobí na **skupinu ponuky** (ADR-032 bod 1) — všetky `offered` kontrakty tej istej
  * voyage vzostupne podľa id (roundtrip = import + export booking; import ponuka alebo export-only je skupina o jednom
@@ -18,6 +22,7 @@
  */
 import type { Contract } from '../contracts/contract';
 import type { ContractId } from '../core/entity-id';
+import { exportLandsideReadiness, type ExportReadiness } from '../logistics/export-readiness';
 import { berthReadiness, type BerthReadiness } from '../ships/berth-allocator';
 import type { World } from '../world/world';
 import type { SerializedCommand } from './command';
@@ -33,6 +38,14 @@ const READINESS_VERDICT: { readonly [R in BerthReadiness]: ValidationResult } = 
   no_berth: offerVerdict('no_berth_for_ship_class'),
   no_crane: offerVerdict('no_crane_for_category'),
   unreachable: offerVerdict('berth_unreachable'),
+});
+
+/** Výsledok validácie podľa pripravenosti pozemnej strany exportu (tabuľka, nie switch). */
+const EXPORT_READINESS_VERDICT: { readonly [R in ExportReadiness]: ValidationResult } = Object.freeze({
+  ready: offerVerdict(null),
+  no_ramp: offerVerdict('no_ramp_for_category'),
+  ramp_inoperative: offerVerdict('ramp_inoperative'),
+  no_storage: offerVerdict('no_storage_for_category'),
 });
 
 export class AcceptContractCommand extends ContractOfferCommand {
@@ -55,7 +68,10 @@ export class AcceptContractCommand extends ContractOfferCommand {
     if (!offer.ok) return offer;
     const contract = world.contracts.get(this.contractId as ContractId) as Contract;
     const request = { def: world.defs.ships.get(contract.shipClassId), cargoCategory: world.defs.cargoTypes.get(contract.cargoTypeId).category };
-    return READINESS_VERDICT[berthReadiness(world, request, (first) => world.shipTraffic.reachesBerth(request.def, first))];
+    const berths = READINESS_VERDICT[berthReadiness(world, request, (first) => world.shipTraffic.reachesBerth(request.def, first))];
+    if (!berths.ok) return berths;
+    const withExport = world.contractBook.offeredOfVoyage(contract.voyageId).some((offered) => offered.booking !== null);
+    return withExport ? EXPORT_READINESS_VERDICT[exportLandsideReadiness(world, request.cargoCategory)] : berths;
   }
 
   protected applyTo(world: World, offer: Contract): void {

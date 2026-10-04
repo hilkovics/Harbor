@@ -64,15 +64,18 @@ const accepts = (raw: Record<string, Json>): boolean => {
 describe('contract_templates.json (bundled)', () => {
   const defs = loadBundledDefs();
 
-  it('3 šablóny kontajnerov: express, standard (feeder) a handy run (tier 1)', () => {
+  it('5 šablón kontajnerov: 3 import (express, standard, handy run tier 1) a booking roundtrip + export (feeder)', () => {
     expect(defs.contractTemplates.items.map((item) => item.id)).toEqual([
       'container_feeder_express',
       'container_feeder_standard',
       'container_handy_run',
+      'container_feeder_roundtrip',
+      'container_feeder_export',
     ]);
     expect(defs.contractTemplates.items).toEqual([
       {
         id: 'container_feeder_express',
+        kind: 'import',
         cargoTypeId: 'container_teu',
         volumeUnitsRange: [12, 48],
         slaDaysRange: [2, 3],
@@ -82,6 +85,7 @@ describe('contract_templates.json (bundled)', () => {
       },
       {
         id: 'container_feeder_standard',
+        kind: 'import',
         cargoTypeId: 'container_teu',
         volumeUnitsRange: [24, 96],
         slaDaysRange: [3, 5],
@@ -91,12 +95,36 @@ describe('contract_templates.json (bundled)', () => {
       },
       {
         id: 'container_handy_run',
+        kind: 'import',
         cargoTypeId: 'container_teu',
         volumeUnitsRange: [60, 240],
         slaDaysRange: [5, 8],
         shipClassIds: ['handy'],
         weight: 2,
         minTier: 1,
+      },
+      {
+        id: 'container_feeder_roundtrip',
+        kind: 'roundtrip',
+        destinationPorts: ['Rotterdam', 'Hamburg', 'Gdańsk'],
+        cargoTypeId: 'container_teu',
+        volumeUnitsRange: [24, 72],
+        exportVolumeUnitsRange: [12, 36],
+        slaDaysRange: [3, 5],
+        shipClassIds: ['feeder'],
+        weight: 4,
+        minTier: 0,
+      },
+      {
+        id: 'container_feeder_export',
+        kind: 'export',
+        destinationPorts: ['Rotterdam', 'Hamburg', 'Gdańsk'],
+        cargoTypeId: 'container_teu',
+        volumeUnitsRange: [12, 36],
+        slaDaysRange: [3, 5],
+        shipClassIds: ['feeder'],
+        weight: 2,
+        minTier: 0,
       },
     ]);
   });

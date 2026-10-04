@@ -2,6 +2,7 @@
  * Typy dátových definícií (ARCHITECTURE §4). Zrkadlia `data/defs/*.json` a `data/schemas/*.schema.json`
  * 1:1 — nové pole = zmena defu, schémy, tohto typu aj tabuľky polí v `def-registry.ts`.
  */
+import type { WeightClass } from '../cargo/cargo-unit';
 import type { RoadKind } from '../grid/road-kind';
 import type { TerrainType } from '../grid/terrain';
 
@@ -64,6 +65,28 @@ export interface EconomyDef extends DefBase {
   readonly lateXpFactor: number;
   /** Koľko posledných `LedgerEntry` sa drží v pamäti a ukladá do savu (staršie sú len v denných súhrnoch). */
   readonly ledgerEntriesKept: number;
+  /**
+   * Cieľový počet booking ponúk (skupín voyage s exportom: šablóny `export` a `roundtrip`), ktoré pool dopĺňa pri
+   * DayClosed po import ponukách (F6a, ADR-032 bod 1); 0 = pool booking neponúka.
+   */
+  readonly bookingOffersPerDay: number;
+  /**
+   * Rozsah `[min, max]` dní od prijatia po príchod lode voyage s exportom (desatinné dni, jeden ťah `Rng`); `min × 24`
+   * hodín musí presiahnuť `cutoffHours`, aby cut-off ležal po prijatí (`DefRegistry`).
+   */
+  readonly exportArrivalDaysRange: readonly [number, number];
+  /** Cut-off exportu: hodiny pred príchodom lode, po ktorých už brána prijíma len „rolled" jednotky (rozhodnutie 6). */
+  readonly cutoffHours: number;
+  /** Varovanie pred cut-off (`CutoffWarning`): hodiny pred cut-off; 0 = varovanie v ticku cut-off. */
+  readonly cutoffWarningHours: number;
+  /** Booking je splnený, keď sa naloží aspoň tento podiel bookovaných TEU (`0 … 1`, `⌈podiel × booked⌉` jednotiek). */
+  readonly bookingFulfilmentShare: number;
+  /** Penalizácia „last minute" za naloženú jednotku, ktorá prešla bránou po cut-off: podiel odmeny za jednotku. */
+  readonly lastMinuteExportRateOfReward: number;
+  /** Penalizácia „rolled" za prijatú, ale nenaloženú (vrátenú) jednotku: podiel odmeny za jednotku. */
+  readonly rolledExportRateOfReward: number;
+  /** Penalizácia za nesplnený booking (naložené < `bookingFulfilmentShare`): podiel odmeny, raz za booking. */
+  readonly unfulfilledBookingRateOfReward: number;
 }
 
 /** Cena a údržba jednej vrstvy dopravy (cesta alebo koľaj), počítané za bunku; peniaze v centoch. */
@@ -134,6 +157,21 @@ export interface ShipNavigationDef {
 }
 
 /**
+ * Tok exportu po súši (F6a, ADR-032): príchody kamiónov s exportom pred loďou, brána (VGM) a hmotnostné triedy jednotiek.
+ * Trvania sú v dňoch a hodinách (prevod na ticky robí sim z `time.json`), pravdepodobnosti v `0 … 1`.
+ */
+export interface ExportFlowDef {
+  /** Okno príchodov exportu pred loďou (dni): kamióny prichádzajú od `príchod lode − okno` po cut-off (rozhodnutie 4). */
+  readonly arrivalWindowDays: number;
+  /** Pravdepodobnosť, že jednotka pri bráne nemá VGM a ide do hold (rozhodnutie 5). */
+  readonly vgmMissingChance: number;
+  /** Trvanie VGM hold v hodinách; jednotka sa potom uvoľní sama. */
+  readonly vgmHoldHours: number;
+  /** Váhy výberu hmotnostnej triedy exportnej jednotky (`Rng.weighted`): hodnoty ≥ 0, súčet > 0. */
+  readonly weightClassShares: Readonly<Record<WeightClass, number>>;
+}
+
+/**
  * `logistics.json` — logistické konštanty (ARCHITECTURE §4.6, §7.3, §7.4, §7.6; ADR-010). Konfiguračný def (ADR-009);
  * všetky trvania sú v tickoch.
  */
@@ -144,6 +182,8 @@ export interface LogisticsDef extends DefBase {
   readonly repathIntervalTicks: number;
   readonly congestion: CongestionDef;
   readonly shipNavigation: ShipNavigationDef;
+  /** Export po súši: príchody kamiónov, VGM, hmotnostné triedy (F6a, ADR-032). */
+  readonly exportFlow: ExportFlowDef;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -153,6 +193,13 @@ export interface LogisticsDef extends DefBase {
 /** Kategórie nákladu (§4.1) v pevnom poradí; určujú kompatibilitu žeriavov, lodí a vozidiel. */
 export const CARGO_CATEGORIES = ['container', 'bulk', 'liquid', 'gas', 'roro'] as const;
 export type CargoCategory = (typeof CARGO_CATEGORIES)[number];
+
+/** Druhy šablón kontraktov (F6a, ADR-032 bod 1): import, export booking a roundtrip (import + export jednej voyage). */
+export const CONTRACT_TEMPLATE_KINDS = ['import', 'export', 'roundtrip'] as const;
+export type ContractTemplateKind = (typeof CONTRACT_TEMPLATE_KINDS)[number];
+
+/** Druh šablóny bez poľa `kind` (spätná kompatibilita F5). */
+export const DEFAULT_TEMPLATE_KIND: ContractTemplateKind = 'import';
 
 /** Druhy modulov (§4.2) v pevnom poradí. */
 export const MODULE_KINDS = [
@@ -186,6 +233,11 @@ export interface CargoTypeDef {
   readonly unitsPerBatch: number;
   /** Referenčná odmena za jednotku v centoch (USD). */
   readonly basePricePerUnitCents: number;
+  /**
+   * Odmena za exportovanú jednotku v centoch (booking, F6a, ADR-032 bod 14). Šablóna `export` / `roundtrip` s týmto
+   * typom nákladu vyžaduje hodnotu > 0 (`DefRegistry`); import ju nepoužíva.
+   */
+  readonly exportPricePerUnitCents: number;
   readonly xpPerUnit: number;
   /** Názov farebného tokenu z `design/tokens.css` bez `--` (napr. `cargo-container`). */
   readonly colorToken: string;
@@ -246,6 +298,11 @@ export interface BerthParams {
   readonly maxCranes: number;
   /** Šírka pásu vody pred dlhou hranou, ktorý musí byť voľný. */
   readonly frontWaterCells: number;
+  /**
+   * Rezerva slotov apronu pre opačný smer (F6a, ADR-032 bod 10): kým má loď import na vykládku aj export na nakládku,
+   * každý smer smie obsadiť najviac `apronSlots − apronReserveSlots` slotov. Celé `0 … ⌊apronSlots / 2⌋`.
+   */
+  readonly apronReserveSlots: number;
 }
 
 /** `params` žeriava (`kind: 'crane'`). */
@@ -255,6 +312,11 @@ export interface CraneParams {
   readonly category: CargoCategory;
   /** Denná mzda obsluhy žeriava v centoch; strhne sa pri DayClosed (§9.2, F5). */
   readonly wagePerDayCents: number;
+  /**
+   * Dual cycling (F6a, ADR-032 bod 11): násobok jedného cyklu, za ktorý žeriav naloží export a vyloží import
+   * (`1 … 2`; 2 = žiadny prínos oproti dvom samostatným cyklom).
+   */
+  readonly dualCycleFactor: number;
 }
 
 /** `params` skladu (`kind: 'storage'`). */
@@ -342,6 +404,10 @@ export interface ShipClassDef {
   readonly cargoCategories: readonly CargoCategory[];
   /** Koľko tickov smie loď stáť pri kotvisku bez demurrage. */
   readonly berthAllowanceTicks: number;
+  /** Lashing (F6a, ADR-032 bod 12): ticky zabezpečenia nákladu na jednu naloženú exportnú jednotku. */
+  readonly lashingTicksPerUnit: number;
+  /** Papiere pred odchodom (F6a): pevné ticky po lashingu, pre loď s naloženým exportom. */
+  readonly paperworkTicks: number;
   readonly techRequired?: string;
 }
 
@@ -384,6 +450,16 @@ export interface TruckDef {
  */
 export interface ContractTemplateDef {
   readonly id: string;
+  /**
+   * Druh šablóny (F6a, ADR-032 bod 1): `import` (F5; chýbajúce pole = `import`), `export` (booking s vlastnou voyage;
+   * bookované TEU z `volumeUnitsRange`) alebo `roundtrip` (import z `volumeUnitsRange` aj export z `exportVolumeUnitsRange`
+   * na jednej voyage). Export a roundtrip vyžadujú `destinationPorts`, roundtrip aj `exportVolumeUnitsRange`.
+   */
+  readonly kind?: ContractTemplateKind;
+  /** Cieľové prístavy exportu (pool losuje jeden); len `export` a `roundtrip`. */
+  readonly destinationPorts?: readonly string[];
+  /** Rozsah `[min, max]` bookovaných TEU exportu roundtripu (`min ≤ max`, max sa zmestí do najmenšej lode); len `roundtrip`. */
+  readonly exportVolumeUnitsRange?: readonly [number, number];
   /** Typ nákladu z `cargo_types.json`. */
   readonly cargoTypeId: string;
   /** Rozsah `[min, max]` objemu kontraktu v jednotkách (`min ≤ max`). */

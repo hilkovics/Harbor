@@ -4,7 +4,7 @@
   "description": "Logistické konštanty (ARCHITECTURE §4.6, §7.3, §7.4, §7.6; ADR-010, ADR-029): pobyt vozidla v module, opakovanie hľadania cesty, model kongescie a lodná navigácia. Konfiguračný def bez items[] (ADR-009); všetky trvania v tickoch.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "defaultInternalTicks", "repathIntervalTicks", "congestion", "shipNavigation"],
+  "required": ["schemaVersion", "defaultInternalTicks", "repathIntervalTicks", "congestion", "shipNavigation", "exportFlow"],
   "properties": {
     "schemaVersion": {
       "const": 1,
@@ -76,6 +76,41 @@
           "minimum": 0,
           "maximum": 100,
           "description": "Manévre navyše za krok lode bokom (kolmo na os) — druhá zložka lexikografickej ceny A* po vode."
+        }
+      }
+    },
+    "exportFlow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["arrivalWindowDays", "vgmMissingChance", "vgmHoldHours", "weightClassShares"],
+      "description": "Tok exportu po súši (F6a, ADR-032): príchody kamiónov s exportom pred loďou, brána (VGM) a hmotnostné triedy jednotiek.",
+      "properties": {
+        "arrivalWindowDays": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Okno príchodov exportu pred loďou (dni): kamióny prichádzajú od príchod lode − okno po cut-off."
+        },
+        "vgmMissingChance": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Pravdepodobnosť, že jednotka pri bráne nemá VGM a ide do hold."
+        },
+        "vgmHoldHours": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Trvanie VGM hold v hodinách; jednotka sa potom uvoľní sama."
+        },
+        "weightClassShares": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["light", "medium", "heavy"],
+          "description": "Váhy výberu hmotnostnej triedy exportnej jednotky. Súčet > 0 schéma nevyjadrí — kontroluje ho DefRegistry a `pnpm validate:defs`.",
+          "properties": {
+            "light": { "type": "number", "minimum": 0 },
+            "medium": { "type": "number", "minimum": 0 },
+            "heavy": { "type": "number", "minimum": 0 }
+          }
         }
       }
     }

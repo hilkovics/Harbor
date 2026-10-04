@@ -110,6 +110,7 @@ describe('bundled katalógy (loadBundledDefs)', () => {
       unitName: 'TEU',
       unitsPerBatch: 1,
       basePricePerUnitCents: 45_000,
+      exportPricePerUnitCents: 40_000,
       xpPerUnit: 1,
       colorToken: 'cargo-container',
     });
@@ -239,8 +240,9 @@ describe('bundled katalógy (loadBundledDefs)', () => {
       apronSlots: 8,
       maxCranes: 2,
       frontWaterCells: 3,
+      apronReserveSlots: 2,
     });
-    expect(craneParams(defs.modules.get('crane_container_gantry'))).toEqual({ cycleTicks: 12, category: 'container', wagePerDayCents: 25_000 });
+    expect(craneParams(defs.modules.get('crane_container_gantry'))).toEqual({ cycleTicks: 12, category: 'container', wagePerDayCents: 25_000, dualCycleFactor: 1.5 });
   });
 
   it('každé volanie loadBundledDefs vráti nezávislé katalógy', () => {
@@ -907,8 +909,8 @@ describe('MODULE_PARAM_SPECS', () => {
   });
 
   it('berth a crane majú presne polia BerthParams a CraneParams', () => {
-    expect(Object.keys(MODULE_PARAM_SPECS.berth)).toEqual(['depthClass', 'apronSlots', 'maxCranes', 'frontWaterCells']);
-    expect(Object.keys(MODULE_PARAM_SPECS.crane)).toEqual(['cycleTicks', 'category', 'wagePerDayCents']);
+    expect(Object.keys(MODULE_PARAM_SPECS.berth)).toEqual(['depthClass', 'apronSlots', 'maxCranes', 'frontWaterCells', 'apronReserveSlots']);
+    expect(Object.keys(MODULE_PARAM_SPECS.crane)).toEqual(['cycleTicks', 'category', 'wagePerDayCents', 'dualCycleFactor']);
   });
 
   it('storage a depot majú presne polia StorageParams a DepotParams (internalTicks je voliteľné)', () => {

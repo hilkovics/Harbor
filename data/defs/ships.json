@@ -10,7 +10,9 @@
       "capacityUnits": 120,
       "speedCellsPerTick": 0.15,
       "cargoCategories": ["container", "bulk", "liquid", "gas", "roro"],
-      "berthAllowanceTicks": 17280
+      "berthAllowanceTicks": 17280,
+      "lashingTicksPerUnit": 6,
+      "paperworkTicks": 360
     },
     {
       "id": "handy",
@@ -21,7 +23,9 @@
       "capacityUnits": 300,
       "speedCellsPerTick": 0.15,
       "cargoCategories": ["container", "bulk", "liquid", "gas", "roro"],
-      "berthAllowanceTicks": 17280
+      "berthAllowanceTicks": 17280,
+      "lashingTicksPerUnit": 6,
+      "paperworkTicks": 540
     }
   ]
 }

@@ -170,22 +170,24 @@
     "berthParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["depthClass", "apronSlots", "maxCranes", "frontWaterCells"],
+      "required": ["depthClass", "apronSlots", "maxCranes", "frontWaterCells", "apronReserveSlots"],
       "properties": {
         "depthClass": { "enum": [1, 2, 3], "description": "Najhlbší ponor, ktorý kotvisko unesie." },
         "apronSlots": { "type": "integer", "minimum": 1, "description": "Počet slotov apronu (ApronBuffer)." },
         "maxCranes": { "type": "integer", "minimum": 1, "description": "Najviac žeriavov na kotvisku." },
-        "frontWaterCells": { "type": "integer", "minimum": 1, "description": "Šírka pásu vody pred dlhou hranou, ktorý musí byť voľný." }
+        "frontWaterCells": { "type": "integer", "minimum": 1, "description": "Šírka pásu vody pred dlhou hranou, ktorý musí byť voľný." },
+        "apronReserveSlots": { "type": "integer", "minimum": 0, "description": "Rezerva slotov apronu pre opačný smer (F6a, ADR-032 bod 10); najviac ⌊apronSlots / 2⌋ — vzťah polí kontroluje DefRegistry a `pnpm validate:defs`." }
       }
     },
     "craneParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["cycleTicks", "category", "wagePerDayCents"],
+      "required": ["cycleTicks", "category", "wagePerDayCents", "dualCycleFactor"],
       "properties": {
         "cycleTicks": { "type": "integer", "minimum": 2, "description": "Trvanie celého cyklu žeriava v tickoch." },
         "category": { "enum": ["container", "bulk", "liquid", "gas", "roro"], "description": "Kategória nákladu, ktorú žeriav vykladá." },
-        "wagePerDayCents": { "type": "integer", "minimum": 0, "description": "Denná mzda obsluhy žeriava v centoch; strhne sa pri DayClosed (F5)." }
+        "wagePerDayCents": { "type": "integer", "minimum": 0, "description": "Denná mzda obsluhy žeriava v centoch; strhne sa pri DayClosed (F5)." },
+        "dualCycleFactor": { "type": "number", "minimum": 1, "maximum": 2, "description": "Dual cycling (F6a, ADR-032 bod 11): násobok jedného cyklu, za ktorý žeriav naloží export a vyloží import (2 = žiadny prínos oproti dvom cyklom)." }
       }
     },
     "storageParams": {

@@ -35,7 +35,9 @@
         "capacityUnits",
         "speedCellsPerTick",
         "cargoCategories",
-        "berthAllowanceTicks"
+        "berthAllowanceTicks",
+        "lashingTicksPerUnit",
+        "paperworkTicks"
       ],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
@@ -75,6 +77,16 @@
           "type": "integer",
           "minimum": 1,
           "description": "Koľko ticks smie loď stáť pri kotvisku bez demurrage."
+        },
+        "lashingTicksPerUnit": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Lashing (F6a, ADR-032): ticky zabezpečenia nákladu na jednu naloženú exportnú jednotku."
+        },
+        "paperworkTicks": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Papiere pred odchodom (F6a): pevné ticky po lashingu, pre loď s naloženým exportom."
         },
         "techRequired": {
           "$ref": "#/$defs/id",

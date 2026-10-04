@@ -58,6 +58,7 @@ describe('skutočné katalógy F2 až F4', () => {
         unitName: 'TEU',
         unitsPerBatch: 1,
         basePricePerUnitCents: 45000,
+        exportPricePerUnitCents: 40000,
         xpPerUnit: 1,
         colorToken: 'cargo-container',
       },
@@ -88,7 +89,7 @@ describe('skutočné katalógy F2 až F4', () => {
       ],
       costCents: 40_000_000,
       maintenancePerDayCents: 120_000,
-      params: { depthClass: 1, apronSlots: 8, maxCranes: 2, frontWaterCells: 3 },
+      params: { depthClass: 1, apronSlots: 8, maxCranes: 2, frontWaterCells: 3, apronReserveSlots: 2 },
     });
     expect(item(def, 'crane_container_gantry')).toEqual({
       id: 'crane_container_gantry',
@@ -99,7 +100,7 @@ describe('skutočné katalógy F2 až F4', () => {
       connectors: [],
       costCents: 60_000_000,
       maintenancePerDayCents: 90_000,
-      params: { cycleTicks: 12, category: 'container', wagePerDayCents: 25000 },
+      params: { cycleTicks: 12, category: 'container', wagePerDayCents: 25000, dualCycleFactor: 1.5 },
     });
     expect(item(def, 'container_yard_small')).toEqual({
       id: 'container_yard_small',
@@ -206,6 +207,7 @@ describe('skutočné katalógy F2 až F4', () => {
       repathIntervalTicks: 30,
       congestion: { trafficDecayPerHour: 0.9, slowdownPerExtraVehicle: 0.25, penaltyTrafficDivisor: 200, penaltyMax: 3 },
       shipNavigation: { approachMarginCells: 1, sweepStepCells: 0.5, turnManeuvers: 1, sidewaysManeuvers: 1 },
+      exportFlow: { arrivalWindowDays: 2, vgmMissingChance: 0.05, vgmHoldHours: 6, weightClassShares: { light: 0.3, medium: 0.5, heavy: 0.2 } },
     });
   });
 
@@ -224,6 +226,8 @@ describe('skutočné katalógy F2 až F4', () => {
         speedCellsPerTick: 0.15,
         cargoCategories: categories,
         berthAllowanceTicks: 17_280,
+        lashingTicksPerUnit: 6,
+        paperworkTicks: 360,
       },
       {
         id: 'handy',
@@ -235,6 +239,8 @@ describe('skutočné katalógy F2 až F4', () => {
         speedCellsPerTick: 0.15,
         cargoCategories: categories,
         berthAllowanceTicks: 17_280,
+        lashingTicksPerUnit: 6,
+        paperworkTicks: 540,
       },
     ]);
   });
@@ -637,11 +643,27 @@ describe('schémy katalógov (validateDefsDir)', () => {
         ['apronSlots', 0, '/items/0/params/apronSlots must be >= 1'],
         ['maxCranes', 1.5, '/items/0/params/maxCranes must be integer'],
         ['frontWaterCells', '3', '/items/0/params/frontWaterCells must be integer'],
+        ['apronReserveSlots', -1, '/items/0/params/apronReserveSlots must be >= 0'],
+        ['apronReserveSlots', 1.5, '/items/0/params/apronReserveSlots must be integer'],
       ])('berth %s = %j', (field, value, message) => {
-        expect(errorsAfter('modules', (def) => void (params(berth(def))[field] = value))).toEqual([`modules.json: ${message}`]);
+        // `apronSlots = 0` dá aj vzťah rezervy (⌊0 / 2⌋ = 0), preto sa rezerva nuluje — kontrola vzťahov má vlastný test.
+        const mutate = (def: Json): void => {
+          params(berth(def))[field] = value;
+          if (field === 'apronSlots') params(berth(def))['apronReserveSlots'] = 0;
+        };
+        expect(errorsAfter('modules', mutate)).toEqual([`modules.json: ${message}`]);
+      });
+
+      it('berth: rezerva apronu nad ⌊apronSlots / 2⌋ → chyba vzťahu polí', () => {
+        expect(errorsAfter('modules', (def) => void (params(berth(def))['apronReserveSlots'] = 5))).toEqual([
+          'modules.json: /items/0/params/apronReserveSlots musí byť ≤ ⌊apronSlots / 2⌋ (4), dostal 5',
+        ]);
+        expect(errorsAfter('modules', (def) => void (params(berth(def))['apronReserveSlots'] = 4))).toEqual([]);
       });
 
       it.each([
+        ['dualCycleFactor', 0.9, '/items/1/params/dualCycleFactor must be >= 1'],
+        ['dualCycleFactor', 2.5, '/items/1/params/dualCycleFactor must be <= 2'],
         ['cycleTicks', 1, '/items/1/params/cycleTicks must be >= 2'],
         ['cycleTicks', 'fast', '/items/1/params/cycleTicks must be integer'],
         ['category', 'coal', '/items/1/params/category must be equal to one of the allowed values'],

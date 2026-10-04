@@ -44,14 +44,18 @@ import { checkModuleItem, rampParams } from './module-def';
 import {
   CARGO_CATEGORIES,
   CONNECTOR_TYPES,
+  CONTRACT_TEMPLATE_KINDS,
+  DEFAULT_TEMPLATE_KIND,
   MODULE_KINDS,
   SIDES,
   SUPPORTED_SCHEMA_VERSION,
   type CargoTypeDef,
   type CongestionDef,
   type ContractTemplateDef,
+  type ContractTemplateKind,
   type DefBase,
   type EconomyDef,
+  type ExportFlowDef,
   type InfrastructureDef,
   type InfrastructureLayerDef,
   type LogisticsDef,
@@ -100,12 +104,34 @@ const ECONOMY_FIELDS: FieldTable<EconomyDef> = {
   xpMultiplier: { kind: 'number', min: 0 },
   lateXpFactor: { kind: 'number', min: 0, max: 1 },
   ledgerEntriesKept: { kind: 'integer', min: 1 },
+  // Export a booking (F6a, ADR-032 bod 1, 6, 14).
+  bookingOffersPerDay: { kind: 'integer', min: 0 },
+  exportArrivalDaysRange: { kind: 'range', bound: { kind: 'number', min: 0 } },
+  cutoffHours: { kind: 'number', exclusiveMin: 0 },
+  cutoffWarningHours: { kind: 'number', min: 0 },
+  bookingFulfilmentShare: { kind: 'number', min: 0, max: 1 },
+  lastMinuteExportRateOfReward: { kind: 'number', min: 0, max: 1 },
+  rolledExportRateOfReward: { kind: 'number', min: 0, max: 1 },
+  unfulfilledBookingRateOfReward: { kind: 'number', min: 0, max: 1 },
 };
 
-/** Vzťah polí `economy.json` (F5): `arrivalDaysRange[1] > 0`, inak by loď kontraktu prišla v ticku prijatia. */
+/** Hodín v dni — prevod `exportArrivalDaysRange` (dni) na hodiny `cutoffHours` (kalendárna konštanta, nie balans). */
+const HOURS_PER_DAY = 24;
+
+/**
+ * Vzťahy polí `economy.json`: `arrivalDaysRange[1] > 0` (F5), inak by loď kontraktu prišla v ticku prijatia; export
+ * (F6a): `exportArrivalDaysRange[0] × 24 > cutoffHours`, inak by cut-off ležal pred prijatím bookingu.
+ */
 function checkEconomy(def: Readonly<EconomyDef>): Problem | undefined {
-  if (def.arrivalDaysRange[1] > 0) return undefined;
-  return { path: '/arrivalDaysRange/1', message: `musí byť > 0 (loď kontraktu nesmie prísť v ticku prijatia), dostal ${String(def.arrivalDaysRange[1])}` };
+  if (!(def.arrivalDaysRange[1] > 0)) {
+    return { path: '/arrivalDaysRange/1', message: `musí byť > 0 (loď kontraktu nesmie prísť v ticku prijatia), dostal ${String(def.arrivalDaysRange[1])}` };
+  }
+  const earliestHours = def.exportArrivalDaysRange[0] * HOURS_PER_DAY;
+  if (earliestHours > def.cutoffHours) return undefined;
+  return {
+    path: '/exportArrivalDaysRange/0',
+    message: `min × 24 h (${String(earliestHours)}) musí byť > cutoffHours (${String(def.cutoffHours)}) — cut-off by ležal pred prijatím bookingu, dostal ${String(def.exportArrivalDaysRange[0])}`,
+  };
 }
 
 /** Cesta aj koľaj majú rovnaké polia (ADR-010), líšia sa iba hodnotami v defe. */
@@ -166,12 +192,38 @@ const SHIP_NAVIGATION_FIELDS: SpecTable<ShipNavigationDef> = {
   sidewaysManeuvers: { kind: 'integer', min: 0, max: 100 },
 };
 
+/**
+ * Tok exportu po súši (F6a, ADR-032), tabuľka zrkadlí `logistics.schema.json`: okno príchodov v dňoch (> 0), pravdepodobnosť
+ * chýbajúceho VGM `0 … 1`, trvanie hold v hodinách (> 0) a váhy hmotnostných tried (≥ 0; súčet > 0 je vzťah polí).
+ */
+const EXPORT_FLOW_FIELDS: SpecTable<ExportFlowDef> = {
+  arrivalWindowDays: { kind: 'number', exclusiveMin: 0 },
+  vgmMissingChance: { kind: 'number', min: 0, max: 1 },
+  vgmHoldHours: { kind: 'number', exclusiveMin: 0 },
+  weightClassShares: {
+    kind: 'object',
+    fields: {
+      light: { kind: 'number', min: 0 },
+      medium: { kind: 'number', min: 0 },
+      heavy: { kind: 'number', min: 0 },
+    },
+  },
+};
+
 const LOGISTICS_FIELDS: FieldTable<LogisticsDef> = {
   defaultInternalTicks: { kind: 'integer', min: 0 },
   repathIntervalTicks: { kind: 'integer', min: 1 },
   congestion: { kind: 'object', fields: CONGESTION_FIELDS },
   shipNavigation: { kind: 'object', fields: SHIP_NAVIGATION_FIELDS },
+  exportFlow: { kind: 'object', fields: EXPORT_FLOW_FIELDS },
 };
+
+/** Vzťah polí `logistics.json` (F6a): aspoň jedna hmotnostná trieda má kladnú váhu (inak `Rng.weighted` nemá z čoho vyberať). */
+function checkLogistics(def: Readonly<LogisticsDef>): Problem | undefined {
+  const { light, medium, heavy } = def.exportFlow.weightClassShares;
+  if (light + medium + heavy > 0) return undefined;
+  return { path: '/exportFlow/weightClassShares', message: 'súčet váh hmotnostných tried musí byť > 0' };
+}
 
 /** Tabuľky konfiguračných defov; kľúč je názov defu (= názov súboru bez `.json`). */
 const DEF_FIELDS = {
@@ -192,6 +244,7 @@ const CARGO_TYPE_FIELDS: SpecTable<CargoTypeDef> = {
   unitName: TEXT_FIELD,
   unitsPerBatch: { kind: 'integer', min: 1 },
   basePricePerUnitCents: { kind: 'integer', min: 0 },
+  exportPricePerUnitCents: { kind: 'integer', min: 0 },
   xpPerUnit: { kind: 'number', min: 0 },
   colorToken: { kind: 'string', pattern: TOKEN_NAME, patternName: 'názov tokenu (kebab-case, bez `--`)' },
 };
@@ -240,6 +293,8 @@ const SHIP_CLASS_FIELDS: SpecTable<ShipClassDef> = {
   speedCellsPerTick: { kind: 'number', exclusiveMin: 0 },
   cargoCategories: { kind: 'array', minItems: 1, unique: true, item: { kind: 'enum', values: CARGO_CATEGORIES } },
   berthAllowanceTicks: { kind: 'integer', min: 1 },
+  lashingTicksPerUnit: { kind: 'integer', min: 0 },
+  paperworkTicks: { kind: 'integer', min: 0 },
   techRequired: { kind: 'string', pattern: SNAKE_CASE_ID, patternName: 'snake_case identifikátor', optional: true },
 };
 
@@ -269,6 +324,10 @@ const TRUCK_FIELDS: SpecTable<TruckDef> = {
 /** Šablóna kontraktu (F5): rozsahy sú celé jednotky/dni, `min ≤ max` hlási `RangeSpec`; vzťahy na iné katalógy `checkContractTemplates`. */
 const CONTRACT_TEMPLATE_FIELDS: SpecTable<ContractTemplateDef> = {
   id: ID_FIELD,
+  // Export a booking (F6a, ADR-032 bod 1): chýbajúci `kind` = import (F5); súvisiace polia podľa druhu hlási `checkContractTemplates`.
+  kind: { kind: 'enum', values: CONTRACT_TEMPLATE_KINDS, optional: true },
+  destinationPorts: { kind: 'array', minItems: 1, unique: true, item: TEXT_FIELD, optional: true },
+  exportVolumeUnitsRange: { kind: 'range', bound: { kind: 'integer', min: 1 }, optional: true },
   cargoTypeId: { kind: 'string', pattern: SNAKE_CASE_ID, patternName: 'snake_case identifikátor' },
   volumeUnitsRange: { kind: 'range', bound: { kind: 'integer', min: 1 } },
   slaDaysRange: { kind: 'range', bound: { kind: 'integer', min: 1 } },
@@ -342,9 +401,22 @@ function checkRampTrucks(modules: Catalog<Readonly<ModuleDef>>, trucks: Catalog<
 }
 
 /**
- * Krížová kontrola `contract_templates.json` × `cargo_types.json` × `ships.json` (F5, fail-fast): `cargoTypeId` a
- * `shipClassIds` existujú, každá loď šablóny vozí kategóriu nákladu a `volumeUnitsRange[1]` sa zmestí do najmenšej lode
- * šablóny (ponuka nikdy nepresiahne kapacitu lode, §9.1). Chyba patrí šablóne (`contract_templates/items/<i>/...`).
+ * Pole šablóny podľa druhu (F6a, ADR-032 bod 1): `import` nemá `destinationPorts` ani `exportVolumeUnitsRange`, `export`
+ * vyžaduje `destinationPorts` a nemá `exportVolumeUnitsRange`, `roundtrip` vyžaduje obe. Tabuľka (nie switch) —
+ * nový druh = nový riadok. `required` / `forbidden` sú polia šablóny.
+ */
+const TEMPLATE_KIND_FIELDS: { readonly [K in ContractTemplateKind]: { readonly required: readonly string[]; readonly forbidden: readonly string[] } } = {
+  import: { required: [], forbidden: ['destinationPorts', 'exportVolumeUnitsRange'] },
+  export: { required: ['destinationPorts'], forbidden: ['exportVolumeUnitsRange'] },
+  roundtrip: { required: ['destinationPorts', 'exportVolumeUnitsRange'], forbidden: [] },
+};
+
+/**
+ * Krížová kontrola `contract_templates.json` × `cargo_types.json` × `ships.json` (F5, F6a; fail-fast): `cargoTypeId` a
+ * `shipClassIds` existujú, každá loď šablóny vozí kategóriu nákladu a `volumeUnitsRange[1]` (pri roundtripe aj
+ * `exportVolumeUnitsRange[1]`) sa zmestí do najmenšej lode šablóny (ponuka nikdy nepresiahne kapacitu lode, §9.1);
+ * polia podľa druhu šablóny (`TEMPLATE_KIND_FIELDS`) a kladná `exportPricePerUnitCents` nákladu pri exporte a roundtripe.
+ * Chyba patrí šablóne (`contract_templates/items/<i>/...`).
  */
 function checkContractTemplates(
   templates: Catalog<Readonly<ContractTemplateDef>>,
@@ -354,10 +426,22 @@ function checkContractTemplates(
   const fail = (index: number, field: string, message: string): never =>
     failWith('contract_templates', { path: `/items/${String(index)}/${field}`, message });
   templates.items.forEach((template, index) => {
+    const kind = template.kind ?? DEFAULT_TEMPLATE_KIND;
+    const fields = TEMPLATE_KIND_FIELDS[kind];
+    for (const field of fields.required) {
+      if (!Object.hasOwn(template, field)) fail(index, field, `šablóna druhu '${kind}' vyžaduje pole`);
+    }
+    for (const field of fields.forbidden) {
+      if (Object.hasOwn(template, field)) fail(index, field, `šablóna druhu '${kind}' toto pole nemá`);
+    }
     if (!cargoTypes.has(template.cargoTypeId)) {
       fail(index, 'cargoTypeId', `neznámy typ nákladu '${template.cargoTypeId}' (známe: ${cargoTypes.items.map((item) => item.id).join(', ')})`);
     }
-    const category = cargoTypes.get(template.cargoTypeId).category;
+    const cargoType = cargoTypes.get(template.cargoTypeId);
+    const category = cargoType.category;
+    if (kind !== DEFAULT_TEMPLATE_KIND && !(cargoType.exportPricePerUnitCents > 0)) {
+      fail(index, 'cargoTypeId', `šablóna druhu '${kind}' vyžaduje typ nákladu s exportPricePerUnitCents > 0, '${cargoType.id}' má ${String(cargoType.exportPricePerUnitCents)}`);
+    }
     let smallestCapacity = Number.POSITIVE_INFINITY;
     template.shipClassIds.forEach((shipClassId, shipIndex) => {
       if (!ships.has(shipClassId)) {
@@ -372,6 +456,10 @@ function checkContractTemplates(
     const maxVolume = template.volumeUnitsRange[1];
     if (maxVolume > smallestCapacity) {
       fail(index, 'volumeUnitsRange/1', `musí byť ≤ najmenšia kapacita lodí šablóny (${String(smallestCapacity)}), dostal ${String(maxVolume)}`);
+    }
+    const maxExport = template.exportVolumeUnitsRange?.[1];
+    if (maxExport !== undefined && maxExport > smallestCapacity) {
+      fail(index, 'exportVolumeUnitsRange/1', `musí byť ≤ najmenšia kapacita lodí šablóny (${String(smallestCapacity)}), dostal ${String(maxExport)}`);
     }
   });
 }
@@ -410,7 +498,7 @@ export class DefRegistry {
     const ships = validateCatalog<ShipClassDef>('ships', raw.ships, { fields: SHIP_CLASS_FIELDS });
     const vehicles = validateCatalog<VehicleDef>('vehicles', raw.vehicles, { fields: VEHICLE_FIELDS });
     const trucks = validateCatalog<TruckDef>('trucks', raw.trucks, { fields: TRUCK_FIELDS });
-    const logistics = validateDef<LogisticsDef>('logistics', raw.logistics, DEF_FIELDS.logistics);
+    const logistics = validateDef<LogisticsDef>('logistics', raw.logistics, DEF_FIELDS.logistics, checkLogistics);
     const contractTemplates = validateCatalog<ContractTemplateDef>('contract_templates', raw.contract_templates, { fields: CONTRACT_TEMPLATE_FIELDS });
     checkRampTrucks(modules, trucks);
     checkContractTemplates(contractTemplates, cargoTypes, ships);

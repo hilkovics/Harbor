@@ -16,7 +16,7 @@
 import type { ContractId, VoyageId } from '../core/entity-id';
 import type { Rng } from '../core/rng';
 import type { DefRegistry } from '../defs/def-registry';
-import type { ContractTemplateDef } from '../defs/types';
+import { DEFAULT_TEMPLATE_KIND, type ContractTemplateDef, type ContractTemplateKind } from '../defs/types';
 import type { Module } from '../modules/module';
 import type { StatResolver } from '../tech/stat-resolver';
 import { ImportContract, type Contract } from './contract';
@@ -81,9 +81,28 @@ export interface OfferContext {
   readonly nextVoyageId: () => VoyageId;
 }
 
-/** Šablóny ponúkateľné pri `tier` (poradie defu). */
-export function eligibleTemplates(templates: readonly Readonly<ContractTemplateDef>[], tier: number): Readonly<ContractTemplateDef>[] {
-  return templates.filter((template) => template.minTier <= tier && template.weight > 0);
+/**
+ * Skupiny šablón, z ktorých pool losuje oddelene (ADR-032 bod 1): `import` ponuky (šablóny `import`, F5) a `booking`
+ * ponuky (šablóny `export` a `roundtrip`, počet `economy.bookingOffersPerDay`). Tabuľka (nie switch) — nový druh šablóny
+ * = nový prvok skupiny.
+ */
+export const TEMPLATE_GROUP_KINDS = Object.freeze({
+  import: Object.freeze(['import'] as const),
+  booking: Object.freeze(['export', 'roundtrip'] as const),
+} satisfies Record<string, readonly ContractTemplateKind[]>);
+export type TemplateGroup = keyof typeof TEMPLATE_GROUP_KINDS;
+
+/**
+ * Šablóny skupiny `group` (predvolene `import` — import-only svet sa správa ako vo F5) ponúkateľné pri `tier`
+ * (poradie defu): `minTier ≤ tier` a váha > 0.
+ */
+export function eligibleTemplates(
+  templates: readonly Readonly<ContractTemplateDef>[],
+  tier: number,
+  group: TemplateGroup = 'import',
+): Readonly<ContractTemplateDef>[] {
+  const kinds: readonly ContractTemplateKind[] = TEMPLATE_GROUP_KINDS[group];
+  return templates.filter((template) => kinds.includes(template.kind ?? DEFAULT_TEMPLATE_KIND) && template.minTier <= tier && template.weight > 0);
 }
 
 /**

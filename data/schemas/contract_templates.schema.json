@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "contract_templates.json",
-  "description": "Katalóg šablón kontraktov (ARCHITECTURE §4.6, §9.1; F5): { schemaVersion, items: [...] }. Z šablón generuje pool ponuky. Jedinečnosť `id` v items[] a poradie `min ≤ max` v rozsahoch schéma nevyjadrí — kontroluje ich DefRegistry a `pnpm validate:defs`; tá overí aj krížové vzťahy (`cargoTypeId` v cargo_types.json, `shipClassIds` v ships.json, `volumeUnitsRange[1]` ≤ najmenšia kapacita lodí šablóny).",
+  "description": "Katalóg šablón kontraktov (ARCHITECTURE §4.6, §9.1; F5): { schemaVersion, items: [...] }. Z šablón generuje pool ponuky. Jedinečnosť `id` v items[] a poradie `min ≤ max` v rozsahoch schéma nevyjadrí — kontroluje ich DefRegistry a `pnpm validate:defs`; tá overí aj krížové vzťahy (`cargoTypeId` v cargo_types.json, `shipClassIds` v ships.json, `volumeUnitsRange[1]` a `exportVolumeUnitsRange[1]` ≤ najmenšia kapacita lodí šablóny, `exportPricePerUnitCents` > 0 pri exporte a roundtripe). Pole `kind` (F6a, ADR-032): chýba = import; polia `destinationPorts` a `exportVolumeUnitsRange` podľa druhu vyjadruje schéma (`allOf` / `if`).",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "items"],
@@ -33,8 +33,37 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "cargoTypeId", "volumeUnitsRange", "slaDaysRange", "shipClassIds", "weight", "minTier"],
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "export" } }, "required": ["kind"] },
+          "then": { "required": ["destinationPorts"], "not": { "required": ["exportVolumeUnitsRange"] } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "roundtrip" } }, "required": ["kind"] },
+          "then": { "required": ["destinationPorts", "exportVolumeUnitsRange"] }
+        },
+        {
+          "if": { "anyOf": [{ "not": { "required": ["kind"] } }, { "properties": { "kind": { "const": "import" } } }] },
+          "then": { "not": { "anyOf": [{ "required": ["destinationPorts"] }, { "required": ["exportVolumeUnitsRange"] }] } }
+        }
+      ],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
+        "kind": {
+          "enum": ["import", "export", "roundtrip"],
+          "description": "Druh šablóny (F6a, ADR-032): import (predvolené), export (booking s vlastnou voyage) alebo roundtrip (import + export jednej voyage)."
+        },
+        "destinationPorts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Cieľové prístavy exportu (pool losuje jeden); len export a roundtrip."
+        },
+        "exportVolumeUnitsRange": {
+          "$ref": "#/$defs/intRange",
+          "description": "Rozsah [min, max] bookovaných TEU exportu roundtripu; max sa musí zmestiť do najmenšej lode zo shipClassIds; len roundtrip."
+        },
         "cargoTypeId": { "$ref": "#/$defs/id" },
         "volumeUnitsRange": {
           "$ref": "#/$defs/intRange",

@@ -35,6 +35,7 @@ export const CARGO_DEFS: DefRegistry = DefRegistry.fromRaw({
         unitName: 't',
         unitsPerBatch: GRAIN_BATCH,
         basePricePerUnitCents: 1200,
+        exportPricePerUnitCents: 1000,
         xpPerUnit: 1,
         colorToken: 'cargo-bulk',
       },

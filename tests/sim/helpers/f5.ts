@@ -25,7 +25,7 @@ import { DefRegistry, craneParams, storageParams } from '@sim/defs';
 import type { LedgerCategory } from '@sim/economy';
 import type { SimEvent } from '@sim/events';
 import { World } from '@sim/world';
-import { DEFS, LEGACY_CAPACITY_MODULES, MAP, RAW_DEFS } from '../world/world-fixtures';
+import { LEGACY_CAPACITY_MODULES, MAP, RAW_DEFS } from '../world/world-fixtures';
 import { auditJobsF4, auditLedgerF4 } from './f4';
 import { f4Scenario, type F4Options } from './f4-layout';
 import { cranesOf, type TimedEvent } from './harbor';
@@ -33,7 +33,17 @@ import { assertCargoConservation } from './invariants';
 import { runScenario, type Scenario, type ScenarioEntry } from './scenario';
 import { storageModulesOf } from './f3';
 
-export { DEFS, MAP, RAW_DEFS };
+export { MAP, RAW_DEFS };
+
+/**
+ * Economy bez booking ponúk (`bookingOffersPerDay: 0`, F6a): testy fázy 5 overujú správanie importu (pool, ponuky,
+ * ekonomiku, vertikálny rez), preto ich pool neponúka export ani roundtrip; booking má vlastné testy (`tests/sim/exports`,
+ * `helpers/f6a.ts`). Bez booking ponúk sa `Rng` prúd importu nezmenil oproti F5 (`refillBookings` nič neťahá).
+ */
+export const IMPORT_ONLY_ECONOMY: Readonly<Record<string, unknown>> = Object.freeze({ bookingOffersPerDay: 0 });
+
+/** Bundled defy bez booking ponúk — import-only svet fázy 5 (viď `IMPORT_ONLY_ECONOMY`). */
+export const DEFS: DefRegistry = DefRegistry.fromRaw({ ...RAW_DEFS, economy: { ...RAW_DEFS.economy, ...IMPORT_ONLY_ECONOMY } });
 
 // ---------------------------------------------------------------------------------------------------------
 // Čas (z `time.json`, nie z implementácie)
@@ -152,9 +162,9 @@ export function stateOfContract(world: World, id: EntityId | number): ContractSt
   return contractsOf(world).get(id as EntityId)?.state ?? 'removed';
 }
 
-/** Stratené jednotky: vytvorené − živé − exportované (musí byť vždy 0). */
+/** Stratené jednotky: vytvorené − živé − exportované − odplávané (`shipped`, F6a; musí byť vždy 0). */
 export function lostUnits(world: World): number {
-  return world.cargo.createdCount - world.cargo.liveCount - world.cargo.exportedCount;
+  return world.cargo.createdCount - world.cargo.liveCount - world.cargo.exportedCount - world.cargo.shippedCount;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -381,7 +391,7 @@ export function defsWith(overrides: DefOverrides): DefRegistry {
       : { ...shipsJson, items: shipsJson.items.map((item) => (item.id === overrides.ship?.id ? { ...item, ...overrides.ship.fields } : item)) };
   return DefRegistry.fromRaw({
     ...RAW_DEFS,
-    economy: { ...RAW_DEFS.economy, ...overrides.economy },
+    economy: { ...RAW_DEFS.economy, ...IMPORT_ONLY_ECONOMY, ...overrides.economy },
     contract_templates: { ...RAW_DEFS.contract_templates, ...(overrides.templates === undefined ? {} : { items: overrides.templates }) },
     ships,
     modules: overrides.legacyCapacities === true ? LEGACY_CAPACITY_MODULES : RAW_DEFS.modules,

@@ -197,16 +197,32 @@ function findEconomyProblems(defsDir: string): string[] {
   return errors;
 }
 
-/** Vzťah polí `logistics.json` (F6a): súčet váh `exportFlow.weightClassShares` > 0. Chýbajúci alebo nečitateľný súbor sa preskočí. */
+/**
+ * Vzťahy polí `logistics.json` (F6a): súčet váh `exportFlow.weightClassShares` > 0 a okno príchodov exportu
+ * (`exportFlow.arrivalWindowDays` × 24 h) > `economy.cutoffHours` (okno pred cut-off nesmie byť prázdne). Chýbajúci alebo
+ * nečitateľný súbor sa preskočí.
+ */
 function findLogisticsProblems(defsDir: string): string[] {
   const logistics = readJsonOrUndefined(join(defsDir, LOGISTICS_DEF_FILE));
   const flow = isRecord(logistics) ? logistics['exportFlow'] : undefined;
-  const shares = isRecord(flow) ? flow['weightClassShares'] : undefined;
-  if (!isRecord(shares)) return [];
-  const values = ['light', 'medium', 'heavy'].map((key) => shares[key]);
-  if (!values.every((value) => typeof value === 'number')) return [];
-  const total = (values as number[]).reduce((sum, value) => sum + value, 0);
-  return total > 0 ? [] : [`${LOGISTICS_DEF_FILE}: /exportFlow/weightClassShares súčet váh hmotnostných tried musí byť > 0`];
+  if (!isRecord(flow)) return [];
+  const errors: string[] = [];
+  const shares = flow['weightClassShares'];
+  if (isRecord(shares)) {
+    const values = ['light', 'medium', 'heavy'].map((key) => shares[key]);
+    if (values.every((value) => typeof value === 'number') && (values as number[]).reduce((sum, value) => sum + value, 0) <= 0) {
+      errors.push(`${LOGISTICS_DEF_FILE}: /exportFlow/weightClassShares súčet váh hmotnostných tried musí byť > 0`);
+    }
+  }
+  const economy = readJsonOrUndefined(join(defsDir, ECONOMY_DEF_FILE));
+  const cutoffHours = isRecord(economy) ? economy['cutoffHours'] : undefined;
+  const windowDays = flow['arrivalWindowDays'];
+  if (typeof windowDays === 'number' && typeof cutoffHours === 'number' && windowDays * HOURS_PER_DAY <= cutoffHours) {
+    errors.push(
+      `${LOGISTICS_DEF_FILE}: /exportFlow/arrivalWindowDays okno príchodov (${String(windowDays * HOURS_PER_DAY)} h) musí byť > economy.cutoffHours (${String(cutoffHours)}) — okno pred cut-off by bolo prázdne, dostal ${String(windowDays)}`,
+    );
+  }
+  return errors;
 }
 
 /**

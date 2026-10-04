@@ -464,6 +464,20 @@ function checkContractTemplates(
   });
 }
 
+/**
+ * Krížová kontrola `economy.json` × `logistics.json` (F6a, ADR-032 bod 6): okno príchodov exportu pred loďou
+ * (`exportFlow.arrivalWindowDays` × 24 h) musí presiahnuť `cutoffHours`, inak by okno `[príchod lode − okno, cut-off]`
+ * bolo prázdne a plán príchodov by nemal z čoho losovať. Chyba patrí `logistics.json`.
+ */
+function checkExportWindow(economy: Readonly<EconomyDef>, logistics: Readonly<LogisticsDef>): void {
+  const windowHours = logistics.exportFlow.arrivalWindowDays * HOURS_PER_DAY;
+  if (windowHours > economy.cutoffHours) return;
+  failWith('logistics', {
+    path: '/exportFlow/arrivalWindowDays',
+    message: `okno príchodov (${String(windowHours)} h) musí byť > economy.cutoffHours (${String(economy.cutoffHours)}) — okno pred cut-off by bolo prázdne, dostal ${String(logistics.exportFlow.arrivalWindowDays)}`,
+  });
+}
+
 // ---------------------------------------------------------------------------------------------------------
 // DefRegistry
 // ---------------------------------------------------------------------------------------------------------
@@ -500,6 +514,7 @@ export class DefRegistry {
     const trucks = validateCatalog<TruckDef>('trucks', raw.trucks, { fields: TRUCK_FIELDS });
     const logistics = validateDef<LogisticsDef>('logistics', raw.logistics, DEF_FIELDS.logistics, checkLogistics);
     const contractTemplates = validateCatalog<ContractTemplateDef>('contract_templates', raw.contract_templates, { fields: CONTRACT_TEMPLATE_FIELDS });
+    checkExportWindow(economy, logistics);
     checkRampTrucks(modules, trucks);
     checkContractTemplates(contractTemplates, cargoTypes, ships);
     return new DefRegistry(time, economy, infrastructure, cargoTypes, modules, ships, vehicles, trucks, logistics, contractTemplates);

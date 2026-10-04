@@ -296,6 +296,42 @@ describe('Rng — xoshiro128**', () => {
     });
   });
 
+  describe('chance(probability)', () => {
+    it('chyby: mimo 0 … 1, NaN a nekonečno → RangeError a nič sa nespotrebuje', () => {
+      const rng = new Rng(61);
+      const before = rng.getState();
+      for (const bad of [-0.01, 1.01, Number.NaN, Number.POSITIVE_INFINITY]) expect(() => rng.chance(bad)).toThrow(RangeError);
+      expect(rng.getState()).toEqual(before);
+    });
+
+    it('0 nikdy, 1 vždy; oba spotrebujú jedno číslo ako ostatné hodnoty', () => {
+      const rng = new Rng(62);
+      const twin = new Rng(62);
+      for (let i = 0; i < 200; i++) {
+        expect(rng.chance(0)).toBe(false);
+        expect(rng.chance(1)).toBe(true);
+        twin.nextU32();
+        twin.nextU32();
+      }
+      expect(rng.getState()).toEqual(twin.getState());
+    });
+
+    it('je presne `next() < p` nad rovnakým prúdom', () => {
+      const rng = new Rng(63);
+      const twin = new Rng(63);
+      for (let i = 0; i < 500; i++) expect(rng.chance(0.3)).toBe(twin.next() < 0.3);
+    });
+
+    it('podiel úspechov zodpovedá pravdepodobnosti (nezávislý odhad)', () => {
+      const rng = new Rng(64);
+      let hits = 0;
+      const trials = 20_000;
+      for (let i = 0; i < trials; i++) if (rng.chance(0.05)) hits += 1;
+      expect(hits / trials).toBeGreaterThan(0.04);
+      expect(hits / trials).toBeLessThan(0.06);
+    });
+  });
+
   describe('weighted(items, weightOf)', () => {
     it('chyby: prázdne pole, súčet ≤ 0, záporná/NaN/nekonečná váha', () => {
       const rng = new Rng(51);

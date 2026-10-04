@@ -143,8 +143,13 @@ describe('World.tick — krok 1 a 13', () => {
       { type: 'HourClosed', tick },
       { type: 'DayClosed', tick },
     ]);
+    // Krok 2 (F6a, ADR-032): pri DayClosed pool doplní booking ponuky (`ContractOffered` ešte pred krokom 9).
+    const after = events.slice(3).map((event) => event.type);
+    const money = after.indexOf('MoneyChanged');
+    expect(money).toBeGreaterThan(0);
+    expect(after.slice(0, money).every((type) => type === 'ContractOffered')).toBe(true);
     // Krok 9 (ADR-025): starter moduly majú údržbu a žeriav mzdu.
-    expect(events.slice(3).map((event) => event.type)).toEqual(['MoneyChanged', 'MoneyChanged', 'DayClosedSummary']);
+    expect(after.slice(money)).toEqual(['MoneyChanged', 'MoneyChanged', 'DayClosedSummary']);
   });
 
   it('hranica mesiaca: TickAdvanced, HourClosed, DayClosed, MonthClosed, krok 2 (doplnenie poolu), potom krok 9 s MonthlyReport', () => {
@@ -159,13 +164,12 @@ describe('World.tick — krok 1 a 13', () => {
       { type: 'DayClosed', tick: ticksPerMonth },
       { type: 'MonthClosed', tick: ticksPerMonth },
     ]);
-    expect(events.slice(4).map((event) => event.type)).toEqual([
-      ...Array<string>(DEFS.economy.offersPerDay).fill('ContractOffered'),
-      'MoneyChanged',
-      'MoneyChanged',
-      'DayClosedSummary',
-      'MonthlyReport',
-    ]);
+    const after = events.slice(4).map((event) => event.type);
+    const money = after.indexOf('MoneyChanged');
+    // Krok 2: import ponuky (`offersPerDay`, pool bol po mesiaci prázdny) a potom booking ponuky (F6a, ADR-032).
+    expect(money).toBeGreaterThanOrEqual(DEFS.economy.offersPerDay);
+    expect(after.slice(0, money).every((type) => type === 'ContractOffered')).toBe(true);
+    expect(after.slice(money)).toEqual(['MoneyChanged', 'MoneyChanged', 'DayClosedSummary', 'MonthlyReport']);
     expect(world.clock.gameMonth).toBe(1);
   });
 

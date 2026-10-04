@@ -143,6 +143,19 @@ export class Rng {
     return min + Math.floor(this.next() * span);
   }
 
+  /**
+   * Pravdepodobnostné rozhodnutie: `true` s pravdepodobnosťou `probability` (`0 … 1`) ako `next() < probability`;
+   * spotrebuje vždy jedno číslo (aj pri 0 a 1), takže dĺžka prúdu nezávisí od hodnoty. `0` nikdy, `1` vždy (`next() < 1`).
+   *
+   * Chyba (`RangeError`, nič nespotrebuje): pravdepodobnosť nie je konečné číslo v `[0, 1]`.
+   */
+  chance(probability: number): boolean {
+    if (!Number.isFinite(probability) || probability < 0 || probability > 1) {
+      throw new RangeError(`Rng.chance: pravdepodobnosť musí byť číslo 0 … 1, dostal ${String(probability)}`);
+    }
+    return this.next() < probability;
+  }
+
   /** Náhodný prvok poľa (spotrebuje jedno číslo). Na prázdnom poli vyhodí chybu. */
   pick<T>(items: readonly T[]): T {
     if (items.length === 0) {

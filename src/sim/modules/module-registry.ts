@@ -10,6 +10,7 @@
  * def → trieda), nie switch.
  */
 import type { CargoReader } from '../cargo/cargo-ledger';
+import type { CargoUnit } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
 import { storageParams } from '../defs/module-def';
 import type { CargoCategory, ModuleDef, ModuleKind } from '../defs/types';
@@ -32,6 +33,8 @@ export type ModuleFactory = (init: ModuleInit) => Module;
 export interface ModuleEnv {
   readonly grid: Grid;
   readonly cargo: CargoReader;
+  /** Test „jednotka na docku čaká na kamión" pre rampy (`ModuleInit.pickupCargo`); chýba = každá jednotka. */
+  readonly pickupCargo?: (unit: CargoUnit) => boolean;
 }
 
 export class ModuleRegistry {
@@ -66,7 +69,7 @@ export class ModuleRegistry {
       const known = this.kinds.length > 0 ? this.kinds.join(', ') : '–';
       throw new ModuleError('unknown_kind', `ModuleRegistry.create: pre druh '${def.kind}' (modul '${def.id}') nie je registrovaná trieda (registrované: ${known})`);
     }
-    return factory({ def, id, origin: { x: spec.x, y: spec.y }, rotation: spec.rotation, purchaseCostCents, grid: env.grid, cargo: env.cargo });
+    return factory({ def, id, origin: { x: spec.x, y: spec.y }, rotation: spec.rotation, purchaseCostCents, grid: env.grid, cargo: env.cargo, pickupCargo: env.pickupCargo });
   }
 }
 

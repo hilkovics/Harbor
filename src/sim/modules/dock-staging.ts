@@ -8,11 +8,18 @@
  * nevedú po slotoch (`SlotReservations`), ale ako počet na dock, a obsadenie docku sa počíta prechodom jednotiek rampy
  * v ledgeri (`unitAtIndex`, najviac `docks × perDock` jednotiek, bez alokácie).
  *
+ * Na docku ležia dva druhy jednotiek (ADR-032 bod 13): **náklad na odvoz** kamiónom (`isPickup` — import, export vrátený
+ * odosielateľovi) a **export na prijatie** (práve vyložený kamiónom s exportom, čaká na vozidlo do skladu). Kapacita docku
+ * (`freeAt`, `firstFreeDock`, `stagedCount`, `staged + reserved ≤ perDock`) počíta všetky jednotky; `stagedAt`,
+ * `firstUnitAt` a `unitsAt` (pripravené na kamión) len náklad na odvoz. Bez testu `isPickup` platí každá jednotka za
+ * náklad na odvoz (F4).
+ *
  * Tok: `reserve(dock)` pri vzniku jobu → pred presunom `assertCommittable(dock, unit)` → `CargoLedger.move(unit,
  * at_ramp(rampId, dock))` → `commit(dock, unit)` (rezervácia zaniká). Odchod jednotky (`at_ramp → in_truck`) je len
  * presun v ledgeri. Zrušený job: `release(dock)`. Operácie sú atomické: pri chybe (`ModuleError`) sa nič nezmení.
  */
 import type { CargoReader } from '../cargo/cargo-ledger';
+import type { CargoUnit } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
 import { ModuleError } from './module-error';
 
@@ -28,6 +35,8 @@ export interface DockStagingInit {
   readonly cargo: CargoReader;
   /** Popis do chybových správ (`rampa loading_ramp_container #7`). */
   readonly label: string;
+  /** Čaká jednotka na docku na kamión (náklad na odvoz)? Predvolene áno (F4); viď hlavička. */
+  readonly isPickup?: (unit: CargoUnit) => boolean;
 }
 
 const KIND = 'at_ramp';
@@ -40,6 +49,7 @@ export class DockStaging {
   readonly capacity: number;
   private readonly cargo: CargoReader;
   private readonly label: string;
+  private readonly isPickup: (unit: CargoUnit) => boolean;
   /** Dock → počet rezervácií. */
   private readonly reservedPerDock: number[];
   private reserved = 0;
@@ -58,10 +68,11 @@ export class DockStaging {
     this.capacity = init.docks * init.perDock;
     this.cargo = init.cargo;
     this.label = init.label;
+    this.isPickup = init.isPickup ?? ((): boolean => true);
     this.reservedPerDock = new Array<number>(init.docks).fill(0);
   }
 
-  /** Jednotky na všetkých dockoch rampy (ledger). */
+  /** Jednotky na všetkých dockoch rampy (ledger; náklad na odvoz aj export na prijatie). */
   get stagedCount(): number {
     return this.cargo.countAt(KIND, this.rampId);
   }
@@ -76,10 +87,19 @@ export class DockStaging {
     return this.capacity - this.stagedCount - this.reserved;
   }
 
-  /** Jednotky na docku podľa ledgera (bez alokácie). Dock mimo rozsahu → `ModuleError('invalid_slot')`. */
+  /**
+   * Jednotky na docku **pripravené na kamión** (náklad na odvoz, ledger; bez alokácie). Export na prijatie sa nepočíta
+   * (`intakeAt`). Dock mimo rozsahu → `ModuleError('invalid_slot')`.
+   */
   stagedAt(dock: number): number {
     this.assertDock(dock, 'stagedAt');
-    return this.countOnDock(dock);
+    return this.countOnDock(dock, true);
+  }
+
+  /** Jednotky na docku, ktoré čakajú na vozidlo do skladu (export práve vyložený kamiónom; ledger, bez alokácie). */
+  intakeAt(dock: number): number {
+    this.assertDock(dock, 'intakeAt');
+    return this.countOnDock(dock, false);
   }
 
   /** Rezervácie na docku. Dock mimo rozsahu → `ModuleError('invalid_slot')`. */
@@ -91,34 +111,34 @@ export class DockStaging {
   /** `perDock − staged − reserved` na docku — koľko ďalších `reserve(dock)` uspeje. */
   freeAt(dock: number): number {
     this.assertDock(dock, 'freeAt');
-    return this.perDock - this.countOnDock(dock) - this.reservedPerDock[dock];
+    return this.perDock - this.countOnDock(dock, undefined) - this.reservedPerDock[dock];
   }
 
   /** Najnižší dock s voľným miestom, alebo −1. */
   firstFreeDock(): number {
     for (let dock = 0; dock < this.docks; dock++) {
-      if (this.perDock - this.countOnDock(dock) - this.reservedPerDock[dock] > 0) return dock;
+      if (this.perDock - this.countOnDock(dock, undefined) - this.reservedPerDock[dock] > 0) return dock;
     }
     return -1;
   }
 
-  /** Najstaršia jednotka na docku (FIFO podľa ledgera) bez alokácie; prázdny dock → `undefined`. */
+  /** Najstaršia jednotka **na odvoz** na docku (FIFO podľa ledgera) bez alokácie; dock bez nej → `undefined`. */
   firstUnitAt(dock: number): EntityId | undefined {
     this.assertDock(dock, 'firstUnitAt');
     const count = this.cargo.countAt(KIND, this.rampId);
     for (let i = 0; i < count; i++) {
       const unitId = this.cargo.unitAtIndex(KIND, this.rampId, i);
-      if (unitId !== undefined && this.dockOfUnit(unitId) === dock) return unitId;
+      if (unitId !== undefined && this.dockOfUnit(unitId) === dock && this.pickupMatches(unitId, true)) return unitId;
     }
     return undefined;
   }
 
-  /** Jednotky na docku v poradí príchodu (kópia). */
+  /** Jednotky na docku **na odvoz** v poradí príchodu (kópia). */
   unitsAt(dock: number): readonly EntityId[] {
     this.assertDock(dock, 'unitsAt');
     const units: EntityId[] = [];
     for (const unitId of this.cargo.unitsAt(KIND, this.rampId)) {
-      if (this.dockOfUnit(unitId) === dock) units.push(unitId);
+      if (this.dockOfUnit(unitId) === dock && this.pickupMatches(unitId, true)) units.push(unitId);
     }
     return units;
   }
@@ -126,7 +146,7 @@ export class DockStaging {
   /** Rezervuje miesto na docku. Chyby: mimo rozsahu → `invalid_slot`, dock bez voľného miesta → `no_free_slot`. */
   reserve(dock: number): void {
     this.assertDock(dock, 'reserve');
-    if (this.perDock - this.countOnDock(dock) - this.reservedPerDock[dock] <= 0) {
+    if (this.perDock - this.countOnDock(dock, undefined) - this.reservedPerDock[dock] <= 0) {
       throw new ModuleError('no_free_slot', `${this.label}.reserve: dock ${String(dock)} nemá voľné miesto (${String(this.perDock)} na dock)`);
     }
     this.reservedPerDock[dock] += 1;
@@ -184,7 +204,7 @@ export class DockStaging {
       }
     }
     for (let dock = 0; dock < this.docks; dock++) {
-      const staged = this.countOnDock(dock);
+      const staged = this.countOnDock(dock, undefined);
       const reserved = this.reservedPerDock[dock];
       if (staged + reserved > this.perDock) {
         return `${this.label}: dock ${String(dock)}: pripravené ${String(staged)} + rezervované ${String(reserved)} > ${String(this.perDock)}`;
@@ -199,12 +219,20 @@ export class DockStaging {
     return location?.kind === KIND && location.rampId === this.rampId ? location.dock : -1;
   }
 
-  private countOnDock(dock: number): number {
+  /** Jednotka `unitId` je náklad na odvoz práve vtedy, keď `wanted` (a export na prijatie práve vtedy, keď `!wanted`). */
+  private pickupMatches(unitId: EntityId, wanted: boolean): boolean {
+    const unit = this.cargo.get(unitId);
+    return unit !== undefined && this.isPickup(unit) === wanted;
+  }
+
+  /** Jednotky na docku: `pickup` `true` = len náklad na odvoz, `false` = len export na prijatie, `undefined` = všetky. */
+  private countOnDock(dock: number, pickup: boolean | undefined): number {
     const count = this.cargo.countAt(KIND, this.rampId);
     let onDock = 0;
     for (let i = 0; i < count; i++) {
       const unitId = this.cargo.unitAtIndex(KIND, this.rampId, i);
-      if (unitId !== undefined && this.dockOfUnit(unitId) === dock) onDock += 1;
+      if (unitId === undefined || this.dockOfUnit(unitId) !== dock) continue;
+      if (pickup === undefined || this.pickupMatches(unitId, pickup)) onDock += 1;
     }
     return onDock;
   }

@@ -25,6 +25,7 @@ import type { LandsideRoute } from '../world/landside';
 import type { World } from '../world/world';
 import type { DockSupply } from './dock-supply';
 import { Truck } from './truck';
+import type { TruckMission } from './truck-fsm';
 import { enterTruckNoPath, faceRoute, planTruckRoute } from './truck-trip';
 
 /**
@@ -42,7 +43,7 @@ export function truckDefFor(defs: DefRegistry, category: CargoCategory): Readonl
 }
 
 /** Prvá trasa rampy, ktorej stojisko má voľný bay; žiadna → `undefined`. */
-function routeWithFreeBay(world: World, ramp: LoadingRamp): LandsideRoute | undefined {
+export function routeWithFreeBay(world: World, ramp: LoadingRamp): LandsideRoute | undefined {
   for (const route of world.landsideRoutes(ramp)) {
     const area = world.modules.get(route.waitingAreaId);
     if (area instanceof WaitingArea && area.freeBays > 0) return route;
@@ -61,9 +62,19 @@ function reportNoWaitingBay(world: World, ramp: LoadingRamp): void {
 /**
  * Nový kamión na portáli pre dock `dock` rampy s trasou `route` (stojisko má voľný bay a dock náklad bez nároku — overil
  * volajúci): `World.addTruck` (nárok na `capacityUnits` jednotiek docku a bay), `TruckSpawned`, plán cesty k vstupnej
- * strane brány (bez cesty hneď `no_path`).
+ * strane brány (bez cesty hneď `no_path`). Kamión s misiou `delivery` (export, ADR-032) nemá nárok na náklad docku;
+ * `loadCargo` (voláno hneď po `World.addTruck`) naň položí jednotku `in_truck` (`CargoLedger.create`).
  */
-export function spawnTruck(world: World, ramp: LoadingRamp, dock: number, route: LandsideRoute, def: Readonly<TruckDef>, portal: number): Truck {
+export function spawnTruck(
+  world: World,
+  ramp: LoadingRamp,
+  dock: number,
+  route: LandsideRoute,
+  def: Readonly<TruckDef>,
+  portal: number,
+  mission: TruckMission = 'pickup',
+  loadCargo?: (truck: Truck) => void,
+): Truck {
   const area = world.modules.get(route.waitingAreaId);
   const bay = area instanceof WaitingArea ? area.firstFreeBay() : -1;
   const position = carrierPosition(portal, undefined, 0, world.grid.width);
@@ -71,6 +82,7 @@ export function spawnTruck(world: World, ramp: LoadingRamp, dock: number, route:
     id: world.ids.next() as EntityId,
     def,
     state: 'to_gate',
+    mission,
     x: position.x,
     y: position.y,
     heading: SPAWN_HEADING_FALLBACK,
@@ -82,6 +94,7 @@ export function spawnTruck(world: World, ramp: LoadingRamp, dock: number, route:
     bay,
   });
   world.addTruck(truck);
+  loadCargo?.(truck);
   world.events.emit({ type: 'TruckSpawned', truckId: truck.id, rampId: ramp.id, dock });
   if (planTruckRoute(world, truck, 'to_gate')) faceRoute(world, truck);
   else enterTruckNoPath(world, truck);

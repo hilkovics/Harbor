@@ -12,9 +12,9 @@ export {
 } from './contract-fsm';
 export type { ContractKind, ContractOutbound, ContractState, ContractStateTraits, ContractTransitions, FieldPresence } from './contract-fsm';
 export { Contract, ExportContract, ImportContract, SERIALIZED_BOOKING_KEYS, SERIALIZED_CONTRACT_KEYS } from './contract';
-export type { ContractTerms, ExportBooking, ExportContractTerms, SerializedBooking, SerializedContract } from './contract';
+export type { AcceptContext, ContractTerms, ExportBooking, ExportContractTerms, SerializedBooking, SerializedContract } from './contract';
 export { ContractBook } from './contract-book';
-export type { ContractBookEnv, ContractBookState, VoyageView } from './contract-book';
+export type { ContractBookEnv, ContractBookState, OfferedGroups, VoyageView } from './contract-book';
 export { ContractError } from './contract-error';
 export type { ContractErrorCode } from './contract-error';
 export {
@@ -28,5 +28,5 @@ export {
   urgencyBp,
   wholePeriods,
 } from './contract-terms';
-export { capacityHintFrom, capacityHintOf, drawOffer, eligibleTemplates, offerVolumeUnits, portCapacityOf } from './contract-pool';
-export type { OfferContext, PortCapacity } from './contract-pool';
+export { TEMPLATE_GROUP_KINDS, capacityHintFrom, capacityHintOf, drawBookingOffer, drawOffer, eligibleTemplates, offerVolumeUnits, portCapacityOf } from './contract-pool';
+export type { OfferContext, PortCapacity, TemplateGroup } from './contract-pool';

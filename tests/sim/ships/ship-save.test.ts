@@ -56,7 +56,8 @@ function waitingAt(world: World, classId: string, index: number, units: number):
     state: 'waiting_anchorage',
     x: cell.x + 0.5,
     y: cell.y + 0.5,
-    heading: 270,
+    // T6D-03: loď na rejde stojí s jednotným kurzom mapy (`anchorageHeading`), nie s kurzom posledného úseku trasy.
+    heading: FLEET_MAP.anchorageHeading,
     anchorageIndex: index,
   });
   world.addShip(ship);

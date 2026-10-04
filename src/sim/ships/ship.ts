@@ -5,11 +5,11 @@
  * - Poloha `x`, `y` = stred lode v bunkách (float); stred bunky (cx, cy) = (cx + 0.5, cy + 0.5). Loď v `arriving`
  *   stojí na `seaLane[0]`, ale je pred vstupom na mapu (nezaberá bunky).
  * - `heading` = kardinálny kurz (0 = predok na sever, v smere hodinových ručičiek) — nikdy nie uhol z trigonometrie.
- * - `berthIds` = kotviská, ktoré loď drží (v poradí po pobreží): od rezervácie (pri vstupe `inbound`, na konci dráhy
- *   alebo na anchorage) po koniec `undocking` na konci dráhy (`SHIP_STATE_TRAITS.berths`).
- * - `anchorageIndex` = index bunky `map.anchorage`, ktorú loď drží od rezervácie (pri vstupe `inbound`) po odchod
- *   ku kotvisku (`SHIP_STATE_TRAITS.anchorage`; v `waiting_anchorage` vždy — loď bez cieľa zo save v5 presunie parser
- *   pred vstup, ADR-029 addendum).
+ * - `berthIds` = kotviská, ktoré loď drží (v poradí po pobreží): od rezervácie (pri vstupe `inbound`, alebo z anchorage pri
+ *   `berthing`) po koniec `undocking` na konci dráhy (`SHIP_STATE_TRAITS.berths`).
+ * - `anchorageIndex` = index bunky `map.anchorage`, ktorú loď drží od pridelenia pri vstupe (`arriving → waiting_anchorage`,
+ *   loď k nej pláva priamo; T6D-03) po odchod ku kotvisku (`SHIP_STATE_TRAITS.anchorage`; v `waiting_anchorage` vždy — loď
+ *   bez cieľa zo save v5 a loď s rejdou zo save spred v9 presunie parser pred vstup, ADR-029 addendum).
  * - `route` = trasa aktuálneho stavu (body na vode; ADR-029 — trasa cez prístav vzniká A* po vode pri rezervácii
  *   a ukladá sa, lebo závisí od polohy ostatných lodí v tej chvíli), `waypointIndex` = index nasledujúceho bodu.
  * - `lashingTicksLeft` = odpočet lashingu a papierov v stave `lashing` (≥ 1), inak 0 (ADR-032 bod 11, WorldState v7).

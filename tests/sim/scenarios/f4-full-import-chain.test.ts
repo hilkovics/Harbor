@@ -506,10 +506,10 @@ describe('save/load uprostred reťazca: obnovený svet pokračuje rovnako ako p�
     expect(savedTrucks.some((truck) => truck.progress > 0)).toBe(true);
   });
 
-  it('uložený stav je verzia 8 s poľom trucks a čistým JSON-om (JSON.parse(JSON.stringify(s)) sa rovná s)', () => {
+  it('uložený stav je verzia 9 s poľom trucks a čistým JSON-om (JSON.parse(JSON.stringify(s)) sa rovná s)', () => {
     expect(forks).toHaveLength(PROBES.length);
     for (const fork of forks) {
-      expect(fork.saved.version, fork.name).toBe(8);
+      expect(fork.saved.version, fork.name).toBe(9);
       const trucks = (fork.saved as unknown as Record<string, unknown>)['trucks'];
       expect(Array.isArray(trucks), `${fork.name}: trucks`).toBe(true);
       expect((trucks as unknown[]).length, `${fork.name}: počet kamiónov v save`).toBe(fork.trucks.length);

@@ -30,10 +30,13 @@ const ROUTE3 = [
   { x: 44.5, y: 7.5, heading: 270 as const },
 ];
 
-/** Karta T02-05 + ADR-029 (`arriving` → `inbound`) + ADR-032 (`lashing`): presne tieto prechody, nič iné. */
+/**
+ * Karta T02-05 + ADR-029 (`arriving` → `inbound`) + ADR-032 (`lashing`) + T6D-03 (`arriving` → `waiting_anchorage`: loď bez
+ * voľného kotviska pláva na rejdu priamo zo vstupu, nie po sea lane): presne tieto prechody, nič iné.
+ */
 const EXPECTED: readonly (readonly [ShipState, ShipState])[] = [
   ['arriving', 'inbound'],
-  ['inbound', 'waiting_anchorage'],
+  ['arriving', 'waiting_anchorage'],
   ['inbound', 'berthing'],
   ['waiting_anchorage', 'berthing'],
   ['berthing', 'docked'],
@@ -58,12 +61,13 @@ describe('SHIP_TRANSITIONS', () => {
 });
 
 describe('SHIP_STATE_TRAITS', () => {
-  it('kotviská: vždy berthing, docked a lashing, smie inbound (rezervácia pri vstupe) a undocking (do konca dráhy); anchorage smie inbound, vždy waiting_anchorage (T5B-04b); vodu pred kotviskom blokuje berthing/docked/lashing/undocking', () => {
+  it('kotviská: vždy inbound (rezervácia pri vstupe), berthing, docked a lashing, smie undocking (do konca dráhy); anchorage vždy a len waiting_anchorage (T6D-03); vodu pred kotviskom blokuje berthing/docked/lashing/undocking', () => {
     const where = (key: 'blocksBerthWater' | 'moored' | 'onMap' | 'lashes'): ShipState[] => SHIP_STATES.filter((state) => SHIP_STATE_TRAITS[state][key]);
     const holding = (key: 'berths' | 'anchorage', value: string): ShipState[] => SHIP_STATES.filter((state) => SHIP_STATE_TRAITS[state][key] === value);
-    expect(holding('berths', 'always')).toEqual(['berthing', 'docked', 'lashing']);
-    expect(holding('berths', 'optional')).toEqual(['inbound', 'undocking']);
-    expect(holding('anchorage', 'optional')).toEqual(['inbound']);
+    expect(holding('berths', 'always')).toEqual(['inbound', 'berthing', 'docked', 'lashing']);
+    expect(holding('berths', 'optional')).toEqual(['undocking']);
+    // T6D-03: loď bez kotviska na sea lane nepláva — anchorage drží len waiting_anchorage (od vstupu na mapu).
+    expect(holding('anchorage', 'optional')).toEqual([]);
     // Loď bez anchorage zo save v5 (čakala na konci dráhy) parser presunie pred vstup (ADR-029 addendum).
     expect(holding('anchorage', 'always')).toEqual(['waiting_anchorage']);
     expect(where('blocksBerthWater')).toEqual(['berthing', 'docked', 'lashing', 'undocking']);
@@ -78,8 +82,8 @@ describe('SHIP_STATE_TRAITS', () => {
 });
 
 describe('Ship.transition', () => {
-  it('prejde celý životný cyklus cez waiting_anchorage a každý prechod začne novú trasu (waypointIndex 0)', () => {
-    const s = ship();
+  it('prejde celý životný cyklus cez waiting_anchorage (priamo z arriving, T6D-03) a každý prechod začne novú trasu (waypointIndex 0)', () => {
+    const s = ship({ state: 'arriving' });
     for (const to of ['waiting_anchorage', 'berthing', 'docked', 'undocking', 'outbound', 'despawned'] as const) {
       s.waypointIndex = 3;
       s.transition(to);
@@ -98,6 +102,7 @@ describe('Ship.transition', () => {
     ['inbound', 'docked'],
     ['docked', 'outbound'],
     ['berthing', 'waiting_anchorage'],
+    ['inbound', 'waiting_anchorage'],
     ['outbound', 'inbound'],
     ['despawned', 'inbound'],
     ['arriving', 'berthing'],

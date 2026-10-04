@@ -24,6 +24,7 @@ export type {
   WorldStateV5,
   WorldStateV6,
   WorldStateV7,
+  WorldStateV8,
   LegacyCargoUnitV6,
   LegacyCargoUnitV7,
   LegacyContractV7,
@@ -50,7 +51,10 @@ export {
   WORLD_STATE_V7_KEYS,
   WORLD_STATE_V8,
   WORLD_STATE_V8_KEYS,
+  WORLD_STATE_V9,
+  WORLD_STATE_V9_KEYS,
   migrateWorldState,
+  savesDirectAnchorage,
   savesShipRoutes,
 } from './migrate';
 export { WorldInvariantError, findWorldViolation } from './world-invariants';

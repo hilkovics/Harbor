@@ -179,21 +179,25 @@ const SHIP_ARRIVING_AND_ANCHORAGE: Situation = {
     state.ships.some((ship) => ship.state === 'docked' && ship.berthIds.length > 0),
 };
 
+/** Loď pláva na svoju anchorage (`waiting_anchorage`, trasa ešte nie je dokončená) — od T6D-03 priamo zo vstupu, nie po sea lane. */
+const sailingToAnchorage = (ship: { readonly state: string; readonly waypointIndex: number; readonly route: readonly unknown[] }): boolean =>
+  ship.state === 'waiting_anchorage' && ship.waypointIndex < ship.route.length;
+
 const SHIP_SAILING_TO_ANCHORAGE: Situation = {
   id: 'ship_sailing_to_anchorage',
-  title: 'loď pláva po sea lane na rezervovanú anchorage (inbound) popri lodi na anchorage, lodi pri kotvisku a lodi pred vstupom',
+  title: 'loď pláva priamo na rejdu (waiting_anchorage, trasa nedokončená; T6D-03) popri lodi na rejde v pokoji, lodi pri kotvisku a lodi pred vstupom',
   match: (world) => {
     const ships = [...world.ships.values()];
     return (
-      ships.some((ship) => ship.state === 'inbound' && ship.anchorageIndex !== null) &&
-      ships.some((ship) => ship.state === 'waiting_anchorage') &&
+      ships.some(sailingToAnchorage) &&
+      ships.some((ship) => ship.state === 'waiting_anchorage' && !sailingToAnchorage(ship)) &&
       ships.some((ship) => ship.state === 'docked') &&
       ships.some((ship) => ship.state === 'arriving')
     );
   },
   inSave: (state) =>
-    state.ships.some((ship) => ship.state === 'inbound' && ship.anchorageIndex !== null && ship.route.length > 0) &&
-    state.ships.some((ship) => ship.state === 'waiting_anchorage') &&
+    state.ships.some((ship) => sailingToAnchorage(ship) && ship.anchorageIndex !== null) &&
+    state.ships.some((ship) => ship.state === 'waiting_anchorage' && !sailingToAnchorage(ship)) &&
     state.ships.some((ship) => ship.state === 'arriving'),
 };
 
@@ -413,7 +417,7 @@ describeRoundtrips(
 );
 
 describeRoundtrips(
-  'roundtrip uprostred multi_ship_queue (jedno kotvisko, päť lodí: arriving, inbound na anchorage, waiting_anchorage, odchod)',
+  'roundtrip uprostred multi_ship_queue (jedno kotvisko, päť lodí: arriving, plavba na rejdu, waiting_anchorage, odchod)',
   'multi_ship_queue',
   [SHIP_ARRIVING_AND_ANCHORAGE, SHIP_SAILING_TO_ANCHORAGE, SHIP_UNDOCKING_WITH_QUEUE, SHIP_BERTHING_WHILE_OUTBOUND],
   6_000,

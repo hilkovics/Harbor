@@ -320,9 +320,9 @@ describe('scenár vertical_slice: beh 60 000 tickov', () => {
     expect(forks.map((fork) => fork.name).sort()).toEqual(PROBES.map((probe) => probe.name).sort());
   });
 
-  it('uložený stav je verzia 8 a čistý JSON; obnova dá rovnaký stav, kontrakty a ekonomiku v každej fáze', () => {
+  it('uložený stav je verzia 9 a čistý JSON; obnova dá rovnaký stav, kontrakty a ekonomiku v každej fáze', () => {
     for (const fork of forks) {
-      expect(fork.saved.version, fork.name).toBe(8);
+      expect(fork.saved.version, fork.name).toBe(9);
       expect(JSON.parse(JSON.stringify(fork.saved)), fork.name).toEqual(fork.saved);
       const clone = World.deserialize(DEFS, MAP, JSON.parse(JSON.stringify(fork.saved)) as WorldState);
       expect(stateHash(clone), fork.name).toBe(fork.hash);

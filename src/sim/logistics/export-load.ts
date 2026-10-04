@@ -84,8 +84,14 @@ function apronTarget(world: World, berth: BerthModule, ship: Ship): CargoLocatio
   return { kind: 'on_apron', berthId: berth.id, slot: berth.apron.reserve() };
 }
 
-/** Cieľ nakládky v režime `under_hook`: hák žeriava s najmenším počtom jobov v obehu (v rámci limitu kotviska), inak `undefined`. */
+/**
+ * Cieľ nakládky v režime `under_hook`: hák žeriava s najmenším počtom jobov nakládky v obehu, inak `undefined`. Kým má loď aj import
+ * na vykládku (`bothDirections`), má každý žeriav najviac jeden job nakládky v obehu — vozidlo s exportom čaká pod hákom popri
+ * vozidlách s importom, takže žeriav robí dual cycle a nakládka nevyčerpá vozidlá vykládky. Bez importu je limit ako pri apron:
+ * `apronSlots` jobov na kotvisko (`apronDirectionCap`).
+ */
 function hookTarget(world: World, berth: BerthModule, ship: Ship): CargoLocation | undefined {
+  const paired = bothDirections(world, ship);
   let best: CraneModule | undefined;
   let bestJobs = Infinity;
   let total = 0;
@@ -99,7 +105,7 @@ function hookTarget(world: World, berth: BerthModule, ship: Ship): CargoLocation
       bestJobs = jobs;
     }
   }
-  if (best === undefined || total >= apronDirectionCap(berth, bothDirections(world, ship))) return undefined;
+  if (best === undefined || (paired ? bestJobs >= 1 : total >= apronDirectionCap(berth, false))) return undefined;
   return { kind: 'in_crane', craneId: best.id };
 }
 

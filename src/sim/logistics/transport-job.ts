@@ -95,10 +95,11 @@ export const JOB_ROUTES: readonly JobRoute[] = Object.freeze([
   // Nakládka exportu na apron (F6a, ADR-032 bod 9): vozidlo vezie jednotku zo skladu na rezervovaný slot apronu. Priorita 1 ako
   // outbound: vykládka lode (inbound a hák, priorita 0) má prednosť, takže import nikdy nečaká za frontou nakládky.
   Object.freeze({ from: 'in_storage', to: 'on_apron', priority: 1 } as const),
-  // Odovzdávanie pod hákom (F6a, ADR-033): vykládka — vozidlo vezme jednotku priamo od žeriava (priorita 0, žeriav nesmie čakať
-  // pri jednotke v ruke a vozidlá viazané na nakládku by ho zablokovali); nakládka — vozidlo s jednotkou čaká pod hákom (priorita 1).
+  // Odovzdávanie pod hákom (F6a, ADR-033): vykládka — vozidlo vezme jednotku priamo od žeriava; nakládka — vozidlo s jednotkou čaká
+  // pod hákom, kým ju žeriav zdvihne. Obe priorita 0: kým loď vykladá, dispatcher drží najviac jeden job nakládky na žeriav
+  // (`logistics/export-load.ts`), takže export a import sa v obehu párujú (dual cycle) a nakládka nevyčerpá vozidlá.
   Object.freeze({ from: 'in_crane', to: 'in_storage', priority: 0 } as const),
-  Object.freeze({ from: 'in_storage', to: 'in_crane', priority: 1 } as const),
+  Object.freeze({ from: 'in_storage', to: 'in_crane', priority: 0 } as const),
 ]);
 
 /** Počet úrovní priority (`max(priority) + 1`) — koľko prechodov jobmi robí priradenie vozidiel. */

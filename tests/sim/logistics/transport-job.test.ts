@@ -74,14 +74,14 @@ describe('stavy jobu a tabuľky', () => {
     expect(Object.isFrozen(JOB_STATE_TRAITS)).toBe(true);
   });
 
-  it('JOB_ROUTES: inbound apron / hák → sklad (priorita 0) pred outbound, prijatím exportu a nakládkou (priorita 1); isJobState; dôvody zrušenia', () => {
+  it('JOB_ROUTES: inbound apron / hák → sklad a nakládka pod hákom (priorita 0) pred outbound, prijatím exportu a nakládkou na apron (priorita 1); isJobState; dôvody zrušenia', () => {
     expect(JOB_ROUTES).toEqual([
       { from: 'on_apron', to: 'in_storage', priority: 0 },
       { from: 'in_storage', to: 'at_ramp', priority: 1 },
       { from: 'at_ramp', to: 'in_storage', priority: 1 },
       { from: 'in_storage', to: 'on_apron', priority: 1 },
       { from: 'in_crane', to: 'in_storage', priority: 0 },
-      { from: 'in_storage', to: 'in_crane', priority: 1 },
+      { from: 'in_storage', to: 'in_crane', priority: 0 },
     ]);
     expect(JOB_PRIORITY_LEVELS).toBe(2);
     expect(isJobRoute('on_apron', 'in_storage')).toBe(true);
@@ -110,9 +110,9 @@ describe('TransportJob — hák žeriava a nakládka (F6a, ADR-033)', () => {
     expect(job.toState()).toEqual({ id: 30, unitIds: [11], from: HOOK, to: TO, createdTick: 1 });
   });
 
-  it('nakládka pod hákom: cieľ in_crane (toModuleId = kotvisko), priorita 1; nakládka na apron: slot apronu', () => {
+  it('nakládka pod hákom: cieľ in_crane (toModuleId = kotvisko), priorita 0; nakládka na apron: slot apronu, priorita 1', () => {
     const hook = new TransportJob({ id: id(31), unitIds: [id(11)], from: TO, to: HOOK, toModuleId: id(1), createdTick: 1 });
-    expect([hook.toModuleId, hook.priority, hook.fromModuleId]).toEqual([1, 1, 4]);
+    expect([hook.toModuleId, hook.priority, hook.fromModuleId]).toEqual([1, 0, 4]);
     const apron = new TransportJob({ id: id(32), unitIds: [id(11)], from: TO, to: FROM, createdTick: 1 });
     expect([apron.toModuleId, apron.priority]).toEqual([1, 1]);
   });

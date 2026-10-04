@@ -98,10 +98,13 @@ export interface ShipSpriteEntry {
   readonly deck?: ShipDeckEntry;
 }
 
-/** Sprity vozidla v `entities.<defId>`: footprint (`w` = šírka, `h` = dĺžka, predok hore) a stavy `empty` / `loaded`. */
+/**
+ * Sprity vozidla v `entities.<defId>`: footprint (`w` = šírka, `h` = dĺžka, predok hore) a stavy `empty` / `loaded`; F6c: voliteľný stav
+ * `carries_empty` = vozidlo vezie prázdny (sivý) kontajner (`direction: 'empty'`), bez neho sa použije `loaded`.
+ */
 export interface VehicleSpriteEntry {
   readonly footprint: CellSize;
-  readonly states: { readonly empty: string; readonly loaded: string };
+  readonly states: { readonly empty: string; readonly loaded: string; readonly carries_empty?: string };
 }
 
 /** Sprite nákladu v `cargo.<typeId>`: rozmer v px zdrojového SVG. */
@@ -218,16 +221,16 @@ export const LOADED_SHIP_VARIANTS: readonly string[] = ['container'];
 /**
  * Moduly so stavmi (`states`), ktorých sprity sa načítajú do atlasu. Sklady majú po päť SVG (`fill00…fill100`);
  * `container_yard_large` (8×8, 5 stavov) by pri rasterizácii 128 px na bunku zabral desiatky MB, ktoré F3 nepoužije,
- * preto sa berie iba to, čo sa dá postaviť. S novým skladom (silo, nádrže…) pribudne jeho id sem.
+ * preto sa berie iba to, čo sa dá postaviť; F6c pridáva depo prázdnych (4×4, ako malý dvor). S novým skladom (silo, nádrže…) pribudne jeho id sem.
  */
-export const LOADED_STATE_MODULES: readonly string[] = ['container_yard_small'];
+export const LOADED_STATE_MODULES: readonly string[] = ['container_yard_small', 'empty_depot'];
 
 /**
- * Vozidlá a kamióny, ktorých sprity (`states.empty`, `states.loaded`) sa načítajú do atlasu — `straddle_carrier` (F3)
- * a `truck_container` (F4). Ostatné (AGV, vysokozdvižný vozík, ďalšie kamióny, vlaky) pribudnú so svojimi fázami;
+ * Vozidlá a kamióny, ktorých sprity (`states.empty`, `states.loaded`, voliteľne `states.carries_empty`) sa načítajú do atlasu —
+ * `straddle_carrier` (F3), `truck_container` (F4) a `empty_handler` (F6c). Ostatné (AGV, vysokozdvižný vozík, ďalšie kamióny, vlaky) pribudnú so svojimi fázami;
  * do vtedy nakreslí `VehicleView` fallback z tokenov.
  */
-export const LOADED_VEHICLES: readonly string[] = ['straddle_carrier', 'truck_container'];
+export const LOADED_VEHICLES: readonly string[] = ['straddle_carrier', 'truck_container', 'empty_handler'];
 
 /**
  * Súbory (relatívne k `assets/`), ktoré atlas načíta pre entity sveta: sprity modulov (`file` a `parts.*.file`),
@@ -258,6 +261,7 @@ export function entitySpriteFiles(): string[] {
     if (entry !== undefined) {
       files.add(entry.states.empty);
       files.add(entry.states.loaded);
+      if (entry.states.carries_empty !== undefined) files.add(entry.states.carries_empty);
     }
   }
   for (const entry of Object.values(CARGO_SPRITES)) files.add(entry.file);

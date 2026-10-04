@@ -99,8 +99,8 @@ describe('záznamy manifestu pre entity', () => {
 describe('entitySpriteFiles (čo načíta atlas)', () => {
   const files = entitySpriteFiles();
 
-  it('každý súbor sa dá previesť na URL (je medzi zabalenými SVG)', () => {
-    for (const file of files) expect(assetUrl(file), file).toMatch(/\.svg/);
+  it('každý súbor sa dá previesť na URL (je medzi zabalenými SVG; malý súbor Vite vloží ako data URL, ktorú Pixi tiež načíta)', () => {
+    for (const file of files) expect(assetUrl(file), file).toMatch(/\.svg|^data:image\/svg\+xml/);
   });
 
   it('obsahuje berth, časti žeriava, kontajner, odznaky a container varianty feeder / handy', () => {
@@ -145,15 +145,19 @@ describe('entitySpriteFiles (čo načíta atlas)', () => {
   });
 
   it('stavy skladov a vozidlá sa berú len z povoleného zoznamu (veľké sklady a ostatné vozidlá sa nerasterizujú)', () => {
-    expect(LOADED_STATE_MODULES).toEqual(['container_yard_small']);
-    expect(LOADED_VEHICLES).toEqual(['straddle_carrier', 'truck_container']);
+    expect(LOADED_STATE_MODULES).toEqual(['container_yard_small', 'empty_depot']);
+    expect(LOADED_VEHICLES).toEqual(['straddle_carrier', 'truck_container', 'empty_handler']);
     const fillFiles = files.filter((file) => /_fill\d+\.svg$/.test(file));
-    expect(fillFiles).toHaveLength(5);
-    for (const file of fillFiles) expect(file).toMatch(/^modules\/container_yard_small_fill\d+\.svg$/);
+    expect(fillFiles).toHaveLength(10);
+    for (const file of fillFiles) expect(file).toMatch(/^modules\/(container_yard_small|empty_depot)_fill\d+\.svg$/);
     const vehicleFiles = files.filter((file) => /^entities\/(?!ship_)/.test(file));
     expect(vehicleFiles.sort()).toEqual([
+      'entities/empty_handler_empty.svg',
+      'entities/empty_handler_loaded.svg',
+      'entities/straddle_carrier_carries_empty.svg',
       'entities/straddle_carrier_empty.svg',
       'entities/straddle_carrier_loaded.svg',
+      'entities/truck_container_carries_empty.svg',
       'entities/truck_container_empty.svg',
       'entities/truck_container_loaded.svg',
     ]);

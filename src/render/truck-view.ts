@@ -30,8 +30,8 @@ export const TRUCK_STYLE: VehicleViewStyle = {
 };
 
 /** Súbor sprite kamióna (relatívne k `assets/`), alebo `undefined`, ak def nie je kamión v manifeste. */
-export function truckSpriteFile(defId: string, loaded: boolean): string | undefined {
-  return vehicleSpriteFile(defId, loaded);
+export function truckSpriteFile(defId: string, loaded: boolean, carriesEmpty = false): string | undefined {
+  return vehicleSpriteFile(defId, loaded, carriesEmpty);
 }
 
 /** Zhoda statickej časti VM (kým sa nezmení, view sa nevytvára nanovo): poloha a kurz sa menia každý tick, def nie. */

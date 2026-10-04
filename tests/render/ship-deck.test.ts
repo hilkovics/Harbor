@@ -135,7 +135,7 @@ describe('deckFill (podiel zaplnenia lode → obsadené miesta)', () => {
       expect(fill.importSlots + fill.exportSlots).toBe(Math.min(slots, imports + exports));
       return;
     }
-    expect(fill).toEqual({ importSlots: expectedImport, exportSlots: expectedExport });
+    expect(fill).toEqual({ importSlots: expectedImport, exportSlots: expectedExport, emptySlots: 0 });
   });
 
   it('smer s jednotkami má vždy aspoň jedno miesto, ak sa zmestia obe; súčet nikdy neprekročí počet miest', () => {
@@ -153,18 +153,18 @@ describe('deckFill (podiel zaplnenia lode → obsadené miesta)', () => {
   });
 
   it('záporné a desatinné vstupy sa orežú (nikdy záporný počet miest)', () => {
-    expect(deckFill({ import: -3, export: 0 }, 120, 6)).toEqual({ importSlots: 0, exportSlots: 0 });
-    expect(deckFill({ import: 2.9, export: 0 }, 120, 6)).toEqual({ importSlots: 1, exportSlots: 0 });
-    expect(deckFill({ import: 5, export: 5 }, 120, 0)).toEqual({ importSlots: 0, exportSlots: 0 });
+    expect(deckFill({ import: -3, export: 0 }, 120, 6)).toEqual({ importSlots: 0, exportSlots: 0, emptySlots: 0 });
+    expect(deckFill({ import: 2.9, export: 0 }, 120, 6)).toEqual({ importSlots: 1, exportSlots: 0, emptySlots: 0 });
+    expect(deckFill({ import: 5, export: 5 }, 120, 0)).toEqual({ importSlots: 0, exportSlots: 0, emptySlots: 0 });
   });
 });
 
 describe('deckDirections', () => {
   it('import od predku, export od zadku, medzi nimi prázdne miesta', () => {
-    expect(deckDirections({ importSlots: 2, exportSlots: 1 }, 6)).toEqual(['import', 'import', null, null, null, 'export']);
-    expect(deckDirections({ importSlots: 0, exportSlots: 3 }, 6)).toEqual([null, null, null, 'export', 'export', 'export']);
-    expect(deckDirections({ importSlots: 3, exportSlots: 3 }, 6)).toEqual(['import', 'import', 'import', 'export', 'export', 'export']);
-    expect(deckDirections({ importSlots: 0, exportSlots: 0 }, 2)).toEqual([null, null]);
+    expect(deckDirections({ importSlots: 2, exportSlots: 1, emptySlots: 0 }, 6)).toEqual(['import', 'import', null, null, null, 'export']);
+    expect(deckDirections({ importSlots: 0, exportSlots: 3, emptySlots: 0 }, 6)).toEqual([null, null, null, 'export', 'export', 'export']);
+    expect(deckDirections({ importSlots: 3, exportSlots: 3, emptySlots: 0 }, 6)).toEqual(['import', 'import', 'import', 'export', 'export', 'export']);
+    expect(deckDirections({ importSlots: 0, exportSlots: 0, emptySlots: 0 }, 2)).toEqual([null, null]);
   });
 });
 
@@ -194,7 +194,7 @@ describe('DeckCargo', () => {
     expect(deck.slotCount).toBe(6);
     expect(deck.directions.every((direction) => direction === null)).toBe(true);
     deck.setCargo({ import: 40, export: 20 }, 120);
-    expect(deck.currentFill).toEqual({ importSlots: 2, exportSlots: 1 });
+    expect(deck.currentFill).toEqual({ importSlots: 2, exportSlots: 1, emptySlots: 0 });
     expect(deck.directions).toEqual(['import', 'import', null, null, null, 'export']);
     const fill = deck.currentFill;
     deck.setCargo({ import: 41, export: 19 }, 120); // rovnaké obsadenie: nič sa nemení
@@ -207,7 +207,7 @@ describe('DeckCargo', () => {
     const deck = new DeckCargo('galeona', { cellPx: CELL, palette: ENTITY_PALETTE });
     deck.setCargo({ import: 10, export: 10 }, 100);
     expect(deck.slotCount).toBe(0);
-    expect(deck.currentFill).toEqual({ importSlots: 0, exportSlots: 0 });
+    expect(deck.currentFill).toEqual({ importSlots: 0, exportSlots: 0, emptySlots: 0 });
   });
 });
 
@@ -232,11 +232,11 @@ describe('ShipView: náklad na palube', () => {
 
   it('počas nakládky a vykládky sa paluba mení s počtom: import ubúda, export pribúda', () => {
     const view = new ShipView(feeder({ cargoSplit: { import: 100, export: 0 } }), deps(new StubTextures()));
-    expect(view.deckCargo?.currentFill).toEqual({ importSlots: 5, exportSlots: 0 });
+    expect(view.deckCargo?.currentFill).toEqual({ importSlots: 5, exportSlots: 0, emptySlots: 0 });
     view.update(feeder({ cargoSplit: { import: 40, export: 20 } }), 1);
-    expect(view.deckCargo?.currentFill).toEqual({ importSlots: 2, exportSlots: 1 });
+    expect(view.deckCargo?.currentFill).toEqual({ importSlots: 2, exportSlots: 1, emptySlots: 0 });
     view.update(feeder({ cargoSplit: { import: 0, export: 90 } }), 1);
-    expect(view.deckCargo?.currentFill).toEqual({ importSlots: 0, exportSlots: 5 });
+    expect(view.deckCargo?.currentFill).toEqual({ importSlots: 0, exportSlots: 5, emptySlots: 0 });
     view.update(feeder({ cargoSplit: { import: 0, export: 0 } }), 1);
     expect(view.deckCargo?.directions.every((direction) => direction === null)).toBe(true);
   });
@@ -270,6 +270,6 @@ describe('ShipView: náklad na palube', () => {
   it('EntityLayer prenesie cargoSplit do view', () => {
     const layer = new EntityLayer(deps(new StubTextures()));
     layer.sync([feeder({ cargoSplit: { import: 40, export: 20 } })], 1);
-    expect(layer.shipView(5)?.deckCargo?.currentFill).toEqual({ importSlots: 2, exportSlots: 1 });
+    expect(layer.shipView(5)?.deckCargo?.currentFill).toEqual({ importSlots: 2, exportSlots: 1, emptySlots: 0 });
   });
 });

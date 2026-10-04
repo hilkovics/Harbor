@@ -22,8 +22,12 @@ export interface ModuleVM {
   /** Rozmery footprintu PO rotácii (bunky). */
   w: number;
   h: number;
-  /** Len berth: kapacita apronu a obsadené sloty (`slot` = index do `sprites.<defId>.apronSlots` v manifeste). */
-  apron?: { capacity: number; units: { slot: number; unitId: number; typeId: string }[] };
+  /**
+   * Len berth: kapacita apronu a obsadené sloty (`slot` = index do `sprites.<defId>.apronSlots` v manifeste). F6c: `empty` = jednotka je
+   * prázdny kontajner (`direction: 'empty'`, kreslí sa farbou `--cargo-empty`); `lineToken` = farba linky jednotky (`LineDef.colorToken`,
+   * `line-blue`, …) — prázdny kontajner nesie pásik v jej farbe. Chýba = F2–F6 správanie (oranžový kontajner). Plní `SimBridge`.
+   */
+  apron?: { capacity: number; units: { slot: number; unitId: number; typeId: string; empty?: boolean; lineToken?: string }[] };
   /**
    * Len sklad (kind `storage`): kapacita, uložené a rezervované jednotky. Sprite skladu sa volí podľa `stored / capacity`
    * (`fillState`); `reserved` renderer nekreslí (je to údaj pre UI).
@@ -33,8 +37,10 @@ export interface ModuleVM {
    * Len sklad (F5b č. 8): posledná operácia s kontajnerom na slote — vozidlo ho uložilo (`put`, `CargoMoved` do `in_storage`),
    * alebo vzalo (`take`, z `in_storage`). `tick` = tick udalosti; renderer podľa trojice (`tick`, `slot`, `kind`) pozná novú
    * operáciu a spustí animáciu portálového žeriavu dvora nad daným slotom. `SimBridge` ju dopĺňa z udalostí (sim ju nevedie).
+   * F6c: `empty` = operácia s prázdnym kontajnerom (`direction: 'empty'`) — kontajner na spreaderi je sivý (`--cargo-empty`); depo
+   * prázdnych (`depot`) drží prázdne vždy, takže ho nepotrebuje.
    */
-  lastStorageOp?: { slot: number; tick: number; kind: 'put' | 'take' };
+  lastStorageOp?: { slot: number; tick: number; kind: 'put' | 'take'; empty?: boolean };
   /**
    * Len moduly s konektormi: má aspoň jeden cestný konektor pripojený k ceste? `false` → odznak `overlay.warning_badge`;
    * `undefined` (F2 VM, modul bez konektorov) → bez odznaku.
@@ -54,9 +60,10 @@ export interface ModuleVM {
   waitingArea?: { bays: number; occupied: readonly boolean[] };
   /**
    * Len nakladacia rampa (kind `ramp`, F4): počet dokov, počet pripravených kontajnerov na každom doku (`staged[i]` patrí
-   * doku `sprites.<defId>.docks[i]`) a či je rampa prevádzková (`false` → odznak `overlay.warning_badge`).
+   * doku `sprites.<defId>.docks[i]`) a či je rampa prevádzková (`false` → odznak `overlay.warning_badge`). F6c: `stagedEmpty[i]` =
+   * koľko z `staged[i]` jednotiek je prázdnych kontajnerov (`direction: 'empty'`; kreslia sa sivé, za plnými); chýba = žiadne.
    */
-  ramp?: { docks: number; staged: readonly number[]; operational: boolean };
+  ramp?: { docks: number; staged: readonly number[]; operational: boolean; stagedEmpty?: readonly number[] };
   /**
    * Jednotky vo VGM hold v tomto module (F6a, ADR-032 bod 7; `world.cargo.get(id).hold !== null`): `count` = všetky takéto
    * jednotky modulu (sklad: `in_storage`, rampa: `at_ramp`, berth: `on_apron`); renderer ukáže odznak `overlay.warning_badge`
@@ -64,6 +71,14 @@ export interface ModuleVM {
    * apronu s jednotkou v hold (odznak pri slote). Chýba / `count` 0 = bez odznaku. Plní `SimBridge`.
    */
   held?: { count: number; docks?: readonly number[]; slots?: readonly number[] };
+  /**
+   * Len depo prázdnych (F6c, `StorageParams.role: 'empty_depot'`, ADR-034): stav kvality uskladnených prázdnych kontajnerov a miesta
+   * opráv. `available` = použiteľné, `damaged` = poškodené čakajúce na opravu, `inRepair` = v oprave (nanajvýš `repairBays`),
+   * `repairBays` = počet miest opravy (`EmptyDepot.repairBays`). Súčty zo `depotCargoSplit(world, moduleId)` cez linky. Renderer ukáže
+   * odznak poškodených (`--cargo-empty-damaged`, počet) a odznak opráv (`--ui-warning`, `inRepair/repairBays`); nulový počet = bez
+   * odznaku. Depo kreslí sivé kontajnery (sprite z manifestu) aj na portálovom žeriave. Plní `SimBridge`.
+   */
+  depot?: { available: number; damaged: number; inRepair: number; repairBays: number };
 }
 
 /** Smer cyklu žeriavu (`CraneModule.cycle`, ADR-032 bod 11): vykládka, nakládka a dve polovice dual cyklu. */
@@ -79,7 +94,7 @@ export interface CraneVM {
   state: 'idle' | 'grabbing' | 'swinging' | 'placing' | 'blocked';
   /** Postup aktuálnej fázy 0..1. */
   progress: number;
-  holding: { unitId: number; typeId: string } | null;
+  holding: { unitId: number; typeId: string; empty?: boolean } | null;
   /**
    * Smer cyklu (F6a): `unload` = loď → apron (F2), `load` = apron → loď (vozík ide opačne), `dual_load` / `dual_unload` = polovice
    * dual cyklu. Chýba = `unload` (VM z F2–F6). `SimBridge` ho berie z `crane.cycle`.
@@ -107,9 +122,10 @@ export interface ShipVM {
   /**
    * Náklad na palube podľa smeru (F6a; `shipCargoSplit(world, shipId)`): import a export v jednotkách. Keď je pole prítomné,
    * renderer kreslí kontajnery na palube podľa počtu (import oranžovo, export modro) na prázdnom sprite paluby; chýba = F2–F6
-   * správanie (sprite `loaded`, kým je `unitsOnBoard > 0`).
+   * správanie (sprite `loaded`, kým je `unitsOnBoard > 0`). F6c: `empty` = prázdne kontajnery (sivé, tesne pred exportom). Prekládka
+   * (`tranship`) sa zarátava do `import` (loď A, prichádzajúca) alebo do `export` (loď B, odchádzajúca) — rozhoduje `SimBridge`.
    */
-  cargoSplit?: { import: number; export: number };
+  cargoSplit?: { import: number; export: number; empty?: number };
   /**
    * Lashing lode (F6a; stav `lashing`): `ticksLeft` = `ship.lashingTicksLeft`, `ticksTotal` = celkový počet tickov lashingu
    * (`ShipLashingStarted.ticks`, `SimBridge` si ho pamätá). Renderer ukáže odznak s prstencom postupu. Chýba = bez odznaku.
@@ -137,6 +153,11 @@ export interface VehicleVM {
   prevHeading?: 0 | 90 | 180 | 270;
   /** Vezie jednotku nákladu → sprite `states.loaded`. */
   loaded: boolean;
+  /**
+   * F6c: vezená jednotka je prázdny kontajner (`direction: 'empty'`) → sprite `states.carries_empty` (sivý kontajner), ak ho def v manifeste
+   * má (`empty_handler` nesie len prázdne, jeho `loaded` je sivý vždy). Pri `loaded: false` sa ignoruje. Chýba = `false`.
+   */
+  carriesEmpty?: boolean;
   /** Stav FSM vozidla (`idle`, `to_pickup`, …); renderer ho zatiaľ nekreslí, nesie ho pre ladenie a budúce odznaky. */
   state: string;
 }
@@ -164,6 +185,8 @@ export interface TruckVM {
    * (nakládka / vykládka sa deje v doku, sim je rýchlejší než manéver).
    */
   loaded: boolean;
+  /** F6c: vezená jednotka je prázdny kontajner (návrat prázdnych, výdaj exportérovi) → sprite `states.carries_empty`; chýba = `false`. */
+  carriesEmpty?: boolean;
   /**
    * Stav Truck FSM (`to_gate`, `gate_queue`, `waiting`, `loading`, `unloading`, …). Renderer podľa neho (a `prevState`) riadi len
    * manéver kamióna pri rampe: `to_dock` → `loading` / `unloading` (cúvanie do docku; `unloading` = exportný kamión vykladá, F6a),

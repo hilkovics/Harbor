@@ -29,7 +29,7 @@
  *
  * **Prázdne kontajnery** (F6c, ADR-034): kamión `delivery` s prázdnym kontajnerom linky (návrat z vnútrozemia, `spawnEmptyTrucks`) sa
  * správa ako export (brána `EmptyReturned`, vykládka na dock); kamión misie `collect` (výdaj prázdneho exportérovi) čaká v stojisku na
- * pridelený prázdny a naloží ho z docku, alebo sa po `giveUpTick` vzdá a odíde prázdny zo stojiska (`empty-collect.ts`). Pri odchode
+ * pridelený prázdny a naloží ho z docku, alebo sa po `giveUpTick` (od príchodu do stojiska) vzdá a odíde prázdny zo stojiska (`empty-collect.ts`). Pri odchode
  * kamióna s importom z mapy sa naplánuje návrat prázdneho (`planEmptyReturn`, `Rng`).
  *
  * **Export** (F6a, ADR-032 bod 4, 7, 13): kamión s misiou `delivery` príde naložený jednou jednotkou, po prechode bránou
@@ -51,7 +51,7 @@ import type { Truck } from '../trucks/truck';
 import { TruckError } from '../trucks/truck-error';
 import { TRUCK_STATE_TRAITS, changeTruckState, isTruckTravelState, type TruckMission, type TruckState, type TruckTravelState } from '../trucks/truck-fsm';
 import { DockSupply } from '../trucks/dock-supply';
-import { collectGivesUp, collectReady, finishCollect, giveUpCollect, loadCollected } from '../trucks/empty-collect';
+import { collectGivesUp, collectReady, finishCollect, giveUpCollect, loadCollected, startCollectWait } from '../trucks/empty-collect';
 import { planEmptyReturn } from '../trucks/empty-plan';
 import { spawnEmptyTrucks } from '../trucks/empty-trucks';
 import { onGatePassed } from '../trucks/export-gate';
@@ -119,6 +119,13 @@ type Arrival = (truck: Truck, world: World) => void;
 /** Stav kamióna po príchode k docku podľa misie (tabuľka, nie switch): pickup a collect nakladajú, delivery vykladá. */
 const DOCK_STATE: { readonly [M in TruckMission]: TruckState } = Object.freeze({ pickup: 'loading', delivery: 'unloading', collect: 'loading' });
 
+/** Čo sa stane, keď kamión dorazí do stojiska (tabuľka podľa misie): `collect` začína lehotu čakania (`giveUpTick`), ostatné misie nič. */
+const WAITING_STARTED: { readonly [M in TruckMission]: (world: World, truck: Truck) => void } = Object.freeze({
+  pickup: NOTHING,
+  delivery: NOTHING,
+  collect: startCollectWait,
+});
+
 /** Príchod na koniec trasy podľa jazdného stavu (tabuľka, nie switch). */
 const ARRIVALS: { readonly [S in TruckTravelState]: Arrival } = Object.freeze({
   to_gate: (truck: Truck, world: World) => {
@@ -130,6 +137,7 @@ const ARRIVALS: { readonly [S in TruckTravelState]: Arrival } = Object.freeze({
     area.occupyBay(truck.id);
     truck.waitTicks = waitingStayTicks(area, world.defs.logistics);
     changeTruckState(world.events, truck, 'waiting');
+    WAITING_STARTED[truck.mission](world, truck);
   },
   to_dock: (truck: Truck, world: World) => {
     truck.waitTicks = rampOfTruck(world, truck).params.loadTicksPerUnit;

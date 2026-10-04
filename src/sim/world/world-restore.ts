@@ -852,6 +852,23 @@ function checkContracts(world: World, units: readonly CargoUnit[]): void {
   checkVoyages(world, held);
 }
 
+/**
+ * Plán výdajov prázdnych (`emptyFlow.pickupPlan`, T6C-07b, m5): výdaj plánuje `AcceptContract` export bookingu, takže každá položka ukazuje na kontrakt
+ * druhu `export` v knihe a nesie linku jeho bookingu. Zlý odkaz by spawnol kamión po prázdny pre cudziu linku alebo pre kontrakt iného druhu (booking
+ * `bookingOpen` len zahodí výdaj zaniknutého kontraktu — kontrakt mimo knihy, ktorý nikdy neexistoval, je poškodený save). Fail-fast s pointerom.
+ */
+function checkPickupPlan(world: World): void {
+  const { pickupPlan } = world.emptyFlow;
+  for (let i = 0; i < pickupPlan.length; i++) {
+    const entry = pickupPlan[i];
+    const path = `/emptyFlow/pickupPlan${pointerSegment(i)}`;
+    const contract = world.contracts.get(entry.contractId as ContractId);
+    if (contract === undefined) throw new WorldStateError(`${path}/contractId`, `výdaj prázdneho ukazuje na kontrakt #${String(entry.contractId)}, ktorý nie je v knihe`);
+    if (contract.kind !== 'export') throw new WorldStateError(`${path}/contractId`, `výdaj prázdneho ukazuje na ${contract.label} druhu '${contract.kind}', očakáva sa export`);
+    if (contract.lineId !== entry.lineId) throw new WorldStateError(`${path}/lineId`, `výdaj prázdneho linky ${entry.lineId} ukazuje na ${contract.label} linky ${contract.lineId}`);
+  }
+}
+
 /** Kontrakty jednej voyage sa zhodujú na lodi (trieda, príchod, loď); `heldUnits` bookingu = jednotky v hold. */
 function checkVoyages(world: World, held: ReadonlyMap<ContractId, number>): void {
   let index = 0;
@@ -899,6 +916,7 @@ export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'mo
   restoreHeldCargo(world, units);
   checkCraneHolding(world, indexOf);
   checkContracts(world, units);
+  checkPickupPlan(world);
   // Index uskladneného nákladu (ADR-027) sa neukladá: poradie sklad ↑, FIFO sa odvodí z obnoveného ledgera.
   world.storedCargo.rebuild(world.cargo, world.modules.keys());
   // Index zadržaných jednotiek (VGM hold, ADR-032) sa tiež neukladá: zostaví sa z jednotiek s `hold`.

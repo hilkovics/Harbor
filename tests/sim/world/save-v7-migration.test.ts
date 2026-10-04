@@ -117,9 +117,9 @@ describe('migrácia save v7 → v8 (ADR-034)', () => {
   });
 });
 
-/** Stav novej hry (v8) po niekoľkých tickoch — základ pre ručne vložené polia F6c. */
-function baseState(): WorldState {
-  const world = World.deserialize(DEFS, MAP, asState(clone(SLICE)));
+/** Stav novej hry (v8) po niekoľkých tickoch (predvolene vertical slice, `EXPORT` = export_roundtrip s export bookingom) — základ pre ručne vložené polia F6c. */
+function baseState(save: Json = SLICE): WorldState {
+  const world = World.deserialize(DEFS, MAP, asState(clone(save)));
   return clone(world.serialize());
 }
 
@@ -152,22 +152,29 @@ function withEmptyUnit(state: WorldState, fields: Json = {}): WorldState {
 
 describe('WorldState v8: polia F6c v save a roundtrip', () => {
   it('prázdny kontajner v oprave a plán návratov / výdajov sa načítajú, roundtrip dá rovnaký stav a invarianty držia', () => {
-    const base = baseState();
+    // výdaj prázdneho ukazuje na export booking (T6C-07b, m5: obnova overuje kontrakt druhu export a jeho linku)
+    const base = baseState(EXPORT);
+    const booking = base.contracts.find((contract) => contract.kind === 'export' && contract.state === 'exporting');
+    if (booking === undefined) throw new Error('save nemá export booking');
     const state: WorldState = {
       ...withEmptyUnit(base, { status: 'in_repair', repairUntilTick: base.clock.tick + 500 }),
       emptyFlow: {
         returnPlan: [{ dueTick: base.clock.tick + 100, lineId: 'blue_anchor' }, { dueTick: base.clock.tick + 100, lineId: 'golden_wave' }],
-        pickupPlan: [{ dueTick: base.clock.tick + 50, lineId: 'northern_star', contractId: 3 }],
+        pickupPlan: [{ dueTick: base.clock.tick + 50, lineId: booking.lineId, contractId: booking.id }],
         errands: [],
       },
     };
     const world = World.deserialize(DEFS, MAP, clone(state));
     world.assertInvariants();
-    expect(JSON.stringify(world.serialize())).toBe(JSON.stringify(state));
+    // poradie jednotiek v save určuje ledger (nie ručné pripojenie na koniec): plán a vložená jednotka sa zachovajú, roundtrip je idempotentný
+    const saved = world.serialize();
+    expect(saved.emptyFlow).toEqual(state.emptyFlow);
+    expect(saved.cargo.units.find((unit) => unit.id === state.ids.nextId - 1)).toEqual(state.cargo.units[state.cargo.units.length - 1]);
+    expect(JSON.stringify(World.deserialize(DEFS, MAP, clone(saved)).serialize())).toBe(JSON.stringify(saved));
     const empty = world.cargo.get(state.ids.nextId - 1 as never);
     expect(empty).toMatchObject({ direction: 'empty', lineId: 'northern_star', status: 'in_repair', repairUntilTick: base.clock.tick + 500 });
     expect(world.emptyFlow.returnPlan.map((entry) => entry.lineId)).toEqual(['blue_anchor', 'golden_wave']);
-    expect(world.emptyFlow.pickupPlan).toEqual([{ dueTick: base.clock.tick + 50, lineId: 'northern_star', contractId: 3 }]);
+    expect(world.emptyFlow.pickupPlan).toEqual([{ dueTick: base.clock.tick + 50, lineId: booking.lineId, contractId: booking.id }]);
     expect(() => assertCargoConservation(world)).not.toThrow();
   });
 

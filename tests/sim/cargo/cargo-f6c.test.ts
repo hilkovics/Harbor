@@ -186,7 +186,7 @@ describe('reťazce prázdneho a prekládky (existujúce prechody §7.1 stačia)'
     harness.ledger.assertConservation();
   });
 
-  it('prekládka: loď A → hák → vozidlo → sklad → vozidlo → hák → loď B → shipped (nikdy exported)', () => {
+  it('prekládka: loď A → hák → vozidlo → sklad → vozidlo → hák → loď B → shipped (bez predaja zmeškaného nikdy exported)', () => {
     const harness = createHarness();
     const unit = harness.ledger.create(TEU, at.ship(SHIP_A), TRANSHIP_CONTRACT, TRANSHIP_LABELS);
     moveThrough(harness.ledger, unit.id, TRANSHIP_CHAIN);

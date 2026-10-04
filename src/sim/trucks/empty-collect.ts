@@ -3,7 +3,8 @@
  * `pickupPlan` s poverením v `World.emptyFlow.errands` (`trucks/empty-trucks.ts`); tu je jeho správanie po vzniku:
  * - **Pripravenosť** (`collectReady`): pridelený prázdny (`errand.unitId`, job dispatchera zo skladu) leží na docku kamióna — až
  *   vtedy kamión odíde zo stojiska k docku (`DOCK_READY`);
- * - **Vzdanie sa** (`collectGivesUp`, `giveUpCollect`): bez prideleného prázdneho po `giveUpTick` kamión odíde zo stojiska prázdny
+ * - **Vzdanie sa** (`startCollectWait` pri príchode do stojiska, `collectGivesUp`, `giveUpCollect`): bez prideleného prázdneho po `giveUpTick` (príchod do
+ *   stojiska + `emptyPickupMaxWaitHours`) kamión odíde zo stojiska prázdny
  *   (`EmptyPickupMissed`, poverenie zanikne);
  * - **Nakládka** (`loadCollected`): po `loadTicksPerUnit` prázdny `at_ramp → in_truck`, uvoľnenie docku a jazda k bráne von;
  * - **Odchod** (`finishCollect`, na portáli `in_truck → exported`): `EmptyPickedUp`, poverenie zanikne.
@@ -16,6 +17,7 @@ import type { LoadingRamp } from '../modules/loading-ramp';
 import type { World } from '../world/world';
 import { TruckError } from './truck-error';
 import type { Truck } from './truck';
+import type { TruckState } from './truck-fsm';
 
 /** Je pridelený prázdny kontajner na docku kamióna (pripravený na nakládku)? */
 export function collectReady(world: World, truck: Truck, ramp: LoadingRamp): boolean {
@@ -25,10 +27,28 @@ export function collectReady(world: World, truck: Truck, ramp: LoadingRamp): boo
   return location?.kind === 'at_ramp' && location.rampId === ramp.id && location.dock === truck.dock;
 }
 
-/** Má sa kamión vzdať — bez prideleného prázdneho uplynul `giveUpTick`? */
+/** Stavy kamióna pred príchodom do stojiska (`to_gate` → `gate_queue` → `to_bay`): lehota čakania `giveUpTick` ešte nebeží. */
+const BEFORE_WAITING_AREA: readonly TruckState[] = ['to_gate', 'gate_queue', 'to_bay'];
+
+/** Dorazil kamión už do stojiska (je v stave `waiting` alebo ďalej; v `no_path` rozhoduje stav, z ktorého vypadol)? */
+export function reachedWaitingArea(truck: Truck): boolean {
+  return !BEFORE_WAITING_AREA.includes(truck.effectiveState);
+}
+
+/**
+ * Kamión dorazil do stojiska (`to_bay → waiting`): začína lehota čakania `giveUpTick = tick + emptyPickupMaxWaitHours` (T6C-07b, m4 — nie od vzniku
+ * kamióna, cesta od portálu cez bránu je pri veľkej fronte dlhá). Kamión bez poverenia (nemá nastať) sa ignoruje — chybu zachytí invariant sveta.
+ */
+export function startCollectWait(world: World, truck: Truck): void {
+  if (world.emptyFlow.errandOfTruck(truck.id) === undefined) return;
+  const { emptyPickupMaxWaitHours } = world.defs.logistics.emptyFlow;
+  world.emptyFlow.startErrandWait(truck.id, world.clock.tick + Math.round(emptyPickupMaxWaitHours * world.clock.ticksPerHour));
+}
+
+/** Má sa kamión vzdať — bez prideleného prázdneho uplynul `giveUpTick` (lehota beží od príchodu do stojiska)? */
 export function collectGivesUp(world: World, truck: Truck): boolean {
   const errand = world.emptyFlow.errandOfTruck(truck.id);
-  return errand !== undefined && errand.unitId === null && world.clock.tick >= errand.giveUpTick;
+  return errand !== undefined && errand.unitId === null && errand.giveUpTick !== null && world.clock.tick >= errand.giveUpTick;
 }
 
 /** Kamión sa vzdal: `EmptyPickupMissed` a zánik poverenia (kamión potom odíde prázdny bez docku). */

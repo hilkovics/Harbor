@@ -86,6 +86,7 @@ import type { Cell } from '../grid/grid';
 import { unitAtJobSource } from '../logistics/job-source';
 import { JOB_STATE_TRAITS, type TransportJob } from '../logistics/transport-job';
 import { DockSupply } from '../trucks/dock-supply';
+import { reachedWaitingArea } from '../trucks/empty-collect';
 import { BerthModule } from '../modules/berth-module';
 import { computeBerthGroups } from '../modules/berth-group';
 import { CRANE_CYCLE_TRAITS, CRANE_STATE_TRAITS, CraneModule, craneReservesApronSlot, cranePhaseProblem } from '../modules/crane-module';
@@ -969,8 +970,44 @@ function loadedAboardOf(world: World, shipId: EntityId, contract: Contract): num
   return units;
 }
 
-/** Dva bookingy repositioningu jednej lode a linky nakladajú tie isté prázdne (prázdne nemajú kontrakt) — ich naložené jednotky sa sčítajú. */
-const sharesEmpties = (a: Contract, b: Contract): boolean => a.kind === 'empty_repositioning' && b.kind === a.kind && a.loadShipId === b.loadShipId && a.lineId === b.lineId;
+/**
+ * Dva bookingy repositioningu jednej lode a linky nakladajú tie isté prázdne (prázdne nemajú kontrakt) — ich naložené jednotky sa sčítajú.
+ * Súčty zbiera `collectSharedEmpties` jedným prechodom kontraktov (T6C-07b: predtým prechod všetkých kontraktov pre každý kontrakt, O(n²));
+ * záznamy sú paralelné polia znovupoužiteľné medzi tickami (kľúč = loď a linka, hodnota = Σ `loadedUnits`).
+ */
+const SHARED_SHIP: (EntityId | undefined)[] = [];
+const SHARED_LINE: string[] = [];
+const SHARED_LOADED: number[] = [];
+
+/** Dvojica bookingov repositioningu s rovnakou loďou a linkou nakladá tie isté prázdne (súčet `loadedUnits`)? */
+function sharesEmpties(contract: Contract, ship: EntityId | undefined, line: string): boolean {
+  return contract.kind === 'empty_repositioning' && contract.loadShipId === ship && contract.lineId === line;
+}
+
+/** Zbiera Σ `loadedUnits` bookingov repositioningu podľa dvojice (loď, linka) do polí `SHARED_*`; jeden prechod kontraktov. */
+function collectSharedEmpties(world: World): void {
+  SHARED_SHIP.length = 0;
+  SHARED_LINE.length = 0;
+  SHARED_LOADED.length = 0;
+  for (const contract of world.contractBook.openContracts.values()) {
+    if (contract.kind !== 'empty_repositioning') continue;
+    let at = 0;
+    while (at < SHARED_SHIP.length && !sharesEmpties(contract, SHARED_SHIP[at], SHARED_LINE[at])) at += 1;
+    if (at === SHARED_SHIP.length) {
+      SHARED_SHIP.push(contract.loadShipId);
+      SHARED_LINE.push(contract.lineId);
+      SHARED_LOADED.push(0);
+    }
+    SHARED_LOADED[at] += contract.booking?.loadedUnits ?? 0;
+  }
+}
+
+/** `loadedUnits` bookingu zvýšené o `loadedUnits` ostatných bookingov, s ktorými nakladá tie isté prázdne (iba repositioning; ostatné vlastné). */
+function loadedWithShared(contract: Contract, own: number): number {
+  if (contract.kind !== 'empty_repositioning') return own;
+  for (let at = 0; at < SHARED_SHIP.length; at++) if (sharesEmpties(contract, SHARED_SHIP[at], SHARED_LINE[at])) return SHARED_LOADED[at];
+  return own;
+}
 
 /** Naložené jednotky bookingu na jeho lodi: export a prázdne presne (`exact`), prekládka najviac (`at_most` — záchrana nakladá ďalšiu loď). */
 const LOADED_ABOARD_CHECK: { readonly [K in ContractKind]: 'exact' | 'at_most' } = Object.freeze({
@@ -986,13 +1023,13 @@ function loadedProblem(world: World, contract: Contract): string | undefined {
   const ship = contract.loadShipId === undefined ? undefined : world.ships.get(contract.loadShipId);
   if (booking === null || ship === undefined) return undefined;
   const aboard = loadedAboardOf(world, ship.id, contract);
-  let loaded = booking.loadedUnits;
-  for (const other of world.contractBook.openContracts.values()) if (other !== contract && sharesEmpties(contract, other)) loaded += other.booking?.loadedUnits ?? 0;
+  const loaded = loadedWithShared(contract, booking.loadedUnits);
   const ok = LOADED_ABOARD_CHECK[contract.kind] === 'exact' ? aboard === loaded : aboard <= loaded;
   return ok ? undefined : `${contract.label}: loadedUnits ${String(loaded)}, na ${ship.label} je ${String(aboard)} jednotiek nákladu bookingu`;
 }
 
 const checkContracts: Check = (world) => {
+  collectSharedEmpties(world);
   let offers = 0;
   for (const contract of world.contractBook.openContracts.values()) {
     const { label, state } = contract;
@@ -1050,6 +1087,9 @@ function leavesEmpty(world: World, truck: Truck): boolean {
   return (state === 'to_gate_out' || state === 'gate_queue_out' || state === 'to_portal') && world.cargo.countAt('in_truck', truck.id) === 0;
 }
 
+/** Znovupoužiteľná množina pridelených prázdnych pre `checkEmptyFlow` (hot path kroku 12; pred použitím sa vyprázdni). */
+const TAKEN_EMPTIES = new Set<number>();
+
 /** Tok prázdnych kontajnerov (bod 12 hlavičky). */
 const checkEmptyFlow: Check = (world) => {
   const { errands } = world.emptyFlow;
@@ -1058,12 +1098,16 @@ const checkEmptyFlow: Check = (world) => {
       return `${truck.label} (collect) v stave '${truck.state}' nemá poverenie v emptyFlow`;
     }
   }
-  const taken = new Set<number>();
+  const taken = TAKEN_EMPTIES;
+  taken.clear();
   for (const errand of errands) {
     const truck = world.trucks.get(errand.truckId as EntityId);
     if (truck?.mission !== 'collect') return `poverenie kamióna #${String(errand.truckId)}: kamión nie je misie collect`;
     const contract = world.contractBook.get(errand.contractId as ContractId);
     if (contract === undefined || contract.lineId !== errand.lineId) return `${truck.label}: poverenie ukazuje na kontrakt #${String(errand.contractId)} inej linky alebo mimo knihy`;
+    const reached = reachedWaitingArea(truck);
+    if (errand.giveUpTick === null && reached) return `${truck.label} v stojisku (stav '${truck.effectiveState}') nemá giveUpTick poverenia`;
+    if (errand.giveUpTick !== null && !reached) return `${truck.label}: giveUpTick poverenia je nastavený pred príchodom do stojiska (stav '${truck.effectiveState}')`;
     if (errand.unitId === null) continue;
     if (taken.has(errand.unitId)) return `prázdny #${String(errand.unitId)} je pridelený dvom kamiónom`;
     taken.add(errand.unitId);

@@ -97,7 +97,7 @@ describe('stavy jobu a tabuľky', () => {
     expect(jobRouteOf('at_ramp', 'in_truck')).toBeUndefined();
     for (const state of JOB_STATES) expect(isJobState(state)).toBe(true);
     for (const value of ['closed', '', null, 1]) expect(isJobState(value)).toBe(false);
-    expect(JOB_CANCEL_REASONS).toEqual(['ramp_inoperative', 'ramp_unreachable']);
+    expect(JOB_CANCEL_REASONS).toEqual(['ramp_inoperative', 'ramp_unreachable', 'loading_stopped']);
   });
 });
 

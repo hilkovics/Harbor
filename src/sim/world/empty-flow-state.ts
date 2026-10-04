@@ -5,8 +5,10 @@
  *
  * Tvar: presné kľúče `EMPTY_FLOW_STATE_KEYS` a položiek (`RETURN_PLAN_ENTRY_KEYS`, `PICKUP_PLAN_ENTRY_KEYS`, `ERRAND_ENTRY_KEYS`),
  * `dueTick` celé ≥ 0 neklesajúce, `lineId` linka z `lines.json`, `contractId` (výdaj, poverenie) celé ≥ 1, poverenia vzostupne podľa
- * `truckId`, `unitId` `null` alebo celé ≥ 1, `giveUpTick` celé ≥ 0. Súlad s knihou kontraktov, kamiónmi a ledgerom (booking existuje
- * a patrí linke, kamión misie `collect`, jednotka prázdna tej istej linky) overuje invariant sveta (`findWorldViolation`) pri obnove.
+ * `truckId`, `unitId` `null` alebo celé ≥ 1, `giveUpTick` `null` (kamión ešte nedorazil do stojiska) alebo celé ≥ 0. Súlad s kontraktmi a plánom
+ * zachytáva obnova: výdaj `pickupPlan` musí ukazovať na kontrakt druhu `export` v knihe a jeho linku (`checkPickupPlan` vo `world-restore`, fail-fast
+ * `WorldStateError` s pointerom `/emptyFlow/pickupPlan/i/…`); poverenia (kamión misie `collect`, kontrakt a linka, jednotka prázdna tej istej linky)
+ * overuje invariant sveta (`findWorldViolation`, `checkEmptyFlow`), ktorý beží pri obnove aj po každom ticku.
  */
 import type { DefRegistry } from '../defs/def-registry';
 import {
@@ -63,7 +65,7 @@ export function parseEmptyFlowState(raw: unknown, defs: DefRegistry): EmptyFlowS
       lineId: checkLine(fields['lineId'], defs, `${path}/lineId`),
       contractId: checkInteger(fields['contractId'], 1, `${path}/contractId`),
       unitId: fields['unitId'] === null ? null : checkInteger(fields['unitId'], 1, `${path}/unitId`),
-      giveUpTick: checkInteger(fields['giveUpTick'], 0, `${path}/giveUpTick`),
+      giveUpTick: fields['giveUpTick'] === null ? null : checkInteger(fields['giveUpTick'], 0, `${path}/giveUpTick`),
     };
   });
   return { returnPlan, pickupPlan, errands };

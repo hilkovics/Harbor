@@ -504,7 +504,8 @@ export interface BookingPenaltyAppliedEvent {
 // F6c — prázdne kontajnery, repositioning a tranship (ADR-034); deklarované v T6C-01, emitujú ich T6C-02 / T6C-03.
 // Poradie v ticku: krok 2 (`EmptyDamaged` → `EmptyRepairStarted` / `EmptyRepaired`, `TranshipMissed` → `TranshipRescued` /
 // `TranshipSold`), krok 5/6 (`EmptyStored` pri vykládke vozidla do skladu), krok 8 (brána dnu: `EmptyReturned`; výjazd kamióna
-// s prázdnym: `EmptyPickedUp`, odchod kamióna bez prázdneho po `emptyPickupMaxWaitHours`: `EmptyPickupMissed`).
+// s prázdnym: `EmptyPickedUp`, odchod kamióna bez prázdneho po `emptyPickupMaxWaitHours`: `EmptyPickupMissed`; návrat bez miesta v depe:
+// `EmptyReturnDeclined`).
 // ---------------------------------------------------------------------------------------------------------
 
 /** Kamión s prázdnym kontajnerom linky (misia `delivery`) prešiel bránou dnu — návrat prázdneho z vnútrozemia (krok 8). */
@@ -569,6 +570,15 @@ export interface EmptyPickupMissedEvent {
   readonly lineId: string;
   readonly contractId: ContractId;
   readonly truckId: EntityId;
+}
+
+/**
+ * Návrat prázdneho kontajnera linky sa zahodil bez kamióna — depo prázdnych nemalo voľné miesto (voľné − rozbehnuté návraty), alebo sa k nemu
+ * z rampy nedá dôjsť (T6C-07b, ADR-034 dodatok; metrika `emptyReturnsDeclined`). Nič nevznikne, bežný dvor sa prázdnymi nezapĺňa.
+ */
+export interface EmptyReturnDeclinedEvent {
+  readonly type: 'EmptyReturnDeclined';
+  readonly lineId: string;
 }
 
 /** Loď B prekládky odplávala bez `units` jednotiek kontraktu (penalizácia `transhipMissedRateOfReward`); `outVoyageId` = voyage B. */
@@ -654,6 +664,7 @@ export type SimEvent =
   | EmptyRepairedEvent
   | EmptyPickedUpEvent
   | EmptyPickupMissedEvent
+  | EmptyReturnDeclinedEvent
   | TranshipMissedEvent
   | TranshipRescuedEvent
   | TranshipSoldEvent;

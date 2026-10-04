@@ -35,19 +35,17 @@ describe('kontrola pri uložení do depa', () => {
     expect(findAvailableEmpty(world, 'blue_anchor')).toBeUndefined();
   });
 
-  it('uloženie do bežného dvora (fallback) kontrolu nerobí: jednotka ostane available a Rng sa nespotrebuje (kontrola je len v depe)', () => {
-    const defs = f6cDefs({ emptyFlow: { damageChance: 1 }, moduleParams: { empty_depot: { capacityUnits: 1 } } });
-    const world = emptyWorld({ defs, vehicles: TWO_STRADDLES });
-    const tick = world.clock.tick;
-    world.emptyFlow.scheduleReturn(tick + 5, 'blue_anchor');
-    runUntil(world, (w) => emptiesByLocation(w)['in_storage'] === 1, 3_000, 'prvý prázdny v depe');
+  it('uloženie do bežného dvora (fallback, svet bez depa) kontrolu nerobí: jednotka ostane available a Rng sa nespotrebuje (kontrola je len v depe)', () => {
+    const defs = f6cDefs({ emptyFlow: { damageChance: 1 } });
+    const world = emptyWorld({ defs, depot: false, vehicles: TWO_STRADDLES });
     const rngBefore = world.rng.getState();
     world.emptyFlow.scheduleReturn(world.clock.tick + 5, 'blue_anchor');
-    const events = runUntil(world, (w) => emptiesByLocation(w)['in_storage'] === 2, 3_000, 'druhý prázdny vo dvore');
+    const events = runUntil(world, (w) => emptiesByLocation(w)['in_storage'] === 1, 3_000, 'prázdny vo dvore');
     expect(eventsOf(events, 'EmptyStored').map((event) => event.fallback)).toEqual([true]);
     expect(eventsOf(events, 'EmptyDamaged')).toEqual([]);
     expect(world.rng.getState()).toEqual(rngBefore);
-    const yardUnit = world.cargo.unitsAt('in_storage', yardOf(world).id)[0];
+    const yard = [...world.modules.values()].find((module): module is StorageModule => module instanceof StorageModule && module.category === 'container');
+    const yardUnit = world.cargo.unitsAt('in_storage', (yard as StorageModule).id)[0];
     expect(world.cargo.get(yardUnit)?.status).toBe('available');
   });
 });

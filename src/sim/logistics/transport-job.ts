@@ -44,8 +44,9 @@ export const JOB_TRANSITIONS: ReadonlyMap<JobState, readonly JobState[]> = new M
 /**
  * Prečo dispatcher zrušil job bez vozidla (`JobCancelled`, ADR-023): cieľová rampa nie je prevádzková (ADR-022), alebo
  * k nej zo zdroja nevedie cesta. Oboje sú podmienky vzniku outbound jobu — `open` job, ktorý by už nevznikol, sa zruší.
+ * `loading_stopped` (T6C-07b): nakládka bookingu sa zastavila (`loadingStopped`) a job nakládky ešte nemá vozidlo.
  */
-export const JOB_CANCEL_REASONS = ['ramp_inoperative', 'ramp_unreachable'] as const;
+export const JOB_CANCEL_REASONS = ['ramp_inoperative', 'ramp_unreachable', 'loading_stopped'] as const;
 export type JobCancelReason = (typeof JOB_CANCEL_REASONS)[number];
 
 /** Kde leží náklad jobu v danom stave (invarianty kroku 12, obnova save). */

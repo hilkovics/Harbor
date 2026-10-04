@@ -38,6 +38,30 @@ describe('checkEmptyFlow — depo a poverenia', () => {
     runUntil(world, (w) => w.trucks.size === 0 && w.emptyFlow.errands.length === 0, 6_000, 'odchod naprázdno');
   });
 
+  it('giveUpTick poverenia: null len kým kamión nedorazí do stojiska, od príchodu nie je null (T6C-07b, m4)', () => {
+    const world = emptyWorld();
+    const { exportContract } = acceptedBooking(world, { kind: 'export', booked: 2 });
+    world.emptyFlow.schedulePickup(world.clock.tick + 3, 'blue_anchor', exportContract.id);
+    runUntil(world, (w) => w.emptyFlow.errands.length === 1, 100, 'vznik kamióna collect');
+    const [errand] = world.emptyFlow.errands;
+    expect(errand.giveUpTick).toBeNull();
+    expect(findWorldViolation(world)).toBeUndefined();
+    // lehota nastavená pred príchodom do stojiska → porušenie
+    world.emptyFlow.startErrandWait(errand.truckId, world.clock.tick + 100);
+    expect(findWorldViolation(world)).toMatch(/giveUpTick .* pred príchodom do stojiska/);
+    // kamión v stojisku bez lehoty → porušenie
+    const bare = emptyWorld();
+    const booked = acceptedBooking(bare, { kind: 'export', booked: 2 });
+    bare.emptyFlow.schedulePickup(bare.clock.tick + 3, 'blue_anchor', booked.exportContract.id);
+    runUntil(bare, (w) => w.emptyFlow.errands.length === 1 && w.trucks.get(w.emptyFlow.errands[0].truckId as EntityId)?.state === 'waiting', 1_000, 'kamión v stojisku');
+    expect(bare.emptyFlow.errands[0].giveUpTick).not.toBeNull();
+    const truckId = bare.emptyFlow.errands[0].truckId;
+    const { lineId, contractId } = bare.emptyFlow.errands[0];
+    bare.emptyFlow.removeErrand(truckId);
+    bare.emptyFlow.addErrand(truckId, lineId, contractId);
+    expect(findWorldViolation(bare)).toMatch(/v stojisku .*nemá giveUpTick/);
+  });
+
   it('poverenie s jednotkou inej linky alebo mimo cesty na dock kamióna → porušenie', () => {
     const world = emptyWorld({ vehicles: [] });
     const { exportContract } = acceptedBooking(world, { kind: 'export', booked: 2 });

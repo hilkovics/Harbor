@@ -54,7 +54,8 @@ export const TRUCK_TRANSITIONS: ReadonlyMap<TruckState, readonly TruckState[]> =
   ['to_gate', Object.freeze(['gate_queue', 'no_path'] as const)],
   ['gate_queue', Object.freeze(['to_bay'] as const)],
   ['to_bay', Object.freeze(['waiting', 'no_path'] as const)],
-  // `waiting → to_gate_out`: kamión misie `collect` bez prideleného prázdneho po čakaní odíde zo stojiska rovno k bráne (nikdy nie pickup / delivery).
+  // `waiting → to_gate_out`: kamión misie `collect` bez prideleného prázdneho po čakaní odíde zo stojiska rovno k bráne (nikdy nie pickup / delivery —
+  // to vynucuje `isTruckTransitionAllowed` podľa `TRUCK_MISSION_GIVES_UP`).
   ['waiting', Object.freeze(['to_dock', 'to_gate_out'] as const)],
   ['to_dock', Object.freeze(['loading', 'unloading', 'no_path'] as const)],
   ['loading', Object.freeze(['to_gate_out'] as const)],
@@ -66,9 +67,19 @@ export const TRUCK_TRANSITIONS: ReadonlyMap<TruckState, readonly TruckState[]> =
   ['no_path', Object.freeze([...TRUCK_TRAVEL_STATES])],
 ]);
 
-/** Je prechod `from → to` v tabuľke? (Návrat z `no_path` do správneho stavu stráži `Truck.transition`.) */
-export function isTruckTransitionAllowed(from: TruckState, to: TruckState): boolean {
-  return TRUCK_TRANSITIONS.get(from)?.includes(to) ?? false;
+/**
+ * Smie sa misia vzdať čakania v stojisku (`waiting → to_gate_out`, odchod rovno k bráne von bez docku)? Tabuľka podľa misie (pravidlo 7): len
+ * `collect` (výdaj prázdneho po `emptyPickupMaxWaitHours`); `pickup` a `delivery` čakajú, kým nepríde ich dock (T6C-07b, review src/sim, m2).
+ */
+export const TRUCK_MISSION_GIVES_UP: { readonly [M in TruckMission]: boolean } = Object.freeze({ pickup: false, delivery: false, collect: true });
+
+/**
+ * Je prechod `from → to` kamióna misie `mission` povolený? Tabuľka stavov `TRUCK_TRANSITIONS` a pre vzdanie sa čakania (`waiting → to_gate_out`)
+ * navyše vlastnosť misie `TRUCK_MISSION_GIVES_UP`. (Návrat z `no_path` do správneho stavu stráži `Truck.transition`.)
+ */
+export function isTruckTransitionAllowed(from: TruckState, to: TruckState, mission: TruckMission): boolean {
+  if (!(TRUCK_TRANSITIONS.get(from)?.includes(to) ?? false)) return false;
+  return from === 'waiting' && to === 'to_gate_out' ? TRUCK_MISSION_GIVES_UP[mission] : true;
 }
 
 /** Je hodnota jeden zo stavov kamióna? */

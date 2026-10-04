@@ -7,7 +7,7 @@ import { WorldStateError } from '@sim/world';
 import { World, stateHash } from '@sim/world';
 import { MAP } from '../world/world-fixtures';
 import { acceptedBooking, send } from '../helpers/f6a';
-import { TICKS_PER_HOUR, depotOf, emptiesByLocation, emptyWorld, eventsOf, f6cDefs, putEmpty, rampOf, run, runUntil } from '../helpers/f6c';
+import { TICKS_PER_HOUR, acceptedImport, depotOf, emptiesByLocation, emptyWorld, eventsOf, f6cDefs, putEmpty, rampOf, run, runUntil } from '../helpers/f6c';
 import { assertCargoConservation } from '../helpers/invariants';
 import { StorageModule } from '@sim/modules';
 
@@ -81,19 +81,33 @@ describe('kamión collect — výdaj z depa', () => {
     expect(world.cargo.createdCount - world.cargo.liveCount - world.cargo.exportedCount - world.cargo.shippedCount).toBe(0);
   });
 
-  it('žiadny prázdny linky: kamión čaká emptyPickupMaxWaitHours od vzniku, potom odíde prázdny (EmptyPickupMissed, TruckExited bez jednotky)', () => {
+  it('žiadny prázdny linky: kamión čaká emptyPickupMaxWaitHours od príchodu do stojiska (nie od vzniku), potom odíde prázdny (EmptyPickupMissed, TruckExited bez jednotky)', () => {
     const { world, contractId } = pickupWorld({ maxWaitHours: 1 });
     world.emptyFlow.schedulePickup(world.clock.tick + 10, 'blue_anchor', contractId);
     const events = runUntil(world, (w) => w.emptyFlow.pickupPlan.length === 0 && w.emptyFlow.errands.length === 0 && w.trucks.size === 0, 6_000, 'odchod kamióna naprázdno');
     const spawnTick = events.find((entry) => entry.event.type === 'TruckSpawned')?.tick ?? -1;
+    const waitingTick = events.find((entry) => entry.event.type === 'TruckStateChanged' && entry.event.to === 'waiting')?.tick ?? -1;
     const missed = events.find((entry) => entry.event.type === 'EmptyPickupMissed');
     expect(missed?.event).toMatchObject({ lineId: 'blue_anchor', contractId });
-    expect((missed?.tick ?? 0) - spawnTick).toBeGreaterThanOrEqual(TICKS_PER_HOUR);
-    expect((missed?.tick ?? 0) - spawnTick).toBeLessThan(TICKS_PER_HOUR + 200);
+    // cesta od portálu cez bránu do stojiska trvá desiatky tickov — lehota sa počíta až od príchodu do stojiska (T6C-07b, m4)
+    expect(waitingTick - spawnTick).toBeGreaterThan(50);
+    expect((missed?.tick ?? 0) - waitingTick).toBeGreaterThanOrEqual(TICKS_PER_HOUR);
+    expect((missed?.tick ?? 0) - waitingTick).toBeLessThan(TICKS_PER_HOUR + 20);
     expect(eventsOf(events, 'EmptyPickedUp')).toEqual([]);
     expect(eventsOf(events, 'TruckExited').map((event) => event.units)).toEqual([0]);
     expect(world.cargo.exportedCount).toBe(0);
     expect(world.cargo.createdCount).toBe(0);
+  });
+
+  it('giveUpTick poverenia je null, kým kamión nedorazí do stojiska; od príchodu je to tick príchodu + emptyPickupMaxWaitHours', () => {
+    const { world, contractId } = pickupWorld({ maxWaitHours: 2 });
+    world.emptyFlow.schedulePickup(world.clock.tick + 10, 'blue_anchor', contractId);
+    runUntil(world, (w) => w.emptyFlow.errands.length === 1, 100, 'vznik kamióna collect');
+    expect(world.emptyFlow.errands[0].giveUpTick).toBeNull();
+    const events = runUntil(world, (w) => w.emptyFlow.errands[0]?.giveUpTick !== null, 1_000, 'príchod do stojiska');
+    const waitingTick = events.find((entry) => entry.event.type === 'TruckStateChanged' && entry.event.to === 'waiting')?.tick ?? -1;
+    expect(waitingTick).toBe(world.clock.tick);
+    expect(world.emptyFlow.errands[0].giveUpTick).toBe(waitingTick + 2 * TICKS_PER_HOUR);
   });
 
   it('prázdny inej linky sa nevydá (kamión sa po čakaní vzdá, cudzí prázdny ostane v depe)', () => {
@@ -185,6 +199,37 @@ describe('zrušený job výdaja', () => {
   });
 });
 
+describe('obnova — plán výdajov voči knihe kontraktov a linke (T6C-07b, m5)', () => {
+  it('pickupPlan musí ukazovať na kontrakt druhu export v knihe a jeho linku: neznámy kontrakt, iná linka a iný druh kontraktu → WorldStateError s pointerom', () => {
+    const { world, contractId } = pickupWorld();
+    world.emptyFlow.schedulePickup(world.clock.tick + 5_000, 'blue_anchor', contractId);
+    const imported = acceptedImport(world, 'blue_anchor', 2);
+    const defs = f6cDefs({ emptyFlow: { emptyPickupRate: 0 } });
+    type Plan = { dueTick: number; lineId: string; contractId: number };
+    const state = JSON.parse(JSON.stringify(world.serialize())) as { emptyFlow: { pickupPlan: Plan[] } };
+    const load = (mutate: (plan: Plan[]) => void): World => {
+      const copy = JSON.parse(JSON.stringify(state)) as typeof state;
+      mutate(copy.emptyFlow.pickupPlan);
+      return World.deserialize(defs, MAP, copy as never);
+    };
+    expect(() => load(() => undefined)).not.toThrow();
+    const failing: [string, (plan: Plan[]) => void, string][] = [
+      ['kontrakt mimo knihy', (plan) => void (plan[0].contractId = 4_242), '/emptyFlow/pickupPlan/0/contractId'],
+      ['linka výdaja ≠ linka kontraktu', (plan) => void (plan[0].lineId = 'golden_wave'), '/emptyFlow/pickupPlan/0/lineId'],
+      ['kontrakt iného druhu než export (import)', (plan) => void (plan[0].contractId = imported.contractId), '/emptyFlow/pickupPlan/0/contractId'],
+    ];
+    for (const [name, mutate, path] of failing) {
+      try {
+        load(mutate);
+        throw new Error(`${name}: mal zlyhať`);
+      } catch (error) {
+        expect(error, name).toBeInstanceOf(WorldStateError);
+        expect((error as WorldStateError).path, name).toBe(path);
+      }
+    }
+  });
+});
+
 describe('obnova a invarianty', () => {
   it('save uprostred výdaja (prázdny vo vozidle, kamión čaká) + pokračovanie dá rovnaké udalosti a hash ako nepretržitý beh', () => {
     const { world: continuous, contractId } = pickupWorld();
@@ -206,7 +251,7 @@ describe('obnova a invarianty', () => {
     world.emptyFlow.schedulePickup(world.clock.tick + 5, 'blue_anchor', contractId);
     runUntil(world, (w) => w.emptyFlow.errands[0]?.unitId !== null && w.emptyFlow.errands.length === 1, 400, 'poverenie s jednotkou');
     const defs = f6cDefs({ emptyFlow: { emptyPickupRate: 0 } });
-    type Errand = { truckId: number; lineId: string; contractId: number; unitId: number | null; giveUpTick: number };
+    type Errand = { truckId: number; lineId: string; contractId: number; unitId: number | null; giveUpTick: number | null };
     const state = JSON.parse(JSON.stringify(world.serialize())) as { emptyFlow: { errands: Errand[] } };
     const load = (mutate: (errands: Errand[]) => void): World => {
       const copy = JSON.parse(JSON.stringify(state)) as typeof state;

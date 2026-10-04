@@ -14,6 +14,9 @@
  * F6a (T6A-07, ADR-032): sklad ukáže rozdelenie uskladnených jednotiek na import a export (`storage.split`), zakotvená loď
  * náklad na palube podľa smeru (`dockedShip.cargoSplit`: import na vykládku / naložený export) a stav lashing s progresom
  * (`dockedShip.lashing`: zostávajúci čas a podiel z celkovej doby, ak ju app pozná).
+ * F6c (T6C-05, ADR-034): rozdelenie podľa smeru má štyri kľúče (import, export, tranship, prázdne; tranship a prázdne ukáže legenda
+ * a pruh len pri nenulovom počte) a depo prázdnych (`emptyDepot`) ukáže dostupné / poškodené / v oprave podľa linky a opravárenské
+ * miesta (obsadené = beží oprava).
  *
  * Komponent je čisto prezentačný (props → DOM, bez hookov): dáta zostaví rodič zo snapshotu
  * (`useSimSnapshot(selector, 100)`, T02-09/T02-10, T03-10), odstránenie ide cez `onRemove(id)` → `dispatch(RemoveModule)`,
@@ -22,6 +25,7 @@
  */
 import { EM_DASH, formatCount, formatDuration, formatFootprint, formatFraction, formatMoney, formatPercent, type TimeScale } from './format';
 import { Icon, type IconName } from './icon';
+import { lineStyle } from './line-color';
 import './module-inspector.css';
 
 export type CraneStateName = 'idle' | 'grabbing' | 'swinging' | 'placing' | 'blocked';
@@ -74,10 +78,53 @@ export interface RampData {
   readonly inoperativeReason?: string;
 }
 
-/** F6a: jednotky rozdelené podľa smeru — import (príde loďou, odíde po súši) a export (príde po súši, odpláva loďou). */
+/**
+ * F6a / F6c: jednotky rozdelené podľa smeru — import (príde loďou, odíde po súši), export (príde po súši, odpláva loďou),
+ * prekládka (loď → loď, nikdy cez bránu) a prázdne kontajnery (návrat z vnútrozemia, depo, repositioning).
+ */
 export interface CargoSplitData {
   readonly import: number;
   readonly export: number;
+  readonly tranship: number;
+  readonly empty: number;
+}
+
+export type CargoSplitDirection = keyof CargoSplitData;
+
+/** Poradie smerov v legende, pruhu a texte. */
+export const CARGO_SPLIT_DIRECTIONS: readonly CargoSplitDirection[] = ['import', 'export', 'tranship', 'empty'];
+
+/** Názvy smerov pre hráča (legenda, popis pruhu). */
+export const CARGO_SPLIT_LABELS: Readonly<Record<CargoSplitDirection, string>> = {
+  import: 'Import',
+  export: 'Export',
+  tranship: 'Tranship',
+  empty: 'Prázdne',
+};
+
+/** Smery, ktoré legenda a pruh ukážu aj s nulou (bežný tok z F6a); tranship a prázdne len pri nenulovom počte. */
+const ALWAYS_SHOWN_DIRECTIONS: ReadonlySet<CargoSplitDirection> = new Set<CargoSplitDirection>(['import', 'export']);
+
+/** F6c: jedna linka v depe prázdnych — prázdne kontajnery podľa stavu kvality. */
+export interface EmptyLineData {
+  readonly lineId: string;
+  /** Názov linky pre hráča (`Blue Anchor Lines`). */
+  readonly label: string;
+  /** Názov farebného tokenu linky (`line-blue`, bez `--`). */
+  readonly colorToken: string;
+  /** Dostupné (stav `available`) — dajú sa vydať exportérovi alebo naložiť. */
+  readonly available: number;
+  /** Poškodené (stav `damaged`) — čakajú na voľné miesto opravy. */
+  readonly damaged: number;
+  /** V oprave (stav `in_repair`). */
+  readonly inRepair: number;
+}
+
+/** F6c: depo prázdnych kontajnerov — prázdne podľa linky a stavu a opravárenské miesta (`repairBays`). */
+export interface EmptyDepotData {
+  readonly lines: readonly EmptyLineData[];
+  /** Počet súčasných opráv; obsadené miesta = jednotky v stave `in_repair`. */
+  readonly repairBays: number;
 }
 
 /**
@@ -140,6 +187,8 @@ export interface ModuleInspectorData {
     /** F6a: uskladnené jednotky podľa smeru (import / export, súčet = `stored`); bez neho sekcia chýba. */
     readonly split?: CargoSplitData;
   };
+  /** F6c: depo prázdnych kontajnerov (sklad s rolou `empty_depot`); bez neho pole nie je. Nahrádza dlaždice skladu a import / export rozdelenie. */
+  readonly emptyDepot?: EmptyDepotData;
   /** F3: depo vozidiel. `canBuy` + `buyBlockedReason` (depo plné, nepripojené, nedostatok peňazí…) určuje rodič. */
   readonly depot?: {
     readonly vehicles: readonly DepotVehicleData[];
@@ -289,7 +338,19 @@ export function craneTimeSplit(crane: { readonly utilizationPct: number; readonl
   return { busy, blocked, idle: 100 - busy - blocked };
 }
 
-export type StatSwatch = 'used' | 'reserved' | 'free' | 'busy' | 'blocked' | 'idle' | 'import' | 'export';
+export type StatSwatch =
+  | 'used'
+  | 'reserved'
+  | 'free'
+  | 'busy'
+  | 'blocked'
+  | 'idle'
+  | 'import'
+  | 'export'
+  | 'tranship'
+  | 'empty'
+  | 'damaged'
+  | 'repair';
 
 export interface InspectorStat {
   readonly key: string;
@@ -388,6 +449,67 @@ export function depotStats(depot: Pick<DepotData, 'vehicles' | 'capacity'>): Ins
   ];
 }
 
+// --- F6c: depo prázdnych kontajnerov ----------------------------------------------------------------------------------
+
+/** Počet prázdnych jednotiek linky v depe (všetky stavy). */
+export function emptyLineTotal(line: Pick<EmptyLineData, 'available' | 'damaged' | 'inRepair'>): number {
+  return wholeCount(line.available) + wholeCount(line.damaged) + wholeCount(line.inRepair);
+}
+
+export interface EmptyDepotTotals {
+  readonly available: number;
+  readonly damaged: number;
+  readonly inRepair: number;
+  readonly total: number;
+  /** Obsadené opravárenské miesta (`inRepair`, najviac `repairBays`). */
+  readonly repairBusy: number;
+  readonly repairFree: number;
+}
+
+/** Súčty depa cez všetky linky a stav opravárenských miest. */
+export function emptyDepotTotals(depot: EmptyDepotData): EmptyDepotTotals {
+  let available = 0;
+  let damaged = 0;
+  let inRepair = 0;
+  for (const line of depot.lines) {
+    available += wholeCount(line.available);
+    damaged += wholeCount(line.damaged);
+    inRepair += wholeCount(line.inRepair);
+  }
+  const bays = wholeCount(depot.repairBays);
+  const repairBusy = Math.min(bays, inRepair);
+  return { available, damaged, inRepair, total: available + damaged + inRepair, repairBusy, repairFree: bays - repairBusy };
+}
+
+/** Dlaždice depa prázdnych: dostupné / poškodené (varovanie, ak sú) / v oprave. */
+export function emptyDepotStats(depot: EmptyDepotData): InspectorStat[] {
+  const totals = emptyDepotTotals(depot);
+  return [
+    { key: 'available', label: 'Dostupné', value: formatCount(totals.available), tone: 'normal', swatch: 'empty' },
+    { key: 'damaged', label: 'Poškodené', value: formatCount(totals.damaged), tone: totals.damaged > 0 ? 'warn' : 'normal', swatch: 'damaged' },
+    { key: 'repair', label: 'V oprave', value: formatCount(totals.inRepair), tone: 'normal', swatch: 'repair' },
+  ];
+}
+
+/** Popis riadku linky pre čítačku: `Blue Anchor Lines: dostupné 12, poškodené 1, v oprave 0`. */
+export function emptyLineText(line: EmptyLineData): string {
+  return `${line.label}: dostupné ${formatCount(wholeCount(line.available))}, poškodené ${formatCount(wholeCount(line.damaged))}, v oprave ${formatCount(wholeCount(line.inRepair))}`;
+}
+
+/** Stav opravárenských miest depa: obsadené (beží oprava) → voľné; dĺžka je `repairBays`. */
+export function repairBayStates(depot: EmptyDepotData): ('occupied' | 'free')[] {
+  const totals = emptyDepotTotals(depot);
+  const states: ('occupied' | 'free')[] = [];
+  for (let index = 0; index < wholeCount(depot.repairBays); index += 1) states.push(index < totals.repairBusy ? 'occupied' : 'free');
+  return states;
+}
+
+/** Poškodené kontajnery čakajú, lebo všetky opravárenské miesta sú obsadené: `Čakajú na voľné miesto opravy: 2`; inak `null`. */
+export function repairWaitingText(depot: EmptyDepotData): string | null {
+  const totals = emptyDepotTotals(depot);
+  return totals.damaged > 0 && totals.repairFree === 0 ? `Čakajú na voľné miesto opravy: ${formatCount(totals.damaged)}` : null;
+}
+
 /** Popis a vzhľad stavu vozidla v zozname depa (prototyp: „Pracuje" / „Nečinné"; `no_path` je varovanie). */
 export interface VehicleStateInfo {
   readonly label: string;
@@ -422,22 +544,64 @@ export function sellTitle(vehicle: DepotVehicleData): string {
 
 // --- F6a: import / export v sklade a na lodi, lashing ---------------------------------------------------------------
 
-/** Podiely importu a exportu v celkovom počte (celé percentá, súčet 100; bez jednotiek 0 / 0). */
-export function cargoSplitShares(split: CargoSplitData): { readonly import: number; readonly export: number } {
-  const total = wholeCount(split.import) + wholeCount(split.export);
-  if (total === 0) return { import: 0, export: 0 };
-  const imported = Math.round((wholeCount(split.import) / total) * 100);
-  return { import: imported, export: 100 - imported };
+/** Smery, ktoré legenda a pruh ukážu: import a export vždy, tranship a prázdne len pri nenulovom počte. */
+export function visibleSplitDirections(split: CargoSplitData): readonly CargoSplitDirection[] {
+  return CARGO_SPLIT_DIRECTIONS.filter((direction) => ALWAYS_SHOWN_DIRECTIONS.has(direction) || wholeCount(split[direction]) > 0);
 }
 
-/** Súčet jednotiek oboch smerov. */
+/**
+ * Podiely smerov v celkovom počte: celé percentá so súčtom presne 100 (metóda najväčšieho zvyšku, pri zhode skôr v poradí smerov);
+ * bez jednotiek samé 0.
+ */
+export function cargoSplitShares(split: CargoSplitData): CargoSplitData {
+  const counts = CARGO_SPLIT_DIRECTIONS.map((direction) => wholeCount(split[direction]));
+  const total = counts.reduce((sum, count) => sum + count, 0);
+  if (total === 0) return { import: 0, export: 0, tranship: 0, empty: 0 };
+  const exact = counts.map((count) => (count / total) * 100);
+  const shares = exact.map((value) => Math.floor(value));
+  let left = 100 - shares.reduce((sum, share) => sum + share, 0);
+  const byRemainder = exact.map((value, index) => ({ index, rest: value - (shares[index] ?? 0) })).sort((a, b) => b.rest - a.rest || a.index - b.index);
+  for (const { index } of byRemainder) {
+    if (left <= 0) break;
+    shares[index] = (shares[index] ?? 0) + 1;
+    left -= 1;
+  }
+  const [imported = 0, exported = 0, transhipped = 0, empties = 0] = shares;
+  return { import: imported, export: exported, tranship: transhipped, empty: empties };
+}
+
+/** Súčet jednotiek všetkých smerov. */
 export function cargoSplitTotal(split: CargoSplitData): number {
-  return wholeCount(split.import) + wholeCount(split.export);
+  return CARGO_SPLIT_DIRECTIONS.reduce((sum, direction) => sum + wholeCount(split[direction]), 0);
 }
 
-/** Popis rozdelenia pre čítačku a tooltip: `Import 12 TEU, export 8 TEU`. */
+/** Zoznam názvov slovensky: `a`, `a a b`, `a, b a c`. */
+function joinNames(names: readonly string[]): string {
+  const last = names[names.length - 1];
+  if (names.length < 2 || last === undefined) return names.join('');
+  return `${names.slice(0, -1).join(', ')} a ${last}`;
+}
+
+/** Názov smeru v texte: prvý s veľkým písmenom (`Import`), ďalší malými (`export`, `prázdne`). */
+function directionName(direction: CargoSplitDirection, index: number): string {
+  return index === 0 ? CARGO_SPLIT_LABELS[direction] : CARGO_SPLIT_LABELS[direction].toLowerCase();
+}
+
+/** Nadpis rozdelenia skladu: `Import / export`, s prekládkou a prázdnymi `Import / export / prázdne`. */
+export function cargoSplitTitle(split: CargoSplitData): string {
+  return visibleSplitDirections(split).map(directionName).join(' / ');
+}
+
+/** Popis pruhu skladu pre čítačku: `Obsah skladu: import a export`, `Obsah skladu: import, export a prázdne`. */
+export function cargoSplitBarLabel(split: CargoSplitData): string {
+  return `Obsah skladu: ${joinNames(visibleSplitDirections(split).map((direction) => CARGO_SPLIT_LABELS[direction].toLowerCase()))}`;
+}
+
+/** Popis rozdelenia pre čítačku a tooltip: `Import 12 TEU, export 8 TEU`; nenulové tranship a prázdne pribudnú (`, prázdne 4 TEU`). */
 export function cargoSplitText(split: CargoSplitData, unitLabel?: string): string {
-  return `Import ${formatCount(wholeCount(split.import), unitLabel)}, export ${formatCount(wholeCount(split.export), unitLabel)}`;
+  return visibleSplitDirections(split)
+    .map((direction, index) => `${directionName(direction, index)} ${formatCount(wholeCount(split[direction]), unitLabel)}`)
+    .join(', ');
 }
 
 /** Podiel odpracovaného lashingu v celých percentách (0–100); bez celkovej doby `null` (progres sa nekreslí). */
@@ -670,14 +834,14 @@ function renderCraneTime(crane: NonNullable<ModuleInspectorData['crane']>) {
   );
 }
 
-/** Legenda rozdelenia import / export: farebná značka + popis + počet (značka nie je jediný nositeľ — vždy aj text). */
+/** Legenda rozdelenia podľa smeru: farebná značka + popis + počet (značka nie je jediný nositeľ — vždy aj text). */
 function renderSplitLegend(section: string, split: CargoSplitData, unitLabel: string | undefined) {
   return (
     <ul className="module-inspector__legend" aria-label={cargoSplitText(split, unitLabel)} data-section={`${section}-legend`}>
-      {(['import', 'export'] as const).map((direction) => (
+      {visibleSplitDirections(split).map((direction) => (
         <li key={direction} className="module-inspector__legend-item" data-split={direction}>
           <span className={`module-inspector__swatch module-inspector__swatch--${direction}`} aria-hidden="true" />
-          <span className="module-inspector__legend-label">{direction === 'import' ? 'Import' : 'Export'}</span>
+          <span className="module-inspector__legend-label">{CARGO_SPLIT_LABELS[direction]}</span>
           <span className="module-inspector__legend-value" data-field={`${section}-${direction}`}>
             {formatCount(wholeCount(split[direction]), unitLabel)}
           </span>
@@ -720,10 +884,12 @@ function renderShip(ship: NonNullable<ModuleInspectorData['dockedShip']>) {
       </div>
       {cargoSplit === undefined
         ? renderBar('Náklad na lodi', ship.unitsOnBoard, ship.capacityUnits, [{ key: 'used', percent: shareOf(ship.unitsOnBoard, ship.capacityUnits) }])
-        : renderBar('Náklad na lodi', ship.unitsOnBoard, ship.capacityUnits, [
-            { key: 'import', percent: shareOf(cargoSplit.import, ship.capacityUnits) },
-            { key: 'export', percent: shareOf(cargoSplit.export, ship.capacityUnits) },
-          ])}
+        : renderBar(
+            'Náklad na lodi',
+            ship.unitsOnBoard,
+            ship.capacityUnits,
+            visibleSplitDirections(cargoSplit).map((direction) => ({ key: direction, percent: shareOf(cargoSplit[direction], ship.capacityUnits) })),
+          )}
       {cargoSplit !== undefined && renderSplitLegend('ship-split', cargoSplit, ship.unitLabel)}
       {lashing !== undefined && renderLashing(lashing)}
     </div>
@@ -758,21 +924,102 @@ function renderStorage(storage: StorageData) {
   );
 }
 
-/** F6a: obsah skladu podľa smeru — dvojsegmentový pruh (podiely z uskladnených jednotiek) a legenda. */
+/** F6a / F6c: obsah skladu podľa smeru — pruh (podiely z uskladnených jednotiek) a legenda; tranship a prázdne len pri nenulovom počte. */
 function renderStorageSplit(storage: StorageData, split: CargoSplitData) {
   const shares = cargoSplitShares(split);
   const total = cargoSplitTotal(split);
   return (
     <div className="module-inspector__meter" data-section="storage-split">
       <div className="module-inspector__meter-head">
-        <span className="module-inspector__meter-label">Import / export</span>
+        <span className="module-inspector__meter-label">{cargoSplitTitle(split)}</span>
         <span data-field="storage-split-count">{total === 0 ? 'Prázdny' : formatCount(total, storage.unitLabel ?? 'jedn.')}</span>
       </div>
-      {renderBar('Obsah skladu: import a export', total, total, [
-        { key: 'import', percent: shares.import },
-        { key: 'export', percent: shares.export },
-      ])}
+      {renderBar(
+        cargoSplitBarLabel(split),
+        total,
+        total,
+        visibleSplitDirections(split).map((direction) => ({ key: direction, percent: shares[direction] })),
+      )}
       {renderSplitLegend('storage-split', split, storage.unitLabel)}
+    </div>
+  );
+}
+
+/** Stavy kvality prázdnych v depe v poradí riadku linky: kľúč poľa, popis a tón hodnoty. */
+const EMPTY_STATUS_COLUMNS: readonly { readonly key: 'available' | 'damaged' | 'inRepair'; readonly field: string; readonly label: string; readonly tone: 'normal' | 'warn' | 'busy' }[] = [
+  { key: 'available', field: 'line-available', label: 'Dostupné', tone: 'normal' },
+  { key: 'damaged', field: 'line-damaged', label: 'Poškodené', tone: 'warn' },
+  { key: 'inRepair', field: 'line-repair', label: 'V oprave', tone: 'busy' },
+];
+
+/**
+ * F6c: prázdne v depe podľa linky a stavu kvality — rámovaný zoznam; riadok linky nesie farebnú bodku a názov (celý, bez orezania)
+ * a súčet, pod ním tri počty (dostupné / poškodené / v oprave); nenulové poškodené a opravované sú zvýraznené farbou aj hrubším písmom.
+ */
+function renderEmptyLines(depot: EmptyDepotData) {
+  return (
+    <div className="module-inspector__section" data-section="empty-lines">
+      <span className="module-inspector__section-title">Prázdne podľa linky</span>
+      <ul className="module-inspector__lines" aria-label="Prázdne kontajnery podľa linky a stavu">
+        {depot.lines.map((line) => (
+          <li key={line.lineId} className="module-inspector__line" data-line={line.lineId} title={emptyLineText(line)}>
+            <div className="module-inspector__line-head">
+              <span className="module-inspector__line-dot" style={lineStyle(line.colorToken)} aria-hidden="true" />
+              <span className="module-inspector__line-name" data-field="line-name">
+                {line.label}
+              </span>
+              <span className="module-inspector__line-total" data-field="line-total">
+                {formatCount(emptyLineTotal(line))}
+              </span>
+            </div>
+            <dl className="module-inspector__line-counts">
+              {EMPTY_STATUS_COLUMNS.map((column) => {
+                const count = wholeCount(line[column.key]);
+                const tone = count > 0 ? column.tone : 'normal';
+                return (
+                  <div key={column.key} className="module-inspector__line-count" data-status={column.key}>
+                    <dt>{column.label}</dt>
+                    <dd className={`module-inspector__line-value module-inspector__line-value--${tone}`} data-field={column.field}>
+                      {formatCount(count)}
+                    </dd>
+                  </div>
+                );
+              })}
+            </dl>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+const REPAIR_BAY_TEXT: Readonly<Record<'occupied' | 'free', string>> = { occupied: 'oprava beží', free: 'voľné' };
+
+/** F6c: opravárenské miesta depa — rad miest (obsadené = beží oprava) a upozornenie, keď poškodené čakajú na voľné miesto. */
+function renderRepairBays(depot: EmptyDepotData) {
+  const states = repairBayStates(depot);
+  const waiting = repairWaitingText(depot);
+  return (
+    <div className="module-inspector__meter" data-section="repair-bays">
+      <div className="module-inspector__meter-head">
+        <span className="module-inspector__meter-label">Opravárenské miesta</span>
+        <span data-field="repair-count">{formatFraction(states.filter((state) => state === 'occupied').length, states.length, 'miest')}</span>
+      </div>
+      <ul className="module-inspector__bays" aria-label="Obsadenosť opravárenských miest">
+        {states.map((state, index) => {
+          const title = `Miesto opravy ${String(index + 1)} · ${REPAIR_BAY_TEXT[state]}`;
+          return (
+            <li key={index} className={`module-inspector__bay module-inspector__bay--${state}`} data-bay={index} data-state={state} title={title} aria-label={title}>
+              {state === 'occupied' && <Icon name="ic_build" className="module-inspector__bay-icon" />}
+            </li>
+          );
+        })}
+      </ul>
+      {waiting !== null && (
+        <span className="module-inspector__meter-note" data-field="repair-waiting">
+          {waiting}
+        </span>
+      )}
     </div>
   );
 }
@@ -923,7 +1170,7 @@ function renderDocks(ramp: RampData) {
 }
 
 export function ModuleInspector({ data, onRemove, onClose, onBuyVehicle, onSellVehicle }: ModuleInspectorProps) {
-  const { apron, crane, dockedShip, storage, depot, gate, waitingArea, ramp } = data;
+  const { apron, crane, dockedShip, storage, emptyDepot, depot, gate, waitingArea, ramp } = data;
   const blocked = crane?.state === 'blocked';
   const waiting = crane?.waitingForVehicle === true;
   const badge = inspectorBadge(data);
@@ -979,7 +1226,7 @@ export function ModuleInspector({ data, onRemove, onClose, onBuyVehicle, onSellV
         {ramp?.operational === false && renderInoperativeBanner(ramp)}
         {apron !== undefined && renderStats(berthStats(apron))}
         {crane !== undefined && renderStats(craneStats(crane))}
-        {storage !== undefined && renderStats(storageStats(storage))}
+        {storage !== undefined && renderStats(emptyDepot === undefined ? storageStats(storage) : emptyDepotStats(emptyDepot))}
         {depot !== undefined && renderStats(depotStats(depot))}
         {gate !== undefined && renderStats(gateStats(gate))}
         {waitingArea !== undefined && renderStats(waitingAreaStats(waitingArea))}
@@ -987,7 +1234,9 @@ export function ModuleInspector({ data, onRemove, onClose, onBuyVehicle, onSellV
         {apron !== undefined && renderApron(apron)}
         {crane !== undefined && renderCraneTime(crane)}
         {storage !== undefined && renderStorage(storage)}
-        {storage?.split !== undefined && renderStorageSplit(storage, storage.split)}
+        {emptyDepot === undefined && storage?.split !== undefined && renderStorageSplit(storage, storage.split)}
+        {emptyDepot !== undefined && renderEmptyLines(emptyDepot)}
+        {emptyDepot !== undefined && renderRepairBays(emptyDepot)}
         {waitingArea !== undefined && renderBays(waitingArea)}
         {ramp !== undefined && renderDocks(ramp)}
         {dockedShip !== undefined && (

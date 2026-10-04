@@ -9,6 +9,8 @@
  *   analogicky. Bez odpracovaných tickov sú oba podiely 0.
  * - Sklad (F3): uložené / rezervované / kapacita z modulu, kumulatívne prijaté a vydané (`unitsIn`/`unitsOut`), jednotka
  *   počtu z typu nákladu kategórie skladu (`TEU`). F6a: uložené jednotky podľa smeru (`storageCargoSplit`).
+ *   F6c (ADR-034): rozdelenie má štyri smery (import / export / tranship / prázdne; náklad na palube lode je ich súčet) a depo
+ *   prázdnych (`EmptyDepot`) nesie `emptyDepot`: prázdne podľa linky a stavu (`depotCargoSplit`) a opravárenské miesta (`repairBays`).
  * - Depo (F3): vozidlá depa (stav `idle` = nečinné, `no_path` = bez cesty, ostatné = pracuje; refundácia z
  *   `validate(SellVehicle)`), kapacita státí a nákup: `canBuy` = `validate(BuyVehicle)` prešlo, inak `buyBlockedReason`
  *   z `REASON_TEXT`. Kupuje sa vozidlo `depotVehicleDef` (prvý def vozidla bez technológie).
@@ -25,10 +27,10 @@
 import { BuyVehicleCommand, RemoveModuleCommand, SellVehicleCommand } from '@sim/commands';
 import type { EntityId } from '@sim/core';
 import type { DefRegistry, VehicleDef } from '@sim/defs';
-import { BerthModule, CRANE_CYCLE_TRAITS, CraneModule, LoadingRamp, StorageModule, TruckGate, VehicleDepot, WaitingArea, type Module } from '@sim/modules';
+import { BerthModule, CRANE_CYCLE_TRAITS, CraneModule, EmptyDepot, LoadingRamp, StorageModule, TruckGate, VehicleDepot, WaitingArea, type Module } from '@sim/modules';
 import type { Ship } from '@sim/ships';
 import type { VehicleState } from '@sim/vehicles';
-import { shipCargoSplit, storageCargoSplit, type World } from '@sim/world';
+import { depotCargoSplit, shipCargoSplit, storageCargoSplit, type World } from '@sim/world';
 import {
   craneStateLabel,
   craneStateOk,
@@ -36,6 +38,7 @@ import {
   type DepotVehicleData,
   type LashingData,
   type DepotVehicleState,
+  type EmptyDepotData,
   type ModuleInspectorData,
   type RampDockData,
 } from '@ui/module-inspector';
@@ -95,14 +98,15 @@ function berthFields(bridge: InspectorBridge, berth: BerthModule): Pick<ModuleIn
     return { stateLabel: BERTH_STATE_FREE, ok: true, apron: { used: apron.usedCount, reserved: apron.reservedCount, capacity: apron.capacity }, dockedShip: null };
   }
   const split = shipCargoSplit(world, ship.id);
-  const lashing = lashingData(bridge, ship, split.export);
+  // Lashing sa týka odchádzajúcich jednotiek (export, prekládka na lodi B, prázdne na repositioning); import sa pred ním vyloží.
+  const lashing = lashingData(bridge, ship, split.export + split.tranship + split.empty);
   return {
     stateLabel: lashing === undefined ? BERTH_STATE_DOCKED : BERTH_STATE_LASHING,
     ok: true,
     apron: { used: apron.usedCount, reserved: apron.reservedCount, capacity: apron.capacity },
     dockedShip: {
       classLabel: ship.def.displayName,
-      unitsOnBoard: split.import + split.export,
+      unitsOnBoard: split.import + split.export + split.tranship + split.empty,
       capacityUnits: ship.def.capacityUnits,
       unitLabel: world.defs.cargoTypes.get(ship.cargoTypeId).unitName,
       cargoSplit: split,
@@ -139,7 +143,29 @@ function craneFields(world: World, crane: CraneModule): Pick<ModuleInspectorData
   };
 }
 
-function storageFields(bridge: InspectorBridge, storage: StorageModule): Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'storage'> {
+/**
+ * Depo prázdnych (F6c, ADR-034): prázdne podľa linky (poradie `lines.json`, aj s nulami) a stavu kvality z `depotCargoSplit` a počet
+ * opravárenských miest; názov a token farby linky z `lines.json`.
+ */
+export function emptyDepotData(world: World, depot: EmptyDepot): EmptyDepotData {
+  const { lines } = world.defs;
+  return {
+    repairBays: depot.repairBays,
+    lines: depotCargoSplit(world, depot.id).lines.map((split) => {
+      const line = lines.has(split.lineId) ? lines.get(split.lineId) : undefined;
+      return {
+        lineId: split.lineId,
+        label: line?.displayName ?? split.lineId,
+        colorToken: line?.colorToken ?? '',
+        available: split.available,
+        damaged: split.damaged,
+        inRepair: split.in_repair,
+      };
+    }),
+  };
+}
+
+function storageFields(bridge: InspectorBridge, storage: StorageModule): Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'storage' | 'emptyDepot'> {
   const unit = bridge.world.defs.cargoTypes.items.find((type) => type.category === storage.category);
   return {
     stateLabel: MODULE_STATE_ACTIVE,
@@ -153,6 +179,7 @@ function storageFields(bridge: InspectorBridge, storage: StorageModule): Pick<Mo
       split: storageCargoSplit(bridge.world, storage.id),
       ...(unit === undefined ? {} : { unitLabel: unit.unitName }),
     },
+    ...(storage instanceof EmptyDepot ? { emptyDepot: emptyDepotData(bridge.world, storage) } : {}),
   };
 }
 

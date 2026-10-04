@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ships.json",
+  "description": "Katalóg tried lodí (ARCHITECTURE §4.3, ADR-009): { schemaVersion, items: [...] }. Jedinečnosť `id` v items[] schéma nevyjadrí — kontroluje ju DefRegistry a `pnpm validate:defs`. Rozmery musia sedieť s `entities.ship_<id>.footprint` v assets/manifest.json (w = widthCells, h = lengthCells).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "items"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Verzia schémy defu."
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/shipClass" },
+      "description": "Triedy lodí v poradí súboru."
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "snake_case identifikátor."
+    },
+    "shipClass": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "displayName",
+        "lengthCells",
+        "widthCells",
+        "draftClass",
+        "capacityUnits",
+        "speedCellsPerTick",
+        "cargoCategories",
+        "berthAllowanceTicks",
+        "lashingTicksPerUnit",
+        "paperworkTicks"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "displayName": { "type": "string", "minLength": 1 },
+        "lengthCells": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Dĺžka lode v bunkách (dlhá os)."
+        },
+        "widthCells": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Šírka lode v bunkách."
+        },
+        "draftClass": {
+          "enum": [1, 2, 3],
+          "description": "Ponor: kotvisko musí mať depthClass >= draftClass."
+        },
+        "capacityUnits": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Kapacita v CargoUnit."
+        },
+        "speedCellsPerTick": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Rýchlosť plavby v bunkách za tick."
+        },
+        "cargoCategories": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["container", "bulk", "liquid", "gas", "roro"] },
+          "description": "Kategórie nákladu, ktoré loď smie viezť."
+        },
+        "berthAllowanceTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Koľko ticks smie loď stáť pri kotvisku bez demurrage."
+        },
+        "lashingTicksPerUnit": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Lashing (F6a, ADR-032): ticky zabezpečenia nákladu na jednu naloženú exportnú jednotku."
+        },
+        "paperworkTicks": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Papiere pred odchodom (F6a): pevné ticky po lashingu, pre loď s naloženým exportom."
+        },
+        "techRequired": {
+          "$ref": "#/$defs/id",
+          "description": "Id uzla tech tree, ktorý loď odomyká; chýba = dostupná od začiatku."
+        }
+      }
+    }
+  }
+}

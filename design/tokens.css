@@ -26,7 +26,27 @@
   --cargo-liquid: #7B4FA0;      /* glyf: kvapka */
   --cargo-gas: #2BB3A3;         /* glyf: valec s hrdlom */
   --cargo-roro: #D64545;        /* glyf: auto zhora */
+  /* svetlý / tmavý variant (base ±14 % L; 3 tonálne stupne, §2) — doplnené z Claude Design, relácia 1 */
+  --cargo-container-light: #F6B06B; --cargo-container-dark: #C7680C;
+  --cargo-bulk-light: #DFBE59;      --cargo-bulk-dark: #8D721B;
+  --cargo-liquid-light: #9E79BD;    --cargo-liquid-dark: #563770;
+  --cargo-gas-light: #50D5C5;       --cargo-gas-dark: #1D796F;
+  --cargo-roro-light: #E38080;      --cargo-roro-dark: #AD2626;
   /* svetlé/tmavé varianty: +14 % L / −14 % L od base */
+
+  /* ===== Smer a stav kontajnerov (F6a, F6c; ADR-032, ADR-034) =====
+     Import a export sú dvojica oranžová/modrá (rozlíšiteľná aj pri poruche farbocitu); prázdne kontajnery sú neutrálne sivé;
+     poškodený prázdny kontajner nesie odznak v `--cargo-empty-damaged`. */
+  --cargo-import: #F28C28;      /* import = farba kontajnera (`--cargo-container`) */
+  --cargo-export: #3AA0FF;      /* export = accent (`--ui-accent`) */
+  --cargo-empty: #6E7783;       /* prázdny kontajner (direction 'empty'); svetlý / tmavý variant ako pri kategóriách */
+  --cargo-empty-light: #98A1AD; --cargo-empty-dark: #4A525C;
+  --cargo-empty-damaged: #C8553D; /* odznak poškodeného prázdneho kontajnera (damaged / in_repair) */
+
+  /* ===== Linky (data/defs/lines.json, `colorToken` bez `--`) ===== */
+  --line-blue: #4C7DF0;
+  --line-amber: #E0A12E;
+  --line-teal: #2FB7A8;
 
   /* ===== Moduly ===== */
   --module-base: #9DA3AC;       /* neutrálny betón/oceľ modulu */

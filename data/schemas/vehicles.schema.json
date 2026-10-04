@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "vehicles.json",
+  "description": "Katalóg interných vozidiel (ARCHITECTURE §4.4, ADR-009): { schemaVersion, items: [...] }. Jedinečnosť `id` v items[] schéma nevyjadrí — kontroluje ju DefRegistry a `pnpm validate:defs`. Každé vozidlo musí mať sprite `entities.<id>` v assets/manifest.json (krížovú kontrolu robí `pnpm validate:defs`).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "items"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Verzia schémy defu."
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/vehicle" },
+      "description": "Vozidlá v poradí súboru."
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "snake_case identifikátor."
+    },
+    "vehicle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "displayName",
+        "capacityUnits",
+        "speedCellsPerTick",
+        "loadTicks",
+        "unloadTicks",
+        "cargoCategories",
+        "purchaseCents",
+        "wagePerDayCents"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "displayName": { "type": "string", "minLength": 1 },
+        "capacityUnits": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Kapacita v CargoUnit (koľko jednotiek vezie naraz)."
+        },
+        "speedCellsPerTick": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Rýchlosť jazdy v bunkách za tick."
+        },
+        "loadTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Trvanie naloženia jednej jednotky v tickoch (sekvenčne po internalTicks)."
+        },
+        "unloadTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Trvanie vyloženia jednej jednotky v tickoch (sekvenčne po internalTicks)."
+        },
+        "cargoCategories": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["container", "bulk", "liquid", "gas", "roro"] },
+          "description": "Kategórie nákladu, ktoré vozidlo smie viezť."
+        },
+        "cargoDirections": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["import", "export", "tranship", "empty"] },
+          "description": "Smery nákladu, ktoré vozidlo smie viezť (F6c, ADR-034): `empty_handler` len `empty`. Chýba = vozidlo vezie každý smer (bežné vozidlá vozia prázdne ako záložná možnosť)."
+        },
+        "purchaseCents": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Kúpna cena v centoch (USD)."
+        },
+        "wagePerDayCents": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Denná mzda obsluhy v centoch (USD)."
+        },
+        "techRequired": {
+          "$ref": "#/$defs/id",
+          "description": "Id uzla tech tree, ktorý vozidlo odomyká; chýba = dostupné od začiatku."
+        }
+      }
+    }
+  }
+}

@@ -9,7 +9,7 @@ z mapy. Zisk a XP → expanzia, prenájmy, výskum. Zdroj pravdy pre dizajn: `do
 
 Tri neporušiteľné princípy z GDD:
 1. **Nič sa neteleportuje** — každá jednotka nákladu má vždy presne jednu fyzickú polohu.
-2. **Grid + moduly** — všetko sa stavia na mriežke; pobrežie je statické, terén sa neupravuje.
+2. **Grid + moduly** — všetko sa stavia na mriežke; pobrežie je statické (od F12 len drahé mólo/zásyp, ADR-028).
 3. **Jedna mena (USD), rozhodovanie nad dátami** — hra meria a zobrazuje metriky.
 
 ## Dokumenty (čítaj v tomto poradí pri začiatku fázy)
@@ -102,6 +102,6 @@ Pravidlá: `src/sim/**` edituje naraz len jeden agent; karta je hotová len po p
 
 ## Čo NEROBIŤ
 - Premium meny, loot boxy, duálne meny (GDD: jedna mena).
-- Úprava terénu/pobrežia hráčom.
+- Úprava terénu/pobrežia hráčom mimo mola/zásypu z ADR-028 (a tie až od F12).
 - Fyzikálne kolízie vozidiel — kongescia je „soft" model (ARCHITECTURE §7.6).
 - Multiplayer, modding API, lokalizácia, Steam — nič z toho pred fázou 13.

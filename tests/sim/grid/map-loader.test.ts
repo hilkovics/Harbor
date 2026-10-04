@@ -4,6 +4,7 @@ import type { EntityId } from '@sim/core/entity-id';
 import {
   Grid,
   MapError,
+  DEFAULT_ANCHORAGE_HEADING,
   loadBundledMap,
   loadMap,
   parseMapDef,
@@ -446,6 +447,25 @@ describe('parseMapDef — tvar podľa map.schema.json', () => {
 
   it('startOwned chýba → ostane chýbať', () => {
     expect(Object.hasOwn(parseMapDef(harbor01Json).parcels[1], 'startOwned')).toBe(false);
+  });
+
+  it('anchorageHeading (T6D-03): harbor_01 ho uvádza, voliteľný — chýba = predvolený kurz, platné hodnoty 0/90/180/270 prejdú, iné → MapError', () => {
+    expect(parseMapDef(harbor01Json).anchorageHeading).toBe(90);
+    expect(load(harbor01Json).anchorageHeading).toBe(90);
+    const without = rawMap() as Record<string, unknown>;
+    delete without['anchorageHeading'];
+    expect(Object.hasOwn(parseMapDef(without), 'anchorageHeading')).toBe(false);
+    expect(load(without).anchorageHeading).toBe(DEFAULT_ANCHORAGE_HEADING);
+    for (const heading of [0, 90, 180, 270]) {
+      const raw = rawMap() as Record<string, unknown>;
+      raw['anchorageHeading'] = heading;
+      expect(load(raw).anchorageHeading).toBe(heading);
+    }
+    for (const heading of [45, '90', null, -90, 360]) {
+      const raw = rawMap() as Record<string, unknown>;
+      raw['anchorageHeading'] = heading;
+      expectMapError(() => parseMapDef(raw), '/anchorageHeading');
+    }
   });
 
   it('platný starter modul prejde', () => {

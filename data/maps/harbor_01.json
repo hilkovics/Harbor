@@ -96,6 +96,7 @@
     { "x": 10, "y": 2 },
     { "x": 86, "y": 2 }
   ],
+  "anchorageHeading": 90,
   "starter": {
     "modules": [
       { "defId": "berth_standard", "x": 40, "y": 14, "rotation": 0 },

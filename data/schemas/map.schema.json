@@ -100,7 +100,11 @@
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/$defs/cell" },
-      "description": "Čakacie pozície lodí na hlbokej vode."
+      "description": "Čakacie pozície lodí na hlbokej vode — rejda: vyhradená zóna kotvísk na otvorenom mori pri príjazdovej dráhe, mimo dráhy a pásov pred kotviskami, s rozostupmi podľa dĺžky lodí (ADR-029 dodatok, T6D-03)."
+    },
+    "anchorageHeading": {
+      "enum": [0, 90, 180, 270],
+      "description": "Kurz všetkých lodí na kotve (0 = predok na sever, v smere hodinových ručičiek): jednotné natočenie voči pobrežiu — pozdĺž pobrežia alebo prídou proti prevládajúcemu prúdu. Predvolene 90 (východ, rovnobežne s pobrežím na sever od prístavu)."
     },
     "starter": {
       "type": "object",

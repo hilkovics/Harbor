@@ -1166,7 +1166,8 @@
       },
       "states": {
         "empty": "entities/straddle_carrier_empty.svg",
-        "loaded": "entities/straddle_carrier_loaded.svg"
+        "loaded": "entities/straddle_carrier_loaded.svg",
+        "carries_empty": "entities/straddle_carrier_carries_empty.svg"
       }
     },
     "empty_handler": {
@@ -1238,7 +1239,8 @@
       },
       "states": {
         "empty": "entities/truck_container_empty.svg",
-        "loaded": "entities/truck_container_loaded.svg"
+        "loaded": "entities/truck_container_loaded.svg",
+        "carries_empty": "entities/truck_container_carries_empty.svg"
       }
     },
     "truck_bulk": {

@@ -48,4 +48,108 @@ Vlny: T6C-01 → {T6C-02 → T6C-03} ‖ {T6C-04 ‖ T6C-05} → T6C-06 ‖ T6C-
 - [ ] T6C-09 · Docs + PR
 
 ## Spoločné rozhrania
-*(doplní T6C-01 — záväzné pre paralelné karty T6C-04 a T6C-05)*
+*Záväzné pre T6C-02 až T6C-06 (T6C-01, ADR-034). Skeleton je v `src/sim` (HEAD po T6C-01): typy, tabuľky, defy, save v8 a migrácia existujú; správanie (návrat prázdnych, depo + kontrola + M&R, výdaj exportérovi, repositioning, tranship) dodajú T6C-02 / T6C-03.*
+
+### Sim typy (už v kóde)
+```ts
+// @sim/cargo
+type CargoDirection = 'import' | 'export' | 'tranship' | 'empty';            // CARGO_DIRECTIONS
+type CargoStatus = 'available' | 'damaged' | 'in_repair';                    // CARGO_STATUSES, DEFAULT_CARGO_STATUS = 'available'
+interface CargoUnitLabels { direction; voyageId: VoyageId | null; lineId: string | null; destinationPort: string | null; weightClass }
+interface CargoUnit extends CargoUnitLabels { id; typeId; contractId: ContractId | null; hold; status: CargoStatus; repairUntilTick: number | null; quantity; location }
+// poradie kľúčov v save: CARGO_UNIT_KEYS = id, typeId, contractId, voyageId, lineId, direction, destinationPort, weightClass, hold, status, repairUntilTick, quantity, location
+CargoLedger.create(typeId, location, contractId = null, labels = IMPORT_LABELS)
+CargoLedger.setStatus(unitId, status, repairUntilTick: number | null): CargoUnit   // bez udalosti, poloha sa nemení; stav ≠ available len pre direction 'empty'
+CARGO_SPAWN_KIND_BY_DIRECTION = { import: 'on_ship', export: 'in_truck', tranship: 'on_ship', empty: 'in_truck' }
+EMPTY_WEIGHT_CLASS = 'light'
+// štítky podľa smeru (DIRECTION_LABEL_RULES): empty = bez kontraktu / voyage / prístavu, s linkou; tranship = ako export (kontrakt, voyage A, linka, cieľový prístav)
+// prázdny a tranship používajú existujúce prechody §7.1 (žiadny nový CargoLocation); konečné stavy: prázdny exported | shipped, tranship len shipped
+// @sim/contracts
+type ContractKind = 'import' | 'export' | 'empty_repositioning' | 'tranship';   // CONTRACT_KINDS
+type OfferGroup = 'import' | 'booking' | 'repositioning' | 'tranship';          // OFFER_GROUPS; CONTRACT_KIND_TRAITS[kind] = { booking, tranship, offerGroup }
+abstract class Contract { …; lineId: string;                                    // povinné; pool: lineForVoyage(lines, voyageId)
+  offerGroup: OfferGroup; voyageIds: readonly VoyageId[];                       // tranship: [A, B]
+  booking: ExportBooking | null;                                                // export, empty_repositioning, tranship
+  tranship: TranshipLeg | null;                                                 // len tranship
+  spawnUnits: number; spawnLabels: CargoUnitLabels }                            // spawn jednotiek na lodi (import: IMPORT štítky + linka; tranship: direction 'tranship')
+class EmptyRepositioningContract extends ExportContract                         // booking prázdnych linky z depa na loď voyage (bez cut-off a plánu príchodov)
+class TranshipContract extends ExportContract implements TranshipLeg            // loď A privezie, loď B odvezie
+interface TranshipLeg { outVoyageId: VoyageId; outArrivalTick | undefined; outShipId: EntityId | undefined; rescueDeadlineTick | undefined }
+interface TranshipContractTerms extends ExportContractTerms { outVoyageId: VoyageId }
+SerializedContract: …, voyageId, lineId (za voyageId), templateId, …, booking, tranship: SerializedTranship | null (na konci)
+SerializedTranship = { outVoyageId, outArrivalTick | null, outShipId | null, rescueDeadlineTick | null }
+ContractBook: voyageContracts(id) a voyage(id): VoyageView platia aj pre voyage B prekládky; voyageIdOfShip(shipId) pozná loď A aj B; offeredGroups(): { import, booking, repositioning, tranship }
+AcceptContext += { ticksPerHour, transhipGapDaysRange }                        // prijatie prekládky: 1 ťah Rng.range po ťahu príchodu lode A
+// @sim/modules
+class EmptyDepot extends StorageModule { repairBays: number; acceptsDirection(d) => d === 'empty'; storageCapacityUnits() => 0 }
+StorageModule.acceptsDirection(direction): boolean                              // bežný sklad true pre každý smer (fallback prázdnych)
+// def: kind 'storage', params { capacityUnits, category: 'container', role: 'empty_depot', repairBays }
+// @sim/logistics
+vehicleCarries(vehicle, category, direction): boolean                           // VehicleDef.cargoDirections ('empty' pre empty handler; chýba = všetko)
+class EmptyFlow { returnPlan: {dueTick, lineId}[]; pickupPlan: {dueTick, lineId, contractId}[]; schedule*/due*/consume*/dropPickupsOf/getState }   // World.emptyFlow
+// @sim/world
+WORLD_STATE_VERSION = 8; WORLD_STATE_V8_KEYS = v7 + 'emptyFlow'; WorldState.emptyFlow = { returnPlan, pickupPlan }
+migrateWorldState: v7 → v8 (lineId = prvá linka z lines.json, status 'available', prázdny emptyFlow); savy v1–v7 sa načítajú
+cargoSplitAt / shipCargoSplit / storageCargoSplit(world, …): { import, export, tranship, empty }
+depotCargoSplit(world, moduleId): { lines: LineStatusSplit[]; other: number }     // prázdne v sklade podľa linky (poradie lines.json) a stavu
+terminalEmptySplit(world): LineStatusSplit[]                                       // uskladnené prázdne celého prístavu
+interface LineStatusSplit { lineId: string; available: number; damaged: number; in_repair: number }
+```
+`ValidationReason`, `BookingPenaltyKind`, `PenaltyKind`, `ContractState`, `CraneState`, `LEDGER_CATEGORIES` sa **nemenia** (app ich mapuje vyčerpávajúco): repositioning používa `no_storage_for_category`, zmeškaná prekládka `BookingPenaltyApplied kind 'rolled'`. Kategóriu `maintenance_repair` pridá T6C-02. `ContractCardKind` v `@ui` rozšíri T6C-05 (dnes `src/app/contract-cards.ts` mapuje nové druhy dočasne na `export`).
+
+### Udalosti (`@sim/events`, deklarované; emitujú T6C-02 / T6C-03)
+| Udalosť | Payload | Kedy |
+|---|---|---|
+| `EmptyReturned` | `unitId, lineId, truckId, gateId` | krok 8: kamión s prázdnym prešiel bránou dnu (toast „Návrat prázdnych") |
+| `EmptyStored` | `unitId, lineId, moduleId, fallback` | uloženie prázdneho do skladu a kontrola; `fallback` = bežný dvor namiesto depa |
+| `EmptyDamaged` | `unitId, lineId, moduleId` | kontrola v depe našla poškodenie (`damageChance`) |
+| `EmptyRepairStarted` | `unitId, lineId, moduleId, untilTick` | krok 2: `damaged → in_repair` |
+| `EmptyRepaired` | `unitId, lineId, moduleId, costCents` | krok 2: `in_repair → available`, poplatok `repairCostCents` (toast „Oprava hotová") |
+| `EmptyPickedUp` | `unitId, lineId, contractId, truckId` | krok 8: kamión misie `pickup` odviezol prázdny exportérovi (`in_truck → exported`) |
+| `EmptyPickupMissed` | `lineId, contractId, truckId` | kamión odišiel prázdny po `emptyPickupMaxWaitHours` |
+| `TranshipMissed` | `contractId, units, outVoyageId` | loď B odplávala bez jednotiek prekládky (toast „Tranship zmeškaný") |
+| `TranshipRescued` | `contractId, units, outVoyageId` | zmeškané jednotky presmerované na ďalšiu voyage linky |
+| `TranshipSold` | `contractId, units` | zmeškané bez záchrany odišli kamiónom ako predané |
+`CargoMoved` pokrýva každý presun prázdneho aj prekládky. **`REVISION_EVENTS` (`src/app/sim-bridge.ts`) rozšíri T6C-05** o `EmptyReturned`, `EmptyStored`, `EmptyDamaged`, `EmptyRepairStarted`, `EmptyRepaired`, `EmptyPickedUp`, `TranshipMissed`, `TranshipRescued`, `TranshipSold` (karty a inšpektor depa sa skladajú pri zmene revízie; zmena stavu jednotky `setStatus` udalosť nemá, preto `EmptyDamaged` / `EmptyRepairStarted` / `EmptyRepaired` musia revíziu zmeniť).
+
+### Príkazy
+Nové nie sú. `AcceptContract` / `DeclineContract { contractId }` pôsobia na skupinu ponuky (voyage) ako vo F6a; repositioning s exportom jednej voyage sa prijíma spolu. Validácia repositioningu (existuje depo prázdnych, dôvod `no_storage_for_category` opätovne použitý) pridá T6C-03; kostra `AcceptContract` ju zatiaľ nekontroluje.
+
+### Čo app a render čítajú zo sveta (snapshot v8, T6C-04/05)
+- jednotky (`world.cargo.get`): `direction` (`empty` → sivý tón, `tranship` ako import/export), `status` (`damaged` / `in_repair` → odznak), `lineId` (farba linky z `world.defs.lines.get(id).colorToken`), `repairUntilTick`;
+- sklady: `storageCargoSplit` (štyri smery), `depotCargoSplit(world, depotId)` pre inšpektor depa (dostupné / poškodené / v oprave podľa linky), `EmptyDepot.repairBays`; HUD: `terminalEmptySplit(world)`;
+- kontrakty: `contract.kind`, `contract.lineId`, `contract.voyageIds`, `contract.booking` (repositioning: `bookedUnits` / `arrivedUnits` / `loadedUnits`), `contract.tranship` (A → B: `outVoyageId`, `outArrivalTick` → odpočet do príchodu B, `outShipId`, `rescueDeadlineTick`), `contract.unitsUnloaded` (prekládka vyložená z A), `world.contractBook.voyage(B)`;
+- vozidlá: def `empty_handler` (`cargoDirections: ['empty']`); sprite dočasne `assets/entities/empty_handler_{empty,loaded}.svg` (kópie `forklift_*` — prefarbiť);
+- `world.emptyFlow.returnPlan.length` / `pickupPlan.length` (naplánované návraty a výdaje) pre prípadný indikátor;
+- tokeny, ktoré **pridá T6C-04** do `design/tokens.css`: `--line-blue`, `--line-amber`, `--line-teal` (z `lines.json`) a `--cargo-empty`, `--cargo-empty-damaged` (sivý tón prázdnych a odznak poškodených).
+
+### Nové polia defov (T6C-01: def + schéma + `DefRegistry` + validate-defs — hotové)
+| Def | Pole | Typ / jednotka | Hodnota |
+|---|---|---|---|
+| `lines.json` (nový) | `items[]: { id, displayName, colorToken }` | neprázdne, jedinečné `id` | `blue_anchor` (`line-blue`), `northern_star` (`line-amber`), `golden_wave` (`line-teal`) |
+| `economy.json` | `repositioningOffersPerDay`, `transhipOffersPerDay` | celé ≥ 0, skupiny ponúk | 1, 1 |
+| | `repairCostCents` | celé ≥ 0, poplatok jednej opravy | 12 000 |
+| | `transhipGapDaysRange` | `[min, max]` dni od príchodu lode A po príchod lode B | [1, 2] |
+| | `transhipRescueDays` | dni na záchranu zmeškanej prekládky | 3 |
+| | `transhipMissedRateOfReward` | 0…1 z odmeny / jednotku | 0,25 |
+| `logistics.json` → `emptyFlow` | `hinterlandDaysRange` | `[min, max]` dni od odchodu importu po návrat prázdneho | [1, 3] |
+| | `emptyReturnRate` | 0…1 | 0,6 |
+| | `damageChance` | 0…1 pri uložení do depa | 0,08 |
+| | `repairHours` | h > 0 | 6 |
+| | `emptyPickupRate` | 0…1 podiel jednotiek exportu | 0,4 |
+| | `emptyPickupLeadHoursRange` | `[min, max]` h pred príchodom naloženého exportu | [4, 12] |
+| | `emptyPickupMaxWaitHours` | h ≥ 0 | 6 |
+| `cargo_types.json` | `repositioningPricePerUnitCents`, `transhipPricePerUnitCents` | celé ≥ 0 centov (šablóna druhu vyžaduje > 0) | `container_teu` 12 000 / 28 000 |
+| `modules.json` storage `params` | `role: 'empty_depot'`, `repairBays` | rola vyžaduje `repairBays` ≥ 1 a kategóriu `container` | `empty_depot`: 4×4, kapacita 96, cena 22 000 000, údržba 40 000 / deň, 2 miesta opravy |
+| `vehicles.json` (položka) | `cargoDirections` | neprázdne jedinečné smery (chýba = všetky) | `empty_handler`: `['empty']`, rýchlosť 0,5, cena 3 600 000, mzda 14 000 / deň |
+| `contract_templates.json` | `kind: 'empty_repositioning' \| 'tranship'` | tranship bez `exportVolumeUnitsRange`; repositioning s ním = spolu s exportom voyage | `container_feeder_repositioning`, `container_feeder_export_repositioning`, `container_feeder_tranship` (SLA ≤ 5, váha 2) |
+Pool nové šablóny **zatiaľ neponúka** (T6C-03 zapne `repositioningOffersPerDay` / `transhipOffersPerDay`).
+
+### Metriky `simrun` (T6C-02 / T6C-03; kľúče za `gameOver`, odporúčané názvy)
+`emptyReturns` = Σ `EmptyReturned`; `emptyFallbackStored` = Σ `EmptyStored.fallback`; `emptyDamaged` = Σ `EmptyDamaged`; `emptyRepaired` = Σ `EmptyRepaired`; `repairCostCents` = Σ `EmptyRepaired.costCents`; `emptyPickedUp` = Σ `EmptyPickedUp`; `emptyPickupMisses` = Σ `EmptyPickupMissed`; `repositionedUnits` = naložené jednotky `empty` → `shipped`; `transhipLoaded` / `transhipMissed` / `transhipSold` = Σ jednotiek prekládky `shipped` / `TranshipMissed` / `TranshipSold`. **`lostUnits` = `createdCount − (liveCount + exportedCount + shippedCount)`** musí byť 0. Hashe po T6C-01 (len tvar v8, metriky bez zmeny): `vertical_slice` 30 000 `5a6eae94` (bolo `c8a8fb43`), `export_roundtrip` 40 000 `65ca76d6` (`8f8bbdaf`), `export_inbound` 30 000 `357cdd37` (`22216b6b`), `full_import_chain` 40 000 `da449fd5` (`9b649c29`), `multi_ship_queue` 40 000 `91e2d10b` (`ac070343`), `stress_f6` 30 000 `2b8e525c` (`c07780e3`); `--roundtrip-at` zhodný.
+
+### Čo môžu paralelné karty robiť hneď / čo čaká na T6C-02/03
+- **T6C-04** (render): farby prázdnych a odznak poškodených nad `CargoUnit.direction` / `status` / `lineId`, sprity depa a empty handlera (defy aj manifest existujú: `sprites.empty_depot`, `entities.empty_handler` — kópie dvora / vidlicového vozíka), tokeny liniek. Živé dáta (prázdne v sklade, poškodené, tranship na palube) až po T6C-02 / T6C-03; do tej doby demo dáta cez ručne vložené jednotky v ledgeri.
+- **T6C-05** (UI + app): karty `empty_repositioning` a `tranship` nad `contract.kind` / `booking` / `tranship`, inšpektor depa nad `depotCargoSplit`, toasty nad udalosťami vyššie, `REVISION_EVENTS`, tabuľky `ContractCardKind` / `REASON_TEXT` ak by T6C-03 pridal nové dôvody. Pool nové ponuky neponúka, kým ich T6C-03 nezapne — karty sa overia nad ručne vloženými ponukami (`world.contractBook.add`, ako `helpers/f6a.ts`).
+- **T6C-02** (sim 1): `EmptyFlow` je v svete, sloty `returnPlan` / `pickupPlan` sa napĺňajú až tam; musí pridať `maintenance_repair` do `LEDGER_CATEGORIES` (+ test `ledger-category.test.ts`, ARCHITECTURE §9.2) a upraviť `StoredCargoIndex` (vylúčiť `direction 'empty'` z odchádzajúceho „voľného" prúdu) a invariant kroku 12 `storedCargo.size`.
+- **T6C-03** (sim 2): zovšeobecní `Bucket.exports` / `exportAboard` pre tranship a prázdne, zapne pool nových druhov, readiness, stowage prázdnych po plných, krok 2 tranship (`CONTRACT_STEPS.tranship` je dnes nečinné), záchranu zmeškaného a priradenie naložených prázdnych bookingu repositioningu podľa lode a linky.

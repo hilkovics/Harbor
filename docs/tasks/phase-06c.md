@@ -29,23 +29,29 @@
 | T6C-03 | Sim 2: repositioning a tranship kontrakty (pool, readiness, stowage prázdnych po plných, tranship A → B, záchrana zmeškaného), scenár `live_terminal.json` + golden, simrun metriky | sim-architect (sonnet) | no | 02 |
 | T6C-04 | Render: farba prázdnych, odznak poškodených, depo prázdnych, empty handler | implementer (sonnet, worktree) | yes | 01 |
 | T6C-05 | UI + app: karty repositioning/tranship, inšpektor depa, toasty, VM | ui-builder (sonnet, worktree) | yes | 01 |
-| T6C-06 | Napojenie render/UI na sim + e2e `f6c-live-terminal` | implementer (sonnet) | no | 03, 04, 05 |
+| T6C-06 | Napojenie render/UI na sim + e2e `f6c-live-terminal` (rozdelené na T6C-06a a T6C-06b) | implementer (sonnet) | no | 03, 04, 05 |
+| T6C-06a | Napojenie render/UI/app na sim 1: prázdne kontajnery, depo, empty handler a toasty nad `empty_cycle` | implementer (sonnet) | no | 02, 04, 05 |
+| T6C-06b | Napojenie na sim 2: prekládka A → B, repositioning, toast lode B, inšpektor + e2e `f6c-live-terminal` | implementer (sonnet) | no | 03, 06a |
 | T6C-07 | Review `src/sim/**` + opravy | sim-reviewer (sonnet) → sim-architect (sonnet) | no | 03 |
+| T6C-07b | Opravy z review F6c (2 major + 7 minor): limit návratov podľa miesta v depe, dosiahnuteľnosť nakládky, hot path, vzdanie sa len `collect`, overenie `pickupPlan` | sim-architect (sonnet) | no | 07 |
 | T6C-08 | Plná pipeline + e2e (test-runner, haiku), artefakt | test-runner (haiku) | no | 06, 07 |
 | T6C-09 | Docs: ARCHITECTURE (sonnet), PROGRESS/BACKLOG/checklist (haiku), PR | implementer / docs-keeper | no | 08 |
 
 Vlny: T6C-01 → {T6C-02 → T6C-03} ‖ {T6C-04 ‖ T6C-05} → T6C-06 ‖ T6C-07 → T6C-08 → T6C-09.
 
 ## Checklist
-- [ ] T6C-01 · ADR-034, defy, Spoločné rozhrania, WorldState v8
-- [ ] T6C-02 · Sim 1: linky, návrat prázdnych, depo, M&R, empty handler, výdaj exportérovi
-- [ ] T6C-03 · Sim 2: repositioning, tranship, live_terminal, metriky
-- [ ] T6C-04 · Render
-- [ ] T6C-05 · UI + app
-- [ ] T6C-06 · Napojenie + e2e
-- [ ] T6C-07 · Review + opravy
-- [ ] T6C-08 · Pipeline + artefakt
-- [ ] T6C-09 · Docs + PR
+- [x] T6C-01 · ADR-034, defy, Spoločné rozhrania, WorldState v8
+- [x] T6C-02 · Sim 1: linky, návrat prázdnych, depo, M&R, empty handler, výdaj exportérovi
+- [x] T6C-03 · Sim 2: repositioning, tranship, live_terminal, metriky
+- [x] T6C-04 · Render
+- [x] T6C-05 · UI + app
+- [x] T6C-06 · Napojenie + e2e
+  - [x] T6C-06a · Napojenie prázdnych kontajnerov, depa a empty handlera nad `empty_cycle`
+  - [x] T6C-06b · Napojenie prekládky a repositioningu nad `live_terminal`, toasty, e2e `f6c-live-terminal`
+- [x] T6C-07 · Review + opravy
+  - [x] T6C-07b · Opravy z review: M1 (limit návratov podľa miesta v depe), M2 (dosiahnuteľnosť nakládky), m1–m6 a minor render + UI
+- [x] T6C-08 · Pipeline + artefakt
+- [x] T6C-09 · Docs + PR
 
 ## Spoločné rozhrania
 *Záväzné pre T6C-02 až T6C-06 (T6C-01, ADR-034). Skeleton je v `src/sim` (HEAD po T6C-01): typy, tabuľky, defy, save v8 a migrácia existujú; správanie (návrat prázdnych, depo + kontrola + M&R, výdaj exportérovi, repositioning, tranship) dodajú T6C-02 / T6C-03.*
@@ -153,3 +159,36 @@ Pool nové šablóny **zatiaľ neponúka** (T6C-03 zapne `repositioningOffersPer
 - **T6C-05** (UI + app): karty `empty_repositioning` a `tranship` nad `contract.kind` / `booking` / `tranship`, inšpektor depa nad `depotCargoSplit`, toasty nad udalosťami vyššie, `REVISION_EVENTS`, tabuľky `ContractCardKind` / `REASON_TEXT` ak by T6C-03 pridal nové dôvody. Pool nové ponuky neponúka, kým ich T6C-03 nezapne — karty sa overia nad ručne vloženými ponukami (`world.contractBook.add`, ako `helpers/f6a.ts`).
 - **T6C-02** (sim 1): `EmptyFlow` je v svete, sloty `returnPlan` / `pickupPlan` sa napĺňajú až tam; musí pridať `maintenance_repair` do `LEDGER_CATEGORIES` (+ test `ledger-category.test.ts`, ARCHITECTURE §9.2) a upraviť `StoredCargoIndex` (vylúčiť `direction 'empty'` z odchádzajúceho „voľného" prúdu) a invariant kroku 12 `storedCargo.size`.
 - **T6C-03** (sim 2): zovšeobecní `Bucket.exports` / `exportAboard` pre tranship a prázdne, zapne pool nových druhov, readiness, stowage prázdnych po plných, krok 2 tranship (`CONTRACT_STEPS.tranship` je dnes nečinné), záchranu zmeškaného a priradenie naložených prázdnych bookingu repositioningu podľa lode a linky.
+
+## Výsledok fázy (M2)
+
+Míľnik **M2 „živý terminál“ splnený**: v jednom prístave bežia všetky štyri toky kontajnerov — import, export, prázdne (návrat, depo, kontrola + M&R, výdaj exportérovi, repositioning) a tranship (loď A → sklad → loď B).
+
+| Karta | Stav |
+|---|---|
+| T6C-01 … T6C-05 | hotové |
+| T6C-06a, T6C-06b | hotové (napojenie nad `empty_cycle` a `live_terminal`, e2e `f6c-live-terminal`) |
+| T6C-07 | hotové (review) |
+| T6C-07b | hotové (2 major + 7 minor opravené; dodatok T6C-07b k ADR-034) |
+| T6C-08 | hotové (plná pipeline, e2e, artefakt) |
+| T6C-09 | hotové (ARCHITECTURE, PORT_OPERATIONS, PROGRESS, BACKLOG) |
+
+**Review `src/sim/**`:** MERGE (2 major + 7 minor opravené v T6C-07b; nálezy odložené mimo fázu sú v `docs/BACKLOG.md` „Z Fázy 6c“).
+
+**Pipeline:** `pnpm test` zelené: 355 súborov, 8 630 testov.
+
+**E2E:** 48/48.
+
+**Scenár `live_terminal`** (60 000 tickov, seed 5014):
+- `lostUnits`: 0
+- `exportedUnits`: 116
+- `shippedUnits`: 96
+- `emptyReturns`: 68
+- `emptyRepaired`: 11
+- `repositionedUnits`: 24
+- `transhipLoaded`: 36
+- `stateHash`: `271a07cc` (zhodný s `--roundtrip-at 37000`)
+
+**Výkon:** bench `live_terminal` priemer 0,11 ms / tick.
+
+**Artefakt** (hrateľná verzia „Fáza 6c“) zverejnený. **Oprava buildu:** Vite `assetsInlineLimit: 0` — `data:` URL SVG assetov blokovala CSP artefaktu, assety sa preto neinlinujú.

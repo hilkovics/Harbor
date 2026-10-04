@@ -1,9 +1,9 @@
 # Prevádzka kontajnerového terminálu — doménový model a plán
 
-> Zdroj: doplnenie od používateľa (2026-09-30) „Štyri toky kontajnerov". Tento dokument je **referencia pre plánovanie fáz**: porovnáva realitu terminálu so stavom hry po F6a (pôvodne po F5b), navrhuje zjednodušený herný model a zaraďuje ho do fáz. Detaily implementácie sa rozhodnú v ADR príslušnej fázy.
+> Zdroj: doplnenie od používateľa (2026-09-30) „Štyri toky kontajnerov". Tento dokument je **referencia pre plánovanie fáz**: porovnáva realitu terminálu so stavom hry po F6c (pôvodne po F5b), navrhuje zjednodušený herný model a zaraďuje ho do fáz. Detaily implementácie sa rozhodnú v ADR príslušnej fázy.
 > Zásady ostávajú: nič sa neteleportuje (každý presun cez `CargoLedger.move`), determinizmus, data-driven, rozšírenia cez triedy a defy.
 
-## 1. Stav hry po F6a (čo už zodpovedá realite)
+## 1. Stav hry po F6c (čo už zodpovedá realite)
 | Realita | V hre dnes |
 |---|---|
 | Import: loď → sklad → kamión odvezie | **Áno** (F2–F5): kontrakt → loď → STS žeriav → apron → straddle carrier → dvor → rampa → kamión → `exported`. |
@@ -21,6 +21,13 @@
 | Lashing + papiere | **Áno (F6a)**: po poslednej nakládke stav lode `lashing` (`lashingTicksPerUnit × naložené + paperworkTicks`), loď drží kotvisko; pri odchode sa export presunie do `shipped`. |
 | Dual transaction | **Áno (F6a)**: kamión s exportom po vykládke na rampe zostane na docku a naloží import, ak je tam náklad na odvoz pre celú jeho kapacitu (metrika `dualTransactionRate`; v prirodzenom toku zriedkavé). |
 | Odovzdávanie žeriav ↔ vozidlo pod hákom | **Áno (F6a)**: predvolený `handoverMode: under_hook` — vozidlo čaká pod žeriavom, apron je len buffer 0–1 jednotka na žeriav; čakanie žeriava a vozidla sa meria (`craneWaitForVehicleTicks`, `vehicleWaitUnderCraneTicks`). Režim `apron` ostáva v defe. |
+| Návrat prázdnych z vnútrozemia | **Áno (F6c)**: keď import odíde kamiónom, po `hinterlandDaysRange` (Rng, podiel `emptyReturnRate`) sa vráti prázdny kontajner tej istej linky — kamión `delivery` s jednotkou `direction: 'empty'` prejde bránou, vyloží sa na rampe a vozidlo ho odvezie do depa. Tok sa plánuje len v prístave s depom a návrat prijme len voľné miesto v depe (inak `EmptyReturnDeclined`, nič sa nehromadí v dvore). |
+| Depot prázdnych | **Áno (F6c)**: modul `empty_depot` (`EmptyDepot extends StorageModule`, kapacita 96, prijíma len prázdne, 2 miesta opravy); bežný dvor prázdne prijme len ako fallback, keď depo chýba. |
+| Kontrola a M&R | **Áno (F6c)**: pri uložení do depa `damageChance` → `damaged` → oprava `repairHours` na jednom z `repairBays` → `available`; poplatok `repairCostCents` (ledger `maintenance_repair`); poškodený ani opravovaný kontajner sa nesmie vydať ani naložiť. |
+| Empty handler | **Áno (F6c)**: vozidlo `empty_handler` (len `direction: 'empty'`, rýchlejšia manipulácia); dispatcher mu prideľuje joby prázdnych prednostne pred bežnými vozidlami. |
+| Výdaj prázdneho exportérovi | **Áno (F6c)**: pred príchodom naloženého exportu (`emptyPickupRate`) príde kamión misie `collect` po prázdny kontajner tej istej linky, naloží ho na rampe a odíde (`exported`); bez dostupného prázdneho čaká `emptyPickupMaxWaitHours` a odíde prázdny (metrika `emptyPickupMisses`). |
+| Repositioning prázdnych | **Áno (F6c)**: kontrakt `empty_repositioning` — linka nalodí N prázdnych z depa na loď voyage (aj spolu s exportom); nakladajú sa **po plných** (stowage), odmena za naložený kus. |
+| Tranship (loď → loď) | **Áno (F6c)**: kontrakt `tranship` — loď A vyloží jednotky `direction: 'tranship'`, uložia sa zoskupene a naložia na loď B, ktorá príde neskôr (`transhipGapDaysRange`); **nikdy neprejdú bránou**. Zmeškaná loď B → penalizácia a záchrana na ďalšiu voyage linky, inak predaj kamiónom po lehote `transhipRescueDays`. |
 
 ## 2. Čo chýba (medzery) a herný model
 ### 2.1 Export (landside → loď)
@@ -63,7 +70,7 @@ Nevyžaduje extra kód, vznikne z vyššie uvedeného: exporty prichádzajú v �
 | **5b** (beží) | spätná väzba z hrania — tok kamiónov, lode bez prekryvu, mapa s mólami, mierka | — |
 | **6** | Save/Load, čas, nastavenia, stabilizácia (bez zmeny) | 1,5 SD |
 | **6a — Export a booking** — **hotová** *(nová; presunuté „export kontrakty" z F12)* | booking (loď + cieľový prístav + cut-off), rozložené príchody exportov, brána s VGM hold, exportný sklad zoskupený podľa lode/prístavu/hmotnosti, nakládka lode podľa zjednodušeného stowage plánu, dual cycling žeriavu, lashing + papiere pred odchodom, dual transaction kamiónov; odovzdávanie žeriav ↔ vozidlo pod hákom (variant A, ADR-033) | 3 SD — hotové |
-| **6c — Prázdne a tranship** *(nová)* | `lineId`, návrat prázdnych z vnútrozemia, depot prázdnych + empty handler, kontrola a M&R, výdaj prázdneho exportérovi, repositioning kontrakty, tranship kontrakty (loď → loď) | 2,5 SD |
+| **6c — Prázdne a tranship** — **hotová** *(nová)* | `lineId`, návrat prázdnych z vnútrozemia, depot prázdnych + empty handler, kontrola a M&R, výdaj prázdneho exportérovi, repositioning kontrakty, tranship kontrakty (loď → loď) | 2,5 SD — hotové |
 | 7 | Parcely, OPEX, grafy (bez zmeny) | 2 SD |
 | 8 | XP a tech tree — odomyká RTG/shuttle/AGV/empty depot | 1,5 SD |
 | 9 | Nové komodity (bulk, liquid, gas, RoRo), **reefery a nebezpečný tovar** v stowage pláne | 3–4 SD |
@@ -74,7 +81,7 @@ Nevyžaduje extra kód, vznikne z vyššie uvedeného: exporty prichádzajú v �
 | 13 | Balans, UX, tutoriál, výkon, release | 3 SD |
 | **14 — Sklad: stohy a rehandling** *(nová, voliteľná, úplne na konci — rozhodnutie používateľa)* | pozície bay–row–tier, poradie v stohu, rehandling (čas stroja), pre-marshalling pred loďou, metriky rehandlingu; dovtedy sklad = kapacita bez poradia, RTG bez rehandlingu | 2,5 SD |
 
-Plán sa tým predĺži o ≈ 11 SD (spolu ≈ 40 SD). Poradie: 5b → 6 → 6a → 6c → 7 → … → 13 → 14 (voliteľná). Fázy 6a a 6c spolu tvoria **M2 „živý terminál"**: všetky štyri toky kontajnerov.
+Plán sa tým predĺži o ≈ 11 SD (spolu ≈ 40 SD). Poradie: 5b → 6 → 6a → 6c → 7 → … → 13 → 14 (voliteľná). Fázy 6a a 6c spolu tvoria **M2 „živý terminál"**: všetky štyri toky kontajnerov — **M2 splnený** (F6c, scenár `live_terminal`: import, export, prázdne + repositioning a prekládka A → B v jednom prístave, `lostUnits` 0).
 
 ## 4. Dopady na architektúru (na rozhodnutie v ADR fáz)
 - `CargoUnit` dostane `direction: 'import' | 'export' | 'tranship' | 'empty'`, `bookingId?`, `lineId`, `destinationPort?`, `weightClass`, `status` (napr. `vgm_hold`, `damaged`).

@@ -252,3 +252,28 @@ Stav: **hotová** (T6A-01 … T6A-09b, T6A-10, T6A-10a, T6A-10b, T6A-11)
 PR hilkovics/Harbor#9.
 
 Ďalej: **Fáza 6c — Prázdne kontajnery a tranship** (spolu so 6a míľnik M2)
+
+## Fáza 6c — Prázdne kontajnery a tranship (M2)
+Karty: `docs/tasks/phase-06c.md` · vetva `phase/06c-empties-tranship` (stacked nad hilkovics/Harbor#9)
+
+Stav: **hotová** (T6C-01 … T6C-09, vrátane T6C-06a, T6C-06b a T6C-07b), **míľnik M2 „živý terminál“ splnený**
+
+**Výsledky:**
+- review sim-reviewer: MERGE (2 major + 7 minor opravené v T6C-07b)
+- `pnpm test`: 355 súborov, 8 630 testov zelených
+- `pnpm test:e2e`: 48/48
+- `simrun live_terminal` (60 000 tickov): lostUnits 0, exported 116, shipped 96, emptyReturns 68, emptyRepaired 11, repositioned 24, transhipLoaded 36, stateHash 271a07cc (zhodný s `--roundtrip-at 37000`)
+- `pnpm bench`: live_terminal priemer 0,11 ms / tick (cieľ < 2 ms)
+- Hrateľná verzia zverejnená (artefakt „Fáza 6c“); oprava buildu: Vite `assetsInlineLimit: 0` — `data:` URL SVG assetov blokovala CSP artefaktu
+
+**Čo je hotové:**
+- Návrh: ADR-034 (linky, smery `empty` / `tranship` a stav kvality jednotky, depo prázdnych, kontrola a M&R, empty handler, `EmptyFlow`, druhy kontraktu `empty_repositioning` a `tranship`, `WorldState` v8 + migrácia v7 → v8) a dodatky T6C-02, T6C-03, T6C-07b
+- Defy: `lines.json` (3 linky), `empty_depot`, `empty_handler`, ekonomika návratov / opráv / repositioningu / prekládky, `logistics.emptyFlow`, šablóny, schémy a `validate:defs`
+- Sim jadro: `lineId` bez `Rng`, návrat prázdnych z vnútrozemia (len s voľným miestom v depe), depo s kontrolou a M&R (ledger `maintenance_repair`), empty handler prednostne, výdaj prázdneho exportérovi (misia `collect`), repositioning (nakládka prázdnych po plných), tranship A → B (loď B, zmeškanie, záchrana, predaj), invarianty (`checkEmptyFlow`), obnova a migrácia v8
+- Render, UI a app: sivé prázdne kontajnery a odznak poškodených, depo prázdnych, empty handler, farby liniek, karty repositioningu a prekládky, inšpektor depa (dostupné / poškodené / v oprave podľa linky), toasty (návrat prázdnych, oprava hotová, tranship zmeškaný)
+- TDD a tooling: scenáre `empty_cycle` a `live_terminal` (golden, `--roundtrip-at`), metriky `simrun` (emptyReturns, emptyRepaired, repositionedUnits, transhipLoaded, …), e2e `f6c-live-terminal`
+- Dokumentácia: ARCHITECTURE (§5, §6, §7.1, §7.3, §7.5, §9.1, §9.2, §12, §14, §16, §18), PORT_OPERATIONS §1 a §3
+
+**Odchýlky od plánu:** `lineId` bez `Rng` (deterministicky podľa voyage); empty handler len def (bez triedy); tok prázdnych, repositioning a tranship sa ponúkajú len v prístave s depom prázdnych; výdaj exportérovi je misia `collect` s poverením (nie `pickup`); pripravenosť repositioningu = existuje depo; záchrana zmeškanej prekládky zjednodušená (prepíše sa voyage B, inak predaj po `transhipRescueDays`); T6C-06 sa rozdelila na T6C-06a a T6C-06b a review T6C-07 si vyžiadalo opravy T6C-07b. Odložené nálezy z review sú v BACKLOG „Z Fázy 6c“.
+
+Ďalej: **Fáza 6d — spätná väzba z hrania 2** (mesto a časové okná kamiónov, odovzdávanie priamo na vozidlo pod hákom, lode priamo na rejdu)

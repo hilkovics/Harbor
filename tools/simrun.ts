@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CommandError, commandFromJSON, type Command, type SerializedCommand } from '@sim/commands';
+import type { CargoDirection } from '@sim/cargo';
 import { loadBundledDefs, type DefRegistry } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
 import { loadBundledMap, loadMap, parseMapDef, type LoadedMap } from '@sim/grid';
@@ -208,6 +209,16 @@ export interface SimrunReport {
   readonly emptyPickedUp: number;
   /** Počet udalostí `EmptyPickupMissed` — kamióny po prázdny kontajner, ktoré odišli naprázdno po `emptyPickupMaxWaitHours`. */
   readonly emptyPickupMisses: number;
+  /** Prázdne kontajnery (smer `empty`) naložené na loď repositioningu, ktoré s ňou odplávali (`CargoMoved on_ship → shipped`, F6c, ADR-034). */
+  readonly repositionedUnits: number;
+  /** Jednotky prekládky (smer `tranship`) naložené na loď B, ktoré s ňou odplávali (`on_ship → shipped`). */
+  readonly transhipLoaded: number;
+  /** Σ `TranshipMissed.units` — jednotky prekládky, pri ktorých loď B odplávala bez nich. */
+  readonly transhipMissed: number;
+  /** Σ `TranshipRescued.units` — zmeškané jednotky presmerované na ďalšiu voyage linky. */
+  readonly transhipRescued: number;
+  /** Σ `TranshipSold.units` — zmeškané jednotky bez záchrany, ktoré odišli kamiónom ako predané. */
+  readonly transhipSold: number;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -500,6 +511,11 @@ interface EventTally {
   repairCostCents: number;
   emptyPickedUp: number;
   emptyPickupMisses: number;
+  repositionedUnits: number;
+  transhipLoaded: number;
+  transhipMissed: number;
+  transhipRescued: number;
+  transhipSold: number;
   /** Súčet a počet `exportGroupingShare` v ticku `CutoffPassed` (priemer sa počíta na konci). */
   groupingShareSum: number;
   groupingShareCount: number;
@@ -543,6 +559,9 @@ function tallyEvents(tally: EventTally, events: readonly SimEvent[]): void {
       tally.repairCostCents += event.costCents;
     } else if (event.type === 'EmptyPickedUp') tally.emptyPickedUp += 1;
     else if (event.type === 'EmptyPickupMissed') tally.emptyPickupMisses += 1;
+    else if (event.type === 'TranshipMissed') tally.transhipMissed += event.units;
+    else if (event.type === 'TranshipRescued') tally.transhipRescued += event.units;
+    else if (event.type === 'TranshipSold') tally.transhipSold += event.units;
     else if (event.type === 'MoneyChanged') {
       // Kategórie účtovnej knihy: príjem kontraktu je kladný, údržba a mzdy záporné → kladná veľkosť.
       if (event.reason === 'contract_revenue') tally.revenueCents += event.deltaCents;
@@ -560,6 +579,28 @@ function tallyGrouping(tally: EventTally, world: World, events: readonly SimEven
     if (share === null) continue;
     tally.groupingShareSum += share;
     tally.groupingShareCount += 1;
+  }
+}
+
+/**
+ * Smer jednotiek naložených na loď (`CargoMoved in_crane → on_ship`) podľa id — `shipped` jednotku z ledgera odstráni, takže smer sa musí zapamätať
+ * pri nakládke (jednotka je vtedy ešte v ledgeri; odplávanie je vždy v neskoršom ticku). Metriky `repositionedUnits` a `transhipLoaded`.
+ */
+type LoadedDirections = Map<number, CargoDirection>;
+
+/** Sčíta jednotky prázdne a prekládky, ktoré odplávali (`on_ship → shipped`); volá sa po `world.tick()`, pred ním sa smer naložených zapamätá. */
+function tallyShipped(tally: EventTally, loaded: LoadedDirections, world: World, events: readonly SimEvent[]): void {
+  for (const event of events) {
+    if (event.type !== 'CargoMoved') continue;
+    if (event.to.kind === 'on_ship' && event.from.kind === 'in_crane') {
+      const direction = world.cargo.get(event.unitId)?.direction;
+      if (direction === 'empty' || direction === 'tranship') loaded.set(event.unitId, direction);
+    } else if (event.to.kind === 'shipped') {
+      const direction = loaded.get(event.unitId);
+      loaded.delete(event.unitId);
+      if (direction === 'empty') tally.repositionedUnits += 1;
+      else if (direction === 'tranship') tally.transhipLoaded += 1;
+    }
   }
 }
 
@@ -696,10 +737,16 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     repairCostCents: 0,
     emptyPickedUp: 0,
     emptyPickupMisses: 0,
+    repositionedUnits: 0,
+    transhipLoaded: 0,
+    transhipMissed: 0,
+    transhipRescued: 0,
+    transhipSold: 0,
     groupingShareSum: 0,
     groupingShareCount: 0,
   };
   const vehicleTicks = { activeTicks: 0, totalTicks: 0 };
+  const loadedDirections: LoadedDirections = new Map();
   let ticksToAllStored: number | null = null;
   let ticksToAllExported: number | null = null;
   let gateQueueMax = 0;
@@ -724,6 +771,7 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     const ticked = world.tick();
     tallyEvents(tally, ticked);
     tallyGrouping(tally, world, ticked);
+    tallyShipped(tally, loadedDirections, world, ticked);
     tallyVehicleTicks(world, vehicleTicks);
     if (ticksToAllStored === null && tally.shipsSpawned > 0 && isAllStored(world)) ticksToAllStored = world.clock.tick;
     gateQueueMax = Math.max(gateQueueMax, totalGateQueue(world));
@@ -794,6 +842,11 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     repairCostCents: tally.repairCostCents,
     emptyPickedUp: tally.emptyPickedUp,
     emptyPickupMisses: tally.emptyPickupMisses,
+    repositionedUnits: tally.repositionedUnits,
+    transhipLoaded: tally.transhipLoaded,
+    transhipMissed: tally.transhipMissed,
+    transhipRescued: tally.transhipRescued,
+    transhipSold: tally.transhipSold,
   };
 }
 
@@ -822,7 +875,9 @@ export function formatSummary(report: SimrunReport): string {
     `dual cycle ${metric(report.dualCycleRate)}, dual transaction ${metric(report.dualTransactionRate)}, mimo poradia ${String(report.stowageOrderViolations)}, ` +
     `zoskupenie exportu ${metric(report.exportGroupingPct)}, žeriav čaká ${String(report.craneWaitForVehicleTicks)}, vozidlo čaká ${String(report.vehicleWaitUnderCraneTicks)}, ` +
     `prázdne vrátené/záložné/poškodené/opravené ${String(report.emptyReturns)}/${String(report.emptyFallbackStored)}/${String(report.emptyDamaged)}/${String(report.emptyRepaired)}, ` +
-    `opravy ${String(report.repairCostCents)}, prázdne vydané/zmeškané ${String(report.emptyPickedUp)}/${String(report.emptyPickupMisses)}` +
+    `opravy ${String(report.repairCostCents)}, prázdne vydané/zmeškané ${String(report.emptyPickedUp)}/${String(report.emptyPickupMisses)}, ` +
+    `repositioning ${String(report.repositionedUnits)}, prekládka naložená/zmeškaná/zachránená/predaná ${String(report.transhipLoaded)}/${String(report.transhipMissed)}/` +
+    `${String(report.transhipRescued)}/${String(report.transhipSold)}` +
     (report.stateHash === null ? '' : `, hash stavu ${report.stateHash}`)
   );
 }

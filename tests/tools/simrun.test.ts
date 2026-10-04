@@ -297,6 +297,11 @@ describe('runScenario', () => {
       repairCostCents: 0,
       emptyPickedUp: 0,
       emptyPickupMisses: 0,
+      repositionedUnits: 0,
+      transhipLoaded: 0,
+      transhipMissed: 0,
+      transhipRescued: 0,
+      transhipSold: 0,
     });
     expect(Object.keys(report)).toEqual([
       'scenario',
@@ -358,6 +363,11 @@ describe('runScenario', () => {
       'repairCostCents',
       'emptyPickedUp',
       'emptyPickupMisses',
+      'repositionedUnits',
+      'transhipLoaded',
+      'transhipMissed',
+      'transhipRescued',
+      'transhipSold',
     ]);
   });
 
@@ -941,6 +951,13 @@ describe('runScenario', () => {
       expect(plain).toMatchObject({ gameOver: true, ticks: TICKS_PER_DAY });
       expect(runScenario(SMOKE, ticks, broke, { hash: true, roundtripAt: TICKS_PER_DAY })).toEqual(plain);
     }, HEAVY_TIMEOUT_MS);
+
+    it('formatSummary nesie metriky repositioningu a prekládky (F6c, T6C-03) pred hashom stavu', () => {
+      const report = runScenario(SMOKE, 10, defs, { hash: true });
+      const text = formatSummary({ ...report, repositionedUnits: 24, transhipLoaded: 36, transhipMissed: 5, transhipRescued: 3, transhipSold: 2 });
+      expect(text).toContain(', repositioning 24, prekládka naložená/zmeškaná/zachránená/predaná 36/5/3/2');
+      expect(text.endsWith(`, hash stavu ${String(report.stateHash)}`)).toBe(true);
+    });
 
     it('formatSummary: so stateHash končí „hash stavu <hex>", bez neho hash nespomína', () => {
       const report = runScenario(SMOKE, 10, defs, { hash: true });

@@ -17,11 +17,11 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { commandFromJSON } from '@sim/commands';
 import { WORLD_STATE_VERSION, World, type WorldState } from '@sim/world';
 import { must } from '../helpers/harbor';
-import { REPO_ROOT, loadScenarioFile, runScenario, stateHash } from '../helpers/scenario';
+import { PORT_MAP } from '../world/world-fixtures';
+import { REPO_ROOT, loadScenarioFile, runScenario, stateHash, withPortBridge } from '../helpers/scenario';
 import {
   CONTRACT_MAIN_CHAIN,
   DEFS,
-  MAP,
   Run5,
   SLICE_ACCEPT_TICK,
   SLICE_SEED,
@@ -74,9 +74,9 @@ describe('scenár vertical_slice: súbor', () => {
   });
 
   it('je zhodný s rozložením F4 (10 úsekov ciest, 6 modulov, 2 vozidlá) + AcceptContract; bez SpawnShipDebug', () => {
-    expect(scenario).toEqual(verticalSliceScenario(CONTRACT_ID, acceptEntry.atTick));
+    expect(scenario).toEqual(withPortBridge(verticalSliceScenario(CONTRACT_ID, acceptEntry.atTick)));
     const types = scenario.commands.map((entry) => entry.command.type);
-    expect(types).toEqual([...Array<string>(10).fill('PlaceRoad'), ...Array<string>(6).fill('PlaceModule'), 'BuyVehicle', 'BuyVehicle', 'AcceptContract']);
+    expect(types).toEqual([...Array<string>(10).fill('PlaceRoad'), ...Array<string>(6).fill('PlaceModule'), 'BuyVehicle', 'BuyVehicle', 'PlaceRoad', 'RemoveRoad', 'AcceptContract']);
     expect(types).not.toContain('SpawnShipDebug');
     expect(scenario.commands.filter((entry) => entry.command.type === 'BuyVehicle').map((entry) => entry.command['vehicleDefId'])).toEqual([
       'straddle_carrier',
@@ -91,7 +91,7 @@ describe('scenár vertical_slice: súbor', () => {
   });
 
   it('cieľ AcceptContract je práve najnižšie id ponuky v ticku prijatia (prvá ponuka)', () => {
-    const world = World.create(DEFS, MAP, scenario.seed);
+    const world = World.create(DEFS, PORT_MAP, scenario.seed);
     runScenario(world, scenario, acceptEntry.atTick);
     const first = must(offeredContracts(world)[0], 'prvá ponuka poolu');
     expect(CONTRACT_ID, `vertical_slice.json má AcceptContract ${String(CONTRACT_ID)}, ale prvá ponuka má id ${String(first.id)} (T05-04: oprav id v scenári)`).toBe(first.id);
@@ -161,7 +161,7 @@ describe('scenár vertical_slice: beh 60 000 tickov', () => {
   let completedAt: number;
 
   beforeAll(() => {
-    world = World.create(DEFS, MAP, scenario.seed);
+    world = World.create(DEFS, PORT_MAP, scenario.seed);
     forks = [];
     sampler = new Sampler();
     const taken = new Set<string>();
@@ -306,7 +306,7 @@ describe('scenár vertical_slice: beh 60 000 tickov', () => {
   // -------------------------------------------------------------------------------------------------------
 
   it('determinizmus: druhý beh s rovnakým seedom a príkazmi dá rovnaký odtlačok udalostí aj stavu každých 1 000 tickov', () => {
-    const world2 = World.create(DEFS, MAP, scenario.seed);
+    const world2 = World.create(DEFS, PORT_MAP, scenario.seed);
     const sampler2 = new Sampler();
     const run2 = new Run5(world2, scenario, { onTick: (_self, tickEvents) => sampler2.observe(world2, tickEvents) });
     run2.runTo(SLICE_TICKS);
@@ -324,7 +324,7 @@ describe('scenár vertical_slice: beh 60 000 tickov', () => {
     for (const fork of forks) {
       expect(fork.saved.version, fork.name).toBe(WORLD_STATE_VERSION);
       expect(JSON.parse(JSON.stringify(fork.saved)), fork.name).toEqual(fork.saved);
-      const clone = World.deserialize(DEFS, MAP, JSON.parse(JSON.stringify(fork.saved)) as WorldState);
+      const clone = World.deserialize(DEFS, PORT_MAP, JSON.parse(JSON.stringify(fork.saved)) as WorldState);
       expect(stateHash(clone), fork.name).toBe(fork.hash);
       expect(clone.clock.tick, fork.name).toBe(fork.tick);
       expect(JSON.stringify(contractsProjection(clone)), fork.name).toBe(fork.contracts);
@@ -335,7 +335,7 @@ describe('scenár vertical_slice: beh 60 000 tickov', () => {
 
   it('obnovený svet dobehne do rovnakého stavu a rovnakých udalostí ako pôvodný (audit po každom ticku), lostUnits 0', () => {
     for (const fork of forks) {
-      const clone = World.deserialize(DEFS, MAP, JSON.parse(JSON.stringify(fork.saved)) as WorldState);
+      const clone = World.deserialize(DEFS, PORT_MAP, JSON.parse(JSON.stringify(fork.saved)) as WorldState);
       const forked = new Run5(clone, scenario, { checkCounters: false });
       forked.runTo(checkpoint.tick);
       expect(clone.clock.tick, fork.name).toBe(checkpoint.tick);

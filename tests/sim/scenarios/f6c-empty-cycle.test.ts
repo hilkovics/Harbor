@@ -12,10 +12,10 @@ import type { EntityId } from '@sim/core';
 import type { SimEvent } from '@sim/events';
 import { World, stateHash, type WorldState } from '@sim/world';
 import { findWorldViolation } from '@sim/world/world-invariants';
-import { MAP, lostUnits } from '../helpers/f6a';
+import { lostUnits } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
 import { REPO_ROOT, loadScenarioFile, runScenario } from '../helpers/scenario';
-import { BUNDLED_DEFS } from '../world/world-fixtures';
+import { BUNDLED_DEFS, PORT_MAP } from '../world/world-fixtures';
 
 const SCENARIO = loadScenarioFile('empty_cycle');
 const TICKS = 40_000;
@@ -36,7 +36,7 @@ const REPAIR_TICKS = Math.round(BUNDLED_DEFS.logistics.emptyFlow.repairHours * (
 type Entries = readonly { readonly tick: number; readonly event: SimEvent }[];
 
 function run(): { readonly world: World; readonly events: Entries } {
-  const world = World.create(BUNDLED_DEFS, MAP, SCENARIO.seed);
+  const world = World.create(BUNDLED_DEFS, PORT_MAP, SCENARIO.seed);
   const events: { tick: number; event: SimEvent }[] = [];
   runScenario(world, SCENARIO, TICKS, {
     afterTick: (w, tickEvents) => {
@@ -69,7 +69,7 @@ describe('scenár empty_cycle: súbor', () => {
 
   it('prístav F4 s depom prázdnych na mieste blízkeho dvora, tri vozidlá (2× straddle, empty handler) a tri AcceptContract (2 @2, 10 @8 641, 22 @25 921)', () => {
     const types = SCENARIO.commands.map((entry) => entry.command.type);
-    expect(types).toEqual([...Array<string>(10).fill('PlaceRoad'), ...Array<string>(6).fill('PlaceModule'), 'BuyVehicle', 'BuyVehicle', 'BuyVehicle', 'AcceptContract', 'AcceptContract', 'AcceptContract']);
+    expect(types).toEqual([...Array<string>(10).fill('PlaceRoad'), ...Array<string>(6).fill('PlaceModule'), 'BuyVehicle', 'BuyVehicle', 'BuyVehicle', 'PlaceRoad', 'RemoveRoad', 'AcceptContract', 'AcceptContract', 'AcceptContract']);
     const modules = SCENARIO.commands.filter((entry) => entry.command.type === 'PlaceModule').map((entry) => (entry.command as unknown as { defId: string }).defId);
     expect(modules).toEqual(['vehicle_depot', 'empty_depot', 'container_yard_small', 'truck_gate', 'truck_waiting_area', 'loading_ramp_container']);
     const vehicles = SCENARIO.commands.filter((entry) => entry.command.type === 'BuyVehicle').map((entry) => (entry.command as unknown as { vehicleDefId: string }).vehicleDefId);
@@ -201,9 +201,9 @@ describe('scenár empty_cycle: beh', () => {
     const repairing = of(events, 'EmptyRepairStarted')[0];
     const ticks = [repairing.tick - 50, repairing.tick + 1_000, 26_050, 36_500];
     for (const at of ticks) {
-      const half = World.create(BUNDLED_DEFS, MAP, SCENARIO.seed);
+      const half = World.create(BUNDLED_DEFS, PORT_MAP, SCENARIO.seed);
       runScenario(half, SCENARIO, at);
-      const restored = World.deserialize(BUNDLED_DEFS, MAP, JSON.parse(JSON.stringify(half.serialize())) as WorldState);
+      const restored = World.deserialize(BUNDLED_DEFS, PORT_MAP, JSON.parse(JSON.stringify(half.serialize())) as WorldState);
       runScenario(restored, SCENARIO, TICKS);
       expect(stateHash(restored), `roundtrip v ticku ${String(at)}`).toBe(expected);
     }

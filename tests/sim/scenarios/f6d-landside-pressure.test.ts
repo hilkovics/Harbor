@@ -12,10 +12,10 @@ import type { SimEvent } from '@sim/events';
 import { WaitingArea } from '@sim/modules';
 import { World, hinterlandMetrics, stateHash, type WorldState } from '@sim/world';
 import { findWorldViolation } from '@sim/world/world-invariants';
-import { MAP, lostUnits } from '../helpers/f6a';
+import { lostUnits } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
 import { REPO_ROOT, loadScenarioFile, runScenario } from '../helpers/scenario';
-import { BUNDLED_DEFS } from '../world/world-fixtures';
+import { BUNDLED_DEFS, PORT_MAP } from '../world/world-fixtures';
 
 const SCENARIO = loadScenarioFile('landside_pressure');
 const TICKS = 40_000;
@@ -40,7 +40,7 @@ interface Observed {
 
 /** Celý beh scenára s kontrolami po každom ticku (konzervácia, kvóta stojísk pre odvoz). */
 function run(): Observed {
-  const world = World.create(BUNDLED_DEFS, MAP, SCENARIO.seed);
+  const world = World.create(BUNDLED_DEFS, PORT_MAP, SCENARIO.seed);
   const events: { tick: number; event: SimEvent }[] = [];
   let maxDeliveryBays = 0;
   let firstReturnWaiting: number | undefined;
@@ -70,7 +70,7 @@ describe('scenár landside_pressure: súbor', () => {
 
   it('prístav F4 s depom prázdnych a tromi vozidlami (2× straddle, empty handler) a dvoma AcceptContract (2 @2, 11 @8 641)', () => {
     const types = SCENARIO.commands.map((entry) => entry.command.type);
-    expect(types).toEqual([...Array<string>(10).fill('PlaceRoad'), ...Array<string>(6).fill('PlaceModule'), 'BuyVehicle', 'BuyVehicle', 'BuyVehicle', 'AcceptContract', 'AcceptContract']);
+    expect(types).toEqual([...Array<string>(10).fill('PlaceRoad'), ...Array<string>(6).fill('PlaceModule'), 'BuyVehicle', 'BuyVehicle', 'BuyVehicle', 'PlaceRoad', 'RemoveRoad', 'AcceptContract', 'AcceptContract']);
     const accepts = SCENARIO.commands.filter((entry) => entry.command.type === 'AcceptContract').map((entry) => [entry.atTick, (entry.command as unknown as { contractId: number }).contractId]);
     expect(accepts).toEqual([[2, FIRST_IMPORT_ID], [8_641, BOOKING_ID]]);
   });
@@ -143,9 +143,9 @@ describe('scenár landside_pressure: beh', () => {
     expect(stateHash(run().world)).toBe(expected);
     const ticks = [observed.firstReturnWaiting, observed.firstPickupWaiting, 9_000, 33_000].filter((tick): tick is number => tick !== undefined);
     for (const at of ticks) {
-      const half = World.create(BUNDLED_DEFS, MAP, SCENARIO.seed);
+      const half = World.create(BUNDLED_DEFS, PORT_MAP, SCENARIO.seed);
       runScenario(half, SCENARIO, at);
-      const restored = World.deserialize(BUNDLED_DEFS, MAP, JSON.parse(JSON.stringify(half.serialize())) as WorldState);
+      const restored = World.deserialize(BUNDLED_DEFS, PORT_MAP, JSON.parse(JSON.stringify(half.serialize())) as WorldState);
       runScenario(restored, SCENARIO, TICKS);
       expect(stateHash(restored), `roundtrip v ticku ${String(at)}`).toBe(expected);
     }

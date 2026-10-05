@@ -11,7 +11,7 @@ import { findWorldViolation } from '@sim/world/world-invariants';
 import { lostUnits } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
 import { REPO_ROOT, loadScenarioFile, runScenario } from '../helpers/scenario';
-import { BUNDLED_DEFS, MAP } from '../world/world-fixtures';
+import { BUNDLED_DEFS, PORT_MAP } from '../world/world-fixtures';
 
 const TICKS = 60_000;
 const RUN_TIMEOUT_MS = 300_000;
@@ -20,7 +20,7 @@ describe('vertical_slice v režime under_hook', () => {
   it('golden report (cashEnd, exportedUnits, onTimeRate, contractsCompleted, xp) je rovnaký ako v režime apron; žeriav čakal na vozidlo', () => {
     expect(BUNDLED_DEFS.modules.get('berth_standard').params['handoverMode']).toBe('under_hook');
     const scenario = loadScenarioFile('vertical_slice');
-    const world = World.create(BUNDLED_DEFS, MAP, scenario.seed);
+    const world = World.create(BUNDLED_DEFS, PORT_MAP, scenario.seed);
     const completed: SimEvent[] = [];
     runScenario(world, scenario, TICKS, {
       afterTick: (w, events) => {

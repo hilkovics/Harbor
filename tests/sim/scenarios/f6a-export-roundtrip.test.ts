@@ -22,7 +22,8 @@ import type { DefRegistry } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
 import { World, stateHash, type WorldState } from '@sim/world';
 import { findWorldViolation } from '@sim/world/world-invariants';
-import { MAP, lostUnits } from '../helpers/f6a';
+import { lostUnits } from '../helpers/f6a';
+import { PORT_MAP } from '../world/world-fixtures';
 import { assertCargoConservation } from '../helpers/invariants';
 import { REPO_ROOT, loadScenarioFile, runScenario } from '../helpers/scenario';
 import { BUNDLED_DEFS, DEFS } from '../world/world-fixtures';
@@ -48,7 +49,7 @@ interface Run {
 }
 
 function run(defs: DefRegistry): Run {
-  const world = World.create(defs, MAP, SCENARIO.seed);
+  const world = World.create(defs, PORT_MAP, SCENARIO.seed);
   const events: { tick: number; event: SimEvent }[] = [];
   runScenario(world, SCENARIO, TICKS, {
     afterTick: (w, tickEvents) => {
@@ -98,10 +99,10 @@ describe('scenár export_roundtrip: súbor', () => {
 
   it('prístav F4 (10 úsekov ciest, 6 modulov, 2 vozidlá), AcceptContract 7 v ticku 8 641 a zablokovanie cesty pred portálom', () => {
     const types = SCENARIO.commands.map((entry) => entry.command.type);
-    expect(types).toEqual([...Array<string>(10).fill('PlaceRoad'), ...Array<string>(6).fill('PlaceModule'), 'BuyVehicle', 'BuyVehicle', 'AcceptContract', 'RemoveRoad', 'PlaceRoad']);
+    expect(types).toEqual([...Array<string>(10).fill('PlaceRoad'), ...Array<string>(6).fill('PlaceModule'), 'BuyVehicle', 'BuyVehicle', 'PlaceRoad', 'RemoveRoad', 'AcceptContract', 'RemoveRoad', 'PlaceRoad']);
     const accept = SCENARIO.commands.find((entry) => entry.command.type === 'AcceptContract');
     expect(accept).toEqual({ atTick: 8641, command: { type: 'AcceptContract', contractId: IMPORT_ID } });
-    expect(SCENARIO.commands.find((entry) => entry.command.type === 'RemoveRoad')?.atTick).toBe(REMOVE_ROAD_TICK);
+    expect(SCENARIO.commands.find((entry) => entry.command.type === 'RemoveRoad' && entry.atTick > 0)?.atTick).toBe(REMOVE_ROAD_TICK);
     expect(SCENARIO.commands.find((entry) => entry.command.type === 'PlaceRoad' && entry.atTick > 0)?.atTick).toBe(PLACE_ROAD_TICK);
   });
 });
@@ -219,9 +220,9 @@ describe.each(MODES)('scenár export_roundtrip: režim $name', ({ defs, goldenPa
     const expected = stateHash(world);
     expect(stateHash(run(defs).world)).toBe(expected);
     for (const at of [REMOVE_ROAD_TICK + 100, 28_000, 30_700]) {
-      const half = World.create(defs, MAP, SCENARIO.seed);
+      const half = World.create(defs, PORT_MAP, SCENARIO.seed);
       runScenario(half, SCENARIO, at);
-      const restored = World.deserialize(defs, MAP, JSON.parse(JSON.stringify(half.serialize())) as WorldState);
+      const restored = World.deserialize(defs, PORT_MAP, JSON.parse(JSON.stringify(half.serialize())) as WorldState);
       runScenario(restored, SCENARIO, TICKS);
       expect(stateHash(restored), `roundtrip v ticku ${String(at)}`).toBe(expected);
     }

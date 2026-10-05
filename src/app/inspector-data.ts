@@ -15,7 +15,8 @@
  *   `validate(SellVehicle)`), kapacita státí a nákup: `canBuy` = `validate(BuyVehicle)` prešlo, inak `buyBlockedReason`
  *   z `REASON_TEXT`. Kupuje sa vozidlo `depotVehicleDef` (prvý def vozidla bez technológie).
  * - Brána (F4): fronta, `processTicks` z defu a priepustnosť za hodinu = `ticksPerHour / processTicks` (`time.json`),
- *   nepripojená brána nepustí nikoho → 0. Stojisko (F4): počet stojísk, obsadené (kamión stojí) a rezervované (na ceste).
+ *   nepripojená brána nepustí nikoho → 0. F6d (ADR-035): kamióny čakajúce vo vnútrozemí (`hinterlandQueue`: odvoz / dovoz / výdaj,
+ *   celkom a najdlhšie čakanie v tickoch s mierkou herného času). Stojisko (F4): počet stojísk, obsadené (kamión stojí) a rezervované (na ceste).
  *   Rampa (F4): docky (`staged` z ledgera / `stagingPerDock`, `truck` = kamión drží dock a práve nakladá, stav `loading`),
  *   prevádzkovosť (`World.isRampOperational`) a text dôvodu neprevádzkovosti (`rampInoperativeText`).
  * - Moduly s cestným konektorom nesú `connected` (badge „Nepripojené“).
@@ -30,7 +31,7 @@ import type { DefRegistry, VehicleDef } from '@sim/defs';
 import { BerthModule, CRANE_CYCLE_TRAITS, CraneModule, EmptyDepot, LoadingRamp, StorageModule, TruckGate, VehicleDepot, WaitingArea, type Module } from '@sim/modules';
 import type { Ship } from '@sim/ships';
 import type { VehicleState } from '@sim/vehicles';
-import { depotCargoSplit, shipCargoSplit, storageCargoSplit, type World } from '@sim/world';
+import { depotCargoSplit, hinterlandQueue, shipCargoSplit, storageCargoSplit, type World } from '@sim/world';
 import {
   craneStateLabel,
   craneStateOk,
@@ -39,6 +40,7 @@ import {
   type LashingData,
   type DepotVehicleState,
   type EmptyDepotData,
+  type HinterlandData,
   type ModuleInspectorData,
   type RampDockData,
 } from '@ui/module-inspector';
@@ -224,7 +226,16 @@ function gateFields(bridge: InspectorBridge, gate: TruckGate): Pick<ModuleInspec
   const { world } = bridge;
   const { processTicks } = gate.params;
   const throughputPerHour = world.isConnected(gate) ? world.clock.ticksPerHour / processTicks : 0;
-  return { stateLabel: MODULE_STATE_ACTIVE, ok: true, gate: { queueLength: gate.queueLength, throughputPerHour, processTicks } };
+  return { stateLabel: MODULE_STATE_ACTIVE, ok: true, gate: { queueLength: gate.queueLength, throughputPerHour, processTicks, hinterland: hinterlandData(world) } };
+}
+
+/**
+ * Kamióny čakajúce vo vnútrozemí pred vjazdom do prístavu (F6d, ADR-035) z `hinterlandQueue(world)` a mierka herného času na formátovanie
+ * najdlhšieho čakania. Údaj je spoločný pre prístav, nie pre konkrétnu bránu (vnútrozemie je za road portálom), preto ho ukazuje každá brána.
+ */
+export function hinterlandData(world: World): HinterlandData {
+  const { pickup, delivery, collect, total, oldestWaitTicks } = hinterlandQueue(world);
+  return { pickup, delivery, collect, total, oldestWaitTicks, scale: { ticksPerHour: world.clock.ticksPerHour, ticksPerDay: world.clock.ticksPerDay } };
 }
 
 function waitingAreaFields(area: WaitingArea): Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'waitingArea'> {

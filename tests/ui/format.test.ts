@@ -15,6 +15,7 @@ import {
   formatMoneyDelta,
   formatPercent,
   formatSpeed,
+  formatWaitDuration,
   formatXp,
   moneySign,
 } from '@ui/format';
@@ -251,6 +252,33 @@ describe('formatDuration', () => {
   it('neplatná hodnota alebo mierka → —', () => {
     expect(formatDuration(Number.NaN, scale)).toBe(EM_DASH);
     expect(formatDuration(100, { ticksPerHour: 0, ticksPerDay: 8640 })).toBe(EM_DASH);
+  });
+});
+
+describe('formatWaitDuration', () => {
+  const scale = { ticksPerHour: 360, ticksPerDay: 8640 };
+  const table: ReadonlyArray<readonly [number, string]> = [
+    [0, '< 1 min'],
+    [5, '< 1 min'],
+    [6, '1 min'],
+    [180, '30 min'],
+    [359, '59 min'],
+    [360, '1 h'],
+    [360 + 90, '1 h 15 min'],
+    [5 * 360 + 6, '5 h 1 min'],
+    [23 * 360 + 359, '23 h 59 min'],
+    [8640, '1 deň'],
+    [8640 + 4 * 360, '1 d 4 h'],
+    [-10, '< 1 min'],
+  ];
+  it.each(table)('%i tickov → %s', (ticks, expected) => {
+    expect(formatWaitDuration(ticks, scale)).toBe(expected);
+  });
+
+  it('neplatná hodnota alebo mierka → —', () => {
+    expect(formatWaitDuration(Number.NaN, scale)).toBe(EM_DASH);
+    expect(formatWaitDuration(100, { ticksPerHour: 0, ticksPerDay: 8640 })).toBe(EM_DASH);
+    expect(formatWaitDuration(100, { ticksPerHour: 360, ticksPerDay: 0 })).toBe(EM_DASH);
   });
 });
 

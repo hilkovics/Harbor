@@ -7,8 +7,11 @@
  * - telo má najviac `lengthCells` slotov, je súvislé (susedné alebo rovnaké bunky) a jeho hlava je v bunke nosiča;
  * - sloty vpredu nadväzujú na hlavu a zodpovedajú bunkám trasy pred nosičom; pri rozbehnutom úseku nosič drží aj cieľovú
  *   bunku úseku;
- * - nosič mimo cesty (stav bez `holdsRoad`) nedrží nič a nečaká (`blockedTicks`, `rerouteCooldown` = 0).
- * Nosič v jazdnom stave smie byť bez slotov (práve do stavu vstúpil, slot získa `TrafficSystem` v nasledujúcom ticku).
+ * - nosič mimo cesty (stav bez `holdsRoad`: kamión v stojisku, v docku a v prechode bránou) nedrží nič a nečaká (`blockedTicks`,
+ *   `rerouteCooldown` = 0).
+ * Nosič v stave s `holdsRoad` (jazda, fronta brány, pobyt pri module na ceste, `no_path`) smie byť bez slotov (práve vstúpil
+ * na cestu, slot získa `TrafficSystem` na konci kroku 6a); výjazdy z modulov a vznik na portáli zaberajú slot hlavy samy.
+ * Stojaci nosič na ceste drží telo ako jazdiaci (ADR-037, TR1-03).
  */
 import type { Carrier } from '../movement/carrier';
 import type { World } from '../world/world';

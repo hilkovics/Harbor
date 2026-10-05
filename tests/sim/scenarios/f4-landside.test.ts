@@ -57,7 +57,7 @@ import {
 } from '../helpers/f4';
 import { must } from '../helpers/harbor';
 import { DEFS, MAP, MAP_GRID } from '../world/world-fixtures';
-import { itR1Interim } from '../helpers/r1-interim';
+import { describeR1Interim, itR1Interim } from '../helpers/r1-interim';
 
 const ROAD_COST = DEFS.infrastructure.road.costPerCellCents;
 const GATE_DEF = DEFS.modules.get('truck_gate');
@@ -362,7 +362,7 @@ describe('prevádzkovosť rampy: bez brány (alebo bez cesty k bráne) je rampa 
  *  B3 `RampOperationalChanged { rampId, operational, reason }` sa emituje v ticku zmeny prevádzkovosti (na true s `reason`
  *     null alebo bez neho).
  */
-describe('neprevádzková rampa počas behu: 12 TEU v sklade čaká na bránu, potom odídu všetky kamiónmi', () => {
+describeR1Interim('neprevádzková rampa počas behu: 12 TEU v sklade čaká na bránu, potom odídu všetky kamiónmi', () => {
   let run: LateGateRun;
 
   beforeAll(() => {
@@ -446,7 +446,7 @@ describe('neprevádzková rampa počas behu: 12 TEU v sklade čaká na bránu, p
  *  C2 bez voľného bay sa kamión nespawnuje a vznikne `NoWaitingBay { rampId }`, najviac 1× za hernú hodinu;
  *  C3 `WaitingArea.occupiedBays + reservedBays` ≥ počet kamiónov, ktoré bay držia, a ≤ `bays`.
  */
-describe('stojisko: pri plných bays (syntetické bays 1) sa ďalší kamión nespawnuje a vznikne NoWaitingBay (≤ 1×/h)', () => {
+describeR1Interim('stojisko: pri plných bays (syntetické bays 1) sa ďalší kamión nespawnuje a vznikne NoWaitingBay (≤ 1×/h)', () => {
   let run: LateGateRun;
 
   beforeAll(() => {
@@ -512,7 +512,7 @@ describe('stojisko: pri plných bays (syntetické bays 1) sa ďalší kamión ne
  *  D3 `TruckGate.queueLength` obsahuje len kamióny v `gate_queue*`, `trucksProcessed` počíta prechody v oboch smeroch.
  * Syntetická brána s `processTicks` 100 vynúti, aby sa kamióny pred bránou naozaj hromadili.
  */
-describe('brána: pustí najviac 1 kamión za processTicks (spoločná FIFO fronta oboch smerov)', () => {
+describeR1Interim('brána: pustí najviac 1 kamión za processTicks (spoločná FIFO fronta oboch smerov)', () => {
   const SLOW = 100;
   let run: LateGateRun;
 

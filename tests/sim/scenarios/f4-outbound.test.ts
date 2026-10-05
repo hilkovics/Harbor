@@ -20,7 +20,7 @@ import { assertCargoConservation } from '../helpers/invariants';
 import { runScenario, stateHash, type Scenario, type ScenarioEntry } from '../helpers/scenario';
 import { LANDSIDE_ROADS, LEGACY_NO_CONTAINER_TRUCK_DEFS, landsideCommand, rampOf, stagingOf, type LandsidePart } from '../logistics/outbound-fixtures';
 import { MAP } from '../world/world-fixtures';
-import { itR1Interim } from '../helpers/r1-interim';
+import { describeR1Interim, itR1Interim } from '../helpers/r1-interim';
 
 /**
  * Defy bez kamiónu pre kontajnery (viď hlavička) s pripnutým pôvodným balansom (staging 2 × 2, apron 4 — Fáza 5b ich
@@ -93,7 +93,7 @@ const kindsOf = (chain: readonly CargoMovedEvent[]): CargoLocationKind[] => (cha
 
 const yardsOf = (world: World): StorageModule[] => [...world.modules.values()].filter((module): module is StorageModule => module instanceof StorageModule);
 
-describe('scenár F4 outbound: 12 TEU loď → dvory → staging rampy (bez kamiónov)', () => {
+describeR1Interim('scenár F4 outbound: 12 TEU loď → dvory → staging rampy (bez kamiónov)', () => {
   let run: Run;
 
   beforeAll(() => {

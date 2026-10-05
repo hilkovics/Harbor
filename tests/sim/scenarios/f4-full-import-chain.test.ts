@@ -43,7 +43,7 @@ import {
 import { must } from '../helpers/harbor';
 import { loadScenarioFile, readRepoJson, stateHash } from '../helpers/scenario';
 import { DEFS, MAP, hashState } from '../world/world-fixtures';
-import { itR1Interim } from '../helpers/r1-interim';
+import { describeR1Interim, itR1Interim } from '../helpers/r1-interim';
 
 const UNITS = 120;
 /** Akceptácia fázy: všetky jednotky `exported` do 40 000 tickov. */
@@ -428,7 +428,7 @@ describe('determinizmus: dva behy s rovnakým seedom a príkazmi dávajú rovnak
  * a rezervácie bay/dock, ak sa nedajú odvodiť; obnova pokračuje bez zmeny správania — z uloženého stavu vznikne svet,
  * ktorý dá rovnaké udalosti a rovnaký koncový stav ako pôvodný beh.
  */
-describe('save/load uprostred reťazca: obnovený svet pokračuje rovnako ako pôvodný (WorldState v4)', () => {
+describeR1Interim('save/load uprostred reťazca: obnovený svet pokračuje rovnako ako pôvodný (WorldState v4)', () => {
   /**
    * Malý scenár s prerušením verejnej cesty (44, 40) v ticku `CUT_AT` a obnovou v `RESTORE_AT` (review T04-11 h):
    * kamióny na verejnej ceste vtedy prejdú do `no_path` (sonda „no_path s resume"). Bunka v tých tickoch nie je pod

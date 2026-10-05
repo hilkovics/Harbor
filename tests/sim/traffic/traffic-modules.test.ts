@@ -8,14 +8,16 @@
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@sim/core';
 import type { SimEvent } from '@sim/events';
-import { VehicleDepot, type LoadingRamp } from '@sim/modules';
+import { CraneModule, VehicleDepot, type LoadingRamp } from '@sim/modules';
 import { carrierOverlapProblem, slotKey } from '@sim/traffic';
 import { RemoveRoadCommand } from '@sim/commands';
 import { Truck } from '@sim/trucks';
 import { Vehicle } from '@sim/vehicles';
+import { hookCellOfCrane } from '@sim/vehicles/vehicle-trip';
 import { World, fnv1a32Hex, stateHash, type WorldState } from '@sim/world';
 import { gateOf, outboundWorld, rampOf } from '../logistics/outbound-fixtures';
 import { emptyWorld, f6cDefs } from '../helpers/f6c';
+import { hookDefs, startLoading } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
 import { DEFS, MAP } from '../world/world-fixtures';
 import { lay, line, spawn, tickTraffic, trafficBed } from './traffic-fixtures';
@@ -306,4 +308,39 @@ describe('RemoveRoad chráni aj telo nosiča (rozhodnutie R1 č. 5 karty)', () =
     expect(world.carrierOnCell(ahead)).toBe(car);
     expect(new RemoveRoadCommand([{ x: 40, y: 27 }]).validate(world).reasons).toEqual(['occupied']);
   });
+});
+
+describe('pod hákom (rozhodnutie R1 č. 8, bunka nábrežia)', () => {
+  it('dve vozidlá na ten istý hák: prvé stojí v bunke pod hákom a drží ju, druhé čaká fyzicky za ním a bunku nezaberie', () => {
+    const run = startLoading({
+      defs: hookDefs(0),
+      vehicles: ['straddle_carrier', 'straddle_carrier'],
+      kind: 'roundtrip',
+      booked: 12,
+      importUnits: 24,
+      arrivals: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120],
+    });
+    const { world } = run;
+    const crane = [...world.modules.values()].find((module): module is CraneModule => module instanceof CraneModule) as CraneModule;
+    const hook = hookCellOfCrane(world, crane.id) as number;
+    const under = (): Vehicle | undefined =>
+      [...world.vehicles.values()].find((vehicle) => vehicle.cell === hook && vehicle.cellsAhead === 0 && (vehicle.state === 'loading' || vehicle.state === 'unloading'));
+    const behind = (): Vehicle | undefined =>
+      [...world.vehicles.values()].find((vehicle) => vehicle.cell !== hook && vehicle.blockedTicks > 0 && vehicle.routeCellAt(vehicle.cellsAhead) === hook);
+    let first: Vehicle | undefined;
+    let second: Vehicle | undefined;
+    for (let i = 0; i < 20_000 && (first === undefined || second === undefined); i++) {
+      world.tick();
+      expect(carrierOverlapProblem(world)).toBeNull();
+      first = under();
+      second = first === undefined ? undefined : behind();
+    }
+    if (first === undefined || second === undefined) throw new Error('dve vozidlá na tom istom háku sa nestretli');
+    expect(first.id).not.toBe(second.id);
+    expect(first.body.map((key) => key >> 1)[0]).toBe(hook);
+    expect(world.laneSlots.holderOf(hook, 0)).toBe(first.id);
+    expect(second.occupiesCell(hook)).toBe(false);
+    expect(second.blockedTicks).toBeGreaterThan(0);
+    expect(world.carrierOnCell(hook)).toBe(first);
+  }, 120_000);
 });

@@ -138,7 +138,9 @@ test.describe('F3: napojenie vozidiel, skladov a notifikácií (T03-10)', () => 
     await carrier.click();
     await expect.poll(() => page.evaluate(() => window.__sim!.world.vehicles.size)).toBe(2);
     expect(await cashCents(page)).toBe(cashBefore - 2 * CARRIER_COST_CENTS);
-    await expect.poll(async () => (await rendered(page)).vehicles).toBe(2);
+    // kúpené vozidlo vzniká zaparkované v depe (R1): na mape sa nekreslí, kreslí ho depo
+    expect((await entities(page)).vehicles.every((vehicle) => vehicle.state === 'parked')).toBe(true);
+    await expect.poll(async () => (await rendered(page)).vehicles).toBe(0);
     await expect(bar.locator('[data-def-id="vehicle_depot"]')).toHaveAttribute('data-action', 'build');
 
     // 3) inšpektor depa: dve nečinné vozidlá, kúpiť je dostupné; inšpektor dvora: 0 / 64
@@ -216,9 +218,9 @@ test.describe('F3: napojenie vozidiel, skladov a notifikácií (T03-10)', () => 
     await parkMouse(page);
     await page.screenshot({ path: 'tests/e2e/__screenshots__/f3-app-yard-filling.png', fullPage: true });
 
-    // 7) do konca: všetko uložené, nič sa nestratilo, vozidlá znova nečinné
+    // 7) do konca: všetko uložené, nič sa nestratilo, vozidlá znova zaparkované v depe
     await setSpeed(page, 8);
-    await waitInPage(page, () => window.__sim!.world.cargo.countByKind('in_storage') === 24 && window.__sim!.entities().vehicles.every((vehicle) => vehicle.state === 'idle'));
+    await waitInPage(page, () => window.__sim!.world.cargo.countByKind('in_storage') === 24 && window.__sim!.entities().vehicles.every((vehicle) => vehicle.state === 'parked'));
     const end = await page.evaluate(() => ({
       inStorage: window.__sim!.world.cargo.countByKind('in_storage'),
       stored: window.__sim!.entities().modules.map((module) => module.storage?.stored ?? 0),

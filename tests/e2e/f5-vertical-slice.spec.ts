@@ -107,6 +107,10 @@ test.describe('F5: nová hra → kontrakt → loď → vykládka → export → 
     for (const segment of ROAD_SEGMENTS) {
       expect(await dispatch(page, { type: 'PlaceRoad', cells: segmentCells(segment) })).toMatchObject({ ok: true });
     }
+    // R1 (ADR-037): obojsmerný úsek (44, 34–36) k bráne a bez (45, 34–35), ako v scenári `full_import_chain` (jednosmerná slučka verejnej cesty)
+    expect(await dispatch(page, { type: 'PlaceRoad', kind: 'two_lane', cells: [{ x: 44, y: 34 }, { x: 44, y: 35 }, { x: 44, y: 36 }] })).toMatchObject({ ok: true });
+    expect(await dispatch(page, { type: 'RemoveRoad', cells: [{ x: 45, y: 34 }, { x: 45, y: 35 }] })).toMatchObject({ ok: true });
+    await page.waitForFunction(() => window.__sim!.world.grid.at(44, 36).roadKind === 'two_lane' && window.__sim!.world.grid.at(45, 34).road !== 'road' && window.__sim!.world.grid.at(45, 35).road !== 'road');
     for (const module of MODULES) expect(await dispatch(page, { type: 'PlaceModule', ...module })).toMatchObject({ ok: true });
     await expect.poll(() => page.evaluate(() => window.__sim!.entities().modules.length)).toBe(1 + MODULES.length);
     for (let bought = 1; bought <= VEHICLES; bought += 1) {

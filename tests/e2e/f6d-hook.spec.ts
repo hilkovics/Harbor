@@ -93,11 +93,13 @@ test.describe('F6d: žeriav spúšťa kontajner priamo na vozidlo pod hákom (T6
     await dismissToasts(page);
     await page.evaluate(([x, y, zoom]) => window.__sim!.centerOn!(x, y, zoom), [HOOK_VIEW.x, HOOK_VIEW.y, HOOK_VIEW.zoom] as const);
 
+    // R1: vozidlo prichádza z depa až po pridelení úlohy, takže žeriav kontajner spustí a čaká (`placing` ~0,83); odovzdanie je potom v tom istom ticku,
+    // ako vozidlo dorazí pod hák. Preto sa nečaká na polovicu spúšťania, stačí vozidlo `loading` presne pod hákom s kontajnerom v `placing`.
     // 1) kontajner sa spúšťa na vozidlo: vozidlo `loading` presne v bunke pod hákom, žeriav v `placing` s kontajnerom v polovici spúšťania
     await advanceUntil(page, () => {
       const { cranes, vehicles = [] } = window.__sim!.entities();
       const crane = cranes[0];
-      if (crane === undefined || crane.hook === undefined || crane.state !== 'placing' || crane.holding === null || crane.progress < 0.6 || crane.progress > 0.75) return false;
+      if (crane === undefined || crane.hook === undefined || crane.state !== 'placing' || crane.holding === null || crane.progress < 0.6) return false;
       const { x, y } = crane.hook;
       return vehicles.some((vehicle) => vehicle.state === 'loading' && !vehicle.loaded && Math.abs(vehicle.x - x) < 0.01 && Math.abs(vehicle.y - y) < 0.01);
     });

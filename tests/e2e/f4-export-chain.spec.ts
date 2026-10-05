@@ -33,7 +33,6 @@ const VEHICLES = 3;
 const FALLBACK_EXPORTED = 12;
 
 /** Ceny z defov (BuildBar ich ukazuje ako $/kus); cesta dvojpruhová $2,000 za bunku. */
-const ROAD_COST_CENTS = 200_000;
 const DEPOT_COST_CENTS = 9_000_000;
 const YARD_COST_CENTS = 15_000_000;
 const GATE_COST_CENTS = 8_000_000;
@@ -64,7 +63,6 @@ const ROAD_SEGMENTS: readonly (readonly [number, number, number, number])[] = [
   [53, 31, 53, 33],
   [51, 30, 55, 30],
 ];
-const ROAD_CELL_COUNT = 34 + 11;
 
 /**
  * Bunka pod kurzorom je stredom footprintu po rotácii (pri párnom rozmere `floor(rozmer / 2)` od rohu): brána 2×2
@@ -193,11 +191,17 @@ test.describe('F4: loď → apron → vozidlá → dvor → rampa → kamión �
     for (const segment of ROAD_SEGMENTS) {
       expect(await dispatch(page, { type: 'PlaceRoad', cells: segmentCells(segment) })).toMatchObject({ ok: true });
     }
+    // R1 (ADR-037): obojsmerný úsek (44, 34–36) k bráne a bez (45, 34–35), ako v scenári `full_import_chain` (jednosmerná slučka verejnej cesty)
+    expect(await dispatch(page, { type: 'PlaceRoad', kind: 'two_lane', cells: [{ x: 44, y: 34 }, { x: 44, y: 35 }, { x: 44, y: 36 }] })).toMatchObject({ ok: true });
+    expect(await dispatch(page, { type: 'RemoveRoad', cells: [{ x: 45, y: 34 }, { x: 45, y: 35 }] })).toMatchObject({ ok: true });
+    await page.waitForFunction(() => window.__sim!.world.grid.at(44, 36).roadKind === 'two_lane' && window.__sim!.world.grid.at(45, 34).road !== 'road' && window.__sim!.world.grid.at(45, 35).road !== 'road');
+    const cashRoads = await cashCents(page);
+    expect(cashRoads).toBeLessThan(cashStart);
     expect(await dispatch(page, { type: 'PlaceModule', defId: 'vehicle_depot', x: 46, y: 27, rotation: 0 })).toMatchObject({ ok: true });
     expect(await dispatch(page, { type: 'PlaceModule', defId: 'container_yard_small', x: 42, y: 18, rotation: 0 })).toMatchObject({ ok: true });
     expect(await dispatch(page, { type: 'PlaceModule', defId: 'container_yard_small', x: 49, y: 26, rotation: 0 })).toMatchObject({ ok: true });
     await expect.poll(() => moduleCount(page)).toBe(4);
-    const cashBase = cashStart - ROAD_CELL_COUNT * ROAD_COST_CENTS - DEPOT_COST_CENTS - 2 * YARD_COST_CENTS;
+    const cashBase = cashRoads - DEPOT_COST_CENTS - 2 * YARD_COST_CENTS;
     await expect.poll(() => cashCents(page)).toBe(cashBase);
 
     // 2) UI: brána (rot 270 = trikrát R), čakacia plocha a rampa; každý modul stojí presne tam, kde ho ukázal ghost
@@ -232,7 +236,9 @@ test.describe('F4: loď → apron → vozidlá → dvor → rampa → kamión �
       await expect.poll(() => vehicleCount(page)).toBe(bought);
     }
     expect(await cashCents(page)).toBe(cashBuilt - VEHICLES * CARRIER_COST_CENTS);
-    await expect.poll(async () => (await rendered(page)).vehicles).toBe(VEHICLES);
+    // kúpené vozidlá vznikajú zaparkované v depe (R1) a na mape sa nekreslia
+    expect((await entities(page)).vehicles.filter((vehicle) => vehicle.state === 'parked')).toHaveLength(VEHICLES);
+    await expect.poll(async () => (await rendered(page)).vehicles).toBe(0);
 
     // 4) DEV loď s 24 TEU cez SpawnShipDebug; BuildBar na Landside (ostane v screenshotoch), hra na 8×
     expect(await dispatch(page, { type: 'SpawnShipDebug', shipClassId: 'feeder', cargoTypeId: 'container_teu', units: UNITS })).toMatchObject({ ok: true });

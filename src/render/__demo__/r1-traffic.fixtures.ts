@@ -16,7 +16,7 @@
  * sa na ceste neprekrývajú).
  */
 import type { CellCoord, Grid, LoadedMap } from '@sim/grid';
-import { rotateFootprint } from '@sim/grid';
+import { DEFAULT_ROAD_KIND, rotateFootprint } from '@sim/grid';
 import { moduleSprite } from '../entity-assets';
 import type { EntitiesVM, ModuleVM, TruckVM, VehicleVM, ViewRotation } from '../view-models';
 import { berthVM, craneVM, shipVM } from './f2-render.fixtures';
@@ -239,7 +239,13 @@ export type R1SceneName = keyof typeof R1_SCENES;
 /** Mriežka pre scénu: terén mapy + cesty scény (štartová cesta mapy sa odstráni, aby zákruty scény boli skutočné zákruty). */
 export function createR1Grid(map: LoadedMap, scene: R1Scene): Grid {
   const grid = map.createGrid();
-  for (const cell of map.starter.roads) grid.at(cell.x, cell.y).road = 'none';
+  for (const cell of map.starter.roads) {
+    // starter cesty sú jednosmerky: s `road = 'none'` by v bunke ostal `roadKind: one_way` a vozidlá by jazdili v strede
+    const target = grid.at(cell.x, cell.y);
+    target.road = 'none';
+    target.roadKind = DEFAULT_ROAD_KIND;
+    target.roadDir = null;
+  }
   for (const cell of scene.roads) grid.at(cell.x, cell.y).road = 'road';
   return grid;
 }

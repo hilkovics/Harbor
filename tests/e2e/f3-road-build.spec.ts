@@ -82,10 +82,9 @@ test.describe('F3: výber typu cesty a jednosmerný ťah (T03-20)', () => {
     await bar(page).locator('[data-category="landside"]').click();
     await expect(bar(page).locator('[data-category="landside"]')).toBeEnabled();
     const item = (defId: string): Locator => bar(page).locator(`[data-def-id="${defId}"]`);
-    await expect(item('road_two_lane')).toContainText('Cesta dvojpruhová');
-    await expect(item('road_two_lane')).toContainText('$2,000 / bunka');
-    await expect(item('road_one_lane')).toContainText('Cesta jednopruhová');
-    await expect(item('road_one_lane')).toContainText('$1,200 / bunka');
+    // R1 (ADR-037 bod 12): BuildBar ponúka len jednosmerku, dvojpruhová a jednopruhová cesta v ňom nie sú
+    await expect(item('road_two_lane')).toHaveCount(0);
+    await expect(item('road_one_lane')).toHaveCount(0);
     await expect(item('road_one_way')).toContainText('Jednosmerná cesta');
     await expect(item('road_one_way')).toContainText(ONE_WAY_PRICE);
     // F4 (T04-08): brána, stojisko a rampa sú skutočné položky z defov (nie zástupné „čoskoro (F4)“)
@@ -106,7 +105,6 @@ test.describe('F3: výber typu cesty a jednosmerný ťah (T03-20)', () => {
     await item('road_one_way').click();
     await expect(map(page)).toHaveAttribute('data-input-state', 'build');
     await expect(item('road_one_way')).toHaveAttribute('aria-pressed', 'true');
-    await expect(item('road_two_lane')).toHaveAttribute('aria-pressed', 'false');
     await item('road_one_way').click();
     await expect(map(page)).toHaveAttribute('data-input-state', 'idle');
     await expect(item('road_one_way')).toHaveAttribute('aria-pressed', 'false');
@@ -170,29 +168,29 @@ test.describe('F3: výber typu cesty a jednosmerný ťah (T03-20)', () => {
     await expect.poll(async () => (await cellsOf(page, [single]))[0]?.kind).toBe('one_way');
     expect((await cellsOf(page, [single]))[0]?.dir).toBe('N');
 
-    // 7) prestavba: dvojpruhová cez časť jednosmerky — štítok „Prestavba“, cena = stavba − refundácia
-    await item('road_two_lane').click();
-    await expect(item('road_two_lane')).toHaveAttribute('aria-pressed', 'true');
-    await expect(item('road_one_way')).toHaveAttribute('aria-pressed', 'false');
+    // 7) prestavba: jednosmerka v opačnom smere cez časť ťahu 1 (E → W) — štítok „Prestavba“, cena = stavba − refundácia
+    await page.keyboard.press('Escape');
+    await item('road_one_way').click();
+    await expect(item('road_one_way')).toHaveAttribute('aria-pressed', 'true');
     const rebuildCash = await cash(page);
-    await page.mouse.move((await screen(page, { x: 32, y: 20 })).x, (await screen(page, { x: 32, y: 20 })).y);
+    await page.mouse.move((await screen(page, { x: 35, y: 20 })).x, (await screen(page, { x: 35, y: 20 })).y);
     await page.mouse.down();
-    await page.mouse.move((await screen(page, { x: 35, y: 20 })).x, (await screen(page, { x: 35, y: 20 })).y, { steps: DRAG_STEPS });
-    // 4 bunky: stavba 4 × $2,000 = $8,000; refundácia 50 % z 4 × $1,500 = $3,000; čisto $5,000
-    await expect(tip(page)).toHaveText('Cesta dvojpruhová · 4 bunky · Prestavba: $8,000, vrátené $3,000 (čisto $5,000)');
+    await page.mouse.move((await screen(page, { x: 32, y: 20 })).x, (await screen(page, { x: 32, y: 20 })).y, { steps: DRAG_STEPS });
+    // 4 bunky: stavba 4 × $1,500 = $6,000; refundácia 50 % z 4 × $1,500 = $3,000; čisto $3,000
+    await expect(tip(page)).toHaveText('Jednosmerná cesta · 4 bunky · Prestavba: $6,000, vrátené $3,000 (čisto $3,000) · ← západ');
     await settle(page);
     await page.screenshot({ path: 'tests/e2e/__screenshots__/f3-road-rebuild.png', fullPage: true });
     await page.mouse.up();
-    await expect.poll(() => cash(page)).toBe(rebuildCash - (4 * 200_000 - 300_000));
+    await expect.poll(() => cash(page)).toBe(rebuildCash - (4 * 150_000 - 300_000));
     const rebuilt = await cellsOf(page, range(32, 35).map((x) => ({ x, y: 20 })));
-    expect(rebuilt.every((cell) => cell.kind === 'two_lane' && cell.dir === null)).toBe(true);
-    // zvyšok ťahu 1 ostal jednosmerný
+    expect(rebuilt.every((cell) => cell.kind === 'one_way' && cell.dir === 'W')).toBe(true);
+    // zvyšok ťahu 1 ostal v pôvodnom smere
     expect((await cellsOf(page, [{ x: 36, y: 20 }]))[0]).toMatchObject({ kind: 'one_way', dir: 'E' });
 
     // 8) Esc ukončí mód a zhasne položku
     await page.keyboard.press('Escape');
     await expect(map(page)).toHaveAttribute('data-input-state', 'idle');
-    await expect(item('road_two_lane')).toHaveAttribute('aria-pressed', 'false');
+    await expect(item('road_one_way')).toHaveAttribute('aria-pressed', 'false');
 
     expect(errors).toEqual([]);
   });

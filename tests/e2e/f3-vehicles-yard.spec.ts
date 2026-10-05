@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
 // F3 e2e (T03-12): celý tok fázy 3 z pohľadu hráča — loď → apron → vozidlá → dvor. Hráč cez UI postaví cesty ťahom myši
-// (BuildBar Landside → „Cesta dvojpruhová“), depo a dva dvory (BuildBar: klik na položku, klik na mapu), kúpi dve vozidlá
+// (BuildBar Landside → „Jednosmerná cesta“), depo a dva dvory (BuildBar: klik na položku, klik na mapu), kúpi dve vozidlá
 // (Logistika → Straddle carrier) a spawnne loď (`SpawnShipDebug`, 4 TEU; ďalších 24 TEU, aby sa dvor
 // zaplnil viditeľne). Na stav sa čaká cez `window.__sim` (polling v rAF stránky), nie pevnými timeoutmi:
 //   1) počas jazdy aspoň jedno vozidlo vezie kontajner → screenshot `f3-vehicles.png` (kamera na vozidlách a dvore),
@@ -39,34 +39,28 @@ const DRIVING_Y_RANGE = { fromY: 19, toY: 22 } as const;
 type Cell = { readonly x: number; readonly y: number };
 
 /**
- * Ťahy myšou (BuildBar → dvojpruhová cesta): každý ťah je lomená čiara z bodov, ktorými myš prejde. Ťahy sa neprekrývajú
- * (spolu 34 buniek, ako `ROAD_SEGMENTS` v f3-layout): U-ťah západná noha + priečka + východná noha, horná spojka,
- * chrbtica a vetva k depu a ďalekému dvoru.
+ * Ťah myšou (BuildBar → jednosmerná cesta, R1: ADR-037 bod 12): jedna lomená čiara z bodov, ktorými myš prejde, je uzavretý
+ * jednosmerný okruh (50 buniek): západná noha berthu dole, chrbtica k depu a ďalekému dvoru, návrat po severnej strane
+ * ďalekého dvora a po východnej strane blízkeho dvora hore a horná spojka späť k (41,17). Bez križovatiek, takže sa
+ * vozidlá nezablokujú.
  */
 const ROAD_STROKES: readonly (readonly Cell[])[] = [
   [
     { x: 41, y: 17 },
     { x: 41, y: 22 },
-    { x: 46, y: 22 },
-    { x: 46, y: 17 },
-  ],
-  [
-    { x: 42, y: 17 },
-    { x: 45, y: 17 },
-  ],
-  [
-    { x: 44, y: 23 },
+    { x: 44, y: 22 },
     { x: 44, y: 30 },
-  ],
-  [
-    { x: 45, y: 30 },
-    { x: 50, y: 30 },
+    { x: 53, y: 30 },
+    { x: 53, y: 25 },
+    { x: 46, y: 25 },
+    { x: 46, y: 17 },
+    { x: 42, y: 17 },
   ],
 ];
-const ROAD_CELL_COUNT = 34;
+const ROAD_CELL_COUNT = 50;
 /** Kroky `mouse.move` medzi bodmi ťahu — viac udalostí ako buniek, ako pri skutočnej myši. */
 const DRAG_STEPS = 12;
-const ROAD_COST_CENTS = 200_000;
+const ROAD_COST_CENTS = 150_000;
 
 /** Bunka pod kurzorom je stredom footprintu (pri párnom rozmere `floor(rozmer / 2)` od rohu): depo 3×3 (roh 46,27), dvory 4×4 (rohy 42,18 a 49,26). */
 const DEPOT_CURSOR: Cell = { x: 47, y: 28 };
@@ -155,10 +149,10 @@ test.describe('F3: loď → apron → vozidlá → dvor (T03-12)', () => {
     await view(page, OVERVIEW.x, OVERVIEW.y, OVERVIEW.zoom);
     const cashStart = await cashCents(page);
 
-    // 1) cesty: BuildBar Landside → „Cesta dvojpruhová“ (build mód ciest), štyri ťahy myšou; Esc ukončí mód
+    // 1) cesty: BuildBar Landside → „Jednosmerná cesta“ (build mód ciest), jeden ťah myšou po okruhu; Esc ukončí mód
     await bar(page).locator('[data-category="landside"]').click();
-    const roadItem = bar(page).locator('[data-def-id="road_two_lane"]');
-    await expect(roadItem).toContainText('Cesta dvojpruhová');
+    const roadItem = bar(page).locator('[data-def-id="road_one_way"]');
+    await expect(roadItem).toContainText('Jednosmerná cesta');
     await roadItem.click();
     await expect(map(page)).toHaveAttribute('data-input-state', 'build');
     await expect(roadItem).toHaveAttribute('aria-pressed', 'true');
@@ -166,7 +160,7 @@ test.describe('F3: loď → apron → vozidlá → dvor (T03-12)', () => {
     await page.keyboard.press('Escape');
     await expect(map(page)).toHaveAttribute('data-input-state', 'idle');
     await expect.poll(() => cashCents(page)).toBe(cashStart - ROAD_CELL_COUNT * ROAD_COST_CENTS);
-    // každá bunka ťahov (bez duplicít v rohoch lomenej čiary) je dvojpruhová cesta v mriežke sveta
+    // každá bunka ťahov (bez duplicít v rohoch lomenej čiary) je jednosmerná cesta v mriežke sveta
     const roadCells = await page.evaluate((strokes) => {
       const unique = new Set<string>();
       for (const stroke of strokes) {
@@ -177,7 +171,7 @@ test.describe('F3: loď → apron → vozidlá → dvor (T03-12)', () => {
           const dy = Math.sign(b.y - a.y);
           for (let x = a.x, y = a.y; ; x += dx, y += dy) {
             const cell = window.__sim!.world.grid.at(x, y);
-            if (cell.road === 'road' && cell.roadKind === 'two_lane') unique.add(`${String(x)},${String(y)}`);
+            if (cell.road === 'road' && cell.roadKind === 'one_way') unique.add(`${String(x)},${String(y)}`);
             if (x === b.x && y === b.y) break;
           }
         }
@@ -236,10 +230,11 @@ test.describe('F3: loď → apron → vozidlá → dvor (T03-12)', () => {
     await carrier.click();
     await expect.poll(() => vehicleCount(page)).toBe(2);
     expect(await cashCents(page)).toBe(cashBeforeBuy - 2 * CARRIER_COST_CENTS);
-    await expect.poll(async () => (await rendered(page)).vehicles).toBe(2);
+    await expect.poll(async () => (await rendered(page)).vehicles).toBe(0);
     const bought = (await entities(page)).vehicles;
     expect(bought.map((vehicle) => vehicle.id)).toEqual([FIRST_VEHICLE_ID, FIRST_VEHICLE_ID + 1]);
-    expect(bought.every((vehicle) => vehicle.state === 'idle' && !vehicle.loaded)).toBe(true);
+    // kúpené vozidlo vzniká zaparkované v depe (R1) a na mape sa nekreslí
+    expect(bought.every((vehicle) => vehicle.state === 'parked' && !vehicle.loaded)).toBe(true);
 
     // 4) ladiaca loď 4 TEU + ďalšia loď 24 TEU, obe cez `SpawnShipDebug` (dvor sa má zaplniť viditeľne)
     expect(await dispatch(page, { type: 'SpawnShipDebug', shipClassId: 'feeder', cargoTypeId: 'container_teu', units: 4 })).toMatchObject({ ok: true });
@@ -261,13 +256,13 @@ test.describe('F3: loď → apron → vozidlá → dvor (T03-12)', () => {
     );
     await settle(page);
     const driving = await page.evaluate(() => ({ entities: window.__sim!.entities(), rendered: window.__sim!.rendered!() }));
-    expect(driving.rendered.vehicles).toBe(2);
+    expect(driving.rendered.vehicles).toBeGreaterThanOrEqual(1); // zaparkované vozidlo sa nekreslí
     expect(driving.entities.vehicles.some((vehicle) => vehicle.loaded && vehicle.state === 'to_dropoff')).toBe(true);
     expect(driving.entities.vehicles.every((vehicle) => vehicle.state !== 'no_path')).toBe(true);
     await parkMouse(page);
     await page.screenshot({ path: 'tests/e2e/__screenshots__/f3-vehicles.png', fullPage: true });
 
-    // 6) všetko `in_storage`, lode preč, vozidlá znova nečinné; hotovosť dvora > 0
+    // 6) všetko `in_storage`, lode preč, vozidlá znova zaparkované v depe; hotovosť dvora > 0
     await setSpeed(page, 8);
     await page.waitForFunction(
       (total) => {
@@ -276,7 +271,7 @@ test.describe('F3: loď → apron → vozidlá → dvor (T03-12)', () => {
           window.__sim!.world.cargo.countByKind('in_storage') === total &&
           window.__sim!.world.cargo.countByKind('on_apron') === 0 &&
           ships.length === 0 &&
-          vehicles.every((vehicle) => vehicle.state === 'idle')
+          vehicles.every((vehicle) => vehicle.state === 'parked')
         );
       },
       TOTAL_UNITS,
@@ -297,7 +292,7 @@ test.describe('F3: loď → apron → vozidlá → dvor (T03-12)', () => {
     const nearYard = end.storage.find(([id]) => id === NEAR_YARD_ID)?.[1] as { capacity: number; stored: number; reserved: number };
     expect(nearYard.stored).toBeGreaterThan(0);
     expect(nearYard.reserved).toBe(0);
-    expect(end.vehicles.every(([, state, loaded]) => state === 'idle' && loaded === false)).toBe(true);
+    expect(end.vehicles.every(([, state, loaded]) => state === 'parked' && loaded === false)).toBe(true);
 
     await view(page, DRIVE_VIEW.x, DRIVE_VIEW.y, DRIVE_VIEW.zoom);
     await parkMouse(page);

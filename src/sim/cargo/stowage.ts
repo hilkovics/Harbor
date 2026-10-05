@@ -30,6 +30,15 @@ function directionRank(key: StowageKey): number {
 }
 
 /**
+ * Porovnanie dvoch jednotiek podľa **triedy** stowage plánu (záporné = `a` skôr): smer a hmotnostná trieda, bez id. Jednotky jednej triedy sú pre stowage
+ * zameniteľné (R2, ADR-039: sklad ich segreguje práve podľa voyage a hmotnosti), takže dispatcher z nich berie tú, ktorú vybrať najlacnejšie (navrchu stohu).
+ */
+export function compareStowageClass(a: StowageKey, b: StowageKey): number {
+  const direction = directionRank(a) - directionRank(b);
+  return direction !== 0 ? direction : STOWAGE_WEIGHT_RANK[a.weightClass] - STOWAGE_WEIGHT_RANK[b.weightClass];
+}
+
+/**
  * Porovnanie dvoch jednotiek podľa stowage plánu (záporné = `a` sa nakladá skôr): smer (`STOWAGE_DIRECTION_RANK` — plné pred
  * prázdnymi), hmotnostná trieda (`STOWAGE_WEIGHT_RANK`), potom id. Dve rôzne jednotky nie sú nikdy rovnocenné (id sú jedinečné).
  */

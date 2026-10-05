@@ -1,11 +1,15 @@
 // YardPlanner (TR2-02; ADR-039 bod 7, 8): segregácia exportu podľa (voyage, hmotnosť, veľkosť), prázdne podľa (linka, veľkosť), nezavalenie podľa
 // plánovaného odchodu, kapacita bloku, determinizmus a režim `random` cez `Rng`.
 import { describe, expect, it } from 'vitest';
+import { IMPORT_LABELS } from '@sim/cargo';
+import type { EntityId } from '@sim/core';
+import { World, findWorldViolation, type WorldState } from '@sim/world';
+import { YardBlock } from '@sim/modules';
 import { DefRegistry } from '@sim/defs';
 import { chooseYardSlot, plannedDepartureTick } from '@sim/logistics';
-import { RAW_DEFS } from '../world/world-fixtures';
-import { dispatchDefs } from './dispatch-fixtures';
-import { emptyLabelsOf, exportLabels, newUnit, stubVoyageArrivals, storeByPlanner, yardTestWorld } from './yard-fixtures';
+import { DEFS, RAW_DEFS, hashState } from '../world/world-fixtures';
+import { ROOT_BERTH_ID, dispatchDefs } from './dispatch-fixtures';
+import { buyVehicle, emptyLabelsOf, exportLabels, newUnit, stubVoyageArrivals, storeByPlanner, yardTestWorld } from './yard-fixtures';
 
 const column = (place: { bay: number; row: number } | null): string | null => (place === null ? null : `${String(place.bay)}/${String(place.row)}`);
 
@@ -117,5 +121,38 @@ describe('determinizmus a režim random', () => {
     };
     expect(run(11)).toEqual(run(11));
     expect(run(11)).not.toEqual(run(12));
+  });
+});
+
+describe('save uprostred stohovania (rezervácie, 20′ aj 40′, vozidlá na ceste)', () => {
+  it('obnovený svet má rovnaké stohy, rezervácie bunky aj tieňa a dobehne na rovnaký hash', () => {
+    const { world, depotId } = yardTestWorld();
+    const depot = world.modules.get(depotId);
+    if (depot === undefined) throw new Error('chýba depo');
+    buyVehicle(world, depot as never);
+    buyVehicle(world, depot as never);
+    // 6 jednotiek na aprone Root berthu (slot 0…5): 20′ aj 40′ — dispatcher im rezervuje bunky plánovačom a vozidlá ich vozia do dvorov.
+    for (let slot = 0; slot < 6; slot++) {
+      const { id } = world.cargo.create('container_teu', { kind: 'on_ship', shipId: 900 as EntityId }, null, { ...IMPORT_LABELS, sizeFt: slot % 3 === 0 ? 40 : 20 });
+      world.cargo.move(id, { kind: 'in_crane', craneId: 901 as EntityId });
+      world.cargo.move(id, { kind: 'on_apron', berthId: ROOT_BERTH_ID, slot });
+    }
+    const blocks = (w: World): YardBlock[] => [...w.modules.values()].filter((module): module is YardBlock => module instanceof YardBlock);
+    // Beh, kým nie je rozbehnuté stohovanie: niečo je už uložené a niečo ešte rezervované (mid-flight).
+    let guard = 0;
+    while (guard++ < 3000 && !(blocks(world).some((block) => block.usedTeu > 0) && blocks(world).some((block) => block.reservedTeu > 0))) world.tick();
+    expect(blocks(world).some((block) => block.usedTeu > 0) && blocks(world).some((block) => block.reservedTeu > 0)).toBe(true);
+    const state = JSON.parse(JSON.stringify(world.serialize())) as WorldState;
+    const restored = World.deserialize(DEFS, world.map, state);
+    expect(findWorldViolation(restored)).toBeUndefined();
+    const [before, after] = [blocks(world), blocks(restored)];
+    expect(after.map((block) => [block.usedTeu, block.reservedTeu, block.reservedSlots(), block.rehandles])).toEqual(before.map((block) => [block.usedTeu, block.reservedTeu, block.reservedSlots(), block.rehandles]));
+    for (let i = 0; i < 2500; i++) {
+      world.tick();
+      restored.tick();
+    }
+    expect(hashState(restored.serialize())).toBe(hashState(world.serialize()));
+    expect(blocks(world).reduce((sum, block) => sum + block.usedTeu, 0)).toBe(8); // 2 × 40′ + 4 × 20′ = 8 TEU, všetko uložené
+    expect(findWorldViolation(world)).toBeUndefined();
   });
 });

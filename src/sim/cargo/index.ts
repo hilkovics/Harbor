@@ -63,7 +63,7 @@ export type {
   ContainerSize,
   WeightClass,
 } from './cargo-unit';
-export { STOWAGE_DIRECTION_RANK, STOWAGE_WEIGHT_RANK, compareStowageOrder } from './stowage';
+export { STOWAGE_DIRECTION_RANK, STOWAGE_WEIGHT_RANK, compareStowageClass, compareStowageOrder } from './stowage';
 export type { StowageKey } from './stowage';
 export { CargoConservationError, CargoError, CargoStateError, CargoTransitionError } from './cargo-error';
 export type { CargoErrorCode } from './cargo-error';

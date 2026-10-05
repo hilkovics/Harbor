@@ -11,7 +11,7 @@
  *    skupiny, ktorého vrch odchádza neskôr → inak najmenšia penalizácia (počet kontajnerov, ktoré by sa zavalili); medzi rovnakými vyššie plný stoh.
  * 4. **Vzdialenosť:** bližší blok má prednosť.
  *
- * Poradie porovnania: `(trieda, [penalizácia zavalenia], vzdialenosť bloku, [vzdialenosť bay od pôvodného pri rehandlingu], penalizácia, plnenie stohu, id bloku, bay, row)`.
+ * Poradie porovnania: `(trieda, [penalizácia zavalenia], vzdialenosť bloku, rozdiel odchodu vrchu (najtesnejšie pasujúci stoh), [vzdialenosť bay od pôvodného pri rehandlingu], penalizácia, plnenie stohu, id bloku, bay, row)`.
  * Stohy počítajú aj rezervácie rozbehnutých jobov (`YardBlock.effectiveHeight`), takže rezervovaná bunka je platná aj vzhľadom na ostatné rezervácie.
  */
 import type { CargoUnit } from '../cargo/cargo-unit';
@@ -42,6 +42,15 @@ interface ClassRanks {
 const CLASS_BURY = 3;
 
 /**
+ * Režim výberu stohu: `place` bežné ukladanie plánovačom (nezavaľuje kontajner s jobom ani pri nízkej voľnej kapacite bloku), `relocate` preklad
+ * kontajnera nad cieľom (rehandling — zavaľuje len v nevyhnutnosti, nikdy kontajner, ktorý práve nakladá vozidlo), `random` náhodné ukladanie.
+ */
+type PlacementMode = 'place' | 'relocate' | 'random';
+
+/** Koľko voľných stĺpcov (`maxTier` buniek každý) musí ostať v bloku, aby plánovač smel zavaliť skôr odchádzajúci kontajner. */
+const BURY_RESERVE_COLUMNS = 4;
+
+/**
  * Poradie tried podľa smeru: náklad, ktorý stojí v sklade (export, prekládka, prázdne), sa skladá do stohu svojej skupiny skôr než do prázdneho (aj vo
  * vzdialenejšom bloku). Import odchádza kamiónom hneď po vykládke, preto sa najprv rozloží po prázdnych stohoch (aj medzi blokmi — rozloží dopravu
  * k prístupovým bunkám; stoh sa vyberá po jednej jednotke zhora, vrstvenie by zdržalo odvoz) a vrství sa až keď prázdne stohy dôjdu.
@@ -60,6 +69,8 @@ interface Candidate {
   penalty: number;
   /** Výška stohu (vrátane rezervácií) = vrstva, na ktorú sa ukladá. */
   height: number;
+  /** Rozdiel odchodu vrchu stohu a jednotky (najtesnejšie pasujúci stoh nechá ostatným voľnejšie): menšie = lepšie; prázdny stoh 0. */
+  gap: number;
   /** Poradie plnenia stohu pri rovnakej triede: import radšej nižší stoh (rozloženie), ostatné vyšší (zhustenie). */
   fill: number;
   bayGap: number;
@@ -69,8 +80,8 @@ interface Candidate {
   row: number;
 }
 
-const BEST: Candidate = { block: undefined, cls: 0, penalty: 0, height: 0, fill: 0, bayGap: 0, distance: 0, moduleId: 0, bay: 0, row: 0 };
-const CURRENT: Candidate = { block: undefined, cls: 0, penalty: 0, height: 0, fill: 0, bayGap: 0, distance: 0, moduleId: 0, bay: 0, row: 0 };
+const BEST: Candidate = { block: undefined, cls: 0, penalty: 0, height: 0, fill: 0, gap: 0, bayGap: 0, distance: 0, moduleId: 0, bay: 0, row: 0 };
+const CURRENT: Candidate = { block: undefined, cls: 0, penalty: 0, height: 0, fill: 0, gap: 0, bayGap: 0, distance: 0, moduleId: 0, bay: 0, row: 0 };
 const COLUMN_UNITS: EntityId[] = [];
 
 function resetBest(): void {
@@ -97,6 +108,7 @@ function better(a: Candidate, b: Candidate): boolean {
   if (a.cls !== b.cls) return a.cls < b.cls;
   if (a.cls === CLASS_BURY && a.penalty !== b.penalty) return a.penalty < b.penalty;
   if (a.distance !== b.distance) return a.distance < b.distance;
+  if (a.gap !== b.gap) return a.gap < b.gap;
   if (a.bayGap !== b.bayGap) return a.bayGap < b.bayGap;
   if (a.penalty !== b.penalty) return a.penalty < b.penalty;
   if (a.fill !== b.fill) return a.fill < b.fill;
@@ -106,7 +118,7 @@ function better(a: Candidate, b: Candidate): boolean {
 }
 
 /** Vyplní `into` skóre stohu `(bay, row)` bloku pre `unit`, alebo vráti `false`, ak pravidlá stohu jednotku nepustia. */
-function scoreColumn(world: World, block: YardBlock, unit: CargoUnit, bay: number, row: number, into: Candidate, strict: boolean): boolean {
+function scoreColumn(world: World, block: YardBlock, unit: CargoUnit, bay: number, row: number, into: Candidate, mode: PlacementMode): boolean {
   const { maxTier } = block.geometry;
   const wide = unit.sizeFt === 40;
   const height = block.effectiveHeight(bay, row);
@@ -121,6 +133,7 @@ function scoreColumn(world: World, block: YardBlock, unit: CargoUnit, bay: numbe
   into.height = height;
   into.fill = unit.direction === 'import' ? height : -height;
   into.penalty = 0;
+  into.gap = 0;
   if (height === 0) {
     into.cls = CLASS_RANKS[unit.direction].empty;
     // Prázdny stoh v ešte celom páre bays by zbytočne znemožnil 40′ — radšej stoh v už načatom páre.
@@ -138,32 +151,35 @@ function scoreColumn(world: World, block: YardBlock, unit: CargoUnit, bay: numbe
     // Kontajner s rozbehnutým jobom zo skladu sa nezavaľuje (kruh čakania: job drží rampu, zavalený by ho vozidlo nevybralo bez rehandlingu); pri rehandlingu
     // a v režime `random` aspoň ten, ktorý práve nakladá vozidlo (inak sa dve vozidlá striedavo zavaľujú ping-pongom).
     const job = world.jobOfUnit(id);
-    if (job?.from.kind === 'in_storage' && (strict || job.state === 'picking')) return false;
+    if (job?.from.kind === 'in_storage' && (mode === 'place' || job.state === 'picking')) return false;
     if (plannedDepartureTick(world, other) < departure) earlier += 1;
   }
   if (earlier > 0) {
-    // Plánovač nezavaľuje skôr odchádzajúci kontajner (bez rehandlingu v bežnom režime); bury ostáva poslednou možnosťou pri rehandlingu a v režime `random`.
-    if (strict) return false;
+    // Zavalenie skôr odchádzajúceho kontajnera je poslednou možnosťou („najmenšia penalizácia“). Pri bežnom ukladaní len keď blok ostane voľný aspoň na dva stĺpce
+    // (`BURY_RESERVE_COLUMNS`) — inak by rehandling nemal kam preložiť kontajnery a vozidlo by uviazlo; pri rehandlingu a v režime `random` bez rezervy.
+    if (mode === 'place' && block.freeCount - teuOf(unit) < BURY_RESERVE_COLUMNS * maxTier) return false;
     into.cls = CLASS_BURY;
     into.penalty = earlier;
     return true;
   }
   const topId = block.effectiveTopUnit(bay, row);
   const top = topId === null ? undefined : world.cargo.get(topId);
+  const topDeparture = top === undefined ? Infinity : plannedDepartureTick(world, top);
+  into.gap = topDeparture === departure ? 0 : topDeparture - departure;
   const ranks = CLASS_RANKS[unit.direction];
   into.cls = top !== undefined && sameGroup(top, unit) ? ranks.sameGroup : ranks.otherGroup;
   return true;
 }
 
 /** Prejde stohy bloku a najlepší, ktorý je lepší než `BEST`, zapíše do `BEST` (alebo všetky do `onlyCollect`); `origin` (rehandling) vynechá pôvodný stoh. */
-function scanBlock(world: World, block: YardBlock, unit: CargoUnit, distance: number, origin: { readonly bay: number; readonly row: number } | undefined, onlyCollect: Candidate[] | undefined, strict: boolean): void {
+function scanBlock(world: World, block: YardBlock, unit: CargoUnit, distance: number, origin: { readonly bay: number; readonly row: number } | undefined, onlyCollect: Candidate[] | undefined, mode: PlacementMode): void {
   const { bays, rows } = block.geometry;
   const wide = unit.sizeFt === 40;
   const step = wide ? 2 : 1;
   for (let row = 0; row < rows; row++) {
     for (let bay = 0; bay < bays; bay += step) {
       if (origin !== undefined && origin.row === row && origin.bay === bay) continue;
-      if (!scoreColumn(world, block, unit, bay, row, CURRENT, strict)) continue;
+      if (!scoreColumn(world, block, unit, bay, row, CURRENT, mode)) continue;
       CURRENT.block = block;
       CURRENT.distance = distance;
       CURRENT.moduleId = block.id;
@@ -207,13 +223,13 @@ export function chooseYardSlot(world: World, unit: CargoUnit, from: Module): Yar
   for (const blocks of candidateTiers(world, unit, from)) {
     if (random) {
       const all: Candidate[] = [];
-      for (const block of blocks) scanBlock(world, block, unit, 0, undefined, all, false);
+      for (const block of blocks) scanBlock(world, block, unit, 0, undefined, all, 'random');
       if (all.length === 0) continue;
       const pick = all[world.rng.int(0, all.length - 1)];
       return { moduleId: pick.moduleId as EntityId, slot: (pick.block as YardBlock).slotOf(pick.bay, pick.row, pick.height) };
     }
     resetBest();
-    for (const block of blocks) scanBlock(world, block, unit, distanceBetweenModules(world, from, block), undefined, undefined, true);
+    for (const block of blocks) scanBlock(world, block, unit, distanceBetweenModules(world, from, block), undefined, undefined, 'place');
     const best = BEST.block;
     if (best !== undefined) return { moduleId: best.id, slot: best.slotOf(BEST.bay, BEST.row, BEST.height) };
   }
@@ -235,7 +251,35 @@ export function reserveYardSlot(world: World, unit: CargoUnit, from: Module): Ya
  */
 export function chooseRehandleSlot(world: World, block: YardBlock, blocker: CargoUnit, origin: { readonly bay: number; readonly row: number }): number | null {
   resetBest();
-  scanBlock(world, block, blocker, 0, origin, undefined, false);
+  scanBlock(world, block, blocker, 0, origin, undefined, 'relocate');
   // Kontajner sa ukladá na skutočný vrchol stohu; rezervácie rozbehnutých jobov nad ním sa posunú (`YardBlock.vacateReservation`).
   return BEST.block === undefined ? null : block.slotOf(BEST.bay, BEST.row, block.stackHeight(BEST.bay, BEST.row));
+}
+
+/**
+ * Koľko kontajnerov `blocker` (a rovnakej veľkosti) sa dá preložiť z `origin` v tom istom bloku: súčet voľných vrstiev v stohoch, ktoré rehandling smie použiť
+ * (`chooseRehandleSlot`). Čistý dotaz.
+ */
+export function rehandleRoom(world: World, block: YardBlock, blocker: CargoUnit, origin: { readonly bay: number; readonly row: number }): number {
+  const all: Candidate[] = [];
+  scanBlock(world, block, blocker, 0, origin, all, 'relocate');
+  let room = 0;
+  for (const candidate of all) room += block.geometry.maxTier - candidate.height;
+  return room;
+}
+
+/**
+ * Dá sa jednotka vybrať zo skladu bez toho, aby vozidlo uviazlo na rehandlingu bez cieľa? Navrchu ležiaca vždy; zavalená len keď blok pre kontajnery nad ňou
+ * (uložené, nie rezervované) má dosť miesta (`rehandleRoom`). Dispatcher inak job nezakladá / nepriraďuje vozidlo — job počká, kým sa blok uvoľní (vozidlo čakajúce
+ * na prístupovej bunke by zablokovalo dopravu).
+ */
+export function unitPickable(world: World, unit: CargoUnit): boolean {
+  const block = unit.location.kind === 'in_storage' ? world.modules.get(unit.location.moduleId) : undefined;
+  if (!(block instanceof YardBlock)) return true;
+  const depth = block.burialDepth(unit.id);
+  if (depth === 0) return true;
+  const blockerId = block.topBlockerOf(unit.id);
+  const blocker = blockerId === null ? undefined : world.cargo.get(blockerId);
+  if (blocker === undefined || blocker.location.kind !== 'in_storage') return true;
+  return rehandleRoom(world, block, blocker, block.positionOfSlot(blocker.location.slot)) >= depth;
 }

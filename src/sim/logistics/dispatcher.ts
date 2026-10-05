@@ -83,7 +83,7 @@ import { distanceBetweenModules, distanceToModule } from './module-access';
 import { allocateRamp, outboundRoom } from './ramp-allocator';
 import type { StoredCargoGroup } from './stored-cargo-index';
 import { JOB_PRIORITY_LEVELS, TransportJob, type JobCancelReason } from './transport-job';
-import { reserveYardSlot } from './yard-planner';
+import { reserveYardSlot, unitPickable } from './yard-planner';
 import { anyBookingLoads, isOutboundOnShip, openLoadBookings } from './voyage-cargo';
 
 /**
@@ -336,7 +336,7 @@ function blockedByLeavingUnit(world: World, unit: CargoUnit, leaves: (world: Wor
 function blockedJob(world: World, job: TransportJob): boolean {
   if (job.from.kind !== 'in_storage') return false;
   const unit = world.cargo.get(job.unitIds[0]);
-  return unit !== undefined && blockedByLeavingUnit(world, unit, hasLeavingJob);
+  return unit !== undefined && (blockedByLeavingUnit(world, unit, hasLeavingJob) || !unitPickable(world, unit));
 }
 
 /**
@@ -362,7 +362,7 @@ function outboundFromGroup(world: World, group: StoredCargoGroup, ramps: Loading
     const index = i;
     i += 1;
     const unit = world.cargo.get(group.units[index]);
-    if (unit === undefined || world.jobOfUnit(unit.id) !== undefined || blockedByLeavingUnit(world, unit, leavesByItself)) continue;
+    if (unit === undefined || world.jobOfUnit(unit.id) !== undefined || blockedByLeavingUnit(world, unit, leavesByItself) || !unitPickable(world, unit)) continue;
     const dock = world.dockIntake.firstRoomDock(ramp);
     ramp.reserve(dock);
     openJob(world, { unitIds: [unit.id], from: unit.location, to: { kind: 'at_ramp', rampId: ramp.id, dock } });

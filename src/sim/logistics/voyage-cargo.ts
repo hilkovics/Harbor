@@ -15,7 +15,7 @@
  *   vyložené z lode A, repositioning: pridelené nakládke) − naložené − vrátené − v hold (zadržané jednotky loď nečaká, rozhodnutie 5).
  * - `stowageOutOfOrder`: je na termináli nenaložená jednotka lode mimo hold s menším kľúčom stowage plánu (plné pred prázdnymi)?
  */
-import { compareStowageOrder } from '../cargo/stowage';
+import { compareStowageClass } from '../cargo/stowage';
 import { OUTBOUND_BY_DIRECTION, teuOf, type CargoUnit } from '../cargo/cargo-unit';
 import type { Contract } from '../contracts/contract';
 import type { ContractKind } from '../contracts/contract-fsm';
@@ -184,7 +184,7 @@ export function stowageOutOfOrder(world: World, loaded: CargoUnit, shipId?: Enti
     if (unit.id === loaded.id || !isLoadable(unit)) continue;
     const { kind } = unit.location;
     if (kind !== 'in_storage' && kind !== 'on_apron' && kind !== 'in_vehicle' && kind !== 'at_ramp' && kind !== 'in_crane') continue;
-    if (compareStowageOrder(unit, loaded) < 0 && anyBookingLoads(bookings, unit)) return true;
+    if (compareStowageClass(unit, loaded) < 0 && anyBookingLoads(bookings, unit)) return true;
   }
   return false;
 }

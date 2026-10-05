@@ -19,7 +19,7 @@
  * nakládky sa vyberajú po jednej (najlepšia podľa stowage plánu, bez poľa a triedenia — poradie je úplné, takže je rovnaké ako pri
  * triedení) a polia kotvísk / žeriavov sú znovupoužiteľné na úrovni modulu (vzor `BOOKINGS`).
  */
-import { compareStowageOrder } from '../cargo/stowage';
+import { compareStowageClass } from '../cargo/stowage';
 import type { CargoUnit } from '../cargo/cargo-unit';
 import type { Contract } from '../contracts/contract';
 import type { ContractKind } from '../contracts/contract-fsm';
@@ -27,13 +27,14 @@ import type { EntityId } from '../core/entity-id';
 import type { HandoverMode } from '../defs/types';
 import { BerthModule } from '../modules/berth-module';
 import { CRANE_CYCLE_TRAITS, CraneModule } from '../modules/crane-module';
+import { YardBlock } from '../modules/yard-block';
 import { HANDOVERS } from '../systems/crane-handover';
 import { apronDirectionCap, bothDirections, exportApronUsage } from './apron-usage';
 import { findAvailableEmpty } from './empty-stock';
 import { collectLoadBerths, storageReaches } from './load-access';
 import { distanceBetweenModules } from './module-access';
 import type { JobCancelReason, TransportJob } from './transport-job';
-import { reserveYardSlot } from './yard-planner';
+import { reserveYardSlot, unitPickable } from './yard-planner';
 import { isOutboundOnShip, loadingStopped, openLoadBookings } from './voyage-cargo';
 import type { CargoLocation } from '../cargo/cargo-location';
 import type { Ship } from '../ships/ship';
@@ -85,6 +86,23 @@ function hookLoadJobs(world: World, crane: CraneModule): number {
   return count;
 }
 
+/** Počet kontajnerov nad jednotkou v jej bloku so stohmi (0 = navrchu, mimo bloku); rehandling je drahší než čakanie. */
+function burialOf(world: World, unit: CargoUnit): number {
+  const block = unit.location.kind === 'in_storage' ? world.modules.get(unit.location.moduleId) : undefined;
+  return block instanceof YardBlock ? block.burialDepth(unit.id) : 0;
+}
+
+/**
+ * Poradie nakládky dvoch jednotiek (záporné = `a` skôr): trieda stowage plánu (plné pred prázdnymi, ťažké skôr — `compareStowageClass`); v rámci triedy
+ * (jednotky sú zameniteľné, sklad ich segreguje) tá, nad ktorou je menej kontajnerov, potom menšie id. Nakladať zospodu stohu by zbytočne spúšťalo rehandling.
+ */
+function compareLoadOrder(world: World, a: CargoUnit, b: CargoUnit): number {
+  const byClass = compareStowageClass(a, b);
+  if (byClass !== 0) return byClass;
+  const depth = burialOf(world, a) - burialOf(world, b);
+  return depth !== 0 ? depth : a.id - b.id;
+}
+
 /**
  * Najlepšia (min kľúč stowage plánu) uskladnená jednotka kontraktu smeru `direction` mimo hold a bez jobu, ktorá leží v sklade s cestou
  * ku kotvisku nakládky (`berths`, T6C-07b: odrezaný sklad nie je zdrojom), alebo `undefined`. Dosiahnuteľnosť skladu sa overuje raz za sklad
@@ -99,7 +117,8 @@ function bestStoredOf(world: World, contract: Contract, direction: CargoUnit['di
   for (let i = 0; i < group.units.length; i++) {
     const unit = world.cargo.get(group.units[i]);
     if (unit === undefined || unit.direction !== direction || unit.hold !== null || world.jobOfUnit(unit.id) !== undefined) continue;
-    if (best !== undefined && compareStowageOrder(unit, best) >= 0) continue;
+    if (best !== undefined && compareLoadOrder(world, unit, best) >= 0) continue;
+    if (!unitPickable(world, unit)) continue;
     if (group.storages[i] !== checkedStorage) {
       checkedStorage = group.storages[i];
       reachable = storageReaches(world, checkedStorage, berths);
@@ -147,7 +166,7 @@ function bestLoadable(world: World, bookings: readonly Contract[], berths: reado
       if (fullPending > 0) continue;
     }
     const unit = LOAD_SCAN[contract.kind](world, contract, berths);
-    if (unit !== undefined && (best === undefined || compareStowageOrder(unit, best) < 0)) best = unit;
+    if (unit !== undefined && (best === undefined || compareLoadOrder(world, unit, best) < 0)) best = unit;
   }
   return best;
 }

@@ -23,10 +23,16 @@
  * Vozidlo bez sprite (def chýba v manifeste / textúra nie je načítaná) sa nakreslí ako telo z tokenov `--vehicle-body`
  * s obrysom `--vehicle-dark` a tmavým pruhom na predku, aby bol vidieť smer jazdy; má rovnakú mierku ako sprite.
  *
+ * **R1 — kĺbové vozidlá po stope (ADR-037):** keď VM nesie `body` a nie je `offRoad`, sprite sa nekreslí na `x`, `y`, ale po stope
+ * (`articulated-pose.ts`): predok je presne pri hlave, stred o polovicu dĺžky spritu späť v smere natočenia, natočenie podľa tetivy stopy a
+ * posun do pravého pruhu kolmo na tetivu. Bez `body` (staré VM) a pri `offRoad` platí pohyb ako doteraz. Pri `blocked` (a nie `offRoad`)
+ * pribudnú procedurálne brzdové svetlá (`--vehicle-brake`) pri zadnom okraji spritu.
+ *
  * Rovnaký pohyb (`vehiclePose`: pruhy, oblúky) a sprite používa aj `TruckView` (F4) — líši sa len štýl (`VehicleViewStyle`:
  * prefix `label` a farby fallbacku) a rozmer, ktorý sa berie z `entities.<defId>.footprint` (kamión 1×2, vozidlo 1×1).
  */
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
+import { articulatedPose, blendedLaneMagnitude, shiftRight, trailAt } from './articulated-pose';
 import type { Point } from './camera';
 import { manifestScale, vehicleSprite, type CellSize } from './entity-assets';
 import {
@@ -44,7 +50,7 @@ import type { EntityTextures } from './sprite-atlas';
 import type { ColorValue, EntityPalette } from './tokens';
 import { cornerAlpha, cornerTurn, isQuarterTurn, lerpHeading, turnArcPose } from './turn-arc';
 import type { VehicleVM, ViewRotation } from './view-models';
-import { CARRIER_WIDTH_PX, VEHICLE_SCALE } from './world-scale';
+import { CARRIER_LENGTH_PX, CARRIER_WIDTH_PX, VEHICLE_SCALE } from './world-scale';
 
 /** Hrúbka obrysu fallbacku ako zlomok bunky (2 px pri 64 px, DESIGN_BRIEF §4 „Obrys“). */
 const OUTLINE_CELLS = 2 / 64;
@@ -58,11 +64,16 @@ const FALLBACK_FOOTPRINT: CellSize = { w: 1, h: 1 };
 /** Výška tmavého pruhu na predku fallbacku ako podiel dĺžky vozidla. */
 const FALLBACK_FRONT_STRIPE = 0.2;
 
+/** Brzdové svetlo v px zdroja (bunka 64 px): obdĺžnik 4 × 3 px; odsadenie od bočného okraja vozidla a od zadného okraja. */
+export const BRAKE_LIGHT_PX = Object.freeze({ w: 4, h: 3, inset: 2 });
+
 /** Štýl view: prefix `label` kontajnera a farby fallbacku (telo, obrys, pruh na predku). */
 export interface VehicleViewStyle {
   readonly label: string;
   /** Šírka tela fallbacku v px zdroja (reálna šírka vozidla, `world-scale.ts`); dĺžka je z `footprint`. */
   readonly widthPx: number;
+  /** Dĺžka obsahu spritu v px zdroja (reálna dĺžka vozidla, `world-scale.ts`): zadný okraj, pri ktorom svietia brzdové svetlá. */
+  readonly lengthPx: number;
   readonly fallback: (palette: EntityPalette) => { readonly body: ColorValue; readonly outline: ColorValue; readonly front: ColorValue };
 }
 
@@ -70,6 +81,7 @@ export interface VehicleViewStyle {
 export const VEHICLE_STYLE: VehicleViewStyle = {
   label: 'vehicle',
   widthPx: CARRIER_WIDTH_PX,
+  lengthPx: CARRIER_LENGTH_PX,
   fallback: (palette) => ({ body: palette.vehicle.body, outline: palette.vehicle.dark, front: palette.vehicle.dark }),
 };
 
@@ -247,6 +259,10 @@ export class VehicleView {
   private load: VehicleLoad;
   private readonly roadKindAt: RoadKindAt;
   private readonly roadMaskAt: RoadMaskAt;
+  /** Dĺžka spritu v bunkách (`footprint.h` × mierka): predok je pri hlave, stred o polovicu späť v smere natočenia. */
+  private readonly spriteLengthCells: number;
+  /** Brzdové svetlá pri zadku (vznikne lenivo pri prvom `blocked`); `null`, kým nie sú potrebné. */
+  private brakeLights: Graphics | null = null;
 
   constructor(
     vm: VehicleVM,
@@ -263,6 +279,7 @@ export class VehicleView {
     this.load = vehicleLoad(vm.loaded, vm.carriesEmpty === true);
     this.textures = this.resolveTextures(vm.defId);
     const entry = vehicleSprite(vm.defId);
+    this.spriteLengthCells = (entry?.footprint ?? FALLBACK_FOOTPRINT).h * VEHICLE_SCALE;
     if (this.textures !== null && entry !== undefined) {
       this.sprite = new Sprite(this.textures[this.load]);
       this.sprite.anchor.set(0.5);
@@ -290,6 +307,16 @@ export class VehicleView {
     return this.sprite?.texture ?? null;
   }
 
+  /** Brzdové svetlá (`null`, kým nebolo vozidlo zablokované) — pre testy. */
+  get brakeLightsView(): Graphics | null {
+    return this.brakeLights;
+  }
+
+  /** Brzdové svetlá svietia (vozidlo stojí na ceste, `blocked && !offRoad`) — pre testy. */
+  get brakeLightsOn(): boolean {
+    return this.brakeLights?.visible === true;
+  }
+
   /** Nastaví polohu (interpolovanú), kurz a stav naloženia. Pre nezmenený stav nič nealokuje. */
   update(vm: VehicleVM, alpha: number): void {
     this.last = vm;
@@ -301,15 +328,57 @@ export class VehicleView {
       this.load = load;
       if (this.sprite !== null && this.textures !== null) this.sprite.texture = this.textures[load];
     }
+    this.syncBrakeLights(vm);
   }
 
   destroy(): void {
     this.view.destroy({ children: true });
   }
 
-  /** Póza vozidla podľa simu (pruh, oblúky) v čase `alpha` (px sveta). */
+  /**
+   * Póza vozidla podľa simu v čase `alpha` (px sveta): kĺbová po stope, keď VM nesie `body` a vozidlo je na ceste, inak pruh a
+   * oblúky ako doteraz (`vehiclePose`).
+   */
   private simPose(vm: VehicleVM, alpha: number): VehiclePose {
-    return vehiclePose(vm, alpha, this.deps.cellPx, this.roadKindAt, this.roadMaskAt);
+    if (vm.body === undefined || vm.offRoad === true) return vehiclePose(vm, alpha, this.deps.cellPx, this.roadKindAt, this.roadMaskAt);
+    return this.trailPose(vm, vm.body, alpha);
+  }
+
+  /** Póza vozidla na stope `body` (viď `articulated-pose.ts`): sprite nesený po stope a posunutý do pravého pruhu kolmo na tetivu. */
+  private trailPose(vm: VehicleVM, body: readonly Point[], alpha: number): VehiclePose {
+    const prevHeading = vm.prevHeading ?? vm.heading;
+    const trail = trailAt({ x: vm.prevX, y: vm.prevY }, { x: vm.x, y: vm.y }, body, alpha, prevHeading === 0 || prevHeading === 180);
+    const lengthCells = vm.lengthCells ?? body.length + 1;
+    const pose = articulatedPose(trail.head, trail.body, lengthCells, this.spriteLengthCells, vm.heading);
+    const lane = blendedLaneMagnitude(pose, pose.angle, (cellX, cellY) => laneMagnitude(this.roadKindAt(cellX, cellY)));
+    const at = shiftRight(pose, pose.angle, lane);
+    const { cellPx } = this.deps;
+    return { x: at.x * cellPx, y: at.y * cellPx, angle: pose.angle };
+  }
+
+  /** Ukáže / skryje brzdové svetlá: svietia pri `blocked` na ceste; vznikajú lenivo, aby vozidlo bez zablokovania nič navyše nekreslilo. */
+  private syncBrakeLights(vm: VehicleVM): void {
+    const on = vm.blocked === true && vm.offRoad !== true;
+    if (!on) {
+      if (this.brakeLights !== null) this.brakeLights.visible = false;
+      return;
+    }
+    this.brakeLights ??= this.createBrakeLights();
+    this.brakeLights.visible = true;
+  }
+
+  /** Dva červené obdĺžniky (`--vehicle-brake`) pri zadnom okraji spritu, pri bočných okrajoch tela vozidla; mierka ako sprite. */
+  private createBrakeLights(): Graphics {
+    const { cellPx, palette } = this.deps;
+    const unit = manifestScale(cellPx) * VEHICLE_SCALE;
+    const { w, h, inset } = BRAKE_LIGHT_PX;
+    const { brake } = palette.vehicle;
+    const x = (this.style.widthPx / 2 - inset - w / 2) * unit;
+    const y = (this.style.lengthPx / 2 - h / 2) * unit;
+    const lights = new Graphics({ label: 'brake-lights' });
+    for (const side of [-1, 1]) lights.rect(side * x - (w * unit) / 2, y - (h * unit) / 2, w * unit, h * unit).fill({ color: brake.color, alpha: brake.alpha });
+    this.view.addChild(lights);
+    return lights;
   }
 
   /** Textúry `empty` / `loaded` / `carries_empty` pre vozidlo, alebo `null` (fallback); `carries_empty` bez súboru alebo textúry = `loaded`. */

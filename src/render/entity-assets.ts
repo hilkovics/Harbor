@@ -138,6 +138,15 @@ export function moduleSprite(defId: string): ModuleSpriteEntry | undefined {
   return lookup(MODULE_SPRITES, defId);
 }
 
+/**
+ * Počet miest státia depa vozidiel (`sprites.<defId>.stalls` ako číslo, napr. `vehicle_depot` = 10), alebo `undefined`: modul bez
+ * záznamu a čakacia plocha (kde `stalls` je pole obdĺžnikov) ho nemajú.
+ */
+export function parkingStalls(defId: string): number | undefined {
+  const stalls: unknown = moduleSprite(defId)?.stalls;
+  return typeof stalls === 'number' ? stalls : undefined;
+}
+
 /** Záznam lode triedy `classId` (`entities.ship_<classId>`), alebo `undefined`. */
 export function shipSprite(classId: string): ShipSpriteEntry | undefined {
   return lookup(SHIP_SPRITES, `${SHIP_ENTRY_PREFIX}${classId}`);

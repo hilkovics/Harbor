@@ -41,6 +41,7 @@ import {
   type CargoLocationKind,
 } from './cargo-location';
 import { parseCargoLedgerState, type CargoLedgerState } from './cargo-ledger-state';
+import type { StorageGuards } from './storage-guard';
 import {
   DEFAULT_CARGO_STATUS,
   DEFAULT_CONTAINER_LABELS,
@@ -75,6 +76,8 @@ export interface CargoLedgerDeps {
    * `CargoMoved` s jednotkou **pred** presunom a cieľom. Nesmie vyhodiť ani meniť ledger (presun je už hotový).
    */
   readonly observer?: CargoMoveObserver;
+  /** Stráž skladov so stohmi (ADR-039): kontroluje pravidlá stohu pri presune do skladu / zo skladu. Bez nej sa pravidlá nekontrolujú (samostatný ledger). */
+  readonly storageGuard?: StorageGuards;
 }
 
 /** Pozorovateľ presunov nákladu (`CargoLedgerDeps.observer`). */
@@ -88,7 +91,7 @@ export interface CargoMoveObserver {
  * `unitAtIndex` (T04-02): rampa počíta jednotky na docku prechodom svojich jednotiek bez kópie (dock nie je jedinečné
  * miesto, ledger ho neindexuje).
  */
-export type CargoReader = Pick<CargoLedger, 'get' | 'unitsAt' | 'countAt' | 'firstUnitAt' | 'unitAtSlot' | 'unitAtIndex'>;
+export type CargoReader = Pick<CargoLedger, 'get' | 'unitsAt' | 'countAt' | 'teuAt' | 'firstUnitAt' | 'unitAtSlot' | 'unitAtIndex'>;
 
 /** Index jednotiek jedného držiteľa. */
 interface Bucket {
@@ -325,6 +328,11 @@ export class CargoLedger {
       throw new CargoTransitionError(unitId, from, target, hint);
     }
     this.assertSlotFree(target, unitId);
+    const guards = this.deps.storageGuard;
+    const takeGuard = guards !== undefined && from.kind === 'in_storage' ? guards(from.moduleId) : undefined;
+    const placeGuard = guards !== undefined && target.kind === 'in_storage' ? guards(target.moduleId) : undefined;
+    takeGuard?.assertCanTake(unit);
+    placeGuard?.assertCanPlace(unit, target.kind === 'in_storage' ? target.slot : -1);
     const bucket = this.bucketOf(from);
     const index = bucket?.units.indexOf(unitId) ?? -1;
     if (bucket === undefined || index < 0) {
@@ -334,6 +342,8 @@ export class CargoLedger {
     // Od tohto bodu nič nevyhadzuje — presun je atomický.
     this.unplace(unit, bucket, index);
     this.place(freezeUnit(unit, unit, target));
+    takeGuard?.taken(unit);
+    placeGuard?.placed(unit, target.kind === 'in_storage' ? target.slot : -1);
     this.deps.events.emit({ type: 'CargoMoved', unitId, from, to: target, tick: this.deps.clock.tick });
     this.deps.observer?.cargoMoved(unit, target);
   }

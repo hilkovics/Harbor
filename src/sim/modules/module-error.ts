@@ -46,6 +46,10 @@ export type ModuleErrorCode =
   | 'busy'
   /** Slot (apron, sklad), bay stojiska alebo dock rampy je mimo rozsahu `0 … n − 1`. */
   | 'invalid_slot'
+  /** Porušenie pravidiel stohu (ADR-039): bunka nie je na vrchu stohu, 40′ mimo páru bays, zlá veľkosť pod kontajnerom, nad `maxTier`. */
+  | 'stack_rule'
+  /** Brať sa dá len vrchný kontajner stohu (ADR-039). */
+  | 'not_top'
   /** Apron, sklad alebo dock rampy nemá miesto, ktoré nie je obsadené ani rezervované (T03-02; pôvodne `apron_full`). */
   | 'no_free_slot'
   /** Slot je už rezervovaný (bay stojiska už drží iný kamión). */

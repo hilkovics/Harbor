@@ -34,6 +34,8 @@ export interface SlotReservationsInit {
   readonly cargo: CargoReader;
   /** Popis do chybových správ (`apron berth_standard #1`). */
   readonly label: string;
+  /** Doplnková kontrola držiteľa (sklad so stohmi, ADR-039), ktorú `findProblem` vráti, ak základné kontroly prejdú. */
+  readonly extraProblem?: () => string | undefined;
 }
 
 /**
@@ -64,6 +66,7 @@ export class SlotReservations implements CargoSlotsView {
   readonly capacity: number;
   private readonly cargo: CargoReader;
   private readonly label: string;
+  private readonly extraProblem: (() => string | undefined) | undefined;
   /** Slot → rezervovaný. */
   private readonly reservedFlags: boolean[];
   private reserved = 0;
@@ -81,6 +84,7 @@ export class SlotReservations implements CargoSlotsView {
     this.capacity = init.capacity;
     this.cargo = init.cargo;
     this.label = init.label;
+    this.extraProblem = init.extraProblem;
     this.reservedFlags = new Array<boolean>(init.capacity).fill(false);
   }
 
@@ -221,7 +225,7 @@ export class SlotReservations implements CargoSlotsView {
     if (used + this.reserved > this.capacity) {
       return `${this.label}: obsadené ${String(used)} + rezervované ${String(this.reserved)} > kapacita ${String(this.capacity)}`;
     }
-    return undefined;
+    return this.extraProblem?.();
   }
 
   private assertSlot(slot: number, method: string): void {

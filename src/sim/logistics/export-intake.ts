@@ -25,6 +25,7 @@ import { StorageModule } from '../modules/storage-module';
 import type { World } from '../world/world';
 import { allocateStorage } from './storage-allocator';
 import { distanceBetweenModules } from './module-access';
+import { reserveYardSlot } from './yard-planner';
 
 /** Znovupoužiteľné pole skladov voyage pre `groupStorages` (hot path bez alokácie; obsah sa vždy najprv vyprázdni). */
 const GROUP_STORAGES: EntityId[] = [];
@@ -101,11 +102,9 @@ export function createExportIntakeJobs(world: World, openJob: (spec: IntakeJobSp
       const unitId = world.cargo.unitAtIndex('at_ramp', ramp.id, i);
       const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
       if (unit === undefined || unit.direction !== 'export' || world.isPickupCargo(unit) || world.jobOfUnit(unit.id) !== undefined) continue;
-      const category = world.defs.cargoTypes.get(unit.typeId).category;
-      const storage = allocateExportStorage(world, ramp, unit, category);
-      if (storage === undefined) continue;
-      const slot = storage.reserve();
-      openJob({ unitId: unit.id, from: unit.location, to: { kind: 'in_storage', moduleId: storage.id, slot } });
+      const place = reserveYardSlot(world, unit, ramp);
+      if (place === null) continue;
+      openJob({ unitId: unit.id, from: unit.location, to: { kind: 'in_storage', moduleId: place.moduleId, slot: place.slot } });
       created += 1;
     }
   }

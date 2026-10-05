@@ -18,7 +18,8 @@ import type { EntityId } from '../core/entity-id';
 import { LoadingRamp } from '../modules/loading-ramp';
 import type { Module } from '../modules/module';
 import type { World } from '../world/world';
-import { allocateReturnStorage, findAvailableEmpty } from './empty-stock';
+import { findAvailableEmpty } from './empty-stock';
+import { reserveYardSlot } from './yard-planner';
 
 /** Podklady jobu prázdneho: jednotka, zdroj a rezervovaný cieľ (dispatcher z toho vytvorí job `open`). */
 export interface EmptyJobSpec {
@@ -36,10 +37,9 @@ export function createEmptyIntakeJobs(world: World, openJob: (spec: EmptyJobSpec
       const unitId = world.cargo.unitAtIndex('at_ramp', ramp.id, i);
       const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
       if (unit === undefined || unit.direction !== 'empty' || world.jobOfUnit(unit.id) !== undefined || world.emptyFlow.errandOfUnit(unit.id) !== undefined) continue;
-      const storage = allocateReturnStorage(world, ramp, world.defs.cargoTypes.get(unit.typeId).category);
-      if (storage === undefined) continue;
-      const slot = storage.reserve();
-      openJob({ unitId: unit.id, from: unit.location, to: { kind: 'in_storage', moduleId: storage.id, slot } });
+      const place = reserveYardSlot(world, unit, ramp);
+      if (place === null) continue;
+      openJob({ unitId: unit.id, from: unit.location, to: { kind: 'in_storage', moduleId: place.moduleId, slot: place.slot } });
       created += 1;
     }
   }

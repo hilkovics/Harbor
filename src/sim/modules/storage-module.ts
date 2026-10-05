@@ -29,6 +29,15 @@ import { checkRuntimeKeys, readCount } from './runtime-state';
 import { SlotReservations, type CargoSlotsView } from './slot-reservations';
 
 /**
+ * Počet slotov skladu: pri bloku so stohmi (`bays × rows × maxTier`, ADR-039) kapacita v TEU, inak `capacityUnits`.
+ * Geometria je celá alebo žiadna (`checkStorageParams`).
+ */
+export function storageSlotCapacity(params: StorageParams): number {
+  const { bays, rows, maxTier } = params;
+  return bays !== undefined && rows !== undefined && maxTier !== undefined ? bays * rows * maxTier : params.capacityUnits;
+}
+
+/**
  * Dynamický stav skladu v save (`WorldState.modules[i].runtime`, ADR-017, ADR-018): len kumulatívne počítadlá —
  * obsadenie je v ledgeri a rezervácie sa odvodia z jobov.
  */
@@ -44,7 +53,7 @@ export abstract class StorageModule extends Module {
   readonly params: StorageParams;
   /** Počet slotov = `params.capacityUnits`. */
   readonly capacity: number;
-  private readonly slots: SlotReservations;
+  protected readonly slots: SlotReservations;
   /** Cieľ doručenia jobu (`in_storage`, slot = miesto) — jeden objekt na sklad, vracia ho `cargoDropTarget()`. */
   private readonly drop: CargoDropTarget;
   private inCount = 0;
@@ -60,17 +69,24 @@ export abstract class StorageModule extends Module {
     if (this.params.category !== category) {
       throw new ModuleError('invalid_input', `${this.label}: trieda skladuje kategóriu '${category}', def má '${this.params.category}'`);
     }
-    this.capacity = this.params.capacityUnits;
-    this.slots = new SlotReservations({ kind: 'in_storage', holderId: this.id, capacity: this.capacity, cargo: init.cargo, label: `sklad ${this.label}` });
-    const { capacity, slots } = this;
+    this.capacity = storageSlotCapacity(this.params);
+    this.slots = new SlotReservations({
+      kind: 'in_storage',
+      holderId: this.id,
+      capacity: this.capacity,
+      cargo: init.cargo,
+      label: `sklad ${this.label}`,
+      extraProblem: () => this.slotProblem(),
+    });
+    const { capacity } = this;
     this.drop = Object.freeze({
       kind: 'in_storage',
       category: this.params.category,
       reserves: true,
       places: capacity,
-      reservationsAt: (slot: number): number => (Number.isInteger(slot) && slot >= 0 && slot < capacity && slots.isReserved(slot) ? 1 : 0),
-      restoreReservation: (slot: number): void => {
-        this.reserveSlot(slot);
+      reservationsAt: (slot: number): number => (Number.isInteger(slot) && slot >= 0 && slot < capacity && this.isReserved(slot) ? 1 : 0),
+      restoreReservation: (slot: number, unitId?: EntityId): void => {
+        this.reserveSlot(slot, unitId);
       },
       release: (slot: number): void => {
         this.release(slot);
@@ -172,10 +188,16 @@ export abstract class StorageModule extends Module {
 
   /**
    * Rezervuje konkrétny slot — obnova zo save podľa aktívneho jobu (ADR-018). Chyby ako `SlotReservations.reserveSlot`
-   * (`invalid_slot`, `slot_occupied`, `slot_reserved`).
+   * (`invalid_slot`, `slot_occupied`, `slot_reserved`). `unitId` (jednotka jobu) využívajú bloky so stohmi.
    */
-  reserveSlot(slot: number): void {
+  reserveSlot(slot: number, unitId?: EntityId): void {
+    void unitId;
     this.slots.reserveSlot(slot);
+  }
+
+  /** Doplnková kontrola súladu slotov s ledgerom pre krok 12 (`SlotReservations.findProblem`); základ nič, blok so stohmi kontroluje stohy. */
+  protected slotProblem(): string | undefined {
+    return undefined;
   }
 
   /** Zruší rezerváciu slotu (zrušený job); chyby ako `SlotReservations.release`. */

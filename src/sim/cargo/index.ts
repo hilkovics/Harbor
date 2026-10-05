@@ -70,5 +70,6 @@ export type { CargoErrorCode } from './cargo-error';
 export { CARGO_SPAWN_KIND_BY_DIRECTION, CargoLedger } from './cargo-ledger';
 export type { CargoLedgerDeps, CargoMoveObserver, CargoReader } from './cargo-ledger';
 export type { CargoLedgerState } from './cargo-ledger-state';
+export type { StorageGuard, StorageGuards } from './storage-guard';
 export { findConservationViolation } from './cargo-conservation';
 export type { CargoBucketView, CargoLedgerView } from './cargo-conservation';

@@ -298,6 +298,28 @@ export class TransportJob {
     this.target = target;
   }
 
+  /**
+   * Zmení slot skladu v zdroji (`in_storage`) toho istého skladu — rehandling presunul jednotku jobu v bloku so stohmi (ADR-039 bod 6), aby sa dalo
+   * vybrať iný kontajner. Povolené len pre job so zdrojom `in_storage` pred nakládkou (`open`, `assigned`, `picking`); inak `JobError`, job sa nezmení.
+   */
+  rebindStorageSource(slot: number): void {
+    const { source } = this;
+    if (source.kind !== 'in_storage' || (this.current !== 'open' && this.current !== 'assigned' && this.current !== 'picking')) {
+      throw new JobError('invalid_transition', `${this.label}: slot zdroja sa mení len pri jobe zo skladu pred nakládkou (zdroj ${source.kind}, stav ${this.current})`);
+    }
+    this.source = checkLocation({ kind: 'in_storage', moduleId: source.moduleId, slot }, this.label, 'from');
+  }
+
+  /**
+   * Zmení slot skladu v cieli (`in_storage`) toho istého skladu — pri vykládke sa rezervácie bunky jedného stohu vymenia podľa skutočnej výšky
+   * (`YardBlock.settleReservation`). Povolené len pre job s cieľom `in_storage`; inak `JobError`, job sa nezmení.
+   */
+  rebindStorageTarget(slot: number): void {
+    const { target } = this;
+    if (target.kind !== 'in_storage') throw new JobError('invalid_transition', `${this.label}: slot cieľa sa mení len pri cieli in_storage (cieľ ${target.kind})`);
+    this.target = checkLocation({ kind: 'in_storage', moduleId: target.moduleId, slot }, this.label, 'to');
+  }
+
   /** Aktuálny stav (mení ho len `assign` / `transition`). */
   get state(): JobState {
     return this.current;

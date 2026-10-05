@@ -29,6 +29,8 @@ import type { EntityId } from '../core/entity-id';
 import type { VehicleDef } from '../defs/types';
 import { onEmptyStored } from '../logistics/empty-depot-service';
 import { hookCraneOf, isHookDropoff, isHookPickup } from '../logistics/job-source';
+import { prepareYardTake } from '../logistics/yard-rehandle';
+import { settleYardDrop } from '../logistics/yard-settle';
 import type { JobState, TransportJob } from '../logistics/transport-job';
 import { CraneModule } from '../modules/crane-module';
 import { advanceCarrier } from '../movement/route-planning';
@@ -144,6 +146,8 @@ function loadUnit(vehicle: Vehicle, world: World): void {
   const source = jobModule(world, job, 'source');
   const unitId = firstUnitAt(world, job, job.from);
   if (unitId === undefined) throw new VehicleError('inconsistent', `${vehicle.label}: ${job.label} nemá jednotku na zdroji`);
+  // Blok so stohmi: kontajnery nad cieľom sa najprv preložia (rehandling, ADR-039 bod 6), vozidlo medzitým čaká.
+  if (!prepareYardTake(world, vehicle, job, unitId)) return;
   world.cargo.move(unitId, { kind: 'in_vehicle', vehicleId: vehicle.id });
   source.recordTaken(unitId);
   if (firstUnitAt(world, job, job.from) !== undefined) {
@@ -163,6 +167,8 @@ function unloadUnit(vehicle: Vehicle, world: World): void {
   const inVehicle: CargoLocation = { kind: 'in_vehicle', vehicleId: vehicle.id };
   const unitId = firstUnitAt(world, job, inVehicle);
   const target = jobModule(world, job, 'target').cargoDropTarget();
+  // Blok so stohmi: rezervácia sa usadí na skutočnú vrstvu stohu (vozidlá prichádzajú v inom poradí než rezervácie).
+  settleYardDrop(world, job);
   const place = slotOf(job.to);
   if (unitId === undefined || target === undefined || target.kind !== job.to.kind || place === null) {
     throw new VehicleError('inconsistent', `${vehicle.label}: ${job.label} nemá jednotku vo vozidle alebo cieľ s miestom '${job.to.kind}'`);

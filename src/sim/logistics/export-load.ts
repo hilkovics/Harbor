@@ -33,7 +33,7 @@ import { findAvailableEmpty } from './empty-stock';
 import { collectLoadBerths, storageReaches } from './load-access';
 import { distanceBetweenModules } from './module-access';
 import type { JobCancelReason, TransportJob } from './transport-job';
-import { allocateUnloadStorage } from './unload-storage';
+import { reserveYardSlot } from './yard-planner';
 import { isOutboundOnShip, loadingStopped, openLoadBookings } from './voyage-cargo';
 import type { CargoLocation } from '../cargo/cargo-location';
 import type { Ship } from '../ships/ship';
@@ -276,12 +276,12 @@ function hookUnloadJobs(world: World, crane: CraneModule): number {
 
 /** Job vykládky pod hákom pre jednotku `unit` z háku `crane` s rezervovaným slotom skladu; bez skladu `false` (+ `NoStorageAvailable`). */
 function openUnloadJob(world: World, crane: CraneModule, berth: BerthModule, unit: CargoUnit, openJob: OpenJob, emitNoStorage: EmitNoStorage): boolean {
-  const storage = allocateUnloadStorage(world, berth, unit);
-  if (storage === undefined) {
+  const place = reserveYardSlot(world, unit, berth);
+  if (place === null) {
     emitNoStorage(world, berth, unit.typeId);
     return false;
   }
-  openJob({ unitIds: [unit.id], from: { kind: 'in_crane', craneId: crane.id }, fromModuleId: berth.id, to: { kind: 'in_storage', moduleId: storage.id, slot: storage.reserve() } });
+  openJob({ unitIds: [unit.id], from: { kind: 'in_crane', craneId: crane.id }, fromModuleId: berth.id, to: { kind: 'in_storage', moduleId: place.moduleId, slot: place.slot } });
   return true;
 }
 

@@ -33,8 +33,11 @@ export interface CargoDropTarget {
   readonly places: number;
   /** Rezervácie na mieste (slot skladu 0/1, dock rampy 0…`stagingPerDock`); miesto mimo rozsahu → 0 (bez chyby). */
   reservationsAt(place: number): number;
-  /** Rezervuje konkrétne miesto — obnova zo save podľa aktívneho jobu; chyby ako rezervácia modulu (`ModuleError`). */
-  restoreReservation(place: number): void;
+  /**
+   * Rezervuje konkrétne miesto — obnova zo save podľa aktívneho jobu; chyby ako rezervácia modulu (`ModuleError`). `unitId` je jednotka
+   * jobu (blok so stohmi z nej berie veľkosť kontajnera, ADR-039); ostatné ciele ho ignorujú.
+   */
+  restoreReservation(place: number, unitId?: EntityId): void;
   /** Zruší rezerváciu miesta (zrušený job). */
   release(place: number): void;
   /** Kontrola pred `CargoLedger.move(unit, job.to)`, bez zmeny stavu. */

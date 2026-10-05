@@ -1,6 +1,6 @@
 /**
  * Depo prázdnych kontajnerov (F6c, ADR-034; PORT_OPERATIONS §2.2) — sklad kategórie `container` s rolou `empty_depot`:
- * vyššie stohovanie (väčšia kapacita na plochu), prijíma len prázdne kontajnery (`acceptsDirection`) a má `repairBays`
+ * vyššie stohovanie (`maxTier` 8, väčšia kapacita na plochu), prijíma len prázdne kontajnery (`acceptsDirection`) a má `repairBays`
  * súčasných opráv (M&R poškodených prázdnych: stav `damaged` čaká na voľné miesto, `in_repair` beží `repairHours`).
  * Obsluhuje ho prednostne empty handler (vozidlo s `cargoDirections: ['empty']`), inak bežné vozidlá.
  *
@@ -11,12 +11,12 @@
 import type { CargoDirection } from '../cargo/cargo-unit';
 import { ModuleError } from './module-error';
 import type { ModuleInit } from './module';
-import { StorageModule } from './storage-module';
+import { YardBlock } from './yard-block';
 
 /** Kategória nákladu, ktorú depo prázdnych skladuje. */
 export const EMPTY_DEPOT_CATEGORY = 'container';
 
-export class EmptyDepot extends StorageModule {
+export class EmptyDepot extends YardBlock {
   /** Počet súčasných opráv (`params.repairBays`). */
   readonly repairBays: number;
 

@@ -93,7 +93,7 @@ import { computeBerthGroups } from '../modules/berth-group';
 import { CRANE_CYCLE_TRAITS, CRANE_STATE_TRAITS, CraneModule, craneReservesApronSlot, cranePhaseProblem } from '../modules/crane-module';
 import { EmptyDepot } from '../modules/empty-depot';
 import { LoadingRamp } from '../modules/loading-ramp';
-import { StorageModule } from '../modules/storage-module';
+import { StorageModule, storageSlotCapacity } from '../modules/storage-module';
 import { TruckGate } from '../modules/truck-gate';
 import { VehicleDepot } from '../modules/vehicle-depot';
 import { WaitingArea } from '../modules/waiting-area';
@@ -305,7 +305,7 @@ const checkCranes: Check = (world) => {
 function expectedSlotCapacity(world: World, moduleId: EntityId): number | undefined {
   const module = world.modules.get(moduleId);
   if (module instanceof BerthModule) return module.params.apronSlots;
-  if (module instanceof StorageModule) return module.params.capacityUnits;
+  if (module instanceof StorageModule) return storageSlotCapacity(module.params);
   return undefined;
 }
 

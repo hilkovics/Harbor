@@ -129,6 +129,10 @@ function checkStorageParams(params: Readonly<Record<string, unknown>>, path: str
     const missing = STORAGE_GEOMETRY_KEYS.find((key) => params[key] === undefined) as string;
     return { path: `${path}/${missing}`, message: `geometria bloku (${STORAGE_GEOMETRY_KEYS.join(', ')}) musí byť zadaná celá, chýba ${missing}` };
   }
+  const { bays, rows, maxTier, capacityUnits } = params;
+  if (typeof bays === 'number' && typeof rows === 'number' && typeof maxTier === 'number' && capacityUnits !== bays * rows * maxTier) {
+    return { path: `${path}/capacityUnits`, message: `kapacita bloku v TEU musí byť bays × rows × maxTier (${String(bays * rows * maxTier)}), dostal ${describeValue(capacityUnits)}` };
+  }
   if (role === 'empty_depot') {
     if (category !== 'container') return { path: `${path}/category`, message: `depo prázdnych (role empty_depot) skladuje kontajnery — kategória musí byť 'container', dostal ${describeValue(category)}` };
     if (repairBays === undefined) return { path: `${path}/repairBays`, message: 'depo prázdnych (role empty_depot) vyžaduje repairBays' };

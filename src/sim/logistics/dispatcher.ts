@@ -82,7 +82,7 @@ import { distanceBetweenModules, distanceToModule } from './module-access';
 import { allocateRamp, outboundRoom } from './ramp-allocator';
 import type { StoredCargoGroup } from './stored-cargo-index';
 import { JOB_PRIORITY_LEVELS, TransportJob, type JobCancelReason } from './transport-job';
-import { allocateUnloadStorage } from './unload-storage';
+import { reserveYardSlot } from './yard-planner';
 import { anyBookingLoads, isOutboundOnShip, openLoadBookings } from './voyage-cargo';
 
 /**
@@ -130,13 +130,12 @@ function inboundFromBerth(world: World, berth: BerthModule): void {
     const unitId = world.cargo.unitAtIndex('on_apron', berth.id, i);
     const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
     if (unit === undefined || world.jobOfUnit(unit.id) !== undefined || awaitsCrane(world, unit, berth)) continue;
-    const storage = allocateUnloadStorage(world, berth, unit);
-    if (storage === undefined) {
+    const place = reserveYardSlot(world, unit, berth);
+    if (place === null) {
       missingTypeId ??= unit.typeId;
       continue;
     }
-    const slot = storage.reserve();
-    openJob(world, { unitIds: [unit.id], from: unit.location, to: { kind: 'in_storage', moduleId: storage.id, slot } });
+    openJob(world, { unitIds: [unit.id], from: unit.location, to: { kind: 'in_storage', moduleId: place.moduleId, slot: place.slot } });
   }
   if (missingTypeId !== undefined) emitNoStorage(world, berth, missingTypeId);
 }

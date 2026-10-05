@@ -545,7 +545,7 @@ function restoreJobReservation(world: World, job: TransportJob, category: CargoC
   }
   if (!target.reserves) return;
   try {
-    for (let i = 0; i < job.unitIds.length; i++) target.restoreReservation(slotOf(job.to) ?? -1);
+    for (const unitId of job.unitIds) target.restoreReservation(slotOf(job.to) ?? -1, unitId);
   } catch (error) {
     if (error instanceof ModuleError) throw new WorldStateError(`${path}/to/${spec?.slotKey ?? 'kind'}`, error.message);
     throw error;

@@ -87,6 +87,10 @@ export type { StagedPlacement } from './ramp-decor';
 export { YARD_BOX_CELLS, YARD_INSET_CELLS, YardCraneDecor, yardCraneHome, yardSlotSpot } from './yard-crane-decor';
 export { CRANE_LIFT_SCALE, CRANE_PHASE_MS, YardCraneMotion, craneOpDuration } from './yard-crane-motion';
 export type { CraneCargo, CraneOp, CranePhase, CraneSpot, StorageOpKind, YardCranePose } from './yard-crane-motion';
+export { articulatedPose, blendedLaneMagnitude, shiftRight, trailAt } from './articulated-pose';
+export type { ArticulatedPose, InterpolatedTrail } from './articulated-pose';
+export { ParkedVehiclesDecor, parkingGrid, parkingSlots } from './parked-vehicles-decor';
+export { TrafficJamLayer } from './traffic-jam-layer';
 export { MODULE_DECORS } from './module-decors';
 export type { ModuleDecor, ModuleDecorContext, ModuleDecorFactory, ModuleViewDeps } from './module-decor';
 export {

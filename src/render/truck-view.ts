@@ -20,12 +20,13 @@ import {
   type VehicleViewStyle,
 } from './vehicle-view';
 import type { TruckVM, VehicleVM } from './view-models';
-import { TRUCK_WIDTH_PX } from './world-scale';
+import { TRUCK_LENGTH_PX, TRUCK_WIDTH_PX } from './world-scale';
 
 /** Štýl kamióna: náves `--truck-trailer` s kabínou `--truck-cab` na predku a tmavým obrysom. */
 export const TRUCK_STYLE: VehicleViewStyle = {
   label: 'truck',
   widthPx: TRUCK_WIDTH_PX,
+  lengthPx: TRUCK_LENGTH_PX,
   fallback: (palette) => ({ body: palette.truck.trailer, outline: palette.vehicle.dark, front: palette.truck.cab }),
 };
 

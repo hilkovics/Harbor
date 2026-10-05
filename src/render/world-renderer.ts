@@ -5,7 +5,7 @@
  * verejnými metódami (`updateRoads` z udalosti `RoadChanged`); napojenie na SimBridge robí bootstrap (T01-11).
  *
  * Vrstvy (zdola, ARCHITECTURE §15.1): terén → cesty → cestné značky (šípky jednosmeriek) → obrysy parciel → portály →
- * moduly → základne žeriavov → lode a vozidlá → žeriavy (výložník, vozík, náklad) → ghost stavby (`BuildLayer`). Základňa žeriava je pod vozidlami
+ * moduly → základne žeriavov → červené bunky zápchy (R1) → lode a vozidlá → odznaky zápchy → žeriavy (výložník, vozík, náklad) → ghost stavby (`BuildLayer`). Základňa žeriava je pod vozidlami
  * (F6d): vozidlo stojace pri odovzdaní pod žeriavom je v portáli vidieť, vozík s kontajnerom je nad ním. Entity (moduly, lode, vozidlá, žeriavy) sa synchronizujú z view-modelov cez
  * `syncEntities(vm, alpha)`,
  * ghost modulu cez `setModuleGhost`. Sprity sa načítajú z `assets/manifest.json` (`SpriteAtlas`); bez nich
@@ -25,6 +25,7 @@ import { ParcelLayer } from './parcel-layer';
 import { PortalLayer } from './portal-layer';
 import { RoadLayer } from './road-layer';
 import { RoadMarkLayer } from './road-mark-layer';
+import { TrafficJamLayer } from './traffic-jam-layer';
 import { SPRITE_RASTER_RESOLUTION, SpriteAtlas, type SpriteTextures } from './sprite-atlas';
 import { TerrainLayer } from './terrain-layer';
 import {
@@ -97,6 +98,8 @@ export class WorldRenderer {
   /** Lode, vozidlá aj kamióny (`EntityLayer`): `ships.shipCount`, `ships.vehicleCount`; alias `entities`. */
   readonly ships: EntityLayer;
   readonly cranes: CraneLayer;
+  /** Zvýraznenie zápchy (R1): červené bunky pod vozidlami (`cells`) a odznaky nad nimi (`badges`). */
+  readonly jams: TrafficJamLayer;
   /** Ghost stavby: cesty (`setGhost`, `GhostView`) aj modulu (`setModuleGhost`); je navrchu nad žeriavmi. */
   readonly build: BuildLayer;
   readonly entityPalette: EntityPalette;
@@ -148,6 +151,7 @@ export class WorldRenderer {
     this.modules = new ModuleLayer(entityDeps);
     this.ships = new EntityLayer(entityDeps);
     this.cranes = new CraneLayer(entityDeps);
+    this.jams = new TrafficJamLayer(entityDeps);
     this.build = build;
     this.world.addChild(
       this.terrain.view,
@@ -157,7 +161,9 @@ export class WorldRenderer {
       this.portals.view,
       this.modules.view,
       this.cranes.baseView,
+      this.jams.cells,
       this.ships.view,
+      this.jams.badges,
       this.cranes.view,
       this.build.view,
     );
@@ -223,6 +229,7 @@ export class WorldRenderer {
     this.ships.sync(vm.ships, alpha);
     this.ships.syncVehicles(vm.vehicles ?? NO_VEHICLES, alpha);
     this.ships.syncTrucks(vm.trucks ?? NO_TRUCKS, alpha);
+    this.jams.sync(vm.vehicles ?? NO_VEHICLES, vm.trucks ?? NO_TRUCKS, alpha);
     this.cranes.sync(vm.cranes);
   }
 
@@ -256,6 +263,7 @@ export class WorldRenderer {
     this.cranes.setZoom(this.camera.zoom); // odznaky žeriavov ostávajú čitateľné pri malom zoome
     this.modules.setZoom(this.camera.zoom); // odznaky „nepripojené“ a VGM hold tiež
     this.ships.setZoom(this.camera.zoom); // odznak lashingu lode tiež
+    this.jams.setZoom(this.camera.zoom); // odznaky zápchy tiež
     this.syncedVersion = this.camera.version;
   }
 
@@ -271,6 +279,7 @@ export class WorldRenderer {
     this.modules.destroy();
     this.ships.destroy();
     this.cranes.destroy();
+    this.jams.destroy();
     this.build.destroy();
     this.app.destroy({ removeView: true }, { children: true });
     void this.atlas?.destroy();

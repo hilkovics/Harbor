@@ -80,6 +80,11 @@ export interface ModuleVM {
    * odznaku. Depo kreslí sivé kontajnery (sprite z manifestu) aj na portálovom žeriave. Plní `SimBridge`.
    */
   depot?: { available: number; damaged: number; inRepair: number; repairBays: number };
+  /**
+   * Len depo vozidiel (R1, ADR-037 bod 7): vozidlá zaparkované v depe (stav `parked`). Modul ich kreslí ako mriežku zmenšených spritov
+   * vnútri footprintu v poradí podľa `id` (`parked-vehicles-decor.ts`). Chýba = depo sa kreslí ako doteraz. Plní `SimBridge` (TR1-08).
+   */
+  parkedVehicles?: readonly { id: number; defId: string }[];
 }
 
 /** Smer cyklu žeriavu (`CraneModule.cycle`, ADR-032 bod 11): vykládka, nakládka a dve polovice dual cyklu. */
@@ -140,8 +145,29 @@ export interface ShipVM {
   lashing?: { ticksLeft: number; ticksTotal: number };
 }
 
+/**
+ * R1 (ADR-037, TERMINAL_2 §7.3, §7.10): stopa nosiča na ceste. Spoločné voliteľné polia `VehicleVM` a `TruckVM`; chýbajú vo VM
+ * z F2–F6 a vtedy sa nosič kreslí ako doteraz (sprite vycentrovaný na `x`, `y`). Hodnoty zo simu dodá `SimBridge` (TR1-08).
+ */
+export interface CarrierTrailVM {
+  /**
+   * Stredy buniek stopy od hlavy k chvostu, bez polohy hlavy (súradnice ako `x`, `y`: stred bunky + 0,5). Keď je pole prítomné
+   * a nosič nie je `offRoad`, renderer kreslí sprite kĺbovo po stope (`articulated-pose.ts`): predok pri hlave (`x`, `y`),
+   * natočenie podľa tetivy stopy. Krátka stopa (po výjazde z modulu) je platná; prázdna znamená, že nosič ešte nemá telo.
+   */
+  body?: readonly { x: number; y: number }[];
+  /** Dĺžka nosiča v bunkách (def `lengthCells`: kamión 3, straddle carrier 2); chýba = `body.length + 1`. */
+  lengthCells?: number;
+  /** Nosič je mimo cesty (stojisko, dok, prechod bránou, depo): nedrží sloty a kreslí sa vycentrovaný na `x`, `y` ako doteraz. */
+  offRoad?: boolean;
+  /** Nosič chcel ísť, ale nemohol (`blockedTicks > 0`): pri `!offRoad` sa kreslia brzdové svetlá. */
+  blocked?: boolean;
+  /** Nosič je v zápche (`blockedTicks ≥ stuckTicks`): červené bunky pod hlavou a stopou a odznak nad hlavou. */
+  jammed?: boolean;
+}
+
 /** Vozidlo na cestách (F3: straddle carrier). Poloha je stred vozidla v bunkách (stred bunky = `x + 0.5`). */
-export interface VehicleVM {
+export interface VehicleVM extends CarrierTrailVM {
   id: number;
   /** Id definície vozidla = kľúč `entities.<defId>` v manifeste (`straddle_carrier`). */
   defId: string;
@@ -165,7 +191,10 @@ export interface VehicleVM {
    * má (`empty_handler` nesie len prázdne, jeho `loaded` je sivý vždy). Pri `loaded: false` sa ignoruje. Chýba = `false`.
    */
   carriesEmpty?: boolean;
-  /** Stav FSM vozidla (`idle`, `to_pickup`, …); renderer ho zatiaľ nekreslí, nesie ho pre ladenie a budúce odznaky. */
+  /**
+   * Stav FSM vozidla (`idle`, `to_pickup`, …, R1: `to_depot`, `parked`, `depot_exit`). Renderer podľa neho nekreslí vozidlo v stave
+   * `parked` (stojí v depe, kreslí ho modul cez `ModuleVM.parkedVehicles`); inak ho nesie pre ladenie a odznaky.
+   */
   state: string;
 }
 
@@ -173,7 +202,7 @@ export interface VehicleVM {
  * Kamión na cestách (F4). Rovnaké pohybové polia ako `VehicleVM` (renderer ich vedie po pruhoch a oblúkoch spoločným
  * `vehiclePose`); sprite je `entities.<defId>` (`truck_container`, 1×2 bunky, kabína v smere jazdy) so stavmi `empty` / `loaded`.
  */
-export interface TruckVM {
+export interface TruckVM extends CarrierTrailVM {
   id: number;
   /** Id definície kamióna = kľúč `entities.<defId>` v manifeste (`truck_container`). */
   defId: string;

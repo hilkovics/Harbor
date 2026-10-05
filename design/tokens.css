@@ -67,6 +67,9 @@
   --ship-superstructure: #ECEFF3;
   --crane-frame: #E3B23C;       /* portálový žeriav: žlto-oranžová */
   --crane-boom: #C88B1F;
+  /* ===== Doprava (R1, ADR-037) ===== */
+  --vehicle-brake: #E5484D;             /* brzdové svetlá stojaceho vozidla: 2 malé obdĺžniky pri zadku spritu */
+  --traffic-jam: rgba(229,72,77,.35);   /* zvýraznenie buniek zápchy: hlava a stopa uviaznutého nosiča (odtieň --ui-danger) */
 
   /* ===== Stavy na mape ===== */
   --ghost-valid: rgba(53,194,122,.55);

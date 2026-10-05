@@ -180,8 +180,10 @@ export interface EntityPalette {
   readonly module: { readonly base: ColorValue; readonly outline: ColorValue };
   readonly crane: { readonly frame: ColorValue; readonly boom: ColorValue };
   readonly ship: { readonly hull: ColorValue; readonly deck: ColorValue };
-  /** Vozidlá na cestách (`--vehicle-body`, `--vehicle-dark`). */
-  readonly vehicle: { readonly body: ColorValue; readonly dark: ColorValue };
+  /** Vozidlá na cestách (`--vehicle-body`, `--vehicle-dark`) a ich brzdové svetlá (`--vehicle-brake`, R1). */
+  readonly vehicle: { readonly body: ColorValue; readonly dark: ColorValue; readonly brake: ColorValue };
+  /** Zvýraznenie buniek zápchy (`--traffic-jam`, polopriehľadná červená, R1). */
+  readonly jam: ColorValue;
   /** Kamióny bez sprite (`--truck-cab`, `--truck-trailer`). */
   readonly truck: { readonly cab: ColorValue; readonly trailer: ColorValue };
   /** Zvýraznenie obsadeného stojiska a obrys odznaku fronty (`--ui-accent`). */
@@ -256,7 +258,8 @@ export function loadEntityPalette(resolve: TokenResolver = documentTokenResolver
     module: { base: color('--module-base'), outline: color('--module-outline') },
     crane: { frame: color('--crane-frame'), boom: color('--crane-boom') },
     ship: { hull: color('--ship-hull'), deck: color('--ship-deck') },
-    vehicle: { body: color('--vehicle-body'), dark: color('--vehicle-dark') },
+    vehicle: { body: color('--vehicle-body'), dark: color('--vehicle-dark'), brake: color('--vehicle-brake') },
+    jam: color('--traffic-jam'),
     truck: { cab: color('--truck-cab'), trailer: color('--truck-trailer') },
     accent: color('--ui-accent'),
     surface: color('--ui-surface'),

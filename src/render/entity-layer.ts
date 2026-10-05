@@ -5,7 +5,8 @@
  *
  * `sync(ships, alpha)`, `syncVehicles(vehicles, alpha)` a `syncTrucks(trucks, alpha)` sa volajú každý frame: views vznikajú
  * a zanikajú podľa `id` a pre nezmenené entity sa iba nastaví interpolovaná poloha (`lerp(prev, curr, alpha)`). Vozidlá sa
- * kreslia nad loďami a kamióny nad vozidlami (`zIndex`), nezávisle od poradia, v akom views vznikli.
+ * kreslia nad loďami a kamióny nad vozidlami (`zIndex`), nezávisle od poradia, v akom views vznikli. Vozidlo v stave `parked`
+ * (R1, zaparkované v depe) sa tu nekreslí.
  */
 import { Container } from 'pixi.js';
 import { badgeScaleForZoom } from './crane-view';
@@ -19,6 +20,9 @@ import { ViewSync } from './view-sync';
 const SHIP_Z_INDEX = 0;
 const VEHICLE_Z_INDEX = 1;
 const TRUCK_Z_INDEX = 2;
+
+/** Stav vozidla zaparkovaného v depe (R1): na mape sa nekreslí ako bežné vozidlo, kreslí ho modul depa (`parked-vehicles-decor.ts`). */
+export const PARKED_VEHICLE_STATE = 'parked';
 
 export class EntityLayer {
   /** Kontajner vrstvy; pridaj ho do sveta (súradnice v px pri zoome 1). */
@@ -50,6 +54,7 @@ export class EntityLayer {
       },
     });
     this.vehicles = new ViewSync<VehicleVM, VehicleView>({
+      accepts: (vm) => vm.state !== PARKED_VEHICLE_STATE,
       create: (vm) => {
         const view = new VehicleView(vm, deps, this.alpha);
         view.view.zIndex = VEHICLE_Z_INDEX;

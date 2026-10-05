@@ -135,8 +135,10 @@ function scoreColumn(world: World, block: YardBlock, unit: CargoUnit, bay: numbe
   for (const id of COLUMN_UNITS) {
     const other = world.cargo.get(id);
     if (other === undefined) continue;
-    // Kontajner s rozbehnutým jobom zo skladu sa nezavaľuje (kruh čakania: job drží rampu, zavalený by ho vozidlo nevybralo bez rehandlingu).
-    if (strict && world.jobOfUnit(id)?.from.kind === 'in_storage') return false;
+    // Kontajner s rozbehnutým jobom zo skladu sa nezavaľuje (kruh čakania: job drží rampu, zavalený by ho vozidlo nevybralo bez rehandlingu); pri rehandlingu
+    // a v režime `random` aspoň ten, ktorý práve nakladá vozidlo (inak sa dve vozidlá striedavo zavaľujú ping-pongom).
+    const job = world.jobOfUnit(id);
+    if (job?.from.kind === 'in_storage' && (strict || job.state === 'picking')) return false;
     if (plannedDepartureTick(world, other) < departure) earlier += 1;
   }
   if (earlier > 0) {

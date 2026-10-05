@@ -359,6 +359,9 @@ export abstract class YardBlock extends StorageModule implements StorageGuard {
     this.assertCell(slot, 'reserve');
     const { bay, row, tier } = positionOfCell(this.geometry, slot);
     const code = codeOfSize(sizeFt);
+    // Bunka môže byť rezervovaná aj ako tieň rezervácie 40′ (`SlotReservations` pozná len kotvu), alebo ju zaberá tieň uloženého 40′.
+    if (this.reservedSize[slot] !== 0) throw new ModuleError('slot_reserved', `${this.label}.reserve: bunka (${String(bay)}, ${String(row)}, ${String(tier)}) je už rezervovaná`);
+    if (this.grid.at(bay, row, tier) !== null) throw new ModuleError('slot_occupied', `${this.label}.reserve: bunku (${String(bay)}, ${String(row)}, ${String(tier)}) obsadila jednotka`);
     if (code === 2) {
       if (bay % 2 !== 0 || bay + 1 >= this.geometry.bays) throw new ModuleError('stack_rule', `${this.label}.reserve: 40′ zaberá pár bays (2k, 2k+1), bunka (${String(bay)}, ${String(row)}, ${String(tier)})`);
       const shadow = slotOfCell(this.geometry, bay + 1, row, tier);

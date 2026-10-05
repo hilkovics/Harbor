@@ -87,7 +87,7 @@ function better(a: Candidate, b: Candidate): boolean {
 }
 
 /** Vyplní `into` skóre stohu `(bay, row)` bloku pre `unit`, alebo vráti `false`, ak pravidlá stohu jednotku nepustia. */
-function scoreColumn(world: World, block: YardBlock, unit: CargoUnit, bay: number, row: number, into: Candidate): boolean {
+function scoreColumn(world: World, block: YardBlock, unit: CargoUnit, bay: number, row: number, into: Candidate, strict: boolean): boolean {
   const { maxTier } = block.geometry;
   const wide = unit.sizeFt === 40;
   const height = block.effectiveHeight(bay, row);
@@ -113,9 +113,14 @@ function scoreColumn(world: World, block: YardBlock, unit: CargoUnit, bay: numbe
   let earlier = 0;
   for (const id of COLUMN_UNITS) {
     const other = world.cargo.get(id);
-    if (other !== undefined && plannedDepartureTick(world, other) < departure) earlier += 1;
+    if (other === undefined) continue;
+    // Kontajner s rozbehnutým jobom zo skladu sa nezavaľuje (kruh čakania: job drží rampu, zavalený by ho vozidlo nevybralo bez rehandlingu).
+    if (strict && world.jobOfUnit(id)?.from.kind === 'in_storage') return false;
+    if (plannedDepartureTick(world, other) < departure) earlier += 1;
   }
   if (earlier > 0) {
+    // Plánovač nezavaľuje skôr odchádzajúci kontajner (bez rehandlingu v bežnom režime); bury ostáva poslednou možnosťou pri rehandlingu a v režime `random`.
+    if (strict) return false;
     into.cls = CLASS_BURY;
     into.penalty = earlier;
     return true;
@@ -127,16 +132,14 @@ function scoreColumn(world: World, block: YardBlock, unit: CargoUnit, bay: numbe
 }
 
 /** Prejde stohy bloku a najlepší, ktorý je lepší než `BEST`, zapíše do `BEST` (alebo všetky do `onlyCollect`); `origin` (rehandling) vynechá pôvodný stoh. */
-function scanBlock(world: World, block: YardBlock, unit: CargoUnit, distance: number, origin: { readonly bay: number; readonly row: number } | undefined, onlyCollect: Candidate[] | undefined): void {
+function scanBlock(world: World, block: YardBlock, unit: CargoUnit, distance: number, origin: { readonly bay: number; readonly row: number } | undefined, onlyCollect: Candidate[] | undefined, strict: boolean): void {
   const { bays, rows } = block.geometry;
   const wide = unit.sizeFt === 40;
   const step = wide ? 2 : 1;
   for (let row = 0; row < rows; row++) {
     for (let bay = 0; bay < bays; bay += step) {
       if (origin !== undefined && origin.row === row && origin.bay === bay) continue;
-      // Rehandling nepoužije stoh s rozbehnutými rezerváciami (rezervovanú bunku by obsadil kontajner bez jobu).
-      if (origin !== undefined && (block.effectiveHeight(bay, row) !== block.stackHeight(bay, row) || (wide && block.effectiveHeight(bay + 1, row) !== block.stackHeight(bay + 1, row)))) continue;
-      if (!scoreColumn(world, block, unit, bay, row, CURRENT)) continue;
+      if (!scoreColumn(world, block, unit, bay, row, CURRENT, strict)) continue;
       CURRENT.block = block;
       CURRENT.distance = distance;
       CURRENT.moduleId = block.id;
@@ -180,13 +183,13 @@ export function chooseYardSlot(world: World, unit: CargoUnit, from: Module): Yar
   for (const blocks of candidateTiers(world, unit, from)) {
     if (random) {
       const all: Candidate[] = [];
-      for (const block of blocks) scanBlock(world, block, unit, 0, undefined, all);
+      for (const block of blocks) scanBlock(world, block, unit, 0, undefined, all, false);
       if (all.length === 0) continue;
       const pick = all[world.rng.int(0, all.length - 1)];
       return { moduleId: pick.moduleId as EntityId, slot: (pick.block as YardBlock).slotOf(pick.bay, pick.row, pick.height) };
     }
     resetBest();
-    for (const block of blocks) scanBlock(world, block, unit, distanceBetweenModules(world, from, block), undefined, undefined);
+    for (const block of blocks) scanBlock(world, block, unit, distanceBetweenModules(world, from, block), undefined, undefined, true);
     const best = BEST.block;
     if (best !== undefined) return { moduleId: best.id, slot: best.slotOf(BEST.bay, BEST.row, BEST.height) };
   }
@@ -203,11 +206,12 @@ export function reserveYardSlot(world: World, unit: CargoUnit, from: Module): Ya
 
 /**
  * Bunka v tom istom bloku pre kontajner `blocker`, ktorý treba odložiť z `origin` (rehandling, ADR-039 bod 6): prednostne rovnaký bay,
- * stoh, ktorého vrch odchádza neskôr (rovnaké poradie ako `chooseYardSlot`, vždy deterministicky, bez `Rng`); `null`, keď blok nemá pre
+ * stoh, ktorého vrch odchádza neskôr (rovnaké poradie ako `chooseYardSlot`, vždy deterministicky, bez `Rng`; stoh s rezerváciami je povolený); `null`, keď blok nemá pre
  * kontajner iný vhodný stoh.
  */
 export function chooseRehandleSlot(world: World, block: YardBlock, blocker: CargoUnit, origin: { readonly bay: number; readonly row: number }): number | null {
   resetBest();
-  scanBlock(world, block, blocker, 0, origin, undefined);
-  return BEST.block === undefined ? null : block.slotOf(BEST.bay, BEST.row, BEST.height);
+  scanBlock(world, block, blocker, 0, origin, undefined, false);
+  // Kontajner sa ukladá na skutočný vrchol stohu; rezervácie rozbehnutých jobov nad ním sa posunú (`YardBlock.vacateReservation`).
+  return BEST.block === undefined ? null : block.slotOf(BEST.bay, BEST.row, block.stackHeight(BEST.bay, BEST.row));
 }

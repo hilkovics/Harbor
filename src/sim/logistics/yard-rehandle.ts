@@ -27,6 +27,16 @@ export function prepareYardTake(world: World, vehicle: Vehicle, job: TransportJo
   const slot = chooseRehandleSlot(world, block, blocker, origin);
   vehicle.waitTicks = world.defs.logistics.rehandleTicks;
   if (slot === null) return false;
+  // Rezervácia rozbehnutého jobu na cieľovej bunke sa posunie nad stoh (job dostane nový slot cieľa).
+  const vacated = block.vacateReservation(slot);
+  if (vacated !== null) {
+    for (const other of world.jobs.values()) {
+      if (other.to.kind === 'in_storage' && other.toModuleId === block.id && other.to.slot === vacated.from) {
+        other.rebindStorageTarget(vacated.to);
+        break;
+      }
+    }
+  }
   world.cargo.move(blockerId, { kind: 'in_vehicle', vehicleId: vehicle.id });
   const target = { kind: 'in_storage', moduleId: block.id, slot } as const;
   world.cargo.move(blockerId, target);

@@ -16,6 +16,7 @@ import type { CargoDirection } from '@sim/cargo';
 import { loadBundledDefs, type DefRegistry } from '@sim/defs';
 import type { CargoMovedEvent, SimEvent } from '@sim/events';
 import { loadBundledMap, loadMap, parseMapDef, type LoadedMap } from '@sim/grid';
+import { yardMetrics } from '@sim/logistics';
 import { CraneModule, TruckGate } from '@sim/modules';
 import { VEHICLE_STATE_TRAITS } from '@sim/vehicles';
 import { World, hinterlandMetrics, stateHash, type HinterlandQueue, type WorldState } from '@sim/world';
@@ -247,6 +248,12 @@ export interface SimrunReport {
   readonly maxBlockedTicks: number;
   /** Počet nosičov so `blockedTicks ≥ stuckTicks` na konci behu (R1). */
   readonly stuckAtEnd: number;
+  /** Presuny kontajnerov nad cieľom pri výbere zo skladu (R2, ADR-039). */
+  readonly rehandles: number;
+  /** `rehandles` na jeden výber zo skladu; bez výberov `null` (R2). */
+  readonly rehandlesPerMove: number | null;
+  /** Obsadené TEU z kapacity blokov na konci behu v % (R2). */
+  readonly yardTeuUsedPct: number;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -465,6 +472,8 @@ export interface CraneTickCounters {
 const PERCENT = 100;
 /** Zaokrúhlenie na 1 desatinné miesto: násobok 10 pred `Math.round`, delenie 10 po ňom. */
 const ONE_DECIMAL = 10;
+/** Mierka zaokrúhlenia pomerov v reporte na 3 desatinné miesta. */
+const REHANDLE_RATIO_SCALE = 1000;
 
 /**
  * Podiel blokovaných ticků: Σ blocked / Σ (busy + idle + blocked) × 100, na 1 desatinné miesto. Sčítajú sa ticky
@@ -936,6 +945,18 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     trafficWaitTicks: { vehicles: tally.vehicleWaitTicks, trucks: tally.trucksWaitTicks },
     maxBlockedTicks: tally.maxBlockedTicks,
     stuckAtEnd,
+    ...yardReport(world),
+  };
+}
+
+/** Metriky blokov so stohmi (R2, ADR-039) z `yardMetrics`; `rehandlesPerMove` zaokrúhlené na 3 desatinné miesta. */
+function yardReport(world: World): Pick<SimrunReport, 'rehandles' | 'rehandlesPerMove' | 'yardTeuUsedPct'> {
+  const metrics = yardMetrics(world);
+  const ratio = metrics.rehandlesPerMove;
+  return {
+    rehandles: metrics.rehandles,
+    rehandlesPerMove: ratio === null ? null : Math.round(ratio * REHANDLE_RATIO_SCALE) / REHANDLE_RATIO_SCALE,
+    yardTeuUsedPct: Math.round(metrics.yardTeuUsedPct * ONE_DECIMAL) / ONE_DECIMAL,
   };
 }
 

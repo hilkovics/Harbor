@@ -6,7 +6,7 @@
  * - **export:** príchod lode voyage + poradie stowage (`STOWAGE_WEIGHT_RANK`, ťažké skôr);
  * - **prekládka:** príchod lode B (`outArrivalTick`), kým nie je známy, `Infinity`;
  * - **import:** odhad `shipArrivalTick + logistics.importDwellEstimateHours`, obmedzený SLA (skutočné termíny odvozu prídu v R4); jednotky jedného
- *   príchodu sa líšia poradím vykládky (id), preto menšie id odchádza skôr;
+ *   príchodu majú rovnaký odhad (poradie odvozu určuje dispatcher podľa vrchu stohu), takže sa smú stohovať na seba;
  * - **prázdne:** `Infinity` (FIFO podľa linky);
  * - jednotka, ktorá už má job zo skladu, odchádza teraz.
  */
@@ -14,12 +14,6 @@ import { STOWAGE_WEIGHT_RANK } from '../cargo/stowage';
 import type { CargoUnit } from '../cargo/cargo-unit';
 import { TranshipContract } from '../contracts/contract';
 import type { World } from '../world/world';
-
-/**
- * Váha id jednotky v čase odchodu importu (poradie vykládky): tak malá, aby nikdy neprekročila rozdiel jedného ticku pri rozumnom počte jednotiek —
- * len usporiada jednotky s rovnakým odhadom.
- */
-export const IMPORT_ORDER_TICKS_PER_ID = 1e-6;
 
 /** Plánovaný odchod jednotky (tick herných hodín; `Infinity` = bez termínu). */
 export function plannedDepartureTick(world: Pick<World, 'clock' | 'contractBook' | 'defs' | 'jobOfUnit'>, unit: CargoUnit): number {
@@ -37,7 +31,7 @@ export function plannedDepartureTick(world: Pick<World, 'clock' | 'contractBook'
       const arrival = contract?.shipArrivalTick;
       if (arrival === undefined) return Infinity;
       const estimate = arrival + world.defs.logistics.importDwellEstimateHours * world.clock.ticksPerHour;
-      return Math.min(estimate, contract?.slaDeadlineTick ?? Infinity) + unit.id * IMPORT_ORDER_TICKS_PER_ID;
+      return Math.min(estimate, contract?.slaDeadlineTick ?? Infinity);
     }
     case 'empty':
       return Infinity;

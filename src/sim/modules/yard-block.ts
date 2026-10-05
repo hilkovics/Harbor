@@ -129,17 +129,23 @@ export abstract class YardBlock extends StorageModule implements StorageGuard {
     return this.grid.at(bay, row, tier);
   }
 
-  /** Výška stohu vrátane rezervovaných buniek — vrstva, na ktorú sa uloží ďalší príchod. */
+  /**
+   * Výška stohu vrátane rezervácií — vrstva, na ktorú sa rezervuje ďalší príchod: nad najvyššou rezervovanou bunkou (po odobratí vrchného kontajnera
+   * môže pod rezerváciou vzniknúť voľná bunka; tú využije až usadenie rezervácie pri vykládke), inak výška stohu.
+   */
   effectiveHeight(bay: number, row: number): number {
-    return this.grid.height(bay, row) + this.columnReserved[row * this.geometry.bays + bay];
+    const height = this.grid.height(bay, row);
+    if (this.columnReserved[row * this.geometry.bays + bay] === 0) return height;
+    for (let tier = this.geometry.maxTier - 1; tier >= height; tier--) {
+      if (this.reservedSize[slotOfCell(this.geometry, bay, row, tier)] !== 0) return tier + 1;
+    }
+    return height;
   }
 
   /** Najvyššia jednotka stohu vrátane rezervácií (rezervácia bez známej jednotky sa preskočí), alebo `null`. */
   effectiveTopUnit(bay: number, row: number): EntityId | null {
-    const reserved = this.columnReserved[row * this.geometry.bays + bay];
-    if (reserved === 0) return this.grid.top(bay, row);
-    const { maxTier } = this.geometry;
-    for (let tier = maxTier - 1; tier >= this.grid.height(bay, row); tier--) {
+    if (this.columnReserved[row * this.geometry.bays + bay] === 0) return this.grid.top(bay, row);
+    for (let tier = this.geometry.maxTier - 1; tier >= this.grid.height(bay, row); tier--) {
       const id = this.reservedUnit[slotOfCell(this.geometry, bay, row, tier)];
       if (id > 0) return id as EntityId;
     }
@@ -171,6 +177,20 @@ export abstract class YardBlock extends StorageModule implements StorageGuard {
     if (slot === undefined) return null;
     const { bay, row, tier } = positionOfCell(this.geometry, slot);
     return this.grid.height(bay, row) > tier + 1 ? this.grid.top(bay, row) : null;
+  }
+
+  /**
+   * Pridá do `into` jednotky nad `unitId` v jeho stohu zdola nahor — uložené kontajnery a potom jednotky, ktoré sa nad ňu práve uložia (rezervácie
+   * rozbehnutých jobov; rezervácia bez známej jednotky sa preskočí). Jednotka mimo bloku → nič.
+   */
+  unitsAbove(unitId: EntityId, into: EntityId[]): void {
+    const slot = super.slotOf(unitId);
+    if (slot === undefined) return;
+    const { bay, row, tier } = positionOfCell(this.geometry, slot);
+    for (let t = tier + 1; t < this.geometry.maxTier; t++) {
+      const id = this.grid.at(bay, row, t) ?? (this.reservedUnit[slotOfCell(this.geometry, bay, row, t)] > 0 ? (this.reservedUnit[slotOfCell(this.geometry, bay, row, t)] as EntityId) : null);
+      if (id !== null) into.push(id);
+    }
   }
 
   /** Pridá do `into` jednotky stohu `(bay, row)` zdola nahor: obsadené bunky, potom rezervované (id > 0). */
@@ -297,6 +317,27 @@ export abstract class YardBlock extends StorageModule implements StorageGuard {
     }
     this.writeReservedCells(slot, otherSize, otherUnit);
     return { slot: actual, displaced: slot };
+  }
+
+  /**
+   * Uvoľní bunku `slot` (vrstva = výška stohu) pre kontajner, ktorý tam uloží rehandling: ak ju držala rezervácia jobu, presunie sa na prvú voľnú bunku nad
+   * stohom (množina rezervovaných buniek sa tým posunie o vrstvu vyššie). Vráti `{ from, to }` (job rezervácie treba presmerovať) alebo `null`, keď bunka
+   * rezervovaná nebola.
+   */
+  vacateReservation(slot: number): { readonly from: number; readonly to: number } | null {
+    this.assertCell(slot, 'vacateReservation');
+    const size = this.reservedSize[slot];
+    if (size === 0) return null;
+    const { bay, row } = positionOfCell(this.geometry, slot);
+    const top = this.effectiveHeight(bay, row);
+    if (top >= this.geometry.maxTier) throw new ModuleError('stack_rule', `${this.label}: stoh (${String(bay)}, ${String(row)}) je plný, rezerváciu slotu ${String(slot)} nemožno presunúť`);
+    const unit = this.reservedUnit[slot];
+    const to = slotOfCell(this.geometry, bay, row, top);
+    this.writeReservedCells(slot, 0, 0);
+    this.slots.release(slot);
+    this.writeReservedCells(to, size, unit);
+    this.slots.reserveSlot(to);
+    return { from: slot, to };
   }
 
   private reserveCells(slot: number, unitId: number, sizeFt: number): void {

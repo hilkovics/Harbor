@@ -65,6 +65,7 @@ import { slotOf, type CargoLocation } from '../cargo/cargo-location';
 import type { CargoDirection, CargoUnit } from '../cargo/cargo-unit';
 import type { ContractOutbound } from '../contracts/contract-fsm';
 import type { EntityId } from '../core/entity-id';
+import { YardBlock } from '../modules/yard-block';
 import type { CargoCategory } from '../defs/types';
 import type { Contract } from '../contracts/contract';
 import { BerthModule } from '../modules/berth-module';
@@ -293,6 +294,51 @@ function nextStorageStart(storages: readonly EntityId[], from: number, storageId
   return low;
 }
 
+/** Znovupoužiteľné pole kontajnerov nad jednotkou pre `blockedByLeavingUnit` (hot path; obsah sa vždy najprv vyprázdni). */
+const ABOVE: EntityId[] = [];
+
+/**
+ * Odíde kontajner `unit` zo skladu sám (nepotrebuje preklad)? Má job zo skladu, alebo je to náklad, ktorý smie na rampu (`ContractOutbound` ≠ `held`).
+ * Export booking, prekládka a prázdne čakajú na loď / výdaj, preto zo skladu sami neodídu.
+ */
+function leavesByItself(world: World, unit: CargoUnit): boolean {
+  if (hasLeavingJob(world, unit)) return true;
+  if (unit.direction === 'empty') return false;
+  const contract = unit.contractId === null ? undefined : world.contractBook.get(unit.contractId);
+  return contract === undefined || contract.outbound !== 'held';
+}
+
+/** Odíde kontajner `unit` zo skladu práve rozbehnutým jobom (job zo skladu existuje)? */
+function hasLeavingJob(world: World, unit: CargoUnit): boolean {
+  return world.jobOfUnit(unit.id)?.from.kind === 'in_storage';
+}
+
+/**
+ * Zavaľuje jednotku `unit` v bloku so stohmi kontajner, ktorý odíde sám (podľa `leaves`)? Vtedy sa jej nezakladá job / nepriraďuje vozidlo — vybrať sa dá,
+ * až keď kontajnery nad ňou odídu (inak by vozidlo zbytočne preskladalo to, čo o chvíľu odíde). Kontajnery, ktoré sami neodídu, sa presúvajú (rehandling).
+ */
+function blockedByLeavingUnit(world: World, unit: CargoUnit, leaves: (world: World, unit: CargoUnit) => boolean): boolean {
+  const block = unit.location.kind === 'in_storage' ? world.modules.get(unit.location.moduleId) : undefined;
+  if (!(block instanceof YardBlock)) return false;
+  ABOVE.length = 0;
+  block.unitsAbove(unit.id, ABOVE);
+  for (const id of ABOVE) {
+    const above = world.cargo.get(id);
+    if (above !== undefined && leaves(world, above)) return true;
+  }
+  return false;
+}
+
+/**
+ * Job zo skladu, ktorého jednotku zavaľuje kontajner s rozbehnutým jobom zo skladu (`hasLeavingJob`)? Vozidlo sa mu nepriraďuje, kým kontajnery nad ňou neodídu —
+ * len pri kontajneroch, ktoré už job majú (držia rezerváciu rampy), takže čakanie nevytvorí kruh; kontajner bez jobu sa preloží.
+ */
+function blockedJob(world: World, job: TransportJob): boolean {
+  if (job.from.kind !== 'in_storage') return false;
+  const unit = world.cargo.get(job.unitIds[0]);
+  return unit !== undefined && blockedByLeavingUnit(world, unit, hasLeavingJob);
+}
+
 /**
  * Joby pre jednotky jednej skupiny (sklad ↑, FIFO), ktoré ešte job nemajú, k najbližšej vhodnej rampe z `ramps` pre ich
  * sklad. Plná rampa z `ramps` vypadne a hľadá sa ďalšia; sklad, pre ktorý rampa nie je, sa preskočí celý (skok na
@@ -316,7 +362,7 @@ function outboundFromGroup(world: World, group: StoredCargoGroup, ramps: Loading
     const index = i;
     i += 1;
     const unit = world.cargo.get(group.units[index]);
-    if (unit === undefined || world.jobOfUnit(unit.id) !== undefined) continue;
+    if (unit === undefined || world.jobOfUnit(unit.id) !== undefined || blockedByLeavingUnit(world, unit, leavesByItself)) continue;
     const dock = world.dockIntake.firstRoomDock(ramp);
     ramp.reserve(dock);
     openJob(world, { unitIds: [unit.id], from: unit.location, to: { kind: 'at_ramp', rampId: ramp.id, dock } });
@@ -495,7 +541,7 @@ export function assignOpenJobs(world: World, idle: Vehicle[] = []): void {
   for (let priority = 0; priority < JOB_PRIORITY_LEVELS; priority++) {
     for (const job of world.jobs.values()) {
       if (idle.length === 0) return;
-      if (job.state !== 'open' || job.priority !== priority) continue;
+      if (job.state !== 'open' || job.priority !== priority || blockedJob(world, job)) continue;
       const vehicle = pickVehicle(world, job, idle);
       if (vehicle === undefined) continue;
       assign(world, job, vehicle);

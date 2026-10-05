@@ -46,3 +46,8 @@ export { StoredCargoIndex } from './stored-cargo-index';
 export type { StoredCargoGroup, StoredCargoSource } from './stored-cargo-index';
 export { OutboundCancelGate, assignOpenJobs, cancelUnusableOutboundJobs, chooseVehicle, createEmptyJobs, createInboundJobs, createOutboundJobs, vehicleCarries } from './dispatcher';
 export type { NetworkVersions } from './dispatcher';
+export { chooseRehandleSlot, chooseYardSlot, reserveYardSlot, sameGroup } from './yard-planner';
+export type { YardChoice } from './yard-planner';
+export { plannedDepartureTick } from './planned-departure';
+export { yardMetrics } from './yard-metrics';
+export type { YardMetrics } from './yard-metrics';

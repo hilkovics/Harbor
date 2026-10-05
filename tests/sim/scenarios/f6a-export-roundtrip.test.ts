@@ -8,10 +8,13 @@
  * Beh sa overuje v oboch režimoch odovzdávania: predvolený `under_hook` (`BUNDLED_DEFS`, ADR-033) a `apron` (`DEFS`, F2–F5).
  * Režim `apron` ostáva v správaní zhodný s F6a — golden `tests/sim/__golden__/export_roundtrip.json`. Predvolený `under_hook` (od T6D-02: vozidlo
  * stojí pod žeriavom, buffer 0 — žeriav čaká na vozidlo) má pomalšiu vykládku — vlastný golden `tests/sim/__golden__/export_roundtrip_under_hook.json`.
- * Posledný kamión (zablokovaná cesta do 30 600) po otvorení cesty nevojde hneď: od T6D-01 (ADR-035) potrebuje zaručené staging miesto na docku,
- * ktoré je pri znovuotvorení cesty plné importu čakajúceho na odvoz, a dostane ho až po kamiónoch na odvoz (priorita). Pod hákom (pomalšia vykládka,
- * dock plný dlhšie) vojde až po začiatku lashingu rovnako ako na aprone — jednotka je rolled a vráti sa odosielateľovi po súši (35 odplávaných);
- * pred T6D-01 dorazila ešte počas nakládky a naložila sa ako last minute (to pokrýva `export-loading.test.ts`). Časovanie a `stateHash` sa líšia podľa režimu.
+ * Posledný kamión (zablokovaná cesta do 30 600, splatný od 22 239) po otvorení cesty nevojde hneď: od T6D-01 (ADR-035) potrebuje zaručené staging miesto
+ * na docku. Príčina (T6D-05b): v ticku 30 601, prvom s prevádzkovou rampou, krok 5 (dispatcher) vytvorí 8× `JobCreated` pre import čakajúci na odvoz
+ * a rezervuje všetkých 8 staging miest dockov skôr, než krok 8 čakajúci kamión vpustí — miesto sa uvoľní až po kamiónoch na odvoz importu. Prisľúbenie
+ * miesta kamiónu (`DockIntake`, „príjem a odvoz majú každý vlastnú kapacitu“) platí až pre už vpustené kamióny, nie pre čakajúci kamión vo vnútrozemí.
+ * Kamión tak vojde po začiatku lashingu v oboch režimoch (pod hákom 30 943, na aprone 30 699 — rozdiel je len v tom, kedy sa uvoľní prvé miesto) —
+ * jednotka je rolled a vráti sa odosielateľovi po súši (35 odplávaných); pred T6D-01 dorazila ešte počas nakládky a naložila sa ako last minute
+ * (to pokrýva `export-loading.test.ts`). Časovanie a `stateHash` sa líšia podľa režimu.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -104,18 +107,17 @@ describe('scenár export_roundtrip: súbor', () => {
 });
 
 /**
- * Režimy odovzdávania a ich očakávaný výsledok: `lastMinute` = rolled jednotka dorazí ešte počas nakládky a naloží sa pred lashingom,
- * inak príde po začiatku lashingu a vráti sa odosielateľovi po súši. Od T6D-01 (vjazd z vnútrozemia len so zaručeným miestom na docku) je to v oboch
- * režimoch to druhé; vetva `lastMinute` ostáva pre prípadný scenár s výraznejším zdržaním nakládky.
+ * Režimy odovzdávania: v oboch príde rolled jednotka po začiatku lashingu (od T6D-01 vjazd z vnútrozemia len so zaručeným miestom na docku, viď hlavičku),
+ * nenaloží sa a vráti sa odosielateľovi po súši (35 odplávaných, 1 vrátená). Naloženie rolled jednotky ako last minute pokrýva `export-loading.test.ts`.
  */
 const MODES = [
-  { name: 'under_hook (predvolený režim)', defs: BUNDLED_DEFS, lastMinute: false, goldenPath: GOLDEN_HOOK_PATH },
-  { name: 'apron', defs: DEFS, lastMinute: false, goldenPath: GOLDEN_PATH },
+  { name: 'under_hook (predvolený režim)', defs: BUNDLED_DEFS, goldenPath: GOLDEN_HOOK_PATH },
+  { name: 'apron', defs: DEFS, goldenPath: GOLDEN_PATH },
 ] as const;
 
-describe.each(MODES)('scenár export_roundtrip: režim $name', ({ defs, lastMinute, goldenPath }) => {
-  const shippedUnits = lastMinute ? BOOKED : SHIPPED;
-  const returnedUnits = lastMinute ? 0 : 1;
+describe.each(MODES)('scenár export_roundtrip: režim $name', ({ defs, goldenPath }) => {
+  const shippedUnits = SHIPPED;
+  const returnedUnits = 1;
   const result = run(defs);
   const { world, events } = result;
   const exportContract = world.contracts.get(EXPORT_ID as never)!;
@@ -142,9 +144,7 @@ describe.each(MODES)('scenár export_roundtrip: režim $name', ({ defs, lastMinu
     const rolled = of(events, 'UnitRolled');
     expect(rolled).toHaveLength(1);
     expect(rolled[0].tick).toBeGreaterThan(PLACE_ROAD_TICK);
-    const lashingTick = of(events, 'ShipLashingStarted')[0].tick;
-    if (lastMinute) expect(rolled[0].tick).toBeLessThan(lashingTick);
-    else expect(rolled[0].tick).toBeGreaterThan(lashingTick);
+    expect(rolled[0].tick).toBeGreaterThan(of(events, 'ShipLashingStarted')[0].tick);
     expect(of(events, 'VgmHoldStarted')).toHaveLength(4);
     expect(of(events, 'VgmHoldReleased')).toHaveLength(4);
     expect(of(events, 'TruckUnloaded')).toHaveLength(BOOKED);
@@ -154,7 +154,7 @@ describe.each(MODES)('scenár export_roundtrip: režim $name', ({ defs, lastMinu
     expect(of(events, 'CraneCycleDone')).toHaveLength(IMPORT_UNITS);
     const loaded = of(events, 'UnitLoaded');
     expect(loaded).toHaveLength(shippedUnits);
-    expect(loaded.filter((entry) => entry.event.lastMinute)).toHaveLength(lastMinute ? 1 : 0);
+    expect(loaded.filter((entry) => entry.event.lastMinute)).toHaveLength(0);
     expect(loaded.some((entry) => entry.event.outOfOrder)).toBe(false);
     expect(of(events, 'DualCycle').length).toBeGreaterThan(0);
   });
@@ -188,18 +188,13 @@ describe.each(MODES)('scenár export_roundtrip: režim $name', ({ defs, lastMinu
     const id = rolled.event.unitId;
     const loadedEntry = of(events, 'UnitLoaded').find((entry) => entry.event.unitId === id);
     const chain = chains(events).get(id) as string[];
-    if (lastMinute) {
-      expect(loadedEntry?.event.lastMinute).toBe(true);
-      expect(chain.at(-1)).toBe('shipped');
-    } else {
-      expect(loadedEntry).toBeUndefined();
-      expect(chain.at(-1)).toBe('exported');
-      expect(chain.includes('on_ship')).toBe(false);
-    }
+    expect(loadedEntry).toBeUndefined();
+    expect(chain.at(-1)).toBe('exported');
+    expect(chain.includes('on_ship')).toBe(false);
     const penalties = of(events, 'BookingPenaltyApplied').map((entry) => entry.event);
     expect(penalties).toHaveLength(1);
-    // Jednotka sa nenaložila (penalizácia rolled); pri `lastMinute` by sa naložila tesne pred lashingom (penalizácia last_minute).
-    expect(penalties[0]).toMatchObject({ contractId: EXPORT_ID, kind: lastMinute ? 'last_minute' : 'rolled', units: 1 });
+    // Jednotka sa nenaložila (penalizácia rolled, nie last_minute).
+    expect(penalties[0]).toMatchObject({ contractId: EXPORT_ID, kind: 'rolled', units: 1 });
     expect(penalties[0].amountCents).toBeGreaterThan(0);
     expect(exportContract.booking?.rolledUnitIds).toEqual([id]);
   });
@@ -242,7 +237,8 @@ describe('scenár export_roundtrip: časovanie podľa režimu', () => {
     expect(cranes(hook.world).some((crane) => crane.waitForVehicleTicks > 0)).toBe(true);
     expect(cranes(apron.world).every((crane) => crane.waitForVehicleTicks === 0)).toBe(true);
     // Rolled jednotka prišla v oboch behoch po otvorení zablokovanej cesty (30 600); pod hákom neskôr — kamión z vnútrozemia vojde až po uvoľnení
-    // staging miesta na docku (T6D-01, ADR-035), ktoré pri pomalšej vykládke ostáva plné importu čakajúceho na odvoz dlhšie (rádovo stovky tickov).
+    // staging miesta na docku (T6D-01, ADR-035): všetkých 8 miest rezervoval v ticku 30 601 krok 5 pred krokom 8 (T6D-05b) a prvé sa uvoľní pod hákom
+    // o ~240 ticků neskôr než na aprone.
     const rolledTicks = [hook, apron].map((entry) => of(entry.events, 'UnitRolled')[0].tick);
     for (const tick of rolledTicks) expect(tick).toBeGreaterThan(PLACE_ROAD_TICK);
     expect(rolledTicks[0]).toBeGreaterThan(rolledTicks[1]);

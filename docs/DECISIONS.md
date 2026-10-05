@@ -732,3 +732,33 @@ Stav: prijaté (R1) · Zdroj: ADR-037 bod 5; ARCHITECTURE §6
 - Aj prístupová cesta k mape je jednosmerná: cestný portál má **vjazd a výjazd** ako dve susedné bunky (`MapDef.roadPortals[].direction: 'in' | 'out'`). Kamióny vznikajú na vjazde a mapu opúšťajú na výjazde. Úvodná cesta `harbor_01` je jednosmerná slučka.
 - Otočka na ceste neexistuje; vozidlo musí ísť okruhom. Bunky nábrežia pod hákom ostávajú do R3 bez smeru (pruhy pod žeriavom prídu v R3).
 - Výjazd z modulu ide vždy dopredu po jednosmerke. Varovanie pri stavbe (R4): prístupová bunka na slepej jednosmerke, sieť nie je silne súvislá (z niektorého miesta sa nedá vrátiť).
+
+## ADR-039: Kontajnery, stohy a plánovač skladu — štítky, TEU, bloky, rehandling a `YardPlanner` (R2)
+
+Stav: prijaté (R2) · Zdroj: `docs/TERMINAL_2.md` §3–§4; `docs/tasks/phase-r2.md` rozhodnutia 1–11; ADR-036
+
+**Kontext:** Sklad je dnes plochý zoznam slotov a každá jednotka je 1 TEU bez veľkosti a typu; brať sa dá ľubovoľná jednotka, rehandling neexistuje a poloha v sklade je len číslo slotu. R2 zavádza kontajnery 20′/40′ s typom, bloky so stohmi (bay × row × tier), pravidlo „berie sa len vrchný kontajner“ a plánovač, ktorý ukladá podľa času odchodu. Dodatky doplní TR2-02.
+
+**Rozhodnutie:**
+1. **Štítky jednotky:** `sizeFt: 20 | 40`, `containerType` (id z `data/defs/container_types.json`; R2 len `dry`, reefer a ďalšie typy R5) a `oog: false`. Štítky vznikajú s jednotkou a nemenia sa; `CargoLedger.create` a obnova save ich overujú voči defu (typ existuje, veľkosť patrí typu, `oog` len pri type s `oogChance > 0`). Prázdny kontajner ostáva `direction: 'empty'`.
+2. **TEU:**
+   - kontrakt má `volumeUnits` = počet kontajnerov a `volumeTeu` = súčet TEU (20′ = 1, 40′ = 2; `teuOf(unit)`);
+   - `volumeUnitsRange` šablóny je v TEU a `capacityUnits` lode je v TEU; zmes určuje `sizeMix` šablóny (podiel 40′, chýba = 0) — `Rng` pri vzniku ponuky losuje kontajnery po jednom, kým nie je naplnené cieľové TEU (jeden `chance` na kontajner, ktorému ostávajú aspoň 2 TEU; bez `sizeMix` bez spotreby `Rng`);
+   - poradie veľkostí kontajnerov kontraktu je deterministická funkcia `unitSizeFt(index, volumeUnits, volumeTeu)` (rovnomerné rozloženie 40′), takže save nesie len `volumeTeu`;
+   - odmena, XP, pomerná výplata exportu a penalizácie sa počítajú z TEU (booking drží TEU počítadlá `arrivedTeu`, `loadedTeu`, `lastMinuteTeu`); kapacita lode (nakládka: voľné TEU vrátane jednotiek v háku; invariant: TEU na palube) je v TEU;
+   - vozidlo, straddle carrier aj kamión vezie 1 kontajner (20′ alebo 40′);
+   - prázdny pri návrate z vnútrozemia dedí veľkosť importu, ktorý odišiel (`ReturnPlanEntry.sizeFt`, bez `Rng`); hlavný kontrakt `empty_repositioning` zmes nepoužíva (`volumeUnits = volumeTeu`, depo dá prázdne s veľkosťou, akú má, pridelenie sa zastaví po naplnení TEU).
+3. **Blok a stoh:** `YardBlock extends StorageModule` s geometriou `bays × rows × maxTier` z `params` skladu (`modules.json`; všetky tri polia naraz). Straddle blok: 1 bay = 1 bunka pozdĺž, 1 rad = 1 bunka naprieč, `maxTier` 3 (`container_yard_small`, rovnaké id defu); depo prázdnych `maxTier` 8. Kapacita v TEU je `bays × rows × maxTier` (od TR2-02; `capacityUnits` ostáva kvôli kompatibilite).
+4. **Poloha** ostáva `in_storage { moduleId, slot }`; slot kóduje polohu `((row × bays) + bay) × maxTier + tier`, dekódovanie robí `YardBlock`.
+5. **`StackGrid`** je odvodená cache (nie je v save) s výškou a vrchným kontajnerom stohu. Pravidlá: ukladá sa len na zem alebo na vrchol stohu rovnakej veľkosti; 40′ zaberá pár bays (2k, 2k+1) s rovnakou výškou aj vrchom; nad `maxTier` nie; berie sa len vrchný kontajner. `CargoLedger.move` volá `YardBlock.assertCanPlace` a `assertCanTake` (porušenie = chyba, nie tichá oprava); invariant v kroku 12 hlási porušenie stohu.
+6. **Rehandling:** ak cieľ nie je navrchu, vozidlo, ktoré prišlo poň, najprv preloží kontajnery nad ním v tom istom bloku (cieľ: rovnaký bay, stoh s neskorším odchodom vrchu); každý presun `in_storage → in_vehicle → in_storage` trvá `logistics.rehandleTicks`. Metriky `rehandles`, `rehandlesPerMove`.
+7. **`YardPlanner`** (TOS) vyberá blok a stoh pre každú jednotku do skladu: (1) filter (typ bloku, veľkosť, dosiahnuteľnosť; prázdne do depa), (2) segregácia (export `(voyage, destinationPort, weightClass, sizeFt)`, import podľa odhadu odchodu, prekládka podľa lode B, prázdne `(lineId, sizeFt)`), (3) bez zavalenia (stoh s neskorším alebo rovnakým odchodom vrchu, inak prázdny stoh, inak najmenšia penalizácia), (4) vzdialenosť. Výber je deterministický, poradie `(skóre, id bloku, bay, row)`. Režim `logistics.yardPlanner: "planned" | "random"`; `random` používa `Rng` a slúži len akceptačnému testu (planned < 0,3 a random > 1 rehandles na presun vo `vertical_slice`).
+8. **Čas odchodu** (`plannedDepartureTick`, odvodený, nie je v save): export = príchod lode voyage + poradie stowage; prekládka = `outArrivalTick`; import = **odhad** `dischargeTick + logistics.importDwellEstimateHours` obmedzený SLA (skutočné termíny odvozu prídu v R4); prázdne = nekonečno (FIFO podľa linky).
+9. **Depo a ECH:** depo prázdnych je `YardBlock` s výškou 8; `empty_handler` ostáva cestným vozidlom (viazané stroje a RTG prídu v R3), v renderi dostane sprite `ech`.
+10. **Mapa a scenáre:** `container_yard_small` je straddle blok (rovnaké id defu, nová geometria); scenáre sa nemenia, len goldeny; save ostáva v10 bez migrácie (mení sa tvar: štítky jednotky, `volumeTeu` a TEU počítadlá kontraktu, `sizeFt` v pláne návratov prázdnych).
+11. **Render:** stohy zhora s vrchným kontajnerom podľa veľkosti, typu a linky, výška v režime Tieň; kontajner na vozidle a kamióne podľa veľkosti; sprity z `design/assets-t2/cargo/` a `entities/ech.svg`.
+
+**Dôsledky:**
+- Nové defy: `container_types.json` (+ schéma), `sizeMix` v šablónach, `rehandleTicks`, `importDwellEstimateHours`, `yardPlanner` v `logistics.json`, geometria v `params` skladov.
+- Kontrakty s mixom veľkostí majú menej fyzických jednotiek pre rovnaký objem v TEU (zmerané TR2-01: `vertical_slice` 78 → 50 exportovaných, odmena v TEU nezmenená). Goldeny a pripnuté čísla sa pregenerujú s vysvetlením odchýlok.
+- Poradie `World.tick()` sa nemení; plánovač a rehandling prídu v rámci existujúcich krokov (TR2-02).

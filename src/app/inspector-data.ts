@@ -28,7 +28,7 @@
 import { BuyVehicleCommand, RemoveModuleCommand, SellVehicleCommand } from '@sim/commands';
 import type { EntityId } from '@sim/core';
 import type { DefRegistry, VehicleDef } from '@sim/defs';
-import { BerthModule, CRANE_CYCLE_TRAITS, CraneModule, EmptyDepot, LoadingRamp, StorageModule, TruckGate, VehicleDepot, WaitingArea, type Module } from '@sim/modules';
+import { BerthModule, CRANE_CYCLE_TRAITS, CraneModule, EmptyDepot, LoadingRamp, StorageModule, TruckGate, VehicleDepot, WaitingArea, YardBlock, type Module } from '@sim/modules';
 import type { Ship } from '@sim/ships';
 import type { VehicleState } from '@sim/vehicles';
 import { depotCargoSplit, hinterlandQueue, shipCargoSplit, storageCargoSplit, type World } from '@sim/world';
@@ -178,9 +178,30 @@ export function emptyDepotData(world: World, depot: EmptyDepot): EmptyDepotData 
   };
 }
 
-function storageFields(bridge: InspectorBridge, storage: StorageModule): Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'storage' | 'emptyDepot'> {
+/** Stohy bloku skladu (R2): všetky pozície `(bay, row)` s výškou a vrchným kontajnerom. */
+function yardBlockStacks(world: World, yard: YardBlock): NonNullable<ModuleInspectorData['yardBlock']>['stacks'] {
+  const stacks: Array<{ bay: number; row: number; height: number; top: { sizeFt: 20 | 40; containerType: string; lineId: string | null; direction: string } | null }> = [];
+  const { bays, rows } = yard.geometry;
+  for (let row = 0; row < rows; row++) {
+    for (let bay = 0; bay < bays; bay++) {
+      const height = yard.stackHeight(bay, row);
+      const topUnitId = yard.topUnit(bay, row);
+      let top: { sizeFt: 20 | 40; containerType: string; lineId: string | null; direction: string } | null = null;
+      if (topUnitId !== null) {
+        const unit = world.cargo.get(topUnitId);
+        if (unit !== undefined) {
+          top = { sizeFt: unit.sizeFt as 20 | 40, containerType: unit.containerType, lineId: unit.lineId, direction: unit.direction };
+        }
+      }
+      stacks.push({ bay, row, height, top });
+    }
+  }
+  return stacks;
+}
+
+function storageFields(bridge: InspectorBridge, storage: StorageModule): Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'storage' | 'emptyDepot' | 'yardBlock'> {
   const unit = bridge.world.defs.cargoTypes.items.find((type) => type.category === storage.category);
-  return {
+  const baseFields: Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'storage' | 'emptyDepot' | 'yardBlock'> = {
     stateLabel: MODULE_STATE_ACTIVE,
     ok: true,
     storage: {
@@ -194,6 +215,19 @@ function storageFields(bridge: InspectorBridge, storage: StorageModule): Pick<Mo
     },
     ...(storage instanceof EmptyDepot ? { emptyDepot: emptyDepotData(bridge.world, storage) } : {}),
   };
+
+  if (storage instanceof YardBlock) {
+    return {
+      ...baseFields,
+      yardBlock: {
+        geometry: storage.geometry,
+        capacityTeu: storage.capacityTeu,
+        usedTeu: storage.usedTeu,
+        stacks: yardBlockStacks(bridge.world, storage),
+      },
+    };
+  }
+  return baseFields;
 }
 
 /** Riadok vozidla v zozname depa; refundácia z `validate(SellVehicle)` (záporná cena = príjem). */

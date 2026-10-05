@@ -127,6 +127,25 @@ function availableOf(split: readonly LineStatusSplit[], lineId: string): number 
 }
 
 /**
+ * Počty 20′ a 40′ kontajnerov z jednotiek kontraktu (R2): iteruje všetky jednotky ledgera a filtruje podľa `contractId`.
+ * Vracia `undefined`, ak sa žiadne jednotky nenájdu.
+ */
+function countContainers(world: World, contract: Contract): { count20: number; count40: number } | undefined {
+  let count20 = 0;
+  let count40 = 0;
+  let found = false;
+  // Iteruj všetky jednotky a filtuj podľa contractId
+  for (const unit of world.cargo.liveUnits()) {
+    if (unit.contractId !== null && unit.contractId === contract.id) {
+      found = true;
+      if (unit.sizeFt === 20) count20 += 1;
+      else if (unit.sizeFt === 40) count40 += 1;
+    }
+  }
+  return found ? { count20, count40 } : undefined;
+}
+
+/**
  * Karta jedného kontraktu (viď hlavička súboru). `emptySplit` = uskladnené prázdne celého prístavu (`terminalEmptySplit`); `contractCards`
  * ho počíta raz pre všetky karty repositioningu, samostatné volanie ho dopočíta.
  */
@@ -137,6 +156,7 @@ export function contractCard(world: World, contract: Contract, emptySplit?: read
   const disabledReason = acceptDisabledReason(world, contract);
   const { booking, tranship } = contract;
   const repositioning = contract.kind === 'empty_repositioning' && !isClosed(contract);
+  const containers = countContainers(world, contract);
   return {
     id: contract.id,
     kind: contract.kind,
@@ -163,6 +183,7 @@ export function contractCard(world: World, contract: Contract, emptySplit?: read
     ...(booking === null ? {} : { booking: bookingData(world, contract, booking) }),
     ...(tranship === null ? {} : { tranship: transhipData(world, tranship) }),
     ...(repositioning ? { availableEmpties: availableOf(emptySplit ?? terminalEmptySplit(world), contract.lineId) } : {}),
+    ...(containers === undefined ? {} : containers),
   };
 }
 

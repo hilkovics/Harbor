@@ -9,7 +9,8 @@ describe('inspectorData: sklad (kontajnerový dvor)', () => {
   it('prázdny pripojený dvor: 0 / 0 / 48, počítadlá 0, jednotka TEU, pripojený, odstrániteľný s refundom polovice ceny', () => {
     const app = createApp();
     buildLogistics(app);
-    expect(inspectorData(app.bridge, YARD_ID)).toEqual({
+    const data = inspectorData(app.bridge, YARD_ID);
+    expect(data).toMatchObject({
       id: YARD_ID,
       defId: 'container_yard_small',
       displayName: 'Kontajnerový dvor S',
@@ -22,6 +23,12 @@ describe('inspectorData: sklad (kontajnerový dvor)', () => {
       refundCents: 7_500_000,
       removable: true,
     });
+    // R2: yard block má geometriu a stohy
+    expect(data?.yardBlock).toBeDefined();
+    expect(data?.yardBlock?.geometry).toEqual({ bays: 4, rows: 2, maxTier: 2 });
+    expect(data?.yardBlock?.capacityTeu).toBe(48);
+    expect(data?.yardBlock?.usedTeu).toBe(0);
+    expect(data?.yardBlock?.stacks?.length).toBe(8); // 4 bays × 2 rows
   });
 
   it('dvor bez cesty: connected false (badge „Nepripojené“ nesie UI)', () => {

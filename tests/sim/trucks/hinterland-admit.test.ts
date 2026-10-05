@@ -81,7 +81,7 @@ describe('návrat prázdneho — vjazd s rezerváciou', () => {
     const world = emptyWorld({ defs, vehicles: TWO_STRADDLES });
     const tick = world.clock.tick;
     for (let i = 0; i < 3; i++) world.emptyFlow.scheduleReturn(tick + 3, 'blue_anchor');
-    const first = run(world, 8);
+    const first = run(world, 24);
     // dve miesta v depe = dva kamióny; tretí čaká (miesto nie je trvalo plné, len zaslúbené), nezahodil sa
     expect(world.trucks.size).toBe(2);
     expect(world.emptyFlow.returnPlan).toHaveLength(1);

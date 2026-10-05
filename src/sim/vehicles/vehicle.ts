@@ -191,7 +191,7 @@ export class Vehicle extends Carrier {
       throw new VehicleError('invalid_transition', `${this.label}: prechod ${this.current} → ${to} nie je povolený (povolené: ${allowed.join(', ') || '–'})`);
     }
     this.current = to;
-    // Mimo jazdy vozidlo (dočasne, R1) nedrží žiadne sloty (ADR-037).
+    // Stav mimo cesty (depo, TR1-04) nedrží žiadne sloty; stojace vozidlo na ceste ich drží ďalej (ADR-037).
     if (!VEHICLE_STATE_TRAITS[to].holdsRoad) this.leaveRoad();
   }
 

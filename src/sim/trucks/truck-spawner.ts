@@ -14,6 +14,8 @@
  * (`LoadingRamp.lastNoWaitingBayHour`); dopyt bez bay sa počíta do `Hinterland.pickupBayStarvationTicks` (ADR-035). Bez rámp sa neprechádza nič.
  * Pickup kamión smie obsadiť aj stojiská rezervované kvótou pre odvoz (`routeWithFreeBay`); kamióny s dovozom vpúšťa vnútrozemie
  * (`trucks/hinterland-entry.ts`).
+ * **Portál je cesta** (ADR-037, R1 č. 10): kamión vznikne, len keď je bunka portálu voľná (`isPortalBlocked`) a hneď zaberie
+ * slot hlavy; inak sa vznik odloží — dopyt (náklad na docku, položka plánu vnútrozemia) ostáva a skúsi sa v ďalšom ticku.
  */
 import type { EntityId } from '../core/entity-id';
 import type { DefRegistry } from '../defs/def-registry';
@@ -23,6 +25,8 @@ import { NO_ACCESS } from '../logistics/module-access';
 import type { LoadingRamp } from '../modules/loading-ramp';
 import { WaitingArea } from '../modules/waiting-area';
 import { carrierPosition } from '../movement/carrier';
+import { headSlotKey } from '../traffic/head-slot';
+import { LANES_PER_CELL } from '../traffic/lane-slots';
 import type { LandsideRoute } from '../world/landside';
 import type { World } from '../world/world';
 import type { DockSupply } from './dock-supply';
@@ -56,6 +60,15 @@ export function routeWithFreeBay(world: World, ramp: LoadingRamp, mission: Truck
     if (area instanceof WaitingArea && (usesPickupBays ? area.freeBays : area.freeBaysForDelivery) > 0) return route;
   }
   return undefined;
+}
+
+/**
+ * Drží niektorý nosič slot bunky portálu `portal` (v ktoromkoľvek pruhu)? Na obsadenom portáli kamión nevznikne (ADR-037, R1 č. 10);
+ * kontrola je konzervatívna — pruh nového kamióna sa určuje až podľa jeho trasy, tá sa pred vznikom neplánuje.
+ */
+export function isPortalBlocked(world: World, portal: number): boolean {
+  for (let lane = 0; lane < LANES_PER_CELL; lane++) if (world.laneSlots.holderOf(portal, lane) !== null) return true;
+  return false;
 }
 
 /** `NoWaitingBay` najviac raz za hernú hodinu na rampu. */
@@ -105,6 +118,7 @@ export function spawnTruck(
   world.events.emit({ type: 'TruckSpawned', truckId: truck.id, rampId: ramp.id, dock });
   if (planTruckRoute(world, truck, 'to_gate')) faceRoute(world, truck);
   else enterTruckNoPath(world, truck);
+  truck.reserveHead(headSlotKey(world, truck));
   return truck;
 }
 
@@ -134,6 +148,8 @@ export function spawnTrucks(world: World, ramps: readonly LoadingRamp[], supply:
         reportNoWaitingBay(world, ramp);
         continue;
       }
+      // Portál je obsadený (kamión, ktorý práve vznikol alebo vchádza): vznik sa odloží, náklad docku ostáva bez nároku.
+      if (isPortalBlocked(world, portal)) continue;
       spawnTruck(world, ramp, dock, route, def, portal, 'pickup');
     }
   }

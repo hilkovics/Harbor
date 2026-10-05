@@ -52,7 +52,7 @@ function truckError(action: () => unknown): TruckError {
 
 describe('TRUCK_TRANSITIONS a TRUCK_STATE_TRAITS', () => {
   it('cyklus to_gate → … → to_portal → exited; jazdné stavy môžu do no_path, z no_path len do jazdných; exited je koncový', () => {
-    const cycle: TruckState[] = ['to_gate', 'gate_queue', 'to_bay', 'waiting', 'to_dock', 'loading', 'to_gate_out', 'gate_queue_out', 'to_portal', 'exited'];
+    const cycle: TruckState[] = ['to_gate', 'gate_queue', 'gate_pass', 'to_bay', 'waiting', 'to_dock', 'loading', 'to_gate_out', 'gate_queue_out', 'gate_pass_out', 'to_portal', 'exited'];
     for (let i = 0; i + 1 < cycle.length; i++) expect(TRUCK_TRANSITIONS.get(cycle[i]), cycle[i]).toContain(cycle[i + 1]);
     for (const state of TRUCK_STATES) {
       const travel = (TRUCK_TRAVEL_STATES as readonly string[]).includes(state);
@@ -62,20 +62,24 @@ describe('TRUCK_TRANSITIONS a TRUCK_STATE_TRAITS', () => {
     expect(TRUCK_TRANSITIONS.get('exited')).toEqual([]);
   });
 
-  it('vlastnosti: bay od spawnu po waiting, dock od povelu do docku po loading, nárok na náklad od spawnu po loading (ADR-029), náklad prázdny → nakládka → plný, fronta len gate_queue*', () => {
+  it('vlastnosti: bay od spawnu po waiting, dock od povelu do docku po loading, nárok na náklad od spawnu po loading (ADR-029), náklad prázdny → nakládka → plný, fronta gate_queue* a prechod gate_pass*, na ceste len jazda, fronta a no_path (ADR-037)', () => {
     const holdsBay = TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].holdsBay);
     const holdsDock = TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].holdsDock);
     const claimsCargo = TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].claimsCargo);
     const queued = TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].queued);
-    expect(holdsBay).toEqual(['to_gate', 'gate_queue', 'to_bay', 'waiting']);
+    expect(holdsBay).toEqual(['to_gate', 'gate_queue', 'gate_pass', 'to_bay', 'waiting']);
     expect(holdsDock).toEqual(['to_dock', 'loading', 'unloading']);
-    expect(claimsCargo).toEqual(['to_gate', 'gate_queue', 'to_bay', 'waiting', 'to_dock', 'loading']);
+    expect(claimsCargo).toEqual(['to_gate', 'gate_queue', 'gate_pass', 'to_bay', 'waiting', 'to_dock', 'loading']);
     expect(queued).toEqual(['gate_queue', 'gate_queue_out']);
+    expect(TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].passing)).toEqual(['gate_pass', 'gate_pass_out']);
+    expect(TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].holdsRoad)).toEqual(['to_gate', 'gate_queue', 'to_bay', 'to_dock', 'to_gate_out', 'gate_queue_out', 'to_portal', 'no_path']);
     expect(TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].bayOccupied)).toEqual(['waiting']);
     expect(TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].cargo === 'loading')).toEqual(['loading']);
     expect(TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].waits)).toEqual(['waiting', 'loading', 'unloading', 'no_path']);
     expect(TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].passageBack)).toEqual(['to_gate_out']);
     expect([TRUCK_STATE_TRAITS.gate_queue.afterGate, TRUCK_STATE_TRAITS.gate_queue_out.afterGate]).toEqual(['to_bay', 'to_portal']);
+    expect([TRUCK_STATE_TRAITS.gate_pass.afterGate, TRUCK_STATE_TRAITS.gate_pass_out.afterGate]).toEqual(['to_bay', 'to_portal']);
+    expect([TRUCK_STATE_TRAITS.gate_queue.passState, TRUCK_STATE_TRAITS.gate_queue_out.passState]).toEqual(['gate_pass', 'gate_pass_out']);
     for (const state of TRUCK_TRAVEL_STATES) expect(TRUCK_STATE_TRAITS[state].motion, state).toBe('drive');
   });
 });

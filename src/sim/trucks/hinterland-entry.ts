@@ -20,7 +20,7 @@ import type { World } from '../world/world';
 import { hasInboundRoom, inboundRoom } from './hinterland-room';
 import type { Truck } from './truck';
 import { TruckError } from './truck-error';
-import { routeWithFreeBay, spawnTruck, truckDefFor } from './truck-spawner';
+import { isPortalBlocked, routeWithFreeBay, spawnTruck, truckDefFor } from './truck-spawner';
 
 /** Výsledok pokusu o vjazd (viď hlavička). */
 export type AdmissionOutcome = 'admitted' | 'declined' | 'waiting';
@@ -86,6 +86,8 @@ export function planDeliveryAdmission(world: World, direction: DeliveryDirection
       else blocked = true;
       continue;
     }
+    // Portál je cesta (ADR-037, R1 č. 10): kým ho drží nosič, kamión nevznikne — položka plánu ostane a skúsi sa v ďalšom ticku.
+    if (isPortalBlocked(world, world.landside.portalCell)) return 'waiting';
     SLOT.ramp = ramp;
     SLOT.dock = dock;
     SLOT.route = route;

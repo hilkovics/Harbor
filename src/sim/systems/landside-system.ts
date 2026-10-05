@@ -62,7 +62,9 @@ import { admitFromHinterland } from '../trucks/hinterland-admit';
 import { spawnTrucks } from '../trucks/truck-spawner';
 import { MIN_STAY_TICKS, waitingStayTicks } from '../trucks/truck-wait';
 import {
+  canExitTo,
   enterTruckNoPath,
+  exitTo,
   faceRoute,
   gateFarSideCell,
   gateOfTruck,
@@ -75,6 +77,7 @@ import {
   truckCircuit,
   waitingAreaOfTruck,
 } from '../trucks/truck-trip';
+import { headSlotKey } from '../traffic/head-slot';
 import type { World } from '../world/world';
 
 /** Jeden tick odpočtu; `true`, keď práve skončil. */
@@ -129,6 +132,13 @@ const WAITING_STARTED: { readonly [M in TruckMission]: (world: World, truck: Tru
   collect: startCollectWait,
 });
 
+/** Po prechode telom stojiska (kamión stojí na jeho vstupnej bunke bez slotov): trasa k bráne a slot hlavy vstupnej bunky. */
+function continueFromHop(world: World, truck: Truck): void {
+  if (planTruckRoute(world, truck, 'to_gate_out')) faceRoute(world, truck);
+  else enterTruckNoPath(world, truck);
+  truck.reserveHead(headSlotKey(world, truck));
+}
+
 /** Príchod na koniec trasy podľa jazdného stavu (tabuľka, nie switch). */
 const ARRIVALS: { readonly [S in TruckTravelState]: Arrival } = Object.freeze({
   to_gate: (truck: Truck, world: World) => {
@@ -152,9 +162,15 @@ const ARRIVALS: { readonly [S in TruckTravelState]: Arrival } = Object.freeze({
       gateOfTruck(world, truck).enqueue(truck.id);
       return;
     }
-    // Koniec trasy pred spätným priechodom stojiskom: prechod telom (okamžitý, bez bay), potom ďalej k bráne.
+    // Koniec trasy pred spätným priechodom stojiskom: prechod telom (okamžitý, bez bay) len so zabraným slotom vstupnej
+    // bunky stojiska — je obsadený, kamión stojí na výstupnej bunke a skúsi to v ďalšom ticku; potom ďalej k bráne.
     const passage = passageBackOf(world, truck);
-    if (passage !== undefined && truck.cell === passage.from) truck.jumpTo(passage.to, world.grid.width);
+    if (passage !== undefined && truck.cell === passage.from) {
+      if (!canExitTo(world, truck, passage.to, 'to_gate_out')) return;
+      truck.jumpTo(passage.to, world.grid.width);
+      continueFromHop(world, truck);
+      return;
+    }
     if (planTruckRoute(world, truck, 'to_gate_out')) faceRoute(world, truck);
     else enterTruckNoPath(world, truck);
   },
@@ -243,11 +259,13 @@ function leaveWaitingArea(truck: Truck, world: World): void {
     return;
   }
   if (WAITING_GIVE_UP[truck.mission](world, truck)) {
-    giveUpWaiting(truck, world, exit);
+    if (canExitTo(world, truck, exit, 'to_gate_out')) giveUpWaiting(truck, world, exit);
+    else truck.waitTicks = MIN_STAY_TICKS;
     return;
   }
   const ramp = rampOfTruck(world, truck);
-  if (ramp.dockTruck(truck.dock) !== null || !DOCK_READY[truck.mission](world, truck, ramp)) {
+  // Výjazd potrebuje voľný slot výjazdovej bunky stojiska; inak kamión čaká v bayi (bay ostáva obsadený, dock voľný).
+  if (ramp.dockTruck(truck.dock) !== null || !DOCK_READY[truck.mission](world, truck, ramp) || !canExitTo(world, truck, exit, 'to_dock')) {
     truck.waitTicks = MIN_STAY_TICKS;
     return;
   }
@@ -255,8 +273,7 @@ function leaveWaitingArea(truck: Truck, world: World): void {
   truck.bay = null;
   ramp.assignDock(truck.dock, truck.id);
   DOCK_DEPARTURE[truck.mission](world, truck, ramp);
-  truck.jumpTo(exit, world.grid.width);
-  startTruckTrip(world, truck, 'to_dock');
+  exitTo(world, truck, exit, 'to_dock');
 }
 
 /**
@@ -267,8 +284,7 @@ function giveUpWaiting(truck: Truck, world: World, exit: number): void {
   giveUpCollect(world, truck);
   waitingAreaOfTruck(world, truck).releaseBay(truck.id);
   truck.bay = null;
-  truck.jumpTo(exit, world.grid.width);
-  startTruckTrip(world, truck, 'to_gate_out');
+  exitTo(world, truck, exit, 'to_gate_out');
 }
 
 /**
@@ -289,54 +305,71 @@ function canDualTransact(truck: Truck, ramp: LoadingRamp): boolean {
  */
 function unloadUnit(truck: Truck, world: World): void {
   const ramp = rampOfTruck(world, truck);
-  const unitId = world.cargo.firstUnitAt('in_truck', truck.id);
-  if (unitId === undefined) throw new TruckError('inconsistent', `${truck.label}: vo vykládke nie je v kamióne jednotka`);
-  ramp.assertCommittable(truck.dock, unitId);
-  world.cargo.move(unitId, { kind: 'at_ramp', rampId: ramp.id, dock: truck.dock });
-  ramp.commit(truck.dock, unitId);
+  // Kamión bez jednotiek vo vykládke už vyložil všetko a čaká na voľnú výjazdovú bunku (`leaveDock`).
   if (unitsIn(world, truck) > 0) {
-    truck.waitTicks = ramp.params.loadTicksPerUnit;
-    return;
+    const unitId = world.cargo.firstUnitAt('in_truck', truck.id);
+    if (unitId === undefined) throw new TruckError('inconsistent', `${truck.label}: vo vykládke nie je v kamióne jednotka`);
+    ramp.assertCommittable(truck.dock, unitId);
+    world.cargo.move(unitId, { kind: 'at_ramp', rampId: ramp.id, dock: truck.dock });
+    ramp.commit(truck.dock, unitId);
+    if (unitsIn(world, truck) > 0) {
+      truck.waitTicks = ramp.params.loadTicksPerUnit;
+      return;
+    }
+    const dualTransaction = canDualTransact(truck, ramp);
+    world.events.emit({ type: 'TruckUnloaded', truckId: truck.id, rampId: ramp.id, dock: truck.dock, unitId, dualTransaction });
+    if (dualTransaction) {
+      truck.becomePickup();
+      ramp.claim(truck.dock, truck.def.capacityUnits);
+      truck.waitTicks = ramp.params.loadTicksPerUnit;
+      changeTruckState(world.events, truck, 'loading');
+      return;
+    }
   }
-  const dualTransaction = canDualTransact(truck, ramp);
-  world.events.emit({ type: 'TruckUnloaded', truckId: truck.id, rampId: ramp.id, dock: truck.dock, unitId, dualTransaction });
-  if (dualTransaction) {
-    truck.becomePickup();
-    ramp.claim(truck.dock, truck.def.capacityUnits);
-    truck.waitTicks = ramp.params.loadTicksPerUnit;
-    changeTruckState(world.events, truck, 'loading');
+  leaveDock(truck, world, ramp);
+}
+
+/**
+ * Odchod od docku k bráne von (ADR-037): dock sa uvoľní až so slotom výjazdovej bunky (bunka, na ktorej kamión v docku stojí);
+ * je obsadený, kamión čaká vnútri a dock ostáva jeho (skúsi to v ďalšom ticku).
+ */
+function leaveDock(truck: Truck, world: World, ramp: LoadingRamp): void {
+  if (!canExitTo(world, truck, truck.cell, 'to_gate_out')) {
+    truck.waitTicks = MIN_STAY_TICKS;
     return;
   }
   ramp.releaseDock(truck.dock, truck.id);
-  startTruckTrip(world, truck, 'to_gate_out');
+  exitTo(world, truck, truck.cell, 'to_gate_out');
 }
 
 /**
  * Koniec nakládky jednej jednotky: najstaršia jednotka docku `at_ramp → in_truck` (uvoľnené staging miesto doplní
- * dispatcher v kroku 5 ďalšieho ticku); ďalšia jednotka `loadTicksPerUnit`, alebo uvoľnenie docku a jazda k bráne von.
+ * dispatcher v kroku 5 ďalšieho ticku); ďalšia jednotka `loadTicksPerUnit`, alebo odchod od docku k bráne von (`leaveDock`).
+ * Plný kamión, ktorý čakal na voľnú výjazdovú bunku, už nenakladá.
  */
 function loadUnit(truck: Truck, world: World): void {
   const ramp = rampOfTruck(world, truck);
-  const unitId = ramp.firstUnitAt(truck.dock);
-  if (unitId === undefined) throw new TruckError('inconsistent', `${truck.label}: na docku ${String(truck.dock)} ${ramp.label} nie je jednotka na nakládku`);
-  world.cargo.move(unitId, { kind: 'in_truck', truckId: truck.id });
-  ramp.settleClaim(truck.dock, 1);
   if (unitsIn(world, truck) < truck.def.capacityUnits) {
-    truck.waitTicks = ramp.params.loadTicksPerUnit;
-    return;
+    const unitId = ramp.firstUnitAt(truck.dock);
+    if (unitId === undefined) throw new TruckError('inconsistent', `${truck.label}: na docku ${String(truck.dock)} ${ramp.label} nie je jednotka na nakládku`);
+    world.cargo.move(unitId, { kind: 'in_truck', truckId: truck.id });
+    ramp.settleClaim(truck.dock, 1);
+    if (unitsIn(world, truck) < truck.def.capacityUnits) {
+      truck.waitTicks = ramp.params.loadTicksPerUnit;
+      return;
+    }
   }
-  ramp.releaseDock(truck.dock, truck.id);
-  startTruckTrip(world, truck, 'to_gate_out');
+  leaveDock(truck, world, ramp);
 }
 
 /**
- * Koniec nakládky kamióna `collect`: pridelený prázdny `at_ramp → in_truck`, uvoľnenie docku a jazda k bráne von (F6c, ADR-034).
+ * Koniec nakládky kamióna `collect`: pridelený prázdny `at_ramp → in_truck` a odchod od docku k bráne von (F6c, ADR-034;
+ * `leaveDock`). Kamión s naloženým prázdnym, ktorý čakal na voľnú výjazdovú bránu, už nenakladá.
  */
 function loadCollectedUnit(truck: Truck, world: World): void {
   const ramp = rampOfTruck(world, truck);
-  loadCollected(world, truck, ramp);
-  ramp.releaseDock(truck.dock, truck.id);
-  startTruckTrip(world, truck, 'to_gate_out');
+  if (unitsIn(world, truck) === 0) loadCollected(world, truck, ramp);
+  leaveDock(truck, world, ramp);
 }
 
 /** Koniec nakládky podľa misie (tabuľka, nie switch); delivery nakladá až po `becomePickup`, takže tu nikdy nie je. */
@@ -359,6 +392,7 @@ type TruckStep = (truck: Truck, world: World) => void;
 const TRUCK_STEPS: { readonly [S in TruckState]: TruckStep } = {
   to_gate: arriveWhenThere,
   gate_queue: () => undefined,
+  gate_pass: () => undefined,
   to_bay: arriveWhenThere,
   waiting: (truck, world) => {
     if (countDown(truck)) leaveWaitingArea(truck, world);
@@ -373,6 +407,7 @@ const TRUCK_STEPS: { readonly [S in TruckState]: TruckStep } = {
   },
   to_gate_out: arriveWhenThere,
   gate_queue_out: () => undefined,
+  gate_pass_out: () => undefined,
   to_portal: arriveWhenThere,
   exited: (truck) => {
     throw new TruckError('inconsistent', `${truck.label} v stave 'exited' je stále vo world.trucks`);
@@ -392,44 +427,55 @@ function headOf(world: World, gate: TruckGate): Truck | undefined {
 }
 
 /**
- * Koniec prechodu: kamión na čele vypadne z fronty (`completePass`, počíta sa dokončený prechod), objaví sa na druhej
- * strane brány (strany pre kamión, `gateFarSideCell`) a ide ďalej (`afterGate`). Keď druhá strana medzitým zanikla
- * (prestavba ciest), kamión ostane na čele a prechod sa zopakuje, keď bude strana späť.
+ * Koniec prechodu (kamión `truck` na čele fronty je v `gate_pass*`): kamión sa objaví na druhej strane brány (strany pre kamión,
+ * `gateFarSideCell`) a ide ďalej (`afterGate`) — len so zabraným slotom výjazdovej bunky (`canExitTo`, ADR-037). Je obsadený
+ * alebo druhá strana medzitým zanikla (prestavba ciest): kamión ostane v bráne na čele fronty (brána ostáva obsadená)
+ * a výjazd sa zopakuje v ďalšom ticku. `true` = kamión vyšiel, brána je voľná pre ďalší prechod.
  */
-function finishPass(world: World, gate: TruckGate): void {
-  const truck = headOf(world, gate);
-  if (truck === undefined) return;
+function finishPass(world: World, gate: TruckGate, truck: Truck): boolean {
   const far = gateFarSideCell(world, truck);
   const next = TRUCK_STATE_TRAITS[truck.state].afterGate;
-  if (far === NO_ACCESS || next === null) return;
+  if (far === NO_ACCESS || next === null || !canExitTo(world, truck, far, next)) return false;
   gate.completePass();
   onGatePassed(world, truck);
-  truck.jumpTo(far, world.grid.width);
-  startTruckTrip(world, truck, next);
+  exitTo(world, truck, far, next);
+  return true;
 }
 
-/** Začiatok prechodu kamióna na čele fronty (len keď druhá strana brány existuje). */
-function beginPass(world: World, gate: TruckGate): void {
-  const truck = headOf(world, gate);
-  if (truck === undefined || gateFarSideCell(world, truck) === NO_ACCESS) return;
+/**
+ * Začiatok prechodu kamióna `truck` na čele fronty (len keď druhá strana brány existuje): kamión prejde do `gate_pass*`
+ * (mimo cesty — uvoľní celé telo, ďalší kamión z kolóny sa posunie na vonkajšiu bunku) a brána odpočítava `passTicks`.
+ */
+function beginPass(world: World, gate: TruckGate, truck: Truck): void {
+  const passState = TRUCK_STATE_TRAITS[truck.state].passState;
+  if (passState === null || gateFarSideCell(world, truck) === NO_ACCESS) return;
   gate.beginPass(gate.passTicks);
+  changeTruckState(world.events, truck, passState);
 }
 
-/** Jeden tick brány: odpočet prechodu, jeho koniec a začiatok ďalšieho. */
+/**
+ * Jeden tick brány: odpočet prechodu, jeho koniec (výjazd kamióna so slotom) a začiatok ďalšieho. Kamión, ktorý prechod
+ * dokončil, ale nemá kam vyjsť, ostáva na čele fronty v `gate_pass*` (`busyTicksLeft = 0`) a výjazd sa opakuje každý tick;
+ * ďalší prechod začne najskôr v tom istom ticku, keď predchádzajúci kamión vyšiel — medzi dvoma prechodmi je aspoň `passTicks`.
+ */
 function stepGate(world: World, gate: TruckGate): void {
-  if (gate.busyTicksLeft > 0) {
-    gate.advancePass();
-    if (gate.busyTicksLeft === 0) finishPass(world, gate);
+  if (gate.busyTicksLeft > 0) gate.advancePass();
+  if (gate.busyTicksLeft > 0) return;
+  let head = headOf(world, gate);
+  if (head !== undefined && TRUCK_STATE_TRAITS[head.state].passing) {
+    if (!finishPass(world, gate, head)) return;
+    head = headOf(world, gate);
   }
-  if (gate.busyTicksLeft === 0) beginPass(world, gate);
+  if (head !== undefined) beginPass(world, gate, head);
 }
 
 /**
  * Urovnanie front po zmene siete (dodatok ADR-024; volá `World` po zverejnení reťazca v príkazovej fáze): kamión vo
  * fronte, pod ktorým sa strany brány preklopili (`isOffQueueSide` — stojí na inej prístupovej bunke brány, než je jeho
  * strana), už je na druhej strane: vypadne z fronty bez prechodu (`TruckGate.withdraw`, čelo zruší aj prechod) a ide
- * ďalej (`afterGate`, `TruckStateChanged`). Brány vzostupne podľa id, kamióny v poradí fronty; bez takých kamiónov
- * nič nemení ani nealokuje.
+ * ďalej (`afterGate`, `TruckStateChanged`; kamión stojí na ceste, takže si slot svojej bunky ponecháva). Kamión v prechode
+ * (`gate_pass*`) sa neurovnáva — prechod dokončí a vyjde na strane určenej v čase výjazdu. Brány vzostupne podľa id,
+ * kamióny v poradí fronty; bez takých kamiónov nič nemení ani nealokuje.
  */
 export function settleGateQueues(world: World): void {
   for (const gate of world.landsideModules.gates) {

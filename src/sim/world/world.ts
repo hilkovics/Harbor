@@ -963,26 +963,26 @@ export class World {
   }
 
   /**
-   * Vozidlo, ktoré zaberá bunku s indexom `index` — stojí na nej (`vehicle.cell`), alebo je to cieľová bunka jeho
-   * rozbehnutého úseku (ADR-019); inak `undefined`. Prechádza vozidlá vzostupne podľa id (príkazy, nie hot path).
+   * Vozidlo, ktoré zaberá bunku s indexom `index` — stojí na nej (`vehicle.cell`), je to cieľová bunka jeho
+   * rozbehnutého úseku (ADR-019), alebo ju drží jeho telo či slot vpredu (`Carrier.occupiesCell`, ADR-037); inak `undefined`. Prechádza vozidlá vzostupne podľa id (príkazy, nie hot path).
    */
   vehicleOnCell(index: number): Vehicle | undefined {
     for (const vehicle of this.vehicleMap.values()) {
-      if (vehicle.cell === index || (vehicle.progress > 0 && vehicle.nextCell === index)) return vehicle;
+      if (vehicle.occupiesCell(index)) return vehicle;
     }
     return undefined;
   }
 
   /**
-   * Nosič (vozidlo, potom kamión), ktorý zaberá bunku `index` — stojí na nej alebo je to cieľová bunka jeho rozbehnutého
-   * úseku (ADR-019, ADR-024); inak `undefined`. `RemoveRoad` a prestavba `PlaceRoad` takú bunku odmietnu (`occupied`).
+   * Nosič (vozidlo, potom kamión), ktorý zaberá bunku `index` — stojí na nej, je to cieľová bunka jeho rozbehnutého
+   * úseku (ADR-019, ADR-024), alebo ju drží jeho telo či slot vpredu (ADR-037); inak `undefined`. `RemoveRoad` a prestavba `PlaceRoad` takú bunku odmietnu (`occupied`).
    * Príkazy, nie hot path.
    */
   carrierOnCell(index: number): Carrier | undefined {
     const vehicle = this.vehicleOnCell(index);
     if (vehicle !== undefined) return vehicle;
     for (const truck of this.truckMap.values()) {
-      if (truck.cell === index || (truck.progress > 0 && truck.nextCell === index)) return truck;
+      if (truck.occupiesCell(index)) return truck;
     }
     return undefined;
   }

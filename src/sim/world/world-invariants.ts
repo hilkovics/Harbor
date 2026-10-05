@@ -55,8 +55,8 @@
  *    a sú toho druhu, dock v rozsahu, poloha v mape; **bays ↔ kamióny**: kamión drží bay práve v stavoch s `holdsBay`,
  *    bay ho má ako držiteľa a je obsadený práve v `waiting`, súčet držaných bays všetkých stojísk = počet kamiónov
  *    s bay; **dock nemá dva kamióny**: kamión v stave s `holdsDock` je držiteľom svojho docku (inak nie), súčet
- *    držaných dockov všetkých rámp = počet takých kamiónov; **fronta ↔ kamióny v `gate_queue*`**: kamión je vo fronte
- *    svojej brány práve v stavoch vo fronte, súčet dĺžok front = počet takých kamiónov (fronta je bez duplicít);
+ *    držaných dockov všetkých rámp = počet takých kamiónov; **fronta ↔ kamióny v `gate_queue*` a `gate_pass*`**: kamión je vo fronte
+ *    svojej brány práve v stavoch vo fronte a v prechode bránou (čelo fronty zostáva vo fronte, kým prechod neskončí a kamión nevyjde), súčet dĺžok front = počet takých kamiónov (fronta je bez duplicít);
  *    **`in_truck` ↔ kamión**: náklad len v existujúcom kamióne (bod 1), najviac `capacityUnits`, len jeho kategórie
  *    a podľa stavu (pred nakládkou 0, po nej plný); **rampa**: def kamióna vozí kategóriu rampy a kamión s dockom má
  *    na docku a v sebe spolu aspoň `capacityUnits` jednotiek (`truckRampProblem`); **nároky na náklad** (ADR-029):
@@ -811,7 +811,7 @@ function checkTruckBonds(world: World, truck: Truck, gate: TruckGate, area: Wait
   if ((ramp.dockTruck(truck.dock) === truck.id) !== bonds.holdsDock) {
     return `${truck.label} v stave '${truck.effectiveState}' ${bonds.holdsDock ? 'nedrží' : 'drží'} dock ${String(truck.dock)} ${ramp.label}`;
   }
-  const queued = TRUCK_STATE_TRAITS[truck.state].queued;
+  const queued = inGateQueue(truck);
   if (gate.isQueued(truck.id) !== queued) return `${truck.label} v stave '${truck.state}' ${queued ? 'nie je' : 'je'} vo fronte ${gate.label}`;
   return undefined;
 }
@@ -845,7 +845,13 @@ export function truckRampProblem(
   };
 }
 
-/** Kamión vo fronte stojí na svojej strane brány, ak je určená (`isOffQueueSide`, dodatok ADR-024). */
+/** Je kamión v zozname fronty svojej brány — čaká v nej (`gate_queue*`) alebo ako jej čelo prechádza bránou (`gate_pass*`, ADR-037)? */
+export function inGateQueue(truck: Truck): boolean {
+  const traits = TRUCK_STATE_TRAITS[truck.state];
+  return traits.queued || traits.passing;
+}
+
+/** Kamión vo fronte stojí na svojej strane brány, ak je určená (`isOffQueueSide`, dodatok ADR-024); kamión v prechode (`gate_pass*`) sa nekontroluje. */
 export function truckQueueSideProblem(world: World, truck: Truck): string | undefined {
   if (!isOffQueueSide(world, truck)) return undefined;
   return `${truck.label} v stave '${truck.state}' stojí na bunke ${String(truck.cell)}, nie na svojej strane brány (${String(gateNearSideCell(world, truck))})`;
@@ -925,7 +931,7 @@ const checkTrucks: Check = (world) => {
     if (violation !== undefined) return violation;
     if (truck.bay !== null) bays += 1;
     if (truck.bonds.holdsDock) docks += 1;
-    if (TRUCK_STATE_TRAITS[truck.state].queued) queued += 1;
+    if (inGateQueue(truck)) queued += 1;
     if (truck.bonds.claimsCargo) {
       const ordinal = world.landsideModules.rampOrdinal(truck.rampId);
       const owed = truck.def.capacityUnits - world.cargo.countAt('in_truck', truck.id);
@@ -943,7 +949,7 @@ const checkTrucks: Check = (world) => {
   for (const gate of gates) queueLength += gate.queueLength;
   if (heldBays !== bays) return `stojiská držia ${String(heldBays)} bays, kamióny ${String(bays)}`;
   if (heldDocks !== docks) return `rampy majú ${String(heldDocks)} držaných dockov, kamióny ${String(docks)}`;
-  if (queueLength !== queued) return `fronty brán majú ${String(queueLength)} kamiónov, v gate_queue* je ${String(queued)}`;
+  if (queueLength !== queued) return `fronty brán majú ${String(queueLength)} kamiónov, v gate_queue* a gate_pass* je ${String(queued)}`;
   return undefined;
 };
 
@@ -1086,7 +1092,7 @@ function errandUnitProblem(world: World, truck: Truck, unitId: EntityId): string
  */
 function leavesEmpty(world: World, truck: Truck): boolean {
   const state = truck.effectiveState;
-  return (state === 'to_gate_out' || state === 'gate_queue_out' || state === 'to_portal') && world.cargo.countAt('in_truck', truck.id) === 0;
+  return (state === 'to_gate_out' || state === 'gate_queue_out' || state === 'gate_pass_out' || state === 'to_portal') && world.cargo.countAt('in_truck', truck.id) === 0;
 }
 
 /** Znovupoužiteľná množina pridelených prázdnych pre `checkEmptyFlow` (hot path kroku 12; pred použitím sa vyprázdni). */

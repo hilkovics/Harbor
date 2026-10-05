@@ -41,6 +41,7 @@ type WaitLimit = (world: TruckWaitWorld, truck: Truck) => number;
 const WAIT_LIMITS: { readonly [S in TruckState]: WaitLimit } = Object.freeze({
   to_gate: () => 0,
   gate_queue: () => 0,
+  gate_pass: () => 0,
   to_bay: () => 0,
   waiting: (world: TruckWaitWorld, truck: Truck) => {
     const area = world.modules.get(truck.waitingAreaId);
@@ -59,6 +60,7 @@ const WAIT_LIMITS: { readonly [S in TruckState]: WaitLimit } = Object.freeze({
   },
   to_gate_out: () => 0,
   gate_queue_out: () => 0,
+  gate_pass_out: () => 0,
   to_portal: () => 0,
   exited: () => 0,
   no_path: (world: TruckWaitWorld) => world.defs.logistics.repathIntervalTicks,

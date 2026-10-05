@@ -258,7 +258,7 @@ export class Truck extends Carrier {
     if (to === 'no_path') this.resumeState = isTruckTravelState(from) ? from : null;
     else if (from === 'no_path') this.resumeState = null;
     this.current = to;
-    // Mimo jazdy kamión (dočasne, R1) nedrží žiadne sloty (ADR-037).
+    // Mimo cesty (stojisko, dock, prechod bránou) kamión nedrží žiadne sloty; vo fronte brány a bez cesty ich drží ďalej (ADR-037).
     if (!this.traits.holdsRoad) this.leaveRoad();
   }
 

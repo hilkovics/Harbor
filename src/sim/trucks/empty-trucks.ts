@@ -25,7 +25,7 @@ import type { PickupPlanEntry } from '../logistics/empty-flow';
 import type { Module } from '../modules/module';
 import type { World } from '../world/world';
 import { leastBusyDock, planDeliveryAdmission, spawnDelivery, type AdmissionOutcome } from './hinterland-entry';
-import { routeWithFreeBay, spawnTruck, truckDefFor } from './truck-spawner';
+import { isPortalBlocked, routeWithFreeBay, spawnTruck, truckDefFor } from './truck-spawner';
 
 /** Booking výdaja ešte beží (nie je uzavretý ani expirovaný)? Zanikol → výdaj nemá komu. */
 function bookingOpen(world: World, entry: PickupPlanEntry): boolean {
@@ -96,6 +96,8 @@ function admitCollectTruck(world: World, entry: PickupPlanEntry, portal: number)
     const dock = leastBusyDock(world, ramp, true);
     // Prázdny sa na dock dostane jobom `storage → ramp`, ktorý potrebuje voľné staging miesto; bez neho by kamión držal stojisko, kým miesto niekto neuvoľní.
     if (dock < 0) continue;
+    // Portál je cesta (ADR-037, R1 č. 10): kým ho drží nosič, kamión nevznikne a položka plánu ostane.
+    if (isPortalBlocked(world, portal)) return 'waiting';
     spawnTruck(world, ramp, dock, route, def, portal, 'collect', (truck) => {
       world.emptyFlow.addErrand(truck.id, entry.lineId, entry.contractId);
     });

@@ -14,7 +14,7 @@
  *   nie je koľaj (→ `occupied`), je verejná alebo na parcele `owned`/`leased` (na predaj → `parcel_not_owned`);
  * - **s cestou rovnakého typu aj smeru**: preskočí sa bez chyby a bez ceny (ako doteraz);
  * - **s cestou iného typu alebo smeru**: **prestavba** — atomický ekvivalent `RemoveRoad + PlaceRoad` (rozhodnutie 12):
- *   nesmie ju zaberať vozidlo ani kamión — stojace ani ako cieľ rozbehnutého úseku (`occupied`, `World.carrierOnCell`, ADR-019, ADR-024)
+ *   nesmie ju zaberať vozidlo ani kamión — stojace, ako cieľ rozbehnutého úseku ani pod telom či slotom vpredu (`occupied`, `World.carrierOnCell`, ADR-019, ADR-024)
  *   a platí pravidlo parcely (ADR-008).
  * Napojenie na existujúcu cestu sa nevyžaduje.
  *

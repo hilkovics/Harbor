@@ -27,8 +27,8 @@ export function collectReady(world: World, truck: Truck, ramp: LoadingRamp): boo
   return location?.kind === 'at_ramp' && location.rampId === ramp.id && location.dock === truck.dock;
 }
 
-/** Stavy kamióna pred príchodom do stojiska (`to_gate` → `gate_queue` → `to_bay`): lehota čakania `giveUpTick` ešte nebeží. */
-const BEFORE_WAITING_AREA: readonly TruckState[] = ['to_gate', 'gate_queue', 'to_bay'];
+/** Stavy kamióna pred príchodom do stojiska (`to_gate` → `gate_queue` → `gate_pass` → `to_bay`): lehota čakania `giveUpTick` ešte nebeží. */
+const BEFORE_WAITING_AREA: readonly TruckState[] = ['to_gate', 'gate_queue', 'gate_pass', 'to_bay'];
 
 /** Dorazil kamión už do stojiska (je v stave `waiting` alebo ďalej; v `no_path` rozhoduje stav, z ktorého vypadol)? */
 export function reachedWaitingArea(truck: Truck): boolean {

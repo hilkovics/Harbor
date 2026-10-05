@@ -25,8 +25,9 @@ import type { Module } from '../modules/module';
 import { TruckGate } from '../modules/truck-gate';
 import { WaitingArea } from '../modules/waiting-area';
 import { carrierMotionProblem, type MotionProblem, type MotionTarget } from '../movement/motion-check';
-import { planRouteToCell, planRouteToModule } from '../movement/route-planning';
+import { findRouteToCell, findRouteToModule, routeAnchor, takePath } from '../movement/route-planning';
 import { cardinalHeading } from '../ships/ship-route';
+import { exitSlotKey, headSlotKey } from '../traffic/head-slot';
 import type { GateSides, LandsideCircuit } from '../world/landside';
 import type { World } from '../world/world';
 import { TruckError } from './truck-error';
@@ -156,24 +157,38 @@ export function passageBackOf(world: World, truck: Truck): PassageBack | undefin
   return { from: circuit.waitingExitCell, to: circuit.waitingEntryCell };
 }
 
-/** Plán k spätnému priechodu stojiskom, keď za ním vedie cesta k cieľu jazdy (`passageBack`). */
-function planPassageBack(world: World, truck: Truck, travel: TruckTravelState): boolean {
+/** Cesta k spätnému priechodu stojiskom z `anchor`, keď za ním vedie cesta k cieľu jazdy (`passageBack`); inak `null`. */
+function findPassageBackRoute(world: World, truck: Truck, travel: TruckTravelState, anchor: number): readonly number[] | null {
   const passage = passageBackOf(world, truck);
   const target = targetCell(world, truck, travel);
-  if (passage === undefined || target === NO_ACCESS || world.paths.get(passage.to, target) === null) return false;
-  return planRouteToCell(world, truck, passage.from);
+  if (passage === undefined || target === NO_ACCESS || world.paths.get(passage.to, target) === null) return null;
+  return findRouteToCell(world, anchor, passage.from);
 }
 
 /**
- * Naplánuje kamiónu trasu k cieľu jazdy `travel` z jeho kotvy (zdieľané `planRouteToCell` / `planRouteToModule`) a
- * nastaví ju: priamo k cieľovej bunke; pri `to_dock` inak k najbližšej prístupovej bunke rampy, pri `to_gate_out` inak
- * k spätnému priechodu stojiskom. `false` = cieľ nie je alebo k nemu nevedie cesta (kamión sa nezmení).
+ * Cesta kamióna k cieľu jazdy `travel` z bunky `anchor` bez zmeny kamióna (suchý beh plánovania — výjazd z modulu podľa nej
+ * zistí, ktorý slot výjazdovej bunky potrebuje): priamo k cieľovej bunke; pri `to_dock` inak k najbližšej prístupovej bunke
+ * rampy, pri `to_gate_out` inak k spätnému priechodu stojiskom. `null` = cieľ nie je alebo k nemu nevedie cesta.
+ */
+export function findTruckRoute(world: World, truck: Truck, travel: TruckTravelState, anchor: number): readonly number[] | null {
+  const direct = findRouteToCell(world, anchor, targetCell(world, truck, travel));
+  if (direct !== null) return direct;
+  const traits = TRUCK_STATE_TRAITS[travel];
+  if (traits.stop === 'ramp') return findRouteToModule(world, anchor, rampOfTruck(world, truck));
+  return traits.passageBack ? findPassageBackRoute(world, truck, travel, anchor) : null;
+}
+
+/**
+ * Naplánuje kamiónu trasu k cieľu jazdy `travel` z jeho kotvy (`findTruckRoute`) a nastaví ju. `false` = cieľ nie je alebo
+ * k nemu nevedie cesta (kamión sa nezmení).
  */
 export function planTruckRoute(world: World, truck: Truck, travel: TruckTravelState): boolean {
-  if (planRouteToCell(world, truck, targetCell(world, truck, travel))) return true;
-  const traits = TRUCK_STATE_TRAITS[travel];
-  if (traits.stop === 'ramp') return planRouteToModule(world, truck, rampOfTruck(world, truck));
-  return traits.passageBack && planPassageBack(world, truck, travel);
+  const anchor = routeAnchor(truck);
+  if (anchor === undefined) return false;
+  const path = findTruckRoute(world, truck, travel, anchor);
+  if (path === null) return false;
+  takePath(world, truck, path);
+  return true;
 }
 
 /** Je kamión na cieľovej bunke jazdy `travel` (napr. výstupná strana brány pri `to_gate_out`)? */
@@ -202,6 +217,31 @@ export function startTruckTrip(world: World, truck: Truck, travel: TruckTravelSt
   changeTruckState(world.events, truck, travel);
   if (planTruckRoute(world, truck, travel)) faceRoute(world, truck);
   else enterTruckNoPath(world, truck);
+}
+
+/**
+ * Slot, ktorý kamión potrebuje na výjazdovej bunke `cell`, keď z nej pôjde v stave `travel` (ADR-037): pruh podľa smeru prvého
+ * kroku trasy (suchý beh plánovania `findTruckRoute`, kamión sa nemení); bez trasy pruh 0 (kamión skončí v `no_path`).
+ */
+export function exitKeyOf(world: World, truck: Truck, cell: number, travel: TruckTravelState): number {
+  const path = findTruckRoute(world, truck, travel, cell);
+  return exitSlotKey(world, cell, path === null ? undefined : path[1]);
+}
+
+/** Je slot výjazdovej bunky `cell` voľný (alebo vlastný) pre jazdu v stave `travel`? Výjazd z modulu ho vyžaduje (ADR-037). */
+export function canExitTo(world: World, truck: Truck, cell: number, travel: TruckTravelState): boolean {
+  return world.laneSlots.isFreeFor(exitKeyOf(world, truck, cell, travel), truck.id);
+}
+
+/**
+ * Výjazd kamióna z modulu na cestu (stojisko, dock, brána; volajúci overil `canExitTo`): kamión sa objaví v strede
+ * výjazdovej bunky `cell`, začne jazdu `travel` (`startTruckTrip`) a zaberie slot hlavy (`headSlotKey`). Telo sa „rozvinie"
+ * počas jazdy. Pohyb až v ďalšom ticku.
+ */
+export function exitTo(world: World, truck: Truck, cell: number, travel: TruckTravelState): void {
+  truck.jumpTo(cell, world.grid.width);
+  startTruckTrip(world, truck, travel);
+  truck.reserveHead(headSlotKey(world, truck));
 }
 
 /** Cieľ pre krok 12 podľa cieľa stavu (tabuľka): modul väzby kamióna alebo bunka portálu. */

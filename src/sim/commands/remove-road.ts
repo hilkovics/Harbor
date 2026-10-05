@@ -3,7 +3,7 @@
  *
  * Každá unikátna bunka v mape musí mať cestu (`road === 'road'`; bez cesty alebo s koľajou → `no_road`), platí
  * pravidlo parcely ako pri stavbe (parcela na predaj → `parcel_not_owned`, ADR-008) a nesmie ju zaberať vozidlo ani
- * kamión — stojace ani ako cieľ rozbehnutého úseku (`occupied`, `World.carrierOnCell`, ADR-019, ADR-024). Refundácia (ADR-012, ADR-015,
+ * kamión — stojace, ako cieľ rozbehnutého úseku ani pod telom či slotom vpredu (`occupied`, `World.carrierOnCell`, ADR-019, ADR-024). Refundácia (ADR-012, ADR-015,
  * ADR-020): `refundCents(Σ roadKinds[typ bunky].costPerCellCents, economy.removalRefundRate)` z celého príkazu naraz
  * (celočíselne v bázických bodoch), kategória `road_sale`; vo `ValidationResult.costCents` je záporná (príjem).
  * Odstránená bunka sa vráti do normalizovaného stavu (`DEFAULT_ROAD_KIND`, bez smeru). Spoločné pravidlá:

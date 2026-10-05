@@ -64,6 +64,7 @@ describe('stav unloading a misie (ADR-032)', () => {
     expect(cargo).toEqual({
       to_gate: 'loaded',
       gate_queue: 'loaded',
+      gate_pass: 'loaded',
       to_bay: 'loaded',
       waiting: 'loaded',
       to_dock: 'loaded',
@@ -71,6 +72,7 @@ describe('stav unloading a misie (ADR-032)', () => {
       unloading: 'unloading',
       to_gate_out: 'empty',
       gate_queue_out: 'empty',
+      gate_pass_out: 'empty',
       to_portal: 'empty',
       exited: 'empty',
       no_path: 'empty',

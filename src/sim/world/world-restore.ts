@@ -50,7 +50,6 @@ import { slotKeyOf } from '../traffic/lane-slots';
 import { DockSupply } from '../trucks/dock-supply';
 import { Truck } from '../trucks/truck';
 import { TruckError, type TruckErrorCode } from '../trucks/truck-error';
-import { TRUCK_STATE_TRAITS } from '../trucks/truck-fsm';
 import { truckMotionProblem } from '../trucks/truck-trip';
 import { truckWaitLimit } from '../trucks/truck-wait';
 import { Vehicle } from '../vehicles/vehicle';
@@ -60,7 +59,7 @@ import { vehicleMotionProblem } from '../vehicles/vehicle-trip';
 import { CARGO_HOLDER_SOURCES } from './cargo-holders';
 import { WorldStateError, pointerSegment } from './state-check';
 import type { World } from './world';
-import { findWorldViolation, truckQueueSideProblem, truckRampProblem } from './world-invariants';
+import { findWorldViolation, inGateQueue, truckQueueSideProblem, truckRampProblem } from './world-invariants';
 import type { ParsedJobEntry, ParsedModuleEntry, ParsedShipEntry, ParsedTruckEntry, ParsedVehicleEntry, ParsedWorldState } from './world-state';
 
 const modulePath = (index: number): string => `/modules${pointerSegment(index)}`;
@@ -367,14 +366,14 @@ function checkTruckCargo(world: World, units: readonly CargoUnit[]): void {
 }
 
 /**
- * Fronta každej brány = presne kamióny v `gate_queue*` tejto brány (ADR-024): id vo fronte je kamión vo fronte svojej
+ * Fronta každej brány = presne kamióny v `gate_queue*` a `gate_pass*` tejto brány (ADR-024, ADR-037): id vo fronte je kamión vo fronte svojej
  * brány (`/modules/<i>/runtime/queue/<k>`), kamión vo fronte je vo fronte svojej brány (`/trucks/<i>/state`).
  */
 function checkGateQueues(world: World, indexOf: ReadonlyMap<EntityId, number>): void {
   for (const gate of world.landsideModules.gates) {
     gate.queuedTruckIds.forEach((truckId, k) => {
       const truck = world.trucks.get(truckId);
-      if (truck === undefined || truck.gateId !== gate.id || !TRUCK_STATE_TRAITS[truck.state].queued) {
+      if (truck === undefined || truck.gateId !== gate.id || !inGateQueue(truck)) {
         throw new WorldStateError(
           `${modulePath(indexOf.get(gate.id) ?? -1)}/runtime/queue${pointerSegment(k)}`,
           `${gate.label}: kamión #${String(truckId)} vo fronte ${truck === undefined ? 'vo svete neexistuje' : `je v stave '${truck.state}' s bránou #${String(truck.gateId)}`}`,
@@ -385,7 +384,7 @@ function checkGateQueues(world: World, indexOf: ReadonlyMap<EntityId, number>): 
   let index = 0;
   for (const truck of world.trucks.values()) {
     const gate = world.modules.get(truck.gateId);
-    if (TRUCK_STATE_TRAITS[truck.state].queued && !(gate instanceof TruckGate && gate.isQueued(truck.id))) {
+    if (inGateQueue(truck) && !(gate instanceof TruckGate && gate.isQueued(truck.id))) {
       throw new WorldStateError(`${truckPath(index)}/state`, `${truck.label} v stave '${truck.state}' nie je vo fronte brány #${String(truck.gateId)}`);
     }
     index += 1;

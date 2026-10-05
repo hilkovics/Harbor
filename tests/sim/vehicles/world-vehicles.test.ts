@@ -228,7 +228,10 @@ describe('vozidlá počas ticku bez práce (žiadny náklad → žiadny job)', (
     const { world, depot } = depotWorld();
     execute(world, buy(depot.id));
     execute(world, buy(depot.id));
+    // Prvý tick: stojaci nosič bez slotov si nárokuje slot svojej bunky (druhé vozidlo na tej istej bunke ho nedostane, kým prvé neodíde).
+    runTicks(world, 1);
     const before = [...world.vehicles.values()].map((vehicle) => vehicle.toState());
+    expect([...world.vehicles.values()].map((vehicle) => vehicle.body.length)).toEqual([1, 0]);
     runTicks(world, 300);
     expect([...world.vehicles.values()].map((vehicle) => vehicle.toState())).toEqual(before);
     for (const vehicle of world.vehicles.values()) {

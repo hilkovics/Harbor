@@ -2,18 +2,23 @@
  * TrafficSystem — krok 6a ticku (ADR-037, ADR-038; rozhodnutia orchestrátora R1 č. 4–7 a 12): pohyb všetkých nosičov na
  * cestách (vozidlá aj kamióny v jazdných stavoch) pod pruhovými slotmi. Vozidlá ani kamióny cez seba neprechádzajú.
  *
- * - **Poradie:** nosiče v jazdných stavoch (`holdsRoad`) sa zoradia podľa `(blockedTicks zostupne, id vzostupne)` a každý
- *   sa pohne raz — existujúcou jazdnou funkciou podľa druhu (`MOVERS`: preplánovanie po zmene ciest + `advanceCarrier`).
+ * - **Poradie:** nosiče v jazdných stavoch (`motion: 'drive'`) sa zoradia podľa `(blockedTicks zostupne, id vzostupne)` a každý
+ *   sa pohne raz — existujúcou jazdnou funkciou podľa druhu (`DRIVING`: preplánovanie po zmene ciest + `advanceCarrier`).
+ *   Stojace nosiče na ceste (pobyt pri module, pod hákom, fronta brány, `no_path`; `holdsRoad` bez `drive`) sa nehýbu,
+ *   len držia sloty — pre jazdiace sú to prekážky bez rekurzie (nehýbu sa, takže čakanie na ne sa rieši preplánovaním).
  * - **Brána úseku** (`AdvanceGate`): nosič vyráža zo stredu bunky, len keď získa slot ďalšej bunky (pri križovatke naraz celú
  *   reťaz križovatiek a prvú bunku za nimi, pri úseku `one_lane` len ak v ňom nikto nejde oproti). Inak stojí v strede bunky
  *   a zvyšok kroku prepadne. Kto sa nepohol, hoci chcel, má `blockedTicks += 1`; kto sa pohol, 0.
  * - **Rekurzia na blokujúceho:** slot drží nosič, ktorý sa v ticku ešte nehýbal, → najprv sa vyrieši on. Ak je blokujúci nosič
  *   na zásobníku, ide o **cyklus čakania**: nosiče cyklu sa zapíšu (kandidáti preplánovania) a čakajúci stojí.
  * - **Vstup do jazdného stavu:** nosič, ktorý ešte nič nedrží, najprv zaberie slot svojej bunky (pruh podľa strany výjazdu);
- *   ak ho nedostane, stojí (`blockedTicks += 1`).
+ *   ak ho nedostane, stojí (`blockedTicks += 1`). Stojaci nosič bez slotov na ceste (kúpené vozidlo, nosič po obnove save)
+ *   si slot svojej bunky nárokuje na konci kroku, kým ho nedostane. Výjazdy z modulov a vznik kamióna na portáli
+ *   zaberajú slot hlavy samy (nikdy nestoja na ceste bez slotu).
  * - **Preplánovanie pri cykle** (na konci kroku, nosiče vzostupne podľa id): nosič s `blockedTicks ≥ gridlockTicks`, ktorý je
  *   v cykle tohto ticku, alebo s `blockedTicks ≥ stuckTicks`, preplánuje trasu mimo prvej blokovanej bunky (A* s dočasne
- *   zakázanou bunkou, mimo `PathCache`), najviac raz za `rerouteCooldownTicks`.
+ *   zakázanou bunkou, mimo `PathCache`), najviac raz za `rerouteCooldownTicks`. Nosič čakajúci na slot vlastnej bunky
+ *   (vstup na cestu) po `stuckTicks` obíde prvú bunku trasy — iná strana výjazdu môže dať voľný druhý pruh.
  *
  * Systém nemá trvalý stav: čakanie, odpočet preplánovania, telo a sloty vpredu sú na nosičoch (a v save); zásobník, cykly
  * a poradie sú pracovné štruktúry jedného ticku.
@@ -27,7 +32,8 @@ import type { Truck } from '../trucks/truck';
 import type { Vehicle } from '../vehicles/vehicle';
 import type { World } from '../world/world';
 import { NO_SIDE, sideBetween } from './cell-lanes';
-import { holdsRoad, type RoadCarrier } from './holds-road';
+import { headSlotKey } from './head-slot';
+import { holdsRoad, isDriving, type RoadCarrier } from './holds-road';
 import { laneOf } from './lane-for';
 import { keyCell, slotKey } from './lane-slots';
 
@@ -73,22 +79,31 @@ export class TrafficSystem implements AdvanceGate {
     const order = this.order;
     order.length = 0;
     this.changed.clear();
-    for (const vehicle of world.vehicles.values()) if (holdsRoad(vehicle)) order.push(vehicle);
-    for (const truck of world.trucks.values()) if (holdsRoad(truck)) order.push(truck);
-    this.current = null;
-    if (order.length === 0) return;
-    this.world = world;
-    for (const carrier of order) if (carrier.rerouteCooldown > 0) carrier.rerouteCooldown -= 1;
-    order.sort(byWaiting);
     this.byIdMap.clear();
     this.done.clear();
     this.inCycle.clear();
     this.blockedCell.clear();
     this.stack.length = 0;
+    this.current = null;
+    this.world = world;
+    for (const vehicle of world.vehicles.values()) if (isDriving(vehicle)) order.push(vehicle);
+    for (const truck of world.trucks.values()) if (isDriving(truck)) order.push(truck);
+    for (const carrier of order) if (carrier.rerouteCooldown > 0) carrier.rerouteCooldown -= 1;
+    order.sort(byWaiting);
     for (const carrier of order) this.byIdMap.set(carrier.id, carrier);
     for (const carrier of order) if (!this.done.has(carrier.id)) this.process(carrier);
+    this.claimStanding(world);
     this.rerouteStuck(world, order);
     this.current = null;
+  }
+
+  /**
+   * Stojaci nosič na ceste bez slotov (kúpené vozidlo, nosič po obnove save) zaberie slot svojej bunky; nedostane ho, kým ho drží
+   * iný nosič. Po pohybe všetkých jazdiacich — slot, ktorý práve uvoľnili, tak využije stojaci nosič v tom istom ticku.
+   */
+  private claimStanding(world: World): void {
+    for (const vehicle of world.vehicles.values()) if (vehicle.body.length === 0 && holdsRoad(vehicle) && !isDriving(vehicle)) this.claimHead(world, vehicle);
+    for (const truck of world.trucks.values()) if (truck.body.length === 0 && holdsRoad(truck) && !isDriving(truck)) this.claimHead(world, truck);
   }
 
   /**
@@ -155,8 +170,7 @@ export class TrafficSystem implements AdvanceGate {
     const driving = DRIVING[carrier.kind];
     // Najprv preplánovanie (po zmene ciest): slot bunky sa volí podľa strany výjazdu novej trasy a čakajúci nosič nemá zastaranú trasu.
     if (!driving.replan(carrier, world)) return;
-    const atEnd = carrier.cellsAhead === 0 && carrier.progress === 0;
-    if (carrier.body.length === 0 && !atEnd && !this.claimHead(world, carrier)) {
+    if (carrier.body.length === 0 && !this.claimHead(world, carrier)) {
       this.blocked = true;
       return;
     }
@@ -164,16 +178,15 @@ export class TrafficSystem implements AdvanceGate {
   }
 
   /**
-   * Nosič vstúpil do jazdného stavu bez slotov: zaberie slot svojej bunky (pruh podľa strany výjazdu) a pri rozbehnutom úseku
-   * aj slot cieľovej bunky úseku. `false` = niektorý slot drží iný nosič.
+   * Nosič bez slotov na ceste (vstup do jazdného stavu, kúpené vozidlo): zaberie slot svojej bunky (pruh podľa strany výjazdu,
+   * `headSlotKey`) a pri rozbehnutom úseku aj slot cieľovej bunky úseku. `false` = niektorý slot drží iný nosič.
    */
   private claimHead(world: World, carrier: RoadCarrier): boolean {
     const lanes = world.cellLanes;
     const { width } = world.grid;
     const cell = carrier.cell;
     const next = carrier.nextCell;
-    const exit = next === undefined ? NO_SIDE : sideBetween(width, cell, next);
-    const head = slotKey(cell, laneOf(lanes, cell, NO_SIDE, exit));
+    const head = headSlotKey(world, carrier);
     const keys = [head];
     if (carrier.progress > 0 && next !== undefined) {
       const after = carrier.routeCellAt(2);
@@ -327,11 +340,13 @@ export class TrafficSystem implements AdvanceGate {
    */
   private reroute(world: World, carrier: RoadCarrier, cooldownTicks: number): void {
     carrier.rerouteCooldown = cooldownTicks;
-    const blocked = this.blockedCell.get(carrier.id);
     const target = carrier.routeCellAt(carrier.cellsAhead);
     const anchor = routeAnchor(carrier);
-    // Nosič čakajúci na slot vlastnej bunky (ešte nič nedrží) sa obísť nedá — ostáva čakať.
-    if (carrier.replanPending || blocked === undefined || target === undefined || anchor === undefined || anchor === target || blocked === anchor) return;
+    if (carrier.replanPending || target === undefined || anchor === undefined || anchor === target) return;
+    // Nosič čakajúci na slot vlastnej bunky (ešte nič nedrží) svoju bunku neobíde; obíde prvú bunku trasy, takže strana
+    // výjazdu (a s ňou pruh vlastnej bunky) môže byť iná. Ostatní obídu prvú blokovanú bunku.
+    const blocked = carrier.body.length === 0 ? carrier.routeCellAt(1) : this.blockedCell.get(carrier.id);
+    if (blocked === undefined || blocked === anchor) return;
     const path = world.pathfinder.findPathAvoiding(anchor, target, blocked);
     if (path !== null) takePath(world, carrier, path);
   }

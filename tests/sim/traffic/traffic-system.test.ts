@@ -4,7 +4,7 @@
  * v `to_pickup` bez jobu; tická sa samotná doprava (viď `traffic-fixtures.ts`), po každom ticku platí `carrierOverlapProblem`.
  */
 import { describe, expect, it } from 'vitest';
-import { keyCell, keyLane } from '@sim/traffic';
+import { carrierOverlapProblem, keyCell, keyLane } from '@sim/traffic';
 import { bodyCells, cellOf, idx, keyAt, lay, line, spawn, tickTraffic, trafficBed, type XY } from './traffic-fixtures';
 
 describe('pruhy podľa strany vjazdu', () => {
@@ -56,11 +56,11 @@ describe('nasledovanie bez prekryvu (dĺžka 3)', () => {
     expect(cellOf(world, follower)).toEqual([40, 25]);
     expect(bodyCells(world, follower)).toEqual([[40, 25], [40, 24], [40, 23]]);
     expect(follower.blockedTicks).toBeGreaterThan(5);
-    leader.releaseSlots();
-    leader.followRoute(Object.freeze([leader.cell]));
-    tickTraffic(world, 3);
-    expect(cellOf(world, follower)).toEqual([40, 28]);
-    expect(follower.blockedTicks).toBe(0);
+    // Vodca pokračuje po trase dopredu (stojaci nosič na ceste slot drží, preto ho musí uvoľniť jazdou); nasledovník sa za ním rozbehne.
+    leader.followRoute(Object.freeze(line([40, 28], [40, 32]).map((xy) => idx(world, xy))));
+    tickTraffic(world, 6);
+    expect(cellOf(world, leader)[1]).toBeGreaterThan(28);
+    expect(cellOf(world, follower)[1]).toBeGreaterThan(25);
   });
 
   it('pri pomalšom vodcovi sa nasledovník nikdy nedostane bližšie než jeho chvost (telo na telo)', () => {
@@ -304,17 +304,34 @@ describe('vstup do jazdného stavu a opustenie', () => {
     expect(second.blockedTicks).toBe(0);
   });
 
-  it('prechod do stavu bez cesty uvoľní celé telo a vynuluje čakanie', () => {
+  it('opustenie cesty (leaveRoad) uvoľní celé telo a vynuluje čakanie', () => {
     const bed = trafficBed();
     const { world } = bed;
     lay(world, line([40, 22], [40, 30]));
     const truck = spawn(bed, line([40, 22], [40, 30]), { length: 3 });
     tickTraffic(world, 4);
     expect(truck.heldSlotCount).toBeGreaterThan(0);
-    truck.transition('loading');
+    truck.blockedTicks = 3;
+    truck.leaveRoad();
     expect(truck.heldSlotCount).toBe(0);
     expect(world.laneSlots.claimedCount).toBe(0);
     expect([truck.blockedTicks, truck.rerouteCooldown]).toEqual([0, 0]);
+  });
+
+  it('vozidlo, ktoré dorazí k modulu (loading, unloading), idle aj bez cesty (no_path), drží celé telo — stojaci nosič je prekážka', () => {
+    const bed = trafficBed();
+    const { world } = bed;
+    lay(world, line([40, 22], [40, 30]));
+    const car = spawn(bed, line([40, 22], [40, 30]));
+    tickTraffic(world, 12);
+    const held = [...car.body];
+    expect(held).toHaveLength(2);
+    for (const state of ['loading', 'to_dropoff', 'unloading', 'idle'] as const) {
+      car.transition(state);
+      expect([state, car.body]).toEqual([state, held]);
+      expect(world.laneSlots.claimedCount).toBe(2);
+    }
+    expect(carrierOverlapProblem(world)).toBeNull();
   });
 
   it('nosič mimo cesty nedrží sloty ani po zmene trasy (xy nezáleží): invariant platí', () => {

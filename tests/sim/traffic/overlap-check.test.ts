@@ -79,18 +79,16 @@ describe('carrierOverlapProblem', () => {
     expect(carrierOverlapProblem(world)).toBeNull();
   });
 
-  it('nosič mimo cesty (bez holdsRoad) nedrží sloty ani nečaká', () => {
+  it('stojaci nosič na ceste (loading) drží telo — platí; jeho slot však patrí len jemu (nesúlad cache sa hlási)', () => {
     const bed = trafficBed();
     const { world } = bed;
     lay(world, line([40, 22], [40, 30]));
     const car = spawn(bed, line([40, 22], [40, 30]));
-    tickTraffic(world, 3);
+    tickTraffic(world, 12);
     car.transition('loading');
     expect(carrierOverlapProblem(world)).toBeNull();
+    expect(car.body).toHaveLength(2);
     car.body.push(keyAt(world, [40, 24], 0));
-    expect(carrierOverlapProblem(world)).toMatch(/mimo cesty/);
-    car.body.pop();
-    car.blockedTicks = 2;
-    expect(carrierOverlapProblem(world)).toMatch(/mimo cesty/);
+    expect(carrierOverlapProblem(world)).not.toBeNull();
   });
 });

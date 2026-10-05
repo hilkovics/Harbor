@@ -57,26 +57,18 @@ export function takePath(world: MovementWorld, carrier: Carrier, path: readonly 
 }
 
 /**
- * Naplánuje trasu z kotvy do bunky `target` a nastaví ju nosiču. `false` = cieľ neexistuje (`NO_ACCESS`) alebo k nemu
- * nevedie cesta (nosič sa nezmení).
+ * Cesta z bunky `anchor` do bunky `target` bez zmeny nosiča (suchý beh plánovania: výjazd z modulu najprv zistí, aké sloty
+ * trasa potrebuje); `null` = cieľ neexistuje (`NO_ACCESS`) alebo k nemu nevedie cesta. Cesta je zmrazená z `PathCache`.
  */
-export function planRouteToCell(world: MovementWorld, carrier: Carrier, target: number): boolean {
-  const anchor = routeAnchor(carrier);
-  if (anchor === undefined || target === NO_ACCESS) return false;
-  const path = world.paths.get(anchor, target);
-  if (path === null) return false;
-  takePath(world, carrier, path);
-  return true;
+export function findRouteToCell(world: MovementWorld, anchor: number, target: number): readonly number[] | null {
+  return target === NO_ACCESS ? null : world.paths.get(anchor, target);
 }
 
 /**
- * Naplánuje trasu z kotvy k najbližšej prístupovej bunke modulu (vonkajšia bunka cestného konektora s cestou, ADR-017;
- * pri zhode cien prvý konektor v poradí defu) a nastaví ju nosiču. `false` = modul nemá prístupovú bunku, ku ktorej
- * vedie cesta (nosič sa nezmení). Alokuje len pri pohybe medzi bunkami bez obratu; inak použije zmrazenú cestu z cache.
+ * Najlacnejšia cesta z bunky `anchor` k prístupovej bunke modulu (vonkajšia bunka cestného konektora s cestou, ADR-017;
+ * pri zhode cien prvý konektor v poradí defu) bez zmeny nosiča; `null` = modul nemá prístupovú bunku s cestou.
  */
-export function planRouteToModule(world: MovementWorld, carrier: Carrier, module: Module): boolean {
-  const anchor = routeAnchor(carrier);
-  if (anchor === undefined) return false;
+export function findRouteToModule(world: MovementWorld, anchor: number, module: Module): readonly number[] | null {
   let best: readonly number[] | null = null;
   let bestCost = Infinity;
   for (const connector of module.connectors) {
@@ -90,6 +82,31 @@ export function planRouteToModule(world: MovementWorld, carrier: Carrier, module
       bestCost = cost;
     }
   }
+  return best;
+}
+
+/**
+ * Naplánuje trasu z kotvy do bunky `target` a nastaví ju nosiču. `false` = cieľ neexistuje (`NO_ACCESS`) alebo k nemu
+ * nevedie cesta (nosič sa nezmení).
+ */
+export function planRouteToCell(world: MovementWorld, carrier: Carrier, target: number): boolean {
+  const anchor = routeAnchor(carrier);
+  if (anchor === undefined) return false;
+  const path = findRouteToCell(world, anchor, target);
+  if (path === null) return false;
+  takePath(world, carrier, path);
+  return true;
+}
+
+/**
+ * Naplánuje trasu z kotvy k najbližšej prístupovej bunke modulu (viď `findRouteToModule`) a nastaví ju nosiču. `false` =
+ * modul nemá prístupovú bunku, ku ktorej vedie cesta (nosič sa nezmení). Alokuje len pri pohybe medzi bunkami bez obratu;
+ * inak použije zmrazenú cestu z cache.
+ */
+export function planRouteToModule(world: MovementWorld, carrier: Carrier, module: Module): boolean {
+  const anchor = routeAnchor(carrier);
+  if (anchor === undefined) return false;
+  const best = findRouteToModule(world, anchor, module);
   if (best === null) return false;
   takePath(world, carrier, best);
   return true;

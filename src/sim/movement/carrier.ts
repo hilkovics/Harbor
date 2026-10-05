@@ -362,6 +362,17 @@ export abstract class Carrier {
     for (const key of this.ahead) slots.claim(key, this.id);
   }
 
+  /**
+   * Zaberá nosič bunku `cell`? Stojí na nej, je to cieľová bunka jeho rozbehnutého úseku, alebo ju drží niektorý slot tela
+   * či slot vpredu (ADR-037: chvost a rezervovaná reťaz križovatky sú tiež pod nosičom). Chránené bunky `RemoveRoad` / `PlaceRoad`.
+   */
+  occupiesCell(cell: number): boolean {
+    if (this.cell === cell || (this.segmentProgress > 0 && this.nextCell === cell)) return true;
+    for (const key of this.body) if (keyCell(key) === cell) return true;
+    for (const key of this.ahead) if (keyCell(key) === cell) return true;
+    return false;
+  }
+
   /** Drží nosič slot `key` (v tele alebo vpredu)? */
   holdsKey(key: number): boolean {
     return this.body.includes(key) || this.ahead.includes(key);

@@ -1,8 +1,9 @@
 /**
  * Druh bunky z hľadiska pruhových slotov (ADR-037, rozhodnutia orchestrátora R1 č. 1, 2 a 6) a úseky `one_lane`.
  *
- * - **Jazdný sused** bunky: bunka s cestou (`road === 'road'`, ľubovoľný typ) alebo bunka jazdného nábrežia kotviska
- *   (`QuayLanes`, ADR-033 dodatok). Koľaj nie.
+ * - **Jazdný sused** bunky: bunka s cestou (`road === 'road'`, ľubovoľný typ), z ktorej alebo do ktorej je krok povolený
+ *   (`isRoadStepAllowed`; dve rovnobežné jednosmerky vedľa seba teda nie sú navzájom susedia — ADR-037 dodatok R1, jednosmerný
+ *   prístav), alebo bunka jazdného nábrežia kotviska (`QuayLanes`, ADR-033 dodatok). Koľaj nie.
  * - **Druh bunky** (`CellLaneKind`): cestná bunka s ≥ 3 jazdnými susedmi je `junction` (1 slot); inak `two_lane`
  *   (2 sloty, pruh podľa strany vjazdu) pre cestu typu `two_lane`, `single` (1 slot) pre `one_lane` a `one_way`;
  *   bunka nábrežia je `single`; ostatné bunky `none`.
@@ -16,6 +17,7 @@
  */
 import type { QuayCells } from '../logistics/pathfinder';
 import { DIRECTIONS_4, type Cell } from '../grid/grid';
+import { isRoadStepAllowed } from '../grid/road-direction';
 
 export type CellLaneKind = 'two_lane' | 'single' | 'junction' | 'none';
 
@@ -146,6 +148,19 @@ export class CellLanes {
     return this.source.grid.atIndex(index).road === 'road' || owners[index] !== 0;
   }
 
+  /**
+   * Je bunka `other` (v smere `d` od bunky `index` s cestou) jazdný sused? Cestná bunka len pri povolenom kroku v niektorom smere
+   * (jednosmerky vedľa seba sa nespájajú); bunka jazdného nábrežia vždy.
+   */
+  private isNeighbor(index: number, other: number, d: number, owners: Readonly<Int32Array>): boolean {
+    const { grid } = this.source;
+    const to = grid.atIndex(other);
+    if (to.road !== 'road') return owners[other] !== 0;
+    const from = grid.atIndex(index);
+    const opposite = DIRECTIONS_4[(d + 2) % 4].name;
+    return isRoadStepAllowed(from, to, DIRECTIONS_4[d].name) || isRoadStepAllowed(to, from, opposite);
+  }
+
   private rebuildKinds(): void {
     const { grid, quay } = this.source;
     const { width, height, cellCount } = grid;
@@ -166,7 +181,7 @@ export class CellLanes {
       for (let d = 0; d < DIRECTIONS_4.length; d++) {
         const nx = x + DIRECTIONS_4[d].dx;
         const ny = y + DIRECTIONS_4[d].dy;
-        if (nx < 0 || ny < 0 || nx >= width || ny >= height || !this.isDriving(ny * width + nx, owners)) continue;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height || !this.isNeighbor(i, ny * width + nx, d, owners)) continue;
         if (count === 0) first = d;
         else if (count === 1) second = d;
         count += 1;

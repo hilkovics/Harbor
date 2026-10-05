@@ -12,7 +12,7 @@
  * - `insufficient_funds` — cena > 0 a vyššia než hotovosť (ADR-013).
  * `techRequired` vozidla sa zatiaľ nevyhodnocuje (tech strom príde v neskoršej fáze, ako pri moduloch).
  *
- * `apply`: vozidlo s novým id (`world.ids`), stav `idle`, v strede vonkajšej bunky prvého pripojeného cestného
+ * `apply`: vozidlo s novým id (`world.ids`), stav `parked` (v depe, mimo cesty), v strede vonkajšej bunky prvého pripojeného cestného
  * konektora depa (trasa `[táto bunka]`) s kurzom von z depa (`depotExit`), `purchaseCostCents = def.purchaseCents`;
  * `world.addVehicle` ho pripojí k depu, hotovosť −= cena, `VehicleBought` a pri nenulovej cene `MoneyChanged(vehicle_capex)`.
  */
@@ -96,7 +96,7 @@ export class BuyVehicleCommand extends SimCommand {
       id: world.ids.next(),
       def,
       depotId: depot.id,
-      state: 'idle',
+      state: 'parked',
       x: exit.x,
       y: exit.y,
       heading: exit.heading,

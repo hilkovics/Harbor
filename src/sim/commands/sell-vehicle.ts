@@ -13,6 +13,7 @@
 import type { EntityId } from '../core/entity-id';
 import type { CellCoord } from '../grid/grid';
 import type { World } from '../world/world';
+import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle-fsm';
 import type { SerializedCommand } from './command';
 import { SimCommand } from './sim-command';
 import { checkInteger, readPayload } from './payload';
@@ -54,7 +55,7 @@ export class SellVehicleCommand extends SimCommand {
     const vehicle = world.vehicles.get(this.vehicleId);
     if (vehicle === undefined) return UNKNOWN_VEHICLE;
     const found = new Set<ValidationReason>();
-    const busy = vehicle.state !== 'idle' || vehicle.jobId !== null || world.cargo.countAt('in_vehicle', vehicle.id) > 0;
+    const busy = !VEHICLE_STATE_TRAITS[vehicle.state].free || vehicle.jobId !== null || world.cargo.countAt('in_vehicle', vehicle.id) > 0;
     if (busy) found.add('vehicle_busy');
     const refund = refundCents(vehicle.purchaseCostCents, world.defs.economy.removalRefundRate);
     return Object.freeze({ ok: found.size === 0, reasons: orderReasons(found), cells: NO_CELLS, costCents: 0 - refund });

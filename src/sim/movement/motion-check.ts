@@ -27,6 +27,8 @@ export interface MotionTraits {
   readonly motion: CarrierMotion;
   /** Stav s odpočtom `waitTicks ≥ 1`; ostatné stavy majú `waitTicks = 0`. */
   readonly waits: boolean;
+  /** `waitTicks` smie byť aj 0, hoci stav odpočet má (vozidlo `idle`: odpočet do odchodu do depa sa ešte nezačal). */
+  readonly waitsOptional?: boolean;
 }
 
 /**
@@ -176,7 +178,7 @@ export function carrierMotionProblem(
   if (traits.motion === 'halt' && (ahead > 1 || (ahead === 1) !== moving)) {
     return { field: 'route', problem: `${whereOf(carrier, state)}: bez cesty smie mať len rozbehnutý úsek, má ${String(ahead)} buniek pred sebou (progres ${String(carrier.progress)})` };
   }
-  if (traits.waits !== carrier.waitTicks > 0) return { field: 'waitTicks', problem: `${whereOf(carrier, state)}: waitTicks ${String(carrier.waitTicks)} ${traits.waits ? 'musí byť ≥ 1' : 'musí byť 0'}` };
+  if (traits.waitsOptional !== true && traits.waits !== carrier.waitTicks > 0) return { field: 'waitTicks', problem: `${whereOf(carrier, state)}: waitTicks ${String(carrier.waitTicks)} ${traits.waits ? 'musí byť ≥ 1' : 'musí byť 0'}` };
   if (carrier.replanPending && traits.motion !== 'drive') return { field: 'replan', problem: `${whereOf(carrier, state)}: preplánovanie čaká len pri jazde` };
   const offRoad = allRoads(world, carrier, 0, moving ? 2 : 1);
   if (offRoad !== undefined) return { field: 'route', problem: `${whereOf(carrier, state)} stojí na bunke ${String(offRoad)} bez cesty` };

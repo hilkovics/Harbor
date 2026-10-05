@@ -69,6 +69,10 @@ export const DEPOT_VEHICLE_STATE: Readonly<Record<VehicleState, DepotVehicleStat
   to_dropoff: 'busy',
   unloading: 'busy',
   no_path: 'no_path',
+  // Parkovanie (R1): do konca TR1-07 sa zobrazuje ako nečinné, výjazd z depa ako práca.
+  to_depot: 'idle',
+  parked: 'idle',
+  depot_exit: 'busy',
 });
 
 /**

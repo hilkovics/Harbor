@@ -21,14 +21,17 @@ import type { EntityId } from '../core/entity-id';
 import type { Module } from '../modules/module';
 import type { TransportJob } from '../logistics/transport-job';
 import { carrierMotionProblem, type MotionProblem, type MotionTarget } from '../movement/motion-check';
-import { planRouteToCell, planRouteToModule } from '../movement/route-planning';
+import { findRouteToCell, findRouteToModule, planRouteToCell, planRouteToModule } from '../movement/route-planning';
 import type { World } from '../world/world';
 import { VehicleError } from './vehicle-error';
 import { VEHICLE_STATE_TRAITS, changeVehicleState, type VehicleDestination } from './vehicle-fsm';
 import type { Vehicle } from './vehicle';
 
-/** Stav jazdy (`VEHICLE_STATE_TRAITS.motion === 'drive'`). */
+/** Stav jazdy k modulu jobu (`VEHICLE_STATE_TRAITS.motion === 'drive'` s jobom; `to_depot` je jazda bez jobu). */
 export type TravelState = 'to_pickup' | 'to_dropoff';
+
+/** Cieľ jobu: zdroj (`from`) alebo cieľ (`to`) — `VehicleDestination` bez depa. */
+export type JobDestination = Exclude<VehicleDestination, 'depot'>;
 
 /** Aktívny job vozidla; vozidlo bez neho → `VehicleError('inconsistent')`. */
 export function jobOfVehicle(world: World, vehicle: Vehicle): TransportJob {
@@ -38,7 +41,7 @@ export function jobOfVehicle(world: World, vehicle: Vehicle): TransportJob {
 }
 
 /** Modul jobu podľa cieľa (`source` = zdroj `from`, `target` = cieľ `to`); chýbajúci → `VehicleError('inconsistent')`. */
-export function jobModule(world: World, job: TransportJob, destination: VehicleDestination): Module {
+export function jobModule(world: World, job: TransportJob, destination: JobDestination): Module {
   const moduleId = destination === 'source' ? job.fromModuleId : job.toModuleId;
   const module = world.modules.get(moduleId);
   if (module === undefined) throw new VehicleError('inconsistent', `${job.label}: modul #${String(moduleId)} (${destination}) vo svete nie je`);
@@ -54,7 +57,7 @@ export function hookCellOfCrane(world: World, craneId: EntityId): number | undef
  * Bunka pod hákom žeriava, ak je ňou cieľ jazdy `destination` jobu (zdroj `in_crane` pri `source`, cieľ `in_crane` pri `target`) a kotvisko
  * má jazdné nábrežie; inak `undefined` (cieľom jazdy je prístupová bunka modulu jobu).
  */
-export function hookCellOfJob(world: World, job: TransportJob, destination: VehicleDestination): number | undefined {
+export function hookCellOfJob(world: World, job: TransportJob, destination: JobDestination): number | undefined {
   const end = destination === 'source' ? job.from : job.to;
   return end.kind === 'in_crane' ? hookCellOfCrane(world, end.craneId) : undefined;
 }
@@ -63,7 +66,7 @@ export function hookCellOfJob(world: World, job: TransportJob, destination: Vehi
  * Cieľ jazdy alebo miesta pobytu vozidla podľa jobu a smeru (`destination`): bunka pod hákom (index), inak modul jobu (jeho prístupová
  * bunka). Pre kontrolu pohybu (`vehicleMotionProblem`) a plánovanie (`planJobRoute`).
  */
-export function jobTarget(world: World, job: TransportJob, destination: VehicleDestination): MotionTarget {
+export function jobTarget(world: World, job: TransportJob, destination: JobDestination): MotionTarget {
   return hookCellOfJob(world, job, destination) ?? jobModule(world, job, destination);
 }
 
@@ -88,7 +91,7 @@ function rerouteLoadViaApron(world: World, vehicle: Vehicle, job: TransportJob):
  * Nakládka pod hákom, ku ktorej bunke pod hákom cesta nevedie, sa presmeruje na apron (`rerouteLoadViaApron`; vykládku rieši žeriav, `deliver`).
  * `false` = cieľ nie je dosiahnuteľný (vozidlo sa nezmení).
  */
-export function planJobRoute(world: World, vehicle: Vehicle, job: TransportJob, destination: VehicleDestination): boolean {
+export function planJobRoute(world: World, vehicle: Vehicle, job: TransportJob, destination: JobDestination): boolean {
   const hook = hookCellOfJob(world, job, destination);
   if (hook === undefined) return planRoute(world, vehicle, jobModule(world, job, destination));
   return planRouteToCell(world, vehicle, hook) || (destination === 'target' && rerouteLoadViaApron(world, vehicle, job));
@@ -117,11 +120,44 @@ export function enterNoPath(world: World, vehicle: Vehicle): void {
  */
 export function startTrip(world: World, vehicle: Vehicle, travel: TravelState): void {
   const destination = VEHICLE_STATE_TRAITS[travel].destination;
-  if (destination === null) throw new VehicleError('inconsistent', `${vehicle.label}: stav '${travel}' nemá cieľ`);
+  if (destination === null || destination === 'depot') throw new VehicleError('inconsistent', `${vehicle.label}: stav '${travel}' nemá cieľ jobu`);
   const job = jobOfVehicle(world, vehicle);
   jobModule(world, job, destination); // modul jobu musí existovať (VehicleError('inconsistent') pri poškodenom svete)
   changeVehicleState(world.events, vehicle, travel);
   if (!planJobRoute(world, vehicle, job, destination)) enterNoPath(world, vehicle);
+}
+
+/** Depo vozidla (modul); chýbajúce → `VehicleError('inconsistent')`. */
+export function depotModule(world: World, vehicle: Vehicle): Module {
+  const depot = world.modules.get(vehicle.depotId);
+  if (depot === undefined) throw new VehicleError('inconsistent', `${vehicle.label}: depo #${String(vehicle.depotId)} vo svete nie je`);
+  return depot;
+}
+
+/** Naplánuje trasu z kotvy vozidla k prístupovej bunke jeho depa (parkovanie); `false` = cesta k depu nevedie (vozidlo sa nezmení). */
+export function planDepotRoute(world: World, vehicle: Vehicle): boolean {
+  return planRouteToModule(world, vehicle, depotModule(world, vehicle));
+}
+
+/**
+ * Nečinné vozidlo ide do depa (ADR-037 bod 7): `idle → to_depot` s trasou k prístupovej bunke depa. `false` = cesta k depu nevedie,
+ * vozidlo ostáva `idle` (nič sa nezmenilo).
+ */
+export function startDepotTrip(world: World, vehicle: Vehicle): boolean {
+  const depot = depotModule(world, vehicle);
+  if (findRouteToModule(world, vehicle.cell, depot) === null) return false;
+  changeVehicleState(world.events, vehicle, 'to_depot');
+  return planRouteToModule(world, vehicle, depot);
+}
+
+/**
+ * Cesta z bunky `anchor` k cieľu jobu (`destination`) bez zmeny vozidla (suchý beh pre výjazd z depa: z jej prvého kroku sa určí pruh
+ * slotu výjazdovej bunky); `null` = cieľ nie je alebo k nemu nevedie cesta.
+ */
+export function findJobRoute(world: World, anchor: number, job: TransportJob, destination: JobDestination): readonly number[] | null {
+  const hook = hookCellOfJob(world, job, destination);
+  if (hook !== undefined) return findRouteToCell(world, anchor, hook);
+  return findRouteToModule(world, anchor, jobModule(world, job, destination));
 }
 
 /** Problém pohybu vozidla s poľom záznamu v save, ku ktorému patrí (krok 12, obnova) — zdieľaný `MotionProblem`. */
@@ -130,6 +166,7 @@ export type VehicleMotionProblem = MotionProblem;
 /** Cieľ, ku ktorému vozidlo v danom stave ide / pri ktorom stojí (bez vyhadzovania): bunka pod hákom, alebo modul jobu; inak `undefined`. */
 function destinationOf(world: World, vehicle: Vehicle): MotionTarget | undefined {
   const destination = VEHICLE_STATE_TRAITS[vehicle.state].destination;
+  if (destination === 'depot') return world.modules.get(vehicle.depotId);
   const job = destination === null || vehicle.jobId === null ? undefined : world.jobs.get(vehicle.jobId);
   if (job === undefined || destination === null) return undefined;
   return hookCellOfJob(world, job, destination) ?? world.modules.get(destination === 'source' ? job.fromModuleId : job.toModuleId);

@@ -3,8 +3,8 @@
  * rozhrania"; ADR-019, ADR-024) — straddle carrier a ďalšie vozidlá z `vehicles.json`, ktoré vozia náklad medzi apronom,
  * skladmi a rampami. Jednotky vo vozidle vedie výlučne `CargoLedger` (`in_vehicle`, pravidlo 2); vozidlo si ich neeviduje.
  *
- * - Vozidlo patrí depu (`depotId`, `VehicleDepot.vehicleIds`); kúpi sa cez `BuyVehicle` a stojí `idle` na vonkajšej
- *   bunke konektora depa. Voľné vozidlo ostáva tam, kde skončilo (návrat do depa je v backlogu).
+ * - Vozidlo patrí depu (`depotId`, `VehicleDepot.vehicleIds`); kúpi sa cez `BuyVehicle` a vzniká `parked` na vonkajšej
+ *   bunke konektora depa. Nečinné vozidlo sa po `idleParkDelayTicks` vráti do depa (`to_depot` → `parked`, ADR-037 bod 7).
  * - **Pohyb** (trasa, progres, poloha, kurz, `waitTicks`, `replanPending`) dedí zo zdieľaného `Carrier`
  *   (`src/sim/movement`, ADR-024) — ten istý kód používajú kamióny.
  * - `waitTicks` = odpočet stavu s čakaním (`VEHICLE_STATE_TRAITS.waits`): pobyt pri module (`loading`/`unloading`)
@@ -191,6 +191,8 @@ export class Vehicle extends Carrier {
       throw new VehicleError('invalid_transition', `${this.label}: prechod ${this.current} → ${to} nie je povolený (povolené: ${allowed.join(', ') || '–'})`);
     }
     this.current = to;
+    const traits = VEHICLE_STATE_TRAITS[to];
+    if (!traits.waits && !traits.waitsOptional) this.waitTicks = 0;
     // Stav mimo cesty (depo, TR1-04) nedrží žiadne sloty; stojace vozidlo na ceste ich drží ďalej (ADR-037).
     if (!VEHICLE_STATE_TRAITS[to].holdsRoad) this.leaveRoad();
   }

@@ -71,6 +71,7 @@ import { BerthModule } from '../modules/berth-module';
 import type { LoadingRamp } from '../modules/loading-ramp';
 import { StorageModule } from '../modules/storage-module';
 import type { Vehicle } from '../vehicles/vehicle';
+import { VEHICLE_STATE_TRAITS, changeVehicleState } from '../vehicles/vehicle-fsm';
 import { startTrip } from '../vehicles/vehicle-trip';
 import type { World } from '../world/world';
 import { JobError } from './job-error';
@@ -419,11 +420,11 @@ export function cancelUnusableOutboundJobs(world: World): void {
   }
 }
 
-/** Voľné vozidlá (`idle`) vzostupne podľa id do znovupoužiteľného poľa `into` (najprv ho vyprázdni) — raz za tick. */
+/** Voľné vozidlá (`idle`, `to_depot`, `parked` — `VehicleStateTraits.free`) vzostupne podľa id do znovupoužiteľného poľa `into` (najprv ho vyprázdni) — raz za tick. */
 function collectIdleVehicles(world: World, into: Vehicle[]): void {
   into.length = 0;
   for (const vehicle of world.vehicles.values()) {
-    if (vehicle.state === 'idle') into.push(vehicle);
+    if (VEHICLE_STATE_TRAITS[vehicle.state].free) into.push(vehicle);
   }
 }
 
@@ -449,7 +450,7 @@ function pickVehicle(world: World, job: TransportJob, candidates: Iterable<Vehic
   let bestPreference = Infinity;
   let bestCost = Infinity;
   for (const vehicle of candidates) {
-    if (vehicle.state !== 'idle' || !vehicleCarries(vehicle, category, direction)) continue;
+    if (!VEHICLE_STATE_TRAITS[vehicle.state].free || !vehicleCarries(vehicle, category, direction)) continue;
     const cost = distanceToModule(world, vehicle.cell, source);
     if (cost === Infinity) continue;
     const preference = vehiclePreference(vehicle, direction);
@@ -475,7 +476,9 @@ function assign(world: World, job: TransportJob, vehicle: Vehicle): void {
   job.assign(vehicle.id);
   vehicle.jobId = job.id;
   world.events.emit({ type: 'JobAssigned', jobId: job.id, vehicleId: vehicle.id });
-  startTrip(world, vehicle, 'to_pickup');
+  // Zaparkované vozidlo najprv vyjde z depa (`depot_exit`, voľný slot prístupovej bunky), ostatné idú k zdroju hneď (s preplánovaním).
+  if (vehicle.state === 'parked') changeVehicleState(world.events, vehicle, 'depot_exit');
+  else startTrip(world, vehicle, 'to_pickup');
 }
 
 /**

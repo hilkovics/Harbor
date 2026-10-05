@@ -791,14 +791,14 @@ export class World {
   /**
    * Odstráni vozidlo (predaj `SellVehicle`) a odpojí ho od depa. Chyby (`VehicleError`, svet sa nezmení): neznáme id
    * (`unknown_vehicle`), vozidlo vezie náklad — jednotky `in_vehicle` by stratili držiteľa (`has_cargo`), vozidlo nie je
-   * `idle` alebo má job (`busy`), depo vozidla vo svete nie je (`unknown_depot`).
+   * voľné (`idle`, `to_depot`, `parked`) alebo má job (`busy`), depo vozidla vo svete nie je (`unknown_depot`).
    */
   removeVehicle(vehicleId: EntityId): Vehicle {
     const vehicle = this.vehicleMap.get(vehicleId);
     if (vehicle === undefined) throw new VehicleError('unknown_vehicle', `World.removeVehicle: vozidlo #${String(vehicleId)} neexistuje`);
     const aboard = this.cargo.countAt('in_vehicle', vehicleId);
     if (aboard > 0) throw new VehicleError('has_cargo', `World.removeVehicle: ${vehicle.label} vezie ${String(aboard)} jednotiek`);
-    if (vehicle.state !== 'idle' || vehicle.jobId !== null) {
+    if (!VEHICLE_STATE_TRAITS[vehicle.state].free || vehicle.jobId !== null) {
       throw new VehicleError('busy', `World.removeVehicle: ${vehicle.label} je v stave '${vehicle.state}' (job ${String(vehicle.jobId)})`);
     }
     this.depotOf(vehicle, 'World.removeVehicle').detachVehicle(vehicleId);

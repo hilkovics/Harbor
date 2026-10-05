@@ -7,6 +7,43 @@
       "atTick": 0,
       "command": {
         "type": "PlaceRoad",
+        "kind": "two_lane",
+        "cells": [
+          {
+            "x": 44,
+            "y": 34
+          },
+          {
+            "x": 44,
+            "y": 35
+          },
+          {
+            "x": 44,
+            "y": 36
+          }
+        ]
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "RemoveRoad",
+        "cells": [
+          {
+            "x": 45,
+            "y": 34
+          },
+          {
+            "x": 45,
+            "y": 35
+          }
+        ]
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceRoad",
         "cells": [
           {
             "x": 41,

@@ -15,6 +15,7 @@
  *   jobu `loadTicks`, inak job `moving` a jazda k cieľu (`startTrip`, bez pohybu v tomto ticku).
  * - `unloading`: po odpočte cez `cargoDropTarget()` cieľa `assertCommittable` → `in_vehicle → job.to` (slot skladu,
  *   dock rampy) → `commit` (prázdny kontajner v sklade: `EmptyStored` + kontrola v depe, F6c); posledná jednotka = job `done`, `removeJob`, `JobDone`, vozidlo `idle` (stojí na mieste).
+ * - `idle` → `to_depot` → `parked` (po `idleParkDelayTicks`), `depot_exit` → `to_pickup` (voľný slot prístupovej bunky depa): ADR-037 bod 7.
  * - `no_path`: po odpočte nový pokus o trasu k modulu jobu (`RESUME_AFTER_NO_PATH`); úspech = návrat do pôvodného `to_*`
  *   (bez pohybu v tomto ticku), inak ďalší odpočet `repathIntervalTicks`.
  * **Pod hákom** (F6a, ADR-033): vozidlo, ktorého job má koncový bod `in_crane` (hák žeriava), čaká po príchode v `loading`
@@ -31,10 +32,11 @@ import { hookCraneOf, isHookDropoff, isHookPickup } from '../logistics/job-sourc
 import type { JobState, TransportJob } from '../logistics/transport-job';
 import { CraneModule } from '../modules/crane-module';
 import { advanceCarrier } from '../movement/route-planning';
+import { exitSlotKey, headSlotKey } from '../traffic/head-slot';
 import type { Vehicle } from '../vehicles/vehicle';
 import { VehicleError } from '../vehicles/vehicle-error';
 import { HOOK_WAIT_TICKS, RESUME_AFTER_NO_PATH, VEHICLE_STATE_TRAITS, changeVehicleState, type VehicleState } from '../vehicles/vehicle-fsm';
-import { enterNoPath, jobModule, jobOfVehicle, planJobRoute, startTrip } from '../vehicles/vehicle-trip';
+import { enterNoPath, findJobRoute, jobModule, jobOfVehicle, planDepotRoute, planJobRoute, startDepotTrip, startTrip } from '../vehicles/vehicle-trip';
 import type { World } from '../world/world';
 
 /** Čo sa stane pri príchode na koniec trasy (`to_*`): stav vozidla, stav jobu a trvanie manipulácie jednotky. */
@@ -70,7 +72,7 @@ function firstUnitAt(world: World, job: TransportJob, location: CargoLocation): 
 function arrive(vehicle: Vehicle, world: World): void {
   const rule = ARRIVALS[vehicle.state];
   const destination = VEHICLE_STATE_TRAITS[vehicle.state].destination;
-  if (rule === undefined || destination === null) throw new VehicleError('inconsistent', `${vehicle.label}: príchod v stave '${vehicle.state}'`);
+  if (rule === undefined || destination === null || destination === 'depot') throw new VehicleError('inconsistent', `${vehicle.label}: príchod v stave '${vehicle.state}'`);
   const job = jobOfVehicle(world, vehicle);
   const module = jobModule(world, job, destination);
   job.transition(rule.job);
@@ -98,9 +100,25 @@ function waitUnderHook(vehicle: Vehicle, world: World): void {
 export function replanVehicle(vehicle: Vehicle, world: World): boolean {
   if (!vehicle.replanPending) return true;
   const destination = VEHICLE_STATE_TRAITS[vehicle.state].destination;
+  if (destination === 'depot') return replanToDepot(vehicle, world);
   if (destination === null) throw new VehicleError('inconsistent', `${vehicle.label}: jazda v stave '${vehicle.state}' bez cieľa`);
   if (planJobRoute(world, vehicle, jobOfVehicle(world, vehicle), destination)) return true;
   enterNoPath(world, vehicle);
+  return false;
+}
+
+/**
+ * Preplánovanie cesty do depa (`to_depot`) po zmene ciest: bez cesty sa nič nestane, kým vozidlo stojí v strede bunky, prejde do `idle`
+ * (a o `idleParkDelayTicks` to skúsi znova); uprostred úseku počká s nedokončeným preplánovaním (každý tick nový pokus).
+ * `false` = vozidlo sa v tomto ticku nehýbe.
+ */
+function replanToDepot(vehicle: Vehicle, world: World): boolean {
+  if (planDepotRoute(world, vehicle)) return true;
+  if (vehicle.progress === 0) {
+    vehicle.halt();
+    vehicle.waitTicks = 0;
+    changeVehicleState(world.events, vehicle, 'idle');
+  }
   return false;
 }
 
@@ -162,6 +180,7 @@ function unloadUnit(vehicle: Vehicle, world: World): void {
   world.removeJob(job.id);
   vehicle.jobId = null;
   world.events.emit({ type: 'JobDone', jobId: job.id });
+  vehicle.waitTicks = world.defs.logistics.traffic.idleParkDelayTicks;
   changeVehicleState(world.events, vehicle, 'idle');
 }
 
@@ -170,7 +189,7 @@ function retry(vehicle: Vehicle, world: World): void {
   const job = jobOfVehicle(world, vehicle);
   const travel = RESUME_AFTER_NO_PATH[job.state];
   const destination = travel === undefined ? null : VEHICLE_STATE_TRAITS[travel].destination;
-  if (travel === undefined || destination === null) throw new VehicleError('inconsistent', `${vehicle.label}: no_path s ${job.label} v stave '${job.state}'`);
+  if (travel === undefined || destination === null || destination === 'depot') throw new VehicleError('inconsistent', `${vehicle.label}: no_path s ${job.label} v stave '${job.state}'`);
   if (planJobRoute(world, vehicle, job, destination)) {
     changeVehicleState(world.events, vehicle, travel);
   } else {
@@ -178,10 +197,45 @@ function retry(vehicle: Vehicle, world: World): void {
   }
 }
 
+/** Príchod `to_depot` na prístupovú bunku depa: vozidlo zaparkuje (mimo cesty, nedrží sloty). */
+function parkWhenThere(vehicle: Vehicle, world: World): void {
+  if (vehicle.cellsAhead === 0) changeVehicleState(world.events, vehicle, 'parked');
+}
+
+/**
+ * `idle`: odpočet `idleParkDelayTicks` a odchod do depa (`to_depot`). Vozidlo bez odpočtu (vytvorené priamo v `idle`, načítané zo save)
+ * ho začne v tomto kroku; bez cesty k depu odpočet beží znova.
+ */
+function idleStep(vehicle: Vehicle, world: World): void {
+  const delay = world.defs.logistics.traffic.idleParkDelayTicks;
+  if (vehicle.waitTicks === 0) vehicle.waitTicks = delay;
+  vehicle.waitTicks -= 1;
+  if (vehicle.waitTicks > 0) return;
+  vehicle.waitTicks = 0;
+  if (!startDepotTrip(world, vehicle)) vehicle.waitTicks = delay;
+}
+
+/**
+ * `depot_exit`: vozidlo s priradeným jobom vyjde z depa na cestu, len keď je voľný slot prístupovej bunky depa (pruh podľa prvého kroku
+ * trasy k zdroju; ADR-037). Inak čaká a skúša každý tick. Výjazd = `to_pickup`, trasa a slot hlavy (pohyb až v ďalšom ticku).
+ */
+function leaveDepot(vehicle: Vehicle, world: World): void {
+  const job = jobOfVehicle(world, vehicle);
+  const path = findJobRoute(world, vehicle.cell, job, 'source');
+  if (path === null) return;
+  if (!world.laneSlots.isFreeFor(exitSlotKey(world, vehicle.cell, path[1]), vehicle.id)) return;
+  changeVehicleState(world.events, vehicle, 'to_pickup');
+  if (!planJobRoute(world, vehicle, job, 'source')) enterNoPath(world, vehicle);
+  vehicle.reserveHead(headSlotKey(world, vehicle));
+}
+
 type VehicleStep = (vehicle: Vehicle, world: World) => void;
 
 const VEHICLE_STEPS: { readonly [S in VehicleState]: VehicleStep } = {
-  idle: () => undefined,
+  idle: idleStep,
+  to_depot: parkWhenThere,
+  parked: () => undefined,
+  depot_exit: leaveDepot,
   to_pickup: arriveWhenThere,
   to_dropoff: arriveWhenThere,
   loading: (vehicle, world) => {

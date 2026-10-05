@@ -98,16 +98,19 @@ export function vehiclesById(world: World): Vehicle[] {
  * Z `no_path` sa vozidlo vracia do toho `to_*`, z ktorého vypadlo (kontroluje `vehicleFsmViolation`).
  */
 export const VEHICLE_TRANSITIONS: Readonly<Record<VehicleState, readonly VehicleState[]>> = {
-  idle: ['to_pickup'],
+  idle: ['to_pickup', 'to_depot'],
   to_pickup: ['loading', 'no_path'],
   loading: ['to_dropoff'],
   to_dropoff: ['unloading', 'no_path'],
   unloading: ['idle'],
   no_path: ['to_pickup', 'to_dropoff'],
+  to_depot: ['parked', 'to_pickup', 'idle'],
+  parked: ['depot_exit'],
+  depot_exit: ['to_pickup'],
 };
 
 /** Stavy, v ktorých má vozidlo pohyb po ceste (bez cesty by nemalo byť). */
-export const MOVING_STATES: readonly VehicleState[] = ['to_pickup', 'to_dropoff'];
+export const MOVING_STATES: readonly VehicleState[] = ['to_pickup', 'to_dropoff', 'to_depot'];
 
 /**
  * Poradie stavov jobu; stav smie len rásť (preskočiť možno, vzorka po ticku nemusí zachytiť krátky stav). `cancelled`

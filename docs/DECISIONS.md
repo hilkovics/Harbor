@@ -587,3 +587,107 @@ Stav: prijaté (F6d, T6D-01) · Zdroj: pripomienka používateľa „chýba mies
 **Dodatok T6D-04 (zlúčenie T6D-01 + T6D-02 + T6D-03, scenár `live_terminal` s druhým dvorom):** `WorldState` v9 po zlúčení = v8 + `hinterland` (T6D-01) a nový význam rejdy (T6D-03; lode s rejdou normalizuje parser, `legacyAnchorage`); `migrateV8ToV9` volá `migrateLandsideV8ToV9` a lode nechá. **Regresia po T6D-01:** v `live_terminal` plný dvor (64) s 36 jednotkami prekládky nemal miesto pre export, takže 8 z 36 exportov čakalo vo vnútrozemí do po cut-off (rolled) — scenár dostal druhý `container_yard_small` (45, 23, rotácia 90; konektor na cestu pri bráne), rolled exporty **8 → 0**. Pool kontraktov škáluje s kapacitou skladov (ADR-026), preto majú importy #1 a #4 objem 48 + 96 TEU (predtým 45 + 64); kontrakty #11, #12, #13 sa nezmenili. Prekládka (36 TEU) sa zoskupuje do jedného dvora, kým má miesto, zvyšok pretečie do druhého (dnes 24 + 12). **Pred → po** (`live_terminal` 60 000, bundled defy, `lostUnits` 0 vo všetkých stavoch): po zlúčení T6D-01 + T6D-02 + T6D-03 bez druhého dvora hotovosť 35 278 135, exportované 114, odplávané 96, návraty prázdnych 63, vydané prázdne 5, zmeškané 13, rolled 8; s druhým dvorom hotovosť 22 271 600 (dvor 150 000 $), exportované 149 (144 importov + 5 prázdnych), odplávané 96, návraty 91, vydané 5, zmeškané 13, rolled 0, xp 205 → 240. **Goldeny** (`live_terminal`, `empty_cycle`, `landside_pressure`, `export_roundtrip_under_hook`) sa pregenerovali z `simrun --report`: `empty_cycle` hotovosť 31 814 040 → 31 850 040, exportované 78 → 75, poškodené / opravené 4 → 1, vydané prázdne 14 → 11 (časovanie pod hákom posunie ťahy `Rng`, návraty ostali 38, `lostUnits` 0); `landside_pressure` hotovosť, exporty a návraty bez zmeny, čakanie vo vnútrozemí 10 095 → 18 478 (max 2 749 → 4 765) a bez stojiska pre odvoz 2 165 → 2 190 (cena bufferu 0 viď dodatok T6D-05). **`export_roundtrip` pod hákom:** po otvorení cesty (30 600) posledný kamión vojde až po uvoľnení staging miesta na docku po kamiónoch na odvoz importu, t. j. po začiatku lashingu (dorazí 31 042, lashing 30 859); rolled jednotka sa nenaloží ako last minute, ale vráti po súši (35 odplávaných, 58 exportovaných) — rovnaké metriky ako golden režimu `apron`. **Príčina neskorého vjazdu (oprava textu v T6D-05b):** nie pomalšia vykládka, ale poradie krokov v ticku 30 601 (prvý s prevádzkovou rampou): krok 5 vytvoril 8× `JobCreated` (import čakajúci na odvoz) a rezervoval všetkých 8 staging miest dockov skôr, než krok 8 vpustil kamión (splatný od 22 239, čakal od zablokovania cesty); kamión nemá pred vjazdom prisľúbené nič (bod 3), takže vojde, až keď sa po kamiónoch na odvoz uvoľní miesto — pod hákom neskôr než na aprone (vjazd 30 943 vs. 30 699; rozdiel je len v tom, kedy sa uvoľní prvé miesto). `stateHash` troch scenárov v režime `apron` (`simrun-apron-bitwise`) sa mení len tvarom v9 (`vertical_slice`, `full_import_chain` sú po zhodení na v8 bitovo rovnaké ako pred T6D-02), `export_roundtrip` aj obsahom (neskorší vjazd posledného kamióna).
 
 **Dodatok T6D-05 (opravy z review `src/sim` po T6D-04, karta T6D-05b):** (1) Žeriav pri bufferi 0 a vozidlo v `no_path` — viď ADR-033 dodatok T6D-05b (T6D-05c doplnilo symetrickú záložnú nakládku cez apron: vozidlo s jednotkou exportu pri nedosiahnuteľnom háku, `export_roundtrip` na kruhu jednosmeriek už odpláva). (2) Text bodu 3 a dodatku T6D-04 (aj komentár testu `export_roundtrip`) opravený: príčina neskorého vjazdu posledného exportu po otvorení cesty nie je pomalšia vykládka, ale poradie krokov v ticku 30 601 — krok 5 vytvoril 8× `JobCreated` a rezervoval všetkých 8 staging miest pre odvoz skôr, než krok 8 vpustil kamión (splatný od 22 239); prisľúbenie miesta (`DockIntake`) platí len pre už vpustené kamióny, čakajúci kamión vo vnútrozemí nemá nič prisľúbené. Alternatíva „1 miesto pre prvý kamión vo vnútrozemí“ je v BACKLOG (zmenila by goldeny). (3) Text bodu 1 a ARCHITECTURE (krok 8): poradie vpúšťania exportu je kontrakty vzostupne podľa id a v rámci kontraktu podľa `dueTick`, nie FIFO naprieč bookingmi (skutočné FIFO → BACKLOG, kód sa nemenil). (4) `mission` je povinný parameter `routeWithFreeBay` a `spawnTruck` (predvolené `pickup` potichu udelilo výnimku z kvóty stojísk; správanie ani hash sa nemenia). (5) Hot path vjazdu: `admitDelivery` rozdelený na `planDeliveryAdmission` (overí podmienky, miesto vjazdu zapíše do znovupoužiteľného záznamu) a `spawnDelivery` (kamión a nakladač až pri skutočnom vjazde), `DockIntake.invalidate` / `refreshIfStale` (prisľúbené miesta sa v kroku 8 prepočítajú raz za tick a znova až po vzniku kamióna s dovozom), bunka pod hákom v odvodenej cache `QuayLanes.hookCellOf` (podľa `moduleVersion`). (6) Test gap `adaptHookVehicle`: `tests/sim/world/save-legacy-hook-vehicle.test.ts` (rozbehnuté vozidlo mieriace na prístupovú bunku a vetva `no_path`, bundled defy, v8 save z `landside_pressure` s čakajúcimi kamiónmi). **Cena bufferu 0** (ADR-033 dodatok T6D-02 bod 4): vozidlá čakajúce pod hákom na žeriav oneskoria odvoz importu na dock a kamióny dlhšie čakajú vo vnútrozemí — `landside_pressure` 40 000: `inlandWaitTicks` 4 439 v režime `apron` vs. 18 478 pod hákom s bufferom 0 (max 1 882 vs. 4 765, nedostatok stojísk pre odvoz 1 267 vs. 2 190, rovnaká hotovosť a exporty); vyváženie počtu vozidiel a bufferu je vec F7 (BACKLOG). **Hashe a metriky:** `simrun --report --hash` bundled scenárov je pred aj po bitovo rovnaký — `vertical_slice` 30 000 `de8cdca1`, `live_terminal` 60 000 `89fb0ea3`, `landside_pressure` 40 000 `64ba05c3`, `export_roundtrip` 40 000 `ba0b07eb`, `empty_cycle` 40 000 `bb6771ec`, `full_import_chain` 40 000 `1366e93a`, `multi_ship_queue` 40 000 `a27a5ed5`, `stress_f6` 30 000 `3e4db22e`, `export_inbound` 30 000 `f92410fc`; goldeny sa nemenili.
+
+## ADR-036: Terminál 2.0 — prestavba prevádzky podľa reality, fázy R1–R7, clean break savov a bez kreslenia ľudí
+
+Stav: prijaté (R0, 2026-10-05; používateľ potvrdil rozhodnutia 1–10 z `docs/TERMINAL_2.md` §13) · Zdroj: popis prevádzky kontajnerového terminálu od používateľa; `docs/TERMINAL_2.md`, `docs/CLAUDE_DESIGN_TERMINAL_2.md`
+
+**Kontext:** Používateľ odmietol doterajší model prístavu: rampa so stojiskom, sklad ako počet bez poradia, vozidlá prechádzajúce cez seba, jedna brána s FIFO frontou. Zároveň dodal presný popis reálnej prevádzky:
+- typy kontajnerov,
+- STS → ťahač pod hákom → RTG → stoh,
+- plánovanie polohy podľa času odchodu,
+- kamión cez vstupnú bránu na odovzdávacie miesto pri bloku, RTG nakladá, výstupná brána s vážením a plombou,
+- vlak s RMG.
+
+Bez toho podľa neho nemá zmysel v projekte pokračovať.
+
+**Rozhodnutie:**
+1. Prestavba prebehne vo fázach **R1–R7** podľa `docs/TERMINAL_2.md` §12, **pred** pôvodnou F7:
+   - R1 doprava bez prekrývania,
+   - R2 kontajnery a stohy,
+   - R3 ťahače, RTG a TOS,
+   - R4 landside bez rampy,
+   - R5 reefery a špeciály,
+   - R6 železnica s RMG,
+   - R7 (voliteľná) automatizácia.
+
+   F10a a F14 sa rozpúšťajú v R2 a R3. F9 (komodity) sa presúva za F13.
+2. **Clean break savov:**
+   - `WorldState` v10 vznikne v R1 a staré savy (v1–v9) sa nenačítajú; hra zobrazí hlášku;
+   - migračný reťazec, legacy typy a voľby (`legacyShipRoutes`, `legacyAnchorage`, `adaptCraneRuntime`, `adaptHookVehicle`) a fixtures starých savov sa odstránia;
+   - počas R1–R6 každá fáza mení tvar v10 bez migrácie;
+   - migrácie sa obnovia od vydania (F13);
+   - obálka `SaveGame` v1 (ADR-030) ostáva.
+3. Potvrdené voľby:
+   - reálne dĺžky vozidiel (kamión a ťahač 3 bunky, straddle carrier a ECH 2);
+   - poradie techniky: straddle a ECH (R2), ťahač s RTG a reach stacker (R3), AGV a RMG blok (R7);
+   - typy kontajnerov: dry a prázdne (R2), ostatné (R5);
+   - TOS rozhoduje automaticky, hráč nastavuje priority a pridelenia;
+   - kotvisko 8 × 4;
+   - termíny odvozu importu;
+   - modulárne pruhy brán a predbránová plocha, viac brán aj portálov mapy.
+4. **Ľudia sa nekreslia** (šoféri, technici, chodci): ich činnosť je v simulácii len čas a stav, v UI text.
+
+**Dôsledky:**
+- Golden hashe a goldeny scenárov sa v každej fáze R prepočítajú.
+- Testy migrácií savov zanikajú.
+- `IMPLEMENTATION_PLAN.md` dostane sekciu Terminál 2.0.
+- CLAUDE.md „Čo NEROBIŤ" sa upraví: kolízie (ADR-037) a ľudia.
+
+## ADR-037: Doprava bez prekrývania — pruhové sloty, dĺžka vozidiel, pravidlo voľného výjazdu, parkovanie a zápchy (R1)
+
+Stav: prijaté (R1, návrh; detaily implementácie dopíše karta TR1-03) · Zdroj: požiadavka používateľa „vozidlá cez seba neprechádzajú"; `docs/TERMINAL_2.md` §7; meranie: `stress_f6` má prekryv vozidiel v 29 992 z 30 000 tickov · Ruší: ADR-005 a ARCHITECTURE §7.6 („soft" kongescia) a bod 2 §7.8 („nosič nikdy nečaká na inú entitu")
+
+**Kontext:** Simulácia vedie vozidlo a kamión ako bod v strede bunky. Pruhy sú len posun v renderi. Fronty pri bráne, stojisku a pod hákom sú virtuálne (viac nosičov na jednej bunke, teleport `jumpTo`). Nečinné vozidlo ostáva stáť na ceste. Fyzika (hmotnosti, zrážky) nie je cieľom; cieľom je, aby nič neprešlo cez iné vozidlo a fronty boli vidno.
+
+**Rozhodnutie:**
+1. **Pruhové sloty (`LaneSlots`):**
+   - Každá bunka cesty má 1 alebo 2 sloty: `two_lane` bunka s ≤ 2 jazdnými susedmi 2 sloty (pruh podľa strany vjazdu), všetko ostatné 1 slot (`one_way`, `one_lane`, **križovatka** = bunka s ≥ 3 jazdnými susedmi, bunka nábrežia).
+   - Jazdný sused = cesta alebo bunka nábrežia jazdná pre vozidlá (ADR-033 dodatok T6D-02).
+   - Slot drží najviac 1 nosič (`Int32Array`, odvodená cache, nie je v save).
+2. **Telo nosiča:**
+   - `lengthCells` v defe (kamión 3, straddle carrier a empty handler 2).
+   - Nosič drží slot bunky hlavy a slotov `lengthCells − 1` za ňou (stopa), počas jazdy navyše slot bunky, do ktorej vchádza.
+   - Do ďalšej bunky smie vojsť, len keď je jej slot voľný alebo jeho vlastný. Posledný slot stopy uvoľní, keď hlava dorazí do stredu ďalšej bunky.
+   - Otočka (U-turn) je bežný krok do opačného pruhu susednej bunky, ak je voľný.
+3. **Križovatka:** vojde sa do nej len **naraz so slotom za ňou** (aj cez reťaz susedných križovatiek). Nikto nezostane stáť uprostred.
+4. **Úsek `one_lane`** (súvislý reťazec jednopruhových buniek medzi križovatkami) sa obsadzuje smerom: vojde sa, len keď v ňom nejde nikto oproti.
+5. **Poradie pohybu:**
+   - Všetky nosiče na cestách (vozidlá aj kamióny) sa pohnú v jednom prechode `TrafficSystem` v poradí `(blockedTicks zostupne, id vzostupne)`.
+   - Ak slot drží nosič, ktorý sa v ticku ešte nehýbal, vyrieši sa najprv on (rekurzia).
+   - Cyklus čakania sa zaznamená ako kandidát zápchy.
+6. **Mimo cesty** (nedržia sloty):
+   - kamión v stojisku a v docku,
+   - kamión počas prechodu bránou,
+   - vozidlo zaparkované v depe (nový stav `parked`).
+
+   Vjazd do modulu uvoľní telo naraz. Výjazd vyžaduje voľný slot výjazdovej bunky a telo sa potom „rozvinie".
+7. **Parkovanie:** nečinné vozidlo bez úlohy odíde do svojho depa (`to_depot` → `parked`). Dispatcher berie ako voľné vozidlá v stavoch `idle`, `to_depot` aj `parked`.
+8. **Zápcha:**
+   - Nosič čakajúci ≥ `gridlockTicks` v cykle si preplánuje trasu mimo blokovanej bunky.
+   - Čakajúci ≥ `stuckTicks` vyvolá udalosť `TrafficJam` (toast „Zápcha" s akciou „Ukázať"), počíta sa `gridlockEvents`.
+   - Všetko deterministicky v poradí id.
+9. **Invariant `carrierOverlapProblem`:**
+   - sloty prepočítané z tiel = cache;
+   - slot má najviac 1 držiteľa;
+   - telo je súvislé a má najviac `lengthCells` (+ sloty vpredu);
+   - nosič mimo cesty nič nedrží.
+
+**Dôsledky:**
+- Fronty pri bráne, stojisku, docku a pod hákom sú fyzické.
+- Priepustnosť niektorých rozložení klesne, čo je zámer a dá sa merať (čakanie, zápchy).
+- Soft kongescia (`congestion.slowdownPerExtraVehicle`, `congestionPenalty`) sa nikdy neimplementovala a ruší sa. Ostáva len `traffic` pre heatmapu.
+- Save v10 dostane pri nosičoch telo, sloty vpredu a `blockedTicks`.
+
+## ADR-038: Tick pipeline — pohyb všetkých nosičov v kroku 6 (R1)
+
+Stav: prijaté (R1) · Zdroj: ADR-037 bod 5; ARCHITECTURE §6
+
+**Kontext:** Dnes sa v kroku 6 hýbu vozidlá a v kroku 8 kamióny. Pri pevnom obsadení slotov by vozidlá mali vždy prednosť a vzájomné blokovanie vozidla a kamióna by sa nedalo riešiť v jednom prechode.
+
+**Rozhodnutie:**
+- Krok 6 = **`TrafficSystem`** (pohyb všetkých nosičov na cestách podľa ADR-037) a potom `VehicleSystem` (FSM vozidiel bez pohybu: príchody, pobyt, nakládka a vykládka, parkovanie, výjazd z depa).
+- Krok 8 `LandsideSystem` ostáva pre FSM kamiónov (príchody, brána, stojisko, dock, vjazd na portáli) a brány, ale kamióny sa v ňom už nehýbu.
+- Nosič, ktorý v ticku dostane novú trasu v 6b alebo 8, sa pohne až v ďalšom ticku. Vozidlo priradené dispatcherom v kroku 5 sa pohne v kroku 6 toho istého ticku ako doteraz.
+
+**Dôsledky:** ARCHITECTURE §6 sa prepíše v TR1-10. Poradie ostatných krokov sa nemení.

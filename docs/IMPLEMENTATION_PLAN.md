@@ -159,6 +159,24 @@ Akceptácia (M2): všetky štyri toky (import, export, prázdne, tranship) v jed
 
 ---
 
+## Terminál 2.0 — fázy R0–R7 (vložené 2026-10-05, ADR-036; detail `docs/TERMINAL_2.md` §12)
+Prestavba prevádzky prístavu podľa reality. Ide **pred F7**. Každá fáza končí hrateľnou verziou, review `src/sim`, plnou e2e a PR. Vo všetkých scenároch platí `lostUnits = 0` a nulový prekryv vozidiel. Grafika podľa `docs/CLAUDE_DESIGN_TERMINAL_2.md`, ľudia sa nekreslia.
+
+| Fáza | Obsah | ADR | Odhad |
+|---|---|---|---|
+| **R0** Rozhodnutia — **hotová** | ADR-036 až ADR-038, plán, CLAUDE.md, manuál pre Claude Design | 036 | 0,5 SD |
+| **R1** Doprava bez prekrývania | pruhové sloty, dĺžka vozidiel, `TrafficSystem` v kroku 6, pravidlo voľného výjazdu, úseky `one_lane`, parkovanie nečinných, zápchy (detekcia, preplánovanie, toast), fyzické fronty, clean break savov (v10) | 037, 038 | 3 SD |
+| **R2** Kontajnery a stohy | 20′ a 40′, typy (dry, empty), `YardBlock` + `StackGrid`, straddle blok, depo s ECH (výška 8), rehandling, `YardPlanner` s časom odchodu, termíny odvozu importu, inšpektor bloku | 039 | 3,5 SD |
+| **R3** Ťahače, RTG a TOS | terminálový ťahač, RTG, kotvisko 8 × 4 s pruhmi pod žeriavom, `Move` + nohy, priority RTG, gang a pool, reach stacker | 040 | 3,5 SD |
+| **R4** Landside bez rampy | modulárne pruhy vstupnej a výstupnej brány, predbránová a odstavná plocha, viac brán a portálov, lístok a TP pri bloku, lashing, prístup ciest; zrušenie rampy a stojiska | 041 | 3 SD |
+| **R5** Reefery a špeciály | reefer bloky a zásuvky, energia, reklamácie; OOG, flat rack, tank; zmesi typov v kontraktoch | 042 | 2 SD |
+| **R6** Železnica s RMG | koľaje, železničný terminál s RMG a bufferom, vlaky, ťahače do bufferu | 043 | 2,5 SD |
+| **R7** (voliteľná) Automatizácia | AGV + automatizovaný RMG blok, pre-marshalling, CFS | — | 2 SD |
+
+**Poradie po R6:** F7 → F8 (tech tree odomyká RTG, RMG, AGV, rýchle pruhy brány) → F11 → F12 → F13 → F9 (komodity, presunuté za release). **F10a** a **F14** sú rozpustené v R2 a R3; **F10** (železnica) nahrádza R6.
+
+---
+
 ## Fáza 7 — Parcely, OPEX, mesačné zúčtovanie, finančné grafy (≈2 SD)
 **Model mix:** `opusplan` — Opus na EconomySystem denné/mesačné zúčtovanie a bankrot; Sonnet: parcely príkazy, ParcelLayer, FinancePanel grafy (`ui-builder` z `design/ui/finance-panel.html`).
 **Cieľ:** hráč rozširuje územie kúpou/prenájmom, platí prevádzku, vidí financie v grafoch.
@@ -189,7 +207,7 @@ Akceptácia (**M2**): hra má rozpoznateľnú progresiu 0 → 3 herné mesiace b
 
 ---
 
-## Fáza 9 — Nové komodity ako dedičné triedy (≈3–4 SD)
+## Fáza 9 — Nové komodity ako dedičné triedy (≈3–4 SD) — **presunutá za F13 (ADR-036)**
 **Model mix:** Opus (`sim-architect`) len na `FlowSystem` (nový mechanizmus) a RoRo self-propelled prechody; **bulk a gas** ako čisto def + odvodené triedy → Sonnet (`implementer`) podľa `/new-cargo`. Property test FlowSystem → `test-writer`. Dôkaz rozšíriteľnosti (`dispatcher.ts` bez zmien) kontroluje `sim-reviewer`.
 **Cieľ:** bulk, liquid, gas, RoRo — každá cez checklist §17, **bez úprav Dispatcher/CraneSystem**.
 
@@ -206,7 +224,7 @@ Akceptácia: všetky 5 kategórií hrateľné; `git diff src/sim/systems/dispatc
 
 ---
 
-## Fáza 10 — Železnica (≈2 SD)
+## Fáza 10 — Železnica (≈2 SD) — **nahradená fázou R6 (ADR-036)**
 **Model mix:** `opusplan` — Opus na TrainScheduler a výber rampa vs. stanica v dispatcheri (jediná povolená zmena dispatchera, cez ADR); Sonnet: PlaceRail, RailLayer, TrainView, RailStation.
 **Cieľ:** vlaky ako vysokokapacitný export s vlastnou infraštruktúrou.
 
@@ -222,7 +240,7 @@ Akceptácia (**M3**): panamax loď s 700 TEU je zvládnuteľná do SLA s 2 žeri
 
 ---
 
-## Fáza 10a — Vybavenie skladu: RTG/RMG, ťahače, shuttle (vložená, ≈2,5 SD)
+## Fáza 10a — Vybavenie skladu: RTG/RMG, ťahače, shuttle (vložená, ≈2,5 SD) — **rozpustená v R2 a R3 (ADR-036)**
 Referencia: `docs/PORT_OPERATIONS.md` §2.5. Bloky s RTG/RMG (vysoká hustota, stoh 5–6), terminálové ťahače/AGV (dvojfázový systém: STS položí kontajner priamo na ťahač „pod hákom", RTG ho v sklade z ťahača zloží — variant B požiadavky z 2026-10-04; variant A, straddle carrier pod hákom, je vo Fáze 6a), shuttle carrier, priorita lode v bloku, pomalý presun RTG medzi blokmi.
 
 ---
@@ -267,7 +285,7 @@ Akceptácia (**M4**): 2 herné mesiace bez pádu, FPS ≥ 60 pri 8× s 3 loďami
 
 ---
 
-## Fáza 14 — Sklad: stohy, rehandling, pre-marshalling (voliteľná, po release, ≈2,5 SD)
+## Fáza 14 — Sklad: stohy, rehandling, pre-marshalling (voliteľná, po release, ≈2,5 SD) — **rozpustená v R2 a R7 (ADR-036)**
 Presunuté na úplný koniec na žiadosť používateľa (nie je nevyhnutné). Do F14 sa sklad modeluje kapacitou bez poradia v stohu; RTG vo F10a bez rehandlingu. Referencia: `docs/PORT_OPERATIONS.md` §2.4. Pozície bay–row–tier, poradie v stohu, rehandling (čas stroja), pre-marshalling exportov k nábrežiu deň pred loďou, metriky `rehandlesPerMove`.
 
 ---

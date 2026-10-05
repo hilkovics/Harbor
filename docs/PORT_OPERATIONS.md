@@ -1,6 +1,7 @@
 # Prevádzka kontajnerového terminálu — doménový model a plán
 
 > Zdroj: doplnenie od používateľa (2026-09-30) „Štyri toky kontajnerov". Tento dokument je **referencia pre plánovanie fáz**: porovnáva realitu terminálu so stavom hry po F6c (pôvodne po F5b), navrhuje zjednodušený herný model a zaraďuje ho do fáz. Detaily implementácie sa rozhodnú v ADR príslušnej fázy.
+> **Od 2026-10-05 nahradené:** §2.4, §2.5 a §3 nahrádza `docs/TERMINAL_2.md` (Terminál 2.0, fázy R1–R7, ADR-036). §1 opisuje stav po F6c a ostáva ako história.
 > Zásady ostávajú: nič sa neteleportuje (každý presun cez `CargoLedger.move`), determinizmus, data-driven, rozšírenia cez triedy a defy.
 
 ## 1. Stav hry po F6c (čo už zodpovedá realite)

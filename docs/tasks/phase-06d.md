@@ -41,8 +41,12 @@ Vlny: {T6D-01 ‖ T6D-02 ‖ T6D-03} → T6D-04 → T6D-05 → T6D-05b → T6D-0
 - [x] T6D-05 Review `src/sim` (MERGE: 0 blocking, 1 major, 9 minor)
 - [x] T6D-05b Opravy z review
 - [x] T6D-05c Nakládka pod hákom cez apron pri nedosiahnuteľnom háku
-- [ ] T6D-06 Plná pipeline + e2e + artefakt
-- [ ] T6D-07 Docs + PR
+- [x] T6D-06 Plná pipeline + e2e + artefakt
+- [x] T6D-07 Docs + PR
 
 ## Výsledok fázy
-_(doplní orchestrátor po T6D-06)_
+- **Pripomienka 1 (kamióny):** scenár `landside_pressure` (pred opravou uviazol: 6/6 stojísk držali kamióny s dovozom, docky plné importu na odvoz) dokončí kontrakty #2, #10, #11, exported 88, `lostUnits` 0; žiadny kamión nečaká v stojisku na niečo, čo prístav nevie zaručiť — čaká vo vnútrozemí (inšpektor brány).
+- **Pripomienka 2 (žeriav):** `directHandoverPct` 100 vo `vertical_slice`, `live_terminal`, `empty_cycle` (`export_roundtrip` 92,5); vozidlo stojí v bunke pod hákom, kontajner sa naň spúšťa (e2e `f6d-hook`).
+- **Pripomienka 3 (lode):** loď bez voľného kotviska pláva priamo na rejdu a kotví rovnobežne s brehom (e2e `f6d-anchorage`); save v8 so starou rejdou sa pri načítaní normalizuje.
+- Review: MERGE, opravy T6D-05b / T6D-05c; `pnpm test` 8 815 testov, e2e 50/50; hashe bundled scenárov po opravách z review bez zmeny (vertical_slice de8cdca1, live_terminal 89fb0ea3, landside_pressure 64ba05c3).
+- Odložené: BACKLOG „Z Fázy 6d“ (panel štatistík vnútrozemia, FIFO naprieč bookingmi, staging pre prvý kamión vo vnútrozemí, rezerva dvora pre import, cena bufferu 0, zámka už uviaznutého save v8, …).

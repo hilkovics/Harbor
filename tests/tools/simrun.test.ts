@@ -785,7 +785,7 @@ describe('runScenario', () => {
         rolledUnits: 0,
         exportedUnits: 149,
         shippedUnits: 96,
-        emptyReturns: 91,
+        emptyReturns: 89,
         emptyPickedUp: 5,
         repositionedUnits: 24,
         transhipLoaded: 36,

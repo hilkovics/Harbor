@@ -24,8 +24,11 @@ const MAX_TICKS = 40_000;
 const TICKS_BEFORE_ADR_029 = 9_836;
 /** Nová hranica: aspoň o 15 % skôr (namerané 8 150). */
 const MAX_TICKS_TO_ALL_EXPORTED = Math.floor(TICKS_BEFORE_ADR_029 * 0.85);
-/** Rezerva nad hranicou brány: prvý kamión musí prísť z portálu a posledný odísť (≈ 2 × 50 tickov jazdy + pobyt). */
-const GATE_BOUND_SLACK_TICKS = 300;
+/**
+ * Rezerva nad hranicou brány: prvý kamión musí prísť z portálu a posledný odísť (≈ 2 × 50 tickov jazdy + pobyt). Od R1 (ADR-037) kamióny
+ * jazdia po pruhových slotoch a nepredbiehajú sa (zmerané o 13 tickov nad pôvodnou rezervou 300).
+ */
+const GATE_BOUND_SLACK_TICKS = 330;
 const SAMPLE_TICKS = 500;
 
 const PROCESS_TICKS = gateParams(DEFS.modules.get('truck_gate')).processTicks;

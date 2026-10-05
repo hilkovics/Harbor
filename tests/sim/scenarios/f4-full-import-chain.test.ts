@@ -431,9 +431,9 @@ describe('save/load uprostred reťazca: obnovený svet pokračuje rovnako ako p�
   /**
    * Malý scenár s prerušením verejnej cesty (44, 40) v ticku `CUT_AT` a obnovou v `RESTORE_AT` (review T04-11 h):
    * kamióny na verejnej ceste vtedy prejdú do `no_path` (sonda „no_path s resume"). Bunka v tých tickoch nie je pod
-   * kamiónom (inak by príkaz odmietlo `occupied`); prvý kamión ide k portálu okolo ticku 553.
+   * kamiónom (inak by príkaz odmietlo `occupied`); prvý kamión ide k portálu okolo ticku 600 (od R1, ADR-037, jazdí po slotoch; pred R1 okolo 553, rez v ticku 600 by tak odmietlo `occupied`).
    */
-  const CUT_AT = 600;
+  const CUT_AT = 604;
   const RESTORE_AT = 700;
   const CUT_CELL = { x: 44, y: 40 };
   const probeScenario = f4Scenario('f4_small_chain_cut', 4004, {

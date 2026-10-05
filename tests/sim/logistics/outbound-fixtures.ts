@@ -15,7 +15,7 @@ import type { EntityId } from '@sim/core';
 import { DefRegistry } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
 import type { CellCoord } from '@sim/grid';
-import type { LoadingRamp, StorageModule, TruckGate, VehicleDepot, WaitingArea } from '@sim/modules';
+import { YardBlock, type LoadingRamp, type StorageModule, type TruckGate, type VehicleDepot, type WaitingArea } from '@sim/modules';
 import { World } from '@sim/world';
 import { DEPOT_ORIGIN, FAR_YARD_ORIGIN, NEAR_YARD_ORIGIN, ROAD_SEGMENTS, segment } from '../helpers/f3-layout';
 import { LEGACY_CAPACITY_MODULES, MAP, RAW_DEFS } from '../world/world-fixtures';
@@ -134,14 +134,23 @@ export function buyVehicles(world: World, depot: VehicleDepot, count: number): E
 }
 
 /**
- * `count` jednotiek priamo do najnižších voľných slotov skladu v poradí príchodu (FIFO) — cez ledger a fiktívnych
+ * `count` jednotiek priamo do voľných slotov skladu rozložených po vrstvách stohov (vrstva 0 všetkých stĺpcov, potom vrstva 1, …) v poradí príchodu (FIFO) — cez ledger a fiktívnych
  * držiteľov (loď 900 → žeriav 901 → apron Root berthu slot 0 → vozidlo 902 → sklad), bez rezervácií a bez `unitsIn`.
  */
 export function stockYard(world: World, yard: StorageModule, count: number, typeId = 'container_teu'): EntityId[] {
   const units: EntityId[] = [];
-  let slot = 0;
+  // Rozloženie po vrstvách (ADR-039): najprv vrstva 0 všetkých stĺpcov, potom vrstva 1, …; každá jednotka je navrchu svojho stohu, kým sa neukladá na druhú vrstvu.
+  const geometry = yard instanceof YardBlock ? yard.geometry : { bays: yard.capacity, rows: 1, maxTier: 1 };
+  const columns = geometry.bays * geometry.rows;
+  let index = 0;
   for (let i = 0; i < count; i++) {
-    while (yard.unitAt(slot) !== null || yard.isReserved(slot)) slot += 1;
+    let slot = -1;
+    while (slot < 0 || yard.unitAt(slot) !== null || yard.isReserved(slot)) {
+      const tier = Math.floor(index / columns);
+      const column = index % columns;
+      slot = column * geometry.maxTier + tier;
+      index += 1;
+    }
     const unit = world.cargo.create(typeId, { kind: 'on_ship', shipId: 900 as EntityId }).id;
     world.cargo.move(unit, { kind: 'in_crane', craneId: 901 as EntityId });
     world.cargo.move(unit, { kind: 'on_apron', berthId: 1 as EntityId, slot: 0 });

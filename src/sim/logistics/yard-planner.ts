@@ -11,7 +11,7 @@
  *    skupiny, ktorého vrch odchádza neskôr → inak najmenšia penalizácia (počet kontajnerov, ktoré by sa zavalili); medzi rovnakými vyššie plný stoh.
  * 4. **Vzdialenosť:** bližší blok má prednosť.
  *
- * Poradie porovnania: `(trieda, penalizácia, −výška, [vzdialenosť bay od pôvodného pri rehandlingu], vzdialenosť bloku, id bloku, bay, row)`.
+ * Poradie porovnania: `(trieda, [penalizácia zavalenia], vzdialenosť bloku, [vzdialenosť bay od pôvodného pri rehandlingu], penalizácia, plnenie stohu, id bloku, bay, row)`.
  * Stohy počítajú aj rezervácie rozbehnutých jobov (`YardBlock.effectiveHeight`), takže rezervovaná bunka je platná aj vzhľadom na ostatné rezervácie.
  */
 import type { CargoUnit } from '../cargo/cargo-unit';
@@ -32,18 +32,36 @@ export interface YardChoice {
   readonly slot: number;
 }
 
-/** Trieda stohu pre jednotku (menšie = lepšie). */
-const CLASS_SAME_GROUP = 0;
-const CLASS_EMPTY = 1;
-const CLASS_OTHER_GROUP = 2;
+/** Triedy stohu pre jednotku (menšie = lepšie): rovnaká skupina, prázdny stoh, iná skupina, zavalenie (len rehandling / `random`). */
+interface ClassRanks {
+  readonly sameGroup: number;
+  readonly empty: number;
+  readonly otherGroup: number;
+}
+
 const CLASS_BURY = 3;
+
+/**
+ * Poradie tried podľa smeru: náklad, ktorý stojí v sklade (export, prekládka, prázdne), sa skladá do stohu svojej skupiny skôr než do prázdneho (aj vo
+ * vzdialenejšom bloku). Import odchádza kamiónom hneď po vykládke, preto sa najprv rozloží po prázdnych stohoch (aj medzi blokmi — rozloží dopravu
+ * k prístupovým bunkám; stoh sa vyberá po jednej jednotke zhora, vrstvenie by zdržalo odvoz) a vrství sa až keď prázdne stohy dôjdu.
+ */
+const CLASS_RANKS: { readonly [D in CargoUnit['direction']]: ClassRanks } = {
+  import: { empty: 0, sameGroup: 1, otherGroup: 2 },
+  export: { sameGroup: 0, empty: 1, otherGroup: 2 },
+  tranship: { sameGroup: 0, empty: 1, otherGroup: 2 },
+  empty: { sameGroup: 0, empty: 1, otherGroup: 2 },
+};
 
 /** Kandidát na stoh: skóre a poloha. */
 interface Candidate {
   block: YardBlock | undefined;
   cls: number;
   penalty: number;
+  /** Výška stohu (vrátane rezervácií) = vrstva, na ktorú sa ukladá. */
   height: number;
+  /** Poradie plnenia stohu pri rovnakej triede: import radšej nižší stoh (rozloženie), ostatné vyšší (zhustenie). */
+  fill: number;
   bayGap: number;
   distance: number;
   moduleId: number;
@@ -51,8 +69,8 @@ interface Candidate {
   row: number;
 }
 
-const BEST: Candidate = { block: undefined, cls: 0, penalty: 0, height: 0, bayGap: 0, distance: 0, moduleId: 0, bay: 0, row: 0 };
-const CURRENT: Candidate = { block: undefined, cls: 0, penalty: 0, height: 0, bayGap: 0, distance: 0, moduleId: 0, bay: 0, row: 0 };
+const BEST: Candidate = { block: undefined, cls: 0, penalty: 0, height: 0, fill: 0, bayGap: 0, distance: 0, moduleId: 0, bay: 0, row: 0 };
+const CURRENT: Candidate = { block: undefined, cls: 0, penalty: 0, height: 0, fill: 0, bayGap: 0, distance: 0, moduleId: 0, bay: 0, row: 0 };
 const COLUMN_UNITS: EntityId[] = [];
 
 function resetBest(): void {
@@ -77,10 +95,11 @@ export function sameGroup(a: CargoUnit, b: CargoUnit): boolean {
 /** Je kandidát `a` lepší než `b`? Úplné usporiadanie (id bloku, bay, row rozhodnú vždy). */
 function better(a: Candidate, b: Candidate): boolean {
   if (a.cls !== b.cls) return a.cls < b.cls;
-  if (a.penalty !== b.penalty) return a.penalty < b.penalty;
-  if (a.height !== b.height) return a.height > b.height;
-  if (a.bayGap !== b.bayGap) return a.bayGap < b.bayGap;
+  if (a.cls === CLASS_BURY && a.penalty !== b.penalty) return a.penalty < b.penalty;
   if (a.distance !== b.distance) return a.distance < b.distance;
+  if (a.bayGap !== b.bayGap) return a.bayGap < b.bayGap;
+  if (a.penalty !== b.penalty) return a.penalty < b.penalty;
+  if (a.fill !== b.fill) return a.fill < b.fill;
   if (a.moduleId !== b.moduleId) return a.moduleId < b.moduleId;
   if (a.bay !== b.bay) return a.bay < b.bay;
   return a.row < b.row;
@@ -100,9 +119,10 @@ function scoreColumn(world: World, block: YardBlock, unit: CargoUnit, bay: numbe
     return false;
   }
   into.height = height;
+  into.fill = unit.direction === 'import' ? height : -height;
   into.penalty = 0;
   if (height === 0) {
-    into.cls = CLASS_EMPTY;
+    into.cls = CLASS_RANKS[unit.direction].empty;
     // Prázdny stoh v ešte celom páre bays by zbytočne znemožnil 40′ — radšej stoh v už načatom páre.
     const partner = bay % 2 === 0 ? bay + 1 : bay - 1;
     into.penalty = wide || (partner < block.geometry.bays && block.effectiveHeight(partner, row) === 0) ? 1 : 0;
@@ -128,7 +148,8 @@ function scoreColumn(world: World, block: YardBlock, unit: CargoUnit, bay: numbe
   }
   const topId = block.effectiveTopUnit(bay, row);
   const top = topId === null ? undefined : world.cargo.get(topId);
-  into.cls = top !== undefined && sameGroup(top, unit) ? CLASS_SAME_GROUP : CLASS_OTHER_GROUP;
+  const ranks = CLASS_RANKS[unit.direction];
+  into.cls = top !== undefined && sameGroup(top, unit) ? ranks.sameGroup : ranks.otherGroup;
   return true;
 }
 

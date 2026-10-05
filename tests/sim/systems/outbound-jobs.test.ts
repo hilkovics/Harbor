@@ -198,15 +198,15 @@ describe('vznik outbound jobov (dispatcher krok 5, §7.3 bod 2)', () => {
       return reads;
     };
 
-    it('plný staging: createOutboundJobs nečíta jednotky skladov ani pri 60 jednotkách; neprevádzková rampa tiež nie', () => {
+    it('plný staging: createOutboundJobs nečíta jednotky skladov ani pri 40 jednotkách; neprevádzková rampa tiež nie', () => {
       const { world, far } = outboundWorld();
-      stockYard(world, far, 60);
+      stockYard(world, far, 40);
       world.tick();
       expect(rampOf(world).freeCount).toBe(0);
       expect(unitReads(world, () => createOutboundJobs(world))).toBe(0);
 
       const inoperative = outboundWorld({ landside: ['waiting_area', 'ramp'] });
-      stockYard(inoperative.world, inoperative.far, 60);
+      stockYard(inoperative.world, inoperative.far, 40);
       expect(unitReads(inoperative.world, () => createOutboundJobs(inoperative.world))).toBe(0);
     });
 
@@ -273,7 +273,7 @@ describe('vznik outbound jobov (dispatcher krok 5, §7.3 bod 2)', () => {
 
     it('voľné miesto na rampe: prečítajú sa len jednotky s aktívnym outbound jobom a jednotka, ktorá job dostane', () => {
       const { world, far } = outboundWorld();
-      stockYard(world, far, 60);
+      stockYard(world, far, 16);
       world.tick();
       const [first] = [...world.jobs.values()];
       rampOf(world).release(first.to.kind === 'at_ramp' ? first.to.dock : -1);

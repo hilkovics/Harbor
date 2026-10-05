@@ -9,7 +9,7 @@ import cargoTypesJson from '@data/defs/cargo_types.json';
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@sim/core';
 import { DefRegistry } from '@sim/defs';
-import { ContainerYard, StorageModule, VehicleDepot, type Module, type StorageRuntimeState } from '@sim/modules';
+import { ContainerYard, StorageModule, VehicleDepot, type Module, type YardRuntimeState } from '@sim/modules';
 import { World, WorldStateError, findWorldViolation, type WorldState } from '@sim/world';
 import { addVehicleTo } from '../vehicles/vehicle-fixtures';
 import { BARE_MAP, DEFS, RAW_DEFS, SEED, hashState, runTicks } from './world-fixtures';
@@ -95,9 +95,18 @@ describe('sklad a depo vo svete', () => {
     world.markRoadsChanged();
     const vehicle = addVehicleTo(world, depot.id); // vozidlo cez World (T03-04) — depo ho eviduje vo vehicleIds
     expect(depot.vehicleIds).toEqual([vehicle.id]);
-    expect([yard.storedCount, yard.reservedCount, yard.freeCount, yard.unitsIn]).toEqual([2, 0, 62, 2]);
+    expect([yard.storedCount, yard.reservedCount, yard.freeCount, yard.unitsIn]).toEqual([2, 0, 46, 2]);
     expect(findWorldViolation(world)).toBeUndefined();
     expect(() => world.tick()).not.toThrow();
+  });
+});
+
+describe('ledger so stohmi (ADR-039)', () => {
+  it('uloženie na slot mimo bloku zlyhá hneď v CargoLedger.move (ModuleError invalid_slot), nič sa nezmení', () => {
+    const { world, yard } = storageWorld();
+    const unit = unitInVehicle(world);
+    expect(() => world.cargo.move(unit, { kind: 'in_storage', moduleId: yard.id, slot: 64 })).toThrow(/slot musí byť celé číslo 0…47/);
+    expect(world.cargo.get(unit)?.location.kind).toBe('in_vehicle');
   });
 });
 
@@ -115,11 +124,6 @@ describe('invarianty skladu a depa (krok 12)', () => {
       'rezervácia skladu bez aktívneho jobu (rezervácie patria jobom, ADR-018)',
       /container_yard_small #\d+: rezervované sloty \[0\] ≠ sloty aktívnych jobov \[\]/,
       ({ yard }) => void yard.reserve(),
-    ],
-    [
-      'jednotka v sklade na slote mimo kapacity',
-      /leží na slote 64 mimo 0…63/,
-      ({ world, yard }) => world.cargo.move(unitInVehicle(world), { kind: 'in_storage', moduleId: yard.id, slot: 64 }),
     ],
     [
       'depo s duplicitným vozidlom',
@@ -179,7 +183,7 @@ describe('WorldState v3 — sklad a depo v save', () => {
     const state = world.serialize();
     const yardEntry = state.modules.find((entry) => entry.id === yard.id);
     const depotEntry = state.modules.find((entry) => entry.id === depot.id);
-    expect(yardEntry?.runtime).toEqual({ unitsIn: 2, unitsOut: 1 } satisfies StorageRuntimeState);
+    expect(yardEntry?.runtime).toEqual({ unitsIn: 2, unitsOut: 1, rehandles: 0 } satisfies YardRuntimeState);
     expect(depotEntry?.runtime).toEqual({});
     expect(state.jobs).toEqual([]);
     expect(state.cargo.units.map((unit) => [unit.id, unit.location])).toEqual([
@@ -191,14 +195,14 @@ describe('WorldState v3 — sklad a depo v save', () => {
   it('roundtrip: rovnaký stav, triedy, obsadenie z ledgera vo FIFO a počítadlá; ďalší priebeh rovnaký', () => {
     const { world, yard } = storageWorld();
     const [s0, s1] = [yard.reserve(), yard.reserve()];
-    const a = store(world, yard, s1);
-    const b = store(world, yard, s0);
+    const a = store(world, yard, s0);
+    const b = store(world, yard, s1);
     const state = viaJson(world.serialize());
     const restored = World.deserialize(DEFS, BARE_MAP, state);
     expect(restored.serialize()).toEqual(state);
     const copy = asYard(restored.modules.get(yard.id) as Module);
     expect(copy).toBeInstanceOf(ContainerYard);
-    expect([copy.units(), copy.slotOf(a), copy.slotOf(b), copy.reservedSlots()]).toEqual([[a, b], 1, 0, []]);
+    expect([copy.units(), copy.slotOf(a), copy.slotOf(b), copy.reservedSlots()]).toEqual([[a, b], 0, 1, []]);
     expect([copy.storedCount, copy.reservedCount, copy.unitsIn, copy.unitsOut]).toEqual([2, 0, 2, 0]);
     expect(restored.modules.get(id(yard.id + 1))).toBeInstanceOf(VehicleDepot);
     runTicks(world, 300);
@@ -216,6 +220,7 @@ describe('WorldState v3 — sklad a depo v save', () => {
   const INVALID: readonly [string, string, Mutation][] = [
     ['runtime skladu bez kľúča', '/modules/0/runtime/unitsIn', (s) => delete runtimeOf(s, 0).unitsIn],
     ['runtime skladu s rezerváciami (v2 tvar; v3 ich odvodí z jobov)', '/modules/0/runtime/reservedSlots', (s) => (runtimeOf(s, 0).reservedSlots = [1])],
+    ['runtime skladu bez rehandles (R2, ADR-039)', '/modules/0/runtime/rehandles', (s) => delete runtimeOf(s, 0).rehandles],
     ['záporné unitsOut', '/modules/0/runtime/unitsOut', (s) => (runtimeOf(s, 0).unitsOut = -1)],
     ['runtime depa s kľúčom', '/modules/1/runtime/vehicleIds', (s) => (runtimeOf(s, 1).vehicleIds = [])],
     ['jednotka na slote mimo kapacity skladu', '/cargo/units/1/location/slot', (s) => (s.cargo.units[1].location.slot = 64)],

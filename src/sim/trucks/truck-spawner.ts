@@ -46,9 +46,10 @@ export function truckDefFor(defs: DefRegistry, category: CargoCategory): Readonl
 
 /**
  * Prvá trasa rampy, ktorej stojisko má pre misiu `mission` voľný bay; žiadna → `undefined`. Misia, ktorá náklad odváža (`pickup`, `collect`), smie
- * obsadiť ľubovoľný voľný bay, misia s dovozom (`delivery`) len voľný nad kvótou pre odvoz (`WaitingArea.freeBaysForDelivery`, ADR-035).
+ * obsadiť ľubovoľný voľný bay, misia s dovozom (`delivery`) len voľný nad kvótou pre odvoz (`WaitingArea.freeBaysForDelivery`, ADR-035). Misia je
+ * povinná (T6D-05b): predvolená `pickup` by potichu udelila výnimku z kvóty stojísk.
  */
-export function routeWithFreeBay(world: World, ramp: LoadingRamp, mission: TruckMission = 'pickup'): LandsideRoute | undefined {
+export function routeWithFreeBay(world: World, ramp: LoadingRamp, mission: TruckMission): LandsideRoute | undefined {
   const usesPickupBays = TRUCK_MISSION_USES_PICKUP_BAYS[mission];
   for (const route of world.landsideRoutes(ramp)) {
     const area = world.modules.get(route.waitingAreaId);
@@ -78,7 +79,7 @@ export function spawnTruck(
   route: LandsideRoute,
   def: Readonly<TruckDef>,
   portal: number,
-  mission: TruckMission = 'pickup',
+  mission: TruckMission,
   loadCargo?: (truck: Truck) => void,
 ): Truck {
   const area = world.modules.get(route.waitingAreaId);
@@ -133,7 +134,7 @@ export function spawnTrucks(world: World, ramps: readonly LoadingRamp[], supply:
         reportNoWaitingBay(world, ramp);
         continue;
       }
-      spawnTruck(world, ramp, dock, route, def, portal);
+      spawnTruck(world, ramp, dock, route, def, portal, 'pickup');
     }
   }
 }

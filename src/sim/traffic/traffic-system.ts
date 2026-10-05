@@ -24,6 +24,11 @@
  *   `TrafficJamCleared`. **Prevencia** (dodatok ADR-037 TR1-04): kamión idúci do fronty brány nevstúpi do reťaze križovatiek, ak by
  *   zastal telom v nej (`entryKeys` → `null`); pobyt pri module drží len hlavu (`Carrier.releaseTail`).
  *
+ * - **Zlom uviaznutia** (dodatok ADR-037 TR1-09b): nasýtený okruh pruhov (otočky na jednej trase, výjazdy z modulov) sa inak nemá ako
+ *   pohnúť. Nosič čakajúci aspoň `gridlockTicks` uvoľňuje križovatku len o jednu bunku (`entryKeys`); cyklus čakania sa pretočí
+ *   naraz (`rotateCycles`: chvosty uvoľnia sloty, ktoré členovia cyklu potrebujú), inak jeden člen o bunku ustúpi (`retreatOne`).
+ *   Nosič po pobyte pri module odchádza späť v pruhu podľa strany výjazdu (`alignHead`).
+ *
  * Systém nemá trvalý stav: čakanie, odpočet preplánovania, telo a sloty vpredu sú na nosičoch (a v save); zásobník, cykly
  * a poradie sú pracovné štruktúry jedného ticku.
  */
@@ -35,6 +40,8 @@ import { advanceVehicle, replanVehicle } from '../systems/vehicle-system';
 import type { Truck } from '../trucks/truck';
 import type { Vehicle } from '../vehicles/vehicle';
 import type { World } from '../world/world';
+import { DIRECTIONS_4 } from '../grid/grid';
+import { isRoadStepAllowed } from '../grid/road-direction';
 import { NO_SIDE, sideBetween } from './cell-lanes';
 import { headSlotKey } from './head-slot';
 import { endsInQueue, holdsRoad, isDriving, type RoadCarrier } from './holds-road';
@@ -67,6 +74,16 @@ export class TrafficSystem implements AdvanceGate {
   private readonly byIdMap = new Map<number, RoadCarrier>();
   private readonly done = new Set<number>();
   private readonly stack: RoadCarrier[] = [];
+  /** Id nosičov na zásobníku (rýchle zistenie cyklu čakania). */
+  private readonly onStack = new Set<number>();
+  /** Cykly čakania tohto ticku: id nosičov v poradí „každý čaká na nasledujúceho“, cykly oddelené `-1`. */
+  private readonly cycles: number[] = [];
+  private readonly members: RoadCarrier[] = [];
+  private readonly rotation: number[] = [];
+  private readonly owners: number[] = [];
+  private readonly drops: number[] = [];
+  /** Pracovné polia kľúčov slotov podľa hĺbky zásobníka (rekurzia `acquire` ich nesmie prepisovať). */
+  private readonly keyPool: number[][] = [];
   private readonly inCycle = new Set<number>();
   private readonly blockedCell = new Map<number, number>();
   /** Nosiče, ktorým sa v tomto ticku v kroku 6a zmenil stav (`no_path`): FSM krok toho istého ticku ich preskočí (ADR-016). */
@@ -88,6 +105,8 @@ export class TrafficSystem implements AdvanceGate {
     this.inCycle.clear();
     this.blockedCell.clear();
     this.stack.length = 0;
+    this.onStack.clear();
+    this.cycles.length = 0;
     this.current = null;
     this.world = world;
     for (const vehicle of world.vehicles.values()) if (isDriving(vehicle)) order.push(vehicle);
@@ -96,6 +115,7 @@ export class TrafficSystem implements AdvanceGate {
     order.sort(byWaiting);
     for (const carrier of order) this.byIdMap.set(carrier.id, carrier);
     for (const carrier of order) if (!this.done.has(carrier.id)) this.process(carrier);
+    this.rotateCycles(world);
     this.claimStanding(world);
     this.rerouteStuck(world, order);
     this.current = null;
@@ -106,8 +126,20 @@ export class TrafficSystem implements AdvanceGate {
    * iný nosič. Po pohybe všetkých jazdiacich — slot, ktorý práve uvoľnili, tak využije stojaci nosič v tom istom ticku.
    */
   private claimStanding(world: World): void {
-    for (const vehicle of world.vehicles.values()) if (vehicle.body.length === 0 && holdsRoad(vehicle) && !isDriving(vehicle)) this.claimHead(world, vehicle);
-    for (const truck of world.trucks.values()) if (truck.body.length === 0 && holdsRoad(truck) && !isDriving(truck)) this.claimHead(world, truck);
+    for (const vehicle of world.vehicles.values()) if (vehicle.body.length === 0 && holdsRoad(vehicle) && !isDriving(vehicle)) this.claimStandingOne(world, vehicle);
+    for (const truck of world.trucks.values()) if (truck.body.length === 0 && holdsRoad(truck) && !isDriving(truck)) this.claimStandingOne(world, truck);
+  }
+
+  /** Stojaci nosič, ktorý slot nedostal, čaká (`blockedTicks`, hlásenie zápchy) a je kandidátom preplánovania. */
+  private claimStandingOne(world: World, carrier: RoadCarrier): void {
+    const before = carrier.blockedTicks;
+    if (carrier.rerouteCooldown > 0) carrier.rerouteCooldown -= 1;
+    if (this.claimHead(world, carrier)) carrier.blockedTicks = 0;
+    else {
+      carrier.blockedTicks += 1;
+      this.order.push(carrier);
+    }
+    this.reportJam(world, carrier, before);
   }
 
   /**
@@ -152,6 +184,7 @@ export class TrafficSystem implements AdvanceGate {
     this.current = carrier;
     this.blocked = false;
     this.stack.push(carrier);
+    this.onStack.add(carrier.id);
     const x = carrier.x;
     const y = carrier.y;
     const state: string = carrier.state;
@@ -160,6 +193,7 @@ export class TrafficSystem implements AdvanceGate {
     } finally {
       if (carrier.state !== state) this.changed.add(carrier.id);
       this.stack.pop();
+      this.onStack.delete(carrier.id);
       this.done.add(carrier.id);
       const waited = this.blocked;
       this.current = outerCurrent;
@@ -204,7 +238,40 @@ export class TrafficSystem implements AdvanceGate {
       this.blocked = true;
       return;
     }
+    // Trasa vedie hneď späť cez vlastný chvost (otočka na mieste): telo sa pri otočke zloží ako pri pobyte pri module, nezostane stáť v pruhu.
+    // Jednoslotová bunka (`single`, jednopruhová cesta) sa nemení: tam ide nosič späť cez ten istý slot, ktorý drží.
+    if (carrier.progress === 0 && carrier.ahead.length === 0 && carrier.body.length > 1 && keyCell(carrier.body[1]) === carrier.nextCell && world.cellLanes.kindOf(carrier.cell) !== 'single') carrier.releaseTail();
+    if (carrier.progress === 0 && carrier.ahead.length === 0 && carrier.body.length > 0 && !this.alignHead(world, carrier)) {
+      this.blocked = true;
+      return;
+    }
     driving.advance(carrier, world);
+  }
+
+  /**
+   * Otočka na mieste (dodatok ADR-037 TR1-09b): nosič, ktorý po pobyte pri module (alebo po vjazde do slepej bunky) odchádza späť,
+   * drží pruh vjazdu, hoci výjazd patrí do opačného pruhu; stál by v pruhu protiidúcej premávky. Pred rozbehom sa preto presunie
+   * do pruhu podľa strany výjazdu (`headSlotKey`); kým ho drží iný nosič, stojí. Dvojica v jednej bunke, kde každý potrebuje pruh toho
+   * druhého, si pruhy vymení naraz. Pri prejazde bunkou sa pruh vjazdu a výjazdu zhodujú, nič sa nemení.
+   */
+  private alignHead(world: World, carrier: RoadCarrier): boolean {
+    if (carrier.nextCell === undefined) return true;
+    const key = headSlotKey(world, carrier);
+    const mine = carrier.body[0];
+    if (mine === key) return true;
+    const holder = world.laneSlots.holderOfKey(key);
+    if (holder !== 0 && holder !== carrier.id) {
+      const other = world.vehicles.get(holder as EntityId) ?? world.trucks.get(holder as EntityId);
+      if (other !== undefined && other.progress === 0 && other.ahead.length === 0 && other.body[0] === key && other.nextCell !== undefined && headSlotKey(world, other) === mine) {
+        carrier.exchangeHeads(other);
+        return true;
+      }
+      const keys = this.keysBuffer();
+      keys.push(key);
+      if (!this.acquire(carrier, keys, -1)) return false;
+    }
+    carrier.swapHead(key);
+    return true;
   }
 
   /**
@@ -217,7 +284,8 @@ export class TrafficSystem implements AdvanceGate {
     const cell = carrier.cell;
     const next = carrier.nextCell;
     const head = headSlotKey(world, carrier);
-    const keys = [head];
+    const keys = this.keysBuffer();
+    keys.push(head);
     if (carrier.progress > 0 && next !== undefined) {
       const after = carrier.routeCellAt(2);
       keys.push(slotKey(next, laneOf(lanes, next, sideBetween(width, next, cell), after === undefined ? NO_SIDE : sideBetween(width, next, after))));
@@ -226,6 +294,42 @@ export class TrafficSystem implements AdvanceGate {
     carrier.reserveHead(head);
     if (keys.length > 1) carrier.reserveAhead(keys[1]);
     return true;
+  }
+
+  /**
+   * Ústup v cykle, ktorý sa nedá pretočiť (dvojica nosičov, ktorí si v križovatke alebo v prístupovej bunke stoja v ceste):
+   * nosič s najvyšším id, ktorého hlavu (bunku, alebo druhý pruh bunky pri otočke na mieste) potrebuje iný člen cyklu, o bunku ustúpi (`Carrier.retreat`) a bunku mu uvoľní.
+   * Ustupuje len smerom, ktorým smie ísť (jednosmerky) a len ak sú všetci členovia cyklu čakajúci aspoň `gridlockTicks`.
+   */
+  private retreatOne(world: World, members: readonly RoadCarrier[]): void {
+    const { gridlockTicks } = world.defs.logistics.traffic;
+    const { width } = world.grid;
+    let best: RoadCarrier | undefined;
+    for (const wanted of members) {
+      const next = wanted.routeCellAt(1);
+      if (next === undefined || wanted.blockedTicks < gridlockTicks) continue;
+      for (const holder of members) {
+        if (holder === wanted || holder.body.length < 2 || holder.progress !== 0 || holder.ahead.length > 0 || (holder.cell !== next && holder.cell !== wanted.cell)) continue;
+        if (holder.blockedTicks < gridlockTicks || keyCell(holder.body[1]) === holder.cell || !this.canStep(world, holder.cell, keyCell(holder.body[1]))) continue;
+        if (best === undefined || holder.id > best.id) best = holder;
+      }
+    }
+    best?.retreat(width);
+  }
+
+  /** Smie nosič ísť z bunky `from` do susednej bunky `to` (smer jednosmerky)? */
+  private canStep(world: World, from: number, to: number): boolean {
+    const side = sideBetween(world.grid.width, from, to);
+    return side !== NO_SIDE && isRoadStepAllowed(world.grid.atIndex(from), world.grid.atIndex(to), DIRECTIONS_4[side].name);
+  }
+
+  /** Prázdne pracovné pole kľúčov pre aktuálnu hĺbku zásobníka. */
+  private keysBuffer(): number[] {
+    const depth = this.stack.length;
+    while (this.keyPool.length <= depth) this.keyPool.push([]);
+    const keys = this.keyPool[depth];
+    keys.length = 0;
+    return keys;
   }
 
   /**
@@ -239,7 +343,10 @@ export class TrafficSystem implements AdvanceGate {
   private entryKeys(world: World, carrier: RoadCarrier, from: number): number[] | null {
     const lanes = world.cellLanes;
     const { width } = world.grid;
-    const keys: number[] = [];
+    const keys = this.keysBuffer();
+    // Dlhodobo čakajúci nosič (aspoň `gridlockTicks`) križovatku neuvoľňuje celým telom, stačí prvá bunka za ňou: nasýtený okruh
+    // pruhov sa inak nemá ako pretočiť (dodatok ADR-037 TR1-09b); poradie krokov (najdlhšie čakajúci prvý) mu dá prednosť.
+    const need = carrier.blockedTicks >= world.defs.logistics.traffic.gridlockTicks && !endsInQueue(carrier) ? 1 : carrier.lengthCells;
     let previous = from;
     let clearance = 0;
     for (let offset = 1; ; offset++) {
@@ -251,7 +358,7 @@ export class TrafficSystem implements AdvanceGate {
       }
       const after = carrier.routeCellAt(offset + 1);
       keys.push(slotKey(cell, laneOf(lanes, cell, sideBetween(width, cell, previous), after === undefined ? NO_SIDE : sideBetween(width, cell, after))));
-      if (lanes.isJunction(cell)) clearance = carrier.lengthCells;
+      if (lanes.isJunction(cell)) clearance = need;
       else if (clearance > 0) clearance -= 1;
       if (clearance === 0) break;
       previous = cell;
@@ -273,7 +380,7 @@ export class TrafficSystem implements AdvanceGate {
       this.blockedCell.set(carrier.id, this.blockerCell);
       const other = this.byIdMap.get(holder);
       if (other === undefined || this.done.has(holder)) return false;
-      if (this.stack.includes(other)) {
+      if (this.onStack.has(holder)) {
         this.markCycle(other);
         return false;
       }
@@ -282,7 +389,78 @@ export class TrafficSystem implements AdvanceGate {
   }
 
   private markCycle(from: RoadCarrier): void {
-    for (let i = this.stack.indexOf(from); i >= 0 && i < this.stack.length; i++) this.inCycle.add(this.stack[i].id);
+    const start = this.stack.indexOf(from);
+    for (let i = start; i >= 0 && i < this.stack.length; i++) {
+      this.inCycle.add(this.stack[i].id);
+      this.cycles.push(this.stack[i].id);
+    }
+    if (start >= 0) this.cycles.push(-1);
+  }
+
+  /**
+   * Zlom nasýteného cyklu (dodatok ADR-037 TR1-09b): v cykle čakania, kde každý stojí aspoň `gridlockTicks`, sa pohne každý
+   * nosič, ktorému k vstupu do ďalšej bunky chýbajú už len sloty, ktoré sú voľné, alebo ich drží chvost (aspoň dvojslotového tela)
+   * iného nosiča cyklu. Takéto chvosty sa uvoľnia a nosiče zaberú sloty vpredu (reťaz križovatky s uvoľnením o jednu bunku, ako pri
+   * dlho čakajúcom nosiči); pohyb nasleduje v ďalšom ticku bežnou cestou. Nasýtený okruh pruhov (otočky na jednej trase) sa inak
+   * nemá ako pohnúť a preplánovanie nepomôže. Každý slot dostane najviac jeden nosič, poradie je poradie zápisu cyklu
+   * (deterministické). Nepohol sa nik → `retreatOne`.
+   */
+  private rotateCycles(world: World): void {
+    const { gridlockTicks } = world.defs.logistics.traffic;
+    const lanes = world.cellLanes;
+    const { cycles, members, rotation, owners, drops } = this;
+    let from = 0;
+    for (let i = 0; i < cycles.length; i++) {
+      if (cycles[i] !== -1) continue;
+      members.length = 0;
+      rotation.length = 0;
+      owners.length = 0;
+      drops.length = 0;
+      for (let j = from; j < i; j++) {
+        const carrier = this.byIdMap.get(cycles[j]);
+        if (carrier !== undefined) members.push(carrier);
+      }
+      from = i + 1;
+      const count = members.length;
+      if (count < 2) continue;
+      for (let j = 0; j < count; j++) this.planMember(world, lanes, gridlockTicks, j);
+      for (const index of drops) members[index].dropTail();
+      for (let k = 0; k < rotation.length; k++) members[owners[k]].reserveAhead(rotation[k]);
+      if (rotation.length === 0) this.retreatOne(world, members);
+    }
+  }
+
+  /** Zapíše do plánu pretočenia (`rotation`, `owners`, `drops`) sloty člena `j` cyklu, ak ich všetky môže dostať (viď `rotateCycles`). */
+  private planMember(world: World, lanes: World['cellLanes'], gridlockTicks: number, j: number): void {
+    const carrier = this.members[j];
+    if (carrier.blockedTicks < gridlockTicks || carrier.progress !== 0 || carrier.ahead.length > 0 || carrier.body.length === 0 || carrier.nextCell === undefined) return;
+    const keys = this.entryKeys(world, carrier, carrier.cell);
+    if (keys === null) return;
+    const { rotation, owners, drops, members } = this;
+    const mark = rotation.length;
+    const dropMark = drops.length;
+    let ok = keys.length > 0;
+    for (const key of keys) {
+      if (!ok) break;
+      const holder = world.laneSlots.holderOfKey(key);
+      ok = lanes.segmentOf(keyCell(key)) === 0 && !rotation.includes(key);
+      if (!ok || holder === carrier.id) continue;
+      if (holder !== 0) {
+        const index = members.findIndex((m) => m.id === holder);
+        const tail = index < 0 ? undefined : members[index].body;
+        ok = tail !== undefined && tail.length >= 2 && members[index].ahead.length === 0 && tail[tail.length - 1] === key && tail.indexOf(key) === tail.length - 1 && !drops.includes(index);
+        if (ok) drops.push(index);
+      }
+      if (ok) {
+        rotation.push(key);
+        owners.push(j);
+      }
+    }
+    if (!ok) {
+      rotation.length = mark;
+      owners.length = mark;
+      drops.length = dropMark;
+    }
   }
 
   /** Držiteľ prvého obsadeného slotu z `keys` alebo nosiča idúceho oproti v úseku `one_lane`; 0 = nič nebráni. */
@@ -373,7 +551,6 @@ export class TrafficSystem implements AdvanceGate {
    * (aj neúspešný) spustí odpočet `rerouteCooldownTicks`. Čakajúci nosič stojí v strede bunky, takže kotva je jeho bunka.
    */
   private reroute(world: World, carrier: RoadCarrier, cooldownTicks: number): void {
-    carrier.rerouteCooldown = cooldownTicks;
     const target = carrier.routeCellAt(carrier.cellsAhead);
     const anchor = routeAnchor(carrier);
     if (carrier.replanPending || target === undefined || anchor === undefined || anchor === target) return;
@@ -382,6 +559,7 @@ export class TrafficSystem implements AdvanceGate {
     const blocked = carrier.body.length === 0 ? carrier.routeCellAt(1) : this.blockedCell.get(carrier.id);
     if (blocked === undefined || blocked === anchor) return;
     const path = world.pathfinder.findPathAvoiding(anchor, target, blocked);
+    carrier.rerouteCooldown = cooldownTicks;
     if (path !== null) takePath(world, carrier, path);
   }
 }

@@ -676,11 +676,11 @@ function tallyVehicleTicks(world: World, counters: { activeTicks: number; totalT
 /** Zhromaždí metriky dopravy (R1): čakajúce nosiče, najdlhšie čakanie. */
 function tallyTraffic(tally: EventTally, world: World): void {
   for (const vehicle of world.vehicles.values()) {
-    if (vehicle.blockedTicks > 0) tally.vehicleWaitTicks += vehicle.blockedTicks;
+    if (vehicle.blockedTicks > 0) tally.vehicleWaitTicks += 1;
     if (vehicle.blockedTicks > tally.maxBlockedTicks) tally.maxBlockedTicks = vehicle.blockedTicks;
   }
   for (const truck of world.trucks.values()) {
-    if (truck.blockedTicks > 0) tally.trucksWaitTicks += truck.blockedTicks;
+    if (truck.blockedTicks > 0) tally.trucksWaitTicks += 1;
     if (truck.blockedTicks > tally.maxBlockedTicks) tally.maxBlockedTicks = truck.blockedTicks;
   }
 }

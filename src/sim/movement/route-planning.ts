@@ -16,6 +16,9 @@ import { NO_ACCESS, accessCellIndex } from '../logistics/module-access';
 import type { PathCache } from '../logistics/path-cache';
 import type { Pathfinder, QuayCells } from '../logistics/pathfinder';
 import type { RoadSpeeds } from '../logistics/road-speed';
+import { NO_SIDE, sideBetween, type CellLanes } from '../traffic/cell-lanes';
+import { laneOf } from '../traffic/lane-for';
+import { slotKey } from '../traffic/lane-slots';
 import type { AdvanceGate, Carrier } from './carrier';
 
 /** Časť sveta, ktorú plánovanie a pohyb nosiča čítajú (`World` ju spĺňa). */
@@ -31,6 +34,9 @@ export interface MovementWorld {
    * pohybu) sa nosič hýbe bez slotov ako pred R1.
    */
   readonly trafficGate?: AdvanceGate;
+  /** Pruhové sloty a druhy buniek (ADR-037): obrat uprostred úseku ich potrebuje na zabratie pruhu cesty späť; bez nich (testy pohybu) sa nečítajú. */
+  readonly laneSlots?: { holderOfKey(key: number): number };
+  readonly cellLanes?: CellLanes;
 }
 
 /**
@@ -52,8 +58,29 @@ export function routeAnchor(carrier: Carrier): number | undefined {
  */
 export function takePath(world: MovementWorld, carrier: Carrier, path: readonly number[]): void {
   const between = carrier.progress > 0;
-  if (between && path[1] === carrier.cell) carrier.turnAround(path, world.grid.width);
-  else carrier.followRoute(between ? Object.freeze([carrier.cell, ...path]) : path);
+  if (!between || path[1] !== carrier.cell) {
+    carrier.followRoute(between ? Object.freeze([carrier.cell, ...path]) : path);
+    return;
+  }
+  const { laneSlots, cellLanes } = world;
+  const next = carrier.nextCell;
+  if (laneSlots === undefined || cellLanes === undefined || next === undefined) {
+    carrier.turnAround(path, world.grid.width);
+    return;
+  }
+  // Cesta späť vedie pruhom protiidúcej premávky (dodatok ADR-037 TR1-09b): obrat je možný, len keď je ten pruh voľný a nosič ho
+  // zaberie hneď (slot vpredu). Inak nosič úsek dokončí a vráti sa z `nextCell` ako bez obratu.
+  const after = path[2];
+  const cell = carrier.cell;
+  const { width } = world.grid;
+  const key = slotKey(cell, laneOf(cellLanes, cell, sideBetween(width, cell, next), after === undefined ? NO_SIDE : sideBetween(width, cell, after)));
+  const holder = laneSlots.holderOfKey(key);
+  if (holder !== 0 && holder !== carrier.id) {
+    carrier.followRoute(Object.freeze([cell, ...path]));
+    return;
+  }
+  carrier.turnAround(path, width);
+  if (!carrier.holdsKey(key)) carrier.reserveAhead(key);
 }
 
 /**

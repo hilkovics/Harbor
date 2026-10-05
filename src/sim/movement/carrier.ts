@@ -142,6 +142,9 @@ export function carrierRouteProblem(label: string, init: Pick<CarrierInit, 'rout
   return undefined;
 }
 
+/** Pracovné pole `releaseSlots` (bez alokácie pri každom opustení cesty; použitie nie je reentrantné). */
+const RELEASING: number[] = [];
+
 export abstract class Carrier {
   x: number;
   y: number;
@@ -424,13 +427,66 @@ export abstract class Carrier {
     for (const key of dropped) this.releaseIfUnheld(key);
   }
 
+  /**
+   * Ústup o jednu bunku (zlom zaseknutého cyklu, `TrafficSystem.rotateCycles`): stojaci nosič s telom aspoň z dvoch buniek uvoľní
+   * slot hlavy a vráti sa na druhú bunku tela; doterajšia bunka ostane prvou bunkou zvyšku trasy (nosič sa tam vráti, keď je voľná).
+   * Chyba (`invalidInput`, nosič sa nezmení): nosič sa hýbe medzi bunkami, drží sloty vpredu alebo má telo z jednej bunky.
+   */
+  retreat(width: number): void {
+    const behind = this.body[1];
+    if (this.segmentProgress !== 0 || this.ahead.length > 0 || behind === undefined || keyCell(behind) === this.cell) {
+      throw this.invalidInput(`${this.label}.retreat: ústup vyžaduje stojaci nosič bez slotov vpredu s telom z aspoň dvoch buniek`);
+    }
+    const head = this.body.shift();
+    this.route = Object.freeze([keyCell(behind), ...this.route.slice(this.routeIndex)]);
+    this.routeIndex = 0;
+    this.replanPending = false;
+    this.place(width);
+    if (head !== undefined) this.releaseIfUnheld(head);
+  }
+
+  /**
+   * Otočka na mieste: hlava tela prejde do druhého pruhu tej istej bunky (`TrafficSystem`, dodatok ADR-037 TR1-09b). Slot `key`
+   * musí byť voľný alebo vlastný; pôvodný slot hlavy sa uvoľní, ak ho telo už inak nedrží.
+   */
+  swapHead(key: number): void {
+    const old = this.body[0];
+    if (old === undefined || old === key) return;
+    this.slots?.claim(key, this.id);
+    this.body[0] = key;
+    this.releaseIfUnheld(old);
+  }
+
+  /** Dvojica nosičov v jednej bunke si vymení pruhy hláv naraz (obaja sa otáčajú opačne: každý potrebuje pruh toho druhého). */
+  exchangeHeads(other: Carrier): void {
+    const mine = this.body[0];
+    const theirs = other.body[0];
+    if (mine === undefined || theirs === undefined || mine === theirs) return;
+    this.slots?.release(mine, this.id);
+    other.slots?.release(theirs, other.id);
+    this.slots?.claim(theirs, this.id);
+    other.slots?.claim(mine, other.id);
+    this.body[0] = theirs;
+    other.body[0] = mine;
+  }
+
+  /** Uvoľní posledný slot tela (pretočenie zaseknutého cyklu: chvost uvoľní miesto nosiču za ním, `TrafficSystem.rotateCycles`). */
+  dropTail(): void {
+    const key = this.body.pop();
+    if (key !== undefined) this.releaseIfUnheld(key);
+  }
+
   /** Uvoľní všetky sloty (telo aj vpredu); príznaky zápchy nemení. */
   releaseSlots(): void {
     if (this.body.length === 0 && this.ahead.length === 0) return;
-    const keys = [...this.body, ...this.ahead];
+    const keys = RELEASING;
+    keys.length = 0;
+    for (const key of this.body) keys.push(key);
+    for (const key of this.ahead) keys.push(key);
     this.body.length = 0;
     this.ahead.length = 0;
     for (const key of keys) this.releaseIfUnheld(key);
+    keys.length = 0;
   }
 
   /** Nosič opustil jazdný stav (ADR-037): uvoľní celé telo a vynuluje čakanie aj odpočet preplánovania. */

@@ -346,9 +346,9 @@ const YARD: ModuleInspectorData = {
   removeBlockedReason: 'Sklad obsahuje náklad.',
 };
 
-const CARRIER_IDLE: DepotVehicleData = { id: 11, label: 'Straddle carrier', state: 'idle', code: 'SC-01', refundCents: 2_400_000 };
-const CARRIER_BUSY: DepotVehicleData = { id: 12, label: 'Straddle carrier', state: 'busy', code: 'SC-02' };
-const CARRIER_STUCK: DepotVehicleData = { id: 13, label: 'Straddle carrier', state: 'no_path' };
+const CARRIER_IDLE: DepotVehicleData = { id: 11, label: 'Straddle carrier', state: 'idle', fsmState: 'idle', code: 'SC-01', refundCents: 2_400_000 };
+const CARRIER_BUSY: DepotVehicleData = { id: 12, label: 'Straddle carrier', state: 'busy', fsmState: 'to_pickup', code: 'SC-02' };
+const CARRIER_STUCK: DepotVehicleData = { id: 13, label: 'Straddle carrier', state: 'no_path', fsmState: 'no_path' };
 
 /** Prototyp `insp_depot`: depo s dvoma vozidlami, nákup dostupný. */
 const DEPOT: ModuleInspectorData = {
@@ -502,16 +502,17 @@ describe('ModuleInspector — nepripojený modul (vzor insp_gate)', () => {
 });
 
 describe('depo — čisté pomocné funkcie', () => {
-  it('depotVehicleCounts: pracuje / nečinné / bez cesty', () => {
-    expect(depotVehicleCounts([CARRIER_IDLE, CARRIER_BUSY, CARRIER_STUCK, CARRIER_BUSY])).toEqual({ busy: 2, idle: 1, noPath: 1 });
-    expect(depotVehicleCounts([])).toEqual({ busy: 0, idle: 0, noPath: 0 });
+  it('depotVehicleCounts: pracuje / nečinné / bez cesty / zaparkované', () => {
+    expect(depotVehicleCounts([CARRIER_IDLE, CARRIER_BUSY, CARRIER_STUCK, CARRIER_BUSY])).toEqual({ busy: 2, idle: 1, noPath: 1, parked: 0 });
+    expect(depotVehicleCounts([])).toEqual({ busy: 0, idle: 0, noPath: 0, parked: 0 });
   });
 
-  it('depotStats: vozidlá „2 / 6", plné depo = varovanie; pracuje / nečinné', () => {
+  it('depotStats: vozidlá „2 / 6", plné depo = varovanie; zaparkované, pracuje, nečinné', () => {
     const rows = (vehicles: readonly DepotVehicleData[], capacity: number) =>
       depotStats({ vehicles, capacity }).map((stat) => [stat.key, stat.value, stat.tone]);
     expect(rows([CARRIER_IDLE, CARRIER_BUSY], 6)).toEqual([
       ['vehicles', '2 / 6', 'normal'],
+      ['parked', '0 / 6', 'normal'],
       ['busy', '1', 'normal'],
       ['idle', '1', 'normal'],
     ]);

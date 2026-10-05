@@ -41,12 +41,10 @@ function landside(cash = defs.economy.startingCashCents) {
 }
 
 describe('BuildBar Landside: typy ciest z defov', () => {
-  it('kategória je povolená a ponúka tri typy ciest, potom moduly z defov (bez zástupných položiek)', () => {
+  it('kategória je povolená a ponúka len jednosmerku (R1: ADR-037), potom moduly z defov (bez zástupných položiek)', () => {
     const category = landside();
     expect(category.enabled).toBe(true);
     expect(category.items.map((item) => item.defId)).toEqual([
-      'road_two_lane',
-      'road_one_lane',
       'road_one_way',
       'truck_gate',
       'truck_waiting_area',
@@ -54,37 +52,35 @@ describe('BuildBar Landside: typy ciest z defov', () => {
     ]);
   });
 
-  it('názvy podľa karty: Cesta dvojpruhová, Cesta jednopruhová, Jednosmerná cesta', () => {
-    expect(landside().items.slice(0, 3).map((item) => item.displayName)).toEqual(['Cesta dvojpruhová', 'Cesta jednopruhová', 'Jednosmerná cesta']);
+  it('názov: Jednosmerná cesta', () => {
+    expect(landside().items[0].displayName).toEqual('Jednosmerná cesta');
   });
 
-  it('cena za bunku je z defs.infrastructure.roadKinds a text ceny je „$X / bunka“ ($2,000, $1,200, $1,500)', () => {
-    const roads = landside().items.slice(0, 3);
-    expect(roads.map((item) => item.costCents)).toEqual(ROAD_KINDS.map((kind) => defs.infrastructure.roadKinds[kind].costPerCellCents));
-    expect(roads.map((item) => item.priceText)).toEqual(['$2,000 / bunka', '$1,200 / bunka', '$1,500 / bunka']);
+  it('cena za bunku je z defs.infrastructure.roadKinds a text ceny je „$X / bunka” ($1,500)', () => {
+    const road = landside().items[0];
+    expect(road.costCents).toEqual(defs.infrastructure.roadKinds.one_way.costPerCellCents);
+    expect(road.priceText).toEqual('$1,500 / bunka');
     expect(ROAD_PRICE_UNIT).toBe('/ bunka');
   });
 
-  it('cestné položky majú akciu road, ikonu cesty, nie sú zamknuté a nemajú rozmer', () => {
-    for (const item of landside().items.slice(0, 3)) {
-      expect(item).toMatchObject({ action: 'road', icon: 'ic_road', locked: false, affordable: true });
-      expect(item.footprint).toBeUndefined();
-      expect(itemStatus(item)).toBe('available');
-    }
+  it('cestná položka má akciu road, ikonu cesty, nie je zamknutá a nemá rozmer', () => {
+    const item = landside().items[0];
+    expect(item).toMatchObject({ action: 'road', icon: 'ic_road', locked: false, affordable: true });
+    expect(item.footprint).toBeUndefined();
+    expect(itemStatus(item)).toBe('available');
   });
 
   it('dostupnosť: hotovosť aspoň na jednu bunku stačí; o cent menej = unaffordable s chýbajúcou sumou', () => {
-    const cost = defs.infrastructure.roadKinds.two_lane.costPerCellCents;
-    expect(roadKindItem(defs, 'two_lane', cost)).toMatchObject({ affordable: true });
-    expect(roadKindItem(defs, 'two_lane', cost).missingCents).toBeUndefined();
-    const short = roadKindItem(defs, 'two_lane', cost - 1);
+    const cost = defs.infrastructure.roadKinds.one_way.costPerCellCents;
+    expect(roadKindItem(defs, 'one_way', cost)).toMatchObject({ affordable: true });
+    expect(roadKindItem(defs, 'one_way', cost).missingCents).toBeUndefined();
+    const short = roadKindItem(defs, 'one_way', cost - 1);
     expect(short).toMatchObject({ affordable: false, missingCents: 1 });
     expect(itemStatus(short)).toBe('unaffordable');
-    expect(roadKindItem(defs, 'one_way', -500)).toMatchObject({ affordable: false, missingCents: 150_000 + 500 });
   });
 
   it('moduly Landside z defov: názov, cena, ikona druhu, rozmer; nie sú zamknuté a majú akciu stavby', () => {
-    const modules = landside().items.slice(3);
+    const modules = landside().items.slice(1);
     expect(modules.map((item) => [item.displayName, item.costCents, item.icon, item.footprint])).toEqual([
       ['Brána kamiónov', 8_000_000, 'ic_gate', { w: 2, h: 2 }],
       ['Čakacia plocha', 6_000_000, 'ic_waiting', { w: 4, h: 3 }],
@@ -100,7 +96,7 @@ describe('BuildBar Landside: typy ciest z defov', () => {
   });
 
   it('moduly Landside bez peňazí: nedostupné (unaffordable) s chýbajúcou sumou, nie zamknuté', () => {
-    const modules = landside(0).items.slice(3);
+    const modules = landside(0).items.slice(1);
     expect(modules.map((item) => item.missingCents)).toEqual([8_000_000, 6_000_000, 10_000_000]);
     for (const item of modules) expect(itemStatus(item)).toBe('unaffordable');
   });
@@ -163,12 +159,10 @@ describe('ConnectedBuildBar: cestné položky a RoadSelection', () => {
     expect(roads.get()).toBeNull();
   });
 
-  it('BuildBar dostane cestné položky v Landside s cenou za bunku', () => {
+  it('BuildBar dostane cestné položky v Landside — len jednosmerka s cenou za bunku (R1: ADR-037)', () => {
     const props = renderBar(new RoadSelection());
     const category = props.categories.find((c) => c.id === 'landside');
-    expect(category?.items.slice(0, 3).map((item) => [item.action, item.priceText])).toEqual([
-      ['road', '$2,000 / bunka'],
-      ['road', '$1,200 / bunka'],
+    expect(category?.items.slice(0, 1).map((item) => [item.action, item.priceText])).toEqual([
       ['road', '$1,500 / bunka'],
     ]);
   });

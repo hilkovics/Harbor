@@ -122,6 +122,8 @@ export const TRANSHIP_MISSED_TOAST_TITLE = 'Tranship zmeškaný';
 export const TRANSHIP_RESCUED_TOAST_TITLE = 'Tranship zachránený';
 export const TRANSHIP_SOLD_TOAST_TITLE = 'Tranship predaný';
 
+export const TRAFFIC_JAM_TOAST_TITLE = 'Zápcha';
+
 /** „1 jednotka“, „2 jednotky“, „5 jednotiek“. */
 export function unitsText(count: number): string {
   if (count === 1) return '1 jednotka';
@@ -564,6 +566,16 @@ export function toastSpecsForEvents(world: World, events: readonly SimEvent[]): 
           ? `${code} — k rampe nevedie trasa cez čakaciu plochu, kamión sa nemá kde zastaviť`
           : `${code} — všetky stojiská sú obsadené, ďalší kamión vznikne, keď sa jedno uvoľní`,
         focus: { x: ramp.origin.x + ramp.size.w / 2, y: ramp.origin.y + ramp.size.h / 2 },
+      });
+    } else if (event.type === 'TrafficJam') {
+      const carrierLabel = event.carrierKind === 'truck' ? 'Kamión' : 'Vozidlo';
+      specs.push({
+        key: `traffic_jam:${String(event.carrierId)}`,
+        tone: 'warning',
+        icon: 'ic_warning',
+        title: TRAFFIC_JAM_TOAST_TITLE,
+        text: `${carrierLabel} #${String(event.carrierId)} stojí v zápche`,
+        focus: { x: event.cell.x, y: event.cell.y },
       });
     }
   }

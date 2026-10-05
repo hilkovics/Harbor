@@ -161,8 +161,9 @@ describe('entitySpriteFiles (čo načíta atlas)', () => {
     for (const file of fillFiles) expect(file).toMatch(/^modules\/(container_yard_small|empty_depot)_fill\d+\.svg$/);
     const vehicleFiles = files.filter((file) => /^entities\/(?!ship_)/.test(file));
     expect(vehicleFiles.sort()).toEqual([
-      'entities/empty_handler_empty.svg',
-      'entities/empty_handler_loaded.svg',
+      'entities/ech.svg',
+      'entities/ech_spreader_20.svg',
+      'entities/ech_spreader_40.svg',
       'entities/straddle_carrier.svg',
       'entities/truck_cab.svg',
       'entities/truck_trailer_40.svg',

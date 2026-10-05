@@ -62,7 +62,8 @@
         "required": ["file", "size"],
         "properties": {
           "file": { "$ref": "#/$defs/svgFile" },
-          "size": { "$ref": "#/$defs/pxSize" }
+          "size": { "$ref": "#/$defs/pxSize" },
+          "tintable": { "type": "boolean", "description": "Sprite je neutrálny (`--container-neutral`) a hra ho tónuje farbou linky (R2: `container_<20|40>_dry`); sivé prázdne a ostatný náklad nie." }
         }
       },
       "description": "Sprity nákladu (veľkosť v px, nie v bunkách)."
@@ -312,6 +313,10 @@
             "oneOf": [{ "$ref": "#/$defs/svgFile" }, { "$ref": "#/$defs/stateFiles" }]
           },
           "description": "Variant → SVG (napr. veľkosť auta) alebo variant → stavy (typ lode: empty/loaded)."
+        },
+        "spreaderMount": {
+          "$ref": "#/$defs/pxPoint",
+          "description": "ECH (R2): bod v px súboru, kde visí spreader s kontajnerom (pivot spreadera = tento bod); časti `spreader_20` / `spreader_40` sú v `parts`."
         },
         "deck": {
           "type": "object",

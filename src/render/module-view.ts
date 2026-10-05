@@ -10,6 +10,8 @@
  * Modul bez sprite (chýba v manifeste / textúra sa nenačítala) sa nakreslí ako obdĺžnik z tokenov
  * (`--module-base` s obrysom `--module-outline`).
  *
+ * Blok skladu so stohmi (R2, `ModuleVM.stacks`) kreslí celé telo ozdoba (`stacks-decor.ts`): sprite sa skryje (`coversBody`) a ostáva `fill00`.
+ *
  * Moduly s vlastnou dynamickou grafikou (brána, čakacia plocha, rampa) kreslia `ModuleDecor`y (`module-decors.ts`): view ich
  * vytvorí lenivo podľa voliteľných polí `ModuleVM` (`gate`, `waitingArea`, `ramp`). Ozdoba, ktorá hlási problém (neprevádzková
  * rampa), zapne ten istý odznak `overlay.warning_badge` ako „nepripojené“.
@@ -54,7 +56,8 @@ export function sameModuleShape(a: ModuleVM, b: ModuleVM): boolean {
  */
 export function moduleFillState(entry: ModuleSpriteEntry | undefined, vm: ModuleVM): FillState | null {
   if (entry?.states === undefined) return null;
-  return vm.storage === undefined ? 0 : fillState(vm.storage.stored, vm.storage.capacity);
+  // R2: blok so stohmi kreslí ozdoba (`stacks-decor.ts`), prázdny sprite pod ňou je len záloha — stav zaplnenia sa nemení
+  return vm.storage === undefined || vm.stacks !== undefined ? 0 : fillState(vm.storage.stored, vm.storage.capacity);
 }
 
 /**
@@ -114,6 +117,11 @@ export class ModuleView {
     return this.bodyFill;
   }
 
+  /** Telo modulu (sprite / fallback) je viditeľné; blok so stohmi ho skrýva (R2) — pre testy. */
+  get bodyVisible(): boolean {
+    return this.body.visible;
+  }
+
   /** Odznak „nepripojené“ (`null`, kým nebol potrebný) — pre testy. */
   get badgeView(): Container | null {
     return this.badge;
@@ -161,6 +169,7 @@ export class ModuleView {
     this.last = vm;
     this.syncBody(vm);
     this.syncDecors(vm);
+    this.syncBodyVisibility();
     this.syncBadge(vm);
     const slots = this.sprite?.apronSlots ?? [];
     const seen = this.seenSlots;
@@ -209,6 +218,15 @@ export class ModuleView {
     this.body.destroy();
     this.body = this.createBody(file);
     this.view.addChildAt(this.body, 0); // pod náklad na aprone
+  }
+
+  /** Telo modulu (sprite) sa skryje, keď ho celé kreslí ozdoba (blok skladu so stohmi, R2). */
+  private syncBodyVisibility(): void {
+    let covered = false;
+    this.decors.forEach((decor) => {
+      covered ||= decor.coversBody === true;
+    });
+    this.body.visible = !covered;
   }
 
   /** Vytvorí ozdoby, ktorých dáta VM nesie (lenivo), a všetkým podá VM. */

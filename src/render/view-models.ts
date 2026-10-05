@@ -11,6 +11,35 @@ export type ViewRotation = 0 | 90 | 180 | 270;
 /** Strana bunky / modulu (svetová strana). */
 export type ViewSide = 'n' | 'e' | 's' | 'w';
 
+/** Smer kontajnera (`CargoUnit.direction`); `empty` = prázdny kontajner (sivý), ostatné sa kreslia podľa linky. */
+export type ContainerDirectionVM = 'import' | 'export' | 'tranship' | 'empty';
+
+/**
+ * Štítky kontajnera pre render (R2, TERMINAL_2 §3): veľkosť 20′ / 40′, typ (`container_types.json`, v R2 len `dry`), linka (`CargoUnit.lineId`,
+ * `null` = bez linky → neutrálna sivá) a smer. Podľa nich renderer volí sprite `container_<sizeFt>_<dry|empty>` a farbu linky (`container-sprites.ts`).
+ */
+export interface ContainerVM {
+  sizeFt: 20 | 40;
+  containerType: string;
+  lineId: string | null;
+  direction: ContainerDirectionVM;
+}
+
+/** Jeden stoh bloku skladu (R2): pozícia `bay` × `row` (od 0), výška stohu (0 = prázdna pozícia) a vrchný kontajner (`null` pri výške 0). */
+export interface StackVM {
+  bay: number;
+  row: number;
+  height: number;
+  top: ContainerVM | null;
+}
+
+/** Geometria bloku skladu (`YardBlock.geometry`, R2): `bays` pozdĺž lokálnej osi x (pri rot 0), `rows` naprieč (os y), `maxTier` = max. výška stohu. */
+export interface StackGeometryVM {
+  bays: number;
+  rows: number;
+  maxTier: number;
+}
+
 export interface ModuleVM {
   id: number;
   defId: string;
@@ -85,6 +114,18 @@ export interface ModuleVM {
    * vnútri footprintu v poradí podľa `id` (`parked-vehicles-decor.ts`). Chýba = depo sa kreslí ako doteraz. Plní `SimBridge` (TR1-08).
    */
   parkedVehicles?: readonly { id: number; defId: string }[];
+  /**
+   * Len blok skladu s presnou polohou kontajnerov (R2, `YardBlock`: `container_yard_small`, `empty_depot`): stohy v poradí ľubovoľnom (renderer ich
+   * zoradí podľa výšky). Pri 40′ kontajneri nesú stohy oboch bays páru `(2k, 2k + 1)` ten istý vrchný kontajner; renderer ho nakreslí raz.
+   * Keď je pole prítomné, telo modulu sa kreslí zhora (mriežka pozícií + vrchný kontajner každého stohu s tieňom výšky, `stacks-decor.ts`) a stav
+   * zaplnenia (`fillNN`) ani portálový žeriav sa nepoužijú. Chýba = sklad sa kreslí ako doteraz. Plní `SimBridge` (TR2-05).
+   */
+  stacks?: readonly StackVM[];
+  /**
+   * Geometria bloku pre mriežku pozícií (R2). Chýba = renderer ju odvodí zo `stacks` (`max(bay) + 1`, `max(row) + 1`, `max(height)`), takže nevyplnená
+   * mriežka môže byť menšia, než blok je; `SimBridge` ju preto vypĺňa vždy.
+   */
+  stackGeometry?: StackGeometryVM;
 }
 
 /** Smer cyklu žeriavu (`CraneModule.cycle`, ADR-032 bod 11): vykládka, nakládka a dve polovice dual cyklu. */
@@ -192,6 +233,12 @@ export interface VehicleVM extends CarrierTrailVM {
    */
   carriesEmpty?: boolean;
   /**
+   * R2: vezený kontajner podľa veľkosti, typu a linky (`null` = žiadny). Keď je pole prítomné, kontajner na vozidle sa kreslí z neho (sprite
+   * `container_<sizeFt>_<dry|empty>`, dry tónovaný farbou linky; na ECH pod spreaderom) a `carriesEmpty` sa ignoruje. Chýba = kontajner TEU podľa
+   * `loaded` / `carriesEmpty` ako doteraz. Plní `SimBridge` (TR2-05).
+   */
+  cargo?: ContainerVM | null;
+  /**
    * Stav FSM vozidla (`idle`, `to_pickup`, …, R1: `to_depot`, `parked`, `depot_exit`). Renderer podľa neho nekreslí vozidlo v stave
    * `parked` (stojí v depe, kreslí ho modul cez `ModuleVM.parkedVehicles`); inak ho nesie pre ladenie a odznaky.
    */
@@ -227,6 +274,12 @@ export interface TruckVM extends CarrierTrailVM {
    * vyložení (renderer kreslí kontajner z príchodu, kým kamión cúva do docku).
    */
   carriesEmpty?: boolean;
+  /**
+   * R2: vezený kontajner podľa veľkosti, typu a linky (`null` = žiadny); 20′ leží na návese vpredu, 40′ na celej jeho dĺžke. Chýba = kontajner TEU
+   * podľa `loaded` / `carriesEmpty` ako doteraz. Pri manévri pri rampe sa drží zobrazené naloženie z príchodu (rovnako ako `loaded`): kontajner
+   * posledného neprázdneho `cargo` ostáva na návese, kým kamión necúva do docku. Plní `SimBridge` (TR2-05).
+   */
+  cargo?: ContainerVM | null;
   /**
    * Stav Truck FSM (`to_gate`, `gate_queue`, `waiting`, `loading`, `unloading`, …). Renderer podľa neho (a `prevState`) riadi len
    * manéver kamióna pri rampe: `to_dock` → `loading` / `unloading` (cúvanie do docku; `unloading` = exportný kamión vykladá, F6a),

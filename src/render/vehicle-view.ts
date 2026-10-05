@@ -28,6 +28,12 @@
  * posun do pravého pruhu kolmo na tetivu. Bez `body` (staré VM) a pri `offRoad` platí pohyb ako doteraz. Pri `blocked` (a nie `offRoad`)
  * pribudnú procedurálne brzdové svetlá (`--vehicle-brake`) pri zadnom okraji spritu.
  *
+ * **R2 — kontajner podľa veľkosti, typu a linky (`container-sprites.ts`):** keď VM nesie `cargo` (`ContainerVM | null`), kontajner na vozidle sa kreslí z neho
+ * (`CargoSprite` s `look.container`: 20′ 64 × 26 px, 40′ 128 × 26 px; prázdny sivý, dry tónovaný farbou linky) a `carriesEmpty` sa ignoruje. Na návese kamióna leží
+ * 20′ vpredu (predná hrana pri čape), 40′ na celej dĺžke; v straddle carrieri je pod rámom; na ECH (`entities.<defId>.spreaderMount`) visí pod spreaderom
+ * (`ech_spreader_20` / `_40`) pred vozidlom, naprieč smeru jazdy. Zobrazenie sa riadi zobrazeným naložením (`PoseDirector.displayLoaded`) — pri manévri kamióna
+ * pri rampe ostáva kontajner posledného neprázdneho `cargo`. Bez `cargo` sa kreslí kontajner TEU (`container_teu`) ako doteraz.
+ *
  * Rovnaký pohyb (`vehiclePose`: pruhy, oblúky) a sprite používa aj `TruckView` (F4) — líši sa len štýl (`VehicleViewStyle`:
  * prefix `label` a farby fallbacku) a rozmer, ktorý sa berie z `entities.<defId>.footprint` (kamión 1×2, vozidlo 1×1).
  */
@@ -35,7 +41,19 @@ import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
 import { articulatedPose, blendedLaneMagnitude, shiftRight, trailAt } from './articulated-pose';
 import type { Point } from './camera';
 import { CargoSprite } from './cargo-sprite';
-import { MANIFEST_CELL_PX, articulatedSprite, brakeLightsSprite, manifestScale, vehicleSprite, type ArticulatedSpriteEntry, type CellSize } from './entity-assets';
+import { containerKey, containerSpriteId } from './container-sprites';
+import {
+  MANIFEST_CELL_PX,
+  articulatedSprite,
+  brakeLightsSprite,
+  cargoDisplaySize,
+  manifestScale,
+  vehicleSpreader,
+  vehicleSprite,
+  type ArticulatedSpriteEntry,
+  type CellSize,
+  type VehicleSpreaderEntry,
+} from './entity-assets';
 import {
   defaultRoadKindAt,
   forwardOf,
@@ -50,8 +68,8 @@ import { lerp } from './ship-view';
 import type { EntityTextures } from './sprite-atlas';
 import type { ColorValue, EntityPalette } from './tokens';
 import { cornerAlpha, cornerTurn, isQuarterTurn, lerpHeading, turnArcPose } from './turn-arc';
-import type { VehicleVM, ViewRotation } from './view-models';
-import { STRADDLE_BODY_PX, VEHICLE_SCALE } from './world-scale';
+import type { ContainerVM, VehicleVM, ViewRotation } from './view-models';
+import { STRADDLE_BODY_PX, TEU_PX, VEHICLE_SCALE } from './world-scale';
 
 /** Hrúbka obrysu fallbacku ako zlomok bunky (2 px pri 64 px, DESIGN_BRIEF §4 „Obrys“). */
 const OUTLINE_CELLS = 2 / 64;
@@ -294,6 +312,12 @@ export class VehicleView {
   private hitchCells = 0;
   /** Kontajner na vozidle: plný a prázdny (sivý) variant, viditeľný podľa stavu; `null` pri fallbacku. */
   private cargo: { readonly full: CargoSprite; readonly empty: CargoSprite } | null = null;
+  /** R2: kontajner podľa štítkov z `vm.cargo` (štítky, kľúč štítkov a sprite); `null`, kým vozidlo nič nevezie alebo VM `cargo` nenesie. */
+  private typedCargo: { readonly key: string; readonly container: ContainerVM; readonly sprite: CargoSprite } | null = null;
+  /** R2: posledný neprázdny `vm.cargo` — kontajner zostáva zobrazený, kým zobrazené naloženie (manéver kamióna pri rampe) neskončí. */
+  private lastCargo: ContainerVM | null = null;
+  /** R2: ECH (def so `spreaderMount`): vrstva nákladu v bode zavesenia a spreadery `20` / `40` (viditeľný je ten, ktorý zodpovedá kontajneru). */
+  private mount: { readonly cargoLayer: Container; readonly s20: Sprite | null; readonly s40: Sprite | null } | null = null;
 
   constructor(
     vm: VehicleVM,
@@ -325,12 +349,14 @@ export class VehicleView {
       this.rig = this.createRig(articulated, partTextures);
     } else if (this.textures !== null && entry !== undefined) {
       this.cargo = this.createCargo();
-      // kontajner pod rámom (priehľadný stred straddle carriera): kreslí sa pred rámom
-      this.view.addChild(this.cargo.full, this.cargo.empty);
+      const spreader = vehicleSpreader(vm.defId);
+      // kontajner pod rámom (priehľadný stred straddle carriera): kreslí sa pred rámom; ECH ho drží pred sebou pod spreaderom (nad rámom)
+      if (spreader === undefined) this.view.addChild(this.cargo.full, this.cargo.empty);
       this.sprite = new Sprite(this.textures[this.load]);
       this.sprite.anchor.set(0.5);
       this.sprite.setSize(entry.footprint.w * deps.cellPx * VEHICLE_SCALE, entry.footprint.h * deps.cellPx * VEHICLE_SCALE);
       this.view.addChild(this.sprite);
+      if (spreader !== undefined) this.mount = this.createMount(spreader, this.cargo);
     } else {
       this.hitchCells = 0;
       this.view.addChild(this.createFallback(articulated === undefined ? (entry?.footprint ?? FALLBACK_FOOTPRINT) : { w: articulated.footprint.w, h: this.spriteLengthCells }));
@@ -364,6 +390,22 @@ export class VehicleView {
     return this.cargo?.empty.visible === true ? 'empty' : 'none';
   }
 
+  /** R2: štítky zobrazeného kontajnera z `vm.cargo` (`null` = nič alebo VM bez `cargo`) — pre testy. */
+  get cargoContainer(): ContainerVM | null {
+    return this.typedCargo?.container ?? null;
+  }
+
+  /** R2: sprite zobrazeného kontajnera z `vm.cargo` (`null` = nič) — pre testy. */
+  get cargoSprite(): CargoSprite | null {
+    return this.typedCargo?.sprite ?? null;
+  }
+
+  /** R2: veľkosť zobrazeného spreadera ECH (`null` = vozidlo nemá spreader alebo nemá jeho textúry) — pre testy. */
+  get spreaderSizeFt(): 20 | 40 | null {
+    if (this.mount?.s20 == null || this.mount.s40 == null) return null;
+    return this.mount.s40.visible ? 40 : 20;
+  }
+
   /** Kabína kĺbového vozidla (`null` pri vozidle bez častí alebo fallbacku) — pre testy. */
   get cabView(): Container | null {
     return this.rig?.cab ?? null;
@@ -395,7 +437,7 @@ export class VehicleView {
       this.load = load;
       if (this.sprite !== null && this.textures !== null) this.sprite.texture = this.textures[load];
     }
-    this.syncCargo(load);
+    this.syncCargo(load, vm);
     this.syncRig(pose);
     this.syncBrakeLights(vm);
   }
@@ -428,11 +470,95 @@ export class VehicleView {
     return { x: at.x * cellPx, y: at.y * cellPx, angle: pose.angle, cabAngle: cab.angle };
   }
 
-  /** Kontajner na vozidle: viditeľný plný (`loaded`) alebo prázdny sivý (`carries_empty`) variant, inak žiadny. */
-  private syncCargo(load: VehicleLoad): void {
+  /**
+   * Kontajner na vozidle: bez `vm.cargo` viditeľný plný (`loaded`) alebo prázdny sivý (`carries_empty`) variant TEU, inak žiadny. S `vm.cargo` (R2) kontajner
+   * podľa štítkov — kým je zobrazené naloženie (`load` ≠ `empty`); po vyložení (`cargo` `null`) ostáva posledný kontajner, kým naloženie nevypne režisér.
+   */
+  private syncCargo(load: VehicleLoad, vm: VehicleVM): void {
     if (this.cargo === null) return;
-    this.cargo.full.visible = load === 'loaded';
-    this.cargo.empty.visible = load === 'carries_empty';
+    const cargo = vm.cargo;
+    this.cargo.full.visible = cargo === undefined && load === 'loaded';
+    this.cargo.empty.visible = cargo === undefined && load === 'carries_empty';
+    if (cargo === undefined) {
+      this.setTypedCargo(null);
+      this.syncSpreader(20);
+      return;
+    }
+    if (cargo !== null) this.lastCargo = cargo;
+    const shown = load === 'empty' ? null : (cargo ?? this.lastCargo);
+    this.setTypedCargo(shown);
+    this.syncSpreader(shown?.sizeFt ?? 20);
+  }
+
+  /** Zobrazí kontajner `container` (alebo nič pri `null`); pri nezmenených štítkoch nič nealokuje, pri zmene vytvorí sprite nanovo. */
+  private setTypedCargo(container: ContainerVM | null): void {
+    const key = containerKey(container);
+    if ((this.typedCargo?.key ?? '') === key) return;
+    this.typedCargo?.sprite.destroy({ children: true });
+    this.typedCargo = null;
+    if (container === null) return;
+    const { cellPx, palette, textures } = this.deps;
+    const sprite = new CargoSprite(this.id, VEHICLE_CARGO_TYPE, { cellPx, palette, textures }, { container });
+    this.placeTypedCargo(sprite, container);
+    this.typedCargo = { key, container, sprite };
+  }
+
+  /**
+   * Postaví sprite kontajnera na vozidlo. Kamión: na náves, dlhšou stranou v smere jazdy, 20′ vpredu (predná hrana pri čape), 40′ na celej dĺžke návesu.
+   * ECH: pod spreader v bode `spreaderMount`, naprieč smeru jazdy. Ostatné vozidlá (straddle carrier): do stredu pod rám.
+   */
+  private placeTypedCargo(sprite: CargoSprite, container: ContainerVM): void {
+    const unit = manifestScale(this.deps.cellPx) * VEHICLE_SCALE;
+    if (this.rig !== null) {
+      const trailer = this.rig.articulated.trailer;
+      const trailerLength = trailer.footprint.h * MANIFEST_CELL_PX;
+      const length = cargoDisplaySize(containerSpriteId(container))?.w ?? TEU_PX.w * (container.sizeFt / 20);
+      const centre = length >= trailerLength ? trailerLength / 2 - trailer.pivot.y : length / 2;
+      sprite.angle = CARGO_ALONG_DEG;
+      sprite.position.set(0, centre * unit);
+      this.rig.trailer.addChild(sprite);
+    } else if (this.mount !== null) {
+      this.mount.cargoLayer.addChild(sprite); // pod spreaderom, naprieč smeru jazdy
+    } else {
+      sprite.angle = CARGO_ALONG_DEG;
+      this.view.addChildAt(sprite, 0); // pod rám
+    }
+  }
+
+  /** Spreader ECH podľa veľkosti kontajnera (bez kontajnera 20′); iné vozidlá spreader nemajú. */
+  private syncSpreader(sizeFt: 20 | 40): void {
+    if (this.mount === null) return;
+    if (this.mount.s20 !== null) this.mount.s20.visible = sizeFt === 20;
+    if (this.mount.s40 !== null) this.mount.s40.visible = sizeFt === 40;
+  }
+
+  /**
+   * ECH: vrstva v bode `spreaderMount` (od stredu plátna), nad rámom vozidla. Pod spreaderom visí kontajner TEU (VM bez `cargo`) alebo kontajner podľa štítkov
+   * (naprieč smeru jazdy); spreader 20′ / 40′ (pivot = bod zavesenia) je navrchu.
+   */
+  private createMount(entry: VehicleSpreaderEntry, cargo: { readonly full: CargoSprite; readonly empty: CargoSprite }): NonNullable<VehicleView['mount']> {
+    const unit = manifestScale(this.deps.cellPx) * VEHICLE_SCALE;
+    const layer = new Container({ label: 'spreader-load' });
+    layer.position.set((entry.mount.x - (entry.footprint.w * MANIFEST_CELL_PX) / 2) * unit, (entry.mount.y - (entry.footprint.h * MANIFEST_CELL_PX) / 2) * unit);
+    const cargoLayer = new Container({ label: 'spreader-cargo' });
+    for (const sprite of [cargo.full, cargo.empty]) sprite.angle = 0; // naprieč: dlhšia strana kontajnera pozdĺž šírky vozidla
+    cargoLayer.addChild(cargo.full, cargo.empty);
+    layer.addChild(cargoLayer);
+    const make = (part: VehicleSpreaderEntry['spreader20']): Sprite | null => {
+      const texture = this.deps.textures?.file(part.file);
+      if (texture === undefined) return null;
+      const sprite = new Sprite(texture);
+      sprite.label = 'spreader';
+      sprite.anchor.set(part.pivot.x / (part.footprint.w * MANIFEST_CELL_PX), part.pivot.y / (part.footprint.h * MANIFEST_CELL_PX));
+      sprite.setSize(part.footprint.w * MANIFEST_CELL_PX * unit, part.footprint.h * MANIFEST_CELL_PX * unit);
+      layer.addChild(sprite);
+      return sprite;
+    };
+    const s20 = make(entry.spreader20);
+    const s40 = make(entry.spreader40);
+    if (s40 !== null) s40.visible = false;
+    this.view.addChild(layer);
+    return { cargoLayer, s20, s40 };
   }
 
   /** Postaví kabínu a náves do pózy: čap je v lokálnom rámci `hitch` za predkom v smere kabíny, náves visí na čape rovno s celkovým kurzom. */

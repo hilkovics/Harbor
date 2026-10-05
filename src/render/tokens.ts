@@ -177,7 +177,8 @@ export function loadRenderPalette(resolve: TokenResolver = documentTokenResolver
 
 /** Farby fallbacku entít sveta (moduly, žeriavy, lode, vozidlá, náklad) — používajú sa, len keď chýba sprite. */
 export interface EntityPalette {
-  readonly module: { readonly base: ColorValue; readonly outline: ColorValue };
+  /** Moduly: telo (`--module-base`), obrys (`--module-outline`) a svetlejšia plocha depa prázdnych (`--module-roof`, R2). */
+  readonly module: { readonly base: ColorValue; readonly outline: ColorValue; readonly roof: ColorValue };
   readonly crane: { readonly frame: ColorValue; readonly boom: ColorValue };
   readonly ship: { readonly hull: ColorValue; readonly deck: ColorValue };
   /** Vozidlá na cestách (`--vehicle-body`, `--vehicle-dark`) a ich brzdové svetlá (`--vehicle-brake`, R1). */
@@ -198,6 +199,13 @@ export interface EntityPalette {
     readonly sizePx: number;
   };
   readonly cargo: { readonly base: ColorValue; readonly dark: ColorValue };
+  /** Kontajner bez linky / bez sprite (R2): neutrálna sivá základňa `--container-neutral` (rovnaká, ktorú tónuje farba linky). */
+  readonly container: { readonly neutral: ColorValue };
+  /**
+   * Stohy zhora (R2, režim výšky „Tieň“): farba tieňa vrchného kontajnera (`--stack-shadow`), jeho posun na jedno poschodie v px pri 64 px bunke
+   * (`--stack-shadow-step`) a obrys pozície bloku (`--stack-grid`).
+   */
+  readonly stack: { readonly shadow: ColorValue; readonly shadowStepPx: number; readonly grid: ColorValue };
   /**
    * Smer nákladu (F6a, F6c; ADR-032, ADR-034): import (`--cargo-import`), export (`--cargo-export`, modrá — pár oranžová/modrá je
    * rozlíšiteľný aj pri poruche farbocitu) a prázdne kontajnery (`--cargo-empty`, neutrálna sivá); `dark` = obrys (`--cargo-empty-dark`
@@ -255,7 +263,7 @@ export function loadEntityPalette(resolve: TokenResolver = documentTokenResolver
     return { base, dark: shadeColor(base, DIRECTION_OUTLINE_SHADE) };
   };
   return {
-    module: { base: color('--module-base'), outline: color('--module-outline') },
+    module: { base: color('--module-base'), outline: color('--module-outline'), roof: color('--module-roof') },
     crane: { frame: color('--crane-frame'), boom: color('--crane-boom') },
     ship: { hull: color('--ship-hull'), deck: color('--ship-deck') },
     vehicle: { body: color('--vehicle-body'), dark: color('--vehicle-dark'), brake: color('--vehicle-brake') },
@@ -270,6 +278,8 @@ export function loadEntityPalette(resolve: TokenResolver = documentTokenResolver
       sizePx: readLengthToken('--fs-xs', resolve),
     },
     cargo: { base: color('--cargo-container'), dark: color('--cargo-container-dark') },
+    container: { neutral: color('--container-neutral') },
+    stack: { shadow: color('--stack-shadow'), shadowStepPx: readLengthToken('--stack-shadow-step', resolve), grid: color('--stack-grid') },
     direction: {
       import: { base: color('--cargo-import'), dark: color('--cargo-container-dark') },
       export: exportColors(),

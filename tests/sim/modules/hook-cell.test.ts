@@ -2,8 +2,11 @@
 // odovzdaní jednotky. Poloha závisí len od geometrie (footprint žeriava, strana kotviska pri vode), nie od stavu sveta.
 import { describe, expect, it } from 'vitest';
 import { BerthModule, CraneModule, hookCellCoord, hookCellIndex } from '@sim/modules';
+import { commandFromJSON } from '@sim/commands';
+import { hookCellOfCrane } from '@sim/vehicles';
 import { World } from '@sim/world';
-import { BUNDLED_DEFS, MAP } from '../world/world-fixtures';
+import { SECOND_CRANE_CELL, placeModuleCommand, removeModuleCommand } from '../helpers/harbor';
+import { BUNDLED_DEFS, DEFS, MAP } from '../world/world-fixtures';
 
 type Side = 'n' | 'e' | 's' | 'w';
 
@@ -54,5 +57,42 @@ describe('hookCellIndex: skutočný žeriav root kotviska', () => {
     const hook = hookCellIndex(world.grid, crane, berth);
     expect(world.quay.ownerAt(hook)).toBe(berth.id);
     expect(world.quay.isQuay(world.grid.index(43, 17))).toBe(false); // cesta pod kotviskom
+  });
+});
+
+describe('QuayLanes.hookCellOf: bunka pod hákom v odvodenej cache (T6D-05b), rovnaká ako hookCellIndex', () => {
+  const craneOf = (world: World, index = 0): CraneModule => [...world.modules.values()].filter((module): module is CraneModule => module instanceof CraneModule)[index];
+
+  it('under_hook: cache vráti index bunky pod hákom (aj cez hookCellOfCrane) a pri opakovaní to isté číslo bez ďalšieho výpočtu', () => {
+    const world = World.create(BUNDLED_DEFS, MAP, 1);
+    const crane = craneOf(world);
+    const berth = world.modules.get(crane.berthId) as BerthModule;
+    const expected = hookCellIndex(world.grid, crane, berth);
+    expect(world.quay.hookCellOf(crane.id)).toBe(expected);
+    expect(hookCellOfCrane(world, crane.id)).toBe(expected);
+    expect(world.quay.hookCellOf(crane.id)).toBe(expected);
+  });
+
+  it('apron: kotvisko nemá jazdné nábrežie, takže žiadna bunka pod hákom; neznámy žeriav tiež nie', () => {
+    const world = World.create(DEFS, MAP, 1);
+    expect(world.quay.hookCellOf(craneOf(world).id)).toBeUndefined();
+    expect(hookCellOfCrane(world, 9_999 as never)).toBeUndefined();
+  });
+
+  it('po zmene modulov sa cache prepočíta: nový žeriav má svoju bunku pod hákom, odstránený žiadnu', () => {
+    const world = World.create(BUNDLED_DEFS, MAP, 1);
+    const first = craneOf(world);
+    expect(world.quay.hookCellOf(first.id)).toBeDefined(); // cache sa naplnila pred pridaním
+    world.enqueue(commandFromJSON(placeModuleCommand('crane_container_gantry', SECOND_CRANE_CELL)));
+    world.applyPending();
+    const second = craneOf(world, 1);
+    expect(second.id).not.toBe(first.id);
+    const berth = world.modules.get(second.berthId) as BerthModule;
+    expect(world.quay.hookCellOf(second.id)).toBe(hookCellIndex(world.grid, second, berth));
+    expect(world.quay.hookCellOf(second.id)).toBe(world.grid.index(45, 16));
+    world.enqueue(commandFromJSON(removeModuleCommand(second.id)));
+    world.applyPending();
+    expect(world.quay.hookCellOf(second.id)).toBeUndefined();
+    expect(world.quay.hookCellOf(first.id)).toBe(world.grid.index(43, 16));
   });
 });

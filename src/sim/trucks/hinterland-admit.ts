@@ -17,6 +17,8 @@ import { admitExportTrucks } from './export-trucks';
 export function admitFromHinterland(world: World): void {
   const portal = world.landside.portalCell;
   if (portal === NO_ACCESS || world.landsideModules.ramps.length === 0) return;
+  // Kamióny sa od kroku 5 zmenili (povel do docku, odchod) — prvý pokus o vjazd prepočíta prisľúbené miesta docku (`DockIntake`), ďalšie až po vzniku kamióna s dovozom.
+  world.dockIntake.invalidate();
   admitCollectTrucks(world, portal);
   admitExportTrucks(world, portal);
   admitReturnTrucks(world, portal);

@@ -10,9 +10,14 @@
  * `QuayLanes` je odvodená cache (pole id kotviska podľa bunky): nie je stav simulácie ani časť save; pri zmene množiny modulov
  * (`World.moduleVersion`) sa pri najbližšom čítaní prepočíta. Pridanie / odstránenie takého kotviska zároveň zvyšuje `World.roadVersion`
  * (cache ciest a vzdialeností sa zneplatnia, vozidlá preplánujú).
+ *
+ * Do tej istej cache patrí aj **bunka pod hákom** každého žeriava takého kotviska (`hookCellOf`, T6D-05b): závisí len od geometrie, takže sa počíta pri prepočte
+ * podľa `moduleVersion`, nie pri každom pláne trasy (`hookCellCoord` alokuje).
  */
 import type { EntityId } from '../core/entity-id';
 import { BerthModule } from '../modules/berth-module';
+import { CraneModule } from '../modules/crane-module';
+import { hookCellCoord } from '../modules/hook-cell';
 import type { Module } from '../modules/module';
 import { HANDOVERS } from '../systems/crane-handover';
 import type { QuayCells } from './pathfinder';
@@ -30,6 +35,8 @@ export function hasQuayLane(module: Module): boolean {
 
 export class QuayLanes implements QuayCells {
   private readonly cells: Int32Array;
+  /** Index bunky pod hákom podľa id žeriava (len žeriavy kotvísk s jazdným nábrežím). */
+  private readonly hooks = new Map<EntityId, number>();
   private version = Number.NaN;
 
   /**
@@ -56,6 +63,12 @@ export class QuayLanes implements QuayCells {
     return this.owners()[index] ?? 0;
   }
 
+  /** Index bunky pod hákom žeriava `craneId`, ak jeho kotvisko má jazdné nábrežie; inak `undefined` (apron režim, neznámy žeriav). */
+  hookCellOf(craneId: EntityId): number | undefined {
+    this.refresh();
+    return this.hooks.get(craneId);
+  }
+
   /** Je bunka jazdným nábrežím nejakého kotviska? */
   isQuay(index: number): boolean {
     return this.ownerAt(index) !== 0;
@@ -66,9 +79,17 @@ export class QuayLanes implements QuayCells {
     if (version === this.version) return;
     this.version = version;
     this.cells.fill(0);
+    this.hooks.clear();
     for (const module of this.source.modules.values()) {
       if (!hasQuayLane(module)) continue;
       for (const { x, y } of module.cells) this.cells[y * this.width + x] = module.id;
+    }
+    for (const module of this.source.modules.values()) {
+      if (!(module instanceof CraneModule)) continue;
+      const berth = this.source.modules.get(module.berthId);
+      if (!(berth instanceof BerthModule) || !hasQuayLane(berth)) continue;
+      const { x, y } = hookCellCoord(module, berth);
+      this.hooks.set(module.id, y * this.width + x);
     }
   }
 }

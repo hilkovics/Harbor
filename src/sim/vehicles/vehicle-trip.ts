@@ -16,9 +16,6 @@
  * - **Pod hákom** (F6d, ADR-033 dodatok T6D-02): ak je koncovým bodom jobu hák žeriava v kotvisku s jazdným nábrežím, cieľom jazdy nie je
  *   prístupová bunka kotviska, ale **bunka pod hákom** (`hookCellIndex`) — vozidlo vojde na nábrežie a zastane pod žeriavom (`planJobRoute`).
  */
-import { BerthModule } from '../modules/berth-module';
-import { CraneModule } from '../modules/crane-module';
-import { hookCellIndex } from '../modules/hook-cell';
 import type { EntityId } from '../core/entity-id';
 import type { Module } from '../modules/module';
 import type { TransportJob } from '../logistics/transport-job';
@@ -49,11 +46,7 @@ export function jobModule(world: World, job: TransportJob, destination: VehicleD
 
 /** Bunka pod hákom žeriava `craneId`, ak jeho kotvisko má jazdné nábrežie (F6d); inak `undefined`. */
 export function hookCellOfCrane(world: World, craneId: EntityId): number | undefined {
-  const crane = world.modules.get(craneId);
-  const berth = crane instanceof CraneModule ? world.modules.get(crane.berthId) : undefined;
-  if (!(crane instanceof CraneModule) || !(berth instanceof BerthModule)) return undefined;
-  const cell = hookCellIndex(world.grid, crane, berth);
-  return world.quay.isQuay(cell) ? cell : undefined;
+  return world.quay.hookCellOf(craneId); // odvodená cache v `QuayLanes` (T6D-05b), bez alokácie pri každom pláne trasy
 }
 
 /**

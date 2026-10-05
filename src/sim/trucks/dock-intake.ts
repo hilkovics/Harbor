@@ -8,7 +8,8 @@
  *
  * Prisľúbené miesto = jednotky, ktoré vezie kamión `delivery` ešte pred povelom do docku (`!bonds.holdsIntake`): od povelu do docku ich držia
  * skutočné rezervácie (`LoadingRamp.reserve`). Odvodená hodnota (nie je v save): `refresh` ju prepočíta z kamiónov v O(kamióny) bez alokácie po
- * prvom zväčšení polí; dispatcher ho volá na začiatku kroku 5, vpúšťanie z vnútrozemia pred každým pokusom.
+ * prvom zväčšení polí; dispatcher ho volá na začiatku kroku 5, vpúšťanie z vnútrozemia (krok 8) raz za tick pred prvým pokusom a znova až po vzniku kamióna
+ * s dovozom (`invalidate` + `refreshIfStale`, T6D-05b) — medzi pokusmi sa prisľúbenie inak nemení.
  *
  * Voľné miesto po odpočítaní prisľúbeného (`roomAt`, `roomCount`, `firstRoomDock`) je to, čo smie dostať nový príjem aj outbound job.
  */
@@ -23,6 +24,18 @@ export class DockIntake {
   private pending = new Int32Array(0);
   /** Register, pre ktorý `refresh` naposledy naplnil polia. */
   private roster: LandsideModules | undefined;
+  /** Polia treba prepočítať (`refreshIfStale`): na začiatku a po `invalidate`; `refresh` ho vynuluje. */
+  private stale = true;
+
+  /** Zneplatní polia — najbližší `refreshIfStale` ich prepočíta (zmenilo sa niečo, čo `refresh` číta: kamióny `delivery` pred povelom do docku). */
+  invalidate(): void {
+    this.stale = true;
+  }
+
+  /** `refresh` len keď sa od posledného prepočtu volalo `invalidate` (alebo ešte nebol žiadny). */
+  refreshIfStale(world: World): void {
+    if (this.stale) this.refresh(world);
+  }
 
   /** Prepočíta prisľúbené jednotky dockov všetkých rámp sveta z kamiónov `delivery` pred povelom do docku. */
   refresh(world: World): void {
@@ -37,6 +50,7 @@ export class DockIntake {
     if (this.pending.length < docks) this.pending = new Int32Array(docks);
     this.pending.fill(0, 0, docks);
     this.roster = roster;
+    this.stale = false;
     if (world.trucks.size === 0) return;
     for (const truck of world.trucks.values()) {
       if (truck.mission !== 'delivery' || truck.bonds.holdsIntake) continue;

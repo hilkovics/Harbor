@@ -420,5 +420,5 @@ describeRoundtrips(
   'roundtrip uprostred multi_ship_queue (jedno kotvisko, päť lodí: arriving, plavba na rejdu, waiting_anchorage, odchod)',
   'multi_ship_queue',
   [SHIP_ARRIVING_AND_ANCHORAGE, SHIP_SAILING_TO_ANCHORAGE, SHIP_UNDOCKING_WITH_QUEUE, SHIP_BERTHING_WHILE_OUTBOUND],
-  6_000,
+  15_000, // R2 (ADR-039): vykládka lodí je pomalšia (fyzická kapacita dvora 48 TEU) — situácia nastane neskôr (pôvodne 6 000)
 );

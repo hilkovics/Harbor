@@ -50,10 +50,23 @@ function baseState(scenarioId: BaseScenario = 'vertical_slice'): WorldState {
   return scenarioId === 'vertical_slice' ? stateOf(scenarioId, SLICE_TICK) : stateOf(scenarioId, EXPORT_TICK);
 }
 
-/** Prázdny kontajner linky v sklade `moduleId` (voľný slot 63 dvora S) — jednotka s novým id. */
+/** Prázdny kontajner linky v sklade `moduleId` (vrstva 0 voľného stĺpca dvora S) — jednotka s novým id. */
 function withEmptyUnit(state: WorldState, fields: Json = {}): WorldState {
-  const yard = state.modules.find((entry) => DEFS.modules.get(entry.defId).kind === 'storage');
-  if (yard === undefined) throw new Error('save nemá sklad');
+  // Vrstva 0 prvého prázdneho stĺpca prvého skladu, ktorý ho má (blok 4 × 4 × 3, ADR-039; 40′ zaberá aj stĺpec vedľa).
+  const freeColumnOf = (moduleId: number): number | undefined => {
+    const taken = new Set<number>();
+    for (const other of state.cargo.units) {
+      const location = other.location as { kind: string; moduleId?: number; slot?: number };
+      if (location.kind !== 'in_storage' || location.moduleId !== moduleId || location.slot === undefined) continue;
+      const column = Math.floor(location.slot / 3);
+      taken.add(column);
+      if (other.sizeFt === 40) taken.add(column + 1);
+    }
+    return Array.from({ length: 16 }, (_, column) => column).find((column) => !taken.has(column));
+  };
+  const yard = state.modules.find((entry) => DEFS.modules.get(entry.defId).kind === 'storage' && freeColumnOf(entry.id) !== undefined);
+  if (yard === undefined) throw new Error('save nemá sklad s voľným stĺpcom');
+  const freeColumn = freeColumnOf(yard.id) as number;
   const unit = {
     id: state.ids.nextId,
     typeId: 'container_teu',
@@ -70,7 +83,7 @@ function withEmptyUnit(state: WorldState, fields: Json = {}): WorldState {
     status: 'damaged',
     repairUntilTick: null,
     quantity: 1,
-    location: { kind: 'in_storage', moduleId: yard.id, slot: 63 },
+    location: { kind: 'in_storage', moduleId: yard.id, slot: freeColumn * 3 },
     ...fields,
   };
   return {

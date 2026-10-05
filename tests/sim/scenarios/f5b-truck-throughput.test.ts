@@ -46,6 +46,8 @@ describe('priepustnosť kamiónov: full_import_chain (ADR-029)', () => {
   let world: World;
   let allStoredAt = -1;
   let allExportedAt = -1;
+  /** Počet už vyvezených jednotiek v čase `allStoredAt`: dvory majú 2 × 48 TEU (R2, ADR-039), takže časť 120 TEU odíde ešte počas vykládky. */
+  let exportedAtAllStored = 0;
   let maxTrucks = 0;
   let maxBayHolders = 0;
   let maxDockHolders = 0;
@@ -59,7 +61,10 @@ describe('priepustnosť kamiónov: full_import_chain (ADR-029)', () => {
         assertCargoConservation(w);
         const { cargo } = w;
         const inTransit = cargo.countByKind('on_ship') + cargo.countByKind('on_apron') + cargo.countByKind('in_crane') + cargo.countByKind('in_vehicle');
-        if (allStoredAt < 0 && cargo.createdCount > 0 && inTransit === 0) allStoredAt = w.clock.tick;
+        if (allStoredAt < 0 && cargo.createdCount > 0 && inTransit === 0) {
+          allStoredAt = w.clock.tick;
+          exportedAtAllStored = cargo.exportedCount;
+        }
         if (allExportedAt < 0 && cargo.createdCount > 0 && cargo.exportedCount === cargo.createdCount) allExportedAt = w.clock.tick;
         const trucks = [...w.trucks.values()];
         maxTrucks = Math.max(maxTrucks, trucks.length);
@@ -84,7 +89,7 @@ describe('priepustnosť kamiónov: full_import_chain (ADR-029)', () => {
   });
 
   it('po uskladnení je úzkym miestom brána: export trvá 2 × processTicks na kamión (+ príjazd prvého a odjazd posledného)', () => {
-    const trucks = UNITS / TRUCK_CAPACITY;
+    const trucks = (UNITS - exportedAtAllStored) / TRUCK_CAPACITY;
     const gateBound = trucks * 2 * PROCESS_TICKS;
     const exportPhase = allExportedAt - allStoredAt;
     expect(allStoredAt).toBeGreaterThan(0);

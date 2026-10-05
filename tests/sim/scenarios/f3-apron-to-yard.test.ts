@@ -69,7 +69,8 @@ const RUN_TIMEOUT_MS = 120_000;
 const scenario = loadScenarioFile('apron_to_yard');
 const STRADDLE = DEFS.vehicles.get('straddle_carrier');
 const YARD_DEF = DEFS.modules.get('container_yard_small');
-const YARD_CAPACITY = storageParams(YARD_DEF).capacityUnits;
+/** Fyzická kapacita dvora v TEU (R2, ADR-039): `min(capacityUnits, bays × rows × maxTier)` = 48. */
+const YARD_CAPACITY = Math.min(storageParams(YARD_DEF).capacityUnits, (storageParams(YARD_DEF).bays ?? Infinity) * (storageParams(YARD_DEF).rows ?? 1) * (storageParams(YARD_DEF).maxTier ?? 1));
 const ROAD_COST = DEFS.infrastructure.road.costPerCellCents;
 /** `internalTicks` skladu/berthu nie je v defoch nastavené → platí `logistics.defaultInternalTicks` (rozhodnutie 2). */
 const INTERNAL_TICKS = DEFS.logistics.defaultInternalTicks;
@@ -368,14 +369,14 @@ describe('scenár apron_to_yard: beh 15 000 tickov', () => {
     expect(cargo.createdCount - cargo.liveCount - cargo.exportedCount).toBe(0);
   });
 
-  it('oba dvory majú náklad a bližší viac alebo rovnako (karta); plný blízky dvor (64) sa preskočí a ďaleký dostane zvyšok (56)', () => {
+  it('oba dvory majú náklad a bližší viac alebo rovnako (karta); oba dvory (48 TEU) sa naplnia', () => {
     const near = world.cargo.countAt('in_storage', nearYard.id);
     const far = world.cargo.countAt('in_storage', farYard.id);
     expect(near + far).toBe(UNITS);
     expect(near).toBeGreaterThan(0);
     expect(far).toBeGreaterThan(0);
     expect(near).toBeGreaterThanOrEqual(far);
-    // Predpoklad A5: alokátor berie najbližší sklad s voľnou kapacitou.
+    // 96 jednotiek = kapacita oboch dvorov (R2: plánovač rozkladá import po prázdnych stohoch bližšieho aj ďalekého dvora).
     expect(near).toBe(YARD_CAPACITY);
     expect(far).toBe(UNITS - YARD_CAPACITY);
   });

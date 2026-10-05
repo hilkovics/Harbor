@@ -72,9 +72,13 @@ export function depotOf(world: World): VehicleDepot {
   return module as VehicleDepot;
 }
 
-/** Kapacita skladu podľa defu (nie podľa implementácie `StorageModule`). */
+/**
+ * Fyzická kapacita skladu podľa defu (nie podľa implementácie `StorageModule`): blok so stohmi (ADR-039) má `min(capacityUnits, bays × rows × maxTier)` TEU,
+ * sklad bez geometrie `capacityUnits`.
+ */
 export function storageCapacity(module: Module): number {
-  return storageParams(module.def).capacityUnits;
+  const { capacityUnits, bays, rows, maxTier } = storageParams(module.def);
+  return bays !== undefined && rows !== undefined && maxTier !== undefined ? Math.min(capacityUnits, bays * rows * maxTier) : capacityUnits;
 }
 
 /** Bunka, na ktorej vozidlo (float poloha, stred bunky = x + 0,5) práve stojí. */

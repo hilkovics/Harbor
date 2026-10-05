@@ -121,7 +121,9 @@ describe('scenár empty_cycle: beh', () => {
       const repaired = of(events, 'EmptyRepaired').find((candidate) => candidate.event.unitId === unitId);
       expect(started, `oprava jednotky ${String(unitId)}`).toBeDefined();
       expect(repaired).toBeDefined();
-      expect((started?.tick ?? 0) - entry.tick).toBeLessThanOrEqual(1);
+      // Oprava začne hneď, keď je voľná oprava (repairBays); inak poškodená jednotka čaká najviac jednu opravu (R2: iné časovanie ukladania zhustilo poškodené jednotky).
+      expect((started?.tick ?? 0) - entry.tick).toBeGreaterThanOrEqual(0);
+      expect((started?.tick ?? 0) - entry.tick).toBeLessThanOrEqual(REPAIR_TICKS);
       expect((repaired?.tick ?? 0) - (started?.tick ?? 0)).toBe(REPAIR_TICKS);
       expect(started?.event.untilTick).toBe(repaired?.tick);
       expect(repaired?.event.costCents).toBe(BUNDLED_DEFS.economy.repairCostCents);

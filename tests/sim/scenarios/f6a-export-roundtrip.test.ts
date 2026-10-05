@@ -167,7 +167,10 @@ describe.each(MODES)('scenár export_roundtrip: režim $name', ({ defs, goldenPa
     expect(loaded).toHaveLength(shippedUnits);
     expect(loaded.filter((entry) => entry.event.lastMinute)).toHaveLength(lateUnit === 'last_minute' ? 1 : 0);
     // Na aprone príde posledný (medium) kontajner ešte pred lashingom a čaká v sklade, kým sa nakladajú ľahšie jednotky → tie sú mimo poradia (last minute).
-    expect(loaded.some((entry) => entry.event.outOfOrder)).toBe(lateUnit === 'last_minute');
+    // Pod hákom vozidlo, ktoré musí najprv preložiť kontajner nad cieľom (rehandling, R2 ADR-039), príde po inom vozidle — najviac 1 jednotka mimo poradia tried.
+    const outOfOrder = loaded.filter((entry) => entry.event.outOfOrder).length;
+    if (lateUnit === 'last_minute') expect(outOfOrder).toBeGreaterThan(0);
+    else expect(outOfOrder).toBeLessThanOrEqual(1);
     expect(of(events, 'DualCycle').length).toBeGreaterThan(0);
   });
 

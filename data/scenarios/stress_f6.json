@@ -275,13 +275,6 @@
       "atTick": 25921,
       "command": {
         "type": "AcceptContract",
-        "contractId": 23
-      }
-    },
-    {
-      "atTick": 25921,
-      "command": {
-        "type": "AcceptContract",
         "contractId": 24
       }
     },
@@ -300,7 +293,7 @@
       }
     },
     {
-      "atTick": 34561,
+      "atTick": 25921,
       "command": {
         "type": "AcceptContract",
         "contractId": 28
@@ -311,13 +304,6 @@
       "command": {
         "type": "AcceptContract",
         "contractId": 30
-      }
-    },
-    {
-      "atTick": 34561,
-      "command": {
-        "type": "AcceptContract",
-        "contractId": 31
       }
     },
     {
@@ -338,21 +324,7 @@
       "atTick": 34561,
       "command": {
         "type": "AcceptContract",
-        "contractId": 34
-      }
-    },
-    {
-      "atTick": 43201,
-      "command": {
-        "type": "AcceptContract",
         "contractId": 35
-      }
-    },
-    {
-      "atTick": 43201,
-      "command": {
-        "type": "AcceptContract",
-        "contractId": 36
       }
     },
     {
@@ -373,7 +345,7 @@
       "atTick": 43201,
       "command": {
         "type": "AcceptContract",
-        "contractId": 39
+        "contractId": 40
       }
     },
     {
@@ -381,6 +353,13 @@
       "command": {
         "type": "AcceptContract",
         "contractId": 41
+      }
+    },
+    {
+      "atTick": 43201,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 43
       }
     }
   ]

@@ -108,7 +108,7 @@ describe('ConnectedModuleInspector: sklad a depo', () => {
     expect(renderInspector(app, YARD_ID).data).toMatchObject({
       kind: 'storage',
       connected: true,
-      storage: { stored: 0, reserved: 0, capacity: 64, unitsIn: 0, unitsOut: 0 },
+      storage: { stored: 0, reserved: 0, capacity: 48, unitsIn: 0, unitsOut: 0 },
     });
   });
 

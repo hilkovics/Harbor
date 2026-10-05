@@ -308,6 +308,9 @@ describe('runScenario', () => {
       inlandWaitTicks: 0,
       inlandWaitTicksMax: 0,
       pickupBayStarvationTicks: 0,
+      rehandles: 0,
+      rehandlesPerMove: null,
+      yardTeuUsedPct: 0,
       directHandoverPct: null,
       gridlockEvents: 0,
       trafficWaitTicks: { vehicles: 0, trucks: 0 },
@@ -389,6 +392,9 @@ describe('runScenario', () => {
       'trafficWaitTicks',
       'maxBlockedTicks',
       'stuckAtEnd',
+      'rehandles',
+      'rehandlesPerMove',
+      'yardTeuUsedPct',
     ]);
   });
 
@@ -488,7 +494,7 @@ describe('runScenario', () => {
   });
 
   describe('metriky vozidiel a skladov (F3)', () => {
-    // apron_to_yard: 2 × straddle_carrier (BuyVehicle), 1 loď so 120 TEU, dvor s kapacitou ≥ 120 (viď scenár).
+    // apron_to_yard: 2 × straddle_carrier (BuyVehicle), 1 loď s 96 TEU = kapacita oboch dvorov (2 × 48 TEU, R2 ADR-039; viď scenár).
     const apronToYard = loadScenario(APRON_TO_YARD_SCENARIO);
     const RUN_TICKS = 15_000;
     let full: SimrunReport;
@@ -497,7 +503,7 @@ describe('runScenario', () => {
       full = runScenario(apronToYard, RUN_TICKS, defs);
     }, HEAVY_TIMEOUT_MS);
 
-    it('apron_to_yard (15 000 tickov): 120 jednotiek v sklade, 120 hotových jobov, bez chýbajúceho skladu, nič stratené', () => {
+    it('apron_to_yard (15 000 tickov): 96 jednotiek v sklade, 96 hotových jobov, bez chýbajúceho skladu, nič stratené', () => {
       expect(full).toMatchObject({
         scenario: 'apron_to_yard',
         lostUnits: 0,
@@ -505,8 +511,8 @@ describe('runScenario', () => {
         shipsSpawned: 1,
         unitsOnApron: 0,
         vehicles: 2,
-        unitsInStorage: 120,
-        jobsDone: 120,
+        unitsInStorage: 96,
+        jobsDone: 96,
         noStorageEvents: 0,
       });
       expect(full.ticksToAllStored).not.toBeNull();
@@ -525,11 +531,11 @@ describe('runScenario', () => {
 
       const before = runScenario(apronToYard, stored - 1, defs);
       expect(before.ticksToAllStored).toBeNull();
-      expect(before.unitsInStorage).toBeLessThan(120);
+      expect(before.unitsInStorage).toBeLessThan(96);
 
       const at = runScenario(apronToYard, stored, defs);
       expect(at.ticksToAllStored).toBe(stored);
-      expect(at.unitsInStorage).toBe(120);
+      expect(at.unitsInStorage).toBe(96);
     });
 
     it('vehicleUtilPct je podiel vozidlo-tickov mimo idle: v (0, 100), najviac 1 desatinné miesto', () => {
@@ -578,6 +584,8 @@ describe('runScenario', () => {
     const fullChain = loadScenario(FULL_IMPORT_CHAIN_SCENARIO);
     const EXPORT_TICKS = 40_000;
     const UNITS = 120;
+    /** Fyzická kapacita oboch dvorov full_import_chain: 2 × 48 TEU (R2, ADR-039). */
+    const YARD_TEU = 96;
     let full: SimrunReport;
 
     beforeAll(() => {
@@ -669,7 +677,7 @@ describe('runScenario', () => {
       expect(report).toMatchObject({
         lostUnits: 0,
         exportedUnits: 0,
-        unitsInStorage: UNITS,
+        unitsInStorage: YARD_TEU, // dva dvory po 48 TEU (R2, ADR-039); zvyšných 24 jednotiek ostáva na aprone
         trucksSpawned: 0,
         trucksExited: 0,
         unitsExportedByTrucks: 0,
@@ -791,21 +799,22 @@ describe('runScenario', () => {
         lostUnits: 0,
         // dva dvory (T6D-04): žiadny export nezostal rolled; pool škáluje s kapacitou skladov, takže importy #1 a #4 majú 48 + 96 TEU (pred druhým dvorom 45 + 64)
         // R2 (ADR-039): počty kontajnerov (export 36 TEU = 22, repositioning 24 TEU = 14 prázdnych, prekládka 36 TEU = 22); jeden export prišiel po cut-off
-        rolledUnits: 1,
-        exportedUnits: 71,
-        shippedUnits: 58,
-        emptyReturns: 39,
-        emptyPickedUp: 10,
-        repositionedUnits: 14,
+        // R2 plánovač (ADR-039): iný prúd Rng a časovanie ukladania — 2 rolled exporty, 16 prázdnych v repositioningu, 73 exportovaných, 60 odplávaných
+        rolledUnits: 2,
+        exportedUnits: 73,
+        shippedUnits: 60,
+        emptyReturns: 34,
+        emptyPickedUp: 12,
+        repositionedUnits: 16,
         transhipLoaded: 22,
         transhipMissed: 0,
         transhipRescued: 0,
         transhipSold: 0,
         emptyReturnsDeclined: 0,
         // vozidlo stojí pod žeriavom a buffer je 0: každé odovzdanie žeriav ↔ vozidlo je priame (pred T6D-02 49 %)
-        directHandoverPct: 100,
+        directHandoverPct: 98.6,
       });
-      // odplávané = export 22 + repositioning 14 + prekládka 22 (kontajnery)
+      // odplávané = export 22 + repositioning 16 + prekládka 22 (kontajnery)
       expect(report.shippedUnits).toBe(22 + report.repositionedUnits + report.transhipLoaded);
     }, HEAVY_TIMEOUT_MS);
 
@@ -1145,8 +1154,8 @@ describe('CLI (tools/simrun.ts)', () => {
       scenario: 'apron_to_yard',
       lostUnits: 0,
       vehicles: 2,
-      unitsInStorage: 120,
-      jobsDone: 120,
+      unitsInStorage: 96,
+      jobsDone: 96,
       noStorageEvents: 0,
     });
     expect(typeof report['ticksToAllStored']).toBe('number');
@@ -1189,7 +1198,7 @@ describe('CLI (tools/simrun.ts)', () => {
       returnedUnits: 1,
       vgmHolds: 2,
       dualTransactionRate: 0,
-      stowageOrderViolations: 0,
+      stowageOrderViolations: 1, // rehandling (R2) oneskorí jedno vozidlo — jednotka nižšej triedy sa naloží pred vyššou
       exportGroupingPct: 100,
     });
     expect(report['dualCycleRate']).toBeGreaterThan(0);

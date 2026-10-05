@@ -186,16 +186,18 @@ describe('ModuleVM: storage a connected', () => {
     const app = createApp();
     buildLogistics(app, { roads: false });
     const modules = new Map(app.bridge.snapshot().modules.map((module) => [module.id, module] as const));
-    expect(modules.get(YARD_ID)).toMatchObject({ defId: 'container_yard_small', kind: 'storage', storage: { capacity: 64, stored: 0, reserved: 0 }, connected: false });
+    expect(modules.get(YARD_ID)).toMatchObject({ defId: 'container_yard_small', kind: 'storage', storage: { capacity: 48, stored: 0, reserved: 0 }, connected: false });
     expect(modules.get(DEPOT_ID)).toMatchObject({ defId: 'vehicle_depot', kind: 'depot', connected: false });
     expect(modules.get(DEPOT_ID)).not.toHaveProperty('storage');
   });
 
-  it('kapacita skladu ide z defu (nie natvrdo)', () => {
+  it('kapacita skladu ide z defu (nie natvrdo): min(capacityUnits, geometria)', () => {
     const app = createApp();
     buildLogistics(app, { roads: false });
     const yard = app.bridge.snapshot().modules.find((module) => module.id === YARD_ID);
-    expect(yard?.storage?.capacity).toBe(app.world.defs.modules.get('container_yard_small').params['capacityUnits']);
+    // Fyzická kapacita bloku so stohmi v TEU (R2, ADR-039): min(capacityUnits, bays × rows × maxTier) z defu.
+    const { capacityUnits, bays, rows, maxTier } = app.world.defs.modules.get('container_yard_small').params as Record<string, number>;
+    expect(yard?.storage?.capacity).toBe(Math.min(capacityUnits, bays * rows * maxTier));
   });
 
   it('žeriav nemá `connected` ani `storage` (nemá cestné konektory); kotvisko áno (connected)', () => {

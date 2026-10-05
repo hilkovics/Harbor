@@ -22,7 +22,7 @@ const TICKS = 40_000;
 const FIRST_IMPORT_ID = 5;
 const BOOKING_ID = 11;
 const PAIRED_IMPORT_ID = 10;
-const PAIRED_IMPORT_UNITS = 28; // kontajnery (TEU viď golden)
+const PAIRED_IMPORT_UNITS = 31; // kontajnery (TEU viď golden); R2 (ADR-039): plánovač zmenil prúd Rng, pôvodne 28
 const RUN_TIMEOUT_MS = 300_000;
 const GOLDEN_PATH = `${REPO_ROOT}tests/sim/__golden__/landside_pressure.json`;
 
@@ -80,7 +80,7 @@ describe('scenár landside_pressure: beh', () => {
   const observed = run();
   const { world, events } = observed;
 
-  it('import #10 (28 kontajnerov) sa pod tlakom dokončí; export #11 aj prvý import #5 tiež, v poradí #5, #11, #10', () => {
+  it('import #10 (31 kontajnerov) sa pod tlakom dokončí; export #11 aj prvý import #5 tiež, v poradí #5, #11, #10', () => {
     expect(of(events, 'ContractCompleted').map((entry) => entry.event.contractId)).toEqual([FIRST_IMPORT_ID, BOOKING_ID, PAIRED_IMPORT_ID]);
     expect(world.contracts.get(PAIRED_IMPORT_ID as never)).toMatchObject({ kind: 'import', state: 'completed', volumeUnits: PAIRED_IMPORT_UNITS, unitsExported: PAIRED_IMPORT_UNITS });
     expect(world.contracts.get(BOOKING_ID as never)).toMatchObject({ kind: 'export', state: 'completed' });

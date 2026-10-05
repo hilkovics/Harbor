@@ -44,11 +44,12 @@ describe('EmptyDepot — registrácia a vlastnosti', () => {
     }
   });
 
-  it('kapacita pre capacityHint poolu: depo 0 (neuskladňuje náklad kontraktov), dvor = capacityUnits', () => {
+  it('kapacita pre capacityHint poolu: depo 0 (neuskladňuje náklad kontraktov), dvor = capacityUnits z defu (nie fyzická kapacita bloku)', () => {
     expect(create('empty_depot').storageCapacityUnits()).toBe(0);
     const yard = create('container_yard_small');
-    expect(yard.storageCapacityUnits()).toBe(yard.capacity);
-    expect(yard.capacity).toBeGreaterThan(0);
+    // Hint poolu = `capacityUnits` z defu (64), fyzická kapacita bloku so stohmi = min(capacityUnits, 4 × 4 × 3) = 48 TEU (ADR-039 dodatok TR2-02).
+    expect(yard.storageCapacityUnits()).toBe(yard.params.capacityUnits);
+    expect(yard.capacity).toBe(48);
   });
 
   it('def bez roly alebo bez repairBays nie je depo: ModuleError invalid_input', () => {

@@ -8,7 +8,9 @@
  * 2. **Segregácia** (`sameGroup`): export `(voyage, cieľový prístav, hmotnostná trieda, veľkosť)`, import podľa odhadu odchodu, prekládka podľa
  *    lode B (kontrakt), prázdne `(linka, veľkosť)`.
  * 3. **Bez zavalenia** (`plannedDepartureTick`): stoh rovnakej skupiny, ktorého vrch odchádza neskôr alebo rovnako → prázdny stoh → stoh inej
- *    skupiny, ktorého vrch odchádza neskôr → inak najmenšia penalizácia (počet kontajnerov, ktoré by sa zavalili); medzi rovnakými vyššie plný stoh.
+ *    skupiny, ktorého vrch odchádza neskôr, medzi nimi najtesnejšie pasujúci (`gap`) → inak najmenšia penalizácia (počet kontajnerov, ktoré by sa zavalili) —
+ *    zavalenie len v bloku, ktorý ostane voľný aspoň na `BURY_RESERVE_COLUMNS` stĺpcov (rehandling potrebuje kam preložiť; kontajner s jobom sa nezavaľuje nikdy);
+ *    bez vhodného stohu jednotka čaká (`null`, `NoStorageAvailable`).
  * 4. **Vzdialenosť:** bližší blok má prednosť.
  *
  * Poradie porovnania: `(trieda, [penalizácia zavalenia], vzdialenosť bloku, rozdiel odchodu vrchu (najtesnejšie pasujúci stoh), [vzdialenosť bay od pôvodného pri rehandlingu], penalizácia, plnenie stohu, id bloku, bay, row)`.

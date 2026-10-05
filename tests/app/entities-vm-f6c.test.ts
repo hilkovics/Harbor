@@ -373,7 +373,7 @@ describe('StorageOpTracker: prázdny kontajner', () => {
   it('SimBridge: operácia s prázdnym kontajnerom v ledgeri nesie `empty` vo `ModuleVM.lastStorageOp`, import nie', () => {
     const app = depotApp();
     const { world, bridge } = app;
-    const empty = storeEmptyUnit(world, 'blue_anchor', EMPTY_DEPOT_ID, 3);
+    const empty = storeEmptyUnit(world, 'blue_anchor', EMPTY_DEPOT_ID, 8); // vrstva 0 druhého stĺpca depa (maxTier 8, ADR-039)
     const imported = world.cargo.create(TEU, { kind: 'on_ship', shipId: 900 as EntityId });
     const loc = (unitId: EntityId) => world.cargo.get(unitId)?.location;
     const moveEvent = (unitId: EntityId, moduleId: EntityId, slot: number): SimEvent => ({
@@ -384,8 +384,8 @@ describe('StorageOpTracker: prázdny kontajner', () => {
       tick: world.clock.tick,
     });
     expect(loc(empty.id)?.kind).toBe('in_storage');
-    bridge.publish([moveEvent(empty.id, EMPTY_DEPOT_ID, 3)]);
-    expect(bridge.snapshot().modules.find((vm) => vm.id === EMPTY_DEPOT_ID)?.lastStorageOp).toEqual({ slot: 3, tick: world.clock.tick, kind: 'put', empty: true });
+    bridge.publish([moveEvent(empty.id, EMPTY_DEPOT_ID, 8)]);
+    expect(bridge.snapshot().modules.find((vm) => vm.id === EMPTY_DEPOT_ID)?.lastStorageOp).toEqual({ slot: 8, tick: world.clock.tick, kind: 'put', empty: true });
     bridge.publish([moveEvent(imported.id, YARD_ID, 2)]);
     expect(bridge.snapshot().modules.find((vm) => vm.id === YARD_ID)?.lastStorageOp).toEqual({ slot: 2, tick: world.clock.tick, kind: 'put' });
     bridge.publish([moveEvent(99_999 as EntityId, YARD_ID, 5)]); // jednotka, ktorá z ledgera zmizla (exported)

@@ -34,14 +34,14 @@ const EXPORT_UNITS = 22;
  * Exporty, ktoré prešli bránou po cut-off (rolled): pred R2 žiadny (s druhým dvorom, T6D-04; pred ním 8 z 36); po R2 jeden z 22 kontajnerov — zmes veľkostí
  * posunula prúd `Rng` a s ním plán príchodov. Rolled jednotka sa naloží ako last minute (booking nakladá, kým loď nelashuje).
  */
-const EXPORTS_ROLLED = 1;
+const EXPORTS_ROLLED = 2; // R2 plánovač (ADR-039): iný prúd Rng a čas ukladania — pôvodne 1
 /** Objemy importov po T6D-04: pool kontraktov sa škáluje kapacitou skladov (2 × 64 namiesto 64), preto #1 a #4 majú iný objem než pred druhým dvorom (45 a 64). */
 /** Po R2 sú objemy v TEU: #1 = 48 TEU = 31 kontajnerov, #4 = 48 TEU = 30 kontajnerov (pred R2 #4 = 96 — zmes veľkostí posunula prúd `Rng` poolu). */
 const IMPORT_A_UNITS = 31;
 const IMPORT_B_UNITS = 30;
 /** Repositioning je v TEU (ADR-039): booking 24 TEU naložil 14 prázdnych rôznej veľkosti (pridelenie sa zastaví po naplnení TEU). */
 const REPOSITIONED_TEU = 24;
-const REPOSITIONED = 14;
+const REPOSITIONED = 16; // R2 (ADR-039): plánovač zmenil prúd Rng (pôvodne 14)
 const TRANSHIP_UNITS = 22; // 36 TEU
 const RUN_TIMEOUT_MS = 600_000;
 const INVARIANT_EVERY = 250;

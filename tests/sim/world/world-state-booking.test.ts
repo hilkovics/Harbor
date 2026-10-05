@@ -149,7 +149,7 @@ describe('WorldState: export booking v save a roundtrip', () => {
   it('kamión s neznámou misiou a žeriav mimo cyklu s nakládkou → WorldStateError s cestou', () => {
     const scenario = loadScenarioFile('vertical_slice');
     const world = World.create(DEFS, MAP, scenario.seed);
-    runScenario(world, scenario, 10_500);
+    runScenario(world, scenario, 11_500); // R2: kamióny sa objavia o niečo neskôr (ukladanie plánovačom)
     const state = clone(world.serialize());
     expect(state.trucks.length).toBeGreaterThan(0);
     expect(loadError({ ...clone(state), trucks: state.trucks.map((truck, i) => (i === 0 ? { ...truck, mission: 'drone' } : truck)) }).path).toBe('/trucks/0/mission');

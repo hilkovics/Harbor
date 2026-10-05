@@ -6,7 +6,7 @@ import { DEPOT_ID, YARD_ID, buildLogistics, buyVehicles, createApp, frameUntil, 
 import { setCash } from '../sim/helpers/economy';
 
 describe('inspectorData: sklad (kontajnerový dvor)', () => {
-  it('prázdny pripojený dvor: 0 / 0 / 64, počítadlá 0, jednotka TEU, pripojený, odstrániteľný s refundom polovice ceny', () => {
+  it('prázdny pripojený dvor: 0 / 0 / 48, počítadlá 0, jednotka TEU, pripojený, odstrániteľný s refundom polovice ceny', () => {
     const app = createApp();
     buildLogistics(app);
     expect(inspectorData(app.bridge, YARD_ID)).toEqual({
@@ -17,7 +17,7 @@ describe('inspectorData: sklad (kontajnerový dvor)', () => {
       footprint: { w: 4, h: 4 },
       stateLabel: 'V prevádzke',
       ok: true,
-      storage: { stored: 0, reserved: 0, capacity: 64, unitsIn: 0, unitsOut: 0, split: { import: 0, export: 0, tranship: 0, empty: 0 }, unitLabel: 'TEU' },
+      storage: { stored: 0, reserved: 0, capacity: 48, unitsIn: 0, unitsOut: 0, split: { import: 0, export: 0, tranship: 0, empty: 0 }, unitLabel: 'TEU' },
       connected: true,
       refundCents: 7_500_000,
       removable: true,
@@ -27,7 +27,7 @@ describe('inspectorData: sklad (kontajnerový dvor)', () => {
   it('dvor bez cesty: connected false (badge „Nepripojené“ nesie UI)', () => {
     const app = createApp();
     buildLogistics(app, { roads: false });
-    expect(inspectorData(app.bridge, YARD_ID)).toMatchObject({ connected: false, storage: { stored: 0, capacity: 64 } });
+    expect(inspectorData(app.bridge, YARD_ID)).toMatchObject({ connected: false, storage: { stored: 0, capacity: 48 } });
   });
 
   it('kapacita, stored, reserved a počítadlá idú z modulu; po vykládke sedí unitsIn a dvor s nákladom nejde odstrániť', () => {

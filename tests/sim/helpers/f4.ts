@@ -1056,5 +1056,13 @@ export function distanceToPortal(x: number, y: number): number {
   return Math.abs(x - (ROAD_PORTAL.x + 0.5)) + Math.abs(y - (ROAD_PORTAL.y + 0.5));
 }
 
+/** Výjazdový portál jednosmerného `harbor_01` (R1): bunka vedľa vjazdu, na ktorej kamióny opúšťajú mapu. */
+export const ROAD_PORTAL_OUT: CellCoord = { x: 45, y: 63 };
+
+/** Vzdialenosť bunky od stredu výjazdového portálu `ROAD_PORTAL_OUT` (Manhattan, v bunkách). */
+export function distanceToExitPortal(x: number, y: number): number {
+  return Math.abs(x - (ROAD_PORTAL_OUT.x + 0.5)) + Math.abs(y - (ROAD_PORTAL_OUT.y + 0.5));
+}
+
 /** Bunky `CellCoord[]` ako `x,y` — pre porovnania množín v hláškach. */
 export const cellKey = (cell: CellCoord): string => `${String(cell.x)},${String(cell.y)}`;

@@ -14,7 +14,7 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { CargoError } from '@sim/cargo';
-import { commandFromJSON } from '@sim/commands';
+import { commandFromJSON, refundCents } from '@sim/commands';
 import type { EntityId } from '@sim/core';
 import { gateParams, rampParams } from '@sim/defs';
 import type { StorageModule } from '@sim/modules';
@@ -25,6 +25,7 @@ import {
   Recorder4,
   STRADDLES,
   TRUCK_CYCLE,
+  distanceToExitPortal,
   distanceToPortal,
   exportChainViolation,
   gateCrossingTicks,
@@ -41,8 +42,8 @@ import {
   type Rule4,
 } from '../helpers/f4';
 import { must } from '../helpers/harbor';
-import { loadScenarioFile, readRepoJson, stateHash } from '../helpers/scenario';
-import { DEFS, MAP, hashState } from '../world/world-fixtures';
+import { PORT_BRIDGE, loadScenarioFile, readRepoJson, stateHash, withPortBridge } from '../helpers/scenario';
+import { DEFS, MAP, PORT_MAP, hashState } from '../world/world-fixtures';
 
 const UNITS = 120;
 /** Akceptácia fázy: všetky jednotky `exported` do 40 000 tickov. */
@@ -53,6 +54,15 @@ const SETTLE_TICKS = 500;
 const RUN_TIMEOUT_MS = 300_000;
 
 const scenario = loadScenarioFile('full_import_chain');
+const KINDS = DEFS.infrastructure.roadKinds;
+/**
+ * Čistá cena napojenia na jednosmernú slučku (`PORT_BRIDGE`): prestavba 3 buniek jednosmerka → dvojpruhová (stavba − refundácia starých
+ * jednosmeriek) a odstránenie 2 jednosmeriek (refundácia), refundácia raz za príkaz.
+ */
+const PORT_BRIDGE_NET_CENTS =
+  3 * KINDS.two_lane.costPerCellCents -
+  refundCents(3 * KINDS.one_way.costPerCellCents, DEFS.economy.removalRefundRate) -
+  refundCents(2 * KINDS.one_way.costPerCellCents, DEFS.economy.removalRefundRate);
 const ROAD_COST = DEFS.infrastructure.road.costPerCellCents;
 const STRADDLE = DEFS.vehicles.get('straddle_carrier');
 const TRUCK = DEFS.trucks.get('truck_container');
@@ -71,24 +81,26 @@ describe('scenár full_import_chain: súbor', () => {
     expect(scenario.id).toBe('full_import_chain');
     expect(scenario.seed).toBe(4004);
     expect(scenario.map).toBe('data/maps/harbor_01.json');
-    expect((readRepoJson(scenario.map) as { id: string }).id).toBe(MAP.id);
+    expect((readRepoJson(scenario.map) as { id: string }).id).toBe(PORT_MAP.id);
   });
 
   it('je zhodný s rozložením z helpers/f4-layout (F3 + brána, plocha, rampa; 3× straddle_carrier, feeder 120 TEU)', () => {
-    expect(scenario).toEqual(f4Scenario('full_import_chain', 4004, { vehicles: STRADDLES, units: UNITS }));
+    expect(scenario).toEqual(withPortBridge(f4Scenario('full_import_chain', 4004, { vehicles: STRADDLES, units: UNITS })));
   });
 
-  it('všetky príkazy idú na tick 0 v poradí: 10 úsekov ciest, 6 modulov, 3 nákupy vozidiel, loď', () => {
+  it('všetky príkazy idú na tick 0 v poradí: 10 úsekov ciest, 6 modulov, 3 nákupy vozidiel, loď, napojenie na jednosmernú slučku (PlaceRoad + RemoveRoad)', () => {
     expect(scenario.commands.every((entry) => entry.atTick === 0)).toBe(true);
     expect(scenario.commands.map((entry) => entry.command.type)).toEqual([
       ...Array<string>(10).fill('PlaceRoad'),
       ...Array<string>(6).fill('PlaceModule'),
       ...Array<string>(3).fill('BuyVehicle'),
       'SpawnShipDebug',
+      'PlaceRoad',
+      'RemoveRoad',
     ]);
     const modules = scenario.commands.filter((entry) => entry.command.type === 'PlaceModule').map((entry) => entry.command['defId']);
     expect(modules).toEqual(['vehicle_depot', 'container_yard_small', 'container_yard_small', 'truck_gate', 'truck_waiting_area', 'loading_ramp_container']);
-    const roadCells = scenario.commands.filter((entry) => entry.command.type === 'PlaceRoad').flatMap((entry) => entry.command['cells'] as unknown[]);
+    const roadCells = scenario.commands.filter((entry) => entry.command.type === 'PlaceRoad').slice(0, 10).flatMap((entry) => entry.command['cells'] as unknown[]);
     expect(roadCells).toHaveLength(ALL_F4_ROAD_CELLS.length);
   });
 
@@ -133,7 +145,7 @@ describe('scenár full_import_chain: beh 120 TEU až po export', () => {
   let rampId: EntityId;
 
   beforeAll(() => {
-    world = World.create(DEFS, MAP, scenario.seed);
+    world = World.create(DEFS, PORT_MAP, scenario.seed);
     recorder = new Recorder4(world, scenario);
     recorder.runTo(MAX_TICKS, (w) => w.cargo.exportedCount === UNITS);
     exportedAt = world.clock.tick;
@@ -188,7 +200,8 @@ describe('scenár full_import_chain: beh 120 TEU až po export', () => {
         (sum, defId) => sum + DEFS.modules.get(defId).costCents,
         0,
       ) +
-      STRADDLES.length * STRADDLE.purchaseCents;
+      STRADDLES.length * STRADDLE.purchaseCents +
+      PORT_BRIDGE_NET_CENTS;
     const first = timed4(events(), 'MoneyChanged').filter((entry) => entry.tick <= 1);
     expect(first.reduce((sum, entry) => sum + entry.event.deltaCents, 0)).toBe(0 - spend);
     expect(Number.isSafeInteger(world.cashCents)).toBe(true);
@@ -293,7 +306,7 @@ describe('scenár full_import_chain: beh 120 TEU až po export', () => {
     }
   });
 
-  it('kamión vzniká na road portáli (44, 63) a mizne pri ňom: prvá vzorka je najviac o krok od portálu, posledná najviac o dva', () => {
+  it('kamión vzniká na vjazde (44, 63) a mizne na výjazde (45, 63): prvá vzorka je najviac o krok od portálu, posledná najviac o dva', () => {
     const speed = TRUCK.speedCellsPerTick;
     expect(recorder.trucks.size).toBe(UNITS);
     for (const [truckId, samples] of recorder.trucks) {
@@ -301,7 +314,7 @@ describe('scenár full_import_chain: beh 120 TEU až po export', () => {
       const last = samples[samples.length - 1];
       expect(first.state, `kamión ${String(truckId)}`).toBe('to_gate');
       expect(distanceToPortal(first.x, first.y), `spawn kamióna ${String(truckId)}`).toBeLessThanOrEqual(speed + 1e-6);
-      expect(distanceToPortal(last.x, last.y), `výjazd kamióna ${String(truckId)} (posledný stav ${last.state})`).toBeLessThanOrEqual(2 * speed + 1e-6);
+      expect(distanceToExitPortal(last.x, last.y), `výjazd kamióna ${String(truckId)} (posledný stav ${last.state})`).toBeLessThanOrEqual(2 * speed + 1e-6);
       expect(['to_portal', 'exited']).toContain(last.state);
     }
   });
@@ -337,11 +350,11 @@ describe('scenár full_import_chain: beh 120 TEU až po export', () => {
     expect(world.jobs.size).toBe(0);
   });
 
-  it('vozidlá: FSM ide len povolenými prechodmi a na konci sú všetky idle bez jobu a nákladu', () => {
+  it('vozidlá: FSM ide len povolenými prechodmi a na konci sú všetky zaparkované bez jobu a nákladu', () => {
     expect(vehicleFsmViolation(events())).toBeNull();
     expect(world.vehicles.size).toBe(STRADDLES.length);
     for (const vehicle of world.vehicles.values()) {
-      expect(vehicle.state).toBe('idle');
+      expect(vehicle.state).toBe('parked');
       expect(vehicle.jobId).toBeNull();
       expect(world.cargo.countAt('in_vehicle', vehicle.id)).toBe(0);
     }
@@ -431,9 +444,9 @@ describe('save/load uprostred reťazca: obnovený svet pokračuje rovnako ako p�
   /**
    * Malý scenár s prerušením verejnej cesty (44, 40) v ticku `CUT_AT` a obnovou v `RESTORE_AT` (review T04-11 h):
    * kamióny na verejnej ceste vtedy prejdú do `no_path` (sonda „no_path s resume"). Bunka v tých tickoch nie je pod
-   * kamiónom (inak by príkaz odmietlo `occupied`); prvý kamión ide k portálu okolo ticku 600 (od R1, ADR-037, jazdí po slotoch; pred R1 okolo 553, rez v ticku 600 by tak odmietlo `occupied`).
+   * kamiónom (inak by príkaz odmietlo `occupied`); prvý kamión prejde (44, 40) okolo ticku 570 a 610 (od R1, ADR-037, jazdí po slotoch; pred R1 okolo 553; rez v ticku 604 by odmietlo `occupied`).
    */
-  const CUT_AT = 604;
+  const CUT_AT = 600;
   const RESTORE_AT = 700;
   const CUT_CELL = { x: 44, y: 40 };
   const probeScenario = f4Scenario('f4_small_chain_cut', 4004, {

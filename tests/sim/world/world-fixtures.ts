@@ -74,6 +74,8 @@ export const LEGACY_HARBOR_JSON = {
   starter: { ...harbor01Json.starter, roads: Array.from({ length: 30 }, (_unused, i) => ({ x: 44, y: 63 - i })) },
 };
 export const MAP: LoadedMap = loadMap(parseMapDef(LEGACY_HARBOR_JSON));
+/** Skutočná `harbor_01` s jednosmernou slučkou (R1): testy bundled scenárov (`data/scenarios`) bežia na nej, nie na `MAP`. */
+export const PORT_MAP: LoadedMap = loadBundledMap();
 /** Mriežka počiatočného stavu mapy len na čítanie (hľadanie buniek, indexy); svety majú vlastné kópie, nezapisovať. */
 export const MAP_GRID: Grid = MAP.createGrid();
 /**

@@ -26,7 +26,8 @@
  *
  * - Prázdne kontajnery a prekládka (F6c, T6C-05, ADR-034): `EmptyReturned` → „Návrat prázdnych“ (nenápadné, info, rýchlo zmizne;
  *   jeden toast za linku a dávku so súčtom, nie za každý kus); `EmptyRepaired` → „Oprava hotová“ (success, zlúčené podľa depa a
- *   linky, s cenou opráv a akciou „Ukázať“ na depo); `EmptyPickupMissed` → „Výdaj prázdneho zlyhal“ (warning, kamión odišiel prázdny);
+ *   linky, s cenou opráv a akciou „Ukázať“ na depo); `EmptyPickupMissed` → „Výdaj prázdneho zlyhal“ (warning; `truckId === null` = kamión sa vzdal vo vnútrozemí a do prístavu nevošiel, F6d ADR-035,
+ *   inak kamión odišiel prázdny zo stojiska);
  *   `TranshipMissed` → „Tranship zmeškaný“ (danger, aj so sumou penalizácie; jej `BookingPenaltyApplied rolled` samostatný toast nemá),
  *   `TranshipRescued` (info) a `TranshipSold` (warning) — čo sa stalo so zmeškanými jednotkami; `ExportShipped` lode B prekládky
  *   ukáže triedu a cieľ z kontraktu prekládky (`tranship.outShipId`). `EmptyStored` / `EmptyDamaged` / `EmptyRepairStarted` / `EmptyPickedUp` toast nemajú (stav je v inšpektore depa).
@@ -372,7 +373,7 @@ function contractSpec(world: World, event: SimEvent, batch: ContractBatch): Toas
         tone: 'warning',
         icon: 'ic_warning',
         title: EMPTY_PICKUP_MISSED_TOAST_TITLE,
-        text: `${contractLabel(world, event.contractId)} · ${lineLabel(world, event.lineId)} nemala dostupný prázdny kontajner, kamión odišiel prázdny${missed > 1 ? ` (×${String(missed)})` : ''}`,
+        text: `${contractLabel(world, event.contractId)} · ${lineLabel(world, event.lineId)} nemala dostupný prázdny kontajner, ${pickupMissedOutcome(missed, batch.pickupMissesInland.get(event.contractId) ?? 0)}${missed > 1 ? ` (×${String(missed)})` : ''}`,
         panel: 'contracts',
       };
     }
@@ -443,9 +444,20 @@ interface ContractBatch {
   readonly repairsShown: Set<string>;
   /** F6c: počet `EmptyPickupMissed` podľa kontraktu a kontrakty, ktoré už dostali toast. */
   readonly pickupMisses: Map<ContractId, number>;
+  /** F6d (ADR-035): z nich tie, kde sa kamión vzdal vo vnútrozemí (`truckId === null`) a do prístavu nevošiel. */
+  readonly pickupMissesInland: Map<ContractId, number>;
   readonly pickupMissesShown: Set<ContractId>;
   /** F6c: súčet `BookingPenaltyApplied` druhu `rolled` podľa kontraktu (penalizácia zmeškanej prekládky, ktorú ukáže toast `TranshipMissed`). */
   readonly missedPenalties: Map<ContractId, number>;
+}
+
+/**
+ * Čo sa stalo s kamiónom po prázdny kontajner (F6d, ADR-035): `inland` z `missed` sa vzdalo vo vnútrozemí a do prístavu nevošlo (`truckId === null`),
+ * zvyšok odišiel prázdny zo stojiska; zmiešaná dávka v jednom frame dostane všeobecný text.
+ */
+function pickupMissedOutcome(missed: number, inland: number): string {
+  if (inland === 0) return 'kamión odišiel prázdny';
+  return inland >= missed ? 'kamión do prístavu nevošiel' : 'kamióny odišli prázdne alebo do prístavu nevošli';
 }
 
 function contractBatch(events: readonly SimEvent[]): ContractBatch {
@@ -464,6 +476,7 @@ function contractBatch(events: readonly SimEvent[]): ContractBatch {
     repairs: new Map(),
     repairsShown: new Set(),
     pickupMisses: new Map(),
+    pickupMissesInland: new Map(),
     pickupMissesShown: new Set(),
     missedPenalties: new Map(),
   };
@@ -486,6 +499,7 @@ function contractBatch(events: readonly SimEvent[]): ContractBatch {
       batch.repairs.set(id, { count: (known?.count ?? 0) + 1, costCents: (known?.costCents ?? 0) + event.costCents });
     } else if (event.type === 'EmptyPickupMissed') {
       batch.pickupMisses.set(event.contractId, (batch.pickupMisses.get(event.contractId) ?? 0) + 1);
+      if (event.truckId === null) batch.pickupMissesInland.set(event.contractId, (batch.pickupMissesInland.get(event.contractId) ?? 0) + 1);
     } else if (event.type === 'BookingPenaltyApplied' && event.kind === 'rolled') {
       batch.missedPenalties.set(event.contractId, (batch.missedPenalties.get(event.contractId) ?? 0) + event.amountCents);
     }

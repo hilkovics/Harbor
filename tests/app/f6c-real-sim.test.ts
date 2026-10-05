@@ -274,6 +274,9 @@ describe('empty_cycle: toasty nad skutočnými udalosťami', () => {
       expect(toast?.spec.panel).toBe('contracts');
       expect(toast?.spec.text).toContain(`#${String(event.contractId)}`);
       expect(toast?.spec.text).toContain(world.defs.lines.get(event.lineId).displayName);
+      // od ADR-035 sa kamión bez dostupného prázdneho vzdá vo vnútrozemí (truckId null) a do prístavu nevojde
+      if (event.truckId === null) expect(toast?.spec.text).toContain('do prístavu nevošiel');
+      else expect(toast?.spec.text).toContain('odišiel prázdny');
     }
     expect(eventsOf('EmptyPickedUp').length).toBeGreaterThan(0);
     expect(toastsOf('empty_picked_up').length).toBe(0);

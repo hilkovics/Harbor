@@ -115,9 +115,9 @@
 | id | názov | agent (model) | parallel | depends_on |
 |---|---|---|---|---|
 | TR1-01 | Clean break savov: `WorldState` v10 (tvar ako v9), odstránenie migrácií v1–v9, legacy typov a volieb, adaptérov obnovy, fixtures a testov migrácií; app: starý save → hláška | sim-architect (sonnet) | no | – |
-| TR1-02 | Jadro dopravy: defy (`lengthCells`, `traffic`), `LaneSlots`, `CellLaneKind`, pruhy, telo a `ahead`, `TrafficSystem` v kroku 6 (vozidlá aj kamióny), pravidlo križovatky, úseky `one_lane`, otočka, refaktor FSM krokov bez pohybu, invariant `carrierOverlapProblem`, save (`body`, `ahead`, `blockedTicks`), unit testy | sim-architect (sonnet) | no | 01 |
-| TR1-03 | Moduly a portál: mimo cesty (stojisko, dock, `gate_pass`, `gate_pass_out`), výjazdy so slotom, fyzický front pred bránou, spawn a výjazd na portáli, pod hákom; úprava invariantov brány a stojiska | sim-architect (sonnet) | no | 02 |
-| TR1-04 | Parkovanie a zápchy: `to_depot`, `parked`, `depot_exit`, dispatcher, kúpa do depa; detekcia cyklu, preplánovanie s dočasne zakázanou bunkou, `TrafficJam` a `TrafficJamCleared`, metriky | sim-architect (sonnet) | no | 03 |
+| TR1-02 | Jadro dopravy: defy (`lengthCells`, `traffic`), `LaneSlots`, `CellLaneKind`, pruhy, telo a `ahead`, `TrafficSystem` v kroku 6 (vozidlá aj kamióny), pravidlo križovatky, úseky `one_lane`, otočka, refaktor FSM krokov bez pohybu, invariant `carrierOverlapProblem`, save (`body`, `ahead`, `blockedTicks`), unit testy; **dočasné pravidlo:** sloty držia len nosiče v jazdných stavoch (stojace dočasne mimo cesty), preplánovanie pri cykle (rozhodnutie 12, prvá časť) | sim-architect (sonnet) | no | 01 |
+| TR1-03 | Moduly a portál: sloty držia aj stojace nosiče (pobyt pri module, pod hákom, `gate_queue`, `no_path`); mimo cesty (stojisko, dock, `gate_pass`, `gate_pass_out`), výjazdy so slotom, fyzický front pred bránou, spawn a výjazd na portáli, pod hákom; úprava invariantov brány a stojiska | sim-architect (sonnet) | no | 02 |
+| TR1-04 | Parkovanie a zápchy: `to_depot`, `parked`, `depot_exit`, dispatcher, kúpa do depa; hlásenie `TrafficJam` a `TrafficJamCleared`, metriky | sim-architect (sonnet) | no | 03 |
 | TR1-05 | TDD a scenáre: test „žiadny prekryv" nad všetkými bundled scenármi, kolóna pred bránou (FIFO, bez prekryvu), odstup za vodcom, protismer, križovatka, `one_lane`, parkovanie, zápcha (riešiteľná a neriešiteľná), determinizmus a roundtrip uprostred kolóny | test-writer (**haiku**, worktree) | yes | 03 (API) |
 | TR1-06 | Render: kĺbové vozidlá po stope (dočasne existujúci sprite), brzdové svetlá stojacich (procedurálne), vozidlá zaparkované v depe, kamión v `gate_pass`, zvýraznenie zápchy (bunky + odznak); demo scéna + e2e screenshot | implementer (sonnet, worktree) | yes | – (VM kontrakt) |
 | TR1-07 | UI a app: toast „Zápcha" s akciou „Ukázať", texty nových stavov v inšpektoroch (vozidlo, kamión), depo „Zaparkované N / kapacita", hláška pri starom save; demo + testy | ui-builder (**haiku**) | no | 04 |
@@ -153,12 +153,12 @@
 
 ## Checklist
 - [x] R0 Rozhodnutia: ADR-036 až ADR-038, plán, CLAUDE.md, PORT_OPERATIONS, manuál pre Claude Design
-- [ ] TR1-01 Clean break savov (v10)
+- [x] TR1-01 Clean break savov (v10): −2 300 riadkov, metriky identické
 - [ ] TR1-02 Jadro dopravy
 - [ ] TR1-03 Moduly a portál
 - [ ] TR1-04 Parkovanie a zápchy
 - [ ] TR1-05 TDD a scenáre
-- [ ] TR1-06 Render
+- [x] TR1-06 Render (kĺbová póza, brzdy, depo, zápcha; demo + e2e)
 - [ ] TR1-07 UI a app
 - [ ] TR1-08 Napojenie, simrun, bench, goldeny
 - [ ] TR1-09 Review + opravy

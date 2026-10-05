@@ -99,9 +99,14 @@ function expectRoundtrip(observed: Observed, scenario: Scenario, ticks = TICKS):
 }
 
 describe('prerezaná cesta počas vykládky (buffer 0): žeriav neuviazne na jednotke vozidla v no_path', () => {
-  const CUT_TICK = 7_900;
+  const CUT_TICK = 7_905;
   const REPAIR_TICK = 10_900;
-  const CUT_CELL = [{ x: 44, y: 25 }];
+  // Vozidlá jazdia medzi berthom a dvorom po kruhu okolo dvora (x = 41 alebo x = 46): strata oboch strán v ticku 7 905 (zaparkované vozidlá
+  // vyšli z depa v 7 900 s prvou loďou) nechá obe vozidlá bez cesty k háku v no_path.
+  const CUT_CELL = [
+    { x: 41, y: 19 },
+    { x: 46, y: 19 },
+  ];
   const scenario: Scenario = {
     ...BASE,
     commands: [
@@ -128,7 +133,7 @@ describe('prerezaná cesta počas vykládky (buffer 0): žeriav neuviazne na jed
     expect(world.contracts.get(1 as never)?.state).toBe('completed');
     expect(world.cargo.exportedCount).toBe(IMPORT_UNITS);
     expect(lostUnits(world)).toBe(0);
-    expect([...world.vehicles.values()].map((vehicle) => vehicle.state)).toEqual(['idle', 'idle']);
+    expect([...world.vehicles.values()].map((vehicle) => vehicle.state)).toEqual(['parked', 'parked']);
     expect(findWorldViolation(world)).toBeUndefined();
   });
 

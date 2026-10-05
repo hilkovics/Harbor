@@ -38,6 +38,10 @@ export interface DepotVehicleData {
   /** Názov druhu vozidla (`Straddle carrier`) — sekundárny text riadku. */
   readonly label: string;
   readonly state: DepotVehicleState;
+  /** Originálny FSM stav vozidla (pre počítanie zaparkovaných atd.); bez neho sa berie abstraktný `state`. */
+  readonly fsmState?: string;
+  /** Voliteľný detailný text stavu FSM vozidla (napr. „Ide do depa"); bez neho sa zobrazí abstraktný stav. */
+  readonly detailedState?: string;
   /** Voliteľný mono kód riadku (prototyp: `SC-01`); bez neho `#<id>`. */
   readonly code?: string;
   /** Voliteľný: čo hráč pri predaji dostane, v centoch — do tooltipu tlačidla predaja. */
@@ -430,25 +434,33 @@ export function storageStats(storage: Pick<StorageData, 'stored' | 'reserved' | 
 }
 
 /** Počty vozidiel podľa stavu (`busy` = pracuje, `idle` = nečinné, `noPath` = bez cesty). */
-export function depotVehicleCounts(vehicles: readonly Pick<DepotVehicleData, 'state'>[]): {
+export function depotVehicleCounts(vehicles: readonly Pick<DepotVehicleData, 'state' | 'fsmState'>[]): {
   readonly busy: number;
   readonly idle: number;
   readonly noPath: number;
+  readonly parked: number;
 } {
   let busy = 0;
   let idle = 0;
   let noPath = 0;
+  let parked = 0;
   for (const vehicle of vehicles) {
-    if (vehicle.state === 'busy') busy += 1;
-    else if (vehicle.state === 'idle') idle += 1;
-    else noPath += 1;
+    if (vehicle.fsmState === 'parked') {
+      parked += 1;
+    } else if (vehicle.state === 'busy') {
+      busy += 1;
+    } else if (vehicle.state === 'idle') {
+      idle += 1;
+    } else {
+      noPath += 1;
+    }
   }
-  return { busy, idle, noPath };
+  return { busy, idle, noPath, parked };
 }
 
 /**
  * Dlaždice depa (bez farebných značiek — depo nemá pruh, ktorému by farba prislúchala): obsadenie stání (plné =
- * varovanie) / pracuje / nečinné (vozidlo bez cesty ide do zoznamu so žltou ikonou).
+ * varovanie) / pracuje / nečinné (vozidlo bez cesty ide do zoznamu so žltou ikonou) / zaparkované.
  */
 export function depotStats(depot: Pick<DepotData, 'vehicles' | 'capacity'>): InspectorStat[] {
   const counts = depotVehicleCounts(depot.vehicles);
@@ -460,6 +472,7 @@ export function depotStats(depot: Pick<DepotData, 'vehicles' | 'capacity'>): Ins
       value: formatFraction(total, depot.capacity),
       tone: depot.capacity > 0 && total >= depot.capacity ? 'warn' : 'normal',
     },
+    { key: 'parked', label: 'Zaparkované', value: formatFraction(counts.parked, depot.capacity), tone: 'normal' },
     { key: 'busy', label: 'Pracuje', value: formatCount(counts.busy), tone: 'normal' },
     { key: 'idle', label: 'Nečinné', value: formatCount(counts.idle), tone: 'normal' },
   ];
@@ -1111,6 +1124,7 @@ function renderVehicles(depot: DepotData, onSellVehicle: ModuleInspectorProps['o
             const info = VEHICLE_STATE_INFO[vehicle.state];
             const sellable = canSellVehicle(vehicle);
             const title = sellTitle(vehicle);
+            const stateText = vehicle.detailedState ?? info.label;
             return (
               <li key={vehicle.id} className="module-inspector__vehicle" data-vehicle-id={vehicle.id} data-state={vehicle.state}>
                 <Icon name="ic_vehicle" className="module-inspector__vehicle-icon" />
@@ -1120,7 +1134,7 @@ function renderVehicles(depot: DepotData, onSellVehicle: ModuleInspectorProps['o
                 <span className="module-inspector__vehicle-label">{vehicle.label}</span>
                 <span className={`module-inspector__vehicle-state module-inspector__vehicle-state--${info.tone}`} data-field="vehicle-state">
                   <Icon name={info.icon} className="module-inspector__vehicle-state-icon" />
-                  {info.label}
+                  {stateText}
                 </span>
                 <button
                   type="button"

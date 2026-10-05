@@ -72,7 +72,7 @@ describe('inspectorData: depo vozidiel', () => {
     });
     expect(data?.depot?.buyBlockedReason).toBeUndefined();
     expect(data?.depot?.vehicles).toEqual(
-      [...app.world.vehicles.keys()].map((id) => ({ id, label: 'Straddle carrier', state: 'idle', refundCents: 2_400_000 })),
+      [...app.world.vehicles.keys()].map((id) => ({ id, label: 'Straddle carrier', state: 'idle', fsmState: 'parked', detailedState: 'Parkuje v depe', refundCents: 2_400_000 })),
     );
   });
 

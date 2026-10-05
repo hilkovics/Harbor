@@ -61,7 +61,7 @@ export const BERTH_STATE_FREE = 'Voľné';
 /** Stav modulu bez vlastného obsahu (F2 ho nepoužíva: budúce druhy modulov si dodajú vlastný popis). */
 export const MODULE_STATE_ACTIVE = 'V prevádzke';
 
-/** Stav FSM vozidla → stav v zozname depa (tabuľka, nie switch): pracovné stavy sú pre hráča jedno „Pracuje“. */
+/** Stav FSM vozidla → stav v zozname depa (tabuľka, nie switch): pracovné stavy sú pre hráča jedno „Pracuje”. */
 export const DEPOT_VEHICLE_STATE: Readonly<Record<VehicleState, DepotVehicleState>> = Object.freeze({
   idle: 'idle',
   to_pickup: 'busy',
@@ -73,6 +73,13 @@ export const DEPOT_VEHICLE_STATE: Readonly<Record<VehicleState, DepotVehicleStat
   to_depot: 'idle',
   parked: 'idle',
   depot_exit: 'busy',
+});
+
+/** Detailný stav FSM vozidla na zobrazenie v depo vozidiel inspektore; bez textu → abstraktný stav. */
+export const VEHICLE_DETAILED_STATE: Readonly<Partial<Record<VehicleState, string>>> = Object.freeze({
+  to_depot: 'Ide do depa',
+  parked: 'Parkuje v depe',
+  depot_exit: 'Odchádza z depa',
 });
 
 /**
@@ -194,10 +201,13 @@ function depotVehicleRow(bridge: InspectorBridge, vehicleId: EntityId): DepotVeh
   const vehicle = bridge.world.vehicles.get(vehicleId);
   if (vehicle === undefined) return null;
   const sale = bridge.validate(new SellVehicleCommand(vehicle.id));
+  const detailedState = VEHICLE_DETAILED_STATE[vehicle.state];
   return {
     id: vehicle.id,
     label: vehicle.def.displayName,
     state: DEPOT_VEHICLE_STATE[vehicle.state],
+    fsmState: vehicle.state,
+    ...(detailedState === undefined ? {} : { detailedState }),
     refundCents: sale.costCents < 0 ? 0 - sale.costCents : 0,
   };
 }

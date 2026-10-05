@@ -16,7 +16,7 @@
  * Čistá funkcia bez Reactu — testuje sa v Node.
  */
 import type { DefRegistry, ModuleDef, ModuleKind, VehicleDef } from '@sim/defs';
-import { ROAD_KINDS, type RoadKind } from '@sim/grid';
+import type { RoadKind } from '@sim/grid';
 import type { BuildBarCategory, BuildBarItem } from '@ui/build-bar';
 import { formatMoney } from '@ui/format';
 import { moduleKindIcon } from '@ui/module-inspector';
@@ -129,12 +129,12 @@ export function roadKindItem(defs: DefRegistry, kind: RoadKind, cashCents: numbe
 /**
  * Kategórie BuildBar z katalógu modulov, vozidiel a aktuálnej hotovosti (poradie položiek = poradie v `vehicles.json`
  * a `modules.json`, vozidlá pred stavbami). `buyTarget` = kam sa dá kúpiť vozidlo (`vehicleBuyTarget`); bez neho sa
- * berie, že depo nie je.
+ * berie, že depo nie je. Cesty ponúka len jednosmerku (R1: ADR-037 bod 12).
  */
 export function buildBarCategories(defs: DefRegistry, cashCents: number, buyTarget: VehicleBuyTarget = NO_BUY_TARGET): BuildBarCategory[] {
   return BUILD_CATEGORIES.map((spec) => {
     const vehicles = spec.enabled && spec.vehicles === true ? defs.vehicles.items.map((def) => vehicleBuyItem(def, cashCents, buyTarget)) : [];
-    const roads = spec.enabled && spec.roads === true ? ROAD_KINDS.map((kind) => roadKindItem(defs, kind, cashCents)) : [];
+    const roads = spec.enabled && spec.roads === true ? ['one_way'].map((kind) => roadKindItem(defs, kind as RoadKind, cashCents)) : [];
     const modules = spec.enabled ? defs.modules.items.filter((def) => spec.kinds.includes(def.kind)).map((def) => buildBarItem(def, cashCents)) : [];
     return { id: spec.id, label: spec.label, icon: spec.icon, enabled: spec.enabled, items: [...vehicles, ...roads, ...modules] };
   });

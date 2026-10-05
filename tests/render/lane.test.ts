@@ -149,14 +149,16 @@ describe('typ cesty pod vozidlom (`roadKindAt`)', () => {
     expect(roadKindOfCell({ road: 'rail', roadKind: 'two_lane' })).toBe('one_lane');
   });
 
-  it('`createRoadKindAt` číta živú mriežku: štartová cesta je two_lane, prestavba na iný typ sa prejaví hneď, mimo mapy stred', () => {
+  it('`createRoadKindAt` číta živú mriežku: štartová cesta je one_way (slučka harbor_01), prestavba na iný typ sa prejaví hneď, mimo mapy stred', () => {
     const grid = map.createGrid();
     const roadKindAt = createRoadKindAt(grid);
     const { x, y } = map.starter.roads[0];
-    expect(roadKindAt(x, y)).toBe('two_lane');
+    expect(roadKindAt(x, y)).toBe('one_way');
     grid.at(x, y).road = 'none';
     expect(roadKindAt(x, y)).toBe('one_lane');
     grid.at(x, y).road = 'road';
+    expect(roadKindAt(x, y)).toBe('one_way');
+    grid.at(x, y).roadKind = 'two_lane';
     expect(roadKindAt(x, y)).toBe('two_lane');
     grid.at(x, y).roadKind = 'one_way';
     grid.at(x, y).roadDir = 'N';

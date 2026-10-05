@@ -42,7 +42,7 @@ describe('scéna road-kinds (karta T03-19, screenshot f3-road-kinds.png)', () =>
     expect(keys.size).toBe(ROAD_KINDS_ROADS.length);
   });
 
-  it('mriežka: všetky tri typy ciest, smer len pri jednosmerke; štartové cesty mapy ostávajú dvojpruhové', () => {
+  it('mriežka: všetky tri typy ciest, smer len pri jednosmerke; štartové cesty mapy: slučka harbor_01 je jednosmerná (dir), bez dir dvojpruhová', () => {
     const counts = new Map<RoadKind, number>();
     for (const { x, y, kind, dir } of ROAD_KINDS_ROADS) {
       const cell = grid.at(x, y);
@@ -54,8 +54,8 @@ describe('scéna road-kinds (karta T03-19, screenshot f3-road-kinds.png)', () =>
     }
     expect([...counts.keys()].sort()).toEqual([...ROAD_KINDS].sort());
     for (const road of map.starter.roads) {
-      expect(grid.at(road.x, road.y).roadKind).toBe('two_lane');
-      expect(grid.at(road.x, road.y).roadDir).toBeNull();
+      expect(grid.at(road.x, road.y).roadKind).toBe(road.dir === undefined ? 'two_lane' : 'one_way');
+      expect(grid.at(road.x, road.y).roadDir).toBe(road.dir ?? null);
     }
   });
 
@@ -109,9 +109,9 @@ describe('scéna road-kinds (karta T03-19, screenshot f3-road-kinds.png)', () =>
     expect(layer.tileStyleAt(36, 21)).toBe('wide');
   });
 
-  it('RoadMarkLayer: šípka na každej bunke jednosmerky (okruh 20 + rovná cesta 6 + odbočka 4), inde nie', () => {
+  it('RoadMarkLayer: šípka na každej bunke jednosmerky (okruh 20 + rovná cesta 6 + odbočka 4 + štartová slučka 60), inde nie', () => {
     const marks = new RoadMarkLayer(grid, PALETTE, new StubTextures().overlay('path_arrow'));
-    expect(marks.arrowCount).toBe(30);
+    expect(marks.arrowCount).toBe(30 + map.starter.roads.length);
     expect(marks.arrowAt(36, 25)).toBe(90);
     expect(marks.arrowAt(54, 24)).toBe(180);
     expect(marks.arrowAt(51, 26)).toBe(270);

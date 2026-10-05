@@ -8,14 +8,15 @@
  *   save, poškodený svet) sa zároveň ohlási toastom s dôvodom a hra beží ďalej.
  * - **Autosave mimo ticku.** `handleEvents` sa volá z `SimBridge.onEvents`, teda po dokončení framu (po `world.tick()`),
  *   nikdy z vnútra ticku. Pri `DayClosed` každého `autosaveEveryDays`-teho dňa uloží do slotu `auto`.
- * - **Načítanie nemení bežiaci svet.** Najprv `World.deserialize` (fail-fast, `WorldStateError` s cestou); až keď prejde,
+ * - **Načítanie nemení bežiaci svet.** Najprv `World.deserialize` (fail-fast, `WorldStateError` s cestou; svet starej verzie
+ *   odmietne s hláškou o staršej verzii, ADR-036); až keď prejde,
  *   odovzdá nový svet `loadWorld` (reštart cez `runGame`, hra štartuje pozastavená). Chybný save/import teda nechá
  *   aktuálny svet nedotknutý.
  * - **Fronta príkazov.** `World.serialize` vyžaduje prázdnu frontu, preto sa pred uložením zvyšné príkazy aplikujú
  *   (`applyPending`) a ich udalosti sa publikujú do mosta, aby o nich UI aj render vedeli (ADR-030 bod 1).
  */
 import type { SimEvent } from '@sim/events';
-import { World, WorldStateError, type WorldOptions } from '@sim/world';
+import { UnsupportedSaveVersionError, World, WorldStateError, type WorldOptions } from '@sim/world';
 import { formatClock, formatDayAndClock } from '@ui/format';
 import { APP_WORLD_OPTIONS, QUIET_TOAST_AUTO_CLOSE_MS } from '../config';
 import type { Settings, SettingsStore } from '../settings';
@@ -23,7 +24,7 @@ import { createSettingsStore } from '../settings';
 import type { SimBridge } from '../sim-bridge';
 import type { ToastSpec } from '../toast-center';
 import { exportSaveFile, readSaveFile, browserDownloader, type FileDownloader, type ReadableFile } from './save-file';
-import { SaveError, encodeSave, type SaveGame, type SaveSlotId } from './save-game';
+import { OLD_WORLD_VERSION_MESSAGE, SaveError, encodeSave, isWorldVersionOlder, type SaveGame, type SaveSlotId } from './save-game';
 import { createSaveStore, type SaveSlotInfo, type SaveStore } from './save-store';
 import { StorageError, browserStorage, type StorageProvider } from './storage';
 
@@ -113,6 +114,8 @@ export function loadedToastSpec(world: World): ToastSpec {
 
 /** Text chyby pre hráča (toast). */
 export function describeError(error: unknown): string {
+  // Clean break savov (ADR-036): save v1–v9 sa nenačíta, hráč dostane jednu zrozumiteľnú hlášku bez cesty do stavu.
+  if (error instanceof UnsupportedSaveVersionError && error.isOlder) return OLD_WORLD_VERSION_MESSAGE;
   if (error instanceof WorldStateError) {
     const where = error.path === '' ? 'celý stav' : error.path;
     return `Stav hry je neplatný (${where}): ${error.problem}`;
@@ -264,6 +267,8 @@ export class SaveController {
   private restore(save: SaveGame, failTitle: string, failKey: string): ActionResult {
     const { loadWorld } = this;
     if (loadWorld === undefined) return this.fail(failTitle, failKey, new Error('Načítanie hry nie je v tomto režime dostupné'));
+    // Starý save (ADR-036) sa odmietne ešte pred obnovou: bežiaca hra sa nezmení a hráč dostane hlášku o staršej verzii.
+    if (isWorldVersionOlder(save)) return this.fail(failTitle, failKey, new Error(OLD_WORLD_VERSION_MESSAGE));
     let world: World;
     try {
       world = World.deserialize(this.world.defs, this.world.map, save.world, this.worldOptions);

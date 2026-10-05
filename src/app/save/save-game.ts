@@ -3,8 +3,9 @@
  * `{ format, saveVersion, gameVersion, savedAtIso, label, preview, world }`.
  *
  * - `version`, `seed` a `tick` žijú len vo `world` (`WorldState`), obálka ich nezdvojuje;
- * - `saveVersion` verzuje len obálku, tvar sveta verzuje `world.version` a prevádza ho `World.deserialize`
- *   (`migrateWorldState`) — obálka v1 teda môže niesť `world` v1 … aktuálnu verziu;
+ * - `saveVersion` verzuje len obálku, tvar sveta verzuje `world.version`; obálka v1 môže niesť aj svet staršej verzie, ktorý
+ *   `World.deserialize` odmietne (`UnsupportedSaveVersionError`, clean break savov, ADR-036) — hra sa nezmení a hráč dostane
+ *   `OLD_WORLD_VERSION_MESSAGE`; slot s takým savom sa v zozname označí ako nekompatibilný (`isWorldVersionSupported`);
  * - `preview` je odvodený z `world` pri uložení (`day` 0-based ako `SimClock.gameDay`, `timeLabel` = `HH:MM`, deň a čas
  *   dňa zvlášť) a slúži len na zoznam slotov; pri načítaní sa ignoruje (neoveruje sa voči `world`, nie je druhým
  *   zdrojom pravdy);
@@ -13,7 +14,7 @@
  * `decodeSave` overí len obálku (formát, verziu, prítomnosť sveta a typy polí). Obsah `world` overí až
  * `World.deserialize` (`WorldStateError` s JSON pointerom), takže poškodený svet sa nikdy nepoužije napoly.
  */
-import type { World, WorldState } from '@sim/world';
+import { WORLD_STATE_VERSION, type World, type WorldState } from '@sim/world';
 import { formatClock } from '@ui/format';
 import { SAVE_SLOT_IDS, type SavePreview, type SaveSlotId } from '@ui/save-types';
 import { GAME_VERSION } from '../config';
@@ -24,6 +25,9 @@ export type { SavePreview, SaveSlotId };
 
 export const SAVE_FORMAT = 'modular-harbor-save';
 export const SAVE_VERSION = 1;
+
+/** Hláška pre hráča: uložená hra je zo staršej verzie sveta (v1–v9) a s novým terminálom sa nedá načítať (ADR-036). */
+export const OLD_WORLD_VERSION_MESSAGE = 'Uložená hra je zo staršej verzie a s novým terminálom sa nedá načítať.';
 
 export function isSaveSlotId(value: unknown): value is SaveSlotId {
   return typeof value === 'string' && (SAVE_SLOT_IDS as readonly string[]).includes(value);
@@ -37,7 +41,7 @@ export interface SaveGame {
   readonly savedAtIso: string;
   readonly label: string;
   readonly preview: SavePreview;
-  /** Stav sveta; môže byť aj staršej verzie, ktorú prevedie `World.deserialize`. */
+  /** Stav sveta; môže byť aj staršej verzie, ktorú `World.deserialize` odmietne (`isWorldVersionSupported`). */
   readonly world: WorldState;
 }
 
@@ -56,6 +60,18 @@ export class SaveError extends Error {
     this.name = 'SaveError';
     this.reason = reason;
   }
+}
+
+/** Nesie obálka svet aktuálnej verzie (`WORLD_STATE_VERSION`)? Iná verzia sa nenačíta (ADR-036); platí to aj pre novšiu verziu. */
+export function isWorldVersionSupported(save: SaveGame): boolean {
+  const version: number = save.world.version;
+  return version === WORLD_STATE_VERSION;
+}
+
+/** Nesie obálka svet **staršej** verzie, než vie táto hra načítať (v1–v9, ADR-036)? */
+export function isWorldVersionOlder(save: SaveGame): boolean {
+  const version: number = save.world.version;
+  return version < WORLD_STATE_VERSION;
 }
 
 /**

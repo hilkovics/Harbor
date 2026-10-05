@@ -31,6 +31,11 @@ export interface SaveSlotInfo {
   /** Čas uloženia, ISO 8601 (UTC). */
   readonly savedAtIso: string;
   readonly preview: SavePreview;
+  /**
+   * Save sveta inej verzie než aktuálnej (starý save, ADR-036): v zozname sa označí a jeho načítanie hru nezmení
+   * (hláška o staršej verzii). Chýba = kompatibilný.
+   */
+  readonly incompatible?: boolean;
 }
 
 /** Nastavenia na zariadení (neukladajú sa do savu). */

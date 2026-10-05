@@ -101,6 +101,15 @@
   color: var(--ui-xp);
 }
 
+.save-slot__incompatible {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--ui-warning);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+}
+
 .save-slot__sr-only {
   position: absolute;
   width: 1px;

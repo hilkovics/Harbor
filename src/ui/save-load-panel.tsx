@@ -24,6 +24,9 @@ export const IMPORT_ACCEPT = '.json,application/json';
 /** Text prázdneho slotu. */
 export const EMPTY_SLOT_TEXT = 'Prázdny';
 
+/** Značka slotu so savom staršej verzie (clean break savov, ADR-036): načítanie hru nezmení, vysvetlí ho hláška. */
+export const INCOMPATIBLE_SLOT_TEXT = 'Nekompatibilné';
+
 /** Viditeľný názov slotu. */
 export function slotName(slot: SaveSlotId): string {
   return slot === 'auto' ? 'Automatické uloženie' : `Slot ${slot}`;
@@ -174,7 +177,7 @@ function renderActions(slot: SaveSlotId, empty: boolean, view: SaveLoadPanelView
 function renderSlot(slot: SaveSlotId, info: SaveSlotInfo | undefined, view: SaveLoadPanelViewProps): ReactElement {
   const empty = info === undefined;
   return (
-    <li key={slot} className="save-slot" data-slot={slot} data-empty={empty}>
+    <li key={slot} className="save-slot" data-slot={slot} data-empty={empty} data-incompatible={info?.incompatible === true}>
       <div className="save-slot__info">
         <div className="save-slot__head">
           <span className="save-slot__name" data-field="slot-name">
@@ -187,6 +190,12 @@ function renderSlot(slot: SaveSlotId, info: SaveSlotInfo | undefined, view: Save
           ) : (
             <span className="save-slot__saved" data-field="slot-saved">
               {formatDateTime(info.savedAtIso)}
+            </span>
+          )}
+          {info?.incompatible === true && (
+            <span className="save-slot__incompatible" data-field="slot-incompatible">
+              <Icon name="ic_warning" className="save-slot__icon" />
+              {INCOMPATIBLE_SLOT_TEXT}
             </span>
           )}
         </div>

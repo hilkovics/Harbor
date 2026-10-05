@@ -8,7 +8,7 @@
  * nedostupné úložisko dá prázdny zoznam, poškodený slot sa vynechá (zobrazí sa ako prázdny a dá sa prepísať).
  */
 import type { SaveSlotInfo } from '@ui/save-types';
-import { SAVE_SLOT_IDS, decodeSave, type SaveGame, type SaveSlotId } from './save-game';
+import { SAVE_SLOT_IDS, decodeSave, isWorldVersionSupported, type SaveGame, type SaveSlotId } from './save-game';
 import { StorageError, browserStorage, guardStorage, type StorageProvider } from './storage';
 
 /** Predpona kľúča slotu v `localStorage`. */
@@ -32,8 +32,10 @@ export interface SaveStore {
   remove(slot: SaveSlotId): void;
 }
 
+/** Údaje slotu pre zoznam; svet inej verzie než aktuálnej (starý save, ADR-036) dostane príznak `incompatible`. */
 export function toSlotInfo(slot: SaveSlotId, save: SaveGame): SaveSlotInfo {
-  return { slot, label: save.label, savedAtIso: save.savedAtIso, preview: save.preview };
+  const info: SaveSlotInfo = { slot, label: save.label, savedAtIso: save.savedAtIso, preview: save.preview };
+  return isWorldVersionSupported(save) ? info : { ...info, incompatible: true };
 }
 
 /** Prečíta a overí obálku zo slotu; chybný JSON alebo obálka → `StorageError('corrupt')`. */

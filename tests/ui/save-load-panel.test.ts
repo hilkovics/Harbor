@@ -6,6 +6,7 @@ import { ModalDialog } from '@ui/modal-dialog';
 import {
   EMPTY_SLOT_TEXT,
   IMPORT_ACCEPT,
+  INCOMPATIBLE_SLOT_TEXT,
   SAVE_SLOT_IDS,
   SaveLoadPanel,
   SaveLoadPanelView,
@@ -280,5 +281,27 @@ describe('SaveLoadPanel (akcie)', () => {
     const dialog = findAll(tree, (element) => element.type === ModalDialog)[0];
     expect(dialog).toBeDefined();
     expect(propsOf(dialog as ReactElement).onClose).toBe(fake.props.onClose);
+  });
+});
+
+describe('slot so savom staršej verzie (clean break savov, ADR-036)', () => {
+  const OLD: SaveSlotInfo = { ...SLOT_2, incompatible: true };
+
+  it('nekompatibilný slot nesie značku a data-incompatible; kompatibilné a prázdne sloty ju nemajú', () => {
+    const html = renderView(setup({}, [AUTO, OLD]));
+    expect(slotHtml(html, '2')).toContain('data-incompatible="true"');
+    expect(slotHtml(html, '2')).toContain('data-field="slot-incompatible"');
+    expect(slotHtml(html, '2')).toContain(INCOMPATIBLE_SLOT_TEXT);
+    for (const slot of ['auto', '1', '3'] as const) {
+      expect(slotHtml(html, slot)).toContain('data-incompatible="false"');
+      expect(slotHtml(html, slot)).not.toContain(INCOMPATIBLE_SLOT_TEXT);
+    }
+  });
+
+  it('Načítať ostáva aktívne (načítanie hru nezmení a vysvetlí ho hláška), Vymazať takisto', () => {
+    const fake = setup({}, [OLD]);
+    const tree = SaveLoadPanelView(fake.props);
+    expect(propsOf(slotButton(tree, 'load', '2'))['disabled']).toBe(false);
+    expect(propsOf(slotButton(tree, 'delete', '2'))['disabled']).toBe(false);
   });
 });

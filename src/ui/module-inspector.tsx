@@ -225,6 +225,27 @@ export interface ModuleInspectorData {
   /** F4: nakladacia rampa (`kind: 'ramp'`). */
   readonly ramp?: RampData;
   /**
+   * R2: blok stohu (yard block). `geometry` = veľkosť gridu, `usedTeu` / `capacityTeu` = obsadenosť,
+   * `rehandlesPerMove` = rehandling na presun (voliteľný), `stacks` = pole stohu po bayoch/radoch.
+   */
+  readonly yardBlock?: {
+    readonly geometry: { readonly bays: number; readonly rows: number; readonly maxTier: number };
+    readonly capacityTeu: number;
+    readonly usedTeu: number;
+    readonly rehandlesPerMove?: number;
+    readonly stacks: readonly {
+      readonly bay: number;
+      readonly row: number;
+      readonly height: number;
+      readonly top: {
+        readonly sizeFt: 20 | 40;
+        readonly containerType: string;
+        readonly lineId: string | null;
+        readonly direction: string;
+      } | null;
+    }[];
+  };
+  /**
    * F3 (voliteľný): modul s cestným konektorom má cestu. `false` = banner „Nepripojené k ceste" a badge „Nepripojené"
    * (má prednosť pred `stateLabel`); `undefined` / `true` = bez zmeny (moduly bez konektorov pole nemajú).
    */
@@ -998,6 +1019,73 @@ function renderStorage(storage: StorageData) {
   );
 }
 
+/** R2: blok stohu so siete bay/radov a pohľadom na bay zboku. */
+function renderYardBlock(block: NonNullable<ModuleInspectorData['yardBlock']>) {
+  const { geometry, capacityTeu, usedTeu, rehandlesPerMove, stacks } = block;
+  const teuPct = Math.round(shareOf(usedTeu, capacityTeu));
+
+  // Skupujeme stohy po bayoch pre zobrazenie
+  const stacksByBay = new Map<number, typeof stacks>();
+  for (const stack of stacks) {
+    const existing = stacksByBay.get(stack.bay) ?? [];
+    stacksByBay.set(stack.bay, [...existing, stack]);
+  }
+
+  return (
+    <>
+      <div className="module-inspector__meter" data-section="yard-block">
+        <div className="module-inspector__meter-head">
+          <span className="module-inspector__meter-label">Obsadenosť TEU</span>
+          <span data-field="block-teu">{formatCount(usedTeu)} / {formatCount(capacityTeu)} ({teuPct} %)</span>
+        </div>
+        {renderBar('Zaplnenie bloku', usedTeu, capacityTeu, [
+          { key: 'used', percent: teuPct },
+        ])}
+      </div>
+      <div className="module-inspector__section" data-section="yard-block-bay">
+        <span className="module-inspector__section-title">Pohľad na bay zboku</span>
+        <div className="module-inspector__bay-view">
+          <div className="module-inspector__bay-columns">
+            {Array.from(stacksByBay.entries()).map(([bay, bayStacks]) => (
+              <div key={bay} className="module-inspector__bay-column" data-bay={bay}>
+                <div className="module-inspector__bay-stacks">
+                  {Array.from({ length: geometry.maxTier }, (_, tier) =>
+                    Array.from({ length: geometry.rows }, (_, row) => {
+                      const stack = bayStacks.find(s => s.row === row && s.height > tier);
+                      const isEmpty = !stack || stack.height <= tier;
+                      const containerType = !isEmpty && stack.top ? stack.top.containerType : 'empty';
+                      const isSizeFt = !isEmpty && stack.top ? stack.top.sizeFt : 0;
+
+                      return (
+                        <div
+                          key={`${bay}-${row}-${tier}`}
+                          className="module-inspector__bay-cell"
+                          data-bay={bay}
+                          data-row={row}
+                          data-tier={tier}
+                          data-empty={isEmpty}
+                          data-container-type={containerType}
+                          title={isEmpty ? `Prázdne · bay ${bay} · riadok ${row} · úroveň ${tier + 1}` : `${isSizeFt}′ ${containerType}${stack.top?.lineId ? ` · ${stack.top.lineId}` : ''}`}
+                        />
+                      );
+                    })
+                  ).flat()}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      {rehandlesPerMove !== undefined && (
+        <div className="module-inspector__row">
+          <span className="module-inspector__row-label">Rehandling na presun</span>
+          <span data-field="rehandles-per-move">{rehandlesPerMove.toFixed(2)}</span>
+        </div>
+      )}
+    </>
+  );
+}
+
 /** F6a / F6c: obsah skladu podľa smeru — pruh (podiely z uskladnených jednotiek) a legenda; tranship a prázdne len pri nenulovom počte. */
 function renderStorageSplit(storage: StorageData, split: CargoSplitData) {
   const shares = cargoSplitShares(split);
@@ -1259,7 +1347,7 @@ function renderHinterland(hinterland: HinterlandData) {
 }
 
 export function ModuleInspector({ data, onRemove, onClose, onBuyVehicle, onSellVehicle }: ModuleInspectorProps) {
-  const { apron, crane, dockedShip, storage, emptyDepot, depot, gate, waitingArea, ramp } = data;
+  const { apron, crane, dockedShip, storage, emptyDepot, depot, gate, waitingArea, ramp, yardBlock } = data;
   const blocked = crane?.state === 'blocked';
   const waiting = crane?.waitingForVehicle === true;
   const badge = inspectorBadge(data);
@@ -1322,7 +1410,8 @@ export function ModuleInspector({ data, onRemove, onClose, onBuyVehicle, onSellV
         {ramp !== undefined && renderStats(rampStats(ramp))}
         {apron !== undefined && renderApron(apron)}
         {crane !== undefined && renderCraneTime(crane)}
-        {storage !== undefined && renderStorage(storage)}
+        {yardBlock !== undefined && renderYardBlock(yardBlock)}
+        {storage !== undefined && !yardBlock && renderStorage(storage)}
         {emptyDepot === undefined && storage?.split !== undefined && renderStorageSplit(storage, storage.split)}
         {emptyDepot !== undefined && renderEmptyLines(emptyDepot)}
         {emptyDepot !== undefined && renderRepairBays(emptyDepot)}

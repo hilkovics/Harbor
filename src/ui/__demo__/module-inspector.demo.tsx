@@ -75,6 +75,41 @@ export const BERTH_FREE: ModuleInspectorData = {
   removeBlockedReason: 'Kotvisko so žeriavom nejde odstrániť.',
 };
 
+/** R2: blok stohu (yard block) so stohmi kontajnerov (bay view). */
+export const YARD_BLOCK: ModuleInspectorData = {
+  id: 10,
+  defId: 'container_yard_small',
+  displayName: 'RTG blok B2',
+  kind: 'storage',
+  footprint: { w: 12, h: 6 },
+  stateLabel: 'V prevádzke',
+  ok: true,
+  yardBlock: {
+    geometry: { bays: 12, rows: 6, maxTier: 5 },
+    capacityTeu: 1440,
+    usedTeu: 1064,
+    rehandlesPerMove: 0.32,
+    stacks: Array.from({ length: 12 }, (_, bay) =>
+      Array.from({ length: 6 }, (_, row) => ({
+        bay,
+        row,
+        height: Math.random() > 0.3 ? Math.floor(Math.random() * 4) + 1 : 0,
+        top:
+          Math.random() > 0.4
+            ? {
+                sizeFt: (Math.random() > 0.5 ? 20 : 40) as 20 | 40,
+                containerType: 'dry',
+                lineId: null,
+                direction: 'export',
+              }
+            : null,
+      }))
+    ).flat(),
+  },
+  refundCents: 25_000_000,
+  removable: true,
+};
+
 /** Lokálny záznam poslednej akcie (`onRemove(id)` / `onClose()`), aby šlo overiť zapojenie callbackov. */
 export function useActionLog(): {
   readonly text: string;
@@ -108,13 +143,14 @@ function InspectorFrame({ title, data }: { title: string; data: ModuleInspectorD
   );
 }
 
-/** Kontrolný rad panelov: blokovaný žeriav, žeriav pri práci, voľné štartové kotvisko. */
+/** Kontrolný rad panelov: blokovaný žeriav, žeriav pri práci, voľné štartové kotvisko, blok stohu. */
 export function ModuleInspectorDemo() {
   return (
     <div className="f2-demo__row">
       <InspectorFrame title="Žeriav — blocked (plný apron)" data={CRANE_BLOCKED} />
       <InspectorFrame title="Žeriav — vykladá (vyťaženosť ≥ 75 %)" data={CRANE_WORKING} />
       <InspectorFrame title="Kotvisko — bez lode, štartový modul" data={BERTH_FREE} />
+      <InspectorFrame title="Blok stohu — RTG blok B2" data={YARD_BLOCK} />
     </div>
   );
 }

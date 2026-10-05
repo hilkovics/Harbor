@@ -11,7 +11,7 @@
  * - **Rezervácie** (job → bunka) drží `SlotReservations` (anchor slot) a bloky navyše po bunkách (id jednotky a veľkosť; 40′ rezervuje aj bunku tieňa),
  *   takže plánovač vidí „efektívnu“ výšku stohu vrátane rozbehnutých jobov (`effectiveHeight`). Vozidlá môžu prísť v inom poradí, než sa rezervovalo —
  *   skutočnú vrstvu určí výška stohu pri vykládke (`settleReservation`), rezervácie sa vymenia (`logistics/yard-settle.ts`).
- * - **Kapacita** je v TEU (`capacityTeu = bays × rows × maxTier`), `freeCount` = `capacityTeu − usedTeu − reservedTeu`.
+ * - **Kapacita** je v TEU (`capacityTeu` = `params.capacityUnits`, v defoch `bays × rows × maxTier`; def ju môže znížiť), `freeCount` = `capacityTeu − usedTeu − reservedTeu`.
  * - **Rehandling** (presun vrchných kontajnerov, aby sa dalo vybrať cieľový): počíta `rehandles` (save `runtime`); logiku robí `logistics/yard-rehandle.ts`.
  */
 import type { CargoReader } from '../cargo/cargo-ledger';
@@ -66,7 +66,7 @@ export abstract class YardBlock extends StorageModule implements StorageGuard {
 
   // ---- geometria a obsadenie ----
 
-  /** Kapacita bloku v TEU (`bays × rows × maxTier`). */
+  /** Kapacita bloku v TEU (`params.capacityUnits` ≤ `bays × rows × maxTier`). */
   get capacityTeu(): number {
     return this.capacity;
   }
@@ -267,6 +267,21 @@ export abstract class YardBlock extends StorageModule implements StorageGuard {
   /** Rezervuje bunku `slot` pre jednotku (veľkosť ≙ 1 / 2 bunky); chyby ako `reserveSlot` + `stack_rule` (40′ mimo páru, tieň obsadený). */
   reserveFor(slot: number, unit: Pick<CargoUnit, 'id' | 'sizeFt'>): void {
     this.reserveCells(slot, unit.id, unit.sizeFt);
+  }
+
+  /**
+   * Rezervuje najnižšiu voľnú bunku pre kontajner neznámej veľkosti (20′) — jednoduchý variant bez plánovača (testy, nástroje); plánovač rezervuje
+   * konkrétnu bunku cez `reserveFor`. Bez voľnej bunky `ModuleError('no_free_slot')`.
+   */
+  override reserve(): number {
+    for (let slot = 0; slot < this.capacity; slot++) {
+      if (this.slots.isReserved(slot) || this.reservedSize[slot] !== 0 || this.slots.unitAt(slot) !== null) continue;
+      const { bay, row, tier } = positionOfCell(this.geometry, slot);
+      if (this.grid.at(bay, row, tier) !== null) continue;
+      this.reserveCells(slot, -1, 20);
+      return slot;
+    }
+    throw new ModuleError('no_free_slot', `${this.label}.reserve: žiadna voľná nerezervovaná bunka (kapacita ${String(this.capacity)} TEU)`);
   }
 
   override reserveSlot(slot: number, unitId?: EntityId): void {

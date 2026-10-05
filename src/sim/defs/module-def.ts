@@ -130,8 +130,8 @@ function checkStorageParams(params: Readonly<Record<string, unknown>>, path: str
     return { path: `${path}/${missing}`, message: `geometria bloku (${STORAGE_GEOMETRY_KEYS.join(', ')}) musí byť zadaná celá, chýba ${missing}` };
   }
   const { bays, rows, maxTier, capacityUnits } = params;
-  if (typeof bays === 'number' && typeof rows === 'number' && typeof maxTier === 'number' && capacityUnits !== bays * rows * maxTier) {
-    return { path: `${path}/capacityUnits`, message: `kapacita bloku v TEU musí byť bays × rows × maxTier (${String(bays * rows * maxTier)}), dostal ${describeValue(capacityUnits)}` };
+  if (typeof bays === 'number' && typeof rows === 'number' && typeof maxTier === 'number' && typeof capacityUnits === 'number' && capacityUnits > bays * rows * maxTier) {
+    return { path: `${path}/capacityUnits`, message: `kapacita bloku v TEU nesmie presiahnuť bays × rows × maxTier (${String(bays * rows * maxTier)}), dostal ${String(capacityUnits)}` };
   }
   if (role === 'empty_depot') {
     if (category !== 'container') return { path: `${path}/category`, message: `depo prázdnych (role empty_depot) skladuje kontajnery — kategória musí byť 'container', dostal ${describeValue(category)}` };

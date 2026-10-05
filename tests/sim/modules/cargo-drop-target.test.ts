@@ -49,7 +49,7 @@ describe('StorageModule.cargoDropTarget — slot skladu', () => {
   it('druh in_storage, kategória a počet miest zo skladu; vždy ten istý zmrazený objekt', () => {
     const yard = yardOf();
     const target = yard.cargoDropTarget();
-    expect([target.kind, target.category, target.places]).toEqual(['in_storage', 'container', 64]);
+    expect([target.kind, target.category, target.places]).toEqual(['in_storage', 'container', 48]);
     expect(yard.cargoDropTarget()).toBe(target);
     expect(Object.isFrozen(target)).toBe(true);
   });
@@ -59,7 +59,7 @@ describe('StorageModule.cargoDropTarget — slot skladu', () => {
     const yard = yardOf(cargo);
     const target = yard.cargoDropTarget();
     const slot = yard.reserve();
-    expect([target.reservationsAt(slot), target.reservationsAt(slot + 1), target.reservationsAt(-1), target.reservationsAt(64), target.reservationsAt(0.5)]).toEqual([1, 0, 0, 0, 0]);
+    expect([target.reservationsAt(slot), target.reservationsAt(slot + 1), target.reservationsAt(-1), target.reservationsAt(48), target.reservationsAt(0.5)]).toEqual([1, 0, 0, 0, 0]);
     const unit = unitInVehicle(cargo);
     target.assertCommittable(slot, unit);
     cargo.move(unit, { kind: 'in_storage', moduleId: yard.id, slot });
@@ -73,7 +73,7 @@ describe('StorageModule.cargoDropTarget — slot skladu', () => {
     target.restoreReservation(5);
     expect(yard.reservedSlots()).toEqual([5]);
     expect(errorCode(() => target.restoreReservation(5))).toBe('slot_reserved');
-    expect(errorCode(() => target.restoreReservation(64))).toBe('invalid_slot');
+    expect(errorCode(() => target.restoreReservation(48))).toBe('invalid_slot');
     target.release(5);
     expect(yard.reservedCount).toBe(0);
     expect(errorCode(() => target.release(5))).toBe('slot_not_reserved');

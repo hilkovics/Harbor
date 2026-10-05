@@ -13,7 +13,7 @@ import {
   StorageModule,
   moduleRegistry,
   type ModuleErrorCode,
-  type StorageRuntimeState,
+  type YardRuntimeState,
 } from '@sim/modules';
 import { RAW_DEFS } from '../world/world-fixtures';
 import { BERTH, emptyCargo, id, quayGrid } from './module-fixtures';
@@ -89,15 +89,15 @@ function expectModuleError(action: () => unknown, code: ModuleErrorCode): void {
 }
 
 describe('ContainerYard — z defu container_yard_small', () => {
-  it('kapacita 64, kategória container, prázdny, počítadlá 0; sloty in_storage u modulu', () => {
+  it('kapacita 48 TEU (4 × 4 × 3), kategória container, prázdny, počítadlá 0; sloty in_storage u modulu', () => {
     const { yard } = yardOf();
     expect(yard).toBeInstanceOf(ContainerYard);
-    expect([yard.capacity, yard.category, yard.storedCount, yard.reservedCount, yard.freeCount]).toEqual([64, 'container', 0, 0, 64]);
+    expect([yard.capacity, yard.category, yard.storedCount, yard.reservedCount, yard.freeCount]).toEqual([48, 'container', 0, 0, 48]);
     expect([yard.unitsIn, yard.unitsOut]).toEqual([0, 0]);
-    expect(yard.params).toEqual({ capacityUnits: 64, category: 'container', bays: 4, rows: 4, maxTier: 3 });
+    expect(yard.params).toEqual({ capacityUnits: 48, category: 'container', bays: 4, rows: 4, maxTier: 3 });
     const slots = yard.cargoSlots();
-    expect([slots.kind, slots.holderId, slots.capacity]).toEqual(['in_storage', YARD_ID, 64]);
-    expect(yard.getRuntimeState()).toEqual({ unitsIn: 0, unitsOut: 0 } satisfies StorageRuntimeState);
+    expect([slots.kind, slots.holderId, slots.capacity]).toEqual(['in_storage', YARD_ID, 48]);
+    expect(yard.getRuntimeState()).toEqual({ unitsIn: 0, unitsOut: 0, rehandles: 0 } satisfies YardRuntimeState);
   });
 
   it('konektor po rotácii je vo `connectors` (1, 3, s) → svet (3, 5, s)', () => {
@@ -117,9 +117,9 @@ describe('StorageModule — rezervácie a obsadenie z ledgera', () => {
   it('reserve → presun do skladu → commit: rezervácia zaniká, stored z ledgera, unitsIn += 1', () => {
     const { yard, cargo } = yardOf();
     const slot = yard.reserve();
-    expect([slot, yard.reservedCount, yard.freeCount, yard.isReserved(slot)]).toEqual([0, 1, 63, true]);
+    expect([slot, yard.reservedCount, yard.freeCount, yard.isReserved(slot)]).toEqual([0, 1, 47, true]);
     const unit = store(yard, cargo, slot);
-    expect([yard.storedCount, yard.reservedCount, yard.freeCount, yard.unitsIn]).toEqual([1, 0, 63, 1]);
+    expect([yard.storedCount, yard.reservedCount, yard.freeCount, yard.unitsIn]).toEqual([1, 0, 47, 1]);
     expect([yard.unitAt(slot), yard.slotOf(unit), yard.units()]).toEqual([unit, slot, [unit]]);
   });
 
@@ -186,7 +186,7 @@ describe('StorageModule — runtime stav v save', () => {
     cargo.move(unit, { kind: 'in_vehicle', vehicleId: id(903) });
     yard.recordTaken(unit);
     const state = yard.getRuntimeState();
-    expect(state).toEqual({ unitsIn: 1, unitsOut: 1 });
+    expect(state).toEqual({ unitsIn: 1, unitsOut: 1, rehandles: 0 });
     const copy = yardOf(YARD, cargo).yard;
     copy.restoreRuntimeState(JSON.parse(JSON.stringify(state)));
     expect([copy.unitsIn, copy.unitsOut, copy.reservedCount, copy.storedCount]).toEqual([1, 1, 0, 0]);
@@ -206,11 +206,13 @@ describe('StorageModule — runtime stav v save', () => {
 
   const INVALID: readonly [string, unknown, string][] = [
     ['nie objekt', null, ''],
-    ['chýba unitsOut', { unitsIn: 0 }, '/unitsOut'],
-    ['neznámy kľúč', { unitsIn: 0, unitsOut: 0, stored: [] }, '/stored'],
-    ['reservedSlots (v2 tvar, v3 ho nepozná)', { reservedSlots: [], unitsIn: 0, unitsOut: 0 }, '/reservedSlots'],
-    ['unitsIn záporné', { unitsIn: -1, unitsOut: 0 }, '/unitsIn'],
-    ['unitsOut zlomkové', { unitsIn: 0, unitsOut: 1.5 }, '/unitsOut'],
+    ['chýba unitsOut', { unitsIn: 0, rehandles: 0 }, '/unitsOut'],
+    ['chýba rehandles (R2, ADR-039)', { unitsIn: 0, unitsOut: 0 }, '/rehandles'],
+    ['neznámy kľúč', { unitsIn: 0, unitsOut: 0, rehandles: 0, stored: [] }, '/stored'],
+    ['reservedSlots (v2 tvar, v3 ho nepozná)', { reservedSlots: [], unitsIn: 0, unitsOut: 0, rehandles: 0 }, '/reservedSlots'],
+    ['unitsIn záporné', { unitsIn: -1, unitsOut: 0, rehandles: 0 }, '/unitsIn'],
+    ['unitsOut zlomkové', { unitsIn: 0, unitsOut: 1.5, rehandles: 0 }, '/unitsOut'],
+    ['rehandles záporné', { unitsIn: 0, unitsOut: 0, rehandles: -1 }, '/rehandles'],
   ];
 
   it.each(INVALID)('%s → ModuleStateError na %s, stav sa nezmení', (_name, raw, path) => {

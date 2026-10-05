@@ -230,7 +230,7 @@ describe('bundled katalógy (loadBundledDefs)', () => {
   });
 
   it('typované gettery storageParams / depotParams', () => {
-    expect(storageParams(defs.modules.get('container_yard_small'))).toEqual({ capacityUnits: 64, category: 'container', bays: 4, rows: 4, maxTier: 3 });
+    expect(storageParams(defs.modules.get('container_yard_small'))).toEqual({ capacityUnits: 48, category: 'container', bays: 4, rows: 4, maxTier: 3 });
     expect(depotParams(defs.modules.get('vehicle_depot'))).toEqual({ capacity: 10 });
   });
 

@@ -91,7 +91,8 @@ function scoreColumn(world: World, block: YardBlock, unit: CargoUnit, bay: numbe
   const { maxTier } = block.geometry;
   const wide = unit.sizeFt === 40;
   const height = block.effectiveHeight(bay, row);
-  if (height >= maxTier) return false;
+  // Bunka musí ležať v kapacite bloku (def môže kapacitu znížiť pod `bays × rows × maxTier`; sloty sú po stĺpcoch).
+  if (height >= maxTier || block.slotOf(bay, row, height) + (wide ? block.geometry.maxTier : 0) >= block.capacity) return false;
   if (wide) {
     if (bay + 1 >= block.geometry.bays || block.effectiveHeight(bay + 1, row) !== height) return false;
     if (height > 0 && (block.effectiveTopSize(bay, row) !== 40 || block.effectiveTopSize(bay + 1, row) !== 40)) return false;

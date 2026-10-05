@@ -29,15 +29,6 @@ import { checkRuntimeKeys, readCount } from './runtime-state';
 import { SlotReservations, type CargoSlotsView } from './slot-reservations';
 
 /**
- * Počet slotov skladu: pri bloku so stohmi (`bays × rows × maxTier`, ADR-039) kapacita v TEU, inak `capacityUnits`.
- * Geometria je celá alebo žiadna (`checkStorageParams`).
- */
-export function storageSlotCapacity(params: StorageParams): number {
-  const { bays, rows, maxTier } = params;
-  return bays !== undefined && rows !== undefined && maxTier !== undefined ? bays * rows * maxTier : params.capacityUnits;
-}
-
-/**
  * Dynamický stav skladu v save (`WorldState.modules[i].runtime`, ADR-017, ADR-018): len kumulatívne počítadlá —
  * obsadenie je v ledgeri a rezervácie sa odvodia z jobov.
  */
@@ -69,7 +60,7 @@ export abstract class StorageModule extends Module {
     if (this.params.category !== category) {
       throw new ModuleError('invalid_input', `${this.label}: trieda skladuje kategóriu '${category}', def má '${this.params.category}'`);
     }
-    this.capacity = storageSlotCapacity(this.params);
+    this.capacity = this.params.capacityUnits;
     this.slots = new SlotReservations({
       kind: 'in_storage',
       holderId: this.id,

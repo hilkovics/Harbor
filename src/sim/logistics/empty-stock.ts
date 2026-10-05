@@ -11,7 +11,7 @@
  *   rozbehnutých návratov, inak najbližší bežný dvor (ohraničené počtom slotov apronu — prázdny nesmie navždy blokovať apron);
  * - `countAvailableEmpties` — koľko ich je (loď repositioningu na ne počká, kým nie sú pridelené nakládke);
  * - `findAvailableEmpty` — prázdny kontajner linky, ktorý možno vydať: v sklade, stav `available`, bez aktívneho jobu; depo pred
- *   bežným skladom, v rámci toho najmenšie id (nezávisí od poradia indexu, takže ho obnova save nemení). Obe vedia obmedziť výber na sklady
+ *   bežným skladom, v rámci toho kontajner navrchu stohu (najmenej kontajnerov nad ním, ADR-039), potom najmenšie id (nezávisí od poradia indexu, takže ho obnova save nemení). Obe vedia obmedziť výber na sklady
  *   s cestou k cieľu (`targets`: kotvisko nakládky, rampa výdaja; `load-access.ts`, T6C-07b).
  */
 import { DEFAULT_CONTAINER_LABELS, EMPTY_WEIGHT_CLASS, type CargoUnit, type CargoUnitLabels, type ContainerSize } from '../cargo/cargo-unit';
@@ -20,6 +20,7 @@ import type { CargoCategory } from '../defs/types';
 import { EMPTY_DEPOT_CATEGORY, EmptyDepot } from '../modules/empty-depot';
 import type { Module } from '../modules/module';
 import { StorageModule } from '../modules/storage-module';
+import { YardBlock } from '../modules/yard-block';
 import type { World } from '../world/world';
 import type { EntityId } from '../core/entity-id';
 import { storageReaches } from './load-access';
@@ -165,6 +166,12 @@ function storageRank(world: Pick<World, 'modules'>, unit: CargoUnit): number {
   return holder instanceof EmptyDepot ? 0 : 1;
 }
 
+/** Počet kontajnerov nad jednotkou v jej bloku so stohmi (0 = navrchu alebo mimo bloku). */
+function burialOf(world: Pick<World, 'modules'>, unit: CargoUnit): number {
+  const holder = unit.location.kind === 'in_storage' ? world.modules.get(unit.location.moduleId) : undefined;
+  return holder instanceof YardBlock ? holder.burialDepth(unit.id) : 0;
+}
+
 /**
  * Prázdny kontajner linky `lineId`, ktorý možno vydať (viď hlavička), alebo `undefined`. Poškodený a opravovaný kontajner sa
  * nevydáva (stav ≠ `available`), kontajner s aktívnym jobom (pridelený inému kamiónu / nakládke) tiež nie. S `targets` (kotvisko nakládky lode,
@@ -173,13 +180,17 @@ function storageRank(world: Pick<World, 'modules'>, unit: CargoUnit): number {
 export function findAvailableEmpty(world: Pick<World, 'storedCargo' | 'cargo' | 'modules' | 'jobOfUnit' | 'grid' | 'distances'>, lineId: string, targets?: readonly Module[]): CargoUnit | undefined {
   let best: CargoUnit | undefined;
   let bestRank = Infinity;
+  let bestDepth = Infinity;
   let checkedStorage: EntityId | undefined;
   let reachable = false;
   for (const unitId of world.storedCargo.emptiesOf(lineId)) {
     const unit = world.cargo.get(unitId);
     if (unit === undefined || unit.status !== 'available' || world.jobOfUnit(unitId) !== undefined) continue;
     const rank = storageRank(world, unit);
-    if (best !== undefined && (rank > bestRank || (rank === bestRank && unit.id > best.id))) continue;
+    if (best !== undefined && rank > bestRank) continue;
+    // V rámci poradia skladu prednosť kontajneru navrchu stohu (menej kontajnerov nad ním = menej rehandlingu), potom najmenšie id.
+    const depth = burialOf(world, unit);
+    if (best !== undefined && rank === bestRank && (depth > bestDepth || (depth === bestDepth && unit.id > best.id))) continue;
     if (targets !== undefined && unit.location.kind === 'in_storage') {
       if (unit.location.moduleId !== checkedStorage) {
         checkedStorage = unit.location.moduleId;
@@ -189,6 +200,7 @@ export function findAvailableEmpty(world: Pick<World, 'storedCargo' | 'cargo' | 
     }
     best = unit;
     bestRank = rank;
+    bestDepth = depth;
   }
   return best;
 }

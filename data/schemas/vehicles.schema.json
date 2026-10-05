@@ -30,6 +30,7 @@
         "id",
         "displayName",
         "capacityUnits",
+        "lengthCells",
         "speedCellsPerTick",
         "loadTicks",
         "unloadTicks",
@@ -44,6 +45,11 @@
           "type": "integer",
           "minimum": 1,
           "description": "Kapacita v CargoUnit (koľko jednotiek vezie naraz)."
+        },
+        "lengthCells": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Dĺžka nosiča v bunkách (ADR-037): počet pruhových slotov, ktoré stojaci nosič drží (telo od hlavy k chvostu)."
         },
         "speedCellsPerTick": {
           "type": "number",

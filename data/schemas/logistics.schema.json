@@ -4,7 +4,7 @@
   "description": "Logistické konštanty (ARCHITECTURE §4.6, §7.3, §7.4, §7.6; ADR-010, ADR-029): pobyt vozidla v module, opakovanie hľadania cesty, model kongescie a lodná navigácia. Konfiguračný def bez items[] (ADR-009); všetky trvania v tickoch.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "defaultInternalTicks", "repathIntervalTicks", "congestion", "shipNavigation", "exportFlow", "emptyFlow"],
+  "required": ["schemaVersion", "defaultInternalTicks", "repathIntervalTicks", "congestion", "traffic", "shipNavigation", "exportFlow", "emptyFlow"],
   "properties": {
     "schemaVersion": {
       "const": 1,
@@ -23,28 +23,41 @@
     "congestion": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["trafficDecayPerHour", "slowdownPerExtraVehicle", "penaltyTrafficDivisor", "penaltyMax"],
+      "required": ["trafficDecayPerHour"],
       "properties": {
         "trafficDecayPerHour": {
           "type": "number",
           "minimum": 0,
           "maximum": 1,
-          "description": "Násobiteľ `cell.traffic` pri každom HourClosed (0 = okamžitý reset, 1 = bez útlmu)."
+          "description": "Násobiteľ `cell.traffic` pri každom HourClosed (0 = okamžitý reset, 1 = bez útlmu); `traffic` je len heatmapa (ADR-037)."
+        }
+      }
+    },
+    "traffic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gridlockTicks", "stuckTicks", "rerouteCooldownTicks", "idleParkDelayTicks"],
+      "description": "Doprava bez prekrývania (ADR-037, ADR-038): čakanie nosičov na voľný slot, zápchy a parkovanie. Všetky trvania v tickoch.",
+      "properties": {
+        "gridlockTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Po koľkých tickoch čakania nosič v cykle čakania skúsi preplánovať trasu mimo blokovanej bunky."
         },
-        "slowdownPerExtraVehicle": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Spomalenie vozidla za každé ďalšie vozidlo na bunke (použije sa vo F11)."
+        "stuckTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Po koľkých tickoch čakania je nosič zaseknutý: vynúti si preplánovanie a hlási sa zápcha (`TrafficJam`)."
         },
-        "penaltyTrafficDivisor": {
-          "type": "number",
-          "exclusiveMinimum": 0,
-          "description": "Delenie `cell.traffic` pri výpočte penalizácie ceny bunky v A* (použije sa vo F11)."
+        "rerouteCooldownTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Najkratší odstup medzi dvoma preplánovaniami jedného nosiča kvôli zápche."
         },
-        "penaltyMax": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Strop penalizácie ceny bunky v A* (použije sa vo F11)."
+        "idleParkDelayTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Po koľkých tickoch nečinnosti vozidlo bez úlohy odíde do svojho depa (parkovanie, TR1-04)."
         }
       }
     },

@@ -178,12 +178,13 @@ describe('DefRegistry.fromRaw', () => {
       ['logistics', '/congestion/trafficDecayPerHour', 1.5],
       ['logistics', '/congestion/trafficDecayPerHour', -0.1],
       ['logistics', '/congestion/trafficDecayPerHour', '0.9'],
-      ['logistics', '/congestion/slowdownPerExtraVehicle', -0.25],
-      ['logistics', '/congestion/slowdownPerExtraVehicle', Number.NaN],
-      ['logistics', '/congestion/penaltyTrafficDivisor', 0],
-      ['logistics', '/congestion/penaltyTrafficDivisor', -200],
-      ['logistics', '/congestion/penaltyMax', -1],
-      ['logistics', '/congestion/penaltyMax', null],
+      // R1 (ADR-037): doprava bez prekrývania
+      ['logistics', '/traffic', null],
+      ['logistics', '/traffic/gridlockTicks', 0],
+      ['logistics', '/traffic/gridlockTicks', 1.5],
+      ['logistics', '/traffic/stuckTicks', 0],
+      ['logistics', '/traffic/rerouteCooldownTicks', -1],
+      ['logistics', '/traffic/idleParkDelayTicks', null],
       // T06-07: lodná navigácia (predtým konštanty v src/sim/ships)
       ['logistics', '/shipNavigation', null],
       ['logistics', '/shipNavigation/approachMarginCells', 0],
@@ -280,18 +281,25 @@ describe('DefRegistry.fromRaw', () => {
       expect([roadKinds.one_lane.speedFactor, roadKinds.one_way.speedFactor]).toEqual([1, 0.01]);
     });
 
-    it('chýbajúce vnorené povinné pole logistics.congestion → úplná cesta', () => {
+    it('chýbajúce vnorené povinné pole logistics.traffic → úplná cesta', () => {
       const raw = rawDefs();
-      delete (raw.logistics['congestion'] as Record<string, unknown>)['penaltyMax'];
+      delete (raw.logistics['traffic'] as Record<string, unknown>)['stuckTicks'];
+      expectDefError(() => DefRegistry.fromRaw(raw), 'logistics', '/traffic/stuckTicks');
+    });
+
+    it('odstránené kľúče soft kongescie (ADR-037) sa hlásia ako neznáme', () => {
+      const raw = rawDefs();
+      (raw.logistics['congestion'] as Record<string, unknown>)['penaltyMax'] = 3;
       expectDefError(() => DefRegistry.fromRaw(raw), 'logistics', '/congestion/penaltyMax');
     });
 
-    it('hranice logistics: defaultInternalTicks 0, trafficDecayPerHour 0 aj 1, penaltyMax 0 sú platné', () => {
+    it('hranice logistics: defaultInternalTicks 0, trafficDecayPerHour 0 aj 1, traffic ticky 1 sú platné', () => {
       const raw = rawDefs();
       raw.logistics['defaultInternalTicks'] = 0;
-      Object.assign(raw.logistics['congestion'] as Record<string, unknown>, { trafficDecayPerHour: 0, penaltyMax: 0 });
+      Object.assign(raw.logistics['congestion'] as Record<string, unknown>, { trafficDecayPerHour: 0 });
+      Object.assign(raw.logistics['traffic'] as Record<string, unknown>, { gridlockTicks: 1, stuckTicks: 1, rerouteCooldownTicks: 1, idleParkDelayTicks: 1 });
       const logistics = DefRegistry.fromRaw(raw).logistics;
-      expect([logistics.defaultInternalTicks, logistics.congestion.trafficDecayPerHour, logistics.congestion.penaltyMax]).toEqual([0, 0, 0]);
+      expect([logistics.defaultInternalTicks, logistics.congestion.trafficDecayPerHour, logistics.traffic.gridlockTicks]).toEqual([0, 0, 1]);
       (raw.logistics['congestion'] as Record<string, unknown>)['trafficDecayPerHour'] = 1;
       expect(DefRegistry.fromRaw(raw).logistics.congestion.trafficDecayPerHour).toBe(1);
     });
@@ -450,7 +458,9 @@ describe('loadBundledDefs', () => {
       schemaVersion: 1,
       defaultInternalTicks: 6,
       repathIntervalTicks: 30,
-      congestion: { trafficDecayPerHour: 0.9, slowdownPerExtraVehicle: 0.25, penaltyTrafficDivisor: 200, penaltyMax: 3 },
+      congestion: { trafficDecayPerHour: 0.9 },
+      // R1 (ADR-037): doprava bez prekrývania.
+      traffic: { gridlockTicks: 30, stuckTicks: 120, rerouteCooldownTicks: 60, idleParkDelayTicks: 6 },
       // T06-07: hodnoty doterajších konštánt APPROACH_MARGIN_CELLS, SWEEP_STEP_CELLS, TURN_MANEUVERS, SIDEWAYS_MANEUVERS.
       shipNavigation: { approachMarginCells: 1, sweepStepCells: 0.5, turnManeuvers: 1, sidewaysManeuvers: 1 },
       // T6A-02 (ADR-032): tok exportu po súši.
@@ -661,7 +671,7 @@ describe('nové polia: schéma ⇔ DefRegistry', () => {
       expect(registryAccepts(raw)).toBe(validateLogistics(raw.logistics));
     });
 
-    it.each(['trafficDecayPerHour', 'slowdownPerExtraVehicle', 'penaltyTrafficDivisor', 'penaltyMax'])('congestion.%s', (key) => {
+    it.each(['trafficDecayPerHour'])('congestion.%s', (key) => {
       for (const [value] of VALUES) {
         const raw = rawDefs();
         congestion(raw)[key] = value;
@@ -677,7 +687,7 @@ describe('nové polia: schéma ⇔ DefRegistry', () => {
 
     it('chýbajúce alebo prebytočné kľúče: rovnaký verdikt', () => {
       const missing = rawDefs();
-      delete congestion(missing)['penaltyMax'];
+      delete congestion(missing)['trafficDecayPerHour'];
       expect(registryAccepts(missing)).toBe(validateLogistics(missing.logistics));
       expect(registryAccepts(missing)).toBe(false);
 

@@ -138,16 +138,22 @@ export interface InfrastructureDef extends DefBase {
   readonly roadKinds: Readonly<Record<RoadKind, Readonly<RoadKindDef>>>;
 }
 
-/** Konštanty kongescie (§7.6): cena bunky v A* a spomalenie vozidiel rastú s `cell.traffic` (použité od F11). */
+/** Heatmapa vyťaženia ciest (§7.6): `cell.traffic` rastie pod nosičmi a s každou hodinou sa tlmí. Spomalenie vozidiel ani cena A* z neho nevychádzajú (ADR-037). */
 export interface CongestionDef {
   /** Násobiteľ `cell.traffic` pri každom HourClosed (0 = okamžitý reset, 1 = bez útlmu). */
   readonly trafficDecayPerHour: number;
-  /** Spomalenie vozidla za každé ďalšie vozidlo na bunke. */
-  readonly slowdownPerExtraVehicle: number;
-  /** Delenie `cell.traffic` pri výpočte penalizácie ceny bunky v A*. */
-  readonly penaltyTrafficDivisor: number;
-  /** Strop penalizácie ceny bunky v A*. */
-  readonly penaltyMax: number;
+}
+
+/** Doprava bez prekrývania (ADR-037, ADR-038): čakanie na voľný slot, zápchy a parkovanie; trvania v tickoch. */
+export interface TrafficDef {
+  /** Po koľkých tickoch čakania nosič v cykle čakania skúsi preplánovať trasu mimo blokovanej bunky. */
+  readonly gridlockTicks: number;
+  /** Po koľkých tickoch čakania je nosič zaseknutý (vynúti preplánovanie, hlási sa zápcha). */
+  readonly stuckTicks: number;
+  /** Najkratší odstup medzi dvoma preplánovaniami jedného nosiča kvôli zápche. */
+  readonly rerouteCooldownTicks: number;
+  /** Po koľkých tickoch nečinnosti vozidlo bez úlohy odíde do depa (TR1-04). */
+  readonly idleParkDelayTicks: number;
 }
 
 /**
@@ -217,6 +223,8 @@ export interface LogisticsDef extends DefBase {
   /** Po koľkých tickoch skúša vozidlo bez cesty (`no_path`) hľadať cestu znova. */
   readonly repathIntervalTicks: number;
   readonly congestion: CongestionDef;
+  /** Doprava bez prekrývania: zápchy, preplánovanie a parkovanie (ADR-037). */
+  readonly traffic: TrafficDef;
   readonly shipNavigation: ShipNavigationDef;
   /** Export po súši: príchody kamiónov, VGM, hmotnostné triedy (F6a, ADR-032). */
   readonly exportFlow: ExportFlowDef;
@@ -495,6 +503,8 @@ export interface VehicleDef {
   readonly displayName: string;
   /** Kapacita v CargoUnit (koľko jednotiek vezie naraz). */
   readonly capacityUnits: number;
+  /** Dĺžka v bunkách (ADR-037): počet pruhových slotov, ktoré stojace vozidlo drží. */
+  readonly lengthCells: number;
   /** Rýchlosť jazdy v bunkách za tick. */
   readonly speedCellsPerTick: number;
   /** Trvanie naloženia jednej jednotky v tickoch (sekvenčne po `internalTicks`, §7.3). */
@@ -533,6 +543,8 @@ export interface TruckDef {
   readonly displayName: string;
   /** Kapacita v CargoUnit (koľko jednotiek vezie naraz). */
   readonly capacityUnits: number;
+  /** Dĺžka v bunkách (ADR-037): počet pruhových slotov, ktoré stojaci kamión drží. */
+  readonly lengthCells: number;
   /** Rýchlosť jazdy v bunkách za tick. */
   readonly speedCellsPerTick: number;
   readonly cargoCategories: readonly CargoCategory[];

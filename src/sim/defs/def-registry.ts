@@ -53,6 +53,7 @@ import {
   SUPPORTED_SCHEMA_VERSION,
   type CargoTypeDef,
   type CongestionDef,
+  type TrafficDef,
   type ContractTemplateDef,
   type ContractTemplateKind,
   type DefBase,
@@ -185,12 +186,17 @@ function checkInfrastructure(def: Readonly<InfrastructureDef>): Problem | undefi
   };
 }
 
-/** Konštanty kongescie (§7.6); hodnoty použije až F11, tabuľka zrkadlí `logistics.schema.json`. */
+/** Heatmapa vyťaženia ciest (§7.6), tabuľka zrkadlí `logistics.schema.json`. */
 const CONGESTION_FIELDS: SpecTable<CongestionDef> = {
   trafficDecayPerHour: { kind: 'number', min: 0, max: 1 },
-  slowdownPerExtraVehicle: { kind: 'number', min: 0 },
-  penaltyTrafficDivisor: { kind: 'number', exclusiveMin: 0 },
-  penaltyMax: { kind: 'number', min: 0 },
+};
+
+/** Doprava bez prekrývania (ADR-037), tabuľka zrkadlí `logistics.schema.json`: všetky trvania sú celé ticky ≥ 1. */
+const TRAFFIC_FIELDS: SpecTable<TrafficDef> = {
+  gridlockTicks: { kind: 'integer', min: 1 },
+  stuckTicks: { kind: 'integer', min: 1 },
+  rerouteCooldownTicks: { kind: 'integer', min: 1 },
+  idleParkDelayTicks: { kind: 'integer', min: 1 },
 };
 
 /**
@@ -240,6 +246,7 @@ const LOGISTICS_FIELDS: FieldTable<LogisticsDef> = {
   defaultInternalTicks: { kind: 'integer', min: 0 },
   repathIntervalTicks: { kind: 'integer', min: 1 },
   congestion: { kind: 'object', fields: CONGESTION_FIELDS },
+  traffic: { kind: 'object', fields: TRAFFIC_FIELDS },
   shipNavigation: { kind: 'object', fields: SHIP_NAVIGATION_FIELDS },
   exportFlow: { kind: 'object', fields: EXPORT_FLOW_FIELDS },
   emptyFlow: { kind: 'object', fields: EMPTY_FLOW_FIELDS },
@@ -338,6 +345,7 @@ const VEHICLE_FIELDS: SpecTable<VehicleDef> = {
   id: ID_FIELD,
   displayName: TEXT_FIELD,
   capacityUnits: { kind: 'integer', min: 1 },
+  lengthCells: { kind: 'integer', min: 1 },
   speedCellsPerTick: { kind: 'number', exclusiveMin: 0 },
   // Load/unload jednej jednotky musí trvať aspoň tick, inak by sekvencia jednotiek (§7.3 bod 4) nemala krok.
   loadTicks: { kind: 'integer', min: 1 },
@@ -355,6 +363,7 @@ const TRUCK_FIELDS: SpecTable<TruckDef> = {
   id: ID_FIELD,
   displayName: TEXT_FIELD,
   capacityUnits: { kind: 'integer', min: 1 },
+  lengthCells: { kind: 'integer', min: 1 },
   speedCellsPerTick: { kind: 'number', exclusiveMin: 0 },
   cargoCategories: { kind: 'array', minItems: 1, unique: true, item: { kind: 'enum', values: CARGO_CATEGORIES } },
 };

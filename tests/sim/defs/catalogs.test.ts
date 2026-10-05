@@ -193,6 +193,7 @@ describe('bundled katalógy (loadBundledDefs)', () => {
       id: 'truck_container',
       displayName: 'Kamión kontajnerový',
       capacityUnits: 1,
+      lengthCells: 3,
       speedCellsPerTick: 0.6,
       cargoCategories: ['container'],
     });
@@ -204,6 +205,7 @@ describe('bundled katalógy (loadBundledDefs)', () => {
       id: 'straddle_carrier',
       displayName: 'Straddle carrier',
       capacityUnits: 1,
+      lengthCells: 2,
       speedCellsPerTick: 0.4,
       loadTicks: 3,
       unloadTicks: 3,

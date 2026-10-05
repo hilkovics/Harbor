@@ -20,6 +20,7 @@ const DEF: VehicleDef = {
   id: 'straddle_carrier',
   displayName: 'Straddle carrier',
   capacityUnits: 1,
+  lengthCells: 2,
   speedCellsPerTick: 0.4,
   loadTicks: 3,
   unloadTicks: 3,

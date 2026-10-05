@@ -179,6 +179,7 @@ describe('skutočné katalógy F2 až F4', () => {
         id: 'truck_container',
         displayName: 'Kamión kontajnerový',
         capacityUnits: 1,
+        lengthCells: 3,
         speedCellsPerTick: 0.6,
         cargoCategories: ['container'],
       },
@@ -193,6 +194,7 @@ describe('skutočné katalógy F2 až F4', () => {
         id: 'straddle_carrier',
         displayName: 'Straddle carrier',
         capacityUnits: 1,
+        lengthCells: 2,
         speedCellsPerTick: 0.4,
         loadTicks: 3,
         unloadTicks: 3,
@@ -204,6 +206,7 @@ describe('skutočné katalógy F2 až F4', () => {
         id: 'empty_handler',
         displayName: 'Empty handler',
         capacityUnits: 1,
+        lengthCells: 2,
         speedCellsPerTick: 0.5,
         loadTicks: 2,
         unloadTicks: 2,
@@ -220,7 +223,8 @@ describe('skutočné katalógy F2 až F4', () => {
       schemaVersion: 1,
       defaultInternalTicks: 6,
       repathIntervalTicks: 30,
-      congestion: { trafficDecayPerHour: 0.9, slowdownPerExtraVehicle: 0.25, penaltyTrafficDivisor: 200, penaltyMax: 3 },
+      congestion: { trafficDecayPerHour: 0.9 },
+      traffic: { gridlockTicks: 30, stuckTicks: 120, rerouteCooldownTicks: 60, idleParkDelayTicks: 6 },
       shipNavigation: { approachMarginCells: 1, sweepStepCells: 0.5, turnManeuvers: 1, sidewaysManeuvers: 1 },
       exportFlow: { arrivalWindowDays: 2, vgmMissingChance: 0.05, vgmHoldHours: 6, weightClassShares: { light: 0.3, medium: 0.5, heavy: 0.2 } },
       emptyFlow: {
@@ -489,6 +493,8 @@ describe('schémy katalógov (validateDefsDir)', () => {
       ['displayName', '', '/items/0/displayName must NOT have fewer than 1 characters'],
       ['capacityUnits', 0, '/items/0/capacityUnits must be >= 1'],
       ['capacityUnits', 1.5, '/items/0/capacityUnits must be integer'],
+      ['lengthCells', 0, '/items/0/lengthCells must be >= 1'],
+      ['lengthCells', 2.5, '/items/0/lengthCells must be integer'],
       ['speedCellsPerTick', 0, '/items/0/speedCellsPerTick must be > 0'],
       ['speedCellsPerTick', '0.4', '/items/0/speedCellsPerTick must be number'],
       ['loadTicks', 0, '/items/0/loadTicks must be >= 1'],
@@ -568,27 +574,36 @@ describe('schémy katalógov (validateDefsDir)', () => {
     it.each([
       ['trafficDecayPerHour', 1.5, '/congestion/trafficDecayPerHour must be <= 1'],
       ['trafficDecayPerHour', -0.1, '/congestion/trafficDecayPerHour must be >= 0'],
-      ['slowdownPerExtraVehicle', -0.25, '/congestion/slowdownPerExtraVehicle must be >= 0'],
-      ['penaltyTrafficDivisor', 0, '/congestion/penaltyTrafficDivisor must be > 0'],
-      ['penaltyMax', -1, '/congestion/penaltyMax must be >= 0'],
-      ['penaltyMax', '3', '/congestion/penaltyMax must be number'],
     ])('congestion.%s = %j', (field, value, message) => {
       expect(errorsAfter('logistics', (def) => void (congestion(def)[field] = value))).toEqual([`logistics.json: ${message}`]);
+    });
+
+    it.each([
+      ['gridlockTicks', 0, '/traffic/gridlockTicks must be >= 1'],
+      ['stuckTicks', 1.5, '/traffic/stuckTicks must be integer'],
+      ['rerouteCooldownTicks', -1, '/traffic/rerouteCooldownTicks must be >= 1'],
+      ['idleParkDelayTicks', '6', '/traffic/idleParkDelayTicks must be integer'],
+    ])('traffic.%s = %j', (field, value, message) => {
+      expect(errorsAfter('logistics', (def) => void ((def['traffic'] as Json)[field] = value))).toEqual([`logistics.json: ${message}`]);
     });
 
     it.each([
       ['defaultInternalTicks'],
       ['repathIntervalTicks'],
       ['congestion'],
+      ['traffic'],
     ])('chýbajúce povinné pole %s', (field) => {
       expect(errorsAfter('logistics', (def) => void delete def[field])).toEqual([
         `logistics.json: / must have required property '${field}'`,
       ]);
     });
 
-    it('chýbajúce pole v congestion', () => {
-      expect(errorsAfter('logistics', (def) => void delete congestion(def)['penaltyMax'])).toEqual([
-        "logistics.json: /congestion must have required property 'penaltyMax'",
+    it('chýbajúce pole v congestion aj traffic', () => {
+      expect(errorsAfter('logistics', (def) => void delete congestion(def)['trafficDecayPerHour'])).toEqual([
+        "logistics.json: /congestion must have required property 'trafficDecayPerHour'",
+      ]);
+      expect(errorsAfter('logistics', (def) => void delete (def['traffic'] as Json)['stuckTicks'])).toEqual([
+        "logistics.json: /traffic must have required property 'stuckTicks'",
       ]);
     });
 

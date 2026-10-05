@@ -20,6 +20,10 @@
  *   zakázanou bunkou, mimo `PathCache`), najviac raz za `rerouteCooldownTicks`. Nosič čakajúci na slot vlastnej bunky
  *   (vstup na cestu) po `stuckTicks` obíde prvú bunku trasy — iná strana výjazdu môže dať voľný druhý pruh.
  *
+ * - **Hlásenie zápchy** (`reportJam`, TR1-04): keď `blockedTicks` dosiahne `traffic.stuckTicks`, vznikne `TrafficJam`; po prvom pohybe
+ *   `TrafficJamCleared`. **Prevencia** (dodatok ADR-037 TR1-04): kamión idúci do fronty brány nevstúpi do reťaze križovatiek, ak by
+ *   zastal telom v nej (`entryKeys` → `null`); pobyt pri module drží len hlavu (`Carrier.releaseTail`).
+ *
  * Systém nemá trvalý stav: čakanie, odpočet preplánovania, telo a sloty vpredu sú na nosičoch (a v save); zásobník, cykly
  * a poradie sú pracovné štruktúry jedného ticku.
  */

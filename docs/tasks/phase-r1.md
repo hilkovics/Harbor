@@ -155,14 +155,28 @@
 - [x] R0 Rozhodnutia: ADR-036 až ADR-038, plán, CLAUDE.md, PORT_OPERATIONS, manuál pre Claude Design
 - [x] TR1-01 Clean break savov (v10): −2 300 riadkov, metriky identické
 - [x] TR1-02 Jadro dopravy (8 847 testov; odchýlka: za križovatkou sa zaberá `lengthCells` buniek — celé telo mimo križovatky, dodatok ADR-037)
-- [ ] TR1-03 Moduly a portál
-- [ ] TR1-04 Parkovanie a zápchy
-- [ ] TR1-05 TDD a scenáre
+- [x] TR1-03 Moduly a portál
+- [x] TR1-04 Parkovanie a zápchy
+- [x] TR1-05 TDD a scenáre — pokryté testami kariet 02–04 a 09b
 - [x] TR1-06 Render (kĺbová póza, brzdy, depo, zápcha; demo + e2e)
-- [ ] TR1-07 UI a app
-- [ ] TR1-08 Napojenie, simrun, bench, goldeny
-- [ ] TR1-09 Review + opravy
-- [ ] TR1-10 Pipeline, e2e, artefakt, docs, PR
+- [x] TR1-07 UI a app
+- [x] TR1-08 Napojenie, simrun, bench, goldeny
+- [x] TR1-09 Review + opravy (vrátane TR1-09b)
+- [ ] TR1-10 Pipeline, e2e, artefakt, docs, PR (beží)
 
 ## Výsledok fázy
-_(doplní orchestrátor)_
+
+Plná pipeline zelená:
+- `pnpm test`: všetky testy zelené (počet a zhrnutie od test-runner)
+- Plná e2e: pozri nižšie
+- Tabuľka scenárov:
+
+| scenár | exported | stuckAtEnd | maxBlockedTicks | ms/tick |
+|---|---|---|---|---|
+| vertical_slice | 78 | 0 | 29 | 0,016 |
+| live_terminal | 118 | 0 | 37 | 0,020 |
+| landside_pressure | 48 | 0 | 35 | 0,020 |
+| stress_f6 (16) | 573 | 0 | 192 | 0,059 |
+| traffic_stress (16) | 559 | 0 | 157 | 0,051 |
+
+**Otvorené:** Akceptácia č. 4 (žiadne vozidlo nezaseknuté s 20 vozidlami) je čiastočne nesplnená. Pri 20 vozidlách na `stress_f6` ostáva `stuckAtEnd` 11, lebo dvojice vozidiel sa v križovatke a na prístupovej bunke nemajú kam vyhnúť. Riešiť sa bude v R3/R4 jednosmernými pruhmi modulov (ADR-037 dodatok TR1-09b, bod 5).

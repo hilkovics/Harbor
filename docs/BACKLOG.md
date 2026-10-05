@@ -158,3 +158,9 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - Pôžičky. — pôvod: ARCHITECTURE §18 (T00-05) · fáza: ?
 - Level crossing cesta × koľaj. — pôvod: ARCHITECTURE §18 (T00-05) · fáza: F10+
 - Kontajnerové stacky ako 3D vizualizácia zaplnenosti vs 5 stavov spritu. — pôvod: ARCHITECTURE §18 (T00-05) · fáza: F3+
+
+## Z Fázy R1
+- Uviaznutie pri 20 vozidlách (stress_f6 `stuckAtEnd` 11): dvojice vozidiel sa v križovatke a na prístupovej bunke nemajú kam vyhnúť, lebo sloty blokuje chvost alebo telo druhého vozidla bez možnosti ústupu. Riešiť jednosmernými pruhmi modulov pri nábreží alebo F10a (pruhy do modelov navyše, R3/R4). — pôvod: TR1-09b (ADR-037 dodatok) · fáza: R3/R4
+- `traffic_stress` len 16 vozidiel, lebo depá majú kapacitu 10 — mapa teda uniesie 20 vozidiel max (2 depá). Zvýšenie kapacity depá alebo počtu depá v balansovanom prístave (R3, balans). — pôvod: TR1-04, ADR-037 dodatok TR1-09b · fáza: R3 (balans)
+- Starý render stojiska a docku: konstanta `TRUCK_LENGTH_PX` pre kamión dlhý 3 bunky, hoci render vozidla sú kĺbové. Pri R4 (rampa zaniká za jednosmernými pruhmi) sa vizuál opraví. — pôvod: T04-06, T04-11, T5B-07 · fáza: R4
+- `ModuleVM.parkedVehicles` v app namiesto `parkedVehicleIds` zo specifikácie (VM ponechal zažradenú vlastnosť bez zmeny na kompatibilitu; render ju nepoužíva, inšpektor si dáta mapuje). — pôvod: TR1-08 · fáza: podľa potreby

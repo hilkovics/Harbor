@@ -300,4 +300,39 @@ Stav: **hotová** (T6D-01 … T6D-07, vrátane T6D-05b a T6D-05c)
 
 **Odchýlky od plánu:** tri sim karty bežali paralelne vo worktree (zlúčenie T6D-04); scenár `live_terminal` dostal druhý dvor (po ADR-035 export čakal na miesto v plnom dvore); poradie vjazdu exportov je podľa kontraktov (nie FIFO naprieč bookingmi, BACKLOG); buffer 0 predlžuje čakanie dovozu vo vnútrozemí (`landside_pressure` 18 478 tickov vs 4 439 v režime apron — balans vo F7).
 
-Ďalej: **Fáza 7**
+Ďalej: **Fáza R1 — Doprava bez prekrývania**
+
+## Fáza R1 — Doprava bez prekrývania
+Karty: `docs/tasks/phase-r1.md` · vetva `phase/r1-traffic` (stacked nad PR hilkovics/Harbor#11)
+
+Stav: **hotová** (TR1-01 … TR1-10)
+
+**Výsledky:**
+- `pnpm test`: zelené (toate testy)
+- Plná e2e: 50/50 (viazanosť na PORT rozloženie)
+- `simrun` (30 000 tickov na scenár):
+  - `vertical_slice`: exportedUnits 78, stuckAtEnd 0, maxBlockedTicks 29
+  - `live_terminal`: exportedUnits 118, stuckAtEnd 0, maxBlockedTicks 37
+  - `landside_pressure`: exportedUnits 48, stuckAtEnd 0, maxBlockedTicks 35
+  - `stress_f6` (16 vozidiel): exportedUnits 573, stuckAtEnd 0, maxBlockedTicks 192
+  - `traffic_stress` (16 vozidiel): exportedUnits 559, stuckAtEnd 0, maxBlockedTicks 157
+- `pnpm bench`: priemer ms/tick pod cieľom < 2 ms
+
+**Čo je hotové:**
+- Jadro dopravy: pruhové sloty (`LaneSlots`), telo vozidiel (`lengthCells`), križovatky (naraz zabranie reťaze), úseky `one_lane` (smer bez teleportu), parkovanie vozidiel v depe (`to_depot`, `parked`, `depot_exit`)
+- TrafficSystem: poradie pohybu (blockedTicks a id), rekurzia pri cikloch, preplánovanie pri zápchach, deterministické pravidlá na zlomenie cyklov uviaznutia (obrat s pruhom, odchod späť, pretočenie cyklu, ústup)
+- Moduly: sloty drží aj stojace nosiče (pri module, na ceste, vo fronte, v no_path), mimo cesty (stojisko, dock, gate_pass, gate_pass_out)
+- Jednosmerný prístav: portal s vjazdom a výjazdom (`MapDef.roadPortals[].direction`), slučka cesty v `harbor_01`
+- Parkovanie: dispatcher berie ako voľné vozidlá v `idle`, `to_depot` a `parked`
+- Zápchy: `TrafficJam` event, metriky `gridlockEvents` a `maxBlockedTicks`, vlast... v `blockedTicks`
+- Invarianty: `carrierOverlapProblem` (sloty, telo, mimo cesty)
+- Save v10: nosič dostane `body`, `ahead`, `blockedTicks`, `rerouteCooldown`
+- Render, UI a app: napojené VM polia
+- `simrun` kľúče: `gridlockEvents`, `trafficWaitTicks`, `maxBlockedTicks`, `stuckAtEnd`
+
+**Odchýlky od plánu:**
+- `ModuleVM.parkedVehicles` namiesto `parkedVehicleIds` zo specifikácie (ponechané bez zmeny, kompatibilita)
+- Starý render stojiska a docku (`TRUCK_LENGTH_PX` pre kamión dlhý 3 bunky) — odsúdené na R4 pri rampe
+- Uviaznutie s 20 vozidlami na `stress_f6` ostáva `stuckAtEnd` 11 (križ zložitosť bez pruhov pod modulmi — R3/R4)
+
+**Ďalej:** Fáza R2 — Kontajnery a stohy

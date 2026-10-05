@@ -336,7 +336,8 @@ describe('stress_f6', () => {
         scenario: 'stress_f6',
         modules: 15,
         vehicles: 16,
-        shipsSpawned: 1,
+        // R2 (ADR-039): menej kontajnerov na kontrakt a iný prúd `Rng` — do 6 000 tickov pricestuje druhá loď
+        shipsSpawned: 2,
         lostUnits: 0,
         contractsAccepted: 6,
       });

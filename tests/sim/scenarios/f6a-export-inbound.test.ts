@@ -1,7 +1,7 @@
 /**
- * Scenár `export_inbound` (F6a, T6A-04, ADR-032): vertikálny rez exportu po súši bez lode — export booking #8 (36 TEU = 20 kontajnerov, Gdańsk)
- * prijatý v ticku 8 641, kamióny prichádzajú naložené pred cut-off, brána ich zaregistruje (jednotka s chýbajúcim VGM → hold 6 h; po R2 losuje
- * `Rng` iné jednotky než predtým, v tomto behu žiadnu), posledný kamión zablokuje chýbajúca cesta pred portálom (RemoveRoad ticku 29 000, PlaceRoad ticku 29 700), takže
+ * Scenár `export_inbound` (F6a, T6A-04, ADR-032): vertikálny rez exportu po súši bez lode — export booking #10 (36 TEU = 23 kontajnerov, Gdańsk)
+ * prijatý v ticku 8 641, kamióny prichádzajú naložené pred cut-off, brána ich zaregistruje (jednotky s chýbajúcim VGM → hold 6 h; po R2 losuje
+ * `Rng` iné jednotky než predtým, v tomto behu dve), posledný kamión zablokuje chýbajúca cesta pred portálom (RemoveRoad ticku 29 300, PlaceRoad ticku 29 700), takže
  * prejde bránou po cut-off (rolled), vyloží sa na rampe a vozidlá odvezú všetky jednotky do skladu. Žiadna jednotka sa
  * nestratí, každý presun je legálny a booking ostane v `accepted` (loď príde až po konci behu).
  */
@@ -17,9 +17,9 @@ import { DEFS } from '../world/world-fixtures';
 
 const SCENARIO = loadScenarioFile('export_inbound');
 const TICKS = 30_000;
-const CONTRACT_ID = 8;
-/** Booking #8: 36 TEU = 20 kontajnerov pri `sizeMix` 0,6 (ADR-039); po R2 ho losuje pool ako export leg roundtripu (id #7 je teraz import). */
-const BOOKED = 20;
+const CONTRACT_ID = 10;
+/** Booking #10: 36 TEU = 23 kontajnerov pri `sizeMix` 0,6 (ADR-039); po R2 ho losuje pool ako export leg roundtripu (id #7 je teraz import). */
+const BOOKED = 23;
 const RUN_TIMEOUT_MS = 300_000;
 
 interface Run {
@@ -47,7 +47,7 @@ describe('scenár export_inbound', () => {
   const { world, events } = result;
   const contract = world.contracts.get(CONTRACT_ID as never)!;
 
-  it('booking je prijatý v ticku 8 641 a naplánovaný: 20 príchodov pred cut-off (36 TEU), loď po konci behu', () => {
+  it('booking je prijatý v ticku 8 641 a naplánovaný: 23 príchodov pred cut-off (36 TEU), loď po konci behu', () => {
     expect(contract.kind).toBe('export');
     expect(contract.acceptedTick).toBe(8641);
     expect(contract.booking?.bookedUnits).toBe(BOOKED);
@@ -57,7 +57,7 @@ describe('scenár export_inbound', () => {
     expect(world.clock.tick).toBe(TICKS);
   });
 
-  it('20 kamiónov s exportom (36 TEU) prešlo bránou a vyložilo; všetky odišli prázdne (units 0)', () => {
+  it('23 kamiónov s exportom (36 TEU) prešlo bránou a vyložilo; všetky odišli prázdne (units 0)', () => {
     expect(of(events, 'TruckSpawned')).toHaveLength(BOOKED);
     expect(of(events, 'ExportArrived')).toHaveLength(BOOKED);
     expect(of(events, 'TruckUnloaded')).toHaveLength(BOOKED);
@@ -137,7 +137,7 @@ describe('scenár export_inbound', () => {
 
   it('deterministický: rovnaký beh dá rovnaký hash; roundtrip uprostred príchodov (aj pri rolled) dá zhodný stateHash', () => {
     expect(stateHash(run().world)).toBe(stateHash(world));
-    for (const at of [12_000, 20_000, 29_000, 29_100, 29_750]) {
+    for (const at of [12_000, 20_000, 29_300, 29_400, 29_750]) {
       const half = World.create(DEFS, MAP, SCENARIO.seed);
       runScenario(half, SCENARIO, at);
       const restored = World.deserialize(DEFS, MAP, JSON.parse(JSON.stringify(half.serialize())) as WorldState);

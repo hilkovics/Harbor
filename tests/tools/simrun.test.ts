@@ -790,13 +790,14 @@ describe('runScenario', () => {
       expect(report).toMatchObject({
         lostUnits: 0,
         // dva dvory (T6D-04): žiadny export nezostal rolled; pool škáluje s kapacitou skladov, takže importy #1 a #4 majú 48 + 96 TEU (pred druhým dvorom 45 + 64)
-        rolledUnits: 0,
-        exportedUnits: 149,
-        shippedUnits: 96,
-        emptyReturns: 91,
-        emptyPickedUp: 5,
-        repositionedUnits: 24,
-        transhipLoaded: 36,
+        // R2 (ADR-039): počty kontajnerov (export 36 TEU = 22, repositioning 24 TEU = 14 prázdnych, prekládka 36 TEU = 22); jeden export prišiel po cut-off
+        rolledUnits: 1,
+        exportedUnits: 71,
+        shippedUnits: 58,
+        emptyReturns: 39,
+        emptyPickedUp: 10,
+        repositionedUnits: 14,
+        transhipLoaded: 22,
         transhipMissed: 0,
         transhipRescued: 0,
         transhipSold: 0,
@@ -804,8 +805,8 @@ describe('runScenario', () => {
         // vozidlo stojí pod žeriavom a buffer je 0: každé odovzdanie žeriav ↔ vozidlo je priame (pred T6D-02 49 %)
         directHandoverPct: 100,
       });
-      // odplávané = export 36 + repositioning 24 + prekládka 36
-      expect(report.shippedUnits).toBe(36 + report.repositionedUnits + report.transhipLoaded);
+      // odplávané = export 22 + repositioning 14 + prekládka 22 (kontajnery)
+      expect(report.shippedUnits).toBe(22 + report.repositionedUnits + report.transhipLoaded);
     }, HEAVY_TIMEOUT_MS);
 
     it('--roundtrip-at uprostred prekládky (jednotky čakajú na loď B) a uprostred nakládky prázdnych dá zhodný report aj hash', () => {
@@ -1181,11 +1182,12 @@ describe('CLI (tools/simrun.ts)', () => {
       contractsCompleted: 2,
       // Predvolený under_hook (T6D-02) so vjazdom z vnútrozemia podľa T6D-01 (ADR-035): posledný kamión vojde až po uvoľnení staging miesta na docku, t. j. po začiatku
       // lashingu — rolled jednotka sa nenaloží (35 odplávaných) a vráti sa odosielateľovi po súši. Pred T6D-01 prišla ešte počas nakládky (last minute, 36 odplávaných).
-      exportedUnits: 58,
-      shippedUnits: 35,
+      // R2 (ADR-039): počty kontajnerov (import 54 TEU = 31, export 36 TEU = 24; posledný, 40′, je rolled a vrátený → 23 odplávaných); VGM holdy losuje Rng.
+      exportedUnits: 32,
+      shippedUnits: 23,
       rolledUnits: 1,
       returnedUnits: 1,
-      vgmHolds: 4,
+      vgmHolds: 2,
       dualTransactionRate: 0,
       stowageOrderViolations: 0,
       exportGroupingPct: 100,

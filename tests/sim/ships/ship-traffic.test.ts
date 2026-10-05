@@ -80,25 +80,26 @@ function tickUntilState(world: World, ship: Ship, state: ShipState, max: number)
 const center = (index: number) => cellCenter(must(CHANNEL_MAP.anchorage[index], `anchorage ${String(index)}`));
 
 describe('ShipTraffic — anchorage pred vstupom, čakanie pred vstupom', () => {
-  it('bez kotviska dostane loď anchorage už pri vstupe (nie tú na dráhe); keď nie je žiadna dostupná, čaká pred mapou a nezaberá bunky', () => {
+  it('bez kotviska dostane loď anchorage už pri vstupe (nie tú na dráhe) a pláva na ňu priamo (waiting_anchorage); keď nie je žiadna dostupná, čaká pred mapou a nezaberá bunky', () => {
     const { world } = harbor([]);
     const first = spawn(world, 'feeder', 2);
-    expect(first).toMatchObject({ state: 'inbound', anchorageIndex: ANCHORAGE_AT_MOUTH, berthIds: [] });
+    // T6D-03: loď bez voľného kotviska neprechádza do `inbound` (plavba po sea lane ku kotviskám), ale rovno do `waiting_anchorage`.
+    expect(first).toMatchObject({ state: 'waiting_anchorage', anchorageIndex: ANCHORAGE_AT_MOUTH, berthIds: [] });
     expect(first.route.at(-1)).toMatchObject(center(ANCHORAGE_AT_MOUTH));
     const second = spawn(world, 'feeder', 2);
     const third = spawn(world, 'handy', 2);
-    // Dráhu drží prvá loď → ostatné čakajú pred vstupom (FIFO podľa id v kroku 3).
+    // Trasu na vstupe drží prvá loď → ostatné čakajú pred vstupom (FIFO podľa id v kroku 3).
     expect([second.state, third.state]).toEqual(['arriving', 'arriving']);
     expect(SHIP_STATE_TRAITS.arriving.onMap).toBe(false);
 
-    const inbound: number[] = [];
-    tickChecked(world, 1500, () => inbound.push([...world.ships.values()].filter((ship) => ship.state === 'inbound').length));
-    expect(Math.max(...inbound)).toBe(1); // na dráhe je naraz najviac jedna loď
+    tickChecked(world, 1500, () => expect([...world.ships.values()].filter((ship) => ship.state === 'inbound')).toEqual([]));
     expect([first.state, second.state, third.state]).toEqual(['waiting_anchorage', 'waiting_anchorage', 'arriving']);
     // Anchorage 3 je za loďami na 1 a 2 nedostupná (A* po vode ich obchádza, priechod nie je) → handy čaká pred mapou.
     expect([first.anchorageIndex, second.anchorageIndex, third.anchorageIndex]).toEqual([ANCHORAGE_AT_MOUTH, ANCHORAGE_OPEN, null]);
     expect([first.x, first.y]).toEqual([center(ANCHORAGE_AT_MOUTH).x, center(ANCHORAGE_AT_MOUTH).y]);
     expect([second.x, second.y]).toEqual([center(ANCHORAGE_OPEN).x, center(ANCHORAGE_OPEN).y]);
+    // Na rejde stoja všetky lode jednotne natočené (kurz mapy, nie kurz posledného úseku trasy).
+    expect([first.heading, second.heading]).toEqual([CHANNEL_MAP.anchorageHeading, CHANNEL_MAP.anchorageHeading]);
     expect([...world.ships.values()].some((ship) => ship.anchorageIndex === ANCHORAGE_ON_LANE)).toBe(false);
     expect(findWorldViolation(world)).toBeUndefined();
   });

@@ -148,7 +148,14 @@ export function shipBox(ship: ShipDimensions, x: number, y: number, heading: Rot
 
 /** Čo trasa potrebuje zo sveta (`World` to spĺňa cez `map` a `modules`). */
 export interface ShipRouteEnv {
-  readonly map: { readonly width: number; readonly height: number; readonly seaLane: readonly CellCoord[]; readonly anchorage: readonly CellCoord[] };
+  readonly map: {
+    readonly width: number;
+    readonly height: number;
+    readonly seaLane: readonly CellCoord[];
+    readonly anchorage: readonly CellCoord[];
+    /** Jednotný kurz lodí na kotve (`MapDef.anchorageHeading`, T6D-03). */
+    readonly anchorageHeading: Rotation;
+  };
   readonly modules: ReadonlyMap<EntityId, Module>;
 }
 
@@ -222,6 +229,18 @@ export function mooringProblem(ship: Ship, env: ShipRouteEnv): { readonly field:
   return undefined;
 }
 
+/**
+ * Porušenie jednotného natočenia lode na rejde (T6D-03): loď v `waiting_anchorage`, ktorá už dopásla na koniec trasy
+ * (stojí na anchorage), musí mať kurz `map.anchorageHeading` — nie kurz posledného úseku trasy. `undefined` = v poriadku
+ * alebo loď ešte pláva / nie je na rejde. Používa obnova save aj invarianty (rovnako ako `mooringProblem`).
+ */
+export function anchoringProblem(ship: Ship, env: ShipRouteEnv): { readonly field: 'heading'; readonly problem: string } | undefined {
+  if (ship.state !== 'waiting_anchorage' || ship.waypointIndex < ship.route.length) return undefined;
+  const expected = env.map.anchorageHeading;
+  if (ship.heading === expected) return undefined;
+  return { field: 'heading', problem: `${ship.label} stojí na rejde, kurz má byť jednotný ${String(expected)} (anchorageHeading), má ${String(ship.heading)}` };
+}
+
 type RouteOf = (ship: Ship, env: ShipRouteEnv) => readonly ShipPoint[];
 
 const NO_ROUTE: readonly ShipPoint[] = Object.freeze([]);
@@ -270,17 +289,11 @@ export function shipRoute(ship: Ship): readonly ShipPoint[] {
   return ship.route;
 }
 
-/** Cieľ lode s rezerváciou pri vstupe: poloha pri kotviskách, inak anchorage; `undefined` = loď cieľ nemá. */
-function targetOf(ship: Ship, env: ShipRouteEnv): ShipPoint | undefined {
-  if (ship.berthIds.length > 0) return dockPoint(firstBerthOf(ship, env), ship.def);
-  return ship.anchorageIndex === null ? undefined : anchoragePoint(env, ship.anchorageIndex);
-}
-
 /** Pravidlo trasy stavu pre kontrolu obnovy save (ADR-029 addendum, review T5B-04b). */
 interface RouteRule {
   /** Trasa musí byť prázdna (loď stojí na mieste stavu a nepláva). */
   readonly empty: boolean;
-  /** Trasa začína celou sea lane a pokračuje k cieľu; loď je ešte na dráhe (`waypointIndex` ≤ počet bodov dráhy). */
+  /** Trasa začína celou sea lane a pokračuje ku kotviskám; loď je ešte na dráhe (`waypointIndex` ≤ počet bodov dráhy). */
   readonly lanePrefix: boolean;
   /** Kde trasa končí (pri prázdnej trase kde loď stojí); `undefined` = stav bez cieľa → chyba. */
   readonly end: (ship: Ship, env: ShipRouteEnv) => ShipPoint | undefined;
@@ -291,13 +304,13 @@ const toDock = (ship: Ship, env: ShipRouteEnv): ShipPoint => dockPoint(firstBert
 
 /**
  * Trasa podľa stavu (tabuľka, nie switch): `arriving` stojí pred vstupom na začiatku dráhy bez trasy, `inbound` pláva
- * po sea lane k cieľu z rezervácie (kotviská alebo anchorage), `waiting_anchorage` končí na svojej anchorage,
+ * po sea lane ku kotviskám z rezervácie, `waiting_anchorage` pláva priamo zo vstupu a končí na svojej anchorage (T6D-03),
  * `berthing` pri kotvisku, `docked` stojí pri kotvisku bez trasy, `undocking` končí na konci dráhy, `outbound` na jej
  * začiatku.
  */
 const ROUTE_RULES: { readonly [S in ShipState]: RouteRule } = {
   arriving: { empty: true, lanePrefix: false, end: toLaneStart },
-  inbound: { empty: false, lanePrefix: true, end: targetOf },
+  inbound: { empty: false, lanePrefix: true, end: toDock },
   waiting_anchorage: { empty: false, lanePrefix: false, end: (ship, env) => (ship.anchorageIndex === null ? undefined : anchoragePoint(env, ship.anchorageIndex)) },
   berthing: { empty: false, lanePrefix: false, end: toDock },
   docked: { empty: true, lanePrefix: false, end: toDock },

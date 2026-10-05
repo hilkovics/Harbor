@@ -58,14 +58,15 @@ function vehicleUnderHook(world: World): boolean {
 }
 
 describe('odovzdávanie pod hákom: ledger a priebeh (ADR-033)', () => {
-  const run = roundtrip({ defs: hookDefs(1) });
+  const run = roundtrip({ defs: hookDefs(0) });
   const events = runUntilDeparted(run.world, TIMEOUT);
   const moves = moveCounts(events);
 
-  it('vykládka: každá jednotka importu ide z lode do žeriava a odtiaľ priamo do vozidla, alebo na buffer apronu', () => {
+  it('vykládka: každá jednotka importu ide z lode do žeriava a odtiaľ priamo do vozidla (buffer 0; apron len ako protideadlock)', () => {
     expect(moves['on_ship>in_crane']).toBe(24);
     expect((moves['in_crane>in_vehicle'] ?? 0) + (moves['in_crane>on_apron'] ?? 0)).toBe(24);
-    expect(moves['in_crane>in_vehicle']).toBeGreaterThan(0);
+    // Predvolený buffer 0 (T6D-02): drvivá väčšina vykládky ide priamo vozidlu pod žeriavom.
+    expect(moves['in_crane>in_vehicle']).toBeGreaterThanOrEqual(20);
     // Vozidlo pri vykládke vezie jednotku do skladu (alebo zo skladu k žeriavu, ak ju vyložilo na buffer).
     expect(moves['in_vehicle>in_storage']).toBeGreaterThan(0);
   });
@@ -107,7 +108,7 @@ describe('režim apron ostáva bez priameho odovzdania (F2–F5 bitovo nezmenen�
 
 describe('vozidlo čaká pod žeriavom (bez nového stavu FSM)', () => {
   it('pod hákom stoja vozidlá v existujúcich stavoch loading/unloading s odpočtom HOOK_WAIT_TICKS; job má koncový bod in_crane', () => {
-    const run = roundtrip({ defs: hookDefs(1) });
+    const run = roundtrip({ defs: hookDefs(0) });
     let loadingUnderHook = 0;
     let unloadingUnderHook = 0;
     runUntilDeparted(run.world, TIMEOUT, (world) => {
@@ -202,7 +203,7 @@ describe('buffer a protideadlock (ADR-033)', () => {
         expect(findWorldViolation(run.world), label).toBeUndefined();
       }
     }
-  });
+  }, 120_000); // šesť behov roundtripu po 60 000 ticků — pri zaťaženom stroji presahuje predvolených 15 s
 });
 
 describe('metriky čakania pod hákom (craneWaitForVehicleTicks, vehicleWaitUnderCraneTicks)', () => {
@@ -248,7 +249,7 @@ describe('determinizmus a obnova uprostred čakania pod hákom', () => {
   });
 
   it('uloženie a obnova v ticku, keď vozidlo čaká pod hákom (vykládka aj nakládka), dá zhodný stateHash a zhodné ďalšie udalosti', () => {
-    const defs = hookDefs(1);
+    const defs = hookDefs(0);
     const reference = roundtrip({ defs });
     const referenceEvents = runUntilDeparted(reference.world, TIMEOUT);
     const referenceHash = stateHash(reference.world);

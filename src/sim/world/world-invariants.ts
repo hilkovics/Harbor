@@ -22,7 +22,8 @@
  *    `SHIP_STATE_TRAITS.berths`, ležia za sebou v jednej skupine v poradí po pobreží a každý berth má `dockedShipId` = loď;
  *    dokovaná loď stojí presne v `dockPoint` s kurzom `DOCKED_HEADING` (`mooringProblem`, T02-14);
  *    každý `dockedShipId` patrí existujúcej lodi, ktorá ho má v `berthIds` (súlad `dockedShipId` ↔ `berthIds`);
- *    `anchorageIndex` podľa `anchorage` (nie spolu s kotviskami), v mape a jedinečný; **dve lode na mape nezdieľajú
+ *    `anchorageIndex` podľa `anchorage` (nie spolu s kotviskami), v mape a jedinečný; loď, ktorá stojí na rejde,
+ *    má jednotný kurz `map.anchorageHeading` (`anchoringProblem`, T6D-03); **dve lode na mape nezdieľajú
  *    bunku** (`shipOverlapProblem`, bez výnimiek); na palube najviac `capacityUnits` jednotiek, všetky
  *    typu `cargoTypeId`; loď s nákladom, ktorá drží kotviská, má na nich aspoň jeden žeriav kategórie svojho nákladu
  *    (inak by pri kotvisku ostala naveky, T02-14); žeriav v `grabbing` má na kotvisku dokovanú loď s nákladom
@@ -100,7 +101,7 @@ import { hasCompatibleCrane } from '../ships/berth-allocator';
 import type { Ship } from '../ships/ship';
 import { SHIP_STATE_TRAITS, holdingAllows } from '../ships/ship-fsm';
 import { shipOverlapProblem } from '../ships/ship-traffic';
-import { mooringProblem } from '../ships/ship-route';
+import { anchoringProblem, mooringProblem } from '../ships/ship-route';
 import { HANDOVERS } from '../systems/crane-handover';
 import type { Truck } from '../trucks/truck';
 import { TRUCK_STATE_TRAITS } from '../trucks/truck-fsm';
@@ -707,7 +708,7 @@ function checkShip(world: World, ship: Ship, anchorages: Map<number, Ship>): str
     if (holder !== undefined) return `${ship.label} a ${holder.label} obsadili tú istú anchorage ${String(index)}`;
     anchorages.set(index, ship);
   }
-  return checkShipBerths(world, ship) ?? mooringProblem(ship, world)?.problem ?? checkShipCargo(world, ship) ?? checkShipCranes(world, ship);
+  return checkShipBerths(world, ship) ?? mooringProblem(ship, world)?.problem ?? anchoringProblem(ship, world)?.problem ?? checkShipCargo(world, ship) ?? checkShipCranes(world, ship);
 }
 
 /**

@@ -11,7 +11,9 @@
  * až pri odchode zo stojiska (landside systém), takže na jeden dock môže byť v okruhu viac kamiónov; ich počet
  * ohraničujú bays stojiska a náklad docku (najviac `stagingPerDock / capacityUnits` kamiónov bez naloženia).
  * Bez voľného bay kamión nevznikne a rampa ohlási `NoWaitingBay` najviac raz za hernú hodinu
- * (`LoadingRamp.lastNoWaitingBayHour`). Bez rámp sa neprechádza nič.
+ * (`LoadingRamp.lastNoWaitingBayHour`); dopyt bez bay sa počíta do `Hinterland.pickupBayStarvationTicks` (ADR-035). Bez rámp sa neprechádza nič.
+ * Pickup kamión smie obsadiť aj stojiská rezervované kvótou pre odvoz (`routeWithFreeBay`); kamióny s dovozom vpúšťa vnútrozemie
+ * (`trucks/hinterland-entry.ts`).
  */
 import type { EntityId } from '../core/entity-id';
 import type { DefRegistry } from '../defs/def-registry';
@@ -25,7 +27,7 @@ import type { LandsideRoute } from '../world/landside';
 import type { World } from '../world/world';
 import type { DockSupply } from './dock-supply';
 import { Truck } from './truck';
-import type { TruckMission } from './truck-fsm';
+import { TRUCK_MISSION_USES_PICKUP_BAYS, type TruckMission } from './truck-fsm';
 import { enterTruckNoPath, faceRoute, planTruckRoute } from './truck-trip';
 
 /**
@@ -42,11 +44,16 @@ export function truckDefFor(defs: DefRegistry, category: CargoCategory): Readonl
   return undefined;
 }
 
-/** Prvá trasa rampy, ktorej stojisko má voľný bay; žiadna → `undefined`. */
-export function routeWithFreeBay(world: World, ramp: LoadingRamp): LandsideRoute | undefined {
+/**
+ * Prvá trasa rampy, ktorej stojisko má pre misiu `mission` voľný bay; žiadna → `undefined`. Misia, ktorá náklad odváža (`pickup`, `collect`), smie
+ * obsadiť ľubovoľný voľný bay, misia s dovozom (`delivery`) len voľný nad kvótou pre odvoz (`WaitingArea.freeBaysForDelivery`, ADR-035). Misia je
+ * povinná (T6D-05b): predvolená `pickup` by potichu udelila výnimku z kvóty stojísk.
+ */
+export function routeWithFreeBay(world: World, ramp: LoadingRamp, mission: TruckMission): LandsideRoute | undefined {
+  const usesPickupBays = TRUCK_MISSION_USES_PICKUP_BAYS[mission];
   for (const route of world.landsideRoutes(ramp)) {
     const area = world.modules.get(route.waitingAreaId);
-    if (area instanceof WaitingArea && area.freeBays > 0) return route;
+    if (area instanceof WaitingArea && (usesPickupBays ? area.freeBays : area.freeBaysForDelivery) > 0) return route;
   }
   return undefined;
 }
@@ -72,7 +79,7 @@ export function spawnTruck(
   route: LandsideRoute,
   def: Readonly<TruckDef>,
   portal: number,
-  mission: TruckMission = 'pickup',
+  mission: TruckMission,
   loadCargo?: (truck: Truck) => void,
 ): Truck {
   const area = world.modules.get(route.waitingAreaId);
@@ -120,12 +127,14 @@ export function spawnTrucks(world: World, ramps: readonly LoadingRamp[], supply:
     }
     for (let dock = 0; dock < ramp.docks; dock++) {
       if (supply.unclaimedAt(ramp, dock) < def.capacityUnits) continue;
-      const route = routeWithFreeBay(world, ramp);
+      const route = routeWithFreeBay(world, ramp, 'pickup');
       if (route === undefined) {
+        // Dopyt po kamióne na odvoz (náklad na docku) bez voľného bay: počíta sa ako nedostatok stojísk pre odvoz (ADR-035).
+        world.hinterland.recordPickupStarved(world.clock.tick);
         reportNoWaitingBay(world, ramp);
         continue;
       }
-      spawnTruck(world, ramp, dock, route, def, portal);
+      spawnTruck(world, ramp, dock, route, def, portal, 'pickup');
     }
   }
 }

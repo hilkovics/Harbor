@@ -77,7 +77,26 @@ describe('prevod cyklu vykládky z režimu apron na under_hook pri obnove (ADR-0
     expect(() => world.assertInvariants()).not.toThrow();
   });
 
-  it.each(['save-v2.json', 'save-v3.json', 'save-v5.json', 'save-v6.json'])(
+  it('save-v2.json (placing so slotom, bez vozidiel): slot sa uvoľní, jednotka v ruke je cieľ cyklu a žeriav s bufferom 0 čaká na vozidlo (nemá komu odovzdať)', () => {
+    const world = World.deserialize(BUNDLED, MAP, readFixture('save-v2.json'));
+    const crane = onlyCrane(world);
+    const held = crane.heldUnitId;
+    expect(held).not.toBeNull();
+    expect(world.vehicles.size).toBe(0);
+    expect([crane.state, crane.cycle, crane.reservedSlot, crane.targetUnitId]).toEqual(['placing', 'unload', null, held]);
+    expect((world.modules.get(crane.berthId) as BerthModule).apron.reservedSlots()).toEqual([]);
+    for (let i = 0; i < 200; i++) {
+      world.tick();
+      assertCargoConservation(world);
+    }
+    // Predvolený buffer 0 (T6D-02): bez vozidla sa jednotka neodloží na apron — žeriav ju drží a počíta čakanie.
+    expect(crane.heldUnitId).toBe(held);
+    expect(crane.waitForVehicleTicks).toBeGreaterThan(0);
+    expect(world.cargo.get(held as never)?.location.kind).toBe('in_crane');
+    world.assertInvariants();
+  });
+
+  it.each(['save-v3.json', 'save-v5.json', 'save-v6.json'])(
     '%s (placing so slotom, jednotka v žeriave): slot sa uvoľní, jednotka v ruke je cieľ cyklu a žeriav ju odovzdá',
     (file) => {
       const world = World.deserialize(BUNDLED, MAP, readFixture(file));

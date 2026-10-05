@@ -412,7 +412,7 @@ export function emptyToasts(onClose: (id: number | string) => void, onShow: (id:
       tone: 'warning',
       icon: 'ic_warning',
       title: 'Výdaj prázdneho zlyhal',
-      text: '#415 · Export 24 TEU → Rotterdam · Golden Wave Container nemala dostupný prázdny kontajner, kamión odišiel prázdny',
+      text: '#415 · Export 24 TEU → Rotterdam · Golden Wave Container nemala dostupný prázdny kontajner, kamión do prístavu nevošiel',
       onShow,
       onClose,
     },

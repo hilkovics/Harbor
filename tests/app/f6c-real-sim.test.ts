@@ -200,8 +200,11 @@ describe('empty_cycle: render VM nad skutočným svetom', () => {
     const completed = [...collect.values()].filter((seen) => seen.after);
     expect(completed.length).toBe(pickedUp);
     expect(completed.every((seen) => seen.before)).toBe(true);
-    // kamióny, ktoré odišli naprázdno (`EmptyPickupMissed`), nesú prázdny len ako kamión bez nákladu
-    expect(collect.size).toBe(pickedUp + observed.app.events.filter((entry) => entry.event.type === 'EmptyPickupMissed').length);
+    // kamióny bez dostupného prázdneho do prístavu nevošli (ADR-035): `EmptyPickupMissed` nesie `truckId: null` a kamión `collect` nikdy nevznikol
+    const missed = observed.app.events.filter((entry) => entry.event.type === 'EmptyPickupMissed');
+    expect(missed.length).toBeGreaterThan(0);
+    expect(missed.every((entry) => entry.event.type === 'EmptyPickupMissed' && entry.event.truckId === null)).toBe(true);
+    expect(collect.size).toBe(pickedUp);
     // v doku kamión `collect` cúva ako `pickup`: VM nesie `approach`, takže ho renderer vedie manévrom (kontajner pred naložením nekreslí)
     expect(observed.trucks.collectDockedWithApproach).toBeGreaterThan(0);
   });
@@ -271,6 +274,9 @@ describe('empty_cycle: toasty nad skutočnými udalosťami', () => {
       expect(toast?.spec.panel).toBe('contracts');
       expect(toast?.spec.text).toContain(`#${String(event.contractId)}`);
       expect(toast?.spec.text).toContain(world.defs.lines.get(event.lineId).displayName);
+      // od ADR-035 sa kamión bez dostupného prázdneho vzdá vo vnútrozemí (truckId null) a do prístavu nevojde
+      if (event.truckId === null) expect(toast?.spec.text).toContain('do prístavu nevošiel');
+      else expect(toast?.spec.text).toContain('odišiel prázdny');
     }
     expect(eventsOf('EmptyPickedUp').length).toBeGreaterThan(0);
     expect(toastsOf('empty_picked_up').length).toBe(0);

@@ -303,5 +303,5 @@ describe('prekládka — obnova zo save', () => {
       expect(stateHash(restored), `po behu od ticku ${String(at)}`).toBe(stateHash(run.world));
       assertCargoConservation(restored);
     }
-  });
+  }, 90_000); // 60 000-tickový prieskumný beh + dva behy s obnovou — pri zaťaženom stroji presahuje predvolených 15 s
 });

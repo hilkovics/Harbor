@@ -24,6 +24,10 @@
  * Svety sa vyberajú tak, aby ich obsah starší formát vedel zapísať (v2 bez vozidiel, v3 bez kamiónov, v4 bez kontraktov
  * a lodí `arriving`, ktoré pred ADR-029 neexistovali).
  *
+ * `save-v8-anchorage.json` (T6D-03) vznikol **natívne** kódom v8 (commit b1c7faf, pred presunom rejdy a priamym vstupom na ňu) z `multi_ship_queue`
+ * v ticku 248: loď pri kotvisku, loď v pokoji na starej anchorage 0 (38,5; 2,5), loď na sea lane s anchorage 2 a loď pred vstupom — generátor
+ * ho nezopakuje (kód v8 už neexistuje); slúži len ako vstup testu `anchorage-roadstead.test.ts` (normalizácia lodí s rejdou pri načítaní v8).
+ *
  * Súbory: save-v1 (F1: cesty, hotovosť, rýchlosť 8×, prenájom; bez modulov), save-v2 (vykládka, žeriav spúšťa
  * kontajner), save-v3 (vozidlo vezie kontajner po ceste), save-v4 (kamión nakladá na rampe), save-v5 (kontrakt
  * `unloading`, vyložená polovica), save-v5-anchorage (jedna loď pri kotvisku, tri na anchorage), save-v6 (ten istý

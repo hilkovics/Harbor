@@ -166,3 +166,20 @@ export function formatDuration(ticks: number, scale: TimeScale): string {
   if (days > 0) return hours === 0 ? `${String(days)} ${dayWord(days)}` : `${String(days)} d ${String(hours)} h`;
   return hours > 0 ? `${String(hours)} h` : '< 1 h';
 }
+
+/** Minút v hodine herného času. */
+const MINUTES_PER_HOUR = 60;
+
+/**
+ * Čakanie v tickoch v hodinách a minútach herného času pre čakajúce kamióny: `< 1 min`, `35 min`, `2 h`, `2 h 15 min`; od jedného dňa
+ * ako `formatDuration` (`1 d 3 h`). Zaokrúhlené nadol, záporné ako 0, bez `Intl`. Neplatná hodnota alebo mierka → `—`.
+ */
+export function formatWaitDuration(ticks: number, scale: TimeScale): string {
+  if (!Number.isFinite(ticks) || !(scale.ticksPerDay > 0) || !(scale.ticksPerHour > 0)) return EM_DASH;
+  const total = Math.max(0, ticks);
+  if (total >= scale.ticksPerDay) return formatDuration(total, scale);
+  const hours = Math.floor(total / scale.ticksPerHour);
+  const minutes = Math.floor(((total - hours * scale.ticksPerHour) * MINUTES_PER_HOUR) / scale.ticksPerHour);
+  if (hours === 0) return minutes === 0 ? '< 1 min' : `${String(minutes)} min`;
+  return minutes === 0 ? `${String(hours)} h` : `${String(hours)} h ${String(minutes)} min`;
+}

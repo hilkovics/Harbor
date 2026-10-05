@@ -32,7 +32,8 @@
  *
  * Pravidlá odstránenia: `has_cargo` (náklad v module alebo rezervované miesto — slot apronu/skladu, staging dock rampy;
  * `Module.cargoReservations()`, ADR-022),
- * `has_cranes`, `has_vehicles` (depo, ktorému patria vozidlá; ADR-017), `ship_docked` (kotvisko má loď v
+ * `has_cranes`, `has_vehicles` (depo, ktorému patria vozidlá, ADR-017; kotvisko s jazdným nábrežím pod hákom, na ktorého bunkách stojí vozidlo
+ * alebo vedie jeho trasa, F6d), `ship_docked` (kotvisko má loď v
  * `berthing`/`docked` — `dockedShipId`; pri žeriave kotvisko pod ním, inak by loď ostala pri kotvisku naveky
  * s nákladom, T02-14), `busy` (žeriav mimo `idle`/`blocked`).
  */
@@ -50,6 +51,7 @@ import type { Module } from '../modules/module';
 import type { ModuleErrorCode } from '../modules/module-error';
 import { SIDE_STEPS, connectorOutside, connectorsOf, edgeCells, footprintOf, waterSideOf } from '../modules/module-geometry';
 import { VehicleDepot } from '../modules/vehicle-depot';
+import { hasQuayLane } from '../logistics/quay-lanes';
 import type { Ship } from '../ships/ship';
 import { SHIP_STATE_TRAITS } from '../ships/ship-fsm';
 import { shipCells } from '../ships/ship-route';
@@ -371,11 +373,35 @@ export interface TruckModuleRefs {
   readonly rampId: EntityId;
 }
 
+/** Trasa vozidla, ktorú pravidlo `has_vehicles` číta (`Vehicle` ju spĺňa): bunka vozidla a zvyšok trasy (`routeCellAt(0)` = `cell`). */
+export interface VehicleRouteRefs {
+  readonly id: EntityId;
+  readonly cellsAhead: number;
+  routeCellAt(offset: number): number | undefined;
+}
+
 /** Časť sveta, ktorú pravidlá odstránenia čítajú (`World` ju spĺňa). */
 export interface RemovalWorld {
   readonly cargo: Pick<CargoLedger, 'countAt'>;
   readonly modules: ReadonlyMap<EntityId, Module>;
   readonly trucks: ReadonlyMap<EntityId, TruckModuleRefs>;
+  readonly vehicles: ReadonlyMap<EntityId, VehicleRouteRefs>;
+  readonly grid: Pick<Grid, 'index'>;
+}
+
+/** Vozidlá, ktorých bunka alebo zvyšok trasy leží vo footprinte kotviska `berth` (nábrežie pod hákom, F6d), vzostupne podľa id. */
+function vehiclesOnQuay(world: RemovalWorld, berth: BerthModule): EntityId[] {
+  const cells = new Set<number>(berth.cells.map(({ x, y }) => world.grid.index(x, y)));
+  const found: EntityId[] = [];
+  for (const vehicle of world.vehicles.values()) {
+    for (let offset = 0; offset <= vehicle.cellsAhead; offset++) {
+      const cell = vehicle.routeCellAt(offset);
+      if (cell === undefined || !cells.has(cell)) continue;
+      found.push(vehicle.id);
+      break;
+    }
+  }
+  return found;
 }
 
 /**
@@ -404,8 +430,12 @@ const REMOVAL_CHECKS: { readonly [R in RemovalRule]: RemovalCheck } = {
   },
   has_cranes: (_world, module) =>
     module instanceof BerthModule && module.craneIds.length > 0 ? `na ${module.label} stoja žeriavy [${module.craneIds.join(', ')}]` : undefined,
-  has_vehicles: (_world, module) =>
-    module instanceof VehicleDepot && module.vehicleIds.length > 0 ? `${module.label} má vozidlá [${module.vehicleIds.join(', ')}]` : undefined,
+  has_vehicles: (world, module) => {
+    if (module instanceof VehicleDepot) return module.vehicleIds.length > 0 ? `${module.label} má vozidlá [${module.vehicleIds.join(', ')}]` : undefined;
+    // Kotvisko s jazdným nábrežím (F6d): vozidlo pod žeriavom alebo na ceste k háku by po odstránení stratilo jazdnú bunku.
+    const onQuay = module instanceof BerthModule && hasQuayLane(module) ? vehiclesOnQuay(world, module) : [];
+    return onQuay.length > 0 ? `na nábreží ${module.label} stoja alebo k nemu mieria vozidlá [${onQuay.join(', ')}]` : undefined;
+  },
   // Brána, stojisko alebo rampa, ktorú používa kamión (T04-04, ADR-024): kamión by stratil trasu, bay alebo dock.
   has_trucks: (world, module) => {
     const users: EntityId[] = [];

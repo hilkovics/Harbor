@@ -176,7 +176,7 @@ describe('bundled katalógy (loadBundledDefs)', () => {
       { x: 3, y: 2, side: 'e', type: 'road' },
     ]);
     expect([waiting.costCents, waiting.maintenancePerDayCents]).toEqual([6_000_000, 10_000]);
-    expect(waiting.params).toEqual({ bays: 6 });
+    expect(waiting.params).toEqual({ bays: 6, pickupReservedBays: 2 });
     const ramp = defs.modules.get('loading_ramp_container');
     expect([ramp.kind, ramp.displayName, ramp.footprint]).toEqual(['ramp', 'Rampa · kontajnery', { w: 4, h: 2 }]);
     expect(ramp.connectors).toEqual([
@@ -231,7 +231,7 @@ describe('bundled katalógy (loadBundledDefs)', () => {
 
   it('typované gettery gateParams / waitingAreaParams / rampParams', () => {
     expect(gateParams(defs.modules.get('truck_gate'))).toEqual({ processTicks: 18 });
-    expect(waitingAreaParams(defs.modules.get('truck_waiting_area'))).toEqual({ bays: 6 });
+    expect(waitingAreaParams(defs.modules.get('truck_waiting_area'))).toEqual({ bays: 6, pickupReservedBays: 2 });
     expect(rampParams(defs.modules.get('loading_ramp_container'))).toEqual({
       docks: 2,
       stagingPerDock: 4,
@@ -248,7 +248,8 @@ describe('bundled katalógy (loadBundledDefs)', () => {
       frontWaterCells: 3,
       apronReserveSlots: 2,
       handoverMode: 'under_hook',
-      craneBufferSlots: 1,
+      // Predvolený buffer 0 (T6D-02): žeriav odovzdáva vozidlu priamo pod hákom a čaká naň, apron nepoužíva.
+      craneBufferSlots: 0,
     });
     expect(craneParams(defs.modules.get('crane_container_gantry'))).toEqual({ cycleTicks: 12, category: 'container', wagePerDayCents: 25_000, dualCycleFactor: 1.5 });
   });
@@ -889,6 +890,21 @@ describe('modules: zlé hodnoty polí → DefError s cestou', () => {
       expect(rampParams(registry.modules.get('loading_ramp_container')).internalTicks).toBe(4);
     });
 
+    it('čakacia plocha: pickupReservedBays (kvóta stojísk pre odvoz, ADR-035) je voliteľná a celé číslo ≥ 0; účinná kvóta je najviac bays − 1', () => {
+      const raw = rawDefs();
+      const params = itemsOf(raw, 'modules')[5]!['params'] as Json;
+      delete params['pickupReservedBays'];
+      expect(waitingAreaParams(fromRaw(raw).modules.get('truck_waiting_area')).pickupReservedBays).toBeUndefined();
+      params['pickupReservedBays'] = 0;
+      expect(waitingAreaParams(fromRaw(raw).modules.get('truck_waiting_area')).pickupReservedBays).toBe(0);
+      params['pickupReservedBays'] = 9; // nad bays: def je platný, `WaitingArea` kvótu orezáva na bays − 1 (viď waiting-area test)
+      expect(waitingAreaParams(fromRaw(raw).modules.get('truck_waiting_area')).pickupReservedBays).toBe(9);
+      for (const bad of [-1, 1.5, '2', null]) {
+        params['pickupReservedBays'] = bad;
+        expectDefError(() => fromRaw(raw), 'modules', '/items/5/params/pickupReservedBays');
+      }
+    });
+
     it('rampa môže nakladať aj inú kategóriu než container', () => {
       const raw = rawDefs();
       (itemsOf(raw, 'modules')[6]!['params'] as Json)['category'] = 'bulk';
@@ -935,7 +951,7 @@ describe('MODULE_PARAM_SPECS', () => {
 
   it('gate, waiting_area a ramp majú presne polia GateParams, WaitingAreaParams a RampParams (internalTicks je voliteľné)', () => {
     expect(Object.keys(MODULE_PARAM_SPECS.gate)).toEqual(['processTicks', 'internalTicks']);
-    expect(Object.keys(MODULE_PARAM_SPECS.waiting_area)).toEqual(['bays', 'internalTicks']);
+    expect(Object.keys(MODULE_PARAM_SPECS.waiting_area)).toEqual(['bays', 'internalTicks', 'pickupReservedBays']);
     expect(Object.keys(MODULE_PARAM_SPECS.ramp)).toEqual(['docks', 'stagingPerDock', 'loadTicksPerUnit', 'category', 'internalTicks']);
     expect(MODULE_PARAM_SPECS.gate.internalTicks.optional).toBe(true);
     expect(MODULE_PARAM_SPECS.waiting_area.internalTicks.optional).toBe(true);
@@ -1237,6 +1253,13 @@ describe('katalógy: schéma ⇔ DefRegistry', () => {
     ['modules', '/items/5/params/bays', undefined],
     ['modules', '/items/5/params/internalTicks', 3],
     ['modules', '/items/5/params/internalTicks', 0.5],
+    ['modules', '/items/5/params/pickupReservedBays', 0],
+    ['modules', '/items/5/params/pickupReservedBays', 5],
+    ['modules', '/items/5/params/pickupReservedBays', 9],
+    ['modules', '/items/5/params/pickupReservedBays', -1],
+    ['modules', '/items/5/params/pickupReservedBays', 1.5],
+    ['modules', '/items/5/params/pickupReservedBays', '2'],
+    ['modules', '/items/5/params/pickupReservedBays', undefined],
     ['modules', '/items/5/params/docks', 2],
     ['modules', '/items/6/params/docks', 1],
     ['modules', '/items/6/params/docks', 0],

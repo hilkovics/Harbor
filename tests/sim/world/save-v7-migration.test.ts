@@ -35,7 +35,7 @@ const SLICE = read('save-v7.json');
 const EXPORT = read('save-v7-export.json');
 const tickOf = (save: Json): number => (save['clock'] as { tick: number }).tick;
 
-/** Text stavu v8 bez liniek, plánu prekládky a stavu kvality (tvar v7). */
+/** Text stavu v9 bez vnútrozemia, liniek, plánu prekládky a stavu kvality (tvar v7). */
 const asV7Text = (state: unknown): string => JSON.stringify(toV7State(state));
 
 function loadError(raw: unknown): WorldStateError {
@@ -65,7 +65,7 @@ describe('migrácia save v7 → v8 (ADR-034)', () => {
     const before = clone(save);
     const migrated = migrateWorldState(save, DEFS) as Json;
     expect(save).toEqual(before);
-    expect(migrated['version']).toBe(8);
+    expect(migrated['version']).toBe(9);
     expect(migrated['rng']).toEqual(save['rng']);
     expect(migrated['emptyFlow']).toEqual({ returnPlan: [], pickupPlan: [], errands: [] });
     const contracts = migrated['contracts'] as Json[];
@@ -79,12 +79,12 @@ describe('migrácia save v7 → v8 (ADR-034)', () => {
   });
 
   it.each([['vertical_slice', SLICE], ['export_roundtrip', EXPORT]] as const)(
-    'načítaný %s: serialize() je v8, zhodenie späť dá pôvodný text natívneho v7 a invarianty držia',
+    'načítaný %s: serialize() je v9, zhodenie späť dá pôvodný text natívneho v7 a invarianty držia',
     (_name, save) => {
       const world = World.deserialize(DEFS, MAP, asState(clone(save)));
       world.assertInvariants();
       const state = world.serialize();
-      expect(state.version).toBe(8);
+      expect(state.version).toBe(9);
       expect(JSON.stringify(toV7State(state))).toBe(JSON.stringify(save));
       expect(World.deserialize(DEFS, MAP, clone(state)).serialize()).toEqual(state);
     },
@@ -254,7 +254,7 @@ describe('toV7State — pomôcka zhodenia tvaru v8 (testový helper)', () => {
   });
 
   it.each<[string, (state: WorldState) => unknown, RegExp]>([
-    ['iná verzia než 8', (state) => ({ ...state, version: 7 }), /čaká sa 8/],
+    ['iná verzia než 8 alebo 9', (state) => ({ ...state, version: 7 }), /čaká sa 8 alebo 9/],
     ['neprázdny plán prázdnych', (state) => ({ ...state, emptyFlow: { returnPlan: [{ dueTick: 1, lineId: 'blue_anchor' }], pickupPlan: [], errands: [] } }), /emptyFlow/],
     ['prázdna jednotka', (state) => withEmptyUnit(state), /smeru empty/],
   ])('odmietne: %s (v7 to nevie zapísať)', (_name, mutate, message) => {

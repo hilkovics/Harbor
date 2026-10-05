@@ -5,7 +5,9 @@
 export { IndexedBinaryHeap } from './binary-heap';
 export type { HeapLess } from './binary-heap';
 export { BASE_CELL_COST, Pathfinder, assertCellIndex, unitCellCost } from './pathfinder';
-export type { CellCostFn, PathfinderDiagnostics, RoadGraph } from './pathfinder';
+export type { CellCostFn, PathfinderDiagnostics, QuayCells, RoadGraph } from './pathfinder';
+export { QuayLanes, hasQuayLane } from './quay-lanes';
+export type { QuaySource } from './quay-lanes';
 export { RoadSpeeds, UNIT_SPEED_FACTOR } from './road-speed';
 export type { SpeedFactorFn } from './road-speed';
 export { PathCache, RoadPairMemo } from './path-cache';

@@ -60,10 +60,22 @@ export interface MapDef {
   readonly railPortals: readonly MapPortalDef[];
   /** Polyline plavebnej dráhy od okraja mapy k anchorage. */
   readonly seaLane: readonly CellCoord[];
-  /** Čakacie pozície lodí. */
+  /** Čakacie pozície lodí (rejda — vyhradená zóna kotvísk na otvorenom mori, ADR-029 dodatok T6D-03). */
   readonly anchorage: readonly CellCoord[];
+  /**
+   * Kurz všetkých lodí na kotve (0/90/180/270, 0 = predok na sever): jednotné natočenie voči pobrežiu — pozdĺž pobrežia
+   * alebo prídou proti prevládajúcemu prúdu (ADR-029 dodatok, T6D-03). Chýba = `DEFAULT_ANCHORAGE_HEADING`.
+   */
+  readonly anchorageHeading?: Rotation;
   readonly starter: MapStarterDef;
 }
+
+/**
+ * Predvolený kurz lodí na kotve, keď mapa `anchorageHeading` neuvádza: východ (90) = rovnobežne s pobrežím na sever
+ * od prístavu, rovnako ako loď pri kotvisku so stranou `n` (`DOCKED_HEADING`). Štrukturálny predvolený údaj formátu
+ * mapy, nie balans.
+ */
+export const DEFAULT_ANCHORAGE_HEADING: Rotation = 90;
 
 // Hranice nižšie zrkadlia map.schema.json (tvar formátu), nie sú to laditeľné herné hodnoty.
 
@@ -85,6 +97,7 @@ const MAP_KEYS = [
   'anchorage',
   'starter',
 ] as const;
+const MAP_OPTIONAL_KEYS = ['anchorageHeading'] as const;
 const PARCEL_KEYS = ['id', 'rect', 'priceCents', 'leasable'] as const;
 const PARCEL_OPTIONAL_KEYS = ['startOwned'] as const;
 const RECT_KEYS = ['x', 'y', 'w', 'h'] as const;
@@ -130,9 +143,9 @@ class MapDefParser {
   constructor(private readonly mapId: string) {}
 
   parse(raw: unknown): MapDef {
-    const root = this.object(raw, '', MAP_KEYS);
+    const root = this.object(raw, '', MAP_KEYS, MAP_OPTIONAL_KEYS);
     // Poradie vlastností = poradie kontrol = poradie v schéme (prvá chyba vyhráva).
-    return Object.freeze({
+    const def: MapDef = {
       schemaVersion: this.schemaVersion(root['schemaVersion'], '/schemaVersion'),
       id: this.id(root['id'], '/id'),
       width: this.integer(root['width'], '/width', MIN_SIZE),
@@ -145,7 +158,9 @@ class MapDefParser {
       seaLane: this.array(root['seaLane'], '/seaLane', MIN_ITEMS.seaLane, (v, p) => this.cell(v, p)),
       anchorage: this.array(root['anchorage'], '/anchorage', MIN_ITEMS.anchorage, (v, p) => this.cell(v, p)),
       starter: this.starter(root['starter'], '/starter'),
-    });
+    };
+    if (!Object.hasOwn(root, 'anchorageHeading')) return Object.freeze(def);
+    return Object.freeze({ ...def, anchorageHeading: this.rotation(root['anchorageHeading'], '/anchorageHeading') });
   }
 
   private error(path: string, problem: string): MapError {
@@ -261,15 +276,17 @@ class MapDefParser {
     return Object.freeze({ id: this.id(raw['id'], `${path}/id`), cell: this.cell(raw['cell'], `${path}/cell`) });
   }
 
+  private rotation(value: unknown, path: string): Rotation {
+    if (!isRotation(value)) throw this.error(path, `rotácia musí byť 0, 90, 180 alebo 270, dostal ${describeValue(value)}`);
+    return value;
+  }
+
   private placedModule(value: unknown, path: string): PlacedModuleSpec {
     const raw = this.object(value, path, PLACED_MODULE_KEYS);
     const defId = this.id(raw['defId'], `${path}/defId`);
     const x = this.integer(raw['x'], `${path}/x`, MIN_COORD);
     const y = this.integer(raw['y'], `${path}/y`, MIN_COORD);
-    const rotation = raw['rotation'];
-    if (!isRotation(rotation)) {
-      throw this.error(`${path}/rotation`, `rotácia musí byť 0, 90, 180 alebo 270, dostal ${describeValue(rotation)}`);
-    }
+    const rotation = this.rotation(raw['rotation'], `${path}/rotation`);
     return Object.freeze({ defId, x, y, rotation });
   }
 

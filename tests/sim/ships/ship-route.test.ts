@@ -8,6 +8,7 @@ import {
   Ship,
   ShipError,
   advanceAlongRoute,
+  anchoringProblem,
   cardinalHeading,
   cellCenter,
   dockPoint,
@@ -224,5 +225,46 @@ describe('shipRoute, approachPoint a pevný kurz bodu trasy (ADR-029)', () => {
     const box = shipBox(FEEDER, 43, 13, 90);
     expect(box).toEqual({ x0: 40, y0: 12, x1: 46, y1: 14 });
     expect(cells).toHaveLength((box.x1 - box.x0) * (box.y1 - box.y0));
+  });
+});
+
+describe('anchoringProblem — jednotný kurz lode na rejde (T6D-03)', () => {
+  const CELL = MAP.anchorage[0];
+  const AT = cellCenter(CELL);
+  const world = newWorld();
+
+  function waiting(heading: Rotation, waypointIndex: number): Ship {
+    return new Ship({
+      id: 99 as EntityId,
+      def: FEEDER,
+      cargoType: SHIP_DEFS.cargoTypes.get(TEU),
+      state: 'waiting_anchorage',
+      x: AT.x,
+      y: AT.y,
+      heading,
+      anchorageIndex: 0,
+      route: [AT, { x: AT.x, y: AT.y, heading: MAP.anchorageHeading }],
+      waypointIndex,
+    });
+  }
+
+  it('loď, ktorá dopĺňala na koniec trasy, má mať kurz mapy; iný kurz → porušenie na poli heading', () => {
+    expect(anchoringProblem(waiting(MAP.anchorageHeading, 2), world)).toBeUndefined();
+    const other = ([0, 90, 180, 270] as const).find((heading) => heading !== MAP.anchorageHeading) ?? 0;
+    expect(anchoringProblem(waiting(other, 2), world)).toMatchObject({ field: 'heading', problem: expect.stringContaining(`jednotný ${String(MAP.anchorageHeading)}`) });
+  });
+
+  it('loď, ktorá ešte pláva (nedosiahla koniec trasy), a lode v iných stavoch sa neposudzujú', () => {
+    expect(anchoringProblem(waiting(0, 1), world)).toBeUndefined();
+    expect(anchoringProblem(waiting(0, 0), world)).toBeUndefined();
+    expect(anchoringProblem(freshShip('inbound', 1, 1, 0), world)).toBeUndefined();
+    expect(anchoringProblem(freshShip('docked', 1, 1, 0), world)).toBeUndefined();
+  });
+
+  it('pevný kurz posledného bodu trasy nastaví kurz lode na kurz mapy (nulový úsek: otočenie na kotve)', () => {
+    const ship = waiting(270, 0);
+    expect(advanceAlongRoute(ship, ship.route, FEEDER.speedCellsPerTick)).toBe(true);
+    expect([ship.x, ship.y, ship.heading]).toEqual([AT.x, AT.y, MAP.anchorageHeading]);
+    expect(anchoringProblem(ship, world)).toBeUndefined();
   });
 });

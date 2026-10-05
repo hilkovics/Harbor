@@ -5,7 +5,8 @@
  * verejnými metódami (`updateRoads` z udalosti `RoadChanged`); napojenie na SimBridge robí bootstrap (T01-11).
  *
  * Vrstvy (zdola, ARCHITECTURE §15.1): terén → cesty → cestné značky (šípky jednosmeriek) → obrysy parciel → portály →
- * moduly → lode a vozidlá → žeriavy → ghost stavby (`BuildLayer`). Entity (moduly, lode, vozidlá, žeriavy) sa synchronizujú z view-modelov cez
+ * moduly → základne žeriavov → lode a vozidlá → žeriavy (výložník, vozík, náklad) → ghost stavby (`BuildLayer`). Základňa žeriava je pod vozidlami
+ * (F6d): vozidlo stojace pri odovzdaní pod žeriavom je v portáli vidieť, vozík s kontajnerom je nad ním. Entity (moduly, lode, vozidlá, žeriavy) sa synchronizujú z view-modelov cez
  * `syncEntities(vm, alpha)`,
  * ghost modulu cez `setModuleGhost`. Sprity sa načítajú z `assets/manifest.json` (`SpriteAtlas`); bez nich
  * (`textures: null`) vrstvy kreslia dočasné `Graphics` z tokenov.
@@ -155,6 +156,7 @@ export class WorldRenderer {
       this.parcels.view,
       this.portals.view,
       this.modules.view,
+      this.cranes.baseView,
       this.ships.view,
       this.cranes.view,
       this.build.view,

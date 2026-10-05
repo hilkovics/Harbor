@@ -132,6 +132,28 @@ describe('TransportJob — hák žeriava a nakládka (F6a, ADR-033)', () => {
     const plain = new TransportJob(BASE);
     expect(jobError(() => plain.rebindSource(FROM)).code).toBe('invalid_transition');
   });
+
+  it('rebindTarget (T6D-05b): job nakládky pod hákom v moving sa presmeruje na slot apronu toho istého kotviska; inak JobError a job sa nezmení', () => {
+    const load = (jobId: number): TransportJob => new TransportJob({ id: id(jobId), unitIds: [id(11)], from: TO, to: HOOK, toModuleId: id(1), createdTick: 1 });
+    const job = load(40);
+    expect(jobError(() => job.rebindTarget(FROM)).code).toBe('invalid_transition'); // open
+    job.assign(id(7));
+    job.transition('picking');
+    expect(jobError(() => job.rebindTarget(FROM)).code).toBe('invalid_transition'); // picking: vozidlo ešte nemá jednotku
+    job.transition('moving');
+    expect(jobError(() => job.rebindTarget({ kind: 'on_apron', berthId: id(9), slot: 0 })).code).toBe('invalid_input'); // iný apron
+    expect(jobError(() => job.rebindTarget({ kind: 'in_storage', moduleId: id(1), slot: 0 })).code).toBe('invalid_input'); // nie apron
+    expect(job.to).toEqual(HOOK);
+    job.rebindTarget(FROM);
+    expect([job.to, job.toModuleId, job.state]).toEqual([FROM, 1, 'moving']);
+    expect(job.toState().to).toEqual(FROM);
+    expect(jobError(() => job.rebindTarget(FROM)).code).toBe('invalid_transition'); // cieľ už nie je hák
+    const plain = new TransportJob(OUTBOUND);
+    plain.assign(id(7));
+    plain.transition('picking');
+    plain.transition('moving');
+    expect(jobError(() => plain.rebindTarget(FROM)).code).toBe('invalid_transition');
+  });
 });
 
 describe('TransportJob', () => {

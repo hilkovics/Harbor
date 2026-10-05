@@ -9,12 +9,14 @@
  * ktoré sa nedotýkajú).
  *
  * **Kedy sa rezervuje** (loď inak čaká na mieste, kde nikomu neprekáža):
- * - `arriving` → `inbound` (vstup): celá sea lane + úsek z konca dráhy k cieľu. Cieľ je voľný úsek kotvísk (poradie
- *   `allocateBerths`) alebo — keď kotvisko nie je — **anchorage pridelená ešte pred vstupom**. Bez cieľa s voľnou
- *   trasou loď čaká pred vstupom (mimo mapy, nezaberá bunky).
- * - `inbound` na konci dráhy → `berthing` (kotviská z rezervácie, alebo novo pridelené, ak je trasa voľná) alebo
- *   `waiting_anchorage` (dopláva na svoju anchorage po rezervovanom úseku).
- * - `waiting_anchorage` na anchorage → `berthing`, keď je kotvisko a trasa voľná.
+ * - `arriving` → `inbound` (vstup, loď má voľné kotvisko): celá sea lane + úsek z konca dráhy ku kotviskám (poradie
+ *   `allocateBerths`) — loď ide rovno ku kotvisku.
+ * - `arriving` → `waiting_anchorage` (vstup, loď **nemá voľné kotvisko**; T6D-03): **anchorage pridelená pri vstupe**
+ *   a loď k nej pláva **priamo** po najkratšej bezpečnej trase po vode (A*) zo vstupu na mapu — bez obchádzky konca
+ *   sea lane pri prístave. Na anchorage stojí s jednotným kurzom `map.anchorageHeading` (kurz sa na konci trasy
+ *   zafixuje bodom s pevným kurzom). Bez cieľa s voľnou trasou loď čaká pred vstupom (mimo mapy, nezaberá bunky).
+ * - `inbound` na konci dráhy → `berthing` (kotviská z rezervácie, po rezervovanom úseku).
+ * - `waiting_anchorage` na anchorage → `berthing` (úsek z anchorage ku kotvisku), keď je kotvisko a trasa voľná.
  * - `docked` → `undocking` (vyložená loď): úsek od kotviska na koniec dráhy + sea lane von.
  * Úseky cez prístav hľadá A* po vode (`WaterNavigator`) s prekážkami = obdĺžniky lodí, ktoré stoja alebo na miesto
  * mieria (kotvisko, anchorage). Trasa ku kotvisku končí bodom priblíženia (`approachPoint`) a posunom bokom do polohy
@@ -31,7 +33,9 @@
  * - loď, ktorá drží kotviská a cestu von nemá už teraz, sa nepreskočí: obdĺžnik sa posúdi s prekážkami, ktoré
  *   neodplávajú samy (lode čakajúce na kotvisko na anchorage), aby sa nestal trvalou prekážkou (ADR-029 addendum);
  * - lode pred vstupom nezaberajú nič, lode na trase trasu dokončia.
- * Predpoklad mapy: anchorage leží na otvorenej vode, kde čakajúca loď nerozdelí prístav (trasu ku kotviskám obíde A*).
+ * Predpoklad mapy: anchorage leží na otvorenej vode (rejda — vyhradená zóna mimo dráhy a pásov pred kotviskami),
+ * kde čakajúca loď nerozdelí prístav (trasu ku kotviskám obíde A*) a kam sa dá priplávať zo vstupu bez prechodu
+ * po sea lane.
  *
  * **Poradie** (FIFO bez head-of-line blokovania): lode sa spracúvajú vzostupne podľa id. Keď loď, ktorá má voľné
  * kotvisko, nemôže vyplávať len preto, že jej trasu drží pohybujúca sa loď, neskoršie lode v tomto ticku nič
@@ -130,9 +134,9 @@ export class ShipTraffic {
   /** Zostavenie kandidátov podľa druhu pokusu (tabuľka, nie switch). */
   private readonly builders: { readonly [K in AttemptKind]: (ship: Ship, out: Candidate[]) => void } = {
     enter: (ship, out) => {
-      const hub = this.hubPose();
-      this.berthCandidates(ship, hub, this.laneIn(), out);
-      this.anchorageCandidates(ship, hub, this.laneIn(), out);
+      // Voľné kotvisko → rovno ku kotvisku po sea lane; inak (loď kotvisko nemá) priamo na rejdu zo vstupu na mapu.
+      this.berthCandidates(ship, this.hubPose(), this.laneIn(), out);
+      if (out.length === 0) this.anchorageCandidates(ship, out);
     },
     berth: (ship, out) => this.berthCandidates(ship, { x: ship.x, y: ship.y, heading: ship.heading }, [], out),
     undock: (ship, out) => {
@@ -503,19 +507,79 @@ export class ShipTraffic {
   }
 
   /**
-   * Plán z pózy `from` na anchorage `index` (A* po vode), ak je anchorage voľná a obdĺžnik lode na nej nezasahuje do
-   * sea lane ani pred kotviská a nezatarasí cestu von lodiam pri kotviskách; inak `null`.
+   * Body prvého úseku sea lane (stredy buniek) zoradené podľa Manhattan vzdialenosti k bunke `target` (pri zhode podľa
+   * poradia na dráhe) — miesta, kde loď vplávajúca na mapu môže odbočiť zo sea lane smerom na rejdu. Loď plynie po dráhe
+   * len po bod odbočky (ostatok trasy je A* po vode z neho), takže na rejdu ide **priamo**, bez prechodu po celej
+   * dráhe k prístavu (T6D-03). Úsek, ktorý nie je osový, sa neprechádza po bunkách — kandidátmi sú jeho krajné body.
+   */
+  private laneTurnPoints(target: ShipPoint): ShipPoint[] {
+    const [start, second] = this.laneIn();
+    if (start === undefined) return [];
+    const candidates: ShipPoint[] = [start];
+    if (second !== undefined) {
+      const axial = start.x === second.x || start.y === second.y;
+      const steps = axial ? Math.max(Math.abs(second.x - start.x), Math.abs(second.y - start.y)) : 1;
+      const stepX = axial ? Math.sign(second.x - start.x) : second.x - start.x;
+      const stepY = axial ? Math.sign(second.y - start.y) : second.y - start.y;
+      for (let k = 1; k <= steps; k++) candidates.push({ x: start.x + stepX * k, y: start.y + stepY * k });
+    }
+    const distance = (point: ShipPoint): number => Math.abs(point.x - target.x) + Math.abs(point.y - target.y);
+    // Array.prototype.sort je stabilná (ES2019) — pri zhode ostáva poradie na dráhe.
+    return candidates.sort((a, b) => distance(a) - distance(b));
+  }
+
+  /**
+   * Trasa zo začiatku sea lane (póza `from`) na anchorage `index` cez bod odbočky `turn` (po prvom úseku sea lane
+   * k nemu, odtiaľ A* po vode do bunky anchorage s osou `map.anchorageHeading`; trasa končí bodom s pevným kurzom
+   * `anchorageHeading`, keď by loď dorazila opačným smerom) a jej „námaha“: dĺžka a počet buniek posunu bokom.
+   * `null` = cesta po vode nie je.
+   */
+  private anchorageRouteVia(ship: Ship, from: ShipPose, turn: ShipPoint, point: ShipPoint, obstacles: readonly CellBox[]): { route: ShipPoint[]; sideways: number; length: number } | null {
+    const heading = this.world.map.anchorageHeading;
+    const leg = this.waterLeg(ship.def, { x: turn.x, y: turn.y, heading: this.laneStartHeading() }, point, heading, obstacles);
+    if (leg === null) return null;
+    const route: ShipPoint[] = turn.x === from.x && turn.y === from.y ? [] : [turn];
+    route.push(...leg);
+    const last = route[route.length - 1] as ShipPoint | undefined;
+    if (last === undefined || last.x !== point.x || last.y !== point.y) route.push(point);
+    if (this.endPose(from, route).heading !== heading) route.push({ x: point.x, y: point.y, heading });
+    let sideways = 0;
+    let length = 0;
+    let x = from.x;
+    let y = from.y;
+    for (const next of route) {
+      const segment = Math.abs(next.x - x) + Math.abs(next.y - y);
+      length += segment;
+      if (next.heading !== undefined) sideways += segment;
+      x = next.x;
+      y = next.y;
+    }
+    return { route, sideways, length };
+  }
+
+  /**
+   * Trasa z pózy `from` (pri vstupe: začiatok sea lane) na anchorage `index`: odbočka zo sea lane čo najbližšie k anchorage
+   * (`laneTurnPoints`) a odtiaľ A* po vode; keď trasa vyžaduje posun bokom (obchádzka lode na rejde), skúsia sa aj ďalšie
+   * body odbočky a vyberie sa trasa s najmenším posunom bokom, potom najkratšia. `null` = anchorage nie je voľná, cesta
+   * nie je alebo obdĺžnik lode na nej (s kurzom `anchorageHeading`) zasahuje do sea lane či pred kotviská alebo zatarasí
+   * cestu von lodiam pri kotviskách.
    */
   private anchoragePlan(ship: Ship, from: ShipPose, index: number, obstacles: readonly CellBox[]): ShipPoint[] | null {
     const point = anchoragePoint(this.world, index);
     if (point === undefined || !this.anchorageFree(ship, index)) return null;
-    const leg = this.waterLeg(ship.def, from, point, null, obstacles);
-    if (leg === null) return null;
-    const route = leg.length > 0 && leg[leg.length - 1].x === point.x && leg[leg.length - 1].y === point.y ? leg : [...leg, point];
-    const rest = this.endPose(from, route);
-    const box = shipBox(ship.def, rest.x, rest.y, rest.heading);
-    if (this.lane().hits(box) || this.berthFronts().hits(box) || !this.keepsExits(ship, box)) return null;
-    return route;
+    const heading = this.world.map.anchorageHeading;
+    const box = shipBox(ship.def, point.x, point.y, heading);
+    if (this.lane().hits(box) || this.berthFronts().hits(box)) return null;
+    const turns = this.laneTurnPoints(point);
+    // Cieľ, ku ktorému nevedie cesta z najbližšieho bodu odbočky, nemá zmysel skúšať z ďalších (bola by to ďalšia plná A*);
+    // drahá kontrola ciest von lodí pri kotviskách beží až pre dosiahnuteľnú anchorage.
+    let best = turns.length === 0 ? null : this.anchorageRouteVia(ship, from, turns[0], point, obstacles);
+    if (best === null || !this.keepsExits(ship, box)) return null;
+    for (let i = 1; i < turns.length && best.sideways > 0; i++) {
+      const plan = this.anchorageRouteVia(ship, from, turns[i], point, obstacles);
+      if (plan !== null && (plan.sideways < best.sideways || (plan.sideways === best.sideways && plan.length < best.length))) best = plan;
+    }
+    return best.route;
   }
 
   // -------------------------------------------------------------------------------------------------------------
@@ -560,14 +624,16 @@ export class ShipTraffic {
     });
   }
 
-  /** Kandidáti na anchorage (poradie mapy) z pózy `from` s trasou `prefix` pred úsekom (pri vstupe sea lane). */
-  private anchorageCandidates(ship: Ship, from: ShipPose, prefix: readonly ShipPoint[], out: Candidate[]): void {
+  /**
+   * Kandidáti na anchorage (poradie mapy) z aktuálnej pózy lode (pri vstupe: zo začiatku sea lane) — priama trasa
+   * zo vstupu na rejdu, bez prechodu po celej sea lane (T6D-03).
+   */
+  private anchorageCandidates(ship: Ship, out: Candidate[]): void {
     const obstacles = this.obstaclesFor(ship);
     const start: ShipPose = { x: ship.x, y: ship.y, heading: ship.heading };
     for (let index = 0; index < this.world.map.anchorage.length; index++) {
-      const leg = this.anchoragePlan(ship, from, index, obstacles);
-      if (leg === null) continue;
-      const route = [...prefix, ...leg];
+      const route = this.anchoragePlan(ship, start, index, obstacles);
+      if (route === null) continue;
       const area = new TrafficArea();
       sweepRoute(area, ship.def, this.navigation.sweepStepCells, start, route);
       out.push({ berths: null, anchorage: index, route, area });
@@ -623,16 +689,21 @@ export class ShipTraffic {
   // -------------------------------------------------------------------------------------------------------------
 
   /**
-   * Vstup lode čakajúcej pred mapou (`arriving` → `inbound`): kotviská alebo anchorage s voľnou trasou po celej sea lane
-   * a ďalej k cieľu. `true` = loď vplávala (stav `inbound`, trasa = dráha + úsek k cieľu).
+   * Vstup lode čakajúcej pred mapou (`arriving`): voľné kotvisko s voľnou trasou po celej sea lane (`inbound`), inak
+   * anchorage s voľnou priamou trasou zo vstupu (`waiting_anchorage`, T6D-03). `true` = loď vplávala (stav `inbound`
+   * alebo `waiting_anchorage`, trasa = rezervovaná trasa k cieľu).
    */
   tryEnter(ship: Ship): boolean {
     if (ship.state !== 'arriving') return false;
     const chosen = this.attempt(ship, 'enter');
     if (chosen === null) return false;
-    if (chosen.berths !== null) this.reserveBerths(ship, chosen.berths);
-    else ship.anchorageIndex = chosen.anchorage;
-    ship.transition('inbound', chosen.route);
+    if (chosen.berths !== null) {
+      this.reserveBerths(ship, chosen.berths);
+      ship.transition('inbound', chosen.route);
+    } else {
+      ship.anchorageIndex = chosen.anchorage;
+      ship.transition('waiting_anchorage', chosen.route);
+    }
     this.bump();
     return true;
   }
@@ -649,8 +720,8 @@ export class ShipTraffic {
   }
 
   /**
-   * Loď na konci dráhy (`inbound`) alebo na anchorage (`waiting_anchorage` v pokoji) si pridelí kotviská s voľnou trasou
-   * a začne `berthing`; anchorage uvoľní. `false` = kotvisko alebo trasa nie je (loď pokračuje / čaká).
+   * Loď na anchorage (`waiting_anchorage` v pokoji) si pridelí kotviská s voľnou trasou a začne `berthing`; anchorage
+   * uvoľní. `false` = kotvisko alebo trasa nie je (loď čaká).
    */
   tryStartBerthing(ship: Ship): boolean {
     const chosen = this.attempt(ship, 'berth');

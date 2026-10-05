@@ -92,7 +92,7 @@ describe('skutočné katalógy F2 až F4', () => {
       ],
       costCents: 40_000_000,
       maintenancePerDayCents: 120_000,
-      params: { depthClass: 1, apronSlots: 8, maxCranes: 2, frontWaterCells: 3, apronReserveSlots: 2, handoverMode: 'under_hook', craneBufferSlots: 1 },
+      params: { depthClass: 1, apronSlots: 8, maxCranes: 2, frontWaterCells: 3, apronReserveSlots: 2, handoverMode: 'under_hook', craneBufferSlots: 0 },
     });
     expect(item(def, 'crane_container_gantry')).toEqual({
       id: 'crane_container_gantry',
@@ -153,7 +153,7 @@ describe('skutočné katalógy F2 až F4', () => {
       ],
       costCents: 6_000_000,
       maintenancePerDayCents: 10_000,
-      params: { bays: 6 },
+      params: { bays: 6, pickupReservedBays: 2 },
     });
     expect(item(def, 'loading_ramp_container')).toEqual({
       id: 'loading_ramp_container',

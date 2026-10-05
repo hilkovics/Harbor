@@ -46,7 +46,7 @@ describe('World.serialize — vozidlá v3', () => {
   it('vehicles = Vehicle.toState() vzostupne podľa id (poradie nákupu), jobs = []', () => {
     const world = fleetWorld();
     const state = world.serialize();
-    expect(state.version).toBe(8); // tvar vozidiel v3 ostal aj vo v4 až v8 (ADR-024 trucks, ADR-025 economy, ADR-029 trasa lode, ADR-032 export, ADR-034 prázdne kontajnery)
+    expect(state.version).toBe(9); // tvar vozidiel v3 ostal aj vo v4 až v9 (ADR-024 trucks, ADR-025 economy, ADR-029 trasa lode, ADR-032 export, ADR-034 prázdne kontajnery, ADR-035 vnútrozemie, T6D-03 rejda)
     expect(state.jobs).toEqual([]);
     expect(state.vehicles.map((vehicle) => vehicle.id)).toEqual([...world.vehicles.keys()]);
     expect(state.vehicles).toHaveLength(2);

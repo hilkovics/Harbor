@@ -1,6 +1,6 @@
 /**
- * „Zhodenie" aktuálneho `WorldState` na tvar v7 (`toV7State`, T6C-01, ADR-034) a v6 (`toV6State`, T6A-01, ADR-032) — presný opak
- * migrácií v7 → v8 a v6 → v7 pre testy a generátor fixtures starších savov. Svet nesmie používať nič z F6c (prázdne
+ * „Zhodenie" aktuálneho `WorldState` na tvar v8 (`toV8State`, T6D-01 + T6D-03, ADR-035, ADR-029 dodatok), v7 (`toV7State`, T6C-01, ADR-034) a v6
+ * (`toV6State`, T6A-01, ADR-032) — presný opak migrácií v8 → v9, v7 → v8 a v6 → v7 pre testy a generátor fixtures starších savov. Svet nesmie používať nič z F6c (prázdne
  * kontajnery, repositioning, prekládka, plán `emptyFlow`) ani F6a (export, voyage s viacerými kontraktmi, lashing, delivery
  * kamión, nakládka žeriavu): starší tvar by to nevedel zapísať, preto je to chyba. Odstránené kľúče nemenia relatívne poradie
  * ostatných, takže výsledok má presne poradie kľúčov natívneho `serialize()` starej verzie. Linky (`lineId`) sa zahadzujú
@@ -22,10 +22,22 @@ function fail(what: string): never {
   throw new Error(`toV6State: v6 nevie zapísať ${what}`);
 }
 
-/** Stav v8 (`World.serialize()` alebo jeho JSON kópia) → stav v7 (nová kópia). */
+/**
+ * Stav v9 (`World.serialize()` alebo jeho JSON kópia) → stav v8 (nová kópia): bez poľa `hinterland` (T6D-01). Počítadlá vnútrozemia sa zahodia — len ich číta UI
+ * a `simrun`, správanie sveta neovplyvňujú (plány kamiónov, ktoré v8 pozná, ostávajú), takže zhodenie nie je stratové pre nič, čo v8 vie zapísať.
+ * Lode s rejdou zostanú, ako sú (T6D-03 zmenila len význam `anchorageIndex` a trás lodí) — pri načítaní ich normalizuje parser (`legacyAnchorage`).
+ */
+export function toV8State(state: unknown): Json {
+  const v9 = clone(state) as Json;
+  if (v9['version'] !== 9) fail(`verziu ${String(v9['version'])} (čaká sa 9, toV8State)`);
+  return { ...without(v9, ['hinterland']), version: 8 };
+}
+
+/** Stav v9 alebo v8 (`World.serialize()` alebo jeho JSON kópia; v9 sa najprv zhodí cez `toV8State`) → stav v7 (nová kópia). */
 export function toV7State(state: unknown): Json {
-  const v8 = clone(state) as Json;
-  if (v8['version'] !== 8) fail(`verziu ${String(v8['version'])} (čaká sa 8, toV7State)`);
+  const given = clone(state) as Json;
+  const v8 = given['version'] === 9 ? toV8State(given) : given;
+  if (v8['version'] !== 8) fail(`verziu ${String(v8['version'])} (čaká sa 8 alebo 9, toV7State)`);
   const flow = v8['emptyFlow'] as { returnPlan: unknown[]; pickupPlan: unknown[]; errands: unknown[] };
   if (flow.returnPlan.length > 0 || flow.pickupPlan.length > 0 || flow.errands.length > 0) fail('plán prázdnych kontajnerov (emptyFlow)');
   const contracts = (v8['contracts'] as Json[]).map((contract) => {
@@ -42,11 +54,11 @@ export function toV7State(state: unknown): Json {
   return { ...without(v8, ['emptyFlow']), version: 7, contracts, cargo: { ...cargo, units } };
 }
 
-/** Stav v7 alebo v8 (`World.serialize()` alebo jeho JSON kópia; v8 sa najprv zhodí cez `toV7State`) → stav v6 (nová kópia). */
+/** Stav v7, v8 alebo v9 (`World.serialize()` alebo jeho JSON kópia; v8 a v9 sa najprv zhodia cez `toV7State`) → stav v6 (nová kópia). */
 export function toV6State(state: unknown): Json {
   const given = clone(state) as Json;
-  const v7 = given['version'] === 8 ? toV7State(given) : given;
-  if (v7['version'] !== 7) fail(`verziu ${String(v7['version'])} (čaká sa 7 alebo 8)`);
+  const v7 = given['version'] === 8 || given['version'] === 9 ? toV7State(given) : given;
+  if (v7['version'] !== 7) fail(`verziu ${String(v7['version'])} (čaká sa 7, 8 alebo 9)`);
   const contracts = v7['contracts'] as Json[];
   for (const contract of contracts) {
     if (contract['kind'] !== 'import' || contract['booking'] !== null || contract['voyageId'] !== contract['id']) fail(`kontrakt #${String(contract['id'])} (export alebo voyage ≠ id)`);

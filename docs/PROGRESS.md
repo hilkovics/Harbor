@@ -277,3 +277,27 @@ Stav: **hotová** (T6C-01 … T6C-09, vrátane T6C-06a, T6C-06b a T6C-07b), **m�
 **Odchýlky od plánu:** `lineId` bez `Rng` (deterministicky podľa voyage); empty handler len def (bez triedy); tok prázdnych, repositioning a tranship sa ponúkajú len v prístave s depom prázdnych; výdaj exportérovi je misia `collect` s poverením (nie `pickup`); pripravenosť repositioningu = existuje depo; záchrana zmeškanej prekládky zjednodušená (prepíše sa voyage B, inak predaj po `transhipRescueDays`); T6C-06 sa rozdelila na T6C-06a a T6C-06b a review T6C-07 si vyžiadalo opravy T6C-07b. Odložené nálezy z review sú v BACKLOG „Z Fázy 6c“.
 
 Ďalej: **Fáza 6d — spätná väzba z hrania 2** (mesto a časové okná kamiónov, odovzdávanie priamo na vozidlo pod hákom, lode priamo na rejdu)
+
+## Fáza 6d — Spätná väzba z hrania 2
+Karty: `docs/tasks/phase-06d.md` · vetva `phase/06d-playtest-2` (stacked nad `phase/06c-empties-tranship`)
+
+Stav: **hotová** (T6D-01 … T6D-07, vrátane T6D-05b a T6D-05c)
+
+**Výsledky:**
+- review sim-reviewer: MERGE (0 blocking; 1 major opravený v T6D-05b, regresia nakládky pod hákom pri jednosmerkách opravená v T6D-05c, ostatné minor opravené alebo v BACKLOG „Z Fázy 6d“)
+- `pnpm test`: 372 súborov, 8 815 testov zelených
+- `pnpm test:e2e`: 50/50 (nové `f6d-hook`, `f6d-anchorage`; `f6c-live-terminal` pre prístav s dvoma dvormi)
+- `simrun vertical_slice` (30 000 tickov): cashEnd 41 790 000, exportedUnits 78, lostUnits 0, directHandoverPct 100, stateHash de8cdca1
+- `simrun live_terminal` (60 000 tickov, druhý dvor): lostUnits 0, exported 149, transhipLoaded 36, repositioned 24, rolled exporty 0, directHandoverPct 100, stateHash 89fb0ea3
+- `simrun landside_pressure` (40 000 tickov, nový scenár zámky príjmu a výdaja): dokončené kontrakty #2, #10, #11, exported 88, lostUnits 0, stateHash 64ba05c3
+- Hrateľná verzia zverejnená (artefakt „Fáza 6d“)
+
+**Čo je hotové:**
+- Kamióny (ADR-035): kamióny s dovozom (`delivery`) a po prázdny (`collect`) čakajú vo vnútrozemí a do prístavu vojdú len so zaručeným miestom (staging docku, sklad / depo, prázdny linky); kvóta stojísk pre odvoz `pickupReservedBays`; `DockIntake`; metriky `hinterlandQueue` / `trucksWaitingInland` / `inlandWaitTicks` / `pickupBayStarvationTicks`; inšpektor brány ukazuje kamióny čakajúce vo vnútrozemí; toast „Výdaj prázdneho zlyhal“ rozlišuje kamión, ktorý do prístavu nevošiel
+- Žeriav (ADR-033 dodatky T6D-02, T6D-05b): vozidlo stojí fyzicky pod hákom, predvolený `craneBufferSlots` 0, `directHandoverPct`, render spúšťania kontajnera na vozidlo; záložná cesta cez apron pri vozidle v `no_path` (vykládka) a pri nedosiahnuteľnom háku (nakládka); režim `apron` ostáva cez def
+- Lode (ADR-029 dodatok T6D-03): rejda v otvorenom mori, loď bez voľného kotviska pláva zo vstupu priamo na rejdu, jednotný kurz na kotve, invariant `anchoringProblem`
+- `WorldState` v9 = v8 + `hinterland` a nový význam rejdy; migrácia v8 → v9 (save so starou rejdou sa normalizuje, vozidlo spred T6D-02 sa preplánuje pod hák)
+
+**Odchýlky od plánu:** tri sim karty bežali paralelne vo worktree (zlúčenie T6D-04); scenár `live_terminal` dostal druhý dvor (po ADR-035 export čakal na miesto v plnom dvore); poradie vjazdu exportov je podľa kontraktov (nie FIFO naprieč bookingmi, BACKLOG); buffer 0 predlžuje čakanie dovozu vo vnútrozemí (`landside_pressure` 18 478 tickov vs 4 439 v režime apron — balans vo F7).
+
+Ďalej: **Fáza 7**

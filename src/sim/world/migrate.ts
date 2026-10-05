@@ -40,6 +40,18 @@
  * `lineId` = **prvá linka z `lines.json`** a `tranship: null`; jednotka s kontraktom `lineId` = prvá linka (bez kontraktu —
  * ladiaca loď — `null`), `status: 'available'` a `repairUntilTick: null`; svet dostane prázdny `emptyFlow` (žiadny plánovaný
  * návrat ani výdaj prázdneho). Import jednotky, ktoré odišli pred migráciou, sa teda prázdne nevrátia.
+ *
+ * v8 → v9 (deterministicky bez `Rng`; tvar = v8 + `hinterland`, zmenený význam rejdy):
+ *  1. T6D-01, ADR-035: v8 nepoznal vnútrozemie, preto svet dostane `hinterland` s nulovými počítadlami čakania (`migrateLandsideV8ToV9`).
+ *     Kamióny, ktoré v save stoja v stojisku, na bráne alebo pri docku, ostávajú ako boli (vpustené už sú); splatné položky plánov
+ *     (`emptyFlow`, `arrivalPlan` bookingov) sú od v9 čakajúce kamióny vo vnútrozemí — nič sa nezahodí, zmení sa len to, že ich vjazd
+ *     podlieha podmienkam ADR-035 (kvóta stojísk, zaručené miesto na vyloženie).
+ *  2. T6D-03, ADR-029 dodatok: mení sa **význam** `anchorageIndex` a trasy lode — rejda (anchorage) harbor_01 sa presunula do vyhradenej
+ *     zóny na otvorenom mori a loď bez voľného kotviska k nej pláva priamo zo vstupu (`arriving → waiting_anchorage`), nie po celej sea lane.
+ *     Migrácia na lodiach nič nemení; lode, ktoré v save držia anchorage (`inbound` / `waiting_anchorage` so starým rozložením rejdy),
+ *     normalizuje parser (`parseShips`, `ParseWorldStateOptions.legacyAnchorage`): presunie ich pred vstup (`arriving`) a vstup zopakujú
+ *     podľa nových pravidiel. Náklad ostáva `on_ship` (nič sa neteleportuje), loď pred vstupom nič nezaberá — rovnaký postup ako pri v5
+ *     (ADR-029 addendum).
  */
 import { DEFAULT_WEIGHT_CLASS } from '../cargo/cargo-unit';
 import type { DefRegistry } from '../defs/def-registry';
@@ -77,8 +89,15 @@ export const WORLD_STATE_V7 = 7;
  */
 export const WORLD_STATE_V8 = 8;
 
+/**
+ * Verzia `WorldState` v9 (F6d): počítadlá vnútrozemia `hinterland` — čakanie kamiónov pred vjazdom do prístavu a nedostatok stojísk pre odvoz
+ * (T6D-01, ADR-035) a nový význam `anchorageIndex` — rejda ako vyhradená zóna na mori s priamym vstupom lode a jednotným kurzom na kotve
+ * (T6D-03, ADR-029 dodatok). Cieľ kroku v8 → v9.
+ */
+export const WORLD_STATE_V9 = 9;
+
 /** Aktuálna verzia `WorldState` — `serialize()` vždy vracia ju. */
-export const WORLD_STATE_VERSION = WORLD_STATE_V8;
+export const WORLD_STATE_VERSION = WORLD_STATE_V9;
 
 /** Kľúče `WorldState` v1 v poradí `serialize()` (F1, ADR-013). */
 export const WORLD_STATE_V1_KEYS = ['version', 'mapId', 'seed', 'rng', 'clock', 'ids', 'cashCents', 'roads', 'parcels'] as const;
@@ -106,6 +125,9 @@ export const WORLD_STATE_V7_KEYS = [...WORLD_STATE_V6_KEYS, 'nextVoyageId'] as c
 
 /** Kľúče `WorldState` v8 v poradí `serialize()` (F6c, ADR-034): v7 + `emptyFlow`. */
 export const WORLD_STATE_V8_KEYS = [...WORLD_STATE_V7_KEYS, 'emptyFlow'] as const;
+
+/** Kľúče `WorldState` v9 v poradí `serialize()` (F6d, ADR-035): v8 + `hinterland` (T6D-03 mení len význam `anchorageIndex` a trás lodí). */
+export const WORLD_STATE_V9_KEYS = [...WORLD_STATE_V8_KEYS, 'hinterland'] as const;
 
 type RawState = Record<string, unknown>;
 type Migration = (state: RawState, defs: DefRegistry) => RawState;
@@ -272,6 +294,28 @@ function migrateV7ToV8(state: RawState, defs: DefRegistry): RawState {
   return migrated;
 }
 
+/**
+ * Pozemná strana v8 → v9 (T6D-01, ADR-035): doplní `hinterland` s nulovými počítadlami vnútrozemia. Samostatný krok migrácie — mení výlučne pole `hinterland`
+ * (v `migrated` ho ešte nebolo), takže ho možno skombinovať s inými zmenami tvaru v9 bez konfliktu logiky.
+ */
+function migrateLandsideV8ToV9(migrated: RawState): void {
+  const zero = { admitted: 0, waitTicksTotal: 0, waitTicksMax: 0, turnedAway: 0 };
+  migrated['hinterland'] = { delivery: { ...zero }, collect: { ...zero }, pickupBayStarvationTicks: 0 };
+}
+
+/**
+ * v8 (presne kľúče v8) → v9: pôvodné polia, verzia a doplnené `hinterland` (pozemná strana, T6D-01). Lode ostávajú ako sú — rejdu
+ * (T6D-03) normalizuje parser pri `legacyAnchorage` (viď hlavička súboru).
+ */
+function migrateV8ToV9(state: RawState): RawState {
+  checkKeys(state, WORLD_STATE_V8_KEYS, '');
+  const migrated: RawState = {};
+  for (const key of WORLD_STATE_V8_KEYS) migrated[key] = state[key];
+  migrated['version'] = WORLD_STATE_V9;
+  migrateLandsideV8ToV9(migrated);
+  return migrated;
+}
+
 /** Verzia `n` → migrácia na `n + 1` (migrácia zapíše cieľovú verziu kroku, napr. `WORLD_STATE_V2`). */
 const WORLD_STATE_MIGRATIONS: ReadonlyMap<number, Migration> = new Map([
   [1, migrateV1ToV2],
@@ -281,6 +325,7 @@ const WORLD_STATE_MIGRATIONS: ReadonlyMap<number, Migration> = new Map([
   [5, migrateV5ToV6],
   [6, migrateV6ToV7],
   [7, migrateV7ToV8],
+  [8, migrateV8ToV9],
 ]);
 
 /**
@@ -291,6 +336,17 @@ export function savesShipRoutes(raw: unknown): boolean {
   if (!isPlainObject(raw)) return true;
   const version = raw['version'];
   return typeof version !== 'number' || version >= WORLD_STATE_V6;
+}
+
+/**
+ * Zapisoval save lode na rejdu podľa pravidiel od v9 (priamy vstup na rejdu, jednotný kurz; T6D-03)? Save spred v9 (aj
+ * neplatný vstup — ten odmietne migrácia) držal anchorage podľa starého rozloženia rejdy: parser lode s anchorage
+ * normalizuje na `arriving` (`ParseWorldStateOptions.legacyAnchorage`, `parseShips`).
+ */
+export function savesDirectAnchorage(raw: unknown): boolean {
+  if (!isPlainObject(raw)) return true;
+  const version = raw['version'];
+  return typeof version !== 'number' || version >= WORLD_STATE_V9;
 }
 
 /** Najstaršia verzia, ktorú vie `migrateWorldState` načítať. */

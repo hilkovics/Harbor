@@ -5,7 +5,8 @@
 //     zablokovala cestu von dokovanej lodi a anchorage pred ústím kanála dostala, lebo dokovaná loď „cestu von nemala";
 //     loď, ktorá cestu von nemá pre dočasnú prekážku, sa pri pridelení anchorage nepreskočí;
 //  3. obnova overí trasy podľa stavu a rezervácie lodí na mape (fail-fast namiesto porušenia kroku 12 o pár tickov);
-//  + strážca FIFO: `heldBack` (neskoršie lode čakajú) vyvolá len pohybujúca sa loď, nie stojaca (dnešné defy).
+//  + strážca FIFO: `heldBack` (neskoršie lode čakajú) vyvolá len pohybujúca sa loď, nie stojaca (dnešné defy);
+//  + T6D-03: save spred v9 s loďou na anchorage (stará rejda) sa načíta — loď sa normalizuje na `arriving`.
 import { describe, expect, it } from 'vitest';
 import { SpawnShipDebugCommand } from '@sim/commands';
 import type { EntityId } from '@sim/core';
@@ -230,15 +231,42 @@ describe('3. obnova overí trasy a rezervácie lodí (fail-fast, ADR-029 addendu
     expect(restored.ships.has(fleet.d.id)).toBe(false);
   });
 
-  it('v5: undocking a loď na anchorage na sea lane (rezervácie sa prekrývajú) → WorldStateError na trase neskoršej lode pri deserialize', () => {
+  it('v5: loď na anchorage na sea lane (stará rejda) sa normalizuje na arriving (T6D-03) — rezervácie sa neprekrývajú, undocking odpláva', () => {
     const fleet = legacyFleet();
     const patch = legacyPatch(fleet);
     patch.set(fleet.d.id, { state: 'undocking', x: 17, y: 15, heading: 180, berthIds: [], anchorageIndex: null, waypointIndex: 0 });
     const onLane = cellCenter(CHANNEL_MAP.anchorage[ANCHORAGE_ON_LANE]);
     patch.set(fleet.l.id, { state: 'waiting_anchorage', x: onLane.x, y: onLane.y, heading: 180, berthIds: [], anchorageIndex: ANCHORAGE_ON_LANE, waypointIndex: 1 });
+    const restored = World.deserialize(DEFS, CHANNEL_MAP_W1, toV5(fleet.world, patch) as WorldState);
+    // Index anchorage v starom save ukazuje na inú bunku než dnes: loď sa presunie pred vstup a anchorage dostane znova.
+    expect(restored.ships.get(fleet.l.id)).toMatchObject({ state: 'arriving', x: LANE_START.x, y: LANE_START.y, anchorageIndex: null, route: [] });
+    tickChecked(restored, 1500);
+    expect(restored.ships.has(fleet.d.id)).toBe(false);
+  });
+
+  it('natívny v9: undocking a loď na anchorage na sea lane (rezervácie sa prekrývajú) → WorldStateError na trase neskoršej lode pri deserialize', () => {
+    const fleet = legacyFleet();
+    const state = JSON.parse(JSON.stringify(fleet.world.serialize())) as { ships: Record<string, unknown>[] };
+    const entryOf = (id: number): Record<string, unknown> => {
+      const found = state.ships.find((entry) => entry['id'] === id);
+      if (found === undefined) throw new Error(`loď #${String(id)} chýba v save`);
+      return found;
+    };
+    Object.assign(entryOf(fleet.d.id), { state: 'undocking', x: 17, y: 15, heading: 180, berthIds: [], anchorageIndex: null, waypointIndex: 0, route: [[LANE_END.x, LANE_END.y]] });
+    const onLane = cellCenter(CHANNEL_MAP.anchorage[ANCHORAGE_ON_LANE]);
+    Object.assign(entryOf(fleet.l.id), {
+      state: 'waiting_anchorage',
+      x: onLane.x,
+      y: onLane.y,
+      heading: CHANNEL_MAP.anchorageHeading,
+      berthIds: [],
+      anchorageIndex: ANCHORAGE_ON_LANE,
+      waypointIndex: 1,
+      route: [[onLane.x, onLane.y]],
+    });
     let error: unknown;
     try {
-      World.deserialize(DEFS, CHANNEL_MAP_W1, toV5(fleet.world, patch) as WorldState);
+      World.deserialize(DEFS, CHANNEL_MAP_W1, state as unknown as WorldState);
     } catch (caught) {
       error = caught;
     }

@@ -188,8 +188,6 @@ export class TransportJob {
   readonly id: EntityId;
   /** Jednotky jobu (zmrazené); dispatcher vytvára joby s práve jednou jednotkou (inbound: cieľ je jedinečný slot). */
   readonly unitIds: readonly EntityId[];
-  /** Cieľ s rezervovaným miestom (slot skladu, dock rampy, slot apronu); pri `in_crane` hák žeriava bez rezervácie. */
-  readonly to: CargoLocation;
   /**
    * Modul zdroja, ku ktorému vozidlo jazdí (sklad, berth, rampa; pri háku žeriava jeho kotvisko — ADR-033). Pri
    * `in_crane` sa líši od držiteľa `from` (žeriav).
@@ -204,6 +202,7 @@ export class TransportJob {
   private current: JobState;
   private vehicle: EntityId | null;
   private source: CargoLocation;
+  private target: CargoLocation;
 
   /**
    * Chyby (`JobError('invalid_input')`): id nie je celé ≥ 1, jednotky nie sú neprázdny zoznam jedinečných id, `from`/`to`
@@ -245,13 +244,21 @@ export class TransportJob {
     this.id = init.id;
     this.unitIds = Object.freeze([...unitIds]);
     this.source = from;
-    this.to = to;
+    this.target = to;
     this.fromModuleId = fromModuleId;
     this.toModuleId = toModuleId;
     this.priority = route.priority;
     this.createdTick = init.createdTick;
     this.current = state;
     this.vehicle = vehicleId;
+  }
+
+  /**
+   * Cieľ s rezervovaným miestom (slot skladu, dock rampy, slot apronu); pri `in_crane` hák žeriava bez rezervácie. Mení ho len `rebindTarget`
+   * (nakládka pod hákom, k háku nevedie cesta — vozidlo jednotku odloží na apron).
+   */
+  get to(): CargoLocation {
+    return this.target;
   }
 
   /** Poloha jednotiek pri vzniku jobu (zdroj); mení ju len `rebindSource` (žeriav pod hákom odloží jednotku na buffer). */
@@ -273,6 +280,22 @@ export class TransportJob {
       throw new JobError('invalid_input', `${this.label}: nový zdroj ${target.kind} nie je apron kotviska #${String(this.fromModuleId)} s povolenou trasou do ${this.to.kind}`);
     }
     this.source = target;
+  }
+
+  /**
+   * Presmeruje cieľ jobu z háku žeriava (`in_crane`, nakládka pod hákom) na slot apronu toho istého kotviska (`toModuleId`) — vozidlo s jednotkou
+   * k háku nedôjde (`no_path`), preto ju odloží na apron a žeriav ju zdvihne odtiaľ (ADR-033 dodatok T6D-05b). Povolené len pre job `moving`
+   * (jednotka je vo vozidle) s cieľom `in_crane`; slot musí byť už rezervovaný volajúcim. Inak `JobError`, job sa nezmení.
+   */
+  rebindTarget(to: CargoLocation): void {
+    const target = checkLocation(to, this.label, 'to');
+    if (this.target.kind !== 'in_crane' || this.current !== 'moving') {
+      throw new JobError('invalid_transition', `${this.label}: cieľ sa presmeruje len pri jobe moving s cieľom in_crane (cieľ ${this.target.kind}, stav ${this.current})`);
+    }
+    if (target.kind !== 'on_apron' || holderIdOf(target) !== this.toModuleId || !isJobRoute(this.source.kind, target.kind)) {
+      throw new JobError('invalid_input', `${this.label}: nový cieľ ${target.kind} nie je apron kotviska #${String(this.toModuleId)} s povolenou trasou z ${this.source.kind}`);
+    }
+    this.target = target;
   }
 
   /** Aktuálny stav (mení ho len `assign` / `transition`). */

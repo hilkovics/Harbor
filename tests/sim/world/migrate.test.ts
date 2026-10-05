@@ -5,8 +5,9 @@
 // verzia a zlý tvar staršej verzie → WorldStateError. v4 → v5 (T05-02, ADR-025): pribudne prázdna economy (hotovosť
 // ostáva v cashCents). v5 → v6 (T5B-02, ADR-029): lode dostanú `route: null`, obnova odvodí trasu podľa pravidiel pred
 // ADR-029. v6 → v7 (T6A-01, ADR-032): kontrakty, náklad, lode, kamióny a žeriavy dostanú polia exportu s hodnotami
-// importu (detail v `save-v6-migration.test.ts`). World.deserialize prijme v1 až v8, serialize() vždy vráti v8 (v7 → v8: linka, stav kvality a plán prázdnych, T6C-01, ADR-034; detail v `save-v7-migration.test.ts`).
-// Pomocníci toV1 … toV4 berú kľúče zo stavu v8 (vnorené tvary v7/v8 migrácie prevezmú bez zmeny hodnôt).
+// importu (detail v `save-v6-migration.test.ts`). World.deserialize prijme v1 až v9, serialize() vždy vráti v9 (v7 → v8: linka, stav kvality a plán prázdnych, T6C-01, ADR-034; detail v `save-v7-migration.test.ts`;
+// v8 → v9: počítadlá vnútrozemia `hinterland`, T6D-01, ADR-035; detail v `save-v8-migration.test.ts`, a lode s rejdou normalizuje parser, T6D-03; detail v `anchorage-roadstead.test.ts`).
+// Pomocníci toV1 … toV4 berú kľúče zo stavu v9 (vnorené tvary v7/v8 migrácie prevezmú bez zmeny hodnôt).
 import { describe, expect, it } from 'vitest';
 import {
   OLDEST_WORLD_STATE_VERSION,
@@ -26,6 +27,8 @@ import {
   WORLD_STATE_V7_KEYS,
   WORLD_STATE_V8,
   WORLD_STATE_V8_KEYS,
+  WORLD_STATE_V9,
+  WORLD_STATE_V9_KEYS,
   WORLD_STATE_VERSION,
   World,
   WorldStateError,
@@ -40,6 +43,9 @@ import { commandFromJSON } from '@sim/commands';
 import type { VehicleDepot } from '@sim/modules';
 import { outboundWorld, rampOf } from '../logistics/outbound-fixtures';
 import { BARE_MAP, DEFS, MAP, MAP_GRID, SEED, adjustCash, consumeRng, findCell, hashState, runTicks, setRoad } from './world-fixtures';
+
+/** Nulové počítadlá čakania jednej misie vnútrozemia (výsledok migrácie v8 → v9 a nová hra). */
+const ZERO_WAIT = { admitted: 0, waitTicksTotal: 0, waitTicksMax: 0, turnedAway: 0 };
 
 const PUBLIC_LAND = findCell(MAP_GRID, (cell) => cell.terrain === 'land' && cell.parcelId === null && cell.road === 'none');
 
@@ -138,9 +144,10 @@ function withoutContractDraws(state: WorldState): WorldState {
 }
 
 describe('migrateWorldState', () => {
-  it('verzie: najstaršia 1, aktuálna 8; kľúče v8 = v7 + emptyFlow = WORLD_STATE_KEYS, v7 = v6 + nextVoyageId, v6 = v5 = v4 + economy + kontrakty, v4 = v3 + trucks, v3 = v2 + vehicles, jobs', () => {
+  it('verzie: najstaršia 1, aktuálna 9; kľúče v9 = v8 + hinterland = WORLD_STATE_KEYS, v8 = v7 + emptyFlow, v7 = v6 + nextVoyageId, v6 = v5 = v4 + economy + kontrakty, v4 = v3 + trucks, v3 = v2 + vehicles, jobs', () => {
     expect(OLDEST_WORLD_STATE_VERSION).toBe(1);
-    expect(WORLD_STATE_VERSION).toBe(8);
+    expect(WORLD_STATE_VERSION).toBe(9);
+    expect([...WORLD_STATE_V9_KEYS]).toEqual([...WORLD_STATE_V8_KEYS, 'hinterland']);
     expect([...WORLD_STATE_V8_KEYS]).toEqual([...WORLD_STATE_V7_KEYS, 'emptyFlow']);
     expect([...WORLD_STATE_V7_KEYS]).toEqual([...WORLD_STATE_V6_KEYS, 'nextVoyageId']);
     expect([...WORLD_STATE_V6_KEYS]).toEqual([...WORLD_STATE_V5_KEYS]);
@@ -148,10 +155,10 @@ describe('migrateWorldState', () => {
     expect(WORLD_STATE_V4_KEYS).toEqual([...WORLD_STATE_V3_KEYS, 'trucks']);
     expect(WORLD_STATE_V3_KEYS).toEqual([...WORLD_STATE_V2_KEYS, 'vehicles', 'jobs']);
     expect(WORLD_STATE_V2_KEYS).toEqual([...WORLD_STATE_V1_KEYS, 'traffic', 'modules', 'cargo', 'ships']);
-    expect([...WORLD_STATE_KEYS]).toEqual([...WORLD_STATE_V8_KEYS]);
+    expect([...WORLD_STATE_KEYS]).toEqual([...WORLD_STATE_V9_KEYS]);
   });
 
-  it('kroky zapisujú pomenované cieľové verzie: WORLD_STATE_V2 = najstaršia + 1, V3 = V2 + 1, … V7 = V6 + 1, V8 = V7 + 1 = aktuálna', () => {
+  it('kroky zapisujú pomenované cieľové verzie: WORLD_STATE_V2 = najstaršia + 1, V3 = V2 + 1, … V7 = V6 + 1, V8 = V7 + 1, V9 = V8 + 1 = aktuálna', () => {
     expect(WORLD_STATE_V2).toBe(OLDEST_WORLD_STATE_VERSION + 1);
     expect(WORLD_STATE_V3).toBe(WORLD_STATE_V2 + 1);
     expect(WORLD_STATE_V4).toBe(WORLD_STATE_V3 + 1);
@@ -159,9 +166,10 @@ describe('migrateWorldState', () => {
     expect(WORLD_STATE_V6).toBe(WORLD_STATE_V5 + 1);
     expect(WORLD_STATE_V7).toBe(WORLD_STATE_V6 + 1);
     expect(WORLD_STATE_V8).toBe(WORLD_STATE_V7 + 1);
-    expect(WORLD_STATE_VERSION).toBe(WORLD_STATE_V8);
+    expect(WORLD_STATE_V9).toBe(WORLD_STATE_V8 + 1);
+    expect(WORLD_STATE_VERSION).toBe(WORLD_STATE_V9);
     const migrated = migrateWorldState(toV1(f1World().serialize()), DEFS) as Record<string, unknown>;
-    expect(migrated.version).toBe(WORLD_STATE_V8);
+    expect(migrated.version).toBe(WORLD_STATE_V9);
   });
 
   it('aktuálna verzia prejde bez zmeny (tá istá referencia)', () => {
@@ -169,7 +177,7 @@ describe('migrateWorldState', () => {
     expect(migrateWorldState(state, DEFS)).toBe(state);
   });
 
-  it('v1 → v2 → … → v8: nový objekt, kľúče v8 v poradí serialize(), v1 hodnoty bez zmeny, prázdne nové polia', () => {
+  it('v1 → v2 → … → v9: nový objekt, kľúče v9 v poradí serialize(), v1 hodnoty bez zmeny, prázdne nové polia', () => {
     const v1 = toV1(f1World().serialize());
     const before = viaJson(v1);
     const migrated = migrateWorldState(v1, DEFS) as Record<string, unknown>;
@@ -178,7 +186,8 @@ describe('migrateWorldState', () => {
     for (const key of WORLD_STATE_V1_KEYS) {
       if (key !== 'version') expect(migrated[key]).toEqual(v1[key]);
     }
-    expect(migrated.version).toBe(8);
+    expect(migrated.version).toBe(9);
+    expect(migrated.hinterland).toEqual({ delivery: ZERO_WAIT, collect: ZERO_WAIT, pickupBayStarvationTicks: 0 });
     expect(migrated.emptyFlow).toEqual({ returnPlan: [], pickupPlan: [], errands: [] });
     expect(migrated.traffic).toEqual([]);
     expect(migrated.modules).toEqual([]);
@@ -192,7 +201,7 @@ describe('migrateWorldState', () => {
     expect(v1).toEqual(before); // vstup sa nezmenil
   });
 
-  it('v2 → v3 → … → v8: nový objekt, kľúče v8, v2 hodnoty bez zmeny (náklad, lode…) okrem runtime modulov, prázdne vehicles, jobs a trucks', () => {
+  it('v2 → v3 → … → v9: nový objekt, kľúče v9, v2 hodnoty bez zmeny (náklad, lode…) okrem runtime modulov, prázdne vehicles, jobs a trucks', () => {
     const world = World.create(DEFS, MAP, SEED);
     runTicks(world, 50);
     const v3 = world.serialize();
@@ -206,7 +215,7 @@ describe('migrateWorldState', () => {
     }
     expect((migrated.modules as unknown[]).length).toBe(MAP.starter.modules.length);
     expect(migrated.modules).toEqual(v3.modules); // kotvisko dostalo lastNoStorageHour: null, žeriav bez zmeny
-    expect(migrated.version).toBe(WORLD_STATE_V8);
+    expect(migrated.version).toBe(WORLD_STATE_VERSION);
     expect(migrated.vehicles).toEqual([]);
     expect(migrated.jobs).toEqual([]);
     expect(migrated.trucks).toEqual([]);
@@ -214,7 +223,7 @@ describe('migrateWorldState', () => {
     expect(v2).toEqual(before);
   });
 
-  it('v3 → v4 → … → v8 (ADR-024): nový objekt, kľúče v8, v3 hodnoty bez zmeny okrem runtime rampy (lastNoWaitingBayHour null), prázdne trucks', () => {
+  it('v3 → v4 → … → v9 (ADR-024): nový objekt, kľúče v9, v3 hodnoty bez zmeny okrem runtime rampy (lastNoWaitingBayHour null), prázdne trucks', () => {
     const v3 = toV3(World.create(DEFS, MAP, SEED).serialize()) as unknown as { modules: Record<string, unknown>[] } & Record<string, unknown>;
     v3.modules.push(
       { id: 90, defId: 'loading_ramp_container', x: 30, y: 20, rotation: 0, purchaseCostCents: 0, runtime: {} },
@@ -225,7 +234,7 @@ describe('migrateWorldState', () => {
     const migrated = migrateWorldState(v3, DEFS) as { modules: { defId: string; runtime: unknown }[] } & Record<string, unknown>;
     expect(migrated).not.toBe(v3);
     expect(Object.keys(migrated)).toEqual([...WORLD_STATE_KEYS]);
-    expect(migrated.version).toBe(WORLD_STATE_V8);
+    expect(migrated.version).toBe(WORLD_STATE_VERSION);
     expect(migrated.trucks).toEqual([]);
     for (const key of WORLD_STATE_V3_KEYS) {
       if (key !== 'version' && key !== 'modules') expect(migrated[key]).toEqual(v3[key]);
@@ -238,7 +247,7 @@ describe('migrateWorldState', () => {
     expect(v3).toEqual(before); // vstup (ani vnorené runtime) sa nezmenil
   });
 
-  it('v4 → v5 → … → v8 (ADR-025): nový objekt, kľúče v8, v4 hodnoty bez zmeny (aj cashCents), prázdna economy', () => {
+  it('v4 → v5 → … → v9 (ADR-025): nový objekt, kľúče v9, v4 hodnoty bez zmeny (aj cashCents), prázdna economy', () => {
     const world = World.create(DEFS, MAP, SEED);
     world.enqueue(adjustCash(-1_234));
     runTicks(world, 20);
@@ -247,7 +256,7 @@ describe('migrateWorldState', () => {
     const migrated = migrateWorldState(v4, DEFS) as Record<string, unknown>;
     expect(migrated).not.toBe(v4);
     expect(Object.keys(migrated)).toEqual([...WORLD_STATE_KEYS]);
-    expect(migrated.version).toBe(WORLD_STATE_V8);
+    expect(migrated.version).toBe(WORLD_STATE_VERSION);
     for (const key of WORLD_STATE_V4_KEYS) {
       if (key !== 'version') expect(migrated[key]).toEqual((v4 as unknown as Record<string, unknown>)[key]);
     }
@@ -296,7 +305,7 @@ describe('migrateWorldState', () => {
   const INVALID: readonly [string, string, Record<string, unknown>][] = [
     ['chýba version', '/version', {}],
     ['verzia 0', '/version', { version: 0 }],
-    ['verzia 9 (budúca)', '/version', { version: 9 }],
+    ['verzia 10 (budúca)', '/version', { version: 10 }],
     ['verzia ako reťazec', '/version', { version: '1' }],
     ['verzia 1.5', '/version', { version: 1.5 }],
   ];
@@ -328,7 +337,7 @@ describe('migrateWorldState', () => {
   });
 });
 
-describe('World.deserialize — v1 save → migrate → v8', () => {
+describe('World.deserialize — v1 save → migrate → v9', () => {
   it('v1 save sa načíta: hodiny, rng, ids, hotovosť, cesty a parcely ako v1; moduly, náklad, lode prázdne', () => {
     const original = f1World();
     const v1 = toV1(original.serialize());
@@ -354,12 +363,12 @@ describe('World.deserialize — v1 save → migrate → v8', () => {
     expect(world.moduleAt(x, y)).toBeUndefined();
   });
 
-  it('serialize() po načítaní v1 vráti v8 s rovnakými v1 poliami a načíta sa znova rovnako', () => {
+  it('serialize() po načítaní v1 vráti v9 s rovnakými v1 poliami a načíta sa znova rovnako', () => {
     const original = f1World();
     const current = original.serialize();
     const fromV1 = World.deserialize(DEFS, MAP, toV1(current));
     const saved = fromV1.serialize();
-    expect(saved.version).toBe(8);
+    expect(saved.version).toBe(9);
     // F1 svet nemá moduly, náklad, vozidlá ani kamióny, takže v7 z migrácie = v7 zo serialize() (traffic je v F1 vždy 0)
     // okrem histórie knihy — v1 ju nepoznal (hotovosť ostáva).
     expect(saved).toEqual(withoutLedgerHistory(current));
@@ -417,7 +426,7 @@ describe('World.deserialize — v2 save (F2 so skladom a depom) → migrate → 
   });
 });
 
-describe('World.deserialize — v3 save (F4 s bránou, stojiskom a rampou pred kamiónmi) → migrate → v8', () => {
+describe('World.deserialize — v3 save (F4 s bránou, stojiskom a rampou pred kamiónmi) → migrate → v9', () => {
   it('v3 save sa načíta ako pôvodný svet a pokračuje rovnako aj po príchode kamiónov a exporte (ADR-024)', () => {
     const { world: original } = outboundWorld({ defs: DEFS });
     const ramp = rampOf(original);

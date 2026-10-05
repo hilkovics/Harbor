@@ -23,7 +23,7 @@
  * nákup / predaj vozidla cez `onBuyVehicle(depotId)` / `onSellVehicle(vehicleId)` → `dispatch(BuyVehicle | SellVehicle)`.
  * Šírku dáva `--side-panel-w`, výšku kontajner (panel vyplní 100 % výšky rodiča, telo sa posúva).
  */
-import { EM_DASH, formatCount, formatDuration, formatFootprint, formatFraction, formatMoney, formatPercent, type TimeScale } from './format';
+import { EM_DASH, formatCount, formatDuration, formatFootprint, formatFraction, formatMoney, formatPercent, formatWaitDuration, type TimeScale } from './format';
 import { Icon, type IconName } from './icon';
 import { lineStyle } from './line-color';
 import './module-inspector.css';
@@ -52,6 +52,22 @@ export interface GateData {
   readonly queueLength: number;
   readonly throughputPerHour: number;
   readonly processTicks: number;
+  /** F6d (ADR-035): kamióny čakajúce vo vnútrozemí pred vjazdom do prístavu; bez neho sekcia chýba. */
+  readonly hinterland?: HinterlandData;
+}
+
+/**
+ * F6d (ADR-035): kamióny čakajúce vo vnútrozemí (`hinterlandQueue`): `pickup` = dopyt po kamiónoch na odvoz importu (náklad na dockoch),
+ * `delivery` = export a návrat prázdneho, `collect` = výdaj prázdneho exportérovi; `total` = súčet. `oldestWaitTicks` = najdlhšie čakanie
+ * kamiónov `delivery` a `collect` (ticky od `dueTick`), `scale` = mierka herného času na jeho formátovanie.
+ */
+export interface HinterlandData {
+  readonly pickup: number;
+  readonly delivery: number;
+  readonly collect: number;
+  readonly total: number;
+  readonly oldestWaitTicks: number;
+  readonly scale: TimeScale;
 }
 
 /** F4: čakacia plocha. `occupied` = kamión stojí na bay, `reserved` = bay je rezervovaný kamiónu na ceste. */
@@ -638,6 +654,51 @@ export function gateStats(gate: GateData): InspectorStat[] {
   ];
 }
 
+/** Riadok s označením a hodnotou (sekcia vnútrozemia brány); `title` = vysvetlenie pre tooltip. */
+export interface InspectorRow {
+  readonly key: string;
+  readonly label: string;
+  readonly value: string;
+  readonly title?: string;
+}
+
+/** Text rozpisu čakajúcich kamiónov: `odvoz 2 · dovoz 3 · výdaj prázdnych 1` (len nenulové misie, v poradí odvoz → dovoz → výdaj). */
+export function hinterlandSplitText(hinterland: Pick<HinterlandData, 'pickup' | 'delivery' | 'collect'>): string {
+  const parts: string[] = [];
+  if (wholeCount(hinterland.pickup) > 0) parts.push(`odvoz ${formatCount(wholeCount(hinterland.pickup))}`);
+  if (wholeCount(hinterland.delivery) > 0) parts.push(`dovoz ${formatCount(wholeCount(hinterland.delivery))}`);
+  if (wholeCount(hinterland.collect) > 0) parts.push(`výdaj prázdnych ${formatCount(wholeCount(hinterland.collect))}`);
+  return parts.join(' \u00B7 ');
+}
+
+/**
+ * Riadky vnútrozemia brány (ADR-035): vždy `Vo vnútrozemí čaká` s počtom; pri nenulovom počte pribudne rozpis podľa misie a — keď niekto z dovozu
+ * alebo výdaja čaká — najdlhšie čakanie v hodinách a minútach herného času.
+ */
+export function hinterlandRows(hinterland: HinterlandData): InspectorRow[] {
+  const total = wholeCount(hinterland.total);
+  const rows: InspectorRow[] = [
+    {
+      key: 'total',
+      label: 'Vo vnútrozemí čaká',
+      value: formatCount(total),
+      title: 'Kamióny, ktoré ešte nevošli do prístavu: čakajú na voľné stojisko, miesto na docku alebo v sklade.',
+    },
+  ];
+  if (total > 0) {
+    rows.push({
+      key: 'split',
+      label: 'Podľa misie',
+      value: hinterlandSplitText(hinterland),
+      title: 'Odvoz = kamióny pre import čakajúci na dockoch; dovoz = export a návrat prázdnych kontajnerov; výdaj = prázdny kontajner pre exportéra.',
+    });
+  }
+  if (wholeCount(hinterland.oldestWaitTicks) > 0) {
+    rows.push({ key: 'oldest', label: 'Najdlhšie čaká', value: formatWaitDuration(hinterland.oldestWaitTicks, hinterland.scale) });
+  }
+  return rows;
+}
+
 /** Stav jedného stojiska (bay) čakacej plochy. */
 export type BayState = 'occupied' | 'reserved' | 'free';
 
@@ -1169,6 +1230,20 @@ function renderDocks(ramp: RampData) {
   );
 }
 
+/** Sekcia vnútrozemia brány (ADR-035): riadky `hinterlandRows` v štýle ostatných riadkov s údajmi. */
+function renderHinterland(hinterland: HinterlandData) {
+  return (
+    <div className="module-inspector__rows" data-section="hinterland">
+      {hinterlandRows(hinterland).map((row) => (
+        <div key={row.key} className="module-inspector__row" title={row.title}>
+          <span className="module-inspector__row-label">{row.label}</span>
+          <span data-field={`hinterland-${row.key}`}>{row.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ModuleInspector({ data, onRemove, onClose, onBuyVehicle, onSellVehicle }: ModuleInspectorProps) {
   const { apron, crane, dockedShip, storage, emptyDepot, depot, gate, waitingArea, ramp } = data;
   const blocked = crane?.state === 'blocked';
@@ -1239,6 +1314,7 @@ export function ModuleInspector({ data, onRemove, onClose, onBuyVehicle, onSellV
         {emptyDepot !== undefined && renderRepairBays(emptyDepot)}
         {waitingArea !== undefined && renderBays(waitingArea)}
         {ramp !== undefined && renderDocks(ramp)}
+        {gate?.hinterland !== undefined && renderHinterland(gate.hinterland)}
         {dockedShip !== undefined && (
           <div className="module-inspector__section">
             <span className="module-inspector__section-title">Zakotvená loď</span>

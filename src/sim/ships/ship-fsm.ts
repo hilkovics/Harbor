@@ -4,9 +4,10 @@
  * mení výlučne `Ship.transition(to)`, ktorý prechod overí v tabuľke.
  *
  * Životný cyklus: `arriving` (loď čaká pred vstupom na `seaLane[0]`, kým nemá cieľ s voľnou trasou — ADR-029) →
- * `inbound` (plavba po `seaLane` s rezervovaným cieľom: kotviská alebo anchorage) → na konci dráhy buď `berthing`
- * (kotviská pridelené), alebo `waiting_anchorage` (pláva na svoju anchorage a čaká) → `berthing` (cez koniec dráhy
- * a bod priblíženia pred kotviskom k polohe pri kotvisku) → `docked` (vykládka importu a nakládka exportu) →
+ * buď `inbound` (loď s voľným kotviskom: plavba po `seaLane` s rezervovanými kotviskami) → na konci dráhy `berthing`,
+ * alebo rovno `waiting_anchorage` (loď bez voľného kotviska: anchorage pridelená pri vstupe, loď k nej pláva priamo
+ * zo vstupu na mapu a na rejde čaká — ADR-029 dodatok T6D-03) → `berthing` (z anchorage cez bod priblíženia pred
+ * kotviskom k polohe pri kotvisku) → `docked` (vykládka importu a nakládka exportu) →
  * `lashing` (F6a, ADR-032 bod 11: po poslednej naloženej jednotke lashing a papiere `lashingTicksPerUnit × naložené +
  * paperworkTicks`, loď drží kotvisko; loď bez naloženého exportu ho preskočí) → `undocking` (loď sa odsunie bokom
  * pred kotvisko a pláva na koniec `seaLane`; kotviská uvoľní až tam) → `outbound` (po `seaLane` k jej začiatku) →
@@ -19,8 +20,8 @@ export type ShipState = (typeof SHIP_STATES)[number];
 
 /** Povolené prechody `from → [to…]` (karta T02-05, ADR-029, ADR-032 `lashing`). `despawned` je konečný stav. */
 export const SHIP_TRANSITIONS: ReadonlyMap<ShipState, readonly ShipState[]> = new Map<ShipState, readonly ShipState[]>([
-  ['arriving', Object.freeze(['inbound'] as const)],
-  ['inbound', Object.freeze(['waiting_anchorage', 'berthing'] as const)],
+  ['arriving', Object.freeze(['inbound', 'waiting_anchorage'] as const)],
+  ['inbound', Object.freeze(['berthing'] as const)],
   ['waiting_anchorage', Object.freeze(['berthing'] as const)],
   ['berthing', Object.freeze(['docked'] as const)],
   ['docked', Object.freeze(['undocking', 'lashing'] as const)],
@@ -41,15 +42,16 @@ export type ShipHolding = 'always' | 'optional' | 'never';
 /** Čo platí pre loď v danom stave. */
 export interface ShipStateTraits {
   /**
-   * Kotviská (`berthIds`, každý berth má `dockedShipId` = loď): `berthing`/`docked` vždy, `inbound` smie (kotviská
-   * rezervované pri vstupe, ADR-029), `undocking` smie (drží ich, kým nedopláva na koniec dráhy — trasa odchodu z nich
-   * odvodí bod priblíženia; save spred ADR-029 ich v `undocking` nemá), ostatné nikdy.
+   * Kotviská (`berthIds`, každý berth má `dockedShipId` = loď): `inbound`/`berthing`/`docked` vždy (kotviská
+   * rezervované pri vstupe, ADR-029; T6D-03: loď bez kotviska na sea lane nepláva — ide na rejdu), `undocking` smie
+   * (drží ich, kým nedopláva na koniec dráhy — trasa odchodu z nich odvodí bod priblíženia; save spred ADR-029 ich
+   * v `undocking` nemá), ostatné nikdy.
    */
   readonly berths: ShipHolding;
   /**
-   * Bunka anchorage (`anchorageIndex`): `inbound` smie (rezervovaná pri vstupe, ADR-029), `waiting_anchorage` vždy
-   * (loď bez anchorage zo save v5 presunie parser pred vstup — `arriving`, ADR-029 addendum), ostatné nikdy.
-   * `inbound` nedrží naraz kotviská aj anchorage a jedno z nich má vždy (cieľ trasy, `shipRouteProblem`).
+   * Bunka anchorage (`anchorageIndex`): `waiting_anchorage` vždy (pridelená pri vstupe, loď k nej pláva priamo zo
+   * vstupu a na nej čaká — ADR-029 dodatok T6D-03; loď bez anchorage zo save v5 presunie parser pred vstup, `arriving`,
+   * ADR-029 addendum), ostatné nikdy. Loď nedrží naraz kotviská aj anchorage.
    */
   readonly anchorage: ShipHolding;
   /**
@@ -81,7 +83,7 @@ const OPEN_WATER = { blocksBerthWater: false, moored: false, onMap: true, lashes
 
 export const SHIP_STATE_TRAITS: { readonly [S in ShipState]: ShipStateTraits } = Object.freeze({
   arriving: traits({ ...OPEN_WATER, berths: 'never', anchorage: 'never', onMap: false }),
-  inbound: traits({ ...OPEN_WATER, berths: 'optional', anchorage: 'optional' }),
+  inbound: traits({ ...OPEN_WATER, berths: 'always', anchorage: 'never' }),
   waiting_anchorage: traits({ ...OPEN_WATER, berths: 'never', anchorage: 'always' }),
   berthing: traits({ ...OPEN_WATER, berths: 'always', anchorage: 'never', blocksBerthWater: true }),
   docked: traits({ ...OPEN_WATER, berths: 'always', anchorage: 'never', blocksBerthWater: true, moored: true }),

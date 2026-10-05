@@ -136,6 +136,26 @@ describe('toastSpecsForEvents: výdaj prázdneho zlyhal', () => {
     expect(specs).toHaveLength(1);
     expect(specs[0]?.text).toMatch(/odišiel prázdny \(×3\)$/);
   });
+
+  it('truckId null (F6d, ADR-035): kamión sa vzdal vo vnútrozemí — „do prístavu nevošiel“, nie „odišiel prázdny“; zmiešaná dávka má všeobecný text', () => {
+    const { world } = createApp();
+    const roundtrip = addRoundtripOffer(world);
+    acceptRoundtrip(world, roundtrip);
+    const exportId = roundtrip.exportContract.id as ContractId;
+    const inland: SimEvent = { type: 'EmptyPickupMissed', lineId: 'blue_anchor', contractId: exportId, truckId: null };
+    const left: SimEvent = { type: 'EmptyPickupMissed', lineId: 'blue_anchor', contractId: exportId, truckId: 7 as EntityId };
+    const prefix = `#${String(exportId)} · Export 24 TEU → Rotterdam · Blue Anchor Lines nemala dostupný prázdny kontajner, `;
+    const [single] = toastSpecsForEvents(world, [inland]);
+    expect(single).toMatchObject({ key: `empty_pickup_missed:${String(exportId)}`, tone: 'warning', title: EMPTY_PICKUP_MISSED_TOAST_TITLE, panel: 'contracts' });
+    expect(single?.text).toBe(`${prefix}kamión do prístavu nevošiel`);
+    expect(single?.text).not.toContain('odišiel prázdny');
+    const batch = toastSpecsForEvents(world, [inland, inland, inland]);
+    expect(batch).toHaveLength(1);
+    expect(batch[0]?.text).toBe(`${prefix}kamión do prístavu nevošiel (×3)`);
+    const mixed = toastSpecsForEvents(world, [left, inland]);
+    expect(mixed).toHaveLength(1);
+    expect(mixed[0]?.text).toBe(`${prefix}kamióny odišli prázdne alebo do prístavu nevošli (×2)`);
+  });
 });
 
 describe('toastSpecsForEvents: tranship', () => {

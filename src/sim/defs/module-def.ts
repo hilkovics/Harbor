@@ -72,6 +72,9 @@ export const MODULE_PARAM_SPECS: { readonly [K in ModuleKind]: SpecTable<ModuleP
   waiting_area: {
     bays: { kind: 'integer', min: 1 },
     internalTicks: { kind: 'integer', min: 0, optional: true },
+    // Kvóta stojísk pre odvoz (F6d, ADR-035): počet stojísk, ktoré smú obsadiť len kamióny odvážajúce náklad; chýba = 0 (bez rezervy).
+    // Vzťah k `bays` nie je chyba defu: účinná kvóta je najviac `bays − 1` (`WaitingArea.pickupReservedBays`), takže schéma a registr akceptujú to isté.
+    pickupReservedBays: { kind: 'integer', min: 0, optional: true },
   },
   ramp: {
     docks: { kind: 'integer', min: 1 },

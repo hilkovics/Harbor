@@ -5,7 +5,7 @@ import type { EntityId } from '@sim/core';
 import { CraneModule } from '@sim/modules';
 import type { World } from '@sim/world';
 import { EntitiesVMBuilder, craneVMs, entitiesVM, moduleVMs, shipVMs, type ShipPositions } from '@app/entities-vm';
-import { createLegacyCapacityWorld, createWorld } from './app-fixtures';
+import { DEPOT_ID, buildFullChain, buildLogistics, buyVehicles, createApp, createLegacyCapacityWorld, createWorld, frameUntil } from './app-fixtures';
 
 const ROOT_BERTH_ID = 1;
 const ROOT_CRANE_ID = 2;
@@ -322,5 +322,37 @@ describe('EntitiesVMBuilder (cache modulov podľa revision)', () => {
     tickUntil(world, () => rootCrane(world).state === 'placing');
     const entities = entitiesVM(world);
     expect(JSON.parse(JSON.stringify(entities))).toEqual(entities);
+  });
+});
+
+describe('entitiesVM: Carrier trail R1 (vozidlá, kamióny)', () => {
+  it('VehicleVM obsahuje lengthCells z defu, offRoad, blocked, jammed polia', () => {
+    const app = createApp();
+    buildLogistics(app);
+    buyVehicles(app, 1);
+
+    const vehicles = entitiesVM(app.world).vehicles;
+    expect(vehicles).toHaveLength(1);
+    const vm = vehicles[0];
+    expect(vm.state).toBe('parked');
+    expect(vm.lengthCells).toBe(2);
+    expect(vm.offRoad).toBe(true); // zaparkované v depe je mimo cesty
+    expect(vm.blocked).toBe(false);
+    expect(vm.jammed).toBe(false);
+    expect(DEPOT_ID).toBeGreaterThan(0);
+  });
+
+  it('TruckVM má lengthCells, offRoad, blocked, jammed polia', () => {
+    const app = createApp();
+    buildFullChain(app, { units: 4 });
+    frameUntil(app, () => app.world.trucks.size > 0, 5000);
+
+    const trucks = entitiesVM(app.world).trucks;
+    expect(trucks.length).toBeGreaterThan(0);
+    const truck = trucks[0];
+    expect(truck.lengthCells).toBe(3);
+    expect(typeof truck.offRoad).toBe('boolean');
+    expect(typeof truck.blocked).toBe('boolean');
+    expect(typeof truck.jammed).toBe('boolean');
   });
 });

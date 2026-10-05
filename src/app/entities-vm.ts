@@ -56,10 +56,11 @@ import { dockHeading, findDockCenter, findStallCenter, type SlotHost } from '@re
 import type { CraneVM, EntitiesVM, ModuleVM, ShipVM, TruckVM, VehicleVM, ViewRotation } from '@render/view-models';
 import type { CargoLocation, CargoUnit } from '@sim/cargo';
 import type { EntityId } from '@sim/core';
-import { BerthModule, CraneModule, EmptyDepot, LoadingRamp, StorageModule, TruckGate, WaitingArea, type Module } from '@sim/modules';
+import { BerthModule, CraneModule, EmptyDepot, LoadingRamp, StorageModule, TruckGate, VehicleDepot, WaitingArea, type Module } from '@sim/modules';
 import { SHIP_STATE_TRAITS, type Ship } from '@sim/ships';
 import type { Truck } from '@sim/trucks';
 import { hookCellOfCrane } from '@sim/vehicles';
+import { holdsRoad } from '@sim/traffic';
 import type { World } from '@sim/world';
 import { depotVM, emptiesPerDock, emptyLook, holderCarriesEmpty, isEmptyUnit, shipDeckSplit, ShipSplitCache, truckCarriesEmpty, type DeckSplit } from './cargo-vm';
 import { lashingTicks, type LashingTotals } from './lashing';
@@ -261,6 +262,17 @@ function moduleVM(world: World, module: Module, storageOps: StorageOps = NO_STOR
   if (module instanceof TruckGate) vm.gate = gateVM(module);
   if (module instanceof WaitingArea) vm.waitingArea = waitingAreaVM(module);
   if (module instanceof LoadingRamp) vm.ramp = rampVM(world, module);
+  if (module instanceof VehicleDepot) {
+    // Depo vozidiel (R1, ADR-037 bod 11): parked vehicles vzostupne podľa id
+    const parkedVehicles: { id: number; defId: string }[] = [];
+    for (const vehicleId of module.vehicleIds) {
+      const vehicle = world.vehicles.get(vehicleId);
+      if (vehicle !== undefined && vehicle.state === 'parked') {
+        parkedVehicles.push({ id: vehicleId, defId: vehicle.defId });
+      }
+    }
+    if (parkedVehicles.length > 0) vm.parkedVehicles = parkedVehicles;
+  }
   if (hasRoadConnector(module)) vm.connected = world.isConnected(module);
   const heldHere = held.get(module.id);
   if (heldHere !== undefined) vm.held = heldVM(module, heldHere);
@@ -355,6 +367,14 @@ export function vehicleVMs(world: World, prev: VehiclePoses = NO_VEHICLE_POSES):
   for (const vehicle of world.vehicles.values()) {
     const before = prev.get(vehicle.id);
     const loaded = world.cargo.countAt('in_vehicle', vehicle.id) > 0;
+    // Carrier trail (R1, ADR-037 bod 7): body = stredy buniek stopy od hlavy k chvostu (bez hlavy), lengthCells z defu
+    const body: { x: number; y: number }[] = [];
+    for (const slot of vehicle.body) {
+      const cell = slot >> 1; // kľúč slotu je bunka × 2 + pruh
+      const cx = cell % world.grid.width;
+      const cy = (cell - cx) / world.grid.width;
+      body.push({ x: cx + 0.5, y: cy + 0.5 });
+    }
     result.push({
       id: vehicle.id,
       defId: vehicle.defId,
@@ -367,6 +387,12 @@ export function vehicleVMs(world: World, prev: VehiclePoses = NO_VEHICLE_POSES):
       loaded,
       ...(loaded && holderCarriesEmpty(world, 'in_vehicle', vehicle.id) ? { carriesEmpty: true } : {}),
       state: vehicle.state,
+      // Carrier trail (R1): body, lengthCells, offRoad, blocked, jammed
+      ...(body.length > 0 ? { body } : {}),
+      lengthCells: vehicle.lengthCells,
+      offRoad: !holdsRoad(vehicle),
+      blocked: vehicle.blockedTicks > 0,
+      jammed: vehicle.blockedTicks >= world.defs.logistics.traffic.stuckTicks,
     });
   }
   return result;
@@ -380,8 +406,11 @@ function slotHostOf(module: Module): SlotHost {
 /** Stavy, v ktorých kamión stojí v doku rampy: `loading` (import odchádza) a `unloading` (exportný kamión vykladá, F6a). */
 const DOCK_STATES: ReadonlySet<string> = new Set<string>(['loading', 'unloading']);
 
-/** Stav kamióna, v ktorom sa kreslí v strede stojiska (`waiting`) alebo docku (`loading` / `unloading`), nie na bunke cesty, kde ho vedie sim. */
-const SLOT_STATES: ReadonlySet<string> = new Set<string>(['waiting', ...DOCK_STATES]);
+/** Stavy brány: `gate_pass` (vjazd) a `gate_pass_out` (výjazd). */
+const GATE_PASS_STATES: ReadonlySet<string> = new Set<string>(['gate_pass', 'gate_pass_out']);
+
+/** Stav kamióna, v ktorom sa kreslí v strede stojiska (`waiting`) alebo docku (`loading` / `unloading`) alebo brány (`gate_pass` / `gate_pass_out`), nie na bunke cesty. */
+const SLOT_STATES: ReadonlySet<string> = new Set<string>(['waiting', ...DOCK_STATES, ...GATE_PASS_STATES]);
 
 /** Zmeniteľná póza (bridge ju prepisuje pred každým tickom bez alokácie). */
 export interface MutableTruckPose {
@@ -395,8 +424,8 @@ export interface MutableTruckPose {
 
 /**
  * Zapíše prezentovanú pózu kamióna do `out`: v `waiting` stred stojiska `stalls[truck.bay]` čakacej plochy, v `loading`
- * a `unloading` stred docku `docks[truck.dock]` rampy (kurz = rotácia modulu); inak (aj keď modul alebo slot v manifeste chýba) poloha
- * a kurz zo simu.
+ * a `unloading` stred docku `docks[truck.dock]` rampy (kurz = rotácia modulu), v `gate_pass` a `gate_pass_out` stred brány;
+ * inak (aj keď modul alebo slot v manifeste chýba) poloha a kurz zo simu.
  */
 export function writeTruckPose(world: World, truck: Truck, out: MutableTruckPose): void {
   let slot: { x: number; y: number } | undefined;
@@ -407,6 +436,12 @@ export function writeTruckPose(world: World, truck: Truck, out: MutableTruckPose
   } else if (DOCK_STATES.has(truck.state)) {
     host = world.modules.get(truck.rampId);
     slot = host instanceof LoadingRamp ? findDockCenter(slotHostOf(host), truck.dock) : undefined;
+  } else if (GATE_PASS_STATES.has(truck.state)) {
+    host = world.modules.get(truck.gateId);
+    if (host instanceof TruckGate) {
+      // Stred brány modulu
+      slot = { x: host.origin.x + host.size.w / 2, y: host.origin.y + host.size.h / 2 };
+    }
   }
   out.x = slot?.x ?? truck.x;
   out.y = slot?.y ?? truck.y;
@@ -441,6 +476,14 @@ export function truckVMs(world: World, prev: TruckPoses = NO_TRUCK_POSES): Truck
     const pose = truckPose(world, truck);
     const last = prev.get(truck.id);
     const before = previousTruckPose(last, pose);
+    // Carrier trail (R1, ADR-037 bod 7): body = stredy buniek stopy od hlavy k chvostu (bez hlavy), lengthCells z defu
+    const body: { x: number; y: number }[] = [];
+    for (const slot of truck.body) {
+      const cell = slot >> 1; // kľúč slotu je bunka × 2 + pruh
+      const cx = cell % world.grid.width;
+      const cy = (cell - cx) / world.grid.width;
+      body.push({ x: cx + 0.5, y: cy + 0.5 });
+    }
     const vm: TruckVM = {
       id: truck.id,
       defId: truck.defId,
@@ -452,6 +495,12 @@ export function truckVMs(world: World, prev: TruckPoses = NO_TRUCK_POSES): Truck
       prevHeading: before.heading,
       loaded: world.cargo.countAt('in_truck', truck.id) > 0,
       state: truck.state,
+      // Carrier trail (R1): body, lengthCells, offRoad, blocked, jammed
+      ...(body.length > 0 ? { body } : {}),
+      lengthCells: truck.lengthCells,
+      offRoad: !holdsRoad(truck),
+      blocked: truck.blockedTicks > 0,
+      jammed: truck.blockedTicks >= world.defs.logistics.traffic.stuckTicks,
     };
     if (truckCarriesEmpty(world, truck.id, last?.carriesEmpty)) vm.carriesEmpty = true;
     if (last !== undefined) vm.prevState = last.state;

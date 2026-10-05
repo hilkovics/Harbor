@@ -309,6 +309,10 @@ describe('runScenario', () => {
       inlandWaitTicksMax: 0,
       pickupBayStarvationTicks: 0,
       directHandoverPct: null,
+      gridlockEvents: 0,
+      trafficWaitTicks: { vehicles: 0, trucks: 0 },
+      maxBlockedTicks: 0,
+      stuckAtEnd: 0,
     });
     expect(Object.keys(report)).toEqual([
       'scenario',
@@ -381,6 +385,10 @@ describe('runScenario', () => {
       'inlandWaitTicksMax',
       'pickupBayStarvationTicks',
       'directHandoverPct',
+      'gridlockEvents',
+      'trafficWaitTicks',
+      'maxBlockedTicks',
+      'stuckAtEnd',
     ]);
   });
 
@@ -1291,4 +1299,41 @@ describe('CLI (tools/simrun.ts)', () => {
     expect(run.stderr).toContain('--ticks');
     expect(run.stdout).toBe('');
   }, 30_000);
+});
+
+describe('simrun: traffic metrics (R1)', () => {
+  it('report obsahuje kľúče gridlockEvents, trafficWaitTicks, maxBlockedTicks, stuckAtEnd', () => {
+    const defs = loadBundledDefs();
+    const mapData = loadBundledMap();
+    const report = runScenario(
+      { id: 'test', seed: 42, mapData, commands: [] },
+      100,
+      defs,
+    );
+    expect(report).toHaveProperty('gridlockEvents');
+    expect(report).toHaveProperty('trafficWaitTicks');
+    expect(report).toHaveProperty('maxBlockedTicks');
+    expect(report).toHaveProperty('stuckAtEnd');
+    expect(typeof report.gridlockEvents).toBe('number');
+    expect(typeof report.trafficWaitTicks).toBe('object');
+    expect(typeof report.trafficWaitTicks.vehicles).toBe('number');
+    expect(typeof report.trafficWaitTicks.trucks).toBe('number');
+    expect(typeof report.maxBlockedTicks).toBe('number');
+    expect(typeof report.stuckAtEnd).toBe('number');
+  });
+
+  it('metriky sú nezáporné čísla', () => {
+    const defs = loadBundledDefs();
+    const mapData = loadBundledMap();
+    const report = runScenario(
+      { id: 'test', seed: 42, mapData, commands: [] },
+      500,
+      defs,
+    );
+    expect(report.gridlockEvents).toBeGreaterThanOrEqual(0);
+    expect(report.trafficWaitTicks.vehicles).toBeGreaterThanOrEqual(0);
+    expect(report.trafficWaitTicks.trucks).toBeGreaterThanOrEqual(0);
+    expect(report.maxBlockedTicks).toBeGreaterThanOrEqual(0);
+    expect(report.stuckAtEnd).toBeGreaterThanOrEqual(0);
+  });
 });

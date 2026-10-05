@@ -1,0 +1,307 @@
+{
+  "id": "traffic_stress",
+  "seed": 6006,
+  "map": "data/maps/stress_f6.json",
+  "commands": [
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "straddle_carrier",
+        "depotId": 7
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "straddle_carrier",
+        "depotId": 7
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "straddle_carrier",
+        "depotId": 7
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "straddle_carrier",
+        "depotId": 7
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "straddle_carrier",
+        "depotId": 7
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "straddle_carrier",
+        "depotId": 7
+      }
+    },
+    {
+      "atTick": 1,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 1
+      }
+    },
+    {
+      "atTick": 1,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 2
+      }
+    },
+    {
+      "atTick": 1,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 3
+      }
+    },
+    {
+      "atTick": 1,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 4
+      }
+    },
+    {
+      "atTick": 1,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 5
+      }
+    },
+    {
+      "atTick": 1,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 6
+      }
+    },
+    {
+      "atTick": 8641,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 7
+      }
+    },
+    {
+      "atTick": 8641,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 8
+      }
+    },
+    {
+      "atTick": 8641,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 9
+      }
+    },
+    {
+      "atTick": 8641,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 10
+      }
+    },
+    {
+      "atTick": 8641,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 11
+      }
+    },
+    {
+      "atTick": 8641,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 12
+      }
+    },
+    {
+      "atTick": 17281,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 16
+      }
+    },
+    {
+      "atTick": 17281,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 17
+      }
+    },
+    {
+      "atTick": 17281,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 18
+      }
+    },
+    {
+      "atTick": 17281,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 19
+      }
+    },
+    {
+      "atTick": 17281,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 20
+      }
+    },
+    {
+      "atTick": 17281,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 21
+      }
+    },
+    {
+      "atTick": 25921,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 22
+      }
+    },
+    {
+      "atTick": 25921,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 23
+      }
+    },
+    {
+      "atTick": 25921,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 24
+      }
+    },
+    {
+      "atTick": 25921,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 25
+      }
+    },
+    {
+      "atTick": 25921,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 26
+      }
+    },
+    {
+      "atTick": 25921,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 27
+      }
+    },
+    {
+      "atTick": 34561,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 31
+      }
+    },
+    {
+      "atTick": 34561,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 32
+      }
+    },
+    {
+      "atTick": 34561,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 33
+      }
+    },
+    {
+      "atTick": 34561,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 34
+      }
+    },
+    {
+      "atTick": 34561,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 35
+      }
+    },
+    {
+      "atTick": 34561,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 36
+      }
+    },
+    {
+      "atTick": 43201,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 37
+      }
+    },
+    {
+      "atTick": 43201,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 38
+      }
+    },
+    {
+      "atTick": 43201,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 39
+      }
+    },
+    {
+      "atTick": 43201,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 40
+      }
+    },
+    {
+      "atTick": 43201,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 41
+      }
+    },
+    {
+      "atTick": 43201,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 42
+      }
+    }
+  ]
+}

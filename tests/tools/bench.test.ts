@@ -22,6 +22,7 @@ const BENCH_SCRIPT = fileURLToPath(new URL('../../tools/bench.ts', import.meta.u
 const SMOKE_SCENARIO = fileURLToPath(new URL('../../data/scenarios/smoke.json', import.meta.url));
 const VERTICAL_SLICE_SCENARIO = fileURLToPath(new URL('../../data/scenarios/vertical_slice.json', import.meta.url));
 const STRESS_SCENARIO = fileURLToPath(new URL('../../data/scenarios/stress_f6.json', import.meta.url));
+const TRAFFIC_STRESS_SCENARIO = fileURLToPath(new URL('../../data/scenarios/traffic_stress.json', import.meta.url));
 
 // Prvá loď stress_f6 sa spawne v ticku 5 795 (kontrakty sa prijímajú v ticku 1, príchod 0,5–2 dňa).
 const TICKS_TO_FIRST_SHIP = 6000;
@@ -343,6 +344,24 @@ describe('stress_f6', () => {
     },
     HEAVY_TIMEOUT_MS,
   );
+});
+
+describe('traffic_stress (R1 bench)', () => {
+  it('scenár je platný a mapa stress_f6 prejde validáciou', () => {
+    const scenario = loadScenario(TRAFFIC_STRESS_SCENARIO);
+    expect(scenario).toMatchObject({ id: 'traffic_stress', map: 'data/maps/stress_f6.json' });
+    expect(scenario.mapData).toMatchObject({ id: 'stress_f6' });
+  });
+
+  it('po 30000 tickoch: stuckAtEnd = 0 (žiadna trvalá zápcha)', () => {
+    const report = runScenario(loadScenario(TRAFFIC_STRESS_SCENARIO), 30000, defs);
+    expect(report).toMatchObject({
+      scenario: 'traffic_stress',
+      lostUnits: 0,
+    });
+    expect(report.stuckAtEnd).toBe(0);
+    expect(report.maxBlockedTicks).toBeGreaterThanOrEqual(0);
+  }, HEAVY_TIMEOUT_MS);
 });
 
 describe('CLI', () => {

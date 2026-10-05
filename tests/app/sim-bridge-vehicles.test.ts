@@ -56,6 +56,11 @@ describe('WorldSnapshot v3: vozidlá', () => {
         prevHeading: source?.heading ?? 0,
         loaded: false,
         state: 'parked',
+        lengthCells: 2,
+        offRoad: true,
+        blocked: false,
+        jammed: false,
+        ...(source !== undefined && source.body.length > 0 ? { body: vehicle.body } : {}),
       });
     }
   });

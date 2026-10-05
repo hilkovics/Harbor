@@ -239,6 +239,14 @@ export interface SimrunReport {
    * Režim `apron` ho má 0 (každá jednotka ide cez apron).
    */
   readonly directHandoverPct: number | null;
+  /** Počet udalostí `TrafficJam` počas behu (nosiče v zápche `blockedTicks ≥ stuckTicks`, R1). */
+  readonly gridlockEvents: number;
+  /** Σ ticky čakania na voľný slot vozidiel a kamiónov (`blockedTicks > 0`, R1). */
+  readonly trafficWaitTicks: { vehicles: number; trucks: number };
+  /** Najdlhšie `blockedTicks` spomedzi všetkých nosičov v behu (R1). */
+  readonly maxBlockedTicks: number;
+  /** Počet nosičov so `blockedTicks ≥ stuckTicks` na konci behu (R1). */
+  readonly stuckAtEnd: number;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -543,6 +551,13 @@ interface EventTally {
   /** Súčet a počet `exportGroupingShare` v ticku `CutoffPassed` (priemer sa počíta na konci). */
   groupingShareSum: number;
   groupingShareCount: number;
+  /** Počet udalostí `TrafficJam` počas behu (R1). */
+  gridlockEvents: number;
+  /** Σ ticky čakania vozidiel a kamiónov (R1). */
+  vehicleWaitTicks: number;
+  trucksWaitTicks: number;
+  /** Najdlhšie `blockedTicks` v behu (R1). */
+  maxBlockedTicks: number;
 }
 
 /** Odovzdanie žeriavom (jedna strana pohybu je `in_crane`): priamo vozidlu, alebo cez apron (buffer / režim `apron`). */
@@ -595,6 +610,7 @@ function tallyEvents(tally: EventTally, events: readonly SimEvent[]): void {
     else if (event.type === 'TranshipMissed') tally.transhipMissed += event.units;
     else if (event.type === 'TranshipRescued') tally.transhipRescued += event.units;
     else if (event.type === 'TranshipSold') tally.transhipSold += event.units;
+    else if (event.type === 'TrafficJam') tally.gridlockEvents += 1;
     else if (event.type === 'MoneyChanged') {
       // Kategórie účtovnej knihy: príjem kontraktu je kladný, údržba a mzdy záporné → kladná veľkosť.
       if (event.reason === 'contract_revenue') tally.revenueCents += event.deltaCents;
@@ -654,6 +670,18 @@ function tallyVehicleTicks(world: World, counters: { activeTicks: number; totalT
   for (const vehicle of world.vehicles.values()) {
     counters.totalTicks += 1;
     if (!VEHICLE_STATE_TRAITS[vehicle.state].free) counters.activeTicks += 1;
+  }
+}
+
+/** Zhromaždí metriky dopravy (R1): čakajúce nosiče, najdlhšie čakanie. */
+function tallyTraffic(tally: EventTally, world: World): void {
+  for (const vehicle of world.vehicles.values()) {
+    if (vehicle.blockedTicks > 0) tally.vehicleWaitTicks += vehicle.blockedTicks;
+    if (vehicle.blockedTicks > tally.maxBlockedTicks) tally.maxBlockedTicks = vehicle.blockedTicks;
+  }
+  for (const truck of world.trucks.values()) {
+    if (truck.blockedTicks > 0) tally.trucksWaitTicks += truck.blockedTicks;
+    if (truck.blockedTicks > tally.maxBlockedTicks) tally.maxBlockedTicks = truck.blockedTicks;
   }
 }
 
@@ -780,6 +808,10 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     apronHandovers: 0,
     groupingShareSum: 0,
     groupingShareCount: 0,
+    gridlockEvents: 0,
+    vehicleWaitTicks: 0,
+    trucksWaitTicks: 0,
+    maxBlockedTicks: 0,
   };
   const vehicleTicks = { activeTicks: 0, totalTicks: 0 };
   const loadedDirections: LoadedDirections = new Map();
@@ -809,12 +841,23 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     tallyGrouping(tally, world, ticked);
     tallyShipped(tally, loadedDirections, world, ticked);
     tallyVehicleTicks(world, vehicleTicks);
+    tallyTraffic(tally, world);
     if (ticksToAllStored === null && tally.shipsSpawned > 0 && isAllStored(world)) ticksToAllStored = world.clock.tick;
     gateQueueMax = Math.max(gateQueueMax, totalGateQueue(world));
     if (ticksToAllExported === null && tally.shipsSpawned > 0 && isAllExported(world)) ticksToAllExported = world.clock.tick;
   }
   if (roundtripAt !== null && !roundtripDone) {
     throw new SimrunError(`${scenario.id}: roundtrip v ticku ${String(roundtripAt)} nenastal — hodiny sa zastavili v ticku ${String(world.clock.tick)} (koniec hry)`);
+  }
+
+  // StuckAtEnd: nosiče so blockedTicks >= stuckTicks na konci (R1)
+  let stuckAtEnd = 0;
+  const stuckTicks = world.defs.logistics.traffic.stuckTicks;
+  for (const vehicle of world.vehicles.values()) {
+    if (vehicle.blockedTicks >= stuckTicks) stuckAtEnd += 1;
+  }
+  for (const truck of world.trucks.values()) {
+    if (truck.blockedTicks >= stuckTicks) stuckAtEnd += 1;
   }
 
   return {
@@ -889,6 +932,10 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
       tally.directHandovers + tally.apronHandovers === 0
         ? null
         : Math.round((tally.directHandovers * PERCENT * ONE_DECIMAL) / (tally.directHandovers + tally.apronHandovers)) / ONE_DECIMAL,
+    gridlockEvents: tally.gridlockEvents,
+    trafficWaitTicks: { vehicles: tally.vehicleWaitTicks, trucks: tally.trucksWaitTicks },
+    maxBlockedTicks: tally.maxBlockedTicks,
+    stuckAtEnd,
   };
 }
 

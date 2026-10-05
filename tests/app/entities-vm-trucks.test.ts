@@ -8,7 +8,7 @@ import type { EntityId } from '@sim/core';
 import { LoadingRamp, WaitingArea, type Module } from '@sim/modules';
 import { Truck } from '@sim/trucks';
 import { entitiesVM, truckPose, truckVMs, type TruckPoses } from '@app/entities-vm';
-import { CHAIN_AREA_ID, CHAIN_RAMP_ID, buildFullChain, createApp, frameUntil, runCommands, type App } from './app-fixtures';
+import { CHAIN_AREA_ID, CHAIN_GATE_ID, CHAIN_RAMP_ID, buildFullChain, createApp, frameUntil, runCommands, type App } from './app-fixtures';
 
 const UNITS = 6;
 
@@ -62,6 +62,11 @@ describe('TruckVM: nový kamión zo simu', () => {
       prevHeading: first.heading,
       loaded: false,
       state: 'to_gate',
+      body: first.body.map((slot) => ({ x: ((slot >> 1) % app.world.grid.width) + 0.5, y: Math.floor((slot >> 1) / app.world.grid.width) + 0.5 })),
+      lengthCells: 3,
+      offRoad: false,
+      blocked: false,
+      jammed: false,
     });
     expect(app.world.defs.trucks.get(vm.defId).id).toBe('truck_container');
   });
@@ -122,6 +127,10 @@ describe('TruckVM: celý beh reťazca, každý frame', () => {
             expect(vm.approach).toEqual({ x: truck.x, y: truck.y, heading: truck.heading });
             expect(inside(ramp, truck.x, truck.y)).toBe(false);
             docked += 1;
+          } else if (truck.state === 'gate_pass' || truck.state === 'gate_pass_out') {
+            const gate = app.world.modules.get(CHAIN_GATE_ID) as Module;
+            expect([vm.x, vm.y, vm.heading]).toEqual([gate.origin.x + gate.size.w / 2, gate.origin.y + gate.size.h / 2, gate.rotation]);
+            expect(vm.approach).toBeUndefined();
           } else {
             expect([vm.x, vm.y, vm.heading]).toEqual([truck.x, truck.y, truck.heading]);
             expect(vm.approach).toBeUndefined(); // manéver pri rampe je len v stave `loading`
@@ -169,7 +178,7 @@ describe('TruckVM: prev (interpolácia) v SimBridge', () => {
           expect([vm.prevX, vm.prevY, vm.prevHeading]).toEqual([vm.x, vm.y, vm.heading]); // nový kamión
           continue;
         }
-        const slotSwitch = last.state !== vm.state && ['waiting', 'loading'].some((state) => state === last.state || state === vm.state);
+        const slotSwitch = last.state !== vm.state && ['waiting', 'loading', 'gate_pass', 'gate_pass_out'].some((state) => state === last.state || state === vm.state);
         if (slotSwitch) {
           expect([vm.prevX, vm.prevY, vm.prevHeading]).toEqual([vm.x, vm.y, vm.heading]);
           // skok naozaj existuje: zapamätaná póza (predchádzajúci snapshot) je inde než nová

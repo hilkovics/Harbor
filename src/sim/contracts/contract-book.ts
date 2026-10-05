@@ -128,8 +128,8 @@ export class ContractBook {
   }
 
   /**
-   * Kniha ešte nepridelila žiadne id kontraktu — pool sa nikdy neplnil (nová hra pred prvým tickom, save spred
-   * kontraktov v1–v4 po migrácii; T06-07). Odvodené zo stavu v save (`nextContractId`), takže prežije save aj load.
+   * Kniha ešte nepridelila žiadne id kontraktu — pool sa nikdy neplnil (nová hra alebo save uložený pred
+   * prvým tickom; T06-07). Odvodené zo stavu v save (`nextContractId`), takže prežije save aj load.
    */
   get untouched(): boolean {
     return this.nextContractId === FIRST_CONTRACT_ID;

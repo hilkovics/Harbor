@@ -64,8 +64,8 @@ function busyWorld(): World {
   return world;
 }
 
-describe('World.serialize — WorldState v9', () => {
-  it('tvar: presne kľúče v9 = v8 (v1 + traffic, modules, cargo, ships + vehicles, jobs + trucks + economy, kontrakty + nextVoyageId + emptyFlow) + hinterland v pevnom poradí a hodnoty novej hry', () => {
+describe('World.serialize — WorldState v10', () => {
+  it('tvar: presne kľúče v10 (= tvar v9, ADR-036) v pevnom poradí a hodnoty novej hry', () => {
     const world = create();
     const state = world.serialize();
     expect(Object.keys(state)).toEqual([
@@ -99,7 +99,6 @@ describe('World.serialize — WorldState v9', () => {
     // Nová hra pred prvým tickom: pool sa plní až v kroku 2 prvého ticku (ADR-026).
     expect([state.contracts, state.xp, state.completedContracts, state.nextContractId, state.nextVoyageId]).toEqual([[], 0, 0, 1, 1]);
     expect(state.cargo).toEqual({ createdCount: 0, exportedCount: 0, shippedCount: 0, units: [] });
-    expect(state.version).toBe(9);
     expect(state.hinterland).toEqual({
       delivery: { admitted: 0, waitTicksTotal: 0, waitTicksMax: 0, turnedAway: 0 },
       collect: { admitted: 0, waitTicksTotal: 0, waitTicksMax: 0, turnedAway: 0 },
@@ -288,11 +287,11 @@ describe('World.deserialize', () => {
   const INVALID: readonly [string, Mutation, string][] = [
     ['neznámy kľúč', set('extra', 1), '/extra'],
     ['chýba kľúč', (s) => delete s.cashCents, '/cashCents'],
-    ['neznáma budúca verzia', set('version', 10), '/version'],
+    ['neznáma budúca verzia', set('version', 11), '/version'],
     ['verzia 0', set('version', 0), '/version'],
     ['verzia ako reťazec', set('version', '3'), '/version'],
-    ['v3 stav označený ako v1 → migrácia v1 odmietne kľúč v2', set('version', 1), '/traffic'],
-    ['v3 stav označený ako v2 → migrácia v2 odmietne kľúč v3', set('version', 2), '/vehicles'],
+    ['starý save v1 → clean break (ADR-036), chyba verzie pred tvarom', set('version', 1), '/version'],
+    ['starý save v2 → clean break (ADR-036), chyba verzie pred tvarom', set('version', 2), '/version'],
     ['iná mapa', set('mapId', 'harbor_99'), '/mapId'],
     ['záporný seed', set('seed', -1), '/seed'],
     ['seed ≥ 2^32', set('seed', 2 ** 32), '/seed'],
@@ -331,7 +330,7 @@ describe('World.deserialize', () => {
     ['cargo nie je objekt', set('cargo', []), '/cargo'],
     ['cargo bez units', set('cargo', { createdCount: 0, exportedCount: 0, shippedCount: 0 }), '/cargo/units'],
     ['cargo porušená konzervácia', set('cargo', { createdCount: 1, exportedCount: 0, shippedCount: 0, units: [] }), '/cargo/createdCount'],
-    ['cargo bez shippedCount (tvar v6, ADR-032)', set('cargo', { createdCount: 0, exportedCount: 0, units: [] }), '/cargo/shippedCount'],
+    ['cargo bez shippedCount (ADR-032)', set('cargo', { createdCount: 0, exportedCount: 0, units: [] }), '/cargo/shippedCount'],
     [
       'chýba nextVoyageId (ADR-032)',
       (state) => {

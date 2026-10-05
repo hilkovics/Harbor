@@ -625,7 +625,7 @@ export class DefRegistry {
     return this.contractTemplatesCatalog;
   }
 
-  /** `lines.json` (§4, F6c, ADR-034): námorné linky — vlastníci kontajnerov a odosielatelia voyage; migrácia save v7 → v8 berie prvú. */
+  /** `lines.json` (§4, F6c, ADR-034): námorné linky — vlastníci kontajnerov a odosielatelia voyage. */
   get lines(): Catalog<Readonly<LineDef>> {
     return this.linesCatalog;
   }

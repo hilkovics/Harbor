@@ -34,8 +34,7 @@ export const WEIGHT_CLASSES = ['light', 'medium', 'heavy'] as const;
 export type WeightClass = (typeof WEIGHT_CLASSES)[number];
 
 /**
- * Hmotnostná trieda jednotky, ktorá sa nelosuje — import (na import nemá vplyv, ADR-032 odchýlka 1) a migrácia save
- * v6 → v7 (rozhodnutie 14). Štrukturálna predvolená hodnota (ako `DEFAULT_ROAD_KIND`), nie balans.
+ * Hmotnostná trieda jednotky, ktorá sa nelosuje — import (na import nemá vplyv, ADR-032 odchýlka 1). Štrukturálna predvolená hodnota (ako `DEFAULT_ROAD_KIND`), nie balans.
  */
 export const DEFAULT_WEIGHT_CLASS: WeightClass = 'medium';
 
@@ -53,7 +52,7 @@ export const EMPTY_WEIGHT_CLASS: WeightClass = 'light';
 export const CARGO_STATUSES = ['available', 'damaged', 'in_repair'] as const;
 export type CargoStatus = (typeof CARGO_STATUSES)[number];
 
-/** Stav jednotky bez kontroly (všetko okrem poškodených prázdnych) a migrácia save v7 → v8. */
+/** Stav jednotky bez kontroly (všetko okrem poškodených prázdnych). */
 export const DEFAULT_CARGO_STATUS: CargoStatus = 'available';
 
 /** Dôvody držania jednotky (`CargoHold`); F6a pozná len chýbajúce VGM (rozhodnutie 5). */

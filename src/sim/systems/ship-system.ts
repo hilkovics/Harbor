@@ -12,8 +12,7 @@
  *   plavba priamo zo vstupu na rejdu — T6D-03).
  * - `inbound`: plavba po sea lane; na jej konci `berthing` (kotviská z rezervácie pri vstupe).
  * - `waiting_anchorage`: priama plavba na rejdu (po rezervovanej trase), na nej jednotný kurz `anchorageHeading` a každý
- *   tick pokus o kotvisko (`tryStartBerthing`). Anchorage drží vždy (loď bez cieľa zo save v5 presunie parser pred
- *   vstup — `arriving`, ADR-029 addendum).
+ *   tick pokus o kotvisko (`tryStartBerthing`). Anchorage drží vždy.
  * - `berthing`: plavba po rezervovanej trase k polohe pri kotvisku; po príchode `docked` s kurzom `DOCKED_HEADING`
  *   a `ShipDocked`.
  * - `docked`: keď na lodi nie je žiadna jednotka (`on_ship`) a trasa von je voľná → `undocking` + `ShipUndocked`. Loď s exportom

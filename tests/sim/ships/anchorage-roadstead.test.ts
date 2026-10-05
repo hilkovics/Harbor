@@ -6,20 +6,16 @@
 //     vstupe a pláva na ňu priamo (`waiting_anchorage` už zo vstupu) — dĺžka trasy je blízko najkratšej, nezájde k prístavu
 //     a nepretína pás pred kotviskami;
 //  3. loď na anchorage stojí s kurzom `anchorageHeading`, nie s kurzom posledného úseku trasy; z anchorage ide ku kotvisku;
-//  4. save: v9 sa načíta a obnoví bitovo rovnaký priebeh, v8 s loďou na starej rejde sa načíta (loď sa normalizuje pred vstup).
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+//  4. save: načíta sa a obnoví bitovo rovnaký priebeh (save s loďou na starej rejde sa po clean breaku, ADR-036, nenačíta).
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@sim/core';
 import { shipBox, type Ship } from '@sim/ships';
-import { World, WorldStateError, findWorldViolation, migrateWorldState, savesDirectAnchorage, type WorldState } from '@sim/world';
+import { WORLD_STATE_VERSION, World, WorldStateError, findWorldViolation, type WorldState } from '@sim/world';
 import { assertCargoConservation } from '../helpers/invariants';
-import { toV8State } from '../helpers/legacy-save';
-import { BUNDLED_DEFS, DEFS, MAP } from '../world/world-fixtures';
+import { DEFS, MAP } from '../world/world-fixtures';
 import { ROOT_BERTH_ID, berth, spawn, tickN } from './ship-fixtures';
 
 const STAYS_DOCKED = 40;
-const FIXTURE_V8 = fileURLToPath(new URL('../__fixtures__/saves/save-v8-anchorage.json', import.meta.url));
 const FEEDER = DEFS.ships.get('feeder');
 const HANDY = DEFS.ships.get('handy');
 const LONGEST = Math.max(...DEFS.ships.items.map((def) => def.lengthCells));
@@ -182,7 +178,7 @@ describe('priamy vstup lode na rejdu (harbor_01, jedno kotvisko Root)', () => {
   });
 });
 
-describe('save: v9 obnoví priebeh, v8 s loďou na starej rejde sa načíta', () => {
+describe('save: roundtrip a invarianty lodí na rejde', () => {
   /** Svet s Root dokovanou loďou a dvoma loďami na rejde (v pokoji). */
   function queuedWorld(): { world: World; ships: Ship[] } {
     const world = World.create(DEFS, MAP, 7);
@@ -192,7 +188,7 @@ describe('save: v9 obnoví priebeh, v8 s loďou na starej rejde sa načíta', ()
     return { world, ships };
   }
 
-  it('v9: roundtrip uprostred plavby na rejdu aj v pokoji obnoví rovnaký stav a ďalší priebeh', () => {
+  it('roundtrip uprostred plavby na rejdu aj v pokoji obnoví rovnaký stav a ďalší priebeh', () => {
     const world = World.create(DEFS, MAP, 7);
     const ships = [spawn(world, 'feeder', STAYS_DOCKED), spawn(world, 'handy', STAYS_DOCKED)];
     for (let i = 0; i < 400 && ships[1].state === 'arriving'; i++) world.tick();
@@ -200,7 +196,7 @@ describe('save: v9 obnoví priebeh, v8 s loďou na starej rejde sa načíta', ()
     expect(ships[1].state).toBe('waiting_anchorage');
     expect(isResting(ships[1])).toBe(false);
     const state = JSON.parse(JSON.stringify(world.serialize())) as WorldState;
-    expect(state.version).toBe(9);
+    expect(state.version).toBe(WORLD_STATE_VERSION);
     const restored = World.deserialize(DEFS, MAP, state);
     expect(JSON.stringify(restored.serialize())).toBe(JSON.stringify(state));
     expect(tickN(restored, 1500)).toEqual(tickN(world, 1500));
@@ -208,7 +204,7 @@ describe('save: v9 obnoví priebeh, v8 s loďou na starej rejde sa načíta', ()
     expect(isResting(restored.ships.get(ships[1].id) as Ship)).toBe(true);
   });
 
-  it('v9: čakajúca loď s iným kurzom než anchorageHeading → WorldStateError na kurze lode (jednotné natočenie je invariant)', () => {
+  it('čakajúca loď s iným kurzom než anchorageHeading → WorldStateError na kurze lode (jednotné natočenie je invariant)', () => {
     const { world, ships } = queuedWorld();
     const state = JSON.parse(JSON.stringify(world.serialize())) as { ships: { id: number; heading: number }[] };
     const entry = state.ships.find((candidate) => candidate.id === ships[1].id);
@@ -225,86 +221,9 @@ describe('save: v9 obnoví priebeh, v8 s loďou na starej rejde sa načíta', ()
     expect((error as WorldStateError).message).toMatch(/jednotný 90/);
   });
 
-  it('v9: krok 12 odhalí loď na rejde s iným kurzom', () => {
+  it('krok 12 odhalí loď na rejde s iným kurzom', () => {
     const { world, ships } = queuedWorld();
     ships[1].heading = 0;
     expect(findWorldViolation(world)).toMatch(/stojí na rejde, kurz má byť jednotný 90/);
-  });
-
-  it('v8 s loďami na starom rozložení rejdy (plavba po celej sea lane, čakanie): načíta sa, lode sa normalizujú pred vstup a odplávajú', () => {
-    const { world, ships } = queuedWorld();
-    const v8 = toV8State(world.serialize()) as unknown as { ships: Record<string, unknown>[] };
-    expect(savesDirectAnchorage(v8)).toBe(false);
-    // stará rejda harbor_01: anchorage 0 = (38, 2), 1 = (31, 5) — loď pláva po celej sea lane a čaká s kurzom posledného úseku
-    const [, second, third] = ships.map((ship) => v8.ships.find((entry) => entry['id'] === ship.id) as Record<string, unknown>);
-    const oldLane = [[48.5, 0.5], [48.5, 7.5], [44.5, 7.5]];
-    Object.assign(second, { state: 'waiting_anchorage', x: 38.5, y: 2.5, heading: 0, anchorageIndex: 0, waypointIndex: 5, route: [...oldLane, [38.5, 7.5], [38.5, 2.5, 90]] });
-    Object.assign(third, { state: 'inbound', x: 48.5, y: 3.5, heading: 180, anchorageIndex: 1, berthIds: [], waypointIndex: 1, route: [...oldLane, [31.5, 7.5], [31.5, 5.5]] });
-    const restored = World.deserialize(DEFS, MAP, v8 as unknown as WorldState);
-    for (const ship of [restored.ships.get(ships[1].id), restored.ships.get(ships[2].id)]) {
-      expect(ship).toMatchObject({ state: 'arriving', anchorageIndex: null, x: LANE_START.x, y: LANE_START.y, waypointIndex: 0, route: [], berthIds: [] });
-    }
-    expect(restored.serialize().version).toBe(9);
-    // náklad ostal na lodiach (nič sa neteleportuje) a svet sa dá plynule dohrať: lode vplávajú na rejdu v poradí id
-    expect(restored.cargo.countAt('on_ship', ships[1].id)).toBe(STAYS_DOCKED);
-    assertCargoConservation(restored);
-    for (let i = 0; i < 6000; i++) {
-      restored.tick();
-      expect(findWorldViolation(restored), `tick ${String(restored.clock.tick)}`).toBeUndefined();
-    }
-    const [a, b] = [restored.ships.get(ships[1].id), restored.ships.get(ships[2].id)];
-    expect([a, b].map((ship) => ship !== undefined && isResting(ship))).toEqual([true, true]);
-    expect(a?.anchorageIndex).not.toBe(b?.anchorageIndex);
-    expect([a?.heading, b?.heading]).toEqual([MAP.anchorageHeading, MAP.anchorageHeading]);
-  });
-
-  it('zmrazený natívny save v8 (kód pred T6D-03, multi_ship_queue v ticku 248: loď pri kotvisku, na starej rejde, na ceste k starej rejde po sea lane, pred vstupom) sa načíta a dohrá bez uviaznutia', () => {
-    const raw = JSON.parse(readFileSync(FIXTURE_V8, 'utf8')) as { version: number; ships: { id: number; state: string; anchorageIndex: number | null }[] };
-    expect(raw.version).toBe(8);
-    expect(raw.ships.map((ship) => [ship.id, ship.state, ship.anchorageIndex])).toEqual([
-      [12, 'docked', null],
-      [133, 'waiting_anchorage', 0],
-      [154, 'inbound', 2],
-      [184, 'arriving', null],
-    ]);
-    // Save vznikol nad bundled defmi (režim odovzdávania kotviska `under_hook`), preto sa načíta s nimi.
-    const world = World.deserialize(BUNDLED_DEFS, MAP, raw as unknown as WorldState);
-    expect([...world.ships.values()].map((ship) => [ship.id, ship.state, ship.anchorageIndex])).toEqual([
-      [12, 'docked', null],
-      [133, 'arriving', null],
-      [154, 'arriving', null],
-      [184, 'arriving', null],
-    ]);
-    expect(world.serialize().version).toBe(9);
-    assertCargoConservation(world);
-    const units = world.cargo.liveCount;
-    let departed = 0;
-    let resting = 0;
-    for (let i = 0; i < 12_000 && world.ships.size > 0; i++) {
-      for (const event of world.tick()) if (event.type === 'ShipDeparted') departed += 1;
-      expect(findWorldViolation(world), `tick ${String(world.clock.tick)}`).toBeUndefined();
-      resting = Math.max(resting, [...world.ships.values()].filter(isResting).length);
-    }
-    expect(world.ships.size).toBe(0); // všetky štyri lode odplávali, žiadna neuviazla
-    expect(departed).toBe(4);
-    expect(resting).toBeGreaterThanOrEqual(2); // lode z normalizovaných savov čakali na novej rejde
-    assertCargoConservation(world);
-    expect(world.cargo.liveCount + world.cargo.exportedCount).toBeGreaterThanOrEqual(units);
-  });
-
-  it('migrácia v8 → v9 mení len verziu a dopĺňa hinterland (T6D-01); lode (rejda, T6D-03) migrácia nemení, loď pri kotvisku sa pri načítaní v8 nemení', () => {
-    const { world, ships } = queuedWorld();
-    const v8 = toV8State(world.serialize());
-    const migrated = migrateWorldState(v8, DEFS) as Record<string, unknown>;
-    expect(migrated['version']).toBe(9);
-    const zero = { admitted: 0, waitTicksTotal: 0, waitTicksMax: 0, turnedAway: 0 };
-    expect(migrated['hinterland']).toEqual({ delivery: zero, collect: zero, pickupBayStarvationTicks: 0 });
-    const withoutHinterland = Object.fromEntries(Object.entries(migrated).filter(([key]) => key !== 'hinterland'));
-    expect(JSON.stringify({ ...withoutHinterland, version: 8 })).toBe(JSON.stringify(v8));
-    expect(savesDirectAnchorage(migrated)).toBe(true);
-    const restored = World.deserialize(DEFS, MAP, v8 as unknown as WorldState);
-    const dockedShip = restored.ships.get(ships[0].id);
-    expect(dockedShip).toMatchObject({ state: ships[0].state, berthIds: [ROOT_BERTH_ID], x: ships[0].x, y: ships[0].y });
-    expect(berth(restored, ROOT_BERTH_ID).dockedShipId).toBe(ships[0].id);
   });
 });

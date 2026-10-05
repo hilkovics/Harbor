@@ -18,7 +18,7 @@ import { commandFromJSON } from '@sim/commands';
 import type { EntityId } from '@sim/core';
 import { gateParams, rampParams } from '@sim/defs';
 import type { StorageModule } from '@sim/modules';
-import { WORLD_STATE_V3_KEYS, World, type WorldState } from '@sim/world';
+import { WORLD_STATE_VERSION, World, type WorldState } from '@sim/world';
 import { ALL_F4_ROAD_CELLS, F4_DEPOT_ID, f4Scenario } from '../helpers/f4-layout';
 import { SLACK_TICKS, storageModulesOf, vehicleFsmViolation } from '../helpers/f3';
 import {
@@ -506,10 +506,10 @@ describe('save/load uprostred reťazca: obnovený svet pokračuje rovnako ako p�
     expect(savedTrucks.some((truck) => truck.progress > 0)).toBe(true);
   });
 
-  it('uložený stav je verzia 9 s poľom trucks a čistým JSON-om (JSON.parse(JSON.stringify(s)) sa rovná s)', () => {
+  it('uložený stav má aktuálnu verziu s poľom trucks a čistým JSON-om (JSON.parse(JSON.stringify(s)) sa rovná s)', () => {
     expect(forks).toHaveLength(PROBES.length);
     for (const fork of forks) {
-      expect(fork.saved.version, fork.name).toBe(9);
+      expect(fork.saved.version, fork.name).toBe(WORLD_STATE_VERSION);
       const trucks = (fork.saved as unknown as Record<string, unknown>)['trucks'];
       expect(Array.isArray(trucks), `${fork.name}: trucks`).toBe(true);
       expect((trucks as unknown[]).length, `${fork.name}: počet kamiónov v save`).toBe(fork.trucks.length);
@@ -543,44 +543,4 @@ describe('save/load uprostred reťazca: obnovený svet pokračuje rovnako ako p�
     },
     RUN_TIMEOUT_MS,
   );
-});
-
-// ---------------------------------------------------------------------------------------------------------
-// Migrácia v3 → v4
-// ---------------------------------------------------------------------------------------------------------
-
-/**
- * Predpoklad (T04-04): v4 = v3 + `trucks` a stav brány / rezervácie bay a dock; migrácia v3 → v4 doplní prázdne kamióny, takže
- * hra uložená pred F4 (bez brány, plochy a rampy) sa načíta a správa sa rovnako ako pôvodný svet. Test je regresná poistka
- * už pred T04-04 (vtedy je uložený stav priamo v3).
- */
-describe('migrácia WorldState v3 → v4', () => {
-  it('uložená hra v3 (bez kamiónov a ostatných polí v4) sa načíta migráciou a dá ten istý svet: apron_to_yard uprostred prevozu', () => {
-    const f3 = loadScenarioFile('apron_to_yard');
-    const plain = World.create(DEFS, MAP, f3.seed);
-    for (const { command } of f3.commands) plain.enqueue(commandFromJSON(command));
-    for (let i = 0; i < 1500; i++) plain.tick();
-    expect(plain.cargo.countByKind('in_vehicle') + plain.cargo.countByKind('in_storage')).toBeGreaterThan(0);
-
-    const current = JSON.parse(JSON.stringify(plain.serialize())) as Record<string, unknown>;
-    // Polia v4 navyše (kamióny, stav brány…) sa zahodia: to, čo zostane, je presne tvar v3.
-    const v3 = Object.fromEntries(WORLD_STATE_V3_KEYS.map((key) => [key, current[key]]));
-    v3['version'] = 3;
-    const migrated = World.deserialize(DEFS, MAP, v3 as unknown as WorldState);
-    // v3 nepoznal knihu (ADR-025) ani kontrakty (ADR-026) a voyage (ADR-032): migrovaný svet má prázdnu históriu
-    // a prázdny pool, hotovosť a všetko ostatné je zhodné. Pool si doplní v prvom ticku po načítaní ako pri štarte hry
-    // (T06-07), takže sa odvtedy líšia ťahy `Rng` poolu — porovnanie po tickoch ich vynechá.
-    const book = { economy: null, contracts: null, nextContractId: null, nextVoyageId: null };
-    const withoutLedger = (world: World): string => JSON.stringify({ ...world.serialize(), ...book });
-    const withoutDraws = (world: World): string => JSON.stringify({ ...world.serialize(), ...book, rng: null });
-    expect(migrated.economy.entries).toEqual([]);
-    expect(migrated.cashCents).toBe(plain.cashCents);
-    expect(withoutLedger(migrated)).toBe(withoutLedger(plain));
-    for (let i = 0; i < 200; i++) {
-      plain.tick();
-      migrated.tick();
-    }
-    expect(migrated.contractBook.offeredCount).toBe(DEFS.economy.offersPerDay);
-    expect(withoutDraws(migrated)).toBe(withoutDraws(plain));
-  });
 });

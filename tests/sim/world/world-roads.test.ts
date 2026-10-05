@@ -1,5 +1,5 @@
-// Cesty s typom a smerom vo svete (T03-18, ADR-020): štartové cesty mapy sú dvojpruhové, save v3 ukladá
-// `[index, vrstva, typ?, smer?]` v kanonickom tvare (roundtrip, fail-fast parsovanie s JSON pointermi, staré dvojice
+// Cesty s typom a smerom vo svete (T03-18, ADR-020): štartové cesty mapy sú dvojpruhové, save ukladá
+// `[index, vrstva, typ?, smer?]` v kanonickom tvare (roundtrip, fail-fast parsovanie s JSON pointermi, dvojice
 // = dvojpruhové), obnovený svet pokračuje rovnako (determinizmus s vozidlami na jednosmerkách a jednopruhových
 // cestách) a krok 12 stráži normalizovaný stav buniek.
 import { describe, expect, it } from 'vitest';
@@ -45,7 +45,7 @@ describe('štartové cesty mapy', () => {
   });
 });
 
-describe('save v3 — cesty [index, vrstva, typ?, smer?] (ADR-020)', () => {
+describe('save — cesty [index, vrstva, typ?, smer?] (ADR-020)', () => {
   it('serializeRoad: kanonický tvar podľa vrstvy, typu a smeru', () => {
     expect(serializeRoad(5, 'road', 'two_lane', null)).toEqual([5, 'road']);
     expect(serializeRoad(5, 'rail', 'two_lane', null)).toEqual([5, 'rail']);
@@ -109,11 +109,11 @@ describe('save v3 — cesty [index, vrstva, typ?, smer?] (ADR-020)', () => {
     expect(hashState(restored.serialize())).toBe(hashState(original.serialize()));
   });
 
-  it('save v1/v2 (len dvojice) sa načíta s dvojpruhovými cestami', () => {
-    const state = viaJson(World.create(DEFS, MAP, SEED).serialize()) as unknown as Record<string, unknown>;
-    const { vehicles: _v, jobs: _j, trucks: _t, economy: _e, contracts: _c, xp: _x, completedContracts: _d, nextContractId: _n, nextVoyageId: _vy, emptyFlow: _ef, hinterland: _h, ...v2 } = state;
-    for (const dropped of [_v, _j, _t, _e, _c, _x, _d, _n, _vy, _ef, _h]) void dropped;
-    const restored = World.deserialize(DEFS, MAP, { ...v2, version: 2 } as unknown as WorldState);
+  it('záznam [index, vrstva] bez typu je dvojpruhová cesta: štartové cesty sa uložia ako dvojice a načítajú ako two_lane', () => {
+    const state = viaJson(World.create(DEFS, MAP, SEED).serialize()) as WorldState;
+    expect(state.roads.length).toBeGreaterThan(0);
+    for (const entry of state.roads) expect(entry).toHaveLength(2);
+    const restored = World.deserialize(DEFS, MAP, state);
     for (const { x, y } of MAP.starter.roads) expect(restored.grid.at(x, y).roadKind).toBe('two_lane');
   });
 

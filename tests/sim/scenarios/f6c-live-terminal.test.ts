@@ -14,7 +14,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { CargoUnit } from '@sim/cargo';
 import type { SimEvent } from '@sim/events';
-import { World, stateHash, type AnyWorldState } from '@sim/world';
+import { World, stateHash, type WorldState } from '@sim/world';
 import { findWorldViolation } from '@sim/world/world-invariants';
 import { MAP, lostUnits } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
@@ -257,7 +257,7 @@ describe('scenár live_terminal: beh', () => {
     for (const at of ticks) {
       const half = World.create(BUNDLED_DEFS, MAP, SCENARIO.seed);
       runScenario(half, SCENARIO, at);
-      const restored = World.deserialize(BUNDLED_DEFS, MAP, JSON.parse(JSON.stringify(half.serialize())) as AnyWorldState);
+      const restored = World.deserialize(BUNDLED_DEFS, MAP, JSON.parse(JSON.stringify(half.serialize())) as WorldState);
       runScenario(restored, SCENARIO, TICKS);
       expect(stateHash(restored), `roundtrip v ticku ${String(at)}`).toBe(expected);
     }

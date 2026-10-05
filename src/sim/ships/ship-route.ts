@@ -5,9 +5,8 @@
  *   úseku tej istej trasy, na konci trasy loď zastane presne v poslednom bode (zvyšok kroku prepadne).
  * - Dĺžka úseku = `Math.sqrt` (IEEE presná na všetkých enginoch). **Žiadna trigonometria** (`sin/cos/atan2` nie sú
  *   bit-presné naprieč enginmi) — kurz je kardinálny podľa dominantnej osi úseku (`cardinalHeading`).
- * - Trasa stavu je uložená v lodi (`Ship.route`, save v6, ADR-029): trasy cez prístav vznikajú pri rezervácii A* po
+ * - Trasa stavu je uložená v lodi (`Ship.route`, ADR-029): trasy cez prístav vznikajú pri rezervácii A* po
  *   vode (`ShipTraffic`, `WaterNavigator`) a závisia od polohy ostatných lodí v tej chvíli, preto sa nedajú odvodiť.
- *   Pravidlá pred ADR-029 ostali len pre migráciu save v5 (`legacyShipRoute`).
  * - Poloha pri kotvisku (`dockPoint`) = stred obdĺžnika `lengthCells × widthCells` tesne pred hranou pri vode, od prvého
  *   obsadeného kotviska po pobreží; kurz pri kotvisku je rovnobežný s hranou (`DOCKED_HEADING`).
  * - **Bod priblíženia** (`approachPoint`, ADR-029) = `dockPoint` posunutý o `frontWaterCells` od brehu, teda tesne za
@@ -241,47 +240,9 @@ export function anchoringProblem(ship: Ship, env: ShipRouteEnv): { readonly fiel
   return { field: 'heading', problem: `${ship.label} stojí na rejde, kurz má byť jednotný ${String(expected)} (anchorageHeading), má ${String(ship.heading)}` };
 }
 
-type RouteOf = (ship: Ship, env: ShipRouteEnv) => readonly ShipPoint[];
-
-const NO_ROUTE: readonly ShipPoint[] = Object.freeze([]);
-
 /** Body sea lane (stredy buniek) od okraja mapy po koniec dráhy. */
 export function laneRoute(env: ShipRouteEnv): readonly ShipPoint[] {
   return env.map.seaLane.map(cellCenter);
-}
-
-/**
- * Trasa stavu podľa pravidiel pred ADR-029 (tabuľka, nie switch) — len pre migráciu save v5 → v6, ktorý trasy lodí
- * neukladal: `inbound` = sea lane, `waiting_anchorage` = pridelená anchorage (bez nej loď stojí), `berthing` = priama
- * úsečka k polohe pri kotvisku s kurzom `DOCKED_HEADING` (review T5B-04b: obdĺžnik pri kotvisku je tak súčasťou
- * rezervácie a loď sa na konci neotočí do susedov), `undocking` = koniec sea lane, `outbound` = sea lane odzadu. Loď
- * bez cieľa (`inbound` bez kotvísk a anchorage, `waiting_anchorage` bez anchorage) sem nepríde — parser save v5 ju
- * presunie pred vstup (`arriving`, ADR-029 addendum).
- */
-const LEGACY_ROUTES: { readonly [S in ShipState]: RouteOf } = {
-  arriving: () => NO_ROUTE,
-  inbound: (_ship, env) => laneRoute(env),
-  waiting_anchorage: (ship, env) => {
-    const point = ship.anchorageIndex === null ? undefined : anchoragePoint(env, ship.anchorageIndex);
-    return point === undefined ? NO_ROUTE : [point];
-  },
-  berthing: (ship, env) => {
-    const first = firstBerthOf(ship, env);
-    return [{ ...dockPoint(first, ship.def), heading: DOCKED_HEADING[first.waterSide] }];
-  },
-  docked: () => NO_ROUTE,
-  lashing: () => NO_ROUTE,
-  undocking: (_ship, env) => {
-    const end = laneEnd(env);
-    return end === undefined ? NO_ROUTE : [end];
-  },
-  outbound: (_ship, env) => [...laneRoute(env)].reverse(),
-  despawned: () => NO_ROUTE,
-};
-
-/** Trasa stavu lode zo save v5 (pravidlá pred ADR-029, viď `LEGACY_ROUTES`). */
-export function legacyShipRoute(ship: Ship, env: ShipRouteEnv): readonly ShipPoint[] {
-  return LEGACY_ROUTES[ship.state](ship, env);
 }
 
 /** Body trasy aktuálneho stavu lode (uložená trasa `Ship.route`, ADR-029). */

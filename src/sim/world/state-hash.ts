@@ -11,7 +11,7 @@
  * je dnes len ASCII, ale hash je definovaný aj pre iné znaky, takže sa zhoduje s FNV-1a nad UTF-8 súborom savu.
  */
 import type { World } from './world';
-import type { AnyWorldState } from './world-state';
+import type { WorldState } from './world-state';
 
 /** FNV-1a 32-bit: počiatočná hodnota (offset basis) a prvočíslo — konštanty algoritmu, nie balans. */
 const FNV1A_32_OFFSET_BASIS = 0x811c9dc5;
@@ -70,9 +70,9 @@ export function fnv1a32Hex(text: string): string {
 /**
  * Hash hotového stavu: FNV-1a 32 nad `JSON.stringify(state)` (8 hex znakov). Pre `world.serialize()` aj stav po
  * `JSON.parse` uloženého súboru — poradie kľúčov sa pri `JSON.parse` zachová, takže hash savu = hash sveta, z ktorého
- * vznikol. Stav sa neoveruje ani nemigruje (staršia verzia dá iný hash než jej migrácia).
+ * vznikol. Stav sa neoveruje (inú verziu než aktuálnu odmietne až `World.deserialize`).
  */
-export function hashWorldState(state: AnyWorldState): string {
+export function hashWorldState(state: WorldState): string {
   return fnv1a32Hex(JSON.stringify(state));
 }
 

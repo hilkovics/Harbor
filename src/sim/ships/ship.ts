@@ -8,8 +8,7 @@
  * - `berthIds` = kotviská, ktoré loď drží (v poradí po pobreží): od rezervácie (pri vstupe `inbound`, alebo z anchorage pri
  *   `berthing`) po koniec `undocking` na konci dráhy (`SHIP_STATE_TRAITS.berths`).
  * - `anchorageIndex` = index bunky `map.anchorage`, ktorú loď drží od pridelenia pri vstupe (`arriving → waiting_anchorage`,
- *   loď k nej pláva priamo; T6D-03) po odchod ku kotvisku (`SHIP_STATE_TRAITS.anchorage`; v `waiting_anchorage` vždy — loď
- *   bez cieľa zo save v5 a loď s rejdou zo save spred v9 presunie parser pred vstup, ADR-029 addendum).
+ *   loď k nej pláva priamo; T6D-03) po odchod ku kotvisku (`SHIP_STATE_TRAITS.anchorage`; v `waiting_anchorage` vždy).
  * - `route` = trasa aktuálneho stavu (body na vode; ADR-029 — trasa cez prístav vzniká A* po vode pri rezervácii
  *   a ukladá sa, lebo závisí od polohy ostatných lodí v tej chvíli), `waypointIndex` = index nasledujúceho bodu.
  * - `lashingTicksLeft` = odpočet lashingu a papierov v stave `lashing` (≥ 1), inak 0 (ADR-032 bod 11, WorldState v7).

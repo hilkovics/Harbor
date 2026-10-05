@@ -52,7 +52,7 @@ export const WAITING_MISSIONS: readonly WaitingMission[] = ['delivery', 'collect
 
 const EMPTY_MISSION_WAIT: MissionWaitState = Object.freeze({ admitted: 0, waitTicksTotal: 0, waitTicksMax: 0, turnedAway: 0 });
 
-/** Prázdny stav (nová hra; cieľ migrácie v8 → v9). */
+/** Prázdny stav (nová hra). */
 export function emptyHinterlandState(): HinterlandState {
   return { delivery: { ...EMPTY_MISSION_WAIT }, collect: { ...EMPTY_MISSION_WAIT }, pickupBayStarvationTicks: 0 };
 }

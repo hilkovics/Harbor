@@ -1,18 +1,16 @@
 // Geometria a pohyb lode (T02-05, ARCHITECTURE §7.4, ADR-016): stred bunky, kardinálny kurz bez trigonometrie,
-// poloha pri kotvisku pre všetky strany vody, bunky obdĺžnika lode, pohyb po úsečkách so zvyškom kroku a trasy stavov.
+// poloha pri kotvisku pre všetky strany vody, bunky obdĺžnika lode, pohyb po úsečkách so zvyškom kroku a uložená trasa lode.
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@sim/core';
 import type { Rotation } from '@sim/grid';
 import {
   DOCKED_HEADING,
   Ship,
-  ShipError,
   advanceAlongRoute,
   anchoringProblem,
   cardinalHeading,
   cellCenter,
   dockPoint,
-  legacyShipRoute,
   segmentHeading,
   shipBox,
   shipCells,
@@ -23,7 +21,7 @@ import {
 } from '@sim/ships';
 import { berthOn, quayGrid } from '../modules/module-fixtures';
 import { MAP } from '../world/world-fixtures';
-import { EAST_BERTH, ROOT_BERTH_ID, SHIP_DEFS, TEU, berth, newWorld, placeModule } from './ship-fixtures';
+import { ROOT_BERTH_ID, SHIP_DEFS, TEU, berth, newWorld } from './ship-fixtures';
 
 const FEEDER = SHIP_DEFS.ships.get('feeder');
 const HANDY = SHIP_DEFS.ships.get('handy');
@@ -140,51 +138,6 @@ describe('advanceAlongRoute — úsečky, zvyšok kroku do ďalšieho úseku', (
     const s = freshShip('docked', 43, 13, 90);
     expect(advanceAlongRoute(s, [], 1)).toBe(true);
     expect(s).toMatchObject({ x: 43, y: 13, heading: 90 });
-  });
-});
-
-describe('legacyShipRoute — trasa stavu podľa pravidiel pred ADR-029 (migrácia save v5, harbor_01)', () => {
-  const lane = MAP.seaLane.map(cellCenter);
-
-  it('inbound = seaLane, undocking = koniec seaLane, outbound = seaLane odzadu, docked a arriving = prázdna', () => {
-    const world = newWorld();
-    expect(legacyShipRoute(freshShip('inbound'), world)).toEqual(lane);
-    expect(legacyShipRoute(freshShip('undocking'), world)).toEqual([lane.at(-1)]);
-    expect(legacyShipRoute(freshShip('outbound'), world)).toEqual([...lane].reverse());
-    expect(legacyShipRoute(freshShip('docked'), world)).toEqual([]);
-    expect(legacyShipRoute(freshShip('arriving'), world)).toEqual([]);
-    expect(lane).toEqual([
-      { x: 48.5, y: 0.5 },
-      { x: 48.5, y: 7.5 },
-      { x: 44.5, y: 7.5 },
-    ]);
-  });
-
-  it('waiting_anchorage = pridelená bunka anchorage, bez nej prázdna', () => {
-    const world = newWorld();
-    const waiting = freshShip('waiting_anchorage');
-    expect(legacyShipRoute(waiting, world)).toEqual([]);
-    waiting.anchorageIndex = 1;
-    expect(legacyShipRoute(waiting, world)).toEqual([cellCenter(MAP.anchorage[1])]);
-  });
-
-  it('berthing = dockPoint od prvého obsadeného kotviska; chýbajúce kotvisko → ShipError(inconsistent)', () => {
-    const world = newWorld();
-    const east = placeModule(world, 'berth_standard', EAST_BERTH);
-    const berthing = new Ship({
-      id: 99 as EntityId,
-      def: HANDY,
-      cargoType: SHIP_DEFS.cargoTypes.get(TEU),
-      state: 'berthing',
-      x: 44.5,
-      y: 7.5,
-      heading: 180,
-      berthIds: [ROOT_BERTH_ID, east],
-    });
-    // Pevný kurz DOCKED_HEADING (T5B-04b): obdĺžnik pri kotvisku je súčasťou rezervácie, loď sa pri ňom neotočí.
-    expect(legacyShipRoute(berthing, world)).toEqual([{ x: 45, y: 13, heading: 90 }]);
-    berthing.berthIds = [777 as EntityId];
-    expect(() => legacyShipRoute(berthing, world)).toThrow(ShipError);
   });
 });
 

@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { acceptCommand, hookDefs, ofType, send, tickEvents } from '../helpers/f6a';
 import { emptyWorld, eventsOf, f6cDefs, offerRepositioning, runUntil, stockDepot, lost } from '../helpers/f6c';
 import { assertCargoConservation } from '../helpers/invariants';
-import { stateHash, World, type AnyWorldState } from '@sim/world';
+import { stateHash, World, type WorldState } from '@sim/world';
 import { pendingExportUnits } from '@sim/logistics/voyage-cargo';
 import { MAP } from '../world/world-fixtures';
 import type { EntityId } from '@sim/core';
@@ -175,7 +175,7 @@ describe('repositioning — obnova uprostred nakládky', () => {
       return ofType(events, 'UnitLoaded')[1].tick;
     })();
     tickEvents(reference.world, midpoint - 10);
-    const restored = World.deserialize(reference.world.defs, MAP, JSON.parse(JSON.stringify(reference.world.serialize())) as AnyWorldState);
+    const restored = World.deserialize(reference.world.defs, MAP, JSON.parse(JSON.stringify(reference.world.serialize())) as WorldState);
     expect(stateHash(restored)).toBe(stateHash(reference.world));
     tickEvents(reference.world, 4_000);
     tickEvents(restored, 4_000);

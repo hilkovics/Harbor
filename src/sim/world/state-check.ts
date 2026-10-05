@@ -1,5 +1,5 @@
 /**
- * Chyba a spoločné kontroly tvaru `WorldState` (parsovanie §14 aj migrácie). Fail-fast: prvý problém →
+ * Chyba a spoločné kontroly tvaru `WorldState` (parsovanie §14). Fail-fast: prvý problém →
  * `WorldStateError` s JSON pointerom.
  */
 import { pointerSegment } from '../grid/map-error';

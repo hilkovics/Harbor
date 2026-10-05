@@ -50,8 +50,7 @@ export interface ShipStateTraits {
   readonly berths: ShipHolding;
   /**
    * Bunka anchorage (`anchorageIndex`): `waiting_anchorage` vždy (pridelená pri vstupe, loď k nej pláva priamo zo
-   * vstupu a na nej čaká — ADR-029 dodatok T6D-03; loď bez anchorage zo save v5 presunie parser pred vstup, `arriving`,
-   * ADR-029 addendum), ostatné nikdy. Loď nedrží naraz kotviská aj anchorage.
+   * vstupu a na nej čaká — ADR-029 dodatok T6D-03), ostatné nikdy. Loď nedrží naraz kotviská aj anchorage.
    */
   readonly anchorage: ShipHolding;
   /**

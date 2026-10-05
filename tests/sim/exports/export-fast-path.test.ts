@@ -4,7 +4,7 @@
  * rovnaký ako vo F5. Príznak sa drží pri vzniku ponuky, prežije obnovu zo save a zhasne pri uzavretí bookingu.
  */
 import { describe, expect, it } from 'vitest';
-import { World, type AnyWorldState } from '@sim/world';
+import { World, type WorldState } from '@sim/world';
 import { MAP, exportWorld, f6aDefs, hookDefs, offerBooking, runUntilDeparted, startLoading } from '../helpers/f6a';
 
 describe('ContractBook.hasOpenExports', () => {
@@ -26,7 +26,7 @@ describe('ContractBook.hasOpenExports', () => {
       const run = startLoading({ defs, vehicles: ['straddle_carrier', 'straddle_carrier'], kind: 'roundtrip', booked: 6, importUnits: 6, arrivals: [10, 20, 30, 40, 50, 60] });
       expect(run.world.contractBook.hasOpenExports).toBe(true);
       for (let i = 0; i < 100; i++) run.world.tick();
-      const restored = World.deserialize(defs, MAP, JSON.parse(JSON.stringify(run.world.serialize())) as AnyWorldState);
+      const restored = World.deserialize(defs, MAP, JSON.parse(JSON.stringify(run.world.serialize())) as WorldState);
       expect(restored.contractBook.hasOpenExports).toBe(true);
       runUntilDeparted(run.world, 40_000);
       expect(run.world.contractBook.hasOpenExports).toBe(false);

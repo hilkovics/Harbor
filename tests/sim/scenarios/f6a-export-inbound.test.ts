@@ -6,7 +6,7 @@
  * nestratí, každý presun je legálny a booking ostane v `accepted` (loď príde až po konci behu).
  */
 import { describe, expect, it } from 'vitest';
-import { World, stateHash, type AnyWorldState } from '@sim/world';
+import { World, stateHash, type WorldState } from '@sim/world';
 import { exportGroupingShare } from '@sim/world/cargo-queries';
 import { findWorldViolation } from '@sim/world/world-invariants';
 import type { SimEvent } from '@sim/events';
@@ -140,7 +140,7 @@ describe('scenár export_inbound', () => {
     for (const at of [12_000, 20_000, 28_100, 28_300, 29_150]) {
       const half = World.create(DEFS, MAP, SCENARIO.seed);
       runScenario(half, SCENARIO, at);
-      const restored = World.deserialize(DEFS, MAP, JSON.parse(JSON.stringify(half.serialize())) as AnyWorldState);
+      const restored = World.deserialize(DEFS, MAP, JSON.parse(JSON.stringify(half.serialize())) as WorldState);
       runScenario(restored, SCENARIO, TICKS);
       expect(stateHash(restored), `roundtrip v ticku ${String(at)}`).toBe(stateHash(world));
     }

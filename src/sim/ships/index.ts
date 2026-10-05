@@ -21,7 +21,6 @@ export {
   laneRoute,
   laneStart,
   laneStartHeading,
-  legacyShipRoute,
   mooringOf,
   mooringProblem,
   segmentHeading,

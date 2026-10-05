@@ -1,4 +1,4 @@
-// WorldState v3 (T03-04…T03-06; docs/tasks/phase-03.md rozhodnutie 10; ARCHITECTURE §14; ADR-018, ADR-019): vozidlá
+// WorldState — vozidlá (T03-04…T03-06; docs/tasks/phase-03.md rozhodnutie 10; ARCHITECTURE §14; ADR-018, ADR-019): vozidlá
 // v save (id, def, depo, stav, poloha, kurz, job, zaplatená cena, zvyšok trasy, progres, odpočet, príznak preplánovania)
 // vzostupne podľa id; roundtrip (depo dostane vehicleIds v poradí nákupu, rovnaký ďalší priebeh), fail-fast parsovanie
 // aj obnova s JSON pointermi, náklad in_vehicle sa overí voči existencii, kapacite, kategóriám a jobu vozidla. Joby
@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@sim/core';
 import type { VehicleDepot } from '@sim/modules';
 import { SERIALIZED_VEHICLE_KEYS, Vehicle } from '@sim/vehicles';
-import { World, WorldStateError, type WorldState } from '@sim/world';
+import { WORLD_STATE_VERSION, World, WorldStateError, type WorldState } from '@sim/world';
 import type { StorageModule } from '@sim/modules';
 import { GRAIN, GRAIN_DEFS, STRADDLE, STRADDLE_DEF, addVehicleTo, buy, carryingVehicle, depotWorld, execute, loadInto, sell } from '../vehicles/vehicle-fixtures';
 import { DEFS, MAP, SEED, hashState, runTicks } from './world-fixtures';
@@ -42,11 +42,11 @@ function errorOf(action: () => unknown): WorldStateError {
   throw new Error('očakávaná WorldStateError, nič nevyhodilo');
 }
 
-describe('World.serialize — vozidlá v3', () => {
+describe('World.serialize — vozidlá', () => {
   it('vehicles = Vehicle.toState() vzostupne podľa id (poradie nákupu), jobs = []', () => {
     const world = fleetWorld();
     const state = world.serialize();
-    expect(state.version).toBe(9); // tvar vozidiel v3 ostal aj vo v4 až v9 (ADR-024 trucks, ADR-025 economy, ADR-029 trasa lode, ADR-032 export, ADR-034 prázdne kontajnery, ADR-035 vnútrozemie, T6D-03 rejda)
+    expect(state.version).toBe(WORLD_STATE_VERSION);
     expect(state.jobs).toEqual([]);
     expect(state.vehicles.map((vehicle) => vehicle.id)).toEqual([...world.vehicles.keys()]);
     expect(state.vehicles).toHaveLength(2);
@@ -58,7 +58,7 @@ describe('World.serialize — vozidlá v3', () => {
   });
 });
 
-describe('World.deserialize — vozidlá v3', () => {
+describe('World.deserialize — vozidlá', () => {
   it('roundtrip: rovnaký stav, Vehicle inštancie, depo.vehicleIds v poradí nákupu, krok 12 prechádza', () => {
     const original = fleetWorld();
     const restored = World.deserialize(DEFS, MAP, viaJson(original.serialize()));

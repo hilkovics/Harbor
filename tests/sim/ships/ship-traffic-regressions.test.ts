@@ -5,17 +5,16 @@
 //     zablokovala cestu von dokovanej lodi a anchorage pred ústím kanála dostala, lebo dokovaná loď „cestu von nemala";
 //     loď, ktorá cestu von nemá pre dočasnú prekážku, sa pri pridelení anchorage nepreskočí;
 //  3. obnova overí trasy podľa stavu a rezervácie lodí na mape (fail-fast namiesto porušenia kroku 12 o pár tickov);
-//  + strážca FIFO: `heldBack` (neskoršie lode čakajú) vyvolá len pohybujúca sa loď, nie stojaca (dnešné defy);
-//  + T6D-03: save spred v9 s loďou na anchorage (stará rejda) sa načíta — loď sa normalizuje na `arriving`.
+//  + strážca FIFO: `heldBack` (neskoršie lode čakajú) vyvolá len pohybujúca sa loď, nie stojaca (dnešné defy).
+//  (Normalizácia lodí zo save v5 a spred v9 zanikla s clean breakom savov, ADR-036.)
 import { describe, expect, it } from 'vitest';
 import { SpawnShipDebugCommand } from '@sim/commands';
 import type { EntityId } from '@sim/core';
 import { loadMap, parseMapDef, type LoadedMap } from '@sim/grid';
 import type { BerthModule } from '@sim/modules';
-import { DOCKED_HEADING, SHIP_STATE_TRAITS, Ship, cellCenter, dockPoint, shipBox, shipCells, type SerializedShip } from '@sim/ships';
+import { DOCKED_HEADING, SHIP_STATE_TRAITS, Ship, cellCenter, dockPoint, shipBox, shipCells } from '@sim/ships';
 import { World, WorldStateError, type WorldState } from '@sim/world';
 import { DEFS, MAP } from '../world/world-fixtures';
-import { toV6State } from '../helpers/legacy-save';
 import { ANCHORAGE_AT_MOUTH, ANCHORAGE_ON_LANE, ANCHORAGE_OPEN, CHANNEL_BERTHS, CHANNEL_MAP, CHANNEL_MAP_W1 } from './channel-map';
 
 /** Toľko jednotiek, že apron sa zaplní a bez vozidiel loď pri kotvisku ostane. */
@@ -144,32 +143,13 @@ describe('1. vnútorný roh nábrežia — posun bokom je súčasťou cesty von 
 });
 
 // ---------------------------------------------------------------------------------------------------------------
-// 2. a 3. Save v5: normalizácia lode bez cieľa, trasy a rezervácie pri obnove
+// 3. Obnova overí trasy a rezervácie lodí
 // ---------------------------------------------------------------------------------------------------------------
 
-type ShipPatch = Partial<Omit<SerializedShip, 'route' | 'lashingTicksLeft'>>;
-
-/** Save v5 zo save v6 (zhodeného z v7): lode bez `route`, s úpravami `patch` podľa id (ostatné polia v6 sa v5 nezmenili). */
-function toV5(world: World, patch: ReadonlyMap<number, ShipPatch>): unknown {
-  const v6 = toV6State(world.serialize()) as unknown as WorldState;
-  return {
-    ...v6,
-    version: 5,
-    ships: v6.ships.map((ship) => {
-      const v5Ship: Record<string, unknown> = { ...ship, ...patch.get(ship.id) };
-      delete v5Ship['route'];
-      return v5Ship;
-    }),
-  };
-}
-
-const LANE_START = cellCenter(CHANNEL_MAP.seaLane[0]);
 const LANE_END = cellCenter(CHANNEL_MAP.seaLane[CHANNEL_MAP.seaLane.length - 1]);
-/** Feeder pri W1 (dockPoint, kurz 180). */
-const AT_W1 = { x: 14, y: 15, heading: 180 } as const;
 
 /** W1 (Root) s feederom D (8 TEU, vyložený) a feedery X, Y na anchorage 2 a 3; L (2 TEU) čaká pred vstupom. */
-function legacyFleet(): { world: World; d: Ship; x: Ship; y: Ship; l: Ship } {
+function queuedFleet(): { world: World; d: Ship; x: Ship; y: Ship; l: Ship } {
   const world = World.create(DEFS, CHANNEL_MAP_W1, 11);
   const d = spawn(world, 'feeder', 8);
   const x = spawn(world, 'feeder', 2);
@@ -181,71 +161,9 @@ function legacyFleet(): { world: World; d: Ship; x: Ship; y: Ship; l: Ship } {
   return { world, d, x, y, l };
 }
 
-/** Úpravy v5: D dokovaná pri W1 bez nákladu, X a Y v pokoji na anchorage (legacy trasa = [anchorage]). */
-function legacyPatch(fleet: { d: Ship; x: Ship; y: Ship }): Map<number, ShipPatch> {
-  return new Map<number, ShipPatch>([
-    [fleet.d.id, { state: 'docked', ...AT_W1, berthIds: [1], anchorageIndex: null, waypointIndex: 0 }],
-    [fleet.x.id, { waypointIndex: 1 }],
-    [fleet.y.id, { waypointIndex: 1 }],
-  ]);
-}
-
-describe('2. save v5: loď bez cieľa sa presunie pred vstup (ADR-029 addendum)', () => {
-  it('waiting_anchorage bez anchorage na konci dráhy (plné anchorage, dokovaná loď) → arriving; dokovaná loď odpláva, nikto neuviazne', () => {
-    const fleet = legacyFleet();
-    const { d, x, l } = fleet;
-    const patch = legacyPatch(fleet);
-    patch.set(l.id, { state: 'waiting_anchorage', x: LANE_END.x, y: LANE_END.y, heading: 180, berthIds: [], anchorageIndex: null, waypointIndex: 0 });
-    const restored = World.deserialize(DEFS, CHANNEL_MAP_W1, toV5(fleet.world, patch) as WorldState);
-    const legacy = restored.ships.get(l.id);
-    expect(legacy).toMatchObject({ state: 'arriving', x: LANE_START.x, y: LANE_START.y, heading: 180, anchorageIndex: null, waypointIndex: 0, route: [] });
-    // v6 po normalizácii už `route: null` nemá a načíta sa znova bez zmeny.
-    const v6 = JSON.parse(JSON.stringify(restored.serialize())) as WorldState;
-    expect(JSON.stringify(World.deserialize(DEFS, CHANNEL_MAP_W1, v6).serialize())).toBe(JSON.stringify(v6));
-
-    tickChecked(restored, 6000);
-    expect(restored.ships.has(d.id)).toBe(false); // predtým `docked` naveky (L na konci dráhy zatarasila cestu von)
-    expect(restored.ships.get(x.id)?.state).toBe('docked');
-    expect(legacy?.state).toBe('waiting_anchorage');
-    expect(legacy?.anchorageIndex).not.toBeNull();
-  });
-
-  it('inbound bez cieľa (plavba po dráhe podľa ADR-016) → arriving pred vstupom', () => {
-    const fleet = legacyFleet();
-    const patch = legacyPatch(fleet);
-    patch.set(fleet.l.id, { state: 'inbound', x: LANE_START.x, y: 3.5, heading: 180, berthIds: [], anchorageIndex: null, waypointIndex: 1 });
-    const restored = World.deserialize(DEFS, CHANNEL_MAP_W1, toV5(fleet.world, patch) as WorldState);
-    expect(restored.ships.get(fleet.l.id)).toMatchObject({ state: 'arriving', x: LANE_START.x, y: LANE_START.y, route: [] });
-  });
-});
-
 describe('3. obnova overí trasy a rezervácie lodí (fail-fast, ADR-029 addendum)', () => {
-  it('v5: undocking (legacy trasa na koniec dráhy) a loď čakajúca na konci dráhy → načíta sa (normalizácia), krok 12 neporuší', () => {
-    const fleet = legacyFleet();
-    const patch = legacyPatch(fleet);
-    patch.set(fleet.d.id, { state: 'undocking', x: 17, y: 15, heading: 180, berthIds: [], anchorageIndex: null, waypointIndex: 0 });
-    patch.set(fleet.l.id, { state: 'waiting_anchorage', x: LANE_END.x, y: LANE_END.y, heading: 180, berthIds: [], anchorageIndex: null, waypointIndex: 0 });
-    const restored = World.deserialize(DEFS, CHANNEL_MAP_W1, toV5(fleet.world, patch) as WorldState);
-    expect(restored.ships.get(fleet.l.id)?.state).toBe('arriving');
-    tickChecked(restored, 1500);
-    expect(restored.ships.has(fleet.d.id)).toBe(false);
-  });
-
-  it('v5: loď na anchorage na sea lane (stará rejda) sa normalizuje na arriving (T6D-03) — rezervácie sa neprekrývajú, undocking odpláva', () => {
-    const fleet = legacyFleet();
-    const patch = legacyPatch(fleet);
-    patch.set(fleet.d.id, { state: 'undocking', x: 17, y: 15, heading: 180, berthIds: [], anchorageIndex: null, waypointIndex: 0 });
-    const onLane = cellCenter(CHANNEL_MAP.anchorage[ANCHORAGE_ON_LANE]);
-    patch.set(fleet.l.id, { state: 'waiting_anchorage', x: onLane.x, y: onLane.y, heading: 180, berthIds: [], anchorageIndex: ANCHORAGE_ON_LANE, waypointIndex: 1 });
-    const restored = World.deserialize(DEFS, CHANNEL_MAP_W1, toV5(fleet.world, patch) as WorldState);
-    // Index anchorage v starom save ukazuje na inú bunku než dnes: loď sa presunie pred vstup a anchorage dostane znova.
-    expect(restored.ships.get(fleet.l.id)).toMatchObject({ state: 'arriving', x: LANE_START.x, y: LANE_START.y, anchorageIndex: null, route: [] });
-    tickChecked(restored, 1500);
-    expect(restored.ships.has(fleet.d.id)).toBe(false);
-  });
-
-  it('natívny v9: undocking a loď na anchorage na sea lane (rezervácie sa prekrývajú) → WorldStateError na trase neskoršej lode pri deserialize', () => {
-    const fleet = legacyFleet();
+  it('undocking a loď na anchorage na sea lane (rezervácie sa prekrývajú) → WorldStateError na trase neskoršej lode pri deserialize', () => {
+    const fleet = queuedFleet();
     const state = JSON.parse(JSON.stringify(fleet.world.serialize())) as { ships: Record<string, unknown>[] };
     const entryOf = (id: number): Record<string, unknown> => {
       const found = state.ships.find((entry) => entry['id'] === id);

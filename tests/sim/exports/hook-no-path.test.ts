@@ -14,7 +14,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SimEvent } from '@sim/events';
 import { BerthModule, CraneModule } from '@sim/modules';
-import { World, stateHash, type AnyWorldState } from '@sim/world';
+import { World, stateHash, type WorldState } from '@sim/world';
 import { findWorldViolation } from '@sim/world/world-invariants';
 import { MAP, lostUnits } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
@@ -54,7 +54,7 @@ interface Observed {
   /** Najdlhší súvislý úsek ticků, v ktorých žeriav drží tú istú jednotku. */
   readonly longestHold: number;
   /** Prvý tick, v ktorom platí `saveWhen` — stav sa tu uloží. */
-  readonly saved: { readonly tick: number; readonly state: AnyWorldState } | undefined;
+  readonly saved: { readonly tick: number; readonly state: WorldState } | undefined;
 }
 
 /** Žeriav drží jednotku v `placing` a nejaké vozidlo je v `no_path` (od ticku `from`). */
@@ -79,7 +79,7 @@ function observe(scenario: Scenario, saveWhen: (world: World, crane: CraneModule
       hold = crane.heldUnitId !== null && crane.heldUnitId === heldUnit ? hold + 1 : 0;
       heldUnit = crane.heldUnitId;
       longestHold = Math.max(longestHold, hold);
-      if (saved === undefined && saveWhen(w, crane)) saved = { tick: w.clock.tick, state: JSON.parse(JSON.stringify(w.serialize())) as AnyWorldState };
+      if (saved === undefined && saveWhen(w, crane)) saved = { tick: w.clock.tick, state: JSON.parse(JSON.stringify(w.serialize())) as WorldState };
     },
   });
   return { world, events, longestHold, saved };
@@ -92,7 +92,7 @@ const moves = (events: Entries, from: string, to: string, window: readonly [numb
 function expectRoundtrip(observed: Observed, scenario: Scenario, ticks = TICKS): void {
   expect(observed.saved, 'sledovaný stav sa v behu nenašiel').toBeDefined();
   const { state } = observed.saved as NonNullable<Observed['saved']>;
-  const restored = World.deserialize(BUNDLED_DEFS, MAP, JSON.parse(JSON.stringify(state)) as AnyWorldState);
+  const restored = World.deserialize(BUNDLED_DEFS, MAP, JSON.parse(JSON.stringify(state)) as WorldState);
   runScenario(restored, scenario, ticks);
   expect(stateHash(restored)).toBe(stateHash(observed.world));
   expect(restored.cargo.exportedCount).toBe(observed.world.cargo.exportedCount);

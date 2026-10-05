@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@sim/core';
 import { StorageModule } from '@sim/modules';
-import { stateHash, World, type AnyWorldState } from '@sim/world';
+import { stateHash, World, type WorldState } from '@sim/world';
 import { findWorldViolation } from '@sim/world/world-invariants';
 import { acceptCommand, exportWorld, f6aDefs, hookDefs, ofType, send, tickEvents } from '../helpers/f6a';
 import { acceptedImport, eventsOf, offerTranship, runUntil, lost } from '../helpers/f6c';
@@ -237,7 +237,7 @@ describe('zmeškaná prekládka — penalizácia, záchrana, predaj', () => {
 });
 
 describe('zmeškaná prekládka — obnova zo save', () => {
-  const roundtrip = (world: World): World => World.deserialize(world.defs, MAP, JSON.parse(JSON.stringify(world.serialize())) as AnyWorldState);
+  const roundtrip = (world: World): World => World.deserialize(world.defs, MAP, JSON.parse(JSON.stringify(world.serialize())) as WorldState);
 
   it('uprostred lehoty záchrany (rescueDeadlineTick nastavený): obnova dá rovnaký stateHash a predaj po lehote prebehne rovnako', () => {
     const { world, contract } = missedWorld();
@@ -296,7 +296,7 @@ describe('prekládka — obnova zo save', () => {
     for (const at of [stored + 500, loading + 1]) {
       const run = build();
       tickEvents(run.world, at - run.world.clock.tick);
-      const restored = World.deserialize(run.world.defs, MAP, JSON.parse(JSON.stringify(run.world.serialize())) as AnyWorldState);
+      const restored = World.deserialize(run.world.defs, MAP, JSON.parse(JSON.stringify(run.world.serialize())) as WorldState);
       expect(stateHash(restored), `po obnove v ticku ${String(at)}`).toBe(stateHash(run.world));
       tickEvents(run.world, 6_000);
       tickEvents(restored, 6_000);

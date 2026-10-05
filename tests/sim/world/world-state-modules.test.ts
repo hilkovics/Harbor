@@ -1,4 +1,4 @@
-// WorldState v2 — moduly a náklad (T02-03, ARCHITECTURE §14, ADR-014): roundtrip modulov (poradie, triedy, bunky,
+// WorldState — moduly a náklad (T02-03, ARCHITECTURE §14, ADR-014): roundtrip modulov (poradie, triedy, bunky,
 // craneIds, runtime žeriavov), odvodený stav z ledgera (obsadenie apronov vo FIFO, držaná jednotka žeriavu),
 // rezervácie apronov z reservedSlot žeriavov a validácia s JSON pointerom.
 import { describe, expect, it } from 'vitest';
@@ -57,7 +57,7 @@ function moduleWorld(): ModuleWorld {
   return { world, berthA, crane1, crane2, berthB, units };
 }
 
-describe('WorldState v2 — moduly v save', () => {
+describe('WorldState — moduly v save', () => {
   it('modules: poradie umiestnenia, presne kľúče, runtime berthu {} a žeriavu podľa CraneRuntimeState', () => {
     const { world } = moduleWorld();
     world.assertInvariants();
@@ -159,7 +159,7 @@ describe('WorldState v2 — moduly v save', () => {
   });
 });
 
-describe('WorldState v2 — neplatné moduly a náklad → WorldStateError', () => {
+describe('WorldState — neplatné moduly a náklad → WorldStateError', () => {
   type Mutation = (state: {
     modules: Record<string, unknown>[];
     cargo: { units: { id: number; location: Record<string, unknown> }[] };

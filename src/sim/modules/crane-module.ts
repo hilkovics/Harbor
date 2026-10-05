@@ -81,7 +81,7 @@ export function craneReservesApronSlot(cycle: CraneCycle, state: CraneState): bo
   return from !== null && CYCLE_STATE_ORDER[state] >= CYCLE_STATE_ORDER[from] && CYCLE_STATE_ORDER[state] >= 0;
 }
 
-/** Smer cyklu žeriavu mimo cyklu a po obnove save spred v7 (ADR-032). */
+/** Smer cyklu žeriavu mimo cyklu (ADR-032). */
 export const DEFAULT_CRANE_CYCLE: CraneCycle = 'unload';
 
 /** Do ktorého počítadla utilizácie (§11) patrí tick v danom stave. */

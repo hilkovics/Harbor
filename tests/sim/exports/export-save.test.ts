@@ -4,7 +4,7 @@
  * sa po roundtripe správajú bitovo rovnako ako nepretržitý beh (rovnaké udalosti a `stateHash`).
  */
 import { describe, expect, it } from 'vitest';
-import { World, stateHash, type AnyWorldState } from '@sim/world';
+import { World, stateHash, type WorldState } from '@sim/world';
 import { findWorldViolation } from '@sim/world/world-invariants';
 import { MAP, acceptedBooking, exportWorld, f6aDefs, lostUnits, tickEvents } from '../helpers/f6a';
 
@@ -27,7 +27,7 @@ describe('roundtrip uprostred príchodov exportu', () => {
   it.each(AT)('uloženie v ticku %i: pokračovanie dá rovnaké udalosti a stateHash ako nepretržitý beh, invarianty držia', (at) => {
     const reference = busyWorld();
     tickEvents(reference, at);
-    const branch = World.deserialize(defs, MAP, clone(reference.serialize()) as unknown as AnyWorldState);
+    const branch = World.deserialize(defs, MAP, clone(reference.serialize()) as unknown as WorldState);
     expect(findWorldViolation(branch)).toBeUndefined();
     expect(stateHash(branch)).toBe(stateHash(reference));
     const expected = tickEvents(reference, TOTAL - at).map((entry) => JSON.stringify(entry));
@@ -48,19 +48,19 @@ describe('roundtrip uprostred príchodov exportu', () => {
     expect(contract.booking?.heldUnits).toBeGreaterThan(0);
     expect(state.cargo.units.filter((unit) => unit.hold !== null)).toHaveLength(contract.booking?.heldUnits ?? -1);
     expect('holdIndex' in state).toBe(false);
-    const restored = World.deserialize(defs, MAP, clone(state) as unknown as AnyWorldState);
+    const restored = World.deserialize(defs, MAP, clone(state) as unknown as WorldState);
     expect(restored.holdIndex.all).toEqual(world.holdIndex.all);
   });
 
   it('vykladajúci delivery kamión sa obnoví s rezerváciou docku (staging miesto) a dokončí vykládku', () => {
     const world = busyWorld();
-    let state: AnyWorldState | undefined;
+    let state: WorldState | undefined;
     for (let i = 0; i < 400 && state === undefined; i++) {
       world.tick();
-      if ([...world.trucks.values()].some((truck) => truck.state === 'unloading')) state = clone(world.serialize()) as unknown as AnyWorldState;
+      if ([...world.trucks.values()].some((truck) => truck.state === 'unloading')) state = clone(world.serialize()) as unknown as WorldState;
     }
     expect(state).toBeDefined();
-    const restored = World.deserialize(defs, MAP, state as AnyWorldState);
+    const restored = World.deserialize(defs, MAP, state as WorldState);
     const truck = [...restored.trucks.values()].find((candidate) => candidate.state === 'unloading');
     expect(truck).toBeDefined();
     expect(restored.cargo.countAt('in_truck', truck!.id)).toBe(1);

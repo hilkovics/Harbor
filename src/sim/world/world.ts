@@ -118,7 +118,6 @@ import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle-fsm';
 import { connectorCellsOf, isModuleConnected, type ConnectorCell } from './connectivity';
 import { LandsideNetwork, type GateSides, type LandsideRoute } from './landside';
 import { LandsideRosterCache, type LandsideModules } from './landside-roster';
-import { migrateWorldState, savesDirectAnchorage, savesShipRoutes } from './migrate';
 import { PLACEMENT_RULE_ERROR, attachesToHost, findPlacementViolations, findRemovalViolations } from './module-rules';
 import { WorldInvariantError, findWorldViolation } from './world-invariants';
 import { restoreEntities } from './world-restore';
@@ -126,7 +125,6 @@ import {
   WORLD_STATE_VERSION,
   parseWorldState,
   serializeRoad,
-  type AnyWorldState,
   type SerializedModule,
   type SerializedRoad,
   type SerializedTraffic,
@@ -387,18 +385,14 @@ export class World {
   }
 
   /**
-   * Obnoví svet zo `serialize()` (aj po `JSON.parse`); staršiu verziu najprv prevedie `migrateWorldState` (v1 → v2:
-   * bez modulov, lodí a nákladu; v2 → v3: bez vozidiel a jobov, `runtime` skladu bez rezervácií, kotviska s
-   * `lastNoStorageHour`; v3 → v4: bez kamiónov; v4 → v5: prázdna kniha so zachovanou hotovosťou, ADR-025; v5 → v6: trasa
-   * lode, ADR-029; v6 → v7: polia exportu s hodnotami importu, ADR-032; v7 → v8: prvá linka a prázdny plán prázdnych, ADR-034; v8 → v9: nulové
-   * počítadlá vnútrozemia, ADR-035). Terén a parcely berie z `map` (musí mať
+   * Obnoví svet zo `serialize()` (aj po `JSON.parse`); inú verziu než `WORLD_STATE_VERSION` odmietne `UnsupportedSaveVersionError` (clean break, ADR-036 — migrácie nie sú). Terén a parcely berie z `map` (musí mať
    * `id === state.mapId`), vrstvu dopravy celú z `state.roads` (aj typ a smer cesty, ADR-020) — starter cesta, ktorú hráč odstránil, sa neobnoví;
    * moduly, lode, vozidlá, náklad a odvodený stav obnoví `restoreEntities`. Neplatný stav → `WorldStateError` (pozri `parseWorldState`, `restoreEntities`). Výsledok
    * nezdieľa meniteľný stav so `state` ani s `map`. `options` ako pri `create`.
    */
-  static deserialize(defs: DefRegistry, map: LoadedMap, state: AnyWorldState, options: WorldOptions = {}): World {
+  static deserialize(defs: DefRegistry, map: LoadedMap, state: WorldState, options: WorldOptions = {}): World {
     const grid = map.createGrid();
-    const parsed = parseWorldState(migrateWorldState(state, defs), defs, map, grid, { legacyShipRoutes: !savesShipRoutes(state), legacyAnchorage: !savesDirectAnchorage(state) });
+    const parsed = parseWorldState(state, defs, map, grid);
     for (let i = 0; i < grid.cellCount; i++) {
       const cell = grid.atIndex(i);
       cell.road = 'none';

@@ -6,7 +6,7 @@
  * `CONTRACT_STEPS` (nie switch; export booking ADR-032 — kroky dopĺňa T6A-04); (2) **denná obnova poolu** pri `DayClosed`: ponuky s `offerExpiresTick ≤ tick`
  * vzostupne podľa id → `expired` + `ContractExpired { reason: 'timeout' }` (kniha ich zabudne) a potom doplnenie do
  * `offersPerDay`; (3) pri štarte hry (`GAME_START_TICK`, prvý tick po `World.create`) len doplnenie — a rovnako
- * v prvom ticku po načítaní save spred kontraktov (v1–v4: kniha po migrácii ešte nepridelila žiadne id,
+ * v prvom ticku po načítaní save uloženého pred prvým tickom (kniha ešte nepridelila žiadne id,
  * `ContractBook.untouched`; T06-07). Obnova save `Rng` nespotrebuje, pool sa doplní až v kroku 2 a podmienka je
  * odvodená zo save, takže ju neprekazí ani uloženie pred prvým tickom. Pokus pre nedotknutú knihu je jeden na
  * inštanciu systému (T06-08b): bez šablóny pre tier 0 kniha ostane `untouched` a ďalší pokus príde až s `DayClosed`

@@ -1,48 +1,27 @@
 /**
- * WorldState v7 (T6A-01, ADR-032; ARCHITECTURE §14): migrácia v6 → v7 nad natívnym save v6 (`save-v6.json` — vertical
- * slice uprostred vykládky, vznikol kódom v6 pred zmenou tvaru), roundtrip a fail-fast cesty nových polí. Od T6C-01
- * (ADR-034) sa save v6 migruje celou reťazou až na v8 — svet po migrácii má všade prvú linku, referenčný svet ich rozdeľuje
- * podľa voyage, preto sa stavy porovnávajú po zhodení linky (`toV7State`).
- *
- * 1. Migrácia je deterministická a bez `Rng` (rozhodnutie 14): kontrakty `kind: 'import'`, `voyageId` = id,
- *    `booking: null`, `nextVoyageId` = `nextContractId`; jednotky štítky importu (`voyageId` = `contractId`, `medium`,
- *    bez hold), `shippedCount: 0`; lode `lashingTicksLeft: 0`, kamióny `mission: 'pickup'`, žeriavy `cycle: 'unload'`.
- * 2. Migrovaný svet je **bitovo rovnaký** ako svet v7, ktorý prešiel tým istým scenárom do toho istého ticku, a ďalej
- *    beží rovnako (import-only správanie sa zmenou tvaru nezmenilo).
- * 3. v7 s export bookingom sa uloží a načíta na rovnaký stav (booking časť save); poškodené nové polia → `WorldStateError`
- *    s JSON pointerom.
+ * WorldState: export booking v save (T6A-01, ADR-032; ARCHITECTURE §14): kontrakt `ExportContract` s bookingom sa uloží a načíta na rovnaký stav,
+ * svet s ním tickuje bez porušenia invariantov a poškodené polia exportu (kontrakt, voyage, booking, štítky jednotiek, lashing, misia kamióna,
+ * cyklus žeriavu) → `WorldStateError` s JSON pointerom. Základ je `vertical_slice` uprostred vykládky (clean break savov, ADR-036: bez fixtures).
  */
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ExportContract } from '@sim/contracts';
 import { DefRegistry } from '@sim/defs';
-import { World, WorldStateError, migrateWorldState, stateHash, type AnyWorldState, type WorldState } from '@sim/world';
-import { assertCargoConservation } from '../helpers/invariants';
-import { toV6State, toV7State } from '../helpers/legacy-save';
+import { World, WorldStateError, stateHash, type WorldState } from '@sim/world';
 import { loadScenarioFile, runScenario } from '../helpers/scenario';
 import { MAP, RAW_DEFS } from './world-fixtures';
 
-type Json = Record<string, unknown>;
-
 /**
- * Defy bez booking ponúk: natívny save v6 vznikol kódom bez exportu, takže jeho pool (a `Rng` prúd) nemá booking ponuky,
- * ktoré by v ticku 8 640 doplnil svet v7 (`bookingOffersPerDay` > 0, F6a). Porovnanie so svetom v7 platí pre import-only svet.
+ * Defy bez booking ponúk: pool (a `Rng` prúd) nemá booking ponuky, takže kontrakt 0 je import a booking pridaný testom je jediný export.
  */
 const DEFS = DefRegistry.fromRaw({ ...RAW_DEFS, economy: { ...RAW_DEFS.economy, bookingOffersPerDay: 0 } });
 
-const FIXTURE = fileURLToPath(new URL('../__fixtures__/saves/save-v6.json', import.meta.url));
-const V6 = JSON.parse(readFileSync(FIXTURE, 'utf8')) as Json;
-const V6_TICK = (V6['clock'] as { tick: number }).tick;
-const CONTINUE_TICKS = 3_000;
+/** Tick uprostred vykládky vertical slice (kotva, na ktorej sa overuje export booking). */
+const SLICE_TICK = 8_784;
 const HEAVY_TIMEOUT_MS = 120_000;
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
-/** Text stavu v8 bez liniek, plánu prekládky a stavu kvality (v7 tvar): svet z migrácie má prvú linku všade, referenčný svet po voyage. */
-const asV7Text = (state: unknown): string => JSON.stringify(toV7State(state));
-
-/** `vertical_slice` (v7) v ticku save v6 — rovnaký okamih, z ktorého vznikol natívny v6 save. */
+/** `vertical_slice` v ticku `tick`. */
 function sliceAt(tick: number): World {
   const scenario = loadScenarioFile('vertical_slice');
   const world = World.create(DEFS, MAP, scenario.seed);
@@ -52,7 +31,7 @@ function sliceAt(tick: number): World {
 
 function loadError(raw: unknown): WorldStateError {
   try {
-    World.deserialize(DEFS, MAP, raw as AnyWorldState);
+    World.deserialize(DEFS, MAP, raw as WorldState);
   } catch (error) {
     if (error instanceof WorldStateError) return error;
     throw new Error(`očakávaná WorldStateError, dostal ${String(error)}`, { cause: error });
@@ -60,73 +39,9 @@ function loadError(raw: unknown): WorldStateError {
   throw new Error('načítanie poškodeného savu nevyhodilo chybu');
 }
 
-describe('migrácia save v6 → v7 (rozhodnutie 14, ADR-032)', () => {
-  it('migrateWorldState: polia v7 a v8 s hodnotami importu, prvá linka, Rng a vstup bez zmeny', () => {
-    const before = clone(V6);
-    const migrated = migrateWorldState(V6, DEFS) as Json;
-    expect(V6).toEqual(before);
-    expect(migrated['version']).toBe(9);
-    expect(migrated['emptyFlow']).toEqual({ returnPlan: [], pickupPlan: [], errands: [] });
-    expect(migrated['rng']).toEqual(V6['rng']);
-    expect(migrated['nextVoyageId']).toBe(V6['nextContractId']);
-    for (const contract of migrated['contracts'] as Json[]) {
-      expect([contract['kind'], contract['voyageId'], contract['booking']]).toEqual(['import', contract['id'], null]);
-      expect([contract['lineId'], contract['tranship']]).toEqual([DEFS.lines.items[0].id, null]);
-    }
-    const cargo = migrated['cargo'] as { shippedCount: number; units: Json[] };
-    expect(cargo.shippedCount).toBe(0);
-    expect(cargo.units.length).toBeGreaterThan(0);
-    for (const unit of cargo.units) {
-      expect(unit).toMatchObject({ voyageId: unit['contractId'], direction: 'import', destinationPort: null, weightClass: 'medium', hold: null, status: 'available', repairUntilTick: null });
-      expect(unit['lineId']).toBe(unit['contractId'] === null ? null : DEFS.lines.items[0].id);
-    }
-    expect((migrated['ships'] as Json[]).map((ship) => ship['lashingTicksLeft'])).toEqual([0]);
-    const cranes = (migrated['modules'] as { defId: string; runtime: Json }[]).filter((entry) => DEFS.modules.get(entry.defId).kind === 'crane');
-    expect(cranes.length).toBeGreaterThan(0);
-    for (const crane of cranes) expect([crane.runtime['cycle'], crane.runtime['targetUnitId']]).toEqual(['unload', null]);
-  });
-
-  it(
-    'načítaný v6 = svet v8 zo scenára v tom istom ticku (rovnaký serialize po zhodení liniek) a zhodenie späť dá pôvodný v6 text',
-    () => {
-      const reference = sliceAt(V6_TICK);
-      const migrated = World.deserialize(DEFS, MAP, clone(V6) as unknown as AnyWorldState);
-      expect(asV7Text(migrated.serialize())).toBe(asV7Text(reference.serialize()));
-      expect(JSON.stringify(toV6State(migrated.serialize()))).toBe(JSON.stringify(V6));
-    },
-    HEAVY_TIMEOUT_MS,
-  );
-
-  it(
-    `migrovaný svet beží ďalej rovnako ako nepretržitý beh (${String(CONTINUE_TICKS)} tickov, konzervácia po každom ticku)`,
-    () => {
-      const scenario = loadScenarioFile('vertical_slice');
-      const reference = sliceAt(V6_TICK);
-      const migrated = World.deserialize(DEFS, MAP, clone(V6) as unknown as AnyWorldState);
-      const until = V6_TICK + CONTINUE_TICKS;
-      const expected = runScenario(reference, scenario, until);
-      const actual = runScenario(migrated, scenario, until, { afterTick: (world) => assertCargoConservation(world) });
-      expect(actual.map((event) => JSON.stringify(event))).toEqual(expected.map((event) => JSON.stringify(event)));
-      expect(asV7Text(migrated.serialize())).toBe(asV7Text(reference.serialize()));
-    },
-    HEAVY_TIMEOUT_MS,
-  );
-
-  it('staršie savy (v4 s kamiónmi) dostanú cez reťaz migrácií misiu pickup', () => {
-    const v4 = JSON.parse(readFileSync(fileURLToPath(new URL('../__fixtures__/saves/save-v4.json', import.meta.url)), 'utf8')) as AnyWorldState;
-    const trucks = World.deserialize(DEFS, MAP, v4).serialize().trucks;
-    expect(trucks.length).toBeGreaterThan(0);
-    expect(trucks.every((truck) => truck.mission === 'pickup')).toBe(true);
-  });
-
-  it('v6 s kľúčom v7 (nextVoyageId) → WorldStateError na /nextVoyageId (tvar v6)', () => {
-    expect(loadError({ ...clone(V6), nextVoyageId: 1 }).path).toBe('/nextVoyageId');
-  });
-});
-
-/** v7 uprostred vykládky vertical slice s pridaným prijatým export bookingom bez nákladu (nová voyage, ADR-032). */
+/** Stav uprostred vykládky vertical slice s pridaným prijatým export bookingom bez nákladu (nová voyage, ADR-032). */
 function stateWithBooking(): WorldState {
-  const state = clone(sliceAt(V6_TICK).serialize());
+  const state = clone(sliceAt(SLICE_TICK).serialize());
   const tick = state.clock.tick;
   const arrival = tick + 20_000;
   const id = state.nextContractId;
@@ -165,7 +80,7 @@ function stateWithBooking(): WorldState {
   return { ...state, contracts: [...state.contracts, booking], nextContractId: id + 1, nextVoyageId: voyageId + 1 };
 }
 
-describe('WorldState v7: export booking v save a roundtrip', () => {
+describe('WorldState: export booking v save a roundtrip', () => {
   it(
     'prijatý booking sa načíta ako ExportContract, roundtrip cez JSON dá rovnaký stav a svet tickuje bez porušenia invariantov',
     () => {

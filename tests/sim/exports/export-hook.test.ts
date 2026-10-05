@@ -9,7 +9,7 @@ import type { DefRegistry } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
 import { BerthModule, CraneModule } from '@sim/modules';
 import { HOOK_WAIT_TICKS } from '@sim/vehicles/vehicle-fsm';
-import { World, stateHash, type AnyWorldState } from '@sim/world';
+import { World, stateHash, type WorldState } from '@sim/world';
 import { findWorldViolation } from '@sim/world/world-invariants';
 import { MAP, apronDefs, hookDefs, lostUnits, ofType, runUntilDeparted, startLoading } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
@@ -216,7 +216,7 @@ describe('metriky čakania pod hákom (craneWaitForVehicleTicks, vehicleWaitUnde
     expect(crane.vehicleWaitTicks).toBeGreaterThan(0);
     expect(Number.isInteger(crane.waitForVehicleTicks)).toBe(true);
     expect(Number.isInteger(crane.vehicleWaitTicks)).toBe(true);
-    const restored = World.deserialize(defs, MAP, JSON.parse(JSON.stringify(run.world.serialize())) as AnyWorldState);
+    const restored = World.deserialize(defs, MAP, JSON.parse(JSON.stringify(run.world.serialize())) as WorldState);
     expect(craneOf(restored).waitForVehicleTicks).toBe(crane.waitForVehicleTicks);
     expect(craneOf(restored).vehicleWaitTicks).toBe(crane.vehicleWaitTicks);
   });
@@ -258,7 +258,7 @@ describe('determinizmus a obnova uprostred čakania pod hákom', () => {
     for (const phase of ['unload', 'load'] as const) {
       const live = roundtrip({ defs });
       let snapshotTick = -1;
-      let snapshot: AnyWorldState | undefined;
+      let snapshot: WorldState | undefined;
       const head: { tick: number; event: SimEvent }[] = [];
       const probe = (world: World): void => {
         if (snapshot !== undefined || !vehicleUnderHook(world)) return;
@@ -267,7 +267,7 @@ describe('determinizmus a obnova uprostred čakania pod hákom', () => {
           return job !== undefined && (phase === 'unload' ? vehicle.state === 'loading' && job.from.kind === 'in_crane' : vehicle.state === 'unloading' && job.to.kind === 'in_crane');
         });
         if (!waiting) return;
-        snapshot = JSON.parse(JSON.stringify(world.serialize())) as AnyWorldState;
+        snapshot = JSON.parse(JSON.stringify(world.serialize())) as WorldState;
         snapshotTick = world.clock.tick;
       };
       for (let i = 0; i < TIMEOUT && snapshot === undefined; i++) {
@@ -275,7 +275,7 @@ describe('determinizmus a obnova uprostred čakania pod hákom', () => {
         probe(live.world);
       }
       expect(snapshot, `snímka ${phase}`).toBeDefined();
-      const restored = World.deserialize(defs, MAP, snapshot as AnyWorldState);
+      const restored = World.deserialize(defs, MAP, snapshot as WorldState);
       expect(stateHash(restored)).toBe(stateHash(live.world));
       const tail = runUntilDeparted(restored, TIMEOUT);
       expect(stateHash(restored), `obnova ${phase} v ticku ${String(snapshotTick)}`).toBe(referenceHash);

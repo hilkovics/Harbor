@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { BerthModule, CraneModule } from '@sim/modules';
 import { hookCellOfCrane } from '@sim/vehicles/vehicle-trip';
-import { World, stateHash, type AnyWorldState } from '@sim/world';
+import { World, stateHash, type WorldState } from '@sim/world';
 import { findRemovalViolations } from '@sim/world/module-rules';
 import { findWorldViolation } from '@sim/world/world-invariants';
 import { MAP, apronDefs, hookDefs, lostUnits, ofType, runUntilDeparted, startLoading } from '../helpers/f6a';
@@ -113,16 +113,16 @@ describe('režim apron: bez nábrežia, vozidlá ostávajú na cestách (bitovo 
   });
 });
 
-describe('save spred T6D-02: vozidlo čakajúce pod hákom na prístupovej bunke sa pri obnove prevedie na nábrežie', () => {
+describe('save: vozidlo čakajúce pod hákom (T6D-02)', () => {
   /** Svet v ticku, keď vozidlo čaká v `loading` / `unloading` pod hákom; vráti serializovaný stav pred ďalším tickom. */
-  function waitingState(state: 'loading' | 'unloading'): { world: World; vehicleId: number; saved: AnyWorldState; hash: string } {
+  function waitingState(state: 'loading' | 'unloading'): { world: World; vehicleId: number; saved: WorldState; hash: string } {
     const run = roundtrip(hookDefs(0));
-    let found: { vehicleId: number; saved: AnyWorldState; hash: string } | undefined;
+    let found: { vehicleId: number; saved: WorldState; hash: string } | undefined;
     runUntilDeparted(run.world, TIMEOUT, (world) => {
       if (found !== undefined) return;
       for (const vehicle of world.vehicles.values()) {
         if (vehicle.state === state && craneWaitedUnder(world, vehicle) !== undefined) {
-          found = { vehicleId: vehicle.id, saved: JSON.parse(JSON.stringify(world.serialize())) as AnyWorldState, hash: stateHash(world) };
+          found = { vehicleId: vehicle.id, saved: JSON.parse(JSON.stringify(world.serialize())) as WorldState, hash: stateHash(world) };
           return;
         }
       }
@@ -131,38 +131,7 @@ describe('save spred T6D-02: vozidlo čakajúce pod hákom na prístupovej bunke
     return { world: run.world, ...found };
   }
 
-  /** Prepíše záznam vozidla v save tak, ako ho uložila hra pred T6D-02: vozidlo stojí na prístupovej bunke cesty (nie pod hákom). */
-  function asLegacy(saved: AnyWorldState, vehicleId: number, accessCell: number, width: number): AnyWorldState {
-    const copy = JSON.parse(JSON.stringify(saved)) as { vehicles: Record<string, unknown>[] };
-    const record = copy.vehicles.find((entry) => entry['id'] === vehicleId) as Record<string, unknown>;
-    record['x'] = (accessCell % width) + 0.5;
-    record['y'] = Math.floor(accessCell / width) + 0.5;
-    record['route'] = [accessCell];
-    record['progress'] = 0;
-    return copy as unknown as AnyWorldState;
-  }
-
-  it.each(['loading', 'unloading'] as const)('%s: stojace vozidlo na ceste sa vráti do jazdy (to_pickup / to_dropoff), dôjde pod hák a svet dobehne bez straty', (state) => {
-    const { world: reference, vehicleId, saved } = waitingState(state);
-    const defs = hookDefs(0);
-    const hook = hookCellOfCrane(reference, craneOf(reference).id) as number;
-    const { width } = reference.grid;
-    const access = reference.grid.index(43, 17); // cesta tesne pod kotviskom (root berth, y = 17)
-    expect(reference.grid.atIndex(access).road).toBe('road');
-    const restored = World.deserialize(defs, MAP, asLegacy(saved, vehicleId, access, width));
-    const vehicle = restored.vehicles.get(vehicleId as never);
-    expect(vehicle?.state).toBe(state === 'loading' ? 'to_pickup' : 'to_dropoff');
-    expect(vehicle?.remainingRoute().at(-1)).toBe(hook);
-    expect(findWorldViolation(restored)).toBeUndefined();
-    for (let i = 0; i < 6_000; i++) {
-      restored.tick();
-      if (i % 50 === 0) assertCargoConservation(restored);
-    }
-    expect(lostUnits(restored)).toBe(0);
-    expect(findWorldViolation(restored)).toBeUndefined();
-  });
-
-  it('save uložený pod T6D-02 (vozidlo už pod hákom) sa neprevádza: obnova dá zhodný stateHash', () => {
+  it('roundtrip s vozidlom čakajúcim pod hákom dá zhodný stateHash a invarianty držia', () => {
     const { saved, hash } = waitingState('loading');
     const restored = World.deserialize(hookDefs(0), MAP, saved);
     expect(stateHash(restored)).toBe(hash);

@@ -5,7 +5,6 @@ export { WORLD_STATE_VERSION, WORLD_STATE_KEYS, WorldStateError, serializeRoad }
 // Odtlačok stavu (ADR-030): FNV-1a 32 nad JSON.stringify(serialize()) — testy, simrun --hash / --roundtrip-at.
 export { fnv1a32Hex, hashWorldState, stateHash } from './state-hash';
 export type {
-  AnyWorldState,
   ParsedRoadEntry,
   SerializedJob,
   SerializedModule,
@@ -17,17 +16,6 @@ export type {
   SerializedTruck,
   SerializedVehicle,
   WorldState,
-  WorldStateV1,
-  WorldStateV2,
-  WorldStateV3,
-  WorldStateV4,
-  WorldStateV5,
-  WorldStateV6,
-  WorldStateV7,
-  WorldStateV8,
-  LegacyCargoUnitV6,
-  LegacyCargoUnitV7,
-  LegacyContractV7,
 } from './world-state';
 // Dotazy nad nákladom pre prezentáciu a metriky F6a (ADR-032): import/export na lodi a v sklade, zoskupenie exportu;
 // F6c (ADR-034): obsah depa prázdnych podľa linky a stavu kvality, prázdne v prístave.
@@ -38,29 +26,8 @@ export { parseHinterlandState } from './hinterland-state';
 // Vnútrozemie (ADR-035): čakajúce kamióny, ich počítadlá a dopyt po odvoze — čisté dotazy pre UI a metriky.
 export { hinterlandMetrics, hinterlandQueue } from './hinterland-queries';
 export type { HinterlandMetrics, HinterlandQueue, MissionWaitMetrics } from './hinterland-queries';
-export {
-  OLDEST_WORLD_STATE_VERSION,
-  WORLD_STATE_V1_KEYS,
-  WORLD_STATE_V2,
-  WORLD_STATE_V2_KEYS,
-  WORLD_STATE_V3,
-  WORLD_STATE_V3_KEYS,
-  WORLD_STATE_V4,
-  WORLD_STATE_V4_KEYS,
-  WORLD_STATE_V5,
-  WORLD_STATE_V5_KEYS,
-  WORLD_STATE_V6,
-  WORLD_STATE_V6_KEYS,
-  WORLD_STATE_V7,
-  WORLD_STATE_V7_KEYS,
-  WORLD_STATE_V8,
-  WORLD_STATE_V8_KEYS,
-  WORLD_STATE_V9,
-  WORLD_STATE_V9_KEYS,
-  migrateWorldState,
-  savesDirectAnchorage,
-  savesShipRoutes,
-} from './migrate';
+// Verzia sveta bez migrácií (ADR-036): inú verziu než aktuálnu `World.deserialize` odmietne `UnsupportedSaveVersionError`.
+export { OLDEST_WORLD_STATE_VERSION, UnsupportedSaveVersionError, assertSupportedWorldVersion } from './migrate';
 export { WorldInvariantError, findWorldViolation } from './world-invariants';
 export { ECONOMY_STATE_KEYS, parseEconomyState } from './economy-state';
 export { CARGO_HOLDER_SOURCES, MODULE_CARGO_HOLDER_KINDS } from './cargo-holders';

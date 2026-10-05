@@ -1,60 +1,25 @@
 /**
- * Savy starších verzií a poškodené savy (T06-02; ADR-014, ADR-029, ADR-030; ARCHITECTURE §14, §16).
+ * Poškodené savy aktuálnej verzie (T06-02; ADR-014, ADR-029, ADR-030, ADR-036; ARCHITECTURE §14, §16).
  *
- * 1. Zmrazené savy `WorldState` v1 … v6 z `tests/sim/__fixtures__/saves/` (malé JSON súbory, generuje ich jednorazovo
- *    `generate-saves.ts`; test číta súbory, nie generátor): `World.deserialize` ich prevedie migráciami na v7, hodnoty
- *    starej verzie ostanú (hodiny, `Rng`, hotovosť, cesty, náklad, lode, kontrakty… — porovnané po zhodení v7 → v6,
- *    `toV6State`), `serialize()` vráti v7, ktorý sa načíta
- *    znova na rovnaký hash, a svet beží 2 000 tickov bez porušenia invariantov (`assertCargoConservation` po každom ticku,
- *    `assertInvariants()` navyše každých 100 tickov; krok 12 ticku beží `assertInvariants()` aj sám) a cez prvú uzávierku
- *    dňa (pool kontraktov sa po migrácii doplní).
- * 2. Poškodený save (chýbajúce pole, zlý typ, neznámy defId, prekrývajúce sa lode, neznáma verzia…) → `WorldStateError`
- *    s JSON pointerom na chybné miesto; nevznikne polovičatý svet, zdieľaná mapa a defy ostanú nedotknuté a vstup sa nemení.
- *
- * Doplnok k `migrate.test.ts` (T02-03…T05-02: migrácie nad živo vyrobenými downgrade-mi v rámci jedného testu), tu sú
- * vstupy pevné súbory, takže sa nemenia, keď sa zmení sim.
+ * Poškodený save (chýbajúce pole, zlý typ, neznámy defId, prekrývajúce sa lode, neznáma verzia…) → `WorldStateError`
+ * s JSON pointerom na chybné miesto; nevznikne polovičatý svet, zdieľaná mapa a defy ostanú nedotknuté a vstup sa nemení.
+ * Základné savy vznikajú behom bundled scenárov (clean break savov, ADR-036: fixtures starších verzií už nie sú).
  */
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { SimEvent } from '@sim/events';
-import {
-  WORLD_STATE_VERSION,
-  WORLD_STATE_V1_KEYS,
-  WORLD_STATE_V2_KEYS,
-  WORLD_STATE_V3_KEYS,
-  WORLD_STATE_V4_KEYS,
-  WORLD_STATE_V5_KEYS,
-  WORLD_STATE_V6_KEYS,
-  World,
-  WorldStateError,
-  stateHash,
-  type AnyWorldState,
-  type WorldState,
-} from '@sim/world';
+import { World, WorldStateError, stateHash, type WorldState } from '@sim/world';
 import { assertCargoConservation } from '../helpers/invariants';
-import { cellCenter, laneStartHeading } from '@sim/ships';
-import { toV6State } from '../helpers/legacy-save';
 import { loadScenarioFile, runScenario } from '../helpers/scenario';
 import { DEFS, MAP } from './world-fixtures';
 
-const FIXTURE_DIR = fileURLToPath(new URL('../__fixtures__/saves/', import.meta.url));
-/** Počet tickov, ktoré musí svet po načítaní starého savu prežiť (zadanie T06-02). */
-const RUN_TICKS = 2_000;
 /** Interval explicitnej kontroly `assertInvariants()` (krok 12 ticku beží každý tick sám). */
 const INVARIANT_EVERY = 100;
-/** Zastavenie hľadania uzávierky dňa — jeden herný deň má 8 640 tickov. */
-const DAY_SEARCH_LIMIT_TICKS = 9_000;
 const HEAVY_TIMEOUT_MS = 120_000;
 
 type Json = Record<string, unknown>;
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
-const asState = (raw: unknown): AnyWorldState => raw as AnyWorldState;
-
-function readFixture(file: string): Json {
-  return JSON.parse(readFileSync(`${FIXTURE_DIR}${file}`, 'utf8')) as Json;
-}
+const asState = (raw: unknown): WorldState => raw as WorldState;
 
 /** Tick po ticku s kontrolou konzervácie nákladu; každých `INVARIANT_EVERY` tickov aj `assertInvariants()`. */
 function runChecked(world: World, ticks: number): SimEvent[] {
@@ -68,9 +33,6 @@ function runChecked(world: World, ticks: number): SimEvent[] {
 }
 
 /** Počet import ponúk (skupín voyage bez exportu) — booking ponuky (F6a) dopĺňa pool zvlášť, `bookingOffersPerDay`. */
-function offersOf(world: World): number {
-  return world.contractBook.offeredGroups().import;
-}
 
 /** Chyba pri načítaní: musí to byť `WorldStateError`; inak test zlyhá (nie holý `TypeError` či `RangeError`). */
 function loadError(raw: unknown): WorldStateError {
@@ -87,197 +49,6 @@ function loadError(raw: unknown): WorldStateError {
 // 1. Savy v1 … v6
 // ---------------------------------------------------------------------------------------------------------
 
-interface LegacyFixture {
-  readonly file: string;
-  readonly version: 1 | 2 | 3 | 4 | 5 | 6;
-  /** Presné kľúče savu v poradí (`WORLD_STATE_Vn_KEYS`). */
-  readonly keys: readonly string[];
-  /** Čo save obsahuje (kontrola, že fixture nie je prázdna). */
-  readonly has: (state: Json) => boolean;
-}
-
-const arrayLength = (value: unknown): number => (Array.isArray(value) ? value.length : 0);
-const unitsAt = (state: Json, kind: string): number =>
-  ((state['cargo'] as { units: { location: { kind: string } }[] }).units).filter((unit) => unit.location.kind === kind).length;
-
-const FIXTURES: readonly LegacyFixture[] = [
-  { file: 'save-v1.json', version: 1, keys: WORLD_STATE_V1_KEYS, has: (s) => arrayLength(s['roads']) > 0 && (s['clock'] as { speed: number }).speed === 8 },
-  {
-    file: 'save-v2.json',
-    version: 2,
-    keys: WORLD_STATE_V2_KEYS,
-    has: (s) => arrayLength(s['modules']) >= 3 && arrayLength(s['ships']) === 1 && unitsAt(s, 'in_crane') === 1,
-  },
-  {
-    file: 'save-v3.json',
-    version: 3,
-    keys: WORLD_STATE_V3_KEYS,
-    has: (s) => arrayLength(s['vehicles']) === 2 && arrayLength(s['jobs']) > 0 && unitsAt(s, 'in_vehicle') > 0,
-  },
-  {
-    file: 'save-v4.json',
-    version: 4,
-    keys: WORLD_STATE_V4_KEYS,
-    has: (s) => arrayLength(s['trucks']) >= 2 && (s['trucks'] as { state: string }[]).some((truck) => truck.state === 'loading'),
-  },
-  {
-    file: 'save-v5.json',
-    version: 5,
-    keys: WORLD_STATE_V5_KEYS,
-    has: (s) => (s['contracts'] as { state: string }[]).some((contract) => contract.state === 'unloading') && arrayLength(s['ships']) === 1,
-  },
-  {
-    file: 'save-v5-anchorage.json',
-    version: 5,
-    keys: WORLD_STATE_V5_KEYS,
-    has: (s) =>
-      (s['ships'] as { state: string }[]).filter((ship) => ship.state === 'docked').length === 1 &&
-      (s['ships'] as { state: string }[]).filter((ship) => ship.state === 'waiting_anchorage').length === 3,
-  },
-  {
-    file: 'save-v6.json',
-    version: 6,
-    keys: WORLD_STATE_V6_KEYS,
-    has: (s) =>
-      (s['contracts'] as { state: string }[]).some((contract) => contract.state === 'unloading') &&
-      (s['ships'] as { route: unknown[] }[]).length === 1 &&
-      arrayLength(s['vehicles']) === 2 &&
-      arrayLength(s['jobs']) > 0,
-  },
-];
-
-/**
- * Lode, ktoré v savoch spred v9 držia anchorage (`inbound` / `waiting_anchorage` bez kotvísk), parser pri načítaní normalizuje
- * (T6D-03, ADR-029 dodatok): rejda harbor_01 sa presunula a plavba k nej ide priamo, takže loď čaká pred vstupom (`arriving`
- * na začiatku sea lane, bez anchorage a trasy) a anchorage dostane znova. Ostatné lode ostanú bez zmeny.
- */
-function normalizedShips(ships: unknown): Json[] {
-  const start = cellCenter(MAP.seaLane[0]);
-  return (ships as Json[]).map((ship) => {
-    const stale = (ship['state'] === 'inbound' || ship['state'] === 'waiting_anchorage') && (ship['berthIds'] as unknown[]).length === 0 && ship['anchorageIndex'] !== null;
-    if (!stale) return ship;
-    const arrived: Json = { ...ship, state: 'arriving', x: start.x, y: start.y, heading: laneStartHeading(MAP), anchorageIndex: null, waypointIndex: 0 };
-    if ('route' in ship) arrived['route'] = [];
-    return arrived;
-  });
-}
-
-/**
- * Kľúče, ktoré migrácia nemení — po zhodení v7 → v6 (`toV6State`, ADR-032): `modules` upraví runtime, `ships` pridá
- * trasu (save spred v6), `version` sa zvýši.
- */
-const UNTOUCHED_BY_MIGRATION = (keys: readonly string[]): string[] => keys.filter((key) => key !== 'version' && key !== 'modules' && key !== 'ships');
-
-describe.each(FIXTURES)('uložený save $file (WorldState v$version) → v7', ({ file, version, keys, has }) => {
-  const raw = readFixture(file);
-  const original = clone(raw);
-
-  it('je zmrazený save svojej verzie: presné kľúče v poradí, version, lode bez trasy, obsah zodpovedá situácii', () => {
-    expect(Object.keys(raw)).toEqual([...keys]);
-    expect(raw['version']).toBe(version);
-    expect(version).toBeLessThan(WORLD_STATE_VERSION);
-    expect((raw['ships'] as Json[] | undefined)?.every((ship) => 'route' in ship === version >= 6) ?? true).toBe(true);
-    expect(raw['mapId']).toBe(MAP.id);
-    expect(has(raw)).toBe(true);
-  });
-
-  it('World.deserialize prejde bez zmeny vstupu; serialize() vráti v7 a zachová hodnoty starej verzie', () => {
-    const world = World.deserialize(DEFS, MAP, asState(raw));
-    expect(raw).toEqual(original);
-
-    expect(world.serialize().version).toBe(WORLD_STATE_VERSION);
-    // Polia v7 (ADR-032) majú pri starom save hodnoty importu, takže zhodenie na v6 sa porovná s pôvodnými hodnotami.
-    const saved = toV6State(world.serialize());
-    for (const key of UNTOUCHED_BY_MIGRATION(keys)) expect(saved[key], `kľúč '${key}'`).toEqual(raw[key]);
-
-    // Moduly: rovnaké id, def, poloha a rotácia; runtime doplnia migrácie (napr. kotvisko dostane lastNoStorageHour).
-    const strip = (modules: unknown): unknown[] =>
-      (modules as Json[]).map(({ id, defId, x, y, rotation, purchaseCostCents }) => ({ id, defId, x, y, rotation, purchaseCostCents }));
-    expect(strip(saved['modules'])).toEqual(strip(raw['modules'] ?? []));
-
-    // Lode: rovnaký stav, poloha a kotviská; pribudla odvodená trasa (v5 ju neukladal).
-    const noRoute = (ships: unknown): unknown[] =>
-      (ships as Json[]).map((ship) => {
-        const older = { ...ship };
-        delete older['route'];
-        return older;
-      });
-    // T6D-03: loď s anchorage zo save spred v9 sa normalizuje na `arriving` (`normalizedShips`), ostatné lode ostanú rovnaké.
-    expect(noRoute(saved['ships'])).toEqual(noRoute(normalizedShips(raw['ships'] ?? [])));
-    expect((saved['ships'] as { route: unknown }[]).every((ship) => Array.isArray(ship.route))).toBe(true);
-    if (version >= 6) expect(saved['ships']).toEqual(normalizedShips(raw['ships']));
-
-    expect(world.clock.tick).toBe((raw['clock'] as { tick: number }).tick);
-    expect(world.cashCents).toBe(raw['cashCents']);
-    expect(world.cargo.liveCount).toBe(arrayLength((raw['cargo'] as { units?: unknown[] } | undefined)?.units));
-    expect(() => world.assertInvariants()).not.toThrow();
-  });
-
-  it('v7 vzniknuté z migrácie sa po JSON texte načíta znova na rovnaký hash (migrácia je pevný bod)', () => {
-    const world = World.deserialize(DEFS, MAP, asState(raw));
-    const text = JSON.stringify(world.serialize());
-    const again = World.deserialize(DEFS, MAP, JSON.parse(text) as WorldState);
-    expect(stateHash(again)).toBe(stateHash(world));
-    expect(JSON.stringify(again.serialize())).toBe(text);
-  });
-
-  it(`po načítaní beží ${String(RUN_TICKS)} tickov bez porušenia invariantov a bez straty nákladu`, () => {
-    const world = World.deserialize(DEFS, MAP, asState(raw));
-    const startTick = world.clock.tick;
-    const created = world.cargo.createdCount;
-    runChecked(world, RUN_TICKS);
-    expect(world.clock.tick).toBe(startTick + RUN_TICKS);
-    // Žiadna jednotka nezmizla mimo exportu: vytvorené − exportované = živé (assertCargoConservation to stráži aj po každom ticku).
-    expect(world.cargo.createdCount - world.cargo.exportedCount).toBe(world.cargo.liveCount);
-    expect(world.cargo.createdCount).toBeGreaterThanOrEqual(created);
-    expect(Number.isSafeInteger(world.cashCents)).toBe(true);
-    // Beh z migrovaného savu zostáva deterministický: rovnaký vstup → rovnaký hash.
-    const second = World.deserialize(DEFS, MAP, asState(clone(raw)));
-    runChecked(second, RUN_TICKS);
-    expect(stateHash(second)).toBe(stateHash(world));
-  });
-
-  it(
-    'svet z migrovaného savu prejde uzávierkou dňa: pool kontraktov je doplnený na offersPerDay, invarianty držia',
-    () => {
-      const world = World.deserialize(DEFS, MAP, asState(raw));
-      const offersBefore = offersOf(world);
-      let closed = false;
-      for (let i = 0; i < DAY_SEARCH_LIMIT_TICKS && !closed; i++) {
-        closed = world.tick().some((event) => event.type === 'DayClosed');
-        assertCargoConservation(world);
-      }
-      expect(closed, 'DayClosed nenastal do jedného herného dňa').toBe(true);
-      expect(offersOf(world), `pool pred uzávierkou: ${String(offersBefore)} ponúk`).toBe(DEFS.economy.offersPerDay);
-      world.assertInvariants();
-    },
-    HEAVY_TIMEOUT_MS,
-  );
-
-  it('poškodený save tejto verzie: chýba posledný kľúč verzie → WorldStateError na jeho ceste; zlý typ hotovosti → /cashCents', () => {
-    const lastKey = keys.at(-1) as string;
-    const missing = clone(raw);
-    delete missing[lastKey];
-    expect(loadError(missing).path).toBe(`/${lastKey}`);
-
-    expect(loadError({ ...clone(raw), cashCents: '1000' }).path).toBe('/cashCents');
-    expect(loadError({ ...clone(raw), bonus: 1 }).path).toBe('/bonus');
-  });
-});
-
-describe('uložené savy v2 … v6 s neznámym defom modulu → WorldStateError s cestou', () => {
-  it.each(FIXTURES.filter((fixture) => fixture.version >= 2))('$file: modules[0].defId neexistuje → /modules/0/defId', ({ file }) => {
-    const broken = readFixture(file);
-    (broken['modules'] as Json[])[0]['defId'] = 'neexistujuci_modul';
-    const error = loadError(broken);
-    expect(error.path).toBe('/modules/0/defId');
-    expect(error.message).toContain('neexistujuci_modul');
-  });
-});
-
-// ---------------------------------------------------------------------------------------------------------
-// 2. Poškodené savy aktuálnej verzie
-// ---------------------------------------------------------------------------------------------------------
 
 /** Aktuálny save s loďami (`outbound` a tri čakajúce na anchorage — od T6D-03 priamo na rejde) a s vozidlami, JSON-kópia. */
 function shipsState(): Json {
@@ -352,7 +123,7 @@ const SHIP_CORRUPTIONS: readonly Corruption[] = [
     problem: 'chýba povinný kľúč',
   },
   {
-    name: 'chýbajúce pole vnorene: ships[0].route (v6 trasu vyžaduje)',
+    name: 'chýbajúce pole vnorene: ships[0].route (trasa je povinná)',
     corrupt: edit((s) => void delete (s['ships'] as Json[])[0]['route']),
     path: '/ships/0/route',
     problem: 'chýba povinný kľúč',

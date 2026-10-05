@@ -50,7 +50,7 @@ describe('repositioning — sklad bez cesty ku kotvisku', () => {
     expect(contract.booking.loadedUnits).toBe(0);
     expect(contract.booking.arrivedUnits).toBe(0);
     expect(world.cargo.shippedCount).toBe(0);
-    expect([...world.vehicles.values()].every((vehicle) => vehicle.state === 'idle')).toBe(true);
+    expect([...world.vehicles.values()].every((vehicle) => vehicle.state === 'parked')).toBe(true);
     expect(depotOf(world).storedCount).toBe(4);
     expect(world.jobs.size).toBe(0);
     expect(lost(world)).toBe(0);
@@ -113,7 +113,7 @@ describe('export — sklad bez cesty ku kotvisku', () => {
   it('jednotky exportu vo dvore, ktorý je po prijatí odrezaný: žiadny job nakládky, loď po lehote odíde (neuviazne), jednotky sa nestratia', () => {
     const { world, offer } = startLoading({ defs: hookDefs(1, { economy: SHORT_FAIL }), kind: 'export', booked: 4, slaDays: 1, arrivals: [10, 20, 30, 40] });
     const { exportContract } = offer;
-    tickUntil(world, (w) => exportUnitsByLocation(w)['in_storage'] === 4 && w.trucks.size === 0 && [...w.vehicles.values()].every((vehicle) => vehicle.state === 'idle'), 40_000);
+    tickUntil(world, (w) => exportUnitsByLocation(w)['in_storage'] === 4 && w.trucks.size === 0 && [...w.vehicles.values()].every((vehicle) => vehicle.state === 'parked'), 40_000);
     // chrbtica x = 44 (44, 24): dvor, depo vozidiel a rampa sú odrezané od kotviska (cesta musí byť voľná — žiadne vozidlo ani kamión na nej nestojí)
     expect(send(world, { type: 'RemoveRoad', cells: [{ x: 44, y: 24 }] }).map((event) => event.type)).not.toContain('CommandRejected');
     const events = runUntilDeparted(world, LONG);

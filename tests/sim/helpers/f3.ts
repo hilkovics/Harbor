@@ -140,7 +140,7 @@ export function vehicleFsmViolation(events: readonly TimedEvent[], initial: Read
     const { vehicleId, from, to } = event;
     const where = `vozidlo ${String(vehicleId)}, tick ${String(tick)}: ${from} → ${to}`;
     if (!VEHICLE_TRANSITIONS[from].includes(to)) return `${where} nie je povolený prechod`;
-    const previous = last.get(vehicleId) ?? 'idle';
+    const previous = last.get(vehicleId) ?? 'parked'; // kúpené vozidlo vzniká zaparkované (ADR-037 bod 7)
     if (from !== previous) return `${where}: predošlý stav vozidla bol ${previous}, nie ${from}`;
     if (to === 'no_path') beforeNoPath.set(vehicleId, from);
     const expectedResume = beforeNoPath.get(vehicleId);
@@ -613,12 +613,21 @@ export function restoreCopy(world: World, defs: DefRegistry = DEFS): World {
   return World.deserialize(defs, MAP, saved);
 }
 
-/** Defy s upravenou kapacitou `container_yard_small` (ostatné hodnoty z data/defs). */
-export function defsWithYardCapacity(capacityUnits: number): DefRegistry {
+/**
+ * `logistics.json` bez parkovania: nečinné vozidlo sa nevracia do depa (`traffic.idleParkDelayTicks` je neprekonateľne veľké).
+ * Testy, ktorých zmysel stojí na tom, kde nečinné vozidlá stoja po práci (najbližšie voľné vozidlo), si ho pripínajú tu.
+ */
+export const NO_PARKING_LOGISTICS = {
+  ...RAW_DEFS.logistics,
+  traffic: { ...RAW_DEFS.logistics.traffic, idleParkDelayTicks: 1_000_000 },
+};
+
+/** Defy s upravenou kapacitou `container_yard_small` (ostatné hodnoty z data/defs); `parking: false` vypne návrat nečinných vozidiel do depa. */
+export function defsWithYardCapacity(capacityUnits: number, parking = true): DefRegistry {
   const items = modulesJson.items.map((item) =>
     item.id === 'container_yard_small' ? { ...item, params: { ...item.params, capacityUnits } } : item,
   );
-  return DefRegistry.fromRaw({ ...RAW_DEFS, modules: { ...modulesJson, items } });
+  return DefRegistry.fromRaw({ ...RAW_DEFS, ...(parking ? {} : { logistics: NO_PARKING_LOGISTICS }), modules: { ...modulesJson, items } });
 }
 
 /** Syntetické vozidlo s nekompatibilnou kategóriou (sypký náklad) — inak rovnaké ako `straddle_carrier`. */

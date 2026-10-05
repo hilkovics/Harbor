@@ -70,7 +70,7 @@ describe('scenár f3_vehicle_fleet — nákup a predaj vozidiel', () => {
     expect(world.modules.get(YARD_ID as EntityId)?.kind).toBe('storage');
     expect([...world.vehicles.keys()]).toEqual([5, 7, 8]);
     expect((world.modules.get(DEPOT_ID as EntityId) as VehicleDepot).vehicleIds).toEqual([5, 7, 8]);
-    for (const vehicle of world.vehicles.values()) expect([vehicle.state, vehicle.jobId, vehicle.depotId]).toEqual(['idle', null, DEPOT_ID]);
+    for (const vehicle of world.vehicles.values()) expect([vehicle.state, vehicle.jobId, vehicle.depotId]).toEqual(['parked', null, DEPOT_ID]);
   });
 
   it('hotovosť = referenčný model; súčet MoneyChanged = zmena hotovosti; vehicle_capex 4×, vehicle_sale 1×', () => {

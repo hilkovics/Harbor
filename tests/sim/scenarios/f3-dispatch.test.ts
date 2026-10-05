@@ -122,7 +122,7 @@ describe('vozidlá: nákup, predaj a odstránenie depa', () => {
     expect(validateReasons(world, buyCommand(STRADDLE))).toEqual(['insufficient_funds']);
   });
 
-  it('BuyVehicle: platný nákup — cena z defu, vozidlo idle na vonkajšej bunke depa, VehicleBought + MoneyChanged(vehicle_capex)', () => {
+  it('BuyVehicle: platný nákup — cena z defu, vozidlo parked na vonkajšej bunke depa, VehicleBought + MoneyChanged(vehicle_capex)', () => {
     const { world } = layoutWorld('f3_buy_ok', 3104);
     const depot = depotOf(world);
     const validation = commandFromJSON(buyCommand(STRADDLE)).validate(world);
@@ -141,7 +141,7 @@ describe('vozidlá: nákup, predaj a odstránenie depa', () => {
     expect(world.cashCents).toBe(cashBefore - STRADDLE_DEF.purchaseCents);
 
     const vehicle = must(world.vehicles.get(bought[0].vehicleId as EntityId), 'nové vozidlo');
-    expect(vehicle.state).toBe('idle');
+    expect(vehicle.state).toBe('parked');
     expect(vehicle.jobId).toBeNull();
     expect(vehicle.depotId).toBe(DEPOT_ID);
     expect([vehicle.x, vehicle.y]).toEqual([DEPOT_OUTSIDE.x + 0.5, DEPOT_OUTSIDE.y + 0.5]);
@@ -318,7 +318,7 @@ describe('NoStorageAvailable: chýbajúci, nepripojený alebo plný sklad', () =
     expect(jobsOf(world).size).toBe(0);
     expect(world.cargo.countByKind('on_apron')).toBe(4);
     expect(far.reservedCount).toBe(0);
-    for (const vehicle of vehiclesById(world)) expect(vehicle.state).toBe('idle'); // žiadny job → vozidlo stojí v depe
+    for (const vehicle of vehiclesById(world)) expect(vehicle.state).toBe('parked'); // žiadny job → vozidlo stojí v depe
 
     const after = recordRunF3(world, scenario, CONNECT_TICK + 4000);
     expect(timed3(after, 'CommandRejected')).toEqual([]);
@@ -400,7 +400,7 @@ describe('dispatcher: vozidlo bez kompatibilnej kategórie job nedostane', () =>
     expect(world.cargo.countByKind('in_storage')).toBe(4);
 
     const bulk = vehicleSamples(log, bulkId);
-    expect(bulk.every((sample) => sample.state === 'idle' && sample.jobId === null && sample.unitsInside === 0)).toBe(true);
+    expect(bulk.every((sample) => sample.state === 'parked' && sample.jobId === null && sample.unitsInside === 0)).toBe(true);
     expect(new Set(bulk.map((sample) => `${String(sample.x)},${String(sample.y)}`)).size).toBe(1);
     expect(timed3(log, 'VehicleStateChanged').filter((item) => item.event.vehicleId === bulkId)).toEqual([]);
   });
@@ -422,7 +422,7 @@ describe('dispatcher: vozidlo bez kompatibilnej kategórie job nedostane', () =>
     expect(world.cargo.countByKind('on_apron')).toBe(4);
     expect(world.cargo.countByKind('in_vehicle')).toBe(0);
     expect(timed3(log, 'NoStorageAvailable')).toEqual([]);
-    expect(must(world.vehicles.get(bulkId), 'flatbed').state).toBe('idle');
+    expect(must(world.vehicles.get(bulkId), 'flatbed').state).toBe('parked');
     expect(vehicleFsmViolation(log.events)).toBeNull();
   });
 });
@@ -437,7 +437,8 @@ describe('dispatcher: priradí najbližšie voľné vozidlo (nie najmenšie id)'
   it('po tom, čo jedno vozidlo skončí pri ďalekom a druhé pri blízkom dvore, dostane nový job to pri blízkom dvore', () => {
     const SECOND_SHIP_TICK = 3000;
     const scenario = f3Scenario('f3_closest', 3140, { vehicles: TWO_STRADDLES, units: 3, extra: [entry(SECOND_SHIP_TICK, spawnCommand(1))] });
-    const world = World.create(defsWithYardCapacity(2), MAP, scenario.seed);
+    // bez parkovania: vozidlá ostanú stáť pri dvoroch, kde skončili (zmysel testu — najbližšie voľné vozidlo)
+    const world = World.create(defsWithYardCapacity(2, false), MAP, scenario.seed);
     const first = recordRunF3(world, scenario, SECOND_SHIP_TICK);
     const near = storageAt(world, NEAR_YARD_ORIGIN);
     const far = storageAt(world, FAR_YARD_ORIGIN);
@@ -459,7 +460,8 @@ describe('dispatcher: priradí najbližšie voľné vozidlo (nie najmenšie id)'
     const assigned = timed3(second, 'JobAssigned').filter((item) => item.event.jobId === created[0].event.jobId);
     expect(assigned).toHaveLength(1);
     expect(assigned[0].event.vehicleId).toBe(atNear[0].id);
-    expect(world.cargo.countByKind('in_storage')).toBe(4);
+    // Bez parkovania stojí druhé (nečinné) vozidlo na prístupovej bunke ďalekého dvora, kam jednotka mieri — dovoz sa v tomto režime nedokončí; testuje sa len výber vozidla.
+    expect(world.cargo.countByKind('in_storage') + world.cargo.countByKind('in_vehicle')).toBe(4);
   }, 60_000);
 
   it('pri zhode cien (obe vozidlá stoja na jednej bunke) dostane prvý job vozidlo s menším id, druhý job druhé vozidlo', () => {
@@ -609,7 +611,7 @@ describe('preplánovanie ciest: RemoveRoad → obchádzka, no_path a obnova', ()
     expect(vehicleFsmViolation(log.events, initial)).toBeNull();
     expect(world.cargo.countByKind('in_storage')).toBe(4);
     expect(world.cargo.countByKind('in_vehicle')).toBe(0);
-    for (const vehicle of vehiclesById(world)) expect(vehicle.state).toBe('idle');
+    for (const vehicle of vehiclesById(world)) expect(vehicle.state).toBe('parked');
   }, 60_000);
 
   it('save/load uprostred no_path: obnovený svet má rovnaký hash a po obnove cesty rovnaký priebeh', () => {

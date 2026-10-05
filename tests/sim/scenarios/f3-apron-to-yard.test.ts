@@ -319,7 +319,7 @@ describe('scenár apron_to_yard: beh 15 000 tickov', () => {
       expect(vehicle.depotId).toBe(DEPOT_ID);
       expect(vehicle.purchaseCostCents).toBe(STRADDLE.purchaseCents);
       const first = vehicleSamples(log, id)[0];
-      expect(first.state).toBe('idle');
+      expect(first.state).toBe('parked');
       expect(first.jobId).toBeNull();
       expect([first.x, first.y]).toEqual([DEPOT_OUTSIDE.x + 0.5, DEPOT_OUTSIDE.y + 0.5]);
     }
@@ -416,15 +416,17 @@ describe('scenár apron_to_yard: beh 15 000 tickov', () => {
     for (const trace of log.jobs.values()) expect(jobStateViolation(trace.states), `job ${String(trace.jobId)}`).toBeNull();
   });
 
-  it('na konci sú všetky joby done, vozidlá idle bez jobu a nákladu a stoja na ceste', () => {
+  it('na konci sú všetky joby done, vozidlá zaparkované v depe bez jobu a nákladu (mimo cesty)', () => {
     expect([...jobsOf(world).values()].filter((job) => job.state !== 'done')).toEqual([]);
     for (const id of vehicleIds) {
       const vehicle = must(world.vehicles.get(id), `vozidlo ${String(id)}`);
-      expect(vehicle.state).toBe('idle');
+      expect(vehicle.state).toBe('parked');
       expect(vehicle.jobId).toBeNull();
       expect(world.cargo.countAt('in_vehicle', id)).toBe(0);
       const cell = cellOfPosition(vehicle.x, vehicle.y);
+      expect([cell.x, cell.y]).toEqual([DEPOT_OUTSIDE.x, DEPOT_OUTSIDE.y]); // prístupová bunka depa
       expect(world.grid.at(cell.x, cell.y).road).toBe('road');
+      expect(vehicle.body).toEqual([]); // zaparkované vozidlo nedrží žiadny slot
     }
   });
 
@@ -532,13 +534,13 @@ describe('scenár apron_to_yard: beh 15 000 tickov', () => {
     expect(checked).toBe(2 * UNITS);
   });
 
-  it('FSM vozidla: idle → to_pickup → loading → to_dropoff → unloading → idle; VehicleStateChanged nadväzujú a každé vozidlo prešlo celým cyklom', () => {
+  it('FSM vozidla: parked → depot_exit → to_pickup → loading → to_dropoff → unloading → idle → to_depot → parked; VehicleStateChanged nadväzujú a každé vozidlo prešlo celým cyklom', () => {
     expect(vehicleFsmViolation(log.events)).toBeNull();
     const changes = timed3(log, 'VehicleStateChanged');
     for (const id of vehicleIds) {
       const own = changes.filter((entry) => entry.event.vehicleId === id);
       const visited = new Set(own.map((entry) => entry.event.to));
-      for (const state of ['to_pickup', 'loading', 'to_dropoff', 'unloading', 'idle'] as const) expect(visited.has(state), `vozidlo ${String(id)} nikdy nebolo v ${state}`).toBe(true);
+      for (const state of ['depot_exit', 'to_pickup', 'loading', 'to_dropoff', 'unloading', 'idle', 'to_depot', 'parked'] as const) expect(visited.has(state), `vozidlo ${String(id)} nikdy nebolo v ${state}`).toBe(true);
       // posledný stav z udalostí = skutočný stav vozidla, každý vzorkovaný stav vznikol z nejakej udalosti
       expect(own.at(-1)?.event.to).toBe(world.vehicles.get(id)?.state);
       for (const sample of vehicleSamples(log, id)) expect(sample.state === 'idle' || visited.has(sample.state), `stav ${sample.state}, tick ${String(sample.tick)}`).toBe(true);

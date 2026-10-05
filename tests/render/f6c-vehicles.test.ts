@@ -1,4 +1,4 @@
-// F6c (T6C-04): empty handler (def `empty_handler`, vlastný prefarbený sprite) a vozidlá / kamióny s prázdnym kontajnerom
+// F6c (T6C-04): empty handler (def `empty_handler`; od R2 sprite `ech` 1×2 so spreaderom) a vozidlá / kamióny s prázdnym kontajnerom
 // (stav sprite `carries_empty`, sivý kontajner); bez sivého variantu v manifeste sa kreslí `loaded`.
 import { describe, expect, it } from 'vitest';
 import { entitySpriteFiles, vehicleSprite } from '@render/entity-assets';
@@ -25,19 +25,20 @@ function truck(over: Partial<TruckVM> = {}): TruckVM {
 const file = (name: string): string => `file/entities/${name}.svg`;
 
 describe('manifest: stav `carries_empty`', () => {
-  it('straddle_carrier a truck_container nemajú sprite `carries_empty` (sivý kontajner kreslí hra), empty_handler je vozidlo 1×1 s vlastnými spritmi', () => {
+  it('straddle_carrier a truck_container nemajú sprite `carries_empty` (sivý kontajner kreslí hra), empty_handler je vozidlo 1×2 (R2: sprite `ech`) s jedným súborom', () => {
     expect(vehicleSprite('straddle_carrier')?.states.carries_empty).toBeUndefined();
     expect(vehicleSprite('truck_container')).toBeUndefined();
     const handler = vehicleSprite('empty_handler');
-    expect(handler?.footprint).toEqual({ w: 1, h: 1 });
-    expect(handler?.states).toEqual({ empty: 'entities/empty_handler_empty.svg', loaded: 'entities/empty_handler_loaded.svg' });
+    expect(handler?.footprint).toEqual({ w: 1, h: 2 });
+    expect(handler?.states).toEqual({ empty: 'entities/ech.svg', loaded: 'entities/ech.svg' });
   });
 
   it('atlas načíta empty_handler aj sivé varianty (a súbor sa neopakuje)', () => {
     const files = entitySpriteFiles();
     for (const expected of [
-      'entities/empty_handler_empty.svg',
-      'entities/empty_handler_loaded.svg',
+      'entities/ech.svg',
+      'entities/ech_spreader_20.svg',
+      'entities/ech_spreader_40.svg',
       'modules/empty_depot_fill00.svg',
       'modules/empty_depot_fill100.svg',
     ]) {
@@ -59,7 +60,7 @@ describe('vehicleLoad / vehicleSpriteFile s prázdnym kontajnerom', () => {
     expect(vehicleSpriteFile('straddle_carrier', true, true)).toBe('entities/straddle_carrier.svg'); // jeden sprite, kontajner kreslí hra
     expect(vehicleSpriteFile('straddle_carrier', true)).toBe('entities/straddle_carrier.svg');
     expect(vehicleSpriteFile('straddle_carrier', false, true)).toBe('entities/straddle_carrier.svg');
-    expect(vehicleSpriteFile('empty_handler', true, true)).toBe('entities/empty_handler_loaded.svg'); // handler nesie len prázdne: `loaded` je sivý
+    expect(vehicleSpriteFile('empty_handler', true, true)).toBe('entities/ech.svg'); // ECH má jeden sprite (rám), kontajner skladá hra pod spreaderom
     expect(vehicleSpriteFile('hovercraft', true, true)).toBeUndefined();
     expect(truckSpriteFile('truck_container', true, true)).toBeUndefined(); // kamión je z častí (kabína + náves), nie jeden sprite
   });
@@ -90,15 +91,17 @@ describe('VehicleView: vozidlo s prázdnym kontajnerom', () => {
     expect(view.cargoState).toBe('empty');
   });
 
-  it('empty handler: vlastné sprity `empty` / `loaded`, príznak `carriesEmpty` ostáva pri `loaded` (sivý kontajner je v spritu)', () => {
+  it('empty handler: jeden sprite `ech` pre všetky stavy, sivý prázdny kontajner visí pod spreaderom (hra)', () => {
     const textures = new StubTextures();
     const view = new VehicleView(vehicle({ defId: 'empty_handler' }), deps(textures));
-    expect(view.texture).toBe(textures.textureFor(file('empty_handler_empty')));
+    expect(view.texture).toBe(textures.textureFor(file('ech')));
+    expect(view.cargoState).toBe('none');
     view.update(vehicle({ defId: 'empty_handler', loaded: true, carriesEmpty: true }), 1);
     expect(view.loadState).toBe('carries_empty');
-    expect(view.texture).toBe(textures.textureFor(file('empty_handler_loaded'))); // def nemá `carries_empty`: `loaded`
+    expect(view.texture).toBe(textures.textureFor(file('ech'))); // rám sa nemení
+    expect(view.cargoState).toBe('empty'); // sivý kontajner TEU pod spreaderom
     view.update(vehicle({ defId: 'empty_handler', loaded: true }), 1);
-    expect(view.texture).toBe(textures.textureFor(file('empty_handler_loaded')));
+    expect(view.texture).toBe(textures.textureFor(file('ech')));
   });
 
   it('vozidlo bez textúr (fallback `Graphics`) s prázdnym kontajnerom nepadne', () => {
@@ -113,7 +116,7 @@ describe('VehicleView: vozidlo s prázdnym kontajnerom', () => {
     layer.syncVehicles([vehicle({ loaded: true, carriesEmpty: true }), vehicle({ id: 3, defId: 'empty_handler', loaded: true, carriesEmpty: true })], 1);
     layer.syncTrucks([truck({ loaded: true, carriesEmpty: true })], 1);
     expect(layer.vehicleView(1)?.loadState).toBe('carries_empty');
-    expect(layer.vehicleView(3)?.texture).toBe(textures.textureFor(file('empty_handler_loaded')));
+    expect(layer.vehicleView(3)?.texture).toBe(textures.textureFor(file('ech')));
     expect(layer.truckView(2)?.loadState).toBe('carries_empty');
   });
 });

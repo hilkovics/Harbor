@@ -130,10 +130,22 @@ export interface BrakeLightsEntry {
   readonly footprint: CellSize;
 }
 
-/** Sprite nákladu v `cargo.<typeId>`: rozmer v px zdrojového SVG. */
+/** Sprite nákladu v `cargo.<typeId>`: rozmer v px zdrojového SVG; `tintable` = neutrálny sprite, ktorý hra tónuje farbou linky (R2: `container_<size>_dry`). */
 export interface CargoSpriteEntry {
   readonly size: CellSize;
   readonly file: string;
+  readonly tintable?: boolean;
+}
+
+/**
+ * Spreader vozidla v `entities.<defId>` (R2, ECH): `mount` = bod v px súboru vozidla (`spreaderMount`), v ktorom visí spreader s kontajnerom; `footprint` je
+ * rozmer plátna vozidla (bunky); `spreader20` / `spreader40` sú časti `parts.spreader_20` / `spreader_40` (pivot = `mount`).
+ */
+export interface VehicleSpreaderEntry {
+  readonly mount: ManifestPoint;
+  readonly footprint: CellSize;
+  readonly spreader20: ArticulatedPart;
+  readonly spreader40: ArticulatedPart;
 }
 
 /** Veľkosť bunky v px, v ktorej sú nakreslené sprity manifestu (`cellPx`). */
@@ -141,7 +153,9 @@ export const MANIFEST_CELL_PX: number = manifestCellPx;
 
 const MODULE_SPRITES = spritesManifest as unknown as Readonly<Record<string, ModuleSpriteEntry>>;
 const SHIP_SPRITES = entitiesManifest as unknown as Readonly<Record<string, ShipSpriteEntry>>;
-const VEHICLE_SPRITES = entitiesManifest as unknown as Readonly<Record<string, Partial<VehicleSpriteEntry> & { readonly file?: string; readonly parts?: Readonly<Record<string, ArticulatedPart>> }>>;
+const VEHICLE_SPRITES = entitiesManifest as unknown as Readonly<
+  Record<string, Partial<VehicleSpriteEntry> & { readonly file?: string; readonly parts?: Readonly<Record<string, ArticulatedPart>>; readonly spreaderMount?: ManifestPoint }>
+>;
 const CARGO_SPRITES = cargoManifest as unknown as Readonly<Record<string, CargoSpriteEntry>>;
 
 /** Prefix záznamov lodí v `entities` (`ship_feeder`, `ship_handy`, …). */
@@ -199,6 +213,16 @@ export function articulatedSprite(defId: string): ArticulatedSpriteEntry | undef
   const trailer = entry?.parts?.trailer;
   if (entry?.footprint === undefined || cab === undefined || trailer === undefined) return undefined;
   return { footprint: entry.footprint, cab, trailer };
+}
+
+/** Spreader vozidla `defId` (`entities.<defId>.spreaderMount` + `parts.spreader_20` / `spreader_40`; R2: ECH), alebo `undefined`. */
+export function vehicleSpreader(defId: string): VehicleSpreaderEntry | undefined {
+  const entry = lookup(VEHICLE_SPRITES, defId);
+  const mount = entry?.spreaderMount;
+  const spreader20 = entry?.parts?.spreader_20;
+  const spreader40 = entry?.parts?.spreader_40;
+  if (entry?.footprint === undefined || mount === undefined || spreader20 === undefined || spreader40 === undefined) return undefined;
+  return { mount, footprint: entry.footprint, spreader20, spreader40 };
 }
 
 /** Prekryv brzdových svetiel (`entities.vehicle_brake_lights`), alebo `undefined`. */
@@ -277,7 +301,7 @@ export const LOADED_STATE_MODULES: readonly string[] = ['container_yard_small', 
 
 /**
  * Vozidlá a kamióny, ktorých sprity (`states.empty`, `states.loaded`, voliteľne `states.carries_empty`) sa načítajú do atlasu —
- * `straddle_carrier` (F3), `truck_container` (F4) a `empty_handler` (F6c). Ostatné (AGV, vysokozdvižný vozík, ďalšie kamióny, vlaky) pribudnú so svojimi fázami;
+ * `straddle_carrier` (F3), `truck_container` (F4) a `empty_handler` (F6c, od R2 sprite `ech` + spreadery). Ostatné (AGV, vysokozdvižný vozík, ďalšie kamióny, vlaky) pribudnú so svojimi fázami;
  * do vtedy nakreslí `VehicleView` fallback z tokenov.
  */
 export const LOADED_VEHICLES: readonly string[] = ['straddle_carrier', 'truck_container', 'empty_handler'];
@@ -317,6 +341,11 @@ export function entitySpriteFiles(): string[] {
     if (parts !== undefined) {
       files.add(parts.cab.file);
       files.add(parts.trailer.file);
+    }
+    const spreader = vehicleSpreader(defId);
+    if (spreader !== undefined) {
+      files.add(spreader.spreader20.file);
+      files.add(spreader.spreader40.file);
     }
   }
   const brake = brakeLightsSprite();

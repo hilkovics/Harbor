@@ -122,18 +122,14 @@ describe('prefarbené placeholder assety (F6c)', () => {
     }
   });
 
-  it('empty handler: modrá karoséria (--truck-cab), `loaded` nesie sivý kontajner, `empty` nie', () => {
-    const empty = files(readAsset(entities.empty_handler.states.empty));
-    const loaded = files(readAsset(entities.empty_handler.states.loaded));
-    expect(empty).toContain(hex('--truck-cab'));
-    expect(empty).not.toContain(hex('--vehicle-body'));
-    expect(loaded).toContain(hex('--truck-cab'));
-    expect(loaded).toContain(hex('--cargo-empty'));
-    for (const orange of ORANGE) expect(loaded, orange).not.toContain(orange);
-    expect(empty).not.toContain(hex('--cargo-empty'));
+  it('ECH (R2): rám bez kontajnera (kontajner a spreader kreslí hra), žltá karoséria, sivý kontajner nie je zapečený', () => {
+    const colors = files(readAsset(entities.empty_handler.file));
+    expect(colors).toContain(hex('--vehicle-body'));
+    expect(colors).not.toContain(hex('--cargo-empty'));
+    for (const orange of ORANGE) expect(colors, orange).not.toContain(orange);
   });
 
-  it.each(['entities/straddle_carrier.svg', 'entities/truck_cab.svg', 'entities/truck_trailer_40.svg'])(
+  it.each(['entities/straddle_carrier.svg', 'entities/truck_cab.svg', 'entities/truck_trailer_40.svg', 'entities/ech.svg'])(
     '%s: vozidlo je bez kontajnera (kontajner skladá hra, sivý aj plný z rovnakého spritu nákladu)',
     (path) => {
       const colors = files(readAsset(path));

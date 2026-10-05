@@ -343,7 +343,7 @@ export class World {
         if (unit.hold !== null && (to.kind === 'exported' || to.kind === 'shipped')) holdIndex.remove(unit.id);
       },
     };
-    const deps = { cargoTypes: parts.defs.cargoTypes, ids: parts.ids, events: this.events, clock: parts.clock, observer };
+    const deps = { cargoTypes: parts.defs.cargoTypes, containerTypes: parts.defs.containerTypes, ids: parts.ids, events: this.events, clock: parts.clock, observer };
     this.cargo = parts.cargo === null ? new CargoLedger(deps) : CargoLedger.fromState(parts.cargo, deps);
     this.modules = this.moduleMap;
     this.ships = this.shipMap;

@@ -95,12 +95,12 @@ function sellAndClose(world: World, leg: TranshipContract): void {
 }
 
 /**
- * Loď B odplávala bez `units` jednotiek: penalizácia `⌊reward × transhipMissedRateOfReward × units / booked⌋` (`BookingPenaltyApplied 'rolled'`,
+ * Loď B odplávala bez `units` jednotiek (`teu` TEU): penalizácia `⌊reward × transhipMissedRateOfReward × teu / bookedTeu⌋` (`BookingPenaltyApplied 'rolled'`,
  * z hotovosti pri uzavretí), `TranshipMissed` a lehota záchrany `transhipRescueDays`.
  */
 function missShipB(world: World, leg: TranshipContract, units: number): void {
   const { economy } = world.defs;
-  const amountCents = bookingUnitsPenaltyCents(leg.rewardCents, leg.volumeUnits, units, economy.transhipMissedRateOfReward);
+  const amountCents = bookingUnitsPenaltyCents(leg.rewardCents, leg.volumeTeu, leg.remainingTeu, economy.transhipMissedRateOfReward);
   leg.penaltiesCents += amountCents;
   world.events.emit({ type: 'BookingPenaltyApplied', contractId: leg.id, kind: 'rolled', units, amountCents });
   world.events.emit({ type: 'TranshipMissed', contractId: leg.id, units, outVoyageId: leg.outVoyageId });

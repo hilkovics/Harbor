@@ -671,10 +671,11 @@ function checkShipBerths(world: World, ship: Ship): string | undefined {
   return undefined;
 }
 
-/** Náklad na palube: najviac `capacityUnits`, všetky jednotky typu lode. */
+/** Náklad na palube: najviac `capacityUnits` TEU (ADR-039), všetky jednotky typu lode. */
 function checkShipCargo(world: World, ship: Ship): string | undefined {
   const aboard = world.cargo.unitsOnShip(ship.id);
-  if (aboard.length > ship.def.capacityUnits) return `${ship.label} má na palube ${String(aboard.length)} jednotiek (capacityUnits ${String(ship.def.capacityUnits)})`;
+  const aboardTeu = world.cargo.teuAt('on_ship', ship.id);
+  if (aboardTeu > ship.def.capacityUnits) return `${ship.label} má na palube ${String(aboardTeu)} TEU v ${String(aboard.length)} jednotkách (capacityUnits ${String(ship.def.capacityUnits)} TEU)`;
   const foreign = aboard.find((unitId) => world.cargo.get(unitId)?.typeId !== ship.cargoTypeId);
   return foreign === undefined ? undefined : `${ship.label}: jednotka #${String(foreign)} nie je typu '${ship.cargoTypeId}'`;
 }

@@ -5,7 +5,7 @@
  *
  * - **`returnPlan`** — návrat prázdneho kontajnera linky z vnútrozemia: keď importná jednotka odíde kamiónom (`→ exported`) a
  *   `rng.chance(emptyReturnRate)` vyjde, do plánu pribudne `{ dueTick = tick + round(rng.range(hinterlandDaysRange) × ticksPerDay),
- *   lineId }`. V `dueTick` spawne krok 8 kamión misie `delivery` s novou jednotkou `direction: 'empty'` (`in_truck`).
+ *   lineId, sizeFt }` (veľkosť zdedená od importu, ADR-039). V `dueTick` spawne krok 8 kamión misie `delivery` s novou jednotkou `direction: 'empty'` (`in_truck`).
  * - **`pickupPlan`** — výdaj prázdneho exportérovi: pri prijatí export bookingu sa pre každú jednotku plánu príchodov
  *   `rng.chance(emptyPickupRate)` rozhodne, či ju predchádza prázdny kamión; položka `{ dueTick = príchod − rng.range(emptyPickupLeadHoursRange)
  *   × ticksPerHour (najskôr acceptedTick + 1), lineId bookingu, contractId }`. V `dueTick` spawne krok 8 kamión misie `pickup` po
@@ -22,12 +22,16 @@
  * príchodov exportu): bez bayu, rampy alebo portálu položka počká a žiadna udalosť nezanikne.
  */
 
+import { DEFAULT_SIZE_FT, type ContainerSize } from '../cargo/cargo-unit';
+
 /** Plánovaný návrat jedného prázdneho kontajnera linky. */
 export interface ReturnPlanEntry {
   /** Tick, od ktorého krok 8 spawne kamión s prázdnym (celé ≥ 0). */
   readonly dueTick: number;
   /** Linka z `lines.json`, ktorej kontajner sa vráti. */
   readonly lineId: string;
+  /** Veľkosť vráteného prázdneho kontajnera: zdedená od importu, ktorý odišiel (ADR-039). */
+  readonly sizeFt: ContainerSize;
 }
 
 /** Plánovaný výdaj jedného prázdneho kontajnera linky exportérovi. */
@@ -68,7 +72,7 @@ export const EMPTY_FLOW_STATE_KEYS: readonly (keyof EmptyFlowState)[] = ['return
 /** Kľúče položky `errands` v poradí `getState()`. */
 export const ERRAND_ENTRY_KEYS: readonly (keyof ErrandEntry)[] = ['truckId', 'lineId', 'contractId', 'unitId', 'giveUpTick'];
 /** Kľúče položky `returnPlan` v poradí `getState()`. */
-export const RETURN_PLAN_ENTRY_KEYS: readonly (keyof ReturnPlanEntry)[] = ['dueTick', 'lineId'];
+export const RETURN_PLAN_ENTRY_KEYS: readonly (keyof ReturnPlanEntry)[] = ['dueTick', 'lineId', 'sizeFt'];
 /** Kľúče položky `pickupPlan` v poradí `getState()`. */
 export const PICKUP_PLAN_ENTRY_KEYS: readonly (keyof PickupPlanEntry)[] = ['dueTick', 'lineId', 'contractId'];
 
@@ -98,7 +102,7 @@ export class EmptyFlow {
 
   /** Prázdny plán (nová hra); obnovu zo save robí `EmptyFlow.fromState`. */
   constructor(state: EmptyFlowState = { returnPlan: [], pickupPlan: [], errands: [] }) {
-    this.returns = state.returnPlan.map((entry) => ({ dueTick: entry.dueTick, lineId: entry.lineId }));
+    this.returns = state.returnPlan.map((entry) => ({ dueTick: entry.dueTick, lineId: entry.lineId, sizeFt: entry.sizeFt }));
     this.pickups = state.pickupPlan.map((entry) => ({ dueTick: entry.dueTick, lineId: entry.lineId, contractId: entry.contractId }));
     this.errandList = state.errands.map((entry) => ({ ...entry }));
     for (const errand of this.errandList) this.index(errand);
@@ -130,9 +134,9 @@ export class EmptyFlow {
     return this.errandList;
   }
 
-  /** Naplánuje návrat prázdneho kontajnera linky `lineId` v `dueTick`. */
-  scheduleReturn(dueTick: number, lineId: string): void {
-    insertByDue(this.returns, { dueTick, lineId });
+  /** Naplánuje návrat prázdneho kontajnera linky `lineId` veľkosti `sizeFt` (zdedenej od importu, ADR-039) v `dueTick`. */
+  scheduleReturn(dueTick: number, lineId: string, sizeFt: ContainerSize = DEFAULT_SIZE_FT): void {
+    insertByDue(this.returns, { dueTick, lineId, sizeFt });
   }
 
   /** Naplánuje výdaj prázdneho kontajnera linky `lineId` exportérovi bookingu `contractId` v `dueTick`. */
@@ -233,7 +237,7 @@ export class EmptyFlow {
   /** Čistý JSON stav pre save (nová kópia). */
   getState(): EmptyFlowState {
     return {
-      returnPlan: this.returns.map((entry) => ({ dueTick: entry.dueTick, lineId: entry.lineId })),
+      returnPlan: this.returns.map((entry) => ({ dueTick: entry.dueTick, lineId: entry.lineId, sizeFt: entry.sizeFt })),
       pickupPlan: this.pickups.map((entry) => ({ dueTick: entry.dueTick, lineId: entry.lineId, contractId: entry.contractId })),
       errands: this.errandList.map((entry) => ({ truckId: entry.truckId, lineId: entry.lineId, contractId: entry.contractId, unitId: entry.unitId, giveUpTick: entry.giveUpTick })),
     };

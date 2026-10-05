@@ -5,17 +5,28 @@
  * Tvar (v7, ADR-032; jednotka od v8, ADR-034): `{ createdCount, exportedCount, shippedCount, units }`. `units` sú len živé jednotky (na mape)
  * v kanonickom poradí: druhy lokácií podľa `CARGO_HOLDER_KINDS`, držitelia vzostupne podľa id, v rámci držiteľa poradie
  * jeho indexu (loď vzostupne podľa id, ostatní FIFO). Poradie v rámci FIFO držiteľa je súčasťou stavu — `fromState` ho
- * obnoví. Jednotka nesie aj štítky (`voyageId`, `lineId`, `direction`, `destinationPort`, `weightClass`), `hold` a od v8 stav
+ * obnoví. Jednotka nesie aj štítky (`voyageId`, `lineId`, `direction`, `destinationPort`, `weightClass`, od R2 `sizeFt`, `containerType`, `oog`), `hold` a od v8 stav
  * kvality (`status`, `repairUntilTick`). Exportované
  * ani odplávané jednotky sa neukladajú, ostávajú len `exportedCount` a `shippedCount`.
  */
 import type { ContractId, EntityId, VoyageId } from '../core/entity-id';
 import type { Catalog } from '../defs/catalog';
 import { describeValue, isPlainObject, pointerSegment } from '../defs/def-spec';
-import type { CargoTypeDef } from '../defs/types';
+import type { CargoTypeDef, ContainerTypeDef } from '../defs/types';
 import { CargoStateError } from './cargo-error';
 import { formatLocation, holderIdOf, holderSpecOf, isEntityIdValue, normalizeLocation, uniqueSlotOf } from './cargo-location';
-import { cargoHoldProblem, cargoLabelsProblem, cargoStatusProblem, type CargoDirection, type CargoHold, type CargoStatus, type CargoUnit, type WeightClass } from './cargo-unit';
+import {
+  cargoHoldProblem,
+  cargoLabelsProblem,
+  cargoStatusProblem,
+  containerLabelsDefProblem,
+  type CargoDirection,
+  type CargoHold,
+  type CargoStatus,
+  type CargoUnit,
+  type ContainerSize,
+  type WeightClass,
+} from './cargo-unit';
 
 export interface CargoLedgerState {
   /** Počet jednotiek vytvorených za celú hru (= živé + exportované). */
@@ -39,6 +50,9 @@ export const CARGO_UNIT_KEYS: readonly (keyof CargoUnit)[] = [
   'direction',
   'destinationPort',
   'weightClass',
+  'sizeFt',
+  'containerType',
+  'oog',
   'hold',
   'status',
   'repairUntilTick',
@@ -76,6 +90,7 @@ function slotKeyOf(unit: CargoUnit): string | undefined {
 
 interface UnitContext {
   readonly cargoTypes: Catalog<Readonly<CargoTypeDef>>;
+  readonly containerTypes: Catalog<Readonly<ContainerTypeDef>>;
   /** `ids.getState().nextId` sveta — uložené id musí byť menšie, inak by ho alokátor pridelil znova. */
   readonly nextId: number;
 }
@@ -98,9 +113,11 @@ function parseUnit(raw: unknown, path: string, context: UnitContext): CargoUnit 
   if (typeof quantity !== 'number' || !Number.isSafeInteger(quantity) || quantity < 1) {
     throw new CargoStateError(`${path}/quantity`, `musí byť celé číslo ≥ 1, dostal ${describeValue(quantity)}`);
   }
-  const { voyageId, lineId, direction, destinationPort, weightClass, hold, status, repairUntilTick } = fields;
-  const labelProblem = cargoLabelsProblem({ voyageId, lineId, direction, destinationPort, weightClass }, contractId);
+  const { voyageId, lineId, direction, destinationPort, weightClass, sizeFt, containerType, oog, hold, status, repairUntilTick } = fields;
+  const labelProblem = cargoLabelsProblem({ voyageId, lineId, direction, destinationPort, weightClass, sizeFt, containerType, oog }, contractId);
   if (labelProblem !== undefined) throw new CargoStateError(`${path}/${labelProblem.field}`, labelProblem.problem);
+  const defProblem = containerLabelsDefProblem({ sizeFt: sizeFt as ContainerSize, containerType: containerType as string, oog: oog as boolean }, context.containerTypes);
+  if (defProblem !== undefined) throw new CargoStateError(`${path}/${defProblem.field}`, defProblem.problem);
   const holdProblem = cargoHoldProblem(hold, direction as CargoDirection);
   if (holdProblem !== undefined) throw new CargoStateError(`${path}/hold`, holdProblem);
   const statusProblem = cargoStatusProblem(status, repairUntilTick, direction as CargoDirection);
@@ -121,6 +138,9 @@ function parseUnit(raw: unknown, path: string, context: UnitContext): CargoUnit 
     direction: direction as CargoDirection,
     destinationPort: destinationPort as string | null,
     weightClass: weightClass as WeightClass,
+    sizeFt: sizeFt as ContainerSize,
+    containerType: containerType as string,
+    oog: oog as boolean,
     hold: frozenHold,
     status: status as CargoStatus,
     repairUntilTick: repairUntilTick as number | null,
@@ -141,6 +161,7 @@ export function parseCargoLedgerState(
   raw: unknown,
   cargoTypes: Catalog<Readonly<CargoTypeDef>>,
   nextId: number,
+  containerTypes: Catalog<Readonly<ContainerTypeDef>>,
 ): CargoLedgerState {
   const state = checkKeys(raw, STATE_KEYS, '');
   const createdCount = checkCount(state['createdCount'], '/createdCount');
@@ -149,7 +170,7 @@ export function parseCargoLedgerState(
   const rawUnits = state['units'];
   if (!Array.isArray(rawUnits)) throw new CargoStateError('/units', `musí byť pole, dostal ${describeValue(rawUnits)}`);
 
-  const context: UnitContext = { cargoTypes, nextId };
+  const context: UnitContext = { cargoTypes, containerTypes, nextId };
   const pathById = new Map<EntityId, string>();
   const pathBySlot = new Map<string, string>();
   const units = rawUnits.map((rawUnit: unknown, i): CargoUnit => {

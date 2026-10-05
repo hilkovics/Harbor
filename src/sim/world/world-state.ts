@@ -474,7 +474,7 @@ function parseModules(value: unknown, defs: DefRegistry, nextId: number): Parsed
 function parseCargo(value: unknown, defs: DefRegistry, nextId: number): CargoLedgerState {
   let state: CargoLedgerState;
   try {
-    state = parseCargoLedgerState(value, defs.cargoTypes, nextId);
+    state = parseCargoLedgerState(value, defs.cargoTypes, nextId, defs.containerTypes);
   } catch (error) {
     if (error instanceof CargoStateError) throw new WorldStateError(`/cargo${error.path}`, error.problem);
     throw error;

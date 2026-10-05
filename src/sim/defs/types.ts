@@ -2,7 +2,7 @@
  * Typy dátových definícií (ARCHITECTURE §4). Zrkadlia `data/defs/*.json` a `data/schemas/*.schema.json`
  * 1:1 — nové pole = zmena defu, schémy, tohto typu aj tabuľky polí v `def-registry.ts`.
  */
-import type { CargoDirection, WeightClass } from '../cargo/cargo-unit';
+import type { CargoDirection, ContainerSize, WeightClass } from '../cargo/cargo-unit';
 import type { RoadKind } from '../grid/road-kind';
 import type { TerrainType } from '../grid/terrain';
 
@@ -213,6 +213,10 @@ export interface EmptyFlowDef {
   readonly emptyPickupMaxWaitHours: number;
 }
 
+/** Režimy plánovača skladu (`logistics.yardPlanner`, ADR-039). */
+export const YARD_PLANNER_MODES = ['planned', 'random'] as const;
+export type YardPlannerMode = (typeof YARD_PLANNER_MODES)[number];
+
 /**
  * `logistics.json` — logistické konštanty (ARCHITECTURE §4.6, §7.3, §7.4, §7.6; ADR-010). Konfiguračný def (ADR-009);
  * všetky trvania sú v tickoch.
@@ -222,6 +226,12 @@ export interface LogisticsDef extends DefBase {
   readonly defaultInternalTicks: number;
   /** Po koľkých tickoch skúša vozidlo bez cesty (`no_path`) hľadať cestu znova. */
   readonly repathIntervalTicks: number;
+  /** Trvanie jedného rehandle v tickoch (celé ≥ 1): presun kontajnera z vrchu stohu inam v bloku (`in_storage → in_vehicle → in_storage`; ADR-039). */
+  readonly rehandleTicks: number;
+  /** Odhad doby ležania importu v sklade po vykládke v hodinách (> 0): základ plánovaného času odchodu importu, obmedzený SLA (ADR-039; skutočné termíny odvozu prídu v R4). */
+  readonly importDwellEstimateHours: number;
+  /** Režim plánovača skladu (ADR-039): `planned` = segregácia podľa času odchodu, `random` = náhodné ukladanie z `Rng` (len pre akceptačný test). */
+  readonly yardPlanner: YardPlannerMode;
   readonly congestion: CongestionDef;
   /** Doprava bez prekrývania: zápchy, preplánovanie a parkovanie (ADR-037). */
   readonly traffic: TrafficDef;
@@ -407,6 +417,15 @@ export interface StorageParams {
   readonly role?: StorageRole;
   /** Počet súčasných opráv v depe prázdnych (M&R, celé ≥ 1); povinné práve pri `role: 'empty_depot'`. */
   readonly repairBays?: number;
+  /**
+   * Geometria bloku so stohmi (ADR-039): počet bays pozdĺž bloku (1 bay = 1 bunka = 20′, 40′ zaberie pár bays 2k, 2k+1; celé ≥ 1).
+   * `bays`, `rows` a `maxTier` sú buď všetky, alebo žiadne (`checkStorageParams`); kapacita v TEU je `bays × rows × maxTier` (od TR2-02).
+   */
+  readonly bays?: number;
+  /** Počet radov naprieč blokom (celé ≥ 1; geometria bloku, ADR-039). */
+  readonly rows?: number;
+  /** Najvyššia vrstva stohu (celé ≥ 1; straddle blok 3, depo prázdnych 8; geometria bloku, ADR-039). */
+  readonly maxTier?: number;
 }
 
 /** `params` depa vozidiel (`kind: 'depot'`). */
@@ -571,7 +590,12 @@ export interface ContractTemplateDef {
   readonly exportVolumeUnitsRange?: readonly [number, number];
   /** Typ nákladu z `cargo_types.json`. */
   readonly cargoTypeId: string;
-  /** Rozsah `[min, max]` objemu kontraktu v jednotkách (`min ≤ max`). */
+  /**
+   * Podiel 40′ kontajnerov kontraktu (`0 … 1`, ADR-039); chýba = 0 (všetky 20′). `Rng` ho použije pri vzniku ponuky: objem v TEU ostáva,
+   * počet kontajnerov je z neho odvodený. Hlavný kontrakt `empty_repositioning` ho ignoruje (prázdne berie depo s veľkosťou, akú má).
+   */
+  readonly sizeMix?: number;
+  /** Rozsah `[min, max]` objemu kontraktu v jednotkách typu nákladu (kontajnery: TEU; `min ≤ max`). */
   readonly volumeUnitsRange: readonly [number, number];
   /** Rozsah `[min, max]` SLA v celých dňoch od príchodu lode (`min ≤ max`). */
   readonly slaDaysRange: readonly [number, number];
@@ -581,4 +605,25 @@ export interface ContractTemplateDef {
   readonly weight: number;
   /** Minimálny tier hráča, od ktorého sa šablóna ponúka. */
   readonly minTier: number;
+}
+
+/** Pravidlá stohovania typu kontajnera (`ContainerTypeDef.stacking`): `normal` = bežné, `top_only` = len navrch alebo na zem (flat rack, R5). */
+export const CONTAINER_STACKING_RULES = ['normal', 'top_only'] as const;
+export type ContainerStackingRule = (typeof CONTAINER_STACKING_RULES)[number];
+
+/**
+ * Typ kontajnera z `container_types.json` (docs/TERMINAL_2.md §3.2, ADR-039). `CargoUnit.containerType` je `id` z katalógu. R2 pozná len `dry`;
+ * `needsPower`, `oogChance` a `rateMultiplier` sú zatiaľ len dáta (reefer, nadrozmer a ceny typov prídu v R5).
+ */
+export interface ContainerTypeDef {
+  readonly id: string;
+  /** Povolené veľkosti typu v stopách (`20` / `40`, bez opakovania). */
+  readonly sizes: readonly ContainerSize[];
+  readonly stacking: ContainerStackingRule;
+  /** Potrebuje zásuvku (reefer; R5). */
+  readonly needsPower: boolean;
+  /** Šanca nadrozmerného nákladu pri vzniku jednotky (`0 … 1`; R5). */
+  readonly oogChance: number;
+  /** Násobiteľ odmeny za TEU oproti základnej cene typu nákladu (> 0; R5). */
+  readonly rateMultiplier: number;
 }

@@ -8,10 +8,10 @@
  * keď nečaká iná loď a má cieľ s voľnou trasou, je `inbound` a pohne sa v kroku 3 toho istého ticku ako doteraz;
  * inak čaká pred vstupom (`arriving`) a vstup skúša krok 3 v poradí podľa id. Hotovosť sa nemení.
  *
- * Platnosť vstupu (známa trieda a typ, kompatibilná kategória, `1 ≤ units ≤ capacityUnits`) overuje volajúci vopred
- * (`SpawnShipDebug.validate`, pool kontraktov); chybu programu tu ohlási `Ship` / `CargoLedger` výnimkou.
+ * Platnosť vstupu (známa trieda a typ, kompatibilná kategória, `1 ≤ units ≤ capacityUnits`; od R2 `capacityUnits` je v TEU a TEU jednotiek ho nesmie
+ * presiahnuť, ADR-039) overuje volajúci vopred (`SpawnShipDebug.validate`, pool kontraktov); chybu programu tu ohlási `Ship` / `CargoLedger` výnimkou.
  */
-import { IMPORT_LABELS, type CargoUnitLabels } from '../cargo/cargo-unit';
+import { IMPORT_LABELS, type CargoUnitLabels, type ContainerSize } from '../cargo/cargo-unit';
 import type { ContractId } from '../core/entity-id';
 import type { World } from '../world/world';
 import { Ship } from './ship';
@@ -27,6 +27,8 @@ export interface ShipSpawnSpec {
   readonly contractId: ContractId | null;
   /** Štítky jednotiek (voyage, linka, smer; ADR-032, ADR-034); ladiaca loď `null` = `IMPORT_LABELS`. */
   readonly labels: CargoUnitLabels | null;
+  /** Veľkosť `i`-tej jednotky (kontrakt: `Contract.unitSizeFt`, ADR-039); chýba = všetky podľa `labels` (predvolene 20′). */
+  readonly sizeOf?: (index: number) => ContainerSize;
 }
 
 /** Vytvorí loď s nákladom podľa `spec` (viď hlavička súboru) a vráti ju. */
@@ -43,7 +45,10 @@ export function spawnShip(world: World, spec: ShipSpawnSpec): Ship {
   });
   world.addShip(ship);
   const labels = spec.labels ?? IMPORT_LABELS;
-  for (let i = 0; i < spec.units; i++) world.cargo.create(spec.cargoTypeId, { kind: 'on_ship', shipId: ship.id }, spec.contractId, labels);
+  for (let i = 0; i < spec.units; i++) {
+    const unitLabels = spec.sizeOf === undefined ? labels : { ...labels, sizeFt: spec.sizeOf(i) };
+    world.cargo.create(spec.cargoTypeId, { kind: 'on_ship', shipId: ship.id }, spec.contractId, unitLabels);
+  }
   world.events.emit({ type: 'ShipSpawned', shipId: ship.id, classId: ship.classId, cargoTypeId: ship.cargoTypeId, units: spec.units });
   world.shipTraffic.tryEnterOnSpawn(ship);
   return ship;

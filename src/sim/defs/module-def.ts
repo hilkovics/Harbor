@@ -63,6 +63,10 @@ export const MODULE_PARAM_SPECS: { readonly [K in ModuleKind]: SpecTable<ModuleP
     // Rola skladu a počet opráv (F6c, ADR-034); vzťah `role` ↔ `repairBays` ↔ kategória je v `checkStorageParams`.
     role: { kind: 'enum', values: STORAGE_ROLES, optional: true },
     repairBays: { kind: 'integer', min: 1, optional: true },
+    // Geometria bloku so stohmi (ADR-039); všetky tri naraz alebo žiadne je v `checkStorageParams`.
+    bays: { kind: 'integer', min: 1, optional: true },
+    rows: { kind: 'integer', min: 1, optional: true },
+    maxTier: { kind: 'integer', min: 1, optional: true },
   },
   gate: {
     // Priepustnosť: 1 kamión za `processTicks`; aspoň tick, inak by brána púšťala neobmedzene (F4, rozhodnutie 2).
@@ -111,12 +115,20 @@ function checkBerthParams(params: Readonly<Record<string, unknown>>, path: strin
   return undefined;
 }
 
+/** Polia geometrie bloku so stohmi v `params` skladu (ADR-039): buď všetky, alebo žiadne. */
+const STORAGE_GEOMETRY_KEYS = ['bays', 'rows', 'maxTier'] as const;
+
 /**
  * Vzťah polí skladu (F6c, ADR-034): depo prázdnych (`role: 'empty_depot'`) je sklad kontajnerov a vyžaduje `repairBays`;
- * `repairBays` bez roly depa nemá zmysel. `params` už prešli tabuľkou polí.
+ * `repairBays` bez roly depa nemá zmysel; geometria bloku (ADR-039) je celá alebo žiadna. `params` už prešli tabuľkou polí.
  */
 function checkStorageParams(params: Readonly<Record<string, unknown>>, path: string): Problem | undefined {
   const { role, repairBays, category } = params;
+  const geometry = STORAGE_GEOMETRY_KEYS.filter((key) => params[key] !== undefined);
+  if (geometry.length > 0 && geometry.length < STORAGE_GEOMETRY_KEYS.length) {
+    const missing = STORAGE_GEOMETRY_KEYS.find((key) => params[key] === undefined) as string;
+    return { path: `${path}/${missing}`, message: `geometria bloku (${STORAGE_GEOMETRY_KEYS.join(', ')}) musí byť zadaná celá, chýba ${missing}` };
+  }
   if (role === 'empty_depot') {
     if (category !== 'container') return { path: `${path}/category`, message: `depo prázdnych (role empty_depot) skladuje kontajnery — kategória musí byť 'container', dostal ${describeValue(category)}` };
     if (repairBays === undefined) return { path: `${path}/repairBays`, message: 'depo prázdnych (role empty_depot) vyžaduje repairBays' };

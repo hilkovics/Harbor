@@ -14,7 +14,7 @@
  *   bežným skladom, v rámci toho najmenšie id (nezávisí od poradia indexu, takže ho obnova save nemení). Obe vedia obmedziť výber na sklady
  *   s cestou k cieľu (`targets`: kotvisko nakládky, rampa výdaja; `load-access.ts`, T6C-07b).
  */
-import { EMPTY_WEIGHT_CLASS, type CargoUnit, type CargoUnitLabels } from '../cargo/cargo-unit';
+import { DEFAULT_CONTAINER_LABELS, EMPTY_WEIGHT_CLASS, type CargoUnit, type CargoUnitLabels, type ContainerSize } from '../cargo/cargo-unit';
 import type { DefRegistry } from '../defs/def-registry';
 import type { CargoCategory } from '../defs/types';
 import { EMPTY_DEPOT_CATEGORY, EmptyDepot } from '../modules/empty-depot';
@@ -48,9 +48,12 @@ export function emptyCargoTypeId(defs: DefRegistry): string | undefined {
   return typeId;
 }
 
-/** Štítky novej jednotky prázdneho kontajnera linky `lineId` (bez kontraktu, voyage a prístavu; hmotnostná trieda bez `Rng`). */
-export function emptyLabels(lineId: string): CargoUnitLabels {
-  return { direction: 'empty', voyageId: null, lineId, destinationPort: null, weightClass: EMPTY_WEIGHT_CLASS };
+/**
+ * Štítky novej jednotky prázdneho kontajnera linky `lineId` (bez kontraktu, voyage a prístavu; hmotnostná trieda bez `Rng`). Veľkosť `sizeFt` zdedí
+ * od importu, ktorý odišiel (`ReturnPlanEntry.sizeFt`, ADR-039); typ `dry` a bez nadrozmeru.
+ */
+export function emptyLabels(lineId: string, sizeFt: ContainerSize = DEFAULT_CONTAINER_LABELS.sizeFt): CargoUnitLabels {
+  return { direction: 'empty', voyageId: null, lineId, destinationPort: null, weightClass: EMPTY_WEIGHT_CLASS, ...DEFAULT_CONTAINER_LABELS, sizeFt };
 }
 
 /** Existuje depo prázdnych kategórie `category`? (Na rozdiel od `hasEmptyDepot` pre konkrétnu kategóriu.) */

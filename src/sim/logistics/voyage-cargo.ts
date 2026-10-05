@@ -16,7 +16,7 @@
  * - `stowageOutOfOrder`: je na termináli nenaložená jednotka lode mimo hold s menším kľúčom stowage plánu (plné pred prázdnymi)?
  */
 import { compareStowageOrder } from '../cargo/stowage';
-import { OUTBOUND_BY_DIRECTION, type CargoUnit } from '../cargo/cargo-unit';
+import { OUTBOUND_BY_DIRECTION, teuOf, type CargoUnit } from '../cargo/cargo-unit';
 import type { Contract } from '../contracts/contract';
 import type { ContractKind } from '../contracts/contract-fsm';
 import { slaLapsed } from '../contracts/contract-terms';
@@ -205,6 +205,26 @@ export function countShipCranes(world: World, ship: Ship, predicate: (crane: Cra
     }
   }
   return count;
+}
+
+/**
+ * TEU jednotiek, ktoré práve nakladajú žeriavy lode (`isLoadingInFlight`): jednotka v háku (`heldUnitId`) alebo vybraná na nakládku (`targetUnitId`, ADR-039).
+ * Žeriav bez známej jednotky sa počíta ako 1 TEU (najmenší kontajner).
+ */
+export function loadingInFlightTeu(world: World, ship: Ship): number {
+  let teu = 0;
+  for (const berthId of ship.berthIds) {
+    const berth = world.modules.get(berthId);
+    if (!(berth instanceof BerthModule)) continue;
+    for (const craneId of berth.craneIds) {
+      const crane = world.modules.get(craneId);
+      if (!(crane instanceof CraneModule) || crane.category !== ship.cargoCategory || !isLoadingInFlight(crane)) continue;
+      const unitId = crane.heldUnitId ?? crane.targetUnitId;
+      const unit = unitId === null ? undefined : world.cargo.get(unitId);
+      teu += unit === undefined ? 1 : teuOf(unit);
+    }
+  }
+  return teu;
 }
 
 /**

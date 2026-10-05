@@ -3,7 +3,7 @@
  * sa prázdny kontajner vráti alebo vydá. Výsledok ide do `World.emptyFlow` (save), spotrebuje ho krok 8 (`empty-trucks.ts`).
  *
  * - **Návrat** (`planEmptyReturn`, krok 8, kamión s importom opustil mapu `in_truck → exported`): `Rng.chance(emptyReturnRate)`; ak vyjde,
- *   `Rng.range(hinterlandDaysRange)` dní → `returnPlan { dueTick = tick + max(1, round(dni × ticksPerDay)), lineId }`.
+ *   `Rng.range(hinterlandDaysRange)` dní → `returnPlan { dueTick = tick + max(1, round(dni × ticksPerDay)), lineId, sizeFt }` (veľkosť zdedená od importu, ADR-039).
  * - **Výdaj** (`planEmptyPickups`, `AcceptContract` export bookingu po jeho plánoch príchodov): pre každý plánovaný príchod naloženej
  *   jednotky `Rng.chance(emptyPickupRate)`; ak vyjde, `Rng.range(emptyPickupLeadHoursRange)` hodín pred príchodom →
  *   `pickupPlan { dueTick = max(tick + 1, príchod − round(hodiny × ticksPerHour)), lineId bookingu, contractId }`.
@@ -29,7 +29,7 @@ export function planEmptyReturn(world: World, unit: CargoUnit): void {
   if (!world.rng.chance(emptyReturnRate)) return;
   const { tick, ticksPerDay } = world.clock;
   const delay = Math.max(MIN_RETURN_TICKS, Math.round(world.rng.range(hinterlandDaysRange[0], hinterlandDaysRange[1]) * ticksPerDay));
-  world.emptyFlow.scheduleReturn(tick + delay, unit.lineId);
+  world.emptyFlow.scheduleReturn(tick + delay, unit.lineId, unit.sizeFt);
 }
 
 /**

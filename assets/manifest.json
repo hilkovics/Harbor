@@ -1162,13 +1162,10 @@
     "straddle_carrier": {
       "footprint": {
         "w": 1,
-        "h": 1
+        "h": 2
       },
-      "states": {
-        "empty": "entities/straddle_carrier_empty.svg",
-        "loaded": "entities/straddle_carrier_loaded.svg",
-        "carries_empty": "entities/straddle_carrier_carries_empty.svg"
-      }
+      "note": "priehľadný stred; kontajner kreslí hra pod rám (CargoSprite), stav empty/loaded = bez/s kontajnerom",
+      "file": "entities/straddle_carrier.svg"
     },
     "empty_handler": {
       "footprint": {
@@ -1235,13 +1232,33 @@
     "truck_container": {
       "footprint": {
         "w": 1,
-        "h": 2
+        "h": 3
       },
-      "states": {
-        "empty": "entities/truck_container_empty.svg",
-        "loaded": "entities/truck_container_loaded.svg",
-        "carries_empty": "entities/truck_container_carries_empty.svg"
-      }
+      "parts": {
+        "cab": {
+          "file": "entities/truck_cab.svg",
+          "footprint": {
+            "w": 1,
+            "h": 1
+          },
+          "pivot": {
+            "x": 32,
+            "y": 54
+          }
+        },
+        "trailer": {
+          "file": "entities/truck_trailer_40.svg",
+          "footprint": {
+            "w": 1,
+            "h": 2
+          },
+          "pivot": {
+            "x": 32,
+            "y": 4
+          }
+        }
+      },
+      "note": "kabína na hlave, náves za čapom po stope; kontajner kreslí hra na náves"
     },
     "truck_bulk": {
       "footprint": {
@@ -1645,6 +1662,14 @@
           }
         ]
       }
+    },
+    "vehicle_brake_lights": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "entities/vehicle_brake_lights.svg",
+      "note": "prekryv stojaceho vozidla, svetlá pri spodnom okraji"
     }
   },
   "cargo": {
@@ -1773,7 +1798,7 @@
       "ic_crane",
       "ic_yard",
       "ic_silo",
-      "ic_tank",
+      "ic_tank_farm",
       "ic_gasholder",
       "ic_lot",
       "ic_gate",
@@ -1805,7 +1830,6 @@
       "ic_contract",
       "ic_ship",
       "ic_truck",
-      "ic_train",
       "ic_vehicle",
       "ic_heatmap",
       "ic_utilization",
@@ -1816,7 +1840,37 @@
       "ic_idle",
       "ic_busy",
       "ic_blocked",
-      "ic_info"
+      "ic_info",
+      "ic_container_20",
+      "ic_container_40",
+      "ic_reefer",
+      "ic_open_top",
+      "ic_flat_rack",
+      "ic_tank",
+      "ic_plug",
+      "ic_rehandle",
+      "ic_stack_height",
+      "ic_tp",
+      "ic_appointment",
+      "ic_tractor",
+      "ic_straddle",
+      "ic_rtg",
+      "ic_rmg",
+      "ic_reach_stacker",
+      "ic_ech",
+      "ic_agv",
+      "ic_train",
+      "ic_gate_in",
+      "ic_gate_out",
+      "ic_weighbridge",
+      "ic_ocr",
+      "ic_seal",
+      "ic_twistlock",
+      "ic_safe_zone",
+      "ic_holding",
+      "ic_traffic_jam",
+      "ic_one_way",
+      "ic_terminal_only"
     ]
   }
 }

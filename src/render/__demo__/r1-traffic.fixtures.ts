@@ -127,7 +127,7 @@ export const QUEUE_ROADS: readonly CellCoord[] = [...column(44, 34, 43), ...row(
 export const QUEUE_TRUCKS: readonly TruckVM[] = [
   truckOnTrail(101, centerOf(44, 34), 0, [centerOf(44, 35), centerOf(44, 36)], { state: 'gate_queue' }),
   truckOnTrail(102, centerOf(44, 37), 0, [centerOf(44, 38), centerOf(44, 39)], { blocked: true, loaded: true }),
-  truckOnTrail(103, centerOf(44, 40), 0, [centerOf(44, 41), centerOf(44, 42)], { blocked: true }),
+  truckOnTrail(103, centerOf(44, 40), 0, [centerOf(44, 41), centerOf(44, 42)], { blocked: true, loaded: true, carriesEmpty: true }), // sivý prázdny kontajner
   truckOnTrail(104, centerOf(44, 43), 0, [centerOf(44, 44), centerOf(45, 44)], { loaded: true, prevX: 44.5, prevY: 43.5 }),
 ];
 

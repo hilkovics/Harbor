@@ -292,11 +292,18 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["footprint"],
-      "anyOf": [{ "required": ["file"] }, { "required": ["states"] }, { "required": ["variants"] }],
+      "anyOf": [{ "required": ["file"] }, { "required": ["states"] }, { "required": ["variants"] }, { "required": ["parts"] }],
       "properties": {
         "footprint": { "$ref": "#/$defs/footprint" },
         "file": { "$ref": "#/$defs/svgFile" },
         "states": { "$ref": "#/$defs/stateFiles" },
+        "parts": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/id" },
+          "additionalProperties": { "$ref": "#/$defs/spritePart" },
+          "description": "Kĺbové vozidlo z častí (kamión: `cab` s pivotom točnice, `trailer` s pivotom čapu); časti sa skladajú po stope (R1, ADR-037)."
+        },
         "variants": {
           "type": "object",
           "minProperties": 1,

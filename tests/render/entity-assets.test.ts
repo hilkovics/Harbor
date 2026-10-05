@@ -11,6 +11,8 @@ import {
   QUEUE_BADGE_FILE,
   QUEUE_BADGE_SIZE,
   WARNING_BADGE_FILE,
+  articulatedSprite,
+  brakeLightsSprite,
   cargoSpriteEntry,
   cargoTypeOfCategory,
   entitySpriteFiles,
@@ -66,11 +68,19 @@ describe('záznamy manifestu pre entity', () => {
     expect(ramp?.category).toBe('container');
   });
 
-  it('truck_container: entita 1×2 so stavmi empty / loaded', () => {
-    const entry = vehicleSprite('truck_container');
+  it('truck_container: kĺbová entita 1×3 z kabíny (1×1, točnica 32, 54) a návesu (1×2, čap 32, 4); nie je obyčajné vozidlo', () => {
+    expect(vehicleSprite('truck_container')).toBeUndefined();
+    const entry = articulatedSprite('truck_container');
+    expect(entry?.footprint).toEqual({ w: 1, h: 3 });
+    expect(entry?.cab).toEqual({ file: 'entities/truck_cab.svg', footprint: { w: 1, h: 1 }, pivot: { x: 32, y: 54 } });
+    expect(entry?.trailer).toEqual({ file: 'entities/truck_trailer_40.svg', footprint: { w: 1, h: 2 }, pivot: { x: 32, y: 4 } });
+  });
+
+  it('straddle_carrier: jeden sprite 1×2 pre stavy empty aj loaded (kontajner kreslí hra); brzdové svetlá majú vlastný sprite', () => {
+    const entry = vehicleSprite('straddle_carrier');
     expect(entry?.footprint).toEqual({ w: 1, h: 2 });
-    expect(entry?.states.empty).toBe('entities/truck_container_empty.svg');
-    expect(entry?.states.loaded).toBe('entities/truck_container_loaded.svg');
+    expect(entry?.states).toEqual({ empty: 'entities/straddle_carrier.svg', loaded: 'entities/straddle_carrier.svg' });
+    expect(brakeLightsSprite()).toEqual({ file: 'entities/vehicle_brake_lights.svg', footprint: { w: 1, h: 1 } });
   });
 
   it('queue_badge je 24×24 px a nesie číslo kreslené enginom', () => {
@@ -137,8 +147,7 @@ describe('entitySpriteFiles (čo načíta atlas)', () => {
       'modules/container_yard_small_fill75.svg',
       'modules/container_yard_small_fill100.svg',
       'modules/vehicle_depot.svg',
-      'entities/straddle_carrier_empty.svg',
-      'entities/straddle_carrier_loaded.svg',
+      'entities/straddle_carrier.svg',
     ]) {
       expect(files, expected).toContain(expected);
     }
@@ -154,24 +163,22 @@ describe('entitySpriteFiles (čo načíta atlas)', () => {
     expect(vehicleFiles.sort()).toEqual([
       'entities/empty_handler_empty.svg',
       'entities/empty_handler_loaded.svg',
-      'entities/straddle_carrier_carries_empty.svg',
-      'entities/straddle_carrier_empty.svg',
-      'entities/straddle_carrier_loaded.svg',
-      'entities/truck_container_carries_empty.svg',
-      'entities/truck_container_empty.svg',
-      'entities/truck_container_loaded.svg',
+      'entities/straddle_carrier.svg',
+      'entities/truck_cab.svg',
+      'entities/truck_trailer_40.svg',
+      'entities/vehicle_brake_lights.svg',
     ]);
   });
 
-  it('F4: závora brány (časť modulu), odznak fronty a oba sprity kamióna', () => {
+  it('F4: závora brány (časť modulu), odznak fronty a časti kamióna (kabína + náves)', () => {
     for (const expected of [
       'modules/truck_gate.svg',
       'modules/truck_gate_barrier.svg',
       'modules/truck_waiting_area.svg',
       'modules/loading_ramp_container.svg',
       QUEUE_BADGE_FILE,
-      'entities/truck_container_empty.svg',
-      'entities/truck_container_loaded.svg',
+      'entities/truck_cab.svg',
+      'entities/truck_trailer_40.svg',
     ]) {
       expect(files, expected).toContain(expected);
     }

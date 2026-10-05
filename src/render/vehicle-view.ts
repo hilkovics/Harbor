@@ -34,7 +34,8 @@
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
 import { articulatedPose, blendedLaneMagnitude, shiftRight, trailAt } from './articulated-pose';
 import type { Point } from './camera';
-import { manifestScale, vehicleSprite, type CellSize } from './entity-assets';
+import { CargoSprite } from './cargo-sprite';
+import { MANIFEST_CELL_PX, articulatedSprite, brakeLightsSprite, manifestScale, vehicleSprite, type ArticulatedSpriteEntry, type CellSize } from './entity-assets';
 import {
   defaultRoadKindAt,
   forwardOf,
@@ -50,7 +51,7 @@ import type { EntityTextures } from './sprite-atlas';
 import type { ColorValue, EntityPalette } from './tokens';
 import { cornerAlpha, cornerTurn, isQuarterTurn, lerpHeading, turnArcPose } from './turn-arc';
 import type { VehicleVM, ViewRotation } from './view-models';
-import { CARRIER_LENGTH_PX, CARRIER_WIDTH_PX, VEHICLE_SCALE } from './world-scale';
+import { STRADDLE_BODY_PX, VEHICLE_SCALE } from './world-scale';
 
 /** Hrúbka obrysu fallbacku ako zlomok bunky (2 px pri 64 px, DESIGN_BRIEF §4 „Obrys“). */
 const OUTLINE_CELLS = 2 / 64;
@@ -64,7 +65,16 @@ const FALLBACK_FOOTPRINT: CellSize = { w: 1, h: 1 };
 /** Výška tmavého pruhu na predku fallbacku ako podiel dĺžky vozidla. */
 const FALLBACK_FRONT_STRIPE = 0.2;
 
-/** Brzdové svetlo v px zdroja (bunka 64 px): obdĺžnik 4 × 3 px; odsadenie od bočného okraja vozidla a od zadného okraja. */
+/** Typ nákladu kontajnera na vozidle (dočasne jediný sprite; typové kontajnery prídu v R2). */
+const VEHICLE_CARGO_TYPE = 'container_teu';
+
+/** Uhol, o ktorý sa kontajner otočí, aby ležal dlhšou stranou v smere jazdy (sprite nákladu má dlhšiu stranu pozdĺž x). */
+const CARGO_ALONG_DEG = 90;
+
+/**
+ * Brzdové svetlo v px zdroja (bunka 64 px): obdĺžnik 4 × 3 px; odsadenie od bočného okraja vozidla a od zadného okraja.
+ * `inset` je aj odsadenie svetiel v sprite `vehicle_brake_lights` od spodného okraja plátna.
+ */
 export const BRAKE_LIGHT_PX = Object.freeze({ w: 4, h: 3, inset: 2 });
 
 /** Štýl view: prefix `label` kontajnera a farby fallbacku (telo, obrys, pruh na predku). */
@@ -80,8 +90,8 @@ export interface VehicleViewStyle {
 /** Štýl vozidla na cestách: žlté telo s tmavým obrysom a tmavým pruhom na predku. */
 export const VEHICLE_STYLE: VehicleViewStyle = {
   label: 'vehicle',
-  widthPx: CARRIER_WIDTH_PX,
-  lengthPx: CARRIER_LENGTH_PX,
+  widthPx: STRADDLE_BODY_PX.w,
+  lengthPx: STRADDLE_BODY_PX.h,
   fallback: (palette) => ({ body: palette.vehicle.body, outline: palette.vehicle.dark, front: palette.vehicle.dark }),
 };
 
@@ -111,6 +121,14 @@ export interface VehiclePose {
   readonly y: number;
   /** Uhol v stupňoch v smere hodinových ručičiek (0 = predok na sever). */
   readonly angle: number;
+  /** Kĺbové vozidlo: natočenie kabíny (stupne ako `angle`); chýba = kabína rovno s návesom. */
+  readonly cabAngle?: number;
+}
+
+/** Uhol normalizovaný do (−180, 180]. */
+function signedAngle(degrees: number): number {
+  const wrapped = ((degrees % 360) + 360) % 360;
+  return wrapped > 180 ? wrapped - 360 : wrapped;
 }
 
 /** Tolerancia, s ktorou je bod „v strede bunky“ (sim ho počíta ako `cx + 0,5`, takže je presný; rezerva pre ručné VM). */
@@ -231,6 +249,13 @@ export interface PoseDirector {
   displayLoaded?(vm: VehicleVM): boolean;
 }
 
+/** Kĺbové vozidlo z častí: kabína a náves (kontajnery s počiatkom v točnici / čape), ktoré `syncRig` stavia do pózy. */
+interface Rig {
+  readonly articulated: ArticulatedSpriteEntry;
+  readonly cab: Container;
+  readonly trailer: Container;
+}
+
 /** Textúry vozidla podľa stavu (`carries_empty` je `loaded`, keď def sivý variant nemá). */
 type VehicleTextures = Readonly<Record<VehicleLoad, Texture>>;
 
@@ -262,7 +287,13 @@ export class VehicleView {
   /** Dĺžka spritu v bunkách (`footprint.h` × mierka): predok je pri hlave, stred o polovicu späť v smere natočenia. */
   private readonly spriteLengthCells: number;
   /** Brzdové svetlá pri zadku (vznikne lenivo pri prvom `blocked`); `null`, kým nie sú potrebné. */
-  private brakeLights: Graphics | null = null;
+  private brakeLights: Container | null = null;
+  /** Kĺbové vozidlo z častí (kamión): kabína a náves, kým sú textúry častí k dispozícii (inak fallback). */
+  private rig: Rig | null = null;
+  /** Vzdialenosť od predku po čap (točnicu) v bunkách (`cab.pivot.y`); 0 pri vozidle bez častí. */
+  private hitchCells = 0;
+  /** Kontajner na vozidle: plný a prázdny (sivý) variant, viditeľný podľa stavu; `null` pri fallbacku. */
+  private cargo: { readonly full: CargoSprite; readonly empty: CargoSprite } | null = null;
 
   constructor(
     vm: VehicleVM,
@@ -279,15 +310,30 @@ export class VehicleView {
     this.load = vehicleLoad(vm.loaded, vm.carriesEmpty === true);
     this.textures = this.resolveTextures(vm.defId);
     const entry = vehicleSprite(vm.defId);
-    this.spriteLengthCells = (entry?.footprint ?? FALLBACK_FOOTPRINT).h * VEHICLE_SCALE;
-    if (this.textures !== null && entry !== undefined) {
+    const articulated = articulatedSprite(vm.defId);
+    if (articulated !== undefined) {
+      const { cab, trailer } = articulated;
+      this.hitchCells = (cab.pivot.y / MANIFEST_CELL_PX) * VEHICLE_SCALE;
+      this.spriteLengthCells = this.hitchCells + ((trailer.footprint.h * MANIFEST_CELL_PX - trailer.pivot.y) / MANIFEST_CELL_PX) * VEHICLE_SCALE;
+    } else {
+      this.spriteLengthCells = (entry?.footprint ?? FALLBACK_FOOTPRINT).h * VEHICLE_SCALE;
+    }
+    const partTextures = articulated === undefined ? null : this.resolvePartTextures(articulated);
+    this.sprite = null;
+    if (articulated !== undefined && partTextures !== null) {
+      this.cargo = this.createCargo();
+      this.rig = this.createRig(articulated, partTextures);
+    } else if (this.textures !== null && entry !== undefined) {
+      this.cargo = this.createCargo();
+      // kontajner pod rámom (priehľadný stred straddle carriera): kreslí sa pred rámom
+      this.view.addChild(this.cargo.full, this.cargo.empty);
       this.sprite = new Sprite(this.textures[this.load]);
       this.sprite.anchor.set(0.5);
       this.sprite.setSize(entry.footprint.w * deps.cellPx * VEHICLE_SCALE, entry.footprint.h * deps.cellPx * VEHICLE_SCALE);
       this.view.addChild(this.sprite);
     } else {
-      this.sprite = null;
-      this.view.addChild(this.createFallback(entry?.footprint ?? FALLBACK_FOOTPRINT));
+      this.hitchCells = 0;
+      this.view.addChild(this.createFallback(articulated === undefined ? (entry?.footprint ?? FALLBACK_FOOTPRINT) : { w: articulated.footprint.w, h: this.spriteLengthCells }));
     }
     this.update(vm, alpha);
   }
@@ -307,8 +353,29 @@ export class VehicleView {
     return this.sprite?.texture ?? null;
   }
 
+  /** Vozidlo je nakreslené spritmi z manifestu (rám alebo kabína + náves), nie fallbackom z tokenov — pre testy. */
+  get textured(): boolean {
+    return this.sprite !== null || this.rig !== null;
+  }
+
+  /** Zobrazený kontajner na vozidle (`full` = plný, `empty` = sivý prázdny, `none` = bez kontajnera alebo fallback) — pre testy. */
+  get cargoState(): 'none' | 'full' | 'empty' {
+    if (this.cargo?.full.visible === true) return 'full';
+    return this.cargo?.empty.visible === true ? 'empty' : 'none';
+  }
+
+  /** Kabína kĺbového vozidla (`null` pri vozidle bez častí alebo fallbacku) — pre testy. */
+  get cabView(): Container | null {
+    return this.rig?.cab ?? null;
+  }
+
+  /** Náves kĺbového vozidla (`null` pri vozidle bez častí alebo fallbacku) — pre testy. */
+  get trailerView(): Container | null {
+    return this.rig?.trailer ?? null;
+  }
+
   /** Brzdové svetlá (`null`, kým nebolo vozidlo zablokované) — pre testy. */
-  get brakeLightsView(): Graphics | null {
+  get brakeLightsView(): Container | null {
     return this.brakeLights;
   }
 
@@ -328,6 +395,8 @@ export class VehicleView {
       this.load = load;
       if (this.sprite !== null && this.textures !== null) this.sprite.texture = this.textures[load];
     }
+    this.syncCargo(load);
+    this.syncRig(pose);
     this.syncBrakeLights(vm);
   }
 
@@ -353,7 +422,31 @@ export class VehicleView {
     const lane = blendedLaneMagnitude(pose, pose.angle, (cellX, cellY) => laneMagnitude(this.roadKindAt(cellX, cellY)));
     const at = shiftRight(pose, pose.angle, lane);
     const { cellPx } = this.deps;
-    return { x: at.x * cellPx, y: at.y * cellPx, angle: pose.angle };
+    if (this.rig === null) return { x: at.x * cellPx, y: at.y * cellPx, angle: pose.angle };
+    // kabína sa natáča podľa krátkej tetivy (po čap), náves podľa celej dĺžky: v zákrute kabína ostáva na ceste a náves ju sleduje
+    const cab = articulatedPose(trail.head, trail.body, this.hitchCells, this.spriteLengthCells, vm.heading);
+    return { x: at.x * cellPx, y: at.y * cellPx, angle: pose.angle, cabAngle: cab.angle };
+  }
+
+  /** Kontajner na vozidle: viditeľný plný (`loaded`) alebo prázdny sivý (`carries_empty`) variant, inak žiadny. */
+  private syncCargo(load: VehicleLoad): void {
+    if (this.cargo === null) return;
+    this.cargo.full.visible = load === 'loaded';
+    this.cargo.empty.visible = load === 'carries_empty';
+  }
+
+  /** Postaví kabínu a náves do pózy: čap je v lokálnom rámci `hitch` za predkom v smere kabíny, náves visí na čape rovno s celkovým kurzom. */
+  private syncRig(pose: { readonly angle: number; readonly cabAngle?: number }): void {
+    if (this.rig === null) return;
+    const front = (-this.spriteLengthCells * this.deps.cellPx) / 2;
+    const relative = signedAngle((pose.cabAngle ?? pose.angle) - pose.angle);
+    const radians = (relative * Math.PI) / 180;
+    const hitch = this.hitchCells * this.deps.cellPx;
+    const x = -Math.sin(radians) * hitch;
+    const y = front + Math.cos(radians) * hitch;
+    this.rig.cab.position.set(x, y);
+    this.rig.cab.angle = relative;
+    this.rig.trailer.position.set(x, y);
   }
 
   /** Ukáže / skryje brzdové svetlá: svietia pri `blocked` na ceste; vznikajú lenivo, aby vozidlo bez zablokovania nič navyše nekreslilo. */
@@ -368,9 +461,11 @@ export class VehicleView {
   }
 
   /** Dva červené obdĺžniky (`--vehicle-brake`) pri zadnom okraji spritu, pri bočných okrajoch tela vozidla; mierka ako sprite. */
-  private createBrakeLights(): Graphics {
+  private createBrakeLights(): Container {
     const { cellPx, palette } = this.deps;
     const unit = manifestScale(cellPx) * VEHICLE_SCALE;
+    const sprite = this.createBrakeLightsSprite(unit);
+    if (sprite !== null) return sprite;
     const { w, h, inset } = BRAKE_LIGHT_PX;
     const { brake } = palette.vehicle;
     const x = (this.style.widthPx / 2 - inset - w / 2) * unit;
@@ -379,6 +474,79 @@ export class VehicleView {
     for (const side of [-1, 1]) lights.rect(side * x - (w * unit) / 2, y - (h * unit) / 2, w * unit, h * unit).fill({ color: brake.color, alpha: brake.alpha });
     this.view.addChild(lights);
     return lights;
+  }
+
+  /**
+   * Sprite `vehicle_brake_lights` (svetlá pri spodnom okraji plátna) tak, aby svetlá sedeli na zadku vozidla; kamión ho nesie na návese
+   * (v zákrute je pri zadku návesu). `null`, keď textúra nie je (fallback: procedurálne obdĺžniky).
+   */
+  private createBrakeLightsSprite(unit: number): Sprite | null {
+    const entry = brakeLightsSprite();
+    const texture = entry === undefined ? undefined : this.deps.textures?.file(entry.file);
+    if (entry === undefined || texture === undefined) return null;
+    const { inset } = BRAKE_LIGHT_PX;
+    const sprite = new Sprite(texture);
+    sprite.label = 'brake-lights';
+    sprite.anchor.set(0.5);
+    sprite.setSize(entry.footprint.w * MANIFEST_CELL_PX * unit, entry.footprint.h * MANIFEST_CELL_PX * unit);
+    const halfCanvas = (entry.footprint.h * MANIFEST_CELL_PX) / 2;
+    if (this.rig !== null) {
+      const trailer = this.rig.articulated.trailer;
+      const rear = trailer.footprint.h * MANIFEST_CELL_PX - trailer.pivot.y - inset; // zadný okraj návesu od čapu
+      sprite.position.set(0, (rear + inset - halfCanvas) * unit);
+      this.rig.trailer.addChild(sprite);
+    } else {
+      sprite.position.set(0, (this.style.lengthPx / 2 + inset - halfCanvas) * unit);
+      this.view.addChild(sprite);
+    }
+    return sprite;
+  }
+
+  /** Dvojica kontajnerov (plný / prázdny sivý) položených dlhšou stranou v smere jazdy. */
+  private createCargo(): { readonly full: CargoSprite; readonly empty: CargoSprite } {
+    const { cellPx, palette, textures } = this.deps;
+    const make = (empty: boolean): CargoSprite => {
+      const sprite = new CargoSprite(this.id, VEHICLE_CARGO_TYPE, { cellPx, palette, textures }, { empty });
+      sprite.angle = CARGO_ALONG_DEG;
+      sprite.visible = false;
+      return sprite;
+    };
+    return { full: make(false), empty: make(true) };
+  }
+
+  /** Textúry kabíny a návesu, alebo `null` (fallback), keď ktorákoľvek chýba. */
+  private resolvePartTextures(articulated: ArticulatedSpriteEntry): { readonly cab: Texture; readonly trailer: Texture } | null {
+    const cab = this.deps.textures?.file(articulated.cab.file);
+    const trailer = this.deps.textures?.file(articulated.trailer.file);
+    return cab === undefined || trailer === undefined ? null : { cab, trailer };
+  }
+
+  /** Skladá návesu a kabínu: každá časť je kontajner s počiatkom v čape / točnici, sprite je zakotvený na svojom pivote; kontajner leží na návese. */
+  private createRig(articulated: ArticulatedSpriteEntry, textures: { readonly cab: Texture; readonly trailer: Texture }): Rig {
+    const { cellPx } = this.deps;
+    const part = (entry: ArticulatedSpriteEntry['cab'], texture: Texture): Container => {
+      const group = new Container();
+      const sprite = new Sprite(texture);
+      sprite.anchor.set(entry.pivot.x / (entry.footprint.w * MANIFEST_CELL_PX), entry.pivot.y / (entry.footprint.h * MANIFEST_CELL_PX));
+      sprite.setSize(entry.footprint.w * cellPx * VEHICLE_SCALE, entry.footprint.h * cellPx * VEHICLE_SCALE);
+      group.addChild(sprite);
+      return group;
+    };
+    const trailer = part(articulated.trailer, textures.trailer);
+    const cab = part(articulated.cab, textures.cab);
+    trailer.label = 'trailer';
+    cab.label = 'cab';
+    // kontajner na strede návesu (stred plátna návesu je od čapu o polovicu dĺžky mínus pivot späť)
+    const unit = manifestScale(cellPx) * VEHICLE_SCALE;
+    if (this.cargo !== null) {
+      const centre = ((articulated.trailer.footprint.h * MANIFEST_CELL_PX) / 2 - articulated.trailer.pivot.y) * unit;
+      for (const sprite of [this.cargo.full, this.cargo.empty]) {
+        sprite.position.set(0, centre);
+        trailer.addChild(sprite);
+      }
+    }
+    this.view.addChild(trailer, cab);
+    return { articulated, cab, trailer };
   }
 
   /** Textúry `empty` / `loaded` / `carries_empty` pre vozidlo, alebo `null` (fallback); `carries_empty` bez súboru alebo textúry = `loaded`. */

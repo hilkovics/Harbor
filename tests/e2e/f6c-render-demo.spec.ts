@@ -119,9 +119,9 @@ test('depot: sivé depo s odznakmi poškodených a opráv vedľa oranžového dv
         carrierFullBox: vehicle(fixtures.CARRIER_FULL_BOX)?.loadState,
         truckEmptyBox: renderer.entities.truckView(fixtures.TRUCK_EMPTY_BOX)?.loadState,
       },
-      textured: [fixtures.HANDLER_EMPTY, fixtures.HANDLER_LOADED, fixtures.CARRIER_EMPTY_BOX, fixtures.CARRIER_FULL_BOX].every((id) => texture(id) !== null),
+      textured: [fixtures.HANDLER_EMPTY, fixtures.HANDLER_LOADED, fixtures.CARRIER_EMPTY_BOX, fixtures.CARRIER_FULL_BOX].every((id) => vehicle(id)?.textured === true),
       handlerTexturesDiffer: texture(fixtures.HANDLER_EMPTY) !== texture(fixtures.HANDLER_LOADED),
-      carrierTexturesDiffer: texture(fixtures.CARRIER_EMPTY_BOX) !== texture(fixtures.CARRIER_FULL_BOX),
+      carrierTexturesDiffer: vehicle(fixtures.CARRIER_EMPTY_BOX)?.cargoState !== vehicle(fixtures.CARRIER_FULL_BOX)?.cargoState, // straddle: jeden sprite rámu, líši sa kontajner pod ním (sivý / plný)
     };
   });
   expect(vehicles.states).toEqual({
@@ -179,7 +179,7 @@ test('ramp: pripravené plné a prázdne kontajnery na dokoch, kamión s prázdn
       lastDock0: decor?.stagedSprite(0, 2)?.look.empty === true,
       arriving: state(71),
       leaving: state(72),
-      texturesDiffer: renderer.entities.truckView(71)?.texture !== renderer.entities.truckView(72)?.texture,
+      texturesDiffer: renderer.entities.truckView(71)?.cargoState !== renderer.entities.truckView(72)?.cargoState, // kamión: sivý (prázdny) vs plný kontajner na návese
     };
   });
   expect(ramp.drawn).toEqual([3, 2]);

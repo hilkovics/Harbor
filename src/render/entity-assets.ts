@@ -107,6 +107,29 @@ export interface VehicleSpriteEntry {
   readonly states: { readonly empty: string; readonly loaded: string; readonly carries_empty?: string };
 }
 
+/** Časť kĺbového vozidla (`entities.<defId>.parts.<partId>`): súbor, rozmer v bunkách a pivot (kĺb) v px súboru. */
+export interface ArticulatedPart {
+  readonly file: string;
+  readonly footprint: CellSize;
+  readonly pivot: ManifestPoint;
+}
+
+/**
+ * Kĺbové vozidlo v `entities.<defId>` (R1, kamión): `cab` (pivot = točnica) a `trailer` (pivot = čap), `footprint` je celková dĺžka v bunkách
+ * (3 = `lengthCells`). Kabína stojí na hlave, náves visí za čapom na točnici a sleduje stopu.
+ */
+export interface ArticulatedSpriteEntry {
+  readonly footprint: CellSize;
+  readonly cab: ArticulatedPart;
+  readonly trailer: ArticulatedPart;
+}
+
+/** Prekryv brzdových svetiel (`entities.vehicle_brake_lights`): súbor a rozmer v bunkách (svetlá sú pri spodnom okraji). */
+export interface BrakeLightsEntry {
+  readonly file: string;
+  readonly footprint: CellSize;
+}
+
 /** Sprite nákladu v `cargo.<typeId>`: rozmer v px zdrojového SVG. */
 export interface CargoSpriteEntry {
   readonly size: CellSize;
@@ -118,7 +141,7 @@ export const MANIFEST_CELL_PX: number = manifestCellPx;
 
 const MODULE_SPRITES = spritesManifest as unknown as Readonly<Record<string, ModuleSpriteEntry>>;
 const SHIP_SPRITES = entitiesManifest as unknown as Readonly<Record<string, ShipSpriteEntry>>;
-const VEHICLE_SPRITES = entitiesManifest as unknown as Readonly<Record<string, Partial<VehicleSpriteEntry>>>;
+const VEHICLE_SPRITES = entitiesManifest as unknown as Readonly<Record<string, Partial<VehicleSpriteEntry> & { readonly file?: string; readonly parts?: Readonly<Record<string, ArticulatedPart>> }>>;
 const CARGO_SPRITES = cargoManifest as unknown as Readonly<Record<string, CargoSpriteEntry>>;
 
 /** Prefix záznamov lodí v `entities` (`ship_feeder`, `ship_handy`, …). */
@@ -163,8 +186,26 @@ export function shipDeck(classId: string): ShipDeckEntry | undefined {
  */
 export function vehicleSprite(defId: string): VehicleSpriteEntry | undefined {
   const entry = lookup(VEHICLE_SPRITES, defId);
-  if (entry?.footprint === undefined || entry.states === undefined) return undefined;
+  if (entry?.footprint === undefined) return undefined;
+  // jediný `file`: stavy `empty` / `loaded` sa líšia len kontajnerom, ktorý kreslí hra (straddle carrier, R1)
+  if (entry.states === undefined) return entry.file === undefined ? undefined : { footprint: entry.footprint, states: { empty: entry.file, loaded: entry.file } };
   return { footprint: entry.footprint, states: entry.states };
+}
+
+/** Kĺbové vozidlo `defId` (`entities.<defId>.parts` = `cab` + `trailer`), alebo `undefined`. */
+export function articulatedSprite(defId: string): ArticulatedSpriteEntry | undefined {
+  const entry = lookup(VEHICLE_SPRITES, defId);
+  const cab = entry?.parts?.cab;
+  const trailer = entry?.parts?.trailer;
+  if (entry?.footprint === undefined || cab === undefined || trailer === undefined) return undefined;
+  return { footprint: entry.footprint, cab, trailer };
+}
+
+/** Prekryv brzdových svetiel (`entities.vehicle_brake_lights`), alebo `undefined`. */
+export function brakeLightsSprite(): BrakeLightsEntry | undefined {
+  const entry = lookup(VEHICLE_SPRITES, 'vehicle_brake_lights');
+  if (entry?.footprint === undefined || entry.file === undefined) return undefined;
+  return { file: entry.file, footprint: entry.footprint };
 }
 
 /** Záznam nákladu typu `typeId` (`cargo.<typeId>`), alebo `undefined`. */
@@ -272,7 +313,14 @@ export function entitySpriteFiles(): string[] {
       files.add(entry.states.loaded);
       if (entry.states.carries_empty !== undefined) files.add(entry.states.carries_empty);
     }
+    const parts = articulatedSprite(defId);
+    if (parts !== undefined) {
+      files.add(parts.cab.file);
+      files.add(parts.trailer.file);
+    }
   }
+  const brake = brakeLightsSprite();
+  if (brake !== undefined) files.add(brake.file);
   for (const entry of Object.values(CARGO_SPRITES)) files.add(entry.file);
   files.add(BLOCKED_BADGE_FILE);
   files.add(WARNING_BADGE_FILE);

@@ -25,6 +25,10 @@ import { ENTITY_PALETTE, PALETTE, StubTextures } from './stub-textures';
 const CELL = PALETTE.cellPx;
 const LANE = VEHICLE_OFFSET_CELLS;
 
+/** Rozpätie kamióna v bunkách: predok kabíny → zadok návesu = točnica (54 px) + náves od čapu (124 px); stred je o polovicu späť od hlavy. */
+const SPAN = (54 + 124) / 64;
+const SCALE = CELL / 64;
+
 function deps(textures: StubTextures | null) {
   return { cellPx: CELL, palette: ENTITY_PALETTE, textures };
 }
@@ -66,17 +70,18 @@ function carrier(over: Partial<VehicleVM> = {}): VehicleVM {
 }
 
 describe('kĺbové vozidlá po stope (VehicleView, TruckView)', () => {
-  it('kamión so stopou: predok pri hlave, stred o bunku späť (sprite 2 bunky), pravý pruh, natočenie 0', () => {
+  it('kamión so stopou: predok kabíny pri hlave, stred o polovicu rozpätia (kabína + náves) späť, pravý pruh, natočenie 0', () => {
     const view = new TruckView(truck(), deps(new StubTextures()));
     expect(view.view.x).toBeCloseTo((5.5 + LANE) * CELL, 9);
-    expect(view.view.y).toBeCloseTo(4.5 * CELL, 9);
+    expect(view.view.y).toBeCloseTo((3.5 + SPAN / 2) * CELL, 9);
     expect(view.view.angle).toBe(0);
+    expect(view.cabView!.angle).toBeCloseTo(0, 9); // rovno: kabína s návesom
   });
 
-  it('straddle carrier (sprite 1 bunka, dĺžka 2): stred je pol bunky za hlavou; východ jazdí v južnom pruhu', () => {
+  it('straddle carrier (sprite 2 bunky, dĺžka 2): stred je bunku za hlavou; východ jazdí v južnom pruhu', () => {
     const vm = carrier({ x: 8.5, y: 2.5, prevX: 8.5, prevY: 2.5, body: [{ x: 7.5, y: 2.5 }], lengthCells: 2 });
     const view = new VehicleView(vm, deps(new StubTextures()));
-    expect(view.view.x).toBeCloseTo(8 * CELL, 9);
+    expect(view.view.x).toBeCloseTo(7.5 * CELL, 9);
     expect(view.view.y).toBeCloseTo((2.5 + LANE) * CELL, 9);
     expect(view.view.angle).toBe(90);
   });
@@ -95,10 +100,39 @@ describe('kĺbové vozidlá po stope (VehicleView, TruckView)', () => {
     });
     const view = new TruckView(vm, deps(new StubTextures()));
     expect(view.view.angle).toBeCloseTo(135, 9);
-    // stred je o bunku späť od hlavy (5,5; 6,5) v smere natočenia, posunutý doprava od smeru 135° (juhozápad) o pruh
+    // stred je o polovicu rozpätia späť od hlavy (5,5; 6,5) v smere natočenia, posunutý doprava od smeru 135° (juhozápad) o pruh
     const side = LANE * Math.SQRT1_2;
-    expect(view.view.x).toBeCloseTo((5.5 - Math.SQRT1_2 - side) * CELL, 6);
-    expect(view.view.y).toBeCloseTo((6.5 - Math.SQRT1_2 + side) * CELL, 6);
+    const back = (SPAN / 2) * Math.SQRT1_2;
+    expect(view.view.x).toBeCloseTo((5.5 - back - side) * CELL, 6);
+    expect(view.view.y).toBeCloseTo((6.5 - back + side) * CELL, 6);
+  });
+
+  it('zákruta: kabína ostáva na ceste a natáča sa ostrejšie než náves (tetiva po čap je kratšia než celá dĺžka)', () => {
+    const vm = truck({
+      x: 5.5,
+      y: 6.5,
+      prevX: 5.5,
+      prevY: 6.5,
+      heading: 180,
+      body: [
+        { x: 5.5, y: 5.5 },
+        { x: 4.5, y: 5.5 },
+        { x: 3.5, y: 5.5 },
+      ],
+    });
+    const view = new TruckView(vm, deps(new StubTextures()));
+    const cab = view.cabView!;
+    expect(Math.abs(cab.angle)).toBeGreaterThan(1); // kabína sa odchyľuje od návesu
+    expect(Math.abs(cab.angle)).toBeLessThanOrEqual(90);
+    // čap (spoločný bod) je v lokálnom rámci o `točnicu` za predkom v smere kabíny
+    const hitch = (54 / 64) * CELL;
+    const front = (-SPAN / 2) * CELL;
+    const radians = (cab.angle * Math.PI) / 180;
+    expect(cab.position.x).toBeCloseTo(-Math.sin(radians) * hitch, 6);
+    expect(cab.position.y).toBeCloseTo(front + Math.cos(radians) * hitch, 6);
+    expect(view.trailerView!.position.x).toBeCloseTo(cab.position.x, 9);
+    expect(view.trailerView!.position.y).toBeCloseTo(cab.position.y, 9);
+    expect(view.trailerView!.angle).toBe(0); // náves nesie celkový kurz kontajnera
   });
 
   it('interpolácia: stred a natočenie sa menia spojito pri jazde cez roh (žiadny skok medzi vzorkami alpha)', () => {
@@ -142,21 +176,31 @@ describe('kĺbové vozidlá po stope (VehicleView, TruckView)', () => {
   it('stopa sa dá meniť za behu: update s novým VM presunie sprite (hlava ide dopredu)', () => {
     const view = new TruckView(truck(), deps(new StubTextures()));
     view.update(truck({ y: 2.5, prevY: 3.5, body: [{ x: 5.5, y: 3.5 }, { x: 5.5, y: 4.5 }] }), 1);
-    expect(view.view.y).toBeCloseTo(3.5 * CELL, 9);
+    expect(view.view.y).toBeCloseTo((2.5 + SPAN / 2) * CELL, 9);
   });
 });
 
 describe('brzdové svetlá', () => {
-  it('stojaci kamión na ceste (`blocked`, nie `offRoad`): dva červené obdĺžniky 4 × 3 px pri zadnom okraji', () => {
-    const view = new TruckView(truck({ blocked: true }), deps(new StubTextures()));
+  it('stojaci kamión na ceste (`blocked`, nie `offRoad`): sprite `vehicle_brake_lights` na zadku návesu (nesie ho náves)', () => {
+    const textures = new StubTextures();
+    const view = new TruckView(truck({ blocked: true }), deps(textures));
     expect(view.brakeLightsOn).toBe(true);
-    const lights = view.brakeLightsView as Graphics;
-    const bounds = lights.getLocalBounds();
-    expect(bounds.height).toBeCloseTo(BRAKE_LIGHT_PX.h, 6);
-    // dva obdĺžniky pri bočných okrajoch tela kamióna (28 px), každý 4 px široký
-    expect(bounds.width).toBeCloseTo(28 - 2 * BRAKE_LIGHT_PX.inset, 6);
-    expect(bounds.maxY).toBeCloseTo(116 / 2, 6); // zadný okraj obsahu kamióna (116 px)
-    expect(lights.parent).toBe(view.view);
+    const lights = view.brakeLightsView as Sprite;
+    expect(lights).toBeInstanceOf(Sprite);
+    expect(lights.texture).toBe(textures.textureFor('file/entities/vehicle_brake_lights.svg'));
+    expect(lights.parent).toBe(view.trailerView);
+    expect([lights.width, lights.height]).toEqual([CELL, CELL]); // plátno 1 × 1 bunka
+    // svetlá (spodné 2 px plátna sú voľné) ležia na zadnom okraji návesu: 124 px od čapu, mínus odsadenie
+    const lightsBottom = lights.y + (64 - BRAKE_LIGHT_PX.inset - 32) * SCALE;
+    expect(lightsBottom).toBeCloseTo((128 - 4 - BRAKE_LIGHT_PX.inset) * SCALE, 6);
+  });
+
+  it('bez textúry brzdových svetiel sa použijú procedurálne obdĺžniky (fallback)', () => {
+    const textures = new StubTextures();
+    const partial = { file: (path: string) => (path.endsWith('vehicle_brake_lights.svg') ? undefined : textures.file(path)) };
+    const view = new TruckView(truck({ blocked: true }), { cellPx: CELL, palette: ENTITY_PALETTE, textures: partial });
+    expect(view.brakeLightsOn).toBe(true);
+    expect(view.brakeLightsView).toBeInstanceOf(Graphics);
   });
 
   it('farba brzdových svetiel je z tokenu `--vehicle-brake`', () => {
@@ -176,13 +220,15 @@ describe('brzdové svetlá', () => {
     expect(plain.brakeLightsOn).toBe(true);
     plain.update(truck({ blocked: false }), 1);
     expect(plain.brakeLightsOn).toBe(false);
-    expect(plain.view.children[0]).toBeInstanceOf(Sprite); // sprite ostáva prvým dieťaťom
+    expect(plain.view.children[0]).toBe(plain.trailerView); // náves ostáva prvým dieťaťom
   });
 
-  it('straddle carrier má svetlá pri zadku svojho tela (62 px)', () => {
+  it('straddle carrier má svetlá pri zadku svojho tela (102 px)', () => {
     const view = new VehicleView(carrier({ blocked: true, body: [{ x: 35.5, y: 24.5 }], lengthCells: 2 }), deps(new StubTextures()));
     expect(view.brakeLightsOn).toBe(true);
-    expect(view.brakeLightsView?.getLocalBounds().maxY).toBeCloseTo(62 / 2, 6);
+    const lights = view.brakeLightsView as Sprite;
+    expect(lights.parent).toBe(view.view);
+    expect(lights.y + (64 - BRAKE_LIGHT_PX.inset - 32) * SCALE).toBeCloseTo((102 / 2) * SCALE, 6);
   });
 });
 
@@ -259,7 +305,7 @@ describe('zaparkované vozidlá', () => {
     const textures = new StubTextures();
     const parked = [
       { id: 40, defId: 'straddle_carrier' },
-      { id: 12, defId: 'truck_container' },
+      { id: 12, defId: 'straddle_carrier' },
       { id: 33, defId: 'empty_handler' },
       { id: 7, defId: 'straddle_carrier' },
       { id: 21, defId: 'straddle_carrier' },
@@ -285,8 +331,8 @@ describe('zaparkované vozidlá', () => {
     }
     // sprity z manifestu (stav `empty`), nie `Graphics`
     expect(decor?.vehicle(7)?.children[0]).toBeInstanceOf(Sprite);
-    expect((decor?.vehicle(7)?.children[0] as Sprite).texture).toBe(textures.textureFor('file/entities/straddle_carrier_empty.svg'));
-    expect((decor?.vehicle(12)?.children[0] as Sprite).texture).toBe(textures.textureFor('file/entities/truck_container_empty.svg'));
+    expect((decor?.vehicle(7)?.children[0] as Sprite).texture).toBe(textures.textureFor('file/entities/straddle_carrier.svg'));
+    expect((decor?.vehicle(12)?.children[0] as Sprite).texture).toBe(textures.textureFor('file/entities/straddle_carrier.svg'));
   });
 
   it('zmena zoznamu prekreslí ozdobu; nezmenený zoznam nič nealokuje; bez textúr sa použije `Graphics` z tokenov', () => {

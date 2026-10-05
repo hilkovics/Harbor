@@ -42,7 +42,7 @@ interface Manifest {
       docks?: unknown[];
     }
   >;
-  entities: Record<string, { footprint: { w: number; h: number } }>;
+  entities: Record<string, { footprint: { w: number; h: number }; parts?: Record<string, unknown> }>;
 }
 
 const manifest = readJson(join(ROOT, 'assets', 'manifest.json')) as unknown as Manifest;
@@ -333,14 +333,16 @@ describe('väzba na assets/manifest.json a design/tokens.css', () => {
     ]);
   });
 
-  it.each(['truck_container'])('kamión %s má entitu entities.%s (1×2) v manifeste', (id) => {
-    expect(items(realDef('trucks')).map((entry) => entry['id'])).toContain(id);
-    expect(manifest.entities[id]?.footprint).toEqual({ w: 1, h: 2 });
+  it.each(['truck_container'])('kamión %s má kĺbovú entitu entities.%s (1×3 = lengthCells, kabína + náves) v manifeste', (id) => {
+    const truck = items(realDef('trucks')).find((entry) => entry['id'] === id);
+    expect(truck).toBeDefined();
+    expect(manifest.entities[id]?.footprint).toEqual({ w: 1, h: truck?.['lengthCells'] });
+    expect(Object.keys(manifest.entities[id]?.parts ?? {})).toEqual(['cab', 'trailer']);
   });
 
   it.each(['straddle_carrier'])('vozidlo %s má entitu entities.%s v manifeste', (id) => {
     expect(items(realDef('vehicles')).map((entry) => entry['id'])).toContain(id);
-    expect(manifest.entities[id]?.footprint).toEqual({ w: 1, h: 1 });
+    expect(manifest.entities[id]?.footprint).toEqual({ w: 1, h: 2 }); // R1: nový sprite 1×2 (priehľadný stred)
   });
 
   it('berth_standard: konektory sú presne sprites.berth_standard.connectors', () => {

@@ -25,9 +25,9 @@ function truck(over: Partial<TruckVM> = {}): TruckVM {
 const file = (name: string): string => `file/entities/${name}.svg`;
 
 describe('manifest: stav `carries_empty`', () => {
-  it('straddle_carrier a truck_container majú súbor `carries_empty`, empty_handler je vozidlo 1×1 s vlastnými spritmi', () => {
-    expect(vehicleSprite('straddle_carrier')?.states.carries_empty).toBe('entities/straddle_carrier_carries_empty.svg');
-    expect(vehicleSprite('truck_container')?.states.carries_empty).toBe('entities/truck_container_carries_empty.svg');
+  it('straddle_carrier a truck_container nemajú sprite `carries_empty` (sivý kontajner kreslí hra), empty_handler je vozidlo 1×1 s vlastnými spritmi', () => {
+    expect(vehicleSprite('straddle_carrier')?.states.carries_empty).toBeUndefined();
+    expect(vehicleSprite('truck_container')).toBeUndefined();
     const handler = vehicleSprite('empty_handler');
     expect(handler?.footprint).toEqual({ w: 1, h: 1 });
     expect(handler?.states).toEqual({ empty: 'entities/empty_handler_empty.svg', loaded: 'entities/empty_handler_loaded.svg' });
@@ -38,8 +38,6 @@ describe('manifest: stav `carries_empty`', () => {
     for (const expected of [
       'entities/empty_handler_empty.svg',
       'entities/empty_handler_loaded.svg',
-      'entities/straddle_carrier_carries_empty.svg',
-      'entities/truck_container_carries_empty.svg',
       'modules/empty_depot_fill00.svg',
       'modules/empty_depot_fill100.svg',
     ]) {
@@ -58,13 +56,12 @@ describe('vehicleLoad / vehicleSpriteFile s prázdnym kontajnerom', () => {
   });
 
   it('vehicleSpriteFile: sivý variant, ak ho def má; inak `loaded`; nezmenené správanie bez príznaku', () => {
-    expect(vehicleSpriteFile('straddle_carrier', true, true)).toBe('entities/straddle_carrier_carries_empty.svg');
-    expect(vehicleSpriteFile('straddle_carrier', true)).toBe('entities/straddle_carrier_loaded.svg');
-    expect(vehicleSpriteFile('straddle_carrier', false, true)).toBe('entities/straddle_carrier_empty.svg');
+    expect(vehicleSpriteFile('straddle_carrier', true, true)).toBe('entities/straddle_carrier.svg'); // jeden sprite, kontajner kreslí hra
+    expect(vehicleSpriteFile('straddle_carrier', true)).toBe('entities/straddle_carrier.svg');
+    expect(vehicleSpriteFile('straddle_carrier', false, true)).toBe('entities/straddle_carrier.svg');
     expect(vehicleSpriteFile('empty_handler', true, true)).toBe('entities/empty_handler_loaded.svg'); // handler nesie len prázdne: `loaded` je sivý
     expect(vehicleSpriteFile('hovercraft', true, true)).toBeUndefined();
-    expect(truckSpriteFile('truck_container', true, true)).toBe('entities/truck_container_carries_empty.svg');
-    expect(truckSpriteFile('truck_container', true)).toBe('entities/truck_container_loaded.svg');
+    expect(truckSpriteFile('truck_container', true, true)).toBeUndefined(); // kamión je z častí (kabína + náves), nie jeden sprite
   });
 });
 
@@ -73,22 +70,24 @@ describe('VehicleView: vozidlo s prázdnym kontajnerom', () => {
     const textures = new StubTextures();
     const view = new VehicleView(vehicle(), deps(textures));
     expect(view.loadState).toBe('empty');
-    expect(view.texture).toBe(textures.textureFor(file('straddle_carrier_empty')));
+    expect(view.cargoState).toBe('none');
+    expect(view.texture).toBe(textures.textureFor(file('straddle_carrier')));
     view.update(vehicle({ loaded: true }), 1);
     expect(view.loadState).toBe('loaded');
-    expect(view.texture).toBe(textures.textureFor(file('straddle_carrier_loaded')));
+    expect(view.cargoState).toBe('full');
+    expect(view.texture).toBe(textures.textureFor(file('straddle_carrier')));
     view.update(vehicle({ loaded: true, carriesEmpty: true }), 1);
     expect(view.loadState).toBe('carries_empty');
-    expect(view.texture).toBe(textures.textureFor(file('straddle_carrier_carries_empty')));
+    expect(view.cargoState).toBe('empty'); // sivý prázdny kontajner pod rámom
     view.update(vehicle({ loaded: false, carriesEmpty: true }), 1); // vyložené: príznak sa ignoruje
     expect(view.loadState).toBe('empty');
-    expect(view.texture).toBe(textures.textureFor(file('straddle_carrier_empty')));
+    expect(view.cargoState).toBe('none');
   });
 
   it('nový view vznikne rovno so sivým kontajnerom', () => {
     const textures = new StubTextures();
     const view = new VehicleView(vehicle({ loaded: true, carriesEmpty: true }), deps(textures));
-    expect(view.texture).toBe(textures.textureFor(file('straddle_carrier_carries_empty')));
+    expect(view.cargoState).toBe('empty');
   });
 
   it('empty handler: vlastné sprity `empty` / `loaded`, príznak `carriesEmpty` ostáva pri `loaded` (sivý kontajner je v spritu)', () => {
@@ -108,13 +107,6 @@ describe('VehicleView: vozidlo s prázdnym kontajnerom', () => {
     expect(view.loadState).toBe('carries_empty');
   });
 
-  it('chýbajúca textúra sivého variantu → `loaded` (def so `carries_empty` bez načítanej textúry)', () => {
-    const textures = new StubTextures();
-    const partial = { file: (path: string) => (path.endsWith('carries_empty.svg') ? undefined : textures.file(path)) };
-    const view = new VehicleView(vehicle({ loaded: true, carriesEmpty: true }), { cellPx: CELL, palette: ENTITY_PALETTE, textures: partial });
-    expect(view.texture).toBe(textures.textureFor(file('straddle_carrier_loaded')));
-  });
-
   it('EntityLayer prenesie `carriesEmpty` vozidlám aj kamiónom', () => {
     const textures = new StubTextures();
     const layer = new EntityLayer(deps(textures));
@@ -130,12 +122,12 @@ describe('TruckView: kamión s prázdnym kontajnerom', () => {
   it('návrat prázdneho: naložený sivým kontajnerom; po vyložení prázdny; výdaj exportérovi: z prázdneho na sivý', () => {
     const textures = new StubTextures();
     const view = new TruckView(truck({ loaded: true, carriesEmpty: true }), deps(textures));
-    expect(view.texture).toBe(textures.textureFor(file('truck_container_carries_empty')));
+    expect(view.cargoState).toBe('empty');
     view.update(truck({ loaded: false, carriesEmpty: true, state: 'to_gate_out' }), 1);
-    expect(view.texture).toBe(textures.textureFor(file('truck_container_empty')));
+    expect(view.cargoState).toBe('none');
     view.update(truck({ loaded: true, carriesEmpty: true }), 1);
-    expect(view.texture).toBe(textures.textureFor(file('truck_container_carries_empty')));
+    expect(view.cargoState).toBe('empty');
     view.update(truck({ loaded: true }), 1); // plný kontajner
-    expect(view.texture).toBe(textures.textureFor(file('truck_container_loaded')));
+    expect(view.cargoState).toBe('full');
   });
 });

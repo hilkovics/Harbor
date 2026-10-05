@@ -133,17 +133,12 @@ describe('prefarbené placeholder assety (F6c)', () => {
     expect(empty).not.toContain(hex('--cargo-empty'));
   });
 
-  it.each([
-    ['straddle_carrier', entities.straddle_carrier.states],
-    ['truck_container', entities.truck_container.states],
-  ] as const)('%s: stav `carries_empty` je `loaded` so sivým kontajnerom (rovnaký rozmer a počet tvarov)', (_id, states) => {
-    const loaded = readAsset(states.loaded);
-    const gray = readAsset(states.carries_empty);
-    expect(/viewBox="([^"]*)"/.exec(gray)?.[1]).toBe(/viewBox="([^"]*)"/.exec(loaded)?.[1]);
-    expect(gray.match(/<(rect|path) /g)?.length).toBe(loaded.match(/<(rect|path) /g)?.length);
-    const colors = files(gray);
-    expect(colors).toContain(hex('--cargo-empty'));
-    for (const orange of ORANGE) expect(colors, orange).not.toContain(orange);
-    expect(files(loaded)).toContain(hex('--cargo-container')); // plný kontajner ostáva oranžový
-  });
+  it.each(['entities/straddle_carrier.svg', 'entities/truck_cab.svg', 'entities/truck_trailer_40.svg'])(
+    '%s: vozidlo je bez kontajnera (kontajner skladá hra, sivý aj plný z rovnakého spritu nákladu)',
+    (path) => {
+      const colors = files(readAsset(path));
+      expect(colors).not.toContain(hex('--cargo-container'));
+      expect(colors).not.toContain(hex('--cargo-empty'));
+    },
+  );
 });

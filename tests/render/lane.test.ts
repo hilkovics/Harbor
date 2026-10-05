@@ -1,4 +1,4 @@
-import { Container, Sprite } from 'pixi.js';
+import { Container } from 'pixi.js';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_ROAD_KIND, ROAD_KINDS, ROAD_KIND_TRAITS, loadBundledMap, type RoadKind } from '@sim/grid';
 import { MANIFEST_CELL_PX } from '@render/entity-assets';
@@ -23,7 +23,7 @@ import {
 import { TruckView } from '@render/truck-view';
 import { VehicleView } from '@render/vehicle-view';
 import type { TruckVM, VehicleVM, ViewRotation } from '@render/view-models';
-import { CARRIER_WIDTH_PX, TRUCK_WIDTH_PX } from '@render/world-scale';
+import { CARRIER_WIDTH_PX, STRADDLE_BODY_PX, TRUCK_WIDTH_PX } from '@render/world-scale';
 import { ENTITY_PALETTE, PALETTE, StubTextures } from './stub-textures';
 import { contentExtent, readAsset, svgRects } from './svg-geometry';
 
@@ -58,16 +58,16 @@ describe('geometria pruhu je odvodená zo spritov (assets/)', () => {
     expect(LANE_OFFSET_CELLS).toBe(13 / 64);
   });
 
-  it.each(['empty', 'loaded'])('sprite `straddle_carrier_%s.svg`: obsah je 34 px široký (x 15–49) a vycentrovaný na x 32', (state) => {
-    const extent = contentExtent(readAsset(`entities/straddle_carrier_${state}.svg`));
-    expect(extent.width).toBe(CARRIER_WIDTH_PX); // 34
+  it('sprite `straddle_carrier.svg` (R1, reálna mierka): telo 52 px + obrys, vycentrované na x 32', () => {
+    const extent = contentExtent(readAsset('entities/straddle_carrier.svg'));
+    expect(extent.width).toBe(STRADDLE_BODY_PX.w + 2); // 54 s obrysom
     expect((extent.left + extent.right) / 2).toBe(MANIFEST_CELL_PX / 2);
   });
 
-  it.each(['empty', 'loaded'])('sprite `truck_container_%s.svg`: obsah je 28 px široký (x 18–46) a vycentrovaný na x 32', (state) => {
-    const extent = contentExtent(readAsset(`entities/truck_container_${state}.svg`));
-    expect(extent.width).toBe(TRUCK_WIDTH_PX); // 28
-    expect((extent.left + extent.right) / 2).toBe(MANIFEST_CELL_PX / 2);
+  it.each(['truck_cab', 'truck_trailer_40'])('sprite `%s.svg`: telo 27 px (+ obrys) ≈ TRUCK_WIDTH_PX a vycentrované na x 32 (±1 px)', (name) => {
+    const extent = contentExtent(readAsset(`entities/${name}.svg`));
+    expect(Math.abs(extent.width - TRUCK_WIDTH_PX)).toBeLessThanOrEqual(1);
+    expect(Math.abs((extent.left + extent.right) / 2 - MANIFEST_CELL_PX / 2)).toBeLessThanOrEqual(1);
   });
 
   it('mierka vozidiel je jedna (`VEHICLE_SCALE` = 1, sprity sú v reálnej mierke); vozidlo jazdí v strede pravého pruhu', () => {
@@ -223,8 +223,7 @@ describe('vozidlo v pravom pruhu nezasahuje do protismerného pruhu viac než o 
   function lateralExtent(view: VehicleView, heading: ViewRotation, file: string): { min: number; max: number } {
     const root = new Container();
     root.addChild(view.view);
-    const sprite = view.view.children[0] as Sprite;
-    const spriteSize = sprite.width; // šírka spritu (anchor 0,5); plátno kamióna je 64 × 128
+    const spriteSize = CELL * VEHICLE_SCALE; // šírka plátna spritu (1 bunka)
     const [rx, ry] = right[heading];
     const lateral = (contentX: number): number => {
       const local = (contentX / MANIFEST_CELL_PX - 0.5) * spriteSize; // bod na osi X spritu
@@ -239,30 +238,27 @@ describe('vozidlo v pravom pruhu nezasahuje do protismerného pruhu viac než o 
   }
 
   const carrierExtent = (heading: ViewRotation): { min: number; max: number } =>
-    lateralExtent(new VehicleView(carrier(heading), deps), heading, 'entities/straddle_carrier_empty.svg');
+    lateralExtent(new VehicleView(carrier(heading), deps), heading, 'entities/straddle_carrier.svg');
   const truckExtent = (heading: ViewRotation, loaded = false): { min: number; max: number } =>
-    lateralExtent(new TruckView(truck(heading, loaded), deps), heading, `entities/truck_container_${loaded ? 'loaded' : 'empty'}.svg`);
+    lateralExtent(new TruckView(truck(heading, loaded), deps), heading, 'entities/truck_trailer_40.svg');
 
   // pravý pruh road sprite: od stredovej čiary x 32 po okraj asfaltu x 58
   const laneMin = MANIFEST_CELL_PX / 2;
   const laneMax = 6 + ROAD_ASPHALT_PX;
 
-  it.each(HEADINGS)('kurz %i°: kamión (28 px) je v pravom pruhu, do protismerného zasahuje najviac o 1 px', (heading) => {
+  it.each(HEADINGS)('kurz %i°: kamión (27 px) je v pravom pruhu, do protismerného zasahuje najviac o 2 px', (heading) => {
     for (const loaded of [false, true]) {
       const { min, max } = truckExtent(heading, loaded);
-      expect(max - min).toBeCloseTo(TRUCK_WIDTH_PX, 6);
-      expect(laneMin - min).toBeLessThanOrEqual(1 + 1e-6); // pred stredovú čiaru
-      expect(max - laneMax).toBeLessThanOrEqual(1 + 1e-6); // cez okraj asfaltu
-      expect((min + max) / 2).toBeCloseTo(MANIFEST_CELL_PX / 2 + VEHICLE_OFFSET_PX, 6);
+      expect(Math.abs(max - min - TRUCK_WIDTH_PX)).toBeLessThanOrEqual(1 + 1e-6); // obrys 27 px tela
+      expect(laneMin - min).toBeLessThanOrEqual(2 + 1e-6); // pred stredovú čiaru
+      expect(max - laneMax).toBeLessThanOrEqual(2 + 1e-6); // cez okraj asfaltu
+      expect(Math.abs((min + max) / 2 - (MANIFEST_CELL_PX / 2 + VEHICLE_OFFSET_PX))).toBeLessThanOrEqual(1);
     }
   });
 
-  it.each(HEADINGS)('kurz %i°: straddle carrier (34 px) presahuje pruh len mierne — o 4 px do protismerného pruhu aj cez okraj', (heading) => {
+  it.each(HEADINGS)('kurz %i°: straddle carrier (52 px, R1) je vycentrovaný v pravom pruhu', (heading) => {
     const { min, max } = carrierExtent(heading);
-    expect(max - min).toBeCloseTo(CARRIER_WIDTH_PX, 6);
-    expect(laneMin - min).toBeCloseTo(laneOverhangPx(CARRIER_WIDTH_PX), 6);
-    expect(laneMin - min).toBeLessThanOrEqual(5);
-    expect(max - laneMax).toBeCloseTo(laneOverhangPx(CARRIER_WIDTH_PX), 6);
+    expect(max - min).toBeCloseTo(STRADDLE_BODY_PX.w + 2, 6); // reálna mierka: 52 px telo + obrys, širší než pruh
     expect((min + max) / 2).toBeCloseTo(MANIFEST_CELL_PX / 2 + VEHICLE_OFFSET_PX, 6);
   });
 

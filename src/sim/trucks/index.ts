@@ -31,6 +31,7 @@ export {
   gateNearSideCell,
   gateOfTruck,
   isAtTravelTarget,
+  isOffGateSide,
   isOffQueueSide,
   passageBackOf,
   planTruckRoute,

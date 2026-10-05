@@ -69,7 +69,7 @@ import {
   gateFarSideCell,
   gateOfTruck,
   isAtTravelTarget,
-  isOffQueueSide,
+  isOffGateSide,
   passageBackOf,
   planTruckRoute,
   rampOfTruck,
@@ -482,9 +482,18 @@ export function settleGateQueues(world: World): void {
     const queued = gate.queuedTruckIds;
     for (const truckId of queued) {
       const truck = world.trucks.get(truckId);
-      if (truck === undefined || !isOffQueueSide(world, truck)) continue;
-      const next = TRUCK_STATE_TRAITS[truck.state].afterGate;
+      if (truck === undefined || !isOffGateSide(world, truck)) continue;
+      const traits = TRUCK_STATE_TRAITS[truck.state];
+      const next = traits.afterGate;
       if (next === null) continue;
+      if (traits.passing) {
+        // Kamión v prechode je mimo cesty: vyjde na bunke, na ktorej stojí, len so zabraným slotom (inak dokončí prechod bežne).
+        if (!canExitTo(world, truck, truck.cell, next)) continue;
+        gate.withdraw(truck.id);
+        onGatePassed(world, truck);
+        exitTo(world, truck, truck.cell, next);
+        continue;
+      }
       gate.withdraw(truck.id);
       onGatePassed(world, truck);
       startTruckTrip(world, truck, next);

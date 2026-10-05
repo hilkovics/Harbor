@@ -58,13 +58,13 @@ describe('spawn kamiónov s exportom', () => {
     expect(lostUnits(world)).toBe(0);
   });
 
-  it('cyklus delivery kamióna: to_gate → gate_queue → to_bay → waiting → to_dock → unloading → to_gate_out → gate_queue_out → to_portal → exited', () => {
+  it('cyklus delivery kamióna: to_gate → gate_queue → gate_pass → to_bay → waiting → to_dock → unloading → to_gate_out → gate_queue_out → gate_pass_out → to_portal → exited', () => {
     const world = exportWorld();
     const { exportContract } = acceptedBooking(world, { kind: 'export', booked: 1 });
     planArrivals(exportContract, [5]);
     const events = tickEvents(world, 400);
     const chain = ofType(events, 'TruckStateChanged').map((entry) => entry.event.to);
-    expect(chain).toEqual(['gate_queue', 'to_bay', 'waiting', 'to_dock', 'unloading', 'to_gate_out', 'gate_queue_out', 'to_portal', 'exited']);
+    expect(chain).toEqual(['gate_queue', 'gate_pass', 'to_bay', 'waiting', 'to_dock', 'unloading', 'to_gate_out', 'gate_queue_out', 'gate_pass_out', 'to_portal', 'exited']);
     expect(ofType(events, 'TruckExited').map((entry) => entry.event.units)).toEqual([0]);
     expect(world.trucks.size).toBe(0);
   });

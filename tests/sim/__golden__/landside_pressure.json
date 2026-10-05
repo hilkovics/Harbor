@@ -1,13 +1,13 @@
 {
-  "cashEnd": 33310000,
-  "exportedUnits": 88,
-  "shippedUnits": 36,
-  "contractsCompleted": 3,
-  "xp": 124,
-  "emptyReturns": 27,
+  "cashEnd": 26140000,
+  "exportedUnits": 0,
+  "shippedUnits": 0,
+  "contractsCompleted": 0,
+  "xp": 0,
+  "emptyReturns": 0,
   "emptyPickedUp": 0,
   "emptyPickupMisses": 21,
-  "inlandWaitTicks": 19256,
-  "inlandWaitTicksMax": 4081,
-  "pickupBayStarvationTicks": 1987
+  "inlandWaitTicks": 0,
+  "inlandWaitTicksMax": 0,
+  "pickupBayStarvationTicks": 0
 }

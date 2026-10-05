@@ -118,6 +118,18 @@ export function isOffQueueSide(world: World, truck: Truck): boolean {
 }
 
 /**
+ * Kamión vo fronte (`gate_queue*`) alebo v prechode bránou (`gate_pass*`) nestojí na svojej strane brány, hoci je určená (strany
+ * sa pod ním preklopili)? Podklad pre `settleGateQueues`; invariant brány (`isOffQueueSide`) kamión v prechode nekontroluje —
+ * ten smie ostať na starej strane, kým ho urovnanie po zmene siete (alebo koniec prechodu) neposunie.
+ */
+export function isOffGateSide(world: World, truck: Truck): boolean {
+  const traits = TRUCK_STATE_TRAITS[truck.state];
+  if (!traits.queued && !traits.passing) return false;
+  const near = gateNearSideCell(world, truck);
+  return near !== NO_ACCESS && truck.cell !== near;
+}
+
+/**
  * Cieľ `to_dock` (viď hlavička): bunka docku, ak ju okruh kamióna obslúži, inak bunka rampy okruhu; bez okruhu bunka
  * docku (`NO_ACCESS` = konektor docku bez cesty — plánovanie potom skúsi najbližšiu prístupovú bunku rampy).
  */

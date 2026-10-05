@@ -96,6 +96,9 @@ function defsWithParams(defId: string, params: Readonly<Record<string, number>>)
   return DefRegistry.fromRaw({ ...RAW_DEFS, modules: { ...modulesJson, items } });
 }
 
+/** Kamión v stave `gate_queue` (čaká na vonkajšej bunke brány za kamiónom, ktorý práve prechádza); iný → `undefined`. */
+const queuedTruck = (world: World): Truck | undefined => [...world.trucks.values()].find((truck) => truck.state === 'gate_queue');
+
 const defsWithGateInternal = (internalTicks: number): DefRegistry => defsWithParams('truck_gate', { internalTicks });
 const defsWithBays = (bays: number): DefRegistry => defsWithParams('truck_waiting_area', { bays });
 
@@ -110,8 +113,12 @@ describe('spawn kamióna', () => {
     expect(truck.remainingRoute().at(-1)).toBe(cellIndex(world, GATE_ENTRY));
     expect([truck.gateId, truck.waitingAreaId, truck.rampId, truck.bay, truck.dock]).toEqual([6, 7, 8, 0, 0]);
     expect([area.bayHolder(0), area.reservedBays, ramp.dockTruck(0), ramp.dockTruck(1), ramp.claimedAt(0), ramp.claimedAt(1)]).toEqual([truck.id, 1, null, null, 1, 0]);
-    const next = run(world, 5);
-    expect(next.filter((entry) => entry.event.type === 'TruckSpawned').map((entry) => [entry.tick, entry.event.type === 'TruckSpawned' ? entry.event.dock : -1])).toEqual([[2, 0]]);
+    const next = run(world, 20);
+    // Portál je cesta (ADR-037, R1 č. 10): druhý kamión vznikne, až keď prvý uvoľní bunku portálu (jeho telo sa rozvinie do 3 buniek).
+    const spawns = next.filter((entry) => entry.event.type === 'TruckSpawned').map((entry) => [entry.tick, entry.event.type === 'TruckSpawned' ? entry.event.dock : -1]);
+    expect(spawns).toHaveLength(1);
+    expect(spawns[0][0]).toBeGreaterThan(2);
+    expect(spawns[0][1]).toBe(0);
     expect([world.trucks.size, ramp.claimedAt(0), area.reservedBays]).toEqual([2, 2, 2]);
   });
 
@@ -195,7 +202,7 @@ describe('povel do docku a fronta v stojisku (ADR-029)', () => {
     buyVehicles(world, depot, 1);
     const ramp = rampOf(world);
     const toDock: { tick: number; staged: number; dock: number }[] = [];
-    for (let i = 0; i < 3000 && world.cargo.exportedCount < 3; i++) {
+    for (let i = 0; i < 9000 && world.cargo.exportedCount < 3; i++) {
       for (const event of world.tick()) {
         if (event.type !== 'TruckStateChanged' || event.to !== 'to_dock') continue;
         const truck = world.trucks.get(event.truckId);
@@ -226,11 +233,13 @@ describe('cyklus jedného kamióna', () => {
       log,
     );
     const path = changes(log, truck.id);
-    expect(path.map((entry) => entry.to)).toEqual(['gate_queue', 'to_bay', 'waiting', 'to_dock', 'loading', 'to_gate_out', 'gate_queue_out', 'to_portal', 'exited']);
-    expect(tickOf(path, 'to_bay') - tickOf(path, 'gate_queue')).toBe(PROCESS);
+    expect(path.map((entry) => entry.to)).toEqual(['gate_queue', 'gate_pass', 'to_bay', 'waiting', 'to_dock', 'loading', 'to_gate_out', 'gate_queue_out', 'gate_pass_out', 'to_portal', 'exited']);
+    // Voľná brána začne prechod v ticku príchodu (gate_queue → gate_pass v tom istom ticku); prechod trvá passTicks.
+    expect(tickOf(path, 'gate_pass') - tickOf(path, 'gate_queue')).toBe(0);
+    expect(tickOf(path, 'to_bay') - tickOf(path, 'gate_pass')).toBe(PROCESS);
     expect(tickOf(path, 'to_dock') - tickOf(path, 'waiting')).toBe(INTERNAL);
     expect(tickOf(path, 'to_gate_out') - tickOf(path, 'loading')).toBe(LOAD);
-    expect(tickOf(path, 'to_portal') - tickOf(path, 'gate_queue_out')).toBe(PROCESS);
+    expect(tickOf(path, 'to_portal') - tickOf(path, 'gate_pass_out')).toBe(PROCESS);
     const exitTick = tickOf(path, 'exited');
     const atExit = log.filter((entry) => entry.tick === exitTick).map((entry) => entry.event);
     expect(atExit).toContainEqual({ type: 'CargoMoved', unitId: unit, from: { kind: 'in_truck', truckId: truck.id }, to: { kind: 'exported' }, tick: exitTick });
@@ -254,7 +263,7 @@ describe('cyklus jedného kamióna', () => {
     const truck = onlyTruck(world);
     runUntil(world, () => truck.state === 'waiting', 500, log);
     const path = changes(log, truck.id);
-    expect(tickOf(path, 'to_bay') - tickOf(path, 'gate_queue')).toBe(PROCESS + 5);
+    expect(tickOf(path, 'to_bay') - tickOf(path, 'gate_pass')).toBe(PROCESS + 5);
   });
 
   it('traffic rastie aj pod kamiónom (krok 11 po pohybe)', () => {
@@ -299,34 +308,35 @@ describe('cesty pod kamiónom a bez cesty', () => {
     stage(world, ramp, 0, 1);
     const log = run(world, 1);
     const truck = onlyTruck(world);
-    runUntil(world, () => truck.state === 'gate_queue', 500, log);
+    runUntil(world, () => truck.state === 'gate_pass', 500, log);
     execute(world, { type: 'RemoveRoad', cells: [GATE_EXIT] });
     expect(world.isRampOperational(ramp)).toBe(false);
     run(world, PROCESS + 5, log);
-    expect([truck.state, gate.queueLength, gate.busyTicksLeft]).toEqual(['gate_queue', 1, 0]);
+    // Prechod skončil, ale druhá strana chýba: kamión ostáva v bráne (gate_pass, mimo cesty) na čele fronty.
+    expect([truck.state, gate.queueLength, gate.busyTicksLeft, truck.body.length]).toEqual(['gate_pass', 1, 0, 0]);
     execute(world, { type: 'PlaceRoad', cells: [GATE_EXIT] });
     runUntil(world, () => world.cargo.exportedCount === 1, 3000, log);
     expect(changes(log, truck.id).map((entry) => entry.to)).toContain('to_bay');
   });
 
-  it('gate_queue_out: vonkajšia strana zanikne počas prechodu von a vráti sa → prechod sa zopakuje celý, trucksProcessed +1, nie +2; aj cez save (BACKLOG P2, T06-07)', () => {
+  it('gate_pass_out: vonkajšia strana zanikne počas prechodu von a vráti sa → dokončený prechod sa nezopakuje, kamión hneď vyjde, trucksProcessed +1, nie +2; aj cez save (BACKLOG P2, T06-07)', () => {
     const { world, gate, ramp } = landside();
     stage(world, ramp, 0, 1);
     const log = run(world, 1);
     const truck = onlyTruck(world);
-    runUntil(world, () => truck.state === 'gate_queue_out', 3000, log);
+    runUntil(world, () => truck.state === 'gate_pass_out', 3000, log);
     run(world, 2, log);
     expect([gate.trucksProcessed, gate.busyTicksLeft]).toEqual([1, PROCESS - 2]);
     execute(world, { type: 'RemoveRoad', cells: [GATE_ENTRY] });
     run(world, PROCESS + REPATH, log);
-    expect([truck.state, gate.queuedTruckIds, gate.busyTicksLeft, gate.trucksProcessed]).toEqual(['gate_queue_out', [truck.id], 0, 1]);
+    expect([truck.state, gate.queuedTruckIds, gate.busyTicksLeft, gate.trucksProcessed]).toEqual(['gate_pass_out', [truck.id], 0, 1]);
     const restored = World.deserialize(DEFS, MAP, viaJson(world.serialize()));
     for (const target of [world, restored]) {
       execute(target, { type: 'PlaceRoad', cells: [GATE_ENTRY] });
       const placedAt = target.clock.tick;
       const tail: Timed[] = [];
       runUntil(target, () => target.cargo.exportedCount === 1, 3000, tail);
-      expect(tickOf(changes(tail, truck.id), 'to_portal') - placedAt).toBe(PROCESS + 1);
+      expect(tickOf(changes(tail, truck.id), 'to_portal') - placedAt).toBe(1);
       expect(gateOf(target).trucksProcessed).toBe(2);
     }
     expect(JSON.stringify(restored.serialize())).toBe(JSON.stringify(world.serialize()));
@@ -378,8 +388,9 @@ describe('cesta späť a kamión za bránou (review T04-11, major 1 a 2)', () =>
     runUntil(world, () => truck.state === 'gate_queue_out', 500, log);
     expect([truck.cell, ramp.dockTruck(0), area.reservedBays + area.occupiedBays, world.cargo.countAt('in_truck', truck.id)]).toEqual([cellIndex(world, GATE_EXIT), null, 0, 1]);
     run(world, 3 * REPATH, log);
+    // Druhá strana chýba od začiatku, takže prechod von sa nezačne: kamión čaká vo fronte (gate_queue_out) na vonkajšej bunke.
     expect([truck.state, gate.queuedTruckIds, gate.busyTicksLeft, gate.trucksProcessed]).toEqual(['gate_queue_out', [truck.id], 0, 1]);
-    expect(changes(log, truck.id).map((entry) => entry.to)).toEqual(['gate_queue', 'to_bay', 'waiting', 'to_dock', 'loading', 'to_gate_out', 'gate_queue_out']);
+    expect(changes(log, truck.id).map((entry) => entry.to)).toEqual(['gate_queue', 'gate_pass', 'to_bay', 'waiting', 'to_dock', 'loading', 'to_gate_out', 'gate_queue_out']);
     // Kamión za bránou už nič nedrží — uložený stav sa obnoví a pokračuje rovnako.
     const restored = World.deserialize(DEFS, MAP, viaJson(world.serialize()));
     execute(world, { type: 'PlaceRoad', cells: [GATE_ENTRY] });
@@ -431,33 +442,34 @@ describe('preklopenie strán brány pod kamiónom vo fronte (dodatok ADR-024)', 
   ];
   const SLOW = Array.from({ length: 8 }, (_, i) => ({ x: 44, y: 41 - i }));
 
-  it('kamión v gate_queue na (44, 33) po preklopení vypadne z fronty bez prechodu (prechod sa zruší) a ide do stojiska; save hneď po príkaze sa obnoví', () => {
+  it('kamión v prechode (gate_pass) na (44, 33) po preklopení vypadne z fronty bez dokončenia prechodu (prechod sa zruší) a ide do stojiska; save hneď po príkaze sa obnoví', () => {
     const { world, gate, ramp } = landside();
     execute(world, { type: 'PlaceRoad', cells: BYPASS });
     expect(world.gateSides(gate).entryCell).toBe(cellIndex(world, GATE_ENTRY));
     stage(world, ramp, 0, 1);
     const log = run(world, 1);
     const truck = onlyTruck(world);
-    runUntil(world, () => truck.state === 'gate_queue', 500, log);
+    runUntil(world, () => truck.state === 'gate_pass', 500, log);
     expect(gate.busyTicksLeft).toBeGreaterThan(0);
     const flip = execute(world, { type: 'PlaceRoad', cells: SLOW, kind: 'one_lane' });
     for (const event of flip) log.push({ tick: world.clock.tick, event });
     expect(world.gateSides(gate)).toMatchObject({ entryCell: cellIndex(world, GATE_EXIT), exitCell: cellIndex(world, GATE_ENTRY) });
-    expect(flip.filter((event) => event.type === 'TruckStateChanged')).toEqual([{ type: 'TruckStateChanged', truckId: truck.id, from: 'gate_queue', to: 'to_bay' }]);
+    expect(flip.filter((event) => event.type === 'TruckStateChanged')).toEqual([{ type: 'TruckStateChanged', truckId: truck.id, from: 'gate_pass', to: 'to_bay' }]);
     expect([truck.state, gate.queueLength, gate.busyTicksLeft, gate.trucksProcessed, truck.cell]).toEqual(['to_bay', 0, 0, 0, cellIndex(world, GATE_ENTRY)]);
     expect(() => world.assertInvariants()).not.toThrow();
     const restored = World.deserialize(DEFS, MAP, viaJson(world.serialize()));
     expect(JSON.stringify(restored.serialize())).toBe(JSON.stringify(world.serialize()));
     runUntil(world, () => world.cargo.exportedCount === 1, 4000, log);
-    expect(changes(log, truck.id).map((entry) => entry.to)).toEqual(['gate_queue', 'to_bay', 'waiting', 'to_dock', 'loading', 'to_gate_out', 'gate_queue_out', 'to_portal', 'exited']);
+    expect(changes(log, truck.id).map((entry) => entry.to)).toEqual(['gate_queue', 'gate_pass', 'to_bay', 'waiting', 'to_dock', 'loading', 'to_gate_out', 'gate_queue_out', 'gate_pass_out', 'to_portal', 'exited']);
   });
 
   it('krok 12: kamión vo fronte mimo svojej strany brány → WorldInvariantError', () => {
     const { world, gate, ramp } = landside();
-    stage(world, ramp, 0, 1);
+    stage(world, ramp, 0, 2);
     run(world, 1);
-    const truck = onlyTruck(world);
-    runUntil(world, () => truck.state === 'gate_queue', 500);
+    let truck = queuedTruck(world);
+    runUntil(world, () => (truck = queuedTruck(world)) !== undefined, 500);
+    if (truck === undefined) throw new Error('žiadny kamión v gate_queue');
     truck.jumpTo(cellIndex(world, GATE_EXIT), world.grid.width);
     expect(gate.isQueued(truck.id)).toBe(true);
     expect(() => world.assertInvariants()).toThrow(/nie na svojej strane brány/);
@@ -530,8 +542,9 @@ describe('invarianty kroku 12: kamióny ↔ bays, docky, fronta, náklad', () =>
     const parts = landside();
     stage(parts.world, parts.ramp, 0, 2);
     run(parts.world, 1);
-    const truck = onlyTruck(parts.world);
-    runUntil(parts.world, () => truck.state === 'gate_queue', 500);
+    let truck = queuedTruck(parts.world);
+    runUntil(parts.world, () => (truck = queuedTruck(parts.world)) !== undefined, 500);
+    if (truck === undefined) throw new Error('žiadny kamión v gate_queue');
     return { ...parts, truck };
   }
 
@@ -539,6 +552,7 @@ describe('invarianty kroku 12: kamióny ↔ bays, docky, fronta, náklad', () =>
     const { world, gate } = queued();
     expect(() => world.assertInvariants()).not.toThrow();
     expect(gate.busyTicksLeft).toBeGreaterThan(0);
+    gate.dequeue();
     gate.dequeue();
     // Brána hlási prechod bez kamióna vo fronte skôr než kamióny (bod 10 pred bodom 11, review T04-11 a).
     expect(() => world.assertInvariants()).toThrow(/prechod beží .*fronta je prázdna/);
@@ -656,8 +670,8 @@ describe('save v4: chyby obnovy kamiónov', () => {
 
   it('platný save sa obnoví a serializuje rovnako', () => {
     const state = midState();
-    // Tick 1: kamión pre dock 0 aj dock 1; tick 2: druhý kamión pre druhú jednotku docku 0 (ADR-029).
-    expect(trucksOf(state).map((truck) => truck['dock'])).toEqual([0, 1, 0]);
+    // Jeden kamión naraz na portáli (ADR-037): najprv dock 0, potom jeho druhá jednotka (docky vzostupne každý tick), nakoniec dock 1 (ADR-029).
+    expect(trucksOf(state).map((truck) => truck['dock'])).toEqual([0, 0, 1]);
     expect(JSON.stringify(World.deserialize(DEFS, MAP, viaJson(state)).serialize())).toBe(JSON.stringify(state));
   });
 
@@ -666,7 +680,7 @@ describe('save v4: chyby obnovy kamiónov', () => {
     ['resume mimo no_path', (s) => (trucksOf(s)[0]['resume'] = 'to_gate'), '/trucks/0/resume'],
     ['bez bay v stave s bay', (s) => (trucksOf(s)[0]['bay'] = null), '/trucks/0/bay'],
     ['dva kamióny s tým istým bay', (s) => (trucksOf(s)[1]['bay'] = trucksOf(s)[0]['bay']), '/trucks/1/bay'],
-    ['nároky kamiónov na dock prevyšujú jeho náklad (ADR-029)', (s) => (trucksOf(s)[1]['dock'] = trucksOf(s)[0]['dock']), '/trucks/2/dock'],
+    ['nároky kamiónov na dock prevyšujú jeho náklad (ADR-029)', (s) => (trucksOf(s)[2]['dock'] = trucksOf(s)[0]['dock']), '/trucks/2/dock'],
     ['neznámy def', (s) => (trucksOf(s)[0]['defId'] = 'truck_x'), '/trucks/0/defId'],
     ['rampa nie je rampa', (s) => (trucksOf(s)[0]['rampId'] = 6), '/trucks/0/rampId'],
     ['kamión mimo mapy (poloha nie je na trase)', (s) => (trucksOf(s)[0]['x'] = 1), '/trucks/0/x'],

@@ -66,14 +66,14 @@ describe('truckStateChains', () => {
 
 describe('prechody bránou', () => {
   const events = [
-    change(100, 1, 'gate_queue', 'to_bay'),
+    change(100, 1, 'gate_pass', 'to_bay'),
     change(105, 2, 'to_bay', 'waiting'),
-    change(118, 2, 'gate_queue', 'to_bay'),
-    change(140, 1, 'gate_queue_out', 'to_portal'),
+    change(118, 2, 'gate_pass', 'to_bay'),
+    change(140, 1, 'gate_pass_out', 'to_portal'),
     change(141, 3, 'to_gate', 'gate_queue'),
   ];
 
-  it('gateCrossingTicks berie prechody z gate_queue aj gate_queue_out v poradí vzniku', () => {
+  it('gateCrossingTicks berie dokončené prechody z gate_pass aj gate_pass_out v poradí vzniku', () => {
     expect(gateCrossingTicks(events)).toEqual([100, 118, 140]);
   });
 

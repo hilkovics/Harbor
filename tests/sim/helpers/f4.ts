@@ -44,12 +44,14 @@ export { EPSILON, SLACK_TICKS } from './f3';
 export const TRUCK_STATES = [
   'to_gate',
   'gate_queue',
+  'gate_pass',
   'to_bay',
   'waiting',
   'to_dock',
   'loading',
   'to_gate_out',
   'gate_queue_out',
+  'gate_pass_out',
   'to_portal',
   'exited',
   'no_path',
@@ -229,18 +231,20 @@ export function timed4<T extends SimEvent['type']>(events: readonly TimedEvent[]
 // ---------------------------------------------------------------------------------------------------------
 
 /**
- * Povolené prechody kamióna: `to_gate → gate_queue → to_bay → waiting → to_dock → loading → to_gate_out →
- * gate_queue_out → to_portal → exited`; jazdné stavy môžu vypadnúť do `no_path` a vracajú sa do toho, z ktorého vypadli.
+ * Povolené prechody kamióna: `to_gate → gate_queue → gate_pass → to_bay → waiting → to_dock → loading → to_gate_out →
+ * gate_queue_out → gate_pass_out → to_portal → exited` (`gate_queue → to_bay` len pri preklopení strán brány); jazdné stavy môžu vypadnúť do `no_path` a vracajú sa do toho, z ktorého vypadli.
  */
 export const TRUCK_TRANSITIONS: Readonly<Record<TruckState, readonly TruckState[]>> = {
   to_gate: ['gate_queue', 'no_path'],
-  gate_queue: ['to_bay'],
+  gate_queue: ['gate_pass', 'to_bay'],
+  gate_pass: ['to_bay'],
   to_bay: ['waiting', 'no_path'],
   waiting: ['to_dock'],
   to_dock: ['loading', 'no_path'],
   loading: ['to_gate_out'],
   to_gate_out: ['gate_queue_out', 'no_path'],
-  gate_queue_out: ['to_portal'],
+  gate_queue_out: ['gate_pass_out', 'to_portal'],
+  gate_pass_out: ['to_portal'],
   to_portal: ['exited', 'no_path'],
   exited: [],
   no_path: ['to_gate', 'to_bay', 'to_dock', 'to_gate_out', 'to_portal'],
@@ -250,25 +254,31 @@ export const TRUCK_TRANSITIONS: Readonly<Record<TruckState, readonly TruckState[
 export const TRUCK_CYCLE: readonly TruckState[] = [
   'to_gate',
   'gate_queue',
+  'gate_pass',
   'to_bay',
   'waiting',
   'to_dock',
   'loading',
   'to_gate_out',
   'gate_queue_out',
+  'gate_pass_out',
   'to_portal',
 ];
 
 /** Kamión drží rezerváciu stojiska od spawnu, kým neodíde k rampe. */
-export const BAY_HOLDING_STATES: readonly TruckState[] = ['to_gate', 'gate_queue', 'to_bay', 'waiting'];
-/** Kamión stojí v (virtuálnej) fronte brány. */
+export const BAY_HOLDING_STATES: readonly TruckState[] = ['to_gate', 'gate_queue', 'gate_pass', 'to_bay', 'waiting'];
+/** Kamión stojí vo (fyzickej) fronte brány na jej vonkajšej bunke. */
 export const GATE_QUEUE_STATES: readonly TruckState[] = ['gate_queue', 'gate_queue_out'];
+/** Kamión prechádza bránou (čelo fronty, mimo cesty). */
+export const GATE_PASS_STATES: readonly TruckState[] = ['gate_pass', 'gate_pass_out'];
+/** Kamión je v zozname fronty brány (čaká alebo prechádza). */
+export const GATE_LISTED_STATES: readonly TruckState[] = [...GATE_QUEUE_STATES, ...GATE_PASS_STATES];
 /** Kamión ešte nič nenaložil. */
-const EMPTY_STATES: readonly TruckState[] = ['to_gate', 'gate_queue', 'to_bay', 'waiting', 'to_dock'];
+const EMPTY_STATES: readonly TruckState[] = ['to_gate', 'gate_queue', 'gate_pass', 'to_bay', 'waiting', 'to_dock'];
 /** Kamión už odchádza s nákladom. */
-const LOADED_STATES: readonly TruckState[] = ['to_gate_out', 'gate_queue_out', 'to_portal'];
+const LOADED_STATES: readonly TruckState[] = ['to_gate_out', 'gate_queue_out', 'gate_pass_out', 'to_portal'];
 /** Stavy, v ktorých kamión určite stojí alebo ide po ceste mimo tela brány / plochy. */
-const ON_ROAD_STATES: readonly TruckState[] = ['to_gate', 'gate_queue', 'gate_queue_out', 'to_portal'];
+const ON_ROAD_STATES: readonly TruckState[] = ['to_gate', 'gate_queue', 'gate_pass', 'gate_queue_out', 'gate_pass_out', 'to_portal'];
 /** Stavy s jazdou, v ktorých sa kamión neprechádza telom brány ani plochy (krok ≤ rýchlosť). */
 const STEADY_DRIVE_STATES: readonly TruckState[] = ['to_gate', 'to_portal'];
 
@@ -309,12 +319,12 @@ export function truckStateChains(events: readonly TimedEvent[]): Map<EntityId, T
 }
 
 /**
- * Ticky prechodov telom brány: každý `TruckStateChanged` z `gate_queue` alebo `gate_queue_out` (oba smery majú
+ * Ticky dokončených prechodov telom brány: každý `TruckStateChanged` z `gate_pass` alebo `gate_pass_out` (oba smery majú
  * spoločnú frontu). Medzi dvoma po sebe idúcimi musí byť ≥ `processTicks`.
  */
 export function gateCrossingTicks(events: readonly TimedEvent[]): number[] {
   return landsideEvents(events, 'TruckStateChanged')
-    .filter((entry) => GATE_QUEUE_STATES.includes(entry.event.from))
+    .filter((entry) => GATE_PASS_STATES.includes(entry.event.from))
     .map((entry) => entry.tick);
 }
 
@@ -765,12 +775,12 @@ export class Recorder4 {
     this.violations.push(...dockViolations(tick, trucks));
 
     for (const gate of gatesOf(world)) {
-      const trucksQueued = trucks.filter((truck) => truck.gateId === gate.id && GATE_QUEUE_STATES.includes(truck.state)).length;
+      const trucksQueued = trucks.filter((truck) => truck.gateId === gate.id && GATE_LISTED_STATES.includes(truck.state)).length;
       this.gates.push({ tick, gateId: gate.id, queueLength: gate.queueLength, busyTicksLeft: gate.busyTicksLeft, trucksProcessed: gate.trucksProcessed, trucksQueued });
       if (!Number.isInteger(gate.queueLength) || gate.queueLength < 0 || gate.queueLength > trucksQueued) {
         this.violations.push({
           rule: 'gate_queue',
-          message: `tick ${String(tick)}, brána ${String(gate.id)}: queueLength ${String(gate.queueLength)}, ale v gate_queue* je ${String(trucksQueued)} kamiónov (fronta smie obsahovať len ich)`,
+          message: `tick ${String(tick)}, brána ${String(gate.id)}: queueLength ${String(gate.queueLength)}, ale v gate_queue* a gate_pass* je ${String(trucksQueued)} kamiónov (fronta smie obsahovať len ich)`,
         });
       }
       if (!Number.isInteger(gate.busyTicksLeft) || gate.busyTicksLeft < 0) {

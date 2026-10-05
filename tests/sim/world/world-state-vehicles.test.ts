@@ -141,7 +141,7 @@ describe('World.deserialize — neplatné vozidlá (parsovanie)', () => {
     ['pruh 2', (_s, v) => (v[0].ahead = [[ROUTE_CELL, 2]]), '/vehicles/0/ahead/0/1', /0 alebo 1/],
     ['záporný blockedTicks', (_s, v) => (v[0].blockedTicks = -1), '/vehicles/0/blockedTicks'],
     ['rerouteCooldown necelý', (_s, v) => (v[0].rerouteCooldown = 1.5), '/vehicles/0/rerouteCooldown'],
-    ['idle drží sloty (nosič mimo cesty)', (_s, v) => (v[0].body = [[ROUTE_CELL, 0]]), '', /mimo cesty/],
+    ['telo vzdialené od polohy vozidla (hlava tela nie je v jeho bunke)', (_s, v) => (v[0].body = [[ROUTE_CELL + 7, 0]]), '', /hlava tela/],
     ['jobs nie je pole', (s) => (s.jobs = null), '/jobs'],
   ];
 

@@ -22,6 +22,7 @@ import {
   tickEvents,
   tickUntil,
 } from '../helpers/f6a';
+import { carrierOverlapProblem } from '@sim/traffic';
 import { hinterlandQueue, type World } from '@sim/world';
 import { F4_DEPOT_ID } from '../helpers/f4-layout';
 
@@ -67,6 +68,9 @@ describe('spawn kamiónov s exportom', () => {
     expect(chain).toEqual(['gate_queue', 'gate_pass', 'to_bay', 'waiting', 'to_dock', 'unloading', 'to_gate_out', 'gate_queue_out', 'gate_pass_out', 'to_portal', 'exited']);
     expect(ofType(events, 'TruckExited').map((entry) => entry.event.units)).toEqual([0]);
     expect(world.trucks.size).toBe(0);
+    // výjazd z mapy uvoľní všetky sloty kamióna (ADR-037): nič nezostane držané po odstránení nosiča
+    expect(world.laneSlots.claimedCount).toBe(0);
+    expect(carrierOverlapProblem(world)).toBeNull();
   });
 
   it('položka plánu počká na voľný bay (jediný bay): kamióny vznikajú po jednom, plán sa spotrebuje až po vzniku kamióna', () => {

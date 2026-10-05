@@ -312,7 +312,7 @@ describe('stress_f6', () => {
     }
   }, 120_000);
 
-  it('rozšírený prístav: 2 kotviská, 4 žeriavy, 3 dvory, 2 rampy, brána, stojisko, 6 vozidiel', () => {
+  it('rozšírený prístav: 2 kotviská, 4 žeriavy, 3 dvory, 2 rampy, brána, stojisko, 16 vozidiel', () => {
     const { world } = playScenario(loadScenario(STRESS_SCENARIO), defs, { ticks: 5, warmup: 0, checkInvariants: true });
     const counts = new Map<string, number>();
     for (const module of world.modules.values()) counts.set(module.def.id, (counts.get(module.def.id) ?? 0) + 1);
@@ -325,7 +325,7 @@ describe('stress_f6', () => {
       truck_waiting_area: 1,
       loading_ramp_container: 2,
     });
-    expect(world.vehicles.size).toBe(6);
+    expect(world.vehicles.size).toBe(16);
   });
 
   it(
@@ -335,7 +335,7 @@ describe('stress_f6', () => {
       expect(report).toMatchObject({
         scenario: 'stress_f6',
         modules: 15,
-        vehicles: 6,
+        vehicles: 16,
         shipsSpawned: 1,
         lostUnits: 0,
         contractsAccepted: 6,

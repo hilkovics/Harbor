@@ -515,7 +515,11 @@ function loadedOnLeg(world: World): LegMoment | null {
     if ((cell.x !== 41 && cell.x !== 46) || cell.y < 18 || cell.y > 20) continue;
     const bottom = { x: cell.x, y: 22 };
     const topNext = cell.x === 41 ? { x: 42, y: 17 } : { x: 45, y: 17 };
-    const clear = all.every((other) => distanceToCell(other, bottom) >= CUT_CLEARANCE_CELLS && distanceToCell(other, topNext) >= CUT_CLEARANCE_CELLS);
+    // Bunku drží aj telo či slot vpredu iného vozidla (ADR-037): `RemoveRoad` ju odmietne ako `occupied`, hoci stred vozidla je ďaleko.
+    const cutCells = [world.grid.index(bottom.x, bottom.y), world.grid.index(topNext.x, topNext.y)];
+    const clear = all.every(
+      (other) => distanceToCell(other, bottom) >= CUT_CLEARANCE_CELLS && distanceToCell(other, topNext) >= CUT_CLEARANCE_CELLS && !cutCells.some((cell) => other.occupiesCell(cell)),
+    );
     if (clear) return { vehicleId: vehicle.id, jobId: vehicle.jobId, legX: cell.x, bottom, topNext };
   }
   return null;

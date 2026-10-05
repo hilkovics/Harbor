@@ -7,6 +7,8 @@
 // posledný kamión po otvorení cesty čaká vo vnútrozemí na zaručené miesto na docku (ADR-035), takže prejde bránou neskôr (metriky ostali rovnaké).
 // R1 (TR1-04, ADR-037): parkovanie vozidiel, jednosmerná slučka `harbor_01` a scenáre napojené na ňu (zhoda s hodnotami pred R1: 78 / 120 / 58 exportovaných;
 // uviaznutie z TR1-03 je preč) → nové hashe a `cashEnd` (cena úpravy ciest pri napojení scenára na slučku, `PORT_BRIDGE`).
+// R1 (TR1-09b, dodatok ADR-037): zlom uviaznutia (obrat s pruhom, otočka na mieste, pretočenie cyklu) mení poradie slotov → nové hashe
+// (vertical_slice 9e557180 → 3ad5f8b4, full_import_chain 7ea1228e → 7e9a7aa2, export_roundtrip cccc2579 → a11a9237); `cashEnd` a `exportedUnits` ostali.
 // R1 (TR1-02, ADR-037): nosiče nesú `body`, `ahead`, `blockedTicks`, `rerouteCooldown` a jazdia po pruhových slotoch → nové hashe
 // (vertical_slice 5990df8f → e76d294b, full_import_chain 4774ec6e → 788ef948, export_roundtrip 8c436f3d → 90d9926e); `cashEnd` a `exportedUnits` ostali.
 import { describe, expect, it } from 'vitest';
@@ -17,9 +19,9 @@ const HEAVY_TIMEOUT_MS = 180_000;
 
 describe('režim apron: bitovo zhodný s F2–F6c', () => {
   it.each([
-    { name: 'vertical_slice', ticks: 30_000, stateHash: '9e557180', cashEnd: 41_565_000, exportedUnits: 78 },
-    { name: 'full_import_chain', ticks: 40_000, stateHash: '7ea1228e', cashEnd: 31_739_000, exportedUnits: 120 },
-    { name: 'export_roundtrip', ticks: 40_000, stateHash: 'cccc2579', cashEnd: 41_637_900, exportedUnits: 58 },
+    { name: 'vertical_slice', ticks: 30_000, stateHash: '3ad5f8b4', cashEnd: 41_565_000, exportedUnits: 78 },
+    { name: 'full_import_chain', ticks: 40_000, stateHash: '7e9a7aa2', cashEnd: 31_739_000, exportedUnits: 120 },
+    { name: 'export_roundtrip', ticks: 40_000, stateHash: 'a11a9237', cashEnd: 41_637_900, exportedUnits: 58 },
   ])('$name ($ticks tickov): stateHash $stateHash, apron → directHandoverPct 0', ({ name, ticks, stateHash, cashEnd, exportedUnits }) => {
     const report = runScenario(loadScenario(`data/scenarios/${name}.json`), ticks, DEFS, { hash: true });
     expect(report).toMatchObject({ stateHash, cashEnd, exportedUnits, lostUnits: 0, directHandoverPct: 0 });

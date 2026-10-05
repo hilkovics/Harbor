@@ -13,11 +13,16 @@ import {
   type MapDef,
 } from '@sim/grid';
 
-type MapJson = typeof harbor01Json;
+type RawCell = { x: number; y: number; dir?: string };
+type RawPortal = { id: string; cell: { x: number; y: number }; direction?: string };
+type MapJson = Omit<typeof harbor01Json, 'starter' | 'roadPortals'> & {
+  starter: Omit<(typeof harbor01Json)['starter'], 'roads'> & { roads: RawCell[] };
+  roadPortals: RawPortal[];
+};
 
 /** Čerstvá hlboká kópia harbor_01; negatívne testy v nej upravia jedno pole. */
 function rawMap(): MapJson {
-  return structuredClone(harbor01Json);
+  return structuredClone(harbor01Json) as MapJson;
 }
 
 function load(raw: unknown): LoadedMap {
@@ -153,7 +158,7 @@ describe('loadMap(harbor_01)', () => {
 
   it('starter cesty zapísané do mriežky (road), inde none; moduly a traffic prázdne', () => {
     const roadCells = new Set(harbor01Json.starter.roads.map(({ x, y }) => grid.index(x, y)));
-    expect(roadCells.size).toBe(30);
+    expect(roadCells.size).toBe(60);
     for (let i = 0; i < grid.cellCount; i++) {
       const cell = grid.atIndex(i);
       expect(cell.road).toBe(roadCells.has(i) ? 'road' : 'none');
@@ -179,7 +184,10 @@ describe('loadMap(harbor_01)', () => {
   });
 
   it('portály, seaLane a anchorage prevzaté z mapy', () => {
-    expect(map.roadPortals).toEqual([{ id: 'road_south', cell: { x: 44, y: 63 } }]);
+    expect(map.roadPortals).toEqual([
+      { id: 'road_south_in', cell: { x: 44, y: 63 }, direction: 'in' },
+      { id: 'road_south_out', cell: { x: 45, y: 63 }, direction: 'out' },
+    ]);
     expect(map.railPortals).toEqual([{ id: 'rail_east', cell: { x: 95, y: 24 } }]);
     expect(map.seaLane).toEqual(harbor01Json.seaLane);
     expect(map.anchorage).toEqual(harbor01Json.anchorage);
@@ -292,6 +300,25 @@ describe('loadMap — povolené prípady', () => {
     expect(grid.at(28, 14).road).toBe('road');
   });
 
+  it('starter cesta s dir je jednosmerná (one_way), bez dir dvojpruhová; harbor_01 má jednosmernú slučku', () => {
+    const grid = load(rawMap()).createGrid();
+    expect([grid.at(44, 50).roadKind, grid.at(44, 50).roadDir]).toEqual(['one_way', 'N']);
+    expect([grid.at(44, 34).roadKind, grid.at(44, 34).roadDir]).toEqual(['one_way', 'E']);
+    expect([grid.at(45, 50).roadKind, grid.at(45, 50).roadDir]).toEqual(['one_way', 'S']);
+    const raw = rawMap();
+    raw.starter.roads.push({ x: 44, y: 30 });
+    expect(load(raw).createGrid().at(44, 30).roadKind).toBe('two_lane');
+  });
+
+  it('portál bez direction je both, neplatný direction → MapError', () => {
+    const raw = rawMap();
+    delete raw.roadPortals[0].direction;
+    expect(load(raw).roadPortals[0].direction).toBeUndefined();
+    const bad = rawMap();
+    bad.roadPortals[0].direction = 'up';
+    expect(() => parseMapDef(bad)).toThrow(/direction/);
+  });
+
   it('starter cesta na parcele, ktorá je startOwned (nie na predaj)', () => {
     const raw = rawMap();
     setAt(raw, '/parcels/1/startOwned', true);
@@ -356,7 +383,7 @@ const INVARIANT_CASES: readonly InvariantCase[] = [
     path: '/railPortals/0/cell',
   },
   { name: 'portál v parcele (parcela rozšírená k okraju)', mutate: (m) => void (m.parcels[2].rect.w = 30), path: '/railPortals/0/cell' },
-  { name: 'duplicitné id portálu', mutate: (m) => void (m.railPortals[0].id = 'road_south'), path: '/railPortals/0/id' },
+  { name: 'duplicitné id portálu', mutate: (m) => void (m.railPortals[0].id = 'road_south_in'), path: '/railPortals/0/id' },
   {
     name: 'železničný portál na bunke cestného portálu',
     mutate: (m) => void (m.railPortals[0].cell = { x: 44, y: 63 }),
@@ -365,7 +392,7 @@ const INVARIANT_CASES: readonly InvariantCase[] = [
   {
     name: 'dva cestné portály na jednej bunke',
     mutate: (m) => void m.roadPortals.push({ id: 'road_south_2', cell: { x: 44, y: 63 } }),
-    path: '/roadPortals/1/cell',
+    path: '/roadPortals/2/cell',
   },
   {
     name: 'cestný portál na bunke železničného (id sa líši)',

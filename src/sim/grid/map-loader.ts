@@ -16,7 +16,7 @@
  */
 import harbor01Json from '@data/maps/harbor_01.json';
 import { Grid, type CellCoord, type DepthClass, type Rect } from './grid';
-import { DEFAULT_ANCHORAGE_HEADING, parseMapDef, type MapDef, type MapPortalDef, type PlacedModuleSpec } from './map-def';
+import { DEFAULT_ANCHORAGE_HEADING, parseMapDef, type MapDef, type MapPortalDef, type MapStarterRoadDef, type PlacedModuleSpec, type PortalDirection } from './map-def';
 import { MapError, pointerSegment } from './map-error';
 import type { Parcel } from './parcel';
 import type { Rotation } from './rotation';
@@ -25,13 +25,15 @@ import { isRoadBuildable, isWater, terrainFromChar, type TerrainType } from './t
 export interface MapPortal {
   readonly id: string;
   readonly cell: CellCoord;
+  /** Smer cestného portálu; bez poľa `both` (ADR-037 dodatok R1). */
+  readonly direction?: PortalDirection;
 }
 
 export interface LoadedStarter {
   /** Predpostavené moduly; umiestni ich `World` (od F2, keď existuje `ModuleRegistry`). */
   readonly modules: readonly PlacedModuleSpec[];
   /** Bunky predpostavených ciest — už zapísané v `grid` ako `road: 'road'`. */
-  readonly roads: readonly CellCoord[];
+  readonly roads: readonly MapStarterRoadDef[];
 }
 
 /**
@@ -295,7 +297,7 @@ function toParcel(def: MapDef['parcels'][number]): Readonly<Parcel> {
 }
 
 function toPortals(portals: readonly MapPortalDef[]): readonly MapPortal[] {
-  return Object.freeze(portals.map(({ id, cell }) => Object.freeze({ id, cell: freezeCell(cell) })));
+  return Object.freeze(portals.map(({ id, cell, direction }) => Object.freeze(direction === undefined ? { id, cell: freezeCell(cell) } : { id, cell: freezeCell(cell), direction })));
 }
 
 /**
@@ -316,7 +318,14 @@ export function loadMap(def: MapDef): LoadedMap {
   checkStarterRoads(grid, def, fail);
   checkStarterModules(grid, def, fail);
 
-  for (const { x, y } of def.starter.roads) grid.at(x, y).road = 'road';
+  for (const { x, y, dir } of def.starter.roads) {
+    const cell = grid.at(x, y);
+    cell.road = 'road';
+    if (dir !== undefined) {
+      cell.roadKind = 'one_way';
+      cell.roadDir = dir;
+    }
+  }
 
   // `grid` je šablóna: nikdy sa nevydáva, každý volajúci `createGrid()` dostane vlastný `clone()`.
   return Object.freeze({
@@ -332,7 +341,7 @@ export function loadMap(def: MapDef): LoadedMap {
     anchorageHeading: def.anchorageHeading ?? DEFAULT_ANCHORAGE_HEADING,
     starter: Object.freeze({
       modules: Object.freeze(def.starter.modules.map((spec) => Object.freeze({ ...spec }))),
-      roads: Object.freeze(def.starter.roads.map(freezeCell)),
+      roads: Object.freeze(def.starter.roads.map((road) => Object.freeze({ ...road }))),
     }),
   });
 }

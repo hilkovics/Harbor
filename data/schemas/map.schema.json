@@ -118,7 +118,7 @@
         },
         "roads": {
           "type": "array",
-          "items": { "$ref": "#/$defs/cell" },
+          "items": { "$ref": "#/$defs/starterRoad" },
           "description": "Predpostavené cesty; len na pevnine/nábreží po verejných bunkách alebo na štartovnej parcele (ADR-008)."
         }
       },
@@ -159,7 +159,18 @@
       "required": ["id", "cell"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
-        "cell": { "$ref": "#/$defs/cell" }
+        "cell": { "$ref": "#/$defs/cell" },
+        "direction": { "enum": ["in", "out", "both"], "description": "Len cestné portály: in = vjazd do mapy (vznik kamiónov), out = výjazd z mapy, both = oboje (predvolené, staré mapy)." }
+      }
+    },
+    "starterRoad": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "dir": { "enum": ["N", "E", "S", "W"], "description": "Jednosmerná cesta (one_way) v danom smere; bez poľa dvojpruhová." }
       }
     },
     "placedModule": {

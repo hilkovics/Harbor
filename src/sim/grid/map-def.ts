@@ -8,8 +8,9 @@
  *
  * Plnú JSON schému navyše vynucuje `pnpm validate:defs`; tu je minimum bez runtime závislostí (ako `DefRegistry`).
  */
-import type { CellCoord, DepthClass, Rect } from './grid';
+import type { CellCoord, DepthClass, Direction4Name, Rect } from './grid';
 import { MapError, pointerSegment } from './map-error';
+import { isDirection4Name } from './road-direction';
 import { isRotation, type Rotation } from './rotation';
 
 /** Hĺbková trieda zóny nábrežia v `MapDef.depth` (1–3; 0 majú len bunky mimo nábrežia). */
@@ -24,9 +25,22 @@ export interface MapParcelDef {
   readonly startOwned?: boolean;
 }
 
+/** Smer cestného portálu (ADR-037 dodatok R1): `in` = vjazd do mapy (vznik kamiónov), `out` = výjazd z mapy, `both` = oboje (predvolené). */
+export type PortalDirection = 'in' | 'out' | 'both';
+
+/** Hodnoty `PortalDirection` v poradí schémy. */
+export const PORTAL_DIRECTIONS: readonly PortalDirection[] = Object.freeze(['in', 'out', 'both'] as const);
+
 export interface MapPortalDef {
   readonly id: string;
   readonly cell: CellCoord;
+  /** Len cestné portály; chýba = `both` (staré mapy a scenáre). */
+  readonly direction?: PortalDirection;
+}
+
+/** Štartová cesta mapy: bunka, voliteľne s `dir` = jednosmerná (`one_way`) v danom smere; bez `dir` dvojpruhová. */
+export interface MapStarterRoadDef extends CellCoord {
+  readonly dir?: Direction4Name;
 }
 
 /** Predpostavený modul (Root modul od F2): def z `modules.json`, ľavý horný roh a rotácia. */
@@ -39,7 +53,7 @@ export interface PlacedModuleSpec {
 
 export interface MapStarterDef {
   readonly modules: readonly PlacedModuleSpec[];
-  readonly roads: readonly CellCoord[];
+  readonly roads: readonly MapStarterRoadDef[];
 }
 
 /** Jediná podporovaná verzia formátu mapy (`schemaVersion` v `data/maps/*.json`, `map.schema.json`). */
@@ -103,6 +117,8 @@ const PARCEL_OPTIONAL_KEYS = ['startOwned'] as const;
 const RECT_KEYS = ['x', 'y', 'w', 'h'] as const;
 const CELL_KEYS = ['x', 'y'] as const;
 const PORTAL_KEYS = ['id', 'cell'] as const;
+const PORTAL_OPTIONAL_KEYS = ['direction'] as const;
+const STARTER_ROAD_OPTIONAL_KEYS = ['dir'] as const;
 const PLACED_MODULE_KEYS = ['defId', 'x', 'y', 'rotation'] as const;
 const STARTER_KEYS = ['modules', 'roads'] as const;
 
@@ -249,6 +265,15 @@ class MapDefParser {
     });
   }
 
+  private starterRoad(value: unknown, path: string): MapStarterRoadDef {
+    const raw = this.object(value, path, CELL_KEYS, STARTER_ROAD_OPTIONAL_KEYS);
+    const cell = { x: this.integer(raw['x'], `${path}/x`, MIN_COORD), y: this.integer(raw['y'], `${path}/y`, MIN_COORD) };
+    if (!Object.hasOwn(raw, 'dir')) return Object.freeze(cell);
+    const dir = raw['dir'];
+    if (!isDirection4Name(dir)) throw this.error(`${path}/dir`, `smer cesty musí byť 'N', 'E', 'S' alebo 'W', dostal ${describeValue(dir)}`);
+    return Object.freeze({ ...cell, dir });
+  }
+
   private rect(value: unknown, path: string): Rect {
     const raw = this.object(value, path, RECT_KEYS);
     return Object.freeze({
@@ -272,8 +297,14 @@ class MapDefParser {
   }
 
   private portal(value: unknown, path: string): MapPortalDef {
-    const raw = this.object(value, path, PORTAL_KEYS);
-    return Object.freeze({ id: this.id(raw['id'], `${path}/id`), cell: this.cell(raw['cell'], `${path}/cell`) });
+    const raw = this.object(value, path, PORTAL_KEYS, PORTAL_OPTIONAL_KEYS);
+    const portal = { id: this.id(raw['id'], `${path}/id`), cell: this.cell(raw['cell'], `${path}/cell`) };
+    if (!Object.hasOwn(raw, 'direction')) return Object.freeze(portal);
+    const direction = raw['direction'];
+    if (!PORTAL_DIRECTIONS.includes(direction as PortalDirection)) {
+      throw this.error(`${path}/direction`, `smer portálu musí byť 'in', 'out' alebo 'both', dostal ${describeValue(direction)}`);
+    }
+    return Object.freeze({ ...portal, direction: direction as PortalDirection });
   }
 
   private rotation(value: unknown, path: string): Rotation {
@@ -294,7 +325,7 @@ class MapDefParser {
     const raw = this.object(value, path, STARTER_KEYS);
     return Object.freeze({
       modules: this.array(raw['modules'], `${path}/modules`, MIN_ITEMS.starterModules, (v, p) => this.placedModule(v, p)),
-      roads: this.array(raw['roads'], `${path}/roads`, MIN_ITEMS.starterRoads, (v, p) => this.cell(v, p)),
+      roads: this.array(raw['roads'], `${path}/roads`, MIN_ITEMS.starterRoads, (v, p) => this.starterRoad(v, p)),
     });
   }
 }

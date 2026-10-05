@@ -12,7 +12,7 @@ export { ROTATIONS, isRotation, rotateFootprint, rotateLocalCell } from './rotat
 export type { Rotation } from './rotation';
 export type { Parcel, ParcelOwnership } from './parcel';
 export { MapError } from './map-error';
-export { DEFAULT_ANCHORAGE_HEADING, parseMapDef } from './map-def';
-export type { DepthZoneClass, MapDef, MapParcelDef, MapPortalDef, MapStarterDef, PlacedModuleSpec } from './map-def';
+export { DEFAULT_ANCHORAGE_HEADING, PORTAL_DIRECTIONS, parseMapDef } from './map-def';
+export type { DepthZoneClass, MapDef, MapParcelDef, MapPortalDef, MapStarterDef, MapStarterRoadDef, PlacedModuleSpec, PortalDirection } from './map-def';
 export { loadMap, loadBundledMap } from './map-loader';
 export type { LoadedMap, LoadedStarter, MapPortal } from './map-loader';

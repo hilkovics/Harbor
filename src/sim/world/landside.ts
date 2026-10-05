@@ -6,7 +6,8 @@
  *
  * Pojmy (bunky sú **prístupové bunky** = vonkajšie bunky cestných konektorov s cestou, `accessCellIndex`; cena cesty
  * z `DistanceMatrix`, „dosiahnuteľná" = konečná cena po cestách so smermi jednosmeriek):
- * - **Portál** = `map.roadPortals[0]` (tam sa spawnujú kamióny, rozhodnutie 5); bez cesty na ňom nevedie odnikiaľ nič.
+ * - **Portál** = vjazd (`in`/`both`: tu vznikajú kamióny, rozhodnutie 5) a výjazd (`out`/`both`: tu opúšťajú mapu); bez cesty na ňom nevedie odnikiaľ nič.
+ *   Jednosmerný prístav (ADR-037 dodatok R1): vstupná strana brány sa určuje z vjazdu, cesta von (`returnsToPortal`) sa overuje k výjazdu.
  * - **Strany brány** (rozhodnutie 2): vstupná = prístupová bunka brány dosiahnuteľná z portálu s najnižšou cenou (pri
  *   zhode prvý konektor v poradí defu). Cesty nevedú telom modulov, takže každá cesta z portálu je „bez prechodu
  *   bránou". Výstupná = prvý ďalší konektor s prístupovou bunkou. **Platná** brána má obe; brány za sebou (brána
@@ -49,7 +50,7 @@ import type { LandsideModules } from './landside-roster';
 /** Časť sveta, z ktorej sa reťazec počíta (`World` ju spĺňa). */
 export interface LandsideEnv {
   readonly grid: Grid;
-  readonly map: { readonly roadPortals: readonly { readonly cell: CellCoord }[] };
+  readonly map: { readonly roadPortals: readonly { readonly cell: CellCoord; readonly direction?: 'in' | 'out' | 'both' }[] };
   /** Register pozemných modulov (brány, stojiská, rampy vzostupne podľa id). */
   readonly landsideModules: LandsideModules;
   /** Ceny ciest (lenivé — číta sa len pri výpočte s bránami, stojiskami alebo rampami). */
@@ -125,7 +126,10 @@ function memoized<K, V>(map: Map<K, V>, key: K, compute: () => V): V {
 }
 
 interface LandsideState {
+  /** Vjazdový portál (vznik kamiónov, strany brán). */
   readonly portalCell: number;
+  /** Výjazdový portál (kamión tu opúšťa mapu). */
+  readonly exitPortalCell: number;
   readonly gates: ReadonlyMap<EntityId, GateSides>;
   readonly ramps: Map<EntityId, RampAccess>;
   /** Strany brány pre kamióny stojiska: brána → stojisko → strany (dopĺňa sa lenivo). */
@@ -134,8 +138,8 @@ interface LandsideState {
   readonly circuits: Map<EntityId, Map<EntityId, Map<EntityId, LandsideCircuit | null>>>;
 }
 
-function emptyState(portalCell: number, gates: ReadonlyMap<EntityId, GateSides>): LandsideState {
-  return { portalCell, gates, ramps: new Map(), truckSides: new Map(), circuits: new Map() };
+function emptyState(portalCell: number, exitPortalCell: number, gates: ReadonlyMap<EntityId, GateSides>): LandsideState {
+  return { portalCell, exitPortalCell, gates, ramps: new Map(), truckSides: new Map(), circuits: new Map() };
 }
 
 /** Okruh z pamäte stavu (brána, stojisko, rampa), pri prvom dotaze spočítaný `compute`. */
@@ -169,12 +173,19 @@ function reaches(env: LandsideEnv, from: number, to: number): boolean {
   return env.distances.distance(from, to) < Infinity;
 }
 
-/** Bunka portálu `roadPortals[0]`, ak je v mape a má cestu; inak `NO_ACCESS`. */
-function portalCellOf(env: LandsideEnv): number {
-  const portal = env.map.roadPortals[0];
-  if (portal === undefined || !env.grid.inBounds(portal.cell.x, portal.cell.y)) return NO_ACCESS;
-  const index = env.grid.index(portal.cell.x, portal.cell.y);
-  return env.grid.atIndex(index).road === 'road' ? index : NO_ACCESS;
+/**
+ * Bunka prvého cestného portálu, ktorý smie byť vjazdom (`in`, `both`) alebo výjazdom (`out`, `both`; portál bez smeru je
+ * `both`), ak je v mape a má cestu; inak `NO_ACCESS` (ADR-037 dodatok R1: jednosmerný prístav).
+ */
+function portalCellOf(env: LandsideEnv, side: 'in' | 'out'): number {
+  for (const portal of env.map.roadPortals) {
+    const direction = portal.direction ?? 'both';
+    if (direction !== side && direction !== 'both') continue;
+    if (!env.grid.inBounds(portal.cell.x, portal.cell.y)) continue;
+    const index = env.grid.index(portal.cell.x, portal.cell.y);
+    if (env.grid.atIndex(index).road === 'road') return index;
+  }
+  return NO_ACCESS;
 }
 
 /** Strany brány z portálu (rozhodnutie 2). */
@@ -336,15 +347,16 @@ function rampAccessOf(env: LandsideEnv, state: LandsideState, ramp: LoadingRamp,
 /** Celý výpočet reťazca nad aktuálnymi cestami a modulmi. */
 function computeLandside(env: LandsideEnv): LandsideState {
   const { gates: gateModules, waitingAreas: areas, ramps } = env.landsideModules;
-  const portal = portalCellOf(env);
+  const portal = portalCellOf(env, 'in');
+  const exitPortal = portalCellOf(env, 'out');
   const gates = new Map<EntityId, GateSides>();
   const valid: ValidGate[] = [];
   for (const gate of gateModules) {
     const sides = gateSidesOf(env, gate, portal);
     gates.set(gate.id, sides);
-    if (sides.exit !== null) valid.push({ gate, sides, returnsToPortal: reaches(env, sides.entryCell, portal) });
+    if (sides.exit !== null) valid.push({ gate, sides, returnsToPortal: exitPortal !== NO_ACCESS && reaches(env, sides.entryCell, exitPortal) });
   }
-  const state = emptyState(portal, gates);
+  const state = emptyState(portal, exitPortal, gates);
   for (const ramp of ramps) state.ramps.set(ramp.id, rampAccessOf(env, state, ramp, valid, areas));
   return state;
 }
@@ -353,16 +365,21 @@ export class LandsideNetwork {
   private readonly env: LandsideEnv;
   private roadVersion = Number.NaN;
   private moduleVersion = Number.NaN;
-  private state: LandsideState = emptyState(NO_ACCESS, new Map());
+  private state: LandsideState = emptyState(NO_ACCESS, NO_ACCESS, new Map());
   private computations = 0;
 
   constructor(env: LandsideEnv) {
     this.env = env;
   }
 
-  /** Bunka road portálu, na ktorom vznikajú kamióny (`roadPortals[0]` s cestou), alebo `NO_ACCESS`. */
+  /** Bunka vjazdového road portálu (`in` alebo `both` s cestou), na ktorom vznikajú kamióny, alebo `NO_ACCESS`. */
   get portalCell(): number {
     return this.current().portalCell;
+  }
+
+  /** Bunka výjazdového road portálu (`out` alebo `both` s cestou), na ktorom kamióny opúšťajú mapu, alebo `NO_ACCESS`. */
+  get exitPortalCell(): number {
+    return this.current().exitPortalCell;
   }
 
   /** Koľkokrát sa reťazec prepočítal (diagnostika, testy cache). */

@@ -15,7 +15,7 @@
  * - `to_gate_out` → prístupová bunka **výstupnej (vnútornej)** strany brány (fronta von); keď k nej od rampy nevedie
  *   cesta priamo (stojisko je jediné spojenie), cez **spätný priechod stojiskom** okruhu: jazda k výstupnej bunke
  *   stojiska, prechod telom (okamžitý, bez bay — ADR-011, ADR-024) na jeho vstupnú bunku a odtiaľ k bráne,
- * - `to_portal` → bunka road portálu (`roadPortals[0]`).
+ * - `to_portal` → bunka výjazdového road portálu (`out` alebo `both`, ADR-037 dodatok R1).
  * Bez cieľa alebo cesty kamión prejde do `no_path` a skúša znova každých `logistics.repathIntervalTicks` (ADR-019).
  */
 import type { Grid } from '../grid/grid';
@@ -147,7 +147,7 @@ const TARGET_CELLS: { readonly [S in TruckStop]: TargetCellFn } = Object.freeze(
   gate: (world: World, truck: Truck, travel: TruckTravelState) => gateSideCell(world, truck, TRUCK_STATE_TRAITS[travel].gateSide),
   waiting_area: (world: World, truck: Truck) => truckCircuit(world, truck)?.waitingEntryCell ?? NO_ACCESS,
   ramp: dockTargetCell,
-  portal: (world: World) => world.landside.portalCell,
+  portal: (world: World) => world.landside.exitPortalCell,
 });
 
 /** Cieľová bunka jazdy v stave `travel` (viď hlavička; pri `to_dock` bunka docku); `NO_ACCESS` = cieľ nie je. */
@@ -261,7 +261,7 @@ const MOTION_TARGETS: { readonly [S in TruckStop]: (world: World, truck: Truck) 
   gate: (world: World, truck: Truck): Module | undefined => world.modules.get(truck.gateId),
   waiting_area: (world: World, truck: Truck): Module | undefined => world.modules.get(truck.waitingAreaId),
   ramp: (world: World, truck: Truck): Module | undefined => world.modules.get(truck.rampId),
-  portal: (world: World): number => world.landside.portalCell,
+  portal: (world: World): number => world.landside.exitPortalCell,
 });
 
 /**

@@ -7,7 +7,8 @@
  *   rezerva `apronReserveSlots` chráni opačný smer pred zablokovaním.
  * - **`under_hook`** (ADR-033): vykládka — vozidlo čaká pod hákom (job `in_crane → in_storage` vznikne už pri štarte cyklu) a jednotka
  *   prejde `in_crane → in_vehicle`; keď pod hákom nikto nečaká a je voľný buffer (`craneBufferSlots`), žeriav ju odloží na apron
- *   (`in_crane → on_apron`) a job presmeruje na slot; inak žeriav s jednotkou čaká (`craneWaitForVehicleTicks`). Nakládka — vozidlo
+ *   (`in_crane → on_apron`) a job presmeruje na slot, to isté pri vozidle jobu v `no_path` (k háku nevedie cesta, T6D-05b); inak žeriav
+ *   s jednotkou čaká (`craneWaitForVehicleTicks`). Nakládka — vozidlo
  *   s jednotkou čaká pod hákom (job `in_storage → in_crane`) a žeriav ju zdvihne priamo `in_vehicle → in_crane`.
  *
  * Vlastnosti stratégie (`reservesUnloadSlot`, `plansUnloadTarget`) čítajú aj invarianty sveta (`world-invariants.ts`) a dispatcher
@@ -27,6 +28,7 @@ import { CRANE_CYCLE_TRAITS, CraneModule } from '../modules/crane-module';
 import { ModuleError } from '../modules/module-error';
 import type { Contract } from '../contracts/contract';
 import type { Ship } from '../ships/ship';
+import type { Vehicle } from '../vehicles/vehicle';
 import { VEHICLE_STATE_TRAITS, changeVehicleState } from '../vehicles/vehicle-fsm';
 import { startTrip } from '../vehicles/vehicle-trip';
 import type { World } from '../world/world';
@@ -228,17 +230,28 @@ export function hookBufferFree(world: World, berth: BerthModule): boolean {
   return slots > 0 && world.cargo.countAt('on_apron', berth.id) < slots && berth.apron.freeUnreservedCount > 0;
 }
 
+/**
+ * Vozidlo jobu vykládky nedôjde pod hák (`no_path`: k bunke pod hákom nevedie cesta — prerušená cesta, jednosmerka pri nábreží, ADR-020):
+ * žeriav naň nesmie čakať (T6D-05b). Vozidlo v `to_pickup` má platnú trasu (po zmene siete ju v kroku 6 preplánuje alebo prejde do `no_path`).
+ */
+function isStranded(vehicle: Vehicle): boolean {
+  return vehicle.state === 'no_path';
+}
+
 const HOOK_HANDOVER: Handover = {
   vehiclesUnderHook: true,
   reservesUnloadSlot: false,
   plansUnloadTarget: true,
   planUnload: ({ world, crane, ship }) => {
     // Jednotka pre tento žeriav v poradí: (1) najmenšie id s vozidlom už pod hákom (žeriav nečaká), (2) job s vozidlom na ceste k háku
-    // (priradené vozidlo príde — bez neho by žeriav s jednotkou čakal na vozidlo, ktoré nikdy nepríde, T6D-02), (3) job bez vozidla,
-    // (4) prvá voľná jednotka importu (job vznikne v kroku 5 toho istého ticku). Jednotky s jobom iného žeriava a zabrané jednotky
-    // sa preskočia.
+    // so platnou trasou (`to_pickup`; priradené vozidlo príde — bez neho by žeriav s jednotkou čakal na vozidlo, ktoré nikdy nepríde,
+    // T6D-02), (3) job s vozidlom v `no_path` (vozidlo k háku nedôjde; jednotku žeriav odloží na apron a vozidlo ju vezme odtiaľ,
+    // `deliver`, T6D-05b — pred jobom bez vozidla, aby nezostalo uviaznuté a žeriav s jednotkou bez vozidla nečakal naň zbytočne),
+    // (4) job bez vozidla, (5) prvá voľná jednotka importu (job vznikne v kroku 5 toho istého ticku). Jednotky s jobom iného žeriava
+    // a zabrané jednotky sa preskočia.
     const claimed = claimImports(world, ship, crane);
     let enRoute: EntityId | undefined;
+    let stranded: EntityId | undefined;
     let queued: EntityId | undefined;
     let fresh: EntityId | undefined;
     const count = world.cargo.countAt('on_ship', ship.id);
@@ -255,9 +268,10 @@ const HOOK_HANDOVER: Handover = {
       const vehicle = job.vehicleId === null ? undefined : world.vehicles.get(job.vehicleId);
       if (vehicle?.state === 'loading') return unitId;
       if (vehicle === undefined) queued ??= unitId;
+      else if (isStranded(vehicle)) stranded ??= unitId;
       else enRoute ??= unitId;
     }
-    return enRoute ?? queued ?? fresh;
+    return enRoute ?? stranded ?? queued ?? fresh;
   },
   reserveUnload: () => undefined,
   blocksWhenNotReady: false,
@@ -282,16 +296,18 @@ const HOOK_HANDOVER: Handover = {
     // Buffer: pod hákom nikto nečaká — jednotka na apron a job (ak vznikol) ju odtiaľ vezme vozidlo bežným spôsobom. Protideadlock:
     // ak pod hákom čaká vozidlo, ktorému tento žeriav s jednotkou v ruke neslúži (export na nakládku, alebo vozidlo iného jobu
     // vykládky), žeriav by ho zablokoval (vozidlo nedoplní jednotku pre túto ani jeho jednotku) — vtedy sa použije ľubovoľný voľný
-    // slot apronu aj nad `craneBufferSlots` (aj pri bufferi 0, T6D-02).
-    if (!hookBufferFree(world, berth) && !(vehicleWaitsUnderHook(world, crane) && berth.apron.freeUnreservedCount > 0)) return false;
+    // slot apronu aj nad `craneBufferSlots` (aj pri bufferi 0, T6D-02). Rovnako ak priradené vozidlo nedôjde pod hák (`no_path`,
+    // T6D-05b): bez odloženia by žeriav pri bufferi 0 držal jednotku, kým sa cesta nezmení, a vozidlo by ju nemalo odkiaľ vziať;
+    // vozidlo pri najbližšom pokuse o trasu mieri na prístupovú bunku kotviska (zdroj jobu je už apron, `planJobRoute`).
+    const vehicleStranded = vehicle !== undefined && isStranded(vehicle);
+    if (!hookBufferFree(world, berth) && !(berth.apron.freeUnreservedCount > 0 && (vehicleStranded || vehicleWaitsUnderHook(world, crane)))) return false;
     const slot = berth.apron.reserve();
     berth.apron.assertCommittable(slot, unitId);
     world.cargo.move(unitId, { kind: 'on_apron', berthId: berth.id, slot });
     berth.apron.commit(slot, unitId);
     job?.rebindSource({ kind: 'on_apron', berthId: berth.id, slot });
     // Vozidlo jobu jazdí k háku (nábrežie) — odteraz si jednotku berie z apronu, trasu preplánuje na prístupovú bunku kotviska.
-    const assigned = job === undefined || job.vehicleId === null ? undefined : world.vehicles.get(job.vehicleId);
-    if (assigned !== undefined && VEHICLE_STATE_TRAITS[assigned.state].motion === 'drive') assigned.replanPending = true;
+    if (vehicle !== undefined && VEHICLE_STATE_TRAITS[vehicle.state].motion === 'drive') vehicle.replanPending = true;
     return true;
   },
   loadable: ({ world, crane }, bookings) => bestUnderHook(world, crane, bookings)?.id,

@@ -2,11 +2,12 @@ import { readFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { dismissToasts } from './dismiss-toasts';
 
-// F6c e2e (T6C-06b, míľnik M2 „živý terminál“): nová hra → prístav s depom prázdnych a empty handlerom (rozloženie scenára
-// `live_terminal`, cez `dispatchJSON`) → import prijatý v paneli Kontrakty (jeho kontajnery odídu kamiónmi a vrátia sa ako prázdne)
+// F6c e2e (T6C-06b, míľnik M2 „živý terminál“): nová hra → prístav s depom prázdnych, dvoma kontajnerovými dvormi a empty handlerom
+// (rozloženie scenára `live_terminal`, cez `dispatchJSON`) → import prijatý v paneli Kontrakty (jeho kontajnery odídu kamiónmi a vrátia sa ako prázdne)
 // → prekládka loď A → sklad → loď B prijatá v paneli Kontrakty → čas sa posúva cez `window.__sim.advance`:
-//   1. loď A privezie prekládku (na palube `import`, žeriav ju vykladá), jednotky ležia v sklade a čakajú na loď B (karta „Čaká na loď B“,
-//      inšpektor dvora ukáže segment Tranship), prekládka nikdy neprejde bránou;
+//   1. loď A privezie prekládku (na palube `import`, žeriav ju vykladá), jednotky ležia v skladoch (dvoch dvoroch; spec zistí, do ktorého sa
+//      uložili, a nezávisle na tom overí súčet) a čakajú na loď B (karta „Čaká na loď B“, inšpektor dvora s väčšinou prekládky ukáže segment
+//      Tranship s počtom z ledgera), prekládka nikdy neprejde bránou;
 //   2. loď B ju naloží (na palube `export`) a odpláva: `ExportShipped` 36 TEU, kontrakt `completed`, výplata;
 //   3. prázdne kontajnery importu sa vrátia kamiónmi cez bránu do depa prázdnych (`EmptyReturned` → `EmptyStored`), inšpektor depa ich
 //      ukáže podľa linky; jedna prázdna sa poškodí (kontrola v depe je náhodná, 8 % — spec ju poškodí cez ledger, aby sa oprava
@@ -19,30 +20,45 @@ import { dismissToasts } from './dismiss-toasts';
 // zo sveta a podmienky screenshotov majú záložné vetvy. Čo sa medzitým stalo, overuje počítadlo udalostí simu (`__tally`).
 //
 // Screenshoty (gitignorované): `f6c-depot.png` (inšpektor depa počas opravy), `f6c-tranship.png` (loď A vykladá prekládku, karta v paneli),
-// `f6c-tranship-yard.png` (prekládka čaká v sklade na loď B), `f6c-loaded.png` (loď B s naloženou prekládkou).
+// `f6c-tranship-yard.png` (prekládka čaká v dvoroch na loď B, inšpektor dvora s jej väčšinou), `f6c-loaded.png` (loď B s naloženou prekládkou).
 
 const SHOTS = 'tests/e2e/__screenshots__';
 test.describe.configure({ timeout: 8 * 60_000 });
 
 const SCENARIO = JSON.parse(readFileSync('data/scenarios/live_terminal.json', 'utf8')) as { commands: { atTick: number; command: Record<string, unknown> }[] };
-/** Príkazy tick 0 scenára: cesty, moduly (depo vozidiel 3, depo prázdnych 4, dvor 5, brána, stojisko, rampa) a tri vozidlá (2 × straddle, empty handler). */
+/** Príkazy tick 0 scenára: cesty, moduly (depo vozidiel, depo prázdnych, dva dvory, brána, stojisko, rampa) a tri vozidlá (2 × straddle, empty handler). */
 const BUILD = SCENARIO.commands.filter((entry) => entry.atTick === 0).map((entry) => entry.command);
 const PLACEMENTS = BUILD.filter((command) => command['type'] !== 'BuyVehicle');
 const PURCHASES = BUILD.filter((command) => command['type'] === 'BuyVehicle');
 const MODULE_COUNT = 1 + PLACEMENTS.filter((command) => command['type'] === 'PlaceModule').length; // + Root berth
+const YARD_COUNT = PLACEMENTS.filter((command) => command['type'] === 'PlaceModule' && command['defId'] === 'container_yard_small').length;
 
 const OVERVIEW = { x: 47, y: 25, zoom: 0.5 } as const;
 /** Root berth s apronom a vozidlami pod hákom (loď nad nábrežím). */
 const BERTH_VIEW = { x: 44, y: 14.3, zoom: 1 } as const;
-/** Depo prázdnych (42–45 × 18–21) a dvor (49–53 × 26–29) s cestami okolo; pravý panel (inšpektor) zakrýva len pravý okraj mapy. */
+/** Depo prázdnych (42–45 × 18–21) s cestami okolo; pravý panel (inšpektor) zakrýva len pravý okraj mapy. */
 const DEPOT_VIEW = { x: 44, y: 21, zoom: 0.8 } as const;
-const YARD_VIEW = { x: 50, y: 27, zoom: 0.8 } as const;
+/** Zoom pohľadu na dvory: stred pohľadu sa odvodí z ich footprintov (`yardsView`), aby boli oba vľavo od panela. */
+const YARD_ZOOM = 0.8;
 
-/** Bunka vo vnútri depa prázdnych (footprint 4 × 4 od [42, 18]) a vo dvore (od [49, 26]). */
+/** Bunka vo vnútri depa prázdnych (footprint 4 × 4 od [42, 18]). */
 const DEPOT_CELL = { x: 43, y: 19 } as const;
-const YARD_CELL = { x: 50, y: 27 } as const;
 
 type Cell = { readonly x: number; readonly y: number };
+/** Modul zo `window.__sim.entities()`: ľavý horný roh a rozmery footprintu PO rotácii (bunky). */
+type Footprint = { readonly id: number; readonly x: number; readonly y: number; readonly w: number; readonly h: number };
+
+/** Bunka v strede footprintu (vždy vo vnútri modulu, aj pri rotácii 90 / 270). */
+const centerCellOf = (module: Footprint): Cell => ({ x: module.x + Math.floor(module.w / 2), y: module.y + Math.floor(module.h / 2) });
+
+/** Pohľad na všetky dvory naraz: stred obálky ich footprintov (obe majú byť na obrazovke vedľa seba, kým pravý panel zakrýva len okraj). */
+function yardsView(yards: readonly Footprint[]): { readonly x: number; readonly y: number; readonly zoom: number } {
+  const minX = Math.min(...yards.map((yard) => yard.x));
+  const minY = Math.min(...yards.map((yard) => yard.y));
+  const maxX = Math.max(...yards.map((yard) => yard.x + yard.w));
+  const maxY = Math.max(...yards.map((yard) => yard.y + yard.h));
+  return { x: (minX + maxX) / 2, y: (minY + maxY) / 2, zoom: YARD_ZOOM };
+}
 
 async function openGame(page: Page): Promise<string[]> {
   const errors: string[] = [];
@@ -165,17 +181,20 @@ test.describe('F6c: prázdne kontajnery a prekládka v jednom prístave (T6C-06b
       return {
         connected: modules.filter((module) => module.connected !== undefined).every((module) => module.connected === true),
         depot: depot === undefined ? null : { id: depot.id, vm: depot.depot },
-        yardId: modules.find((module) => module.defId === 'container_yard_small')?.id ?? null,
+        yards: modules.filter((module) => module.defId === 'container_yard_small').map((module) => ({ id: module.id, x: module.x, y: module.y, w: module.w, h: module.h })),
         vehicles: (vehicles ?? []).map((vehicle) => vehicle.defId).sort(),
         ramp: modules.find((module) => module.defId === 'loading_ramp_container')?.ramp?.operational,
       };
     });
     expect(port.connected).toBe(true);
     expect(port.ramp).toBe(true);
+    expect(port.yards).toHaveLength(YARD_COUNT); // prístav má dva kontajnerové dvory (druhý otočený o 90°), prekládka sa uloží do ktoréhokoľvek
+    expect(YARD_COUNT).toBe(2);
     expect(port.vehicles).toEqual(['empty_handler', 'straddle_carrier', 'straddle_carrier']);
     expect(port.depot?.vm).toEqual({ available: 0, damaged: 0, inRepair: 0, repairBays: 2 }); // prázdne depo, dve opravárenské miesta
     const depotId = port.depot!.id;
-    const yardId = port.yardId!;
+    const yards = port.yards;
+    const yardIds = yards.map((yard) => yard.id);
 
     // 2) import prijatý v paneli Kontrakty: jeho kontajnery odídu kamiónmi a po pobyte vo vnútrozemí sa vrátia ako prázdne
     const imported = await page.evaluate(() => {
@@ -269,8 +288,8 @@ test.describe('F6c: prázdne kontajnery a prekládka v jednom prístave (T6C-06b
     await page.keyboard.press('Escape');
     await expect(panel(page)).toHaveCount(0);
 
-    // 5) loď A je vyložená a odplávala; všetka prekládka leží v sklade (nikdy nešla bránou) a čaká na loď B: karta „Čaká na loď B“,
-    //    inšpektor dvora ukáže segment Tranship
+    // 5) loď A je vyložená a odplávala; všetka prekládka leží v dvoroch (nikdy nešla bránou) a čaká na loď B: karta „Čaká na loď B“,
+    //    inšpektor dvora s väčšinou prekládky ukáže segment Tranship s počtom z ledgera
     await advanceUntil(
       page,
       (id: number) => {
@@ -293,20 +312,29 @@ test.describe('F6c: prázdne kontajnery a prekládka v jednom prístave (T6C-06b
     expect(waiting.loaded).toBe(0);
     expect(Object.keys(waiting.locations).filter((kind) => kind === 'at_ramp' || kind === 'in_truck' || kind === 'on_ship')).toEqual([]);
     await advanceUntil(page, (id: number) => window.__sim!.world.cargo.countByKind('in_storage') >= 1 && [...window.__sim!.world.cargo.liveUnits()].filter((unit) => unit.direction === 'tranship').every((unit) => unit.location.kind === 'in_storage') && window.__sim!.world.contracts.get(id as never)!.unitsUnloaded > 0, offer.id, { step: 5 });
-    await dismissToasts(page);
-    await view(page, YARD_VIEW);
-    await selectModuleAt(page, YARD_CELL);
-    await expect(inspector(page).locator('[data-field="title"]')).toContainText('Kontajnerový dvor');
-    await expect(inspector(page).locator('[data-section="storage-split"]')).toContainText('Tranship');
-    await expect(inspector(page).locator('[data-section="storage-split"]')).toContainText(`${String(offer.volume)}`);
-    expect(
-      await page.evaluate((id) => {
-        const { cargo } = window.__sim!.world;
+    // prekládka sa rozdelí medzi dvory podľa toho, kam ju dispečer vozidlám pridelil: súčet cez dvory = objem kontraktu, inšpektor otvoríme
+    // nad dvorom s väčšinou (pri rovnosti nad prvým), ktorý musí niesť aspoň jednu jednotku
+    const split = await page.evaluate((ids) => {
+      const { cargo } = window.__sim!.world;
+      return ids.map((id) => {
         let count = 0;
         for (let i = 0; i < cargo.countAt('in_storage', id as never); i += 1) if (cargo.get(cargo.unitAtIndex('in_storage', id as never, i)!)?.direction === 'tranship') count += 1;
         return count;
-      }, yardId),
-    ).toBe(offer.volume); // inšpektor ukazuje ledger: všetka prekládka je v dvore
+      });
+    }, yardIds);
+    expect(split.reduce((sum, count) => sum + count, 0)).toBe(offer.volume); // ledger: všetka prekládka leží v dvoroch
+    const tranYard = split.indexOf(Math.max(...split));
+    const tranYardId = yardIds[tranYard]!;
+    const tranCount = split[tranYard]!;
+    expect(tranCount).toBeGreaterThan(0);
+    await dismissToasts(page);
+    await view(page, yardsView(yards));
+    await selectModuleAt(page, centerCellOf(yards[tranYard]!));
+    await expect(inspector(page)).toHaveAttribute('data-module-id', String(tranYardId)); // klik trafil dvor s prekládkou, nie druhý
+    await expect(inspector(page).locator('[data-field="title"]')).toContainText('Kontajnerový dvor');
+    await expect(inspector(page).locator('[data-section="storage-split"]')).toContainText('Tranship');
+    // inšpektor ukazuje ledger: počet segmentu Tranship = jednotky prekládky v tomto dvore
+    await expect(inspector(page).locator('[data-section="storage-split"] [data-field="storage-split-tranship"]')).toHaveText(new RegExp(`^${String(tranCount)}( |$)`));
     await parkMouse(page);
     await page.screenshot({ path: `${SHOTS}/f6c-tranship-yard.png`, fullPage: true });
     await page.keyboard.press('Escape');
@@ -390,9 +418,9 @@ test.describe('F6c: prázdne kontajnery a prekládka v jednom prístave (T6C-06b
     const returned = await tallyOf(page);
     expect(returned['EmptyReturned']).toBeGreaterThanOrEqual(3);
     expect(returned['EmptyStored']).toBeGreaterThanOrEqual(3);
-    // prázdne prišli kamiónom `in_truck → at_ramp → in_vehicle → in_storage` a uložili sa do depa (nie do bežného dvora): dvor má len import / export
+    // prázdne prišli kamiónom `in_truck → at_ramp → in_vehicle → in_storage` a uložili sa do depa (nie do bežného dvora): dvory majú len import / export
     const stored = await page.evaluate(
-      ([depot, yard]) => {
+      ([depot, yardList]) => {
         const { world } = window.__sim!;
         const inStorage = (moduleId: number) => {
           const directions: Record<string, number> = {};
@@ -402,12 +430,13 @@ test.describe('F6c: prázdne kontajnery a prekládka v jednom prístave (T6C-06b
           }
           return directions;
         };
-        return { depot: inStorage(depot!), yard: inStorage(yard!), fallback: (window as unknown as { __tally: Tally }).__tally['EmptyStored'] };
+        return { depot: inStorage(depot as number), yards: (yardList as number[]).map((yard) => inStorage(yard)), fallback: (window as unknown as { __tally: Tally }).__tally['EmptyStored'] };
       },
-      [depotId, yardId] as const,
+      [depotId, yardIds] as const,
     );
     expect(Object.keys(stored.depot)).toEqual(['empty']);
-    expect(stored.yard['empty'] ?? 0).toBe(0);
+    expect(stored.yards).toHaveLength(YARD_COUNT);
+    for (const yard of stored.yards) expect(yard['empty'] ?? 0).toBe(0);
     await dismissToasts(page);
     await view(page, DEPOT_VIEW);
     await selectModuleAt(page, DEPOT_CELL);

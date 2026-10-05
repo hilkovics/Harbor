@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Rng } from '@sim/core/rng';
 
 // Referenčný vektor xoshiro128** pre stav [1, 2, 3, 4] bol vypočítaný nezávisle od implementácie
@@ -62,6 +62,23 @@ describe('Rng — xoshiro128**', () => {
     expect(() => new Rng(1.5)).toThrow(RangeError);
     expect(() => new Rng(Number.NaN)).toThrow(RangeError);
     expect(() => new Rng(Number.POSITIVE_INFINITY)).toThrow(RangeError);
+  });
+
+  describe('seed je uint32', () => {
+    it.each([-1, 2 ** 32, 2 ** 32 + 1, 2 ** 53, -(2 ** 31), Number.NEGATIVE_INFINITY])('seed %s mimo 0 … 2^32 − 1 → RangeError', (seed) => {
+      expect(() => new Rng(seed)).toThrow(RangeError);
+    });
+
+    it('hranice 0 a 2^32 − 1 aj seedy nad 2^31 sú platné a dávajú rôzne sekvencie', () => {
+      const seeds = [0, 1, 2 ** 31 - 1, 2 ** 31, 2 ** 32 - 1];
+      const firstOutputs = seeds.map((seed) => takeU32(new Rng(seed), 4).join(','));
+      expect(new Set(firstOutputs).size).toBe(seeds.length);
+    });
+
+    it('seed sa už nezlieva s hodnotou o 2^32 vyššie (1 vs 2^32 + 1 → druhý je chyba)', () => {
+      expect(() => new Rng(1)).not.toThrow();
+      expect(() => new Rng(2 ** 32 + 1)).toThrow(/uint32/);
+    });
   });
 
   it('nextU32 vracia uint32', () => {
@@ -164,6 +181,26 @@ describe('Rng — xoshiro128**', () => {
       }
     });
 
+    it('rozpätie pretekajúce do Infinity vyhodí chybu a nespotrebuje číslo', () => {
+      const rng = new Rng(22);
+      const before = rng.getState();
+      expect(() => rng.range(-Number.MAX_VALUE, Number.MAX_VALUE)).toThrow(RangeError);
+      expect(() => rng.range(-1e308, 1e308)).toThrow(RangeError);
+      expect(rng.getState()).toEqual(before);
+    });
+
+    it('horná hranica je výlučná aj pri najväčšom next() (1 − 2^−32), ak max(|min|, |max|) < 2^20 × rozpätie', () => {
+      const rng = new Rng(23);
+      const spy = vi.spyOn(rng, 'next').mockReturnValue(1 - 2 ** -32);
+      expect(rng.range(0, 1)).toBeLessThan(1);
+      expect(rng.range(-5, 5)).toBeLessThan(5);
+      expect(rng.range(1e6, 1e6 + 1)).toBeLessThan(1e6 + 1);
+      expect(rng.range(-1e6 - 1, -1e6)).toBeLessThan(-1e6);
+      spy.mockReturnValue(0);
+      expect(rng.range(1e6, 1e6 + 1)).toBe(1e6);
+      expect(rng.range(-5, 5)).toBe(-5);
+    });
+
     it('min === max vráti min; min > max alebo nefinitné hranice vyhodia chybu', () => {
       const rng = new Rng(21);
       expect(rng.range(3, 3)).toBe(3);
@@ -209,6 +246,19 @@ describe('Rng — xoshiro128**', () => {
       }
     });
 
+    it('krajné hodnoty next() (0 a 1 − 2^−32) dajú presne min a maxInclusive, aj pri span = 2^32', () => {
+      const rng = new Rng(36);
+      const spy = vi.spyOn(rng, 'next').mockReturnValue(1 - 2 ** -32);
+      expect(rng.int(0, 9)).toBe(9);
+      expect(rng.int(-3, 3)).toBe(3);
+      expect(rng.int(0, 2 ** 32 - 1)).toBe(2 ** 32 - 1);
+      expect(rng.int(-(2 ** 31), 2 ** 31 - 1)).toBe(2 ** 31 - 1);
+      spy.mockReturnValue(0);
+      expect(rng.int(0, 9)).toBe(0);
+      expect(rng.int(-3, 3)).toBe(-3);
+      expect(rng.int(0, 2 ** 32 - 1)).toBe(0);
+    });
+
     it('vyhodí chybu pri necelých hraniciach, min > max a intervale širšom než 2^32', () => {
       const rng = new Rng(35);
       expect(() => rng.int(0.5, 3)).toThrow(RangeError);
@@ -243,6 +293,42 @@ describe('Rng — xoshiro128**', () => {
       a.pick([1, 2, 3]);
       b.nextU32();
       expect(a.getState()).toEqual(b.getState());
+    });
+  });
+
+  describe('chance(probability)', () => {
+    it('chyby: mimo 0 … 1, NaN a nekonečno → RangeError a nič sa nespotrebuje', () => {
+      const rng = new Rng(61);
+      const before = rng.getState();
+      for (const bad of [-0.01, 1.01, Number.NaN, Number.POSITIVE_INFINITY]) expect(() => rng.chance(bad)).toThrow(RangeError);
+      expect(rng.getState()).toEqual(before);
+    });
+
+    it('0 nikdy, 1 vždy; oba spotrebujú jedno číslo ako ostatné hodnoty', () => {
+      const rng = new Rng(62);
+      const twin = new Rng(62);
+      for (let i = 0; i < 200; i++) {
+        expect(rng.chance(0)).toBe(false);
+        expect(rng.chance(1)).toBe(true);
+        twin.nextU32();
+        twin.nextU32();
+      }
+      expect(rng.getState()).toEqual(twin.getState());
+    });
+
+    it('je presne `next() < p` nad rovnakým prúdom', () => {
+      const rng = new Rng(63);
+      const twin = new Rng(63);
+      for (let i = 0; i < 500; i++) expect(rng.chance(0.3)).toBe(twin.next() < 0.3);
+    });
+
+    it('podiel úspechov zodpovedá pravdepodobnosti (nezávislý odhad)', () => {
+      const rng = new Rng(64);
+      let hits = 0;
+      const trials = 20_000;
+      for (let i = 0; i < trials; i++) if (rng.chance(0.05)) hits += 1;
+      expect(hits / trials).toBeGreaterThan(0.04);
+      expect(hits / trials).toBeLessThan(0.06);
     });
   });
 

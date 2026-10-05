@@ -1,0 +1,1144 @@
+<!-- Čitateľný zdroj šablóny prototypu design/ui/game-ui.html (relácia 5, Claude Design), dekódovaný z bundlu. Nie je samostatne spustiteľný — referencia pre ui-builder (/ui-from-design). -->
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="a9acc80e-9d19-46a7-8a87-389b7308bc90"></script>
+
+
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<style>/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("45282bc7-22bb-42e8-b13e-14d55231879e") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("7588483e-b8e4-4e0c-bc1f-e1b5a1af4a3b") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fa1d7e5b-7598-48a5-80ba-c97437d5e4f7") format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("a4e6fd77-e873-479e-863b-bb8c46f5f0e9") format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("175b8aba-e47c-4698-97f6-9221fbbb31fb") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("27db64a6-2724-4175-a48f-1007184dc363") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("2fdee8d7-784c-45db-b230-7938a8a96a5a") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("45282bc7-22bb-42e8-b13e-14d55231879e") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("7588483e-b8e4-4e0c-bc1f-e1b5a1af4a3b") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("fa1d7e5b-7598-48a5-80ba-c97437d5e4f7") format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("a4e6fd77-e873-479e-863b-bb8c46f5f0e9") format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("175b8aba-e47c-4698-97f6-9221fbbb31fb") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("27db64a6-2724-4175-a48f-1007184dc363") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("2fdee8d7-784c-45db-b230-7938a8a96a5a") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("45282bc7-22bb-42e8-b13e-14d55231879e") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("7588483e-b8e4-4e0c-bc1f-e1b5a1af4a3b") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("fa1d7e5b-7598-48a5-80ba-c97437d5e4f7") format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("a4e6fd77-e873-479e-863b-bb8c46f5f0e9") format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("175b8aba-e47c-4698-97f6-9221fbbb31fb") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("27db64a6-2724-4175-a48f-1007184dc363") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("2fdee8d7-784c-45db-b230-7938a8a96a5a") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("6a41dac8-9bb8-41f9-8a1e-4a845c91d405") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("82716f61-762e-4d75-b2ab-7e7074d82d24") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("ad3080bd-99d1-4259-aabf-af27a92814f4") format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("637ca0d8-ce35-427a-8fe3-cdba2bd5a42c") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("970d3263-66dd-48b7-98cb-70114be004f7") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("5f77672a-22aa-4bd2-bde4-bc92c49570a7") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("6a41dac8-9bb8-41f9-8a1e-4a845c91d405") format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("82716f61-762e-4d75-b2ab-7e7074d82d24") format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("ad3080bd-99d1-4259-aabf-af27a92814f4") format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("637ca0d8-ce35-427a-8fe3-cdba2bd5a42c") format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("970d3263-66dd-48b7-98cb-70114be004f7") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("5f77672a-22aa-4bd2-bde4-bc92c49570a7") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+</style>
+<style>:root {
+  /* ===== Herný svet (terén) ===== */
+  --terrain-water-deep: #0E3A5B;
+  --terrain-water-shallow: #1F6F8B;
+  --terrain-water-foam: #7FC2D6;      /* jemná linka pri pobreží */
+  --terrain-quay: #B7B2A6;            /* betón kotviska */
+  --terrain-quay-edge: #7D786E;       /* hrana k vode, 4 px */
+  --terrain-land: #D8D2C4;
+  --terrain-land-alt: #CFC8B8;        /* šachovnica 2×2 buniek pre orientáciu */
+  --terrain-blocked: #6E6A66;
+  --parcel-for-sale: #F2B233;         /* prerušovaný obrys 2 px */
+  --parcel-owned: #35C27A;
+  --parcel-leased: #3AA0FF;
+
+  /* ===== Infraštruktúra ===== */
+  --road-base: #4B5058;
+  --road-marking: #E9E4D6;
+  --rail-base: #3B3B3B;
+  --rail-tie: #6B5A45;
+  --pipe-base: #8A8F98;
+  --pipe-valve: #E5484D;
+
+  /* ===== Kategórie nákladu (sémantické) ===== */
+  --cargo-container: #F28C28;   /* glyf: obdĺžnik s dvomi pruhmi */
+  --cargo-bulk: #C9A227;        /* glyf: kopa / tri kruhy */
+  --cargo-liquid: #7B4FA0;      /* glyf: kvapka */
+  --cargo-gas: #2BB3A3;         /* glyf: valec s hrdlom */
+  --cargo-roro: #D64545;        /* glyf: auto zhora */
+  /* svetlé/tmavé varianty: +14 % L / −14 % L od base */
+
+  /* ===== Moduly ===== */
+  --module-base: #9DA3AC;       /* neutrálny betón/oceľ modulu */
+  --module-roof: #B8BEC7;
+  --module-outline: #5C626B;
+  --module-connector: #3AA0FF;  /* bunka konektora v build mode */
+  --module-disconnected: #F2B233;
+
+  /* ===== Entity ===== */
+  --vehicle-body: #F4D03F;      /* straddle carrier / AGV: žltá "industrial" */
+  --vehicle-dark: #2B2B2B;
+  --truck-cab: #3A6EA5;
+  --truck-trailer: #C9CDD3;
+  --train-loco: #2F5D8A;
+  --train-wagon: #7A7F87;
+  --ship-hull: #2C3E50;
+  --ship-deck: #8E9AA7;
+  --ship-superstructure: #ECEFF3;
+  --crane-frame: #E3B23C;       /* portálový žeriav: žlto-oranžová */
+  --crane-boom: #C88B1F;
+
+  /* ===== Stavy na mape ===== */
+  --ghost-valid: rgba(53,194,122,.55);
+  --ghost-invalid: rgba(229,72,77,.55);  /* + diagonálny hatch 45°, 6 px */
+  --outline-hover: #FFFFFF;              /* 2 px */
+  --outline-selected: #3AA0FF;           /* 3 px */
+  --heat-0: rgba(58,160,255,0);
+  --heat-1: rgba(58,160,255,.65);
+  --heat-2: rgba(242,178,51,.8);
+  --heat-3: rgba(229,72,77,.9);
+
+  /* ===== UI (tmavá, poloprehľadná nad mapou) ===== */
+  --ui-bg: rgba(15,27,39,.92);
+  --ui-surface: #172736;
+  --ui-surface-2: #1F334A;
+  --ui-border: #2E4760;
+  --ui-text: #EEF3F7;
+  --ui-text-2: #9FB2C4;
+  --ui-text-3: #6E8299;
+  --ui-accent: #3AA0FF;
+  --ui-accent-hover: #63B5FF;
+  --ui-success: #35C27A;
+  --ui-warning: #F2B233;
+  --ui-danger: #E5484D;
+  --ui-info: #6FB7FF;
+  --ui-money-pos: #35C27A;
+  --ui-money-neg: #E5484D;
+  --ui-xp: #B58CFF;
+
+  /* ===== Typografia ===== */
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --fs-xs: 12px; --fs-sm: 13px; --fs-md: 14px; --fs-lg: 16px; --fs-xl: 20px; --fs-2xl: 28px;
+  --fw-regular: 400; --fw-semibold: 600; --fw-bold: 700;
+  --lh-tight: 1.2; --lh-normal: 1.45;
+  /* čísla v UI vždy `font-variant-numeric: tabular-nums` */
+
+  /* ===== Rozmery ===== */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-6: 24px; --space-8: 32px;
+  --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px;
+  --shadow-panel: 0 8px 24px rgba(0,0,0,.35);
+  --icon-sm: 16px; --icon-md: 24px; --icon-lg: 32px;
+  --hud-top-h: 48px; --build-bar-h: 96px; --side-panel-w: 360px;
+  --cell: 64px;   /* 1 bunka gridu pri zoom 1 */
+
+  /* ===== Odvodené (Relácia 1): kategórie nákladu ±14 % L (HSL) ===== */
+  --cargo-container-light: #F6B06B;
+  --cargo-container-dark: #C7680C;
+  --cargo-bulk-light: #DFBE59;
+  --cargo-bulk-dark: #8D721B;
+  --cargo-liquid-light: #9E79BD;
+  --cargo-liquid-dark: #563770;
+  --cargo-gas-light: #50D5C5;
+  --cargo-gas-dark: #1D796F;
+  --cargo-roro-light: #E38080;
+  --cargo-roro-dark: #AD2626;
+}
+</style>
+<style>
+body{margin:0;background:#0B1520;color:var(--ui-text);font-family:var(--font-ui);-webkit-font-smoothing:antialiased}
+a{color:var(--ui-accent)}a:hover{color:var(--ui-accent-hover)}
+button{font-family:inherit;white-space:nowrap}
+*{scrollbar-width:thin;scrollbar-color:var(--ui-border) transparent}
+@keyframes mhPulse{0%,100%{box-shadow:0 0 0 0 rgba(229,72,77,0)}8%{box-shadow:0 0 0 3px rgba(229,72,77,.55)}40%{box-shadow:0 0 0 3px rgba(229,72,77,.55)}48%{box-shadow:0 0 0 0 rgba(229,72,77,0)}}
+</style>
+</helmet>
+<div style="min-height:100vh;display:flex;flex-direction:column;font-size:var(--fs-md);line-height:var(--lh-normal)">
+
+<nav style="display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--ui-border);background:#0F1B27">
+  <span style="font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--ui-text-2);letter-spacing:.06em;text-transform:uppercase">Relácia 5 · prototyp</span>
+  <sc-for list="{{ nav }}" as="g" hint-placeholder-count="4">
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+      <span style="font-size:var(--fs-xs);color:var(--ui-text-2);margin-right:2px">{{ g.label }}</span>
+      <sc-for list="{{ g.chips }}" as="c" hint-placeholder-count="3">
+        <button sc-camel-on-click="{{ c.onClick }}" style="height:26px;padding:0 10px;border-radius:13px;border:1px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:12px;white-space:nowrap;cursor:pointer" style-hover="border-color:var(--ui-accent)" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px">{{ c.label }}</button>
+      </sc-for>
+    </div>
+  </sc-for>
+</nav>
+
+<div ref="{{ wrapRef }}" style="flex:1;padding:16px;box-sizing:border-box">
+<div style="position:relative;width:100%;height:{{ stageH }}px">
+<div data-screen-label="Game UI" style="position:absolute;left:0;top:0;width:{{ W }}px;height:{{ H }}px;transform:scale({{ scale }});transform-origin:0 0;overflow:hidden;border-radius:4px;background:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px) 0 0/64px 64px,linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px) 0 0/64px 64px,#12304A">
+
+  <div style="position:absolute;left:0;right:0;top:48px;bottom:96px;display:flex;align-items:center;justify-content:center;pointer-events:none">
+    <span style="font-family:var(--font-mono);font-size:var(--fs-sm);color:var(--ui-text-2);letter-spacing:.08em">MAPA · PixiJS canvas</span>
+  </div>
+  <sc-if value="{{ showHeat }}" hint-placeholder-val="{{ false }}">
+    <sc-for list="{{ heatCells }}" as="h" hint-placeholder-count="0"><div style="position:absolute;left:{{ h.x }}px;top:{{ h.y }}px;width:64px;height:64px;background:var({{ h.v }})"></div></sc-for>
+  </sc-if>
+  <sc-if value="{{ paused }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;top:64px;left:0;right:0;display:flex;justify-content:center;pointer-events:none">
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;border-radius:var(--radius-md);background:var(--ui-bg);border:1px solid var(--ui-warning);box-shadow:var(--shadow-panel)">
+        <svg width="16" height="16" style="color:var(--ui-warning)"><use href="#ic_pause"></use></svg>
+        <span style="font-weight:600">Pozastavené</span>
+        <span style="font-family:var(--font-mono);font-size:11px;padding:1px 6px;border-radius:4px;border:1px solid var(--ui-border);background:var(--ui-surface-2);color:var(--ui-text-2)">Medzerník</span>
+      </div>
+    </div>
+  </sc-if>
+
+  <header style="position:absolute;left:0;right:0;top:0;height:48px;box-sizing:border-box;display:flex;align-items:center;gap:0;padding:0 12px;background:var(--ui-bg);border-bottom:1px solid var(--ui-border);font-variant-numeric:tabular-nums">
+    <div style="display:flex;align-items:center;gap:10px;padding:0 14px 0 6px;height:34px;border-radius:var(--radius-md);background:{{ cashBg }};animation:{{ cashAnim }}">
+      <svg width="20" height="20" style="color:{{ cashIconColor }}"><use href="#ic_cash"></use></svg>
+      <span style="font-size:var(--fs-lg);font-weight:700;color:{{ cashColor }}">{{ cash }}</span>
+      <span style="font-size:var(--fs-sm);color:{{ deltaColor }}">{{ delta }}</span>
+    </div>
+    <div style="width:1px;height:24px;background:var(--ui-border);margin:0 12px"></div>
+    <div style="display:flex;align-items:center;gap:8px"><svg width="18" height="18" style="color:var(--ui-xp)"><use href="#ic_xp"></use></svg><span style="font-weight:600">340 XP</span></div>
+    <div style="width:1px;height:24px;background:var(--ui-border);margin:0 12px"></div>
+    <div style="display:flex;align-items:center;gap:8px"><svg width="18" height="18" style="color:var(--ui-text-2)"><use href="#ic_calendar"></use></svg><span>Deň 12 · 14:20</span></div>
+    <div style="width:1px;height:24px;background:var(--ui-border);margin:0 12px"></div>
+    <div style="display:flex;align-items:center;gap:2px;padding:2px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border)">
+      <button sc-camel-on-click="{{ togglePause }}" title="Pauza (Medzerník)" style="width:32px;height:28px;display:grid;place-items:center;border-radius:6px;border:none;cursor:pointer;background:{{ pauseBg }};color:{{ pauseFg }}" style-hover="background:var(--ui-surface-2)" style-focus="outline:2px solid var(--ui-accent)"><svg width="16" height="16"><use href="{{ pauseIcon }}"></use></svg></button>
+      <sc-for list="{{ speeds }}" as="s" hint-placeholder-count="4">
+        <button sc-camel-on-click="{{ s.onClick }}" title="{{ s.title }}" style="min-width:34px;height:28px;padding:0 6px;border-radius:6px;border:none;cursor:pointer;font-size:var(--fs-sm);font-weight:600;background:{{ s.bg }};color:{{ s.fg }}" style-hover="background:var(--ui-surface-2)" style-focus="outline:2px solid var(--ui-accent)">{{ s.label }}</button>
+      </sc-for>
+    </div>
+    <div style="flex:1"></div>
+    <div style="display:flex;align-items:center;gap:4px">
+      <sc-for list="{{ hudButtons }}" as="b" hint-placeholder-count="5">
+        <button sc-camel-on-click="{{ b.onClick }}" title="{{ b.title }}" style="width:36px;height:36px;display:grid;place-items:center;border-radius:var(--radius-md);cursor:pointer;border:1px solid {{ b.bd }};background:{{ b.bg }};color:{{ b.fg }}" style-hover="background:var(--ui-surface-2);color:var(--ui-text)" style-focus="outline:2px solid var(--ui-accent);outline-offset:1px"><svg width="20" height="20"><use href="{{ b.icon }}"></use></svg></button>
+      </sc-for>
+    </div>
+  </header>
+
+  <sc-if value="{{ hasPanel }}" hint-placeholder-val="{{ true }}">
+  <aside style="position:absolute;right:12px;top:60px;bottom:108px;width:360px;display:flex;flex-direction:column;background:var(--ui-bg);border:1px solid var(--ui-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-panel);overflow:hidden">
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 12px 12px 16px;border-bottom:1px solid var(--ui-border);flex:none">
+      <svg width="20" height="20" style="color:var(--ui-text-2);flex:none"><use href="{{ ph.icon }}"></use></svg>
+      <div style="display:flex;flex-direction:column;flex:1;min-width:0">
+        <span style="font-size:var(--fs-lg);font-weight:600;line-height:var(--lh-tight)">{{ ph.title }}</span>
+        <sc-if value="{{ ph.sub }}" hint-placeholder-val="{{ false }}"><span style="font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--ui-text-2)">{{ ph.sub }}</span></sc-if>
+      </div>
+      <sc-if value="{{ ph.badge }}" hint-placeholder-val="{{ false }}"><span style="display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:11px;font-size:var(--fs-xs);font-weight:600;background:{{ ph.badgeBg }};color:{{ ph.badgeFg }}"><svg width="12" height="12"><use href="{{ ph.badgeIcon }}"></use></svg>{{ ph.badge }}</span></sc-if>
+      <button sc-camel-on-click="{{ closePanel }}" title="Zavrieť (Esc)" style="width:32px;height:32px;display:grid;place-items:center;border-radius:var(--radius-md);border:none;background:transparent;color:var(--ui-text-2);cursor:pointer;flex:none" style-hover="background:var(--ui-surface-2);color:var(--ui-text)" style-focus="outline:2px solid var(--ui-accent)"><svg width="18" height="18"><use href="#ic_close"></use></svg></button>
+    </div>
+    <div style="flex:1;overflow-y:auto;overflow-x:hidden;padding:16px;display:flex;flex-direction:column;gap:16px">
+
+      <sc-if value="{{ is.contracts }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;gap:2px;padding:2px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border)">
+          <sc-for list="{{ ctabs }}" as="t" hint-placeholder-count="3">
+            <button sc-camel-on-click="{{ t.onClick }}" style="flex:1;height:30px;border:none;border-radius:6px;cursor:pointer;font-size:var(--fs-sm);font-weight:600;background:{{ t.bg }};color:{{ t.fg }}" style-hover="color:var(--ui-text)" style-focus="outline:2px solid var(--ui-accent)">{{ t.label }}</button>
+          </sc-for>
+        </div>
+        <sc-if value="{{ contractsEmpty }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:40px 16px">
+            <div style="width:56px;height:56px;border-radius:50%;display:grid;place-items:center;background:var(--ui-surface-2);color:var(--ui-text-2)"><svg width="26" height="26"><use href="#ic_contract"></use></svg></div>
+            <span style="font-weight:600;font-size:var(--fs-lg)">Žiadne ponuky</span>
+            <span style="color:var(--ui-text-2);max-width:32ch;text-wrap:pretty">Ďalšia ponuka príde o 2 dni. Vyššia reputácia prináša viac ponúk a väčšie lode.</span>
+            <div style="display:flex;align-items:center;gap:6px;color:var(--ui-text-2);font-size:var(--fs-sm)"><svg width="14" height="14" style="color:var(--ui-success)"><use href="#ic_reputation"></use></svg>Reputácia 3,8 / 5</div>
+          </div>
+        </sc-if>
+        <sc-for list="{{ contracts }}" as="k" hint-placeholder-count="3">
+          <div style="display:flex;flex-direction:column;gap:10px;padding:12px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border)">
+            <div style="display:flex;align-items:flex-start;gap:10px">
+              <div style="width:36px;height:36px;flex:none;border-radius:var(--radius-md);display:grid;place-items:center;background:var(--ui-surface-2);color:var({{ k.catColor }})"><svg width="22" height="22"><use href="{{ k.icon }}"></use></svg></div>
+              <div style="display:flex;flex-direction:column;flex:1;min-width:0">
+                <span style="font-weight:600;font-size:var(--fs-sm)">{{ k.title }}</span>
+                <span style="font-size:var(--fs-xs);color:var(--ui-text-2)">{{ k.meta }}</span>
+              </div>
+              <span style="font-weight:700;font-variant-numeric:tabular-nums;color:{{ k.rewardColor }}">{{ k.reward }}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span style="display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:11px;font-size:var(--fs-xs);font-weight:600;background:{{ k.slaBg }};color:{{ k.slaFg }}"><svg width="12" height="12"><use href="#ic_clock"></use></svg>{{ k.sla }}</span>
+              <span style="display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:11px;font-size:var(--fs-xs);background:var(--ui-surface-2);color:var(--ui-text-2)"><svg width="12" height="12"><use href="#ic_ship"></use></svg>{{ k.ship }}</span>
+              <span style="flex:1"></span>
+              <span style="display:inline-flex;align-items:center;gap:4px;font-size:var(--fs-xs);font-weight:600;color:{{ k.statusFg }}"><svg width="12" height="12"><use href="{{ k.statusIcon }}"></use></svg>{{ k.status }}</span>
+            </div>
+            <sc-if value="{{ k.active }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <sc-for list="{{ k.bars }}" as="b" hint-placeholder-count="2">
+                  <div style="display:flex;flex-direction:column;gap:4px">
+                    <div style="display:flex;justify-content:space-between;font-size:var(--fs-xs);color:var(--ui-text-2);font-variant-numeric:tabular-nums"><span>{{ b.label }}</span><span style="color:var(--ui-text)">{{ b.value }}</span></div>
+                    <div style="height:6px;border-radius:3px;background:var(--ui-surface-2);overflow:hidden"><div style="height:100%;width:{{ b.pct }}%;background:var({{ k.catColor }})"></div></div>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{ k.offer }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;gap:8px">
+                <button style="flex:1;height:32px;display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:var(--radius-md);border:1px solid var(--ui-accent);background:var(--ui-accent);color:#0F1B27;font-size:var(--fs-sm);font-weight:600;cursor:pointer" style-hover="background:var(--ui-accent-hover);border-color:var(--ui-accent-hover)" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px"><svg width="14" height="14"><use href="#ic_check"></use></svg>Prijať</button>
+                <button style="flex:1;height:32px;border-radius:var(--radius-md);border:1px solid var(--ui-border);background:transparent;color:var(--ui-text-2);font-size:var(--fs-sm);font-weight:600;cursor:pointer" style-hover="background:var(--ui-surface-2);color:var(--ui-text)" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px">Odmietnuť</button>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </sc-if>
+
+      <sc-if value="{{ is.inspector }}" hint-placeholder-val="{{ false }}">
+        <sc-if value="{{ insp.disconnected }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:10px;padding:12px;border-radius:var(--radius-md);background:rgba(242,178,51,.12);border:1px solid var(--module-disconnected)">
+            <svg width="20" height="20" style="color:var(--module-disconnected);flex:none"><use href="#ic_warning"></use></svg>
+            <div style="display:flex;flex-direction:column;gap:2px"><span style="font-weight:600">Nepripojené k ceste</span><span style="font-size:var(--fs-sm);color:var(--ui-text-2);text-wrap:pretty">Konektor na severnej strane nemá cestu. Kamióny nemôžu vojsť do prístavu.</span></div>
+          </div>
+        </sc-if>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+          <sc-for list="{{ insp.stats }}" as="s" hint-placeholder-count="3">
+            <div style="display:flex;flex-direction:column;gap:2px;padding:10px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border)">
+              <span style="font-size:var(--fs-xs);color:var(--ui-text-2)">{{ s.label }}</span>
+              <span style="font-size:var(--fs-xl);font-weight:700;font-variant-numeric:tabular-nums;color:{{ s.color }}">{{ s.value }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <sc-if value="{{ insp.capacity }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="display:flex;justify-content:space-between;font-size:var(--fs-sm);font-variant-numeric:tabular-nums"><span style="color:var(--ui-text-2)">Kapacita</span><span>{{ insp.capacity }}</span></div>
+            <div style="height:8px;border-radius:4px;background:var(--ui-surface-2);overflow:hidden"><div style="width:72%;height:100%;background:var(--cargo-container)"></div></div>
+          </div>
+        </sc-if>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:var(--fs-sm);font-weight:600">Vyťaženosť · 24 h</span><span style="font-size:var(--fs-xs);color:var(--ui-text-2);font-variant-numeric:tabular-nums">{{ insp.hoverLabel }}</span></div>
+          <div style="padding:10px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border)">{{ sparkline }}</div>
+        </div>
+        <sc-if value="{{ insp.policy }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <span style="font-size:var(--fs-sm);font-weight:600">Politika skladu</span>
+            <div style="display:flex;gap:2px;padding:2px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border)">
+              <sc-for list="{{ policies }}" as="p" hint-placeholder-count="3"><button sc-camel-on-click="{{ p.onClick }}" style="flex:1;height:28px;border:none;border-radius:6px;cursor:pointer;font-size:var(--fs-xs);font-weight:600;background:{{ p.bg }};color:{{ p.fg }}" style-hover="color:var(--ui-text)" style-focus="outline:2px solid var(--ui-accent)">{{ p.label }}</button></sc-for>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ insp.vehicles }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <span style="font-size:var(--fs-sm);font-weight:600">Vozidlá v depe</span>
+            <div style="display:flex;flex-direction:column;border-radius:var(--radius-md);border:1px solid var(--ui-border);overflow:hidden">
+              <sc-for list="{{ insp.vehicles }}" as="v" hint-placeholder-count="4">
+                <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:{{ v.bg }};font-size:var(--fs-sm)">
+                  <svg width="16" height="16" style="color:var(--ui-text-2)"><use href="#ic_vehicle"></use></svg>
+                  <span style="font-family:var(--font-mono);font-size:var(--fs-xs)">{{ v.id }}</span>
+                  <span style="flex:1;color:var(--ui-text-2)">{{ v.type }}</span>
+                  <span style="display:inline-flex;align-items:center;gap:4px;font-size:var(--fs-xs);font-weight:600;color:{{ v.fg }}"><svg width="12" height="12"><use href="{{ v.icon }}"></use></svg>{{ v.state }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:auto">
+          <sc-if value="{{ insp.buy }}" hint-placeholder-val="{{ false }}">
+            <button style="height:36px;display:flex;align-items:center;justify-content:center;gap:8px;border-radius:var(--radius-md);border:1px solid var(--ui-accent);background:var(--ui-accent);color:#0F1B27;font-size:var(--fs-sm);font-weight:600;cursor:pointer" style-hover="background:var(--ui-accent-hover)" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px"><svg width="16" height="16"><use href="#ic_vehicle"></use></svg>Kúpiť vozidlo v depe · $48,000</button>
+          </sc-if>
+          <sc-if value="{{ insp.connect }}" hint-placeholder-val="{{ false }}">
+            <button style="height:36px;display:flex;align-items:center;justify-content:center;gap:8px;border-radius:var(--radius-md);border:1px solid var(--ui-accent);background:var(--ui-accent);color:#0F1B27;font-size:var(--fs-sm);font-weight:600;cursor:pointer" style-hover="background:var(--ui-accent-hover)" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px"><svg width="16" height="16"><use href="#ic_road"></use></svg>Postaviť cestu ku konektoru</button>
+          </sc-if>
+          <div style="display:flex;gap:8px">
+            <button style="flex:1;height:32px;display:flex;align-items:center;justify-content:center;gap:6px;border-radius:var(--radius-md);border:1px solid var(--ui-border);background:var(--ui-surface-2);color:var(--ui-text);font-size:var(--fs-sm);font-weight:600;cursor:pointer" style-hover="border-color:var(--ui-accent)" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px"><svg width="14" height="14"><use href="#ic_rotate"></use></svg>Presunúť</button>
+            <button style="flex:1;height:32px;display:flex;align-items:center;justify-content:center;gap:6px;border-radius:var(--radius-md);border:1px solid var(--ui-danger);background:rgba(229,72,77,.14);color:var(--ui-text);font-size:var(--fs-sm);font-weight:600;cursor:pointer" style-hover="background:rgba(229,72,77,.26)" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px"><svg width="14" height="14" style="color:var(--ui-danger)"><use href="#ic_demolish"></use></svg>Odstrániť</button>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ is.finance }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;gap:2px;padding:2px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border)">
+          <sc-for list="{{ finModes }}" as="t" hint-placeholder-count="2"><button sc-camel-on-click="{{ t.onClick }}" style="flex:1;height:30px;border:none;border-radius:6px;cursor:pointer;font-size:var(--fs-sm);font-weight:600;background:{{ t.bg }};color:{{ t.fg }}" style-hover="color:var(--ui-text)" style-focus="outline:2px solid var(--ui-accent)">{{ t.label }}</button></sc-for>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:var(--fs-sm);font-weight:600">Príjmy vs. výdaje</span><span style="font-size:var(--fs-xs);color:var(--ui-text-2)">{{ fin.range }}</span></div>
+          <div style="position:relative;padding:10px 10px 6px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border)">
+            {{ finChart }}
+            <div style="display:flex;justify-content:space-around;padding:4px 0 0 30px;font-size:11px;color:var(--ui-text-3);font-variant-numeric:tabular-nums"><sc-for list="{{ fin.labels }}" as="l" hint-placeholder-count="7"><span>{{ l }}</span></sc-for></div>
+            <sc-if value="{{ fin.tip }}" hint-placeholder-val="{{ false }}">
+              <div style="position:absolute;top:8px;left:{{ fin.tip.x }}px;transform:translateX(-50%);pointer-events:none;padding:8px 10px;border-radius:var(--radius-sm);background:var(--ui-surface-2);border:1px solid var(--ui-border);box-shadow:var(--shadow-panel);font-size:var(--fs-xs);font-variant-numeric:tabular-nums;white-space:nowrap;display:flex;flex-direction:column;gap:2px">
+                <span style="font-weight:600">{{ fin.tip.label }}</span>
+                <span style="color:var(--ui-money-pos)">Príjmy {{ fin.tip.inc }}</span>
+                <span style="color:var(--ui-text-2)">Výdaje {{ fin.tip.exp }}</span>
+                <span>Zisk {{ fin.tip.net }}</span>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px 12px">
+          <sc-for list="{{ fin.legend }}" as="l" hint-placeholder-count="7"><span style="display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-xs);color:var(--ui-text-2)"><span style="width:10px;height:10px;border-radius:2px;background:var({{ l.c }})"></span>{{ l.name }}</span></sc-for>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:var(--fs-sm);font-weight:600">Hotovosť</span><span style="font-size:var(--fs-sm);font-weight:600;font-variant-numeric:tabular-nums">$1,234,560</span></div>
+          <div style="padding:10px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border)">{{ cashChart }}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;border-radius:var(--radius-md);border:1px solid var(--ui-border);overflow:hidden;font-size:var(--fs-sm);font-variant-numeric:tabular-nums">
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) 96px 64px;gap:8px;padding:8px 10px;background:var(--ui-surface-2);font-size:var(--fs-xs);color:var(--ui-text-2)"><span>Kategória</span><span style="text-align:right">{{ fin.colLabel }}</span><span style="text-align:right">Δ</span></div>
+          <sc-for list="{{ fin.rows }}" as="r" hint-placeholder-count="7">
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) 96px 64px;gap:8px;padding:7px 10px;background:{{ r.bg }};align-items:center">
+              <span style="display:flex;align-items:center;gap:8px;min-width:0"><span style="width:8px;height:8px;border-radius:2px;flex:none;background:var({{ r.c }})"></span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.name }}</span></span>
+              <span style="text-align:right;color:{{ r.vc }}">{{ r.v }}</span>
+              <span style="text-align:right;font-size:var(--fs-xs);color:{{ r.dc }}">{{ r.d }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ is.stats }}" hint-placeholder-val="{{ false }}">
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+          <sc-for list="{{ kpis }}" as="s" hint-placeholder-count="3">
+            <div style="display:flex;flex-direction:column;gap:2px;padding:10px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border)">
+              <span style="font-size:var(--fs-xs);color:var(--ui-text-2);line-height:var(--lh-tight);min-height:30px">{{ s.label }}</span>
+              <span style="font-size:var(--fs-xl);font-weight:700;font-variant-numeric:tabular-nums">{{ s.value }}</span>
+              <span style="font-size:11px;font-variant-numeric:tabular-nums;color:{{ s.dc }}">{{ s.delta }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <sc-for list="{{ util }}" as="g" hint-placeholder-count="3">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <span style="display:flex;align-items:center;gap:8px;font-size:var(--fs-sm);font-weight:600"><svg width="16" height="16" style="color:var(--ui-text-2)"><use href="{{ g.icon }}"></use></svg>{{ g.name }}</span>
+            <sc-for list="{{ g.items }}" as="u" hint-placeholder-count="3">
+              <div style="display:grid;grid-template-columns:72px minmax(0,1fr) 44px;gap:10px;align-items:center;font-size:var(--fs-xs);font-variant-numeric:tabular-nums">
+                <span style="font-family:var(--font-mono);color:var(--ui-text-2)">{{ u.id }}</span>
+                <div style="height:8px;border-radius:4px;background:var(--ui-surface-2);overflow:hidden"><div style="height:100%;width:{{ u.v }}%;background:var({{ u.c }})"></div></div>
+                <span style="text-align:right;font-weight:600;color:{{ u.tc }}">{{ u.v }} %</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-for>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <span style="font-size:var(--fs-sm);font-weight:600">Top 5 hot-spots</span>
+          <sc-for list="{{ hotspots }}" as="h" hint-placeholder-count="5">
+            <div style="display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--ui-border);font-size:var(--fs-sm)">
+              <span style="font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--ui-text-2)">{{ h.n }}</span><span>{{ h.name }}</span><span style="font-size:var(--fs-xs);color:var(--ui-text-2);font-variant-numeric:tabular-nums">{{ h.m }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:flex;gap:10px;padding:12px;border-radius:var(--radius-md);background:rgba(242,178,51,.10);border:1px solid rgba(242,178,51,.5)">
+          <svg width="20" height="20" style="color:var(--ui-warning);flex:none"><use href="#ic_warning"></use></svg>
+          <div style="display:flex;flex-direction:column;gap:2px"><span style="font-weight:600">Úzke hrdlo: Brána G-1</span><span style="font-size:var(--fs-sm);color:var(--ui-text-2);text-wrap:pretty">Vyťaženosť 97 %, fronta 7 kamiónov, priemerné čakanie 18 min. Druhá brána alebo väčšia čakacia plocha frontu skráti.</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;padding:12px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border)">
+          <div style="display:flex;align-items:center;gap:10px">
+            <svg width="18" height="18" style="color:var(--ui-text-2)"><use href="#ic_heatmap"></use></svg>
+            <span style="flex:1;font-size:var(--fs-sm);font-weight:600">Heatmapa premávky</span>
+            <button sc-camel-on-click="{{ toggleHeat }}" role="switch" aria-checked="{{ heatOn }}" style="width:40px;height:22px;border-radius:11px;border:none;padding:2px;cursor:pointer;display:flex;justify-content:{{ heatJustify }};background:{{ heatTrack }}" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px"><span style="width:18px;height:18px;border-radius:50%;background:var(--ui-text)"></span></button>
+          </div>
+          <div style="height:12px;width:200px;border-radius:2px;background:linear-gradient(90deg,var(--heat-0),var(--heat-1),var(--heat-2),var(--heat-3)),var(--ui-surface-2)"></div>
+          <div style="width:200px;display:flex;justify-content:space-between;font-size:11px;color:var(--ui-text-2)"><span>nízka</span><span>stredná</span><span>vysoká</span></div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ is.parcel }}" hint-placeholder-val="{{ false }}">
+        <div style="position:relative;height:120px;border-radius:var(--radius-md);background:var(--terrain-land);overflow:hidden">
+          <div style="position:absolute;left:24px;top:14px;width:192px;height:88px;border:2px dashed var(--parcel-for-sale);border-radius:2px"></div>
+          <span style="position:absolute;left:232px;top:14px;font-family:var(--font-mono);font-size:var(--fs-xs);color:#2B2B2B">12 × 8</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div style="display:flex;flex-direction:column;gap:2px;padding:12px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border)"><span style="font-size:var(--fs-xs);color:var(--ui-text-2)">Kúpa</span><span style="font-size:var(--fs-xl);font-weight:700;font-variant-numeric:tabular-nums">$640,000</span><span style="font-size:11px;color:var(--ui-text-2)">jednorazovo</span></div>
+          <div style="display:flex;flex-direction:column;gap:2px;padding:12px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border)"><span style="font-size:var(--fs-xs);color:var(--ui-text-2)">Prenájom</span><span style="font-size:var(--fs-xl);font-weight:700;font-variant-numeric:tabular-nums">$9,800</span><span style="font-size:11px;color:var(--ui-text-2)">mesačne</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;font-size:var(--fs-sm);font-variant-numeric:tabular-nums">
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--ui-border)"><span style="color:var(--ui-text-2)">Plocha</span><span>96 buniek · 12 × 8</span></div>
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--ui-border)"><span style="color:var(--ui-text-2)">Kúpa sa vráti za</span><span>65 mesiacov</span></div>
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--ui-border)"><span style="color:var(--ui-text-2)">Prístup</span><span>cesta · koľaj na západe</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:auto">
+          <div style="display:flex;gap:8px">
+            <button style="flex:1;height:36px;display:flex;align-items:center;justify-content:center;gap:6px;border-radius:var(--radius-md);border:1px solid var(--ui-accent);background:var(--ui-accent);color:#0F1B27;font-size:var(--fs-sm);font-weight:600;cursor:pointer" style-hover="background:var(--ui-accent-hover)" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px"><svg width="14" height="14"><use href="#ic_cash"></use></svg>Kúpiť</button>
+            <button style="flex:1;height:36px;display:flex;align-items:center;justify-content:center;gap:6px;border-radius:var(--radius-md);border:1px solid var(--ui-border);background:var(--ui-surface-2);color:var(--ui-text);font-size:var(--fs-sm);font-weight:600;cursor:pointer" style-hover="border-color:var(--ui-accent)" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px"><svg width="14" height="14"><use href="#ic_calendar"></use></svg>Prenajať</button>
+          </div>
+          <button disabled="{{ true }}" title="Dostupné len pre vlastnené alebo prenajaté parcely" style="height:32px;border-radius:var(--radius-md);border:1px solid var(--ui-border);background:transparent;color:var(--ui-text-2);font-size:var(--fs-sm);font-weight:600;cursor:not-allowed;opacity:.6">Uvoľniť</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ is.empty }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:12px;padding:24px">
+          <div style="width:56px;height:56px;border-radius:50%;display:grid;place-items:center;background:var(--ui-surface-2);color:var(--ui-text-2)"><svg width="26" height="26"><use href="#ic_inspect"></use></svg></div>
+          <span style="font-weight:600;font-size:var(--fs-lg)">Nič nie je vybrané</span>
+          <span style="color:var(--ui-text-2);max-width:30ch;text-wrap:pretty">Klikni na modul, vozidlo alebo parcelu na mape.</span>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;font-size:var(--fs-sm);color:var(--ui-text-2)">
+            <sc-for list="{{ emptyKeys }}" as="k" hint-placeholder-count="4"><span style="display:flex;align-items:center;gap:8px;justify-content:center"><span style="font-family:var(--font-mono);font-size:11px;min-width:12px;text-align:center;padding:1px 6px;border-radius:4px;border:1px solid var(--ui-border);background:var(--ui-surface-2);color:var(--ui-text)">{{ k.key }}</span>{{ k.label }}</span></sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+    </div>
+  </aside>
+  </sc-if>
+
+  <sc-if value="{{ showToasts }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;right:384px;bottom:108px;width:340px;display:flex;flex-direction:column;gap:8px">
+      <sc-for list="{{ toasts }}" as="t" hint-placeholder-count="4">
+        <div role="status" style="display:flex;gap:10px;padding:12px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border);box-shadow:var(--shadow-panel)">
+          <div style="width:4px;align-self:stretch;border-radius:2px;flex:none;background:var({{ t.c }})"></div>
+          <svg width="20" height="20" style="color:var({{ t.c }});flex:none"><use href="{{ t.icon }}"></use></svg>
+          <div style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:0">
+            <span style="font-weight:600;font-size:var(--fs-sm)">{{ t.title }}</span>
+            <span style="font-size:var(--fs-xs);color:var(--ui-text-2);font-variant-numeric:tabular-nums">{{ t.text }}</span>
+            <button sc-camel-on-click="{{ t.onShow }}" style="align-self:flex-start;margin-top:4px;padding:0;border:none;background:none;color:var(--ui-accent);font-size:var(--fs-xs);font-weight:600;cursor:pointer" style-hover="color:var(--ui-accent-hover)" style-focus="outline:2px solid var(--ui-accent)">Zobraziť</button>
+          </div>
+          <button sc-camel-on-click="{{ t.onClose }}" title="Zavrieť" style="width:24px;height:24px;display:grid;place-items:center;border:none;border-radius:4px;background:transparent;color:var(--ui-text-2);cursor:pointer;flex:none" style-hover="background:var(--ui-surface-2);color:var(--ui-text)" style-focus="outline:2px solid var(--ui-accent)"><svg width="14" height="14"><use href="#ic_close"></use></svg></button>
+        </div>
+      </sc-for>
+    </div>
+  </sc-if>
+
+  <footer style="position:absolute;left:0;right:0;bottom:0;height:96px;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;padding:6px 12px 8px;background:var(--ui-bg);border-top:1px solid var(--ui-border)">
+    <div style="display:flex;gap:2px;height:26px">
+      <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="6">
+        <button sc-camel-on-click="{{ t.onClick }}" style="display:flex;align-items:center;gap:8px;padding:0 12px;border:none;border-radius:6px;cursor:pointer;font-size:var(--fs-sm);font-weight:600;background:{{ t.bg }};color:{{ t.fg }}" style-hover="color:var(--ui-text);background:var(--ui-surface-2)" style-focus="outline:2px solid var(--ui-accent)">{{ t.label }}<span style="font-family:var(--font-mono);font-size:10px;padding:0 4px;border-radius:3px;border:1px solid var(--ui-border);color:var(--ui-text-2)">{{ t.key }}</span></button>
+      </sc-for>
+      <span style="flex:1"></span>
+      <span style="display:flex;align-items:center;gap:8px;font-size:var(--fs-xs);color:var(--ui-text-2)"><span style="font-family:var(--font-mono);font-size:10px;padding:0 4px;border-radius:3px;border:1px solid var(--ui-border)">R</span>otočiť<span style="font-family:var(--font-mono);font-size:10px;padding:0 4px;border-radius:3px;border:1px solid var(--ui-border);margin-left:6px">Esc</span>zrušiť</span>
+    </div>
+    <div style="display:flex;gap:8px;flex:1;min-height:0">
+      <sc-for list="{{ items }}" as="it" hint-placeholder-count="7">
+        <div sc-camel-on-mouse-enter="{{ it.enter }}" sc-camel-on-mouse-leave="{{ it.leave }}" tabindex="0" style="position:relative;flex:0 1 200px;min-width:0;display:flex;align-items:center;gap:10px;padding:0 12px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border);cursor:{{ it.cursor }}" style-hover="border-color:{{ it.hoverBd }};background:var(--ui-surface-2)" style-focus="outline:2px solid var(--ui-accent);outline-offset:1px">
+          <svg width="24" height="24" style="flex:none;color:{{ it.iconColor }}"><use href="{{ it.icon }}"></use></svg>
+          <div style="display:flex;flex-direction:column;min-width:0">
+            <span style="font-size:var(--fs-sm);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:{{ it.nameColor }}">{{ it.name }}</span>
+            <span style="font-size:var(--fs-xs);font-variant-numeric:tabular-nums;color:{{ it.priceColor }}">{{ it.price }}</span>
+          </div>
+          <sc-if value="{{ it.locked }}" hint-placeholder-val="{{ false }}"><svg width="14" height="14" style="position:absolute;top:6px;right:6px;color:var(--ui-text-2)"><use href="#ic_lock"></use></svg></sc-if>
+          <sc-if value="{{ it.tip }}" hint-placeholder-val="{{ false }}">
+            <div role="tooltip" style="position:absolute;left:0;bottom:calc(100% + 8px);min-width:220px;padding:10px 12px;border-radius:var(--radius-sm);background:var(--ui-surface-2);border:1px solid var(--ui-border);box-shadow:var(--shadow-panel);display:flex;flex-direction:column;gap:4px;z-index:5;pointer-events:none">
+              <span style="display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);font-weight:600"><svg width="14" height="14" style="color:{{ it.tipColor }}"><use href="{{ it.tipIcon }}"></use></svg>{{ it.tipTitle }}</span>
+              <span style="font-size:var(--fs-xs);color:var(--ui-text-2);font-variant-numeric:tabular-nums">{{ it.tip }}</span>
+            </div>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+  </footer>
+
+  <sc-if value="{{ ov.any }}" hint-placeholder-val="{{ false }}">
+  <div style="position:absolute;inset:0;background:{{ ov.scrim }};display:flex;align-items:center;justify-content:center;padding:24px">
+
+    <sc-if value="{{ ov.tech }}" hint-placeholder-val="{{ false }}">
+      <div role="dialog" aria-label="Strom technológií" style="width:1040px;max-width:100%;max-height:100%;display:flex;flex-direction:column;background:var(--ui-surface);border:1px solid var(--ui-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-panel);overflow:hidden">
+        <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--ui-border)">
+          <svg width="20" height="20" style="color:var(--ui-text-2)"><use href="#ic_build"></use></svg>
+          <span style="font-size:var(--fs-xl);font-weight:600;flex:1">Strom technológií</span>
+          <span style="display:flex;align-items:center;gap:6px;font-weight:600;font-variant-numeric:tabular-nums"><svg width="16" height="16" style="color:var(--ui-xp)"><use href="#ic_xp"></use></svg>340 XP k dispozícii</span>
+          <button sc-camel-on-click="{{ closeOverlay }}" title="Zavrieť (Esc)" style="width:32px;height:32px;display:grid;place-items:center;border-radius:var(--radius-md);border:none;background:transparent;color:var(--ui-text-2);cursor:pointer" style-hover="background:var(--ui-surface-2);color:var(--ui-text)" style-focus="outline:2px solid var(--ui-accent)"><svg width="18" height="18"><use href="#ic_close"></use></svg></button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;padding:20px 24px;overflow-y:auto;overflow-x:hidden">
+          <sc-for list="{{ tech }}" as="b" hint-placeholder-count="3">
+            <div style="display:flex;flex-direction:column;align-items:stretch">
+              <span style="font-size:var(--fs-xs);font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ui-text-2);padding-bottom:12px">{{ b.name }}</span>
+              <sc-for list="{{ b.nodes }}" as="n" hint-placeholder-count="4">
+                <div style="display:flex;flex-direction:column;align-items:stretch">
+                  <sc-if value="{{ n.line }}" hint-placeholder-val="{{ false }}"><div style="width:2px;height:20px;margin-left:27px;background:{{ n.lineColor }}"></div></sc-if>
+                  <button sc-camel-on-mouse-enter="{{ n.enter }}" sc-camel-on-focus="{{ n.enter }}" style="display:flex;align-items:center;gap:12px;padding:10px 12px;text-align:left;border-radius:var(--radius-md);border:{{ n.border }};background:{{ n.bg }};color:var(--ui-text);cursor:pointer;opacity:{{ n.op }}" style-hover="background:var(--ui-surface-2)" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px">
+                    <div style="width:32px;height:32px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--ui-surface-2);color:{{ n.iconColor }}"><svg width="18" height="18"><use href="{{ n.icon }}"></use></svg></div>
+                    <div style="display:flex;flex-direction:column;flex:1;min-width:0"><span style="font-weight:600;font-size:var(--fs-sm)">{{ n.name }}</span><span style="font-size:var(--fs-xs);font-variant-numeric:tabular-nums;color:{{ n.subColor }}">{{ n.sub }}</span></div>
+                  </button>
+                </div>
+              </sc-for>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:flex;align-items:center;gap:16px;padding:14px 24px;border-top:1px solid var(--ui-border);background:var(--ui-bg)">
+          <svg width="20" height="20" style="color:{{ node.iconColor }};flex:none"><use href="{{ node.icon }}"></use></svg>
+          <div style="display:flex;flex-direction:column;flex:1;min-width:0"><span style="font-weight:600">{{ node.name }}</span><span style="font-size:var(--fs-sm);color:var(--ui-text-2)">{{ node.effect }}</span></div>
+          <sc-if value="{{ node.canBuy }}" hint-placeholder-val="{{ false }}"><button style="height:36px;display:flex;align-items:center;gap:8px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--ui-accent);background:var(--ui-accent);color:#0F1B27;font-size:var(--fs-sm);font-weight:600;cursor:pointer" style-hover="background:var(--ui-accent-hover)" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px">Vyskúmať · {{ node.cost }}</button></sc-if>
+          <sc-if value="{{ node.needs }}" hint-placeholder-val="{{ false }}"><span style="display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);color:var(--ui-text-2)"><svg width="14" height="14"><use href="#ic_lock"></use></svg>{{ node.needs }}</span></sc-if>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ ov.report }}" hint-placeholder-val="{{ false }}">
+      <div role="dialog" aria-label="Mesačný report" style="width:600px;max-width:100%;display:flex;flex-direction:column;background:var(--ui-surface);border:1px solid var(--ui-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-panel)">
+        <div style="display:flex;flex-direction:column;gap:4px;padding:20px 24px 16px;border-bottom:1px solid var(--ui-border)">
+          <span style="font-size:var(--fs-xs);color:var(--ui-text-2);letter-spacing:.06em;text-transform:uppercase">Mesiac 1 · deň 1–30</span>
+          <span style="font-size:var(--fs-2xl);font-weight:700;line-height:var(--lh-tight)">Mesačný report</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:20px;padding:20px 24px">
+          <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;font-variant-numeric:tabular-nums">
+            <div style="display:flex;flex-direction:column;gap:2px;padding:12px;border-radius:var(--radius-md);background:var(--ui-surface-2)"><span style="font-size:var(--fs-xs);color:var(--ui-text-2)">Príjmy</span><span style="font-size:var(--fs-xl);font-weight:700">$1,486,200</span></div>
+            <div style="display:flex;flex-direction:column;gap:2px;padding:12px;border-radius:var(--radius-md);background:var(--ui-surface-2)"><span style="font-size:var(--fs-xs);color:var(--ui-text-2)">Výdaje</span><span style="font-size:var(--fs-xl);font-weight:700">$1,212,900</span></div>
+            <div style="display:flex;flex-direction:column;gap:2px;padding:12px;border-radius:var(--radius-md);background:var(--ui-surface-2)"><span style="font-size:var(--fs-xs);color:var(--ui-text-2)">Čistý zisk</span><span style="font-size:var(--fs-xl);font-weight:700;color:var(--ui-money-pos)">+$273,300</span></div>
+          </div>
+          <div style="display:flex;gap:24px;font-size:var(--fs-sm)">
+            <span style="display:flex;align-items:center;gap:8px"><svg width="16" height="16" style="color:var(--ui-success)"><use href="#ic_check"></use></svg><b style="font-variant-numeric:tabular-nums">11</b> dokončených kontraktov</span>
+            <span style="display:flex;align-items:center;gap:8px"><svg width="16" height="16" style="color:var(--ui-danger)"><use href="#ic_close"></use></svg><b style="font-variant-numeric:tabular-nums">2</b> zlyhané · pokuty $38,000</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <span style="font-size:var(--fs-sm);font-weight:600">Odporúčania</span>
+            <sc-for list="{{ recs }}" as="r" hint-placeholder-count="3">
+              <div style="display:flex;gap:12px;padding:12px;border-radius:var(--radius-md);border:1px solid var(--ui-border)">
+                <span style="font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--ui-text-2);padding-top:2px">{{ r.n }}</span>
+                <span style="font-size:var(--fs-sm);text-wrap:pretty;max-width:60ch">{{ r.text }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;padding:14px 24px;border-top:1px solid var(--ui-border)">
+          <button sc-camel-on-click="{{ openFinance }}" style="height:36px;padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--ui-border);background:var(--ui-surface-2);color:var(--ui-text);font-size:var(--fs-sm);font-weight:600;cursor:pointer" style-hover="border-color:var(--ui-accent)" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px">Zobraziť financie</button>
+          <button sc-camel-on-click="{{ closeOverlay }}" style="height:36px;padding:0 20px;border-radius:var(--radius-md);border:1px solid var(--ui-accent);background:var(--ui-accent);color:#0F1B27;font-size:var(--fs-sm);font-weight:600;cursor:pointer" style-hover="background:var(--ui-accent-hover)" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px">Pokračovať</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ ov.settings }}" hint-placeholder-val="{{ false }}">
+      <div role="dialog" aria-label="Nastavenia" style="width:640px;max-width:100%;max-height:100%;display:flex;flex-direction:column;background:var(--ui-surface);border:1px solid var(--ui-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-panel);overflow:hidden">
+        <div style="display:flex;align-items:center;gap:12px;padding:14px 16px 14px 24px;border-bottom:1px solid var(--ui-border)">
+          <span style="font-size:var(--fs-xl);font-weight:600;flex:1">Nastavenia</span>
+          <button sc-camel-on-click="{{ closeOverlay }}" title="Zavrieť (Esc)" style="width:32px;height:32px;display:grid;place-items:center;border-radius:var(--radius-md);border:none;background:transparent;color:var(--ui-text-2);cursor:pointer" style-hover="background:var(--ui-surface-2);color:var(--ui-text)" style-focus="outline:2px solid var(--ui-accent)"><svg width="18" height="18"><use href="#ic_close"></use></svg></button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:20px;padding:20px 24px;overflow:auto">
+          <sc-for list="{{ settings }}" as="g" hint-placeholder-count="3">
+            <div style="display:flex;flex-direction:column">
+              <span style="font-size:var(--fs-xs);font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ui-text-2);padding-bottom:4px">{{ g.name }}</span>
+              <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="2">
+                <div style="display:flex;align-items:center;gap:16px;min-height:44px;border-bottom:1px solid var(--ui-border)">
+                  <span style="flex:1;font-size:var(--fs-sm)">{{ r.label }}</span>
+                  <sc-if value="{{ r.seg }}" hint-placeholder-val="{{ false }}"><div style="display:flex;gap:2px;padding:2px;border-radius:var(--radius-md);background:var(--ui-bg);border:1px solid var(--ui-border)"><sc-for list="{{ r.seg }}" as="o" hint-placeholder-count="3"><span style="height:26px;display:flex;align-items:center;padding:0 10px;border-radius:6px;font-size:var(--fs-xs);font-weight:600;background:{{ o.bg }};color:{{ o.fg }}">{{ o.label }}</span></sc-for></div></sc-if>
+                  <sc-if value="{{ r.toggle }}" hint-placeholder-val="{{ false }}"><span style="width:40px;height:22px;border-radius:11px;padding:2px;box-sizing:border-box;display:flex;justify-content:{{ r.j }};background:{{ r.track }}"><span style="width:18px;height:18px;border-radius:50%;background:var(--ui-text)"></span></span></sc-if>
+                  <sc-if value="{{ r.slider }}" hint-placeholder-val="{{ false }}"><span style="display:flex;align-items:center;gap:10px;font-size:var(--fs-xs);font-variant-numeric:tabular-nums;color:var(--ui-text-2)"><span style="position:relative;width:180px;height:6px;border-radius:3px;background:var(--ui-surface-2)"><span style="position:absolute;left:0;top:0;bottom:0;width:{{ r.slider }}%;border-radius:3px;background:var(--ui-accent)"></span><span style="position:absolute;top:-5px;left:calc({{ r.slider }}% - 8px);width:16px;height:16px;border-radius:50%;background:var(--ui-text)"></span></span><span style="width:32px;text-align:right">{{ r.slider }} %</span></span></sc-if>
+                  <sc-if value="{{ r.key }}" hint-placeholder-val="{{ false }}"><span style="font-family:var(--font-mono);font-size:var(--fs-xs);padding:2px 8px;border-radius:4px;border:1px solid var(--ui-border);background:var(--ui-surface-2)">{{ r.key }}</span></sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;padding:14px 24px;border-top:1px solid var(--ui-border)">
+          <button sc-camel-on-click="{{ closeOverlay }}" style="height:36px;padding:0 16px;border-radius:var(--radius-md);border:1px solid transparent;background:transparent;color:var(--ui-text-2);font-size:var(--fs-sm);font-weight:600;cursor:pointer" style-hover="background:var(--ui-surface-2);color:var(--ui-text)" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px">Zrušiť</button>
+          <button sc-camel-on-click="{{ closeOverlay }}" style="height:36px;padding:0 20px;border-radius:var(--radius-md);border:1px solid var(--ui-accent);background:var(--ui-accent);color:#0F1B27;font-size:var(--fs-sm);font-weight:600;cursor:pointer" style-hover="background:var(--ui-accent-hover)" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px">Uložiť</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ ov.gameover }}" hint-placeholder-val="{{ false }}">
+      <div role="alertdialog" aria-label="Bankrot" style="width:560px;max-width:100%;display:flex;flex-direction:column;align-items:center;text-align:center;gap:20px;padding:40px 40px 32px;background:var(--ui-surface);border:1px solid var(--ui-danger);border-radius:var(--radius-lg);box-shadow:var(--shadow-panel)">
+        <div style="width:72px;height:72px;border-radius:50%;display:grid;place-items:center;background:rgba(229,72,77,.16);color:var(--ui-danger)"><svg width="36" height="36"><use href="#ic_warning"></use></svg></div>
+        <div style="display:flex;flex-direction:column;gap:8px;align-items:center">
+          <span style="font-size:40px;font-weight:700;line-height:var(--lh-tight)">Bankrot</span>
+          <span style="color:var(--ui-text-2);max-width:44ch;text-wrap:pretty">Hotovosť zostala záporná 30 dní po sebe. Banka zablokovala účet prístavu.</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;width:100%;font-variant-numeric:tabular-nums">
+          <div style="display:flex;flex-direction:column;gap:2px;padding:12px;border-radius:var(--radius-md);background:var(--ui-surface-2)"><span style="font-size:var(--fs-xs);color:var(--ui-text-2)">Prežité dni</span><span style="font-size:var(--fs-xl);font-weight:700">142</span></div>
+          <div style="display:flex;flex-direction:column;gap:2px;padding:12px;border-radius:var(--radius-md);background:var(--ui-surface-2)"><span style="font-size:var(--fs-xs);color:var(--ui-text-2)">Kontrakty</span><span style="font-size:var(--fs-xl);font-weight:700">87</span></div>
+          <div style="display:flex;flex-direction:column;gap:2px;padding:12px;border-radius:var(--radius-md);background:var(--ui-surface-2)"><span style="font-size:var(--fs-xs);color:var(--ui-text-2)">Max. hotovosť</span><span style="font-size:var(--fs-xl);font-weight:700">$4,812,300</span></div>
+        </div>
+        <div style="display:flex;gap:8px;width:100%">
+          <button style="flex:1;height:40px;display:flex;align-items:center;justify-content:center;gap:8px;border-radius:var(--radius-md);border:1px solid var(--ui-accent);background:var(--ui-accent);color:#0F1B27;font-size:var(--fs-md);font-weight:600;cursor:pointer" style-hover="background:var(--ui-accent-hover)" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px"><svg width="16" height="16"><use href="#ic_load"></use></svg>Načítať uloženú hru</button>
+          <button style="flex:1;height:40px;border-radius:var(--radius-md);border:1px solid var(--ui-border);background:var(--ui-surface-2);color:var(--ui-text);font-size:var(--fs-md);font-weight:600;cursor:pointer" style-hover="border-color:var(--ui-accent)" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px">Nová hra</button>
+        </div>
+      </div>
+    </sc-if>
+
+  </div>
+  </sc-if>
+
+</div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;resolution&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;1920×1080&quot;,&quot;1280×720&quot;],&quot;default&quot;:&quot;1920×1080&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  state = { hud: 'normal', speed: 1, panel: 'contracts', overlay: 'none', toasts: true, gone: [], tab: 'terminal', ctab: 'offers', fin: 'day', heat: true, policy: 1, hoverItem: null, hoverDay: null, hoverHour: null, node: 'k2', scale: 1 };
+  wrapEl = null;
+  wrapRef = el => {
+    if (el === this.wrapEl) return;
+    if (this.ro) this.ro.disconnect();
+    this.wrapEl = el;
+    if (el) { this.ro = new ResizeObserver(() => this.fit()); this.ro.observe(el); requestAnimationFrame(() => this.fit()); }
+  };
+  componentDidMount() {
+    const R = window.__resources || {};
+    if (!document.getElementById('mh-icons')) fetch(R.icons || 'assets/icons/icons.svg').then(r => r.text()).then(t => {
+      if (document.getElementById('mh-icons')) return;
+      const d = document.createElement('div'); d.id = 'mh-icons'; d.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden'; d.innerHTML = t; document.body.prepend(d);
+    });
+    this.onResize = () => this.fit(); window.addEventListener('resize', this.onResize); this.fit();
+    this.kd = e => {
+      if (/INPUT|TEXTAREA/.test(e.target.tagName)) return;
+      const k = e.key.toLowerCase();
+      if (k === ' ') { e.preventDefault(); this.togglePause(); }
+      else if (k === 'escape') this.setState(this.state.overlay !== 'none' ? { overlay: 'none' } : { panel: 'empty' });
+      else if (k === 'c') this.setState({ panel: 'contracts', ctab: 'offers' });
+      else if (k === 'f') this.setState({ panel: 'finance' });
+      else if (k === 's') this.setState({ panel: 'stats' });
+      else if (k === 't') this.setState({ overlay: 'tech' });
+      else if (['1', '2', '3', '4', '5', '6'].includes(k)) this.setState({ tab: this.tabIds[+k - 1] });
+    };
+    window.addEventListener('keydown', this.kd);
+  }
+  componentDidUpdate() { this.fit(); }
+  componentWillUnmount() { this.ro && this.ro.disconnect(); window.removeEventListener('keydown', this.kd); window.removeEventListener('resize', this.onResize); }
+  dims() { return this.props.resolution === '1280×720' ? [1280, 720] : [1920, 1080]; }
+  fit() { const el = this.wrapEl || document.querySelector('[data-screen-label="Game UI"]')?.parentElement?.parentElement; if (!el) { requestAnimationFrame(() => this.fit()); return; } const [W] = this.dims(); const w = el.clientWidth - 32; const s = Math.min(1, w / W); if (s > 0 && Math.abs(s - this.state.scale) > .002) this.setState({ scale: s }); }
+  togglePause = () => this.setState(s => ({ hud: s.hud === 'paused' ? 'normal' : 'paused' }));
+  tabIds = ['terminal', 'storage', 'logistics', 'landside', 'rail', 'pipes'];
+
+  renderVals() {
+    const st = this.state, set = o => () => this.setState(o);
+    const [W, H] = this.dims();
+    const $ = n => (n < 0 ? '−' : '') + '$' + Math.abs(Math.round(n)).toLocaleString('en-US');
+    const warn = st.hud === 'warning', paused = st.hud === 'paused';
+    const chipOn = on => on ? { bg: 'var(--ui-accent)', fg: '#0F1B27', bd: 'var(--ui-accent)' } : { bg: 'transparent', fg: 'var(--ui-text-2)', bd: 'var(--ui-border)' };
+    const segOn = on => on ? { bg: 'var(--ui-surface-2)', fg: 'var(--ui-text)' } : { bg: 'transparent', fg: 'var(--ui-text-2)' };
+    const cat = { container: ['--cargo-container', 'Kontajnery'], bulk: ['--cargo-bulk', 'Sypký náklad'], liquid: ['--cargo-liquid-light', 'Kvapaliny'], gas: ['--cargo-gas', 'Plyn'], roro: ['--cargo-roro-light', 'RoRo'] };
+
+    const nav = [
+      { label: 'HUD', chips: [['normal', 'Normálny'], ['warning', 'Varovanie'], ['paused', 'Pauza']].map(([k, l]) => ({ label: l, onClick: set({ hud: k }), ...chipOn(st.hud === k) })) },
+      { label: 'Panel', chips: [['contracts', 'Kontrakty'], ['insp_yard', 'Inšpektor · sklad'], ['insp_depot', 'Inšpektor · depo'], ['insp_gate', 'Inšpektor · brána'], ['finance', 'Financie'], ['stats', 'Štatistiky'], ['parcel', 'Parcela'], ['empty', 'Nič nevybrané'], ['contracts_empty', 'Žiadne kontrakty']].map(([k, l]) => ({ label: l, onClick: set(k === 'contracts_empty' ? { panel: 'contracts', ctab: 'empty' } : k === 'contracts' ? { panel: k, ctab: 'offers' } : { panel: k }), ...chipOn(k === 'contracts_empty' ? st.panel === 'contracts' && st.ctab === 'empty' : k === 'contracts' ? st.panel === 'contracts' && st.ctab !== 'empty' : st.panel === k) })) },
+      { label: 'Overlay', chips: [['none', 'Žiadny'], ['tech', 'Tech strom'], ['report', 'Mesačný report'], ['settings', 'Nastavenia'], ['gameover', 'Bankrot']].map(([k, l]) => ({ label: l, onClick: set({ overlay: k }), ...chipOn(st.overlay === k) })) },
+      { label: 'Toasty', chips: [{ label: st.toasts ? 'Zobrazené' : 'Skryté', onClick: () => this.setState(s => ({ toasts: !s.toasts, gone: [] })), ...chipOn(st.toasts) }] }
+    ];
+
+    const speeds = [1, 2, 4, 8].map(n => ({ label: n + '×', title: 'Rýchlosť ' + n + '×', onClick: () => this.setState({ speed: n, hud: st.hud === 'paused' ? 'normal' : st.hud }), bg: !paused && st.speed === n ? 'var(--ui-accent)' : 'transparent', fg: !paused && st.speed === n ? '#0F1B27' : 'var(--ui-text-2)' }));
+    const hb = (icon, title, on, onClick) => ({ icon, title, onClick, bg: on ? 'var(--ui-surface-2)' : 'transparent', fg: on ? 'var(--ui-text)' : 'var(--ui-text-2)', bd: on ? 'var(--ui-border)' : 'transparent' });
+    const hudButtons = [
+      hb('#ic_contract', 'Kontrakty (C)', st.panel === 'contracts', set({ panel: 'contracts', ctab: 'offers' })),
+      hb('#ic_cash', 'Financie (F)', st.panel === 'finance', set({ panel: 'finance' })),
+      hb('#ic_utilization', 'Štatistiky (S)', st.panel === 'stats', set({ panel: 'stats' })),
+      hb('#ic_xp', 'Strom technológií (T)', st.overlay === 'tech', set({ overlay: 'tech' })),
+      hb('#ic_settings', 'Nastavenia', st.overlay === 'settings', set({ overlay: 'settings' }))
+    ];
+
+    // Build bar
+    const tabNames = { terminal: 'Terminál', storage: 'Sklady', logistics: 'Logistika', landside: 'Landside', rail: 'Železnica', pipes: 'Potrubia' };
+    const tabs = this.tabIds.map((id, i) => ({ label: tabNames[id], key: String(i + 1), onClick: set({ tab: id }), bg: st.tab === id ? 'var(--ui-surface-2)' : 'transparent', fg: st.tab === id ? 'var(--ui-text)' : 'var(--ui-text-2)' }));
+    const cash = warn ? -48200 : 1234560;
+    const BI = {
+      terminal: [['Kotvisko štandard', 'berth', 180000], ['Kotvisko hlbokovodné', 'berth', 1450000], ['Kontajnerový žeriav', 'crane', 260000], ['Drapákový žeriav', 'crane', 210000], ['Rameno kvapalín', 'liquid', 95000, 'Kvapalné terminály', 120], ['Rameno plynu', 'gas', 120000, 'LNG infraštruktúra', 260], ['RoRo rampa', 'roro', 140000]],
+      storage: [['Kontajnerový dvor S', 'yard', 90000], ['Kontajnerový dvor M', 'yard', 190000], ['Kontajnerový dvor L', 'yard', 340000, 'Veľký dvor', 150], ['Silá', 'silo', 120000], ['Nádrže', 'tank', 160000, 'Kvapalné terminály', 120], ['Plynojemy', 'gasholder', 210000, 'LNG infraštruktúra', 260], ['Parkovisko áut', 'lot', 70000]],
+      logistics: [['Straddle carrier', 'vehicle', 48000], ['AGV', 'vehicle', 62000, 'Automatizácia I', 180], ['Vysokozdvižný vozík', 'vehicle', 18000], ['Bulk shuttle', 'bulk', 36000], ['Tanker shuttle', 'liquid', 42000, 'Kvapalné terminály', 120], ['Depo vozidiel', 'depot', 85000]],
+      landside: [['Brána kamiónov', 'gate', 60000], ['Čakacia plocha', 'waiting', 40000], ['Rampa · kontajnery', 'ramp', 55000], ['Rampa · sypký', 'ramp', 55000], ['Rampa · kvapaliny', 'ramp', 65000, 'Kvapalné terminály', 120], ['Rampa · plyn', 'ramp', 70000, 'LNG infraštruktúra', 260], ['Rampa · RoRo', 'ramp', 50000], ['Cesta', 'road', 400, null, null, '/ bunka']],
+      rail: [['Koľaj', 'rail', 900, null, null, '/ bunka'], ['Železničná stanica', 'rail_station', 520000], ['Výhybka', 'rail', 6000]],
+      pipes: [['Potrubie', 'pipe', 700, null, null, '/ bunka'], ['Ventil', 'pipe', 4500]]
+    };
+    const items = BI[st.tab].map(([name, icon, price, lock, xp, unit], i) => {
+      const locked = !!lock, poor = !locked && price > cash, hov = st.hoverItem === i;
+      const ic = { berth: 'berth', crane: 'crane', liquid: 'liquid', gas: 'gas', roro: 'roro', yard: 'yard', silo: 'silo', tank: 'tank', gasholder: 'gasholder', lot: 'lot', vehicle: 'vehicle', bulk: 'bulk', depot: 'depot', gate: 'gate', waiting: 'waiting', ramp: 'ramp', road: 'road', rail: 'rail', rail_station: 'rail_station', pipe: 'pipe' }[icon];
+      return {
+        name, icon: '#ic_' + ic, price: $(price) + (unit ? ' ' + unit : ''), locked,
+        iconColor: locked ? 'var(--ui-text-3)' : 'var(--ui-text)', nameColor: locked ? 'var(--ui-text-2)' : 'var(--ui-text)',
+        priceColor: poor ? 'var(--ui-money-neg)' : 'var(--ui-text-2)', cursor: locked || poor ? 'not-allowed' : 'pointer', hoverBd: locked || poor ? 'var(--ui-border)' : 'var(--ui-accent)',
+        enter: () => this.setState({ hoverItem: i }), leave: () => this.setState({ hoverItem: null }),
+        tip: hov && locked ? 'Vyžaduje technológiu ' + lock + ' · ' + xp + ' XP' : hov && poor ? 'Chýba ' + $(price - cash) : false,
+        tipTitle: locked ? 'Zamknuté' : 'Nedostatok peňazí', tipIcon: locked ? '#ic_lock' : '#ic_cash', tipColor: locked ? 'var(--ui-text-2)' : 'var(--ui-danger)'
+      };
+    });
+
+    // Panel header
+    const p = st.panel;
+    const is = { contracts: p === 'contracts', inspector: p.startsWith('insp'), finance: p === 'finance', stats: p === 'stats', parcel: p === 'parcel', empty: p === 'empty' };
+    const INSP = {
+      insp_yard: { title: 'Kontajnerový dvor · stredný', sub: 'YRD-03 · 6×6', icon: '#ic_yard', badge: 'V prevádzke', ok: true, capacity: '548 / 760 TEU', policy: true,
+        stats: [['Zaplnenie', '72 %', 'var(--ui-text)'], ['Vyťaženosť', '64 %', 'var(--ui-text)'], ['Fronta', '3', 'var(--ui-text)']], util: [42, 38, 30, 28, 26, 31, 45, 58, 66, 71, 74, 70, 68, 72, 75, 78, 74, 69, 64, 60, 57, 52, 48, 64] },
+      insp_depot: { title: 'Depo vozidiel', sub: 'DEP-01 · 3×3', icon: '#ic_depot', badge: 'V prevádzke', ok: true, buy: true,
+        stats: [['Vozidlá', '4 / 6', 'var(--ui-text)'], ['Vyťaženosť', '81 %', 'var(--ui-warning)'], ['Úlohy v rade', '5', 'var(--ui-text)']], util: [60, 55, 48, 45, 44, 50, 62, 74, 82, 88, 90, 86, 84, 88, 91, 93, 90, 87, 84, 80, 76, 72, 68, 81],
+        vehicles: [['SC-01', 'Straddle carrier', 'busy'], ['SC-02', 'Straddle carrier', 'busy'], ['AGV-01', 'AGV', 'idle'], ['FL-01', 'Vysokozdvižný vozík', 'busy']] },
+      insp_gate: { title: 'Brána kamiónov', sub: 'GTE-01 · 2×2', icon: '#ic_gate', badge: 'Nepripojené', ok: false, disconnected: true, connect: true,
+        stats: [['Priepustnosť', '0 / h', 'var(--ui-text)'], ['Fronta', '—', 'var(--ui-text-2)'], ['Čakanie', '—', 'var(--ui-text-2)']], util: [70, 72, 68, 66, 71, 74, 78, 80, 76, 74, 72, 70, 69, 71, 73, 40, 0, 0, 0, 0, 0, 0, 0, 0] }
+    };
+    const ins = INSP[p] || INSP.insp_yard;
+    const PH = {
+      contracts: { title: 'Kontrakty', icon: '#ic_contract' }, finance: { title: 'Financie', icon: '#ic_cash' }, stats: { title: 'Štatistiky', icon: '#ic_utilization' },
+      parcel: { title: 'Parcela P-14', sub: 'na predaj · 12×8', icon: '#ic_parcel', badge: 'Na predaj', badgeBg: 'rgba(242,178,51,.16)', badgeFg: 'var(--parcel-for-sale)', badgeIcon: '#ic_parcel' },
+      empty: { title: 'Inšpektor', icon: '#ic_inspect' }
+    };
+    const ph = is.inspector ? { title: ins.title, sub: ins.sub, icon: ins.icon, badge: ins.badge, badgeBg: ins.ok ? 'rgba(53,194,122,.16)' : 'rgba(242,178,51,.16)', badgeFg: ins.ok ? 'var(--ui-success)' : 'var(--module-disconnected)', badgeIcon: ins.ok ? '#ic_check' : '#ic_warning' } : { sub: false, badge: false, ...PH[p] };
+
+    // Contracts
+    const slaC = d => d >= 5 ? ['rgba(53,194,122,.16)', 'var(--ui-success)'] : d >= 3 ? ['rgba(242,178,51,.16)', 'var(--ui-warning)'] : ['rgba(229,72,77,.18)', '#FF8A8E'];
+    const mk = (c, type, vol, reward, sla, ship, extra = {}) => { const [bg, fg] = slaC(sla); return { icon: '#ic_' + c, catColor: cat[c][0], title: type + ' · ' + cat[c][1], meta: vol, reward: '+' + $(reward), rewardColor: 'var(--ui-money-pos)', sla: sla === 1 ? '1 deň' : sla + (sla < 5 ? ' dni' : ' dní'), slaBg: bg, slaFg: fg, ship, active: false, offer: false, bars: [], status: 'Ponuka', statusIcon: '#ic_info', statusFg: 'var(--ui-info)', ...extra }; };
+    const bar = (label, v, t, u) => ({ label, value: v.toLocaleString('en-US') + ' / ' + t.toLocaleString('en-US') + ' ' + u, pct: Math.round(v / t * 100) });
+    const C = {
+      offers: [mk('container', 'Import', '1,200 TEU', 184000, 6, 'Panamax', { offer: true }), mk('liquid', 'Export', '18,000 m³', 96000, 3, 'Handy', { offer: true }), mk('roro', 'Import', '640 áut', 71500, 2, 'Feeder', { offer: true })],
+      active: [
+        mk('container', 'Import', '2,400 TEU', 352000, 4, 'Mega', { active: true, status: 'Prebieha', statusIcon: '#ic_busy', statusFg: 'var(--ui-accent)', bars: [bar('Vyložené', 1820, 2400, 'TEU'), bar('Exportované', 640, 2400, 'TEU')] }),
+        mk('gas', 'Import', '9,500 m³', 142000, 1, 'Handy', { active: true, status: 'Ohrozené', statusIcon: '#ic_warning', statusFg: 'var(--ui-warning)', bars: [bar('Vyložené', 9500, 9500, 'm³'), bar('Exportované', 3100, 9500, 'm³')] }),
+        mk('bulk', 'Export', '32,000 t', 128000, 5, 'Panamax', { active: true, status: 'Prebieha', statusIcon: '#ic_busy', statusFg: 'var(--ui-accent)', bars: [bar('Naložené', 21000, 32000, 't'), bar('Dovezené', 26500, 32000, 't')] }),
+        mk('container', 'Export', '600 TEU', 58000, 7, 'Feeder', { active: true, status: 'Prebieha', statusIcon: '#ic_busy', statusFg: 'var(--ui-accent)', bars: [bar('Naložené', 580, 600, 'TEU'), bar('Dovezené', 600, 600, 'TEU')] })
+      ],
+      history: [
+        mk('container', 'Export', '800 TEU', 74000, 9, 'Feeder · deň 11', { status: 'Splnené', statusIcon: '#ic_check', statusFg: 'var(--ui-success)', sla: 'včas', slaBg: 'rgba(53,194,122,.16)', slaFg: 'var(--ui-success)' }),
+        mk('bulk', 'Import', '12,000 t', 52000, 9, 'Handy · deň 9', { status: 'Zlyhané', statusIcon: '#ic_close', statusFg: '#FF8A8E', reward: '−$24,000', rewardColor: 'var(--ui-money-neg)', sla: 'o 2 dni neskôr', slaBg: 'rgba(229,72,77,.18)', slaFg: '#FF8A8E' }),
+        mk('roro', 'Export', '420 áut', 46500, 9, 'Feeder · deň 7', { status: 'Splnené', statusIcon: '#ic_check', statusFg: 'var(--ui-success)', sla: 'včas', slaBg: 'rgba(53,194,122,.16)', slaFg: 'var(--ui-success)' })
+      ],
+      empty: []
+    };
+    const ctabKey = st.ctab === 'empty' ? 'offers' : st.ctab;
+    const ctabs = [['offers', 'Ponuky', st.ctab === 'empty' ? 0 : 3], ['active', 'Aktívne', 4], ['history', 'História', null]].map(([k, l, c]) => ({ label: l + (c != null ? ' · ' + c : ''), onClick: set({ ctab: k }), ...segOn(ctabKey === k) }));
+    const contracts = C[st.ctab] || [];
+
+    // Inspector
+    const hh = st.hoverHour;
+    const sparkline = React.createElement('svg', { width: 306, height: 56, viewBox: '0 0 306 56', style: { display: 'block', width: '100%', height: 'auto' } },
+      ins.util.map((v, i) => React.createElement('rect', { key: i, x: i * 12.75 + 1, y: 54 - v * .5, width: 10, height: Math.max(1, v * .5), rx: 1, style: { fill: v >= 90 ? 'var(--ui-danger)' : v >= 75 ? 'var(--ui-warning)' : 'var(--ui-accent)', opacity: hh == null || hh === i ? 1 : .45 }, onMouseEnter: () => this.setState({ hoverHour: i }), onMouseLeave: () => this.setState({ hoverHour: null }) })));
+    const insp = { ...ins, stats: ins.stats.map(([label, value, color]) => ({ label, value, color })), capacity: ins.capacity || false, policy: !!ins.policy, buy: !!ins.buy, connect: !!ins.connect, disconnected: !!ins.disconnected,
+      vehicles: ins.vehicles ? ins.vehicles.map(([id, type, s], i) => ({ id, type, state: s === 'busy' ? 'Pracuje' : 'Nečinné', icon: s === 'busy' ? '#ic_busy' : '#ic_idle', fg: s === 'busy' ? 'var(--ui-success)' : 'var(--ui-text-2)', bg: i % 2 ? 'var(--ui-surface)' : 'transparent' })) : false,
+      hoverLabel: hh == null ? 'priemer 64 %' : String(hh).padStart(2, '0') + ':00 · ' + ins.util[hh] + ' %' };
+    const policies = ['Len import', 'Import + export', 'Len export'].map((l, i) => ({ label: l, onClick: set({ policy: i }), ...segOn(st.policy === i) }));
+
+    // Finance
+    const CATS = [['Prístavné poplatky', '--ui-accent', 1], ['Manipulácia', '--ui-success', 1], ['Skladovanie', '--ui-xp', 1], ['Mzdy', '--ui-danger', -1], ['Údržba', '--ui-warning', -1], ['Energia', '--ui-info', -1], ['Prenájom parciel', '--ui-text-2', -1]];
+    const day = [[21, 18, 9, 16, 9, 6, 3], [23, 17, 9, 16, 10, 6, 3], [19, 16, 10, 16, 8, 6, 3], [26, 20, 10, 17, 11, 7, 3], [24, 21, 11, 17, 9, 7, 3], [27, 22, 11, 17, 12, 7, 3], [28, 21, 12, 18, 10, 7, 3]].map(r => r.map(v => v * 1000));
+    const mon = [[610, 470, 230, 480, 240, 170, 80], [640, 510, 250, 490, 260, 180, 80], [590, 480, 260, 500, 300, 190, 90], [700, 540, 270, 510, 280, 190, 90], [720, 580, 290, 520, 270, 200, 90], [760, 600, 300, 530, 290, 200, 100]].map(r => r.map(v => v * 1000));
+    const isDay = st.fin === 'day', data = isDay ? day : mon;
+    const labels = isDay ? ['D6', 'D7', 'D8', 'D9', 'D10', 'D11', 'D12'] : ['M1', 'M2', 'M3', 'M4', 'M5', 'M6'];
+    const inc = r => r[0] + r[1] + r[2], exp = r => r[3] + r[4] + r[5] + r[6];
+    const mx = Math.max(...data.map(r => Math.max(inc(r), exp(r))));
+    const CW = 276, X0 = 30, Z = 84, SC = 74 / mx, colW = CW / data.length;
+    const kids = [];
+    [0, .5, 1].forEach((f, i) => { const y = Z - 74 * f; kids.push(React.createElement('line', { key: 'g' + i, x1: X0, x2: X0 + CW, y1: y, y2: y, style: { stroke: 'var(--ui-border)' } }), React.createElement('text', { key: 't' + i, x: X0 - 6, y: y + 4, textAnchor: 'end', style: { fill: 'var(--ui-text-3)', fontSize: 10, fontFamily: 'var(--font-ui)' } }, (mx * f / 1000).toFixed(0) + 'k')); });
+    data.forEach((r, i) => {
+      const x = X0 + i * colW + colW / 2 - 11, hov = st.hoverDay === i; let y = Z;
+      [0, 1, 2].forEach(c => { const h = r[c] * SC; y -= h; kids.push(React.createElement('rect', { key: 'i' + i + c, x, y, width: 22, height: h, style: { fill: 'var(--' + CATS[c][1].slice(2) + ')', opacity: st.hoverDay == null || hov ? 1 : .45 } })); });
+      y = Z; [3, 4, 5, 6].forEach(c => { const h = r[c] * SC; kids.push(React.createElement('rect', { key: 'e' + i + c, x, y, width: 22, height: h, style: { fill: 'var(--' + CATS[c][1].slice(2) + ')', opacity: st.hoverDay == null || hov ? 1 : .45 } })); y += h; });
+      kids.push(React.createElement('rect', { key: 'h' + i, x: X0 + i * colW, y: 0, width: colW, height: 164, style: { fill: 'transparent', cursor: 'default' }, onMouseEnter: () => this.setState({ hoverDay: i }), onMouseLeave: () => this.setState({ hoverDay: null }) }));
+    });
+    kids.push(React.createElement('line', { key: 'z', x1: X0, x2: X0 + CW, y1: Z, y2: Z, style: { stroke: 'var(--ui-text-3)' } }));
+    const finChart = React.createElement('svg', { width: 306, height: 164, viewBox: '0 0 306 164', style: { display: 'block', width: '100%', height: 'auto' } }, kids);
+    const hd = st.hoverDay != null ? data[st.hoverDay] : null;
+    const cashPts = isDay ? [880, 905, 921, 910, 948, 972, 1001, 1024, 1016, 1047, 1082, 1110, 1098, 1132, 1160, 1187, 1175, 1204, 1219, 1234.56] : [420, 520, 610, 740, 980, 1234.56];
+    const cmin = Math.min(...cashPts), cmax = Math.max(...cashPts), cpx = i => 30 + i * (276 / (cashPts.length - 1)), cpy = v => 64 - (v - cmin) / (cmax - cmin) * 56;
+    const cashChart = React.createElement('svg', { width: 306, height: 72, viewBox: '0 0 306 72', style: { display: 'block', width: '100%', height: 'auto' } },
+      React.createElement('line', { x1: 30, x2: 306, y1: 64, y2: 64, style: { stroke: 'var(--ui-border)' } }),
+      React.createElement('text', { x: 24, y: 12, textAnchor: 'end', style: { fill: 'var(--ui-text-3)', fontSize: 10 } }, (cmax / 1000).toFixed(2) + 'M'),
+      React.createElement('text', { x: 24, y: 67, textAnchor: 'end', style: { fill: 'var(--ui-text-3)', fontSize: 10 } }, (cmin / 1000).toFixed(2) + 'M'),
+      React.createElement('path', { d: cashPts.map((v, i) => (i ? 'L' : 'M') + cpx(i).toFixed(1) + ' ' + cpy(v).toFixed(1)).join(''), style: { fill: 'none', stroke: 'var(--ui-accent)', strokeWidth: 2, strokeLinejoin: 'round' } }),
+      React.createElement('circle', { cx: cpx(cashPts.length - 1), cy: cpy(cashPts[cashPts.length - 1]), r: 3.5, style: { fill: 'var(--ui-accent)' } }));
+    const last = data[data.length - 1], prev = data[data.length - 2];
+    const fin = {
+      range: isDay ? 'posledných 7 dní' : 'posledných 6 mesiacov', labels, colLabel: isDay ? 'Deň 12' : 'Mesiac 6',
+      legend: CATS.map(([name, c]) => ({ name, c })),
+      tip: hd ? { x: X0 + 10 + st.hoverDay * colW + colW / 2, label: isDay ? 'Deň ' + (6 + st.hoverDay) : 'Mesiac ' + (1 + st.hoverDay), inc: $(inc(hd)), exp: $(exp(hd)), net: (inc(hd) - exp(hd) >= 0 ? '+' : '') + $(inc(hd) - exp(hd)) } : false,
+      rows: CATS.map(([name, c, sgn], i) => { const d = (last[i] - prev[i]) / prev[i] * 100, good = sgn > 0 ? d >= 0 : d <= 0; return { name, c, v: (sgn > 0 ? '+' : '−') + $(last[i]).replace('$', '$'), vc: sgn > 0 ? 'var(--ui-money-pos)' : 'var(--ui-text)', d: Math.abs(d) < .5 ? '0 %' : (d > 0 ? '▲ ' : '▼ ') + Math.abs(d).toFixed(0) + ' %', dc: Math.abs(d) < .5 ? 'var(--ui-text-2)' : good ? 'var(--ui-success)' : '#FF8A8E', bg: i % 2 ? 'var(--ui-surface)' : 'transparent' }; })
+    };
+    const finModes = [['day', 'Denne'], ['month', 'Mesačne']].map(([k, l]) => ({ label: l, onClick: set({ fin: k, hoverDay: null }), ...segOn(st.fin === k) }));
+
+    // Stats
+    const kpis = [['Včasnosť (on-time)', '92 %', '▲ 3 pb', 'var(--ui-success)'], ['Čas na kotvisku', '14,2 h', '▼ 1,1 h', 'var(--ui-success)'], ['Dwell v sklade', '2,8 dňa', '▲ 0,4 dňa', '#FF8A8E']].map(([label, value, delta, dc]) => ({ label, value, delta, dc }));
+    const uc = v => v >= 90 ? '--ui-danger' : v >= 75 ? '--ui-warning' : '--ui-accent';
+    const util = [['Žeriavy', '#ic_crane', [['QC-01', 91], ['QC-02', 88], ['QC-03', 62], ['GR-01', 47]]], ['Vozidlá', '#ic_vehicle', [['Straddle', 78], ['AGV', 55], ['Vozíky', 34]]], ['Brány', '#ic_gate', [['G-1', 97], ['G-2', 41]]]]
+      .map(([name, icon, it]) => ({ name, icon, items: it.map(([id, v]) => ({ id, v, c: uc(v), tc: v >= 90 ? '#FF8A8E' : v >= 75 ? 'var(--ui-warning)' : 'var(--ui-text)' })) }));
+    const hotspots = [['Brána G-1', 'fronta 7'], ['Križovatka X12', '34 vozidiel / h'], ['Kotvisko B2', '2 lode čakajú'], ['Dvor YRD-03', 'zaplnenie 72 %'], ['Rampa LR-02', 'fronta 3']].map(([name, m], i) => ({ n: i + 1, name, m }));
+    const heatCells = [];
+    [[5, 6, 3], [6, 6, 3], [7, 6, 2], [4, 6, 2], [6, 5, 2], [6, 7, 2], [8, 6, 1], [3, 6, 1], [6, 4, 1], [10, 3, 2], [11, 3, 1], [9, 3, 1], [2, 8, 1], [3, 8, 1], [12, 5, 1]].forEach(([x, y, v]) => heatCells.push({ x: x * 64, y: y * 64, v: '--heat-' + v }));
+
+    // Tech
+    const TN = {
+      k1: ['Kontajnery II', 'ic_container', 'r', 0, '+1 vrstva v kontajnerových dvoroch'], k2: ['Kvapalné terminály', 'ic_liquid', 'a', 120, 'Odomkne rameno kvapalín, nádrže, tanker shuttle a rampu kvapalín'], k3: ['LNG infraštruktúra', 'ic_gas', 'l', 260, 'Odomkne rameno plynu, plynojemy a plynové lode'], k4: ['RoRo expres', 'ic_roro', 'l', 200, '−20 % čas vykládky RoRo lodí'],
+      e1: ['Dvojitý spreader', 'ic_crane', 'r', 0, '+25 % rýchlosť kontajnerových žeriavov'], e2: ['Automatizácia I', 'ic_vehicle', 'a', 180, 'Odomkne AGV · vozidlá bez mzdy'], e3: ['Automatizácia II', 'ic_vehicle', 'l', 320, 'AGV sa samé nabíjajú · −15 % prestoje'], e4: ['Optimalizácia trás', 'ic_road', 'l', 240, '−10 % dĺžka jázd vozidiel'],
+      i1: ['Hlbokovodné kotvisko', 'ic_berth', 'r', 0, 'Odomkne kotvisko pre Panamax a Mega lode'], i2: ['Veľký dvor', 'ic_yard', 'a', 150, 'Odomkne kontajnerový dvor 8×8'], i3: ['Železničná vlečka II', 'ic_rail_station', 'l', 220, 'Stanica pre 2 súpravy naraz'], i4: ['Potrubná sieť', 'ic_pipe', 'l', 200, '−30 % cena potrubia']
+    };
+    const reqs = { k3: 'k2', k4: 'k2', e3: 'e2', e4: 'e2', i3: 'i2', i4: 'i2' };
+    const tnode = (id, i) => { const [name, ic, s, xp] = TN[id]; return {
+      name, icon: '#' + (s === 'r' ? 'ic_check' : s === 'l' ? 'ic_lock' : ic), line: i > 0, lineColor: s === 'l' ? 'var(--ui-border)' : s === 'a' ? 'var(--ui-accent)' : 'var(--ui-success)',
+      border: s === 'a' ? '2px solid var(--ui-accent)' : s === 'r' ? '1px solid var(--ui-success)' : '1px solid var(--ui-border)', bg: st.node === id ? 'var(--ui-surface-2)' : 'var(--ui-bg)', op: s === 'l' ? .75 : 1,
+      iconColor: s === 'r' ? 'var(--ui-success)' : s === 'a' ? 'var(--ui-accent)' : 'var(--ui-text-2)',
+      sub: s === 'r' ? 'Vyskúmané' : s === 'a' ? xp + ' XP' : 'Zamknuté · ' + xp + ' XP', subColor: s === 'r' ? 'var(--ui-success)' : s === 'a' ? 'var(--ui-xp)' : 'var(--ui-text-2)',
+      enter: () => this.setState({ node: id }) }; };
+    const tech = [['Náklad', ['k1', 'k2', 'k3', 'k4']], ['Efektivita', ['e1', 'e2', 'e3', 'e4']], ['Infraštruktúra', ['i1', 'i2', 'i3', 'i4']]].map(([name, ids]) => ({ name, nodes: ids.map(tnode) }));
+    const cn = TN[st.node], cs = cn[2];
+    const node = { name: cn[0], effect: cn[4], icon: '#' + cn[1], iconColor: cs === 'r' ? 'var(--ui-success)' : cs === 'a' ? 'var(--ui-accent)' : 'var(--ui-text-2)', canBuy: cs === 'a', cost: cn[3] + ' XP', needs: cs === 'l' ? 'Vyžaduje ' + TN[reqs[st.node]][0] : cs === 'r' ? 'Vyskúmané' : false };
+
+    const recs = ['Brána G-1 je vyťažená na 97 %. Druhá brána skráti frontu kamiónov približne o polovicu.', 'Dvor YRD-03 bol 9 dní nad 90 %. Nastav politiku „Len export“ alebo postav ďalší dvor pri kotvisku B2.', 'Prenájom parcely P-09 stojí $9,800 mesačne; kúpa za $640,000 sa vráti za 65 mesiacov.'].map((text, i) => ({ n: String(i + 1).padStart(2, '0'), text }));
+    const seg = (opts, on) => opts.map((label, i) => ({ label, ...(i === on ? { bg: 'var(--ui-surface-2)', fg: 'var(--ui-text)' } : { bg: 'transparent', fg: 'var(--ui-text-2)' }) }));
+    const row = (label, o) => ({ label, seg: false, toggle: false, slider: false, key: false, ...o });
+    const tg = on => ({ toggle: true, j: on ? 'flex-end' : 'flex-start', track: on ? 'var(--ui-accent)' : 'var(--ui-surface-2)' });
+    const settings = [
+      { name: 'Hra', rows: [row('Automatické ukladanie', { seg: seg(['Vyp', '5 min', '10 min'], 1) }), row('Posúvanie mapy okrajom obrazovky', tg(true)), row('Pauza pri mesačnom reporte', tg(true))] },
+      { name: 'Rozhranie', rows: [row('Mierka UI', { seg: seg(['90 %', '100 %', '125 %'], 1) }), row('Zobrazovať klávesové skratky', tg(true))] },
+      { name: 'Zvuk', rows: [row('Hlavná hlasitosť', { slider: 80 }), row('Efekty', { slider: 60 })] },
+      { name: 'Klávesové skratky', rows: [row('Pauza', { key: 'Medzerník' }), row('Kategórie stavby', { key: '1 – 6' }), row('Otočiť', { key: 'R' }), row('Kontrakty · Financie · Štatistiky', { key: 'C · F · S' }), row('Strom technológií', { key: 'T' }), row('Zrušiť / zavrieť', { key: 'Esc' })] }
+    ];
+
+    const TT = [['info', '--ui-info', '#ic_info', 'Nová ponuka kontraktu', 'Import · Kontajnery · 1,200 TEU · SLA 6 dní', { panel: 'contracts', ctab: 'offers' }], ['success', '--ui-success', '#ic_check', 'Kontrakt splnený', 'Export · Feeder · +$74,000', { panel: 'contracts', ctab: 'history' }], ['warning', '--ui-warning', '#ic_warning', 'Dvor YRD-03 je plný na 92 %', 'Nové kontajnery budú čakať na aprone', { panel: 'insp_yard' }], ['danger', '--ui-danger', '#ic_blocked', 'Brána GTE-01 nie je pripojená', 'Kamióny nemôžu vojsť do prístavu', { panel: 'insp_gate' }]];
+    const toasts = TT.filter(t => !st.gone.includes(t[0])).slice(0, 4).map(([k, c, icon, title, text, go]) => ({ c, icon, title, text, onShow: () => this.setState({ ...go, overlay: 'none' }), onClose: () => this.setState(s => ({ gone: [...s.gone, k] })) }));
+
+    const o = st.overlay;
+    const ov = { any: o !== 'none', tech: o === 'tech', report: o === 'report', settings: o === 'settings', gameover: o === 'gameover', scrim: o === 'gameover' ? 'rgba(5,10,16,.8)' : 'rgba(5,10,16,.55)' };
+    const heatOn = st.heat;
+    return {
+      nav, wrapRef: this.wrapRef, W, H, scale: st.scale, stageH: Math.round(H * st.scale),
+      cash: $(cash), delta: warn ? '▼ −$6,400/deň' : '▲ +$12,300/deň', cashColor: warn ? 'var(--ui-money-neg)' : 'var(--ui-text)', deltaColor: warn ? '#FF8A8E' : 'var(--ui-money-pos)', cashIconColor: warn ? 'var(--ui-danger)' : 'var(--ui-success)',
+      cashBg: warn ? 'rgba(229,72,77,.14)' : 'transparent', cashAnim: warn ? 'mhPulse 1.6s steps(1,end) infinite' : 'none',
+      paused, pauseIcon: paused ? '#ic_play' : '#ic_pause', pauseBg: paused ? 'var(--ui-warning)' : 'transparent', pauseFg: paused ? '#0F1B27' : 'var(--ui-text)', togglePause: this.togglePause,
+      speeds, hudButtons, tabs, items,
+      hasPanel: true, is, ph, closePanel: set({ panel: 'empty' }),
+      ctabs, contracts, contractsEmpty: st.ctab === 'empty',
+      insp, sparkline, policies,
+      finModes, fin, finChart, cashChart,
+      kpis, util, hotspots, heatOn, toggleHeat: () => this.setState(s => ({ heat: !s.heat })), heatJustify: heatOn ? 'flex-end' : 'flex-start', heatTrack: heatOn ? 'var(--ui-accent)' : 'var(--ui-surface-2)',
+      showHeat: is.stats && heatOn, heatCells,
+      emptyKeys: [['C', 'Kontrakty'], ['F', 'Financie'], ['S', 'Štatistiky'], ['T', 'Strom technológií']].map(([key, label]) => ({ key, label })),
+      showToasts: st.toasts && o === 'none', toasts,
+      ov, closeOverlay: set({ overlay: 'none' }), openFinance: set({ overlay: 'none', panel: 'finance' }),
+      tech, node, recs, settings
+    };
+  }
+}
+</script>
+
+
+</body></html>

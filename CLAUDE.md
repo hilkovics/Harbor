@@ -9,7 +9,7 @@ z mapy. Zisk a XP → expanzia, prenájmy, výskum. Zdroj pravdy pre dizajn: `do
 
 Tri neporušiteľné princípy z GDD:
 1. **Nič sa neteleportuje** — každá jednotka nákladu má vždy presne jednu fyzickú polohu.
-2. **Grid + moduly** — všetko sa stavia na mriežke; pobrežie je statické, terén sa neupravuje.
+2. **Grid + moduly** — všetko sa stavia na mriežke; pobrežie je statické (od F12 len drahé mólo/zásyp, ADR-028).
 3. **Jedna mena (USD), rozhodovanie nad dátami** — hra meria a zobrazuje metriky.
 
 ## Dokumenty (čítaj v tomto poradí pri začiatku fázy)
@@ -18,6 +18,7 @@ Tri neporušiteľné princípy z GDD:
 3. `docs/DECISIONS.md` — ADR log (jeden odsek na rozhodnutie). Založ ho vo fáze 0.
 4. `docs/DESIGN_BRIEF.md` — vizuálny jazyk, tokeny, názvy assetov (pri integrácii grafiky/UI).
 5. `docs/AGENTIC_WORKFLOW.md` — roly agentov, smerovanie modelov, task karty, eskalácia. **Záväzné pre každú delegáciu.**
+6. `docs/TERMINAL_2.md` — prestavba prevádzky prístavu (fázy R1–R7, ADR-036). **Záväzná od R1**; grafika podľa `docs/CLAUDE_DESIGN_TERMINAL_2.md`.
 
 ## Stack (rozhodnuté, nemeň bez ADR)
 | Vrstva | Voľba | Prečo |
@@ -102,6 +103,7 @@ Pravidlá: `src/sim/**` edituje naraz len jeden agent; karta je hotová len po p
 
 ## Čo NEROBIŤ
 - Premium meny, loot boxy, duálne meny (GDD: jedna mena).
-- Úprava terénu/pobrežia hráčom.
-- Fyzikálne kolízie vozidiel — kongescia je „soft" model (ARCHITECTURE §7.6).
+- Úprava terénu/pobrežia hráčom mimo mola/zásypu z ADR-028 (a tie až od F12).
+- Fyzikálne kolízie (hmotnosti, odrazy) — doprava je diskrétne obsadenie pruhových slotov, vozidlá cez seba **neprechádzajú** (ADR-037).
+- Kreslenie ľudí (šoféri, technici, chodci) — ich činnosť je len čas a stav, v UI text (ADR-036).
 - Multiplayer, modding API, lokalizácia, Steam — nič z toho pred fázou 13.

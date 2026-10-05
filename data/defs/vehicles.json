@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "items": [
+    {
+      "id": "straddle_carrier",
+      "displayName": "Straddle carrier",
+      "capacityUnits": 1,
+      "lengthCells": 2,
+      "speedCellsPerTick": 0.4,
+      "loadTicks": 3,
+      "unloadTicks": 3,
+      "cargoCategories": ["container"],
+      "purchaseCents": 4800000,
+      "wagePerDayCents": 18000
+    },
+    {
+      "id": "empty_handler",
+      "displayName": "Empty handler",
+      "capacityUnits": 1,
+      "lengthCells": 2,
+      "speedCellsPerTick": 0.5,
+      "loadTicks": 2,
+      "unloadTicks": 2,
+      "cargoCategories": ["container"],
+      "cargoDirections": ["empty"],
+      "purchaseCents": 3600000,
+      "wagePerDayCents": 14000
+    }
+  ]
+}

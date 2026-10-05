@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "lines.json",
+  "description": "Katalóg námorných liniek (ARCHITECTURE §4, F6c, ADR-034): { schemaVersion, items: [...] }. Linka vlastní kontajnery (`CargoUnit.lineId`) a je odosielateľom/príjemcom voyage (`Contract.lineId`); prázdne kontajnery sa vracajú a vydávajú len v rámci linky. Jedinečnosť `id` v items[] schéma nevyjadrí — kontroluje ju DefRegistry a `pnpm validate:defs`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "items"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Verzia schémy defu."
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/line" },
+      "description": "Linky v poradí súboru; migrácia save v7 → v8 priradí starým kontraktom a jednotkám prvú z nich."
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "snake_case identifikátor."
+    },
+    "line": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "displayName", "colorToken"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "displayName": { "type": "string", "minLength": 1, "description": "Zobrazený názov linky (UI)." },
+        "colorToken": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "description": "Názov farebného tokenu z design/tokens.css bez `--` (napr. `line-blue`) — farba linky na odznaku kontajnera a v paneloch."
+        }
+      }
+    }
+  }
+}

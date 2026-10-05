@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "items": [
+    {
+      "id": "truck_container",
+      "displayName": "Kamión kontajnerový",
+      "capacityUnits": 1,
+      "lengthCells": 3,
+      "speedCellsPerTick": 0.6,
+      "cargoCategories": ["container"]
+    }
+  ]
+}

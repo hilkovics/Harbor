@@ -1,0 +1,256 @@
+/**
+ * TopHUD (DESIGN_BRIEF §6.1; rozloženie z prototypu design/ui/game-ui.source.html, <header>): 48 px lišta —
+ * [ic_cash] hotovosť + denný delta │ [ic_xp] XP │ [ic_calendar] Deň N · HH:MM │ ⏸ 1× 2× 4× 8× │ … │ ikony panelov.
+ *
+ * - `TopHUDView` je prezentačný (props → DOM), používa ho aj demo a testy.
+ * - `TopHUD` je pripojený: číta `useSimSnapshot(selector, 100)` a rýchlosť zapisuje výlučne cez
+ *   `dispatch(commandFromJSON({ type: 'SetGameSpeed', speed }))` (CLAUDE.md, pravidlá 1 a 5).
+ *
+ * Denný delta a XP sú voliteľné props (`dailyDeltaCents`, `xp`): dáta dodá app vrstva vo F5 (Economy.daily a XP hráča),
+ * dovtedy (F1–F4) sa ukáže zástupné `—`. Kladný delta je zelený s ▲, záporný červený s ▼, nula neutrálna bez šípky.
+ * Rovnako sú vo F1 neaktívne ikony panelov vpravo
+ * (kontrakty, financie, štatistiky, tech) — panely prídu neskôr; ikony overlayov, Uložiť a načítať (`onOpenSaves`) a
+ * ⚙ Nastavenia (`onOpenSettings`), sú aktívne vždy (bez handlera bez akcie, kým ich app nenapojí; T06-04).
+ */
+import { useCallback, useEffect, useRef } from 'react';
+import { useSimBridge, useSimSnapshot } from '@app/use-sim-snapshot';
+import type { WorldSnapshot } from '@app/sim-bridge';
+import { resolveSpeedRequest } from '@app/speed-request';
+import { commandFromJSON } from '@sim/commands';
+import { EM_DASH, formatGameTime, formatMoney, formatMoneyDelta, formatXp, moneySign } from './format';
+import { Icon, TrendIcon, type IconName } from './icon';
+import { SpeedControl } from './speed-control';
+import './top-hud.css';
+
+/** Odstup prekresľovania HUD (ARCHITECTURE §13: `useSimSnapshot(selector, throttleMs = 100)`). */
+export const HUD_THROTTLE_MS = 100;
+
+/** Tlačidlá panelov vpravo v poradí prototypu. `saves` (Uložiť/načítať) a `settings` otvárajú overlay, sú aktívne aj bez panelov. */
+export const HUD_PANEL_BUTTONS: ReadonlyArray<{ readonly id: string; readonly icon: IconName; readonly title: string }> = [
+  { id: 'contracts', icon: 'ic_contract', title: 'Kontrakty (C)' },
+  { id: 'finance', icon: 'ic_cash', title: 'Financie (F)' },
+  { id: 'stats', icon: 'ic_utilization', title: 'Štatistiky (S)' },
+  { id: 'tech', icon: 'ic_xp', title: 'Strom technológií (T)' },
+  { id: 'saves', icon: 'ic_save', title: 'Uložiť a načítať hru' },
+  { id: 'settings', icon: 'ic_settings', title: 'Nastavenia' },
+];
+
+/** Tlačidlá, ktoré otvárajú overlay (nie panel): vždy aktívne, majú vlastný handler (`onOpenSaves`, `onOpenSettings`). */
+const OVERLAY_BUTTON_IDS: readonly string[] = ['saves', 'settings'];
+
+export interface TopHUDViewProps {
+  /** Hotovosť v centoch; záporná hodnota zapne stav varovania. */
+  readonly cashCents: number;
+  /** Herný deň, 0-based (zobrazí sa `day + 1`). */
+  readonly day: number;
+  readonly hour: number;
+  readonly minute: number;
+  /** Aktuálna rýchlosť, 0 = pauza. */
+  readonly speed: number;
+  readonly speeds: readonly number[];
+  readonly onSpeedChange: (speed: number) => void;
+  /** Denná zmena hotovosti v centoch (znamienko + farba + ▲/▼); `null`/vynechané = zástupný text `—/deň`. */
+  readonly dailyDeltaCents?: number | null;
+  /** Skúsenosti (`340 XP`); `null`/vynechané = zástupný text `— XP`. */
+  readonly xp?: number | null;
+  /** Otvorí nastavenia; bez handlera je ⚙ aktívne, ale bez akcie. */
+  readonly onOpenSettings?: () => void;
+  /** Otvorí overlay Uložiť a načítať hru (ikona diskety); bez handlera je ikona aktívna, ale bez akcie. */
+  readonly onOpenSaves?: () => void;
+  /** Id otvoreného panelu (zvýrazní jeho ikonu); ostatné panely sú vo F1 neaktívne. */
+  readonly activePanel?: string | null;
+  /** Prepnutie panelu (kontrakty/financie/štatistiky/tech). Bez handlera sú ikony panelov neaktívne placeholdery. */
+  readonly onTogglePanel?: (panelId: string) => void;
+}
+
+function DailyDelta({ cents }: { cents: number | null }) {
+  if (cents === null) {
+    return (
+      <span className="top-hud__delta" data-field="cash-delta" data-placeholder="true" title="Denný výsledok zatiaľ nie je k dispozícii">
+        {`${EM_DASH}/deň`}
+      </span>
+    );
+  }
+  const sign = moneySign(cents);
+  const tone = sign > 0 ? ' top-hud__delta--pos' : sign < 0 ? ' top-hud__delta--neg' : '';
+  return (
+    <span className={`top-hud__delta${tone}`} data-field="cash-delta">
+      {sign !== 0 && <TrendIcon direction={sign > 0 ? 'up' : 'down'} className="top-hud__trend" />}
+      {`${formatMoneyDelta(cents)}/deň`}
+    </span>
+  );
+}
+
+export function TopHUDView({
+  cashCents,
+  day,
+  hour,
+  minute,
+  speed,
+  speeds,
+  onSpeedChange,
+  dailyDeltaCents = null,
+  xp = null,
+  onOpenSettings,
+  onOpenSaves,
+  activePanel = null,
+  onTogglePanel,
+}: TopHUDViewProps) {
+  const paused = speed === 0;
+  const debt = cashCents < 0;
+  return (
+    <header className={debt ? 'top-hud top-hud--debt' : 'top-hud'} aria-label="Stav prístavu" data-paused={paused} data-debt={debt}>
+      <div className="top-hud__cash" title={debt ? 'Záporná hotovosť' : undefined}>
+        <Icon name="ic_cash" className="top-hud__cash-icon" />
+        <span className="top-hud__cash-value" data-field="cash">
+          {formatMoney(cashCents)}
+        </span>
+        {debt && <span className="top-hud__sr-only">Záporná hotovosť</span>}
+        <DailyDelta cents={dailyDeltaCents} />
+      </div>
+      <span className="top-hud__divider" aria-hidden="true" />
+      <div className={xp === null ? 'top-hud__xp top-hud__xp--empty' : 'top-hud__xp'}>
+        <Icon name="ic_xp" className="top-hud__inline-icon top-hud__xp-icon" />
+        <span data-field="xp" data-placeholder={xp === null ? 'true' : undefined}>
+          {xp === null ? `${EM_DASH} XP` : formatXp(xp)}
+        </span>
+      </div>
+      <span className="top-hud__divider" aria-hidden="true" />
+      <div className="top-hud__clock">
+        <Icon name="ic_calendar" className="top-hud__inline-icon top-hud__clock-icon" />
+        <span className="top-hud__time" data-field="time">
+          {formatGameTime({ day, hour, minute })}
+        </span>
+      </div>
+      <span className="top-hud__divider" aria-hidden="true" />
+      <SpeedControl value={speed} speeds={speeds} onChange={onSpeedChange} />
+      <div className="top-hud__spacer" />
+      <div className="top-hud__panels" role="group" aria-label="Panely">
+        {HUD_PANEL_BUTTONS.map(({ id, icon, title }) => {
+          const isOverlay = OVERLAY_BUTTON_IDS.includes(id);
+          const overlayHandler = id === 'saves' ? onOpenSaves : onOpenSettings;
+          const handler = isOverlay ? overlayHandler : onTogglePanel === undefined ? undefined : () => { onTogglePanel(id); };
+          const inactive = !isOverlay && onTogglePanel === undefined;
+          return (
+            <button
+              key={id}
+              type="button"
+              className={activePanel === id ? 'top-hud__panel top-hud__panel--active' : 'top-hud__panel'}
+              aria-label={title}
+              aria-pressed={isOverlay ? undefined : activePanel === id}
+              aria-haspopup={isOverlay ? 'dialog' : undefined}
+              title={inactive ? `${title} · čoskoro` : title}
+              data-field={`panel-${id}`}
+              data-placeholder={inactive ? 'true' : undefined}
+              disabled={inactive}
+              onClick={handler}
+            >
+              <Icon name={icon} className="top-hud__panel-icon" />
+            </button>
+          );
+        })}
+      </div>
+    </header>
+  );
+}
+
+interface HudSlice {
+  readonly cashCents: number;
+  readonly speed: number;
+  readonly speeds: readonly number[];
+  readonly day: number;
+  readonly hour: number;
+  readonly minute: number;
+}
+
+/** Výber pre HUD; nový objekt pri každom snapshote, preto ho `useSimSnapshot` porovnáva cez `sameHudSlice`. */
+function selectHudSlice(snapshot: WorldSnapshot): HudSlice {
+  return {
+    cashCents: snapshot.cashCents,
+    speed: snapshot.speed,
+    speeds: snapshot.speeds,
+    day: snapshot.day,
+    hour: snapshot.hour,
+    minute: snapshot.minute,
+  };
+}
+
+function sameHudSlice(a: HudSlice, b: HudSlice): boolean {
+  return (
+    a.cashCents === b.cashCents &&
+    a.speed === b.speed &&
+    a.speeds === b.speeds &&
+    a.day === b.day &&
+    a.hour === b.hour &&
+    a.minute === b.minute
+  );
+}
+
+// `resolveSpeedRequest` (klik na ⏸ pri pauze obnoví poslednú nenulovú rýchlosť) zdieľa klávesnica (Space,
+// InputController), preto žije v `@app/speed-request`; odtiaľto sa len re-exportuje.
+export { resolveSpeedRequest };
+
+/** Callback, ktorý odošle `SetGameSpeed(speed)` do simulácie (zápis len cez `dispatch`). */
+export function useSetGameSpeed(): (speed: number) => void {
+  const bridge = useSimBridge();
+  return useCallback(
+    (speed: number) => {
+      bridge.dispatch(commandFromJSON({ type: 'SetGameSpeed', speed }));
+    },
+    [bridge],
+  );
+}
+
+export interface TopHUDProps {
+  /** Denná zmena hotovosti v centoch (Economy.daily, F5); vynechané = zástupný text. */
+  readonly dailyDeltaCents?: number | null;
+  /** Skúsenosti (F8); vynechané = zástupný text. */
+  readonly xp?: number | null;
+  /** Ponúkané rýchlosti; predvolene `snapshot.speeds` (= `time.speeds` zo simu, nie natvrdo v UI). */
+  readonly speeds?: readonly number[];
+  readonly onOpenSettings?: () => void;
+  /** Otvorí overlay Uložiť a načítať hru (T06-04; napojenie na app robí T06-03). */
+  readonly onOpenSaves?: () => void;
+  readonly activePanel?: string | null;
+  readonly onTogglePanel?: (panelId: string) => void;
+}
+
+/** HUD pripojený na `SimBridge` (vyžaduje `<SimBridgeProvider>` vyššie v strome). */
+export function TopHUD({ dailyDeltaCents, xp, speeds, onOpenSettings, onOpenSaves, activePanel, onTogglePanel }: TopHUDProps) {
+  const hud = useSimSnapshot(selectHudSlice, HUD_THROTTLE_MS, sameHudSlice);
+  const setSpeed = useSetGameSpeed();
+  const speedList = speeds ?? hud.speeds;
+
+  // Posledná nenulová rýchlosť: cieľ „obnoviť" po pauze. Aktualizuje sa po vykreslení, nie počas neho.
+  const lastRunning = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (hud.speed !== 0) lastRunning.current = hud.speed;
+  }, [hud.speed]);
+
+  const currentSpeed = hud.speed;
+  const onSpeedChange = useCallback(
+    (requested: number) => {
+      const fallback = speedList.find((speed) => speed !== 0);
+      setSpeed(resolveSpeedRequest(requested, currentSpeed, lastRunning.current ?? fallback));
+    },
+    [setSpeed, currentSpeed, speedList],
+  );
+
+  return (
+    <TopHUDView
+      cashCents={hud.cashCents}
+      day={hud.day}
+      hour={hud.hour}
+      minute={hud.minute}
+      speed={hud.speed}
+      speeds={speedList}
+      onSpeedChange={onSpeedChange}
+      dailyDeltaCents={dailyDeltaCents}
+      xp={xp}
+      onOpenSettings={onOpenSettings}
+      onOpenSaves={onOpenSaves}
+      activePanel={activePanel}
+      onTogglePanel={onTogglePanel}
+    />
+  );
+}

@@ -1,0 +1,697 @@
+{
+  "note": "Terminál 2.0 · zlomok manifestu (relácie A–F + STS).",
+  "cellPx": 64,
+  "entities": {
+    "truck_cab": {
+      "file": "entities/truck_cab.svg",
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "pivot": [
+        32,
+        54
+      ]
+    },
+    "truck_trailer_40": {
+      "file": "entities/truck_trailer_40.svg",
+      "footprint": {
+        "w": 1,
+        "h": 2
+      },
+      "pivot": [
+        32,
+        4
+      ]
+    },
+    "terminal_tractor_cab": {
+      "file": "entities/terminal_tractor_cab.svg",
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "pivot": [
+        32,
+        52
+      ]
+    },
+    "terminal_tractor_chassis_40": {
+      "file": "entities/terminal_tractor_chassis_40.svg",
+      "footprint": {
+        "w": 1,
+        "h": 2
+      },
+      "pivot": [
+        32,
+        4
+      ]
+    },
+    "straddle_carrier": {
+      "file": "entities/straddle_carrier.svg",
+      "footprint": {
+        "w": 1,
+        "h": 2
+      },
+      "pivot": [
+        32,
+        64
+      ]
+    },
+    "agv": {
+      "file": "entities/agv.svg",
+      "footprint": {
+        "w": 1,
+        "h": 3
+      },
+      "pivot": [
+        32,
+        96
+      ]
+    },
+    "vehicle_brake_lights": {
+      "file": "entities/vehicle_brake_lights.svg",
+      "footprint": {
+        "w": 1,
+        "h": 1
+      }
+    },
+    "rtg_frame": {
+      "file": "entities/rtg_frame.svg",
+      "footprint": {
+        "w": 5,
+        "h": 2
+      },
+      "pivot": [
+        160,
+        64
+      ],
+      "travel": [
+        "y",
+        0,
+        "blockLength-128"
+      ],
+      "trolleyRail": "y 32 a 96, x 20–300",
+      "layout": "6 radov x 36–216, pruh kamióna x 236–300"
+    },
+    "rtg_trolley": {
+      "file": "entities/rtg_trolley.svg",
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "pivot": [
+        32,
+        32
+      ],
+      "travel": [
+        "x",
+        32,
+        288
+      ]
+    },
+    "rmg_frame": {
+      "file": "entities/rmg_frame.svg",
+      "footprint": {
+        "w": 6,
+        "h": 2
+      },
+      "pivot": [
+        160,
+        64
+      ],
+      "travel": [
+        "y",
+        0,
+        "trackLength-128"
+      ],
+      "trolleyRail": "y 32 a 96, x 20–376",
+      "layout": "konzola x 320–384"
+    },
+    "rmg_trolley": {
+      "file": "entities/rmg_trolley.svg",
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "pivot": [
+        32,
+        32
+      ],
+      "travel": [
+        "x",
+        32,
+        352
+      ]
+    },
+    "reach_stacker": {
+      "file": "entities/reach_stacker.svg",
+      "footprint": {
+        "w": 1,
+        "h": 2
+      },
+      "boomMount": [
+        32,
+        96
+      ]
+    },
+    "reach_stacker_boom": {
+      "file": "entities/reach_stacker_boom.svg",
+      "footprint": {
+        "w": 1,
+        "h": 2
+      },
+      "pivot": [
+        32,
+        116
+      ],
+      "head": [
+        32,
+        8
+      ],
+      "travel": [
+        "telescope",
+        0,
+        64
+      ]
+    },
+    "reach_stacker_spreader_20": {
+      "file": "entities/reach_stacker_spreader_20.svg",
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "pivot": [
+        32,
+        27
+      ]
+    },
+    "reach_stacker_spreader_40": {
+      "file": "entities/reach_stacker_spreader_40.svg",
+      "footprint": {
+        "w": 2,
+        "h": 1
+      },
+      "pivot": [
+        64,
+        27
+      ]
+    },
+    "ech": {
+      "file": "entities/ech.svg",
+      "footprint": {
+        "w": 1,
+        "h": 2
+      },
+      "spreaderMount": [
+        32,
+        6
+      ]
+    },
+    "ech_spreader_20": {
+      "file": "entities/ech_spreader_20.svg",
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "pivot": [
+        32,
+        32
+      ]
+    },
+    "ech_spreader_40": {
+      "file": "entities/ech_spreader_40.svg",
+      "footprint": {
+        "w": 2,
+        "h": 1
+      },
+      "pivot": [
+        64,
+        32
+      ]
+    },
+    "locomotive": {
+      "file": "entities/locomotive.svg",
+      "footprint": {
+        "w": 1,
+        "h": 3
+      },
+      "pivot": [
+        32,
+        96
+      ],
+      "couplerY": [
+        4,
+        188
+      ]
+    },
+    "wagon_container_60": {
+      "file": "entities/wagon_container_60.svg",
+      "footprint": {
+        "w": 1,
+        "h": 3
+      },
+      "couplerY": [
+        0,
+        192
+      ],
+      "slots20": [
+        [
+          2,
+          66
+        ],
+        [
+          64,
+          128
+        ],
+        [
+          126,
+          190
+        ]
+      ],
+      "slot40": [
+        2,
+        128
+      ]
+    }
+  },
+  "cargo": {
+    "container_20_dry": {
+      "file": "cargo/container_20_dry.svg",
+      "size": {
+        "w": 64,
+        "h": 26
+      },
+      "tintable": true
+    },
+    "container_20_empty": {
+      "file": "cargo/container_20_empty.svg",
+      "size": {
+        "w": 64,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "container_20_flat_rack": {
+      "file": "cargo/container_20_flat_rack.svg",
+      "size": {
+        "w": 64,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "container_20_open_top": {
+      "file": "cargo/container_20_open_top.svg",
+      "size": {
+        "w": 64,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "container_20_reefer": {
+      "file": "cargo/container_20_reefer.svg",
+      "size": {
+        "w": 64,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "container_20_tank": {
+      "file": "cargo/container_20_tank.svg",
+      "size": {
+        "w": 64,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "container_40_dry": {
+      "file": "cargo/container_40_dry.svg",
+      "size": {
+        "w": 128,
+        "h": 26
+      },
+      "tintable": true
+    },
+    "container_40_empty": {
+      "file": "cargo/container_40_empty.svg",
+      "size": {
+        "w": 128,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "container_40_flat_rack": {
+      "file": "cargo/container_40_flat_rack.svg",
+      "size": {
+        "w": 128,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "container_40_flat_rack_oog": {
+      "file": "cargo/container_40_flat_rack_oog.svg",
+      "size": {
+        "w": 128,
+        "h": 40
+      },
+      "tintable": false
+    },
+    "container_40_open_top": {
+      "file": "cargo/container_40_open_top.svg",
+      "size": {
+        "w": 128,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "container_40_open_top_oog": {
+      "file": "cargo/container_40_open_top_oog.svg",
+      "size": {
+        "w": 128,
+        "h": 34
+      },
+      "tintable": false
+    },
+    "container_40_reefer": {
+      "file": "cargo/container_40_reefer.svg",
+      "size": {
+        "w": 128,
+        "h": 26
+      },
+      "tintable": false
+    }
+  },
+  "modules": {
+    "gate_in_lane": {
+      "footprint": {
+        "w": 1,
+        "h": 4
+      },
+      "variants": {
+        "single": "modules/gate_in_lane_single.svg",
+        "left": "modules/gate_in_lane_left.svg",
+        "mid": "modules/gate_in_lane_mid.svg",
+        "right": "modules/gate_in_lane_right.svg"
+      },
+      "stopLineY": 63,
+      "barrierOffset": {
+        "x": 0,
+        "y": 24
+      },
+      "ocrPortalY": 233,
+      "connectors": [
+        {
+          "x": 0,
+          "y": 3,
+          "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 0,
+          "y": 0,
+          "side": "n",
+          "type": "road"
+        }
+      ]
+    },
+    "gate_out_lane": {
+      "footprint": {
+        "w": 1,
+        "h": 4
+      },
+      "variants": {
+        "single": "modules/gate_out_lane_single.svg",
+        "left": "modules/gate_out_lane_left.svg",
+        "mid": "modules/gate_out_lane_mid.svg",
+        "right": "modules/gate_out_lane_right.svg"
+      },
+      "weighbridge": {
+        "x": 12,
+        "y": 48,
+        "w": 40,
+        "h": 176
+      },
+      "scannerPortalY": 10,
+      "stopLineY": 36,
+      "connectors": [
+        {
+          "x": 0,
+          "y": 3,
+          "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 0,
+          "y": 0,
+          "side": "n",
+          "type": "road"
+        }
+      ]
+    },
+    "gate_lane_barrier": {
+      "file": "modules/gate_lane_barrier.svg",
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "pivot": [
+        9,
+        32
+      ],
+      "closedDeg": 0,
+      "openDeg": -90
+    },
+    "pre_gate_lane": {
+      "file": "modules/pre_gate_lane.svg",
+      "footprint": {
+        "w": 1,
+        "h": 6
+      },
+      "stopLinesY": [
+        0,
+        190
+      ],
+      "slots": 2
+    },
+    "truck_holding": {
+      "file": "modules/truck_holding.svg",
+      "footprint": {
+        "w": 6,
+        "h": 5
+      },
+      "stalls": 6,
+      "stallSize": {
+        "w": 1,
+        "h": 3
+      },
+      "aisleRows": [
+        3,
+        4
+      ]
+    },
+    "vehicle_parking": {
+      "file": "modules/vehicle_parking.svg",
+      "footprint": {
+        "w": 4,
+        "h": 4
+      },
+      "stalls": 4,
+      "stallSize": {
+        "w": 1,
+        "h": 3
+      },
+      "aisleRows": [
+        3
+      ]
+    },
+    "berth_standard": {
+      "file": "modules/berth_standard.svg",
+      "footprint": {
+        "w": 8,
+        "h": 4
+      },
+      "waterSide": "n",
+      "stsRailsY": [
+        26,
+        200
+      ],
+      "laneRowsUnderCrane": [
+        1,
+        2
+      ],
+      "bypassRow": 3,
+      "laneDir": "e",
+      "connectors": [
+        {
+          "x": 0,
+          "y": 1,
+          "side": "w",
+          "type": "road"
+        },
+        {
+          "x": 0,
+          "y": 2,
+          "side": "w",
+          "type": "road"
+        },
+        {
+          "x": 0,
+          "y": 3,
+          "side": "w",
+          "type": "road"
+        },
+        {
+          "x": 7,
+          "y": 1,
+          "side": "e",
+          "type": "road"
+        },
+        {
+          "x": 7,
+          "y": 2,
+          "side": "e",
+          "type": "road"
+        },
+        {
+          "x": 7,
+          "y": 3,
+          "side": "e",
+          "type": "road"
+        }
+      ],
+      "bypassY": [
+        212,
+        256
+      ]
+    },
+    "reefer_rack": {
+      "file": "modules/reefer_rack.svg",
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "tileable": "x",
+      "sockets": [
+        [
+          16,
+          26
+        ],
+        [
+          16,
+          38
+        ],
+        [
+          48,
+          26
+        ],
+        [
+          48,
+          38
+        ]
+      ]
+    },
+    "sts": {
+      "replaces": "crane_container_gantry_base/_boom/_trolley",
+      "footprint": {
+        "w": 3,
+        "h": 10
+      },
+      "placeOnBerth": {
+        "dy": -256
+      },
+      "parts": {
+        "frame": {
+          "file": "modules/sts_frame.svg",
+          "pivot": [
+            96,
+            369
+          ],
+          "travel": "x"
+        },
+        "trolley": {
+          "file": "modules/sts_trolley.svg",
+          "pivot": [
+            96,
+            32
+          ],
+          "offsetX": 0,
+          "travel": [
+            "y",
+            30,
+            560
+          ]
+        },
+        "spreader_40": {
+          "file": "modules/sts_spreader_40.svg",
+          "pivot": [
+            96,
+            32
+          ]
+        },
+        "spreader_20": {
+          "file": "modules/sts_spreader_20.svg",
+          "pivot": [
+            64,
+            32
+          ]
+        }
+      },
+      "drawOrder": [
+        "container",
+        "spreader",
+        "frame",
+        "trolley"
+      ],
+      "backreachDropZoneY": [
+        480,
+        570
+      ]
+    }
+  },
+  "overlay": {
+    "tp_marker": {
+      "file": "overlay/tp_marker.svg",
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "rotatable": true
+    },
+    "safe_zone": {
+      "file": "overlay/safe_zone.svg",
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "rotatable": true
+    },
+    "inspection_bay": {
+      "file": "overlay/inspection_bay.svg",
+      "footprint": {
+        "w": 1,
+        "h": 3
+      },
+      "rotatable": true
+    },
+    "reefer_plug_on": {
+      "file": "overlay/reefer_plug_on.svg",
+      "size": {
+        "w": 16,
+        "h": 16
+      }
+    },
+    "reefer_plug_alarm": {
+      "file": "overlay/reefer_plug_alarm.svg",
+      "size": {
+        "w": 16,
+        "h": 16
+      }
+    },
+    "reefer_plug_off": {
+      "file": "overlay/reefer_plug_off.svg",
+      "size": {
+        "w": 16,
+        "h": 16
+      }
+    }
+  }
+}

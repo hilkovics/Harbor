@@ -1,0 +1,223 @@
+// Geometria a pohyb lode (T02-05, ARCHITECTURE §7.4, ADR-016): stred bunky, kardinálny kurz bez trigonometrie,
+// poloha pri kotvisku pre všetky strany vody, bunky obdĺžnika lode, pohyb po úsečkách so zvyškom kroku a uložená trasa lode.
+import { describe, expect, it } from 'vitest';
+import type { EntityId } from '@sim/core';
+import type { Rotation } from '@sim/grid';
+import {
+  DOCKED_HEADING,
+  Ship,
+  advanceAlongRoute,
+  anchoringProblem,
+  cardinalHeading,
+  cellCenter,
+  dockPoint,
+  segmentHeading,
+  shipBox,
+  shipCells,
+  shipRoute,
+  approachPoint,
+  type ShipPoint,
+  type ShipState,
+} from '@sim/ships';
+import { berthOn, quayGrid } from '../modules/module-fixtures';
+import { MAP } from '../world/world-fixtures';
+import { ROOT_BERTH_ID, SHIP_DEFS, TEU, berth, newWorld } from './ship-fixtures';
+
+const FEEDER = SHIP_DEFS.ships.get('feeder');
+const HANDY = SHIP_DEFS.ships.get('handy');
+
+function freshShip(state: ShipState = 'inbound', x = 0, y = 0, heading: Rotation = 0): Ship {
+  return new Ship({ id: 99 as EntityId, def: FEEDER, cargoType: SHIP_DEFS.cargoTypes.get(TEU), state, x, y, heading });
+}
+
+describe('cellCenter a cardinalHeading', () => {
+  it('stred bunky = (x + 0,5, y + 0,5)', () => {
+    expect(cellCenter({ x: 44, y: 7 })).toEqual({ x: 44.5, y: 7.5 });
+  });
+
+  it.each<[number, number, Rotation | null]>([
+    [1, 0, 90],
+    [-1, 0, 270],
+    [0, 1, 180],
+    [0, -1, 0],
+    [3, -2, 90],
+    [-1.5, 5.5, 180],
+    [1, 1, 90], // remíza → os x
+    [-2, 2, 270],
+    [0, 0, null],
+  ])('(%d, %d) → %s', (dx, dy, heading) => {
+    expect(cardinalHeading(dx, dy)).toBe(heading);
+  });
+
+  it('kurz pri kotvisku je rovnobežný s hranou pri vode (nábrežie po pravoboku)', () => {
+    expect(DOCKED_HEADING).toEqual({ n: 90, e: 180, s: 270, w: 0 });
+  });
+});
+
+describe('dockPoint — stred obdĺžnika lengthCells × widthCells pred hranou pri vode', () => {
+  it('harbor_01 Root berth (40,14) rot 0: feeder (6×2) → (43, 13), handy (10×2) → (45, 13)', () => {
+    const world = newWorld();
+    const root = berth(world, ROOT_BERTH_ID);
+    expect(dockPoint(root, FEEDER)).toEqual({ x: 43, y: 13 });
+    expect(dockPoint(root, HANDY)).toEqual({ x: 45, y: 13 });
+  });
+
+  // Syntetické nábrežie 30×30, berth 8×3 na (10, 10) po rotácii: rot 0 = n, 90 = e, 180 = s, 270 = w.
+  it.each<[Rotation, ShipPoint]>([
+    [0, { x: 13, y: 9 }], // hrana y 10, x 10–17; loď x 10–15, y 8–9
+    [90, { x: 14, y: 13 }], // hrana x 12 (berth 3×8), y 10–17; loď x 13–14, y 10–15
+    [180, { x: 13, y: 14 }], // hrana y 12; loď x 10–15, y 13–14
+    [270, { x: 9, y: 13 }], // hrana x 10; loď x 8–9, y 10–15
+  ])('rot %d → %o', (rotation, expected) => {
+    const b = berthOn(quayGrid(30, 30), 5, { x: 10, y: 10 }, rotation);
+    expect(dockPoint(b, FEEDER)).toEqual(expected);
+  });
+});
+
+describe('shipCells — bunky obdĺžnika lode', () => {
+  it('pri kotvisku Root (43, 13), kurz 90: x 40–45, y 12–13 (row-major)', () => {
+    const cells = shipCells({ x: 43, y: 13, heading: 90, def: FEEDER });
+    expect(cells).toHaveLength(12);
+    expect(cells[0]).toEqual({ x: 40, y: 12 });
+    expect(cells.at(-1)).toEqual({ x: 45, y: 13 });
+  });
+
+  it('kurz 0/180 otočí obdĺžnik (dĺžka pozdĺž y); necelá poloha zaberie aj načaté bunky', () => {
+    expect(shipCells({ x: 43, y: 13, heading: 180, def: FEEDER })).toHaveLength(12);
+    const cells = shipCells({ x: 43.25, y: 10.5, heading: 0, def: FEEDER });
+    const xs = [...new Set(cells.map((c) => c.x))];
+    const ys = [...new Set(cells.map((c) => c.y))];
+    expect(xs).toEqual([42, 43, 44]);
+    expect(ys).toEqual([7, 8, 9, 10, 11, 12, 13]);
+  });
+});
+
+describe('advanceAlongRoute — úsečky, zvyšok kroku do ďalšieho úseku', () => {
+  const route: readonly ShipPoint[] = [
+    { x: 0, y: 0 },
+    { x: 0, y: 1 },
+    { x: 2, y: 1 },
+  ];
+
+  it('nulový prvý úsek preskočí, kurz podľa úseku, na konci presne v poslednom bode', () => {
+    const s = freshShip('inbound', 0, 0, 90);
+    expect(advanceAlongRoute(s, route, 0.4)).toBe(false);
+    expect(s).toMatchObject({ x: 0, y: 0.4, heading: 180, waypointIndex: 1 });
+    // 0,6 dokončí úsek dole, zvyšok 0,4 ide doprava — loď zahne v tom istom ticku.
+    expect(advanceAlongRoute(s, route, 1)).toBe(false);
+    expect(s.x).toBeCloseTo(0.4, 12);
+    expect(s.y).toBe(1);
+    expect(s.heading).toBe(90);
+    expect(s.waypointIndex).toBe(2);
+    expect(advanceAlongRoute(s, route, 5)).toBe(true);
+    expect(s).toMatchObject({ x: 2, y: 1, waypointIndex: 3 });
+    // Zvyšok na konci trasy prepadne, ďalšie volanie nič nezmení.
+    expect(advanceAlongRoute(s, route, 5)).toBe(true);
+    expect(s).toMatchObject({ x: 2, y: 1 });
+  });
+
+  it('krok nikdy nepresiahne rozpočet (tetiva ≤ dráha) a súčet krokov = dĺžka trasy', () => {
+    const t = freshShip('inbound', 0, 0);
+    const speed = 0.15;
+    let travelled = 0;
+    let arrived = false;
+    for (let tick = 0; !arrived; tick++) {
+      if (tick > 100) throw new Error('loď sa nedostala do cieľa');
+      const [px, py] = [t.x, t.y];
+      arrived = advanceAlongRoute(t, route, speed);
+      const step = Math.hypot(t.x - px, t.y - py);
+      expect(step).toBeLessThanOrEqual(speed + 1e-12);
+      travelled += step;
+    }
+    expect(travelled).toBeLessThanOrEqual(3 + 1e-9);
+    expect(travelled).toBeGreaterThan(2.8);
+    expect([t.x, t.y]).toEqual([2, 1]);
+  });
+
+  it('prázdna trasa = dorazila, loď sa nepohne ani neotočí', () => {
+    const s = freshShip('docked', 43, 13, 90);
+    expect(advanceAlongRoute(s, [], 1)).toBe(true);
+    expect(s).toMatchObject({ x: 43, y: 13, heading: 90 });
+  });
+});
+
+describe('shipRoute, approachPoint a pevný kurz bodu trasy (ADR-029)', () => {
+  it('shipRoute = uložená trasa lode (Ship.route)', () => {
+    const route = [{ x: 44.5, y: 7.5 }, { x: 43, y: 10, heading: 90 as const }];
+    const ship = new Ship({ id: 99 as EntityId, def: FEEDER, cargoType: SHIP_DEFS.cargoTypes.get(TEU), state: 'berthing', x: 48.5, y: 7.5, heading: 270, berthIds: [ROOT_BERTH_ID], route });
+    expect(shipRoute(ship)).toEqual(route);
+  });
+
+  it('approachPoint = dockPoint posunutý od brehu o frontWaterCells (Root: (43, 13) → (43, 10)); orezaný do mapy', () => {
+    const world = newWorld();
+    const root = berth(world, ROOT_BERTH_ID);
+    expect(approachPoint(root, FEEDER, MAP)).toEqual({ x: 43, y: 10 });
+    expect(approachPoint(root, HANDY, MAP)).toEqual({ x: 45, y: 10 });
+    expect(approachPoint(root, FEEDER, { width: 96, height: 11.5 })).toEqual({ x: 43, y: 10 });
+    expect(approachPoint(root, FEEDER, { width: 40, height: 64 })).toEqual({ x: 40, y: 10 });
+  });
+
+  it('bod s pevným kurzom: loď sa posúva bokom (kurz sa nemení podľa smeru úseku)', () => {
+    const s = freshShip('berthing', 43, 10, 270);
+    expect(advanceAlongRoute(s, [{ x: 43, y: 13, heading: 90 }], 1)).toBe(false);
+    expect(s).toMatchObject({ x: 43, y: 11, heading: 90 });
+    expect(segmentHeading({ x: 0, y: 5 }, 0, 5)).toBe(180);
+    expect(segmentHeading({ x: 0, y: 5, heading: 90 }, 0, 5)).toBe(90);
+    expect(segmentHeading({ x: 0, y: 0 }, 0, 0)).toBeNull();
+  });
+
+  it('advanceAlongRoute s koncom `end`: zastane v bode end − 1 a zvyšok trasy nechá', () => {
+    const s = freshShip('inbound', 0.5, 0.5, 180);
+    const route = [{ x: 0.5, y: 1.5 }, { x: 0.5, y: 2.5 }, { x: 5.5, y: 2.5 }];
+    expect(advanceAlongRoute(s, route, 10, 2)).toBe(true);
+    expect([s.x, s.y, s.waypointIndex]).toEqual([0.5, 2.5, 2]);
+  });
+
+  it('shipBox = obal shipCells (rovnaké bunky)', () => {
+    const cells = shipCells({ x: 43, y: 13, heading: 90, def: FEEDER });
+    const box = shipBox(FEEDER, 43, 13, 90);
+    expect(box).toEqual({ x0: 40, y0: 12, x1: 46, y1: 14 });
+    expect(cells).toHaveLength((box.x1 - box.x0) * (box.y1 - box.y0));
+  });
+});
+
+describe('anchoringProblem — jednotný kurz lode na rejde (T6D-03)', () => {
+  const CELL = MAP.anchorage[0];
+  const AT = cellCenter(CELL);
+  const world = newWorld();
+
+  function waiting(heading: Rotation, waypointIndex: number): Ship {
+    return new Ship({
+      id: 99 as EntityId,
+      def: FEEDER,
+      cargoType: SHIP_DEFS.cargoTypes.get(TEU),
+      state: 'waiting_anchorage',
+      x: AT.x,
+      y: AT.y,
+      heading,
+      anchorageIndex: 0,
+      route: [AT, { x: AT.x, y: AT.y, heading: MAP.anchorageHeading }],
+      waypointIndex,
+    });
+  }
+
+  it('loď, ktorá dopĺňala na koniec trasy, má mať kurz mapy; iný kurz → porušenie na poli heading', () => {
+    expect(anchoringProblem(waiting(MAP.anchorageHeading, 2), world)).toBeUndefined();
+    const other = ([0, 90, 180, 270] as const).find((heading) => heading !== MAP.anchorageHeading) ?? 0;
+    expect(anchoringProblem(waiting(other, 2), world)).toMatchObject({ field: 'heading', problem: expect.stringContaining(`jednotný ${String(MAP.anchorageHeading)}`) });
+  });
+
+  it('loď, ktorá ešte pláva (nedosiahla koniec trasy), a lode v iných stavoch sa neposudzujú', () => {
+    expect(anchoringProblem(waiting(0, 1), world)).toBeUndefined();
+    expect(anchoringProblem(waiting(0, 0), world)).toBeUndefined();
+    expect(anchoringProblem(freshShip('inbound', 1, 1, 0), world)).toBeUndefined();
+    expect(anchoringProblem(freshShip('docked', 1, 1, 0), world)).toBeUndefined();
+  });
+
+  it('pevný kurz posledného bodu trasy nastaví kurz lode na kurz mapy (nulový úsek: otočenie na kotve)', () => {
+    const ship = waiting(270, 0);
+    expect(advanceAlongRoute(ship, ship.route, FEEDER.speedCellsPerTick)).toBe(true);
+    expect([ship.x, ship.y, ship.heading]).toEqual([AT.x, AT.y, MAP.anchorageHeading]);
+    expect(anchoringProblem(ship, world)).toBeUndefined();
+  });
+});

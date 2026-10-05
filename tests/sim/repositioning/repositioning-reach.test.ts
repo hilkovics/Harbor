@@ -85,7 +85,7 @@ describe('výber prázdneho s cestou k cieľu (findAvailableEmpty / countAvailab
     const depot = depotOf(world);
     const yard = [...world.modules.values()].find((module): module is StorageModule => module instanceof StorageModule && module.id !== depot.id && module.category === 'container');
     if (yard === undefined) throw new Error('svet nemá dvor');
-    const [depotUnit] = stockDepot(world, 'blue_anchor', 2);
+    const depotUnit = stockDepot(world, 'blue_anchor', 2)[1]; // navrchu stohu (v depe sa vydáva kontajner navrchu, ADR-039)
     const yardUnit = putEmpty(world, yard, 'blue_anchor');
     send(world, { type: 'RemoveRoad', cells: [{ x: 43, y: 22 }] });
     const berth = world.modules.get(1 as EntityId);

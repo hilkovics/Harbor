@@ -28,11 +28,15 @@
  * jednotku, ktorá job dostane; sklad bez vhodnej rampy sa preskočí binárnym skokom na hranicu ďalšieho skladu skupiny. Pri samých jednotkách bez kontraktu je poradie
  * jobov rovnaké ako vo F4 (sklady ↑, FIFO).
  *
+ * **Bloky so stohmi** (R2, ADR-039): outbound job vznikne len pre jednotku, ktorú zavaľuje kontajner, čo zo skladu nepôjde sám (export, prázdne — vtedy preloží
+ * kontajnery vozidlo, rehandling), a len ak je pre kontajnery nad ňou v bloku miesto (`unitPickable`); kontajner, ktorý odíde sám (import s jobom), jednotku pod
+ * sebou nezdržiava — vozidlo sa jej nepriraďuje, kým neodíde (`blockedJob`), takže sa najprv berú jednotky navrchu a rehandling takmer nevzniká.
+ *
  * **Prijatie exportu** (F6a, ADR-032 bod 8): jednotka exportu, ktorú vyložil kamión s exportom na dock rampy (booking beží),
  * dostane sklad zoskupene podľa voyage a job `at_ramp → in_storage` (`createExportJobs`), priority ako outbound.
  *
- * **Vykládka z lode a nakládka** (F6c, ADR-034 + dodatok T6C-03): jednotka na aprone dostane sklad podľa smeru (`allocateUnloadStorage` — prekládka z lode A
- * zoskupene podľa kontraktu); jednotka na nakládku dokovanej lode (export, prázdne repositioningu, prekládka čakajúca na loď B) na aprone čaká na žeriav
+ * **Vykládka z lode a nakládka** (F6c, ADR-034 + dodatok T6C-03): jednotka na aprone dostane blok a stoh od plánovača skladu (`reserveYardSlot`, ADR-039 — segregácia podľa smeru:
+ * prekládka z lode A zoskupene podľa kontraktu); jednotka na nakládku dokovanej lode (export, prázdne repositioningu, prekládka čakajúca na loď B) na aprone čaká na žeriav
  * (`awaitsCrane`), kým beží jej booking; joby nakládky vytvára `logistics/export-load.ts` (prázdne po plných jednotkách).
  *
  * **Prázdne kontajnery** (F6c, ADR-034 + dodatok T6C-02): prázdny z vnútrozemia vyložený na dock dostane job `at_ramp → in_storage` do depa

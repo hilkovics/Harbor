@@ -29,6 +29,15 @@ import { checkRuntimeKeys, readCount } from './runtime-state';
 import { SlotReservations, type CargoSlotsView } from './slot-reservations';
 
 /**
+ * Počet slotov skladu: pri bloku so stohmi najviac `bays × rows × maxTier` (kapacita v TEU, ADR-039), nižšie `capacityUnits` ju môže znížiť (def, testy);
+ * bez geometrie `capacityUnits`.
+ */
+export function storageSlotCapacity(params: StorageParams): number {
+  const { bays, rows, maxTier } = params;
+  return bays !== undefined && rows !== undefined && maxTier !== undefined ? Math.min(params.capacityUnits, bays * rows * maxTier) : params.capacityUnits;
+}
+
+/**
  * Dynamický stav skladu v save (`WorldState.modules[i].runtime`, ADR-017, ADR-018): len kumulatívne počítadlá —
  * obsadenie je v ledgeri a rezervácie sa odvodia z jobov.
  */
@@ -60,7 +69,7 @@ export abstract class StorageModule extends Module {
     if (this.params.category !== category) {
       throw new ModuleError('invalid_input', `${this.label}: trieda skladuje kategóriu '${category}', def má '${this.params.category}'`);
     }
-    this.capacity = this.params.capacityUnits;
+    this.capacity = storageSlotCapacity(this.params);
     this.slots = new SlotReservations({
       kind: 'in_storage',
       holderId: this.id,
@@ -105,9 +114,12 @@ export abstract class StorageModule extends Module {
     return true;
   }
 
-  /** Skladovacia kapacita pre `capacityHint` poolu kontraktov (ADR-026) = `params.capacityUnits`. */
+  /**
+   * Skladovacia kapacita pre `capacityHint` poolu kontraktov (ADR-026) = `params.capacityUnits` z defu — nie fyzická kapacita bloku so stohmi (`capacity`):
+   * presun hintu na TEU bloku by zmenil ponuky aj prúd `Rng` všetkých scenárov (ADR-039 dodatok TR2-02, BACKLOG).
+   */
   override storageCapacityUnits(): number {
-    return this.capacity;
+    return this.params.capacityUnits;
   }
 
   /** Uložené jednotky (ledger `in_storage` u tohto modulu). */

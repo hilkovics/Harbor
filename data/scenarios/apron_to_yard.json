@@ -239,7 +239,7 @@
         "type": "SpawnShipDebug",
         "shipClassId": "feeder",
         "cargoTypeId": "container_teu",
-        "units": 120
+        "units": 96
       }
     }
   ]

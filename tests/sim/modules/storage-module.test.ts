@@ -89,12 +89,12 @@ function expectModuleError(action: () => unknown, code: ModuleErrorCode): void {
 }
 
 describe('ContainerYard — z defu container_yard_small', () => {
-  it('kapacita 48 TEU (4 × 4 × 3), kategória container, prázdny, počítadlá 0; sloty in_storage u modulu', () => {
+  it('kapacita 48 TEU (min(capacityUnits 64, 4 × 4 × 3)), kategória container, prázdny, počítadlá 0; sloty in_storage u modulu', () => {
     const { yard } = yardOf();
     expect(yard).toBeInstanceOf(ContainerYard);
     expect([yard.capacity, yard.category, yard.storedCount, yard.reservedCount, yard.freeCount]).toEqual([48, 'container', 0, 0, 48]);
     expect([yard.unitsIn, yard.unitsOut]).toEqual([0, 0]);
-    expect(yard.params).toEqual({ capacityUnits: 48, category: 'container', bays: 4, rows: 4, maxTier: 3 });
+    expect(yard.params).toEqual({ capacityUnits: 64, category: 'container', bays: 4, rows: 4, maxTier: 3 });
     const slots = yard.cargoSlots();
     expect([slots.kind, slots.holderId, slots.capacity]).toEqual(['in_storage', YARD_ID, 48]);
     expect(yard.getRuntimeState()).toEqual({ unitsIn: 0, unitsOut: 0, rehandles: 0 } satisfies YardRuntimeState);

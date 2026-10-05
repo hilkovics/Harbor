@@ -419,7 +419,8 @@ export interface StorageParams {
   readonly repairBays?: number;
   /**
    * Geometria bloku so stohmi (ADR-039): počet bays pozdĺž bloku (1 bay = 1 bunka = 20′, 40′ zaberie pár bays 2k, 2k+1; celé ≥ 1).
-   * `bays`, `rows` a `maxTier` sú buď všetky, alebo žiadne (`checkStorageParams`); kapacita v TEU je `bays × rows × maxTier` (od TR2-02).
+   * `bays`, `rows` a `maxTier` sú buď všetky, alebo žiadne (`checkStorageParams`); fyzická kapacita bloku v TEU je `min(capacityUnits, bays × rows × maxTier)` (od TR2-02,
+   * `storageSlotCapacity`); `capacityUnits` ostáva aj hintom pre pool kontraktov (`StorageModule.storageCapacityUnits`).
    */
   readonly bays?: number;
   /** Počet radov naprieč blokom (celé ≥ 1; geometria bloku, ADR-039). */

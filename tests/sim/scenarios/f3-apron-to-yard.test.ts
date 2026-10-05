@@ -1,5 +1,5 @@
 /**
- * Scenár `apron_to_yard` (T03-07, TDD): feeder so 120 TEU zakotví na Root berthe, Root žeriav ich vyloží na apron a dve
+ * Scenár `apron_to_yard` (T03-07, TDD): feeder so 96 TEU (kapacita dvorov, 2 × 48 TEU) zakotví na Root berthe, Root žeriav ich vyloží na apron a dve
  * vozidlá `straddle_carrier` ich fyzicky prevezú do dvoch kontajnerových dvorov (blízky a ďaleký). Testy idú výlučne
  * cez verejné API a JSON príkazy (`PlaceRoad`, `PlaceModule`, `BuyVehicle`, `SpawnShipDebug`), proti rozhraniu
  * z `docs/tasks/phase-03.md` („Spoločné rozhrania", „Rozhodnutia orchestrátora"). Časové hranice sú horné alebo ±1 tick,
@@ -62,7 +62,7 @@ import { DEFS, MAP, MAP_GRID } from '../world/world-fixtures';
 
 /** Karta T03-07 / akceptácia fázy: po ≤ 15 000 tickoch sú všetky jednotky `in_storage`. */
 const RUN_TICKS = 15000;
-const UNITS = 120;
+const UNITS = 96;
 /** Timeout hooku: 15 000 tickov s auditom po každom ticku. */
 const RUN_TIMEOUT_MS = 120_000;
 
@@ -89,7 +89,7 @@ describe('scenár apron_to_yard: súbor', () => {
     expect((readRepoJson(scenario.map) as { id: string }).id).toBe(MAP.id);
   });
 
-  it('je zhodný s rozložením z helpers/f3-layout (2× straddle_carrier, feeder 120 TEU)', () => {
+  it('je zhodný s rozložením z helpers/f3-layout (2× straddle_carrier, feeder 96 TEU)', () => {
     expect(scenario).toEqual(f3Scenario('apron_to_yard', 3003, { vehicles: ['straddle_carrier', 'straddle_carrier'], units: UNITS }));
   });
 
@@ -118,10 +118,10 @@ describe('scenár apron_to_yard: súbor', () => {
     expect(DEPOT_ID).toBe(3);
   });
 
-  it('SpawnShipDebug feeder container_teu 120 (celá kapacita feedera)', () => {
+  it('SpawnShipDebug feeder container_teu 96 (kapacita oboch dvorov)', () => {
     const spawn = scenario.commands.find((entry) => entry.command.type === 'SpawnShipDebug')?.command;
     expect(spawn).toEqual({ type: 'SpawnShipDebug', shipClassId: 'feeder', cargoTypeId: 'container_teu', units: UNITS });
-    expect(DEFS.ships.get('feeder').capacityUnits).toBe(UNITS);
+    expect(DEFS.ships.get('feeder').capacityUnits).toBeGreaterThanOrEqual(UNITS); // loď vezie toľko, koľko sa zmestí do oboch dvorov (2 × 48 TEU)
   });
 
   it('každý príkaz prežije commandFromJSON → toJSON bez zmeny (vrátane BuyVehicle)', () => {
@@ -356,7 +356,7 @@ describe('scenár apron_to_yard: beh 15 000 tickov', () => {
     expect(world.ships.size).toBe(0);
   });
 
-  it('všetkých 120 jednotiek skončilo v sklade: in_storage 120, nič na aprone/lodi/v žeriave/vo vozidle, lostUnits 0', () => {
+  it('všetkých 96 jednotiek skončilo v sklade: in_storage 96, nič na aprone/lodi/v žeriave/vo vozidle, lostUnits 0', () => {
     const { cargo } = world;
     expect(cargo.createdCount).toBe(UNITS);
     expect(cargo.countByKind('in_storage')).toBe(UNITS);
@@ -392,7 +392,7 @@ describe('scenár apron_to_yard: beh 15 000 tickov', () => {
     }
   });
 
-  it('joby: 120 JobCreated (každá jednotka v práve jednom jobe), každý job má práve jedno JobAssigned a JobDone; vozidlo nevezie viac než unesie', () => {
+  it('joby: 96 JobCreated (každá jednotka v práve jednom jobe), každý job má práve jedno JobAssigned a JobDone; vozidlo nevezie viac než unesie', () => {
     const created = timed3(log, 'JobCreated');
     const assigned = timed3(log, 'JobAssigned');
     const done = timed3(log, 'JobDone');
@@ -564,9 +564,9 @@ describe('scenár apron_to_yard: beh 15 000 tickov', () => {
     expect(violationsOf(log, 'stuck')).toEqual([]);
   });
 
-  it('vozidlá reálne jazdia (spolu > 120 buniek) a vezú náklad (aspoň jedna vzorka to_dropoff s jednotkou vo vozidle)', () => {
+  it('vozidlá reálne jazdia (spolu > 96 buniek) a vezú náklad (aspoň jedna vzorka to_dropoff s jednotkou vo vozidle)', () => {
     const total = vehicleIds.reduce((sum, id) => sum + travelledCells(vehicleSamples(log, id)), 0);
-    expect(total).toBeGreaterThan(120);
+    expect(total).toBeGreaterThan(96);
     const loaded = vehicleIds.flatMap((id) => vehicleSamples(log, id)).filter((sample) => sample.state === 'to_dropoff');
     expect(loaded.length).toBeGreaterThan(0);
     expect(loaded.every((sample) => sample.unitsInside === 1)).toBe(true);

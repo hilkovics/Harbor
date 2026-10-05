@@ -103,7 +103,7 @@ describe('opravy — repairBays, trvanie, poplatok', () => {
 });
 
 describe('findAvailableEmpty — výber dostupného prázdneho', () => {
-  it('berie len available kontajner danej linky: poškodený, v oprave a iná linka sa preskočia; najmenšie id', () => {
+  it('berie len available kontajner danej linky: poškodený, v oprave a iná linka sa preskočia; kontajner navrchu stohu pred spodným (ADR-039)', () => {
     const world = emptyWorld();
     const depot = depotOf(world);
     putEmpty(world, depot, 'blue_anchor', 'damaged');
@@ -111,7 +111,8 @@ describe('findAvailableEmpty — výber dostupného prázdneho', () => {
     putEmpty(world, depot, 'golden_wave');
     const good = putEmpty(world, depot, 'blue_anchor');
     const better = putEmpty(world, depot, 'blue_anchor');
-    expect(findAvailableEmpty(world, 'blue_anchor')?.id).toBe(good);
+    // `good` a `better` ležia v jednom stohu (poradie ukladania): vydáva sa ten navrchu — vydať spodný by znamenalo rehandling.
+    expect(findAvailableEmpty(world, 'blue_anchor')?.id).toBe(better);
     expect(good).toBeLessThan(better);
     expect(findAvailableEmpty(world, 'northern_star')).toBeUndefined();
   });

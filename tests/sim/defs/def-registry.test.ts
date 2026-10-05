@@ -463,7 +463,7 @@ describe('loadBundledDefs', () => {
       repathIntervalTicks: 30,
       // R2 (ADR-039): sklad so stohmi.
       rehandleTicks: 12,
-      importDwellEstimateHours: 24,
+      importDwellEstimateHours: 6,
       yardPlanner: 'planned',
       congestion: { trafficDecayPerHour: 0.9 },
       // R1 (ADR-037): doprava bez prekrývania.

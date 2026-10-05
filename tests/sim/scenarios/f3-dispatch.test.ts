@@ -259,7 +259,7 @@ describe('alokátor: bližší dvor dostane prvý job a rezervácie sa rátajú 
     const far = storageAt(world, FAR_YARD_ORIGIN);
 
     expect(near.capacity).toBe(3);
-    expect(timed3(log, 'JobCreated').map((item) => item.event.toModuleId)).toEqual([near.id, near.id, near.id, far.id]);
+    expect(timed3(log, 'JobCreated').map((item) => item.event.toModuleId)).toEqual([near.id, far.id, near.id, near.id]); // import sa najprv rozloží po prázdnych stohoch (ADR-039), potom vrství v bližšom dvore
     expect([near.storedCount, near.reservedCount, near.freeCount]).toEqual([0, 3, 0]);
     expect([far.storedCount, far.reservedCount, far.freeCount]).toEqual([0, 1, 2]);
     expect(timed3(log, 'NoStorageAvailable')).toEqual([]); // sklad je, len rezervovaný — nie je to „chýba sklad"

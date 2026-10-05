@@ -12,8 +12,8 @@
  *   nenakladá) a len pre kotvisko so žeriavom kategórie nákladu.
  * - **Vykládka pod hákom** (`createHookUnloadJobs`): joby `in_crane → in_storage` s rezervovaným slotom skladu vznikajú **vopred** —
  *   pre jednotku, ktorú žeriav práve vykladá, aj pre ďalšie jednotky na vykládku (import, prekládka z lode A) dokovanej lode — aby dispatcher poslal
- *   vozidlá k háku skôr, než žeriav jednotku zdvihne, a žeriav nečakal (`NoStorageAvailable`, keď sklad nie je); sklad podľa smeru
- *   (`allocateUnloadStorage`: prekládka zoskupene podľa kontraktu).
+ *   vozidlá k háku skôr, než žeriav jednotku zdvihne, a žeriav nečakal (`NoStorageAvailable`, keď sklad nie je); blok a stoh vyberá plánovač skladu
+ *   (`reserveYardSlot`, ADR-039: prekládka zoskupene podľa kontraktu).
  *
  * Funkcie nemenia ledger; vznik jobu rieši `openJob` z dispatchera (`JobCreated`, `World.addJob`). Hot path bez alokácií: jednotky
  * nakládky sa vyberajú po jednej (najlepšia podľa stowage plánu, bez poľa a triedenia — poradie je úplné, takže je rovnaké ako pri

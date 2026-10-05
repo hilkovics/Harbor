@@ -1,12 +1,12 @@
 /**
- * Nakládka exportu v režime `apron` (F6a, T6A-05, ADR-032 bod 8–14): stowage poradie (heavy → medium → light, id), rezerva
+ * Nakládka exportu v režime `apron` (F6a, T6A-05, ADR-032 bod 8–14): stowage poradie (heavy → medium → light; v triede podľa vrchu stohu, R2), rezerva
  * apronu pre opačný smer, kapacita lode pre import + export, dual cycling (`dualCycleFactor`), lashing a papiere, `shipped` pri
  * odchode lode a uzavretie bookingu (výplata pomerne k naloženým, penalizácie, vrátenie nenaložených odosielateľovi).
  * Svet = prístav F4 s dvoma vozidlami (`exportWorld`), booking sa prijíma príkazom, príchody kamiónov sú pevné (`arrivals`).
  */
 import { describe, expect, it } from 'vitest';
 import type { WeightClass } from '@sim/cargo/cargo-unit';
-import { compareStowageOrder } from '@sim/cargo/stowage';
+import { compareStowageClass } from '@sim/cargo/stowage';
 import { bookingUnitsPenaltyCents } from '@sim/contracts/contract-terms';
 import type { EntityId } from '@sim/core';
 import { apronDirectionCap, exportApronUsage, importApronUsage } from '@sim/logistics/apron-usage';
@@ -47,7 +47,7 @@ function weightRecorder(world: World): { readonly record: () => void; readonly w
 }
 
 describe('stowage poradie nakládky (ADR-032 bod 8)', () => {
-  it('jedno vozidlo: jednotky sa nakladajú v poradí heavy → medium → light, pri zhode podľa id; žiadna mimo poradia', () => {
+  it('jedno vozidlo: jednotky sa nakladajú v poradí tried heavy → medium → light (v triede zameniteľné — berie sa kontajner navrchu stohu); žiadna mimo poradia', () => {
     const defs = apronDefs({ exportFlow: { weightClassShares: { light: 1, medium: 1, heavy: 1 } } });
     const { world } = startLoading({ defs, vehicles: ['straddle_carrier'], kind: 'export', booked: 9, arrivals: [10, 20, 30, 40, 50, 60, 70, 80, 90] });
     const recorder = weightRecorder(world);
@@ -56,8 +56,9 @@ describe('stowage poradie nakládky (ADR-032 bod 8)', () => {
     expect(loaded).toHaveLength(9);
     expect(new Set([...recorder.weights.values()]).size).toBeGreaterThan(1);
     const keys = loaded.map((entry) => ({ id: entry.event.unitId, weightClass: recorder.weights.get(entry.event.unitId) as WeightClass }));
-    const sorted = [...keys].sort(compareStowageOrder);
-    expect(keys.map((key) => key.id)).toEqual(sorted.map((key) => key.id));
+    // Jednotky jednej triedy sú pre stowage zameniteľné (ADR-039: sklad ich segreguje), preto sa porovnáva trieda, nie id.
+    const sorted = [...keys].sort(compareStowageClass);
+    expect(keys.map((key) => key.weightClass)).toEqual(sorted.map((key) => key.weightClass));
     expect(loaded.every((entry) => !entry.event.outOfOrder)).toBe(true);
     expect(lostUnits(world)).toBe(0);
   });

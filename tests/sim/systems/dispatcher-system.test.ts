@@ -46,7 +46,8 @@ describe('inbound: joby pre jednotky na aprone', () => {
       ['open', null, 1],
     ]);
     expect(jobs.map((job) => job.from)).toEqual(units.map((unit) => world.cargo.get(unit)?.location));
-    expect(jobs.map((job) => job.to)).toEqual([0, 1, 2].map((slot) => ({ kind: 'in_storage', moduleId: west.id, slot })));
+    // Plánovač rozloží import po prázdnych stohoch (ADR-039): bunky vrstvy 0 — najprv stĺpec 0, potom jeho pár (bay 1), potom ďalší rad.
+    expect(jobs.map((job) => job.to)).toEqual([0, 3, 12].map((slot) => ({ kind: 'in_storage', moduleId: west.id, slot })));
     expect([west.reservedCount, west.storedCount, far.reservedCount]).toEqual([3, 0, 0]);
     for (const unit of units) expect(world.jobOfUnit(unit)?.unitIds).toEqual([unit]);
     expect(created.map((event) => event.jobId)).toEqual(jobs.map((job) => job.id));
@@ -63,14 +64,14 @@ describe('inbound: joby pre jednotky na aprone', () => {
     expect(world.jobs.size).toBe(3);
   });
 
-  it('plne rezervovaný sklad sa preskočí: kapacita 2 → W, W, E, E; posledná jednotka bez skladu ostane bez jobu', () => {
+  it('plne rezervovaný sklad sa preskočí: kapacita 2 → W, E, W, E (import sa rozkladá po prázdnych stohoch aj medzi blokmi); všetky štyri jednotky dostanú job', () => {
     const { world } = dispatchWorld(dispatchDefs({ yardCapacity: 2 }));
     const west = placeYard(world, YARD_W);
     const east = placeYard(world, YARD_E);
     const units = unitsOnApron(world, [0, 1, 2, 3]);
     const events = world.tick();
     const created = events.filter((event) => event.type === 'JobCreated');
-    expect(created.map((event) => (event.type === 'JobCreated' ? event.toModuleId : 0))).toEqual([west.id, west.id, east.id, east.id]);
+    expect(created.map((event) => (event.type === 'JobCreated' ? event.toModuleId : 0))).toEqual([west.id, east.id, west.id, east.id]);
     expect(events.filter((event) => event.type === 'NoStorageAvailable')).toEqual([]);
     placeYard(world, YARD_F);
     expect(world.jobs.size).toBe(4);
@@ -278,7 +279,7 @@ describe('determinizmus a save', () => {
     expect(JSON.stringify(restored.serialize())).toBe(JSON.stringify(saved));
     expect([...restored.jobs.values()].map((job) => [job.state, job.vehicleId])).toEqual([...a.world.jobs.values()].map((job) => [job.state, job.vehicleId]));
     const west = restored.moduleAt(YARD_W.x, YARD_W.y) as StorageModule;
-    expect(west.reservedSlots()).toEqual([0, 1, 2]);
+    expect(west.reservedSlots()).toEqual([0, 3, 12]);
     for (const world of [a.world, restored]) unitsOnApron(world, [2]);
     const nextA: SimEvent[] = [];
     const nextB: SimEvent[] = [];

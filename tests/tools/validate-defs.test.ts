@@ -124,7 +124,7 @@ describe('validateDefsDir', () => {
         defaultInternalTicks: 6,
         repathIntervalTicks: 30,
         rehandleTicks: 12,
-        importDwellEstimateHours: 24,
+        importDwellEstimateHours: 6,
         yardPlanner: 'planned',
         congestion: { trafficDecayPerHour: 0.9 },
         traffic: { gridlockTicks: 30, stuckTicks: 120, rerouteCooldownTicks: 60, idleParkDelayTicks: 6 },

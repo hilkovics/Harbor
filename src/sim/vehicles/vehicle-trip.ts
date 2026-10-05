@@ -16,6 +16,7 @@
  * - **Pod hákom** (F6d, ADR-033 dodatok T6D-02): ak je koncovým bodom jobu hák žeriava v kotvisku s jazdným nábrežím, cieľom jazdy nie je
  *   prístupová bunka kotviska, ale **bunka pod hákom** (`hookCellIndex`) — vozidlo vojde na nábrežie a zastane pod žeriavom (`planJobRoute`).
  */
+import { BerthModule } from '../modules/berth-module';
 import type { EntityId } from '../core/entity-id';
 import type { Module } from '../modules/module';
 import type { TransportJob } from '../logistics/transport-job';
@@ -67,12 +68,30 @@ export function jobTarget(world: World, job: TransportJob, destination: VehicleD
 }
 
 /**
+ * Nakládka pod hákom, k ničomu pod hákom nevedie cesta (`no_path`, T6D-05b): vozidlo s jednotkou (job `moving`, cieľ `in_crane`) ju odloží na apron
+ * kotviska — job sa presmeruje na voľný slot apronu (`TransportJob.rebindTarget`) a vozidlo ide na prístupovú bunku kotviska (ako v režime `apron`
+ * a v F6c), odkiaľ žeriav jednotku zdvihne z apronu. Deterministické, bez `Rng` a bez nového stavu: cieľ jobu je v save, rezerváciu slotu drží job.
+ * `false` = nič sa nezmenilo (apron nemá voľný slot, alebo ani k prístupovej bunke nevedie cesta) — vozidlo ostane / vráti sa do `no_path`
+ * a o `logistics.repathIntervalTicks` to skúsi znova. Poradie: najprv sa overí slot a trasa, rezervácia a presmerovanie až po úspechu.
+ */
+function rerouteLoadViaApron(world: World, vehicle: Vehicle, job: TransportJob): boolean {
+  if (job.state !== 'moving' || job.to.kind !== 'in_crane') return false;
+  const berth = world.modules.get(job.toModuleId);
+  if (!(berth instanceof BerthModule) || berth.apron.freeUnreservedCount <= 0) return false;
+  if (!planRoute(world, vehicle, berth)) return false;
+  job.rebindTarget({ kind: 'on_apron', berthId: berth.id, slot: berth.apron.reserve() });
+  return true;
+}
+
+/**
  * Naplánuje trasu k cieľu jobu (`destination`): k bunke pod hákom (F6d), inak k najbližšej prístupovej bunke modulu jobu (`planRoute`).
+ * Nakládka pod hákom, ku ktorej bunke pod hákom cesta nevedie, sa presmeruje na apron (`rerouteLoadViaApron`; vykládku rieši žeriav, `deliver`).
  * `false` = cieľ nie je dosiahnuteľný (vozidlo sa nezmení).
  */
 export function planJobRoute(world: World, vehicle: Vehicle, job: TransportJob, destination: VehicleDestination): boolean {
   const hook = hookCellOfJob(world, job, destination);
-  return hook === undefined ? planRoute(world, vehicle, jobModule(world, job, destination)) : planRouteToCell(world, vehicle, hook);
+  if (hook === undefined) return planRoute(world, vehicle, jobModule(world, job, destination));
+  return planRouteToCell(world, vehicle, hook) || (destination === 'target' && rerouteLoadViaApron(world, vehicle, job));
 }
 
 /**

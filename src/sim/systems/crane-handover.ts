@@ -9,7 +9,8 @@
  *   prejde `in_crane → in_vehicle`; keď pod hákom nikto nečaká a je voľný buffer (`craneBufferSlots`), žeriav ju odloží na apron
  *   (`in_crane → on_apron`) a job presmeruje na slot, to isté pri vozidle jobu v `no_path` (k háku nevedie cesta, T6D-05b); inak žeriav
  *   s jednotkou čaká (`craneWaitForVehicleTicks`). Nakládka — vozidlo
- *   s jednotkou čaká pod hákom (job `in_storage → in_crane`) a žeriav ju zdvihne priamo `in_vehicle → in_crane`.
+ *   s jednotkou čaká pod hákom (job `in_storage → in_crane`) a žeriav ju zdvihne priamo `in_vehicle → in_crane`; keď k háku nevedie cesta, vozidlo
+ *   jednotku odloží na apron (job sa presmeruje, `vehicle-trip.ts`) a žeriav ju zdvihne z apronu `on_apron → in_crane` (záložná nakládka, T6D-05b).
  *
  * Vlastnosti stratégie (`reservesUnloadSlot`, `plansUnloadTarget`) čítajú aj invarianty sveta (`world-invariants.ts`) a dispatcher
  * (`logistics/export-load.ts`) — režim sa nikde mimo tejto tabuľky nevetví podľa literálu (T6A-09b, pravidlo 7). Cyklus vykládky
@@ -120,6 +121,35 @@ function apronUnloadSlot({ world, berth, ship }: CraneEnv): boolean {
   return importApronUsage(world, berth) < apronDirectionCap(berth, true);
 }
 
+/**
+ * Najlepšia (min kľúč stowage plánu) jednotka bookingov na aprone kotviska, ktorú si nezabral iný žeriav kotviska; bez nej `undefined`. Režim `apron`
+ * ju berie vždy, režim `under_hook` ako záložnú nakládku cez apron (vozidlo k háku nedôjde, T6D-05b).
+ */
+function bestOnApron({ world, crane, berth }: CraneEnv, bookings: readonly Contract[]): CargoUnit | undefined {
+  const claimed = claimLoads(world, berth, crane);
+  let best: CargoUnit | undefined;
+  const count = world.cargo.countAt('on_apron', berth.id);
+  for (let i = 0; i < count; i++) {
+    const unitId = world.cargo.unitAtIndex('on_apron', berth.id, i);
+    const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
+    if (unit === undefined || claimed.includes(unit.id) || !isBookingUnit(unit, bookings)) continue;
+    best = better(best, unit);
+  }
+  return best;
+}
+
+/** Zdvihne cieľ cyklu nakládky `crane.targetUnitId` z apronu kotviska do žeriava (`on_apron → in_crane`); vráti uvoľnený slot apronu. */
+function liftFromApron({ world, crane, berth }: CraneEnv): number {
+  const unitId = crane.targetUnitId;
+  const unit = unitId === null ? undefined : world.cargo.get(unitId);
+  if (unit === undefined || unit.location.kind !== 'on_apron' || unit.location.berthId !== berth.id) {
+    throw new ModuleError('invalid_transition', `${crane.label}: koniec grabbing nakládky, jednotka ${String(unitId)} nie je na aprone ${berth.label}`);
+  }
+  const { slot } = unit.location;
+  world.cargo.move(unit.id, { kind: 'in_crane', craneId: crane.id });
+  return slot;
+}
+
 const APRON_HANDOVER: Handover = {
   vehiclesUnderHook: false,
   reservesUnloadSlot: true,
@@ -143,26 +173,10 @@ const APRON_HANDOVER: Handover = {
     crane.reservedSlot = null;
     return true;
   },
-  loadable: ({ world, crane, berth }, bookings) => {
-    const claimed = claimLoads(world, berth, crane);
-    let best: CargoUnit | undefined;
-    const count = world.cargo.countAt('on_apron', berth.id);
-    for (let i = 0; i < count; i++) {
-      const unitId = world.cargo.unitAtIndex('on_apron', berth.id, i);
-      const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
-      if (unit === undefined || claimed.includes(unit.id) || !isBookingUnit(unit, bookings)) continue;
-      best = better(best, unit);
-    }
-    return best?.id;
-  },
-  lift: ({ world, crane, berth }) => {
-    const unitId = crane.targetUnitId;
-    const unit = unitId === null ? undefined : world.cargo.get(unitId);
-    if (unit === undefined || unit.location.kind !== 'on_apron' || unit.location.berthId !== berth.id) {
-      throw new ModuleError('invalid_transition', `${crane.label}: koniec grabbing nakládky, jednotka ${String(unitId)} nie je na aprone ${berth.label}`);
-    }
-    const { slot } = unit.location;
-    world.cargo.move(unit.id, { kind: 'in_crane', craneId: crane.id });
+  loadable: (env, bookings) => bestOnApron(env, bookings)?.id,
+  lift: (env) => {
+    const { crane, berth } = env;
+    const slot = liftFromApron(env);
     // Dual cyklus: slot uvoľnený zdvihnutou jednotkou sa hneď rezervuje pre import druhej polovice (nikto ho nepredbehne).
     if (CRANE_CYCLE_TRAITS[crane.cycle].reservesFrom === 'swinging') {
       berth.apron.reserveSlot(slot);
@@ -310,10 +324,20 @@ const HOOK_HANDOVER: Handover = {
     if (vehicle !== undefined && VEHICLE_STATE_TRAITS[vehicle.state].motion === 'drive') vehicle.replanPending = true;
     return true;
   },
-  loadable: ({ world, crane }, bookings) => bestUnderHook(world, crane, bookings)?.id,
-  lift: ({ world, crane }) => {
+  // Vozidlo s jednotkou pod hákom, alebo jednotka na aprone kotviska (záložná nakládka cez apron: vozidlo k háku nedôjde, T6D-05b) — lepšia podľa stowage plánu.
+  loadable: (env, bookings) => {
+    const underHook = bestUnderHook(env.world, env.crane, bookings);
+    const onApron = bestOnApron(env, bookings);
+    return (onApron !== undefined && (underHook === undefined || compareStowageOrder(onApron, underHook) < 0) ? onApron : underHook)?.id;
+  },
+  lift: (env) => {
+    const { world, crane } = env;
     const unitId = crane.targetUnitId;
     const unit = unitId === null ? undefined : world.cargo.get(unitId);
+    if (unit?.location.kind === 'on_apron') {
+      liftFromApron(env); // záložná nakládka cez apron: žiadny slot sa pre import druhej polovice dual cyklu nerezervuje (`reservesUnloadSlot` = false)
+      return;
+    }
     const job = unitId === null ? undefined : world.jobOfUnit(unitId);
     const vehicle = job?.vehicleId === null || job === undefined ? undefined : world.vehicles.get(job.vehicleId);
     if (unit === undefined || job === undefined || vehicle === undefined || unit.location.kind !== 'in_vehicle' || unit.location.vehicleId !== vehicle.id) {

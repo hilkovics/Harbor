@@ -9,6 +9,7 @@ import {
   DEFAULT_WEIGHT_CLASS,
   IMPORT_LABELS,
   STOWAGE_WEIGHT_RANK,
+  compareStowageClass,
   compareStowageOrder,
   type CargoUnit,
   type WeightClass,
@@ -222,6 +223,13 @@ describe('stowage plán F6a (ADR-032 bod 8)', () => {
     expect(STOWAGE_WEIGHT_RANK).toEqual({ heavy: 0, medium: 1, light: 2 });
     const units = [key(5, 'light'), key(2, 'medium'), key(9, 'heavy'), key(1, 'light'), key(4, 'heavy'), key(3, 'medium')];
     expect([...units].sort(compareStowageOrder).map((unit) => unit.id)).toEqual([4, 9, 2, 3, 1, 5]);
+  });
+
+  it('trieda stowage (R2, ADR-039): heavy → medium → light bez id — jednotky jednej triedy sú zameniteľné', () => {
+    const units = [key(5, 'light'), key(2, 'medium'), key(9, 'heavy'), key(1, 'light'), key(4, 'heavy')];
+    expect([...units].sort(compareStowageClass).map((unit) => unit.weightClass)).toEqual(['heavy', 'heavy', 'medium', 'light', 'light']);
+    expect(compareStowageClass(key(4, 'heavy'), key(9, 'heavy'))).toBe(0);
+    expect(compareStowageClass(key(4, 'heavy'), key(1, 'light'))).toBeLessThan(0);
   });
 
   it('úplné usporiadanie: rôzne jednotky nie sú nikdy rovnocenné, antisymetria', () => {

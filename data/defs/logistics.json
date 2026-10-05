@@ -2,6 +2,9 @@
   "schemaVersion": 1,
   "defaultInternalTicks": 6,
   "repathIntervalTicks": 30,
+  "rehandleTicks": 12,
+  "importDwellEstimateHours": 24,
+  "yardPlanner": "planned",
   "congestion": {
     "trafficDecayPerHour": 0.9
   },

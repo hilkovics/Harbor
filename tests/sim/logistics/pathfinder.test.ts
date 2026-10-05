@@ -230,3 +230,26 @@ describe('Pathfinder — výkon (1 000 hľadaní na 96×64)', () => {
     expect(elapsed).toBeLessThan(PERF_LIMIT_MS);
   });
 });
+
+describe('Pathfinder.findPathAvoiding — A* s dočasne zakázanou bunkou (preplánovanie pri zápche, ADR-037)', () => {
+  // Kruh 3 × 3 s obvodom ciest: z (0,0) do (2,0) vedie rovno cez (1,0), alebo dookola cez (0,1), (0,2), (1,2), (2,2), (2,1).
+  const RING = ['...', '.#.', '...'];
+  const grid = roadGrid(RING);
+  const pathfinder = new Pathfinder(grid);
+
+  it('bez zakázanej bunky ide najkratšou cestou, so zakázanou prostrednou bunkou obchádzkou; cieľ sa nemení', () => {
+    expect(pathfinder.findPath(at(0, 0, 3), at(2, 0, 3))).toEqual([at(0, 0, 3), at(1, 0, 3), at(2, 0, 3)]);
+    const around = pathfinder.findPathAvoiding(at(0, 0, 3), at(2, 0, 3), at(1, 0, 3));
+    expect(around).toEqual([[0, 0], [0, 1], [0, 2], [1, 2], [2, 2], [2, 1], [2, 0]].map(([x, y]) => at(x, y, 3)));
+  });
+
+  it('zakázaný je aj cieľ → bez cesty; po volaní je zákaz zrušený (ďalšie findPath je bitovo ako predtým)', () => {
+    expect(pathfinder.findPathAvoiding(at(0, 0, 3), at(2, 0, 3), at(2, 0, 3))).toBeNull();
+    expect(pathfinder.findPath(at(0, 0, 3), at(2, 0, 3))).toEqual([at(0, 0, 3), at(1, 0, 3), at(2, 0, 3)]);
+  });
+
+  it('bez obchádzky (jediná cesta vedie cez zakázanú bunku) → null', () => {
+    const line = new Pathfinder(roadGrid(['....']));
+    expect(line.findPathAvoiding(0, 3, 1)).toBeNull();
+  });
+});

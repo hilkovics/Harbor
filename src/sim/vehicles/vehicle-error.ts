@@ -15,6 +15,8 @@ export type VehicleErrorCode =
   | 'depot_full'
   /** `World.removeVehicle`: vozidlo s daným id vo svete nie je. */
   | 'unknown_vehicle'
+  /** `World.addVehicle`: sloty tela alebo slotov vpredu už drží iný nosič (ADR-037). */
+  | 'slot_taken'
   /** `World.removeVehicle`: vozidlo vezie náklad (`in_vehicle`) — jednotky by stratili držiteľa. */
   | 'has_cargo'
   /** `World.removeVehicle`: vozidlo nie je `idle` alebo má job. */

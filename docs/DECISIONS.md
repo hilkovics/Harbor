@@ -679,6 +679,14 @@ Stav: prijaté (R1, návrh; detaily implementácie dopíše karta TR1-03) · Zdr
 - Soft kongescia (`congestion.slowdownPerExtraVehicle`, `congestionPenalty`) sa nikdy neimplementovala a ruší sa. Ostáva len `traffic` pre heatmapu.
 - Save v10 dostane pri nosičoch telo, sloty vpredu a `blockedTicks`.
 
+**Dodatok TR1-02 (jadro dopravy, implementácia):**
+1. **Križovatka s dobehom tela.** Hlava, ktorá by stála o jednu bunku za križovatkou, v nej drží chvost (telo dĺžky ≥ 2) a protiidúce nosiče medzi dvoma križovatkami s jednou bunkou medzi nimi sa navzájom zablokujú (zmerané: `stress_f6` natrvalo uviazne, 12 z 656 exportovaných jednotiek). Preto nosič pri vstupe do križovatky zaberá naraz celú reťaz križovatiek a za poslednou z nich **`lengthCells` buniek** (nie jednu), takže telo križovatku celé opustí; ďalšia križovatka v dosahu reťaz predĺži, trasa končiaca skôr zaberá len po koniec. Dĺžka pochádza z defu (`lengthCells`), nie z konštanty. Po oprave `stress_f6` neuviazne (610 exportovaných jednotiek oproti 656 pred R1).
+2. **Druh bunky.** Cestná bunka s ≥ 3 jazdnými susedmi je `junction` pri každom type cesty (aj `one_lane`, `one_way`); bunka nábrežia je vždy `single`. Úsek `one_lane` je súvislý reťazec `one_lane` buniek druhu `single`.
+3. **Smer v úseku `one_lane` sa neukladá.** Je to čistá funkcia tela, slotov vpredu a polohy v úseku (`TrafficSystem.segmentDirection`), takže po obnove save sedí s tým, čo bolo za behu. Vstup oproti je zakázaný, kým v úseku drží slot iný nosič idúci opačne.
+4. **Otočka uprostred úseku** (`Carrier.turnAround`): hlava sa presunie do doterajšej cieľovej bunky (jej slot nosič už drží vpredu), reťaz križovatky sa uvoľní a pri návrate do pôvodnej bunky sa jej slot v tele zopakuje. Slot držaný viackrát sa uvoľní po poslednom výskyte.
+5. **Poradie krokov nosiča v 6a:** preplánovanie po zmene ciest → získanie slotu vlastnej bunky (len nosič bez tela) → jazda. Preplánovanie pred slotom zaručuje, že čakajúci nosič nemá zastaranú trasu a preplánovanie pri zápche (`reroute`) nikdy nepracuje s trasou čakajúcou na preplánovanie. Nosič, ktorému sa v 6a zmenil stav (`no_path`), nerobí v tom istom ticku krok FSM (6b, krok 8) — tick vstupu do stavu je jeho nultý tick (ADR-016).
+6. **Save v10** rozširuje vozidlo aj kamión o `body`, `ahead` (páry `[bunka, pruh]`), `blockedTicks` a `rerouteCooldown`; `LaneSlots` sa pri obnove prepočítajú z nosičov, konflikt slotov je `WorldStateError` (`/…/body`).
+
 ## ADR-038: Tick pipeline — pohyb všetkých nosičov v kroku 6 (R1)
 
 Stav: prijaté (R1) · Zdroj: ADR-037 bod 5; ARCHITECTURE §6

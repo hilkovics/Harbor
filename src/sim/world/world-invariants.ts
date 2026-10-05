@@ -107,6 +107,7 @@ import type { Truck } from '../trucks/truck';
 import { TRUCK_STATE_TRAITS } from '../trucks/truck-fsm';
 import { gateNearSideCell, isOffQueueSide, truckMotionProblem } from '../trucks/truck-trip';
 import type { Vehicle } from '../vehicles/vehicle';
+import { carrierOverlapProblem } from '../traffic/overlap-check';
 import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle-fsm';
 import { vehicleMotionProblem } from '../vehicles/vehicle-trip';
 import { CARGO_HOLDER_SOURCES } from './cargo-holders';
@@ -1128,6 +1129,9 @@ const checkEmptyFlow: Check = (world) => {
   return undefined;
 };
 
+/** Doprava bez prekrývania (ADR-037): sloty = telá nosičov, žiadny prekryv, nosič mimo cesty nič nedrží. */
+const checkCarrierOverlap: Check = (world) => carrierOverlapProblem(world) ?? undefined;
+
 const CHECKS: readonly Check[] = [
   checkCargoHolders,
   checkModuleCells,
@@ -1140,6 +1144,7 @@ const CHECKS: readonly Check[] = [
   checkVehicles,
   checkJobs,
   checkTrucks,
+  checkCarrierOverlap,
   checkEmptyFlow,
   checkContracts,
 ];

@@ -285,7 +285,8 @@ function sampleVehicle(world: World, vehicle: Vehicle): VehicleSample {
  * Fyzické pravidlá vozidla po jednom ticku (rozhodnutie orchestrátora 1 a 7, „nič sa neteleportuje"):
  * 1. stojí na bunke s cestou (aj v `idle`/`loading`/`unloading` — vonkajšia bunka konektora),
  * 2. za tick sa posunie najviac o `speedCellsPerTick` (Manhattan; zákruta v strede bunky prenáša zvyšok kroku),
- * 3. vozidlo v `to_pickup`/`to_dropoff` sa v ďalšom ticku pohne alebo zmení stav (žiadne `to_*` bez cesty/pohybu).
+ * 3. vozidlo v `to_pickup`/`to_dropoff` sa v ďalšom ticku pohne alebo zmení stav (žiadne `to_*` bez cesty/pohybu); čaká len na voľný
+ *    slot dopravy bez prekrývania (`blockedTicks > 0`, ADR-037).
  */
 function vehicleViolations(world: World, vehicle: Vehicle, sample: VehicleSample, previous: VehicleSample | undefined): Violation[] {
   const found: Violation[] = [];
@@ -305,7 +306,7 @@ function vehicleViolations(world: World, vehicle: Vehicle, sample: VehicleSample
     if (step > speed + EPSILON) {
       found.push({ rule: 'teleport', message: `${where}: krok ${String(step)} > speedCellsPerTick ${String(speed)} (teleportácia)` });
     }
-    const stuck = step <= EPSILON && sample.state === previous.state && MOVING_STATES.includes(sample.state);
+    const stuck = step <= EPSILON && sample.state === previous.state && MOVING_STATES.includes(sample.state) && vehicle.blockedTicks === 0;
     if (stuck) found.push({ rule: 'stuck', message: `${where}: stojí v stave ${sample.state} bez pohybu (to_* bez platnej cesty)` });
   }
   return found;

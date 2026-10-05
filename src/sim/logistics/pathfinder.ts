@@ -66,6 +66,9 @@ export interface PathfinderDiagnostics {
 /** Rodič štartovej bunky (koniec rekonštrukcie cesty). */
 const NO_PARENT = -1;
 
+/** Žiadna zakázaná bunka (`findPathAvoiding`). */
+const NO_AVOIDED = -1;
+
 /** Pečiatka „nikdy" — generácia hľadania začína od 1. */
 const NEVER = 0;
 
@@ -90,6 +93,7 @@ export class Pathfinder {
   private readonly closed: Int32Array;
   private readonly open: IndexedBinaryHeap;
   private readonly quay: QuayCells | undefined;
+  private avoided = NO_AVOIDED;
   private generation = NEVER;
   private searchCount = 0;
   private expanded = 0;
@@ -143,6 +147,20 @@ export class Pathfinder {
       path[i] = at;
     }
     return Object.freeze(path);
+  }
+
+  /**
+   * Najlacnejšia cesta z `from` do `to`, ktorá nevedie cez bunku `avoid` (ADR-037, preplánovanie pri zápche): ako
+   * `findPath`, ale bunka `avoid` nie je uzol grafu — ak je cieľom, cesta neexistuje. Výsledok nepatrí do `PathCache`
+   * (kľúč cache nepozná zakázanú bunku). Bez `avoid` v inom volaní je A* bitovo zhodný s `findPath`.
+   */
+  findPathAvoiding(from: number, to: number, avoid: number): readonly number[] | null {
+    this.avoided = avoid;
+    try {
+      return this.findPath(from, to);
+    } finally {
+      this.avoided = NO_AVOIDED;
+    }
   }
 
   /**
@@ -211,7 +229,7 @@ export class Pathfinder {
         const ny = y + direction.dy;
         if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
         const next = ny * width + nx;
-        if (closed[next] === generation) continue;
+        if (closed[next] === generation || next === this.avoided) continue;
         const nextCell = this.grid.atIndex(next);
         if (nextCell.road !== 'road' && (owners === undefined || owners[next] === 0 || (owners[next] !== quayFrom && owners[next] !== quayTo))) continue;
         if (!isRoadStepAllowed(currentCell, nextCell, direction.name)) continue;

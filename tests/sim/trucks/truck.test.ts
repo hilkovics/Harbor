@@ -147,6 +147,10 @@ describe('Truck', () => {
       progress: 0.25,
       waitTicks: 7,
       replan: false,
+      body: [],
+      ahead: [],
+      blockedTicks: 0,
+      rerouteCooldown: 0,
     });
     expect(JSON.parse(JSON.stringify(state))).toEqual(state);
   });

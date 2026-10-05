@@ -134,6 +134,14 @@ describe('World.deserialize — neplatné vozidlá (parsovanie)', () => {
     ['idle s príznakom preplánovania', (_s, v) => (v[0].replan = true), '/vehicles/0/replan'],
     ['idle s trasou pred sebou', (_s, v) => (v[0].route = [ROUTE_CELL, ROUTE_CELL + 96]), '/vehicles/0/route', /stojí, ale má pred sebou/],
     ['vozidlo na bunke bez cesty', (_s, v) => ((v[0].route = [ROUTE_CELL + 1]), (v[0].x = (v[0].x as number) + 1)), '/vehicles/0/route', /bez cesty/],
+    // R1 (ADR-037): doprava bez prekrývania
+    ['body nie je pole', (_s, v) => (v[0].body = 5), '/vehicles/0/body'],
+    ['slot nie je pár', (_s, v) => (v[0].body = [ROUTE_CELL]), '/vehicles/0/body/0', /pár \[bunka, pruh\]/],
+    ['slot mimo mriežky', (_s, v) => (v[0].body = [[96 * 64, 0]]), '/vehicles/0/body/0/0', /mimo mriežky/],
+    ['pruh 2', (_s, v) => (v[0].ahead = [[ROUTE_CELL, 2]]), '/vehicles/0/ahead/0/1', /0 alebo 1/],
+    ['záporný blockedTicks', (_s, v) => (v[0].blockedTicks = -1), '/vehicles/0/blockedTicks'],
+    ['rerouteCooldown necelý', (_s, v) => (v[0].rerouteCooldown = 1.5), '/vehicles/0/rerouteCooldown'],
+    ['idle drží sloty (nosič mimo cesty)', (_s, v) => (v[0].body = [[ROUTE_CELL, 0]]), '', /mimo cesty/],
     ['jobs nie je pole', (s) => (s.jobs = null), '/jobs'],
   ];
 

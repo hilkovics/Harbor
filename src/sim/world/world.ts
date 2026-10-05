@@ -5,8 +5,8 @@
  *
  * Tick pipeline (§6): príkazy z fronty → krok 1 (`clock.advance()` + udalosti hraníc) → krok 2 (`ContractSystem`: pool,
  * lode kontraktov, SLA, penalizácie, výplata — ADR-026) → krok 3 (`ShipSystem`) →
- * krok 4 (`CraneSystem`) → krok 5 (`DispatcherSystem`) → krok 6 (`VehicleSystem`) → krok 8 (`LandsideSystem`: kamióny,
- * brány, spawn, export) → krok 9 (`EconomySystem`: údržba, mzdy, súhrny, bankrot — ADR-025) → krok 11 (`MetricsSystem`, traffic) → krok 12 (`assertInvariants()`, ak je zapnuté
+ * krok 4 (`CraneSystem`) → krok 5 (`DispatcherSystem`) → krok 6a (`TrafficSystem`: pohyb všetkých nosičov pod pruhovými slotmi, ADR-037, ADR-038) → krok 6b (`VehicleSystem`) →
+ * krok 8 (`LandsideSystem`: kamióny, brány, spawn, export) → krok 9 (`EconomySystem`: údržba, mzdy, súhrny, bankrot — ADR-025) → krok 11 (`MetricsSystem`, traffic) → krok 12 (`assertInvariants()`, ak je zapnuté
  * `checkInvariants`) → krok 13 (`events.flush()`). Ďalšie kroky pribúdajú so systémami na označenom mieste v `tick()`; poradie §6 je záväzné
  * a mení sa len cez ADR.
  *
@@ -82,7 +82,7 @@ import { moduleRegistry } from '../modules/module-registry';
 import { TruckGate } from '../modules/truck-gate';
 import { VehicleDepot } from '../modules/vehicle-depot';
 import { WaitingArea } from '../modules/waiting-area';
-import type { Carrier } from '../movement/carrier';
+import type { AdvanceGate, Carrier } from '../movement/carrier';
 import type { Ship } from '../ships/ship';
 import { ShipError } from '../ships/ship-error';
 import { DistanceMatrix } from '../logistics/distance-matrix';
@@ -106,6 +106,9 @@ import { EconomySystem } from '../systems/economy-system';
 import { LandsideSystem, settleGateQueues } from '../systems/landside-system';
 import { MetricsSystem } from '../systems/metrics-system';
 import { VehicleSystem } from '../systems/vehicle-system';
+import { CellLanes } from '../traffic/cell-lanes';
+import { LaneSlots } from '../traffic/lane-slots';
+import { TrafficSystem } from '../traffic/traffic-system';
 import { ShipSystem } from '../systems/ship-system';
 import { StatResolver } from '../tech/stat-resolver';
 import { ShipTraffic } from '../ships/ship-traffic';
@@ -222,6 +225,11 @@ export class World {
    */
   readonly roadSpeeds: RoadSpeeds;
   /**
+   * Pruhové sloty ciest (ADR-037): kto drží ktorý slot bunky; odvodená cache z `body` a `ahead` nosičov (nie je v save,
+   * po obnove sa prepočíta). Zapisujú ju len nosiče (`Carrier`) pod `TrafficSystem`.
+   */
+  readonly laneSlots: LaneSlots;
+  /**
    * Hotovosť a účtovná kniha (§9.2, ADR-025): jediná cesta zmeny hotovosti je `economy.post(amountCents, category, refId?)`
    * (zápis do knihy + `MoneyChanged`); denné a mesačné súhrny a bankrot uzatvára krok 9 (`EconomySystem`).
    */
@@ -286,6 +294,7 @@ export class World {
   private readonly shipSystem = new ShipSystem();
   private readonly craneSystem = new CraneSystem();
   private readonly dispatcherSystem = new DispatcherSystem();
+  private readonly trafficSystem = new TrafficSystem();
   private readonly vehicleSystem = new VehicleSystem();
   private readonly landsideSystem = new LandsideSystem();
   private readonly economySystem = new EconomySystem();
@@ -301,6 +310,7 @@ export class World {
   private readonly landsideRoster = new LandsideRosterCache();
   private pathfinderInstance: Pathfinder | undefined;
   private quayInstance: QuayLanes | undefined;
+  private cellLaneInstance: CellLanes | undefined;
   private pathCache: PathCache | undefined;
   private distanceMatrix: DistanceMatrix | undefined;
 
@@ -342,6 +352,7 @@ export class World {
     this.trucks = this.truckMap;
     this.stats = new StatResolver(parts.defs);
     this.roadSpeeds = new RoadSpeeds(parts.grid, parts.defs.infrastructure.roadKinds);
+    this.laneSlots = new LaneSlots(parts.grid.cellCount);
     this.checkInvariants = options.checkInvariants ?? true;
   }
 
@@ -592,6 +603,25 @@ export class World {
     return this.quayInstance;
   }
 
+  /**
+   * Druhy buniek a úseky `one_lane` pre pruhové sloty (ADR-037), odvodené z ciest a nábrežia; prepočítajú sa po zmene
+   * `roadVersion` alebo `moduleVersion` (nie je v save).
+   */
+  get cellLanes(): CellLanes {
+    this.cellLaneInstance ??= new CellLanes(this);
+    return this.cellLaneInstance;
+  }
+
+  /** Brána úseku dopravy bez prekrývania (ADR-037): `TrafficSystem` ju nastaví na nosič, ktorý sa práve hýbe. */
+  get trafficGate(): AdvanceGate {
+    return this.trafficSystem;
+  }
+
+  /** Systém dopravy (krok 6a, ADR-038); `tick()` sveta ho volá sám, testy dopravy ho smú tikať samostatne. */
+  get traffic(): TrafficSystem {
+    return this.trafficSystem;
+  }
+
   /** Cache ciest (`PathCache`) nad `pathfinder`, zneplatnená podľa `roadVersion`; vznikne pri prvom použití. */
   get paths(): PathCache {
     this.pathCache ??= new PathCache(this.pathfinder, this);
@@ -750,7 +780,10 @@ export class World {
     if (depot.freeStalls <= 0) {
       throw new VehicleError('depot_full', `World.addVehicle: ${depot.label} je plné (${String(depot.vehicleIds.length)}/${String(depot.capacity)})`);
     }
+    const taken = this.slotConflict(vehicle);
+    if (taken !== undefined) throw new VehicleError('slot_taken', `World.addVehicle: ${vehicle.label}: ${taken}`);
     depot.attachVehicle(id);
+    vehicle.attachSlots(this.laneSlots);
     this.vehicleMap.set(id, vehicle);
     this.lastVehicleId = id;
   }
@@ -769,6 +802,7 @@ export class World {
       throw new VehicleError('busy', `World.removeVehicle: ${vehicle.label} je v stave '${vehicle.state}' (job ${String(vehicle.jobId)})`);
     }
     this.depotOf(vehicle, 'World.removeVehicle').detachVehicle(vehicleId);
+    vehicle.leaveRoad();
     this.vehicleMap.delete(vehicleId);
     if (vehicleId === this.lastVehicleId) this.lastVehicleId = lastKeyOf(this.vehicleMap);
     return vehicle;
@@ -881,6 +915,8 @@ export class World {
     if (intake > ramp.freeAt(truck.dock)) {
       throw new TruckError('inconsistent', `World.addTruck: ${truck.label}: dock ${String(truck.dock)} ${ramp.label} má ${String(ramp.freeAt(truck.dock))} voľných staging miest, kamión vezie ${String(intake)} jednotiek na vyloženie`);
     }
+    const taken = this.slotConflict(truck);
+    if (taken !== undefined) throw new TruckError('slot_taken', `World.addTruck: ${truck.label}: ${taken}`);
     if (bay !== null) {
       area.reserveBayAt(bay, id);
       if (bonds.bayOccupied) area.occupyBay(id);
@@ -889,6 +925,7 @@ export class World {
     for (let i = 0; i < intake; i++) ramp.reserve(truck.dock);
     const owed = truck.def.capacityUnits - this.cargo.countAt('in_truck', id);
     if (bonds.claimsCargo && owed > 0) ramp.claim(truck.dock, owed);
+    truck.attachSlots(this.laneSlots);
     this.truckMap.set(id, truck);
     this.lastTruckId = id;
   }
@@ -909,9 +946,20 @@ export class World {
     if (truck.bay !== null || holdsDock || truck.bonds.claimsCargo || (gate instanceof TruckGate && gate.isQueued(truckId))) {
       throw new TruckError('busy', `World.removeTruck: ${truck.label} v stave '${truck.state}' drží bay, dock, nárok na náklad alebo stojí vo fronte brány`);
     }
+    truck.leaveRoad();
     this.truckMap.delete(truckId);
     if (truckId === this.lastTruckId) this.lastTruckId = lastKeyOf(this.truckMap);
     return truck;
+  }
+
+  /** Popis konfliktu slotov nosiča s inými nosičmi (`body`, `ahead` pri pridaní / obnove), alebo `undefined`. */
+  private slotConflict(carrier: Carrier): string | undefined {
+    for (const key of [...carrier.body, ...carrier.ahead]) {
+      if (!this.laneSlots.isFreeFor(key, carrier.id)) {
+        return `slot ${String(key)} (bunka ${String(key >> 1)}, pruh ${String(key & 1)}) drží #${String(this.laneSlots.holderOfKey(key))}`;
+      }
+    }
+    return undefined;
   }
 
   /**
@@ -1040,7 +1088,10 @@ export class World {
     //    s rezerváciou staging miesta rampy, priradenie voľných vozidiel inbound pred outbound (ADR-018, ADR-023).
     this.dispatcherSystem.tick(this);
 
-    // 6. vehicleSystem — FSM vozidiel, pohyb po trase, pobyt v module, load/unload (ADR-019).
+    // 6a. trafficSystem — pohyb všetkých nosičov na cestách (vozidlá aj kamióny) pod pruhovými slotmi, zápchy (ADR-037, ADR-038).
+    this.trafficSystem.tick(this);
+
+    // 6b. vehicleSystem — FSM vozidiel bez pohybu: príchody, pobyt v module, load/unload (ADR-019).
     this.vehicleSystem.tick(this);
 
     // 7. flowSystem — pribudne s potrubiami (F9) presne na tomto mieste §6.

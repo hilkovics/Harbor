@@ -64,6 +64,11 @@ export interface VehicleStateTraits {
    */
   readonly jobStates: readonly JobState[];
   readonly motion: VehicleMotion;
+  /**
+   * Vozidlo v stave drží pruhové sloty cesty (`LaneSlots`, ADR-037): dočasne (R1, TR1-02) len pri jazde; stojace vozidlá
+   * držať začnú v TR1-03.
+   */
+  readonly holdsRoad: boolean;
   /** Stav s odpočtom `waitTicks ≥ 1` (pobyt v module, nový pokus o cestu); ostatné stavy majú `waitTicks = 0`. */
   readonly waits: boolean;
   /** Modul jobu, ku ktorému vozidlo ide / pri ktorom stojí; `null` = žiadny (`idle`) alebo podľa jobu (`no_path`). */
@@ -71,12 +76,12 @@ export interface VehicleStateTraits {
 }
 
 export const VEHICLE_STATE_TRAITS: { readonly [S in VehicleState]: VehicleStateTraits } = Object.freeze({
-  idle: Object.freeze({ hasJob: false, jobStates: Object.freeze([] as const), motion: 'park', waits: false, destination: null }),
-  to_pickup: Object.freeze({ hasJob: true, jobStates: Object.freeze(['assigned'] as const), motion: 'drive', waits: false, destination: 'source' }),
-  loading: Object.freeze({ hasJob: true, jobStates: Object.freeze(['picking'] as const), motion: 'park', waits: true, destination: 'source' }),
-  to_dropoff: Object.freeze({ hasJob: true, jobStates: Object.freeze(['moving'] as const), motion: 'drive', waits: false, destination: 'target' }),
-  unloading: Object.freeze({ hasJob: true, jobStates: Object.freeze(['dropping'] as const), motion: 'park', waits: true, destination: 'target' }),
-  no_path: Object.freeze({ hasJob: true, jobStates: Object.freeze(['assigned', 'moving'] as const), motion: 'halt', waits: true, destination: null }),
+  idle: Object.freeze({ hasJob: false, jobStates: Object.freeze([] as const), motion: 'park', holdsRoad: false, waits: false, destination: null }),
+  to_pickup: Object.freeze({ hasJob: true, jobStates: Object.freeze(['assigned'] as const), motion: 'drive', holdsRoad: true, waits: false, destination: 'source' }),
+  loading: Object.freeze({ hasJob: true, jobStates: Object.freeze(['picking'] as const), motion: 'park', holdsRoad: false, waits: true, destination: 'source' }),
+  to_dropoff: Object.freeze({ hasJob: true, jobStates: Object.freeze(['moving'] as const), motion: 'drive', holdsRoad: true, waits: false, destination: 'target' }),
+  unloading: Object.freeze({ hasJob: true, jobStates: Object.freeze(['dropping'] as const), motion: 'park', holdsRoad: false, waits: true, destination: 'target' }),
+  no_path: Object.freeze({ hasJob: true, jobStates: Object.freeze(['assigned', 'moving'] as const), motion: 'halt', holdsRoad: false, waits: true, destination: null }),
 } as const);
 
 /** Stav jazdy, do ktorého sa vozidlo vráti z `no_path`, podľa stavu jobu (`assigned` → k zdroju, `moving` → k cieľu). */

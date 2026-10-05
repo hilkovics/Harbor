@@ -21,8 +21,15 @@ class TestError extends Error {}
 
 /** Minimálna podtrieda — overuje, že báza nepozná triedu nosiča. */
 class TestCarrier extends Carrier {
+  readonly id = 1 as never;
+  readonly kind = 'vehicle' as const;
+
   constructor(init: CarrierInit) {
     super(init);
+  }
+
+  get lengthCells(): number {
+    return 2;
   }
 
   get label(): string {

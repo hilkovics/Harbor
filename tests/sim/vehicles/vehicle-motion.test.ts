@@ -112,7 +112,7 @@ describe('Vehicle — trasa a advance', () => {
     const vehicle = vehicleOn([idx(10, 5), idx(11, 5), idx(12, 5), idx(13, 5)]);
     vehicle.advance(1.25, WIDTH);
     expect(vehicle.toState()).toMatchObject({ route: [idx(11, 5), idx(12, 5), idx(13, 5)], progress: 0.25, waitTicks: 0, replan: false, x: 11.75, y: 5.5 });
-    const copy = new Vehicle({ ...vehicle.toState(), id: vehicle.id, def: STRADDLE_DEF, depotId: vehicle.depotId, jobId: vehicle.jobId, replanPending: false });
+    const copy = new Vehicle({ ...vehicle.toState(), id: vehicle.id, def: STRADDLE_DEF, depotId: vehicle.depotId, jobId: vehicle.jobId, replanPending: false, body: vehicle.body, ahead: vehicle.ahead });
     for (let i = 0; i < 3; i++) {
       copy.advance(SPEED, WIDTH);
       vehicle.advance(SPEED, WIDTH);
@@ -222,7 +222,7 @@ describe('Vehicle — šum progresu (review T03-13, ADR-021)', () => {
         const p = vehicle.progress;
         expect(p === 0 || p > Number.EPSILON, `${name}, tick ${String(ticks)}: progres ${String(p)}`).toBe(true);
         if (p > 0) expect(1 - p, `${name}, tick ${String(ticks)}: obrat`).toBeLessThan(1);
-        const copy = new Vehicle({ ...vehicle.toState(), id: vehicle.id, def: STRADDLE_DEF, depotId: vehicle.depotId, jobId: vehicle.jobId, replanPending: false });
+        const copy = new Vehicle({ ...vehicle.toState(), id: vehicle.id, def: STRADDLE_DEF, depotId: vehicle.depotId, jobId: vehicle.jobId, replanPending: false, body: vehicle.body, ahead: vehicle.ahead });
         expect(copy.toState()).toEqual(vehicle.toState());
         expect(ticks, name).toBeLessThan(200);
       }
@@ -244,7 +244,7 @@ describe('Vehicle — šum progresu (review T03-13, ADR-021)', () => {
       if (vehicle.progress === 0) vehicle.advance(speed, WIDTH, FACTOR_CASES[4][1]);
       const back = [vehicle.nextCell ?? -1, vehicle.cell, vehicle.cell - 1];
       vehicle.turnAround(back, WIDTH);
-      const copy = new Vehicle({ ...vehicle.toState(), id: vehicle.id, def: STRADDLE_DEF, depotId: vehicle.depotId, jobId: vehicle.jobId, replanPending: false });
+      const copy = new Vehicle({ ...vehicle.toState(), id: vehicle.id, def: STRADDLE_DEF, depotId: vehicle.depotId, jobId: vehicle.jobId, replanPending: false, body: vehicle.body, ahead: vehicle.ahead });
       for (let t = 0; t < 15; t++) {
         vehicle.advance(speed, WIDTH, FACTOR_CASES[4][1]);
         copy.advance(speed, WIDTH, FACTOR_CASES[4][1]);

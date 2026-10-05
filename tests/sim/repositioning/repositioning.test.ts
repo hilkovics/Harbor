@@ -44,7 +44,9 @@ describe('repositioning prázdnych — nakládka z depa na loď', () => {
     expect(contract.booking.arrivedUnits).toBe(4);
     const loaded = eventsOf(events, 'UnitLoaded');
     expect(loaded).toHaveLength(4);
-    expect(loaded.every((event) => event.contractId === contract.id && !event.outOfOrder && !event.lastMinute)).toBe(true);
+    // R1 (ADR-037): vozidlá sa nepredbiehajú, takže pomalšie vozidlo pred rýchlejším `empty_handler` mení poradie príchodov k žeriavu —
+    // `outOfOrder` (poradie stowage plánu) sa tu preto neoveruje, len že nakládka patrí bookingu a nie je last-minute.
+    expect(loaded.every((event) => event.contractId === contract.id && !event.lastMinute)).toBe(true);
     expect(world.cargo.shippedCount).toBe(4);
     expect(world.cargo.liveCount).toBe(2);
     expect(lost(world)).toBe(0);
@@ -138,7 +140,7 @@ describe('repositioning spolu s exportom jednej voyage — stowage: plné pred p
   it.each([
     ['apron', false],
     ['pod hákom', true],
-  ])('%s: všetky naložené exporty predchádzajú prázdnym, žiadne UnitLoaded.outOfOrder', (_name, hook) => {
+  ])('%s: všetky naložené exporty predchádzajú prázdnym', (_name, hook) => {
     const world = repoWorld({ hook });
     stockDepot(world, 'blue_anchor', 6);
     const repo = offerRepositioning(world, { booked: 4, withExport: 6 });
@@ -153,7 +155,7 @@ describe('repositioning spolu s exportom jednej voyage — stowage: plné pred p
     expect(kinds.filter((kind) => kind === 'full').length).toBeGreaterThan(0);
     expect(kinds.filter((kind) => kind === 'empty')).toHaveLength(4);
     expect(kinds.join(',')).toMatch(/^(full,)*(empty,?)+$/);
-    expect(loaded.some((event) => event.outOfOrder)).toBe(false);
+    // `outOfOrder` sa neoveruje: od R1 (ADR-037) sa vozidlá nepredbiehajú a poradie príchodov k žeriavu nemusí zodpovedať plánu.
     expect(world.cargo.shippedCount).toBe(loaded.length);
     expect(lost(world)).toBe(0);
   });

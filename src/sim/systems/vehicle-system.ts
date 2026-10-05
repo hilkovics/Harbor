@@ -1,13 +1,15 @@
 /**
- * VehicleSystem — krok 6 ticku (ARCHITECTURE §6, §7.3 bod 4, §7.8; docs/tasks/phase-03.md rozhodnutia 1, 2, 7 a 8;
- * ADR-011, ADR-019): FSM vozidiel, pohyb po trase, pobyt v module a load/unload. Vozidlá sa spracúvajú vzostupne podľa
- * id, krok podľa stavu je tabuľka `VEHICLE_STEPS` (nie switch) a stav mení len `changeVehicleState`.
+ * VehicleSystem — krok 6b ticku (ARCHITECTURE §6, §7.3 bod 4, §7.8; docs/tasks/phase-03.md rozhodnutia 1, 2, 7 a 8;
+ * ADR-011, ADR-019, ADR-038): FSM vozidiel bez pohybu — príchody, pobyt v module a load/unload. Pohyb po trase robí
+ * `TrafficSystem` (krok 6a, ADR-037): preplánovanie a jazda vozidiel (`replanVehicle`, `advanceVehicle`) idú pod pruhovými slotmi.
+ * Vozidlá sa spracúvajú vzostupne podľa id, krok podľa stavu je tabuľka `VEHICLE_STEPS` (nie switch) a stav mení len
+ * `changeVehicleState`. Vozidlo, ktorému sa stav zmenil už v kroku 6a (`no_path`), v tomto ticku krok FSM nerobí (ADR-016).
  *
- * - `to_pickup` / `to_dropoff`: ak sa od plánu zmenila cestná sieť (`replanPending`), vozidlo preplánuje z kotvy
+ * - `to_pickup` / `to_dropoff`: vozidlo, ktoré (po pohybe v kroku 6a) stojí na konci trasy — prístupovej bunke modulu jobu —
+ *   prejde do `loading` / `unloading` s pobytom `internalTicks` modulu (inak `logistics.defaultInternalTicks`) +
+ *   `loadTicks` / `unloadTicks` prvej jednotky. Pohyb: ak sa od plánu zmenila cestná sieť (`replanPending`), vozidlo preplánuje z kotvy
  *   (bunka, pri pohybe medzi bunkami cieľová bunka úseku); bez cesty `no_path`. Potom sa posunie o `speedCellsPerTick`
- *   × `speedFactor` typu cieľovej bunky každého úseku (zdieľaný `advanceCarrier`, `World.roadSpeeds`, ADR-020, ADR-024) a na konci trasy —
- *   prístupovej bunke modulu jobu — prejde do `loading` / `unloading` s pobytom
- *   `internalTicks` modulu (inak `logistics.defaultInternalTicks`) + `loadTicks` / `unloadTicks` prvej jednotky.
+ *   × `speedFactor` typu cieľovej bunky každého úseku (zdieľaný `advanceCarrier`, `World.roadSpeeds`, ADR-020, ADR-024).
  * - `loading`: po odpočte presun jednotky zo zdroja do vozidla (`on_apron → in_vehicle` — slot apronu sa uvoľní sám,
  *   ADR-017; `in_storage → in_vehicle`) a `Module.recordTaken` zdroja (sklad `unitsOut`, ADR-023); ďalšia jednotka
  *   jobu `loadTicks`, inak job `moving` a jazda k cieľu (`startTrip`, bez pohybu v tomto ticku).
@@ -88,17 +90,31 @@ function waitUnderHook(vehicle: Vehicle, world: World): void {
   crane.vehicleWaitTicks += 1;
 }
 
-/** Jazda: preplánovanie po zmene ciest, pohyb, príchod. */
-function drive(vehicle: Vehicle, world: World): void {
-  if (vehicle.replanPending) {
-    const destination = VEHICLE_STATE_TRAITS[vehicle.state].destination;
-    if (destination === null) throw new VehicleError('inconsistent', `${vehicle.label}: jazda v stave '${vehicle.state}' bez cieľa`);
-    if (!planJobRoute(world, vehicle, jobOfVehicle(world, vehicle), destination)) {
-      enterNoPath(world, vehicle);
-      return;
-    }
-  }
-  if (advanceCarrier(world, vehicle, vehicle.def.speedCellsPerTick)) arrive(vehicle, world);
+/**
+ * Preplánovanie vozidla v jazdnom stave po zmene ciest (volá `TrafficSystem` pred získaním slotov a pohybom, krok 6a,
+ * ADR-038): nová trasa z kotvy k cieľu jobu, bez cesty `no_path`. `false` = vozidlo prešlo do `no_path`. Bez čakajúceho
+ * preplánovania nič nerobí (`true`).
+ */
+export function replanVehicle(vehicle: Vehicle, world: World): boolean {
+  if (!vehicle.replanPending) return true;
+  const destination = VEHICLE_STATE_TRAITS[vehicle.state].destination;
+  if (destination === null) throw new VehicleError('inconsistent', `${vehicle.label}: jazda v stave '${vehicle.state}' bez cieľa`);
+  if (planJobRoute(world, vehicle, jobOfVehicle(world, vehicle), destination)) return true;
+  enterNoPath(world, vehicle);
+  return false;
+}
+
+/**
+ * Jeden tick jazdy vozidla po trase (volá `TrafficSystem`, krok 6a): sloty ďalších buniek stráži brána sveta (`advanceCarrier`,
+ * ADR-037). Príchod na koniec trasy spracuje až FSM krok vozidla (`arriveWhenThere`).
+ */
+export function advanceVehicle(vehicle: Vehicle, world: World): void {
+  advanceCarrier(world, vehicle, vehicle.def.speedCellsPerTick);
+}
+
+/** Jazdný stav (FSM krok bez pohybu): vozidlo, ktoré stojí na konci trasy, dorazilo k modulu jobu. */
+function arriveWhenThere(vehicle: Vehicle, world: World): void {
+  if (vehicle.cellsAhead === 0) arrive(vehicle, world);
 }
 
 /**
@@ -166,8 +182,8 @@ type VehicleStep = (vehicle: Vehicle, world: World) => void;
 
 const VEHICLE_STEPS: { readonly [S in VehicleState]: VehicleStep } = {
   idle: () => undefined,
-  to_pickup: drive,
-  to_dropoff: drive,
+  to_pickup: arriveWhenThere,
+  to_dropoff: arriveWhenThere,
   loading: (vehicle, world) => {
     if (isHookPickup(jobOfVehicle(world, vehicle))) waitUnderHook(vehicle, world);
     else if (countDown(vehicle)) loadUnit(vehicle, world);
@@ -182,8 +198,10 @@ const VEHICLE_STEPS: { readonly [S in VehicleState]: VehicleStep } = {
 };
 
 export class VehicleSystem {
-  /** Krok 6: jeden krok FSM každého vozidla vzostupne podľa id. */
+  /** Krok 6b: jeden krok FSM každého vozidla vzostupne podľa id (pohyb po cestách robí `TrafficSystem` v kroku 6a, ADR-038). */
   tick(world: World): void {
-    for (const vehicle of world.vehicles.values()) VEHICLE_STEPS[vehicle.state](vehicle, world);
+    for (const vehicle of world.vehicles.values()) {
+      if (!world.traffic.changedState(vehicle.id)) VEHICLE_STEPS[vehicle.state](vehicle, world);
+    }
   }
 }

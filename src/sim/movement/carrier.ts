@@ -20,10 +20,19 @@
  *
  * Trasu menia len `followRoute`, `turnAround`, `halt`, `advance` a `jumpTo` (abstrahovaný prechod telom modulu, ADR-011,
  * ADR-024). Chyby vstupu hlási podtrieda vlastnou triedou chyby (`invalidInput`).
+ *
+ * **Doprava bez prekrývania** (ADR-037, R1): nosič drží pruhové sloty (`LaneSlots`, kľúč `bunka × 2 + pruh`) — `body` (hlava
+ * prvá, najviac `lengthCells`) a `ahead` (sloty pred hlavou, ktoré už drží: bunka, do ktorej vchádza, pri križovatke aj
+ * reťaz). Úsek `cell → nextCell` smie nosič rozbehnúť, len keď mu to dovolí brána úseku (`AdvanceGate.tryEnter`); inak
+ * zvyšok kroku prepadne, nosič stojí v strede bunky a `blockedTicks` rastie (počíta `TrafficSystem`). Slot sa v poli
+ * môže opakovať (otočka cez vlastnú stopu) a uvoľní sa, až keď ho nosič nedrží ani raz. Bez brány sa pohyb správa ako
+ * pred R1.
  */
+import type { EntityId } from '../core/entity-id';
 import { isRotation, type Rotation } from '../grid/rotation';
 import { UNIT_SPEED_FACTOR, type SpeedFactorFn } from '../logistics/road-speed';
 import { CELL_CENTER_OFFSET, cardinalHeading } from '../ships/ship-route';
+import { keyCell, type SlotRegistry } from '../traffic/lane-slots';
 
 /**
  * Šum progresu úseku (review T03-13, ADR-021). Keď nosič v `advance` prejde stredom bunky, zvyšok kroku
@@ -39,6 +48,9 @@ export const PROGRESS_NOISE = Number.EPSILON;
 export function isValidProgress(progress: number): boolean {
   return progress === 0 || (progress > PROGRESS_NOISE && progress < 1);
 }
+
+/** Druh nosiča: interné vozidlo alebo kamión (tabuľky podľa druhu v `TrafficSystem`). */
+export type CarrierKind = 'vehicle' | 'truck';
 
 /** Poloha nosiča (stred v bunkách). */
 export interface CarrierPosition {
@@ -65,6 +77,20 @@ export function carrierPosition(cell: number, next: number | undefined, progress
   return { x, y };
 }
 
+/**
+ * Brána úseku pre `advance` (ADR-037): rozhoduje, či nosič smie vyraziť zo stredu bunky, a zapisuje sloty, keď hlava
+ * dorazí do stredu ďalšej bunky.
+ */
+export interface AdvanceGate {
+  /**
+   * Smie nosič vyraziť zo stredu bunky `from` do susednej bunky `to` (`to` je `nextCell`)? Zaberie sloty vpredu (`ahead`):
+   * bunku `to`, pri križovatke celú reťaz a výjazd. `false` = obsadené, nosič ostane stáť.
+   */
+  tryEnter(from: number, to: number): boolean;
+  /** Hlava dorazila do stredu bunky `cell`: sloty vpredu sa presunú do tela a chvost sa uvoľní. */
+  onReach(cell: number): void;
+}
+
 /** Pohybová časť vstupu konštruktora (nákup, spawn aj obnova zo save). */
 export interface CarrierInit {
   readonly x: number;
@@ -78,6 +104,14 @@ export interface CarrierInit {
   readonly waitTicks?: number;
   /** Predvolene `false`. */
   readonly replanPending?: boolean;
+  /** Kľúče slotov tela (hlava prvá); predvolene prázdne. Súlad so svetom overuje `carrierOverlapProblem`. */
+  readonly body?: readonly number[];
+  /** Kľúče slotov pred hlavou; predvolene prázdne. */
+  readonly ahead?: readonly number[];
+  /** Predvolene 0. */
+  readonly blockedTicks?: number;
+  /** Predvolene 0. */
+  readonly rerouteCooldown?: number;
 }
 
 function isCellIndex(value: unknown): value is number {
@@ -116,9 +150,18 @@ export abstract class Carrier {
   waitTicks: number;
   /** Cestná sieť sa zmenila po naplánovaní trasy (`World.markRoadsChanged`); preplánuje systém podtriedy. */
   replanPending: boolean;
+  /** Sloty tela od hlavy k chvostu (kľúč `bunka × 2 + pruh`); mení ich len nosič a `TrafficSystem` cez metódy nižšie. */
+  readonly body: number[];
+  /** Sloty pred hlavou, ktoré nosič už drží (bunka, do ktorej vchádza, reťaz križovatky). */
+  readonly ahead: number[];
+  /** Po sebe idúce ticky, v ktorých nosič chcel ísť, ale nemohol (slot drží iný nosič); 0 = nečaká. */
+  blockedTicks: number;
+  /** Zostávajúce ticky do ďalšieho preplánovania kvôli zápche (rozhodnutie orchestrátora R1 č. 12). */
+  rerouteCooldown: number;
   private route: readonly number[];
   private routeIndex = 0;
   private segmentProgress: number;
+  private slots: SlotRegistry | undefined;
 
   /** Vstup musí byť overený podtriedou (`carrierPoseProblem`, `carrierRouteProblem`) — tu sa len uloží. */
   protected constructor(init: CarrierInit) {
@@ -129,7 +172,20 @@ export abstract class Carrier {
     this.replanPending = init.replanPending ?? false;
     this.route = Object.freeze([...init.route]);
     this.segmentProgress = init.progress ?? 0;
+    this.body = [...(init.body ?? [])];
+    this.ahead = [...(init.ahead ?? [])];
+    this.blockedTicks = init.blockedTicks ?? 0;
+    this.rerouteCooldown = init.rerouteCooldown ?? 0;
   }
+
+  /** Id nosiča (držiteľ slotov). */
+  abstract readonly id: EntityId;
+
+  /** Druh nosiča. */
+  abstract readonly kind: CarrierKind;
+
+  /** Dĺžka nosiča v bunkách (`def.lengthCells`, ADR-037): najviac toľko slotov drží `body`. */
+  abstract get lengthCells(): number;
 
   /** Popis do chybových správ (`straddle_carrier #7`, `truck_container #40`). */
   abstract get label(): string;
@@ -185,6 +241,7 @@ export abstract class Carrier {
     this.route = route;
     this.routeIndex = 0;
     this.replanPending = false;
+    this.pruneAhead();
   }
 
   /**
@@ -209,6 +266,15 @@ export abstract class Carrier {
         `${this.label}.turnAround: progres ${String(this.segmentProgress)} je šum pod PROGRESS_NOISE — obrat by dal neplatný progres ${String(turned)}`,
       );
     }
+    // Sloty (ADR-037): hlava sa presunie do doterajšej `nextCell` (jej slot už nosič drží vpredu), zvyšok reťaze križovatky
+    // sa uvoľní; späť do `cell` vedie nosič slot, ktorý má v tele — pri dosiahnutí jej stredu sa zopakuje na čele.
+    if (this.ahead.length > 0) {
+      const head = this.ahead[0];
+      this.dropAhead(1);
+      this.ahead.length = 0;
+      this.body.unshift(head);
+      this.trimBody();
+    }
     this.route = route;
     this.routeIndex = 0;
     this.segmentProgress = turned > PROGRESS_NOISE ? turned : 0;
@@ -222,6 +288,7 @@ export abstract class Carrier {
     this.route = this.segmentProgress > 0 && next !== undefined ? Object.freeze([this.cell, next]) : Object.freeze([this.cell]);
     this.routeIndex = 0;
     this.replanPending = false;
+    this.pruneAhead();
   }
 
   /**
@@ -233,6 +300,7 @@ export abstract class Carrier {
     if (this.segmentProgress !== 0 || !isCellIndex(cell)) {
       throw this.invalidInput(`${this.label}.jumpTo: prechod modulom vyžaduje stojaci nosič a bunku ≥ 0, progres ${String(this.segmentProgress)}, bunka ${String(cell)}`);
     }
+    this.releaseSlots();
     this.route = Object.freeze([cell]);
     this.routeIndex = 0;
     this.replanPending = false;
@@ -247,10 +315,15 @@ export abstract class Carrier {
    * faktore 1 je výpočet bitovo rovnaký ako bez typov ciest. Progres `≤ PROGRESS_NOISE` (zvyšok kroku po prechode stredom
    * bunky) sa zahodí — nosič ostane v strede bunky (ADR-021). Vráti `true`, keď nosič stojí na konci trasy. Bez
    * alokácie.
+   *
+   * **Brána** (`gate`, ADR-037): pred rozbehnutím úseku zo stredu bunky sa spýta `gate.tryEnter(cell, nextCell)`; `false`
+   * znamená, že nasledujúci slot je obsadený — nosič ostane stáť v strede bunky (kurz sa nemení) a zvyšok kroku prepadne.
+   * Po dosiahnutí stredu bunky zavolá `gate.onReach(cell)`. Bez brány pohyb nezávisí od slotov.
    */
-  advance(distance: number, width: number, speedFactor: SpeedFactorFn = UNIT_SPEED_FACTOR): boolean {
+  advance(distance: number, width: number, speedFactor: SpeedFactorFn = UNIT_SPEED_FACTOR, gate?: AdvanceGate): boolean {
     let budget = distance;
     while (budget > 0 && this.routeIndex + 1 < this.route.length) {
+      if (gate !== undefined && this.segmentProgress === 0 && !gate.tryEnter(this.route[this.routeIndex], this.route[this.routeIndex + 1])) break;
       this.heading = this.segmentHeading(width);
       const factor = speedFactor(this.route[this.routeIndex + 1]);
       const remaining = 1 - this.segmentProgress;
@@ -269,9 +342,110 @@ export abstract class Carrier {
       }
       this.routeIndex += 1;
       this.segmentProgress = 0;
+      gate?.onReach(this.route[this.routeIndex]);
     }
     this.place(width);
     return this.cellsAhead === 0;
+  }
+
+  // -------------------------------------------------------------------------------------------------------
+  // Sloty (ADR-037)
+  // -------------------------------------------------------------------------------------------------------
+
+  /**
+   * Pripojí nosič k pruhovým slotom sveta (`World.addVehicle` / `addTruck`) a zapíše sloty, ktoré už drží (`body`, `ahead`
+   * z obnovy save). Slot iného držiteľa vyhodí `Error` — svet to overuje vopred.
+   */
+  attachSlots(slots: SlotRegistry): void {
+    this.slots = slots;
+    for (const key of this.body) slots.claim(key, this.id);
+    for (const key of this.ahead) slots.claim(key, this.id);
+  }
+
+  /** Drží nosič slot `key` (v tele alebo vpredu)? */
+  holdsKey(key: number): boolean {
+    return this.body.includes(key) || this.ahead.includes(key);
+  }
+
+  /** Počet buniek, ktoré nosič drží (tvar tela + vpredu). */
+  get heldSlotCount(): number {
+    return this.body.length + this.ahead.length;
+  }
+
+  /** Zaberie slot `key` pred hlavou (bunka, do ktorej nosič vchádza, reťaz križovatky). Slot musí byť voľný alebo vlastný. */
+  reserveAhead(key: number): void {
+    this.slots?.claim(key, this.id);
+    this.ahead.push(key);
+  }
+
+  /** Zaberie slot hlavy nosiča, ktorý ešte nič nedrží (vstup do jazdného stavu). */
+  reserveHead(key: number): void {
+    this.slots?.claim(key, this.id);
+    this.body.unshift(key);
+    this.trimBody();
+  }
+
+  /**
+   * Hlava dorazila do stredu bunky `cell`: slot `ahead[0]` sa presunie na čelo tela a nadbytočný chvost (nad `lengthCells`)
+   * sa uvoľní. Bunka, ktorú telo už drží (otočka cez vlastnú stopu), zopakuje svoj slot na čele. Nosič bez slotov nič nemení.
+   */
+  reachCell(cell: number): void {
+    const first = this.ahead[0];
+    if (first !== undefined && keyCell(first) === cell) {
+      this.ahead.shift();
+      this.body.unshift(first);
+    } else if (this.body.length > 0 && keyCell(this.body[0]) !== cell) {
+      const held = this.body.find((key) => keyCell(key) === cell);
+      if (held === undefined) return;
+      this.body.unshift(held);
+    }
+    this.trimBody();
+  }
+
+  /** Uvoľní všetky sloty (telo aj vpredu); príznaky zápchy nemení. */
+  releaseSlots(): void {
+    if (this.body.length === 0 && this.ahead.length === 0) return;
+    const keys = [...this.body, ...this.ahead];
+    this.body.length = 0;
+    this.ahead.length = 0;
+    for (const key of keys) this.releaseIfUnheld(key);
+  }
+
+  /** Nosič opustil jazdný stav (ADR-037): uvoľní celé telo a vynuluje čakanie aj odpočet preplánovania. */
+  leaveRoad(): void {
+    this.releaseSlots();
+    this.blockedTicks = 0;
+    this.rerouteCooldown = 0;
+  }
+
+  /** Uvoľní sloty `ahead` od pozície `from` (nepoužité reťaze po zmene trasy). */
+  private dropAhead(from: number): void {
+    const dropped = this.ahead.splice(from);
+    for (const key of dropped) this.releaseIfUnheld(key);
+  }
+
+  /** Po zmene trasy: sloty `ahead`, ktoré už nezodpovedajú bunkám trasy pred nosičom, sa uvoľnia. */
+  private pruneAhead(): void {
+    for (let i = 0; i < this.ahead.length; i++) {
+      if (keyCell(this.ahead[i]) !== this.routeCellAt(i + 1)) {
+        this.dropAhead(i);
+        return;
+      }
+    }
+  }
+
+  /** Telo nad `lengthCells` slotov: chvost sa uvoľní. */
+  private trimBody(): void {
+    while (this.body.length > this.lengthCells) {
+      const key = this.body.pop();
+      if (key !== undefined) this.releaseIfUnheld(key);
+    }
+  }
+
+  /** Slot sa v registri uvoľní, až keď ho nosič nedrží ani raz (v tele ani vpredu). */
+  private releaseIfUnheld(key: number): void {
+    if (this.slots === undefined || this.holdsKey(key) || this.slots.holderOfKey(key) !== this.id) return;
+    this.slots.release(key, this.id);
   }
 
   /** Prepočíta `x`, `y` (a kurz pri pohybe medzi bunkami) z `cell`, `nextCell` a progresu. */

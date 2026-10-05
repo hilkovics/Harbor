@@ -125,6 +125,10 @@ describe('BuyVehicle.apply', () => {
       progress: 0,
       waitTicks: 0,
       replan: false,
+      body: [],
+      ahead: [],
+      blockedTicks: 0,
+      rerouteCooldown: 0,
     });
     expect(depot.vehicleIds).toEqual([nextId]);
     expect(() => world.assertInvariants()).not.toThrow();

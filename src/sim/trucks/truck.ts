@@ -22,6 +22,7 @@ import type { EntityId } from '../core/entity-id';
 import type { TruckDef } from '../defs/types';
 import type { Rotation } from '../grid/rotation';
 import { Carrier, carrierPoseProblem, carrierRouteProblem, type CarrierInit } from '../movement/carrier';
+import { serializeSlots, type SerializedSlot } from '../traffic/lane-slots';
 import { TruckError } from './truck-error';
 import {
   TRUCK_TRANSITIONS,
@@ -61,6 +62,14 @@ export interface SerializedTruck {
   readonly waitTicks: number;
   /** Trasa čaká na preplánovanie (cesty sa zmenili po naplánovaní a kamión sa odvtedy nepohol). */
   readonly replan: boolean;
+  /** Sloty tela od hlavy k chvostu ako `[bunka, pruh]` (ADR-037); mimo jazdy prázdne. */
+  readonly body: readonly SerializedSlot[];
+  /** Sloty pred hlavou, ktoré kamión už drží (bunka, do ktorej vchádza, reťaz križovatky). */
+  readonly ahead: readonly SerializedSlot[];
+  /** Ticky čakania na voľný slot (0 = nečaká). */
+  readonly blockedTicks: number;
+  /** Zostávajúce ticky do ďalšieho preplánovania kvôli zápche. */
+  readonly rerouteCooldown: number;
 }
 
 /** Kľúče `SerializedTruck` v poradí `toState()`. */
@@ -82,6 +91,10 @@ export const SERIALIZED_TRUCK_KEYS: readonly (keyof SerializedTruck)[] = [
   'progress',
   'waitTicks',
   'replan',
+  'body',
+  'ahead',
+  'blockedTicks',
+  'rerouteCooldown',
 ];
 
 /** Vstup konštruktora kamióna (spawn aj obnova zo save). */
@@ -111,6 +124,7 @@ function isIndex(value: number): boolean {
 
 export class Truck extends Carrier {
   readonly id: EntityId;
+  readonly kind = 'truck' as const;
   readonly def: Readonly<TruckDef>;
   /** Id defu (`def.id`). */
   readonly defId: string;
@@ -224,6 +238,11 @@ export class Truck extends Carrier {
     return `${this.defId} #${String(this.id)}`;
   }
 
+  /** Dĺžka kamióna v bunkách (`def.lengthCells`, ADR-037). */
+  get lengthCells(): number {
+    return this.def.lengthCells;
+  }
+
   /**
    * Prechod podľa `TRUCK_TRANSITIONS` a vlastností misie (`TRUCK_MISSION_GIVES_UP`: vzdať sa čakania smie len `collect`; `landsideSystem`); udalosť `TruckStateChanged` emituje volajúci
    * (`changeTruckState`). Do `no_path` si kamión zapamätá doterajší jazdný stav (`resume`) a z `no_path` sa smie vrátiť
@@ -239,6 +258,8 @@ export class Truck extends Carrier {
     if (to === 'no_path') this.resumeState = isTruckTravelState(from) ? from : null;
     else if (from === 'no_path') this.resumeState = null;
     this.current = to;
+    // Mimo jazdy kamión (dočasne, R1) nedrží žiadne sloty (ADR-037).
+    if (!this.traits.holdsRoad) this.leaveRoad();
   }
 
   /** Čistý JSON stav pre save (nová kópia pri každom volaní). */
@@ -261,6 +282,10 @@ export class Truck extends Carrier {
       progress: this.progress,
       waitTicks: this.waitTicks,
       replan: this.replanPending,
+      body: serializeSlots(this.body),
+      ahead: serializeSlots(this.ahead),
+      blockedTicks: this.blockedTicks,
+      rerouteCooldown: this.rerouteCooldown,
     };
   }
 

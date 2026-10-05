@@ -8,6 +8,8 @@
  * nedá odvodiť: `cell.moduleId` vznikne z footprintov modulov, obsadenie apronov a skladov a držané jednotky žeriavov z ledgera, rezervácie
  * slotov apronu z `reservedSlot` žeriavov, `VehicleDepot.vehicleIds` z `depotId` vozidiel, vozidlo a stav jobu z vozidla a polohy nákladu,
  * držitelia bays a dockov z kamiónov, skupiny kotvísk prepočtom. Staré verzie (v1–v9) sa nenačítajú (`UnsupportedSaveVersionError`, migrate.ts).
+ * R1 (TR1-02, ADR-037): vozidlo aj kamión nesie `body` a `ahead` (sloty ako `[bunka, pruh]`), `blockedTicks` a `rerouteCooldown`; `LaneSlots` a úseky
+ * `one_lane` sa pri obnove prepočítajú z nosičov (konflikt slotov je `WorldStateError`).
  *
  * Lode (ADR-016, ADR-029) sa ukladajú s polohou, stavom FSM, kotviskami, anchorage, trasou a indexom bodu trasy;
  * `BerthModule.dockedShipId` sa odvodí z `berthIds`.
@@ -38,6 +40,7 @@ import type { ModuleRuntimeState } from '../modules/runtime-state';
 import { SERIALIZED_SHIP_KEYS, type SerializedShip } from '../ships/ship';
 import { SHIP_STATES, SHIP_STATE_TRAITS, holdingAllows, type ShipState } from '../ships/ship-fsm';
 import type { ShipPoint } from '../ships/ship-route';
+import type { SerializedSlot } from '../traffic/lane-slots';
 import { SERIALIZED_TRUCK_KEYS, type SerializedTruck } from '../trucks/truck';
 import {
   TRUCK_MISSIONS,
@@ -205,6 +208,11 @@ export interface ParsedVehicleEntry {
   readonly progress: number;
   readonly waitTicks: number;
   readonly replan: boolean;
+  /** Sloty tela a sloty vpredu (ADR-037); súlad so svetom overí obnova (`carrierOverlapProblem`). */
+  readonly body: readonly SerializedSlot[];
+  readonly ahead: readonly SerializedSlot[];
+  readonly blockedTicks: number;
+  readonly rerouteCooldown: number;
 }
 
 /**
@@ -230,6 +238,11 @@ export interface ParsedTruckEntry {
   readonly progress: number;
   readonly waitTicks: number;
   readonly replan: boolean;
+  /** Sloty tela a sloty vpredu (ADR-037); súlad so svetom overí obnova (`carrierOverlapProblem`). */
+  readonly body: readonly SerializedSlot[];
+  readonly ahead: readonly SerializedSlot[];
+  readonly blockedTicks: number;
+  readonly rerouteCooldown: number;
 }
 
 /** Job zo save s overeným tvarom (lokácie, dvojica druhov, jednotky); stav, vozidlo a vzťahy k svetu odvodí obnova. */
@@ -632,8 +645,36 @@ function parseVehicles(value: unknown, defs: DefRegistry, map: LoadedMap, grid: 
     if (expected.x !== x || expected.y !== y) {
       throw new WorldStateError(`${path}/x`, `poloha (${String(x)}, ${String(y)}) nie je na trase — očakávaná (${String(expected.x)}, ${String(expected.y)})`);
     }
-    return { id: id as EntityId, defId, depotId: depotId as EntityId, state, x, y, heading, jobId: jobId as EntityId | null, purchaseCostCents, route, progress, waitTicks, replan };
+    const traffic = parseCarrierTraffic(entry, path, grid.cellCount);
+    return { id: id as EntityId, defId, depotId: depotId as EntityId, state, x, y, heading, jobId: jobId as EntityId | null, purchaseCostCents, route, progress, waitTicks, replan, ...traffic };
   });
+}
+
+/** Pole slotov zo save: zoznam párov `[bunka, pruh]` (bunka celá 0…`cellCount − 1`, pruh 0 | 1). */
+function parseSlots(value: unknown, path: string, cellCount: number): SerializedSlot[] {
+  return checkArray(value, path).map((raw: unknown, i): SerializedSlot => {
+    const at = `${path}${pointerSegment(i)}`;
+    if (!Array.isArray(raw) || raw.length !== 2) throw new WorldStateError(at, `slot musí byť pár [bunka, pruh], dostal ${describeValue(raw)}`);
+    const cell = checkInteger(raw[0], 0, `${at}/0`);
+    if (cell >= cellCount) throw new WorldStateError(`${at}/0`, `bunka ${String(cell)} je mimo mriežky (${String(cellCount)} buniek)`);
+    const lane = checkInteger(raw[1], 0, `${at}/1`);
+    if (lane > 1) throw new WorldStateError(`${at}/1`, `pruh musí byť 0 alebo 1, dostal ${String(lane)}`);
+    return [cell, lane];
+  });
+}
+
+/** Doprava bez prekrývania zo save (vozidlo aj kamión, ADR-037): `body`, `ahead`, `blockedTicks`, `rerouteCooldown`. */
+function parseCarrierTraffic(
+  entry: Readonly<Record<string, unknown>>,
+  path: string,
+  cellCount: number,
+): Pick<ParsedVehicleEntry, 'body' | 'ahead' | 'blockedTicks' | 'rerouteCooldown'> {
+  return {
+    body: parseSlots(entry['body'], `${path}/body`, cellCount),
+    ahead: parseSlots(entry['ahead'], `${path}/ahead`, cellCount),
+    blockedTicks: checkInteger(entry['blockedTicks'], 0, `${path}/blockedTicks`),
+    rerouteCooldown: checkInteger(entry['rerouteCooldown'], 0, `${path}/rerouteCooldown`),
+  };
 }
 
 /** Progres úseku zo save: číslo v `[0, 1)`, `> 0` len s ďalšou bunkou trasy. */
@@ -711,6 +752,7 @@ function parseTrucks(value: unknown, defs: DefRegistry, map: LoadedMap, grid: Gr
       progress,
       waitTicks,
       replan,
+      ...parseCarrierTraffic(entry, path, grid.cellCount),
     };
   });
 }

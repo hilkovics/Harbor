@@ -15,6 +15,8 @@ export type TruckErrorCode =
   | 'bay_taken'
   /** `World.addTruck`: dock rampy už drží iný kamión. */
   | 'dock_taken'
+  /** `World.addTruck`: sloty tela alebo slotov vpredu už drží iný nosič (ADR-037). */
+  | 'slot_taken'
   /** `World.removeTruck`: kamión s daným id vo svete nie je. */
   | 'unknown_truck'
   /** `World.removeTruck`: kamión vezie náklad (`in_truck`) — jednotky by stratili držiteľa. */

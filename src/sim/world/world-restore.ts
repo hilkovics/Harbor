@@ -46,6 +46,7 @@ import { ShipError } from '../ships/ship-error';
 import { anchoringProblem, mooringProblem, shipRouteProblem } from '../ships/ship-route';
 import { TruckGate } from '../modules/truck-gate';
 import { WaitingArea } from '../modules/waiting-area';
+import { slotKeyOf } from '../traffic/lane-slots';
 import { DockSupply } from '../trucks/dock-supply';
 import { Truck } from '../trucks/truck';
 import { TruckError, type TruckErrorCode } from '../trucks/truck-error';
@@ -185,6 +186,7 @@ const VEHICLE_ERROR_FIELD: { readonly [C in VehicleErrorCode]: string } = {
   duplicate_id: 'id',
   unknown_depot: 'depotId',
   depot_full: 'depotId',
+  slot_taken: 'body',
   unknown_vehicle: 'id',
   has_cargo: 'id',
   busy: 'state',
@@ -208,6 +210,10 @@ function vehicleInit(world: World, entry: ParsedVehicleEntry): ConstructorParame
     progress: entry.progress,
     waitTicks: entry.waitTicks,
     replanPending: entry.replan,
+    body: entry.body.map(slotKeyOf),
+    ahead: entry.ahead.map(slotKeyOf),
+    blockedTicks: entry.blockedTicks,
+    rerouteCooldown: entry.rerouteCooldown,
   };
 }
 
@@ -236,6 +242,7 @@ const TRUCK_ERROR_FIELD: { readonly [C in TruckErrorCode]: string } = {
   unknown_module: 'rampId',
   bay_taken: 'bay',
   dock_taken: 'dock',
+  slot_taken: 'body',
   unknown_truck: 'id',
   has_cargo: 'id',
   busy: 'state',
@@ -309,6 +316,10 @@ function restoreTrucks(world: World, entries: readonly ParsedTruckEntry[]): void
           progress: entry.progress,
           waitTicks: entry.waitTicks,
           replanPending: entry.replan,
+          body: entry.body.map(slotKeyOf),
+          ahead: entry.ahead.map(slotKeyOf),
+          blockedTicks: entry.blockedTicks,
+          rerouteCooldown: entry.rerouteCooldown,
         }),
       );
     } catch (error) {

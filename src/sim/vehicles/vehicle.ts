@@ -19,8 +19,10 @@ import type { EntityId } from '../core/entity-id';
 import type { VehicleDef } from '../defs/types';
 import type { Rotation } from '../grid/rotation';
 import { Carrier, carrierPoseProblem, carrierPosition, carrierRouteProblem, type CarrierPosition } from '../movement/carrier';
+import { serializeSlots, type SerializedSlot } from '../traffic/lane-slots';
 import { VehicleError } from './vehicle-error';
-import { VEHICLE_TRANSITIONS, isVehicleState, isVehicleTransitionAllowed, type VehicleState } from './vehicle-fsm';
+import { VEHICLE_STATE_TRAITS, VEHICLE_TRANSITIONS, isVehicleState, isVehicleTransitionAllowed, type VehicleState } from './vehicle-fsm';
+
 
 export { PROGRESS_NOISE, isValidProgress } from '../movement/carrier';
 
@@ -42,6 +44,14 @@ export interface SerializedVehicle {
   readonly waitTicks: number;
   /** Trasa čaká na preplánovanie (cesty sa zmenili po naplánovaní a vozidlo sa odvtedy nehlo). */
   readonly replan: boolean;
+  /** Sloty tela od hlavy k chvostu ako `[bunka, pruh]` (ADR-037); mimo jazdy prázdne. */
+  readonly body: readonly SerializedSlot[];
+  /** Sloty pred hlavou, ktoré vozidlo už drží (bunka, do ktorej vchádza, reťaz križovatky). */
+  readonly ahead: readonly SerializedSlot[];
+  /** Ticky čakania na voľný slot (0 = nečaká). */
+  readonly blockedTicks: number;
+  /** Zostávajúce ticky do ďalšieho preplánovania kvôli zápche. */
+  readonly rerouteCooldown: number;
 }
 
 /** Kľúče `SerializedVehicle` v poradí `toState()`. */
@@ -59,6 +69,10 @@ export const SERIALIZED_VEHICLE_KEYS: readonly (keyof SerializedVehicle)[] = [
   'progress',
   'waitTicks',
   'replan',
+  'body',
+  'ahead',
+  'blockedTicks',
+  'rerouteCooldown',
 ];
 
 /** Vstup konštruktora vozidla (nákup aj obnova zo save). */
@@ -82,6 +96,14 @@ export interface VehicleInit {
   readonly waitTicks?: number;
   /** Predvolene `false`. */
   readonly replanPending?: boolean;
+  /** Kľúče slotov tela (hlava prvá), predvolene prázdne (ADR-037). */
+  readonly body?: readonly number[];
+  /** Kľúče slotov pred hlavou, predvolene prázdne. */
+  readonly ahead?: readonly number[];
+  /** Predvolene 0. */
+  readonly blockedTicks?: number;
+  /** Predvolene 0. */
+  readonly rerouteCooldown?: number;
 }
 
 /** Poloha vozidla (stred v bunkách) — tvar zdieľaného `CarrierPosition`. */
@@ -101,6 +123,7 @@ function isPositiveId(value: number): boolean {
 
 export class Vehicle extends Carrier {
   readonly id: EntityId;
+  readonly kind = 'vehicle' as const;
   readonly def: Readonly<VehicleDef>;
   /** Id defu (`def.id`). */
   readonly defId: string;
@@ -153,6 +176,11 @@ export class Vehicle extends Carrier {
     return `${this.defId} #${String(this.id)}`;
   }
 
+  /** Dĺžka vozidla v bunkách (`def.lengthCells`, ADR-037). */
+  get lengthCells(): number {
+    return this.def.lengthCells;
+  }
+
   /**
    * Prechod podľa `VEHICLE_TRANSITIONS` (dispatcher, `VehicleSystem`); udalosť `VehicleStateChanged` emituje volajúci
    * (`changeVehicleState`). Nepovolený prechod → `VehicleError('invalid_transition')`, vozidlo sa nezmení.
@@ -163,6 +191,8 @@ export class Vehicle extends Carrier {
       throw new VehicleError('invalid_transition', `${this.label}: prechod ${this.current} → ${to} nie je povolený (povolené: ${allowed.join(', ') || '–'})`);
     }
     this.current = to;
+    // Mimo jazdy vozidlo (dočasne, R1) nedrží žiadne sloty (ADR-037).
+    if (!VEHICLE_STATE_TRAITS[to].holdsRoad) this.leaveRoad();
   }
 
   /** Čistý JSON stav pre save (nová kópia pri každom volaní). */
@@ -181,6 +211,10 @@ export class Vehicle extends Carrier {
       progress: this.progress,
       waitTicks: this.waitTicks,
       replan: this.replanPending,
+      body: serializeSlots(this.body),
+      ahead: serializeSlots(this.ahead),
+      blockedTicks: this.blockedTicks,
+      rerouteCooldown: this.rerouteCooldown,
     };
   }
 

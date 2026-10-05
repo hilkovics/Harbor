@@ -16,7 +16,7 @@ import { NO_ACCESS, accessCellIndex } from '../logistics/module-access';
 import type { PathCache } from '../logistics/path-cache';
 import type { Pathfinder, QuayCells } from '../logistics/pathfinder';
 import type { RoadSpeeds } from '../logistics/road-speed';
-import type { Carrier } from './carrier';
+import type { AdvanceGate, Carrier } from './carrier';
 
 /** Časť sveta, ktorú plánovanie a pohyb nosiča čítajú (`World` ju spĺňa). */
 export interface MovementWorld {
@@ -26,6 +26,11 @@ export interface MovementWorld {
   readonly roadSpeeds: RoadSpeeds;
   /** Nábrežie kotvísk pod hákom (F6d, ADR-033 dodatok): jazdné bunky vozidla bez cesty; bez neho sa jazdí len po cestách. */
   readonly quay?: QuayCells;
+  /**
+   * Brána úseku dopravy bez prekrývania (ADR-037): `TrafficSystem` ju nastaví na nosič, ktorý sa práve hýbe. Bez nej (testy
+   * pohybu) sa nosič hýbe bez slotov ako pred R1.
+   */
+  readonly trafficGate?: AdvanceGate;
 }
 
 /**
@@ -90,7 +95,10 @@ export function planRouteToModule(world: MovementWorld, carrier: Carrier, module
   return true;
 }
 
-/** Jeden tick jazdy po trase rýchlosťou `speedCellsPerTick` (ADR-019, ADR-020); `true` = nosič stojí na konci trasy. */
+/**
+ * Jeden tick jazdy po trase rýchlosťou `speedCellsPerTick` (ADR-019, ADR-020); `true` = nosič stojí na konci trasy.
+ * Sloty ďalších buniek stráži brána sveta (`trafficGate`, ADR-037): obsadený slot nosič zastaví v strede bunky.
+ */
 export function advanceCarrier(world: MovementWorld, carrier: Carrier, speedCellsPerTick: number): boolean {
-  return carrier.advance(speedCellsPerTick, world.grid.width, world.roadSpeeds.speedFactor);
+  return carrier.advance(speedCellsPerTick, world.grid.width, world.roadSpeeds.speedFactor, world.trafficGate);
 }

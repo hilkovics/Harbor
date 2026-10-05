@@ -1,6 +1,8 @@
 /**
  * LandsideSystem — krok 8 ticku (ARCHITECTURE §6, §7.5, §7.8 bod 3; rozhodnutia orchestrátora F4 č. 2, 3, 5, 6;
- * ADR-011, ADR-024): kamióny, brány a spawn. Poradie v kroku je pevné:
+ * ADR-011, ADR-024, ADR-038): kamióny, brány a spawn. Pohyb kamiónov po cestách (preplánovanie `replanTruck`, jazda `advanceTruck`)
+ * robí od R1 `TrafficSystem` v kroku 6a pod pruhovými slotmi (ADR-037); tu ostáva FSM kamiónov — príchody, stojisko, dock, brána.
+ * Kamión, ktorému sa stav zmenil už v kroku 6a (`no_path`), v tomto ticku krok FSM nerobí (ADR-016). Poradie v kroku je pevné:
  * 1. **Kamióny** vzostupne podľa id, krok podľa stavu z tabuľky `TRUCK_STEPS` (nie switch), stav mení len
  *    `changeTruckState`:
  *    Ciele za bránou dáva okruh kamióna (`truckCircuit`: brána, stojisko a rampa kamióna nezávisle od cesty pred
@@ -166,14 +168,29 @@ function travelOf(truck: Truck): TruckTravelState {
   throw new TruckError('inconsistent', `${truck.label}: jazda v stave '${state}'`);
 }
 
-/** Jazda: preplánovanie po zmene ciest, pohyb, príchod. */
-function drive(truck: Truck, world: World): void {
-  const travel = travelOf(truck);
-  if (truck.replanPending && !planTruckRoute(world, truck, travel)) {
-    enterTruckNoPath(world, truck);
-    return;
-  }
-  if (advanceCarrier(world, truck, truck.def.speedCellsPerTick)) ARRIVALS[travel](truck, world);
+/**
+ * Preplánovanie kamióna v jazdnom stave po zmene ciest (volá `TrafficSystem` pred získaním slotov a pohybom, krok 6a,
+ * ADR-038): nová trasa z kotvy k cieľu stavu, bez cesty `no_path`. `false` = kamión prešiel do `no_path`. Bez čakajúceho
+ * preplánovania nič nerobí (`true`).
+ */
+export function replanTruck(truck: Truck, world: World): boolean {
+  if (!truck.replanPending) return true;
+  if (planTruckRoute(world, truck, travelOf(truck))) return true;
+  enterTruckNoPath(world, truck);
+  return false;
+}
+
+/**
+ * Jeden tick jazdy kamióna po trase (volá `TrafficSystem`, krok 6a): sloty ďalších buniek stráži brána sveta (`advanceCarrier`,
+ * ADR-037). Príchod na koniec trasy spracuje až FSM krok kamióna (`arriveWhenThere`).
+ */
+export function advanceTruck(truck: Truck, world: World): void {
+  advanceCarrier(world, truck, truck.def.speedCellsPerTick);
+}
+
+/** Jazdný stav (FSM krok bez pohybu): kamión, ktorý stojí na konci trasy, dorazil (`ARRIVALS`). */
+function arriveWhenThere(truck: Truck, world: World): void {
+  if (truck.cellsAhead === 0) ARRIVALS[travelOf(truck)](truck, world);
 }
 
 /**
@@ -340,13 +357,13 @@ function retry(truck: Truck, world: World): void {
 type TruckStep = (truck: Truck, world: World) => void;
 
 const TRUCK_STEPS: { readonly [S in TruckState]: TruckStep } = {
-  to_gate: drive,
+  to_gate: arriveWhenThere,
   gate_queue: () => undefined,
-  to_bay: drive,
+  to_bay: arriveWhenThere,
   waiting: (truck, world) => {
     if (countDown(truck)) leaveWaitingArea(truck, world);
   },
-  to_dock: drive,
+  to_dock: arriveWhenThere,
   loading: (truck, world) => {
     if (countDown(truck)) LOADERS[truck.mission](truck, world);
   },
@@ -354,9 +371,9 @@ const TRUCK_STEPS: { readonly [S in TruckState]: TruckStep } = {
   unloading: (truck, world) => {
     if (countDown(truck)) unloadUnit(truck, world);
   },
-  to_gate_out: drive,
+  to_gate_out: arriveWhenThere,
   gate_queue_out: () => undefined,
-  to_portal: drive,
+  to_portal: arriveWhenThere,
   exited: (truck) => {
     throw new TruckError('inconsistent', `${truck.label} v stave 'exited' je stále vo world.trucks`);
   },
@@ -435,7 +452,9 @@ export class LandsideSystem {
 
   /** Krok 8: kamióny → brány → spawn (viď hlavička); brány a rampy z registra sveta (`World.landsideModules`). */
   tick(world: World): void {
-    for (const truck of world.trucks.values()) TRUCK_STEPS[truck.state](truck, world);
+    for (const truck of world.trucks.values()) {
+      if (!world.traffic.changedState(truck.id)) TRUCK_STEPS[truck.state](truck, world);
+    }
     const { gates, ramps } = world.landsideModules;
     for (const gate of gates) stepGate(world, gate);
     spawnTrucks(world, ramps, this.supply);

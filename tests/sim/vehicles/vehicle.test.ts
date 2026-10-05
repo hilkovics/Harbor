@@ -90,6 +90,10 @@ describe('Vehicle', () => {
       progress: 0,
       waitTicks: 0,
       replan: false,
+      body: [],
+      ahead: [],
+      blockedTicks: 0,
+      rerouteCooldown: 0,
     });
     expect(JSON.parse(JSON.stringify(state))).toStrictEqual(state);
     expect(vehicle.toState()).not.toBe(state);

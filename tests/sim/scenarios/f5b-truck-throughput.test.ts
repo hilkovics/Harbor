@@ -94,8 +94,9 @@ describe('priepustnosť kamiónov: full_import_chain (ADR-029)', () => {
     expect(phase.length).toBeGreaterThan(4);
     for (let i = 1; i < phase.length; i++) {
       expect(phase[i].stored, `tick ${String(phase[i].tick)}`).toBeLessThan(phase[i - 1].stored);
-      // Hranica brány: SAMPLE_TICKS / (2 × processTicks) kamiónov za okno; pred ADR-029 ~10 TEU za 500 tickov.
-      expect(phase[i].exported - phase[i - 1].exported, `tick ${String(phase[i].tick)}`).toBeGreaterThanOrEqual(Math.floor(SAMPLE_TICKS / (2 * PROCESS_TICKS)) - 1);
+      // Hranica brány: SAMPLE_TICKS / (2 × processTicks) kamiónov za okno; pred ADR-029 ~10 TEU za 500 tickov. Od R1 (ADR-037) kamióny
+      // jazdia po slotoch a okno sa môže o jeden kamión rozkolísať navyše — celkovú hranicu brány drží test vyššie.
+      expect(phase[i].exported - phase[i - 1].exported, `tick ${String(phase[i].tick)}`).toBeGreaterThanOrEqual(Math.floor(SAMPLE_TICKS / (2 * PROCESS_TICKS)) - 2);
     }
   });
 });

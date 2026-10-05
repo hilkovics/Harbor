@@ -118,15 +118,37 @@
 | TR1-02 | Jadro dopravy: defy (`lengthCells`, `traffic`), `LaneSlots`, `CellLaneKind`, pruhy, telo a `ahead`, `TrafficSystem` v kroku 6 (vozidlá aj kamióny), pravidlo križovatky, úseky `one_lane`, otočka, refaktor FSM krokov bez pohybu, invariant `carrierOverlapProblem`, save (`body`, `ahead`, `blockedTicks`), unit testy | sim-architect (sonnet) | no | 01 |
 | TR1-03 | Moduly a portál: mimo cesty (stojisko, dock, `gate_pass`, `gate_pass_out`), výjazdy so slotom, fyzický front pred bránou, spawn a výjazd na portáli, pod hákom; úprava invariantov brány a stojiska | sim-architect (sonnet) | no | 02 |
 | TR1-04 | Parkovanie a zápchy: `to_depot`, `parked`, `depot_exit`, dispatcher, kúpa do depa; detekcia cyklu, preplánovanie s dočasne zakázanou bunkou, `TrafficJam` a `TrafficJamCleared`, metriky | sim-architect (sonnet) | no | 03 |
-| TR1-05 | TDD a scenáre: test „žiadny prekryv" nad všetkými bundled scenármi, kolóna pred bránou (FIFO, bez prekryvu), odstup za vodcom, protismer, križovatka, `one_lane`, parkovanie, zápcha (riešiteľná a neriešiteľná), determinizmus a roundtrip uprostred kolóny | test-writer (sonnet, worktree) | yes | 03 (API) |
+| TR1-05 | TDD a scenáre: test „žiadny prekryv" nad všetkými bundled scenármi, kolóna pred bránou (FIFO, bez prekryvu), odstup za vodcom, protismer, križovatka, `one_lane`, parkovanie, zápcha (riešiteľná a neriešiteľná), determinizmus a roundtrip uprostred kolóny | test-writer (**haiku**, worktree) | yes | 03 (API) |
 | TR1-06 | Render: kĺbové vozidlá po stope (dočasne existujúci sprite), brzdové svetlá stojacich (procedurálne), vozidlá zaparkované v depe, kamión v `gate_pass`, zvýraznenie zápchy (bunky + odznak); demo scéna + e2e screenshot | implementer (sonnet, worktree) | yes | – (VM kontrakt) |
-| TR1-07 | UI a app: toast „Zápcha" s akciou „Ukázať", texty nových stavov v inšpektoroch (vozidlo, kamión), depo „Zaparkované N / kapacita", hláška pri starom save; demo + testy | ui-builder (sonnet, worktree) | yes | – (VM kontrakt) |
-| TR1-08 | Napojenie VM (body, offRoad, blocked, jammed, parkedVehicleIds) na sim, `simrun` kľúče, scenár `traffic_stress` + bench, úpravy rozloženia scenárov pri trvalej zápche, prepočet goldenov | implementer (sonnet) | no | 04, 06, 07 |
+| TR1-07 | UI a app: toast „Zápcha" s akciou „Ukázať", texty nových stavov v inšpektoroch (vozidlo, kamión), depo „Zaparkované N / kapacita", hláška pri starom save; demo + testy | ui-builder (**haiku**) | no | 04 |
+| TR1-08 | Napojenie VM (body, offRoad, blocked, jammed, parkedVehicleIds) na sim, `simrun` kľúče, scenár `traffic_stress` + bench, úpravy rozloženia scenárov pri trvalej zápche, prepočet goldenov | implementer (**haiku**; pri neúspechu sonnet) | no | 04, 06, 07 |
 | TR1-09 | Review `src/sim/**` + opravy | sim-reviewer (sonnet) → sim-architect (sonnet) | no | 08 |
-| TR1-10 | Plná pipeline + plná e2e + artefakt; docs (ARCHITECTURE §5.1, §6, §7.3–§7.8, §14; PROGRESS; BACKLOG) + PR | test-runner (haiku), implementer (sonnet), docs-keeper (haiku) | no | 09 |
+| TR1-10 | Plná pipeline + plná e2e + artefakt; docs (ARCHITECTURE §5.1, §6, §7.3–§7.8, §14; PROGRESS; BACKLOG) + PR | test-runner (haiku), docs-keeper (haiku) | no | 09 |
+
+## Veľmi úsporný režim (pokyn používateľa 2026-10-05, platí aj pre ďalšie fázy)
+- **Haiku** robí všetko mechanické:
+  - behy testov a triáž,
+  - docs (PROGRESS, BACKLOG, ARCHITECTURE podľa ADR),
+  - napojenie VM podľa presnej mapy polí,
+  - kľúče `simrun`, goldeny a úpravy scenárov,
+  - jednoduché UI texty a toasty,
+  - tabuľkové a scenárové testy z presného zoznamu,
+  - prieskum kódu (Explore s modelom haiku).
+- **Sonnet** robí len jadro simulácie (`src/sim`, nové algoritmy), netriviálny render a review. Pri neúspechu Haiku 2× sa karta eskaluje na Sonnet.
+- **Opus** (orchestrátor):
+  - len plán, ADR a rozhodnutia;
+  - nečíta surové výstupy, celé veľké súbory ani diffy;
+  - dostáva len zhrnutia;
+  - píše krátke správy.
+- **Agenti:**
+  - počas práce cielené testy; celé `pnpm test` raz na konci karty;
+  - plná e2e raz za fázu (Haiku);
+  - reporty max 12 riadkov;
+  - pri veľkých súboroch grep alebo výrez namiesto čítania celého súboru;
+  - prompty s presnými cestami k súborom, aby agent nemusel hľadať.
 
 **Vlny:** TR1-01 → TR1-02 → TR1-03 → TR1-04 → TR1-08 → TR1-09 → TR1-10.
-- Paralelne od začiatku: TR1-06 a TR1-07 (worktree, demo nad VM kontraktom).
+- Paralelne od začiatku: TR1-06 (worktree, demo nad VM kontraktom). TR1-07 až po TR1-04 (Haiku, priamo nad typmi simu).
 - Po TR1-03: TR1-05.
 
 ## Checklist

@@ -11,7 +11,7 @@ import timeJson from '@data/defs/time.json';
 import trucksJson from '@data/defs/trucks.json';
 import vehiclesJson from '@data/defs/vehicles.json';
 import { DefRegistry } from '@sim/defs';
-import { loadBundledMap } from '@sim/grid';
+import { MAP } from '../sim/world/world-fixtures';
 import { World } from '@sim/world';
 import { GameLoop } from '@app/game-loop';
 import { SimBridge } from '@app/sim-bridge';
@@ -36,7 +36,7 @@ export function createAppWithEconomy(patch: Partial<typeof economyJson>, cashCen
     contract_templates: contractTemplatesJson,
     lines: linesJson,
   });
-  const world = World.create(defs, loadBundledMap(), SEED);
+  const world = World.create(defs, MAP, SEED);
   if (cashCents !== undefined) setCash(world, cashCents);
   const bridge = new SimBridge(world);
   return { world, bridge, loop: new GameLoop(world, bridge) };

@@ -14,11 +14,10 @@ import timeJson from '@data/defs/time.json';
 import trucksJson from '@data/defs/trucks.json';
 import vehiclesJson from '@data/defs/vehicles.json';
 import { DefRegistry } from '@sim/defs';
-import { loadBundledMap } from '@sim/grid';
 import { World, type WorldOptions } from '@sim/world';
 import { GameLoop } from '@app/game-loop';
 import { SimBridge } from '@app/sim-bridge';
-import { DEFS as APRON_DEFS, LEGACY_CAPACITY_DEFS } from '../sim/world/world-fixtures';
+import { DEFS as APRON_DEFS, LEGACY_CAPACITY_DEFS, MAP } from '../sim/world/world-fixtures';
 
 export const SEED = 20260929;
 
@@ -28,7 +27,7 @@ export const SEED = 20260929;
  * namiesto prepisu očakávaní si pripínajú starý režim cez def — rovnako ako testy v `tests/sim` (`APRON_MODULES`).
  */
 export function createWorld(options: WorldOptions = {}): World {
-  return World.create(APRON_DEFS, loadBundledMap(), SEED, options);
+  return World.create(APRON_DEFS, MAP, SEED, options);
 }
 
 /**
@@ -36,7 +35,7 @@ export function createWorld(options: WorldOptions = {}): World {
  * (T5B-01 zväčšila apron na 8 a staging na 4; zmysel testu ostáva, pripína sa balans).
  */
 export function createLegacyCapacityWorld(options: WorldOptions = {}): World {
-  return World.create(LEGACY_CAPACITY_DEFS, loadBundledMap(), SEED, options);
+  return World.create(LEGACY_CAPACITY_DEFS, MAP, SEED, options);
 }
 
 /**
@@ -64,7 +63,7 @@ export function defsWithBays(bays: number): DefRegistry {
 
 /** Ako `createApp`, ale s čakacou plochou o `bays` stojiskách (viď `defsWithBays`). */
 export function createAppWithBays(bays: number): App {
-  const world = World.create(defsWithBays(bays), loadBundledMap(), SEED);
+  const world = World.create(defsWithBays(bays), MAP, SEED);
   const bridge = new SimBridge(world);
   const loop = new GameLoop(world, bridge);
   return { world, bridge, loop };

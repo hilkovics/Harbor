@@ -36,7 +36,7 @@ describe('WorldSnapshot v3: vozidlá', () => {
     expect(bridge.entities().vehicles).toBe(bridge.snapshot().vehicles);
   });
 
-  it('čerstvo kúpené vozidlá: vzostupne podľa id, idle, prázdne, kurz z depa, prev = curr (aj prevHeading)', () => {
+  it('čerstvo kúpené vozidlá: vzostupne podľa id, parked, prázdne, kurz z depa, prev = curr (aj prevHeading)', () => {
     const app = createApp();
     buildLogistics(app);
     buyVehicles(app, 2);
@@ -55,7 +55,7 @@ describe('WorldSnapshot v3: vozidlá', () => {
         heading: source?.heading ?? 0,
         prevHeading: source?.heading ?? 0,
         loaded: false,
-        state: 'idle',
+        state: 'parked',
       });
     }
   });

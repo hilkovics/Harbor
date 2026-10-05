@@ -3,14 +3,13 @@
 // nikdy nečaká.
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@sim/core';
-import { loadBundledMap } from '@sim/grid';
 import { CraneModule } from '@sim/modules';
 import { World } from '@sim/world';
 import { GameLoop } from '@app/game-loop';
 import { inspectorData } from '@app/inspector-data';
 import { SimBridge } from '@app/sim-bridge';
 import { SEED, buildLogistics, createApp, frameUntil, runCommands, type App } from './app-fixtures';
-import { BUNDLED_DEFS } from '../sim/world/world-fixtures';
+import { BUNDLED_DEFS, MAP } from '../sim/world/world-fixtures';
 
 const ROOT_BERTH = 1 as EntityId;
 const ROOT_CRANE = 2 as EntityId;
@@ -18,7 +17,7 @@ const FEEDER = { type: 'SpawnShipDebug', shipClassId: 'feeder', cargoTypeId: 'co
 
 /** Svet nad bundled defmi tak, ako ho hra načíta: kotvisko v režime `under_hook` s predvoleným bufferom 0 (T6D-02). */
 function createHookApp(): App {
-  const world = World.create(BUNDLED_DEFS, loadBundledMap(), SEED);
+  const world = World.create(BUNDLED_DEFS, MAP, SEED);
   const bridge = new SimBridge(world);
   return { world, bridge, loop: new GameLoop(world, bridge) };
 }

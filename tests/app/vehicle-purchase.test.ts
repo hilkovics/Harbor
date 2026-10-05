@@ -1,6 +1,7 @@
 // T03-10: nákup a predaj vozidiel z UI — výber depa (pripojené, voľné státie, najmenšie id), validácia pred dispatch.
 import { describe, expect, it, vi } from 'vitest';
 import { BuyVehicleCommand, SellVehicleCommand } from '@sim/commands';
+import { VEHICLE_STATE_TRAITS } from '@sim/vehicles';
 import {
   DEPOTS_FULL_REASON,
   NO_DEPOT_REASON,
@@ -132,8 +133,8 @@ describe('buyVehicleFromBuildBar / buyVehicleInDepot / sellVehicle', () => {
     buildLogistics(app);
     buyVehicles(app, 1);
     runCommands(app, [{ type: 'SpawnShipDebug', shipClassId: 'feeder', cargoTypeId: 'container_teu', units: 4 }]);
-    for (let i = 0; i < 2000 && [...app.world.vehicles.values()].every((vehicle) => vehicle.state === 'idle'); i += 1) app.loop.frame(app.loop.tickMs);
-    const busy = [...app.world.vehicles.values()].find((vehicle) => vehicle.state !== 'idle');
+    for (let i = 0; i < 2000 && [...app.world.vehicles.values()].every((vehicle) => VEHICLE_STATE_TRAITS[vehicle.state].free); i += 1) app.loop.frame(app.loop.tickMs);
+    const busy = [...app.world.vehicles.values()].find((vehicle) => !VEHICLE_STATE_TRAITS[vehicle.state].free);
     expect(busy).toBeDefined();
     const dispatch = vi.spyOn(app.bridge, 'dispatch');
     expect(sellVehicle(app.bridge, busy?.id ?? 0)).toBe(false);

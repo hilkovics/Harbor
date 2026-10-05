@@ -137,11 +137,13 @@ describe('inspectorData: depo vozidiel', () => {
 });
 
 describe('DEPOT_VEHICLE_STATE a depotVehicleDef', () => {
-  it('každý stav FSM vozidla má stav v zozname depa: idle → idle, no_path → no_path, ostatné → busy', () => {
+  it('každý stav FSM vozidla má stav v zozname depa: idle, to_depot a parked → idle, no_path → no_path, ostatné → busy', () => {
     expect(Object.keys(DEPOT_VEHICLE_STATE).sort()).toEqual([...VEHICLE_STATES].sort());
     expect(DEPOT_VEHICLE_STATE.idle).toBe('idle');
     expect(DEPOT_VEHICLE_STATE.no_path).toBe('no_path');
-    for (const state of VEHICLE_STATES.filter((s) => s !== 'idle' && s !== 'no_path')) expect(DEPOT_VEHICLE_STATE[state]).toBe('busy');
+    // parkovanie (R1): zatiaľ sa zobrazuje ako nečinné (texty nových stavov prinesie TR1-07)
+    for (const state of ['to_depot', 'parked'] as const) expect(DEPOT_VEHICLE_STATE[state]).toBe('idle');
+    for (const state of VEHICLE_STATES.filter((s) => !['idle', 'no_path', 'to_depot', 'parked'].includes(s))) expect(DEPOT_VEHICLE_STATE[state]).toBe('busy');
   });
 
   it('ponúkané vozidlo depa je prvý def bez technológie (straddle_carrier)', () => {

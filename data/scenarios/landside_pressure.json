@@ -388,7 +388,7 @@
       "atTick": 2,
       "command": {
         "type": "AcceptContract",
-        "contractId": 2
+        "contractId": 5
       }
     },
     {

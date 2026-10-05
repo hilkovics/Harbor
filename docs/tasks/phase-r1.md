@@ -162,7 +162,7 @@
 - [x] TR1-07 UI a app
 - [x] TR1-08 Napojenie, simrun, bench, goldeny
 - [x] TR1-09 Review + opravy (vrátane TR1-09b)
-- [ ] TR1-10 Pipeline, e2e, artefakt, docs, PR (beží)
+- [x] TR1-10 Pipeline, e2e (56/56 po oprave 9 špecifikácií), artefakt „Fáza R1", docs, PR hilkovics/Harbor#12
 
 ## Výsledok fázy
 

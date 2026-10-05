@@ -155,8 +155,12 @@ export interface ContractCardData {
   readonly booking?: ContractBookingData;
   /** Trasa prekládky A → B; len kontrakt `kind: 'tranship'`. */
   readonly tranship?: ContractTranshipData;
-  /** Repositioning: dostupné prázdne kontajnery linky v prístave (stav `available` v skladoch), pre „V prístave je N dostupných“. */
+  /** Repositioning: dostupné prázdne kontajnery linky v prístave (stav `available` v skladoch), pre „V prístave je N dostupných”. */
   readonly availableEmpties?: number;
+  /** R2: počet 20′ kontajnerov (voliteľný); bez neho sa nekreslí rozdelenie veľkostí. */
+  readonly count20?: number;
+  /** R2: počet 40′ kontajnerov (voliteľný); bez neho sa nekreslí rozdelenie veľkostí. */
+  readonly count40?: number;
 }
 
 /** Aktuálny čas simulácie a mierka na prevod ticku na dni/hodiny. */
@@ -268,7 +272,12 @@ export function voyageTitle(group: VoyageGroup): string {
 /** Objem kontraktu pre hráča: `24 TEU`, pri repositioningu `24 TEU prázdnych`. */
 export function volumeText(contract: ContractCardData): string {
   const base = formatCount(contract.volumeUnits, contract.unit);
-  return contractKind(contract) === 'empty_repositioning' ? `${base} prázdnych` : base;
+  let text = contractKind(contract) === 'empty_repositioning' ? `${base} prázdnych` : base;
+  // R2: append size breakdown (20' and 40' counts) if available
+  if (contract.count20 !== undefined && contract.count40 !== undefined) {
+    text += ` (${contract.count20}× 20′, ${contract.count40}× 40′)`;
+  }
+  return text;
 }
 
 /** Počty kariet (skupín voyage) na záložku (do popisiek záložiek). */

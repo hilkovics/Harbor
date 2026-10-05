@@ -85,6 +85,22 @@ export interface ModuleVM {
    * vnútri footprintu v poradí podľa `id` (`parked-vehicles-decor.ts`). Chýba = depo sa kreslí ako doteraz. Plní `SimBridge` (TR1-08).
    */
   parkedVehicles?: readonly { id: number; defId: string }[];
+  /**
+   * R2: blok stohu (yard block, `kind: 'storage'`, `StorageParams.role: 'block'`): poľa stohu po bayoch a radoch.
+   * `bay` a `row` sú indexy, `height` = počet kontajnerov na stĺpci (tier), `top` = vrchný kontajner alebo null ak je prázdny.
+   * Plní `SimBridge` (TR2-05). Chýba = sklad bez stohu (depo, rampa, atď.).
+   */
+  stacks?: readonly {
+    readonly bay: number;
+    readonly row: number;
+    readonly height: number;
+    readonly top: {
+      readonly sizeFt: 20 | 40;
+      readonly containerType: string;
+      readonly lineId: string | null;
+      readonly direction: string;
+    } | null;
+  }[];
 }
 
 /** Smer cyklu žeriavu (`CraneModule.cycle`, ADR-032 bod 11): vykládka, nakládka a dve polovice dual cyklu. */

@@ -52,6 +52,86 @@
       }
     },
     {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "straddle_carrier",
+        "depotId": 7
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "straddle_carrier",
+        "depotId": 7
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "straddle_carrier",
+        "depotId": 7
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "straddle_carrier",
+        "depotId": 7
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "straddle_carrier",
+        "depotId": 8
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "straddle_carrier",
+        "depotId": 8
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "straddle_carrier",
+        "depotId": 8
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "straddle_carrier",
+        "depotId": 8
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "straddle_carrier",
+        "depotId": 8
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "straddle_carrier",
+        "depotId": 8
+      }
+    },
+    {
       "atTick": 1,
       "command": {
         "type": "AcceptContract",

@@ -435,6 +435,7 @@ Model je deterministický, lacný (pole `Int32Array`) a vizuálne presvedčivý:
 > Ruší sa ADR-005 a ARCHITECTURE §7.6 („soft kongescia"), ako aj bod v CLAUDE.md „Čo NEROBIŤ: Fyzikálne kolízie vozidiel". Nahradí ich ADR-037. Dnešné meranie: v `stress_f6` sa vozidlá prekrývajú v 29 992 z 30 000 tickov.
 
 ### 7.2 Pruhy podľa typu cesty
+> **Od 2026-10-05 je celý prístav jednosmerný** (dodatok ADR-037): hráč stavia len `one_way`, takže v hre prakticky platí len 1 slot na bunku. Tabuľka nižšie platí pre simuláciu (testy a staré scenáre do R4).
 
 | Bunka | Sloty | Pravidlo |
 |---|---|---|
@@ -754,6 +755,7 @@ F9 (bulk, kvapaliny, plyn, RoRo) odporúčam **odsunúť za F13**, aby hra najpr
 8. **Termíny odvozu importu** (Truck Appointment System) namiesto kamiónov „na požiadanie". **Odporúčam**, je to realistické a nutné pre plánovač polohy.
 9. **Brány a vstupy:** modulárne pruhy brány (ľubovoľná šírka), predbránová plocha, viac brán a druhý cestný portál na `harbor_01` (západ). **Odporúčam** (tvoja pripomienka z 2026-10-05).
 10. **Ľudia sa nekreslia** (šofér, technik). Ich činnosť je len čas a stav. **Potvrdené** (tvoja pripomienka z 2026-10-05).
+11. **Celý prístav je jednosmerný** vrátane prístupu k mape. Portál má vjazd a výjazd, hráč stavia len jednosmerky. **Potvrdené** (pokyn z 2026-10-05; dodatok ADR-037).
 
 ---
 

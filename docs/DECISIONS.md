@@ -699,3 +699,9 @@ Stav: prijaté (R1) · Zdroj: ADR-037 bod 5; ARCHITECTURE §6
 - Nosič, ktorý v ticku dostane novú trasu v 6b alebo 8, sa pohne až v ďalšom ticku. Vozidlo priradené dispatcherom v kroku 5 sa pohne v kroku 6 toho istého ticku ako doteraz.
 
 **Dôsledky:** ARCHITECTURE §6 sa prepíše v TR1-10. Poradie ostatných krokov sa nemení.
+
+**Dodatok R1 (2026-10-05) — celý prístav jednosmerný (pokyn používateľa „celý prístav bude fungovať jednosmerne"):**
+- Hráč stavia len cesty `one_way` (BuildBar ponúka jediný typ, smer určuje ťah); `two_lane` a `one_lane` ostávajú v simulácii len kvôli testom mechaniky a scenárom, ktoré sa prepíšu v R4 (nové rozloženie landside).
+- Aj prístupová cesta k mape je jednosmerná: cestný portál má **vjazd a výjazd** ako dve susedné bunky (`MapDef.roadPortals[].direction: 'in' | 'out'`). Kamióny vznikajú na vjazde a mapu opúšťajú na výjazde. Úvodná cesta `harbor_01` je jednosmerná slučka.
+- Otočka na ceste neexistuje; vozidlo musí ísť okruhom. Bunky nábrežia pod hákom ostávajú do R3 bez smeru (pruhy pod žeriavom prídu v R3).
+- Výjazd z modulu ide vždy dopredu po jednosmerke. Varovanie pri stavbe (R4): prístupová bunka na slepej jednosmerke, sieť nie je silne súvislá (z niektorého miesta sa nedá vrátiť).

@@ -14,15 +14,15 @@ import {
   type CargoBucketView,
   type CargoLedgerView,
   type CargoLocationKind,
-  type CargoUnitLabels,
+  type CargoUnitLabelsInput,
 } from '@sim/cargo';
 import type { ContractId, EntityId, VoyageId } from '@sim/core';
 import { EXPORT_LABELS, TEU, at, createHarness, id, moveThrough, viaJson } from './cargo-fixtures';
 
 const SHIP = 70;
 const TRUCK = 60;
-const EMPTY_LABELS: CargoUnitLabels = { direction: 'empty', voyageId: null, lineId: 'blue_anchor', destinationPort: null, weightClass: EMPTY_WEIGHT_CLASS };
-const TRANSHIP_LABELS: CargoUnitLabels = { direction: 'tranship', voyageId: 3 as VoyageId, lineId: 'blue_anchor', destinationPort: 'Hamburg', weightClass: 'medium' };
+const EMPTY_LABELS: CargoUnitLabelsInput = { direction: 'empty', voyageId: null, lineId: 'blue_anchor', destinationPort: null, weightClass: EMPTY_WEIGHT_CLASS };
+const TRANSHIP_LABELS: CargoUnitLabelsInput = { direction: 'tranship', voyageId: 3 as VoyageId, lineId: 'blue_anchor', destinationPort: 'Hamburg', weightClass: 'medium' };
 const TRANSHIP_CONTRACT = 5 as ContractId;
 const EXPORT_CONTRACT = 6 as ContractId;
 /** Prázdny z depa na loď (repositioning): depo → vozidlo → hák → loď (bez `shipped`). */

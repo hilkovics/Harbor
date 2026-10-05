@@ -24,7 +24,7 @@
  *    každý `dockedShipId` patrí existujúcej lodi, ktorá ho má v `berthIds` (súlad `dockedShipId` ↔ `berthIds`);
  *    `anchorageIndex` podľa `anchorage` (nie spolu s kotviskami), v mape a jedinečný; loď, ktorá stojí na rejde,
  *    má jednotný kurz `map.anchorageHeading` (`anchoringProblem`, T6D-03); **dve lode na mape nezdieľajú
- *    bunku** (`shipOverlapProblem`, bez výnimiek); na palube najviac `capacityUnits` jednotiek, všetky
+ *    bunku** (`shipOverlapProblem`, bez výnimiek); na palube najviac `capacityUnits` TEU (20′ = 1, 40′ = 2; ADR-039), všetky
  *    typu `cargoTypeId`; loď s nákladom, ktorá drží kotviská, má na nich aspoň jeden žeriav kategórie svojho nákladu
  *    (inak by pri kotvisku ostala naveky, T02-14); žeriav v `grabbing` má na kotvisku dokovanú loď s nákladom
  *    svojej kategórie a žeriavov v `grabbing` nad loďou nie je viac ako jednotiek na jej palube (každý má čo zdvihnúť);

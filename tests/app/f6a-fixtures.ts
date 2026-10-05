@@ -1,6 +1,6 @@
 // Spoločné pomôcky pre testy UI/app F6a (T6A-07): export booking a roundtrip vložené priamo do knihy kontraktov sveta
 // (správanie exportu dodá sim T6A-04/05, UI sa testuje na fixture dátach) a náklad exportu presunutý cez ledger.
-import type { CargoLocation, CargoUnit, CargoUnitLabels, WeightClass } from '@sim/cargo';
+import type { CargoLocation, CargoUnit, CargoUnitLabelsInput, WeightClass } from '@sim/cargo';
 import { ExportContract, ImportContract } from '@sim/contracts';
 import type { ContractId, EntityId, VoyageId } from '@sim/core';
 import type { World } from '@sim/world';
@@ -73,7 +73,7 @@ export function acceptRoundtrip(world: World, roundtrip: Roundtrip, options: Acc
 }
 
 /** Štítky exportnej jednotky bookingu. */
-export function exportLabels(contract: ExportContract, weightClass: WeightClass = 'medium'): CargoUnitLabels {
+export function exportLabels(contract: ExportContract, weightClass: WeightClass = 'medium'): CargoUnitLabelsInput {
   return { direction: 'export', voyageId: contract.voyageId, lineId: contract.lineId, destinationPort: contract.destinationPort, weightClass };
 }
 

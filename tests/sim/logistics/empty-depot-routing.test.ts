@@ -2,7 +2,7 @@
 // preskočia (prijíma len `empty`), `allocateStorage(…, 'empty')` ho nájde, empty handler nikdy nedostane job importu
 // (`vehicleCarries`) a dotazy snapshotu (`depotCargoSplit`, `terminalEmptySplit`) rozdelia prázdne podľa linky a stavu.
 import { describe, expect, it } from 'vitest';
-import { EMPTY_WEIGHT_CLASS, type CargoLocation, type CargoUnitLabels } from '@sim/cargo';
+import { EMPTY_WEIGHT_CLASS, type CargoLocation, type CargoUnitLabelsInput } from '@sim/cargo';
 import type { EntityId, VoyageId } from '@sim/core';
 import { allocateStorage, assignOpenJobs, chooseVehicle, vehicleCarries } from '@sim/logistics';
 import { exportLandsideReadiness } from '@sim/logistics/export-readiness';
@@ -24,7 +24,7 @@ function placeDepot(world: World, cell: { x: number; y: number }, rotation: 0 | 
 
 const berthOf = (world: World): BerthModule => world.modules.get(ROOT_BERTH_ID) as BerthModule;
 
-const emptyLabels = (lineId: string): CargoUnitLabels => ({ direction: 'empty', voyageId: null, lineId, destinationPort: null, weightClass: EMPTY_WEIGHT_CLASS });
+const emptyLabels = (lineId: string): CargoUnitLabelsInput => ({ direction: 'empty', voyageId: null, lineId, destinationPort: null, weightClass: EMPTY_WEIGHT_CLASS });
 
 /** Prázdny kontajner linky `lineId` v sklade `storage` na `slot`, so stavom kvality `status` (cez ledger, ako ho uloží vozidlo). */
 function storeEmpty(world: World, storage: StorageModule, slot: number, lineId: string, status: 'available' | 'damaged' | 'in_repair' = 'available'): EntityId {

@@ -76,11 +76,16 @@ describe('krok 12: loadedUnits otvoreného export bookingu (minor 8)', () => {
     tickUntil(world, () => contract.loadedUnits >= 2 && contract.loadedUnits < contract.arrivedUnits, TIMEOUT);
     expect(findWorldViolation(world)).toBeUndefined();
     const loaded = contract.loadedUnits;
+    // Všetky jednotky sú 20′ (1 TEU), TEU počítadlo sa mení s počtom, aby sa nespustila kontrola TEU počítadiel (ADR-039) pred porovnaním s lodou.
+    const loadedTeu = contract.loadedTeu;
     contract.loadedUnits = loaded + 1;
+    contract.loadedTeu = loadedTeu + 1;
     expect(findWorldViolation(world)).toMatch(new RegExp(`loadedUnits ${String(loaded + 1)}, na .* je ${String(loaded)} jednotiek nákladu bookingu`));
     contract.loadedUnits = loaded - 1;
+    contract.loadedTeu = loadedTeu - 1;
     expect(findWorldViolation(world)).toMatch(new RegExp(`loadedUnits ${String(loaded - 1)}, na .* je ${String(loaded)} jednotiek nákladu bookingu`));
     contract.loadedUnits = loaded;
+    contract.loadedTeu = loadedTeu;
     expect(findWorldViolation(world)).toBeUndefined();
   });
 

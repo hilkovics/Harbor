@@ -11,11 +11,12 @@ import {
   CargoTransitionError,
   DEFAULT_CARGO_STATUS,
   EMPTY_WEIGHT_CLASS,
+  DEFAULT_CONTAINER_LABELS,
   IMPORT_LABELS,
   cargoLabelsProblem,
   cargoStatusProblem,
   isCargoStatus,
-  type CargoUnitLabels,
+  type CargoUnitLabelsInput,
 } from '@sim/cargo';
 import type { ContractId, EntityId, VoyageId } from '@sim/core';
 import { EXPORT_LABELS, TEU, at, createHarness, flushMoves, id, moveThrough, snapshot, viaJson } from './cargo-fixtures';
@@ -24,8 +25,8 @@ const TRUCK = 60;
 const SHIP_A = 90;
 const SHIP_B = 91;
 const TRANSHIP_CONTRACT = 88 as ContractId;
-const EMPTY_LABELS: CargoUnitLabels = { direction: 'empty', voyageId: null, lineId: 'northern_star', destinationPort: null, weightClass: EMPTY_WEIGHT_CLASS };
-const TRANSHIP_LABELS: CargoUnitLabels = { direction: 'tranship', voyageId: 12 as VoyageId, lineId: 'golden_wave', destinationPort: 'Hamburg', weightClass: 'medium' };
+const EMPTY_LABELS: CargoUnitLabelsInput = { direction: 'empty', voyageId: null, lineId: 'northern_star', destinationPort: null, weightClass: EMPTY_WEIGHT_CLASS };
+const TRANSHIP_LABELS: CargoUnitLabelsInput = { direction: 'tranship', voyageId: 12 as VoyageId, lineId: 'golden_wave', destinationPort: 'Hamburg', weightClass: 'medium' };
 
 /** Prázdny kontajner: príchod kamiónom, depo, výdaj exportérovi (`exported`) — reťazec rozhodnutia 9 orchestrátora. */
 const EMPTY_TO_EXPORTER = [at.ramp(50, 0), at.vehicle(30), at.storage(40, 5), at.vehicle(31), at.ramp(50, 1), at.truck(61), at.exported()];
@@ -50,17 +51,17 @@ describe('smery a stavy (tabuľky)', () => {
 });
 
 describe('cargoLabelsProblem — pravidlá štítkov podľa smeru', () => {
-  const problemOf = (labels: Partial<Record<keyof CargoUnitLabels, unknown>>, contractId: unknown): string | undefined => {
-    const problem = cargoLabelsProblem({ ...EMPTY_LABELS, ...labels } as Record<keyof CargoUnitLabels, unknown>, contractId);
+  const problemOf = (labels: Partial<Record<keyof CargoUnitLabelsInput, unknown>>, contractId: unknown): string | undefined => {
+    const problem = cargoLabelsProblem({ ...DEFAULT_CONTAINER_LABELS, ...EMPTY_LABELS, ...labels } as Record<keyof CargoUnitLabelsInput, unknown>, contractId);
     return problem === undefined ? undefined : `${problem.field}: ${problem.problem}`;
   };
 
   it('platné kombinácie: ladiaca loď (import bez kontraktu a linky), import kontraktu, export, tranship, prázdny', () => {
     expect(cargoLabelsProblem(IMPORT_LABELS, null)).toBeUndefined();
     expect(cargoLabelsProblem({ ...IMPORT_LABELS, voyageId: 4 as VoyageId, lineId: 'blue_anchor' }, 4)).toBeUndefined();
-    expect(cargoLabelsProblem(EXPORT_LABELS, 77)).toBeUndefined();
-    expect(cargoLabelsProblem(TRANSHIP_LABELS, TRANSHIP_CONTRACT)).toBeUndefined();
-    expect(cargoLabelsProblem(EMPTY_LABELS, null)).toBeUndefined();
+    expect(cargoLabelsProblem({ ...DEFAULT_CONTAINER_LABELS, ...EXPORT_LABELS }, 77)).toBeUndefined();
+    expect(cargoLabelsProblem({ ...DEFAULT_CONTAINER_LABELS, ...TRANSHIP_LABELS }, TRANSHIP_CONTRACT)).toBeUndefined();
+    expect(cargoLabelsProblem({ ...DEFAULT_CONTAINER_LABELS, ...EMPTY_LABELS }, null)).toBeUndefined();
   });
 
   it.each([
@@ -116,6 +117,9 @@ describe('CargoLedger.create — prázdny kontajner a prekládka', () => {
       direction: 'empty',
       destinationPort: null,
       weightClass: 'light',
+      sizeFt: 20,
+      containerType: 'dry',
+      oog: false,
       hold: null,
       status: 'available',
       repairUntilTick: null,

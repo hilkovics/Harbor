@@ -5,6 +5,7 @@ import contractTemplatesJson from '@data/defs/contract_templates.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
 import linesJson from '@data/defs/lines.json';
+import containerTypesJson from '@data/defs/container_types.json';
 import logisticsJson from '@data/defs/logistics.json';
 import modulesJson from '@data/defs/modules.json';
 import shipsJson from '@data/defs/ships.json';
@@ -22,6 +23,7 @@ import { checkNumber } from '@sim/defs/def-spec';
 type DefName = 'time' | 'economy' | 'infrastructure' | 'logistics';
 
 interface RawBundle {
+  container_types: Record<string, unknown>;
   time: Record<string, unknown>;
   economy: Record<string, unknown>;
   infrastructure: Record<string, unknown>;
@@ -49,6 +51,7 @@ function rawDefs(): RawBundle {
     logistics: structuredClone(logisticsJson),
     contract_templates: structuredClone(contractTemplatesJson),
     lines: structuredClone(linesJson),
+    container_types: structuredClone(containerTypesJson),
   };
 }
 
@@ -458,6 +461,10 @@ describe('loadBundledDefs', () => {
       schemaVersion: 1,
       defaultInternalTicks: 6,
       repathIntervalTicks: 30,
+      // R2 (ADR-039): sklad so stohmi.
+      rehandleTicks: 12,
+      importDwellEstimateHours: 24,
+      yardPlanner: 'planned',
       congestion: { trafficDecayPerHour: 0.9 },
       // R1 (ADR-037): doprava bez prekrývania.
       traffic: { gridlockTicks: 30, stuckTicks: 120, rerouteCooldownTicks: 60, idleParkDelayTicks: 6 },

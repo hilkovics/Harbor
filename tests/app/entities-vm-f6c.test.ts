@@ -4,7 +4,7 @@
 // Skutočný tok prázdnych (návrat, depo, M&R, výdaj) overuje `f6c-real-sim.test.ts`; repositioning a prekládku sim dodá T6C-03,
 // preto tu idú ako ručne vložené kontrakty a jednotky (ako `helpers/f6a.ts` pri exporte).
 import { describe, expect, it } from 'vitest';
-import type { CargoUnit, CargoUnitLabels } from '@sim/cargo';
+import type { CargoUnit, CargoUnitLabelsInput } from '@sim/cargo';
 import { commandFromJSON } from '@sim/commands';
 import type { ContractId, EntityId, VoyageId } from '@sim/core';
 import type { SimEvent } from '@sim/events';
@@ -44,7 +44,7 @@ function depotApp(): App {
 }
 
 /** Tranship jednotka (privezená lodou A, voyage A) na palube lode `shipId`. */
-function transhipOnShip(app: App, contractId: number, shipId: EntityId, labels: CargoUnitLabels): CargoUnit {
+function transhipOnShip(app: App, contractId: number, shipId: EntityId, labels: CargoUnitLabelsInput): CargoUnit {
   return app.world.cargo.create(TEU, { kind: 'on_ship', shipId }, contractId as ContractId, labels);
 }
 
@@ -65,7 +65,7 @@ describe('ShipVM.cargoSplit: prázdne a prekládka', () => {
     const shipA = dockedFeeder(asA);
     const tranship = addTranshipOffer(asA.world);
     tranship.shipId = shipA.id;
-    const labels: CargoUnitLabels = { direction: 'tranship', voyageId: tranship.voyageId, lineId: tranship.lineId, destinationPort: tranship.destinationPort, weightClass: 'medium' };
+    const labels: CargoUnitLabelsInput = { direction: 'tranship', voyageId: tranship.voyageId, lineId: tranship.lineId, destinationPort: tranship.destinationPort, weightClass: 'medium' };
     for (let i = 0; i < 3; i += 1) transhipOnShip(asA, tranship.id, shipA.id, labels);
     const [vmA] = shipVMs(asA.world);
     expect(vmA?.cargoSplit).toEqual({ import: 4 + 3, export: 0 });
@@ -75,7 +75,7 @@ describe('ShipVM.cargoSplit: prázdne a prekládka', () => {
     const shipB = dockedFeeder(asB);
     const out = addTranshipOffer(asB.world);
     out.outShipId = shipB.id;
-    const outLabels: CargoUnitLabels = { direction: 'tranship', voyageId: out.voyageId, lineId: out.lineId, destinationPort: out.destinationPort, weightClass: 'medium' };
+    const outLabels: CargoUnitLabelsInput = { direction: 'tranship', voyageId: out.voyageId, lineId: out.lineId, destinationPort: out.destinationPort, weightClass: 'medium' };
     for (let i = 0; i < 3; i += 1) transhipOnShip(asB, out.id, shipB.id, outLabels);
     const [vmB] = shipVMs(asB.world);
     expect(vmB?.cargoSplit).toEqual({ import: 4, export: 3 });
@@ -90,7 +90,7 @@ describe('ShipVM.cargoSplit: prázdne a prekládka', () => {
     for (let i = 0; i < 2; i += 1) moveChain(app.world, createExportUnit(app.world, roundtrip.exportContract).id, toShipChain(ship.id));
     const tranship = addTranshipOffer(app.world);
     tranship.outShipId = ship.id;
-    const labels: CargoUnitLabels = { direction: 'tranship', voyageId: tranship.voyageId, lineId: tranship.lineId, destinationPort: tranship.destinationPort, weightClass: 'light' };
+    const labels: CargoUnitLabelsInput = { direction: 'tranship', voyageId: tranship.voyageId, lineId: tranship.lineId, destinationPort: tranship.destinationPort, weightClass: 'light' };
     for (let i = 0; i < 2; i += 1) transhipOnShip(app, tranship.id, ship.id, labels);
     moveChain(app.world, createEmptyUnit(app.world, 'golden_wave').id, toShipChain(ship.id));
     const [vm] = shipVMs(app.world);
@@ -103,7 +103,7 @@ describe('ShipVM.cargoSplit: prázdne a prekládka', () => {
     const ship = dockedFeeder(app);
     const tranship = addTranshipOffer(app.world);
     tranship.outShipId = ship.id;
-    const labels: CargoUnitLabels = { direction: 'tranship', voyageId: tranship.voyageId, lineId: tranship.lineId, destinationPort: tranship.destinationPort, weightClass: 'light' };
+    const labels: CargoUnitLabelsInput = { direction: 'tranship', voyageId: tranship.voyageId, lineId: tranship.lineId, destinationPort: tranship.destinationPort, weightClass: 'light' };
     for (let i = 0; i < 2; i += 1) transhipOnShip(app, tranship.id, ship.id, labels);
     moveChain(app.world, createEmptyUnit(app.world, 'golden_wave').id, toShipChain(ship.id));
     ship.transition('lashing');
@@ -114,7 +114,7 @@ describe('ShipVM.cargoSplit: prázdne a prekládka', () => {
   it('loď bez kontraktu (voyage neznáma) nie je loď A prekládky: jednotka sa zarátava do exportu', () => {
     const app = createApp();
     const ship = dockedFeeder(app);
-    const labels: CargoUnitLabels = { direction: 'tranship', voyageId: 99 as VoyageId, lineId: 'golden_wave', destinationPort: 'Hamburg', weightClass: 'light' };
+    const labels: CargoUnitLabelsInput = { direction: 'tranship', voyageId: 99 as VoyageId, lineId: 'golden_wave', destinationPort: 'Hamburg', weightClass: 'light' };
     transhipOnShip(app, 7, ship.id, labels);
     expect(shipDeckSplit(app.world, ship)).toEqual({ import: 4, export: 1, empty: 0 });
   });
@@ -134,7 +134,7 @@ describe('ShipSplitCache', () => {
     // zmena, ktorá počet jednotiek nemení (loď B ↔ A prekládky), sa prejaví až s novou revíziou
     const tranship = addTranshipOffer(app.world);
     tranship.shipId = ship.id;
-    const labels: CargoUnitLabels = { direction: 'tranship', voyageId: tranship.voyageId, lineId: tranship.lineId, destinationPort: tranship.destinationPort, weightClass: 'light' };
+    const labels: CargoUnitLabelsInput = { direction: 'tranship', voyageId: tranship.voyageId, lineId: tranship.lineId, destinationPort: tranship.destinationPort, weightClass: 'light' };
     transhipOnShip(app, tranship.id, ship.id, labels);
     const asImport = cache.split(app.world, ship, 1);
     expect(asImport).toEqual({ import: 5, export: 0, empty: 1 });

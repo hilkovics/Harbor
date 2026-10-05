@@ -94,7 +94,7 @@ describe('ContainerYard — z defu container_yard_small', () => {
     expect(yard).toBeInstanceOf(ContainerYard);
     expect([yard.capacity, yard.category, yard.storedCount, yard.reservedCount, yard.freeCount]).toEqual([64, 'container', 0, 0, 64]);
     expect([yard.unitsIn, yard.unitsOut]).toEqual([0, 0]);
-    expect(yard.params).toEqual({ capacityUnits: 64, category: 'container' });
+    expect(yard.params).toEqual({ capacityUnits: 64, category: 'container', bays: 4, rows: 4, maxTier: 3 });
     const slots = yard.cargoSlots();
     expect([slots.kind, slots.holderId, slots.capacity]).toEqual(['in_storage', YARD_ID, 64]);
     expect(yard.getRuntimeState()).toEqual({ unitsIn: 0, unitsOut: 0 } satisfies StorageRuntimeState);

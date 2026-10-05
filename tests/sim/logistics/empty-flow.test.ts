@@ -36,10 +36,10 @@ describe('EmptyFlow — plán návratov', () => {
     flow.scheduleReturn(200, 'blue_anchor');
     flow.scheduleReturn(100, 'golden_wave');
     expect(flow.dueReturn(99)).toBeUndefined();
-    expect(flow.dueReturn(100)).toEqual({ dueTick: 100, lineId: 'golden_wave' });
+    expect(flow.dueReturn(100)).toEqual({ dueTick: 100, lineId: 'golden_wave', sizeFt: 20 });
     flow.consumeReturn();
     expect(flow.dueReturn(150)).toBeUndefined();
-    expect(flow.dueReturn(200)).toEqual({ dueTick: 200, lineId: 'blue_anchor' });
+    expect(flow.dueReturn(200)).toEqual({ dueTick: 200, lineId: 'blue_anchor', sizeFt: 20 });
     flow.consumeReturn();
     flow.consumeReturn(); // prázdny plán: bez chyby
     expect(flow.returnPlan).toEqual([]);
@@ -151,8 +151,8 @@ describe('EmptyFlow — stav', () => {
 describe('parseEmptyFlowState', () => {
   const valid = {
     returnPlan: [
-      { dueTick: 100, lineId: 'blue_anchor' },
-      { dueTick: 100, lineId: 'golden_wave' },
+      { dueTick: 100, lineId: 'blue_anchor', sizeFt: 20 },
+      { dueTick: 100, lineId: 'golden_wave', sizeFt: 20 },
     ],
     pickupPlan: [{ dueTick: 50, lineId: 'northern_star', contractId: 3 }],
     errands: [{ truckId: 5, lineId: 'northern_star', contractId: 3, unitId: null, giveUpTick: 900 }],
@@ -170,11 +170,11 @@ describe('parseEmptyFlowState', () => {
     ['chýbajúci kľúč', { returnPlan: [] }, '/emptyFlow/pickupPlan'],
     ['cudzí kľúč', { ...valid, extra: 1 }, '/emptyFlow/extra'],
     ['returnPlan nie pole', { ...valid, returnPlan: {} }, '/emptyFlow/returnPlan'],
-    ['neznáma linka v návrate', { ...valid, returnPlan: [{ dueTick: 1, lineId: 'ghost_line' }] }, '/emptyFlow/returnPlan/0/lineId'],
-    ['zlý dueTick návratu', { ...valid, returnPlan: [{ dueTick: -1, lineId: 'blue_anchor' }] }, '/emptyFlow/returnPlan/0/dueTick'],
-    ['necelý dueTick návratu', { ...valid, returnPlan: [{ dueTick: 1.5, lineId: 'blue_anchor' }] }, '/emptyFlow/returnPlan/0/dueTick'],
-    ['nezoradený návrat', { ...valid, returnPlan: [valid.returnPlan[0], { dueTick: 99, lineId: 'blue_anchor' }] }, '/emptyFlow/returnPlan/1/dueTick'],
-    ['cudzí kľúč v návrate', { ...valid, returnPlan: [{ dueTick: 1, lineId: 'blue_anchor', contractId: 1 }] }, '/emptyFlow/returnPlan/0/contractId'],
+    ['neznáma linka v návrate', { ...valid, returnPlan: [{ dueTick: 1, lineId: 'ghost_line', sizeFt: 20 }] }, '/emptyFlow/returnPlan/0/lineId'],
+    ['zlý dueTick návratu', { ...valid, returnPlan: [{ dueTick: -1, lineId: 'blue_anchor', sizeFt: 20 }] }, '/emptyFlow/returnPlan/0/dueTick'],
+    ['necelý dueTick návratu', { ...valid, returnPlan: [{ dueTick: 1.5, lineId: 'blue_anchor', sizeFt: 20 }] }, '/emptyFlow/returnPlan/0/dueTick'],
+    ['nezoradený návrat', { ...valid, returnPlan: [valid.returnPlan[0], { dueTick: 99, lineId: 'blue_anchor', sizeFt: 20 }] }, '/emptyFlow/returnPlan/1/dueTick'],
+    ['cudzí kľúč v návrate', { ...valid, returnPlan: [{ dueTick: 1, lineId: 'blue_anchor', sizeFt: 20, contractId: 1 }] }, '/emptyFlow/returnPlan/0/contractId'],
     ['poverenia nie pole', { ...valid, errands: {} }, '/emptyFlow/errands'],
     ['poverenie s neznámou linkou', { ...valid, errands: [{ truckId: 5, lineId: 'ghost_line', contractId: 3, unitId: null, giveUpTick: 9 }] }, '/emptyFlow/errands/0/lineId'],
     ['poverenie s kamiónom 0', { ...valid, errands: [{ truckId: 0, lineId: 'blue_anchor', contractId: 3, unitId: null, giveUpTick: 9 }] }, '/emptyFlow/errands/0/truckId'],
@@ -208,6 +208,6 @@ describe('parseEmptyFlowState', () => {
   });
 
   it('poradie nezoradenosti sa kontroluje zvlášť pre návraty a výdaje (výdaj nemusí nadväzovať na návrat)', () => {
-    expect(() => parseEmptyFlowState({ returnPlan: [{ dueTick: 900, lineId: 'blue_anchor' }], pickupPlan: [{ dueTick: 5, lineId: 'blue_anchor', contractId: 1 }], errands: [] }, DEFS)).not.toThrow();
+    expect(() => parseEmptyFlowState({ returnPlan: [{ dueTick: 900, lineId: 'blue_anchor', sizeFt: 20 }], pickupPlan: [{ dueTick: 5, lineId: 'blue_anchor', contractId: 1 }], errands: [] }, DEFS)).not.toThrow();
   });
 });

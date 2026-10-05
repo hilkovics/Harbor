@@ -5,7 +5,7 @@
  * Defy: `f6cDefs` = `f6aDefs` (bez ponúk poolu, príchod lode 1 deň po prijatí) s vlastným `emptyFlow` — testy si pripnú pravdepodobnosti
  * (`emptyReturnRate`, `damageChance`, `emptyPickupRate` na 0 alebo 1), takže `Rng` nerozhoduje o tom, čo sa overuje.
  */
-import { EMPTY_WEIGHT_CLASS, type CargoUnitLabels } from '@sim/cargo';
+import { EMPTY_WEIGHT_CLASS, type CargoUnitLabelsInput } from '@sim/cargo';
 import { EmptyRepositioningContract, ExportContract, ImportContract, TranshipContract } from '@sim/contracts';
 import type { EntityId } from '@sim/core';
 import type { DefRegistry } from '@sim/defs';
@@ -62,7 +62,7 @@ export function rampOf(world: World): LoadingRamp {
 }
 
 /** Štítky prázdneho kontajnera linky. */
-export const emptyLabelsOf = (lineId: string): CargoUnitLabels => ({ direction: 'empty', voyageId: null, lineId, destinationPort: null, weightClass: EMPTY_WEIGHT_CLASS });
+export const emptyLabelsOf = (lineId: string): CargoUnitLabelsInput => ({ direction: 'empty', voyageId: null, lineId, destinationPort: null, weightClass: EMPTY_WEIGHT_CLASS });
 
 /**
  * Vloží do skladu `storage` prázdny kontajner linky `lineId` tak, ako by ho uložilo vozidlo (ledger: `in_truck → at_ramp →

@@ -95,10 +95,14 @@ export function exportWorld(options: ExportWorldOptions = {}): World {
 
 export interface BookingOptions {
   readonly kind: 'export' | 'roundtrip';
-  /** Bookované TEU exportu (predvolene 12). */
+  /** Bookované kontajnery exportu (predvolene 12). */
   readonly booked?: number;
-  /** Import TEU roundtripu (predvolene 6). */
+  /** TEU bookovaných kontajnerov exportu (ADR-039; predvolene = `booked`, všetko 20′). */
+  readonly bookedTeu?: number;
+  /** Import kontajnery roundtripu (predvolene 6). */
   readonly importUnits?: number;
+  /** TEU kontajnerov importu roundtripu (predvolene = `importUnits`). */
+  readonly importTeu?: number;
   readonly destinationPort?: string;
   readonly slaDays?: number;
 }
@@ -112,13 +116,14 @@ export interface OfferedBooking {
 /** Vloží do knihy ponuku bookingu (export, alebo roundtrip = import + export jednej voyage); id z postupností knihy. */
 export function offerBooking(world: World, options: BookingOptions): OfferedBooking {
   const { kind, booked = 12, importUnits = 6, destinationPort = 'Hamburg', slaDays = 3 } = options;
+  const { bookedTeu = booked, importTeu = importUnits } = options;
   const book = world.contractBook;
   const tick = world.clock.tick;
   const terms = { slaDays, rewardCents: 1_000_000, xpReward: 10, offeredTick: tick, offerExpiresTick: tick + 2 * TICKS_PER_DAY, shipClassId: 'feeder', cargoTypeId: 'container_teu', lineId: 'blue_anchor' };
   const voyageId = book.allocateVoyageId();
   let importContract: ImportContract | undefined;
   if (kind === 'roundtrip') {
-    importContract = new ImportContract({ ...terms, id: book.allocateId(), voyageId, templateId: 'container_feeder_roundtrip', volumeUnits: importUnits });
+    importContract = new ImportContract({ ...terms, id: book.allocateId(), voyageId, templateId: 'container_feeder_roundtrip', volumeUnits: importUnits, volumeTeu: importTeu });
     book.add(importContract);
   }
   const exportContract = new ExportContract({
@@ -127,6 +132,7 @@ export function offerBooking(world: World, options: BookingOptions): OfferedBook
     voyageId,
     templateId: kind === 'roundtrip' ? 'container_feeder_roundtrip' : 'container_feeder_export',
     volumeUnits: booked,
+    volumeTeu: bookedTeu,
     destinationPort,
   });
   book.add(exportContract);

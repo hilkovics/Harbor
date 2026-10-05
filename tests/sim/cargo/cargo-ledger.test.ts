@@ -68,7 +68,7 @@ describe('CargoLedger.create', () => {
     const grain = harness.ledger.create(GRAIN, at.ship(SHIP), 77 as ContractId);
     expect(teu).toEqual(importUnit({ id: id(2), location: at.ship(SHIP) }));
     expect(grain).toEqual(importUnit({ id: id(3), typeId: GRAIN, contractId: 77 as ContractId, quantity: GRAIN_BATCH, location: at.ship(SHIP) }));
-    expect(Object.keys(teu)).toEqual(['id', 'typeId', 'contractId', 'voyageId', 'lineId', 'direction', 'destinationPort', 'weightClass', 'hold', 'status', 'repairUntilTick', 'quantity', 'location']);
+    expect(Object.keys(teu)).toEqual(['id', 'typeId', 'contractId', 'voyageId', 'lineId', 'direction', 'destinationPort', 'weightClass', 'sizeFt', 'containerType', 'oog', 'hold', 'status', 'repairUntilTick', 'quantity', 'location']);
     expect(harness.ids.next()).toBe(4);
   });
 

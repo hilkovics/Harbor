@@ -1,7 +1,7 @@
 // Spoločné pomôcky pre testy UI/app F6c (T6C-05): repositioning prázdnych a prekládka vložené priamo do knihy kontraktov sveta
 // (správanie dodá sim T6C-02 / T6C-03, UI sa testuje na fixture dátach, ako `helpers/f6a.ts` pri exporte) a prázdne kontajnery
 // v sklade vytvorené a presunuté cez ledger.
-import type { CargoUnit, CargoUnitLabels } from '@sim/cargo';
+import type { CargoUnit, CargoUnitLabelsInput } from '@sim/cargo';
 import { EmptyRepositioningContract, TranshipContract, type AcceptContext } from '@sim/contracts';
 import type { EntityId } from '@sim/core';
 import type { World } from '@sim/world';
@@ -10,7 +10,7 @@ import { TEU } from './f6a-fixtures';
 export { TEU };
 
 /** Štítky prázdneho kontajnera linky (bez kontraktu, voyage a prístavu; ADR-034). */
-export function emptyLabels(lineId: string): CargoUnitLabels {
+export function emptyLabels(lineId: string): CargoUnitLabelsInput {
   return { direction: 'empty', voyageId: null, lineId, destinationPort: null, weightClass: 'light' };
 }
 

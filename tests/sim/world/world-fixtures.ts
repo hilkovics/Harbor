@@ -5,6 +5,7 @@ import contractTemplatesJson from '@data/defs/contract_templates.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
 import linesJson from '@data/defs/lines.json';
+import containerTypesJson from '@data/defs/container_types.json';
 import logisticsJson from '@data/defs/logistics.json';
 import harbor01Json from '@data/maps/harbor_01.json';
 import shipsJson from '@data/defs/ships.json';
@@ -40,6 +41,7 @@ export const RAW_DEFS = {
   logistics: logisticsJson,
   contract_templates: contractTemplatesJson,
   lines: linesJson,
+  container_types: containerTypesJson,
 };
 /**
  * Pôvodný balans kapacít spred Fázy 5b (T5B-01 zväčšila `berth_standard.apronSlots` 4 → 8 a `loading_ramp_container.

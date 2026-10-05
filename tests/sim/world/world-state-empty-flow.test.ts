@@ -17,7 +17,7 @@ const HEAVY_TIMEOUT_MS = 180_000;
 
 /** Tick uprostred vykládky `vertical_slice` a uprostred nakládky `export_roundtrip` (export booking v stave `exporting`). */
 const SLICE_TICK = 8_784;
-const EXPORT_TICK = 28_492;
+const EXPORT_TICK = 31_000;
 
 type BaseScenario = 'vertical_slice' | 'export_roundtrip';
 const cache = new Map<BaseScenario, WorldState>();
@@ -63,6 +63,9 @@ function withEmptyUnit(state: WorldState, fields: Json = {}): WorldState {
     direction: 'empty',
     destinationPort: null,
     weightClass: 'light',
+    sizeFt: 20,
+    containerType: 'dry',
+    oog: false,
     hold: null,
     status: 'damaged',
     repairUntilTick: null,
@@ -86,7 +89,7 @@ describe('WorldState: polia F6c v save a roundtrip', () => {
     const state: WorldState = {
       ...withEmptyUnit(base, { status: 'in_repair', repairUntilTick: base.clock.tick + 500 }),
       emptyFlow: {
-        returnPlan: [{ dueTick: base.clock.tick + 100, lineId: 'blue_anchor' }, { dueTick: base.clock.tick + 100, lineId: 'golden_wave' }],
+        returnPlan: [{ dueTick: base.clock.tick + 100, lineId: 'blue_anchor', sizeFt: 20 }, { dueTick: base.clock.tick + 100, lineId: 'golden_wave', sizeFt: 40 }],
         pickupPlan: [{ dueTick: base.clock.tick + 50, lineId: booking.lineId, contractId: booking.id }],
         errands: [],
       },
@@ -154,8 +157,8 @@ describe('WorldState: polia F6c v save a roundtrip', () => {
     ['jednotka kontraktu s inou linkou ako kontrakt', (s) => ({ ...s, cargo: { ...s.cargo, units: s.cargo.units.map((u, i) => (i === 0 ? { ...u, lineId: 'golden_wave' } : u)) } }), '/cargo/units/0/lineId'],
     ['poškodený import', (s) => ({ ...s, cargo: { ...s.cargo, units: s.cargo.units.map((u, i) => (i === 0 ? { ...u, status: 'damaged' } : u)) } }), '/cargo/units/0/status'],
     ['chýba emptyFlow', (s) => ({ ...s, emptyFlow: undefined as never }), '/emptyFlow'],
-    ['plán návratov nie je zoradený', (s) => ({ ...s, emptyFlow: { returnPlan: [{ dueTick: 9, lineId: 'blue_anchor' }, { dueTick: 3, lineId: 'blue_anchor' }], pickupPlan: [], errands: [] } }), '/emptyFlow/returnPlan/1/dueTick'],
-    ['plán s neznámou linkou', (s) => ({ ...s, emptyFlow: { returnPlan: [{ dueTick: 9, lineId: 'ghost_line' }], pickupPlan: [], errands: [] } }), '/emptyFlow/returnPlan/0/lineId'],
+    ['plán návratov nie je zoradený', (s) => ({ ...s, emptyFlow: { returnPlan: [{ dueTick: 9, lineId: 'blue_anchor', sizeFt: 20 }, { dueTick: 3, lineId: 'blue_anchor', sizeFt: 20 }], pickupPlan: [], errands: [] } }), '/emptyFlow/returnPlan/1/dueTick'],
+    ['plán s neznámou linkou', (s) => ({ ...s, emptyFlow: { returnPlan: [{ dueTick: 9, lineId: 'ghost_line', sizeFt: 20 }], pickupPlan: [], errands: [] } }), '/emptyFlow/returnPlan/0/lineId'],
     ['výdaj s kontraktom 0', (s) => ({ ...s, emptyFlow: { returnPlan: [], pickupPlan: [{ dueTick: 9, lineId: 'blue_anchor', contractId: 0 }], errands: [] } }), '/emptyFlow/pickupPlan/0/contractId'],
     ['plán s neznámym kľúčom', (s) => ({ ...s, emptyFlow: { returnPlan: [], pickupPlan: [], errands: [], extra: [] } as never }), '/emptyFlow/extra'],
   ];

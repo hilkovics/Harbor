@@ -122,7 +122,7 @@ describe('drawTranshipOffer', () => {
       expect(leg.lineId).toBe('blue_anchor');
       const maxSla = Math.max(...defs.contractTemplates.items.map((template) => template.slaDaysRange[1]));
       const urgency = 10_000 + Math.floor((6000 * (maxSla - leg.slaDays)) / maxSla);
-      expect(leg.rewardCents).toBe(Math.floor((leg.volumeUnits * 28_000 * urgency) / 10_000));
+      expect(leg.rewardCents).toBe(Math.floor((leg.volumeTeu * 28_000 * urgency) / 10_000));
       expect(leg.state).toBe('offered');
     }
   });

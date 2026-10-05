@@ -1,7 +1,7 @@
 /**
- * Scenár `export_inbound` (F6a, T6A-04, ADR-032): vertikálny rez exportu po súši bez lode — export booking (36 TEU, Rotterdam)
- * prijatý v ticku 8 641, kamióny prichádzajú naložené pred cut-off, brána ich zaregistruje (1 jednotka s chýbajúcim VGM →
- * hold 6 h), posledný kamión zablokuje chýbajúca cesta pred portálom (RemoveRoad ticku 28 100, PlaceRoad ticku 29 100), takže
+ * Scenár `export_inbound` (F6a, T6A-04, ADR-032): vertikálny rez exportu po súši bez lode — export booking #8 (36 TEU = 20 kontajnerov, Gdańsk)
+ * prijatý v ticku 8 641, kamióny prichádzajú naložené pred cut-off, brána ich zaregistruje (jednotka s chýbajúcim VGM → hold 6 h; po R2 losuje
+ * `Rng` iné jednotky než predtým, v tomto behu žiadnu), posledný kamión zablokuje chýbajúca cesta pred portálom (RemoveRoad ticku 29 000, PlaceRoad ticku 29 700), takže
  * prejde bránou po cut-off (rolled), vyloží sa na rampe a vozidlá odvezú všetky jednotky do skladu. Žiadna jednotka sa
  * nestratí, každý presun je legálny a booking ostane v `accepted` (loď príde až po konci behu).
  */
@@ -17,8 +17,9 @@ import { DEFS } from '../world/world-fixtures';
 
 const SCENARIO = loadScenarioFile('export_inbound');
 const TICKS = 30_000;
-const CONTRACT_ID = 7;
-const BOOKED = 36;
+const CONTRACT_ID = 8;
+/** Booking #8: 36 TEU = 20 kontajnerov pri `sizeMix` 0,6 (ADR-039); po R2 ho losuje pool ako export leg roundtripu (id #7 je teraz import). */
+const BOOKED = 20;
 const RUN_TIMEOUT_MS = 300_000;
 
 interface Run {
@@ -46,7 +47,7 @@ describe('scenár export_inbound', () => {
   const { world, events } = result;
   const contract = world.contracts.get(CONTRACT_ID as never)!;
 
-  it('booking je prijatý v ticku 8 641 a naplánovaný: 36 príchodov pred cut-off, loď po konci behu', () => {
+  it('booking je prijatý v ticku 8 641 a naplánovaný: 20 príchodov pred cut-off (36 TEU), loď po konci behu', () => {
     expect(contract.kind).toBe('export');
     expect(contract.acceptedTick).toBe(8641);
     expect(contract.booking?.bookedUnits).toBe(BOOKED);
@@ -56,7 +57,7 @@ describe('scenár export_inbound', () => {
     expect(world.clock.tick).toBe(TICKS);
   });
 
-  it('36 kamiónov s exportom prešlo bránou a vyložilo; všetky odišli prázdne (units 0)', () => {
+  it('20 kamiónov s exportom (36 TEU) prešlo bránou a vyložilo; všetky odišli prázdne (units 0)', () => {
     expect(of(events, 'TruckSpawned')).toHaveLength(BOOKED);
     expect(of(events, 'ExportArrived')).toHaveLength(BOOKED);
     expect(of(events, 'TruckUnloaded')).toHaveLength(BOOKED);
@@ -85,7 +86,7 @@ describe('scenár export_inbound', () => {
     expect(rolled).toHaveLength(1);
     const cutoff = contract.booking?.cutoffTick as number;
     expect(rolled[0].tick).toBeGreaterThan(cutoff);
-    expect(rolled[0].tick).toBeGreaterThan(29_100);
+    expect(rolled[0].tick).toBeGreaterThan(29_700);
     expect(contract.booking?.rolledUnitIds).toEqual([rolled[0].event.unitId]);
     const sameTick = events.filter((entry) => entry.tick === rolled[0].tick).map((entry) => entry.event.type);
     expect(sameTick.indexOf('ExportArrived')).toBeLessThan(sameTick.indexOf('UnitRolled'));
@@ -95,12 +96,11 @@ describe('scenár export_inbound', () => {
     expect(of(events, 'CutoffWarning').map((entry) => entry.tick)).toEqual([cutoff - 6 * TICKS_PER_HOUR]);
   });
 
-  it('VGM: práve jedna jednotka v hold na vgmHoldHours, uvoľnená presne v untilTick', () => {
+  it('VGM: každá jednotka v hold je zadržaná vgmHoldHours a uvoľnená presne v untilTick (počet holdov losuje Rng, nie je pinnutý)', () => {
     const started = of(events, 'VgmHoldStarted');
-    expect(started).toHaveLength(1);
-    expect(started[0].event.untilTick - started[0].tick).toBe(6 * TICKS_PER_HOUR);
+    for (const entry of started) expect(entry.event.untilTick - entry.tick).toBe(6 * TICKS_PER_HOUR);
     const released = of(events, 'VgmHoldReleased');
-    expect(released).toEqual([{ tick: started[0].event.untilTick, event: { type: 'VgmHoldReleased', contractId: CONTRACT_ID, unitId: started[0].event.unitId } }]);
+    expect(released).toEqual(started.map((entry) => ({ tick: entry.event.untilTick, event: { type: 'VgmHoldReleased', contractId: CONTRACT_ID, unitId: entry.event.unitId } })));
     expect(contract.booking?.heldUnits).toBe(0);
     expect(world.holdIndex.size).toBe(0);
   });
@@ -137,7 +137,7 @@ describe('scenár export_inbound', () => {
 
   it('deterministický: rovnaký beh dá rovnaký hash; roundtrip uprostred príchodov (aj pri rolled) dá zhodný stateHash', () => {
     expect(stateHash(run().world)).toBe(stateHash(world));
-    for (const at of [12_000, 20_000, 28_100, 28_300, 29_150]) {
+    for (const at of [12_000, 20_000, 29_000, 29_100, 29_750]) {
       const half = World.create(DEFS, MAP, SCENARIO.seed);
       runScenario(half, SCENARIO, at);
       const restored = World.deserialize(DEFS, MAP, JSON.parse(JSON.stringify(half.serialize())) as WorldState);

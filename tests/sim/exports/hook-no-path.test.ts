@@ -3,8 +3,8 @@
  * už nie je „na ceste k háku“ (`planUnload`) a žeriav jeho jednotku odloží na apron (`deliver`), odkiaľ ju vozidlo vezme na prístupovej
  * bunke kotviska — žeriav nedrží jednotku pre vozidlo, ktoré nikdy nepríde.
  *
- * - **Prerezaná cesta**: `vertical_slice`, `RemoveRoad` na trase vozidiel v ticku 7 900 (obe vozidlá preplánujú do `no_path`), oprava o 3 000 ticků
- *   neskôr. Pred opravou žeriav ostal v `placing` s prvou jednotkou a loď (77 jednotiek) sa nevykladala.
+ * - **Prerezaná cesta**: `vertical_slice`, `RemoveRoad` na trase vozidiel v ticku 8 332 (obe vozidlá preplánujú do `no_path`), oprava o 3 000 ticků
+ *   neskôr. Pred opravou žeriav ostal v `placing` s prvou jednotkou a loď (49 jednotiek) sa nevykladala.
  * - **Jednosmerky popri nábreží**: kruh ciest okolo dvora je jednosmerný tak, že z cestných buniek pri nábreží sa na ňho nedá odbočiť
  *   (`isRoadStepAllowed`); prístupová bunka kotviska je dosiahnuteľná, bunka pod hákom nie — každá jednotka ide cez apron.
  * - **Nakládka exportu** pod hákom na tom istom kruhu (`export_roundtrip`): vozidlo s jednotkou k háku nedôjde, job `in_storage → in_crane` sa presmeruje na
@@ -23,7 +23,8 @@ import { BUNDLED_DEFS } from '../world/world-fixtures';
 
 const BASE = loadScenarioFile('vertical_slice');
 const TICKS = 30_000;
-const IMPORT_UNITS = 78;
+/** Import kontraktu #1 `vertical_slice`: 78 TEU = 50 kontajnerov pri `sizeMix` 0,6 (ADR-039). */
+const IMPORT_UNITS = 50;
 const TIMEOUT_MS = 120_000;
 
 const cells = (points: readonly (readonly [number, number])[]): { x: number; y: number }[] => points.map(([x, y]) => ({ x, y }));
@@ -99,10 +100,10 @@ function expectRoundtrip(observed: Observed, scenario: Scenario, ticks = TICKS):
 }
 
 describe('prerezaná cesta počas vykládky (buffer 0): žeriav neuviazne na jednotke vozidla v no_path', () => {
-  const CUT_TICK = 7_905;
-  const REPAIR_TICK = 10_900;
-  // Vozidlá jazdia medzi berthom a dvorom po kruhu okolo dvora (x = 41 alebo x = 46): strata oboch strán v ticku 7 905 (zaparkované vozidlá
-  // vyšli z depa v 7 900 s prvou loďou) nechá obe vozidlá bez cesty k háku v no_path.
+  const CUT_TICK = 8_332;
+  const REPAIR_TICK = 11_332;
+  // Vozidlá jazdia medzi berthom a dvorom po kruhu okolo dvora (x = 41 alebo x = 46): strata oboch strán v ticku 8 332 (zaparkované vozidlá
+  // vyšli z depa v 8 327 s prvou loďou) nechá obe vozidlá bez cesty k háku v no_path.
   const CUT_CELL = [
     { x: 41, y: 19 },
     { x: 46, y: 19 },
@@ -129,7 +130,7 @@ describe('prerezaná cesta počas vykládky (buffer 0): žeriav neuviazne na jed
     expect(moves(events, 'on_ship', 'in_crane', window)).toBeGreaterThanOrEqual(3);
   });
 
-  it('po oprave siete sa všetko dokončí: kontrakt, 78 exportovaných jednotiek, žiadna stratená, invarianty sveta', () => {
+  it('po oprave siete sa všetko dokončí: kontrakt, 50 exportovaných jednotiek, žiadna stratená, invarianty sveta', () => {
     expect(world.contracts.get(1 as never)?.state).toBe('completed');
     expect(world.cargo.exportedCount).toBe(IMPORT_UNITS);
     expect(lostUnits(world)).toBe(0);
@@ -160,7 +161,7 @@ describe('jednosmerky popri nábreží: prístupová bunka kotviska je dosiahnut
     expect(observed.longestHold).toBeLessThan(500);
   });
 
-  it('všetko sa dokončí: kontrakt, 78 exportovaných jednotiek, žiadna stratená, invarianty sveta', () => {
+  it('všetko sa dokončí: kontrakt, 50 exportovaných jednotiek, žiadna stratená, invarianty sveta', () => {
     expect(world.contracts.get(1 as never)?.state).toBe('completed');
     expect(world.cargo.exportedCount).toBe(IMPORT_UNITS);
     expect(lostUnits(world)).toBe(0);
@@ -175,8 +176,8 @@ describe('jednosmerky popri nábreží: prístupová bunka kotviska je dosiahnut
 describe('nakládka exportu pod hákom na kruhu jednosmeriek: záložná cesta cez apron (export_roundtrip)', () => {
   const ROUNDTRIP = loadScenarioFile('export_roundtrip');
   const ROUNDTRIP_TICKS = 40_000;
-  const IMPORT = 57;
-  const BOOKED = 36;
+  const IMPORT = 31; // 54 TEU
+  const BOOKED = 24; // 36 TEU
   const SHIPPED = BOOKED - 1; // jednotka, ktorá prišla po cut-off, je rolled (vráti sa po súši), rovnako ako v scenári bez jednosmeriek
   const scenario = withRing(ROUNDTRIP);
   /** Job nakládky presmerovaný na apron: `in_storage → on_apron` s vozidlom v `moving`, ktoré k háku nedôjde; stav sa uloží uprostred záložnej nakládky. */
@@ -184,7 +185,7 @@ describe('nakládka exportu pod hákom na kruhu jednosmeriek: záložná cesta c
   const observed = observe(scenario, (w) => rebound(w), ROUNDTRIP_TICKS);
   const { world, events } = observed;
 
-  it('loď sa naloží a odpláva: 35 odplávaných, 58 exportovaných (57 importov + vrátená rolled jednotka), obe kontrakty dokončené, žiadna stratená', () => {
+  it('loď sa naloží a odpláva: 23 odplávaných, 32 exportovaných (31 importov + vrátená rolled jednotka), obe kontrakty dokončené, žiadna stratená', () => {
     expect(world.cargo.shippedCount).toBe(SHIPPED);
     expect(world.cargo.exportedCount).toBe(IMPORT + 1);
     expect([7, 8].map((id) => world.contracts.get(id as never)?.state)).toEqual(['completed', 'completed']);

@@ -41,7 +41,7 @@ export const id = (value: number): EntityId => value as EntityId;
  * `ModuleEnv` vyžaduje aj tam, kde náklad nie je.
  */
 export function emptyCargo(defs: DefRegistry = MODULE_DEFS): CargoLedger {
-  return new CargoLedger({ cargoTypes: defs.cargoTypes, ids: new EntityIdAllocator(), events: new EventBus<SimEvent>(), clock: { tick: 0 } });
+  return new CargoLedger({ cargoTypes: defs.cargoTypes, containerTypes: defs.containerTypes, ids: new EntityIdAllocator(), events: new EventBus<SimEvent>(), clock: { tick: 0 } });
 }
 
 /** Syntetická mriežka `w×h` celá z nábrežia s jednou hĺbkou (skupiny kotvísk vo všetkých rotáciách). */

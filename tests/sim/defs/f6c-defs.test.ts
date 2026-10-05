@@ -8,6 +8,7 @@ import contractTemplatesJson from '@data/defs/contract_templates.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
 import linesJson from '@data/defs/lines.json';
+import containerTypesJson from '@data/defs/container_types.json';
 import logisticsJson from '@data/defs/logistics.json';
 import modulesJson from '@data/defs/modules.json';
 import shipsJson from '@data/defs/ships.json';
@@ -39,6 +40,7 @@ function rawDefs(): Record<string, Json> {
     logistics: structuredClone(logisticsJson),
     contract_templates: structuredClone(contractTemplatesJson),
     lines: structuredClone(linesJson),
+    container_types: structuredClone(containerTypesJson),
   };
 }
 
@@ -118,7 +120,7 @@ describe('bundled defy F6c (hodnoty z ADR-034)', () => {
     const depot = defs.modules.get('empty_depot');
     const yard = defs.modules.get('container_yard_small');
     expect(depot.kind).toBe('storage');
-    expect(storageParams(depot)).toEqual({ capacityUnits: 96, category: 'container', role: 'empty_depot', repairBays: 2 });
+    expect(storageParams(depot)).toEqual({ capacityUnits: 96, category: 'container', role: 'empty_depot', repairBays: 2, bays: 4, rows: 3, maxTier: 8 });
     expect(depot.footprint).toEqual(yard.footprint);
     expect(storageParams(depot).capacityUnits).toBeGreaterThan(storageParams(yard).capacityUnits);
     expect(depot.techRequired).toBeUndefined();

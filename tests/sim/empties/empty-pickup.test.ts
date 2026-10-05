@@ -10,6 +10,7 @@ import { acceptedBooking, send } from '../helpers/f6a';
 import { TICKS_PER_HOUR, acceptedImport, depotOf, emptiesByLocation, emptyWorld, eventsOf, f6cDefs, putEmpty, rampOf, run, runUntil } from '../helpers/f6c';
 import { assertCargoConservation } from '../helpers/invariants';
 import { StorageModule } from '@sim/modules';
+import { itR1Interim } from '../helpers/r1-interim';
 
 const TWO_STRADDLES = ['straddle_carrier', 'straddle_carrier'];
 const WAIT_HOURS = 6;
@@ -60,7 +61,7 @@ describe('plán výdaja po prijatí export bookingu', () => {
 });
 
 describe('kamión collect — výdaj z depa', () => {
-  it('dostupný prázdny linky: kamión vznikne, dostane pridelený prázdny, naloží ho z docku a odíde (EmptyPickedUp, in_truck → exported)', () => {
+  itR1Interim('dostupný prázdny linky: kamión vznikne, dostane pridelený prázdny, naloží ho z docku a odíde (EmptyPickedUp, in_truck → exported)', () => {
     const { world, contractId } = pickupWorld();
     const unitId = putEmpty(world, depotOf(world), 'blue_anchor');
     world.emptyFlow.schedulePickup(world.clock.tick + 10, 'blue_anchor', contractId);
@@ -126,7 +127,7 @@ describe('kamión collect — výdaj z depa', () => {
     expect(world.cargo.get(foreign)).toMatchObject({ location: { kind: 'in_storage', moduleId: depotOf(world).id } });
   });
 
-  it('poškodený prázdny sa nevydá, kým ho neopravia: po opravě (6 h) ho kamión dostane (EmptyRepaired pred EmptyPickedUp)', () => {
+  itR1Interim('poškodený prázdny sa nevydá, kým ho neopravia: po opravě (6 h) ho kamión dostane (EmptyRepaired pred EmptyPickedUp)', () => {
     const { world, contractId } = pickupWorld({ maxWaitHours: 12 });
     const unitId = putEmpty(world, depotOf(world), 'blue_anchor', 'damaged');
     world.emptyFlow.schedulePickup(world.clock.tick + 10, 'blue_anchor', contractId);
@@ -138,7 +139,7 @@ describe('kamión collect — výdaj z depa', () => {
     expect(eventsOf(events, 'EmptyPickupMissed')).toEqual([]);
   });
 
-  it('záložný prázdny z bežného dvora (fallback) sa vydá, keď depo nemá dostupný; depo má prednosť', () => {
+  itR1Interim('záložný prázdny z bežného dvora (fallback) sa vydá, keď depo nemá dostupný; depo má prednosť', () => {
     const { world, contractId } = pickupWorld();
     const yardUnit = putEmpty(world, yardOf(world), 'blue_anchor');
     world.emptyFlow.schedulePickup(world.clock.tick + 10, 'blue_anchor', contractId);
@@ -153,7 +154,7 @@ describe('kamión collect — výdaj z depa', () => {
     expect(eventsOf(secondEvents, 'EmptyPickedUp')).toMatchObject([{ unitId: preferred }]);
   });
 
-  it('dva výdaje, jeden dostupný prázdny: prvý kamión ho odvezie, druhý sa po čakaní vo vnútrozemí vzdá (metrika miss), nič sa nestratí', () => {
+  itR1Interim('dva výdaje, jeden dostupný prázdny: prvý kamión ho odvezie, druhý sa po čakaní vo vnútrozemí vzdá (metrika miss), nič sa nestratí', () => {
     const { world, contractId } = pickupWorld({ maxWaitHours: 1 });
     putEmpty(world, depotOf(world), 'blue_anchor');
     world.emptyFlow.schedulePickup(world.clock.tick + 10, 'blue_anchor', contractId);
@@ -240,7 +241,7 @@ describe('obnova — plán výdajov voči knihe kontraktov a linke (T6C-07b, m5)
 });
 
 describe('obnova a invarianty', () => {
-  it('save uprostred výdaja (prázdny vo vozidle, kamión čaká) + pokračovanie dá rovnaké udalosti a hash ako nepretržitý beh', () => {
+  itR1Interim('save uprostred výdaja (prázdny vo vozidle, kamión čaká) + pokračovanie dá rovnaké udalosti a hash ako nepretržitý beh', () => {
     const { world: continuous, contractId } = pickupWorld();
     putEmpty(continuous, depotOf(continuous), 'blue_anchor');
     continuous.emptyFlow.schedulePickup(continuous.clock.tick + 10, 'blue_anchor', contractId);

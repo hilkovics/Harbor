@@ -57,6 +57,7 @@ import {
 } from '../helpers/f4';
 import { must } from '../helpers/harbor';
 import { DEFS, MAP, MAP_GRID } from '../world/world-fixtures';
+import { itR1Interim } from '../helpers/r1-interim';
 
 const ROAD_COST = DEFS.infrastructure.road.costPerCellCents;
 const GATE_DEF = DEFS.modules.get('truck_gate');
@@ -612,7 +613,7 @@ describe('RemoveModule pozemných modulov: kamión alebo náklad na rampe bráni
     expect(reasonsInclude(result.reasons, 'has_trucks', 'has_cargo')).toBe(true);
   });
 
-  it('po vyvezení všetkých jednotiek (žiadny kamión, náklad ani rezervácia) sa brána, plocha aj rampa dajú odstrániť', () => {
+  itR1Interim('po vyvezení všetkých jednotiek (žiadny kamión, náklad ani rezervácia) sa brána, plocha aj rampa dajú odstrániť', () => {
     recorder.runUntil((w) => w.cargo.exportedCount === 12, 30000);
     expect(trucksOf(world).size).toBe(0);
     for (const id of [gateOf(world).id, waitingAreaOf(world).id, rampOf(world).id]) {

@@ -19,6 +19,7 @@ import { loadBundledMap } from '@sim/grid';
 import { World, fnv1a32Hex, hashWorldState, stateHash, type WorldState } from '@sim/world';
 import { assertCargoConservation } from '../helpers/invariants';
 import { loadScenarioFile, runScenario, type Scenario } from '../helpers/scenario';
+import { itR1Interim } from '../helpers/r1-interim';
 
 const DEFS = loadBundledDefs();
 const MAP = loadBundledMap();
@@ -86,7 +87,7 @@ describe('roundtrip uprostred vertical_slice (F5) → rovnaký ďalší priebeh 
     baseline = runBaseline(scenario, SPLITS);
   }, HEAVY_TIMEOUT_MS);
 
-  it('stráž pokrytia: body roundtripu ležia v rôznych fázach kontraktu (accepted, unloading, exporting s kamiónmi, completed)', () => {
+  itR1Interim('stráž pokrytia: body roundtripu ležia v rôznych fázach kontraktu (accepted, unloading, exporting s kamiónmi, completed)', () => {
     expect(baseline.probes.get(3_000)).toEqual({ contracts: ['accepted'], ships: [], trucks: 0 });
     expect(baseline.probes.get(9_000)).toMatchObject({ contracts: ['unloading'], ships: ['docked'] });
     expect(baseline.probes.get(12_000)?.contracts).toEqual(['exporting']);

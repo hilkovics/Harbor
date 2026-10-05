@@ -43,6 +43,7 @@ import {
 import { must } from '../helpers/harbor';
 import { loadScenarioFile, readRepoJson, stateHash } from '../helpers/scenario';
 import { DEFS, MAP, hashState } from '../world/world-fixtures';
+import { itR1Interim } from '../helpers/r1-interim';
 
 const UNITS = 120;
 /** Akceptácia fázy: všetky jednotky `exported` do 40 000 tickov. */
@@ -144,7 +145,7 @@ describe('scenár full_import_chain: beh 120 TEU až po export', () => {
   const events = () => recorder.events;
   const moves = () => timed4(events(), 'CargoMoved');
 
-  it('všetkých 120 jednotiek je exported do 40 000 tickov; nič nie je na lodi, v žeriave, na aprone, vo vozidle, v sklade, na rampe ani v kamióne', () => {
+  itR1Interim('všetkých 120 jednotiek je exported do 40 000 tickov; nič nie je na lodi, v žeriave, na aprone, vo vozidle, v sklade, na rampe ani v kamióne', () => {
     const { cargo } = world;
     expect(exportedAt).toBeLessThanOrEqual(MAX_TICKS);
     expect(cargo.exportedCount).toBe(UNITS);
@@ -195,7 +196,7 @@ describe('scenár full_import_chain: beh 120 TEU až po export', () => {
     for (const sample of recorder.ramps) expect(sample.operational, `tick ${String(sample.tick)}`).toBe(true);
   });
 
-  it('reťaz pohybov každej z 120 jednotiek je presne on_ship → in_crane → on_apron → in_vehicle → in_storage → in_vehicle → at_ramp → in_truck → exported', () => {
+  itR1Interim('reťaz pohybov každej z 120 jednotiek je presne on_ship → in_crane → on_apron → in_vehicle → in_storage → in_vehicle → at_ramp → in_truck → exported', () => {
     const chains = moveChains(events());
     expect(chains.size).toBe(UNITS);
     for (const [unitId, chain] of chains) {
@@ -219,7 +220,7 @@ describe('scenár full_import_chain: beh 120 TEU až po export', () => {
     }
   });
 
-  it('exported je konečný stav: nikdy sa nevyskytne CargoMoved z exported, po dosiahnutí 120 sa už nič nepohne a ledger jednotky nepozná', () => {
+  itR1Interim('exported je konečný stav: nikdy sa nevyskytne CargoMoved z exported, po dosiahnutí 120 sa už nič nepohne a ledger jednotky nepozná', () => {
     expect(moves().filter((entry) => entry.event.from.kind === 'exported')).toEqual([]);
     expect(moves().filter((entry) => entry.tick > exportedAt)).toEqual([]);
     expect(landsideEvents(events(), 'TruckSpawned').filter((entry) => entry.tick > exportedAt)).toEqual([]);
@@ -233,7 +234,7 @@ describe('scenár full_import_chain: beh 120 TEU až po export', () => {
     expect(stateHash(world)).toBe(before);
   });
 
-  it('kamióny: 120 TruckSpawned a 120 TruckExited po 1 jednotke, na našu rampu a dock v rozsahu; world.trucks je na konci prázdne', () => {
+  itR1Interim('kamióny: 120 TruckSpawned a 120 TruckExited po 1 jednotke, na našu rampu a dock v rozsahu; world.trucks je na konci prázdne', () => {
     const spawned = landsideEvents(events(), 'TruckSpawned');
     const exited = landsideEvents(events(), 'TruckExited');
     expect(spawned).toHaveLength(UNITS);
@@ -250,7 +251,7 @@ describe('scenár full_import_chain: beh 120 TEU až po export', () => {
     expect(trucksOf(world).size).toBe(0);
   });
 
-  it('životný cyklus každého kamióna: to_gate → gate_queue → to_bay → waiting → to_dock → loading → to_gate_out → gate_queue_out → to_portal (bez no_path)', () => {
+  itR1Interim('životný cyklus každého kamióna: to_gate → gate_queue → to_bay → waiting → to_dock → loading → to_gate_out → gate_queue_out → to_portal (bez no_path)', () => {
     expect(truckFsmViolation(events())).toBeNull();
     const chains = truckStateChains(events());
     expect(chains.size).toBe(UNITS);
@@ -261,7 +262,7 @@ describe('scenár full_import_chain: beh 120 TEU až po export', () => {
     expect(landsideEvents(events(), 'TruckStateChanged').filter((entry) => entry.event.to === 'no_path')).toEqual([]);
   });
 
-  it('TruckExited a export jednotky nastanú v tom istom ticku a z toho istého kamióna (in_truck → exported)', () => {
+  itR1Interim('TruckExited a export jednotky nastanú v tom istom ticku a z toho istého kamióna (in_truck → exported)', () => {
     const exportMoves = moves().filter((entry) => entry.event.to.kind === 'exported');
     expect(exportMoves).toHaveLength(UNITS);
     const exitTicks = new Map(landsideEvents(events(), 'TruckExited').map((entry) => [entry.event.truckId as number, entry.tick]));
@@ -272,7 +273,7 @@ describe('scenár full_import_chain: beh 120 TEU až po export', () => {
     }
   });
 
-  it('nakládka trvá loadTicksPerUnit × units (±1 tick) a at_ramp → in_truck prebehne počas loading', () => {
+  itR1Interim('nakládka trvá loadTicksPerUnit × units (±1 tick) a at_ramp → in_truck prebehne počas loading', () => {
     const changes = landsideEvents(events(), 'TruckStateChanged');
     const startedLoading = new Map<number, number>();
     const finishedLoading = new Map<number, number>();
@@ -293,7 +294,7 @@ describe('scenár full_import_chain: beh 120 TEU až po export', () => {
     }
   });
 
-  it('kamión vzniká na road portáli (44, 63) a mizne pri ňom: prvá vzorka je najviac o krok od portálu, posledná najviac o dva', () => {
+  itR1Interim('kamión vzniká na road portáli (44, 63) a mizne pri ňom: prvá vzorka je najviac o krok od portálu, posledná najviac o dva', () => {
     const speed = TRUCK.speedCellsPerTick;
     expect(recorder.trucks.size).toBe(UNITS);
     for (const [truckId, samples] of recorder.trucks) {
@@ -306,7 +307,7 @@ describe('scenár full_import_chain: beh 120 TEU až po export', () => {
     }
   });
 
-  it('brána: 240 prechodov (120 kamiónov × dnu aj von), medzi dvoma ≥ processTicks; trucksProcessed = 240, fronta prázdna', () => {
+  itR1Interim('brána: 240 prechodov (120 kamiónov × dnu aj von), medzi dvoma ≥ processTicks; trucksProcessed = 240, fronta prázdna', () => {
     const crossings = gateCrossingTicks(events());
     expect(crossings).toHaveLength(2 * UNITS);
     expect(minGap(crossings)).toBeGreaterThanOrEqual(PROCESS_TICKS);
@@ -320,7 +321,7 @@ describe('scenár full_import_chain: beh 120 TEU až po export', () => {
     for (const rule of ALL_RULES) expect(recorder.violationsOf(rule), rule).toEqual([]);
   });
 
-  it('joby: 120 inbound (apron → sklad) a 120 outbound (sklad → rampa), každý raz priradený a hotový; každá jednotka má práve jeden outbound job', () => {
+  itR1Interim('joby: 120 inbound (apron → sklad) a 120 outbound (sklad → rampa), každý raz priradený a hotový; každá jednotka má práve jeden outbound job', () => {
     const created = timed4(events(), 'JobCreated');
     expect(created).toHaveLength(2 * UNITS);
     expect(timed4(events(), 'JobAssigned')).toHaveLength(2 * UNITS);
@@ -337,7 +338,7 @@ describe('scenár full_import_chain: beh 120 TEU až po export', () => {
     expect(world.jobs.size).toBe(0);
   });
 
-  it('vozidlá: FSM ide len povolenými prechodmi a na konci sú všetky idle bez jobu a nákladu', () => {
+  itR1Interim('vozidlá: FSM ide len povolenými prechodmi a na konci sú všetky idle bez jobu a nákladu', () => {
     expect(vehicleFsmViolation(events())).toBeNull();
     expect(world.vehicles.size).toBe(STRADDLES.length);
     for (const vehicle of world.vehicles.values()) {
@@ -347,7 +348,7 @@ describe('scenár full_import_chain: beh 120 TEU až po export', () => {
     }
   });
 
-  it('dvory: náklad prešiel cez ne (unitsIn = unitsOut = 120), na konci prázdne bez rezervácií', () => {
+  itR1Interim('dvory: náklad prešiel cez ne (unitsIn = unitsOut = 120), na konci prázdne bez rezervácií', () => {
     const yards = storageModulesOf(world) as StorageModule[];
     expect(yards.reduce((sum, yard) => sum + yard.unitsIn, 0)).toBe(UNITS);
     expect(yards.reduce((sum, yard) => sum + yard.unitsOut, 0)).toBe(UNITS);
@@ -357,7 +358,7 @@ describe('scenár full_import_chain: beh 120 TEU až po export', () => {
     }
   });
 
-  it('rampa: staging na docku nikdy nepresiahol stagingPerDock, bol využitý a na konci je prázdny bez rezervácií', () => {
+  itR1Interim('rampa: staging na docku nikdy nepresiahol stagingPerDock, bol využitý a na konci je prázdny bez rezervácií', () => {
     let peak = 0;
     for (const sample of recorder.ramps) {
       sample.staged.forEach((count, dock) => {
@@ -407,7 +408,7 @@ describe('determinizmus: dva behy s rovnakým seedom a príkazmi dávajú rovnak
     b = run();
   }, RUN_TIMEOUT_MS);
 
-  it('oba behy exportujú všetkých 12 jednotiek a skončia v tom istom ticku', () => {
+  itR1Interim('oba behy exportujú všetkých 12 jednotiek a skončia v tom istom ticku', () => {
     expect(a.world.cargo.exportedCount).toBe(SMALL_UNITS);
     expect(b.world.cargo.exportedCount).toBe(SMALL_UNITS);
     expect(a.world.clock.tick).toBe(b.world.clock.tick);

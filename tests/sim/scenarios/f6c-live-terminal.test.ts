@@ -20,6 +20,7 @@ import { MAP, lostUnits } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
 import { REPO_ROOT, loadScenarioFile, runScenario } from '../helpers/scenario';
 import { BUNDLED_DEFS } from '../world/world-fixtures';
+import { itR1Interim } from '../helpers/r1-interim';
 
 const SCENARIO = loadScenarioFile('live_terminal');
 const TICKS = 60_000;
@@ -109,7 +110,7 @@ describe('scenár live_terminal: beh', () => {
   const returnedIds = new Set(returned.map((event) => event.unitId as number));
   const loaded = of(events, 'UnitLoaded');
 
-  it('import: kontrakty #1 (48 TEU) a #4 (96 TEU) sa vyložia, odvezú kamiónmi (exported) a dokončia', () => {
+  itR1Interim('import: kontrakty #1 (48 TEU) a #4 (96 TEU) sa vyložia, odvezú kamiónmi (exported) a dokončia', () => {
     for (const [id, units] of [[IMPORT_A, IMPORT_A_UNITS], [IMPORT_B, IMPORT_B_UNITS]] as const) {
       expect(world.contracts.get(id as never), `import #${String(id)}`).toMatchObject({ kind: 'import', lineId: 'blue_anchor', volumeUnits: units, state: 'completed', unitsExported: units });
     }
@@ -118,7 +119,7 @@ describe('scenár live_terminal: beh', () => {
     expect(world.cargo.exportedCount).toBe(IMPORT_A_UNITS + IMPORT_B_UNITS + of(events, 'EmptyPickedUp').length);
   });
 
-  it('prázdne: návrat z vnútrozemia (len linka importov) do depa, kontrola a oprava, výdaj exportérovi #11 z depa', () => {
+  itR1Interim('prázdne: návrat z vnútrozemia (len linka importov) do depa, kontrola a oprava, výdaj exportérovi #11 z depa', () => {
     expect(returned.length).toBeGreaterThan(REPOSITIONED);
     expect(returned.every((event) => event.lineId === 'blue_anchor')).toBe(true);
     for (const event of returned) expect(kinds.get(event.unitId)?.slice(0, 4), `jednotka ${String(event.unitId)}`).toEqual(['in_truck', 'at_ramp', 'in_vehicle', 'in_storage']);
@@ -142,7 +143,7 @@ describe('scenár live_terminal: beh', () => {
     }
   });
 
-  it('export: booking #11 — 36 TEU prešlo bránou, uložilo sa, naložilo a odplávalo (in_truck → … → in_crane → on_ship → shipped)', () => {
+  itR1Interim('export: booking #11 — 36 TEU prešlo bránou, uložilo sa, naložilo a odplávalo (in_truck → … → in_crane → on_ship → shipped)', () => {
     const booking = world.contracts.get(EXPORT_ID as never);
     expect(booking).toMatchObject({ kind: 'export', lineId: 'blue_anchor', state: 'completed', volumeUnits: EXPORT_UNITS });
     // vnútrozemie (ADR-035): export vojde len so zaručeným miestom v sklade; dva dvory (T6D-04) ho majú, takže ani jeden kamión nezostane čakať do po cut-off (rolled 0)
@@ -157,7 +158,7 @@ describe('scenár live_terminal: beh', () => {
     }
   });
 
-  it('repositioning: booking #12 naložil 24 prázdnych (vrátených z vnútrozemia) na tú istú loď po plných jednotkách exportu; odmena za naložené', () => {
+  itR1Interim('repositioning: booking #12 naložil 24 prázdnych (vrátených z vnútrozemia) na tú istú loď po plných jednotkách exportu; odmena za naložené', () => {
     const booking = world.contracts.get(REPOSITIONING_ID as never);
     expect(booking).toMatchObject({ kind: 'empty_repositioning', lineId: 'blue_anchor', state: 'completed', volumeUnits: REPOSITIONED });
     expect(booking?.booking).toMatchObject({ arrivedUnits: REPOSITIONED, loadedUnits: REPOSITIONED });
@@ -180,7 +181,7 @@ describe('scenár live_terminal: beh', () => {
     expect(new Set([...exportTicks, ...emptyTicks].map((tick) => loaded.find((entry) => entry.tick === tick)?.event.shipId)).size).toBe(1);
   });
 
-  it('prekládka: #13 — loď A vyloží 36 TEU do skladu (zoskupene, najviac dva dvory), loď B o 1 – 2 dni odvezie; jednotky nikdy neprešli bránou ani rampou', () => {
+  itR1Interim('prekládka: #13 — loď A vyloží 36 TEU do skladu (zoskupene, najviac dva dvory), loď B o 1 – 2 dni odvezie; jednotky nikdy neprešli bránou ani rampou', () => {
     const leg = world.contracts.get(TRANSHIP_ID as never);
     expect(leg).toMatchObject({ kind: 'tranship', lineId: 'northern_star', state: 'completed', volumeUnits: TRANSHIP_UNITS });
     expect(leg?.booking).toMatchObject({ arrivedUnits: TRANSHIP_UNITS, loadedUnits: TRANSHIP_UNITS, returnedUnits: 0 });
@@ -211,7 +212,7 @@ describe('scenár live_terminal: beh', () => {
     expect(of(events, 'ContractCompleted').find((entry) => entry.event.contractId === TRANSHIP_ID)?.event).toMatchObject({ rewardCents: 1_234_800, penaltiesCents: 0 });
   });
 
-  it('nič sa nestratilo: vytvorené = živé + exported + shipped, lostUnits 0, invarianty sveta bez porušenia', () => {
+  itR1Interim('nič sa nestratilo: vytvorené = živé + exported + shipped, lostUnits 0, invarianty sveta bez porušenia', () => {
     expect(lostUnits(world)).toBe(0);
     expect(world.cargo.createdCount).toBe(world.cargo.liveCount + world.cargo.exportedCount + world.cargo.shippedCount);
     expect(world.cargo.shippedCount).toBe(EXPORT_UNITS + REPOSITIONED + TRANSHIP_UNITS);
@@ -222,7 +223,7 @@ describe('scenár live_terminal: beh', () => {
     expect(world.storedCargo.emptySize).toBe(live.length);
   });
 
-  it('golden report tests/sim/__golden__/live_terminal.json sa zhoduje s behom (všetky štyri toky nenulové)', () => {
+  itR1Interim('golden report tests/sim/__golden__/live_terminal.json sa zhoduje s behom (všetky štyri toky nenulové)', () => {
     expect(existsSync(GOLDEN_PATH), 'chýba golden: pnpm simrun data/scenarios/live_terminal.json --ticks 60000 --report').toBe(true);
     const golden = JSON.parse(readFileSync(GOLDEN_PATH, 'utf8')) as Record<string, number>;
     const metrics = {
@@ -248,7 +249,7 @@ describe('scenár live_terminal: beh', () => {
     expect([metrics.exportedUnits, metrics.shippedUnits, metrics.emptyPickedUp, metrics.repositionedUnits, metrics.transhipLoaded].every((value) => value > 0)).toBe(true);
   });
 
-  it('deterministický: rovnaký beh dá rovnaký stateHash; obnova uprostred prekládky (jednotky v sklade, nakládka na B) a nakládky prázdnych dá zhodný stateHash', () => {
+  itR1Interim('deterministický: rovnaký beh dá rovnaký stateHash; obnova uprostred prekládky (jednotky v sklade, nakládka na B) a nakládky prázdnych dá zhodný stateHash', () => {
     const expected = stateHash(world);
     expect(stateHash(run().world)).toBe(expected);
     const leg = world.contracts.get(TRANSHIP_ID as never);

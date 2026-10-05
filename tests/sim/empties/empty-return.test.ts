@@ -9,6 +9,7 @@ import { TICKS_PER_DAY, acceptedImport, depotOf, emptiesByLocation, emptyWorld, 
 import { EmptyDepot } from '@sim/modules';
 import type { CargoUnit } from '@sim/cargo';
 import type { EntityId } from '@sim/core';
+import { itR1Interim } from '../helpers/r1-interim';
 
 const TWO_STRADDLES = ['straddle_carrier', 'straddle_carrier'];
 
@@ -73,7 +74,7 @@ describe('planEmptyReturn — plán návratu po odchode importu', () => {
 });
 
 describe('návrat prázdneho — kamión, brána, rampa, depo', () => {
-  it('splatný návrat: kamión delivery s novou prázdnou jednotkou → EmptyReturned → vykládka na rampe → job → uložené v depe (EmptyStored bez fallbacku)', () => {
+  itR1Interim('splatný návrat: kamión delivery s novou prázdnou jednotkou → EmptyReturned → vykládka na rampe → job → uložené v depe (EmptyStored bez fallbacku)', () => {
     const world = emptyWorld({ vehicles: TWO_STRADDLES });
     world.emptyFlow.scheduleReturn(world.clock.tick + 5, 'northern_star');
     const events = runUntil(world, (w) => w.emptyFlow.returnPlan.length === 0 && emptiesByLocation(w)['in_storage'] === 1, 3_000, 'uloženie prázdneho');
@@ -103,7 +104,7 @@ describe('návrat prázdneho — kamión, brána, rampa, depo', () => {
     expect(world.cargo.createdCount).toBe(0);
   });
 
-  it('dve linky: každý návrat nesie svoju linku a obe jednotky skončia v depe', () => {
+  itR1Interim('dve linky: každý návrat nesie svoju linku a obe jednotky skončia v depe', () => {
     const world = emptyWorld({ vehicles: TWO_STRADDLES });
     const tick = world.clock.tick;
     world.emptyFlow.scheduleReturn(tick + 5, 'blue_anchor');
@@ -117,7 +118,7 @@ describe('návrat prázdneho — kamión, brána, rampa, depo', () => {
 });
 
 describe('fallback — prázdny do bežného dvora len keď depo chýba (T6C-07b, M1)', () => {
-  it('depo plné (kapacita 1): druhý návrat sa zahodí (EmptyReturnDeclined), do dvora sa neukladá žiadny prázdny', () => {
+  itR1Interim('depo plné (kapacita 1): druhý návrat sa zahodí (EmptyReturnDeclined), do dvora sa neukladá žiadny prázdny', () => {
     const defs = f6cDefs({ moduleParams: { empty_depot: { capacityUnits: 1 } } });
     const world = emptyWorld({ defs, vehicles: TWO_STRADDLES });
     const tick = world.clock.tick;
@@ -146,7 +147,7 @@ describe('fallback — prázdny do bežného dvora len keď depo chýba (T6C-07b
 });
 
 describe('import → návrat prázdneho (celý reťaz cez kontrakt)', () => {
-  it('prístav bez depa: odvezený import nezaloží návrat (returnPlan ostane prázdny, nevznikne žiadna prázdna jednotka)', () => {
+  itR1Interim('prístav bez depa: odvezený import nezaloží návrat (returnPlan ostane prázdny, nevznikne žiadna prázdna jednotka)', () => {
     const defs = f6cDefs({ emptyFlow: { emptyReturnRate: 1 }, economy: { arrivalDaysRange: [0.5, 0.5] } });
     const world = emptyWorld({ defs, depot: false, vehicles: TWO_STRADDLES });
     acceptedImport(world, 'golden_wave', 4);
@@ -155,7 +156,7 @@ describe('import → návrat prázdneho (celý reťaz cez kontrakt)', () => {
     expect(world.cargo.createdCount).toBe(4);
   }, 120_000);
 
-  it('rate 1: každá jednotka importu, ktorá odíde kamiónom, naplánuje návrat prázdneho svojej linky; po 1 dni prídu a uložia sa v depe', () => {
+  itR1Interim('rate 1: každá jednotka importu, ktorá odíde kamiónom, naplánuje návrat prázdneho svojej linky; po 1 dni prídu a uložia sa v depe', () => {
     const defs = f6cDefs({ emptyFlow: { emptyReturnRate: 1, hinterlandDaysRange: [1, 1] }, economy: { arrivalDaysRange: [0.5, 0.5] } });
     const world = emptyWorld({ defs, vehicles: TWO_STRADDLES });
     const { contractId } = acceptedImport(world, 'golden_wave', 4);

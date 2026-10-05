@@ -30,6 +30,7 @@ import {
   type OutboundOptions,
 } from '../logistics/outbound-fixtures';
 import { DEFS, LEGACY_CAPACITY_DEFS, MAP, RAW_DEFS } from '../world/world-fixtures';
+import { itR1Interim } from '../helpers/r1-interim';
 
 /**
  * Celý súbor stojí na pôvodnom stagingu 2 × 2 (plný staging, poradie dockov 0, 0, 1, 1) — Fáza 5b zväčšila
@@ -348,7 +349,7 @@ describe('cyklus vozidla: sklad → dock rampy', () => {
     expect([world.jobs.size, world.vehicles.get(vehicleId)?.state]).toEqual([0, 'idle']);
   });
 
-  it('staging sa zaplní (2 docky × 2) a ďalšie outbound joby nevzniknú; zvyšok ostane v sklade, nič sa nestratí', () => {
+  itR1Interim('staging sa zaplní (2 docky × 2) a ďalšie outbound joby nevzniknú; zvyšok ostane v sklade, nič sa nestratí', () => {
     const { world, far, depot } = outboundWorld();
     const ramp = rampOf(world);
     const units = stockYard(world, far, 7);

@@ -26,6 +26,7 @@ import { MAP, lostUnits } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
 import { REPO_ROOT, loadScenarioFile, runScenario } from '../helpers/scenario';
 import { BUNDLED_DEFS, DEFS } from '../world/world-fixtures';
+import { itR1Interim } from '../helpers/r1-interim';
 
 const SCENARIO = loadScenarioFile('export_roundtrip');
 const TICKS = 40_000;
@@ -123,7 +124,7 @@ describe.each(MODES)('scenár export_roundtrip: režim $name', ({ defs, goldenPa
   const exportContract = world.contracts.get(EXPORT_ID as never)!;
   const importContract = world.contracts.get(IMPORT_ID as never)!;
 
-  it('roundtrip: import 57 TEU a export 36 TEU jednej voyage, oba prijaté v ticku 8 641 a dokončené', () => {
+  itR1Interim('roundtrip: import 57 TEU a export 36 TEU jednej voyage, oba prijaté v ticku 8 641 a dokončené', () => {
     expect([importContract.kind, exportContract.kind]).toEqual(['import', 'export']);
     expect(importContract.voyageId).toBe(exportContract.voyageId);
     expect(importContract.volumeUnits).toBe(IMPORT_UNITS);
@@ -134,7 +135,7 @@ describe.each(MODES)('scenár export_roundtrip: režim $name', ({ defs, goldenPa
     expect(world.clock.tick).toBe(TICKS);
   });
 
-  it('36 kamiónov s exportom prešlo bránou, posledný prišiel po cut-off ako rolled (4 s VGM hold) až počas lashingu', () => {
+  itR1Interim('36 kamiónov s exportom prešlo bránou, posledný prišiel po cut-off ako rolled (4 s VGM hold) až počas lashingu', () => {
     const cutoff = of(events, 'CutoffPassed');
     expect(cutoff).toHaveLength(1);
     expect(cutoff[0].event).toMatchObject({ contractId: EXPORT_ID, arrivedUnits: BOOKED - 1, bookedUnits: BOOKED });
@@ -150,7 +151,7 @@ describe.each(MODES)('scenár export_roundtrip: režim $name', ({ defs, goldenPa
     expect(of(events, 'TruckUnloaded')).toHaveLength(BOOKED);
   });
 
-  it('loď vyloží 57 TEU importu a naloží exportu v poradí stowage plánu (žiadna jednotka mimo poradia)', () => {
+  itR1Interim('loď vyloží 57 TEU importu a naloží exportu v poradí stowage plánu (žiadna jednotka mimo poradia)', () => {
     expect(of(events, 'CraneCycleDone')).toHaveLength(IMPORT_UNITS);
     const loaded = of(events, 'UnitLoaded');
     expect(loaded).toHaveLength(shippedUnits);
@@ -159,7 +160,7 @@ describe.each(MODES)('scenár export_roundtrip: režim $name', ({ defs, goldenPa
     expect(of(events, 'DualCycle').length).toBeGreaterThan(0);
   });
 
-  it('lashing po poslednej naloženej jednotke: lashingTicksPerUnit × počet naložených + paperworkTicks, potom odchod lode s ExportShipped', () => {
+  itR1Interim('lashing po poslednej naloženej jednotke: lashingTicksPerUnit × počet naložených + paperworkTicks, potom odchod lode s ExportShipped', () => {
     const { lashingTicksPerUnit, paperworkTicks } = defs.ships.get('feeder');
     const lashing = of(events, 'ShipLashingStarted');
     expect(lashing).toHaveLength(1);
@@ -172,7 +173,7 @@ describe.each(MODES)('scenár export_roundtrip: režim $name', ({ defs, goldenPa
     expect(of(events, 'ExportShipped')[0].tick).toBe(departed[0].tick);
   });
 
-  it('každá naložená jednotka prešla legálnu cestu on_ship ← in_crane ← vozidlo ← sklad … → shipped (nič sa neteleportuje)', () => {
+  itR1Interim('každá naložená jednotka prešla legálnu cestu on_ship ← in_crane ← vozidlo ← sklad … → shipped (nič sa neteleportuje)', () => {
     const shipped = of(events, 'CargoMoved').filter((entry) => entry.event.to.kind === 'shipped');
     expect(shipped).toHaveLength(shippedUnits);
     const all = chains(events);
@@ -183,7 +184,7 @@ describe.each(MODES)('scenár export_roundtrip: režim $name', ({ defs, goldenPa
     for (const entry of shipped) expect(all.get(entry.event.unitId), `jednotka ${String(entry.event.unitId)}`).toEqual(expected);
   });
 
-  it('rolled jednotka: prišla po začiatku lashingu, nenaložená, vráti sa odosielateľovi po súši; booking s penalizáciou rolled', () => {
+  itR1Interim('rolled jednotka: prišla po začiatku lashingu, nenaložená, vráti sa odosielateľovi po súši; booking s penalizáciou rolled', () => {
     const [rolled] = of(events, 'UnitRolled');
     const id = rolled.event.unitId;
     const loadedEntry = of(events, 'UnitLoaded').find((entry) => entry.event.unitId === id);
@@ -199,7 +200,7 @@ describe.each(MODES)('scenár export_roundtrip: režim $name', ({ defs, goldenPa
     expect(exportContract.booking?.rolledUnitIds).toEqual([id]);
   });
 
-  it('žiadna jednotka sa nestratila: vytvorených 93 = 57 exportovaných importov + vrátený export (1) + odoslané lodou (35); invarianty bez porušenia', () => {
+  itR1Interim('žiadna jednotka sa nestratila: vytvorených 93 = 57 exportovaných importov + vrátený export (1) + odoslané lodou (35); invarianty bez porušenia', () => {
     expect(world.cargo.createdCount).toBe(IMPORT_UNITS + BOOKED);
     expect(world.cargo.exportedCount).toBe(IMPORT_UNITS + returnedUnits);
     expect(world.cargo.shippedCount).toBe(shippedUnits);
@@ -229,7 +230,7 @@ describe.each(MODES)('scenár export_roundtrip: režim $name', ({ defs, goldenPa
 });
 
 describe('scenár export_roundtrip: časovanie podľa režimu', () => {
-  it('režimy sa líšia stateHash a časovaním: pod hákom žeriav čaká na vozidlo a odovzdáva priamo, na aprone nie; rolled jednotka príde v oboch po otvorení cesty', () => {
+  itR1Interim('režimy sa líšia stateHash a časovaním: pod hákom žeriav čaká na vozidlo a odovzdáva priamo, na aprone nie; rolled jednotka príde v oboch po otvorení cesty', () => {
     const hook = run(BUNDLED_DEFS);
     const apron = run(DEFS);
     expect(stateHash(hook.world)).not.toBe(stateHash(apron.world));

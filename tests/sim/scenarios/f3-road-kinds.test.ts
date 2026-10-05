@@ -24,6 +24,7 @@ import { ALL_ROAD_CELLS, ROAD_SEGMENTS, f3Scenario, segment } from '../helpers/f
 import { cellOfPosition, recordRunF3, restoreCopy, storageModulesOf, type RunLog3 } from '../helpers/f3';
 import { runScenario, stateHash, type Scenario, type ScenarioEntry } from '../helpers/scenario';
 import { DEFS, MAP } from '../world/world-fixtures';
+import { itR1Interim } from '../helpers/r1-interim';
 
 const UNITS = 60;
 const RUN_TICKS = 9000;
@@ -90,7 +91,7 @@ describe('scenár road_kinds — jednosmerný okruh a jednopruhová chrbtica', (
     for (const { x, y } of ROAD_SEGMENTS.trunk) expect(world.grid.at(x, y).roadKind).toBe('two_lane');
   });
 
-  it(`všetkých ${String(UNITS)} jednotiek je v dvoroch, apron prázdny, konzervácia po každom ticku`, () => {
+  itR1Interim(`všetkých ${String(UNITS)} jednotiek je v dvoroch, apron prázdny, konzervácia po každom ticku`, () => {
     expect(allStoredTick).not.toBeNull();
     expect(world.cargo.countByKind('in_storage')).toBe(UNITS);
     expect(world.cargo.countByKind('on_apron') + world.cargo.countByKind('in_vehicle') + world.cargo.countByKind('on_ship')).toBe(0);

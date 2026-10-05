@@ -19,6 +19,7 @@ import {
   tickOfState,
   type Run5,
 } from '../helpers/f5';
+import { itR1Interim } from '../helpers/r1-interim';
 
 const DEFS = fixedContractDefs();
 const RUN_TIMEOUT_MS = 300_000;
@@ -34,7 +35,7 @@ const noViolations = (run: Run5): void => {
 };
 
 describe('jednotky kontraktu, ktorý ešte vykladá (outbound sla, ADR-027 dodatok T05-11)', () => {
-  it('počas vykládky dostanú uskladnené jednotky kontraktu outbound joby na voľnú prevádzkovú rampu, skôr než kontrakt prejde do exporting', () => {
+  itR1Interim('počas vykládky dostanú uskladnené jednotky kontraktu outbound joby na voľnú prevádzkovú rampu, skôr než kontrakt prejde do exporting', () => {
     const { world, run, contractId } = startContract({ id: 'f5_unloading_sla', seed: 5401, defs: DEFS, fullAudit: true });
     run.runUntil((w) => contractById(w, contractId).state === 'unloading' && outboundJobs(w, run).length > 0, 3 * TICKS_PER_DAY);
     const firstJob = must(outboundJobs(world, run)[0], 'prvý outbound job');
@@ -65,7 +66,7 @@ describe('jednotky kontraktu, ktorý ešte vykladá (outbound sla, ADR-027 dodat
 });
 
 describe('jednotky zlyhaného kontraktu (failed) smú na rampu', () => {
-  it('po zlyhaní a postavení brány sa náklad kontraktu vyvezie; kontrakt ostáva failed, bez výplaty, XP a ďalšej penalizácie', () => {
+  itR1Interim('po zlyhaní a postavení brány sa náklad kontraktu vyvezie; kontrakt ostáva failed, bez výplaty, XP a ďalšej penalizácie', () => {
     const { world, run, contractId } = startContract({ id: 'f5_failed_export', seed: 5402, defs: DEFS, scenario: portScenario('f5_failed_export', 5402, { landside: NO_GATE }) });
     run.runUntil((w) => contractById(w, contractId).state === 'failed', 10 * TICKS_PER_DAY);
     expect(world.cargo.countByKind('in_storage')).toBe(FIXED_VOLUME);
@@ -94,7 +95,7 @@ describe('jednotky zlyhaného kontraktu (failed) smú na rampu', () => {
 });
 
 describe('poradie: kontrakt exporting pred staršími jednotkami bez kontraktu', () => {
-  it('jednotky SpawnShipDebug (uskladnené skôr) dostanú outbound joby až po všetkých jednotkách kontraktu', () => {
+  itR1Interim('jednotky SpawnShipDebug (uskladnené skôr) dostanú outbound joby až po všetkých jednotkách kontraktu', () => {
     const seed = 5403;
     const scenario = portScenario('f5_null_after_sla', seed, { landside: NO_GATE, extra: [{ atTick: 0, command: DEBUG_SHIP }] });
     const { world, run, contractId } = startContract({ id: 'f5_null_after_sla', seed, defs: DEFS, scenario, fullAudit: true });

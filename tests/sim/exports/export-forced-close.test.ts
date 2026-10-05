@@ -13,6 +13,7 @@ import { exportAboard, importAboard } from '@sim/logistics/voyage-cargo';
 import type { World } from '@sim/world';
 import { TICKS_PER_DAY, apronDefs, contractOf, hookDefs, lostUnits, ofType, startLoading, tickUntil } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
+import { itR1Interim } from '../helpers/r1-interim';
 
 const TIMEOUT = 60_000;
 const EARLY = [10, 20, 30, 40, 50, 60];
@@ -32,7 +33,7 @@ describe.each([
   ['apron', () => apronDefs()],
   ['under_hook', () => hookDefs()],
 ])('booking po lehote počas nakládky — režim %s', (_mode, makeDefs) => {
-  it('booking sa uzavrie (pomerná výplata), loď odíde a naložený export je shipped; nič sa nestratí', () => {
+  itR1Interim('booking sa uzavrie (pomerná výplata), loď odíde a naložený export je shipped; nič sa nestratí', () => {
     const { world, contractId, loadedBefore } = forceOverdueDuringLoading(makeDefs());
     const events = tickUntil(world, (w) => w.ships.size === 0, TIMEOUT);
     assertCargoConservation(world);
@@ -51,7 +52,7 @@ describe.each([
     expect(lostUnits(world)).toBe(0);
   });
 
-  it('po lehote nevznikne nový job nakládky; rozbehnutá nakládka sa dokončí a booking sa neskončí ako failed', () => {
+  itR1Interim('po lehote nevznikne nový job nakládky; rozbehnutá nakládka sa dokončí a booking sa neskončí ako failed', () => {
     const { world, contractId } = forceOverdueDuringLoading(makeDefs());
     let lastJobId = 0;
     for (const job of world.jobs.values()) lastJobId = Math.max(lastJobId, job.id);
@@ -67,7 +68,7 @@ describe.each([
     expect(contractOf(world, contractId).state).toBe('completed');
   });
 
-  it('svet beží po odchode lode ďalej: nenaložené jednotky sa vrátia odosielateľovi, invarianty držia', () => {
+  itR1Interim('svet beží po odchode lode ďalej: nenaložené jednotky sa vrátia odosielateľovi, invarianty držia', () => {
     const { world } = forceOverdueDuringLoading(makeDefs());
     tickUntil(world, (w) => w.ships.size === 0, TIMEOUT);
     tickUntil(world, (w) => w.cargo.liveCount === 0, TIMEOUT);

@@ -16,6 +16,7 @@ import { MAP, lostUnits } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
 import { REPO_ROOT, loadScenarioFile, runScenario } from '../helpers/scenario';
 import { BUNDLED_DEFS } from '../world/world-fixtures';
+import { itR1Interim } from '../helpers/r1-interim';
 
 const SCENARIO = loadScenarioFile('landside_pressure');
 const TICKS = 40_000;
@@ -80,7 +81,7 @@ describe('scenár landside_pressure: beh', () => {
   const observed = run();
   const { world, events } = observed;
 
-  it('import #10 (40 TEU) sa pod tlakom dokončí; export #11 aj prvý import #2 tiež, v poradí #2, #11, #10', () => {
+  itR1Interim('import #10 (40 TEU) sa pod tlakom dokončí; export #11 aj prvý import #2 tiež, v poradí #2, #11, #10', () => {
     expect(of(events, 'ContractCompleted').map((entry) => entry.event.contractId)).toEqual([FIRST_IMPORT_ID, BOOKING_ID, PAIRED_IMPORT_ID]);
     expect(world.contracts.get(PAIRED_IMPORT_ID as never)).toMatchObject({ kind: 'import', state: 'completed', volumeUnits: PAIRED_IMPORT_UNITS, unitsExported: PAIRED_IMPORT_UNITS });
     expect(world.contracts.get(BOOKING_ID as never)).toMatchObject({ kind: 'export', state: 'completed' });
@@ -101,7 +102,7 @@ describe('scenár landside_pressure: beh', () => {
     expect(hinterlandMetrics(world).collect.turnedAway).toBe(missed.length);
   });
 
-  it('vnútrozemie sa v behu využilo: návrat aj výdaj prázdneho čakali pred vjazdom, čakanie a nedostatok stojísk pre odvoz sú namerané, na konci nikto nečaká', () => {
+  itR1Interim('vnútrozemie sa v behu využilo: návrat aj výdaj prázdneho čakali pred vjazdom, čakanie a nedostatok stojísk pre odvoz sú namerané, na konci nikto nečaká', () => {
     expect(observed.firstReturnWaiting).toBeDefined();
     expect(observed.firstPickupWaiting).toBeDefined();
     const metrics = hinterlandMetrics(world);

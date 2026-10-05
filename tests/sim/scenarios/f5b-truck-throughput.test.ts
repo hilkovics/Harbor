@@ -17,6 +17,7 @@ import { World } from '@sim/world';
 import { assertCargoConservation } from '../helpers/invariants';
 import { loadScenarioFile, runScenario } from '../helpers/scenario';
 import { DEFS, MAP } from '../world/world-fixtures';
+import { itR1Interim } from '../helpers/r1-interim';
 
 const UNITS = 120;
 const MAX_TICKS = 40_000;
@@ -70,7 +71,7 @@ describe('priepustnosť kamiónov: full_import_chain (ADR-029)', () => {
     });
   }, 300_000);
 
-  it(`vyvezie všetkých ${String(UNITS)} TEU bez straty, najneskôr v ticku ${String(MAX_TICKS_TO_ALL_EXPORTED)} (pred ADR-029 ${String(TICKS_BEFORE_ADR_029)})`, () => {
+  itR1Interim(`vyvezie všetkých ${String(UNITS)} TEU bez straty, najneskôr v ticku ${String(MAX_TICKS_TO_ALL_EXPORTED)} (pred ADR-029 ${String(TICKS_BEFORE_ADR_029)})`, () => {
     expect(world.cargo.exportedCount).toBe(UNITS);
     expect(world.cargo.createdCount - (world.cargo.liveCount + world.cargo.exportedCount)).toBe(0);
     expect(allExportedAt).toBeGreaterThan(0);
@@ -83,7 +84,7 @@ describe('priepustnosť kamiónov: full_import_chain (ADR-029)', () => {
     expect(maxDockHolders).toBeLessThanOrEqual(DOCKS);
   });
 
-  it('po uskladnení je úzkym miestom brána: export trvá 2 × processTicks na kamión (+ príjazd prvého a odjazd posledného)', () => {
+  itR1Interim('po uskladnení je úzkym miestom brána: export trvá 2 × processTicks na kamión (+ príjazd prvého a odjazd posledného)', () => {
     const trucks = UNITS / TRUCK_CAPACITY;
     const gateBound = trucks * 2 * PROCESS_TICKS;
     const exportPhase = allExportedAt - allStoredAt;
@@ -92,7 +93,7 @@ describe('priepustnosť kamiónov: full_import_chain (ADR-029)', () => {
     expect(exportPhase).toBeLessThanOrEqual(gateBound + GATE_BOUND_SLACK_TICKS);
   });
 
-  it('sklad sa po uskladnení vyprázdňuje priebežne: zásoba v každej vzorke klesne, export v každom okne rastie', () => {
+  itR1Interim('sklad sa po uskladnení vyprázdňuje priebežne: zásoba v každej vzorke klesne, export v každom okne rastie', () => {
     const phase = samples.filter((sample) => sample.tick > allStoredAt && sample.tick <= allExportedAt);
     expect(phase.length).toBeGreaterThan(4);
     for (let i = 1; i < phase.length; i++) {

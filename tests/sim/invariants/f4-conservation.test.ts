@@ -34,6 +34,7 @@ import { must } from '../helpers/harbor';
 import { assertCargoConservation } from '../helpers/invariants';
 import { loadScenarioFile, stateHash } from '../helpers/scenario';
 import { DEFS, MAP } from '../world/world-fixtures';
+import { itR1Interim } from '../helpers/r1-interim';
 
 const UNITS = 12;
 const MAX_TICKS = 20_000;
@@ -129,7 +130,7 @@ describe('konzervácia nákladu: loď → žeriav → apron → vozidlá → dvo
     expect(timed4(recorder.events, 'CommandRejected')).toEqual([]);
   });
 
-  it('exported nikdy neklesá a rastie iba pri TruckExited: prírastok počítadla v ticku = súčet units udalostí TruckExited v tom ticku', () => {
+  itR1Interim('exported nikdy neklesá a rastie iba pri TruckExited: prírastok počítadla v ticku = súčet units udalostí TruckExited v tom ticku', () => {
     const exitedAt = new Map<number, number>();
     for (const entry of landsideEvents(recorder.events, 'TruckExited')) exitedAt.set(entry.tick, (exitedAt.get(entry.tick) ?? 0) + entry.event.units);
     let previous = 0;
@@ -155,7 +156,7 @@ describe('konzervácia nákladu: loď → žeriav → apron → vozidlá → dvo
     expect(recorder.violationsOf('truck_refs')).toEqual([]);
   });
 
-  it('pohyby: každá jednotka ide presne on_ship → in_crane → on_apron → in_vehicle → in_storage → in_vehicle → at_ramp → in_truck → exported', () => {
+  itR1Interim('pohyby: každá jednotka ide presne on_ship → in_crane → on_apron → in_vehicle → in_storage → in_vehicle → at_ramp → in_truck → exported', () => {
     const chains = moveChains(recorder.events);
     expect(chains.size).toBe(UNITS);
     for (const [unitId, chain] of chains) {
@@ -169,7 +170,7 @@ describe('konzervácia nákladu: loď → žeriav → apron → vozidlá → dvo
     }
   });
 
-  it('exported je konečný stav: exportované jednotky ledger nepozná, ďalší move z exported ani do exported nejde a stav sa nezmení', () => {
+  itR1Interim('exported je konečný stav: exportované jednotky ledger nepozná, ďalší move z exported ani do exported nejde a stav sa nezmení', () => {
     const before = stateHash(world);
     for (const unitId of moveChains(recorder.events).keys()) {
       expect(world.cargo.get(unitId as EntityId), `jednotka ${String(unitId)}`).toBeUndefined();
@@ -182,7 +183,7 @@ describe('konzervácia nákladu: loď → žeriav → apron → vozidlá → dvo
     expect(world.events.flush().filter((event) => event.type === 'CargoMoved')).toEqual([]);
   });
 
-  it('nič sa nestratilo: po exporte je svet prázdny a každá jednotka opustila mapu cez kamión (12 TruckExited po 1 jednotke)', () => {
+  itR1Interim('nič sa nestratilo: po exporte je svet prázdny a každá jednotka opustila mapu cez kamión (12 TruckExited po 1 jednotke)', () => {
     expect(world.cargo.exportedCount).toBe(UNITS);
     expect(world.cargo.liveCount).toBe(0);
     expect(world.cargo.createdCount - world.cargo.liveCount - world.cargo.exportedCount).toBe(0);

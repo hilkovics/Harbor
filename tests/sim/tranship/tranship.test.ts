@@ -13,6 +13,7 @@ import { acceptCommand, exportWorld, f6aDefs, hookDefs, ofType, send, tickEvents
 import { acceptedImport, eventsOf, offerTranship, runUntil, lost } from '../helpers/f6c';
 import { assertCargoConservation } from '../helpers/invariants';
 import { MAP } from '../world/world-fixtures';
+import { itR1Interim } from '../helpers/r1-interim';
 
 const VEHICLES = ['straddle_carrier', 'straddle_carrier'];
 const ECONOMY = { transhipGapDaysRange: [1, 1], arrivalDaysRange: [1, 1] };
@@ -39,7 +40,7 @@ function chains(events: readonly { readonly event: { readonly type: string } }[]
 const closed = (world: World): boolean => world.ships.size === 0 && [...world.contractBook.contracts.values()].every((c) => c.state === 'completed' || c.state === 'failed') && world.contractBook.contracts.size > 0;
 
 describe('prekládka A → B — bežný tok', () => {
-  it.each([
+  itR1Interim.each([
     ['apron', false],
     ['pod hákom', true],
   ])('%s: jednotky prejdú on_ship → in_crane → … → in_storage → … → in_crane → on_ship → shipped, nikdy bránou; kontrakt sa vyplatí v plnej výške', (_name, hook) => {
@@ -145,7 +146,7 @@ describe('prekládka — načasovanie lodí A a B', () => {
     expect(spawns[1].tick - spawns[0].tick).toBe(1);
   });
 
-  it('loď B nepríde pred lehotou zlyhania SLA (príchod za 30 dní): predaj zvyšku — TranshipSold, kontrakt zlyhá a kamión jednotky odvezie', () => {
+  itR1Interim('loď B nepríde pred lehotou zlyhania SLA (príchod za 30 dní): predaj zvyšku — TranshipSold, kontrakt zlyhá a kamión jednotky odvezie', () => {
     const world = transhipWorld({ economy: { transhipGapDaysRange: [30, 30] } });
     const contract = offerTranship(world, { units: 4 });
     send(world, acceptCommand(contract.id));
@@ -174,7 +175,7 @@ describe('zmeškaná prekládka — penalizácia, záchrana, predaj', () => {
     assertCargoConservation(world);
   });
 
-  it('bez ďalšej voyage linky: po transhipRescueDays sa jednotky predajú — TranshipSold, kontrakt sa uzavrie (failed), kamión ich odvezie ako exported; nič nezmizlo', () => {
+  itR1Interim('bez ďalšej voyage linky: po transhipRescueDays sa jednotky predajú — TranshipSold, kontrakt sa uzavrie (failed), kamión ich odvezie ako exported; nič nezmizlo', () => {
     const { world, contract } = missedWorld();
     const deadline = contract.rescueDeadlineTick as number;
     const events = runUntil(world, () => world.cargo.exportedCount === 5, 60_000, 'predané jednotky odišli kamiónom');

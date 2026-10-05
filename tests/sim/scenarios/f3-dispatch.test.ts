@@ -57,6 +57,7 @@ import {
 import { must } from '../helpers/harbor';
 import { eventsOfType, stateHash, type Scenario, type ScenarioEntry } from '../helpers/scenario';
 import { DEFS, MAP, RAW_DEFS } from '../world/world-fixtures';
+import { itR1Interim } from '../helpers/r1-interim';
 
 const STRADDLE = 'straddle_carrier';
 const TWO_STRADDLES: readonly string[] = [STRADDLE, STRADDLE];
@@ -333,7 +334,7 @@ describe('NoStorageAvailable: chýbajúci, nepripojený alebo plný sklad', () =
     expect(violationsOf(after, 'off_road')).toEqual([]);
   });
 
-  it('plné dvory: 2 dvory s kapacitou 3 prijmú 6 jednotiek, siedma ostane na aprone a hlási sa NoStorageAvailable (≤ 1× za hodinu)', () => {
+  itR1Interim('plné dvory: 2 dvory s kapacitou 3 prijmú 6 jednotiek, siedma ostane na aprone a hlási sa NoStorageAvailable (≤ 1× za hodinu)', () => {
     const scenario = f3Scenario('f3_yards_full', 3122, { vehicles: TWO_STRADDLES, units: 7 });
     const world = World.create(defsWithYardCapacity(3), MAP, scenario.seed);
     const log = recordRunF3(world, scenario, 7000);
@@ -383,7 +384,7 @@ describe('NoStorageAvailable: chýbajúci, nepripojený alebo plný sklad', () =
  * vozidla ostáva job `open` a vozidlo `idle` na mieste.
  */
 describe('dispatcher: vozidlo bez kompatibilnej kategórie job nedostane', () => {
-  it('nekompatibilné vozidlo s nižším id ostane idle; všetky joby dostane straddle_carrier a 4 jednotky skončia v sklade', () => {
+  itR1Interim('nekompatibilné vozidlo s nižším id ostane idle; všetky joby dostane straddle_carrier a 4 jednotky skončia v sklade', () => {
     const scenario = f3Scenario('f3_compat', 3130, { vehicles: [BULK_VEHICLE_ID, STRADDLE], units: 4 });
     const world = World.create(defsWithBulkVehicle(), MAP, scenario.seed);
     const log = recordRunF3(world, scenario, 4000);
@@ -434,7 +435,7 @@ describe('dispatcher: vozidlo bez kompatibilnej kategórie job nedostane', () =>
  * pri blízkom dvore — bez ohľadu na to, ktoré má menšie id.
  */
 describe('dispatcher: priradí najbližšie voľné vozidlo (nie najmenšie id)', () => {
-  it('po tom, čo jedno vozidlo skončí pri ďalekom a druhé pri blízkom dvore, dostane nový job to pri blízkom dvore', () => {
+  itR1Interim('po tom, čo jedno vozidlo skončí pri ďalekom a druhé pri blízkom dvore, dostane nový job to pri blízkom dvore', () => {
     const SECOND_SHIP_TICK = 3000;
     const scenario = f3Scenario('f3_closest', 3140, { vehicles: TWO_STRADDLES, units: 3, extra: [entry(SECOND_SHIP_TICK, spawnCommand(1))] });
     const world = World.create(defsWithYardCapacity(2), MAP, scenario.seed);
@@ -543,7 +544,7 @@ describe('preplánovanie ciest: RemoveRoad → obchádzka, no_path a obnova', ()
   const REPAIR_AFTER_TICKS = 200;
   const RUN_AFTER_TICKS = 5000;
 
-  it('po RemoveRoad dolnej bunky nohy sa vozidlo preplánuje cez hornú spojku (nikdy no_path), nejazdí po odstránenej bunke a job dokončí', () => {
+  itR1Interim('po RemoveRoad dolnej bunky nohy sa vozidlo preplánuje cez hornú spojku (nikdy no_path), nejazdí po odstránenej bunke a job dokončí', () => {
     const { world, scenario, moment } = worldAtLegMoment('f3_reroute', 3201);
     const t0 = world.clock.tick;
     const cut = withEntries(scenario, entry(t0, removeRoadCommand([moment.bottom])));

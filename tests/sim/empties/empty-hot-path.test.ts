@@ -11,6 +11,7 @@ import type { SimEvent } from '@sim/events';
 import type { World } from '@sim/world';
 import { acceptCommand, acceptedBooking, send } from '../helpers/f6a';
 import { depotOf, emptiesByLocation, emptyWorld, eventsOf, f6cDefs, offerRepositioning, run, runUntil, stockDepot } from '../helpers/f6c';
+import { itR1Interim } from '../helpers/r1-interim';
 
 const VEHICLES = ['straddle_carrier', 'straddle_carrier', 'empty_handler'];
 /** Súbory a funkcie hot pathu prázdnych (viď hlavička). */
@@ -71,7 +72,7 @@ afterEach(() => {
 });
 
 describe('hot path prázdnych kontajnerov — žiadne Set / sort / find / findIndex / some zo súborov hot pathu', () => {
-  it('návraty (kamión, brána, rampa, job prijatia, uloženie, kontrola) a výdaj kamiónmi collect (poverenia, pridelenie, nakládka z docku)', () => {
+  itR1Interim('návraty (kamión, brána, rampa, job prijatia, uloženie, kontrola) a výdaj kamiónmi collect (poverenia, pridelenie, nakládka z docku)', () => {
     const defs = f6cDefs({ emptyFlow: { damageChance: 0.5, emptyPickupMaxWaitHours: 12 } });
     const world = emptyWorld({ defs, vehicles: VEHICLES });
     stockDepot(world, 'blue_anchor', 3);

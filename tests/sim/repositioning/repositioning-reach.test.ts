@@ -12,6 +12,7 @@ import { acceptCommand, hookDefs, send, startLoading, runUntilDeparted, exportUn
 import { depotOf, emptyWorld, eventsOf, f6cDefs, lost, offerRepositioning, putEmpty, runUntil, stockDepot } from '../helpers/f6c';
 import { assertCargoConservation } from '../helpers/invariants';
 import type { World } from '@sim/world';
+import { itR1Interim } from '../helpers/r1-interim';
 
 const VEHICLES = ['straddle_carrier', 'straddle_carrier', 'empty_handler'];
 const NO_RANDOM = { emptyReturnRate: 0, emptyPickupRate: 0, damageChance: 0 };
@@ -57,7 +58,7 @@ describe('repositioning — sklad bez cesty ku kotvisku', () => {
     assertCargoConservation(world);
   });
 
-  it('depo bez prístupu, prázdne aj vo dvore: nakladá sa z dvora (depo pred dvorom platí len medzi dosiahnuteľnými)', () => {
+  itR1Interim('depo bez prístupu, prázdne aj vo dvore: nakladá sa z dvora (depo pred dvorom platí len medzi dosiahnuteľnými)', () => {
     const world = repoWorld({ hook: true });
     const depot = depotOf(world);
     const yard = [...world.modules.values()].find((module): module is StorageModule => module instanceof StorageModule && module.id !== depot.id && module.category === 'container');
@@ -110,7 +111,7 @@ describe('výber prázdneho s cestou k cieľu (findAvailableEmpty / countAvailab
 });
 
 describe('export — sklad bez cesty ku kotvisku', () => {
-  it('jednotky exportu vo dvore, ktorý je po prijatí odrezaný: žiadny job nakládky, loď po lehote odíde (neuviazne), jednotky sa nestratia', () => {
+  itR1Interim('jednotky exportu vo dvore, ktorý je po prijatí odrezaný: žiadny job nakládky, loď po lehote odíde (neuviazne), jednotky sa nestratia', () => {
     const { world, offer } = startLoading({ defs: hookDefs(1, { economy: SHORT_FAIL }), kind: 'export', booked: 4, slaDays: 1, arrivals: [10, 20, 30, 40] });
     const { exportContract } = offer;
     tickUntil(world, (w) => exportUnitsByLocation(w)['in_storage'] === 4 && w.trucks.size === 0 && [...w.vehicles.values()].every((vehicle) => vehicle.state === 'idle'), 40_000);

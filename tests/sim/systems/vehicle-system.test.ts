@@ -12,6 +12,7 @@ import type { StorageModule } from '@sim/modules';
 import { World } from '@sim/world';
 import { DEFS, MAP, RAW_DEFS } from '../world/world-fixtures';
 import { BERTH_ACCESS, YARD_W, YARD_W_ACCESS, buyVehicle, dispatchWorld, execute, placeYard, unitsOnApron } from '../logistics/dispatch-fixtures';
+import { itR1Interim } from '../helpers/r1-interim';
 
 interface Timed {
   readonly tick: number;
@@ -110,7 +111,7 @@ describe('cyklus vozidla: depo → apron → dvor', () => {
     expect(world.vehicles.get(vehicleId)?.state).toBe('idle');
   });
 
-  it('dve vozidlá, dve jednotky: obe vozidlá jazdia súčasne, každá jednotka skončí v sklade, joby zmiznú', () => {
+  itR1Interim('dve vozidlá, dve jednotky: obe vozidlá jazdia súčasne, každá jednotka skončí v sklade, joby zmiznú', () => {
     const { world, depot } = dispatchWorld();
     const yard = placeYard(world, YARD_W);
     const ids = [buyVehicle(world, depot), buyVehicle(world, depot)];

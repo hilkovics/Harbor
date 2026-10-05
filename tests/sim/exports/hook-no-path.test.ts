@@ -20,6 +20,7 @@ import { MAP, lostUnits } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
 import { loadScenarioFile, runScenario, type Scenario } from '../helpers/scenario';
 import { BUNDLED_DEFS } from '../world/world-fixtures';
+import { itR1Interim } from '../helpers/r1-interim';
 
 const BASE = loadScenarioFile('vertical_slice');
 const TICKS = 30_000;
@@ -124,7 +125,7 @@ describe('prerezaná cesta počas vykládky (buffer 0): žeriav neuviazne na jed
     expect(moves(events, 'on_ship', 'in_crane', window)).toBeGreaterThanOrEqual(3);
   });
 
-  it('po oprave siete sa všetko dokončí: kontrakt, 78 exportovaných jednotiek, žiadna stratená, invarianty sveta', () => {
+  itR1Interim('po oprave siete sa všetko dokončí: kontrakt, 78 exportovaných jednotiek, žiadna stratená, invarianty sveta', () => {
     expect(world.contracts.get(1 as never)?.state).toBe('completed');
     expect(world.cargo.exportedCount).toBe(IMPORT_UNITS);
     expect(lostUnits(world)).toBe(0);
@@ -155,7 +156,7 @@ describe('jednosmerky popri nábreží: prístupová bunka kotviska je dosiahnut
     expect(observed.longestHold).toBeLessThan(500);
   });
 
-  it('všetko sa dokončí: kontrakt, 78 exportovaných jednotiek, žiadna stratená, invarianty sveta', () => {
+  itR1Interim('všetko sa dokončí: kontrakt, 78 exportovaných jednotiek, žiadna stratená, invarianty sveta', () => {
     expect(world.contracts.get(1 as never)?.state).toBe('completed');
     expect(world.cargo.exportedCount).toBe(IMPORT_UNITS);
     expect(lostUnits(world)).toBe(0);
@@ -179,7 +180,7 @@ describe('nakládka exportu pod hákom na kruhu jednosmeriek: záložná cesta c
   const observed = observe(scenario, (w) => rebound(w), ROUNDTRIP_TICKS);
   const { world, events } = observed;
 
-  it('loď sa naloží a odpláva: 35 odplávaných, 58 exportovaných (57 importov + vrátená rolled jednotka), obe kontrakty dokončené, žiadna stratená', () => {
+  itR1Interim('loď sa naloží a odpláva: 35 odplávaných, 58 exportovaných (57 importov + vrátená rolled jednotka), obe kontrakty dokončené, žiadna stratená', () => {
     expect(world.cargo.shippedCount).toBe(SHIPPED);
     expect(world.cargo.exportedCount).toBe(IMPORT + 1);
     expect([7, 8].map((id) => world.contracts.get(id as never)?.state)).toEqual(['completed', 'completed']);
@@ -188,7 +189,7 @@ describe('nakládka exportu pod hákom na kruhu jednosmeriek: záložná cesta c
     expect(findWorldViolation(world)).toBeUndefined();
   });
 
-  it('každá jednotka exportu ide zo skladu cez vozidlo na apron a odtiaľ žeriavom na loď (nikdy priamo vozidlo → žeriav)', () => {
+  itR1Interim('každá jednotka exportu ide zo skladu cez vozidlo na apron a odtiaľ žeriavom na loď (nikdy priamo vozidlo → žeriav)', () => {
     expect(events.some((entry) => entry.event.type === 'VehicleStateChanged' && entry.event.to === 'no_path')).toBe(true);
     expect(moves(events, 'in_vehicle', 'in_crane')).toBe(0);
     expect(moves(events, 'in_vehicle', 'on_apron')).toBe(SHIPPED);
@@ -202,7 +203,7 @@ describe('nakládka exportu pod hákom na kruhu jednosmeriek: záložná cesta c
     expectRoundtrip(observed, scenario, ROUNDTRIP_TICKS);
   }, TIMEOUT_MS);
 
-  it('apron bez voľného slotu: vozidlo s jednotkou čaká v no_path (jednotka ostáva vo vozidle, cieľ jobu je hák, nič sa nepresúva); po uvoľnení slotu sa presmeruje a loď sa naloží', () => {
+  itR1Interim('apron bez voľného slotu: vozidlo s jednotkou čaká v no_path (jednotka ostáva vo vozidle, cieľ jobu je hák, nič sa nepresúva); po uvoľnení slotu sa presmeruje a loď sa naloží', () => {
     // Rezervácie slotov apronu bez jobu / žeriava porušujú invarianty sveta (krok 12) — kým je apron „plný“, sú vypnuté; konzerváciu nákladu kontroluje test po každom ticku.
     const run = World.create(BUNDLED_DEFS, MAP, scenario.seed, { checkInvariants: false });
     const berth = [...run.modules.values()].find((module): module is BerthModule => module instanceof BerthModule) as BerthModule;

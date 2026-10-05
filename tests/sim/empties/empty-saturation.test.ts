@@ -7,6 +7,7 @@ import { exportWorld } from '../helpers/f6a';
 import { TICKS_PER_DAY, acceptedImport, depotOf, emptiesByLocation, emptyWorld, eventsOf, f6cDefs, lost, rampOf, run, runUntil, stockDepot } from '../helpers/f6c';
 import { StorageModule } from '@sim/modules';
 import { emptyReturnRoom } from '@sim/logistics/empty-stock';
+import { itR1Interim } from '../helpers/r1-interim';
 
 const TWO_STRADDLES = ['straddle_carrier', 'straddle_carrier'];
 
@@ -26,7 +27,7 @@ function emptiesInYards(world: ReturnType<typeof emptyWorld>): number {
 }
 
 describe('návrat prázdneho — len s voľným miestom v depe (M1)', () => {
-  it('depo kapacity 2, päť návratov naraz: dva kamióny, tri zahodené bez kamióna (EmptyReturnDeclined), dvor ostane bez prázdnych', () => {
+  itR1Interim('depo kapacity 2, päť návratov naraz: dva kamióny, tri zahodené bez kamióna (EmptyReturnDeclined), dvor ostane bez prázdnych', () => {
     const defs = f6cDefs({ moduleParams: { empty_depot: { capacityUnits: 2 } } });
     const world = emptyWorld({ defs, vehicles: TWO_STRADDLES });
     const tick = world.clock.tick;
@@ -50,7 +51,7 @@ describe('návrat prázdneho — len s voľným miestom v depe (M1)', () => {
     assertCargoConservation(world);
   });
 
-  it('rozbehnuté návraty sa odpočítavajú: depo kapacity 3 s jedným uloženým má miesto pre dva ďalšie, tretí a štvrtý návrat sa zahodia', () => {
+  itR1Interim('rozbehnuté návraty sa odpočítavajú: depo kapacity 3 s jedným uloženým má miesto pre dva ďalšie, tretí a štvrtý návrat sa zahodia', () => {
     const defs = f6cDefs({ moduleParams: { empty_depot: { capacityUnits: 3 } } });
     const world = emptyWorld({ defs, vehicles: TWO_STRADDLES });
     stockDepot(world, 'golden_wave', 1);
@@ -66,7 +67,7 @@ describe('návrat prázdneho — len s voľným miestom v depe (M1)', () => {
     assertCargoConservation(world);
   });
 
-  it('depo plné + import s návratmi: import sa vyloží a odíde, všetky návraty sa zahodia, na docku ani vo dvore žiadny prázdny', () => {
+  itR1Interim('depo plné + import s návratmi: import sa vyloží a odíde, všetky návraty sa zahodia, na docku ani vo dvore žiadny prázdny', () => {
     const defs = f6cDefs({
       moduleParams: { empty_depot: { capacityUnits: 2 } },
       emptyFlow: { emptyReturnRate: 1, hinterlandDaysRange: [1, 1] },

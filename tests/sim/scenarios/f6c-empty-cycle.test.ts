@@ -16,6 +16,7 @@ import { MAP, lostUnits } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
 import { REPO_ROOT, loadScenarioFile, runScenario } from '../helpers/scenario';
 import { BUNDLED_DEFS } from '../world/world-fixtures';
+import { itR1Interim } from '../helpers/r1-interim';
 
 const SCENARIO = loadScenarioFile('empty_cycle');
 const TICKS = 40_000;
@@ -85,7 +86,7 @@ describe('scenár empty_cycle: beh', () => {
   const returnedIds = new Set(returned.map((event) => event.unitId));
   const all = chains(events);
 
-  it('import #2 (64 TEU, northern_star) sa odvezie kamiónmi a kontrakt sa dokončí; booking #10 aj roundtrip #22 + #23 sú prijaté', () => {
+  itR1Interim('import #2 (64 TEU, northern_star) sa odvezie kamiónmi a kontrakt sa dokončí; booking #10 aj roundtrip #22 + #23 sú prijaté', () => {
     const imported = world.contracts.get(IMPORT_ID as never);
     expect(imported).toMatchObject({ kind: 'import', lineId: 'northern_star', volumeUnits: IMPORT_UNITS, state: 'completed', unitsExported: IMPORT_UNITS });
     expect(world.contracts.get(MISSED_BOOKING_ID as never)).toMatchObject({ kind: 'export', lineId: 'golden_wave', state: 'completed' });
@@ -94,7 +95,7 @@ describe('scenár empty_cycle: beh', () => {
     expect(of(events, 'ContractCompleted').map((entry) => entry.event.contractId)).toEqual([IMPORT_ID, MISSED_BOOKING_ID]);
   });
 
-  it('návrat prázdnych: každá vrátená jednotka je prázdna linky importu, prešla in_truck → at_ramp → in_vehicle → in_storage a uložili ju v depe (nie vo dvore)', () => {
+  itR1Interim('návrat prázdnych: každá vrátená jednotka je prázdna linky importu, prešla in_truck → at_ramp → in_vehicle → in_storage a uložili ju v depe (nie vo dvore)', () => {
     expect(returned.length).toBeGreaterThan(0);
     expect(returned.every((event) => event.lineId === 'northern_star')).toBe(true);
     const stored = of(events, 'EmptyStored').map((entry) => entry.event);
@@ -111,7 +112,7 @@ describe('scenár empty_cycle: beh', () => {
     expect(of(events, 'EmptyReturned')[0].tick).toBeGreaterThan(firstExport);
   });
 
-  it('kontrola a M&R: poškodené jednotky prejdú damaged → in_repair → available o repairHours, poplatok maintenance_repair, a opravené sa neskôr vydajú', () => {
+  itR1Interim('kontrola a M&R: poškodené jednotky prejdú damaged → in_repair → available o repairHours, poplatok maintenance_repair, a opravené sa neskôr vydajú', () => {
     const damaged = of(events, 'EmptyDamaged');
     expect(damaged.length).toBeGreaterThan(0);
     for (const entry of damaged) {
@@ -140,7 +141,7 @@ describe('scenár empty_cycle: beh', () => {
     expect(pickedUp.some((entry) => damaged.some((candidate) => candidate.event.unitId === entry.event.unitId))).toBe(true);
   });
 
-  it('empty handler vozí len prázdne kontajnery a vozí ich prednostne (joby importu a exportu dostanú straddle carrier)', () => {
+  itR1Interim('empty handler vozí len prázdne kontajnery a vozí ich prednostne (joby importu a exportu dostanú straddle carrier)', () => {
     const handler = [...world.vehicles.values()].find((vehicle) => vehicle.def.id === 'empty_handler');
     expect(handler).toBeDefined();
     const unitOfJob = new Map(of(events, 'JobCreated').map((entry) => [entry.event.jobId, entry.event.unitIds[0]]));
@@ -152,7 +153,7 @@ describe('scenár empty_cycle: beh', () => {
     expect(handlerJobs.length / emptyJobs.length).toBeGreaterThan(0.5);
   });
 
-  it('výdaj exportérovi: booking #23 dostane prázdne svojej linky z depa (in_storage → in_vehicle → at_ramp → in_truck → exported), booking #10 (linka bez prázdnych) odíde naprázdno', () => {
+  itR1Interim('výdaj exportérovi: booking #23 dostane prázdne svojej linky z depa (in_storage → in_vehicle → at_ramp → in_truck → exported), booking #10 (linka bez prázdnych) odíde naprázdno', () => {
     const picked = of(events, 'EmptyPickedUp').map((entry) => entry.event);
     expect(picked.length).toBeGreaterThan(0);
     for (const event of picked) {
@@ -195,7 +196,7 @@ describe('scenár empty_cycle: beh', () => {
     }).toEqual(golden);
   });
 
-  it('deterministický: rovnaký beh dá rovnaký stateHash; obnova pred opravou, uprostred opravy, uprostred výdajov a na konci dá zhodný stateHash', () => {
+  itR1Interim('deterministický: rovnaký beh dá rovnaký stateHash; obnova pred opravou, uprostred opravy, uprostred výdajov a na konci dá zhodný stateHash', () => {
     const expected = stateHash(world);
     expect(stateHash(run().world)).toBe(expected);
     const repairing = of(events, 'EmptyRepairStarted')[0];

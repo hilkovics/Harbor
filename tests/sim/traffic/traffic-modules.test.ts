@@ -208,7 +208,7 @@ describe('kamión v stojisku a v docku je mimo cesty (rozhodnutie R1 č. 8)', ()
     expect([truck.state, ramp.dockTruck(truck.dock), truck.body.length, truck.waitTicks]).toEqual(['loading', truck.id, 0, 1]);
     expect(world.cargo.countAt('in_truck', truck.id)).toBe(1);
     world.removeVehicle(blocker.id);
-    runUntil(world, (w) => truck.state !== 'loading', 5, log);
+    runUntil(world, () => truck.state !== 'loading', 5, log);
     expect([truck.state, ramp.dockTruck(truck.dock)]).toEqual(['to_gate_out', null]);
     expect(truck.body.length).toBeGreaterThanOrEqual(1);
     expect(world.laneSlots.holderOf(truck.cell, truck.body[0] & 1)).toBe(truck.id);
@@ -228,7 +228,7 @@ describe('kamión v stojisku a v docku je mimo cesty (rozhodnutie R1 č. 8)', ()
     for (let i = 0; i < 30; i++) step(world, log);
     expect([truck.state, gate.queuedTruckIds[0], gate.busyTicksLeft, gate.trucksProcessed, truck.body.length]).toEqual(['gate_pass', truck.id, 0, 0, 0]);
     world.removeVehicle(blocker.id);
-    runUntil(world, (w) => truck.state !== 'gate_pass', 5, log);
+    runUntil(world, () => truck.state !== 'gate_pass', 5, log);
     expect([truck.state, gate.trucksProcessed, gate.queueLength, truck.cell]).toEqual(['to_bay', 1, 0, far]);
   });
 });

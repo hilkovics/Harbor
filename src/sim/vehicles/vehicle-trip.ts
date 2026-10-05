@@ -22,6 +22,7 @@ import type { Module } from '../modules/module';
 import type { TransportJob } from '../logistics/transport-job';
 import { carrierMotionProblem, type MotionProblem, type MotionTarget } from '../movement/motion-check';
 import { findRouteToCell, findRouteToModule, planRouteToCell, planRouteToModule } from '../movement/route-planning';
+import { exitSlotKey, headSlotKey } from '../traffic/head-slot';
 import type { World } from '../world/world';
 import { VehicleError } from './vehicle-error';
 import { VEHICLE_STATE_TRAITS, changeVehicleState, type VehicleDestination } from './vehicle-fsm';
@@ -158,6 +159,22 @@ export function findJobRoute(world: World, anchor: number, job: TransportJob, de
   const hook = hookCellOfJob(world, job, destination);
   if (hook !== undefined) return findRouteToCell(world, anchor, hook);
   return findRouteToModule(world, anchor, jobModule(world, job, destination));
+}
+
+/**
+ * Výjazd zaparkovaného vozidla s priradeným jobom z depa (`depot_exit`): len keď je voľný slot prístupovej bunky depa (pruh podľa
+ * prvého kroku trasy k zdroju; ADR-037). Úspech = `to_pickup`, trasa a slot hlavy (pohyb v kroku 6a toho istého ticku, ak výjazd
+ * nastal v dispatcheri; inak až v ďalšom ticku). `false` = vozidlo čaká (aj bez cesty k zdroju) a skúša znova každý tick.
+ */
+export function tryLeaveDepot(world: World, vehicle: Vehicle): boolean {
+  const job = jobOfVehicle(world, vehicle);
+  const path = findJobRoute(world, vehicle.cell, job, 'source');
+  if (path === null) return false;
+  if (!world.laneSlots.isFreeFor(exitSlotKey(world, vehicle.cell, path[1]), vehicle.id)) return false;
+  changeVehicleState(world.events, vehicle, 'to_pickup');
+  if (!planJobRoute(world, vehicle, job, 'source')) enterNoPath(world, vehicle);
+  vehicle.reserveHead(headSlotKey(world, vehicle));
+  return true;
 }
 
 /** Problém pohybu vozidla s poľom záznamu v save, ku ktorému patrí (krok 12, obnova) — zdieľaný `MotionProblem`. */

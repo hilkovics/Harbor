@@ -100,7 +100,7 @@ describe('BuyVehicle.validate', () => {
 });
 
 describe('BuyVehicle.apply', () => {
-  it('vozidlo idle v strede vonkajšej bunky depa s kurzom von z depa; cena; VehicleBought, potom MoneyChanged(vehicle_capex)', () => {
+  it('vozidlo parked v strede vonkajšej bunky depa s kurzom von z depa; cena; VehicleBought, potom MoneyChanged(vehicle_capex)', () => {
     const { world, depot } = depotWorld();
     const cashBefore = world.cashCents;
     const nextId = world.ids.getState().nextId;
@@ -115,7 +115,7 @@ describe('BuyVehicle.apply', () => {
       id: nextId,
       defId: STRADDLE,
       depotId: depot.id,
-      state: 'idle',
+      state: 'parked',
       x: DEPOT_OUTSIDE.x + 0.5,
       y: DEPOT_OUTSIDE.y + 0.5,
       heading: 180,

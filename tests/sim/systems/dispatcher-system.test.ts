@@ -146,7 +146,10 @@ describe('priradenie vozidiel', () => {
       'JobCreated',
       'JobCreated',
       'JobCreated',
+      // zaparkované vozidlo vyjde z depa v tom istom ticku: parked → depot_exit → to_pickup (voľný slot prístupovej bunky depa);
+      // druhé vozidlo čaká v `depot_exit`, kým prvé slot tej istej bunky neuvoľní
       'JobAssigned',
+      'VehicleStateChanged',
       'VehicleStateChanged',
       'JobAssigned',
       'VehicleStateChanged',
@@ -158,9 +161,13 @@ describe('priradenie vozidiel', () => {
       ['open', null],
     ]);
     expect(events.filter((event) => event.type === 'VehicleStateChanged')).toEqual([
-      { type: 'VehicleStateChanged', vehicleId: a, from: 'idle', to: 'to_pickup' },
-      { type: 'VehicleStateChanged', vehicleId: b, from: 'idle', to: 'to_pickup' },
+      { type: 'VehicleStateChanged', vehicleId: a, from: 'parked', to: 'depot_exit' },
+      { type: 'VehicleStateChanged', vehicleId: a, from: 'depot_exit', to: 'to_pickup' },
+      { type: 'VehicleStateChanged', vehicleId: b, from: 'parked', to: 'depot_exit' },
     ]);
+    expect(world.vehicles.get(b)?.state).toBe('depot_exit');
+    for (let i = 0; i < 10 && world.vehicles.get(b)?.state === 'depot_exit'; i++) world.tick(); // prvé vozidlo odíde (jeho telo uvoľní bunku depa)
+    expect(world.vehicles.get(b)?.state).toBe('to_pickup');
     expect([world.vehicles.get(a)?.jobId, world.vehicles.get(b)?.jobId]).toEqual([jobs[0].id, jobs[1].id]);
     expect(() => world.assertInvariants()).not.toThrow();
   });
@@ -185,10 +192,10 @@ describe('priradenie vozidiel', () => {
     const assigned = tickEvents(world, 'JobAssigned');
     expect(assigned.map((event) => event.vehicleId)).toEqual([near.id]);
     expect(near.id).toBeGreaterThan(inDepot);
-    expect(world.vehicles.get(inDepot)?.state).toBe('idle');
+    expect(world.vehicles.get(inDepot)?.state).toBe('parked');
   });
 
-  it('vozidlo bez kompatibilnej kategórie job nedostane (ostáva idle, job open); kompatibilné s väčším id áno', () => {
+  it('vozidlo bez kompatibilnej kategórie job nedostane (ostáva zaparkované, job open); kompatibilné s väčším id áno', () => {
     const { world, depot } = dispatchWorld(dispatchDefs());
     placeYard(world, YARD_W);
     const bulk = buyVehicle(world, depot, BULK_VEHICLE);
@@ -196,11 +203,11 @@ describe('priradenie vozidiel', () => {
     const events = world.tick();
     expect(events.filter((event) => event.type === 'JobAssigned')).toEqual([]);
     expect([...world.jobs.values()].map((job) => job.state)).toEqual(['open', 'open']);
-    expect(world.vehicles.get(bulk)?.state).toBe('idle');
+    expect(world.vehicles.get(bulk)?.state).toBe('parked');
     const straddle = buyVehicle(world, depot);
     const assigned = tickEvents(world, 'JobAssigned');
     expect(assigned.map((event) => event.vehicleId)).toEqual([straddle]);
-    expect(world.vehicles.get(bulk)?.state).toBe('idle');
+    expect(world.vehicles.get(bulk)?.state).toBe('parked');
   });
 
   it('vozidlo, z ktorého k zdroju nevedie cesta, job nedostane; job ostáva open', () => {
@@ -212,7 +219,7 @@ describe('priradenie vozidiel', () => {
     const events = world.tick();
     expect(events.filter((event) => event.type === 'JobCreated')).toHaveLength(1);
     expect(events.filter((event) => event.type === 'JobAssigned')).toEqual([]);
-    expect(world.vehicles.get(cutOff)?.state).toBe('idle');
+    expect(world.vehicles.get(cutOff)?.state).toBe('parked');
     expect([...world.jobs.values()][0].state).toBe('open');
   });
 

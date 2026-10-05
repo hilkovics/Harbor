@@ -345,7 +345,7 @@ describe('cyklus vozidla: sklad → dock rampy', () => {
       [1, 0],
       [0, 0],
     ]);
-    expect([world.jobs.size, world.vehicles.get(vehicleId)?.state]).toEqual([0, 'idle']);
+    expect([world.jobs.size, world.vehicles.get(vehicleId)?.state]).toEqual([0, 'parked']);
   });
 
   it('staging sa zaplní (2 docky × 2) a ďalšie outbound joby nevzniknú; zvyšok ostane v sklade, nič sa nestratí', () => {
@@ -393,7 +393,7 @@ describe('strata prevádzkovosti rampy', () => {
     const log = run(world, 80);
     expect(ofType(events(log), 'JobCreated')).toEqual([]);
     expect(world.cargo.get(units[0])?.location).toEqual({ kind: 'at_ramp', rampId: ramp.id, dock: 0 });
-    expect([world.jobs.size, world.vehicles.get(vehicleId)?.state]).toEqual([0, 'idle']);
+    expect([world.jobs.size, world.vehicles.get(vehicleId)?.state]).toEqual([0, 'parked']);
     expect(stagingOf(ramp)).toEqual([
       [1, 0],
       [0, 0],

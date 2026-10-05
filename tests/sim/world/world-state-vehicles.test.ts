@@ -52,7 +52,7 @@ describe('World.serialize — vozidlá', () => {
     expect(state.vehicles).toHaveLength(2);
     for (const entry of state.vehicles) {
       expect(Object.keys(entry)).toEqual([...SERIALIZED_VEHICLE_KEYS]);
-      expect(entry).toMatchObject({ defId: STRADDLE, depotId: 3, state: 'idle', jobId: null, purchaseCostCents: STRADDLE_DEF.purchaseCents });
+      expect(entry).toMatchObject({ defId: STRADDLE, depotId: 3, state: 'parked', jobId: null, purchaseCostCents: STRADDLE_DEF.purchaseCents });
     }
     expect(viaJson(state)).toStrictEqual(state);
   });
@@ -141,7 +141,7 @@ describe('World.deserialize — neplatné vozidlá (parsovanie)', () => {
     ['pruh 2', (_s, v) => (v[0].ahead = [[ROUTE_CELL, 2]]), '/vehicles/0/ahead/0/1', /0 alebo 1/],
     ['záporný blockedTicks', (_s, v) => (v[0].blockedTicks = -1), '/vehicles/0/blockedTicks'],
     ['rerouteCooldown necelý', (_s, v) => (v[0].rerouteCooldown = 1.5), '/vehicles/0/rerouteCooldown'],
-    ['telo vzdialené od polohy vozidla (hlava tela nie je v jeho bunke)', (_s, v) => (v[0].body = [[ROUTE_CELL + 7, 0]]), '', /hlava tela/],
+    ['telo vzdialené od polohy vozidla (hlava tela nie je v jeho bunke)', (_s, v) => ((v[0].state = 'idle'), (v[0].body = [[ROUTE_CELL + 7, 0]])), '', /hlava tela/],
     ['jobs nie je pole', (s) => (s.jobs = null), '/jobs'],
   ];
 

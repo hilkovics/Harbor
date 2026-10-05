@@ -46,8 +46,9 @@ function oneJobWorld(defs: DefRegistry = DEFS): { world: World; vehicleId: Entit
 }
 
 describe('cyklus vozidla: depo → apron → dvor', () => {
-  it('jazda k najbližšej prístupovej bunke berthu, pobyt 6 + 3 ticky, naloženie, jazda do dvora, pobyt 6 + 3, uloženie + JobDone, idle na mieste', () => {
+  it('jazda k najbližšej prístupovej bunke berthu, pobyt 6 + 3 ticky, naloženie, jazda do dvora, pobyt 6 + 3, uloženie + JobDone, idle na mieste, potom späť do depa (to_depot → parked)', () => {
     const { world, vehicleId, unit, yard } = oneJobWorld();
+    const depotCell = { x: world.vehicles.get(vehicleId)?.x, y: world.vehicles.get(vehicleId)?.y };
     const log = run(world, 120);
     const vehicle = world.vehicles.get(vehicleId);
     const arrivedPickup = tickOf(log, stateChange(vehicleId, 'loading'));
@@ -65,7 +66,11 @@ describe('cyklus vozidla: depo → apron → dvor', () => {
     expect(done).toBe(stored);
     expect(tickOf(log, stateChange(vehicleId, 'idle'))).toBe(stored);
 
-    expect([vehicle?.state, vehicle?.jobId, vehicle?.x, vehicle?.y]).toEqual(['idle', null, YARD_W_ACCESS.x + 0.5, YARD_W_ACCESS.y + 0.5]);
+    // Po dokončení jobu vozidlo stojí `idle` na prístupovej bunke dvora, po `idleParkDelayTicks` ide do depa a zaparkuje.
+    const left = tickOf(log, stateChange(vehicleId, 'to_depot'));
+    expect(left - stored).toBe(world.defs.logistics.traffic.idleParkDelayTicks);
+    expect([vehicle?.state, vehicle?.jobId, vehicle?.x, vehicle?.y]).toEqual(['parked', null, depotCell.x, depotCell.y]);
+    expect(tickOf(log, stateChange(vehicleId, 'parked'))).toBeGreaterThan(left);
     expect(world.jobs.size).toBe(0);
     expect([yard.storedCount, yard.reservedCount, yard.unitsIn]).toEqual([1, 0, 1]);
     expect(world.cargo.get(unit)?.location).toEqual({ kind: 'in_storage', moduleId: yard.id, slot: 0 });
@@ -107,7 +112,8 @@ describe('cyklus vozidla: depo → apron → dvor', () => {
     const loaded = tickOf(log, (event) => event.type === 'CargoMoved' && event.unitId === unit && event.to.kind === 'in_vehicle');
     expect(tickOf(log, stateChange(vehicleId, 'unloading'))).toBe(loaded + 1);
     expect(world.cargo.get(unit)?.location).toEqual({ kind: 'in_storage', moduleId: shared.id, slot: 0 });
-    expect(world.vehicles.get(vehicleId)?.state).toBe('idle');
+    expect(tickOf(log, stateChange(vehicleId, 'idle'))).toBeGreaterThan(loaded); // dokončený job: idle (potom parkovanie)
+    expect(world.vehicles.get(vehicleId)?.state).toBe('parked');
   });
 
   it('dve vozidlá, dve jednotky: obe vozidlá jazdia súčasne, každá jednotka skončí v sklade, joby zmiznú', () => {
@@ -117,7 +123,7 @@ describe('cyklus vozidla: depo → apron → dvor', () => {
     unitsOnApron(world, [0, 1]);
     run(world, 200);
     expect([yard.storedCount, yard.reservedCount, world.jobs.size]).toEqual([2, 0, 0]);
-    for (const id of ids) expect(world.vehicles.get(id)?.state).toBe('idle');
+    for (const id of ids) expect(world.vehicles.get(id)?.state).toBe('parked');
   });
 });
 
@@ -145,7 +151,7 @@ describe('no_path a preplánovanie', () => {
     expect(resumed - repairedAt).toBeLessThanOrEqual(REPATH);
     run(world, 200, log);
     expect(world.jobs.size).toBe(0);
-    expect(world.vehicles.get(vehicleId)?.state).toBe('idle');
+    expect(world.vehicles.get(vehicleId)?.state).toBe('parked');
   });
 
   it('RemoveRoad odmietne bunku pod vozidlom aj cieľovú bunku rozbehnutého úseku (occupied); bunku za vozidlom a mimo neho nie', () => {

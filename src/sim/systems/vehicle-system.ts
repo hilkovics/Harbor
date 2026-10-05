@@ -32,11 +32,10 @@ import { hookCraneOf, isHookDropoff, isHookPickup } from '../logistics/job-sourc
 import type { JobState, TransportJob } from '../logistics/transport-job';
 import { CraneModule } from '../modules/crane-module';
 import { advanceCarrier } from '../movement/route-planning';
-import { exitSlotKey, headSlotKey } from '../traffic/head-slot';
 import type { Vehicle } from '../vehicles/vehicle';
 import { VehicleError } from '../vehicles/vehicle-error';
 import { HOOK_WAIT_TICKS, RESUME_AFTER_NO_PATH, VEHICLE_STATE_TRAITS, changeVehicleState, type VehicleState } from '../vehicles/vehicle-fsm';
-import { enterNoPath, findJobRoute, jobModule, jobOfVehicle, planDepotRoute, planJobRoute, startDepotTrip, startTrip } from '../vehicles/vehicle-trip';
+import { enterNoPath, jobModule, jobOfVehicle, planDepotRoute, planJobRoute, startDepotTrip, startTrip, tryLeaveDepot } from '../vehicles/vehicle-trip';
 import type { World } from '../world/world';
 
 /** Čo sa stane pri príchode na koniec trasy (`to_*`): stav vozidla, stav jobu a trvanie manipulácie jednotky. */
@@ -216,18 +215,9 @@ function idleStep(vehicle: Vehicle, world: World): void {
   if (!startDepotTrip(world, vehicle)) vehicle.waitTicks = delay;
 }
 
-/**
- * `depot_exit`: vozidlo s priradeným jobom vyjde z depa na cestu, len keď je voľný slot prístupovej bunky depa (pruh podľa prvého kroku
- * trasy k zdroju; ADR-037). Inak čaká a skúša každý tick. Výjazd = `to_pickup`, trasa a slot hlavy (pohyb až v ďalšom ticku).
- */
+/** `depot_exit`: vozidlo čaká na voľný slot prístupovej bunky depa a skúša výjazd každý tick (`tryLeaveDepot`). */
 function leaveDepot(vehicle: Vehicle, world: World): void {
-  const job = jobOfVehicle(world, vehicle);
-  const path = findJobRoute(world, vehicle.cell, job, 'source');
-  if (path === null) return;
-  if (!world.laneSlots.isFreeFor(exitSlotKey(world, vehicle.cell, path[1]), vehicle.id)) return;
-  changeVehicleState(world.events, vehicle, 'to_pickup');
-  if (!planJobRoute(world, vehicle, job, 'source')) enterNoPath(world, vehicle);
-  vehicle.reserveHead(headSlotKey(world, vehicle));
+  tryLeaveDepot(world, vehicle);
 }
 
 type VehicleStep = (vehicle: Vehicle, world: World) => void;

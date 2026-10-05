@@ -72,7 +72,7 @@ import type { LoadingRamp } from '../modules/loading-ramp';
 import { StorageModule } from '../modules/storage-module';
 import type { Vehicle } from '../vehicles/vehicle';
 import { VEHICLE_STATE_TRAITS, changeVehicleState } from '../vehicles/vehicle-fsm';
-import { startTrip } from '../vehicles/vehicle-trip';
+import { startTrip, tryLeaveDepot } from '../vehicles/vehicle-trip';
 import type { World } from '../world/world';
 import { JobError } from './job-error';
 import { createEmptyIntakeJobs, createEmptyPickupJobs } from './empty-jobs';
@@ -477,8 +477,12 @@ function assign(world: World, job: TransportJob, vehicle: Vehicle): void {
   vehicle.jobId = job.id;
   world.events.emit({ type: 'JobAssigned', jobId: job.id, vehicleId: vehicle.id });
   // Zaparkované vozidlo najprv vyjde z depa (`depot_exit`, voľný slot prístupovej bunky), ostatné idú k zdroju hneď (s preplánovaním).
-  if (vehicle.state === 'parked') changeVehicleState(world.events, vehicle, 'depot_exit');
-  else startTrip(world, vehicle, 'to_pickup');
+  if (vehicle.state === 'parked') {
+    changeVehicleState(world.events, vehicle, 'depot_exit');
+    tryLeaveDepot(world, vehicle);
+  } else {
+    startTrip(world, vehicle, 'to_pickup');
+  }
 }
 
 /**

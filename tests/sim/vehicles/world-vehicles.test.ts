@@ -224,18 +224,18 @@ describe('invarianty vozidiel (krok 12)', () => {
 });
 
 describe('vozidlá počas ticku bez práce (žiadny náklad → žiadny job)', () => {
-  it('kúpené vozidlá stoja idle na vonkajšej bunke depa, krok 12 prechádza, stav sa nemení', () => {
+  it('kúpené vozidlá stoja parked na vonkajšej bunke depa mimo cesty, krok 12 prechádza, stav sa nemení', () => {
     const { world, depot } = depotWorld();
     execute(world, buy(depot.id));
     execute(world, buy(depot.id));
-    // Prvý tick: stojaci nosič bez slotov si nárokuje slot svojej bunky (druhé vozidlo na tej istej bunke ho nedostane, kým prvé neodíde).
+    // Zaparkované vozidlo je mimo cesty (ADR-037 bod 7): nedrží žiadny slot, dve vozidlá stoja na tej istej bunke depa.
     runTicks(world, 1);
     const before = [...world.vehicles.values()].map((vehicle) => vehicle.toState());
-    expect([...world.vehicles.values()].map((vehicle) => vehicle.body.length)).toEqual([1, 0]);
+    expect([...world.vehicles.values()].map((vehicle) => vehicle.body.length)).toEqual([0, 0]);
     runTicks(world, 300);
     expect([...world.vehicles.values()].map((vehicle) => vehicle.toState())).toEqual(before);
     for (const vehicle of world.vehicles.values()) {
-      expect([vehicle.state, vehicle.x, vehicle.y]).toEqual(['idle', DEPOT_OUTSIDE.x + 0.5, DEPOT_OUTSIDE.y + 0.5]);
+      expect([vehicle.state, vehicle.x, vehicle.y]).toEqual(['parked', DEPOT_OUTSIDE.x + 0.5, DEPOT_OUTSIDE.y + 0.5]);
       expect(vehicle.def).toBe(STRADDLE_DEF);
     }
   });

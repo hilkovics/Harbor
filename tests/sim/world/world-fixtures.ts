@@ -63,14 +63,24 @@ export const LEGACY_CAPACITY_DEFS: DefRegistry = DefRegistry.fromRaw({ ...RAW_DE
 /** Bundled defy s pripnutým režimom `apron` — predvolené defy väčšiny testov (`DEFS`). */
 export const DEFS: DefRegistry = DefRegistry.fromRaw(RAW_DEFS);
 /** Zdieľaná mapa — testy overujú, že ju žiadny svet nezmení. */
-export const MAP: LoadedMap = loadBundledMap();
+/**
+ * harbor_01 v podobe pred jednosmerným prístavom (R1, ADR-037 dodatok): jeden obojsmerný portál `road_south` (44, 63) a dvojpruhová
+ * cesta x = 44, y 34–63. Testy mechaniky (príkazy, FSM, sklady, kamióny) stoja na tomto tvare; skutočná jednosmerná mapa a jej
+ * slučka sú v testoch mapy a scenárov (`loadBundledMap`, bundled scenáre).
+ */
+export const LEGACY_HARBOR_JSON = {
+  ...harbor01Json,
+  roadPortals: [{ id: 'road_south', cell: { x: 44, y: 63 } }],
+  starter: { ...harbor01Json.starter, roads: Array.from({ length: 30 }, (_unused, i) => ({ x: 44, y: 63 - i })) },
+};
+export const MAP: LoadedMap = loadMap(parseMapDef(LEGACY_HARBOR_JSON));
 /** Mriežka počiatočného stavu mapy len na čítanie (hľadanie buniek, indexy); svety majú vlastné kópie, nezapisovať. */
 export const MAP_GRID: Grid = MAP.createGrid();
 /**
  * harbor_01 bez `starter.modules` (T02-04): nový svet nemá Root modul, takže testy modulov (T02-03) a pravidiel
  * umiestnenia stavajú na (40, 14) samy. Terén, parcely, cesty a id mapy sú rovnaké ako `MAP`.
  */
-export const BARE_MAP: LoadedMap = loadMap(parseMapDef({ ...harbor01Json, starter: { ...harbor01Json.starter, modules: [] } }));
+export const BARE_MAP: LoadedMap = loadMap(parseMapDef({ ...LEGACY_HARBOR_JSON, starter: { ...LEGACY_HARBOR_JSON.starter, modules: [] } }));
 export const SEED = 20260929;
 
 /** Defy s upraveným `time.json` (napr. `speeds` bez 1). */

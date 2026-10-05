@@ -96,7 +96,7 @@ describe('World.vehicleOnCell a markRoadsChanged', () => {
     world.markRoadsChanged();
     expect(world.roadVersion).toBe(version + 1);
     expect([world.vehicles.get(driver)?.state, world.vehicles.get(driver)?.replanPending]).toEqual(['to_pickup', true]);
-    expect([world.vehicles.get(parked)?.state, world.vehicles.get(parked)?.replanPending]).toEqual(['idle', false]);
+    expect([world.vehicles.get(parked)?.state, world.vehicles.get(parked)?.replanPending]).toEqual(['parked', false]);
   });
 });
 

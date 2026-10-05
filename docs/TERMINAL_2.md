@@ -6,7 +6,8 @@
 > - rampa na nakladanie kamiónov ide preč, kamióny nakladajú priamo žeriavy.
 >
 > **Nadväzuje na:** `docs/PORT_OPERATIONS.md`, ktorého §2.4, §2.5 a §3 tento návrh nahrádza; ARCHITECTURE §5–§7 a §14; ADR-017 až ADR-035.
-> **Zoznam nových SVG a usmernenie ku generovaniu:** `docs/ASSETS_TERMINAL_2.md`.
+> **Manuál pre Claude Design (čo nakresliť a čo chýba):** `docs/CLAUDE_DESIGN_TERMINAL_2.md`.
+> **Grafika:** ľudia (šoféri, technici) sa nekreslia. Ich činnosť je v hre len čas a stav, napr. „šofér v bezpečnej zóne“ v inšpektore.
 > **Po schválení:**
 > - ADR-036 až ADR-043 (rozdelenie v §12),
 > - prepis `IMPLEMENTATION_PLAN.md`: fázy R1–R7 pred dnešnou F7,
@@ -36,7 +37,8 @@
    Nakládka lode prebieha opačne.
 5. **Rampa zanikne a s ňou aj stojisko:**
    - Kamión prejde vstupnou bránou (OCR a kontrola) a dostane lístok s blokom a pozíciou.
-   - Ide vyznačeným koridorom k **odovzdávaciemu miestu (TP) pri bloku**. Šofér medzitým čaká v **bezpečnej zóne**.
+   - Brána je **široká a modulárna**: hráč skladá ľubovoľný počet pruhov vedľa seba. Pred ňou je predbránová plocha, kde kamióny čakajú vedľa seba. Brán aj vstupov do mapy môže byť viac (§8).
+   - Ide vyznačeným koridorom k **odovzdávaciemu miestu (TP) pri bloku**. Šofér medzitým čaká v **bezpečnej zóne** (v hre len čas, postavy sa nekreslia).
    - RTG (alebo reach stacker či ECH) naloží kontajner priamo na náves a šofér zaistí twistlocky.
    - Na výstupnej bráne kamión prejde vážením, skenom a kontrolou plomby.
 6. **Vozidlá cez seba neprechádzajú:**
@@ -112,9 +114,10 @@ Zmizne alebo sa prepíše:
    └──────────────────────┘  └──────────────────────┘  └───────────────┘
    ┌Empty depot (ECH, 8 výška)┐  ┌OOG plocha (RS)┐  ┌Žel. terminál (RMG)┐
   ───────────────────────────────────────────────────────────────────────
-   koridor externých kamiónov (do 30 km/h)  ◄═══ výstupná brána (váha, sken)
-                                            ═══► vstupná brána (OCR, lístok)
-                                     portál (verejná cesta) ↕
+   koridor externých kamiónov (do 30 km/h)  ◄═══ výstupné pruhy (váha, sken)
+   odstavná plocha kamiónov                 ═══► vstupné pruhy ×8 (OCR, lístok)
+                                            ▲▲▲▲ predbránová plocha (kamióny vedľa seba)
+                          portál juh (verejná cesta) ↕      portál západ ↔ (druhý vstup)
 ```
 
 Hráč stavia **bloky** (typ bloku určuje stroj), **cesty s pruhmi a smermi**, **brány** a **kotviská so žeriavmi** a kupuje **stroje**.
@@ -352,7 +355,7 @@ Dual cycling (ADR-032) ostáva: TT, ktorý priviezol export, odvezie hneď impor
    - S malou šancou `gateIssueChance` vznikne problém. Kamión vtedy ide do „trouble" pruhu a čaká `troubleTicks`.
    - TOS vydá **lístok**: blok, bay a TP (pozícia v pruhu bloku).
 3. **Koridor:** kamión ide len po cestách s prístupom pre externé kamióny (§7.10), rýchlosťou `truckSpeedFactorInTerminal` (do 30 km/h).
-4. **TP pri bloku:** zastaví na TP svojho lístka (alebo za vozidlom pred ním). Šofér vystúpi do **bezpečnej zóny** (`driverToSafeZoneTicks`); v renderi ho vidno pri TP.
+4. **TP pri bloku:** zastaví na TP svojho lístka (alebo za vozidlom pred ním). Šofér vystúpi do **bezpečnej zóny** (`driverToSafeZoneTicks`). V hre je to len čas a stav v inšpektore; postava sa nekreslí, na zemi je iba značka zóny.
 5. **Naloženie:** RTG prejde nad stoh, preloží zavaľujúce kontajnery, zdvihne cieľový, prejde nad kamión a pomaly ho spustí na náves. Ledger: `in_storage → in_handler → in_truck`.
 6. **Lashing:** šofér sa vráti a zaistí 4 twistlocky (`twistlockTicks × 4`).
 7. **Výstupná brána (out-gate):** váženie na nápravy (`weighTicks`), sken stavu kontajnera (`scanTicks`) a kontrola plomby.
@@ -477,7 +480,7 @@ Pri súbehoch rozhoduje poradie z §7.4, teda kto čaká najdlhšie.
 
 ### 7.6 Fyzické fronty
 Virtuálne fronty a teleporty (`jumpTo`) zaniknú:
-- **Vstupná a výstupná brána:** majú pruhy. Kamión stojí v pruhu pri búdke a ďalšie stoja za ním na príjazdovej ceste. Front je vidno.
+- **Vstupná a výstupná brána:** majú ľubovoľný počet pruhov. Kamióny čakajú vedľa seba v paralelných pruhoch predbránovej plochy, nie v jednom rade na ceste (§8). Front je vidno.
 - **Pod žeriavom:** TT stojí na TP v pruhu pod žeriavom a ďalšie za ním v tom istom pruhu.
   - Kotvisko dostane **obchádzkový pruh**, aby ťahač pre druhý žeriav nemusel stáť za prvým.
   - Odporúčam rozšíriť kotvisko o 1 rad na 8 × 4: 2 pruhy pod žeriavom + obchádzka.
@@ -523,7 +526,6 @@ Cesta dostane **prístup** (`access`), ktorý hráč nastaví nástrojom ako dne
 - Poloha prichádza zo simulácie (slot a priebeh), takže sa vozidlá neprekrývajú ani v renderi.
 - Kĺbový náves sa kreslí po stope.
 - Čakajúce vozidlá majú brzdové svetlá (malý prvok spritu) a nad zápchou je ikonka.
-- Šofér v bezpečnej zóne je malá postavička pri TP.
 
 ### 7.11 Determinizmus, save, výkon
 - **Obsadenie slotov** je odvodené z polôh a stôp nosičov a do savu nejde. Do savu pribudne `trail` (stopa) a `waitTicks`.
@@ -536,14 +538,41 @@ Cesta dostane **prístup** (`access`), ktorý hráč nastaví nástrojom ako dne
 
 ---
 
-## 8. Brány
+## 8. Brány a vstupné miesta
 
-| Modul | Pruhy | Kroky v pruhu | Defy |
+Cieľ: brána musí zvládnuť **veľa kamiónov naraz** a vstupných miest musí byť viac. Dnešná brána má jednu frontu a spracuje jeden kamión naraz.
+
+### 8.1 Modulárne pruhy brány
+| Modul | Rozmer | Kroky v pruhu | Defy |
 |---|---|---|---|
-| `gate_in` (napr. 4 pruhy, 4 × 3 bunky) | jednosmerné, každý s búdkou a OCR portálom | stoj → OCR → kontrola (VGM, booking, termín) → lístok → závora | `lanes`, `ocrTicks`, `checkTicks`, `gateIssueChance`, `troubleTicks` |
-| `gate_out` (napr. 3 pruhy) | jednosmerné, každý s váhou a skenerom | stoj na váhe → váženie → sken → plomba → závora | `weighTicks`, `scanTicks`, `sealIssueChance`, `inspectionTicks` |
+| `gate_in_lane` | 1 × 4 bunky (3 bunky stojisko kamióna pri búdke + 1 bunka závora) | stoj → OCR → kontrola (VGM, booking, termín) → lístok → závora | `ocrTicks`, `checkTicks`, `gateIssueChance`, `troubleTicks` |
+| `gate_out_lane` | 1 × 4 bunky (váha pod celým kamiónom + závora) | stoj na váhe → váženie → sken → plomba → závora | `weighTicks`, `scanTicks`, `sealIssueChance`, `inspectionTicks` |
 
-- Vstupná a výstupná brána sú **samostatné moduly**. Nahradia `truck_gate`, ktorá dnes rieši obe strany jednou frontou.
+- Hráč kladie **pruhy vedľa seba** v ľubovoľnom počte (4, 8, 12…). Susedné pruhy tvoria jednu bránu; render nakreslí spoločnú strechu (okrajové a stredné kusy).
+- Každý pruh spracúva 1 kamión naraz a nezávisle od ostatných. Priepustnosť = pruhy ÷ čas spracovania. Napríklad 8 pruhov pri 2,5 min na kamión zvládne ≈ 190 kamiónov za hodinu.
+- Pruh má režim (prepínač v inšpektore):
+  - `standard`;
+  - `express`: len kamióny s potvrdeným termínom a OCR bez zastavenia, kratší čas; odomkne tech F8 „gate_fast_lane";
+  - `trouble`: problémové kamióny a otočka späť.
+- Vstupné a výstupné pruhy sú samostatné moduly. Nahradia `truck_gate`, ktorá dnes rieši obe strany jednou frontou.
+
+### 8.2 Predbránová plocha (pre-gate buffer)
+- Modul `pre_gate_buffer`, napríklad 8 × 8 buniek, má jeden vjazd z verejnej cesty. Vnútri sa rozvetví na N paralelných radových pruhov po 2 kamióny a tie ústia do pruhov brány.
+- Kamióny tu čakajú **vedľa seba**, takže front neblokuje cestu ani križovatky.
+- Kamión dostane pri vjazde pruh brány s najkratšou frontou (pri zhode najnižšie poradie). Pravidlo je deterministické.
+- Kapacita = radové pruhy × 2 kamióny. Keď je plná, ďalšie kamióny čakajú vo vnútrozemí (ADR-035), nie na ceste v termináli.
+
+### 8.3 Viac vstupných miest
+- **Viac brán:** hráč smie postaviť viac brán, aj na rôznych miestach terminálu (napríklad jednu pri importnom a druhú pri exportnom sklade). Kamión si pri vjazde na mapu vyberie bránu podľa odhadu času: cesta + fronta × čas spracovania. Výber je deterministický.
+- **Viac portálov mapy:** `MapDef.roadPortals` už je pole, dnes sa používa len prvý portál. Každý portál dostane `trafficShare`, teda podiel kamiónov z danej strany vnútrozemia. Na `harbor_01` pribudne druhý cestný portál (západ). Portál kamióna určí `Rng` pri vzniku termínu; bránu si kamión vyberie podľa bodu vyššie.
+- Vnútrozemie (ADR-035) čaká zvlášť pri každom portáli. Kamión vojde, keď sú voľné sloty pri jeho portáli.
+
+### 8.4 Odstavná plocha (truck holding area)
+- Modul `truck_holding` je parkovisko so státiami 1 × 3 za vstupnou bránou.
+- Odstavia sa tu kamióny, ktoré prišli pred termínom alebo čakajú na kontajner (napríklad VGM hold či rehandling). Neblokujú tak pruh bloku ani cestu.
+- TOS ich zavolá k TP, keď je kontajner pripravený.
+
+### 8.5 Kontroly a odmietnutie
 - Kamión bez termínu alebo s chybou (napr. booking po cut-off a loď už lashuje) **brána odmietne**. Kamión sa otočí cez trouble pruh a vráti sa do vnútrozemia. Ide o udalosť, nie o stratu nákladu: jednotka je stále `in_truck`.
 - Hráč volí počet pruhov a rozšírenia (tech F8: „gate_fast_lane" skráti `checkTicks`).
 
@@ -555,7 +584,7 @@ Cesta dostane **prístup** (`access`), ktorý hráč nastaví nástrojom ako dne
 |---|---|---|
 | `LoadingRamp`, `DockStaging`, `DockIntake`, `ramp-allocator`, `dock-cargo`, dual transaction na rampe | **zruší sa** | „ramp" je v `src/sim` v 69 súboroch (942 riadkov); render 25, UI 8, app 9 súborov; testy 136 súborov |
 | `WaitingArea` (stojisko), `pickupReservedBays` | **zruší sa** | nahradia ho fyzické fronty a vnútrozemie |
-| `TruckGate` (jedna brána, FIFO) | **prepíše sa** na `GateIn` a `GateOut` s pruhmi | hook registrácie exportu (`onGatePassed`) ostáva |
+| `TruckGate` (jedna brána, FIFO) | **prepíše sa** na modulárne pruhy `GateInLane` a `GateOutLane`, predbránovú a odstavnú plochu | hook registrácie exportu (`onGatePassed`) ostáva |
 | FSM kamióna (12 stavov) | **prepíše sa** na návštevu s lístkom | `to_gate_in → gate_in → to_tp → at_tp (safe_zone, handling, lashing) → (ďalšie TP) → to_gate_out → gate_out → to_portal` |
 | `StorageModule` (počet a ploché sloty), `SlotReservations` | **prepíše sa** na `YardBlock` + `StackGrid` + rezervácie pozícií | `ContainerYard` a `EmptyDepot` sa stanú defmi blokov |
 | `Dispatcher` + `TransportJob` | **prepíše sa** na TOS (`Move` + nohy, plánovač polohy, fronty strojov) | zachová sa poradie stowage, dual cycling, priority |
@@ -630,7 +659,7 @@ Formát obálky `SaveGame` v1 (ADR-030) ostáva.
 - `equipment.json` (yard stroje).
 
 **Rozšírenia existujúcich defov:**
-- `modules.json`: nové druhy `yard_block`, `area`, `gate_in`, `gate_out`, `rail_terminal`, `vehicle_parking`; kotvisko dostane pruhy pod žeriavom;
+- `modules.json`: nové druhy `yard_block`, `area`, `gate_in_lane`, `gate_out_lane`, `pre_gate_buffer`, `truck_holding`, `rail_terminal`, `vehicle_parking`; kotvisko dostane pruhy pod žeriavom;
 - `vehicles.json` a `trucks.json`: `lengthCells`, `canLift`, `stackTiers`, `access`;
 - `logistics.json`: sekcie `traffic`, `gate`, `landside`, `tos`, `reefer`;
 - `infrastructure.json`: `access` ciest, `truckSpeedFactorInTerminal`;
@@ -666,8 +695,8 @@ Manifest dostane:
   - SC (prekreslený na reálny rozmer);
   - RS a ECH s kontajnerom naprieč pred sebou.
 - **Kontajnery sa skladajú** (sprite vozidla + sprite kontajnera) namiesto stavov `loaded` v každom sprite vozidla. Pri 6 typoch × 2 veľkostiach by inak vznikla explózia súborov.
-- **Brány:** pruhy, búdky, OCR portál, váha, závory a front kamiónov na ceste.
-- **TP a bezpečná zóna:** značky na zemi a postavička šoféra počas nakládky.
+- **Brány:** modulárne pruhy so spoločnou strechou, búdky, OCR portál, váha, závory, predbránová plocha s kamiónmi vedľa seba.
+- **TP a bezpečná zóna:** len značky na zemi. **Ľudia sa nekreslia**; čakanie šoféra je stav v inšpektore kamióna.
 - **Reefer:** rady so stĺpikmi zásuviek a stav zásuvky (zapojený, alarm).
 - **Zápcha:** ikona a červené bunky, ktoré po kliknutí vedú na miesto.
 
@@ -691,7 +720,7 @@ Každá fáza končí hrateľnou verziou (artefakt), review simulácie, plnou e2
 | **R1 Doprava bez prekrývania** | pruhové sloty, dĺžka vozidiel, stopa, `TrafficSystem` (zlúčené kroky 6+8), pravidlo voľného výjazdu, úseky `one_lane`, parkovanie nečinných, detekcia a riešenie zápch, fyzické fronty pred bránou a modulmi (rampa ešte existuje), render kĺbového návesu | 037 (doprava), 038 (pipeline) | 3 SD | `carrierOverlapProblem` nikdy vo všetkých scenároch; `stress_f6` bez trvalej zápchy; bench < 2 ms; e2e screenshot frontu |
 | **R2 Kontajnery a stohy** | veľkosti a typy (dry, empty; reefer zatiaľ ako dry), `YardBlock` + `StackGrid`, straddle blok (SC stohuje 1 nad 2), depo s ECH (8 výška), rehandling, `YardPlanner` s časom odchodu, termíny odvozu importu, inšpektor bloku | 039 (sklad a plánovač) | 3,5 SD | 0 porušení stohov; `rehandlesPerMove` < 0,3 v `vertical_slice` s plánovačom a > 1 s náhodným ukladaním (dôkaz, že plánovač funguje) |
 | **R3 Ťahače, RTG a TOS** | `TerminalTractor`, `RtgCrane`, pruhy pod STS + obchádzka (kotvisko 8 × 4), `Move` + nohy, fronty a priority RTG, gang/pool, reach stacker plocha | 040 (TOS a stroje) | 3,5 SD | scenár „ťahač + RTG": vykládka a nakládka 120 TEU bez zápchy; STS čaká na ťahač < 20 % času cyklu pri 4 TT na žeriav |
-| **R4 Landside bez rampy** | `gate_in` a `gate_out` s pruhmi a kontrolami, lístok, TP pri blokoch, bezpečná zóna, lashing a unlashing, prístup ciest (`access`), dual transaction s 2 zastávkami, **zrušenie rampy a stojiska** | 041 (landside) | 3 SD | `live_terminal` na novom rozložení: import, export, prázdne a prekládka; TTT meraný; e2e: kamión na TP, šofér v zóne, RTG nakladá |
+| **R4 Landside bez rampy** | modulárne pruhy `gate_in_lane` a `gate_out_lane` s kontrolami, predbránová plocha, odstavná plocha, viac brán a druhý portál mapy, lístok, TP pri blokoch, bezpečná zóna, lashing a unlashing, prístup ciest (`access`), dual transaction s 2 zastávkami, **zrušenie rampy a stojiska** | 041 (landside) | 3 SD | `live_terminal` na novom rozložení: import, export, prázdne a prekládka; TTT meraný; 8 vstupných pruhov spracuje špičku 100 kamiónov za hodinu bez frontu na verejnej ceste; e2e: kamióny vedľa seba v predbránovej ploche, kamión na TP, RTG nakladá |
 | **R5 Reefery a špeciály** | reefer blok a zásuvky, energia, limit odpojenia, alarmy, reklamácie; OOG plocha a RS, flat rack navrch, tank; zmesi typov v kontraktoch | 042 (reefery a špeciály) | 2 SD | scenár `reefer_flow`: 0 reklamácií pri dosť zásuvkách, reklamácie pri nedostatku |
 | **R6 Železnica s RMG** | koľaje (`PlaceRail`), železničný terminál s RMG a bufferom, vlaky podľa cestovného poriadku, ťahače do bufferu, rail podiel v kontraktoch | 043 (železnica) | 2,5 SD | scenár `rail_flow`: > 50 % importu vlakom; vagóny sa nakladajú po blokoch |
 | **R7 (voliteľná) Automatizácia a housekeeping** | AGV + automatizovaný RMG blok, pre-marshalling v nečinnosti, CFS (stripping) | — | 2 SD | scenár s AGV bez zápchy; pokles rehandlingu po pre-marshallingu |
@@ -723,6 +752,8 @@ F9 (bulk, kvapaliny, plyn, RoRo) odporúčam **odsunúť za F13**, aby hra najpr
 6. **Fáza 9 (bulk, kvapaliny, plyn, RoRo)** sa odsunie za release. **Odporúčam**, aby sa sústredenie nerozdrobilo.
 7. **Kotvisko 8 × 4** (pruhy pod žeriavom + obchádzka) namiesto 8 × 3. Starter na `harbor_01` sa posunie o 1 rad na pevninu. **Odporúčam.**
 8. **Termíny odvozu importu** (Truck Appointment System) namiesto kamiónov „na požiadanie". **Odporúčam**, je to realistické a nutné pre plánovač polohy.
+9. **Brány a vstupy:** modulárne pruhy brány (ľubovoľná šírka), predbránová plocha, viac brán a druhý cestný portál na `harbor_01` (západ). **Odporúčam** (tvoja pripomienka z 2026-10-05).
+10. **Ľudia sa nekreslia** (šofér, technik). Ich činnosť je len čas a stav. **Potvrdené** (tvoja pripomienka z 2026-10-05).
 
 ---
 
@@ -735,4 +766,4 @@ F9 (bulk, kvapaliny, plyn, RoRo) odporúčam **odsunúť za F13**, aby hra najpr
 | Prepis testov (≈ ¼ sady) spomalí fázy | stredný | testy rampy a stojiska sa zmažú spolu s kódom; nové testy sa píšu TDD po tokoch |
 | Výkon pri väčšom počte nosičov a strojov | nízky | rezerva 40×; bench so scenárom 80 nosičov v R1 |
 | Rozsah narastie (CFS, IMO, twin-lift, viac pruhov) | stredný | len to, čo je v tabuľke fáz; ostatné do BACKLOG |
-| Grafika nebude stíhať simuláciu | stredný | zoznam SVG po fázach (`ASSETS_TERMINAL_2.md`); dovtedy procedurálne náhrady (Graphics s tokenmi), ako je dnes RTG dekorácia |
+| Grafika nebude stíhať simuláciu | stredný | manuál pre Claude Design po fázach (`CLAUDE_DESIGN_TERMINAL_2.md`); dovtedy procedurálne náhrady (Graphics s tokenmi), ako je dnes RTG dekorácia |

@@ -55,7 +55,7 @@ function stage(world: World, ramp: LoadingRamp, dock: number, count: number): vo
   }
 }
 
-/** Stojaci prekážkový nosič: vozidlo `idle`, ktoré drží oba pruhy bunky `cell` (nič iné cez ňu neprejde ani na nej nevznikne). */
+/** Stojaci prekážkový nosič: vozidlo `idle` (odpočet parkovania je neprekonateľne dlhý), ktoré drží oba pruhy bunky `cell` (nič iné cez ňu neprejde ani na nej nevznikne). */
 function obstacle(world: World, cell: number): Vehicle {
   const depot = [...world.modules.values()].find((module): module is VehicleDepot => module instanceof VehicleDepot);
   if (depot === undefined) throw new Error('svet nemá depo vozidiel');
@@ -70,6 +70,7 @@ function obstacle(world: World, cell: number): Vehicle {
     heading: 0,
     purchaseCostCents: 0,
     route: [cell],
+    waitTicks: 1_000_000,
     body: [slotKey(cell, 0), slotKey(cell, 1)],
   });
   world.addVehicle(vehicle);

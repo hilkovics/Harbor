@@ -11,7 +11,7 @@ import type { SimEvent } from '@sim/events';
 import type { StorageModule } from '@sim/modules';
 import { World } from '@sim/world';
 import { DEFS, MAP, RAW_DEFS } from '../world/world-fixtures';
-import { BERTH_ACCESS, YARD_W, YARD_W_ACCESS, buyVehicle, dispatchWorld, execute, placeYard, unitsOnApron } from '../logistics/dispatch-fixtures';
+import { BERTH_ACCESS, YARD_W, buyVehicle, dispatchWorld, execute, placeYard, unitsOnApron } from '../logistics/dispatch-fixtures';
 
 interface Timed {
   readonly tick: number;

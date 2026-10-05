@@ -42,7 +42,7 @@ import {
   type Rule4,
 } from '../helpers/f4';
 import { must } from '../helpers/harbor';
-import { PORT_BRIDGE, loadScenarioFile, readRepoJson, stateHash, withPortBridge } from '../helpers/scenario';
+import { loadScenarioFile, readRepoJson, stateHash, withPortBridge } from '../helpers/scenario';
 import { DEFS, MAP, PORT_MAP, hashState } from '../world/world-fixtures';
 
 const UNITS = 120;

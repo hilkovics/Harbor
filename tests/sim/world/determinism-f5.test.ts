@@ -20,7 +20,7 @@ import { loadBundledMap } from '@sim/grid';
 import { World, fnv1a32Hex, hashWorldState, stateHash, type WorldState } from '@sim/world';
 import { assertCargoConservation } from '../helpers/invariants';
 import { loadScenarioFile, runScenario, type Scenario } from '../helpers/scenario';
-import { DEFS, MAP, RAW_DEFS } from './world-fixtures';
+import { DEFS, PORT_MAP, RAW_DEFS } from './world-fixtures';
 
 const HEAVY_TIMEOUT_MS = 180_000;
 /** Krok striedania svetov (tickov). */
@@ -52,7 +52,7 @@ interface Runner {
 
 function makeRunner(scenario: Scenario, fresh: boolean): Runner {
   const defs = fresh ? DefRegistry.fromRaw(RAW_DEFS) : DEFS;
-  const map = fresh ? loadBundledMap() : MAP;
+  const map = fresh ? loadBundledMap() : PORT_MAP;
   return { world: World.create(defs, map, scenario.seed), scenario, eventPrints: [], hashes: new Map() };
 }
 
@@ -99,7 +99,7 @@ describe.each(CHECKPOINTS)('determinizmus F5: %s', (scenarioId, checkpoints) => 
   let c: Runner;
 
   beforeAll(() => {
-    startHash = stateHash(World.create(DEFS, MAP, scenario.seed));
+    startHash = stateHash(World.create(DEFS, PORT_MAP, scenario.seed));
     a = makeRunner(scenario, false);
     b = makeRunner(scenario, true);
     c = makeRunner(otherSeed, true);
@@ -145,6 +145,6 @@ describe.each(CHECKPOINTS)('determinizmus F5: %s', (scenarioId, checkpoints) => 
   });
 
   it('zdieľané defy a mapa ostali nedotknuté: čerstvý svet po behoch má rovnaký štartový hash', () => {
-    expect(stateHash(World.create(DEFS, MAP, scenario.seed))).toBe(startHash);
+    expect(stateHash(World.create(DEFS, PORT_MAP, scenario.seed))).toBe(startHash);
   });
 });

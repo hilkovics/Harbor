@@ -154,7 +154,7 @@
 ## Checklist
 - [x] R0 Rozhodnutia: ADR-036 až ADR-038, plán, CLAUDE.md, PORT_OPERATIONS, manuál pre Claude Design
 - [x] TR1-01 Clean break savov (v10): −2 300 riadkov, metriky identické
-- [ ] TR1-02 Jadro dopravy
+- [x] TR1-02 Jadro dopravy (8 847 testov; odchýlka: za križovatkou sa zaberá `lengthCells` buniek — celé telo mimo križovatky, dodatok ADR-037)
 - [ ] TR1-03 Moduly a portál
 - [ ] TR1-04 Parkovanie a zápchy
 - [ ] TR1-05 TDD a scenáre

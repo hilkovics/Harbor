@@ -47,7 +47,6 @@ import {
   type ContractLike,
 } from '../helpers/f5';
 import { hashState } from '../world/world-fixtures';
-import { describeR1Interim } from '../helpers/r1-interim';
 
 const GOLDEN_PATH = `${REPO_ROOT}tests/sim/__golden__/vertical_slice.json`;
 const RUN_TIMEOUT_MS = 600_000;
@@ -153,7 +152,7 @@ class Sampler {
   }
 }
 
-describeR1Interim('scenár vertical_slice: beh 60 000 tickov', () => {
+describe('scenár vertical_slice: beh 60 000 tickov', () => {
   let world: World;
   let run: Run5;
   let forks: Fork[];

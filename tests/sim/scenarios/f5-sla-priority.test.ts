@@ -9,7 +9,7 @@
  * Predpoklady o API: `JobCreated` outbound (cieľ = rampa) nesie `unitIds` jednotiek jedného kontraktu; poradie
  * `JobCreated` udalostí je poradie priorít dispatchera (ADR-018: joby vznikajú v poradí kandidátov).
  */
-import { beforeAll, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { World } from '@sim/world';
 import { placeLandsideCommand } from '../helpers/f4-layout';
 import { must } from '../helpers/harbor';
@@ -30,14 +30,13 @@ import {
   urgencyBp,
   type TemplateRaw,
 } from '../helpers/f5';
-import { describeR1Interim } from '../helpers/r1-interim';
 
 const FAST: TemplateRaw = { ...FIXED_TEMPLATE, id: 'fast_run', slaDaysRange: [2, 2] };
 const SLOW: TemplateRaw = { ...FIXED_TEMPLATE, id: 'slow_run', slaDaysRange: [5, 5] };
 const DEFS = defsWith({ templates: [FAST, SLOW], economy: { arrivalDaysRange: [1, 1] } });
 const RUN_TIMEOUT_MS = 300_000;
 
-describeR1Interim('SLA priorita outbound jobov: rýchly kontrakt (SLA 2 dni) pred pomalým (SLA 5 dní), hoci pomalý je starší a má nižšie id', () => {
+describe('SLA priorita outbound jobov: rýchly kontrakt (SLA 2 dni) pred pomalým (SLA 5 dní), hoci pomalý je starší a má nižšie id', () => {
   let run: Run5;
   let world: World;
   let fastId: number;

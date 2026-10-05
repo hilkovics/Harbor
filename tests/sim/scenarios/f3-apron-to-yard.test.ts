@@ -59,7 +59,6 @@ import {
 import { must, type TimedEvent } from '../helpers/harbor';
 import { loadScenarioFile, readRepoJson, stateHash } from '../helpers/scenario';
 import { DEFS, MAP, MAP_GRID } from '../world/world-fixtures';
-import { itR1Interim } from '../helpers/r1-interim';
 
 /** Karta T03-07 / akceptácia fázy: po ≤ 15 000 tickoch sú všetky jednotky `in_storage`. */
 const RUN_TICKS = 15000;
@@ -357,7 +356,7 @@ describe('scenár apron_to_yard: beh 15 000 tickov', () => {
     expect(world.ships.size).toBe(0);
   });
 
-  itR1Interim('všetkých 120 jednotiek skončilo v sklade: in_storage 120, nič na aprone/lodi/v žeriave/vo vozidle, lostUnits 0', () => {
+  it('všetkých 120 jednotiek skončilo v sklade: in_storage 120, nič na aprone/lodi/v žeriave/vo vozidle, lostUnits 0', () => {
     const { cargo } = world;
     expect(cargo.createdCount).toBe(UNITS);
     expect(cargo.countByKind('in_storage')).toBe(UNITS);
@@ -369,7 +368,7 @@ describe('scenár apron_to_yard: beh 15 000 tickov', () => {
     expect(cargo.createdCount - cargo.liveCount - cargo.exportedCount).toBe(0);
   });
 
-  itR1Interim('oba dvory majú náklad a bližší viac alebo rovnako (karta); plný blízky dvor (64) sa preskočí a ďaleký dostane zvyšok (56)', () => {
+  it('oba dvory majú náklad a bližší viac alebo rovnako (karta); plný blízky dvor (64) sa preskočí a ďaleký dostane zvyšok (56)', () => {
     const near = world.cargo.countAt('in_storage', nearYard.id);
     const far = world.cargo.countAt('in_storage', farYard.id);
     expect(near + far).toBe(UNITS);
@@ -381,7 +380,7 @@ describe('scenár apron_to_yard: beh 15 000 tickov', () => {
     expect(far).toBe(UNITS - YARD_CAPACITY);
   });
 
-  itR1Interim('počítadlá skladov: storedCount = ledger, reserved 0, freeCount = kapacita − stored, unitsIn = stored, unitsOut 0', () => {
+  it('počítadlá skladov: storedCount = ledger, reserved 0, freeCount = kapacita − stored, unitsIn = stored, unitsOut 0', () => {
     for (const yard of [nearYard, farYard]) {
       const stored = world.cargo.countAt('in_storage', yard.id);
       expect(yard.storedCount).toBe(stored);
@@ -393,7 +392,7 @@ describe('scenár apron_to_yard: beh 15 000 tickov', () => {
     }
   });
 
-  itR1Interim('joby: 120 JobCreated (každá jednotka v práve jednom jobe), každý job má práve jedno JobAssigned a JobDone; vozidlo nevezie viac než unesie', () => {
+  it('joby: 120 JobCreated (každá jednotka v práve jednom jobe), každý job má práve jedno JobAssigned a JobDone; vozidlo nevezie viac než unesie', () => {
     const created = timed3(log, 'JobCreated');
     const assigned = timed3(log, 'JobAssigned');
     const done = timed3(log, 'JobDone');
@@ -417,7 +416,7 @@ describe('scenár apron_to_yard: beh 15 000 tickov', () => {
     for (const trace of log.jobs.values()) expect(jobStateViolation(trace.states), `job ${String(trace.jobId)}`).toBeNull();
   });
 
-  itR1Interim('na konci sú všetky joby done, vozidlá idle bez jobu a nákladu a stoja na ceste', () => {
+  it('na konci sú všetky joby done, vozidlá idle bez jobu a nákladu a stoja na ceste', () => {
     expect([...jobsOf(world).values()].filter((job) => job.state !== 'done')).toEqual([]);
     for (const id of vehicleIds) {
       const vehicle = must(world.vehicles.get(id), `vozidlo ${String(id)}`);
@@ -435,7 +434,7 @@ describe('scenár apron_to_yard: beh 15 000 tickov', () => {
     expect(assigned[0].event.vehicleId).toBe(Math.min(...vehicleIds));
   });
 
-  itR1Interim('reťaz každej jednotky: on_ship → in_crane → on_apron → in_vehicle → in_storage; vozidlo a sklad zodpovedajú jobu, slot je ten rezervovaný', () => {
+  it('reťaz každej jednotky: on_ship → in_crane → on_apron → in_vehicle → in_storage; vozidlo a sklad zodpovedajú jobu, slot je ten rezervovaný', () => {
     const jobOfUnit = new Map<number, number>();
     for (const entry of timed3(log, 'JobCreated')) for (const unitId of entry.event.unitIds) jobOfUnit.set(unitId, entry.event.jobId);
     const assignedVehicle = new Map<number, number>();
@@ -467,7 +466,7 @@ describe('scenár apron_to_yard: beh 15 000 tickov', () => {
     }
   });
 
-  itR1Interim('poradie udalostí každej jednotky: príchod na apron ≤ JobCreated ≤ JobAssigned ≤ naloženie ≤ uloženie a JobDone v rovnakom ticku (±1)', () => {
+  it('poradie udalostí každej jednotky: príchod na apron ≤ JobCreated ≤ JobAssigned ≤ naloženie ≤ uloženie a JobDone v rovnakom ticku (±1)', () => {
     const createdTicks = new Map<number, number>();
     const assignedTicks = new Map<number, number>();
     const doneTicks = new Map<number, number>();
@@ -492,7 +491,7 @@ describe('scenár apron_to_yard: beh 15 000 tickov', () => {
     }
   });
 
-  itR1Interim('nič sa neteleportuje: nakladá sa na vonkajšej bunke konektora berthu, vykladá na vonkajšej bunke konektora cieľového dvora', () => {
+  it('nič sa neteleportuje: nakladá sa na vonkajšej bunke konektora berthu, vykladá na vonkajšej bunke konektora cieľového dvora', () => {
     let loads = 0;
     let stores = 0;
     for (const { tick, event } of moves()) {
@@ -516,7 +515,7 @@ describe('scenár apron_to_yard: beh 15 000 tickov', () => {
     expect(stores).toBe(UNITS);
   });
 
-  itR1Interim('pobyt v module: vozidlo stojí na mieste internalTicks + loadTicks (naloženie) / internalTicks + unloadTicks (uloženie), kým sa jednotka presunie (±1 tick)', () => {
+  it('pobyt v module: vozidlo stojí na mieste internalTicks + loadTicks (naloženie) / internalTicks + unloadTicks (uloženie), kým sa jednotka presunie (±1 tick)', () => {
     let checked = 0;
     for (const { tick, event } of moves()) {
       const load = event.from.kind === 'on_apron' && event.to.kind === 'in_vehicle';

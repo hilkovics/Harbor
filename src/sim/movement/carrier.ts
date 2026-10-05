@@ -413,6 +413,17 @@ export abstract class Carrier {
     this.trimBody();
   }
 
+  /**
+   * Nosič dorazil na miesto pobytu pri module (prístupová bunka, bunka pod hákom): drží už len slot hlavy, chvost sa uvoľní
+   * (ADR-037 dodatok R1: pobyt pri module nedrží telo, telo sa pri odchode „rozvinie“ ako pri výjazde z modulu). Stojaci chvost by
+   * v križovatke a v protismernom pruhu blokoval nosiče, ktoré na ňom nezávisia (cykly čakania pri otočke na obojsmernej ceste).
+   */
+  releaseTail(): void {
+    if (this.body.length <= 1) return;
+    const dropped = this.body.splice(1);
+    for (const key of dropped) this.releaseIfUnheld(key);
+  }
+
   /** Uvoľní všetky sloty (telo aj vpredu); príznaky zápchy nemení. */
   releaseSlots(): void {
     if (this.body.length === 0 && this.ahead.length === 0) return;

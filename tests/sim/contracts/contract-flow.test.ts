@@ -16,7 +16,7 @@
  *     −penaltiesCents` v tom istom ticku; `ContractCompleted { rewardCents, penaltiesCents, xp, onTime }`;
  *  L5 `onTime` = dokončené v ticku ≤ `slaDeadlineTick`; XP: `xpReward` včas, inak `round(xpReward × lateXpFactor)`.
  */
-import { beforeAll, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import type { World } from '@sim/world';
 import { must } from '../helpers/harbor';
 import {
@@ -41,7 +41,6 @@ import {
   xpOf,
   type Run5,
 } from '../helpers/f5';
-import { describeR1Interim } from '../helpers/r1-interim';
 
 const DEFS = fixedContractDefs();
 const REWARD = 540_000;
@@ -49,7 +48,7 @@ const MAX_TICKS = 60_000;
 const SETTLE_TICKS = 500;
 const RUN_TIMEOUT_MS = 300_000;
 
-describeR1Interim('kontrakt od prijatia po výplatu (12 TEU, SLA 2 dni, príchod +1 deň)', () => {
+describe('kontrakt od prijatia po výplatu (12 TEU, SLA 2 dni, príchod +1 deň)', () => {
   let world: World;
   let run: Run5;
   let contractId: number;

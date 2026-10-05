@@ -12,7 +12,6 @@ import { stateHash, World, type WorldState } from '@sim/world';
 import { pendingExportUnits } from '@sim/logistics/voyage-cargo';
 import { MAP } from '../world/world-fixtures';
 import type { EntityId } from '@sim/core';
-import { itR1Interim } from '../helpers/r1-interim';
 
 const VEHICLES = ['straddle_carrier', 'straddle_carrier', 'empty_handler'];
 const NO_RANDOM = { emptyReturnRate: 0, emptyPickupRate: 0, damageChance: 0 };
@@ -29,7 +28,7 @@ function runToClose(world: World, maxTicks = 60_000) {
 }
 
 describe('repositioning prázdnych — nakládka z depa na loď', () => {
-  itR1Interim.each([
+  it.each([
     ['apron', false],
     ['pod hákom', true],
   ])('%s: 4 prázdne linky z depa sa naložia, odplávajú ako shipped a booking sa vyplatí v plnej výške', (_name, hook) => {
@@ -61,7 +60,7 @@ describe('repositioning prázdnych — nakládka z depa na loď', () => {
     expect(eventsOf(events, 'ExportShipped')).toEqual([expect.objectContaining({ units: 4 })]);
   });
 
-  itR1Interim('job prázdneho dostane prednostne empty handler (prvý job vždy, ďalšie keď je voľný); pod hákom ide job in_storage → in_crane', () => {
+  it('job prázdneho dostane prednostne empty handler (prvý job vždy, ďalšie keď je voľný); pod hákom ide job in_storage → in_crane', () => {
     const world = repoWorld({ hook: true });
     stockDepot(world, 'blue_anchor', 4);
     const contract = offerRepositioning(world, { booked: 4 });
@@ -78,7 +77,7 @@ describe('repositioning prázdnych — nakládka z depa na loď', () => {
     expect(contract.state).toBe('completed');
   });
 
-  itR1Interim('menej dostupných prázdnych než bookovaných (opravovaný sa nenakladá, iná linka tiež): naloží sa len dostupné, odmena pomerne, penalizácia za nesplnený booking', () => {
+  it('menej dostupných prázdnych než bookovaných (opravovaný sa nenakladá, iná linka tiež): naloží sa len dostupné, odmena pomerne, penalizácia za nesplnený booking', () => {
     const world = repoWorld({ hook: true });
     stockDepot(world, 'blue_anchor', 2);
     const [repairing] = stockDepot(world, 'blue_anchor', 1, 'in_repair');
@@ -115,7 +114,7 @@ describe('repositioning prázdnych — nakládka z depa na loď', () => {
     assertCargoConservation(world);
   });
 
-  itR1Interim('loď voyage počká na pridelenie: dostupný prázdny, ktorý nie je pridelený (oprava práve skončila), sa započíta do pendingExportUnits, takže loď neodíde bez neho', () => {
+  it('loď voyage počká na pridelenie: dostupný prázdny, ktorý nie je pridelený (oprava práve skončila), sa započíta do pendingExportUnits, takže loď neodíde bez neho', () => {
     const world = repoWorld({ hook: true });
     stockDepot(world, 'blue_anchor', 3);
     const [repairing] = stockDepot(world, 'blue_anchor', 1, 'in_repair');
@@ -138,7 +137,7 @@ describe('repositioning prázdnych — nakládka z depa na loď', () => {
 });
 
 describe('repositioning spolu s exportom jednej voyage — stowage: plné pred prázdnymi', () => {
-  itR1Interim.each([
+  it.each([
     ['apron', false],
     ['pod hákom', true],
   ])('%s: všetky naložené exporty predchádzajú prázdnym', (_name, hook) => {

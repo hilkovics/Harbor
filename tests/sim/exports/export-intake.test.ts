@@ -16,7 +16,6 @@ import type { World } from '@sim/world';
 import { findWorldViolation } from '@sim/world/world-invariants';
 import { TICKS_PER_DAY, acceptedBooking, exportUnitIds, exportUnitsByLocation, exportWorld, f6aDefs, lostUnits, offerBooking, startLoading, tickEvents, tickUntil } from '../helpers/f6a';
 import type { ExportContract } from '@sim/contracts';
-import { itR1Interim } from '../helpers/r1-interim';
 
 const LABELS = (contract: ExportContract) => ({ direction: 'export' as const, voyageId: contract.voyageId, lineId: contract.lineId, destinationPort: contract.booking.destinationPort, weightClass: 'medium' as const });
 
@@ -327,7 +326,7 @@ describe('prijatie exportu end-to-end', () => {
     expect(exportUnitIds(world, exportContract.id)).toHaveLength(12);
   });
 
-  itR1Interim('export zostáva v sklade, kým booking beží (outbound held) — nevracia sa odosielateľovi', () => {
+  it('export zostáva v sklade, kým booking beží (outbound held) — nevracia sa odosielateľovi', () => {
     const world = exportWorld();
     const { exportContract } = acceptedBooking(world, { kind: 'export', booked: 3 });
     (exportContract.booking.arrivalPlan as number[]).splice(0, 3, 5, 6, 7);

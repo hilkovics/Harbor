@@ -78,6 +78,7 @@ function arrive(vehicle: Vehicle, world: World): void {
   job.transition(rule.job);
   vehicle.waitTicks = rule.underHook(job) ? HOOK_WAIT_TICKS : (module.vehicleInternalTicks() ?? world.defs.logistics.defaultInternalTicks) + rule.handlingTicks(vehicle.def);
   changeVehicleState(world.events, vehicle, rule.vehicle);
+  vehicle.releaseTail();
 }
 
 /**

@@ -9,7 +9,6 @@ import { TICKS_PER_HOUR, depotOf, emptyWorld, eventsOf, f6cDefs, putEmpty, rampO
 import { assertCargoConservation } from '../helpers/invariants';
 import { routeWithFreeBay } from '../../../src/sim/trucks/truck-spawner';
 import { MAP } from '../world/world-fixtures';
-import { itR1Interim } from '../helpers/r1-interim';
 
 const TWO_STRADDLES = ['straddle_carrier', 'straddle_carrier'];
 
@@ -77,7 +76,7 @@ describe('návrat prázdneho — vjazd s rezerváciou', () => {
     assertCargoConservation(world);
   });
 
-  itR1Interim('čakajúci návrat zostane vo vnútrozemí, kým je miesto v depe zaslúbené kamiónom na ceste; keď je depo plné, položka sa zahodí (EmptyReturnDeclined)', () => {
+  it('čakajúci návrat zostane vo vnútrozemí, kým je miesto v depe zaslúbené kamiónom na ceste; keď je depo plné, položka sa zahodí (EmptyReturnDeclined)', () => {
     const defs = f6cDefs({ moduleParams: { empty_depot: { capacityUnits: 2 } } });
     const world = emptyWorld({ defs, vehicles: TWO_STRADDLES });
     const tick = world.clock.tick;

@@ -4,7 +4,7 @@
  * a XP nezávisia od spôsobu odovzdávania žeriav ↔ vozidlo; `lostUnits 0`, každý presun je legálny (`assertCargoConservation`).
  */
 import { readFileSync } from 'node:fs';
-import { describe, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { SimEvent } from '@sim/events';
 import { World } from '@sim/world';
 import { findWorldViolation } from '@sim/world/world-invariants';
@@ -12,13 +12,12 @@ import { lostUnits } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
 import { REPO_ROOT, loadScenarioFile, runScenario } from '../helpers/scenario';
 import { BUNDLED_DEFS, MAP } from '../world/world-fixtures';
-import { itR1Interim } from '../helpers/r1-interim';
 
 const TICKS = 60_000;
 const RUN_TIMEOUT_MS = 300_000;
 
 describe('vertical_slice v režime under_hook', () => {
-  itR1Interim('golden report (cashEnd, exportedUnits, onTimeRate, contractsCompleted, xp) je rovnaký ako v režime apron; žeriav čakal na vozidlo', () => {
+  it('golden report (cashEnd, exportedUnits, onTimeRate, contractsCompleted, xp) je rovnaký ako v režime apron; žeriav čakal na vozidlo', () => {
     expect(BUNDLED_DEFS.modules.get('berth_standard').params['handoverMode']).toBe('under_hook');
     const scenario = loadScenarioFile('vertical_slice');
     const world = World.create(BUNDLED_DEFS, MAP, scenario.seed);

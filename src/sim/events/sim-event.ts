@@ -279,6 +279,26 @@ export interface TruckExitedEvent {
 }
 
 /**
+ * Zápcha (ADR-037 bod 8, rozhodnutie R1 č. 12): nosič `carrierId` čaká na voľný slot prvýkrát `traffic.stuckTicks` tickov v kuse.
+ * `cell` = bunka, na ktorej čaká a `blockerIds` = nosiče, ktoré držia sloty jeho blokovanej bunky (vzostupne podľa id; prázdne pri
+ * pravidle bez držiteľa, napr. fronta brány nesmie siahať do križovatky). Najviac raz za jedno čakanie; koniec hlási `TrafficJamCleared`.
+ */
+export interface TrafficJamEvent {
+  readonly type: 'TrafficJam';
+  readonly carrierId: EntityId;
+  readonly carrierKind: 'vehicle' | 'truck';
+  readonly cell: { readonly x: number; readonly y: number };
+  readonly blockerIds: readonly EntityId[];
+}
+
+/** Nosič, ktorému bola hlásená zápcha (`TrafficJam`), sa pohol (alebo opustil cestu): zápcha sa rozpustila. */
+export interface TrafficJamClearedEvent {
+  readonly type: 'TrafficJamCleared';
+  readonly carrierId: EntityId;
+  readonly carrierKind: 'vehicle' | 'truck';
+}
+
+/**
  * Dock prevádzkovej rampy `rampId` má pripravený náklad a voľný, ale žiadne stojisko na jej trasách nemá voľný bay —
  * kamión sa nespawnuje (§7.8 bod 3). Najviac raz za hernú hodinu na rampu (`LoadingRamp.lastNoWaitingBayHour`, ADR-024).
  */
@@ -637,6 +657,8 @@ export type SimEvent =
   | TruckSpawnedEvent
   | TruckStateChangedEvent
   | TruckExitedEvent
+  | TrafficJamEvent
+  | TrafficJamClearedEvent
   | NoWaitingBayEvent
   | DayClosedSummaryEvent
   | MonthlyReportEvent

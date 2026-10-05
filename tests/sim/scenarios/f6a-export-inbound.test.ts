@@ -14,7 +14,6 @@ import { MAP, TICKS_PER_HOUR, lostUnits } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
 import { loadScenarioFile, runScenario } from '../helpers/scenario';
 import { DEFS } from '../world/world-fixtures';
-import { itR1Interim } from '../helpers/r1-interim';
 
 const SCENARIO = loadScenarioFile('export_inbound');
 const TICKS = 30_000;
@@ -57,7 +56,7 @@ describe('scenár export_inbound', () => {
     expect(world.clock.tick).toBe(TICKS);
   });
 
-  itR1Interim('36 kamiónov s exportom prešlo bránou a vyložilo; všetky odišli prázdne (units 0)', () => {
+  it('36 kamiónov s exportom prešlo bránou a vyložilo; všetky odišli prázdne (units 0)', () => {
     expect(of(events, 'TruckSpawned')).toHaveLength(BOOKED);
     expect(of(events, 'ExportArrived')).toHaveLength(BOOKED);
     expect(of(events, 'TruckUnloaded')).toHaveLength(BOOKED);
@@ -67,7 +66,7 @@ describe('scenár export_inbound', () => {
     expect(contract.booking?.arrivedUnits).toBe(BOOKED);
   });
 
-  itR1Interim('kamióny prichádzajú rozložene pred cut-off; jediná výnimka je rolled jednotka po cut-off', () => {
+  it('kamióny prichádzajú rozložene pred cut-off; jediná výnimka je rolled jednotka po cut-off', () => {
     const cutoff = contract.booking?.cutoffTick as number;
     const arrivals = of(events, 'ExportArrived');
     const late = arrivals.filter((entry) => entry.tick > cutoff);
@@ -81,7 +80,7 @@ describe('scenár export_inbound', () => {
     expect(new Set(ticks).size).toBe(ticks.length);
   });
 
-  itR1Interim('rolled: zablokovaná cesta oneskorí posledný kamión za cut-off; UnitRolled hneď po ExportArrived', () => {
+  it('rolled: zablokovaná cesta oneskorí posledný kamión za cut-off; UnitRolled hneď po ExportArrived', () => {
     const rolled = of(events, 'UnitRolled');
     expect(rolled).toHaveLength(1);
     const cutoff = contract.booking?.cutoffTick as number;
@@ -106,7 +105,7 @@ describe('scenár export_inbound', () => {
     expect(world.holdIndex.size).toBe(0);
   });
 
-  itR1Interim('každá jednotka exportu prešla presne in_truck → at_ramp → in_vehicle → in_storage (nič sa neteleportuje)', () => {
+  it('každá jednotka exportu prešla presne in_truck → at_ramp → in_vehicle → in_storage (nič sa neteleportuje)', () => {
     const chains = new Map<number, string[]>();
     for (const entry of of(events, 'CargoMoved')) {
       const chain = chains.get(entry.event.unitId) ?? [];
@@ -117,7 +116,7 @@ describe('scenár export_inbound', () => {
     for (const chain of chains.values()) expect(chain).toEqual(['in_truck→at_ramp', 'at_ramp→in_vehicle', 'in_vehicle→in_storage']);
   });
 
-  itR1Interim('všetky exporty skončia v sklade, žiadna sa nestratila a nič neodišlo mimo mapy', () => {
+  it('všetky exporty skončia v sklade, žiadna sa nestratila a nič neodišlo mimo mapy', () => {
     expect(world.cargo.countByKind('in_storage')).toBe(BOOKED);
     expect(world.cargo.createdCount).toBe(BOOKED);
     expect(world.cargo.exportedCount).toBe(0);

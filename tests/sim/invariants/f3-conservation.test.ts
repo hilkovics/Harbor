@@ -33,7 +33,6 @@ import { must, type TimedEvent } from '../helpers/harbor';
 import { assertCargoConservation } from '../helpers/invariants';
 import { loadScenarioFile, stateHash } from '../helpers/scenario';
 import { DEFS, MAP } from '../world/world-fixtures';
-import { itR1Interim } from '../helpers/r1-interim';
 
 const RUN_TICKS = 4000;
 const UNITS = 120;
@@ -248,7 +247,7 @@ describe('konzervácia nákladu: dvory s kapacitou 3 a 7 jednotiek (jedna ostane
     expect(problems).toEqual([]);
   });
 
-  itR1Interim('konečný stav: 6 v dvoroch (po 3), 1 na aprone, nič vo vozidlách ani na lodi; súčet 7 = createdCount', () => {
+  it('konečný stav: 6 v dvoroch (po 3), 1 na aprone, nič vo vozidlách ani na lodi; súčet 7 = createdCount', () => {
     expect(world.cargo.createdCount).toBe(7);
     expect(world.cargo.countByKind('in_storage')).toBe(6);
     expect(world.cargo.countByKind('on_apron')).toBe(1);
@@ -259,7 +258,7 @@ describe('konzervácia nákladu: dvory s kapacitou 3 a 7 jednotiek (jedna ostane
     expect(world.cargo.countAt('in_storage', storageAt(world, FAR_YARD_ORIGIN).id)).toBe(3);
   });
 
-  itR1Interim('reťaz pohybov: 6 jednotiek prešlo celou cestou do dvora, siedma skončila na on_apron; nič nepreskočilo vozidlo', () => {
+  it('reťaz pohybov: 6 jednotiek prešlo celou cestou do dvora, siedma skončila na on_apron; nič nepreskočilo vozidlo', () => {
     expectContiguousChains(log);
     const lengths = [...moveChains(log).values()].map((chain) => chain.length).sort((a, b) => a - b);
     expect(lengths).toEqual([2, 4, 4, 4, 4, 4, 4]);

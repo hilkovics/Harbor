@@ -10,3 +10,4 @@ export type { RoadCarrier } from './holds-road';
 export { carrierOverlapProblem } from './overlap-check';
 export type { OverlapWorld } from './overlap-check';
 export { TrafficSystem } from './traffic-system';
+export { trafficMetrics, type TrafficMetrics } from './traffic-metrics';

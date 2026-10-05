@@ -16,7 +16,6 @@ import { lostUnits } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
 import { loadScenarioFile, runScenario } from '../helpers/scenario';
 import { BUNDLED_DEFS, MAP } from '../world/world-fixtures';
-import { itR1Interim } from '../helpers/r1-interim';
 
 const RUN_TIMEOUT_MS = 300_000;
 
@@ -135,7 +134,7 @@ describe('scenár multi_ship_queue: päť lodí, jedno kotvisko, rejda (T6D-03)'
 });
 
 describe('scenár live_terminal: päť lodí, štyri toky v jednom prístave, 60 000 tickov (T6D-03)', () => {
-  itR1Interim(
+  it(
     'lode sa po každom ticku neprekrývajú, jednotný kurz na rejde, všetky odplávajú, stratených jednotiek 0',
     () => {
       const scenario = loadScenarioFile('live_terminal');

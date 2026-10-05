@@ -26,7 +26,6 @@ import {
   startContract,
   worldWithPool,
 } from '../helpers/f5';
-import { itR1Interim } from '../helpers/r1-interim';
 
 const RUN_TIMEOUT_MS = 300_000;
 
@@ -146,7 +145,7 @@ describe('krok 2: snímka neukončených kontraktov a loď kontraktu', () => {
 });
 
 describe('dokončenie: poradie udalostí a kniha', () => {
-  itR1Interim('v ticku dokončenia: ContractStateChanged exporting → completed, MoneyChanged(contract_revenue), ContractCompleted; refId contract:<id>', () => {
+  it('v ticku dokončenia: ContractStateChanged exporting → completed, MoneyChanged(contract_revenue), ContractCompleted; refId contract:<id>', () => {
     const { world, run, contractId } = startContract({ id: 'f5_completion_order', seed: 5604, defs: fixedContractDefs() });
     run.runUntil((w) => contractById(w, contractId).state === 'completed', 30_000);
     const tick = world.clock.tick;

@@ -24,7 +24,6 @@ import {
   type Run5,
   type TemplateRaw,
 } from '../helpers/f5';
-import { itR1Interim } from '../helpers/r1-interim';
 
 const VOLUME = 72;
 const SLA_DAYS = 5;
@@ -63,7 +62,7 @@ describe('kontrakt s objemom nad kapacitu jediného skladu sa dokončí (export 
     expect(VOLUME).toBeGreaterThan(YARD_CAPACITY);
   });
 
-  itR1Interim('kontrakt prejde hlavnou vetvou až do completed a exportuje celý objem', () => {
+  it('kontrakt prejde hlavnou vetvou až do completed a exportuje celý objem', () => {
     expect(stateChain(run.events, contractId)).toEqual(['offered', 'accepted', 'ship_en_route', 'unloading', 'exporting', 'completed']);
     const contract = contractById(world, contractId);
     expect(contract.unitsUnloaded).toBe(VOLUME);

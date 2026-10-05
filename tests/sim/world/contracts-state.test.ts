@@ -11,7 +11,6 @@ import { World, WorldInvariantError, WorldStateError, type WorldState } from '@s
 import { must } from '../helpers/harbor';
 import { runScenario } from '../helpers/scenario';
 import { MAP, TICKS_PER_DAY, contractById, fixedContractDefs, offeredContracts, portScenario, startContract, worldWithPool } from '../helpers/f5';
-import { itR1Interim } from '../helpers/r1-interim';
 
 const DEFS = fixedContractDefs();
 const RUN_TIMEOUT_MS = 300_000;
@@ -120,7 +119,7 @@ describe('WorldState v5: väzba nákladu na kontrakty a krok 12', () => {
 });
 
 describe('WorldState v5: roundtrip uprostred kontraktu', () => {
-  itR1Interim.each(['accepted', 'ship_en_route', 'unloading', 'exporting'] as const)(
+  it.each(['accepted', 'ship_en_route', 'unloading', 'exporting'] as const)(
     'uložené v stave %s: obnovený svet dobehne kontrakt rovnako (stav, hotovosť, XP aj udalosti)',
     (target) => {
       const { world, run, contractId } = startContract({ id: `f5_roundtrip_${target}`, seed: 5505, defs: DEFS });

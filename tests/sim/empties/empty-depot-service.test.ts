@@ -8,7 +8,6 @@ import { World, stateHash } from '@sim/world';
 import { DEFS, MAP } from '../world/world-fixtures';
 import { TICKS_PER_HOUR, depotOf, emptiesByLocation, emptyWorld, eventsOf, f6cDefs, putEmpty, run, runUntil } from '../helpers/f6c';
 import { assertCargoConservation } from '../helpers/invariants';
-import { itR1Interim } from '../helpers/r1-interim';
 
 const TWO_STRADDLES = ['straddle_carrier', 'straddle_carrier'];
 const REPAIR_COST = DEFS.economy.repairCostCents;
@@ -22,7 +21,7 @@ const yardOf = (world: World): StorageModule => {
 };
 
 describe('kontrola pri uložení do depa', () => {
-  itR1Interim('damageChance 1: jednotka je damaged hneď po uložení (EmptyStored → EmptyDamaged), vydať sa nedá', () => {
+  it('damageChance 1: jednotka je damaged hneď po uložení (EmptyStored → EmptyDamaged), vydať sa nedá', () => {
     const world = emptyWorld({ defs: f6cDefs({ emptyFlow: { damageChance: 1 } }), vehicles: TWO_STRADDLES });
     world.emptyFlow.scheduleReturn(world.clock.tick + 5, 'blue_anchor');
     const events = runUntil(world, (w) => [...w.cargo.liveUnits()].some((unit) => unit.status === 'damaged'), 3_000, 'poškodenie');

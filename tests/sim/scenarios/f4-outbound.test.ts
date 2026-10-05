@@ -20,7 +20,6 @@ import { assertCargoConservation } from '../helpers/invariants';
 import { runScenario, stateHash, type Scenario, type ScenarioEntry } from '../helpers/scenario';
 import { LANDSIDE_ROADS, LEGACY_NO_CONTAINER_TRUCK_DEFS, landsideCommand, rampOf, stagingOf, type LandsidePart } from '../logistics/outbound-fixtures';
 import { MAP } from '../world/world-fixtures';
-import { describeR1Interim, itR1Interim } from '../helpers/r1-interim';
 
 /**
  * Defy bez kamiónu pre kontajnery (viď hlavička) s pripnutým pôvodným balansom (staging 2 × 2, apron 4 — Fáza 5b ich
@@ -93,7 +92,7 @@ const kindsOf = (chain: readonly CargoMovedEvent[]): CargoLocationKind[] => (cha
 
 const yardsOf = (world: World): StorageModule[] => [...world.modules.values()].filter((module): module is StorageModule => module instanceof StorageModule);
 
-describeR1Interim('scenár F4 outbound: 12 TEU loď → dvory → staging rampy (bez kamiónov)', () => {
+describe('scenár F4 outbound: 12 TEU loď → dvory → staging rampy (bez kamiónov)', () => {
   let run: Run;
 
   beforeAll(() => {
@@ -177,7 +176,7 @@ describeR1Interim('scenár F4 outbound: 12 TEU loď → dvory → staging rampy 
 });
 
 describe('scenár F4 outbound: rampa bez brány, brána neskôr; odstránenie brány počas outbound', () => {
-  itR1Interim('bez brány sa všetkých 12 TEU uloží a outbound nevznikne; po postavení brány sa staging zaplní', () => {
+  it('bez brány sa všetkých 12 TEU uloží a outbound nevznikne; po postavení brány sa staging zaplní', () => {
     const allStored = (world: World): boolean => world.ships.size === 0 && world.jobs.size === 0 && world.cargo.countByKind('in_storage') === UNITS;
     const first = runOutbound(outboundScenario(['waiting_area', 'ramp']), allStored, 100);
     expect(ofType(first.events, 'JobCreated')).toHaveLength(UNITS);
@@ -195,7 +194,7 @@ describe('scenár F4 outbound: rampa bez brány, brána neskôr; odstránenie br
     expect(second.world.cargo.liveCount).toBe(UNITS);
   });
 
-  itR1Interim('brána odstránená pri open outbound joboch: zrušia sa, job s vozidlom sa dokončí, po obnove brány sa staging zaplní; nič sa nestratí', () => {
+  it('brána odstránená pri open outbound joboch: zrušia sa, job s vozidlom sa dokončí, po obnove brány sa staging zaplní; nič sa nestratí', () => {
     const scenario = outboundScenario();
     const probe = World.create(DEFS, MAP, scenario.seed);
     let tick = 0;

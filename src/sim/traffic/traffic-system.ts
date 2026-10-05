@@ -33,9 +33,9 @@ import type { Vehicle } from '../vehicles/vehicle';
 import type { World } from '../world/world';
 import { NO_SIDE, sideBetween } from './cell-lanes';
 import { headSlotKey } from './head-slot';
-import { holdsRoad, isDriving, type RoadCarrier } from './holds-road';
+import { endsInQueue, holdsRoad, isDriving, type RoadCarrier } from './holds-road';
 import { laneOf } from './lane-for';
-import { keyCell, slotKey } from './lane-slots';
+import { LANES_PER_CELL, keyCell, slotKey } from './lane-slots';
 
 /** Jazdné funkcie podľa druhu nosiča: preplánovanie po zmene ciest (`false` = nosič prešiel do `no_path`) a jeden tick jazdy. */
 interface Driving {
@@ -124,7 +124,7 @@ export class TrafficSystem implements AdvanceGate {
     // Sloty vpredu (rozbehnutý úsek, reťaz križovatky) nosič už drží — `Carrier` ich zosúladí s trasou pri jej zmene.
     if (carrier.ahead.length > 0) return true;
     const keys = this.entryKeys(this.world, carrier, from);
-    if (!this.acquire(carrier, keys, from)) {
+    if (keys === null || !this.acquire(carrier, keys, from)) {
       this.blocked = true;
       return false;
     }
@@ -160,9 +160,35 @@ export class TrafficSystem implements AdvanceGate {
       const waited = this.blocked;
       this.current = outerCurrent;
       this.blocked = outerBlocked;
+      const before = carrier.blockedTicks;
       if (!holdsRoad(carrier)) carrier.blockedTicks = 0;
       else if (waited && carrier.x === x && carrier.y === y) carrier.blockedTicks += 1;
       else carrier.blockedTicks = 0;
+      this.reportJam(world, carrier, before);
+    }
+  }
+
+  /**
+   * Hlásenie zápchy (rozhodnutie R1 č. 12): keď `blockedTicks` prvýkrát dosiahne `traffic.stuckTicks`, vznikne `TrafficJam`; po prvom
+   * pohybe (alebo opustení cesty) potom `TrafficJamCleared`. Stav hlásenia je v `blockedTicks` (je v save), systém ho nedrží.
+   */
+  private reportJam(world: World, carrier: RoadCarrier, before: number): void {
+    const stuck = world.defs.logistics.traffic.stuckTicks;
+    if (carrier.blockedTicks === stuck) {
+      const width = world.grid.width;
+      const blocked = this.blockedCell.get(carrier.id);
+      const at = carrier.cell;
+      const blockerIds: EntityId[] = [];
+      if (blocked !== undefined) {
+        for (let lane = 0; lane < LANES_PER_CELL; lane++) {
+          const holder = world.laneSlots.holderOfKey(slotKey(blocked, lane));
+          if (holder !== 0 && holder !== carrier.id && !blockerIds.includes(holder as EntityId)) blockerIds.push(holder as EntityId);
+        }
+        blockerIds.sort((a, b) => a - b);
+      }
+      world.events.emit({ type: 'TrafficJam', carrierId: carrier.id, carrierKind: carrier.kind, cell: { x: at % width, y: Math.floor(at / width) }, blockerIds });
+    } else if (before >= stuck && carrier.blockedTicks === 0) {
+      world.events.emit({ type: 'TrafficJamCleared', carrierId: carrier.id, carrierKind: carrier.kind });
     }
   }
 
@@ -206,7 +232,7 @@ export class TrafficSystem implements AdvanceGate {
    * križovatkami by sa navzájom zablokovala (cyklus čakania); rozhodnutie orchestrátora R1 č. 5 žiada „prvú bunku za nimi“,
    * čo platí len pre nosič dĺžky 1 — pozri dodatok ADR-037 (TR1-02).
    */
-  private entryKeys(world: World, carrier: RoadCarrier, from: number): number[] {
+  private entryKeys(world: World, carrier: RoadCarrier, from: number): number[] | null {
     const lanes = world.cellLanes;
     const { width } = world.grid;
     const keys: number[] = [];
@@ -214,7 +240,11 @@ export class TrafficSystem implements AdvanceGate {
     let clearance = 0;
     for (let offset = 1; ; offset++) {
       const cell = carrier.routeCellAt(offset);
-      if (cell === undefined) break;
+      if (cell === undefined) {
+        // Fronta nesiaha do križovatky: kamión, ktorý by zastal vo fronte brány s telom v križovatke, do nej nevstúpi.
+        if (clearance > 0 && endsInQueue(carrier)) return null;
+        break;
+      }
       const after = carrier.routeCellAt(offset + 1);
       keys.push(slotKey(cell, laneOf(lanes, cell, sideBetween(width, cell, previous), after === undefined ? NO_SIDE : sideBetween(width, cell, after))));
       if (lanes.isJunction(cell)) clearance = carrier.lengthCells;

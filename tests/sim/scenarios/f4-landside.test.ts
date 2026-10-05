@@ -57,7 +57,6 @@ import {
 } from '../helpers/f4';
 import { must } from '../helpers/harbor';
 import { DEFS, MAP, MAP_GRID } from '../world/world-fixtures';
-import { describeR1Interim, itR1Interim } from '../helpers/r1-interim';
 
 const ROAD_COST = DEFS.infrastructure.road.costPerCellCents;
 const GATE_DEF = DEFS.modules.get('truck_gate');
@@ -362,7 +361,7 @@ describe('prevádzkovosť rampy: bez brány (alebo bez cesty k bráne) je rampa 
  *  B3 `RampOperationalChanged { rampId, operational, reason }` sa emituje v ticku zmeny prevádzkovosti (na true s `reason`
  *     null alebo bez neho).
  */
-describeR1Interim('neprevádzková rampa počas behu: 12 TEU v sklade čaká na bránu, potom odídu všetky kamiónmi', () => {
+describe('neprevádzková rampa počas behu: 12 TEU v sklade čaká na bránu, potom odídu všetky kamiónmi', () => {
   let run: LateGateRun;
 
   beforeAll(() => {
@@ -446,7 +445,7 @@ describeR1Interim('neprevádzková rampa počas behu: 12 TEU v sklade čaká na 
  *  C2 bez voľného bay sa kamión nespawnuje a vznikne `NoWaitingBay { rampId }`, najviac 1× za hernú hodinu;
  *  C3 `WaitingArea.occupiedBays + reservedBays` ≥ počet kamiónov, ktoré bay držia, a ≤ `bays`.
  */
-describeR1Interim('stojisko: pri plných bays (syntetické bays 1) sa ďalší kamión nespawnuje a vznikne NoWaitingBay (≤ 1×/h)', () => {
+describe('stojisko: pri plných bays (syntetické bays 1) sa ďalší kamión nespawnuje a vznikne NoWaitingBay (≤ 1×/h)', () => {
   let run: LateGateRun;
 
   beforeAll(() => {
@@ -512,7 +511,7 @@ describeR1Interim('stojisko: pri plných bays (syntetické bays 1) sa ďalší k
  *  D3 `TruckGate.queueLength` obsahuje len kamióny v `gate_queue*`, `trucksProcessed` počíta prechody v oboch smeroch.
  * Syntetická brána s `processTicks` 100 vynúti, aby sa kamióny pred bránou naozaj hromadili.
  */
-describeR1Interim('brána: pustí najviac 1 kamión za processTicks (spoločná FIFO fronta oboch smerov)', () => {
+describe('brána: pustí najviac 1 kamión za processTicks (spoločná FIFO fronta oboch smerov)', () => {
   const SLOW = 100;
   let run: LateGateRun;
 
@@ -613,7 +612,7 @@ describe('RemoveModule pozemných modulov: kamión alebo náklad na rampe bráni
     expect(reasonsInclude(result.reasons, 'has_trucks', 'has_cargo')).toBe(true);
   });
 
-  itR1Interim('po vyvezení všetkých jednotiek (žiadny kamión, náklad ani rezervácia) sa brána, plocha aj rampa dajú odstrániť', () => {
+  it('po vyvezení všetkých jednotiek (žiadny kamión, náklad ani rezervácia) sa brána, plocha aj rampa dajú odstrániť', () => {
     recorder.runUntil((w) => w.cargo.exportedCount === 12, 30000);
     expect(trucksOf(world).size).toBe(0);
     for (const id of [gateOf(world).id, waitingAreaOf(world).id, rampOf(world).id]) {

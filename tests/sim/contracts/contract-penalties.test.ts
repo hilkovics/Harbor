@@ -42,7 +42,6 @@ import {
   type StartedContract,
 } from '../helpers/f5';
 import type { World } from '@sim/world';
-import { itR1Interim } from '../helpers/r1-interim';
 
 const DEFS = fixedContractDefs();
 const REWARD = 540_000;
@@ -134,7 +133,7 @@ describe('demurrage: loď stojí pri kotvisku nad berthAllowanceTicks', () => {
 });
 
 describe('late: export po slaDeadlineTick, ešte pred failAfterDaysLate', () => {
-  itR1Interim('dokončenie 1,25 dňa po SLA: jedna late penalizácia 27 000, výplata 540 000 a strhnutie 27 000 jednou transakciou, XP × 0,5', () => {
+  it('dokončenie 1,25 dňa po SLA: jedna late penalizácia 27 000, výplata 540 000 a strhnutie 27 000 jednou transakciou, XP × 0,5', () => {
     const { world, run, contractId, slaDeadline } = startExporting('f5_late_one_day', 5104);
     run.runTo(slaDeadline + Math.floor(1.25 * TICKS_PER_DAY));
     expect(contractById(world, contractId).state).toBe('exporting');
@@ -178,7 +177,7 @@ describe('late: export po slaDeadlineTick, ešte pred failAfterDaysLate', () => 
     expect(run.ticksChecked).toBe(world.clock.tick);
   }, RUN_TIMEOUT_MS);
 
-  itR1Interim('dokončenie hneď po termíne (menej než celý deň): bez late penalizácie, plná odmena, ale onTime = false a XP × 0,5', () => {
+  it('dokončenie hneď po termíne (menej než celý deň): bez late penalizácie, plná odmena, ale onTime = false a XP × 0,5', () => {
     const { world, run, contractId, slaDeadline } = startExporting('f5_late_zero_days', 5105);
     run.runTo(slaDeadline + 432);
     expect(contractById(world, contractId).state).toBe('exporting');

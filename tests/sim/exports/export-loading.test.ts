@@ -28,7 +28,6 @@ import {
   tickUntil,
 } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
-import { itR1Interim } from '../helpers/r1-interim';
 
 const LOAD_TIMEOUT = 40_000;
 /** Pevné príchody kamiónov (ticky od prijatia) pred cut-off (4 320). */
@@ -297,7 +296,7 @@ describe('uzavretie bookingu (ADR-032 bod 14)', () => {
     expect(contract.booking.lastMinuteUnits).toBe(2);
   });
 
-  itR1Interim('jednotka po lashingu je rolled a vráti sa odosielateľovi po súši (exported): výplata pomerne k naloženým + rolled a nesplnený booking', () => {
+  it('jednotka po lashingu je rolled a vráti sa odosielateľovi po súši (exported): výplata pomerne k naloženým + rolled a nesplnený booking', () => {
     // 6 príchodov, posledný až po začiatku lashingu lode (loď dockuje ~8 765; papiere 3 000 tickov predĺžia lashing, takže kamión
     // prejde bránou vo vnútri lashingu a pred uzavretím bookingu).
     const defs = apronDefs({ ship: { id: 'feeder', fields: { paperworkTicks: 3000 } } });
@@ -332,7 +331,7 @@ describe('uzavretie bookingu (ADR-032 bod 14)', () => {
     expect(world.cargo.shippedCount).toBe(0);
   });
 
-  itR1Interim('VGM hold dlhší než príchod lode: zadržané jednotky sa nenakladajú a loď na ne nečaká; po uzavretí sa vrátia', () => {
+  it('VGM hold dlhší než príchod lode: zadržané jednotky sa nenakladajú a loď na ne nečaká; po uzavretí sa vrátia', () => {
     const defs = apronDefs({ exportFlow: { vgmMissingChance: 1, vgmHoldHours: 100 } });
     const { world, offer } = startLoading({ defs, kind: 'export', booked: 4, arrivals: [10, 20, 30, 40] });
     const events = runUntilDeparted(world, LOAD_TIMEOUT);

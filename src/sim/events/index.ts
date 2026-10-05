@@ -60,6 +60,8 @@ export type {
   TranshipMissedEvent,
   TranshipRescuedEvent,
   TranshipSoldEvent,
+  TrafficJamClearedEvent,
+  TrafficJamEvent,
   TruckExitedEvent,
   TruckSpawnedEvent,
   TruckStateChangedEvent,

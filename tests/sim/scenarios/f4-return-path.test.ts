@@ -9,13 +9,12 @@
  * 2. Prerušený vstup brány (44, 33), keď sú kamióny za bránou: dokončia okruh (nakládka uvoľní dock), čakajú vo fronte
  *    brány von a po obnove cesty odídu (predtým kamión vo `waiting` navždy držal bay aj dock).
  */
-import { beforeAll, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import type { SerializedCommand } from '@sim/commands';
 import { World } from '@sim/world';
 import { GATE_ENTRY_OUTSIDE, GATE_EXIT_OUTSIDE, f4Scenario } from '../helpers/f4-layout';
 import { Recorder4, STRADDLES, landsideEvents, rampOf, timed4, trucksById, type Rule4 } from '../helpers/f4';
 import { DEFS, MAP } from '../world/world-fixtures';
-import { describeR1Interim } from '../helpers/r1-interim';
 
 const UNITS = 12;
 const RUN_TIMEOUT_MS = 300_000;
@@ -27,7 +26,7 @@ const CUT_TICKS = 1500;
 
 type Dir = 'N' | 'E';
 
-describeR1Interim.each<[string, { x: number; y: number }, Dir]>([
+describe.each<[string, { x: number; y: number }, Dir]>([
   ['výstupe brány (47, 33) smerom E — od rampy sa k bráne nedá vrátiť', GATE_EXIT_OUTSIDE, 'E'],
   ['vstupe brány (44, 33) smerom N — od brány sa k portálu nedá vrátiť', GATE_ENTRY_OUTSIDE, 'N'],
 ])('jednosmerka na %s', (_name, cell, dir) => {
@@ -69,7 +68,7 @@ describeR1Interim.each<[string, { x: number; y: number }, Dir]>([
   });
 });
 
-describeR1Interim('prerušený vstup brány (44, 33) s kamiónmi za bránou: dokončia okruh, uvoľnia docky, čakajú pri bráne a po obnove odídu', () => {
+describe('prerušený vstup brány (44, 33) s kamiónmi za bránou: dokončia okruh, uvoľnia docky, čakajú pri bráne a po obnove odídu', () => {
   let world: World;
   let recorder: Recorder4;
   let cutSentAt: number;

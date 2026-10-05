@@ -17,7 +17,6 @@ import { Truck, TruckError } from '@sim/trucks';
 import { World, WorldInvariantError, WorldStateError, type WorldState } from '@sim/world';
 import { areaOf, buyVehicles, execute, gateOf, ofType, outboundWorld, rampOf, stockYard } from '../logistics/outbound-fixtures';
 import { DEFS, MAP, RAW_DEFS } from '../world/world-fixtures';
-import { itR1Interim } from '../helpers/r1-interim';
 
 interface Timed {
   readonly tick: number;
@@ -197,7 +196,7 @@ describe('povel do docku a fronta v stojisku (ADR-029)', () => {
     expect([area.reservedBays + area.occupiedBays, ramp.assignedDocks, ramp.claimedUnits, world.cargo.exportedCount]).toEqual([0, 0, 0, 2]);
   });
 
-  itR1Interim('kamión na náklad, ktorý ešte vezie vozidlo, čaká v bayi a do docku ide až s celým nákladom na docku', () => {
+  it('kamión na náklad, ktorý ešte vezie vozidlo, čaká v bayi a do docku ide až s celým nákladom na docku', () => {
     const { world, depot, near } = outboundWorld({ defs: DEFS });
     stockYard(world, near, 3);
     buyVehicles(world, depot, 1);

@@ -114,4 +114,19 @@
   --icon-sm: 16px; --icon-md: 24px; --icon-lg: 32px;
   --hud-top-h: 48px; --build-bar-h: 96px; --side-panel-w: 360px;
   --cell: 64px;   /* 1 bunka gridu pri zoom 1 */
+
+  /* ===== Terminál 2.0 (Claude Design, TR1-06b): odvodené tmavé varianty kategórií, kontajnery, bezpečná zóna, STS ===== */
+  --cargo-container-dark: #C7680C;
+  --cargo-bulk-dark: #8D721B;
+  --cargo-liquid-dark: #563770;
+  --cargo-gas-dark: #1D796F;
+  --cargo-roro-dark: #AD2626;
+  --container-neutral: #D9DDE2;
+  --container-reefer: #ECEFF3;
+  --container-tarp: #5D7A8C;
+  --safe-zone: #3FA34D;
+  --tp-marker: #F4D03F;
+  --sts-steel: #D64545;
+  --sts-stay-red: #E5484D;
+  --sts-stay-white: #ECEFF3;
 }

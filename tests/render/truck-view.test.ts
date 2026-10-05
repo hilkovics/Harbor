@@ -1,7 +1,7 @@
 import { Container, Graphics, Sprite } from 'pixi.js';
 import { describe, expect, it } from 'vitest';
 import { Grid } from '@sim/grid';
-import { vehicleSprite } from '@render/entity-assets';
+import { articulatedSprite, vehicleSprite } from '@render/entity-assets';
 import { EntityLayer } from '@render/entity-layer';
 import { VEHICLE_OFFSET_CELLS, VEHICLE_SCALE, createRoadMaskAt } from '@render/lane';
 import { TRUCK_STYLE, TruckView, sameTruckShape, truckSpriteFile } from '@render/truck-view';
@@ -35,42 +35,51 @@ function truck(over: Partial<TruckVM> = {}): TruckVM {
 }
 
 describe('záznam kamióna v manifeste', () => {
-  it('truck_container: entita 1×2 (dlhšia ako straddle carrier 1×1) so stavmi empty / loaded', () => {
-    const entry = vehicleSprite('truck_container');
-    expect(entry?.footprint).toEqual({ w: 1, h: 2 });
-    expect(vehicleSprite('straddle_carrier')?.footprint).toEqual({ w: 1, h: 1 });
+  it('truck_container: kĺbová entita 1×3 (kabína 1×1 + náves 1×2), dlhšia ako straddle carrier 1×2', () => {
+    expect(articulatedSprite('truck_container')?.footprint).toEqual({ w: 1, h: 3 });
+    expect(vehicleSprite('straddle_carrier')?.footprint).toEqual({ w: 1, h: 2 });
   });
 
-  it('truckSpriteFile: súbor podľa naloženia; neznámy kamión → undefined', () => {
-    expect(truckSpriteFile('truck_container', false)).toBe('entities/truck_container_empty.svg');
-    expect(truckSpriteFile('truck_container', true)).toBe('entities/truck_container_loaded.svg');
+  it('truckSpriteFile: kamión nemá jediný sprite (časti kabína + náves); neznámy kamión → undefined', () => {
+    expect(truckSpriteFile('truck_container', false)).toBeUndefined();
     expect(truckSpriteFile('truck_hovercraft', true)).toBeUndefined();
   });
 });
 
 describe('TruckView', () => {
-  it('prázdny kamión: sprite `empty`, vycentrovaný, 1×2 bunky v jednotnej mierke vozidiel (rovnaká ako straddle carrier), label `truck-<id>`', () => {
+  const spriteOf = (group: Container | null): Sprite => group!.children.find((child): child is Sprite => child instanceof Sprite)!;
+
+  it('prázdny kamión: kabína (točnica 32, 54) a náves (čap 32, 4) v jednotnej mierke vozidiel, čap je v počiatku častí, label `truck-<id>`', () => {
     const textures = new StubTextures();
     const view = new TruckView(truck(), deps(textures));
-    const sprite = view.view.children[0] as Sprite;
-    expect(sprite).toBeInstanceOf(Sprite);
-    expect(sprite.texture).toBe(textures.textureFor('file/entities/truck_container_empty.svg'));
-    expect(sprite.anchor.x).toBe(0.5);
-    expect(sprite.anchor.y).toBe(0.5);
-    expect(sprite.width).toBeCloseTo(CELL * VEHICLE_SCALE, 9);
-    expect(sprite.height).toBeCloseTo(2 * CELL * VEHICLE_SCALE, 9);
+    const cab = spriteOf(view.cabView);
+    const trailer = spriteOf(view.trailerView);
+    expect(cab.texture).toBe(textures.textureFor('file/entities/truck_cab.svg'));
+    expect(trailer.texture).toBe(textures.textureFor('file/entities/truck_trailer_40.svg'));
+    expect([cab.anchor.x, cab.anchor.y]).toEqual([32 / 64, 54 / 64]);
+    expect([trailer.anchor.x, trailer.anchor.y]).toEqual([32 / 64, 4 / 128]);
+    expect(cab.width).toBeCloseTo(CELL * VEHICLE_SCALE, 9);
+    expect(cab.height).toBeCloseTo(CELL * VEHICLE_SCALE, 9);
+    expect(trailer.width).toBeCloseTo(CELL * VEHICLE_SCALE, 9);
+    expect(trailer.height).toBeCloseTo(2 * CELL * VEHICLE_SCALE, 9);
     expect(view.view.label).toBe('truck-1');
+    expect(view.cargoState).toBe('none');
+    expect(view.cabView!.position.x).toBe(view.trailerView!.position.x); // točnica = čap, v priamej jazde kabína rovno s návesom
+    expect(view.cabView!.angle).toBe(0);
+    // kabína (hlava) je o 54 px pred čapom: predok vozidla je v 1/2 rozpätia pred stredom
+    const span = (54 + (128 - 4)) / 64;
+    expect(view.cabView!.position.y).toBeCloseTo((-span / 2 + 54 / 64) * CELL, 9);
     // dlhší ako straddle carrier v tej istej mierke
     const carrier = new VehicleView({ ...truck(), defId: 'straddle_carrier' }, deps(textures));
-    expect((carrier.view.children[0] as Sprite).height).toBeCloseTo(sprite.height / 2, 9);
+    expect((carrier.view.children.find((child): child is Sprite => child instanceof Sprite)!).height).toBeLessThan(span * CELL);
   });
 
-  it('naložený kamión má sprite `loaded`; textúra sa prepne pri zmene `loaded`', () => {
+  it('naložený kamión nesie kontajner na návese (CargoSprite); zmena `loaded` ho zobrazí / skryje', () => {
     const textures = new StubTextures();
     const view = new TruckView(truck({ loaded: true }), deps(textures));
-    expect(view.texture).toBe(textures.textureFor('file/entities/truck_container_loaded.svg'));
+    expect(view.cargoState).toBe('full');
     view.update(truck({ loaded: false }), 1);
-    expect(view.texture).toBe(textures.textureFor('file/entities/truck_container_empty.svg'));
+    expect(view.cargoState).toBe('none');
   });
 
   it.each([

@@ -21,7 +21,7 @@ import {
   vehicleAt,
 } from '@render/__demo__/f6c-render.fixtures';
 import { createT5b03Grid, type T5b03Scene } from '@render/__demo__/t5b03-render.fixtures';
-import { moduleSprite, shipDeck, vehicleSprite } from '@render/entity-assets';
+import { articulatedSprite, moduleSprite, shipDeck, vehicleSprite } from '@render/entity-assets';
 import { worldConnectors } from '@render/module-connectors';
 import { LINE_COLOR_TOKENS } from '@render/tokens';
 import type { ModuleVM, ShipVM } from '@render/view-models';
@@ -82,7 +82,7 @@ describe.each(Object.entries(F6C_SCENES))('scéna %s', (_name, scene: T5b03Scene
   it('vozidlá a kamióny majú sprite v manifeste a stoja na ceste scény', () => {
     const roads = new Set(scene.roads.map((cell) => `${String(cell.x)},${String(cell.y)}`));
     for (const vehicle of [...(scene.vm.vehicles ?? []), ...(scene.vm.trucks ?? [])]) {
-      expect(vehicleSprite(vehicle.defId), vehicle.defId).toBeDefined();
+      expect(vehicleSprite(vehicle.defId) ?? articulatedSprite(vehicle.defId), vehicle.defId).toBeDefined();
       expect(roads.has(`${String(Math.floor(vehicle.x))},${String(Math.floor(vehicle.y))}`), `vozidlo ${String(vehicle.id)}`).toBe(true);
     }
   });

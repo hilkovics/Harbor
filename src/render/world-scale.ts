@@ -46,6 +46,12 @@ export const CARRIER_WIDTH_PX = metersToPx(CARRIER_WIDTH_M);
 export const CARRIER_LENGTH_PX = metersToPx(CARRIER_LENGTH_M);
 
 /**
+ * Telo straddle carriera v novom sprite (TR1-06b, Claude Design): 52 × 102 px v plátne 64 × 128 (footprint 1 × 2, priehľadný stred).
+ * `CARRIER_*` zostávajú pre šírku pruhu na ceste (`lane.ts`); toto je rozmer pre brzdové svetlá a fallback.
+ */
+export const STRADDLE_BODY_PX: { readonly w: number; readonly h: number } = Object.freeze({ w: 52, h: 102 });
+
+/**
  * Mierka spritov vozidiel a kamiónov voči súboru (manifest `entities.<def>.footprint` × 64 px × mierka): 1 = sprite v pôvodnej
  * veľkosti. Sprity sú nakreslené v reálnej mierke (kamión 28 px v plátne 64 px), preto sa neškálujú.
  */

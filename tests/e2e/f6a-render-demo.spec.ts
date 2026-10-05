@@ -148,13 +148,13 @@ test('dock: exportný kamión prichádza naložený, cúva do docku, po vykládk
         const modules = demo.scene.modules.map((module) => (module.kind === 'ramp' && module.id === f.DOCK_RAMP.id ? f.dockRamp(staged) : module));
         await demo.show({ ...demo.scene, modules, trucks });
         const view = (id: number) => demo.renderer.entities.truckView(id);
-        const textureOf = (id: number) => view(id)?.texture ?? null;
+        const textureOf = (id: number) => view(id)?.cargoState ?? null; // R1: naloženie = kontajner na návese
         return {
           sidePhase: view(f.EXPORT_TRUCK_SIDE)?.dockPhase,
           straightPhase: view(f.EXPORT_TRUCK_STRAIGHT)?.dockPhase,
           x: (view(f.EXPORT_TRUCK_SIDE)?.view.x ?? Number.NaN) / demo.renderer.palette.cellPx,
           y: (view(f.EXPORT_TRUCK_SIDE)?.view.y ?? Number.NaN) / demo.renderer.palette.cellPx,
-          sideTexture: textureOf(f.EXPORT_TRUCK_SIDE)?.label ?? 'bez textúry',
+          sideTexture: textureOf(f.EXPORT_TRUCK_SIDE) ?? 'bez kamióna',
           sameTexture: textureOf(f.EXPORT_TRUCK_SIDE) === textureOf(f.EXPORT_TRUCK_STRAIGHT),
           straightX: (view(f.EXPORT_TRUCK_STRAIGHT)?.view.x ?? Number.NaN) / demo.renderer.palette.cellPx,
           straightY: (view(f.EXPORT_TRUCK_STRAIGHT)?.view.y ?? Number.NaN) / demo.renderer.palette.cellPx,

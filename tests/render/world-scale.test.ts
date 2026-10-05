@@ -2,17 +2,18 @@
 // sa tu overujú priamo proti SVG a manifestu, takže tabuľka nemôže potichu zastarať. Príčina chyby „vozík sa po naložení scvrkne“:
 // sprity vozidiel sa škálovali na šírku pruhu (26 / 56 ≈ 0,46), zatiaľ čo kontajnery na aprone, pod žeriavom a na lodi majú mierku 1 —
 // kontajner sa pri naložení zmenšil na menej než polovicu a pri vyložení zväčšil späť.
-import { Sprite } from 'pixi.js';
+import { Container, Sprite } from 'pixi.js';
 import { describe, expect, it } from 'vitest';
 import {
-  LOADED_VEHICLES,
   MANIFEST_CELL_PX,
+  articulatedSprite,
   cargoDisplaySize,
   cargoSpriteEntry,
   moduleSprite,
   shipSprite,
   vehicleSprite,
 } from '@render/entity-assets';
+import { CargoSprite, cargoSizePx } from '@render/cargo-sprite';
 import { LANE_WIDTH_PX, ROAD_ASPHALT_PX, VEHICLE_SCALE, VEHICLE_WIDTH_PX, laneOverhangPx } from '@render/lane';
 import { NARROW_ASPHALT_PX } from '@render/narrow-road';
 import { TruckView } from '@render/truck-view';
@@ -23,6 +24,7 @@ import {
   CARRIER_WIDTH_PX,
   METERS_PER_CELL,
   PX_PER_METER,
+  STRADDLE_BODY_PX,
   TEU_LENGTH_M,
   TEU_PX,
   TEU_WIDTH_M,
@@ -37,13 +39,17 @@ import { ENTITY_PALETTE, PALETTE, StubTextures } from './stub-textures';
 import { contentExtent, outer, readAsset, svgRects, viewBox } from './svg-geometry';
 
 const CELL = MANIFEST_CELL_PX;
-const CONTAINER_FILL = '#F28C28';
 
-/** Kontajner (oranžová výplň) v sprite vozidla: vonkajšie rozmery vrátane obrysu. */
-function containerIn(svg: string): ReturnType<typeof outer> {
-  const found = svgRects(svg).filter((rect) => rect.fill === CONTAINER_FILL);
-  expect(found).toHaveLength(1);
-  return outer(found[0]);
+/** Prvý `CargoSprite` v strome view (kontajner na vozidle). */
+function findCargo(root: Container): CargoSprite {
+  for (const child of root.children) {
+    if (child instanceof CargoSprite) return child;
+    if (child instanceof Container) {
+      const nested = child.children.find((grandchild): grandchild is CargoSprite => grandchild instanceof CargoSprite);
+      if (nested !== undefined) return nested;
+    }
+  }
+  throw new Error('kontajner na vozidle chýba');
 }
 
 describe('referenčná mierka: 1 bunka = 6 m', () => {
@@ -63,20 +69,18 @@ describe('referenčná mierka: 1 bunka = 6 m', () => {
     expect([CARRIER_WIDTH_PX, CARRIER_LENGTH_PX]).toEqual([34, 62]);
     expect(TRUCK_LENGTH_PX / PX_PER_METER).toBeCloseTo(TRUCK_LENGTH_M, 1);
     expect(CARRIER_LENGTH_PX / PX_PER_METER).toBeCloseTo(CARRIER_LENGTH_M, 1);
-    // kamión ťahač + podvozok 20 ft je ≈ 2 bunky (footprint 1 × 2), carrier sa zmestí do bunky 1 × 1
-    expect(vehicleSprite('truck_container')!.footprint).toEqual({ w: 1, h: 2 });
+    // R1: kamión je kabína (1 × 1) + náves (1 × 2) = 3 bunky, straddle carrier 1 × 2 (nový sprite 52 × 102 px)
+    expect(articulatedSprite('truck_container')!.footprint).toEqual({ w: 1, h: 3 });
     expect(TRUCK_LENGTH_PX).toBeLessThanOrEqual(2 * CELL);
-    expect(TRUCK_LENGTH_PX).toBeGreaterThan(1.6 * CELL);
-    expect(vehicleSprite('straddle_carrier')!.footprint).toEqual({ w: 1, h: 1 });
+    expect(vehicleSprite('straddle_carrier')!.footprint).toEqual({ w: 1, h: 2 });
+    expect(STRADDLE_BODY_PX).toEqual({ w: 52, h: 102 });
     expect(CARRIER_LENGTH_PX).toBeLessThanOrEqual(CELL);
   });
 });
 
 describe('audit mierky: kontajner TEU je všade rovnako veľký (64 × 26 px)', () => {
-  const teu = svgRects(readAsset('cargo/container_teu.svg')).find((rect) => rect.fill === CONTAINER_FILL)!;
   /** Sprite `cargo.container_teu` je nakreslený 64 × 32 px, renderer ho zmenší na šírku 26 px. */
   const canvas = viewBox(readAsset('cargo/container_teu.svg'));
-  const displayed = { length: outer(teu).width, across: (outer(teu).height * TEU_PX.h) / canvas.h };
 
   it('zobrazená veľkosť nákladu: kontajner 64 × 26 (jedno miesto, `cargoDisplaySize`), ostatný náklad z manifestu', () => {
     expect(canvas).toEqual({ w: 64, h: 32 });
@@ -86,16 +90,18 @@ describe('audit mierky: kontajner TEU je všade rovnako veľký (64 × 26 px)', 
     expect(cargoDisplaySize('neznamy')).toBeUndefined();
   });
 
-  it('kontajner v návese kamióna je TEU: 62 × 24,8 px (64 × 26 s 1 px okrajom); v straddle carrieri rovnako', () => {
-    for (const [file, label] of [
-      ['entities/truck_container_loaded.svg', 'kamión'],
-      ['entities/straddle_carrier_loaded.svg', 'carrier'],
-    ] as const) {
-      const container = containerIn(readAsset(file));
-      // dĺžka pozdĺž jazdy = dĺžka TEU, šírka = šírka TEU zmenšená rovnako ako pri sprite (26 / 32)
-      expect(container.height, label).toBeCloseTo(displayed.length, 6);
-      expect(container.width, label).toBeCloseTo(displayed.across, 0);
-      expect(Math.abs(container.width - displayed.across), label).toBeLessThan(0.5);
+  it('kontajner na vozidle (kamión, straddle) kreslí hra cez CargoSprite v jednotnej veľkosti TEU 64 × 26, otočený dlhšou stranou v smere jazdy', () => {
+    const textures = new StubTextures();
+    const deps = { cellPx: PALETTE.cellPx, palette: ENTITY_PALETTE, textures };
+    const carrier: VehicleVM = { id: 1, defId: 'straddle_carrier', x: 5.5, y: 5.5, prevX: 5.5, prevY: 5.5, heading: 0, loaded: true, state: 'to_dropoff' };
+    const truck: TruckVM = { ...carrier, id: 2, defId: 'truck_container', state: 'to_gate' };
+    for (const view of [new VehicleView(carrier, deps), new TruckView(truck, deps)]) {
+      expect(view.cargoState).toBe('full');
+      const cargo = findCargo(view.view);
+      expect(cargo.angle).toBe(90);
+      expect(cargo.visible).toBe(true);
+      const size = cargoSizePx('container_teu', PALETTE.cellPx);
+      expect([size.w, size.h]).toEqual([TEU_PX.w * (PALETTE.cellPx / CELL), TEU_PX.h * (PALETTE.cellPx / CELL)]);
     }
   });
 
@@ -116,36 +122,36 @@ describe('audit mierky: kontajner TEU je všade rovnako veľký (64 × 26 px)', 
 });
 
 describe('audit mierky: vozidlá sú v pomere ku kontajneru a pruhu', () => {
-  const carrierEmpty = readAsset('entities/straddle_carrier_empty.svg');
-  const carrierLoaded = readAsset('entities/straddle_carrier_loaded.svg');
-  const truckEmpty = readAsset('entities/truck_container_empty.svg');
-  const truckLoaded = readAsset('entities/truck_container_loaded.svg');
+  const carrier = readAsset('entities/straddle_carrier.svg');
+  const cab = readAsset('entities/truck_cab.svg');
+  const trailer = readAsset('entities/truck_trailer_40.svg');
 
-  it('straddle carrier obkročí jeden kontajner: otvor medzi nohami je 26 px (TEU 24,8 + vôľa), šírka 34 px, dĺžka 60–62 px', () => {
-    const legs = svgRects(carrierEmpty)
-      .filter((rect) => rect.fill === '#F4D03F' && rect.height === 58) // bočné nosníky
+  it('straddle carrier obkročí jeden kontajner: otvor medzi nosníkmi ≥ TEU (26 px), telo 52 × 102 px v plátne 64 × 128, stred je priehľadný', () => {
+    const beams = svgRects(carrier)
+      .filter((rect) => rect.fill === '#F4D03F' && rect.height === 102) // bočné nosníky
       .map(outer)
       .sort((a, b) => a.left - b.left);
-    expect(legs).toHaveLength(2);
-    const opening = legs[1].left - legs[0].right;
-    expect(opening).toBe(TEU_PX.h);
-    const container = containerIn(carrierLoaded);
-    expect(container.width).toBeLessThanOrEqual(opening);
-    expect(contentExtent(carrierEmpty).width).toBe(CARRIER_WIDTH_PX);
-    expect(contentExtent(carrierLoaded).width).toBe(CARRIER_WIDTH_PX);
-    expect(contentExtent(carrierLoaded).height).toBe(CARRIER_LENGTH_PX);
-    expect(contentExtent(carrierEmpty).height).toBeGreaterThanOrEqual(CARRIER_LENGTH_PX - 2);
-    expect(contentExtent(carrierEmpty).height).toBeLessThanOrEqual(CELL);
+    expect(beams).toHaveLength(2);
+    const opening = beams[1].left - beams[0].right;
+    expect(opening).toBeGreaterThanOrEqual(TEU_PX.h);
+    expect(viewBox(carrier)).toEqual({ w: CELL, h: 2 * CELL });
+    const extent = contentExtent(carrier);
+    expect(extent.width).toBe(STRADDLE_BODY_PX.w + 2);
+    expect(extent.height).toBeLessThanOrEqual(STRADDLE_BODY_PX.h + 2);
   });
 
-  it('kamión nesie jeden TEU: kontajner v návese 64 × 26; kamión 28 × 116 px, vycentrovaný v plátne 64 × 128', () => {
-    const extent = contentExtent(truckEmpty);
-    expect(extent.width).toBe(TRUCK_WIDTH_PX);
-    expect(extent.height).toBe(TRUCK_LENGTH_PX);
-    expect(extent.top + extent.bottom).toBe(viewBox(truckEmpty).h);
-    expect((extent.left + extent.right) / 2).toBe(CELL / 2);
-    expect(contentExtent(truckLoaded)).toEqual(extent);
-    expect(TRUCK_LENGTH_PX / TEU_PX.w).toBeGreaterThan(1.5); // dlhší než kontajner (ťahač + podvozok)
+  it('kamión: kabína 64 × 64 (točnica 32, 54) a náves 64 × 128 (čap 32, 4), telo 27 px; dokopy ≈ 3 bunky (čap prekrýva kabínu)', () => {
+    expect(viewBox(cab)).toEqual({ w: CELL, h: CELL });
+    expect(viewBox(trailer)).toEqual({ w: CELL, h: 2 * CELL });
+    for (const svg of [cab, trailer]) {
+      const extent = contentExtent(svg);
+      expect(Math.abs(extent.width - TRUCK_WIDTH_PX)).toBeLessThanOrEqual(1);
+    }
+    const rig = articulatedSprite('truck_container')!;
+    const span = rig.cab.pivot.y + (rig.trailer.footprint.h * CELL - rig.trailer.pivot.y);
+    expect(span).toBeLessThanOrEqual(rig.footprint.h * CELL);
+    expect(span).toBeGreaterThan(2.5 * CELL);
+    expect(span / TEU_PX.w).toBeGreaterThan(1.5); // dlhší než kontajner (ťahač + podvozok)
   });
 
   it('kamión sa zmestí do jedného pruhu (presah ≤ 1 px), carrier ho presahuje o 4 px; obaja stoja na asfalte cesty', () => {
@@ -156,45 +162,28 @@ describe('audit mierky: vozidlá sú v pomere ku kontajneru a pruhu', () => {
     expect(VEHICLE_WIDTH_PX).toBe(CARRIER_WIDTH_PX * VEHICLE_SCALE);
   });
 
-  it('prázdny a naložený variant majú rovnaké plátno (viewBox) a rovnakú veľkosť vo view — naloženie mierku nemení', () => {
-    for (const defId of LOADED_VEHICLES) {
-      const entry = vehicleSprite(defId)!;
-      const empty = viewBox(readAsset(entry.states.empty));
-      const loaded = viewBox(readAsset(entry.states.loaded));
-      expect(loaded, defId).toEqual(empty);
-      expect(empty, defId).toEqual({ w: entry.footprint.w * CELL, h: entry.footprint.h * CELL });
-    }
-  });
-
-  it('jediná mierka vozidiel: sprite carriera aj kamióna = footprint × bunka × VEHICLE_SCALE, v oboch stavoch rovnako', () => {
+  it('jediná mierka vozidiel: sprite carriera = footprint × bunka × VEHICLE_SCALE, v oboch stavoch rovnako; kabína a náves kamióna tiež', () => {
     const textures = new StubTextures();
     const deps = { cellPx: PALETTE.cellPx, palette: ENTITY_PALETTE, textures };
-    const carrier: VehicleVM = { id: 1, defId: 'straddle_carrier', x: 5.5, y: 5.5, prevX: 5.5, prevY: 5.5, heading: 0, loaded: false, state: 'idle' };
-    const truck: TruckVM = { ...carrier, id: 2, defId: 'truck_container', state: 'to_gate' };
-    for (const [view, defId] of [
-      [new VehicleView(carrier, deps), 'straddle_carrier'],
-      [new TruckView(truck, deps), 'truck_container'],
-    ] as const) {
-      const footprint = vehicleSprite(defId)!.footprint;
-      const sprite = view.view.children[0] as Sprite;
-      expect(sprite.width).toBeCloseTo(footprint.w * PALETTE.cellPx * VEHICLE_SCALE, 9);
-      expect(sprite.height).toBeCloseTo(footprint.h * PALETTE.cellPx * VEHICLE_SCALE, 9);
-      view.update({ ...(defId === 'straddle_carrier' ? carrier : truck), loaded: true }, 1);
+    const base: VehicleVM = { id: 1, defId: 'straddle_carrier', x: 5.5, y: 5.5, prevX: 5.5, prevY: 5.5, heading: 0, loaded: false, state: 'idle' };
+    const view = new VehicleView(base, deps);
+    const footprint = vehicleSprite('straddle_carrier')!.footprint;
+    const sprite = view.view.children.find((child): child is Sprite => child instanceof Sprite)!;
+    for (const loaded of [false, true]) {
+      view.update({ ...base, loaded }, 1);
       expect(sprite.width).toBeCloseTo(footprint.w * PALETTE.cellPx * VEHICLE_SCALE, 9);
       expect(sprite.height).toBeCloseTo(footprint.h * PALETTE.cellPx * VEHICLE_SCALE, 9);
     }
-  });
-
-  it('F5b č. 10: kontajner pri naložení na carrier nemení veľkosť — vo vozidle aj na aprone má 62 × 24,4 px (pred opravou 41 % × 36 %)', () => {
-    const inCarrier = containerIn(carrierLoaded);
-    const inTruck = containerIn(truckLoaded);
-    expect(inCarrier.width).toBeCloseTo(inTruck.width, 6);
-    expect(inCarrier.height).toBeCloseTo(inTruck.height, 6);
-    const onApron = { length: TEU_PX.w - 2, across: ((TEU_PX.h / 32) * 30) };
-    expect(inCarrier.height).toBeCloseTo(onApron.length, 6);
-    expect(Math.abs(inCarrier.width - onApron.across)).toBeLessThan(0.5);
-    // pôvodná mierka 26 / 56 by kontajner v carrieri zmenšila na menej než polovicu
-    expect((inCarrier.height * 26) / 56 / onApron.length).toBeLessThan(0.5);
+    const truck = new TruckView({ ...base, id: 2, defId: 'truck_container', state: 'to_gate' }, deps);
+    const rig = articulatedSprite('truck_container')!;
+    for (const [group, part] of [
+      [truck.cabView!, rig.cab],
+      [truck.trailerView!, rig.trailer],
+    ] as const) {
+      const partSprite = group.children.find((child): child is Sprite => child instanceof Sprite)!;
+      expect(partSprite.width).toBeCloseTo(part.footprint.w * PALETTE.cellPx * VEHICLE_SCALE, 9);
+      expect(partSprite.height).toBeCloseTo(part.footprint.h * PALETTE.cellPx * VEHICLE_SCALE, 9);
+    }
   });
 });
 

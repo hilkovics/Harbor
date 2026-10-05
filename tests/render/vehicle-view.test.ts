@@ -53,11 +53,11 @@ function feeder(over: Partial<ShipVM> = {}): ShipVM {
 }
 
 describe('záznam vozidla v manifeste', () => {
-  it('straddle_carrier: footprint 1×1 a stavy empty / loaded', () => {
+  it('straddle_carrier: footprint 1×2, jediný sprite pre stavy empty / loaded (kontajner kreslí hra pod rám)', () => {
     const entry = vehicleSprite('straddle_carrier');
-    expect(entry?.footprint).toEqual({ w: 1, h: 1 });
-    expect(entry?.states.empty).toBe('entities/straddle_carrier_empty.svg');
-    expect(entry?.states.loaded).toBe('entities/straddle_carrier_loaded.svg');
+    expect(entry?.footprint).toEqual({ w: 1, h: 2 });
+    expect(entry?.states.empty).toBe('entities/straddle_carrier.svg');
+    expect(entry?.states.loaded).toBe('entities/straddle_carrier.svg');
   });
 
   it('lode (majú `variants`, nie `states`), neznáme id a kľúče z prototypu objektu nie sú vozidlá', () => {
@@ -68,8 +68,8 @@ describe('záznam vozidla v manifeste', () => {
   });
 
   it('vehicleSpriteFile: súbor podľa stavu naloženia; neznáme vozidlo → undefined', () => {
-    expect(vehicleSpriteFile('straddle_carrier', false)).toBe('entities/straddle_carrier_empty.svg');
-    expect(vehicleSpriteFile('straddle_carrier', true)).toBe('entities/straddle_carrier_loaded.svg');
+    expect(vehicleSpriteFile('straddle_carrier', false)).toBe('entities/straddle_carrier.svg');
+    expect(vehicleSpriteFile('straddle_carrier', true)).toBe('entities/straddle_carrier.svg');
     expect(vehicleSpriteFile('hovercraft', true)).toBeUndefined();
   });
 
@@ -187,30 +187,33 @@ describe('vehiclePose (lerp(prev + pruh, curr + pruh, alpha) × cell, rotácia =
 });
 
 describe('VehicleView', () => {
-  it('prázdne vozidlo: sprite `empty`, vycentrovaný, v jednotnej mierke vozidiel, poloha = stred bunky posunutý doprava od osi', () => {
+  it('prázdne vozidlo: sprite rámu, vycentrovaný, v jednotnej mierke vozidiel, bez kontajnera; poloha = stred bunky posunutý doprava od osi', () => {
     const textures = new StubTextures();
     const view = new VehicleView(carrier(), deps(textures));
-    const sprite = view.view.children[0] as Sprite;
+    const sprite = view.view.children.find((child): child is Sprite => child instanceof Sprite)!;
     expect(sprite).toBeInstanceOf(Sprite);
-    expect(sprite.texture).toBe(textures.textureFor('file/entities/straddle_carrier_empty.svg'));
+    expect(sprite.texture).toBe(textures.textureFor('file/entities/straddle_carrier.svg'));
     expect(sprite.anchor.x).toBe(0.5);
     expect(sprite.anchor.y).toBe(0.5);
-    // sprite 1×1 bunka × VEHICLE_SCALE (jediná mierka vozidiel, kontajner na vozidle = TEU na aprone)
+    expect(view.cargoState).toBe('none');
+    // sprite 1×2 bunky × VEHICLE_SCALE (jediná mierka vozidiel, kontajner na vozidle = TEU na aprone)
     expect(sprite.width).toBeCloseTo(CELL * VEHICLE_SCALE, 6);
-    expect(sprite.height).toBeCloseTo(CELL * VEHICLE_SCALE, 6);
+    expect(sprite.height).toBeCloseTo(2 * CELL * VEHICLE_SCALE, 6);
     expect(view.view.position.x).toBe(36.5 * CELL);
     expect(view.view.position.y).toBeCloseTo((24.5 + LANE) * CELL, 9); // kurz 90°: pravý pruh je južne
     expect(view.view.angle).toBeCloseTo(90, 9);
   });
 
-  it('naložené vozidlo má sprite `loaded`; textúra sa prepne pri zmene `loaded`', () => {
+  it('naložené vozidlo nesie kontajner POD rámom (kreslí sa pred spritom rámu); zmena `loaded` ho zobrazí / skryje', () => {
     const textures = new StubTextures();
     const view = new VehicleView(carrier({ loaded: true }), deps(textures));
-    expect(view.texture).toBe(textures.textureFor('file/entities/straddle_carrier_loaded.svg'));
+    expect(view.cargoState).toBe('full');
+    const order = view.view.children.map((child) => child.constructor.name);
+    expect(order.indexOf('CargoSprite')).toBeLessThan(order.indexOf('Sprite'));
     view.update(carrier({ loaded: false }), 1);
-    expect(view.texture).toBe(textures.textureFor('file/entities/straddle_carrier_empty.svg'));
+    expect(view.cargoState).toBe('none');
     view.update(carrier({ loaded: true }), 1);
-    expect(view.texture).toBe(textures.textureFor('file/entities/straddle_carrier_loaded.svg'));
+    expect(view.cargoState).toBe('full');
   });
 
   it.each([

@@ -32,10 +32,10 @@ test.describe('F4: render brány, čakacej plochy, rampy a kamiónov (demo s pev
       const rampA = module(3)?.decor<RampDecor>('ramp');
       const trucks = (scene.trucks ?? []).map((truck) => {
         const view = renderer.entities.truckView(truck.id);
-        const sprite = view?.view.children[0];
+        const sprite = view?.trailerView?.children[0] ?? view?.view.children[0]; // R1: kamión je z častí, rozmer berieme z návesu (1×2)
         return {
           id: truck.id,
-          textured: view?.texture !== null,
+          textured: view?.textured === true,
           angle: Math.round((((view?.view.angle ?? 0) % 360) + 360) % 360),
           width: sprite?.width ?? Number.NaN,
           height: sprite?.height ?? Number.NaN,
@@ -63,7 +63,7 @@ test.describe('F4: render brány, čakacej plochy, rampy a kamiónov (demo s pev
     expect(state.highlighted).toEqual([0, 1, 3, 4]);
     expect(state.staged).toEqual([2, 0]);
     expect(state.badges).toEqual([false, false, false, true]); // odznak upozornenia iba na neprevádzkovej rampe B
-    // sprity (nie fallback), plátno 1×2 bunky v jednotnej mierke vozidiel (VEHICLE_SCALE = 1; kamión v ňom 28 × 116 px, TEU v návese 64 × 26)
+    // sprity (nie fallback), plátno 1×2 bunky v jednotnej mierke vozidiel (VEHICLE_SCALE = 1; náves 1×2; kabína 1×1 na čape, TEU v návese 64 × 26)
     expect(state.trucks.every((truck) => truck.textured)).toBe(true);
     for (const truck of state.trucks) {
       expect(truck.width / state.cellPx, `šírka kamióna ${String(truck.id)}`).toBeCloseTo(1, 6);

@@ -11,9 +11,6 @@ const CELL = PALETTE.cellPx;
 /** Rampa A (30; 23): dok 0 má stred (31,5; 24,42), vonkajšia bunka konektora (31; 25). */
 const DOCK_Y = 24 + (60 + 62 / 2) / 64 - 1;
 
-const LOADED = 'file/entities/truck_container_loaded.svg';
-const EMPTY = 'file/entities/truck_container_empty.svg';
-
 let time = 0;
 const textures = new StubTextures();
 
@@ -36,9 +33,10 @@ const driving = (over: Partial<TruckVM> = {}): TruckVM =>
 const leaving = (over: Partial<TruckVM> = {}): TruckVM =>
   truck({ x: 31.5, y: 25.5, prevX: 31.5, prevY: 25.5, heading: 90, state: 'to_gate_out', prevState: 'unloading', ...over });
 
-const textureOf = (view: TruckView): unknown => view.texture;
-const loadedTexture = textures.textureFor(LOADED);
-const emptyTexture = textures.textureFor(EMPTY);
+// naloženie kamióna = kontajner na návese (cargoState), nie zámena spritu (R1: kamión je z častí)
+const textureOf = (view: TruckView): unknown => view.cargoState;
+const loadedTexture = 'full';
+const emptyTexture = 'none';
 
 describe('DOCKED_STATES', () => {
   it('kamión vymieňa náklad v doku v stavoch loading (import) a unloading (export)', () => {

@@ -14,17 +14,19 @@
  *      na portál (export: všetky `in_truck → exported`, `TruckExited`, kamión zmizne);
  *    - `waiting`: po pobyte povel do docku (ADR-029), keď je dock kamióna voľný a je na ňom celý jeho náklad —
  *      kamión si vezme dock, uvoľní bay, objaví sa na výstupnej bunke stojiska (abstrahovaný prechod telom, ADR-011)
- *      a ide k docku; inak čaká v bayi a skúsi to v ďalšom ticku (FIFO: v ticku odíde prvý pripravený kamión docku
+ *      so zabraným slotom bunky a ide k docku; inak (aj pri obsadenej bunke) čaká v bayi a skúsi to v ďalšom ticku (FIFO: v ticku odíde prvý pripravený kamión docku
  *      podľa id); bez výstupu stojiska čaká ďalej (`repathIntervalTicks`);
  *    - `loading`: po `loadTicksPerUnit` presun najstaršej jednotky docku `at_ramp → in_truck` (nárok kamióna klesne);
- *      po naložení `capacityUnits` uvoľní dock a ide k výstupnej strane brány;
+ *      po naložení `capacityUnits` uvoľní dock a ide k výstupnej strane brány — len so slotom bunky docku, inak čaká v docku (ADR-037);
  *    - `no_path`: po odpočte nový pokus o cestu, úspech = návrat do stavu, z ktorého kamión vypadol.
- * 2. **Brány** vzostupne podľa id: spoločná FIFO fronta oboch smerov, púšťa sa kamión na čele fronty. Prechod trvá
- *    `passTicks` (`processTicks` + `internalTicks`); po ňom kamión vypadne z fronty (`completePass`, `trucksProcessed`
- *    počíta dokončené prechody), objaví sa na druhej strane brány (strany pre kamión — bez vstupu z portálu podľa
- *    stojiska, dodatok ADR-024) a ide ďalej (`to_bay` / `to_portal`). Ďalší prechod začne najskôr v tom istom ticku — medzi dvoma prechodmi je
- *    teda aspoň `passTicks ≥ processTicks` tickov (tvrdý bottleneck). Fronta je virtuálna: čakajúci kamión stojí na
- *    vonkajšej bunke konektora, kamióny sa navzájom neblokujú (§7.8 bod 2, 3).
+ * 2. **Brány** vzostupne podľa id: spoločná FIFO fronta oboch smerov, púšťa sa kamión na čele fronty. Kamión na čele prejde
+ *    `gate_queue*` → `gate_pass*` (mimo cesty — uvoľní celé telo, takže sa ďalší kamión z kolóny posunie na vonkajšiu bunku)
+ *    a prechod trvá `passTicks` (`processTicks` + `internalTicks`). Po ňom sa kamión objaví na druhej strane brány (strany pre
+ *    kamión — bez vstupu z portálu podľa stojiska, dodatok ADR-024) a ide ďalej (`to_bay` / `to_portal`) **len so zabraným slotom
+ *    výjazdovej bunky**; inak ostane na čele fronty v `gate_pass*` a brána ostáva obsadená (`completePass`, `trucksProcessed`
+ *    počíta dokončené prechody). Ďalší prechod začne najskôr v tom istom ticku — medzi dvoma prechodmi je aspoň `passTicks ≥
+ *    processTicks` tickov (tvrdý bottleneck). Fronta je **fyzická**: na vonkajšej bunke konektora stojí jediný `gate_queue`
+ *    a ďalšie kamióny čakajú za ním na ceste v `to_gate` (ADR-037, R1 č. 9).
  * 3. **Spawn** (`spawnTrucks`): rampy vzostupne podľa id, docky vzostupne; nový kamión len na náklad docku bez nároku
  *    (pripravený alebo vezený vozidlom, `DockSupply`, ADR-029; smie obsadiť aj stojiská rezervované kvótou pre odvoz, ADR-035); potom vjazd
  *    kamiónov z vnútrozemia (`admitFromHinterland`, ADR-035): výdaj prázdneho, export podľa plánu príchodov bookingov (ADR-032) a návrat

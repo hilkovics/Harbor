@@ -7,8 +7,9 @@
  *   cenou cesty od portálu, pri zhode prvý v poradí defu. Výstupný je prvý ďalší cestný konektor s cestou na vonkajšej
  *   bunke. Určuje ich svet (`LandsideNetwork`) a zverejní cez `setSides` — `entrySide` / `exitSide` sú `null`, kým ich
  *   svet neurčí alebo keď strana chýba. Brána bez oboch strán nie je platná a rampu za ňou neoživí.
- * - **Fronta:** spoločná FIFO fronta kamiónov oboch smerov (`enqueue` / `peekQueue` / `dequeue`); je **virtuálna** —
- *   čakajúci kamión stojí na vonkajšej bunke konektora, render ukáže `queue_badge` (§7.5, §7.8 bod 3, nikdy gridlock).
+ * - **Fronta:** spoločná FIFO fronta kamiónov oboch smerov (`enqueue` / `peekQueue` / `dequeue`); eviduje poradie a čelo
+ *   (kamión na čele, ktorý prechádza bránou, ostáva v nej, kým prechod neskončí a nevyjde). Fyzicky čaká na vonkajšej bunke
+ *   konektora jediný kamión (`gate_queue`), ďalšie stoja za ním na ceste (ADR-037, R1 č. 9); render ukáže `queue_badge`.
  * - **Priepustnosť:** 1 kamión za `processTicks` (tvrdý bottleneck): `beginPass(ticks)` začne prechod kamióna na čele
  *   fronty (`busyTicksLeft = ticks`), `advancePass()` odpočíta tick. Kým `busyTicksLeft > 0`, závora je hore (`isOpen`)
  *   a ďalší kamión nesmie začať. Prechod trvá `passTicks` = `processTicks` + `internalTicks` (chýbajúci `internalTicks`

@@ -5,7 +5,7 @@
  * (`CargoLedger.create` v `in_truck`, hmotnostná trieda `Rng.weighted` podľa `exportFlow.weightClassShares`, štítky z kontraktu) na road portáli;
  * kamión ide k bráne, prejde ňou (`ExportArrived`), počká v stojisku a vyloží na dock rampy (`systems/landside-system.ts`).
  *
- * Kontrakty vzostupne podľa id; položky plánu spredu (neklesajúco, FIFO). Bez prevádzkovej rampy kategórie nákladu, bez rezervácie alebo bez road
+ * Kontrakty vzostupne podľa id, každý sa vybaví celý (všetky splatné položky spredu, neklesajúco podľa `dueTick`, kým ho niečo nezastaví) skôr než ďalší — FIFO naprieč bookingmi to nie je. Bez prevádzkovej rampy kategórie nákladu, bez rezervácie alebo bez road
  * portálu položka počká (ďalší tick) — plán sa spotrebuje až po vzniku kamióna, takže žiadny príchod nezanikne; čakanie vpusteného kamióna
  * (`tick − dueTick`) sa zapíše do `Hinterland`. Kontrakt, ktorý sa medzitým uzavrel, plán odnesie so sebou.
  */

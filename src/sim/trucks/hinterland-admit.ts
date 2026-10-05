@@ -1,6 +1,7 @@
 /**
- * Vpúšťanie kamiónov z vnútrozemia do prístavu (F6d, ADR-035; krok 8 po spawne kamiónov na odvoz): poradie podľa priority, v rámci druhu FIFO
- * podľa `dueTick` (čas vzniku kamióna vo vnútrozemí) a pri zhode podľa poradia plánu:
+ * Vpúšťanie kamiónov z vnútrozemia do prístavu (F6d, ADR-035; krok 8 po spawne kamiónov na odvoz): poradie podľa priority; v rámci druhu prázdne
+ * v poradí jediného plánu prázdnych (FIFO podľa `dueTick` — čas vzniku kamióna vo vnútrozemí), export po kontraktoch vzostupne podľa id a v rámci kontraktu
+ * podľa `dueTick` (nie FIFO naprieč bookingmi):
  * 1. **výdaj prázdneho** (`collect`, `trucks/empty-trucks.ts`) — kamión, ktorý náklad z prístavu odváža, má prednosť pred dovozom;
  * 2. **export** (`delivery`, `trucks/export-trucks.ts`) — platí, na rozdiel od prázdneho, a viaže ho cut-off;
  * 3. **návrat prázdneho** (`delivery`, `trucks/empty-trucks.ts`).

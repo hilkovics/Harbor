@@ -420,7 +420,7 @@ describe('validateDefsDir', () => {
         for (const row of map.terrain) expect(row).toHaveLength(96);
       });
 
-      it('harbor_01: súvislé nábrežie ≥ 24 buniek, 3 parcely (1 štartovná), 1 cestný a 1 železničný portál', () => {
+      it('harbor_01: súvislé nábrežie ≥ 24 buniek, 3 parcely (1 štartovná), 2 cestné (vjazd, výjazd) a 1 železničný portál', () => {
         const map = realMap() as {
           terrain: string[];
           parcels: { id: string; startOwned?: boolean; leasable: boolean }[];
@@ -434,7 +434,7 @@ describe('validateDefsDir', () => {
         expect(map.parcels).toHaveLength(3);
         expect(map.parcels.filter((p) => p.startOwned === true).map((p) => p.id)).toEqual(['starter']);
         expect(map.parcels.filter((p) => p.startOwned !== true).every((p) => p.leasable)).toBe(true);
-        expect(map.roadPortals).toHaveLength(1);
+        expect(map.roadPortals).toHaveLength(2); // vjazd (in) a výjazd (out), jednosmerný prístav
         expect(map.railPortals).toHaveLength(1);
       });
     });

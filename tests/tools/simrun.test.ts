@@ -39,7 +39,7 @@ const TICKS_PER_DAY = 8640;
 // Dlhé behy (desaťtisíce tickov) pri paralelnom behu celej sady presiahnu predvolených 10 s pre hooky.
 const HEAVY_TIMEOUT_MS = 120_000;
 // harbor_01: 30 štartovacích ciest (x = 44, y 34…63).
-const STARTER_ROADS = 30;
+const STARTER_ROADS = 60; // harbor_01 po R1: jednosmerná slučka x = 44 (N) a x = 45 (S), 2 × 30 buniek
 // harbor_01: štartovacie moduly = berth_standard + crane_container_gantry.
 const STARTER_MODULES = 2;
 
@@ -234,7 +234,7 @@ describe('runScenario', () => {
   const defs = loadBundledDefs();
   const withCommands = (...commands: ScenarioEntry[]): Scenario => ({ ...SMOKE, commands });
 
-  it('1000 tickov → ticks 1000, lostUnits 0, roads 30, kľúče reportu presne podľa dohody', () => {
+  it('1000 tickov → ticks 1000, lostUnits 0, roads 60, kľúče reportu presne podľa dohody', () => {
     const report = runScenario(SMOKE, 1000, defs);
     expect(report.ticks).toBe(1000);
     expect(report.lostUnits).toBe(0);
@@ -413,7 +413,7 @@ describe('runScenario', () => {
     expect(line).not.toContain('\n');
     expect(line).toContain('smoke');
     expect(line).toContain('1000 tickov');
-    expect(line).toContain('cesty 30');
+    expect(line).toContain('cesty 60');
     expect(line).toContain('lode 0/0');
     expect(line).toContain('cykly žeriavov 0');
     expect(line).toContain('vozidlá 0');
@@ -592,9 +592,9 @@ describe('runScenario', () => {
       });
     });
 
-    it('cashEnd (ADR-025): 33 600 000 po stavbe − 4 dni × (údržba 330 000 + mzdy 79 000) = 31 964 000', () => {
+    it('cashEnd (ADR-025): 33 600 000 po stavbe − 225 000 napojenie scenára na slučku (PORT_BRIDGE) − 4 dni × (údržba 330 000 + mzdy 79 000) = 31 739 000', () => {
       expect(full.gameDays).toBe(4);
-      expect(full.cashEnd).toBe(31_964_000);
+      expect(full.cashEnd).toBe(31_739_000);
     });
 
     it('krížová kontrola: Σ TruckExited.units === exportedUnits (kamióny sú jediná cesta exportu)', () => {
@@ -785,7 +785,7 @@ describe('runScenario', () => {
         rolledUnits: 0,
         exportedUnits: 149,
         shippedUnits: 96,
-        emptyReturns: 89,
+        emptyReturns: 94,
         emptyPickedUp: 5,
         repositionedUnits: 24,
         transhipLoaded: 36,
@@ -1042,7 +1042,7 @@ describe('runScenario', () => {
       expect(explicit).toEqual(bundled);
     });
 
-    it('scenár s `map` používa túto mapu (o jednu štartovaciu cestu menej → roads 29)', () => {
+    it('scenár s `map` používa túto mapu (o jednu štartovaciu cestu menej → roads 59)', () => {
       const raw = JSON.parse(readFileSync(HARBOR_MAP, 'utf8')) as { starter: { roads: unknown[] } };
       raw.starter.roads.pop();
       const map = join(dir, 'harbor_minus_one.json');

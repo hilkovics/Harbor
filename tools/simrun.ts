@@ -17,6 +17,7 @@ import { loadBundledDefs, type DefRegistry } from '@sim/defs';
 import type { CargoMovedEvent, SimEvent } from '@sim/events';
 import { loadBundledMap, loadMap, parseMapDef, type LoadedMap } from '@sim/grid';
 import { CraneModule, TruckGate } from '@sim/modules';
+import { VEHICLE_STATE_TRAITS } from '@sim/vehicles';
 import { World, hinterlandMetrics, stateHash, type HinterlandQueue, type WorldState } from '@sim/world';
 import { exportGroupingShare } from '@sim/world/cargo-queries';
 
@@ -109,7 +110,7 @@ export interface SimrunReport {
   /** Počet udalostí `JobDone` počas behu (vozidlo uložilo poslednú jednotku jobu do cieľa). */
   readonly jobsDone: number;
   /**
-   * Využitie vozidiel: Σ vozidlo-tickov so `state !== 'idle'` / Σ všetkých vozidlo-tickov × 100, na 1 desatinné miesto.
+   * Využitie vozidiel: Σ vozidlo-tickov mimo voľných stavov (`idle`, `to_depot`, `parked`) / Σ všetkých vozidlo-tickov × 100, na 1 desatinné miesto.
    * Vozidlo-tick = jedno vozidlo po jednom `tick()`; po uložení všetkého sa podiel len riedi. Bez vozidiel 0.
    */
   readonly vehicleUtilPct: number;
@@ -472,7 +473,7 @@ export function craneBlockedPercent(cranes: Iterable<CraneTickCounters>): number
   return Math.round((blocked * PERCENT * ONE_DECIMAL) / total) / ONE_DECIMAL;
 }
 
-/** Vozidlo-ticky: `activeTicks` (stav ≠ `idle`) z `totalTicks` (každé vozidlo po každom ticku). */
+/** Vozidlo-ticky: `activeTicks` (práca s jobom, stav mimo `idle`, `to_depot`, `parked`) z `totalTicks` (každé vozidlo po každom ticku). */
 export interface VehicleTickCounters {
   readonly activeTicks: number;
   readonly totalTicks: number;
@@ -648,11 +649,11 @@ function ratioOrNull(part: number, whole: number): number | null {
   return whole === 0 ? null : part / whole;
 }
 
-/** Vozidlá (`state !== 'idle'`) po jednom ticku pripočíta do počítadiel využitia. */
+/** Vozidlá v práci (nie voľné: `idle`, `to_depot`, `parked`) po jednom ticku pripočíta do počítadiel využitia. */
 function tallyVehicleTicks(world: World, counters: { activeTicks: number; totalTicks: number }): void {
   for (const vehicle of world.vehicles.values()) {
     counters.totalTicks += 1;
-    if (vehicle.state !== 'idle') counters.activeTicks += 1;
+    if (!VEHICLE_STATE_TRAITS[vehicle.state].free) counters.activeTicks += 1;
   }
 }
 

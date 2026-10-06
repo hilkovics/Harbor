@@ -23,9 +23,10 @@
  * nákup / predaj vozidla cez `onBuyVehicle(depotId)` / `onSellVehicle(vehicleId)` → `dispatch(BuyVehicle | SellVehicle)`.
  * Šírku dáva `--side-panel-w`, výšku kontajner (panel vyplní 100 % výšky rodiča, telo sa posúva).
  */
+import type { CSSProperties } from 'react';
 import { EM_DASH, formatCount, formatDuration, formatFootprint, formatFraction, formatMoney, formatPercent, formatWaitDuration, type TimeScale } from './format';
 import { Icon, type IconName } from './icon';
-import { lineStyle } from './line-color';
+import { lineStyle, lineTokenOfId } from './line-color';
 import './module-inspector.css';
 
 export type CraneStateName = 'idle' | 'grabbing' | 'swinging' | 'placing' | 'blocked';
@@ -72,6 +73,23 @@ export interface HinterlandData {
   readonly total: number;
   readonly oldestWaitTicks: number;
   readonly scale: TimeScale;
+}
+
+/** R2: štítok kontajnera v stohu bloku (veľkosť, typ, linka, smer). */
+export interface YardContainerLook {
+  readonly sizeFt: 20 | 40;
+  readonly containerType: string;
+  readonly lineId: string | null;
+  readonly direction: string;
+}
+
+/** R2: jeden stoh bloku `(bay, row)`: výška, vrchný kontajner a (voliteľne) štítky po poschodiach (0 = spodné). */
+export interface YardStackData {
+  readonly bay: number;
+  readonly row: number;
+  readonly height: number;
+  readonly top: YardContainerLook | null;
+  readonly tiers?: readonly (YardContainerLook | null)[];
 }
 
 /** F4: čakacia plocha. `occupied` = kamión stojí na bay, `reserved` = bay je rezervovaný kamiónu na ceste. */
@@ -233,17 +251,7 @@ export interface ModuleInspectorData {
     readonly capacityTeu: number;
     readonly usedTeu: number;
     readonly rehandlesPerMove?: number;
-    readonly stacks: readonly {
-      readonly bay: number;
-      readonly row: number;
-      readonly height: number;
-      readonly top: {
-        readonly sizeFt: 20 | 40;
-        readonly containerType: string;
-        readonly lineId: string | null;
-        readonly direction: string;
-      } | null;
-    }[];
+    readonly stacks: readonly YardStackData[];
   };
   /**
    * F3 (voliteľný): modul s cestným konektorom má cestu. `false` = banner „Nepripojené k ceste" a badge „Nepripojené"
@@ -1019,6 +1027,49 @@ function renderStorage(storage: StorageData) {
   );
 }
 
+/** R2: skratka typu kontajnera v bunke bay view (typ sa nekreslí farbou — farba nesie linku); neznámy typ → prvé písmeno veľké. */
+export const CONTAINER_TYPE_ABBR: Readonly<Record<string, string>> = Object.freeze({ dry: 'D', reefer: 'R', tank: 'T', open_top: 'OT' });
+
+/** Štítok kontajnera v bunke `(tier)` stohu: z `tiers`, inak (staršie dáta) len vrch stohu; `null` = nezistený. */
+function stackCellLook(stack: YardStackData, tier: number): YardContainerLook | null {
+  return stack.tiers?.[tier] ?? (tier === stack.height - 1 ? stack.top : null);
+}
+
+/**
+ * Bunka bay view (R2): farba podľa **linky** kontajnera (`--line-*`, mapovanie `lineId` → token ako v rendereri), prázdny kontajner
+ * (`direction: 'empty'`) `--cargo-empty`, kontajner bez linky neutrálny; typ je len skratka. Voľná bunka stohu je prázdna.
+ */
+function renderBayCell(bay: number, row: number, tier: number, stack: YardStackData | undefined) {
+  const filled = stack !== undefined && stack.height > tier;
+  const look = filled ? stackCellLook(stack, tier) : null;
+  const key = `${String(bay)}-${String(row)}-${String(tier)}`;
+  if (!filled) {
+    return <div key={key} className="module-inspector__bay-cell" data-bay={bay} data-row={row} data-tier={tier} data-empty="true" title={`Voľné · bay ${String(bay)} · riadok ${String(row)} · úroveň ${String(tier + 1)}`} />;
+  }
+  const isEmptyBox = look?.direction === 'empty';
+  const token = look === null || isEmptyBox ? undefined : lineTokenOfId(look.lineId);
+  const abbr = look === null ? '' : (CONTAINER_TYPE_ABBR[look.containerType] ?? look.containerType.charAt(0).toUpperCase());
+  const title = look === null ? `Obsadené · bay ${String(bay)}` : `${String(look.sizeFt)}′ ${look.containerType}${isEmptyBox ? ' · prázdny' : ''}${look.lineId === null ? '' : ` · ${look.lineId}`}`;
+  return (
+    <div
+      key={key}
+      className="module-inspector__bay-cell"
+      style={token === undefined ? undefined : lineStyle(token)}
+      data-bay={bay}
+      data-row={row}
+      data-tier={tier}
+      data-empty="false"
+      data-fill={isEmptyBox ? 'empty' : token === undefined ? 'neutral' : 'line'}
+      data-line={token}
+      data-size={look?.sizeFt}
+      data-container-type={look?.containerType}
+      title={title}
+    >
+      {abbr}
+    </div>
+  );
+}
+
 /** R2: blok stohu so siete bay/radov a pohľadom na bay zboku. */
 function renderYardBlock(block: NonNullable<ModuleInspectorData['yardBlock']>) {
   const { geometry, capacityTeu, usedTeu, rehandlesPerMove, stacks } = block;
@@ -1048,28 +1099,11 @@ function renderYardBlock(block: NonNullable<ModuleInspectorData['yardBlock']>) {
           <div className="module-inspector__bay-columns">
             {Array.from(stacksByBay.entries()).map(([bay, bayStacks]) => (
               <div key={bay} className="module-inspector__bay-column" data-bay={bay}>
-                <div className="module-inspector__bay-stacks">
-                  {Array.from({ length: geometry.maxTier }, (_, tier) =>
-                    Array.from({ length: geometry.rows }, (_, row) => {
-                      const stack = bayStacks.find(s => s.row === row && s.height > tier);
-                      const isEmpty = !stack || stack.height <= tier;
-                      const containerType = !isEmpty && stack.top ? stack.top.containerType : 'empty';
-                      const isSizeFt = !isEmpty && stack.top ? stack.top.sizeFt : 0;
-
-                      return (
-                        <div
-                          key={`${bay}-${row}-${tier}`}
-                          className="module-inspector__bay-cell"
-                          data-bay={bay}
-                          data-row={row}
-                          data-tier={tier}
-                          data-empty={isEmpty}
-                          data-container-type={containerType}
-                          title={isEmpty ? `Prázdne · bay ${bay} · riadok ${row} · úroveň ${tier + 1}` : `${isSizeFt}′ ${containerType}${stack.top?.lineId ? ` · ${stack.top.lineId}` : ''}`}
-                        />
-                      );
-                    })
-                  ).flat()}
+                <div className="module-inspector__bay-stacks" style={{ '--bay-rows': geometry.rows } as CSSProperties}>
+                  {/* Prierez bayom: riadky vedľa seba, poschodia zhora nadol (najvyššie hore). */}
+                  {Array.from({ length: geometry.maxTier }, (_, index) => geometry.maxTier - 1 - index).flatMap((tier) =>
+                    Array.from({ length: geometry.rows }, (_, row) => renderBayCell(bay, row, tier, bayStacks.find((candidate) => candidate.row === row))),
+                  )}
                 </div>
               </div>
             ))}

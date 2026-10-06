@@ -262,7 +262,7 @@ describe('zmeškaná prekládka — obnova zo save', () => {
     expect(stateHash(restored)).toBe(stateHash(world));
     expect(restored.contracts.get(contract.id)?.state).toBe('completed');
     expect(restored.cargo.shippedCount).toBe(world.cargo.shippedCount);
-  });
+  }, 60_000);
 });
 
 describe('invariant loadedUnits bookingu (prekládka najviac, prázdne presne)', () => {

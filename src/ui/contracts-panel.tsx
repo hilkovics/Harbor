@@ -130,7 +130,10 @@ export interface ContractCardData {
   readonly cargoLabel: string;
   /** Jednotka objemu (`TEU`). */
   readonly unit: string;
+  /** Počet jednotiek (kontajnerov) kontraktu. */
   readonly volumeUnits: number;
+  /** R2: objem v TEU (20′ = 1, 40′ = 2); chýba = `volumeUnits` (náklad mimo kontajnerov, staršie karty). */
+  readonly volumeTeu?: number;
   readonly rewardCents: number;
   readonly xpReward: number;
   readonly shipClassId: string;
@@ -269,11 +272,16 @@ export function voyageTitle(group: VoyageGroup): string {
   return names.map((name, index) => (index === 0 ? name : name.toLowerCase())).join(' + ');
 }
 
+/** Objem karty v jednotke karty (TEU): `volumeTeu`, bez neho `volumeUnits`. */
+export function volumeOf(contract: Pick<ContractCardData, 'volumeUnits' | 'volumeTeu'>): number {
+  return contract.volumeTeu ?? contract.volumeUnits;
+}
+
 /** Objem kontraktu pre hráča: `24 TEU`, pri repositioningu `24 TEU prázdnych`. */
 export function volumeText(contract: ContractCardData): string {
-  const base = formatCount(contract.volumeUnits, contract.unit);
+  const base = formatCount(volumeOf(contract), contract.unit);
   let text = contractKind(contract) === 'empty_repositioning' ? `${base} prázdnych` : base;
-  // R2: append size breakdown (20' and 40' counts) if available
+  // R2: rozdelenie na 20′ a 40′ (počty kontajnerov), ak ho karta nesie; hlavné číslo sú TEU
   if (contract.count20 !== undefined && contract.count40 !== undefined) {
     text += ` (${contract.count20}× 20′, ${contract.count40}× 40′)`;
   }
@@ -1162,7 +1170,7 @@ export function VoyageCard({ group, time, onAccept, onDecline }: VoyageCardProps
   const volumes = parts.map((part) => `${KIND_PART_NAME[contractKind(part)]} ${volumeText(part)}`).join(' · ');
   // Súčet objemu cez obe časti (rovnaká jednotka); pri rôznych jednotkách zoznam objemov podľa častí.
   const sameUnit = parts.every((part) => part.unit === lead.unit);
-  const volume = sameUnit ? formatCount(parts.reduce((sum, part) => sum + part.volumeUnits, 0), lead.unit) : volumes;
+  const volume = sameUnit ? formatCount(parts.reduce((sum, part) => sum + volumeOf(part), 0), lead.unit) : volumes;
   const offers = parts.filter((part) => part.state === 'offered');
   return (
     <article

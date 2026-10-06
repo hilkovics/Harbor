@@ -16,7 +16,7 @@
  *   prekládka `tranship` (plavba lode B, príchod B alebo rozstup príchodu pre ponuku, lehota záchrany zmeškanej prekládky).
  */
 import { AcceptContractCommand, type ValidationReason } from '@sim/commands';
-import { offerClosingTick, type Contract, type ContractKind, type ExportBooking, type TranshipLeg } from '@sim/contracts';
+import { largeContainerCount, offerClosingTick, type Contract, type ContractKind, type ExportBooking, type TranshipLeg } from '@sim/contracts';
 import { terminalEmptySplit, type LineStatusSplit, type World } from '@sim/world';
 import type { ContractBookingData, ContractCardData, ContractLineData, ContractTranshipData, ContractsTimeScale } from '@ui/contracts-panel';
 import { REASON_TEXT } from './build-feedback';
@@ -127,22 +127,13 @@ function availableOf(split: readonly LineStatusSplit[], lineId: string): number 
 }
 
 /**
- * Počty 20′ a 40′ kontajnerov z jednotiek kontraktu (R2): iteruje všetky jednotky ledgera a filtruje podľa `contractId`.
- * Vracia `undefined`, ak sa žiadne jednotky nenájdu.
+ * Objem kontraktu v TEU a rozdelenie na 20′ / 40′ (R2, ADR-039): `volumeTeu` (chýba = `volumeUnits`), počet 40′ je `volumeTeu − volumeUnits`
+ * (`largeContainerCount`), zvyšok sú 20′. Čisté z kontraktu, takže platí aj pre ponuku, ktorá ešte nemá jednotky.
  */
-function countContainers(world: World, contract: Contract): { count20: number; count40: number } | undefined {
-  let count20 = 0;
-  let count40 = 0;
-  let found = false;
-  // Iteruj všetky jednotky a filtuj podľa contractId
-  for (const unit of world.cargo.liveUnits()) {
-    if (unit.contractId !== null && unit.contractId === contract.id) {
-      found = true;
-      if (unit.sizeFt === 20) count20 += 1;
-      else if (unit.sizeFt === 40) count40 += 1;
-    }
-  }
-  return found ? { count20, count40 } : undefined;
+function containerMix(contract: Contract): { volumeTeu: number; count20: number; count40: number } {
+  const volumeTeu = contract.volumeTeu ?? contract.volumeUnits;
+  const count40 = largeContainerCount(contract.volumeUnits, volumeTeu);
+  return { volumeTeu, count20: contract.volumeUnits - count40, count40 };
 }
 
 /**
@@ -156,7 +147,6 @@ export function contractCard(world: World, contract: Contract, emptySplit?: read
   const disabledReason = acceptDisabledReason(world, contract);
   const { booking, tranship } = contract;
   const repositioning = contract.kind === 'empty_repositioning' && !isClosed(contract);
-  const containers = countContainers(world, contract);
   return {
     id: contract.id,
     kind: contract.kind,
@@ -183,7 +173,7 @@ export function contractCard(world: World, contract: Contract, emptySplit?: read
     ...(booking === null ? {} : { booking: bookingData(world, contract, booking) }),
     ...(tranship === null ? {} : { tranship: transhipData(world, tranship) }),
     ...(repositioning ? { availableEmpties: availableOf(emptySplit ?? terminalEmptySplit(world), contract.lineId) } : {}),
-    ...(containers === undefined ? {} : containers),
+    ...containerMix(contract),
   };
 }
 

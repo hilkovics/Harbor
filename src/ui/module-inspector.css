@@ -941,37 +941,39 @@
 }
 
 .module-inspector__bay-stacks {
+  --bay-rows: 4; /* počet riadkov bloku; inline štýl ho prepíše geometriou z defu */
   display: grid;
-  grid-template-columns: repeat(6, var(--icon-lg));
+  grid-template-columns: repeat(var(--bay-rows, 4), var(--icon-lg));
   gap: var(--space-1);
 }
 
 .module-inspector__bay-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: var(--icon-lg);
   height: var(--icon-lg);
   border-radius: 2px;
   border: 1px solid color-mix(in srgb, var(--ui-text) 7%, transparent);
   background: var(--ui-surface-2);
+  color: var(--ui-bg);
+  font-size: var(--fs-xs);
+  font-weight: 600;
   cursor: default;
 }
 
+/* Zaplnená bunka: farba nesie linku (`--line-color` z `lineStyle`), prázdny kontajner `--cargo-empty`, bez linky neutrálny; typ je len skratka. */
 .module-inspector__bay-cell[data-empty='false'] {
-  background: var(--line-blue);
   border: 1px solid color-mix(in srgb, var(--ui-bg) 35%, transparent);
+  background: var(--container-neutral);
 }
 
-.module-inspector__bay-cell[data-container-type='tank'] {
+.module-inspector__bay-cell[data-fill='line'] {
+  background: var(--line-color, var(--container-neutral));
+}
+
+.module-inspector__bay-cell[data-fill='empty'] {
   background: var(--cargo-empty);
-}
-
-.module-inspector__bay-cell[data-container-type='reefer'] {
-  background: var(--ui-text);
-  border: 1px solid color-mix(in srgb, var(--ui-bg) 35%, transparent);
-}
-
-.module-inspector__bay-cell[data-container-type='open_top'] {
-  background: var(--line-teal);
-  border: 1px solid color-mix(in srgb, var(--ui-bg) 35%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {

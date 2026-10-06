@@ -23,12 +23,12 @@ describe('inspectorData: sklad (kontajnerový dvor)', () => {
       refundCents: 7_500_000,
       removable: true,
     });
-    // R2: yard block má geometriu a stohy
+    // R2: geometria z defu (4×4×3 = 48 TEU) a stohy; kapacita = min(capacityUnits 64, geometria 48)
     expect(data?.yardBlock).toBeDefined();
-    expect(data?.yardBlock?.geometry).toEqual({ bays: 4, rows: 2, maxTier: 2 });
+    expect(data?.yardBlock?.geometry).toEqual({ bays: 4, rows: 4, maxTier: 3 });
     expect(data?.yardBlock?.capacityTeu).toBe(48);
     expect(data?.yardBlock?.usedTeu).toBe(0);
-    expect(data?.yardBlock?.stacks?.length).toBe(8); // 4 bays × 2 rows
+    expect(data?.yardBlock?.stacks?.length).toBe(16); // 4 bays × 4 rows
   });
 
   it('dvor bez cesty: connected false (badge „Nepripojené“ nesie UI)', () => {

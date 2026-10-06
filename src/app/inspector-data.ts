@@ -178,22 +178,26 @@ export function emptyDepotData(world: World, depot: EmptyDepot): EmptyDepotData 
   };
 }
 
-/** Stohy bloku skladu (R2): všetky pozície `(bay, row)` s výškou a vrchným kontajnerom. */
+/** Štítok kontajnera pre bay view (veľkosť, typ, linka, smer). */
+type StackLook = { sizeFt: 20 | 40; containerType: string; lineId: string | null; direction: string };
+
+/** Štítok jednotky podľa id (`null`, ak jednotka neexistuje). */
+function stackLook(world: World, unitId: EntityId | null): StackLook | null {
+  if (unitId === null) return null;
+  const unit = world.cargo.get(unitId);
+  return unit === undefined ? null : { sizeFt: unit.sizeFt as 20 | 40, containerType: unit.containerType, lineId: unit.lineId, direction: unit.direction };
+}
+
+/** Stohy bloku skladu (R2): všetky pozície `(bay, row)` s výškou, vrchným kontajnerom a štítkami po poschodiach (0 = spodné). */
 function yardBlockStacks(world: World, yard: YardBlock): NonNullable<ModuleInspectorData['yardBlock']>['stacks'] {
-  const stacks: Array<{ bay: number; row: number; height: number; top: { sizeFt: 20 | 40; containerType: string; lineId: string | null; direction: string } | null }> = [];
+  const stacks: Array<{ bay: number; row: number; height: number; top: StackLook | null; tiers: (StackLook | null)[] }> = [];
   const { bays, rows } = yard.geometry;
   for (let row = 0; row < rows; row++) {
     for (let bay = 0; bay < bays; bay++) {
       const height = yard.stackHeight(bay, row);
-      const topUnitId = yard.topUnit(bay, row);
-      let top: { sizeFt: 20 | 40; containerType: string; lineId: string | null; direction: string } | null = null;
-      if (topUnitId !== null) {
-        const unit = world.cargo.get(topUnitId);
-        if (unit !== undefined) {
-          top = { sizeFt: unit.sizeFt as 20 | 40, containerType: unit.containerType, lineId: unit.lineId, direction: unit.direction };
-        }
-      }
-      stacks.push({ bay, row, height, top });
+      const tiers: (StackLook | null)[] = [];
+      for (let tier = 0; tier < height; tier++) tiers.push(stackLook(world, yard.unitInCell(bay, row, tier)));
+      stacks.push({ bay, row, height, top: stackLook(world, yard.topUnit(bay, row)), tiers });
     }
   }
   return stacks;

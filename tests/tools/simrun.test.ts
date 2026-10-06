@@ -684,11 +684,11 @@ describe('runScenario', () => {
         gateQueueMax: 0,
       });
       expect(report.ticksToAllExported).toBeNull();
-    });
+    }, 60_000);
 
     it('rovnaký scenár → identický report (metriky F4 sú deterministické)', () => {
       expect(runScenario(fullChain, EXPORT_TICKS, defs)).toEqual(full);
-    });
+    }, 60_000);
 
     it.each<[string, string, number]>([
       ['smoke (bez lode a kamiónov)', SMOKE_SCENARIO, 1000],

@@ -226,6 +226,7 @@ describe('skutočné katalógy F2 až F4', () => {
       rehandleTicks: 12,
       rehandleGiveUpTicks: 96,
       buryReserveColumns: 4,
+      rehandleSpareCells: 2,
       importDwellEstimateHours: 6,
       yardPlanner: 'planned',
       congestion: { trafficDecayPerHour: 0.9 },

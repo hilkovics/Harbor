@@ -345,6 +345,13 @@
       "atTick": 43201,
       "command": {
         "type": "AcceptContract",
+        "contractId": 39
+      }
+    },
+    {
+      "atTick": 43201,
+      "command": {
+        "type": "AcceptContract",
         "contractId": 40
       }
     },
@@ -353,13 +360,6 @@
       "command": {
         "type": "AcceptContract",
         "contractId": 41
-      }
-    },
-    {
-      "atTick": 43201,
-      "command": {
-        "type": "AcceptContract",
-        "contractId": 43
       }
     }
   ]

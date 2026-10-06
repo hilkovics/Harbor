@@ -16,7 +16,7 @@
  *   prekládka `tranship` (plavba lode B, príchod B alebo rozstup príchodu pre ponuku, lehota záchrany zmeškanej prekládky).
  */
 import { AcceptContractCommand, type ValidationReason } from '@sim/commands';
-import { offerClosingTick, type Contract, type ContractKind, type ExportBooking, type TranshipLeg } from '@sim/contracts';
+import { largeContainerCount, offerClosingTick, type Contract, type ContractKind, type ExportBooking, type TranshipLeg } from '@sim/contracts';
 import { terminalEmptySplit, type LineStatusSplit, type World } from '@sim/world';
 import type { ContractBookingData, ContractCardData, ContractLineData, ContractTranshipData, ContractsTimeScale } from '@ui/contracts-panel';
 import { REASON_TEXT } from './build-feedback';
@@ -127,6 +127,16 @@ function availableOf(split: readonly LineStatusSplit[], lineId: string): number 
 }
 
 /**
+ * Objem kontraktu v TEU a rozdelenie na 20′ / 40′ (R2, ADR-039): `volumeTeu` (chýba = `volumeUnits`), počet 40′ je `volumeTeu − volumeUnits`
+ * (`largeContainerCount`), zvyšok sú 20′. Čisté z kontraktu, takže platí aj pre ponuku, ktorá ešte nemá jednotky.
+ */
+function containerMix(contract: Contract): { volumeTeu: number; count20: number; count40: number } {
+  const volumeTeu = contract.volumeTeu ?? contract.volumeUnits;
+  const count40 = largeContainerCount(contract.volumeUnits, volumeTeu);
+  return { volumeTeu, count20: contract.volumeUnits - count40, count40 };
+}
+
+/**
  * Karta jedného kontraktu (viď hlavička súboru). `emptySplit` = uskladnené prázdne celého prístavu (`terminalEmptySplit`); `contractCards`
  * ho počíta raz pre všetky karty repositioningu, samostatné volanie ho dopočíta.
  */
@@ -163,6 +173,7 @@ export function contractCard(world: World, contract: Contract, emptySplit?: read
     ...(booking === null ? {} : { booking: bookingData(world, contract, booking) }),
     ...(tranship === null ? {} : { tranship: transhipData(world, tranship) }),
     ...(repositioning ? { availableEmpties: availableOf(emptySplit ?? terminalEmptySplit(world), contract.lineId) } : {}),
+    ...containerMix(contract),
   };
 }
 

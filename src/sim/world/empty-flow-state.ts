@@ -10,6 +10,7 @@
  * `WorldStateError` s pointerom `/emptyFlow/pickupPlan/i/…`); poverenia (kamión misie `collect`, kontrakt a linka, jednotka prázdna tej istej linky)
  * overuje invariant sveta (`findWorldViolation`, `checkEmptyFlow`), ktorý beží pri obnove aj po každom ticku.
  */
+import { CONTAINER_SIZES, isContainerSize, type ContainerSize } from '../cargo/cargo-unit';
 import type { DefRegistry } from '../defs/def-registry';
 import {
   EMPTY_FLOW_STATE_KEYS,
@@ -29,6 +30,12 @@ function checkLine(value: unknown, defs: DefRegistry, path: string): string {
   return value;
 }
 
+/** Veľkosť kontajnera záznamu plánu: 20 alebo 40 (ADR-039). */
+function checkSize(value: unknown, path: string): ContainerSize {
+  if (!isContainerSize(value)) throw new WorldStateError(path, `veľkosť musí byť jedna z: ${CONTAINER_SIZES.join(', ')}, dostal ${describeValue(value)}`);
+  return value;
+}
+
 /** `dueTick` celé ≥ 0, neklesajúce voči predchádzajúcej položke (`previous`). */
 function checkDue(value: unknown, previous: number, path: string): number {
   const due = checkInteger(value, 0, path);
@@ -44,7 +51,7 @@ export function parseEmptyFlowState(raw: unknown, defs: DefRegistry): EmptyFlowS
     const path = `/emptyFlow/returnPlan${pointerSegment(i)}`;
     const fields = checkKeys(entry, RETURN_PLAN_ENTRY_KEYS, path);
     previous = checkDue(fields['dueTick'], previous, `${path}/dueTick`);
-    return { dueTick: previous, lineId: checkLine(fields['lineId'], defs, `${path}/lineId`) };
+    return { dueTick: previous, lineId: checkLine(fields['lineId'], defs, `${path}/lineId`), sizeFt: checkSize(fields['sizeFt'], `${path}/sizeFt`) };
   });
   previous = 0;
   const pickupPlan = checkArray(state['pickupPlan'], '/emptyFlow/pickupPlan').map((entry: unknown, i): PickupPlanEntry => {

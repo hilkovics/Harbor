@@ -114,7 +114,7 @@ describe('skutočné katalógy F2 až F4', () => {
       connectors: [{ x: 1, y: 3, side: 's', type: 'road' }],
       costCents: 15_000_000,
       maintenancePerDayCents: 30_000,
-      params: { capacityUnits: 64, category: 'container' },
+      params: { capacityUnits: 64, category: 'container', bays: 4, rows: 4, maxTier: 3 },
     });
     expect(item(def, 'vehicle_depot')).toEqual({
       id: 'vehicle_depot',
@@ -223,6 +223,12 @@ describe('skutočné katalógy F2 až F4', () => {
       schemaVersion: 1,
       defaultInternalTicks: 6,
       repathIntervalTicks: 30,
+      rehandleTicks: 12,
+      rehandleGiveUpTicks: 96,
+      buryReserveColumns: 4,
+      rehandleSpareCells: 2,
+      importDwellEstimateHours: 6,
+      yardPlanner: 'planned',
       congestion: { trafficDecayPerHour: 0.9 },
       traffic: { gridlockTicks: 30, stuckTicks: 120, rerouteCooldownTicks: 60, idleParkDelayTicks: 6 },
       shipNavigation: { approachMarginCells: 1, sweepStepCells: 0.5, turnManeuvers: 1, sidewaysManeuvers: 1 },

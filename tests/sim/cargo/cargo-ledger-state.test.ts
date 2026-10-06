@@ -63,7 +63,7 @@ function restore(harness: LedgerHarness, raw: unknown): LedgerHarness {
   const ids = new EntityIdAllocator(harness.ids.getState());
   const events = new EventBus<SimEvent>();
   const clock = { tick: harness.clock.tick };
-  const deps = { cargoTypes: CARGO_DEFS.cargoTypes, ids, events, clock };
+  const deps = { cargoTypes: CARGO_DEFS.cargoTypes, containerTypes: CARGO_DEFS.containerTypes, ids, events, clock };
   return { ledger: CargoLedger.fromState(raw, deps), ids, events, clock, deps };
 }
 
@@ -95,7 +95,7 @@ describe('CargoLedger.getState', () => {
       ['at_ramp', 50, 6],
       ['at_ramp', 50, 3],
     ]);
-    expect(Object.keys(units[4])).toEqual(['id', 'typeId', 'contractId', 'voyageId', 'lineId', 'direction', 'destinationPort', 'weightClass', 'hold', 'status', 'repairUntilTick', 'quantity', 'location']);
+    expect(Object.keys(units[4])).toEqual(['id', 'typeId', 'contractId', 'voyageId', 'lineId', 'direction', 'destinationPort', 'weightClass', 'sizeFt', 'containerType', 'oog', 'hold', 'status', 'repairUntilTick', 'quantity', 'location']);
     expect(JSON.stringify(units[4].location)).toBe('{"kind":"on_apron","berthId":10,"slot":3}');
     expect(units.find((unit) => unit.id === 1)).toMatchObject({ typeId: GRAIN, contractId: 500, quantity: 25 });
   });
@@ -189,6 +189,9 @@ describe('CargoLedger.fromState — neplatný stav', () => {
     direction: 'import',
     destinationPort: null,
     weightClass: 'medium',
+    sizeFt: 20,
+    containerType: 'dry',
+    oog: false,
     hold: null,
     status: 'available',
     repairUntilTick: null,

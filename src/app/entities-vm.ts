@@ -53,10 +53,10 @@
  * Bez side-effectov a bez závislosti na DOM/Pixi/React.
  */
 import { dockHeading, findDockCenter, findStallCenter, type SlotHost } from '@render/module-slots';
-import type { CraneVM, EntitiesVM, ModuleVM, ShipVM, TruckVM, VehicleVM, ViewRotation } from '@render/view-models';
+import type { ContainerVM, CraneVM, EntitiesVM, ModuleVM, ShipVM, StackVM, TruckVM, VehicleVM, ViewRotation } from '@render/view-models';
 import type { CargoLocation, CargoUnit } from '@sim/cargo';
 import type { EntityId } from '@sim/core';
-import { BerthModule, CraneModule, EmptyDepot, LoadingRamp, StorageModule, TruckGate, VehicleDepot, WaitingArea, type Module } from '@sim/modules';
+import { BerthModule, CraneModule, EmptyDepot, LoadingRamp, StorageModule, TruckGate, VehicleDepot, WaitingArea, YardBlock, type Module } from '@sim/modules';
 import { SHIP_STATE_TRAITS, type Ship } from '@sim/ships';
 import type { Truck } from '@sim/trucks';
 import { hookCellOfCrane } from '@sim/vehicles';
@@ -227,6 +227,27 @@ export function isLiveModule(module: Module): boolean {
   return module instanceof TruckGate || module instanceof WaitingArea;
 }
 
+/** Stohy bloku skladu (R2): všetky pozície `(bay, row)` s výškou a vrchným kontajnerom. */
+function yardBlockStacks(world: World, yard: YardBlock): readonly StackVM[] {
+  const stacks: StackVM[] = [];
+  const { bays, rows } = yard.geometry;
+  for (let row = 0; row < rows; row++) {
+    for (let bay = 0; bay < bays; bay++) {
+      const height = yard.stackHeight(bay, row);
+      const topUnitId = yard.topUnit(bay, row);
+      let topContainer: ContainerVM | null = null;
+      if (topUnitId !== null) {
+        const unit = world.cargo.get(topUnitId);
+        if (unit !== undefined) {
+          topContainer = { sizeFt: unit.sizeFt as 20 | 40, containerType: unit.containerType, lineId: unit.lineId, direction: unit.direction };
+        }
+      }
+      stacks.push({ bay, row, height, top: topContainer });
+    }
+  }
+  return stacks;
+}
+
 /**
  * VM jedného modulu (mimo žeriavov); `storageOps` dopĺňa `lastStorageOp` skladom (animácia žeriavu dvora), `held` odznak
  * VGM hold skladu, rampy a berthu.
@@ -272,6 +293,11 @@ function moduleVM(world: World, module: Module, storageOps: StorageOps = NO_STOR
       }
     }
     if (parkedVehicles.length > 0) vm.parkedVehicles = parkedVehicles;
+  }
+  if (module instanceof YardBlock) {
+    // Blok skladu (R2): stohy kontajnerov a geometria
+    vm.stacks = yardBlockStacks(world, module);
+    vm.stackGeometry = { bays: module.geometry.bays, rows: module.geometry.rows, maxTier: module.geometry.maxTier };
   }
   if (hasRoadConnector(module)) vm.connected = world.isConnected(module);
   const heldHere = held.get(module.id);
@@ -375,6 +401,20 @@ export function vehicleVMs(world: World, prev: VehiclePoses = NO_VEHICLE_POSES):
       const cy = (cell - cx) / world.grid.width;
       body.push({ x: cx + 0.5, y: cy + 0.5 });
     }
+    // R2: veziený kontajner podľa veľkosti, typu a linky
+    let cargo: ContainerVM | null = null;
+    if (loaded) {
+      const count = world.cargo.countAt('in_vehicle', vehicle.id);
+      if (count > 0) {
+        const unitId = world.cargo.unitAtIndex('in_vehicle', vehicle.id, 0);
+        if (unitId !== undefined) {
+          const unit = world.cargo.get(unitId);
+          if (unit !== undefined) {
+            cargo = { sizeFt: unit.sizeFt as 20 | 40, containerType: unit.containerType, lineId: unit.lineId, direction: unit.direction };
+          }
+        }
+      }
+    }
     result.push({
       id: vehicle.id,
       defId: vehicle.defId,
@@ -386,6 +426,7 @@ export function vehicleVMs(world: World, prev: VehiclePoses = NO_VEHICLE_POSES):
       prevHeading: before?.heading ?? vehicle.heading,
       loaded,
       ...(loaded && holderCarriesEmpty(world, 'in_vehicle', vehicle.id) ? { carriesEmpty: true } : {}),
+      ...(cargo !== null ? { cargo } : {}),
       state: vehicle.state,
       // Carrier trail (R1): body, lengthCells, offRoad, blocked, jammed
       ...(body.length > 0 ? { body } : {}),
@@ -484,6 +525,18 @@ export function truckVMs(world: World, prev: TruckPoses = NO_TRUCK_POSES): Truck
       const cy = (cell - cx) / world.grid.width;
       body.push({ x: cx + 0.5, y: cy + 0.5 });
     }
+    // R2: veziený kontajner podľa veľkosti, typu a linky
+    const loaded = world.cargo.countAt('in_truck', truck.id) > 0;
+    let cargo: ContainerVM | null = null;
+    if (loaded) {
+      const unitId = world.cargo.unitAtIndex('in_truck', truck.id, 0);
+      if (unitId !== undefined) {
+        const unit = world.cargo.get(unitId);
+        if (unit !== undefined) {
+          cargo = { sizeFt: unit.sizeFt as 20 | 40, containerType: unit.containerType, lineId: unit.lineId, direction: unit.direction };
+        }
+      }
+    }
     const vm: TruckVM = {
       id: truck.id,
       defId: truck.defId,
@@ -493,7 +546,8 @@ export function truckVMs(world: World, prev: TruckPoses = NO_TRUCK_POSES): Truck
       prevY: before.y,
       heading: pose.heading,
       prevHeading: before.heading,
-      loaded: world.cargo.countAt('in_truck', truck.id) > 0,
+      loaded,
+      ...(cargo !== null ? { cargo } : {}),
       state: truck.state,
       // Carrier trail (R1): body, lengthCells, offRoad, blocked, jammed
       ...(body.length > 0 ? { body } : {}),

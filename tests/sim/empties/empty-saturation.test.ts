@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest';
 import { assertCargoConservation } from '../helpers/invariants';
 import { exportWorld } from '../helpers/f6a';
 import { TICKS_PER_DAY, acceptedImport, depotOf, emptiesByLocation, emptyWorld, eventsOf, f6cDefs, lost, rampOf, run, runUntil, stockDepot } from '../helpers/f6c';
+import type { EntityId } from '@sim/core';
 import { StorageModule } from '@sim/modules';
+import { emptyLabelsOf } from '../logistics/yard-fixtures';
 import { emptyReturnRoom } from '@sim/logistics/empty-stock';
 
 const TWO_STRADDLES = ['straddle_carrier', 'straddle_carrier'];
@@ -64,6 +66,20 @@ describe('návrat prázdneho — len s voľným miestom v depe (M1)', () => {
     expect(emptiesInYards(world)).toBe(0);
     expect(emptyReturnRoom(world, rampOf(world), 'container')).toBe(0);
     assertCargoConservation(world);
+  });
+
+  it('rozbehnuté návraty sa počítajú v TEU (TR2-06b): prázdny 40′ čakajúci na docku zaberie 2 miesta depa, 20′ jedno', () => {
+    const world = emptyWorld({ vehicles: TWO_STRADDLES });
+    const ramp = rampOf(world);
+    const before = emptyReturnRoom(world, ramp, 'container');
+    const arrive = (sizeFt: 20 | 40): void => {
+      const { id } = world.cargo.create('container_teu', { kind: 'in_truck', truckId: 950 as EntityId }, null, emptyLabelsOf('blue_anchor', sizeFt));
+      world.cargo.move(id, { kind: 'at_ramp', rampId: ramp.id, dock: 0 });
+    };
+    arrive(40);
+    expect(emptyReturnRoom(world, ramp, 'container')).toBe(before - 2);
+    arrive(20);
+    expect(emptyReturnRoom(world, ramp, 'container')).toBe(before - 3);
   });
 
   it('depo plné + import s návratmi: import sa vyloží a odíde, všetky návraty sa zahodia, na docku ani vo dvore žiadny prázdny', () => {

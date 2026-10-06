@@ -1,6 +1,6 @@
 /**
- * Scenár `landside_pressure` (F6d, T6D-01, ADR-035): tlak na pozemnú stranu prístavu F4 s depom prázdnych — import northern_star (#2, 48 TEU) beží bez tlaku,
- * potom export booking golden_wave (#11, 36 TEU, so spárovaným importom #10, 40 TEU) a návraty prázdnych z importu #2 zaplnia stojiská a staging rampy skôr,
+ * Scenár `landside_pressure` (F6d, T6D-01, ADR-035): tlak na pozemnú stranu prístavu F4 s depom prázdnych — import northern_star (#5, 60 TEU = 35 kontajnerov; pred R2 #2, 48 TEU — po R2 má #2 len 28 TEU a tlak by nevznikol, preto scenár prijíma #5) beží bez tlaku,
+ * potom export booking golden_wave (#11, 36 TEU = 22 kontajnerov, so spárovaným importom #10, 28 kontajnerov) a návraty prázdnych z importu #2 zaplnia stojiská a staging rampy skôr,
  * než príde loď. Pred opravou (kód v8) zámka: kamióny `collect` a `delivery` čakali v stojisku (6 / 6 bays) na prázdny / na miesto na docku, staging dockov
  * zaplnili jednotky importu čakajúce na odvoz a kamióny na odvoz sa nedostali dnu, import #10 sa nikdy nedokončil (40 000 tickov: 49 exportovaných
  * jednotiek, dokončené len #2 a #11, v stojisku 6 kamiónov `delivery`, oba docky 4 + 4 jednotky importu na odvoz). Po oprave čakajú kamióny vo vnútrozemí a vojdú len s rezerváciou (kvóta stojísk pre odvoz,
@@ -19,10 +19,10 @@ import { BUNDLED_DEFS, PORT_MAP } from '../world/world-fixtures';
 
 const SCENARIO = loadScenarioFile('landside_pressure');
 const TICKS = 40_000;
-const FIRST_IMPORT_ID = 2;
+const FIRST_IMPORT_ID = 5;
 const BOOKING_ID = 11;
 const PAIRED_IMPORT_ID = 10;
-const PAIRED_IMPORT_UNITS = 40;
+const PAIRED_IMPORT_UNITS = 31; // kontajnery (TEU viď golden); R2 (ADR-039): plánovač zmenil prúd Rng, pôvodne 28
 const RUN_TIMEOUT_MS = 300_000;
 const GOLDEN_PATH = `${REPO_ROOT}tests/sim/__golden__/landside_pressure.json`;
 
@@ -80,8 +80,8 @@ describe('scenár landside_pressure: beh', () => {
   const observed = run();
   const { world, events } = observed;
 
-  it('import #10 (40 TEU) sa pod tlakom dokončí; export #11 aj prvý import #2 tiež, v poradí #2, #11, #10', () => {
-    expect(of(events, 'ContractCompleted').map((entry) => entry.event.contractId)).toEqual([FIRST_IMPORT_ID, BOOKING_ID, PAIRED_IMPORT_ID]);
+  it('import #10 (31 kontajnerov) sa pod tlakom dokončí; export #11 aj prvý import #5 tiež, v poradí #5, #10, #11 (TR2-06b: výber zo skladu počíta rezervované kontajnery nad cieľom, export dobehne po importe)', () => {
+    expect(of(events, 'ContractCompleted').map((entry) => entry.event.contractId)).toEqual([FIRST_IMPORT_ID, PAIRED_IMPORT_ID, BOOKING_ID]);
     expect(world.contracts.get(PAIRED_IMPORT_ID as never)).toMatchObject({ kind: 'import', state: 'completed', volumeUnits: PAIRED_IMPORT_UNITS, unitsExported: PAIRED_IMPORT_UNITS });
     expect(world.contracts.get(BOOKING_ID as never)).toMatchObject({ kind: 'export', state: 'completed' });
   });

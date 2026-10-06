@@ -24,7 +24,7 @@
  *    každý `dockedShipId` patrí existujúcej lodi, ktorá ho má v `berthIds` (súlad `dockedShipId` ↔ `berthIds`);
  *    `anchorageIndex` podľa `anchorage` (nie spolu s kotviskami), v mape a jedinečný; loď, ktorá stojí na rejde,
  *    má jednotný kurz `map.anchorageHeading` (`anchoringProblem`, T6D-03); **dve lode na mape nezdieľajú
- *    bunku** (`shipOverlapProblem`, bez výnimiek); na palube najviac `capacityUnits` jednotiek, všetky
+ *    bunku** (`shipOverlapProblem`, bez výnimiek); na palube najviac `capacityUnits` TEU (20′ = 1, 40′ = 2; ADR-039), všetky
  *    typu `cargoTypeId`; loď s nákladom, ktorá drží kotviská, má na nich aspoň jeden žeriav kategórie svojho nákladu
  *    (inak by pri kotvisku ostala naveky, T02-14); žeriav v `grabbing` má na kotvisku dokovanú loď s nákladom
  *    svojej kategórie a žeriavov v `grabbing` nad loďou nie je viac ako jednotiek na jej palube (každý má čo zdvihnúť);
@@ -93,7 +93,7 @@ import { computeBerthGroups } from '../modules/berth-group';
 import { CRANE_CYCLE_TRAITS, CRANE_STATE_TRAITS, CraneModule, craneReservesApronSlot, cranePhaseProblem } from '../modules/crane-module';
 import { EmptyDepot } from '../modules/empty-depot';
 import { LoadingRamp } from '../modules/loading-ramp';
-import { StorageModule } from '../modules/storage-module';
+import { StorageModule, storageSlotCapacity } from '../modules/storage-module';
 import { TruckGate } from '../modules/truck-gate';
 import { VehicleDepot } from '../modules/vehicle-depot';
 import { WaitingArea } from '../modules/waiting-area';
@@ -305,7 +305,7 @@ const checkCranes: Check = (world) => {
 function expectedSlotCapacity(world: World, moduleId: EntityId): number | undefined {
   const module = world.modules.get(moduleId);
   if (module instanceof BerthModule) return module.params.apronSlots;
-  if (module instanceof StorageModule) return module.params.capacityUnits;
+  if (module instanceof StorageModule) return storageSlotCapacity(module.params);
   return undefined;
 }
 
@@ -671,10 +671,11 @@ function checkShipBerths(world: World, ship: Ship): string | undefined {
   return undefined;
 }
 
-/** Náklad na palube: najviac `capacityUnits`, všetky jednotky typu lode. */
+/** Náklad na palube: najviac `capacityUnits` TEU (ADR-039), všetky jednotky typu lode. */
 function checkShipCargo(world: World, ship: Ship): string | undefined {
   const aboard = world.cargo.unitsOnShip(ship.id);
-  if (aboard.length > ship.def.capacityUnits) return `${ship.label} má na palube ${String(aboard.length)} jednotiek (capacityUnits ${String(ship.def.capacityUnits)})`;
+  const aboardTeu = world.cargo.teuAt('on_ship', ship.id);
+  if (aboardTeu > ship.def.capacityUnits) return `${ship.label} má na palube ${String(aboardTeu)} TEU v ${String(aboard.length)} jednotkách (capacityUnits ${String(ship.def.capacityUnits)} TEU)`;
   const foreign = aboard.find((unitId) => world.cargo.get(unitId)?.typeId !== ship.cargoTypeId);
   return foreign === undefined ? undefined : `${ship.label}: jednotka #${String(foreign)} nie je typu '${ship.cargoTypeId}'`;
 }

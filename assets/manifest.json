@@ -1170,12 +1170,38 @@
     "empty_handler": {
       "footprint": {
         "w": 1,
-        "h": 1
+        "h": 2
       },
-      "states": {
-        "empty": "entities/empty_handler_empty.svg",
-        "loaded": "entities/empty_handler_loaded.svg"
-      }
+      "file": "entities/ech.svg",
+      "spreaderMount": {
+        "x": 32,
+        "y": 6
+      },
+      "parts": {
+        "spreader_20": {
+          "file": "entities/ech_spreader_20.svg",
+          "footprint": {
+            "w": 1,
+            "h": 1
+          },
+          "pivot": {
+            "x": 32,
+            "y": 32
+          }
+        },
+        "spreader_40": {
+          "file": "entities/ech_spreader_40.svg",
+          "footprint": {
+            "w": 2,
+            "h": 1
+          },
+          "pivot": {
+            "x": 64,
+            "y": 32
+          }
+        }
+      },
+      "note": "ECH (sprite `ech`, R2): rám bez kontajnera; kontajner a spreader kreslí hra v bode spreaderMount (px súboru, pivot spreadera = tento bod), nad rámom"
     },
     "agv": {
       "footprint": {
@@ -1679,6 +1705,38 @@
         "h": 32
       },
       "file": "cargo/container_teu.svg"
+    },
+    "container_20_dry": {
+      "size": {
+        "w": 64,
+        "h": 26
+      },
+      "file": "cargo/container_20_dry.svg",
+      "tintable": true
+    },
+    "container_40_dry": {
+      "size": {
+        "w": 128,
+        "h": 26
+      },
+      "file": "cargo/container_40_dry.svg",
+      "tintable": true
+    },
+    "container_20_empty": {
+      "size": {
+        "w": 64,
+        "h": 26
+      },
+      "file": "cargo/container_20_empty.svg",
+      "tintable": false
+    },
+    "container_40_empty": {
+      "size": {
+        "w": 128,
+        "h": 26
+      },
+      "file": "cargo/container_40_empty.svg",
+      "tintable": false
     },
     "bulk_pile": {
       "size": {

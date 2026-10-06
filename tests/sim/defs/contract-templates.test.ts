@@ -7,6 +7,7 @@ import contractTemplatesJson from '@data/defs/contract_templates.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
 import linesJson from '@data/defs/lines.json';
+import containerTypesJson from '@data/defs/container_types.json';
 import logisticsJson from '@data/defs/logistics.json';
 import modulesJson from '@data/defs/modules.json';
 import shipsJson from '@data/defs/ships.json';
@@ -33,6 +34,7 @@ function rawDefs(): Record<string, Json> {
     logistics: structuredClone(logisticsJson),
     contract_templates: structuredClone(contractTemplatesJson),
     lines: structuredClone(linesJson),
+    container_types: structuredClone(containerTypesJson),
   };
 }
 
@@ -82,6 +84,7 @@ describe('contract_templates.json (bundled)', () => {
         id: 'container_feeder_express',
         kind: 'import',
         cargoTypeId: 'container_teu',
+        sizeMix: 0.6,
         volumeUnitsRange: [12, 48],
         slaDaysRange: [2, 3],
         shipClassIds: ['feeder'],
@@ -92,6 +95,7 @@ describe('contract_templates.json (bundled)', () => {
         id: 'container_feeder_standard',
         kind: 'import',
         cargoTypeId: 'container_teu',
+        sizeMix: 0.6,
         volumeUnitsRange: [24, 96],
         slaDaysRange: [3, 5],
         shipClassIds: ['feeder'],
@@ -102,6 +106,7 @@ describe('contract_templates.json (bundled)', () => {
         id: 'container_handy_run',
         kind: 'import',
         cargoTypeId: 'container_teu',
+        sizeMix: 0.6,
         volumeUnitsRange: [60, 240],
         slaDaysRange: [5, 8],
         shipClassIds: ['handy'],
@@ -113,6 +118,7 @@ describe('contract_templates.json (bundled)', () => {
         kind: 'roundtrip',
         destinationPorts: ['Rotterdam', 'Hamburg', 'Gdańsk'],
         cargoTypeId: 'container_teu',
+        sizeMix: 0.6,
         volumeUnitsRange: [24, 72],
         exportVolumeUnitsRange: [12, 36],
         slaDaysRange: [3, 5],
@@ -125,6 +131,7 @@ describe('contract_templates.json (bundled)', () => {
         kind: 'export',
         destinationPorts: ['Rotterdam', 'Hamburg', 'Gdańsk'],
         cargoTypeId: 'container_teu',
+        sizeMix: 0.6,
         volumeUnitsRange: [12, 36],
         slaDaysRange: [3, 5],
         shipClassIds: ['feeder'],
@@ -147,6 +154,7 @@ describe('contract_templates.json (bundled)', () => {
         kind: 'empty_repositioning',
         destinationPorts: ['Rotterdam', 'Hamburg', 'Gdańsk'],
         cargoTypeId: 'container_teu',
+        sizeMix: 0.6,
         volumeUnitsRange: [12, 24],
         exportVolumeUnitsRange: [12, 36],
         slaDaysRange: [3, 5],
@@ -159,6 +167,7 @@ describe('contract_templates.json (bundled)', () => {
         kind: 'tranship',
         destinationPorts: ['Rotterdam', 'Hamburg', 'Gdańsk'],
         cargoTypeId: 'container_teu',
+        sizeMix: 0.6,
         volumeUnitsRange: [12, 36],
         slaDaysRange: [3, 5],
         shipClassIds: ['feeder'],

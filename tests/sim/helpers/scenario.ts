@@ -7,7 +7,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { commandFromJSON, type SerializedCommand } from '@sim/commands';
+import { AcceptContractCommand, commandFromJSON, type SerializedCommand } from '@sim/commands';
 import type { SimEvent } from '@sim/events';
 import type { World } from '@sim/world';
 
@@ -116,4 +116,29 @@ export function withPortBridge(scenario: Scenario): Scenario {
   });
   commands.splice(last + 1, 0, ...PORT_BRIDGE);
   return { ...scenario, commands };
+}
+
+/**
+ * Ako `runScenario`, ale príkazy `AcceptContract` zo scenára nahradí prijatím prvých `N` platných **importných** ponúk (booking ponuky scenáre neprijímajú) v každom rozhodovacom ticku
+ * (`N` = počet prijatí scenára v tom ticku). Id kontraktov závisia od počtu jobov a ďalších entít sveta (spoločný počítadlo id), takže scenár so zapísanými id platí len pre svet,
+ * pre ktorý vznikol; takto ten istý záťažový scenár beží aj nad inou sadou defov (napr. režim odovzdávania `apron`).
+ */
+export function runScenarioAutoAccept(world: World, scenario: Scenario, untilTick: number, hooks: RunHooks = {}): void {
+  const accepts = new Map<number, number>();
+  for (const { atTick, command } of scenario.commands) if (command.type === 'AcceptContract') accepts.set(atTick, (accepts.get(atTick) ?? 0) + 1);
+  const rest: Scenario = { ...scenario, commands: scenario.commands.filter(({ command }) => command.type !== 'AcceptContract') };
+  for (const tick of [...accepts.keys()].sort((a, b) => a - b)) {
+    if (tick >= untilTick || tick < world.clock.tick) continue;
+    runScenario(world, rest, tick, hooks);
+    let left = accepts.get(tick) ?? 0;
+    const offered = [...world.contractBook.openContracts.values()].filter((contract) => contract.state === 'offered' && contract.kind === 'import').map((contract) => contract.id as number).sort((a, b) => a - b);
+    for (const id of offered) {
+      if (left === 0) break;
+      const command = new AcceptContractCommand(id);
+      if (!command.validate(world).ok) continue;
+      world.enqueue(command);
+      if (!world.applyPending().some((event) => event.type === 'CommandRejected')) left -= 1;
+    }
+  }
+  runScenario(world, rest, untilTick, hooks);
 }

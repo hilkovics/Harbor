@@ -110,23 +110,27 @@ export function complete(world: World, contract: Contract): void {
 /**
  * Uzavretie export bookingu, keď loď opustila kotvisko (ADR-032 bod 14): penalizácie podľa počítadiel (`BookingPenaltyApplied`
  * pre last minute, rolled — prijaté a nenaložené, vrátené odosielateľovi — a nesplnený booking), potom pri ≥ 1 naloženej jednotke
- * `completed` s výplatou `⌊reward × naložené / bookované⌋` a XP pomerne k naloženým, inak `failed`. Hotovosť sa strhne jednou
+ * `completed` s výplatou `⌊reward × naložené TEU / bookované TEU⌋` a XP pomerne k naloženým TEU, inak `failed`. Penalizácie za last minute a rolled
+ * sú pomerné k TEU týchto jednotiek (ADR-039); nesplnený booking sa posudzuje podľa naložených TEU (`bookingFulfilmentShare × bookované TEU`). Hotovosť sa strhne jednou
  * transakciou (ADR-026); od uzavretia smú nenaložené jednotky v sklade na rampu (`outbound` = `free`, vrátenie odosielateľovi).
  */
 export function closeBooking(world: World, contract: Contract): void {
   const booking = contract.booking;
   if (booking === null) return;
   const { economy } = world.defs;
-  const booked = contract.volumeUnits;
+  const bookedTeu = contract.volumeTeu;
   const loaded = booking.loadedUnits;
+  // Pomerná výplata nepresiahne odmenu: repositioning smie prideliť posledný prázdny s miernym presahom TEU (`EmptyRepositioningContract`).
+  const loadedTeu = Math.min(booking.loadedTeu, bookedTeu);
   const reward = contract.rewardCents;
+  const unfulfilled = loadedTeu < bookingFulfilmentUnits(bookedTeu, economy);
   const penalties: readonly { readonly kind: 'last_minute' | 'rolled' | 'unfulfilled'; readonly units: number; readonly amountCents: number }[] = [
-    { kind: 'last_minute', units: booking.lastMinuteUnits, amountCents: bookingUnitsPenaltyCents(reward, booked, booking.lastMinuteUnits, economy.lastMinuteExportRateOfReward) },
-    { kind: 'rolled', units: contract.rolledAtClose, amountCents: bookingUnitsPenaltyCents(reward, booked, contract.rolledAtClose, economy.rolledExportRateOfReward) },
+    { kind: 'last_minute', units: booking.lastMinuteUnits, amountCents: bookingUnitsPenaltyCents(reward, bookedTeu, booking.lastMinuteTeu, economy.lastMinuteExportRateOfReward) },
+    { kind: 'rolled', units: contract.rolledAtClose, amountCents: bookingUnitsPenaltyCents(reward, bookedTeu, contract.rolledTeuAtClose, economy.rolledExportRateOfReward) },
     {
       kind: 'unfulfilled',
-      units: loaded < bookingFulfilmentUnits(booked, economy) ? booked - loaded : 0,
-      amountCents: loaded < bookingFulfilmentUnits(booked, economy) ? unfulfilledBookingPenaltyCents(reward, economy) : 0,
+      units: unfulfilled ? contract.volumeUnits - loaded : 0,
+      amountCents: unfulfilled ? unfulfilledBookingPenaltyCents(reward, economy) : 0,
     },
   ];
   for (const penalty of penalties) {
@@ -140,12 +144,12 @@ export function closeBooking(world: World, contract: Contract): void {
     world.events.emit({ type: 'ContractFailed', contractId: contract.id, penaltiesCents: contract.penaltiesCents });
     return;
   }
-  const payout = bookingPayoutCents(reward, loaded, booked);
+  const payout = bookingPayoutCents(reward, loadedTeu, bookedTeu);
   const onTime = contract.slaDeadlineTick !== undefined && world.clock.tick <= contract.slaDeadlineTick;
   world.contractBook.changeState(contract, 'completed');
   world.economy.post(payout, 'contract_revenue', contractRefId(contract));
   settlePenalties(world, contract);
-  const xp = contractXpGain((contract.xpReward * loaded) / booked, onTime, economy.lateXpFactor);
+  const xp = contractXpGain((contract.xpReward * loadedTeu) / bookedTeu, onTime, economy.lateXpFactor);
   world.contractBook.recordCompletion(xp);
   world.events.emit({ type: 'ContractCompleted', contractId: contract.id, rewardCents: payout, penaltiesCents: contract.penaltiesCents, xp, onTime });
 }
@@ -179,6 +183,7 @@ export function boardVoyageShip(world: World, contract: Contract): void {
     units: contract.spawnUnits,
     contractId: contract.id,
     labels: contract.spawnLabels,
+    sizeOf: (index) => contract.unitSizeFt(index),
   });
   contract.shipId = ship.id;
 }

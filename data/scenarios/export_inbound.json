@@ -380,11 +380,11 @@
       "atTick": 8641,
       "command": {
         "type": "AcceptContract",
-        "contractId": 7
+        "contractId": 10
       }
     },
     {
-      "atTick": 28100,
+      "atTick": 29300,
       "command": {
         "type": "RemoveRoad",
         "cells": [
@@ -396,7 +396,7 @@
       }
     },
     {
-      "atTick": 29100,
+      "atTick": 29700,
       "command": {
         "type": "PlaceRoad",
         "cells": [

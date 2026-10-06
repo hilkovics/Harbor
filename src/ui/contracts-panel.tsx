@@ -130,7 +130,10 @@ export interface ContractCardData {
   readonly cargoLabel: string;
   /** Jednotka objemu (`TEU`). */
   readonly unit: string;
+  /** Počet jednotiek (kontajnerov) kontraktu. */
   readonly volumeUnits: number;
+  /** R2: objem v TEU (20′ = 1, 40′ = 2); chýba = `volumeUnits` (náklad mimo kontajnerov, staršie karty). */
+  readonly volumeTeu?: number;
   readonly rewardCents: number;
   readonly xpReward: number;
   readonly shipClassId: string;
@@ -155,8 +158,12 @@ export interface ContractCardData {
   readonly booking?: ContractBookingData;
   /** Trasa prekládky A → B; len kontrakt `kind: 'tranship'`. */
   readonly tranship?: ContractTranshipData;
-  /** Repositioning: dostupné prázdne kontajnery linky v prístave (stav `available` v skladoch), pre „V prístave je N dostupných“. */
+  /** Repositioning: dostupné prázdne kontajnery linky v prístave (stav `available` v skladoch), pre „V prístave je N dostupných”. */
   readonly availableEmpties?: number;
+  /** R2: počet 20′ kontajnerov (voliteľný); bez neho sa nekreslí rozdelenie veľkostí. */
+  readonly count20?: number;
+  /** R2: počet 40′ kontajnerov (voliteľný); bez neho sa nekreslí rozdelenie veľkostí. */
+  readonly count40?: number;
 }
 
 /** Aktuálny čas simulácie a mierka na prevod ticku na dni/hodiny. */
@@ -265,10 +272,20 @@ export function voyageTitle(group: VoyageGroup): string {
   return names.map((name, index) => (index === 0 ? name : name.toLowerCase())).join(' + ');
 }
 
+/** Objem karty v jednotke karty (TEU): `volumeTeu`, bez neho `volumeUnits`. */
+export function volumeOf(contract: Pick<ContractCardData, 'volumeUnits' | 'volumeTeu'>): number {
+  return contract.volumeTeu ?? contract.volumeUnits;
+}
+
 /** Objem kontraktu pre hráča: `24 TEU`, pri repositioningu `24 TEU prázdnych`. */
 export function volumeText(contract: ContractCardData): string {
-  const base = formatCount(contract.volumeUnits, contract.unit);
-  return contractKind(contract) === 'empty_repositioning' ? `${base} prázdnych` : base;
+  const base = formatCount(volumeOf(contract), contract.unit);
+  let text = contractKind(contract) === 'empty_repositioning' ? `${base} prázdnych` : base;
+  // R2: rozdelenie na 20′ a 40′ (počty kontajnerov), ak ho karta nesie; hlavné číslo sú TEU
+  if (contract.count20 !== undefined && contract.count40 !== undefined) {
+    text += ` (${contract.count20}× 20′, ${contract.count40}× 40′)`;
+  }
+  return text;
 }
 
 /** Počty kariet (skupín voyage) na záložku (do popisiek záložiek). */
@@ -1153,7 +1170,7 @@ export function VoyageCard({ group, time, onAccept, onDecline }: VoyageCardProps
   const volumes = parts.map((part) => `${KIND_PART_NAME[contractKind(part)]} ${volumeText(part)}`).join(' · ');
   // Súčet objemu cez obe časti (rovnaká jednotka); pri rôznych jednotkách zoznam objemov podľa častí.
   const sameUnit = parts.every((part) => part.unit === lead.unit);
-  const volume = sameUnit ? formatCount(parts.reduce((sum, part) => sum + part.volumeUnits, 0), lead.unit) : volumes;
+  const volume = sameUnit ? formatCount(parts.reduce((sum, part) => sum + volumeOf(part), 0), lead.unit) : volumes;
   const offers = parts.filter((part) => part.state === 'offered');
   return (
     <article

@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { commandFromJSON } from '@sim/commands';
-import { drawBookingOffer, drawOffer, type OfferContext } from '@sim/contracts';
+import { drawBookingOffer, drawContainerCount, drawOffer, type OfferContext } from '@sim/contracts';
 import { Rng } from '@sim/core/rng';
 import type { ContractId, VoyageId } from '@sim/core';
 import { DefRegistry } from '@sim/defs';
@@ -83,9 +83,10 @@ describe('drawBookingOffer', () => {
       // maxSlaDays = najväčšie slaDaysRange[1] cez šablóny defov (tu jediná šablóna roundtripu: 5).
       const maxSla = Math.max(...defs.contractTemplates.items.map((template) => template.slaDaysRange[1]));
       const urgency = 10_000 + Math.floor((6000 * (maxSla - imp.slaDays)) / maxSla);
-      expect(exp.rewardCents).toBe(Math.floor((exp.volumeUnits * 40_000 * urgency) / 10_000));
-      expect(imp.rewardCents).toBe(Math.floor((imp.volumeUnits * 45_000 * urgency) / 10_000));
-      expect(exp.xpReward).toBe(exp.volumeUnits);
+      // Odmena a XP idú z TEU (ADR-039), nie z počtu kontajnerov.
+      expect(exp.rewardCents).toBe(Math.floor((exp.volumeTeu * 40_000 * urgency) / 10_000));
+      expect(imp.rewardCents).toBe(Math.floor((imp.volumeTeu * 45_000 * urgency) / 10_000));
+      expect(exp.xpReward).toBe(exp.volumeTeu);
     }
   });
 
@@ -100,6 +101,8 @@ describe('drawBookingOffer', () => {
     twin.range(...defs.economy.volumeScaleRange);
     const sla = twin.int(template.slaDaysRange[0], template.slaDaysRange[1]);
     const port = twin.pick(template.destinationPorts as readonly string[]);
+    // Zmes veľkostí (ADR-039): po ťahoch ponuky jeden `chance` na kontajner každého kontraktu skupiny v poradí vzniku (import, potom export).
+    for (const contract of group) expect(drawContainerCount(twin, contract.volumeTeu, template.sizeMix ?? 0)).toBe(contract.volumeUnits);
     expect(group[0].templateId).toBe(template.id);
     expect(group[0].slaDays).toBe(sla);
     expect(group.at(-1)?.booking?.destinationPort).toBe(port);

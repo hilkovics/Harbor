@@ -67,6 +67,7 @@ export interface ContractLike {
   readonly templateId: string;
   readonly cargoTypeId: string;
   readonly volumeUnits: number;
+  readonly volumeTeu: number;
   readonly rewardCents: number;
   readonly xpReward: number;
   readonly offeredTick: number;

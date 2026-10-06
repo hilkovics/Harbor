@@ -7,7 +7,7 @@ import { assertCargoConservation } from '../helpers/invariants';
 import { send } from '../helpers/f6a';
 import { TICKS_PER_DAY, acceptedImport, depotOf, emptiesByLocation, emptyWorld, eventsOf, f6cDefs, run, runUntil } from '../helpers/f6c';
 import { EmptyDepot } from '@sim/modules';
-import type { CargoUnit } from '@sim/cargo';
+import { DEFAULT_CONTAINER_LABELS, type CargoUnit } from '@sim/cargo';
 import type { EntityId } from '@sim/core';
 
 const TWO_STRADDLES = ['straddle_carrier', 'straddle_carrier'];
@@ -15,6 +15,7 @@ const TWO_STRADDLES = ['straddle_carrier', 'straddle_carrier'];
 /** Jednotka importu linky na kamióne (tvar pre `planEmptyReturn`, ledger sa nepoužije). */
 function importUnit(lineId: string | null, direction: CargoUnit['direction'] = 'import'): CargoUnit {
   return {
+    ...DEFAULT_CONTAINER_LABELS,
     id: 9_001 as EntityId,
     typeId: 'container_teu',
     contractId: lineId === null ? null : (1 as never),

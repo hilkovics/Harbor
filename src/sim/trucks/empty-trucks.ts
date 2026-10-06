@@ -41,12 +41,12 @@ export function admitReturnTrucks(world: World, portal: number): void {
   if (typeId === undefined) return;
   const category = world.defs.cargoTypes.get(typeId).category;
   for (let entry = emptyFlow.dueReturn(tick); entry !== undefined; entry = emptyFlow.dueReturn(tick)) {
-    const { lineId, dueTick } = entry;
+    const { lineId, dueTick, sizeFt } = entry;
     const outcome: AdmissionOutcome = planDeliveryAdmission(world, 'empty', category);
     if (outcome === 'waiting') break;
     if (outcome === 'admitted') {
       spawnDelivery(world, portal, (truck) => {
-        world.cargo.create(typeId, { kind: 'in_truck', truckId: truck.id }, null, emptyLabels(lineId));
+        world.cargo.create(typeId, { kind: 'in_truck', truckId: truck.id }, null, emptyLabels(lineId, sizeFt));
       });
     }
     emptyFlow.consumeReturn();

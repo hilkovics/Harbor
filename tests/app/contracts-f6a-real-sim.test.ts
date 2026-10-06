@@ -54,7 +54,8 @@ describe('ponuky booking v poole od prvej polnoci (skutočný pool)', () => {
   it('karty sa zoskupia podľa voyage: každá booking skupina má práve jeden export (samostatný alebo s importom roundtripu)', () => {
     for (const group of voyageGroups(cards)) {
       expect(group.parts.map((part) => part.voyageId)).toEqual(group.parts.map(() => group.voyageId));
-      if (group.parts.length === 1) expect(group.parts[0]?.voyageId).toBe(group.parts[0]?.id);
+      // samostatná ponuka nesie vlastnú voyage (po R2 už voyage a id kontraktu nemusia ísť v ústrety — roundtrip skupina zaberie dve id na jednu voyage)
+      if (group.parts.length === 1) expect(group.parts[0]?.voyageId).toBeGreaterThan(0);
     }
     expect(voyageGroups(cards).filter((group) => group.parts.some((part) => part.kind === 'export'))).toHaveLength(exportCards.length);
   });
@@ -207,7 +208,9 @@ describe('Prijať a Odmietnuť cez akcie panelu nad skutočným simom', () => {
 
 describe('scenár export_inbound: karty bookingu a toasty zo skutočných udalostí', () => {
   const app = createScenarioApp();
-  const CONTRACT = 7;
+  // R2 (ADR-039): export booking #10 (36 TEU = 23 kontajnerov, Gdańsk); karta zatiaľ ukazuje počet kontajnerov (`volumeUnits`), TR2-04 prepne na TEU
+  const CONTRACT = 10;
+  const BOOKED = 23;
   const samples: { tick: number; arrived: number; pending: number; held: number; state: string }[] = [];
 
   beforeAll(() => {
@@ -217,7 +220,7 @@ describe('scenár export_inbound: karty bookingu a toasty zo skutočných udalos
       30_000,
       (a) => {
         const cutoff = a.world.contracts.get(CONTRACT as ContractId)?.booking?.cutoffTick;
-        return cutoff !== undefined && [cutoff - WARNING_LEAD, cutoff].some((target) => Math.abs(a.world.clock.tick - target) < 30) ? 1 : 100;
+        return cutoff !== undefined && [cutoff - WARNING_LEAD, cutoff].some((target) => Math.abs(a.world.clock.tick - target) < 100) ? 1 : 100;
       },
       (a) => {
         const card = a.bridge.snapshot().contracts.find((candidate) => candidate.id === CONTRACT);
@@ -228,23 +231,25 @@ describe('scenár export_inbound: karty bookingu a toasty zo skutočných udalos
     );
   }, 120_000);
 
-  it('prijatie scenárom (príkaz s id 7) vedie k karte accepted s konkrétnym cut-off tickom a plánom 36 príchodov', () => {
-    const accepted = app.toasts.filter((entry) => entry.spec.key === `contract_accepted:${String(CONTRACT)}`);
+  it('prijatie scenárom (príkaz s id 10) vedie k karte accepted s konkrétnym cut-off tickom a plánom 23 príchodov', () => {
+    // kľúč oznámenia prijatia je voyage kontraktu (po R2 sa voyage a id kontraktu už nezhodujú)
+    const voyage = app.world.contracts.get(CONTRACT as ContractId)?.voyageId;
+    const accepted = app.toasts.filter((entry) => entry.spec.key === `contract_accepted:${String(voyage)}`);
     expect(accepted).toHaveLength(1);
-    expect(accepted[0]?.spec.text).toMatch(/Export 36 TEU → Rotterdam/);
+    expect(accepted[0]?.spec.text).toMatch(new RegExp(`Export ${String(BOOKED)} TEU → Gdańsk`));
     const first = samples.find((sample) => sample.state === 'accepted');
-    expect(first?.pending).toBe(36);
+    expect(first?.pending).toBe(BOOKED);
     expect(first?.arrived).toBe(0);
   });
 
-  it('počítadlá na karte rastú s príchodmi kamiónov: dovezené + zostávajúce príchody = 36, hold sa prejaví v heldUnits', () => {
+  it('počítadlá na karte rastú s príchodmi kamiónov: dovezené + zostávajúce príchody = 23, hold sa prejaví v heldUnits', () => {
     const accepted = samples.filter((sample) => sample.state === 'accepted');
-    for (const sample of accepted) expect(sample.arrived + sample.pending).toBeLessThanOrEqual(36);
+    for (const sample of accepted) expect(sample.arrived + sample.pending).toBeLessThanOrEqual(BOOKED);
     const arrivedSeries = accepted.map((sample) => sample.arrived);
     expect([...arrivedSeries].sort((a, b) => a - b)).toEqual(arrivedSeries);
-    expect(arrivedSeries.at(-1)).toBe(36);
+    expect(arrivedSeries.at(-1)).toBe(BOOKED);
     expect(accepted.at(-1)?.pending).toBe(0);
-    expect(Math.max(...accepted.map((sample) => sample.held))).toBe(1);
+    expect(Math.max(...accepted.map((sample) => sample.held))).toBeGreaterThan(0);
     expect(accepted.at(-1)?.held).toBe(0);
   });
 
@@ -261,7 +266,7 @@ describe('scenár export_inbound: karty bookingu a toasty zo skutočných udalos
     expect(warning.event.cutoffTick - warning.tick).toBeLessThanOrEqual(6 * app.world.clock.ticksPerHour);
     const toast = app.toasts.find((entry) => entry.spec.key === `cutoff_warning:${String(CONTRACT)}`);
     expect(toast?.spec).toMatchObject({ tone: 'warning', title: 'Cut-off exportu o 6 h', panel: 'contracts' });
-    expect(toast?.spec.text).toMatch(/^#7 · Export 36 TEU → Rotterdam · dovezené \d+ \/ 36 TEU$/);
+    expect(toast?.spec.text).toMatch(new RegExp(`^#${String(CONTRACT)} · Export ${String(BOOKED)} TEU → Gdańsk · dovezené \\d+ \\/ ${String(BOOKED)} TEU$`));
   });
 
   it('rolled jednotka a VGM hold dostanú toast; rolled po cut-off ukáže „po cut-off (rolled)“', () => {

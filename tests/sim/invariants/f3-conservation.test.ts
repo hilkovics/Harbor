@@ -35,7 +35,7 @@ import { loadScenarioFile, stateHash } from '../helpers/scenario';
 import { DEFS, MAP } from '../world/world-fixtures';
 
 const RUN_TICKS = 4000;
-const UNITS = 120;
+const UNITS = 96;
 
 /** Všetky druhy lokácií z ARCHITECTURE §7.1 okrem konečného `exported`. */
 const LIVE_KINDS: readonly CargoLocationKind[] = [
@@ -165,7 +165,7 @@ describe('konzervácia nákladu: apron_to_yard, prvých 4 000 tickov (loď, žer
     }
   });
 
-  it('createdCount rastie iba spawnom lode: 0 → 120 (tick 0), potom je konštantne 120', () => {
+  it('createdCount rastie iba spawnom lode: 0 → 96 (tick 0), potom je konštantne 96', () => {
     for (const sample of samples.filter((s) => s.tick >= 2)) expect(sample.created, `tick ${String(sample.tick)}`).toBe(UNITS);
     expect(world.cargo.createdCount).toBe(UNITS);
     expect(timed3(log, 'ShipSpawned').map((entry) => entry.event.units)).toEqual([UNITS]);

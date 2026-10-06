@@ -37,8 +37,9 @@ import {
   type CraneState,
 } from '../modules/crane-module';
 import { ModuleError } from '../modules/module-error';
-import { countShipCranes, importAboard, isLoadingInFlight, openLoadBookings, stowageOutOfOrder } from '../logistics/voyage-cargo';
+import { countShipCranes, importAboard, loadingInFlightTeu, openLoadBookings, stowageOutOfOrder } from '../logistics/voyage-cargo';
 import type { Contract } from '../contracts/contract';
+import { teuOf } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
 import type { Ship } from '../ships/ship';
 import type { StatResolver } from '../tech/stat-resolver';
@@ -106,9 +107,15 @@ function unclaimedImports(world: World, ship: Ship): number {
   return importAboard(world, ship.id) - countShipCranes(world, ship, isGrabbingUnloader);
 }
 
-/** Je na lodi miesto pre ďalšiu jednotku exportu (import + export na palube ≤ `capacityUnits`, rátajú sa aj jednotky v ceste)? */
-function shipHasRoom(world: World, ship: Ship): boolean {
-  return world.cargo.countAt('on_ship', ship.id) + countShipCranes(world, ship, isLoadingInFlight) < ship.def.capacityUnits;
+/** Voľné TEU lode pre ďalšiu jednotku exportu (import + export na palube ≤ `capacityUnits` v TEU, rátajú sa aj jednotky v ceste; ADR-039). */
+function shipFreeTeu(world: World, ship: Ship): number {
+  return ship.def.capacityUnits - world.cargo.teuAt('on_ship', ship.id) - loadingInFlightTeu(world, ship);
+}
+
+/** Zmestí sa jednotka `unitId` do `freeTeu` voľných TEU lode (40′ potrebuje 2)? */
+function fitsAboard(world: World, unitId: EntityId, freeTeu: number): boolean {
+  const unit = world.cargo.get(unitId);
+  return unit !== undefined && teuOf(unit) <= freeTeu;
 }
 
 /** `CraneBlocked` najviac raz za hernú hodinu na žeriav (index hodiny v `lastBlockedHour`). */
@@ -151,7 +158,9 @@ function start(crane: CraneModule, world: World): void {
   const handover = HANDOVERS[berth.params.handoverMode];
   const imports = unclaimedImports(world, ship);
   const bookings: readonly Contract[] = openLoadBookings(world, ship.id, LOAD_BOOKINGS);
-  const loadUnit = bookings.length > 0 && shipHasRoom(world, ship) ? handover.loadable(env, bookings) : undefined;
+  const freeTeu = bookings.length > 0 ? shipFreeTeu(world, ship) : 0;
+  const candidate = freeTeu > 0 ? handover.loadable(env, bookings) : undefined;
+  const loadUnit = candidate !== undefined && fitsAboard(world, candidate, freeTeu) ? candidate : undefined;
   if (loadUnit !== undefined) {
     enterGrabbing(world, crane, imports > 0 ? 'dual_load' : 'load', loadUnit);
     return;

@@ -132,7 +132,10 @@ test.describe('F5: nová hra → kontrakt → loď → vykládka → export → 
     const smallest = offers.reduce((best, offer) => (offer.volumeUnits < best.volumeUnits ? offer : best));
     const card = panel(page).locator(`article.contract-card[data-contract-id="${String(smallest.id)}"]`);
     await expect(card).toHaveAttribute('data-state', 'offered');
-    await expect(card.locator('[data-field="volume"]')).toContainText(String(smallest.volumeUnits));
+    // R2: karta ukazuje objem v TEU a rozdelenie na 20′/40′ (`12 TEU (2× 20′, 5× 40′)`), nie počet kontajnerov
+    const smallestTeu = smallest.volumeTeu;
+    const count40 = smallestTeu - smallest.volumeUnits;
+    await expect(card.locator('[data-field="volume"]')).toContainText(`${String(smallestTeu)} TEU (${String(smallest.volumeUnits - count40)}× 20′, ${String(count40)}× 40′)`);
     await expect(card.locator('[data-field="reward"]')).toContainText(formatMoney(smallest.rewardCents).replace(/^\+/, ''));
 
     // screenshot: hra s panelom ponúk pred prijatím

@@ -20,7 +20,7 @@
  */
 import type { ContractId, EntityId, EntityIdAllocator } from '../core/entity-id';
 import type { Catalog } from '../defs/catalog';
-import type { CargoTypeDef } from '../defs/types';
+import type { CargoTypeDef, ContainerTypeDef } from '../defs/types';
 import type { CargoMovedEvent } from '../events/sim-event';
 import { findConservationViolation } from './cargo-conservation';
 import { CargoConservationError, CargoError, CargoTransitionError } from './cargo-error';
@@ -41,23 +41,30 @@ import {
   type CargoLocationKind,
 } from './cargo-location';
 import { parseCargoLedgerState, type CargoLedgerState } from './cargo-ledger-state';
+import type { StorageGuards } from './storage-guard';
 import {
   DEFAULT_CARGO_STATUS,
+  DEFAULT_CONTAINER_LABELS,
   IMPORT_LABELS,
   OUTBOUND_BY_DIRECTION,
   cargoHoldProblem,
   cargoLabelsProblem,
   cargoStatusProblem,
+  containerLabelsDefProblem,
+  teuOf,
   type CargoDirection,
   type CargoHold,
   type CargoStatus,
   type CargoUnit,
   type CargoUnitLabels,
+  type CargoUnitLabelsInput,
 } from './cargo-unit';
 
 /** Závislosti ledgera od sveta (v `World` sú to `defs.cargoTypes`, `ids`, `events`, `clock`). */
 export interface CargoLedgerDeps {
   readonly cargoTypes: Catalog<Readonly<CargoTypeDef>>;
+  /** Typy kontajnerov (`defs.containerTypes`, ADR-039): `create` a obnova save overia `containerType`, veľkosť a nadrozmer. */
+  readonly containerTypes: Catalog<Readonly<ContainerTypeDef>>;
   /** Spoločný alokátor id sveta — jednotky nákladu dostávajú id z rovnakej postupnosti ako ostatné entity. */
   readonly ids: EntityIdAllocator;
   /** Cieľ udalostí `CargoMoved` (`world.events`). */
@@ -69,6 +76,8 @@ export interface CargoLedgerDeps {
    * `CargoMoved` s jednotkou **pred** presunom a cieľom. Nesmie vyhodiť ani meniť ledger (presun je už hotový).
    */
   readonly observer?: CargoMoveObserver;
+  /** Stráž skladov so stohmi (ADR-039): kontroluje pravidlá stohu pri presune do skladu / zo skladu. Bez nej sa pravidlá nekontrolujú (samostatný ledger). */
+  readonly storageGuard?: StorageGuards;
 }
 
 /** Pozorovateľ presunov nákladu (`CargoLedgerDeps.observer`). */
@@ -82,7 +91,7 @@ export interface CargoMoveObserver {
  * `unitAtIndex` (T04-02): rampa počíta jednotky na docku prechodom svojich jednotiek bez kópie (dock nie je jedinečné
  * miesto, ledger ho neindexuje).
  */
-export type CargoReader = Pick<CargoLedger, 'get' | 'unitsAt' | 'countAt' | 'firstUnitAt' | 'unitAtSlot' | 'unitAtIndex'>;
+export type CargoReader = Pick<CargoLedger, 'get' | 'unitsAt' | 'countAt' | 'teuAt' | 'firstUnitAt' | 'unitAtSlot' | 'unitAtIndex'>;
 
 /** Index jednotiek jedného držiteľa. */
 interface Bucket {
@@ -93,6 +102,8 @@ interface Bucket {
   exports: number;
   /** Počet jednotiek smeru `tranship` v `units` (`CargoLedger.countTranshipAt`, O(1)); na lodi A sú vykladané, na lodi B naložené. */
   tranships: number;
+  /** Súčet TEU jednotiek v `units` (`teuOf`, ADR-039; `CargoLedger.teuAt`, O(1) — kapacita lode v TEU). */
+  teu: number;
 }
 
 const NO_UNITS: readonly EntityId[] = Object.freeze([]);
@@ -138,6 +149,9 @@ function freezeUnit(base: Omit<CargoUnit, 'location' | 'hold' | 'status' | 'repa
     direction: base.direction,
     destinationPort: base.destinationPort,
     weightClass: base.weightClass,
+    sizeFt: base.sizeFt,
+    containerType: base.containerType,
+    oog: base.oog,
     hold: state.hold,
     status: state.status,
     repairUntilTick: state.repairUntilTick,
@@ -164,6 +178,9 @@ function unitState(unit: CargoUnit): CargoUnit {
     direction: unit.direction,
     destinationPort: unit.destinationPort,
     weightClass: unit.weightClass,
+    sizeFt: unit.sizeFt,
+    containerType: unit.containerType,
+    oog: unit.oog,
     hold: unit.hold === null ? null : { reason: unit.hold.reason, untilTick: unit.hold.untilTick },
     status: unit.status,
     repairUntilTick: unit.repairUntilTick,
@@ -192,7 +209,7 @@ export class CargoLedger {
    * (pozri `parseCargoLedgerState`). Poradie FIFO indexov sa obnoví z poradia `units`.
    */
   static fromState(raw: unknown, deps: CargoLedgerDeps): CargoLedger {
-    const state = parseCargoLedgerState(raw, deps.cargoTypes, deps.ids.getState().nextId);
+    const state = parseCargoLedgerState(raw, deps.cargoTypes, deps.ids.getState().nextId, deps.containerTypes);
     const ledger = new CargoLedger(deps);
     for (const unit of state.units) ledger.place(unit);
     ledger.created = state.createdCount;
@@ -230,7 +247,7 @@ export class CargoLedger {
    * `CargoError('invalid_input')`, lokácia mimo miesta vzniku smeru → `CargoTransitionError`, obsadené miesto →
    * `CargoError('slot_occupied')`.
    */
-  create(typeId: string, location: CargoLocation, contractId: ContractId | null = null, labels: CargoUnitLabels = IMPORT_LABELS): CargoUnit {
+  create(typeId: string, location: CargoLocation, contractId: ContractId | null = null, input: CargoUnitLabelsInput = IMPORT_LABELS): CargoUnit {
     if (!this.deps.cargoTypes.has(typeId)) {
       throw new CargoError('unknown_cargo_type', `CargoLedger.create: neznámy typ nákladu '${typeId}'`);
     }
@@ -238,7 +255,8 @@ export class CargoLedger {
     if (contractId !== null && !isEntityIdValue(contractId)) {
       throw new CargoError('invalid_input', `CargoLedger.create: contractId musí byť null alebo celé číslo ≥ 1, dostal ${String(contractId)}`);
     }
-    const labelProblem = cargoLabelsProblem(labels, contractId);
+    const labels: CargoUnitLabels = { ...DEFAULT_CONTAINER_LABELS, ...input };
+    const labelProblem = cargoLabelsProblem(labels, contractId) ?? containerLabelsDefProblem(labels, this.deps.containerTypes);
     if (labelProblem !== undefined) throw new CargoError('invalid_input', `CargoLedger.create: ${labelProblem.field}: ${labelProblem.problem}`);
     const spawnKind = CARGO_SPAWN_KIND_BY_DIRECTION[labels.direction];
     if (!CARGO_SPAWN_KINDS.includes(target.kind) || target.kind !== spawnKind) {
@@ -310,6 +328,11 @@ export class CargoLedger {
       throw new CargoTransitionError(unitId, from, target, hint);
     }
     this.assertSlotFree(target, unitId);
+    const guards = this.deps.storageGuard;
+    const takeGuard = guards !== undefined && from.kind === 'in_storage' ? guards(from.moduleId) : undefined;
+    const placeGuard = guards !== undefined && target.kind === 'in_storage' ? guards(target.moduleId) : undefined;
+    takeGuard?.assertCanTake(unit);
+    placeGuard?.assertCanPlace(unit, target.kind === 'in_storage' ? target.slot : -1);
     const bucket = this.bucketOf(from);
     const index = bucket?.units.indexOf(unitId) ?? -1;
     if (bucket === undefined || index < 0) {
@@ -319,6 +342,8 @@ export class CargoLedger {
     // Od tohto bodu nič nevyhadzuje — presun je atomický.
     this.unplace(unit, bucket, index);
     this.place(freezeUnit(unit, unit, target));
+    takeGuard?.taken(unit);
+    placeGuard?.placed(unit, target.kind === 'in_storage' ? target.slot : -1);
     this.deps.events.emit({ type: 'CargoMoved', unitId, from, to: target, tick: this.deps.clock.tick });
     this.deps.observer?.cargoMoved(unit, target);
   }
@@ -356,6 +381,11 @@ export class CargoLedger {
    */
   countExportsAt(kind: CargoHolderKind, holderId: EntityId): number {
     return this.buckets.get(kind)?.get(holderId)?.exports ?? 0;
+  }
+
+  /** Súčet TEU jednotiek u držiteľa (`teuOf`: 20′ = 1, 40′ = 2; bez alokácie, O(1)) — kapacita lode je v TEU (ADR-039). */
+  teuAt(kind: CargoHolderKind, holderId: EntityId): number {
+    return this.buckets.get(kind)?.get(holderId)?.teu ?? 0;
   }
 
   /** Počet jednotiek smeru `tranship` u držiteľa (bez alokácie, O(1)); či je na lodi vykladaná alebo naložená, určuje kontrakt. */
@@ -467,13 +497,14 @@ export class CargoLedger {
     this.units.set(unit.id, unit);
     let bucket = holders.get(holderId);
     if (bucket === undefined) {
-      bucket = { units: [], slots: spec.uniqueSlot ? new Map() : null, exports: 0, tranships: 0 };
+      bucket = { units: [], slots: spec.uniqueSlot ? new Map() : null, exports: 0, tranships: 0, teu: 0 };
       holders.set(holderId, bucket);
     }
     if (spec.order === 'id') insertSorted(bucket.units, unit.id);
     else bucket.units.push(unit.id);
     if (OUTBOUND_BY_DIRECTION[unit.direction]) bucket.exports += 1;
     if (unit.direction === 'tranship') bucket.tranships += 1;
+    bucket.teu += teuOf(unit);
     const slot = uniqueSlotOf(location);
     if (slot !== null) bucket.slots?.set(slot, unit.id);
   }
@@ -485,6 +516,7 @@ export class CargoLedger {
     bucket.units.splice(index, 1);
     if (OUTBOUND_BY_DIRECTION[unit.direction]) bucket.exports -= 1;
     if (unit.direction === 'tranship') bucket.tranships -= 1;
+    bucket.teu -= teuOf(unit);
     const slot = uniqueSlotOf(location);
     if (slot !== null) bucket.slots?.delete(slot);
     const holderId = holderIdOf(location);

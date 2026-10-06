@@ -3,7 +3,7 @@
 // háčik ledgera, polymorfné pravidlá, indexy knihy (prekládka pod voyage A aj B), skupiny ponúk a pool, ktorý šablóny F6c
 // zatiaľ neponúka. Správanie krokov 2/5/8 (spawn lodí, nakládka, záchrana) dodá T6C-03.
 import { describe, expect, it } from 'vitest';
-import type { CargoLocation, CargoUnit } from '@sim/cargo';
+import { DEFAULT_CONTAINER_LABELS, type CargoLocation, type CargoUnit } from '@sim/cargo';
 import {
   CONTRACT_KINDS,
   CONTRACT_KIND_TRAITS,
@@ -88,6 +88,7 @@ function recordingRng(range = 1.5): { readonly rng: AcceptContext['rng']; readon
 const SHIP = 40 as EntityId;
 const SHIP_B = 41 as EntityId;
 const unit = (unitId: number, direction: CargoUnit['direction'], location: CargoLocation, contractId: ContractId | null): CargoUnit => ({
+  ...DEFAULT_CONTAINER_LABELS,
   id: unitId as EntityId,
   typeId: 'container_teu',
   contractId,
@@ -301,8 +302,11 @@ function savedRepositioning(state: ContractState): SerializedContract {
       cutoffTick: null,
       arrivalPlan: [],
       arrivedUnits: state === 'completed' || state === 'exporting' ? 10 : 0,
+      arrivedTeu: state === 'completed' || state === 'exporting' ? 10 : 0,
       loadedUnits: state === 'completed' || state === 'exporting' ? 8 : 0,
+      loadedTeu: state === 'completed' || state === 'exporting' ? 8 : 0,
       lastMinuteUnits: 0,
+      lastMinuteTeu: 0,
       rolledUnitIds: [],
       heldUnits: 0,
     },
@@ -318,7 +322,7 @@ describe('TranshipContract', () => {
     expect([contract.outVoyageId, contract.outArrivalTick, contract.outShipId, contract.rescueDeadlineTick]).toEqual([9, undefined, undefined, undefined]);
     expect(contract.voyageIds).toEqual([4, 9]);
     expect(contract.spawnUnits).toBe(12);
-    expect(contract.spawnLabels).toEqual({ direction: 'tranship', voyageId: 4, lineId: 'northern_star', destinationPort: 'Hamburg', weightClass: 'medium' });
+    expect(contract.spawnLabels).toEqual({ direction: 'tranship', voyageId: 4, lineId: 'northern_star', destinationPort: 'Hamburg', weightClass: 'medium', sizeFt: 20, containerType: 'dry', oog: false });
     expect(new ImportContract(BASE).spawnLabels).toMatchObject({ direction: 'import', voyageId: 3, lineId: 'northern_star', destinationPort: null });
   });
 
@@ -449,8 +453,11 @@ function savedTranship(state: ContractState): SerializedContract {
       cutoffTick: null,
       arrivalPlan: [],
       arrivedUnits: unloaded,
+      arrivedTeu: unloaded,
       loadedUnits: loaded,
+      loadedTeu: loaded,
       lastMinuteUnits: 0,
+      lastMinuteTeu: 0,
       rolledUnitIds: [],
       heldUnits: 0,
     },

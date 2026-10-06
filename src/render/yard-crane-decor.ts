@@ -153,8 +153,9 @@ export class YardCraneDecor implements ModuleDecor {
   }
 
   update(vm: ModuleVM): void {
+    this.view.visible = vm.stacks === undefined; // blok sa medzitým zmenil na blok so stohmi (R2): žeriav sa skryje
     const op = vm.lastStorageOp;
-    if (op !== undefined) {
+    if (op !== undefined && vm.stacks === undefined) {
       const key = opKey(op);
       if (key !== this.seenOp) {
         this.seenOp = key;
@@ -274,6 +275,7 @@ function opKey(op: NonNullable<ModuleVM['lastStorageOp']>): string {
 
 export const yardCraneDecorFactory: ModuleDecorFactory = {
   id: 'yard_crane',
-  applies: (vm) => vm.storage !== undefined && isYardEntry(moduleSprite(vm.defId)),
+  // R2: blok so stohmi (`ModuleVM.stacks`) žeriav dvora nemá — straddle carriery, RTG prídu v R3
+  applies: (vm) => vm.storage !== undefined && vm.stacks === undefined && isYardEntry(moduleSprite(vm.defId)),
   create: (vm, context) => new YardCraneDecor(vm, context),
 };

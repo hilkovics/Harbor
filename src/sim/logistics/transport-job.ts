@@ -28,13 +28,14 @@ export const JOB_STATES = ['open', 'assigned', 'picking', 'moving', 'dropping', 
 export type JobState = (typeof JOB_STATES)[number];
 
 /**
- * Povolené prechody `from → [to…]`; `done` a `cancelled` sú konečné stavy (job sa odstráni). Zrušiť sa dá len job bez
- * vozidla (`open`) — vozidlo, ktoré job už má, ho dokončí (ADR-023).
+ * Povolené prechody `from → [to…]`; `done` a `cancelled` sú konečné stavy (job sa odstráni). Zrušiť sa dá job bez vozidla (`open`)
+ * a job vozidla, ktoré pri zdroji nenašlo cieľ rehandlingu (`picking → cancelled`, dodatok TR2-06b); inak vozidlo job dokončí (ADR-023).
  */
 export const JOB_TRANSITIONS: ReadonlyMap<JobState, readonly JobState[]> = new Map<JobState, readonly JobState[]>([
   ['open', Object.freeze(['assigned', 'cancelled'] as const)],
   ['assigned', Object.freeze(['picking'] as const)],
-  ['picking', Object.freeze(['moving'] as const)],
+  // Rehandling bez cieľa v bloku (R2, dodatok TR2-06b): vozidlo čaká v `picking` na kontajnery nad jednotkou; po `rehandleGiveUpTicks` sa job zruší a vozidlo uvoľní.
+  ['picking', Object.freeze(['moving', 'cancelled'] as const)],
   ['moving', Object.freeze(['dropping'] as const)],
   ['dropping', Object.freeze(['done'] as const)],
   ['done', Object.freeze([] as const)],
@@ -45,8 +46,10 @@ export const JOB_TRANSITIONS: ReadonlyMap<JobState, readonly JobState[]> = new M
  * Prečo dispatcher zrušil job bez vozidla (`JobCancelled`, ADR-023): cieľová rampa nie je prevádzková (ADR-022), alebo
  * k nej zo zdroja nevedie cesta. Oboje sú podmienky vzniku outbound jobu — `open` job, ktorý by už nevznikol, sa zruší.
  * `loading_stopped` (T6C-07b): nakládka bookingu sa zastavila (`loadingStopped`) a job nakládky ešte nemá vozidlo.
+ * `rehandle_stalled` (TR2-06b): vozidlo pri zdroji v bloku so stohmi nenašlo cieľ pre kontajnery nad jednotkou (alebo jednotku pri príchode nemožno vybrať)
+ * a po `rehandleGiveUpTicks` job zrušilo — jednotka ostáva v sklade a dispatcher jej vytvorí job znova, až keď je pre kontajnery nad ňou miesto.
  */
-export const JOB_CANCEL_REASONS = ['ramp_inoperative', 'ramp_unreachable', 'loading_stopped'] as const;
+export const JOB_CANCEL_REASONS = ['ramp_inoperative', 'ramp_unreachable', 'loading_stopped', 'rehandle_stalled'] as const;
 export type JobCancelReason = (typeof JOB_CANCEL_REASONS)[number];
 
 /** Kde leží náklad jobu v danom stave (invarianty kroku 12, obnova save). */
@@ -296,6 +299,28 @@ export class TransportJob {
       throw new JobError('invalid_input', `${this.label}: nový cieľ ${target.kind} nie je apron kotviska #${String(this.toModuleId)} s povolenou trasou z ${this.source.kind}`);
     }
     this.target = target;
+  }
+
+  /**
+   * Zmení slot skladu v zdroji (`in_storage`) toho istého skladu — rehandling presunul jednotku jobu v bloku so stohmi (ADR-039 bod 6), aby sa dalo
+   * vybrať iný kontajner. Povolené len pre job so zdrojom `in_storage` pred nakládkou (`open`, `assigned`, `picking`); inak `JobError`, job sa nezmení.
+   */
+  rebindStorageSource(slot: number): void {
+    const { source } = this;
+    if (source.kind !== 'in_storage' || (this.current !== 'open' && this.current !== 'assigned' && this.current !== 'picking')) {
+      throw new JobError('invalid_transition', `${this.label}: slot zdroja sa mení len pri jobe zo skladu pred nakládkou (zdroj ${source.kind}, stav ${this.current})`);
+    }
+    this.source = checkLocation({ kind: 'in_storage', moduleId: source.moduleId, slot }, this.label, 'from');
+  }
+
+  /**
+   * Zmení slot skladu v cieli (`in_storage`) toho istého skladu — pri vykládke sa rezervácie bunky jedného stohu vymenia podľa skutočnej výšky
+   * (`YardBlock.settleReservation`). Povolené len pre job s cieľom `in_storage`; inak `JobError`, job sa nezmení.
+   */
+  rebindStorageTarget(slot: number): void {
+    const { target } = this;
+    if (target.kind !== 'in_storage') throw new JobError('invalid_transition', `${this.label}: slot cieľa sa mení len pri cieli in_storage (cieľ ${target.kind})`);
+    this.target = checkLocation({ kind: 'in_storage', moduleId: target.moduleId, slot }, this.label, 'to');
   }
 
   /** Aktuálny stav (mení ho len `assign` / `transition`). */

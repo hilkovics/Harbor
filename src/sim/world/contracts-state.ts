@@ -35,7 +35,7 @@ import type { DefRegistry } from '../defs/def-registry';
 import { WorldStateError, checkArray, checkInteger, checkKeys, describeValue, pointerSegment } from './state-check';
 
 /** Polia kontraktu, ktoré sú celé čísla ≥ 0 (okrem id). */
-const COUNT_FIELDS = ['volumeUnits', 'slaDays', 'rewardCents', 'offeredTick', 'offerExpiresTick', 'unitsUnloaded', 'unitsExported', 'penaltiesCents', 'demurrageHours', 'lateDays'] as const;
+const COUNT_FIELDS = ['volumeUnits', 'volumeTeu', 'slaDays', 'rewardCents', 'offeredTick', 'offerExpiresTick', 'unitsUnloaded', 'unitsExported', 'penaltiesCents', 'demurrageHours', 'lateDays'] as const;
 /** Voliteľné polia (v save `null` alebo celé ≥ 0). */
 const NULLABLE_FIELDS = ['acceptedTick', 'shipArrivalTick', 'slaDeadlineTick', 'shipId', 'dockedTick', 'closedTick'] as const;
 /** Časy, ktoré nesmú byť v budúcnosti. */
@@ -67,8 +67,11 @@ function parseBooking(raw: unknown, path: string): SerializedBooking {
     cutoffTick: cutoff === null ? null : checkInteger(cutoff, 0, `${path}/cutoffTick`),
     arrivalPlan: checkIntegerList(entry['arrivalPlan'], 0, `${path}/arrivalPlan`),
     arrivedUnits: checkInteger(entry['arrivedUnits'], 0, `${path}/arrivedUnits`),
+    arrivedTeu: checkInteger(entry['arrivedTeu'], 0, `${path}/arrivedTeu`),
     loadedUnits: checkInteger(entry['loadedUnits'], 0, `${path}/loadedUnits`),
+    loadedTeu: checkInteger(entry['loadedTeu'], 0, `${path}/loadedTeu`),
     lastMinuteUnits: checkInteger(entry['lastMinuteUnits'], 0, `${path}/lastMinuteUnits`),
+    lastMinuteTeu: checkInteger(entry['lastMinuteTeu'], 0, `${path}/lastMinuteTeu`),
     rolledUnitIds: checkIntegerList(entry['rolledUnitIds'], 1, `${path}/rolledUnitIds`),
     heldUnits: checkInteger(entry['heldUnits'], 0, `${path}/heldUnits`),
   };

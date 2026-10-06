@@ -39,6 +39,8 @@ export interface ModuleDecor {
   readonly view: Container;
   /** `true` = ozdoba hlási problém modulu; `ModuleView` ukáže odznak `overlay.warning_badge` (rovnako ako pri „nepripojené“). */
   readonly warning?: boolean;
+  /** `true` = ozdoba kreslí celé telo modulu (blok skladu so stohmi, R2); `ModuleView` skryje sprite tela. */
+  readonly coversBody?: boolean;
   /** Zosúladí ozdobu s VM (pole VM môže chýbať — ozdoba sa vtedy skryje). */
   update(vm: ModuleVM): void;
   /** Násobok odznakov ozdoby pre zoom kamery (`badgeScaleForZoom`). */

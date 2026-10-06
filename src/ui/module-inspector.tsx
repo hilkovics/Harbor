@@ -23,9 +23,10 @@
  * nákup / predaj vozidla cez `onBuyVehicle(depotId)` / `onSellVehicle(vehicleId)` → `dispatch(BuyVehicle | SellVehicle)`.
  * Šírku dáva `--side-panel-w`, výšku kontajner (panel vyplní 100 % výšky rodiča, telo sa posúva).
  */
+import type { CSSProperties } from 'react';
 import { EM_DASH, formatCount, formatDuration, formatFootprint, formatFraction, formatMoney, formatPercent, formatWaitDuration, type TimeScale } from './format';
 import { Icon, type IconName } from './icon';
-import { lineStyle } from './line-color';
+import { lineStyle, lineTokenOfId } from './line-color';
 import './module-inspector.css';
 
 export type CraneStateName = 'idle' | 'grabbing' | 'swinging' | 'placing' | 'blocked';
@@ -72,6 +73,23 @@ export interface HinterlandData {
   readonly total: number;
   readonly oldestWaitTicks: number;
   readonly scale: TimeScale;
+}
+
+/** R2: štítok kontajnera v stohu bloku (veľkosť, typ, linka, smer). */
+export interface YardContainerLook {
+  readonly sizeFt: 20 | 40;
+  readonly containerType: string;
+  readonly lineId: string | null;
+  readonly direction: string;
+}
+
+/** R2: jeden stoh bloku `(bay, row)`: výška, vrchný kontajner a (voliteľne) štítky po poschodiach (0 = spodné). */
+export interface YardStackData {
+  readonly bay: number;
+  readonly row: number;
+  readonly height: number;
+  readonly top: YardContainerLook | null;
+  readonly tiers?: readonly (YardContainerLook | null)[];
 }
 
 /** F4: čakacia plocha. `occupied` = kamión stojí na bay, `reserved` = bay je rezervovaný kamiónu na ceste. */
@@ -224,6 +242,17 @@ export interface ModuleInspectorData {
   readonly waitingArea?: WaitingAreaData;
   /** F4: nakladacia rampa (`kind: 'ramp'`). */
   readonly ramp?: RampData;
+  /**
+   * R2: blok stohu (yard block). `geometry` = veľkosť gridu, `usedTeu` / `capacityTeu` = obsadenosť,
+   * `rehandlesPerMove` = rehandling na presun (voliteľný), `stacks` = pole stohu po bayoch/radoch.
+   */
+  readonly yardBlock?: {
+    readonly geometry: { readonly bays: number; readonly rows: number; readonly maxTier: number };
+    readonly capacityTeu: number;
+    readonly usedTeu: number;
+    readonly rehandlesPerMove?: number;
+    readonly stacks: readonly YardStackData[];
+  };
   /**
    * F3 (voliteľný): modul s cestným konektorom má cestu. `false` = banner „Nepripojené k ceste" a badge „Nepripojené"
    * (má prednosť pred `stateLabel`); `undefined` / `true` = bez zmeny (moduly bez konektorov pole nemajú).
@@ -998,6 +1027,99 @@ function renderStorage(storage: StorageData) {
   );
 }
 
+/** R2: skratka typu kontajnera v bunke bay view (typ sa nekreslí farbou — farba nesie linku); neznámy typ → prvé písmeno veľké. */
+export const CONTAINER_TYPE_ABBR: Readonly<Record<string, string>> = Object.freeze({ dry: 'D', reefer: 'R', tank: 'T', open_top: 'OT' });
+
+/** Štítok kontajnera v bunke `(tier)` stohu: z `tiers`, inak (staršie dáta) len vrch stohu; `null` = nezistený. */
+function stackCellLook(stack: YardStackData, tier: number): YardContainerLook | null {
+  return stack.tiers?.[tier] ?? (tier === stack.height - 1 ? stack.top : null);
+}
+
+/**
+ * Bunka bay view (R2): farba podľa **linky** kontajnera (`--line-*`, mapovanie `lineId` → token ako v rendereri), prázdny kontajner
+ * (`direction: 'empty'`) `--cargo-empty`, kontajner bez linky neutrálny; typ je len skratka. Voľná bunka stohu je prázdna.
+ */
+function renderBayCell(bay: number, row: number, tier: number, stack: YardStackData | undefined) {
+  const filled = stack !== undefined && stack.height > tier;
+  const look = filled ? stackCellLook(stack, tier) : null;
+  const key = `${String(bay)}-${String(row)}-${String(tier)}`;
+  if (!filled) {
+    return <div key={key} className="module-inspector__bay-cell" data-bay={bay} data-row={row} data-tier={tier} data-empty="true" title={`Voľné · bay ${String(bay)} · riadok ${String(row)} · úroveň ${String(tier + 1)}`} />;
+  }
+  const isEmptyBox = look?.direction === 'empty';
+  const token = look === null || isEmptyBox ? undefined : lineTokenOfId(look.lineId);
+  const abbr = look === null ? '' : (CONTAINER_TYPE_ABBR[look.containerType] ?? look.containerType.charAt(0).toUpperCase());
+  const title = look === null ? `Obsadené · bay ${String(bay)}` : `${String(look.sizeFt)}′ ${look.containerType}${isEmptyBox ? ' · prázdny' : ''}${look.lineId === null ? '' : ` · ${look.lineId}`}`;
+  return (
+    <div
+      key={key}
+      className="module-inspector__bay-cell"
+      style={token === undefined ? undefined : lineStyle(token)}
+      data-bay={bay}
+      data-row={row}
+      data-tier={tier}
+      data-empty="false"
+      data-fill={isEmptyBox ? 'empty' : token === undefined ? 'neutral' : 'line'}
+      data-line={token}
+      data-size={look?.sizeFt}
+      data-container-type={look?.containerType}
+      title={title}
+    >
+      {abbr}
+    </div>
+  );
+}
+
+/** R2: blok stohu so siete bay/radov a pohľadom na bay zboku. */
+function renderYardBlock(block: NonNullable<ModuleInspectorData['yardBlock']>) {
+  const { geometry, capacityTeu, usedTeu, rehandlesPerMove, stacks } = block;
+  const teuPct = Math.round(shareOf(usedTeu, capacityTeu));
+
+  // Skupujeme stohy po bayoch pre zobrazenie
+  const stacksByBay = new Map<number, typeof stacks>();
+  for (const stack of stacks) {
+    const existing = stacksByBay.get(stack.bay) ?? [];
+    stacksByBay.set(stack.bay, [...existing, stack]);
+  }
+
+  return (
+    <>
+      <div className="module-inspector__meter" data-section="yard-block">
+        <div className="module-inspector__meter-head">
+          <span className="module-inspector__meter-label">Obsadenosť TEU</span>
+          <span data-field="block-teu">{formatCount(usedTeu)} / {formatCount(capacityTeu)} ({teuPct} %)</span>
+        </div>
+        {renderBar('Zaplnenie bloku', usedTeu, capacityTeu, [
+          { key: 'used', percent: teuPct },
+        ])}
+      </div>
+      <div className="module-inspector__section" data-section="yard-block-bay">
+        <span className="module-inspector__section-title">Pohľad na bay zboku</span>
+        <div className="module-inspector__bay-view">
+          <div className="module-inspector__bay-columns">
+            {Array.from(stacksByBay.entries()).map(([bay, bayStacks]) => (
+              <div key={bay} className="module-inspector__bay-column" data-bay={bay}>
+                <div className="module-inspector__bay-stacks" style={{ '--bay-rows': geometry.rows } as CSSProperties}>
+                  {/* Prierez bayom: riadky vedľa seba, poschodia zhora nadol (najvyššie hore). */}
+                  {Array.from({ length: geometry.maxTier }, (_, index) => geometry.maxTier - 1 - index).flatMap((tier) =>
+                    Array.from({ length: geometry.rows }, (_, row) => renderBayCell(bay, row, tier, bayStacks.find((candidate) => candidate.row === row))),
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      {rehandlesPerMove !== undefined && (
+        <div className="module-inspector__row">
+          <span className="module-inspector__row-label">Rehandling na presun</span>
+          <span data-field="rehandles-per-move">{rehandlesPerMove.toFixed(2)}</span>
+        </div>
+      )}
+    </>
+  );
+}
+
 /** F6a / F6c: obsah skladu podľa smeru — pruh (podiely z uskladnených jednotiek) a legenda; tranship a prázdne len pri nenulovom počte. */
 function renderStorageSplit(storage: StorageData, split: CargoSplitData) {
   const shares = cargoSplitShares(split);
@@ -1259,7 +1381,7 @@ function renderHinterland(hinterland: HinterlandData) {
 }
 
 export function ModuleInspector({ data, onRemove, onClose, onBuyVehicle, onSellVehicle }: ModuleInspectorProps) {
-  const { apron, crane, dockedShip, storage, emptyDepot, depot, gate, waitingArea, ramp } = data;
+  const { apron, crane, dockedShip, storage, emptyDepot, depot, gate, waitingArea, ramp, yardBlock } = data;
   const blocked = crane?.state === 'blocked';
   const waiting = crane?.waitingForVehicle === true;
   const badge = inspectorBadge(data);
@@ -1322,7 +1444,8 @@ export function ModuleInspector({ data, onRemove, onClose, onBuyVehicle, onSellV
         {ramp !== undefined && renderStats(rampStats(ramp))}
         {apron !== undefined && renderApron(apron)}
         {crane !== undefined && renderCraneTime(crane)}
-        {storage !== undefined && renderStorage(storage)}
+        {yardBlock !== undefined && renderYardBlock(yardBlock)}
+        {storage !== undefined && !yardBlock && renderStorage(storage)}
         {emptyDepot === undefined && storage?.split !== undefined && renderStorageSplit(storage, storage.split)}
         {emptyDepot !== undefined && renderEmptyLines(emptyDepot)}
         {emptyDepot !== undefined && renderRepairBays(emptyDepot)}

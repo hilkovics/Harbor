@@ -56,6 +56,7 @@ import type { CargoLedgerState } from '../cargo/cargo-ledger-state';
 import { HoldIndex } from '../cargo/hold-index';
 import type { CargoLocation } from '../cargo/cargo-location';
 import type { CargoUnit } from '../cargo/cargo-unit';
+import type { StorageGuard } from '../cargo/storage-guard';
 import { EntityIdAllocator, type ContractId, type EntityId } from '../core/entity-id';
 import { EventBus } from '../core/event-bus';
 import { INITIAL_SPEED, SimClock, type ClockBoundaries } from '../core/sim-clock';
@@ -80,6 +81,7 @@ import type { Module } from '../modules/module';
 import { ModuleError } from '../modules/module-error';
 import { moduleRegistry } from '../modules/module-registry';
 import { TruckGate } from '../modules/truck-gate';
+import { YardBlock } from '../modules/yard-block';
 import { VehicleDepot } from '../modules/vehicle-depot';
 import { WaitingArea } from '../modules/waiting-area';
 import type { AdvanceGate, Carrier } from '../movement/carrier';
@@ -343,7 +345,12 @@ export class World {
         if (unit.hold !== null && (to.kind === 'exported' || to.kind === 'shipped')) holdIndex.remove(unit.id);
       },
     };
-    const deps = { cargoTypes: parts.defs.cargoTypes, ids: parts.ids, events: this.events, clock: parts.clock, observer };
+    // Stráž skladov so stohmi (ADR-039): ledger pri presune do / zo skladu overí pravidlá stohu a udržiava `StackGrid` bloku.
+    const storageGuard = (moduleId: EntityId): StorageGuard | undefined => {
+      const module = this.moduleMap.get(moduleId);
+      return module instanceof YardBlock ? module : undefined;
+    };
+    const deps = { cargoTypes: parts.defs.cargoTypes, containerTypes: parts.defs.containerTypes, ids: parts.ids, events: this.events, clock: parts.clock, observer, storageGuard };
     this.cargo = parts.cargo === null ? new CargoLedger(deps) : CargoLedger.fromState(parts.cargo, deps);
     this.modules = this.moduleMap;
     this.ships = this.shipMap;

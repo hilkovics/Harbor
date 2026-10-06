@@ -139,12 +139,12 @@ describe('invarianty jobov (krok 12)', () => {
     const [assigned, open] = [...world.jobs.values()];
     expect([assigned.state, open.state]).toEqual(['assigned', 'open']);
 
-    yard.release(1);
-    expect(findWorldViolation(world)).toMatch(/job #\d+: miesto 1 \('in_storage'\) nie je rezervované/);
-    yard.reserveSlot(1);
+    yard.release(3);
+    expect(findWorldViolation(world)).toMatch(/job #\d+: miesto 3 \('in_storage'\) nie je rezervované/);
+    yard.reserveSlot(3);
     yard.reserve();
-    expect(findWorldViolation(world)).toMatch(/rezervované sloty \[0, 1, 2\] ≠ sloty aktívnych jobov \[0, 1\]/);
-    yard.release(2);
+    expect(findWorldViolation(world)).toMatch(/rezervované sloty \[0, 1, 3\] ≠ sloty aktívnych jobov \[0, 3\]/);
+    yard.release(1);
     expect(findWorldViolation(world)).toBeUndefined();
 
     assigned.transition('picking'); // vozidlo ostalo v to_pickup
@@ -192,7 +192,7 @@ describe('WorldState v3 — joby v save', () => {
     expect([...restored.jobs.values()].map((job) => [job.id, job.state, job.vehicleId])).toEqual([...world.jobs.values()].map((job) => [job.id, job.state, job.vehicleId]));
     for (const job of restored.jobs.values()) expect(restored.jobOfUnit(job.unitIds[0])).toBe(job);
     const yard = restored.moduleAt(YARD_W.x, YARD_W.y) as StorageModule;
-    expect(yard.reservedSlots()).toEqual([0, 1]);
+    expect(yard.reservedSlots()).toEqual([0, 3]);
     expect(() => restored.assertInvariants()).not.toThrow();
     expect((restored.modules.get(ROOT_BERTH_ID) as BerthModule).lastNoStorageHour).toBeNull();
   });
@@ -219,7 +219,7 @@ describe('WorldState v3 — joby v save', () => {
     ['jednotka v dvoch joboch', (s) => ((s.jobs[1].unitIds = s.jobs[0].unitIds), (s.jobs[1].from = s.jobs[0].from)), '/jobs/1/unitIds', /už má/],
     ['cieľ nie je sklad', (s) => (s.jobs[0].to = { kind: 'in_storage', moduleId: 3, slot: 0 }), '/jobs/0/to/moduleId', /neprijíma náklad jobu do 'in_storage'/],
     ['slot mimo kapacity', (s) => (s.jobs[0].to = { kind: 'in_storage', moduleId: 4, slot: 64 }), '/jobs/0/to/slot'],
-    ['dva joby na jeden slot', (s) => (s.jobs[1].to = s.jobs[0].to), '/jobs/1/to/slot', /rezervovaný/],
+    ['dva joby na jeden slot', (s) => (s.jobs[1].to = s.jobs[0].to), '/jobs/1/to/slot', /rezervovan/],
     ['vozidlo s jobom, ktorý v save nie je', (s) => (s.vehicles[0].jobId = 999), '/vehicles/0/jobId', /job #999 vo svete neexistuje/],
     ['hodina NoStorageAvailable v budúcnosti', (s) => (s.modules[0].runtime.lastNoStorageHour = 5), '/modules/0/runtime/lastNoStorageHour'],
     ['runtime kotviska bez hodiny', (s) => (s.modules[0].runtime = {}), '/modules/0/runtime/lastNoStorageHour'],

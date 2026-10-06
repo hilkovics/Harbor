@@ -50,7 +50,7 @@ function allowedRewards(contract: ContractLike, defs = DEFS): number[] {
   const template = defs.contractTemplates.get(contract.templateId);
   const rewards: number[] = [];
   for (let sla = template.slaDaysRange[0]; sla <= template.slaDaysRange[1]; sla++) {
-    rewards.push(expectedRewardCents(template.cargoTypeId, contract.volumeUnits, sla, defs));
+    rewards.push(expectedRewardCents(template.cargoTypeId, contract.volumeTeu, sla, defs));
   }
   return rewards;
 }
@@ -81,7 +81,7 @@ describe('pool: prvé naplnenie', () => {
       expect(template.minTier, `${offer.templateId}`).toBeLessThanOrEqual(tierOf(world));
       expect(offer.offeredTick).toBeLessThanOrEqual(world.clock.tick);
       expect(offer.offerExpiresTick - offer.offeredTick).toBe(EXPIRY_TICKS);
-      expect(offer.xpReward).toBe(expectedXpReward(offer.cargoTypeId, offer.volumeUnits));
+      expect(offer.xpReward).toBe(expectedXpReward(offer.cargoTypeId, offer.volumeTeu));
     }
   });
 
@@ -92,9 +92,9 @@ describe('pool: prvé naplnenie', () => {
       expect(hint).toBe(DEFS.economy.minCapacityHint);
       for (const offer of offeredContracts(world)) {
         const bounds = volumeBounds(offer.templateId, hint);
-        expect(offer.volumeUnits, `seed ${String(seed)}, ${offer.templateId}`).toBeGreaterThanOrEqual(bounds.min);
-        expect(offer.volumeUnits, `seed ${String(seed)}, ${offer.templateId}`).toBeLessThanOrEqual(bounds.max);
-        expect(offer.volumeUnits).toBeGreaterThan(0);
+        expect(offer.volumeTeu, `seed ${String(seed)}, ${offer.templateId}`).toBeGreaterThanOrEqual(bounds.min);
+        expect(offer.volumeTeu, `seed ${String(seed)}, ${offer.templateId}`).toBeLessThanOrEqual(bounds.max);
+        expect(offer.volumeTeu).toBeGreaterThan(0);
       }
     }
   });
@@ -103,7 +103,7 @@ describe('pool: prvé naplnenie', () => {
     for (let seed = 1; seed <= 8; seed++) {
       const world = worldWithPool(DEFS, seed);
       for (const offer of offeredContracts(world)) {
-        expect(allowedRewards(offer), `seed ${String(seed)}, ${offer.templateId}, objem ${String(offer.volumeUnits)}, odmena ${String(offer.rewardCents)}`).toContain(offer.rewardCents);
+        expect(allowedRewards(offer), `seed ${String(seed)}, ${offer.templateId}, objem ${String(offer.volumeTeu)}, odmena ${String(offer.rewardCents)}`).toContain(offer.rewardCents);
       }
     }
   });
@@ -117,7 +117,7 @@ describe('pool: prvé naplnenie', () => {
   });
 
   it('determinizmus: rovnaký seed dá rovnaké ponuky, iný seed iné', () => {
-    const shape = (world: World): unknown[] => offeredContracts(world).map((offer) => [offer.id, offer.templateId, offer.volumeUnits, offer.rewardCents, offer.shipClassId]);
+    const shape = (world: World): unknown[] => offeredContracts(world).map((offer) => [offer.id, offer.templateId, offer.volumeUnits, offer.volumeTeu, offer.rewardCents, offer.shipClassId]);
     expect(shape(worldWithPool(DEFS, 5005))).toEqual(shape(worldWithPool(DEFS, 5005)));
     expect(shape(worldWithPool(DEFS, 5005))).not.toEqual(shape(worldWithPool(DEFS, 5006)));
   });
@@ -183,8 +183,8 @@ describe('pool: doplnenie pri DayClosed a objem podľa kapacity prístavu', () =
     for (const entry of refill) {
       const offer = contractById(world, entry.event.contractId);
       const bounds = volumeBounds(offer.templateId, hint);
-      expect(offer.volumeUnits, offer.templateId).toBeGreaterThanOrEqual(bounds.min);
-      expect(offer.volumeUnits, offer.templateId).toBeLessThanOrEqual(bounds.max);
+      expect(offer.volumeTeu, offer.templateId).toBeGreaterThanOrEqual(bounds.min);
+      expect(offer.volumeTeu, offer.templateId).toBeLessThanOrEqual(bounds.max);
       expect(firstBatch).not.toContain(offer.id);
     }
     expect(run.violations).toEqual([]);

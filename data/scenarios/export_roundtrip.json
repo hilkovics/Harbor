@@ -384,7 +384,7 @@
       }
     },
     {
-      "atTick": 22200,
+      "atTick": 24350,
       "command": {
         "type": "RemoveRoad",
         "cells": [

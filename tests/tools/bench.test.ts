@@ -296,7 +296,13 @@ describe('stress_f6', () => {
     expect(ids.slice(0, 12)).toEqual(Array.from({ length: 12 }, (_, index) => index + 1));
     expect(ids).toEqual([...ids].sort((a, b) => a - b));
     expect(new Set(ids).size).toBe(ids.length);
-    for (const tick of ticks) expect(accepts.filter((entry) => entry.atTick === tick)).toHaveLength(defs.economy.offersPerDay);
+    // Prvé tri dni prijmú všetkých 6 ponúk; v neskorších dňoch sa neprijímajú ponuky, ktorým chýba kotvisko triedy lode (`no_berth_for_ship_class`, trieda handy) —
+    // po R2 (ADR-039: plánovač mení prúd `Rng`) ich je v poole viac, preto aspoň 4 za deň.
+    for (const tick of ticks) {
+      const perDay = accepts.filter((entry) => entry.atTick === tick).length;
+      expect(perDay).toBeLessThanOrEqual(defs.economy.offersPerDay);
+      expect(perDay).toBeGreaterThanOrEqual(tick <= 2 * ticksPerDay ? defs.economy.offersPerDay : 4);
+    }
   });
 
   it('každé AcceptContract scenára je platné: uvedené id je v ten tick import ponuka poolu (booking ponuky sa neprijímajú)', () => {
@@ -336,7 +342,8 @@ describe('stress_f6', () => {
         scenario: 'stress_f6',
         modules: 15,
         vehicles: 16,
-        shipsSpawned: 1,
+        // R2 (ADR-039): menej kontajnerov na kontrakt a iný prúd `Rng` — do 6 000 tickov pricestuje druhá loď
+        shipsSpawned: 2,
         lostUnits: 0,
         contractsAccepted: 6,
       });

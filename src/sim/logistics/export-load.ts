@@ -12,14 +12,14 @@
  *   nenakladá) a len pre kotvisko so žeriavom kategórie nákladu.
  * - **Vykládka pod hákom** (`createHookUnloadJobs`): joby `in_crane → in_storage` s rezervovaným slotom skladu vznikajú **vopred** —
  *   pre jednotku, ktorú žeriav práve vykladá, aj pre ďalšie jednotky na vykládku (import, prekládka z lode A) dokovanej lode — aby dispatcher poslal
- *   vozidlá k háku skôr, než žeriav jednotku zdvihne, a žeriav nečakal (`NoStorageAvailable`, keď sklad nie je); sklad podľa smeru
- *   (`allocateUnloadStorage`: prekládka zoskupene podľa kontraktu).
+ *   vozidlá k háku skôr, než žeriav jednotku zdvihne, a žeriav nečakal (`NoStorageAvailable`, keď sklad nie je); blok a stoh vyberá plánovač skladu
+ *   (`reserveYardSlot`, ADR-039: prekládka zoskupene podľa kontraktu).
  *
  * Funkcie nemenia ledger; vznik jobu rieši `openJob` z dispatchera (`JobCreated`, `World.addJob`). Hot path bez alokácií: jednotky
  * nakládky sa vyberajú po jednej (najlepšia podľa stowage plánu, bez poľa a triedenia — poradie je úplné, takže je rovnaké ako pri
  * triedení) a polia kotvísk / žeriavov sú znovupoužiteľné na úrovni modulu (vzor `BOOKINGS`).
  */
-import { compareStowageOrder } from '../cargo/stowage';
+import { compareStowageClass } from '../cargo/stowage';
 import type { CargoUnit } from '../cargo/cargo-unit';
 import type { Contract } from '../contracts/contract';
 import type { ContractKind } from '../contracts/contract-fsm';
@@ -27,13 +27,14 @@ import type { EntityId } from '../core/entity-id';
 import type { HandoverMode } from '../defs/types';
 import { BerthModule } from '../modules/berth-module';
 import { CRANE_CYCLE_TRAITS, CraneModule } from '../modules/crane-module';
+import { YardBlock } from '../modules/yard-block';
 import { HANDOVERS } from '../systems/crane-handover';
 import { apronDirectionCap, bothDirections, exportApronUsage } from './apron-usage';
 import { findAvailableEmpty } from './empty-stock';
 import { collectLoadBerths, storageReaches } from './load-access';
 import { distanceBetweenModules } from './module-access';
 import type { JobCancelReason, TransportJob } from './transport-job';
-import { allocateUnloadStorage } from './unload-storage';
+import { reserveYardSlot, unitPickable } from './yard-planner';
 import { isOutboundOnShip, loadingStopped, openLoadBookings } from './voyage-cargo';
 import type { CargoLocation } from '../cargo/cargo-location';
 import type { Ship } from '../ships/ship';
@@ -85,6 +86,23 @@ function hookLoadJobs(world: World, crane: CraneModule): number {
   return count;
 }
 
+/** Počet kontajnerov nad jednotkou v jej bloku so stohmi (0 = navrchu, mimo bloku); rehandling je drahší než čakanie. */
+function burialOf(world: World, unit: CargoUnit): number {
+  const block = unit.location.kind === 'in_storage' ? world.modules.get(unit.location.moduleId) : undefined;
+  return block instanceof YardBlock ? block.burialDepth(unit.id) : 0;
+}
+
+/**
+ * Poradie nakládky dvoch jednotiek (záporné = `a` skôr): trieda stowage plánu (plné pred prázdnymi, ťažké skôr — `compareStowageClass`); v rámci triedy
+ * (jednotky sú zameniteľné, sklad ich segreguje) tá, nad ktorou je menej kontajnerov, potom menšie id. Nakladať zospodu stohu by zbytočne spúšťalo rehandling.
+ */
+function compareLoadOrder(world: World, a: CargoUnit, b: CargoUnit): number {
+  const byClass = compareStowageClass(a, b);
+  if (byClass !== 0) return byClass;
+  const depth = burialOf(world, a) - burialOf(world, b);
+  return depth !== 0 ? depth : a.id - b.id;
+}
+
 /**
  * Najlepšia (min kľúč stowage plánu) uskladnená jednotka kontraktu smeru `direction` mimo hold a bez jobu, ktorá leží v sklade s cestou
  * ku kotvisku nakládky (`berths`, T6C-07b: odrezaný sklad nie je zdrojom), alebo `undefined`. Dosiahnuteľnosť skladu sa overuje raz za sklad
@@ -99,7 +117,8 @@ function bestStoredOf(world: World, contract: Contract, direction: CargoUnit['di
   for (let i = 0; i < group.units.length; i++) {
     const unit = world.cargo.get(group.units[i]);
     if (unit === undefined || unit.direction !== direction || unit.hold !== null || world.jobOfUnit(unit.id) !== undefined) continue;
-    if (best !== undefined && compareStowageOrder(unit, best) >= 0) continue;
+    if (best !== undefined && compareLoadOrder(world, unit, best) >= 0) continue;
+    if (!unitPickable(world, unit)) continue;
     if (group.storages[i] !== checkedStorage) {
       checkedStorage = group.storages[i];
       reachable = storageReaches(world, checkedStorage, berths);
@@ -117,7 +136,11 @@ const LOAD_SCAN: { readonly [K in ContractKind]: LoadScan } = {
   export: (world, contract, berths) => bestStoredOf(world, contract, 'export', berths),
   tranship: (world, contract, berths) => bestStoredOf(world, contract, 'tranship', berths),
   // Prázdne nemajú kontrakt: dostupný prázdny linky z depa (alebo záložného dvora), najviac toľko, koľko je bookovaných.
-  empty_repositioning: (world, contract, berths) => (contract.loadsToAssign > 0 ? findAvailableEmpty(world, contract.lineId, berths) : undefined),
+  empty_repositioning: (world, contract, berths) => {
+    const unit = contract.loadsToAssign > 0 ? findAvailableEmpty(world, contract.lineId, berths) : undefined;
+    // Zavalený prázdny bez miesta na rehandling sa nenakladá (vozidlo by uviazlo, TR2-06b) — job vznikne, až keď sa blok uvoľní.
+    return unit !== undefined && unitPickable(world, unit) ? unit : undefined;
+  },
 };
 
 /** Jednotky plných bookingov lode (export, prekládka), ktoré sú prijaté, ale ešte nenaložené ani vrátené (mimo hold) — pred nimi sa prázdne nenakladajú. */
@@ -147,7 +170,7 @@ function bestLoadable(world: World, bookings: readonly Contract[], berths: reado
       if (fullPending > 0) continue;
     }
     const unit = LOAD_SCAN[contract.kind](world, contract, berths);
-    if (unit !== undefined && (best === undefined || compareStowageOrder(unit, best) < 0)) best = unit;
+    if (unit !== undefined && (best === undefined || compareLoadOrder(world, unit, best) < 0)) best = unit;
   }
   return best;
 }
@@ -218,6 +241,22 @@ function assignToBooking(world: World, bookings: readonly Contract[], unit: Carg
 }
 
 /**
+ * Vráti pridelenie nakládky bookingu (`Contract.releaseLoad`) pri zrušení jobu nakládky, ktorý už mal vozidlo (rehandling bez cieľa, TR2-06b); iný job nič nerobí.
+ * Booking sa hľadá ako pri zastavenej nakládke — prvý neukončený booking dokovanej lode, ktorý jednotku nakladá.
+ */
+export function releaseLoadAssignment(world: World, job: TransportJob): void {
+  if (job.from.kind !== 'in_storage' || (job.to.kind !== 'on_apron' && job.to.kind !== 'in_crane')) return;
+  const berth = world.modules.get(job.toModuleId);
+  const unit = world.cargo.get(job.unitIds[0]);
+  if (!(berth instanceof BerthModule) || berth.dockedShipId === null || unit === undefined) return;
+  for (const contract of openLoadBookings(world, berth.dockedShipId, BOOKINGS)) {
+    if (!contract.loadsUnit(unit)) continue;
+    contract.releaseLoad(unit);
+    return;
+  }
+}
+
+/**
  * Nakládka bookingov lode sa zastavila (`loadingStopped`: po lehote zlyhania sa nové joby nezačínajú)? Otvorené joby nakládky jednotiek týchto
  * bookingov, ktoré ešte nemajú vozidlo (`open`), sa zrušia (`loading_stopped`) a booking dostane pridelenie späť (`Contract.releaseLoad`) — job,
  * ku ktorému sa vozidlo nedostane (odrezaný sklad, chýbajúce vozidlá), by inak navždy držal `loadingInFlight` a loď s kotviskom by neodišli
@@ -276,12 +315,12 @@ function hookUnloadJobs(world: World, crane: CraneModule): number {
 
 /** Job vykládky pod hákom pre jednotku `unit` z háku `crane` s rezervovaným slotom skladu; bez skladu `false` (+ `NoStorageAvailable`). */
 function openUnloadJob(world: World, crane: CraneModule, berth: BerthModule, unit: CargoUnit, openJob: OpenJob, emitNoStorage: EmitNoStorage): boolean {
-  const storage = allocateUnloadStorage(world, berth, unit);
-  if (storage === undefined) {
+  const place = reserveYardSlot(world, unit, berth);
+  if (place === null) {
     emitNoStorage(world, berth, unit.typeId);
     return false;
   }
-  openJob({ unitIds: [unit.id], from: { kind: 'in_crane', craneId: crane.id }, fromModuleId: berth.id, to: { kind: 'in_storage', moduleId: storage.id, slot: storage.reserve() } });
+  openJob({ unitIds: [unit.id], from: { kind: 'in_crane', craneId: crane.id }, fromModuleId: berth.id, to: { kind: 'in_storage', moduleId: place.moduleId, slot: place.slot } });
   return true;
 }
 

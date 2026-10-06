@@ -106,11 +106,10 @@ test('depot: sivé depo s odznakmi poškodených a opráv vedľa oranžového dv
   expect(depot.yard).toEqual({ decor: false });
   expect(depot.cranes).toEqual({ depot: true, cleanDepot: true, yard: false });
 
-  // sprity vozidiel: empty handler (vlastný sprite), straddle carrier a kamión s prázdnym kontajnerom ≠ s plným (rôzne textúry, stav sprite)
+  // sprity vozidiel: empty handler (od R2 sprite `ech` pre všetky stavy, kontajner pod spreaderom), straddle carrier a kamión s prázdnym kontajnerom ≠ s plným
   const vehicles = await page.evaluate(() => {
     const { renderer, fixtures } = window.__f6cDemo!;
     const vehicle = (id: number) => renderer.entities.vehicleView(id);
-    const texture = (id: number) => vehicle(id)?.texture ?? null;
     return {
       states: {
         handlerEmpty: vehicle(fixtures.HANDLER_EMPTY)?.loadState,
@@ -120,7 +119,7 @@ test('depot: sivé depo s odznakmi poškodených a opráv vedľa oranžového dv
         truckEmptyBox: renderer.entities.truckView(fixtures.TRUCK_EMPTY_BOX)?.loadState,
       },
       textured: [fixtures.HANDLER_EMPTY, fixtures.HANDLER_LOADED, fixtures.CARRIER_EMPTY_BOX, fixtures.CARRIER_FULL_BOX].every((id) => vehicle(id)?.textured === true),
-      handlerTexturesDiffer: texture(fixtures.HANDLER_EMPTY) !== texture(fixtures.HANDLER_LOADED),
+      handlerCargoDiffers: vehicle(fixtures.HANDLER_EMPTY)?.cargoState !== vehicle(fixtures.HANDLER_LOADED)?.cargoState, // ECH: jeden sprite rámu, líši sa kontajner pod spreaderom (žiadny / sivý)
       carrierTexturesDiffer: vehicle(fixtures.CARRIER_EMPTY_BOX)?.cargoState !== vehicle(fixtures.CARRIER_FULL_BOX)?.cargoState, // straddle: jeden sprite rámu, líši sa kontajner pod ním (sivý / plný)
     };
   });
@@ -131,7 +130,7 @@ test('depot: sivé depo s odznakmi poškodených a opráv vedľa oranžového dv
     carrierFullBox: 'loaded',
     truckEmptyBox: 'carries_empty',
   });
-  expect(vehicles).toMatchObject({ textured: true, handlerTexturesDiffer: true, carrierTexturesDiffer: true });
+  expect(vehicles).toMatchObject({ textured: true, handlerCargoDiffers: true, carrierTexturesDiffer: true });
 
   // detail depa: odznaky v rohu, sivé kontajnery na svetlej ploche; zdola dvor (oranžový) na porovnanie
   await page.evaluate(() => {

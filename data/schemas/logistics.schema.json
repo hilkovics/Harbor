@@ -4,7 +4,7 @@
   "description": "Logistické konštanty (ARCHITECTURE §4.6, §7.3, §7.4, §7.6; ADR-010, ADR-029): pobyt vozidla v module, opakovanie hľadania cesty, model kongescie a lodná navigácia. Konfiguračný def bez items[] (ADR-009); všetky trvania v tickoch.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "defaultInternalTicks", "repathIntervalTicks", "congestion", "traffic", "shipNavigation", "exportFlow", "emptyFlow"],
+  "required": ["schemaVersion", "defaultInternalTicks", "repathIntervalTicks", "rehandleTicks", "rehandleGiveUpTicks", "buryReserveColumns", "rehandleSpareCells", "importDwellEstimateHours", "yardPlanner", "congestion", "traffic", "shipNavigation", "exportFlow", "emptyFlow"],
   "properties": {
     "schemaVersion": {
       "const": 1,
@@ -19,6 +19,35 @@
       "type": "integer",
       "minimum": 1,
       "description": "Po koľkých tickoch skúša vozidlo bez cesty (`no_path`) hľadať cestu znova."
+    },
+    "rehandleTicks": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Trvanie jedného rehandle (ADR-039): presun kontajnera z vrchu stohu inam v tom istom bloku (`in_storage → in_vehicle → in_storage`), v tickoch."
+    },
+    "rehandleGiveUpTicks": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Trpezlivosť rehandlingu (ADR-039 dodatok TR2-06b): koľko ticks bez úspešného presunu (cieľ v bloku sa nenašiel) vozidlo čaká, kým job zruší a vozidlo uvoľní; zaokrúhľuje sa nahor na celé cykly `rehandleTicks`. Má byť menej ako `traffic.stuckTicks`, aby stojace vozidlo nebolo nikdy vyhlásené za zápchu."
+    },
+    "buryReserveColumns": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Plánovač skladu (ADR-039): koľko voľných stĺpcov (`maxTier` buniek každý) musí ostať v bloku, aby smel zavaliť skôr odchádzajúci kontajner; rehandling potrebuje kam preložiť."
+    },
+    "rehandleSpareCells": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Rezerva buniek navyše (ADR-039 dodatok TR2-06b): vozidlo sa jobu pre zavalenú jednotku priradí, len keď je v bloku miesto pre kontajnery nad ňou plus túto rezervu — plánovač počas cesty vozidla ukladá príchody do tých istých stohov a berie miesto pre rehandling. Job vzniká a vozidlo pri príchode kontroluje len samotné miesto."
+    },
+    "importDwellEstimateHours": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Odhad doby, ktorú import leží v sklade po vykládke (hodiny); plánovač z neho odvodí čas odchodu importu (`dischargeTick + odhad`, obmedzený SLA; ADR-039). Skutočné termíny odvozu prídu v R4."
+    },
+    "yardPlanner": {
+      "enum": ["planned", "random"],
+      "description": "Režim plánovača skladu (ADR-039): `planned` = segregácia podľa času odchodu, `random` = náhodné ukladanie z `Rng` (len pre akceptačný test, že plánovač funguje)."
     },
     "congestion": {
       "type": "object",

@@ -6,8 +6,7 @@
  * `OutboundCancelGate` (po zmene ciest alebo modulov, T06-07 — viď „Hot path").
  *
  * **Inbound:** kotviská vzostupne podľa id, jednotky na aprone vo FIFO (poradie príchodu v ledgeri); jednotka bez
- * aktívneho jobu dostane sklad z `allocateStorage` (najbližší pripojený s voľnou kapacitou, pri zhode menšie id),
- * sklad jej rezervuje slot (`reserve`) a vznikne job `open` (`JobCreated`). Ak sklad pre jednotku nie je, job nevznikne
+ * aktívneho jobu dostane blok a stoh od `YardPlanner` (`reserveYardSlot`, ADR-039), plánovač rezervuje bunku a vznikne job `open` (`JobCreated`). Ak sklad pre jednotku nie je, job nevznikne
  * a jednotka čaká na aprone; kotvisko emituje `NoStorageAvailable` najviac raz za hernú hodinu
  * (`BerthModule.lastNoStorageHour`).
  *
@@ -28,11 +27,16 @@
  * jednotku, ktorá job dostane; sklad bez vhodnej rampy sa preskočí binárnym skokom na hranicu ďalšieho skladu skupiny. Pri samých jednotkách bez kontraktu je poradie
  * jobov rovnaké ako vo F4 (sklady ↑, FIFO).
  *
+ * **Bloky so stohmi** (R2, ADR-039): outbound job vznikne len pre jednotku, ktorú zavaľuje kontajner, čo zo skladu nepôjde sám (export, prázdne — vtedy preloží
+ * kontajnery vozidlo, rehandling), a len ak je pre kontajnery nad ňou v bloku miesto (`unitPickable`); kontajner, ktorý odíde sám (import s jobom), jednotku pod
+ * sebou nezdržiava — vozidlo sa jej nepriraďuje, kým neodíde (`blockedJob`), takže sa najprv berú jednotky navrchu a rehandling takmer nevzniká. Vozidlo sa jobu zavalenej
+ * jednotky priradí až keď je miesto pre kontajnery nad ňou plus `logistics.rehandleSpareCells` (plánovač počas cesty vozidla ukladá príchody do tých istých stohov; TR2-06b).
+ *
  * **Prijatie exportu** (F6a, ADR-032 bod 8): jednotka exportu, ktorú vyložil kamión s exportom na dock rampy (booking beží),
  * dostane sklad zoskupene podľa voyage a job `at_ramp → in_storage` (`createExportJobs`), priority ako outbound.
  *
- * **Vykládka z lode a nakládka** (F6c, ADR-034 + dodatok T6C-03): jednotka na aprone dostane sklad podľa smeru (`allocateUnloadStorage` — prekládka z lode A
- * zoskupene podľa kontraktu); jednotka na nakládku dokovanej lode (export, prázdne repositioningu, prekládka čakajúca na loď B) na aprone čaká na žeriav
+ * **Vykládka z lode a nakládka** (F6c, ADR-034 + dodatok T6C-03): jednotka na aprone dostane blok a stoh od plánovača skladu (`reserveYardSlot`, ADR-039 — segregácia podľa smeru:
+ * prekládka z lode A zoskupene podľa kontraktu); jednotka na nakládku dokovanej lode (export, prázdne repositioningu, prekládka čakajúca na loď B) na aprone čaká na žeriav
  * (`awaitsCrane`), kým beží jej booking; joby nakládky vytvára `logistics/export-load.ts` (prázdne po plných jednotkách).
  *
  * **Prázdne kontajnery** (F6c, ADR-034 + dodatok T6C-02): prázdny z vnútrozemia vyložený na dock dostane job `at_ramp → in_storage` do depa
@@ -61,10 +65,11 @@
  * sklady cez skupiny `StoredCargoIndex` a mapy sveta sa prechádzajú v poradí id; voľné vozidlá, rampy a outbound skupiny
  * sa zbierajú raz za tick do znovupoužiteľných polí. Alokuje sa len nový job (jeho zoznam jednotiek a lokácie).
  */
-import { slotOf, type CargoLocation } from '../cargo/cargo-location';
+import type { CargoLocation } from '../cargo/cargo-location';
 import type { CargoDirection, CargoUnit } from '../cargo/cargo-unit';
 import type { ContractOutbound } from '../contracts/contract-fsm';
 import type { EntityId } from '../core/entity-id';
+import { YardBlock } from '../modules/yard-block';
 import type { CargoCategory } from '../defs/types';
 import type { Contract } from '../contracts/contract';
 import { BerthModule } from '../modules/berth-module';
@@ -74,7 +79,7 @@ import type { Vehicle } from '../vehicles/vehicle';
 import { VEHICLE_STATE_TRAITS, changeVehicleState } from '../vehicles/vehicle-fsm';
 import { startTrip, tryLeaveDepot } from '../vehicles/vehicle-trip';
 import type { World } from '../world/world';
-import { JobError } from './job-error';
+import { cancelJob } from './job-cancel';
 import { createEmptyIntakeJobs, createEmptyPickupJobs } from './empty-jobs';
 import { createExportIntakeJobs } from './export-intake';
 import { createExportLoadJobs as createLoadJobs, createHookUnloadJobs as createHookJobs, type LoadJobSpec } from './export-load';
@@ -82,7 +87,7 @@ import { distanceBetweenModules, distanceToModule } from './module-access';
 import { allocateRamp, outboundRoom } from './ramp-allocator';
 import type { StoredCargoGroup } from './stored-cargo-index';
 import { JOB_PRIORITY_LEVELS, TransportJob, type JobCancelReason } from './transport-job';
-import { allocateUnloadStorage } from './unload-storage';
+import { reserveYardSlot, unitPickable } from './yard-planner';
 import { anyBookingLoads, isOutboundOnShip, openLoadBookings } from './voyage-cargo';
 
 /**
@@ -130,13 +135,12 @@ function inboundFromBerth(world: World, berth: BerthModule): void {
     const unitId = world.cargo.unitAtIndex('on_apron', berth.id, i);
     const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
     if (unit === undefined || world.jobOfUnit(unit.id) !== undefined || awaitsCrane(world, unit, berth)) continue;
-    const storage = allocateUnloadStorage(world, berth, unit);
-    if (storage === undefined) {
+    const place = reserveYardSlot(world, unit, berth);
+    if (place === null) {
       missingTypeId ??= unit.typeId;
       continue;
     }
-    const slot = storage.reserve();
-    openJob(world, { unitIds: [unit.id], from: unit.location, to: { kind: 'in_storage', moduleId: storage.id, slot } });
+    openJob(world, { unitIds: [unit.id], from: unit.location, to: { kind: 'in_storage', moduleId: place.moduleId, slot: place.slot } });
   }
   if (missingTypeId !== undefined) emitNoStorage(world, berth, missingTypeId);
 }
@@ -294,6 +298,51 @@ function nextStorageStart(storages: readonly EntityId[], from: number, storageId
   return low;
 }
 
+/** Znovupoužiteľné pole kontajnerov nad jednotkou pre `blockedByLeavingUnit` (hot path; obsah sa vždy najprv vyprázdni). */
+const ABOVE: EntityId[] = [];
+
+/**
+ * Odíde kontajner `unit` zo skladu sám (nepotrebuje preklad)? Má job zo skladu, alebo je to náklad, ktorý smie na rampu (`ContractOutbound` ≠ `held`).
+ * Export booking, prekládka a prázdne čakajú na loď / výdaj, preto zo skladu sami neodídu.
+ */
+function leavesByItself(world: World, unit: CargoUnit): boolean {
+  if (hasLeavingJob(world, unit)) return true;
+  if (unit.direction === 'empty') return false;
+  const contract = unit.contractId === null ? undefined : world.contractBook.get(unit.contractId);
+  return contract === undefined || contract.outbound !== 'held';
+}
+
+/** Odíde kontajner `unit` zo skladu práve rozbehnutým jobom (job zo skladu existuje)? */
+function hasLeavingJob(world: World, unit: CargoUnit): boolean {
+  return world.jobOfUnit(unit.id)?.from.kind === 'in_storage';
+}
+
+/**
+ * Zavaľuje jednotku `unit` v bloku so stohmi kontajner, ktorý odíde sám (podľa `leaves`)? Vtedy sa jej nezakladá job / nepriraďuje vozidlo — vybrať sa dá,
+ * až keď kontajnery nad ňou odídu (inak by vozidlo zbytočne preskladalo to, čo o chvíľu odíde). Kontajnery, ktoré sami neodídu, sa presúvajú (rehandling).
+ */
+function blockedByLeavingUnit(world: World, unit: CargoUnit, leaves: (world: World, unit: CargoUnit) => boolean): boolean {
+  const block = unit.location.kind === 'in_storage' ? world.modules.get(unit.location.moduleId) : undefined;
+  if (!(block instanceof YardBlock)) return false;
+  ABOVE.length = 0;
+  block.unitsAbove(unit.id, ABOVE);
+  for (const id of ABOVE) {
+    const above = world.cargo.get(id);
+    if (above !== undefined && leaves(world, above)) return true;
+  }
+  return false;
+}
+
+/**
+ * Job zo skladu, ktorého jednotku zavaľuje kontajner s rozbehnutým jobom zo skladu (`hasLeavingJob`)? Vozidlo sa mu nepriraďuje, kým kontajnery nad ňou neodídu —
+ * len pri kontajneroch, ktoré už job majú (držia rezerváciu rampy), takže čakanie nevytvorí kruh; kontajner bez jobu sa preloží.
+ */
+function blockedJob(world: World, job: TransportJob): boolean {
+  if (job.from.kind !== 'in_storage') return false;
+  const unit = world.cargo.get(job.unitIds[0]);
+  return unit !== undefined && (blockedByLeavingUnit(world, unit, hasLeavingJob) || !unitPickable(world, unit, world.defs.logistics.rehandleSpareCells));
+}
+
 /**
  * Joby pre jednotky jednej skupiny (sklad ↑, FIFO), ktoré ešte job nemajú, k najbližšej vhodnej rampe z `ramps` pre ich
  * sklad. Plná rampa z `ramps` vypadne a hľadá sa ďalšia; sklad, pre ktorý rampa nie je, sa preskočí celý (skok na
@@ -317,7 +366,7 @@ function outboundFromGroup(world: World, group: StoredCargoGroup, ramps: Loading
     const index = i;
     i += 1;
     const unit = world.cargo.get(group.units[index]);
-    if (unit === undefined || world.jobOfUnit(unit.id) !== undefined) continue;
+    if (unit === undefined || world.jobOfUnit(unit.id) !== undefined || blockedByLeavingUnit(world, unit, leavesByItself) || !unitPickable(world, unit)) continue;
     const dock = world.dockIntake.firstRoomDock(ramp);
     ramp.reserve(dock);
     openJob(world, { unitIds: [unit.id], from: unit.location, to: { kind: 'at_ramp', rampId: ramp.id, dock } });
@@ -353,31 +402,6 @@ function outboundCancelReason(world: World, job: TransportJob): JobCancelReason 
   if (ramp === undefined || source === undefined) return undefined;
   if (!world.isRampOperational(ramp)) return 'ramp_inoperative';
   return distanceBetweenModules(world, source, ramp) === Infinity ? 'ramp_unreachable' : undefined;
-}
-
-/**
- * Uvoľní rezerváciu cieľa jobu bez vozidla (jedna na jednotku jobu, `cargoDropTarget().release`). Hák žeriava (`in_crane`, nakládka pod hákom,
- * ADR-033) nič nerezervuje — nie je čo uvoľniť. Cieľ bez `cargoDropTarget` → `JobError('invalid_input')` (svet je nekonzistentný).
- */
-function releaseTarget(world: World, job: TransportJob): void {
-  if (job.to.kind === 'in_crane') return;
-  const target = world.modules.get(job.toModuleId)?.cargoDropTarget();
-  const place = slotOf(job.to);
-  if (target === undefined || target.kind !== job.to.kind || place === null) {
-    throw new JobError('invalid_input', `${job.label}: cieľ #${String(job.toModuleId)} nemá miesto '${job.to.kind}' na uvoľnenie`);
-  }
-  for (let i = 0; i < job.unitIds.length; i++) target.release(place);
-}
-
-/**
- * Zruší job bez vozidla: uvoľní rezerváciu v cieli (`releaseTarget`), `open → cancelled`, `World.removeJob` a `JobCancelled`. Cieľ bez
- * `cargoDropTarget` → `JobError('invalid_input')` (svet je nekonzistentný), job sa nezmení.
- */
-function cancelJob(world: World, job: TransportJob, reason: JobCancelReason): void {
-  releaseTarget(world, job);
-  job.transition('cancelled');
-  world.removeJob(job.id);
-  world.events.emit({ type: 'JobCancelled', jobId: job.id, reason });
 }
 
 /** Verzie siete, od ktorých závisí zrušenie open outbound jobov (`World` ich spĺňa). */
@@ -496,7 +520,7 @@ export function assignOpenJobs(world: World, idle: Vehicle[] = []): void {
   for (let priority = 0; priority < JOB_PRIORITY_LEVELS; priority++) {
     for (const job of world.jobs.values()) {
       if (idle.length === 0) return;
-      if (job.state !== 'open' || job.priority !== priority) continue;
+      if (job.state !== 'open' || job.priority !== priority || blockedJob(world, job)) continue;
       const vehicle = pickVehicle(world, job, idle);
       if (vehicle === undefined) continue;
       assign(world, job, vehicle);

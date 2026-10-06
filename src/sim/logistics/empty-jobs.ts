@@ -18,7 +18,8 @@ import type { EntityId } from '../core/entity-id';
 import { LoadingRamp } from '../modules/loading-ramp';
 import type { Module } from '../modules/module';
 import type { World } from '../world/world';
-import { allocateReturnStorage, findAvailableEmpty } from './empty-stock';
+import { findAvailableEmpty } from './empty-stock';
+import { reserveYardSlot, unitPickable } from './yard-planner';
 
 /** Podklady jobu prázdneho: jednotka, zdroj a rezervovaný cieľ (dispatcher z toho vytvorí job `open`). */
 export interface EmptyJobSpec {
@@ -36,10 +37,9 @@ export function createEmptyIntakeJobs(world: World, openJob: (spec: EmptyJobSpec
       const unitId = world.cargo.unitAtIndex('at_ramp', ramp.id, i);
       const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
       if (unit === undefined || unit.direction !== 'empty' || world.jobOfUnit(unit.id) !== undefined || world.emptyFlow.errandOfUnit(unit.id) !== undefined) continue;
-      const storage = allocateReturnStorage(world, ramp, world.defs.cargoTypes.get(unit.typeId).category);
-      if (storage === undefined) continue;
-      const slot = storage.reserve();
-      openJob({ unitId: unit.id, from: unit.location, to: { kind: 'in_storage', moduleId: storage.id, slot } });
+      const place = reserveYardSlot(world, unit, ramp);
+      if (place === null) continue;
+      openJob({ unitId: unit.id, from: unit.location, to: { kind: 'in_storage', moduleId: place.moduleId, slot: place.slot } });
       created += 1;
     }
   }
@@ -72,7 +72,8 @@ export function createEmptyPickupJobs(world: World, openJob: (spec: EmptyJobSpec
     if (truck === undefined || !(ramp instanceof LoadingRamp) || world.dockIntake.roomAt(ramp, truck.dock) <= 0 || !world.isRampOperational(ramp)) continue;
     RAMP_TARGET[0] = ramp;
     const unit = findAvailableEmpty(world, errand.lineId, RAMP_TARGET);
-    if (unit === undefined || unit.location.kind !== 'in_storage') continue;
+    // Zavalený prázdny bez miesta na rehandling sa nevydáva (vozidlo by uviazlo, TR2-06b) — job vznikne, až keď sa blok uvoľní.
+    if (unit === undefined || unit.location.kind !== 'in_storage' || !unitPickable(world, unit)) continue;
     ramp.reserve(truck.dock);
     openJob({ unitId: unit.id, from: unit.location, to: { kind: 'at_ramp', rampId: ramp.id, dock: truck.dock } });
     world.emptyFlow.assignErrandUnit(truckId, unit.id);

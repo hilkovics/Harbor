@@ -1,16 +1,16 @@
-// Depo prázdnych a empty handler v rozhodovaní logistiky (T6C-01, ADR-034): alokátory skladu pre import a export depo
-// preskočia (prijíma len `empty`), `allocateStorage(…, 'empty')` ho nájde, empty handler nikdy nedostane job importu
+// Depo prázdnych a empty handler v rozhodovaní logistiky (T6C-01, ADR-034): plánovač skladu (`YardPlanner`, TR2-06b nahradil alokátory) pre import a export depo
+// preskočí (prijíma len `empty`), prázdny ho nájde, empty handler nikdy nedostane job importu
 // (`vehicleCarries`) a dotazy snapshotu (`depotCargoSplit`, `terminalEmptySplit`) rozdelia prázdne podľa linky a stavu.
 import { describe, expect, it } from 'vitest';
-import { EMPTY_WEIGHT_CLASS, type CargoLocation, type CargoUnitLabels } from '@sim/cargo';
+import { EMPTY_WEIGHT_CLASS, IMPORT_LABELS, type CargoLocation, type CargoUnitLabelsInput } from '@sim/cargo';
 import type { EntityId, VoyageId } from '@sim/core';
-import { allocateStorage, assignOpenJobs, chooseVehicle, vehicleCarries } from '@sim/logistics';
+import { assignOpenJobs, chooseVehicle, chooseYardSlot, vehicleCarries } from '@sim/logistics';
 import { exportLandsideReadiness } from '@sim/logistics/export-readiness';
-import { allocateExportStorage } from '@sim/logistics/export-intake';
 import { EmptyDepot, LoadingRamp, StorageModule, type BerthModule } from '@sim/modules';
 import { depotCargoSplit, terminalEmptySplit, type World } from '@sim/world';
 import { acceptedBooking, exportWorld } from '../helpers/f6a';
 import { ROOT_BERTH_ID, YARD_F, YARD_W, buyVehicle, dispatchWorld, execute, placeYard, tickEvents, unitsOnApron } from './dispatch-fixtures';
+import { exportLabels, newUnit } from './yard-fixtures';
 
 const EMPTY_HANDLER = 'empty_handler';
 const STRADDLE = 'straddle_carrier';
@@ -24,7 +24,7 @@ function placeDepot(world: World, cell: { x: number; y: number }, rotation: 0 | 
 
 const berthOf = (world: World): BerthModule => world.modules.get(ROOT_BERTH_ID) as BerthModule;
 
-const emptyLabels = (lineId: string): CargoUnitLabels => ({ direction: 'empty', voyageId: null, lineId, destinationPort: null, weightClass: EMPTY_WEIGHT_CLASS });
+const emptyLabels = (lineId: string): CargoUnitLabelsInput => ({ direction: 'empty', voyageId: null, lineId, destinationPort: null, weightClass: EMPTY_WEIGHT_CLASS });
 
 /** Prázdny kontajner linky `lineId` v sklade `storage` na `slot`, so stavom kvality `status` (cez ledger, ako ho uloží vozidlo). */
 function storeEmpty(world: World, storage: StorageModule, slot: number, lineId: string, status: 'available' | 'damaged' | 'in_repair' = 'available'): EntityId {
@@ -39,25 +39,26 @@ function storeEmpty(world: World, storage: StorageModule, slot: number, lineId: 
   return unit.id;
 }
 
-describe('allocateStorage — smer jednotky', () => {
+describe('YardPlanner — smer jednotky', () => {
+  const choiceOf = (world: World, labels: CargoUnitLabelsInput, contractId: number | null = null) => chooseYardSlot(world, newUnit(world, labels, contractId), berthOf(world))?.moduleId;
+
   it('import ide do dvora, aj keď je depo bližšie; prázdny do depa, aj keď je dvor bližšie', () => {
     const { world } = dispatchWorld();
     const depot = placeDepot(world, YARD_W); // bližšie k berthu (vzdialenosť 4)
     const farYard = placeYard(world, YARD_F); // ďalej (9)
-    expect(allocateStorage(world, berthOf(world), 'container')?.id).toBe(farYard.id);
-    expect(allocateStorage(world, berthOf(world), 'container', 'import')?.id).toBe(farYard.id);
-    expect(allocateStorage(world, berthOf(world), 'container', 'export')?.id).toBe(farYard.id);
-    expect(allocateStorage(world, berthOf(world), 'container', 'empty')?.id).toBe(depot.id);
+    expect(choiceOf(world, IMPORT_LABELS)).toBe(farYard.id);
+    expect(choiceOf(world, exportLabels(1, 'medium'), 7)).toBe(farYard.id);
+    expect(choiceOf(world, emptyLabels('northern_star'))).toBe(depot.id);
     const nearYard = placeYard(world, { x: 48, y: 18 }); // vzdialenosť 4, ale väčšie id než depo
-    expect(allocateStorage(world, berthOf(world), 'container', 'empty')?.id).toBe(depot.id);
+    expect(choiceOf(world, emptyLabels('northern_star'))).toBe(depot.id);
     expect([depot.id < nearYard.id]).toEqual([true]);
   });
 
   it('bez dvora import nemá sklad (depo ho neprijme) — dispatcher job nevytvorí a oznámi NoStorageAvailable', () => {
     const { world } = dispatchWorld();
     placeDepot(world, YARD_W);
-    expect(allocateStorage(world, berthOf(world), 'container')).toBeUndefined();
-    unitsOnApron(world, [0]);
+    const [apronUnit] = unitsOnApron(world, [0]);
+    expect(chooseYardSlot(world, world.cargo.get(apronUnit) as never, berthOf(world))).toBeNull();
     const events = world.tick();
     expect(events.filter((event) => event.type === 'JobCreated')).toEqual([]);
     expect(events.filter((event) => event.type === 'NoStorageAvailable')).toHaveLength(1);
@@ -86,14 +87,14 @@ describe('export — depo nie je cieľom ani podmienkou pripravenosti', () => {
     expect(exportLandsideReadiness(withYard, 'container')).toBe('ready');
   });
 
-  it('allocateExportStorage vyberie dvor, nie bližšie depo', () => {
+  it('plánovač pre export z rampy vyberie dvor, nie bližšie depo', () => {
     const world = exportWorld({ vehicles: [], yards: ['far'], extra: [{ atTick: 0, command: depotAt }] });
     const { exportContract } = acceptedBooking(world, { kind: 'export', booked: 4 });
     const ramp = [...world.modules.values()].find((module): module is LoadingRamp => module instanceof LoadingRamp) as LoadingRamp;
     const labels = { direction: 'export' as const, voyageId: exportContract.voyageId as VoyageId, lineId: exportContract.lineId, destinationPort: exportContract.booking.destinationPort, weightClass: 'medium' as const };
     const unit = world.cargo.create('container_teu', { kind: 'in_truck', truckId: 900 as EntityId }, exportContract.id, labels);
     world.cargo.move(unit.id, { kind: 'at_ramp', rampId: ramp.id, dock: 0 });
-    const chosen = allocateExportStorage(world, ramp, world.cargo.get(unit.id) as never, 'container');
+    const chosen = world.modules.get(chooseYardSlot(world, world.cargo.get(unit.id) as never, ramp)?.moduleId as EntityId);
     expect(chosen).toBeInstanceOf(StorageModule);
     expect(chosen instanceof EmptyDepot).toBe(false);
   });

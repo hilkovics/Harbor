@@ -20,11 +20,12 @@ function idleVehicle(): Vehicle {
 }
 
 describe('VEHICLE_TRANSITIONS', () => {
-  it('idle → to_pickup → loading → to_dropoff → unloading → idle, to_* ↔ no_path, parkovanie idle → to_depot → parked → depot_exit → to_pickup; nič iné', () => {
+  it('idle → to_pickup → loading → to_dropoff → unloading → idle, loading ↔ rehandling → idle (R2), to_* ↔ no_path, parkovanie idle → to_depot → parked → depot_exit → to_pickup; nič iné', () => {
     expect([...VEHICLE_TRANSITIONS.entries()]).toEqual([
       ['idle', ['to_pickup', 'to_depot']],
       ['to_pickup', ['loading', 'no_path']],
-      ['loading', ['to_dropoff']],
+      ['loading', ['to_dropoff', 'rehandling']],
+      ['rehandling', ['loading', 'idle']],
       ['to_dropoff', ['unloading', 'no_path']],
       ['unloading', ['idle']],
       ['no_path', ['to_pickup', 'to_dropoff']],
@@ -34,7 +35,7 @@ describe('VEHICLE_TRANSITIONS', () => {
     ]);
     let allowed = 0;
     for (const from of VEHICLE_STATES) for (const to of VEHICLE_STATES) if (isVehicleTransitionAllowed(from, to)) allowed += 1;
-    expect(allowed).toBe(15);
+    expect(allowed).toBe(18);
   });
 });
 
@@ -47,6 +48,7 @@ describe('VEHICLE_STATE_TRAITS', () => {
       ['idle', false, [], 'park', false, null],
       ['to_pickup', true, ['assigned'], 'drive', false, 'source'],
       ['loading', true, ['picking'], 'park', true, 'source'],
+      ['rehandling', true, ['picking'], 'park', true, 'source'],
       ['to_dropoff', true, ['moving'], 'drive', false, 'target'],
       ['unloading', true, ['dropping'], 'park', true, 'target'],
       ['no_path', true, ['assigned', 'moving'], 'halt', true, null],

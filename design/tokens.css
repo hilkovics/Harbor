@@ -129,4 +129,9 @@
   --sts-steel: #D64545;
   --sts-stay-red: #E5484D;
   --sts-stay-white: #ECEFF3;
+
+  /* ===== Stohy kontajnerov zhora (R2, TR2-03): režim výšky „Tieň“ ===== */
+  --stack-shadow: rgba(0,0,0,.32);      /* tieň vrchného kontajnera stohu */
+  --stack-shadow-step: 3px;             /* posun tieňa dole-vpravo na 1 poschodie (pri --cell 64 px) */
+  --stack-grid: rgba(92,98,107,.35);    /* obrys pozície (bay × rad) bloku; odtieň --module-outline */
 }

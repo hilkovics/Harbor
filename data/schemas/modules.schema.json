@@ -196,12 +196,20 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["capacityUnits", "category"],
+      "dependentRequired": {
+        "bays": ["rows", "maxTier"],
+        "rows": ["bays", "maxTier"],
+        "maxTier": ["bays", "rows"]
+      },
       "properties": {
         "capacityUnits": { "type": "integer", "minimum": 1, "description": "Kapacita skladu v CargoUnit (pre dvor: sloty × vrstvy v manifeste)." },
         "category": { "enum": ["container", "bulk", "liquid", "gas", "roro"], "description": "Kategória nákladu, ktorú sklad prijíma." },
         "internalTicks": { "type": "integer", "minimum": 0, "description": "Vnútorný čas vozidla v module; chýba = logistics.defaultInternalTicks." },
         "role": { "enum": ["empty_depot"], "description": "Rola skladu (F6c, ADR-034): `empty_depot` = depo prázdnych kontajnerov (iná trieda, prijíma len prázdne, kontrola a M&R); chýba = bežný sklad. Vyžaduje kategóriu `container` a `repairBays` — kontroluje DefRegistry a `pnpm validate:defs`." },
-        "repairBays": { "type": "integer", "minimum": 1, "description": "Počet súčasných opráv v depe prázdnych (M&R); povinné práve pri `role: empty_depot`." }
+        "repairBays": { "type": "integer", "minimum": 1, "description": "Počet súčasných opráv v depe prázdnych (M&R); povinné práve pri `role: empty_depot`." },
+        "bays": { "type": "integer", "minimum": 1, "description": "Geometria bloku (ADR-039): počet bays pozdĺž bloku (1 bay = 1 bunka = 20′; 40′ zaberie pár bays 2k, 2k+1). Všetky tri polia geometrie naraz alebo žiadne — kontroluje DefRegistry a `pnpm validate:defs`." },
+        "rows": { "type": "integer", "minimum": 1, "description": "Geometria bloku (ADR-039): počet radov naprieč blokom." },
+        "maxTier": { "type": "integer", "minimum": 1, "description": "Geometria bloku (ADR-039): najvyššia vrstva stohu (straddle blok 3, depo prázdnych 8). Kapacita v TEU je `bays × rows × maxTier` (od TR2-02; `capacityUnits` ostáva kvôli kompatibilite)." }
       }
     },
     "depotParams": {

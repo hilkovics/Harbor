@@ -117,15 +117,15 @@ describe('vzorce: tabuľky z defov', () => {
 });
 
 describe('vzorce: ponuky v poole', () => {
-  it('xpReward = volumeUnits × xpPerUnit × xpMultiplier a rewardCents sedí s tabuľkou pre niektoré celé SLA šablóny (10 seedov)', () => {
+  it('xpReward = volumeTeu × xpPerUnit × xpMultiplier a rewardCents (objem v TEU, ADR-039) sedí s tabuľkou pre niektoré celé SLA šablóny (10 seedov)', () => {
     for (let seed = 1; seed <= 10; seed++) {
       for (const offer of offeredContracts(worldWithPool(DEFS, seed))) {
         const template = DEFS.contractTemplates.get(offer.templateId);
         const slaChoices: number[] = [];
         for (let sla = template.slaDaysRange[0]; sla <= template.slaDaysRange[1]; sla++) slaChoices.push(sla);
-        const rewards = slaChoices.map((sla) => expectedRewardCents(offer.cargoTypeId, offer.volumeUnits, sla));
-        expect(rewards, `seed ${String(seed)}, ${offer.templateId}, ${String(offer.volumeUnits)} TEU`).toContain(offer.rewardCents);
-        expect(offer.xpReward).toBe(offer.volumeUnits);
+        const rewards = slaChoices.map((sla) => expectedRewardCents(offer.cargoTypeId, offer.volumeTeu, sla));
+        expect(rewards, `seed ${String(seed)}, ${offer.templateId}, ${String(offer.volumeTeu)} TEU`).toContain(offer.rewardCents);
+        expect(offer.xpReward).toBe(offer.volumeTeu);
         expect(offer.rewardCents).toBeGreaterThan(0);
         expect(Number.isSafeInteger(offer.rewardCents)).toBe(true);
       }
@@ -153,7 +153,7 @@ describe('vzorce: ponuky v poole', () => {
       expect(Number.isInteger(slaDays), `seed ${String(seed)}: SLA ${String(slaDays)} dní`).toBe(true);
       expect(slaDays).toBeGreaterThanOrEqual(template.slaDaysRange[0]);
       expect(slaDays).toBeLessThanOrEqual(template.slaDaysRange[1]);
-      expect(contract.rewardCents, `seed ${String(seed)}`).toBe(expectedRewardCents(contract.cargoTypeId, contract.volumeUnits, slaDays));
+      expect(contract.rewardCents, `seed ${String(seed)}`).toBe(expectedRewardCents(contract.cargoTypeId, contract.volumeTeu, slaDays));
     }
   });
 

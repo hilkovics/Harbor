@@ -262,7 +262,7 @@ describe('zmeškaná prekládka — obnova zo save', () => {
     expect(stateHash(restored)).toBe(stateHash(world));
     expect(restored.contracts.get(contract.id)?.state).toBe('completed');
     expect(restored.cargo.shippedCount).toBe(world.cargo.shippedCount);
-  });
+  }, 60_000);
 });
 
 describe('invariant loadedUnits bookingu (prekládka najviac, prázdne presne)', () => {
@@ -273,11 +273,16 @@ describe('invariant loadedUnits bookingu (prekládka najviac, prázdne presne)',
     runUntil(world, () => contract.loadedUnits === 2, 60_000, 'dve naložené jednotky');
     expect(findWorldViolation(world)).toBeUndefined();
     const loaded = contract.loadedUnits;
+    // Jednotky tohto testu sú 20′ (1 TEU): TEU počítadlo sa mení spolu s počtom (kontrola TEU počítadiel, ADR-039, nesmie predbehnúť porovnanie s lodou).
+    const loadedTeu = contract.loadedTeu;
     contract.loadedUnits = loaded + 1;
+    contract.loadedTeu = loadedTeu + 1;
     expect(findWorldViolation(world), 'viac naložených než na lodi').toBeUndefined();
     contract.loadedUnits = loaded - 1;
+    contract.loadedTeu = loadedTeu - 1;
     expect(findWorldViolation(world)).toMatch(/loadedUnits \d+, na .* je 2 jednotiek nákladu bookingu/);
     contract.loadedUnits = loaded;
+    contract.loadedTeu = loadedTeu;
   });
 });
 

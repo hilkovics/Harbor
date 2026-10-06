@@ -17,11 +17,16 @@
  * Voliteľné polia (`acceptedTick?`, `shipId?`, `cutoffTick?`, …) sú `undefined`, kým ich stav nevyžaduje
  * (`CONTRACT_STATE_TRAITS`); v save sú `null`. Konštruktory držia poradie polí pevné, aby dva rovnaké kontrakty
  * (originál a obnova zo save) mali rovnaký tvar aj pri `JSON.stringify`.
+ *
+ * TEU (ADR-039): `volumeUnits` je počet kontajnerov, `volumeTeu` ich súčet v TEU (20′ = 1, 40′ = 2; `volumeUnits ≤ volumeTeu ≤ 2 × volumeUnits`). Odmena, XP,
+ * pomerná výplata exportu a penalizácie sa počítajú z TEU; booking drží TEU počítadlá (`arrivedTeu`, `loadedTeu`, `lastMinuteTeu`) vedľa počítadiel kontajnerov.
+ * Veľkosť `i`-teho kontajnera kontraktu je `unitSizeFt(i, volumeUnits, volumeTeu)` — save nesie len `volumeTeu`.
  */
 import type { CargoLocation } from '../cargo/cargo-location';
-import { DEFAULT_WEIGHT_CLASS, IMPORT_LABELS, type CargoUnit, type CargoUnitLabels } from '../cargo/cargo-unit';
+import { CONTAINER_SIZES, DEFAULT_WEIGHT_CLASS, IMPORT_LABELS, teuOf, teuOfSize, type CargoUnit, type CargoUnitLabels, type ContainerSize } from '../cargo/cargo-unit';
 import type { ContractId, EntityId, VoyageId } from '../core/entity-id';
 import type { Rng } from '../core/rng';
+import { unitSizeFt } from './container-sizes';
 import { ContractError } from './contract-error';
 import {
   CONTRACT_KIND_TRAITS,
@@ -47,16 +52,21 @@ export interface ContractTerms {
   readonly templateId: string;
   /** Typ nákladu z `cargo_types.json`. */
   readonly cargoTypeId: string;
-  /** Počet jednotiek nákladu (celé ≥ 1, ≤ kapacita lode); pri exporte bookované TEU (`bookedUnits`). */
+  /** Počet jednotiek nákladu (kontajnerov; celé ≥ 1); pri exporte bookované kontajnery (`bookedUnits`). */
   readonly volumeUnits: number;
+  /**
+   * Objem v TEU (ADR-039): súčet TEU kontajnerov kontraktu, `volumeUnits ≤ volumeTeu ≤ 2 × volumeUnits`, najviac kapacita lode (v TEU). Základ odmeny, XP a penalizácií.
+   * Chýba = `volumeUnits` (všetky kontajnery 20′, náklad mimo kontajnerov); pool ho dodáva vždy.
+   */
+  readonly volumeTeu?: number;
   /** SLA v celých dňoch od príchodu lode (zo `slaDaysRange` šablóny). */
   readonly slaDays: number;
   /**
-   * Odmena v centoch (celé ≥ 1): import `⌊volume × basePricePerUnitCents × urgencyBp / 10 000⌋`; export plná odmena za
-   * celý booking `⌊booked × exportPricePerUnitCents × urgencyBp / 10 000⌋` (výplata pomerne k naloženým, ADR-032 bod 13).
+   * Odmena v centoch (celé ≥ 1): import `⌊volumeTeu × basePricePerUnitCents × urgencyBp / 10 000⌋`; export plná odmena za
+   * celý booking `⌊bookedTeu × exportPricePerUnitCents × urgencyBp / 10 000⌋` (výplata pomerne k naloženým TEU, ADR-032 bod 13, ADR-039).
    */
   readonly rewardCents: number;
-  /** XP za včasné dokončenie: `volume × xpPerUnit × xpMultiplier`. */
+  /** XP za včasné dokončenie: `volumeTeu × xpPerUnit × xpMultiplier`. */
   readonly xpReward: number;
   /** Tick vzniku ponuky. */
   readonly offeredTick: number;
@@ -93,10 +103,16 @@ export interface SerializedBooking {
   readonly arrivalPlan: readonly number[];
   /** Jednotky, ktoré prešli bránou dnu (`ExportArrived`), kumulatívne. */
   readonly arrivedUnits: number;
+  /** TEU prijatých jednotiek (`arrivedUnits` vážené `teuOf`; ADR-039). */
+  readonly arrivedTeu: number;
   /** Jednotky naložené na loď (`in_crane → on_ship`), kumulatívne. */
   readonly loadedUnits: number;
+  /** TEU naložených jednotiek (základ pomernej výplaty, ADR-039). */
+  readonly loadedTeu: number;
   /** Z naložených tie, ktoré prišli po cut-off („last minute", rolled a naložené). */
   readonly lastMinuteUnits: number;
+  /** TEU last minute jednotiek (základ penalizácie, ADR-039). */
+  readonly lastMinuteTeu: number;
   /** Jednotky, ktoré prešli bránou po cut-off (rolled), vzostupne podľa id. */
   readonly rolledUnitIds: readonly number[];
   /** Jednotky bookingu práve v VGM hold (= jednotky s `hold !== null`; kontroluje obnova). */
@@ -109,8 +125,11 @@ export const SERIALIZED_BOOKING_KEYS: readonly (keyof SerializedBooking)[] = [
   'cutoffTick',
   'arrivalPlan',
   'arrivedUnits',
+  'arrivedTeu',
   'loadedUnits',
+  'loadedTeu',
   'lastMinuteUnits',
+  'lastMinuteTeu',
   'rolledUnitIds',
   'heldUnits',
 ];
@@ -134,8 +153,10 @@ export interface SerializedTranship {
 export const SERIALIZED_TRANSHIP_KEYS: readonly (keyof SerializedTranship)[] = ['outVoyageId', 'outArrivalTick', 'outShipId', 'rescueDeadlineTick'];
 
 /** Kontrakt v save (`WorldState.contracts`, v8): druh, voyage, linka, podmienky + priebeh (`null` = nenastavené), booking a plán prekládky. */
-export interface SerializedContract extends Omit<ContractTerms, 'id' | 'voyageId'> {
+export interface SerializedContract extends Omit<ContractTerms, 'id' | 'voyageId' | 'volumeTeu'> {
   readonly id: number;
+  /** Objem v TEU (`ContractTerms.volumeTeu`; v save vždy uvedený). */
+  readonly volumeTeu: number;
   readonly kind: ContractKind;
   readonly voyageId: number;
   readonly state: ContractState;
@@ -165,6 +186,7 @@ export const SERIALIZED_CONTRACT_KEYS: readonly (keyof SerializedContract)[] = [
   'templateId',
   'cargoTypeId',
   'volumeUnits',
+  'volumeTeu',
   'slaDays',
   'rewardCents',
   'xpReward',
@@ -216,13 +238,18 @@ export interface ExportBooking {
   readonly destinationPort: string;
   /** Cut-off (po prijatí), inak `undefined`. */
   readonly cutoffTick: number | undefined;
-  /** Bookované TEU (= `volumeUnits`). */
+  /** Bookované kontajnery (= `volumeUnits`). */
   readonly bookedUnits: number;
+  /** Bookované TEU (= `volumeTeu`). */
+  readonly bookedTeu: number;
   /** Zostávajúce plánované príchody kamiónov (ticky vzostupne). */
   readonly arrivalPlan: readonly number[];
   readonly arrivedUnits: number;
+  readonly arrivedTeu: number;
   readonly loadedUnits: number;
+  readonly loadedTeu: number;
   readonly lastMinuteUnits: number;
+  readonly lastMinuteTeu: number;
   /** Počet rolled jednotiek (`rolledUnitIds.length`). */
   readonly rolledUnits: number;
   readonly rolledUnitIds: readonly EntityId[];
@@ -245,6 +272,9 @@ export interface TranshipLeg {
   /** Tick, do ktorého zmeškaná prekládka čaká na záchranu, inak `undefined`. */
   readonly rescueDeadlineTick: number | undefined;
 }
+
+/** TEU najväčšieho kontajnera (40′) — horná hranica `volumeTeu / volumeUnits`. */
+const LARGEST_CONTAINER_TEU = teuOfSize(CONTAINER_SIZES[CONTAINER_SIZES.length - 1]);
 
 const isCount = (value: number): boolean => Number.isSafeInteger(value) && value >= 0;
 const isPositive = (value: number): boolean => Number.isSafeInteger(value) && value >= 1;
@@ -271,6 +301,7 @@ export abstract class Contract {
   readonly templateId: string;
   readonly cargoTypeId: string;
   readonly volumeUnits: number;
+  readonly volumeTeu: number;
   readonly slaDays: number;
   readonly rewardCents: number;
   readonly xpReward: number;
@@ -307,6 +338,10 @@ export abstract class Contract {
     if (!isPositive(terms.voyageId)) throw new ContractError('invalid_input', `${label}: voyageId musí byť celé číslo ≥ 1, dostal ${String(terms.voyageId)}`);
     if (typeof terms.lineId !== 'string' || terms.lineId.length === 0) throw new ContractError('invalid_input', `${label}: lineId musí byť neprázdny reťazec, dostal ${String(terms.lineId)}`);
     if (!isPositive(terms.volumeUnits)) throw new ContractError('invalid_input', `${label}: volumeUnits musí byť celé číslo ≥ 1, dostal ${String(terms.volumeUnits)}`);
+    const volumeTeu = terms.volumeTeu ?? terms.volumeUnits;
+    if (!isPositive(volumeTeu) || volumeTeu < terms.volumeUnits || volumeTeu > terms.volumeUnits * LARGEST_CONTAINER_TEU) {
+      throw new ContractError('invalid_input', `${label}: volumeTeu musí byť celé číslo v rozsahu volumeUnits … ${String(LARGEST_CONTAINER_TEU)} × volumeUnits (${String(terms.volumeUnits)}), dostal ${String(volumeTeu)}`);
+    }
     if (!isPositive(terms.slaDays)) throw new ContractError('invalid_input', `${label}: slaDays musí byť celé číslo ≥ 1, dostal ${String(terms.slaDays)}`);
     if (!isPositive(terms.rewardCents)) throw new ContractError('invalid_input', `${label}: rewardCents musí byť celé číslo ≥ 1, dostal ${String(terms.rewardCents)}`);
     if (!Number.isFinite(terms.xpReward) || terms.xpReward < 0) throw new ContractError('invalid_input', `${label}: xpReward musí byť konečné číslo ≥ 0`);
@@ -319,6 +354,7 @@ export abstract class Contract {
     this.templateId = terms.templateId;
     this.cargoTypeId = terms.cargoTypeId;
     this.volumeUnits = terms.volumeUnits;
+    this.volumeTeu = volumeTeu;
     this.slaDays = terms.slaDays;
     this.rewardCents = terms.rewardCents;
     this.xpReward = terms.xpReward;
@@ -423,6 +459,11 @@ export abstract class Contract {
     return { ...IMPORT_LABELS, voyageId: this.voyageId, lineId: this.lineId };
   }
 
+  /** Veľkosť `index`-teho kontajnera kontraktu (od 0; ADR-039): deterministická funkcia `volumeUnits` a `volumeTeu`, rovnomerné rozloženie 40′. */
+  unitSizeFt(index: number): ContainerSize {
+    return unitSizeFt(index, this.volumeUnits, this.volumeTeu);
+  }
+
   /**
    * Loď, na ktorú kontrakt nakladá (od jej spawnu): export a repositioning loď voyage (`shipId`), prekládka loď B (`outShipId`); import nenakladá
    * (`undefined`). Podľa nej `openLoadBookings` nájde bookingy lode a ledger priradí naložené prázdne repositioningu (ADR-034).
@@ -476,6 +517,11 @@ export abstract class Contract {
     return 0;
   }
 
+  /** TEU jednotiek z `rolledAtClose` (základ penalizácie „rolled“, ADR-039). */
+  get rolledTeuAtClose(): number {
+    return 0;
+  }
+
   /** Má kontrakt cut-off a plán príchodov kamiónov (export)? Podľa toho pool volí rozsah príchodu lode (`exportArrivalDaysRange`, ADR-032). */
   get hasCutoff(): boolean {
     return false;
@@ -508,12 +554,13 @@ export abstract class Contract {
   }
 
   /**
-   * Brána prijala jednotku kontraktu (krok 8): export `arrivedUnits += 1` a pri `rolled` (po cut-off) zaradí jednotku do
+   * Brána prijala jednotku kontraktu (krok 8): export `arrivedUnits += 1`, `arrivedTeu += teu` a pri `rolled` (po cut-off) zaradí jednotku do
    * `rolledUnitIds`; import nič.
    */
-  recordArrival(unitId: EntityId, rolled: boolean): void {
+  recordArrival(unitId: EntityId, rolled: boolean, teu = 1): void {
     void unitId;
     void rolled;
+    void teu;
   }
 
   /** Zmena počtu zadržaných (VGM hold) jednotiek kontraktu: `+1` hold začal, `−1` sa uvoľnil; import nič. */
@@ -562,6 +609,7 @@ export abstract class Contract {
       templateId: this.templateId,
       cargoTypeId: this.cargoTypeId,
       volumeUnits: this.volumeUnits,
+      volumeTeu: this.volumeTeu,
       slaDays: this.slaDays,
       rewardCents: this.rewardCents,
       xpReward: this.xpReward,
@@ -730,8 +778,14 @@ export class ExportContract extends Contract implements ExportBooking {
   /** Zostávajúce plánované ticky spawnu kamiónov s exportom, vzostupne (krok 8 ich spotrebúva spredu). */
   arrivalPlan: number[];
   arrivedUnits = 0;
+  /** TEU prijatých jednotiek (ADR-039). */
+  arrivedTeu = 0;
   loadedUnits = 0;
+  /** TEU naložených jednotiek: základ pomernej výplaty pri uzavretí (ADR-039). */
+  loadedTeu = 0;
   lastMinuteUnits = 0;
+  /** TEU last minute jednotiek: základ penalizácie (ADR-039). */
+  lastMinuteTeu = 0;
   /** Rolled jednotky (brána po cut-off) vzostupne podľa id. */
   rolledUnitIds: EntityId[];
   /** Jednotky bookingu práve v VGM hold. */
@@ -777,13 +831,16 @@ export class ExportContract extends Contract implements ExportBooking {
     if (planned === 'absent' && booking.arrivalPlan.length > 0) throw new ContractError('invalid_input', `${label}: ponuka nemá plán príchodov`);
     if (!isAscending(booking.arrivalPlan, 0, false)) throw new ContractError('invalid_input', `${label}: plán príchodov musí byť neklesajúci zoznam celých tickov ≥ 0`);
     if (!isAscending(booking.rolledUnitIds, 1, true)) throw new ContractError('invalid_input', `${label}: rolledUnitIds musí byť ostro rastúci zoznam id ≥ 1`);
-    const counters = [booking.arrivedUnits, booking.loadedUnits, booking.lastMinuteUnits, booking.heldUnits];
+    const counters = [booking.arrivedUnits, booking.arrivedTeu, booking.loadedUnits, booking.loadedTeu, booking.lastMinuteUnits, booking.lastMinuteTeu, booking.heldUnits];
     if (!counters.every(isCount)) throw new ContractError('invalid_input', `${label}: počítadlá bookingu musia byť celé čísla ≥ 0`);
     this.cutoffTick = orUndefined(booking.cutoffTick);
     this.arrivalPlan = [...booking.arrivalPlan];
     this.arrivedUnits = booking.arrivedUnits;
+    this.arrivedTeu = booking.arrivedTeu;
     this.loadedUnits = booking.loadedUnits;
+    this.loadedTeu = booking.loadedTeu;
     this.lastMinuteUnits = booking.lastMinuteUnits;
+    this.lastMinuteTeu = booking.lastMinuteTeu;
     this.rolledUnitIds = booking.rolledUnitIds.map((id) => id as EntityId);
     this.heldUnits = booking.heldUnits;
     this.assertCounters();
@@ -819,6 +876,10 @@ export class ExportContract extends Contract implements ExportBooking {
   /** Export: prijaté a nenaložené jednotky (vrátené odosielateľovi po uzavretí sú odpočítané počítadlom `unitsExported`). */
   override get rolledAtClose(): number {
     return Math.max(0, this.arrivedUnits - this.loadedUnits);
+  }
+
+  override get rolledTeuAtClose(): number {
+    return Math.max(0, this.arrivedTeu - this.loadedTeu);
   }
 
   override get hasCutoff(): boolean {
@@ -867,6 +928,10 @@ export class ExportContract extends Contract implements ExportBooking {
     return this.volumeUnits;
   }
 
+  get bookedTeu(): number {
+    return this.volumeTeu;
+  }
+
   get rolledUnits(): number {
     return this.rolledUnitIds.length;
   }
@@ -879,8 +944,9 @@ export class ExportContract extends Contract implements ExportBooking {
    * Brána prijala jednotku bookingu (krok 8): `arrivedUnits += 1`; po cut-off (`rolled`) aj zaradenie do `rolledUnitIds`
    * (vzostupne). Udalosti (`ExportArrived`, `UnitRolled`) emituje volajúci.
    */
-  override recordArrival(unitId: EntityId, rolled: boolean): void {
+  override recordArrival(unitId: EntityId, rolled: boolean, teu = 1): void {
     this.arrivedUnits += 1;
+    this.arrivedTeu += teu;
     if (!rolled) return;
     let at = this.rolledUnitIds.length;
     while (at > 0 && this.rolledUnitIds[at - 1] > unitId) at -= 1;
@@ -895,7 +961,11 @@ export class ExportContract extends Contract implements ExportBooking {
     const settled = this.loadedUnits + this.unitsExported;
     if (to.kind === 'on_ship' && settled < this.arrivedUnits) {
       this.loadedUnits += 1;
-      if (this.rolledUnitIds.includes(unit.id)) this.lastMinuteUnits += 1;
+      this.loadedTeu += teuOf(unit);
+      if (this.rolledUnitIds.includes(unit.id)) {
+        this.lastMinuteUnits += 1;
+        this.lastMinuteTeu += teuOf(unit);
+      }
     }
     if (to.kind === 'exported' && settled < this.arrivedUnits) this.unitsExported += 1;
     // Zadržaná jednotka, ktorá opustila mapu (vrátenie odosielateľovi po uzavretí bookingu), už nie je v hold.
@@ -918,6 +988,30 @@ export class ExportContract extends Contract implements ExportBooking {
     if (this.rolledUnits > arrivedUnits) return `rolled ${String(this.rolledUnits)} > prijaté ${String(arrivedUnits)}`;
     if (heldUnits > arrivedUnits - loadedUnits - unitsExported) return `v hold ${String(heldUnits)} > jednotky na termináli`;
     if (this.state === 'completed' && loadedUnits === 0) return 'completed bez naloženej jednotky';
+    return this.teuCountersProblem();
+  }
+
+  /** O koľko TEU smie `arrivedTeu` presiahnuť `volumeTeu` (export a prekládka 0; repositioning pridelí posledný prázdny aj keď ho jeho veľkosť mierne prečnieva). */
+  protected get teuSlack(): number {
+    return 0;
+  }
+
+  /**
+   * TEU počítadlá: každá z dvojíc `(units, teu)` spĺňa `units ≤ teu ≤ 2 × units`; `loadedTeu ≤ arrivedTeu ≤ volumeTeu`, `lastMinuteTeu ≤ loadedTeu`.
+   * Spoločné pre export a z neho odvodené druhy.
+   */
+  protected teuCountersProblem(): string | undefined {
+    const pairs: readonly (readonly [string, number, number])[] = [
+      ['prijaté', this.arrivedUnits, this.arrivedTeu],
+      ['naložené', this.loadedUnits, this.loadedTeu],
+      ['last minute', this.lastMinuteUnits, this.lastMinuteTeu],
+    ];
+    for (const [what, units, teu] of pairs) {
+      if (teu < units || teu > units * LARGEST_CONTAINER_TEU) return `${what}: ${String(teu)} TEU nezodpovedá ${String(units)} jednotkám (1 … ${String(LARGEST_CONTAINER_TEU)} TEU na jednotku)`;
+    }
+    if (this.loadedTeu > this.arrivedTeu || this.arrivedTeu > this.volumeTeu + this.teuSlack || this.lastMinuteTeu > this.loadedTeu) {
+      return `TEU počítadlá neplatia: naložené ${String(this.loadedTeu)} ≤ prijaté ${String(this.arrivedTeu)} ≤ bookované ${String(this.volumeTeu)}, last minute ${String(this.lastMinuteTeu)} ≤ naložené`;
+    }
     return undefined;
   }
 
@@ -927,8 +1021,11 @@ export class ExportContract extends Contract implements ExportBooking {
       cutoffTick: orNull(this.cutoffTick),
       arrivalPlan: [...this.arrivalPlan],
       arrivedUnits: this.arrivedUnits,
+      arrivedTeu: this.arrivedTeu,
       loadedUnits: this.loadedUnits,
+      loadedTeu: this.loadedTeu,
       lastMinuteUnits: this.lastMinuteUnits,
+      lastMinuteTeu: this.lastMinuteTeu,
       rolledUnitIds: [...this.rolledUnitIds],
       heldUnits: this.heldUnits,
     };
@@ -972,19 +1069,27 @@ export class EmptyRepositioningContract extends ExportContract {
 
   /** Pridelená prázdna jednotka sa počíta ako „prijatá“ (`arrivedUnits`): z nej loď vie, koľko prázdnych ešte čaká na nakládku. */
   override assignLoad(unit: CargoUnit): void {
-    void unit;
     this.arrivedUnits += 1;
+    this.arrivedTeu += teuOf(unit);
   }
 
   /** Zrušený job nakládky pridelenej prázdnej jednotky: pridelenie sa vráti (`arrivedUnits − 1`, nie pod 0). */
   override releaseLoad(unit: CargoUnit): void {
-    void unit;
     this.arrivedUnits = Math.max(0, this.arrivedUnits - 1);
+    this.arrivedTeu = Math.max(0, this.arrivedTeu - teuOf(unit));
   }
 
-  /** Dispatcher pridelí nakládke najviac toľko prázdnych, koľko je bookovaných (`volumeUnits − arrivedUnits`). */
+  /**
+   * Repositioning je v TEU, nie v počte kontajnerov (ADR-039): prázdne berie depo s veľkosťou, akú má, preto `volumeUnits = volumeTeu` a dispatcher
+   * pridelí nakládke prázdne, kým pridelené TEU nedosiahnu bookované (`volumeTeu − arrivedTeu`; každý prázdny je aspoň 1 TEU, takže je to aj horná hranica počtu).
+   */
   override get loadsToAssign(): number {
-    return Math.max(0, this.volumeUnits - this.arrivedUnits);
+    return Math.max(0, this.volumeTeu - this.arrivedTeu);
+  }
+
+  /** Posledný pridelený prázdny smie bookované TEU presiahnuť najviac o `LARGEST_CONTAINER_TEU − 1` (40′ pri 1 zostávajúcom TEU). */
+  protected override get teuSlack(): number {
+    return LARGEST_CONTAINER_TEU - 1;
   }
 
   override get loadsAfterFullUnits(): boolean {
@@ -1130,9 +1235,17 @@ export class TranshipContract extends ExportContract implements TranshipLeg {
     this.rescueDeadlineTick = undefined;
   }
 
+  /**
+   * TEU jednotiek prekládky, ktoré neboli naložené na loď B (`volumeTeu − loadedTeu`): základ penalizácie za zmeškanú loď B (ADR-039). Jednotky „predané“
+   * odchádzajú až po uzavretí kontraktu, takže `unitsExported` sa do tohto času nepočíta.
+   */
+  get remainingTeu(): number {
+    return this.volumeTeu - this.loadedTeu;
+  }
+
   /** Jednotky prekládky: smer `tranship`, voyage lode A (kontraktu), linka a cieľový prístav lode B. */
   override get spawnLabels(): CargoUnitLabels {
-    return { direction: 'tranship', voyageId: this.voyageId, lineId: this.lineId, destinationPort: this.destinationPort, weightClass: DEFAULT_WEIGHT_CLASS };
+    return { ...IMPORT_LABELS, direction: 'tranship', voyageId: this.voyageId, lineId: this.lineId, destinationPort: this.destinationPort, weightClass: DEFAULT_WEIGHT_CLASS };
   }
 
   /** Náklad na palube lode A patrí kontraktu v `ship_en_route` a `unloading` (ako import). */
@@ -1163,6 +1276,7 @@ export class TranshipContract extends ExportContract implements TranshipLeg {
     if (unit.location.kind === 'on_ship' && to.kind !== 'shipped' && this.unitsUnloaded < this.volumeUnits) {
       this.unitsUnloaded += 1;
       this.arrivedUnits += 1;
+      this.arrivedTeu += teuOf(unit);
     }
     super.cargoMoved(unit, to);
   }
@@ -1182,7 +1296,7 @@ export class TranshipContract extends ExportContract implements TranshipLeg {
     }
     if (this.state === 'exporting' && unitsUnloaded !== volumeUnits) return 'exporting bez vyloženého celého objemu';
     if (this.state === 'completed' && loadedUnits === 0) return 'completed bez naloženej jednotky';
-    return undefined;
+    return this.teuCountersProblem();
   }
 
   protected override transhipState(): SerializedTranship {

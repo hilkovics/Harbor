@@ -54,9 +54,9 @@ describe('repositioning prázdnych — nakládka z depa na loď', () => {
     const completed = eventsOf(events, 'ContractCompleted');
     expect(completed).toEqual([expect.objectContaining({ contractId: contract.id, rewardCents: 1_000_000, penaltiesCents: 0, onTime: true })]);
     expect(world.cashCents).toBeGreaterThan(cashBefore);
-    // pridelenie berie najmenšie id; zvyšné dve ostali v sklade
-    expect(ids.slice(0, 4).every((unit) => world.cargo.get(unit) === undefined)).toBe(true);
-    expect(ids.slice(4).every((unit) => world.cargo.get(unit)?.location.kind === 'in_storage')).toBe(true);
+    // pridelenie berie kontajnery navrchu stohu (ADR-039: bez rehandlingu); zvyšné dve (spodné) ostali v sklade
+    expect(ids.slice(2).every((unit) => world.cargo.get(unit) === undefined)).toBe(true);
+    expect(ids.slice(0, 2).every((unit) => world.cargo.get(unit)?.location.kind === 'in_storage')).toBe(true);
     expect(eventsOf(events, 'ExportShipped')).toEqual([expect.objectContaining({ units: 4 })]);
   });
 

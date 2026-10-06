@@ -25,7 +25,7 @@ import {
   type SerializedBooking,
   type SerializedContract,
 } from '@sim/contracts';
-import type { CargoLocation, CargoUnit } from '@sim/cargo';
+import { DEFAULT_CONTAINER_LABELS, type CargoLocation, type CargoUnit } from '@sim/cargo';
 import type { ContractId, EntityId, VoyageId } from '@sim/core';
 import type { SimEvent } from '@sim/events';
 
@@ -47,6 +47,7 @@ const EXPORT_TERMS: ExportContractTerms = { ...IMPORT_TERMS, id: 4 as ContractId
 
 const SHIP = 40 as EntityId;
 const unit = (unitId: number, location: CargoLocation): CargoUnit => ({
+  ...DEFAULT_CONTAINER_LABELS,
   id: unitId as EntityId,
   typeId: 'container_teu',
   contractId: EXPORT_TERMS.id,
@@ -86,8 +87,11 @@ function savedExport(state: ContractState, booking: Partial<SerializedBooking> =
       cutoffTick: plan ? 15_680 : null,
       arrivalPlan: state === 'accepted' ? [3_000, 9_000] : [],
       arrivedUnits: plan ? 4 : 0,
+      arrivedTeu: plan ? 4 : 0,
       loadedUnits: state === 'completed' || state === 'exporting' ? 2 : 0,
+      loadedTeu: state === 'completed' || state === 'exporting' ? 2 : 0,
       lastMinuteUnits: 0,
+      lastMinuteTeu: 0,
       rolledUnitIds: [],
       heldUnits: 0,
       ...booking,
@@ -151,14 +155,14 @@ describe('ExportContract', () => {
     expect(Object.keys(state)).toEqual([...SERIALIZED_CONTRACT_KEYS]);
     expect([state.kind, state.voyageId]).toEqual(['export', 2]);
     expect(Object.keys(state.booking ?? {})).toEqual([...SERIALIZED_BOOKING_KEYS]);
-    expect(state.booking).toEqual({ destinationPort: 'Rotterdam', cutoffTick: null, arrivalPlan: [], arrivedUnits: 0, loadedUnits: 0, lastMinuteUnits: 0, rolledUnitIds: [], heldUnits: 0 });
+    expect(state.booking).toEqual({ destinationPort: 'Rotterdam', cutoffTick: null, arrivalPlan: [], arrivedUnits: 0, arrivedTeu: 0, loadedUnits: 0, loadedTeu: 0, lastMinuteUnits: 0, lastMinuteTeu: 0, rolledUnitIds: [], heldUnits: 0 });
     const imported = new ImportContract(IMPORT_TERMS).toState();
     expect([imported.kind, imported.voyageId, imported.booking]).toEqual(['import', 2, null]);
   });
 
   it.each(CONTRACT_STATES.filter((state) => state !== 'expired' && state !== 'unloading'))('fromState obnoví booking v stave %s rovnako (aj JSON tvar inštancie)', (state) => {
     const arrived = CONTRACT_STATE_TRAITS[state].plan === 'required';
-    const saved = savedExport(state, { rolledUnitIds: arrived ? [11, 14] : [], lastMinuteUnits: state === 'completed' || state === 'exporting' ? 1 : 0 });
+    const saved = savedExport(state, { rolledUnitIds: arrived ? [11, 14] : [], lastMinuteUnits: state === 'completed' || state === 'exporting' ? 1 : 0, lastMinuteTeu: state === 'completed' || state === 'exporting' ? 1 : 0 });
     const restored = Contract.fromState(saved);
     expect(restored).toBeInstanceOf(ExportContract);
     expect(restored.toState()).toEqual(saved);
@@ -176,12 +180,12 @@ describe('ExportContract', () => {
     ['cut-off po príchode lode', savedExport('accepted', { cutoffTick: 20_000 })],
     ['plán príchodov klesá', savedExport('accepted', { arrivalPlan: [9_000, 3_000] })],
     ['rolled id neusporiadané', savedExport('exporting', { rolledUnitIds: [14, 11] })],
-    ['prijaté + plán > booked', savedExport('accepted', { arrivedUnits: 5 })],
-    ['naložené + vrátené > prijaté', savedExport('exporting', { loadedUnits: 5 })],
-    ['last minute > naložené', savedExport('exporting', { lastMinuteUnits: 3, rolledUnitIds: [1, 2, 3] })],
-    ['last minute bez rolled', savedExport('exporting', { lastMinuteUnits: 1 })],
+    ['prijaté + plán > booked', savedExport('accepted', { arrivedUnits: 5, arrivedTeu: 5 })],
+    ['naložené + vrátené > prijaté', savedExport('exporting', { loadedUnits: 5, loadedTeu: 5 })],
+    ['last minute > naložené', savedExport('exporting', { lastMinuteUnits: 3, lastMinuteTeu: 3, rolledUnitIds: [1, 2, 3] })],
+    ['last minute bez rolled', savedExport('exporting', { lastMinuteUnits: 1, lastMinuteTeu: 1 })],
     ['hold > jednotky na termináli', savedExport('exporting', { heldUnits: 3 })],
-    ['completed bez nakládky', savedExport('completed', { loadedUnits: 0 })],
+    ['completed bez nakládky', savedExport('completed', { loadedUnits: 0, loadedTeu: 0 })],
     ['unitsUnloaded pri exporte', savedExport('exporting', {}, { unitsUnloaded: 1 })],
   ])('fromState odmietne nekonzistentný booking: %s', (_label, state) => {
     expect(() => Contract.fromState(state)).toThrow(ContractError);

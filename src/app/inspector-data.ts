@@ -28,7 +28,7 @@
 import { BuyVehicleCommand, RemoveModuleCommand, SellVehicleCommand } from '@sim/commands';
 import type { EntityId } from '@sim/core';
 import type { DefRegistry, VehicleDef } from '@sim/defs';
-import { BerthModule, CRANE_CYCLE_TRAITS, CraneModule, EmptyDepot, LoadingRamp, StorageModule, TruckGate, VehicleDepot, WaitingArea, type Module } from '@sim/modules';
+import { BerthModule, CRANE_CYCLE_TRAITS, CraneModule, EmptyDepot, LoadingRamp, StorageModule, TruckGate, VehicleDepot, WaitingArea, YardBlock, type Module } from '@sim/modules';
 import type { Ship } from '@sim/ships';
 import type { VehicleState } from '@sim/vehicles';
 import { depotCargoSplit, hinterlandQueue, shipCargoSplit, storageCargoSplit, type World } from '@sim/world';
@@ -66,6 +66,7 @@ export const DEPOT_VEHICLE_STATE: Readonly<Record<VehicleState, DepotVehicleStat
   idle: 'idle',
   to_pickup: 'busy',
   loading: 'busy',
+  rehandling: 'busy',
   to_dropoff: 'busy',
   unloading: 'busy',
   no_path: 'no_path',
@@ -77,6 +78,7 @@ export const DEPOT_VEHICLE_STATE: Readonly<Record<VehicleState, DepotVehicleStat
 
 /** Detailný stav FSM vozidla na zobrazenie v depo vozidiel inspektore; bez textu → abstraktný stav. */
 export const VEHICLE_DETAILED_STATE: Readonly<Partial<Record<VehicleState, string>>> = Object.freeze({
+  rehandling: 'Prekladá kontajnery',
   to_depot: 'Ide do depa',
   parked: 'Parkuje v depe',
   depot_exit: 'Odchádza z depa',
@@ -178,9 +180,34 @@ export function emptyDepotData(world: World, depot: EmptyDepot): EmptyDepotData 
   };
 }
 
-function storageFields(bridge: InspectorBridge, storage: StorageModule): Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'storage' | 'emptyDepot'> {
+/** Štítok kontajnera pre bay view (veľkosť, typ, linka, smer). */
+type StackLook = { sizeFt: 20 | 40; containerType: string; lineId: string | null; direction: string };
+
+/** Štítok jednotky podľa id (`null`, ak jednotka neexistuje). */
+function stackLook(world: World, unitId: EntityId | null): StackLook | null {
+  if (unitId === null) return null;
+  const unit = world.cargo.get(unitId);
+  return unit === undefined ? null : { sizeFt: unit.sizeFt as 20 | 40, containerType: unit.containerType, lineId: unit.lineId, direction: unit.direction };
+}
+
+/** Stohy bloku skladu (R2): všetky pozície `(bay, row)` s výškou, vrchným kontajnerom a štítkami po poschodiach (0 = spodné). */
+function yardBlockStacks(world: World, yard: YardBlock): NonNullable<ModuleInspectorData['yardBlock']>['stacks'] {
+  const stacks: Array<{ bay: number; row: number; height: number; top: StackLook | null; tiers: (StackLook | null)[] }> = [];
+  const { bays, rows } = yard.geometry;
+  for (let row = 0; row < rows; row++) {
+    for (let bay = 0; bay < bays; bay++) {
+      const height = yard.stackHeight(bay, row);
+      const tiers: (StackLook | null)[] = [];
+      for (let tier = 0; tier < height; tier++) tiers.push(stackLook(world, yard.unitInCell(bay, row, tier)));
+      stacks.push({ bay, row, height, top: stackLook(world, yard.topUnit(bay, row)), tiers });
+    }
+  }
+  return stacks;
+}
+
+function storageFields(bridge: InspectorBridge, storage: StorageModule): Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'storage' | 'emptyDepot' | 'yardBlock'> {
   const unit = bridge.world.defs.cargoTypes.items.find((type) => type.category === storage.category);
-  return {
+  const baseFields: Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'storage' | 'emptyDepot' | 'yardBlock'> = {
     stateLabel: MODULE_STATE_ACTIVE,
     ok: true,
     storage: {
@@ -194,6 +221,19 @@ function storageFields(bridge: InspectorBridge, storage: StorageModule): Pick<Mo
     },
     ...(storage instanceof EmptyDepot ? { emptyDepot: emptyDepotData(bridge.world, storage) } : {}),
   };
+
+  if (storage instanceof YardBlock) {
+    return {
+      ...baseFields,
+      yardBlock: {
+        geometry: storage.geometry,
+        capacityTeu: storage.capacityTeu,
+        usedTeu: storage.usedTeu,
+        stacks: yardBlockStacks(bridge.world, storage),
+      },
+    };
+  }
+  return baseFields;
 }
 
 /** Riadok vozidla v zozname depa; refundácia z `validate(SellVehicle)` (záporná cena = príjem). */

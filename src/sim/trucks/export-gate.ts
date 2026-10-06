@@ -14,7 +14,7 @@
  * z vnútrozemia) — brána ho neregistruje na kontrakt (nemá ho), len ohlási `EmptyReturned`. Smer jednotky vyberá tabuľka
  * `DELIVERY_REGISTRARS` (jednotka iného smeru kamión s misiou `delivery` nevezie — riadky držia úplnosť tabuľky).
  */
-import type { CargoDirection } from '../cargo/cargo-unit';
+import { teuOf, type CargoDirection } from '../cargo/cargo-unit';
 import type { World } from '../world/world';
 import type { Truck } from './truck';
 import { TRUCK_STATE_TRAITS, type TruckMission } from './truck-fsm';
@@ -29,7 +29,7 @@ function registerExport(world: World, truck: Truck): void {
   const { tick, ticksPerHour } = world.clock;
   const cutoff = contract.booking?.cutoffTick;
   const rolled = cutoff !== undefined && tick > cutoff;
-  contract.recordArrival(unit.id, rolled);
+  contract.recordArrival(unit.id, rolled, teuOf(unit));
   world.events.emit({ type: 'ExportArrived', contractId: contract.id, unitId: unit.id, truckId: truck.id, gateId: truck.gateId });
   if (rolled) world.events.emit({ type: 'UnitRolled', contractId: contract.id, unitId: unit.id });
   if (!world.rng.chance(world.defs.logistics.exportFlow.vgmMissingChance)) return;

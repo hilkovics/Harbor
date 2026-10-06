@@ -11,8 +11,13 @@
  * Od F6c (ADR-034) pribudla **linka** (`lineId` — vlastník kontajnera, štítok z vzniku), smery `tranship` (prekládka
  * loď → loď) a `empty` (prázdny kontajner linky) a **stav kvality** `status` + `repairUntilTick` (kontrola a M&R prázdneho
  * v depe; mení ich len `CargoLedger.setStatus`).
+ *
+ * Od R2 (ADR-039) nesie jednotka štítky kontajnera: `sizeFt` (20′ / 40′), `containerType` (id z `container_types.json`) a `oog`
+ * (nadrozmer); `teuOf(unit)` je 1 (20′) alebo 2 (40′). Štítky nemení nikto po vzniku (ako `direction`, `lineId`).
  */
 import type { ContractId, EntityId, VoyageId } from '../core/entity-id';
+import type { Catalog } from '../defs/catalog';
+import type { ContainerTypeDef } from '../defs/types';
 import type { CargoLocation } from './cargo-location';
 
 /**
@@ -28,6 +33,19 @@ export type CargoDirection = (typeof CARGO_DIRECTIONS)[number];
  * (`Contract.tranship.outShipId`, `isOutboundOnShip`), nie smer; počíta ju `CargoLedger.countTranshipAt`.
  */
 export const OUTBOUND_BY_DIRECTION: { readonly [D in CargoDirection]: boolean } = Object.freeze({ import: false, export: true, tranship: false, empty: true });
+
+/** Veľkosti kontajnera v stopách (ADR-039): 20′ = 1 TEU, 40′ = 2 TEU. */
+export const CONTAINER_SIZES = [20, 40] as const;
+export type ContainerSize = (typeof CONTAINER_SIZES)[number];
+
+/** Stôp na 1 TEU (definícia jednotky: dvadsaťstopový ekvivalent) — `teuOf` = `sizeFt / FEET_PER_TEU`. */
+export const FEET_PER_TEU = 20;
+
+/** Predvolená veľkosť jednotky bez losu (ladiaca loď, scenáre F2–F4, jednotky iných kategórií než kontajner): 20′ = 1 TEU. */
+export const DEFAULT_SIZE_FT: ContainerSize = 20;
+
+/** Predvolený typ kontajnera (`container_types.json`; R2 pozná len `dry`). */
+export const DEFAULT_CONTAINER_TYPE = 'dry';
 
 /** Hmotnostné triedy kontajnera (stowage plán, ADR-032 bod 8). */
 export const WEIGHT_CLASSES = ['light', 'medium', 'heavy'] as const;
@@ -80,10 +98,32 @@ export interface CargoUnitLabels {
   readonly destinationPort: string | null;
   /** Hmotnostná trieda (export: `Rng` pri vzniku podľa `logistics.exportFlow.weightClassShares`). */
   readonly weightClass: WeightClass;
+  /** Veľkosť kontajnera (ADR-039): 20′ = 1 TEU, 40′ = 2 TEU; z kontraktu (`sizeMix`), prázdny dedí veľkosť importu. */
+  readonly sizeFt: ContainerSize;
+  /** Typ kontajnera (id z `container_types.json`; R2 len `dry`). Existenciu typu a povolenú veľkosť overuje obnova save a `CargoLedger.create`. */
+  readonly containerType: string;
+  /** Nadrozmerný náklad (len `open_top` / `flat_rack`, R5); v R2 vždy `false`. */
+  readonly oog: boolean;
 }
 
+/** Štítky kontajnera (ADR-039) — voliteľné vo vstupe `CargoLedger.create` (chýbajúce dostanú `DEFAULT_*`), povinné na uloženej jednotke. */
+export type ContainerLabels = Pick<CargoUnitLabels, 'sizeFt' | 'containerType' | 'oog'>;
+
+/** Vstup štítkov pre `CargoLedger.create`: štítky z vzniku, štítky kontajnera voliteľné (predvolene 20′, `dry`, bez nadrozmeru). */
+export type CargoUnitLabelsInput = Omit<CargoUnitLabels, keyof ContainerLabels> & Partial<ContainerLabels>;
+
+/** Predvolené štítky kontajnera: 20′, `dry`, bez nadrozmeru. */
+export const DEFAULT_CONTAINER_LABELS: ContainerLabels = Object.freeze({ sizeFt: DEFAULT_SIZE_FT, containerType: DEFAULT_CONTAINER_TYPE, oog: false });
+
 /** Štítky import jednotky bez kontraktu (ladiaca loď, scenáre F2–F4) — predvolené v `CargoLedger.create`. */
-export const IMPORT_LABELS: CargoUnitLabels = Object.freeze({ direction: 'import', voyageId: null, lineId: null, destinationPort: null, weightClass: DEFAULT_WEIGHT_CLASS });
+export const IMPORT_LABELS: CargoUnitLabels = Object.freeze({
+  direction: 'import',
+  voyageId: null,
+  lineId: null,
+  destinationPort: null,
+  weightClass: DEFAULT_WEIGHT_CLASS,
+  ...DEFAULT_CONTAINER_LABELS,
+});
 
 export interface CargoUnit extends CargoUnitLabels {
   /** Id z `world.ids` (spoločný alokátor všetkých entít). */
@@ -102,6 +142,21 @@ export interface CargoUnit extends CargoUnitLabels {
   readonly quantity: number;
   /** Jediná poloha jednotky; mení ju výlučne `CargoLedger.move` (pravidlo 2). */
   readonly location: CargoLocation;
+}
+
+/** TEU jednotky: 1 (20′) alebo 2 (40′) — `sizeFt / FEET_PER_TEU` (ADR-039). */
+export function teuOf(unit: Pick<CargoUnit, 'sizeFt'>): number {
+  return unit.sizeFt / FEET_PER_TEU;
+}
+
+/** TEU kontajnera danej veľkosti (`teuOf` bez jednotky). */
+export function teuOfSize(sizeFt: ContainerSize): number {
+  return sizeFt / FEET_PER_TEU;
+}
+
+/** Je hodnota veľkosť kontajnera (20 alebo 40)? */
+export function isContainerSize(value: unknown): value is ContainerSize {
+  return (CONTAINER_SIZES as readonly unknown[]).includes(value);
 }
 
 /** Je hodnota smer jednotky? */
@@ -158,9 +213,14 @@ function presenceProblem(presence: LabelPresence, isNull: boolean, what: string,
  * ledger kontrakty nepozná. Vracia `{ field, problem }` s názvom poľa jednotky.
  */
 export function cargoLabelsProblem(labels: Readonly<Record<keyof CargoUnitLabels, unknown>>, contractId: unknown): { readonly field: keyof CargoUnitLabels; readonly problem: string } | undefined {
-  const { direction, voyageId, lineId, destinationPort, weightClass } = labels;
+  const { direction, voyageId, lineId, destinationPort, weightClass, sizeFt, containerType, oog } = labels;
   if (!isCargoDirection(direction)) return { field: 'direction', problem: `smer musí byť jeden z: ${CARGO_DIRECTIONS.join(', ')}, dostal ${String(direction)}` };
   if (!isWeightClass(weightClass)) return { field: 'weightClass', problem: `hmotnostná trieda musí byť jedna z: ${WEIGHT_CLASSES.join(', ')}, dostal ${String(weightClass)}` };
+  if (!isContainerSize(sizeFt)) return { field: 'sizeFt', problem: `veľkosť musí byť jedna z: ${CONTAINER_SIZES.join(', ')}, dostal ${String(sizeFt)}` };
+  if (typeof containerType !== 'string' || containerType.length === 0) {
+    return { field: 'containerType', problem: `musí byť neprázdny reťazec (id z container_types.json), dostal ${String(containerType)}` };
+  }
+  if (typeof oog !== 'boolean') return { field: 'oog', problem: `musí byť boolean, dostal ${String(oog)}` };
   if (voyageId !== null && !isIdValue(voyageId)) return { field: 'voyageId', problem: `musí byť null alebo celé číslo ≥ 1, dostal ${String(voyageId)}` };
   if (lineId !== null && (typeof lineId !== 'string' || lineId.length === 0)) {
     return { field: 'lineId', problem: `musí byť null alebo neprázdny reťazec, dostal ${String(lineId)}` };
@@ -177,6 +237,25 @@ export function cargoLabelsProblem(labels: Readonly<Record<keyof CargoUnitLabels
   if (line !== undefined) return { field: 'lineId', problem: line };
   const port = presenceProblem(rule.port, destinationPort === null, 'cieľový prístav', direction);
   if (port !== undefined) return { field: 'destinationPort', problem: port };
+  return undefined;
+}
+
+/**
+ * Súlad štítkov kontajnera s defmi (ADR-039) — `undefined` = v poriadku: `containerType` existuje v `container_types.json`, `sizeFt` patrí medzi
+ * jeho povolené veľkosti a `oog` smie byť `true` len pri type s `oogChance > 0`. Štrukturálnu správnosť štítkov (typy hodnôt) overuje `cargoLabelsProblem`.
+ */
+export function containerLabelsDefProblem(
+  labels: Pick<CargoUnitLabels, 'sizeFt' | 'containerType' | 'oog'>,
+  containerTypes: Catalog<Readonly<ContainerTypeDef>>,
+): { readonly field: keyof CargoUnitLabels; readonly problem: string } | undefined {
+  if (!containerTypes.has(labels.containerType)) {
+    return { field: 'containerType', problem: `neznámy typ kontajnera '${labels.containerType}' (známe: ${containerTypes.items.map((item) => item.id).join(', ')})` };
+  }
+  const def = containerTypes.get(labels.containerType);
+  if (!def.sizes.includes(labels.sizeFt)) {
+    return { field: 'sizeFt', problem: `typ '${def.id}' pozná veľkosti ${def.sizes.join(', ')}, dostal ${String(labels.sizeFt)}` };
+  }
+  if (labels.oog && !(def.oogChance > 0)) return { field: 'oog', problem: `typ '${def.id}' nemá nadrozmer (oogChance 0)` };
   return undefined;
 }
 

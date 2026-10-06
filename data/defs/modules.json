@@ -46,7 +46,7 @@
       "connectors": [{ "x": 1, "y": 3, "side": "s", "type": "road" }],
       "costCents": 15000000,
       "maintenancePerDayCents": 30000,
-      "params": { "capacityUnits": 64, "category": "container" }
+      "params": { "capacityUnits": 64, "category": "container", "bays": 4, "rows": 4, "maxTier": 3 }
     },
     {
       "id": "vehicle_depot",
@@ -125,7 +125,7 @@
       "connectors": [{ "x": 1, "y": 3, "side": "s", "type": "road" }],
       "costCents": 22000000,
       "maintenancePerDayCents": 40000,
-      "params": { "capacityUnits": 96, "category": "container", "role": "empty_depot", "repairBays": 2 }
+      "params": { "capacityUnits": 96, "category": "container", "role": "empty_depot", "repairBays": 2, "bays": 4, "rows": 3, "maxTier": 8 }
     }
   ]
 }

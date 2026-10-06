@@ -260,7 +260,7 @@ describe('scenár export_inbound: kamióny s exportom a VGM hold v skutočnom si
   beforeAll(() => {
     // Krok 1 tick, kým je niektorý kamión pred dockom alebo v ňom (to_dock → unloading → výjazd), inak 10 ticků; do konca VGM hold.
     app.advanceTo(
-      20_000,
+      30_000,
       (a) => ([...a.world.trucks.values()].some((truck) => truck.state === 'to_dock' || truck.state === 'unloading') ? 1 : 10),
       () => {
         sampleTrucks();
@@ -285,7 +285,9 @@ describe('scenár export_inbound: kamióny s exportom a VGM hold v skutočnom si
     expect(seen.heldSamples).toBeGreaterThan(0);
     expect(seen.heldRamp).toBeGreaterThan(0);
     expect(seen.heldStorage).toBeGreaterThan(0);
-    expect(seen.maxHeld).toBe(1);
+    // dve jednotky bookingu #10 s chýbajúcim VGM (Rng); naraz zadržané najviac dve
+    expect(seen.maxHeld).toBeGreaterThanOrEqual(1);
+    expect(seen.maxHeld).toBeLessThanOrEqual(2);
     expect(app.world.holdIndex.size).toBe(0);
     expect(app.bridge.snapshot().modules.filter((vm) => vm.held !== undefined)).toEqual([]);
   });

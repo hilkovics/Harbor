@@ -73,9 +73,15 @@
           "description": "Rozsah [min, max] bookovaných TEU exportu roundtripu; max sa musí zmestiť do najmenšej lode zo shipClassIds; roundtrip (povinné) a empty_repositioning (voliteľné: prítomnosť = skupina s export bookingom jednej voyage)."
         },
         "cargoTypeId": { "$ref": "#/$defs/id" },
+        "sizeMix": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Podiel 40′ kontajnerov v kontrakte šablóny (ADR-039; chýba = 0, všetky 20′). Zmes veľkostí losuje `Rng` pri vzniku ponuky; objem `volumeUnitsRange` ostáva v TEU, počet kontajnerov je z neho odvodený. Nepoužije sa pri hlavnom kontrakte `empty_repositioning` (prázdne berie depo s veľkosťou, akú má)."
+        },
         "volumeUnitsRange": {
           "$ref": "#/$defs/intRange",
-          "description": "Rozsah [min, max] objemu kontraktu v jednotkách; max sa musí zmestiť do najmenšej lode zo shipClassIds."
+          "description": "Rozsah [min, max] objemu kontraktu v jednotkách typu nákladu (kontajnery: TEU, ADR-039); max sa musí zmestiť do najmenšej lode zo shipClassIds (kapacita lode je v TEU)."
         },
         "slaDaysRange": {
           "$ref": "#/$defs/intRange",

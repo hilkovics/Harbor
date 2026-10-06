@@ -19,6 +19,9 @@
  *   kapacitu skladov (mierka až 1,2 × hint); dolnú hranicu šablóny poistka neporuší (šablóna je kontrakt s hráčom,
  *   nad kapacitu sa náklad vyvezie počas vykládky — `unloading.outbound = 'sla'`). Poistka nemení spotrebu `Rng`.
  *   Bez vhodnej šablóny ponuka nevznikne a `Rng` sa nespotrebuje.
+ * - Objem je v **TEU** (ADR-039; kapacita lode `capacityUnits` je v TEU): po výbere objemu `drawContainerCount` losuje zmes veľkostí podľa `sizeMix` šablóny
+ *   (jeden `chance` na kontajner; bez `sizeMix` žiadna spotreba `Rng`) — kontrakt dostane `volumeTeu` (cieľ) a `volumeUnits` (počet kontajnerov). Odmena a XP idú z TEU.
+ *   Hlavný kontrakt `empty_repositioning` zmes nepoužije (`volumeUnits = volumeTeu`, prázdne berie depo s veľkosťou, akú má).
  */
 import type { ContractId, VoyageId } from '../core/entity-id';
 import type { Rng } from '../core/rng';
@@ -27,6 +30,7 @@ import { DEFAULT_TEMPLATE_KIND, type ContractTemplateDef, type ContractTemplateK
 import type { Module } from '../modules/module';
 import type { StatResolver } from '../tech/stat-resolver';
 import { EmptyRepositioningContract, ExportContract, ImportContract, TranshipContract, type Contract } from './contract';
+import { drawContainerCount } from './container-sizes';
 import { contractRewardCents, contractXpReward, lineForVoyage, maxSlaDaysOf, urgencyBp } from './contract-terms';
 
 /** Najkratšia platnosť ponuky v tickoch (ponuka musí prežiť aspoň tick svojho vzniku). */
@@ -126,10 +130,21 @@ interface DrawnTerms {
   readonly offerExpiresTick: number;
 }
 
-/** Objem ponuky z mierky: rozsah šablóny, kapacita lode a poistka skladov (`offerVolumeUnits`). */
-function volumeOf(context: OfferContext, terms: DrawnTerms, range: readonly [number, number]): number {
+/** Objem ponuky: počet kontajnerov a ich TEU (ADR-039). */
+interface OfferVolume {
+  readonly volumeUnits: number;
+  readonly volumeTeu: number;
+}
+
+/**
+ * Objem ponuky z mierky: TEU z rozsahu šablóny, kapacity lode (v TEU) a poistky skladov (`offerVolumeUnits`), potom zmes veľkostí (`drawContainerCount`;
+ * `mixed = false` = všetko 20′, bez `Rng` — hlavný kontrakt repositioningu).
+ */
+function volumeOf(context: OfferContext, terms: DrawnTerms, range: readonly [number, number], mixed = true): OfferVolume {
   const shipCapacity = context.defs.ships.get(terms.shipClassId).capacityUnits;
-  return offerVolumeUnits(terms.scale, context.capacityHint, range, shipCapacity, context.storageCapacity);
+  const volumeTeu = offerVolumeUnits(terms.scale, context.capacityHint, range, shipCapacity, context.storageCapacity);
+  const sizeMix = mixed ? (terms.template.sizeMix ?? 0) : 0;
+  return { volumeTeu, volumeUnits: drawContainerCount(context.rng, volumeTeu, sizeMix) };
 }
 
 /** Podmienky ponuky po ťahoch `Rng` (šablóna, loď, mierka a SLA už sú vyžrebované). */
@@ -147,7 +162,7 @@ function drawnTerms(context: OfferContext, template: Readonly<ContractTemplateDe
 }
 
 /** Import kontrakt ponuky (F5) s objemom `volumeUnits`; voyage dodáva volajúci (id n a n + 1 podľa poradia vzniku). */
-function buildImport(context: OfferContext, terms: DrawnTerms, id: ContractId, voyageId: VoyageId, volumeUnits: number): ImportContract {
+function buildImport(context: OfferContext, terms: DrawnTerms, id: ContractId, voyageId: VoyageId, volume: OfferVolume): ImportContract {
   const { defs } = context;
   const cargoType = defs.cargoTypes.get(terms.template.cargoTypeId);
   return new ImportContract({
@@ -155,10 +170,10 @@ function buildImport(context: OfferContext, terms: DrawnTerms, id: ContractId, v
     voyageId,
     templateId: terms.template.id,
     cargoTypeId: terms.template.cargoTypeId,
-    volumeUnits,
+    ...volume,
     slaDays: terms.slaDays,
-    rewardCents: contractRewardCents(volumeUnits, cargoType.basePricePerUnitCents, terms.urgency),
-    xpReward: contractXpReward(volumeUnits, cargoType.xpPerUnit, defs.economy.xpMultiplier),
+    rewardCents: contractRewardCents(volume.volumeTeu, cargoType.basePricePerUnitCents, terms.urgency),
+    xpReward: contractXpReward(volume.volumeTeu, cargoType.xpPerUnit, defs.economy.xpMultiplier),
     offeredTick: terms.offeredTick,
     offerExpiresTick: terms.offerExpiresTick,
     shipClassId: terms.shipClassId,
@@ -166,8 +181,8 @@ function buildImport(context: OfferContext, terms: DrawnTerms, id: ContractId, v
   });
 }
 
-/** Export booking ponuky (ADR-032 bod 14): odmena za celý booking `⌊booked × exportPricePerUnitCents × urgency⌋`. */
-function buildExport(context: OfferContext, terms: DrawnTerms, id: ContractId, voyageId: VoyageId, bookedUnits: number, destinationPort: string): ExportContract {
+/** Export booking ponuky (ADR-032 bod 14, ADR-039): odmena za celý booking `⌊bookedTeu × exportPricePerUnitCents × urgency⌋`. */
+function buildExport(context: OfferContext, terms: DrawnTerms, id: ContractId, voyageId: VoyageId, booked: OfferVolume, destinationPort: string): ExportContract {
   const { defs } = context;
   const cargoType = defs.cargoTypes.get(terms.template.cargoTypeId);
   return new ExportContract({
@@ -175,10 +190,10 @@ function buildExport(context: OfferContext, terms: DrawnTerms, id: ContractId, v
     voyageId,
     templateId: terms.template.id,
     cargoTypeId: terms.template.cargoTypeId,
-    volumeUnits: bookedUnits,
+    ...booked,
     slaDays: terms.slaDays,
-    rewardCents: contractRewardCents(bookedUnits, cargoType.exportPricePerUnitCents, terms.urgency),
-    xpReward: contractXpReward(bookedUnits, cargoType.xpPerUnit, defs.economy.xpMultiplier),
+    rewardCents: contractRewardCents(booked.volumeTeu, cargoType.exportPricePerUnitCents, terms.urgency),
+    xpReward: contractXpReward(booked.volumeTeu, cargoType.xpPerUnit, defs.economy.xpMultiplier),
     offeredTick: terms.offeredTick,
     offerExpiresTick: terms.offerExpiresTick,
     shipClassId: terms.shipClassId,
@@ -187,8 +202,8 @@ function buildExport(context: OfferContext, terms: DrawnTerms, id: ContractId, v
   });
 }
 
-/** Repositioning prázdnych kontajnerov (ADR-034): odmena za celý booking `⌊booked × repositioningPricePerUnitCents × urgency⌋`, bez cut-off. */
-function buildRepositioning(context: OfferContext, terms: DrawnTerms, id: ContractId, voyageId: VoyageId, bookedUnits: number, destinationPort: string): EmptyRepositioningContract {
+/** Repositioning prázdnych kontajnerov (ADR-034, ADR-039): odmena za celý booking `⌊TEU × repositioningPricePerUnitCents × urgency⌋`, bez cut-off. */
+function buildRepositioning(context: OfferContext, terms: DrawnTerms, id: ContractId, voyageId: VoyageId, booked: OfferVolume, destinationPort: string): EmptyRepositioningContract {
   const { defs } = context;
   const cargoType = defs.cargoTypes.get(terms.template.cargoTypeId);
   return new EmptyRepositioningContract({
@@ -196,10 +211,10 @@ function buildRepositioning(context: OfferContext, terms: DrawnTerms, id: Contra
     voyageId,
     templateId: terms.template.id,
     cargoTypeId: terms.template.cargoTypeId,
-    volumeUnits: bookedUnits,
+    ...booked,
     slaDays: terms.slaDays,
-    rewardCents: contractRewardCents(bookedUnits, cargoType.repositioningPricePerUnitCents, terms.urgency),
-    xpReward: contractXpReward(bookedUnits, cargoType.xpPerUnit, defs.economy.xpMultiplier),
+    rewardCents: contractRewardCents(booked.volumeTeu, cargoType.repositioningPricePerUnitCents, terms.urgency),
+    xpReward: contractXpReward(booked.volumeTeu, cargoType.xpPerUnit, defs.economy.xpMultiplier),
     offeredTick: terms.offeredTick,
     offerExpiresTick: terms.offerExpiresTick,
     shipClassId: terms.shipClassId,
@@ -208,14 +223,14 @@ function buildRepositioning(context: OfferContext, terms: DrawnTerms, id: Contra
   });
 }
 
-/** Prekládka loď → loď (ADR-034): odmena `⌊N × transhipPricePerUnitCents × urgency⌋`; voyage lode A (`voyageId`) a lode B (`outVoyageId`). */
+/** Prekládka loď → loď (ADR-034, ADR-039): odmena `⌊TEU × transhipPricePerUnitCents × urgency⌋`; voyage lode A (`voyageId`) a lode B (`outVoyageId`). */
 function buildTranship(
   context: OfferContext,
   terms: DrawnTerms,
   id: ContractId,
   voyageId: VoyageId,
   outVoyageId: VoyageId,
-  volumeUnits: number,
+  volume: OfferVolume,
   destinationPort: string,
 ): TranshipContract {
   const { defs } = context;
@@ -226,10 +241,10 @@ function buildTranship(
     outVoyageId,
     templateId: terms.template.id,
     cargoTypeId: terms.template.cargoTypeId,
-    volumeUnits,
+    ...volume,
     slaDays: terms.slaDays,
-    rewardCents: contractRewardCents(volumeUnits, cargoType.transhipPricePerUnitCents, terms.urgency),
-    xpReward: contractXpReward(volumeUnits, cargoType.xpPerUnit, defs.economy.xpMultiplier),
+    rewardCents: contractRewardCents(volume.volumeTeu, cargoType.transhipPricePerUnitCents, terms.urgency),
+    xpReward: contractXpReward(volume.volumeTeu, cargoType.xpPerUnit, defs.economy.xpMultiplier),
     offeredTick: terms.offeredTick,
     offerExpiresTick: terms.offerExpiresTick,
     shipClassId: terms.shipClassId,
@@ -322,7 +337,7 @@ export function drawRepositioningOffer(context: OfferContext): Contract[] {
   const exportRange = terms.template.exportVolumeUnitsRange;
   const contracts: Contract[] = [];
   if (exportRange !== undefined) contracts.push(buildExport(context, terms, context.nextId(), voyageId, volumeOf(context, terms, exportRange), destinationPort));
-  contracts.push(buildRepositioning(context, terms, context.nextId(), voyageId, volumeOf(context, terms, terms.template.volumeUnitsRange), destinationPort));
+  contracts.push(buildRepositioning(context, terms, context.nextId(), voyageId, volumeOf(context, terms, terms.template.volumeUnitsRange, false), destinationPort));
   return contracts;
 }
 

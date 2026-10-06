@@ -6,7 +6,7 @@ import {
   IMPORT_LABELS,
   CargoLedger,
   type CargoUnit,
-  type CargoUnitLabels,
+  type CargoUnitLabelsInput,
   type CargoLedgerDeps,
   type CargoLedgerState,
   type CargoLocation,
@@ -134,7 +134,7 @@ export const UNDER_HOOK_EXPORT_CHAIN: readonly CargoLocation[] = [
 
 /** Štítky exportnej jednotky bookingu (kontrakt 77, voyage 7, Rotterdam, ťažká). */
 export const EXPORT_CONTRACT = 77 as ContractId;
-export const EXPORT_LABELS: CargoUnitLabels = { direction: 'export', voyageId: 7 as VoyageId, lineId: 'blue_anchor', destinationPort: 'Rotterdam', weightClass: 'heavy' };
+export const EXPORT_LABELS: CargoUnitLabelsInput = { direction: 'export', voyageId: 7 as VoyageId, lineId: 'blue_anchor', destinationPort: 'Rotterdam', weightClass: 'heavy' };
 
 /** Celá import jednotka bez kontraktu (štítky `IMPORT_LABELS`, bez hold) — pre ručne skladané pohľady a stavy. */
 export function importUnit(fields: Pick<CargoUnit, 'id' | 'location'> & Partial<CargoUnit>): CargoUnit {
@@ -161,7 +161,8 @@ export function createHarness(options: HarnessOptions = {}): LedgerHarness {
   const ids = new EntityIdAllocator({ nextId: options.nextId ?? 1 });
   const events = new EventBus<SimEvent>();
   const clock = { tick: options.tick ?? 0 };
-  const deps: CargoLedgerDeps = { cargoTypes: (options.defs ?? CARGO_DEFS).cargoTypes, ids, events, clock };
+  const defs = options.defs ?? CARGO_DEFS;
+  const deps: CargoLedgerDeps = { cargoTypes: defs.cargoTypes, containerTypes: defs.containerTypes, ids, events, clock };
   return { ledger: new CargoLedger(deps), ids, events, clock, deps };
 }
 

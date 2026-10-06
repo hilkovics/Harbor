@@ -914,6 +914,68 @@
   height: var(--mi-icon-xs);
 }
 
+/* R2: bay view (stacks) */
+.module-inspector__bay-view {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.module-inspector__bay-columns {
+  display: flex;
+  gap: var(--space-1);
+  justify-content: center;
+}
+
+.module-inspector__bay-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+}
+
+.module-inspector__bay-stacks {
+  --bay-rows: 4; /* počet riadkov bloku; inline štýl ho prepíše geometriou z defu */
+  display: grid;
+  grid-template-columns: repeat(var(--bay-rows, 4), var(--icon-lg));
+  gap: var(--space-1);
+}
+
+.module-inspector__bay-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+  border-radius: 2px;
+  border: 1px solid color-mix(in srgb, var(--ui-text) 7%, transparent);
+  background: var(--ui-surface-2);
+  color: var(--ui-bg);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  cursor: default;
+}
+
+/* Zaplnená bunka: farba nesie linku (`--line-color` z `lineStyle`), prázdny kontajner `--cargo-empty`, bez linky neutrálny; typ je len skratka. */
+.module-inspector__bay-cell[data-empty='false'] {
+  border: 1px solid color-mix(in srgb, var(--ui-bg) 35%, transparent);
+  background: var(--container-neutral);
+}
+
+.module-inspector__bay-cell[data-fill='line'] {
+  background: var(--line-color, var(--container-neutral));
+}
+
+.module-inspector__bay-cell[data-fill='empty'] {
+  background: var(--cargo-empty);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .module-inspector,
   .module-inspector * {

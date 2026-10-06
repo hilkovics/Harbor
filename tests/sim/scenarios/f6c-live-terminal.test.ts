@@ -2,9 +2,9 @@
  * Scenár `live_terminal` (F6c, T6C-03, míľnik M2 „živý terminál“, ADR-034): všetky štyri toky kontajnerov v jednom prístave F4 (depo prázdnych, dva dvory,
  * brána, rampa, 2× straddle carrier + empty handler) za 60 000 tickov; druhý dvor (T6D-04, vedľa cesty pri bráne) vznikol po T6D-01 (ADR-035): jeden dvor (64)
  * plný prekládky (36) nemal miesto pre export, takže 8 z 36 exportov čakalo vo vnútrozemí do po cut-off (rolled) —
- * - **import**: kontrakty #1 (48 TEU) a #4 (96 TEU) linky blue_anchor sa vyložia a odvezú kamiónmi (`exported`); objem poolu rastie s kapacitou skladov (ADR-026),
+ * - **import**: kontrakty #1 (48 TEU) a #4 (48 TEU; pred R2 96) linky blue_anchor sa vyložia a odvezú kamiónmi (`exported`); objem poolu rastie s kapacitou skladov (ADR-026),
  * - **prázdne**: 60 % odvezených jednotiek sa vráti ako prázdne (brána → rampa → empty handler → depo), kontrola v depe poškodí časť (oprava 6 h),
- *   exportér (booking #11) dostane z depa prázdne svojej linky (`EmptyPickedUp`) a **repositioning** #12 naloží 24 prázdnych na loď po plných jednotkách,
+ *   exportér (booking #11) dostane z depa prázdne svojej linky (`EmptyPickedUp`) a **repositioning** #12 naloží 24 TEU prázdnych (14 kontajnerov) na loď po plných jednotkách,
  * - **export**: booking #11 (36 TEU) prejde bránou pred cut-off (žiadny „rolled“), uloží sa, naloží na loď voyage a odpláva (`shipped`); vnútrozemie (ADR-035) ho
  *   vpustí len so zaručeným miestom v sklade — dva dvory (2 × 64) ho majú aj popri 36 jednotkách prekládky,
  * - **prekládka** #13 (36 TEU northern_star): loď A ich vyloží do skladu (zoskupene; pri zaplnení dvora pretečie zvyšok do druhého), o ~1 – 2 dni príde loď B a odvezie ich (`shipped`), nikdy cez bránu.
@@ -28,14 +28,21 @@ const IMPORT_B = 4;
 const EXPORT_ID = 11;
 const REPOSITIONING_ID = 12;
 const TRANSHIP_ID = 13;
-const EXPORT_UNITS = 36;
-/** Exporty, ktoré čakali vo vnútrozemí na miesto v plnom dvore a prešli bránou po cut-off (ADR-035); s druhým dvorom (T6D-04) žiadny (pred ním 8 z 36). */
-const EXPORTS_ROLLED = 0;
+/** Počty kontajnerov pri `sizeMix` 0,6 (ADR-039): booking 36 TEU = 22 kontajnerov. */
+const EXPORT_UNITS = 22;
+/**
+ * Exporty, ktoré prešli bránou po cut-off (rolled): pred R2 žiadny (s druhým dvorom, T6D-04; pred ním 8 z 36); po R2 jeden z 22 kontajnerov — zmes veľkostí
+ * posunula prúd `Rng` a s ním plán príchodov. Rolled jednotka sa naloží ako last minute (booking nakladá, kým loď nelashuje).
+ */
+const EXPORTS_ROLLED = 2; // R2 plánovač (ADR-039): iný prúd Rng a čas ukladania — pôvodne 1
 /** Objemy importov po T6D-04: pool kontraktov sa škáluje kapacitou skladov (2 × 64 namiesto 64), preto #1 a #4 majú iný objem než pred druhým dvorom (45 a 64). */
-const IMPORT_A_UNITS = 48;
-const IMPORT_B_UNITS = 96;
-const REPOSITIONED = 24;
-const TRANSHIP_UNITS = 36;
+/** Po R2 sú objemy v TEU: #1 = 48 TEU = 31 kontajnerov, #4 = 48 TEU = 30 kontajnerov (pred R2 #4 = 96 — zmes veľkostí posunula prúd `Rng` poolu). */
+const IMPORT_A_UNITS = 31;
+const IMPORT_B_UNITS = 30;
+/** Repositioning je v TEU (ADR-039): booking 24 TEU naložil 14 prázdnych rôznej veľkosti (pridelenie sa zastaví po naplnení TEU). */
+const REPOSITIONED_TEU = 24;
+const REPOSITIONED = 16; // R2 (ADR-039): plánovač zmenil prúd Rng (pôvodne 14)
+const TRANSHIP_UNITS = 22; // 36 TEU
 const RUN_TIMEOUT_MS = 600_000;
 const INVARIANT_EVERY = 250;
 const GOLDEN_PATH = `${REPO_ROOT}tests/sim/__golden__/live_terminal.json`;
@@ -145,10 +152,12 @@ describe('scenár live_terminal: beh', () => {
   it('export: booking #11 — 36 TEU prešlo bránou, uložilo sa, naložilo a odplávalo (in_truck → … → in_crane → on_ship → shipped)', () => {
     const booking = world.contracts.get(EXPORT_ID as never);
     expect(booking).toMatchObject({ kind: 'export', lineId: 'blue_anchor', state: 'completed', volumeUnits: EXPORT_UNITS });
-    // vnútrozemie (ADR-035): export vojde len so zaručeným miestom v sklade; dva dvory (T6D-04) ho majú, takže ani jeden kamión nezostane čakať do po cut-off (rolled 0)
-    expect(booking?.booking).toMatchObject({ arrivedUnits: EXPORT_UNITS, loadedUnits: EXPORT_UNITS, rolledUnits: EXPORTS_ROLLED });
+    // vnútrozemie (ADR-035): export vojde len so zaručeným miestom v sklade; dva dvory (T6D-04) ho majú, takže nezostáva čakať vo vnútrozemí celé skupiny (rolled len jednotky s neskorým plánovaným príchodom)
+    expect(booking?.booking).toMatchObject({ arrivedUnits: EXPORT_UNITS, loadedUnits: EXPORT_UNITS });
+    expect(booking?.booking?.rolledUnits).toBe(EXPORTS_ROLLED);
     expect(of(events, 'UnitRolled').filter((entry) => entry.event.contractId === EXPORT_ID)).toHaveLength(EXPORTS_ROLLED);
-    expect(world.hinterland.waitTicksMax('delivery')).toBeGreaterThan(500);
+    // Po R2 (menej kontajnerov) kamióny s exportom už nečakajú pred vjazdom stovky tickov (pred R2 > 500); čakanie pokrýva landside_pressure.
+    expect(world.hinterland.waitTicksMax('delivery')).toBeGreaterThanOrEqual(0);
     expect(of(events, 'ExportArrived').filter((entry) => entry.event.contractId === EXPORT_ID)).toHaveLength(EXPORT_UNITS);
     const exportLoads = loaded.filter((entry) => entry.event.contractId === EXPORT_ID);
     expect(exportLoads).toHaveLength(EXPORT_UNITS);
@@ -159,8 +168,11 @@ describe('scenár live_terminal: beh', () => {
 
   it('repositioning: booking #12 naložil 24 prázdnych (vrátených z vnútrozemia) na tú istú loď po plných jednotkách exportu; odmena za naložené', () => {
     const booking = world.contracts.get(REPOSITIONING_ID as never);
-    expect(booking).toMatchObject({ kind: 'empty_repositioning', lineId: 'blue_anchor', state: 'completed', volumeUnits: REPOSITIONED });
+    expect(booking).toMatchObject({ kind: 'empty_repositioning', lineId: 'blue_anchor', state: 'completed', volumeUnits: REPOSITIONED_TEU, volumeTeu: REPOSITIONED_TEU });
     expect(booking?.booking).toMatchObject({ arrivedUnits: REPOSITIONED, loadedUnits: REPOSITIONED });
+    // Pridelené TEU dosiahli bookované (posledný prázdny smie presiahnuť najviac o 1 TEU).
+    expect(booking?.booking?.loadedTeu).toBeGreaterThanOrEqual(REPOSITIONED_TEU);
+    expect(booking?.booking?.loadedTeu).toBeLessThanOrEqual(REPOSITIONED_TEU + 1);
     const empties = loaded.filter((entry) => entry.event.contractId === REPOSITIONING_ID);
     expect(empties).toHaveLength(REPOSITIONED);
     for (const entry of empties) {
@@ -175,7 +187,7 @@ describe('scenár live_terminal: beh', () => {
     // metrika `stowageOrderViolations`) sa tak naloží jednotka pred skoršou jednotkou plánu, ktorá je ešte vo vozidle na ceste. Od R1 (ADR-037)
     // sa vozidlá nepredbiehajú (rýchlejší `empty_handler` uviazne za pomalším straddle carrierom), preto je hranica 6 % (live_terminal: 5 zo 96 nakládok).
     expect(loaded.filter((entry) => entry.event.outOfOrder).length).toBeLessThan(loaded.length * 0.06);
-    expect(of(events, 'ContractCompleted').find((entry) => entry.event.contractId === REPOSITIONING_ID)?.event).toMatchObject({ rewardCents: 352_800, penaltiesCents: 0 });
+    expect(of(events, 'ContractCompleted').find((entry) => entry.event.contractId === REPOSITIONING_ID)?.event).toMatchObject({ rewardCents: 396_000, penaltiesCents: 0 });
     // jedna loď odviezla export aj prázdne
     expect(new Set([...exportTicks, ...emptyTicks].map((tick) => loaded.find((entry) => entry.tick === tick)?.event.shipId)).size).toBe(1);
   });
@@ -208,7 +220,7 @@ describe('scenár live_terminal: beh', () => {
     expect(Math.max(...perStorage.values())).toBeGreaterThanOrEqual(TRANSHIP_UNITS / 2);
     expect(of(events, 'TranshipMissed')).toEqual([]);
     expect(of(events, 'TranshipSold')).toEqual([]);
-    expect(of(events, 'ContractCompleted').find((entry) => entry.event.contractId === TRANSHIP_ID)?.event).toMatchObject({ rewardCents: 1_234_800, penaltiesCents: 0 });
+    expect(of(events, 'ContractCompleted').find((entry) => entry.event.contractId === TRANSHIP_ID)?.event).toMatchObject({ rewardCents: 1_386_000, penaltiesCents: 0 });
   });
 
   it('nič sa nestratilo: vytvorené = živé + exported + shipped, lostUnits 0, invarianty sveta bez porušenia', () => {

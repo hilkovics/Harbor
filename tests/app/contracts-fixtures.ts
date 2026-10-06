@@ -4,6 +4,7 @@ import contractTemplatesJson from '@data/defs/contract_templates.json';
 import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
 import linesJson from '@data/defs/lines.json';
+import containerTypesJson from '@data/defs/container_types.json';
 import logisticsJson from '@data/defs/logistics.json';
 import modulesJson from '@data/defs/modules.json';
 import shipsJson from '@data/defs/ships.json';
@@ -35,6 +36,7 @@ export function createAppWithEconomy(patch: Partial<typeof economyJson>, cashCen
     logistics: logisticsJson,
     contract_templates: contractTemplatesJson,
     lines: linesJson,
+    container_types: containerTypesJson,
   });
   const world = World.create(defs, MAP, SEED);
   if (cashCents !== undefined) setCash(world, cashCents);

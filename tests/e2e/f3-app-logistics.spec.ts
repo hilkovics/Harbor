@@ -121,7 +121,7 @@ test.describe('F3: napojenie vozidiel, skladov a notifikácií (T03-10)', () => 
       [YARD_ID, 'container_yard_small', true],
       [YARD_2_ID, 'container_yard_small', true],
     ]);
-    expect(modules.find((module) => module.id === YARD_ID)?.storage).toEqual({ capacity: 64, stored: 0, reserved: 0 });
+    expect(modules.find((module) => module.id === YARD_ID)?.storage).toEqual({ capacity: 48, stored: 0, reserved: 0 }); // R2: blok 4 bays × 4 rows × 3 tiers = 48 TEU (nie 64 slotov)
     await expect(toasts(page)).toHaveCount(0); // všetko pripojené → žiadne „Nepripojené“
 
     // 2) BuildBar Logistika: vozidlo je nákup (kúpiť), depo je pripojené → dostupné; dva kliky = dve vozidlá
@@ -143,7 +143,7 @@ test.describe('F3: napojenie vozidiel, skladov a notifikácií (T03-10)', () => 
     await expect.poll(async () => (await rendered(page)).vehicles).toBe(0);
     await expect(bar.locator('[data-def-id="vehicle_depot"]')).toHaveAttribute('data-action', 'build');
 
-    // 3) inšpektor depa: dve nečinné vozidlá, kúpiť je dostupné; inšpektor dvora: 0 / 64
+    // 3) inšpektor depa: dve nečinné vozidlá, kúpiť je dostupné; inšpektor dvora (blok): 0 / 48 TEU
     await clickCell(page, { x: 47, y: 28 });
     await expect(inspector(page)).toHaveAttribute('data-module-id', String(DEPOT_ID));
     await expect(inspector(page).locator('[data-vehicle-id][data-state]')).toHaveCount(2);
@@ -151,7 +151,7 @@ test.describe('F3: napojenie vozidiel, skladov a notifikácií (T03-10)', () => 
     await expect(inspector(page).locator('[data-field="badge"]')).toHaveText('V prevádzke');
     await clickCell(page, { x: 43, y: 19 });
     await expect(inspector(page)).toHaveAttribute('data-module-id', String(YARD_ID));
-    await expect(inspector(page).locator('[data-field="storage-count"]')).toContainText('0 / 64');
+    await expect(inspector(page).locator('[data-field="block-teu"]')).toContainText('0 / 48'); // R2: blok ukazuje obsadenosť v TEU
     await page.keyboard.press('Escape');
     await expect(inspector(page)).toHaveCount(0);
 

@@ -3,14 +3,14 @@
  * sadzby z defu sa prevedú na celé bázické body a zaokrúhľuje sa nadol:
  *
  *   urgencyBp = 10 000 + ⌊urgencyFactorBp × (maxSlaDays − slaDays) / maxSlaDays⌋
- *   reward    = ⌊volume × basePricePerUnitCents × urgencyBp / 10 000⌋
+ *   reward    = ⌊volumeTeu × basePricePerUnitCents × urgencyBp / 10 000⌋   (objem v TEU, ADR-039)
  *   demurrage = ⌊reward × demurrageBp / 10 000⌋ za každú celú hodinu státia nad `berthAllowanceTicks`
  *   late      = ⌊reward × lateBp / 10 000⌋ za každý celý deň po `slaDeadlineTick`
- *   xpReward  = volume × xpPerUnit × xpMultiplier; pri dokončení round(xpReward × (včas ? 1 : lateXpFactor))
+ *   xpReward  = volumeTeu × xpPerUnit × xpMultiplier; pri dokončení round(xpReward × (včas ? 1 : lateXpFactor))
  *
- * Export booking (ADR-032 bod 13–14): výplata pomerne k naloženým `⌊reward × loaded / booked⌋`, penalizácia za `n` jednotiek
- * (last minute, rolled) `⌊reward × bp × n / (10 000 × booked)⌋` (sadzba je podiel odmeny **za jednotku**, jedno zaokrúhlenie
- * nadol), za nesplnený booking `⌊reward × bp / 10 000⌋` raz; splnený je od `⌈bookingFulfilmentShare × booked⌉` naložených.
+ * Export booking (ADR-032 bod 13–14, ADR-039): všetky množstvá sú v **TEU** — výplata pomerne k naloženým `⌊reward × loadedTeu / bookedTeu⌋`, penalizácia za `n` TEU
+ * (last minute, rolled) `⌊reward × bp × n / (10 000 × bookedTeu)⌋` (sadzba je podiel odmeny **za TEU**, jedno zaokrúhlenie
+ * nadol), za nesplnený booking `⌊reward × bp / 10 000⌋` raz; splnený je od `⌈bookingFulfilmentShare × bookedTeu⌉` naložených TEU.
  *
  * `maxSlaDays` = najväčšie `slaDaysRange[1]` všetkých šablón (nezávisle od tieru — rovnaké SLA má vždy rovnakú urgency).
  */
@@ -89,7 +89,7 @@ export function offerClosingTick(offerExpiresTick: number, ticksPerDay: number):
   return Math.ceil(offerExpiresTick / ticksPerDay) * ticksPerDay;
 }
 
-/** Výplata exportu pomerne k naloženým: `⌊reward × loaded / booked⌋` (`loaded ≤ booked`, celé čísla). */
+/** Výplata exportu pomerne k naloženým TEU: `⌊reward × loaded / booked⌋` (`loaded ≤ booked`, celé čísla v TEU). */
 export function bookingPayoutCents(rewardCents: number, loadedUnits: number, bookedUnits: number): number {
   const product = rewardCents * loadedUnits;
   if (!Number.isSafeInteger(product) || bookedUnits < 1) throw new RangeError(`výplata exportu: ${String(rewardCents)} × ${String(loadedUnits)} / ${String(bookedUnits)} nie je platné`);
@@ -97,7 +97,7 @@ export function bookingPayoutCents(rewardCents: number, loadedUnits: number, boo
 }
 
 /**
- * Penalizácia za `units` jednotiek bookingu so sadzbou `rate` (podiel odmeny za jednotku): `⌊reward × bp × units / (10 000 ×
+ * Penalizácia za `units` TEU bookingu so sadzbou `rate` (podiel odmeny za TEU): `⌊reward × bp × units / (10 000 ×
  * booked)⌋`. Súčin mimo bezpečného celého rozsahu alebo neplatný vstup → `RangeError`.
  */
 export function bookingUnitsPenaltyCents(rewardCents: number, bookedUnits: number, units: number, rate: number): number {
@@ -111,7 +111,7 @@ export function unfulfilledBookingPenaltyCents(rewardCents: number, economy: Pic
   return shareOfCents(rewardCents, economy.unfulfilledBookingRateOfReward);
 }
 
-/** Najmenší počet naložených jednotiek, od ktorého je booking splnený: `⌈bookingFulfilmentShare × booked⌉` (celé bázické body). */
+/** Najmenší počet naložených TEU, od ktorého je booking splnený: `⌈bookingFulfilmentShare × bookedTeu⌉` (celé bázické body). */
 export function bookingFulfilmentUnits(bookedUnits: number, economy: Pick<EconomyDef, 'bookingFulfilmentShare'>): number {
   return Math.ceil((toBasisPoints(economy.bookingFulfilmentShare) * bookedUnits) / BASIS_POINTS);
 }

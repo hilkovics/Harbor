@@ -9,7 +9,7 @@
  * portálu položka počká (ďalší tick) — plán sa spotrebuje až po vzniku kamióna, takže žiadny príchod nezanikne; čakanie vpusteného kamióna
  * (`tick − dueTick`) sa zapíše do `Hinterland`. Kontrakt, ktorý sa medzitým uzavrel, plán odnesie so sebou.
  */
-import { WEIGHT_CLASSES } from '../cargo/cargo-unit';
+import { DEFAULT_CONTAINER_LABELS, WEIGHT_CLASSES } from '../cargo/cargo-unit';
 import type { Contract } from '../contracts/contract';
 import { CONTRACT_STATE_TRAITS } from '../contracts/contract-fsm';
 import type { EntityId } from '../core/entity-id';
@@ -26,6 +26,8 @@ function admitExportTruck(world: World, contract: Contract, portal: number): Adm
   const outcome = planDeliveryAdmission(world, 'export', world.defs.cargoTypes.get(contract.cargoTypeId).category);
   if (outcome !== 'admitted') return outcome;
   const shares = world.defs.logistics.exportFlow.weightClassShares;
+  // Veľkosť kontajnera, ktorý kamión privezie: `volumeUnits − arrivalPlan.length`-ty kontajnerov bookingu (ADR-039); plán sa spotrebuje až po vjazde.
+  const sizeFt = contract.unitSizeFt(contract.volumeUnits - booking.arrivalPlan.length);
   spawnDelivery(world, portal, (truck) => {
     const weightClass = world.rng.weighted(WEIGHT_CLASSES, (item) => shares[item]);
     world.cargo.create(contract.cargoTypeId, { kind: 'in_truck', truckId: truck.id as EntityId }, contract.id, {
@@ -34,6 +36,8 @@ function admitExportTruck(world: World, contract: Contract, portal: number): Adm
       lineId: contract.lineId,
       destinationPort: booking.destinationPort,
       weightClass,
+      ...DEFAULT_CONTAINER_LABELS,
+      sizeFt,
     });
   });
   return 'admitted';

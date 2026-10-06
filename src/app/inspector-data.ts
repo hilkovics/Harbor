@@ -66,6 +66,7 @@ export const DEPOT_VEHICLE_STATE: Readonly<Record<VehicleState, DepotVehicleStat
   idle: 'idle',
   to_pickup: 'busy',
   loading: 'busy',
+  rehandling: 'busy',
   to_dropoff: 'busy',
   unloading: 'busy',
   no_path: 'no_path',
@@ -77,6 +78,7 @@ export const DEPOT_VEHICLE_STATE: Readonly<Record<VehicleState, DepotVehicleStat
 
 /** Detailný stav FSM vozidla na zobrazenie v depo vozidiel inspektore; bez textu → abstraktný stav. */
 export const VEHICLE_DETAILED_STATE: Readonly<Partial<Record<VehicleState, string>>> = Object.freeze({
+  rehandling: 'Prekladá kontajnery',
   to_depot: 'Ide do depa',
   parked: 'Parkuje v depe',
   depot_exit: 'Odchádza z depa',

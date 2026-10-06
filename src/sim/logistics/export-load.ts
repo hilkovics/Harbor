@@ -136,7 +136,11 @@ const LOAD_SCAN: { readonly [K in ContractKind]: LoadScan } = {
   export: (world, contract, berths) => bestStoredOf(world, contract, 'export', berths),
   tranship: (world, contract, berths) => bestStoredOf(world, contract, 'tranship', berths),
   // Prázdne nemajú kontrakt: dostupný prázdny linky z depa (alebo záložného dvora), najviac toľko, koľko je bookovaných.
-  empty_repositioning: (world, contract, berths) => (contract.loadsToAssign > 0 ? findAvailableEmpty(world, contract.lineId, berths) : undefined),
+  empty_repositioning: (world, contract, berths) => {
+    const unit = contract.loadsToAssign > 0 ? findAvailableEmpty(world, contract.lineId, berths) : undefined;
+    // Zavalený prázdny bez miesta na rehandling sa nenakladá (vozidlo by uviazlo, TR2-06b) — job vznikne, až keď sa blok uvoľní.
+    return unit !== undefined && unitPickable(world, unit) ? unit : undefined;
+  },
 };
 
 /** Jednotky plných bookingov lode (export, prekládka), ktoré sú prijaté, ale ešte nenaložené ani vrátené (mimo hold) — pred nimi sa prázdne nenakladajú. */
@@ -232,6 +236,22 @@ function assignToBooking(world: World, bookings: readonly Contract[], unit: Carg
   for (const contract of bookings) {
     if (!contract.acceptsLoading || loadingStopped(world, contract) || contract.loadsToAssign <= 0 || !contract.loadsUnit(unit)) continue;
     contract.assignLoad(unit);
+    return;
+  }
+}
+
+/**
+ * Vráti pridelenie nakládky bookingu (`Contract.releaseLoad`) pri zrušení jobu nakládky, ktorý už mal vozidlo (rehandling bez cieľa, TR2-06b); iný job nič nerobí.
+ * Booking sa hľadá ako pri zastavenej nakládke — prvý neukončený booking dokovanej lode, ktorý jednotku nakladá.
+ */
+export function releaseLoadAssignment(world: World, job: TransportJob): void {
+  if (job.from.kind !== 'in_storage' || (job.to.kind !== 'on_apron' && job.to.kind !== 'in_crane')) return;
+  const berth = world.modules.get(job.toModuleId);
+  const unit = world.cargo.get(job.unitIds[0]);
+  if (!(berth instanceof BerthModule) || berth.dockedShipId === null || unit === undefined) return;
+  for (const contract of openLoadBookings(world, berth.dockedShipId, BOOKINGS)) {
+    if (!contract.loadsUnit(unit)) continue;
+    contract.releaseLoad(unit);
     return;
   }
 }

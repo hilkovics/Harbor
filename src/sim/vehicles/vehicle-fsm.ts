@@ -13,6 +13,9 @@
  * (`to_depot`), po príchode na prístupovú bunku depa je `parked` (mimo cesty, nedrží sloty); kúpené vozidlo vzniká `parked`.
  * Dispatcher priradí job vozidlu `idle`, `to_depot` (priamo `to_pickup` s preplánovaním) alebo `parked` (cez `depot_exit`, kým nie je
  * voľný slot prístupovej bunky depa → `to_pickup`). Tieto tri stavy sú „voľné“ (`VehicleStateTraits.free`).
+ * **Rehandling** (R2, ADR-039 bod 6, dodatok TR2-06b): zdroj jobu je blok so stohmi a cieľ nie je navrchu — vozidlo po pobyte `loading` prejde do `rehandling`
+ * (preloží kontajnery nad cieľom v tom istom bloku, každý `rehandleTicks`) a vráti sa do `loading`; ak sa do `rehandleGiveUpTicks` nenájde cieľ presunu,
+ * job sa zruší a vozidlo ide `idle`. Job je počas toho stále `picking`.
  * `to_* → no_path`, keď k cieľu nevedie cesta; z `no_path` sa vozidlo vráti do toho `to_*`, z ktorého vypadlo
  * (určuje ho stav jobu: `assigned` → `to_pickup`, `moving` → `to_dropoff`).
  */
@@ -22,7 +25,7 @@ import type { CarrierMotion } from '../movement/motion-check';
 import type { Vehicle } from './vehicle';
 
 /** Stavy vozidla v poradí životného cyklu. */
-export const VEHICLE_STATES = ['idle', 'to_pickup', 'loading', 'to_dropoff', 'unloading', 'no_path', 'to_depot', 'parked', 'depot_exit'] as const;
+export const VEHICLE_STATES = ['idle', 'to_pickup', 'loading', 'rehandling', 'to_dropoff', 'unloading', 'no_path', 'to_depot', 'parked', 'depot_exit'] as const;
 export type VehicleState = (typeof VEHICLE_STATES)[number];
 
 /**
@@ -36,7 +39,10 @@ export const HOOK_WAIT_TICKS = 1;
 export const VEHICLE_TRANSITIONS: ReadonlyMap<VehicleState, readonly VehicleState[]> = new Map<VehicleState, readonly VehicleState[]>([
   ['idle', Object.freeze(['to_pickup', 'to_depot'] as const)],
   ['to_pickup', Object.freeze(['loading', 'no_path'] as const)],
-  ['loading', Object.freeze(['to_dropoff'] as const)],
+  // Zdroj je blok so stohmi a cieľ nie je navrchu: vozidlo prekladá kontajnery nad ním (`rehandling`), potom nakladá (R2, ADR-039 bod 6); bez cieľa v bloku
+  // sa job zruší a vozidlo uvoľní (`rehandling → idle`, dodatok TR2-06b).
+  ['loading', Object.freeze(['to_dropoff', 'rehandling'] as const)],
+  ['rehandling', Object.freeze(['loading', 'idle'] as const)],
   ['to_dropoff', Object.freeze(['unloading', 'no_path'] as const)],
   ['unloading', Object.freeze(['idle'] as const)],
   ['no_path', Object.freeze(['to_pickup', 'to_dropoff'] as const)],
@@ -95,6 +101,8 @@ export const VEHICLE_STATE_TRAITS: { readonly [S in VehicleState]: VehicleStateT
   idle: Object.freeze({ hasJob: false, jobStates: Object.freeze([] as const), motion: 'park', holdsRoad: true, free: true, waits: false, waitsOptional: true, destination: null }),
   to_pickup: Object.freeze({ hasJob: true, jobStates: Object.freeze(['assigned'] as const), motion: 'drive', holdsRoad: true, free: false, waitsOptional: false, waits: false, destination: 'source' }),
   loading: Object.freeze({ hasJob: true, jobStates: Object.freeze(['picking'] as const), motion: 'park', holdsRoad: true, free: false, waitsOptional: false, waits: true, destination: 'source' }),
+  // Prekladá kontajnery nad cieľom v bloku so stohmi (R2): `waitTicks` = zvyšná trpezlivosť (`rehandleGiveUpTicks` zaokrúhlené na cykly `rehandleTicks`), viď `logistics/yard-rehandle.ts`.
+  rehandling: Object.freeze({ hasJob: true, jobStates: Object.freeze(['picking'] as const), motion: 'park', holdsRoad: true, free: false, waitsOptional: false, waits: true, destination: 'source' }),
   to_dropoff: Object.freeze({ hasJob: true, jobStates: Object.freeze(['moving'] as const), motion: 'drive', holdsRoad: true, free: false, waitsOptional: false, waits: false, destination: 'target' }),
   unloading: Object.freeze({ hasJob: true, jobStates: Object.freeze(['dropping'] as const), motion: 'park', holdsRoad: true, free: false, waitsOptional: false, waits: true, destination: 'target' }),
   no_path: Object.freeze({ hasJob: true, jobStates: Object.freeze(['assigned', 'moving'] as const), motion: 'halt', holdsRoad: true, free: false, waitsOptional: false, waits: true, destination: null }),

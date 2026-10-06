@@ -10,6 +10,8 @@
  *   `loadTicks` / `unloadTicks` prvej jednotky. Pohyb: ak sa od plánu zmenila cestná sieť (`replanPending`), vozidlo preplánuje z kotvy
  *   (bunka, pri pohybe medzi bunkami cieľová bunka úseku); bez cesty `no_path`. Potom sa posunie o `speedCellsPerTick`
  *   × `speedFactor` typu cieľovej bunky každého úseku (zdieľaný `advanceCarrier`, `World.roadSpeeds`, ADR-020, ADR-024).
+ * - `rehandling` (R2, TR2-06b): cieľ v bloku so stohmi nie je navrchu — vozidlo prekladá kontajnery nad ním (`logistics/yard-rehandle.ts`), potom späť `loading`,
+ *   alebo bez cieľa presunu po `rehandleGiveUpTicks` job zruší a ide `idle`.
  * - `loading`: po odpočte presun jednotky zo zdroja do vozidla (`on_apron → in_vehicle` — slot apronu sa uvoľní sám,
  *   ADR-017; `in_storage → in_vehicle`) a `Module.recordTaken` zdroja (sklad `unitsOut`, ADR-023); ďalšia jednotka
  *   jobu `loadTicks`, inak job `moving` a jazda k cieľu (`startTrip`, bez pohybu v tomto ticku).
@@ -29,7 +31,7 @@ import type { EntityId } from '../core/entity-id';
 import type { VehicleDef } from '../defs/types';
 import { onEmptyStored } from '../logistics/empty-depot-service';
 import { hookCraneOf, isHookDropoff, isHookPickup } from '../logistics/job-source';
-import { prepareYardTake } from '../logistics/yard-rehandle';
+import { rehandleStep, startYardTake } from '../logistics/yard-rehandle';
 import { settleYardDrop } from '../logistics/yard-settle';
 import type { JobState, TransportJob } from '../logistics/transport-job';
 import { CraneModule } from '../modules/crane-module';
@@ -146,8 +148,8 @@ function loadUnit(vehicle: Vehicle, world: World): void {
   const source = jobModule(world, job, 'source');
   const unitId = firstUnitAt(world, job, job.from);
   if (unitId === undefined) throw new VehicleError('inconsistent', `${vehicle.label}: ${job.label} nemá jednotku na zdroji`);
-  // Blok so stohmi: kontajnery nad cieľom sa najprv preložia (rehandling, ADR-039 bod 6), vozidlo medzitým čaká.
-  if (!prepareYardTake(world, vehicle, job, unitId)) return;
+  // Blok so stohmi: kontajnery nad cieľom sa najprv preložia (`rehandling`, ADR-039 bod 6); bez cieľa presunu sa job zruší a vozidlo uvoľní (TR2-06b).
+  if (startYardTake(world, vehicle, job, unitId) !== 'ready') return;
   world.cargo.move(unitId, { kind: 'in_vehicle', vehicleId: vehicle.id });
   source.recordTaken(unitId);
   if (firstUnitAt(world, job, job.from) !== undefined) {
@@ -238,6 +240,12 @@ const VEHICLE_STEPS: { readonly [S in VehicleState]: VehicleStep } = {
   loading: (vehicle, world) => {
     if (isHookPickup(jobOfVehicle(world, vehicle))) waitUnderHook(vehicle, world);
     else if (countDown(vehicle)) loadUnit(vehicle, world);
+  },
+  rehandling: (vehicle, world) => {
+    const job = jobOfVehicle(world, vehicle);
+    const unitId = firstUnitAt(world, job, job.from);
+    if (unitId === undefined) throw new VehicleError('inconsistent', `${vehicle.label}: ${job.label} nemá jednotku na zdroji počas rehandlingu`);
+    rehandleStep(world, vehicle, job, unitId);
   },
   unloading: (vehicle, world) => {
     if (isHookDropoff(jobOfVehicle(world, vehicle))) waitUnderHook(vehicle, world);

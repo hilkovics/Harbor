@@ -209,7 +209,8 @@ export interface JobDoneEvent {
 /**
  * Dispatcher (krok 5, ADR-023) zrušil job bez vozidla (`open → cancelled`), lebo jeho cieľ prestal byť použiteľný
  * (`reason`: rampa neprevádzková alebo zo zdroja nedosiahnuteľná). Rezervácia v cieli sa uvoľnila, jednotky ostali na
- * zdroji a job zmizol z `world.jobs`; dispatcher im v tom istom kroku môže vytvoriť nový job k inej rampe.
+ * zdroji a job zmizol z `world.jobs`; dispatcher im v tom istom kroku môže vytvoriť nový job k inej rampe. `rehandle_stalled` (TR2-06b) hlási `VehicleSystem`
+ * (krok 6b): vozidlo, ktoré už job malo, pri zdroji nenašlo cieľ rehandlingu a uvoľnilo sa (`picking → cancelled`).
  */
 export interface JobCancelledEvent {
   readonly type: 'JobCancelled';

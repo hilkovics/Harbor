@@ -2,86 +2,21 @@
  * Prijatie exportu do skladu (F6a, ADR-032 bod 8; dispatcher krok 5): job `at_ramp → in_storage` pre jednotky exportu, ktoré
  * práve vyložil kamión s exportom na dock rampy a čakajú na vozidlo (`!isPickupCargo`, `logistics/dock-cargo.ts`).
  *
- * **Zoskupenie podľa voyage:** jednotka ide do skladu, v ktorom už ležia jednotky jej kontraktu (jedna voyage = jeden export
- * booking, takže skupina kontraktu `World.storedCargo` = jednotky voyage) alebo kam už mieri job pre jej kontrakt;
- * medzi nimi najbližší od rampy (`DistanceMatrix`), pri zhode menšie id, a len s voľnou kapacitou. Bez takého skladu je
- * to najbližší sklad s voľným miestom (`allocateStorage`). Import a export zdieľajú sklady, bez poradia v stohu (F14).
- * Sklad rezervuje slot hneď pri vzniku jobu (ako inbound), takže po sebe idúce jednotky voyage v jednom ticku sa nerozbehnú
- * do viacerých skladov. Bez skladu job nevznikne a jednotka čaká na docku (kapacitu docku drží, kamióny s exportom
- * vtedy čakajú v stojisku — nič sa nestratí).
+ * **Zoskupenie podľa voyage** robí `YardPlanner` (`reserveYardSlot`, ADR-039 bod 7: export podľa `(voyage, cieľový prístav, hmotnostná trieda, veľkosť)`);
+ * plánovač hneď pri vzniku jobu rezervuje bunku (ako inbound), takže po sebe idúce jednotky voyage v jednom ticku sa nerozbehnú. Bez bloku job nevznikne
+ * a jednotka čaká na docku (kapacitu docku drží, kamióny s exportom vtedy čakajú v stojisku — nič sa nestratí). Staré alokátory skladu bez plánovača
+ * (`allocateStorage`, `allocateExportStorage`) odstránil TR2-06b — plánovač je jediná cesta do skladu.
  *
  * Poradie: rampy vzostupne podľa id, jednotky docku vo FIFO poradí ledgera (bez kópie — počas prechodu sa ledger nemení,
  * vznikajú len joby).
  *
- * **Prekládka** (F6c, ADR-034) sa ukladá rovnakým výberom (`allocateGroupedStorage`): jednotky jednej prekládky z lode A ležia zoskupene v sklade
+ * **Prekládka** (F6c, ADR-034) sa ukladá rovnakým výberom (podľa kontraktu lode B): jednotky jednej prekládky z lode A ležia zoskupene v sklade
  * (zdrojom je kotvisko, nie rampa), kým ich nenaloží loď B; na rampu neprichádza (nikdy neprejde bránou), kým ju kontrakt neuzavrie predajom.
  */
 import type { CargoUnit } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
-import type { CargoCategory } from '../defs/types';
-import type { LoadingRamp } from '../modules/loading-ramp';
-import type { Module } from '../modules/module';
-import { StorageModule } from '../modules/storage-module';
 import type { World } from '../world/world';
-import { allocateStorage } from './storage-allocator';
-import { distanceBetweenModules } from './module-access';
 import { reserveYardSlot } from './yard-planner';
-
-/** Znovupoužiteľné pole skladov voyage pre `groupStorages` (hot path bez alokácie; obsah sa vždy najprv vyprázdni). */
-const GROUP_STORAGES: EntityId[] = [];
-
-/** Vloží `id` do vzostupne zoradeného `GROUP_STORAGES`, ak tam ešte nie je (vkladanie — polia majú niekoľko prvkov). */
-function addGroupStorage(id: EntityId): void {
-  if (GROUP_STORAGES.includes(id)) return;
-  let at = GROUP_STORAGES.length;
-  GROUP_STORAGES.push(id);
-  while (at > 0 && GROUP_STORAGES[at - 1] > id) {
-    GROUP_STORAGES[at] = GROUP_STORAGES[at - 1];
-    at -= 1;
-  }
-  GROUP_STORAGES[at] = id;
-}
-
-/**
- * Sklady, v ktorých leží alebo kam mieri jednotka kontraktu `unit.contractId` (zoradené podľa id, bez duplicít). Vracia zdieľané pole
- * (`GROUP_STORAGES`) — platí len do ďalšieho volania, volajúci ho iba prejde.
- */
-function groupStorages(world: World, unit: CargoUnit): readonly EntityId[] {
-  GROUP_STORAGES.length = 0;
-  const group = world.storedCargo.groupOf(unit.contractId);
-  if (group !== undefined) for (const storageId of group.storages) addGroupStorage(storageId);
-  for (const job of world.jobs.values()) {
-    if (job.to.kind !== 'in_storage') continue;
-    const mate = world.cargo.get(job.unitIds[0]);
-    if (mate?.contractId === unit.contractId) addGroupStorage(job.toModuleId);
-  }
-  return GROUP_STORAGES;
-}
-
-/**
- * Sklad pre jednotku zoskupenú podľa kontraktu (export z rampy, **prekládka z kotviska lode A**, ADR-034 — „uložia zoskupene podľa B“)
- * zo zdroja `source` (viď hlavička): najbližší sklad kontraktu s voľnou kapacitou, ktorý prijme smer jednotky a je dosiahnuteľný po
- * ceste, inak najbližší sklad s voľným miestom; inak `undefined`.
- */
-export function allocateGroupedStorage(world: World, source: Module, unit: CargoUnit, category: CargoCategory): StorageModule | undefined {
-  let best: StorageModule | undefined;
-  let bestDistance = Infinity;
-  for (const storageId of groupStorages(world, unit)) {
-    const storage = world.modules.get(storageId);
-    if (!(storage instanceof StorageModule) || storage.category !== category || !storage.acceptsDirection(unit.direction) || storage.freeCount <= 0) continue;
-    const distance = distanceBetweenModules(world, source, storage);
-    if (distance < bestDistance) {
-      best = storage;
-      bestDistance = distance;
-    }
-  }
-  return best ?? allocateStorage(world, source, category, unit.direction);
-}
-
-/** Sklad pre jednotku exportu z rampy `ramp` (`allocateGroupedStorage`). */
-export function allocateExportStorage(world: World, ramp: LoadingRamp, unit: CargoUnit, category: CargoCategory): StorageModule | undefined {
-  return allocateGroupedStorage(world, ramp, unit, category);
-}
 
 /** Podklady jobu: jednotka, zdroj (dock) a rezervovaný cieľ — dispatcher z toho vytvorí job (`openJob`). */
 export interface IntakeJobSpec {
@@ -91,7 +26,7 @@ export interface IntakeJobSpec {
 }
 
 /**
- * Pre každú jednotku exportu na prijatie bez aktívneho jobu nájde sklad (`allocateExportStorage`), rezervuje v ňom slot
+ * Pre každú jednotku exportu na prijatie bez aktívneho jobu nájde stoh (`reserveYardSlot`), rezervuje jeho bunku
  * a odovzdá podklady jobu `open` (`openJob` dispatchera). Vracia počet vytvorených jobov.
  */
 export function createExportIntakeJobs(world: World, openJob: (spec: IntakeJobSpec) => void): number {

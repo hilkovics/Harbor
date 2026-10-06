@@ -41,6 +41,16 @@ export function positionOfCell(geometry: YardGeometry, slot: number): YardPositi
   return { bay, row: (column - bay) / geometry.bays, tier };
 }
 
+/** Vrstva bunky slotu (číselne, bez alokácie — horúce slučky dispatchera). */
+export function tierOfSlot(geometry: YardGeometry, slot: number): number {
+  return slot % geometry.maxTier;
+}
+
+/** Stĺpec (stoh) bunky slotu: `row × bays + bay` — index do polí po stĺpcoch (`StackGrid.columnHeight`). */
+export function columnOfSlot(geometry: YardGeometry, slot: number): number {
+  return Math.floor(slot / geometry.maxTier);
+}
+
 /** Odvodená cache obsadenia buniek (viď hlavička súboru). Operácie `place` / `remove` predpokladajú už overený presun (`YardBlock.assertCanPlace`). */
 export class StackGrid {
   readonly geometry: YardGeometry;
@@ -64,6 +74,22 @@ export class StackGrid {
   /** Výška stohu `(bay, row)` — počet obsadených vrstiev. */
   height(bay: number, row: number): number {
     return this.heights[row * this.geometry.bays + bay];
+  }
+
+  /** Výška stohu podľa indexu stĺpca (`columnOfSlot`). */
+  columnHeight(column: number): number {
+    return this.heights[column];
+  }
+
+  /** Je bunka (slot) obsadená? (40′ aj bunka tieňa.) */
+  occupied(slot: number): boolean {
+    return this.cells[slot] !== 0;
+  }
+
+  /** Jednotka, ktorá zaberá bunku `slot` (40′ aj z bunky tieňa), alebo `null`. */
+  atSlot(slot: number): EntityId | null {
+    const id = this.cells[slot];
+    return id === 0 ? null : (id as EntityId);
   }
 
   /** Jednotka na vrchu stohu `(bay, row)`, alebo `null` pre prázdny stoh. */
@@ -101,7 +127,9 @@ export class StackGrid {
     const covered = sizeFt === 40 ? 2 : 1;
     for (let i = 0; i < covered; i++) {
       this.cells[slotOfCell(geometry, bay + i, row, tier)] = id;
-      this.heights[row * geometry.bays + bay + i] = id === 0 ? tier : tier + 1;
+      const column = row * geometry.bays + bay + i;
+      // Pri zápise výšku zdvihne (pri obnove z ledgera jednotky neprichádzajú zdola nahor), pri odobratí klesne na vrstvu jednotky.
+      this.heights[column] = id === 0 ? tier : Math.max(this.heights[column], tier + 1);
     }
   }
 }

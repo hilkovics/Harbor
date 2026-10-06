@@ -250,6 +250,8 @@ export interface SimrunReport {
   readonly stuckAtEnd: number;
   /** Presuny kontajnerov nad cieľom pri výbere zo skladu (R2, ADR-039). */
   readonly rehandles: number;
+  /** Joby zrušené, lebo rehandling nenašiel cieľ v bloku do `rehandleGiveUpTicks` (vozidlo sa uvoľnilo; zdravý beh 0, TR2-06b). */
+  readonly rehandleStalls: number;
   /** `rehandles` na jeden výber zo skladu; bez výberov `null` (R2). */
   readonly rehandlesPerMove: number | null;
   /** Obsadené TEU z kapacity blokov na konci behu v % (R2). */
@@ -950,11 +952,12 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
 }
 
 /** Metriky blokov so stohmi (R2, ADR-039) z `yardMetrics`; `rehandlesPerMove` zaokrúhlené na 3 desatinné miesta. */
-function yardReport(world: World): Pick<SimrunReport, 'rehandles' | 'rehandlesPerMove' | 'yardTeuUsedPct'> {
+function yardReport(world: World): Pick<SimrunReport, 'rehandles' | 'rehandleStalls' | 'rehandlesPerMove' | 'yardTeuUsedPct'> {
   const metrics = yardMetrics(world);
   const ratio = metrics.rehandlesPerMove;
   return {
     rehandles: metrics.rehandles,
+    rehandleStalls: metrics.rehandleStalls,
     rehandlesPerMove: ratio === null ? null : Math.round(ratio * REHANDLE_RATIO_SCALE) / REHANDLE_RATIO_SCALE,
     yardTeuUsedPct: Math.round(metrics.yardTeuUsedPct * ONE_DECIMAL) / ONE_DECIMAL,
   };

@@ -28,13 +28,14 @@ export const JOB_STATES = ['open', 'assigned', 'picking', 'moving', 'dropping', 
 export type JobState = (typeof JOB_STATES)[number];
 
 /**
- * Povolené prechody `from → [to…]`; `done` a `cancelled` sú konečné stavy (job sa odstráni). Zrušiť sa dá len job bez
- * vozidla (`open`) — vozidlo, ktoré job už má, ho dokončí (ADR-023).
+ * Povolené prechody `from → [to…]`; `done` a `cancelled` sú konečné stavy (job sa odstráni). Zrušiť sa dá job bez vozidla (`open`)
+ * a job vozidla, ktoré pri zdroji nenašlo cieľ rehandlingu (`picking → cancelled`, dodatok TR2-06b); inak vozidlo job dokončí (ADR-023).
  */
 export const JOB_TRANSITIONS: ReadonlyMap<JobState, readonly JobState[]> = new Map<JobState, readonly JobState[]>([
   ['open', Object.freeze(['assigned', 'cancelled'] as const)],
   ['assigned', Object.freeze(['picking'] as const)],
-  ['picking', Object.freeze(['moving'] as const)],
+  // Rehandling bez cieľa v bloku (R2, dodatok TR2-06b): vozidlo čaká v `picking` na kontajnery nad jednotkou; po `rehandleGiveUpTicks` sa job zruší a vozidlo uvoľní.
+  ['picking', Object.freeze(['moving', 'cancelled'] as const)],
   ['moving', Object.freeze(['dropping'] as const)],
   ['dropping', Object.freeze(['done'] as const)],
   ['done', Object.freeze([] as const)],
@@ -45,8 +46,10 @@ export const JOB_TRANSITIONS: ReadonlyMap<JobState, readonly JobState[]> = new M
  * Prečo dispatcher zrušil job bez vozidla (`JobCancelled`, ADR-023): cieľová rampa nie je prevádzková (ADR-022), alebo
  * k nej zo zdroja nevedie cesta. Oboje sú podmienky vzniku outbound jobu — `open` job, ktorý by už nevznikol, sa zruší.
  * `loading_stopped` (T6C-07b): nakládka bookingu sa zastavila (`loadingStopped`) a job nakládky ešte nemá vozidlo.
+ * `rehandle_stalled` (TR2-06b): vozidlo pri zdroji v bloku so stohmi nenašlo cieľ pre kontajnery nad jednotkou (alebo jednotku pri príchode nemožno vybrať)
+ * a po `rehandleGiveUpTicks` job zrušilo — jednotka ostáva v sklade a dispatcher jej vytvorí job znova, až keď je pre kontajnery nad ňou miesto.
  */
-export const JOB_CANCEL_REASONS = ['ramp_inoperative', 'ramp_unreachable', 'loading_stopped'] as const;
+export const JOB_CANCEL_REASONS = ['ramp_inoperative', 'ramp_unreachable', 'loading_stopped', 'rehandle_stalled'] as const;
 export type JobCancelReason = (typeof JOB_CANCEL_REASONS)[number];
 
 /** Kde leží náklad jobu v danom stave (invarianty kroku 12, obnova save). */

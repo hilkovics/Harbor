@@ -32,14 +32,12 @@ export {
 export type { JobCancelReason, JobCargoPlace, JobRoute, JobState, JobStateTraits, SerializedJob, TransportJobInit } from './transport-job';
 export { NO_ACCESS, accessCellIndex, distanceBetweenModules, distanceToModule, isAccessCell, nearestAccessCell } from './module-access';
 export type { ModuleAccessEnv } from './module-access';
-export { allocateStorage } from './storage-allocator';
-export type { StorageAllocatorEnv } from './storage-allocator';
 export { acceptsOutbound, allocateRamp } from './ramp-allocator';
 export type { RampAllocatorEnv } from './ramp-allocator';
 export { EMPTY_FLOW_STATE_KEYS, ERRAND_ENTRY_KEYS, EmptyFlow, PICKUP_PLAN_ENTRY_KEYS, RETURN_PLAN_ENTRY_KEYS } from './empty-flow';
 export type { EmptyFlowState, ErrandEntry, PickupPlanEntry, ReturnPlanEntry } from './empty-flow';
 export { EmptyDepotService, onEmptyStored } from './empty-depot-service';
-export { allocateEmptyStorage, allocateReturnStorage, emptyCargoTypeId, emptyLabels, emptyReturnRoom, findAvailableEmpty, hasEmptyDepot } from './empty-stock';
+export { emptyCargoTypeId, emptyLabels, emptyReturnRoom, findAvailableEmpty, hasEmptyDepot } from './empty-stock';
 export { createEmptyIntakeJobs, createEmptyPickupJobs } from './empty-jobs';
 export type { EmptyJobSpec } from './empty-jobs';
 export { StoredCargoIndex } from './stored-cargo-index';

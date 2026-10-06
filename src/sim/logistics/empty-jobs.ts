@@ -19,7 +19,7 @@ import { LoadingRamp } from '../modules/loading-ramp';
 import type { Module } from '../modules/module';
 import type { World } from '../world/world';
 import { findAvailableEmpty } from './empty-stock';
-import { reserveYardSlot } from './yard-planner';
+import { reserveYardSlot, unitPickable } from './yard-planner';
 
 /** Podklady jobu prázdneho: jednotka, zdroj a rezervovaný cieľ (dispatcher z toho vytvorí job `open`). */
 export interface EmptyJobSpec {
@@ -72,7 +72,8 @@ export function createEmptyPickupJobs(world: World, openJob: (spec: EmptyJobSpec
     if (truck === undefined || !(ramp instanceof LoadingRamp) || world.dockIntake.roomAt(ramp, truck.dock) <= 0 || !world.isRampOperational(ramp)) continue;
     RAMP_TARGET[0] = ramp;
     const unit = findAvailableEmpty(world, errand.lineId, RAMP_TARGET);
-    if (unit === undefined || unit.location.kind !== 'in_storage') continue;
+    // Zavalený prázdny bez miesta na rehandling sa nevydáva (vozidlo by uviazlo, TR2-06b) — job vznikne, až keď sa blok uvoľní.
+    if (unit === undefined || unit.location.kind !== 'in_storage' || !unitPickable(world, unit)) continue;
     ramp.reserve(truck.dock);
     openJob({ unitId: unit.id, from: unit.location, to: { kind: 'at_ramp', rampId: ramp.id, dock: truck.dock } });
     world.emptyFlow.assignErrandUnit(truckId, unit.id);

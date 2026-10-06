@@ -21,14 +21,17 @@ import type { EntityId } from '../core/entity-id';
 import type { Module, ModuleInit } from './module';
 import { ModuleError } from './module-error';
 import { checkRuntimeKeys, readCount } from './runtime-state';
-import { StackGrid, geometryCapacity, positionOfCell, slotOfCell, type YardGeometry, type YardPosition } from './stack-grid';
+import { StackGrid, columnOfSlot, geometryCapacity, positionOfCell, slotOfCell, tierOfSlot, type YardGeometry, type YardPosition } from './stack-grid';
 import { StorageModule, type StorageRuntimeState } from './storage-module';
 import type { CargoCategory } from '../defs/types';
 
-/** Dynamický stav bloku v save: počítadlá skladu + `rehandles` (počet presunov kontajnerov nad cieľom, ADR-039 bod 6). */
-export type YardRuntimeState = StorageRuntimeState & { readonly rehandles: number };
+/**
+ * Dynamický stav bloku v save: počítadlá skladu + `rehandles` (počet presunov kontajnerov nad cieľom, ADR-039 bod 6) a `rehandleStalls`
+ * (joby, ktoré sa zrušili, lebo rehandling nenašiel cieľ v bloku do `rehandleGiveUpTicks`; dodatok TR2-06b).
+ */
+export type YardRuntimeState = StorageRuntimeState & { readonly rehandles: number; readonly rehandleStalls: number };
 
-const YARD_RUNTIME_KEYS: readonly (keyof YardRuntimeState)[] = ['unitsIn', 'unitsOut', 'rehandles'];
+const YARD_RUNTIME_KEYS: readonly (keyof YardRuntimeState)[] = ['unitsIn', 'unitsOut', 'rehandles', 'rehandleStalls'];
 
 /** Veľkosť kontajnera v rezervácii bunky → 20 / 40. */
 const SIZE_OF_CODE = [0, 20, 40] as const;
@@ -50,6 +53,7 @@ export abstract class YardBlock extends StorageModule implements StorageGuard {
   private readonly columnReserved: Uint8Array;
   private reservedCells = 0;
   private rehandleCount = 0;
+  private rehandleStallCount = 0;
 
   protected constructor(init: ModuleInit, category: CargoCategory) {
     super(init, category);
@@ -94,6 +98,16 @@ export abstract class YardBlock extends StorageModule implements StorageGuard {
   /** Zapíše jeden rehandling (volá `logistics/yard-rehandle.ts` po presune). */
   recordRehandle(): void {
     this.rehandleCount += 1;
+  }
+
+  /** Kumulatívny počet jobov zrušených, lebo rehandling nenašiel cieľ v bloku (vozidlo sa uvoľnilo, job sa vytvorí znova, až keď bude miesto). */
+  get rehandleStalls(): number {
+    return this.rehandleStallCount;
+  }
+
+  /** Zapíše jedno zrušenie jobu pre rehandling bez cieľa (volá `logistics/yard-rehandle.ts`). */
+  recordRehandleStall(): void {
+    this.rehandleStallCount += 1;
   }
 
   /** Poloha bunky slotu (`slot` mimo rozsahu → `ModuleError('invalid_slot')`). */
@@ -163,20 +177,29 @@ export abstract class YardBlock extends StorageModule implements StorageGuard {
     return unit?.sizeFt === 40 ? 40 : 20;
   }
 
-  /** Počet kontajnerov nad jednotkou `unitId` v jej stohu (0 = navrchu); jednotka mimo bloku → 0. */
+  /**
+   * Počet kontajnerov nad jednotkou `unitId` v jej stohu (0 = navrchu); jednotka mimo bloku → 0. Počíta uložené aj **rezervované** (kontajnery, ktoré sa nad
+   * ňu práve ukladajú rozbehnutými jobmi) — vozidlo pre jednotku ich bude musieť preložiť, aj keď ešte nestoja.
+   */
   burialDepth(unitId: EntityId): number {
     const slot = super.slotOf(unitId);
     if (slot === undefined) return 0;
-    const { bay, row, tier } = positionOfCell(this.geometry, slot);
-    return Math.max(0, this.grid.height(bay, row) - tier - 1);
+    const { maxTier } = this.geometry;
+    const base = columnOfSlot(this.geometry, slot) * maxTier;
+    let depth = 0;
+    for (let tier = tierOfSlot(this.geometry, slot) + 1; tier < maxTier; tier++) {
+      if (this.grid.occupied(base + tier) || this.reservedSize[base + tier] !== 0) depth += 1;
+    }
+    return depth;
   }
 
-  /** Vrchný kontajner nad jednotkou `unitId` (ten, ktorý treba odložiť ako prvý), alebo `null`, ak je navrchu / mimo bloku. */
+  /** Vrchný uložený kontajner nad jednotkou `unitId` (ten, ktorý treba odložiť ako prvý), alebo `null`, ak je navrchu / mimo bloku (rezervácie sa nepočítajú — nestoja). */
   topBlockerOf(unitId: EntityId): EntityId | null {
     const slot = super.slotOf(unitId);
     if (slot === undefined) return null;
-    const { bay, row, tier } = positionOfCell(this.geometry, slot);
-    return this.grid.height(bay, row) > tier + 1 ? this.grid.top(bay, row) : null;
+    const column = columnOfSlot(this.geometry, slot);
+    const height = this.grid.columnHeight(column);
+    return height > tierOfSlot(this.geometry, slot) + 1 ? this.grid.atSlot(column * this.geometry.maxTier + height - 1) : null;
   }
 
   /**
@@ -186,9 +209,10 @@ export abstract class YardBlock extends StorageModule implements StorageGuard {
   unitsAbove(unitId: EntityId, into: EntityId[]): void {
     const slot = super.slotOf(unitId);
     if (slot === undefined) return;
-    const { bay, row, tier } = positionOfCell(this.geometry, slot);
-    for (let t = tier + 1; t < this.geometry.maxTier; t++) {
-      const id = this.grid.at(bay, row, t) ?? (this.reservedUnit[slotOfCell(this.geometry, bay, row, t)] > 0 ? (this.reservedUnit[slotOfCell(this.geometry, bay, row, t)] as EntityId) : null);
+    const { maxTier } = this.geometry;
+    const base = columnOfSlot(this.geometry, slot) * maxTier;
+    for (let tier = tierOfSlot(this.geometry, slot) + 1; tier < maxTier; tier++) {
+      const id = this.grid.atSlot(base + tier) ?? (this.reservedUnit[base + tier] > 0 ? (this.reservedUnit[base + tier] as EntityId) : null);
       if (id !== null) into.push(id);
     }
   }
@@ -213,13 +237,15 @@ export abstract class YardBlock extends StorageModule implements StorageGuard {
     };
     if (unit.sizeFt === 40) {
       if (bay % 2 !== 0 || bay + 1 >= bays) return fail('40′ zaberá pár bays (2k, 2k+1)');
+      // Bunka tieňa (bay + 1) musí ležať v kapacite bloku (def môže kapacitu znížiť pod `bays × rows × maxTier`; sloty sú po stĺpcoch).
+      if (slot + maxTier >= this.capacity) return fail('bunka tieňa 40′ je mimo kapacity bloku');
       if (this.grid.height(bay, row) !== tier || this.grid.height(bay + 1, row) !== tier) return fail('40′ sa ukladá len na rovnako vysoký pár stohov');
       if (tier > 0 && (this.sizeOfCell(bay, row, tier - 1) !== 40 || this.grid.at(bay, row, tier - 1) !== this.grid.at(bay + 1, row, tier - 1))) return fail('pod 40′ smie byť len 40′ alebo zem');
     } else {
       if (this.grid.height(bay, row) !== tier) return fail('ukladá sa len na vrchol stohu');
       if (tier > 0 && this.sizeOfCell(bay, row, tier - 1) !== 20) return fail('pod 20′ smie byť len 20′ alebo zem');
     }
-    if (tier >= maxTier) fail('nad maxTier');
+    // `tier < maxTier` platí vždy: `assertCell` pustí len sloty z kapacity, ktorá nie je väčšia než `bays × rows × maxTier`.
   }
 
   assertCanTake(unit: CargoUnit): void {
@@ -365,6 +391,7 @@ export abstract class YardBlock extends StorageModule implements StorageGuard {
     if (code === 2) {
       if (bay % 2 !== 0 || bay + 1 >= this.geometry.bays) throw new ModuleError('stack_rule', `${this.label}.reserve: 40′ zaberá pár bays (2k, 2k+1), bunka (${String(bay)}, ${String(row)}, ${String(tier)})`);
       const shadow = slotOfCell(this.geometry, bay + 1, row, tier);
+      if (shadow >= this.capacity) throw new ModuleError('stack_rule', `${this.label}.reserve: bunka tieňa 40′ (${String(bay + 1)}, ${String(row)}, ${String(tier)}) je mimo kapacity bloku`);
       if (this.reservedSize[shadow] !== 0 || this.grid.at(bay + 1, row, tier) !== null) {
         throw new ModuleError('slot_occupied', `${this.label}.reserve: bunka tieňa 40′ (${String(bay + 1)}, ${String(row)}, ${String(tier)}) je obsadená alebo rezervovaná`);
       }
@@ -453,14 +480,16 @@ export abstract class YardBlock extends StorageModule implements StorageGuard {
   // ---- save ----
 
   override getRuntimeState(): YardRuntimeState {
-    return { ...super.getRuntimeState(), rehandles: this.rehandleCount };
+    return { ...super.getRuntimeState(), rehandles: this.rehandleCount, rehandleStalls: this.rehandleStallCount };
   }
 
   override restoreRuntimeState(raw: unknown): void {
     const fields = checkRuntimeKeys(raw, YARD_RUNTIME_KEYS);
     const rehandles = readCount(fields['rehandles'], '/rehandles');
+    const rehandleStalls = readCount(fields['rehandleStalls'], '/rehandleStalls');
     super.restoreRuntimeState({ unitsIn: fields['unitsIn'], unitsOut: fields['unitsOut'] });
     this.rehandleCount = rehandles;
+    this.rehandleStallCount = rehandleStalls;
   }
 
   private assertCell(slot: number, method: string): void {

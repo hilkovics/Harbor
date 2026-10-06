@@ -9,7 +9,7 @@
  *    lode B (kontrakt), prázdne `(linka, veľkosť)`.
  * 3. **Bez zavalenia** (`plannedDepartureTick`): stoh rovnakej skupiny, ktorého vrch odchádza neskôr alebo rovnako → prázdny stoh → stoh inej
  *    skupiny, ktorého vrch odchádza neskôr, medzi nimi najtesnejšie pasujúci (`gap`) → inak najmenšia penalizácia (počet kontajnerov, ktoré by sa zavalili) —
- *    zavalenie len v bloku, ktorý ostane voľný aspoň na `BURY_RESERVE_COLUMNS` stĺpcov (rehandling potrebuje kam preložiť; kontajner s jobom sa nezavaľuje nikdy);
+ *    zavalenie len v bloku, ktorý ostane voľný aspoň na `logistics.buryReserveColumns` stĺpcov (rehandling potrebuje kam preložiť; kontajner s jobom sa nezavaľuje nikdy);
  *    bez vhodného stohu jednotka čaká (`null`, `NoStorageAvailable`).
  * 4. **Vzdialenosť:** bližší blok má prednosť.
  *
@@ -49,9 +49,6 @@ const CLASS_BURY = 3;
  */
 type PlacementMode = 'place' | 'relocate' | 'random';
 
-/** Koľko voľných stĺpcov (`maxTier` buniek každý) musí ostať v bloku, aby plánovač smel zavaliť skôr odchádzajúci kontajner. */
-const BURY_RESERVE_COLUMNS = 4;
-
 /**
  * Poradie tried podľa smeru: náklad, ktorý stojí v sklade (export, prekládka, prázdne), sa skladá do stohu svojej skupiny skôr než do prázdneho (aj vo
  * vzdialenejšom bloku). Import odchádza kamiónom hneď po vykládke, preto sa najprv rozloží po prázdnych stohoch (aj medzi blokmi — rozloží dopravu
@@ -85,6 +82,12 @@ interface Candidate {
 const BEST: Candidate = { block: undefined, cls: 0, penalty: 0, height: 0, fill: 0, gap: 0, bayGap: 0, distance: 0, moduleId: 0, bay: 0, row: 0 };
 const CURRENT: Candidate = { block: undefined, cls: 0, penalty: 0, height: 0, fill: 0, gap: 0, bayGap: 0, distance: 0, moduleId: 0, bay: 0, row: 0 };
 const COLUMN_UNITS: EntityId[] = [];
+
+/** Kam `scanBlock` zapisuje kandidátov: `best` = najlepší do `BEST`, `room` = súčet voľných vrstiev do `roomSum` (bez alokácie), pole = všetkých (režim `random`). */
+type Sink = 'best' | 'room' | Candidate[];
+
+/** Súčet voľných vrstiev stohov z posledného `scanBlock` so `sink = 'room'` (`rehandleRoom`; jedno vlákno simulácie, vždy sa najprv vynuluje). */
+let roomSum = 0;
 
 function resetBest(): void {
   BEST.block = undefined;
@@ -157,9 +160,9 @@ function scoreColumn(world: World, block: YardBlock, unit: CargoUnit, bay: numbe
     if (plannedDepartureTick(world, other) < departure) earlier += 1;
   }
   if (earlier > 0) {
-    // Zavalenie skôr odchádzajúceho kontajnera je poslednou možnosťou („najmenšia penalizácia“). Pri bežnom ukladaní len keď blok ostane voľný aspoň na dva stĺpce
-    // (`BURY_RESERVE_COLUMNS`) — inak by rehandling nemal kam preložiť kontajnery a vozidlo by uviazlo; pri rehandlingu a v režime `random` bez rezervy.
-    if (mode === 'place' && block.freeCount - teuOf(unit) < BURY_RESERVE_COLUMNS * maxTier) return false;
+    // Zavalenie skôr odchádzajúceho kontajnera je poslednou možnosťou („najmenšia penalizácia“). Pri bežnom ukladaní len keď blok ostane voľný aspoň na
+    // `logistics.buryReserveColumns` stĺpcov (def) — inak by rehandling nemal kam preložiť kontajnery a vozidlo by uviazlo; pri rehandlingu a v režime `random` bez rezervy.
+    if (mode === 'place' && block.freeCount - teuOf(unit) < world.defs.logistics.buryReserveColumns * maxTier) return false;
     into.cls = CLASS_BURY;
     into.penalty = earlier;
     return true;
@@ -173,8 +176,8 @@ function scoreColumn(world: World, block: YardBlock, unit: CargoUnit, bay: numbe
   return true;
 }
 
-/** Prejde stohy bloku a najlepší, ktorý je lepší než `BEST`, zapíše do `BEST` (alebo všetky do `onlyCollect`); `origin` (rehandling) vynechá pôvodný stoh. */
-function scanBlock(world: World, block: YardBlock, unit: CargoUnit, distance: number, origin: { readonly bay: number; readonly row: number } | undefined, onlyCollect: Candidate[] | undefined, mode: PlacementMode): void {
+/** Prejde stohy bloku a zapíše kandidátov podľa `sink` (najlepší lepší než `BEST`, súčet voľných vrstiev, alebo všetkých); `origin` (rehandling) vynechá pôvodný stoh. */
+function scanBlock(world: World, block: YardBlock, unit: CargoUnit, distance: number, origin: { readonly bay: number; readonly row: number } | undefined, sink: Sink, mode: PlacementMode): void {
   const { bays, rows } = block.geometry;
   const wide = unit.sizeFt === 40;
   const step = wide ? 2 : 1;
@@ -188,8 +191,10 @@ function scanBlock(world: World, block: YardBlock, unit: CargoUnit, distance: nu
       CURRENT.bay = bay;
       CURRENT.row = row;
       CURRENT.bayGap = origin === undefined ? 0 : Math.abs(bay - origin.bay);
-      if (onlyCollect !== undefined) {
-        onlyCollect.push({ ...CURRENT });
+      if (sink === 'room') {
+        roomSum += block.geometry.maxTier - CURRENT.height;
+      } else if (sink !== 'best') {
+        sink.push({ ...CURRENT });
       } else if (BEST.block === undefined || better(CURRENT, BEST)) {
         Object.assign(BEST, CURRENT);
       }
@@ -197,23 +202,38 @@ function scanBlock(world: World, block: YardBlock, unit: CargoUnit, distance: nu
   }
 }
 
-/** Bloky kandidátov pre jednotku zo zdroja `from` po vrstvách (prvá vrstva s riešením vyhráva); viď hlavička súboru, bod 1. */
-function candidateTiers(world: World, unit: CargoUnit, from: Module): YardBlock[][] {
+/** Znovupoužiteľné polia blokov kandidátov (hot path: plánovač beží pre každú jednotku; obsah sa vždy najprv vyprázdni). */
+const DEPOT_BLOCKS: YardBlock[] = [];
+const YARD_BLOCKS: YardBlock[] = [];
+const NO_BLOCKS: YardBlock[] = [];
+const TIERS: YardBlock[][] = [];
+
+/**
+ * Bloky kandidátov pre jednotku zo zdroja `from` po vrstvách (prvá vrstva s riešením vyhráva; viď hlavička súboru, bod 1) do znovupoužiteľných polí —
+ * výsledok platí len do ďalšieho volania.
+ */
+function candidateTiers(world: World, unit: CargoUnit, from: Module): readonly YardBlock[][] {
   const category = world.defs.cargoTypes.get(unit.typeId).category;
   const teu = teuOf(unit);
-  const depots: YardBlock[] = [];
-  const yards: YardBlock[] = [];
+  DEPOT_BLOCKS.length = 0;
+  YARD_BLOCKS.length = 0;
+  TIERS.length = 0;
   let anyDepot = false;
   for (const module of world.modules.values()) {
     if (!(module instanceof YardBlock) || module.category !== category) continue;
     const isDepot = module instanceof EmptyDepot;
     anyDepot ||= isDepot;
     if (!module.acceptsDirection(unit.direction) || module.freeCount < teu || distanceBetweenModules(world, from, module) === Infinity) continue;
-    (isDepot ? depots : yards).push(module);
+    (isDepot ? DEPOT_BLOCKS : YARD_BLOCKS).push(module);
   }
-  if (unit.direction !== 'empty') return [yards];
-  if (from instanceof LoadingRamp) return [anyDepot ? depots : yards];
-  return [emptyReturnRoom(world, from, category) > 0 ? depots : [], yards];
+  if (unit.direction !== 'empty') {
+    TIERS.push(YARD_BLOCKS);
+  } else if (from instanceof LoadingRamp) {
+    TIERS.push(anyDepot ? DEPOT_BLOCKS : YARD_BLOCKS);
+  } else {
+    TIERS.push(emptyReturnRoom(world, from, category) > 0 ? DEPOT_BLOCKS : NO_BLOCKS, YARD_BLOCKS);
+  }
+  return TIERS;
 }
 
 /**
@@ -231,7 +251,7 @@ export function chooseYardSlot(world: World, unit: CargoUnit, from: Module): Yar
       return { moduleId: pick.moduleId as EntityId, slot: (pick.block as YardBlock).slotOf(pick.bay, pick.row, pick.height) };
     }
     resetBest();
-    for (const block of blocks) scanBlock(world, block, unit, distanceBetweenModules(world, from, block), undefined, undefined, 'place');
+    for (const block of blocks) scanBlock(world, block, unit, distanceBetweenModules(world, from, block), undefined, 'best', 'place');
     const best = BEST.block;
     if (best !== undefined) return { moduleId: best.id, slot: best.slotOf(BEST.bay, BEST.row, BEST.height) };
   }
@@ -253,7 +273,7 @@ export function reserveYardSlot(world: World, unit: CargoUnit, from: Module): Ya
  */
 export function chooseRehandleSlot(world: World, block: YardBlock, blocker: CargoUnit, origin: { readonly bay: number; readonly row: number }): number | null {
   resetBest();
-  scanBlock(world, block, blocker, 0, origin, undefined, 'relocate');
+  scanBlock(world, block, blocker, 0, origin, 'best', 'relocate');
   // Kontajner sa ukladá na skutočný vrchol stohu; rezervácie rozbehnutých jobov nad ním sa posunú (`YardBlock.vacateReservation`).
   return BEST.block === undefined ? null : block.slotOf(BEST.bay, BEST.row, block.stackHeight(BEST.bay, BEST.row));
 }
@@ -263,25 +283,26 @@ export function chooseRehandleSlot(world: World, block: YardBlock, blocker: Carg
  * (`chooseRehandleSlot`). Čistý dotaz.
  */
 export function rehandleRoom(world: World, block: YardBlock, blocker: CargoUnit, origin: { readonly bay: number; readonly row: number }): number {
-  const all: Candidate[] = [];
-  scanBlock(world, block, blocker, 0, origin, all, 'relocate');
-  let room = 0;
-  for (const candidate of all) room += block.geometry.maxTier - candidate.height;
-  return room;
+  roomSum = 0;
+  scanBlock(world, block, blocker, 0, origin, 'room', 'relocate');
+  return roomSum;
 }
 
 /**
  * Dá sa jednotka vybrať zo skladu bez toho, aby vozidlo uviazlo na rehandlingu bez cieľa? Navrchu ležiaca vždy; zavalená len keď blok pre kontajnery nad ňou
- * (uložené, nie rezervované) má dosť miesta (`rehandleRoom`). Dispatcher inak job nezakladá / nepriraďuje vozidlo — job počká, kým sa blok uvoľní (vozidlo čakajúce
- * na prístupovej bunke by zablokovalo dopravu).
+ * má dosť miesta (`rehandleRoom`). Kontajnery nad jednotkou sa počítajú uložené aj **rezervované** (`YardBlock.burialDepth`) — rezervovaný kontajner sa nad ňu
+ * uloží skôr, než vozidlo dorazí, a bude ho treba preložiť. Dispatcher inak job nezakladá / nepriraďuje vozidlo (job počká, kým sa blok uvoľní — vozidlo čakajúce
+ * na prístupovej bunke by zablokovalo dopravu) a vozidlo ju kontroluje znova pri príchode (`logistics/yard-rehandle.ts`). `spare` = rezerva buniek navyše
+ * (`logistics.rehandleSpareCells` pri priraďovaní vozidla jobu — plánovač počas cesty vozidla ukladá príchody do tých istých stohov; pri vzniku jobu a pri príchode 0).
  */
-export function unitPickable(world: World, unit: CargoUnit): boolean {
-  const block = unit.location.kind === 'in_storage' ? world.modules.get(unit.location.moduleId) : undefined;
+export function unitPickable(world: World, unit: CargoUnit, spare = 0): boolean {
+  if (unit.location.kind !== 'in_storage') return true;
+  const block = world.modules.get(unit.location.moduleId);
   if (!(block instanceof YardBlock)) return true;
   const depth = block.burialDepth(unit.id);
   if (depth === 0) return true;
   const blockerId = block.topBlockerOf(unit.id);
-  const blocker = blockerId === null ? undefined : world.cargo.get(blockerId);
-  if (blocker === undefined || blocker.location.kind !== 'in_storage') return true;
-  return rehandleRoom(world, block, blocker, block.positionOfSlot(blocker.location.slot)) >= depth;
+  // Bez uloženého kontajnera nad jednotkou (len rezervácie) je stoh rovnakej veľkosti ako ona — poslúži ako zástupca pri hľadaní miesta.
+  const blocker = (blockerId === null ? undefined : world.cargo.get(blockerId)) ?? unit;
+  return rehandleRoom(world, block, blocker, block.positionOfSlot(unit.location.slot)) >= depth + spare;
 }

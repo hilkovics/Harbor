@@ -5,27 +5,24 @@
  * - `emptyCargoTypeId` — typ nákladu prázdneho kontajnera (prvý typ kategórie depa, `container`);
  * - `emptyReturnRoom` — koľko ďalších návratov z vnútrozemia depo prijme: Σ voľné miesta dosiahnuteľných dep − rozbehnuté návraty (T6C-07b, M1;
  *   bez depa `Infinity`); krok 8 návrat bez miesta zahodí (`EmptyReturnDeclined`), takže sa bežný dvor prázdnymi nezaplní;
- * - `allocateReturnStorage` — kam uloží prázdny z docku rampy (návrat z vnútrozemia): najbližšie depo s voľným miestom; **fallback do bežného
- *   dvora len keď depo chýba**, inak (depo je, ale nemá miesto alebo je nedosiahnuteľné) prázdny čaká na docku;
- * - `allocateEmptyStorage` — kam uloží prázdny vrátený z apronu (po uzavretí bookingu repositioningu): depo s voľným miestom po odpočítaní
- *   rozbehnutých návratov, inak najbližší bežný dvor (ohraničené počtom slotov apronu — prázdny nesmie navždy blokovať apron);
+ * - kam sa prázdny uloží (depo / fallback do dvora) rozhoduje `YardPlanner` (`logistics/yard-planner.ts`, `candidateTiers`); staré alokátory
+ *   `allocateReturnStorage` a `allocateEmptyStorage` odstránil TR2-06b;
  * - `countAvailableEmpties` — koľko ich je (loď repositioningu na ne počká, kým nie sú pridelené nakládke);
  * - `findAvailableEmpty` — prázdny kontajner linky, ktorý možno vydať: v sklade, stav `available`, bez aktívneho jobu; depo pred
  *   bežným skladom, v rámci toho kontajner navrchu stohu (najmenej kontajnerov nad ním, ADR-039), potom najmenšie id (nezávisí od poradia indexu, takže ho obnova save nemení). Obe vedia obmedziť výber na sklady
  *   s cestou k cieľu (`targets`: kotvisko nakládky, rampa výdaja; `load-access.ts`, T6C-07b).
  */
-import { DEFAULT_CONTAINER_LABELS, EMPTY_WEIGHT_CLASS, type CargoUnit, type CargoUnitLabels, type ContainerSize } from '../cargo/cargo-unit';
+import { DEFAULT_CONTAINER_LABELS, EMPTY_WEIGHT_CLASS, teuOf, type CargoUnit, type CargoUnitLabels, type ContainerSize } from '../cargo/cargo-unit';
 import type { DefRegistry } from '../defs/def-registry';
 import type { CargoCategory } from '../defs/types';
 import { EMPTY_DEPOT_CATEGORY, EmptyDepot } from '../modules/empty-depot';
 import type { Module } from '../modules/module';
-import { StorageModule } from '../modules/storage-module';
 import { YardBlock } from '../modules/yard-block';
 import type { World } from '../world/world';
 import type { EntityId } from '../core/entity-id';
 import { storageReaches } from './load-access';
 import { distanceBetweenModules } from './module-access';
-import type { StorageAllocatorEnv } from './storage-allocator';
+import type { ModuleAccessEnv } from './module-access';
 
 /** Má svet aspoň jedno depo prázdnych (modul `EmptyDepot`)? O(moduly) — volá sa pri plánovaní, nie v hot path ticku. */
 export function hasEmptyDepot(world: Pick<World, 'modules'>): boolean {
@@ -57,44 +54,8 @@ export function emptyLabels(lineId: string, sizeFt: ContainerSize = DEFAULT_CONT
   return { direction: 'empty', voyageId: null, lineId, destinationPort: null, weightClass: EMPTY_WEIGHT_CLASS, ...DEFAULT_CONTAINER_LABELS, sizeFt };
 }
 
-/** Existuje depo prázdnych kategórie `category`? (Na rozdiel od `hasEmptyDepot` pre konkrétnu kategóriu.) */
-function hasDepotOf(env: Pick<StorageAllocatorEnv, 'modules'>, category: CargoCategory): boolean {
-  for (const module of env.modules.values()) if (module instanceof EmptyDepot && module.category === category) return true;
-  return false;
-}
-
-/** Najbližšie depo prázdnych kategórie `category` s voľným miestom dosiahnuteľné zo zdroja `source`; inak `undefined`. */
-function nearestDepot(env: StorageAllocatorEnv, source: Module, category: CargoCategory): EmptyDepot | undefined {
-  let best: EmptyDepot | undefined;
-  let bestDistance = Infinity;
-  for (const module of env.modules.values()) {
-    if (!(module instanceof EmptyDepot) || module.category !== category || module.freeCount <= 0) continue;
-    const distance = distanceBetweenModules(env, source, module);
-    if (distance < bestDistance) {
-      best = module;
-      bestDistance = distance;
-    }
-  }
-  return best;
-}
-
-/** Najbližší bežný sklad (nie depo) kategórie `category`, ktorý prijme prázdny kontajner, s voľným miestom dosiahnuteľný zo zdroja `source`. */
-function nearestYard(env: StorageAllocatorEnv, source: Module, category: CargoCategory): StorageModule | undefined {
-  let best: StorageModule | undefined;
-  let bestDistance = Infinity;
-  for (const module of env.modules.values()) {
-    if (!(module instanceof StorageModule) || module instanceof EmptyDepot || module.category !== category || !module.acceptsDirection('empty') || module.freeCount <= 0) continue;
-    const distance = distanceBetweenModules(env, source, module);
-    if (distance < bestDistance) {
-      best = module;
-      bestDistance = distance;
-    }
-  }
-  return best;
-}
-
 /**
- * Prázdne kontajnery, ktoré ešte nemajú rezervované miesto v depe, ale budú ho potrebovať — **rozbehnuté návraty**: jednotka v kamióne
+ * Prázdne kontajnery (v TEU — 40′ zaberá 2 bunky depa), ktoré ešte nemajú rezervované miesto v depe, ale budú ho potrebovať — **rozbehnuté návraty**: jednotka v kamióne
  * misie `delivery` (prešla bránou alebo čaká) a jednotka na docku rampy bez jobu a bez poverenia kamiónom `collect` (čaká na job prijatia).
  * Jednotka s jobom (`in_vehicle`, `at_ramp` s jobom) už drží rezerváciu, takže je v `freeCount` depa. Prechod trucks a ramp — volá sa len pri
  * rozhodovaní o návrate (zriedka), nie v každom ticku.
@@ -106,7 +67,8 @@ function emptiesAwaitingDepot(world: World): number {
     const aboard = world.cargo.countAt('in_truck', truck.id);
     for (let i = 0; i < aboard; i++) {
       const unitId = world.cargo.unitAtIndex('in_truck', truck.id, i);
-      if (unitId !== undefined && world.cargo.get(unitId)?.direction === 'empty') count += 1;
+      const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
+      if (unit?.direction === 'empty') count += teuOf(unit);
     }
   }
   for (const ramp of world.landsideModules.ramps) {
@@ -114,14 +76,19 @@ function emptiesAwaitingDepot(world: World): number {
     for (let i = 0; i < docked; i++) {
       const unitId = world.cargo.unitAtIndex('at_ramp', ramp.id, i);
       const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
-      if (unit !== undefined && unit.direction === 'empty' && world.jobOfUnit(unit.id) === undefined && world.emptyFlow.errandOfUnit(unit.id) === undefined) count += 1;
+      if (unit !== undefined && unit.direction === 'empty' && world.jobOfUnit(unit.id) === undefined && world.emptyFlow.errandOfUnit(unit.id) === undefined) count += teuOf(unit);
     }
   }
   return count;
 }
 
+/** Časť sveta, ktorú čítajú dotazy na depá (`World` ju spĺňa). */
+interface DepotEnv extends ModuleAccessEnv {
+  readonly modules: ReadonlyMap<EntityId, Module>;
+}
+
 /** Súčet voľných miest dep kategórie `category` dosiahnuteľných zo zdroja `source`, alebo `undefined`, keď také depo vo svete nie je. */
-export function depotFreeSlots(env: StorageAllocatorEnv, source: Module, category: CargoCategory): number | undefined {
+export function depotFreeSlots(env: DepotEnv, source: Module, category: CargoCategory): number | undefined {
   let free = 0;
   let depots = 0;
   for (const module of env.modules.values()) {
@@ -139,25 +106,6 @@ export function depotFreeSlots(env: StorageAllocatorEnv, source: Module, categor
 export function emptyReturnRoom(world: World, source: Module, category: CargoCategory): number {
   const free = depotFreeSlots(world, source, category);
   return free === undefined ? Infinity : Math.max(0, free - emptiesAwaitingDepot(world));
-}
-
-/**
- * Sklad pre prázdny kontajner z docku rampy `source` (návrat z vnútrozemia; viď hlavička): najbližšie depo s voľným miestom; bez depa vo svete
- * najbližší bežný sklad kategórie s voľným miestom (`EmptyStored.fallback`); keď depo je, ale nemá miesto alebo je nedosiahnuteľné, `undefined`
- * (prázdny počká na docku — návrat sa pri vzniku kamióna povoľuje len s miestom v depe, takže nastáva len po zmene sveta, napr. zbúranej ceste).
- */
-export function allocateReturnStorage(env: StorageAllocatorEnv, source: Module, category: CargoCategory): StorageModule | undefined {
-  return nearestDepot(env, source, category) ?? (hasDepotOf(env, category) ? undefined : nearestYard(env, source, category));
-}
-
-/**
- * Sklad pre prázdny kontajner vrátený z apronu zo zdroja `source` (viď hlavička): depo s voľným miestom, ktoré nie je sľúbené rozbehnutým
- * návratom (`emptyReturnRoom > 0`), inak najbližší bežný sklad s voľným miestom; inak `undefined` (jednotka čaká na aprone).
- */
-export function allocateEmptyStorage(world: World, source: Module, category: CargoCategory): StorageModule | undefined {
-  const depot = nearestDepot(world, source, category);
-  if (depot !== undefined && emptyReturnRoom(world, source, category) > 0) return depot;
-  return nearestYard(world, source, category);
 }
 
 /** Rozhodnutie o výbere: depo (0) pred bežným skladom (1). */

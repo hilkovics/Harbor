@@ -183,7 +183,7 @@ describe('WorldState v3 — sklad a depo v save', () => {
     const state = world.serialize();
     const yardEntry = state.modules.find((entry) => entry.id === yard.id);
     const depotEntry = state.modules.find((entry) => entry.id === depot.id);
-    expect(yardEntry?.runtime).toEqual({ unitsIn: 2, unitsOut: 1, rehandles: 0 } satisfies YardRuntimeState);
+    expect(yardEntry?.runtime).toEqual({ unitsIn: 2, unitsOut: 1, rehandles: 0, rehandleStalls: 0 } satisfies YardRuntimeState);
     expect(depotEntry?.runtime).toEqual({});
     expect(state.jobs).toEqual([]);
     expect(state.cargo.units.map((unit) => [unit.id, unit.location])).toEqual([
@@ -221,6 +221,7 @@ describe('WorldState v3 — sklad a depo v save', () => {
     ['runtime skladu bez kľúča', '/modules/0/runtime/unitsIn', (s) => delete runtimeOf(s, 0).unitsIn],
     ['runtime skladu s rezerváciami (v2 tvar; v3 ich odvodí z jobov)', '/modules/0/runtime/reservedSlots', (s) => (runtimeOf(s, 0).reservedSlots = [1])],
     ['runtime skladu bez rehandles (R2, ADR-039)', '/modules/0/runtime/rehandles', (s) => delete runtimeOf(s, 0).rehandles],
+    ['runtime skladu bez rehandleStalls (TR2-06b)', '/modules/0/runtime/rehandleStalls', (s) => delete runtimeOf(s, 0).rehandleStalls],
     ['záporné unitsOut', '/modules/0/runtime/unitsOut', (s) => (runtimeOf(s, 0).unitsOut = -1)],
     ['runtime depa s kľúčom', '/modules/1/runtime/vehicleIds', (s) => (runtimeOf(s, 1).vehicleIds = [])],
     ['jednotka na slote mimo kapacity skladu', '/cargo/units/1/location/slot', (s) => (s.cargo.units[1].location.slot = 64)],

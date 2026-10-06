@@ -10,6 +10,7 @@ import { assertCargoConservation } from '../helpers/invariants';
 import { buyVehicle, newUnit, openLoadJob, yardTestWorld } from './yard-fixtures';
 
 const REHANDLE_TICKS = DEFS.logistics.rehandleTicks;
+const LOAD_TICKS = DEFS.vehicles.get('straddle_carrier').loadTicks;
 
 /** Uloží jednotku na bunku `(bay, row, tier)` bloku priamo cez ledger (ako pri obnove save). */
 function place(world: World, block: YardBlock, bay: number, row: number, tier: number): EntityId {
@@ -26,6 +27,8 @@ interface Run {
   /** Tick, v ktorom cieľová jednotka opustila sklad (`in_storage → in_vehicle`). */
   readonly takenAt: number;
   readonly moves: readonly { readonly tick: number; readonly unitId: EntityId; readonly from: string; readonly to: string }[];
+  /** Zmeny stavu vozidla (`VehicleStateChanged`) v poradí: `from>to`. */
+  readonly vehicleStates: readonly string[];
 }
 
 /** Dvor W, cieľ v stohu (1, 0) s `blockers` kontajnermi nad ním; jedno vozidlo si ho vezme jobom na apron Root berthu. */
@@ -40,16 +43,18 @@ function takeWithBlockers(blockers: number): Run {
   buyVehicle(world, depot as never);
   openLoadJob(world, berth, target);
   const moves: Run['moves'][number][] = [];
+  const vehicleStates: string[] = [];
   let takenAt = -1;
   for (let i = 0; i < 4000 && takenAt < 0; i++) {
     const tick = world.clock.tick;
     for (const event of world.tick()) {
+      if (event.type === 'VehicleStateChanged') vehicleStates.push(`${event.from}>${event.to}`);
       if (event.type !== 'CargoMoved' || (event.from.kind !== 'in_storage' && event.to.kind !== 'in_storage')) continue;
       moves.push({ tick, unitId: event.unitId, from: event.from.kind, to: event.to.kind });
       if (event.unitId === target && event.to.kind === 'in_vehicle') takenAt = tick;
     }
   }
-  return { world, block, target, blockers: above, takenAt, moves };
+  return { world, block, target, blockers: above, takenAt, moves, vehicleStates };
 }
 
 describe('rehandling pri výbere zo skladu', () => {
@@ -85,9 +90,18 @@ describe('rehandling pri výbere zo skladu', () => {
     expect(buried.block.stackHeight(1, 0)).toBe(0);
   });
 
-  it('čas: každý presun trvá rehandleTicks — cieľ s dvoma kontajnermi nad sebou sa vyberie o 2 × rehandleTicks neskôr než navrchu ležiaci', () => {
+  it('čas: každý presun trvá rehandleTicks — cieľ s dvoma kontajnermi nad sebou sa vyberie o 2 × rehandleTicks + loadTicks (návrat do loading) neskôr než navrchu ležiaci', () => {
     expect(REHANDLE_TICKS).toBeGreaterThan(0);
-    expect(buried.takenAt - free.takenAt).toBe(2 * REHANDLE_TICKS);
+    expect(buried.takenAt - free.takenAt).toBe(2 * REHANDLE_TICKS + LOAD_TICKS);
+  });
+
+  it('FSM vozidla (R2, TR2-06b): rehandling je samostatný stav — loading → rehandling → loading len pri zavalenom cieli', () => {
+    expect(free.vehicleStates).not.toContain('loading>rehandling');
+    const states = buried.vehicleStates;
+    const at = states.indexOf('loading>rehandling');
+    expect(at).toBeGreaterThan(0);
+    expect(states.slice(at - 1, at + 3)).toEqual(['to_pickup>loading', 'loading>rehandling', 'rehandling>loading', 'loading>to_dropoff']);
+    expect(states.filter((state) => state === 'loading>rehandling')).toHaveLength(1); // jeden pobyt na oba presuny
   });
 
   it('po rehandlingu drží krok 12 aj zachovanie nákladu: stohy súvislé, StackGrid = ledger, nič sa nestratilo', () => {
@@ -107,9 +121,10 @@ describe('rehandling pri výbere zo skladu', () => {
     const depot = [...world.modules.values()].find((module) => module.kind === 'depot');
     buyVehicle(world, depot as never);
     openLoadJob(world, berth, target);
-    // Beh, kým vozidlo nepreloží prvý kontajner (rehandles 1) — vozidlo je v `loading` a čaká.
+    // Beh, kým vozidlo nepreloží prvý kontajner (rehandles 1) — vozidlo je v `rehandling` a čaká (trpezlivosť sa obnovila).
     for (let i = 0; i < 4000 && block.rehandles < 1; i++) world.tick();
     expect(block.rehandles).toBe(1);
+    expect([...world.vehicles.values()].map((vehicle) => [vehicle.state, vehicle.waitTicks])).toEqual([['rehandling', Math.ceil(DEFS.logistics.rehandleGiveUpTicks / REHANDLE_TICKS) * REHANDLE_TICKS]]); // úspešný presun vrátil trpezlivosť na plnú hodnotu
     const state = JSON.parse(JSON.stringify(world.serialize())) as WorldState;
     const restored = World.deserialize(DEFS, world.map, state);
     for (let i = 0; i < 600; i++) {

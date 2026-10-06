@@ -1,19 +1,20 @@
 // YardBlock + StackGrid (TR2-02; ADR-039 bod 3–5): geometria a kódovanie slotu, pravidlá stohu (20′, 40′, výška, len vrchný),
 // kapacita v TEU, odvodená cache `StackGrid` vs ledger (invariant kroku 12) a rezervácie bunky (40′ rezervuje aj tieň).
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { IMPORT_LABELS, type ContainerSize } from '@sim/cargo';
 import type { EntityId } from '@sim/core';
 import { EmptyDepot, YardBlock, positionOfCell, slotOfCell } from '@sim/modules';
 import { World, findWorldViolation, type WorldState } from '@sim/world';
-import { BARE_MAP, DEFS, SEED } from '../world/world-fixtures';
+import { DefRegistry } from '@sim/defs';
+import { APRON_MODULES, BARE_MAP, DEFS, RAW_DEFS, SEED } from '../world/world-fixtures';
 
 const YARD = 'container_yard_small';
 const DEPOT = 'empty_depot';
 const TEU = 'container_teu';
 const id = (value: number): EntityId => value as EntityId;
 
-function worldWith(defId: string, x: number, y: number): { world: World; block: YardBlock } {
-  const world = World.create(DEFS, BARE_MAP, SEED);
+function worldWith(defId: string, x: number, y: number, defs: DefRegistry = DEFS): { world: World; block: YardBlock } {
+  const world = World.create(defs, BARE_MAP, SEED);
   const block = world.placeModule({ defId, x, y, rotation: 0 }, 0);
   if (!(block instanceof YardBlock)) throw new Error(`${defId} nie je YardBlock`);
   return { world, block };
@@ -196,6 +197,88 @@ describe('rezervácie buniek', () => {
     // `second` (rezervovaný na vrstvu 1) príde prvý: stoh je prázdny, takže dostane vrstvu 0 a `first` jeho vrstvu 1.
     expect(block.settleReservation(upper)).toEqual({ slot: lower, displaced: upper });
     expect(block.reservedSlots()).toEqual([lower, upper]);
+    expect(block.findStackProblem()).toBeUndefined();
+  });
+});
+
+describe('burialDepth, topBlockerOf a rezervácie nad jednotkou (TR2-06b)', () => {
+  it('burialDepth počíta uložené aj rezervované kontajnery nad jednotkou; topBlockerOf len uložené', () => {
+    const { world, block } = worldWith(YARD, 50, 20);
+    const target = inVehicle(world);
+    const stored = inVehicle(world);
+    put(world, block, target, 1, 0, 0);
+    expect([block.burialDepth(target), block.topBlockerOf(target)]).toEqual([0, null]);
+    put(world, block, stored, 1, 0, 1);
+    expect([block.burialDepth(target), block.topBlockerOf(target)]).toEqual([1, stored]);
+    // Rezervácia na vrstve 2 (kontajner, ktorý sa nad cieľ práve ukladá): hĺbka 2, vrchný uložený blokátor ostáva ten istý.
+    const incoming = world.cargo.get(inVehicle(world));
+    if (incoming === undefined) throw new Error('chýba jednotka');
+    block.reserveFor(block.slotOf(1, 0, 2), incoming);
+    expect([block.burialDepth(target), block.topBlockerOf(target), block.burialDepth(stored)]).toEqual([2, stored, 1]);
+    // Jednotka mimo bloku nemá hĺbku ani blokátora.
+    const outside = inVehicle(world);
+    expect([block.burialDepth(outside), block.topBlockerOf(outside)]).toEqual([0, null]);
+  });
+});
+
+describe('vacateReservation (TR2-06b)', () => {
+  it('rezervovanú bunku uvoľní pre rehandling: rezervácia sa presunie na prvú voľnú vrstvu nad stohom; nerezervovaná bunka → null', () => {
+    const { world, block } = worldWith(YARD, 50, 20);
+    const base = inVehicle(world);
+    put(world, block, base, 2, 1, 0);
+    const incoming = world.cargo.get(inVehicle(world));
+    if (incoming === undefined) throw new Error('chýba jednotka');
+    const reserved = block.slotOf(2, 1, 1);
+    block.reserveFor(reserved, incoming);
+    expect(block.vacateReservation(block.slotOf(2, 2, 0))).toBeNull(); // bunka bez rezervácie
+    expect(block.vacateReservation(reserved)).toEqual({ from: reserved, to: block.slotOf(2, 1, 2) });
+    expect(block.reservedSlots()).toEqual([block.slotOf(2, 1, 2)]);
+    expect([block.reservedTeu, block.effectiveHeight(2, 1), block.effectiveTopUnit(2, 1)]).toEqual([1, 3, incoming.id]);
+    expect(block.findStackProblem()).toBeUndefined();
+  });
+
+  it('keď stoh nemá voľnú vrstvu (rezervácia je už navrchu), presun zlyhá stack_rule a nič sa nezmení', () => {
+    const { world, block } = worldWith(YARD, 50, 20);
+    const incoming = world.cargo.get(inVehicle(world));
+    if (incoming === undefined) throw new Error('chýba jednotka');
+    const top = block.slotOf(0, 0, 2);
+    block.reserveFor(top, incoming);
+    expect(codeOf(() => block.vacateReservation(top))).toBe('stack_rule');
+    expect(block.reservedSlots()).toEqual([top]);
+    expect(block.findStackProblem()).toBeUndefined();
+  });
+});
+
+describe('bunka tieňa 40′ v kapacite bloku a obnova výšky (TR2-06b)', () => {
+  const smallCapacity = DefRegistry.fromRaw({
+    ...RAW_DEFS,
+    modules: { ...APRON_MODULES, items: APRON_MODULES.items.map((item) => (item.id === YARD ? { ...item, params: { ...item.params, capacityUnits: 7 } } : item)) },
+  });
+
+  it('40′ na slote, ktorého tieň (bay + 1) leží mimo kapacity, sa neuloží ani nerezervuje (stack_rule)', () => {
+    const { world, block } = worldWith(YARD, 50, 20, smallCapacity);
+    expect(block.capacity).toBe(7);
+    const wide = inVehicle(world, 40);
+    const unit = world.cargo.get(wide);
+    if (unit === undefined) throw new Error('chýba jednotka');
+    const slot = block.slotOf(2, 0, 0); // slot 6 < 7, tieň (slot 9) je mimo
+    expect(codeOf(() => put(world, block, wide, 2, 0, 0))).toBe('stack_rule');
+    expect(codeOf(() => block.reserveFor(slot, unit))).toBe('stack_rule');
+    expect(world.cargo.get(wide)?.location.kind).toBe('in_vehicle');
+    expect(codeOf(() => put(world, block, wide, 0, 0, 0))).toBeUndefined(); // tieň (slot 3) je v kapacite
+  });
+
+  it('rebuildGrid dá správnu výšku, aj keď ledger vráti jednotky stohu v poradí zhora nadol', () => {
+    const { world, block } = worldWith(YARD, 50, 20);
+    const [a, b, c] = [inVehicle(world), inVehicle(world), inVehicle(world)];
+    put(world, block, a, 0, 0, 0);
+    put(world, block, b, 0, 0, 1);
+    put(world, block, c, 0, 0, 2);
+    // Obnova z ledgera: `unitsAt` nemusí vracať jednotky od zeme nahor — výška je najvyššia obsadená vrstva + 1, nie vrstva poslednej jednotky.
+    const spy = vi.spyOn(world.cargo, 'unitsAt').mockReturnValue([c, a, b]);
+    block.rebuildGrid();
+    spy.mockRestore();
+    expect([block.stackHeight(0, 0), block.topUnit(0, 0)]).toEqual([3, c]);
     expect(block.findStackProblem()).toBeUndefined();
   });
 });

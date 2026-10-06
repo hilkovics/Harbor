@@ -40,12 +40,12 @@ function jobError(action: () => unknown): JobError {
 }
 
 describe('stavy jobu a tabuľky', () => {
-  it('JOB_STATES v poradí životného cyklu; prechody dopredu po jednom až po done, zrušiť sa dá len open; done a cancelled sú konečné', () => {
+  it('JOB_STATES v poradí životného cyklu; prechody dopredu po jednom až po done, zrušiť sa dá open a picking (rehandling bez cieľa, TR2-06b); done a cancelled sú konečné', () => {
     expect(JOB_STATES).toEqual(['open', 'assigned', 'picking', 'moving', 'dropping', 'done', 'cancelled']);
     expect([...JOB_TRANSITIONS.entries()]).toEqual([
       ['open', ['assigned', 'cancelled']],
       ['assigned', ['picking']],
-      ['picking', ['moving']],
+      ['picking', ['moving', 'cancelled']],
       ['moving', ['dropping']],
       ['dropping', ['done']],
       ['done', []],
@@ -55,7 +55,7 @@ describe('stavy jobu a tabuľky', () => {
     for (const from of JOB_STATES) {
       for (const to of JOB_STATES) {
         const forward = lifecycle.includes(from) && lifecycle.includes(to) && lifecycle.indexOf(to) === lifecycle.indexOf(from) + 1;
-        expect(isJobTransitionAllowed(from, to), `${from} → ${to}`).toBe(forward || (from === 'open' && to === 'cancelled'));
+        expect(isJobTransitionAllowed(from, to), `${from} → ${to}`).toBe(forward || ((from === 'open' || from === 'picking') && to === 'cancelled'));
       }
     }
   });
@@ -97,7 +97,7 @@ describe('stavy jobu a tabuľky', () => {
     expect(jobRouteOf('at_ramp', 'in_truck')).toBeUndefined();
     for (const state of JOB_STATES) expect(isJobState(state)).toBe(true);
     for (const value of ['closed', '', null, 1]) expect(isJobState(value)).toBe(false);
-    expect(JOB_CANCEL_REASONS).toEqual(['ramp_inoperative', 'ramp_unreachable', 'loading_stopped']);
+    expect(JOB_CANCEL_REASONS).toEqual(['ramp_inoperative', 'ramp_unreachable', 'loading_stopped', 'rehandle_stalled']);
   });
 });
 
@@ -181,6 +181,20 @@ describe('TransportJob', () => {
     assigned.assign(id(7));
     expect(jobError(() => assigned.transition('cancelled')).code).toBe('invalid_transition');
     expect(assigned.state).toBe('assigned');
+  });
+
+  it('zrušenie z picking (rehandling bez cieľa, TR2-06b): vozidlo ostáva v jobe, stav je neaktívny; z moving / dropping sa job zrušiť nedá', () => {
+    const picking = new TransportJob(OUTBOUND);
+    picking.assign(id(7));
+    picking.transition('picking');
+    picking.transition('cancelled');
+    expect([picking.state, picking.vehicleId, JOB_STATE_TRAITS[picking.state].active]).toEqual(['cancelled', 7, false]);
+    const moving = new TransportJob(OUTBOUND);
+    moving.assign(id(7));
+    moving.transition('picking');
+    moving.transition('moving');
+    expect(jobError(() => moving.transition('cancelled')).code).toBe('invalid_transition');
+    expect(moving.state).toBe('moving');
   });
 
   it('assign: open → assigned s vozidlom; transition ďalej po tabuľke až po done', () => {

@@ -309,6 +309,7 @@ describe('runScenario', () => {
       inlandWaitTicksMax: 0,
       pickupBayStarvationTicks: 0,
       rehandles: 0,
+      rehandleStalls: 0,
       rehandlesPerMove: null,
       yardTeuUsedPct: 0,
       directHandoverPct: null,
@@ -393,6 +394,7 @@ describe('runScenario', () => {
       'maxBlockedTicks',
       'stuckAtEnd',
       'rehandles',
+      'rehandleStalls',
       'rehandlesPerMove',
       'yardTeuUsedPct',
     ]);

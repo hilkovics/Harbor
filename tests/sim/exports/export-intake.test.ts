@@ -1,6 +1,6 @@
 /**
  * Prijatie exportu do skladu (F6a, T6A-04, ADR-032 bod 8): job `at_ramp → in_storage` pre jednotky vyložené kamiónom,
- * zoskupenie podľa voyage, náklad na odvoz vs. export na prijatie na docku (`isPickupCargo`), index zadržaných jednotiek
+ * zoskupenie podľa voyage (`YardPlanner`, TR2-06b: nahradil `allocateExportStorage`), náklad na odvoz vs. export na prijatie na docku (`isPickupCargo`), index zadržaných jednotiek
  * a invarianty kroku 12 pre export (rezervácie docku vykladajúcimi kamiónmi, pool po skupinách, index hold).
  */
 import { describe, expect, it } from 'vitest';
@@ -9,9 +9,8 @@ import { HoldIndex } from '@sim/cargo/hold-index';
 import type { ContractId, EntityId } from '@sim/core';
 import { createExportJobs } from '@sim/logistics/dispatcher';
 import { isPickupCargo } from '@sim/logistics/dock-cargo';
-import { allocateExportStorage } from '@sim/logistics/export-intake';
-import { LoadingRamp, StorageModule } from '@sim/modules';
-import { TransportJob } from '@sim/logistics';
+import { LoadingRamp, StorageModule, type YardBlock } from '@sim/modules';
+import { TransportJob, chooseYardSlot } from '@sim/logistics';
 import type { World } from '@sim/world';
 import { findWorldViolation } from '@sim/world/world-invariants';
 import { TICKS_PER_DAY, acceptedBooking, exportUnitIds, exportUnitsByLocation, exportWorld, f6aDefs, lostUnits, offerBooking, startLoading, tickEvents, tickUntil } from '../helpers/f6a';
@@ -44,8 +43,8 @@ describe('zoskupenie exportu podľa voyage', () => {
     const { exportContract } = acceptedBooking(world, { kind: 'export', booked: 4 });
     const unit = world.cargo.get(unitAtRamp(world, exportContract)) as CargoUnit;
     const [near, far] = yardsOf(world);
-    const chosen = allocateExportStorage(world, rampOf(world), unit, 'container');
-    expect(chosen?.id).toBe(far.id);
+    const chosen = chooseYardSlot(world, unit, rampOf(world));
+    expect(chosen?.moduleId).toBe(far.id);
     expect(near.id).not.toBe(far.id);
   });
 
@@ -55,11 +54,11 @@ describe('zoskupenie exportu podľa voyage', () => {
     const [near, far] = yardsOf(world);
     unitInStorage(world, exportContract, near, 0);
     const unit = world.cargo.get(unitAtRamp(world, exportContract)) as CargoUnit;
-    expect(allocateExportStorage(world, rampOf(world), unit, 'container')?.id).toBe(near.id);
+    expect(chooseYardSlot(world, unit, rampOf(world))?.moduleId).toBe(near.id);
     // Iná voyage (iný booking) toto zoskupenie nezdedí — ide do najbližšieho.
     const other = acceptedBooking(world, { kind: 'export', booked: 4 }).exportContract;
     const otherUnit = world.cargo.get(unitAtRamp(world, other, 1)) as CargoUnit;
-    expect(allocateExportStorage(world, rampOf(world), otherUnit, 'container')?.id).toBe(far.id);
+    expect(chooseYardSlot(world, otherUnit, rampOf(world))?.moduleId).toBe(far.id);
   });
 
   it('job do skladu voyage, ktorý ešte nemá uloženú jednotku (job v lete), tiež zoskupuje', () => {
@@ -67,10 +66,11 @@ describe('zoskupenie exportu podľa voyage', () => {
     const { exportContract } = acceptedBooking(world, { kind: 'export', booked: 4 });
     const [near] = yardsOf(world);
     const first = unitAtRamp(world, exportContract);
-    const slot = near.reserve();
+    const slot = (near as YardBlock).slotOf(0, 0, 0);
+    (near as YardBlock).reserveFor(slot, world.cargo.get(first) as CargoUnit);
     world.addJob(new TransportJob({ id: world.ids.next(), unitIds: [first], from: world.cargo.get(first)!.location, to: { kind: 'in_storage', moduleId: near.id, slot }, createdTick: 0 }));
     const second = world.cargo.get(unitAtRamp(world, exportContract, 1)) as CargoUnit;
-    expect(allocateExportStorage(world, rampOf(world), second, 'container')?.id).toBe(near.id);
+    expect(chooseYardSlot(world, second, rampOf(world))?.moduleId).toBe(near.id);
   });
 
   it('plný sklad voyage sa preskočí: najbližší sklad s voľným miestom', () => {
@@ -81,7 +81,7 @@ describe('zoskupenie exportu podľa voyage', () => {
     unitInStorage(world, exportContract, near, 0);
     const unit = world.cargo.get(unitAtRamp(world, exportContract)) as CargoUnit;
     expect(near.freeCount).toBe(0);
-    expect(allocateExportStorage(world, rampOf(world), unit, 'container')?.id).toBe(far.id);
+    expect(chooseYardSlot(world, unit, rampOf(world))?.moduleId).toBe(far.id);
   });
 
   it('bez voľného skladu job nevznikne a jednotka čaká na docku', () => {

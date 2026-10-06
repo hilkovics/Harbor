@@ -80,8 +80,8 @@ describe('scenár landside_pressure: beh', () => {
   const observed = run();
   const { world, events } = observed;
 
-  it('import #10 (31 kontajnerov) sa pod tlakom dokončí; export #11 aj prvý import #5 tiež, v poradí #5, #11, #10', () => {
-    expect(of(events, 'ContractCompleted').map((entry) => entry.event.contractId)).toEqual([FIRST_IMPORT_ID, BOOKING_ID, PAIRED_IMPORT_ID]);
+  it('import #10 (31 kontajnerov) sa pod tlakom dokončí; export #11 aj prvý import #5 tiež, v poradí #5, #10, #11 (TR2-06b: výber zo skladu počíta rezervované kontajnery nad cieľom, export dobehne po importe)', () => {
+    expect(of(events, 'ContractCompleted').map((entry) => entry.event.contractId)).toEqual([FIRST_IMPORT_ID, PAIRED_IMPORT_ID, BOOKING_ID]);
     expect(world.contracts.get(PAIRED_IMPORT_ID as never)).toMatchObject({ kind: 'import', state: 'completed', volumeUnits: PAIRED_IMPORT_UNITS, unitsExported: PAIRED_IMPORT_UNITS });
     expect(world.contracts.get(BOOKING_ID as never)).toMatchObject({ kind: 'export', state: 'completed' });
   });

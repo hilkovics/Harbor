@@ -1,9 +1,11 @@
-// StorageAllocator a prístup k modulom (T03-05; ARCHITECTURE §7.3 bod 1, §7.7; ADR-018): prístupová bunka = vonkajšia
-// bunka cestného konektora s cestou, vzdialenosti cez DistanceMatrix, najbližší kompatibilný pripojený sklad s voľnou
-// kapacitou (stored + reserved < capacity), remíza → menšie id; výber svet nemení.
+// Prístup k modulom a výber bloku (T03-05; ARCHITECTURE §7.3 bod 1, §7.7; ADR-018, ADR-039): prístupová bunka = vonkajšia
+// bunka cestného konektora s cestou, vzdialenosti cez DistanceMatrix, najbližší kompatibilný pripojený blok s voľnou
+// kapacitou (stored + reserved < capacity) vyberá `YardPlanner` (nahradil `allocateStorage`, TR2-06b), remíza → menšie id; výber svet nemení.
 import { describe, expect, it } from 'vitest';
-import { NO_ACCESS, accessCellIndex, allocateStorage, distanceBetweenModules, distanceToModule, isAccessCell, nearestAccessCell } from '@sim/logistics';
-import type { BerthModule } from '@sim/modules';
+import type { CargoUnit } from '@sim/cargo';
+import { NO_ACCESS, accessCellIndex, chooseYardSlot, distanceBetweenModules, distanceToModule, isAccessCell, nearestAccessCell, reserveYardSlot } from '@sim/logistics';
+import type { BerthModule, YardBlock } from '@sim/modules';
+import type { World } from '@sim/world';
 import {
   BERTH_ACCESS,
   DEPOT_ACCESS,
@@ -20,6 +22,7 @@ import {
   execute,
   placeYard,
 } from './dispatch-fixtures';
+import { newUnit } from './yard-fixtures';
 
 const berthOf = (world: ReturnType<typeof dispatchWorld>['world']): BerthModule => world.modules.get(ROOT_BERTH_ID) as BerthModule;
 
@@ -53,53 +56,53 @@ describe('prístup k modulom po ceste', () => {
   });
 });
 
-describe('allocateStorage', () => {
-  it('najbližší sklad od berthu; pri zhode vzdialeností menšie id (W pred E)', () => {
+describe('YardPlanner — výber bloku (nahradil allocateStorage, TR2-06b)', () => {
+  const blockOf = (world: World, unit: CargoUnit): YardBlock => {
+    const choice = reserveYardSlot(world, unit, berthOf(world));
+    if (choice === null) throw new Error('plánovač nenašiel blok');
+    return world.modules.get(choice.moduleId) as YardBlock;
+  };
+
+  it('najbližší blok od berthu; pri zhode vzdialeností menšie id (W pred E)', () => {
     const { world } = dispatchWorld();
     const far = placeYard(world, YARD_F);
     const west = placeYard(world, YARD_W);
     const east = placeYard(world, YARD_E);
     expect(west.id).toBeLessThan(east.id);
-    expect(allocateStorage(world, berthOf(world), 'container')).toBe(west);
+    expect(chooseYardSlot(world, newUnit(world), berthOf(world))?.moduleId).toBe(west.id);
     expect(far.id).toBeLessThan(west.id);
   });
 
-  it('rešpektuje rezervácie: plne rezervovaný sklad sa preskočí (freeCount = capacity − stored − reserved)', () => {
+  it('rešpektuje rezervácie: plne rezervovaný blok sa preskočí (freeCount = capacity − stored − reserved); import sa najprv rozloží po prázdnych stohoch blokov', () => {
     const { world } = dispatchWorld(dispatchDefs({ yardCapacity: 2 }));
     const west = placeYard(world, YARD_W);
     const east = placeYard(world, YARD_E);
     const far = placeYard(world, YARD_F);
-    west.reserve();
-    expect(allocateStorage(world, berthOf(world), 'container')).toBe(west);
-    west.reserve();
-    expect(west.freeCount).toBe(0);
-    expect(allocateStorage(world, berthOf(world), 'container')).toBe(east);
-    east.reserve();
-    east.reserve();
-    expect(allocateStorage(world, berthOf(world), 'container')).toBe(far);
-    far.reserve();
-    far.reserve();
-    expect(allocateStorage(world, berthOf(world), 'container')).toBeUndefined();
+    // Každý blok má jediný použiteľný stoh (kapacita 2): prázdny stoh (trieda 0) má prednosť pred vrstvením, medzi nimi najbližší blok; potom sa vrství.
+    const picks = Array.from({ length: 6 }, () => blockOf(world, newUnit(world)));
+    expect(picks).toEqual([west, east, far, west, east, far]);
+    expect([west.freeCount, east.freeCount, far.freeCount]).toEqual([0, 0, 0]);
+    expect(chooseYardSlot(world, newUnit(world), berthOf(world))).toBeNull();
   });
 
-  it('nepripojený sklad (bez cesty pred konektorom) a sklad inej kategórie sa ignorujú; výber svet nemení', () => {
+  it('nepripojený blok (bez cesty pred konektorom) sa ignoruje; výber (chooseYardSlot) svet nemení', () => {
     const { world } = dispatchWorld();
     placeYard(world, { x: 42, y: 24 }, 0); // bez cesty
-    expect(allocateStorage(world, berthOf(world), 'container')).toBeUndefined();
+    expect(chooseYardSlot(world, newUnit(world), berthOf(world))).toBeNull();
     const far = placeYard(world, YARD_F);
-    expect(allocateStorage(world, berthOf(world), 'bulk')).toBeUndefined();
+    const unit = newUnit(world);
     const before = JSON.stringify(world.serialize());
-    expect(allocateStorage(world, berthOf(world), 'container')).toBe(far);
+    expect(chooseYardSlot(world, unit, berthOf(world))?.moduleId).toBe(far.id);
     expect(JSON.stringify(world.serialize())).toBe(before);
     expect(far.reservedCount).toBe(0);
   });
 
-  it('sklad, ku ktorému po ceste nevedie cesta (odrezaný úsek), sa ignoruje', () => {
+  it('blok, ku ktorému po ceste nevedie cesta (odrezaný úsek), sa ignoruje', () => {
     const { world } = dispatchWorld();
     const far = placeYard(world, YARD_F);
     const west = placeYard(world, YARD_W);
     execute(world, { type: 'RemoveRoad', cells: [{ x: 39, y: 17 }] }); // W je odrezaný od berthu
-    expect(allocateStorage(world, berthOf(world), 'container')).toBe(far);
+    expect(chooseYardSlot(world, newUnit(world), berthOf(world))?.moduleId).toBe(far.id);
     expect(distanceBetweenModules(world, berthOf(world), west)).toBe(Infinity);
     expect(YARD_W_ACCESS.x).toBeLessThan(39);
     expect(YARD_F_ACCESS.x).toBeGreaterThan(39);

@@ -97,7 +97,7 @@ describe('ContainerYard — z defu container_yard_small', () => {
     expect(yard.params).toEqual({ capacityUnits: 64, category: 'container', bays: 4, rows: 4, maxTier: 3 });
     const slots = yard.cargoSlots();
     expect([slots.kind, slots.holderId, slots.capacity]).toEqual(['in_storage', YARD_ID, 48]);
-    expect(yard.getRuntimeState()).toEqual({ unitsIn: 0, unitsOut: 0, rehandles: 0 } satisfies YardRuntimeState);
+    expect(yard.getRuntimeState()).toEqual({ unitsIn: 0, unitsOut: 0, rehandles: 0, rehandleStalls: 0 } satisfies YardRuntimeState);
   });
 
   it('konektor po rotácii je vo `connectors` (1, 3, s) → svet (3, 5, s)', () => {
@@ -186,7 +186,7 @@ describe('StorageModule — runtime stav v save', () => {
     cargo.move(unit, { kind: 'in_vehicle', vehicleId: id(903) });
     yard.recordTaken(unit);
     const state = yard.getRuntimeState();
-    expect(state).toEqual({ unitsIn: 1, unitsOut: 1, rehandles: 0 });
+    expect(state).toEqual({ unitsIn: 1, unitsOut: 1, rehandles: 0, rehandleStalls: 0 });
     const copy = yardOf(YARD, cargo).yard;
     copy.restoreRuntimeState(JSON.parse(JSON.stringify(state)));
     expect([copy.unitsIn, copy.unitsOut, copy.reservedCount, copy.storedCount]).toEqual([1, 1, 0, 0]);
@@ -206,13 +206,15 @@ describe('StorageModule — runtime stav v save', () => {
 
   const INVALID: readonly [string, unknown, string][] = [
     ['nie objekt', null, ''],
-    ['chýba unitsOut', { unitsIn: 0, rehandles: 0 }, '/unitsOut'],
-    ['chýba rehandles (R2, ADR-039)', { unitsIn: 0, unitsOut: 0 }, '/rehandles'],
-    ['neznámy kľúč', { unitsIn: 0, unitsOut: 0, rehandles: 0, stored: [] }, '/stored'],
-    ['reservedSlots (v2 tvar, v3 ho nepozná)', { reservedSlots: [], unitsIn: 0, unitsOut: 0, rehandles: 0 }, '/reservedSlots'],
-    ['unitsIn záporné', { unitsIn: -1, unitsOut: 0, rehandles: 0 }, '/unitsIn'],
-    ['unitsOut zlomkové', { unitsIn: 0, unitsOut: 1.5, rehandles: 0 }, '/unitsOut'],
-    ['rehandles záporné', { unitsIn: 0, unitsOut: 0, rehandles: -1 }, '/rehandles'],
+    ['chýba unitsOut', { unitsIn: 0, rehandles: 0, rehandleStalls: 0 }, '/unitsOut'],
+    ['chýba rehandles (R2, ADR-039)', { unitsIn: 0, unitsOut: 0, rehandleStalls: 0 }, '/rehandles'],
+    ['chýba rehandleStalls (TR2-06b)', { unitsIn: 0, unitsOut: 0, rehandles: 0 }, '/rehandleStalls'],
+    ['neznámy kľúč', { unitsIn: 0, unitsOut: 0, rehandles: 0, rehandleStalls: 0, stored: [] }, '/stored'],
+    ['reservedSlots (v2 tvar, v3 ho nepozná)', { reservedSlots: [], unitsIn: 0, unitsOut: 0, rehandles: 0, rehandleStalls: 0 }, '/reservedSlots'],
+    ['unitsIn záporné', { unitsIn: -1, unitsOut: 0, rehandles: 0, rehandleStalls: 0 }, '/unitsIn'],
+    ['unitsOut zlomkové', { unitsIn: 0, unitsOut: 1.5, rehandles: 0, rehandleStalls: 0 }, '/unitsOut'],
+    ['rehandles záporné', { unitsIn: 0, unitsOut: 0, rehandles: -1, rehandleStalls: 0 }, '/rehandles'],
+    ['rehandleStalls záporné', { unitsIn: 0, unitsOut: 0, rehandles: 0, rehandleStalls: -1 }, '/rehandleStalls'],
   ];
 
   it.each(INVALID)('%s → ModuleStateError na %s, stav sa nezmení', (_name, raw, path) => {

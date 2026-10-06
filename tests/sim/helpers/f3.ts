@@ -98,13 +98,14 @@ export function vehiclesById(world: World): Vehicle[] {
 // ---------------------------------------------------------------------------------------------------------
 
 /**
- * Povolené prechody vozidla: `idle → to_pickup → loading → to_dropoff → unloading → idle`, `to_* ↔ no_path`.
+ * Povolené prechody vozidla: `idle → to_pickup → loading → to_dropoff → unloading → idle`, `to_* ↔ no_path`, `loading ↔ rehandling` a `rehandling → idle` (R2).
  * Z `no_path` sa vozidlo vracia do toho `to_*`, z ktorého vypadlo (kontroluje `vehicleFsmViolation`).
  */
 export const VEHICLE_TRANSITIONS: Readonly<Record<VehicleState, readonly VehicleState[]>> = {
   idle: ['to_pickup', 'to_depot'],
   to_pickup: ['loading', 'no_path'],
-  loading: ['to_dropoff'],
+  loading: ['to_dropoff', 'rehandling'],
+  rehandling: ['loading', 'idle'],
   to_dropoff: ['unloading', 'no_path'],
   unloading: ['idle'],
   no_path: ['to_pickup', 'to_dropoff'],
@@ -118,7 +119,7 @@ export const MOVING_STATES: readonly VehicleState[] = ['to_pickup', 'to_dropoff'
 
 /**
  * Poradie stavov jobu; stav smie len rásť (preskočiť možno, vzorka po ticku nemusí zachytiť krátky stav). `cancelled`
- * (T04-03, ADR-023) je konečný ako `done` a dosiahne sa len z `open`; vo F3 nenastane.
+ * (T04-03, ADR-023) je konečný ako `done` a dosiahne sa z `open` (dispatcher) alebo `picking` (rehandling bez cieľa, TR2-06b).
  */
 export const JOB_STATE_RANK: Readonly<Record<JobState, number>> = {
   open: 0,

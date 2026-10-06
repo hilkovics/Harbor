@@ -35,7 +35,7 @@ const BASE: VehicleInit = {
 
 describe('stavy vozidla', () => {
   it('VEHICLE_STATES = stavy zo „Spoločných rozhraní" v poradí životného cyklu', () => {
-    expect(VEHICLE_STATES).toEqual(['idle', 'to_pickup', 'loading', 'to_dropoff', 'unloading', 'no_path', 'to_depot', 'parked', 'depot_exit']);
+    expect(VEHICLE_STATES).toEqual(['idle', 'to_pickup', 'loading', 'rehandling', 'to_dropoff', 'unloading', 'no_path', 'to_depot', 'parked', 'depot_exit']);
   });
 
   it('VEHICLE_STATE_TRAITS: job má každý stav okrem voľných (idle, to_depot, parked); tabuľka pokrýva všetky stavy a je zmrazená', () => {

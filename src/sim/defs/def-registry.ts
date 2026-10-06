@@ -251,6 +251,8 @@ const LOGISTICS_FIELDS: FieldTable<LogisticsDef> = {
   repathIntervalTicks: { kind: 'integer', min: 1 },
   // Sklad so stohmi (R2, ADR-039): trvanie rehandle v tickoch, odhad ležania importu v hodinách, režim plánovača.
   rehandleTicks: { kind: 'integer', min: 1 },
+  rehandleGiveUpTicks: { kind: 'integer', min: 1 },
+  buryReserveColumns: { kind: 'integer', min: 0 },
   importDwellEstimateHours: { kind: 'number', exclusiveMin: 0 },
   yardPlanner: { kind: 'enum', values: YARD_PLANNER_MODES },
   congestion: { kind: 'object', fields: CONGESTION_FIELDS },

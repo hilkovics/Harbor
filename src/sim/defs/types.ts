@@ -228,6 +228,10 @@ export interface LogisticsDef extends DefBase {
   readonly repathIntervalTicks: number;
   /** Trvanie jedného rehandle v tickoch (celé ≥ 1): presun kontajnera z vrchu stohu inam v bloku (`in_storage → in_vehicle → in_storage`; ADR-039). */
   readonly rehandleTicks: number;
+  /** Trpezlivosť rehandlingu v tickoch (celé ≥ 1): po toľkých tickoch bez úspešného presunu (bez cieľa v bloku) sa job zruší a vozidlo uvoľní; zaokrúhľuje sa nahor na celé cykly `rehandleTicks` (ADR-039 dodatok TR2-06b). */
+  readonly rehandleGiveUpTicks: number;
+  /** Koľko voľných stĺpcov (`maxTier` buniek každý, celé ≥ 0) musí ostať v bloku, aby plánovač smel zavaliť skôr odchádzajúci kontajner (ADR-039). */
+  readonly buryReserveColumns: number;
   /** Odhad doby ležania importu v sklade po vykládke v hodinách (> 0): základ plánovaného času odchodu importu, obmedzený SLA (ADR-039; skutočné termíny odvozu prídu v R4). */
   readonly importDwellEstimateHours: number;
   /** Režim plánovača skladu (ADR-039): `planned` = segregácia podľa času odchodu, `random` = náhodné ukladanie z `Rng` (len pre akceptačný test). */

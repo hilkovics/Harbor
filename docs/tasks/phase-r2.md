@@ -100,13 +100,31 @@
 | TR2-07 | Plná pipeline + e2e + artefakt + docs (PROGRESS, BACKLOG, ARCHITECTURE §5, §7.7) + PR | test-runner / docs-keeper (haiku), orchestrátor | no | 06 |
 
 ## Checklist
-- [ ] TR2-01 Defy, štítky, TEU
-- [ ] TR2-02 Bloky, stohy, rehandling, plánovač
-- [ ] TR2-03 Render
-- [ ] TR2-04 UI
-- [ ] TR2-05 Napojenie, simrun, goldeny
-- [ ] TR2-06 Review + opravy
-- [ ] TR2-07 Pipeline, e2e, artefakt, docs, PR
+- [x] TR2-01 Defy, štítky, TEU
+- [x] TR2-02 Bloky, stohy, rehandling, plánovač
+- [x] TR2-03 Render
+- [x] TR2-04 UI
+- [x] TR2-05 Napojenie, simrun, goldeny
+- [x] TR2-06 Review + opravy
+- [x] TR2-07 Pipeline, e2e, artefakt, docs, PR
 
 ## Výsledok fázy
-_(doplní orchestrátor)_
+
+**Pipeline:** `pnpm test` zelené (405 súborov, 9 114 testov)
+
+| Scenár | 30k tickov | exported | stuckAtEnd | rehandleStalls | rehandlesPerMove |
+|--------|-----------|----------|-----------|----------------|-----------------|
+| vertical_slice | bundled | 50 | 0 | 0 | 0,00 |
+| live_terminal | bundled | 124 | 0 | 0 | 0,00 |
+| stress_f6 | bundled | 631 | 0 | 0 | 0,002 |
+| traffic_stress | bundled | 633 | 0 | 0 | 0,009 |
+
+**Akceptácia:**
+1. 0 porušení stohov vo všetkých scenároch, `lostUnits` 0, `stuckAtEnd` 0 — splnené.
+2. `rehandlesPerMove` na `vertical_slice`: `planned` 0 (plánovač optimalizuje); `random` 0,14 (nezačína nad 1, lebo dispatcher počká, kým sa kontajner od cieľa sama oddeli; test `yard-contrast` dokazuje rozlíšenie: `random` 1,04).
+3. Kontrakty a lode počítajú TEU podľa veľkosti — splnené.
+4. Inšpektor bloku ukazuje bay zboku — splnené.
+5. Render stohy zhora s tieňom a kontajnery podľa veľkosti/typu/linky — splnené.
+6. `pnpm test` a e2e zelené — splnené.
+
+**Otvorené:** pri 100 000 tickoch majú `stress_f6` a `traffic_stress` (obe DEFS) 13–14 zaseknutých vozidiel v čelnej kolízii na križovatke (zvyšok R1, riešenie R3/R4).

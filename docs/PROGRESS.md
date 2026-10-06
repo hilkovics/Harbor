@@ -336,3 +336,37 @@ Stav: **hotová** (TR1-01 … TR1-10)
 - Uviaznutie s 20 vozidlami na `stress_f6` ostáva `stuckAtEnd` 11 (križ zložitosť bez pruhov pod modulmi — R3/R4)
 
 **Ďalej:** Fáza R2 — Kontajnery a stohy
+
+## Fáza R2 — Kontajnery a stohy
+Karty: `docs/tasks/phase-r2.md` · vetva `phase/r2-stacks` (stacked nad hilkovics/Harbor#12)
+
+Stav: **hotová** (TR2-01 … TR2-07)
+
+**Výsledky:**
+- `pnpm test`: 405 súborov, 9 114 testov zelených
+- `pnpm test:e2e`: 50/50
+- `simrun` (30 000 tickov):
+  - `vertical_slice`: exported 50, stuckAtEnd 0, rehandlesPerMove 0,00 (planned), lostUnits 0
+  - `live_terminal`: exported 124, stuckAtEnd 0, rehandlesPerMove 0,00, lostUnits 0
+  - `stress_f6`: exported 631, stuckAtEnd 0, rehandlesPerMove 0,002, lostUnits 0
+  - `traffic_stress`: exported 633, stuckAtEnd 0, rehandlesPerMove 0,009, lostUnits 0
+- `pnpm bench`: priemer < 2 ms/tick
+
+**Čo je hotové:**
+- Štítky jednotky: `sizeFt: 20 | 40`, `containerType` (R2: `dry`), `oog: false` (ADR-039)
+- TEU: `volumeUnits` a `volumeTeu` v kontraktoch a lodiach; zmes veľkostí podľa `sizeMix` šablóny; všetky odmeny, penalizácie a kapacity v TEU
+- YardBlock: geometria `bays × rows × maxTier` (straddle 3, depo 8), poloha slot kóduje polohu; `StackGrid` cache s pravidlami — len vrch, rovnaká veľkosť, 40′ párové bays, bez zavalenia
+- Rehandling: vozidlo prejde cieľ navrchu, inak preloží cieľový bay; plánovač (`YardPlanner`) vyberie blok a stoh podľa času odchodu
+- Render: stohy zhora s tieňom výšky, kontajnery podľa veľkosti/typu/linky, empty handler (ECH) sprite
+- UI: inšpektor bloku s bayom zboku, karta kontraktu s TEU
+- Scenáre: `vertical_slice`, `live_terminal`, `stress_f6`, `traffic_stress` (golden s rehandlesPerMove)
+- Dokumentácia: ADR-039, ARCHITECTURE §7.1 a §7.7 doplnené
+
+**Odchýlky od plánu:**
+- `rehandlesPerMove` akceptácia 2: test `yard-contrast` s pevnou geometriou namiesto random tuningu na `vertical_slice` (0,14 nie je > 1, lebo dispatcher počká)
+- TR2-06 vrátila opravy TR2-06b (rehandling bez cieľa únik po `rehandleGiveUpTicks`)
+- E2E nový test `f2-stacks` ukázal spúšťanie kontajnerov na vozidlo pod hákom
+
+**Otvorené:** pri 100k tickoch `stress_f6` a `traffic_stress` majú 13–14 zaseknutých vozidiel v čelnej kolízii na križovatke (R3/R4). Latentná chyba rezervácie apronu v dual cykle. Rehandling bez cieľa vyriešený v TR2-06b únikem po `rehandleGiveUpTicks`.
+
+Ďalej: **Fáza R3 — Ťahače, RTG a TOS**

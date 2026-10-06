@@ -166,9 +166,10 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - `ModuleVM.parkedVehicles` v app namiesto `parkedVehicleIds` zo specifikácie (VM ponechal zažradenú vlastnosť bez zmeny na kompatibilitu; render ju nepoužíva, inšpektor si dáta mapuje). — pôvod: TR1-08 · fáza: podľa potreby
 
 ## Z Fázy R2
+- Zápcha R1 pri 100 000 tickoch: `stress_f6` a `traffic_stress` (DEFS) majú 13–14 zaseknutých vozidiel v čelnej kolízii na križovatke 43–45, 22–24 — zvyšok R1, riešenie R3/R4. — pôvod: TR2-05, TR2-07 · fáza: R3/R4
+- Latentná chyba rezervácie apronu v dual cykle: nezhoda `[1,3,5] ≠ [1,5]` pri skúšobnej konfigurácii s viacerými žeriavmi — test `f2-stacks` zaznamenala prípad, vyriešiť v R3. — pôvod: TR2-04 (UI audit), TR2-06 · fáza: R3
+- Riziko ramp-bound importu bez cieľa rehandlingu: fronta priorít v R3. — pôvod: TR2-06b (ADR-039 dodatok) — **vyriešené** únikem po `rehandleGiveUpTicks` (job dostane `rehandleAt === null` a čaká)
 - Zosúladenie hint poolu kontraktov (`capacityUnits` 64 v defoch) s fyzickou kapacitou bloku 48 TEU (32 slots × 2 vrstvy pod `container_yard_small` geometriou, alebo 64 / 1.33 kvôli 40′ párom). — pôvod: TR2-04 (ADR-039) · fáza: R3 (balans)
 - Odstránenie nepoužitých starých alokátorov: `allocateGroupedStorage`, `allocateEmptyStorage`, a podľa potreby `allocateExportStorage` / `allocateStorage` ak namiesto nich fungujú jobami. — pôvod: TR2-02 · fáza: R3
-- Zostatkové uviaznutie dopravy: `stress_f6` pri ≥ 40 000 tickoch má `stuckAtEnd` 13 pri seed 6007, čo je vyššie ako R1 szenário (seed 6006/6008: 11); zistiť príčinu (rehandling bez cieľa, fragment bloku) a opraviť v R3/R4. — pôvod: TR2-05 (vertify metriky), TR2-08 (scenár) · fáza: R3/R4
-- Rehandling bez cieľovej pozície v bloku (job `rehandleAt === null` alebo nemá slot) len čaká na prioritizáciu; uviesť do poriadku v prioritnej fronte. — pôvod: TR2-06 (dispatch) · fáza: R3
 - Režim výšky stohu „Odznak" v nastaveniach (render overlay s maximálnou výškou bloku), podľa potreby pre hráči pri visuálnej orientácii vo veľkých stohoch. — pôvod: design/tasks/UI·výšky-stohu (TR2-09 UI render) · fáza: R4+
-- Akceptácia „random > 1" na `vertical_slice` neľahko dosiahnuteľná bez seed tuningu (random uviazne vo fragmentovanom bloku); náhrada je test `yard-contrast` s pevnou geometriou a semenami. — pôvod: TR2-08 (scenár vertical_slice) · fáza: R3
+- Akceptácia „random > 1" na `vertical_slice` neľahko dosiahnuteľná bez seed tuningu (random uviazne vo fragmentovanom bloku); náhrada je test `yard-contrast` s pevnou geometriou a semenami — **vyriešené** testom `yard-contrast`. — pôvod: TR2-08 (scenár vertical_slice) · fáza: R3

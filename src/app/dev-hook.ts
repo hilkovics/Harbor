@@ -46,7 +46,10 @@ export interface RenderedCounts {
 export interface DevContract {
   readonly id: number;
   readonly state: string;
+  /** Počet kontajnerov kontraktu (R2: nie TEU). */
   readonly volumeUnits: number;
+  /** Objem v TEU (20′ = 1, 40′ = 2); chýba = `volumeUnits`. */
+  readonly volumeTeu: number;
   readonly rewardCents: number;
   readonly unitsUnloaded: number;
   readonly unitsExported: number;
@@ -139,6 +142,7 @@ export function installDevHook(bridge: SimBridge, options: DevHookOptions = {}):
         id: contract.id,
         state: contract.state,
         volumeUnits: contract.volumeUnits,
+        volumeTeu: contract.volumeTeu ?? contract.volumeUnits,
         rewardCents: contract.rewardCents,
         unitsUnloaded: contract.unitsUnloaded,
         unitsExported: contract.unitsExported,

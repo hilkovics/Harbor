@@ -249,16 +249,21 @@ function approachingJob(world: World, vehicle: Vehicle, block: RtgBlock, lane: I
   return tpCell !== undefined && lane.includes(tpCell) ? { job, tpCell } : undefined;
 }
 
-/** Predzásobenie: začne `take` pre najbližší ťahač na ceste k TP (najmenej buniek, potom id); `true`, keď stroj opustil `idle`. */
+/**
+ * Predzásobenie: začne cyklus pre ťahač, ktorý je v poradí pruhu prvý — najplytší TP (najbližšie k vjazdu), potom najmenej buniek trasy, potom id; `true`, keď stroj opustil `idle`.
+ * Jednosmerný pruh sa nepredbieha: ťahač s hlbším TP by stál za ťahačom s plytším TP, ktorý čaká na stroj, a stroj by čakal na neho (zápcha, ADR-040 dodatok TR3-02c).
+ */
 function startPrefetch(world: World, machine: RtgCrane, block: RtgBlock): boolean {
   const lane = world.quay.laneCellsOf(block.id);
   const { prefetchCells } = machine.def;
   if (lane === undefined || prefetchCells <= 0) return false;
-  let best: { vehicle: Vehicle; job: TransportJob; tpCell: number } | undefined;
+  let best: { vehicle: Vehicle; job: TransportJob; tpCell: number; tpBay: number } | undefined;
   for (const vehicle of world.vehicles.values()) {
     if (machine.serves(vehicle.id)) continue;
     const found = approachingJob(world, vehicle, block, lane, prefetchCells);
-    if (found !== undefined && (best === undefined || vehicle.cellsAhead < best.vehicle.cellsAhead)) best = { vehicle, ...found };
+    if (found === undefined) continue;
+    const tpBay = lane.indexOf(found.tpCell);
+    if (best === undefined || tpBay < best.tpBay || (tpBay === best.tpBay && vehicle.cellsAhead < best.vehicle.cellsAhead)) best = { vehicle, ...found, tpBay };
   }
   if (best === undefined) return false;
   const cycle = planCycle(world, machine, block, best.vehicle, best.job, best.tpCell);

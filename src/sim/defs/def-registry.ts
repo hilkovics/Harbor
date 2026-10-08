@@ -259,6 +259,7 @@ const LOGISTICS_FIELDS: FieldTable<LogisticsDef> = {
   rehandleTicks: { kind: 'integer', min: 1 },
   rehandleGiveUpTicks: { kind: 'integer', min: 1 },
   buryReserveColumns: { kind: 'integer', min: 0 },
+  yardMachineLoadWeight: { kind: 'number', min: 0 },
   rehandleSpareCells: { kind: 'integer', min: 0 },
   apronUnloadReserveSlots: { kind: 'integer', min: 0 },
   importDwellEstimateHours: { kind: 'number', exclusiveMin: 0 },

@@ -12,10 +12,10 @@ import { loadScenarioFile, readRepoJson, runScenario } from '../helpers/scenario
 
 const TICKS = 100_000;
 const UNITS = 120;
-const ECONOMY = { transhipGapDaysRange: [1, 1], arrivalDaysRange: [1, 1] };
+const ECONOMY = { startingCashCents: 400_000_000, transhipGapDaysRange: [1, 1], arrivalDaysRange: [1, 1] };
 
-describe('tt_rtg: 100 000 tickov bez zápchy na kotvisku a v bloku', () => {
-  const scenario = loadScenarioFile('tt_rtg');
+describe('tt_rtg_2blocks: 100 000 tickov bez zápchy na kotvisku a v bloku', () => {
+  const scenario = loadScenarioFile('tt_rtg_2blocks');
   const world = World.create(hookDefs(0, { economy: ECONOMY }), loadMap(parseMapDef(readRepoJson(scenario.map))), scenario.seed, { checkInvariants: false });
   runScenario(world, scenario, 1);
   const { stuckTicks } = world.defs.logistics.traffic;
@@ -47,13 +47,21 @@ describe('tt_rtg: 100 000 tickov bez zápchy na kotvisku a v bloku', () => {
     expect(yardMetrics(world).rehandleStalls).toBe(0);
   });
 
-  it('priepustnosť: RTG aj STS spravili stovky presunov; čakanie STS je obmedzené kapacitou jediného RTG (cieľ < 20 % nedosiahnuteľný, zmerané ≈ 62 %; docs/BACKLOG.md TR3-02b)', () => {
+  it('10 ťahačov, 2 RTG bloky: oba stroje robia (vyváženie plánovača), žiadny nezostal bez práce', () => {
+    expect(world.vehicles.size).toBe(10);
+    const moves = [...world.machines.values()].map((machine) => machine.moves);
+    expect(moves).toHaveLength(2);
+    const total = moves[0] + moves[1];
+    for (const count of moves) expect(count).toBeGreaterThan(total * 0.3);
+  });
+
+  it('priepustnosť: RTG aj STS spravili stovky presunov; čakanie STS nie je kapacitou RTG (cieľ < 20 % nedosiahnuté, zmerané ≈ 62 %; ADR-040 dodatok TR3-02c)', () => {
     const metrics = terminalMetrics(world);
     expect(metrics.rtgMoves).toBeGreaterThanOrEqual(2 * UNITS * 3);
     expect(metrics.stsMoves).toBeGreaterThanOrEqual(2 * UNITS * 3);
     expect(metrics.stsMovesPerHour).toBeGreaterThan(1);
     expect(metrics.stsWaitForTractorPct).not.toBeNull();
-    // Dva STS (cyklus 12 ticků) na jeden RTG (cyklus ≈ 14–15 ticků) nemôžu čakať < 20 %: zmerané ≈ 66 % (6 ťahačov), ≈ 62 % (8–10) je strop kapacity jedného stroja, nie nedostatok ťahačov; druhý blok plánovač nepoužije (ADR-040 dodatok TR3-02b).
-    expect(metrics.stsWaitForTractorPct as number).toBeLessThan(75);
+    // Zmerané ≈ 62 % aj s dvoma vyváženými RTG (stroje ≈ 35 % vyťažené, fronta 0) a 8–10 ťahačmi: úzke miesto je latencia dispatchu pod hákom (job nakládky vzniká pri štarte cyklu žeriava, v obehu je ≤ 1 job na žeriav), nie stroj ani počet ťahačov.
+    expect(metrics.stsWaitForTractorPct as number).toBeLessThan(70);
   });
 }, 900_000);

@@ -468,6 +468,7 @@ describe('loadBundledDefs', () => {
       rehandleTicks: 12,
       rehandleGiveUpTicks: 96,
       buryReserveColumns: 4,
+      yardMachineLoadWeight: 12,
       rehandleSpareCells: 2,
       apronUnloadReserveSlots: 1,
       importDwellEstimateHours: 6,

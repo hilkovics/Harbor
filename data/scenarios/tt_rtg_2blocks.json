@@ -1,5 +1,5 @@
 {
-  "id": "tt_rtg",
+  "id": "tt_rtg_2blocks",
   "seed": 7003,
   "map": "data/maps/harbor_01.json",
   "commands": [
@@ -198,6 +198,62 @@
     {
       "atTick": 0,
       "command": {
+        "type": "PlaceRoad",
+        "cells": [
+          {
+            "x": 51,
+            "y": 17
+          },
+          {
+            "x": 52,
+            "y": 17
+          },
+          {
+            "x": 53,
+            "y": 17
+          },
+          {
+            "x": 54,
+            "y": 17
+          },
+          {
+            "x": 55,
+            "y": 17
+          }
+        ]
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceRoad",
+        "cells": [
+          {
+            "x": 51,
+            "y": 30
+          },
+          {
+            "x": 52,
+            "y": 30
+          },
+          {
+            "x": 53,
+            "y": 30
+          },
+          {
+            "x": 54,
+            "y": 30
+          },
+          {
+            "x": 55,
+            "y": 30
+          }
+        ]
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
         "type": "PlaceModule",
         "defId": "vehicle_depot",
         "x": 40,
@@ -228,9 +284,11 @@
     {
       "atTick": 0,
       "command": {
-        "type": "BuyVehicle",
-        "vehicleDefId": "terminal_tractor",
-        "depotId": 3
+        "type": "PlaceModule",
+        "defId": "rtg_block",
+        "x": 51,
+        "y": 18,
+        "rotation": 0
       }
     },
     {
@@ -274,10 +332,43 @@
       }
     },
     {
-      "atTick": 2,
+      "atTick": 0,
       "command": {
-        "type": "AcceptContract",
-        "contractId": 1
+        "type": "BuyVehicle",
+        "vehicleDefId": "terminal_tractor",
+        "depotId": 3
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "terminal_tractor",
+        "depotId": 3
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "terminal_tractor",
+        "depotId": 3
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "terminal_tractor",
+        "depotId": 3
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "terminal_tractor",
+        "depotId": 3
       }
     }
   ]

@@ -236,6 +236,8 @@ export interface LogisticsDef extends DefBase {
   readonly apronUnloadReserveSlots: number;
   /** Koľko voľných stĺpcov (`maxTier` buniek každý, celé ≥ 0) musí ostať v bloku, aby plánovač smel zavaliť skôr odchádzajúci kontajner (ADR-039). */
   readonly buryReserveColumns: number;
+  /** Váha vyťaženia stroja RTG bloku v skóre plánovača (číslo ≥ 0, v bunkách vzdialenosti na jednu položku fronty alebo rozbehnutý cyklus; ADR-040 dodatok TR3-02c); 0 = len vzdialenosť. */
+  readonly yardMachineLoadWeight: number;
   /** Odhad doby ležania importu v sklade po vykládke v hodinách (> 0): základ plánovaného času odchodu importu, obmedzený SLA (ADR-039; skutočné termíny odvozu prídu v R4). */
   readonly importDwellEstimateHours: number;
   /** Režim plánovača skladu (ADR-039): `planned` = segregácia podľa času odchodu, `random` = náhodné ukladanie z `Rng` (len pre akceptačný test). */

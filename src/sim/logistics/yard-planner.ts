@@ -11,7 +11,8 @@
  *    skupiny, ktorého vrch odchádza neskôr, medzi nimi najtesnejšie pasujúci (`gap`) → inak najmenšia penalizácia (počet kontajnerov, ktoré by sa zavalili) —
  *    zavalenie len v bloku, ktorý ostane voľný aspoň na `logistics.buryReserveColumns` stĺpcov (rehandling potrebuje kam preložiť; kontajner s jobom sa nezavaľuje nikdy);
  *    bez vhodného stohu jednotka čaká (`null`, `NoStorageAvailable`).
- * 4. **Vzdialenosť:** bližší blok má prednosť.
+ * 4. **Vzdialenosť:** bližší blok má prednosť; vzdialenosť bloku s RTG sa zväčší o `logistics.yardMachineLoadWeight` × (fronta stroja + rozbehnutý cyklus), takže
+ *    práca sa rozloží medzi stroje (ADR-040 dodatok TR3-02c); bloky bez stroja (strádl) sa nemenia.
  *
  * Poradie porovnania: `(trieda, [penalizácia zavalenia], vzdialenosť bloku, rozdiel odchodu vrchu (najtesnejšie pasujúci stoh), [vzdialenosť bay od pôvodného pri rehandlingu], penalizácia, plnenie stohu, id bloku, bay, row)`.
  * Stohy počítajú aj rezervácie rozbehnutých jobov (`YardBlock.effectiveHeight`), takže rezervovaná bunka je platná aj vzhľadom na ostatné rezervácie.
@@ -236,6 +237,15 @@ function candidateTiers(world: World, unit: CargoUnit, from: Module): readonly Y
   return TIERS;
 }
 
+/** Vyťaženie stroja RTG bloku: položky fronty + rozbehnutý cyklus (blok bez stroja, napr. strádl, = 0; ADR-040 dodatok TR3-02c). */
+function machineLoad(world: World, block: YardBlock): number {
+  let load = 0;
+  for (const machine of world.machines.values()) {
+    if (machine.blockId === block.id) load += machine.queue.length + (machine.cycle === null ? 0 : 1);
+  }
+  return load;
+}
+
 /**
  * Najlepší stoh pre `unit` zo zdroja `from` (viď hlavička súboru), alebo `null`, keď žiadny blok jednotku neprijme (jednotka čaká, kotvisko
  * hlási `NoStorageAvailable`). Stav sveta nemení; v režime `random` spotrebuje `Rng`.
@@ -251,7 +261,8 @@ export function chooseYardSlot(world: World, unit: CargoUnit, from: Module): Yar
       return { moduleId: pick.moduleId as EntityId, slot: (pick.block as YardBlock).slotOf(pick.bay, pick.row, pick.height) };
     }
     resetBest();
-    for (const block of blocks) scanBlock(world, block, unit, distanceBetweenModules(world, from, block), undefined, 'best', 'place');
+    const weight = world.defs.logistics.yardMachineLoadWeight;
+    for (const block of blocks) scanBlock(world, block, unit, distanceBetweenModules(world, from, block) + machineLoad(world, block) * weight, undefined, 'best', 'place');
     const best = BEST.block;
     if (best !== undefined) return { moduleId: best.id, slot: best.slotOf(BEST.bay, BEST.row, BEST.height) };
   }

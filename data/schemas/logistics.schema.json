@@ -4,7 +4,7 @@
   "description": "Logistické konštanty (ARCHITECTURE §4.6, §7.3, §7.4, §7.6; ADR-010, ADR-029): pobyt vozidla v module, opakovanie hľadania cesty, model kongescie a lodná navigácia. Konfiguračný def bez items[] (ADR-009); všetky trvania v tickoch.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "defaultInternalTicks", "repathIntervalTicks", "rehandleTicks", "rehandleGiveUpTicks", "buryReserveColumns", "rehandleSpareCells", "apronUnloadReserveSlots", "importDwellEstimateHours", "yardPlanner", "congestion", "traffic", "shipNavigation", "exportFlow", "emptyFlow"],
+  "required": ["schemaVersion", "defaultInternalTicks", "repathIntervalTicks", "rehandleTicks", "rehandleGiveUpTicks", "buryReserveColumns", "yardMachineLoadWeight", "rehandleSpareCells", "apronUnloadReserveSlots", "importDwellEstimateHours", "yardPlanner", "congestion", "traffic", "shipNavigation", "exportFlow", "emptyFlow"],
   "properties": {
     "schemaVersion": {
       "const": 1,
@@ -34,6 +34,11 @@
       "type": "integer",
       "minimum": 0,
       "description": "Plánovač skladu (ADR-039): koľko voľných stĺpcov (`maxTier` buniek každý) musí ostať v bloku, aby smel zavaliť skôr odchádzajúci kontajner; rehandling potrebuje kam preložiť."
+    },
+    "yardMachineLoadWeight": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Plánovač skladu (ADR-040 dodatok TR3-02c): o koľko buniek vzdialenosti sa blok s RTG „predĺži“ za každú položku fronty stroja a rozbehnutý cyklus; vyvažuje vyťaženie strojov medzi bloky. 0 = vyvažovanie vypnuté."
     },
     "rehandleSpareCells": {
       "type": "integer",

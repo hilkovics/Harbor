@@ -13,7 +13,7 @@ import { loadScenarioFile, readRepoJson, runScenario } from '../helpers/scenario
 
 const UNITS = 120;
 const MAX_TICKS = 120_000;
-const ECONOMY = { transhipGapDaysRange: [1, 1], arrivalDaysRange: [1, 1] };
+const ECONOMY = { startingCashCents: 400_000_000, transhipGapDaysRange: [1, 1], arrivalDaysRange: [1, 1] };
 
 interface Run {
   readonly world: World;
@@ -24,7 +24,7 @@ interface Run {
 
 /** Svet zo scenára `tt_rtg` (rozloženie, ťahače) + prijatá prekládka `UNITS` TEU; beh po uzavretie kontraktu. */
 function run(seed?: number): Run {
-  const scenario = loadScenarioFile('tt_rtg');
+  const scenario = loadScenarioFile('tt_rtg_2blocks');
   const world = World.create(hookDefs(0, { economy: ECONOMY }), loadMap(parseMapDef(readRepoJson(scenario.map))), seed ?? scenario.seed, { checkInvariants: true });
   runScenario(world, scenario, 1);
   const contract = offerTranship(world, { units: UNITS });
@@ -42,17 +42,17 @@ function run(seed?: number): Run {
   return { world, chains, states, finishedTick: world.clock.tick };
 }
 
-describe('scenár tt_rtg: STS → ťahač → RTG blok → ťahač → STS', () => {
+describe('scenár tt_rtg_2blocks: STS → ťahač → RTG blok → ťahač → STS', () => {
   const first = run();
 
-  it('rozloženie: 2 STS na kotvisku, 1 RTG blok s jedným strojom, 6 ťahačov bez zdvihu', () => {
+  it('rozloženie: 2 STS na kotvisku, 2 RTG bloky s jedným strojom každý, 10 ťahačov bez zdvihu', () => {
     const { world } = first;
     expect([...world.modules.values()].filter((module) => module.kind === 'crane')).toHaveLength(2);
     const blocks = [...world.modules.values()].filter((module): module is RtgBlock => module instanceof RtgBlock);
-    expect(blocks).toHaveLength(1);
-    expect(world.machines.size).toBe(1);
-    expect([...world.machines.values()][0].blockId).toBe(blocks[0].id);
-    expect([...world.vehicles.values()].map((vehicle) => vehicle.defId)).toEqual(Array<string>(6).fill('terminal_tractor'));
+    expect(blocks).toHaveLength(2);
+    expect(world.machines.size).toBe(2);
+    expect([...world.machines.values()].map((machine) => machine.blockId).sort()).toEqual(blocks.map((block) => block.id).sort());
+    expect([...world.vehicles.values()].map((vehicle) => vehicle.defId)).toEqual(Array<string>(10).fill('terminal_tractor'));
   });
 
   it(`vyloží a naloží ${String(UNITS)} TEU: nič sa nestratilo, nič nezostalo, rehandleStalls 0, stuckAtEnd 0`, () => {
@@ -78,12 +78,15 @@ describe('scenár tt_rtg: STS → ťahač → RTG blok → ťahač → STS', () 
     }
   });
 
-  it('RTG spravil aspoň 2 × 120 presunov a je v `idle` bez cyklu a fronty', () => {
-    const machine = [...first.world.machines.values()][0];
-    expect(machine.moves).toBeGreaterThanOrEqual(2 * UNITS);
-    expect(machine.state).toBe('idle');
-    expect(machine.cycle).toBeNull();
-    expect(machine.queue).toHaveLength(0);
+  it('RTG stroje spolu spravili aspoň 2 × 120 presunov, oba sa používajú (vyváženie plánovača, TR3-02c) a sú v `idle` bez cyklu a fronty', () => {
+    const machines = [...first.world.machines.values()];
+    expect(machines.reduce((sum, machine) => sum + machine.moves, 0)).toBeGreaterThanOrEqual(2 * UNITS);
+    for (const machine of machines) {
+      expect(machine.moves).toBeGreaterThan(UNITS / 2);
+      expect(machine.state).toBe('idle');
+      expect(machine.cycle).toBeNull();
+      expect(machine.queue).toHaveLength(0);
+    }
   });
 
   it('deterministické: rovnaký seed dá rovnaký stav sveta a rovnaký tick dokončenia', () => {

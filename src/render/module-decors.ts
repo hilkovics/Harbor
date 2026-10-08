@@ -5,6 +5,7 @@
 import { depotDecorFactory } from './depot-decor';
 import { gateDecorFactory } from './gate-decor';
 import { holdDecorFactory } from './hold-decor';
+import { lanesDecorFactory } from './lanes-decor';
 import type { ModuleDecorFactory } from './module-decor';
 import { parkedVehiclesDecorFactory } from './parked-vehicles-decor';
 import { rampDecorFactory } from './ramp-decor';
@@ -12,4 +13,4 @@ import { stacksDecorFactory } from './stacks-decor';
 import { waitingAreaDecorFactory } from './waiting-area-decor';
 import { yardCraneDecorFactory } from './yard-crane-decor';
 
-export const MODULE_DECORS: readonly ModuleDecorFactory[] = [stacksDecorFactory, gateDecorFactory, waitingAreaDecorFactory, rampDecorFactory, yardCraneDecorFactory, holdDecorFactory, depotDecorFactory, parkedVehiclesDecorFactory];
+export const MODULE_DECORS: readonly ModuleDecorFactory[] = [stacksDecorFactory, gateDecorFactory, waitingAreaDecorFactory, rampDecorFactory, yardCraneDecorFactory, holdDecorFactory, depotDecorFactory, parkedVehiclesDecorFactory, lanesDecorFactory];

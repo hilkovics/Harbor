@@ -216,3 +216,31 @@ export type { SaveLoadPanelProps, SaveLoadPanelViewProps } from './save-load-pan
 export { SAVE_SLOT_IDS } from './save-types';
 export type { SavePreview, SaveSlotId, SaveSlotInfo, Settings } from './save-types';
 export { LINE_TOKEN_DEFAULT_FALLBACK, lineColor, lineStyle } from './line-color';
+export {
+  BlockInspector,
+  CraneInspector,
+  GANG_MODE_LABELS,
+  MACHINE_STATE_LABELS,
+  MACHINE_STATE_TONES,
+  MachineInspector,
+  RTG_DEFAULT_PRIORITY,
+  RTG_PRIORITY_LABELS,
+  RTG_PRIORITY_ORDERS,
+  TRACTORS_PER_STS_DEFAULT,
+  TRACTORS_PER_STS_MAX,
+  TRACTORS_PER_STS_MIN,
+  clampTractorsPerSts,
+  machineCargoText,
+  machineIcon,
+  machineSubtitle,
+} from './machine-inspector';
+export type {
+  BlockInspectorProps,
+  CraneInspectorProps,
+  GangMode,
+  MachineCargoData,
+  MachineInspectorData,
+  MachineInspectorProps,
+  MachineStateName,
+  RtgPriority,
+} from './machine-inspector';

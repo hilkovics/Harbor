@@ -51,10 +51,9 @@ type Cell = { readonly x: number; readonly y: number };
 /** Cesty F3 (34 buniek) a pozemnej časti F4 (11 buniek), po úsekoch `[x0, y0, x1, y1]` ako `PlaceRoad` v scenári. */
 const ROAD_SEGMENTS: readonly (readonly [number, number, number, number])[] = [
   // F3: okruh pri Root berthe, chrbtica k depu a vetva k ďalekému dvoru
-  [41, 17, 41, 22],
-  [46, 17, 46, 22],
+  [41, 18, 41, 22],
+  [46, 18, 46, 22],
   [42, 22, 45, 22],
-  [42, 17, 45, 17],
   [44, 23, 44, 30],
   [45, 30, 50, 30],
   // F4: vstup brány, výstup brány + západ stojiska, východ stojiska → sever, predĺženie vetvy k dokom rampy

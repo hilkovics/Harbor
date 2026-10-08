@@ -155,7 +155,7 @@ describe('entitySpriteFiles (čo načíta atlas)', () => {
 
   it('stavy skladov a vozidlá sa berú len z povoleného zoznamu (veľké sklady a ostatné vozidlá sa nerasterizujú)', () => {
     expect(LOADED_STATE_MODULES).toEqual(['container_yard_small', 'empty_depot']);
-    expect(LOADED_VEHICLES).toEqual(['straddle_carrier', 'truck_container', 'empty_handler']);
+    expect(LOADED_VEHICLES).toEqual(['straddle_carrier', 'truck_container', 'empty_handler', 'terminal_tractor']);
     const fillFiles = files.filter((file) => /_fill\d+\.svg$/.test(file));
     expect(fillFiles).toHaveLength(10);
     for (const file of fillFiles) expect(file).toMatch(/^modules\/(container_yard_small|empty_depot)_fill\d+\.svg$/);
@@ -164,7 +164,11 @@ describe('entitySpriteFiles (čo načíta atlas)', () => {
       'entities/ech.svg',
       'entities/ech_spreader_20.svg',
       'entities/ech_spreader_40.svg',
+      'entities/rtg_frame.svg',
+      'entities/rtg_trolley.svg',
       'entities/straddle_carrier.svg',
+      'entities/terminal_tractor_cab.svg',
+      'entities/terminal_tractor_chassis_40.svg',
       'entities/truck_cab.svg',
       'entities/truck_trailer_40.svg',
       'entities/vehicle_brake_lights.svg',

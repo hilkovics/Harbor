@@ -148,6 +148,34 @@ export interface VehicleSpreaderEntry {
   readonly spreader40: ArticulatedPart;
 }
 
+/** Časť STS žeriavu (R3): súbor, rozmer v bunkách a pivot v px súboru. */
+export interface StsPart {
+  readonly file: string;
+  readonly footprint: CellSize;
+  readonly pivot: ManifestPoint;
+}
+
+/**
+ * STS žeriav (R3, `sprites.<defId>.parts`: `frame`, `trolley`, `spreader_20`, `spreader_40`): rám je statický (footprint celého modulu, pivot v px
+ * súboru), vozík jazdí po osi Y rámu v rozsahu `travelY` (súradnice rámu, px) a spreader (pivot = pivot vozíka) visí pod ním.
+ */
+export interface StsEntry {
+  readonly footprint: CellSize;
+  readonly frame: StsPart;
+  readonly trolley: StsPart;
+  readonly travelY: { readonly yMin: number; readonly yMax: number };
+  readonly spreader20: StsPart;
+  readonly spreader40: StsPart;
+}
+
+/** RTG (R3, `entities.rtg`): rám (pivot = stred rámu, jazdí po Y) a vozík (jazdí po X rámu v rozsahu `travelX`, px rámu; stred vozíka). */
+export interface MachineSpriteEntry {
+  readonly footprint: CellSize;
+  readonly frame: StsPart;
+  readonly trolley: StsPart;
+  readonly travelX: { readonly yMin: number; readonly yMax: number };
+}
+
 /** Veľkosť bunky v px, v ktorej sú nakreslené sprity manifestu (`cellPx`). */
 export const MANIFEST_CELL_PX: number = manifestCellPx;
 
@@ -155,6 +183,9 @@ const MODULE_SPRITES = spritesManifest as unknown as Readonly<Record<string, Mod
 const SHIP_SPRITES = entitiesManifest as unknown as Readonly<Record<string, ShipSpriteEntry>>;
 const VEHICLE_SPRITES = entitiesManifest as unknown as Readonly<
   Record<string, Partial<VehicleSpriteEntry> & { readonly file?: string; readonly parts?: Readonly<Record<string, ArticulatedPart>>; readonly spreaderMount?: ManifestPoint }>
+>;
+const MACHINE_SPRITES = entitiesManifest as unknown as Readonly<
+  Record<string, { readonly footprint?: CellSize; readonly parts?: Readonly<Record<string, Partial<StsPart> & { readonly travel?: { readonly yMin: number; readonly yMax: number } }>> }>
 >;
 const CARGO_SPRITES = cargoManifest as unknown as Readonly<Record<string, CargoSpriteEntry>>;
 
@@ -182,6 +213,43 @@ export function moduleSprite(defId: string): ModuleSpriteEntry | undefined {
 export function parkingStalls(defId: string): number | undefined {
   const stalls: unknown = moduleSprite(defId)?.stalls;
   return typeof stalls === 'number' ? stalls : undefined;
+}
+
+/** Id záznamu STS v `sprites`: každé `sts*` id modulu žeriavu sa kreslí z neho. */
+export const STS_ENTRY_ID = 'sts';
+
+function stsPart(part: (Partial<StsPart> & { readonly file?: string }) | undefined): StsPart | undefined {
+  if (part?.file === undefined || part.footprint === undefined || part.pivot === undefined) return undefined;
+  return { file: part.file, footprint: part.footprint, pivot: part.pivot };
+}
+
+/** STS žeriav `defId` (`sprites.<defId>.parts.frame` + `trolley` s `travel` + `spreader_20` / `spreader_40`), alebo `undefined` (starý žeriav s výložníkom). */
+export function stsSprite(defId: string): StsEntry | undefined {
+  const entry = moduleSprite(defId.startsWith(STS_ENTRY_ID) ? STS_ENTRY_ID : defId);
+  const parts = entry?.parts;
+  const frame = stsPart(parts?.['frame']);
+  const trolley = stsPart(parts?.['trolley']);
+  const spreader20 = stsPart(parts?.['spreader_20']);
+  const spreader40 = stsPart(parts?.['spreader_40']);
+  const travel = parts?.['trolley']?.travel;
+  if (entry === undefined || frame === undefined || trolley === undefined || spreader20 === undefined || spreader40 === undefined || travel === undefined) return undefined;
+  return { footprint: entry.footprint, frame, trolley, travelY: { yMin: travel.yMin, yMax: travel.yMax }, spreader20, spreader40 };
+}
+
+/** Id záznamu RTG v `entities`: každé `rtg*` id stroja sa kreslí z neho. */
+export const RTG_ENTRY_ID = 'rtg';
+
+/** Stroje, ktorých sprity sa načítajú do atlasu. */
+export const LOADED_MACHINES: readonly string[] = [RTG_ENTRY_ID];
+
+/** RTG `defId` (`entities.rtg.parts.frame` + `trolley` s `travel`; `rtg*` → `rtg`), alebo `undefined`. */
+export function machineSprite(defId: string): MachineSpriteEntry | undefined {
+  const entry = lookup(MACHINE_SPRITES, defId.startsWith(RTG_ENTRY_ID) ? RTG_ENTRY_ID : defId);
+  const frame = stsPart(entry?.parts?.['frame']);
+  const trolley = stsPart(entry?.parts?.['trolley']);
+  const travel = entry?.parts?.['trolley']?.travel;
+  if (entry?.footprint === undefined || frame === undefined || trolley === undefined || travel === undefined) return undefined;
+  return { footprint: entry.footprint, frame, trolley, travelX: { yMin: travel.yMin, yMax: travel.yMax } };
 }
 
 /** Záznam lode triedy `classId` (`entities.ship_<classId>`), alebo `undefined`. */
@@ -304,7 +372,7 @@ export const LOADED_STATE_MODULES: readonly string[] = ['container_yard_small', 
  * `straddle_carrier` (F3), `truck_container` (F4) a `empty_handler` (F6c, od R2 sprite `ech` + spreadery). Ostatné (AGV, vysokozdvižný vozík, ďalšie kamióny, vlaky) pribudnú so svojimi fázami;
  * do vtedy nakreslí `VehicleView` fallback z tokenov.
  */
-export const LOADED_VEHICLES: readonly string[] = ['straddle_carrier', 'truck_container', 'empty_handler'];
+export const LOADED_VEHICLES: readonly string[] = ['straddle_carrier', 'truck_container', 'empty_handler', 'terminal_tractor'];
 
 /**
  * Súbory (relatívne k `assets/`), ktoré atlas načíta pre entity sveta: sprity modulov (`file` a `parts.*.file`),
@@ -346,6 +414,13 @@ export function entitySpriteFiles(): string[] {
     if (spreader !== undefined) {
       files.add(spreader.spreader20.file);
       files.add(spreader.spreader40.file);
+    }
+  }
+  for (const defId of LOADED_MACHINES) {
+    const machine = machineSprite(defId);
+    if (machine !== undefined) {
+      files.add(machine.frame.file);
+      files.add(machine.trolley.file);
     }
   }
   const brake = brakeLightsSprite();

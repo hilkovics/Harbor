@@ -126,6 +126,18 @@ export interface ModuleVM {
    * mriežka môže byť menšia, než blok je; `SimBridge` ju preto vypĺňa vždy.
    */
   stackGeometry?: StackGeometryVM;
+  /**
+   * R3 (TERMINAL_2, TR3-03): jednosmerné pruhy kotviska a bloku — bunky (svet, ľavý horný roh bunky) so smerom jazdy. Renderer ich kreslí ako
+   * šípkový overlay nad telom modulu (`lanes-decor.ts`). Chýba / prázdne = bez overlaya. Plní `SimBridge` (TR3-05).
+   */
+  lanes?: readonly LaneCellVM[];
+}
+
+/** Bunka pruhu so smerom jazdy (R3): `dir` = strana, ktorou vozidlo bunku opúšťa (`e` = doprava). */
+export interface LaneCellVM {
+  x: number;
+  y: number;
+  dir: ViewSide;
 }
 
 /** Smer cyklu žeriavu (`CraneModule.cycle`, ADR-032 bod 11): vykládka, nakládka a dve polovice dual cyklu. */
@@ -153,6 +165,13 @@ export interface CraneVM {
    * nakládke ho z vozidla zdvihne. Chýba = režim `apron` (vozidlo si jednotku berie z apronu, kontajner ostáva pod vozíkom). Plní `SimBridge`.
    */
   hook?: { x: number; y: number };
+  /**
+   * R3 (STS): poloha vozíka pozdĺž osi Y rámu 0..1 (0 = nos k vode / `travel.yMin`, 1 = backreach / `travel.yMax`). Chýba = odvodí sa z `state` a
+   * `progress` (`trolleyTravelFraction`, pevnina = 1). Plní `SimBridge` (TR3-05).
+   */
+  trolleyY?: number;
+  /** R3 (STS): kontajner na spreaderi (veľkosť určuje spreader 20′ / 40′); chýba / `null` = bez kontajnera (spreader 40′). */
+  cargo?: ContainerVM | null;
 }
 
 export interface ShipVM {
@@ -299,6 +318,23 @@ export interface TruckVM extends CarrierTrailVM {
   approach?: { x: number; y: number; heading: ViewRotation };
 }
 
+/**
+ * Stroj v bloku skladu (R3, RTG): portál nad blokom. `x`, `y` = stred rámu (pivot) v bunkách (stred bunky = +0,5), rám jazdí po osi Y, vozík po osi X rámu.
+ * `trolley` 0..1 = poloha vozíka naprieč rámom (0 = vľavo, 1 = vpravo, pruh kamióna), `hoist` 0..1 = výška zdvihu kontajnera (0 = dole, 1 = hore).
+ */
+export interface MachineVM {
+  id: number;
+  /** Id definície stroja (`rtg`, …); sprity z `entities.rtg` v manifeste (každé `rtg*` id sa kreslí ako `rtg`). */
+  defId: string;
+  blockId: number;
+  x: number;
+  y: number;
+  trolley: number;
+  hoist: number;
+  state: string;
+  cargo: ContainerVM | null;
+}
+
 export interface EntitiesVM {
   modules: readonly ModuleVM[];
   cranes: readonly CraneVM[];
@@ -313,6 +349,8 @@ export interface EntitiesVM {
    * `SimBridge` (T04-08) ho vyplní vždy.
    */
   trucks?: readonly TruckVM[];
+  /** Stroje v blokoch (R3, RTG). Voliteľné: VM bez poľa nekreslí nič. */
+  machines?: readonly MachineVM[];
 }
 
 export interface ModuleGhostVM {

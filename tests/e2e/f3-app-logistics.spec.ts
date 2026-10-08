@@ -28,10 +28,9 @@ const UNITS = 24;
 const OVERVIEW = { x: 45, y: 24.5, zoom: 0.5 } as const;
 
 const ROADS: readonly (readonly [number, number, number, number])[] = [
-  [41, 17, 41, 22],
-  [46, 17, 46, 22],
+  [41, 18, 41, 22],
+  [46, 18, 46, 22],
   [42, 22, 45, 22],
-  [42, 17, 45, 17],
   [44, 23, 44, 30],
   [45, 30, 50, 30],
 ];

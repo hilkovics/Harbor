@@ -27,10 +27,10 @@ test.describe.configure({ timeout: 3 * WAIT_LIMIT_MS });
 const ROOT_BERTH_VIEW = { x: 44, y: 14.5, zoom: 1 } as const;
 
 /** Bunka kotviska s ľavým horným rohom (48, 14): bunka pod kurzorom je stredom footprintu 8×3 (roh + (4, 1)). */
-const FREE_QUAY_CURSOR = { x: 52, y: 15 } as const;
+const FREE_QUAY_CURSOR = { x: 52, y: 16 } as const;
 const FREE_QUAY_ORIGIN = { x: 48, y: 14 } as const;
 /** Ďalšie voľné miesto na západ od Root berthu (roh (32, 14)). */
-const WEST_QUAY_CURSOR = { x: 36, y: 15 } as const;
+const WEST_QUAY_CURSOR = { x: 36, y: 16 } as const;
 /** Pevnina na starter parcele, ďaleko od vody (viditeľná v pohľade na Root berth nad BuildBarom; štítok pri kurzore ostane nad ním). */
 const INLAND_CURSOR = { x: 36, y: 17 } as const;
 
@@ -113,10 +113,9 @@ async function waitInPage(page: Page, condition: () => boolean): Promise<void> {
 
 /** Cesty rozloženia F3 (okruh pri Root berthe, chrbtica k depu) po úsekoch `[x0, y0, x1, y1]`; 34 buniek. */
 const LOGISTICS_ROADS: readonly (readonly [number, number, number, number])[] = [
-  [41, 17, 41, 22],
-  [46, 17, 46, 22],
+  [41, 18, 41, 22],
+  [46, 18, 46, 22],
   [42, 22, 45, 22],
-  [42, 17, 45, 17],
   [44, 23, 44, 30],
   [45, 30, 50, 30],
 ];
@@ -282,18 +281,20 @@ test.describe('F2: loď, žeriav, apron (T02-12)', () => {
     await expect.poll(() => moduleGhost(page)).toMatchObject({ defId: 'berth_standard', w: 8, h: 4, valid: false });
     await expect(buildTip(page)).toHaveAttribute('data-ok', 'false');
     await expect(buildTip(page)).toContainText('Kotvisko · $400,000');
-    await expect(buildTip(page)).toContainText('Nevhodný terén');
     await expect(buildTip(page)).toContainText('Dlhá hrana musí byť pri vode');
-    expect(await rendered(page)).toMatchObject({ ghostCells: 24, ghostConnectors: 2 });
+    expect(await rendered(page)).toMatchObject({ ghostCells: 32, ghostConnectors: 8 });
     await settle(page);
     await page.screenshot({ path: 'tests/e2e/__screenshots__/f2-build-invalid.png', fullPage: true });
 
     // 3) na voľnom nábreží (roh (48, 14)) je ghost platný: zelený, s konektormi na južnej hrane
     await hoverCell(page, FREE_QUAY_CURSOR);
     await expect.poll(() => moduleGhost(page)).toMatchObject({ x: FREE_QUAY_ORIGIN.x, y: FREE_QUAY_ORIGIN.y, rotation: 0, valid: true });
-    expect((await moduleGhost(page))?.connectors).toEqual([
-      { x: 49, y: 16, side: 's' },
-      { x: 54, y: 16, side: 's' },
+    // kotvisko 8×4: dva južné konektory (riadok pri pevnine) + pruhové w/e v riadkoch 1–3 (ADR-040 dodatok)
+    const ghostConnectors = (await moduleGhost(page))?.connectors ?? [];
+    expect(ghostConnectors).toHaveLength(8);
+    expect(ghostConnectors.filter((connector) => connector.side === 's')).toEqual([
+      { x: 49, y: 17, side: 's' },
+      { x: 54, y: 17, side: 's' },
     ]);
     await expect(buildTip(page)).toHaveAttribute('data-ok', 'true');
     await expect(buildTip(page)).toHaveText('Kotvisko · $400,000');
@@ -302,7 +303,7 @@ test.describe('F2: loď, žeriav, apron (T02-12)', () => {
 
     // 4) R otočí ghost o 90° (dlhá hrana už nie je pri vode → neplatný); po štyroch stlačeniach je späť platný
     await page.keyboard.press('KeyR');
-    await expect.poll(() => moduleGhost(page)).toMatchObject({ rotation: 90, w: 3, h: 8, valid: false });
+    await expect.poll(() => moduleGhost(page)).toMatchObject({ rotation: 90, w: 4, h: 8, valid: false });
     await expect(buildTip(page)).toContainText('Dlhá hrana musí byť pri vode');
     for (let i = 0; i < 3; i += 1) await page.keyboard.press('KeyR');
     await expect.poll(() => moduleGhost(page)).toMatchObject({ rotation: 0, x: FREE_QUAY_ORIGIN.x, y: FREE_QUAY_ORIGIN.y, valid: true });

@@ -31,7 +31,7 @@ test.describe('F2: render entít (demo s pevnými view-modelmi)', () => {
         connectorMarkers: renderer.build.markerCount,
       };
     });
-    expect(counts).toEqual({ modules: 1, cranes: 1, ships: 1, cargoOnApron: 2, ghostCells: 24, connectorMarkers: 2 });
+    expect(counts).toEqual({ modules: 1, cranes: 1, ships: 1, cargoOnApron: 2, ghostCells: 32, connectorMarkers: 8 });
 
     await page.screenshot({ path: 'tests/e2e/__screenshots__/f2-render-demo.png' });
     expect(errors).toEqual([]);

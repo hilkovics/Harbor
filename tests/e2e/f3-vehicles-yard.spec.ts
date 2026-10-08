@@ -40,24 +40,23 @@ type Cell = { readonly x: number; readonly y: number };
 
 /**
  * Ťah myšou (BuildBar → jednosmerná cesta, R1: ADR-037 bod 12): jedna lomená čiara z bodov, ktorými myš prejde, je uzavretý
- * jednosmerný okruh (50 buniek): západná noha berthu dole, chrbtica k depu a ďalekému dvoru, návrat po severnej strane
- * ďalekého dvora a po východnej strane blízkeho dvora hore a horná spojka späť k (41,17). Bez križovatiek, takže sa
+ * jednosmerný okruh (44 buniek): výjazd z berthu (46,18) dole, ďalekému dvoru, chrbtica k depu, návrat po severnej strane
+ * ďalekého dvora a západnou nohou hore k vjazdu do berthu (41,18). Bez križovatiek, takže sa
  * vozidlá nezablokujú.
  */
 const ROAD_STROKES: readonly (readonly Cell[])[] = [
   [
-    { x: 41, y: 17 },
-    { x: 41, y: 22 },
-    { x: 44, y: 22 },
-    { x: 44, y: 30 },
-    { x: 53, y: 30 },
-    { x: 53, y: 25 },
+    { x: 46, y: 18 },
     { x: 46, y: 25 },
-    { x: 46, y: 17 },
-    { x: 42, y: 17 },
+    { x: 53, y: 25 },
+    { x: 53, y: 30 },
+    { x: 44, y: 30 },
+    { x: 44, y: 22 },
+    { x: 41, y: 22 },
+    { x: 41, y: 18 },
   ],
 ];
-const ROAD_CELL_COUNT = 50;
+const ROAD_CELL_COUNT = 44;
 /** Kroky `mouse.move` medzi bodmi ťahu — viac udalostí ako buniek, ako pri skutočnej myši. */
 const DRAG_STEPS = 12;
 const ROAD_COST_CENTS = 150_000;

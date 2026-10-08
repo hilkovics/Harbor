@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "equipment.json",
+  "description": "Stroje bloku (TERMINAL_2 §5.3, §10.5; ADR-040): R3 pozná `rtg`. Konfiguračný def bez items[] (ADR-009); časy v tickoch, pojazd v bays za tick. Poradie priorít (loď < kamión < housekeeping) schéma nevyjadrí — kontroluje DefRegistry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "rtg"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Verzia schémy defu."
+    },
+    "rtg": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gantryCellsPerTick",
+        "hoistTicksPerTier",
+        "trolleyTicksPerRow",
+        "lockTicks",
+        "priorities"
+      ],
+      "properties": {
+        "gantryCellsPerTick": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Rýchlosť pojazdu žeriavu pozdĺž bloku v bays za tick (spojitá poloha)."
+        },
+        "hoistTicksPerTier": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Zdvih alebo spúšťanie o jednu vrstvu stohu v tickoch."
+        },
+        "trolleyTicksPerRow": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Pojazd vozíka o jeden rad naprieč blokom v tickoch."
+        },
+        "lockTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Uchopenie alebo pustenie kontajnera (twist-lock) v tickoch."
+        },
+        "priorities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ship",
+            "truck",
+            "housekeeping"
+          ],
+          "description": "Priorita fronty stroja podľa druhu úlohy (ADR-040 bod 6): menšie číslo = skôr; musí ostro rásť v poradí ship, truck, housekeeping.",
+          "properties": {
+            "ship": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "truck": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "housekeeping": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -79,6 +79,7 @@ describe('skutočné katalógy F2 až F4', () => {
       'truck_waiting_area',
       'loading_ramp_container',
       'empty_depot',
+      'rtg_block',
     ]);
     expect(item(def, 'berth_standard')).toEqual({
       id: 'berth_standard',
@@ -186,7 +187,7 @@ describe('skutočné katalógy F2 až F4', () => {
     ]);
   });
 
-  it('vehicles.json: straddle_carrier (ARCHITECTURE §4.4) a empty_handler (ADR-034)', () => {
+  it('vehicles.json: straddle_carrier (ARCHITECTURE §4.4), empty_handler (ADR-034) a terminal_tractor (ADR-040)', () => {
     const def = realDef('vehicles');
     expect(def['schemaVersion']).toBe(1);
     expect(items(def)).toEqual([
@@ -199,6 +200,7 @@ describe('skutočné katalógy F2 až F4', () => {
         loadTicks: 3,
         unloadTicks: 3,
         cargoCategories: ['container'],
+        canLift: true,
         purchaseCents: 4_800_000,
         wagePerDayCents: 18_000,
       },
@@ -212,8 +214,22 @@ describe('skutočné katalógy F2 až F4', () => {
         unloadTicks: 2,
         cargoCategories: ['container'],
         cargoDirections: ['empty'],
+        canLift: true,
         purchaseCents: 3_600_000,
         wagePerDayCents: 14_000,
+      },
+      {
+        id: 'terminal_tractor',
+        displayName: 'Terminálový ťahač',
+        capacityUnits: 1,
+        lengthCells: 3,
+        speedCellsPerTick: 0.5,
+        loadTicks: 2,
+        unloadTicks: 2,
+        cargoCategories: ['container'],
+        canLift: false,
+        purchaseCents: 2_200_000,
+        wagePerDayCents: 12_000,
       },
     ]);
   });

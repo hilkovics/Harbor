@@ -637,6 +637,27 @@
       "slots": 32,
       "layers": 2
     },
+    "rtg_block": {
+      "footprint": {
+        "w": 5,
+        "h": 12
+      },
+      "file": "modules/rtg_block.svg",
+      "connectors": [
+        {
+          "x": 4,
+          "y": 0,
+          "side": "n",
+          "type": "road"
+        },
+        {
+          "x": 4,
+          "y": 11,
+          "side": "s",
+          "type": "road"
+        }
+      ]
+    },
     "empty_depot": {
       "footprint": {
         "w": 4,
@@ -1159,6 +1180,14 @@
     }
   },
   "entities": {
+    "terminal_tractor": {
+      "footprint": {
+        "w": 1,
+        "h": 3
+      },
+      "note": "zástupný sprite TR3-01 (kabína + podvozok 40′ ako jeden celok); nahradí TR3-03 kĺbovým `parts`",
+      "file": "entities/terminal_tractor.svg"
+    },
     "straddle_carrier": {
       "footprint": {
         "w": 1,

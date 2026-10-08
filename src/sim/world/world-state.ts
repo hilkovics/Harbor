@@ -66,6 +66,8 @@ import type { EmptyFlowState } from '../logistics/empty-flow';
 import { parseHinterlandState } from './hinterland-state';
 import type { HinterlandState } from '../trucks/hinterland';
 import { assertSupportedWorldVersion, WORLD_STATE_VERSION } from './migrate';
+import type { SerializedMachine } from '../machines/yard-machine';
+import { parseMachines } from './machines-state';
 import { WorldStateError, checkArray, checkInteger, checkKeys, describeValue, isPlainObject, pointerSegment } from './state-check';
 
 export { WORLD_STATE_VERSION } from './migrate';
@@ -147,6 +149,8 @@ export interface WorldState {
   readonly jobs: readonly SerializedJob[];
   /** Kamióny na mape vzostupne podľa id (`Truck.toState()`); bays a docky ich držiteľov sa odvodia pri obnove. */
   readonly trucks: readonly SerializedTruck[];
+  /** Stroje blokov (RTG) vzostupne podľa id (`YardMachine.toState()`, ADR-040); blok je RTG blok s najviac jedným strojom. */
+  readonly machines: readonly SerializedMachine[];
   /** Kniha, súhrny období a bankrot (`Economy.getState()`); hotovosť ostáva v `cashCents`. */
   readonly economy: EconomyState;
   /** Kontrakty okrem expirovaných vzostupne podľa id (`Contract.toState()`; ponuky poolu = stav `offered`), ADR-026. */
@@ -276,6 +280,8 @@ export interface ParsedWorldState {
   readonly jobs: readonly ParsedJobEntry[];
   /** Kamióny vzostupne podľa id (= poradie spawnu). */
   readonly trucks: readonly ParsedTruckEntry[];
+  /** Stroje blokov (`parseMachines`, ADR-040). */
+  readonly machines: readonly SerializedMachine[];
   /** Stav ekonomiky (`parseEconomyState`). */
   readonly economy: EconomyState;
   /** Kniha kontraktov (`parseContractsState`). */
@@ -304,6 +310,7 @@ export const WORLD_STATE_KEYS: readonly (keyof WorldState)[] = [
   'vehicles',
   'jobs',
   'trucks',
+  'machines',
   'economy',
   'contracts',
   'xp',
@@ -801,6 +808,7 @@ function checkIdCollisions(
   vehicles: readonly ParsedVehicleEntry[],
   jobs: readonly ParsedJobEntry[],
   trucks: readonly ParsedTruckEntry[],
+  machines: readonly SerializedMachine[],
   cargo: CargoLedgerState,
 ): void {
   const owners = new Map<number, string>(modules.map((entry) => [entry.id, 'modulu'] as const));
@@ -822,6 +830,11 @@ function checkIdCollisions(
     const owner = owners.get(truck.id);
     if (owner !== undefined) throw new WorldStateError(`/trucks${pointerSegment(i)}/id`, `id ${String(truck.id)} už patrí ${owner} (id entít sú jedinečné)`);
     owners.set(truck.id, 'kamiónu');
+  });
+  machines.forEach((machine, i) => {
+    const owner = owners.get(machine.id);
+    if (owner !== undefined) throw new WorldStateError(`/machines${pointerSegment(i)}/id`, `id ${String(machine.id)} už patrí ${owner} (id entít sú jedinečné)`);
+    owners.set(machine.id, 'stroju');
   });
   cargo.units.forEach((unit, i) => {
     const owner = owners.get(unit.id);
@@ -880,10 +893,11 @@ export function parseWorldState(raw: unknown, defs: DefRegistry, map: LoadedMap,
   const vehicles = parseVehicles(state.vehicles, defs, map, grid, nextId);
   const jobs = parseJobs(state.jobs, nextId, clock.tick);
   const trucks = parseTrucks(state.trucks, defs, map, grid, nextId);
+  const machines = parseMachines(state.machines, nextId);
   const contracts = parseContractsState(state, defs, clock);
-  checkIdCollisions(modules, ships, vehicles, jobs, trucks, cargo);
+  checkIdCollisions(modules, ships, vehicles, jobs, trucks, machines, cargo);
   const economy = parseEconomyState(state.economy, clock);
   const emptyFlow = parseEmptyFlowState(state.emptyFlow, defs);
   const hinterland = parseHinterlandState(state.hinterland);
-  return { seed, clock, rng, ids, cashCents, roads, traffic, ownership, modules, cargo, ships, vehicles, jobs, trucks, economy, contracts, emptyFlow, hinterland };
+  return { seed, clock, rng, ids, cashCents, roads, traffic, ownership, modules, cargo, ships, vehicles, jobs, trucks, machines, economy, contracts, emptyFlow, hinterland };
 }

@@ -23,12 +23,14 @@ import type { CargoUnit } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
 import type { HandoverMode } from '../defs/types';
 import { apronDirectionCap, bothDirections, importApronUsage } from '../logistics/apron-usage';
+import { jobNeedsMachine } from '../logistics/handling-chains';
 import { firstUnloadableOnShip, isLoadable, isOutboundOnShip } from '../logistics/voyage-cargo';
 import { BerthModule } from '../modules/berth-module';
 import { CRANE_CYCLE_TRAITS, CraneModule } from '../modules/crane-module';
 import { ModuleError } from '../modules/module-error';
 import type { Contract } from '../contracts/contract';
 import type { Ship } from '../ships/ship';
+import type { TransportJob } from '../logistics/transport-job';
 import type { Vehicle } from '../vehicles/vehicle';
 import { VEHICLE_STATE_TRAITS, changeVehicleState } from '../vehicles/vehicle-fsm';
 import { startTrip } from '../vehicles/vehicle-trip';
@@ -252,6 +254,25 @@ function isStranded(vehicle: Vehicle): boolean {
   return vehicle.state === 'no_path';
 }
 
+/**
+ * Žeriav drží jednotku jobu s ťahačom (RTG chain, ADR-040) na ceste, no pod hákom už čaká ťahač s iným jobom toho istého žeriavu: vozidlá si jobmi vymenia
+ * (`TransportJob.exchangeVehicle`), takže žeriav odovzdá jednotku čakajúcemu a ťahač na ceste dostane job čakajúceho. Bez výmeny by sa dvaja ťahače pod hákom
+ * zablokovali (hák je jedna bunka) a žeriav by držal jednotku, ktorú ťahač nemôže prevziať z apronu. Iný job, vozidlo alebo žeriav → nič.
+ */
+function exchangeWithWaitingTractor(world: World, crane: CraneModule, job: TransportJob): void {
+  if (!jobNeedsMachine(world, job) || job.state !== 'assigned' || job.vehicleId === null) return;
+  const mine = world.vehicles.get(job.vehicleId);
+  if (mine === undefined || mine.state === 'loading') return;
+  for (const waiting of world.vehicles.values()) {
+    const other = waiting.state === 'loading' && waiting.jobId !== null ? world.jobs.get(waiting.jobId) : undefined;
+    if (other === undefined || other === job || other.state !== 'picking' || other.from.kind !== 'in_crane' || other.from.craneId !== crane.id) continue;
+    job.exchangeVehicle(other);
+    mine.jobId = other.id;
+    waiting.jobId = job.id;
+    return;
+  }
+}
+
 const HOOK_HANDOVER: Handover = {
   vehiclesUnderHook: true,
   reservesUnloadSlot: false,
@@ -298,6 +319,7 @@ const HOOK_HANDOVER: Handover = {
     const unitId = crane.heldUnitId;
     if (unitId === null) throw new ModuleError('invalid_transition', `${crane.label}: koniec placing vykládky pod hákom bez jednotky v žeriave`);
     const job = world.jobOfUnit(unitId);
+    if (job !== undefined) exchangeWithWaitingTractor(world, crane, job);
     const vehicle = job?.vehicleId === null || job === undefined ? undefined : world.vehicles.get(job.vehicleId);
     if (job !== undefined && vehicle !== undefined && job.from.kind === 'in_crane' && vehicle.state === 'loading') {
       // Priame odovzdanie: vozidlo čaká pod hákom — jednotka prejde `in_crane → in_vehicle`, vozidlo vyráža k skladu.
@@ -313,6 +335,8 @@ const HOOK_HANDOVER: Handover = {
     // slot apronu aj nad `craneBufferSlots` (aj pri bufferi 0, T6D-02). Rovnako ak priradené vozidlo nedôjde pod hák (`no_path`,
     // T6D-05b): bez odloženia by žeriav pri bufferi 0 držal jednotku, kým sa cesta nezmení, a vozidlo by ju nemalo odkiaľ vziať;
     // vozidlo pri najbližšom pokuse o trasu mieri na prístupovú bunku kotviska (zdroj jobu je už apron, `planJobRoute`).
+    // Job, ktorého odklad do bloku robí stroj (RTG, ADR-040): ťahač nezdvihne nič z apronu, takže jednotku nemožno odložiť — žeriav ju drží, kým ťahač nepríde pod hák.
+    if (job !== undefined && jobNeedsMachine(world, job)) return false;
     const vehicleStranded = vehicle !== undefined && isStranded(vehicle);
     if (!hookBufferFree(world, berth) && !(berth.apron.freeUnreservedCount > 0 && (vehicleStranded || vehicleWaitsUnderHook(world, crane)))) return false;
     const slot = berth.apron.reserve();

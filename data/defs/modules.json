@@ -126,6 +126,23 @@
       "costCents": 22000000,
       "maintenancePerDayCents": 40000,
       "params": { "capacityUnits": 96, "category": "container", "role": "empty_depot", "repairBays": 2, "bays": 4, "rows": 3, "maxTier": 8 }
+    },
+    {
+      "id": "rtg_block",
+      "kind": "storage",
+      "displayName": "RTG blok",
+      "footprint": { "w": 5, "h": 12 },
+      "placement": {
+        "requiredTerrain": ["land", "quay"],
+        "requiresParcelOwnership": true
+      },
+      "connectors": [
+        { "x": 4, "y": 0, "side": "n", "type": "road" },
+        { "x": 4, "y": 11, "side": "s", "type": "road" }
+      ],
+      "costCents": 24000000,
+      "maintenancePerDayCents": 90000,
+      "params": { "capacityUnits": 360, "category": "container", "role": "rtg_block", "bays": 12, "rows": 6, "maxTier": 5, "laneCol": 4, "tpSpacingBays": 1 }
     }
   ]
 }

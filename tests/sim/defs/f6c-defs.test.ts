@@ -9,6 +9,7 @@ import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
 import linesJson from '@data/defs/lines.json';
 import containerTypesJson from '@data/defs/container_types.json';
+import equipmentJson from '@data/defs/equipment.json';
 import logisticsJson from '@data/defs/logistics.json';
 import modulesJson from '@data/defs/modules.json';
 import shipsJson from '@data/defs/ships.json';
@@ -41,6 +42,7 @@ function rawDefs(): Record<string, Json> {
     contract_templates: structuredClone(contractTemplatesJson),
     lines: structuredClone(linesJson),
     container_types: structuredClone(containerTypesJson),
+    equipment: structuredClone(equipmentJson),
   };
 }
 
@@ -253,7 +255,7 @@ describe('DefRegistry — rola skladu a smery vozidla', () => {
     delete depotParams(noRole)['role'];
     expectDefError(() => DefRegistry.fromRaw(noRole), 'modules', `/items/${String(depotIndex(noRole))}/params/repairBays`);
     const badRole = rawDefs();
-    depotParams(badRole)['role'] = 'rtg_block';
+    depotParams(badRole)['role'] = 'ghost_role';
     expectDefError(() => DefRegistry.fromRaw(badRole), 'modules', `/items/${String(depotIndex(badRole))}/params/role`);
     for (const bad of [0, 1.5, '2']) {
       const raw = rawDefs();
@@ -360,7 +362,7 @@ describe('schéma ⇔ DefRegistry (Ajv) pre polia F6c', () => {
 
   it('schéma odmietne sklad s role bez zmyslu a vozidlo s neznámym smerom; register rovnako', () => {
     const raw = rawDefs();
-    depotParamsOf(raw)['role'] = 'rtg_block';
+    depotParamsOf(raw)['role'] = 'ghost_role';
     expect(validators.modules(raw['modules'])).toBe(false);
     expect(accepts(raw)).toBe(false);
     const vehicle = rawDefs();

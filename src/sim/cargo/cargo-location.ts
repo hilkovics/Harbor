@@ -19,6 +19,7 @@ export type CargoLocation =
   | { readonly kind: 'in_crane'; readonly craneId: EntityId }
   | { readonly kind: 'on_apron'; readonly berthId: EntityId; readonly slot: number }
   | { readonly kind: 'in_vehicle'; readonly vehicleId: EntityId }
+  | { readonly kind: 'in_handler'; readonly machineId: EntityId }
   | { readonly kind: 'in_storage'; readonly moduleId: EntityId; readonly slot: number }
   | { readonly kind: 'in_pipeline'; readonly pipelineId: EntityId }
   | { readonly kind: 'at_ramp'; readonly rampId: EntityId; readonly dock: number }
@@ -79,6 +80,7 @@ export const CARGO_HOLDER_SPECS: { readonly [K in CargoHolderKind]: CargoHolderS
   in_crane: { holderKey: 'craneId', slotKey: null, uniqueSlot: false, order: 'arrival' },
   on_apron: { holderKey: 'berthId', slotKey: 'slot', uniqueSlot: true, order: 'arrival' },
   in_vehicle: { holderKey: 'vehicleId', slotKey: null, uniqueSlot: false, order: 'arrival' },
+  in_handler: { holderKey: 'machineId', slotKey: null, uniqueSlot: false, order: 'arrival' },
   in_storage: { holderKey: 'moduleId', slotKey: 'slot', uniqueSlot: true, order: 'arrival' },
   in_pipeline: { holderKey: 'pipelineId', slotKey: null, uniqueSlot: false, order: 'arrival' },
   at_ramp: { holderKey: 'rampId', slotKey: 'dock', uniqueSlot: false, order: 'arrival' },
@@ -98,6 +100,8 @@ export const CARGO_HOLDER_SPECS: { readonly [K in CargoHolderKind]: CargoHolderS
  * - odovzdávanie pod hákom (F6a, ADR-033, `handoverMode: 'under_hook'`): vykládka `on_ship → in_crane → in_vehicle →
  *   in_storage`, nakládka `in_storage → in_vehicle → in_crane → on_ship` — jednotka sa medzi žeriavom a vozidlom odovzdá
  *   priamo (`in_crane ↔ in_vehicle`), apron ostáva len buffer (`in_crane → on_apron`).
+ * - stroj bloku (R3, ADR-040 bod 3, TERMINAL_2 §6.10): vykládka `in_vehicle → in_handler → in_storage` (RTG zdvihne z ťahača a uloží do stohu), nakládka
+ *   `in_storage → in_handler → in_vehicle`; `in_handler` drží najviac jednu jednotku (stroj) a je vždy len prechodová poloha.
  * Tabuľka je podľa druhu lokácie, nie kategórie nákladu ani smeru — kompatibilitu kategórie so žeriavom/potrubím/vozidlom
  * a smer toku strážia systémy.
  */
@@ -105,8 +109,9 @@ const TRANSITIONS: { readonly [K in CargoLocationKind]: readonly CargoLocationKi
   on_ship: ['in_crane', 'in_pipeline', 'in_vehicle', 'shipped'],
   in_crane: ['on_apron', 'on_ship', 'in_vehicle'],
   on_apron: ['in_vehicle', 'in_crane'],
-  in_vehicle: ['in_storage', 'at_ramp', 'on_apron', 'in_crane'],
-  in_storage: ['in_vehicle', 'in_pipeline'],
+  in_vehicle: ['in_storage', 'at_ramp', 'on_apron', 'in_crane', 'in_handler'],
+  in_handler: ['in_storage', 'in_vehicle'],
+  in_storage: ['in_vehicle', 'in_pipeline', 'in_handler'],
   in_pipeline: ['in_storage', 'at_ramp'],
   at_ramp: ['in_truck', 'in_train', 'in_vehicle'],
   in_truck: ['exported', 'at_ramp'],

@@ -347,6 +347,22 @@ export class TransportJob {
   }
 
   /**
+   * Výmena vozidiel medzi dvoma jobmi pod hákom jedného žeriava (ADR-040): žeriav drží jednotku jobu s vozidlom na ceste (`assigned`), no pod hákom už čaká vozidlo iného jobu
+   * (`picking`) — ťahač nezdvihne nič z apronu a pod hákom sa dvaja nevyhnú, takže sa vozidlá vymenia: tento job (`assigned`) dostane čakajúce vozidlo a stane sa `picking`,
+   * `other` (`picking`) dostane vozidlo na ceste a stane sa `assigned`. Explicitná operácia mimo `JOB_TRANSITIONS`; iné stavy → `JobError`, nič sa nezmení.
+   */
+  exchangeVehicle(other: TransportJob): void {
+    if (this.current !== 'assigned' || other.current !== 'picking' || this.vehicle === null || other.vehicle === null) {
+      throw new JobError('invalid_transition', `${this.label}: výmena vozidla vyžaduje job assigned a druhý picking s vozidlami (${this.current}, ${other.label} ${other.current})`);
+    }
+    const waiting = other.vehicle;
+    other.vehicle = this.vehicle;
+    other.current = 'assigned';
+    this.vehicle = waiting;
+    this.current = 'picking';
+  }
+
+  /**
    * Prechod podľa `JOB_TRANSITIONS` (okrem `→ assigned`, ktorý robí `assign`). Nepovolený prechod →
    * `JobError('invalid_transition')`, job sa nezmení.
    */

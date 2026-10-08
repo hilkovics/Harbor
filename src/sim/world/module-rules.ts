@@ -386,6 +386,8 @@ export interface RemovalWorld {
   readonly modules: ReadonlyMap<EntityId, Module>;
   readonly trucks: ReadonlyMap<EntityId, TruckModuleRefs>;
   readonly vehicles: ReadonlyMap<EntityId, VehicleRouteRefs>;
+  /** Stroje blokov (R3, ADR-040): blok so strojom v cykle alebo s frontou sa neodstráni. */
+  readonly machines: ReadonlyMap<EntityId, { readonly blockId: EntityId; readonly state: string; readonly queue: readonly unknown[] }>;
   readonly grid: Pick<Grid, 'index'>;
 }
 
@@ -450,7 +452,10 @@ const REMOVAL_CHECKS: { readonly [R in RemovalRule]: RemovalCheck } = {
     const ship = `#${String(berth.dockedShipId)}`;
     return berth === module ? `${berth.label} má loď ${ship}` : `${module.label} stojí na ${berth.label}, ktoré drží loď ${ship}`;
   },
-  busy: (_world, module) => {
+  busy: (world, module) => {
+    for (const machine of world.machines.values()) {
+      if (machine.blockId === module.id && (machine.state !== 'idle' || machine.queue.length > 0)) return `stroj bloku ${module.label} je uprostred cyklu (${machine.state}) alebo má frontu`;
+    }
     if (!(module instanceof CraneModule)) return undefined;
     const { holdsUnit, hasReservation } = CRANE_STATE_TRAITS[module.state];
     const busy = holdsUnit || hasReservation || module.heldUnitId !== null || module.reservedSlot !== null;

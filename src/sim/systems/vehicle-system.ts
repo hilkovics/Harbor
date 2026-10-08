@@ -30,6 +30,7 @@ import { isSameLocation, slotOf, type CargoLocation } from '../cargo/cargo-locat
 import type { EntityId } from '../core/entity-id';
 import type { VehicleDef } from '../defs/types';
 import { onEmptyStored } from '../logistics/empty-depot-service';
+import { isMachineEndpoint } from '../logistics/handling-chains';
 import { hookCraneOf, isHookDropoff, isHookPickup } from '../logistics/job-source';
 import { rehandleStep, startYardTake } from '../logistics/yard-rehandle';
 import { settleYardDrop } from '../logistics/yard-settle';
@@ -44,7 +45,7 @@ import type { World } from '../world/world';
 
 /** Čo sa stane pri príchode na koniec trasy (`to_*`): stav vozidla, stav jobu a trvanie manipulácie jednotky. */
 interface ArrivalRule {
-  readonly vehicle: VehicleState;
+  readonly vehicle: 'loading' | 'unloading';
   readonly job: JobState;
   readonly handlingTicks: (def: Readonly<VehicleDef>) => number;
   /** Koniec trasy je hák žeriava (ADR-033): vozidlo čaká pod hákom na odovzdanie, nie na pobyt v module. */
@@ -79,7 +80,9 @@ function arrive(vehicle: Vehicle, world: World): void {
   const job = jobOfVehicle(world, vehicle);
   const module = jobModule(world, job, destination);
   job.transition(rule.job);
-  vehicle.waitTicks = rule.underHook(job) ? HOOK_WAIT_TICKS : (module.vehicleInternalTicks() ?? world.defs.logistics.defaultInternalTicks) + rule.handlingTicks(vehicle.def);
+  // Pod hákom, alebo na TP RTG bloku (ADR-040): vozidlo čaká na odovzdanie od žeriavu / stroja, nie na pobyt v module (odpočet pripnutý ako pod hákom).
+  const handedOver = rule.underHook(job) || isMachineEndpoint(world, job, rule.vehicle);
+  vehicle.waitTicks = handedOver ? HOOK_WAIT_TICKS : (module.vehicleInternalTicks() ?? world.defs.logistics.defaultInternalTicks) + rule.handlingTicks(vehicle.def);
   changeVehicleState(world.events, vehicle, rule.vehicle);
   vehicle.releaseTail();
 }
@@ -147,13 +150,28 @@ function loadUnit(vehicle: Vehicle, world: World): void {
   const job = jobOfVehicle(world, vehicle);
   const source = jobModule(world, job, 'source');
   const unitId = firstUnitAt(world, job, job.from);
-  if (unitId === undefined) throw new VehicleError('inconsistent', `${vehicle.label}: ${job.label} nemá jednotku na zdroji`);
+  if (unitId === undefined) {
+    // Jednotku práve prekladá stroj bloku (rehandling RTG, ADR-040): vozidlo počká o tick.
+    if (job.unitIds.some((id) => world.cargo.get(id)?.location.kind === 'in_handler')) {
+      vehicle.waitTicks = HOOK_WAIT_TICKS;
+      return;
+    }
+    throw new VehicleError('inconsistent', `${vehicle.label}: ${job.label} nemá jednotku na zdroji`);
+  }
   // Blok so stohmi: kontajnery nad cieľom sa najprv preložia (`rehandling`, ADR-039 bod 6); bez cieľa presunu sa job zruší a vozidlo uvoľní (TR2-06b).
   if (startYardTake(world, vehicle, job, unitId) !== 'ready') return;
   world.cargo.move(unitId, { kind: 'in_vehicle', vehicleId: vehicle.id });
   source.recordTaken(unitId);
+  completeLoad(world, vehicle, job, vehicle.def.loadTicks);
+}
+
+/**
+ * Po naložení jednej jednotky do vozidla (vlastný zdvih, alebo odovzdanie strojom RTG, ADR-040): ďalšia jednotka jobu na zdroji = vozidlo ostáva v `loading` s odpočtom
+ * `nextWaitTicks`, inak job `moving` a jazda k cieľu (`startTrip`, bez pohybu v tomto ticku).
+ */
+export function completeLoad(world: World, vehicle: Vehicle, job: TransportJob, nextWaitTicks: number): void {
   if (firstUnitAt(world, job, job.from) !== undefined) {
-    vehicle.waitTicks = vehicle.def.loadTicks;
+    vehicle.waitTicks = nextWaitTicks;
     return;
   }
   job.transition('moving');
@@ -180,8 +198,17 @@ function unloadUnit(vehicle: Vehicle, world: World): void {
   target.commit(place, unitId);
   // Prázdny kontajner v sklade: `EmptyStored` a v depe kontrola (`damageChance`, ADR-034).
   if (job.to.kind === 'in_storage') onEmptyStored(world, unitId, jobModule(world, job, 'target'));
+  completeDrop(world, vehicle, job, vehicle.def.unloadTicks);
+}
+
+/**
+ * Po vyložení jednej jednotky z vozidla (vlastné uloženie, alebo odovzdanie strojom RTG, ADR-040): ďalšia jednotka vo vozidle = vozidlo ostáva v `unloading` s odpočtom
+ * `nextWaitTicks`, inak job `done`, `JobDone` a vozidlo `idle` (stojí na mieste).
+ */
+export function completeDrop(world: World, vehicle: Vehicle, job: TransportJob, nextWaitTicks: number): void {
+  const inVehicle: CargoLocation = { kind: 'in_vehicle', vehicleId: vehicle.id };
   if (firstUnitAt(world, job, inVehicle) !== undefined) {
-    vehicle.waitTicks = vehicle.def.unloadTicks;
+    vehicle.waitTicks = nextWaitTicks;
     return;
   }
   job.transition('done');
@@ -238,8 +265,9 @@ const VEHICLE_STEPS: { readonly [S in VehicleState]: VehicleStep } = {
   to_pickup: arriveWhenThere,
   to_dropoff: arriveWhenThere,
   loading: (vehicle, world) => {
-    if (isHookPickup(jobOfVehicle(world, vehicle))) waitUnderHook(vehicle, world);
-    else if (countDown(vehicle)) loadUnit(vehicle, world);
+    const job = jobOfVehicle(world, vehicle);
+    if (isHookPickup(job)) waitUnderHook(vehicle, world);
+    else if (!isMachineEndpoint(world, job, 'loading') && countDown(vehicle)) loadUnit(vehicle, world);
   },
   rehandling: (vehicle, world) => {
     const job = jobOfVehicle(world, vehicle);
@@ -248,8 +276,9 @@ const VEHICLE_STEPS: { readonly [S in VehicleState]: VehicleStep } = {
     rehandleStep(world, vehicle, job, unitId);
   },
   unloading: (vehicle, world) => {
-    if (isHookDropoff(jobOfVehicle(world, vehicle))) waitUnderHook(vehicle, world);
-    else if (countDown(vehicle)) unloadUnit(vehicle, world);
+    const job = jobOfVehicle(world, vehicle);
+    if (isHookDropoff(job)) waitUnderHook(vehicle, world);
+    else if (!isMachineEndpoint(world, job, 'unloading') && countDown(vehicle)) unloadUnit(vehicle, world);
   },
   no_path: (vehicle, world) => {
     if (countDown(vehicle)) retry(vehicle, world);

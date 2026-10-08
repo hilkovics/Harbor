@@ -19,11 +19,12 @@ const HEAVY_TIMEOUT_MS = 180_000;
 
 describe('režim apron: bitovo zhodný s F2–F6c', () => {
   // R2 (ADR-039): hashe prepísané po plánovači stohov (cashEnd a počty exportovaných jednotiek ostali; stav obsahuje `rehandles` a stohové sloty).
+  // TR3-01 (ADR-040): `WorldState` nesie nový kľúč `machines: []` → nové hashe (vertical_slice 8c7ec283 → b2dd39a3, full_import_chain ba945370 → f6a160e0, export_roundtrip 9326712a → 9bc73b8a); `cashEnd` a `exportedUnits` ostali, sim sa nezmenil.
   // TR2-06b: runtime bloku nesie aj `rehandleStalls` → nové hashe (vertical_slice 80ba4d63 → 8c7ec283, full_import_chain 91ec22b0 → ba945370, export_roundtrip 1d247952 → 9326712a); `cashEnd` a `exportedUnits` ostali.
   it.each([
-    { name: 'vertical_slice', ticks: 30_000, stateHash: '8c7ec283', cashEnd: 41_565_000, exportedUnits: 50 },
-    { name: 'full_import_chain', ticks: 40_000, stateHash: 'ba945370', cashEnd: 31_739_000, exportedUnits: 120 },
-    { name: 'export_roundtrip', ticks: 40_000, stateHash: '9326712a', cashEnd: 41_805_050, exportedUnits: 31 },
+    { name: 'vertical_slice', ticks: 30_000, stateHash: 'b2dd39a3', cashEnd: 41_565_000, exportedUnits: 50 },
+    { name: 'full_import_chain', ticks: 40_000, stateHash: 'f6a160e0', cashEnd: 31_739_000, exportedUnits: 120 },
+    { name: 'export_roundtrip', ticks: 40_000, stateHash: '9bc73b8a', cashEnd: 41_805_050, exportedUnits: 31 },
   ])('$name ($ticks tickov): stateHash $stateHash, apron → directHandoverPct 0', ({ name, ticks, stateHash, cashEnd, exportedUnits }) => {
     const report = runScenario(loadScenario(`data/scenarios/${name}.json`), ticks, DEFS, { hash: true });
     expect(report).toMatchObject({ stateHash, cashEnd, exportedUnits, lostUnits: 0, directHandoverPct: 0 });

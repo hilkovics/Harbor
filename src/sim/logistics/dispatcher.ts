@@ -83,6 +83,7 @@ import { cancelJob } from './job-cancel';
 import { createEmptyIntakeJobs, createEmptyPickupJobs } from './empty-jobs';
 import { createExportIntakeJobs } from './export-intake';
 import { createExportLoadJobs as createLoadJobs, createHookUnloadJobs as createHookJobs, type LoadJobSpec } from './export-load';
+import { vehicleMayServe } from './handling-chains';
 import { distanceBetweenModules, distanceToModule } from './module-access';
 import { allocateRamp, outboundRoom } from './ramp-allocator';
 import type { StoredCargoGroup } from './stored-cargo-index';
@@ -474,7 +475,7 @@ function pickVehicle(world: World, job: TransportJob, candidates: Iterable<Vehic
   let bestPreference = Infinity;
   let bestCost = Infinity;
   for (const vehicle of candidates) {
-    if (!VEHICLE_STATE_TRAITS[vehicle.state].free || !vehicleCarries(vehicle, category, direction)) continue;
+    if (!VEHICLE_STATE_TRAITS[vehicle.state].free || !vehicleCarries(vehicle, category, direction) || !vehicleMayServe(world, vehicle, job)) continue;
     const cost = distanceToModule(world, vehicle.cell, source);
     if (cost === Infinity) continue;
     const preference = vehiclePreference(vehicle, direction);

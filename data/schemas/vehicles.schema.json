@@ -90,6 +90,10 @@
           "minimum": 0,
           "description": "Denná mzda obsluhy v centoch (USD)."
         },
+        "canLift": {
+          "type": "boolean",
+          "description": "Vozidlo zdvihne kontajner samo (straddle carrier, empty handler); chýba = áno. Terminálový ťahač (`false`, ADR-040 bod 1) kontajner nezdvihne — odovzdáva ho žeriav a stroj bloku (RTG)."
+        },
         "techRequired": {
           "$ref": "#/$defs/id",
           "description": "Id uzla tech tree, ktorý vozidlo odomyká; chýba = dostupné od začiatku."

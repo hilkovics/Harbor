@@ -93,6 +93,7 @@ import { computeBerthGroups } from '../modules/berth-group';
 import { CRANE_CYCLE_TRAITS, CRANE_STATE_TRAITS, CraneModule, craneReservesApronSlot, cranePhaseProblem } from '../modules/crane-module';
 import { EmptyDepot } from '../modules/empty-depot';
 import { LoadingRamp } from '../modules/loading-ramp';
+import { RtgBlock } from '../modules/rtg-block';
 import { StorageModule, storageSlotCapacity } from '../modules/storage-module';
 import { TruckGate } from '../modules/truck-gate';
 import { VehicleDepot } from '../modules/vehicle-depot';
@@ -111,6 +112,7 @@ import { carrierOverlapProblem } from '../traffic/overlap-check';
 import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle-fsm';
 import { vehicleMotionProblem } from '../vehicles/vehicle-trip';
 import { CARGO_HOLDER_SOURCES } from './cargo-holders';
+import { heldByMachine } from './machines-state';
 import type { LandsideModules } from './landside-roster';
 import type { World } from './world';
 
@@ -429,6 +431,43 @@ function checkVehicle(world: World, vehicle: Vehicle): string | undefined {
   return checkVehicleCargo(world, vehicle) ?? vehicleMotionProblem(world, vehicle)?.problem;
 }
 
+/**
+ * Stroje blokov (ADR-040; TERMINAL_2 §10.4): stroj stojí na RTG bloku (najviac jeden na blok), v `idle` nemá cyklus ani nesie nič, v cykle drží najviac jednu jednotku
+ * (`in_handler`) — práve jednotku cyklu — a po zdvihu ju nesie len v fázach po `lift` (`shift`, `trolley`, `lower`), pred zdvihom (`travel`, `lift`) ju nenesie; vozidlo cyklu
+ * `put` / `take` existuje a čaká na TP v `unloading` / `loading` s jobom cyklu; poloha je v rozsahu bloku.
+ */
+const checkMachines: Check = (world) => {
+  const blocks = new Set<number>();
+  for (const [id, machine] of world.machines) {
+    if (machine.id !== id) return `world.machines: kľúč ${String(id)} ukazuje na ${machine.label}`;
+    const block = world.modules.get(machine.blockId);
+    if (!(block instanceof RtgBlock)) return `${machine.label}: blok #${String(machine.blockId)} nie je RTG blok`;
+    if (blocks.has(block.id)) return `${machine.label}: blok ${block.label} má viac strojov`;
+    blocks.add(block.id);
+    const held = world.cargo.countAt('in_handler', machine.id);
+    const { cycle, state } = machine;
+    if (state === 'idle') {
+      if (cycle !== null || held > 0) return `${machine.label} v stave 'idle' má cyklus alebo drží ${String(held)} jednotiek`;
+    } else {
+      if (cycle === null) return `${machine.label} v stave '${state}' nemá cyklus`;
+      const carrying = state === 'shift' || state === 'trolley' || state === 'lower';
+      if (held > 1) return `${machine.label} drží ${String(held)} jednotiek (najviac 1)`;
+      if (held === 1 && world.cargo.unitAtIndex('in_handler', machine.id, 0) !== cycle.unitId) return `${machine.label} drží inú jednotku než #${String(cycle.unitId)} cyklu ${cycle.kind}`;
+      if (carrying !== (held === 1)) return `${machine.label} v stave '${state}' ${held === 1 ? 'drží jednotku skôr, než ju zdvihol' : 'nedrží jednotku po zdvihu'}`;
+      if (cycle.kind !== 'relocate') {
+        const vehicle = world.vehicles.get(cycle.vehicleId as EntityId);
+        const wanted = cycle.kind === 'put' ? 'unloading' : 'loading';
+        if (vehicle === undefined || vehicle.state !== wanted || vehicle.jobId !== cycle.jobId) return `${machine.label}: vozidlo #${String(cycle.vehicleId)} cyklu ${cycle.kind} nečaká na TP v stave '${wanted}' s jobom #${String(cycle.jobId)}`;
+      }
+    }
+    const { gantry, trolley, hoist } = machine.restPose;
+    if (!isWithin(gantry, block.geometry.bays) || trolley < -1 || trolley > block.geometry.rows - 1 || !isWithin(hoist, block.geometry.maxTier)) {
+      return `${machine.label} stojí mimo bloku (bay ${String(gantry)}, rad ${String(trolley)}, vrstva ${String(hoist)})`;
+    }
+  }
+  return undefined;
+};
+
 const checkVehicles: Check = (world) => {
   let previous = 0;
   for (const [id, vehicle] of world.vehicles) {
@@ -450,7 +489,7 @@ function checkJobUnits(world: World, job: TransportJob): string | undefined {
     if (world.jobOfUnit(unitId) !== job) return `${job.label}: index jobOfUnit(#${String(unitId)}) ukazuje na ${world.jobOfUnit(unitId)?.label ?? 'nič'}`;
     const atSource = unitAtJobSource(world, job, unit);
     const inVehicle = unit.location.kind === 'in_vehicle' && unit.location.vehicleId === job.vehicleId;
-    if ((place === 'source' && !atSource) || (place === 'vehicle' && !inVehicle)) {
+    if (((place === 'source' && !atSource) || (place === 'vehicle' && !inVehicle)) && !heldByMachine(world, unit)) {
       return `${job.label} v stave '${job.state}': jednotka #${String(unitId)} nie je na ${place === 'source' ? 'zdroji' : 'vozidle'} jobu`;
     }
   }
@@ -1149,6 +1188,7 @@ const CHECKS: readonly Check[] = [
   checkShips,
   checkDepots,
   checkVehicles,
+  checkMachines,
   checkJobs,
   checkTrucks,
   checkCarrierOverlap,

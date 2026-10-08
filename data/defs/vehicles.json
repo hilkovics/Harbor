@@ -10,6 +10,7 @@
       "loadTicks": 3,
       "unloadTicks": 3,
       "cargoCategories": ["container"],
+      "canLift": true,
       "purchaseCents": 4800000,
       "wagePerDayCents": 18000
     },
@@ -23,8 +24,22 @@
       "unloadTicks": 2,
       "cargoCategories": ["container"],
       "cargoDirections": ["empty"],
+      "canLift": true,
       "purchaseCents": 3600000,
       "wagePerDayCents": 14000
+    },
+    {
+      "id": "terminal_tractor",
+      "displayName": "Terminálový ťahač",
+      "capacityUnits": 1,
+      "lengthCells": 3,
+      "speedCellsPerTick": 0.5,
+      "loadTicks": 2,
+      "unloadTicks": 2,
+      "cargoCategories": ["container"],
+      "canLift": false,
+      "purchaseCents": 2200000,
+      "wagePerDayCents": 12000
     }
   ]
 }

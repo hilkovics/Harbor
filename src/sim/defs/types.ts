@@ -408,7 +408,7 @@ export interface CraneParams {
 }
 
 /** Roly skladu (F6c, ADR-034): `empty_depot` = depo prázdnych kontajnerov (trieda `EmptyDepot`); chýbajúca rola = bežný sklad kategórie. */
-export const STORAGE_ROLES = ['empty_depot'] as const;
+export const STORAGE_ROLES = ['empty_depot', 'rtg_block'] as const;
 export type StorageRole = (typeof STORAGE_ROLES)[number];
 
 /** `params` skladu (`kind: 'storage'`). */
@@ -433,6 +433,13 @@ export interface StorageParams {
   readonly rows?: number;
   /** Najvyššia vrstva stohu (celé ≥ 1; straddle blok 3, depo prázdnych 8; geometria bloku, ADR-039). */
   readonly maxTier?: number;
+  /**
+   * Stĺpec footprintu (pri rotácii 0, od ľavého okraja, celé ≥ 0), v ktorom beží jednosmerný pruh pozdĺž bloku (TR3-01, ADR-040 bod 2); povinné práve pri
+   * `role: 'rtg_block'`. Pruh je simulačný údaj: bay `b` leží na bunke pruhu `b` (po dĺžke), vjazd je na začiatku a výjazd na konci pruhu.
+   */
+  readonly laneCol?: number;
+  /** Každý koľký bay má odovzdávacie miesto (TP) v pruhu (celé ≥ 1); povinné práve pri `role: 'rtg_block'`. */
+  readonly tpSpacingBays?: number;
 }
 
 /** `params` depa vozidiel (`kind: 'depot'`). */
@@ -546,6 +553,11 @@ export interface VehicleDef {
   readonly purchaseCents: number;
   readonly wagePerDayCents: number;
   readonly techRequired?: string;
+  /**
+   * Vozidlo zdvihne kontajner samo (straddle carrier, empty handler): chýba = áno. Terminálový ťahač (`canLift: false`, ADR-040 bod 1) kontajner nezdvihne —
+   * odovzdáva ho žeriav (STS) a stroj bloku (RTG) a vozidlo smie len joby, v ktorých jeho koncové body obsluhuje stroj (`logistics/handling-chains.ts`).
+   */
+  readonly canLift?: boolean;
 }
 
 /**
@@ -633,4 +645,27 @@ export interface ContainerTypeDef {
   readonly oogChance: number;
   /** Násobiteľ odmeny za TEU oproti základnej cene typu nákladu (> 0; R5). */
   readonly rateMultiplier: number;
+}
+
+/** Priority RTG fronty (`equipment.json` → `rtg.priorities`, ADR-040 bod 6): menšie číslo = vyššia priorita; poradie loď > kamión > housekeeping je v dátach. */
+export const YARD_PRIORITY_KINDS = ['ship', 'truck', 'housekeeping'] as const;
+export type YardPriorityKind = (typeof YARD_PRIORITY_KINDS)[number];
+
+/** Parametre RTG žeriavu (`equipment.json` → `rtg`, docs/TERMINAL_2.md §5.3); časy sú v tickoch, pohyb v bunkách (bays) za tick. */
+export interface RtgDef {
+  /** Rýchlosť pojazdu žeriavu pozdĺž bloku v bays za tick (spojitá poloha). */
+  readonly gantryCellsPerTick: number;
+  /** Zdvih / spúšťanie o jednu vrstvu stohu v tickoch. */
+  readonly hoistTicksPerTier: number;
+  /** Pojazd vozíka o jeden rad naprieč blokom v tickoch. */
+  readonly trolleyTicksPerRow: number;
+  /** Uchopenie / pustenie kontajnera (twist-lock) v tickoch. */
+  readonly lockTicks: number;
+  /** Priority fronty stroja podľa druhu úlohy (menšie = skôr). */
+  readonly priorities: { readonly [K in YardPriorityKind]: number };
+}
+
+/** `equipment.json` — stroje bloku (TERMINAL_2 §10.5, ADR-040); R3 pozná len `rtg`. */
+export interface EquipmentDef extends DefBase {
+  readonly rtg: RtgDef;
 }

@@ -85,6 +85,7 @@ describe('World.serialize — WorldState v10', () => {
       'vehicles',
       'jobs',
       'trucks',
+      'machines',
       'economy',
       'contracts',
       'xp',

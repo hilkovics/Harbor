@@ -232,6 +232,8 @@ export interface LogisticsDef extends DefBase {
   readonly rehandleGiveUpTicks: number;
   /** Rezerva buniek navyše (celé ≥ 0) pri priraďovaní vozidla jobu pre zavalenú jednotku (`unitPickable`): príchody ukladané počas cesty vozidla berú miesto pre rehandling (ADR-039 dodatok TR2-06b). */
   readonly rehandleSpareCells: number;
+  /** Sloty apronu (celé ≥ 0), ktoré záložná nakládka cez apron (`rerouteLoadViaApron`) nezaberie: musí tam ostať miesto, kam žeriav odloží vykladanú jednotku (inak žeriav drží import, apron je plný exportov čakajúcich na žeriav a nič sa nepohne; ADR-040 dodatok TR3-02b). */
+  readonly apronUnloadReserveSlots: number;
   /** Koľko voľných stĺpcov (`maxTier` buniek každý, celé ≥ 0) musí ostať v bloku, aby plánovač smel zavaliť skôr odchádzajúci kontajner (ADR-039). */
   readonly buryReserveColumns: number;
   /** Odhad doby ležania importu v sklade po vykládke v hodinách (> 0): základ plánovaného času odchodu importu, obmedzený SLA (ADR-039; skutočné termíny odvozu prídu v R4). */

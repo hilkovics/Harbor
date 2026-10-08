@@ -47,13 +47,13 @@ describe('tt_rtg: 100 000 tickov bez zápchy na kotvisku a v bloku', () => {
     expect(yardMetrics(world).rehandleStalls).toBe(0);
   });
 
-  it('priepustnosť: RTG aj STS spravili stovky presunov; čakanie STS je obmedzené kapacitou jediného RTG (cieľ < 20 % → docs/BACKLOG.md)', () => {
+  it('priepustnosť: RTG aj STS spravili stovky presunov; čakanie STS je obmedzené kapacitou jediného RTG (cieľ < 20 % nedosiahnuteľný, zmerané ≈ 62 %; docs/BACKLOG.md TR3-02b)', () => {
     const metrics = terminalMetrics(world);
     expect(metrics.rtgMoves).toBeGreaterThanOrEqual(2 * UNITS * 3);
     expect(metrics.stsMoves).toBeGreaterThanOrEqual(2 * UNITS * 3);
     expect(metrics.stsMovesPerHour).toBeGreaterThan(1);
     expect(metrics.stsWaitForTractorPct).not.toBeNull();
-    // Dva STS (cyklus 12 ticků) na jeden RTG (cyklus ≈ 14–15 ticků) nemôžu čakať < 20 %: ≈ 65 % je strop kapacity jedného stroja, nie nedostatok ťahačov (ADR-040 dodatok TR3-02).
+    // Dva STS (cyklus 12 ticků) na jeden RTG (cyklus ≈ 14–15 ticků) nemôžu čakať < 20 %: zmerané ≈ 66 % (6 ťahačov), ≈ 62 % (8–10) je strop kapacity jedného stroja, nie nedostatok ťahačov; druhý blok plánovač nepoužije (ADR-040 dodatok TR3-02b).
     expect(metrics.stsWaitForTractorPct as number).toBeLessThan(75);
   });
 }, 900_000);

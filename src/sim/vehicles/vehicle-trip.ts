@@ -107,7 +107,7 @@ export function jobTarget(world: World, job: TransportJob, destination: JobDesti
 function rerouteLoadViaApron(world: World, vehicle: Vehicle, job: TransportJob): boolean {
   if (job.state !== 'moving' || job.to.kind !== 'in_crane') return false;
   const berth = world.modules.get(job.toModuleId);
-  if (!(berth instanceof BerthModule) || berth.apron.freeUnreservedCount <= 0) return false;
+  if (!(berth instanceof BerthModule) || berth.apron.freeUnreservedCount <= world.defs.logistics.apronUnloadReserveSlots) return false;
   if (!planRoute(world, vehicle, berth)) return false;
   job.rebindTarget({ kind: 'on_apron', berthId: berth.id, slot: berth.apron.reserve() });
   return true;

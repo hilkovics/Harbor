@@ -260,6 +260,7 @@ const LOGISTICS_FIELDS: FieldTable<LogisticsDef> = {
   rehandleGiveUpTicks: { kind: 'integer', min: 1 },
   buryReserveColumns: { kind: 'integer', min: 0 },
   rehandleSpareCells: { kind: 'integer', min: 0 },
+  apronUnloadReserveSlots: { kind: 'integer', min: 0 },
   importDwellEstimateHours: { kind: 'number', exclusiveMin: 0 },
   yardPlanner: { kind: 'enum', values: YARD_PLANNER_MODES },
   congestion: { kind: 'object', fields: CONGESTION_FIELDS },

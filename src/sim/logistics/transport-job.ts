@@ -288,11 +288,11 @@ export class TransportJob {
   /**
    * Presmeruje cieľ jobu z háku žeriava (`in_crane`, nakládka pod hákom) na slot apronu toho istého kotviska (`toModuleId`) — vozidlo s jednotkou
    * k háku nedôjde (`no_path`), preto ju odloží na apron a žeriav ju zdvihne odtiaľ (ADR-033 dodatok T6D-05b). Povolené len pre job `moving`
-   * (jednotka je vo vozidle) s cieľom `in_crane`; slot musí byť už rezervovaný volajúcim. Inak `JobError`, job sa nezmení.
+   * (jednotka je vo vozidle) alebo `assigned` (dispatcher presmeruje nakládku s nedosiahnuteľným hákom už pri priradení, TR3-02b) s cieľom `in_crane`; slot musí byť už rezervovaný volajúcim. Inak `JobError`, job sa nezmení.
    */
   rebindTarget(to: CargoLocation): void {
     const target = checkLocation(to, this.label, 'to');
-    if (this.target.kind !== 'in_crane' || this.current !== 'moving') {
+    if (this.target.kind !== 'in_crane' || (this.current !== 'moving' && this.current !== 'assigned')) {
       throw new JobError('invalid_transition', `${this.label}: cieľ sa presmeruje len pri jobe moving s cieľom in_crane (cieľ ${this.target.kind}, stav ${this.current})`);
     }
     if (target.kind !== 'on_apron' || holderIdOf(target) !== this.toModuleId || !isJobRoute(this.source.kind, target.kind)) {

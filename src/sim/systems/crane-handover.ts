@@ -24,6 +24,7 @@ import type { EntityId } from '../core/entity-id';
 import type { HandoverMode } from '../defs/types';
 import { apronDirectionCap, bothDirections, importApronUsage } from '../logistics/apron-usage';
 import { jobNeedsMachine } from '../logistics/handling-chains';
+import { hookUnreachable } from '../logistics/load-access';
 import { firstUnloadableOnShip, isLoadable, isOutboundOnShip } from '../logistics/voyage-cargo';
 import { BerthModule } from '../modules/berth-module';
 import { CRANE_CYCLE_TRAITS, CraneModule } from '../modules/crane-module';
@@ -337,7 +338,8 @@ const HOOK_HANDOVER: Handover = {
     // vozidlo pri najbližšom pokuse o trasu mieri na prístupovú bunku kotviska (zdroj jobu je už apron, `planJobRoute`).
     // Job, ktorého odklad do bloku robí stroj (RTG, ADR-040): ťahač nezdvihne nič z apronu, takže jednotku nemožno odložiť — žeriav ju drží, kým ťahač nepríde pod hák.
     if (job !== undefined && jobNeedsMachine(world, job)) return false;
-    const vehicleStranded = vehicle !== undefined && isStranded(vehicle);
+    // Job bez vozidla pri nedosiahnuteľnom háku: žeriav naň nečaká (vozidlá sú pri nakládke cez apron obsadené), ak nejaké vozidlo vo svete je (svet bez vozidiel drží jednotku v ruke, ADR-033).
+    const vehicleStranded = vehicle !== undefined ? isStranded(vehicle) : world.vehicles.size > 0 && hookUnreachable(world, crane.id, berth);
     if (!hookBufferFree(world, berth) && !(berth.apron.freeUnreservedCount > 0 && (vehicleStranded || vehicleWaitsUnderHook(world, crane)))) return false;
     const slot = berth.apron.reserve();
     berth.apron.assertCommittable(slot, unitId);

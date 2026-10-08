@@ -370,3 +370,28 @@ Stav: **hotová** (TR2-01 … TR2-07)
 **Otvorené:** pri 100k tickoch `stress_f6` a `traffic_stress` majú 13–14 zaseknutých vozidiel v čelnej kolízii na križovatke (R3/R4). Latentná chyba rezervácie apronu v dual cykle. Rehandling bez cieľa vyriešený v TR2-06b únikem po `rehandleGiveUpTicks`.
 
 Ďalej: **Fáza R3 — Ťahače, RTG a TOS**
+
+## Fáza R3 — Ťahače, RTG a TOS
+Karty: `docs/tasks/phase-r3.md` · vetva `phase/r3-tractors-rtg` (stacked nad `phase/r2-stacks`, PR hilkovics/Harbor#13)
+
+Stav: **hotová s otvorenou akceptáciou 2** (TR3-01 … TR3-07, vrátane TR3-02b, TR3-02c, TR3-02d, TR3-06b a TR3-07a)
+
+**Výsledky:**
+- `pnpm test`: 420 súborov, 9 264 testov zelených (1 timeout pod záťažou opravený na 60 s)
+- `pnpm test:e2e`: 60/61 v plnom behu; `f5-app-contracts.spec.ts:28` padol pod záťažou a pri samostatnom behu prešiel; 10 špecifikácií upravených na kotvisko 8×4
+- Akceptácia: 1 splnené (`tt_rtg` 120 TEU, lostUnits 0, stuckAtEnd 0, rehandleStalls 0); 2 NESPLNENÉ (STS čaká na ťahač ≈ 60 %, `tt_rtg_2blocks` 59,8 %, cieľ < 20 %); 3 splnené (100k `tt_rtg_2blocks` stuck 0, 0 TrafficJam); 4 splnené (render STS, kotvisko 8×4, TT, RTG); 5 splnené
+
+**Čo je hotové:**
+- Terminálový ťahač (`terminal_tractor`, `TerminalTractor extends Vehicle`), RTG blok (`rtg_block`, `RtgBlock extends YardBlock`) s jednosmerným pruhom, RTG (`RtgCrane`, `YardMachine` v save), `in_handler` v ledgeri
+- Reťaz nôh STS ↔ TT ↔ RTG cez `HANDLING_CHAINS`; kotvisko 8×4 s pruhmi a obchádzkou; starter `harbor_01` s novým STS
+- Priority RTG a `SetBlockPriority`, gang/pool a `SetCraneGang`; metriky `stsMovesPerHour`, `rtgMovesPerHour`, `stsWaitForTractorPct`
+- Vyváženie RTG medzi bloky, prefetch v poradí pruhu, dopredné plánovanie jobov pod hákom (`logistics.hookJobLookahead`), ohraničené čakanie RTG (TR3-02b/02c/02d, TR3-06b)
+- Render a UI: nový STS, kotvisko 8×4, ťahač s podvozkom, RTG nad blokom; inšpektor stroja
+- Dokumentácia: ADR-040 (vrátane dodatkov TR3-02b/02c/02d a TR3-06b), `WorldState` v11
+
+**Odchýlky od plánu:**
+- Obeh ťahačov (~67 buniek, ~135 tickov/job) obmedzuje STS; 2 STS by potrebovali ~22 ťahačov, geometria a prístup riešiť v R4
+- `WorldState` v11 (clean break, ADR-036) namiesto „v10 bez migrácie" z ADR-040 bod 9
+- E2E: 1 špecifikácia nestabilná pod záťažou (viď vyššie)
+
+**Otvorené:** STS čaká na ťahač < 20 % → R4 (geometria / druhý výjazd z bloku); `stress_f6` 100k zvyškové zápchy (R1, 17 stuck) → R4; výber RTG kliknutím; RTG obsluha kamiónov → R4; reach stacker → R5. Viď `docs/BACKLOG.md` „Z Fázy R3“.

@@ -59,6 +59,11 @@
 | TR3-05 | Napojenie VM, kľúče `simrun`, goldeny | implementer (haiku → sonnet) | 02, 03, 04 |
 | TR3-06 | Review + opravy | sim-reviewer → sim-architect (sonnet) | 05 |
 | TR3-07 | e2e, artefakt, docs, PR | orchestrátor + haiku | 06 |
+| TR3-02b | Čakanie STS na ťahač: vyváženie RTG medzi bloky, oprava prefetchu v pruhu, zápchy pri 100k | sim-architect (sonnet) | 02 |
+| TR3-02c | Vyváženie strojov RTG v plánovači, prefetch v poradí pruhu, latencia dispatchu pod hákom | sim-architect (sonnet) | 02b |
+| TR3-02d | Dopredné plánovanie jobov pod hákom (`hookJobLookahead`), simrun s override hotovosti | sim-architect (sonnet) | 02c |
+| TR3-06b | Review R3 opravy: ohraničené čakanie RTG, `WorldState` v11, výkon | sim-architect (sonnet) | 06 |
+| TR3-07a | Úprava 10 e2e špecifikácií na kotvisko 8×4 | implementer (sonnet, worktree) | 06 |
 
 **VM kontrakt** (render a UI, voliteľné polia):
 - `MachineVM { id, defId, blockId, x, y, trolley: 0..1, hoist: 0..1, state, cargo: ContainerVM | null }` v `entities.machines`;
@@ -67,7 +72,19 @@
 - `VehicleVM.defId` `terminal_tractor`.
 
 ## Checklist
-- [ ] TR3-01 · [ ] TR3-02 · [ ] TR3-03 · [ ] TR3-04 · [ ] TR3-05 · [ ] TR3-06 · [ ] TR3-07
+- [x] TR3-01 · [x] TR3-02 · [x] TR3-03 · [x] TR3-04 · [x] TR3-05 · [x] TR3-06 · [x] TR3-07
+- [x] TR3-02b · [x] TR3-02c · [x] TR3-02d · [x] TR3-06b · [x] TR3-07a
 
 ## Výsledok fázy
-_(doplní orchestrátor)_
+**Pipeline:**
+- `pnpm test`: 420 súborov, 9 264 testov zelených (1 timeout pod záťažou opravený na 60 s).
+- `pnpm test:e2e`: 60/61 v plnom behu; `f5-app-contracts.spec.ts:28` padol pod záťažou a pri samostatnom behu prešiel. 10 špecifikácií upravených na kotvisko 8×4.
+
+**Akceptácia:**
+1. SPLNENÉ — `tt_rtg` 120 TEU, lostUnits 0, stuckAtEnd 0, rehandleStalls 0.
+2. NESPLNENÉ — STS čaká na ťahač ≈ 60 % (`tt_rtg_2blocks` 59,8 %; cieľ < 20 %). Úzke miesto je obeh ťahačov (~67 buniek, ~135 tickov/job; 2 STS by chceli ~22 TT). Riešenie geometria/prístup v R4, ADR-040 TR3-02d.
+3. SPLNENÉ — 100k `tt_rtg_2blocks`: stuck 0, 0 TrafficJam.
+4. SPLNENÉ — render STS, kotvisko 8×4, TT, RTG.
+5. SPLNENÉ — `pnpm test` zelené; e2e 60/61 v plnom behu, `f5-app-contracts.spec.ts:28` padol pod súbežnou záťažou a samostatne prešiel.
+
+**Otvorené:** STS wait < 20 % → R4 (geometria / druhý výjazd z bloku); `stress_f6` 100k zvyškové zápchy (R1, 17 stuck) → R4; výber RTG kliknutím; RTG obsluha kamiónov → R4; reach stacker → R5; `WorldState` v11. Položky sú v `docs/BACKLOG.md` „Z Fázy R3“.

@@ -1317,14 +1317,6 @@
     }
   },
   "entities": {
-    "terminal_tractor": {
-      "footprint": {
-        "w": 1,
-        "h": 3
-      },
-      "note": "zástupný sprite TR3-01 (kabína + podvozok 40′ ako jeden celok); nahradí TR3-03 kĺbovým `parts`",
-      "file": "entities/terminal_tractor.svg"
-    },
     "straddle_carrier": {
       "footprint": {
         "w": 1,

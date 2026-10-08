@@ -87,16 +87,22 @@ describe('footprintOf', () => {
     }
     expect(new Set(cells.map((c) => `${String(c.x)},${String(c.y)}`))).toEqual(expected);
     expect(cells).toHaveLength(size.w * size.h);
-    expect(size).toEqual(rotation % 180 === 0 ? { w: 8, h: 3 } : { w: 3, h: 8 });
+    expect(size).toEqual(rotation % 180 === 0 ? { w: 8, h: 4 } : { w: 4, h: 8 });
   });
 });
 
 describe('connectorsOf (§8 bod 7, T02-04)', () => {
-  // berth_standard 8×3: konektory (1, 2, s) a (6, 2, s) pri rot 0 (manifest).
+  // berth_standard 8×4: južné konektory (1, 3, s) a (6, 3, s) a pruhové konektory w / e v riadkoch 1–3 pri rot 0.
   it('rot 0: lokálne bunky + (x, y), strany bez zmeny, poradie z defu', () => {
     expect(connectorsOf(berthDef, 40, 14, 0)).toEqual([
-      { x: 41, y: 16, side: 's', type: 'road' },
-      { x: 46, y: 16, side: 's', type: 'road' },
+      { x: 41, y: 17, side: 's', type: 'road' },
+      { x: 46, y: 17, side: 's', type: 'road' },
+      { x: 40, y: 15, side: 'w', type: 'road' },
+      { x: 40, y: 16, side: 'w', type: 'road' },
+      { x: 40, y: 17, side: 'w', type: 'road' },
+      { x: 47, y: 15, side: 'e', type: 'road' },
+      { x: 47, y: 16, side: 'e', type: 'road' },
+      { x: 47, y: 17, side: 'e', type: 'road' },
     ]);
   });
 
@@ -113,11 +119,14 @@ describe('connectorsOf (§8 bod 7, T02-04)', () => {
     for (const { x, y } of placed) expect(footprint.cells).toContainEqual({ x, y });
   });
 
-  it('rot 90: konektory na západnej hrane (strana w), 3×8 footprint', () => {
-    expect(connectorsOf(berthDef, 0, 0, 90)).toEqual([
+  it('rot 90: južné konektory berthu idú na západnú hranu (strana w), footprint 4×8; pruhové konektory sú na severe a juhu', () => {
+    const placed = connectorsOf(berthDef, 0, 0, 90);
+    expect(placed.slice(0, 2)).toEqual([
       { x: 0, y: 1, side: 'w', type: 'road' },
       { x: 0, y: 6, side: 'w', type: 'road' },
     ]);
+    expect(placed).toHaveLength(8);
+    expect(new Set(placed.slice(2).map((connector) => connector.side))).toEqual(new Set(['n', 's']));
   });
 
   it('modul bez konektorov → prázdne zmrazené pole', () => {
@@ -130,10 +139,16 @@ describe('connectorsOf (§8 bod 7, T02-04)', () => {
 describe('connectorOutside (vonkajšia bunka konektora, T03-02, ADR-017)', () => {
   const yardDef = MODULE_DEFS.modules.get('container_yard_small');
 
-  it('Root berth (40, 14) rot 0: vonkajšie bunky (41, 17) a (46, 17) — pevnina pod nábrežím', () => {
+  it('Root berth 8 × 4 (40, 14) rot 0: južné vonkajšie bunky (41, 18) a (46, 18); pruhové vonkajšie bunky vľavo (39, 15–17) a vpravo (48, 15–17)', () => {
     expect(connectorsOf(berthDef, 40, 14, 0).map(connectorOutside)).toEqual([
-      { x: 41, y: 17 },
-      { x: 46, y: 17 },
+      { x: 41, y: 18 },
+      { x: 46, y: 18 },
+      { x: 39, y: 15 },
+      { x: 39, y: 16 },
+      { x: 39, y: 17 },
+      { x: 48, y: 15 },
+      { x: 48, y: 16 },
+      { x: 48, y: 17 },
     ]);
   });
 

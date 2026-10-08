@@ -5,6 +5,7 @@
  */
 import type { EntityId } from '../core/entity-id';
 import type { DefRegistry } from '../defs/def-registry';
+import { YARD_PRIORITY_KINDS, type YardPriorityKind } from '../defs/types';
 import { MachineError } from '../machines/machine-error';
 import { isMachineState } from '../machines/machine-fsm';
 import { MACHINE_STATES } from '../machines/machine-state-types';
@@ -38,8 +39,9 @@ function parseCycle(value: unknown, path: string): MachineCycle | null {
   if (!YardMachine.isCycleKind(kind)) throw new WorldStateError(`${path}/kind`, `druh cyklu musí byť put, take alebo relocate, dostal ${describeValue(kind)}`);
   const vehicleId = nullableInteger(raw['vehicleId'], 1, `${path}/vehicleId`);
   const jobId = nullableInteger(raw['jobId'], 1, `${path}/jobId`);
-  if (kind === 'relocate' ? vehicleId !== null || jobId !== null : vehicleId === null || jobId === null) {
-    throw new WorldStateError(`${path}/vehicleId`, kind === 'relocate' ? 'rehandling nemá vozidlo ani job' : `cyklus ${kind} vyžaduje vozidlo aj job`);
+  // `put` po zdvihu je bez vozidla aj jobu (ťahač je voľný hneď po zdvihu, ADR-040 dodatok TR3-02); `take` vozidlo a job vyžaduje po celý cyklus.
+  if ((vehicleId === null) !== (jobId === null) || (kind === 'take' && vehicleId === null) || (kind === 'relocate' && vehicleId !== null)) {
+    throw new WorldStateError(`${path}/vehicleId`, kind === 'relocate' ? 'rehandling nemá vozidlo ani job' : `cyklus ${kind} vyžaduje vozidlo aj job (put ich po zdvihu nemá, ale vždy obe naraz)`);
   }
   const fromSlot = nullableInteger(raw['fromSlot'], 0, `${path}/fromSlot`);
   const toSlot = nullableInteger(raw['toSlot'], 0, `${path}/toSlot`);
@@ -80,8 +82,27 @@ export function parseMachines(value: unknown, nextId: number): SerializedMachine
       queue,
       moves: checkInteger(entry['moves'], 0, `${path}/moves`),
       stallTicks: checkInteger(entry['stallTicks'], 0, `${path}/stallTicks`),
+      firstPriority: parseFirstPriority(entry['firstPriority'], `${path}/firstPriority`),
     };
   });
+}
+
+/** `firstPriority` zo save: `null` alebo druh úlohy z `YARD_PRIORITY_KINDS`. */
+function parseFirstPriority(value: unknown, path: string): YardPriorityKind | null {
+  if (value === null) return null;
+  const kind = YARD_PRIORITY_KINDS.find((candidate) => candidate === value);
+  if (kind === undefined) throw new WorldStateError(path, `priorita musí byť null alebo jedna z: ${YARD_PRIORITY_KINDS.join(', ')}, dostal ${describeValue(value)}`);
+  return kind;
+}
+
+/** `put` po zdvihu už nemá job, ktorý by rezerváciu slotu v bloku obnovil (`restoreJobs`): drží ju cyklus stroja (`toSlot`), takže sa obnoví tu. */
+function restoreReleasedPut(world: World, entry: SerializedMachine): void {
+  const cycle = entry.cycle;
+  if (cycle === null || cycle.kind !== 'put' || cycle.jobId !== null || cycle.toSlot === null) return;
+  const block = world.modules.get(entry.blockId as EntityId);
+  const target = block?.cargoDropTarget();
+  if (target === undefined || !target.reserves) throw new WorldStateError('/machines', `blok #${String(entry.blockId)} nemá kam rezervovať slot cyklu put`);
+  target.restoreReservation(cycle.toSlot, cycle.unitId as EntityId);
 }
 
 /** Obnoví stroje vzostupne podľa id cez `World.addMachine` (blok je RTG blok bez stroja); `MachineError` → `WorldStateError` s poľom záznamu. Po obnove vozidiel a jobov. */
@@ -90,6 +111,7 @@ export function restoreMachines(world: World, entries: readonly SerializedMachin
     const path = `/machines${pointerSegment(index)}`;
     try {
       world.addMachine(new RtgCrane({ ...entry, id: entry.id as EntityId, blockId: entry.blockId as EntityId, def: defs.equipment.rtg }));
+      restoreReleasedPut(world, entry);
     } catch (error) {
       if (error instanceof MachineError) throw new WorldStateError(`${path}/${error.code === 'unknown_block' ? 'blockId' : 'id'}`, error.message);
       throw error;

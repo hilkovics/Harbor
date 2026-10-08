@@ -45,7 +45,7 @@ describe('buildBarCategories: kategórie', () => {
 describe('buildBarCategories: položky z defs.modules', () => {
   it('názov, cena a rozmer footprintu pri rotácii 0 idú z defu; ikony podľa druhu modulu', () => {
     const [berth, crane] = terminalItems(0);
-    expect(berth).toMatchObject({ defId: 'berth_standard', displayName: 'Kotvisko', costCents: BERTH_COST, footprint: { w: 8, h: 3 }, icon: 'ic_berth', locked: false });
+    expect(berth).toMatchObject({ defId: 'berth_standard', displayName: 'Kotvisko', costCents: BERTH_COST, footprint: { w: 8, h: 4 }, icon: 'ic_berth', locked: false });
     expect(crane).toMatchObject({ defId: 'crane_container_gantry', displayName: 'Kontajnerový žeriav', costCents: CRANE_COST, footprint: { w: 2, h: 3 }, icon: 'ic_crane', locked: false });
   });
 

@@ -42,9 +42,9 @@ describe('manifest R3', () => {
     expect(stsSprite('crane_container_gantry')).toBeUndefined(); // starý žeriav s výložníkom
   });
 
-  it('berth_standard_v2 je 8 × 4 so šiestimi konektormi; ťahač je kĺbový 1 × 3; rtg 5 × 2 s travel x 32–288', () => {
-    expect(moduleSprite('berth_standard_v2')?.footprint).toEqual({ w: 8, h: 4 });
-    expect(moduleSprite('berth_standard_v2')?.connectors).toHaveLength(6);
+  it('berth_standard je 8 × 4 s ôsmimi konektormi; ťahač je kĺbový 1 × 3; rtg 5 × 2 s travel x 32–288', () => {
+    expect(moduleSprite('berth_standard')?.footprint).toEqual({ w: 8, h: 4 });
+    expect(moduleSprite('berth_standard')?.connectors).toHaveLength(8);
     const tractor = articulatedSprite('terminal_tractor');
     expect(tractor?.footprint).toEqual({ w: 1, h: 3 });
     expect(tractor?.cab.pivot).toEqual({ x: 32, y: 52 });
@@ -63,7 +63,7 @@ describe('manifest R3', () => {
       'modules/sts_trolley.svg',
       'modules/sts_spreader_20.svg',
       'modules/sts_spreader_40.svg',
-      'modules/berth_standard_v2.svg',
+      'modules/berth_standard.svg',
       'entities/terminal_tractor_cab.svg',
       'entities/terminal_tractor_chassis_40.svg',
       'entities/rtg_frame.svg',
@@ -209,7 +209,7 @@ describe('ťahač terminálu', () => {
 describe('overlay pruhov (ModuleVM.lanes)', () => {
   const berth: ModuleVM = {
     id: 1,
-    defId: 'berth_standard_v2',
+    defId: 'berth_standard',
     kind: 'berth',
     x: 8,
     y: 6,
@@ -222,7 +222,7 @@ describe('overlay pruhov (ModuleVM.lanes)', () => {
       { x: 9, y: 9, dir: 'w' },
     ],
   };
-  const context = { deps: deps(null), pose: footprintPose(berth, CELL), entry: moduleSprite('berth_standard_v2') };
+  const context = { deps: deps(null), pose: footprintPose(berth, CELL), entry: moduleSprite('berth_standard') };
 
   it('šípky ležia v lokálnom rámci modulu a majú uhol podľa smeru', () => {
     const arrows = laneArrows(berth.lanes!, context);

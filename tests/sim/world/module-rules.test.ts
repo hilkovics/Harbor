@@ -70,12 +70,12 @@ describe('findPlacementViolations — kotvisko na harbor_01', () => {
   });
 
   it.each<[string, number, number, Rotation, PlacementRule[]]>([
-    // Konektory berthu na vode vedú do vody → connector_blocked (§8 bod 5, ADR-017).
-    ['na vode (y 10–12, mimo parcely)', 40, 10, 0, ['terrain', 'parcel_not_owned', 'connector_blocked']],
+    // Južné konektory berthu 8 × 4 vedú na nábrežie (použiteľná vonkajšia bunka), takže connector_blocked nehlási (§8 bod 5, ADR-017).
+    ['na vode (y 10–12, mimo parcely)', 40, 10, 0, ['terrain', 'parcel_not_owned']],
     ['vnútrozemie (pevnina, hrana nesusedí s vodou)', 40, 20, 0, ['terrain', 'no_water_side']],
-    ['o riadok nižšie: hrana y 15 susedí s nábrežím, spodok na pevnine', 40, 15, 0, ['terrain', 'no_water_side']],
-    ['otočené o 180° (voda na juhu = pevnina; konektory na severe vedú do vody)', 40, 14, 180, ['no_water_side', 'connector_blocked']],
-    ['otočené o 90° (3×8 sa na nábrežie nezmestí)', 40, 14, 90, ['terrain', 'no_water_side']],
+    ['o riadok nižšie: hrana y 15 je nábrežie, ale nesusedí s vodou (spodné riadky smú byť pevnina)', 40, 15, 0, ['no_water_side']],
+    ['otočené o 180° (voda na juhu = pevnina: hrana pri vode nie je nábrežie)', 40, 14, 180, ['terrain', 'no_water_side']],
+    ['otočené o 90° (4×8 sa na nábrežie nezmestí)', 40, 14, 90, ['terrain', 'no_water_side']],
     ['cudzia parcela west_quay (na predaj)', 6, 12, 0, ['parcel_not_owned']],
     ['cez verejné bunky x 28–29 a parcelu starter', 28, 14, 0, ['parcel_not_owned']],
     ['presah mimo mapy: všetky dôvody naraz, bunky mimo mapy len out_of_bounds', 90, 20, 0, ['out_of_bounds', 'terrain', 'parcel_not_owned', 'no_water_side', 'connector_blocked']],
@@ -138,7 +138,7 @@ describe('findPlacementViolations — kotvisko na harbor_01', () => {
 });
 
 describe('findPlacementViolations — pás vody (syntetická mapa pier_test)', () => {
-  // Kotvisko na móle W (x 5–7) zaberá celé mólo, konektory vedú do vody na druhej strane → connector_blocked (§8 bod 5,
+  // Kotvisko na móle W (x 5–8) zaberá celé mólo, konektory vedú do vody na druhej strane → connector_blocked (§8 bod 5,
   // ADR-017). Testy pásov vody ho preto vynechávajú (`waterRules`, `buildOnPier`) a overujú ho samostatne.
   const waterRules = (world: World, x: number, y: number, rotation: Rotation): PlacementRule[] =>
     rules(world, BERTH, x, y, rotation).filter((rule) => rule !== 'connector_blocked');
@@ -173,8 +173,8 @@ describe('findPlacementViolations — pás vody (syntetická mapa pier_test)', (
 
   it('pás siaha za okraj mapy → water_blocked; hrana priamo pri okraji → no_water_side', () => {
     const world = pierWorld();
-    expect(waterRules(world, 36, 2, 90)).toEqual(['water_blocked']);
-    const [violation] = findPlacementViolations(world, MODULE_DEFS.modules.get(BERTH), { x: 36, y: 2, rotation: 90 });
+    expect(waterRules(world, 35, 2, 90)).toEqual(['water_blocked']);
+    const [violation] = findPlacementViolations(world, MODULE_DEFS.modules.get(BERTH), { x: 35, y: 2, rotation: 90 });
     expect(violation?.detail).toMatch(/\(40, 2\) je mimo mapy/);
   });
 
@@ -184,8 +184,8 @@ describe('findPlacementViolations — pás vody (syntetická mapa pier_test)', (
     if (!(berth instanceof BerthModule)) throw new Error('nie je berth');
     expect(berth.waterSide).toBe('e');
     expect(berth.frontWaterBand).toHaveLength(8 * 3);
-    expect(berth.frontWaterBand.slice(0, 2)).toEqual([{ x: 8, y: 2 }, { x: 8, y: 3 }]);
-    expect(berth.frontWaterBand.at(-1)).toEqual({ x: 10, y: 9 });
+    expect(berth.frontWaterBand.slice(0, 2)).toEqual([{ x: 9, y: 2 }, { x: 9, y: 3 }]);
+    expect(berth.frontWaterBand.at(-1)).toEqual({ x: 11, y: 9 });
   });
 });
 
@@ -220,12 +220,14 @@ describe('findPlacementViolations — cestné konektory (§8 bod 5, connector_bl
     expect(rules(world, YARD, 35, 20)).toEqual(['connector_blocked']);
   });
 
-  it('kotvisko: stačí jeden konektor — prvý zablokovaný modulom, druhý voľný → platné; oba zablokované → connector_blocked', () => {
+  it('kotvisko: stačí jeden konektor — oba južné zablokované modulmi, pruhové konektory w / e voľné → platné', () => {
     const world = bareWorld();
-    build(world, DEPOT, 40, 17); // x 40–42, y 17–19 — pokrýva (41, 17), vonkajšiu bunku prvého konektora Root pozície
+    // Berth 8 × 4 má konektory w / e v riadkoch 1–3 a južné; všetky vonkajšie bunky zablokuje pás depov okolo footprintu.
+    build(world, DEPOT, 40, 18); // x 40–42, y 18–20 — pokrýva (41, 18), vonkajšiu bunku prvého južného konektora Root pozície
     expect(rules(world, BERTH, 40, 14)).toEqual([]);
-    build(world, DEPOT, 45, 17); // pokrýva (46, 17)
-    expect(rules(world, BERTH, 40, 14)).toEqual(['connector_blocked']);
+    build(world, DEPOT, 45, 18); // pokrýva (46, 18)
+    // Vonkajšie bunky konektorov w / e (39, 15–17) a (48, 15–17) sú voľné, takže berth stále prejde (oba južné sú zablokované).
+    expect(rules(world, BERTH, 40, 14)).toEqual([]);
   });
 
   it('konektory mimo mapy sa nehodnotia (footprint mimo mapy hlási len out_of_bounds)', () => {

@@ -8,6 +8,11 @@ export { BASE_CELL_COST, Pathfinder, assertCellIndex, unitCellCost } from './pat
 export type { CellCostFn, PathfinderDiagnostics, QuayCells, RoadGraph } from './pathfinder';
 export { QuayLanes, hasQuayLane } from './quay-lanes';
 export type { QuaySource } from './quay-lanes';
+export { gangFilter, gangRoster, craneGangMode, craneTractorsPerSts } from './gang-roster';
+export { terminalMetrics } from './terminal-metrics';
+export type { TerminalMetrics } from './terminal-metrics';
+export { moduleLanes } from './module-lanes';
+export type { LaneCell, LaneDirection, LaneRole } from './module-lanes';
 export { RoadSpeeds, UNIT_SPEED_FACTOR } from './road-speed';
 export type { SpeedFactorFn } from './road-speed';
 export { PathCache, RoadPairMemo } from './path-cache';

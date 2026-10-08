@@ -203,7 +203,7 @@ describe('audit mierky: cesty, lode a moduly', () => {
     expect(moduleSprite('loading_ramp_container')!.footprint).toEqual({ w: 4, h: 2 });
     expect(moduleSprite('loading_ramp_container')!.docks![0]).toMatchObject({ w: 56, h: 62 });
     expect(moduleSprite('container_yard_small')!.footprint).toEqual({ w: 4, h: 4 });
-    expect(moduleSprite('berth_standard')!.footprint).toEqual({ w: 8, h: 3 });
+    expect(moduleSprite('berth_standard')!.footprint).toEqual({ w: 8, h: 4 });
   });
 
   it('stojisko čakacej plochy 40 × 116 px a dok rampy 56 × 62 px: kamión (28 × 116) sa doň zmestí, zadok v doku a kabína von', () => {

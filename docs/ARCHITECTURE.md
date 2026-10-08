@@ -345,7 +345,7 @@ interface Cell {
 ### 5.3 Moduly — rozmery a parametre (počiatočné hodnoty, podliehajú balansu)
 | id | kind | footprint | kľúčové params | cena | údržba/deň |
 |---|---|---|---|---|---|
-| `berth_standard` | berth | 8×3 (dlhá hrana k vode) | `depthClass 1`, `apronSlots 8`, `maxCranes 2`, `frontWaterCells 3` | 400k | 1 200 |
+| `berth_standard` | berth | 8×4 (dlhá hrana k vode; ADR-040: dva jednosmerné pruhy pod žeriavom + pevninská obchádzka) | `depthClass 1`, `apronSlots 8`, `maxCranes 2`, `frontWaterCells 3` | 400k | 1 200 |
 | `berth_deepwater` | berth | 8×3 | `depthClass 3`, `apronSlots 6` | 900k | 2 000 |
 | `crane_container_gantry` | crane | 2×3 (na berth) | `cycleTicks 12` (2 min), `category container` | 600k | 900 |
 | `crane_bulk_grab` | crane | 2×3 | `cycleTicks 18`, `bulk` | 450k | 700 |

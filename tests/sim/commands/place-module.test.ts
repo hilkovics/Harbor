@@ -34,9 +34,9 @@ function built(world: World, defId: string, x: number, y: number, rotation = 0):
 const footprint = (defId: string, x: number, y: number, rotation: 0 | 90 | 180 | 270 = 0) => footprintOf(DEFS.modules.get(defId), x, y, rotation).cells;
 
 describe('PlaceModule — kotvisko', () => {
-  it('platné na Root pozícii: ok, cells = 24 buniek footprintu, costCents = cena defu', () => {
+  it('platné na Root pozícii: ok, cells = 32 buniek footprintu, costCents = cena defu', () => {
     expect(place(BERTH, 40, 14).validate(newBareWorld())).toEqual({ ok: true, reasons: [], cells: footprint(BERTH, 40, 14), costCents: BERTH_COST });
-    expect(footprint(BERTH, 40, 14)).toHaveLength(24);
+    expect(footprint(BERTH, 40, 14)).toHaveLength(32);
   });
 
   it('apply: modul s id z alokátora a zaplatenou cenou, bunky, hotovosť, udalosti, skupina kotvísk', () => {
@@ -57,9 +57,9 @@ describe('PlaceModule — kotvisko', () => {
   });
 
   it.each<[string, number, number, number, ValidationReason[]]>([
-    ['na vode (konektory vedú do vody)', 40, 10, 0, ['terrain', 'parcel_not_owned', 'connector_blocked']],
+    ['na vode (južné konektory vedú na nábrežie, takže connector_blocked nehlási)', 40, 10, 0, ['terrain', 'parcel_not_owned']],
     ['mimo pobrežia (vnútrozemie)', 40, 20, 0, ['terrain', 'no_water_side']],
-    ['hrana pri vode otočená na pevninu (180°), konektory na severe vo vode', 40, 14, 180, ['no_water_side', 'connector_blocked']],
+    ['hrana pri vode otočená na pevninu (180°): riadok pri vode nie je nábrežie', 40, 14, 180, ['terrain', 'no_water_side']],
     ['cudzia parcela (west_quay na predaj)', 6, 12, 0, ['parcel_not_owned']],
     ['presah mimo mapy — všetky dôvody naraz', 90, 20, 0, ['out_of_bounds', 'terrain', 'parcel_not_owned', 'no_water_side', 'connector_blocked']],
   ])('%s → %j, cells = footprint, costCents = cena', (_name, x, y, rotation, reasons) => {
@@ -87,11 +87,11 @@ describe('PlaceModule — kotvisko', () => {
     expect(place(BERTH, 5, 2, 270).validate(world).reasons).toEqual(['connector_blocked']);
   });
 
-  it('rotácia 90: cells = otočený footprint 3×8', () => {
+  it('rotácia 90: cells = otočený footprint 4×8', () => {
     const result = place(BERTH, 40, 14, 90).validate(newBareWorld());
     expect(result.cells).toEqual(footprint(BERTH, 40, 14, 90));
-    expect(result.cells).toHaveLength(24);
-    expect(result.cells.at(-1)).toEqual({ x: 42, y: 21 });
+    expect(result.cells).toHaveLength(32);
+    expect(result.cells.at(-1)).toEqual({ x: 43, y: 21 });
   });
 });
 

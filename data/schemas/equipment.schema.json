@@ -1,17 +1,18 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "equipment.json",
-  "description": "Stroje bloku (TERMINAL_2 §5.3, §10.5; ADR-040): R3 pozná `rtg`. Konfiguračný def bez items[] (ADR-009); časy v tickoch, pojazd v bays za tick. Poradie priorít (loď < kamión < housekeeping) schéma nevyjadrí — kontroluje DefRegistry.",
+  "description": "Stroje bloku (TERMINAL_2 \u00a75.3, \u00a710.5; ADR-040): R3 pozn\u00e1 `rtg`. Konfigura\u010dn\u00fd def bez items[] (ADR-009); \u010dasy v tickoch, pojazd v bays za tick. Poradie prior\u00edt (lo\u010f < kami\u00f3n < housekeeping) sch\u00e9ma nevyjadr\u00ed \u2014 kontroluje DefRegistry.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schemaVersion",
-    "rtg"
+    "rtg",
+    "tractors"
   ],
   "properties": {
     "schemaVersion": {
       "const": 1,
-      "description": "Verzia schémy defu."
+      "description": "Verzia sch\u00e9my defu."
     },
     "rtg": {
       "type": "object",
@@ -21,23 +22,24 @@
         "hoistTicksPerTier",
         "trolleyTicksPerRow",
         "lockTicks",
-        "priorities"
+        "priorities",
+        "prefetchCells"
       ],
       "properties": {
         "gantryCellsPerTick": {
           "type": "number",
           "exclusiveMinimum": 0,
-          "description": "Rýchlosť pojazdu žeriavu pozdĺž bloku v bays za tick (spojitá poloha)."
+          "description": "R\u00fdchlos\u0165 pojazdu \u017eeriavu pozd\u013a\u017e bloku v bays za tick (spojit\u00e1 poloha)."
         },
         "hoistTicksPerTier": {
           "type": "integer",
           "minimum": 1,
-          "description": "Zdvih alebo spúšťanie o jednu vrstvu stohu v tickoch."
+          "description": "Zdvih alebo sp\u00fa\u0161\u0165anie o jednu vrstvu stohu v tickoch."
         },
         "trolleyTicksPerRow": {
           "type": "integer",
           "minimum": 1,
-          "description": "Pojazd vozíka o jeden rad naprieč blokom v tickoch."
+          "description": "Pojazd voz\u00edka o jeden rad naprie\u010d blokom v tickoch."
         },
         "lockTicks": {
           "type": "integer",
@@ -52,7 +54,7 @@
             "truck",
             "housekeeping"
           ],
-          "description": "Priorita fronty stroja podľa druhu úlohy (ADR-040 bod 6): menšie číslo = skôr; musí ostro rásť v poradí ship, truck, housekeeping.",
+          "description": "Priorita fronty stroja pod\u013ea druhu \u00falohy (ADR-040 bod 6): men\u0161ie \u010d\u00edslo = sk\u00f4r; mus\u00ed ostro r\u00e1s\u0165 v porad\u00ed ship, truck, housekeeping.",
           "properties": {
             "ship": {
               "type": "integer",
@@ -67,6 +69,46 @@
               "minimum": 0
             }
           }
+        },
+        "prefetchCells": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Predz\u00e1sobenie nakl\u00e1dky (TR3-02): RTG za\u010dne cyklus `take` (zdvih zo stohu a presun na TP), ke\u010f je \u0165aha\u010d s jobom nakl\u00e1dky na ceste k TP najviac to\u013eko buniek pred n\u00edm; 0 = stroj \u010dak\u00e1, k\u00fdm \u0165aha\u010d doraz\u00ed na TP."
+        }
+      }
+    },
+    "tractors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "defaultMode",
+        "defaultPerSts",
+        "minPerSts",
+        "maxPerSts"
+      ],
+      "description": "Pride\u013eovanie \u0165aha\u010dov \u017eeriavom STS (ADR-040 bod 7): v\u00fdchodiskov\u00fd re\u017eim a po\u010det \u0165aha\u010dov na STS v re\u017eime gang; menite\u013en\u00e9 pr\u00edkazom SetCraneGang.",
+      "properties": {
+        "defaultMode": {
+          "enum": [
+            "pool",
+            "gang"
+          ],
+          "description": "V\u00fdchodiskov\u00fd re\u017eim \u017eeriavu: pool = najbli\u017e\u0161\u00ed vo\u013en\u00fd \u0165aha\u010d, gang = pevn\u00e1 skupina."
+        },
+        "defaultPerSts": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "V\u00fdchodiskov\u00fd po\u010det \u0165aha\u010dov na STS v re\u017eime gang."
+        },
+        "minPerSts": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Najmen\u0161\u00ed povolen\u00fd po\u010det \u0165aha\u010dov na STS."
+        },
+        "maxPerSts": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Najv\u00e4\u010d\u0161\u00ed povolen\u00fd po\u010det \u0165aha\u010dov na STS."
         }
       }
     }

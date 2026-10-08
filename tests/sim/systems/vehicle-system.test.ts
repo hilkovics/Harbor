@@ -58,10 +58,10 @@ describe('cyklus vozidla: depo → apron → dvor', () => {
     const done = tickOf(log, (event) => event.type === 'JobDone');
 
     expect(tickOf(log, stateChange(vehicleId, 'to_pickup'))).toBe(1);
-    expect(arrivedPickup).toBe(1 + Math.ceil(9 / STRADDLE.speedCellsPerTick) - 1); // (32, 17) → (41, 17): 9 buniek, pohyb od ticku 1
+    expect(arrivedPickup).toBe(1 + Math.ceil(9 / STRADDLE.speedCellsPerTick) - 1); // (32, 18) → (41, 18): 9 buniek, pohyb od ticku 1
     expect(loaded - arrivedPickup).toBe(INTERNAL + STRADDLE.loadTicks);
     expect(tickOf(log, stateChange(vehicleId, 'to_dropoff'))).toBe(loaded);
-    expect(arrivedDrop - loaded).toBe(Math.ceil(4 / STRADDLE.speedCellsPerTick)); // (41, 17) → (37, 17), pohyb od ďalšieho ticku
+    expect(arrivedDrop - loaded).toBe(Math.ceil(4 / STRADDLE.speedCellsPerTick)); // (41, 18) → (37, 18), pohyb od ďalšieho ticku
     expect(stored - arrivedDrop).toBe(INTERNAL + STRADDLE.unloadTicks);
     expect(done).toBe(stored);
     expect(tickOf(log, stateChange(vehicleId, 'idle'))).toBe(stored);
@@ -105,7 +105,7 @@ describe('cyklus vozidla: depo → apron → dvor', () => {
 
   it('dvor s prístupovou bunkou spoločnou s berthom: jazda k cieľu má nulovú trasu, príchod v ďalšom ticku (krok 12 platí)', () => {
     const { world, depot } = dispatchWorld();
-    const shared = placeYard(world, { x: 39, y: 18 }); // rot 180 → vonkajšia bunka (41, 17) = prístupová bunka berthu
+    const shared = placeYard(world, { x: 39, y: 19 }); // rot 180 → vonkajšia bunka (41, 18) = prístupová bunka berthu
     const vehicleId = buyVehicle(world, depot);
     const [unit] = unitsOnApron(world, [0]);
     const log = run(world, 80);
@@ -134,7 +134,7 @@ describe('no_path a preplánovanie', () => {
     const vehicle = world.vehicles.get(vehicleId);
     expect(vehicle?.state).toBe('to_pickup');
     const log: Timed[] = [];
-    execute(world, { type: 'RemoveRoad', cells: [{ x: 39, y: 17 }] });
+    execute(world, { type: 'RemoveRoad', cells: [{ x: 39, y: 18 }] });
     expect(vehicle?.replanPending).toBe(true);
     run(world, 1, log);
     expect(vehicle?.state).toBe('no_path');
@@ -144,7 +144,7 @@ describe('no_path a preplánovanie', () => {
     expect(vehicle?.state).toBe('no_path');
     expect([vehicle?.x, vehicle?.y]).toEqual(halted);
     expect(log.filter((entry) => entry.event.type === 'VehicleStateChanged')).toHaveLength(1); // len to_pickup → no_path
-    execute(world, { type: 'PlaceRoad', cells: [{ x: 39, y: 17 }] });
+    execute(world, { type: 'PlaceRoad', cells: [{ x: 39, y: 18 }] });
     const repairedAt = world.clock.tick;
     run(world, REPATH, log);
     const resumed = tickOf(log, stateChange(vehicleId, 'to_pickup'));
@@ -156,16 +156,16 @@ describe('no_path a preplánovanie', () => {
 
   it('RemoveRoad odmietne bunku pod vozidlom aj cieľovú bunku rozbehnutého úseku (occupied); bunku za vozidlom a mimo neho nie', () => {
     const { world, vehicleId } = oneJobWorld();
-    run(world, 2); // vozidlo medzi (32, 17) a (33, 17)
+    run(world, 2); // vozidlo medzi (32, 18) a (33, 18)
     const vehicle = world.vehicles.get(vehicleId);
     expect(vehicle?.progress).toBeGreaterThan(0);
     const cellOf = (index: number | undefined): { x: number; y: number } => world.grid.coordOf(index ?? -1);
     const reasons = (cell: { x: number; y: number }): readonly string[] => commandFromJSON({ type: 'RemoveRoad', cells: [cell] }).validate(world).reasons;
-    expect(cellOf(vehicle?.cell)).toEqual({ x: 32, y: 17 });
+    expect(cellOf(vehicle?.cell)).toEqual({ x: 32, y: 18 });
     expect(reasons(cellOf(vehicle?.cell))).toEqual(['occupied']);
     expect(reasons(cellOf(vehicle?.nextCell))).toEqual(['occupied']);
-    expect(reasons({ x: 31, y: 17 })).toEqual([]);
-    expect(reasons({ x: 40, y: 17 })).toEqual([]);
+    expect(reasons({ x: 31, y: 18 })).toEqual([]);
+    expect(reasons({ x: 40, y: 18 })).toEqual([]);
   });
 
   it('príznak preplánovania dostanú len jazdiace vozidlá; save s čakajúcim príznakom (applyPending bez ticku) sa obnoví a pokračuje rovnako', () => {
@@ -175,7 +175,7 @@ describe('no_path a preplánovanie', () => {
     const idle = buyVehicle(world, depot);
     unitsOnApron(world, [0]);
     run(world, 3);
-    execute(world, { type: 'PlaceRoad', cells: [{ x: 45, y: 18 }] }); // nová bunka mimo trasy — len zmena siete
+    execute(world, { type: 'PlaceRoad', cells: [{ x: 45, y: 19 }] }); // nová bunka mimo trasy — len zmena siete
     expect([world.vehicles.get(driving)?.replanPending, world.vehicles.get(idle)?.replanPending]).toEqual([true, false]);
     const saved = JSON.parse(JSON.stringify(world.serialize()));
     expect(saved.vehicles.map((entry: { replan: boolean }) => entry.replan)).toEqual([true, false]);

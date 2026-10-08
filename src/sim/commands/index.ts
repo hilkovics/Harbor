@@ -23,6 +23,8 @@ export type { SpawnShipDebugInput } from './spawn-ship-debug';
 export { BuyVehicleCommand } from './buy-vehicle';
 export type { BuyVehicleInput } from './buy-vehicle';
 export { SellVehicleCommand } from './sell-vehicle';
+export { SetBlockPriorityCommand } from './set-block-priority';
+export { SetCraneGangCommand } from './set-crane-gang';
 export { ContractOfferCommand } from './contract-command';
 export { AcceptContractCommand } from './accept-contract';
 export { DeclineContractCommand } from './decline-contract';

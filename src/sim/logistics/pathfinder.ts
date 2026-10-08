@@ -40,6 +40,13 @@ export interface RoadGraph {
  */
 export interface QuayCells {
   owners(): Readonly<Int32Array>;
+  /**
+   * Smie vozidlo urobiť krok `from → to` v smere `direction` (index v `DIRECTIONS_4`) cez bunky pruhov (jednosmerné pruhy kotviska a RTG bloku, ADR-040)?
+   * Voliteľné: bez metódy sú pruhy bez obmedzenia smeru.
+   */
+  stepAllowed?(from: number, to: number, direction: number): boolean;
+  /** Je bunka priechodná (obchádzka kotviska): trasa ňou smie viesť aj bez začiatku či cieľa v tom kotvisku. Voliteľné: bez metódy nie je žiadna. */
+  isThrough?(index: number): boolean;
 }
 
 /** Cena vstupu do bunky s daným indexom; musí byť ≥ `BASE_CELL_COST` (volá sa len pre cestné bunky). */
@@ -231,8 +238,9 @@ export class Pathfinder {
         const next = ny * width + nx;
         if (closed[next] === generation || next === this.avoided) continue;
         const nextCell = this.grid.atIndex(next);
-        if (nextCell.road !== 'road' && (owners === undefined || owners[next] === 0 || (owners[next] !== quayFrom && owners[next] !== quayTo))) continue;
+        if (nextCell.road !== 'road' && (owners === undefined || owners[next] === 0 || (owners[next] !== quayFrom && owners[next] !== quayTo && this.quay?.isThrough?.(next) !== true))) continue;
         if (!isRoadStepAllowed(currentCell, nextCell, direction.name)) continue;
+        if (this.quay?.stepAllowed !== undefined && !this.quay.stepAllowed(current, next, k)) continue;
         const tentative = g[current] + this.stepCost(next);
         if (seen[next] !== generation) {
           seen[next] = generation;

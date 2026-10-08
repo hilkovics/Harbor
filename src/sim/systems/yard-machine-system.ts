@@ -71,10 +71,12 @@ function refreshQueue(world: World, machine: RtgCrane): void {
   }
 }
 
-/** Bay TP, pri ktorom vozidlo stojí: konektor bloku, ktorého vonkajšia bunka je bunkou vozidla (vjazd / výjazd); inak vjazd. */
-function tpBayOf(world: World, block: RtgBlock, vehicle: Vehicle): number {
+/** Bay TP, pri ktorom vozidlo stojí: bunka pruhu bloku, na ktorej vozidlo stojí (ťahač do pruhu vchádza, ADR-040 TR3-02); mimo pruhu (starý stav, testy) bay podľa konektora, ktorého vonkajšia bunka je bunkou vozidla. */
+function tpBayOf(world: World, block: RtgBlock, vehicle: Vehicle, cell: number = vehicle.cell): number {
+  const bay = world.quay.laneCellsOf(block.id)?.indexOf(cell) ?? -1;
+  if (bay >= 0) return block.tpBayNear(bay);
   for (let index = 0; index < block.connectors.length; index++) {
-    if (accessCellIndex(world.grid, block.connectors[index]) === vehicle.cell) return block.tpBayOfConnector(index);
+    if (accessCellIndex(world.grid, block.connectors[index]) === cell) return block.tpBayOfConnector(index);
   }
   return block.tpBayOfConnector(0);
 }
@@ -138,9 +140,21 @@ interface PhasePlan {
   readonly target: MachinePose;
 }
 
-/** Spúšťač stojí na vrstve, z ktorej sa dvíha; počas jazdy je hore na úrovni `carryTier` (= `maxTier`, nad stohmi). */
-function carryTierOf(block: RtgBlock): number {
-  return block.geometry.maxTier;
+/**
+ * Výška nosenia (vrstva spúšťača počas presunu): nad najvyšším stohom, ktorý kontajner prejde medzi miestom zdvihu a odkladu (bays a rady oboch miest vrátane), nie vždy na plnú
+ * výšku bloku — spúšťač sa zdvíha len na výšku potrebnú na prejazd (TR3-02). Nikdy nad `maxTier`; pri prázdnych stohoch 0.
+ */
+function carryTierOf(block: RtgBlock, pick: Spot, drop: Spot): number {
+  const { bays, rows, maxTier } = block.geometry;
+  const bayFrom = Math.max(0, Math.floor(Math.min(pick.bay, drop.bay)));
+  const bayTo = Math.min(bays - 1, Math.ceil(Math.max(pick.bay, drop.bay)));
+  const rowFrom = Math.max(0, Math.min(pick.row, drop.row));
+  const rowTo = Math.min(rows - 1, Math.max(pick.row, drop.row));
+  let need = Math.max(pick.tier, drop.tier);
+  for (let bay = bayFrom; bay <= bayTo; bay++) {
+    for (let row = rowFrom; row <= rowTo; row++) need = Math.max(need, block.stackHeight(bay, row));
+  }
+  return Math.min(maxTier, need);
 }
 
 /**
@@ -153,25 +167,28 @@ function planTravel(machine: RtgCrane, pick: Spot): PhasePlan | null {
   return ticks === 0 ? null : { state: 'travel', ticks, target: { gantry: pick.bay, trolley: pick.row, hoist: pick.tier } };
 }
 
-/** Plán `lift`: uchopenie a zdvih z vrstvy zdvihu na `carryTier`. */
-function planLift(machine: RtgCrane, block: RtgBlock, pick: Spot): PhasePlan {
-  const carry = carryTierOf(block);
-  return { state: 'lift', ticks: machine.def.lockTicks + machine.hoistTicks(carry - pick.tier), target: { ...machine.restPose, hoist: carry } };
+/** Plán `lift`: uchopenie kontajnera (twist-lock); stúpanie spúšťača prebieha až súbežne s pojazdom (`planAfterCarry`). */
+function planLift(machine: RtgCrane): PhasePlan {
+  return { state: 'lift', ticks: machine.def.lockTicks, target: { ...machine.restPose } };
 }
 
-/** Plán `lower`: spustenie na vrstvu odkladu a pustenie. */
-function planLower(machine: RtgCrane, block: RtgBlock, drop: Spot): PhasePlan {
-  return { state: 'lower', ticks: machine.hoistTicks(carryTierOf(block) - drop.tier) + machine.def.lockTicks, target: { ...machine.restPose, hoist: drop.tier } };
+/** Plán `lower`: spustenie z výšky nosenia na vrstvu odkladu a pustenie. */
+function planLower(machine: RtgCrane, drop: Spot): PhasePlan {
+  return { state: 'lower', ticks: machine.hoistTicks(machine.restPose.hoist - drop.tier) + machine.def.lockTicks, target: { ...machine.restPose, hoist: drop.tier } };
 }
 
-/** Fáza po `lift` / `shift` / `trolley`: pojazd žeriavu, potom vozík, potom spustenie; fázy bez dráhy sa preskočia. */
-function planAfterCarry(machine: RtgCrane, block: RtgBlock, drop: Spot): PhasePlan {
+/**
+ * Fáza po `lift` / `shift` / `trolley`: **súbežný** pojazd žeriavu, vozíka a stúpanie spúšťača na výšku nosenia (`carryTierOf`) — trvá najdlhšia z troch dráh (ako `travel`;
+ * stav `shift`, ak žeriav nejde kratšie než vozík, inak `trolley`); bez dráhy rovno spustenie.
+ */
+function planAfterCarry(machine: RtgCrane, block: RtgBlock, pick: Spot, drop: Spot): PhasePlan {
   const rest = machine.restPose;
+  const carry = Math.max(rest.hoist, carryTierOf(block, pick, drop));
   const gantry = machine.gantryTicks(drop.bay - rest.gantry);
-  if (gantry > 0) return { state: 'shift', ticks: gantry, target: { ...rest, gantry: drop.bay } };
   const trolley = machine.trolleyTicks(drop.row - rest.trolley);
-  if (trolley > 0) return { state: 'trolley', ticks: trolley, target: { ...rest, trolley: drop.row } };
-  return planLower(machine, block, drop);
+  const ticks = Math.max(gantry, trolley, machine.hoistTicks(carry - rest.hoist));
+  if (ticks === 0) return planLower(machine, drop);
+  return { state: gantry > 0 && gantry >= trolley ? 'shift' : 'trolley', ticks, target: { gantry: drop.bay, trolley: drop.row, hoist: carry } };
 }
 
 /** Vstúpi do fázy (prechod podľa tabuľky FSM + odpočet). */
@@ -185,19 +202,18 @@ function enter(machine: RtgCrane, plan: PhasePlan): void {
 
 /** Fronta zoradená podľa `(priorita, createdTick, id vozidla)` (ADR-040 bod 6). */
 export function sortedQueue(world: Pick<World, 'vehicles' | 'jobs'>, machine: RtgCrane): MachineQueueEntry[] {
-  const { priorities } = machine.def;
   const keyOf = (entry: MachineQueueEntry): number => {
     const vehicle = world.vehicles.get(entry.vehicleId as EntityId);
     const job = vehicle?.jobId === null || vehicle === undefined ? undefined : world.jobs.get(vehicle.jobId as EntityId);
-    return job === undefined ? Number.MAX_SAFE_INTEGER : priorities[priorityKindOf(job)];
+    return job === undefined ? Number.MAX_SAFE_INTEGER : machine.priorityOf(priorityKindOf(job));
   };
   return [...machine.queue].sort((a, b) => keyOf(a) - keyOf(b) || a.createdTick - b.createdTick || a.vehicleId - b.vehicleId);
 }
 
 /** Cyklus pre vozidlo z fronty, alebo `null`, ak sa teraz nedá začať (zavalený cieľ bez miesta na rehandling); zapíše `stallTicks` stroja. */
-function planCycle(world: World, machine: RtgCrane, block: RtgBlock, vehicle: Vehicle, job: TransportJob): MachineCycle | null {
-  const tpBay = tpBayOf(world, block, vehicle);
-  if (vehicle.state === 'unloading') {
+function planCycle(world: World, machine: RtgCrane, block: RtgBlock, vehicle: Vehicle, job: TransportJob, tpCell: number = vehicle.cell): MachineCycle | null {
+  const tpBay = tpBayOf(world, block, vehicle, tpCell);
+  if (job.to.kind === 'in_storage') {
     const unit = firstUnitAt(world, job, { kind: 'in_vehicle', vehicleId: vehicle.id });
     const slot = slotOf(job.to);
     if (unit === undefined || slot === null) throw new MachineError('inconsistent', `${machine.label}: ${vehicle.label} čaká s ${job.label} bez jednotky vo vozidle`);
@@ -216,6 +232,62 @@ function planCycle(world: World, machine: RtgCrane, block: RtgBlock, vehicle: Ve
   const target = chooseRehandleSlot(world, block, blocker, block.positionOfSlot(blocker.location.slot));
   if (target === null) return null;
   return { kind: 'relocate', unitId: blocker.id, vehicleId: null, jobId: null, fromSlot: blocker.location.slot, toSlot: target, tpBay: block.positionOfSlot(blocker.location.slot).bay };
+}
+
+/**
+ * Ťahač s jobom tohto bloku (nakládka `to_pickup`, vykládka `to_dropoff`), ktorý ide k TP pruhu a do cieľa mu ostáva najviac `prefetchCells` buniek trasy (ADR-040 dodatok TR3-02, predzásobenie): stroj
+ * môže cyklus začať skôr, než ťahač dorazí — `take` zdvihne kontajner zo stohu a presunie ho nad TP, `put` sa nastaví nad TP; potom počká na ťahač (`holdForVehicle`). Vracia job a cieľovú bunku trasy, inak `undefined`.
+ */
+function approachingJob(world: World, vehicle: Vehicle, block: RtgBlock, lane: Int32Array, prefetchCells: number): { readonly job: TransportJob; readonly tpCell: number } | undefined {
+  if (vehicle.jobId === null || vehicle.cellsAhead > prefetchCells) return undefined;
+  const job = world.jobs.get(vehicle.jobId);
+  if (job === undefined || chainBlockOf(world, job)?.id !== block.id) return undefined;
+  const take = vehicle.state === 'to_pickup' && job.from.kind === 'in_storage' && isMachineEndpoint(world, job, 'loading');
+  const put = vehicle.state === 'to_dropoff' && job.to.kind === 'in_storage' && isMachineEndpoint(world, job, 'unloading');
+  if (!take && !put) return undefined;
+  const tpCell = vehicle.routeCellAt(vehicle.cellsAhead);
+  return tpCell !== undefined && lane.includes(tpCell) ? { job, tpCell } : undefined;
+}
+
+/** Predzásobenie: začne `take` pre najbližší ťahač na ceste k TP (najmenej buniek, potom id); `true`, keď stroj opustil `idle`. */
+function startPrefetch(world: World, machine: RtgCrane, block: RtgBlock): boolean {
+  const lane = world.quay.laneCellsOf(block.id);
+  const { prefetchCells } = machine.def;
+  if (lane === undefined || prefetchCells <= 0) return false;
+  let best: { vehicle: Vehicle; job: TransportJob; tpCell: number } | undefined;
+  for (const vehicle of world.vehicles.values()) {
+    if (machine.serves(vehicle.id)) continue;
+    const found = approachingJob(world, vehicle, block, lane, prefetchCells);
+    if (found !== undefined && (best === undefined || vehicle.cellsAhead < best.vehicle.cellsAhead)) best = { vehicle, ...found };
+  }
+  if (best === undefined) return false;
+  const cycle = planCycle(world, machine, block, best.vehicle, best.job, best.tpCell);
+  if (cycle === null) return false;
+  machine.beginCycle(cycle);
+  if (cycle.kind === 'relocate') beginRelocation(world, block, cycle.toSlot as number);
+  const { pick } = spotsOf(world, block, cycle);
+  const travel = planTravel(machine, pick);
+  if (travel === null) {
+    machine.transition('travel');
+    enter(machine, planLift(machine));
+  } else {
+    enter(machine, travel);
+  }
+  return true;
+}
+
+/**
+ * Cyklus s ťahačom, ktorý ešte nedorazil na TP (predzásobenie): `put` čaká nad TP pred zdvihom (`lift`), `take` s kontajnerom nad TP pred spustením (`lower`) — stroj sa na 1 tick
+ * „zdrží“ (`shift` bez pohybu), kým ťahač nestojí na TP (`unloading` pri `put`, `loading` pri `take`). Ostatné cykly a fázy idú ďalej bez čakania.
+ */
+function holdForVehicle(world: World, machine: RtgCrane, block: RtgBlock, cycle: MachineCycle, next: PhasePlan): PhasePlan {
+  const put = cycle.kind === 'put' && cycle.vehicleId !== null && next.state === 'lift';
+  const take = cycle.kind === 'take' && next.state === 'lower';
+  if (!put && !take) return next;
+  const vehicle = world.vehicles.get(cycle.vehicleId as EntityId);
+  const lane = world.quay.laneCellsOf(block.id);
+  if (vehicle !== undefined && vehicle.state === (put ? 'unloading' : 'loading') && lane?.[cycle.tpBay] === vehicle.cell) return next;
+  return { state: 'shift', ticks: 1, target: { ...machine.restPose } };
 }
 
 /** Začne ďalší cyklus podľa fronty; `true`, keď stroj opustil `idle`. Bez použiteľného vozidla beží trpezlivosť rehandlingu. */
@@ -237,12 +309,13 @@ function startCycle(world: World, machine: RtgCrane, block: RtgBlock): boolean {
     const travel = planTravel(machine, pick);
     if (travel === null) {
       machine.transition('travel');
-      enter(machine, planLift(machine, block, pick));
+      enter(machine, planLift(machine));
     } else {
       enter(machine, travel);
     }
     return true;
   }
+  if (!stalled && startPrefetch(world, machine, block)) return true;
   if (stalled) {
     const waited = machine.addStall();
     if (waited >= world.defs.logistics.rehandleGiveUpTicks) {
@@ -259,19 +332,25 @@ function startCycle(world: World, machine: RtgCrane, block: RtgBlock): boolean {
 // Koniec fáz
 // ---------------------------------------------------------------------------------------------------------
 
-/** Koniec `lift`: jednotka z vozidla / stohu do `in_handler`; `put` usadí rezerváciu slotu na skutočnú vrstvu stohu. */
+/**
+ * Koniec `lift`: jednotka z vozidla / stohu do `in_handler`. Pri `put` je ťahač **voľný hneď po zdvihu** (ADR-040 dodatok TR3-02): `put` usadí rezerváciu slotu na skutočnú vrstvu stohu,
+ * job vozidla sa dokončí (`completeDrop` — `JobDone`, vozidlo `idle`) a cyklus stroja pokračuje bez vozidla a jobu (`vehicleId` a `jobId` `null`; rezerváciu slotu drží cyklus, nie job).
+ * Ďalší ťahač tak vojde na TP, kým stroj ešte ukladá.
+ */
 function pickUp(world: World, machine: RtgCrane, block: RtgBlock, cycle: MachineCycle): void {
   const handler: CargoLocation = { kind: 'in_handler', machineId: machine.id };
   world.cargo.move(cycle.unitId as EntityId, handler);
   if (cycle.kind === 'take') block.recordTaken(cycle.unitId as EntityId);
   if (cycle.kind === 'put') {
+    const vehicle = vehicleOfCycle(world, machine, cycle);
     const job = jobOfCycle(world, machine, cycle);
     settleYardDrop(world, job);
-    machine.replaceCycle({ ...cycle, toSlot: slotOf(job.to) });
+    machine.replaceCycle({ ...cycle, toSlot: slotOf(job.to), vehicleId: null, jobId: null });
+    completeDrop(world, vehicle, job, HOOK_WAIT_TICKS);
   }
 }
 
-/** Koniec `lower`: jednotka z `in_handler` na cieľ cyklu a dokončenie jobu vozidla (`put`, `take`), alebo rehandle bloku (`relocate`). */
+/** Koniec `lower`: jednotka z `in_handler` na cieľ cyklu (stoh, alebo vozidlo pri `take`; `take` dokončí job vozidla), alebo rehandle bloku (`relocate`). */
 function putDown(world: World, machine: RtgCrane, block: RtgBlock, cycle: MachineCycle): void {
   const unitId = cycle.unitId as EntityId;
   if (cycle.kind === 'relocate') {
@@ -280,22 +359,20 @@ function putDown(world: World, machine: RtgCrane, block: RtgBlock, cycle: Machin
     endRelocation(world, block, unitId, slot);
     return;
   }
-  const vehicle = vehicleOfCycle(world, machine, cycle);
-  const job = jobOfCycle(world, machine, cycle);
   if (cycle.kind === 'take') {
+    const vehicle = vehicleOfCycle(world, machine, cycle);
+    const job = jobOfCycle(world, machine, cycle);
     world.cargo.move(unitId, { kind: 'in_vehicle', vehicleId: vehicle.id });
     completeLoad(world, vehicle, job, HOOK_WAIT_TICKS);
     return;
   }
+  const place = cycle.toSlot;
+  if (place === null) throw new MachineError('inconsistent', `${machine.label}: cyklus put bez cieľového slotu`);
   const target = block.cargoDropTarget();
-  settleYardDrop(world, job);
-  const place = slotOf(job.to);
-  if (place === null || job.to.kind !== 'in_storage') throw new MachineError('inconsistent', `${machine.label}: ${job.label} nemá cieľ s miestom v bloku`);
   target.assertCommittable(place, unitId);
-  world.cargo.move(unitId, job.to);
+  world.cargo.move(unitId, { kind: 'in_storage', moduleId: block.id, slot: place });
   target.commit(place, unitId);
   onEmptyStored(world, unitId, block);
-  completeDrop(world, vehicle, job, HOOK_WAIT_TICKS);
 }
 
 /** Koniec fázy: ledger, potom ďalšia fáza (alebo `idle`). */
@@ -305,15 +382,20 @@ function onPhaseEnd(world: World, machine: RtgCrane, block: RtgBlock): void {
   const { pick, drop } = spotsOf(world, block, cycle);
   switch (NEXT_AFTER[machine.state]) {
     case 'lift':
-      enter(machine, planLift(machine, block, pick));
+      enter(machine, holdForVehicle(world, machine, block, cycle, planLift(machine)));
       return;
     case 'carry':
+      // `put` pred zdvihom (vozidlo ešte v cykle) je v `shift` len ako čakanie nad TP (`holdForVehicle`): po ňom nasleduje zdvih, nie nosenie.
+      if (cycle.kind === 'put' && cycle.vehicleId !== null && machine.state === 'shift') {
+        enter(machine, holdForVehicle(world, machine, block, cycle, planLift(machine)));
+        return;
+      }
       if (machine.state !== 'lift') {
-        enter(machine, planAfterCarry(machine, block, drop));
+        enter(machine, holdForVehicle(world, machine, block, cycle, planAfterCarry(machine, block, pick, drop)));
         return;
       }
       pickUp(world, machine, block, cycle);
-      enter(machine, planAfterCarry(machine, block, spotsOf(world, block, machine.cycle as MachineCycle).drop));
+      enter(machine, holdForVehicle(world, machine, block, cycle, planAfterCarry(machine, block, pick, spotsOf(world, block, machine.cycle as MachineCycle).drop)));
       return;
     case 'idle':
       putDown(world, machine, block, cycle);

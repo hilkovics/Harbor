@@ -1270,6 +1270,7 @@ export class World {
    * umiestnenia (`findPlacementViolations`, ako `PlaceModule` bez ceny); inak `MapError` s indexom modulu.
    */
   private placeStarterModules(): void {
+    const roadChangesBefore = this.roadChanges; // starter kotvisko pri vzniku sveta cestnú sieť nemení (cache ciest ešte neexistujú, nie sú vozidlá)
     this.map.starter.modules.forEach((spec, index) => {
       const path = `/starter/modules${pointerSegment(index)}`;
       if (!this.defs.modules.has(spec.defId)) {
@@ -1283,6 +1284,7 @@ export class World {
       }
       this.placeModule(spec, 0);
     });
+    this.roadChanges = roadChangesBefore;
   }
 
   /** Prepočet skupín kotvísk a `groupId` každého berthu. */

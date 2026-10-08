@@ -64,7 +64,7 @@ describe('World.ships (T02-05)', () => {
 });
 
 describe('World.placeModule / addModule', () => {
-  it('berth: id z alokátora, zaplatená cena, cell.moduleId na všetkých 24 bunkách', () => {
+  it('berth: id z alokátora, zaplatená cena, cell.moduleId na všetkých 32 bunkách', () => {
     const world = newWorld();
     const berth = place(world, BERTH, 40, 14, 0, 40_000_000);
     expect(berth).toBeInstanceOf(BerthModule);
@@ -72,7 +72,7 @@ describe('World.placeModule / addModule', () => {
     expect(world.ids.getState().nextId).toBe(2);
     expect(berth.purchaseCostCents).toBe(40_000_000);
     expect(world.modules.get(berth.id)).toBe(berth);
-    expect(cellsOwnedBy(world, berth.id)).toBe(24);
+    expect(cellsOwnedBy(world, berth.id)).toBe(32);
     for (const { x, y } of berth.cells) expect(world.grid.at(x, y).moduleId).toBe(berth.id);
     // Hotovosť ani udalosti placeModule nemení — to je vec príkazu (T02-04).
     expect(world.cashCents).toBe(MODULE_DEFS.economy.startingCashCents);
@@ -83,7 +83,7 @@ describe('World.placeModule / addModule', () => {
     const { world, berth, crane } = harbor();
     expect(crane.berthId).toBe(berth.id);
     expect(berth.craneIds).toEqual([crane.id]);
-    expect(cellsOwnedBy(world, berth.id)).toBe(24);
+    expect(cellsOwnedBy(world, berth.id)).toBe(32);
     expect(cellsOwnedBy(world, crane.id)).toBe(0);
     expect([...world.modules.keys()]).toEqual([berth.id, crane.id]);
     expect(() => world.assertInvariants()).not.toThrow();
@@ -158,7 +158,7 @@ describe('World.removeModule', () => {
     expect(errorCode(() => world.removeModule(berth.id))).toBe('has_cranes');
     world.removeModule(crane.id);
     expect(berth.craneIds).toEqual([]);
-    expect(cellsOwnedBy(world, berth.id)).toBe(24);
+    expect(cellsOwnedBy(world, berth.id)).toBe(32);
     world.removeModule(berth.id);
     expect(world.modules.size).toBe(0);
     expect(cellsOwnedBy(world, berth.id)).toBe(0);

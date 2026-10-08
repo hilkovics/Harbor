@@ -30,8 +30,8 @@ function errorOf(action: () => unknown): WorldStateError {
 /** Svet s cestami všetkých typov: nábrežná cesta (dvojpruhová), jednopruhový a jednosmerný úsek. */
 function kindsWorld(): World {
   const { world } = dispatchWorld();
-  execute(world, { type: 'PlaceRoad', cells: row(33, 35, 17), kind: 'one_lane' });
-  execute(world, { type: 'PlaceRoad', cells: [cell(50, 17), cell(51, 17), cell(52, 17)], kind: 'one_way', dirs: ['E', 'E', 'N'] });
+  execute(world, { type: 'PlaceRoad', cells: row(33, 35, 18), kind: 'one_lane' });
+  execute(world, { type: 'PlaceRoad', cells: [cell(50, 18), cell(51, 18), cell(52, 18)], kind: 'one_way', dirs: ['E', 'E', 'N'] });
   return world;
 }
 
@@ -55,10 +55,10 @@ describe('save — cesty [index, vrstva, typ?, smer?] (ADR-020)', () => {
 
   it('serialize: dvojpruhová cesta ako dvojica, jednopruhová s typom, jednosmerka s typom a smerom', () => {
     const state = kindsWorld().serialize();
-    expect(state.roads).toContainEqual([indexOf(cell(40, 17)), 'road']);
-    expect(state.roads).toContainEqual([indexOf(cell(34, 17)), 'road', 'one_lane']);
-    expect(state.roads).toContainEqual([indexOf(cell(50, 17)), 'road', 'one_way', 'E']);
-    expect(state.roads).toContainEqual([indexOf(cell(52, 17)), 'road', 'one_way', 'N']);
+    expect(state.roads).toContainEqual([indexOf(cell(40, 18)), 'road']);
+    expect(state.roads).toContainEqual([indexOf(cell(34, 18)), 'road', 'one_lane']);
+    expect(state.roads).toContainEqual([indexOf(cell(50, 18)), 'road', 'one_way', 'E']);
+    expect(state.roads).toContainEqual([indexOf(cell(52, 18)), 'road', 'one_way', 'N']);
     const indexes = state.roads.map(([index]) => index);
     expect(indexes).toEqual([...indexes].sort((a, b) => a - b));
     expect(viaJson(state)).toStrictEqual(state);
@@ -78,10 +78,10 @@ describe('save — cesty [index, vrstva, typ?, smer?] (ADR-020)', () => {
 
   it('odstránená jednosmerka sa v save neobjaví a bunka po obnove je normalizovaná', () => {
     const world = kindsWorld();
-    execute(world, { type: 'RemoveRoad', cells: [cell(51, 17)] });
+    execute(world, { type: 'RemoveRoad', cells: [cell(51, 18)] });
     const restored = World.deserialize(DEFS, MAP, viaJson(world.serialize()));
-    expect(restored.serialize().roads.some(([index]) => index === indexOf(cell(51, 17)))).toBe(false);
-    const removed = restored.grid.at(51, 17);
+    expect(restored.serialize().roads.some(([index]) => index === indexOf(cell(51, 18)))).toBe(false);
+    const removed = restored.grid.at(51, 18);
     expect([removed.road, removed.roadKind, removed.roadDir]).toEqual(['none', 'two_lane', null]);
   });
 
@@ -89,8 +89,8 @@ describe('save — cesty [index, vrstva, typ?, smer?] (ADR-020)', () => {
     const build = (): World => {
       const { world, depot } = dispatchWorld();
       placeYard(world, YARD_W);
-      execute(world, { type: 'PlaceRoad', cells: row(33, 36, 17), kind: 'one_lane' });
-      execute(world, { type: 'PlaceRoad', cells: row(38, 40, 17), kind: 'one_way', dirs: ['E', 'E', 'E'] });
+      execute(world, { type: 'PlaceRoad', cells: row(33, 36, 18), kind: 'one_lane' });
+      execute(world, { type: 'PlaceRoad', cells: row(38, 40, 18), kind: 'one_way', dirs: ['E', 'E', 'E'] });
       buyVehicle(world, depot);
       buyVehicle(world, depot);
       unitsOnApron(world, [0, 1, 2]);
@@ -162,10 +162,10 @@ describe('krok 12 — typ a smer cesty na bunke', () => {
   it.each<[string, (world: World) => void, RegExp]>([
     ['koľaj s typom', (w) => Object.assign(w.grid.at(40, 40), { road: 'rail', roadKind: 'one_way', roadDir: 'N' }), /vrstvou 'rail' má typ cesty 'one_way'/],
     ['koľaj so smerom', (w) => Object.assign(w.grid.at(40, 40), { road: 'rail', roadDir: 'E' }), /vrstvou 'rail' .* smer E/],
-    ['neznámy typ cesty', (w) => void (w.grid.at(40, 17).roadKind = 'four_lane' as never), /neznámy typ cesty 'four_lane'/],
-    ['jednosmerka bez smeru', (w) => void (w.grid.at(50, 17).roadDir = null), /jednosmerka musí mať smer/],
-    ['dvojpruhová so smerom', (w) => void (w.grid.at(40, 17).roadDir = 'W'), /len jednosmerka má smer/],
-    ['jednopruhová so smerom', (w) => void (w.grid.at(34, 17).roadDir = 'S'), /len jednosmerka má smer/],
+    ['neznámy typ cesty', (w) => void (w.grid.at(40, 18).roadKind = 'four_lane' as never), /neznámy typ cesty 'four_lane'/],
+    ['jednosmerka bez smeru', (w) => void (w.grid.at(50, 18).roadDir = null), /jednosmerka musí mať smer/],
+    ['dvojpruhová so smerom', (w) => void (w.grid.at(40, 18).roadDir = 'W'), /len jednosmerka má smer/],
+    ['jednopruhová so smerom', (w) => void (w.grid.at(34, 18).roadDir = 'S'), /len jednosmerka má smer/],
   ])('%s → porušenie', (_name, corrupt, message) => {
     const world = kindsWorld();
     corrupt(world);
@@ -174,7 +174,7 @@ describe('krok 12 — typ a smer cesty na bunke', () => {
 
   it('PlaceRoad/RemoveRoad udržia normalizovaný stav (bez porušenia po prestavbách a odstránení)', () => {
     const world = kindsWorld();
-    const cells = row(44, 48, 17);
+    const cells = row(44, 48, 18);
     for (const command of [
       new PlaceRoadCommand(cells, 'one_way', ['W', 'W', 'W', 'W', 'W']),
       new PlaceRoadCommand(cells, 'one_lane'),
@@ -184,7 +184,7 @@ describe('krok 12 — typ a smer cesty na bunke', () => {
       world.applyPending();
       expect(findWorldViolation(world)).toBeUndefined();
     }
-    execute(world, { type: 'RemoveRoad', cells: [cell(50, 17), cell(34, 17)] });
+    execute(world, { type: 'RemoveRoad', cells: [cell(50, 18), cell(34, 18)] });
     expect(findWorldViolation(world)).toBeUndefined();
   });
 });

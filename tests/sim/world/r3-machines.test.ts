@@ -153,7 +153,7 @@ describe('save v10: stroj uprostred cyklu sa obnoví a beh pokračuje bit po bit
     expect(load((s) => (s.machines[0]['state'] = 'flying'))).toThrow(/stav musí byť/);
     expect(load((s) => (s.machines[0]['state'] = 'lift'))).toThrow();
     expect(load((s) => (s.machines[0]['defId'] = 'rmg'))).toThrow(/neznámy stroj/);
-    expect(load((s) => (s.machines[0]['cycle'] = { kind: 'put', unitId: 1, vehicleId: null, jobId: null, fromSlot: null, toSlot: 1, tpBay: 0 }))).toThrow(/vozidlo aj job/);
+    expect(load((s) => (s.machines[0]['cycle'] = { kind: 'take', unitId: 1, vehicleId: null, jobId: null, fromSlot: 1, toSlot: null, tpBay: 0 }))).toThrow(/vozidlo aj job/);
     expect(load(() => undefined)()).toBeInstanceOf(World);
   });
 });

@@ -320,7 +320,7 @@ export class TrafficSystem implements AdvanceGate {
   /** Smie nosič ísť z bunky `from` do susednej bunky `to` (smer jednosmerky)? */
   private canStep(world: World, from: number, to: number): boolean {
     const side = sideBetween(world.grid.width, from, to);
-    return side !== NO_SIDE && isRoadStepAllowed(world.grid.atIndex(from), world.grid.atIndex(to), DIRECTIONS_4[side].name);
+    return side !== NO_SIDE && isRoadStepAllowed(world.grid.atIndex(from), world.grid.atIndex(to), DIRECTIONS_4[side].name) && world.quay.stepAllowed(from, to, side);
   }
 
   /** Prázdne pracovné pole kľúčov pre aktuálnu hĺbku zásobníka. */

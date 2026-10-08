@@ -56,6 +56,8 @@ import {
   SUPPORTED_SCHEMA_VERSION,
   YARD_PLANNER_MODES,
   YARD_PRIORITY_KINDS,
+  CRANE_GANG_MODES,
+  type TractorsDef,
   type CargoTypeDef,
   type EquipmentDef,
   type RtgDef,
@@ -281,11 +283,21 @@ const RTG_FIELDS: SpecTable<RtgDef> = {
   hoistTicksPerTier: { kind: 'integer', min: 1 },
   trolleyTicksPerRow: { kind: 'integer', min: 1 },
   lockTicks: { kind: 'integer', min: 1 },
+  prefetchCells: { kind: 'integer', min: 0 },
   priorities: { kind: 'object', fields: { ship: { kind: 'integer', min: 0 }, truck: { kind: 'integer', min: 0 }, housekeeping: { kind: 'integer', min: 0 } } },
+};
+
+/** `equipment.json` → `tractors` (TR3-02, ADR-040 bod 7): východisko a medze počtu ťahačov na STS. */
+const TRACTORS_FIELDS: SpecTable<TractorsDef> = {
+  defaultMode: { kind: 'enum', values: CRANE_GANG_MODES },
+  defaultPerSts: { kind: 'integer', min: 1 },
+  minPerSts: { kind: 'integer', min: 1 },
+  maxPerSts: { kind: 'integer', min: 1 },
 };
 
 const EQUIPMENT_FIELDS: FieldTable<EquipmentDef> = {
   rtg: { kind: 'object', fields: RTG_FIELDS },
+  tractors: { kind: 'object', fields: TRACTORS_FIELDS },
 };
 
 const DEF_FIELDS = {
@@ -598,6 +610,9 @@ function checkExportWindow(economy: Readonly<EconomyDef>, logistics: Readonly<Lo
 
 /** Priority RTG: poradie loď > kamión > housekeeping (ADR-040 bod 6) — menšie číslo = skôr, takže hodnoty musia ostro rásť v poradí `YARD_PRIORITY_KINDS`. */
 function checkEquipment(def: Readonly<EquipmentDef>): Problem | undefined {
+  const { minPerSts, maxPerSts, defaultPerSts } = def.tractors;
+  if (minPerSts > maxPerSts) return { path: '/tractors/minPerSts', message: `minPerSts (${String(minPerSts)}) nesmie byť väčší než maxPerSts (${String(maxPerSts)})` };
+  if (defaultPerSts < minPerSts || defaultPerSts > maxPerSts) return { path: '/tractors/defaultPerSts', message: `defaultPerSts (${String(defaultPerSts)}) musí ležať v ${String(minPerSts)} … ${String(maxPerSts)}` };
   const { priorities } = def.rtg;
   for (let i = 1; i < YARD_PRIORITY_KINDS.length; i++) {
     const previous = YARD_PRIORITY_KINDS[i - 1];

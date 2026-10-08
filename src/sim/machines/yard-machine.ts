@@ -7,6 +7,7 @@
  * Stav mení len `transition` podľa `MACHINE_TRANSITIONS` (CLAUDE.md konvencia FSM). Konkrétny stroj (`RtgCrane`) dodáva časy z `equipment.json`.
  */
 import type { EntityId } from '../core/entity-id';
+import { YARD_PRIORITY_KINDS, type YardPriorityKind } from '../defs/types';
 import { MachineError } from './machine-error';
 import { MACHINE_TRANSITIONS, isMachineState, isMachineTransitionAllowed } from './machine-fsm';
 import type { CycleKind, MachineCycle, MachinePose, MachineQueueEntry, MachineState } from './machine-state-types';
@@ -32,10 +33,12 @@ export interface SerializedMachine {
   readonly moves: number;
   /** Ticky bez cieľa rehandlingu (trpezlivosť, `logistics.rehandleGiveUpTicks`). */
   readonly stallTicks: number;
+  /** Druh úlohy, ktorý hráč povýšil na prvý v poradí (`SetBlockPriority`); `null` = poradie z `equipment.json`. */
+  readonly firstPriority: YardPriorityKind | null;
 }
 
 /** Kľúče `SerializedMachine` v poradí `toState()`. */
-export const SERIALIZED_MACHINE_KEYS: readonly (keyof SerializedMachine)[] = ['id', 'defId', 'blockId', 'state', 'pose', 'target', 'phaseTotal', 'phaseLeft', 'cycle', 'queue', 'moves', 'stallTicks'];
+export const SERIALIZED_MACHINE_KEYS: readonly (keyof SerializedMachine)[] = ['id', 'defId', 'blockId', 'state', 'pose', 'target', 'phaseTotal', 'phaseLeft', 'cycle', 'queue', 'moves', 'stallTicks', 'firstPriority'];
 
 /** Vstup konštruktora stroja (kúpa aj obnova zo save). */
 export interface YardMachineInit {
@@ -51,6 +54,7 @@ export interface YardMachineInit {
   readonly queue?: readonly MachineQueueEntry[];
   readonly moves?: number;
   readonly stallTicks?: number;
+  readonly firstPriority?: YardPriorityKind | null;
 }
 
 const isCount = (value: number): boolean => Number.isSafeInteger(value) && value >= 0;
@@ -70,6 +74,7 @@ export abstract class YardMachine {
   private readonly waiting: MachineQueueEntry[];
   private moveCount: number;
   private stall: number;
+  private first: YardPriorityKind | null;
 
   /** Chyby (`MachineError('invalid_input')`): id alebo `blockId` nie je celé ≥ 1, neznámy stav, neplatná poloha, fáza (`idle` ↔ odpočet 0, inak `1 ≤ left ≤ total`), počítadlá. */
   protected constructor(init: YardMachineInit, label: string) {
@@ -99,6 +104,20 @@ export abstract class YardMachine {
     this.waiting = [...(init.queue ?? [])];
     this.moveCount = moves;
     this.stall = stallTicks;
+    const firstPriority = init.firstPriority ?? null;
+    if (firstPriority !== null && !YARD_PRIORITY_KINDS.includes(firstPriority)) throw bad(`neznáma priorita '${String(firstPriority)}'`);
+    this.first = firstPriority;
+  }
+
+  /** Druh úlohy povýšený hráčom na prvý (`SetBlockPriority`), alebo `null` (poradie z defu). */
+  get firstPriority(): YardPriorityKind | null {
+    return this.first;
+  }
+
+  /** Nastaví druh úlohy, ktorý stroj obsluhuje ako prvý (`null` = poradie z defu); volá výlučne `SetBlockPriority`. */
+  setFirstPriority(kind: YardPriorityKind | null): void {
+    if (kind !== null && !YARD_PRIORITY_KINDS.includes(kind)) throw new MachineError('invalid_input', `${this.label}: neznáma priorita '${String(kind)}'`);
+    this.first = kind;
   }
 
   get state(): MachineState {
@@ -246,6 +265,7 @@ export abstract class YardMachine {
       queue: this.waiting.map((entry) => ({ ...entry })),
       moves: this.moveCount,
       stallTicks: this.stall,
+      firstPriority: this.first,
     };
   }
 }

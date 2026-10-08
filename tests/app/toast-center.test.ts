@@ -228,7 +228,7 @@ describe('ToastCenter: udalosti zo simu', () => {
   it('položenie dvora vedľa hotovej cesty toast nevytvorí', () => {
     const { app, center } = centerWith();
     runCommands(app, [
-      { type: 'PlaceRoad', cells: [{ x: 41, y: 17 }, { x: 41, y: 18 }, { x: 41, y: 19 }, { x: 41, y: 20 }, { x: 41, y: 21 }, { x: 41, y: 22 }, { x: 42, y: 22 }, { x: 43, y: 22 }] },
+      { type: 'PlaceRoad', cells: [{ x: 41, y: 18 }, { x: 41, y: 19 }, { x: 41, y: 20 }, { x: 41, y: 21 }, { x: 41, y: 22 }, { x: 42, y: 22 }, { x: 43, y: 22 }] },
       { type: 'PlaceModule', defId: 'container_yard_small', x: 42, y: 18, rotation: 0 },
     ]);
     expect(center.get()).toEqual([]);

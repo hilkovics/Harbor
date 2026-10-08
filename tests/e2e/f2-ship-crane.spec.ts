@@ -279,7 +279,7 @@ test.describe('F2: loď, žeriav, apron (T02-12)', () => {
 
     // 2) nad pevninou je ghost neplatný a tooltip vypíše slovenské dôvody aj cenu
     await hoverCell(page, INLAND_CURSOR);
-    await expect.poll(() => moduleGhost(page)).toMatchObject({ defId: 'berth_standard', w: 8, h: 3, valid: false });
+    await expect.poll(() => moduleGhost(page)).toMatchObject({ defId: 'berth_standard', w: 8, h: 4, valid: false });
     await expect(buildTip(page)).toHaveAttribute('data-ok', 'false');
     await expect(buildTip(page)).toContainText('Kotvisko · $400,000');
     await expect(buildTip(page)).toContainText('Nevhodný terén');

@@ -63,3 +63,4 @@ export { computeBerthGroups } from './berth-group';
 export type { BerthGroup } from './berth-group';
 export { BUILTIN_MODULES, ModuleRegistry, STORAGE_MODULES, STORAGE_ROLE_MODULES, moduleRegistry, registerBuiltinModules } from './module-registry';
 export type { ModuleEnv, ModuleFactory } from './module-registry';
+export { craneCargo, craneTrolley } from './crane-pose';

@@ -384,7 +384,7 @@
     "berth_standard": {
       "footprint": {
         "w": 8,
-        "h": 3
+        "h": 4
       },
       "file": "modules/berth_standard.svg",
       "apronSlots": [
@@ -424,14 +424,50 @@
       "connectors": [
         {
           "x": 1,
-          "y": 2,
+          "y": 3,
           "side": "s",
           "type": "road"
         },
         {
           "x": 6,
-          "y": 2,
+          "y": 3,
           "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 0,
+          "y": 1,
+          "side": "w",
+          "type": "road"
+        },
+        {
+          "x": 0,
+          "y": 2,
+          "side": "w",
+          "type": "road"
+        },
+        {
+          "x": 0,
+          "y": 3,
+          "side": "w",
+          "type": "road"
+        },
+        {
+          "x": 7,
+          "y": 1,
+          "side": "e",
+          "type": "road"
+        },
+        {
+          "x": 7,
+          "y": 2,
+          "side": "e",
+          "type": "road"
+        },
+        {
+          "x": 7,
+          "y": 3,
+          "side": "e",
           "type": "road"
         }
       ]
@@ -1174,85 +1210,6 @@
           "x": 8,
           "y": 3,
           "side": "s",
-          "type": "road"
-        }
-      ]
-    },
-    "berth_standard_v2": {
-      "footprint": {
-        "w": 8,
-        "h": 4
-      },
-      "file": "modules/berth_standard_v2.svg",
-      "apronSlots": [
-        {
-          "x": 1,
-          "y": 1
-        },
-        {
-          "x": 2,
-          "y": 1
-        },
-        {
-          "x": 5,
-          "y": 1
-        },
-        {
-          "x": 6,
-          "y": 1
-        },
-        {
-          "x": 0,
-          "y": 1
-        },
-        {
-          "x": 7,
-          "y": 1
-        },
-        {
-          "x": 2,
-          "y": 2
-        },
-        {
-          "x": 5,
-          "y": 2
-        }
-      ],
-      "connectors": [
-        {
-          "x": 0,
-          "y": 1,
-          "side": "w",
-          "type": "road"
-        },
-        {
-          "x": 0,
-          "y": 2,
-          "side": "w",
-          "type": "road"
-        },
-        {
-          "x": 0,
-          "y": 3,
-          "side": "w",
-          "type": "road"
-        },
-        {
-          "x": 7,
-          "y": 1,
-          "side": "e",
-          "type": "road"
-        },
-        {
-          "x": 7,
-          "y": 2,
-          "side": "e",
-          "type": "road"
-        },
-        {
-          "x": 7,
-          "y": 3,
-          "side": "e",
           "type": "road"
         }
       ]

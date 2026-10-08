@@ -95,12 +95,12 @@ function line(from: Point, to: Point): { x: number; y: number }[] {
   }
 }
 
-/** Cesty scenára `apron_to_yard`: od výjazdov Root kotviska (41,17) a (46,17) k obom dvorom a k depu. */
+/** Cesty scenára `apron_to_yard`: od výjazdov Root kotviska 8 × 4 (41,18) a (46,18) k obom dvorom a k depu (+ obchádzka dolnej bunky západnej nohy). */
 export const LOGISTICS_ROADS: readonly (readonly { x: number; y: number }[])[] = [
-  line([41, 17], [41, 22]),
-  line([46, 17], [46, 22]),
+  line([41, 18], [41, 22]),
+  line([46, 18], [46, 22]),
+  [{ x: 40, y: 21 }, { x: 40, y: 22 }, { x: 40, y: 23 }, { x: 41, y: 23 }, { x: 42, y: 23 }],
   line([42, 22], [45, 22]),
-  line([42, 17], [45, 17]),
   line([44, 23], [44, 30]),
   line([45, 30], [50, 30]),
 ];

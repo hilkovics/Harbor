@@ -139,17 +139,18 @@ const coords = (world: World, path: readonly number[] | null): CellCoord[] | nul
 describe('World.roadVersion', () => {
   it('nový svet 0; PlaceRoad a RemoveRoad ho zvýšia o 1, odmietnutý príkaz ani iné príkazy nie', () => {
     const world = World.create(DEFS, MAP, SEED);
-    expect(world.roadVersion).toBe(0);
+    const base = world.roadVersion;
+    expect(base).toBe(0);
     execute(world, { type: 'PlaceRoad', cells: LOOP });
-    expect(world.roadVersion).toBe(1);
+    expect(world.roadVersion).toBe(base + 1);
     execute(world, { type: 'PlaceRoad', cells: [TOP[0]] }); // už je cesta → empty, odmietnuté
-    expect(world.roadVersion).toBe(1);
+    expect(world.roadVersion).toBe(base + 1);
     execute(world, { type: 'PlaceModule', defId: 'vehicle_depot', x: 50, y: 20, rotation: 0 });
     execute(world, { type: 'SetGameSpeed', speed: 2 });
     expect(world.modules.size).toBe(3);
-    expect(world.roadVersion).toBe(1);
+    expect(world.roadVersion).toBe(base + 1);
     execute(world, { type: 'RemoveRoad', cells: [TOP[2]] });
-    expect(world.roadVersion).toBe(2);
+    expect(world.roadVersion).toBe(base + 2);
   });
 
   it('deserialize ho zvýši (cesty prišli zo save) a verzia nie je súčasťou save', () => {

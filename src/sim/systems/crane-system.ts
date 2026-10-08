@@ -179,7 +179,10 @@ function start(crane: CraneModule, world: World): void {
     return;
   }
   rest(crane);
-  if (bookings.length > 0 && handover.idleWaits(env)) crane.waitForVehicleTicks += 1;
+  if (bookings.length > 0 && handover.idleWaits(env)) {
+    crane.waitForVehicleTicks += 1;
+    crane.idleWaitTicks += 1;
+  }
 }
 
 /** `swinging` → `placing` (jednotku už drží). */
@@ -236,6 +239,7 @@ function placeUnloaded(crane: CraneModule, world: World): void {
   }
   const loadedUnitId = crane.dualUnitId;
   crane.heldUnitId = null;
+  crane.moves += 1;
   crane.transition('idle');
   world.events.emit({ type: 'CraneCycleDone', craneId: crane.id, unitId });
   if (loadedUnitId !== null && berth.dockedShipId !== null) {
@@ -267,6 +271,7 @@ function placeLoaded(crane: CraneModule, world: World): void {
   world.cargo.move(unit.id, { kind: 'on_ship', shipId: ship.id });
   world.events.emit({ type: 'UnitLoaded', craneId: crane.id, shipId: ship.id, unitId: unit.id, contractId: booking.id, lastMinute, outOfOrder });
   crane.heldUnitId = null;
+  crane.moves += 1;
   crane.transition('idle');
   if (crane.cycle === 'dual_load' && unclaimedImports(world, ship) > 0) {
     const env: CraneEnv = { world, crane, berth, ship };

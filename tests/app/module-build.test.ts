@@ -19,14 +19,14 @@ describe('placementAt (bunka pod kurzorom je stredom footprintu)', () => {
   const berth = world.defs.modules.get(BERTH);
   const crane = world.defs.modules.get(CRANE);
 
-  it('kotvisko 8×3: roh je o floor(w/2) = 4 doľava a floor(h/2) = 1 nahor', () => {
-    expect(placementAt(berth, { x: 52, y: 15 }, 0)).toEqual({ defId: BERTH, x: 48, y: 14, rotation: 0 });
+  it('kotvisko 8×4: roh je o floor(w/2) = 4 doľava a floor(h/2) = 2 nahor', () => {
+    expect(placementAt(berth, { x: 52, y: 15 }, 0)).toEqual({ defId: BERTH, x: 48, y: 13, rotation: 0 });
   });
 
-  it('po rotácii o 90° sa rozmer otočí na 3×8: roh je 1 doľava a 4 nahor', () => {
-    expect(placementAt(berth, { x: 52, y: 15 }, 90)).toEqual({ defId: BERTH, x: 51, y: 11, rotation: 90 });
-    expect(placementAt(berth, { x: 52, y: 15 }, 180)).toEqual({ defId: BERTH, x: 48, y: 14, rotation: 180 });
-    expect(placementAt(berth, { x: 52, y: 15 }, 270)).toEqual({ defId: BERTH, x: 51, y: 11, rotation: 270 });
+  it('po rotácii o 90° sa rozmer otočí na 4×8: roh je 2 doľava a 4 nahor', () => {
+    expect(placementAt(berth, { x: 52, y: 15 }, 90)).toEqual({ defId: BERTH, x: 50, y: 11, rotation: 90 });
+    expect(placementAt(berth, { x: 52, y: 15 }, 180)).toEqual({ defId: BERTH, x: 48, y: 13, rotation: 180 });
+    expect(placementAt(berth, { x: 52, y: 15 }, 270)).toEqual({ defId: BERTH, x: 50, y: 11, rotation: 270 });
   });
 
   it('žeriav 2×3: roh je o 1 doľava a 1 nahor', () => {
@@ -60,7 +60,7 @@ describe('previewModule', () => {
   const berth = app.world.defs.modules.get(BERTH);
 
   it('voľné nábrežie: ghost platný, príkaz prejde, konektory vo svetových bunkách po rotácii', () => {
-    const preview = previewModule(berth, { x: 52, y: 15 }, 0, validate);
+    const preview = previewModule(berth, { x: 52, y: 16 }, 0, validate);
     expect(preview.placeable).toBe(true);
     expect(preview.fundsShort).toBe(false);
     expect(preview.result).toMatchObject({ ok: true, costCents: 40_000_000 });
@@ -70,11 +70,17 @@ describe('previewModule', () => {
       y: 14,
       rotation: 0,
       w: 8,
-      h: 3,
+      h: 4,
       valid: true,
       connectors: [
-        { x: 49, y: 16, side: 's' },
-        { x: 54, y: 16, side: 's' },
+        { x: 49, y: 17, side: 's' },
+        { x: 54, y: 17, side: 's' },
+        { x: 48, y: 15, side: 'w' },
+        { x: 48, y: 16, side: 'w' },
+        { x: 48, y: 17, side: 'w' },
+        { x: 55, y: 15, side: 'e' },
+        { x: 55, y: 16, side: 'e' },
+        { x: 55, y: 17, side: 'e' },
       ],
     });
   });
@@ -89,7 +95,7 @@ describe('previewModule', () => {
   it('len nedostatok peňazí: ghost ostáva platný (zelený), ale príkaz sa neodošle', () => {
     const poor = createApp();
     setCash(poor.world, 1);
-    const preview = previewModule(berth, { x: 52, y: 15 }, 0, poor.bridge.validate.bind(poor.bridge));
+    const preview = previewModule(berth, { x: 52, y: 16 }, 0, poor.bridge.validate.bind(poor.bridge));
     expect(preview.result.reasons).toEqual(['insufficient_funds']);
     expect(preview.fundsShort).toBe(true);
     expect(preview.ghost.valid).toBe(true);
@@ -107,7 +113,7 @@ describe('previewModule', () => {
   it('validáciu robí iba cez odovzdanú funkciu (svet sa nemení)', () => {
     const cash = app.world.cashCents;
     const modules = app.world.modules.size;
-    previewModule(berth, { x: 52, y: 15 }, 0, validate);
+    previewModule(berth, { x: 52, y: 16 }, 0, validate);
     expect(app.world.cashCents).toBe(cash);
     expect(app.world.modules.size).toBe(modules);
   });

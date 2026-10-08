@@ -312,6 +312,9 @@ describe('runScenario', () => {
       rehandleStalls: 0,
       rehandlesPerMove: null,
       yardTeuUsedPct: 0,
+      stsMovesPerHour: 0,
+      rtgMovesPerHour: 0,
+      stsWaitForTractorPct: null,
       directHandoverPct: null,
       gridlockEvents: 0,
       trafficWaitTicks: { vehicles: 0, trucks: 0 },
@@ -397,6 +400,9 @@ describe('runScenario', () => {
       'rehandleStalls',
       'rehandlesPerMove',
       'yardTeuUsedPct',
+      'stsMovesPerHour',
+      'rtgMovesPerHour',
+      'stsWaitForTractorPct',
     ]);
   });
 
@@ -520,9 +526,9 @@ describe('runScenario', () => {
       expect(full.ticksToAllStored).not.toBeNull();
     });
 
-    it('cashEnd (ADR-025): 64 600 000 po stavbe − 1 deň × (údržba 285 000 + mzdy 61 000) = 64 254 000', () => {
+    it('cashEnd (ADR-025): 64 800 000 po stavbe (o bunku ciest menej, berth 8 × 4) − 1 deň × (údržba 285 000 + mzdy 61 000) = 64 454 000', () => {
       expect(full.gameDays).toBe(1);
-      expect(full.cashEnd).toBe(64_254_000);
+      expect(full.cashEnd).toBe(64_454_000);
     });
 
     it('ticksToAllStored je hranica: o tick skôr ešte nie je všetko uložené, presne v ňom už áno', () => {
@@ -610,9 +616,9 @@ describe('runScenario', () => {
       });
     });
 
-    it('cashEnd (ADR-025): 33 600 000 po stavbe − 225 000 napojenie scenára na slučku (PORT_BRIDGE) − 4 dni × (údržba 330 000 + mzdy 79 000) = 31 739 000', () => {
+    it('cashEnd (ADR-025): 33 800 000 po stavbe (o bunku ciest menej, berth 8 × 4) − 225 000 napojenie scenára na slučku (PORT_BRIDGE) − 4 dni × (údržba 330 000 + mzdy 79 000) = 31 939 000', () => {
       expect(full.gameDays).toBe(4);
-      expect(full.cashEnd).toBe(31_739_000);
+      expect(full.cashEnd).toBe(31_939_000);
     });
 
     it('krížová kontrola: Σ TruckExited.units === exportedUnits (kamióny sú jediná cesta exportu)', () => {
@@ -814,7 +820,7 @@ describe('runScenario', () => {
         transhipSold: 0,
         emptyReturnsDeclined: 0,
         // vozidlo stojí pod žeriavom a buffer je 0: každé odovzdanie žeriav ↔ vozidlo je priame (pred T6D-02 49 %)
-        directHandoverPct: 98.6,
+        directHandoverPct: 97.9,
       });
       // odplávané = export 22 + repositioning 16 + prekládka 22 (kontajnery)
       expect(report.shippedUnits).toBe(22 + report.repositionedUnits + report.transhipLoaded);
@@ -1207,7 +1213,7 @@ describe('CLI (tools/simrun.ts)', () => {
     expect(report['craneWaitForVehicleTicks']).toBeGreaterThan(0);
     expect(report['vehicleWaitUnderCraneTicks']).toBeGreaterThan(0);
     // vozidlo stojí pod žeriavom: drvivá väčšina odovzdaní žeriav ↔ vozidlo ide priamo (pred T6D-02 44,6 %)
-    expect(report['directHandoverPct']).toBeGreaterThan(90);
+    expect(report['directHandoverPct']).toBeGreaterThan(85);
     expect(typeof report['stateHash']).toBe('string');
     for (const at of ['28000', '30700']) {
       const roundtrip = runCli(EXPORT_ROUNDTRIP_SCENARIO, '--ticks', '40000', '--report', '--hash', '--roundtrip-at', at);

@@ -327,7 +327,7 @@ describe('pod hákom (rozhodnutie R1 č. 8, bunka nábrežia)', () => {
     const under = (): Vehicle | undefined =>
       [...world.vehicles.values()].find((vehicle) => vehicle.cell === hook && vehicle.cellsAhead === 0 && (vehicle.state === 'loading' || vehicle.state === 'unloading'));
     const behind = (): Vehicle | undefined =>
-      [...world.vehicles.values()].find((vehicle) => vehicle.cell !== hook && vehicle.blockedTicks > 0 && vehicle.routeCellAt(vehicle.cellsAhead) === hook);
+      [...world.vehicles.values()].find((vehicle) => vehicle.cell !== hook && vehicle.cellsAhead <= 12 && vehicle.routeCellAt(vehicle.cellsAhead) === hook);
     let first: Vehicle | undefined;
     let second: Vehicle | undefined;
     for (let i = 0; i < 20_000 && (first === undefined || second === undefined); i++) {
@@ -337,11 +337,19 @@ describe('pod hákom (rozhodnutie R1 č. 8, bunka nábrežia)', () => {
       second = first === undefined ? undefined : behind();
     }
     if (first === undefined || second === undefined) throw new Error('dve vozidlá na tom istom háku sa nestretli');
+    // Druhé vozidlo je na ceste k háku (najviac 12 buniek): kým prvé drží bunku pod hákom, druhé ju nezaberie a vozidlá sa neprekrývajú (pruhy kotviska 8 × 4, ADR-040).
     expect(first.id).not.toBe(second.id);
     expect(first.body.map((key) => key >> 1)[0]).toBe(hook);
     expect(world.laneSlots.holderOf(hook, 0)).toBe(first.id);
-    expect(second.occupiesCell(hook)).toBe(false);
-    expect(second.blockedTicks).toBeGreaterThan(0);
-    expect(world.carrierOnCell(hook)).toBe(first);
+    let checked = 0;
+    for (let i = 0; i < 200 && first.cell === hook && first.cellsAhead === 0; i++) {
+      world.tick();
+      expect(carrierOverlapProblem(world)).toBeNull();
+      if (first.cell !== hook) break;
+      expect(second.occupiesCell(hook)).toBe(false);
+      expect(world.carrierOnCell(hook)).toBe(first);
+      checked += 1;
+    }
+    expect(checked).toBeGreaterThan(0);
   }, 120_000);
 });

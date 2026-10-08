@@ -1,8 +1,8 @@
 // Fixtúra testov dispatchera a alokátora (T03-05, ADR-018): harbor_01 s Root berthom (id 1, apron 4 sloty, konektory
-// → vonkajšie bunky (41, 17) a (46, 17)) a cestou pozdĺž nábrežia y = 17, x 31…56. Moduly sú otočené o 180°, takže
+// → vonkajšie bunky (41, 18) a (46, 18); berth 8 × 4 zaberá y 14…17) a cestou pozdĺž nábrežia y = 18, x 31…56. Moduly sú otočené o 180°, takže
 // konektor (pôvodne `s`) smeruje na sever priamo na cestu:
-//   depo (31, 18) → vonkajšia bunka (32, 17);  dvor W (35, 18) → (37, 17), od berthu 4;
-//   dvor E (48, 18) → (50, 17), od berthu 4 (remíza s W);  dvor F (53, 18) → (55, 17), od berthu 9.
+//   depo (31, 19) → vonkajšia bunka (32, 18);  dvor W (35, 19) → (37, 18), od berthu 4;
+//   dvor E (48, 19) → (50, 18), od berthu 4 (remíza s W);  dvor F (53, 19) → (55, 18), od berthu 9.
 // Jednotky na aprone vznikajú priamo cez ledger (fiktívna loď 900 a žeriav 901 — len prechody §7.1), bez lode.
 import vehiclesJson from '@data/defs/vehicles.json';
 import { APRON_MODULES as modulesJson } from '../helpers/apron-modules';
@@ -16,18 +16,18 @@ import { World } from '@sim/world';
 import { DEFS, MAP, RAW_DEFS } from '../world/world-fixtures';
 
 export const ROOT_BERTH_ID = 1 as EntityId;
-export const QUAY_ROAD: readonly CellCoord[] = Array.from({ length: 26 }, (_, i) => ({ x: 31 + i, y: 17 }));
-export const DEPOT_CELL: CellCoord = { x: 31, y: 18 };
-export const DEPOT_ACCESS: CellCoord = { x: 32, y: 17 };
-export const YARD_W: CellCoord = { x: 35, y: 18 };
-export const YARD_W_ACCESS: CellCoord = { x: 37, y: 17 };
-export const YARD_E: CellCoord = { x: 48, y: 18 };
-export const YARD_E_ACCESS: CellCoord = { x: 50, y: 17 };
-export const YARD_F: CellCoord = { x: 53, y: 18 };
-export const YARD_F_ACCESS: CellCoord = { x: 55, y: 17 };
+export const QUAY_ROAD: readonly CellCoord[] = Array.from({ length: 26 }, (_, i) => ({ x: 31 + i, y: 18 }));
+export const DEPOT_CELL: CellCoord = { x: 31, y: 19 };
+export const DEPOT_ACCESS: CellCoord = { x: 32, y: 18 };
+export const YARD_W: CellCoord = { x: 35, y: 19 };
+export const YARD_W_ACCESS: CellCoord = { x: 37, y: 18 };
+export const YARD_E: CellCoord = { x: 48, y: 19 };
+export const YARD_E_ACCESS: CellCoord = { x: 50, y: 18 };
+export const YARD_F: CellCoord = { x: 53, y: 19 };
+export const YARD_F_ACCESS: CellCoord = { x: 55, y: 18 };
 export const BERTH_ACCESS: readonly CellCoord[] = [
-  { x: 41, y: 17 },
-  { x: 46, y: 17 },
+  { x: 41, y: 18 },
+  { x: 46, y: 18 },
 ];
 
 export const STRADDLE = 'straddle_carrier';

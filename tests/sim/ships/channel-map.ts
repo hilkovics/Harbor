@@ -8,8 +8,8 @@
 //  - sea lane (30, 0) → (30, 5), koniec dráhy (30,5 ; 5,5);
 //  - anchorage: 0 = (30, 3) na dráhe (nepoužiteľná), 1 = (15, 7) pred ústím kanála (zatarasí výstup lodi v kanáli),
 //    2 = (6, 3) a 3 = (6, 7) na otvorenej vode mimo trás do kanála (použiteľné pre feeder aj handy);
-//  - kotviská (`CHANNEL_BERTHS`): W1 rot 90 na (10, 12) — feeder pri ňom (14, 15), bunky x 13–14, y 12–17;
-//    E2 rot 270 na (19, 18) — feeder (18, 21), bunky x 17–18, y 18–23; W3 rot 90 na (10, 28) — feeder (14, 31),
+//  - kotviská (`CHANNEL_BERTHS`, berth 8 × 4: pevninský riadok na x 9 mimo móla): W1 rot 90 na (9, 12) — feeder pri ňom (14, 15), bunky x 13–14, y 12–17;
+//    E2 rot 270 na (19, 18) — feeder (18, 21), bunky x 17–18, y 18–23; W3 rot 90 na (9, 28) — feeder (14, 31),
 //    bunky x 13–14, y 28–33. Feedery pri W1 a E2 spolu zatarasia kanál (priechod 3 stĺpce nie je v žiadnom riadku),
 //    každý sám nie. Kotviská sú samostatné skupiny po 8 → handy (10) nezakotví nikde a čaká na anchorage;
 //  - mapa okrem posledného riadku je vlastnená parcela, cestný portál (39, 39) na verejnej bunke;
@@ -30,9 +30,9 @@ function terrainChar(x: number, y: number): string {
 
 /** Kotviská kanála: ľavý horný roh a rotácia (voda W1, W3 na východ, E2 na západ). */
 export const CHANNEL_BERTHS = {
-  W1: { x: 10, y: 12, rotation: 90 },
+  W1: { x: 9, y: 12, rotation: 90 },
   E2: { x: 19, y: 18, rotation: 270 },
-  W3: { x: 10, y: 28, rotation: 90 },
+  W3: { x: 9, y: 28, rotation: 90 },
 } as const satisfies Record<string, CellCoord & { rotation: 90 | 270 }>;
 
 /** Indexy anchorage mapy. */
@@ -71,5 +71,5 @@ function channelMap(modules: readonly PlacedModuleSpec[]): LoadedMap {
 export const CHANNEL_MAP: LoadedMap = channelMap([]);
 export const CHANNEL_MAP_W1: LoadedMap = channelMap([
   { defId: 'berth_standard', ...CHANNEL_BERTHS.W1 },
-  { defId: 'crane_container_gantry', x: CHANNEL_BERTHS.W1.x, y: CHANNEL_BERTHS.W1.y + 2, rotation: CHANNEL_BERTHS.W1.rotation },
+  { defId: 'crane_container_gantry', x: CHANNEL_BERTHS.W1.x + 1, y: CHANNEL_BERTHS.W1.y + 2, rotation: CHANNEL_BERTHS.W1.rotation },
 ]);

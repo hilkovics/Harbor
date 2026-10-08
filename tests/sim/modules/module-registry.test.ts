@@ -154,12 +154,12 @@ describe('Module — geometria a vstup', () => {
     const berth = moduleRegistry.create(berthDef, { defId: BERTH, x: 5, y: 1, rotation: 90 }, id(2), 0, ENV);
     expect(berth.origin).toEqual({ x: 5, y: 1 });
     expect(berth.rotation).toBe(90);
-    expect(berth.size).toEqual({ w: 3, h: 8 });
-    expect(berth.cells).toHaveLength(24);
+    expect(berth.size).toEqual({ w: 4, h: 8 });
+    expect(berth.cells).toHaveLength(32);
     expect(berth.cells[0]).toEqual({ x: 5, y: 1 });
-    expect(berth.cells[23]).toEqual({ x: 7, y: 8 });
-    expect(berth.containsCell(7, 8)).toBe(true);
-    expect(berth.containsCell(8, 8)).toBe(false);
+    expect(berth.cells[31]).toEqual({ x: 8, y: 8 });
+    expect(berth.containsCell(8, 8)).toBe(true);
+    expect(berth.containsCell(9, 8)).toBe(false);
     expect(berth.containsCell(5, 0)).toBe(false);
     expect(berth.label).toBe('berth_standard #2');
   });

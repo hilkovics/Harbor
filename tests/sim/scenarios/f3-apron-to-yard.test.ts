@@ -154,11 +154,11 @@ describe('scenár apron_to_yard: rozloženie je platné podľa ARCHITECTURE §8'
     return [{ defId: command['defId'] as string, x: command['x'] as number, y: command['y'] as number, command }];
   });
 
-  it('34 unikátnych buniek ciest sa postaví za bunky × costPerCellCents', () => {
+  it('33 unikátnych buniek ciest sa postaví za bunky × costPerCellCents', () => {
     const world = worldWithRoads();
-    expect(new Set(ALL_ROAD_CELLS.map(({ x, y }) => `${String(x)},${String(y)}`)).size).toBe(34);
+    expect(new Set(ALL_ROAD_CELLS.map(({ x, y }) => `${String(x)},${String(y)}`)).size).toBe(33);
     for (const { x, y } of ALL_ROAD_CELLS) expect(world.grid.at(x, y).road, `(${String(x)}, ${String(y)})`).toBe('road');
-    expect(DEFS.economy.startingCashCents - world.cashCents).toBe(34 * ROAD_COST);
+    expect(DEFS.economy.startingCashCents - world.cashCents).toBe(33 * ROAD_COST);
   });
 
   it('cesty ležia na pevnine starter parcely (patrí hráčovi) a pod berthom nie sú', () => {
@@ -203,31 +203,32 @@ describe('scenár apron_to_yard: rozloženie je platné podľa ARCHITECTURE §8'
     expect(outsideCellsOf(world, 'vehicle_depot', DEPOT_ORIGIN)).toEqual([DEPOT_OUTSIDE]);
     expect(outsideCellsOf(world, 'container_yard_small', NEAR_YARD_ORIGIN)).toEqual([NEAR_YARD_OUTSIDE]);
     expect(outsideCellsOf(world, 'container_yard_small', FAR_YARD_ORIGIN)).toEqual([FAR_YARD_OUTSIDE]);
-    expect(outsideCellsOf(world, 'berth_standard', { x: 40, y: 14 })).toEqual([...BERTH_OUTSIDE_CELLS]);
+    // Berth 8 × 4: prvé dva sú južné konektory s cestou; pruhové konektory w / e (6) cestu nemajú.
+    expect(outsideCellsOf(world, 'berth_standard', { x: 40, y: 14 }).slice(0, 2)).toEqual([...BERTH_OUTSIDE_CELLS]);
     for (const cell of [DEPOT_OUTSIDE, NEAR_YARD_OUTSIDE, FAR_YARD_OUTSIDE, ...BERTH_OUTSIDE_CELLS]) {
       expect(world.grid.at(cell.x, cell.y).road, `(${String(cell.x)}, ${String(cell.y)})`).toBe('road');
     }
   });
 
-  it('všetky vonkajšie bunky tvoria jednu súvislú cestnú sieť a berth → blízky dvor (7) je bližšie než berth → ďaleký dvor (21)', () => {
+  it('všetky vonkajšie bunky tvoria jednu súvislú cestnú sieť a berth → blízky dvor (6) je bližšie než berth → ďaleký dvor (20)', () => {
     const world = worldWithRoads();
     const fromBerth = (target: typeof NEAR_YARD_OUTSIDE): number =>
       Math.min(...BERTH_OUTSIDE_CELLS.map((cell) => roadDistance(world.grid, cell, target)));
     expect(roadDistance(world.grid, DEPOT_OUTSIDE, BERTH_OUTSIDE_CELLS[0])).toBeLessThan(Infinity);
     expect(roadDistance(world.grid, DEPOT_OUTSIDE, BERTH_OUTSIDE_CELLS[1])).toBeLessThan(Infinity);
-    expect(fromBerth(NEAR_YARD_OUTSIDE)).toBe(7);
-    expect(fromBerth(FAR_YARD_OUTSIDE)).toBe(21);
+    expect(fromBerth(NEAR_YARD_OUTSIDE)).toBe(6);
+    expect(fromBerth(FAR_YARD_OUTSIDE)).toBe(20);
   });
 
-  it('okruh: po odstránení dolnej bunky západnej nohy existuje obchádzka cez hornú spojku (13 krokov)', () => {
+  it('okruh: po odstránení dolnej bunky západnej nohy existuje obchádzka cez západnú obchádzku (10 krokov)', () => {
     const world = worldWithRoads();
     world.grid.at(41, 22).road = 'none'; // len tento zahodený svet, nie scenár
-    expect(roadDistance(world.grid, BERTH_OUTSIDE_CELLS[0], NEAR_YARD_OUTSIDE)).toBe(13);
+    expect(roadDistance(world.grid, BERTH_OUTSIDE_CELLS[0], NEAR_YARD_OUTSIDE)).toBe(10);
   });
 
   it('výdavky na cesty, 3 moduly a 2 vozidlá sú pod štartovou hotovosťou', () => {
     const spend =
-      34 * ROAD_COST +
+      33 * ROAD_COST +
       placeModules.reduce((sum, { defId }) => sum + DEFS.modules.get(defId).costCents, 0) +
       2 * STRADDLE.purchaseCents;
     expect(spend).toBeLessThan(DEFS.economy.startingCashCents);
@@ -326,10 +327,10 @@ describe('scenár apron_to_yard: beh 15 000 tickov', () => {
     }
   });
 
-  it('výdavky ticku príkazov = 34 buniek ciest + 3 moduly + 2 vozidlá (kategórie road/module/vehicle_capex), potom len údržba a mzdy pri DayClosed', () => {
+  it('výdavky ticku príkazov = 33 buniek ciest + 3 moduly + 2 vozidlá (kategórie road/module/vehicle_capex), potom len údržba a mzdy pri DayClosed', () => {
     const money = timed3(log, 'MoneyChanged');
     const first = money.filter((entry) => entry.tick <= 1);
-    const spend = 34 * ROAD_COST + DEFS.modules.get('vehicle_depot').costCents + 2 * YARD_DEF.costCents + 2 * STRADDLE.purchaseCents;
+    const spend = 33 * ROAD_COST + DEFS.modules.get('vehicle_depot').costCents + 2 * YARD_DEF.costCents + 2 * STRADDLE.purchaseCents;
     expect(first.reduce((sum, entry) => sum + entry.event.deltaCents, 0)).toBe(0 - spend);
     expect(first.filter((entry) => entry.event.reason === 'vehicle_capex').map((entry) => entry.event.deltaCents)).toEqual([
       0 - STRADDLE.purchaseCents,

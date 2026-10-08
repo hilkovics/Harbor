@@ -51,7 +51,7 @@ describe('entitiesVM: nový svet (Root modul)', () => {
         y: 14,
         rotation: 0,
         w: 8,
-        h: 3,
+        h: 4,
         apron: { capacity: 8, units: [] },
         connected: false, // kotvisko má cestné konektory, ale žiadna cesta ešte nevedie
       },
@@ -273,7 +273,7 @@ describe('entitiesVM: nový modul', () => {
     const modules = moduleVMs(world);
     expect(modules).toHaveLength(2);
     const placed = modules[1] as ModuleVM;
-    expect(placed).toMatchObject({ defId: 'berth_standard', kind: 'berth', x: 48, y: 14, w: 8, h: 3, rotation: 0 });
+    expect(placed).toMatchObject({ defId: 'berth_standard', kind: 'berth', x: 48, y: 14, w: 8, h: 4, rotation: 0 });
     expect(placed.id).toBeGreaterThan(ROOT_CRANE_ID);
     expect(placed.apron).toEqual({ capacity: 8, units: [] });
   });

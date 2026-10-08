@@ -49,7 +49,7 @@ describe('YardPlanner — smer jednotky', () => {
     expect(choiceOf(world, IMPORT_LABELS)).toBe(farYard.id);
     expect(choiceOf(world, exportLabels(1, 'medium'), 7)).toBe(farYard.id);
     expect(choiceOf(world, emptyLabels('northern_star'))).toBe(depot.id);
-    const nearYard = placeYard(world, { x: 48, y: 18 }); // vzdialenosť 4, ale väčšie id než depo
+    const nearYard = placeYard(world, { x: 48, y: 19 }); // vzdialenosť 4, ale väčšie id než depo
     expect(choiceOf(world, emptyLabels('northern_star'))).toBe(depot.id);
     expect([depot.id < nearYard.id]).toEqual([true]);
   });

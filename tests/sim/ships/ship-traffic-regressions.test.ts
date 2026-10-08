@@ -68,7 +68,7 @@ const CORNER_SIZE = 40;
 /**
  * Syntetická mapa s vnútorným rohom nábrežia: otvorená voda y 0–9, nábrežie y 10–12 (x 7–36), pod ním bazén
  * x 10–36 × y 13–35 s nábrežím na západe (x 7–9); sea lane (30, 0) → (30, 5), anchorage (5, 3) a (5, 7).
- * Kotvisko H (rot 180 na (11, 10), voda na juh) a N (rot 90 na (7, 15), voda na východ) — feeder pri N
+ * Kotvisko H (rot 180 na (11, 9), hrana pri vode y 12, voda na juh) a N (rot 90 na (6, 15), hrana pri vode x 9, voda na východ) — feeder pri N
  * (x 10–11, y 15–20) leží v posune bokom feedera pri H (x 11–16, y 13–17).
  */
 function cornerTerrain(x: number, y: number): string {
@@ -101,8 +101,9 @@ const CORNER_MAP: LoadedMap = loadMap(
   }),
 );
 
-const placeH = (world: World): BerthModule => berthWithCrane(world, 11, 10, 180, { x: 2, y: 0 });
-const placeN = (world: World): BerthModule => berthWithCrane(world, 7, 15, 90, { x: 0, y: 2 });
+// Berth 8 × 4 (ADR-040): pevninský riadok leží za nábrežím, takže pôvodná hrana pri vode (y 12 / x 9) ostáva — H rot 180 začína o riadok vyššie (11, 9), N rot 90 o stĺpec vľavo (6, 15).
+const placeH = (world: World): BerthModule => berthWithCrane(world, 11, 9, 180, { x: 2, y: 1 });
+const placeN = (world: World): BerthModule => berthWithCrane(world, 6, 15, 90, { x: 1, y: 2 });
 
 describe('1. vnútorný roh nábrežia — posun bokom je súčasťou cesty von (ADR-029 B5)', () => {
   it('exitLeg: obdĺžnik lode pri N v posune bokom lode pri H → cesta von nie je; bez neho je', () => {

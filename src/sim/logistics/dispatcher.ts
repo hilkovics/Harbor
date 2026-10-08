@@ -83,6 +83,7 @@ import { cancelJob } from './job-cancel';
 import { createEmptyIntakeJobs, createEmptyPickupJobs } from './empty-jobs';
 import { createExportIntakeJobs } from './export-intake';
 import { createExportLoadJobs as createLoadJobs, createHookUnloadJobs as createHookJobs, type LoadJobSpec } from './export-load';
+import { gangFilter } from './gang-roster';
 import { vehicleMayServe } from './handling-chains';
 import { distanceBetweenModules, distanceToModule } from './module-access';
 import { allocateRamp, outboundRoom } from './ramp-allocator';
@@ -471,11 +472,13 @@ function pickVehicle(world: World, job: TransportJob, candidates: Iterable<Vehic
   const category = jobCategory(world, job);
   const direction = world.cargo.get(job.unitIds[0])?.direction;
   if (source === undefined || category === undefined || direction === undefined) return undefined;
+  const gangAllows = gangFilter(world, job);
   let best: Vehicle | undefined;
   let bestPreference = Infinity;
   let bestCost = Infinity;
   for (const vehicle of candidates) {
     if (!VEHICLE_STATE_TRAITS[vehicle.state].free || !vehicleCarries(vehicle, category, direction) || !vehicleMayServe(world, vehicle, job)) continue;
+    if (gangAllows !== undefined && !gangAllows(vehicle)) continue;
     const cost = distanceToModule(world, vehicle.cell, source);
     if (cost === Infinity) continue;
     const preference = vehiclePreference(vehicle, direction);

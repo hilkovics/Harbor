@@ -663,9 +663,24 @@ export interface RtgDef {
   readonly lockTicks: number;
   /** Priority fronty stroja podľa druhu úlohy (menšie = skôr). */
   readonly priorities: { readonly [K in YardPriorityKind]: number };
+  /** Predzásobenie nakládky: stroj začne `take` pre ťahač, ktorému do TP ostáva najviac toľko buniek trasy (0 = čaká na príchod ťahača). */
+  readonly prefetchCells: number;
 }
 
-/** `equipment.json` — stroje bloku (TERMINAL_2 §10.5, ADR-040); R3 pozná len `rtg`. */
+/** Režim prideľovania ťahačov žeriavu STS (ADR-040 bod 7): `pool` = najbližší voľný ťahač zo spoločného bazéna, `gang` = pevná skupina `tractorsPerSts` ťahačov žeriavu. */
+export const CRANE_GANG_MODES = ['pool', 'gang'] as const;
+export type CraneGangMode = (typeof CRANE_GANG_MODES)[number];
+
+/** Prideľovanie ťahačov (`equipment.json` → `tractors`, TR3-02): východisko a medze príkazu `SetCraneGang`. */
+export interface TractorsDef {
+  readonly defaultMode: CraneGangMode;
+  readonly defaultPerSts: number;
+  readonly minPerSts: number;
+  readonly maxPerSts: number;
+}
+
+/** `equipment.json` — stroje bloku a ťahače (TERMINAL_2 §10.5, ADR-040): `rtg` a `tractors`. */
 export interface EquipmentDef extends DefBase {
   readonly rtg: RtgDef;
+  readonly tractors: TractorsDef;
 }

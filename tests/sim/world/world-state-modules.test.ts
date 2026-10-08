@@ -84,6 +84,10 @@ describe('WorldState — moduly v save', () => {
       idleTicks: 0,
       blockedTicks: 0,
       lastBlockedHour: null,
+      gangMode: null,
+      tractorsPerSts: null,
+      moves: 0,
+      idleWaitTicks: 0,
     } satisfies CraneRuntimeState);
     expect(state.cargo.units.map((u) => [u.id, u.location])).toEqual([
       [6, { kind: 'in_crane', craneId: 2 }],
@@ -181,6 +185,10 @@ describe('WorldState — neplatné moduly a náklad → WorldStateError', () => 
     idleTicks: 0,
     blockedTicks: 0,
     lastBlockedHour: null,
+    gangMode: null,
+    tractorsPerSts: null,
+    moves: 0,
+    idleWaitTicks: 0,
   };
 
   const INVALID: readonly [string, string, Mutation][] = [

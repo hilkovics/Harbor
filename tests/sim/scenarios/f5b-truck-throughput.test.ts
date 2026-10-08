@@ -99,7 +99,7 @@ describe('priepustnosť kamiónov: full_import_chain (ADR-029)', () => {
 
   it('sklad sa po uskladnení vyprázdňuje priebežne: zásoba v každej vzorke klesne, export v každom okne rastie', () => {
     const phase = samples.filter((sample) => sample.tick > allStoredAt && sample.tick <= allExportedAt);
-    expect(phase.length).toBeGreaterThan(4);
+    expect(phase.length).toBeGreaterThan(2); // kratšia fáza po uskladnení (kotvisko 8 × 4: rýchlejší príjem), stále viac než jedna vzorka
     for (let i = 1; i < phase.length; i++) {
       expect(phase[i].stored, `tick ${String(phase[i].tick)}`).toBeLessThan(phase[i - 1].stored);
       // Hranica brány: SAMPLE_TICKS / (2 × processTicks) kamiónov za okno; pred ADR-029 ~10 TEU za 500 tickov. Od R1 (ADR-037) kamióny

@@ -141,11 +141,18 @@ describe('bundled katalógy (loadBundledDefs)', () => {
     ]);
     const berth = defs.modules.get('berth_standard');
     expect(berth.kind).toBe('berth');
-    expect(berth.footprint).toEqual({ w: 8, h: 3 });
-    expect(berth.placement).toEqual({ requiredTerrain: ['quay'], waterSide: 'north', requiresParcelOwnership: true });
+    expect(berth.footprint).toEqual({ w: 8, h: 4 });
+    // 8 × 4 (TR3-02): riadok pri vode je nábrežie, pevninský riadok (obchádzka) smie byť pevnina.
+    expect(berth.placement).toEqual({ requiredTerrain: ['quay', 'land'], waterSide: 'north', requiresParcelOwnership: true });
     expect(berth.connectors).toEqual([
-      { x: 1, y: 2, side: 's', type: 'road' },
-      { x: 6, y: 2, side: 's', type: 'road' },
+      { x: 1, y: 3, side: 's', type: 'road' },
+      { x: 6, y: 3, side: 's', type: 'road' },
+      { x: 0, y: 1, side: 'w', type: 'road' },
+      { x: 0, y: 2, side: 'w', type: 'road' },
+      { x: 0, y: 3, side: 'w', type: 'road' },
+      { x: 7, y: 1, side: 'e', type: 'road' },
+      { x: 7, y: 2, side: 'e', type: 'road' },
+      { x: 7, y: 3, side: 'e', type: 'road' },
     ]);
     expect([berth.costCents, berth.maintenancePerDayCents]).toEqual([40_000_000, 120_000]);
     const crane = defs.modules.get('crane_container_gantry');
@@ -666,18 +673,18 @@ describe('modules: zlé hodnoty polí → DefError s cestou', () => {
   describe('konektor musí ležať vo footprinte (rotácia 0°)', () => {
     it.each([
       ['x = w', { x: 8, y: 2 }],
-      ['y = h', { x: 1, y: 3 }],
+      ['y = h', { x: 1, y: 4 }],
       ['x ďaleko mimo', { x: 100, y: 0 }],
     ])('%s → DefError s indexom konektora', (_name, cell) => {
       const raw = rawDefs();
       Object.assign(((itemsOf(raw, 'modules')[0]!['connectors'] as Json[])[1])!, cell);
       const error = expectDefError(() => fromRaw(raw), 'modules', '/items/0/connectors/1');
-      expect(error.problem).toContain('mimo footprintu 8×3');
+      expect(error.problem).toContain('mimo footprintu 8×4');
     });
 
     it.each([
       ['ľavý horný roh', { x: 0, y: 0 }],
-      ['pravý dolný roh', { x: 7, y: 2 }],
+      ['pravý dolný roh', { x: 7, y: 3 }],
     ])('%s je vo footprinte', (_name, cell) => {
       const raw = rawDefs();
       Object.assign(((itemsOf(raw, 'modules')[0]!['connectors'] as Json[])[0])!, cell);

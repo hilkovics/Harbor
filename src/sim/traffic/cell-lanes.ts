@@ -155,10 +155,12 @@ export class CellLanes {
   private isNeighbor(index: number, other: number, d: number, owners: Readonly<Int32Array>): boolean {
     const { grid } = this.source;
     const to = grid.atIndex(other);
-    if (to.road !== 'road') return owners[other] !== 0;
+    const { quay } = this.source;
+    const opposite = (d + 2) % 4;
+    const laneOk = quay.stepAllowed === undefined || quay.stepAllowed(index, other, d) || quay.stepAllowed(other, index, opposite);
+    if (to.road !== 'road') return owners[other] !== 0 && laneOk;
     const from = grid.atIndex(index);
-    const opposite = DIRECTIONS_4[(d + 2) % 4].name;
-    return isRoadStepAllowed(from, to, DIRECTIONS_4[d].name) || isRoadStepAllowed(to, from, opposite);
+    return laneOk && (isRoadStepAllowed(from, to, DIRECTIONS_4[d].name) || isRoadStepAllowed(to, from, DIRECTIONS_4[opposite].name));
   }
 
   private rebuildKinds(): void {

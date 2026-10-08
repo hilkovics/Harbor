@@ -450,14 +450,20 @@ const checkMachines: Check = (world) => {
       if (cycle !== null || held > 0) return `${machine.label} v stave 'idle' má cyklus alebo drží ${String(held)} jednotiek`;
     } else {
       if (cycle === null) return `${machine.label} v stave '${state}' nemá cyklus`;
-      const carrying = state === 'shift' || state === 'trolley' || state === 'lower';
+      // `put` s vozidlom v cykle je pred zdvihom (`shift` je čakanie nad TP, predzásobenie) — jednotka je ešte vo vozidle.
+      const carrying = (state === 'shift' || state === 'trolley' || state === 'lower') && !(cycle.kind === 'put' && cycle.vehicleId !== null);
       if (held > 1) return `${machine.label} drží ${String(held)} jednotiek (najviac 1)`;
       if (held === 1 && world.cargo.unitAtIndex('in_handler', machine.id, 0) !== cycle.unitId) return `${machine.label} drží inú jednotku než #${String(cycle.unitId)} cyklu ${cycle.kind}`;
       if (carrying !== (held === 1)) return `${machine.label} v stave '${state}' ${held === 1 ? 'drží jednotku skôr, než ju zdvihol' : 'nedrží jednotku po zdvihu'}`;
-      if (cycle.kind !== 'relocate') {
+      // `put` po zdvihu je bez vozidla a jobu (ťahač je voľný hneď po zdvihu, ADR-040 dodatok TR3-02); inak vozidlo cyklu čaká na TP.
+      if (cycle.kind === 'put' && cycle.vehicleId === null) {
+        if (!carrying || cycle.jobId !== null) return `${machine.label}: cyklus put bez vozidla musí byť po zdvihu a bez jobu`;
+      } else if (cycle.kind !== 'relocate') {
         const vehicle = world.vehicles.get(cycle.vehicleId as EntityId);
+        // `take` s predzásobením (ťahač ešte ide k TP, `prefetchCells`) smie mať vozidlo na ceste (`to_pickup`, po zmene ciest `no_path`), kým stroj nezačne `lower`.
+        const approaching = (cycle.kind === 'take' ? vehicle?.state === 'to_pickup' && state !== 'lower' : vehicle?.state === 'to_dropoff' && (state === 'travel' || state === 'shift')) || vehicle?.state === 'no_path' && state !== 'lower' && state !== 'lift';
         const wanted = cycle.kind === 'put' ? 'unloading' : 'loading';
-        if (vehicle === undefined || vehicle.state !== wanted || vehicle.jobId !== cycle.jobId) return `${machine.label}: vozidlo #${String(cycle.vehicleId)} cyklu ${cycle.kind} nečaká na TP v stave '${wanted}' s jobom #${String(cycle.jobId)}`;
+        if (vehicle === undefined || (vehicle.state !== wanted && !approaching) || vehicle.jobId !== cycle.jobId) return `${machine.label}: vozidlo #${String(cycle.vehicleId)} cyklu ${cycle.kind} nečaká na TP v stave '${wanted}' s jobom #${String(cycle.jobId)}`;
       }
     }
     const { gantry, trolley, hoist } = machine.restPose;
@@ -535,6 +541,10 @@ function reservationMismatch(world: World, storage: StorageModule): string {
     const slot = uniqueSlotOf(job.to);
     if (job.toModuleId === storage.id && slot !== null) want.push(slot);
   }
+  for (const machine of world.machines.values()) {
+    const cycle = machine.cycle;
+    if (machine.blockId === storage.id && cycle?.kind === 'put' && cycle.jobId === null && cycle.toSlot !== null) want.push(cycle.toSlot);
+  }
   want.sort((a, b) => a - b);
   return `${storage.label}: rezervované sloty [${storage.reservedSlots().join(', ')}] ≠ sloty aktívnych jobov [${want.join(', ')}]`;
 }
@@ -557,6 +567,14 @@ function checkStorageReservations(world: World): string | undefined {
       count += 1;
       sum += slot;
       squares += slot * slot;
+    }
+    // `put` po zdvihu drží rezerváciu slotu v cykle stroja, nie v jobe (ťahač je voľný, ADR-040 dodatok TR3-02).
+    for (const machine of world.machines.values()) {
+      const cycle = machine.cycle;
+      if (machine.blockId !== module.id || cycle?.kind !== 'put' || cycle.jobId !== null || cycle.toSlot === null) continue;
+      count += 1;
+      sum += cycle.toSlot;
+      squares += cycle.toSlot * cycle.toSlot;
     }
     const reserved = module.reservedCount;
     let found = 0;

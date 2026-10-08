@@ -89,12 +89,12 @@ describe('rozloženie F4: brána, čakacia plocha a rampa na starter parcele sú
     return [{ defId: command['defId'] as string, x: command['x'] as number, y: command['y'] as number, rotation: command['rotation'] as number, command }];
   });
 
-  it('11 nových buniek ciest, spolu 45 unikátnych; postavia sa za bunky × costPerCellCents', () => {
+  it('11 nových buniek ciest, spolu 44 unikátnych; postavia sa za bunky × costPerCellCents', () => {
     expect(F4_ROAD_CELLS).toHaveLength(11);
-    expect(new Set(ALL_F4_ROAD_CELLS.map(key)).size).toBe(45);
+    expect(new Set(ALL_F4_ROAD_CELLS.map(key)).size).toBe(44);
     const world = worldWithRoads(scenario);
     for (const { x, y } of ALL_F4_ROAD_CELLS) expect(world.grid.at(x, y).road, `(${String(x)}, ${String(y)})`).toBe('road');
-    expect(DEFS.economy.startingCashCents - world.cashCents).toBe(45 * ROAD_COST);
+    expect(DEFS.economy.startingCashCents - world.cashCents).toBe(44 * ROAD_COST);
   });
 
   it('nové cesty ležia na pevnine starter parcely (patrí hráčovi) a pod modulmi nie sú; štartová cesta nadväzuje na (44, 34)', () => {
@@ -179,8 +179,8 @@ describe('rozloženie F4: brána, čakacia plocha a rampa na starter parcele sú
     expect(roadDistance(world.grid, ROAD_PORTAL, GATE_ENTRY_OUTSIDE)).toBe(30);
     expect(reachable(GATE_EXIT_OUTSIDE, WAITING_WEST_OUTSIDE)).toBe(true);
     for (const outside of RAMP_OUTSIDE_CELLS) expect(reachable(WAITING_EAST_OUTSIDE, outside), key(outside)).toBe(true);
-    // Sieť dvorov: vonkajšie bunky depa (47, 30), ďalekého dvora (50, 30) aj berthu (41, 17) sú s rampou v jednej sieti.
-    for (const outside of [{ x: 47, y: 30 }, { x: 50, y: 30 }, { x: 41, y: 17 }]) expect(reachable(RAMP_OUTSIDE_CELLS[0], outside), key(outside)).toBe(true);
+    // Sieť dvorov: vonkajšie bunky depa (47, 30), ďalekého dvora (50, 30) aj berthu (41, 18) sú s rampou v jednej sieti.
+    for (const outside of [{ x: 47, y: 30 }, { x: 50, y: 30 }, { x: 41, y: 18 }]) expect(reachable(RAMP_OUTSIDE_CELLS[0], outside), key(outside)).toBe(true);
   });
 
   it('žiadny obchvat: bez prechodu bránou sa z portálu nedá dostať k výstupu brány, plocha ani rampa; výstup brány nevedie k rampe bez plochy', () => {

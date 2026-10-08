@@ -15,12 +15,12 @@ const id = (value: number): EntityId => value as EntityId;
 const TRACTOR = { def: BUNDLED_DEFS.vehicles.get('terminal_tractor') };
 const STRADDLE = { def: BUNDLED_DEFS.vehicles.get('straddle_carrier') };
 
-/** Svet `tt_rtg` (RTG blok + 2 STS) s dvorom straddle na (42, 18); dosť hotovosti na všetko. */
+/** Svet `tt_rtg` (RTG blok + 2 STS) s dvorom straddle na (41, 20); dosť hotovosti na všetko. */
 function build(): World {
   const scenario = loadScenarioFile('tt_rtg');
   const w = World.create(hookDefs(0, { economy: { startingCashCents: 5_000_000_000 } }), loadMap(parseMapDef(readRepoJson(scenario.map))), scenario.seed);
   runScenario(w, scenario, 1);
-  w.enqueue(commandFromJSON({ type: 'PlaceModule', defId: 'container_yard_small', x: 42, y: 18, rotation: 0 }));
+  w.enqueue(commandFromJSON({ type: 'PlaceModule', defId: 'container_yard_small', x: 41, y: 20, rotation: 0 }));
   w.applyPending();
   return w;
 }

@@ -117,35 +117,35 @@ describe('planRoute — smerové hrany, cena a obrat uprostred úseku', () => {
 
   it('jednosmerka proti smeru k bližšiemu konektoru → cieľ je vzdialenejší konektor', () => {
     const { world, depot } = dispatchWorld();
-    const vehicle = vehicleAt(world, depot.id, [cell(42, 17)]);
+    const vehicle = vehicleAt(world, depot.id, [cell(42, 18)]);
     expect(planRoute(world, vehicle, berthOf(world))).toBe(true);
-    expect(vehicle.remainingRoute().at(-1)).toBe(world.grid.index(41, 17));
-    execute(world, { type: 'PlaceRoad', cells: [cell(41, 17)], kind: 'one_way', dirs: ['E'] });
+    expect(vehicle.remainingRoute().at(-1)).toBe(world.grid.index(41, 18));
+    execute(world, { type: 'PlaceRoad', cells: [cell(41, 18)], kind: 'one_way', dirs: ['E'] });
     expect(planRoute(world, vehicle, berthOf(world))).toBe(true);
-    expect(vehicle.remainingRoute()).toEqual(row(42, 46, 17).map(({ x, y }) => world.grid.index(x, y)));
+    expect(vehicle.remainingRoute()).toEqual(row(42, 46, 18).map(({ x, y }) => world.grid.index(x, y)));
   });
 
   it('konektor podľa ceny, nie dĺžky: 2 pomalé bunky (faktor 0,5 → cena 4) prehrajú s 3 dvojpruhovými', () => {
     const infrastructure = { ...infrastructureJson, roadKinds: { ...infrastructureJson.roadKinds, one_lane: { costPerCellCents: 1, speedFactor: 0.5 } } };
     const { world, depot } = dispatchWorld(DefRegistry.fromRaw({ ...RAW_DEFS, infrastructure }));
-    execute(world, { type: 'PlaceRoad', cells: [cell(42, 17), cell(41, 17)], kind: 'one_lane' });
-    const vehicle = vehicleAt(world, depot.id, [cell(43, 17)]);
+    execute(world, { type: 'PlaceRoad', cells: [cell(42, 18), cell(41, 18)], kind: 'one_lane' });
+    const vehicle = vehicleAt(world, depot.id, [cell(43, 18)]);
     expect(planRoute(world, vehicle, berthOf(world))).toBe(true);
-    expect(vehicle.remainingRoute()).toEqual(row(43, 46, 17).map(({ x, y }) => world.grid.index(x, y)));
+    expect(vehicle.remainingRoute()).toEqual(row(43, 46, 18).map(({ x, y }) => world.grid.index(x, y)));
   });
 
   it('obrat uprostred úseku proti jednosmerke nie je povolený → preplánuje dopredu obchádzkou (úsek dokončí)', () => {
     const { world, depot } = dispatchWorld();
     const west = placeYard(world, YARD_W);
-    // Okruh južne od nábrežnej cesty: (43,17) ↓ (43,20) ← (39,20) ↑ (39,17).
-    execute(world, { type: 'PlaceRoad', cells: [...column(43, 18, 20), ...row(39, 42, 20), ...column(39, 18, 19)] });
-    execute(world, { type: 'PlaceRoad', cells: [cell(40, 17), cell(41, 17)], kind: 'one_way', dirs: ['E', 'E'] });
-    const vehicle = vehicleAt(world, depot.id, [cell(40, 17), cell(41, 17)], { progress: 0.5 });
+    // Okruh južne od nábrežnej cesty: (43,18) ↓ (43,21) ← (39,21) ↑ (39,18).
+    execute(world, { type: 'PlaceRoad', cells: [...column(43, 19, 21), ...row(39, 42, 21), ...column(39, 19, 20)] });
+    execute(world, { type: 'PlaceRoad', cells: [cell(40, 18), cell(41, 18)], kind: 'one_way', dirs: ['E', 'E'] });
+    const vehicle = vehicleAt(world, depot.id, [cell(40, 18), cell(41, 18)], { progress: 0.5 });
     const before = [vehicle.x, vehicle.y];
     expect(planRoute(world, vehicle, west)).toBe(true);
     const expected = [
-      cell(40, 17), cell(41, 17), cell(42, 17), cell(43, 17), ...column(43, 18, 20), ...row(39, 42, 20).reverse(), cell(39, 19), cell(39, 18),
-      cell(39, 17), cell(38, 17), cell(37, 17),
+      cell(40, 18), cell(41, 18), cell(42, 18), cell(43, 18), ...column(43, 19, 21), ...row(39, 42, 21).reverse(), cell(39, 20), cell(39, 19),
+      cell(39, 18), cell(38, 18), cell(37, 18),
     ];
     expect(vehicle.remainingRoute()).toEqual(expected.map(({ x, y }) => world.grid.index(x, y)));
     expect([vehicle.progress, vehicle.x, vehicle.y, vehicle.heading]).toEqual([0.5, ...before, 90]);
@@ -154,8 +154,8 @@ describe('planRoute — smerové hrany, cena a obrat uprostred úseku', () => {
   it('bez obchádzky na jednosmerke → false (žiadny obrat), vozidlo sa nezmení', () => {
     const { world, depot } = dispatchWorld();
     const west = placeYard(world, YARD_W);
-    execute(world, { type: 'PlaceRoad', cells: [cell(40, 17), cell(41, 17)], kind: 'one_way', dirs: ['E', 'E'] });
-    const vehicle = vehicleAt(world, depot.id, [cell(40, 17), cell(41, 17)], { progress: 0.5 });
+    execute(world, { type: 'PlaceRoad', cells: [cell(40, 18), cell(41, 18)], kind: 'one_way', dirs: ['E', 'E'] });
+    const vehicle = vehicleAt(world, depot.id, [cell(40, 18), cell(41, 18)], { progress: 0.5 });
     const before = vehicle.remainingRoute();
     expect(planRoute(world, vehicle, west)).toBe(false);
     expect([vehicle.remainingRoute(), vehicle.progress]).toEqual([before, 0.5]);
@@ -164,10 +164,10 @@ describe('planRoute — smerové hrany, cena a obrat uprostred úseku', () => {
   it('na obojsmernej jednopruhovej ceste sa vozidlo otočí ako na dvojpruhovej', () => {
     const { world, depot } = dispatchWorld();
     const west = placeYard(world, YARD_W);
-    execute(world, { type: 'PlaceRoad', cells: [cell(40, 17), cell(41, 17)], kind: 'one_lane' });
-    const vehicle = vehicleAt(world, depot.id, [cell(40, 17), cell(41, 17)], { progress: 0.25 });
+    execute(world, { type: 'PlaceRoad', cells: [cell(40, 18), cell(41, 18)], kind: 'one_lane' });
+    const vehicle = vehicleAt(world, depot.id, [cell(40, 18), cell(41, 18)], { progress: 0.25 });
     expect(planRoute(world, vehicle, west)).toBe(true);
-    expect(vehicle.remainingRoute().slice(0, 2)).toEqual([world.grid.index(41, 17), world.grid.index(40, 17)]);
+    expect(vehicle.remainingRoute().slice(0, 2)).toEqual([world.grid.index(41, 18), world.grid.index(40, 18)]);
     expect(vehicle.progress).toBe(0.75);
   });
 });
@@ -201,7 +201,7 @@ describe('VehicleSystem — prestavba pod trasou a rýchlosť v ticku', () => {
     const arrivalTick = (kind: 'two_lane' | 'one_lane'): number => {
       const { world, depot } = dispatchWorld();
       placeYard(world, YARD_W);
-      if (kind === 'one_lane') execute(world, { type: 'PlaceRoad', cells: row(33, 41, 17), kind });
+      if (kind === 'one_lane') execute(world, { type: 'PlaceRoad', cells: row(33, 41, 18), kind });
       const id = buyVehicle(world, depot);
       unitsOnApron(world, [0]);
       for (let t = 0; t < 200; t++) {

@@ -16,7 +16,7 @@ import type { CargoDirection } from '@sim/cargo';
 import { loadBundledDefs, type DefRegistry } from '@sim/defs';
 import type { CargoMovedEvent, SimEvent } from '@sim/events';
 import { loadBundledMap, loadMap, parseMapDef, type LoadedMap } from '@sim/grid';
-import { yardMetrics } from '@sim/logistics';
+import { terminalMetrics, yardMetrics } from '@sim/logistics';
 import { CraneModule, TruckGate } from '@sim/modules';
 import { VEHICLE_STATE_TRAITS } from '@sim/vehicles';
 import { World, hinterlandMetrics, stateHash, type HinterlandQueue, type WorldState } from '@sim/world';
@@ -256,6 +256,12 @@ export interface SimrunReport {
   readonly rehandlesPerMove: number | null;
   /** Obsadené TEU z kapacity blokov na konci behu v % (R2). */
   readonly yardTeuUsedPct: number;
+  /** Dokončené presuny žeriavov STS za hernú hodinu (R3, TR3-02); na 1 desatinné miesto. */
+  readonly stsMovesPerHour: number;
+  /** Dokončené cykly RTG za hernú hodinu (R3, TR3-02); na 1 desatinné miesto. */
+  readonly rtgMovesPerHour: number;
+  /** Podiel času práce STS, ktorý čakal na ťahač pod hákom, v % (R3, TR3-02); bez práce žeriavov `null`. */
+  readonly stsWaitForTractorPct: number | null;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -948,6 +954,17 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     maxBlockedTicks: tally.maxBlockedTicks,
     stuckAtEnd,
     ...yardReport(world),
+    ...terminalReport(world),
+  };
+}
+
+/** Metriky ťahačov a strojov (R3, TR3-02) z `terminalMetrics`; hodnoty na 1 desatinné miesto. */
+function terminalReport(world: World): Pick<SimrunReport, 'stsMovesPerHour' | 'rtgMovesPerHour' | 'stsWaitForTractorPct'> {
+  const metrics = terminalMetrics(world);
+  return {
+    stsMovesPerHour: Math.round(metrics.stsMovesPerHour * ONE_DECIMAL) / ONE_DECIMAL,
+    rtgMovesPerHour: Math.round(metrics.rtgMovesPerHour * ONE_DECIMAL) / ONE_DECIMAL,
+    stsWaitForTractorPct: metrics.stsWaitForTractorPct === null ? null : Math.round(metrics.stsWaitForTractorPct * ONE_DECIMAL) / ONE_DECIMAL,
   };
 }
 

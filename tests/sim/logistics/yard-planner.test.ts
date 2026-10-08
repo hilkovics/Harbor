@@ -68,7 +68,7 @@ describe('bez zavalenia (plánovaný odchod)', () => {
   });
 
   // Dvor s jediným stĺpcom (kapacita 3 TEU): bez voľného stohu rozhoduje len pravidlo zavalenia.
-  const oneColumnWorld = () => yardTestWorld(dispatchDefs({ yardCapacity: 3 }), 3050, [{ x: 35, y: 18 }]);
+  const oneColumnWorld = () => yardTestWorld(dispatchDefs({ yardCapacity: 3 }), 3050, [{ x: 35, y: 19 }]);
 
   it('skorší odchod sa ukladá navrch neskoršieho; neskorší na skorší nesmie (null = jednotka čaká, nič sa nezavalí)', () => {
     const { world, berth } = oneColumnWorld();

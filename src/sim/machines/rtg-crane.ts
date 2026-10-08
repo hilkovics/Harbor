@@ -4,7 +4,7 @@
  * trieda ich len prevádza na ticky fázy; stroj drží najviac jeden kontajner.
  */
 import type { EntityId } from '../core/entity-id';
-import type { RtgDef } from '../defs/types';
+import { YARD_PRIORITY_KINDS, type RtgDef, type YardPriorityKind } from '../defs/types';
 import { YardMachine, type YardMachineInit } from './yard-machine';
 
 /** Id defu RTG v `equipment.json` (kľúč `rtg`) a `SerializedMachine.defId`. */
@@ -17,6 +17,17 @@ export class RtgCrane extends YardMachine {
   constructor(init: YardMachineInit & { readonly def: Readonly<RtgDef> }) {
     super(init, RTG_DEF_ID);
     this.def = init.def;
+  }
+
+  /**
+   * Poradie obsluhy druhu úlohy (menšie = skôr): z `equipment.json`, a ak hráč povýšil druh `firstPriority` (`SetBlockPriority`), ten má 0 a ostatné nasledujú
+   * vo východiskovom poradí.
+   */
+  priorityOf(kind: YardPriorityKind): number {
+    const first = this.firstPriority;
+    if (first === null) return this.def.priorities[kind];
+    if (kind === first) return 0;
+    return YARD_PRIORITY_KINDS.filter((candidate) => candidate !== first).indexOf(kind) + 1;
   }
 
   /** Ticky pojazdu žeriavu o `bays` bayov (zaokrúhlené nahor; nulová vzdialenosť = 0, fáza sa preskočí). */

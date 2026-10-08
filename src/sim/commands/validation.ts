@@ -117,6 +117,10 @@ export const VALIDATION_REASONS = [
    * ceste dosiahnuteľný — vyložený export by nemal kam ísť.
    */
   'no_storage_for_category',
+  /** `SetBlockPriority` (TR3-02, ADR-040 bod 6): `order` nie je druh úlohy z `YARD_PRIORITY_KINDS` (ship, truck, housekeeping). */
+  'invalid_priority',
+  /** `SetCraneGang` (TR3-02, ADR-040 bod 7): režim nie je `pool` / `gang`, alebo `tractorsPerSts` mimo `equipment.json` `tractors.minPerSts … maxPerSts`. */
+  'invalid_gang',
 ] as const;
 
 export type ValidationReason = (typeof VALIDATION_REASONS)[number];

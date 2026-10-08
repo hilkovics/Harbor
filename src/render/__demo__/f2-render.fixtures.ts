@@ -148,8 +148,8 @@ export const ROTATED_SCENE: EntitiesVM = {
     craneVM(22, BERTH_SOUTH, { state: 'blocked' }),
   ],
   ships: [
-    shipVM(31, 'feeder', 48, 22, 0),
-    shipVM(32, 'handy', 58, 24, 270, { unitsOnBoard: 0 }),
+    shipVM(31, 'feeder', 49, 22, 0),
+    shipVM(32, 'handy', 58, 25, 270, { unitsOnBoard: 0 }),
   ],
 };
 

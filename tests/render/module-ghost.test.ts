@@ -15,7 +15,7 @@ function layer(connectorMarker: Texture | null = Texture.WHITE): BuildLayer {
 /** Ghost berthu 8×3 na (48, 14) rot 0 s konektormi z manifestu (svetové bunky = (48 + x, 14 + y)). */
 function berthGhost(valid = true): ModuleGhostVM {
   const connectors = (moduleSprite('berth_standard')?.connectors ?? []).map((c) => ({ x: 48 + c.x, y: 14 + c.y, side: c.side }));
-  return { defId: 'berth_standard', x: 48, y: 14, rotation: 0, w: 8, h: 3, valid, connectors };
+  return { defId: 'berth_standard', x: 48, y: 14, rotation: 0, w: 8, h: 4, valid, connectors };
 }
 
 const hatch = (build: BuildLayer): TilingSprite[] => (build.view.children[1] as Container).children as TilingSprite[];
@@ -53,24 +53,24 @@ describe('CONNECTOR_MARKER_ROTATION (šípka sprite smeruje na sever = do modulu
 });
 
 describe('BuildLayer.setModuleGhost', () => {
-  it('platný ghost: footprint 8×3 = 24 buniek, bez šrafy, 2 značky konektorov na bunkách konektorov', () => {
+  it('platný ghost: footprint 8×4 = 32 buniek, bez šrafy, 8 značiek konektorov na bunkách konektorov', () => {
     const build = layer();
     build.setModuleGhost(berthGhost(true));
-    expect(build.shownCount).toBe(24);
+    expect(build.shownCount).toBe(32);
     expect(visible(hatch(build))).toHaveLength(0);
-    expect(build.markerCount).toBe(2);
+    expect(build.markerCount).toBe(8);
     const shown = visible(markers(build));
     expect(shown[0].position.x).toBe((48 + 1 + 0.5) * CELL);
-    expect(shown[0].position.y).toBe((14 + 2 + 0.5) * CELL);
+    expect(shown[0].position.y).toBe((14 + 3 + 0.5) * CELL);
     expect(shown[1].position.x).toBe((48 + 6 + 0.5) * CELL);
     expect(shown[0].angle).toBeCloseTo(0, 9); // konektory berthu majú side "s"
   });
 
-  it('neplatný ghost: šrafa na každej z 24 buniek, značky konektorov ostávajú', () => {
+  it('neplatný ghost: šrafa na každej z 32 buniek, značky konektorov ostávajú', () => {
     const build = layer();
     build.setModuleGhost(berthGhost(false));
-    expect(visible(hatch(build))).toHaveLength(24);
-    expect(build.markerCount).toBe(2);
+    expect(visible(hatch(build))).toHaveLength(32);
+    expect(build.markerCount).toBe(8);
   });
 
   it('značka je sprite `connector_marker` veľkosti 1 bunka, vycentrovaný', () => {
@@ -93,21 +93,21 @@ describe('BuildLayer.setModuleGhost', () => {
   });
 
   it('rotovaný modul: konektory vo svetových bunkách po rotácii, uhol značky podľa strany', () => {
-    // berth rot 90 na (10, 10): footprint 3×8; konektory z manifestu otočené rovnako ako v sime
+    // berth rot 90 na (10, 10): footprint 4×8; konektory z manifestu otočené rovnako ako v sime
     const rotation: Rotation = 90;
     const spec = moduleSprite('berth_standard')?.connectors ?? [];
     const sideAfterRotation = { s: 'w', w: 'n', n: 'e', e: 's' } as const; // otočenie strany o 90° v smere hodinových ručičiek
     const connectors = spec.map((c) => {
-      const cell = rotateLocalCell(c.x, c.y, 8, 3, rotation);
+      const cell = rotateLocalCell(c.x, c.y, 8, 4, rotation);
       return { x: 10 + cell.x, y: 10 + cell.y, side: sideAfterRotation[c.side] };
     });
     const build = layer();
-    build.setModuleGhost({ defId: 'berth_standard', x: 10, y: 10, rotation, w: 3, h: 8, valid: true, connectors });
-    expect(build.shownCount).toBe(24);
+    build.setModuleGhost({ defId: 'berth_standard', x: 10, y: 10, rotation, w: 4, h: 8, valid: true, connectors });
+    expect(build.shownCount).toBe(32);
     const shown = visible(markers(build));
-    expect(shown).toHaveLength(2);
+    expect(shown).toHaveLength(8);
     // všetky konektory berthu majú stranu s → po rotácii o 90° strana w → šípka 90°
-    for (const marker of shown) expect(marker.angle).toBeCloseTo(90, 9);
+    for (const marker of shown.slice(0, 2)) expect(marker.angle).toBeCloseTo(90, 9);
     expect(shown[0].position.x).toBe((connectors[0].x + 0.5) * CELL);
     expect(shown[0].position.y).toBe((connectors[0].y + 0.5) * CELL);
   });
@@ -120,7 +120,7 @@ describe('BuildLayer.setModuleGhost', () => {
     expect(build.shownCount).toBe(0);
     expect(build.markerCount).toBe(0);
     build.setModuleGhost(berthGhost());
-    expect(markers(build)).toHaveLength(2);
+    expect(markers(build)).toHaveLength(8);
     expect(markers(build)[0]).toBe(pool[0]);
   });
 

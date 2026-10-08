@@ -17,6 +17,9 @@
  *   prístupová bunka kotviska, ale **bunka pod hákom** (`hookCellIndex`) — vozidlo vojde na nábrežie a zastane pod žeriavom (`planJobRoute`).
  */
 import { BerthModule } from '../modules/berth-module';
+import { slotOf } from '../cargo/cargo-location';
+import { RtgBlock } from '../modules/rtg-block';
+import { jobNeedsMachine } from '../logistics/handling-chains';
 import type { EntityId } from '../core/entity-id';
 import type { Module } from '../modules/module';
 import type { TransportJob } from '../logistics/transport-job';
@@ -64,11 +67,34 @@ export function hookCellOfJob(world: World, job: TransportJob, destination: JobD
 }
 
 /**
+ * Pruh RTG bloku, ak je cieľom jazdy `destination` jobu odovzdanie strojom bloku (koncový bod `in_storage` jobu pod hákom, ktorého reťaz robí stroj; ADR-040, TR3-02):
+ * ťahač do pruhu **vchádza** a stojí na TP. `undefined` = cieľ nie je odovzdanie strojom.
+ */
+export function laneOfJob(world: World, job: TransportJob, destination: JobDestination): Int32Array | undefined {
+  const end = destination === 'source' ? job.from : job.to;
+  if (end.kind !== 'in_storage' || !jobNeedsMachine(world, job)) return undefined;
+  return world.quay.laneCellsOf(end.moduleId);
+}
+
+/**
+ * Bunka TP v pruhu RTG bloku pre job (viď `laneOfJob`): TP najbližšie k bayu slotu jobu (`RtgBlock.tpBayNear`). Slot sa môže pri uložení usadiť inak (`settleYardDrop`) — vozidlo je platné
+ * na ktoromkoľvek TP pruhu (`laneOfJob`), stroj sa k nemu natiahne podľa polohy vozidla.
+ */
+export function tpCellOfJob(world: World, job: TransportJob, destination: JobDestination): number | undefined {
+  const lane = laneOfJob(world, job, destination);
+  const end = destination === 'source' ? job.from : job.to;
+  const slot = slotOf(end);
+  const block = end.kind === 'in_storage' ? world.modules.get(end.moduleId) : undefined;
+  if (lane === undefined || slot === null || !(block instanceof RtgBlock)) return undefined;
+  return lane[block.tpBayNear(block.positionOfSlot(slot).bay)];
+}
+
+/**
  * Cieľ jazdy alebo miesta pobytu vozidla podľa jobu a smeru (`destination`): bunka pod hákom (index), inak modul jobu (jeho prístupová
  * bunka). Pre kontrolu pohybu (`vehicleMotionProblem`) a plánovanie (`planJobRoute`).
  */
 export function jobTarget(world: World, job: TransportJob, destination: JobDestination): MotionTarget {
-  return hookCellOfJob(world, job, destination) ?? jobModule(world, job, destination);
+  return hookCellOfJob(world, job, destination) ?? laneOfJob(world, job, destination) ?? jobModule(world, job, destination);
 }
 
 /**
@@ -93,9 +119,9 @@ function rerouteLoadViaApron(world: World, vehicle: Vehicle, job: TransportJob):
  * `false` = cieľ nie je dosiahnuteľný (vozidlo sa nezmení).
  */
 export function planJobRoute(world: World, vehicle: Vehicle, job: TransportJob, destination: JobDestination): boolean {
-  const hook = hookCellOfJob(world, job, destination);
-  if (hook === undefined) return planRoute(world, vehicle, jobModule(world, job, destination));
-  return planRouteToCell(world, vehicle, hook) || (destination === 'target' && rerouteLoadViaApron(world, vehicle, job));
+  const goal = hookCellOfJob(world, job, destination) ?? tpCellOfJob(world, job, destination);
+  if (goal === undefined) return planRoute(world, vehicle, jobModule(world, job, destination));
+  return planRouteToCell(world, vehicle, goal) || (destination === 'target' && rerouteLoadViaApron(world, vehicle, job));
 }
 
 /**
@@ -156,8 +182,8 @@ export function startDepotTrip(world: World, vehicle: Vehicle): boolean {
  * slotu výjazdovej bunky); `null` = cieľ nie je alebo k nemu nevedie cesta.
  */
 export function findJobRoute(world: World, anchor: number, job: TransportJob, destination: JobDestination): readonly number[] | null {
-  const hook = hookCellOfJob(world, job, destination);
-  if (hook !== undefined) return findRouteToCell(world, anchor, hook);
+  const goal = hookCellOfJob(world, job, destination) ?? tpCellOfJob(world, job, destination);
+  if (goal !== undefined) return findRouteToCell(world, anchor, goal);
   return findRouteToModule(world, anchor, jobModule(world, job, destination));
 }
 
@@ -186,7 +212,7 @@ function destinationOf(world: World, vehicle: Vehicle): MotionTarget | undefined
   if (destination === 'depot') return world.modules.get(vehicle.depotId);
   const job = destination === null || vehicle.jobId === null ? undefined : world.jobs.get(vehicle.jobId);
   if (job === undefined || destination === null) return undefined;
-  return hookCellOfJob(world, job, destination) ?? world.modules.get(destination === 'source' ? job.fromModuleId : job.toModuleId);
+  return hookCellOfJob(world, job, destination) ?? laneOfJob(world, job, destination) ?? world.modules.get(destination === 'source' ? job.fromModuleId : job.toModuleId);
 }
 
 /**

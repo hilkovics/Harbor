@@ -37,10 +37,10 @@ export const DEPOT_ORIGIN: CellCoord = { x: 46, y: 27 };
 export const NEAR_YARD_ORIGIN: CellCoord = { x: 42, y: 18 };
 export const FAR_YARD_ORIGIN: CellCoord = { x: 49, y: 26 };
 
-/** Vonkajšie bunky konektorov Root berthu (lokálne (1, 2) a (6, 2), strana `s`). */
+/** Vonkajšie bunky južných konektorov Root berthu 8 × 4 (lokálne (1, 3) a (6, 3), strana `s`). */
 export const BERTH_OUTSIDE_CELLS: readonly CellCoord[] = [
-  { x: 41, y: 17 },
-  { x: 46, y: 17 },
+  { x: 41, y: 18 },
+  { x: 46, y: 18 },
 ];
 export const NEAR_YARD_OUTSIDE: CellCoord = { x: 43, y: 22 };
 export const FAR_YARD_OUTSIDE: CellCoord = { x: 50, y: 30 };
@@ -57,14 +57,20 @@ export function segment(x0: number, y0: number, x1: number, y1: number): CellCoo
 
 /** Úseky ciest v poradí, v akom ich scenár stavia (jeden `PlaceRoad` na úsek). */
 export const ROAD_SEGMENTS = {
-  /** Západná noha: berth (41, 17) → priečka (41, 22). */
-  westLeg: segment(41, 17, 41, 22),
-  /** Východná noha: berth (46, 17) → priečka (46, 22). */
-  eastLeg: segment(46, 17, 46, 22),
+  /** Západná noha: berth (41, 18) → priečka (41, 22). */
+  westLeg: segment(41, 18, 41, 22),
+  /** Východná noha: berth (46, 18) → priečka (46, 22). */
+  eastLeg: segment(46, 18, 46, 22),
+  /** Obchádzka dolnej bunky západnej nohy (41, 22): okruh (40, 21) → (40, 23) → (42, 23) → priečka (berth 8 × 4 zaberá y=17, horná spojka nie je možná). */
+  bypass: [
+    { x: 40, y: 21 },
+    { x: 40, y: 22 },
+    { x: 40, y: 23 },
+    { x: 41, y: 23 },
+    { x: 42, y: 23 },
+  ],
   /** Priečka y=22 medzi nohami; (43, 22) je vonkajšia bunka blízkeho dvora. */
   trunk: segment(42, 22, 45, 22),
-  /** Horná spojka y=17 medzi vonkajšími bunkami berthu (okruh → obchádzka). */
-  topLink: segment(42, 17, 45, 17),
   /** Chrbtica x=44 z priečky na juh. */
   spine: segment(44, 23, 44, 30),
   /** Vetva y=30: (47, 30) je vonkajšia bunka depa, (50, 30) ďalekého dvora. */
@@ -73,7 +79,7 @@ export const ROAD_SEGMENTS = {
 
 export type RoadSegmentName = keyof typeof ROAD_SEGMENTS;
 
-/** Všetky cesty rozloženia (34 buniek). */
+/** Všetky cesty rozloženia (35 buniek). */
 export const ALL_ROAD_CELLS: readonly CellCoord[] = Object.values(ROAD_SEGMENTS).flat();
 
 export type YardSpot = 'near' | 'far';

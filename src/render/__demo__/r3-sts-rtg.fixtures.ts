@@ -3,7 +3,7 @@
  * TR3-05; tu sú zadané ručne.
  *
  * Dva pohľady (`?scene=<názov>`):
- *  - `berth`: kotvisko 8 × 4 (`berth_standard_v2`, do TR3-05 pod id `berth_standard`) s jednosmernými pruhmi (šípky `lanes`), nový STS (rám 3 × 10 o 4 bunky nad kotviskom, vozík uprostred dráhy, spreader 40′
+ *  - `berth`: kotvisko 8 × 4 (`berth_standard`) s jednosmernými pruhmi (šípky `lanes`), nový STS (rám 3 × 10 o 4 bunky nad kotviskom, vozík uprostred dráhy, spreader 40′
  *    s kontajnerom) a dva ťahače na pruhoch pod žeriavom (kontajner 40′ a 20′ na podvozku);
  *  - `rtg`: RTG nad blokom (rám 5 × 2, vozík v pruhu kamióna, kontajner zdvihnutý) a ťahač pri ňom.
  *
@@ -37,9 +37,9 @@ export const BERTH_LANES: readonly { x: number; y: number; dir: 'e' | 'w' }[] = 
 ];
 
 function berthModule(): ModuleVM {
-  const base = moduleSprite('berth_standard_v2')?.footprint;
-  if (base === undefined) throw new Error('demo: berth_standard_v2 nie je v manifeste');
-  return { id: BERTH_ID, defId: 'berth_standard_v2', kind: 'berth', x: BERTH_X, y: BERTH_Y, rotation: 0, w: base.w, h: base.h, connected: true, lanes: BERTH_LANES };
+  const base = moduleSprite('berth_standard')?.footprint;
+  if (base === undefined) throw new Error('demo: berth_standard nie je v manifeste');
+  return { id: BERTH_ID, defId: 'berth_standard', kind: 'berth', x: BERTH_X, y: BERTH_Y, rotation: 0, w: base.w, h: base.h, connected: true, lanes: BERTH_LANES };
 }
 
 /** STS: rám 3 × 10 sa kladie o 4 bunky (256 px) nad kotvisko; vozík uprostred dráhy. */

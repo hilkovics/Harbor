@@ -17,7 +17,7 @@ describe('BerthModule — geometria', () => {
     const berth = berthOn(quayGrid(20, 20), 1, { x: 2, y: 2 }, rotation);
     expect(berth.waterSide).toBe(side);
     expect(berth.lengthCells).toBe(8);
-    expect(berth.size).toEqual(rotation % 180 === 0 ? { w: 8, h: 3 } : { w: 3, h: 8 });
+    expect(berth.size).toEqual(rotation % 180 === 0 ? { w: 8, h: 4 } : { w: 4, h: 8 });
   });
 
   it('typované params, prázdny stav: bez žeriavov, bez lode, groupId 0 mimo sveta', () => {

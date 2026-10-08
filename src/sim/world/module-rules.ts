@@ -276,8 +276,11 @@ const PLACEMENT_CHECKS: { readonly [R in PlacementRule]: PlacementCheck } = {
   terrain: (ctx) => {
     const allowed = ctx.def.placement.requiredTerrain;
     const cell = ctx.inside.find(({ x, y }) => !allowed.includes(ctx.world.grid.at(x, y).terrain));
-    if (cell === undefined) return undefined;
-    return `bunka ${cellLabel(cell)} má terén '${ctx.world.grid.at(cell.x, cell.y).terrain}', povolené [${allowed.join(', ')}]`;
+    if (cell !== undefined) return `bunka ${cellLabel(cell)} má terén '${ctx.world.grid.at(cell.x, cell.y).terrain}', povolené [${allowed.join(', ')}]`;
+    // Kotvisko (TR3-02, ADR-040): riadok pri vode musí byť nábrežie; ostatné riadky (pruhy pod žeriavom, pevninská obchádzka) smú byť aj pevnina.
+    if (ctx.waterSide === undefined) return undefined;
+    const dry = waterEdge(ctx, ctx.waterSide).find(({ x, y }) => ctx.world.grid.inBounds(x, y) && ctx.world.grid.at(x, y).terrain !== 'quay');
+    return dry === undefined ? undefined : `bunka hrany pri vode ${cellLabel(dry)} má terén '${ctx.world.grid.at(dry.x, dry.y).terrain}', musí byť 'quay'`;
   },
   occupied: (ctx) => {
     if (ctx.attaches) return undefined;

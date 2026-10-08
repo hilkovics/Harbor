@@ -20,10 +20,10 @@ const SHORT_FAIL = { failAfterDaysLate: 1 };
 /** Dlhý limit ticku. */
 const LONG = 80_000;
 
-/** Prerušené nohy kotviska (41, 22) a (46, 22): kotvisko je odrezané od priečky, depa, dvorov aj rampy. */
+/** Prerušené nohy kotviska (41, 21) a (46, 21) (obchádzka (40, 21) … (42, 23) a obchádzka berthu spájajú nohy len medzi sebou): kotvisko je odrezané od priečky, depa, dvorov aj rampy. */
 const CUT_BERTH = [
-  { x: 41, y: 22 },
-  { x: 46, y: 22 },
+  { x: 41, y: 21 },
+  { x: 46, y: 21 },
 ];
 
 const isTerminal = (state: string): boolean => state === 'completed' || state === 'failed';

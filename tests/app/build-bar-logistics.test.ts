@@ -23,8 +23,10 @@ function carrier(cash = defs.economy.startingCashCents, target?: VehicleBuyTarge
 
 describe('BuildBar: Sklady', () => {
   it('container_yard_small ako stavba (build) s cenou a rozmerom z defu', () => {
-    const [yard, depot, ...rest] = category('storage').items;
+    const [yard, depot, rtg, ...rest] = category('storage').items;
     expect(rest).toEqual([]);
+    // RTG blok (R3, ADR-040) je v kategórii Sklady z defu; vlastný odznak a inšpektor stroja dodá TR3-04.
+    expect(rtg).toMatchObject({ defId: 'rtg_block', costCents: defs.modules.get('rtg_block').costCents, footprint: { w: 5, h: 12 }, locked: false });
     // Depo prázdnych (F6c, ADR-034) je v kategórii Sklady z defu; jeho odznak a text dodá T6C-05.
     expect(depot).toMatchObject({ defId: 'empty_depot', costCents: defs.modules.get('empty_depot').costCents, footprint: { w: 4, h: 4 }, locked: false });
     expect(yard).toMatchObject({
@@ -46,9 +48,10 @@ describe('BuildBar: Logistika', () => {
     expect(items.map((item) => [item.defId, item.action ?? 'build'])).toEqual([
       ['straddle_carrier', 'buy'],
       ['empty_handler', 'buy'], // F6c, ADR-034: vozidlo len pre prázdne kontajnery
+      ['terminal_tractor', 'buy'], // R3, ADR-040: ťahač bez zdvihu (RTG blok ho obsluhuje)
       ['vehicle_depot', 'build'],
     ]);
-    expect(items[2]).toMatchObject({ costCents: defs.modules.get('vehicle_depot').costCents, footprint: { w: 3, h: 3 }, icon: 'ic_depot', locked: false });
+    expect(items[3]).toMatchObject({ costCents: defs.modules.get('vehicle_depot').costCents, footprint: { w: 3, h: 3 }, icon: 'ic_depot', locked: false });
   });
 
   it('vozidlo bez cieľa nákupu je zamknuté „Postav a pripoj depo vozidiel“; bez rozmeru, cena z defu', () => {

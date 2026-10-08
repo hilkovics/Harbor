@@ -8,22 +8,22 @@ const CELL = PALETTE.cellPx;
 
 /** Footprint berthu 8×3 (manifest) umiestnený s ľavým horným rohom (40, 14) po rotácii. */
 function berthBox(rotation: Rotation): FootprintBox {
-  const rotated = rotateFootprint(8, 3, rotation);
+  const rotated = rotateFootprint(8, 4, rotation);
   return { x: 40, y: 14, w: rotated.w, h: rotated.h, rotation };
 }
 
 describe('footprintPose (rotácia okolo stredu footprintu)', () => {
   it('rot 0: stred = ľavý horný roh + polovica rozmerov, rozmery pred rotáciou = rozmery', () => {
-    expect(footprintPose(berthBox(0), CELL)).toEqual({ cx: 44 * CELL, cy: 15.5 * CELL, angle: 0, baseW: 8, baseH: 3 });
+    expect(footprintPose(berthBox(0), CELL)).toEqual({ cx: 44 * CELL, cy: 16 * CELL, angle: 0, baseW: 8, baseH: 4 });
   });
 
-  it('rot 90: footprint po rotácii je 3×8, sprite ostáva 8×3 a kontajner sa otočí o 90°', () => {
-    expect(footprintPose(berthBox(90), CELL)).toEqual({ cx: 41.5 * CELL, cy: 18 * CELL, angle: 90, baseW: 8, baseH: 3 });
+  it('rot 90: footprint po rotácii je 4×8, sprite ostáva 8×4 a kontajner sa otočí o 90°', () => {
+    expect(footprintPose(berthBox(90), CELL)).toEqual({ cx: 42 * CELL, cy: 18 * CELL, angle: 90, baseW: 8, baseH: 4 });
   });
 
-  it.each(ROTATIONS)('rot %i: rozmery pred rotáciou sú vždy 8×3', (rotation) => {
+  it.each(ROTATIONS)('rot %i: rozmery pred rotáciou sú vždy 8×4', (rotation) => {
     const pose = footprintPose(berthBox(rotation), CELL);
-    expect([pose.baseW, pose.baseH]).toEqual([8, 3]);
+    expect([pose.baseW, pose.baseH]).toEqual([8, 4]);
     expect(pose.angle).toBe(rotation);
   });
 });
@@ -49,15 +49,15 @@ describe('rotateOffset', () => {
 describe('pozícia apron slotov a konektorov po rotácii', () => {
   const berth = moduleSprite('berth_standard');
 
-  it('manifest: berth_standard má 8 apron slotov a 2 konektory', () => {
+  it('manifest: berth_standard má 8 apron slotov a 8 konektorov (2 južné + 6 pruhových w / e)', () => {
     expect(berth?.apronSlots).toHaveLength(8);
-    expect(berth?.connectors).toHaveLength(2);
+    expect(berth?.connectors).toHaveLength(8);
   });
 
   it.each(ROTATIONS)('rot %i: stred slotu sa zhoduje s rotateLocalCell zo simu (bunka + 0,5)', (rotation) => {
     const box = berthBox(rotation);
     for (const slot of [...(berth?.apronSlots ?? []), ...(berth?.connectors ?? [])]) {
-      const cell = rotateLocalCell(slot.x, slot.y, 8, 3, rotation);
+      const cell = rotateLocalCell(slot.x, slot.y, 8, 4, rotation);
       const world = localCellWorldCenter(box, slot, CELL);
       expect(world.x).toBeCloseTo((box.x + cell.x + 0.5) * CELL, 9);
       expect(world.y).toBeCloseTo((box.y + cell.y + 0.5) * CELL, 9);

@@ -20,7 +20,7 @@ const SEED = 5501;
 
 /** Po jednej vzorke každého vstavaného príkazu (platnej aj neplatnej — po GameOver na tom nezáleží). */
 const SAMPLES: readonly SerializedCommand[] = [
-  { type: 'PlaceRoad', cells: [{ x: 41, y: 17 }, { x: 41, y: 18 }] },
+  { type: 'PlaceRoad', cells: [{ x: 41, y: 18 }, { x: 41, y: 19 }] },
   { type: 'RemoveRoad', cells: [{ x: 44, y: 34 }] },
   { type: 'SetGameSpeed', speed: 2 },
   { type: 'PlaceModule', defId: 'container_yard_small', x: 42, y: 18, rotation: 0 },
@@ -30,6 +30,8 @@ const SAMPLES: readonly SerializedCommand[] = [
   { type: 'SellVehicle', vehicleId: 99 },
   { type: 'AcceptContract', contractId: 1 },
   { type: 'DeclineContract', contractId: 1 },
+  { type: 'SetBlockPriority', blockId: 99, order: 'ship' },
+  { type: 'SetCraneGang', craneId: 2, mode: 'gang', tractorsPerSts: 2 },
 ];
 
 /** Svet po prvom ticku (pool ponúk existuje) a jeho kópia zo save s `gameOver = true`. */

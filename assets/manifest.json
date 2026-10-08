@@ -384,7 +384,7 @@
     "berth_standard": {
       "footprint": {
         "w": 8,
-        "h": 3
+        "h": 4
       },
       "file": "modules/berth_standard.svg",
       "apronSlots": [
@@ -424,14 +424,50 @@
       "connectors": [
         {
           "x": 1,
-          "y": 2,
+          "y": 3,
           "side": "s",
           "type": "road"
         },
         {
           "x": 6,
-          "y": 2,
+          "y": 3,
           "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 0,
+          "y": 1,
+          "side": "w",
+          "type": "road"
+        },
+        {
+          "x": 0,
+          "y": 2,
+          "side": "w",
+          "type": "road"
+        },
+        {
+          "x": 0,
+          "y": 3,
+          "side": "w",
+          "type": "road"
+        },
+        {
+          "x": 7,
+          "y": 1,
+          "side": "e",
+          "type": "road"
+        },
+        {
+          "x": 7,
+          "y": 2,
+          "side": "e",
+          "type": "road"
+        },
+        {
+          "x": 7,
+          "y": 3,
+          "side": "e",
           "type": "road"
         }
       ]
@@ -636,6 +672,27 @@
       ],
       "slots": 32,
       "layers": 2
+    },
+    "rtg_block": {
+      "footprint": {
+        "w": 5,
+        "h": 12
+      },
+      "file": "modules/rtg_block.svg",
+      "connectors": [
+        {
+          "x": 4,
+          "y": 0,
+          "side": "n",
+          "type": "road"
+        },
+        {
+          "x": 4,
+          "y": 11,
+          "side": "s",
+          "type": "road"
+        }
+      ]
     },
     "empty_depot": {
       "footprint": {
@@ -1156,6 +1213,64 @@
           "type": "road"
         }
       ]
+    },
+    "sts": {
+      "footprint": {
+        "w": 3,
+        "h": 10
+      },
+      "parts": {
+        "frame": {
+          "file": "modules/sts_frame.svg",
+          "footprint": {
+            "w": 3,
+            "h": 10
+          },
+          "pivot": {
+            "x": 96,
+            "y": 369
+          }
+        },
+        "trolley": {
+          "file": "modules/sts_trolley.svg",
+          "footprint": {
+            "w": 3,
+            "h": 1
+          },
+          "pivot": {
+            "x": 96,
+            "y": 32
+          },
+          "travel": {
+            "axis": "y",
+            "yMin": 30,
+            "yMax": 560
+          }
+        },
+        "spreader_20": {
+          "file": "modules/sts_spreader_20.svg",
+          "footprint": {
+            "w": 2,
+            "h": 1
+          },
+          "pivot": {
+            "x": 64,
+            "y": 32
+          }
+        },
+        "spreader_40": {
+          "file": "modules/sts_spreader_40.svg",
+          "footprint": {
+            "w": 3,
+            "h": 1
+          },
+          "pivot": {
+            "x": 96,
+            "y": 32
+          }
+        }
+      },
+      "connectors": []
     }
   },
   "entities": {
@@ -1696,6 +1811,73 @@
       },
       "file": "entities/vehicle_brake_lights.svg",
       "note": "prekryv stojaceho vozidla, svetlá pri spodnom okraji"
+    },
+    "terminal_tractor": {
+      "footprint": {
+        "w": 1,
+        "h": 3
+      },
+      "parts": {
+        "cab": {
+          "file": "entities/terminal_tractor_cab.svg",
+          "footprint": {
+            "w": 1,
+            "h": 1
+          },
+          "pivot": {
+            "x": 32,
+            "y": 52
+          }
+        },
+        "trailer": {
+          "file": "entities/terminal_tractor_chassis_40.svg",
+          "footprint": {
+            "w": 1,
+            "h": 2
+          },
+          "pivot": {
+            "x": 32,
+            "y": 4
+          }
+        }
+      },
+      "note": "ťahač terminálu: kabína na hlave, podvozok 40' za čapom po stope; kontajner kreslí hra na podvozok"
+    },
+    "rtg": {
+      "footprint": {
+        "w": 5,
+        "h": 2
+      },
+      "parts": {
+        "frame": {
+          "file": "entities/rtg_frame.svg",
+          "footprint": {
+            "w": 5,
+            "h": 2
+          },
+          "pivot": {
+            "x": 160,
+            "y": 64
+          }
+        },
+        "trolley": {
+          "file": "entities/rtg_trolley.svg",
+          "footprint": {
+            "w": 1,
+            "h": 1
+          },
+          "pivot": {
+            "x": 32,
+            "y": 32
+          },
+          "travel": {
+            "axis": "x",
+            "yMin": 32,
+            "yMax": 288
+          }
+        }
+      },
+      "note": "RTG: rám jazdí po Y, vozík po X (travel v súradniciach rámu, 64 = rail y), rady x 36-216, pruh kamióna x 236-300"
     }
   },
   "cargo": {

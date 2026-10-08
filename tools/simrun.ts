@@ -16,7 +16,7 @@ import type { CargoDirection } from '@sim/cargo';
 import { loadBundledDefs, type DefRegistry } from '@sim/defs';
 import type { CargoMovedEvent, SimEvent } from '@sim/events';
 import { loadBundledMap, loadMap, parseMapDef, type LoadedMap } from '@sim/grid';
-import { yardMetrics } from '@sim/logistics';
+import { terminalMetrics, yardMetrics } from '@sim/logistics';
 import { CraneModule, TruckGate } from '@sim/modules';
 import { VEHICLE_STATE_TRAITS } from '@sim/vehicles';
 import { World, hinterlandMetrics, stateHash, type HinterlandQueue, type WorldState } from '@sim/world';
@@ -41,6 +41,8 @@ export interface Scenario {
   readonly seed: number;
   /** Cesta k mape (relatívna k pracovnému adresáru, rovnako ako cesta k scenáru). */
   readonly map?: string;
+  /** Voliteľný override štartovnej hotovosti v centoch (celé číslo ≥ 0); používa ho CLI pri načítaní defov (TR3-02d). */
+  readonly startingCashCents?: number;
   readonly commands: readonly ScenarioEntry[];
 }
 
@@ -256,6 +258,12 @@ export interface SimrunReport {
   readonly rehandlesPerMove: number | null;
   /** Obsadené TEU z kapacity blokov na konci behu v % (R2). */
   readonly yardTeuUsedPct: number;
+  /** Dokončené presuny žeriavov STS za hernú hodinu (R3, TR3-02); na 1 desatinné miesto. */
+  readonly stsMovesPerHour: number;
+  /** Dokončené cykly RTG za hernú hodinu (R3, TR3-02); na 1 desatinné miesto. */
+  readonly rtgMovesPerHour: number;
+  /** Podiel času práce STS, ktorý čakal na ťahač pod hákom, v % (R3, TR3-02); bez práce žeriavov `null`. */
+  readonly stsWaitForTractorPct: number | null;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -357,7 +365,7 @@ export function parseArgs(argv: readonly string[]): SimrunArgs {
 // Načítanie scenára
 // ---------------------------------------------------------------------------------------------------------
 
-const SCENARIO_KEYS: ReadonlySet<string> = new Set(['id', 'seed', 'map', 'commands']);
+const SCENARIO_KEYS: ReadonlySet<string> = new Set(['id', 'seed', 'map', 'startingCashCents', 'commands']);
 
 export function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
@@ -414,7 +422,7 @@ export function loadScenario(path: string): LoadedScenario {
   for (const key of Object.keys(raw)) {
     if (!SCENARIO_KEYS.has(key)) throw new SimrunError(`${path}: /${key} je neznámy kľúč`);
   }
-  const { id, seed, map, commands } = raw;
+  const { id, seed, map, commands, startingCashCents } = raw;
   if (typeof id !== 'string' || id === '') throw new SimrunError(`${path}: /id musí byť neprázdny reťazec`);
   if (typeof seed !== 'number' || !Number.isSafeInteger(seed) || seed < 0) {
     throw new SimrunError(`${path}: /seed musí byť celé číslo ≥ 0`);
@@ -422,9 +430,18 @@ export function loadScenario(path: string): LoadedScenario {
   if (map !== undefined && (typeof map !== 'string' || map === '')) {
     throw new SimrunError(`${path}: /map musí byť neprázdny reťazec (cesta k mape)`);
   }
+  if (startingCashCents !== undefined && (typeof startingCashCents !== 'number' || !Number.isSafeInteger(startingCashCents) || startingCashCents < 0)) {
+    throw new SimrunError(`${path}: /startingCashCents musí byť celé číslo ≥ 0`);
+  }
   if (!Array.isArray(commands)) throw new SimrunError(`${path}: /commands musí byť pole`);
 
-  const scenario: Scenario = { id, seed, commands: validateEntries(commands, path), ...(map !== undefined && { map }) };
+  const scenario: Scenario = {
+    id,
+    seed,
+    commands: validateEntries(commands, path),
+    ...(map !== undefined && { map }),
+    ...(startingCashCents !== undefined && { startingCashCents }),
+  };
 
   if (scenario.map === undefined) return scenario;
   return { ...scenario, mapData: readJsonFile(scenario.map, 'mapa') };
@@ -948,6 +965,17 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     maxBlockedTicks: tally.maxBlockedTicks,
     stuckAtEnd,
     ...yardReport(world),
+    ...terminalReport(world),
+  };
+}
+
+/** Metriky ťahačov a strojov (R3, TR3-02) z `terminalMetrics`; hodnoty na 1 desatinné miesto. */
+function terminalReport(world: World): Pick<SimrunReport, 'stsMovesPerHour' | 'rtgMovesPerHour' | 'stsWaitForTractorPct'> {
+  const metrics = terminalMetrics(world);
+  return {
+    stsMovesPerHour: Math.round(metrics.stsMovesPerHour * ONE_DECIMAL) / ONE_DECIMAL,
+    rtgMovesPerHour: Math.round(metrics.rtgMovesPerHour * ONE_DECIMAL) / ONE_DECIMAL,
+    stsWaitForTractorPct: metrics.stsWaitForTractorPct === null ? null : Math.round(metrics.stsWaitForTractorPct * ONE_DECIMAL) / ONE_DECIMAL,
   };
 }
 
@@ -1014,7 +1042,8 @@ export function formatSummary(report: SimrunReport): string {
 function main(argv: readonly string[]): number {
   try {
     const args = parseArgs(argv);
-    const report = runScenario(loadScenario(args.scenarioPath), args.ticks, loadBundledDefs(), {
+    const scenario = loadScenario(args.scenarioPath);
+    const report = runScenario(scenario, args.ticks, loadBundledDefs(scenario.startingCashCents === undefined ? {} : { startingCashCents: scenario.startingCashCents }), {
       hash: args.hash,
       roundtripAt: args.roundtripAt,
     });

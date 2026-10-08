@@ -88,22 +88,34 @@ export function startYardTake(world: World, vehicle: Vehicle, job: TransportJob,
   return 'abandoned';
 }
 
-/** Presunie kontajner `blockerId` na slot `slot` toho istého bloku cez vozidlo (viď hlavička); rezervácia rozbehnutého jobu na cieľovej bunke sa posunie nad stoh. */
-function relocate(world: World, vehicle: Vehicle, block: YardBlock, blockerId: EntityId, slot: number): void {
+/**
+ * Začiatok presunu kontajnera na slot `slot` toho istého bloku: rezervácia rozbehnutého jobu na cieľovej bunke sa posunie nad stoh (`vacateReservation`) a job dostane
+ * nový cieľ. Spoločné pre vozidlo (`relocate`) a stroj bloku (`systems/yard-machine-system.ts`, RTG rehandling, ADR-040 bod 3).
+ */
+export function beginRelocation(world: World, block: YardBlock, slot: number): void {
   const vacated = block.vacateReservation(slot);
-  if (vacated !== null) {
-    for (const other of world.jobs.values()) {
-      if (other.to.kind === 'in_storage' && other.toModuleId === block.id && other.to.slot === vacated.from) {
-        other.rebindStorageTarget(vacated.to);
-        break;
-      }
+  if (vacated === null) return;
+  for (const other of world.jobs.values()) {
+    if (other.to.kind === 'in_storage' && other.toModuleId === block.id && other.to.slot === vacated.from) {
+      other.rebindStorageTarget(vacated.to);
+      break;
     }
   }
-  world.cargo.move(blockerId, { kind: 'in_vehicle', vehicleId: vehicle.id });
-  world.cargo.move(blockerId, { kind: 'in_storage', moduleId: block.id, slot });
+}
+
+/** Koniec presunu: kontajner `blockerId` už leží na slote `slot` bloku — počíta sa rehandle a job kontajnera zo skladu dostane nový slot zdroja. */
+export function endRelocation(world: World, block: YardBlock, blockerId: EntityId, slot: number): void {
   block.recordRehandle();
   const blockerJob = world.jobOfUnit(blockerId);
   if (blockerJob?.from.kind === 'in_storage') blockerJob.rebindStorageSource(slot);
+}
+
+/** Presunie kontajner `blockerId` na slot `slot` toho istého bloku cez vozidlo (viď hlavička); rezervácia rozbehnutého jobu na cieľovej bunke sa posunie nad stoh. */
+function relocate(world: World, vehicle: Vehicle, block: YardBlock, blockerId: EntityId, slot: number): void {
+  beginRelocation(world, block, slot);
+  world.cargo.move(blockerId, { kind: 'in_vehicle', vehicleId: vehicle.id });
+  world.cargo.move(blockerId, { kind: 'in_storage', moduleId: block.id, slot });
+  endRelocation(world, block, blockerId, slot);
 }
 
 /**

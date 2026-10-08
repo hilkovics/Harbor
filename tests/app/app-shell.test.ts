@@ -123,7 +123,7 @@ describe('App: BuildBar dole (kategória Terminál z defs.modules)', () => {
     expect(html).toContain('Kontajnerový žeriav');
     expect(html).toContain('$400,000');
     expect(html).toContain('$600,000');
-    expect(html).toContain('8×3');
+    expect(html).toContain('8×4');
     expect(html).toContain('2×3');
   });
 

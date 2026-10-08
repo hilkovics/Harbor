@@ -8,6 +8,7 @@ import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
 import linesJson from '@data/defs/lines.json';
 import containerTypesJson from '@data/defs/container_types.json';
+import equipmentJson from '@data/defs/equipment.json';
 import logisticsJson from '@data/defs/logistics.json';
 import modulesJson from '@data/defs/modules.json';
 import shipsJson from '@data/defs/ships.json';
@@ -54,6 +55,7 @@ interface RawBundle {
   contract_templates: Json;
   lines: Json;
   container_types: Json;
+  equipment: Json;
 }
 
 /** Čerstvá hlboká kópia bundled defov; negatívne testy z nej upravia jedno pole. */
@@ -71,6 +73,7 @@ function rawDefs(): RawBundle {
     contract_templates: structuredClone(contractTemplatesJson),
     lines: structuredClone(linesJson),
     container_types: structuredClone(containerTypesJson),
+    equipment: structuredClone(equipmentJson),
   };
 }
 
@@ -134,14 +137,22 @@ describe('bundled katalógy (loadBundledDefs)', () => {
       'truck_waiting_area',
       'loading_ramp_container',
       'empty_depot',
+      'rtg_block',
     ]);
     const berth = defs.modules.get('berth_standard');
     expect(berth.kind).toBe('berth');
-    expect(berth.footprint).toEqual({ w: 8, h: 3 });
-    expect(berth.placement).toEqual({ requiredTerrain: ['quay'], waterSide: 'north', requiresParcelOwnership: true });
+    expect(berth.footprint).toEqual({ w: 8, h: 4 });
+    // 8 × 4 (TR3-02): riadok pri vode je nábrežie, pevninský riadok (obchádzka) smie byť pevnina.
+    expect(berth.placement).toEqual({ requiredTerrain: ['quay', 'land'], waterSide: 'north', requiresParcelOwnership: true });
     expect(berth.connectors).toEqual([
-      { x: 1, y: 2, side: 's', type: 'road' },
-      { x: 6, y: 2, side: 's', type: 'road' },
+      { x: 1, y: 3, side: 's', type: 'road' },
+      { x: 6, y: 3, side: 's', type: 'road' },
+      { x: 0, y: 1, side: 'w', type: 'road' },
+      { x: 0, y: 2, side: 'w', type: 'road' },
+      { x: 0, y: 3, side: 'w', type: 'road' },
+      { x: 7, y: 1, side: 'e', type: 'road' },
+      { x: 7, y: 2, side: 'e', type: 'road' },
+      { x: 7, y: 3, side: 'e', type: 'road' },
     ]);
     expect([berth.costCents, berth.maintenancePerDayCents]).toEqual([40_000_000, 120_000]);
     const crane = defs.modules.get('crane_container_gantry');
@@ -203,7 +214,7 @@ describe('bundled katalógy (loadBundledDefs)', () => {
   });
 
   it('vehicles: straddle_carrier podľa T03-01', () => {
-    expect(defs.vehicles.items.map((item) => item.id)).toEqual(['straddle_carrier', 'empty_handler']);
+    expect(defs.vehicles.items.map((item) => item.id)).toEqual(['straddle_carrier', 'empty_handler', 'terminal_tractor']);
     expect(defs.vehicles.get('straddle_carrier')).toEqual({
       id: 'straddle_carrier',
       displayName: 'Straddle carrier',
@@ -213,6 +224,7 @@ describe('bundled katalógy (loadBundledDefs)', () => {
       loadTicks: 3,
       unloadTicks: 3,
       cargoCategories: ['container'],
+      canLift: true,
       purchaseCents: 4_800_000,
       wagePerDayCents: 18_000,
     });
@@ -661,18 +673,18 @@ describe('modules: zlé hodnoty polí → DefError s cestou', () => {
   describe('konektor musí ležať vo footprinte (rotácia 0°)', () => {
     it.each([
       ['x = w', { x: 8, y: 2 }],
-      ['y = h', { x: 1, y: 3 }],
+      ['y = h', { x: 1, y: 4 }],
       ['x ďaleko mimo', { x: 100, y: 0 }],
     ])('%s → DefError s indexom konektora', (_name, cell) => {
       const raw = rawDefs();
       Object.assign(((itemsOf(raw, 'modules')[0]!['connectors'] as Json[])[1])!, cell);
       const error = expectDefError(() => fromRaw(raw), 'modules', '/items/0/connectors/1');
-      expect(error.problem).toContain('mimo footprintu 8×3');
+      expect(error.problem).toContain('mimo footprintu 8×4');
     });
 
     it.each([
       ['ľavý horný roh', { x: 0, y: 0 }],
-      ['pravý dolný roh', { x: 7, y: 2 }],
+      ['pravý dolný roh', { x: 7, y: 3 }],
     ])('%s je vo footprinte', (_name, cell) => {
       const raw = rawDefs();
       Object.assign(((itemsOf(raw, 'modules')[0]!['connectors'] as Json[])[0])!, cell);
@@ -943,7 +955,7 @@ describe('MODULE_PARAM_SPECS', () => {
   });
 
   it('storage a depot majú presne polia StorageParams a DepotParams (internalTicks je voliteľné)', () => {
-    expect(Object.keys(MODULE_PARAM_SPECS.storage)).toEqual(['capacityUnits', 'category', 'internalTicks', 'role', 'repairBays', 'bays', 'rows', 'maxTier']);
+    expect(Object.keys(MODULE_PARAM_SPECS.storage)).toEqual(['capacityUnits', 'category', 'internalTicks', 'role', 'repairBays', 'bays', 'rows', 'maxTier', 'laneCol', 'tpSpacingBays']);
     expect(Object.keys(MODULE_PARAM_SPECS.depot)).toEqual(['capacity', 'internalTicks']);
     expect(MODULE_PARAM_SPECS.storage.internalTicks.optional).toBe(true);
     // F6c (ADR-034): rola a počet opráv sú voliteľné (bežný sklad ich nemá).

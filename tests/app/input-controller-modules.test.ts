@@ -9,13 +9,13 @@ import { setCash } from '../sim/helpers/economy';
 
 // T02-10: build mód modulov (ghost, R, umiestnenie, Esc / pravý klik) a výber modulu klikom (inšpektor).
 // Root berth = id 1 (x 40–47, y 14–16), Root žeriav = id 2 (x 43–44, y 14–16). Berth 8×3: bunka pod kurzorom je jeho
-// stredom, teda kurzor (52, 15) = ľavý horný roh (48, 14) — voľné nábrežie starter parcely.
+// stredom, teda kurzor (52, 16) = ľavý horný roh (48, 14) — voľné nábrežie starter parcely.
 
 const BERTH = 'berth_standard';
 const CRANE = 'crane_container_gantry';
 const BERTH_COST = 40_000_000;
 /** Kurzor, pri ktorom leží ghost kotviska s ľavým horným rohom (48, 14). */
-const AT_FREE_QUAY = c(52, 15);
+const AT_FREE_QUAY = c(52, 16);
 /** Pevnina ďaleko od vody (starter parcela). */
 const INLAND = c(35, 25);
 
@@ -32,15 +32,17 @@ describe('build mód modulov: vstup a výstup', () => {
     expect(h.moduleGhost.ghost).toBeNull(); // kurzor ešte nie je nad mapou
 
     h.move(AT_FREE_QUAY);
-    expect(h.moduleGhost.ghost).toMatchObject({ defId: BERTH, x: 48, y: 14, w: 8, h: 3, rotation: 0, valid: true });
-    expect(h.moduleGhost.ghost?.connectors).toEqual([
-      { x: 49, y: 16, side: 's' },
-      { x: 54, y: 16, side: 's' },
+    expect(h.moduleGhost.ghost).toMatchObject({ defId: BERTH, x: 48, y: 14, w: 8, h: 4, rotation: 0, valid: true });
+    // Berth 8 × 4: prvé dva sú južné konektory, potom 6 pruhových (w / e).
+    expect(h.moduleGhost.ghost?.connectors).toHaveLength(8);
+    expect(h.moduleGhost.ghost?.connectors.slice(0, 2)).toEqual([
+      { x: 49, y: 17, side: 's' },
+      { x: 54, y: 17, side: 's' },
     ]);
     expect(h.controller.moduleGhost()).toBe(h.moduleGhost.ghost);
 
     h.move(c(53, 16));
-    expect(h.moduleGhost.ghost).toMatchObject({ x: 49, y: 15 });
+    expect(h.moduleGhost.ghost).toMatchObject({ x: 49, y: 14 });
   });
 
   it('feedback ghostu ukáže názov, cenu a stav; text „Kotvisko · $400,000“', () => {
@@ -53,7 +55,7 @@ describe('build mód modulov: vstup a výstup', () => {
       ok: true,
       reasons: [],
       costCents: BERTH_COST,
-      cellCount: 24,
+      cellCount: 32,
       label: 'Kotvisko',
       moduleKind: 'berth',
       fundsShort: false,
@@ -205,17 +207,17 @@ describe('build mód modulov: rotácia (R)', () => {
 
     expect(h.controller.keyDown(key('KeyR'))).toBe(true);
     expect(h.controller.rotation).toBe(90);
-    // 3×8 (po rotácii): stred pod kurzorom (52, 15) → roh (51, 11)
-    expect(h.moduleGhost.ghost).toMatchObject({ rotation: 90, w: 3, h: 8, x: 51, y: 11 });
-    expect(h.moduleGhost.ghost?.connectors.map((connector) => connector.side)).toEqual(['w', 'w']); // južná strana → západná
+    // 4×8 (po rotácii): stred pod kurzorom (52, 16) → roh (50, 12)
+    expect(h.moduleGhost.ghost).toMatchObject({ rotation: 90, w: 4, h: 8, x: 50, y: 12 });
+    expect(h.moduleGhost.ghost?.connectors.map((connector) => connector.side).slice(0, 2)).toEqual(['w', 'w']); // južná strana → západná
 
     h.controller.keyDown(key('KeyR'));
-    expect(h.moduleGhost.ghost).toMatchObject({ rotation: 180, w: 8, h: 3 });
-    expect(h.moduleGhost.ghost?.connectors.map((connector) => connector.side)).toEqual(['n', 'n']);
+    expect(h.moduleGhost.ghost).toMatchObject({ rotation: 180, w: 8, h: 4 });
+    expect(h.moduleGhost.ghost?.connectors.map((connector) => connector.side).slice(0, 2)).toEqual(['n', 'n']);
 
     h.controller.keyDown(key('KeyR'));
-    expect(h.moduleGhost.ghost).toMatchObject({ rotation: 270, w: 3, h: 8 });
-    expect(h.moduleGhost.ghost?.connectors.map((connector) => connector.side)).toEqual(['e', 'e']);
+    expect(h.moduleGhost.ghost).toMatchObject({ rotation: 270, w: 4, h: 8 });
+    expect(h.moduleGhost.ghost?.connectors.map((connector) => connector.side).slice(0, 2)).toEqual(['e', 'e']);
 
     h.controller.keyDown(key('KeyR'));
     expect(h.controller.rotation).toBe(0);
@@ -295,7 +297,7 @@ describe('build mód modulov: umiestnenie klikom', () => {
     h.down(AT_FREE_QUAY);
     h.up(AT_FREE_QUAY);
     h.frame();
-    const west = c(36, 15); // roh (32, 14): starter parcela začína na x 30, Root berth na x 40
+    const west = c(36, 16); // roh (32, 14): starter parcela začína na x 30, Root berth na x 40
     h.move(west);
     expect(h.moduleGhost.ghost).toMatchObject({ x: 32, y: 14, valid: true });
     h.down(west);
@@ -374,8 +376,8 @@ describe('build mód modulov: umiestnenie klikom', () => {
     const h = harness();
     const dispatch = vi.spyOn(h.bridge, 'dispatch');
     h.buildSelection.select(BERTH);
-    h.move(c(51, 15));
-    h.down(c(51, 15));
+    h.move(c(51, 16));
+    h.down(c(51, 16));
     h.move(AT_FREE_QUAY);
     expect(h.controller.feedback()?.dragging).toBe(true);
     h.up(AT_FREE_QUAY);

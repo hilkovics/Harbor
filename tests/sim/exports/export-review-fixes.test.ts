@@ -1,6 +1,6 @@
 /**
  * Opravy z review `src/sim` po T6A-05 (T6A-09b, minor 6–8; ADR-032, ADR-033):
- * - 6: limit jobov nakládky pod hákom na žeriav, kým má loď aj import, je pomenovaná konštanta (`PAIRED_HOOK_LOAD_JOBS_PER_CRANE`),
+ * - 6: limit jobov nakládky pod hákom na žeriav, kým má loď aj import, je pomenovaná konštanta (def `logistics.hookPairedLoadJobs`, TR3-02d),
  * - 7: vetvenie podľa režimu odovzdávania je v tabuľke `HANDOVERS` (pravidlo 7), nie v literáloch `handoverMode` mimo nej,
  * - 8: krok 12 overí `loadedUnits` otvoreného export bookingu = jednotky exportu bookingu na lodi.
  */
@@ -8,7 +8,6 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { HANDOVER_MODES } from '@sim/defs';
-import { PAIRED_HOOK_LOAD_JOBS_PER_CRANE } from '@sim/logistics/export-load';
 import { bothDirections } from '@sim/logistics/apron-usage';
 import { CraneModule } from '@sim/modules';
 import { HANDOVERS } from '@sim/systems/crane-handover';
@@ -19,9 +18,9 @@ const EARLY = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120];
 const TIMEOUT = 40_000;
 
 describe('limit jobov nakládky pod hákom na žeriav (minor 6)', () => {
-  it('kým má loď import aj export, má každý žeriav najviac PAIRED_HOOK_LOAD_JOBS_PER_CRANE jobov nakládky v obehu', () => {
-    expect(PAIRED_HOOK_LOAD_JOBS_PER_CRANE).toBe(1);
+  it('kým má loď import aj export, má každý žeriav najviac hookPairedLoadJobs jobov nakládky v obehu', () => {
     const { world, offer } = startLoading({ defs: hookDefs(), kind: 'roundtrip', booked: 12, importUnits: 12, arrivals: EARLY });
+    expect(world.defs.logistics.hookPairedLoadJobs).toBeGreaterThan(0);
     let samples = 0;
     tickUntil(
       world,
@@ -31,7 +30,7 @@ describe('limit jobov nakládky pod hákom na žeriav (minor 6)', () => {
           for (const module of w.modules.values()) {
             if (!(module instanceof CraneModule)) continue;
             const loadJobs = [...w.jobs.values()].filter((job) => job.to.kind === 'in_crane' && job.to.craneId === module.id).length;
-            expect(loadJobs).toBeLessThanOrEqual(PAIRED_HOOK_LOAD_JOBS_PER_CRANE);
+            expect(loadJobs).toBeLessThanOrEqual(world.defs.logistics.hookPairedLoadJobs);
             samples += 1;
           }
         }

@@ -25,9 +25,9 @@ import { TEU_PX } from '@render/world-scale';
 import { ENTITY_PALETTE, PALETTE, StubTextures } from './stub-textures';
 
 describe('záznamy manifestu pre entity', () => {
-  it('berth_standard: footprint 8×3, 8 apron slotov (prvé štyri v strednom riadku pri žeriave), 2 konektory na južnej hrane', () => {
+  it('berth_standard: footprint 8×4, 8 apron slotov (prvé štyri v strednom riadku pri žeriave), 2 južné a 6 pruhových konektorov (w / e)', () => {
     const berth = moduleSprite('berth_standard');
-    expect(berth?.footprint).toEqual({ w: 8, h: 3 });
+    expect(berth?.footprint).toEqual({ w: 8, h: 4 });
     expect(berth?.apronSlots).toEqual([
       { x: 1, y: 1 },
       { x: 2, y: 1 },
@@ -38,7 +38,7 @@ describe('záznamy manifestu pre entity', () => {
       { x: 2, y: 2 },
       { x: 5, y: 2 },
     ]);
-    expect(berth?.connectors.map((c) => c.side)).toEqual(['s', 's']);
+    expect(berth?.connectors.map((c) => c.side)).toEqual(['s', 's', 'w', 'w', 'w', 'e', 'e', 'e']);
   });
 
   it('lode feeder a handy majú varianty paluby; neznáma trieda a kľúče z prototypu objektu nie', () => {
@@ -155,7 +155,7 @@ describe('entitySpriteFiles (čo načíta atlas)', () => {
 
   it('stavy skladov a vozidlá sa berú len z povoleného zoznamu (veľké sklady a ostatné vozidlá sa nerasterizujú)', () => {
     expect(LOADED_STATE_MODULES).toEqual(['container_yard_small', 'empty_depot']);
-    expect(LOADED_VEHICLES).toEqual(['straddle_carrier', 'truck_container', 'empty_handler']);
+    expect(LOADED_VEHICLES).toEqual(['straddle_carrier', 'truck_container', 'empty_handler', 'terminal_tractor']);
     const fillFiles = files.filter((file) => /_fill\d+\.svg$/.test(file));
     expect(fillFiles).toHaveLength(10);
     for (const file of fillFiles) expect(file).toMatch(/^modules\/(container_yard_small|empty_depot)_fill\d+\.svg$/);
@@ -164,7 +164,11 @@ describe('entitySpriteFiles (čo načíta atlas)', () => {
       'entities/ech.svg',
       'entities/ech_spreader_20.svg',
       'entities/ech_spreader_40.svg',
+      'entities/rtg_frame.svg',
+      'entities/rtg_trolley.svg',
       'entities/straddle_carrier.svg',
+      'entities/terminal_tractor_cab.svg',
+      'entities/terminal_tractor_chassis_40.svg',
       'entities/truck_cab.svg',
       'entities/truck_trailer_40.svg',
       'entities/vehicle_brake_lights.svg',

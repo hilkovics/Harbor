@@ -6,6 +6,7 @@ import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
 import linesJson from '@data/defs/lines.json';
 import containerTypesJson from '@data/defs/container_types.json';
+import equipmentJson from '@data/defs/equipment.json';
 import logisticsJson from '@data/defs/logistics.json';
 import modulesJson from '@data/defs/modules.json';
 import shipsJson from '@data/defs/ships.json';
@@ -24,6 +25,7 @@ type DefName = 'time' | 'economy' | 'infrastructure' | 'logistics';
 
 interface RawBundle {
   container_types: Record<string, unknown>;
+  equipment: Record<string, unknown>;
   time: Record<string, unknown>;
   economy: Record<string, unknown>;
   infrastructure: Record<string, unknown>;
@@ -52,6 +54,7 @@ function rawDefs(): RawBundle {
     contract_templates: structuredClone(contractTemplatesJson),
     lines: structuredClone(linesJson),
     container_types: structuredClone(containerTypesJson),
+    equipment: structuredClone(equipmentJson),
   };
 }
 
@@ -465,7 +468,11 @@ describe('loadBundledDefs', () => {
       rehandleTicks: 12,
       rehandleGiveUpTicks: 96,
       buryReserveColumns: 4,
+      yardMachineLoadWeight: 12,
       rehandleSpareCells: 2,
+      apronUnloadReserveSlots: 1,
+      hookJobLookahead: 8,
+      hookPairedLoadJobs: 1,
       importDwellEstimateHours: 6,
       yardPlanner: 'planned',
       congestion: { trafficDecayPerHour: 0.9 },

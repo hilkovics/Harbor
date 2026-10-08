@@ -6,6 +6,7 @@ export {
   CARGO_SPAWN_KINDS,
   CARGO_TERMINAL_KINDS,
   CARGO_TRANSITIONS,
+  IN_HANDLER_CAPACITY,
   formatLocation,
   holderIdOf,
   isCargoLocationKind,

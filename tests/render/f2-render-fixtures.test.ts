@@ -57,7 +57,7 @@ function touchesBerthOn(ship: ShipVM, berth: ModuleVM, side: ViewSide): boolean 
 describe('scéna main (karta T02-07)', () => {
   it('berth (40, 14), žeriav (43, 14) grabbing 0,5, loď feeder docked (43; 13) kurz 90°, 2 kontajnery na aprone', () => {
     const [berth] = MAIN_SCENE.modules;
-    expect([berth.x, berth.y, berth.w, berth.h, berth.rotation]).toEqual([40, 14, 8, 3, 0]);
+    expect([berth.x, berth.y, berth.w, berth.h, berth.rotation]).toEqual([40, 14, 8, 4, 0]);
     expect(berth.apron?.units).toHaveLength(2);
     const [crane] = MAIN_SCENE.cranes;
     expect([crane.x, crane.y, crane.state, crane.progress]).toEqual([43, 14, 'grabbing', 0.5]);
@@ -65,12 +65,18 @@ describe('scéna main (karta T02-07)', () => {
     expect([ship.classId, ship.state, ship.x, ship.y, ship.heading]).toEqual(['feeder', 'docked', 43, 13, 90]);
   });
 
-  it('ghost druhého berthu (48, 14) s dvoma konektormi vo svetových bunkách', () => {
+  it('ghost druhého berthu (48, 14) s ôsmimi konektormi vo svetových bunkách (2 južné + 6 pruhových w / e)', () => {
     const ghost = mainGhost(true);
-    expect([ghost.x, ghost.y, ghost.w, ghost.h]).toEqual([48, 14, 8, 3]);
+    expect([ghost.x, ghost.y, ghost.w, ghost.h]).toEqual([48, 14, 8, 4]);
     expect(ghost.connectors).toEqual([
-      { x: 49, y: 16, side: 's' },
-      { x: 54, y: 16, side: 's' },
+      { x: 49, y: 17, side: 's' },
+      { x: 54, y: 17, side: 's' },
+      { x: 48, y: 15, side: 'w' },
+      { x: 48, y: 16, side: 'w' },
+      { x: 48, y: 17, side: 'w' },
+      { x: 55, y: 15, side: 'e' },
+      { x: 55, y: 16, side: 'e' },
+      { x: 55, y: 17, side: 'e' },
     ]);
     expect(mainGhost(false).valid).toBe(false);
   });

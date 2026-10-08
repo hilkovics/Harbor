@@ -41,7 +41,18 @@ function codeOfSize(sizeFt: number): 1 | 2 {
   return sizeFt === 40 ? 2 : 1;
 }
 
+/**
+ * Systém obsluhy bloku (R3, ADR-040 bod 4): `straddle` — kontajner zdvihne a uloží samo vozidlo (straddle carrier); `rtg` — uloží ho stroj bloku (RTG) a vozidlo (ťahač)
+ * ho len privezie na odovzdávacie miesto. Reťaz nôh podľa systému je v tabuľke `HANDLING_CHAINS` (`logistics/handling-chains.ts`).
+ */
+export type HandlingSystem = 'straddle' | 'rtg';
+
 export abstract class YardBlock extends StorageModule implements StorageGuard {
+  /** Systém obsluhy bloku; podtrieda s inou obsluhou ho prepíše (pravidlo 7, žiadny switch podľa defu). */
+  get handlingSystem(): HandlingSystem {
+    return 'straddle';
+  }
+
   readonly geometry: YardGeometry;
   private readonly ledger: CargoReader;
   private readonly grid: StackGrid;

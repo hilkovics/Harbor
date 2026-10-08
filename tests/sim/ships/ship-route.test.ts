@@ -62,11 +62,11 @@ describe('dockPoint — stred obdĺžnika lengthCells × widthCells pred hranou 
     expect(dockPoint(root, HANDY)).toEqual({ x: 45, y: 13 });
   });
 
-  // Syntetické nábrežie 30×30, berth 8×3 na (10, 10) po rotácii: rot 0 = n, 90 = e, 180 = s, 270 = w.
+  // Syntetické nábrežie 30×30, berth 8×4 na (10, 10) po rotácii: rot 0 = n, 90 = e, 180 = s, 270 = w.
   it.each<[Rotation, ShipPoint]>([
     [0, { x: 13, y: 9 }], // hrana y 10, x 10–17; loď x 10–15, y 8–9
-    [90, { x: 14, y: 13 }], // hrana x 12 (berth 3×8), y 10–17; loď x 13–14, y 10–15
-    [180, { x: 13, y: 14 }], // hrana y 12; loď x 10–15, y 13–14
+    [90, { x: 15, y: 13 }], // hrana x 13 (berth 4×8), y 10–17; loď x 14–15, y 10–15
+    [180, { x: 13, y: 15 }], // hrana y 13; loď x 10–15, y 14–15
     [270, { x: 9, y: 13 }], // hrana x 10; loď x 8–9, y 10–15
   ])('rot %d → %o', (rotation, expected) => {
     const b = berthOn(quayGrid(30, 30), 5, { x: 10, y: 10 }, rotation);

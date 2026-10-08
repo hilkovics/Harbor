@@ -9,6 +9,7 @@ import economyJson from '@data/defs/economy.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
 import linesJson from '@data/defs/lines.json';
 import containerTypesJson from '@data/defs/container_types.json';
+import equipmentJson from '@data/defs/equipment.json';
 import logisticsJson from '@data/defs/logistics.json';
 import modulesJson from '@data/defs/modules.json';
 import shipsJson from '@data/defs/ships.json';
@@ -40,6 +41,7 @@ function rawDefs(): Record<string, Json> {
     contract_templates: structuredClone(contractTemplatesJson),
     lines: structuredClone(linesJson),
     container_types: structuredClone(containerTypesJson),
+    equipment: structuredClone(equipmentJson),
   };
 }
 

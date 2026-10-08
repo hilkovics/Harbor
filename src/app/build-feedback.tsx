@@ -43,6 +43,8 @@ export const REASON_TEXT: Readonly<Record<ValidationReason, string>> = {
   unknown_cargo: 'Neznámy náklad',
   cargo_incompatible: 'Loď tento náklad neprevezie',
   invalid_units: 'Neplatný počet jednotiek',
+  invalid_priority: 'Neplatná priorita',
+  invalid_gang: 'Neplatný režim ťahačov',
   invalid_rotation: 'Neplatná rotácia',
   unknown_vehicle_def: 'Neznámy typ vozidla',
   unknown_depot: 'Depo neexistuje',

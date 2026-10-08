@@ -13,7 +13,7 @@ import { CraneModule } from '../modules/crane-module';
 import type { Module } from '../modules/module';
 import type { Ship } from '../ships/ship';
 import type { World } from '../world/world';
-import { distanceBetweenModules } from './module-access';
+import { NO_ACCESS, accessCellIndex, distanceBetweenModules } from './module-access';
 
 /** Kotvisko lode `ship` obsluhuje žeriav kategórie jej nákladu? */
 export function berthHasCraneFor(world: Pick<World, 'modules'>, berth: BerthModule, ship: Pick<Ship, 'cargoCategory'>): boolean {
@@ -43,4 +43,19 @@ export function storageReaches(world: Pick<World, 'modules' | 'grid' | 'distance
   if (storage === undefined) return false;
   for (const target of targets) if (distanceBetweenModules(world, storage, target) !== Infinity) return true;
   return false;
+}
+
+/**
+ * K bunke pod hákom žeriava `craneId` nevedie z prístupovej bunky žiadneho cestného konektora kotviska cesta (jednosmerné zátky pri nábreží, ADR-020;
+ * ADR-040 dodatok TR3-02b): žiadne vozidlo sa pod hák nedostane, takže žeriav naň nesmie čakať a nakládka ide rovno cez apron. Bunka pod hákom neexistuje
+ * (režim `apron`) → `false`.
+ */
+export function hookUnreachable(world: Pick<World, 'quay' | 'grid' | 'paths'>, craneId: EntityId, berth: BerthModule): boolean {
+  const hook = world.quay.hookCellOf(craneId);
+  if (hook === undefined) return false;
+  for (const connector of berth.connectors) {
+    const access = accessCellIndex(world.grid, connector);
+    if (access !== NO_ACCESS && world.paths.get(access, hook) !== null) return false;
+  }
+  return true;
 }

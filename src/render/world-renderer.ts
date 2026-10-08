@@ -17,6 +17,7 @@ import type { CellCoord, Grid, LoadedMap, Parcel, Rect } from '@sim/grid';
 import { BuildLayer, loadGhostPalette } from './build-layer';
 import { Camera } from './camera';
 import { CraneLayer } from './crane-layer';
+import { MachineLayer } from './machine-layer';
 import { EntityLayer } from './entity-layer';
 import { createRoadKindAt, createRoadMaskAt } from './lane';
 import { ConnectorArmIndex } from './module-connectors';
@@ -36,7 +37,7 @@ import {
   type RenderPalette,
   type TokenResolver,
 } from './tokens';
-import type { EntitiesVM, ModuleGhostVM, TruckVM, VehicleVM } from './view-models';
+import type { EntitiesVM, MachineVM, ModuleGhostVM, TruckVM, VehicleVM } from './view-models';
 
 export interface WorldRendererOptions {
   /** Prvok, do ktorého sa vloží canvas; renderer sa prispôsobí jeho veľkosti. */
@@ -82,6 +83,9 @@ const NO_VEHICLES: readonly VehicleVM[] = Object.freeze([]);
 /** Prázdny zoznam kamiónov pre VM bez poľa `trucks` (F2/F3). */
 const NO_TRUCKS: readonly TruckVM[] = Object.freeze([]);
 
+/** Prázdny zoznam strojov pre VM bez poľa `machines` (do R3). */
+const NO_MACHINES: readonly MachineVM[] = Object.freeze([]);
+
 export class WorldRenderer {
   readonly app: Application;
   readonly camera: Camera;
@@ -98,6 +102,8 @@ export class WorldRenderer {
   /** Lode, vozidlá aj kamióny (`EntityLayer`): `ships.shipCount`, `ships.vehicleCount`; alias `entities`. */
   readonly ships: EntityLayer;
   readonly cranes: CraneLayer;
+  /** Stroje v blokoch (R3, RTG) nad vozidlami. */
+  readonly machines: MachineLayer;
   /** Zvýraznenie zápchy (R1): červené bunky pod vozidlami (`cells`) a odznaky nad nimi (`badges`). */
   readonly jams: TrafficJamLayer;
   /** Ghost stavby: cesty (`setGhost`, `GhostView`) aj modulu (`setModuleGhost`); je navrchu nad žeriavmi. */
@@ -151,6 +157,7 @@ export class WorldRenderer {
     this.modules = new ModuleLayer(entityDeps);
     this.ships = new EntityLayer(entityDeps);
     this.cranes = new CraneLayer(entityDeps);
+    this.machines = new MachineLayer(entityDeps);
     this.jams = new TrafficJamLayer(entityDeps);
     this.build = build;
     this.world.addChild(
@@ -163,6 +170,7 @@ export class WorldRenderer {
       this.cranes.baseView,
       this.jams.cells,
       this.ships.view,
+      this.machines.view,
       this.jams.badges,
       this.cranes.view,
       this.build.view,
@@ -230,6 +238,7 @@ export class WorldRenderer {
     this.ships.syncVehicles(vm.vehicles ?? NO_VEHICLES, alpha);
     this.ships.syncTrucks(vm.trucks ?? NO_TRUCKS, alpha);
     this.jams.sync(vm.vehicles ?? NO_VEHICLES, vm.trucks ?? NO_TRUCKS, alpha);
+    this.machines.sync(vm.machines ?? NO_MACHINES);
     this.cranes.sync(vm.cranes);
   }
 
@@ -279,6 +288,7 @@ export class WorldRenderer {
     this.modules.destroy();
     this.ships.destroy();
     this.cranes.destroy();
+    this.machines.destroy();
     this.jams.destroy();
     this.build.destroy();
     this.app.destroy({ removeView: true }, { children: true });

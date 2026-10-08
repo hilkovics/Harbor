@@ -232,8 +232,16 @@ export interface LogisticsDef extends DefBase {
   readonly rehandleGiveUpTicks: number;
   /** Rezerva buniek navyše (celé ≥ 0) pri priraďovaní vozidla jobu pre zavalenú jednotku (`unitPickable`): príchody ukladané počas cesty vozidla berú miesto pre rehandling (ADR-039 dodatok TR2-06b). */
   readonly rehandleSpareCells: number;
+  /** Sloty apronu (celé ≥ 0), ktoré záložná nakládka cez apron (`rerouteLoadViaApron`) nezaberie: musí tam ostať miesto, kam žeriav odloží vykladanú jednotku (inak žeriav drží import, apron je plný exportov čakajúcich na žeriav a nič sa nepohne; ADR-040 dodatok TR3-02b). */
+  readonly apronUnloadReserveSlots: number;
+  /** Okno dopredného plánovania pod hákom (celé ≥ 1, ADR-040 dodatok TR3-02d): najviac toľko jobov vykládky a toľko jobov nakládky na žeriav je vopred priradených, takže ťahače čakajú v pruhu kotviska pod žeriavom skôr, než ich žeriav potrebuje. */
+  readonly hookJobLookahead: number;
+  /** Najviac jobov nakládky pod hákom v obehu na žeriav (celé ≥ 1), kým má loď aj import na vykládku (ADR-033 bod 4; nahrádza konštantu `PAIRED_HOOK_LOAD_JOBS_PER_CRANE`): export sa páruje s importom v dual cykle a nevyčerpá vozidlá vykládky. */
+  readonly hookPairedLoadJobs: number;
   /** Koľko voľných stĺpcov (`maxTier` buniek každý, celé ≥ 0) musí ostať v bloku, aby plánovač smel zavaliť skôr odchádzajúci kontajner (ADR-039). */
   readonly buryReserveColumns: number;
+  /** Váha vyťaženia stroja RTG bloku v skóre plánovača (číslo ≥ 0, v bunkách vzdialenosti na jednu položku fronty alebo rozbehnutý cyklus; ADR-040 dodatok TR3-02c); 0 = len vzdialenosť. */
+  readonly yardMachineLoadWeight: number;
   /** Odhad doby ležania importu v sklade po vykládke v hodinách (> 0): základ plánovaného času odchodu importu, obmedzený SLA (ADR-039; skutočné termíny odvozu prídu v R4). */
   readonly importDwellEstimateHours: number;
   /** Režim plánovača skladu (ADR-039): `planned` = segregácia podľa času odchodu, `random` = náhodné ukladanie z `Rng` (len pre akceptačný test). */
@@ -408,7 +416,7 @@ export interface CraneParams {
 }
 
 /** Roly skladu (F6c, ADR-034): `empty_depot` = depo prázdnych kontajnerov (trieda `EmptyDepot`); chýbajúca rola = bežný sklad kategórie. */
-export const STORAGE_ROLES = ['empty_depot'] as const;
+export const STORAGE_ROLES = ['empty_depot', 'rtg_block'] as const;
 export type StorageRole = (typeof STORAGE_ROLES)[number];
 
 /** `params` skladu (`kind: 'storage'`). */
@@ -433,6 +441,13 @@ export interface StorageParams {
   readonly rows?: number;
   /** Najvyššia vrstva stohu (celé ≥ 1; straddle blok 3, depo prázdnych 8; geometria bloku, ADR-039). */
   readonly maxTier?: number;
+  /**
+   * Stĺpec footprintu (pri rotácii 0, od ľavého okraja, celé ≥ 0), v ktorom beží jednosmerný pruh pozdĺž bloku (TR3-01, ADR-040 bod 2); povinné práve pri
+   * `role: 'rtg_block'`. Pruh je simulačný údaj: bay `b` leží na bunke pruhu `b` (po dĺžke), vjazd je na začiatku a výjazd na konci pruhu.
+   */
+  readonly laneCol?: number;
+  /** Každý koľký bay má odovzdávacie miesto (TP) v pruhu (celé ≥ 1); povinné práve pri `role: 'rtg_block'`. */
+  readonly tpSpacingBays?: number;
 }
 
 /** `params` depa vozidiel (`kind: 'depot'`). */
@@ -546,6 +561,11 @@ export interface VehicleDef {
   readonly purchaseCents: number;
   readonly wagePerDayCents: number;
   readonly techRequired?: string;
+  /**
+   * Vozidlo zdvihne kontajner samo (straddle carrier, empty handler): chýba = áno. Terminálový ťahač (`canLift: false`, ADR-040 bod 1) kontajner nezdvihne —
+   * odovzdáva ho žeriav (STS) a stroj bloku (RTG) a vozidlo smie len joby, v ktorých jeho koncové body obsluhuje stroj (`logistics/handling-chains.ts`).
+   */
+  readonly canLift?: boolean;
 }
 
 /**
@@ -633,4 +653,44 @@ export interface ContainerTypeDef {
   readonly oogChance: number;
   /** Násobiteľ odmeny za TEU oproti základnej cene typu nákladu (> 0; R5). */
   readonly rateMultiplier: number;
+}
+
+/** Priority RTG fronty (`equipment.json` → `rtg.priorities`, ADR-040 bod 6): menšie číslo = vyššia priorita; poradie loď > kamión > housekeeping je v dátach. */
+export const YARD_PRIORITY_KINDS = ['ship', 'truck', 'housekeeping'] as const;
+export type YardPriorityKind = (typeof YARD_PRIORITY_KINDS)[number];
+
+/** Parametre RTG žeriavu (`equipment.json` → `rtg`, docs/TERMINAL_2.md §5.3); časy sú v tickoch, pohyb v bunkách (bays) za tick. */
+export interface RtgDef {
+  /** Rýchlosť pojazdu žeriavu pozdĺž bloku v bays za tick (spojitá poloha). */
+  readonly gantryCellsPerTick: number;
+  /** Zdvih / spúšťanie o jednu vrstvu stohu v tickoch. */
+  readonly hoistTicksPerTier: number;
+  /** Pojazd vozíka o jeden rad naprieč blokom v tickoch. */
+  readonly trolleyTicksPerRow: number;
+  /** Uchopenie / pustenie kontajnera (twist-lock) v tickoch. */
+  readonly lockTicks: number;
+  /** Priority fronty stroja podľa druhu úlohy (menšie = skôr). */
+  readonly priorities: { readonly [K in YardPriorityKind]: number };
+  /** Predzásobenie nakládky: stroj začne `take` pre ťahač, ktorému do TP ostáva najviac toľko buniek trasy (0 = čaká na príchod ťahača). */
+  readonly prefetchCells: number;
+  /** Po toľkých tickoch čakania stroja so zdvihnutým kontajnerom na ťahač (predzásobenie) stroj kontajner vráti do stohu a cyklus zruší (≥ 1). */
+  readonly handoverGiveUpTicks: number;
+}
+
+/** Režim prideľovania ťahačov žeriavu STS (ADR-040 bod 7): `pool` = najbližší voľný ťahač zo spoločného bazéna, `gang` = pevná skupina `tractorsPerSts` ťahačov žeriavu. */
+export const CRANE_GANG_MODES = ['pool', 'gang'] as const;
+export type CraneGangMode = (typeof CRANE_GANG_MODES)[number];
+
+/** Prideľovanie ťahačov (`equipment.json` → `tractors`, TR3-02): východisko a medze príkazu `SetCraneGang`. */
+export interface TractorsDef {
+  readonly defaultMode: CraneGangMode;
+  readonly defaultPerSts: number;
+  readonly minPerSts: number;
+  readonly maxPerSts: number;
+}
+
+/** `equipment.json` — stroje bloku a ťahače (TERMINAL_2 §10.5, ADR-040): `rtg` a `tractors`. */
+export interface EquipmentDef extends DefBase {
+  readonly rtg: RtgDef;
+  readonly tractors: TractorsDef;
 }

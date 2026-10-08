@@ -18,15 +18,16 @@ import {
   type CargoLocation,
   type CargoLocationKind,
 } from '@sim/cargo';
-import { CONTAINER_CHAIN, EXPORT_CHAIN, LAST_MINUTE_CHAIN, LIQUID_CHAIN, RORO_CHAIN, SAMPLE_LOCATIONS, UNDER_HOOK_EXPORT_CHAIN, UNDER_HOOK_IMPORT_CHAIN, at } from './cargo-fixtures';
+import { CONTAINER_CHAIN, EXPORT_CHAIN, LAST_MINUTE_CHAIN, LIQUID_CHAIN, RORO_CHAIN, RTG_DISCHARGE_CHAIN, RTG_LOAD_CHAIN, SAMPLE_LOCATIONS, UNDER_HOOK_EXPORT_CHAIN, UNDER_HOOK_IMPORT_CHAIN, at } from './cargo-fixtures';
 
 /** Očakávaná tabuľka prepísaná z §7.1 a ADR-032 — zmena tabuľky v kóde musí byť vedomá (a zapísaná v ARCHITECTURE). */
 const EXPECTED_TRANSITIONS: Readonly<Record<CargoLocationKind, readonly CargoLocationKind[]>> = {
   on_ship: ['in_crane', 'in_pipeline', 'in_vehicle', 'shipped'],
   in_crane: ['on_apron', 'on_ship', 'in_vehicle'],
   on_apron: ['in_vehicle', 'in_crane'],
-  in_vehicle: ['in_storage', 'at_ramp', 'on_apron', 'in_crane'],
-  in_storage: ['in_vehicle', 'in_pipeline'],
+  in_vehicle: ['in_storage', 'at_ramp', 'on_apron', 'in_crane', 'in_handler'],
+  in_handler: ['in_storage', 'in_vehicle'],
+  in_storage: ['in_vehicle', 'in_pipeline', 'in_handler'],
   in_pipeline: ['in_storage', 'at_ramp'],
   at_ramp: ['in_truck', 'in_train', 'in_vehicle'],
   in_truck: ['exported', 'at_ramp'],
@@ -40,12 +41,13 @@ const TERMINAL: readonly CargoLocationKind[] = ['exported', 'shipped'];
 const kindsOf = (chain: readonly CargoLocation[]): CargoLocationKind[] => ['on_ship', ...chain.map((location) => location.kind)];
 
 describe('CARGO_LOCATION_KINDS a CARGO_TRANSITIONS', () => {
-  it('všetkých 11 druhov lokácií v poradí §7.1 (ADR-032 pridal shipped)', () => {
+  it('všetkých 12 druhov lokácií v poradí §7.1 (ADR-032 pridal shipped, ADR-040 in_handler)', () => {
     expect(CARGO_LOCATION_KINDS).toEqual([
       'on_ship',
       'in_crane',
       'on_apron',
       'in_vehicle',
+      'in_handler',
       'in_storage',
       'in_pipeline',
       'at_ramp',
@@ -114,6 +116,28 @@ describe('CARGO_LOCATION_KINDS a CARGO_TRANSITIONS', () => {
       expect(isTransitionAllowed(kinds[i - 1], kinds[i]), `${kinds[i - 1]} → ${kinds[i]}`).toBe(true);
     }
     expect(kinds.at(-1)).toBe(last);
+  });
+
+  it.each([
+    ['vykládka cez RTG (on_ship → in_crane → in_vehicle → in_handler → in_storage)', RTG_DISCHARGE_CHAIN, 'on_ship'],
+    ['nakládka cez RTG (in_storage → in_handler → in_vehicle → in_crane → on_ship → shipped)', RTG_LOAD_CHAIN, 'in_storage'],
+  ] as const)('reťazec %s je povolený krok po kroku (ADR-040)', (_name, chain, first) => {
+    const kinds: CargoLocationKind[] = [first, ...chain.map((location) => location.kind)];
+    for (let i = 1; i < kinds.length; i++) {
+      expect(isTransitionAllowed(kinds[i - 1], kinds[i]), `${kinds[i - 1]} → ${kinds[i]}`).toBe(true);
+    }
+  });
+
+  it('in_handler je prechodová poloha: len in_vehicle ↔ in_handler ↔ in_storage, ťahač ani stoh sa nepreskočí', () => {
+    expect([...(CARGO_TRANSITIONS.get('in_handler') ?? [])].sort()).toEqual(['in_storage', 'in_vehicle']);
+    expect(holderIdOf(at.handler(95))).toBe(95);
+    expect(slotOf(at.handler(95))).toBeNull();
+    for (const [from, to] of [['in_handler', 'in_crane'], ['in_handler', 'on_apron'], ['in_handler', 'at_ramp'], ['on_apron', 'in_handler'], ['in_crane', 'in_handler'], ['in_handler', 'in_handler']] as const) {
+      expect(isTransitionAllowed(from, to), `${from} → ${to}`).toBe(false);
+    }
+    expect(normalizeLocation({ kind: 'in_handler', machineId: 7 })).toEqual({ ok: true, location: { kind: 'in_handler', machineId: 7 } });
+    expect(normalizeLocation({ kind: 'in_handler', machineId: 0 }).ok).toBe(false);
+    expect(normalizeLocation({ kind: 'in_handler', vehicleId: 7 }).ok).toBe(false);
   });
 
   it.each<[CargoLocationKind, CargoLocationKind]>([

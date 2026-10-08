@@ -67,6 +67,9 @@ export const MODULE_PARAM_SPECS: { readonly [K in ModuleKind]: SpecTable<ModuleP
     bays: { kind: 'integer', min: 1, optional: true },
     rows: { kind: 'integer', min: 1, optional: true },
     maxTier: { kind: 'integer', min: 1, optional: true },
+    // RTG blok (R3, ADR-040 bod 2): stĺpec jednosmerného pruhu a rozstup TP; povinné práve pri `role: 'rtg_block'` (`checkStorageParams`).
+    laneCol: { kind: 'integer', min: 0, optional: true },
+    tpSpacingBays: { kind: 'integer', min: 1, optional: true },
   },
   gate: {
     // Priepustnosť: 1 kamión za `processTicks`; aspoň tick, inak by brána púšťala neobmedzene (F4, rozhodnutie 2).
@@ -124,10 +127,20 @@ const STORAGE_GEOMETRY_KEYS = ['bays', 'rows', 'maxTier'] as const;
  */
 function checkStorageParams(params: Readonly<Record<string, unknown>>, path: string): Problem | undefined {
   const { role, repairBays, category } = params;
+  const lane = ['laneCol', 'tpSpacingBays'].find((key) => (role === 'rtg_block') !== (params[key] !== undefined));
+  if (lane !== undefined) {
+    return { path: `${path}/${lane}`, message: role === 'rtg_block' ? `RTG blok (role rtg_block) vyžaduje ${lane}` : `${lane} má zmysel len pri role rtg_block` };
+  }
   const geometry = STORAGE_GEOMETRY_KEYS.filter((key) => params[key] !== undefined);
   if (geometry.length > 0 && geometry.length < STORAGE_GEOMETRY_KEYS.length) {
     const missing = STORAGE_GEOMETRY_KEYS.find((key) => params[key] === undefined) as string;
     return { path: `${path}/${missing}`, message: `geometria bloku (${STORAGE_GEOMETRY_KEYS.join(', ')}) musí byť zadaná celá, chýba ${missing}` };
+  }
+  if (role === 'rtg_block') {
+    if (category !== 'container') return { path: `${path}/category`, message: `RTG blok (role rtg_block) skladuje kontajnery — kategória musí byť 'container', dostal ${describeValue(category)}` };
+    if (geometry.length < STORAGE_GEOMETRY_KEYS.length) return { path: `${path}/bays`, message: 'RTG blok (role rtg_block) vyžaduje geometriu bloku (bays, rows, maxTier)' };
+    if (repairBays !== undefined) return { path: `${path}/repairBays`, message: 'repairBays má zmysel len pri role empty_depot' };
+    return undefined;
   }
   if (role === 'empty_depot') {
     if (category !== 'container') return { path: `${path}/category`, message: `depo prázdnych (role empty_depot) skladuje kontajnery — kategória musí byť 'container', dostal ${describeValue(category)}` };
@@ -153,6 +166,15 @@ function numberAt(source: unknown, key: string): number | undefined {
   if (!isPlainObject(source)) return undefined;
   const value = source[key];
   return typeof value === 'number' ? value : undefined;
+}
+
+/** RTG blok: pruh leží vo footprinte (`laneCol < w`) a pozdĺž bloku je pre každý bay jedna bunka pruhu (`bays ≤ h`). `params` už prešli tabuľkou polí. */
+function checkRtgFootprint(params: unknown, w: number | undefined, h: number | undefined, path: string): Problem | undefined {
+  if (!isPlainObject(params) || params['role'] !== 'rtg_block' || w === undefined || h === undefined) return undefined;
+  const { laneCol, bays } = params;
+  if (typeof laneCol === 'number' && laneCol >= w) return { path: `${path}/laneCol`, message: `pruh (stĺpec ${String(laneCol)}) leží mimo footprintu ${String(w)}×${String(h)}` };
+  if (typeof bays === 'number' && bays > h) return { path: `${path}/bays`, message: `bays (${String(bays)}) musí byť ≤ dĺžke footprintu (${String(h)}) — každý bay má bunku pruhu` };
+  return undefined;
 }
 
 /**
@@ -188,7 +210,8 @@ export function checkModuleItem(item: Readonly<Record<string, unknown>>, path: s
 
   const paramsPath = `${path}/params`;
   if (!Object.hasOwn(item, 'params')) return { path: paramsPath, message: 'chýba povinné pole' };
-  return checkModuleParams(item['params'], kind, paramsPath);
+  const problem = checkModuleParams(item['params'], kind, paramsPath);
+  return problem ?? checkRtgFootprint(item['params'], w, h, paramsPath);
 }
 
 // ---------------------------------------------------------------------------------------------------------

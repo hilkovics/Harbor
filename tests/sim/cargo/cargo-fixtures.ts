@@ -53,6 +53,7 @@ export const at = {
   crane: (craneId: number): CargoLocation => ({ kind: 'in_crane', craneId: id(craneId) }),
   apron: (berthId: number, slot: number): CargoLocation => ({ kind: 'on_apron', berthId: id(berthId), slot }),
   vehicle: (vehicleId: number): CargoLocation => ({ kind: 'in_vehicle', vehicleId: id(vehicleId) }),
+  handler: (machineId: number): CargoLocation => ({ kind: 'in_handler', machineId: id(machineId) }),
   storage: (moduleId: number, slot: number): CargoLocation => ({ kind: 'in_storage', moduleId: id(moduleId), slot }),
   pipeline: (pipelineId: number): CargoLocation => ({ kind: 'in_pipeline', pipelineId: id(pipelineId) }),
   ramp: (rampId: number, dock: number): CargoLocation => ({ kind: 'at_ramp', rampId: id(rampId), dock }),
@@ -68,6 +69,7 @@ export const SAMPLE_LOCATIONS: Readonly<Record<CargoLocationKind, CargoLocation>
   in_crane: at.crane(901),
   on_apron: at.apron(902, 1),
   in_vehicle: at.vehicle(903),
+  in_handler: at.handler(909),
   in_storage: at.storage(904, 7),
   in_pipeline: at.pipeline(905),
   at_ramp: at.ramp(906, 2),
@@ -121,6 +123,11 @@ export const LAST_MINUTE_CHAIN: readonly CargoLocation[] = [at.ramp(50, 1), at.v
 
 /** Importný reťazec pod hákom (ADR-033): žeriav odovzdá jednotku priamo vozidlu, bez apronu. */
 export const UNDER_HOOK_IMPORT_CHAIN: readonly CargoLocation[] = [at.crane(20), at.vehicle(30), at.storage(40, 3), at.vehicle(31), at.ramp(50, 1), at.truck(60), at.exported()];
+/** Importný reťazec ťahač + RTG (ADR-040, TERMINAL_2 §6.1): žeriav → ťahač → RTG (`in_handler`) → stoh, odtiaľ RTG späť na ťahač a cez žeriav na loď. */
+export const RTG_DISCHARGE_CHAIN: readonly CargoLocation[] = [at.crane(20), at.vehicle(30), at.handler(95), at.storage(40, 3)];
+/** Nakládka cez RTG (TERMINAL_2 §6.3, bez počiatočného `in_storage`): stoh → RTG → ťahač → žeriav → loď → `shipped`. */
+export const RTG_LOAD_CHAIN: readonly CargoLocation[] = [at.handler(95), at.vehicle(30), at.crane(20), at.ship(90), at.shipped()];
+
 /** Exportný reťazec pod hákom (ADR-033, bez počiatočného `in_truck`): vozidlo z príjmu čaká pod žeriavom a ten jednotku zdvihne. */
 export const UNDER_HOOK_EXPORT_CHAIN: readonly CargoLocation[] = [
   at.ramp(50, 0),

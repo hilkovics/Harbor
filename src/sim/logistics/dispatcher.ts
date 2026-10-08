@@ -83,6 +83,9 @@ import { cancelJob } from './job-cancel';
 import { createEmptyIntakeJobs, createEmptyPickupJobs } from './empty-jobs';
 import { createExportIntakeJobs } from './export-intake';
 import { createExportLoadJobs as createLoadJobs, createHookUnloadJobs as createHookJobs, type LoadJobSpec } from './export-load';
+import { gangFilter } from './gang-roster';
+import { hookUnreachable } from './load-access';
+import { vehicleMayServe } from './handling-chains';
 import { distanceBetweenModules, distanceToModule } from './module-access';
 import { allocateRamp, outboundRoom } from './ramp-allocator';
 import type { StoredCargoGroup } from './stored-cargo-index';
@@ -470,11 +473,13 @@ function pickVehicle(world: World, job: TransportJob, candidates: Iterable<Vehic
   const category = jobCategory(world, job);
   const direction = world.cargo.get(job.unitIds[0])?.direction;
   if (source === undefined || category === undefined || direction === undefined) return undefined;
+  const gangAllows = gangFilter(world, job);
   let best: Vehicle | undefined;
   let bestPreference = Infinity;
   let bestCost = Infinity;
   for (const vehicle of candidates) {
-    if (!VEHICLE_STATE_TRAITS[vehicle.state].free || !vehicleCarries(vehicle, category, direction)) continue;
+    if (!VEHICLE_STATE_TRAITS[vehicle.state].free || !vehicleCarries(vehicle, category, direction) || !vehicleMayServe(world, vehicle, job)) continue;
+    if (gangAllows !== undefined && !gangAllows(vehicle)) continue;
     const cost = distanceToModule(world, vehicle.cell, source);
     if (cost === Infinity) continue;
     const preference = vehiclePreference(vehicle, direction);
@@ -495,9 +500,28 @@ export function chooseVehicle(world: World, job: TransportJob): Vehicle | undefi
   return pickVehicle(world, job, world.vehicles.values());
 }
 
+/**
+ * Kotvisko nakládky pod hákom (job `in_storage → in_crane`), ku ktorého háku nevedie cesta (jednosmerné zátky pri nábreží): nakládka ide rovno cez apron, takže job
+ * potrebuje slot apronu už pri priradení (ADR-040 dodatok TR3-02b). Bez neho by vozidlo s jednotkou čakalo v `no_path` na zdrojovej bunke a zablokovalo vozidlo,
+ * ktoré uvoľňuje apron. `undefined` = job sa týka bežného háku; inak kotvisko.
+ */
+function apronLoadBerth(world: World, job: TransportJob): BerthModule | undefined {
+  if (job.from.kind !== 'in_storage' || job.to.kind !== 'in_crane') return undefined;
+  const berth = world.modules.get(job.toModuleId);
+  return berth instanceof BerthModule && hookUnreachable(world, job.to.craneId, berth) ? berth : undefined;
+}
+
+/** Je pre job voľné miesto na priradenie? Nakládka cez apron potrebuje slot nad rezervou pre vykládku (`apronUnloadReserveSlots`). */
+function hasApronRoom(world: World, job: TransportJob): boolean {
+  const berth = apronLoadBerth(world, job);
+  return berth === undefined || berth.apron.freeUnreservedCount > world.defs.logistics.apronUnloadReserveSlots;
+}
+
 /** Priradí job vozidlu a pošle ho k zdroju (viď hlavička súboru). */
 function assign(world: World, job: TransportJob, vehicle: Vehicle): void {
   job.assign(vehicle.id);
+  const apronBerth = apronLoadBerth(world, job);
+  if (apronBerth !== undefined) job.rebindTarget({ kind: 'on_apron', berthId: apronBerth.id, slot: apronBerth.apron.reserve() });
   vehicle.jobId = job.id;
   world.events.emit({ type: 'JobAssigned', jobId: job.id, vehicleId: vehicle.id });
   // Zaparkované vozidlo najprv vyjde z depa (`depot_exit`, voľný slot prístupovej bunky), ostatné idú k zdroju hneď (s preplánovaním).
@@ -520,7 +544,7 @@ export function assignOpenJobs(world: World, idle: Vehicle[] = []): void {
   for (let priority = 0; priority < JOB_PRIORITY_LEVELS; priority++) {
     for (const job of world.jobs.values()) {
       if (idle.length === 0) return;
-      if (job.state !== 'open' || job.priority !== priority || blockedJob(world, job)) continue;
+      if (job.state !== 'open' || job.priority !== priority || blockedJob(world, job) || !hasApronRoom(world, job)) continue;
       const vehicle = pickVehicle(world, job, idle);
       if (vehicle === undefined) continue;
       assign(world, job, vehicle);

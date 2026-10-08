@@ -36,6 +36,8 @@ export interface F6aDefsOptions {
   readonly ship?: { readonly id: string; readonly fields: Readonly<Record<string, unknown>> };
   /** Prepíše `params` modulov podľa id defu (napr. `truck_waiting_area: { bays: 1 }`). */
   readonly moduleParams?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+  /** Prepíše polia `equipment.json` → `rtg` (TR3-06b). */
+  readonly rtg?: Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -55,6 +57,7 @@ export function f6aDefs(overrides: F6aDefsOptions = {}): DefRegistry {
     ...RAW_DEFS,
     ships,
     modules,
+    equipment: { ...RAW_DEFS.equipment, rtg: { ...RAW_DEFS.equipment.rtg, ...overrides.rtg } },
     economy: {
       ...RAW_DEFS.economy,
       offersPerDay: 0,

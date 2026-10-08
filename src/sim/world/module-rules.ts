@@ -276,8 +276,11 @@ const PLACEMENT_CHECKS: { readonly [R in PlacementRule]: PlacementCheck } = {
   terrain: (ctx) => {
     const allowed = ctx.def.placement.requiredTerrain;
     const cell = ctx.inside.find(({ x, y }) => !allowed.includes(ctx.world.grid.at(x, y).terrain));
-    if (cell === undefined) return undefined;
-    return `bunka ${cellLabel(cell)} má terén '${ctx.world.grid.at(cell.x, cell.y).terrain}', povolené [${allowed.join(', ')}]`;
+    if (cell !== undefined) return `bunka ${cellLabel(cell)} má terén '${ctx.world.grid.at(cell.x, cell.y).terrain}', povolené [${allowed.join(', ')}]`;
+    // Kotvisko (TR3-02, ADR-040): riadok pri vode musí byť nábrežie; ostatné riadky (pruhy pod žeriavom, pevninská obchádzka) smú byť aj pevnina.
+    if (ctx.waterSide === undefined) return undefined;
+    const dry = waterEdge(ctx, ctx.waterSide).find(({ x, y }) => ctx.world.grid.inBounds(x, y) && ctx.world.grid.at(x, y).terrain !== 'quay');
+    return dry === undefined ? undefined : `bunka hrany pri vode ${cellLabel(dry)} má terén '${ctx.world.grid.at(dry.x, dry.y).terrain}', musí byť 'quay'`;
   },
   occupied: (ctx) => {
     if (ctx.attaches) return undefined;
@@ -386,6 +389,8 @@ export interface RemovalWorld {
   readonly modules: ReadonlyMap<EntityId, Module>;
   readonly trucks: ReadonlyMap<EntityId, TruckModuleRefs>;
   readonly vehicles: ReadonlyMap<EntityId, VehicleRouteRefs>;
+  /** Stroje blokov (R3, ADR-040): blok so strojom v cykle alebo s frontou sa neodstráni. */
+  readonly machines: ReadonlyMap<EntityId, { readonly blockId: EntityId; readonly state: string; readonly queue: readonly unknown[] }>;
   readonly grid: Pick<Grid, 'index'>;
 }
 
@@ -450,7 +455,10 @@ const REMOVAL_CHECKS: { readonly [R in RemovalRule]: RemovalCheck } = {
     const ship = `#${String(berth.dockedShipId)}`;
     return berth === module ? `${berth.label} má loď ${ship}` : `${module.label} stojí na ${berth.label}, ktoré drží loď ${ship}`;
   },
-  busy: (_world, module) => {
+  busy: (world, module) => {
+    for (const machine of world.machines.values()) {
+      if (machine.blockId === module.id && (machine.state !== 'idle' || machine.queue.length > 0)) return `stroj bloku ${module.label} je uprostred cyklu (${machine.state}) alebo má frontu`;
+    }
     if (!(module instanceof CraneModule)) return undefined;
     const { holdsUnit, hasReservation } = CRANE_STATE_TRAITS[module.state];
     const busy = holdsUnit || hasReservation || module.heldUnitId !== null || module.reservedSlot !== null;

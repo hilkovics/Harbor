@@ -60,6 +60,7 @@ import { CARGO_HOLDER_SOURCES } from './cargo-holders';
 import { WorldStateError, pointerSegment } from './state-check';
 import type { World } from './world';
 import { findWorldViolation, inGateQueue, truckQueueSideProblem, truckRampProblem } from './world-invariants';
+import { heldByMachine, restoreMachines } from './machines-state';
 import type { ParsedJobEntry, ParsedModuleEntry, ParsedShipEntry, ParsedTruckEntry, ParsedVehicleEntry, ParsedWorldState } from './world-state';
 
 const modulePath = (index: number): string => `/modules${pointerSegment(index)}`;
@@ -521,7 +522,7 @@ function checkJobCargo(world: World, job: TransportJob, path: string): void {
     if (unit === undefined) throw new WorldStateError(unitPathInJob, `jednotka #${String(unitId)} v save nie je`);
     const atExpected =
       place === 'vehicle' && job.vehicleId !== null ? isSameLocation(unit.location, { kind: 'in_vehicle', vehicleId: job.vehicleId }) : unitAtJobSource(world, job, unit);
-    if (!atExpected) {
+    if (!atExpected && !heldByMachine(world, unit)) {
       throw new WorldStateError(unitPathInJob, `jednotka #${String(unitId)} jobu v stave '${job.state}' má byť na ${place === 'vehicle' ? 'vozidle jobu' : 'zdroji jobu'}`);
     }
   });
@@ -880,7 +881,7 @@ function checkVoyages(world: World, held: ReadonlyMap<ContractId, number>): void
   }
 }
 
-export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'modules' | 'ships' | 'vehicles' | 'jobs' | 'trucks' | 'cargo'>): void {
+export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'modules' | 'ships' | 'vehicles' | 'jobs' | 'trucks' | 'machines' | 'cargo'>): void {
   const entries = parsed.modules;
   const { units } = parsed.cargo;
   restoreModules(world, entries);
@@ -888,6 +889,7 @@ export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'mo
   checkShipRoutes(world);
   restoreVehicles(world, parsed.vehicles);
   restoreTrucks(world, parsed.trucks);
+  restoreMachines(world, parsed.machines, world.defs);
   const indexOf = new Map<EntityId, number>(entries.map((entry, index) => [entry.id, index]));
   const unitIndexOf = new Map<EntityId, number>(units.map((unit, index) => [unit.id, index]));
   checkHolders(world, units);

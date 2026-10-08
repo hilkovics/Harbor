@@ -5,7 +5,7 @@
  *
  * Tick pipeline (§6): príkazy z fronty → krok 1 (`clock.advance()` + udalosti hraníc) → krok 2 (`ContractSystem`: pool,
  * lode kontraktov, SLA, penalizácie, výplata — ADR-026) → krok 3 (`ShipSystem`) →
- * krok 4 (`CraneSystem`) → krok 5 (`DispatcherSystem`) → krok 6a (`TrafficSystem`: pohyb všetkých nosičov pod pruhovými slotmi, ADR-037, ADR-038) → krok 6b (`VehicleSystem`) →
+ * krok 4 (`CraneSystem`) → krok 5 (`DispatcherSystem`) → krok 6a (`TrafficSystem`: pohyb všetkých nosičov pod pruhovými slotmi, ADR-037, ADR-038) → krok 6b (`VehicleSystem`) → krok 6c (`YardMachineSystem`: stroje blokov RTG, ADR-040) →
  * krok 8 (`LandsideSystem`: kamióny, brány, spawn, export) → krok 9 (`EconomySystem`: údržba, mzdy, súhrny, bankrot — ADR-025) → krok 11 (`MetricsSystem`, traffic) → krok 12 (`assertInvariants()`, ak je zapnuté
  * `checkInvariants`) → krok 13 (`events.flush()`). Ďalšie kroky pribúdajú so systémami na označenom mieste v `tick()`; poradie §6 je záväzné
  * a mení sa len cez ADR.
@@ -82,6 +82,11 @@ import { ModuleError } from '../modules/module-error';
 import { moduleRegistry } from '../modules/module-registry';
 import { TruckGate } from '../modules/truck-gate';
 import { YardBlock } from '../modules/yard-block';
+import { RtgBlock } from '../modules/rtg-block';
+import { MachineError } from '../machines/machine-error';
+import { RtgCrane } from '../machines/rtg-crane';
+import type { YardMachine } from '../machines/yard-machine';
+import { YardMachineSystem } from '../systems/yard-machine-system';
 import { VehicleDepot } from '../modules/vehicle-depot';
 import { WaitingArea } from '../modules/waiting-area';
 import type { AdvanceGate, Carrier } from '../movement/carrier';
@@ -219,6 +224,8 @@ export class World {
   readonly jobs: ReadonlyMap<EntityId, TransportJob>;
   /** Kamióny na mape vzostupne podľa id (= poradie spawnu); meniť len cez `addTruck`/`removeTruck` (ADR-024). */
   readonly trucks: ReadonlyMap<EntityId, Truck>;
+  /** Stroje blokov (RTG, ADR-040) vzostupne podľa id; meniť len cez `addMachine`/`removeMachine` (stroj RTG bloku vzniká s blokom v `placeModule`). */
+  readonly machines: ReadonlyMap<EntityId, YardMachine>;
   /** Štatistiky entít po modifikátoroch (§10); vo F2 základ z defov. */
   readonly stats: StatResolver;
   /**
@@ -285,6 +292,7 @@ export class World {
   private readonly vehicleMap = new Map<EntityId, Vehicle>();
   private readonly jobMap = new Map<EntityId, TransportJob>();
   private readonly truckMap = new Map<EntityId, Truck>();
+  private readonly machineMap = new Map<EntityId, YardMachine>();
   /** Jednotka → jej aktívny job (odvodený index nad `jobMap`). */
   private readonly unitJobs = new Map<EntityId, TransportJob>();
   /** Najväčšie id vo `vehicleMap` / `jobMap` (= posledné vložené; poradie pridania = vzostupne podľa id) bez prechodu kľúčov. */
@@ -298,6 +306,7 @@ export class World {
   private readonly dispatcherSystem = new DispatcherSystem();
   private readonly trafficSystem = new TrafficSystem();
   private readonly vehicleSystem = new VehicleSystem();
+  private readonly yardMachineSystem = new YardMachineSystem();
   private readonly landsideSystem = new LandsideSystem();
   private readonly economySystem = new EconomySystem();
   private readonly metricsSystem = new MetricsSystem();
@@ -357,6 +366,7 @@ export class World {
     this.vehicles = this.vehicleMap;
     this.jobs = this.jobMap;
     this.trucks = this.truckMap;
+    this.machines = this.machineMap;
     this.stats = new StatResolver(parts.defs);
     this.roadSpeeds = new RoadSpeeds(parts.grid, parts.defs.infrastructure.roadKinds);
     this.laneSlots = new LaneSlots(parts.grid.cellCount);
@@ -662,6 +672,8 @@ export class World {
     const def = this.defs.modules.get(spec.defId);
     const module = moduleRegistry.create(def, spec, this.ids.next(), purchaseCostCents, { grid: this.grid, cargo: this.cargo, pickupCargo: this.isPickupCargo });
     this.addModule(module);
+    // RTG blok sa stavia aj so svojím strojom (ADR-040 bod 3): stroj je súčasť ceny bloku.
+    if (module instanceof RtgBlock) this.addMachine(RtgCrane.create(this.ids.next(), module.id, this.defs.equipment.rtg, module.geometry.maxTier));
     return module;
   }
 
@@ -712,6 +724,8 @@ export class World {
     } else {
       for (const { x, y } of module.cells) this.grid.at(x, y).moduleId = null;
     }
+    const machine = this.machineOfBlock(moduleId);
+    if (machine !== undefined) this.removeMachine(machine.id);
     this.moduleMap.delete(moduleId);
     this.moduleChanges += 1;
     this.refreshBerthGroups();
@@ -813,6 +827,45 @@ export class World {
     this.vehicleMap.delete(vehicleId);
     if (vehicleId === this.lastVehicleId) this.lastVehicleId = lastKeyOf(this.vehicleMap);
     return vehicle;
+  }
+
+  // -------------------------------------------------------------------------------------------------------
+  // Stroje blokov (ADR-040)
+  // -------------------------------------------------------------------------------------------------------
+
+  /** Stroj bloku `blockId` (RTG bloku), alebo `undefined`. */
+  machineOfBlock(blockId: EntityId): YardMachine | undefined {
+    for (const machine of this.machineMap.values()) if (machine.blockId === blockId) return machine;
+    return undefined;
+  }
+
+  /**
+   * Pridá stroj (`placeModule` RTG bloku, obnova zo save). Chyby (`MachineError`, svet sa nezmení): id už vo svete má iná entita (`duplicate_id`), id nepridelené
+   * alokátorom alebo nejde vzostupne (`invalid_input`), blok nie je RTG blok vo svete, alebo už má stroj (`unknown_block`).
+   */
+  addMachine(machine: YardMachine): void {
+    const { id } = machine;
+    if (this.machineMap.has(id) || this.moduleMap.has(id) || this.shipMap.has(id) || this.vehicleMap.has(id) || this.jobMap.has(id) || this.truckMap.has(id) || this.cargo.get(id) !== undefined) {
+      throw new MachineError('duplicate_id', `World.addMachine: id ${String(id)} už vo svete je`);
+    }
+    if (id >= this.ids.getState().nextId) {
+      throw new MachineError('invalid_input', `World.addMachine: id ${String(id)} nepridelil alokátor sveta (nextId ${String(this.ids.getState().nextId)})`);
+    }
+    if (!(this.moduleMap.get(machine.blockId) instanceof RtgBlock) || this.machineOfBlock(machine.blockId) !== undefined) {
+      throw new MachineError('unknown_block', `World.addMachine: ${machine.label}: blok #${String(machine.blockId)} nie je RTG blok bez stroja`);
+    }
+    this.machineMap.set(id, machine);
+  }
+
+  /** Odstráni stroj (zánik bloku) a vráti ho; stroj v cykle alebo s frontou sa neodstráni (`busy`), neznáme id → `unknown_machine`. */
+  removeMachine(machineId: EntityId): YardMachine {
+    const machine = this.machineMap.get(machineId);
+    if (machine === undefined) throw new MachineError('unknown_machine', `World.removeMachine: stroj #${String(machineId)} neexistuje`);
+    if (machine.state !== 'idle' || machine.cycle !== null || machine.queue.length > 0) {
+      throw new MachineError('busy', `World.removeMachine: ${machine.label} je v stave '${machine.state}' (fronta ${String(machine.queue.length)})`);
+    }
+    this.machineMap.delete(machineId);
+    return machine;
   }
 
   // -------------------------------------------------------------------------------------------------------
@@ -1101,6 +1154,9 @@ export class World {
     // 6b. vehicleSystem — FSM vozidiel bez pohybu: príchody, pobyt v module, load/unload (ADR-019).
     this.vehicleSystem.tick(this);
 
+    // 6c. yardMachineSystem — stroje blokov (RTG): fronta TP, cykly zdvih / pojazd / odklad, odovzdanie vozidlu (ADR-040; poradie §6 rozšírené o krok 6c).
+    this.yardMachineSystem.tick(this);
+
     // 7. flowSystem — pribudne s potrubiami (F9) presne na tomto mieste §6.
 
     // 8. landsideSystem — kamióny (FSM, pohyb, nakládka, export), brány (FIFO, priepustnosť), spawn (ADR-024).
@@ -1173,6 +1229,7 @@ export class World {
       vehicles: [...this.vehicleMap.values()].map((vehicle) => vehicle.toState()),
       jobs: [...this.jobMap.values()].map((job) => job.toState()),
       trucks: [...this.truckMap.values()].map((truck) => truck.toState()),
+      machines: [...this.machineMap.values()].map((machine) => machine.toState()),
       economy: this.economy.getState(),
       ...this.contractBook.getState(),
       emptyFlow: this.emptyFlow.getState(),
@@ -1213,6 +1270,7 @@ export class World {
    * umiestnenia (`findPlacementViolations`, ako `PlaceModule` bez ceny); inak `MapError` s indexom modulu.
    */
   private placeStarterModules(): void {
+    const roadChangesBefore = this.roadChanges; // starter kotvisko pri vzniku sveta cestnú sieť nemení (cache ciest ešte neexistujú, nie sú vozidlá)
     this.map.starter.modules.forEach((spec, index) => {
       const path = `/starter/modules${pointerSegment(index)}`;
       if (!this.defs.modules.has(spec.defId)) {
@@ -1226,6 +1284,7 @@ export class World {
       }
       this.placeModule(spec, 0);
     });
+    this.roadChanges = roadChangesBefore;
   }
 
   /** Prepočet skupín kotvísk a `groupId` každého berthu. */

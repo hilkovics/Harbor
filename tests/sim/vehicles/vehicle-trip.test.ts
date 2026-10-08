@@ -35,10 +35,10 @@ const cell = (x: number, y: number) => ({ x, y });
 describe('planRoute', () => {
   it('z bunky vozidla k najbližšej prístupovej bunke modulu (zmrazená cesta z cache, vrátane oboch koncov)', () => {
     const { world, depot } = dispatchWorld();
-    const vehicle = vehicleAt(world, depot.id, [cell(32, 17)]);
+    const vehicle = vehicleAt(world, depot.id, [cell(32, 18)]);
     expect(planRoute(world, vehicle, berthOf(world))).toBe(true);
     const route = vehicle.remainingRoute();
-    expect(route[0]).toBe(world.grid.index(32, 17));
+    expect(route[0]).toBe(world.grid.index(32, 18));
     expect(route.at(-1)).toBe(world.grid.index(BERTH_ACCESS[0].x, BERTH_ACCESS[0].y));
     expect(route).toHaveLength(10);
     expect(vehicle.replanPending).toBe(false);
@@ -46,43 +46,43 @@ describe('planRoute', () => {
 
   it('medzi bunkami plánuje z cieľovej bunky úseku a úsek dokončí', () => {
     const { world, depot } = dispatchWorld();
-    const vehicle = vehicleAt(world, depot.id, [cell(33, 17), cell(34, 17)], { progress: 0.5 });
+    const vehicle = vehicleAt(world, depot.id, [cell(33, 18), cell(34, 18)], { progress: 0.5 });
     expect(planRoute(world, vehicle, berthOf(world))).toBe(true);
-    expect(vehicle.remainingRoute().slice(0, 3)).toEqual([world.grid.index(33, 17), world.grid.index(34, 17), world.grid.index(35, 17)]);
+    expect(vehicle.remainingRoute().slice(0, 3)).toEqual([world.grid.index(33, 18), world.grid.index(34, 18), world.grid.index(35, 18)]);
     expect(vehicle.progress).toBe(0.5);
   });
 
   it('medzi bunkami s cestou späť cez začiatok úseku: obrat na mieste (turnAround), poloha sa nezmení', () => {
     const { world, depot } = dispatchWorld();
     const west = placeYard(world, YARD_W);
-    const vehicle = vehicleAt(world, depot.id, [cell(40, 17), cell(41, 17)], { progress: 0.5 });
+    const vehicle = vehicleAt(world, depot.id, [cell(40, 18), cell(41, 18)], { progress: 0.5 });
     const before = [vehicle.x, vehicle.y];
     expect(planRoute(world, vehicle, west)).toBe(true);
-    expect(vehicle.remainingRoute()).toEqual([41, 40, 39, 38, 37].map((x) => world.grid.index(x, 17)));
+    expect(vehicle.remainingRoute()).toEqual([41, 40, 39, 38, 37].map((x) => world.grid.index(x, 18)));
     expect([vehicle.progress, vehicle.x, vehicle.y, vehicle.heading]).toEqual([0.5, ...before, 270]);
-    expect(YARD_W_ACCESS).toEqual(cell(37, 17));
+    expect(YARD_W_ACCESS).toEqual(cell(37, 18));
   });
 
   it('bez cesty k modulu (nepripojený alebo odrezaný) → false a vozidlo sa nezmení', () => {
     const { world, depot } = dispatchWorld();
     const unconnected = placeYard(world, cell(42, 24), 0);
-    const vehicle = vehicleAt(world, depot.id, [cell(32, 17)]);
+    const vehicle = vehicleAt(world, depot.id, [cell(32, 18)]);
     expect(planRoute(world, vehicle, unconnected)).toBe(false);
-    execute(world, { type: 'RemoveRoad', cells: [cell(36, 17)] });
+    execute(world, { type: 'RemoveRoad', cells: [cell(36, 18)] });
     expect(planRoute(world, vehicle, berthOf(world))).toBe(false);
-    expect(vehicle.remainingRoute()).toEqual([world.grid.index(32, 17)]);
+    expect(vehicle.remainingRoute()).toEqual([world.grid.index(32, 18)]);
   });
 });
 
 describe('World.vehicleOnCell a markRoadsChanged', () => {
   it('bunka pod vozidlom; pri pohybe medzi bunkami aj cieľ úseku; inak undefined', () => {
     const { world, depot } = dispatchWorld();
-    const parked = vehicleAt(world, depot.id, [cell(32, 17)]);
-    const moving = vehicleAt(world, depot.id, [cell(40, 17), cell(41, 17)], { state: 'idle', progress: 0.25 });
-    expect(world.vehicleOnCell(world.grid.index(32, 17))).toBe(parked);
-    expect(world.vehicleOnCell(world.grid.index(40, 17))).toBe(moving);
-    expect(world.vehicleOnCell(world.grid.index(41, 17))).toBe(moving);
-    expect(world.vehicleOnCell(world.grid.index(42, 17))).toBeUndefined();
+    const parked = vehicleAt(world, depot.id, [cell(32, 18)]);
+    const moving = vehicleAt(world, depot.id, [cell(40, 18), cell(41, 18)], { state: 'idle', progress: 0.25 });
+    expect(world.vehicleOnCell(world.grid.index(32, 18))).toBe(parked);
+    expect(world.vehicleOnCell(world.grid.index(40, 18))).toBe(moving);
+    expect(world.vehicleOnCell(world.grid.index(41, 18))).toBe(moving);
+    expect(world.vehicleOnCell(world.grid.index(42, 18))).toBeUndefined();
   });
 
   it('markRoadsChanged zvýši roadVersion a označí na preplánovanie len vozidlá v jazde', () => {
@@ -125,7 +125,7 @@ describe('vehicleMotionProblem (krok 12, obnova)', () => {
     ['jazda so zahodenou trasou (len rozbehnutý úsek)', (_w, v) => v.halt(), 'route', /trasa nekončí na prístupovej bunke/],
     ['odpočet v jazde', (_w, v) => (v.waitTicks = 3), 'waitTicks', /musí byť 0/],
     ['cesta pod vozidlom zmizla', (w, v) => (w.grid.atIndex(v.cell).road = 'none'), 'route', /bez cesty/],
-    ['trasa cez bunku bez cesty', (w) => (w.grid.at(38, 17).road = 'none'), 'route', /trasa vedie cez bunku/],
+    ['trasa cez bunku bez cesty', (w) => (w.grid.at(38, 18).road = 'none'), 'route', /trasa vedie cez bunku/],
     ['kurz rozbehnutého vozidla ≠ smer úseku (ADR-021)', (_w, v) => (v.heading = v.heading === 0 ? 180 : 0), 'heading', /nezodpovedá rozbehnutému úseku/],
   ])('%s → pole %s', (_name, corrupt, field, message) => {
     const { world, vehicle } = drivingWorld();
@@ -139,11 +139,11 @@ describe('vehicleMotionProblem (krok 12, obnova)', () => {
 
   it('príznak preplánovania mimo jazdy, stojace vozidlo s trasou, nesusedná trasa, pobyt mimo prístupovej bunky', () => {
     const { world, depot } = dispatchWorld();
-    const idleFlag = vehicleAt(world, depot.id, [cell(32, 17)], { replanPending: true });
+    const idleFlag = vehicleAt(world, depot.id, [cell(32, 18)], { replanPending: true });
     expect(vehicleMotionProblem(world, idleFlag)?.field).toBe('replan');
-    const idleRoute = vehicleAt(world, depot.id, [cell(32, 17), cell(33, 17)]);
+    const idleRoute = vehicleAt(world, depot.id, [cell(32, 18), cell(33, 18)]);
     expect(vehicleMotionProblem(world, idleRoute)?.problem).toMatch(/stojí, ale má pred sebou 1 buniek/);
-    const jump = vehicleAt(world, depot.id, [cell(32, 17), cell(34, 17)]);
+    const jump = vehicleAt(world, depot.id, [cell(32, 18), cell(34, 18)]);
     expect(vehicleMotionProblem(world, jump)?.problem).toMatch(/nie sú susedné/);
     const offRoad = vehicleAt(world, depot.id, [cell(32, 20)]);
     expect(vehicleMotionProblem(world, offRoad)?.problem).toMatch(/bez cesty/);
@@ -151,12 +151,12 @@ describe('vehicleMotionProblem (krok 12, obnova)', () => {
 
   it('šum progresu ≤ PROGRESS_NOISE (konštruktor ho pripustí) → pole progress; stojace vozidlo kurz nekontroluje (ADR-021)', () => {
     const { world, depot } = dispatchWorld();
-    const noisy = vehicleAt(world, depot.id, [cell(32, 17), cell(33, 17)], { progress: 2 ** -60 });
+    const noisy = vehicleAt(world, depot.id, [cell(32, 18), cell(33, 18)], { progress: 2 ** -60 });
     const problem = vehicleMotionProblem(world, noisy);
     expect(problem?.field).toBe('progress');
     expect(problem?.problem).toMatch(/musí byť 0 alebo v \(PROGRESS_NOISE, 1\)/);
     expect(findWorldViolation(world)).toMatch(/PROGRESS_NOISE/);
-    const parkedAnyHeading = vehicleAt(world, depot.id, [cell(40, 17)], { heading: 0 });
+    const parkedAnyHeading = vehicleAt(world, depot.id, [cell(40, 18)], { heading: 0 });
     expect(vehicleMotionProblem(world, parkedAnyHeading)).toBeUndefined();
   });
 });

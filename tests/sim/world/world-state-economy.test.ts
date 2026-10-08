@@ -2,7 +2,7 @@
  * WorldState: kontrakty, pool, `economy` (DaySummary/MonthSummary, posledných `ledgerEntriesKept` záznamov ledgera), `xp`, `completedContracts`,
  * bankrotové počítadlo a `gameOver` (T05-05, ARCHITECTURE §14). Priority dispatchera sa neukladajú (odvodzujú sa).
  *
- *  W1 `WORLD_STATE_VERSION === 10` (ADR-036); `serialize()` vracia `version: 10` a čistý JSON;
+ *  W1 `WORLD_STATE_VERSION === 11` (ADR-036); `serialize()` vracia `version: 11` a čistý JSON;
  *  W2 roundtrip čerstvého sveta s poolom: rovnaké kontrakty, ekonomika a ďalší beh.
  */
 import { describe, expect, it } from 'vitest';
@@ -20,11 +20,11 @@ const RUN_TIMEOUT_MS = 300_000;
 
 describe('WorldState: ekonomika a kontrakty', () => {
   it('WORLD_STATE_VERSION je 10 (clean break savov, ADR-036) a serialize() vracia verziu 10 ako čistý JSON', () => {
-    expect(WORLD_STATE_VERSION).toBe(10);
+    expect(WORLD_STATE_VERSION).toBe(11);
     const world = World.create(DEFS, MAP, 5901);
     world.tick();
     const state = world.serialize();
-    expect(state.version).toBe(10);
+    expect(state.version).toBe(11);
     expect(JSON.parse(JSON.stringify(state))).toEqual(state);
   });
 

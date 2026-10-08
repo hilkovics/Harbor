@@ -239,8 +239,8 @@ describe('scenár f1_roads: beh 20 000 tickov', () => {
     expect(placedCells).toBeGreaterThan(0);
     expect(removedCells).toBeGreaterThan(0);
     expect([closedDays, STARTER_MAINTENANCE, STARTER_WAGES]).toEqual([2, 210_000, 25_000]);
-    // Report simrun (ADR-025): 108 300 000 bez údržby − 2 × 235 000.
-    expect(world.cashCents).toBe(107_830_000);
+    // Report simrun (ADR-025): 109 100 000 bez údržby (4 bunky pri berthe 8 × 4 v riadku y = 17 odpadli) − 2 × 235 000.
+    expect(world.cashCents).toBe(108_630_000);
     expect(world.cashCents).toBe(expected);
     expect(world.cashCents).toBe(model.cashCents);
     expect(world.cashCents).toBeLessThan(defs.economy.startingCashCents);

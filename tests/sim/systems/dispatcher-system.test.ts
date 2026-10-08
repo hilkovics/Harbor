@@ -183,10 +183,10 @@ describe('priradenie vozidiel', () => {
       depotId: depot.id,
       state: 'idle',
       x: 45.5,
-      y: 17.5,
+      y: 18.5,
       heading: 90,
       purchaseCostCents: 0,
-      route: [world.grid.index(45, 17)],
+      route: [world.grid.index(45, 18)],
     });
     world.addVehicle(near);
     unitsOnApron(world, [0]);
@@ -215,7 +215,7 @@ describe('priradenie vozidiel', () => {
     const { world, depot } = dispatchWorld();
     placeYard(world, YARD_E);
     const cutOff = buyVehicle(world, depot);
-    execute(world, { type: 'RemoveRoad', cells: [{ x: 36, y: 17 }] }); // depo (32, 17) odrezané od berthu
+    execute(world, { type: 'RemoveRoad', cells: [{ x: 36, y: 18 }] }); // depo (32, 18) odrezané od berthu
     unitsOnApron(world, [0]);
     const events = world.tick();
     expect(events.filter((event) => event.type === 'JobCreated')).toHaveLength(1);

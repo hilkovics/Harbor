@@ -113,12 +113,12 @@ describe('nečinné vozidlo ide do depa', () => {
   it('bez cesty do depa vozidlo ostáva idle a po obnove cesty odíde', () => {
     const { world, vehicleId } = oneVehicleWorld();
     const log = runUntil(world, (l) => seen(l, stateChange(vehicleId, 'unloading', 'idle')), 400);
-    // cesta medzi dvorom (37, 17) a depom (32, 17) sa preruší za vozidlom
-    execute(world, { type: 'RemoveRoad', cells: [{ x: 35, y: 17 }] });
+    // cesta medzi dvorom (37, 18) a depom (32, 18) sa preruší za vozidlom
+    execute(world, { type: 'RemoveRoad', cells: [{ x: 35, y: 18 }] });
     run(world, 4 * PARK_DELAY, log);
     expect(world.vehicles.get(vehicleId)?.state).toBe('idle');
     expect(seen(log, stateChange(vehicleId, 'idle', 'to_depot'))).toBe(false);
-    execute(world, { type: 'PlaceRoad', cells: [{ x: 35, y: 17 }] });
+    execute(world, { type: 'PlaceRoad', cells: [{ x: 35, y: 18 }] });
     runUntil(world, (l) => seen(l, stateChange(vehicleId, 'to_depot', 'parked')), 400, log);
     expect(world.vehicles.get(vehicleId)?.state).toBe('parked');
   });

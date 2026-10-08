@@ -7,7 +7,7 @@
  * `routeCellAt(i)`, dĺžka = `cellsAhead + 1`. V platnom stave kontrola nealokuje — správy sa skladajú až pri porušení.
  */
 import { directionOfStep } from '../grid/grid';
-import { isRoadStepAllowed } from '../grid/road-direction';
+import { DIRECTION_NAMES, isRoadStepAllowed } from '../grid/road-direction';
 import type { Rotation } from '../grid/rotation';
 import { isAccessCell } from '../logistics/module-access';
 import type { Module } from '../modules/module';
@@ -35,7 +35,7 @@ export interface MotionTraits {
  * Cieľ jazdy alebo miesto pobytu: modul (ľubovoľná jeho prístupová bunka — vonkajšia bunka cestného konektora s cestou,
  * ADR-017) alebo konkrétna bunka (index; napr. road portál).
  */
-export type MotionTarget = Module | number;
+export type MotionTarget = Module | number | Int32Array;
 
 /** Pole záznamu nosiča v save, ku ktorému patrí problém pohybu (rovnaké mená vo `SerializedVehicle` aj `SerializedTruck`). */
 export type MotionField = 'progress' | 'route' | 'x' | 'heading' | 'waitTicks' | 'replan';
@@ -52,7 +52,8 @@ function routeCell(carrier: Carrier, offset: number): number {
 
 /** Je bunka cieľom (prístupová bunka modulu, resp. presne cieľová bunka)? */
 function isAtTarget(world: MovementWorld, target: MotionTarget, cell: number): boolean {
-  return typeof target === 'number' ? cell === target : isAccessCell(world.grid, target, cell);
+  if (typeof target === 'number') return cell === target;
+  return target instanceof Int32Array ? target.includes(cell) : isAccessCell(world.grid, target, cell);
 }
 
 /** Je bunka cieľom jazdy alebo medzicieľom `via`? */
@@ -62,7 +63,8 @@ function isAtGoal(world: MovementWorld, target: MotionTarget, via: MotionTarget 
 
 /** Popis cieľa do správy o porušení. */
 function targetLabel(target: MotionTarget): string {
-  return typeof target === 'number' ? `cieľovej bunke ${String(target)}` : `prístupovej bunke ${target.label}`;
+  if (typeof target === 'number') return `cieľovej bunke ${String(target)}`;
+  return target instanceof Int32Array ? 'bunke pruhu bloku' : `prístupovej bunke ${target.label}`;
 }
 
 /** Popis nosiča do správy o porušení — skladá sa až pri porušení (krok 12 overuje každý nosič v každom ticku). */
@@ -106,6 +108,7 @@ function wrongWayStep(world: MovementWorld, carrier: Carrier, to: number): numbe
     const b = routeCell(carrier, i);
     const direction = directionOfStep((b % width) - (a % width), (b - (b % width)) / width - (a - (a % width)) / width);
     if (direction === undefined || !isRoadStepAllowed(world.grid.atIndex(a), world.grid.atIndex(b), direction)) return i;
+    if (world.quay?.stepAllowed !== undefined && !world.quay.stepAllowed(a, b, DIRECTION_NAMES.indexOf(direction))) return i;
   }
   return undefined;
 }

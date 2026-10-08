@@ -40,7 +40,7 @@ describe('bindSelectionRing', () => {
     const ring = new FakeRing();
     bindSelectionRing(selection, bridge, ring);
     selection.select(ROOT_BERTH);
-    expect(ring.rect).toEqual({ x: 40, y: 14, w: 8, h: 3 });
+    expect(ring.rect).toEqual({ x: 40, y: 14, w: 8, h: 4 });
     selection.select(ROOT_CRANE);
     expect(ring.rect).toEqual({ x: 43, y: 14, w: 2, h: 3 });
     selection.select(null);
@@ -77,7 +77,7 @@ describe('bindSelectionRing', () => {
     loop.frame(0);
     expect(world.modules.has(ROOT_CRANE)).toBe(false);
     expect(selection.get()).toBe(ROOT_BERTH);
-    expect(ring.rect).toEqual({ x: 40, y: 14, w: 8, h: 3 });
+    expect(ring.rect).toEqual({ x: 40, y: 14, w: 8, h: 4 });
 
     // teraz berth (už bez žeriavov) odstránime: výber aj obrys zaniknú
     bridge.dispatch(new RemoveModuleCommand(ROOT_BERTH));

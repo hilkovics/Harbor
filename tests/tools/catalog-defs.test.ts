@@ -79,16 +79,23 @@ describe('skutočné katalógy F2 až F4', () => {
       'truck_waiting_area',
       'loading_ramp_container',
       'empty_depot',
+      'rtg_block',
     ]);
     expect(item(def, 'berth_standard')).toEqual({
       id: 'berth_standard',
       kind: 'berth',
       displayName: 'Kotvisko',
-      footprint: { w: 8, h: 3 },
-      placement: { requiredTerrain: ['quay'], waterSide: 'north', requiresParcelOwnership: true },
+      footprint: { w: 8, h: 4 },
+      placement: { requiredTerrain: ['quay', 'land'], waterSide: 'north', requiresParcelOwnership: true },
       connectors: [
-        { x: 1, y: 2, side: 's', type: 'road' },
-        { x: 6, y: 2, side: 's', type: 'road' },
+        { x: 1, y: 3, side: 's', type: 'road' },
+        { x: 6, y: 3, side: 's', type: 'road' },
+        { x: 0, y: 1, side: 'w', type: 'road' },
+        { x: 0, y: 2, side: 'w', type: 'road' },
+        { x: 0, y: 3, side: 'w', type: 'road' },
+        { x: 7, y: 1, side: 'e', type: 'road' },
+        { x: 7, y: 2, side: 'e', type: 'road' },
+        { x: 7, y: 3, side: 'e', type: 'road' },
       ],
       costCents: 40_000_000,
       maintenancePerDayCents: 120_000,
@@ -186,7 +193,7 @@ describe('skutočné katalógy F2 až F4', () => {
     ]);
   });
 
-  it('vehicles.json: straddle_carrier (ARCHITECTURE §4.4) a empty_handler (ADR-034)', () => {
+  it('vehicles.json: straddle_carrier (ARCHITECTURE §4.4), empty_handler (ADR-034) a terminal_tractor (ADR-040)', () => {
     const def = realDef('vehicles');
     expect(def['schemaVersion']).toBe(1);
     expect(items(def)).toEqual([
@@ -199,6 +206,7 @@ describe('skutočné katalógy F2 až F4', () => {
         loadTicks: 3,
         unloadTicks: 3,
         cargoCategories: ['container'],
+        canLift: true,
         purchaseCents: 4_800_000,
         wagePerDayCents: 18_000,
       },
@@ -212,8 +220,22 @@ describe('skutočné katalógy F2 až F4', () => {
         unloadTicks: 2,
         cargoCategories: ['container'],
         cargoDirections: ['empty'],
+        canLift: true,
         purchaseCents: 3_600_000,
         wagePerDayCents: 14_000,
+      },
+      {
+        id: 'terminal_tractor',
+        displayName: 'Terminálový ťahač',
+        capacityUnits: 1,
+        lengthCells: 3,
+        speedCellsPerTick: 0.5,
+        loadTicks: 2,
+        unloadTicks: 2,
+        cargoCategories: ['container'],
+        canLift: false,
+        purchaseCents: 2_200_000,
+        wagePerDayCents: 12_000,
       },
     ]);
   });
@@ -226,7 +248,11 @@ describe('skutočné katalógy F2 až F4', () => {
       rehandleTicks: 12,
       rehandleGiveUpTicks: 96,
       buryReserveColumns: 4,
+      yardMachineLoadWeight: 12,
       rehandleSpareCells: 2,
+      apronUnloadReserveSlots: 1,
+      hookJobLookahead: 8,
+      hookPairedLoadJobs: 1,
       importDwellEstimateHours: 6,
       yardPlanner: 'planned',
       congestion: { trafficDecayPerHour: 0.9 },

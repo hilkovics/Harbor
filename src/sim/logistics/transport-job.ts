@@ -288,11 +288,11 @@ export class TransportJob {
   /**
    * Presmeruje cieľ jobu z háku žeriava (`in_crane`, nakládka pod hákom) na slot apronu toho istého kotviska (`toModuleId`) — vozidlo s jednotkou
    * k háku nedôjde (`no_path`), preto ju odloží na apron a žeriav ju zdvihne odtiaľ (ADR-033 dodatok T6D-05b). Povolené len pre job `moving`
-   * (jednotka je vo vozidle) s cieľom `in_crane`; slot musí byť už rezervovaný volajúcim. Inak `JobError`, job sa nezmení.
+   * (jednotka je vo vozidle) alebo `assigned` (dispatcher presmeruje nakládku s nedosiahnuteľným hákom už pri priradení, TR3-02b) s cieľom `in_crane`; slot musí byť už rezervovaný volajúcim. Inak `JobError`, job sa nezmení.
    */
   rebindTarget(to: CargoLocation): void {
     const target = checkLocation(to, this.label, 'to');
-    if (this.target.kind !== 'in_crane' || this.current !== 'moving') {
+    if (this.target.kind !== 'in_crane' || (this.current !== 'moving' && this.current !== 'assigned')) {
       throw new JobError('invalid_transition', `${this.label}: cieľ sa presmeruje len pri jobe moving s cieľom in_crane (cieľ ${this.target.kind}, stav ${this.current})`);
     }
     if (target.kind !== 'on_apron' || holderIdOf(target) !== this.toModuleId || !isJobRoute(this.source.kind, target.kind)) {
@@ -344,6 +344,22 @@ export class TransportJob {
     if (!isPositiveId(vehicleId)) throw new JobError('invalid_input', `${this.label}: vehicleId musí byť celé číslo ≥ 1`);
     this.vehicle = vehicleId;
     this.current = 'assigned';
+  }
+
+  /**
+   * Výmena vozidiel medzi dvoma jobmi pod hákom jedného žeriava (ADR-040): žeriav drží jednotku jobu s vozidlom na ceste (`assigned`), no pod hákom už čaká vozidlo iného jobu
+   * (`picking`) — ťahač nezdvihne nič z apronu a pod hákom sa dvaja nevyhnú, takže sa vozidlá vymenia: tento job (`assigned`) dostane čakajúce vozidlo a stane sa `picking`,
+   * `other` (`picking`) dostane vozidlo na ceste a stane sa `assigned`. Explicitná operácia mimo `JOB_TRANSITIONS`; iné stavy → `JobError`, nič sa nezmení.
+   */
+  exchangeVehicle(other: TransportJob): void {
+    if (this.current !== 'assigned' || other.current !== 'picking' || this.vehicle === null || other.vehicle === null) {
+      throw new JobError('invalid_transition', `${this.label}: výmena vozidla vyžaduje job assigned a druhý picking s vozidlami (${this.current}, ${other.label} ${other.current})`);
+    }
+    const waiting = other.vehicle;
+    other.vehicle = this.vehicle;
+    other.current = 'assigned';
+    this.vehicle = waiting;
+    this.current = 'picking';
   }
 
   /**

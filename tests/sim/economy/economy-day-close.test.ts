@@ -94,7 +94,7 @@ describe('DayClosed: údržba a mzdy v rozložení F4 s 2 vozidlami', () => {
     expect(summary.cashEndCents).toBe(cashOf(world));
     expect(expenseOf(summary, 'maintenance')).toBe(PORT_MAINTENANCE);
     expect(expenseOf(summary, 'wages')).toBe(PORT_WAGES);
-    expect(expenseOf(summary, 'road_capex')).toBe(45 * DEFS.infrastructure.road.costPerCellCents);
+    expect(expenseOf(summary, 'road_capex')).toBe(44 * DEFS.infrastructure.road.costPerCellCents);
     expect(expenseOf(summary, 'module_capex')).toBe(63_000_000);
     expect(expenseOf(summary, 'vehicle_capex')).toBe(9_600_000);
     expect(incomeOf(summary, 'contract_revenue')).toBe(0);

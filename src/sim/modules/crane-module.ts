@@ -15,7 +15,7 @@
  */
 import type { EntityId } from '../core/entity-id';
 import { craneParams } from '../defs/module-def';
-import type { CargoCategory, CraneParams } from '../defs/types';
+import { CRANE_GANG_MODES, type CargoCategory, type CraneGangMode, type CraneParams } from '../defs/types';
 import type { StatResolver } from '../tech/stat-resolver';
 import type { CargoDropTarget } from './cargo-drop-target';
 import { Module, type ModuleInit } from './module';
@@ -190,6 +190,14 @@ export type CraneRuntimeState = {
   /** Ticky vozidiel čakajúcich pod týmto žeriavom (súčet cez vozidlá; metrika `vehicleWaitUnderCraneTicks`). */
   readonly vehicleWaitTicks: number;
   readonly lastBlockedHour: number | null;
+  /** Režim prideľovania ťahačov (`SetCraneGang`, ADR-040 bod 7); `null` = východisko z `equipment.json`. */
+  readonly gangMode: CraneGangMode | null;
+  /** Počet ťahačov na STS v režime `gang`; `null` = východisko z `equipment.json`. */
+  readonly tractorsPerSts: number | null;
+  /** Dokončené presuny žeriavu (vykládka aj nakládka jednotky; metrika `stsMovesPerHour`). */
+  readonly moves: number;
+  /** Ticky čakania na vozidlo, keď žeriav stál nečinný (podmnožina `waitForVehicleTicks`; zvyšok je čakanie vo fáze `placing`, ktoré je aj v `busyTicks`) — menovateľ `stsWaitForTractorPct`. */
+  readonly idleWaitTicks: number;
 };
 
 /**
@@ -213,6 +221,10 @@ export const CRANE_RUNTIME_KEYS: readonly (keyof CraneRuntimeState)[] = [
   'waitForVehicleTicks',
   'vehicleWaitTicks',
   'lastBlockedHour',
+  'gangMode',
+  'tractorsPerSts',
+  'moves',
+  'idleWaitTicks',
 ];
 
 export class CraneModule extends Module {
@@ -245,6 +257,14 @@ export class CraneModule extends Module {
   vehicleWaitTicks = 0;
   /** Index hernej hodiny (`clock.gameHour`) posledného `CraneBlocked`; `null` = ešte nebol (throttle, ADR-016). */
   lastBlockedHour: number | null = null;
+  /** Režim prideľovania ťahačov (`SetCraneGang`); `null` = východisko z `equipment.json` (`tractors.defaultMode`). */
+  gangMode: CraneGangMode | null = null;
+  /** Počet ťahačov na STS v režime `gang`; `null` = východisko z `equipment.json` (`tractors.defaultPerSts`). */
+  tractorsPerSts: number | null = null;
+  /** Dokončené presuny žeriavu (jednotka odovzdaná vozidlu / apronu, alebo položená na loď); metrika `stsMovesPerHour`. */
+  moves = 0;
+  /** Ticky čakania na vozidlo pri nečinnom žeriave (podmnožina `waitForVehicleTicks`). */
+  idleWaitTicks = 0;
   /** Stav FSM — zapisuje ho len `transition` (CraneSystem) a `restoreRuntimeState` (save), T02-14. */
   private current: CraneState = 'idle';
 
@@ -362,6 +382,10 @@ export class CraneModule extends Module {
       waitForVehicleTicks: this.waitForVehicleTicks,
       vehicleWaitTicks: this.vehicleWaitTicks,
       lastBlockedHour: this.lastBlockedHour,
+      gangMode: this.gangMode,
+      tractorsPerSts: this.tractorsPerSts,
+      moves: this.moves,
+      idleWaitTicks: this.idleWaitTicks,
     };
   }
 
@@ -412,6 +436,12 @@ export class CraneModule extends Module {
     const waitForVehicleTicks = readCount(fields['waitForVehicleTicks'], '/waitForVehicleTicks');
     const vehicleWaitTicks = readCount(fields['vehicleWaitTicks'], '/vehicleWaitTicks');
     const lastBlockedHour = readOptionalCount(fields['lastBlockedHour'], '/lastBlockedHour');
+    const gangMode = fields['gangMode'] === null ? null : readEnum(fields['gangMode'], CRANE_GANG_MODES, '/gangMode');
+    const tractorsPerSts = readOptionalCount(fields['tractorsPerSts'], '/tractorsPerSts');
+    const moves = readCount(fields['moves'], '/moves');
+    const idleWaitTicks = readCount(fields['idleWaitTicks'], '/idleWaitTicks');
+    if (idleWaitTicks > waitForVehicleTicks) throw new ModuleStateError('/idleWaitTicks', `${String(idleWaitTicks)} > waitForVehicleTicks ${String(waitForVehicleTicks)}`);
+    if (tractorsPerSts === 0) throw new ModuleStateError('/tractorsPerSts', 'počet ťahačov na STS musí byť null alebo celé číslo ≥ 1');
 
     // Od tohto bodu nič nevyhadzuje — obnova je atomická.
     this.current = state;
@@ -427,5 +457,9 @@ export class CraneModule extends Module {
     this.waitForVehicleTicks = waitForVehicleTicks;
     this.vehicleWaitTicks = vehicleWaitTicks;
     this.lastBlockedHour = lastBlockedHour;
+    this.gangMode = gangMode;
+    this.tractorsPerSts = tractorsPerSts;
+    this.moves = moves;
+    this.idleWaitTicks = idleWaitTicks;
   }
 }

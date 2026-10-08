@@ -29,6 +29,7 @@ import {
   CARGO_LOCATION_KINDS,
   CARGO_SPAWN_KINDS,
   CARGO_TRANSITIONS,
+  IN_HANDLER_CAPACITY,
   formatLocation,
   holderIdOf,
   holderSpecOf,
@@ -328,6 +329,9 @@ export class CargoLedger {
       throw new CargoTransitionError(unitId, from, target, hint);
     }
     this.assertSlotFree(target, unitId);
+    if (target.kind === 'in_handler' && this.countAt('in_handler', target.machineId) >= IN_HANDLER_CAPACITY) {
+      throw new CargoError('slot_occupied', `CargoLedger: jednotka #${String(unitId)}: stroj #${String(target.machineId)} už drží ${String(IN_HANDLER_CAPACITY)} jednotku (in_handler ≤ ${String(IN_HANDLER_CAPACITY)})`);
+    }
     const guards = this.deps.storageGuard;
     const takeGuard = guards !== undefined && from.kind === 'in_storage' ? guards(from.moduleId) : undefined;
     const placeGuard = guards !== undefined && target.kind === 'in_storage' ? guards(target.moduleId) : undefined;

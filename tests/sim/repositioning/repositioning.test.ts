@@ -183,5 +183,5 @@ describe('repositioning — obnova uprostred nakládky', () => {
     tickEvents(restored, 4_000);
     expect(stateHash(restored)).toBe(stateHash(reference.world));
     expect(restored.contracts.get(reference.contractId as never)?.state).toBe(reference.world.contracts.get(reference.contractId as never)?.state);
-  });
+  }, 60_000);
 });

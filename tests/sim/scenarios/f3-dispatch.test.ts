@@ -115,7 +115,7 @@ describe('vozidlá: nákup, predaj a odstránenie depa', () => {
   });
 
   it('BuyVehicle: nedostatok hotovosti → insufficient_funds', () => {
-    const poor = DefRegistry.fromRaw({ ...RAW_DEFS, economy: { ...RAW_DEFS.economy, startingCashCents: 34 * ROAD_COST + DEFS.modules.get('vehicle_depot').costCents + 1_000_000 } });
+    const poor = DefRegistry.fromRaw({ ...RAW_DEFS, economy: { ...RAW_DEFS.economy, startingCashCents: 33 * ROAD_COST + DEFS.modules.get('vehicle_depot').costCents + 1_000_000 } });
     const { world } = layoutWorld('f3_buy_poor', 3103, { yards: [] }, poor);
     expect(world.cashCents).toBe(1_000_000);
     expect(STRADDLE_DEF.purchaseCents).toBeGreaterThan(world.cashCents);
@@ -482,15 +482,17 @@ describe('dispatcher: priradí najbližšie voľné vozidlo (nie najmenšie id)'
 // A* a cache ciest cez verejné API: RemoveRoad → preplánovanie, no_path, obnova
 // ---------------------------------------------------------------------------------------------------------
 
-/** Vozidlo, ktoré práve vezie jednotku po nohe berthu (x = 41 alebo 46, y 18–20), a jeho noha. */
+/** Vozidlo, ktoré práve vezie jednotku po západnej nohe berthu (x = 41, y 18–20; len tá má obchádzku (40, 21) … (42, 23), ADR-040 TR3-02), a jeho noha. */
 interface LegMoment {
   readonly vehicleId: EntityId;
   readonly jobId: EntityId;
   readonly legX: number;
   /** Dolná bunka nohy (napojenie na priečku); jej odstránenie zablokuje priamu trasu k dvoru. */
   readonly bottom: { x: number; y: number };
-  /** Bunka hornej spojky susediaca s vonkajšou bunkou berthu na tejto nohe. */
+  /** Bunka obchádzky dolnej bunky nohy (40, 22) — rez `bottom` + `topNext` + `eastBottom` nechá vozidlo bez cesty. */
   readonly topNext: { x: number; y: number };
+  /** Dolná bunka východnej nohy (46, 22): druhá cesta k dvoru ide cez obchádzku berthu (pruh zľava doprava) a východnú nohu, takže treba prerušiť aj ju. */
+  readonly eastBottom: { x: number; y: number };
 }
 
 /** Vzdialenosť (Manhattan, v bunkách) stredu vozidla od stredu bunky. */
@@ -512,15 +514,17 @@ function loadedOnLeg(world: World): LegMoment | null {
   for (const vehicle of all) {
     if (vehicle.state !== 'to_dropoff' || vehicle.jobId === null) continue;
     const cell = cellOfPosition(vehicle.x, vehicle.y);
-    if ((cell.x !== 41 && cell.x !== 46) || cell.y < 18 || cell.y > 20) continue;
+    if (cell.x !== 41 || cell.y < 18 || cell.y > 20) continue;
     const bottom = { x: cell.x, y: 22 };
-    const topNext = cell.x === 41 ? { x: 42, y: 17 } : { x: 45, y: 17 };
+    const topNext = { x: 40, y: 22 };
+    const eastBottom = { x: 46, y: 22 };
     // Bunku drží aj telo či slot vpredu iného vozidla (ADR-037): `RemoveRoad` ju odmietne ako `occupied`, hoci stred vozidla je ďaleko.
-    const cutCells = [world.grid.index(bottom.x, bottom.y), world.grid.index(topNext.x, topNext.y)];
+    const cutCells = [world.grid.index(bottom.x, bottom.y), world.grid.index(topNext.x, topNext.y), world.grid.index(eastBottom.x, eastBottom.y)];
     const clear = all.every(
-      (other) => distanceToCell(other, bottom) >= CUT_CLEARANCE_CELLS && distanceToCell(other, topNext) >= CUT_CLEARANCE_CELLS && !cutCells.some((cell) => other.occupiesCell(cell)),
+      (other) =>
+        distanceToCell(other, bottom) >= CUT_CLEARANCE_CELLS && distanceToCell(other, topNext) >= CUT_CLEARANCE_CELLS && distanceToCell(other, eastBottom) >= CUT_CLEARANCE_CELLS && !cutCells.some((cell) => other.occupiesCell(cell)),
     );
-    if (clear) return { vehicleId: vehicle.id, jobId: vehicle.jobId, legX: cell.x, bottom, topNext };
+    if (clear) return { vehicleId: vehicle.id, jobId: vehicle.jobId, legX: cell.x, bottom, topNext, eastBottom };
   }
   return null;
 }
@@ -536,7 +540,7 @@ function worldAtLegMoment(id: string, seed: number): { world: World; scenario: S
   return { world, scenario, moment: must(loadedOnLeg(world), 'vozidlo s nákladom na nohe berthu') };
 }
 
-const TOP_LINK = ROAD_SEGMENTS.topLink;
+const TOP_LINK = ROAD_SEGMENTS.bypass;
 const onTopLink = (x: number, y: number): boolean => TOP_LINK.some((cell) => sameCell(cell, cellOfPosition(x, y)));
 
 /**
@@ -549,7 +553,7 @@ describe('preplánovanie ciest: RemoveRoad → obchádzka, no_path a obnova', ()
   const REPAIR_AFTER_TICKS = 200;
   const RUN_AFTER_TICKS = 5000;
 
-  it('po RemoveRoad dolnej bunky nohy sa vozidlo preplánuje cez hornú spojku (nikdy no_path), nejazdí po odstránenej bunke a job dokončí', () => {
+  it('po RemoveRoad dolnej bunky nohy sa vozidlo preplánuje cez obchádzku (nikdy no_path), nejazdí po odstránenej bunke a job dokončí', () => {
     const { world, scenario, moment } = worldAtLegMoment('f3_reroute', 3201);
     const t0 = world.clock.tick;
     const cut = withEntries(scenario, entry(t0, removeRoadCommand([moment.bottom])));
@@ -562,7 +566,7 @@ describe('preplánovanie ciest: RemoveRoad → obchádzka, no_path a obnova', ()
 
     const samples = vehicleSamples(log, moment.vehicleId);
     expect(samples.filter((sample) => sample.state === 'no_path')).toEqual([]); // obchádzka existuje → hneď nové trasy
-    expect(samples.some((sample) => onTopLink(sample.x, sample.y))).toBe(true); // obchádza hornou spojkou
+    expect(samples.some((sample) => onTopLink(sample.x, sample.y))).toBe(true); // obchádza obchádzkou
     expect(samples.some((sample) => sameCell(cellOfPosition(sample.x, sample.y), moment.bottom))).toBe(false);
     expect(timed3(log, 'JobDone').some((item) => item.event.jobId === moment.jobId)).toBe(true);
 
@@ -578,7 +582,7 @@ describe('preplánovanie ciest: RemoveRoad → obchádzka, no_path a obnova', ()
   it('bez obchádzky prejde vozidlo do no_path, stojí s nákladom a po obnove cesty pokračuje do dvora', () => {
     const { world, scenario, moment } = worldAtLegMoment('f3_no_path', 3202);
     const t0 = world.clock.tick;
-    const cells = [moment.bottom, moment.topNext];
+    const cells = [moment.bottom, moment.topNext, moment.eastBottom];
     const repairTick = t0 + REPAIR_AFTER_TICKS;
     const scenarioWithCut = withEntries(scenario, entry(t0, removeRoadCommand(cells)), entry(repairTick, placeRoadCommand(cells)));
     const initial = vehicleStates(world);
@@ -621,7 +625,7 @@ describe('preplánovanie ciest: RemoveRoad → obchádzka, no_path a obnova', ()
   it('save/load uprostred no_path: obnovený svet má rovnaký hash a po obnove cesty rovnaký priebeh', () => {
     const { world, scenario, moment } = worldAtLegMoment('f3_no_path_save', 3203);
     const t0 = world.clock.tick;
-    const cells = [moment.bottom, moment.topNext];
+    const cells = [moment.bottom, moment.topNext, moment.eastBottom];
     const repairTick = t0 + REPAIR_AFTER_TICKS;
     const scenarioWithCut = withEntries(scenario, entry(t0, removeRoadCommand(cells)), entry(repairTick, placeRoadCommand(cells)));
 

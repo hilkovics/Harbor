@@ -19,6 +19,8 @@ import {
   GRAIN_BATCH,
   LIQUID_CHAIN,
   RORO_CHAIN,
+  RTG_DISCHARGE_CHAIN,
+  RTG_LOAD_CHAIN,
   SAMPLE_LOCATIONS,
   TEU,
   at,
@@ -281,6 +283,54 @@ describe('CargoLedger.move — úspešný presun a CargoMoved', () => {
       const holder = holderIdOf(location) as EntityId;
       expect(harness.ledger.countAt(location.kind as CargoHolderKind, holder), location.kind).toBe(0);
     }
+  });
+});
+
+describe('CargoLedger — stroj bloku (in_handler, ADR-040)', () => {
+  const MACHINE = 95;
+
+  it('vykládka a nakládka cez RTG: každý krok je CargoMoved, in_handler drží jednotku len medzi vozidlom a stohom', () => {
+    const harness = withUnits(1);
+    const [unit] = harness.units;
+    moveThrough(harness.ledger, unit, RTG_DISCHARGE_CHAIN.slice(0, 3));
+    expect(harness.ledger.countAt('in_handler', id(MACHINE))).toBe(1);
+    expect(harness.ledger.unitsAt('in_handler', id(MACHINE))).toEqual([unit]);
+    expect(harness.ledger.countAt('in_vehicle', id(30))).toBe(0);
+    harness.ledger.move(unit, RTG_DISCHARGE_CHAIN[3]);
+    expect(harness.ledger.countAt('in_handler', id(MACHINE))).toBe(0);
+    moveThrough(harness.ledger, unit, RTG_LOAD_CHAIN);
+    expect(flushMoves(harness.events).map((move) => `${move.from.kind}→${move.to.kind}`)).toEqual([
+      'on_ship→in_crane',
+      'in_crane→in_vehicle',
+      'in_vehicle→in_handler',
+      'in_handler→in_storage',
+      'in_storage→in_handler',
+      'in_handler→in_vehicle',
+      'in_vehicle→in_crane',
+      'in_crane→on_ship',
+      'on_ship→shipped',
+    ]);
+    harness.ledger.assertConservation();
+  });
+
+  it('stroj drží najviac jednu jednotku: druhá do toho istého in_handler → slot_occupied, stav sa nezmení; iný stroj je voľný', () => {
+    const harness = withUnits(3);
+    const [first, second, third] = harness.units;
+    for (const unit of [first, second, third]) moveThrough(harness.ledger, unit, [at.crane(CRANE), at.vehicle(30)]);
+    harness.ledger.move(first, at.handler(MACHINE));
+    expectAtomicFailure(harness, () => harness.ledger.move(second, at.handler(MACHINE)), 'slot_occupied');
+    harness.ledger.move(third, at.handler(MACHINE + 1));
+    harness.ledger.move(first, at.storage(40, 3));
+    harness.ledger.move(second, at.handler(MACHINE));
+    expect(harness.ledger.unitsAt('in_handler', id(MACHINE))).toEqual([second]);
+    harness.ledger.assertConservation();
+  });
+
+  it('žeriav ani rampa nesiahnu do in_handler (nepovolený prechod, stav sa nezmení)', () => {
+    const harness = withUnits(1);
+    const [unit] = harness.units;
+    harness.ledger.move(unit, at.crane(CRANE));
+    expectAtomicFailure(harness, () => harness.ledger.move(unit, at.handler(MACHINE)), 'transition');
   });
 });
 

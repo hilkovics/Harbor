@@ -5,15 +5,21 @@
       "id": "berth_standard",
       "kind": "berth",
       "displayName": "Kotvisko",
-      "footprint": { "w": 8, "h": 3 },
+      "footprint": { "w": 8, "h": 4 },
       "placement": {
-        "requiredTerrain": ["quay"],
+        "requiredTerrain": ["quay", "land"],
         "waterSide": "north",
         "requiresParcelOwnership": true
       },
       "connectors": [
-        { "x": 1, "y": 2, "side": "s", "type": "road" },
-        { "x": 6, "y": 2, "side": "s", "type": "road" }
+        { "x": 1, "y": 3, "side": "s", "type": "road" },
+        { "x": 6, "y": 3, "side": "s", "type": "road" },
+        { "x": 0, "y": 1, "side": "w", "type": "road" },
+        { "x": 0, "y": 2, "side": "w", "type": "road" },
+        { "x": 0, "y": 3, "side": "w", "type": "road" },
+        { "x": 7, "y": 1, "side": "e", "type": "road" },
+        { "x": 7, "y": 2, "side": "e", "type": "road" },
+        { "x": 7, "y": 3, "side": "e", "type": "road" }
       ],
       "costCents": 40000000,
       "maintenancePerDayCents": 120000,
@@ -126,6 +132,23 @@
       "costCents": 22000000,
       "maintenancePerDayCents": 40000,
       "params": { "capacityUnits": 96, "category": "container", "role": "empty_depot", "repairBays": 2, "bays": 4, "rows": 3, "maxTier": 8 }
+    },
+    {
+      "id": "rtg_block",
+      "kind": "storage",
+      "displayName": "RTG blok",
+      "footprint": { "w": 5, "h": 12 },
+      "placement": {
+        "requiredTerrain": ["land", "quay"],
+        "requiresParcelOwnership": true
+      },
+      "connectors": [
+        { "x": 4, "y": 0, "side": "n", "type": "road" },
+        { "x": 4, "y": 11, "side": "s", "type": "road" }
+      ],
+      "costCents": 24000000,
+      "maintenancePerDayCents": 90000,
+      "params": { "capacityUnits": 360, "category": "container", "role": "rtg_block", "bays": 12, "rows": 6, "maxTier": 5, "laneCol": 4, "tpSpacingBays": 1 }
     }
   ]
 }

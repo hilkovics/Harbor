@@ -15,6 +15,8 @@ import { PlaceRoadCommand } from './place-road';
 import { RemoveModuleCommand } from './remove-module';
 import { RemoveRoadCommand } from './remove-road';
 import { SellVehicleCommand } from './sell-vehicle';
+import { SetBlockPriorityCommand } from './set-block-priority';
+import { SetCraneGangCommand } from './set-crane-gang';
 import { SetGameSpeedCommand } from './set-game-speed';
 import { SpawnShipDebugCommand } from './spawn-ship-debug';
 
@@ -39,6 +41,8 @@ export const BUILTIN_COMMANDS: readonly RegistrableCommand[] = Object.freeze([
   SellVehicleCommand,
   AcceptContractCommand,
   DeclineContractCommand,
+  SetBlockPriorityCommand,
+  SetCraneGangCommand,
 ]);
 
 /** Zaregistruje všetky vstavané príkazy do `registry` (už registrovaný typ → `CommandError`). */

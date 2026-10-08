@@ -97,9 +97,11 @@ describe('režim apron: bez nábrežia, vozidlá ostávajú na cestách (bitovo 
     for (const vehicle of world.vehicles.values()) if (world.quay.isQuay(vehicle.cell)) onQuay += 1;
   });
 
-  it('žiadna bunka nábrežia a žiadne vozidlo na nábreží', () => {
+  it('v režime apron je z kotviska jazdná len obchádzka (pevninský riadok) a žiadne vozidlo na nábreží nestojí ani nejazdí; bunky pod hákom nie sú', () => {
     expect(onQuay).toBe(0);
-    expect(world().quay.owners().every((owner) => owner === 0)).toBe(true);
+    const driving = world().quay.owners().reduce((count, owner) => count + (owner === 0 ? 0 : 1), 0);
+    expect(driving).toBe(24); // 8 × 4 bez riadku pri vode: 3 riadky po 8 buniek (pruhy a obchádzka), tranzit smie len obchádzka
+    for (const crane of world().modules.values()) if (crane.kind === 'crane') expect(world().quay.hookCellOf(crane.id)).toBeUndefined();
   });
 
   function world(): World {

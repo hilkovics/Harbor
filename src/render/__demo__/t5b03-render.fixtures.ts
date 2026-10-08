@@ -79,10 +79,10 @@ const SCALE_YARD = yardVM(3, 44, 19, 32);
 const SCALE_RAMP = rampVM(4, 51, 24, 0, [2, 1], true);
 
 /**
- * Cesty scény `scale`: od južného konektora berthu (41; 16) → vonkajšia (41; 17) dole a doprava k dvoru (45; 23) a od (50; 17)
+ * Cesty scény `scale`: od južného konektora berthu (41; 17) → vonkajšia (41; 18) dole a doprava k dvoru (45; 23) a od (50; 18)
  * dole k rampe (vonkajšie bunky (52; 26), (53; 26)).
  */
-export const SCALE_ROADS: readonly CellCoord[] = [...column(41, 17, 23), ...row(23, 41, 45), ...column(50, 17, 26), ...row(26, 50, 53)];
+export const SCALE_ROADS: readonly CellCoord[] = [...column(41, 18, 23), ...row(23, 41, 45), ...column(50, 18, 26), ...row(26, 50, 53)];
 
 const SCALE_VEHICLES: readonly VehicleVM[] = [
   carrierAt(11, 41, 18, 180, false), // prázdny a naložený vedľa seba pod apronom

@@ -26,25 +26,25 @@ import { runScenario, stateHash, type Scenario, type ScenarioEntry } from '../he
 import { DEFS, MAP } from '../world/world-fixtures';
 
 const UNITS = 60;
-const RUN_TICKS = 9000;
+const RUN_TICKS = 20000;
 const RUN_TIMEOUT_MS = 120_000;
 const KINDS = DEFS.infrastructure.roadKinds;
 const REFUND_RATE = DEFS.economy.removalRefundRate;
 
-/** Okruh pri berthe v smere jazdy: západná noha dole, (priečku preskočí), východná noha hore, horná spojka na západ. */
-const WEST_LEG = segment(41, 17, 41, 22);
-const EAST_LEG_UP = segment(46, 17, 46, 22).reverse();
-const TOP_LINK_WEST = segment(42, 17, 45, 17).reverse();
-/** Smery: roh (41, 22) → východ do priečky, roh (46, 17) → západ do hornej spojky (rozhodnutie 12: v rohu smer ďalej). */
-const WEST_DIRS = [...(dragDirections(WEST_LEG) ?? []).slice(0, -1), 'E'];
-const EAST_DIRS = [...(dragDirections(EAST_LEG_UP) ?? []).slice(0, -1), 'W'];
-const TOP_DIRS = dragDirections(TOP_LINK_WEST) ?? [];
+/**
+ * Okruh pri berthe v smere jazdy pruhov kotviska (zľava doprava, ADR-040 TR3-02): západná noha hore (vjazd do pruhu obchádzky), východná noha dole (výjazd z kotviska),
+ * priečka y=22 ostáva dvojpruhová. Horná spojka už neexistuje (berth 8 × 4 zaberá y=17).
+ */
+const WEST_LEG = segment(41, 18, 41, 22).reverse();
+const EAST_LEG_DOWN = segment(46, 18, 46, 22);
+/** Smery: západná noha všade `N`; východná noha `S`, roh (46, 22) → západ do priečky (rozhodnutie 12: v rohu smer ďalej). */
+const WEST_DIRS = dragDirections(WEST_LEG) ?? [];
+const EAST_DIRS = [...(dragDirections(EAST_LEG_DOWN) ?? []).slice(0, -1), 'W'];
 const SPINE = ROAD_SEGMENTS.spine;
 
 const REBUILDS: readonly ScenarioEntry[] = [
   { atTick: 0, command: { type: 'PlaceRoad', cells: WEST_LEG, kind: 'one_way', dirs: WEST_DIRS } },
-  { atTick: 0, command: { type: 'PlaceRoad', cells: EAST_LEG_UP, kind: 'one_way', dirs: EAST_DIRS } },
-  { atTick: 0, command: { type: 'PlaceRoad', cells: TOP_LINK_WEST, kind: 'one_way', dirs: TOP_DIRS } },
+  { atTick: 0, command: { type: 'PlaceRoad', cells: EAST_LEG_DOWN, kind: 'one_way', dirs: EAST_DIRS } },
   { atTick: 0, command: { type: 'PlaceRoad', cells: SPINE, kind: 'one_lane' } },
 ];
 
@@ -85,7 +85,7 @@ describe('scenár road_kinds — jednosmerný okruh a jednopruhová chrbtica', (
   it('všetky príkazy prešli (prestavby na ticku 0 nie sú odmietnuté) a typy ciest sedia', () => {
     expect(log.events.filter(({ event }) => event.type === 'CommandRejected')).toEqual([]);
     for (const [i, { x, y }] of WEST_LEG.entries()) expect([world.grid.at(x, y).roadKind, world.grid.at(x, y).roadDir]).toEqual(['one_way', WEST_DIRS[i]]);
-    expect([world.grid.at(41, 22).roadDir, world.grid.at(46, 17).roadDir, world.grid.at(43, 17).roadDir]).toEqual(['E', 'W', 'W']);
+    expect([world.grid.at(41, 22).roadDir, world.grid.at(46, 22).roadDir, world.grid.at(46, 20).roadDir]).toEqual(['N', 'W', 'S']);
     for (const { x, y } of SPINE) expect(world.grid.at(x, y).roadKind).toBe('one_lane');
     for (const { x, y } of ROAD_SEGMENTS.trunk) expect(world.grid.at(x, y).roadKind).toBe('two_lane');
   });
@@ -114,10 +114,10 @@ describe('scenár road_kinds — jednosmerný okruh a jednopruhová chrbtica', (
     expect(used.has('44,26')).toBe(true); // jednopruhová chrbtica
   });
 
-  it('peniaze: road_capex = 34 dvojpruhových + nové typy, road_sale = 50 % dvojpruhovej ceny prestavaných buniek', () => {
+  it('peniaze: road_capex = ALL_ROAD_CELLS dvojpruhových + nové typy, road_sale = 50 % dvojpruhovej ceny prestavaných buniek', () => {
     const money = log.events.map(({ event }) => event).filter((event): event is TimedMoney => event.type === 'MoneyChanged');
     const sum = (reason: string): number => money.filter((event) => event.reason === reason).reduce((total, event) => total + event.deltaCents, 0);
-    const oneWayCells = WEST_LEG.length + EAST_LEG_UP.length + TOP_LINK_WEST.length;
+    const oneWayCells = WEST_LEG.length + EAST_LEG_DOWN.length;
     const rebuilt = oneWayCells + SPINE.length;
     expect(sum('road_capex')).toBe(
       -(ALL_ROAD_CELLS.length * KINDS.two_lane.costPerCellCents + oneWayCells * KINDS.one_way.costPerCellCents + SPINE.length * KINDS.one_lane.costPerCellCents),

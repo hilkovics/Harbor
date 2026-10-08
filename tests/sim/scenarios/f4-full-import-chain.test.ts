@@ -193,9 +193,9 @@ describe('scenár full_import_chain: beh 120 TEU až po export', () => {
     expect([...world.modules.values()].filter((module) => module.kind === 'waiting_area').map((module) => module.id)).toEqual([7]);
   });
 
-  it('výdavky ticku príkazov = 45 buniek ciest + 6 modulov + 3 vozidlá a rampa je od začiatku prevádzková', () => {
+  it('výdavky ticku príkazov = 44 buniek ciest + 6 modulov + 3 vozidlá a rampa je od začiatku prevádzková', () => {
     const spend =
-      45 * ROAD_COST +
+      44 * ROAD_COST +
       ['vehicle_depot', 'container_yard_small', 'container_yard_small', 'truck_gate', 'truck_waiting_area', 'loading_ramp_container'].reduce(
         (sum, defId) => sum + DEFS.modules.get(defId).costCents,
         0,

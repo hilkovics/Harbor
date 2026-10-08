@@ -18,6 +18,7 @@ export interface CargoHolderWorld {
   readonly ships: ReadonlyMap<EntityId, unknown>;
   readonly vehicles: ReadonlyMap<EntityId, unknown>;
   readonly trucks: ReadonlyMap<EntityId, unknown>;
+  readonly machines: ReadonlyMap<EntityId, unknown>;
 }
 
 type HolderSource = (world: CargoHolderWorld) => Iterable<EntityId>;
@@ -39,6 +40,7 @@ export const CARGO_HOLDER_SOURCES: { readonly [K in CargoHolderKind]: HolderSour
   in_crane: modulesOfKinds('crane'),
   on_apron: modulesOfKinds('berth'),
   in_vehicle: (world: CargoHolderWorld) => world.vehicles.keys(),
+  in_handler: (world: CargoHolderWorld) => world.machines.keys(),
   in_storage: modulesOfKinds('storage'),
   in_pipeline: modulesOfKinds('pipeline'),
   at_ramp: modulesOfKinds('ramp', 'rail_station'),

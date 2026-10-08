@@ -26,7 +26,7 @@ describe('inspectorData: Root kotvisko a žeriav pri štarte', () => {
       defId: 'berth_standard',
       displayName: 'Kotvisko',
       kind: 'berth',
-      footprint: { w: 8, h: 3 },
+      footprint: { w: 8, h: 4 },
       stateLabel: BERTH_STATE_FREE,
       ok: true,
       apron: { used: 0, reserved: 0, capacity: 8 },

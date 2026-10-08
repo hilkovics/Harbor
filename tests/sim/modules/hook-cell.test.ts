@@ -47,7 +47,7 @@ describe('hookCellIndex: skutočný žeriav root kotviska', () => {
   const crane = [...world.modules.values()].find((module): module is CraneModule => module instanceof CraneModule) as CraneModule;
   const berth = world.modules.get(crane.berthId) as BerthModule;
 
-  it('žeriav 2 × 3 na (43, 14) s vodou hore má bunku pod hákom (43, 16): pevninský riadok, hneď nad cestou y = 17', () => {
+  it('žeriav 2 × 3 na (43, 14) s vodou hore má bunku pod hákom (43, 16): pevninský riadok, pruh obchádzky y = 17 (berth 8 × 4)', () => {
     expect(berth.waterSide).toBe('n');
     expect(hookCellCoord(crane, berth)).toEqual({ x: 43, y: 16 });
     expect(hookCellIndex(world.grid, crane, berth)).toBe(world.grid.index(43, 16));
@@ -56,7 +56,9 @@ describe('hookCellIndex: skutočný žeriav root kotviska', () => {
   it('nábrežie kotviska pod hákom (world.quay) obsahuje bunku pod hákom a nie bunky mimo footprintu kotviska', () => {
     const hook = hookCellIndex(world.grid, crane, berth);
     expect(world.quay.ownerAt(hook)).toBe(berth.id);
-    expect(world.quay.isQuay(world.grid.index(43, 17))).toBe(false); // cesta pod kotviskom
+    expect(world.quay.isQuay(world.grid.index(43, 17))).toBe(true); // pevninský riadok = obchádzka (ADR-040)
+    expect(world.quay.isQuay(world.grid.index(43, 14))).toBe(false); // riadok pri vode (nohy žeriava) nie je jazdný
+    expect(world.quay.isQuay(world.grid.index(43, 18))).toBe(false); // cesta pod kotviskom
   });
 });
 

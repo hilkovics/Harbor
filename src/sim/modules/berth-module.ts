@@ -34,10 +34,14 @@ const BERTH_RUNTIME_KEYS: readonly (keyof BerthRuntimeState)[] = ['lastNoStorage
 
 const NO_CRANES: readonly EntityId[] = Object.freeze([]);
 
-/** Efektívna hĺbka kotviska: menšia z hĺbky typu kotviska a najplytšej bunky footprintu (rozhodnutie 4). */
+/**
+ * Efektívna hĺbka kotviska: menšia z hĺbky typu kotviska a najplytšej bunky nábrežia vo footprinte (rozhodnutie 4). Pevninské riadky kotviska 8 × 4 (obchádzka, TR3-02)
+ * hĺbku nemajú a ponor lode neovplyvňujú.
+ */
 export function effectiveBerthDepth(params: BerthParams, cells: readonly { readonly x: number; readonly y: number }[], grid: Grid): DepthClass {
   let depth: DepthClass = params.depthClass;
   for (const { x, y } of cells) {
+    if (grid.at(x, y).terrain !== 'quay') continue;
     const cellDepth = grid.at(x, y).depthClass;
     if (cellDepth < depth) depth = cellDepth;
   }

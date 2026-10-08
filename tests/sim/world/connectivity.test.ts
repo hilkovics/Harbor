@@ -2,7 +2,7 @@
 // po rotácii, vonkajšia bunka, hasRoad) a World.isConnected (aspoň jeden `road` konektor s cestou na vonkajšej bunke),
 // počítané vždy z mriežky — PlaceRoad/RemoveRoad sa prejavia hneď, bez cache.
 //
-// harbor_01: Root berth (40, 14) rot 0 má konektory (41, 16, s) a (46, 16, s) → vonkajšie bunky (41, 17), (46, 17);
+// harbor_01: Root berth 8 × 4 (40, 14) rot 0 má južné konektory (41, 17, s) a (46, 17, s) → vonkajšie bunky (41, 18), (46, 18) a pruhové konektory w / e;
 // starter parcela x 30–57, y 14–33 (vlastnená), pevnina y ≥ 17.
 import { APRON_MODULES as modulesJson } from '../helpers/apron-modules';
 import { describe, expect, it } from 'vitest';
@@ -40,18 +40,24 @@ describe('World.connectorCells', () => {
     const berth = world.moduleAt(40, 14);
     if (berth === undefined) throw new Error('Root berth chýba');
     expect(world.connectorCells(berth)).toEqual([
-      { connector: { x: 41, y: 16, side: 's', type: 'road' }, outside: { x: 41, y: 17 }, hasRoad: false },
-      { connector: { x: 46, y: 16, side: 's', type: 'road' }, outside: { x: 46, y: 17 }, hasRoad: false },
+      { connector: { x: 41, y: 17, side: 's', type: 'road' }, outside: { x: 41, y: 18 }, hasRoad: false },
+      { connector: { x: 46, y: 17, side: 's', type: 'road' }, outside: { x: 46, y: 18 }, hasRoad: false },
+      { connector: { x: 40, y: 15, side: 'w', type: 'road' }, outside: { x: 39, y: 15 }, hasRoad: false },
+      { connector: { x: 40, y: 16, side: 'w', type: 'road' }, outside: { x: 39, y: 16 }, hasRoad: false },
+      { connector: { x: 40, y: 17, side: 'w', type: 'road' }, outside: { x: 39, y: 17 }, hasRoad: false },
+      { connector: { x: 47, y: 15, side: 'e', type: 'road' }, outside: { x: 48, y: 15 }, hasRoad: false },
+      { connector: { x: 47, y: 16, side: 'e', type: 'road' }, outside: { x: 48, y: 16 }, hasRoad: false },
+      { connector: { x: 47, y: 17, side: 'e', type: 'road' }, outside: { x: 48, y: 17 }, hasRoad: false },
     ]);
   });
 
   it('hasRoad sleduje mriežku: po PlaceRoad na (46, 17) true, po RemoveRoad znova false', () => {
     const world = rootWorld();
     const berth = world.moduleAt(40, 14) as Module;
-    roads(world, [{ x: 46, y: 17 }]);
-    expect(world.connectorCells(berth).map((c) => c.hasRoad)).toEqual([false, true]);
-    unroads(world, [{ x: 46, y: 17 }]);
-    expect(world.connectorCells(berth).map((c) => c.hasRoad)).toEqual([false, false]);
+    roads(world, [{ x: 46, y: 18 }]);
+    expect(world.connectorCells(berth).map((c) => c.hasRoad).slice(0, 2)).toEqual([false, true]);
+    unroads(world, [{ x: 46, y: 18 }]);
+    expect(world.connectorCells(berth).map((c) => c.hasRoad).slice(0, 2)).toEqual([false, false]);
   });
 
   it('modul bez konektorov (žeriav) → []', () => {
@@ -87,9 +93,9 @@ describe('World.isConnected', () => {
     const world = rootWorld();
     const berth = world.moduleAt(40, 14) as Module;
     expect(world.isConnected(berth)).toBe(false);
-    roads(world, [{ x: 41, y: 17 }]);
+    roads(world, [{ x: 41, y: 18 }]);
     expect(world.isConnected(berth)).toBe(true);
-    unroads(world, [{ x: 41, y: 17 }]);
+    unroads(world, [{ x: 41, y: 18 }]);
     expect(world.isConnected(berth)).toBe(false);
   });
 
@@ -128,7 +134,7 @@ describe('World.isConnected', () => {
   it('čisté funkcie: connectorCellsOf / isModuleConnected = metódy World', () => {
     const world = rootWorld();
     const berth = world.moduleAt(40, 14) as Module;
-    roads(world, [{ x: 46, y: 17 }]);
+    roads(world, [{ x: 46, y: 18 }]);
     expect(connectorCellsOf(world.grid, berth)).toEqual(world.connectorCells(berth));
     expect(isModuleConnected(world.grid, berth)).toBe(world.isConnected(berth));
   });

@@ -30,7 +30,8 @@ describe('prístup k modulom po ceste', () => {
   it('accessCellIndex / isAccessCell: vonkajšia bunka cestného konektora s cestou; bez cesty NO_ACCESS', () => {
     const { world, depot } = dispatchWorld();
     const berth = berthOf(world);
-    expect(berth.connectors.map((connector) => accessCellIndex(world.grid, connector))).toEqual(BERTH_ACCESS.map((cell) => cellIndex(world, cell)));
+    // Berth 8 × 4: prvé dva sú južné konektory (s cestou), ostatné pruhové w / e bez cesty.
+    expect(berth.connectors.map((connector) => accessCellIndex(world.grid, connector))).toEqual([...BERTH_ACCESS.map((cell) => cellIndex(world, cell)), ...Array<number>(6).fill(NO_ACCESS)]);
     expect(accessCellIndex(world.grid, depot.connectors[0])).toBe(cellIndex(world, DEPOT_ACCESS));
     expect(isAccessCell(world.grid, depot, cellIndex(world, DEPOT_ACCESS))).toBe(true);
     expect(isAccessCell(world.grid, depot, cellIndex(world, BERTH_ACCESS[0]))).toBe(false);
@@ -51,8 +52,8 @@ describe('prístup k modulom po ceste', () => {
     expect(distanceBetweenModules(world, berth, west)).toBe(4);
     expect(distanceBetweenModules(world, berth, east)).toBe(4);
     expect(distanceBetweenModules(world, depot, east)).toBe(18);
-    expect(nearestAccessCell(world, cellIndex(world, { x: 43, y: 17 }), berth)).toBe(cellIndex(world, BERTH_ACCESS[0])); // 2 < 3
-    expect(nearestAccessCell(world, cellIndex(world, { x: 44, y: 17 }), berth)).toBe(cellIndex(world, BERTH_ACCESS[1])); // 3 > 2
+    expect(nearestAccessCell(world, cellIndex(world, { x: 43, y: 18 }), berth)).toBe(cellIndex(world, BERTH_ACCESS[0])); // 2 < 3
+    expect(nearestAccessCell(world, cellIndex(world, { x: 44, y: 18 }), berth)).toBe(cellIndex(world, BERTH_ACCESS[1])); // 3 > 2
   });
 });
 
@@ -101,7 +102,7 @@ describe('YardPlanner — výber bloku (nahradil allocateStorage, TR2-06b)', () 
     const { world } = dispatchWorld();
     const far = placeYard(world, YARD_F);
     const west = placeYard(world, YARD_W);
-    execute(world, { type: 'RemoveRoad', cells: [{ x: 39, y: 17 }] }); // W je odrezaný od berthu
+    execute(world, { type: 'RemoveRoad', cells: [{ x: 39, y: 18 }] }); // W je odrezaný od berthu
     expect(chooseYardSlot(world, newUnit(world), berthOf(world))?.moduleId).toBe(far.id);
     expect(distanceBetweenModules(world, berthOf(world), west)).toBe(Infinity);
     expect(YARD_W_ACCESS.x).toBeLessThan(39);

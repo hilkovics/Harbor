@@ -53,10 +53,11 @@
  * Bez side-effectov a bez závislosti na DOM/Pixi/React.
  */
 import { dockHeading, findDockCenter, findStallCenter, type SlotHost } from '@render/module-slots';
-import type { ContainerVM, CraneVM, EntitiesVM, ModuleVM, ShipVM, StackVM, TruckVM, VehicleVM, ViewRotation } from '@render/view-models';
+import type { ContainerVM, CraneVM, EntitiesVM, MachineVM, ModuleVM, ShipVM, StackVM, TruckVM, VehicleVM, ViewRotation } from '@render/view-models';
 import type { CargoLocation, CargoUnit } from '@sim/cargo';
 import type { EntityId } from '@sim/core';
-import { BerthModule, CraneModule, EmptyDepot, LoadingRamp, StorageModule, TruckGate, VehicleDepot, WaitingArea, YardBlock, type Module } from '@sim/modules';
+import { moduleLanes } from '@sim/logistics';
+import { BerthModule, CraneModule, RtgBlock, craneCargo, craneTrolley, EmptyDepot, LoadingRamp, StorageModule, TruckGate, VehicleDepot, WaitingArea, YardBlock, type Module } from '@sim/modules';
 import { SHIP_STATE_TRAITS, type Ship } from '@sim/ships';
 import type { Truck } from '@sim/trucks';
 import { hookCellOfCrane } from '@sim/vehicles';
@@ -299,6 +300,8 @@ function moduleVM(world: World, module: Module, storageOps: StorageOps = NO_STOR
     vm.stacks = yardBlockStacks(world, module);
     vm.stackGeometry = { bays: module.geometry.bays, rows: module.geometry.rows, maxTier: module.geometry.maxTier };
   }
+  const lanes = moduleLanes(module);
+  if (lanes.length > 0) vm.lanes = lanes.map(({ x, y, dir }) => ({ x, y, dir: dir.toLowerCase() as 'n' | 'e' | 's' | 'w' }));
   if (hasRoadConnector(module)) vm.connected = world.isConnected(module);
   const heldHere = held.get(module.id);
   if (heldHere !== undefined) vm.held = heldVM(module, heldHere);
@@ -316,12 +319,50 @@ export function moduleVMs(world: World, storageOps: StorageOps = NO_STORAGE_OPS)
   return result;
 }
 
+/** VM kontajnera z jednotky ledgera. */
+function containerOf(unit: CargoUnit): ContainerVM {
+  return { sizeFt: unit.sizeFt as 20 | 40, containerType: unit.containerType, lineId: unit.lineId, direction: unit.direction };
+}
+
+/** Stroje blokov (R3, RTG): stred rámu v bunkách sveta (s rotáciou bloku), vozík a zdvih 0..1, náklad z `in_handler`. */
+export function machineVMs(world: World): MachineVM[] {
+  const result: MachineVM[] = [];
+  for (const machine of world.machines.values()) {
+    const block = world.modules.get(machine.blockId);
+    if (!(block instanceof RtgBlock)) continue;
+    const pose = machine.poseNow();
+    const { w, h } = block.def.footprint;
+    const lx = w / 2;
+    const ly = pose.gantry + 0.5;
+    const local = { 0: { x: lx, y: ly }, 90: { x: h - ly, y: lx }, 180: { x: w - lx, y: h - ly }, 270: { x: ly, y: w - lx } }[block.rotation];
+    let cargo: ContainerVM | null = null;
+    if (world.cargo.countAt('in_handler', machine.id) > 0) {
+      const unitId = world.cargo.unitAtIndex('in_handler', machine.id, 0);
+      const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
+      if (unit !== undefined) cargo = containerOf(unit);
+    }
+    const { rows, maxTier } = block.geometry;
+    result.push({
+      id: machine.id,
+      defId: machine.defId,
+      blockId: machine.blockId,
+      x: block.origin.x + local.x,
+      y: block.origin.y + local.y,
+      trolley: Math.min(1, Math.max(0, (pose.trolley + 1) / rows)),
+      hoist: Math.min(1, Math.max(0, pose.hoist / maxTier)),
+      state: machine.state,
+      cargo,
+    });
+  }
+  return result;
+}
+
 /** Žeriavy sveta v poradí umiestnenia. */
 export function craneVMs(world: World): CraneVM[] {
   const result: CraneVM[] = [];
   for (const module of world.modules.values()) {
     if (!(module instanceof CraneModule)) continue;
-    const held = module.heldUnitId;
+    const held = craneCargo(module) as EntityId | null;
     const heldUnit = held === null ? undefined : unitOf(world, held, module.label);
     const idlePhase = module.state === 'idle' || module.state === 'blocked';
     const hook = hookCellOfCrane(world, module.id); // F6d: bunka pod hákom, len pri kotvisku s jazdným nábrežím (under_hook)
@@ -336,6 +377,8 @@ export function craneVMs(world: World): CraneVM[] {
       progress: idlePhase ? 0 : Math.min(1, Math.max(0, module.phaseProgress)),
       holding: heldUnit === undefined ? null : { unitId: heldUnit.id, typeId: heldUnit.typeId, ...(isEmptyUnit(heldUnit) ? { empty: true } : {}) },
       cycle: module.cycle,
+      trolleyY: craneTrolley(module),
+      cargo: heldUnit === undefined ? null : containerOf(heldUnit),
       ...(hook === undefined ? {} : { hook: { x: (hook % world.grid.width) + 0.5, y: Math.floor(hook / world.grid.width) + 0.5 } }),
     });
   }
@@ -579,6 +622,7 @@ export function entitiesVM(
   return Object.freeze({
     modules: Object.freeze(moduleVMs(world, storageOps)),
     cranes: Object.freeze(craneVMs(world)),
+    machines: Object.freeze(machineVMs(world)),
     ships: Object.freeze(shipVMs(world, prev, lashingTotals)),
     vehicles: Object.freeze(vehicleVMs(world, prevVehicles)),
     trucks: Object.freeze(truckVMs(world, prevTrucks)),
@@ -652,6 +696,7 @@ export class EntitiesVMBuilder {
     return Object.freeze({
       modules: this.modules,
       cranes: Object.freeze(craneVMs(world)),
+      machines: Object.freeze(machineVMs(world)),
       ships: Object.freeze(shipVMs(world, prev, lashingTotals, (target, ship) => this.shipSplits.split(target, ship, revision))),
       vehicles: Object.freeze(vehicleVMs(world, prevVehicles)),
       trucks: Object.freeze(truckVMs(world, prevTrucks)),

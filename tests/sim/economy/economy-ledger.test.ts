@@ -65,7 +65,7 @@ describe('Economy: počiatočný stav', () => {
 describe('Economy: výdavky a predaje z F1–F4 idú cez ledger s rovnakými sumami', () => {
   const seed = 5503;
 
-  it('stavba prístavu: road_capex 45 buniek, module_capex 6 modulov, vehicle_capex 2 vozidlá; hotovosť = štart − súčet', () => {
+  it('stavba prístavu: road_capex 44 buniek, module_capex 6 modulov, vehicle_capex 2 vozidlá; hotovosť = štart − súčet', () => {
     const world = World.create(DEFS, MAP, seed);
     const run = new Run5(world, portScenario('f5_ledger_build', seed));
     run.runTo(2);
@@ -113,7 +113,7 @@ describe('Ledger: okno posledných záznamov', () => {
   it('drží najviac ledgerEntriesKept záznamov (najstaršie vypadnú), hotovosť sa zachová', () => {
     const kept = 4;
     const defs = defsWith({ economy: { ledgerEntriesKept: kept } });
-    const roads = [1, 2, 3, 4, 5, 6].map((i) => at(i, { type: 'PlaceRoad', cells: [{ x: 41, y: 16 + i }] }));
+    const roads = [1, 2, 3, 4, 5, 6].map((i) => at(i, { type: 'PlaceRoad', cells: [{ x: 41, y: 17 + i }] }));
     const scenario = withCommands(emptyScenario('f5_ledger_ring', 5504), ...roads);
     const world = World.create(defs, MAP, 5504);
     const run = new Run5(world, scenario);

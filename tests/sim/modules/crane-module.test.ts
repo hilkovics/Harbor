@@ -45,6 +45,10 @@ const VALID: CraneRuntimeState = {
   waitForVehicleTicks: 11,
   vehicleWaitTicks: 13,
   lastBlockedHour: 3,
+  gangMode: null,
+  tractorsPerSts: null,
+  moves: 0,
+  idleWaitTicks: 0,
 };
 
 describe('CraneModule', () => {
@@ -91,6 +95,10 @@ describe('CraneModule — runtime stav', () => {
       'waitForVehicleTicks',
       'vehicleWaitTicks',
       'lastBlockedHour',
+      'gangMode',
+      'tractorsPerSts',
+      'moves',
+      'idleWaitTicks',
     ]);
   });
 

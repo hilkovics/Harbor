@@ -243,9 +243,17 @@ export function CraneInspector({ gang, tractorsPerSts, onSetGang }: CraneInspect
           min={TRACTORS_PER_STS_MIN}
           max={TRACTORS_PER_STS_MAX}
           step={1}
-          value={count}
+          defaultValue={count}
+          key={count}
           data-field="tractors-per-sts"
-          onChange={(event) => onSetGang?.(mode, clampTractorsPerSts(Number(event.currentTarget.value)))}
+          onChange={(event) => {
+            // prázdne pole počas písania sa nevynucuje na 1 — ohraničí sa až pri commite (blur)
+            if (event.currentTarget.value.trim() === '') return;
+            onSetGang?.(mode, clampTractorsPerSts(Number(event.currentTarget.value)));
+          }}
+          onBlur={(event) => {
+            event.currentTarget.value = String(count);
+          }}
         />
       </label>
     </section>

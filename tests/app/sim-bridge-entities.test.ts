@@ -353,7 +353,7 @@ describe('SimBridge.entities()', () => {
     expect(entities.ships).toBe(snapshot.ships);
     expect(entities.vehicles).toBe(snapshot.vehicles);
     expect(entities.trucks).toBe(snapshot.trucks);
-    expect(Object.keys(entities).sort()).toEqual(['cranes', 'modules', 'ships', 'trucks', 'vehicles']);
+    expect(Object.keys(entities).sort()).toEqual(['cranes', 'machines', 'modules', 'ships', 'trucks', 'vehicles']);
   });
 
   it('referencia je stabilná, kým sa snapshot nezmení; potom sa obnoví', () => {

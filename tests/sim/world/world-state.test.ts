@@ -64,8 +64,8 @@ function busyWorld(): World {
   return world;
 }
 
-describe('World.serialize — WorldState v10', () => {
-  it('tvar: presne kľúče v10 (= tvar v9, ADR-036) v pevnom poradí a hodnoty novej hry', () => {
+describe('World.serialize — WorldState v11', () => {
+  it('tvar: presne kľúče v11 (= tvar v9, ADR-036) v pevnom poradí a hodnoty novej hry', () => {
     const world = create();
     const state = world.serialize();
     expect(Object.keys(state)).toEqual([
@@ -288,7 +288,7 @@ describe('World.deserialize', () => {
   const INVALID: readonly [string, Mutation, string][] = [
     ['neznámy kľúč', set('extra', 1), '/extra'],
     ['chýba kľúč', (s) => delete s.cashCents, '/cashCents'],
-    ['neznáma budúca verzia', set('version', 11), '/version'],
+    ['neznáma budúca verzia', set('version', 12), '/version'],
     ['verzia 0', set('version', 0), '/version'],
     ['verzia ako reťazec', set('version', '3'), '/version'],
     ['starý save v1 → clean break (ADR-036), chyba verzie pred tvarom', set('version', 1), '/version'],

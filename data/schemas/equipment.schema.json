@@ -23,7 +23,8 @@
         "trolleyTicksPerRow",
         "lockTicks",
         "priorities",
-        "prefetchCells"
+        "prefetchCells",
+        "handoverGiveUpTicks"
       ],
       "properties": {
         "gantryCellsPerTick": {
@@ -69,6 +70,11 @@
               "minimum": 0
             }
           }
+        },
+        "handoverGiveUpTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "TR3-06b: po tolko tickoch cakania RTG s jednotkou v in_handler na tahac (no_path, nezhoda bunky pruhu) stroj jednotku vrati do stohu a cyklus zrusi."
         },
         "prefetchCells": {
           "type": "integer",

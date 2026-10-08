@@ -10,7 +10,8 @@
       "truck": 1,
       "housekeeping": 2
     },
-    "prefetchCells": 6
+    "prefetchCells": 6,
+    "handoverGiveUpTicks": 600
   },
   "tractors": {
     "defaultMode": "pool",

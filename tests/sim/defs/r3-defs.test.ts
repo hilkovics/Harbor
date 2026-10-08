@@ -62,7 +62,7 @@ describe('bundled defy R3', () => {
   const defs = loadBundledDefs();
 
   it('equipment.json: časy RTG a priority loď < kamión < housekeeping', () => {
-    expect(defs.equipment.rtg).toEqual({ gantryCellsPerTick: 2, hoistTicksPerTier: 1, trolleyTicksPerRow: 1, lockTicks: 1, prefetchCells: 6, priorities: { ship: 0, truck: 1, housekeeping: 2 } });
+    expect(defs.equipment.rtg).toEqual({ gantryCellsPerTick: 2, hoistTicksPerTier: 1, trolleyTicksPerRow: 1, lockTicks: 1, prefetchCells: 6, handoverGiveUpTicks: 600, priorities: { ship: 0, truck: 1, housekeeping: 2 } });
     expect(Object.isFrozen(defs.equipment.rtg)).toBe(true);
   });
 

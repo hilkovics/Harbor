@@ -219,6 +219,22 @@ export abstract class YardMachine {
     this.moveCount += 1;
   }
 
+  /**
+   * Vzdá rozpracovaný cyklus (TR3-06b): stroj stojí na mieste (`idle`, bez odpočtu), cyklus sa nezapočíta do `moves`. Jednotku v `in_handler` musí volajúci vrátiť
+   * do stohu **pred** týmto volaním (`systems/yard-machine-system.ts`).
+   */
+  abortCycle(): void {
+    if (this.activeCycle === null) throw new MachineError('inconsistent', `${this.label}: nie je čo vzdať, stroj nemá cyklus`);
+    const pose = this.poseNow();
+    this.transition('idle');
+    this.from = pose;
+    this.to = pose;
+    this.total = 0;
+    this.left = 0;
+    this.activeCycle = null;
+    this.stall = 0;
+  }
+
   /** Pripočíta tick bez cieľa rehandlingu; vráti nový počet. */
   addStall(): number {
     this.stall += 1;

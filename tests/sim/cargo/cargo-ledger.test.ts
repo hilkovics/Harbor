@@ -313,6 +313,19 @@ describe('CargoLedger — stroj bloku (in_handler, ADR-040)', () => {
     harness.ledger.assertConservation();
   });
 
+  it('stroj drží najviac jednu jednotku: druhá do toho istého in_handler → slot_occupied, stav sa nezmení; iný stroj je voľný', () => {
+    const harness = withUnits(3);
+    const [first, second, third] = harness.units;
+    for (const unit of [first, second, third]) moveThrough(harness.ledger, unit, [at.crane(CRANE), at.vehicle(30)]);
+    harness.ledger.move(first, at.handler(MACHINE));
+    expectAtomicFailure(harness, () => harness.ledger.move(second, at.handler(MACHINE)), 'slot_occupied');
+    harness.ledger.move(third, at.handler(MACHINE + 1));
+    harness.ledger.move(first, at.storage(40, 3));
+    harness.ledger.move(second, at.handler(MACHINE));
+    expect(harness.ledger.unitsAt('in_handler', id(MACHINE))).toEqual([second]);
+    harness.ledger.assertConservation();
+  });
+
   it('žeriav ani rampa nesiahnu do in_handler (nepovolený prechod, stav sa nezmení)', () => {
     const harness = withUnits(1);
     const [unit] = harness.units;

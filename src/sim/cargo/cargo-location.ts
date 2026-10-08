@@ -126,6 +126,9 @@ export const CARGO_LOCATION_KINDS: readonly CargoLocationKind[] = Object.freeze(
 /** Druhy lokácií s držiteľom v poradí `CARGO_LOCATION_KINDS`. */
 export const CARGO_HOLDER_KINDS: readonly CargoHolderKind[] = Object.freeze(Object.keys(CARGO_HOLDER_SPECS) as CargoHolderKind[]);
 
+/** Najviac jednotiek naraz v `in_handler` jedného stroja (štrukturálna konštanta: stroj drží jeden kontajner, ADR-040 bod 3). */
+export const IN_HANDLER_CAPACITY = 1;
+
 /** Tabuľka povolených prechodov `from → [to…]` (dáta, nie switch); konečné stavy (`exported`, `shipped`) nemajú výstupy. */
 export const CARGO_TRANSITIONS: ReadonlyMap<CargoLocationKind, readonly CargoLocationKind[]> = new Map(
   CARGO_LOCATION_KINDS.map((kind) => [kind, Object.freeze([...TRANSITIONS[kind]])] as const),

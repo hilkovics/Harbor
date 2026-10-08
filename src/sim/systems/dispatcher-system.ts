@@ -18,6 +18,7 @@ import {
   createInboundJobs,
   createOutboundJobs,
 } from '../logistics/dispatcher';
+import { beginGangPass, endGangPass } from '../logistics/gang-roster';
 import type { StoredCargoGroup } from '../logistics/stored-cargo-index';
 import type { LoadingRamp } from '../modules/loading-ramp';
 import type { Vehicle } from '../vehicles/vehicle';
@@ -42,13 +43,18 @@ export class DispatcherSystem {
   tick(world: World): void {
     // Staging miesta prisľúbené kamiónom s dovozom (ADR-035): outbound joby ich nesmú vziať (`DockIntake.roomAt`).
     world.dockIntake.refresh(world);
-    if (this.cancelGate.due(world)) cancelUnusableOutboundJobs(world);
-    createInboundJobs(world);
-    createHookUnloadJobs(world);
-    createExportJobs(world);
-    createEmptyJobs(world);
-    createExportLoadJobs(world);
-    createOutboundJobs(world, this.ramps, this.groups);
-    assignOpenJobs(world, this.idle);
+    beginGangPass(world);
+    try {
+      if (this.cancelGate.due(world)) cancelUnusableOutboundJobs(world);
+      createInboundJobs(world);
+      createHookUnloadJobs(world);
+      createExportJobs(world);
+      createEmptyJobs(world);
+      createExportLoadJobs(world);
+      createOutboundJobs(world, this.ramps, this.groups);
+      assignOpenJobs(world, this.idle);
+    } finally {
+      endGangPass();
+    }
   }
 }

@@ -288,6 +288,7 @@ const RTG_FIELDS: SpecTable<RtgDef> = {
   trolleyTicksPerRow: { kind: 'integer', min: 1 },
   lockTicks: { kind: 'integer', min: 1 },
   prefetchCells: { kind: 'integer', min: 0 },
+  handoverGiveUpTicks: { kind: 'integer', min: 1 },
   priorities: { kind: 'object', fields: { ship: { kind: 'integer', min: 0 }, truck: { kind: 'integer', min: 0 }, housekeeping: { kind: 'integer', min: 0 } } },
 };
 

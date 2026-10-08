@@ -10,7 +10,7 @@ const crane = (): RtgCrane => RtgCrane.create(id(5), id(4), DEF, 5);
 
 describe('equipment.json → rtg', () => {
   it('časy a priority loď > kamión > housekeeping sú v dátach', () => {
-    expect(DEF).toEqual({ gantryCellsPerTick: 2, hoistTicksPerTier: 1, trolleyTicksPerRow: 1, lockTicks: 1, prefetchCells: 6, priorities: { ship: 0, truck: 1, housekeeping: 2 } });
+    expect(DEF).toEqual({ gantryCellsPerTick: 2, hoistTicksPerTier: 1, trolleyTicksPerRow: 1, lockTicks: 1, prefetchCells: 6, handoverGiveUpTicks: 600, priorities: { ship: 0, truck: 1, housekeeping: 2 } });
   });
 });
 
@@ -19,10 +19,10 @@ describe('MACHINE_TRANSITIONS: idle → travel → (shift)* → lift → trolley
     expect(MACHINE_STATES).toEqual(['idle', 'travel', 'shift', 'lift', 'trolley', 'lower']);
     expect(Object.fromEntries(MACHINE_TRANSITIONS)).toEqual({
       idle: ['travel'],
-      travel: ['shift', 'lift'],
-      shift: ['shift', 'lift', 'trolley', 'lower'],
-      lift: ['shift', 'trolley', 'lower'],
-      trolley: ['shift', 'lower'],
+      travel: ['shift', 'lift', 'idle'],
+      shift: ['shift', 'lift', 'trolley', 'lower', 'idle'],
+      lift: ['shift', 'trolley', 'lower', 'idle'],
+      trolley: ['shift', 'lower', 'idle'],
       lower: ['idle'],
     });
   });
@@ -31,7 +31,7 @@ describe('MACHINE_TRANSITIONS: idle → travel → (shift)* → lift → trolley
     ['idle', 'lift'],
     ['idle', 'lower'],
     ['travel', 'lower'],
-    ['lift', 'idle'],
+    ['lower', 'shift'],
     ['lower', 'travel'],
     ['trolley', 'lift'],
   ])('%s → %s nie je povolené', (from, to) => {

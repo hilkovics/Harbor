@@ -673,6 +673,8 @@ export interface RtgDef {
   readonly priorities: { readonly [K in YardPriorityKind]: number };
   /** Predzásobenie nakládky: stroj začne `take` pre ťahač, ktorému do TP ostáva najviac toľko buniek trasy (0 = čaká na príchod ťahača). */
   readonly prefetchCells: number;
+  /** Po toľkých tickoch čakania stroja so zdvihnutým kontajnerom na ťahač (predzásobenie) stroj kontajner vráti do stohu a cyklus zruší (≥ 1). */
+  readonly handoverGiveUpTicks: number;
 }
 
 /** Režim prideľovania ťahačov žeriavu STS (ADR-040 bod 7): `pool` = najbližší voľný ťahač zo spoločného bazéna, `gang` = pevná skupina `tractorsPerSts` ťahačov žeriavu. */

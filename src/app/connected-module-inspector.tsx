@@ -12,7 +12,9 @@
  */
 import { useCallback, useSyncExternalStore } from 'react';
 import { RemoveModuleCommand } from '@sim/commands';
+import { BlockInspector, CraneInspector, MachineInspector } from '@ui/machine-inspector';
 import { ModuleInspector } from '@ui/module-inspector';
+import { blockPanelData, cranePanelData, sameBlockPanel, sameCranePanel, setBlockPriority, setCraneGang } from './machine-inspector-data';
 import { depotVehicleDef, inspectorData, sameInspectorData } from './inspector-data';
 import type { ModuleSelection } from './module-selection';
 import { useSimBridge, useSimSnapshot } from './use-sim-snapshot';
@@ -26,6 +28,8 @@ export function ConnectedModuleInspector({ selection }: ConnectedModuleInspector
   const bridge = useSimBridge();
   const moduleId = useSyncExternalStore(selection.subscribe, selection.get, selection.get);
   const data = useSimSnapshot(() => (moduleId === null ? null : inspectorData(bridge, moduleId)), undefined, sameInspectorData);
+  const blockPanel = useSimSnapshot(() => (moduleId === null ? null : blockPanelData(bridge, moduleId)), undefined, sameBlockPanel);
+  const cranePanel = useSimSnapshot(() => (moduleId === null ? null : cranePanelData(bridge, moduleId)), undefined, sameCranePanel);
   const remove = useCallback(
     (id: number) => {
       const command = new RemoveModuleCommand(id);
@@ -53,6 +57,26 @@ export function ConnectedModuleInspector({ selection }: ConnectedModuleInspector
   return (
     <div className="app__side">
       <ModuleInspector data={data} onRemove={remove} onClose={close} onBuyVehicle={buyVehicle} onSellVehicle={sell} />
+      {blockPanel !== null && (
+        <>
+          {blockPanel.machine !== null && <MachineInspector data={blockPanel.machine} />}
+          <BlockInspector
+            priority={blockPanel.priority}
+            onSetPriority={(order) => {
+              setBlockPriority(bridge, blockPanel.blockId, order);
+            }}
+          />
+        </>
+      )}
+      {cranePanel !== null && (
+        <CraneInspector
+          gang={cranePanel.gang}
+          tractorsPerSts={cranePanel.tractorsPerSts}
+          onSetGang={(mode, n) => {
+            setCraneGang(bridge, cranePanel.craneId, mode, n);
+          }}
+        />
+      )}
     </div>
   );
 }

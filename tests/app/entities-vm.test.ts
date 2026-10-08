@@ -53,6 +53,7 @@ describe('entitiesVM: nový svet (Root modul)', () => {
         w: 8,
         h: 4,
         apron: { capacity: 8, units: [] },
+        lanes: expect.any(Array) as ModuleVM['lanes'], // pruhy kotviska (TR3-05)
         connected: false, // kotvisko má cestné konektory, ale žiadna cesta ešte nevedie
       },
     ]);
@@ -72,6 +73,8 @@ describe('entitiesVM: nový svet (Root modul)', () => {
         progress: 0,
         holding: null,
         cycle: 'unload',
+        trolleyY: 1,
+        cargo: null,
       },
     ]);
   });

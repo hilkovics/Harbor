@@ -251,6 +251,8 @@ describe('skutočné katalógy F2 až F4', () => {
       yardMachineLoadWeight: 12,
       rehandleSpareCells: 2,
       apronUnloadReserveSlots: 1,
+      hookJobLookahead: 8,
+      hookPairedLoadJobs: 1,
       importDwellEstimateHours: 6,
       yardPlanner: 'planned',
       congestion: { trafficDecayPerHour: 0.9 },

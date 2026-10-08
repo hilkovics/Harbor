@@ -137,6 +137,15 @@ describe('loadScenario', () => {
     expect(loadScenario(write('s.json', { id: 'z', seed: 0, commands: [] })).seed).toBe(0);
   });
 
+  it('startingCashCents: voliteľný override štartovnej hotovosti (TR3-02d); tt_rtg_2blocks ho má a svet začne s ním', () => {
+    expect(loadScenario(write('c.json', { id: 'c', seed: 1, startingCashCents: 5, commands: [] })).startingCashCents).toBe(5);
+    expect(loadScenario(write('n.json', { id: 'n', seed: 1, commands: [] })).startingCashCents).toBeUndefined();
+    const scenario = loadScenario('data/scenarios/tt_rtg_2blocks.json');
+    expect(scenario.startingCashCents).toBe(400_000_000);
+    expect(loadBundledDefs({ startingCashCents: scenario.startingCashCents }).economy.startingCashCents).toBe(400_000_000);
+    expect(loadBundledDefs().economy.startingCashCents).toBeLessThan(400_000_000);
+  });
+
   it('chýbajúci súbor → SimrunError s cestou', () => {
     const missing = join(dir, 'nope.json');
     expect(() => loadScenario(missing)).toThrow(SimrunError);
@@ -160,6 +169,8 @@ describe('loadScenario', () => {
     ['chýba commands', { id: 'a', seed: 1 }, /\/commands musí byť pole/],
     ['commands nie je pole', { id: 'a', seed: 1, commands: {} }, /\/commands musí byť pole/],
     ['map nie je reťazec', { id: 'a', seed: 1, map: 5, commands: [] }, /\/map musí byť neprázdny reťazec/],
+    ['startingCashCents zlomkový', { id: 'a', seed: 1, startingCashCents: 1.5, commands: [] }, /\/startingCashCents musí byť celé číslo ≥ 0/],
+    ['startingCashCents záporný', { id: 'a', seed: 1, startingCashCents: -5, commands: [] }, /\/startingCashCents musí byť celé číslo ≥ 0/],
     ['neznámy kľúč', { id: 'a', seed: 1, commands: [], comands: [] }, /\/comands je neznámy kľúč/],
     ['prvok commands nie je objekt', { id: 'a', seed: 1, commands: [1] }, /\/commands\/0 musí byť objekt/],
     [

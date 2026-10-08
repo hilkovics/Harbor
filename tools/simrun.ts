@@ -41,6 +41,8 @@ export interface Scenario {
   readonly seed: number;
   /** Cesta k mape (relatívna k pracovnému adresáru, rovnako ako cesta k scenáru). */
   readonly map?: string;
+  /** Voliteľný override štartovnej hotovosti v centoch (celé číslo ≥ 0); používa ho CLI pri načítaní defov (TR3-02d). */
+  readonly startingCashCents?: number;
   readonly commands: readonly ScenarioEntry[];
 }
 
@@ -363,7 +365,7 @@ export function parseArgs(argv: readonly string[]): SimrunArgs {
 // Načítanie scenára
 // ---------------------------------------------------------------------------------------------------------
 
-const SCENARIO_KEYS: ReadonlySet<string> = new Set(['id', 'seed', 'map', 'commands']);
+const SCENARIO_KEYS: ReadonlySet<string> = new Set(['id', 'seed', 'map', 'startingCashCents', 'commands']);
 
 export function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
@@ -420,7 +422,7 @@ export function loadScenario(path: string): LoadedScenario {
   for (const key of Object.keys(raw)) {
     if (!SCENARIO_KEYS.has(key)) throw new SimrunError(`${path}: /${key} je neznámy kľúč`);
   }
-  const { id, seed, map, commands } = raw;
+  const { id, seed, map, commands, startingCashCents } = raw;
   if (typeof id !== 'string' || id === '') throw new SimrunError(`${path}: /id musí byť neprázdny reťazec`);
   if (typeof seed !== 'number' || !Number.isSafeInteger(seed) || seed < 0) {
     throw new SimrunError(`${path}: /seed musí byť celé číslo ≥ 0`);
@@ -428,9 +430,18 @@ export function loadScenario(path: string): LoadedScenario {
   if (map !== undefined && (typeof map !== 'string' || map === '')) {
     throw new SimrunError(`${path}: /map musí byť neprázdny reťazec (cesta k mape)`);
   }
+  if (startingCashCents !== undefined && (typeof startingCashCents !== 'number' || !Number.isSafeInteger(startingCashCents) || startingCashCents < 0)) {
+    throw new SimrunError(`${path}: /startingCashCents musí byť celé číslo ≥ 0`);
+  }
   if (!Array.isArray(commands)) throw new SimrunError(`${path}: /commands musí byť pole`);
 
-  const scenario: Scenario = { id, seed, commands: validateEntries(commands, path), ...(map !== undefined && { map }) };
+  const scenario: Scenario = {
+    id,
+    seed,
+    commands: validateEntries(commands, path),
+    ...(map !== undefined && { map }),
+    ...(startingCashCents !== undefined && { startingCashCents }),
+  };
 
   if (scenario.map === undefined) return scenario;
   return { ...scenario, mapData: readJsonFile(scenario.map, 'mapa') };
@@ -1031,7 +1042,8 @@ export function formatSummary(report: SimrunReport): string {
 function main(argv: readonly string[]): number {
   try {
     const args = parseArgs(argv);
-    const report = runScenario(loadScenario(args.scenarioPath), args.ticks, loadBundledDefs(), {
+    const scenario = loadScenario(args.scenarioPath);
+    const report = runScenario(scenario, args.ticks, loadBundledDefs(scenario.startingCashCents === undefined ? {} : { startingCashCents: scenario.startingCashCents }), {
       hash: args.hash,
       roundtripAt: args.roundtripAt,
     });

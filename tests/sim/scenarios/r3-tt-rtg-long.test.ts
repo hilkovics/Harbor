@@ -55,13 +55,14 @@ describe('tt_rtg_2blocks: 100 000 tickov bez zápchy na kotvisku a v bloku', () 
     for (const count of moves) expect(count).toBeGreaterThan(total * 0.3);
   });
 
-  it('priepustnosť: RTG aj STS spravili stovky presunov; čakanie STS nie je kapacitou RTG (cieľ < 20 % nedosiahnuté, zmerané ≈ 62 %; ADR-040 dodatok TR3-02c)', () => {
+  it('priepustnosť: RTG aj STS spravili stovky presunov; čakanie STS nie je kapacitou RTG (cieľ < 20 % nedosiahnuté, zmerané ≈ 64 %; ADR-040 dodatok TR3-02c, TR3-02d)', () => {
     const metrics = terminalMetrics(world);
     expect(metrics.rtgMoves).toBeGreaterThanOrEqual(2 * UNITS * 3);
     expect(metrics.stsMoves).toBeGreaterThanOrEqual(2 * UNITS * 3);
     expect(metrics.stsMovesPerHour).toBeGreaterThan(1);
     expect(metrics.stsWaitForTractorPct).not.toBeNull();
-    // Zmerané ≈ 62 % aj s dvoma vyváženými RTG (stroje ≈ 35 % vyťažené, fronta 0) a 8–10 ťahačmi: úzke miesto je latencia dispatchu pod hákom (job nakládky vzniká pri štarte cyklu žeriava, v obehu je ≤ 1 job na žeriav), nie stroj ani počet ťahačov.
-    expect(metrics.stsWaitForTractorPct as number).toBeLessThan(70);
+    // Zmerané ≈ 64 % (pred `hookJobLookahead` ≈ 62 %, TR3-02d): okno nepomohlo. Úzke miesto nie je latencia dispatchu ani RTG (≈ 42 % vyťažené), ale obeh ťahačov: okruh kotvisko → pruh bloku → návrat
+    // cez depo je ≈ 67 buniek (≈ 135 ticků na job), takže 10 ťahačov dá jeden job za ≈ 13,5 ticku a dvaja STS (cyklus 12 ticků) by potrebovali ≈ 22 ťahačov; viac ťahačov okruh zahltí (16 → ≈ 65 %).
+    expect(metrics.stsWaitForTractorPct as number).toBeLessThan(68);
   });
 }, 900_000);

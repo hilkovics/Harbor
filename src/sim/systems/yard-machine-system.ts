@@ -250,20 +250,25 @@ function approachingJob(world: World, vehicle: Vehicle, block: RtgBlock, lane: I
 }
 
 /**
- * Predzásobenie: začne cyklus pre ťahač, ktorý je v poradí pruhu prvý — najplytší TP (najbližšie k vjazdu), potom najmenej buniek trasy, potom id; `true`, keď stroj opustil `idle`.
- * Jednosmerný pruh sa nepredbieha: ťahač s hlbším TP by stál za ťahačom s plytším TP, ktorý čaká na stroj, a stroj by čakal na neho (zápcha, ADR-040 dodatok TR3-02c).
+ * Predzásobenie: začne cyklus pre ťahač, ktorý je v poradí pruhu prvý — najbližšie k vjazdu pruhu / najhlbšie v ňom (`cellsAhead − index TP`), potom najplytší TP; `true`, keď stroj opustil `idle`.
+ * Jednosmerný pruh sa nepredbieha: ťahač, ktorý je fyzicky pred iným (hoci s hlbším TP), musí prísť na rad skôr, inak by stroj čakal na ťahač za ním a ten pred sebou
+ * ťahač čakajúci na TP (zápcha, ADR-040 dodatok TR3-02c a TR3-02d).
  */
 function startPrefetch(world: World, machine: RtgCrane, block: RtgBlock): boolean {
   const lane = world.quay.laneCellsOf(block.id);
   const { prefetchCells } = machine.def;
   if (lane === undefined || prefetchCells <= 0) return false;
-  let best: { vehicle: Vehicle; job: TransportJob; tpCell: number; tpBay: number } | undefined;
+  let best: { vehicle: Vehicle; job: TransportJob; tpCell: number; tpBay: number; toEntry: number } | undefined;
   for (const vehicle of world.vehicles.values()) {
     if (machine.serves(vehicle.id)) continue;
     const found = approachingJob(world, vehicle, block, lane, prefetchCells);
     if (found === undefined) continue;
     const tpBay = lane.indexOf(found.tpCell);
-    if (best === undefined || tpBay < best.tpBay || (tpBay === best.tpBay && vehicle.cellsAhead < best.vehicle.cellsAhead)) best = { vehicle, ...found, tpBay };
+    // Poradie v pruhu = vzdialenosť k vjazdu pruhu (buniek do TP − index TP; záporná = ťahač je už v pruhu); pri rovnosti plytší TP.
+    const toEntry = vehicle.cellsAhead - tpBay;
+    // Mimo pruhu (pred vjazdom) sa nepredzásobuje: pri zlievaní na vjazde by predbehol iný ťahač a stroj by čakal na ťahač za ťahačom, ktorý stojí na jeho TP (TR3-02d).
+    if (toEntry > 0) continue;
+    if (best === undefined || toEntry < best.toEntry || (toEntry === best.toEntry && tpBay < best.tpBay)) best = { vehicle, ...found, tpBay, toEntry };
   }
   if (best === undefined) return false;
   const cycle = planCycle(world, machine, block, best.vehicle, best.job, best.tpCell);

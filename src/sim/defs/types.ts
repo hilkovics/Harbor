@@ -234,6 +234,10 @@ export interface LogisticsDef extends DefBase {
   readonly rehandleSpareCells: number;
   /** Sloty apronu (celé ≥ 0), ktoré záložná nakládka cez apron (`rerouteLoadViaApron`) nezaberie: musí tam ostať miesto, kam žeriav odloží vykladanú jednotku (inak žeriav drží import, apron je plný exportov čakajúcich na žeriav a nič sa nepohne; ADR-040 dodatok TR3-02b). */
   readonly apronUnloadReserveSlots: number;
+  /** Okno dopredného plánovania pod hákom (celé ≥ 1, ADR-040 dodatok TR3-02d): najviac toľko jobov vykládky a toľko jobov nakládky na žeriav je vopred priradených, takže ťahače čakajú v pruhu kotviska pod žeriavom skôr, než ich žeriav potrebuje. */
+  readonly hookJobLookahead: number;
+  /** Najviac jobov nakládky pod hákom v obehu na žeriav (celé ≥ 1), kým má loď aj import na vykládku (ADR-033 bod 4; nahrádza konštantu `PAIRED_HOOK_LOAD_JOBS_PER_CRANE`): export sa páruje s importom v dual cykle a nevyčerpá vozidlá vykládky. */
+  readonly hookPairedLoadJobs: number;
   /** Koľko voľných stĺpcov (`maxTier` buniek každý, celé ≥ 0) musí ostať v bloku, aby plánovač smel zavaliť skôr odchádzajúci kontajner (ADR-039). */
   readonly buryReserveColumns: number;
   /** Váha vyťaženia stroja RTG bloku v skóre plánovača (číslo ≥ 0, v bunkách vzdialenosti na jednu položku fronty alebo rozbehnutý cyklus; ADR-040 dodatok TR3-02c); 0 = len vzdialenosť. */

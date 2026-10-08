@@ -1,6 +1,7 @@
 {
   "id": "tt_rtg_2blocks",
   "seed": 7003,
+  "startingCashCents": 400000000,
   "map": "data/maps/harbor_01.json",
   "commands": [
     {
@@ -369,6 +370,13 @@
         "type": "BuyVehicle",
         "vehicleDefId": "terminal_tractor",
         "depotId": 3
+      }
+    },
+    {
+      "atTick": 2,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 1
       }
     }
   ]

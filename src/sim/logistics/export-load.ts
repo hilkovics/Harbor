@@ -64,12 +64,6 @@ const BOOKINGS: Contract[] = [];
 /** Znovupoužiteľné pole kotvísk nakládky lode (`collectLoadBerths`; obsah sa vždy najprv vyprázdni). */
 const BERTHS: BerthModule[] = [];
 
-/**
- * Najviac jobov nakládky pod hákom v obehu na žeriav, kým má loď aj import na vykládku (ADR-033 bod 4): vozidlo s exportom čaká pod
- * hákom popri vozidlách s importom, takže žeriav robí dual cycle a nakládka nevyčerpá vozidlá vykládky.
- */
-export const PAIRED_HOOK_LOAD_JOBS_PER_CRANE = 1;
-
 /** Žeriav kotviska s kategóriou nákladu lode (obsluhuje loď). */
 function craneFor(world: World, berth: BerthModule, ship: Ship): CraneModule | undefined {
   for (const craneId of berth.craneIds) {
@@ -183,26 +177,24 @@ function apronTarget(world: World, berth: BerthModule, ship: Ship): CargoLocatio
 }
 
 /**
- * Cieľ nakládky v režime `under_hook`: hák žeriava s najmenším počtom jobov nakládky v obehu, inak `undefined`. Kým má loď aj import
- * na vykládku (`bothDirections`), má každý žeriav najviac `PAIRED_HOOK_LOAD_JOBS_PER_CRANE` jobov nakládky v obehu. Bez importu je limit ako pri apron:
- * `apronSlots` jobov na kotvisko (`apronDirectionCap`).
+ * Cieľ nakládky v režime `under_hook`: hák žeriava s najmenším počtom jobov nakládky v obehu, inak `undefined`. Každý žeriav má v obehu najviac
+ * `logistics.hookJobLookahead` jobov nakládky (okno dopredného plánovania, TR3-02d: ťahače sa pred žeriavom zaradia do pruhu kotviska vopred); kým má loď aj import
+ * na vykládku (`bothDirections`, ADR-033 bod 4), je limit `logistics.hookPairedLoadJobs` — vozidlo s exportom čaká pod hákom popri vozidlách s importom, takže žeriav
+ * robí dual cycle a nakládka nevyčerpá vozidlá vykládky.
  */
 function hookTarget(world: World, berth: BerthModule, ship: Ship): CargoLocation | undefined {
-  const paired = bothDirections(world, ship);
   let best: CraneModule | undefined;
   let bestJobs = Infinity;
-  let total = 0;
   for (const craneId of berth.craneIds) {
     const crane = world.modules.get(craneId);
     if (!(crane instanceof CraneModule) || crane.category !== ship.cargoCategory) continue;
     const jobs = hookLoadJobs(world, crane);
-    total += jobs;
     if (jobs < bestJobs) {
       best = crane;
       bestJobs = jobs;
     }
   }
-  if (best === undefined || (paired ? bestJobs >= PAIRED_HOOK_LOAD_JOBS_PER_CRANE : total >= apronDirectionCap(berth, false))) return undefined;
+  if (best === undefined || bestJobs >= (bothDirections(world, ship) ? world.defs.logistics.hookPairedLoadJobs : world.defs.logistics.hookJobLookahead)) return undefined;
   return { kind: 'in_crane', craneId: best.id };
 }
 
@@ -376,6 +368,8 @@ function aheadUnloadJobs(world: World, ship: Ship, berth: BerthModule, openJob: 
     inFlight += jobs;
   }
   if (AHEAD_CRANES.length === 0) return;
+  const lookahead = world.defs.logistics.hookJobLookahead;
+  // Súčet jobov vykládky na kotvisko ohraničuje aj smerový limit apronu (`apronDirectionCap`, ADR-032 bod 10) — pôvodné správanie, ktoré drží zápchy v scenároch bez RTG (stress_f6) na nule.
   const cap = apronDirectionCap(berth, bothDirections(world, ship));
   for (let i = 0; i < count && inFlight < cap; i++) {
     const unitId = world.cargo.unitAtIndex('on_ship', ship.id, i);
@@ -383,6 +377,7 @@ function aheadUnloadJobs(world: World, ship: Ship, berth: BerthModule, openJob: 
     if (unit === undefined || isOutboundOnShip(world, unit, ship.id) || world.jobOfUnit(unit.id) !== undefined) continue;
     let fewest = 0;
     for (let k = 1; k < AHEAD_CRANES.length; k++) if (AHEAD_JOBS[k] < AHEAD_JOBS[fewest]) fewest = k;
+    if (AHEAD_JOBS[fewest] >= lookahead) return;
     if (!openUnloadJob(world, AHEAD_CRANES[fewest], berth, unit, openJob, emitNoStorage)) return;
     AHEAD_JOBS[fewest] += 1;
     inFlight += 1;

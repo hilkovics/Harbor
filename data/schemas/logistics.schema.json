@@ -4,7 +4,7 @@
   "description": "Logistické konštanty (ARCHITECTURE §4.6, §7.3, §7.4, §7.6; ADR-010, ADR-029): pobyt vozidla v module, opakovanie hľadania cesty, model kongescie a lodná navigácia. Konfiguračný def bez items[] (ADR-009); všetky trvania v tickoch.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "defaultInternalTicks", "repathIntervalTicks", "rehandleTicks", "rehandleGiveUpTicks", "buryReserveColumns", "yardMachineLoadWeight", "rehandleSpareCells", "apronUnloadReserveSlots", "importDwellEstimateHours", "yardPlanner", "congestion", "traffic", "shipNavigation", "exportFlow", "emptyFlow"],
+  "required": ["schemaVersion", "defaultInternalTicks", "repathIntervalTicks", "rehandleTicks", "rehandleGiveUpTicks", "buryReserveColumns", "yardMachineLoadWeight", "rehandleSpareCells", "apronUnloadReserveSlots", "hookJobLookahead", "hookPairedLoadJobs", "importDwellEstimateHours", "yardPlanner", "congestion", "traffic", "shipNavigation", "exportFlow", "emptyFlow"],
   "properties": {
     "schemaVersion": {
       "const": 1,
@@ -49,6 +49,16 @@
       "type": "integer",
       "minimum": 0,
       "description": "Sloty apronu, ktoré záložná nakládka cez apron nezaberie (ADR-040 dodatok TR3-02b): musí tam ostať miesto, kam žeriav odloží vykladanú jednotku; inak žeriav drží import, apron je plný exportov čakajúcich na žeriav a nič sa nepohne."
+    },
+    "hookJobLookahead": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Okno dopredného plánovania pod hákom (ADR-040 dodatok TR3-02d): najviac toľko jobov vykládky a toľko jobov nakládky na žeriav je v obehu vopred, takže ťahače čakajú v pruhu kotviska pod žeriavom skôr, než ich žeriav potrebuje. 1 = job vzniká tesne pred potrebou."
+    },
+    "hookPairedLoadJobs": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Najviac jobov nakládky pod hákom v obehu na žeriav, kým má loď aj import na vykládku (ADR-033 bod 4, TR3-02d): export sa páruje s importom v dual cykle a nevyčerpá vozidlá vykládky."
     },
     "importDwellEstimateHours": {
       "type": "number",

@@ -262,6 +262,8 @@ const LOGISTICS_FIELDS: FieldTable<LogisticsDef> = {
   yardMachineLoadWeight: { kind: 'number', min: 0 },
   rehandleSpareCells: { kind: 'integer', min: 0 },
   apronUnloadReserveSlots: { kind: 'integer', min: 0 },
+  hookJobLookahead: { kind: 'integer', min: 1 },
+  hookPairedLoadJobs: { kind: 'integer', min: 1 },
   importDwellEstimateHours: { kind: 'number', exclusiveMin: 0 },
   yardPlanner: { kind: 'enum', values: YARD_PLANNER_MODES },
   congestion: { kind: 'object', fields: CONGESTION_FIELDS },
@@ -744,10 +746,10 @@ export class DefRegistry {
 }
 
 /** Načíta defy zabalené v `data/defs/` (statické JSON importy, bez `fs`) a zvaliduje ich. */
-export function loadBundledDefs(): DefRegistry {
+export function loadBundledDefs(options: { readonly startingCashCents?: number } = {}): DefRegistry {
   return DefRegistry.fromRaw({
     time: timeJson,
-    economy: economyJson,
+    economy: options.startingCashCents === undefined ? economyJson : { ...economyJson, startingCashCents: options.startingCashCents },
     infrastructure: infrastructureJson,
     cargo_types: cargoTypesJson,
     modules: modulesJson,

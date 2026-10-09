@@ -50,22 +50,25 @@ describe('záznamy manifestu pre entity', () => {
     expect(cargoSpriteEntry('__proto__')).toBeUndefined();
   });
 
-  it('truck_gate: 2×2, závora s pivotom a uhlami, dva cestné konektory na sever a juh', () => {
-    const gate = moduleSprite('truck_gate');
-    expect(gate?.footprint).toEqual({ w: 2, h: 2 });
-    const barrier = gate?.parts?.['barrier'];
-    expect(barrier?.file).toBe('modules/truck_gate_barrier.svg');
-    expect(barrier?.pivot).toEqual({ x: 8, y: 32 });
-    expect(barrier?.offset).toEqual({ x: 0, y: 64 });
+  it('gate_in_lane a gate_out_lane: 1×4, samostatná strecha a časti left / mid / right, konektory na juh a sever; závora pruhu s pivotom a uhlami', () => {
+    for (const defId of ['gate_in_lane', 'gate_out_lane']) {
+      const lane = moduleSprite(defId);
+      expect(lane?.footprint, defId).toEqual({ w: 1, h: 4 });
+      expect(lane?.file, defId).toBe(`modules/${defId}_single.svg`);
+      expect(Object.keys(lane?.parts ?? {}).sort(), defId).toEqual(['left', 'mid', 'right']);
+      expect(lane?.connectors.map((c) => c.side), defId).toEqual(['s', 'n']);
+    }
+    const barrier = moduleSprite('gate_lane_barrier')?.parts?.['barrier'];
+    expect(barrier?.file).toBe('modules/gate_lane_barrier.svg');
     expect([barrier?.closedDeg, barrier?.openDeg]).toEqual([0, -90]);
-    expect(gate?.connectors.map((c) => c.side)).toEqual(['n', 's']);
   });
 
-  it('truck_waiting_area: 6 stojísk; loading_ramp_container: 2 doky a kategória container', () => {
-    expect(moduleSprite('truck_waiting_area')?.stalls).toHaveLength(6);
-    const ramp = moduleSprite('loading_ramp_container');
-    expect(ramp?.docks).toHaveLength(2);
-    expect(ramp?.category).toBe('container');
+  it('pre_gate_buffer: 8×8 z pruhov `lane` (1×6); truck_holding: 6×5 so šiestimi státiami; zaniknuté moduly (truck_gate, truck_waiting_area, loading_ramp_*) v manifeste nie sú', () => {
+    const buffer = moduleSprite('pre_gate_buffer');
+    expect(buffer?.footprint).toEqual({ w: 8, h: 8 });
+    expect(buffer?.parts?.['lane']?.footprint).toEqual({ w: 1, h: 6 });
+    expect(moduleSprite('truck_holding')?.footprint).toEqual({ w: 6, h: 5 });
+    for (const defId of ['truck_gate', 'truck_waiting_area', 'loading_ramp_container', 'loading_ramp_bulk']) expect(moduleSprite(defId), defId).toBeUndefined();
   });
 
   it('truck_container: kĺbová entita 1×3 z kabíny (1×1, točnica 32, 54) a návesu (1×2, čap 32, 4); nie je obyčajné vozidlo', () => {
@@ -175,12 +178,14 @@ describe('entitySpriteFiles (čo načíta atlas)', () => {
     ]);
   });
 
-  it('F4: závora brány (časť modulu), odznak fronty a časti kamióna (kabína + náves)', () => {
+  it('R4: pruhy brány (strecha po častiach), závora pruhu, odznak fronty a časti kamióna (kabína + náves)', () => {
     for (const expected of [
-      'modules/truck_gate.svg',
-      'modules/truck_gate_barrier.svg',
-      'modules/truck_waiting_area.svg',
-      'modules/loading_ramp_container.svg',
+      'modules/gate_in_lane_single.svg',
+      'modules/gate_in_lane_left.svg',
+      'modules/gate_out_lane_right.svg',
+      'modules/gate_lane_barrier.svg',
+      'modules/pre_gate_lane.svg',
+      'modules/truck_holding.svg',
       QUEUE_BADGE_FILE,
       'entities/truck_cab.svg',
       'entities/truck_trailer_40.svg',

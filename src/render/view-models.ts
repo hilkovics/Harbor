@@ -76,31 +76,11 @@ export interface ModuleVM {
    */
   connected?: boolean;
   /**
-   * Len brána kamiónov (kind `gate`, F4): dĺžka virtuálnej fronty pred bránou a či práve púšťa kamión (závora hore).
-   * `entryConnector` je index konektora v defe modulu (= poradie `sprites.<defId>.connectors` v manifeste), na ktorom kamióny
-   * do brány vchádzajú z portálu; renderer pri ňom kreslí `overlay.queue_badge` s číslom. Renderer vstupnú stranu
-   * nepozná (závisí od ciest), preto ju dodáva sim; chýba = 0 (prvý konektor).
-   */
-  gate?: { queueLength: number; open: boolean; entryConnector?: number };
-  /**
-   * Len čakacia plocha (kind `waiting_area`, F4): počet stojísk a ich obsadenosť. `occupied[i]` patrí stojisku
-   * `sprites.<defId>.stalls[i]` v manifeste (obsadené aj rezervované sa zvýrazní).
-   */
-  waitingArea?: { bays: number; occupied: readonly boolean[] };
-  /**
-   * Len nakladacia rampa (kind `ramp`, F4): počet dokov, počet pripravených kontajnerov na každom doku (`staged[i]` patrí
-   * doku `sprites.<defId>.docks[i]`) a či je rampa prevádzková (`false` → odznak `overlay.warning_badge`). F6c: `stagedEmpty[i]` =
-   * koľko z `staged[i]` jednotiek je prázdnych kontajnerov (`direction: 'empty'`; kreslia sa sivé, za plnými); chýba = žiadne.
-   * `SimBridge` do `staged[i]` prázdne kontajnery na doku zarátava (sim ich do `LoadingRamp.stagedAt` nepočíta — prázdny nie je náklad na odvoz).
-   */
-  ramp?: { docks: number; staged: readonly number[]; operational: boolean; stagedEmpty?: readonly number[] };
-  /**
    * Jednotky vo VGM hold v tomto module (F6a, ADR-032 bod 7; `world.cargo.get(id).hold !== null`): `count` = všetky takéto
-   * jednotky modulu (sklad: `in_storage`, rampa: `at_ramp`, berth: `on_apron`); renderer ukáže odznak `overlay.warning_badge`
-   * s číslom. Rampa dopĺňa `docks[i]` = počet jednotiek v hold na doku `docks[i]` (odznak pri doku), berth `slots` = indexy slotov
-   * apronu s jednotkou v hold (odznak pri slote). Chýba / `count` 0 = bez odznaku. Plní `SimBridge`.
+   * jednotky modulu (sklad: `in_storage`, berth: `on_apron`); renderer ukáže odznak `overlay.warning_badge` s číslom. Berth dopĺňa
+   * `slots` = indexy slotov apronu s jednotkou v hold (odznak pri slote). Chýba / `count` 0 = bez odznaku. Plní `SimBridge`.
    */
-  held?: { count: number; docks?: readonly number[]; slots?: readonly number[] };
+  held?: { count: number; slots?: readonly number[] };
   /**
    * Len depo prázdnych (F6c, `StorageParams.role: 'empty_depot'`, ADR-034): stav kvality uskladnených prázdnych kontajnerov a miesta
    * opráv. `available` = použiteľné, `damaged` = poškodené čakajúce na opravu, `inRepair` = v oprave (nanajvýš `repairBays`),
@@ -317,39 +297,29 @@ export interface TruckVM extends CarrierTrailVM {
   prevHeading?: 0 | 90 | 180 | 270;
   /**
    * Vezie náklad → sprite `states.loaded`. Exportný kamión (`mission` delivery, F6a) je naložený už od spawnu (`in_truck > 0`),
-   * prázdny je až po vyložení na rampe. Pri manévri pri rampe renderer drží sprite z príchodu, kým kamión necúva do docku
-   * (nakládka / vykládka sa deje v doku, sim je rýchlejší než manéver).
+   * prázdny je až po vyložení na TP (R4).
    */
   loaded: boolean;
   /**
    * F6c: vezená jednotka je prázdny kontajner (návrat prázdnych, výdaj exportérovi) → sprite `states.carries_empty`; chýba = `false`. Kamión misie
    * `collect` je pred naložením prázdny (`loaded: false`), po naložení nesie `carriesEmpty`; kamión, ktorý prázdny dovezie, si hodnotu pamätá aj po
-   * vyložení (renderer kreslí kontajner z príchodu, kým kamión cúva do docku).
+   * vyložení.
    */
   carriesEmpty?: boolean;
   /**
    * R2: vezený kontajner podľa veľkosti, typu a linky (`null` = žiadny); 20′ leží na návese vpredu, 40′ na celej jeho dĺžke. Chýba = kontajner TEU
-   * podľa `loaded` / `carriesEmpty` ako doteraz. Pri manévri pri rampe sa drží zobrazené naloženie z príchodu (rovnako ako `loaded`): kontajner
-   * posledného neprázdneho `cargo` ostáva na návese, kým kamión necúva do docku. Plní `SimBridge` (TR2-05).
+   * podľa `loaded` / `carriesEmpty` ako doteraz. Plní `SimBridge` (TR2-05).
    */
   cargo?: ContainerVM | null;
   /**
-   * Stav Truck FSM (`to_gate`, `gate_queue`, `waiting`, `loading`, `unloading`, …). Renderer podľa neho (a `prevState`) riadi len
-   * manéver kamióna pri rampe: `to_dock` → `loading` / `unloading` (cúvanie do docku; `unloading` = exportný kamión vykladá, F6a),
-   * `loading` / `unloading` → `to_gate_out` (výjazd predkom); `unloading` → `loading` (dual transaction) kamión v doku necháva.
+   * Stav Truck FSM (`to_gate`, `gate_queue`, `gate_pass` / `gate_pass_out` (prechod pruhom brány), `pre_gate`, `holding`, `to_tp`, `at_tp`, `at_edge_tp`, …). Renderer podľa neho nič neriadi,
+   * nesie ho pre ladenie a odznaky (R4).
    */
   state: string;
   /**
-   * Stav kamióna pred posledným tickom (`SimBridge` si ho pamätá spolu s pózou); chýba pri novom kamióne. Renderer z dvojice
-   * `prevState` → `state` pozná práve dokončený príjazd k rampe (`to_dock` → `loading`) aj keď view vznikol až teraz.
+   * Stav kamióna pred posledným tickom (`SimBridge` si ho pamätá spolu s pózou); chýba pri novom kamióne. Slúži na ladenie a odznaky.
    */
   prevState?: string;
-  /**
-   * Len v stave `loading` alebo `unloading` (F5b č. 11, F6a): sim poloha kamióna — stred vonkajšej bunky konektora docku a kurz príjazdu. `x`, `y`,
-   * `heading` sú vtedy cieľová póza v doku (stred docku, kabína von z rampy). Kamión do docku cúva: renderer ho plynulo
-   * vedie z `approach` do `x`, `y`, `heading` (`dock-maneuver.ts`), nie skokom.
-   */
-  approach?: { x: number; y: number; heading: ViewRotation };
 }
 
 /**

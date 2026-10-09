@@ -1,4 +1,4 @@
-// F6a (T6A-06): jednotky vo VGM hold v sklade / na rampe / na aprone označené odznakom `overlay.warning_badge` (+ počet).
+// F6a (T6A-06): jednotky vo VGM hold v sklade / na aprone označené odznakom `overlay.warning_badge` (+ počet).
 import { Container } from 'pixi.js';
 import { describe, expect, it } from 'vitest';
 import { rotateFootprint, type Rotation } from '@sim/grid';
@@ -11,7 +11,6 @@ import { ModuleLayer } from '@render/module-layer';
 import { MODULE_DECORS } from '@render/module-decors';
 import { ModuleView } from '@render/module-view';
 import type { ModuleVM } from '@render/view-models';
-import { TRUCK_LENGTH_PX } from '@render/world-scale';
 import { ENTITY_PALETTE, PALETTE, StubTextures } from './stub-textures';
 
 const CELL = PALETTE.cellPx;
@@ -32,12 +31,6 @@ function plain(id: number, defId: string, kind: string, x: number, y: number, ro
 const yard = (held?: ModuleVM['held'], rotation: Rotation = 0): ModuleVM => ({
   ...plain(1, 'container_yard_small', 'storage', 44, 19, rotation),
   storage: { capacity: 64, stored: 20, reserved: 0 },
-  ...(held === undefined ? {} : { held }),
-});
-
-const ramp = (held?: ModuleVM['held'], rotation: Rotation = 0): ModuleVM => ({
-  ...plain(2, 'loading_ramp_container', 'ramp', 30, 23, rotation),
-  ramp: { docks: 2, staged: [1, 0], operational: true },
   ...(held === undefined ? {} : { held }),
 });
 
@@ -103,23 +96,6 @@ describe('holdMarks (kde odznaky sú)', () => {
     expect(marks[0].y).toBeCloseTo((-4 * CELL) / 2 + HALF, 9);
   });
 
-  it('rampa: odznak pri každom doku s jednotkou v hold (v osi docku za zadkom kamióna v doku), počet z docks[i]', () => {
-    const vm = ramp({ count: 3, docks: [2, 0] });
-    const marks = holdMarks(vm, context(vm));
-    expect(marks.map((mark) => [mark.key, mark.count])).toEqual([['dock-0', 2]]);
-    const dock = moduleSprite('loading_ramp_container')?.docks?.[0];
-    const pose = footprintPose(vm, CELL);
-    if (dock === undefined) throw new Error('dock');
-    expect(marks[0].x).toBeCloseTo((-pose.baseW * CELL) / 2 + (dock.x + dock.w / 2) * UNIT, 9);
-    const rear = dock.y + dock.h / 2 - TRUCK_LENGTH_PX / 2; // zadok kamióna stojaceho v doku
-    expect(marks[0].y).toBeCloseTo((-pose.baseH * CELL) / 2 + Math.max(HALF / UNIT, rear - HALF / UNIT) * UNIT, 9);
-    // odznak neprekrýva kamión v doku: jeho spodok sedí presne na zadku kamióna (rampa A má nad dokom dosť miesta)
-    expect(rear).toBeGreaterThanOrEqual((2 * HALF) / UNIT);
-    expect(marks[0].y + HALF).toBeCloseTo((-pose.baseH * CELL) / 2 + rear * UNIT, 9);
-    const both = ramp({ count: 3, docks: [2, 1] });
-    expect(holdMarks(both, context(both)).map((mark) => mark.key)).toEqual(['dock-0', 'dock-1']);
-  });
-
   it('berth: odznak pri slote apronu s jednotkou v hold', () => {
     const vm = berth({ count: 2, slots: [0, 2] });
     const marks = holdMarks(vm, context(vm));
@@ -133,12 +109,10 @@ describe('holdMarks (kde odznaky sú)', () => {
     expect(marks[1].y).toBeCloseTo(center.y - CELL / 2 + HALF, 9);
   });
 
-  it('dok / slot, ktorý manifest nepozná, spadne na odznak modulu s celkovým počtom', () => {
-    const noDock = ramp({ count: 2, docks: [0, 0, 2] });
-    expect(holdMarks(noDock, context(noDock)).map((mark) => [mark.key, mark.count])).toEqual([['module', 2]]);
+  it('slot, ktorý manifest nepozná, spadne na odznak modulu s celkovým počtom', () => {
     const noSlot = berth({ count: 1, slots: [99] });
     expect(holdMarks(noSlot, context(noSlot)).map((mark) => [mark.key, mark.count])).toEqual([['module', 1]]);
-    const total = ramp({ count: 4 });
+    const total = berth({ count: 4 });
     expect(holdMarks(total, context(total)).map((mark) => [mark.key, mark.count])).toEqual([['module', 4]]);
   });
 });
@@ -168,17 +142,6 @@ describe('ModuleView: ozdoba hold', () => {
     expect(decor?.badgeCount).toBe(1);
   });
 
-  it('rampa: odznaky pri dokoch sa pridávajú a ruší podľa docks[]', () => {
-    const view = new ModuleView(ramp({ count: 1, docks: [1, 0] }), deps(new StubTextures()));
-    const decor = view.decor<HoldDecor>('hold');
-    expect([decor?.badge('dock-0') !== undefined, decor?.badge('dock-1') !== undefined]).toEqual([true, false]);
-    view.update(ramp({ count: 3, docks: [1, 2] }));
-    expect(decor?.badge('dock-1')?.shownText).toBe('2');
-    view.update(ramp({ count: 2, docks: [0, 2] }));
-    expect(decor?.badge('dock-0')).toBeUndefined();
-    expect(decor?.badge('dock-1')).toBeDefined();
-  });
-
   it('odznak ostáva vzpriamený pri každej rotácii modulu', () => {
     for (const rotation of [0, 90, 180, 270] as const) {
       const vm = yard({ count: 2 }, rotation);
@@ -205,7 +168,7 @@ describe('ModuleView: ozdoba hold', () => {
     layer.setZoom(0.5);
     const decor = layer.moduleView(1)?.decor<HoldDecor>('hold');
     expect(decor?.badge('module')?.scale.x).toBe(badgeScaleForZoom(0.5));
-    layer.sync([{ ...ramp({ count: 1, docks: [1, 0] }) }, yard({ count: 2 })]);
-    expect(layer.moduleView(2)?.decor<HoldDecor>('hold')?.badge('dock-0')?.scale.x).toBe(badgeScaleForZoom(0.5));
+    layer.sync([berth({ count: 1, slots: [0] }), yard({ count: 2 })]);
+    expect(layer.moduleView(3)?.decor<HoldDecor>('hold')?.badge('slot-0')?.scale.x).toBe(badgeScaleForZoom(0.5));
   });
 });

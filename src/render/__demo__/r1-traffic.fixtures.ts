@@ -20,7 +20,6 @@ import { DEFAULT_ROAD_KIND, rotateFootprint } from '@sim/grid';
 import { moduleSprite } from '../entity-assets';
 import type { EntitiesVM, ModuleVM, TruckVM, VehicleVM, ViewRotation } from '../view-models';
 import { berthVM, craneVM, shipVM } from './f2-render.fixtures';
-import { gateVM } from './f4-render.fixtures';
 
 /** Dĺžky nosičov v bunkách – rovnaké ako `lengthCells` v defoch od TR1-02 (kamión 3, straddle carrier 2). */
 export const TRUCK_LENGTH_CELLS = 3;
@@ -117,8 +116,8 @@ export function vehicleDepotVM(id: number, x: number, y: number, parked: readonl
 
 // ---- scéna `queue` -------------------------------------------------------------------------------------------------
 
-/** Brána kamiónov (44; 32): južný konektor, vonkajšia bunka (44; 34). */
-const QUEUE_GATE = gateVM(1, 44, 32, 0, { queueLength: 4, open: false, entryConnector: 1 });
+/** Vstupný pruh brány (44; 30): južný konektor, vonkajšia bunka (44; 34). */
+const QUEUE_GATE: ModuleVM = { ...plainModule(1, 'gate_in_lane', 'gate', 44, 30, 0), connected: true, gateLane: { kind: 'in', mode: 'standard', roofPart: 'single' } };
 
 /** Cesty: zvislá x = 44 od brány dole (y 34–43), zákruta (44; 44) a vodorovná y = 44 na východ (x 45–52). */
 export const QUEUE_ROADS: readonly CellCoord[] = [...column(44, 34, 43), ...row(44, 44, 52)];

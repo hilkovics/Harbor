@@ -85,8 +85,8 @@ describe('BuildBar Landside: typy ciest z defov', () => {
     expect(modules.map((item) => [item.displayName, item.costCents, item.icon, item.footprint])).toEqual([
       ['Vstupný pruh brány', 2_500_000, 'ic_gate', { w: 1, h: 4 }],
       ['Výstupný pruh brány', 2_500_000, 'ic_gate', { w: 1, h: 4 }],
-      ['Predbránová plocha', 9_000_000, 'ic_inspect', { w: 8, h: 8 }],
-      ['Odstavná plocha kamiónov', 5_000_000, 'ic_inspect', { w: 6, h: 5 }],
+      ['Predbránová plocha', 9_000_000, 'ic_one_way', { w: 8, h: 8 }],
+      ['Odstavná plocha kamiónov', 5_000_000, 'ic_waiting', { w: 6, h: 5 }],
     ]);
     for (const item of modules) {
       expect(item).toMatchObject({ locked: false, affordable: true });
@@ -105,7 +105,7 @@ describe('BuildBar Landside: typy ciest z defov', () => {
 
   it('ponuka nemá zástupné položky (gate, waiting_area, ramp, „čoskoro (F4)“)', () => {
     const items = buildBarCategories(defs, defs.economy.startingCashCents).flatMap((category) => category.items);
-    for (const defId of ['gate', 'waiting_area', 'ramp']) expect(items.some((item) => item.defId === defId)).toBe(false);
+    for (const defId of ['gate', 'waiting_area', 'ramp', 'truck_gate', 'truck_waiting_area', 'loading_ramp_container']) expect(items.some((item) => item.defId === defId)).toBe(false);
     expect(items.some((item) => item.priceText === 'čoskoro (F4)' || item.lockedReason === 'čoskoro (F4)')).toBe(false);
   });
 

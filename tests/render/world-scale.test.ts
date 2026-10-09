@@ -196,23 +196,24 @@ describe('audit mierky: cesty, lode a moduly', () => {
     expect(NARROW_ASPHALT_PX).toBeGreaterThanOrEqual(TRUCK_WIDTH_PX);
   });
 
-  it('lode: feeder 2 × 6 bunky, handy 2 × 10; brána 2 × 2, rampa 4 × 2 (dok 56 × 62 px), dvor 4 × 4, berth 8 × 3', () => {
+  it('lode: feeder 2 × 6 bunky, handy 2 × 10; pruh brány 1 × 4, predbránová plocha 8 × 8, odstavná plocha 6 × 5, dvor 4 × 4, berth 8 × 4', () => {
     expect(shipSprite('feeder')!.footprint).toEqual({ w: 2, h: 6 });
     expect(shipSprite('handy')!.footprint).toEqual({ w: 2, h: 10 });
-    expect(moduleSprite('truck_gate')!.footprint).toEqual({ w: 2, h: 2 });
-    expect(moduleSprite('loading_ramp_container')!.footprint).toEqual({ w: 4, h: 2 });
-    expect(moduleSprite('loading_ramp_container')!.docks![0]).toMatchObject({ w: 56, h: 62 });
+    expect(moduleSprite('gate_in_lane')!.footprint).toEqual({ w: 1, h: 4 });
+    expect(moduleSprite('gate_out_lane')!.footprint).toEqual({ w: 1, h: 4 });
+    expect(moduleSprite('pre_gate_buffer')!.footprint).toEqual({ w: 8, h: 8 });
+    expect(moduleSprite('truck_holding')!.footprint).toEqual({ w: 6, h: 5 });
     expect(moduleSprite('container_yard_small')!.footprint).toEqual({ w: 4, h: 4 });
     expect(moduleSprite('berth_standard')!.footprint).toEqual({ w: 8, h: 4 });
   });
 
-  it('stojisko čakacej plochy 40 × 116 px a dok rampy 56 × 62 px: kamión (28 × 116) sa doň zmestí, zadok v doku a kabína von', () => {
-    const stall = moduleSprite('truck_waiting_area')!.stalls![0];
-    expect([stall.w, stall.h]).toEqual([40, 116]);
-    expect(TRUCK_WIDTH_PX).toBeLessThanOrEqual(stall.w);
-    expect(TRUCK_LENGTH_PX).toBeLessThanOrEqual(stall.h);
-    const dock = moduleSprite('loading_ramp_container')!.docks![0];
-    expect(TRUCK_WIDTH_PX).toBeLessThanOrEqual(dock.w);
-    expect(dock.h).toBeLessThan(TRUCK_LENGTH_PX); // kabína presahuje z rampy
+  it('kamión (28 px široký) sa zmestí do pruhu brány aj do radu predbránovej plochy (1 bunka), státie odstavnej plochy je 1 × 3 bunky', () => {
+    const cell = 64;
+    expect(TRUCK_WIDTH_PX).toBeLessThanOrEqual(cell);
+    const stall = moduleSprite('truck_holding')!.stallSize!;
+    expect(stall.w * cell).toBeGreaterThanOrEqual(TRUCK_WIDTH_PX);
+    expect(stall.h * cell).toBeGreaterThanOrEqual(TRUCK_LENGTH_PX);
+    const lane = moduleSprite('pre_gate_buffer')!.parts!['lane']!.footprint!;
+    expect(lane.h * cell).toBeGreaterThanOrEqual(2 * TRUCK_LENGTH_PX / 2); // dve miesta po 3 bunky v rade
   });
 });

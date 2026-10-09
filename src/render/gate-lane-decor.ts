@@ -6,7 +6,7 @@
  */
 import { Container, Graphics, Sprite, Text, type TextStyleFontWeight } from 'pixi.js';
 import { GATE_BARRIER_ENTRY_ID, manifestScale, moduleSprite, type ModuleSpriteEntry } from './entity-assets';
-import { BARRIER_MOTION_MS, BarrierMotion, createBarrier } from './gate-decor';
+import { BARRIER_MOTION_MS, BarrierMotion, createBarrier } from './gate-barrier';
 import type { ModuleDecor, ModuleDecorContext, ModuleDecorFactory } from './module-decor';
 import type { GateLaneVM, ModuleVM } from './view-models';
 

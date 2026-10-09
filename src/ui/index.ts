@@ -244,3 +244,29 @@ export type {
   MachineStateName,
   RtgPriority,
 } from './machine-inspector';
+export {
+  GATE_LANE_KIND_LABELS,
+  GATE_LANE_MODES,
+  GATE_LANE_MODE_LABELS,
+  GATE_LANE_STEP_LABELS,
+  GateLaneInspector,
+  PreGateInspector,
+  TurnTimeStat,
+  clampProgress,
+  gateLaneIcon,
+  gateLaneModeTone,
+  gateLaneStepText,
+  preGateOccupancy,
+  turnTimeText,
+} from './gate-inspector';
+export type {
+  GateLaneInspectorData,
+  GateLaneInspectorProps,
+  GateLaneKind,
+  GateLaneMode,
+  GateLaneStep,
+  PreGateInspectorData,
+  PreGateInspectorProps,
+  PreGateRowData,
+  TurnTimeStatProps,
+} from './gate-inspector';

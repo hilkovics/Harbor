@@ -336,6 +336,13 @@ export const QUEUE_BADGE_SIZE: CellSize = overlayManifest.queue_badge.size;
 /** Súbor `overlay.queue_badge` (cesta relatívne k `assets/`). */
 export const QUEUE_BADGE_FILE: string = overlayManifest.queue_badge.file;
 
+/** Súbory overlayov R4: odovzdávacie miesto RTG (`tp_marker`) a bezpečnostná zóna pri ňom (`safe_zone`); obe 1 × 1 bunka. */
+export const TP_MARKER_FILE: string = overlayManifest.tp_marker.file;
+export const SAFE_ZONE_FILE: string = overlayManifest.safe_zone.file;
+
+/** Id záznamu zdieľanej závory pruhov brány v `sprites` (`parts.barrier`). */
+export const GATE_BARRIER_ENTRY_ID = 'gate_lane_barrier';
+
 /** Typ nákladu pre neznámu kategóriu: kontajner. */
 const DEFAULT_CARGO_TYPE = 'container_teu';
 
@@ -429,5 +436,7 @@ export function entitySpriteFiles(): string[] {
   files.add(BLOCKED_BADGE_FILE);
   files.add(WARNING_BADGE_FILE);
   files.add(QUEUE_BADGE_FILE);
+  files.add(TP_MARKER_FILE);
+  files.add(SAFE_ZONE_FILE);
   return [...files];
 }

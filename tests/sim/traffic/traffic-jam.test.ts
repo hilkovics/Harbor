@@ -1,13 +1,11 @@
 // Zápchy a ich prevencia (TR1-04; ADR-037 bod 8 a dodatok TR1-04, rozhodnutie orchestrátora R1 č. 12):
 // - `TrafficJam` raz, keď nosič čaká `stuckTicks` v kuse (bunka, blokujúci nosiči), `TrafficJamCleared` po prvom pohybe;
 // - neriešiteľná situácia (vzájomné blokovanie bez obchádzky) sa nahlási pre všetkých, ktorí čakajú, a nezmizne;
-// - prevencia: fronta pred bránou nesiaha do križovatky (kamión, ktorý by tam zastal telom v križovatke, do nej nevstúpi);
 // - prevencia: pobyt pri module drží len hlavu (chvost sa uvoľní), takže stojaci nosič neblokuje križovatku ani protismerný pruh.
 import { describe, expect, it } from 'vitest';
 import type { SimEvent } from '@sim/events';
 import { slotKey, trafficMetrics } from '@sim/traffic';
 import type { World } from '@sim/world';
-import { gateOf, outboundWorld, rampOf } from '../logistics/outbound-fixtures';
 import { DEFS } from '../world/world-fixtures';
 import { idx, lay, line, spawn, tickTraffic, trafficBed } from './traffic-fixtures';
 
@@ -87,56 +85,5 @@ describe('TrafficJam a TrafficJamCleared', () => {
     expect([a.blockedTicks, b.blockedTicks].every((ticks) => ticks >= STUCK)).toBe(true);
     expect(trafficMetrics(world).jammed).toBe(2);
     expect(jamEvents(world).cleared).toEqual([]);
-  });
-});
-
-describe('prevencia: fronta pred bránou nesiaha do križovatky', () => {
-  /** Svet s bránou: kamión sa spawne z docku s nákladom a ide k bráne (44, 33); križovatka na (44, `junctionY`) cez bočnú cestu (43, `junctionY`). */
-  function gateWorld(junctionY: number): World {
-    const { world } = outboundWorld({ defs: DEFS, before: [{ type: 'PlaceRoad', cells: [{ x: 43, y: junctionY }] }] });
-    const ramp = rampOf(world);
-    for (let i = 0; i < 1; i++) {
-      const unit = world.cargo.create('container_teu', { kind: 'on_ship', shipId: 900 as never }).id;
-      world.cargo.move(unit, { kind: 'in_crane', craneId: 901 as never });
-      world.cargo.move(unit, { kind: 'on_apron', berthId: 1 as never, slot: 0 });
-      world.cargo.move(unit, { kind: 'in_vehicle', vehicleId: 902 as never });
-      world.cargo.move(unit, { kind: 'at_ramp', rampId: ramp.id, dock: 0 });
-    }
-    return world;
-  }
-
-  it('brána 1 bunku za križovatkou: kamión čaká pred križovatkou v to_gate (nezastane v nej telom), zápcha sa nahlási', () => {
-    const world = gateWorld(34);
-    const junction = world.grid.index(44, 34);
-    expect(world.cellLanes.isJunction(junction)).toBe(true);
-    let jams = 0;
-    for (let tick = 0; tick < 600; tick++) {
-      for (const event of world.tick()) if (event.type === 'TrafficJam') jams += 1;
-      for (const truck of world.trucks.values()) {
-        for (const key of [...truck.body, ...truck.ahead]) expect(key >> 1).not.toBe(junction);
-        expect(truck.state).toBe('to_gate');
-      }
-    }
-    expect([...world.trucks.values()].map((truck) => truck.blockedTicks >= STUCK)).toEqual([true]);
-    expect(jams).toBe(1);
-    expect(gateOf(world).queueLength).toBe(0);
-  });
-
-  it('brána 3 bunky za križovatkou: telo kamióna vo fronte križovatku neobsadzuje, kamión sa do fronty dostane', () => {
-    const world = gateWorld(36);
-    const junction = world.grid.index(44, 36);
-    expect(world.cellLanes.isJunction(junction)).toBe(true);
-    let reachedGate = false;
-    let jams = 0;
-    for (let tick = 0; tick < 600; tick++) {
-      for (const event of world.tick()) if (event.type === 'TrafficJam') jams += 1;
-      for (const truck of world.trucks.values()) {
-        if (truck.state === 'gate_queue' || truck.state === 'gate_pass') reachedGate = true;
-        // telo kamióna čakajúceho pred bránou (tri bunky) zasahuje najviac po bunku pred križovatkou
-        if (truck.state === 'gate_queue') for (const key of truck.body) expect(key >> 1).not.toBe(junction);
-      }
-    }
-    expect(reachedGate).toBe(true);
-    expect(jams).toBe(0);
   });
 });

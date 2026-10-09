@@ -4,17 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { commandFromJSON } from '@sim/commands';
 import { World, findWorldViolation, type WorldState } from '@sim/world';
 import { preGateInbound } from '@sim/trucks/gate-choice';
-import { GATES_DEFS, GATES_MAP, gatesWorld, stageUnit, type GatesWorld } from '../helpers/r4-gates-layout';
+import { GATES_DEFS, GATES_MAP, gatesWorld, stageUnits } from '../helpers/r4-gates-layout';
 import { assertCargoConservation } from '../helpers/invariants';
-
-function stageMany(layout: GatesWorld, count: number): void {
-  const { world, ramp } = layout;
-  for (let i = 0; i < count; i++) {
-    let best = 0;
-    for (let dock = 1; dock < ramp.docks; dock++) if (ramp.freeAt(dock) > ramp.freeAt(best)) best = dock;
-    stageUnit(world, ramp, best);
-  }
-}
 
 function setMode(world: World, laneId: number, mode: string): void {
   world.enqueue(commandFromJSON({ type: 'SetGateLaneMode', laneId, mode }));
@@ -27,7 +18,7 @@ describe('vjazd do plochy a pruh radu', () => {
     const { world, buffers } = layout;
     // Pruhy v `trouble` (40 ticov na kamión) držia kamióny v radoch dlhšie, takže rady sa plnia.
     for (const lane of layout.inLanes) setMode(world, lane.id, 'trouble');
-    stageMany(layout, 30);
+    stageUnits(layout, 30);
     let admissions = 0;
     for (let tick = 0; tick < 250; tick++) {
       const before = buffers.map((buffer) => Array.from({ length: buffer.rowCount }, (_unused, row) => buffer.rowTrucks(row).length));
@@ -62,7 +53,7 @@ describe('vjazd do plochy a pruh radu', () => {
   it('čelo radu vyjde len k voľnému pruhu: vstupný pruh nikdy nemá vo fronte viac než jeden kamión a nik k nemu nejde, kým prechádza iný', () => {
     const layout = gatesWorld(22);
     const { world, inLanes } = layout;
-    stageMany(layout, 40);
+    stageUnits(layout, 40);
     let released = 0;
     for (let tick = 0; tick < 400; tick++) {
       const before = new Set([...world.trucks.values()].filter((truck) => truck.state === 'pre_gate').map((truck) => truck.id));
@@ -82,12 +73,12 @@ describe('vjazd do plochy a pruh radu', () => {
 });
 
 describe('plná plocha: kamióny nečakajú na ceste', () => {
-  it('pruhy v trouble → plochy sa naplnia (obsadené + idúce ≤ kapacita), nové kamióny nevznikajú (náklad čaká na dockoch); po návrate do standard sa všetko odvezie', () => {
+  it('pruhy v trouble → plochy sa naplnia (obsadené + idúce ≤ kapacita), kamióny sa nehromadia na ceste (token TP / státia ich zastaví vo vnútrozemí, náklad čaká vo dvoroch); po návrate do standard sa všetko odvezie', () => {
     const layout = gatesWorld(23);
-    const { world, buffers, ramp } = layout;
+    const { world, buffers } = layout;
     for (const lane of layout.inLanes) setMode(world, lane.id, 'trouble');
     const UNITS = 120;
-    stageMany(layout, UNITS);
+    stageUnits(layout, UNITS);
     let sawFull = false;
     for (let tick = 0; tick < 300; tick++) {
       world.tick();
@@ -98,15 +89,14 @@ describe('plná plocha: kamióny nečakajú na ceste', () => {
       }
     }
     expect(sawFull).toBe(true);
-    // Trouble: 8 pruhov × (≈ 46 ticov na kamión) pustí za 300 ticov najviac ≈ 52 kamiónov; plochy držia ďalších 32 ⇒ časť nákladu je stále na dockoch bez kamióna.
-    const unclaimed = [...world.cargo.liveUnits()].filter((unit) => unit.location.kind === 'at_ramp').length;
-    expect(unclaimed).toBeGreaterThan(0);
+    // Vnútri prístavu je najviac toľko kamiónov, koľko je tokenov (12 TP dvorov + 60 státí): ďalší kamióny nevznikajú, náklad čaká vo dvoroch.
+    expect([...world.trucks.values()].filter((truck) => truck.bonds.holdsToken).length).toBeLessThanOrEqual(12 + 60);
     expect(world.trucks.size).toBeLessThan(UNITS);
+    expect(world.cargo.countByKind('in_storage')).toBeGreaterThan(0);
     for (const lane of layout.inLanes) setMode(world, lane.id, 'standard');
-    for (let tick = 0; tick < 4_000 && world.cargo.exportedCount < UNITS; tick++) world.tick();
+    for (let tick = 0; tick < 12_000 && world.cargo.exportedCount < UNITS; tick++) world.tick();
     expect(world.cargo.exportedCount).toBe(UNITS);
     expect(world.cargo.liveCount).toBe(0);
-    expect(ramp.stagedCount).toBe(0);
     expect(world.trucks.size).toBe(0);
   });
 });
@@ -125,7 +115,7 @@ describe('režimy pruhov a SetGateLaneMode', () => {
     expect(lane.meanServiceTicks('trouble')).toBeGreaterThan(lane.meanServiceTicks('standard'));
     // Prechod: kamión v pruhu v `trouble` ukazuje krok `trouble` a postup 0…1.
     for (const other of inLanes) setMode(world, other.id, 'trouble');
-    stageMany(layout, 1);
+    stageUnits(layout, 1);
     const progress: number[] = [];
     for (let tick = 0; tick < 400 && progress.length < 5; tick++) {
       world.tick();
@@ -144,8 +134,8 @@ describe('režimy pruhov a SetGateLaneMode', () => {
   });
 
   it('príkaz: neznáme id → unknown_module, neplatný režim → invalid_gate_mode; platný príkaz je serializovateľný a režim sa zmení; modul, ktorý nie je pruh, sa odmietne', () => {
-    const { world, inLanes, ramp } = gatesWorld(25);
-    const bad = commandFromJSON({ type: 'SetGateLaneMode', laneId: ramp.id, mode: 'express' }).validate(world);
+    const { world, inLanes, yards } = gatesWorld(25);
+    const bad = commandFromJSON({ type: 'SetGateLaneMode', laneId: yards[0].id, mode: 'express' }).validate(world);
     expect([bad.ok, bad.reasons]).toEqual([false, ['unknown_module']]);
     const invalid = commandFromJSON({ type: 'SetGateLaneMode', laneId: inLanes[0].id, mode: 'turbo' }).validate(world);
     expect([invalid.ok, invalid.reasons]).toEqual([false, ['invalid_gate_mode']]);
@@ -163,7 +153,7 @@ describe('režimy pruhov a SetGateLaneMode', () => {
       const layout = gatesWorld(26);
       const { world } = layout;
       for (const lane of layout.inLanes) setMode(world, lane.id, mode);
-      stageMany(layout, 12);
+      stageUnits(layout, 12);
       const states: string[] = [];
       // Portál sa vyberá z Rng pri ≥ 2 voľných portáloch, preto sa porovnáva len stav po prechodoch pruhmi: spotrebu pruhu meria rozdiel oproti behu bez prechodov.
       for (let tick = 0; tick < 300; tick++) {
@@ -184,7 +174,7 @@ describe('save/load plochy', () => {
     const layout = gatesWorld(27);
     const { world } = layout;
     for (const lane of layout.inLanes) setMode(world, lane.id, 'trouble');
-    stageMany(layout, 24);
+    stageUnits(layout, 24);
     for (let tick = 0; tick < 120; tick++) world.tick();
     expect(layout.buffers.reduce((sum, buffer) => sum + buffer.occupied, 0)).toBeGreaterThan(4);
     const state = JSON.parse(JSON.stringify(world.serialize())) as WorldState;
@@ -206,7 +196,7 @@ describe('save/load plochy', () => {
     const layout = gatesWorld(28);
     const { world, buffers } = layout;
     for (const lane of layout.inLanes) setMode(world, lane.id, 'trouble');
-    stageMany(layout, 12);
+    stageUnits(layout, 12);
     for (let tick = 0; tick < 80 && [...world.trucks.values()].every((truck) => truck.state !== 'pre_gate'); tick++) world.tick();
     const inside = [...world.trucks.values()].find((truck) => truck.state === 'pre_gate');
     expect(inside).toBeDefined();

@@ -45,7 +45,6 @@ const LIVE_KINDS: readonly CargoLocationKind[] = [
   'in_vehicle',
   'in_storage',
   'in_pipeline',
-  'at_ramp',
   'in_truck',
   'in_train',
 ];

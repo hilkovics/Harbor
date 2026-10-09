@@ -64,8 +64,8 @@ function busyWorld(): World {
   return world;
 }
 
-describe('World.serialize — WorldState v12', () => {
-  it('tvar: presne kľúče v12 (= tvar v9, ADR-036) v pevnom poradí a hodnoty novej hry', () => {
+describe('World.serialize — WorldState v13', () => {
+  it('tvar: presne kľúče v13 (ADR-041: `hinterland.truckTurn`, nový tvar kamiónov a jobov) v pevnom poradí a hodnoty novej hry', () => {
     const world = create();
     const state = world.serialize();
     expect(Object.keys(state)).toEqual([
@@ -104,6 +104,7 @@ describe('World.serialize — WorldState v12', () => {
       delivery: { admitted: 0, waitTicksTotal: 0, waitTicksMax: 0, turnedAway: 0 },
       collect: { admitted: 0, waitTicksTotal: 0, waitTicksMax: 0, turnedAway: 0 },
       pickupBayStarvationTicks: 0,
+      truckTurn: { trucks: 0, ticksTotal: 0, ticksMax: 0 },
     });
     expect(state.economy).toEqual({ entries: [], today: { incomeCents: {}, expenseCents: {} }, daily: [], monthly: [], daysNegative: 0, gameOver: false });
     expect(state.traffic).toEqual([]);
@@ -288,7 +289,7 @@ describe('World.deserialize', () => {
   const INVALID: readonly [string, Mutation, string][] = [
     ['neznámy kľúč', set('extra', 1), '/extra'],
     ['chýba kľúč', (s) => delete s.cashCents, '/cashCents'],
-    ['neznáma budúca verzia', set('version', 13), '/version'],
+    ['neznáma budúca verzia', set('version', 14), '/version'],
     ['verzia 0', set('version', 0), '/version'],
     ['verzia ako reťazec', set('version', '3'), '/version'],
     ['starý save v1 → clean break (ADR-036), chyba verzie pred tvarom', set('version', 1), '/version'],

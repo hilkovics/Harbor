@@ -359,7 +359,7 @@ export function jobStateViolation(states: readonly JobState[]): string | null {
 // ---------------------------------------------------------------------------------------------------------
 
 /** Lokácie, ktoré vo F3 nesmie mať žiadna jednotka (potrubia, rampy, kamióny, vlaky a export prídu neskôr). */
-const LOCATION_KINDS_AFTER_STORAGE = ['in_pipeline', 'at_ramp', 'in_truck', 'in_train', 'exported'] as const;
+const LOCATION_KINDS_AFTER_STORAGE = ['in_pipeline', 'in_truck', 'in_train', 'exported'] as const;
 
 export interface LedgerAuditF3 {
   readonly onShip: number;

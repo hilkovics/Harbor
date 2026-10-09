@@ -1,5 +1,5 @@
-// T04-08 B: napojenie kamiónov na SimBridge — `revision` z udalostí Truck*/NoWaitingBay a cache modulov. Cache modulov je
-// podľa `revision` (stabilné pole), okrem brány a stojiska, ktorých VM sa porovnáva so živým modulom, lebo sa môže zmeniť
+// T04-08 B: napojenie kamiónov na SimBridge — `revision` z udalostí Truck* a cache modulov. Cache modulov je
+// podľa `revision` (stabilné pole), okrem brány, ktorej VM sa porovnáva so živým modulom, lebo sa môže zmeniť
 // aj bez udalosti (závora po prestavbe ciest). Celý reťazec ide skutočným tickom (`buildFullChain`), nie fiktívnymi id.
 import { describe, expect, it } from 'vitest';
 import type { ModuleVM } from '@render/view-models';
@@ -8,12 +8,12 @@ import type { SimEvent } from '@sim/events';
 import { TruckGate } from '@sim/modules';
 import { moduleVMs } from '@app/entities-vm';
 import { REVISION_EVENTS } from '@app/sim-bridge';
-import { CHAIN_GATE_ID, buildFullChain, createApp, frameUntil, type App } from './app-fixtures';
+import { CHAIN_GATE_ID, buildFullChain, createPortApp, frameUntil, type App } from './app-fixtures';
 
 const UNITS = 12;
 
 function chainApp(units = UNITS, vehicles?: number): App {
-  const app = createApp();
+  const app = createPortApp();
   buildFullChain(app, { units, vehicles });
   return app;
 }
@@ -55,7 +55,7 @@ describe('SimBridge: revision a kamióny', () => {
   });
 });
 
-describe('SimBridge: cache modulov s bránou a stojiskom', () => {
+describe('SimBridge: cache modulov s bránou', () => {
   it('celý beh: VM modulov v snapshote sú v každom frame rovnaké ako čerstvo zložené zo sveta (žiadna zastaraná závora ani fronta)', () => {
     const app = chainApp();
     const { world, bridge } = app;
@@ -71,7 +71,7 @@ describe('SimBridge: cache modulov s bránou a stojiskom', () => {
     );
   });
 
-  it('pole modulov je pri rovnakej revision tá istá referencia, kým sa hodnoty brány a stojiska nezmenia; nové je len pri zmene', () => {
+  it('pole modulov je pri rovnakej revision tá istá referencia, kým sa hodnoty brány nezmenia; nové je len pri zmene', () => {
     const app = chainApp();
     const { world, bridge, loop } = app;
     let stable = 0;
@@ -134,8 +134,8 @@ describe('SimBridge: cache modulov s bránou a stojiskom', () => {
     const gate = world.modules.get(CHAIN_GATE_ID) as TruckGate;
     frameUntil(app, () => gate.isOpen, 3000);
     // výstupná strana brány zanikne počas prechodu: kamión ostane na čele fronty a prechod sa nedokončí
-    const removal = commandFromJSON({ type: 'RemoveRoad', cells: [{ x: 49, y: 33 }, { x: 50, y: 33 }] });
-    expect(bridge.validate(removal).ok).toBe(true);
+    const removal = commandFromJSON({ type: 'RemoveRoad', cells: [{ x: 44, y: 29 }] });
+    expect(bridge.validate(removal).reasons).toEqual([]);
     bridge.dispatch(removal);
     loop.frame(0);
     expect(gate.exitSide).toBeNull();

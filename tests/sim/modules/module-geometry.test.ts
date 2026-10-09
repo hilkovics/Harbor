@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { SIDES, type Side } from '@sim/defs';
 import { DIRECTIONS_4, ROTATIONS, rotateLocalCell, type Rotation } from '@sim/grid';
-import { SIDE_STEPS, connectorOutside, connectorsOf, edgeCells, footprintOf, frontBandCells, rotateSide, waterSideOf } from '@sim/modules';
+import { SIDE_STEPS, connectorAllows, connectorOutside, connectorsOf, edgeCells, footprintOf, frontBandCells, rotateSide, waterSideOf } from '@sim/modules';
 import { BERTH, CRANE, MODULE_DEFS } from './module-fixtures';
 
 const berthDef = MODULE_DEFS.modules.get(BERTH);
@@ -133,6 +133,31 @@ describe('connectorsOf (§8 bod 7, T02-04)', () => {
     const placed = connectorsOf(craneDef, 0, 0, 0);
     expect(placed).toEqual([]);
     expect(Object.isFrozen(placed)).toBe(true);
+  });
+});
+
+describe('connectorAllows a prístup konektora `access` (TR4-02, ADR-041 bod 8: jednosmerné vjazdy a výjazdy)', () => {
+  const rtgDef = MODULE_DEFS.modules.get('rtg_block');
+  const holdingDef = MODULE_DEFS.modules.get('truck_holding');
+  const gateDef = MODULE_DEFS.modules.get('gate_in_lane');
+
+  it('chýbajúci `access` = oboje; `in` len vjazd, `out` len výjazd', () => {
+    expect([connectorAllows({}, 'in'), connectorAllows({}, 'out')]).toEqual([true, true]);
+    expect([connectorAllows({ access: 'in' }, 'in'), connectorAllows({ access: 'in' }, 'out')]).toEqual([true, false]);
+    expect([connectorAllows({ access: 'out' }, 'in'), connectorAllows({ access: 'out' }, 'out')]).toEqual([false, true]);
+  });
+
+  it('RTG blok: vjazd pruhu (sever) a druhý výjazd (juh); odstavná plocha: vjazd a výjazd; pruh brány: vstup a výstup — poradie z defu', () => {
+    expect(rtgDef.connectors.map((connector) => [connector.side, connector.access])).toEqual([['n', 'in'], ['s', 'out']]);
+    expect(holdingDef.connectors.map((connector) => connector.access)).toEqual(['in', 'out']);
+    expect(gateDef.connectors.map((connector) => connector.access)).toEqual(['in', 'out']);
+  });
+
+  it('`access` sa pri rotácii zachováva (mení sa len bunka a strana)', () => {
+    for (const rotation of ROTATIONS) {
+      const placed = connectorsOf(holdingDef, 10, 10, rotation);
+      expect(placed.map((connector) => connector.access)).toEqual(['in', 'out']);
+    }
   });
 });
 

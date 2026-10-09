@@ -35,7 +35,7 @@ const BERTH = 10;
 
 /**
  * Ledger so všetkým, čo stav musí zachovať: dve lode (jednotky v premiešanom poradí id), apron v poradí príchodu
- * odlišnom od id aj slotov, sklad, dock rampy s dvomi jednotkami, žeriav, kontrakt a exportované jednotky.
+ * odlišnom od id aj slotov, sklad, kamión s dvomi jednotkami, žeriav, kontrakt a exportované jednotky.
  */
 function busyHarness(): LedgerHarness {
   const harness = createHarness();
@@ -50,8 +50,8 @@ function busyHarness(): LedgerHarness {
   moveThrough(ledger, u7, [at.crane(21), at.apron(BERTH, 1)]);
   moveThrough(ledger, u5, [at.crane(21)]);
   moveThrough(ledger, u1, [at.crane(22), at.apron(BERTH + 1, 0), at.vehicle(30), at.storage(40, 3)]);
-  moveThrough(ledger, u6, [at.vehicle(33), at.ramp(50, 1)]);
-  moveThrough(ledger, u3, [at.vehicle(34), at.ramp(50, 1)]);
+  moveThrough(ledger, u6, [at.vehicle(33), at.truck(50)]);
+  moveThrough(ledger, u3, [at.vehicle(34), at.truck(50)]);
   const exportedUnit = ledger.create(TEU, at.ship(SHIP_A)).id;
   moveThrough(ledger, exportedUnit, LIQUID_CHAIN);
   harness.events.flush();
@@ -92,8 +92,8 @@ describe('CargoLedger.getState', () => {
       ['on_apron', BERTH, 2],
       ['on_apron', BERTH, 7],
       ['in_storage', 40, 1],
-      ['at_ramp', 50, 6],
-      ['at_ramp', 50, 3],
+      ['in_truck', 50, 6],
+      ['in_truck', 50, 3],
     ]);
     expect(Object.keys(units[4])).toEqual(['id', 'typeId', 'contractId', 'voyageId', 'lineId', 'direction', 'destinationPort', 'weightClass', 'sizeFt', 'containerType', 'oog', 'hold', 'status', 'repairUntilTick', 'quantity', 'location']);
     expect(JSON.stringify(units[4].location)).toBe('{"kind":"on_apron","berthId":10,"slot":3}');
@@ -120,7 +120,7 @@ describe('CargoLedger.fromState — roundtrip', () => {
     expect(snapshot(restored)).toEqual(snapshot(original));
     for (const kind of CARGO_LOCATION_KINDS) expect(restored.ledger.countByKind(kind)).toBe(original.ledger.countByKind(kind));
     expect(restored.ledger.unitsOnApron(id(BERTH))).toEqual([4, 2, 7]);
-    expect(restored.ledger.unitsAt('at_ramp', id(50))).toEqual([6, 3]);
+    expect(restored.ledger.unitsAt('in_truck', id(50))).toEqual([6, 3]);
     expect(restored.ledger.unitAtSlot('on_apron', id(BERTH), 1)).toBe(7);
     expect(restored.ledger.unitAtSlot('in_storage', id(40), 3)).toBe(1);
     expect(restored.ledger.get(id(5))).toEqual(original.ledger.get(id(5)));
@@ -139,7 +139,7 @@ describe('CargoLedger.fromState — roundtrip', () => {
       ledger.move(id(5), at.apron(BERTH, 3)); // slot uvoľnený jednotkou 4
       const [nextOnShip] = ledger.unitsOnShip(id(SHIP_A));
       ledger.move(nextOnShip, at.pipeline(70));
-      moveThrough(ledger, id(6), [at.truck(60), at.exported()]);
+      ledger.move(id(6), at.exported());
       return { fresh, moves: flushMoves(harness.events), state: ledger.getState(), nextId: harness.ids.getState().nextId };
     };
     expect(script(restored)).toEqual(script(original));
@@ -280,16 +280,16 @@ describe('CargoLedger.fromState — neplatný stav', () => {
     expect(error.message).toBe(`CargoLedgerState${path}: ${error.problem}`);
   });
 
-  it('rovnaký slot na rôznych berthoch a rovnaký dock rampy sú platné', () => {
+  it('rovnaký slot na rôznych berthoch a rovnaký kamión (držiteľ bez miesta) sú platné', () => {
     const harness = createHarness({ nextId: NEXT_ID });
     const raw = state([
       unit({ location: at.apron(BERTH, 2) }),
       unit({ id: 2, location: at.apron(BERTH + 1, 2) }),
-      unit({ id: 3, location: at.ramp(50, 0) }),
-      unit({ id: 4, location: at.ramp(50, 0) }),
+      unit({ id: 3, location: at.truck(50) }),
+      unit({ id: 4, location: at.truck(50) }),
     ]);
     const ledger = CargoLedger.fromState(raw, harness.deps);
-    expect(ledger.unitsAt('at_ramp', id(50))).toEqual([3, 4]);
+    expect(ledger.unitsAt('in_truck', id(50))).toEqual([3, 4]);
     ledger.assertConservation();
   });
 });

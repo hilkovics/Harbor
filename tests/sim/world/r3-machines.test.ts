@@ -74,22 +74,22 @@ describe('RTG blok a jeho stroj', () => {
 });
 
 describe('fronta stroja: priorita (loď > kamión > housekeeping), potom čas vzniku a id', () => {
-  const job = (from: 'in_crane' | 'at_ramp' | 'in_storage' | 'on_apron', to: 'in_storage' | 'at_ramp' | 'in_crane', jobId: number): TransportJob =>
+  const job = (from: 'in_crane' | 'in_truck' | 'in_storage' | 'on_apron', to: 'in_storage' | 'in_truck' | 'in_crane', jobId: number): TransportJob =>
     new TransportJob({
       id: id(jobId),
       unitIds: [id(1000 + jobId)],
-      from: from === 'in_crane' ? { kind: 'in_crane', craneId: id(2) } : from === 'on_apron' ? { kind: 'on_apron', berthId: id(1), slot: 0 } : from === 'at_ramp' ? { kind: 'at_ramp', rampId: id(8), dock: 0 } : { kind: 'in_storage', moduleId: id(4), slot: 0 },
-      to: to === 'in_crane' ? { kind: 'in_crane', craneId: id(2) } : to === 'at_ramp' ? { kind: 'at_ramp', rampId: id(8), dock: 0 } : { kind: 'in_storage', moduleId: id(4), slot: 1 },
-      fromModuleId: from === 'in_crane' ? id(1) : undefined,
-      toModuleId: to === 'in_crane' ? id(1) : undefined,
+      from: from === 'in_crane' ? { kind: 'in_crane', craneId: id(2) } : from === 'on_apron' ? { kind: 'on_apron', berthId: id(1), slot: 0 } : from === 'in_truck' ? { kind: 'in_truck', truckId: id(8) } : { kind: 'in_storage', moduleId: id(4), slot: 0 },
+      to: to === 'in_crane' ? { kind: 'in_crane', craneId: id(2) } : to === 'in_truck' ? { kind: 'in_truck', truckId: id(8) } : { kind: 'in_storage', moduleId: id(4), slot: 1 },
+      fromModuleId: from === 'in_crane' ? id(1) : from === 'in_truck' ? id(4) : undefined,
+      toModuleId: to === 'in_crane' ? id(1) : to === 'in_truck' ? id(4) : undefined,
       createdTick: 0,
     });
 
-  it('priorityKindOf: hák → ship, rampa → truck, ostatné housekeeping', () => {
+  it('priorityKindOf: hák → ship, kamión na TP → truck, ostatné housekeeping', () => {
     expect(priorityKindOf(job('in_crane', 'in_storage', 1))).toBe('ship');
     expect(priorityKindOf(job('in_storage', 'in_crane', 2))).toBe('ship');
-    expect(priorityKindOf(job('at_ramp', 'in_storage', 3))).toBe('truck');
-    expect(priorityKindOf(job('in_storage', 'at_ramp', 4))).toBe('truck');
+    expect(priorityKindOf(job('in_truck', 'in_storage', 3))).toBe('truck');
+    expect(priorityKindOf(job('in_storage', 'in_truck', 4))).toBe('truck');
     expect(priorityKindOf(job('on_apron', 'in_storage', 5))).toBe('housekeeping');
   });
 
@@ -97,7 +97,7 @@ describe('fronta stroja: priorita (loď > kamión > housekeeping), potom čas vz
     const machine = RtgCrane.create(id(5), id(4), BUNDLED_DEFS.equipment.rtg, 5);
     const jobs = new Map<EntityId, TransportJob>([
       [id(1), job('on_apron', 'in_storage', 1)],
-      [id(2), job('at_ramp', 'in_storage', 2)],
+      [id(2), job('in_truck', 'in_storage', 2)],
       [id(3), job('in_crane', 'in_storage', 3)],
       [id(4), job('in_crane', 'in_storage', 4)],
       [id(5), job('in_storage', 'in_crane', 5)],
@@ -108,7 +108,7 @@ describe('fronta stroja: priorita (loď > kamión > housekeeping), potom čas vz
     machine.enqueue(id(13), 9); // loď, neskôr
     machine.enqueue(id(14), 9); // loď, rovnaký tick, väčšie id
     machine.enqueue(id(12), 9); // loď, rovnaký tick, menšie id než 13
-    const order = sortedQueue({ jobs, vehicles } as unknown as Pick<World, 'jobs' | 'vehicles'>, machine).map((entry) => entry.vehicleId);
+    const order = sortedQueue({ jobs, vehicles, trucks: new Map() } as unknown as Pick<World, 'jobs' | 'vehicles' | 'trucks'>, machine).map((entry) => entry.vehicleId);
     expect(order).toEqual([12, 13, 14, 11, 10]);
   });
 });
@@ -153,7 +153,7 @@ describe('save v10: stroj uprostred cyklu sa obnoví a beh pokračuje bit po bit
     expect(load((s) => (s.machines[0]['state'] = 'flying'))).toThrow(/stav musí byť/);
     expect(load((s) => (s.machines[0]['state'] = 'lift'))).toThrow();
     expect(load((s) => (s.machines[0]['defId'] = 'rmg'))).toThrow(/neznámy stroj/);
-    expect(load((s) => (s.machines[0]['cycle'] = { kind: 'take', unitId: 1, vehicleId: null, jobId: null, fromSlot: 1, toSlot: null, tpBay: 0 }))).toThrow(/vozidlo aj job/);
+    expect(load((s) => (s.machines[0]['cycle'] = { kind: 'take', unitId: 1, vehicleId: null, truck: false, jobId: null, fromSlot: 1, toSlot: null, tpBay: 0 }))).toThrow(/vozidlo aj job/);
     expect(load(() => undefined)()).toBeInstanceOf(World);
   });
 });

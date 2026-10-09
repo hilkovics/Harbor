@@ -183,7 +183,7 @@ export function stowageOutOfOrder(world: World, loaded: CargoUnit, shipId?: Enti
   for (const unit of world.cargo.liveUnits()) {
     if (unit.id === loaded.id || !isLoadable(unit)) continue;
     const { kind } = unit.location;
-    if (kind !== 'in_storage' && kind !== 'on_apron' && kind !== 'in_vehicle' && kind !== 'at_ramp' && kind !== 'in_crane') continue;
+    if (kind !== 'in_storage' && kind !== 'on_apron' && kind !== 'in_vehicle' && kind !== 'in_crane') continue;
     if (compareStowageClass(unit, loaded) < 0 && anyBookingLoads(bookings, unit)) return true;
   }
   return false;

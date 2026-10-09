@@ -8,7 +8,7 @@ import { TranshipContract } from '@sim/contracts';
 import { World, WorldStateError, type WorldState } from '@sim/world';
 import { assertCargoConservation } from '../helpers/invariants';
 import { loadScenarioFile, runScenario } from '../helpers/scenario';
-import { DEFS, MAP } from './world-fixtures';
+import { DEFS, PORT_MAP } from './world-fixtures';
 
 type Json = Record<string, unknown>;
 
@@ -27,7 +27,7 @@ function stateOf(scenarioId: BaseScenario, tick: number): WorldState {
   let state = cache.get(scenarioId);
   if (state === undefined) {
     const scenario = loadScenarioFile(scenarioId);
-    const world = World.create(DEFS, MAP, scenario.seed);
+    const world = World.create(DEFS, PORT_MAP, scenario.seed);
     runScenario(world, scenario, tick);
     state = clone(world.serialize());
     cache.set(scenarioId, state);
@@ -37,7 +37,7 @@ function stateOf(scenarioId: BaseScenario, tick: number): WorldState {
 
 function loadError(raw: unknown): WorldStateError {
   try {
-    World.deserialize(DEFS, MAP, raw as WorldState);
+    World.deserialize(DEFS, PORT_MAP, raw as WorldState);
   } catch (error) {
     if (error instanceof WorldStateError) return error;
     throw new Error(`očakávaná WorldStateError, dostal ${String(error)}`, { cause: error });
@@ -107,13 +107,13 @@ describe('WorldState: polia F6c v save a roundtrip', () => {
         errands: [],
       },
     };
-    const world = World.deserialize(DEFS, MAP, clone(state));
+    const world = World.deserialize(DEFS, PORT_MAP, clone(state));
     world.assertInvariants();
     // poradie jednotiek v save určuje ledger (nie ručné pripojenie na koniec): plán a vložená jednotka sa zachovajú, roundtrip je idempotentný
     const saved = world.serialize();
     expect(saved.emptyFlow).toEqual(state.emptyFlow);
     expect(saved.cargo.units.find((unit) => unit.id === state.ids.nextId - 1)).toEqual(state.cargo.units[state.cargo.units.length - 1]);
-    expect(JSON.stringify(World.deserialize(DEFS, MAP, clone(saved)).serialize())).toBe(JSON.stringify(saved));
+    expect(JSON.stringify(World.deserialize(DEFS, PORT_MAP, clone(saved)).serialize())).toBe(JSON.stringify(saved));
     const empty = world.cargo.get(state.ids.nextId - 1 as never);
     expect(empty).toMatchObject({ direction: 'empty', lineId: 'northern_star', status: 'in_repair', repairUntilTick: base.clock.tick + 500 });
     expect(world.emptyFlow.returnPlan.map((entry) => entry.lineId)).toEqual(['blue_anchor', 'golden_wave']);
@@ -144,7 +144,7 @@ describe('WorldState: polia F6c v save a roundtrip', () => {
       destinationPort: 'Hamburg',
     });
     const state: WorldState = { ...base, contracts: [...base.contracts, offered.toState()], nextContractId: contractId + 1, nextVoyageId: voyageB + 1 };
-    const world = World.deserialize(DEFS, MAP, clone(state));
+    const world = World.deserialize(DEFS, PORT_MAP, clone(state));
     world.assertInvariants();
     const loaded = world.contracts.get(contractId as never);
     expect(loaded).toBeInstanceOf(TranshipContract);

@@ -15,7 +15,7 @@ import { World, findWorldViolation } from '@sim/world';
 import { lostUnits } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
 import { loadScenarioFile, runScenario } from '../helpers/scenario';
-import { BUNDLED_DEFS, MAP } from '../world/world-fixtures';
+import { BUNDLED_DEFS, PORT_MAP } from '../world/world-fixtures';
 
 const RUN_TIMEOUT_MS = 300_000;
 
@@ -38,7 +38,7 @@ const resting = (ship: Ship): boolean => ship.state === 'waiting_anchorage' && s
 
 describe('scenár multi_ship_queue: päť lodí, jedno kotvisko, rejda (T6D-03)', () => {
   const scenario = loadScenarioFile('multi_ship_queue');
-  const world = World.create(BUNDLED_DEFS, MAP, scenario.seed);
+  const world = World.create(BUNDLED_DEFS, PORT_MAP, scenario.seed);
   const overlaps: string[] = [];
   const unevenHeading: string[] = [];
   const dockOrder: EntityId[] = [];
@@ -57,7 +57,7 @@ describe('scenár multi_ship_queue: päť lodí, jedno kotvisko, rejda (T6D-03)'
     return { x0: root.origin.x, x1: root.origin.x + root.size.w, y0: root.origin.y - depth, y1: root.origin.y };
   })();
 
-  runScenario(world, scenario, 14_000, {
+  runScenario(world, scenario, 16_000, {
     afterTick: (w, events: readonly SimEvent[]) => {
       assertCargoConservation(w);
       for (const event of events) {
@@ -74,7 +74,7 @@ describe('scenár multi_ship_queue: päť lodí, jedno kotvisko, rejda (T6D-03)'
         if (ship.state === 'inbound' || ship.state === 'outbound') onLane += 1;
         if (resting(ship)) {
           restingCount += 1;
-          if (ship.heading !== MAP.anchorageHeading) unevenHeading.push(`tick ${String(w.clock.tick)}: ${ship.label} kurz ${String(ship.heading)}`);
+          if (ship.heading !== PORT_MAP.anchorageHeading) unevenHeading.push(`tick ${String(w.clock.tick)}: ${ship.label} kurz ${String(ship.heading)}`);
         }
         if (ship.state === 'waiting_anchorage' && ship.anchorageIndex !== null) {
           let record = sail.get(ship.id);
@@ -112,9 +112,9 @@ describe('scenár multi_ship_queue: päť lodí, jedno kotvisko, rejda (T6D-03)'
 
   it('každá loď mierená na rejdu plávala priamo: dĺžka trasy zo vstupu ≤ Manhattan + obchádzka, nikdy nezašla na koniec sea lane ani stredom do pásu pred Root kotviskom', () => {
     expect(sail.size).toBe(4); // štyri lode z piatich nemali pri vstupe voľné kotvisko
-    const laneEnd = MAP.seaLane[MAP.seaLane.length - 1].y + 0.5;
+    const laneEnd = PORT_MAP.seaLane[PORT_MAP.seaLane.length - 1].y + 0.5;
     for (const [id, record] of sail) {
-      const cell = MAP.anchorage[record.anchorageIndex];
+      const cell = PORT_MAP.anchorage[record.anchorageIndex];
       const manhattan = Math.abs(cell.x + 0.5 - record.entry.x) + Math.abs(cell.y + 0.5 - record.entry.y);
       // obchádzka lode na rejde: dolu a hore o šírku radu (≤ 2 × 3 bunky) — priama trasa má presne Manhattan
       expect(record.length, `loď #${String(id)}: dĺžka trasy`).toBeLessThanOrEqual(manhattan + 2 * 3 + 1);
@@ -138,7 +138,7 @@ describe('scenár live_terminal: päť lodí, štyri toky v jednom prístave, 60
     'lode sa po každom ticku neprekrývajú, jednotný kurz na rejde, všetky odplávajú, stratených jednotiek 0',
     () => {
       const scenario = loadScenarioFile('live_terminal');
-      const world = World.create(BUNDLED_DEFS, MAP, scenario.seed);
+      const world = World.create(BUNDLED_DEFS, PORT_MAP, scenario.seed);
       const overlaps: string[] = [];
       const uneven: string[] = [];
       let spawned = 0;
@@ -153,7 +153,7 @@ describe('scenár live_terminal: päť lodí, štyri toky v jednom prístave, 60
           if (shared !== undefined) overlaps.push(`tick ${String(w.clock.tick)}: ${shared}`);
           for (const ship of w.ships.values()) {
             if (!resting(ship)) continue;
-            if (ship.heading !== MAP.anchorageHeading) uneven.push(`tick ${String(w.clock.tick)}: ${ship.label}`);
+            if (ship.heading !== PORT_MAP.anchorageHeading) uneven.push(`tick ${String(w.clock.tick)}: ${ship.label}`);
           }
           if (w.clock.tick % 500 === 0) assertCargoConservation(w);
         },

@@ -60,15 +60,15 @@ function buildView(units: readonly CargoUnit[], exported = 0): MutableView {
 const bucketOf = (view: MutableView, kind: CargoLocationKind, holderId: number): MutableBucket =>
   view.buckets.get(kind)?.get(id(holderId)) as MutableBucket;
 
-/** Referenčný stav: dve jednotky na lodi, dve na aprone, jedna v sklade, dve na docku rampy, jedna exportovaná. */
+/** Referenčný stav: dve jednotky na lodi, dve na aprone, jedna v sklade, dve v kamióne, jedna exportovaná. */
 const BASE: readonly CargoUnit[] = [
   unit(1, at.ship(100)),
   unit(3, at.ship(100)),
   unit(5, at.apron(10, 2)),
   unit(2, at.apron(10, 0)),
   unit(4, at.storage(40, 1)),
-  unit(6, at.ramp(50, 0)),
-  unit(7, at.ramp(50, 0)),
+  unit(6, at.truck(50)),
+  unit(7, at.truck(50)),
 ];
 const base = (): MutableView => buildView(BASE, 1);
 
@@ -91,13 +91,13 @@ describe('findConservationViolation', () => {
   it.each<[string, (view: MutableView) => void, RegExp]>([
     [
       'jednotka v dvoch indexoch',
-      (view) => bucketOf(view, 'at_ramp', 50).units.push(id(1)),
-      /^jednotka #1 je v dvoch indexoch: index on_ship\(shipId=100\) a index at_ramp\(rampId=50\)$/,
+      (view) => bucketOf(view, 'in_truck', 50).units.push(id(1)),
+      /^jednotka #1 je v dvoch indexoch: index on_ship\(shipId=100\) a index in_truck\(truckId=50\)$/,
     ],
     [
       'jednotka dvakrát v tom istom indexe',
-      (view) => bucketOf(view, 'at_ramp', 50).units.push(id(6)),
-      /jednotka #6 je v index at_ramp\(rampId=50\) dvakrát/,
+      (view) => bucketOf(view, 'in_truck', 50).units.push(id(6)),
+      /jednotka #6 je v index in_truck\(truckId=50\) dvakrát/,
     ],
     [
       'index nezodpovedá lokácii (iný držiteľ)',
@@ -149,9 +149,9 @@ describe('findConservationViolation', () => {
     [
       'druh bez jedinečných miest má mapu miest',
       (view) => {
-        bucketOf(view, 'at_ramp', 50).slots = new Map([[0, id(6)]]);
+        bucketOf(view, 'in_truck', 50).slots = new Map([[0, id(6)]]);
       },
-      /index at_ramp\(rampId=50\) má mapu miest, hoci druh 'at_ramp' nemá jedinečné miesta/,
+      /index in_truck\(truckId=50\) má mapu miest, hoci druh 'in_truck' nemá jedinečné miesta/,
     ],
     [
       'druh s jedinečnými miestami nemá mapu miest',
@@ -183,9 +183,9 @@ describe('findConservationViolation', () => {
     [
       'počítadlo druhu nesedí s indexmi',
       (view) => {
-        view.counts.at_ramp = 3;
+        view.counts.in_truck = 3;
       },
-      /počítadlo 'at_ramp' = 3, v indexoch je 2 jednotiek/,
+      /počítadlo 'in_truck' = 3, v indexoch je 2 jednotiek/,
     ],
     [
       'createdCount ≠ živé + exported',

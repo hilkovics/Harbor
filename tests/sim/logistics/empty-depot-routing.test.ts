@@ -6,7 +6,7 @@ import { EMPTY_WEIGHT_CLASS, IMPORT_LABELS, type CargoLocation, type CargoUnitLa
 import type { EntityId, VoyageId } from '@sim/core';
 import { assignOpenJobs, chooseVehicle, chooseYardSlot, vehicleCarries } from '@sim/logistics';
 import { exportLandsideReadiness } from '@sim/logistics/export-readiness';
-import { EmptyDepot, LoadingRamp, StorageModule, type BerthModule } from '@sim/modules';
+import { EmptyDepot, StorageModule, TruckGate, type BerthModule } from '@sim/modules';
 import { depotCargoSplit, terminalEmptySplit, type World } from '@sim/world';
 import { acceptedBooking, exportWorld } from '../helpers/f6a';
 import { ROOT_BERTH_ID, YARD_F, YARD_W, buyVehicle, dispatchWorld, execute, placeYard, tickEvents, unitsOnApron } from './dispatch-fixtures';
@@ -29,7 +29,7 @@ const emptyLabels = (lineId: string): CargoUnitLabelsInput => ({ direction: 'emp
 /** Prázdny kontajner linky `lineId` v sklade `storage` na `slot`, so stavom kvality `status` (cez ledger, ako ho uloží vozidlo). */
 function storeEmpty(world: World, storage: StorageModule, slot: number, lineId: string, status: 'available' | 'damaged' | 'in_repair' = 'available'): EntityId {
   const unit = world.cargo.create('container_teu', { kind: 'in_truck', truckId: 800 as EntityId }, null, emptyLabels(lineId));
-  const path: CargoLocation[] = [{ kind: 'at_ramp', rampId: 801 as EntityId, dock: 0 }, { kind: 'in_vehicle', vehicleId: 802 as EntityId }, { kind: 'in_storage', moduleId: storage.id, slot }];
+  const path: CargoLocation[] = [{ kind: 'in_vehicle', vehicleId: 802 as EntityId }, { kind: 'in_storage', moduleId: storage.id, slot }];
   for (const location of path) world.cargo.move(unit.id, location);
   if (status === 'damaged') world.cargo.setStatus(unit.id, 'damaged', null);
   if (status === 'in_repair') {
@@ -77,7 +77,7 @@ describe('YardPlanner — smer jednotky', () => {
 });
 
 describe('export — depo nie je cieľom ani podmienkou pripravenosti', () => {
-  const depotAt = { type: 'PlaceModule' as const, defId: 'empty_depot', x: 42, y: 18, rotation: 0 as const };
+  const depotAt = { type: 'PlaceModule' as const, defId: 'empty_depot', x: 40, y: 23, rotation: 270 as const };
 
   it('exportLandsideReadiness: s depom bez dvora no_storage, s dvorom ready', () => {
     const onlyDepot = exportWorld({ yards: [], extra: [{ atTick: 0, command: depotAt }] });
@@ -87,14 +87,13 @@ describe('export — depo nie je cieľom ani podmienkou pripravenosti', () => {
     expect(exportLandsideReadiness(withYard, 'container')).toBe('ready');
   });
 
-  it('plánovač pre export z rampy vyberie dvor, nie bližšie depo', () => {
+  it('plánovač pre export z brány vyberie dvor, nie bližšie depo', () => {
     const world = exportWorld({ vehicles: [], yards: ['far'], extra: [{ atTick: 0, command: depotAt }] });
     const { exportContract } = acceptedBooking(world, { kind: 'export', booked: 4 });
-    const ramp = [...world.modules.values()].find((module): module is LoadingRamp => module instanceof LoadingRamp) as LoadingRamp;
+    const gate = [...world.modules.values()].find((module): module is TruckGate => module instanceof TruckGate) as TruckGate;
     const labels = { direction: 'export' as const, voyageId: exportContract.voyageId as VoyageId, lineId: exportContract.lineId, destinationPort: exportContract.booking.destinationPort, weightClass: 'medium' as const };
     const unit = world.cargo.create('container_teu', { kind: 'in_truck', truckId: 900 as EntityId }, exportContract.id, labels);
-    world.cargo.move(unit.id, { kind: 'at_ramp', rampId: ramp.id, dock: 0 });
-    const chosen = world.modules.get(chooseYardSlot(world, world.cargo.get(unit.id) as never, ramp)?.moduleId as EntityId);
+    const chosen = world.modules.get(chooseYardSlot(world, world.cargo.get(unit.id) as never, gate)?.moduleId as EntityId);
     expect(chosen).toBeInstanceOf(StorageModule);
     expect(chosen instanceof EmptyDepot).toBe(false);
   });

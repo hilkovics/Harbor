@@ -1,13 +1,11 @@
-// Invariant kroku 12 pre tok prázdnych (T6C-02, ADR-034 dodatok): depo drží len prázdne, kamión misie `collect` má poverenie (kým neodíde
-// naprázdno), poverenie ukazuje na platnú jednotku; prázdny na docku nie je „náklad na odvoz“ (`isPickupCargo`, `DockSupply`).
+// Invariant kroku 12 pre tok prázdnych (T6C-02, ADR-034 dodatok; R4 ADR-041): depo drží len prázdne, kamión misie `collect` má poverenie, kým neodíde, poverenie ukazuje na platnú
+// jednotku jeho linky s jobom `receive` tohto kamióna (po naložení je jednotka v kamióne).
 import { describe, expect, it } from 'vitest';
 import { IMPORT_LABELS } from '@sim/cargo';
 import type { EntityId } from '@sim/core';
-import { isPickupCargo } from '@sim/logistics/dock-cargo';
 import { findWorldViolation } from '@sim/world/world-invariants';
 import { acceptedBooking } from '../helpers/f6a';
-import { DockSupply } from '@sim/trucks';
-import { depotOf, emptyLabelsOf, emptyWorld, f6cDefs, putEmpty, rampOf, runUntil } from '../helpers/f6c';
+import { depotOf, emptyWorld, putEmpty, runUntil } from '../helpers/f6c';
 
 describe('checkEmptyFlow — depo a poverenia', () => {
   it('depo prázdnych drží import jednotku → porušenie (depo prijíma len prázdne)', () => {
@@ -23,53 +21,25 @@ describe('checkEmptyFlow — depo a poverenia', () => {
     expect(findWorldViolation(world)).toMatch(/depo prijíma len prázdne/);
   });
 
-  it('kamión collect bez poverenia (mimo odchodu naprázdno) → porušenie; po vzdaní sa a odchode naprázdno je v poriadku', () => {
-    const defs = f6cDefs({ emptyFlow: { emptyPickupMaxWaitHours: 1 } });
-    const world = emptyWorld({ defs });
-    const { exportContract } = acceptedBooking(world, { kind: 'export', booked: 2 });
-    const unitId = putEmpty(world, depotOf(world), 'blue_anchor');
-    world.emptyFlow.schedulePickup(world.clock.tick + 3, 'blue_anchor', exportContract.id);
-    runUntil(world, (w) => w.emptyFlow.errands.length === 1, 100, 'vznik kamióna collect');
-    world.cargo.setStatus(unitId, 'damaged', null); // prázdny po vjazde zmizol — kamión sa po čakaní vzdá v stojisku (do prístavu vojde len s dostupným prázdnym, ADR-035)
-    const [errand] = world.emptyFlow.errands;
-    world.emptyFlow.removeErrand(errand.truckId);
-    expect(findWorldViolation(world)).toMatch(/\(collect\) v stave 'to_gate' nemá poverenie/);
-    world.emptyFlow.addErrand(errand.truckId, errand.lineId, errand.contractId, errand.giveUpTick);
-    expect(findWorldViolation(world)).toBeUndefined();
-    // po vzdaní sa poverenie zanikne a kamión odchádza naprázdno — invarianty (krok 12 každý tick) držia až po opustenie mapy
-    runUntil(world, (w) => w.trucks.size === 0 && w.emptyFlow.errands.length === 0, 6_000, 'odchod naprázdno');
-  });
-
-  it('giveUpTick poverenia: null len kým kamión nedorazí do stojiska, od príchodu nie je null (T6C-07b, m4)', () => {
+  it('kamión collect bez poverenia → porušenie; po obnovení poverenia aj pridelenej jednotky je svet v poriadku a kamión odíde s prázdnym', () => {
     const world = emptyWorld();
     const { exportContract } = acceptedBooking(world, { kind: 'export', booked: 2 });
     const unitId = putEmpty(world, depotOf(world), 'blue_anchor');
     world.emptyFlow.schedulePickup(world.clock.tick + 3, 'blue_anchor', exportContract.id);
     runUntil(world, (w) => w.emptyFlow.errands.length === 1, 100, 'vznik kamióna collect');
-    world.cargo.setStatus(unitId, 'damaged', null); // prázdny po vjazde zmizol — kamión čaká v stojisku
     const [errand] = world.emptyFlow.errands;
-    expect(errand.giveUpTick).toBeNull();
+    world.emptyFlow.removeErrand(errand.truckId);
+    expect(findWorldViolation(world)).toMatch(/\(collect\) v stave '[a-z_]+' nemá poverenie/);
+    world.emptyFlow.addErrand(errand.truckId, errand.lineId, errand.contractId, errand.giveUpTick);
+    expect(findWorldViolation(world)).toMatch(/nemá pridelený prázdny kontajner/);
+    world.emptyFlow.assignErrandUnit(errand.truckId, unitId);
     expect(findWorldViolation(world)).toBeUndefined();
-    // lehota nastavená pred príchodom do stojiska → porušenie
-    world.emptyFlow.startErrandWait(errand.truckId, world.clock.tick + 100);
-    expect(findWorldViolation(world)).toMatch(/giveUpTick .* pred príchodom do stojiska/);
-    // kamión v stojisku bez lehoty → porušenie
-    const bare = emptyWorld();
-    const booked = acceptedBooking(bare, { kind: 'export', booked: 2 });
-    const bareUnit = putEmpty(bare, depotOf(bare), 'blue_anchor');
-    bare.emptyFlow.schedulePickup(bare.clock.tick + 3, 'blue_anchor', booked.exportContract.id);
-    runUntil(bare, (w) => w.emptyFlow.errands.length === 1, 100, 'vznik kamióna collect');
-    bare.cargo.setStatus(bareUnit, 'damaged', null);
-    runUntil(bare, (w) => w.emptyFlow.errands.length === 1 && w.trucks.get(w.emptyFlow.errands[0].truckId as EntityId)?.state === 'waiting', 1_000, 'kamión v stojisku');
-    expect(bare.emptyFlow.errands[0].giveUpTick).not.toBeNull();
-    const truckId = bare.emptyFlow.errands[0].truckId;
-    const { lineId, contractId } = bare.emptyFlow.errands[0];
-    bare.emptyFlow.removeErrand(truckId);
-    bare.emptyFlow.addErrand(truckId, lineId, contractId);
-    expect(findWorldViolation(bare)).toMatch(/v stojisku .*nemá giveUpTick/);
+    // invarianty (krok 12 každý tick) držia až po opustenie mapy kamiónom s prázdnym
+    runUntil(world, (w) => w.trucks.size === 0 && w.emptyFlow.errands.length === 0, 6_000, 'odchod s prázdnym');
+    expect(world.cargo.exportedCount).toBe(1);
   });
 
-  it('poverenie s jednotkou inej linky alebo mimo cesty na dock kamióna → porušenie', () => {
+  it('poverenie s jednotkou inej linky → porušenie; po vrátení správnej jednotky je svet v poriadku', () => {
     const world = emptyWorld({ vehicles: [] });
     const { exportContract } = acceptedBooking(world, { kind: 'export', booked: 2 });
     const unitId = putEmpty(world, depotOf(world), 'blue_anchor');
@@ -78,46 +48,8 @@ describe('checkEmptyFlow — depo a poverenia', () => {
     expect(findWorldViolation(world)).toBeUndefined();
     const [errand] = world.emptyFlow.errands;
     world.emptyFlow.assignErrandUnit(errand.truckId, putEmpty(world, depotOf(world), 'golden_wave'));
-    expect(findWorldViolation(world)).toMatch(/nemá job na jeho dock|patrí inej linke/);
-    world.emptyFlow.assignErrandUnit(errand.truckId, null);
+    expect(findWorldViolation(world)).toMatch(/nemá job na tento kamión|patrí inej linke/);
+    world.emptyFlow.assignErrandUnit(errand.truckId, unitId);
     expect(findWorldViolation(world)).toBeUndefined();
-  });
-});
-
-describe('prázdny na docku nie je náklad na odvoz', () => {
-  it('isPickupCargo: prázdny (aj bez kontraktu) nikdy; import bez kontraktu áno; prázdny ráta do kapacity docku, ale nie do stagedAt', () => {
-    const world = emptyWorld();
-    const ramp = rampOf(world);
-    const unit = world.cargo.create('container_teu', { kind: 'in_truck', truckId: 800 as EntityId }, null, emptyLabelsOf('blue_anchor'));
-    world.cargo.move(unit.id, { kind: 'at_ramp', rampId: ramp.id, dock: 0 });
-    const staged = world.cargo.get(unit.id);
-    if (staged === undefined) throw new Error('jednotka chýba');
-    expect(isPickupCargo(world.contractBook, staged)).toBe(false);
-    expect(world.isPickupCargo(staged)).toBe(false);
-    expect([ramp.stagedAt(0), ramp.intakeAt(0), ramp.freeAt(0)]).toEqual([0, 1, ramp.stagingPerDock - 1]);
-    const imported = world.cargo.create('container_teu', { kind: 'on_ship', shipId: 900 as EntityId }, null, IMPORT_LABELS);
-    world.cargo.move(imported.id, { kind: 'in_crane', craneId: 901 as EntityId });
-    world.cargo.move(imported.id, { kind: 'in_vehicle', vehicleId: 902 as EntityId });
-    world.cargo.move(imported.id, { kind: 'at_ramp', rampId: ramp.id, dock: 0 });
-    expect(world.isPickupCargo(world.cargo.get(imported.id) as never)).toBe(true);
-    expect([ramp.stagedAt(0), ramp.intakeAt(0)]).toEqual([1, 1]);
-  });
-});
-
-describe('DockSupply — prázdny z depa na ceste na dock', () => {
-  it('job prázdneho s vozidlom (in_storage → at_ramp pre kamión collect) sa nepočíta ako náklad na odvoz: nevznikne kamión pickup a nárok kamióna collect nie je', () => {
-    const world = emptyWorld();
-    const { exportContract } = acceptedBooking(world, { kind: 'export', booked: 2 });
-    const unitId = putEmpty(world, depotOf(world), 'blue_anchor');
-    world.emptyFlow.schedulePickup(world.clock.tick + 3, 'blue_anchor', exportContract.id);
-    runUntil(world, (w) => [...w.jobs.values()].some((job) => job.vehicleId !== null && job.to.kind === 'at_ramp'), 300, 'job s vozidlom');
-    const supply = new DockSupply();
-    supply.refresh(world);
-    const ramp = rampOf(world);
-    const job = [...world.jobs.values()].find((candidate) => candidate.to.kind === 'at_ramp');
-    expect(job?.unitIds).toEqual([unitId]);
-    expect(job?.to.kind === 'at_ramp' ? supply.dispatchedAt(ramp, job.to.dock) : -1).toBe(0);
-    expect([...world.trucks.values()].every((truck) => truck.mission === 'collect')).toBe(true);
-    expect(ramp.claimedUnits).toBe(0);
   });
 });

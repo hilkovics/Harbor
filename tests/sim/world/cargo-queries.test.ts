@@ -6,7 +6,7 @@ import type { ContractId, EntityId, VoyageId } from '@sim/core';
 import { StoredCargoIndex } from '@sim/logistics';
 import { World, exportGroupingShare, shipCargoSplit, storageCargoSplit } from '@sim/world';
 import { loadScenarioFile, runScenario } from '../helpers/scenario';
-import { DEFS, MAP } from './world-fixtures';
+import { DEFS, PORT_MAP } from './world-fixtures';
 
 const BOOKING = 4 as ContractId;
 const exportUnit = (unitId: number, location: CargoLocation): CargoUnit => ({
@@ -30,7 +30,7 @@ const yard = (moduleId: number): CargoLocation => ({ kind: 'in_storage', moduleI
 describe('shipCargoSplit / storageCargoSplit', () => {
   it('vertical slice uprostred vykládky: na lodi len import, v sklade len import; neznámy držiteľ → nuly', () => {
     const scenario = loadScenarioFile('vertical_slice');
-    const world = World.create(DEFS, MAP, scenario.seed);
+    const world = World.create(DEFS, PORT_MAP, scenario.seed);
     runScenario(world, scenario, 9_000);
     const [ship] = [...world.ships.values()];
     const aboard = world.cargo.countAt('on_ship', ship.id);

@@ -282,8 +282,6 @@ export const MODULE_KINDS = [
   'gate',
   'pre_gate',
   'holding',
-  'waiting_area',
-  'ramp',
   'depot',
   'rail_station',
   'pipeline',
@@ -297,6 +295,13 @@ export type Side = (typeof SIDES)[number];
 /** Druhy konektorov modulu: cesta, koľaj, potrubie. */
 export const CONNECTOR_TYPES = ['road', 'rail', 'pipe'] as const;
 export type ConnectorType = (typeof CONNECTOR_TYPES)[number];
+
+/**
+ * Prístup cez konektor (R4, ADR-041 bod 8): `in` = len vjazd (cieľ jazdy k modulu), `out` = len výjazd (odtiaľ vozidlo odchádza, cieľom jazdy nie je), `both` = oboje
+ * (predvolené, jediný konektor modulu na jednosmernej ceste). Jednosmerný modul má vjazd a výjazd na rôznych konektoroch (RTG blok: sever dnu, juh von, bočný druhý výjazd).
+ */
+export const CONNECTOR_ACCESS = ['in', 'out', 'both'] as const;
+export type ConnectorAccess = (typeof CONNECTOR_ACCESS)[number];
 
 /** Položka `cargo_types.json` (§4.1). */
 export interface CargoTypeDef {
@@ -335,6 +340,8 @@ export interface ModuleConnectorDef {
   readonly y: number;
   readonly side: Side;
   readonly type: ConnectorType;
+  /** Prístup (`in`, `out`, `both`); chýba = `both`. */
+  readonly access?: ConnectorAccess;
 }
 
 /** Pravidlá umiestnenia modulu (§8). */
@@ -350,7 +357,7 @@ export interface ModulePlacementDef {
 
 /**
  * Voľné parametre modulu; tvar podľa `kind` overuje `MODULE_PARAM_SPECS`, typované gettery sú `berthParams`,
- * `craneParams`, `storageParams`, `depotParams`, `gateParams`, `waitingAreaParams` a `rampParams`.
+ * `craneParams`, `storageParams`, `depotParams`, `gateParams`, `preGateParams` a `holdingParams`.
  */
 export type ModuleParams = Readonly<Record<string, number | string>>;
 
@@ -522,37 +529,6 @@ export interface HoldingParams {
   readonly stalls: number;
 }
 
-/** `params` čakacej plochy kamiónov (`kind: 'waiting_area'`, F4). */
-export interface WaitingAreaParams {
-  /** Počet stojísk (bays) pre kamióny; `stalls` v manifeste. */
-  readonly bays: number;
-  /** Pobyt kamióna v bayi pred povelom do docku (ADR-011, ADR-024 bod 6); chýba = `logistics.defaultInternalTicks`. */
-  readonly internalTicks?: number;
-  /**
-   * Kvóta stojísk pre odvoz (F6d, ADR-035): `pickupReservedBays` stojísk smú obsadiť len kamióny, ktoré odvážajú náklad z prístavu (import, výdaj
-   * prázdneho); kamióny, ktoré náklad privezú (export, návrat prázdneho), nesmú obsadiť posledné rezervované. Celé ≥ 0; chýba = 0 (bez rezervy). Účinná kvóta je najviac `bays − 1` (`WaitingArea.pickupReservedBays`): aspoň jedno
-   * stojisko ostáva pre dovoz, inak by kamióny s dovozom nikdy nevošli.
-   */
-  readonly pickupReservedBays?: number;
-}
-
-/** `params` nakladacej rampy (`kind: 'ramp'`, F4). */
-export interface RampParams {
-  /** Počet dockov rampy; `docks` v manifeste. */
-  readonly docks: number;
-  /** Kapacita staging slotov `at_ramp` na jeden dock. */
-  readonly stagingPerDock: number;
-  /** Trvanie naloženia jednej jednotky na kamión v tickoch. */
-  readonly loadTicksPerUnit: number;
-  /** Kategória nákladu, ktorú rampa nakladá. */
-  readonly category: CargoCategory;
-  /**
-   * Pobyt **interného vozidla** v docku pred vykládkou (§7.3 bod 4, ADR-011); chýba = `logistics.defaultInternalTicks`.
-   * Kamión ho nepoužíva — nakladá `loadTicksPerUnit` na jednotku (ADR-024).
-   */
-  readonly internalTicks?: number;
-}
-
 /** Druh bez typovaných parametrov (zatiaľ ostatné kind-y): `params` musí byť `{}`. */
 export type NoParams = Readonly<Record<never, never>>;
 
@@ -564,8 +540,6 @@ export interface ModuleParamsByKind {
   readonly gate: GateParams;
   readonly pre_gate: PreGateParams;
   readonly holding: HoldingParams;
-  readonly waiting_area: WaitingAreaParams;
-  readonly ramp: RampParams;
   readonly depot: DepotParams;
   readonly rail_station: NoParams;
   readonly pipeline: NoParams;
@@ -636,8 +610,8 @@ export interface LineDef {
 }
 
 /**
- * Položka `trucks.json` (§4.2, §7.5; F4): kamión, ktorý odváža náklad z rampy mimo mapu. Kamión sa nekupuje a nemá mzdu —
- * spawnuje ho `TruckSpawner`; čas nakládky určuje rampa (`RampParams.loadTicksPerUnit`). Sprite je `entities.<id>` v manifeste.
+ * Položka `trucks.json` (§4.2, §7.5; F4, R4): externý kamión. Kamión sa nekupuje a nemá mzdu — vpúšťa ho vnútrozemie / `TruckSpawner`; obsluhuje ho stroj bloku (RTG) alebo straddle carrier na odovzdávacom
+ * mieste (TP, ADR-041 bod 4). Časy na TP (bezpečná zóna, lashing) sú v tomto defe. Sprite je `entities.<id>` v manifeste.
  */
 export interface TruckDef {
   readonly id: string;
@@ -649,6 +623,12 @@ export interface TruckDef {
   /** Rýchlosť jazdy v bunkách za tick. */
   readonly speedCellsPerTick: number;
   readonly cargoCategories: readonly CargoCategory[];
+  /** Bezpečná zóna (R4, ADR-041 bod 4): čas, kým šofér pred zdvihom opustí kamión a po zdvihu sa vráti (ticky, celé ≥ 0; osoba sa nekreslí, ADR-036). */
+  readonly safeZoneTicks: number;
+  /** Lashing (zaistenie twistlockov po naložení importu) na TP, v tickoch (celé ≥ 0). */
+  readonly lashTicks: number;
+  /** Unlashing (odistenie pred zdvihom exportu a prázdneho) na TP, v tickoch (celé ≥ 0). */
+  readonly unlashTicks: number;
 }
 
 /**

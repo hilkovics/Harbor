@@ -20,6 +20,7 @@ import { at, emptyScenario, must, withCommands } from '../helpers/harbor';
 import {
   DEFS,
   MAP,
+  PORT_MAP,
   Run5,
   cashOf,
   completedOf,
@@ -32,9 +33,10 @@ import {
   xpOf,
 } from '../helpers/f5';
 
-const ROAD_COST = DEFS.infrastructure.road.costPerCellCents;
+/** Cesty rozloženia: 32 jednosmerných buniek a križovatka `two_lane` (47, 28). */
+const ROAD_CAPEX = (ALL_F4_ROAD_CELLS.length - 1) * DEFS.infrastructure.roadKinds.one_way.costPerCellCents + DEFS.infrastructure.roadKinds.two_lane.costPerCellCents;
 const START_CASH = DEFS.economy.startingCashCents;
-const MODULE_IDS = ['vehicle_depot', 'container_yard_small', 'container_yard_small', 'gate_in_lane', 'gate_out_lane', 'truck_waiting_area', 'loading_ramp_container'];
+const MODULE_IDS = ['vehicle_depot', 'container_yard_small', 'container_yard_small', 'gate_in_lane', 'gate_out_lane'];
 const MODULES_COST = MODULE_IDS.reduce((sum, defId) => sum + DEFS.modules.get(defId).costCents, 0);
 const VEHICLES_COST = 2 * DEFS.vehicles.get('straddle_carrier').purchaseCents;
 
@@ -65,18 +67,20 @@ describe('Economy: počiatočný stav', () => {
 describe('Economy: výdavky a predaje z F1–F4 idú cez ledger s rovnakými sumami', () => {
   const seed = 5503;
 
-  it('stavba prístavu: road_capex 50 buniek, module_capex 7 modulov, vehicle_capex 2 vozidlá; hotovosť = štart − súčet', () => {
-    const world = World.create(DEFS, MAP, seed);
+  it('stavba prístavu: road_capex 33 buniek, module_capex 5 modulov, vehicle_capex 2 vozidlá; hotovosť = štart − súčet', () => {
+    const world = World.create(DEFS, PORT_MAP, seed);
     const run = new Run5(world, portScenario('f5_ledger_build', seed));
     run.runTo(2);
 
     const sums = sumByCategory(economyOf(world).entries);
-    expect(sums.road_capex).toBe(-ALL_F4_ROAD_CELLS.length * ROAD_COST);
+    expect(sums.road_capex).toBe(-ROAD_CAPEX);
     expect(sums.module_capex).toBe(-MODULES_COST);
     expect(sums.vehicle_capex).toBe(-VEHICLES_COST);
-    expect(Object.keys(sums).sort()).toEqual(['module_capex', 'road_capex', 'vehicle_capex']);
-    expect(cashOf(world)).toBe(START_CASH - ALL_F4_ROAD_CELLS.length * ROAD_COST - MODULES_COST - VEHICLES_COST);
-    for (const entry of economyOf(world).entries) {
+    // (44, 34) je už na starter mape: jej predaj vráti polovicu ceny jednosmernej bunky
+    expect(sums.road_sale).toBe(75_000);
+    expect(Object.keys(sums).sort()).toEqual(['module_capex', 'road_capex', 'road_sale', 'vehicle_capex']);
+    expect(cashOf(world)).toBe(START_CASH - ROAD_CAPEX + 75_000 - MODULES_COST - VEHICLES_COST);
+    for (const entry of economyOf(world).entries.filter((candidate) => candidate.category !== 'road_sale')) {
       expect(entry.amountCents).toBeLessThan(0);
       expect(Number.isSafeInteger(entry.amountCents)).toBe(true);
     }
@@ -86,7 +90,7 @@ describe('Economy: výdavky a predaje z F1–F4 idú cez ledger s rovnakými sum
   });
 
   it('odstránenie modulu a predaj vozidla: module_sale a vehicle_sale = refundCents(zaplatená cena, removalRefundRate), kladné záznamy', () => {
-    const world = World.create(DEFS, MAP, seed);
+    const world = World.create(DEFS, PORT_MAP, seed);
     const run = new Run5(world, portScenario('f5_ledger_sales', seed));
     run.runTo(2);
     const yard = must([...world.modules.values()].filter((module) => module.kind === 'storage').at(-1), 'dvor');
@@ -122,11 +126,11 @@ describe('Ledger: okno posledných záznamov', () => {
     const entries = economyOf(world).entries;
     expect(entries).toHaveLength(kept);
     expect(entries.map((entry) => entry.category)).toEqual(Array<string>(kept).fill('road_capex'));
-    expect(entries.map((entry) => entry.amountCents)).toEqual(Array<number>(kept).fill(-ROAD_COST));
+    expect(entries.map((entry) => entry.amountCents)).toEqual(Array<number>(kept).fill(-(DEFS.infrastructure.road.costPerCellCents)));
     const ticks = entries.map((entry) => entry.tick);
     expect([...ticks].sort((a, b) => a - b)).toEqual(ticks);
     expect(ticks[0]).toBeGreaterThanOrEqual(3);
-    expect(cashOf(world)).toBe(START_CASH - 6 * ROAD_COST);
+    expect(cashOf(world)).toBe(START_CASH - 6 * (DEFS.infrastructure.road.costPerCellCents));
     expect(run.ofSim('CommandRejected')).toEqual([]);
     expect(run.violations).toEqual([]);
   });

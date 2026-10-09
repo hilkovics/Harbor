@@ -2,10 +2,8 @@
  * Kamióny s prázdnymi kontajnermi (F6c, ADR-034 bod 6, 8 + dodatok T6C-02; F6d, ADR-035) — krok 8, vjazd z vnútrozemia (`trucks/hinterland.ts`).
  *
  * - **Návrat prázdneho** (`returnPlan`): splatná položka je kamión `delivery` s novou jednotkou `direction: 'empty'` (`CargoLedger.create` v `in_truck`,
- *   linka plánu, bez kontraktu; `Rng` sa nespotrebuje), ktorý čaká vo vnútrozemí. Vjazd dostane s rezerváciou (`planDeliveryAdmission` + `spawnDelivery`: bay nad kvótou pre odvoz,
- *   dock so zaručeným miestom na vyloženie, voľné miesto v depe po odpočítaní rozbehnutých návratov — `emptyReturnRoom`); prejde bránou (`EmptyReturned`,
- *   `trucks/export-gate.ts`), počká v stojisku a vyloží na dock rampy rovnako ako export (`landside-system.ts`); prázdny na docku odvezie vozidlo do depa
- *   (`logistics/empty-jobs.ts`). **Len ak má depo voľné miesto** (T6C-07b, M1): depo bez jediného voľného miesta (alebo nedosiahnuteľné) položku zahodí bez
+ *   linka plánu, bez kontraktu; `Rng` sa nespotrebuje), ktorý čaká vo vnútrozemí. Vjazd dostane s rezerváciou (`tryAdmitDelivery`: slot v depe a token TP / státia); prejde bránou (`EmptyReturned`,
+ *   `trucks/export-gate.ts`) a na TP depa ho obslúži vozidlo (`landside-system.ts`). **Len ak má depo voľné miesto** (T6C-07b, M1): depo bez jediného voľného miesta (alebo nedosiahnuteľné) položku zahodí bez
  *   kamióna (`EmptyReturnDeclined`) — nič nevznikne, konzervácia ostáva a bežný dvor sa prázdnymi nezaplní (import by sa zablokoval); miesto, ktoré zaberú
  *   kamióny na ceste, sa len čaká.
  * - **Výdaj prázdneho** (`pickupPlan`): splatná položka je kamión `collect` čakajúci vo vnútrozemí. Vjazd dostane, keď je pre jeho linku dostupný prázdny
@@ -20,37 +18,34 @@
  * bez nich položka plánu počká (ďalší tick) a žiadna udalosť nezanikne.
  */
 import type { ContractId } from '../core/entity-id';
-import { countAvailableEmpties, emptyCargoTypeId, emptyLabels } from '../logistics/empty-stock';
+import { slotOf } from '../cargo/cargo-location';
+import { emptyCargoTypeId, emptyLabels, findAvailableEmpty } from '../logistics/empty-stock';
 import type { PickupPlanEntry } from '../logistics/empty-flow';
-import type { Module } from '../modules/module';
+import { openReceiveJob } from '../logistics/truck-jobs';
+import { unitPickable } from '../logistics/yard-planner';
+import { YardBlock } from '../modules/yard-block';
 import type { World } from '../world/world';
-import { NO_ACCESS } from '../logistics/module-access';
-import { pickInPortalFor } from './gate-choice';
-import { leastBusyDock, planDeliveryAdmission, spawnDelivery, type AdmissionOutcome } from './hinterland-entry';
-import { routeWithFreeBay, spawnTruck, truckDefFor } from './truck-spawner';
+import { nearBayOfSlot } from './destination';
+import { tryAdmitDelivery, type AdmissionOutcome } from './hinterland-entry';
+import { trySpawn, truckDefFor } from './truck-spawner';
 
 /** Booking výdaja ešte beží (nie je uzavretý ani expirovaný)? Zanikol → výdaj nemá komu. */
 function bookingOpen(world: World, entry: PickupPlanEntry): boolean {
   return world.contractBook.openContracts.has(entry.contractId as ContractId);
 }
 
-/** Krok 8, časť návrat prázdnych: splatné návraty v poradí plánu (viď hlavička). Nakladač jednotky vznikne až pri skutočnom vjazde (T6D-05b). */
+/** Krok 8, časť návrat prázdnych: splatné návraty v poradí plánu (viď hlavička). Skutočná jednotka vznikne až pri skutočnom vjazde (T6D-05b). */
 export function admitReturnTrucks(world: World): void {
   const { emptyFlow } = world;
   const { tick } = world.clock;
   if (emptyFlow.dueReturn(tick) === undefined) return;
   const typeId = emptyCargoTypeId(world.defs);
   if (typeId === undefined) return;
-  const category = world.defs.cargoTypes.get(typeId).category;
   for (let entry = emptyFlow.dueReturn(tick); entry !== undefined; entry = emptyFlow.dueReturn(tick)) {
     const { lineId, dueTick, sizeFt } = entry;
-    const outcome: AdmissionOutcome = planDeliveryAdmission(world, 'empty', category);
+    const labels = emptyLabels(lineId, sizeFt);
+    const outcome: AdmissionOutcome = tryAdmitDelivery(world, 'empty', { typeId, contractId: null, probe: labels, final: () => labels });
     if (outcome === 'waiting') break;
-    if (outcome === 'admitted') {
-      spawnDelivery(world, (truck) => {
-        world.cargo.create(typeId, { kind: 'in_truck', truckId: truck.id }, null, emptyLabels(lineId, sizeFt));
-      });
-    }
     emptyFlow.consumeReturn();
     if (outcome === 'declined') {
       world.hinterland.recordTurnedAway('delivery');
@@ -61,51 +56,30 @@ export function admitReturnTrucks(world: World): void {
   }
 }
 
-/** Znovupoužiteľné pole s rampou pre `countAvailableEmpties` (hot path; obsah sa vždy najprv prepíše). */
-const RAMP_TARGET: Module[] = [];
-
 /** Linky, pre ktoré v tomto ticku nebol dostupný prázdny (ďalšie položky tej istej linky sa nepokúšajú); plní sa pri každom volaní. */
 const LINES_WITHOUT_EMPTY: string[] = [];
 
-/** Prázdne kontajnery linky, ktoré možno prideliť novému kamiónu `collect` rampy: dostupné (v sklade s cestou k rampe) − poverenia linky bez prideleného prázdneho. */
-function emptiesForNewErrand(world: World, lineId: string): number {
-  let unassigned = 0;
-  for (const errand of world.emptyFlow.errands) if (errand.lineId === lineId && errand.unitId === null) unassigned += 1;
-  return countAvailableEmpties(world, lineId, RAMP_TARGET) - unassigned;
-}
-
 /**
- * Pokus o vjazd kamióna `collect` pre výdaj `entry`: prvá prevádzková rampa kategórie prázdneho s voľným bayom (aj rezervovaným pre odvoz), dockom so staging miestom pre výdaj a dostupným
- * prázdnym linky. `admitted` = kamión vznikol; `no_empty` = linka nemá dostupný prázdny (čaká sa na ňu); `blocked` = nie je kam (typ prázdneho, rampa, bay).
+ * Pokus o vjazd kamióna `collect` pre výdaj `entry`: dostupný prázdny linky (v sklade, `available`, bez jobu) dostane kamión pri vzniku — job `receive` a poverenie `errand.unitId`; kamión
+ * dostane token cieľa pri bloku prázdneho. `admitted` = kamión vznikol; `no_empty` = linka nemá dostupný prázdny (čaká sa na ňu); `waiting` = nie je kam (typ prázdneho, token, portál, zavalený stoh).
  */
 function admitCollectTruck(world: World, entry: PickupPlanEntry): AdmissionOutcome | 'no_empty' {
   const typeId = emptyCargoTypeId(world.defs);
   if (typeId === undefined) return 'waiting';
-  const category = world.defs.cargoTypes.get(typeId).category;
-  let outcome: AdmissionOutcome | 'no_empty' = 'waiting';
-  for (const ramp of world.landsideModules.ramps) {
-    if (ramp.category !== category || !world.isRampOperational(ramp)) continue;
-    const def = truckDefFor(world.defs, ramp.category);
-    if (def === undefined) continue;
-    if (routeWithFreeBay(world, ramp, 'collect') === undefined) continue;
-    RAMP_TARGET[0] = ramp;
-    if (emptiesForNewErrand(world, entry.lineId) <= 0) {
-      outcome = 'no_empty';
-      continue;
-    }
-    world.dockIntake.refreshIfStale(world);
-    const dock = leastBusyDock(world, ramp, true);
-    // Prázdny sa na dock dostane jobom `storage → ramp`, ktorý potrebuje voľné staging miesto; bez neho by kamión držal stojisko, kým miesto niekto neuvoľní.
-    if (dock < 0) continue;
-    // Portál je cesta (ADR-037, R1 č. 10): kým ho drží nosič, kamión nevznikne a položka plánu ostane (voľný portál vyberá `pickInPortalFor`, ADR-041 bod 3).
-    const portal = pickInPortalFor(world, ramp, 'collect', def);
-    if (portal === NO_ACCESS) return 'waiting';
-    spawnTruck(world, ramp, dock, def, portal, 'collect', (truck) => {
-      world.emptyFlow.addErrand(truck.id, entry.lineId, entry.contractId);
-    });
-    return 'admitted';
-  }
-  return outcome;
+  const def = truckDefFor(world.defs, world.defs.cargoTypes.get(typeId).category);
+  if (def === undefined) return 'waiting';
+  const unit = findAvailableEmpty(world, entry.lineId);
+  if (unit === undefined) return 'no_empty';
+  const block = unit.location.kind === 'in_storage' ? world.modules.get(unit.location.moduleId) : undefined;
+  const slot = slotOf(unit.location);
+  // Zavalený prázdny bez miesta na rehandling sa nevydáva (stroj by uviazol, TR2-06b) — kamión vznikne, až keď sa blok uvoľní.
+  if (!(block instanceof YardBlock) || slot === null || !unitPickable(world, unit)) return 'waiting';
+  const outcome = trySpawn(world, def, 'collect', block, nearBayOfSlot(block, slot), (truck) => {
+    world.emptyFlow.addErrand(truck.id, entry.lineId, entry.contractId);
+    world.emptyFlow.assignErrandUnit(truck.id, unit.id);
+    openReceiveJob(world, truck, unit, block);
+  });
+  return outcome === 'spawned' ? 'admitted' : 'waiting';
 }
 
 /** Krok 8, časť výdaj prázdnych: splatné výdaje v poradí plánu, s preskakovaním tých, ktoré čakajú na prázdny (viď hlavička). */

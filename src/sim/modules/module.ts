@@ -9,7 +9,6 @@
  */
 import type { CargoReader } from '../cargo/cargo-ledger';
 import type { CargoHolderKind } from '../cargo/cargo-location';
-import type { CargoUnit } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
 import type { ModuleDef, ModuleKind } from '../defs/types';
 import type { CellCoord, Grid } from '../grid/grid';
@@ -37,11 +36,6 @@ export interface ModuleInit {
    * rezervácie — poloha nákladu má jediný zápis (pravidlo 2, review T02-13).
    */
   readonly cargo: CargoReader;
-  /**
-   * Čaká jednotka na docku rampy na kamión (`logistics/dock-cargo.ts`, ADR-032 bod 13)? Svet ju dodá z knihy kontraktov
-   * (export s bežiacim bookingom čaká na vozidlo do skladu); bez nej platí každá jednotka za náklad na odvoz (F4).
-   */
-  readonly pickupCargo?: (unit: CargoUnit) => boolean;
 }
 
 function isEntityId(value: number): boolean {

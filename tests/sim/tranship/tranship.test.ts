@@ -12,7 +12,7 @@ import { findWorldViolation } from '@sim/world/world-invariants';
 import { acceptCommand, exportWorld, f6aDefs, hookDefs, ofType, send, tickEvents } from '../helpers/f6a';
 import { acceptedImport, eventsOf, offerTranship, runUntil, lost } from '../helpers/f6c';
 import { assertCargoConservation } from '../helpers/invariants';
-import { MAP } from '../world/world-fixtures';
+import { PORT_MAP } from '../world/world-fixtures';
 
 const VEHICLES = ['straddle_carrier', 'straddle_carrier'];
 const ECONOMY = { transhipGapDaysRange: [1, 1], arrivalDaysRange: [1, 1] };
@@ -190,8 +190,8 @@ describe('zmeškaná prekládka — penalizácia, záchrana, predaj', () => {
     expect(lost(world)).toBe(0);
     const perUnit = [...chains(events).values()];
     expect(perUnit.length).toBe(5);
-    // predané jednotky odišli bránou-rampou ako import (in_storage → … → at_ramp → in_truck → exported), nie loďou
-    expect(perUnit.every((chain) => chain.at(-1) === 'exported' && chain.includes('at_ramp'))).toBe(true);
+    // predané jednotky odišli bránou ako import (in_storage → … → in_truck → exported), nie loďou
+    expect(perUnit.every((chain) => chain.at(-1) === 'exported' && chain.includes('in_truck'))).toBe(true);
     expect(eventsOf(events, 'ContractFailed')).toHaveLength(1);
     expect(eventsOf(events, 'TranshipRescued')).toEqual([]);
   });
@@ -237,7 +237,7 @@ describe('zmeškaná prekládka — penalizácia, záchrana, predaj', () => {
 });
 
 describe('zmeškaná prekládka — obnova zo save', () => {
-  const roundtrip = (world: World): World => World.deserialize(world.defs, MAP, JSON.parse(JSON.stringify(world.serialize())) as WorldState);
+  const roundtrip = (world: World): World => World.deserialize(world.defs, PORT_MAP, JSON.parse(JSON.stringify(world.serialize())) as WorldState);
 
   it('uprostred lehoty záchrany (rescueDeadlineTick nastavený): obnova dá rovnaký stateHash a predaj po lehote prebehne rovnako', () => {
     const { world, contract } = missedWorld();
@@ -301,7 +301,7 @@ describe('prekládka — obnova zo save', () => {
     for (const at of [stored + 500, loading + 1]) {
       const run = build();
       tickEvents(run.world, at - run.world.clock.tick);
-      const restored = World.deserialize(run.world.defs, MAP, JSON.parse(JSON.stringify(run.world.serialize())) as WorldState);
+      const restored = World.deserialize(run.world.defs, PORT_MAP, JSON.parse(JSON.stringify(run.world.serialize())) as WorldState);
       expect(stateHash(restored), `po obnove v ticku ${String(at)}`).toBe(stateHash(run.world));
       tickEvents(run.world, 6_000);
       tickEvents(restored, 6_000);

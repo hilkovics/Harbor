@@ -13,7 +13,5 @@ export {
   gateParams,
   holdingParams,
   preGateParams,
-  rampParams,
   storageParams,
-  waitingAreaParams,
 } from './module-def';

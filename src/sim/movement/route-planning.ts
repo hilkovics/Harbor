@@ -12,6 +12,7 @@
  */
 import type { Grid } from '../grid/grid';
 import type { Module } from '../modules/module';
+import { connectorAllows } from '../modules/module-geometry';
 import { NO_ACCESS, accessCellIndex } from '../logistics/module-access';
 import type { PathCache } from '../logistics/path-cache';
 import type { Pathfinder, QuayCells } from '../logistics/pathfinder';
@@ -99,6 +100,7 @@ export function findRouteToModule(world: MovementWorld, anchor: number, module: 
   let best: readonly number[] | null = null;
   let bestCost = Infinity;
   for (const connector of module.connectors) {
+    if (!connectorAllows(connector, 'in')) continue;
     const access = accessCellIndex(world.grid, connector);
     if (access === NO_ACCESS) continue;
     const path = world.paths.get(anchor, access);

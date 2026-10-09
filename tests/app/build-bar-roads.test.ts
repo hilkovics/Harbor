@@ -47,9 +47,9 @@ describe('BuildBar Landside: typy ciest z defov', () => {
     expect(category.items.map((item) => item.defId)).toEqual([
       'road_one_way',
       'gate_in_lane',
-      'truck_waiting_area',
-      'loading_ramp_container',
       'gate_out_lane',
+      'pre_gate_buffer',
+      'truck_holding',
     ]);
   });
 
@@ -84,9 +84,9 @@ describe('BuildBar Landside: typy ciest z defov', () => {
     const modules = landside().items.slice(1);
     expect(modules.map((item) => [item.displayName, item.costCents, item.icon, item.footprint])).toEqual([
       ['Vstupný pruh brány', 2_500_000, 'ic_gate', { w: 1, h: 4 }],
-      ['Čakacia plocha', 6_000_000, 'ic_waiting', { w: 4, h: 3 }],
-      ['Rampa · kontajnery', 10_000_000, 'ic_ramp', { w: 4, h: 2 }],
       ['Výstupný pruh brány', 2_500_000, 'ic_gate', { w: 1, h: 4 }],
+      ['Predbránová plocha', 9_000_000, 'ic_inspect', { w: 8, h: 8 }],
+      ['Odstavná plocha kamiónov', 5_000_000, 'ic_inspect', { w: 6, h: 5 }],
     ]);
     for (const item of modules) {
       expect(item).toMatchObject({ locked: false, affordable: true });
@@ -99,7 +99,7 @@ describe('BuildBar Landside: typy ciest z defov', () => {
 
   it('moduly Landside bez peňazí: nedostupné (unaffordable) s chýbajúcou sumou, nie zamknuté', () => {
     const modules = landside(0).items.slice(1);
-    expect(modules.map((item) => item.missingCents)).toEqual([2_500_000, 6_000_000, 10_000_000, 2_500_000]);
+    expect(modules.map((item) => item.missingCents)).toEqual([2_500_000, 2_500_000, 9_000_000, 5_000_000]);
     for (const item of modules) expect(itemStatus(item)).toBe('unaffordable');
   });
 

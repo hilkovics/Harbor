@@ -70,14 +70,14 @@ describe('kontrakt s objemom nad kapacitu jediného skladu sa dokončí (export 
     expect(world.cargo.exportedCount).toBe(VOLUME);
   });
 
-  it('jednotky kontraktu odchádzajú na rampu už počas vykládky a sklad nikdy nepresiahne kapacitu', () => {
+  it('jednotky kontraktu odchádzajú v kamiónoch už počas vykládky a sklad nikdy nepresiahne kapacitu', () => {
     expect(exportedWhileUnloading).toBeGreaterThan(0);
     expect(maxStored).toBeLessThanOrEqual(YARD_CAPACITY);
     const unloadingAt = must(tickOfState(run.events, contractId, 'unloading'), 'unloading');
     const exportingAt = must(tickOfState(run.events, contractId, 'exporting'), 'exporting');
     const firstToRamp = must(
-      run.ofSim('CargoMoved').find((entry) => entry.event.to.kind === 'at_ramp'),
-      'prvá jednotka na rampe',
+      run.ofSim('CargoMoved').find((entry) => entry.event.to.kind === 'in_truck'),
+      'prvá jednotka v kamióne',
     );
     expect(firstToRamp.tick).toBeGreaterThanOrEqual(unloadingAt);
     expect(firstToRamp.tick).toBeLessThan(exportingAt);

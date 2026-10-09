@@ -8,7 +8,7 @@ import { ExportContract } from '@sim/contracts';
 import { DefRegistry } from '@sim/defs';
 import { World, WorldStateError, stateHash, type WorldState } from '@sim/world';
 import { loadScenarioFile, runScenario } from '../helpers/scenario';
-import { MAP, RAW_DEFS } from './world-fixtures';
+import { PORT_MAP, RAW_DEFS } from './world-fixtures';
 
 /**
  * Defy bez booking ponúk: pool (a `Rng` prúd) nemá booking ponuky, takže kontrakt 0 je import a booking pridaný testom je jediný export.
@@ -24,14 +24,14 @@ const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 /** `vertical_slice` v ticku `tick`. */
 function sliceAt(tick: number): World {
   const scenario = loadScenarioFile('vertical_slice');
-  const world = World.create(DEFS, MAP, scenario.seed);
+  const world = World.create(DEFS, PORT_MAP, scenario.seed);
   runScenario(world, scenario, tick);
   return world;
 }
 
 function loadError(raw: unknown): WorldStateError {
   try {
-    World.deserialize(DEFS, MAP, raw as WorldState);
+    World.deserialize(DEFS, PORT_MAP, raw as WorldState);
   } catch (error) {
     if (error instanceof WorldStateError) return error;
     throw new Error(`očakávaná WorldStateError, dostal ${String(error)}`, { cause: error });
@@ -88,14 +88,14 @@ describe('WorldState: export booking v save a roundtrip', () => {
     'prijatý booking sa načíta ako ExportContract, roundtrip cez JSON dá rovnaký stav a svet tickuje bez porušenia invariantov',
     () => {
       const state = stateWithBooking();
-      const world = World.deserialize(DEFS, MAP, clone(state));
+      const world = World.deserialize(DEFS, PORT_MAP, clone(state));
       expect(JSON.stringify(world.serialize())).toBe(JSON.stringify(state));
       const booking = world.contracts.get(state.nextContractId - 1 as never);
       expect(booking).toBeInstanceOf(ExportContract);
       expect(booking?.booking).toMatchObject({ destinationPort: 'Rotterdam', bookedUnits: 4, cutoffTick: state.clock.tick + 20_000 - 4_320 });
       expect(world.contractBook.voyage(booking?.voyageId as never)?.destinationPort).toBe('Rotterdam');
       for (let i = 0; i < 200; i++) world.tick();
-      const again = World.deserialize(DEFS, MAP, clone(world.serialize()));
+      const again = World.deserialize(DEFS, PORT_MAP, clone(world.serialize()));
       expect(stateHash(again)).toBe(stateHash(world));
       expect(again.contracts.get(state.nextContractId - 1 as never)?.state).toBe('accepted');
     },
@@ -148,7 +148,7 @@ describe('WorldState: export booking v save a roundtrip', () => {
 
   it('kamión s neznámou misiou a žeriav mimo cyklu s nakládkou → WorldStateError s cestou', () => {
     const scenario = loadScenarioFile('vertical_slice');
-    const world = World.create(DEFS, MAP, scenario.seed);
+    const world = World.create(DEFS, PORT_MAP, scenario.seed);
     runScenario(world, scenario, 11_500); // R2: kamióny sa objavia o niečo neskôr (ukladanie plánovačom)
     const state = clone(world.serialize());
     expect(state.trucks.length).toBeGreaterThan(0);

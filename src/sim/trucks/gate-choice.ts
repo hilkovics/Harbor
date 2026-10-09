@@ -1,23 +1,20 @@
 /**
- * Výber vstupu do prístavu pre kamión (R4, ADR-041 bod 2 a 3): portál vjazdu, predbránová plocha alebo vstupný pruh brány, trasa k rampe. Všetko deterministické; `Rng` sa
+ * Výber vstupu do prístavu pre kamión (R4, ADR-041 bod 2 a 3): portál vjazdu, predbránová plocha alebo vstupný pruh brány. Všetko deterministické; `Rng` sa
  * spotrebuje len pri výbere medzi viacerými voľnými portálmi (`pickInPortal`, váha `trafficShare`).
  *
  * - **Portál:** kamión vznikne na voľnom portáli vjazdu (bunku nedrží nosič, `isPortalBlocked`); pri viacerých voľných portáloch ho vyberie `Rng.weighted` podľa `trafficShare`.
  *   Obsadený portál sa preskočí — vnútrozemie čaká pri každom portáli zvlášť (ADR-035): položka plánu ostane, kým niektorý portál nie je voľný.
- * - **Brána:** spomedzi trás rampy so stojiskom s voľným bayom (`routeWithFreeBay` pravidlá misie) vyhrá vstup s najkratším odhadom času
- *   `cesta z portálu / rýchlosť kamióna + záťaž × stredný čas obsluhy`. Vstup je predbránová plocha (ak pruh trasy obsluhuje; len s voľným miestom) alebo samotný pruh.
- *   Pri zhode vyhrá prvá trasa (najnižšie id pruhu, potom stojiska). Vstup bez cesty z portálu (nekonečný odhad) sa preskočí.
+ * - **Brána:** spomedzi platných vstupných pruhov, ktoré obslúžia cieľ kamióna (`LandsideNetwork.servesTp`: cesta k TP alebo odstavnej ploche a z nej späť von), vyhrá vstup s najkratším
+ *   odhadom času `cesta z portálu / rýchlosť kamióna + záťaž × stredný čas obsluhy`. Vstup je predbránová plocha (ak pruh obsluhuje; len s voľným miestom) alebo samotný pruh.
+ *   Pri zhode vyhrá najnižšie id pruhu. Vstup bez cesty z portálu (nekonečný odhad) sa preskočí.
  */
 import type { TruckDef } from '../defs/types';
 import { NO_ACCESS, accessCellIndex } from '../logistics/module-access';
-import type { LoadingRamp } from '../modules/loading-ramp';
 import type { PreGateBuffer } from '../modules/pre-gate-buffer';
 import { TruckGate } from '../modules/truck-gate';
-import { WaitingArea } from '../modules/waiting-area';
 import { LANES_PER_CELL } from '../traffic/lane-slots';
-import type { LandsidePortal, LandsideRoute } from '../world/landside';
+import type { LandsidePortal } from '../world/landside';
 import type { World } from '../world/world';
-import { TRUCK_MISSION_USES_PICKUP_BAYS, type TruckMission } from './truck-fsm';
 
 /**
  * Drží niektorý nosič slot bunky portálu `portal` (v ktoromkoľvek pruhu)? Na obsadenom portáli kamión nevznikne (ADR-037, R1 č. 10);
@@ -49,13 +46,13 @@ export function pickInPortal(world: World): number {
 }
 
 /**
- * Ako `pickInPortal`, ale len z portálov, z ktorých má kamión misie `mission` k rampe `ramp` vstup (`pickGate` s miestom v ploche a bayom): pri viacerých blokoch pruhov
+ * Ako `pickInPortal`, ale len z portálov, z ktorých má kamión s cieľom `destCell` (TP alebo vstup odstavnej plochy) vstup (`pickGate` s miestom v ploche): pri viacerých blokoch pruhov
  * s vlastnými vjazdmi tak kamión nevznikne na portáli, z ktorého by nemal kam ísť, kým iný portál je použiteľný.
  */
-export function pickInPortalFor(world: World, ramp: LoadingRamp, mission: TruckMission, truckDef: Readonly<TruckDef> | undefined): number {
+export function pickInPortalFor(world: World, truckDef: Readonly<TruckDef> | undefined, destCell: number): number {
   FREE_PORTALS.length = 0;
   for (const portal of world.landside.inPortals) {
-    if (!isPortalBlocked(world, portal.cell) && pickGate(world, ramp, mission, portal.cell, truckDef) !== undefined) FREE_PORTALS.push(portal);
+    if (!isPortalBlocked(world, portal.cell) && pickGate(world, portal.cell, truckDef, destCell) !== undefined) FREE_PORTALS.push(portal);
   }
   return drawFreePortal(world);
 }
@@ -81,9 +78,9 @@ export function laneLoad(world: World, lane: TruckGate): number {
   return load;
 }
 
-/** Výber vstupu: trasa a (voliteľne) predbránová plocha, cez ktorú kamión ide. */
+/** Výber vstupu: vstupný pruh a (voliteľne) predbránová plocha, cez ktorú kamión ide. */
 export interface GateChoice {
-  readonly route: LandsideRoute;
+  readonly lane: TruckGate;
   readonly buffer: PreGateBuffer | null;
 }
 
@@ -93,20 +90,16 @@ function travelTicks(cost: number, speed: number): number {
 }
 
 /**
- * Najlepší vstup pre kamión misie `mission` k rampe `ramp` z portálu `portal` (viď hlavička); `portal === NO_ACCESS` = bez odhadu cesty (prvá trasa, ktorá má miesto).
- * Žiadna trasa so stojiskom s voľným bayom a vstupom s miestom → `undefined`.
+ * Najlepší vstup pre kamión s cieľom `destCell` (TP, alebo vstup odstavnej plochy) z portálu `portal` (viď hlavička); `portal === NO_ACCESS` = bez odhadu cesty (prvý pruh, ktorý cieľ
+ * obslúži a má miesto). Žiadny vstup s miestom → `undefined`.
  */
-export function pickGate(world: World, ramp: LoadingRamp, mission: TruckMission, portal: number, truckDef: Readonly<TruckDef> | undefined): GateChoice | undefined {
-  const usesPickupBays = TRUCK_MISSION_USES_PICKUP_BAYS[mission];
+export function pickGate(world: World, portal: number, truckDef: Readonly<TruckDef> | undefined, destCell: number): GateChoice | undefined {
   const speed = truckDef?.speedCellsPerTick ?? 1;
   const { preGates } = world.landsideModules;
   let best: GateChoice | undefined;
   let bestEta = Infinity;
-  for (const route of world.landsideRoutes(ramp)) {
-    const area = world.modules.get(route.waitingAreaId);
-    if (!(area instanceof WaitingArea) || (usesPickupBays ? area.freeBays : area.freeBaysForDelivery) <= 0) continue;
-    const lane = world.modules.get(route.gateId);
-    if (!(lane instanceof TruckGate)) continue;
+  for (const lane of world.landside.inLanes) {
+    if (!world.landside.servesTp(lane, destCell)) continue;
     const buffer = world.landside.preGateOf(lane, preGates) ?? null;
     let eta = 0;
     if (buffer !== null) {
@@ -122,12 +115,12 @@ export function pickGate(world: World, ramp: LoadingRamp, mission: TruckMission,
         eta = travelTicks(world.distances.distance(portal, cell), speed) + ((buffer.capacity - room) / Math.max(lanes.length, 1)) * service;
       }
     } else if (portal !== NO_ACCESS) {
-      eta = travelTicks(world.distances.distance(portal, route.gateEntryCell), speed) + laneLoad(world, lane) * lane.meanServiceTicks(lane.mode);
+      eta = travelTicks(world.distances.distance(portal, world.landside.gateSides(lane).entryCell), speed) + laneLoad(world, lane) * lane.meanServiceTicks(lane.mode);
     }
     // Vstup, na ktorý z portálu nevedie cesta (nekonečný odhad), kamión nedostane — pri plnej ploche by inak skončil v `no_path` pred nedosiahnuteľnou plochou iného bloku.
     if (!Number.isFinite(eta)) continue;
     if (best === undefined || eta < bestEta) {
-      best = { route, buffer };
+      best = { lane, buffer };
       bestEta = eta;
     }
   }

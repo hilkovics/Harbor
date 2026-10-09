@@ -10,7 +10,7 @@ import type { SimEvent } from '@sim/events';
 import { World, WorldStateError, stateHash, type WorldState } from '@sim/world';
 import { assertCargoConservation } from '../helpers/invariants';
 import { loadScenarioFile, runScenario } from '../helpers/scenario';
-import { DEFS, MAP } from './world-fixtures';
+import { DEFS, PORT_MAP } from './world-fixtures';
 
 /** Interval explicitnej kontroly `assertInvariants()` (krok 12 ticku beží každý tick sám). */
 const INVARIANT_EVERY = 100;
@@ -37,7 +37,7 @@ function runChecked(world: World, ticks: number): SimEvent[] {
 /** Chyba pri načítaní: musí to byť `WorldStateError`; inak test zlyhá (nie holý `TypeError` či `RangeError`). */
 function loadError(raw: unknown): WorldStateError {
   try {
-    World.deserialize(DEFS, MAP, asState(raw));
+    World.deserialize(DEFS, PORT_MAP, asState(raw));
   } catch (error) {
     if (error instanceof WorldStateError) return error;
     throw new Error(`očakávaná WorldStateError, dostal ${String(error)}`, { cause: error });
@@ -53,7 +53,7 @@ function loadError(raw: unknown): WorldStateError {
 /** Aktuálny save s loďami (`outbound` a tri čakajúce na anchorage — od T6D-03 priamo na rejde) a s vozidlami, JSON-kópia. */
 function shipsState(): Json {
   const scenario = loadScenarioFile('multi_ship_queue');
-  const world = World.create(DEFS, MAP, scenario.seed);
+  const world = World.create(DEFS, PORT_MAP, scenario.seed);
   let found: Json | undefined;
   runScenario(world, scenario, 6_000, {
     afterTick: (w) => {
@@ -71,7 +71,7 @@ function shipsState(): Json {
 /** Aktuálny save s kamiónmi, vozidlami a kontraktom `exporting`, JSON-kópia. */
 function landsideState(): Json {
   const scenario = loadScenarioFile('vertical_slice');
-  const world = World.create(DEFS, MAP, scenario.seed);
+  const world = World.create(DEFS, PORT_MAP, scenario.seed);
   let found: Json | undefined;
   runScenario(world, scenario, 14_000, {
     afterTick: (w) => {
@@ -252,9 +252,9 @@ const LANDSIDE_CORRUPTIONS: readonly Corruption[] = [
     problem: 'neexistujuci_kamion',
   },
   {
-    name: 'chýbajúce pole kamióna: bay',
-    corrupt: edit((s) => void delete (s['trucks'] as Json[])[0]['bay']),
-    path: '/trucks/0/bay',
+    name: 'chýbajúce pole kamióna: tpCell',
+    corrupt: edit((s) => void delete (s['trucks'] as Json[])[0]['tpCell']),
+    path: '/trucks/0/tpCell',
     problem: 'chýba povinný kľúč',
   },
   {
@@ -292,7 +292,7 @@ describe('poškodený save aktuálnej verzie → WorldStateError s cestou', () =
   beforeAll(() => {
     bases.ships = shipsState();
     bases.landside = landsideState();
-    startHash = stateHash(World.create(DEFS, MAP, 4242));
+    startHash = stateHash(World.create(DEFS, PORT_MAP, 4242));
   }, HEAVY_TIMEOUT_MS);
 
   const cases: readonly (readonly [name: string, base: BaseName, corruption: Corruption])[] = [
@@ -302,7 +302,7 @@ describe('poškodený save aktuálnej verzie → WorldStateError s cestou', () =
 
   it('základné savy sú platné (bez poškodenia sa načítajú a pokračujú) a obsahujú entity, ktoré poškodenia menia', () => {
     for (const name of ['ships', 'landside'] as const) {
-      const world = World.deserialize(DEFS, MAP, asState(clone(bases[name])));
+      const world = World.deserialize(DEFS, PORT_MAP, asState(clone(bases[name])));
       runChecked(world, 200);
     }
     expect((bases.ships['ships'] as Json[]).length).toBeGreaterThanOrEqual(5);
@@ -324,9 +324,9 @@ describe('poškodený save aktuálnej verzie → WorldStateError s cestou', () =
   });
 
   it('po sérii zlyhaných načítaní sú zdieľané defy a mapa nedotknuté a platný save sa načíta rovnako', () => {
-    const loadedBefore = stateHash(World.deserialize(DEFS, MAP, asState(clone(bases.ships))));
+    const loadedBefore = stateHash(World.deserialize(DEFS, PORT_MAP, asState(clone(bases.ships))));
     for (const [, baseName, corruption] of cases) loadError(corruption.corrupt(clone(bases[baseName])));
-    expect(stateHash(World.create(DEFS, MAP, 4242))).toBe(startHash);
-    expect(stateHash(World.deserialize(DEFS, MAP, asState(clone(bases.ships))))).toBe(loadedBefore);
+    expect(stateHash(World.create(DEFS, PORT_MAP, 4242))).toBe(startHash);
+    expect(stateHash(World.deserialize(DEFS, PORT_MAP, asState(clone(bases.ships))))).toBe(loadedBefore);
   });
 });

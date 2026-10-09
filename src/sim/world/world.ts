@@ -76,11 +76,11 @@ import type { Parcel, ParcelOwnership } from '../grid/parcel';
 import { BerthModule } from '../modules/berth-module';
 import { computeBerthGroups, type BerthGroup } from '../modules/berth-group';
 import { CraneModule } from '../modules/crane-module';
-import { LoadingRamp, type RampStatus } from '../modules/loading-ramp';
 import type { Module } from '../modules/module';
 import { ModuleError } from '../modules/module-error';
 import { moduleRegistry } from '../modules/module-registry';
 import { TruckGate } from '../modules/truck-gate';
+import { TruckHolding } from '../modules/truck-holding';
 import { YardBlock } from '../modules/yard-block';
 import { RtgBlock } from '../modules/rtg-block';
 import { MachineError } from '../machines/machine-error';
@@ -88,7 +88,6 @@ import { RtgCrane } from '../machines/rtg-crane';
 import type { YardMachine } from '../machines/yard-machine';
 import { YardMachineSystem } from '../systems/yard-machine-system';
 import { VehicleDepot } from '../modules/vehicle-depot';
-import { WaitingArea } from '../modules/waiting-area';
 import type { AdvanceGate, Carrier } from '../movement/carrier';
 import type { Ship } from '../ships/ship';
 import { ShipError } from '../ships/ship-error';
@@ -99,9 +98,7 @@ import { PathCache } from '../logistics/path-cache';
 import { Pathfinder } from '../logistics/pathfinder';
 import { QuayLanes, hasQuayLane } from '../logistics/quay-lanes';
 import { RoadSpeeds } from '../logistics/road-speed';
-import { isPickupCargo } from '../logistics/dock-cargo';
 import { EmptyFlow, type EmptyFlowState } from '../logistics/empty-flow';
-import { DockIntake } from '../trucks/dock-intake';
 import { Hinterland, type HinterlandState } from '../trucks/hinterland';
 import { StoredCargoIndex } from '../logistics/stored-cargo-index';
 import { JOB_STATE_TRAITS, type TransportJob } from '../logistics/transport-job';
@@ -126,7 +123,7 @@ import type { Vehicle } from '../vehicles/vehicle';
 import { VehicleError } from '../vehicles/vehicle-error';
 import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle-fsm';
 import { connectorCellsOf, isModuleConnected, type ConnectorCell } from './connectivity';
-import { LandsideNetwork, type GateSides, type LandsideRoute } from './landside';
+import { LandsideNetwork, type GateSides } from './landside';
 import { LandsideRosterCache, type LandsideModules } from './landside-roster';
 import { PLACEMENT_RULE_ERROR, attachesToHost, findPlacementViolations, findRemovalViolations } from './module-rules';
 import { WorldInvariantError, findWorldViolation } from './world-invariants';
@@ -271,18 +268,6 @@ export class World {
    * (`hinterland`); čakajúce kamióny samotné sú splatné položky plánov (`emptyFlow`, `arrivalPlan`), vpúšťa ich krok 8 (`trucks/hinterland-admit.ts`).
    */
   readonly hinterland: Hinterland;
-  /**
-   * Staging miesta dockov prisľúbené kamiónom s dovozom, kým si ich nerezervujú (F6d, ADR-035) — odvodená cache, nie je v save; dispatcher ju
-   * obnovuje na začiatku kroku 5 a vjazd z vnútrozemia pred každým pokusom (`trucks/dock-intake.ts`).
-   */
-  readonly dockIntake = new DockIntake();
-  /**
-   * Čaká jednotka `at_ramp` na kamión (náklad na odvoz — import, vrátený export bez jobu), alebo je to export na prijatie, ktorý
-   * čaká na vozidlo do skladu alebo ho už vozidlo odváža (`logistics/dock-cargo.ts`, ADR-032 bod 13; export s aktívnym jobom
-   * nie je náklad na odvoz ani po uzavretí bookingu, T6A-09b)? Rampy ho používajú pri počítaní pripravených jednotiek docku;
-   * arrow pole, aby sa dal odovzdať modulom bez väzby na `this`.
-   */
-  readonly isPickupCargo = (unit: CargoUnit): boolean => isPickupCargo(this.contractBook, unit, (unitId) => this.unitJobs.has(unitId));
   /** Krok 12 ticku zapnutý (`WorldOptions.checkInvariants`, predvolene `true`). */
   readonly checkInvariants: boolean;
 
@@ -558,29 +543,6 @@ export class World {
     return this.landsideRoster.refresh(this.moduleMap, this.moduleChanges);
   }
 
-  /**
-   * Je rampa prevádzková (rozhodnutie orchestrátora F4 č. 1, ADR-022) — vždy aktuálne, bez alokácie pri nezmenenej sieti.
-   * Modul (alebo id), ktorý nie je rampou tohto sveta, → `false`.
-   */
-  isRampOperational(ramp: Module | EntityId): boolean {
-    const module = typeof ramp === 'number' ? this.moduleMap.get(ramp) : ramp;
-    return module === undefined ? false : (this.landside.rampStatus(module)?.operational ?? false);
-  }
-
-  /**
-   * Aktuálny prevádzkový stav rampy s dôvodom (`RampStatus`). Rampa, ktorá vo svete nie je → `ModuleError('unknown_module')`.
-   */
-  rampStatus(ramp: LoadingRamp): RampStatus {
-    const status = this.landside.rampStatus(ramp);
-    if (status === undefined) throw new ModuleError('unknown_module', `World.rampStatus: ${ramp.label} vo svete nie je`);
-    return status;
-  }
-
-  /** Trasy kamiónov k rampe (brána, stojisko, prístupové bunky; poradie id brány, potom stojiska); neprevádzková → `[]`. */
-  landsideRoutes(ramp: LoadingRamp): readonly LandsideRoute[] {
-    return this.landside.routes(ramp);
-  }
-
   /** Aktuálne strany brány (konektory a prístupové bunky; `null` / `NO_ACCESS`, keď strana chýba). */
   gateSides(gate: TruckGate): GateSides {
     return this.landside.gateSides(gate);
@@ -670,7 +632,7 @@ export class World {
    */
   placeModule(spec: PlacedModuleSpec, purchaseCostCents: number): Module {
     const def = this.defs.modules.get(spec.defId);
-    const module = moduleRegistry.create(def, spec, this.ids.next(), purchaseCostCents, { grid: this.grid, cargo: this.cargo, pickupCargo: this.isPickupCargo });
+    const module = moduleRegistry.create(def, spec, this.ids.next(), purchaseCostCents, { grid: this.grid, cargo: this.cargo });
     this.addModule(module);
     // RTG blok sa stavia aj so svojím strojom (ADR-040 bod 3): stroj je súčasť ceny bloku.
     if (module instanceof RtgBlock) this.addMachine(RtgCrane.create(this.ids.next(), module.id, this.defs.equipment.rtg, module.geometry.maxTier));
@@ -935,15 +897,10 @@ export class World {
   // -------------------------------------------------------------------------------------------------------
 
   /**
-   * Pridá kamión (spawn v `LandsideSystem`, obnova zo save): kamión s `bay` si ho rezervuje v stojisku
-   * (`reserveBayAt`, v stave s obsadeným bay aj `occupyBay`), v stave, ktorý drží dock (`holdsDock` efektívneho stavu),
-   * si drží dock rampy (`assignDock`), v stave s nárokom na náklad (`claimsCargo`) si nárokuje zvyšok svojej kapacity
-   * na docku (`claim(dock, capacityUnits − in_truck)`, ADR-029; pri spawne celú kapacitu) a delivery kamión v stave
-   * `holdsIntake` drží staging miesto docku pre každú jednotku, ktorú ešte nevyložil (`reserve(dock)`, ADR-032 bod 13). Chyby (`TruckError`, svet sa nezmení): id už vo svete má kamión, vozidlo, modul,
-   * loď, job alebo jednotka (`duplicate_id`), id nepridelené alokátorom alebo menšie ako id posledného kamióna — poradie
-   * spawnu (`invalid_input`), brána / stojisko / rampa nie sú moduly toho druhu vo svete alebo dock či bay mimo
-   * rozsahu (`unknown_module`), bay drží iný kamión (`bay_taken`), dock drží iný kamión (`dock_taken`). Frontu brány
-   * spravuje brána.
+   * Pridá kamión (spawn v `LandsideSystem`, obnova zo save): kamión s lístkom drží token cieľa — rezervované TP (`tpCell`), alebo státie odstavnej plochy (`holdingId` + `stall`). Chyby
+   * (`TruckError`, svet sa nezmení): id už vo svete má kamión, vozidlo, modul, loď, job alebo jednotka (`duplicate_id`), id nepridelil alokátor sveta alebo je menšie ako id posledného
+   * kamióna — poradie spawnu (`invalid_input`), blok, brána alebo odstavná plocha nie sú moduly toho druhu vo svete alebo státie je mimo rozsahu (`unknown_module`), TP alebo státie
+   * drží iný kamión (`tp_taken`, `stall_taken`), konflikt pruhových slotov (`slot_taken`). Frontu brány a obsadenie predbránovej plochy spravuje volajúci.
    */
   addTruck(truck: Truck): void {
     const { id } = truck;
@@ -955,36 +912,27 @@ export class World {
     }
     const last = this.lastTruckId;
     if (last !== undefined && id < last) throw new TruckError('invalid_input', `World.addTruck: ${truck.label} má menšie id ako posledný kamión #${String(last)}`);
-    const ramp = this.moduleMap.get(truck.rampId);
+    const block = this.moduleMap.get(truck.blockId);
     const gate = this.moduleMap.get(truck.gateId);
-    const area = this.moduleMap.get(truck.waitingAreaId);
-    if (!(ramp instanceof LoadingRamp) || !(gate instanceof TruckGate) || !(area instanceof WaitingArea)) {
-      throw new TruckError('unknown_module', `World.addTruck: ${truck.label}: rampa #${String(truck.rampId)}, brána #${String(truck.gateId)} alebo stojisko #${String(truck.waitingAreaId)} vo svete nie je`);
+    if (!(block instanceof YardBlock) || !(gate instanceof TruckGate)) {
+      throw new TruckError('unknown_module', `World.addTruck: ${truck.label}: blok #${String(truck.blockId)} alebo brána #${String(truck.gateId)} vo svete nie je`);
     }
-    if (truck.dock >= ramp.docks) throw new TruckError('unknown_module', `World.addTruck: ${truck.label}: dock ${String(truck.dock)} mimo 0…${String(ramp.docks - 1)} ${ramp.label}`);
-    const { bay, bonds } = truck;
-    if (bay !== null && bay >= area.bays) throw new TruckError('unknown_module', `World.addTruck: ${truck.label}: bay ${String(bay)} mimo 0…${String(area.bays - 1)} ${area.label}`);
-    if (bay !== null && area.bayHolder(bay) !== null) {
-      throw new TruckError('bay_taken', `World.addTruck: ${truck.label}: bay ${String(bay)} ${area.label} drží kamión #${String(area.bayHolder(bay))}`);
+    if (truck.holdingId !== null) {
+      const holding = this.moduleMap.get(truck.holdingId);
+      if (!(holding instanceof TruckHolding) || truck.stall === null || truck.stall >= holding.stalls) {
+        throw new TruckError('unknown_module', `World.addTruck: ${truck.label}: odstavná plocha #${String(truck.holdingId)} alebo státie ${String(truck.stall)} vo svete nie je`);
+      }
+      for (const other of this.truckMap.values()) {
+        if (other.holdingId === truck.holdingId && other.stall === truck.stall) throw new TruckError('stall_taken', `World.addTruck: ${truck.label}: státie ${String(truck.stall)} ${holding.label} drží kamión #${String(other.id)}`);
+      }
     }
-    if (bonds.holdsDock && ramp.dockTruck(truck.dock) !== null) {
-      throw new TruckError('dock_taken', `World.addTruck: ${truck.label}: dock ${String(truck.dock)} ${ramp.label} drží kamión #${String(ramp.dockTruck(truck.dock))}`);
-    }
-    // Delivery kamión pred vykládkou drží staging miesto docku pre každú jednotku, ktorú vezie (ADR-032 bod 13).
-    const intake = bonds.holdsIntake ? this.cargo.countAt('in_truck', id) : 0;
-    if (intake > ramp.freeAt(truck.dock)) {
-      throw new TruckError('inconsistent', `World.addTruck: ${truck.label}: dock ${String(truck.dock)} ${ramp.label} má ${String(ramp.freeAt(truck.dock))} voľných staging miest, kamión vezie ${String(intake)} jednotiek na vyloženie`);
+    if (truck.tpCell !== null) {
+      for (const other of this.truckMap.values()) {
+        if (other.tpCell === truck.tpCell) throw new TruckError('tp_taken', `World.addTruck: ${truck.label}: TP (bunka ${String(truck.tpCell)}) drží kamión #${String(other.id)}`);
+      }
     }
     const taken = this.slotConflict(truck);
     if (taken !== undefined) throw new TruckError('slot_taken', `World.addTruck: ${truck.label}: ${taken}`);
-    if (bay !== null) {
-      area.reserveBayAt(bay, id);
-      if (bonds.bayOccupied) area.occupyBay(id);
-    }
-    if (bonds.holdsDock) ramp.assignDock(truck.dock, id);
-    for (let i = 0; i < intake; i++) ramp.reserve(truck.dock);
-    const owed = truck.def.capacityUnits - this.cargo.countAt('in_truck', id);
-    if (bonds.claimsCargo && owed > 0) ramp.claim(truck.dock, owed);
     truck.attachSlots(this.laneSlots);
     this.truckMap.set(id, truck);
     this.lastTruckId = id;
@@ -992,19 +940,16 @@ export class World {
 
   /**
    * Odstráni kamión (export na portáli) a vráti ho. Chyby (`TruckError`, svet sa nezmení): neznáme id (`unknown_truck`),
-   * kamión vezie náklad — jednotky `in_truck` by stratili držiteľa (`has_cargo`), kamión drží bay alebo dock, má nárok
-   * na náklad docku (ADR-029) alebo stojí vo fronte brány (`busy`).
+   * kamión vezie náklad — jednotky `in_truck` by stratili držiteľa (`has_cargo`), kamión drží token (TP, státie) alebo job, alebo stojí vo fronte brány (`busy`).
    */
   removeTruck(truckId: EntityId): Truck {
     const truck = this.truckMap.get(truckId);
     if (truck === undefined) throw new TruckError('unknown_truck', `World.removeTruck: kamión #${String(truckId)} neexistuje`);
     const aboard = this.cargo.countAt('in_truck', truckId);
     if (aboard > 0) throw new TruckError('has_cargo', `World.removeTruck: ${truck.label} vezie ${String(aboard)} jednotiek`);
-    const ramp = this.moduleMap.get(truck.rampId);
     const gate = this.moduleMap.get(truck.gateId);
-    const holdsDock = ramp instanceof LoadingRamp && truck.dock < ramp.docks && ramp.dockTruck(truck.dock) === truckId;
-    if (truck.bay !== null || holdsDock || truck.bonds.claimsCargo || (gate instanceof TruckGate && gate.isQueued(truckId))) {
-      throw new TruckError('busy', `World.removeTruck: ${truck.label} v stave '${truck.state}' drží bay, dock, nárok na náklad alebo stojí vo fronte brány`);
+    if (truck.tpCell !== null || truck.stall !== null || truck.jobId !== null || (gate instanceof TruckGate && gate.isQueued(truckId))) {
+      throw new TruckError('busy', `World.removeTruck: ${truck.label} v stave '${truck.state}' drží TP, státie alebo job, alebo stojí vo fronte brány`);
     }
     truck.leaveRoad();
     this.truckMap.delete(truckId);
@@ -1324,8 +1269,7 @@ export class World {
 
   /**
    * Zverejní pozemný reťazec do modulov (ADR-022), ak sa od posledného zverejnenia zmenili cesty alebo moduly: bránam
-   * strany (`TruckGate.setSides`), rampám prevádzkový stav (`LoadingRamp.publishStatus`) a pri zmene stavu rampy (aj
-   * pri prvom zverejnení novej rampy) `RampOperationalChanged`, ak `emit`. V príkazovej fáze (`emit`) potom urovná
+   * strany (`TruckGate.setSides`). V príkazovej fáze (`emit`) potom urovná
    * fronty brán (`settleGateQueues`, dodatok ADR-024): kamión vo fronte, pod ktorým sa strany brány preklopili, ide
    * ďalej bez prechodu — invariant „kamión vo fronte stojí na svojej strane" tak platí po každom príkaze aj ticku.
    * `create` a `deserialize` (bez `emit`) fronty nemenia (obnova overila strany front). Pri nezmenených verziách nerobí nič.
@@ -1335,17 +1279,10 @@ export class World {
     this.publishedRoadVersion = this.roadChanges;
     this.publishedModuleVersion = this.moduleChanges;
     const { landside } = this;
-    const { gates, ramps } = this.landsideModules;
+    const { gates } = this.landsideModules;
     for (const gate of gates) {
       const sides = landside.gateSides(gate);
       gate.setSides(sides.entry, sides.exit);
-    }
-    // Rampy vzostupne podľa id — rovnaké poradie udalostí ako prechod všetkými modulmi (brány udalosti nemajú).
-    for (const ramp of ramps) {
-      const status = this.rampStatus(ramp);
-      if (ramp.publishStatus(status) && emit) {
-        this.events.emit({ type: 'RampOperationalChanged', rampId: ramp.id, operational: status.operational, reason: status.reason });
-      }
     }
     if (emit) settleGateQueues(this);
   }

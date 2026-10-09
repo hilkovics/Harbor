@@ -219,14 +219,14 @@
       "atTick": 17281,
       "command": {
         "type": "AcceptContract",
-        "contractId": 14
+        "contractId": 13
       }
     },
     {
       "atTick": 17281,
       "command": {
         "type": "AcceptContract",
-        "contractId": 16
+        "contractId": 15
       }
     },
     {
@@ -324,7 +324,21 @@
       "atTick": 34561,
       "command": {
         "type": "AcceptContract",
+        "contractId": 32
+      }
+    },
+    {
+      "atTick": 34561,
+      "command": {
+        "type": "AcceptContract",
         "contractId": 33
+      }
+    },
+    {
+      "atTick": 34561,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 34
       }
     },
     {
@@ -352,6 +366,13 @@
       "atTick": 43201,
       "command": {
         "type": "AcceptContract",
+        "contractId": 38
+      }
+    },
+    {
+      "atTick": 43201,
+      "command": {
+        "type": "AcceptContract",
         "contractId": 39
       }
     },
@@ -359,7 +380,7 @@
       "atTick": 43201,
       "command": {
         "type": "AcceptContract",
-        "contractId": 41
+        "contractId": 40
       }
     }
   ]

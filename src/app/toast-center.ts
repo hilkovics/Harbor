@@ -7,11 +7,6 @@
  * - `NoStorageAvailable` → „Chýba sklad“ (warning): kotvisko nemá kam uložiť náklad (aj keď je len nepripojené).
  * - `ModulePlaced` modulu s cestným konektorom, ktorý nie je pripojený → „Nepripojené“ (info) s akciou „Ukázať“
  *   (centruje kameru na modul).
- * - `RampOperationalChanged` na `false` → „Rampa neprevádzková“ (warning) s dôvodom (`RAMP_INOPERATIVE_TOAST_REASON`) a
- *   akciou „Ukázať“ (T04-08). Návrat do prevádzky toast nevytvára: rampa postavená ako posledná v hotovom reťazci by ním
- *   zbytočne zahltila panel.
- * - `NoWaitingBay` → „Chýba čakacia plocha“ (k rampe nevedie trasa cez stojisko), inak „Stojisko je plné“ (warning) s akciou
- *   „Ukázať“ na rampu (T04-08). Kľúč `no_waiting_bay:<rampId>`; sim ju hlási najviac raz za hernú hodinu.
  *
  * - Kontrakty (F5, T05-07): `ContractOffered` → jeden toast „Nové ponuky“ za herný deň (zlúčené, info, akcia „Zobraziť“
  *   otvorí panel kontraktov); `ContractAccepted` (info); `ContractCompleted` → výplata (success, `+$… a +N XP`);
@@ -42,7 +37,6 @@ import type { ContractId, EntityId } from '@sim/core';
 import type { CargoCategory } from '@sim/defs';
 import type { ContractKind } from '@sim/contracts';
 import type { BookingPenaltyKind, PenaltyKind, SimEvent } from '@sim/events';
-import { LoadingRamp, type RampInoperativeReason } from '@sim/modules';
 import type { World } from '@sim/world';
 import { formatDuration, formatFraction, formatMoney, formatMoneyDelta, formatXp } from '@ui/format';
 import { moduleCode } from '@ui/module-inspector';
@@ -87,9 +81,6 @@ export const TOAST_SHOW_PANEL_LABEL = 'Zobraziť';
 
 export const NO_STORAGE_TITLE = 'Chýba sklad';
 export const DISCONNECTED_TOAST_TITLE = 'Nepripojené';
-export const RAMP_INOPERATIVE_TOAST_TITLE = 'Rampa neprevádzková';
-export const NO_WAITING_AREA_TITLE = 'Chýba čakacia plocha';
-export const WAITING_AREA_FULL_TITLE = 'Stojisko je plné';
 
 export const OFFERS_TOAST_TITLE = 'Nové ponuky kontraktov';
 export const ACCEPTED_TOAST_TITLE = 'Kontrakt prijatý';
@@ -147,14 +138,6 @@ export function newOffersText(count: number): string {
   if (count === 1) return '1 nová ponuka';
   return count >= 2 && count <= 4 ? `${String(count)} nové ponuky` : `${String(count)} nových ponúk`;
 }
-
-/** Dôvod neprevádzkovosti rampy (kód zo simu) → krátky text do oznámenia (úplná mapa: nový dôvod v sime = chyba kompilácie). */
-export const RAMP_INOPERATIVE_TOAST_REASON: Readonly<Record<RampInoperativeReason, string>> = Object.freeze({
-  not_connected: 'chýba súvislá cesta k rampe',
-  no_gate: 'chýba brána na ceste',
-  no_waiting_area: 'chýba stojisko',
-  no_return_path: 'kamióny sa nemajú ako vrátiť cez bránu k portálu',
-});
 
 /** Kód modulu pre text oznámenia (`BRT-01`); zaniknutý modul → kód z druhu `fallbackKind`. */
 function codeOf(world: World, moduleId: EntityId, fallbackKind: string): string {
@@ -538,34 +521,6 @@ export function toastSpecsForEvents(world: World, events: readonly SimEvent[]): 
         title: DISCONNECTED_TOAST_TITLE,
         text: `${module.def.displayName} ${moduleCode(module.kind, module.id)} nemá cestu k vjazdu — pripoj ho cestou`,
         focus: { x: module.origin.x + module.size.w / 2, y: module.origin.y + module.size.h / 2 },
-      });
-    } else if (event.type === 'RampOperationalChanged' && !event.operational) {
-      const ramp = world.modules.get(event.rampId);
-      if (ramp === undefined) continue;
-      const reason = event.reason === null ? undefined : RAMP_INOPERATIVE_TOAST_REASON[event.reason];
-      specs.push({
-        key: `ramp_inoperative:${String(ramp.id)}`,
-        tone: 'warning',
-        icon: 'ic_warning',
-        title: RAMP_INOPERATIVE_TOAST_TITLE,
-        text: reason === undefined ? moduleCode(ramp.kind, ramp.id) : `${moduleCode(ramp.kind, ramp.id)} — ${reason}`,
-        focus: { x: ramp.origin.x + ramp.size.w / 2, y: ramp.origin.y + ramp.size.h / 2 },
-      });
-    } else if (event.type === 'NoWaitingBay') {
-      const ramp = world.modules.get(event.rampId);
-      if (!(ramp instanceof LoadingRamp)) continue;
-      const code = moduleCode(ramp.kind, ramp.id);
-      // Bez trasy cez stojisko chýba čakacia plocha na ceste k rampe; s trasou sú všetky jej stojiská plné.
-      const missing = world.landsideRoutes(ramp).length === 0;
-      specs.push({
-        key: `no_waiting_bay:${String(ramp.id)}`,
-        tone: 'warning',
-        icon: 'ic_warning',
-        title: missing ? NO_WAITING_AREA_TITLE : WAITING_AREA_FULL_TITLE,
-        text: missing
-          ? `${code} — k rampe nevedie trasa cez čakaciu plochu, kamión sa nemá kde zastaviť`
-          : `${code} — všetky stojiská sú obsadené, ďalší kamión vznikne, keď sa jedno uvoľní`,
-        focus: { x: ramp.origin.x + ramp.size.w / 2, y: ramp.origin.y + ramp.size.h / 2 },
       });
     } else if (event.type === 'TrafficJam') {
       const carrierLabel = event.carrierKind === 'truck' ? 'Kamión' : 'Vozidlo';

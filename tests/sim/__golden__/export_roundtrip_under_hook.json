@@ -1,9 +1,9 @@
 {
-  "cashEnd": 43719750,
-  "exportedUnits": 32,
-  "shippedUnits": 23,
+  "cashEnd": 65303050,
+  "exportedUnits": 31,
+  "shippedUnits": 24,
   "rolledUnits": 1,
-  "returnedUnits": 1,
+  "returnedUnits": 0,
   "contractsCompleted": 2,
-  "xp": 88
+  "xp": 90
 }

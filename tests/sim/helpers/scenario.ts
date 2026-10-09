@@ -98,27 +98,6 @@ export function stateHash(world: World): string {
 }
 
 /**
- * Napojenie bundled scenárov na jednosmernú slučku `harbor_01` (R1, ADR-037 dodatok): obojsmerný úsek x = 44, y 34–36 s križovatkou na (44, 36)
- * a odstránený začiatok návratovej cesty (45, 34–35), aby fronta pred bránou (44, 33) nesiahala do križovatky. Príkazy idú na tick 0
- * za posledný príkaz tick 0 pôvodného scenára.
- */
-export const PORT_BRIDGE: readonly ScenarioEntry[] = [
-  { atTick: 0, command: { type: 'PlaceRoad', kind: 'two_lane', cells: [{ x: 44, y: 34 }, { x: 44, y: 35 }, { x: 44, y: 36 }] } },
-  { atTick: 0, command: { type: 'RemoveRoad', cells: [{ x: 45, y: 34 }, { x: 45, y: 35 }] } },
-];
-
-/** Scenár z `f4Scenario` & spol. (rozloženie na legacy mape) doplnený o `PORT_BRIDGE` — tvar bundled scenárov v `data/scenarios`. */
-export function withPortBridge(scenario: Scenario): Scenario {
-  const commands = [...scenario.commands];
-  let last = -1;
-  commands.forEach((entry, index) => {
-    if (entry.atTick === 0) last = index;
-  });
-  commands.splice(last + 1, 0, ...PORT_BRIDGE);
-  return { ...scenario, commands };
-}
-
-/**
  * Ako `runScenario`, ale príkazy `AcceptContract` zo scenára nahradí prijatím prvých `N` platných **importných** ponúk (booking ponuky scenáre neprijímajú) v každom rozhodovacom ticku
  * (`N` = počet prijatí scenára v tom ticku). Id kontraktov závisia od počtu jobov a ďalších entít sveta (spoločný počítadlo id), takže scenár so zapísanými id platí len pre svet,
  * pre ktorý vznikol; takto ten istý záťažový scenár beží aj nad inou sadou defov (napr. režim odovzdávania `apron`).

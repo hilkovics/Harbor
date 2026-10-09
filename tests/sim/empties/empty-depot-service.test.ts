@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { findAvailableEmpty } from '@sim/logistics/empty-stock';
 import { StorageModule } from '@sim/modules';
 import { World, stateHash } from '@sim/world';
-import { DEFS, MAP } from '../world/world-fixtures';
+import { DEFS, PORT_MAP } from '../world/world-fixtures';
 import { TICKS_PER_HOUR, depotOf, emptiesByLocation, emptyWorld, eventsOf, f6cDefs, putEmpty, run, runUntil } from '../helpers/f6c';
 import { assertCargoConservation } from '../helpers/invariants';
 
@@ -139,7 +139,7 @@ describe('obnova uprostred opravy', () => {
     const continuous = make();
     run(continuous, 1_500);
     expect([...continuous.cargo.liveUnits()].some((unit) => unit.status === 'in_repair')).toBe(true);
-    const restored = World.deserialize(f6cDefs({ emptyFlow: { damageChance: 1 } }), MAP, JSON.parse(JSON.stringify(continuous.serialize())) as never);
+    const restored = World.deserialize(f6cDefs({ emptyFlow: { damageChance: 1 } }), PORT_MAP, JSON.parse(JSON.stringify(continuous.serialize())) as never);
     const expected = run(continuous, 3_500);
     const actual = run(restored, 3_500);
     expect(actual.map((entry) => JSON.stringify(entry))).toEqual(expected.map((entry) => JSON.stringify(entry)));

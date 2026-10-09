@@ -9,10 +9,10 @@ import type { JobCancelReason, TransportJob } from './transport-job';
 
 /**
  * Uvoľní rezerváciu cieľa jobu (jedna na jednotku jobu, `cargoDropTarget().release`). Hák žeriava (`in_crane`, nakládka pod hákom,
- * ADR-033) nič nerezervuje — nie je čo uvoľniť. Cieľ bez `cargoDropTarget` → `JobError('invalid_input')` (svet je nekonzistentný).
+ * ADR-033) a kamión na TP (`in_truck`, ADR-041) nič nerezervujú — nie je čo uvoľniť. Cieľ bez `cargoDropTarget` → `JobError('invalid_input')` (svet je nekonzistentný).
  */
 export function releaseTarget(world: World, job: TransportJob): void {
-  if (job.to.kind === 'in_crane') return;
+  if (job.to.kind === 'in_crane' || job.to.kind === 'in_truck') return;
   const target = world.modules.get(job.toModuleId)?.cargoDropTarget();
   const place = slotOf(job.to);
   if (target === undefined || target.kind !== job.to.kind || place === null) {

@@ -26,8 +26,9 @@ const id = (value: number): EntityId => value as EntityId;
 const FROM: CargoLocation = { kind: 'on_apron', berthId: id(1), slot: 2 };
 const TO: CargoLocation = { kind: 'in_storage', moduleId: id(4), slot: 7 };
 const BASE: TransportJobInit = { id: id(20), unitIds: [id(11)], from: FROM, to: TO, createdTick: 5 };
-const RAMP_TO: CargoLocation = { kind: 'at_ramp', rampId: id(8), dock: 1 };
-const OUTBOUND: TransportJobInit = { id: id(21), unitIds: [id(12)], from: TO, to: RAMP_TO, createdTick: 6 };
+/** Kamión na TP bloku 4 (R4, ADR-041): koncový bod `in_truck` nemá modul, `toModuleId` je blok. */
+const TRUCK_TO: CargoLocation = { kind: 'in_truck', truckId: id(8) };
+const OUTBOUND: TransportJobInit = { id: id(21), unitIds: [id(12)], from: TO, to: TRUCK_TO, toModuleId: id(4), createdTick: 6 };
 
 function jobError(action: () => unknown): JobError {
   try {
@@ -40,10 +41,10 @@ function jobError(action: () => unknown): JobError {
 }
 
 describe('stavy jobu a tabuľky', () => {
-  it('JOB_STATES v poradí životného cyklu; prechody dopredu po jednom až po done, zrušiť sa dá open a picking (rehandling bez cieľa, TR2-06b); done a cancelled sú konečné', () => {
+  it('JOB_STATES v poradí životného cyklu; prechody dopredu po jednom až po done, zrušiť sa dá open a picking (rehandling bez cieľa, TR2-06b); open → done len pre job obsluhy kamióna na TP (stroj bloku ho dokončí bez vozidla, R4); done a cancelled sú konečné', () => {
     expect(JOB_STATES).toEqual(['open', 'assigned', 'picking', 'moving', 'dropping', 'done', 'cancelled']);
     expect([...JOB_TRANSITIONS.entries()]).toEqual([
-      ['open', ['assigned', 'cancelled']],
+      ['open', ['assigned', 'cancelled', 'done']],
       ['assigned', ['picking']],
       ['picking', ['moving', 'cancelled']],
       ['moving', ['dropping']],
@@ -55,7 +56,7 @@ describe('stavy jobu a tabuľky', () => {
     for (const from of JOB_STATES) {
       for (const to of JOB_STATES) {
         const forward = lifecycle.includes(from) && lifecycle.includes(to) && lifecycle.indexOf(to) === lifecycle.indexOf(from) + 1;
-        expect(isJobTransitionAllowed(from, to), `${from} → ${to}`).toBe(forward || ((from === 'open' || from === 'picking') && to === 'cancelled'));
+        expect(isJobTransitionAllowed(from, to), `${from} → ${to}`).toBe(forward || ((from === 'open' || from === 'picking') && to === 'cancelled') || (from === 'open' && to === 'done'));
       }
     }
   });
@@ -74,30 +75,30 @@ describe('stavy jobu a tabuľky', () => {
     expect(Object.isFrozen(JOB_STATE_TRAITS)).toBe(true);
   });
 
-  it('JOB_ROUTES: inbound apron / hák → sklad a nakládka pod hákom (priorita 0) pred outbound, prijatím exportu a nakládkou na apron (priorita 1); isJobState; dôvody zrušenia', () => {
+  it('JOB_ROUTES: inbound apron / hák → sklad a nakládka pod hákom (priorita 0) pred obsluhou kamiónov a nakládkou na apron (priorita 1); isJobState; dôvody zrušenia', () => {
     expect(JOB_ROUTES).toEqual([
       { from: 'on_apron', to: 'in_storage', priority: 0 },
-      { from: 'in_storage', to: 'at_ramp', priority: 1 },
-      { from: 'at_ramp', to: 'in_storage', priority: 1 },
+      { from: 'in_storage', to: 'in_truck', priority: 1 },
+      { from: 'in_truck', to: 'in_storage', priority: 1 },
       { from: 'in_storage', to: 'on_apron', priority: 1 },
       { from: 'in_crane', to: 'in_storage', priority: 0 },
       { from: 'in_storage', to: 'in_crane', priority: 0 },
     ]);
     expect(JOB_PRIORITY_LEVELS).toBe(2);
     expect(isJobRoute('on_apron', 'in_storage')).toBe(true);
-    expect(isJobRoute('in_storage', 'at_ramp')).toBe(true);
-    expect(isJobRoute('at_ramp', 'in_storage')).toBe(true);
-    expect(jobRouteOf('at_ramp', 'in_storage')?.priority).toBe(1);
+    expect(isJobRoute('in_storage', 'in_truck')).toBe(true);
+    expect(isJobRoute('in_truck', 'in_storage')).toBe(true);
+    expect(jobRouteOf('in_truck', 'in_storage')?.priority).toBe(1);
     expect(isJobRoute('in_storage', 'on_apron')).toBe(true);
     expect(isJobRoute('in_crane', 'in_storage')).toBe(true);
     expect(isJobRoute('in_storage', 'in_crane')).toBe(true);
-    expect(isJobRoute('on_apron', 'at_ramp')).toBe(false);
+    expect(isJobRoute('on_apron', 'in_truck')).toBe(false);
     expect(isJobRoute('in_crane', 'on_apron')).toBe(false);
-    expect(jobRouteOf('in_storage', 'at_ramp')?.priority).toBe(1);
-    expect(jobRouteOf('at_ramp', 'in_truck')).toBeUndefined();
+    expect(jobRouteOf('in_storage', 'in_truck')?.priority).toBe(1);
+    expect(jobRouteOf('in_truck', 'exported')).toBeUndefined();
     for (const state of JOB_STATES) expect(isJobState(state)).toBe(true);
     for (const value of ['closed', '', null, 1]) expect(isJobState(value)).toBe(false);
-    expect(JOB_CANCEL_REASONS).toEqual(['ramp_inoperative', 'ramp_unreachable', 'loading_stopped', 'rehandle_stalled']);
+    expect(JOB_CANCEL_REASONS).toEqual(['loading_stopped', 'rehandle_stalled']);
   });
 });
 
@@ -165,9 +166,9 @@ describe('TransportJob', () => {
     expect(Object.isFrozen(job.from)).toBe(true);
   });
 
-  it('outbound sklad → dock rampy: držitelia sklad a rampa, priorita 1 (inbound 0); job na dock nie je obmedzený jedinečným slotom', () => {
+  it('obsluha kamióna sklad → kamión na TP: držiteľ cieľa je blok (nie kamión), priorita 1 (inbound 0); kamión nie je obmedzený jedinečným slotom', () => {
     const job = new TransportJob(OUTBOUND);
-    expect([job.fromModuleId, job.toModuleId, job.priority, job.to]).toEqual([4, 8, 1, RAMP_TO]);
+    expect([job.fromModuleId, job.toModuleId, job.priority, job.to]).toEqual([4, 4, 1, TRUCK_TO]);
     expect(new TransportJob(BASE).priority).toBe(0);
     expect(new TransportJob({ ...OUTBOUND, unitIds: [id(12), id(13)] }).unitIds).toEqual([12, 13]);
   });
@@ -233,7 +234,7 @@ describe('TransportJob', () => {
     ['viac jednotiek do jedinečného slotu', { unitIds: [id(11), id(12)] }],
     ['from nie je lokácia', { from: { kind: 'on_apron', berthId: id(1) } as unknown as CargoLocation }],
     ['to bez držiteľa (exported)', { to: { kind: 'exported' } }],
-    ['nepovolená dvojica (apron → rampa)', { from: FROM, to: RAMP_TO }],
+    ['nepovolená dvojica (apron → kamión)', { from: FROM, to: TRUCK_TO, toModuleId: id(4) }],
     ['hák žeriava bez modulu (in_crane vyžaduje fromModuleId)', { from: { kind: 'in_crane', craneId: id(2) } }],
     ['fromModuleId, ktorý nie je držiteľom zdroja', { fromModuleId: id(9) }],
     ['fromModuleId 0', { fromModuleId: id(0) }],

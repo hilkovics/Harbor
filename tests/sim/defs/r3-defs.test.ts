@@ -78,8 +78,8 @@ describe('bundled defy R3', () => {
     expect(block.kind).toBe('storage');
     expect(block.footprint).toEqual({ w: 5, h: 12 });
     expect(block.connectors).toEqual([
-      { x: 4, y: 0, side: 'n', type: 'road' },
-      { x: 4, y: 11, side: 's', type: 'road' },
+      { x: 4, y: 0, side: 'n', type: 'road', access: 'in' },
+      { x: 4, y: 11, side: 's', type: 'road', access: 'out' },
     ]);
     expect(storageParams(block)).toEqual({ capacityUnits: 360, category: 'container', role: 'rtg_block', bays: 12, rows: 6, maxTier: 5, laneCol: 4, tpSpacingBays: 1 });
   });

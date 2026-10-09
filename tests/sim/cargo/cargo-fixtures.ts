@@ -56,7 +56,6 @@ export const at = {
   handler: (machineId: number): CargoLocation => ({ kind: 'in_handler', machineId: id(machineId) }),
   storage: (moduleId: number, slot: number): CargoLocation => ({ kind: 'in_storage', moduleId: id(moduleId), slot }),
   pipeline: (pipelineId: number): CargoLocation => ({ kind: 'in_pipeline', pipelineId: id(pipelineId) }),
-  ramp: (rampId: number, dock: number): CargoLocation => ({ kind: 'at_ramp', rampId: id(rampId), dock }),
   truck: (truckId: number): CargoLocation => ({ kind: 'in_truck', truckId: id(truckId) }),
   train: (trainId: number): CargoLocation => ({ kind: 'in_train', trainId: id(trainId) }),
   exported: (): CargoLocation => ({ kind: 'exported' }),
@@ -72,7 +71,6 @@ export const SAMPLE_LOCATIONS: Readonly<Record<CargoLocationKind, CargoLocation>
   in_handler: at.handler(909),
   in_storage: at.storage(904, 7),
   in_pipeline: at.pipeline(905),
-  at_ramp: at.ramp(906, 2),
   in_truck: at.truck(907),
   in_train: at.train(908),
   exported: at.exported(),
@@ -86,7 +84,6 @@ export const CONTAINER_CHAIN: readonly CargoLocation[] = [
   at.vehicle(30),
   at.storage(40, 3),
   at.vehicle(31),
-  at.ramp(50, 1),
   at.truck(60),
   at.exported(),
 ];
@@ -94,22 +91,19 @@ export const LIQUID_CHAIN: readonly CargoLocation[] = [
   at.pipeline(70),
   at.storage(41, 0),
   at.pipeline(71),
-  at.ramp(51, 0),
-  at.train(80),
+  at.truck(80),
   at.exported(),
 ];
 export const RORO_CHAIN: readonly CargoLocation[] = [
   at.vehicle(32),
   at.storage(42, 5),
   at.vehicle(32),
-  at.ramp(52, 0),
   at.truck(61),
   at.exported(),
 ];
 
 /** Exportný reťazec ADR-032 (bez počiatočného `in_truck`, ktorý dá `create` s exportnými štítkami). */
 export const EXPORT_CHAIN: readonly CargoLocation[] = [
-  at.ramp(50, 0),
   at.vehicle(30),
   at.storage(40, 4),
   at.vehicle(31),
@@ -118,11 +112,11 @@ export const EXPORT_CHAIN: readonly CargoLocation[] = [
   at.ship(90),
   at.shipped(),
 ];
-/** „Last minute" export (ADR-032 bod 6): z docku rampy priamo na apron, bez skladu. */
-export const LAST_MINUTE_CHAIN: readonly CargoLocation[] = [at.ramp(50, 1), at.vehicle(30), at.apron(10, 3), at.crane(20), at.ship(90), at.shipped()];
+/** „Last minute" export (ADR-032 bod 6): z kamióna priamo na apron, bez skladu. */
+export const LAST_MINUTE_CHAIN: readonly CargoLocation[] = [at.vehicle(30), at.apron(10, 3), at.crane(20), at.ship(90), at.shipped()];
 
 /** Importný reťazec pod hákom (ADR-033): žeriav odovzdá jednotku priamo vozidlu, bez apronu. */
-export const UNDER_HOOK_IMPORT_CHAIN: readonly CargoLocation[] = [at.crane(20), at.vehicle(30), at.storage(40, 3), at.vehicle(31), at.ramp(50, 1), at.truck(60), at.exported()];
+export const UNDER_HOOK_IMPORT_CHAIN: readonly CargoLocation[] = [at.crane(20), at.vehicle(30), at.storage(40, 3), at.vehicle(31), at.truck(60), at.exported()];
 /** Importný reťazec ťahač + RTG (ADR-040, TERMINAL_2 §6.1): žeriav → ťahač → RTG (`in_handler`) → stoh, odtiaľ RTG späť na ťahač a cez žeriav na loď. */
 export const RTG_DISCHARGE_CHAIN: readonly CargoLocation[] = [at.crane(20), at.vehicle(30), at.handler(95), at.storage(40, 3)];
 /** Nakládka cez RTG (TERMINAL_2 §6.3, bez počiatočného `in_storage`): stoh → RTG → ťahač → žeriav → loď → `shipped`. */
@@ -130,7 +124,6 @@ export const RTG_LOAD_CHAIN: readonly CargoLocation[] = [at.handler(95), at.vehi
 
 /** Exportný reťazec pod hákom (ADR-033, bez počiatočného `in_truck`): vozidlo z príjmu čaká pod žeriavom a ten jednotku zdvihne. */
 export const UNDER_HOOK_EXPORT_CHAIN: readonly CargoLocation[] = [
-  at.ramp(50, 0),
   at.vehicle(30),
   at.storage(40, 4),
   at.vehicle(31),

@@ -282,6 +282,8 @@
             { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/pxRect" } }
           ]
         },
+        "stallSize": { "type": "object", "required": ["w", "h"], "additionalProperties": false, "properties": { "w": { "type": "integer", "minimum": 1 }, "h": { "type": "integer", "minimum": 1 } } },
+        "aisleRows": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 0 } },
         "slots": { "type": "integer", "minimum": 1 },
         "layers": { "type": "integer", "minimum": 1 },
         "category": { "enum": ["container", "bulk", "liquid", "gas", "roro"] },

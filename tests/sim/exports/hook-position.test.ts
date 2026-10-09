@@ -10,7 +10,7 @@ import { hookCellOfCrane } from '@sim/vehicles/vehicle-trip';
 import { World, stateHash, type WorldState } from '@sim/world';
 import { findRemovalViolations } from '@sim/world/module-rules';
 import { findWorldViolation } from '@sim/world/world-invariants';
-import { MAP, apronDefs, hookDefs, lostUnits, ofType, runUntilDeparted, startLoading } from '../helpers/f6a';
+import { PORT_MAP, apronDefs, hookDefs, lostUnits, ofType, runUntilDeparted, startLoading } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
 
 const TIMEOUT = 40_000;
@@ -94,10 +94,10 @@ describe('režim apron: bez nábrežia, vozidlá ostávajú na cestách (bitovo 
   const run = roundtrip(apronDefs());
   let onQuay = 0;
   runUntilDeparted(run.world, TIMEOUT, (world) => {
-    for (const vehicle of world.vehicles.values()) if (world.quay.isQuay(vehicle.cell)) onQuay += 1;
+    for (const vehicle of world.vehicles.values()) if (world.quay.isQuay(vehicle.cell) && !world.quay.isThrough(vehicle.cell)) onQuay += 1;
   });
 
-  it('v režime apron je z kotviska jazdná len obchádzka (pevninský riadok) a žiadne vozidlo na nábreží nestojí ani nejazdí; bunky pod hákom nie sú', () => {
+  it('v režime apron je z kotviska jazdná len obchádzka (pevninský riadok) a žiadne vozidlo nejazdí po pruhoch nábrežia (len tranzit po obchádzke — návrat z kotviska v jednosmernom avenue vedie cez ňu); bunky pod hákom nie sú', () => {
     expect(onQuay).toBe(0);
     const driving = world().quay.owners().reduce((count, owner) => count + (owner === 0 ? 0 : 1), 0);
     expect(driving).toBe(24); // 8 × 4 bez riadku pri vode: 3 riadky po 8 buniek (pruhy a obchádzka), tranzit smie len obchádzka
@@ -135,7 +135,7 @@ describe('save: vozidlo čakajúce pod hákom (T6D-02)', () => {
 
   it('roundtrip s vozidlom čakajúcim pod hákom dá zhodný stateHash a invarianty držia', () => {
     const { saved, hash } = waitingState('loading');
-    const restored = World.deserialize(hookDefs(0), MAP, saved);
+    const restored = World.deserialize(hookDefs(0), PORT_MAP, saved);
     expect(stateHash(restored)).toBe(hash);
     expect(() => restored.assertInvariants()).not.toThrow();
   });

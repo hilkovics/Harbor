@@ -10,7 +10,7 @@ import type { SimEvent } from '@sim/events';
 import { World, WorldInvariantError, WorldStateError, type WorldState } from '@sim/world';
 import { must } from '../helpers/harbor';
 import { runScenario } from '../helpers/scenario';
-import { MAP, TICKS_PER_DAY, contractById, fixedContractDefs, offeredContracts, portScenario, startContract, worldWithPool } from '../helpers/f5';
+import { MAP, PORT_MAP, TICKS_PER_DAY, contractById, fixedContractDefs, offeredContracts, portScenario, startContract, worldWithPool } from '../helpers/f5';
 
 const DEFS = fixedContractDefs();
 const RUN_TIMEOUT_MS = 300_000;
@@ -32,7 +32,7 @@ function withContract(state: WorldState, index: number, patch: Record<string, un
 function expectStateError(defs: typeof DEFS, state: WorldState, path: string): void {
   let error: unknown;
   try {
-    World.deserialize(defs, MAP, state);
+    World.deserialize(defs, PORT_MAP, state);
   } catch (caught) {
     error = caught;
   }
@@ -124,7 +124,7 @@ describe('WorldState v5: roundtrip uprostred kontraktu', () => {
     (target) => {
       const { world, run, contractId } = startContract({ id: `f5_roundtrip_${target}`, seed: 5505, defs: DEFS });
       run.runUntil((w) => contractById(w, contractId).state === target, 40_000);
-      const clone = World.deserialize(DEFS, MAP, viaJson(world.serialize()));
+      const clone = World.deserialize(DEFS, PORT_MAP, viaJson(world.serialize()));
       const scenario = portScenario(`f5_roundtrip_${target}`, 5505);
       const events: SimEvent[][] = [[], []];
       const until = world.clock.tick + 12_000;

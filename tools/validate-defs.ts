@@ -6,8 +6,8 @@
 // loader v sime (MapError). Schéma manifestu tiež len štruktúru; existenciu SVG súborov, ich pokrytie a rozmery
 // overuje tests/tools/asset-manifest.test.ts. `validateAssetManifest` navyše krížovo overí, že každý modul z
 // `modules.json` má `sprites[id]`, každá loď zo `ships.json` má `entities.ship_{id}`, každé vozidlo z
-// `vehicles.json` a každý kamión z `trucks.json` má `entities[id]`; navyše `params.bays` čakacej plochy sa musí
-// zhodovať s počtom `stalls` a `params.docks` rampy s počtom `docks` v manifeste.
+// `vehicles.json` a každý kamión z `trucks.json` má `entities[id]`; navyše `params.stalls` odstavnej plochy sa musí
+// zhodovať s číslom `stalls` v manifeste.
 // Katalógové defy (`items: [...]`, ADR-009) majú navyše kontrolu jedinečnosti `id` — JSON Schema ju nevyjadrí.
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -113,41 +113,6 @@ function validateJsonFile(label: string, filePath: string, schemaName: string, s
   } catch (cause) {
     return [`${label}: / neplatná schéma ${schemaName}: ${errorMessage(cause)}`];
   }
-}
-
-/**
- * Krížová kontrola rámp a kamiónov (review T04-11 f, dodatok ADR-024): pre každú rampu v `modules.json` musí
- * `trucks.json` mať kamión jej kategórie (prvý v poradí — ten pošle spawner) a jeho `capacityUnits ≤ stagingPerDock`
- * rampy; inak rampa prijíma outbound joby a nič z nej neodíde. Kapacitu overuje aj `DefRegistry.fromRaw` (fail-fast),
- * existenciu len táto kontrola zabalených dát (syntetické defy testov rampu bez kamióna smú mať). Chyba:
- * `modules.json: /items/<i>/params/<category|stagingPerDock> <správa>`. Chýbajúci alebo nečitateľný katalóg a položky
- * bez očakávaného tvaru sa preskočia (hlási ich schéma).
- */
-function findRampTruckProblems(defsDir: string): string[] {
-  const modules = readJsonOrUndefined(join(defsDir, MODULES_DEF_FILE));
-  const trucks = readJsonOrUndefined(join(defsDir, TRUCKS_DEF_FILE));
-  const moduleItems = isRecord(modules) ? modules['items'] : undefined;
-  const truckItems = isRecord(trucks) ? trucks['items'] : undefined;
-  if (!Array.isArray(moduleItems) || !Array.isArray(truckItems)) return [];
-  const errors: string[] = [];
-  moduleItems.forEach((item: unknown, index) => {
-    if (!isRecord(item) || item['kind'] !== 'ramp' || !isRecord(item['params'])) return;
-    const { category, stagingPerDock } = item['params'];
-    if (typeof category !== 'string' || typeof stagingPerDock !== 'number') return;
-    const truck = truckItems.find((candidate: unknown) => isRecord(candidate) && Array.isArray(candidate['cargoCategories']) && candidate['cargoCategories'].includes(category));
-    const at = `${MODULES_DEF_FILE}: /items/${String(index)}/params`;
-    if (!isRecord(truck)) {
-      errors.push(`${at}/category rampa '${String(item['id'])}' nakladá kategóriu '${category}', ale ${TRUCKS_DEF_FILE} nemá kamión tejto kategórie`);
-      return;
-    }
-    const capacity = truck['capacityUnits'];
-    if (typeof capacity === 'number' && capacity > stagingPerDock) {
-      errors.push(
-        `${at}/stagingPerDock kamión '${String(truck['id'])}' má capacityUnits ${String(capacity)} > stagingPerDock ${String(stagingPerDock)} rampy '${String(item['id'])}' — dock by sa nikdy nenaplnil`,
-      );
-    }
-  });
-  return errors;
 }
 
 /** Dvojica čísel `[min, max]`, inak `undefined` (tvar rozsahu hlási schéma). */
@@ -378,7 +343,7 @@ function findContractTemplateProblems(defsDir: string): string[] {
 
 /** Krížové kontroly, ktoré JSON Schema nevyjadrí, podľa súboru defu (`undefined` = súbor ich nemá). */
 const DEF_FILE_CHECKS: Readonly<Record<string, (defsDir: string) => string[]>> = {
-  [MODULES_DEF_FILE]: (defsDir) => [...findRampTruckProblems(defsDir), ...findBerthParamProblems(defsDir), ...findStorageParamProblems(defsDir)],
+  [MODULES_DEF_FILE]: (defsDir) => [...findBerthParamProblems(defsDir), ...findStorageParamProblems(defsDir)],
   [ECONOMY_DEF_FILE]: findEconomyProblems,
   [LOGISTICS_DEF_FILE]: findLogisticsProblems,
   [CONTRACT_TEMPLATES_DEF_FILE]: findContractTemplateProblems,
@@ -386,7 +351,7 @@ const DEF_FILE_CHECKS: Readonly<Record<string, (defsDir: string) => string[]>> =
 
 /**
  * Overí každý `*.json` v `defsDir` voči `<názov>.schema.json` v `schemasDir`; k niektorým súborom pridá krížové kontroly
- * (`DEF_FILE_CHECKS`: `modules.json` rampy × kamióny, rezerva apronu a roly skladov, `economy.json` rozsahy a cut-off, `logistics.json` váhy tried, `contract_templates.json` × cargo × lode). Chýbajúca schéma, nevalidný JSON aj porušenie schémy sú chyby v `errors`
+ * (`DEF_FILE_CHECKS`: `modules.json` rezerva apronu a roly skladov, `economy.json` rozsahy a cut-off, `logistics.json` váhy tried, `contract_templates.json` × cargo × lode). Chýbajúca schéma, nevalidný JSON aj porušenie schémy sú chyby v `errors`
  * (nie výnimky). Výsledky sú zoradené podľa názvu súboru. Výnimku vyhodí iba neexistujúci/nečitateľný `defsDir`.
  */
 export function validateDefsDir(defsDir: string, schemasDir: string): DefValidationResult[] {
@@ -472,8 +437,8 @@ function findMissingSprites(label: string, manifest: unknown, defsDir: string): 
 
 /**
  * Parametre modulov, ktoré musia zodpovedať počtu prvkov poľa alebo číslu v jeho sprite:
- * `berth.apronSlots` = počet `apronSlots`, `waiting_area.bays` = počet `stalls`,
- * `ramp.docks` = počet `docks`, `depot.capacity` = počet `stalls` (číslo, nie pole).
+ * `berth.apronSlots` = počet `apronSlots`, `holding.stalls` = číslo `stalls`,
+ * `depot.capacity` = počet `stalls` (číslo, nie pole).
  */
 interface SpriteCountCheck {
   kind: string;
@@ -484,8 +449,7 @@ interface SpriteCountCheck {
 }
 const SPRITE_COUNT_PARAMS: readonly SpriteCountCheck[] = [
   { kind: 'berth', param: 'apronSlots', spriteKey: 'apronSlots', what: 'apronSlotov', valueType: 'array' },
-  { kind: 'waiting_area', param: 'bays', spriteKey: 'stalls', what: 'stojísk', valueType: 'array' },
-  { kind: 'ramp', param: 'docks', spriteKey: 'docks', what: 'dockov', valueType: 'array' },
+  { kind: 'holding', param: 'stalls', spriteKey: 'stalls', what: 'státí', valueType: 'number' },
   { kind: 'depot', param: 'capacity', spriteKey: 'stalls', what: 'stajní', valueType: 'number' },
 ];
 

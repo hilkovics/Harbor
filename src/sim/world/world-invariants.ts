@@ -86,19 +86,19 @@ import type { CargoCategory } from '../defs/types';
 import type { Cell } from '../grid/grid';
 import { unitAtJobSource } from '../logistics/job-source';
 import { JOB_STATE_TRAITS, type TransportJob } from '../logistics/transport-job';
-import { DockSupply } from '../trucks/dock-supply';
-import { reachedWaitingArea } from '../trucks/empty-collect';
 import { BerthModule } from '../modules/berth-module';
 import { computeBerthGroups } from '../modules/berth-group';
 import { CRANE_CYCLE_TRAITS, CRANE_STATE_TRAITS, CraneModule, craneReservesApronSlot, cranePhaseProblem } from '../modules/crane-module';
 import { EmptyDepot } from '../modules/empty-depot';
-import { LoadingRamp } from '../modules/loading-ramp';
 import { RtgBlock } from '../modules/rtg-block';
 import { StorageModule, storageSlotCapacity } from '../modules/storage-module';
 import { PreGateBuffer } from '../modules/pre-gate-buffer';
+import { TruckHolding } from '../modules/truck-holding';
+import { YardBlock } from '../modules/yard-block';
+import { isTruckJob, truckJobBlock, truckOfJob } from '../logistics/truck-jobs';
+import { tpCellsOf } from '../trucks/tp-points';
 import { TruckGate } from '../modules/truck-gate';
 import { VehicleDepot } from '../modules/vehicle-depot';
-import { WaitingArea } from '../modules/waiting-area';
 import { hasCompatibleCrane } from '../ships/berth-allocator';
 import type { Ship } from '../ships/ship';
 import { SHIP_STATE_TRAITS, holdingAllows } from '../ships/ship-fsm';
@@ -114,7 +114,6 @@ import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle-fsm';
 import { vehicleMotionProblem } from '../vehicles/vehicle-trip';
 import { CARGO_HOLDER_SOURCES } from './cargo-holders';
 import { heldByMachine } from './machines-state';
-import type { LandsideModules } from './landside-roster';
 import type { World } from './world';
 
 /** Porušený invariant sveta (moduly, mriežka, aprony, žeriavy, skupiny kotvísk). */
@@ -459,6 +458,12 @@ const checkMachines: Check = (world) => {
       // `put` po zdvihu je bez vozidla a jobu (ťahač je voľný hneď po zdvihu, ADR-040 dodatok TR3-02); inak vozidlo cyklu čaká na TP.
       if (cycle.kind === 'put' && cycle.vehicleId === null) {
         if (!carrying || cycle.jobId !== null) return `${machine.label}: cyklus put bez vozidla musí byť po zdvihu a bez jobu`;
+      } else if (cycle.kind !== 'relocate' && cycle.truck) {
+        // Kamión na TP vo fáze `handling` s jobom cyklu (ADR-041 bod 4); stroj naňho nikdy nečaká prefetchom.
+        const truck = world.trucks.get(cycle.vehicleId as EntityId);
+        if (truck === undefined || truck.state !== 'at_tp' || truck.phase !== 'handling' || truck.jobId !== cycle.jobId) {
+          return `${machine.label}: kamión #${String(cycle.vehicleId)} cyklu ${cycle.kind} nestojí na TP vo fáze handling s jobom #${String(cycle.jobId)}`;
+        }
       } else if (cycle.kind !== 'relocate') {
         const vehicle = world.vehicles.get(cycle.vehicleId as EntityId);
         // `take` s predzásobením (ťahač ešte ide k TP, `prefetchCells`) smie mať vozidlo na ceste (`to_pickup`, po zmene ciest `no_path`), kým stroj nezačne `lower`.
@@ -508,7 +513,9 @@ function checkJobUnits(world: World, job: TransportJob): string | undefined {
  * `to` (slot, dock) má rezerváciu a cieľ prijíma kategóriu nákladu jobu.
  */
 function checkJobTarget(world: World, job: TransportJob, category: CargoCategory | undefined): string | undefined {
-  // Držiteľ cieľa: modul `to` (sklad, rampa, berth), pri háku žeriava samotný žeriav (vozidlo jazdí ku kotvisku — `toModuleId`).
+  // Kamión na TP (R4, ADR-041 bod 4): cieľ `in_truck` nerezervuje miesto; kamión musí existovať a mať tento job (väzby na blok overuje `checkTruckJob`).
+  if (job.to.kind === 'in_truck') return truckOfJob(world, job)?.jobId === job.id ? undefined : `${job.label}: kamión #${String(job.to.truckId)} tento job nemá`;
+  // Držiteľ cieľa: modul `to` (sklad, berth), pri háku žeriava samotný žeriav (vozidlo jazdí ku kotvisku — `toModuleId`).
   const module = world.modules.get(holderIdOf(job.to) ?? job.toModuleId);
   const target = module?.cargoDropTarget();
   if (module === undefined || target?.kind !== job.to.kind) return `${job.label}: cieľ #${String(job.toModuleId)} neprijíma náklad do '${job.to.kind}'`;
@@ -526,6 +533,7 @@ function checkJob(world: World, job: TransportJob): string | undefined {
   if (traits.hasVehicle !== (job.vehicleId !== null)) return `${job.label} v stave '${job.state}' ${traits.hasVehicle ? 'nemá vozidlo' : 'má vozidlo'}`;
   const vehicle = job.vehicleId === null ? undefined : world.vehicles.get(job.vehicleId);
   if (job.vehicleId !== null && vehicle?.jobId !== job.id) return `${job.label}: vozidlo #${String(job.vehicleId)} tento job nemá`;
+  if (isTruckJob(job) && (truckOfJob(world, job) === undefined || truckJobBlock(world, job) === undefined)) return `${job.label}: kamión alebo blok jobu vo svete nie je`;
   const category = unitCategory(world, job.unitIds[0]);
   const target = checkJobTarget(world, job, category);
   if (target !== undefined) return target;
@@ -590,100 +598,6 @@ function checkStorageReservations(world: World): string | undefined {
   return undefined;
 }
 
-/**
- * Znovupoužiteľné pracovné polia kroku 12 (nie sú stav simulácie): začiatok docku 0 každej rampy (podľa `rampOrdinal`),
- * počty jednotiek outbound jobov na dock a počty pripravených jednotiek na docku.
- */
-let rampDockOffsets = new Int32Array(0);
-let dockUnitCounts = new Int32Array(0);
-let dockStagedCounts = new Int32Array(0);
-/** Súčty nárokov kamiónov na každý dock (ADR-029). */
-let dockClaimCounts = new Int32Array(0);
-/** Vezené jednotky na docky (outbound joby s vozidlom, ADR-029) — pracovné polia kroku 12. */
-const dockSupply = new DockSupply();
-
-/** Naplní `rampDockOffsets` pre rampy registra a vráti počet dockov všetkých rámp (polia počtov zväčší podľa potreby). */
-function layoutRampDocks(ramps: readonly LoadingRamp[]): number {
-  if (rampDockOffsets.length < ramps.length) rampDockOffsets = new Int32Array(ramps.length);
-  let docks = 0;
-  for (let ordinal = 0; ordinal < ramps.length; ordinal++) {
-    rampDockOffsets[ordinal] = docks;
-    docks += ramps[ordinal].docks;
-  }
-  if (dockUnitCounts.length < docks) dockUnitCounts = new Int32Array(docks);
-  if (dockStagedCounts.length < docks) dockStagedCounts = new Int32Array(docks);
-  if (dockClaimCounts.length < docks) dockClaimCounts = new Int32Array(docks);
-  return docks;
-}
-
-/**
- * Pripravené jednotky na každom docku všetkých rámp jedným prechodom jednotiek `at_ramp` (O(jednotky na rampách), bez
- * alokácie) do `dockStagedCounts` — pre väzbu kamióna na dock (`truckRampProblem`), ktorá by inak pre každý kamión
- * prechádzala jednotky svojej rampy. Dock mimo rozsahu hlási `findRuntimeProblem` rampy (bod 10).
- */
-function countStagedUnits(world: World): void {
-  const roster = world.landsideModules;
-  const { ramps } = roster;
-  const docks = layoutRampDocks(ramps);
-  dockStagedCounts.fill(0, 0, docks);
-  stagedRoster = roster;
-  for (let ordinal = 0; ordinal < ramps.length; ordinal++) {
-    const ramp = ramps[ordinal];
-    const count = world.cargo.countAt('at_ramp', ramp.id);
-    for (let i = 0; i < count; i++) {
-      const unitId = world.cargo.unitAtIndex('at_ramp', ramp.id, i);
-      const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
-      const location = unit?.location;
-      // Pripravené na kamión = náklad na odvoz; export na prijatie (čaká na vozidlo do skladu) sa nepočíta (ADR-032 bod 13).
-      if (unit !== undefined && location?.kind === 'at_ramp' && location.dock < ramp.docks && world.isPickupCargo(unit)) {
-        dockStagedCounts[rampDockOffsets[ordinal] + location.dock] += 1;
-      }
-    }
-  }
-}
-
-/** Register, pre ktorý `countStagedUnits` naposledy naplnil `dockStagedCounts` (poradie rámp pre `stagedFromScratch`). */
-let stagedRoster: LandsideModules | undefined;
-
-/**
- * Staging rezervácie každej rampy = outbound joby (ADR-023): na každom docku počet rezervácií = počet jednotiek
- * aktívnych jobov s cieľom na tomto docku (job drží rezerváciu celý život, `commit` pri vykládke ju premení na
- * obsadenie). O(joby + docky) bez alokácie v platnom stave (review T04-11): jeden prechod jobmi (`to.kind === 'at_ramp'`)
- * do znovupoužiteľného poľa počtov (rampa podľa `rampOrdinal` registra, dock ako posun), potom jeden prechod dockami.
- * Cieľ jobu a dock v rozsahu overil `checkJob`. `staged + reserved ≤ stagingPerDock` overuje `findRuntimeProblem`
- * rampy (bod 10).
- */
-function checkRampReservations(world: World): string | undefined {
-  const { ramps } = world.landsideModules;
-  if (ramps.length === 0) return undefined;
-  const docks = layoutRampDocks(ramps);
-  dockUnitCounts.fill(0, 0, docks);
-  for (const job of world.jobs.values()) {
-    const { to } = job;
-    if (to.kind !== 'at_ramp') continue;
-    const ordinal = world.landsideModules.rampOrdinal(to.rampId);
-    if (ordinal < 0 || to.dock >= ramps[ordinal].docks) return `${job.label}: cieľ at_ramp #${String(to.rampId)} dock ${String(to.dock)} nie je dock rampy sveta`;
-    dockUnitCounts[rampDockOffsets[ordinal] + to.dock] += job.unitIds.length;
-  }
-  // Delivery kamióny pred vykládkou držia staging miesto za každú jednotku, ktorú ešte vezú (ADR-032 bod 13).
-  for (const truck of world.trucks.values()) {
-    if (!truck.bonds.holdsIntake) continue;
-    const ordinal = world.landsideModules.rampOrdinal(truck.rampId);
-    if (ordinal >= 0 && truck.dock < ramps[ordinal].docks) dockUnitCounts[rampDockOffsets[ordinal] + truck.dock] += world.cargo.countAt('in_truck', truck.id);
-  }
-  for (let ordinal = 0; ordinal < ramps.length; ordinal++) {
-    const ramp = ramps[ordinal];
-    for (let dock = 0; dock < ramp.docks; dock++) {
-      const count = dockUnitCounts[rampDockOffsets[ordinal] + dock];
-      const reserved = ramp.reservedAt(dock);
-      if (count !== reserved) {
-        return `${ramp.label}: dock ${String(dock)} má ${String(reserved)} staging rezervácií, aktívne outbound joby a vykladajúce kamióny naň vezú ${String(count)} jednotiek`;
-      }
-    }
-  }
-  return undefined;
-}
-
 const checkJobs: Check = (world) => {
   let previous = 0;
   let units = 0;
@@ -696,7 +610,7 @@ const checkJobs: Check = (world) => {
     if (violation !== undefined) return violation;
   }
   if (world.jobUnitCount !== units) return `index jobOfUnit má ${String(world.jobUnitCount)} jednotiek, joby ${String(units)}`;
-  return checkStorageReservations(world) ?? checkRampReservations(world);
+  return checkStorageReservations(world);
 };
 
 const checkBerthGroups: Check = (world) => {
@@ -813,28 +727,11 @@ const checkShips: Check = (world) => {
   return checkGrabbingCranes(world) ?? shipOverlapProblem(world.ships);
 };
 
-/** Na rampe ležia len jednotky jej kategórie (bez alokácie — prechod indexom ledgera). */
-function checkRampCategory(world: World, ramp: LoadingRamp): string | undefined {
-  const count = world.cargo.countAt('at_ramp', ramp.id);
-  for (let i = 0; i < count; i++) {
-    const unitId = world.cargo.unitAtIndex('at_ramp', ramp.id, i);
-    const category = unitCategory(world, unitId);
-    if (category !== ramp.category) {
-      return `${ramp.label} (kategória '${ramp.category}') drží jednotku #${String(unitId)} kategórie '${String(category)}'`;
-    }
-  }
-  return undefined;
-}
-
-/** Vnútorný stav každého modulu (`findRuntimeProblem`) a kategória nákladu na rampách (bod 10 hlavičky). */
+/** Vnútorný stav každého modulu (`findRuntimeProblem`, bod 10 hlavičky). */
 const checkModuleRuntime: Check = (world) => {
   for (const module of world.modules.values()) {
     const problem = module.findRuntimeProblem();
     if (problem !== undefined) return problem;
-  }
-  for (const ramp of world.landsideModules.ramps) {
-    const foreign = checkRampCategory(world, ramp);
-    if (foreign !== undefined) return foreign;
   }
   return undefined;
 };
@@ -859,21 +756,22 @@ function checkTruckCargo(world: World, truck: Truck): string | undefined {
 }
 
 /**
- * Väzby kamióna na pruhy brány (vstupný `gateId`, výstupný `gateOutId`), predbránovú plochu (rad, R4), stojisko (bay) a rampu (dock) a frontu pruhu podľa stavu
- * (bod 11 hlavičky): kamión je vo fronte vstupného pruhu práve v stavoch s bránou `entry`, vo fronte výstupného práve v stavoch s bránou `exit`; v stave `pre_gate`
- * stojí v rade `row` svojej plochy, inak na žiadnej ploche nie je.
+ * Väzby kamióna na pruhy brány (vstupný `gateId`, výstupný `gateOutId`), predbránovú plochu (rad, R4), blok zastávky, token cieľa (TP, státie) a job zastávky (bod 11 hlavičky): kamión je vo
+ * fronte vstupného pruhu práve v stavoch s bránou `entry`, vo fronte výstupného práve v stavoch s bránou `exit`; v stave `pre_gate` stojí v rade `row` svojej plochy, inak na žiadnej ploche nie je;
+ * TP kamióna je TP jeho bloku, státie existuje v jeho odstavnej ploche; job zastávky patrí kamiónu a jeho bloku a existuje práve v stavoch pred odovzdaním (fáza `handling` vrátane).
  */
-function checkTruckBonds(world: World, truck: Truck, gate: TruckGate, area: WaitingArea, ramp: LoadingRamp): string | undefined {
+function checkTruckBonds(world: World, truck: Truck, gate: TruckGate, block: YardBlock): string | undefined {
   const { bonds } = truck;
-  const { bay } = truck;
-  if (bonds.holdsBay !== (bay !== null)) return `${truck.label} v stave '${truck.effectiveState}' ${bonds.holdsBay ? 'nedrží bay' : `drží bay ${String(bay)}`}`;
-  if (bay !== null) {
-    if (bay >= area.bays || area.bayHolder(bay) !== truck.id) return `${truck.label}: bay ${String(bay)} ${area.label} ho nemá ako držiteľa`;
-    if (area.isBayOccupied(bay) !== bonds.bayOccupied) return `${truck.label} v stave '${truck.state}': bay ${String(bay)} ${bonds.bayOccupied ? 'nie je' : 'je'} obsadený`;
+  if (bonds.holdsToken !== (truck.tpCell !== null || truck.stall !== null)) return `${truck.label} v stave '${truck.effectiveState}' ${bonds.holdsToken ? 'nedrží token (TP ani státie)' : 'drží token (TP alebo státie)'}`;
+  if (truck.tpCell !== null && !tpCellsOf(world, block).includes(truck.tpCell)) return `${truck.label}: TP (bunka ${String(truck.tpCell)}) nie je TP bloku ${block.label}`;
+  if (truck.holdingId !== null) {
+    const holding = world.modules.get(truck.holdingId);
+    if (!(holding instanceof TruckHolding) || truck.stall === null || truck.stall >= holding.stalls) return `${truck.label}: státie ${String(truck.stall)} odstavnej plochy #${String(truck.holdingId)} neexistuje`;
   }
-  if ((ramp.dockTruck(truck.dock) === truck.id) !== bonds.holdsDock) {
-    return `${truck.label} v stave '${truck.effectiveState}' ${bonds.holdsDock ? 'nedrží' : 'drží'} dock ${String(truck.dock)} ${ramp.label}`;
-  }
+  if (truck.effectiveState === 'holding' && truck.stall === null) return `${truck.label} v stave 'holding' nedrží státie`;
+  if (truck.traits.atTp !== (truck.phase !== null)) return `${truck.label} v stave '${truck.state}' ${truck.phase === null ? 'nemá fázu TP' : `má fázu '${truck.phase}'`}`;
+  const jobProblem = checkTruckJob(world, truck, block);
+  if (jobProblem !== undefined) return jobProblem;
   const queued = inGateQueue(truck);
   const side = TRUCK_STATE_TRAITS[truck.state].gateSide;
   if (gate.isQueued(truck.id) !== (queued && side === 'entry')) return `${truck.label} v stave '${truck.state}' ${queued && side === 'entry' ? 'nie je' : 'je'} vo fronte ${gate.label}`;
@@ -883,6 +781,23 @@ function checkTruckBonds(world: World, truck: Truck, gate: TruckGate, area: Wait
     if (out.isQueued(truck.id) !== (queued && side === 'exit')) return `${truck.label} v stave '${truck.state}' ${queued && side === 'exit' ? 'nie je' : 'je'} vo fronte ${out.label}`;
   } else if (queued && side === 'exit') return `${truck.label} v stave '${truck.state}' nemá výstupný pruh`;
   return checkTruckPreGate(world, truck);
+}
+
+/** Fázy TP, v ktorých kamión drží job zastávky (odovzdanie ešte neskončilo); po nich a po odchode z TP je `jobId` `null`. */
+const PHASES_WITH_JOB: readonly (string | null)[] = ['safe_in', 'unlash', 'handling'];
+
+/** Job zastávky kamióna (R4, ADR-041 bod 4): pred TP vždy, na TP do konca odovzdania, potom žiadny; job patrí kamiónu a jeho bloku a nesie jeho jednotku. */
+function checkTruckJob(world: World, truck: Truck, block: YardBlock): string | undefined {
+  const state = truck.effectiveState;
+  const beforeTp = state !== 'at_tp' && state !== 'at_edge_tp' && truck.bonds.holdsToken;
+  const expectsJob = beforeTp || (truck.traits.atTp && PHASES_WITH_JOB.includes(truck.phase));
+  if (expectsJob !== (truck.jobId !== null)) return `${truck.label} v stave '${truck.state}'${truck.phase === null ? '' : ` (fáza ${truck.phase})`} ${expectsJob ? 'nemá job zastávky' : `má job #${String(truck.jobId)}`}`;
+  if (truck.jobId === null) return truck.bonds.holdsToken && truck.unitId === null && !truck.traits.atTp ? `${truck.label} bez jobu nemá jednotku zastávky` : undefined;
+  const job = world.jobs.get(truck.jobId);
+  if (job === undefined) return `${truck.label}: job #${String(truck.jobId)} zastávky vo svete nie je`;
+  if (truckOfJob(world, job)?.id !== truck.id || truckJobBlock(world, job)?.id !== block.id) return `${truck.label}: ${job.label} nepatrí jemu a jeho bloku ${block.label}`;
+  if (job.unitIds[0] !== truck.unitId) return `${truck.label}: jednotka jobu #${String(job.unitIds[0])} ≠ jednotka zastávky #${String(truck.unitId)}`;
+  return undefined;
 }
 
 /** Kamión v `pre_gate` stojí v rade `row` svojej predbránovej plochy; kamión v inom stave na žiadnej ploche nie je (R4, ADR-041 bod 2). */
@@ -895,35 +810,6 @@ function checkTruckPreGate(world: World, truck: Truck): string | undefined {
   if (onPreGate && (row < 0 || row !== truck.row)) return `${truck.label} v stave 'pre_gate' (rad ${String(truck.row)}) nie je v tomto rade ${buffer.label}`;
   if (!onPreGate && row >= 0) return `${truck.label} v stave '${truck.state}' je na ploche ${buffer.label}`;
   return undefined;
-}
-
-/**
- * Väzba kamióna na rampu (review T04-11): def kamióna vozí kategóriu rampy a kamión, ktorý drží dock (pred koncom
- * nakládky), má na docku a v sebe spolu aspoň `capacityUnits` jednotiek — povel do docku to vyžaduje (ADR-029; predtým
- * spawn) a jednotky docku odchádzajú len nakládkou tohto kamióna, takže `loadUnit` jednotku vždy nájde. `stagedOnDock` = počet pripravených jednotiek na
- * docku (predvolene `LoadingRamp.stagedAt`; krok 12 dodá predpočítané počty). Problém s poľom záznamu v save, alebo
- * `undefined`.
- */
-export function truckRampProblem(
-  world: World,
-  truck: Truck,
-  ramp: LoadingRamp,
-  stagedOnDock: (ramp: LoadingRamp, dock: number) => number = (target, dock) => target.stagedAt(dock),
-): { readonly field: 'defId' | 'dock'; readonly problem: string } | undefined {
-  if (!truck.def.cargoCategories.includes(ramp.category)) {
-    return { field: 'defId', problem: `${truck.label} nevozí kategóriu '${ramp.category}' rampy ${ramp.label}` };
-  }
-  // Delivery kamión pred vykládkou nepotrebuje na docku náklad — drží staging miesto pre jednotky, ktoré vyloží (`holdsIntake`).
-  // Kamión misie `collect` berie prázdny kontajner cez poverenie (prázdny nie je náklad na odvoz) — väzbu overuje `checkEmptyFlow`.
-  if (!truck.bonds.holdsDock || truck.bonds.holdsIntake || truck.mission === 'collect') return undefined;
-  const aboard = world.cargo.countAt('in_truck', truck.id);
-  if (aboard >= truck.def.capacityUnits) return undefined;
-  const staged = stagedOnDock(ramp, truck.dock);
-  if (staged + aboard >= truck.def.capacityUnits) return undefined;
-  return {
-    field: 'dock',
-    problem: `${truck.label} drží dock ${String(truck.dock)} ${ramp.label}, ale na docku je ${String(staged)} a v kamióne ${String(aboard)} jednotiek (capacityUnits ${String(truck.def.capacityUnits)})`,
-  };
 }
 
 /** Je kamión v zozname fronty svojej brány — čaká v nej (`gate_queue*`) alebo ako jej čelo prechádza bránou (`gate_pass*`, ADR-037)? */
@@ -943,102 +829,50 @@ export function truckQueueSideProblem(world: World, truck: Truck): string | unde
   return `${truck.label} v stave '${truck.state}' stojí na bunke ${String(truck.cell)}, nie na svojej strane brány (${String(gateNearSideCell(world, truck))})`;
 }
 
-/**
- * Pripravené jednotky na docku z `dockStagedCounts` (naplnil `countStagedUnits` na začiatku `checkTrucks`); rampa mimo
- * registra (nemá nastať — väzby overil `checkTruck`) → priamy dotaz rampy.
- */
-function stagedFromScratch(ramp: LoadingRamp, dock: number): number {
-  const ordinal = stagedRoster?.rampOrdinal(ramp.id) ?? -1;
-  return ordinal < 0 ? ramp.stagedAt(dock) : dockStagedCounts[rampDockOffsets[ordinal] + dock];
-}
-
 function checkTruck(world: World, truck: Truck): string | undefined {
   if (truck.state === 'exited') return `${truck.label} v stave 'exited' je stále vo world.trucks`;
   const gate = world.modules.get(truck.gateId);
-  const area = world.modules.get(truck.waitingAreaId);
-  const ramp = world.modules.get(truck.rampId);
+  const block = world.modules.get(truck.blockId);
   if (!(gate instanceof TruckGate)) return `${truck.label}: brána #${String(truck.gateId)} vo svete nie je`;
-  if (!(area instanceof WaitingArea)) return `${truck.label}: stojisko #${String(truck.waitingAreaId)} vo svete nie je`;
-  if (!(ramp instanceof LoadingRamp)) return `${truck.label}: rampa #${String(truck.rampId)} vo svete nie je`;
-  if (truck.dock >= ramp.docks) return `${truck.label}: dock ${String(truck.dock)} mimo 0…${String(ramp.docks - 1)} ${ramp.label}`;
+  if (!(block instanceof YardBlock)) return `${truck.label}: blok #${String(truck.blockId)} vo svete nie je`;
   const { width, height } = world.grid;
   if (!isWithin(truck.x, width) || !isWithin(truck.y, height)) return `${truck.label} stojí mimo mapy (${String(truck.x)}, ${String(truck.y)})`;
-  return (
-    checkTruckBonds(world, truck, gate, area, ramp) ??
-    checkTruckCargo(world, truck) ??
-    truckRampProblem(world, truck, ramp, stagedFromScratch)?.problem ??
-    truckMotionProblem(world, truck)?.problem ??
-    truckQueueSideProblem(world, truck)
-  );
+  return checkTruckBonds(world, truck, gate, block) ?? checkTruckCargo(world, truck) ?? truckMotionProblem(world, truck)?.problem ?? truckQueueSideProblem(world, truck);
 }
 
 /**
- * Nároky kamiónov na náklad dockov (bod 11, ADR-029): nárok každého docku (`LoadingRamp.claimedAt`) = súčet nárokov jeho
- * kamiónov (`dockClaimCounts`, naplnil `checkTrucks`) a nepresahuje pripravené + vozidlami vezené jednotky docku.
- * O(joby + docky) bez alokácie.
- */
-function checkDockClaims(world: World): string | undefined {
-  const { ramps } = world.landsideModules;
-  if (ramps.length === 0) return undefined;
-  dockSupply.refresh(world);
-  for (let ordinal = 0; ordinal < ramps.length; ordinal++) {
-    const ramp = ramps[ordinal];
-    for (let dock = 0; dock < ramp.docks; dock++) {
-      const claimed = ramp.claimedAt(dock);
-      const expected = dockClaimCounts[rampDockOffsets[ordinal] + dock];
-      if (claimed !== expected) return `${ramp.label}: dock ${String(dock)} má nárok ${String(claimed)}, kamióny docku ${String(expected)}`;
-      const supplied = dockStagedCounts[rampDockOffsets[ordinal] + dock] + dockSupply.dispatchedAt(ramp, dock);
-      if (claimed > supplied) {
-        return `${ramp.label}: dock ${String(dock)} má nárok ${String(claimed)} > pripravené a vezené jednotky ${String(supplied)}`;
-      }
-    }
-  }
-  return undefined;
-}
-
-/**
- * Kamióny a ich väzby (bod 11 hlavičky) jedným prechodom kamiónov a jedným prechodom modulov, bez alokácie: každý
- * kamión je držiteľom svojho bay / docku / miesta vo fronte práve podľa stavu a súčty držaných miest v moduloch sa
- * rovnajú počtom kamiónov — žiadny modul nedrží miesto pre kamión, ktorý neexistuje alebo ho nemá.
+ * Kamióny a ich väzby (bod 11 hlavičky) jedným prechodom kamiónov a jedným prechodom modulov: každý kamión drží token (TP alebo státie) práve podľa stavu, TP a státia nemajú dvoch držiteľov,
+ * kamión je držiteľom miesta vo fronte brány a v predbránovej ploche práve podľa stavu a súčty držaných miest v moduloch sa rovnajú počtom kamiónov.
  */
 const checkTrucks: Check = (world) => {
-  countStagedUnits(world);
-  const layout = layoutRampDocks(world.landsideModules.ramps);
-  dockClaimCounts.fill(0, 0, layout);
   let previous = 0;
-  let bays = 0;
-  let docks = 0;
   let queued = 0;
   let preGated = 0;
+  const tps = new Set<number>();
+  const stalls = new Set<number>();
   for (const [id, truck] of world.trucks) {
     if (truck.id !== id) return `world.trucks: kľúč ${String(id)} ukazuje na ${truck.label}`;
     if (id <= previous) return `world.trucks: ${truck.label} nie je vzostupne podľa id (po #${String(previous)})`;
     previous = id;
     const violation = checkTruck(world, truck);
     if (violation !== undefined) return violation;
-    if (truck.bay !== null) bays += 1;
-    if (truck.bonds.holdsDock) docks += 1;
+    if (truck.tpCell !== null) {
+      if (tps.has(truck.tpCell)) return `TP (bunka ${String(truck.tpCell)}) drží viac kamiónov (aj ${truck.label})`;
+      tps.add(truck.tpCell);
+    }
+    if (truck.holdingId !== null && truck.stall !== null) {
+      const key = truck.holdingId * 1000 + truck.stall;
+      if (stalls.has(key)) return `státie ${String(truck.stall)} odstavnej plochy #${String(truck.holdingId)} drží viac kamiónov (aj ${truck.label})`;
+      stalls.add(key);
+    }
     if (inGateQueue(truck)) queued += 1;
     if (truck.state === 'pre_gate') preGated += 1;
-    if (truck.bonds.claimsCargo) {
-      const ordinal = world.landsideModules.rampOrdinal(truck.rampId);
-      const owed = truck.def.capacityUnits - world.cargo.countAt('in_truck', truck.id);
-      if (ordinal >= 0 && owed > 0) dockClaimCounts[rampDockOffsets[ordinal] + truck.dock] += owed;
-    }
   }
-  const claims = checkDockClaims(world);
-  if (claims !== undefined) return claims;
-  let heldBays = 0;
-  let heldDocks = 0;
   let queueLength = 0;
-  const { gates, preGates, waitingAreas, ramps } = world.landsideModules;
+  const { gates, preGates } = world.landsideModules;
   let preGateHeld = 0;
   for (const buffer of preGates) preGateHeld += buffer.occupied;
-  for (const area of waitingAreas) heldBays += area.bays - area.freeBays;
-  for (const ramp of ramps) heldDocks += ramp.assignedDocks;
   for (const gate of gates) queueLength += gate.queueLength;
-  if (heldBays !== bays) return `stojiská držia ${String(heldBays)} bays, kamióny ${String(bays)}`;
-  if (heldDocks !== docks) return `rampy majú ${String(heldDocks)} držaných dockov, kamióny ${String(docks)}`;
   if (preGateHeld !== preGated) return `predbránové plochy držia ${String(preGateHeld)} kamiónov, v pre_gate je ${String(preGated)}`;
   if (queueLength !== queued) return `fronty pruhov brán majú ${String(queueLength)} kamiónov, v gate_queue* a gate_pass* je ${String(queued)}`;
   return undefined;
@@ -1159,31 +993,18 @@ const checkContracts: Check = (world) => {
   return world.storedCargo.size === stored ? undefined : `index uskladneného nákladu má ${String(world.storedCargo.size)} jednotiek, sklady ${String(stored)}`;
 };
 
-/** Jednotka pridelená poverenému kamiónu leží v ceste na jeho dock (viď bod 12 hlavičky); `undefined` = v poriadku. */
+/** Jednotka pridelená poverenému kamiónu je v ceste na jeho TP (viď bod 12 hlavičky); `undefined` = v poriadku. */
 function errandUnitProblem(world: World, truck: Truck, unitId: EntityId): string | undefined {
   const unit = world.cargo.get(unitId);
   if (unit === undefined) return `${truck.label}: pridelený prázdny #${String(unitId)} v ledgeri nie je`;
   if (unit.direction !== 'empty') return `${truck.label}: pridelená jednotka #${String(unitId)} nie je prázdny kontajner (${unit.direction})`;
   const { location } = unit;
-  if (location.kind === 'at_ramp') {
-    return location.rampId === truck.rampId && location.dock === truck.dock ? undefined : `${truck.label}: pridelený prázdny #${String(unitId)} leží na inom docku`;
-  }
   if (location.kind === 'in_truck') return location.truckId === truck.id ? undefined : `${truck.label}: pridelený prázdny #${String(unitId)} vezie iný kamión`;
-  if (location.kind !== 'in_storage' && location.kind !== 'in_vehicle') return `${truck.label}: pridelený prázdny #${String(unitId)} je v '${location.kind}'`;
+  if (location.kind !== 'in_storage' && location.kind !== 'in_vehicle' && location.kind !== 'in_handler') return `${truck.label}: pridelený prázdny #${String(unitId)} je v '${location.kind}'`;
+  // Kým kamión nenaložil, jednotka má job `receive` práve tohto kamióna (po zdvihu strojom je v `in_handler` a job ešte beží).
   const job = world.jobOfUnit(unitId);
-  if (job?.to.kind !== 'at_ramp' || job.to.rampId !== truck.rampId || job.to.dock !== truck.dock) {
-    return `${truck.label}: pridelený prázdny #${String(unitId)} nemá job na jeho dock`;
-  }
+  if (job?.to.kind !== 'in_truck' || job.to.truckId !== truck.id) return `${truck.label}: pridelený prázdny #${String(unitId)} nemá job na tento kamión`;
   return undefined;
-}
-
-/**
- * Kamión misie `collect` odchádza naprázdno — vzdal sa a poverenie mu zaniklo (`EmptyPickupMissed`): je v jazde od stojiska k portálu bez
- * jednotky na palube (kamión s naloženým prázdnym má poverenie až do odchodu z mapy).
- */
-function leavesEmpty(world: World, truck: Truck): boolean {
-  const state = truck.effectiveState;
-  return (state === 'to_gate_out' || state === 'gate_queue_out' || state === 'gate_pass_out' || state === 'to_portal') && world.cargo.countAt('in_truck', truck.id) === 0;
 }
 
 /** Znovupoužiteľná množina pridelených prázdnych pre `checkEmptyFlow` (hot path kroku 12; pred použitím sa vyprázdni). */
@@ -1193,7 +1014,7 @@ const TAKEN_EMPTIES = new Set<number>();
 const checkEmptyFlow: Check = (world) => {
   const { errands } = world.emptyFlow;
   for (const truck of world.trucks.values()) {
-    if (truck.mission === 'collect' && world.emptyFlow.errandOfTruck(truck.id) === undefined && !leavesEmpty(world, truck)) {
+    if (truck.mission === 'collect' && world.emptyFlow.errandOfTruck(truck.id) === undefined) {
       return `${truck.label} (collect) v stave '${truck.state}' nemá poverenie v emptyFlow`;
     }
   }
@@ -1204,10 +1025,7 @@ const checkEmptyFlow: Check = (world) => {
     if (truck?.mission !== 'collect') return `poverenie kamióna #${String(errand.truckId)}: kamión nie je misie collect`;
     const contract = world.contractBook.get(errand.contractId as ContractId);
     if (contract === undefined || contract.lineId !== errand.lineId) return `${truck.label}: poverenie ukazuje na kontrakt #${String(errand.contractId)} inej linky alebo mimo knihy`;
-    const reached = reachedWaitingArea(truck);
-    if (errand.giveUpTick === null && reached) return `${truck.label} v stojisku (stav '${truck.effectiveState}') nemá giveUpTick poverenia`;
-    if (errand.giveUpTick !== null && !reached) return `${truck.label}: giveUpTick poverenia je nastavený pred príchodom do stojiska (stav '${truck.effectiveState}')`;
-    if (errand.unitId === null) continue;
+    if (errand.unitId === null) return `${truck.label}: poverenie nemá pridelený prázdny kontajner (pridelí sa pri vzniku kamióna)`;
     if (taken.has(errand.unitId)) return `prázdny #${String(errand.unitId)} je pridelený dvom kamiónom`;
     taken.add(errand.unitId);
     const problem = errandUnitProblem(world, truck, errand.unitId as EntityId);

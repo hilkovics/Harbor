@@ -949,12 +949,15 @@
       ]
     },
     "truck_holding": {
-      "footprint": { "w": 3, "h": 6 },
+      "footprint": { "w": 6, "h": 5 },
       "file": "modules/truck_holding.svg",
       "connectors": [
-        { "x": 0, "y": 5, "side": "s", "type": "road" },
-        { "x": 2, "y": 0, "side": "n", "type": "road" }
-      ]
+        { "x": 0, "y": 4, "side": "s", "type": "road" },
+        { "x": 5, "y": 4, "side": "s", "type": "road" }
+      ],
+      "stalls": 6,
+      "stallSize": { "w": 1, "h": 3 },
+      "aisleRows": [3, 4]
     },
     "truck_waiting_area": {
       "footprint": {

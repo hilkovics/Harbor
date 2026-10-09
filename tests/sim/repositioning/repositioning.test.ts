@@ -10,7 +10,7 @@ import { emptyWorld, eventsOf, f6cDefs, offerRepositioning, runUntil, stockDepot
 import { assertCargoConservation } from '../helpers/invariants';
 import { stateHash, World, type WorldState } from '@sim/world';
 import { pendingExportUnits } from '@sim/logistics/voyage-cargo';
-import { MAP } from '../world/world-fixtures';
+import { PORT_MAP } from '../world/world-fixtures';
 import type { EntityId } from '@sim/core';
 
 const VEHICLES = ['straddle_carrier', 'straddle_carrier', 'empty_handler'];
@@ -177,7 +177,7 @@ describe('repositioning — obnova uprostred nakládky', () => {
       return ofType(events, 'UnitLoaded')[1].tick;
     })();
     tickEvents(reference.world, midpoint - 10);
-    const restored = World.deserialize(reference.world.defs, MAP, JSON.parse(JSON.stringify(reference.world.serialize())) as WorldState);
+    const restored = World.deserialize(reference.world.defs, PORT_MAP, JSON.parse(JSON.stringify(reference.world.serialize())) as WorldState);
     expect(stateHash(restored)).toBe(stateHash(reference.world));
     tickEvents(reference.world, 4_000);
     tickEvents(restored, 4_000);

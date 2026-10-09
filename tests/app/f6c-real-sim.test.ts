@@ -1,12 +1,12 @@
 // T6C-06a: render VM a toasty F6c nad skutočným svetom scenára `empty_cycle` (import → návrat prázdnych → depo → kontrola a oprava → výdaj
 // exportérovi). Svet beží cez `GameLoop` + `SimBridge` po jednom ticku a po každom ticku sa VM porovná s ledgerom: depo (`ModuleVM.depot` =
-// `depotCargoSplit`), prázdne na rampe (`ramp.stagedEmpty`), prázdne vo vozidle (`VehicleVM.carriesEmpty`) a v kamióne (`TruckVM.carriesEmpty`,
+// `depotCargoSplit`), prázdne vo vozidle (`VehicleVM.carriesEmpty`) a v kamióne (`TruckVM.carriesEmpty`,
 // vrátane kamióna misie `collect`), operácie skladov (`lastStorageOp.empty`), súčet nákladu lode, a toasty (`EmptyReturned`, `EmptyRepaired`,
 // `EmptyPickupMissed`) nad skutočnými udalosťami. Repositioning a prekládku sim zatiaľ negeneruje (T6C-03), tie pokrýva `entities-vm-f6c.test.ts`.
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { CargoDirection } from '@sim/cargo';
 import type { EntityId } from '@sim/core';
-import { EmptyDepot, LoadingRamp } from '@sim/modules';
+import { EmptyDepot } from '@sim/modules';
 import { depotCargoSplit } from '@sim/world';
 import { EMPTY_PICKUP_MISSED_TOAST_TITLE, EMPTY_REPAIRED_TOAST_TITLE, EMPTY_RETURNED_TOAST_TITLE } from '@app/toast-center';
 import { formatMoney } from '@ui/format';
@@ -20,13 +20,10 @@ interface Observed {
   /** Tick, v ktorom sa VM rozišlo s ledgerom, a popis (prázdne = všetko sedí). */
   readonly mismatches: string[];
   readonly depot: { id: number; repairBays: number; maxAvailable: number; sawDamaged: boolean; sawInRepair: boolean; stepsWithUnits: number };
-  readonly ramp: { stagedEmptyTicks: number; maxEmpty: number };
   readonly vehicles: { handlerCarried: number; handlerLoaded: number; otherCarried: number };
   readonly trucks: {
     /** Kamión misie `collect`: stav pred naložením a po naložení (podľa id kamióna). */
     readonly collect: Map<number, { before: boolean; after: boolean }>;
-    /** Kroky, v ktorých kamión `collect` stál v doku (`loading`) s polohou príjazdu pre manéver cúvania. */
-    collectDockedWithApproach: number;
     /** Kamión, ktorý dovezie prázdny: po vyložení (`loaded: false`) si pamätá `carriesEmpty`. */
     memoryAfterUnload: number;
     /** Krok, v ktorom exportný / importný kamión nesie neprázdny náklad a `carriesEmpty` nie je nastavené. */
@@ -45,9 +42,8 @@ function observe(): Observed {
     app,
     mismatches: [],
     depot: { id: depotModule.id, repairBays: depotModule.repairBays, maxAvailable: 0, sawDamaged: false, sawInRepair: false, stepsWithUnits: 0 },
-    ramp: { stagedEmptyTicks: 0, maxEmpty: 0 },
     vehicles: { handlerCarried: 0, handlerLoaded: 0, otherCarried: 0 },
-    trucks: { collect: new Map(), collectDockedWithApproach: 0, memoryAfterUnload: 0, plainLoaded: 0 },
+    trucks: { collect: new Map(), memoryAfterUnload: 0, plainLoaded: 0 },
     storageOps: { emptyOps: 0, depotOpsNotEmpty: 0 },
   };
   const bad = (what: string): void => {
@@ -56,14 +52,6 @@ function observe(): Observed {
 
   app.advanceTo(TICKS, 1, () => {
     const snapshot = bridge.snapshot();
-    const emptiesOnRamp = new Map<number, number[]>();
-    for (const unit of world.cargo.liveUnits()) {
-      if (unit.direction !== 'empty' || unit.location.kind !== 'at_ramp') continue;
-      const docks = emptiesOnRamp.get(unit.location.rampId) ?? [];
-      docks[unit.location.dock] = (docks[unit.location.dock] ?? 0) + 1;
-      emptiesOnRamp.set(unit.location.rampId, docks);
-    }
-
     for (const vm of snapshot.modules) {
       const module = world.modules.get(vm.id as EntityId);
       if (module instanceof EmptyDepot) {
@@ -81,23 +69,6 @@ function observe(): Observed {
         }
       } else if (vm.depot !== undefined) {
         bad(`modul #${String(vm.id)} nie je depo, ale nesie depot`);
-      }
-      if (module instanceof LoadingRamp) {
-        const perDock = emptiesOnRamp.get(module.id) ?? [];
-        const total = perDock.reduce((sum, count) => sum + count, 0);
-        const stagedEmpty = vm.ramp?.stagedEmpty;
-        if (total === 0) {
-          if (stagedEmpty !== undefined) bad(`rampa #${String(vm.id)}: stagedEmpty ${JSON.stringify(stagedEmpty)} bez prázdnych v ledgeri`);
-        } else {
-          observed.ramp.stagedEmptyTicks += 1;
-          observed.ramp.maxEmpty = Math.max(observed.ramp.maxEmpty, total);
-          for (let dock = 0; dock < module.docks; dock++) {
-            const staged = vm.ramp?.staged[dock] ?? 0;
-            const empties = stagedEmpty?.[dock] ?? 0;
-            if (empties !== (perDock[dock] ?? 0)) bad(`rampa #${String(vm.id)} dock ${String(dock)}: stagedEmpty ${String(empties)} ≠ ledger ${String(perDock[dock] ?? 0)}`);
-            if (staged - empties !== module.stagedAt(dock)) bad(`rampa #${String(vm.id)} dock ${String(dock)}: staged ${String(staged)} − prázdne ≠ stagedAt ${String(module.stagedAt(dock))}`);
-          }
-        }
       }
     }
 
@@ -127,10 +98,6 @@ function observe(): Observed {
         if (!vm.loaded && vm.carriesEmpty !== true && !seen.after) seen.before = true;
         if (vm.loaded && vm.carriesEmpty === true) seen.after = true;
         if (vm.loaded && vm.carriesEmpty !== true) bad(`kamión collect #${String(vm.id)} nesie neprázdny náklad`);
-        if (vm.state === 'loading') {
-          if (vm.approach === undefined) bad(`kamión collect #${String(vm.id)} v doku bez approach`);
-          else observed.trucks.collectDockedWithApproach += 1;
-        }
         if (!vm.loaded && seen.after) bad(`kamión collect #${String(vm.id)} stratil náklad pred odchodom`);
         observed.trucks.collect.set(vm.id, seen);
       }
@@ -178,17 +145,12 @@ describe('empty_cycle: render VM nad skutočným svetom', () => {
     expect(vm?.depot?.inRepair).toBeLessThanOrEqual(depot.repairBays);
   });
 
-  it('prázdne na rampe: `stagedEmpty` = prázdne `at_ramp` podľa docku, `staged` ich zahŕňa a bez nich zostáva `LoadingRamp.stagedAt`', () => {
-    expect(observed.ramp.stagedEmptyTicks).toBeGreaterThan(0);
-    expect(observed.ramp.maxEmpty).toBeGreaterThan(0);
-  });
-
   it('prázdne vo vozidle: empty handler nesie prázdny vždy (`carriesEmpty`), záložné vozidlo len keď ho vezie', () => {
     expect(observed.vehicles.handlerLoaded).toBeGreaterThan(0);
     expect(observed.vehicles.handlerCarried).toBe(observed.vehicles.handlerLoaded);
   });
 
-  it('prázdne v kamióne: návrat nesie `carriesEmpty` aj po vyložení (kontajner z príchodu pri cúvaní), neprázdny náklad ho nenesie', () => {
+  it('prázdne v kamióne: návrat nesie `carriesEmpty` aj po vyložení (kontajner z príchodu), neprázdny náklad ho nenesie', () => {
     expect(observed.trucks.memoryAfterUnload).toBeGreaterThan(0);
     expect(observed.trucks.plainLoaded).toBeGreaterThan(0);
   });
@@ -205,8 +167,6 @@ describe('empty_cycle: render VM nad skutočným svetom', () => {
     expect(missed.length).toBeGreaterThan(0);
     expect(missed.every((entry) => entry.event.type === 'EmptyPickupMissed' && entry.event.truckId === null)).toBe(true);
     expect(collect.size).toBe(pickedUp);
-    // v doku kamión `collect` cúva ako `pickup`: VM nesie `approach`, takže ho renderer vedie manévrom (kontajner pred naložením nekreslí)
-    expect(observed.trucks.collectDockedWithApproach).toBeGreaterThan(0);
   });
 
   it('operácie skladov: depo drží len prázdne, preto každá jeho `lastStorageOp` nesie `empty`', () => {

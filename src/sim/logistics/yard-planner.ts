@@ -21,7 +21,7 @@ import type { CargoUnit } from '../cargo/cargo-unit';
 import { teuOf } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
 import { EmptyDepot } from '../modules/empty-depot';
-import { LoadingRamp } from '../modules/loading-ramp';
+import { TruckGate } from '../modules/truck-gate';
 import type { Module } from '../modules/module';
 import { YardBlock } from '../modules/yard-block';
 import type { World } from '../world/world';
@@ -229,7 +229,7 @@ function candidateTiers(world: World, unit: CargoUnit, from: Module): readonly Y
   }
   if (unit.direction !== 'empty') {
     TIERS.push(YARD_BLOCKS);
-  } else if (from instanceof LoadingRamp) {
+  } else if (from instanceof TruckGate) {
     TIERS.push(anyDepot ? DEPOT_BLOCKS : YARD_BLOCKS);
   } else {
     TIERS.push(emptyReturnRoom(world, from, category) > 0 ? DEPOT_BLOCKS : NO_BLOCKS, YARD_BLOCKS);

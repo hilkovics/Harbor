@@ -1,8 +1,7 @@
 /**
  * TransportJob (ARCHITECTURE §7.3; docs/tasks/phase-03.md rozhodnutie 6 a „Spoločné rozhrania"; ADR-018, ADR-023) —
  * úloha previezť jednotky nákladu z jedného držiteľa k druhému vozidlom. Povolené dvojice lokácií sú tabuľka
- * `JOB_ROUTES`: inbound `on_apron → in_storage` (F3), outbound `in_storage → at_ramp` (F4, T04-03) a prijatie exportu
- * `at_ramp → in_storage` (F6a, ADR-032).
+ * `JOB_ROUTES`: inbound `on_apron → in_storage` (F3), obsluha kamióna na TP `in_storage ↔ in_truck` (R4, ADR-041).
  *
  * - Job vzniká v dispatcheri (krok 5) s rezervovaným miestom v cieli (`to` = `in_storage(moduleId, slot)` alebo
  *   `at_ramp(rampId, dock)`) a jednotkami na zdroji (`from` = ich poloha pri vzniku). Rezervácia trvá, kým vozidlo
@@ -32,7 +31,8 @@ export type JobState = (typeof JOB_STATES)[number];
  * a job vozidla, ktoré pri zdroji nenašlo cieľ rehandlingu (`picking → cancelled`, dodatok TR2-06b); inak vozidlo job dokončí (ADR-023).
  */
 export const JOB_TRANSITIONS: ReadonlyMap<JobState, readonly JobState[]> = new Map<JobState, readonly JobState[]>([
-  ['open', Object.freeze(['assigned', 'cancelled'] as const)],
+  // `open → done`: job kamióna na TP, ktorý obslúžil stroj bloku (RTG) priamo, bez vozidla (R4, ADR-041 bod 4).
+  ['open', Object.freeze(['assigned', 'cancelled', 'done'] as const)],
   ['assigned', Object.freeze(['picking'] as const)],
   // Rehandling bez cieľa v bloku (R2, dodatok TR2-06b): vozidlo čaká v `picking` na kontajnery nad jednotkou; po `rehandleGiveUpTicks` sa job zruší a vozidlo uvoľní.
   ['picking', Object.freeze(['moving', 'cancelled'] as const)],
@@ -49,7 +49,7 @@ export const JOB_TRANSITIONS: ReadonlyMap<JobState, readonly JobState[]> = new M
  * `rehandle_stalled` (TR2-06b): vozidlo pri zdroji v bloku so stohmi nenašlo cieľ pre kontajnery nad jednotkou (alebo jednotku pri príchode nemožno vybrať)
  * a po `rehandleGiveUpTicks` job zrušilo — jednotka ostáva v sklade a dispatcher jej vytvorí job znova, až keď je pre kontajnery nad ňou miesto.
  */
-export const JOB_CANCEL_REASONS = ['ramp_inoperative', 'ramp_unreachable', 'loading_stopped', 'rehandle_stalled'] as const;
+export const JOB_CANCEL_REASONS = ['loading_stopped', 'rehandle_stalled'] as const;
 export type JobCancelReason = (typeof JOB_CANCEL_REASONS)[number];
 
 /** Kde leží náklad jobu v danom stave (invarianty kroku 12, obnova save). */
@@ -93,9 +93,10 @@ export interface JobRoute {
  */
 export const JOB_ROUTES: readonly JobRoute[] = Object.freeze([
   Object.freeze({ from: 'on_apron', to: 'in_storage', priority: 0 } as const),
-  Object.freeze({ from: 'in_storage', to: 'at_ramp', priority: 1 } as const),
-  // Prijatie exportu (F6a, ADR-032 bod 8): jednotku vyloženú kamiónom na docku odvezie vozidlo do skladu; uvoľňuje dock.
-  Object.freeze({ from: 'at_ramp', to: 'in_storage', priority: 1 } as const),
+  // Obsluha kamióna na TP (R4, ADR-041 bod 4): odvoz importu / prázdneho zo skladu na kamión (`receive`) a vyloženie exportu / prázdneho z kamióna do skladu (`deliver`).
+  // Koncový bod `in_truck` nemá modul — `fromModuleId` / `toModuleId` je blok, pri ktorého TP kamión stojí. Obsluhuje ich stroj bloku (RTG), alebo straddle carrier na hrane bloku.
+  Object.freeze({ from: 'in_storage', to: 'in_truck', priority: 1 } as const),
+  Object.freeze({ from: 'in_truck', to: 'in_storage', priority: 1 } as const),
   // Nakládka exportu na apron (F6a, ADR-032 bod 9): vozidlo vezie jednotku zo skladu na rezervovaný slot apronu. Priorita 1 ako
   // outbound: vykládka lode (inbound a hák, priorita 0) má prednosť, takže import nikdy nečaká za frontou nakládky.
   Object.freeze({ from: 'in_storage', to: 'on_apron', priority: 1 } as const),
@@ -177,11 +178,11 @@ function checkLocation(raw: CargoLocation, label: string, field: string): CargoL
 function endpointModule(label: string, field: string, location: CargoLocation, explicit: EntityId | undefined): EntityId {
   const holder = holderIdOf(location) as EntityId;
   if (explicit === undefined) {
-    if (location.kind === 'in_crane') throw new JobError('invalid_input', `${label}: ${field} 'in_crane' (hák žeriava) vyžaduje modul ${field}ModuleId (kotvisko žeriava)`);
+    if (location.kind === 'in_crane' || location.kind === 'in_truck') throw new JobError('invalid_input', `${label}: ${field} '${location.kind}' vyžaduje modul ${field}ModuleId (kotvisko žeriava, blok kamióna na TP)`);
     return holder;
   }
   if (!isPositiveId(explicit)) throw new JobError('invalid_input', `${label}: ${field}ModuleId musí byť celé číslo ≥ 1, dostal ${String(explicit)}`);
-  if (location.kind !== 'in_crane' && explicit !== holder) {
+  if (location.kind !== 'in_crane' && location.kind !== 'in_truck' && explicit !== holder) {
     throw new JobError('invalid_input', `${label}: ${field}ModuleId ${String(explicit)} sa líši od držiteľa ${location.kind} #${String(holder)}`);
   }
   return explicit;

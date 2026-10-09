@@ -41,7 +41,7 @@ const DEF_IDS_WITH_CONNECTORS = MODULE_DEFS.modules.items
 
 describe('worldConnectors (konektory z manifestu) sa zhodujú s konektormi simu (`connectorsOf`)', () => {
   it('existujú moduly s konektormi, ktoré manifest pozná', () => {
-    expect(DEF_IDS_WITH_CONNECTORS).toEqual(expect.arrayContaining(['gate_in_lane', 'gate_out_lane', 'truck_waiting_area', 'loading_ramp_container', 'container_yard_small', 'vehicle_depot']));
+    expect(DEF_IDS_WITH_CONNECTORS).toEqual(expect.arrayContaining(['gate_in_lane', 'gate_out_lane', 'truck_holding', 'container_yard_small', 'vehicle_depot']));
   });
 
   it.each(DEF_IDS_WITH_CONNECTORS)('%s: všetky rotácie', (defId) => {
@@ -184,9 +184,9 @@ describe('RoadLayer napojený na konektory modulov', () => {
     expect(layer.tileAt(44, 34)).toEqual({ shape: 'end', rotation: 180 });
   });
 
-  it('rampa otočená o 90°: rameno smeruje k modulu pri každej rotácii', () => {
+  it('odstavná plocha otočená o 90°: rameno smeruje k modulu pri každej rotácii', () => {
     for (const rotation of ROTATIONS) {
-      const moduleHost = host('loading_ramp_container', 20, 20, rotation);
+      const moduleHost = host('truck_holding', 20, 20, rotation);
       const g = new Grid(64, 64, () => ({ terrain: 'land' }));
       const arms = worldConnectors(moduleHost).map(connectorArm);
       for (const arm of arms) g.at(arm.x, arm.y).road = 'road';

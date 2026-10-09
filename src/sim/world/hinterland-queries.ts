@@ -2,18 +2,17 @@
  * Dotazy nad vnútrozemím pre prezentáciu a metriky (F6d, ADR-035) — čisté funkcie nad svetom, nič nemenia a nie sú hot path ticku (volá ich snapshot
  * pre UI a `simrun`):
  * - `hinterlandQueue` — kamióny, ktoré práve čakajú vo vnútrozemí pred vjazdom do prístavu, podľa misie (údaj pre inšpektor brány) a najdlhšie čakanie;
- * - `hinterlandMetrics` — počítadlá čakania vpustených kamiónov (priemer a maximum v tickoch, počet vpustených a tých, čo sa vzdali) a nedostatok stojísk
+ * - `hinterlandMetrics` — počítadlá čakania vpustených kamiónov (priemer a maximum v tickoch, počet vpustených a tých, čo sa vzdali) a nedostatok tokenov (TP, státí)
  *   pre odvoz (`pickupBayStarvationTicks`).
  *
  * Čakajúci kamión = splatná položka plánu (`dueTick ≤ tick`): návrat prázdneho (`returnPlan`), výdaj prázdneho (`pickupPlan`, booking beží) a export
  * (`arrivalPlan` bookingu po prijatí) — `delivery` je export + návrat. Kamióny na odvoz importu (`pickup`) nečakajú v zozname: ich dopyt je počet
- * kamiónov, ktoré by vznikli na náklad čakajúci na dockoch, keby bol voľný bay (`pripravené + vezené − nároky`, na kapacitu kamióna kategórie rampy).
+ * jednotiek v sklade, na ktoré kamión ešte nevznikol (`forEachPickupCandidate`).
  */
 import type { ContractId } from '../core/entity-id';
 import { CONTRACT_STATE_TRAITS } from '../contracts/contract-fsm';
 import { WAITING_MISSIONS, type WaitingMission } from '../trucks/hinterland';
-import { DockSupply } from '../trucks/dock-supply';
-import { truckDefFor } from '../trucks/truck-spawner';
+import { forEachPickupCandidate } from '../logistics/pickup-demand';
 import type { World } from './world';
 
 /** Kamióny čakajúce vo vnútrozemí podľa misie (viď hlavička súboru). */
@@ -47,22 +46,17 @@ export interface HinterlandMetrics {
   readonly collect: MissionWaitMetrics;
   /** Čakanie vpustených kamiónov všetkých misií: priemer a maximum (ticky). */
   readonly waitTicks: { readonly avg: number; readonly max: number };
-  /** Ticky, v ktorých dopyt po kamióne na odvoz nemal voľný bay. */
+  /** Ticky, v ktorých dopyt po kamióne na odvoz nemal token (TP ani státie). */
   readonly pickupBayStarvationTicks: number;
 }
 
-/** Dopyt po kamiónoch na odvoz: Σ cez prevádzkové rampy s kamiónom kategórie a ich docky `⌊(pripravené + vezené − nároky) / kapacita kamióna⌋`. */
+/** Dopyt po kamiónoch na odvoz: počet jednotiek v sklade, ktoré treba odviezť a kamión na ne ešte nevznikol (`logistics/pickup-demand.ts`; prechod len pri snapshote, nie v ticku). */
 function pickupDemand(world: World): number {
-  const ramps = world.landsideModules.ramps;
-  if (ramps.length === 0) return 0;
-  const supply = new DockSupply();
-  supply.refresh(world);
   let demand = 0;
-  for (const ramp of ramps) {
-    const def = truckDefFor(world.defs, ramp.category);
-    if (def === undefined || !world.isRampOperational(ramp)) continue;
-    for (let dock = 0; dock < ramp.docks; dock++) demand += Math.max(0, Math.floor(supply.unclaimedAt(ramp, dock) / def.capacityUnits));
-  }
+  forEachPickupCandidate(world, () => {
+    demand += 1;
+    return true;
+  });
   return demand;
 }
 

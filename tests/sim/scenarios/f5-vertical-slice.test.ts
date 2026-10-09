@@ -18,7 +18,7 @@ import { commandFromJSON } from '@sim/commands';
 import { WORLD_STATE_VERSION, World, type WorldState } from '@sim/world';
 import { must } from '../helpers/harbor';
 import { PORT_MAP } from '../world/world-fixtures';
-import { REPO_ROOT, loadScenarioFile, runScenario, stateHash, withPortBridge } from '../helpers/scenario';
+import { REPO_ROOT, loadScenarioFile, runScenario, stateHash } from '../helpers/scenario';
 import {
   CONTRACT_MAIN_CHAIN,
   DEFS,
@@ -73,10 +73,10 @@ describe('scenár vertical_slice: súbor', () => {
     expect(scenario.map).toBe('data/maps/harbor_01.json');
   });
 
-  it('je zhodný s rozložením F4 (13 úsekov ciest, 7 modulov, 2 vozidlá) + AcceptContract; bez SpawnShipDebug', () => {
-    expect(scenario).toEqual(withPortBridge(verticalSliceScenario(CONTRACT_ID, acceptEntry.atTick)));
+  it('je zhodný s rozložením `f4-layout` (8 úsekov ciest, 5 modulov, 2 vozidlá) + AcceptContract; bez SpawnShipDebug', () => {
+    expect(scenario).toEqual(verticalSliceScenario(CONTRACT_ID, acceptEntry.atTick));
     const types = scenario.commands.map((entry) => entry.command.type);
-    expect(types).toEqual([...Array<string>(13).fill('PlaceRoad'), ...Array<string>(7).fill('PlaceModule'), 'BuyVehicle', 'BuyVehicle', 'PlaceRoad', 'RemoveRoad', 'AcceptContract']);
+    expect(types).toEqual([...Array<string>(8).fill('PlaceRoad'), ...Array<string>(5).fill('PlaceModule'), 'BuyVehicle', 'BuyVehicle', 'AcceptContract']);
     expect(types).not.toContain('SpawnShipDebug');
     expect(scenario.commands.filter((entry) => entry.command.type === 'BuyVehicle').map((entry) => entry.command['vehicleDefId'])).toEqual([
       'straddle_carrier',
@@ -129,8 +129,8 @@ const PROBES: readonly Probe[] = [
   { name: 'loď na ceste (ship_en_route)', when: (_world, c) => c.state === 'ship_en_route' },
   { name: 'uprostred vykládky (unloading, 0 < unitsUnloaded < objem)', when: (_world, c) => c.state === 'unloading' && c.unitsUnloaded > 0 && c.unitsUnloaded < c.volumeUnits },
   {
-    name: 'uprostred exportu (exporting, náklad na rampe alebo v kamióne)',
-    when: (world, c) => c.state === 'exporting' && c.unitsExported < c.volumeUnits && world.cargo.countByKind('at_ramp') + world.cargo.countByKind('in_truck') > 0,
+    name: 'uprostred exportu (náklad v kamióne)',
+    when: (world, c) => (c.state === 'exporting' || c.state === 'unloading') && c.unitsExported < c.volumeUnits && world.cargo.countByKind('in_truck') > 0,
   },
   { name: 'po prvej uzávierke dňa', when: (world) => economyOf(world).daily.length === 1 },
   { name: 'po dokončení (completed)', when: (_world, c) => c.state === 'completed' },
@@ -261,7 +261,7 @@ describe('scenár vertical_slice: beh 60 000 tickov', () => {
         .filter((move) => move.tick === tick && move.event.reason === reason)
         .reduce((sum, move) => sum + move.event.deltaCents, 0);
     for (let day = 1; day <= daily.length; day++) {
-      expect(sumAt('maintenance', day * TICKS_PER_DAY), `údržba, deň ${String(day)}`).toBe(-323_000);
+      expect(sumAt('maintenance', day * TICKS_PER_DAY), `údržba, deň ${String(day)}`).toBe(-293_000);
       expect(sumAt('wages', day * TICKS_PER_DAY), `mzdy, deň ${String(day)}`).toBe(-61_000);
     }
     expect(run.ofSim('MoneyChanged').filter((move) => (move.event.reason === 'maintenance' || move.event.reason === 'wages') && move.tick % TICKS_PER_DAY !== 0)).toEqual([]);

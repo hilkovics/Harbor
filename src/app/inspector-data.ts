@@ -28,21 +28,19 @@
 import { BuyVehicleCommand, RemoveModuleCommand, SellVehicleCommand } from '@sim/commands';
 import type { EntityId } from '@sim/core';
 import type { DefRegistry, VehicleDef } from '@sim/defs';
-import { BerthModule, CRANE_CYCLE_TRAITS, CraneModule, EmptyDepot, LoadingRamp, StorageModule, TruckGate, VehicleDepot, WaitingArea, YardBlock, type Module } from '@sim/modules';
+import { BerthModule, CRANE_CYCLE_TRAITS, CraneModule, EmptyDepot, StorageModule, TruckGate, VehicleDepot, YardBlock, type Module } from '@sim/modules';
 import type { Ship } from '@sim/ships';
 import type { VehicleState } from '@sim/vehicles';
 import { depotCargoSplit, hinterlandQueue, shipCargoSplit, storageCargoSplit, type World } from '@sim/world';
 import {
   craneStateLabel,
   craneStateOk,
-  rampInoperativeText,
   type DepotVehicleData,
   type LashingData,
   type DepotVehicleState,
   type EmptyDepotData,
   type HinterlandData,
   type ModuleInspectorData,
-  type RampDockData,
 } from '@ui/module-inspector';
 import { REASON_TEXT } from './build-feedback';
 import { hasRoadConnector } from './entities-vm';
@@ -292,31 +290,6 @@ export function hinterlandData(world: World): HinterlandData {
   return { pickup, delivery, collect, total, oldestWaitTicks, scale: { ticksPerHour: world.clock.ticksPerHour, ticksPerDay: world.clock.ticksPerDay } };
 }
 
-function waitingAreaFields(area: WaitingArea): Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'waitingArea'> {
-  return { stateLabel: MODULE_STATE_ACTIVE, ok: true, waitingArea: { bays: area.bays, occupied: area.occupiedBays, reserved: area.reservedBays } };
-}
-
-/** Kamión v docku: dock drží kamión, ktorý v ňom práve nakladá (`loading`); kamión na ceste k docku ešte nestojí. */
-function truckLoadingAt(world: World, ramp: LoadingRamp, dock: number): boolean {
-  const truckId = ramp.dockTruck(dock);
-  return truckId !== null && world.trucks.get(truckId)?.state === 'loading';
-}
-
-/** Rampa: docky so staging sloty; neprevádzková rampa nesie text dôvodu (bez známeho dôvodu ho UI nahradí všeobecným). */
-function rampFields(bridge: InspectorBridge, ramp: LoadingRamp): Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'ramp'> {
-  const status = bridge.world.rampStatus(ramp);
-  const docks: RampDockData[] = [];
-  for (let dock = 0; dock < ramp.docks; dock++) {
-    docks.push({ staged: ramp.stagedAt(dock), capacity: ramp.stagingPerDock, truck: truckLoadingAt(bridge.world, ramp, dock) });
-  }
-  const reason = rampInoperativeText(status.reason);
-  return {
-    stateLabel: MODULE_STATE_ACTIVE,
-    ok: true,
-    ramp: { docks, operational: status.operational, ...(reason === undefined ? {} : { inoperativeReason: reason }) },
-  };
-}
-
 /** Polia závislé od druhu modulu (badge stavu + sekcie kotviska / žeriavu / skladu / depa / brány / stojiska / rampy). */
 function kindFields(bridge: InspectorBridge, module: Module): Pick<ModuleInspectorData, 'stateLabel' | 'ok'> & Partial<ModuleInspectorData> {
   if (module instanceof BerthModule) return berthFields(bridge, module);
@@ -324,8 +297,6 @@ function kindFields(bridge: InspectorBridge, module: Module): Pick<ModuleInspect
   if (module instanceof StorageModule) return storageFields(bridge, module);
   if (module instanceof VehicleDepot) return depotFields(bridge, module);
   if (module instanceof TruckGate) return gateFields(bridge, module);
-  if (module instanceof WaitingArea) return waitingAreaFields(module);
-  if (module instanceof LoadingRamp) return rampFields(bridge, module);
   return { stateLabel: MODULE_STATE_ACTIVE, ok: true };
 }
 

@@ -13,7 +13,7 @@ import { World } from '@sim/world';
 import { must } from '../helpers/harbor';
 import {
   DEFS,
-  MAP,
+  PORT_MAP,
   Run5,
   TICKS_PER_DAY,
   acceptContract,
@@ -41,7 +41,7 @@ describe('invarianty F5: 8 dní s poolom, prijímaním a odmietaním ponúk', ()
   let run: Run5;
 
   beforeAll(() => {
-    world = World.create(DEFS, MAP, seed);
+    world = World.create(DEFS, PORT_MAP, seed);
     run = new Run5(world, portScenario('f5_invariants', seed), {
       fullAudit: true,
       onTick: (self, tickEvents) => {
@@ -82,14 +82,14 @@ describe('invarianty F5: 8 dní s poolom, prijímaním a odmietaním ponúk', ()
     expect(completedOf(world)).toBe(completed.length);
   });
 
-  it('dispatcher: na rampu sa jednotky kontraktu dostanú najskôr po prechode kontraktu do unloading', () => {
-    const toRamp = run.ofSim('CargoMoved').filter((entry) => entry.event.to.kind === 'at_ramp');
-    expect(toRamp.length).toBeGreaterThan(0);
-    for (const entry of toRamp) {
+  it('dispatcher: do kamiónov sa jednotky kontraktu dostanú najskôr po prechode kontraktu do unloading', () => {
+    const toTruck = run.ofSim('CargoMoved').filter((entry) => entry.event.to.kind === 'in_truck');
+    expect(toTruck.length).toBeGreaterThan(0);
+    for (const entry of toTruck) {
       const contractId = run.contractOfUnit(entry.event.unitId);
       if (contractId === null || contractId === undefined) continue;
       const unloadingAt = tickOfState(run.events, contractId, 'unloading');
-      expect(unloadingAt, `kontrakt ${String(contractId)} nikdy nebol unloading, ale jeho jednotka je na rampe`).toBeDefined();
+      expect(unloadingAt, `kontrakt ${String(contractId)} nikdy nebol unloading, ale jeho jednotka je v kamióne`).toBeDefined();
       expect(entry.tick, `jednotka ${String(entry.event.unitId)} kontraktu ${String(contractId)}`).toBeGreaterThanOrEqual(unloadingAt ?? Infinity);
     }
   });

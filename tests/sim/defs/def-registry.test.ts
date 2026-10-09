@@ -408,33 +408,6 @@ describe('DefRegistry.fromRaw', () => {
   });
 });
 
-describe('krížová kontrola rampa × kamión (review T04-11 f)', () => {
-  const rampIndex = modulesJson.items.findIndex((item) => item.kind === 'ramp');
-  const withTruckCapacity = (capacityUnits: number) => ({
-    ...rawDefs(),
-    trucks: { ...trucksJson, items: trucksJson.items.map((item) => ({ ...item, capacityUnits })) },
-  });
-
-  it('kamión kategórie rampy s capacityUnits > stagingPerDock → DefError na stagingPerDock rampy', () => {
-    const staging = modulesJson.items[rampIndex].params.stagingPerDock as number;
-    const error = expectDefError(() => DefRegistry.fromRaw(withTruckCapacity(staging + 1)), 'modules', `/items/${String(rampIndex)}/params/stagingPerDock`);
-    expect(error.problem).toContain(`capacityUnits ${String(staging + 1)} > stagingPerDock ${String(staging)}`);
-  });
-
-  it('capacityUnits = stagingPerDock je platné; rozhoduje prvý kamión kategórie v poradí trucks.json (ten pošle spawner)', () => {
-    const staging = modulesJson.items[rampIndex].params.stagingPerDock as number;
-    expect(() => DefRegistry.fromRaw(withTruckCapacity(staging))).not.toThrow();
-    const big = { ...trucksJson.items[0], id: 'truck_big_test', capacityUnits: staging + 1 };
-    expect(() => DefRegistry.fromRaw({ ...rawDefs(), trucks: { ...trucksJson, items: [...trucksJson.items, big] } })).not.toThrow();
-    expectDefError(() => DefRegistry.fromRaw({ ...rawDefs(), trucks: { ...trucksJson, items: [big, ...trucksJson.items] } }), 'modules', `/items/${String(rampIndex)}/params/stagingPerDock`);
-  });
-
-  it('rampa bez kamióna svojej kategórie je v registri prípustná (existenciu v zabalených dátach overí validate:defs)', () => {
-    const noContainer = { ...rawDefs(), trucks: { ...trucksJson, items: trucksJson.items.map((item) => ({ ...item, cargoCategories: ['bulk'] })) } };
-    expect(() => DefRegistry.fromRaw(noContainer)).not.toThrow();
-  });
-});
-
 describe('loadBundledDefs', () => {
   it('bundled defy sa načítajú s hodnotami z data/defs', () => {
     const registry = loadBundledDefs();

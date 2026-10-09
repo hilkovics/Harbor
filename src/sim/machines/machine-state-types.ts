@@ -17,9 +17,11 @@ export type CycleKind = 'put' | 'take' | 'relocate';
 export interface MachineCycle {
   readonly kind: CycleKind;
   readonly unitId: number;
-  /** Vozidlo na TP (`put`, `take`), pri `relocate` `null`. */
+  /** Vozidlo alebo kamión na TP (`put`, `take`; kamión, keď je `truck` pravda — id entít sú jedinečné), pri `relocate` `null`. */
   readonly vehicleId: number | null;
-  /** Job vozidla (`put`, `take`), pri `relocate` `null`. */
+  /** Partner cyklu je kamión (R4, ADR-041 bod 4): job `in_storage ↔ in_truck`, kamión sa po odovzdaní uvoľní sám (zánikom jobu). */
+  readonly truck: boolean;
+  /** Job vozidla alebo kamióna (`put`, `take`), pri `relocate` `null`. */
   readonly jobId: number | null;
   /** Slot odkiaľ sa zdvíha (`take`, `relocate`); pri `put` `null` (zdvih z vozidla na TP). */
   readonly fromSlot: number | null;

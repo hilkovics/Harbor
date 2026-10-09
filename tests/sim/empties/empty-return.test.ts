@@ -73,8 +73,8 @@ describe('planEmptyReturn — plán návratu po odchode importu', () => {
   });
 });
 
-describe('návrat prázdneho — kamión, brána, rampa, depo', () => {
-  it('splatný návrat: kamión delivery s novou prázdnou jednotkou → EmptyReturned → vykládka na rampe → job → uložené v depe (EmptyStored bez fallbacku)', () => {
+describe('návrat prázdneho — kamión, brána, TP depa', () => {
+  it('splatný návrat: kamión delivery s novou prázdnou jednotkou → EmptyReturned → vyloženie na TP depa (straddle carrier) → job → uložené v depe (EmptyStored bez fallbacku)', () => {
     const world = emptyWorld({ vehicles: TWO_STRADDLES });
     world.emptyFlow.scheduleReturn(world.clock.tick + 5, 'northern_star');
     const events = runUntil(world, (w) => w.emptyFlow.returnPlan.length === 0 && emptiesByLocation(w)['in_storage'] === 1, 3_000, 'uloženie prázdneho');
@@ -85,9 +85,9 @@ describe('návrat prázdneho — kamión, brána, rampa, depo', () => {
     const [stored] = eventsOf(events, 'EmptyStored');
     expect(stored).toMatchObject({ unitId: returned.unitId, lineId: 'northern_star', moduleId: depot.id, fallback: false });
     expect(world.cargo.get(returned.unitId)).toMatchObject({ direction: 'empty', lineId: 'northern_star', contractId: null, status: 'available', location: { kind: 'in_storage', moduleId: depot.id } });
-    // reťaz presunov bez teleportácie: in_truck → at_ramp → in_vehicle → in_storage (ledger povoľuje len tieto prechody)
+    // reťaz presunov bez teleportácie: in_truck → in_vehicle → in_storage (ledger povoľuje len tieto prechody)
     const moved = eventsOf(events, 'CargoMoved').filter((event) => event.unitId === returned.unitId).map((event) => `${event.from.kind}>${event.to.kind}`);
-    expect(moved).toEqual(['in_truck>at_ramp', 'at_ramp>in_vehicle', 'in_vehicle>in_storage']);
+    expect(moved).toEqual(['in_truck>in_vehicle', 'in_vehicle>in_storage']);
     // kamión odíde prázdny a zmizne z mapy
     runUntil(world, (w) => w.trucks.size === 0, 3_000, 'odchod kamióna');
     expect(world.trucks.size).toBe(0);
@@ -95,8 +95,8 @@ describe('návrat prázdneho — kamión, brána, rampa, depo', () => {
     expect(world.cargo.createdCount - world.cargo.liveCount - world.cargo.exportedCount - world.cargo.shippedCount).toBe(0);
   });
 
-  it('plán sa spotrebuje až po vzniku kamióna; bez prevádzkovej rampy položka počká a nič nezanikne', () => {
-    const world = emptyWorld({ vehicles: TWO_STRADDLES, landside: ['gate', 'waiting_area'] });
+  it('plán sa spotrebuje až po vzniku kamióna; bez brány položka počká a nič nezanikne', () => {
+    const world = emptyWorld({ vehicles: TWO_STRADDLES, landside: [] });
     world.emptyFlow.scheduleReturn(world.clock.tick + 2, 'blue_anchor');
     run(world, 50);
     expect(world.emptyFlow.returnPlan).toHaveLength(1);

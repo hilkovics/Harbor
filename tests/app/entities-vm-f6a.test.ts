@@ -1,16 +1,15 @@
 // T6A-07b: napojenie render VM na simuláciu F6a — smer cyklu žeriavu, náklad na palube podľa smeru a lashing lode, odznaky
-// VGM hold (sklad / rampa / berth cez `World.holdIndex`) a manéver exportného kamióna (`unloading`). Syntetické prípady
+// VGM hold (sklad / berth cez `World.holdIndex`) a exportné kamióny (R4: obsluha na TP dvora). Syntetické prípady
 // idú nad živým svetom s nákladom presunutým cez ledger; kamióny a hold nad skutočným scenárom `export_inbound`.
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { ModuleVM, TruckVM } from '@render/view-models';
-import { dockHeading, findDockCenter, type SlotHost } from '@render/module-slots';
+import type { ModuleVM } from '@render/view-models';
 import type { EntityId } from '@sim/core';
 import { commandFromJSON } from '@sim/commands';
-import { CRANE_CYCLES, LoadingRamp, type CraneCycle } from '@sim/modules';
+import { CRANE_CYCLES, type CraneCycle } from '@sim/modules';
 import type { Ship } from '@sim/ships';
 import { EntitiesVMBuilder, craneVMs, entitiesVM, heldByModule, moduleVMs, shipVMs } from '@app/entities-vm';
 import type { LashingTotals } from '@app/lashing';
-import { CHAIN_AREA_ID, CHAIN_GATE_ID, CHAIN_RAMP_ID, YARD_ID, buildLandside, buildLogistics, createApp, type App } from './app-fixtures';
+import { CHAIN_GATE_ID, CHAIN_GATE_OUT_ID, YARD_ID, buildFullChain, createApp, createPortApp, type App } from './app-fixtures';
 import { addRoundtripOffer, createExportUnit, moveChain, toShipChain, toStorageChain } from './f6a-fixtures';
 import { createScenarioApp } from './f6a-scenario';
 
@@ -102,9 +101,8 @@ describe('ShipVM.cargoSplit a ShipVM.lashing', () => {
 
 describe('ModuleVM.held (VGM hold)', () => {
   function logisticsApp(): App {
-    const app = createApp();
-    buildLogistics(app);
-    buildLandside(app);
+    const app = createPortApp();
+    buildFullChain(app, { units: 0, vehicles: 0 });
     return app;
   }
 
@@ -124,37 +122,27 @@ describe('ModuleVM.held (VGM hold)', () => {
     for (const vm of moduleVMs(app.world)) expect(vm).not.toHaveProperty('held');
   });
 
-  it('sklad: počet zadržaných jednotiek (nezadržané sa nepočítajú); rampa: počet po dockoch; berth: sloty apronu vzostupne', () => {
+  it('sklad: počet zadržaných jednotiek (nezadržané sa nepočítajú); berth: sloty apronu vzostupne', () => {
     const app = logisticsApp();
-    const ramp = app.world.modules.get(CHAIN_RAMP_ID);
-    if (!(ramp instanceof LoadingRamp)) throw new Error('rampa chýba');
-    expect(ramp.docks).toBeGreaterThan(1);
-
     holdUnit(app, toStorageChain(YARD_ID, 0));
     const free = createExportUnit(app.world, addRoundtripOffer(app.world).exportContract);
     moveChain(app.world, free.id, toStorageChain(YARD_ID, 1)); // v sklade, ale bez hold
-    const lastDock = ramp.docks - 1;
-    holdUnit(app, [{ kind: 'at_ramp', rampId: CHAIN_RAMP_ID, dock: lastDock }]);
-    holdUnit(app, [{ kind: 'at_ramp', rampId: CHAIN_RAMP_ID, dock: lastDock }]);
     holdUnit(app, [
-      { kind: 'at_ramp', rampId: CHAIN_RAMP_ID, dock: 0 },
       { kind: 'in_vehicle', vehicleId: 9003 as EntityId },
       { kind: 'on_apron', berthId: ROOT_BERTH, slot: 3 },
     ]);
     holdUnit(app, [
-      { kind: 'at_ramp', rampId: CHAIN_RAMP_ID, dock: 0 },
       { kind: 'in_vehicle', vehicleId: 9003 as EntityId },
       { kind: 'on_apron', berthId: ROOT_BERTH, slot: 1 },
     ]);
     holdUnit(app, []); // ostáva v kamióne (miesto vzniku exportu): žiadny modul ho nenesie
-    expect(app.world.holdIndex.size).toBe(6);
+    expect(app.world.holdIndex.size).toBe(4);
 
     const byId = new Map<number, ModuleVM>(moduleVMs(app.world).map((vm) => [vm.id, vm]));
     expect(byId.get(YARD_ID)?.held).toEqual({ count: 1 });
-    expect(byId.get(CHAIN_RAMP_ID)?.held).toEqual({ count: 2, docks: Array.from({ length: ramp.docks }, (_, dock) => (dock === lastDock ? 2 : 0)) });
     expect(byId.get(ROOT_BERTH)?.held).toEqual({ count: 2, slots: [1, 3] });
     expect(byId.get(CHAIN_GATE_ID)).not.toHaveProperty('held');
-    expect(byId.get(CHAIN_AREA_ID)).not.toHaveProperty('held');
+    expect(byId.get(CHAIN_GATE_OUT_ID)).not.toHaveProperty('held');
   });
 
   it('VM modulov sa prepočíta len pri zmene revízie: VgmHoldStarted / VgmHoldReleased ju zvyšujú, stav pole `held` v snapshote', () => {
@@ -189,27 +177,22 @@ describe('ModuleVM.held (VGM hold)', () => {
 describe('scenár export_inbound: kamióny s exportom a VGM hold v skutočnom sime', () => {
   const app = createScenarioApp();
   const problems: string[] = [];
-  const seen = { unloading: 0, arrival: 0, afterUnload: 0, deliveryLoaded: 0, deliveryEmpty: 0, heldSamples: 0, heldRamp: 0, heldStorage: 0, maxHeld: 0 };
-  let last = new Map<number, TruckVM>();
-  let lastTick = -1;
+  const seen = { atTp: 0, deliveryLoaded: 0, deliveryEmpty: 0, heldSamples: 0, heldStorage: 0, maxHeld: 0 };
 
   const check = (condition: boolean, message: string): void => {
     if (!condition) problems.push(`tick ${String(app.world.clock.tick)}: ${message}`);
   };
-  const slotHost = (module: LoadingRamp): SlotHost => ({ defId: module.def.id, x: module.origin.x, y: module.origin.y, w: module.size.w, h: module.size.h, rotation: module.rotation });
-  const ARRIVING = ['to_gate', 'gate_queue', 'to_bay', 'waiting', 'to_dock'];
-  const LEAVING = ['to_gate_out', 'gate_queue_out', 'to_portal'];
+  const ARRIVING = ['to_gate', 'gate_queue', 'gate_pass', 'to_holding', 'holding', 'to_tp'];
+  const LEAVING = ['to_gate_out', 'gate_queue_out', 'gate_pass_out', 'to_portal'];
 
   function sampleTrucks(): void {
-    const snapshot = app.bridge.snapshot();
-    const ramp = [...app.world.modules.values()].find((module): module is LoadingRamp => module instanceof LoadingRamp);
-    for (const vm of snapshot.trucks) {
+    for (const vm of app.bridge.snapshot().trucks) {
       const truck = app.world.trucks.get(vm.id as EntityId);
-      if (truck === undefined || ramp === undefined) {
-        check(false, 'kamión alebo rampa chýba');
+      if (truck === undefined) {
+        check(false, 'kamión chýba');
         continue;
       }
-      const before = last.get(vm.id);
+      if (vm.state === 'at_tp' || vm.state === 'at_edge_tp') seen.atTp += 1;
       if (truck.mission === 'delivery' && ARRIVING.includes(vm.state)) {
         check(vm.loaded, `delivery kamión #${String(vm.id)} v stave ${vm.state} má byť naložený`);
         seen.deliveryLoaded += 1;
@@ -217,26 +200,7 @@ describe('scenár export_inbound: kamióny s exportom a VGM hold v skutočnom si
         check(!vm.loaded, `delivery kamión #${String(vm.id)} v stave ${vm.state} má byť prázdny`);
         seen.deliveryEmpty += 1;
       }
-      if (vm.state === 'unloading') {
-        seen.unloading += 1;
-        const dock = findDockCenter(slotHost(ramp), truck.dock);
-        // póza v doku: stred docku, kabína von z rampy; sim poloha (vonkajšia bunka konektora) je východisko manévru
-        check(dock !== undefined && vm.x === dock.x && vm.y === dock.y, `unloading kamión #${String(vm.id)} nestojí v strede docku`);
-        check(dock !== undefined && vm.heading === dockHeading(truck, dock), `unloading kamión #${String(vm.id)} má zlý kurz`);
-        check(vm.approach?.x === truck.x && vm.approach.y === truck.y && vm.approach.heading === truck.heading, `unloading kamión #${String(vm.id)} nemá approach zo simu`);
-        check(vm.prevState !== undefined, `unloading kamión #${String(vm.id)} nemá prevState`);
-        if (vm.prevState === 'to_dock') {
-          seen.arrival += 1;
-          check([vm.prevX, vm.prevY, vm.prevHeading].join() === [vm.x, vm.y, vm.heading].join(), 'príjazd do docku: prev = curr');
-        }
-      } else if (before?.state === 'unloading' && app.world.clock.tick - lastTick === 1) {
-        seen.afterUnload += 1;
-        check(vm.approach === undefined, 'po vykládke už nie je approach');
-        check(vm.prevX === vm.x && vm.prevY === vm.y, 'výjazd z docku: prev = curr');
-      }
     }
-    last = new Map(snapshot.trucks.map((vm) => [vm.id, vm] as const));
-    lastTick = app.world.clock.tick;
   }
 
   function sampleHold(): void {
@@ -246,22 +210,14 @@ describe('scenár export_inbound: kamióny s exportom a VGM hold v skutočnom si
     check(total <= app.world.holdIndex.size, 'súčet held.count presahuje index zadržaných jednotiek');
     seen.maxHeld = Math.max(seen.maxHeld, app.world.holdIndex.size);
     if (held.length > 0) seen.heldSamples += 1;
-    for (const vm of held) {
-      if (vm.ramp !== undefined) {
-        seen.heldRamp += 1;
-        const docks = vm.held?.docks ?? [];
-        check(docks.length === vm.ramp.docks && docks.reduce((sum, count) => sum + count, 0) === vm.held?.count, 'held.docks nezodpovedá rampe');
-      } else if (vm.storage !== undefined) {
-        seen.heldStorage += 1;
-      }
-    }
+    for (const vm of held) if (vm.storage !== undefined) seen.heldStorage += 1;
   }
 
   beforeAll(() => {
-    // Krok 1 tick, kým je niektorý kamión pred dockom alebo v ňom (to_dock → unloading → výjazd), inak 10 ticků; do konca VGM hold.
+    // Krok 10 tickov; do konca VGM hold.
     app.advanceTo(
       30_000,
-      (a) => ([...a.world.trucks.values()].some((truck) => truck.state === 'to_dock' || truck.state === 'unloading') ? 1 : 10),
+      () => 10,
       () => {
         sampleTrucks();
         sampleHold();
@@ -269,21 +225,15 @@ describe('scenár export_inbound: kamióny s exportom a VGM hold v skutočnom si
     );
   }, 120_000);
 
-  it('exportný kamión vykladá na dock rampy: unloading má pózu v doku, approach, prevState a prev = curr pri príjazde aj pri výjazde', () => {
+  it('exportný kamión: na TP dvora vykladá, delivery kamión je naložený na ceste k TP a prázdny po vyložení (loaded zo simu)', () => {
     expect(problems).toEqual([]);
-    expect(seen.unloading).toBeGreaterThan(0);
-    expect(seen.arrival).toBeGreaterThan(0);
-    expect(seen.afterUnload).toBeGreaterThan(0);
-  });
-
-  it('delivery kamión je naložený na ceste k rampe a prázdny po vyložení (loaded zo simu)', () => {
+    expect(seen.atTp).toBeGreaterThan(0);
     expect(seen.deliveryLoaded).toBeGreaterThan(0);
     expect(seen.deliveryEmpty).toBeGreaterThan(0);
   });
 
-  it('VGM hold: jednotka zadržaná na doku rampy a potom v sklade nesie odznak `held`, po uvoľnení odznak zmizne', () => {
+  it('VGM hold: jednotka zadržaná v sklade nesie odznak `held`, po uvoľnení odznak zmizne', () => {
     expect(seen.heldSamples).toBeGreaterThan(0);
-    expect(seen.heldRamp).toBeGreaterThan(0);
     expect(seen.heldStorage).toBeGreaterThan(0);
     // dve jednotky bookingu #10 s chýbajúcim VGM (Rng); naraz zadržané najviac dve
     expect(seen.maxHeld).toBeGreaterThanOrEqual(1);

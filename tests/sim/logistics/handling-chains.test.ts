@@ -54,15 +54,15 @@ describe('chainKindOf / chainOfJob / vehicleMayServe', () => {
   const berth = id(1);
   const crane = [...w.modules.values()].find((module) => module.kind === 'crane')?.id as EntityId;
 
-  const job = (from: 'hook' | 'storage' | 'ramp', to: 'hook' | 'storage', block: RtgBlock | ContainerYard): TransportJob => {
-    const location = (end: 'hook' | 'storage' | 'ramp', slot: number) =>
-      end === 'hook' ? ({ kind: 'in_crane', craneId: crane } as const) : end === 'storage' ? ({ kind: 'in_storage', moduleId: block.id, slot } as const) : ({ kind: 'at_ramp', rampId: id(90), dock: 0 } as const);
+  const job = (from: 'hook' | 'storage' | 'truck', to: 'hook' | 'storage', block: RtgBlock | ContainerYard): TransportJob => {
+    const location = (end: 'hook' | 'storage' | 'truck', slot: number) =>
+      end === 'hook' ? ({ kind: 'in_crane', craneId: crane } as const) : end === 'storage' ? ({ kind: 'in_storage', moduleId: block.id, slot } as const) : ({ kind: 'in_truck', truckId: id(90) } as const);
     return new TransportJob({
       id: id(500),
       unitIds: [id(501)],
       from: location(from, 0),
       to: location(to, 1),
-      fromModuleId: from === 'hook' ? berth : from === 'storage' ? block.id : id(90),
+      fromModuleId: from === 'hook' ? berth : block.id,
       toModuleId: to === 'hook' ? berth : block.id,
       createdTick: 0,
     });
@@ -71,8 +71,8 @@ describe('chainKindOf / chainOfJob / vehicleMayServe', () => {
   it('vykládka je in_crane → in_storage, nakládka in_storage → in_crane; job bez háku nemá reťaz', () => {
     expect(chainKindOf(job('hook', 'storage', rtg))).toBe('discharge');
     expect(chainKindOf(job('storage', 'hook', rtg))).toBe('load');
-    expect(chainKindOf(job('ramp', 'storage', rtg))).toBeUndefined();
-    expect(chainOfJob(w, job('ramp', 'storage', rtg))).toBeUndefined();
+    expect(chainKindOf(job('truck', 'storage', rtg))).toBeUndefined();
+    expect(chainOfJob(w, job('truck', 'storage', rtg))).toBeUndefined();
   });
 
   it('reťaz podľa systému bloku: RTG blok → rtg, dvor straddle → straddle', () => {
@@ -95,7 +95,7 @@ describe('chainKindOf / chainOfJob / vehicleMayServe', () => {
     ['nakládka z RTG bloku', 'storage', 'hook', 'rtg', true, false],
     ['vykládka do dvora straddle', 'hook', 'storage', 'yard', false, true],
     ['nakládka zo dvora straddle', 'storage', 'hook', 'yard', false, true],
-    ['sklad z rampy (bez háku)', 'ramp', 'storage', 'rtg', false, true],
+    ['sklad z kamióna (bez háku)', 'truck', 'storage', 'rtg', false, true],
   ] as const)('%s: ťahač %s, straddle %s', (_name, from, to, which, tractor, straddle) => {
     const target = job(from, to, which === 'rtg' ? rtg : yard);
     expect(vehicleMayServe(w, TRACTOR, target)).toBe(tractor);

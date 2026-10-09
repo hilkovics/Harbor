@@ -127,8 +127,7 @@ describe('CommandRegistry (kostra T01-03)', () => {
       // T06-08b (ADR-031 dodatok): úsek kotvísk je, ale loď k nemu nedopláva
       'berth_unreachable',
       // F6a (ADR-032): pripravenosť pozemnej strany pri AcceptContract export / roundtrip bookingu
-      'no_ramp_for_category',
-      'ramp_inoperative',
+      'no_gate_for_category',
       'no_storage_for_category',
       // TR3-02 (ADR-040): SetBlockPriority, SetCraneGang
       'invalid_priority',

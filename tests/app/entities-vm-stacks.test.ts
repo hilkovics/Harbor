@@ -7,7 +7,7 @@ import type { EntityId } from '@sim/core';
 import { YardBlock } from '@sim/modules';
 import type { World } from '@sim/world';
 import { moduleVMs, truckVMs, vehicleVMs } from '@app/entities-vm';
-import { YARD_ID, buildFullChain, buildLogistics, buyVehicles, createApp, frameUntil, type App } from './app-fixtures';
+import { YARD_ID, buildFullChain, buildLogistics, buyVehicles, createApp, createPortApp, frameUntil, type App } from './app-fixtures';
 
 const TEU = 'container_teu';
 const id = (value: number): EntityId => value as EntityId;
@@ -20,9 +20,7 @@ function labels(lineId: string | null, sizeFt: 20 | 40, direction: 'import' | 'e
 function inVehicle(world: World, input: CargoUnitLabelsInput, vehicleId: EntityId = id(903)): CargoUnit {
   const empty = input.direction === 'empty';
   const unit = world.cargo.create(TEU, empty ? { kind: 'in_truck', truckId: id(950) } : { kind: 'on_ship', shipId: id(900) }, null, input);
-  if (empty) {
-    world.cargo.move(unit.id, { kind: 'at_ramp', rampId: id(960), dock: 0 });
-  } else {
+  if (!empty) {
     world.cargo.move(unit.id, { kind: 'in_crane', craneId: id(901) });
     world.cargo.move(unit.id, { kind: 'on_apron', berthId: id(902), slot: 0 });
   }
@@ -106,7 +104,7 @@ describe('VehicleVM.cargo', () => {
 
 describe('TruckVM.cargo', () => {
   it('kamión v behu reťazca: `cargo` je prítomné práve pri `loaded` a zhoduje sa so štítkami prvej jednotky na kamióne', () => {
-    const app = createApp();
+    const app = createPortApp();
     buildFullChain(app, { units: 6 });
     frameUntil(app, () => truckVMs(app.world).some((truck) => truck.loaded), 6000);
     for (const vm of truckVMs(app.world)) {

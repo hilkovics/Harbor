@@ -7,6 +7,8 @@
  * Počas R1–R6 každá fáza zmení tvar v11 bez migrácie a bez zvýšenia verzie; migračný reťazec sa obnoví od vydania (F13).
  * Súbor ostáva domovom verzie, aby sa ten reťazec mal kam vrátiť.
  *
+ * Tvar v13 (R4, TR4-02, ADR-041 dodatok) = v12 + kamión s lístkom (`blockId`, `jobId`, `unitId`, `tpCell`, `holdingId`, `stall`, `phase`, `gateInTick`; bez `rampId`, `dock`, `waitingAreaId`, `bay`), joby
+ * `in_storage ↔ in_truck`, cyklus stroja s kamiónom (`truck`) a TTT v `hinterland.truckTurn`; moduly `loading_ramp_*` a `truck_waiting_area` zanikli (clean break ADR-036 bod 2).
  * Tvar v12 (R4, ADR-041) = v11 + pruhy brány s plánom prechodu a režimom (`runtime` modulu `gate`), predbránová plocha (`pre_gate`, rady kamiónov) a kamióny so stavmi `to_pre_gate` / `pre_gate` a poliami `gateOutId`,
  * `preGateId`, `row` (clean break ADR-036 bod 2, rovnako ako v11).
  * Tvar v11 = v10 + kľúč `machines` (R3, ADR-040 dodatok) = tvar v9 (F6d) + `machines`: kľúče `WORLD_STATE_KEYS` (world-state.ts) v poradí `serialize()`.
@@ -14,10 +16,10 @@
 import { WorldStateError, describeValue, isPlainObject } from './state-check';
 
 /** Aktuálna verzia `WorldState` — `serialize()` vždy vracia ju. */
-export const WORLD_STATE_VERSION = 12;
+export const WORLD_STATE_VERSION = 13;
 
 /** Najstaršia verzia, ktorú vie `World.deserialize` načítať (bez migrácií rovná aktuálnej, ADR-036). */
-export const OLDEST_WORLD_STATE_VERSION = 12;
+export const OLDEST_WORLD_STATE_VERSION = 13;
 
 /**
  * Save s verziou sveta, ktorú táto verzia hry nenačíta (`version` je celé číslo iné než `WORLD_STATE_VERSION`). Väčšinou ide

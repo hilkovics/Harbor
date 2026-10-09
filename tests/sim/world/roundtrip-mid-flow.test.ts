@@ -21,7 +21,7 @@ import { assertCargoConservation } from '../helpers/invariants';
 import { loadScenarioFile, runScenario, type Scenario } from '../helpers/scenario';
 
 const DEFS = loadBundledDefs();
-const MAP = loadBundledMap();
+const PORT_MAP = loadBundledMap();
 const RUN_TICKS = 30_000;
 const HEAVY_TIMEOUT_MS = 180_000;
 
@@ -38,7 +38,7 @@ interface Baseline {
 
 /** Nepretržitý beh s odtlačkami udalostí po tickoch a savmi v bodoch `splits`. */
 function runBaseline(scenario: Scenario, splits: readonly number[]): Baseline {
-  const world = World.create(DEFS, MAP, scenario.seed);
+  const world = World.create(DEFS, PORT_MAP, scenario.seed);
   const eventPrints: string[] = [];
   const saves = new Map<number, string>();
   const probes = new Map<number, { contracts: string[]; ships: string[]; trucks: number }>();
@@ -63,7 +63,7 @@ function resume(scenario: Scenario, baseline: Baseline, split: number): { firstE
   const text = baseline.saves.get(split);
   if (text === undefined) throw new Error(`save v ticku ${String(split)} chýba`);
   const saved = JSON.parse(text) as WorldState;
-  const world = World.deserialize(DEFS, MAP, saved);
+  const world = World.deserialize(DEFS, PORT_MAP, saved);
   const loadedHash = stateHash(world);
   let firstEventMismatch: number | null = null;
   runScenario(world, scenario, RUN_TICKS, {
@@ -79,7 +79,7 @@ function resume(scenario: Scenario, baseline: Baseline, split: number): { firstE
 
 describe('roundtrip uprostred vertical_slice (F5) → rovnaký ďalší priebeh a hash na konci', () => {
   const scenario = loadScenarioFile('vertical_slice');
-  const SPLITS = [3_000, 9_000, 12_000, 16_000];
+  const SPLITS = [3_000, 9_000, 12_000, 18_000];
   let baseline: Baseline;
 
   beforeAll(() => {
@@ -91,7 +91,7 @@ describe('roundtrip uprostred vertical_slice (F5) → rovnaký ďalší priebeh 
     expect(baseline.probes.get(9_000)).toMatchObject({ contracts: ['unloading'], ships: ['docked'] });
     expect(baseline.probes.get(12_000)?.contracts).toEqual(['exporting']);
     expect(baseline.probes.get(12_000)?.trucks).toBeGreaterThan(0);
-    expect(baseline.probes.get(16_000)).toEqual({ contracts: ['completed'], ships: [], trucks: 0 });
+    expect(baseline.probes.get(18_000)).toEqual({ contracts: ['completed'], ships: [], trucks: 0 });
   });
 
   it.each(SPLITS)(
@@ -111,7 +111,7 @@ describe('roundtrip uprostred vertical_slice (F5) → rovnaký ďalší priebeh 
     const saved = JSON.parse(text) as WorldState;
     const [s0, s1, s2, s3] = saved.rng;
     const tampered: WorldState = { ...saved, rng: [(s0 + 1) >>> 0, s1, s2, s3] };
-    const world = World.deserialize(DEFS, MAP, tampered);
+    const world = World.deserialize(DEFS, PORT_MAP, tampered);
     runScenario(world, scenario, RUN_TICKS, { afterTick: assertCargoConservation });
     expect(stateHash(world)).not.toBe(baseline.finalHash);
   }, HEAVY_TIMEOUT_MS);

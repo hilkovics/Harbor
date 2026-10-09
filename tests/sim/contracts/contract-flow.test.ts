@@ -141,16 +141,14 @@ describe('kontrakt od prijatia po výplatu (12 TEU, SLA 2 dni, príchod +1 deň)
     expect(c.unitsUnloaded).toBe(FIXED_VOLUME);
   });
 
-  it('dispatcher: jednotky kontraktu smú na rampu už počas vykládky (outbound sla od unloading, ADR-027 dodatok), nikdy pred ňou', () => {
+  it('dispatcher: jednotky kontraktu sa nakladajú do kamiónov už počas vykládky (odvoz od unloading, ADR-027 dodatok), nikdy pred ňou', () => {
     const unloadingAt = must(tickOfState(run.events, contractId, 'unloading'), 'unloading');
-    const toRamp = run.ofSim('CargoMoved').filter((entry) => entry.event.to.kind === 'at_ramp');
-    expect(toRamp).toHaveLength(FIXED_VOLUME);
-    for (const entry of toRamp) {
+    const toTruck = run.ofSim('CargoMoved').filter((entry) => entry.event.to.kind === 'in_truck');
+    expect(toTruck).toHaveLength(FIXED_VOLUME);
+    for (const entry of toTruck) {
       expect(run.contractOfUnit(entry.event.unitId)).toBe(contractId);
-      expect(entry.tick, `jednotka ${String(entry.event.unitId)} na rampe`).toBeGreaterThanOrEqual(unloadingAt);
+      expect(entry.tick, `jednotka ${String(entry.event.unitId)} v kamióne`).toBeGreaterThanOrEqual(unloadingAt);
     }
-    const outboundJobs = run.ofSim('JobCreated').filter((entry) => world.modules.get(entry.event.toModuleId)?.kind === 'ramp');
-    for (const entry of outboundJobs) expect(entry.tick).toBeGreaterThanOrEqual(unloadingAt);
   });
 
   it('počítadlá: unitsUnloaded = unitsExported = volumeUnits = 12 a zodpovedajú CargoMoved', () => {
@@ -208,7 +206,7 @@ describe('kontrakt od prijatia po výplatu (12 TEU, SLA 2 dni, príchod +1 deň)
     expect(byReason('module_capex')).toBeLessThan(0);
     expect(byReason('vehicle_capex')).toBeLessThan(0);
     // AcceptContract je zadarmo: hotovosť pred prijatím = štart − CAPEX z ticku 0 (údržba ešte nie je)
-    expect(cashBeforeAccept).toBe(DEFS.economy.startingCashCents + byReason('road_capex') + byReason('module_capex') + byReason('vehicle_capex'));
+    expect(cashBeforeAccept).toBe(DEFS.economy.startingCashCents + byReason('road_capex') + byReason('road_sale') + byReason('module_capex') + byReason('vehicle_capex'));
   });
 
   it('po dokončení sa nič nehýbe: ďalších 500 tickov bez zmeny stavu kontraktu, bez ďalších penalizácií a výplat', () => {

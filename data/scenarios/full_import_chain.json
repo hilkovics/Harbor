@@ -9,105 +9,13 @@
         "type": "PlaceRoad",
         "cells": [
           {
-            "x": 41,
-            "y": 18
-          },
-          {
-            "x": 41,
-            "y": 19
-          },
-          {
-            "x": 41,
-            "y": 20
-          },
-          {
-            "x": 41,
-            "y": 21
-          },
-          {
-            "x": 41,
-            "y": 22
-          }
-        ]
-      }
-    },
-    {
-      "atTick": 0,
-      "command": {
-        "type": "PlaceRoad",
-        "cells": [
-          {
-            "x": 46,
-            "y": 18
-          },
-          {
-            "x": 46,
-            "y": 19
-          },
-          {
-            "x": 46,
-            "y": 20
-          },
-          {
-            "x": 46,
-            "y": 21
-          },
-          {
-            "x": 46,
-            "y": 22
-          }
-        ]
-      }
-    },
-    {
-      "atTick": 0,
-      "command": {
-        "type": "PlaceRoad",
-        "cells": [
-          {
-            "x": 40,
-            "y": 21
-          },
-          {
-            "x": 40,
-            "y": 22
-          },
-          {
-            "x": 40,
-            "y": 23
-          },
-          {
-            "x": 41,
-            "y": 23
-          },
-          {
-            "x": 42,
-            "y": 23
-          }
-        ]
-      }
-    },
-    {
-      "atTick": 0,
-      "command": {
-        "type": "PlaceRoad",
-        "cells": [
-          {
-            "x": 42,
-            "y": 22
-          },
-          {
-            "x": 43,
-            "y": 22
-          },
-          {
             "x": 44,
-            "y": 22
-          },
-          {
-            "x": 45,
-            "y": 22
+            "y": 34
           }
+        ],
+        "kind": "one_way",
+        "dirs": [
+          "N"
         ]
       }
     },
@@ -118,23 +26,7 @@
         "cells": [
           {
             "x": 44,
-            "y": 23
-          },
-          {
-            "x": 44,
-            "y": 24
-          },
-          {
-            "x": 44,
-            "y": 25
-          },
-          {
-            "x": 44,
-            "y": 26
-          },
-          {
-            "x": 44,
-            "y": 27
+            "y": 29
           },
           {
             "x": 44,
@@ -142,12 +34,54 @@
           },
           {
             "x": 44,
-            "y": 29
+            "y": 27
           },
           {
             "x": 44,
-            "y": 30
+            "y": 26
+          },
+          {
+            "x": 44,
+            "y": 25
+          },
+          {
+            "x": 44,
+            "y": 24
+          },
+          {
+            "x": 44,
+            "y": 23
+          },
+          {
+            "x": 44,
+            "y": 22
+          },
+          {
+            "x": 44,
+            "y": 21
+          },
+          {
+            "x": 44,
+            "y": 20
+          },
+          {
+            "x": 44,
+            "y": 19
           }
+        ],
+        "kind": "one_way",
+        "dirs": [
+          "N",
+          "N",
+          "N",
+          "N",
+          "N",
+          "N",
+          "N",
+          "N",
+          "N",
+          "N",
+          "N"
         ]
       }
     },
@@ -157,29 +91,49 @@
         "type": "PlaceRoad",
         "cells": [
           {
-            "x": 45,
-            "y": 30
+            "x": 44,
+            "y": 18
           },
           {
+            "x": 43,
+            "y": 18
+          },
+          {
+            "x": 42,
+            "y": 18
+          },
+          {
+            "x": 41,
+            "y": 18
+          }
+        ],
+        "kind": "one_way",
+        "dirs": [
+          "W",
+          "W",
+          "W",
+          "N"
+        ]
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceRoad",
+        "cells": [
+          {
             "x": 46,
-            "y": 30
+            "y": 18
           },
           {
             "x": 47,
-            "y": 30
-          },
-          {
-            "x": 48,
-            "y": 30
-          },
-          {
-            "x": 49,
-            "y": 30
-          },
-          {
-            "x": 50,
-            "y": 30
+            "y": 18
           }
+        ],
+        "kind": "one_way",
+        "dirs": [
+          "E",
+          "S"
         ]
       }
     },
@@ -189,9 +143,53 @@
         "type": "PlaceRoad",
         "cells": [
           {
-            "x": 44,
-            "y": 33
+            "x": 47,
+            "y": 19
+          },
+          {
+            "x": 47,
+            "y": 20
+          },
+          {
+            "x": 47,
+            "y": 21
+          },
+          {
+            "x": 47,
+            "y": 22
+          },
+          {
+            "x": 47,
+            "y": 23
+          },
+          {
+            "x": 47,
+            "y": 24
+          },
+          {
+            "x": 47,
+            "y": 25
+          },
+          {
+            "x": 47,
+            "y": 26
+          },
+          {
+            "x": 47,
+            "y": 27
           }
+        ],
+        "kind": "one_way",
+        "dirs": [
+          "S",
+          "S",
+          "S",
+          "S",
+          "S",
+          "S",
+          "S",
+          "S",
+          "S"
         ]
       }
     },
@@ -201,9 +199,31 @@
         "type": "PlaceRoad",
         "cells": [
           {
-            "x": 44,
-            "y": 32
+            "x": 47,
+            "y": 28
           }
+        ],
+        "kind": "two_lane"
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceRoad",
+        "cells": [
+          {
+            "x": 46,
+            "y": 28
+          },
+          {
+            "x": 45,
+            "y": 28
+          }
+        ],
+        "kind": "one_way",
+        "dirs": [
+          "W",
+          "W"
         ]
       }
     },
@@ -213,97 +233,23 @@
         "type": "PlaceRoad",
         "cells": [
           {
-            "x": 49,
-            "y": 33
+            "x": 47,
+            "y": 29
           },
           {
-            "x": 50,
-            "y": 33
+            "x": 46,
+            "y": 29
           },
           {
-            "x": 51,
-            "y": 33
-          },
-          {
-            "x": 52,
-            "y": 33
+            "x": 45,
+            "y": 29
           }
-        ]
-      }
-    },
-    {
-      "atTick": 0,
-      "command": {
-        "type": "PlaceRoad",
-        "cells": [
-          {
-            "x": 49,
-            "y": 32
-          }
-        ]
-      }
-    },
-    {
-      "atTick": 0,
-      "command": {
-        "type": "PlaceRoad",
-        "cells": [
-          {
-            "x": 57,
-            "y": 31
-          },
-          {
-            "x": 57,
-            "y": 32
-          },
-          {
-            "x": 57,
-            "y": 33
-          }
-        ]
-      }
-    },
-    {
-      "atTick": 0,
-      "command": {
-        "type": "PlaceRoad",
-        "cells": [
-          {
-            "x": 51,
-            "y": 30
-          },
-          {
-            "x": 52,
-            "y": 30
-          },
-          {
-            "x": 53,
-            "y": 30
-          },
-          {
-            "x": 54,
-            "y": 30
-          },
-          {
-            "x": 55,
-            "y": 30
-          }
-        ]
-      }
-    },
-    {
-      "atTick": 0,
-      "command": {
-        "type": "PlaceRoad",
-        "cells": [
-          {
-            "x": 56,
-            "y": 30
-          },
-          {
-            "x": 57,
-            "y": 30
-          }
+        ],
+        "kind": "one_way",
+        "dirs": [
+          "W",
+          "W",
+          "S"
         ]
       }
     },
@@ -312,38 +258,8 @@
       "command": {
         "type": "PlaceModule",
         "defId": "vehicle_depot",
-        "x": 46,
-        "y": 27,
-        "rotation": 0
-      }
-    },
-    {
-      "atTick": 0,
-      "command": {
-        "type": "PlaceModule",
-        "defId": "container_yard_small",
-        "x": 42,
-        "y": 18,
-        "rotation": 0
-      }
-    },
-    {
-      "atTick": 0,
-      "command": {
-        "type": "PlaceModule",
-        "defId": "container_yard_small",
-        "x": 49,
-        "y": 26,
-        "rotation": 0
-      }
-    },
-    {
-      "atTick": 0,
-      "command": {
-        "type": "PlaceModule",
-        "defId": "gate_in_lane",
-        "x": 45,
-        "y": 33,
+        "x": 48,
+        "y": 24,
         "rotation": 90
       }
     },
@@ -351,19 +267,29 @@
       "atTick": 0,
       "command": {
         "type": "PlaceModule",
-        "defId": "truck_waiting_area",
-        "x": 53,
-        "y": 31,
-        "rotation": 0
+        "defId": "container_yard_small",
+        "x": 40,
+        "y": 19,
+        "rotation": 270
       }
     },
     {
       "atTick": 0,
       "command": {
         "type": "PlaceModule",
-        "defId": "loading_ramp_container",
-        "x": 53,
-        "y": 28,
+        "defId": "container_yard_small",
+        "x": 48,
+        "y": 19,
+        "rotation": 90
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceModule",
+        "defId": "gate_in_lane",
+        "x": 44,
+        "y": 30,
         "rotation": 0
       }
     },
@@ -373,8 +299,8 @@
         "type": "PlaceModule",
         "defId": "gate_out_lane",
         "x": 45,
-        "y": 32,
-        "rotation": 270
+        "y": 30,
+        "rotation": 180
       }
     },
     {
@@ -408,43 +334,6 @@
         "shipClassId": "feeder",
         "cargoTypeId": "container_teu",
         "units": 120
-      }
-    },
-    {
-      "atTick": 0,
-      "command": {
-        "type": "PlaceRoad",
-        "kind": "two_lane",
-        "cells": [
-          {
-            "x": 44,
-            "y": 34
-          },
-          {
-            "x": 44,
-            "y": 35
-          },
-          {
-            "x": 44,
-            "y": 36
-          }
-        ]
-      }
-    },
-    {
-      "atTick": 0,
-      "command": {
-        "type": "RemoveRoad",
-        "cells": [
-          {
-            "x": 45,
-            "y": 34
-          },
-          {
-            "x": 45,
-            "y": 35
-          }
-        ]
       }
     }
   ]

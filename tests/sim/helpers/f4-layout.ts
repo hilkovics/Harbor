@@ -1,47 +1,31 @@
 /**
- * Rozloženie prístavu pre scenáre fázy 4 (T04-05, TDD; R4 prerobené na pruhy brány, ADR-041): rozloženie F3 (`f3-layout.ts`: cesty, depo, dva dvory) + pozemná
- * časť exportu — vstupný a výstupný pruh brány, čakacia plocha, rampa a cesty k nim — na starter parcele mapy `harbor_01`. Čistý dátový modul
- * bez behových závislostí na sim; `data/scenarios/full_import_chain.json` je presne výstup
- * `f4Scenario('full_import_chain', 4004, …)` (test `f4-full-import-chain` to overuje).
- *
- * Mapa: starter parcela x 30–57, y 14–33; road portál `road_south_in` (44, 63); verejná cesta x = 44, y 34..63. Pruhy brány musia
- * ležať na parcele (moduly len na vlastnenej parcele), takže vstup vstupného pruhu nadväzuje na verejnú cestu v bunke (44, 33).
+ * Rozloženie prístavu pre scenáre pozemnej časti (R4, TR4-02, ADR-041): „priečna ulica“ na starter parcele mapy `harbor_01` — jednosmerný okruh
+ * (verejná cesta → vstupný pruh brány → ulica na sever → berth a späť dolu východným ramenom → výstupný pruh brány) s depom a dvormi pri ulici.
+ * Čistý dátový modul bez behových závislostí na sim; `data/scenarios/vertical_slice.json` je to isté rozloženie.
  *
  * ```
- *   x:    44 45 46 47 48 49 50 51 52 53 54 55 56 57      # cesta, o cesta = vonkajšia bunka konektora
- *   y=26   #  .  .  .  .  B  B  B  B  .  .  .  .  .      D depo (46, 27), B ďaleký dvor (49, 26)   (F3)
- *   y=27   #  .  D  D  D  B  B  B  B  .  .  .  .  .      R rampa (53, 28) rot 0
- *   y=28   #  .  D  D  D  B  B  B  B  R  R  R  R  .      W čakacia plocha (53, 31) rot 0
- *   y=29   #  .  D  D  D  B  B  B  B  R  R  R  R  .      I vstupný pruh (45, 33) rot 90 (4×1), O výstupný pruh (45, 32) rot 270
- *   y=30   #  #  #  o  #  #  o  #  #  #  o  o  #  #      vetva y = 30: F3 po (50, 30), predĺženie po (57, 30)
- *   y=31   .  .  .  .  .  .  .  .  .  W  W  W  W  #
- *   y=32   o  O  O  O  O  o  .  .  .  W  W  W  W  #      (44, 32) výstup výstupného pruhu, (49, 32) vstup výstupného pruhu
- *   y=33   o  I  I  I  I  o  #  #  o  W  W  W  W  o      (44, 33) vstup vstupného pruhu, (49, 33) jeho výstup, (52, 33) západ plochy, (57, 33) východ plochy
- *   y=34   #  .  .  .  .  .  .  .  .  .  .  .  .  .
+ *   x:    40 41 42 43 44 45 46 47 48 49 50
+ *   y=18   .  N  W  W  W  .  E  S  .  .  .      berth hák (41, 18) severne, ulica (44..42, 18) na západ, (46, 18) na východ, (47, 18) juh
+ *   y=19   Y  .  .  .  ^  .  .  v  Y  Y  .      západný dvor (40, 19) rot 270, východný dvor (48, 19) rot 90, ulica x = 44 na sever, x = 47 na juh
+ *   y=24   .  .  .  .  ^  .  .  v  D  D  D      depo (48, 24) rot 90
+ *   y=28   .  .  .  .  ^  <  <  J  .  .  .      križovatka J (47, 28) `two_lane`
+ *   y=29   .  .  .  .  ^  v  <  <                odbočka (47, 29) → (45, 29) → juh
+ *   y=30   .  .  .  .  I  O  .  .                vstupný pruh brány (44, 30) rot 0, výstupný pruh (45, 30) rot 180
+ *   y=34   .  .  .  .  ^                         verejná cesta (44, 34) sever
  * ```
- * Reťaz kamióna: portál (44, 63) → x = 44 na sever → (44, 33) vstup vstupného pruhu → telom pruhu (konektor 0 na (45, 33)… (48, 33), kamión ide na východ) →
- * (49, 33) výstup → (50..52, 33) → telom plochy (konektor `w` (53, 33), konektor `e` (56, 33)) → (57, 33) → x = 57 na sever (57, 31..33) → (57, 30) a (56, 30) vetva →
- * (55, 30) dock 1 / (54, 30) dock 0 (vonkajšie bunky konektorov rampy `(1, 1, s)` a `(2, 1, s)`). Späť: od rampy k (57, 33), prechod telom plochy na (52, 33), na západ
- * po (49, 33), stub (49, 32) = vstup výstupného pruhu → telom pruhu (kamión ide na západ) → (44, 32) → (44, 33) → verejná cesta.
- *
- * Pruhy brány sú jediné spojenie verejnej cesty s areálom a plocha je jediné spojenie výstupu vstupného pruhu s vetvou F3: medzi (44, 33) a (49, 33) ani medzi (52, 33)
- * a (57, 33) nevedie žiadna cesta, takže rampa je prevádzková len s oboma pruhmi aj plochou (`f4-landside.test.ts` to overuje BFS po cestách).
- *
- * Poradie príkazov (id modulov): starter berth 1 + žeriav 2, potom depo 3, dvory 4 a 5, vstupný pruh 6, plocha 7, rampa 8, výstupný pruh 9.
+ * Poradie príkazov (id modulov): starter berth 1 + žeriav 2, depo 3, dvory 4 a 5, vstupný pruh 6, výstupný pruh 7.
  */
 import type { CellCoord, Rotation } from '@sim/grid';
-import { ROAD_SEGMENTS as F3_ROAD_SEGMENTS, segment } from './f3-layout';
-import type { F3Options } from './f3-layout';
 import type { Scenario, ScenarioEntry } from './scenario';
 
 export { segment } from './f3-layout';
 
 /** Road portál `road_south` mapy `harbor_01`. */
 export const ROAD_PORTAL: CellCoord = { x: 44, y: 63 };
-/** Posledná bunka verejnej cesty pred areálom (štartová cesta x = 44, y 34..63). */
+/** Posledná bunka verejnej cesty pred areálom. */
 export const PUBLIC_ROAD_END: CellCoord = { x: 44, y: 34 };
 
-export type LandsideKind = 'gate' | 'gate_out' | 'waiting_area' | 'ramp';
+export type LandsideKind = 'gate' | 'gate_out';
 
 export interface LandsidePlacement {
   readonly defId: string;
@@ -51,77 +35,75 @@ export interface LandsidePlacement {
   readonly rotation: Rotation;
 }
 
-/** Vstupný pruh brány 1×4 (rot 90 = 4×1): kamión vchádza zo západu — konektor 0 má vonkajšiu bunku (44, 33), konektor 1 (49, 33). */
-export const GATE: LandsidePlacement = { defId: 'gate_in_lane', kind: 'gate', origin: { x: 45, y: 33 }, rotation: 90 };
-/** Výstupný pruh brány 1×4 (rot 270 = 4×1): kamión vchádza z východu — konektor 0 má vonkajšiu bunku (49, 32), konektor 1 (44, 32). */
-export const GATE_OUT: LandsidePlacement = { defId: 'gate_out_lane', kind: 'gate_out', origin: { x: 45, y: 32 }, rotation: 270 };
-/** Čakacia plocha 4×3 (rot 0): konektory `w` (53, 33) a `e` (56, 33). */
-export const WAITING_AREA: LandsidePlacement = { defId: 'truck_waiting_area', kind: 'waiting_area', origin: { x: 53, y: 31 }, rotation: 0 };
-/** Rampa 4×2 (rot 0): konektory `s` na (54, 29) a (55, 29). */
-export const RAMP: LandsidePlacement = { defId: 'loading_ramp_container', kind: 'ramp', origin: { x: 53, y: 28 }, rotation: 0 };
+/** Vstupný pruh brány (R4): kamión ide na sever, vstup z verejnej cesty (44, 34). */
+export const GATE: LandsidePlacement = { defId: 'gate_in_lane', kind: 'gate', origin: { x: 44, y: 30 }, rotation: 0 };
+/** Výstupný pruh brány: kamión ide na juh (rot 180), výstup na verejnú cestu. */
+export const GATE_OUT: LandsidePlacement = { defId: 'gate_out_lane', kind: 'gate_out', origin: { x: 45, y: 30 }, rotation: 180 };
 
-export const LANDSIDE_PLACEMENTS: Readonly<Record<LandsideKind, LandsidePlacement>> = { gate: GATE, gate_out: GATE_OUT, waiting_area: WAITING_AREA, ramp: RAMP };
-/** Predvolené poradie stavby pozemných modulov (id 6, 7, 8, 9): výstupný pruh je posledný, aby id vstupného pruhu, plochy a rampy ostali 6, 7, 8. */
-export const DEFAULT_LANDSIDE_ORDER: readonly LandsideKind[] = ['gate', 'waiting_area', 'ramp', 'gate_out'];
+export const LANDSIDE_PLACEMENTS: Readonly<Record<LandsideKind, LandsidePlacement>> = { gate: GATE, gate_out: GATE_OUT };
+/** Predvolené poradie stavby pozemných modulov (id 6, 7). */
+export const DEFAULT_LANDSIDE_ORDER: readonly LandsideKind[] = ['gate', 'gate_out'];
 
-/** Vonkajšia bunka vstupného konektora vstupného pruhu, ktorý nadväzuje na verejnú cestu. */
-export const GATE_ENTRY_OUTSIDE: CellCoord = { x: 44, y: 33 };
-/** Vonkajšia bunka výstupného konektora vstupného pruhu (výstup do areálu). */
-export const GATE_EXIT_OUTSIDE: CellCoord = { x: 49, y: 33 };
-/** Vonkajšie bunky výstupného pruhu: vstup z areálu a výstup na verejnú cestu. */
-export const GATE_OUT_ENTRY_OUTSIDE: CellCoord = { x: 49, y: 32 };
-export const GATE_OUT_EXIT_OUTSIDE: CellCoord = { x: 44, y: 32 };
-export const WAITING_WEST_OUTSIDE: CellCoord = { x: 52, y: 33 };
-export const WAITING_EAST_OUTSIDE: CellCoord = { x: 57, y: 33 };
-/** Vonkajšie bunky konektorov rampy v poradí defu (dock 0, dock 1). */
-export const RAMP_OUTSIDE_CELLS: readonly CellCoord[] = [
-  { x: 54, y: 30 },
-  { x: 55, y: 30 },
+/** Úsek ciest rozloženia: jeden `PlaceRoad` (jednosmerné s `dirs`, križovatka `two_lane`). */
+interface RoadSegment {
+  readonly type: 'PlaceRoad';
+  readonly cells: readonly CellCoord[];
+  readonly kind: 'one_way' | 'two_lane';
+  readonly dirs?: readonly ('N' | 'E' | 'S' | 'W')[];
+}
+
+const ROAD_COMMANDS: readonly RoadSegment[] = [
+  { type: 'PlaceRoad', cells: [{ x: 44, y: 34 }], kind: 'one_way', dirs: ['N'] },
+  {
+    type: 'PlaceRoad',
+    cells: Array.from({ length: 11 }, (_, i) => ({ x: 44, y: 29 - i })),
+    kind: 'one_way',
+    dirs: Array.from({ length: 11 }, () => 'N' as const),
+  },
+  { type: 'PlaceRoad', cells: [{ x: 44, y: 18 }, { x: 43, y: 18 }, { x: 42, y: 18 }, { x: 41, y: 18 }], kind: 'one_way', dirs: ['W', 'W', 'W', 'N'] },
+  { type: 'PlaceRoad', cells: [{ x: 46, y: 18 }, { x: 47, y: 18 }], kind: 'one_way', dirs: ['E', 'S'] },
+  {
+    type: 'PlaceRoad',
+    cells: Array.from({ length: 9 }, (_, i) => ({ x: 47, y: 19 + i })),
+    kind: 'one_way',
+    dirs: Array.from({ length: 9 }, () => 'S' as const),
+  },
+  { type: 'PlaceRoad', cells: [{ x: 47, y: 28 }], kind: 'two_lane' },
+  { type: 'PlaceRoad', cells: [{ x: 46, y: 28 }, { x: 45, y: 28 }], kind: 'one_way', dirs: ['W', 'W'] },
+  { type: 'PlaceRoad', cells: [{ x: 47, y: 29 }, { x: 46, y: 29 }, { x: 45, y: 29 }], kind: 'one_way', dirs: ['W', 'W', 'S'] },
 ];
 
-/** Cesty pozemnej časti; PlaceRoad po úsekoch, rovnako ako `ROAD_SEGMENTS` z F3. */
-export const F4_ROAD_SEGMENTS = {
-  /** Vstup vstupného pruhu: (44, 33) nadväzuje na verejnú cestu (44, 34). */
-  gateApproach: segment(44, 33, 44, 33),
-  /** Výstup výstupného pruhu na verejnú cestu: (44, 32) nad vstupom vstupného pruhu. */
-  gateOutExit: segment(44, 32, 44, 32),
-  /** Výstup vstupného pruhu (49, 33) po západnú vonkajšiu bunku plochy (52, 33). */
-  gateExit: segment(49, 33, 52, 33),
-  /** Vstup výstupného pruhu (49, 32): slepý prístup nad (49, 33). */
-  gateOutEntry: segment(49, 32, 49, 32),
-  /** Východná vonkajšia bunka plochy (57, 33) a cesta na sever k vetve. */
-  truckLink: segment(57, 31, 57, 33),
-  /** Predĺženie vetvy y = 30 z (51, 30) po (55, 30): vonkajšie bunky rampy (54, 30) a (55, 30). */
-  branchExtension: segment(51, 30, 55, 30),
-  /** Spojka vetvy y = 30 s cestou plochy: (56, 30) a (57, 30). */
-  branchLink: segment(56, 30, 57, 30),
-} as const;
+/** Všetky cesty rozloženia (33 buniek). */
+export const ALL_F4_ROAD_CELLS: readonly CellCoord[] = ROAD_COMMANDS.flatMap((command) => command.cells);
 
-export type F4RoadSegmentName = keyof typeof F4_ROAD_SEGMENTS;
-
-/** Cesty pozemnej časti (17 buniek). */
-export const F4_ROAD_CELLS: readonly CellCoord[] = Object.values(F4_ROAD_SEGMENTS).flat();
-/** Všetky cesty scenára F4: 34 buniek F3 + 17 buniek pozemnej časti. */
-export const ALL_F4_ROAD_CELLS: readonly CellCoord[] = [...Object.values(F3_ROAD_SEGMENTS).flat(), ...F4_ROAD_CELLS];
-
-export interface F4Options extends Pick<F3Options, 'vehicles' | 'units' | 'omitRoadCells' | 'extra'> {
-  /** Ktoré pozemné moduly postaviť a v akom poradí (predvolene brána, plocha, rampa); chýbajúci sa nepostaví. */
+export interface F4Options {
+  /** Def id vozidiel na kúpu v poradí (predvolene žiadne); všetky idú do depa `F4_DEPOT_ID`. */
+  readonly vehicles?: readonly string[];
+  /** Počet TEU na lodi `feeder` spawnutej na ticku 0; 0 = bez lode (predvolene). */
+  readonly units?: number;
+  /** Cesty, ktoré sa nepostavia (každá bunka z rozloženia; úsek sa skráti). */
+  readonly omitRoadCells?: readonly CellCoord[];
+  /** Ďalšie príkazy; pridajú sa na koniec. */
+  readonly extra?: readonly ScenarioEntry[];
+  /** Ktoré pozemné moduly postaviť a v akom poradí (predvolene vstupný a výstupný pruh brány). */
   readonly landside?: readonly LandsideKind[];
-  /** Ktoré dvory postaviť (predvolene oba: blízky, potom ďaleký). */
+  /** Ktoré dvory postaviť (predvolene oba: západný `near`, východný `far`). */
   readonly yards?: readonly ('near' | 'far')[];
 }
 
-const sameCell = (a: CellCoord, b: CellCoord): boolean => a.x === b.x && a.y === b.y;
-
-const YARD_ORIGIN: Readonly<Record<'near' | 'far', CellCoord>> = { near: { x: 42, y: 18 }, far: { x: 49, y: 26 } };
-const DEPOT_ORIGIN: CellCoord = { x: 46, y: 27 };
+const YARD: Readonly<Record<'near' | 'far', { readonly origin: CellCoord; readonly rotation: Rotation }>> = {
+  near: { origin: { x: 40, y: 19 }, rotation: 270 },
+  far: { origin: { x: 48, y: 19 }, rotation: 90 },
+};
+const DEPOT_ORIGIN: CellCoord = { x: 48, y: 24 };
 /** ID depa: starter berth 1 + žeriav 2, depo je prvý `PlaceModule`. */
 export const F4_DEPOT_ID = 3;
 
+const sameCell = (a: CellCoord, b: CellCoord): boolean => a.x === b.x && a.y === b.y;
+
 /**
- * Scenár na `harbor_01`: (1) cesty F3, potom cesty pozemnej časti (jeden `PlaceRoad` na úsek), (2) depo, (3) dvory,
- * (4) pozemné moduly v `landside` poradí, (5) nákupy vozidiel, (6) loď — všetko na ticku 0. Cesty idú pred modulmi, takže
- * konektory sú pripojené hneď pri stavbe. `omitRoadCells` vynechá jednotlivé bunky (napr. vstup brány).
+ * Scenár na `harbor_01`: (1) cesty, (2) depo, (3) dvory, (4) brány v `landside` poradí, (5) nákupy vozidiel, (6) loď — všetko na ticku 0.
+ * Cesty idú pred modulmi, takže konektory sú pripojené hneď pri stavbe.
  */
 export function f4Scenario(id: string, seed: number, options: F4Options = {}): Scenario {
   const { vehicles = [], units = 0, omitRoadCells = [], extra = [], landside = DEFAULT_LANDSIDE_ORDER, yards = ['near', 'far'] } = options;
@@ -130,13 +112,17 @@ export function f4Scenario(id: string, seed: number, options: F4Options = {}): S
     commands.push({ atTick: 0, command });
   };
 
-  for (const cells of [...Object.values(F3_ROAD_SEGMENTS), ...Object.values(F4_ROAD_SEGMENTS)]) {
-    const kept = cells.filter((cell) => !omitRoadCells.some((omitted) => sameCell(omitted, cell)));
-    if (kept.length > 0) add({ type: 'PlaceRoad', cells: kept });
+  for (const command of ROAD_COMMANDS) {
+    const keep = command.cells.map((cell) => !omitRoadCells.some((omitted) => sameCell(omitted, cell)));
+    if (!keep.some(Boolean)) continue;
+    const cells = command.cells.filter((_, i) => keep[i]);
+    const dirs = command.dirs?.filter((_, i) => keep[i]);
+    add({ type: 'PlaceRoad', cells, kind: command.kind, ...(dirs === undefined ? {} : { dirs }) });
   }
-  add({ type: 'PlaceModule', defId: 'vehicle_depot', x: DEPOT_ORIGIN.x, y: DEPOT_ORIGIN.y, rotation: 0 });
+  add({ type: 'PlaceModule', defId: 'vehicle_depot', x: DEPOT_ORIGIN.x, y: DEPOT_ORIGIN.y, rotation: 90 });
   for (const spot of yards) {
-    add({ type: 'PlaceModule', defId: 'container_yard_small', x: YARD_ORIGIN[spot].x, y: YARD_ORIGIN[spot].y, rotation: 0 });
+    const yard = YARD[spot];
+    add({ type: 'PlaceModule', defId: 'container_yard_small', x: yard.origin.x, y: yard.origin.y, rotation: yard.rotation });
   }
   for (const kind of landside) add(placeLandsideCommand(kind));
   for (const vehicleDefId of vehicles) add({ type: 'BuyVehicle', vehicleDefId, depotId: F4_DEPOT_ID });

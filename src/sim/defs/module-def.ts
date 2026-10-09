@@ -1,6 +1,6 @@
 /**
  * Pravidlá špecifické pre `modules.json`: typované `params` podľa `kind` (`MODULE_PARAM_SPECS`, tabuľka — nie `switch`),
- * typované gettery `berthParams` / `craneParams` / `storageParams` / `depotParams` / `gateParams` / `waitingAreaParams` / `rampParams` a kontroly vzťahov medzi poľami modulu (konektor vo footprinte,
+ * typované gettery `berthParams` / `craneParams` / `storageParams` / `depotParams` / `gateParams` / `preGateParams` / `holdingParams` a kontroly vzťahov medzi poľami modulu (konektor vo footprinte,
  * berth vyžaduje `waterSide`). Nový druh modulu s parametrami = nový typ v `ModuleParamsByKind` + riadok v tabuľke.
  */
 import { DefError } from './def-error';
@@ -32,9 +32,7 @@ import {
   type ModuleKind,
   type ModuleParams,
   type ModuleParamsByKind,
-  type RampParams,
   type StorageParams,
-  type WaitingAreaParams,
 } from './types';
 
 /** Tvar `params` pre každý druh modulu; kompilátor ohlási druh bez riadku aj riadok s nesprávnymi poľami. */
@@ -97,21 +95,6 @@ export const MODULE_PARAM_SPECS: { readonly [K in ModuleKind]: SpecTable<ModuleP
   },
   holding: {
     stalls: { kind: 'integer', min: 1 },
-  },
-  waiting_area: {
-    bays: { kind: 'integer', min: 1 },
-    internalTicks: { kind: 'integer', min: 0, optional: true },
-    // Kvóta stojísk pre odvoz (F6d, ADR-035): počet stojísk, ktoré smú obsadiť len kamióny odvážajúce náklad; chýba = 0 (bez rezervy).
-    // Vzťah k `bays` nie je chyba defu: účinná kvóta je najviac `bays − 1` (`WaitingArea.pickupReservedBays`), takže schéma a registr akceptujú to isté.
-    pickupReservedBays: { kind: 'integer', min: 0, optional: true },
-  },
-  ramp: {
-    docks: { kind: 'integer', min: 1 },
-    stagingPerDock: { kind: 'integer', min: 1 },
-    // Nakládka jednej jednotky musí trvať aspoň tick, inak by sekvencia jednotiek nemala krok.
-    loadTicksPerUnit: { kind: 'integer', min: 1 },
-    category: { kind: 'enum', values: CARGO_CATEGORIES },
-    internalTicks: { kind: 'integer', min: 0, optional: true },
   },
   depot: {
     capacity: { kind: 'integer', min: 1 },
@@ -266,8 +249,6 @@ const isDepotParams = (value: unknown): value is DepotParams => matchesFields(va
 const isGateParams = (value: unknown): value is GateParams => matchesFields(value, MODULE_PARAM_SPECS.gate);
 const isPreGateParams = (value: unknown): value is PreGateParams => matchesFields(value, MODULE_PARAM_SPECS.pre_gate);
 const isHoldingParams = (value: unknown): value is HoldingParams => matchesFields(value, MODULE_PARAM_SPECS.holding);
-const isWaitingAreaParams = (value: unknown): value is WaitingAreaParams => matchesFields(value, MODULE_PARAM_SPECS.waiting_area);
-const isRampParams = (value: unknown): value is RampParams => matchesFields(value, MODULE_PARAM_SPECS.ramp);
 
 // Defy sú zmrazené a po validácii nemenné, takže overený výsledok sa dá uložiť podľa identity `params`.
 const berthParamsCache = new WeakMap<ModuleParams, BerthParams>();
@@ -277,8 +258,6 @@ const depotParamsCache = new WeakMap<ModuleParams, DepotParams>();
 const gateParamsCache = new WeakMap<ModuleParams, GateParams>();
 const preGateParamsCache = new WeakMap<ModuleParams, PreGateParams>();
 const holdingParamsCache = new WeakMap<ModuleParams, HoldingParams>();
-const waitingAreaParamsCache = new WeakMap<ModuleParams, WaitingAreaParams>();
-const rampParamsCache = new WeakMap<ModuleParams, RampParams>();
 
 function typedParams<K extends ModuleKind>(
   def: ModuleDef,
@@ -332,14 +311,4 @@ export function preGateParams(def: ModuleDef): PreGateParams {
 /** Parametre odstavnej plochy kamiónov; def iného druhu → `DefError`. */
 export function holdingParams(def: ModuleDef): HoldingParams {
   return typedParams(def, 'holding', isHoldingParams, holdingParamsCache);
-}
-
-/** Parametre čakacej plochy kamiónov; def iného druhu → `DefError`. */
-export function waitingAreaParams(def: ModuleDef): WaitingAreaParams {
-  return typedParams(def, 'waiting_area', isWaitingAreaParams, waitingAreaParamsCache);
-}
-
-/** Parametre nakladacej rampy; def iného druhu → `DefError`. */
-export function rampParams(def: ModuleDef): RampParams {
-  return typedParams(def, 'ramp', isRampParams, rampParamsCache);
 }

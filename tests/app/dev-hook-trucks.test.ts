@@ -1,26 +1,26 @@
-// T04-08 B: dev hook `window.__sim` pre kamióny — `entities().trucks` (stavy pre e2e: kamión vo fronte / v stojisku),
+// T04-08 B: dev hook `window.__sim` pre kamióny — `entities().trucks` (stavy pre e2e: kamión vo fronte / na TP dvora),
 // `rendered().trucks` + `truckStates` (bootstrap ich plní z rendereru a z posledných entít) a `world.cargo.exportedCount`
 // (export). Kamióny idú zo skutočného ticku celého reťazca.
 import { describe, expect, it } from 'vitest';
 import type { TruckVM } from '@render/view-models';
 import { installDevHook, truckStateCounts, type DevHook, type RenderedCounts } from '@app/dev-hook';
-import { buildFullChain, createApp, frameUntil } from './app-fixtures';
+import { buildFullChain, createPortApp, frameUntil } from './app-fixtures';
 
 describe('truckStateCounts', () => {
   it('spočíta kamióny podľa stavu; stav bez kamiónov kľúč nemá; prázdny zoznam → prázdny objekt', () => {
     expect(truckStateCounts([])).toEqual({});
-    expect(truckStateCounts([{ state: 'waiting' }, { state: 'to_gate' }, { state: 'waiting' }, { state: 'loading' }])).toEqual({ waiting: 2, to_gate: 1, loading: 1 });
+    expect(truckStateCounts([{ state: 'to_tp' }, { state: 'to_gate' }, { state: 'to_tp' }, { state: 'at_edge_tp' }])).toEqual({ to_tp: 2, to_gate: 1, at_edge_tp: 1 });
   });
 });
 
 describe('window.__sim: kamióny', () => {
-  it('entities().trucks je vždy aktuálne (stavy TruckVM zo simu) a e2e podľa nich počká na frontu, stojisko aj dock', () => {
-    const app = createApp();
+  it('entities().trucks je vždy aktuálne (stavy TruckVM zo simu) a e2e podľa nich počká na príjazd k bráne, prechod bránou, jazdu na TP aj obsluhu na TP', () => {
+    const app = createPortApp();
     buildFullChain(app, { units: 6 });
     const target: { __sim?: DevHook } = {};
     const hook = installDevHook(app.bridge, { enabled: true, target });
     expect(hook?.entities().trucks).toEqual([]);
-    for (const state of ['to_gate', 'gate_queue', 'waiting', 'loading'] as const) {
+    for (const state of ['to_gate', 'gate_pass', 'to_tp', 'at_edge_tp'] as const) {
       frameUntil(app, () => hook?.entities().trucks.some((truck) => truck.state === state) === true, 3000);
       const truck = hook?.entities().trucks.find((candidate) => candidate.state === state) as TruckVM;
       expect(app.world.trucks.get(truck.id as never)?.state).toBe(state);
@@ -29,7 +29,7 @@ describe('window.__sim: kamióny', () => {
   });
 
   it('export: po dojazde kamióna na portál rastie world.cargo.exportedCount a kamión zmizne z entities()', () => {
-    const app = createApp();
+    const app = createPortApp();
     buildFullChain(app, { units: 3 });
     const hook = installDevHook(app.bridge, { enabled: true, target: {} });
     expect(hook?.world.cargo.exportedCount).toBe(0);
@@ -38,7 +38,7 @@ describe('window.__sim: kamióny', () => {
   });
 
   it('rendered() nesie počet TruckView a počty stavov (z bootstrapu); JSON-serializovateľné pre page.evaluate', () => {
-    const app = createApp();
+    const app = createPortApp();
     buildFullChain(app, { units: 6 });
     frameUntil(app, () => app.world.trucks.size >= 2, 3000);
     const { trucks } = app.bridge.entities();

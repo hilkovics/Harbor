@@ -6,9 +6,8 @@
  * ale loď k žiadnemu nedopláva po prázdnej vode (`ShipTraffic.reachesBerth`: plytká zátoka, úzke hrdlo);
  * `no_crane_for_category` — dosiahnuteľný úsek je, ale bez žeriavu kategórie nákladu kontraktu. Obsadenosť kotvísk
  * a lodná doprava (iné lode) sa neposudzujú (loď by počkala na anchorage). Pri skupine s export bookingom (export,
- * roundtrip) sa po pripravenosti kotvísk posúdi aj **pozemná strana** (`exportLandsideReadiness`, ADR-032): `no_ramp_for_category`
- * — žiadna rampa kategórie, `ramp_inoperative` — žiadna nie je prevádzková (brána, stojisko, cesta od portálu),
- * `no_storage_for_category` — z prevádzkovej rampy nie je dosiahnuteľný sklad kategórie; bez nej by kamióny s exportom nevznikli
+ * roundtrip) sa po pripravenosti kotvísk posúdi aj **pozemná strana** (`exportLandsideReadiness`, ADR-032): `no_gate_for_category`
+ * — žiadny platný vstupný a výstupný pruh brány, `no_storage_for_category` — z brány nie je dosiahnuteľný sklad kategórie; bez nej by kamióny s exportom nevznikli
  * a booking by skončil penalizáciou. Nové druhy F6c (ADR-034) majú vlastnú pripravenosť (`READINESS_BY_KIND`) a bránu ani rampu nepotrebujú:
  * **repositioning prázdnych** vyžaduje depo prázdnych a **prekládka** sklad kategórie nákladu — inak `no_storage_for_category` (nový dôvod sa nezavádza).
  * Validácia svet nemení a `Rng` nespotrebuje.
@@ -49,8 +48,7 @@ const READINESS_VERDICT: { readonly [R in BerthReadiness]: ValidationResult } = 
 /** Výsledok validácie podľa pripravenosti pozemnej strany exportu (tabuľka, nie switch). */
 const EXPORT_READINESS_VERDICT: { readonly [R in ExportReadiness]: ValidationResult } = Object.freeze({
   ready: offerVerdict(null),
-  no_ramp: offerVerdict('no_ramp_for_category'),
-  ramp_inoperative: offerVerdict('ramp_inoperative'),
+  no_gate: offerVerdict('no_gate_for_category'),
   no_storage: offerVerdict('no_storage_for_category'),
 });
 

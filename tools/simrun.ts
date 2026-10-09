@@ -125,14 +125,17 @@ export interface SimrunReport {
    * `null`, ak taký tick v behu nenastal (vrátane behu bez spawnu lode).
    */
   readonly ticksToAllStored: number | null;
-  /** Počet udalostí `TruckSpawned` počas behu (kamión vyšiel na road portáli s nákladom z docku rampy, F4). */
+  /** Počet udalostí `TruckSpawned` počas behu (kamión vznikol na road portáli s lístkom na blok, ADR-041). */
   readonly trucksSpawned: number;
   /** Počet udalostí `TruckExited` počas behu (kamión opustil mapu cez road portál). */
   readonly trucksExited: number;
   /** Σ `TruckExited.units` — jednotky odvezené kamiónmi; krížová kontrola voči `exportedUnits` (bez iného exportu sú rovnaké). */
   readonly unitsExportedByTrucks: number;
-  /** Počet udalostí `NoWaitingBay` počas behu (rampa má náklad, ale žiadne stojisko nemá voľný bay; najviac raz za hernú hodinu na rampu). */
-  readonly noWaitingBayEvents: number;
+  /**
+   * TTT — priemerný čas kamióna v termináli v minútach (R4, ADR-041): od príchodu k vstupnému pruhu brány po koniec prechodu výstupným pruhom, 1 desatinné miesto; bez kamióna, ktorý prešiel výstupnou
+   * bránou, `null` (`World.hinterland.truckTurn`).
+   */
+  readonly truckTurnTimeAvgMin: number | null;
   /**
    * Maximum Σ `TruckGate.queueLength` cez všetky brány (moduly druhu `gate`) meraného po každom ticku; do fronty sa
    * počíta aj kamión, ktorý bránou práve prechádza (z fronty vypadne až po dokončení prechodu). Bez brány 0.
@@ -491,6 +494,8 @@ export interface CraneTickCounters {
 const PERCENT = 100;
 /** Zaokrúhlenie na 1 desatinné miesto: násobok 10 pred `Math.round`, delenie 10 po ňom. */
 const ONE_DECIMAL = 10;
+/** Sekúnd v minúte. */
+const SECONDS_PER_MINUTE = 60;
 /** Mierka zaokrúhlenia pomerov v reporte na 3 desatinné miesta. */
 const REHANDLE_RATIO_SCALE = 1000;
 
@@ -542,7 +547,6 @@ interface EventTally {
   trucksSpawned: number;
   trucksExited: number;
   unitsExportedByTrucks: number;
-  noWaitingBayEvents: number;
   contractsCompleted: number;
   contractsOnTime: number;
   contractsOffered: number;
@@ -607,8 +611,7 @@ function tallyEvents(tally: EventTally, events: readonly SimEvent[]): void {
     else if (event.type === 'TruckExited') {
       tally.trucksExited += 1;
       tally.unitsExportedByTrucks += event.units;
-    } else if (event.type === 'NoWaitingBay') tally.noWaitingBayEvents += 1;
-    else if (event.type === 'ContractCompleted') {
+    } else if (event.type === 'ContractCompleted') {
       tally.contractsCompleted += 1;
       if (event.onTime) tally.contractsOnTime += 1;
     } else if (event.type === 'ContractOffered') tally.contractsOffered += 1;
@@ -689,6 +692,14 @@ function returnedUnits(world: World): number {
 }
 
 /** `part / whole` alebo `null` pri nulovom menovateli. */
+/** TTT v minútach (viď `SimrunReport.truckTurnTimeAvgMin`): priemer ticku od vstupnej po výstupnú bránu × `time.tickGameSeconds` / 60, na 1 desatinné miesto; bez kamióna `null`. */
+function truckTurnAvgMin(world: World): number | null {
+  const { turnTrucks, turnTicksTotal } = world.hinterland;
+  if (turnTrucks === 0) return null;
+  const seconds = (turnTicksTotal / turnTrucks) * world.defs.time.tickGameSeconds;
+  return Math.round((seconds / SECONDS_PER_MINUTE) * ONE_DECIMAL) / ONE_DECIMAL;
+}
+
 function ratioOrNull(part: number, whole: number): number | null {
   return whole === 0 ? null : part / whole;
 }
@@ -801,7 +812,6 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     trucksSpawned: 0,
     trucksExited: 0,
     unitsExportedByTrucks: 0,
-    noWaitingBayEvents: 0,
     contractsCompleted: 0,
     contractsOnTime: 0,
     contractsOffered: 0,
@@ -915,7 +925,7 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     trucksSpawned: tally.trucksSpawned,
     trucksExited: tally.trucksExited,
     unitsExportedByTrucks: tally.unitsExportedByTrucks,
-    noWaitingBayEvents: tally.noWaitingBayEvents,
+    truckTurnTimeAvgMin: truckTurnAvgMin(world),
     gateQueueMax,
     ticksToAllExported,
     contractsCompleted: world.completedContracts,
@@ -1017,7 +1027,7 @@ export function formatSummary(report: SimrunReport): string {
     `využitie vozidiel ${String(report.vehicleUtilPct)} %, bez skladu ${String(report.noStorageEvents)}, ` +
     `všetko uložené ${metric(report.ticksToAllStored)}, ` +
     `kamióny ${String(report.trucksSpawned)}/${String(report.trucksExited)} (spawn/odchod), ` +
-    `odvezené kamiónmi ${String(report.unitsExportedByTrucks)}, bez stojiska ${String(report.noWaitingBayEvents)}, ` +
+    `odvezené kamiónmi ${String(report.unitsExportedByTrucks)}, TTT ${metric(report.truckTurnTimeAvgMin)} min, ` +
     `fronta brány max ${String(report.gateQueueMax)}, všetko exportované ${metric(report.ticksToAllExported)}, ` +
     `kontrakty dokončené ${String(report.contractsCompleted)}, XP ${String(report.xp)}, ` +
     `kontrakty ponúknuté/prijaté/zlyhané/zaniknuté ${String(report.contractsOffered)}/${String(report.contractsAccepted)}/` +

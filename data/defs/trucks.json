@@ -7,7 +7,12 @@
       "capacityUnits": 1,
       "lengthCells": 3,
       "speedCellsPerTick": 0.6,
-      "cargoCategories": ["container"]
+      "cargoCategories": [
+        "container"
+      ],
+      "safeZoneTicks": 6,
+      "lashTicks": 8,
+      "unlashTicks": 8
     }
   ]
 }

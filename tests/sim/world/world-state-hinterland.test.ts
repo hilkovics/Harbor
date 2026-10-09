@@ -24,6 +24,7 @@ describe('WorldState: počítadlá vnútrozemia v save', () => {
     delivery: { admitted: 3, waitTicksTotal: 90, waitTicksMax: 50, turnedAway: 1 },
     collect: { admitted: 2, waitTicksTotal: 10, waitTicksMax: 10, turnedAway: 4 },
     pickupBayStarvationTicks: 123,
+    truckTurn: { trucks: 5, ticksTotal: 500, ticksMax: 200 },
   };
 
   it('nenulové počítadlá sa načítajú a roundtrip dá rovnaký stav', () => {
@@ -34,6 +35,7 @@ describe('WorldState: počítadlá vnútrozemia v save', () => {
     expect(world.hinterland.waitTicksMax('collect')).toBe(10);
     expect(world.hinterland.turnedAway('collect')).toBe(4);
     expect(world.hinterland.pickupBayStarvationTicks).toBe(123);
+    expect([world.hinterland.turnTrucks, world.hinterland.turnTicksTotal, world.hinterland.turnTicksMax]).toEqual([5, 500, 200]);
     expect(JSON.stringify(world.serialize())).toBe(JSON.stringify(state));
   });
 
@@ -41,11 +43,13 @@ describe('WorldState: počítadlá vnútrozemia v save', () => {
     ['chýba hinterland', (s) => ({ ...s, hinterland: undefined }), '/hinterland'],
     ['hinterland nie je objekt', (s) => ({ ...s, hinterland: 3 }), '/hinterland'],
     ['neznámy kľúč', (s) => ({ ...s, hinterland: { ...WITH_COUNTS, extra: 1 } }), '/hinterland/extra'],
-    ['chýba misia collect', (s) => ({ ...s, hinterland: { delivery: WITH_COUNTS.delivery, pickupBayStarvationTicks: 0 } }), '/hinterland/collect'],
+    ['chýba misia collect', (s) => ({ ...s, hinterland: { delivery: WITH_COUNTS.delivery, pickupBayStarvationTicks: 0, truckTurn: WITH_COUNTS.truckTurn } }), '/hinterland/collect'],
     ['záporné vpustené', (s) => ({ ...s, hinterland: { ...WITH_COUNTS, delivery: { ...WITH_COUNTS.delivery, admitted: -1 } } }), '/hinterland/delivery/admitted'],
     ['neceločíselné čakanie', (s) => ({ ...s, hinterland: { ...WITH_COUNTS, collect: { ...WITH_COUNTS.collect, waitTicksTotal: 1.5 } } }), '/hinterland/collect/waitTicksTotal'],
     ['maximum nad súčtom', (s) => ({ ...s, hinterland: { ...WITH_COUNTS, delivery: { ...WITH_COUNTS.delivery, waitTicksMax: 91 } } }), '/hinterland/delivery/waitTicksMax'],
     ['čakanie bez vpustených', (s) => ({ ...s, hinterland: { ...WITH_COUNTS, collect: { admitted: 0, waitTicksTotal: 5, waitTicksMax: 5, turnedAway: 0 } } }), '/hinterland/collect/waitTicksTotal'],
+    ['chýba truckTurn', (s) => ({ ...s, hinterland: { delivery: WITH_COUNTS.delivery, collect: WITH_COUNTS.collect, pickupBayStarvationTicks: 0 } }), '/hinterland/truckTurn'],
+    ['maximum obratu nad súčtom', (s) => ({ ...s, hinterland: { ...WITH_COUNTS, truckTurn: { trucks: 5, ticksTotal: 500, ticksMax: 501 } } }), '/hinterland/truckTurn/ticksMax'],
     ['záporné ticky nedostatku', (s) => ({ ...s, hinterland: { ...WITH_COUNTS, pickupBayStarvationTicks: -2 } }), '/hinterland/pickupBayStarvationTicks'],
   ];
 

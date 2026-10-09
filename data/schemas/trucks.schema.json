@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "trucks.json",
-  "description": "Katalóg kamiónov pre export z mapy (ARCHITECTURE §4.2, §7.5; F4): { schemaVersion, items: [...] }. Kamión sa nekupuje a nemá mzdu — spawnuje ho TruckSpawner podľa rampy; čas nakládky určuje rampa (`loadTicksPerUnit`). Jedinečnosť `id` v items[] schéma nevyjadrí — kontroluje ju DefRegistry a `pnpm validate:defs`. Každý kamión musí mať sprite `entities.<id>` v assets/manifest.json (krížovú kontrolu robí `pnpm validate:defs`).",
+  "description": "Katalóg kamiónov pre export z mapy (ARCHITECTURE §4.2, §7.5; F4): { schemaVersion, items: [...] }. Kamión sa nekupuje a nemá mzdu — obsluhuje ho stroj bloku alebo straddle carrier na TP (R4). Jedinečnosť `id` v items[] schéma nevyjadrí — kontroluje ju DefRegistry a `pnpm validate:defs`. Každý kamión musí mať sprite `entities.<id>` v assets/manifest.json (krížovú kontrolu robí `pnpm validate:defs`).",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "items"],
@@ -26,7 +26,7 @@
     "truck": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "displayName", "capacityUnits", "lengthCells", "speedCellsPerTick", "cargoCategories"],
+      "required": ["id", "displayName", "capacityUnits", "lengthCells", "speedCellsPerTick", "cargoCategories", "safeZoneTicks", "lashTicks", "unlashTicks"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "displayName": { "type": "string", "minLength": 1 },
@@ -51,7 +51,10 @@
           "uniqueItems": true,
           "items": { "enum": ["container", "bulk", "liquid", "gas", "roro"] },
           "description": "Kategórie nákladu, ktoré kamión smie viezť."
-        }
+        },
+        "safeZoneTicks": { "type": "integer", "minimum": 0, "description": "Bezpečná zóna pred zdvihom a po ňom na TP (ticky; šofér sa nekreslí, ADR-036)." },
+        "lashTicks": { "type": "integer", "minimum": 0, "description": "Lashing (zaistenie twistlockov) po naložení importu na TP, ticky." },
+        "unlashTicks": { "type": "integer", "minimum": 0, "description": "Unlashing pred zdvihom exportu / prázdneho z kamióna na TP, ticky." }
       }
     }
   }

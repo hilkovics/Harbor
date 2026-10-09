@@ -11,7 +11,7 @@ import { BerthModule, CraneModule } from '@sim/modules';
 import { HOOK_WAIT_TICKS } from '@sim/vehicles/vehicle-fsm';
 import { World, stateHash, type WorldState } from '@sim/world';
 import { findWorldViolation } from '@sim/world/world-invariants';
-import { MAP, apronDefs, hookDefs, lostUnits, ofType, runUntilDeparted, startLoading } from '../helpers/f6a';
+import { PORT_MAP, apronDefs, hookDefs, lostUnits, ofType, runUntilDeparted, startLoading } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
 
 const TIMEOUT = 40_000;
@@ -216,7 +216,7 @@ describe('metriky čakania pod hákom (craneWaitForVehicleTicks, vehicleWaitUnde
     expect(crane.vehicleWaitTicks).toBeGreaterThan(0);
     expect(Number.isInteger(crane.waitForVehicleTicks)).toBe(true);
     expect(Number.isInteger(crane.vehicleWaitTicks)).toBe(true);
-    const restored = World.deserialize(defs, MAP, JSON.parse(JSON.stringify(run.world.serialize())) as WorldState);
+    const restored = World.deserialize(defs, PORT_MAP, JSON.parse(JSON.stringify(run.world.serialize())) as WorldState);
     expect(craneOf(restored).waitForVehicleTicks).toBe(crane.waitForVehicleTicks);
     expect(craneOf(restored).vehicleWaitTicks).toBe(crane.vehicleWaitTicks);
   });
@@ -275,7 +275,7 @@ describe('determinizmus a obnova uprostred čakania pod hákom', () => {
         probe(live.world);
       }
       expect(snapshot, `snímka ${phase}`).toBeDefined();
-      const restored = World.deserialize(defs, MAP, snapshot as WorldState);
+      const restored = World.deserialize(defs, PORT_MAP, snapshot as WorldState);
       expect(stateHash(restored)).toBe(stateHash(live.world));
       const tail = runUntilDeparted(restored, TIMEOUT);
       expect(stateHash(restored), `obnova ${phase} v ticku ${String(snapshotTick)}`).toBe(referenceHash);

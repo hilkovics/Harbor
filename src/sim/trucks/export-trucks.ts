@@ -1,46 +1,41 @@
 /**
  * Kamióny s exportom (F6a, ADR-032 bod 6; F6d, ADR-035): vjazd **delivery** kamiónov podľa plánu príchodov bookingov (krok 8, po výdaji prázdnych).
  * Každá položka plánu (`Contract.nextArrivalTick ≤ tick`) je kamión, ktorý čaká vo vnútrozemí (`trucks/hinterland.ts`); vjazd dostane s rezerváciou
- * (`planDeliveryAdmission`: bay nad kvótou pre odvoz, dock a sklad so zaručeným miestom na vyloženie) a vznikne naložený jednou jednotkou
+ * (`tryAdmitDelivery`: blok so zaručeným miestom a token TP / státia) a vznikne naložený jednou jednotkou
  * (`CargoLedger.create` v `in_truck`, hmotnostná trieda `Rng.weighted` podľa `exportFlow.weightClassShares`, štítky z kontraktu) na road portáli;
- * kamión ide k bráne, prejde ňou (`ExportArrived`), počká v stojisku a vyloží na dock rampy (`systems/landside-system.ts`).
+ * kamión ide k bráne, prejde ňou (`ExportArrived`) a na TP bloku ho obslúži stroj bloku alebo straddle carrier (`systems/landside-system.ts`).
  *
- * Kontrakty vzostupne podľa id, každý sa vybaví celý (všetky splatné položky spredu, neklesajúco podľa `dueTick`, kým ho niečo nezastaví) skôr než ďalší — FIFO naprieč bookingmi to nie je. Bez prevádzkovej rampy kategórie nákladu, bez rezervácie alebo bez road
+ * Kontrakty vzostupne podľa id, každý sa vybaví celý (všetky splatné položky spredu, neklesajúco podľa `dueTick`, kým ho niečo nezastaví) skôr než ďalší — FIFO naprieč bookingmi to nie je. Bez bloku, tokenu alebo bez road
  * portálu položka počká (ďalší tick) — plán sa spotrebuje až po vzniku kamióna, takže žiadny príchod nezanikne; čakanie vpusteného kamióna
  * (`tick − dueTick`) sa zapíše do `Hinterland`. Kontrakt, ktorý sa medzitým uzavrel, plán odnesie so sebou.
  */
-import { DEFAULT_CONTAINER_LABELS, WEIGHT_CLASSES } from '../cargo/cargo-unit';
+import { DEFAULT_CONTAINER_LABELS, WEIGHT_CLASSES, type CargoUnitLabels } from '../cargo/cargo-unit';
 import type { Contract } from '../contracts/contract';
 import { CONTRACT_STATE_TRAITS } from '../contracts/contract-fsm';
-import type { EntityId } from '../core/entity-id';
 import type { World } from '../world/world';
-import { planDeliveryAdmission, spawnDelivery, type AdmissionOutcome } from './hinterland-entry';
+import { tryAdmitDelivery, type AdmissionOutcome } from './hinterland-entry';
+
+/** Štítky jednotky exportu: hmotnostná trieda `weightClass`, štítky z kontraktu a bookingu. */
+function exportLabels(contract: Contract, destinationPort: string, sizeFt: CargoUnitLabels['sizeFt'], weightClass: CargoUnitLabels['weightClass']): CargoUnitLabels {
+  return { direction: 'export', voyageId: contract.voyageId, lineId: contract.lineId, destinationPort, weightClass, ...DEFAULT_CONTAINER_LABELS, sizeFt };
+}
 
 /**
- * Pokus o vjazd kamióna s exportom pre najbližšiu položku plánu kontraktu (booking po prijatí, `booking !== null`). Nakladač jednotky (closure) vznikne až
- * pri skutočnom vjazde — kamión čakajúci vo vnútrozemí nealokuje nič (T6D-05b); `Rng` sa spotrebuje pri vzniku jednotky ako doteraz.
+ * Pokus o vjazd kamióna s exportom pre najbližšiu položku plánu kontraktu (booking po prijatí, `booking !== null`). Skutočná jednotka vznikne až pri skutočnom vjazde — kamión čakajúci
+ * vo vnútrozemí nealokuje nič (T6D-05b); `Rng` (hmotnostná trieda) sa spotrebuje pri vzniku jednotky ako doteraz.
  */
 function admitExportTruck(world: World, contract: Contract): AdmissionOutcome {
   const booking = contract.booking;
   if (booking === null) return 'waiting';
-  const outcome = planDeliveryAdmission(world, 'export', world.defs.cargoTypes.get(contract.cargoTypeId).category);
-  if (outcome !== 'admitted') return outcome;
   const shares = world.defs.logistics.exportFlow.weightClassShares;
   // Veľkosť kontajnera, ktorý kamión privezie: `volumeUnits − arrivalPlan.length`-ty kontajnerov bookingu (ADR-039); plán sa spotrebuje až po vjazde.
   const sizeFt = contract.unitSizeFt(contract.volumeUnits - booking.arrivalPlan.length);
-  spawnDelivery(world, (truck) => {
-    const weightClass = world.rng.weighted(WEIGHT_CLASSES, (item) => shares[item]);
-    world.cargo.create(contract.cargoTypeId, { kind: 'in_truck', truckId: truck.id as EntityId }, contract.id, {
-      direction: 'export',
-      voyageId: contract.voyageId,
-      lineId: contract.lineId,
-      destinationPort: booking.destinationPort,
-      weightClass,
-      ...DEFAULT_CONTAINER_LABELS,
-      sizeFt,
-    });
+  return tryAdmitDelivery(world, 'export', {
+    typeId: contract.cargoTypeId,
+    contractId: contract.id,
+    probe: exportLabels(contract, booking.destinationPort, sizeFt, 'medium'),
+    final: () => exportLabels(contract, booking.destinationPort, sizeFt, world.rng.weighted(WEIGHT_CLASSES, (item) => shares[item])),
   });
-  return 'admitted';
 }
 
 /** Krok 8, časť vjazd exportu (viď hlavička). */

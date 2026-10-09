@@ -2,8 +2,7 @@
  * Nákladové polia render view-modelov (F6c, ADR-034; T6C-06a): čo `SimBridge` z ledgera zloží pre prázdne kontajnery, depo prázdnych
  * a prekládku. Čisté funkcie nad `World` bez side-effectov (nič nemenia, `Rng` nespotrebujú) a bez závislosti na DOM / Pixi / React.
  *
- * - **Prázdne kontajnery** (`direction: 'empty'`): `emptyLook` (apron: `empty` + `lineToken`), `emptiesPerDock` (rampa:
- *   `stagedEmpty[i]`), `depotVM` (depo: dostupné / poškodené / v oprave z `depotCargoSplit` + `repairBays`).
+ * - **Prázdne kontajnery** (`direction: 'empty'`): `emptyLook` (apron: `empty` + `lineToken`), `depotVM` (depo: dostupné / poškodené / v oprave z `depotCargoSplit` + `repairBays`).
  * - **Náklad lode pre palubu** (`shipDeckSplit`): tri smery pre renderer — import, export a prázdne. Prekládka (`tranship`) sa
  *   zarátava do **importu na lodi A** (privezie ju, vyloží sa pod hák) a do **exportu na lodi B** (odvezie ju, nakladá sa spolu
  *   s exportom). Loď A pozná jednotka podľa `voyageId` (štítok pri vzniku = voyage lode A, ledger ho nemení), loď B je každá iná
@@ -16,7 +15,7 @@
  */
 import type { CargoDirection, CargoUnit } from '@sim/cargo';
 import type { EntityId, VoyageId } from '@sim/core';
-import type { EmptyDepot, LoadingRamp } from '@sim/modules';
+import type { EmptyDepot } from '@sim/modules';
 import type { Ship } from '@sim/ships';
 import { depotCargoSplit, type World } from '@sim/world';
 import type { ModuleVM } from '@render/view-models';
@@ -37,25 +36,6 @@ export function emptyLook(world: Pick<World, 'defs'>, unit: CargoUnit): { empty?
   if (!isEmptyUnit(unit)) return {};
   const lineToken = lineTokenOf(world, unit);
   return lineToken === undefined ? { empty: true } : { empty: true, lineToken };
-}
-
-/**
- * Prázdne kontajnery na dockoch rampy (`ramp.stagedEmpty`): index = dock. `null`, ak na rampe žiadny prázdny nie je (VM pole vtedy
- * chýba). Sim ich do `LoadingRamp.stagedAt` nepočíta (prázdny nie je náklad na odvoz), renderer ich však kreslí ako kontajnery
- * na doku — preto sa pripočítavajú aj k `ramp.staged[i]` (viď `rampVM`). O(jednotky rampy).
- */
-export function emptiesPerDock(world: Pick<World, 'cargo'>, ramp: LoadingRamp): number[] | null {
-  const { cargo } = world;
-  const count = cargo.countAt('at_ramp', ramp.id);
-  let perDock: number[] | null = null;
-  for (let i = 0; i < count; i++) {
-    const unitId = cargo.unitAtIndex('at_ramp', ramp.id, i);
-    const unit = unitId === undefined ? undefined : cargo.get(unitId);
-    if (unit === undefined || !isEmptyUnit(unit) || unit.location.kind !== 'at_ramp' || unit.location.dock >= ramp.docks) continue;
-    perDock ??= new Array<number>(ramp.docks).fill(0);
-    perDock[unit.location.dock] += 1;
-  }
-  return perDock;
 }
 
 /** VM depa prázdnych: prázdne uskladnené v depe podľa stavu kvality (súčet liniek) a počet miest opravy. */

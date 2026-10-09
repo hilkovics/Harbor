@@ -52,8 +52,8 @@ const FAIL_DAYS = DEFS.economy.failAfterDaysLate;
 const RUN_TIMEOUT_MS = 300_000;
 /** Tolerancia na začiatok státia lode pri kotvisku: pol hodiny. */
 const DOCK_TOLERANCE = TICKS_PER_HOUR / 2;
-/** Rozloženie prístavu bez brány: rampa je neprevádzková, jednotky po vyložení čakajú v skladoch. */
-const NO_GATE = ['waiting_area', 'ramp', 'gate_out'] as const;
+/** Rozloženie prístavu bez vstupného pruhu brány: export nie je pripravený, jednotky po vyložení čakajú v skladoch. */
+const NO_GATE = ['gate_out'] as const;
 
 const penaltyMoves = (run: Run5) => run.ofSim('MoneyChanged').filter((move) => move.event.reason === 'penalty');
 const revenueMoves = (run: Run5) => run.ofSim('MoneyChanged').filter((move) => move.event.reason === 'contract_revenue');

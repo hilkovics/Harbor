@@ -22,7 +22,6 @@ export type CargoLocation =
   | { readonly kind: 'in_handler'; readonly machineId: EntityId }
   | { readonly kind: 'in_storage'; readonly moduleId: EntityId; readonly slot: number }
   | { readonly kind: 'in_pipeline'; readonly pipelineId: EntityId }
-  | { readonly kind: 'at_ramp'; readonly rampId: EntityId; readonly dock: number }
   | { readonly kind: 'in_truck'; readonly truckId: EntityId }
   | { readonly kind: 'in_train'; readonly trainId: EntityId }
   | { readonly kind: 'exported' }
@@ -83,7 +82,6 @@ export const CARGO_HOLDER_SPECS: { readonly [K in CargoHolderKind]: CargoHolderS
   in_handler: { holderKey: 'machineId', slotKey: null, uniqueSlot: false, order: 'arrival' },
   in_storage: { holderKey: 'moduleId', slotKey: 'slot', uniqueSlot: true, order: 'arrival' },
   in_pipeline: { holderKey: 'pipelineId', slotKey: null, uniqueSlot: false, order: 'arrival' },
-  at_ramp: { holderKey: 'rampId', slotKey: 'dock', uniqueSlot: false, order: 'arrival' },
   in_truck: { holderKey: 'truckId', slotKey: null, uniqueSlot: false, order: 'arrival' },
   in_train: { holderKey: 'trainId', slotKey: null, uniqueSlot: false, order: 'arrival' },
 });
@@ -109,12 +107,11 @@ const TRANSITIONS: { readonly [K in CargoLocationKind]: readonly CargoLocationKi
   on_ship: ['in_crane', 'in_pipeline', 'in_vehicle', 'shipped'],
   in_crane: ['on_apron', 'on_ship', 'in_vehicle'],
   on_apron: ['in_vehicle', 'in_crane'],
-  in_vehicle: ['in_storage', 'at_ramp', 'on_apron', 'in_crane', 'in_handler'],
-  in_handler: ['in_storage', 'in_vehicle'],
+  in_vehicle: ['in_storage', 'on_apron', 'in_crane', 'in_handler', 'in_truck'],
+  in_handler: ['in_storage', 'in_vehicle', 'in_truck'],
   in_storage: ['in_vehicle', 'in_pipeline', 'in_handler'],
-  in_pipeline: ['in_storage', 'at_ramp'],
-  at_ramp: ['in_truck', 'in_train', 'in_vehicle'],
-  in_truck: ['exported', 'at_ramp'],
+  in_pipeline: ['in_storage', 'in_truck'],
+  in_truck: ['exported', 'in_handler', 'in_vehicle'],
   in_train: ['exported'],
   exported: [],
   shipped: [],

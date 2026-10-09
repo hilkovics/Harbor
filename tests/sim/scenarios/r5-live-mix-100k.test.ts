@@ -1,6 +1,6 @@
 // Dlhý beh so zmesou typov (TR5-02, ADR-042): 100 000 tickov bez zápchy (`TrafficJam`), bez uviaznutého nosiča na konci a bez straty nákladu.
-// - `live_terminal` (straddle dvory, brány, kamióny) so zmesou typov v šablónach (reefer, open top, flat rack, tank): prístav nemá reefer blok ani OOG plochu, takže sa losujú len typy bez napájania
-//   a bez nadrozmeru (flat rack len navrch, tank 20′); OOG a reefery bez príslušných blokov sa nelosujú (Rng sa nespotrebuje).
+// - `live_terminal_mix` (`live_terminal` + reefer blok a OOG plocha s jednosmernými prístupmi, TR5-02b) so zmesou typov v šablónach (reefer, open top, flat rack, tank, OOG):
+//   0 TrafficJam, nič neuviazlo, nič sa nestratilo; reefery aj OOG sa naozaj losujú a obsluhujú.
 // - `oog_flow` (STS, RTG blok, OOG plocha s reach stackerom, 10 ťahačov) s trvalým prúdom prekládok so zmesou typov vrátane OOG: reach stacker pracuje celý beh.
 import { describe, expect, it } from 'vitest';
 import { loadMap, parseMapDef } from '@sim/grid';
@@ -37,24 +37,36 @@ function mixedDefs(): DefRegistry {
 }
 
 describe('100 000 tickov so zmesou typov a OOG', () => {
-  it('live_terminal: žiadna udalosť TrafficJam, stuckAtEnd 0, lostUnits 0 a typy zmesi sa naozaj vyskytli', () => {
-    const scenario = loadScenarioFile('live_terminal');
+  it('live_terminal_mix (reefer blok + OOG plocha): žiadna udalosť TrafficJam, stuckAtEnd 0, lostUnits 0 a typy zmesi sa naozaj vyskytli', () => {
+    const scenario = loadScenarioFile('live_terminal_mix');
     const world = World.create(mixedDefs(), loadMap(parseMapDef(readRepoJson(scenario.map))), scenario.seed);
     let jams = 0;
+    let reeferClaims = 0;
+    let storedInReefer = 0;
+    let storedInOog = 0;
+    const moduleOf = (defId: string) => [...world.modules.values()].find((module) => module.def.id === defId)?.id;
     runScenarioAutoAccept(world, scenario, TICKS, {
       afterTick: (w, events) => {
         if (w.clock.tick % CHECK_EVERY === 0) expect(findWorldViolation(w), `tick ${String(w.clock.tick)}`).toBeUndefined();
         for (const event of events) if (event.type === 'TrafficJam') jams += 1;
+          else if (event.type === 'ReeferClaim') reeferClaims += 1;
+          else if (event.type === 'CargoMoved' && event.to.kind === 'in_storage') {
+            if (event.to.moduleId === moduleOf('reefer_block_8')) storedInReefer += 1;
+            else if (event.to.moduleId === moduleOf('oog_area')) storedInOog += 1;
+          }
       },
     });
     expect(jams, 'udalosti TrafficJam').toBe(0);
     expect(trafficMetrics(world).jammed, 'zaseknuté nosiče na konci').toBe(0);
     expect(lostUnits(world)).toBe(0);
     assertCargoConservation(world);
+    console.log(`live_terminal_mix: reeferClaims ${String(reeferClaims)}`);
     const types = new Set([...world.contractBook.contracts.values()].flatMap((contract) => contract.unitTypes));
     expect(types.has('flat_rack') || types.has('open_top') || types.has('tank')).toBe(true);
-    expect(types.has('reefer')).toBe(false);
-    expect([...world.contractBook.contracts.values()].every((contract) => contract.oogUnits.length === 0)).toBe(true);
+    expect(types.has('reefer')).toBe(true);
+    expect([...world.contractBook.contracts.values()].some((contract) => contract.oogUnits.length > 0)).toBe(true);
+    expect(storedInReefer, 'jednotky uložené do reefer bloku').toBeGreaterThan(0);
+    expect(storedInOog, 'jednotky uložené na OOG plochu').toBeGreaterThan(0);
   }, 900_000);
 
   it('oog_flow: prúd prekládok so zmesou typov a OOG — reach stacker pracuje, bez zápchy, uviaznutia a straty', () => {

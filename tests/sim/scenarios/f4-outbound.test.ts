@@ -41,7 +41,7 @@ function landsideEntries(parts: readonly LandsidePart[]): ScenarioEntry[] {
   ];
 }
 
-function outboundScenario(parts: readonly LandsidePart[] = ['gate', 'waiting_area', 'ramp'], later: readonly ScenarioEntry[] = []): Scenario {
+function outboundScenario(parts: readonly LandsidePart[] = ['gate', 'waiting_area', 'ramp', 'gate_out'], later: readonly ScenarioEntry[] = []): Scenario {
   return f3Scenario('f4_outbound', 4031, { vehicles: [STRADDLE, STRADDLE], units: UNITS, extra: [...landsideEntries(parts), ...later] });
 }
 
@@ -183,7 +183,7 @@ describe('scenár F4 outbound: rampa bez brány, brána neskôr; odstránenie br
     expect(rampOf(first.world).reservedCount + rampOf(first.world).stagedCount).toBe(0);
 
     const gateAt = first.world.clock.tick;
-    const late = outboundScenario(['waiting_area', 'ramp'], [{ atTick: gateAt, command: landsideCommand('gate') }]);
+    const late = outboundScenario(['waiting_area', 'ramp', 'gate_out'], [{ atTick: gateAt, command: landsideCommand('gate') }]);
     const second = runOutbound(late, stagingFull);
     const outbound = ofType(second.events, 'JobCreated').slice(UNITS);
     expect(outbound).toHaveLength(STAGING);
@@ -209,7 +209,7 @@ describe('scenár F4 outbound: rampa bez brány, brána neskôr; odstránenie br
       { atTick: tick, command: { type: 'RemoveModule', moduleId: gateId } },
       { atTick: tick + 200, command: landsideCommand('gate') },
     ];
-    const result = runOutbound(outboundScenario(['gate', 'waiting_area', 'ramp'], later), (world) => world.clock.tick > tick + 200 && stagingFull(world));
+    const result = runOutbound(outboundScenario(['gate', 'waiting_area', 'ramp', 'gate_out'], later), (world) => world.clock.tick > tick + 200 && stagingFull(world));
     const cancelled = ofType(result.events, 'JobCancelled');
     expect(cancelled.length).toBeGreaterThan(0);
     expect(cancelled.every((event) => event.reason === 'ramp_inoperative')).toBe(true);

@@ -275,10 +275,10 @@ function depotFields(bridge: InspectorBridge, depot: VehicleDepot): Pick<ModuleI
   };
 }
 
-/** Brána: fronta a priepustnosť za herný čas jednej hodiny; nepripojená brána → 0 (nepustí nikoho). */
+/** Pruh brány: fronta a priepustnosť za herný čas jednej hodiny (podľa stredného času obsluhy v režime pruhu); nepripojený pruh → 0 (nepustí nikoho). */
 function gateFields(bridge: InspectorBridge, gate: TruckGate): Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'gate'> {
   const { world } = bridge;
-  const { processTicks } = gate.params;
+  const processTicks = Math.max(1, Math.round(gate.meanServiceTicks(gate.mode)));
   const throughputPerHour = world.isConnected(gate) ? world.clock.ticksPerHour / processTicks : 0;
   return { stateLabel: MODULE_STATE_ACTIVE, ok: true, gate: { queueLength: gate.queueLength, throughputPerHour, processTicks, hinterland: hinterlandData(world) } };
 }

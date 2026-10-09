@@ -20,7 +20,7 @@ import { planDeliveryAdmission, spawnDelivery, type AdmissionOutcome } from './h
  * Pokus o vjazd kamióna s exportom pre najbližšiu položku plánu kontraktu (booking po prijatí, `booking !== null`). Nakladač jednotky (closure) vznikne až
  * pri skutočnom vjazde — kamión čakajúci vo vnútrozemí nealokuje nič (T6D-05b); `Rng` sa spotrebuje pri vzniku jednotky ako doteraz.
  */
-function admitExportTruck(world: World, contract: Contract, portal: number): AdmissionOutcome {
+function admitExportTruck(world: World, contract: Contract): AdmissionOutcome {
   const booking = contract.booking;
   if (booking === null) return 'waiting';
   const outcome = planDeliveryAdmission(world, 'export', world.defs.cargoTypes.get(contract.cargoTypeId).category);
@@ -28,7 +28,7 @@ function admitExportTruck(world: World, contract: Contract, portal: number): Adm
   const shares = world.defs.logistics.exportFlow.weightClassShares;
   // Veľkosť kontajnera, ktorý kamión privezie: `volumeUnits − arrivalPlan.length`-ty kontajnerov bookingu (ADR-039); plán sa spotrebuje až po vjazde.
   const sizeFt = contract.unitSizeFt(contract.volumeUnits - booking.arrivalPlan.length);
-  spawnDelivery(world, portal, (truck) => {
+  spawnDelivery(world, (truck) => {
     const weightClass = world.rng.weighted(WEIGHT_CLASSES, (item) => shares[item]);
     world.cargo.create(contract.cargoTypeId, { kind: 'in_truck', truckId: truck.id as EntityId }, contract.id, {
       direction: 'export',
@@ -44,13 +44,13 @@ function admitExportTruck(world: World, contract: Contract, portal: number): Adm
 }
 
 /** Krok 8, časť vjazd exportu (viď hlavička). */
-export function admitExportTrucks(world: World, portal: number): void {
+export function admitExportTrucks(world: World): void {
   const { tick } = world.clock;
   for (const contract of world.contractBook.openContracts.values()) {
     // Booking po prijatí (plán je nastavený); ponuka ho nemá a uzavretý kontrakt už nie je medzi otvorenými.
     if (CONTRACT_STATE_TRAITS[contract.state].plan !== 'required') continue;
     for (let due = contract.nextArrivalTick; due !== undefined && due <= tick; due = contract.nextArrivalTick) {
-      if (admitExportTruck(world, contract, portal) !== 'admitted') break;
+      if (admitExportTruck(world, contract) !== 'admitted') break;
       world.hinterland.recordAdmitted('delivery', tick - due);
       contract.consumeArrival();
     }

@@ -36,8 +36,10 @@ export const LEGACY_NO_CONTAINER_TRUCK_DEFS: DefRegistry = DefRegistry.fromRaw({
   trucks: NO_CONTAINER_TRUCKS,
 });
 
-export const GATE_ORIGIN: CellCoord = { x: 45, y: 32 };
-export const AREA_ORIGIN: CellCoord = { x: 49, y: 31 };
+export const GATE_ORIGIN: CellCoord = { x: 45, y: 33 };
+/** Výstupný pruh brány (R4): rot 270, vstup z areálu (49, 32), výstup na verejnú cestu (44, 32). */
+export const GATE_OUT_ORIGIN: CellCoord = { x: 45, y: 32 };
+export const AREA_ORIGIN: CellCoord = { x: 53, y: 31 };
 export const RAMP_ORIGIN: CellCoord = { x: 53, y: 28 };
 /** Vonkajšie bunky konektorov rampy v poradí defu. */
 export const RAMP_OUTSIDE: readonly CellCoord[] = [
@@ -46,18 +48,22 @@ export const RAMP_OUTSIDE: readonly CellCoord[] = [
 ];
 export const GATE_ENTRY_OUTSIDE: CellCoord = { x: 44, y: 33 };
 
-/** Cesty pozemnej časti (11 buniek), po úsekoch. */
+/** Cesty pozemnej časti (17 buniek), po úsekoch (geometria: `helpers/f4-layout.ts`). */
 export const LANDSIDE_ROADS = {
   gateApproach: segment(44, 33, 44, 33),
-  gateExit: segment(47, 33, 48, 33),
-  truckLink: segment(53, 31, 53, 33),
+  gateOutExit: segment(44, 32, 44, 32),
+  gateExit: segment(49, 33, 52, 33),
+  gateOutEntry: segment(49, 32, 49, 32),
+  truckLink: segment(57, 31, 57, 33),
   branchExtension: segment(51, 30, 55, 30),
+  branchLink: segment(56, 30, 57, 30),
 } as const;
 
-export type LandsidePart = 'gate' | 'waiting_area' | 'ramp';
+export type LandsidePart = 'gate' | 'gate_out' | 'waiting_area' | 'ramp';
 
 const LANDSIDE_COMMANDS: Readonly<Record<LandsidePart, SerializedCommand>> = {
-  gate: { type: 'PlaceModule', defId: 'truck_gate', x: GATE_ORIGIN.x, y: GATE_ORIGIN.y, rotation: 270 },
+  gate: { type: 'PlaceModule', defId: 'gate_in_lane', x: GATE_ORIGIN.x, y: GATE_ORIGIN.y, rotation: 90 },
+  gate_out: { type: 'PlaceModule', defId: 'gate_out_lane', x: GATE_OUT_ORIGIN.x, y: GATE_OUT_ORIGIN.y, rotation: 270 },
   waiting_area: { type: 'PlaceModule', defId: 'truck_waiting_area', x: AREA_ORIGIN.x, y: AREA_ORIGIN.y, rotation: 0 },
   ramp: { type: 'PlaceModule', defId: 'loading_ramp_container', x: RAMP_ORIGIN.x, y: RAMP_ORIGIN.y, rotation: 0 },
 };
@@ -82,7 +88,7 @@ export interface OutboundWorld {
 }
 
 export interface OutboundOptions {
-  /** Pozemné moduly v poradí stavby (predvolene brána, stojisko, rampa → id 6, 7, 8); chýbajúci sa nepostaví. */
+  /** Pozemné moduly v poradí stavby (predvolene vstupný pruh, stojisko, rampa, výstupný pruh → id 6, 7, 8, 9); chýbajúci sa nepostaví. */
   readonly landside?: readonly LandsidePart[];
   /** Príkazy pred pozemnými modulmi (napr. ďalšia rampa s menším id). */
   readonly before?: readonly SerializedCommand[];
@@ -98,7 +104,7 @@ const sameCell = (a: CellCoord, b: CellCoord): boolean => a.x === b.x && a.y ===
 
 /** Svet s rozložením (cesty, depo 3, dvory 4 a 5, pozemné moduly) bez vozidiel a nákladu. */
 export function outboundWorld(options: OutboundOptions = {}): OutboundWorld {
-  const { landside = ['gate', 'waiting_area', 'ramp'], before = [], after = [], omitRoads = [], defs = NO_CONTAINER_TRUCK_DEFS, seed = 4030 } = options;
+  const { landside = ['gate', 'waiting_area', 'ramp', 'gate_out'], before = [], after = [], omitRoads = [], defs = NO_CONTAINER_TRUCK_DEFS, seed = 4030 } = options;
   const world = World.create(defs, MAP, seed);
   for (const segmentCells of [...Object.values(ROAD_SEGMENTS), ...Object.values(LANDSIDE_ROADS)]) {
     const cells = segmentCells.filter((cell) => !omitRoads.some((omitted) => sameCell(cell, omitted)));
@@ -119,7 +125,10 @@ export function outboundWorld(options: OutboundOptions = {}): OutboundWorld {
 }
 
 export const rampOf = (world: World): LoadingRamp => world.moduleAt(RAMP_ORIGIN.x, RAMP_ORIGIN.y) as LoadingRamp;
+/** Vstupný pruh brány (id 6 v predvolenom rozložení). */
 export const gateOf = (world: World): TruckGate => world.moduleAt(GATE_ORIGIN.x, GATE_ORIGIN.y) as TruckGate;
+/** Výstupný pruh brány (id 9 v predvolenom rozložení). */
+export const gateOutOf = (world: World): TruckGate => world.moduleAt(GATE_OUT_ORIGIN.x, GATE_OUT_ORIGIN.y) as TruckGate;
 export const areaOf = (world: World): WaitingArea => world.moduleAt(AREA_ORIGIN.x, AREA_ORIGIN.y) as WaitingArea;
 
 /** Kúpi `count` vozidiel `straddle_carrier` do depa; vráti ich id. */

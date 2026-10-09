@@ -10,6 +10,8 @@ import type { EntityId } from '../core/entity-id';
 import { LandExportModule, type LandsideRoster } from '../modules/land-export-module';
 import type { LoadingRamp } from '../modules/loading-ramp';
 import type { Module } from '../modules/module';
+import type { PreGateBuffer } from '../modules/pre-gate-buffer';
+import type { TruckHolding } from '../modules/truck-holding';
 import type { TruckGate } from '../modules/truck-gate';
 import type { WaitingArea } from '../modules/waiting-area';
 
@@ -17,6 +19,10 @@ import type { WaitingArea } from '../modules/waiting-area';
 export interface LandsideModules {
   /** Brány vzostupne podľa id. */
   readonly gates: readonly TruckGate[];
+  /** Predbránové plochy vzostupne podľa id (R4). */
+  readonly preGates: readonly PreGateBuffer[];
+  /** Odstavné plochy vzostupne podľa id (R4, stub). */
+  readonly holdings: readonly TruckHolding[];
   /** Stojiská vzostupne podľa id. */
   readonly waitingAreas: readonly WaitingArea[];
   /** Rampy vzostupne podľa id. */
@@ -27,12 +33,20 @@ export interface LandsideModules {
 
 /** Register s lenivou obnovou podľa verzie množiny modulov (vlastní ho `World`). */
 export class LandsideRosterCache implements LandsideModules {
-  private readonly roster: LandsideRoster = { gates: [], waitingAreas: [], ramps: [] };
+  private readonly roster: LandsideRoster = { gates: [], preGates: [], holdings: [], waitingAreas: [], ramps: [] };
   private readonly ordinals = new Map<EntityId, number>();
   private version = Number.NaN;
 
   get gates(): readonly TruckGate[] {
     return this.roster.gates;
+  }
+
+  get preGates(): readonly PreGateBuffer[] {
+    return this.roster.preGates;
+  }
+
+  get holdings(): readonly TruckHolding[] {
+    return this.roster.holdings;
   }
 
   get waitingAreas(): readonly WaitingArea[] {
@@ -56,6 +70,8 @@ export class LandsideRosterCache implements LandsideModules {
     this.version = moduleVersion;
     const { roster } = this;
     roster.gates.length = 0;
+    roster.preGates.length = 0;
+    roster.holdings.length = 0;
     roster.waitingAreas.length = 0;
     roster.ramps.length = 0;
     this.ordinals.clear();

@@ -19,7 +19,9 @@ import {
   ModuleRegistry,
   STORAGE_MODULES,
   StorageModule,
+  PreGateBuffer,
   TruckGate,
+  TruckHolding,
   VehicleDepot,
   WaitingArea,
   moduleRegistry,
@@ -79,14 +81,17 @@ const siloDef: Readonly<ModuleDef> = STORAGE_DEFS.modules.get('silo_test');
 const pipelineDef: Readonly<ModuleDef> = STORAGE_DEFS.modules.get('pipeline_test');
 
 describe('ModuleRegistry', () => {
-  it('predvolený register má vstavané druhy berth, crane, storage, depot, gate, waiting_area a ramp (BUILTIN_MODULES)', () => {
-    const kinds = ['berth', 'crane', 'storage', 'depot', 'gate', 'waiting_area', 'ramp'];
+  it('predvolený register má vstavané druhy berth, crane, storage, depot, gate, pre_gate, holding, waiting_area a ramp (BUILTIN_MODULES)', () => {
+    const kinds = ['berth', 'crane', 'storage', 'depot', 'gate', 'pre_gate', 'holding', 'waiting_area', 'ramp'];
     expect(moduleRegistry.kinds).toEqual(kinds);
     expect(BUILTIN_MODULES.map(([kind]) => kind)).toEqual(kinds);
   });
 
   it.each([
-    ['truck_gate', TruckGate],
+    ['gate_in_lane', TruckGate],
+    ['gate_out_lane', TruckGate],
+    ['pre_gate_buffer', PreGateBuffer],
+    ['truck_holding', TruckHolding],
     ['truck_waiting_area', WaitingArea],
     ['loading_ramp_container', LoadingRamp],
   ] as const)('pozemný modul %s → vlastná trieda (extends LandExportModule)', (defId, cls) => {
@@ -132,7 +137,7 @@ describe('ModuleRegistry', () => {
     const pipeline = registry.create(pipelineDef, { defId: 'pipeline_test', x: 1, y: 1, rotation: 90 }, id(3), 0, ENV);
     expect(pipeline).toBeInstanceOf(TestPipeline);
     expect(pipeline.size).toEqual({ w: 4, h: 4 });
-    expect(registry.kinds).toEqual(['berth', 'crane', 'storage', 'depot', 'gate', 'waiting_area', 'ramp', 'pipeline']);
+    expect(registry.kinds).toEqual(['berth', 'crane', 'storage', 'depot', 'gate', 'pre_gate', 'holding', 'waiting_area', 'ramp', 'pipeline']);
     expect(errorCode(() => registry.register('storage', (init) => new TestPipeline(init)))).toBe('duplicate_kind');
   });
 

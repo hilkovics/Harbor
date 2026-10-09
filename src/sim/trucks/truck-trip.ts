@@ -4,41 +4,63 @@
  * prechod do `no_path` a súlad pohybu so stavom (krok 12, obnova save).
  *
  * Ciele sa odvodzujú z aktuálnych ciest a modulov pri každom plánovaní, takže prestavba siete sa prejaví pri najbližšom
- * preplánovaní. Strany brány dáva `truckGateSides` (strany z portálu, bez vstupu z portálu strany podľa stojiska
- * kamióna) a úseky za bránou **okruh kamióna** `truckCircuit` (brána, stojisko a rampa kamióna — nezávisle od toho, či
- * je brána práve dosiahnuteľná z portálu; review T04-11, major 2):
- * - `to_gate` → prístupová bunka **vstupnej** strany brány (fronta dnu),
+ * preplánovaní. Strany pruhu brány dáva `LandsideNetwork.gateSides` (prvý konektor = vonkajšia, druhý = vnútorná strana; R4, ADR-041) a úseky za bránou
+ * **okruh kamióna** `truckCircuit` (vstupný pruh, stojisko a rampa kamióna; review T04-11, major 2):
+ * - `to_pre_gate` → prístupová bunka vjazdu predbránovej plochy kamióna (`preGateId`),
+ * - `to_gate` → prístupová bunka **vonkajšej** strany vstupného pruhu kamióna (`gateId`; fronta dnu),
  * - `to_bay` → vstupná bunka stojiska v okruhu,
  * - `to_dock` → prístupová bunka konektora docku (dock `d` = `d`-tý cestný konektor rampy v poradí defu), ak ju okruh
  *   obslúži (dosiahnuteľná z výstupu stojiska a s cestou späť, keď ju okruh má); inak bunka rampy okruhu; bez okruhu
  *   bunka docku a bez cesty k nej najbližšia prístupová bunka rampy (dock je logické miesto, ADR-022),
- * - `to_gate_out` → prístupová bunka **výstupnej (vnútornej)** strany brány (fronta von); keď k nej od rampy nevedie
- *   cesta priamo (stojisko je jediné spojenie), cez **spätný priechod stojiskom** okruhu: jazda k výstupnej bunke
- *   stojiska, prechod telom (okamžitý, bez bay — ADR-011, ADR-024) na jeho vstupnú bunku a odtiaľ k bráne,
- * - `to_portal` → bunka výjazdového road portálu (`out` alebo `both`, ADR-037 dodatok R1).
+ * - `to_gate_out` → prístupová bunka **vonkajšej** (vnútornej pre terminál) strany výstupného pruhu kamióna (`gateOutId`, vyberie sa podľa odhadu času pri prvom
+ *   plánovaní; fronta von); keď k nej od rampy nevedie cesta priamo (stojisko je jediné spojenie), cez **spätný priechod stojiskom** okruhu: jazda k výstupnej bunke
+ *   stojiska, prechod telom (okamžitý, bez bay — ADR-011, ADR-024) na jeho vstupnú bunku a odtiaľ k pruhu,
+ * - `to_portal` → najbližší portál výjazdu (`out` alebo `both`, ADR-037 dodatok R1, ADR-041 bod 3).
  * Bez cieľa alebo cesty kamión prejde do `no_path` a skúša znova každých `logistics.repathIntervalTicks` (ADR-019).
  */
 import type { Grid } from '../grid/grid';
 import { NO_ACCESS, accessCellIndex } from '../logistics/module-access';
 import { LoadingRamp } from '../modules/loading-ramp';
 import type { Module } from '../modules/module';
+import { PreGateBuffer } from '../modules/pre-gate-buffer';
 import { TruckGate } from '../modules/truck-gate';
 import { WaitingArea } from '../modules/waiting-area';
 import { carrierMotionProblem, type MotionProblem, type MotionTarget } from '../movement/motion-check';
 import { findRouteToCell, findRouteToModule, routeAnchor, takePath } from '../movement/route-planning';
 import { cardinalHeading } from '../ships/ship-route';
 import { exitSlotKey, headSlotKey } from '../traffic/head-slot';
-import type { GateSides, LandsideCircuit } from '../world/landside';
+import type { LandsideCircuit } from '../world/landside';
 import type { World } from '../world/world';
+import { laneLoad } from './gate-choice';
 import { TruckError } from './truck-error';
 import { TRUCK_STATE_TRAITS, changeTruckState, type TruckGateSide, type TruckStop, type TruckTravelState } from './truck-fsm';
 import type { Truck } from './truck';
 
-/** Brána kamióna; chýbajúca → `TruckError('inconsistent')`. */
+/** Vstupný pruh brány kamióna (`gateId`); chýbajúci → `TruckError('inconsistent')`. */
 export function gateOfTruck(world: World, truck: Truck): TruckGate {
   const gate = world.modules.get(truck.gateId);
   if (!(gate instanceof TruckGate)) throw new TruckError('inconsistent', `${truck.label}: brána #${String(truck.gateId)} vo svete nie je`);
   return gate;
+}
+
+/** Výstupný pruh brány kamióna (`gateOutId`); kamión ho ešte nemá alebo modul chýba → `TruckError('inconsistent')`. */
+export function gateOutOfTruck(world: World, truck: Truck): TruckGate {
+  const gate = truck.gateOutId === null ? undefined : world.modules.get(truck.gateOutId);
+  if (!(gate instanceof TruckGate)) throw new TruckError('inconsistent', `${truck.label}: výstupný pruh #${String(truck.gateOutId)} vo svete nie je`);
+  return gate;
+}
+
+/** Predbránová plocha kamióna (`preGateId`); chýbajúca → `TruckError('inconsistent')`. */
+export function preGateOfTruck(world: World, truck: Truck): PreGateBuffer {
+  const buffer = truck.preGateId === null ? undefined : world.modules.get(truck.preGateId);
+  if (!(buffer instanceof PreGateBuffer)) throw new TruckError('inconsistent', `${truck.label}: predbránová plocha #${String(truck.preGateId)} vo svete nie je`);
+  return buffer;
+}
+
+/** Pruh brány, ku ktorému sa kamión vzťahuje v stave so stranou `side` (`entry` = vstupný pruh, `exit` = výstupný pruh); výstupný pruh bez výberu → `undefined`. */
+function laneOfSide(world: World, truck: Truck, side: TruckGateSide): TruckGate | undefined {
+  if (side === 'entry') return gateOfTruck(world, truck);
+  return truck.gateOutId === null ? undefined : gateOutOfTruck(world, truck);
 }
 
 /** Stojisko kamióna; chýbajúce → `TruckError('inconsistent')`. */
@@ -53,11 +75,6 @@ export function rampOfTruck(world: World, truck: Truck): LoadingRamp {
   const ramp = world.modules.get(truck.rampId);
   if (!(ramp instanceof LoadingRamp)) throw new TruckError('inconsistent', `${truck.label}: rampa #${String(truck.rampId)} vo svete nie je`);
   return ramp;
-}
-
-/** Strany brány pre kamión (`LandsideNetwork.truckGateSides`: z portálu, bez vstupu z portálu podľa stojiska kamióna). */
-export function truckGateSides(world: World, truck: Truck): GateSides {
-  return world.landside.truckGateSides(gateOfTruck(world, truck), waitingAreaOfTruck(world, truck));
 }
 
 /**
@@ -85,25 +102,48 @@ export function dockAccessCell(grid: Grid, ramp: LoadingRamp, dock: number): num
   return NO_ACCESS;
 }
 
-/** Prístupová bunka strany brány pre kamión (`NO_ACCESS`, keď strana chýba). */
-function gateSideCell(world: World, truck: Truck, side: TruckGateSide | null): number {
-  if (side === null) return NO_ACCESS;
-  const sides = truckGateSides(world, truck);
-  return side === 'entry' ? sides.entryCell : sides.exitCell;
-}
+/** Koniec pruhu brány: `near` = vonkajšia strana (tu kamión čaká, prvý konektor), `far` = vnútorná strana (tu po prechode vyjde, druhý konektor). */
+type LaneEnd = 'near' | 'far';
 
-/** Druhá strana brány. */
-const OTHER_SIDE: { readonly [S in TruckGateSide]: TruckGateSide } = Object.freeze({ entry: 'exit', exit: 'entry' });
+/** Prístupová bunka konca `end` pruhu brány pre stranu `side` kamióna (`NO_ACCESS`, keď strana alebo pruh chýba). */
+function gateEndCell(world: World, truck: Truck, side: TruckGateSide | null, end: LaneEnd, anchor?: number): number {
+  if (side === null) return NO_ACCESS;
+  const lane = laneOfSide(world, truck, side) ?? (anchor === undefined ? undefined : pickOutLane(world, truck, anchor));
+  if (lane === undefined) return NO_ACCESS;
+  const sides = world.landside.gateSides(lane);
+  return end === 'near' ? sides.entryCell : sides.exitCell;
+}
 
 /** Bunka strany brány, pri ktorej kamión vo fronte (stav `gate_queue*`) čaká; `NO_ACCESS`, ak strana chýba alebo nie je vo fronte. */
 export function gateNearSideCell(world: World, truck: Truck): number {
-  return gateSideCell(world, truck, TRUCK_STATE_TRAITS[truck.state].gateSide);
+  return gateEndCell(world, truck, TRUCK_STATE_TRAITS[truck.state].gateSide, 'near');
 }
 
-/** Bunka, na ktorej kamión po prechode bránou (z fronty v aktuálnom stave) vyjde; `NO_ACCESS`, ak strana chýba. */
+/** Bunka, na ktorej kamión po prechode pruhom (z fronty v aktuálnom stave) vyjde; `NO_ACCESS`, ak strana chýba. */
 export function gateFarSideCell(world: World, truck: Truck): number {
-  const side = TRUCK_STATE_TRAITS[truck.state].gateSide;
-  return side === null ? NO_ACCESS : gateSideCell(world, truck, OTHER_SIDE[side]);
+  return gateEndCell(world, truck, TRUCK_STATE_TRAITS[truck.state].gateSide, 'far');
+}
+
+/**
+ * Výstupný pruh pre kamión z bunky `from` podľa odhadu času (ADR-041 bod 3): cesta priamo (alebo cez spätný priechod stojiskom okruhu) k vstupu pruhu v tickoch +
+ * záťaž pruhu (fronta a idúci k nemu) × stredný čas obsluhy v jeho režime; pruh bez cesty sa preskočí, pri zhode vyhrá nižšie id. Nič nemení.
+ */
+export function pickOutLane(world: World, truck: Truck, from: number): TruckGate | undefined {
+  const passage = passageBackOf(world, truck);
+  let best: TruckGate | undefined;
+  let bestEta = Infinity;
+  for (const lane of world.landside.outLanes) {
+    const entry = world.landside.gateSides(lane).entryCell;
+    let cost = world.distances.distance(from, entry);
+    if (cost === Infinity && passage !== undefined) cost = world.distances.distance(from, passage.from) + world.distances.distance(passage.to, entry);
+    if (cost === Infinity) continue;
+    const eta = cost / Math.max(truck.def.speedCellsPerTick, Number.MIN_VALUE) + laneLoad(world, lane) * lane.meanServiceTicks(lane.mode);
+    if (best === undefined || eta < bestEta) {
+      best = lane;
+      bestEta = eta;
+    }
+  }
+  return best;
 }
 
 /**
@@ -140,20 +180,24 @@ export function dockTargetCell(world: World, truck: Truck): number {
   return world.landside.circuitServesCell(circuit, dock) ? dock : circuit.rampCell;
 }
 
-type TargetCellFn = (world: World, truck: Truck, travel: TruckTravelState) => number;
+type TargetCellFn = (world: World, truck: Truck, travel: TruckTravelState, anchor: number) => number;
 
 /** Cieľová bunka jazdy podľa cieľa stavu (tabuľka, nie switch — pravidlo 7); `NO_ACCESS` = cieľ nie je. */
 const TARGET_CELLS: { readonly [S in TruckStop]: TargetCellFn } = Object.freeze({
-  gate: (world: World, truck: Truck, travel: TruckTravelState) => gateSideCell(world, truck, TRUCK_STATE_TRAITS[travel].gateSide),
+  pre_gate: (world: World, truck: Truck) => {
+    const entry = preGateOfTruck(world, truck).connectors[0];
+    return entry === undefined ? NO_ACCESS : accessCellIndex(world.grid, entry);
+  },
+  gate: (world: World, truck: Truck, travel: TruckTravelState, anchor: number) => gateEndCell(world, truck, TRUCK_STATE_TRAITS[travel].gateSide, 'near', anchor),
   waiting_area: (world: World, truck: Truck) => truckCircuit(world, truck)?.waitingEntryCell ?? NO_ACCESS,
   ramp: dockTargetCell,
-  portal: (world: World) => world.landside.exitPortalCell,
+  portal: (world: World, _truck: Truck, _travel: TruckTravelState, anchor: number) => world.landside.nearestExitPortal(anchor),
 });
 
-/** Cieľová bunka jazdy v stave `travel` (viď hlavička; pri `to_dock` bunka docku); `NO_ACCESS` = cieľ nie je. */
-function targetCell(world: World, truck: Truck, travel: TruckTravelState): number {
+/** Cieľová bunka jazdy v stave `travel` z kotvy `anchor` (viď hlavička; pri `to_dock` bunka docku); `NO_ACCESS` = cieľ nie je. */
+function targetCell(world: World, truck: Truck, travel: TruckTravelState, anchor: number = truck.cell): number {
   const stop = TRUCK_STATE_TRAITS[travel].stop;
-  return stop === null ? NO_ACCESS : TARGET_CELLS[stop](world, truck, travel);
+  return stop === null ? NO_ACCESS : TARGET_CELLS[stop](world, truck, travel, anchor);
 }
 
 /** Spätný priechod stojiskom okruhu kamióna: z výstupnej bunky (`from`) na vstupnú (`to`); slepé parkovisko ho nemá. */
@@ -172,7 +216,7 @@ export function passageBackOf(world: World, truck: Truck): PassageBack | undefin
 /** Cesta k spätnému priechodu stojiskom z `anchor`, keď za ním vedie cesta k cieľu jazdy (`passageBack`); inak `null`. */
 function findPassageBackRoute(world: World, truck: Truck, travel: TruckTravelState, anchor: number): readonly number[] | null {
   const passage = passageBackOf(world, truck);
-  const target = targetCell(world, truck, travel);
+  const target = targetCell(world, truck, travel, anchor);
   if (passage === undefined || target === NO_ACCESS || world.paths.get(passage.to, target) === null) return null;
   return findRouteToCell(world, anchor, passage.from);
 }
@@ -183,7 +227,7 @@ function findPassageBackRoute(world: World, truck: Truck, travel: TruckTravelSta
  * rampy, pri `to_gate_out` inak k spätnému priechodu stojiskom. `null` = cieľ nie je alebo k nemu nevedie cesta.
  */
 export function findTruckRoute(world: World, truck: Truck, travel: TruckTravelState, anchor: number): readonly number[] | null {
-  const direct = findRouteToCell(world, anchor, targetCell(world, truck, travel));
+  const direct = findRouteToCell(world, anchor, targetCell(world, truck, travel, anchor));
   if (direct !== null) return direct;
   const traits = TRUCK_STATE_TRAITS[travel];
   if (traits.stop === 'ramp') return findRouteToModule(world, anchor, rampOfTruck(world, truck));
@@ -199,6 +243,8 @@ export function planTruckRoute(world: World, truck: Truck, travel: TruckTravelSt
   if (anchor === undefined) return false;
   const path = findTruckRoute(world, truck, travel, anchor);
   if (path === null) return false;
+  // Výstupný pruh sa vyberie pri prvom úspešnom plánovaní cesty von (odhad času, ADR-041 bod 3) a ďalej sa nemení.
+  if (travel === 'to_gate_out' && truck.gateOutId === null) truck.gateOutId = pickOutLane(world, truck, anchor)?.id ?? null;
   takePath(world, truck, path);
   return true;
 }
@@ -258,10 +304,15 @@ export function exitTo(world: World, truck: Truck, cell: number, travel: TruckTr
 
 /** Cieľ pre krok 12 podľa cieľa stavu (tabuľka): modul väzby kamióna alebo bunka portálu. */
 const MOTION_TARGETS: { readonly [S in TruckStop]: (world: World, truck: Truck) => MotionTarget | undefined } = Object.freeze({
-  gate: (world: World, truck: Truck): Module | undefined => world.modules.get(truck.gateId),
+  pre_gate: (world: World, truck: Truck): Module | undefined => (truck.preGateId === null ? undefined : world.modules.get(truck.preGateId)),
+  gate: (world: World, truck: Truck): Module | undefined => {
+    const side = TRUCK_STATE_TRAITS[truck.state].gateSide;
+    const id = side === 'exit' ? truck.gateOutId : truck.gateId;
+    return id === null ? undefined : world.modules.get(id);
+  },
   waiting_area: (world: World, truck: Truck): Module | undefined => world.modules.get(truck.waitingAreaId),
   ramp: (world: World, truck: Truck): Module | undefined => world.modules.get(truck.rampId),
-  portal: (world: World): number => world.landside.exitPortalCell,
+  portal: (world: World): Int32Array => world.landside.outPortalCells,
 });
 
 /**

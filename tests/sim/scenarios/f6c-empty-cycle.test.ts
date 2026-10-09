@@ -3,7 +3,7 @@
  * dvora) a empty handlerom — import northern_star (kontrakt #2, 64 TEU = 39 kontajnerov) sa odvezie kamiónmi, 60 % jednotiek sa o 1 – 3 dni vráti ako
  * prázdne (kamión `delivery`, brána `EmptyReturned`, vykládka na rampe, empty handler odvezie do depa), kontrola v depe poškodí časť
  * (`EmptyDamaged`), oprava trvá 6 h (`EmptyRepaired`, poplatok `maintenance_repair`); export booking #10 (golden_wave) nemá z čoho dostať
- * prázdny (14× `EmptyPickupMissed`), booking #23 (export northern_star roundtripu #22, prijatý v ticku 25 921) dostane prázdne z depa (`EmptyPickedUp`,
+ * prázdny (14× `EmptyPickupMissed`), booking #22 (export northern_star roundtripu #22, prijatý v ticku 25 921) dostane prázdne z depa (`EmptyPickedUp`,
  * `in_truck → exported`), vrátane už opravených. `lostUnits 0`, `--roundtrip-at` uprostred opravy dá zhodný hash.
  */
 import { existsSync, readFileSync } from 'node:fs';
@@ -22,12 +22,12 @@ const TICKS = 40_000;
 const IMPORT_ID = 2;
 const MISSED_BOOKING_ID = 10;
 /**
- * Príkaz `AcceptContract` v ticku 25 921 prijíma ponuku #22. Od T6D-02 (vozidlo pod žeriavom, žeriav čaká na vozidlo) sa časovanie a tým aj
- * prúd `Rng` zmenili, takže #22 je import roundtrip bookingu (northern_star) a jeho export #23 sa prijme spolu s ním; prázdne z depa
- * dostane práve export #23 (pred T6D-02 bol #22 samostatný export).
+ * Príkaz `AcceptContract` v ticku 25 921 prijíma ponuku #21 (pôvodne #22, R4 ADR-041: brána s Rng losovaním problémov posunula prúd Rng). Od T6D-02 (vozidlo pod žeriavom, žeriav čaká na vozidlo) sa časovanie a tým aj
+ * prúd `Rng` zmenili, takže #21 je import roundtrip bookingu (northern_star) a jeho export #22 sa prijme spolu s ním; prázdne z depa
+ * dostane práve export #22 (pred T6D-02 bol #21 samostatný export).
  */
-const ACCEPTED_OFFER_ID = 22;
-const SERVED_BOOKING_ID = 23;
+const ACCEPTED_OFFER_ID = 21;
+const SERVED_BOOKING_ID = 22;
 /** Import #2: 64 TEU = 39 kontajnerov pri `sizeMix` 0,6 (ADR-039). */
 const IMPORT_UNITS = 39;
 const RUN_TIMEOUT_MS = 300_000;
@@ -68,11 +68,11 @@ describe('scenár empty_cycle: súbor', () => {
     expect([SCENARIO.id, SCENARIO.seed, SCENARIO.map]).toEqual(['empty_cycle', 5011, 'data/maps/harbor_01.json']);
   });
 
-  it('prístav F4 s depom prázdnych na mieste blízkeho dvora, tri vozidlá (2× straddle, empty handler) a tri AcceptContract (2 @2, 10 @8 641, 22 @25 921)', () => {
+  it('prístav F4 s depom prázdnych na mieste blízkeho dvora, tri vozidlá (2× straddle, empty handler) a tri AcceptContract (2 @2, 10 @8 641, 21 @25 921)', () => {
     const types = SCENARIO.commands.map((entry) => entry.command.type);
-    expect(types).toEqual([...Array<string>(10).fill('PlaceRoad'), ...Array<string>(6).fill('PlaceModule'), 'BuyVehicle', 'BuyVehicle', 'BuyVehicle', 'PlaceRoad', 'RemoveRoad', 'AcceptContract', 'AcceptContract', 'AcceptContract']);
+    expect(types).toEqual([...Array<string>(8).fill('PlaceRoad'), ...Array<string>(7).fill('PlaceModule'), 'BuyVehicle', 'BuyVehicle', 'BuyVehicle', ...Array<string>(6).fill('PlaceRoad'), 'RemoveRoad', 'AcceptContract', 'AcceptContract', 'AcceptContract']);
     const modules = SCENARIO.commands.filter((entry) => entry.command.type === 'PlaceModule').map((entry) => (entry.command as unknown as { defId: string }).defId);
-    expect(modules).toEqual(['vehicle_depot', 'empty_depot', 'container_yard_small', 'truck_gate', 'truck_waiting_area', 'loading_ramp_container']);
+    expect(modules).toEqual(['vehicle_depot', 'empty_depot', 'container_yard_small', 'gate_in_lane', 'truck_waiting_area', 'loading_ramp_container', 'gate_out_lane']);
     const vehicles = SCENARIO.commands.filter((entry) => entry.command.type === 'BuyVehicle').map((entry) => (entry.command as unknown as { vehicleDefId: string }).vehicleDefId);
     expect(vehicles).toEqual(['straddle_carrier', 'straddle_carrier', 'empty_handler']);
     const accepts = SCENARIO.commands.filter((entry) => entry.command.type === 'AcceptContract').map((entry) => [entry.atTick, (entry.command as unknown as { contractId: number }).contractId]);
@@ -86,7 +86,7 @@ describe('scenár empty_cycle: beh', () => {
   const returnedIds = new Set(returned.map((event) => event.unitId));
   const all = chains(events);
 
-  it('import #2 (64 TEU, northern_star) sa odvezie kamiónmi a kontrakt sa dokončí; booking #10 aj roundtrip #22 + #23 sú prijaté', () => {
+  it('import #2 (64 TEU, northern_star) sa odvezie kamiónmi a kontrakt sa dokončí; booking #10 aj roundtrip #21 + #22 sú prijaté', () => {
     const imported = world.contracts.get(IMPORT_ID as never);
     expect(imported).toMatchObject({ kind: 'import', lineId: 'northern_star', volumeUnits: IMPORT_UNITS, state: 'completed', unitsExported: IMPORT_UNITS });
     expect(world.contracts.get(MISSED_BOOKING_ID as never)).toMatchObject({ kind: 'export', lineId: 'golden_wave', state: 'completed' });
@@ -156,7 +156,7 @@ describe('scenár empty_cycle: beh', () => {
     expect(handlerJobs.length / emptyJobs.length).toBeGreaterThan(0.5);
   });
 
-  it('výdaj exportérovi: booking #23 dostane prázdne svojej linky z depa (in_storage → in_vehicle → at_ramp → in_truck → exported), booking #10 (linka bez prázdnych) odíde naprázdno', () => {
+  it('výdaj exportérovi: booking #22 dostane prázdne svojej linky z depa (in_storage → in_vehicle → at_ramp → in_truck → exported), booking #10 (linka bez prázdnych) odíde naprázdno', () => {
     const picked = of(events, 'EmptyPickedUp').map((entry) => entry.event);
     expect(picked.length).toBeGreaterThan(0);
     for (const event of picked) {

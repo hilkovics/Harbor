@@ -160,7 +160,8 @@
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "cell": { "$ref": "#/$defs/cell" },
-        "direction": { "enum": ["in", "out", "both"], "description": "Len cestné portály: in = vjazd do mapy (vznik kamiónov), out = výjazd z mapy, both = oboje (predvolené, staré mapy)." }
+        "direction": { "enum": ["in", "out", "both"], "description": "Len cestné portály: in = vjazd do mapy (vznik kamiónov), out = výjazd z mapy, both = oboje (predvolené, staré mapy)." },
+        "trafficShare": { "type": "number", "exclusiveMinimum": 0, "description": "Len cestné portály vjazdu (R4, ADR-041 bod 3): podiel kamiónov z danej strany vnútrozemia (relatívna váha, nie súčet 1); portál vyberá `Rng` pri vzniku kamióna. Chýba = rovnaký podiel ako ostatné portály." }
       }
     },
     "starterRoad": {

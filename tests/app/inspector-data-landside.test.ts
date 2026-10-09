@@ -35,20 +35,20 @@ function stage(app: App, dock: number): void {
 }
 
 describe('inspectorData: brána', () => {
-  it('pripojená prázdna brána: fronta 0, priepustnosť = ticksPerHour / processTicks, processTicks z defu', () => {
+  it('pripojená prázdna brána: fronta 0, priepustnosť = ticksPerHour / processTicks, processTicks = stredný čas obsluhy z defu', () => {
     const app = landsideApp();
     const data = inspectorData(app.bridge, GATE_ID);
     const { ticksPerHour } = app.world.clock;
     expect(data).toMatchObject({
-      defId: 'truck_gate',
-      displayName: 'Brána kamiónov',
+      defId: 'gate_in_lane',
+      displayName: 'Vstupný pruh brány',
       kind: 'gate',
-      footprint: { w: 2, h: 2 },
+      footprint: { w: 4, h: 1 },
       stateLabel: 'V prevádzke',
       ok: true,
       connected: true,
       removable: true,
-      gate: { queueLength: 0, throughputPerHour: ticksPerHour / 18, processTicks: 18 },
+      gate: { queueLength: 0, throughputPerHour: ticksPerHour / 15, processTicks: 15 },
     });
     expect(data?.storage).toBeUndefined();
     expect(data?.waitingArea).toBeUndefined();
@@ -58,7 +58,8 @@ describe('inspectorData: brána', () => {
   it('priepustnosť sa počíta z time.json, nie natvrdo: ticksPerHour × (1 / processTicks)', () => {
     const app = landsideApp();
     const throughput = inspectorData(app.bridge, GATE_ID)?.gate?.throughputPerHour ?? 0;
-    expect(throughput).toBe(app.world.clock.ticksPerHour / gateOf(app).params.processTicks);
+    const gate = gateOf(app);
+    expect(throughput).toBe(app.world.clock.ticksPerHour / Math.max(1, Math.round(gate.meanServiceTicks(gate.mode))));
     expect(throughput).toBeGreaterThan(0);
   });
 
@@ -74,7 +75,7 @@ describe('inspectorData: brána', () => {
     buildLandside(app, { roads: false, parts: ['gate'] });
     expect(inspectorData(app.bridge, GATE_ID)).toMatchObject({
       connected: false,
-      gate: { queueLength: 0, throughputPerHour: 0, processTicks: 18 },
+      gate: { queueLength: 0, throughputPerHour: 0, processTicks: 15 },
     });
   });
 });
@@ -166,7 +167,7 @@ describe('inspectorData: rampa', () => {
     buildLandside(app, { parts: ['ramp'] });
     const ramp = [...app.world.modules.values()].find((module) => module instanceof LoadingRamp) as LoadingRamp;
     expect(inspectorData(app.bridge, ramp.id)?.ramp?.operational).toBe(false);
-    buildLandside(app, { roads: false, parts: ['gate', 'waiting_area'] });
+    buildLandside(app, { roads: false, parts: ['gate', 'waiting_area', 'gate_out'] });
     const after = inspectorData(app.bridge, ramp.id);
     expect(after?.ramp?.operational).toBe(true);
     expect(Object.keys(after?.ramp ?? {})).not.toContain('inoperativeReason');

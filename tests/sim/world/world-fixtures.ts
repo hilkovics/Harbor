@@ -66,6 +66,11 @@ export const LEGACY_CAPACITY_MODULES = {
 export const LEGACY_CAPACITY_DEFS: DefRegistry = DefRegistry.fromRaw({ ...RAW_DEFS, modules: LEGACY_CAPACITY_MODULES });
 /** Bundled defy s pripnutým režimom `apron` — predvolené defy väčšiny testov (`DEFS`). */
 export const DEFS: DefRegistry = DefRegistry.fromRaw(RAW_DEFS);
+/**
+ * Bundled defy bez náhodných problémov pruhov brány (R4, ADR-041): `APRON_MODULES` pripína `gateIssueChance` a `sealIssueChance` na 0, takže prechod pruhom má presné
+ * trvanie a brána `Rng` nespotrebuje. Pomenované pre čitateľnosť testov presných časov a stavu `Rng` (rovnaké defy ako `DEFS`).
+ */
+export const NO_ISSUE_DEFS: DefRegistry = DEFS;
 /** Zdieľaná mapa — testy overujú, že ju žiadny svet nezmení. */
 /**
  * harbor_01 v podobe pred jednosmerným prístavom (R1, ADR-037 dodatok): jeden obojsmerný portál `road_south` (44, 63) a dvojpruhová

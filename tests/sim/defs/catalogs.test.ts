@@ -30,6 +30,8 @@ import {
   craneParams,
   depotParams,
   gateParams,
+  holdingParams,
+  preGateParams,
   loadBundledDefs,
   rampParams,
   storageParams,
@@ -133,11 +135,15 @@ describe('bundled katalógy (loadBundledDefs)', () => {
       'crane_container_gantry',
       'container_yard_small',
       'vehicle_depot',
-      'truck_gate',
+      'gate_in_lane',
       'truck_waiting_area',
       'loading_ramp_container',
       'empty_depot',
       'rtg_block',
+      // R4 (ADR-041): výstupný pruh brány, predbránová plocha, odstavná plocha (pridané na koniec — indexy ostatných nemenné)
+      'gate_out_lane',
+      'pre_gate_buffer',
+      'truck_holding',
     ]);
     const berth = defs.modules.get('berth_standard');
     expect(berth.kind).toBe('berth');
@@ -173,16 +179,28 @@ describe('bundled katalógy (loadBundledDefs)', () => {
     expect([depot.costCents, depot.maintenancePerDayCents]).toEqual([9_000_000, 15_000]);
   });
 
-  it('modules: brána, čakacia plocha a rampa podľa T04-01 (konektory z manifestu)', () => {
-    const gate = defs.modules.get('truck_gate');
-    expect([gate.kind, gate.displayName, gate.footprint]).toEqual(['gate', 'Brána kamiónov', { w: 2, h: 2 }]);
+  it('modules: pruhy brány (R4, ADR-041), predbránová a odstavná plocha, čakacia plocha a rampa (konektory z manifestu)', () => {
+    const gate = defs.modules.get('gate_in_lane');
+    expect([gate.kind, gate.displayName, gate.footprint]).toEqual(['gate', 'Vstupný pruh brány', { w: 1, h: 4 }]);
     expect(gate.placement).toEqual({ requiredTerrain: ['land', 'quay'], requiresParcelOwnership: true });
+    // Prvý konektor = vonkajšia (vstupná) strana pruhu — juh, druhý = vnútorná — sever (rot 0).
     expect(gate.connectors).toEqual([
+      { x: 0, y: 3, side: 's', type: 'road' },
       { x: 0, y: 0, side: 'n', type: 'road' },
-      { x: 0, y: 1, side: 's', type: 'road' },
     ]);
-    expect([gate.costCents, gate.maintenancePerDayCents]).toEqual([8_000_000, 15_000]);
-    expect(gate.params).toEqual({ processTicks: 18 });
+    expect([gate.costCents, gate.maintenancePerDayCents]).toEqual([2_500_000, 4_000]);
+    expect(gate.params).toEqual({ direction: 'in', ocrTicks: 3, checkTicks: 8, issueTicks: 4, gateIssueChance: 0.05, troubleTicks: 40, expressTicks: 6 });
+    const gateOut = defs.modules.get('gate_out_lane');
+    expect([gateOut.kind, gateOut.displayName, gateOut.footprint]).toEqual(['gate', 'Výstupný pruh brány', { w: 1, h: 4 }]);
+    expect(gateOut.params).toEqual({ direction: 'out', weighTicks: 6, scanTicks: 6, sealTicks: 4, sealIssueChance: 0.03, inspectionTicks: 40, expressTicks: 8 });
+    const preGate = defs.modules.get('pre_gate_buffer');
+    expect([preGate.kind, preGate.footprint, preGate.params]).toEqual(['pre_gate', { w: 8, h: 8 }, { rows: 8, rowCapacity: 2 }]);
+    expect(preGate.connectors).toEqual([
+      { x: 0, y: 7, side: 's', type: 'road' },
+      { x: 7, y: 0, side: 'n', type: 'road' },
+    ]);
+    const holding = defs.modules.get('truck_holding');
+    expect([holding.kind, holding.footprint, holding.params]).toEqual(['holding', { w: 3, h: 6 }, { stalls: 4 }]);
     const waiting = defs.modules.get('truck_waiting_area');
     expect([waiting.kind, waiting.displayName, waiting.footprint]).toEqual(['waiting_area', 'Čakacia plocha', { w: 4, h: 3 }]);
     expect(waiting.connectors).toEqual([
@@ -247,7 +265,9 @@ describe('bundled katalógy (loadBundledDefs)', () => {
   });
 
   it('typované gettery gateParams / waitingAreaParams / rampParams', () => {
-    expect(gateParams(defs.modules.get('truck_gate'))).toEqual({ processTicks: 18 });
+    expect(gateParams(defs.modules.get('gate_in_lane'))).toMatchObject({ direction: 'in', expressTicks: 6 });
+    expect(preGateParams(defs.modules.get('pre_gate_buffer'))).toEqual({ rows: 8, rowCapacity: 2 });
+    expect(holdingParams(defs.modules.get('truck_holding'))).toEqual({ stalls: 4 });
     expect(waitingAreaParams(defs.modules.get('truck_waiting_area'))).toEqual({ bays: 6, pickupReservedBays: 2 });
     expect(rampParams(defs.modules.get('loading_ramp_container'))).toEqual({
       docks: 2,
@@ -831,10 +851,17 @@ describe('modules: zlé hodnoty polí → DefError s cestou', () => {
     });
 
     const gateCases: readonly (readonly [field: string, value: unknown])[] = [
-      ['processTicks', 0],
-      ['processTicks', 18.5],
-      ['processTicks', '18'],
-      ['processTicks', null],
+      ['direction', 'up'],
+      ['direction', null],
+      ['ocrTicks', 0],
+      ['checkTicks', 8.5],
+      ['issueTicks', '4'],
+      ['gateIssueChance', 1.5],
+      ['gateIssueChance', -0.1],
+      ['gateIssueChance', '0.05'],
+      ['troubleTicks', 0],
+      ['expressTicks', 0],
+      ['expressTicks', null],
       ['internalTicks', -1],
       ['internalTicks', 2.5],
       ['internalTicks', '6'],
@@ -880,7 +907,7 @@ describe('modules: zlé hodnoty polí → DefError s cestou', () => {
     });
 
     it.each([
-      ['gate', 4, 'processTicks'],
+      ['gate', 4, 'direction'],
       ['waiting_area', 5, 'bays'],
       ['ramp', 6, 'docks'],
     ] as const)('%s: params {} neprejdú (chýba povinný parameter), cudzí parameter je neznámy kľúč', (_kind, index, first) => {
@@ -895,14 +922,14 @@ describe('modules: zlé hodnoty polí → DefError s cestou', () => {
     it('brána, čakacia plocha a rampa: internalTicks je voliteľné (0 je platné) a prejaví sa v getteri', () => {
       const raw = rawDefs();
       const before = fromRaw(raw);
-      expect(gateParams(before.modules.get('truck_gate')).internalTicks).toBeUndefined();
+      expect(gateParams(before.modules.get('gate_in_lane')).internalTicks).toBeUndefined();
       expect(waitingAreaParams(before.modules.get('truck_waiting_area')).internalTicks).toBeUndefined();
       expect(rampParams(before.modules.get('loading_ramp_container')).internalTicks).toBeUndefined();
       (itemsOf(raw, 'modules')[4]!['params'] as Json)['internalTicks'] = 0;
       (itemsOf(raw, 'modules')[5]!['params'] as Json)['internalTicks'] = 3;
       (itemsOf(raw, 'modules')[6]!['params'] as Json)['internalTicks'] = 4;
       const registry = fromRaw(raw);
-      expect(gateParams(registry.modules.get('truck_gate')).internalTicks).toBe(0);
+      expect(gateParams(registry.modules.get('gate_in_lane')).internalTicks).toBe(0);
       expect(waitingAreaParams(registry.modules.get('truck_waiting_area')).internalTicks).toBe(3);
       expect(rampParams(registry.modules.get('loading_ramp_container')).internalTicks).toBe(4);
     });
@@ -967,13 +994,31 @@ describe('MODULE_PARAM_SPECS', () => {
   });
 
   it('gate, waiting_area a ramp majú presne polia GateParams, WaitingAreaParams a RampParams (internalTicks je voliteľné)', () => {
-    expect(Object.keys(MODULE_PARAM_SPECS.gate)).toEqual(['processTicks', 'internalTicks']);
+    expect(Object.keys(MODULE_PARAM_SPECS.gate)).toEqual([
+      'direction',
+      'ocrTicks',
+      'checkTicks',
+      'issueTicks',
+      'gateIssueChance',
+      'troubleTicks',
+      'weighTicks',
+      'scanTicks',
+      'sealTicks',
+      'sealIssueChance',
+      'inspectionTicks',
+      'expressTicks',
+      'internalTicks',
+    ]);
+    expect(Object.keys(MODULE_PARAM_SPECS.pre_gate)).toEqual(['rows', 'rowCapacity']);
+    expect(Object.keys(MODULE_PARAM_SPECS.holding)).toEqual(['stalls']);
     expect(Object.keys(MODULE_PARAM_SPECS.waiting_area)).toEqual(['bays', 'internalTicks', 'pickupReservedBays']);
     expect(Object.keys(MODULE_PARAM_SPECS.ramp)).toEqual(['docks', 'stagingPerDock', 'loadTicksPerUnit', 'category', 'internalTicks']);
     expect(MODULE_PARAM_SPECS.gate.internalTicks.optional).toBe(true);
     expect(MODULE_PARAM_SPECS.waiting_area.internalTicks.optional).toBe(true);
     expect(MODULE_PARAM_SPECS.ramp.internalTicks.optional).toBe(true);
-    expect(MODULE_PARAM_SPECS.gate.processTicks.optional).not.toBe(true);
+    expect(MODULE_PARAM_SPECS.gate.direction.optional).not.toBe(true);
+    expect(MODULE_PARAM_SPECS.gate.expressTicks.optional).not.toBe(true);
+    expect(MODULE_PARAM_SPECS.gate.ocrTicks.optional).toBe(true);
     expect(MODULE_PARAM_SPECS.waiting_area.bays.optional).not.toBe(true);
     expect(MODULE_PARAM_SPECS.ramp.docks.optional).not.toBe(true);
     expect(MODULE_PARAM_SPECS.ramp.stagingPerDock.optional).not.toBe(true);
@@ -1020,7 +1065,7 @@ describe('storageParams / depotParams', () => {
 
 describe('gateParams / waitingAreaParams / rampParams', () => {
   const defs = loadBundledDefs();
-  const gate = defs.modules.get('truck_gate');
+  const gate = defs.modules.get('gate_in_lane');
   const waiting = defs.modules.get('truck_waiting_area');
   const ramp = defs.modules.get('loading_ramp_container');
   const yard = defs.modules.get('container_yard_small');
@@ -1042,9 +1087,9 @@ describe('gateParams / waitingAreaParams / rampParams', () => {
   });
 
   it('ručne zostavený def s nesprávnymi parametrami → DefError (nie tichý as-cast)', () => {
-    const brokenGate: ModuleDef = { ...gate, params: { processTicks: 'slow' } };
+    const brokenGate: ModuleDef = { ...gate, params: { direction: 'sideways' } };
     const error = expectDefError(() => gateParams(brokenGate), 'modules', '/items');
-    expect(error.problem).toContain('truck_gate');
+    expect(error.problem).toContain('gate_in_lane');
     const handWaiting: ModuleDef = { ...waiting, params: { bays: 6, extra: 1 } };
     expectDefError(() => waitingAreaParams(handWaiting), 'modules', '/items');
     const missingRamp: ModuleDef = { ...ramp, params: { docks: 2 } };
@@ -1256,10 +1301,18 @@ describe('katalógy: schéma ⇔ DefRegistry', () => {
     ['vehicles', '/items/0/techRequired', 'Automation 1'],
     ['vehicles', '/items/0/id', 'Straddle'],
     ['vehicles', '/items/0/extra', 1],
-    ['modules', '/items/4/params/processTicks', 1],
-    ['modules', '/items/4/params/processTicks', 0],
-    ['modules', '/items/4/params/processTicks', 18.5],
-    ['modules', '/items/4/params/processTicks', undefined],
+    ['modules', '/items/4/params/ocrTicks', 1],
+    ['modules', '/items/4/params/ocrTicks', 0],
+    ['modules', '/items/4/params/ocrTicks', 18.5],
+    ['modules', '/items/4/params/expressTicks', 1],
+    ['modules', '/items/4/params/expressTicks', 0],
+    ['modules', '/items/4/params/expressTicks', undefined],
+    ['modules', '/items/4/params/gateIssueChance', 0],
+    ['modules', '/items/4/params/gateIssueChance', 1.01],
+    ['modules', '/items/4/params/direction', 'up'],
+    ['modules', '/items/10/params/rows', 0],
+    ['modules', '/items/10/params/rowCapacity', 1.5],
+    ['modules', '/items/11/params/stalls', 0],
     ['modules', '/items/4/params/internalTicks', 0],
     ['modules', '/items/4/params/internalTicks', -1],
     ['modules', '/items/4/params/extra', 1],

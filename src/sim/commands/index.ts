@@ -24,6 +24,7 @@ export { BuyVehicleCommand } from './buy-vehicle';
 export type { BuyVehicleInput } from './buy-vehicle';
 export { SellVehicleCommand } from './sell-vehicle';
 export { SetBlockPriorityCommand } from './set-block-priority';
+export { SetGateLaneModeCommand } from './set-gate-lane-mode';
 export { SetCraneGangCommand } from './set-crane-gang';
 export { ContractOfferCommand } from './contract-command';
 export { AcceptContractCommand } from './accept-contract';

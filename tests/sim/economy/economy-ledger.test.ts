@@ -34,7 +34,7 @@ import {
 
 const ROAD_COST = DEFS.infrastructure.road.costPerCellCents;
 const START_CASH = DEFS.economy.startingCashCents;
-const MODULE_IDS = ['vehicle_depot', 'container_yard_small', 'container_yard_small', 'truck_gate', 'truck_waiting_area', 'loading_ramp_container'];
+const MODULE_IDS = ['vehicle_depot', 'container_yard_small', 'container_yard_small', 'gate_in_lane', 'gate_out_lane', 'truck_waiting_area', 'loading_ramp_container'];
 const MODULES_COST = MODULE_IDS.reduce((sum, defId) => sum + DEFS.modules.get(defId).costCents, 0);
 const VEHICLES_COST = 2 * DEFS.vehicles.get('straddle_carrier').purchaseCents;
 
@@ -65,7 +65,7 @@ describe('Economy: počiatočný stav', () => {
 describe('Economy: výdavky a predaje z F1–F4 idú cez ledger s rovnakými sumami', () => {
   const seed = 5503;
 
-  it('stavba prístavu: road_capex 44 buniek, module_capex 6 modulov, vehicle_capex 2 vozidlá; hotovosť = štart − súčet', () => {
+  it('stavba prístavu: road_capex 50 buniek, module_capex 7 modulov, vehicle_capex 2 vozidlá; hotovosť = štart − súčet', () => {
     const world = World.create(DEFS, MAP, seed);
     const run = new Run5(world, portScenario('f5_ledger_build', seed));
     run.runTo(2);

@@ -31,7 +31,10 @@ const MAX_TICKS_TO_ALL_EXPORTED = Math.floor(TICKS_BEFORE_ADR_029 * 0.85);
 const GATE_BOUND_SLACK_TICKS = 330;
 const SAMPLE_TICKS = 500;
 
-const PROCESS_TICKS = gateParams(DEFS.modules.get('truck_gate')).processTicks;
+/** Najdlhší prechod pruhom (R4, ADR-041): vstupný 3 + 8 + 4, výstupný 6 + 6 + 4 tickov; pruhy pracujú nezávisle, takže priepustnosť brány = 1 kamión za najdlhší z nich. */
+const IN_PARAMS = gateParams(DEFS.modules.get('gate_in_lane'));
+const OUT_PARAMS = gateParams(DEFS.modules.get('gate_out_lane'));
+const PROCESS_TICKS = Math.max((IN_PARAMS.ocrTicks ?? 0) + (IN_PARAMS.checkTicks ?? 0) + (IN_PARAMS.issueTicks ?? 0), (OUT_PARAMS.weighTicks ?? 0) + (OUT_PARAMS.scanTicks ?? 0) + (OUT_PARAMS.sealTicks ?? 0));
 const BAYS = waitingAreaParams(DEFS.modules.get('truck_waiting_area')).bays;
 const DOCKS = rampParams(DEFS.modules.get('loading_ramp_container')).docks;
 const TRUCK_CAPACITY = DEFS.trucks.get('truck_container').capacityUnits;
@@ -88,9 +91,9 @@ describe('priepustnosť kamiónov: full_import_chain (ADR-029)', () => {
     expect(maxDockHolders).toBeLessThanOrEqual(DOCKS);
   });
 
-  it('po uskladnení je úzkym miestom brána: export trvá 2 × processTicks na kamión (+ príjazd prvého a odjazd posledného)', () => {
+  it('po uskladnení je úzkym miestom brána: export trvá najdlhší prechod pruhom na kamión (+ príjazd prvého a odjazd posledného)', () => {
     const trucks = (UNITS - exportedAtAllStored) / TRUCK_CAPACITY;
-    const gateBound = trucks * 2 * PROCESS_TICKS;
+    const gateBound = trucks * PROCESS_TICKS;
     const exportPhase = allExportedAt - allStoredAt;
     expect(allStoredAt).toBeGreaterThan(0);
     expect(exportPhase).toBeGreaterThanOrEqual(gateBound - GATE_BOUND_SLACK_TICKS);
@@ -99,10 +102,10 @@ describe('priepustnosť kamiónov: full_import_chain (ADR-029)', () => {
 
   it('sklad sa po uskladnení vyprázdňuje priebežne: zásoba v každej vzorke klesne, export v každom okne rastie', () => {
     const phase = samples.filter((sample) => sample.tick > allStoredAt && sample.tick <= allExportedAt);
-    expect(phase.length).toBeGreaterThan(2); // kratšia fáza po uskladnení (kotvisko 8 × 4: rýchlejší príjem), stále viac než jedna vzorka
+    expect(phase.length).toBeGreaterThan(1); // kratšia fáza po uskladnení (kotvisko 8 × 4, od R4 rýchlejšie pruhy brány: ≈ 1 100 tickov), stále aspoň dve vzorky
     for (let i = 1; i < phase.length; i++) {
       expect(phase[i].stored, `tick ${String(phase[i].tick)}`).toBeLessThan(phase[i - 1].stored);
-      // Hranica brány: SAMPLE_TICKS / (2 × processTicks) kamiónov za okno; pred ADR-029 ~10 TEU za 500 tickov. Od R1 (ADR-037) kamióny
+      // Spodná hranica: SAMPLE_TICKS / (2 × najdlhší prechod pruhom) kamiónov za okno (od R4 je brána rýchlejšia, úzke miesto sú docky rampy); pred ADR-029 ~10 TEU za 500 tickov. Od R1 (ADR-037) kamióny
       // jazdia po slotoch a okno sa môže o jeden kamión rozkolísať navyše — celkovú hranicu brány drží test vyššie.
       expect(phase[i].exported - phase[i - 1].exported, `tick ${String(phase[i].tick)}`).toBeGreaterThanOrEqual(Math.floor(SAMPLE_TICKS / (2 * PROCESS_TICKS)) - 2);
     }

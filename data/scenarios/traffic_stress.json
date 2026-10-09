@@ -1,6 +1,6 @@
 {
   "id": "traffic_stress",
-  "seed": 6014,
+  "seed": 6015,
   "map": "data/maps/stress_f6.json",
   "commands": [
     {
@@ -219,14 +219,14 @@
       "atTick": 17281,
       "command": {
         "type": "AcceptContract",
-        "contractId": 15
+        "contractId": 13
       }
     },
     {
       "atTick": 17281,
       "command": {
         "type": "AcceptContract",
-        "contractId": 16
+        "contractId": 15
       }
     },
     {
@@ -282,13 +282,6 @@
       "atTick": 25921,
       "command": {
         "type": "AcceptContract",
-        "contractId": 24
-      }
-    },
-    {
-      "atTick": 25921,
-      "command": {
-        "type": "AcceptContract",
         "contractId": 25
       }
     },
@@ -300,10 +293,17 @@
       }
     },
     {
+      "atTick": 25921,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 28
+      }
+    },
+    {
       "atTick": 34561,
       "command": {
         "type": "AcceptContract",
-        "contractId": 27
+        "contractId": 30
       }
     },
     {
@@ -331,7 +331,14 @@
       "atTick": 43201,
       "command": {
         "type": "AcceptContract",
-        "contractId": 36
+        "contractId": 34
+      }
+    },
+    {
+      "atTick": 43201,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 35
       }
     },
     {
@@ -339,13 +346,6 @@
       "command": {
         "type": "AcceptContract",
         "contractId": 37
-      }
-    },
-    {
-      "atTick": 43201,
-      "command": {
-        "type": "AcceptContract",
-        "contractId": 40
       }
     }
   ]

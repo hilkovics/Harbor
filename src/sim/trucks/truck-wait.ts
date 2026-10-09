@@ -39,6 +39,8 @@ type WaitLimit = (world: TruckWaitWorld, truck: Truck) => number;
 
 /** Hranica odpočtu podľa stavu (tabuľka, nie switch); stav bez čakania → 0 (`waitTicks` musí byť 0, krok 12). */
 const WAIT_LIMITS: { readonly [S in TruckState]: WaitLimit } = Object.freeze({
+  to_pre_gate: () => 0,
+  pre_gate: () => 0,
   to_gate: () => 0,
   gate_queue: () => 0,
   gate_pass: () => 0,

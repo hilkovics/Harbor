@@ -133,6 +133,8 @@ describe('CommandRegistry (kostra T01-03)', () => {
       // TR3-02 (ADR-040): SetBlockPriority, SetCraneGang
       'invalid_priority',
       'invalid_gang',
+      // TR4-01 (ADR-041): SetGateLaneMode
+      'invalid_gate_mode',
     ]);
     expect(new Set(VALIDATION_REASONS).size).toBe(VALIDATION_REASONS.length);
   });
@@ -160,6 +162,7 @@ describe('vstavané príkazy (T01-04, T02-04, T02-05)', () => {
       'DeclineContract',
       'SetBlockPriority',
       'SetCraneGang',
+      'SetGateLaneMode',
     ]);
     expect(BUILTIN_COMMANDS.map((command) => command.TYPE)).toEqual(commandRegistry.types);
   });
@@ -207,6 +210,7 @@ describe('vstavané príkazy (T01-04, T02-04, T02-05)', () => {
       'DeclineContract',
       'SetBlockPriority',
       'SetCraneGang',
+      'SetGateLaneMode',
     ]);
     expect(direct.commandFromJSON({ type: 'RemoveRoad', cells: [] }).type).toBe('RemoveRoad');
   });

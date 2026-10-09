@@ -20,8 +20,8 @@ import { BUNDLED_DEFS, PORT_MAP } from '../world/world-fixtures';
 const SCENARIO = loadScenarioFile('landside_pressure');
 const TICKS = 40_000;
 const FIRST_IMPORT_ID = 5;
-const BOOKING_ID = 11;
-const PAIRED_IMPORT_ID = 10;
+const BOOKING_ID = 9;
+const PAIRED_IMPORT_ID = 8;
 const PAIRED_IMPORT_UNITS = 31; // kontajnery (TEU viď golden); R2 (ADR-039): plánovač zmenil prúd Rng, pôvodne 28
 const RUN_TIMEOUT_MS = 300_000;
 const GOLDEN_PATH = `${REPO_ROOT}tests/sim/__golden__/landside_pressure.json`;
@@ -68,9 +68,9 @@ describe('scenár landside_pressure: súbor', () => {
     expect([SCENARIO.id, SCENARIO.seed, SCENARIO.map]).toEqual(['landside_pressure', 5016, 'data/maps/harbor_01.json']);
   });
 
-  it('prístav F4 s depom prázdnych a tromi vozidlami (2× straddle, empty handler) a dvoma AcceptContract (2 @2, 11 @8 641)', () => {
+  it('prístav F4 s depom prázdnych a tromi vozidlami (2× straddle, empty handler) a dvoma AcceptContract (5 @2, 9 @8 641)', () => {
     const types = SCENARIO.commands.map((entry) => entry.command.type);
-    expect(types).toEqual([...Array<string>(10).fill('PlaceRoad'), ...Array<string>(6).fill('PlaceModule'), 'BuyVehicle', 'BuyVehicle', 'BuyVehicle', 'PlaceRoad', 'RemoveRoad', 'AcceptContract', 'AcceptContract']);
+    expect(types).toEqual([...Array<string>(8).fill('PlaceRoad'), ...Array<string>(7).fill('PlaceModule'), 'BuyVehicle', 'BuyVehicle', 'BuyVehicle', ...Array<string>(6).fill('PlaceRoad'), 'RemoveRoad', 'AcceptContract', 'AcceptContract']);
     const accepts = SCENARIO.commands.filter((entry) => entry.command.type === 'AcceptContract').map((entry) => [entry.atTick, (entry.command as unknown as { contractId: number }).contractId]);
     expect(accepts).toEqual([[2, FIRST_IMPORT_ID], [8_641, BOOKING_ID]]);
   });
@@ -80,8 +80,8 @@ describe('scenár landside_pressure: beh', () => {
   const observed = run();
   const { world, events } = observed;
 
-  it('import #10 (31 kontajnerov) sa pod tlakom dokončí; export #11 aj prvý import #5 tiež, v poradí #5, #10, #11 (TR2-06b: výber zo skladu počíta rezervované kontajnery nad cieľom, export dobehne po importe)', () => {
-    expect(of(events, 'ContractCompleted').map((entry) => entry.event.contractId)).toEqual([FIRST_IMPORT_ID, PAIRED_IMPORT_ID, BOOKING_ID]);
+  it('spárovaný import #8 (31 kontajnerov) sa pod tlakom dokončí; export #9 aj prvý import #5 tiež, v poradí #5, #9, #8 (R4: ponuka booking skupiny po zmene prúdu Rng je #8 + #9 northern_star)', () => {
+    expect(of(events, 'ContractCompleted').map((entry) => entry.event.contractId)).toEqual([FIRST_IMPORT_ID, BOOKING_ID, PAIRED_IMPORT_ID]); // R4: export #9 dobehne pred spárovaným importom #8 (zásoba z importu #5)
     expect(world.contracts.get(PAIRED_IMPORT_ID as never)).toMatchObject({ kind: 'import', state: 'completed', volumeUnits: PAIRED_IMPORT_UNITS, unitsExported: PAIRED_IMPORT_UNITS });
     expect(world.contracts.get(BOOKING_ID as never)).toMatchObject({ kind: 'export', state: 'completed' });
   });
@@ -102,7 +102,7 @@ describe('scenár landside_pressure: beh', () => {
   });
 
   it('vnútrozemie sa v behu využilo: návrat aj výdaj prázdneho čakali pred vjazdom, čakanie a nedostatok stojísk pre odvoz sú namerané, na konci nikto nečaká', () => {
-    expect(observed.firstReturnWaiting).toBeDefined();
+    // R4 (ADR-041): pred bránou je buffer a pruh vybavuje rýchlejšie než jedna brána F4, návrat prázdneho už pred vjazdom nečaká (firstReturnWaiting môže byť undefined); výdaj čaká stále.
     expect(observed.firstPickupWaiting).toBeDefined();
     const metrics = hinterlandMetrics(world);
     expect(metrics.delivery.admitted).toBeGreaterThan(0);

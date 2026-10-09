@@ -11,6 +11,8 @@ export {
   craneParams,
   depotParams,
   gateParams,
+  holdingParams,
+  preGateParams,
   rampParams,
   storageParams,
   waitingAreaParams,

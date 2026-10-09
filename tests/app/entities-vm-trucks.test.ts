@@ -143,7 +143,7 @@ describe('TruckVM: celý beh reťazca, každý frame', () => {
     expect(parked).toBeGreaterThan(0);
     expect(docked).toBeGreaterThan(0);
     expect(seenLoaded).toEqual(new Set([true, false]));
-    expect([...seenStates]).toEqual(expect.arrayContaining(['to_gate', 'gate_queue', 'to_bay', 'waiting', 'to_dock', 'loading', 'to_gate_out', 'gate_queue_out', 'to_portal']));
+    expect([...seenStates]).toEqual(expect.arrayContaining(['to_gate', 'gate_queue', 'gate_pass', 'to_bay', 'waiting', 'to_dock', 'loading', 'to_gate_out', 'gate_pass_out', 'to_portal']));
     expect(world.trucks.size).toBe(0);
     expect(bridge.snapshot().trucks).toEqual([]);
   });

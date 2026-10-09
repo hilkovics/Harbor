@@ -1,13 +1,14 @@
 /**
  * TruckSpawner — vznik kamiónov v kroku 8 (ARCHITECTURE §7.5, §7.8 bod 3; rozhodnutia orchestrátora F4 č. 3 a 5;
  * ADR-024, ADR-029). Pre každý dock prevádzkovej rampy (rampy vzostupne podľa id, docky vzostupne) vznikne najviac
- * jeden kamión za tick na road portáli (`roadPortals[0]`), keď:
+ * jeden kamión za tick na portáli vjazdu (R4, ADR-041 bod 3: voľný portál, pri viacerých ho vyberie `Rng` podľa `trafficShare`, `pickInPortal`), keď:
  * - rampa je prevádzková (`World.isRampOperational`, ADR-022) a existuje kamión (`trucks.json`) jej kategórie,
  * - dock má pre kamión náklad, na ktorý ešte nemá nárok iný kamión: pripravené jednotky (`stagedAt`) + jednotky, ktoré
  *   k docku vezie vozidlo (`DockSupply`), − nároky kamiónov docku (`claimedAt`) ≥ `capacityUnits` (ADR-029),
- * - niektoré stojisko na trasách rampy (`World.landsideRoutes`, poradie id brány, potom stojiska) má voľný bay.
+ * - niektoré stojisko na trasách rampy (`World.landsideRoutes`, poradie id pruhu, potom stojiska) má voľný bay a vstup brány voľné miesto (predbránová plocha).
  * Kamión si pri vzniku nárokuje `capacityUnits` jednotiek docku a rezervuje najnižší voľný bay prvej takej trasy
- * (`World.addTruck`), emituje `TruckSpawned` a naplánuje cestu k vstupnej strane brány. Dock **nedrží** — ten si vezme
+ * (`World.addTruck`), emituje `TruckSpawned` a naplánuje cestu k vstupu brány vybranému podľa odhadu času (`gate-choice.ts`): k predbránovej ploche (`to_pre_gate`) alebo
+ * k vstupnému pruhu (`to_gate`). Dock **nedrží** — ten si vezme
  * až pri odchode zo stojiska (landside systém), takže na jeden dock môže byť v okruhu viac kamiónov; ich počet
  * ohraničujú bays stojiska a náklad docku (najviac `stagingPerDock / capacityUnits` kamiónov bez naloženia).
  * Bez voľného bay kamión nevznikne a rampa ohlási `NoWaitingBay` najviac raz za hernú hodinu
@@ -23,15 +24,16 @@ import type { CargoCategory, TruckDef } from '../defs/types';
 import type { Rotation } from '../grid/rotation';
 import { NO_ACCESS } from '../logistics/module-access';
 import type { LoadingRamp } from '../modules/loading-ramp';
+import type { LandsideRoute } from '../world/landside';
 import { WaitingArea } from '../modules/waiting-area';
 import { carrierPosition } from '../movement/carrier';
 import { headSlotKey } from '../traffic/head-slot';
-import { LANES_PER_CELL } from '../traffic/lane-slots';
-import type { LandsideRoute } from '../world/landside';
 import type { World } from '../world/world';
 import type { DockSupply } from './dock-supply';
+import { isPortalBlocked, pickGate, pickInPortalFor } from './gate-choice';
 import { Truck } from './truck';
-import { TRUCK_MISSION_USES_PICKUP_BAYS, type TruckMission } from './truck-fsm';
+import { TruckError } from './truck-error';
+import type { TruckMission } from './truck-fsm';
 import { enterTruckNoPath, faceRoute, planTruckRoute } from './truck-trip';
 
 /**
@@ -48,27 +50,15 @@ export function truckDefFor(defs: DefRegistry, category: CargoCategory): Readonl
   return undefined;
 }
 
-/**
- * Prvá trasa rampy, ktorej stojisko má pre misiu `mission` voľný bay; žiadna → `undefined`. Misia, ktorá náklad odváža (`pickup`, `collect`), smie
- * obsadiť ľubovoľný voľný bay, misia s dovozom (`delivery`) len voľný nad kvótou pre odvoz (`WaitingArea.freeBaysForDelivery`, ADR-035). Misia je
- * povinná (T6D-05b): predvolená `pickup` by potichu udelila výnimku z kvóty stojísk.
- */
-export function routeWithFreeBay(world: World, ramp: LoadingRamp, mission: TruckMission): LandsideRoute | undefined {
-  const usesPickupBays = TRUCK_MISSION_USES_PICKUP_BAYS[mission];
-  for (const route of world.landsideRoutes(ramp)) {
-    const area = world.modules.get(route.waitingAreaId);
-    if (area instanceof WaitingArea && (usesPickupBays ? area.freeBays : area.freeBaysForDelivery) > 0) return route;
-  }
-  return undefined;
-}
+export { isPortalBlocked };
 
 /**
- * Drží niektorý nosič slot bunky portálu `portal` (v ktoromkoľvek pruhu)? Na obsadenom portáli kamión nevznikne (ADR-037, R1 č. 10);
- * kontrola je konzervatívna — pruh nového kamióna sa určuje až podľa jeho trasy, tá sa pred vznikom neplánuje.
+ * Prvá trasa rampy, ktorej stojisko má pre misiu `mission` voľný bay a vstup brány voľné miesto; žiadna → `undefined`. Misia, ktorá náklad odváža (`pickup`, `collect`), smie
+ * obsadiť ľubovoľný voľný bay, misia s dovozom (`delivery`) len voľný nad kvótou pre odvoz (`WaitingArea.freeBaysForDelivery`, ADR-035). Misia je povinná (T6D-05b):
+ * predvolená `pickup` by potichu udelila výnimku z kvóty stojísk. Bez portálu (`NO_ACCESS`) sa vstup nevyberá podľa odhadu času — slúži ako test rezervácie.
  */
-export function isPortalBlocked(world: World, portal: number): boolean {
-  for (let lane = 0; lane < LANES_PER_CELL; lane++) if (world.laneSlots.holderOf(portal, lane) !== null) return true;
-  return false;
+export function routeWithFreeBay(world: World, ramp: LoadingRamp, mission: TruckMission): LandsideRoute | undefined {
+  return pickGate(world, ramp, mission, NO_ACCESS, truckDefFor(world.defs, ramp.category))?.route;
 }
 
 /** `NoWaitingBay` najviac raz za hernú hodinu na rampu. */
@@ -80,28 +70,30 @@ function reportNoWaitingBay(world: World, ramp: LoadingRamp): void {
 }
 
 /**
- * Nový kamión na portáli pre dock `dock` rampy s trasou `route` (stojisko má voľný bay a dock náklad bez nároku — overil
- * volajúci): `World.addTruck` (nárok na `capacityUnits` jednotiek docku a bay), `TruckSpawned`, plán cesty k vstupnej
- * strane brány (bez cesty hneď `no_path`). Kamión s misiou `delivery` (export, ADR-032) nemá nárok na náklad docku;
- * `loadCargo` (voláno hneď po `World.addTruck`) naň položí jednotku `in_truck` (`CargoLedger.create`).
+ * Nový kamión na portáli `portal` pre dock `dock` rampy (stojisko má voľný bay, vstup brány miesto a dock náklad bez nároku — overil volajúci): vstup brány sa vyberie
+ * podľa odhadu času (`pickGate`), `World.addTruck` (nárok na `capacityUnits` jednotiek docku a bay), `TruckSpawned`, plán cesty k vstupu (bez cesty hneď `no_path`).
+ * Kamión s misiou `delivery` (export, ADR-032) nemá nárok na náklad docku; `loadCargo` (voláno hneď po `World.addTruck`) naň položí jednotku `in_truck`
+ * (`CargoLedger.create`).
  */
 export function spawnTruck(
   world: World,
   ramp: LoadingRamp,
   dock: number,
-  route: LandsideRoute,
   def: Readonly<TruckDef>,
   portal: number,
   mission: TruckMission,
   loadCargo?: (truck: Truck) => void,
 ): Truck {
+  const choice = pickGate(world, ramp, mission, portal, def);
+  if (choice === undefined) throw new TruckError('inconsistent', `spawnTruck: rampa ${ramp.label} nemá trasu s voľným bayom a vstupom brány`);
+  const { route, buffer } = choice;
   const area = world.modules.get(route.waitingAreaId);
   const bay = area instanceof WaitingArea ? area.firstFreeBay() : -1;
   const position = carrierPosition(portal, undefined, 0, world.grid.width);
   const truck = new Truck({
     id: world.ids.next() as EntityId,
     def,
-    state: 'to_gate',
+    state: buffer === null ? 'to_gate' : 'to_pre_gate',
     mission,
     x: position.x,
     y: position.y,
@@ -110,13 +102,14 @@ export function spawnTruck(
     rampId: ramp.id,
     dock,
     gateId: route.gateId,
+    preGateId: buffer === null ? null : buffer.id,
     waitingAreaId: route.waitingAreaId,
     bay,
   });
   world.addTruck(truck);
   loadCargo?.(truck);
   world.events.emit({ type: 'TruckSpawned', truckId: truck.id, rampId: ramp.id, dock });
-  if (planTruckRoute(world, truck, 'to_gate')) faceRoute(world, truck);
+  if (planTruckRoute(world, truck, buffer === null ? 'to_gate' : 'to_pre_gate')) faceRoute(world, truck);
   else enterTruckNoPath(world, truck);
   truck.reserveHead(headSlotKey(world, truck));
   return truck;
@@ -127,9 +120,7 @@ export function spawnTruck(
  * počty vezených jednotiek (vlastní ich `LandsideSystem`); prepočíta sa len pri prevádzkovej rampe s kamiónom.
  */
 export function spawnTrucks(world: World, ramps: readonly LoadingRamp[], supply: DockSupply): void {
-  if (ramps.length === 0) return;
-  const portal = world.landside.portalCell;
-  if (portal === NO_ACCESS) return;
+  if (ramps.length === 0 || world.landside.inPortals.length === 0) return;
   let counted = false;
   for (const ramp of ramps) {
     if (!world.isRampOperational(ramp)) continue;
@@ -141,16 +132,16 @@ export function spawnTrucks(world: World, ramps: readonly LoadingRamp[], supply:
     }
     for (let dock = 0; dock < ramp.docks; dock++) {
       if (supply.unclaimedAt(ramp, dock) < def.capacityUnits) continue;
-      const route = routeWithFreeBay(world, ramp, 'pickup');
-      if (route === undefined) {
+      if (routeWithFreeBay(world, ramp, 'pickup') === undefined) {
         // Dopyt po kamióne na odvoz (náklad na docku) bez voľného bay: počíta sa ako nedostatok stojísk pre odvoz (ADR-035).
         world.hinterland.recordPickupStarved(world.clock.tick);
         reportNoWaitingBay(world, ramp);
         continue;
       }
-      // Portál je obsadený (kamión, ktorý práve vznikol alebo vchádza): vznik sa odloží, náklad docku ostáva bez nároku.
-      if (isPortalBlocked(world, portal)) continue;
-      spawnTruck(world, ramp, dock, route, def, portal, 'pickup');
+      // Každý portál je obsadený (kamión, ktorý práve vznikol alebo vchádza): vznik sa odloží, náklad docku ostáva bez nároku.
+      const portal = pickInPortalFor(world, ramp, 'pickup', def);
+      if (portal === NO_ACCESS) continue;
+      spawnTruck(world, ramp, dock, def, portal, 'pickup');
     }
   }
 }

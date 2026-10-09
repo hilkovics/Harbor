@@ -62,6 +62,8 @@ describe('stav unloading a misie (ADR-032)', () => {
     expect(TRUCK_STATES.filter((state) => TRUCK_DELIVERY_STATE_TRAITS[state].claimsCargo)).toEqual(['loading']);
     const cargo = Object.fromEntries(TRUCK_STATES.map((state) => [state, truckStateTraits('delivery', state).cargo]));
     expect(cargo).toEqual({
+      to_pre_gate: 'loaded',
+      pre_gate: 'loaded',
       to_gate: 'loaded',
       gate_queue: 'loaded',
       gate_pass: 'loaded',

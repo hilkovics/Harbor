@@ -26,7 +26,7 @@ type Json = Record<string, unknown>;
 
 const REPATH = DEFS.logistics.repathIntervalTicks;
 /** Cesta medzi rampou a stojiskom (rozloženie outbound-fixtures); bez nej kamión po nakládke ostane v `no_path`. */
-const RAMP_LINK: SerializedCommand = { type: 'RemoveRoad', cells: [{ x: 53, y: 32 }] };
+const RAMP_LINK: SerializedCommand = { type: 'RemoveRoad', cells: [{ x: 57, y: 32 }] };
 
 const viaJson = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 

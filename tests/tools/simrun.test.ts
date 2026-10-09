@@ -39,7 +39,7 @@ const TICKS_PER_DAY = 8640;
 // Dlhé behy (desaťtisíce tickov) pri paralelnom behu celej sady presiahnu predvolených 10 s pre hooky.
 const HEAVY_TIMEOUT_MS = 120_000;
 // harbor_01: 30 štartovacích ciest (x = 44, y 34…63).
-const STARTER_ROADS = 60; // harbor_01 po R1: jednosmerná slučka x = 44 (N) a x = 45 (S), 2 × 30 buniek
+const STARTER_ROADS = 62; // harbor_01 po R4: jednosmerná slučka x = 44 (N) a x = 45 (S), 2 × 30 buniek + 2 bunky západných portálov (0, 60) a (0, 61)
 // harbor_01: štartovacie moduly = berth_standard + crane_container_gantry.
 const STARTER_MODULES = 2;
 
@@ -245,7 +245,7 @@ describe('runScenario', () => {
   const defs = loadBundledDefs();
   const withCommands = (...commands: ScenarioEntry[]): Scenario => ({ ...SMOKE, commands });
 
-  it('1000 tickov → ticks 1000, lostUnits 0, roads 60, kľúče reportu presne podľa dohody', () => {
+  it('1000 tickov → ticks 1000, lostUnits 0, roads 62, kľúče reportu presne podľa dohody', () => {
     const report = runScenario(SMOKE, 1000, defs);
     expect(report.ticks).toBe(1000);
     expect(report.lostUnits).toBe(0);
@@ -446,7 +446,7 @@ describe('runScenario', () => {
     expect(line).not.toContain('\n');
     expect(line).toContain('smoke');
     expect(line).toContain('1000 tickov');
-    expect(line).toContain('cesty 60');
+    expect(line).toContain('cesty 62');
     expect(line).toContain('lode 0/0');
     expect(line).toContain('cykly žeriavov 0');
     expect(line).toContain('vozidlá 0');
@@ -627,9 +627,9 @@ describe('runScenario', () => {
       });
     });
 
-    it('cashEnd (ADR-025): 33 800 000 po stavbe (o bunku ciest menej, berth 8 × 4) − 225 000 napojenie scenára na slučku (PORT_BRIDGE) − 4 dni × (údržba 330 000 + mzdy 79 000) = 31 939 000', () => {
+    it('cashEnd (ADR-025): 35 375 000 po stavbe (R4: pruhy brány a cesty rozloženia vrátane napojenia na slučku) − 4 dni × (údržba 323 000 + mzdy 79 000) = 33 767 000', () => {
       expect(full.gameDays).toBe(4);
-      expect(full.cashEnd).toBe(31_939_000);
+      expect(full.cashEnd).toBe(33_767_000);
     });
 
     it('krížová kontrola: Σ TruckExited.units === exportedUnits (kamióny sú jediná cesta exportu)', () => {
@@ -819,12 +819,13 @@ describe('runScenario', () => {
         // dva dvory (T6D-04): žiadny export nezostal rolled; pool škáluje s kapacitou skladov, takže importy #1 a #4 majú 48 + 96 TEU (pred druhým dvorom 45 + 64)
         // R2 (ADR-039): počty kontajnerov (export 36 TEU = 22, repositioning 24 TEU = 14 prázdnych, prekládka 36 TEU = 22); jeden export prišiel po cut-off
         // R2 plánovač (ADR-039): iný prúd Rng a časovanie ukladania — 2 rolled exporty, 16 prázdnych v repositioningu, 73 exportovaných, 60 odplávaných
-        rolledUnits: 2,
-        exportedUnits: 73,
-        shippedUnits: 60,
+        // R4 (ADR-041): brána losuje problémy z Rng a mení plán príchodov — žiadny rolled export, 14 prázdnych v repositioningu, 78 exportovaných (17 prázdnych odviezol exportér), 58 odplávaných
+        rolledUnits: 0,
+        exportedUnits: 78,
+        shippedUnits: 58,
         emptyReturns: 34,
-        emptyPickedUp: 12,
-        repositionedUnits: 16,
+        emptyPickedUp: 17,
+        repositionedUnits: 14,
         transhipLoaded: 22,
         transhipMissed: 0,
         transhipRescued: 0,
@@ -1079,7 +1080,7 @@ describe('runScenario', () => {
       expect(explicit).toEqual(bundled);
     });
 
-    it('scenár s `map` používa túto mapu (o jednu štartovaciu cestu menej → roads 59)', () => {
+    it('scenár s `map` používa túto mapu (o jednu štartovaciu cestu menej → roads 61)', () => {
       const raw = JSON.parse(readFileSync(HARBOR_MAP, 'utf8')) as { starter: { roads: unknown[] } };
       raw.starter.roads.pop();
       const map = join(dir, 'harbor_minus_one.json');
@@ -1215,9 +1216,9 @@ describe('CLI (tools/simrun.ts)', () => {
       shippedUnits: 23,
       rolledUnits: 1,
       returnedUnits: 1,
-      vgmHolds: 2,
+      vgmHolds: 1, // R4: posun prúdu Rng (pred R4 2)
       dualTransactionRate: 0,
-      stowageOrderViolations: 1, // rehandling (R2) oneskorí jedno vozidlo — jednotka nižšej triedy sa naloží pred vyššou
+      stowageOrderViolations: 5, // rehandling (R2) oneskoruje vozidlá; po R4 (posun prúdu Rng) 5 jednotiek nižšej triedy pred vyššou (pred R4 1)
       exportGroupingPct: 100,
     });
     expect(report['dualCycleRate']).toBeGreaterThan(0);

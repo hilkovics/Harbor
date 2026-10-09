@@ -121,6 +121,8 @@ export const VALIDATION_REASONS = [
   'invalid_priority',
   /** `SetCraneGang` (TR3-02, ADR-040 bod 7): režim nie je `pool` / `gang`, alebo `tractorsPerSts` mimo `equipment.json` `tractors.minPerSts … maxPerSts`. */
   'invalid_gang',
+  /** `SetGateLaneMode` (TR4-01, ADR-041 bod 1): režim nie je `standard` / `express` / `trouble`. */
+  'invalid_gate_mode',
 ] as const;
 
 export type ValidationReason = (typeof VALIDATION_REASONS)[number];

@@ -67,12 +67,12 @@ describe('TRUCK_TRANSITIONS a TRUCK_STATE_TRAITS', () => {
     const holdsDock = TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].holdsDock);
     const claimsCargo = TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].claimsCargo);
     const queued = TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].queued);
-    expect(holdsBay).toEqual(['to_gate', 'gate_queue', 'gate_pass', 'to_bay', 'waiting']);
+    expect(holdsBay).toEqual(['to_pre_gate', 'pre_gate', 'to_gate', 'gate_queue', 'gate_pass', 'to_bay', 'waiting']);
     expect(holdsDock).toEqual(['to_dock', 'loading', 'unloading']);
-    expect(claimsCargo).toEqual(['to_gate', 'gate_queue', 'gate_pass', 'to_bay', 'waiting', 'to_dock', 'loading']);
+    expect(claimsCargo).toEqual(['to_pre_gate', 'pre_gate', 'to_gate', 'gate_queue', 'gate_pass', 'to_bay', 'waiting', 'to_dock', 'loading']);
     expect(queued).toEqual(['gate_queue', 'gate_queue_out']);
     expect(TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].passing)).toEqual(['gate_pass', 'gate_pass_out']);
-    expect(TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].holdsRoad)).toEqual(['to_gate', 'gate_queue', 'to_bay', 'to_dock', 'to_gate_out', 'gate_queue_out', 'to_portal', 'no_path']);
+    expect(TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].holdsRoad)).toEqual(['to_pre_gate', 'to_gate', 'gate_queue', 'to_bay', 'to_dock', 'to_gate_out', 'gate_queue_out', 'to_portal', 'no_path']);
     expect(TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].bayOccupied)).toEqual(['waiting']);
     expect(TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].cargo === 'loading')).toEqual(['loading']);
     expect(TRUCK_STATES.filter((state) => TRUCK_STATE_TRAITS[state].waits)).toEqual(['waiting', 'loading', 'unloading', 'no_path']);
@@ -144,6 +144,9 @@ describe('Truck', () => {
       rampId: 8,
       dock: 0,
       gateId: 6,
+      gateOutId: null,
+      preGateId: null,
+      row: null,
       waitingAreaId: 7,
       bay: 3,
       resume: 'to_bay',

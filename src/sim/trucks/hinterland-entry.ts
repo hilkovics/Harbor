@@ -15,12 +15,13 @@
 import type { CargoDirection } from '../cargo/cargo-unit';
 import type { CargoCategory, TruckDef } from '../defs/types';
 import type { LoadingRamp } from '../modules/loading-ramp';
-import type { LandsideRoute } from '../world/landside';
 import type { World } from '../world/world';
 import { hasInboundRoom, inboundRoom } from './hinterland-room';
 import type { Truck } from './truck';
 import { TruckError } from './truck-error';
-import { isPortalBlocked, routeWithFreeBay, spawnTruck, truckDefFor } from './truck-spawner';
+import { NO_ACCESS } from '../logistics/module-access';
+import { pickInPortalFor } from './gate-choice';
+import { routeWithFreeBay, spawnTruck, truckDefFor } from './truck-spawner';
 
 /** Výsledok pokusu o vjazd (viď hlavička). */
 export type AdmissionOutcome = 'admitted' | 'declined' | 'waiting';
@@ -51,11 +52,11 @@ export type DeliveryDirection = Extract<CargoDirection, 'export' | 'empty'>;
 interface AdmissionSlot {
   ramp: LoadingRamp | undefined;
   dock: number;
-  route: LandsideRoute | undefined;
+  portal: number;
   def: Readonly<TruckDef> | undefined;
 }
 
-const SLOT: AdmissionSlot = { ramp: undefined, dock: -1, route: undefined, def: undefined };
+const SLOT: AdmissionSlot = { ramp: undefined, dock: -1, portal: NO_ACCESS, def: undefined };
 
 /**
  * Pokus o vjazd kamióna s dovozom jednotky smeru `direction` kategórie `category` (viď hlavička): prejde rampy a overí stojisko, dock a miesto v sklade / depe.
@@ -68,8 +69,7 @@ export function planDeliveryAdmission(world: World, direction: DeliveryDirection
     if (ramp.category !== category || !world.isRampOperational(ramp)) continue;
     const def = truckDefFor(world.defs, ramp.category);
     if (def === undefined) continue;
-    const route = routeWithFreeBay(world, ramp, 'delivery');
-    if (route === undefined) {
+    if (routeWithFreeBay(world, ramp, 'delivery') === undefined) {
       blocked = true;
       continue;
     }
@@ -86,11 +86,13 @@ export function planDeliveryAdmission(world: World, direction: DeliveryDirection
       else blocked = true;
       continue;
     }
-    // Portál je cesta (ADR-037, R1 č. 10): kým ho drží nosič, kamión nevznikne — položka plánu ostane a skúsi sa v ďalšom ticku.
-    if (isPortalBlocked(world, world.landside.portalCell)) return 'waiting';
+    // Portál je cesta (ADR-037, R1 č. 10): kým ho drží nosič, kamión nevznikne — vnútrozemie čaká pri každom portáli zvlášť (ADR-041 bod 3): vznikne na voľnom portáli
+    // (pri viacerých ho vyberie `Rng`), inak položka plánu ostane a skúsi sa v ďalšom ticku.
+    const portal = pickInPortalFor(world, ramp, 'delivery', def);
+    if (portal === NO_ACCESS) return 'waiting';
     SLOT.ramp = ramp;
     SLOT.dock = dock;
-    SLOT.route = route;
+    SLOT.portal = portal;
     SLOT.def = def;
     return 'admitted';
   }
@@ -98,18 +100,18 @@ export function planDeliveryAdmission(world: World, direction: DeliveryDirection
 }
 
 /**
- * Vytvorí kamión s dovozom na road portáli `portal` na mieste, ktoré práve vybral `planDeliveryAdmission` (`admitted`); `load` položí jednotku na nový kamión
+ * Vytvorí kamión s dovozom na portáli, ktorý vybral `planDeliveryAdmission`, na mieste, ktoré práve vybral `planDeliveryAdmission` (`admitted`); `load` položí jednotku na nový kamión
  * (`CargoLedger.create` v `in_truck`) hneď po `World.addTruck`. Prisľúbené miesto docku (`DockIntake`) sa tým mení — cache sa zneplatní, aby ďalší pokus
  * v tom istom ticku videl aj tento kamión.
  */
-export function spawnDelivery(world: World, portal: number, load: (truck: Truck) => void): void {
-  const { ramp, dock, route, def } = SLOT;
-  if (ramp === undefined || route === undefined || def === undefined) {
+export function spawnDelivery(world: World, load: (truck: Truck) => void): void {
+  const { ramp, dock, portal, def } = SLOT;
+  if (ramp === undefined || portal === NO_ACCESS || def === undefined) {
     throw new TruckError('inconsistent', 'spawnDelivery bez predchádzajúceho planDeliveryAdmission s výsledkom admitted');
   }
   SLOT.ramp = undefined;
-  SLOT.route = undefined;
+  SLOT.portal = NO_ACCESS;
   SLOT.def = undefined;
-  spawnTruck(world, ramp, dock, route, def, portal, 'delivery', load);
+  spawnTruck(world, ramp, dock, def, portal, 'delivery', load);
   world.dockIntake.invalidate();
 }

@@ -96,11 +96,11 @@ describe('prerušený vstup brány (44, 33) s kamiónmi za bránou: dokončia ok
     recorder.runUntil((w) => w.cargo.exportedCount === UNITS, 30_000);
   }, RUN_TIMEOUT_MS);
 
-  it('kamióny za bránou v čase prerušenia naložili, dock nedržia a čakajú vo fronte von (gate_queue_out)', () => {
+  it('kamióny za bránou v čase prerušenia naložili, dock nedržia a čakajú v no_path s návratom do to_gate_out (výstupný pruh je od R4 mimo prerušeného vstupu, ale cesta k nemu vedie cez prerušenú bunku)', () => {
     expect(behindAtCut.length).toBeGreaterThan(0);
     for (const id of behindAtCut) {
       const truck = afterCut.find((entry) => entry.id === id);
-      expect(truck, `kamión ${String(id)}`).toMatchObject({ state: 'gate_queue_out', dockHeld: false });
+      expect(truck, `kamión ${String(id)}`).toMatchObject({ state: 'no_path', resume: 'to_gate_out', dockHeld: false });
     }
     expect(timed4(recorder.events, 'CommandRejected')).toEqual([]);
   });
@@ -110,7 +110,7 @@ describe('prerušený vstup brány (44, 33) s kamiónmi za bránou: dokončia ok
     expect(landsideEvents(recorder.events, 'TruckSpawned').filter((entry) => entry.tick > cutSentAt + 1 && entry.tick <= cutEnd)).toEqual([]);
     expect(afterCut.filter((truck) => ['to_bay', 'waiting', 'to_dock', 'loading'].includes(truck.state))).toEqual([]);
     // Kamióny pred bránou (bez cesty k vstupu) čakajú v no_path s bay a dockom — návrat ani preradenie nie je (BACKLOG).
-    for (const truck of afterCut.filter((entry) => entry.state !== 'gate_queue_out')) expect(truck).toMatchObject({ state: 'no_path', resume: 'to_gate' });
+    for (const truck of afterCut) expect(truck).toMatchObject({ state: 'no_path', resume: expect.stringMatching(/^to_gate/) });
   });
 
   it('po obnove cesty je všetkých 12 jednotiek exported, svet je prázdny a pravidlá kamiónov držali po každom ticku', () => {

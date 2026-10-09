@@ -19,15 +19,19 @@
  */
 import { Module } from './module';
 import type { LoadingRamp } from './loading-ramp';
+import type { PreGateBuffer } from './pre-gate-buffer';
+import type { TruckHolding } from './truck-holding';
 import type { TruckGate } from './truck-gate';
 import type { WaitingArea } from './waiting-area';
 
 /** Rola pozemného modulu v reťazci kamiónov. */
-export type LandsideRole = 'gate' | 'waiting_area' | 'ramp';
+export type LandsideRole = 'gate' | 'pre_gate' | 'holding' | 'waiting_area' | 'ramp';
 
 /** Register pozemných modulov podľa roly (poradie = poradie `enlist`, svet ho volá vzostupne podľa id). */
 export interface LandsideRoster {
   readonly gates: TruckGate[];
+  readonly preGates: PreGateBuffer[];
+  readonly holdings: TruckHolding[];
   readonly waitingAreas: WaitingArea[];
   readonly ramps: LoadingRamp[];
 }

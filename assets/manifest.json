@@ -924,6 +924,38 @@
         }
       ]
     },
+    "gate_in_lane": {
+      "footprint": { "w": 1, "h": 4 },
+      "file": "modules/gate_in_lane_single.svg",
+      "connectors": [
+        { "x": 0, "y": 3, "side": "s", "type": "road" },
+        { "x": 0, "y": 0, "side": "n", "type": "road" }
+      ]
+    },
+    "gate_out_lane": {
+      "footprint": { "w": 1, "h": 4 },
+      "file": "modules/gate_out_lane_single.svg",
+      "connectors": [
+        { "x": 0, "y": 3, "side": "s", "type": "road" },
+        { "x": 0, "y": 0, "side": "n", "type": "road" }
+      ]
+    },
+    "pre_gate_buffer": {
+      "footprint": { "w": 8, "h": 8 },
+      "file": "modules/pre_gate_lane.svg",
+      "connectors": [
+        { "x": 0, "y": 7, "side": "s", "type": "road" },
+        { "x": 7, "y": 0, "side": "n", "type": "road" }
+      ]
+    },
+    "truck_holding": {
+      "footprint": { "w": 3, "h": 6 },
+      "file": "modules/truck_holding.svg",
+      "connectors": [
+        { "x": 0, "y": 5, "side": "s", "type": "road" },
+        { "x": 2, "y": 0, "side": "n", "type": "road" }
+      ]
+    },
     "truck_waiting_area": {
       "footprint": {
         "w": 4,

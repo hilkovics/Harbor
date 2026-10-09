@@ -36,6 +36,8 @@ export interface MapPortalDef {
   readonly cell: CellCoord;
   /** Len cestné portály; chýba = `both` (staré mapy a scenáre). */
   readonly direction?: PortalDirection;
+  /** Len cestné portály vjazdu (R4, ADR-041 bod 3): podiel kamiónov z danej strany vnútrozemia (číslo > 0); chýba = rovnaký podiel ako ostatné portály. */
+  readonly trafficShare?: number;
 }
 
 /** Štartová cesta mapy: bunka, voliteľne s `dir` = jednosmerná (`one_way`) v danom smere; bez `dir` dvojpruhová. */
@@ -117,7 +119,7 @@ const PARCEL_OPTIONAL_KEYS = ['startOwned'] as const;
 const RECT_KEYS = ['x', 'y', 'w', 'h'] as const;
 const CELL_KEYS = ['x', 'y'] as const;
 const PORTAL_KEYS = ['id', 'cell'] as const;
-const PORTAL_OPTIONAL_KEYS = ['direction'] as const;
+const PORTAL_OPTIONAL_KEYS = ['direction', 'trafficShare'] as const;
 const STARTER_ROAD_OPTIONAL_KEYS = ['dir'] as const;
 const PLACED_MODULE_KEYS = ['defId', 'x', 'y', 'rotation'] as const;
 const STARTER_KEYS = ['modules', 'roads'] as const;
@@ -298,13 +300,22 @@ class MapDefParser {
 
   private portal(value: unknown, path: string): MapPortalDef {
     const raw = this.object(value, path, PORTAL_KEYS, PORTAL_OPTIONAL_KEYS);
-    const portal = { id: this.id(raw['id'], `${path}/id`), cell: this.cell(raw['cell'], `${path}/cell`) };
-    if (!Object.hasOwn(raw, 'direction')) return Object.freeze(portal);
-    const direction = raw['direction'];
-    if (!PORTAL_DIRECTIONS.includes(direction as PortalDirection)) {
-      throw this.error(`${path}/direction`, `smer portálu musí byť 'in', 'out' alebo 'both', dostal ${describeValue(direction)}`);
+    let portal: MapPortalDef = { id: this.id(raw['id'], `${path}/id`), cell: this.cell(raw['cell'], `${path}/cell`) };
+    if (Object.hasOwn(raw, 'direction')) {
+      const direction = raw['direction'];
+      if (!PORTAL_DIRECTIONS.includes(direction as PortalDirection)) {
+        throw this.error(`${path}/direction`, `smer portálu musí byť 'in', 'out' alebo 'both', dostal ${describeValue(direction)}`);
+      }
+      portal = { ...portal, direction: direction as PortalDirection };
     }
-    return Object.freeze({ ...portal, direction: direction as PortalDirection });
+    if (Object.hasOwn(raw, 'trafficShare')) {
+      const share = raw['trafficShare'];
+      if (typeof share !== 'number' || !Number.isFinite(share) || share <= 0) {
+        throw this.error(`${path}/trafficShare`, `podiel premávky portálu musí byť konečné číslo > 0, dostal ${describeValue(share)}`);
+      }
+      portal = { ...portal, trafficShare: share };
+    }
+    return Object.freeze(portal);
   }
 
   private rotation(value: unknown, path: string): Rotation {

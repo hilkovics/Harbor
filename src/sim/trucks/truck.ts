@@ -49,7 +49,14 @@ export interface SerializedTruck {
   readonly heading: Rotation;
   readonly rampId: number;
   readonly dock: number;
+  /** Vstupný pruh brány (R4: pri `to_pre_gate` / `pre_gate` predbežný — pruh radu sa určí pri vjazde na plochu). */
   readonly gateId: number;
+  /** Výstupný pruh brány; `null`, kým si ho kamión nevyberie (pri odchode od rampy, ADR-041 bod 3). */
+  readonly gateOutId: number | null;
+  /** Predbránová plocha kamióna v stavoch `to_pre_gate` / `pre_gate`, inak `null` (ADR-041 bod 2). */
+  readonly preGateId: number | null;
+  /** Radový pruh predbránovej plochy v stave `pre_gate`, inak `null`. */
+  readonly row: number | null;
   readonly waitingAreaId: number;
   /** Rezervovaný bay stojiska (v stavoch s `holdsBay`), inak `null`. */
   readonly bay: number | null;
@@ -84,6 +91,9 @@ export const SERIALIZED_TRUCK_KEYS: readonly (keyof SerializedTruck)[] = [
   'rampId',
   'dock',
   'gateId',
+  'gateOutId',
+  'preGateId',
+  'row',
   'waitingAreaId',
   'bay',
   'resume',
@@ -105,6 +115,12 @@ export interface TruckInit extends CarrierInit {
   readonly rampId: EntityId;
   readonly dock: number;
   readonly gateId: EntityId;
+  /** Predvolene `null` (výstupný pruh brány sa vyberá pri odchode od rampy). */
+  readonly gateOutId?: EntityId | null;
+  /** Predvolene `null`; predbránová plocha práve v `to_pre_gate` / `pre_gate`. */
+  readonly preGateId?: EntityId | null;
+  /** Predvolene `null`; radový pruh plochy práve v `pre_gate`. */
+  readonly row?: number | null;
   readonly waitingAreaId: EntityId;
   /** Predvolene `null`; celé ≥ 0 práve v stavoch s `holdsBay` (pri `no_path` podľa `resume`). */
   readonly bay?: number | null;
@@ -135,8 +151,17 @@ export class Truck extends Carrier {
    * nakládky (ADR-029).
    */
   readonly dock: number;
-  /** Brána, ktorou kamión prechádza dnu aj von (spoločná FIFO fronta). */
-  readonly gateId: EntityId;
+  /**
+   * Vstupný pruh brány (R4, ADR-041): kamión pred plochou má predbežný pruh (prvý z pruhov plochy), pri vjazde na plochu sa preradí na pruh svojho radu
+   * (`assignLane`). Mení ho len systém pri vjazde na predbránovú plochu.
+   */
+  gateId: EntityId;
+  /** Výstupný pruh brány (R4): `null`, kým si ho kamión nevyberie podľa odhadu času; po výbere nemenný (`assignOutLane`). */
+  gateOutId: EntityId | null;
+  /** Predbránová plocha v stavoch `to_pre_gate` / `pre_gate`; inak `null`. */
+  preGateId: EntityId | null;
+  /** Radový pruh predbránovej plochy v stave `pre_gate`; inak `null`. */
+  row: number | null;
   /** Stojisko, v ktorom kamión drží bay. */
   readonly waitingAreaId: EntityId;
   /** Rezervovaný bay stojiska, kým ho kamión drží (`holdsBay`); inak `null`. Mení ho `landsideSystem`. */
@@ -154,6 +179,9 @@ export class Truck extends Carrier {
    */
   constructor(init: TruckInit) {
     const { id, def, state, rampId, dock, gateId, waitingAreaId } = init;
+    const gateOutId = init.gateOutId ?? null;
+    const preGateId = init.preGateId ?? null;
+    const row = init.row ?? null;
     const bay = init.bay ?? null;
     const resume = init.resume ?? null;
     const mission = init.mission ?? 'pickup';
@@ -169,6 +197,13 @@ export class Truck extends Carrier {
       throw new TruckError('invalid_input', `${label}: resume ${String(resume)} ${state === 'no_path' ? 'musí byť jazdný stav' : 'musí byť null mimo no_path'}`);
     }
     const effective: TruckState = resume ?? state;
+    if (gateOutId !== null && !isPositiveId(gateOutId)) throw new TruckError('invalid_input', `${label}: gateOutId musí byť null alebo celé číslo ≥ 1, dostal ${String(gateOutId)}`);
+    if (preGateId !== null && !isPositiveId(preGateId)) throw new TruckError('invalid_input', `${label}: preGateId musí byť null alebo celé číslo ≥ 1, dostal ${String(preGateId)}`);
+    if (row !== null && !isIndex(row)) throw new TruckError('invalid_input', `${label}: row musí byť null alebo celé číslo ≥ 0, dostal ${String(row)}`);
+    const onPreGate = effective === 'to_pre_gate' || effective === 'pre_gate';
+    if (onPreGate !== (preGateId !== null)) throw new TruckError('invalid_input', `${label}: v stave '${effective}' ${onPreGate ? 'musí mať' : 'nesmie mať'} predbránovú plochu`);
+    if ((state === 'pre_gate') !== (row !== null)) throw new TruckError('invalid_input', `${label}: rad ${String(row)} nezodpovedá stavu '${state}'`);
+    if ((state === 'gate_queue_out' || state === 'gate_pass_out') && gateOutId === null) throw new TruckError('invalid_input', `${label}: v stave '${state}' musí mať výstupný pruh`);
     if (bay !== null && !isIndex(bay)) throw new TruckError('invalid_input', `${label}: bay musí byť null alebo celé číslo ≥ 0, dostal ${String(bay)}`);
     const holdsBay = truckStateTraits(mission, effective).holdsBay;
     if (holdsBay !== (bay !== null)) {
@@ -185,6 +220,9 @@ export class Truck extends Carrier {
     this.rampId = rampId;
     this.dock = dock;
     this.gateId = gateId;
+    this.gateOutId = gateOutId;
+    this.preGateId = preGateId;
+    this.row = row;
     this.waitingAreaId = waitingAreaId;
     this.bay = bay;
     this.currentMission = mission;
@@ -275,6 +313,9 @@ export class Truck extends Carrier {
       rampId: this.rampId,
       dock: this.dock,
       gateId: this.gateId,
+      gateOutId: this.gateOutId,
+      preGateId: this.preGateId,
+      row: this.row,
       waitingAreaId: this.waitingAreaId,
       bay: this.bay,
       resume: this.resumeState,

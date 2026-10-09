@@ -19,14 +19,16 @@
  *    - `loading`: po `loadTicksPerUnit` presun najstaršej jednotky docku `at_ramp → in_truck` (nárok kamióna klesne);
  *      po naložení `capacityUnits` uvoľní dock a ide k výstupnej strane brány — len so slotom bunky docku, inak čaká v docku (ADR-037);
  *    - `no_path`: po odpočte nový pokus o cestu, úspech = návrat do stavu, z ktorého kamión vypadol.
- * 2. **Brány** vzostupne podľa id: spoločná FIFO fronta oboch smerov, púšťa sa kamión na čele fronty. Kamión na čele prejde
+ * 2. **Pruhy brány** vzostupne podľa id (R4, ADR-041 bod 1): každý pruh má vlastnú FIFO frontu a obsluhuje 1 kamión naraz nezávisle od ostatných. Kamión na čele prejde
  *    `gate_queue*` → `gate_pass*` (mimo cesty — uvoľní celé telo, takže sa ďalší kamión z kolóny posunie na vonkajšiu bunku)
- *    a prechod trvá `passTicks` (`processTicks` + `internalTicks`). Po ňom sa kamión objaví na druhej strane brány (strany pre
- *    kamión — bez vstupu z portálu podľa stojiska, dodatok ADR-024) a ide ďalej (`to_bay` / `to_portal`) **len so zabraným slotom
- *    výjazdovej bunky**; inak ostane na čele fronty v `gate_pass*` a brána ostáva obsadená (`completePass`, `trucksProcessed`
- *    počíta dokončené prechody). Ďalší prechod začne najskôr v tom istom ticku — medzi dvoma prechodmi je aspoň `passTicks ≥
- *    processTicks` tickov (tvrdý bottleneck). Fronta je **fyzická**: na vonkajšej bunke konektora stojí jediný `gate_queue`
+ *    a prechod je plán krokov pruhu (`TruckGate.planFor`: OCR / kontrola / lístok, váha / sken / plomba; režim `standard` pri šanci na problém losuje `Rng` raz za prechod).
+ *    Po ňom sa kamión objaví na vnútornej strane pruhu a ide ďalej (`to_bay` / `to_portal`) **len so zabraným slotom
+ *    výjazdovej bunky**; inak ostane na čele fronty v `gate_pass*` a pruh ostáva obsadený (`completePass`, `trucksProcessed`
+ *    počíta dokončené prechody). Fronta je **fyzická**: na vonkajšej bunke konektora stojí jediný `gate_queue`
  *    a ďalšie kamióny čakajú za ním na ceste v `to_gate` (ADR-037, R1 č. 9).
+ * 2b. **Predbránové plochy** (`stepPreGates`): kamión dorazí k vjazdu (`to_pre_gate → pre_gate`), dostane rad s najkratšou frontou (`PreGateBuffer.shortestRow`, pruh brány radu
+ *    `r mod počet pruhov`) a čaká mimo cesty vedľa ostatných. Čelo radu vyjde na cestu (`pre_gate → to_gate`), keď je jeho pruh voľný (bez fronty, bez prechodu, nik k nemu nejde)
+ *    a výjazdový slot plochy je voľný — pruh tak nikdy nemá viac než jeden kamión naraz a verejná cesta fronty nenesie (ADR-041 bod 2).
  * 3. **Spawn** (`spawnTrucks`): rampy vzostupne podľa id, docky vzostupne; nový kamión len na náklad docku bez nároku
  *    (pripravený alebo vezený vozidlom, `DockSupply`, ADR-029; smie obsadiť aj stojiská rezervované kvótou pre odvoz, ADR-035); potom vjazd
  *    kamiónov z vnútrozemia (`admitFromHinterland`, ADR-035): výdaj prázdneho, export podľa plánu príchodov bookingov (ADR-032) a návrat
@@ -51,7 +53,7 @@ import type { CargoUnit } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
 import type { LoadingRamp } from '../modules/loading-ramp';
 import type { TruckGate } from '../modules/truck-gate';
-import { NO_ACCESS } from '../logistics/module-access';
+import { NO_ACCESS, accessCellIndex } from '../logistics/module-access';
 import { advanceCarrier } from '../movement/route-planning';
 import type { Truck } from '../trucks/truck';
 import { TruckError } from '../trucks/truck-error';
@@ -60,6 +62,7 @@ import { DockSupply } from '../trucks/dock-supply';
 import { collectGivesUp, collectReady, finishCollect, giveUpCollect, loadCollected, startCollectWait } from '../trucks/empty-collect';
 import { planEmptyReturn } from '../trucks/empty-plan';
 import { onGatePassed } from '../trucks/export-gate';
+import { laneLoad } from '../trucks/gate-choice';
 import { admitFromHinterland } from '../trucks/hinterland-admit';
 import { spawnTrucks } from '../trucks/truck-spawner';
 import { MIN_STAY_TICKS, waitingStayTicks } from '../trucks/truck-wait';
@@ -70,10 +73,12 @@ import {
   faceRoute,
   gateFarSideCell,
   gateOfTruck,
+  gateOutOfTruck,
   isAtTravelTarget,
   isOffGateSide,
   passageBackOf,
   planTruckRoute,
+  preGateOfTruck,
   rampOfTruck,
   startTruckTrip,
   truckCircuit,
@@ -143,6 +148,21 @@ function continueFromHop(world: World, truck: Truck): void {
 
 /** Príchod na koniec trasy podľa jazdného stavu (tabuľka, nie switch). */
 const ARRIVALS: { readonly [S in TruckTravelState]: Arrival } = Object.freeze({
+  to_pre_gate: (truck: Truck, world: World) => {
+    const buffer = preGateOfTruck(world, truck);
+    const row = buffer.shortestRow();
+    // Plná plocha: kamión ostane na ceste a skúsi to v ďalšom ticku (rezervácia miesta pri vjazde to nepripustí; ochrana pred prestavbou).
+    if (row < 0) return;
+    const lanes = world.landside.preGateLanes(buffer);
+    if (lanes.length === 0) {
+      enterTruckNoPath(world, truck);
+      return;
+    }
+    buffer.admit(truck.id, row);
+    truck.row = row;
+    truck.gateId = lanes[row % lanes.length].id;
+    changeTruckState(world.events, truck, 'pre_gate');
+  },
   to_gate: (truck: Truck, world: World) => {
     changeTruckState(world.events, truck, 'gate_queue');
     gateOfTruck(world, truck).enqueue(truck.id);
@@ -161,7 +181,7 @@ const ARRIVALS: { readonly [S in TruckTravelState]: Arrival } = Object.freeze({
   to_gate_out: (truck: Truck, world: World) => {
     if (isAtTravelTarget(world, truck, 'to_gate_out')) {
       changeTruckState(world.events, truck, 'gate_queue_out');
-      gateOfTruck(world, truck).enqueue(truck.id);
+      gateOutOfTruck(world, truck).enqueue(truck.id);
       return;
     }
     // Koniec trasy pred spätným priechodom stojiskom: prechod telom (okamžitý, bez bay) len so zabraným slotom vstupnej
@@ -392,6 +412,8 @@ function retry(truck: Truck, world: World): void {
 type TruckStep = (truck: Truck, world: World) => void;
 
 const TRUCK_STEPS: { readonly [S in TruckState]: TruckStep } = {
+  to_pre_gate: arriveWhenThere,
+  pre_gate: () => undefined,
   to_gate: arriveWhenThere,
   gate_queue: () => undefined,
   gate_pass: () => undefined,
@@ -446,12 +468,15 @@ function finishPass(world: World, gate: TruckGate, truck: Truck): boolean {
 
 /**
  * Začiatok prechodu kamióna `truck` na čele fronty (len keď druhá strana brány existuje): kamión prejde do `gate_pass*`
- * (mimo cesty — uvoľní celé telo, ďalší kamión z kolóny sa posunie na vonkajšiu bunku) a brána odpočítava `passTicks`.
+ * (mimo cesty — uvoľní celé telo, ďalší kamión z kolóny sa posunie na vonkajšiu bunku) a pruh odpočítava plán prechodu.
  */
 function beginPass(world: World, gate: TruckGate, truck: Truck): void {
   const passState = TRUCK_STATE_TRAITS[truck.state].passState;
   if (passState === null || gateFarSideCell(world, truck) === NO_ACCESS) return;
-  gate.beginPass(gate.passTicks);
+  // Režim `standard`: šanca na problém (`Rng` raz za prechod; express a trouble pruhy `Rng` nespotrebujú).
+  const mode = gate.mode;
+  const trouble = mode === 'standard' && gate.issueChance > 0 && world.rng.chance(gate.issueChance);
+  gate.beginPass(gate.planFor(mode, trouble));
   changeTruckState(world.events, truck, passState);
 }
 
@@ -469,6 +494,33 @@ function stepGate(world: World, gate: TruckGate): void {
     head = headOf(world, gate);
   }
   if (head !== undefined) beginPass(world, gate, head);
+}
+
+/**
+ * Predbránové plochy (viď hlavička, bod 2b): čelo každého radu vyjde na cestu k svojmu pruhu brány, keď je pruh voľný a výjazdový slot plochy je voľný. Plochy a rady vzostupne
+ * (deterministicky); pruh radu je `preGateLanes[r mod počet]`, takže kamión sa po zmene ciest preradí na aktuálny pruh radu.
+ */
+function stepPreGates(world: World): void {
+  for (const buffer of world.landsideModules.preGates) {
+    if (buffer.occupied === 0) continue;
+    const lanes = world.landside.preGateLanes(buffer);
+    const exitConnector = buffer.connectors[1];
+    const exitCell = exitConnector === undefined ? NO_ACCESS : accessCellIndex(world.grid, exitConnector);
+    if (lanes.length === 0 || exitCell === NO_ACCESS) continue;
+    for (let row = 0; row < buffer.rowCount; row++) {
+      const headId = buffer.head(row);
+      if (headId === undefined) continue;
+      const truck = world.trucks.get(headId);
+      if (truck === undefined || truck.state !== 'pre_gate') throw new TruckError('inconsistent', `${buffer.label}: čelo radu ${String(row)} #${String(headId)} nie je kamión v pre_gate`);
+      const lane = lanes[row % lanes.length];
+      truck.gateId = lane.id;
+      if (lane.busyTicksLeft > 0 || laneLoad(world, lane) > 0 || !canExitTo(world, truck, exitCell, 'to_gate')) continue;
+      buffer.releaseHead(row);
+      truck.row = null;
+      truck.preGateId = null;
+      exitTo(world, truck, exitCell, 'to_gate');
+    }
+  }
 }
 
 /**
@@ -514,6 +566,7 @@ export class LandsideSystem {
     }
     const { gates, ramps } = world.landsideModules;
     for (const gate of gates) stepGate(world, gate);
+    stepPreGates(world);
     spawnTrucks(world, ramps, this.supply);
     admitFromHinterland(world);
   }

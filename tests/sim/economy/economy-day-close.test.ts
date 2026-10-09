@@ -5,7 +5,7 @@
  * Cesty majú údržbu 0 (`infrastructure.json`), prenájmy pozemkov prídu až vo F7.
  *
  * Rozloženie F4 s 2 vozidlami: údržba = berth 120 000 + žeriav 90 000 + depo 15 000 + 2 × dvor 30 000 + brána 15 000 +
- * stojisko 10 000 + rampa 20 000 = 330 000, mzdy = 2 × 18 000 + 25 000 = 61 000; spolu 391 000 za deň.
+ * stojisko 10 000 + rampa 20 000 = 330 000, mzdy = 2 × 18 000 + 25 000 = 61 000; spolu 384 000 za deň.
  * Starter prístav (berth + žeriav): údržba 210 000, mzdy 25 000 = 235 000 za deň.
  *
  * Predpoklady o API:
@@ -40,7 +40,7 @@ import {
 } from '../helpers/f5';
 
 const START_CASH = DEFS.economy.startingCashCents;
-const PORT_MAINTENANCE = 330_000;
+const PORT_MAINTENANCE = 323_000;
 const PORT_WAGES = 61_000;
 const STARTER_MAINTENANCE = 210_000;
 const STARTER_WAGES = 25_000;
@@ -72,7 +72,7 @@ describe('DayClosed: údržba a mzdy v rozložení F4 s 2 vozidlami', () => {
     expect(economyOf(world).todayDeltaCents()).toBe(cashOf(world) - START_CASH);
   });
 
-  it('prvý DayClosed: údržba −330 000 a mzdy −61 000 v ticku uzávierky, DaySummary s výdavkami dňa 0 (CAPEX + údržba + mzdy)', () => {
+  it('prvý DayClosed: údržba −323 000 a mzdy −61 000 v ticku uzávierky, DaySummary s výdavkami dňa 0 (CAPEX + údržba + mzdy)', () => {
     run.runTo(TICKS_PER_DAY);
     const closes = run.ofSim('DayClosed');
     expect(closes.map((entry) => entry.tick)).toEqual([TICKS_PER_DAY]);
@@ -94,8 +94,8 @@ describe('DayClosed: údržba a mzdy v rozložení F4 s 2 vozidlami', () => {
     expect(summary.cashEndCents).toBe(cashOf(world));
     expect(expenseOf(summary, 'maintenance')).toBe(PORT_MAINTENANCE);
     expect(expenseOf(summary, 'wages')).toBe(PORT_WAGES);
-    expect(expenseOf(summary, 'road_capex')).toBe(44 * DEFS.infrastructure.road.costPerCellCents);
-    expect(expenseOf(summary, 'module_capex')).toBe(63_000_000);
+    expect(expenseOf(summary, 'road_capex')).toBe(50 * DEFS.infrastructure.road.costPerCellCents);
+    expect(expenseOf(summary, 'module_capex')).toBe(60_000_000);
     expect(expenseOf(summary, 'vehicle_capex')).toBe(9_600_000);
     expect(incomeOf(summary, 'contract_revenue')).toBe(0);
     expect(summary.cashEndCents - START_CASH).toBe(netOf(summary));
@@ -108,7 +108,7 @@ describe('DayClosed: údržba a mzdy v rozložení F4 s 2 vozidlami', () => {
     expect(cashOf(world)).toBe(cashAtClose0);
   });
 
-  it('druhý DayClosed bez akcií: hotovosť klesne presne o 391 000 (údržba + mzdy), súhrn dňa má len tieto dve kategórie', () => {
+  it('druhý DayClosed bez akcií: hotovosť klesne presne o 384 000 (údržba + mzdy), súhrn dňa má len tieto dve kategórie', () => {
     run.runTo(2 * TICKS_PER_DAY);
     const daily = economyOf(world).daily;
     expect(daily).toHaveLength(2);

@@ -24,7 +24,9 @@ import { LoadingRamp } from './loading-ramp';
 import { RtgBlock } from './rtg-block';
 import type { Module, ModuleInit } from './module';
 import { ModuleError } from './module-error';
+import { PreGateBuffer } from './pre-gate-buffer';
 import { TruckGate } from './truck-gate';
+import { TruckHolding } from './truck-holding';
 import { VehicleDepot } from './vehicle-depot';
 import { WaitingArea } from './waiting-area';
 
@@ -108,6 +110,8 @@ export const BUILTIN_MODULES: readonly (readonly [ModuleKind, ModuleFactory])[] 
   ['storage', createStorage],
   ['depot', (init) => new VehicleDepot(init)],
   ['gate', (init) => new TruckGate(init)],
+  ['pre_gate', (init) => new PreGateBuffer(init)],
+  ['holding', (init) => new TruckHolding(init)],
   ['waiting_area', (init) => new WaitingArea(init)],
   ['ramp', (init) => new LoadingRamp(init)],
 ]);

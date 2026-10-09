@@ -195,14 +195,14 @@ describe('zrušený job výdaja', () => {
     const unitId = putEmpty(world, depotOf(world), 'blue_anchor');
     world.emptyFlow.schedulePickup(world.clock.tick + 5, 'blue_anchor', contractId);
     runUntil(world, (w) => w.emptyFlow.errands[0]?.unitId === unitId, 300, 'pridelenie');
-    const road = { type: 'RemoveRoad', cells: [{ x: 53, y: 31 }] } as const;
+    const road = { type: 'RemoveRoad', cells: [{ x: 57, y: 31 }] } as const;
     expect(send(world, road).filter((event) => event.type === 'CommandRejected')).toEqual([]);
     const cancelled = run(world, 3);
     expect(eventsOf(cancelled, 'JobCancelled')).toMatchObject([{ reason: 'ramp_inoperative' }]);
     expect(world.emptyFlow.errands[0]?.unitId).toBeNull();
     expect(world.jobs.size).toBe(0);
     expect(world.cargo.get(unitId)?.location.kind).toBe('in_storage');
-    send(world, { type: 'PlaceRoad', cells: [{ x: 53, y: 31 }] });
+    send(world, { type: 'PlaceRoad', cells: [{ x: 57, y: 31 }] });
     runUntil(world, (w) => w.emptyFlow.errands[0]?.unitId === unitId, 100, 'nové pridelenie');
     expect(world.jobs.size).toBe(1);
   });

@@ -23,7 +23,7 @@ import {
 const DEFS = fixedContractDefs();
 const RUN_TIMEOUT_MS = 300_000;
 /** Rozloženie bez brány: rampa je neprevádzková, jednotky po vyložení čakajú v skladoch. */
-const NO_GATE = ['waiting_area', 'ramp'] as const;
+const NO_GATE = ['waiting_area', 'ramp', 'gate_out'] as const;
 const DEBUG_SHIP = { type: 'SpawnShipDebug', shipClassId: 'feeder', cargoTypeId: 'container_teu', units: FIXED_VOLUME } as const;
 
 const outboundJobs = (world: World, run: Run5, fromTick = 0) =>

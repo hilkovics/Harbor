@@ -17,13 +17,17 @@ import {
 } from './def-spec';
 import {
   CARGO_CATEGORIES,
+  GATE_DIRECTIONS,
   HANDOVER_MODES,
   MODULE_KINDS,
   STORAGE_ROLES,
   type BerthParams,
   type CraneParams,
   type DepotParams,
+  type GateDirection,
   type GateParams,
+  type HoldingParams,
+  type PreGateParams,
   type ModuleDef,
   type ModuleKind,
   type ModuleParams,
@@ -72,9 +76,27 @@ export const MODULE_PARAM_SPECS: { readonly [K in ModuleKind]: SpecTable<ModuleP
     tpSpacingBays: { kind: 'integer', min: 1, optional: true },
   },
   gate: {
-    // Priepustnosť: 1 kamión za `processTicks`; aspoň tick, inak by brána púšťala neobmedzene (F4, rozhodnutie 2).
-    processTicks: { kind: 'integer', min: 1 },
+    // Pruh brány (R4, ADR-041 bod 1): smer, kroky podľa smeru (vzťah polí v `checkGateParams`), šance cez `Rng`, režim `express`.
+    direction: { kind: 'enum', values: GATE_DIRECTIONS },
+    ocrTicks: { kind: 'integer', min: 1, optional: true },
+    checkTicks: { kind: 'integer', min: 1, optional: true },
+    issueTicks: { kind: 'integer', min: 1, optional: true },
+    gateIssueChance: { kind: 'number', min: 0, max: 1, optional: true },
+    troubleTicks: { kind: 'integer', min: 1, optional: true },
+    weighTicks: { kind: 'integer', min: 1, optional: true },
+    scanTicks: { kind: 'integer', min: 1, optional: true },
+    sealTicks: { kind: 'integer', min: 1, optional: true },
+    sealIssueChance: { kind: 'number', min: 0, max: 1, optional: true },
+    inspectionTicks: { kind: 'integer', min: 1, optional: true },
+    expressTicks: { kind: 'integer', min: 1 },
     internalTicks: { kind: 'integer', min: 0, optional: true },
+  },
+  pre_gate: {
+    rows: { kind: 'integer', min: 1 },
+    rowCapacity: { kind: 'integer', min: 1 },
+  },
+  holding: {
+    stalls: { kind: 'integer', min: 1 },
   },
   waiting_area: {
     bays: { kind: 'integer', min: 1 },
@@ -118,6 +140,24 @@ function checkBerthParams(params: Readonly<Record<string, unknown>>, path: strin
   return undefined;
 }
 
+/** Polia krokov podľa smeru pruhu brány (R4, ADR-041 bod 1): každý smer má presne svoje (tabuľka, nie switch). */
+const GATE_DIRECTION_FIELDS: { readonly [D in GateDirection]: readonly string[] } = {
+  in: ['ocrTicks', 'checkTicks', 'issueTicks', 'gateIssueChance', 'troubleTicks'],
+  out: ['weighTicks', 'scanTicks', 'sealTicks', 'sealIssueChance', 'inspectionTicks'],
+};
+
+/** Vzťah polí pruhu brány: polia svojho smeru sú povinné, polia opačného smeru sú chyba. `params` už prešli tabuľkou polí. */
+function checkGateParams(params: Readonly<Record<string, unknown>>, path: string): Problem | undefined {
+  const direction = params['direction'];
+  if (direction !== 'in' && direction !== 'out') return undefined;
+  const other: GateDirection = direction === 'in' ? 'out' : 'in';
+  const missing = GATE_DIRECTION_FIELDS[direction].find((key) => params[key] === undefined);
+  if (missing !== undefined) return { path: `${path}/${missing}`, message: `pruh smeru '${direction}' vyžaduje ${missing}` };
+  const foreign = GATE_DIRECTION_FIELDS[other].find((key) => params[key] !== undefined);
+  if (foreign !== undefined) return { path: `${path}/${foreign}`, message: `${foreign} patrí pruhu smeru '${other}', nie '${direction}'` };
+  return undefined;
+}
+
 /** Polia geometrie bloku so stohmi v `params` skladu (ADR-039): buď všetky, alebo žiadne. */
 const STORAGE_GEOMETRY_KEYS = ['bays', 'rows', 'maxTier'] as const;
 
@@ -158,6 +198,7 @@ export function checkModuleParams(value: unknown, kind: ModuleKind, path: string
   const problem = findUnknownKey(value, new Set(Object.keys(table)), path) ?? checkFields(value, table, path);
   if (problem !== undefined) return problem;
   if (kind === 'berth') return checkBerthParams(value, path);
+  if (kind === 'gate') return checkGateParams(value, path);
   return kind === 'storage' ? checkStorageParams(value, path) : undefined;
 }
 
@@ -223,6 +264,8 @@ const isCraneParams = (value: unknown): value is CraneParams => matchesFields(va
 const isStorageParams = (value: unknown): value is StorageParams => matchesFields(value, MODULE_PARAM_SPECS.storage);
 const isDepotParams = (value: unknown): value is DepotParams => matchesFields(value, MODULE_PARAM_SPECS.depot);
 const isGateParams = (value: unknown): value is GateParams => matchesFields(value, MODULE_PARAM_SPECS.gate);
+const isPreGateParams = (value: unknown): value is PreGateParams => matchesFields(value, MODULE_PARAM_SPECS.pre_gate);
+const isHoldingParams = (value: unknown): value is HoldingParams => matchesFields(value, MODULE_PARAM_SPECS.holding);
 const isWaitingAreaParams = (value: unknown): value is WaitingAreaParams => matchesFields(value, MODULE_PARAM_SPECS.waiting_area);
 const isRampParams = (value: unknown): value is RampParams => matchesFields(value, MODULE_PARAM_SPECS.ramp);
 
@@ -232,6 +275,8 @@ const craneParamsCache = new WeakMap<ModuleParams, CraneParams>();
 const storageParamsCache = new WeakMap<ModuleParams, StorageParams>();
 const depotParamsCache = new WeakMap<ModuleParams, DepotParams>();
 const gateParamsCache = new WeakMap<ModuleParams, GateParams>();
+const preGateParamsCache = new WeakMap<ModuleParams, PreGateParams>();
+const holdingParamsCache = new WeakMap<ModuleParams, HoldingParams>();
 const waitingAreaParamsCache = new WeakMap<ModuleParams, WaitingAreaParams>();
 const rampParamsCache = new WeakMap<ModuleParams, RampParams>();
 
@@ -277,6 +322,16 @@ export function depotParams(def: ModuleDef): DepotParams {
 /** Parametre brány kamiónov; def iného druhu → `DefError`. */
 export function gateParams(def: ModuleDef): GateParams {
   return typedParams(def, 'gate', isGateParams, gateParamsCache);
+}
+
+/** Parametre predbránovej plochy; def iného druhu → `DefError`. */
+export function preGateParams(def: ModuleDef): PreGateParams {
+  return typedParams(def, 'pre_gate', isPreGateParams, preGateParamsCache);
+}
+
+/** Parametre odstavnej plochy kamiónov; def iného druhu → `DefError`. */
+export function holdingParams(def: ModuleDef): HoldingParams {
+  return typedParams(def, 'holding', isHoldingParams, holdingParamsCache);
 }
 
 /** Parametre čakacej plochy kamiónov; def iného druhu → `DefError`. */

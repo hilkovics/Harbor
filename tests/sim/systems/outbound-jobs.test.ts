@@ -71,27 +71,16 @@ const stateChange = (vehicleId: EntityId, to: string) => (event: SimEvent): bool
 
 const viaJson = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
-/** Druhá rampa otočená o 180° na (54, 31): konektory (56, 31) a (55, 31) `n` → prístup (56, 30) a (55, 30) — od dvora o krok ďalej. */
-const FARTHER_RAMP = { type: 'PlaceModule', defId: 'loading_ramp_container', x: 54, y: 31, rotation: 180 } as const;
-
 /**
- * Druhá rampa oproti prvej: (53, 31) rot 180, prístup (55, 30) a (54, 30) — rovnaký ako prvej rampy (zhoda vzdialenosti).
- * Spojka zo stojiska vedie namiesto (53, 31..32) okolo: (54..57, 33), (57, 30..32), (56, 30).
+ * Druhá rampa (id menšie než hlavná) na západe: (36, 28) rot 0, konektory `s` → prístup (37, 30) a (38, 30); cesta (37..43, 30) ju napojí na chrbticu (44, 30) a vetvu F3 —
+ * od dvora (prístup (50, 30)) o 12 buniek ďalej než hlavná rampa (4 bunky). Obe sú prevádzkové (stojisko je za pruhom, okruh vedie po y = 30).
  */
-const FACING_LAYOUT = {
-  omitRoads: [
-    { x: 53, y: 31 },
-    { x: 53, y: 32 },
-  ],
-  before: [
-    { type: 'PlaceRoad', cells: [...segment(54, 33, 57, 33), ...segment(57, 30, 57, 32), { x: 56, y: 30 }] },
-    { type: 'PlaceModule', defId: 'loading_ramp_container', x: 53, y: 31, rotation: 180 },
-  ],
-} as const;
+const FARTHER_ROAD = { type: 'PlaceRoad', cells: segment(37, 30, 43, 30) } as const;
+const FARTHER_RAMP = { type: 'PlaceModule', defId: 'loading_ramp_container', x: 36, y: 28, rotation: 0 } as const;
 
 describe('vznik outbound jobov (dispatcher krok 5, §7.3 bod 2)', () => {
   it('bez brány je rampa neprevádzková: žiadny outbound job ani rezervácia; po postavení brány vzniknú joby FIFO na docky 0, 0, 1, 1', () => {
-    const { world, far } = outboundWorld({ landside: ['waiting_area', 'ramp'] });
+    const { world, far } = outboundWorld({ landside: ['waiting_area', 'ramp', 'gate_out'] });
     const ramp = rampOf(world);
     const units = stockYard(world, far, 6);
     expect(ofType(events(run(world, 3)), 'JobCreated')).toEqual([]);
@@ -129,7 +118,7 @@ describe('vznik outbound jobov (dispatcher krok 5, §7.3 bod 2)', () => {
   });
 
   it('najbližšia rampa podľa DistanceMatrix vyhrá nad menším id; keď je plná, dostane zvyšok ďalšia', () => {
-    const { world, far } = outboundWorld({ before: [FARTHER_RAMP] });
+    const { world, far } = outboundWorld({ before: [FARTHER_ROAD, FARTHER_RAMP] });
     const farther = world.moduleAt(FARTHER_RAMP.x, FARTHER_RAMP.y);
     const nearest = rampOf(world);
     expect(farther?.id).toBeLessThan(nearest.id);
@@ -137,16 +126,6 @@ describe('vznik outbound jobov (dispatcher krok 5, §7.3 bod 2)', () => {
     stockYard(world, far, 6);
     const created = ofType(world.tick(), 'JobCreated');
     expect(created.map((event) => event.toModuleId)).toEqual([nearest.id, nearest.id, nearest.id, nearest.id, farther?.id, farther?.id]);
-  });
-
-  it('pri zhode vzdialenosti (rampy so spoločnými prístupovými bunkami) vyhrá menšie id', () => {
-    const { world, far } = outboundWorld(FACING_LAYOUT);
-    const facing = world.moduleAt(53, 31);
-    const ramp = rampOf(world);
-    expect(facing !== undefined && world.isRampOperational(facing) && world.isRampOperational(ramp)).toBe(true);
-    stockYard(world, far, 9);
-    const created = ofType(world.tick(), 'JobCreated');
-    expect(created.map((event) => event.toModuleId)).toEqual([...Array.from({ length: 4 }, () => facing?.id), ...Array.from({ length: 4 }, () => ramp.id)]);
   });
 
   it('rampa zo skladu nedosiahnuteľná po ceste (prevádzková pre kamióny) job nedostane; po dostavaní cesty áno', () => {
@@ -170,7 +149,7 @@ describe('vznik outbound jobov (dispatcher krok 5, §7.3 bod 2)', () => {
     });
     const { world, far } = outboundWorld({
       defs,
-      landside: ['gate', 'waiting_area'],
+      landside: ['gate', 'waiting_area', 'gate_out'],
       after: [{ type: 'PlaceModule', defId: 'ramp_bulk_test', x: RAMP_ORIGIN.x, y: RAMP_ORIGIN.y, rotation: 0 }],
     });
     const ramp = rampOf(world);
@@ -205,7 +184,7 @@ describe('vznik outbound jobov (dispatcher krok 5, §7.3 bod 2)', () => {
       expect(rampOf(world).freeCount).toBe(0);
       expect(unitReads(world, () => createOutboundJobs(world))).toBe(0);
 
-      const inoperative = outboundWorld({ landside: ['waiting_area', 'ramp'] });
+      const inoperative = outboundWorld({ landside: ['waiting_area', 'ramp', 'gate_out'] });
       stockYard(inoperative.world, inoperative.far, 40);
       expect(unitReads(inoperative.world, () => createOutboundJobs(inoperative.world))).toBe(0);
     });

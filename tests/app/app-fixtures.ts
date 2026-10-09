@@ -140,22 +140,26 @@ export function buyVehicles(app: App, count: number): void {
 // ---- pozemná časť F4: brána, stojisko, rampa (rozloženie TDD scenára full_import_chain, bez dvorov) ----
 
 /**
- * Cesty pozemnej časti na `harbor_01`: (44, 33) vstup brány (nadväzuje na verejnú cestu x = 44, y 34..63 od portálu),
- * (47..48, 33) výstup brány → západ stojiska, (53, 31..33) východ stojiska → rampa, (51..55, 30) k dokom rampy.
+ * Cesty pozemnej časti na `harbor_01` (R4, pruhy brány): (44, 33) vstup vstupného pruhu (nadväzuje na verejnú cestu x = 44, y 34..63 od portálu), (44, 32) výstup výstupného
+ * pruhu, (49..52, 33) výstup vstupného pruhu → západ stojiska, (49, 32) vstup výstupného pruhu, (57, 31..33) východ stojiska, (56..57, 30) a (51..55, 30) k dokom rampy.
  */
 export const LANDSIDE_ROAD_CELLS: readonly (readonly { x: number; y: number }[])[] = [
   line([44, 33], [44, 33]),
-  line([47, 33], [48, 33]),
-  line([53, 33], [53, 31]),
+  line([44, 32], [44, 32]),
+  line([49, 33], [52, 33]),
+  line([49, 32], [49, 32]),
+  line([57, 33], [57, 31]),
   line([51, 30], [55, 30]),
+  line([56, 30], [57, 30]),
 ];
 
-export type LandsidePart = 'gate' | 'waiting_area' | 'ramp';
+export type LandsidePart = 'gate' | 'gate_out' | 'waiting_area' | 'ramp';
 
-/** Príkazy stavby pozemných modulov: brána (45, 32) rot 270, stojisko (49, 31), rampa (53, 28). */
+/** Príkazy stavby pozemných modulov: vstupný pruh (45, 33) rot 90, výstupný pruh (45, 32) rot 270, stojisko (53, 31), rampa (53, 28). */
 export const LANDSIDE_MODULE_COMMANDS: Readonly<Record<LandsidePart, SerializedCommand>> = {
-  gate: { type: 'PlaceModule', defId: 'truck_gate', x: 45, y: 32, rotation: 270 },
-  waiting_area: { type: 'PlaceModule', defId: 'truck_waiting_area', x: 49, y: 31, rotation: 0 },
+  gate: { type: 'PlaceModule', defId: 'gate_in_lane', x: 45, y: 33, rotation: 90 },
+  gate_out: { type: 'PlaceModule', defId: 'gate_out_lane', x: 45, y: 32, rotation: 270 },
+  waiting_area: { type: 'PlaceModule', defId: 'truck_waiting_area', x: 53, y: 31, rotation: 0 },
   ramp: { type: 'PlaceModule', defId: 'loading_ramp_container', x: 53, y: 28, rotation: 0 },
 };
 
@@ -166,7 +170,7 @@ export const RAMP_ID = 5 as EntityId;
 
 /** Postaví cesty pozemnej časti (`roads = false` ich vynechá) a potom moduly `parts` v danom poradí. */
 export function buildLandside(app: App, options: { readonly roads?: boolean; readonly parts?: readonly LandsidePart[] } = {}): void {
-  const { roads = true, parts = ['gate', 'waiting_area', 'ramp'] } = options;
+  const { roads = true, parts = ['gate', 'waiting_area', 'ramp', 'gate_out'] } = options;
   if (roads) runCommands(app, LANDSIDE_ROAD_CELLS.map((cells) => ({ type: 'PlaceRoad', cells })));
   runCommands(
     app,

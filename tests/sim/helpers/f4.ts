@@ -25,7 +25,7 @@ import { DEFS, MAP, RAW_DEFS } from '../world/world-fixtures';
 import { EPSILON, cellOfPosition, jobsOf, sameCell, storageCapacity, storageModulesOf, vehiclesOf } from './f3';
 import {
   GATE_ENTRY_OUTSIDE,
-  GATE_EXIT_OUTSIDE,
+  GATE_OUT_ENTRY_OUTSIDE,
   ROAD_PORTAL,
   f4Scenario,
   placeLandsideCommand,
@@ -74,6 +74,7 @@ export interface TruckLike {
   readonly dock: number;
   readonly waitingAreaId: EntityId;
   readonly gateId: EntityId;
+  readonly gateOutId?: EntityId | null;
 }
 
 interface ConnectorLike {
@@ -83,9 +84,10 @@ interface ConnectorLike {
   readonly type: string;
 }
 
-/** `TruckGate` (T04-02) — len polia, ktoré testy čítajú. */
+/** `TruckGate` (T04-02; od R4 pruh brány) — len polia, ktoré testy čítajú. */
 export interface GateLike {
-  readonly params: { readonly processTicks: number; readonly internalTicks?: number };
+  readonly params: { readonly direction: 'in' | 'out'; readonly internalTicks?: number };
+  readonly direction: 'in' | 'out';
   readonly queueLength: number;
   readonly busyTicksLeft: number;
   readonly entrySide: ConnectorLike | null;
@@ -158,7 +160,10 @@ function only<T>(list: readonly T[], what: string): T {
   if (list.length !== 1) throw new Error(`očakávaný práve 1 modul druhu ${what}, svet ich má ${String(list.length)}`);
   return list[0];
 }
-export const gateOf = (world: World): GateModule => only(gatesOf(world), 'gate');
+/** Vstupný pruh brány (R4: v rozložení F4 práve jeden). */
+export const gateOf = (world: World): GateModule => only(gatesOf(world).filter((gate) => gate.direction === 'in'), 'gate_in_lane');
+/** Výstupný pruh brány (R4: v rozložení F4 práve jeden). */
+export const gateOutOf = (world: World): GateModule => only(gatesOf(world).filter((gate) => gate.direction === 'out'), 'gate_out_lane');
 export const waitingAreaOf = (world: World): WaitingAreaModule => only(waitingAreasOf(world), 'waiting_area');
 export const rampOf = (world: World): RampModule => only(rampsOf(world), 'ramp');
 
@@ -775,7 +780,8 @@ export class Recorder4 {
     this.violations.push(...dockViolations(tick, trucks));
 
     for (const gate of gatesOf(world)) {
-      const trucksQueued = trucks.filter((truck) => truck.gateId === gate.id && GATE_LISTED_STATES.includes(truck.state)).length;
+      const listed = gate.direction === 'in' ? ['gate_queue', 'gate_pass'] : ['gate_queue_out', 'gate_pass_out'];
+      const trucksQueued = trucks.filter((truck) => (gate.direction === 'in' ? truck.gateId : truck.gateOutId) === gate.id && listed.includes(truck.state)).length;
       this.gates.push({ tick, gateId: gate.id, queueLength: gate.queueLength, busyTicksLeft: gate.busyTicksLeft, trucksProcessed: gate.trucksProcessed, trucksQueued });
       if (!Number.isInteger(gate.queueLength) || gate.queueLength < 0 || gate.queueLength > trucksQueued) {
         this.violations.push({
@@ -868,8 +874,8 @@ function truckViolations(world: World, truck: TruckLike, sample: TruckSample, pr
   if (sample.state === 'gate_queue' && !sameCell(cell, GATE_ENTRY_OUTSIDE)) {
     found.push({ rule: 'truck_queue_position', message: `${where}: gate_queue má stáť na vstupnej vonkajšej bunke brány (${String(GATE_ENTRY_OUTSIDE.x)}, ${String(GATE_ENTRY_OUTSIDE.y)})` });
   }
-  if (sample.state === 'gate_queue_out' && !sameCell(cell, GATE_EXIT_OUTSIDE)) {
-    found.push({ rule: 'truck_queue_position', message: `${where}: gate_queue_out má stáť na výstupnej vonkajšej bunke brány (${String(GATE_EXIT_OUTSIDE.x)}, ${String(GATE_EXIT_OUTSIDE.y)})` });
+  if (sample.state === 'gate_queue_out' && !sameCell(cell, GATE_OUT_ENTRY_OUTSIDE)) {
+    found.push({ rule: 'truck_queue_position', message: `${where}: gate_queue_out má stáť na vonkajšej bunke vstupu výstupného pruhu (${String(GATE_OUT_ENTRY_OUTSIDE.x)}, ${String(GATE_OUT_ENTRY_OUTSIDE.y)})` });
   }
 
   const capacity = truck.def.capacityUnits;
@@ -997,8 +1003,25 @@ function defsWithModuleParams(defId: string, params: Readonly<Record<string, num
 /** Defy s upraveným počtom stojísk čakacej plochy (napr. `bays 1` → druhý kamión sa nespawne, kým prvý neodíde k rampe). */
 export const defsWithBays = (bays: number): DefRegistry => defsWithModuleParams('truck_waiting_area', { bays });
 
-/** Defy s upravenou priepustnosťou brány (`processTicks`) — veľká hodnota vynúti frontu pred bránou. */
-export const defsWithProcessTicks = (processTicks: number): DefRegistry => defsWithModuleParams('truck_gate', { processTicks });
+/**
+ * Defy s pomalými pruhmi brány: prechod vstupným aj výstupným pruhom trvá `passTicks` tickov (OCR 40 % + kontrola 40 % + lístok 20 %, váha 40 % + sken 40 % + plomba 20 %),
+ * bez náhodných problémov — veľká hodnota vynúti frontu pred pruhom.
+ */
+export function defsWithSlowLanes(passTicks: number): DefRegistry {
+  const first = Math.round(passTicks * 0.4);
+  const last = passTicks - 2 * first;
+  return DefRegistry.fromRaw({
+    ...RAW_DEFS,
+    modules: {
+      ...RAW_DEFS.modules,
+      items: RAW_DEFS.modules.items.map((item) => {
+        if (item.id === 'gate_in_lane') return { ...item, params: { ...item.params, ocrTicks: first, checkTicks: first, issueTicks: last, gateIssueChance: 0 } };
+        if (item.id === 'gate_out_lane') return { ...item, params: { ...item.params, weighTicks: first, scanTicks: first, sealTicks: last, sealIssueChance: 0 } };
+        return item;
+      }),
+    },
+  });
+}
 
 // ---------------------------------------------------------------------------------------------------------
 // Scenár „brána sa postaví neskôr": jednotky sú už v sklade, kým rampa nie je prevádzková
@@ -1039,7 +1062,7 @@ export interface LateGateRun {
  */
 export function runLateGate(options: LateGateOptions = {}): LateGateRun {
   const { defs = DEFS, units = 12, seed = 4104, holdTicks = 300, maxExportTicks = 30000 } = options;
-  const scenario = f4Scenario('f4_late_gate', seed, { vehicles: STRADDLES, units, landside: ['waiting_area', 'ramp'] });
+  const scenario = f4Scenario('f4_late_gate', seed, { vehicles: STRADDLES, units, landside: ['waiting_area', 'ramp', 'gate_out'] });
   const world = World.create(defs, MAP, seed);
   const recorder = new Recorder4(world, scenario);
   recorder.runUntil((w) => w.cargo.countByKind('in_storage') === units, 20000);

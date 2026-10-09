@@ -21,17 +21,16 @@ const tinyRamp = () => f6cDefs({ moduleParams: { loading_ramp_container: { docks
 describe('planDeliveryAdmission + spawnDelivery', () => {
   it('admitted zapíše miesto vjazdu a spawnDelivery vytvorí kamión s dovozom (nakladač sa zavolá raz, až pri vzniku); druhé volanie bez nového plánu je chyba', () => {
     const world = emptyWorld({ vehicles: TWO_STRADDLES });
-    const portal = world.landside.portalCell;
     expect(planDeliveryAdmission(world, 'empty', rampOf(world).category)).toBe('admitted');
     expect(world.trucks.size).toBe(0); // plán nič nevytvorí
     const loaded: number[] = [];
-    spawnDelivery(world, portal, (truck) => {
+    spawnDelivery(world, (truck) => {
       loaded.push(truck.id);
       expect(truck.mission).toBe('delivery');
     });
     expect(world.trucks.size).toBe(1);
     expect(loaded).toEqual([...world.trucks.keys()]);
-    expect(() => spawnDelivery(world, portal, () => undefined)).toThrow(TruckError);
+    expect(() => spawnDelivery(world, () => undefined)).toThrow(TruckError);
   });
 
   it('waiting (stojisko pre dovoz je plné) nič nezapíše: spawnDelivery bez admitted je TruckError a nakladač sa nezavolá', () => {
@@ -40,7 +39,7 @@ describe('planDeliveryAdmission + spawnDelivery', () => {
     for (const bay of [1, 2, 3, 4]) area.reserveBay(bay as never);
     expect(planDeliveryAdmission(world, 'empty', rampOf(world).category)).toBe('waiting');
     let called = 0;
-    expect(() => spawnDelivery(world, world.landside.portalCell, () => (called += 1))).toThrow(TruckError);
+    expect(() => spawnDelivery(world, () => (called += 1))).toThrow(TruckError);
     expect(called).toBe(0);
     expect(world.trucks.size).toBe(0);
   });
@@ -49,7 +48,7 @@ describe('planDeliveryAdmission + spawnDelivery', () => {
     const world = emptyWorld({ defs: tinyRamp(), vehicles: TWO_STRADDLES });
     const ramp = rampOf(world);
     expect(planDeliveryAdmission(world, 'empty', ramp.category)).toBe('admitted');
-    spawnDelivery(world, world.landside.portalCell, (truck) => {
+    spawnDelivery(world, (truck) => {
       world.cargo.create('container_teu', { kind: 'in_truck', truckId: truck.id }, null, { direction: 'empty', voyageId: null, lineId: 'blue_anchor', destinationPort: null, weightClass: 'medium' });
     });
     expect(planDeliveryAdmission(world, 'empty', ramp.category)).toBe('waiting');

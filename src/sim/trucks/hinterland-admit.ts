@@ -6,20 +6,18 @@
  * 2. **export** (`delivery`, `trucks/export-trucks.ts`) — platí, na rozdiel od prázdneho, a viaže ho cut-off;
  * 3. **návrat prázdneho** (`delivery`, `trucks/empty-trucks.ts`).
  * Kamióny na odvoz importu (`pickup`) vznikajú pred nimi podľa dopytu (`trucks/truck-spawner.ts`) a smú obsadiť aj stojiská rezervované kvótou — dovoz ich
- * nikdy nevytlačí. Bez road portálu alebo rampy sa nevpúšťa nič (položky plánu čakajú).
+ * nikdy nevytlačí. Bez portálu vjazdu alebo rampy sa nevpúšťa nič (položky plánu čakajú).
  */
-import { NO_ACCESS } from '../logistics/module-access';
 import type { World } from '../world/world';
 import { admitCollectTrucks, admitReturnTrucks } from './empty-trucks';
 import { admitExportTrucks } from './export-trucks';
 
 /** Krok 8, časť vjazd z vnútrozemia (viď hlavička). */
 export function admitFromHinterland(world: World): void {
-  const portal = world.landside.portalCell;
-  if (portal === NO_ACCESS || world.landsideModules.ramps.length === 0) return;
+  if (world.landside.inPortals.length === 0 || world.landsideModules.ramps.length === 0) return;
   // Kamióny sa od kroku 5 zmenili (povel do docku, odchod) — prvý pokus o vjazd prepočíta prisľúbené miesta docku (`DockIntake`), ďalšie až po vzniku kamióna s dovozom.
   world.dockIntake.invalidate();
-  admitCollectTrucks(world, portal);
-  admitExportTrucks(world, portal);
-  admitReturnTrucks(world, portal);
+  admitCollectTrucks(world);
+  admitExportTrucks(world);
+  admitReturnTrucks(world);
 }

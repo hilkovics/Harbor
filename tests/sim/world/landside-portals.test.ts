@@ -1,6 +1,6 @@
 // Jednosmerný prístav (R1, ADR-037 dodatok): cestný portál má smer (`in` = vjazd, kde vznikajú kamióny a odkiaľ sa určujú strany brán,
-// `out` = výjazd, kde kamióny opúšťajú mapu, `both` / bez poľa = oboje ako doteraz). Rampa je prevádzková, len keď sa z vnútornej strany
-// brány dá dôjsť k výjazdovému portálu.
+// `out` = výjazd, kde kamióny opúšťajú mapu, `both` / bez poľa = oboje ako doteraz). Portál vjazdu je použiteľný, len keď z neho vedie cesta k vstupu
+// pruhu brány (R4, ADR-041 bod 3); rampa je prevádzková, len keď sa z výstupného pruhu dá dôjsť k výjazdovému portálu.
 import { describe, expect, it } from 'vitest';
 import { commandFromJSON, type SerializedCommand } from '@sim/commands';
 import type { CellCoord } from '@sim/grid';
@@ -30,22 +30,27 @@ function apply(world: World, ...commands: readonly SerializedCommand[]): void {
   expect(world.applyPending().filter((event) => event.type === 'CommandRejected')).toEqual([]);
 }
 
-/** Pozemný reťazec (brána, stojisko, rampa) ako v `landside.test.ts`; výjazdový portál (60, 63) je spojený s trasou po y = 63, ak `linked`. */
-function build(linked: boolean): World {
-  const portals = [
-    { id: 'road_in', cell: IN_CELL, direction: 'in' },
-    { id: 'road_out', cell: OUT_CELL, direction: 'out' },
-  ];
-  const world = World.create(DEFS, mapWith(portals, [OUT_CELL, ...(linked ? row(63, 45, 59) : [])]), SEED);
+const PORTALS_IN_OUT = [
+  { id: 'road_in', cell: IN_CELL, direction: 'in' },
+  { id: 'road_out', cell: OUT_CELL, direction: 'out' },
+];
+
+/** Pozemný reťazec (pruhy brány, stojisko, rampa) ako v `landside.test.ts`; výjazdový portál (60, 63) je spojený s trasou po y = 63, ak `linked`. */
+function build(linked: boolean, portals: readonly { id: string; cell: CellCoord; direction?: string }[] = PORTALS_IN_OUT): World {
+  const outCells = portals.filter((portal) => portal.direction !== 'in' && portal.cell.x !== IN_CELL.x).map((portal) => portal.cell);
+  const world = World.create(DEFS, mapWith(portals, [...outCells, ...(linked ? row(63, 45, 59) : [])]), SEED);
   apply(
     world,
     { type: 'PlaceRoad', cells: [{ x: 44, y: 33 }] },
-    { type: 'PlaceRoad', cells: [{ x: 47, y: 33 }, { x: 48, y: 33 }] },
-    { type: 'PlaceRoad', cells: [{ x: 53, y: 31 }, { x: 53, y: 32 }, { x: 53, y: 33 }] },
-    { type: 'PlaceRoad', cells: row(30, 51, 55) },
-    { type: 'PlaceModule', defId: 'truck_gate', x: 45, y: 32, rotation: 270 },
-    { type: 'PlaceModule', defId: 'truck_waiting_area', x: 49, y: 31, rotation: 0 },
+    { type: 'PlaceRoad', cells: [{ x: 44, y: 32 }] },
+    { type: 'PlaceRoad', cells: row(33, 49, 52) },
+    { type: 'PlaceRoad', cells: [{ x: 49, y: 32 }] },
+    { type: 'PlaceRoad', cells: [{ x: 57, y: 31 }, { x: 57, y: 32 }, { x: 57, y: 33 }] },
+    { type: 'PlaceRoad', cells: row(30, 51, 57) },
+    { type: 'PlaceModule', defId: 'gate_in_lane', x: 45, y: 33, rotation: 90 },
+    { type: 'PlaceModule', defId: 'truck_waiting_area', x: 53, y: 31, rotation: 0 },
     { type: 'PlaceModule', defId: 'loading_ramp_container', x: 53, y: 28, rotation: 0 },
+    { type: 'PlaceModule', defId: 'gate_out_lane', x: 45, y: 32, rotation: 270 },
   );
   return world;
 }
@@ -54,50 +59,51 @@ const idx = (world: World, cell: CellCoord): number => world.grid.index(cell.x, 
 
 describe('smer cestného portálu', () => {
   it('in a out: vjazd = portál in (vznik kamiónov), výjazd = portál out (opustenie mapy)', () => {
-    const world = World.create(DEFS, mapWith([{ id: 'road_in', cell: IN_CELL, direction: 'in' }, { id: 'road_out', cell: OUT_CELL, direction: 'out' }], [OUT_CELL]), SEED);
+    const world = build(true);
+    expect(world.landside.inPortals.map((portal) => portal.cell)).toEqual([idx(world, IN_CELL)]);
+    expect(world.landside.outPortals.map((portal) => portal.cell)).toEqual([idx(world, OUT_CELL)]);
     expect(world.landside.portalCell).toBe(idx(world, IN_CELL));
     expect(world.landside.exitPortalCell).toBe(idx(world, OUT_CELL));
   });
 
   it('bez poľa direction (staré mapy a scenáre) je portál both: vjazd aj výjazd na tej istej bunke', () => {
-    const world = World.create(DEFS, mapWith([{ id: 'road_south', cell: IN_CELL }]), SEED);
+    const world = build(true, [{ id: 'road_south', cell: IN_CELL }]);
     expect(world.landside.portalCell).toBe(idx(world, IN_CELL));
     expect(world.landside.exitPortalCell).toBe(idx(world, IN_CELL));
   });
 
   it('portál iba out nie je vjazd: kamióny nemajú kde vzniknúť (portalCell NO_ACCESS), výjazd platí', () => {
-    const world = World.create(DEFS, mapWith([{ id: 'road_out_only', cell: IN_CELL, direction: 'out' }]), SEED);
+    const world = build(true, [{ id: 'road_out_only', cell: IN_CELL, direction: 'out' }]);
     expect(world.landside.portalCell).toBe(NO_ACCESS);
+    expect(world.landside.inPortals).toEqual([]);
     expect(world.landside.exitPortalCell).toBe(idx(world, IN_CELL));
   });
 
   it('portál iba in nie je výjazd: exitPortalCell NO_ACCESS', () => {
-    const world = World.create(DEFS, mapWith([{ id: 'road_in_only', cell: IN_CELL, direction: 'in' }]), SEED);
+    const world = build(true, [{ id: 'road_in_only', cell: IN_CELL, direction: 'in' }]);
     expect(world.landside.portalCell).toBe(idx(world, IN_CELL));
     expect(world.landside.exitPortalCell).toBe(NO_ACCESS);
+    expect(world.landside.outPortals).toEqual([]);
   });
 
-  it('prvý vhodný portál: vjazdom je prvý in/both, výjazdom prvý out/both', () => {
-    const world = World.create(
-      DEFS,
-      mapWith([{ id: 'a', cell: OUT_CELL, direction: 'out' }, { id: 'b', cell: IN_CELL, direction: 'both' }], [OUT_CELL]),
-      SEED,
-    );
+  it('poradie portálov podľa mapy: vjazdom je prvý in/both, výjazdom prvý out/both; podiel trafficShare (chýba = 1)', () => {
+    const world = build(true, [{ id: 'a', cell: OUT_CELL, direction: 'out' }, { id: 'b', cell: IN_CELL, direction: 'both' }]);
     expect(world.landside.portalCell).toBe(idx(world, IN_CELL));
     expect(world.landside.exitPortalCell).toBe(idx(world, OUT_CELL));
+    expect(world.landside.inPortals).toEqual([{ cell: idx(world, IN_CELL), share: 1 }]);
   });
 });
 
-describe('strany brány a prevádzkovosť rampy podľa vjazdu a výjazdu', () => {
-  it('strany brány sa určujú z vjazdu: vstup (44, 33) je dosiahnuteľný z portálu in', () => {
+describe('strany pruhov brány a prevádzkovosť rampy podľa vjazdu a výjazdu', () => {
+  it('vstup vstupného pruhu (44, 33) je dosiahnuteľný z portálu in', () => {
     const world = build(true);
-    const gate = [...world.modules.values()].find((module): module is TruckGate => module instanceof TruckGate);
+    const gate = [...world.modules.values()].find((module): module is TruckGate => module instanceof TruckGate && module.direction === 'in');
     expect(gate).toBeDefined();
     const sides = world.gateSides(gate as TruckGate);
-    expect([sides.entryCell, sides.exitCell]).toEqual([idx(world, { x: 44, y: 33 }), idx(world, { x: 47, y: 33 })]);
+    expect([sides.entryCell, sides.exitCell]).toEqual([idx(world, { x: 44, y: 33 }), idx(world, { x: 49, y: 33 })]);
   });
 
-  it('rampa je prevádzková, len keď sa z brány dá dôjsť k výjazdovému portálu', () => {
+  it('rampa je prevádzková, len keď sa z výstupného pruhu dá dôjsť k výjazdovému portálu', () => {
     const linked = build(true);
     const ramp = [...linked.modules.values()].find((module): module is LoadingRamp => module instanceof LoadingRamp) as LoadingRamp;
     expect(linked.rampStatus(ramp)).toMatchObject({ operational: true });

@@ -73,7 +73,7 @@ describe('ConnectedModuleInspector', () => {
     const selection = new ModuleSelection();
     selection.select(GATE_ID);
     render(app, selection);
-    expect(inspectorProps().data).toMatchObject({ kind: 'gate', gate: { queueLength: 0, processTicks: 18 }, connected: true });
+    expect(inspectorProps().data).toMatchObject({ kind: 'gate', gate: { queueLength: 0, processTicks: 15 }, connected: true });
     selection.select(RAMP_ID);
     render(app, selection);
     expect(inspectorProps().data).toMatchObject({ kind: 'ramp', ramp: { operational: true, docks: [{ staged: 0, capacity: 4, truck: false }, { staged: 0, capacity: 4, truck: false }] } });

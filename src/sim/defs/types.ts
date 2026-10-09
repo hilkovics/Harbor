@@ -280,6 +280,8 @@ export const MODULE_KINDS = [
   'crane',
   'storage',
   'gate',
+  'pre_gate',
+  'holding',
   'waiting_area',
   'ramp',
   'depot',
@@ -458,15 +460,66 @@ export interface DepotParams {
   readonly internalTicks?: number;
 }
 
-/** `params` brány kamiónov (`kind: 'gate'`, F4). */
+/** Smer pruhu brány: vstupný (`gate_in_lane`) alebo výstupný (`gate_out_lane`), R4, ADR-041. */
+export const GATE_DIRECTIONS = ['in', 'out'] as const;
+export type GateDirection = (typeof GATE_DIRECTIONS)[number];
+
+/** Režim pruhu brány (R4, ADR-041 bod 1): `standard`, `express` (skrátený čas, bez náhodného problému), `trouble` (pomalé riešenie problémových kamiónov). */
+export const GATE_MODES = ['standard', 'express', 'trouble'] as const;
+export type GateMode = (typeof GATE_MODES)[number];
+
+/**
+ * `params` pruhu brány kamiónov (`kind: 'gate'`; od R4 `gate_in_lane` a `gate_out_lane`, ADR-041 bod 1). Pruh je jednosmerný (prvý konektor = vonkajšia strana,
+ * druhý = vnútorná) a obsluhuje 1 kamión naraz. Kroky vstupného pruhu: OCR → kontrola → lístok; výstupného: váha → sken → plomba.
+ * Pole kroku patrí len svojmu smeru (vzťah polí v `checkGateParams`).
+ */
 export interface GateParams {
-  /** Priepustnosť: 1 kamión za `processTicks` tickov (spoločná FIFO fronta oboch smerov, tvrdý bottleneck). */
-  readonly processTicks: number;
-  /**
-   * Vnútorný čas prechodu telom brány (ADR-011): prechod trvá `processTicks + internalTicks` (`TruckGate.passTicks`).
-   * Chýba = 0, nie `logistics.defaultInternalTicks` — priepustnosť brány určuje `processTicks` (ADR-024).
-   */
+  /** Smer pruhu. */
+  readonly direction: GateDirection;
+  /** Vstupný pruh: čas OCR v tickoch (celé ≥ 1). */
+  readonly ocrTicks?: number;
+  /** Vstupný pruh: čas kontroly (VGM, booking, termín) v tickoch (celé ≥ 1). */
+  readonly checkTicks?: number;
+  /** Vstupný pruh: čas vydania lístka a závory v tickoch (celé ≥ 1). */
+  readonly issueTicks?: number;
+  /** Vstupný pruh: šanca na problém pri kontrole v režime `standard` (0 … 1, `Rng`). */
+  readonly gateIssueChance?: number;
+  /** Vstupný pruh: čas riešenia problémového kamióna (tickov navyše; v režime `trouble` celý prechod). */
+  readonly troubleTicks?: number;
+  /** Výstupný pruh: čas váženia v tickoch (celé ≥ 1). */
+  readonly weighTicks?: number;
+  /** Výstupný pruh: čas skenu v tickoch (celé ≥ 1). */
+  readonly scanTicks?: number;
+  /** Výstupný pruh: čas plomby a závory v tickoch (celé ≥ 1). */
+  readonly sealTicks?: number;
+  /** Výstupný pruh: šanca na problém pri plombe v režime `standard` (0 … 1, `Rng`). */
+  readonly sealIssueChance?: number;
+  /** Výstupný pruh: čas dôkladnej kontroly (tickov navyše; v režime `trouble` celý prechod). */
+  readonly inspectionTicks?: number;
+  /** Celý prechod v režime `express` v tickoch (celé ≥ 1; odomyká ho tech F8 `gate_fast_lane`, zatiaľ bez podmienky). */
+  readonly expressTicks: number;
+  /** Vnútorný čas prechodu telom brány (ADR-011): pripočíta sa k trvaniu prechodu; chýba = 0 (ADR-024). */
   readonly internalTicks?: number;
+}
+
+/**
+ * `params` predbránovej plochy (`kind: 'pre_gate'`, R4, ADR-041 bod 2): jeden vjazd z cesty a `rows` radových pruhov po `rowCapacity` kamiónov; kapacita
+ * plochy = `rows × rowCapacity`. Radový pruh `i` obsluhuje i-ty pruh brány dosiahnuteľný z výjazdu plochy (`i mod počet pruhov`).
+ */
+export interface PreGateParams {
+  /** Počet radových pruhov (celé ≥ 1). */
+  readonly rows: number;
+  /** Kapacita radového pruhu v kamiónoch (celé ≥ 1; podľa ADR-041 2). */
+  readonly rowCapacity: number;
+}
+
+/**
+ * `params` odstavnej plochy kamiónov (`kind: 'holding'`, R4, ADR-041 bod 5): parkovisko so státiami 1 × 3 mimo pruhov. Správanie (volanie k TP) prinesie TR4-02;
+ * v TR4-01 je to len def a modul bez dynamiky.
+ */
+export interface HoldingParams {
+  /** Počet státí (celé ≥ 1). */
+  readonly stalls: number;
 }
 
 /** `params` čakacej plochy kamiónov (`kind: 'waiting_area'`, F4). */
@@ -509,6 +562,8 @@ export interface ModuleParamsByKind {
   readonly crane: CraneParams;
   readonly storage: StorageParams;
   readonly gate: GateParams;
+  readonly pre_gate: PreGateParams;
+  readonly holding: HoldingParams;
   readonly waiting_area: WaitingAreaParams;
   readonly ramp: RampParams;
   readonly depot: DepotParams;

@@ -69,21 +69,21 @@
       "params": { "capacity": 10 }
     },
     {
-      "id": "truck_gate",
+      "id": "gate_in_lane",
       "kind": "gate",
-      "displayName": "Brána kamiónov",
-      "footprint": { "w": 2, "h": 2 },
+      "displayName": "Vstupný pruh brány",
+      "footprint": { "w": 1, "h": 4 },
       "placement": {
         "requiredTerrain": ["land", "quay"],
         "requiresParcelOwnership": true
       },
       "connectors": [
-        { "x": 0, "y": 0, "side": "n", "type": "road" },
-        { "x": 0, "y": 1, "side": "s", "type": "road" }
+        { "x": 0, "y": 3, "side": "s", "type": "road" },
+        { "x": 0, "y": 0, "side": "n", "type": "road" }
       ],
-      "costCents": 8000000,
-      "maintenancePerDayCents": 15000,
-      "params": { "processTicks": 18 }
+      "costCents": 2500000,
+      "maintenancePerDayCents": 4000,
+      "params": { "direction": "in", "ocrTicks": 3, "checkTicks": 8, "issueTicks": 4, "gateIssueChance": 0.05, "troubleTicks": 40, "expressTicks": 6 }
     },
     {
       "id": "truck_waiting_area",
@@ -149,6 +149,57 @@
       "costCents": 24000000,
       "maintenancePerDayCents": 90000,
       "params": { "capacityUnits": 360, "category": "container", "role": "rtg_block", "bays": 12, "rows": 6, "maxTier": 5, "laneCol": 4, "tpSpacingBays": 1 }
+    },
+    {
+      "id": "gate_out_lane",
+      "kind": "gate",
+      "displayName": "Výstupný pruh brány",
+      "footprint": { "w": 1, "h": 4 },
+      "placement": {
+        "requiredTerrain": ["land", "quay"],
+        "requiresParcelOwnership": true
+      },
+      "connectors": [
+        { "x": 0, "y": 3, "side": "s", "type": "road" },
+        { "x": 0, "y": 0, "side": "n", "type": "road" }
+      ],
+      "costCents": 2500000,
+      "maintenancePerDayCents": 4000,
+      "params": { "direction": "out", "weighTicks": 6, "scanTicks": 6, "sealTicks": 4, "sealIssueChance": 0.03, "inspectionTicks": 40, "expressTicks": 8 }
+    },
+    {
+      "id": "pre_gate_buffer",
+      "kind": "pre_gate",
+      "displayName": "Predbránová plocha",
+      "footprint": { "w": 8, "h": 8 },
+      "placement": {
+        "requiredTerrain": ["land", "quay"],
+        "requiresParcelOwnership": true
+      },
+      "connectors": [
+        { "x": 0, "y": 7, "side": "s", "type": "road" },
+        { "x": 7, "y": 0, "side": "n", "type": "road" }
+      ],
+      "costCents": 9000000,
+      "maintenancePerDayCents": 8000,
+      "params": { "rows": 8, "rowCapacity": 2 }
+    },
+    {
+      "id": "truck_holding",
+      "kind": "holding",
+      "displayName": "Odstavná plocha kamiónov",
+      "footprint": { "w": 3, "h": 6 },
+      "placement": {
+        "requiredTerrain": ["land", "quay"],
+        "requiresParcelOwnership": true
+      },
+      "connectors": [
+        { "x": 0, "y": 5, "side": "s", "type": "road" },
+        { "x": 2, "y": 0, "side": "n", "type": "road" }
+      ],
+      "costCents": 5000000,
+      "maintenancePerDayCents": 6000,
+      "params": { "stalls": 4 }
     }
   ]
 }

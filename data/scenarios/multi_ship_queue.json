@@ -201,42 +201,6 @@
         "type": "PlaceRoad",
         "cells": [
           {
-            "x": 47,
-            "y": 33
-          },
-          {
-            "x": 48,
-            "y": 33
-          }
-        ]
-      }
-    },
-    {
-      "atTick": 0,
-      "command": {
-        "type": "PlaceRoad",
-        "cells": [
-          {
-            "x": 53,
-            "y": 31
-          },
-          {
-            "x": 53,
-            "y": 32
-          },
-          {
-            "x": 53,
-            "y": 33
-          }
-        ]
-      }
-    },
-    {
-      "atTick": 0,
-      "command": {
-        "type": "PlaceRoad",
-        "cells": [
-          {
             "x": 51,
             "y": 30
           },
@@ -293,10 +257,10 @@
       "atTick": 0,
       "command": {
         "type": "PlaceModule",
-        "defId": "truck_gate",
+        "defId": "gate_in_lane",
         "x": 45,
-        "y": 32,
-        "rotation": 270
+        "y": 33,
+        "rotation": 90
       }
     },
     {
@@ -304,7 +268,7 @@
       "command": {
         "type": "PlaceModule",
         "defId": "truck_waiting_area",
-        "x": 49,
+        "x": 53,
         "y": 31,
         "rotation": 0
       }
@@ -317,6 +281,16 @@
         "x": 53,
         "y": 28,
         "rotation": 0
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceModule",
+        "defId": "gate_out_lane",
+        "x": 45,
+        "y": 32,
+        "rotation": 270
       }
     },
     {
@@ -387,6 +361,90 @@
           {
             "x": 44,
             "y": 36
+          }
+        ]
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceRoad",
+        "cells": [
+          {
+            "x": 44,
+            "y": 32
+          }
+        ]
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceRoad",
+        "cells": [
+          {
+            "x": 49,
+            "y": 33
+          },
+          {
+            "x": 50,
+            "y": 33
+          },
+          {
+            "x": 51,
+            "y": 33
+          },
+          {
+            "x": 52,
+            "y": 33
+          }
+        ]
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceRoad",
+        "cells": [
+          {
+            "x": 49,
+            "y": 32
+          }
+        ]
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceRoad",
+        "cells": [
+          {
+            "x": 57,
+            "y": 31
+          },
+          {
+            "x": 57,
+            "y": 32
+          },
+          {
+            "x": 57,
+            "y": 33
+          }
+        ]
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceRoad",
+        "cells": [
+          {
+            "x": 56,
+            "y": 30
+          },
+          {
+            "x": 57,
+            "y": 30
           }
         ]
       }

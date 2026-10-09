@@ -3,8 +3,9 @@
  * stavy, explicitná tabuľka povolených prechodov `TRUCK_TRANSITIONS` a vlastnosti stavov `TRUCK_STATE_TRAITS`.
  * Žiadne skryté prechody — stav mení výlučne `Truck.transition(to)`, ktorý prechod overí v tabuľke.
  *
- * Cyklus: (spawn na road portáli) `to_gate` → (príchod na vonkajšiu bunku vstupnej strany brány) `gate_queue` →
- * (brána začala prechod) `gate_pass` → (prechod skončil a výjazdová bunka je voľná) `to_bay` → (príchod k vstupu stojiska)
+ * Cyklus (R4, ADR-041): (spawn na road portáli) buď `to_gate` (pruh brány bez predbránovej plochy), alebo `to_pre_gate` → (príchod k vjazdu plochy) `pre_gate`
+ * (mimo cesty v radovom pruhu plochy, najkratší rad) → (čelo radu, jeho pruh brány je voľný) `to_gate` → (príchod na vonkajšiu bunku vstupného pruhu brány) `gate_queue` →
+ * (pruh začal prechod) `gate_pass` (kroky OCR / kontrola / lístok, `TruckGate.currentStep`) → (prechod skončil a výjazdová bunka je voľná) `to_bay` → (príchod k vstupu stojiska)
  * `waiting` → (povel do docku) `to_dock` → (príchod k docku rampy) `loading` → (naložené) `to_gate_out` → (príchod
  * k výstupnej strane brány) `gate_queue_out` → (brána začala prechod) `gate_pass_out` → (prechod skončil) `to_portal` →
  * (príchod na portál) `exited` — jednotky `in_truck → exported`, kamión zmizne.
@@ -36,6 +37,8 @@ import type { Truck } from './truck';
 
 /** Stavy kamióna v poradí životného cyklu (`exited` je prechodný — kamión v ňom zmizne v tom istom kroku). */
 export const TRUCK_STATES = [
+  'to_pre_gate',
+  'pre_gate',
   'to_gate',
   'gate_queue',
   'gate_pass',
@@ -54,11 +57,13 @@ export const TRUCK_STATES = [
 export type TruckState = (typeof TRUCK_STATES)[number];
 
 /** Jazdné stavy — z nich kamión môže vypadnúť do `no_path` a do nich sa vracia. */
-export const TRUCK_TRAVEL_STATES = ['to_gate', 'to_bay', 'to_dock', 'to_gate_out', 'to_portal'] as const;
+export const TRUCK_TRAVEL_STATES = ['to_pre_gate', 'to_gate', 'to_bay', 'to_dock', 'to_gate_out', 'to_portal'] as const;
 export type TruckTravelState = (typeof TRUCK_TRAVEL_STATES)[number];
 
 /** Povolené prechody `from → [to…]`. */
 export const TRUCK_TRANSITIONS: ReadonlyMap<TruckState, readonly TruckState[]> = new Map<TruckState, readonly TruckState[]>([
+  ['to_pre_gate', Object.freeze(['pre_gate', 'no_path'] as const)],
+  ['pre_gate', Object.freeze(['to_gate'] as const)],
   ['to_gate', Object.freeze(['gate_queue', 'no_path'] as const)],
   // `gate_queue → to_bay` bez prechodu: strany brány sa pod čakajúcim kamiónom preklopili (`settleGateQueues`, dodatok ADR-024).
   ['gate_queue', Object.freeze(['gate_pass', 'to_bay'] as const)],
@@ -111,7 +116,7 @@ export function isTruckTravelState(value: unknown): value is TruckTravelState {
 }
 
 /** Modul (alebo portál), ku ktorému kamión ide / pri ktorom stojí; cieľ trasy v kroku 12 (`truckMotionTarget`). */
-export type TruckStop = 'gate' | 'waiting_area' | 'ramp' | 'portal';
+export type TruckStop = 'pre_gate' | 'gate' | 'waiting_area' | 'ramp' | 'portal';
 
 /**
  * Náklad kamióna podľa stavu (§7.5): `empty` 0, `loading` / `unloading` 0 … kapacita (počas nakládky / vykládky),
@@ -132,7 +137,7 @@ export function isTruckMission(value: unknown): value is TruckMission {
   return (TRUCK_MISSIONS as readonly unknown[]).includes(value);
 }
 
-/** Strana brány: vstupná (z portálu, fronta dnu) alebo výstupná (z areálu, fronta von). */
+/** Brána kamióna: vstupná (`gateId`, pruh dnu) alebo výstupná (`gateOutId`, pruh von); kamión vždy čaká na vonkajšej (prvý konektor) a vychádza na vnútornej strane pruhu (R4). */
 export type TruckGateSide = 'entry' | 'exit';
 
 /** Čo platí pre kamión v danom stave. Pre `no_path` platia väzby (bay, dock, náklad) stavu `resume`. */
@@ -198,6 +203,8 @@ function traits(spec: TruckStateTraits): TruckStateTraits {
 const BASE = { waits: false, bayOccupied: false, gateSide: null, queued: false, passing: false, afterGate: null, passState: null, passageBack: false, holdsIntake: false } as const;
 
 export const TRUCK_STATE_TRAITS: { readonly [S in TruckState]: TruckStateTraits } = Object.freeze({
+  to_pre_gate: traits({ ...BASE, motion: 'drive', holdsRoad: true, stop: 'pre_gate', holdsBay: true, holdsDock: false, claimsCargo: true, cargo: 'empty' }),
+  pre_gate: traits({ ...BASE, motion: 'park', holdsRoad: false, stop: 'pre_gate', holdsBay: true, holdsDock: false, claimsCargo: true, cargo: 'empty' }),
   to_gate: traits({ ...BASE, motion: 'drive', holdsRoad: true, stop: 'gate', holdsBay: true, holdsDock: false, claimsCargo: true, cargo: 'empty', gateSide: 'entry' }),
   gate_queue: traits({ ...BASE, motion: 'park', holdsRoad: true, stop: 'gate', holdsBay: true, holdsDock: false, claimsCargo: true, cargo: 'empty', gateSide: 'entry', queued: true, afterGate: 'to_bay', passState: 'gate_pass' }),
   gate_pass: traits({ ...BASE, motion: 'park', holdsRoad: false, stop: 'gate', holdsBay: true, holdsDock: false, claimsCargo: true, cargo: 'empty', gateSide: 'entry', passing: true, afterGate: 'to_bay' }),
@@ -221,6 +228,8 @@ export const TRUCK_STATE_TRAITS: { readonly [S in TruckState]: TruckStateTraits 
  * a `empty` po nej (kamión odchádza prázdny; pri dual transaction sa misia zmení na `pickup` ešte pred `loading`).
  */
 export const TRUCK_DELIVERY_STATE_TRAITS: { readonly [S in TruckState]: TruckStateTraits } = Object.freeze({
+  to_pre_gate: traits({ ...TRUCK_STATE_TRAITS.to_pre_gate, claimsCargo: false, cargo: 'loaded' }),
+  pre_gate: traits({ ...TRUCK_STATE_TRAITS.pre_gate, claimsCargo: false, cargo: 'loaded' }),
   to_gate: traits({ ...TRUCK_STATE_TRAITS.to_gate, claimsCargo: false, cargo: 'loaded' }),
   gate_queue: traits({ ...TRUCK_STATE_TRAITS.gate_queue, claimsCargo: false, cargo: 'loaded' }),
   gate_pass: traits({ ...TRUCK_STATE_TRAITS.gate_pass, claimsCargo: false, cargo: 'loaded' }),
@@ -244,6 +253,8 @@ export const TRUCK_DELIVERY_STATE_TRAITS: { readonly [S in TruckState]: TruckSta
  * kamión, ktorý sa vzdal, odchádza prázdny. Vykládku nepozná (riadok `unloading` drží úplnosť tabuľky).
  */
 export const TRUCK_COLLECT_STATE_TRAITS: { readonly [S in TruckState]: TruckStateTraits } = Object.freeze({
+  to_pre_gate: traits({ ...TRUCK_STATE_TRAITS.to_pre_gate, claimsCargo: false }),
+  pre_gate: traits({ ...TRUCK_STATE_TRAITS.pre_gate, claimsCargo: false }),
   to_gate: traits({ ...TRUCK_STATE_TRAITS.to_gate, claimsCargo: false }),
   gate_queue: traits({ ...TRUCK_STATE_TRAITS.gate_queue, claimsCargo: false }),
   gate_pass: traits({ ...TRUCK_STATE_TRAITS.gate_pass, claimsCargo: false }),

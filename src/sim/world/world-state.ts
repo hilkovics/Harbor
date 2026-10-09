@@ -235,6 +235,9 @@ export interface ParsedTruckEntry {
   readonly rampId: EntityId;
   readonly dock: number;
   readonly gateId: EntityId;
+  readonly gateOutId: EntityId | null;
+  readonly preGateId: EntityId | null;
+  readonly row: number | null;
   readonly waitingAreaId: EntityId;
   readonly bay: number | null;
   readonly resume: TruckTravelState | null;
@@ -696,10 +699,15 @@ function checkProgress(value: unknown, route: readonly number[], path: string): 
 /**
  * Tvar kamiónov (ADR-024): presne kľúče `SerializedTruck`, id celé 1…`nextId − 1` a ostro rastúce (poradie spawnu),
  * známy def z `trucks.json`, misia z `TRUCK_MISSIONS` (ADR-032), stav z `TRUCK_STATES` okrem `exited`, platný kurz, `rampId` / `gateId` / `waitingAreaId`
- * celé ≥ 1, `dock` celé ≥ 0, `resume` jazdný stav práve v `no_path`, `bay` celé ≥ 0 práve v stavoch s `holdsBay`
+ * celé ≥ 1, `gateOutId` / `preGateId` null alebo celé ≥ 1, `row` null alebo celé ≥ 0 (R4), `dock` celé ≥ 0, `resume` jazdný stav práve v `no_path`, `bay` celé ≥ 0 práve v stavoch s `holdsBay`
  * (v `no_path` podľa `resume`), trasa (`parseRoute`), progres v `[0, 1)` (> 0 len s ďalšou bunkou), `waitTicks` celé ≥ 0,
  * `replan` boolean, poloha = poloha na trase. Moduly, bay, dock, fronta brány, náklad a cesty overí obnova.
  */
+/** Celé číslo ≥ `min`, alebo `null`. */
+function checkNullableInteger(value: unknown, min: number, path: string): number | null {
+  return value === null ? null : checkInteger(value, min, path);
+}
+
 function parseTrucks(value: unknown, defs: DefRegistry, map: LoadedMap, grid: Grid, nextId: number): ParsedTruckEntry[] {
   let previousId = 0;
   return checkArray(value, '/trucks').map((raw: unknown, i): ParsedTruckEntry => {
@@ -721,6 +729,9 @@ function parseTrucks(value: unknown, defs: DefRegistry, map: LoadedMap, grid: Gr
     const rampId = checkInteger(entry['rampId'], 1, `${path}/rampId`);
     const dock = checkInteger(entry['dock'], 0, `${path}/dock`);
     const gateId = checkInteger(entry['gateId'], 1, `${path}/gateId`);
+    const gateOutId = checkNullableInteger(entry['gateOutId'], 1, `${path}/gateOutId`);
+    const preGateId = checkNullableInteger(entry['preGateId'], 1, `${path}/preGateId`);
+    const row = checkNullableInteger(entry['row'], 0, `${path}/row`);
     const waitingAreaId = checkInteger(entry['waitingAreaId'], 1, `${path}/waitingAreaId`);
     if (state === 'no_path' ? !isTruckTravelState(resume) : resume !== null) {
       throw new WorldStateError(`${path}/resume`, state === 'no_path' ? `stav no_path vyžaduje jeden z: ${TRUCK_TRAVEL_STATES.join(', ')}` : `stav '${state}' musí mať resume null`);
@@ -752,6 +763,9 @@ function parseTrucks(value: unknown, defs: DefRegistry, map: LoadedMap, grid: Gr
       rampId: rampId as EntityId,
       dock,
       gateId: gateId as EntityId,
+      gateOutId: gateOutId as EntityId | null,
+      preGateId: preGateId as EntityId | null,
+      row,
       waitingAreaId: waitingAreaId as EntityId,
       bay,
       resume: isTruckTravelState(resume) ? resume : null,

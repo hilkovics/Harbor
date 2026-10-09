@@ -318,7 +318,7 @@ describe('stress_f6', () => {
     }
   }, 120_000);
 
-  it('rozšírený prístav: 2 kotviská, 4 žeriavy, 3 dvory, 2 rampy, brána, stojisko, 16 vozidiel', () => {
+  it('rozšírený prístav: 2 kotviská, 4 žeriavy, 3 dvory, 2 rampy, vstupný a výstupný pruh brány, stojisko, 16 vozidiel', () => {
     const { world } = playScenario(loadScenario(STRESS_SCENARIO), defs, { ticks: 5, warmup: 0, checkInvariants: true });
     const counts = new Map<string, number>();
     for (const module of world.modules.values()) counts.set(module.def.id, (counts.get(module.def.id) ?? 0) + 1);
@@ -327,7 +327,8 @@ describe('stress_f6', () => {
       crane_container_gantry: 4,
       vehicle_depot: 2,
       container_yard_small: 3,
-      truck_gate: 1,
+      gate_in_lane: 1,
+      gate_out_lane: 1,
       truck_waiting_area: 1,
       loading_ramp_container: 2,
     });
@@ -340,7 +341,7 @@ describe('stress_f6', () => {
       const report = runScenario(loadScenario(STRESS_SCENARIO), TICKS_TO_FIRST_SHIP, defs);
       expect(report).toMatchObject({
         scenario: 'stress_f6',
-        modules: 15,
+        modules: 16,
         vehicles: 16,
         // R2 (ADR-039): menej kontajnerov na kontrakt a iný prúd `Rng` — do 6 000 tickov pricestuje druhá loď
         shipsSpawned: 2,

@@ -44,6 +44,7 @@ import { moduleRegistry } from '../modules/module-registry';
 import { Ship } from '../ships/ship';
 import { ShipError } from '../ships/ship-error';
 import { anchoringProblem, mooringProblem, shipRouteProblem } from '../ships/ship-route';
+import { PreGateBuffer } from '../modules/pre-gate-buffer';
 import { TruckGate } from '../modules/truck-gate';
 import { WaitingArea } from '../modules/waiting-area';
 import { slotKeyOf } from '../traffic/lane-slots';
@@ -59,7 +60,7 @@ import { vehicleMotionProblem } from '../vehicles/vehicle-trip';
 import { CARGO_HOLDER_SOURCES } from './cargo-holders';
 import { WorldStateError, pointerSegment } from './state-check';
 import type { World } from './world';
-import { findWorldViolation, inGateQueue, truckQueueSideProblem, truckRampProblem } from './world-invariants';
+import { findWorldViolation, inGateQueue, queueGateIdOf, truckQueueSideProblem, truckRampProblem } from './world-invariants';
 import { heldByMachine, restoreMachines } from './machines-state';
 import type { ParsedJobEntry, ParsedModuleEntry, ParsedShipEntry, ParsedTruckEntry, ParsedVehicleEntry, ParsedWorldState } from './world-state';
 
@@ -252,7 +253,7 @@ const TRUCK_ERROR_FIELD: { readonly [C in TruckErrorCode]: string } = {
 
 /** Modul väzby kamióna je modul daného druhu vo svete (pole záznamu, ktoré naň odkazuje). */
 interface TruckModuleRef {
-  readonly field: 'rampId' | 'gateId' | 'waitingAreaId';
+  readonly field: 'rampId' | 'gateId' | 'gateOutId' | 'preGateId' | 'waitingAreaId';
   readonly label: string;
   readonly matches: (module: Module | undefined) => boolean;
 }
@@ -261,6 +262,8 @@ interface TruckModuleRef {
 const TRUCK_MODULE_REFS: readonly TruckModuleRef[] = [
   { field: 'rampId', label: 'rampa', matches: (module) => module instanceof LoadingRamp },
   { field: 'gateId', label: 'brána', matches: (module) => module instanceof TruckGate },
+  { field: 'gateOutId', label: 'výstupný pruh', matches: (module) => module instanceof TruckGate },
+  { field: 'preGateId', label: 'predbránová plocha', matches: (module) => module instanceof PreGateBuffer },
   { field: 'waitingAreaId', label: 'stojisko', matches: (module) => module instanceof WaitingArea },
 ];
 
@@ -272,6 +275,7 @@ const TRUCK_MODULE_REFS: readonly TruckModuleRef[] = [
 function checkTruckRefs(world: World, entry: ParsedTruckEntry, path: string): void {
   for (const ref of TRUCK_MODULE_REFS) {
     const id = entry[ref.field];
+    if (id === null) continue;
     const module = world.modules.get(id);
     if (!ref.matches(module)) {
       throw new WorldStateError(`${path}/${ref.field}`, `${ref.label} #${String(id)} vo svete nie je${module === undefined ? '' : ` (${module.label})`}`);
@@ -309,6 +313,9 @@ function restoreTrucks(world: World, entries: readonly ParsedTruckEntry[]): void
           rampId: entry.rampId,
           dock: entry.dock,
           gateId: entry.gateId,
+          gateOutId: entry.gateOutId,
+          preGateId: entry.preGateId,
+          row: entry.row,
           waitingAreaId: entry.waitingAreaId,
           bay: entry.bay,
           resume: entry.resume,
@@ -374,21 +381,35 @@ function checkGateQueues(world: World, indexOf: ReadonlyMap<EntityId, number>): 
   for (const gate of world.landsideModules.gates) {
     gate.queuedTruckIds.forEach((truckId, k) => {
       const truck = world.trucks.get(truckId);
-      if (truck === undefined || truck.gateId !== gate.id || !inGateQueue(truck)) {
+      if (truck === undefined || queueGateIdOf(truck) !== gate.id || !inGateQueue(truck)) {
         throw new WorldStateError(
           `${modulePath(indexOf.get(gate.id) ?? -1)}/runtime/queue${pointerSegment(k)}`,
-          `${gate.label}: kamión #${String(truckId)} vo fronte ${truck === undefined ? 'vo svete neexistuje' : `je v stave '${truck.state}' s bránou #${String(truck.gateId)}`}`,
+          `${gate.label}: kamión #${String(truckId)} vo fronte ${truck === undefined ? 'vo svete neexistuje' : `je v stave '${truck.state}' s pruhom #${String(queueGateIdOf(truck))}`}`,
         );
       }
     });
   }
   let index = 0;
   for (const truck of world.trucks.values()) {
-    const gate = world.modules.get(truck.gateId);
+    const gateId = queueGateIdOf(truck);
+    const gate = gateId === null ? undefined : world.modules.get(gateId);
     if (inGateQueue(truck) && !(gate instanceof TruckGate && gate.isQueued(truck.id))) {
-      throw new WorldStateError(`${truckPath(index)}/state`, `${truck.label} v stave '${truck.state}' nie je vo fronte brány #${String(truck.gateId)}`);
+      throw new WorldStateError(`${truckPath(index)}/state`, `${truck.label} v stave '${truck.state}' nie je vo fronte pruhu brány #${String(gateId)}`);
     }
     index += 1;
+  }
+  for (const buffer of world.landsideModules.preGates) {
+    buffer.getRuntimeState().rows.forEach((row, r) =>
+      row.forEach((truckId, k) => {
+        const truck = world.trucks.get(truckId as EntityId);
+        if (truck === undefined || truck.state !== 'pre_gate' || truck.preGateId !== buffer.id || truck.row !== r) {
+          throw new WorldStateError(
+            `${modulePath(indexOf.get(buffer.id) ?? -1)}/runtime/rows${pointerSegment(r)}${pointerSegment(k)}`,
+            `${buffer.label}: kamión #${String(truckId)} v rade ${String(r)} ${truck === undefined ? 'vo svete neexistuje' : `je v stave '${truck.state}' (rad ${String(truck.row)}, plocha #${String(truck.preGateId)})`}`,
+          );
+        }
+      }),
+    );
   }
 }
 

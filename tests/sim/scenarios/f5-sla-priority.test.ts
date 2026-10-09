@@ -55,7 +55,7 @@ describe('SLA priorita outbound jobov: rýchly kontrakt (SLA 2 dni) pred pomalý
       },
     );
     world = World.create(DEFS, MAP, seed);
-    run = new Run5(world, portScenario('f5_sla_priority', seed, { landside: ['gate', 'waiting_area'] }), { fullAudit: true });
+    run = new Run5(world, portScenario('f5_sla_priority', seed, { landside: ['gate', 'waiting_area', 'gate_out'] }), { fullAudit: true });
     run.runTo(1);
     const offers = offeredContracts(world);
     const slow = must(offers.find((offer) => offer.templateId === 'slow_run'), 'ponuka slow_run');

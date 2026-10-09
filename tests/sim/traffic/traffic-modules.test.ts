@@ -19,7 +19,11 @@ import { gateOf, outboundWorld, rampOf } from '../logistics/outbound-fixtures';
 import { emptyWorld, f6cDefs } from '../helpers/f6c';
 import { hookDefs, startLoading } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
-import { DEFS, MAP } from '../world/world-fixtures';
+import { MAP, NO_ISSUE_DEFS } from '../world/world-fixtures';
+
+/** Defy bez náhodných problémov pruhov brány: prechod pruhom trvá presne 15 tickov (OCR 3 + kontrola 8 + lístok 4). */
+const DEFS = NO_ISSUE_DEFS;
+const PASS_TICKS = 15;
 import { lay, line, spawn, tickTraffic, trafficBed } from './traffic-fixtures';
 
 interface Timed {
@@ -124,11 +128,11 @@ describe('kolóna pred bránou (rozhodnutie R1 č. 9)', () => {
     // FIFO: kamióny vzniku 1…4 prechádzajú bránou v tom istom poradí, v akom dorazili
     expect(starts.map((change) => change.id)).toEqual([...starts.map((change) => change.id)].sort((a, b) => a - b));
     expect(exits.map((change) => change.id)).toEqual(starts.map((change) => change.id));
-    // priepustnosť brány sa nezmenila: medzi dvoma začiatkami prechodu práve passTicks
-    for (let i = 1; i < starts.length; i++) expect(starts[i].tick - starts[i - 1].tick).toBe(gate.passTicks);
+    // priepustnosť pruhu sa nezmenila: medzi dvoma začiatkami prechodu práve súčet krokov
+    for (let i = 1; i < starts.length; i++) expect(starts[i].tick - starts[i - 1].tick).toBe(PASS_TICKS);
     // prechod trvá passTicks a kamión vyjde na druhej strane v stave to_bay
     for (let i = 0; i < starts.length; i++) {
-      expect(exits[i].tick - starts[i].tick).toBe(gate.passTicks);
+      expect(exits[i].tick - starts[i].tick).toBe(PASS_TICKS);
       expect(exits[i].to).toBe('to_bay');
     }
   });
@@ -225,7 +229,7 @@ describe('kamión v stojisku a v docku je mimo cesty (rozhodnutie R1 č. 8)', ()
     const log: Timed[] = [];
     runUntil(world, (w) => trucksOf(w).some((truck) => truck.state === 'gate_pass'), 3000, log);
     const truck = trucksOf(world)[0];
-    const far = cellOf(world, { x: 47, y: 33 });
+    const far = cellOf(world, { x: 49, y: 33 });
     const blocker = obstacle(world, far);
     runUntil(world, () => gate.busyTicksLeft === 0, 100, log);
     for (let i = 0; i < 30; i++) step(world, log);

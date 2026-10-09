@@ -184,3 +184,12 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - **Výber RTG kliknutím:** hráč vyberie RTG priamo na mape (nie len cez inšpektor bloku), ako pri žeriavoch. — pôvod: R3 (výsledok fázy) · fáza: R4 (UI)
 - **RTG obsluha kamiónov:** RTG pri bloku obsluhuje aj kamióny (rampa / stojisko) podľa `HANDLING_CHAINS`; dnes len STS ↔ TT ↔ RTG. — pôvod: R3 (výsledok fázy) · fáza: R4
 - **Reach stacker:** vozidlo s dosahom pre OOG plochu; presunuté z R3 (ADR-040 bod 8). — pôvod: R3 (výsledok fázy, ADR-040 bod 8) · fáza: R5
+
+## Z Fázy R4 (TR4-01)
+- **`traffic_stress` beží na seede 6015 (hack):** pôvodný seed po zmene prúdu `Rng` (ADR-041) zahltil križovatku; seed bol zvolený tak, aby scenár dobehol bez zápchy. Latentná zápcha ostáva (jedna križovatka s frontou do križovatky) — vlastní ju TR4-02 (100 000 ticků bez zápchy v `stress_f6` a `live_terminal`). — pôvod: TR4-01 · fáza: R4
+- **`stress_f6` 40 000 ticků: 6 udalostí zápchy (`gridlockEvents`), `lostUnits` 0, `stuckAtEnd` 0** — rovnaká príčina, rieši TR4-02 (`access` modulov, druhý výjazd bloku). — pôvod: TR4-01 · fáza: R4
+- **Rampa a stojisko ostávajú ako interné moduly** (ADR-041 prechodné stavy): kamióny ich zatiaľ používajú ako cieľ nakládky; BuildBar ich stále ponúka, UI karta TR4-04 ich schová, TR4-02 (TP pri blokoch) ich zruší spolu s `loading_ramp_*` a scenármi. — pôvod: TR4-01 · fáza: R4
+- **Odstavná plocha `truck_holding` je len def a trieda** bez správania (kamióny ju nepoužívajú). — pôvod: TR4-01 · fáza: R4 (TR4-02)
+- **Odstránený test „vzájomné ťahanie čelných rámp“ (tie-test facing-ramp):** s jednosmernými pruhmi (ADR-041) sa dva vzájomne čelné vstupy do jedného úseku nestavajú; ak sa v R4+ vrátia obojsmerné rampy, test obnoviť. — pôvod: TR4-01
+- **e2e špecifikácie (`tests/e2e/f3-road-build`, `f4-export-chain`, `f4-ui-demo`, `f5-vertical-slice`, `f6a-export`) a demá (`src/ui/__demo__`, `src/render/__demo__`) odkazujú na `truck_gate`/starý tvar brány:** upraví TR4-05 (napojenie VM, e2e) spolu s renderom (TR4-03) a UI (TR4-04); `pnpm test` (vitest) je zelené. — pôvod: TR4-01 · fáza: R4
+- **Jeden vjazd plochy ≈ 70 kamiónov/h** (kamión dlhý 3 bunky pri 0,6 bunky za tick): špička 100/h vyžaduje dve plochy alebo dva portály (scenár `r4-gate-peak`). Ak treba jednu plochu na 100/h, zvážiť kratší kamión alebo druhý vjazd plochy. — pôvod: TR4-01 · fáza: R4+

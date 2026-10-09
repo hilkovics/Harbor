@@ -24,8 +24,10 @@ import { countAvailableEmpties, emptyCargoTypeId, emptyLabels } from '../logisti
 import type { PickupPlanEntry } from '../logistics/empty-flow';
 import type { Module } from '../modules/module';
 import type { World } from '../world/world';
+import { NO_ACCESS } from '../logistics/module-access';
+import { pickInPortalFor } from './gate-choice';
 import { leastBusyDock, planDeliveryAdmission, spawnDelivery, type AdmissionOutcome } from './hinterland-entry';
-import { isPortalBlocked, routeWithFreeBay, spawnTruck, truckDefFor } from './truck-spawner';
+import { routeWithFreeBay, spawnTruck, truckDefFor } from './truck-spawner';
 
 /** Booking výdaja ešte beží (nie je uzavretý ani expirovaný)? Zanikol → výdaj nemá komu. */
 function bookingOpen(world: World, entry: PickupPlanEntry): boolean {
@@ -33,7 +35,7 @@ function bookingOpen(world: World, entry: PickupPlanEntry): boolean {
 }
 
 /** Krok 8, časť návrat prázdnych: splatné návraty v poradí plánu (viď hlavička). Nakladač jednotky vznikne až pri skutočnom vjazde (T6D-05b). */
-export function admitReturnTrucks(world: World, portal: number): void {
+export function admitReturnTrucks(world: World): void {
   const { emptyFlow } = world;
   const { tick } = world.clock;
   if (emptyFlow.dueReturn(tick) === undefined) return;
@@ -45,7 +47,7 @@ export function admitReturnTrucks(world: World, portal: number): void {
     const outcome: AdmissionOutcome = planDeliveryAdmission(world, 'empty', category);
     if (outcome === 'waiting') break;
     if (outcome === 'admitted') {
-      spawnDelivery(world, portal, (truck) => {
+      spawnDelivery(world, (truck) => {
         world.cargo.create(typeId, { kind: 'in_truck', truckId: truck.id }, null, emptyLabels(lineId, sizeFt));
       });
     }
@@ -76,7 +78,7 @@ function emptiesForNewErrand(world: World, lineId: string): number {
  * Pokus o vjazd kamióna `collect` pre výdaj `entry`: prvá prevádzková rampa kategórie prázdneho s voľným bayom (aj rezervovaným pre odvoz), dockom so staging miestom pre výdaj a dostupným
  * prázdnym linky. `admitted` = kamión vznikol; `no_empty` = linka nemá dostupný prázdny (čaká sa na ňu); `blocked` = nie je kam (typ prázdneho, rampa, bay).
  */
-function admitCollectTruck(world: World, entry: PickupPlanEntry, portal: number): AdmissionOutcome | 'no_empty' {
+function admitCollectTruck(world: World, entry: PickupPlanEntry): AdmissionOutcome | 'no_empty' {
   const typeId = emptyCargoTypeId(world.defs);
   if (typeId === undefined) return 'waiting';
   const category = world.defs.cargoTypes.get(typeId).category;
@@ -85,8 +87,7 @@ function admitCollectTruck(world: World, entry: PickupPlanEntry, portal: number)
     if (ramp.category !== category || !world.isRampOperational(ramp)) continue;
     const def = truckDefFor(world.defs, ramp.category);
     if (def === undefined) continue;
-    const route = routeWithFreeBay(world, ramp, 'collect');
-    if (route === undefined) continue;
+    if (routeWithFreeBay(world, ramp, 'collect') === undefined) continue;
     RAMP_TARGET[0] = ramp;
     if (emptiesForNewErrand(world, entry.lineId) <= 0) {
       outcome = 'no_empty';
@@ -96,9 +97,10 @@ function admitCollectTruck(world: World, entry: PickupPlanEntry, portal: number)
     const dock = leastBusyDock(world, ramp, true);
     // Prázdny sa na dock dostane jobom `storage → ramp`, ktorý potrebuje voľné staging miesto; bez neho by kamión držal stojisko, kým miesto niekto neuvoľní.
     if (dock < 0) continue;
-    // Portál je cesta (ADR-037, R1 č. 10): kým ho drží nosič, kamión nevznikne a položka plánu ostane.
-    if (isPortalBlocked(world, portal)) return 'waiting';
-    spawnTruck(world, ramp, dock, route, def, portal, 'collect', (truck) => {
+    // Portál je cesta (ADR-037, R1 č. 10): kým ho drží nosič, kamión nevznikne a položka plánu ostane (voľný portál vyberá `pickInPortalFor`, ADR-041 bod 3).
+    const portal = pickInPortalFor(world, ramp, 'collect', def);
+    if (portal === NO_ACCESS) return 'waiting';
+    spawnTruck(world, ramp, dock, def, portal, 'collect', (truck) => {
       world.emptyFlow.addErrand(truck.id, entry.lineId, entry.contractId);
     });
     return 'admitted';
@@ -107,7 +109,7 @@ function admitCollectTruck(world: World, entry: PickupPlanEntry, portal: number)
 }
 
 /** Krok 8, časť výdaj prázdnych: splatné výdaje v poradí plánu, s preskakovaním tých, ktoré čakajú na prázdny (viď hlavička). */
-export function admitCollectTrucks(world: World, portal: number): void {
+export function admitCollectTrucks(world: World): void {
   const { emptyFlow } = world;
   const { tick, ticksPerHour } = world.clock;
   const maxWaitTicks = Math.round(world.defs.logistics.emptyFlow.emptyPickupMaxWaitHours * ticksPerHour);
@@ -121,7 +123,7 @@ export function admitCollectTrucks(world: World, portal: number): void {
       continue;
     }
     let outcome: AdmissionOutcome | 'no_empty' = 'waiting';
-    if (!noRoom && !LINES_WITHOUT_EMPTY.includes(entry.lineId)) outcome = admitCollectTruck(world, entry, portal);
+    if (!noRoom && !LINES_WITHOUT_EMPTY.includes(entry.lineId)) outcome = admitCollectTruck(world, entry);
     if (outcome === 'no_empty') LINES_WITHOUT_EMPTY.push(entry.lineId);
     else if (outcome === 'waiting') noRoom = true;
     if (outcome === 'admitted') {

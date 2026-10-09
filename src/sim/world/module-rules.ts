@@ -372,6 +372,8 @@ export type RemovalRule = (typeof REMOVAL_RULES)[number];
 export interface TruckModuleRefs {
   readonly id: EntityId;
   readonly gateId: EntityId;
+  readonly gateOutId: EntityId | null;
+  readonly preGateId: EntityId | null;
   readonly waitingAreaId: EntityId;
   readonly rampId: EntityId;
 }
@@ -445,7 +447,7 @@ const REMOVAL_CHECKS: { readonly [R in RemovalRule]: RemovalCheck } = {
   has_trucks: (world, module) => {
     const users: EntityId[] = [];
     for (const truck of world.trucks.values()) {
-      if (truck.gateId === module.id || truck.waitingAreaId === module.id || truck.rampId === module.id) users.push(truck.id);
+      if (truck.gateId === module.id || truck.gateOutId === module.id || truck.preGateId === module.id || truck.waitingAreaId === module.id || truck.rampId === module.id) users.push(truck.id);
     }
     return users.length > 0 ? `${module.label} používajú kamióny [${users.join(', ')}]` : undefined;
   },

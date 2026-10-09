@@ -18,15 +18,16 @@ import { DEFS } from '../sim/world/world-fixtures';
 const HEAVY_TIMEOUT_MS = 180_000;
 
 describe('režim apron: bitovo zhodný s F2–F6c', () => {
+  // TR4-01 (R4, ADR-041): pruhy brány (2 × $25 000, údržba 323 000 namiesto 330 000 za deň), `WorldState` v12, brána losuje problémy z Rng → nové hashe (vertical_slice 7b73e817 → dac93b99, full_import_chain dfc91c96 → d7e859c3, export_roundtrip 707c1880 → f8b64c01) a `cashEnd`; `exportedUnits` ostali (50 / 120 / 31), `lostUnits` 0.
   // R2 (ADR-039): hashe prepísané po plánovači stohov (cashEnd a počty exportovaných jednotiek ostali; stav obsahuje `rehandles` a stohové sloty).
   // TR3-06b: `WorldState` v11 (clean break, `version` je v hashi) → nové hashe (vertical_slice 6b803284 → 7b73e817, full_import_chain bf12387f → dfc91c96, export_roundtrip e1aa153d → 707c1880); `cashEnd` a `exportedUnits` ostali, tok sveta sa nezmenil.
   // TR3-02 (ADR-040 dodatok): berth 8 × 4, obchádzka a jednosmerné pruhy (cesty v riadku y = 17 odpadli, +obchádzka), nové runtime kľúče žeriavov → nové hashe (vertical_slice b2dd39a3 → 6b803284, full_import_chain f6a160e0 → bf12387f, export_roundtrip 9bc73b8a → e1aa153d); `cashEnd` o bunku ciest viac (+200 000), `exportedUnits` ostali.
   // TR3-01 (ADR-040): `WorldState` nesie nový kľúč `machines: []` → nové hashe (vertical_slice 8c7ec283 → b2dd39a3, full_import_chain ba945370 → f6a160e0, export_roundtrip 9326712a → 9bc73b8a); `cashEnd` a `exportedUnits` ostali, sim sa nezmenil.
   // TR2-06b: runtime bloku nesie aj `rehandleStalls` → nové hashe (vertical_slice 80ba4d63 → 8c7ec283, full_import_chain 91ec22b0 → ba945370, export_roundtrip 1d247952 → 9326712a); `cashEnd` a `exportedUnits` ostali.
   it.each([
-    { name: 'vertical_slice', ticks: 30_000, stateHash: '7b73e817', cashEnd: 41_765_000, exportedUnits: 50 },
-    { name: 'full_import_chain', ticks: 40_000, stateHash: 'dfc91c96', cashEnd: 31_939_000, exportedUnits: 120 },
-    { name: 'export_roundtrip', ticks: 40_000, stateHash: '707c1880', cashEnd: 42_005_050, exportedUnits: 31 },
+    { name: 'vertical_slice', ticks: 30_000, stateHash: 'dac93b99', cashEnd: 43_586_000, exportedUnits: 50 },
+    { name: 'full_import_chain', ticks: 40_000, stateHash: 'd7e859c3', cashEnd: 33_767_000, exportedUnits: 120 },
+    { name: 'export_roundtrip', ticks: 40_000, stateHash: 'f8b64c01', cashEnd: 43_833_050, exportedUnits: 31 },
   ])('$name ($ticks tickov): stateHash $stateHash, apron → directHandoverPct 0', ({ name, ticks, stateHash, cashEnd, exportedUnits }) => {
     const report = runScenario(loadScenario(`data/scenarios/${name}.json`), ticks, DEFS, { hash: true });
     expect(report).toMatchObject({ stateHash, cashEnd, exportedUnits, lostUnits: 0, directHandoverPct: 0 });

@@ -95,6 +95,7 @@ import { EmptyDepot } from '../modules/empty-depot';
 import { LoadingRamp } from '../modules/loading-ramp';
 import { RtgBlock } from '../modules/rtg-block';
 import { StorageModule, storageSlotCapacity } from '../modules/storage-module';
+import { PreGateBuffer } from '../modules/pre-gate-buffer';
 import { TruckGate } from '../modules/truck-gate';
 import { VehicleDepot } from '../modules/vehicle-depot';
 import { WaitingArea } from '../modules/waiting-area';
@@ -857,7 +858,11 @@ function checkTruckCargo(world: World, truck: Truck): string | undefined {
   return undefined;
 }
 
-/** Väzby kamióna na bránu, stojisko (bay) a rampu (dock) a frontu brány podľa stavu (bod 11 hlavičky). */
+/**
+ * Väzby kamióna na pruhy brány (vstupný `gateId`, výstupný `gateOutId`), predbránovú plochu (rad, R4), stojisko (bay) a rampu (dock) a frontu pruhu podľa stavu
+ * (bod 11 hlavičky): kamión je vo fronte vstupného pruhu práve v stavoch s bránou `entry`, vo fronte výstupného práve v stavoch s bránou `exit`; v stave `pre_gate`
+ * stojí v rade `row` svojej plochy, inak na žiadnej ploche nie je.
+ */
 function checkTruckBonds(world: World, truck: Truck, gate: TruckGate, area: WaitingArea, ramp: LoadingRamp): string | undefined {
   const { bonds } = truck;
   const { bay } = truck;
@@ -870,7 +875,25 @@ function checkTruckBonds(world: World, truck: Truck, gate: TruckGate, area: Wait
     return `${truck.label} v stave '${truck.effectiveState}' ${bonds.holdsDock ? 'nedrží' : 'drží'} dock ${String(truck.dock)} ${ramp.label}`;
   }
   const queued = inGateQueue(truck);
-  if (gate.isQueued(truck.id) !== queued) return `${truck.label} v stave '${truck.state}' ${queued ? 'nie je' : 'je'} vo fronte ${gate.label}`;
+  const side = TRUCK_STATE_TRAITS[truck.state].gateSide;
+  if (gate.isQueued(truck.id) !== (queued && side === 'entry')) return `${truck.label} v stave '${truck.state}' ${queued && side === 'entry' ? 'nie je' : 'je'} vo fronte ${gate.label}`;
+  if (truck.gateOutId !== null) {
+    const out = world.modules.get(truck.gateOutId);
+    if (!(out instanceof TruckGate)) return `${truck.label}: výstupný pruh #${String(truck.gateOutId)} vo svete nie je`;
+    if (out.isQueued(truck.id) !== (queued && side === 'exit')) return `${truck.label} v stave '${truck.state}' ${queued && side === 'exit' ? 'nie je' : 'je'} vo fronte ${out.label}`;
+  } else if (queued && side === 'exit') return `${truck.label} v stave '${truck.state}' nemá výstupný pruh`;
+  return checkTruckPreGate(world, truck);
+}
+
+/** Kamión v `pre_gate` stojí v rade `row` svojej predbránovej plochy; kamión v inom stave na žiadnej ploche nie je (R4, ADR-041 bod 2). */
+function checkTruckPreGate(world: World, truck: Truck): string | undefined {
+  const onPreGate = truck.state === 'pre_gate';
+  if (truck.preGateId === null) return undefined;
+  const buffer = world.modules.get(truck.preGateId);
+  if (!(buffer instanceof PreGateBuffer)) return `${truck.label}: predbránová plocha #${String(truck.preGateId)} vo svete nie je`;
+  const row = buffer.rowOf(truck.id);
+  if (onPreGate && (row < 0 || row !== truck.row)) return `${truck.label} v stave 'pre_gate' (rad ${String(truck.row)}) nie je v tomto rade ${buffer.label}`;
+  if (!onPreGate && row >= 0) return `${truck.label} v stave '${truck.state}' je na ploche ${buffer.label}`;
   return undefined;
 }
 
@@ -907,6 +930,11 @@ export function truckRampProblem(
 export function inGateQueue(truck: Truck): boolean {
   const traits = TRUCK_STATE_TRAITS[truck.state];
   return traits.queued || traits.passing;
+}
+
+/** Pruh brány, v ktorého fronte kamión stojí v aktuálnom stave: vstupný (`gateId`) pri bráne `entry`, výstupný (`gateOutId`) pri bráne `exit`; stav bez brány → `gateId`. */
+export function queueGateIdOf(truck: Truck): EntityId | null {
+  return TRUCK_STATE_TRAITS[truck.state].gateSide === 'exit' ? truck.gateOutId : truck.gateId;
 }
 
 /** Kamión vo fronte stojí na svojej strane brány, ak je určená (`isOffQueueSide`, dodatok ADR-024); kamión v prechode (`gate_pass*`) sa nekontroluje. */
@@ -981,6 +1009,7 @@ const checkTrucks: Check = (world) => {
   let bays = 0;
   let docks = 0;
   let queued = 0;
+  let preGated = 0;
   for (const [id, truck] of world.trucks) {
     if (truck.id !== id) return `world.trucks: kľúč ${String(id)} ukazuje na ${truck.label}`;
     if (id <= previous) return `world.trucks: ${truck.label} nie je vzostupne podľa id (po #${String(previous)})`;
@@ -990,6 +1019,7 @@ const checkTrucks: Check = (world) => {
     if (truck.bay !== null) bays += 1;
     if (truck.bonds.holdsDock) docks += 1;
     if (inGateQueue(truck)) queued += 1;
+    if (truck.state === 'pre_gate') preGated += 1;
     if (truck.bonds.claimsCargo) {
       const ordinal = world.landsideModules.rampOrdinal(truck.rampId);
       const owed = truck.def.capacityUnits - world.cargo.countAt('in_truck', truck.id);
@@ -1001,13 +1031,16 @@ const checkTrucks: Check = (world) => {
   let heldBays = 0;
   let heldDocks = 0;
   let queueLength = 0;
-  const { gates, waitingAreas, ramps } = world.landsideModules;
+  const { gates, preGates, waitingAreas, ramps } = world.landsideModules;
+  let preGateHeld = 0;
+  for (const buffer of preGates) preGateHeld += buffer.occupied;
   for (const area of waitingAreas) heldBays += area.bays - area.freeBays;
   for (const ramp of ramps) heldDocks += ramp.assignedDocks;
   for (const gate of gates) queueLength += gate.queueLength;
   if (heldBays !== bays) return `stojiská držia ${String(heldBays)} bays, kamióny ${String(bays)}`;
   if (heldDocks !== docks) return `rampy majú ${String(heldDocks)} držaných dockov, kamióny ${String(docks)}`;
-  if (queueLength !== queued) return `fronty brán majú ${String(queueLength)} kamiónov, v gate_queue* a gate_pass* je ${String(queued)}`;
+  if (preGateHeld !== preGated) return `predbránové plochy držia ${String(preGateHeld)} kamiónov, v pre_gate je ${String(preGated)}`;
+  if (queueLength !== queued) return `fronty pruhov brán majú ${String(queueLength)} kamiónov, v gate_queue* a gate_pass* je ${String(queued)}`;
   return undefined;
 };
 

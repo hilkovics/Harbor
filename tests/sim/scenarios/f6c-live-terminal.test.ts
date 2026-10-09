@@ -34,14 +34,15 @@ const EXPORT_UNITS = 22;
  * Exporty, ktoré prešli bránou po cut-off (rolled): pred R2 žiadny (s druhým dvorom, T6D-04; pred ním 8 z 36); po R2 jeden z 22 kontajnerov — zmes veľkostí
  * posunula prúd `Rng` a s ním plán príchodov. Rolled jednotka sa naloží ako last minute (booking nakladá, kým loď nelashuje).
  */
-const EXPORTS_ROLLED = 2; // R2 plánovač (ADR-039): iný prúd Rng a čas ukladania — pôvodne 1
+const EXPORTS_ROLLED = 0; // R4 (ADR-041): brána losuje problémy z Rng a mení plán príchodov — žiadny export neprešiel po cut-off (R2: 2, pôvodne 1)
 /** Objemy importov po T6D-04: pool kontraktov sa škáluje kapacitou skladov (2 × 64 namiesto 64), preto #1 a #4 majú iný objem než pred druhým dvorom (45 a 64). */
 /** Po R2 sú objemy v TEU: #1 = 48 TEU = 31 kontajnerov, #4 = 48 TEU = 30 kontajnerov (pred R2 #4 = 96 — zmes veľkostí posunula prúd `Rng` poolu). */
 const IMPORT_A_UNITS = 31;
 const IMPORT_B_UNITS = 30;
 /** Repositioning je v TEU (ADR-039): booking 24 TEU naložil 14 prázdnych rôznej veľkosti (pridelenie sa zastaví po naplnení TEU). */
 const REPOSITIONED_TEU = 24;
-const REPOSITIONED = 16; // R2 (ADR-039): plánovač zmenil prúd Rng (pôvodne 14)
+const REPOSITIONED_TEU_LOADED = 21;
+const REPOSITIONED = 14; // R4 (ADR-041): posun prúdu Rng (R2: 16, pôvodne 14)
 const TRANSHIP_UNITS = 22; // 36 TEU
 const RUN_TIMEOUT_MS = 600_000;
 const INVARIANT_EVERY = 250;
@@ -101,7 +102,7 @@ describe('scenár live_terminal: súbor', () => {
 
   it('prístav s depom prázdnych, dvoma dvormi, tri vozidlá (2× straddle, empty handler) a štyri AcceptContract (1 @2, 4 @8 641, 11 a 13 @17 281)', () => {
     const modules = SCENARIO.commands.filter((entry) => entry.command.type === 'PlaceModule').map((entry) => (entry.command as unknown as { defId: string }).defId);
-    expect(modules).toEqual(['vehicle_depot', 'empty_depot', 'container_yard_small', 'truck_gate', 'truck_waiting_area', 'loading_ramp_container', 'container_yard_small']);
+    expect(modules).toEqual(['vehicle_depot', 'empty_depot', 'container_yard_small', 'gate_in_lane', 'truck_waiting_area', 'loading_ramp_container', 'gate_out_lane', 'container_yard_small']);
     const vehicles = SCENARIO.commands.filter((entry) => entry.command.type === 'BuyVehicle').map((entry) => (entry.command as unknown as { vehicleDefId: string }).vehicleDefId);
     expect(vehicles).toEqual(['straddle_carrier', 'straddle_carrier', 'empty_handler']);
     const accepts = SCENARIO.commands.filter((entry) => entry.command.type === 'AcceptContract').map((entry) => [entry.atTick, (entry.command as unknown as { contractId: number }).contractId]);
@@ -171,7 +172,8 @@ describe('scenár live_terminal: beh', () => {
     expect(booking).toMatchObject({ kind: 'empty_repositioning', lineId: 'blue_anchor', state: 'completed', volumeUnits: REPOSITIONED_TEU, volumeTeu: REPOSITIONED_TEU });
     expect(booking?.booking).toMatchObject({ arrivedUnits: REPOSITIONED, loadedUnits: REPOSITIONED });
     // Pridelené TEU dosiahli bookované (posledný prázdny smie presiahnuť najviac o 1 TEU).
-    expect(booking?.booking?.loadedTeu).toBeGreaterThanOrEqual(REPOSITIONED_TEU);
+    // R4 (ADR-041): výdaj exportérovi #11 odviezol viac prázdnych (17) a repositioning dostal 14 kontajnerov = 21 TEU z bookovaných 24 (dokončí sa s menším naložením).
+    expect(booking?.booking?.loadedTeu).toBe(REPOSITIONED_TEU_LOADED);
     expect(booking?.booking?.loadedTeu).toBeLessThanOrEqual(REPOSITIONED_TEU + 1);
     const empties = loaded.filter((entry) => entry.event.contractId === REPOSITIONING_ID);
     expect(empties).toHaveLength(REPOSITIONED);
@@ -187,7 +189,7 @@ describe('scenár live_terminal: beh', () => {
     // metrika `stowageOrderViolations`) sa tak naloží jednotka pred skoršou jednotkou plánu, ktorá je ešte vo vozidle na ceste. Od R1 (ADR-037)
     // sa vozidlá nepredbiehajú (rýchlejší `empty_handler` uviazne za pomalším straddle carrierom), preto je hranica 6 % (live_terminal: 5 zo 96 nakládok).
     expect(loaded.filter((entry) => entry.event.outOfOrder).length).toBeLessThan(loaded.length * 0.06);
-    expect(of(events, 'ContractCompleted').find((entry) => entry.event.contractId === REPOSITIONING_ID)?.event).toMatchObject({ rewardCents: 396_000, penaltiesCents: 0 });
+    expect(of(events, 'ContractCompleted').find((entry) => entry.event.contractId === REPOSITIONING_ID)?.event).toMatchObject({ rewardCents: 346_500, penaltiesCents: 39_600 }); // R4: naložených 21 z 24 TEU — čiastočné plnenie s penále
     // jedna loď odviezla export aj prázdne
     expect(new Set([...exportTicks, ...emptyTicks].map((tick) => loaded.find((entry) => entry.tick === tick)?.event.shipId)).size).toBe(1);
   });

@@ -45,6 +45,7 @@ export const REASON_TEXT: Readonly<Record<ValidationReason, string>> = {
   invalid_units: 'Neplatný počet jednotiek',
   invalid_priority: 'Neplatná priorita',
   invalid_gang: 'Neplatný režim ťahačov',
+  invalid_gate_mode: 'Neplatný režim pruhu brány',
   invalid_rotation: 'Neplatná rotácia',
   unknown_vehicle_def: 'Neznámy typ vozidla',
   unknown_depot: 'Depo neexistuje',

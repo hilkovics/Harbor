@@ -45,18 +45,19 @@ describe('ModuleVM.gate', () => {
   it('prázdna pripojená brána: fronta 0, závora zatvorená, vstupný konektor podľa strany určenej svetom', () => {
     const app = landsideApp();
     const gate = gateOf(app);
-    // Brána (45, 32) rot 270: vstup zo západu na (45, 33) = konektor 0 v defe (sever pri rot 0), výstup na východ = 1.
+    // Vstupný pruh (45, 33) rot 90: vstup zo západu na (44, 33) = konektor 0, výstup na východ = 1.
     expect(gate.entrySide).toMatchObject({ x: 45, y: 33, side: 'w' });
     expect(vmOf(app.world, GATE_ID).gate).toEqual({ queueLength: 0, open: false, entryConnector: 0 });
   });
 
-  it('entryConnector je index konektora v defe, ktorý sedí s entrySide (nie vždy 0)', () => {
+  it('entryConnector je index konektora v defe, ktorý sedí s entrySide; pruh je jednosmerný, takže vstupom je vždy konektor 0 (aj pri inej rotácii pruhu)', () => {
     const app = createApp();
-    // Brána (44, 32) rot 0: južný konektor (index 1) sa napája na verejnú cestu x = 44 od portálu → je vstupný.
-    runCommands(app, [{ type: 'PlaceModule', defId: 'truck_gate', x: 44, y: 32, rotation: 0 }]);
+    // Vstupný pruh (44, 30) rot 0 (1×4, y 30–33): konektor 0 (juh) sa napája na verejnú cestu x = 44 od portálu (44, 34).
+    runCommands(app, [{ type: 'PlaceModule', defId: 'gate_in_lane', x: 44, y: 30, rotation: 0 }]);
     const gate = app.world.modules.get(GATE_ID) as TruckGate;
     expect(gate.entrySide).toMatchObject({ x: 44, y: 33, side: 's' });
-    expect(vmOf(app.world, GATE_ID).gate?.entryConnector).toBe(1);
+    expect(gate.connectors.indexOf(gate.entrySide as never)).toBe(0);
+    expect(vmOf(app.world, GATE_ID).gate?.entryConnector).toBe(0);
   });
 
   it('brána, ktorej strany svet neurčil (bez ciest), má entryConnector 0', () => {
@@ -73,7 +74,7 @@ describe('ModuleVM.gate', () => {
     gate.enqueue(TRUCK_B);
     expect(vmOf(app.world, GATE_ID).gate).toMatchObject({ queueLength: 2, open: false });
     gate.dequeue();
-    gate.beginPass(gate.params.processTicks);
+    gate.beginPass([{ id: 'ocr', ticks: gate.planTicks(gate.planFor('standard', false)) }]);
     expect(vmOf(app.world, GATE_ID).gate).toMatchObject({ queueLength: 1, open: true });
   });
 });
@@ -173,7 +174,7 @@ describe('EntitiesVMBuilder: živé pozemné moduly', () => {
     const builder = new EntitiesVMBuilder();
     const first = builder.build(app.world, 5).modules;
     gateOf(app).enqueue(TRUCK_A);
-    gateOf(app).beginPass(3);
+    gateOf(app).beginPass([{ id: 'ocr', ticks: 3 }]);
     areaOf(app).reserveBay(TRUCK_B);
     const second = builder.build(app.world, 5).modules;
     expect(second).not.toBe(first);
@@ -203,7 +204,7 @@ describe('SimBridge: snapshot pozemných modulov', () => {
     const rampVm = (): ModuleVM => app.bridge.snapshot().modules.find((vm) => vm.defId === 'loading_ramp_container') as ModuleVM;
     expect(rampVm().ramp?.operational).toBe(false);
     const revisionBefore = app.bridge.snapshot().revision;
-    buildLandside(app, { roads: false, parts: ['gate', 'waiting_area'] });
+    buildLandside(app, { roads: false, parts: ['gate', 'waiting_area', 'gate_out'] });
     expect(app.bridge.snapshot().revision).toBeGreaterThan(revisionBefore);
     expect(rampVm().ramp).toEqual({ docks: 2, staged: [0, 0], operational: true });
   });

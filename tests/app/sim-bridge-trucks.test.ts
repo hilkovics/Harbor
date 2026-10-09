@@ -134,7 +134,7 @@ describe('SimBridge: cache modulov s bránou a stojiskom', () => {
     const gate = world.modules.get(CHAIN_GATE_ID) as TruckGate;
     frameUntil(app, () => gate.isOpen, 3000);
     // výstupná strana brány zanikne počas prechodu: kamión ostane na čele fronty a prechod sa nedokončí
-    const removal = commandFromJSON({ type: 'RemoveRoad', cells: [{ x: 47, y: 33 }, { x: 48, y: 33 }] });
+    const removal = commandFromJSON({ type: 'RemoveRoad', cells: [{ x: 49, y: 33 }, { x: 50, y: 33 }] });
     expect(bridge.validate(removal).ok).toBe(true);
     bridge.dispatch(removal);
     loop.frame(0);

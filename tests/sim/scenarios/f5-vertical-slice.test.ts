@@ -73,10 +73,10 @@ describe('scenár vertical_slice: súbor', () => {
     expect(scenario.map).toBe('data/maps/harbor_01.json');
   });
 
-  it('je zhodný s rozložením F4 (10 úsekov ciest, 6 modulov, 2 vozidlá) + AcceptContract; bez SpawnShipDebug', () => {
+  it('je zhodný s rozložením F4 (13 úsekov ciest, 7 modulov, 2 vozidlá) + AcceptContract; bez SpawnShipDebug', () => {
     expect(scenario).toEqual(withPortBridge(verticalSliceScenario(CONTRACT_ID, acceptEntry.atTick)));
     const types = scenario.commands.map((entry) => entry.command.type);
-    expect(types).toEqual([...Array<string>(10).fill('PlaceRoad'), ...Array<string>(6).fill('PlaceModule'), 'BuyVehicle', 'BuyVehicle', 'PlaceRoad', 'RemoveRoad', 'AcceptContract']);
+    expect(types).toEqual([...Array<string>(13).fill('PlaceRoad'), ...Array<string>(7).fill('PlaceModule'), 'BuyVehicle', 'BuyVehicle', 'PlaceRoad', 'RemoveRoad', 'AcceptContract']);
     expect(types).not.toContain('SpawnShipDebug');
     expect(scenario.commands.filter((entry) => entry.command.type === 'BuyVehicle').map((entry) => entry.command['vehicleDefId'])).toEqual([
       'straddle_carrier',
@@ -261,7 +261,7 @@ describe('scenár vertical_slice: beh 60 000 tickov', () => {
         .filter((move) => move.tick === tick && move.event.reason === reason)
         .reduce((sum, move) => sum + move.event.deltaCents, 0);
     for (let day = 1; day <= daily.length; day++) {
-      expect(sumAt('maintenance', day * TICKS_PER_DAY), `údržba, deň ${String(day)}`).toBe(-330_000);
+      expect(sumAt('maintenance', day * TICKS_PER_DAY), `údržba, deň ${String(day)}`).toBe(-323_000);
       expect(sumAt('wages', day * TICKS_PER_DAY), `mzdy, deň ${String(day)}`).toBe(-61_000);
     }
     expect(run.ofSim('MoneyChanged').filter((move) => (move.event.reason === 'maintenance' || move.event.reason === 'wages') && move.tick % TICKS_PER_DAY !== 0)).toEqual([]);

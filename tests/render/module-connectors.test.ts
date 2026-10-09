@@ -41,7 +41,7 @@ const DEF_IDS_WITH_CONNECTORS = MODULE_DEFS.modules.items
 
 describe('worldConnectors (konektory z manifestu) sa zhodujú s konektormi simu (`connectorsOf`)', () => {
   it('existujú moduly s konektormi, ktoré manifest pozná', () => {
-    expect(DEF_IDS_WITH_CONNECTORS).toEqual(expect.arrayContaining(['truck_gate', 'truck_waiting_area', 'loading_ramp_container', 'container_yard_small', 'vehicle_depot']));
+    expect(DEF_IDS_WITH_CONNECTORS).toEqual(expect.arrayContaining(['gate_in_lane', 'gate_out_lane', 'truck_waiting_area', 'loading_ramp_container', 'container_yard_small', 'vehicle_depot']));
   });
 
   it.each(DEF_IDS_WITH_CONNECTORS)('%s: všetky rotácie', (defId) => {

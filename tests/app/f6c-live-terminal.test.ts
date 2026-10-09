@@ -157,8 +157,8 @@ describe('live_terminal: app a VM nad skutočným svetom (M2)', () => {
     assertCargoConservation(world);
     const { cargo } = world;
     expect(cargo.createdCount - cargo.liveCount - cargo.exportedCount - cargo.shippedCount).toBe(0);
-    // R2 (ADR-039): počty kontajnerov — export 36 TEU = 22, repositioning 24 TEU = 16 prázdnych (plánovač stohov, ADR-039, posunul prúd Rng — pôvodne 14), prekládka 36 TEU = 22
-    expect(cargo.shippedCount).toBe(22 + 16 + 22); // export + repositioning + prekládka
+    // R2 (ADR-039): počty kontajnerov — export 36 TEU = 22, repositioning 24 TEU, po R4 (ADR-041, posun prúdu Rng) 14 prázdnych = 21 TEU (výdaj exportérovi odviezol viac prázdnych), prekládka 36 TEU = 22
+    expect(cargo.shippedCount).toBe(22 + 14 + 22); // export + repositioning + prekládka
   });
 
   it('pravidlo A / B: loď A nesie prekládku ako import (export 0), loď B ako export (import 0); orákulum z kontraktov sedí v každom kroku', () => {
@@ -180,29 +180,29 @@ describe('live_terminal: app a VM nad skutočným svetom (M2)', () => {
   it('export + repositioning na jednej lodi: paluba nesie export aj prázdne (`cargoSplit.empty`), prázdne sa nakladajú po plných', () => {
     const { exportContract, repo } = observed.contracts;
     expect(repo.shipId).toBe(exportContract.shipId);
-    expect(observed.peak.get(exportContract.shipId as EntityId)).toEqual({ import: 0, export: 22, empty: 16 });
+    expect(observed.peak.get(exportContract.shipId as EntityId)).toEqual({ import: 0, export: 22, empty: 14 });
     expect(observed.seen.mixedExportEmpty).toBeGreaterThan(5);
     const loads = eventsOf('UnitLoaded').map((entry) => (entry.event.type === 'UnitLoaded' ? entry.event : undefined));
     // nakládka prázdneho nesie `contractId` bookingu repositioningu, plnej jednotky export kontraktu (a prekládky na lodi B)
     const byContract = new Map<number, number>();
     for (const load of loads) if (load !== undefined && load.contractId !== null) byContract.set(load.contractId, (byContract.get(load.contractId) ?? 0) + 1);
-    expect(Object.fromEntries(byContract)).toEqual({ [exportContract.id]: 22, [repo.id]: 16, [observed.contracts.tranship.id]: 22 });
+    expect(Object.fromEntries(byContract)).toEqual({ [exportContract.id]: 22, [repo.id]: 14, [observed.contracts.tranship.id]: 22 });
     // stowage: pod hákom (od T6D-02) vozia jednotky nakládky viaceré vozidlá a žeriav berie to, ktoré už čaká — výnimočne (< 2 % nakládok) sa tak
     // naloží jednotka pred skoršou jednotkou plánu; plná jednotka po prázdnych však nikdy (prázdne idú až po exporte, `mixedExportEmpty`).
     expect(loads.filter((load) => load?.outOfOrder === true).length).toBeLessThan(loads.length * 0.06);
   });
 
-  it('karta repositioningu: pridelené prázdne rastú k bookovaným TEU, naložené ich dobiehajú; po odchode lode 16 prázdnych (24 TEU) a kontrakt splnený', () => {
+  it('karta repositioningu: pridelené prázdne rastú k bookovaným TEU, naložené ich dobiehajú; po odchode lode 14 prázdnych (21 z 24 TEU) a kontrakt splnený (čiastočne, s penále)', () => {
     const { repo } = observed.contracts;
     const { booking } = repo;
     expect(repo.state).toBe('completed');
-    expect(booking).toMatchObject({ bookedUnits: 24, arrivedUnits: 16, loadedUnits: 16 });
+    expect(booking).toMatchObject({ bookedUnits: 24, arrivedUnits: 14, loadedUnits: 14 });
     const arrivedAt = observed.cardTicks.get(`${String(repo.id)}:arrived`) ?? 0;
     const loadedAt = observed.cardTicks.get(`${String(repo.id)}:loaded`) ?? 0;
     expect(arrivedAt).toBeGreaterThan(0);
     expect(loadedAt).toBeGreaterThanOrEqual(arrivedAt);
     const card = contractCards(observed.app.world).find((entry) => entry.id === repo.id);
-    expect(card).toMatchObject({ kind: 'empty_repositioning', state: 'completed', line: { id: 'blue_anchor' }, booking: { arrivedUnits: 16, loadedUnits: 16 } });
+    expect(card).toMatchObject({ kind: 'empty_repositioning', state: 'completed', line: { id: 'blue_anchor' }, booking: { arrivedUnits: 14, loadedUnits: 14 } });
     expect(card).not.toHaveProperty('availableEmpties'); // zatvorený repositioning už dostupné prázdne neukazuje
   });
 
@@ -226,12 +226,12 @@ describe('live_terminal: app a VM nad skutočným svetom (M2)', () => {
     const shipped = eventsOf('ExportShipped').map((entry) => (entry.event.type === 'ExportShipped' ? entry.event : undefined));
     // po R2 odplávala najprv loď exportu + repositioningu, potom loď B prekládky (pred R2 opačne)
     expect(shipped.map((event) => [event?.shipId, event?.units])).toEqual([
-      [exportContract.shipId, 22 + 16],
+      [exportContract.shipId, 22 + 14],
       [tranship.tranship?.outShipId, 22],
     ]);
     const toasts = observed.app.toasts.filter((entry) => entry.spec.title === EXPORT_SHIPPED_TOAST_TITLE).map((entry) => entry.spec.text);
     const destination = repo.booking?.destinationPort ?? '';
-    expect(toasts).toEqual([`Feeder · 38 TEU → ${destination}`, `Feeder · 22 TEU → ${tranship.booking?.destinationPort ?? ''}`]);
+    expect(toasts).toEqual([`Feeder · 36 TEU → ${destination}`, `Feeder · 22 TEU → ${tranship.booking?.destinationPort ?? ''}`]);
   });
 
   it('toasty: prijatie skupiny export + prázdne a prekládky, splnenie repositioningu a prekládky; zmeškaná prekládka ani jej penalizácia toast nemajú; penalizácia exportu (jednotky po cut-off) je len tá za kontrakt exportu', () => {
@@ -249,7 +249,8 @@ describe('live_terminal: app a VM nad skutočným svetom (M2)', () => {
     expect(toasts.some((spec) => spec.key.startsWith('tranship_'))).toBe(false);
     // export #11: 8 jednotiek čakalo vo vnútrozemí na miesto v plnom dvore (ADR-035) a prešlo bránou po cut-off — penalizácia „rolled“ je jediná, tranship žiadnu nemá
     const penalties = toasts.filter((spec) => spec.key.startsWith('booking_penalty:')).map((spec) => spec.key);
-    expect(penalties.every((key) => key.startsWith(`booking_penalty:${String(exportContract.id)}:`))).toBe(true);
+    // po R4 (posun prúdu Rng) žiadny export nepríde po cut-off, penále je len za nedoplnený repositioning (21 z 24 TEU); prekládka ho nemá
+    expect(penalties.every((key) => key.startsWith(`booking_penalty:${String(exportContract.id)}:`) || key.startsWith(`booking_penalty:${String(repo.id)}:`))).toBe(true);
   });
 
   it('inšpektor: depo ukázalo prázdne podľa linky počas toku (ledger = inšpektor v každom kroku) a dvor prekládku čakajúcu na loď B', () => {

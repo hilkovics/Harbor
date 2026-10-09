@@ -32,6 +32,7 @@ const SAMPLES: readonly SerializedCommand[] = [
   { type: 'DeclineContract', contractId: 1 },
   { type: 'SetBlockPriority', blockId: 99, order: 'ship' },
   { type: 'SetCraneGang', craneId: 2, mode: 'gang', tractorsPerSts: 2 },
+  { type: 'SetGateLaneMode', laneId: 99, mode: 'express' },
 ];
 
 /** Svet po prvom ticku (pool ponúk existuje) a jeho kópia zo save s `gameOver = true`. */

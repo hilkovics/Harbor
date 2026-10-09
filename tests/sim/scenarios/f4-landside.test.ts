@@ -1,10 +1,10 @@
 /**
  * Pozemná časť exportu vo fáze 4 (T04-05, TDD): rozloženie brány, čakacej plochy a rampy, prevádzkovosť rampy, brána ako
- * úzke hrdlo (1 kamión za `processTicks`, spoločná FIFO fronta), stojisko (kamión sa nespawnuje bez voľného bay,
+ * úzke hrdlo (každý pruh brány obsluhuje 1 kamión naraz, vlastná FIFO fronta pruhu), stojisko (kamión sa nespawnuje bez voľného bay,
  * `NoWaitingBay` najviac 1× za hodinu) a odstraňovanie modulov, ktoré používa kamión. Testy idú výlučne cez verejné API
  * a JSON príkazy, proti rozhraniu z `docs/tasks/phase-04.md` („Spoločné rozhrania", „Rozhodnutia orchestrátora").
  *
- * Rozloženie (`helpers/f4-layout.ts`): brána (45, 32) rot 270, čakacia plocha (49, 31), rampa (53, 28); cesty tak, že jediné
+ * Rozloženie (`helpers/f4-layout.ts`): vstupný pruh (45, 33) rot 90, výstupný pruh (45, 32) rot 270, čakacia plocha (53, 31), rampa (53, 28); cesty tak, že jediné
  * spojenie verejnej cesty s areálom vedie bránou a jediné spojenie výstupu brány s vetvou dvorov vedie čakacou plochou.
  * Testy rozloženia (prvý `describe`) sú overiteľné už teraz (validácia, geometria z defov, vlastné BFS po cestách) a
  * strážia, aby červené testy nižšie zlyhávali kvôli chýbajúcej implementácii, nie kvôli chybe rozloženia.
@@ -24,6 +24,9 @@ import {
   GATE,
   GATE_ENTRY_OUTSIDE,
   GATE_EXIT_OUTSIDE,
+  GATE_OUT,
+  GATE_OUT_ENTRY_OUTSIDE,
+  GATE_OUT_EXIT_OUTSIDE,
   PUBLIC_ROAD_END,
   RAMP,
   RAMP_OUTSIDE_CELLS,
@@ -40,9 +43,9 @@ import {
   STRADDLES,
   builtWorld,
   defsWithBays,
-  defsWithProcessTicks,
-  gateCrossingTicks,
+  defsWithSlowLanes,
   gateOf,
+  gateOutOf,
   isRampOperational,
   landsideEvents,
   maxNoWaitingBayPerRampHour,
@@ -59,10 +62,15 @@ import { must } from '../helpers/harbor';
 import { DEFS, MAP, MAP_GRID } from '../world/world-fixtures';
 
 const ROAD_COST = DEFS.infrastructure.road.costPerCellCents;
-const GATE_DEF = DEFS.modules.get('truck_gate');
+const GATE_DEF = DEFS.modules.get('gate_in_lane');
+const GATE_OUT_DEF = DEFS.modules.get('gate_out_lane');
 const WAITING_DEF = DEFS.modules.get('truck_waiting_area');
 const RAMP_DEF = DEFS.modules.get('loading_ramp_container');
-const PROCESS_TICKS = gateParams(GATE_DEF).processTicks;
+/** Prechod vstupným pruhom v režime standard bez problému: OCR 3 + kontrola 8 + lístok 4; výstupným: váha 6 + sken 6 + plomba 4. */
+const IN_PARAMS = gateParams(GATE_DEF);
+const OUT_PARAMS = gateParams(GATE_OUT_DEF);
+const IN_PASS_TICKS = (IN_PARAMS.ocrTicks ?? 0) + (IN_PARAMS.checkTicks ?? 0) + (IN_PARAMS.issueTicks ?? 0);
+const OUT_PASS_TICKS = (OUT_PARAMS.weighTicks ?? 0) + (OUT_PARAMS.scanTicks ?? 0) + (OUT_PARAMS.sealTicks ?? 0);
 const BAYS = waitingAreaParams(WAITING_DEF).bays;
 const RAMP_PARAMS = rampParams(RAMP_DEF);
 
@@ -89,12 +97,12 @@ describe('rozloženie F4: brána, čakacia plocha a rampa na starter parcele sú
     return [{ defId: command['defId'] as string, x: command['x'] as number, y: command['y'] as number, rotation: command['rotation'] as number, command }];
   });
 
-  it('11 nových buniek ciest, spolu 44 unikátnych; postavia sa za bunky × costPerCellCents', () => {
-    expect(F4_ROAD_CELLS).toHaveLength(11);
-    expect(new Set(ALL_F4_ROAD_CELLS.map(key)).size).toBe(44);
+  it('17 nových buniek ciest, spolu 50 unikátnych; postavia sa za bunky × costPerCellCents', () => {
+    expect(F4_ROAD_CELLS).toHaveLength(17);
+    expect(new Set(ALL_F4_ROAD_CELLS.map(key)).size).toBe(50);
     const world = worldWithRoads(scenario);
     for (const { x, y } of ALL_F4_ROAD_CELLS) expect(world.grid.at(x, y).road, `(${String(x)}, ${String(y)})`).toBe('road');
-    expect(DEFS.economy.startingCashCents - world.cashCents).toBe(44 * ROAD_COST);
+    expect(DEFS.economy.startingCashCents - world.cashCents).toBe(50 * ROAD_COST);
   });
 
   it('nové cesty ležia na pevnine starter parcely (patrí hráčovi) a pod modulmi nie sú; štartová cesta nadväzuje na (44, 34)', () => {
@@ -108,15 +116,16 @@ describe('rozloženie F4: brána, čakacia plocha a rampa na starter parcele sú
     expect(MAP_GRID.at(ROAD_PORTAL.x, ROAD_PORTAL.y).road).toBe('road');
   });
 
-  it('PlaceModule.validate je ok pre všetkých 6 modulov (terén, parcela, prekryv, konektory s cestou) za cenu z defu', () => {
+  it('PlaceModule.validate je ok pre všetkých 7 modulov (terén, parcela, prekryv, konektory s cestou) za cenu z defu', () => {
     const world = worldWithRoads(scenario);
     expect(placements.map((placement) => placement.defId)).toEqual([
       'vehicle_depot',
       'container_yard_small',
       'container_yard_small',
-      'truck_gate',
+      'gate_in_lane',
       'truck_waiting_area',
       'loading_ramp_container',
+      'gate_out_lane',
     ]);
     for (const { defId, x, y, command } of placements) {
       const result = commandFromJSON(command).validate(world);
@@ -150,13 +159,19 @@ describe('rozloženie F4: brána, čakacia plocha a rampa na starter parcele sú
     }
   });
 
-  it('konektory z defov (rotácia, footprint): brána 270° w (45, 33) → (44, 33) a e (46, 33) → (47, 33); plocha (48, 33) a (53, 33); rampa (54, 30) a (55, 30)', () => {
+  it('konektory z defov (rotácia, footprint): vstupný pruh 90° w (45, 33) → (44, 33) a e (48, 33) → (49, 33); výstupný pruh 270° e (48, 32) → (49, 32) a w (45, 32) → (44, 32); plocha (52, 33) a (57, 33); rampa (54, 30) a (55, 30)', () => {
     const gate = connectorsOf(GATE_DEF, GATE.origin.x, GATE.origin.y, GATE.rotation);
     expect(gate.map((c) => ({ x: c.x, y: c.y, side: c.side }))).toEqual([
       { x: 45, y: 33, side: 'w' },
-      { x: 46, y: 33, side: 'e' },
+      { x: 48, y: 33, side: 'e' },
     ]);
     expect(gate.map(connectorOutside)).toEqual([GATE_ENTRY_OUTSIDE, GATE_EXIT_OUTSIDE]);
+    const gateOut = connectorsOf(GATE_OUT_DEF, GATE_OUT.origin.x, GATE_OUT.origin.y, GATE_OUT.rotation);
+    expect(gateOut.map((c) => ({ x: c.x, y: c.y, side: c.side }))).toEqual([
+      { x: 48, y: 32, side: 'e' },
+      { x: 45, y: 32, side: 'w' },
+    ]);
+    expect(gateOut.map(connectorOutside)).toEqual([GATE_OUT_ENTRY_OUTSIDE, GATE_OUT_EXIT_OUTSIDE]);
     expect(connectorsOf(WAITING_DEF, WAITING_AREA.origin.x, WAITING_AREA.origin.y, WAITING_AREA.rotation).map(connectorOutside)).toEqual([
       WAITING_WEST_OUTSIDE,
       WAITING_EAST_OUTSIDE,
@@ -166,28 +181,30 @@ describe('rozloženie F4: brána, čakacia plocha a rampa na starter parcele sú
 
   it('všetky vonkajšie bunky konektorov majú cestu', () => {
     const world = worldWithRoads(scenario);
-    for (const cell of [GATE_ENTRY_OUTSIDE, GATE_EXIT_OUTSIDE, WAITING_WEST_OUTSIDE, WAITING_EAST_OUTSIDE, ...RAMP_OUTSIDE_CELLS]) {
+    for (const cell of [GATE_ENTRY_OUTSIDE, GATE_EXIT_OUTSIDE, GATE_OUT_ENTRY_OUTSIDE, GATE_OUT_EXIT_OUTSIDE, WAITING_WEST_OUTSIDE, WAITING_EAST_OUTSIDE, ...RAMP_OUTSIDE_CELLS]) {
       expect(world.grid.at(cell.x, cell.y).road, key(cell)).toBe('road');
     }
   });
 
-  it('cestná sieť (BFS po cestách, bez prechodu modulmi): portál ↔ vstup brány; výstup brány ↔ západ plochy; východ plochy ↔ rampa aj dvory', () => {
+  it('cestná sieť (BFS po cestách, bez prechodu modulmi): portál ↔ vstup brány a výstup výstupného pruhu; výstup brány ↔ západ plochy a vstup výstupného pruhu; východ plochy ↔ rampa aj dvory', () => {
     const world = worldWithRoads(scenario);
     const reachable = (from: { x: number; y: number }, to: { x: number; y: number }): boolean => roadDistance(world.grid, from, to) < Infinity;
 
     expect(reachable(ROAD_PORTAL, GATE_ENTRY_OUTSIDE)).toBe(true);
     expect(roadDistance(world.grid, ROAD_PORTAL, GATE_ENTRY_OUTSIDE)).toBe(30);
     expect(reachable(GATE_EXIT_OUTSIDE, WAITING_WEST_OUTSIDE)).toBe(true);
+    expect(reachable(GATE_EXIT_OUTSIDE, GATE_OUT_ENTRY_OUTSIDE)).toBe(true);
+    expect(reachable(GATE_OUT_EXIT_OUTSIDE, ROAD_PORTAL)).toBe(true);
     for (const outside of RAMP_OUTSIDE_CELLS) expect(reachable(WAITING_EAST_OUTSIDE, outside), key(outside)).toBe(true);
     // Sieť dvorov: vonkajšie bunky depa (47, 30), ďalekého dvora (50, 30) aj berthu (41, 18) sú s rampou v jednej sieti.
     for (const outside of [{ x: 47, y: 30 }, { x: 50, y: 30 }, { x: 41, y: 18 }]) expect(reachable(RAMP_OUTSIDE_CELLS[0], outside), key(outside)).toBe(true);
   });
 
-  it('žiadny obchvat: bez prechodu bránou sa z portálu nedá dostať k výstupu brány, plocha ani rampa; výstup brány nevedie k rampe bez plochy', () => {
+  it('žiadny obchvat: bez prechodu pruhom sa z portálu nedá dostať k výstupu vstupného pruhu, plocha ani rampa; výstup vstupného pruhu nevedie k rampe bez plochy', () => {
     const world = worldWithRoads(scenario);
     const reachable = (from: { x: number; y: number }, to: { x: number; y: number }): boolean => roadDistance(world.grid, from, to) < Infinity;
 
-    for (const target of [GATE_EXIT_OUTSIDE, WAITING_WEST_OUTSIDE, WAITING_EAST_OUTSIDE, ...RAMP_OUTSIDE_CELLS]) {
+    for (const target of [GATE_EXIT_OUTSIDE, GATE_OUT_ENTRY_OUTSIDE, WAITING_WEST_OUTSIDE, WAITING_EAST_OUTSIDE, ...RAMP_OUTSIDE_CELLS]) {
       expect(reachable(ROAD_PORTAL, target), `portál → ${key(target)} musí viesť len bránou`).toBe(false);
     }
     for (const target of [WAITING_EAST_OUTSIDE, ...RAMP_OUTSIDE_CELLS]) {
@@ -196,16 +213,16 @@ describe('rozloženie F4: brána, čakacia plocha a rampa na starter parcele sú
     expect(reachable(GATE_ENTRY_OUTSIDE, GATE_EXIT_OUTSIDE)).toBe(false);
   });
 
-  it('výdavky na cesty, 6 modulov a 3 vozidlá sú pod štartovou hotovosťou', () => {
+  it('výdavky na cesty, 7 modulov a 3 vozidlá sú pod štartovou hotovosťou', () => {
     const spend =
-      45 * ROAD_COST +
+      51 * ROAD_COST +
       placements.reduce((sum, { defId }) => sum + DEFS.modules.get(defId).costCents, 0) +
       STRADDLES.length * DEFS.vehicles.get('straddle_carrier').purchaseCents;
     expect(spend).toBeLessThan(DEFS.economy.startingCashCents);
   });
 
-  it('defy, na ktoré sa testy odvolávajú: brána processTicks 18, plocha 6 bays, rampa 2 docks × 2 staging, 6 tickov na jednotku, kamión kapacita 1', () => {
-    expect(PROCESS_TICKS).toBe(18);
+  it('defy, na ktoré sa testy odvolávajú: vstupný pruh 15 a výstupný 16 tickov, plocha 6 bays, rampa 2 docks × 4 staging, 6 tickov na jednotku, kamión kapacita 1', () => {
+    expect([IN_PASS_TICKS, OUT_PASS_TICKS]).toEqual([15, 16]);
     expect(BAYS).toBe(6);
     expect(RAMP_PARAMS).toMatchObject({ docks: 2, stagingPerDock: 4, loadTicksPerUnit: 6, category: 'container' });
     expect(DEFS.trucks.get('truck_container').capacityUnits).toBe(1);
@@ -219,8 +236,8 @@ describe('rozloženie F4: brána, čakacia plocha a rampa na starter parcele sú
 /**
  * Predpoklady o API (T04-02):
  *  A1 `World.isRampOperational(ramp)` a `LoadingRamp.operational` / `inoperativeReason` sú zhodné;
- *  A2 rampa je prevádzková, keď existuje cesta portál → vstupná strana brány a výstupná strana brány → plocha → konektor
- *     rampy; brána a plocha sú priechody (telom sa prechádza abstraktne), bez nich cesta nevedie;
+ *  A2 rampa je prevádzková, keď existuje cesta portál → vstup vstupného pruhu a jeho výstup → plocha → konektor
+ *     rampy a späť k vstupu výstupného pruhu; pruhy a plocha sú priechody (telom sa prechádza abstraktne), bez nich cesta nevedie;
  *  A3 `inoperativeReason`: bez brány `no_gate`, s bránou bez plochy `no_waiting_area`, rampa bez cesty k svojim konektorom
  *     `not_connected`; prevádzková rampa má `null`;
  *  A4 `TruckGate.entrySide` je konektor dosiahnuteľný z portálu bez prechodu bránou (tu `w` na (45, 33)), `exitSide` druhý;
@@ -231,7 +248,7 @@ describe('prevádzkovosť rampy: bez brány (alebo bez cesty k bráne) je rampa 
     builtWorld(f4Scenario('f4_operational', 4204, { landside, omitRoadCells }));
 
   it('bez brány: rampa aj plocha stoja, ale isRampOperational === false a dôvod je no_gate', () => {
-    const world = build(['waiting_area', 'ramp']);
+    const world = build(['waiting_area', 'ramp', 'gate_out']);
     const ramp = rampOf(world);
     expect(isRampOperational(world, ramp)).toBe(false);
     expect(ramp.operational).toBe(false);
@@ -239,7 +256,7 @@ describe('prevádzkovosť rampy: bez brány (alebo bez cesty k bráne) je rampa 
   });
 
   it('s bránou, ale bez čakacej plochy: neprevádzková, dôvod no_waiting_area', () => {
-    const world = build(['gate', 'ramp']);
+    const world = build(['gate', 'ramp', 'gate_out']);
     const ramp = rampOf(world);
     expect(isRampOperational(world, ramp)).toBe(false);
     expect(ramp.operational).toBe(false);
@@ -247,7 +264,7 @@ describe('prevádzkovosť rampy: bez brány (alebo bez cesty k bráne) je rampa 
   });
 
   it('brána aj plocha, ale rampa nemá cestu k svojim konektorom: neprevádzková, dôvod not_connected', () => {
-    const world = build(['gate', 'waiting_area', 'ramp'], RAMP_OUTSIDE_CELLS);
+    const world = build(['gate', 'waiting_area', 'ramp', 'gate_out'], RAMP_OUTSIDE_CELLS);
     const ramp = rampOf(world);
     for (const cell of RAMP_OUTSIDE_CELLS) expect(world.grid.at(cell.x, cell.y).road).toBe('none');
     expect(isRampOperational(world, ramp)).toBe(false);
@@ -255,7 +272,7 @@ describe('prevádzkovosť rampy: bez brány (alebo bez cesty k bráne) je rampa 
   });
 
   it('brána bez cesty k portálu (chýba vstupná cesta (44, 33)): rampa je neprevádzková a má dôvod', () => {
-    const world = build(['gate', 'waiting_area', 'ramp'], [GATE_ENTRY_OUTSIDE]);
+    const world = build(['gate', 'waiting_area', 'ramp', 'gate_out'], [GATE_ENTRY_OUTSIDE]);
     const ramp = rampOf(world);
     expect(world.grid.at(GATE_ENTRY_OUTSIDE.x, GATE_ENTRY_OUTSIDE.y).road).toBe('none');
     expect(isRampOperational(world, ramp)).toBe(false);
@@ -264,19 +281,21 @@ describe('prevádzkovosť rampy: bez brány (alebo bez cesty k bráne) je rampa 
   });
 
   it('kompletné rozloženie: rampa je prevádzková a nemá dôvod neprevádzkovosti', () => {
-    const world = build(['gate', 'waiting_area', 'ramp']);
+    const world = build(['gate', 'waiting_area', 'ramp', 'gate_out']);
     const ramp = rampOf(world);
     expect(isRampOperational(world, ramp)).toBe(true);
     expect(ramp.operational).toBe(true);
     expect(ramp.inoperativeReason).toBeNull();
   });
 
-  it('API modulov: brána mala vstup na (45, 33) west a výstup na (46, 33) east; parametre z defov; plocha 6 bays; rampa 2 docky', () => {
-    const world = build(['gate', 'waiting_area', 'ramp']);
+  it('API modulov: vstupný pruh má vstup na (45, 33) west a výstup na (48, 33) east, výstupný pruh vstup (48, 32) east a výstup (45, 32) west; parametre z defov; plocha 6 bays; rampa 2 docky', () => {
+    const world = build(['gate', 'waiting_area', 'ramp', 'gate_out']);
     const gate = gateOf(world);
     expect(gate.entrySide).toMatchObject({ x: 45, y: 33, side: 'w' });
-    expect(gate.exitSide).toMatchObject({ x: 46, y: 33, side: 'e' });
-    expect(gate.params.processTicks).toBe(PROCESS_TICKS);
+    expect(gate.exitSide).toMatchObject({ x: 48, y: 33, side: 'e' });
+    expect(gateOutOf(world).entrySide).toMatchObject({ x: 48, y: 32, side: 'e' });
+    expect(gateOutOf(world).exitSide).toMatchObject({ x: 45, y: 32, side: 'w' });
+    expect([gate.params.direction, gateOutOf(world).params.direction]).toEqual(['in', 'out']);
     expect(gate.queueLength).toBe(0);
     expect(gate.busyTicksLeft).toBe(0);
     expect(gate.trucksProcessed).toBe(0);
@@ -290,8 +309,8 @@ describe('prevádzkovosť rampy: bez brány (alebo bez cesty k bráne) je rampa 
     for (let dock = 0; dock < ramp.docks; dock++) expect([ramp.stagedAt(dock), ramp.reservedAt(dock)], `dock ${String(dock)}`).toEqual([0, 0]);
   });
 
-  it.each(permutations<LandsideKind>(['gate', 'waiting_area', 'ramp']).map((order) => ({ name: order.join(' → '), order })))(
-    'poradie stavby $name: každý PlaceModule prejde a rampa je prevádzková práve vtedy, keď stoja brána aj plocha aj rampa',
+  it.each(permutations<LandsideKind>(['gate', 'waiting_area', 'ramp', 'gate_out']).map((order) => ({ name: order.join(' → '), order })))(
+    'poradie stavby $name: každý PlaceModule prejde a rampa je prevádzková práve vtedy, keď stoja vstupný pruh, plocha, rampa aj výstupný pruh',
     ({ order }) => {
       const world = worldWithRoads(f4Scenario('f4_order', 4204, { landside: [] }));
       const placed: LandsideKind[] = [];
@@ -306,7 +325,7 @@ describe('prevádzkovosť rampy: bez brány (alebo bez cesty k bráne) je rampa 
 
         if (placed.includes('ramp')) {
           const ramp = rampOf(world);
-          const complete = placed.length === 3;
+          const complete = placed.length === 4;
           expect(isRampOperational(world, ramp), `po ${placed.join(' → ')}`).toBe(complete);
           expect(ramp.operational, `po ${placed.join(' → ')}`).toBe(complete);
         }
@@ -324,6 +343,7 @@ describe('prevádzkovosť rampy: bez brány (alebo bez cesty k bráne) je rampa 
     };
     send('waiting_area');
     send('ramp');
+    send('gate_out');
     const rampId = rampOf(world).id;
     const beforeGate = events.length;
     send('gate');
@@ -398,7 +418,7 @@ describe('neprevádzková rampa počas behu: 12 TEU v sklade čaká na bránu, p
     expect(turnedOn[0].tick).toBeGreaterThan(run.gateSentAtTick);
     expect(turnedOn[0].tick).toBeLessThanOrEqual(run.gateSentAtTick + 2);
     expect(turnedOn[0].event.reason ?? null).toBeNull();
-    const placed = timed4(events(), 'ModulePlaced').filter((entry) => entry.event.defId === 'truck_gate');
+    const placed = timed4(events(), 'ModulePlaced').filter((entry) => entry.event.defId === 'gate_in_lane');
     expect(placed).toHaveLength(1);
     expect(Math.abs(turnedOn[0].tick - placed[0].tick)).toBeLessThanOrEqual(1);
   });
@@ -500,61 +520,70 @@ describe('stojisko: pri plných bays (syntetické bays 1) sa ďalší kamión ne
 });
 
 // ---------------------------------------------------------------------------------------------------------
-// Brána: najviac 1 kamión za processTicks
+// Pruh brány: najviac 1 kamión naraz
 // ---------------------------------------------------------------------------------------------------------
 
 /**
- * Predpoklady o API (T04-04, rozhodnutie orchestrátora 2):
- *  D1 brána má spoločnú FIFO frontu pre oba smery; kamión čaká v `gate_queue` (dnu) alebo `gate_queue_out` (von) na
- *     vonkajšej bunke príslušného konektora a po spracovaní prejde do `to_bay` resp. `to_portal`;
- *  D2 medzi dvoma po sebe idúcimi prechodmi (`TruckStateChanged` z `gate_queue` / `gate_queue_out`) je ≥ `processTicks`;
- *  D3 `TruckGate.queueLength` obsahuje len kamióny v `gate_queue*`, `trucksProcessed` počíta prechody v oboch smeroch.
- * Syntetická brána s `processTicks` 100 vynúti, aby sa kamióny pred bránou naozaj hromadili.
+ * Predpoklady o API (T04-04, rozhodnutie orchestrátora 2; R4, ADR-041 bod 1):
+ *  D1 každý pruh brány má vlastnú FIFO frontu; kamión čaká v `gate_queue` (dnu) alebo `gate_queue_out` (von) na vonkajšej bunke prvého konektora pruhu a po spracovaní prejde do
+ *     `to_bay` resp. `to_portal`;
+ *  D2 medzi dvoma po sebe idúcimi prechodmi toho istého pruhu (`TruckStateChanged` z `gate_pass` / `gate_pass_out`) je ≥ súčet krokov pruhu;
+ *  D3 `TruckGate.queueLength` obsahuje len kamióny v `gate_queue*` / `gate_pass*` svojho pruhu, `trucksProcessed` počíta prechody pruhu.
+ * Syntetické pruhy s prechodom 100 tickov vynútia, aby sa kamióny pred pruhom naozaj hromadili.
  */
-describe('brána: pustí najviac 1 kamión za processTicks (spoločná FIFO fronta oboch smerov)', () => {
+describe('pruh brány: pustí najviac 1 kamión naraz (vlastná FIFO fronta pruhu)', () => {
   const SLOW = 100;
   let run: LateGateRun;
 
   beforeAll(() => {
-    run = runLateGate({ defs: defsWithProcessTicks(SLOW), units: 12 });
+    run = runLateGate({ defs: defsWithSlowLanes(SLOW), units: 12 });
   }, RUN_TIMEOUT_MS);
 
-  it('brána má processTicks 100', () => {
-    expect(gateOf(run.world).params.processTicks).toBe(SLOW);
+  const passTicks = (from: 'gate_pass' | 'gate_pass_out'): number[] =>
+    landsideEvents(run.recorder.events, 'TruckStateChanged').filter((entry) => entry.event.from === from).map((entry) => entry.tick);
+
+  it('pruhy majú prechod 100 tickov', () => {
+    const inLane = gateParams(gateOf(run.world).def);
+    const outLane = gateParams(gateOutOf(run.world).def);
+    expect([(inLane.ocrTicks ?? 0) + (inLane.checkTicks ?? 0) + (inLane.issueTicks ?? 0), (outLane.weighTicks ?? 0) + (outLane.scanTicks ?? 0) + (outLane.sealTicks ?? 0)]).toEqual([SLOW, SLOW]);
   });
 
-  it('test skutočne zaťažil bránu: aspoň 2 kamióny naraz čakali vo fronte (gate_queue / gate_queue_out)', () => {
+  it('test skutočne zaťažil pruhy: aspoň 2 kamióny naraz čakali vo fronte (gate_queue / gate_queue_out)', () => {
     expect(run.recorder.maxTrucksQueued).toBeGreaterThanOrEqual(2);
     expect(Math.max(...run.recorder.gates.map((sample) => sample.queueLength))).toBeGreaterThanOrEqual(1);
   });
 
-  it('medzi dvoma po sebe idúcimi prechodmi bránou je ≥ processTicks tickov (oba smery dokopy)', () => {
-    const crossings = gateCrossingTicks(run.recorder.events);
-    expect(crossings).toHaveLength(2 * run.units);
-    expect(minGap(crossings)).toBeGreaterThanOrEqual(SLOW);
-  });
-
-  it('v žiadnom okne dĺžky processTicks neprejdú bránou dva kamióny', () => {
-    const crossings = gateCrossingTicks(run.recorder.events);
-    for (let i = 0; i < crossings.length; i++) {
-      const inWindow = crossings.filter((tick) => tick >= crossings[i] && tick < crossings[i] + SLOW);
-      expect(inWindow.length, `okno od ticku ${String(crossings[i])}`).toBe(1);
+  it('medzi dvoma po sebe idúcimi prechodmi toho istého pruhu je ≥ 100 tickov (vstupný a výstupný pruh zvlášť)', () => {
+    for (const from of ['gate_pass', 'gate_pass_out'] as const) {
+      const crossings = passTicks(from);
+      expect(crossings, from).toHaveLength(run.units);
+      expect(minGap(crossings), from).toBeGreaterThanOrEqual(SLOW);
     }
   });
 
-  it('fronta je FIFO: kamióny opúšťajú frontu v poradí, v akom do nej vstúpili (oba smery spolu)', () => {
-    const transitions = landsideEvents(run.recorder.events, 'TruckStateChanged');
-    const isQueue = (state: string): boolean => state === 'gate_queue' || state === 'gate_queue_out';
-    const entered = transitions.filter((entry) => isQueue(entry.event.to)).map((entry) => `${String(entry.event.truckId)}:${entry.event.to}`);
-    const left = transitions.filter((entry) => isQueue(entry.event.from)).map((entry) => `${String(entry.event.truckId)}:${entry.event.from}`);
-    expect(left).toEqual(entered);
+  it('v žiadnom okne dĺžky 100 tickov neprejdú tým istým pruhom dva kamióny', () => {
+    for (const from of ['gate_pass', 'gate_pass_out'] as const) {
+      const crossings = passTicks(from);
+      for (let i = 0; i < crossings.length; i++) {
+        const inWindow = crossings.filter((tick) => tick >= crossings[i] && tick < crossings[i] + SLOW);
+        expect(inWindow.length, `${from}: okno od ticku ${String(crossings[i])}`).toBe(1);
+      }
+    }
   });
 
-  it('trucksProcessed = 24 (12 kamiónov × dva prechody), queueLength na konci 0; čakajúci kamión stojí na vonkajšej bunke konektora', () => {
-    const gate = gateOf(run.world);
-    expect(gate.trucksProcessed).toBe(2 * run.units);
-    expect(gate.queueLength).toBe(0);
-    expect(gate.busyTicksLeft).toBe(0);
+  it('fronta každého pruhu je FIFO: kamióny opúšťajú frontu v poradí, v akom do nej vstúpili (vstup a výstup zvlášť)', () => {
+    const transitions = landsideEvents(run.recorder.events, 'TruckStateChanged');
+    for (const queue of ['gate_queue', 'gate_queue_out']) {
+      const entered = transitions.filter((entry) => entry.event.to === queue).map((entry) => entry.event.truckId);
+      const left = transitions.filter((entry) => entry.event.from === queue).map((entry) => entry.event.truckId);
+      expect(left, queue).toEqual(entered);
+    }
+  });
+
+  it('trucksProcessed = 12 + 12 (každý pruh 12 prechodov), fronty na konci prázdne; čakajúci kamión stojí na vonkajšej bunke konektora', () => {
+    const [gate, gateOut] = [gateOf(run.world), gateOutOf(run.world)];
+    expect([gate.trucksProcessed, gateOut.trucksProcessed]).toEqual([run.units, run.units]);
+    expect([gate.queueLength, gateOut.queueLength, gate.busyTicksLeft, gateOut.busyTicksLeft]).toEqual([0, 0, 0, 0]);
     expect(run.recorder.violationsOf('truck_queue_position')).toEqual([]);
     expect(run.recorder.violationsOf('gate_queue')).toEqual([]);
   });
@@ -594,7 +623,7 @@ describe('RemoveModule pozemných modulov: kamión alebo náklad na rampe bráni
     expect(truck.rampId).toBe(rampOf(world).id);
   });
 
-  it('brána, ktorú kamión používa, sa nedá odstrániť: has_trucks', () => {
+  it('vstupný pruh, ktorý kamión používa, sa nedá odstrániť: has_trucks', () => {
     const result = removal(gateOf(world).id);
     expect(result.ok).toBe(false);
     expect(reasonsInclude(result.reasons, 'has_trucks')).toBe(true);

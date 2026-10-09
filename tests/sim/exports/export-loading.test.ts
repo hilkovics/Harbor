@@ -69,7 +69,6 @@ describe('stowage poradie nakládky (ADR-032 bod 8)', () => {
     const labels = (weightClass: WeightClass) => ({ direction: 'export' as const, voyageId: contract.voyageId, lineId: contract.lineId, destinationPort: contract.booking.destinationPort, weightClass });
     const stored = (weightClass: WeightClass, slot: number): EntityId => {
       const unit = world.cargo.create('container_teu', { kind: 'in_truck', truckId: 900 as EntityId }, contract.id, labels(weightClass));
-      world.cargo.move(unit.id, { kind: 'at_ramp', rampId: 8 as EntityId, dock: 0 });
       world.cargo.move(unit.id, { kind: 'in_vehicle', vehicleId: 901 as EntityId });
       world.cargo.move(unit.id, { kind: 'in_storage', moduleId: 4 as EntityId, slot });
       return unit.id;
@@ -125,7 +124,6 @@ describe('rezerva apronu a kapacita lode (ADR-032 bod 10, 11)', () => {
     for (const slot of [5, 6, 7]) {
       const unit = world.cargo.create('container_teu', { kind: 'in_truck', truckId: 900 as EntityId }, contract.id, labels);
       for (const next of [
-        { kind: 'at_ramp', rampId: 8 as EntityId, dock: 0 },
         { kind: 'in_vehicle', vehicleId: 901 as EntityId },
         { kind: 'on_apron', berthId: berth.id, slot },
       ] as const) {
@@ -318,7 +316,7 @@ describe('uzavretie bookingu (ADR-032 bod 14)', () => {
     // Vrátenie odosielateľovi: kamión odvezie jednotku (exported) po uzavretí bookingu; nič sa nestratí.
     tickUntil(world, (w) => w.cargo.exportedCount === 1, 20_000);
     expect(contract.booking.returnedUnits).toBe(1);
-    expect(world.cargo.countByKind('in_storage') + world.cargo.countByKind('at_ramp')).toBe(0);
+    expect(world.cargo.countByKind('in_storage') + world.cargo.countByKind('in_truck')).toBe(0);
     expect(lostUnits(world)).toBe(0);
   });
 

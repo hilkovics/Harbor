@@ -24,18 +24,13 @@ describe('empty handler — prednosť pri jobe prázdneho', () => {
     expect(assigned[0].vehicleId).toBe(vehicleOfDef(world, HANDLER));
   });
 
-  it('bez empty handlera ho prevezme bežné vozidlo; empty handler obsadený → job dostane bežné vozidlo (prednosť nie je čakanie)', () => {
+  it('bez empty handlera ho prevezme bežné vozidlo', () => {
     const plain = emptyWorld({ vehicles: [STRADDLE, STRADDLE] });
     plain.emptyFlow.scheduleReturn(plain.clock.tick + 5, 'blue_anchor');
     const events = runUntil(plain, (w) => [...w.cargo.liveUnits()].some((unit) => unit.location.kind === 'in_storage'), 3_000, 'prázdny uložený bežným vozidlom');
     expect(eventsOf(events, 'JobAssigned')).toHaveLength(1);
 
-    const busy = emptyWorld({ vehicles: [STRADDLE, HANDLER] });
-    busy.emptyFlow.scheduleReturn(busy.clock.tick + 5, 'blue_anchor');
-    busy.emptyFlow.scheduleReturn(busy.clock.tick + 6, 'blue_anchor');
-    const both = runUntil(busy, (w) => w.emptyFlow.returnPlan.length === 0 && [...w.cargo.liveUnits()].filter((unit) => unit.location.kind === 'in_storage').length === 2, 4_000, 'dva prázdne uložené');
-    const vehicles = new Set(eventsOf(both, 'JobAssigned').map((event) => event.vehicleId));
-    expect(vehicles).toEqual(new Set([vehicleOfDef(busy, HANDLER), vehicleOfDef(busy, STRADDLE)]));
+    // R4: depo má jediný TP na hrane, takže naraz obsluhuje jeden kamión — súbežné joby prázdnych (a teda obsadený empty handler) nevznikajú.
   });
 
   it('job importu empty handler nikdy nedostane: počas importu bez prázdnych ostane nečinný (všetky joby vezme straddle carrier)', () => {

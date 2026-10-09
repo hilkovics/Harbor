@@ -372,8 +372,10 @@ export type RemovalRule = (typeof REMOVAL_RULES)[number];
 export interface TruckModuleRefs {
   readonly id: EntityId;
   readonly gateId: EntityId;
-  readonly waitingAreaId: EntityId;
-  readonly rampId: EntityId;
+  readonly gateOutId: EntityId | null;
+  readonly preGateId: EntityId | null;
+  readonly holdingId: EntityId | null;
+  readonly blockId: EntityId;
 }
 
 /** Trasa vozidla, ktorú pravidlo `has_vehicles` číta (`Vehicle` ju spĺňa): bunka vozidla a zvyšok trasy (`routeCellAt(0)` = `cell`). */
@@ -441,11 +443,11 @@ const REMOVAL_CHECKS: { readonly [R in RemovalRule]: RemovalCheck } = {
     const onQuay = module instanceof BerthModule && hasQuayLane(module) ? vehiclesOnQuay(world, module) : [];
     return onQuay.length > 0 ? `na nábreží ${module.label} stoja alebo k nemu mieria vozidlá [${onQuay.join(', ')}]` : undefined;
   },
-  // Brána, stojisko alebo rampa, ktorú používa kamión (T04-04, ADR-024): kamión by stratil trasu, bay alebo dock.
+  // Brána, plocha alebo blok, ktorý používa kamión (T04-04, ADR-024, ADR-041): kamión by stratil trasu, lístok, TP alebo státie.
   has_trucks: (world, module) => {
     const users: EntityId[] = [];
     for (const truck of world.trucks.values()) {
-      if (truck.gateId === module.id || truck.waitingAreaId === module.id || truck.rampId === module.id) users.push(truck.id);
+      if (truck.gateId === module.id || truck.gateOutId === module.id || truck.preGateId === module.id || truck.holdingId === module.id || truck.blockId === module.id) users.push(truck.id);
     }
     return users.length > 0 ? `${module.label} používajú kamióny [${users.join(', ')}]` : undefined;
   },

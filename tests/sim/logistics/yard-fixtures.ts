@@ -46,8 +46,8 @@ export function emptyLabelsOf(lineId: string, sizeFt: 20 | 40 = 20): CargoUnitLa
 }
 
 /**
- * Nová jednotka so štítkami `labels` pripravená na uloženie vo vozidle 903: import po reťazci §7.1, export / prázdny po kamióne a rampe
- * (`in_truck → at_ramp → in_vehicle`, kontrakt `contractId` len pre export).
+ * Nová jednotka so štítkami `labels` pripravená na uloženie vo vozidle 903: import po reťazci §7.1, export / prázdny po kamióne
+ * (`in_truck → in_vehicle`, kontrakt `contractId` len pre export).
  */
 export function newUnit(world: World, labels: CargoUnitLabelsInput = IMPORT_LABELS, contractId: number | null = null): CargoUnit {
   const direction = labels.direction;
@@ -58,7 +58,6 @@ export function newUnit(world: World, labels: CargoUnitLabelsInput = IMPORT_LABE
     world.cargo.move(id, { kind: 'on_apron', berthId: 902 as EntityId, slot: 0 });
     world.cargo.move(id, { kind: 'in_vehicle', vehicleId: 903 as EntityId });
   } else {
-    world.cargo.move(id, { kind: 'at_ramp', rampId: 960 as EntityId, dock: 0 });
     world.cargo.move(id, { kind: 'in_vehicle', vehicleId: 903 as EntityId });
   }
   return world.cargo.get(id) as CargoUnit;

@@ -1,12 +1,12 @@
 // Moduly (ARCHITECTURE §5, §5.3, §5.4, §7.5, §7.7; ADR-014, ADR-017, ADR-022): Module, ModuleRegistry, BerthModule,
 // CraneModule, BerthGroup, ApronBuffer, SlotReservations, StorageModule, ContainerYard, VehicleDepot, LandExportModule,
-// TruckGate, WaitingArea, LoadingRamp (DockStaging).
+// TruckGate, PreGateBuffer, TruckHolding.
 export { Module } from './module';
 export type { ModuleInit } from './module';
 export type { CargoDropTarget } from './cargo-drop-target';
 export { ModuleError, ModuleStateError } from './module-error';
 export type { ModuleErrorCode } from './module-error';
-export { SIDE_STEPS, connectorOutside, connectorsOf, edgeCells, footprintOf, frontBandCells, rotateSide, waterSideOf } from './module-geometry';
+export { SIDE_STEPS, connectorAllows, connectorOutside, connectorsOf, edgeCells, footprintOf, frontBandCells, rotateSide, waterSideOf } from './module-geometry';
 export type { ModuleFootprint, PlacedConnector } from './module-geometry';
 export type { JsonPrimitive, JsonValue, ModuleRuntimeState } from './runtime-state';
 export { ApronBuffer } from './apron-buffer';
@@ -24,13 +24,13 @@ export { RTG_BLOCK_CATEGORY, RTG_LANE_DIRECTION, RtgBlock } from './rtg-block';
 export { VehicleDepot } from './vehicle-depot';
 export { LandExportModule } from './land-export-module';
 export type { LandsideRole, LandsideRoster } from './land-export-module';
-export { TruckGate, gatePassProblem } from './truck-gate';
-export type { GateRuntimeState } from './truck-gate';
-export { WaitingArea } from './waiting-area';
-export { DockStaging } from './dock-staging';
-export type { DockStagingInit } from './dock-staging';
-export { LoadingRamp, RAMP_INOPERATIVE_REASONS, RAMP_OPERATIONAL } from './loading-ramp';
-export type { RampInoperativeReason, RampStatus } from './loading-ramp';
+export { GATE_STEP_IDS, TruckGate, gatePassProblem } from './truck-gate';
+export type { GateRuntimeState, GateStep, GateStepId, GateStepProgress } from './truck-gate';
+export { LANE_ROOF_POSITIONS, adjacentLaneGroups } from './gate-lane-groups';
+export type { LaneRoofPlacement, LaneRoofPosition } from './gate-lane-groups';
+export { PreGateBuffer } from './pre-gate-buffer';
+export type { PreGateRuntimeState } from './pre-gate-buffer';
+export { TruckHolding } from './truck-holding';
 export { BerthModule, effectiveBerthDepth } from './berth-module';
 export type { BerthRuntimeState } from './berth-module';
 export {

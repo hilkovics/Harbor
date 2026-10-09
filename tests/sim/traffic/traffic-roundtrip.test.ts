@@ -12,7 +12,7 @@ import { assertCargoConservation } from '../helpers/invariants';
 import { loadScenarioFile, runScenario } from '../helpers/scenario';
 
 const DEFS = loadBundledDefs();
-const MAP = loadBundledMap();
+const PORT_MAP = loadBundledMap();
 const scenario = loadScenarioFile('full_import_chain');
 const FOLLOW_TICKS = 600;
 const END_TICK = 12_000;
@@ -34,7 +34,7 @@ describe('roundtrip savu uprostred dopravy (full_import_chain)', () => {
   let baseline: Baseline;
 
   beforeAll(() => {
-    const world = World.create(DEFS, MAP, scenario.seed);
+    const world = World.create(DEFS, PORT_MAP, scenario.seed);
     const eventPrints = new Map<number, string>();
     let splitTick = -1;
     let save = '';
@@ -68,7 +68,7 @@ describe('roundtrip savu uprostred dopravy (full_import_chain)', () => {
   });
 
   it('obnovený svet má prepočítané sloty a pokračuje s rovnakými udalosťami po tickoch aj rovnakým hashom', () => {
-    const world = World.deserialize(DEFS, MAP, JSON.parse(baseline.save) as WorldState);
+    const world = World.deserialize(DEFS, PORT_MAP, JSON.parse(baseline.save) as WorldState);
     expect(carrierOverlapProblem(world)).toBeNull();
     let firstMismatch: number | null = null;
     runScenario(world, scenario, baseline.splitTick + FOLLOW_TICKS, {
@@ -88,7 +88,7 @@ describe('roundtrip savu uprostred dopravy (full_import_chain)', () => {
     (holders[1].body as [number, number][])[0] = [...holders[0].body[0]] as [number, number];
     let error: unknown;
     try {
-      World.deserialize(DEFS, MAP, state);
+      World.deserialize(DEFS, PORT_MAP, state);
     } catch (caught) {
       error = caught;
     }

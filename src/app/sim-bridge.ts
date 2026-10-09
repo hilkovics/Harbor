@@ -49,11 +49,9 @@ export const REVISION_EVENTS: ReadonlySet<SimEventType> = new Set<SimEventType>(
   'JobDone',
   'JobCancelled',
   'NoStorageAvailable',
-  'RampOperationalChanged',
   'TruckSpawned',
   'TruckStateChanged',
   'TruckExited',
-  'NoWaitingBay',
   // Kontrakty (F5): karty v snapshote sa skladajú len pri zmene revízie (stav, progres nákladu cez `CargoMoved`,
   // penalizácie, zánik ponuky, koniec hry). Cut-off sa na kartách odpočítava z ticku, preto `CutoffWarning` / `CutoffPassed`
   // revíziu nemenia.

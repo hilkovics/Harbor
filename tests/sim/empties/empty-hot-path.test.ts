@@ -29,6 +29,8 @@ function hotPathAllocations(world: World, ticks: number, sink?: { readonly tick:
     recording = true;
     try {
       const frames = (new Error().stack ?? '').split('\n').slice(2, 2 + FRAMES);
+      // Tvorba jobu `TransportJob` (vznik kamióna `collect` s jobom `receive`, R4) má vlastné alokácie mimo tejto karty.
+      if (frames.some((frame) => /transport-job\.ts/.test(frame))) return;
       for (const frame of frames) {
         if (!HOT_PATH.test(frame)) continue;
         found.push(`${what} ${frame.trim()}`);

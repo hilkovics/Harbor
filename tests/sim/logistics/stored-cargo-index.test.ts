@@ -73,7 +73,7 @@ describe('StoredCargoIndex: udržiavanie háčikom ledgera', () => {
     store(index, 30, 4, 5);
     store(index, 31, 4, 5);
     index.cargoMoved(unitAt(40, 4, { kind: 'on_ship', shipId: id(700) }), { kind: 'in_crane', craneId: id(2) });
-    index.cargoMoved(unitAt(41, 4, { kind: 'at_ramp', rampId: id(9), dock: 0 }), { kind: 'in_truck', truckId: id(800) });
+    index.cargoMoved(unitAt(41, 4, { kind: 'in_vehicle', vehicleId: id(9) }), { kind: 'in_truck', truckId: id(800) });
     take(index, 30, 4, 5);
     expect(view(index.groupOf(contract(4)))).toEqual([[31, 5]]);
     take(index, 31, 4, 5);
@@ -154,7 +154,7 @@ describe('StoredCargoIndex: prázdne kontajnery (F6c, ADR-034)', () => {
     const index = new StoredCargoIndex();
     index.cargoMoved(empty(60, 'blue_anchor', vehicle), storage(6, 0));
     index.cargoMoved(empty(61, 'blue_anchor', vehicle), storage(6, 1));
-    index.cargoMoved(empty(62, 'blue_anchor', { kind: 'at_ramp', rampId: id(9), dock: 0 }), { kind: 'in_truck', truckId: id(800) });
+    index.cargoMoved(empty(62, 'blue_anchor', { kind: 'in_vehicle', vehicleId: id(9) }), { kind: 'in_truck', truckId: id(800) });
     expect(index.emptySize).toBe(2);
     index.cargoMoved(empty(60, 'blue_anchor', storage(6, 0)), vehicle);
     expect([...index.emptiesOf('blue_anchor')]).toEqual([61]);

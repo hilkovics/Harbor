@@ -35,8 +35,7 @@ function isClosed(contract: Contract): boolean {
 /** Pozemná strana repositioningu a prekládky: kontrola `AcceptContract` je rovnaká ako pri exporte, text dôvodu je pre druh vecný. */
 function landsideReasonText(noun: string): Readonly<Partial<Record<ValidationReason, string>>> {
   return {
-    no_ramp_for_category: `Pre ${noun} chýba rampa na tento náklad`,
-    ramp_inoperative: `Pre ${noun} nie je prevádzková rampa (brána, stojisko, cesta)`,
+    no_gate_for_category: `Pre ${noun} chýba brána pre tento náklad`,
   };
 }
 

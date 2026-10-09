@@ -3,8 +3,7 @@
  * Spúšťa ju stránka `f4-render.html` (Vite dev server: `/src/render/__demo__/f4-render.html`); Playwright
  * (`tests/e2e/f4-render.spec.ts`) z nej robí screenshoty.
  *
- * Scéna: brána kamiónov s frontou 3 a zatvorenou závorou, čakacia plocha so 4 z 6 obsadených stojísk, rampa s dvoma
- * pripravenými kontajnermi a kamiónom v doku, neprevádzková rampa s odznakom a kamióny na ceste aj v zákrute. Po
+ * Scéna: pruhy brány (vstupný s krokom, výstupný voľný), odstavná plocha s dvoma kamiónmi a kamióny na ceste aj v zákrute. Po
  * vykreslení nastaví `data-demo-ready="true"` na `<body>` a vystaví `window.__f4RenderDemo` (renderer, VM scény,
  * `show(vm, alpha)` na prekreslenie zmeneným view-modelom a `focus(x, y, zoom)` na priblíženie kamery).
  */

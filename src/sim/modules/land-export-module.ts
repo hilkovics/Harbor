@@ -1,7 +1,7 @@
 /**
  * Pozemný (landside) modul exportného reťazca (ARCHITECTURE §1, §5, §7.5; ADR-022) — abstraktná báza brány kamiónov
- * (`TruckGate`), stojiska (`WaitingArea`) a nakladacej rampy (`LoadingRamp`); neskôr aj železničnej stanice (F10).
- * Triedu vyberá `ModuleRegistry` podľa `def.kind` (`gate`, `waiting_area`, `ramp`; pravidlo 7, §17).
+ * (`TruckGate`), predbránovej plochy (`PreGateBuffer`) a odstavnej plochy (`TruckHolding`); neskôr aj železničnej stanice (F10).
+ * Triedu vyberá `ModuleRegistry` podľa `def.kind` (`gate`, `pre_gate`, `holding`; pravidlo 7, §17).
  *
  * Spoločné: `internalTicks` z `params` (ADR-004, ADR-011). Význam určuje trieda: pri bráne je to časť trvania prechodu
  * telom (`passTicks = processTicks + internalTicks`, chýbajúci = 0 — priepustnosť určuje `processTicks`, ADR-024), pri
@@ -18,18 +18,18 @@
  * ktorý im svet zverejní (`TruckGate.entrySide`, `LoadingRamp.operational`).
  */
 import { Module } from './module';
-import type { LoadingRamp } from './loading-ramp';
+import type { PreGateBuffer } from './pre-gate-buffer';
+import type { TruckHolding } from './truck-holding';
 import type { TruckGate } from './truck-gate';
-import type { WaitingArea } from './waiting-area';
 
 /** Rola pozemného modulu v reťazci kamiónov. */
-export type LandsideRole = 'gate' | 'waiting_area' | 'ramp';
+export type LandsideRole = 'gate' | 'pre_gate' | 'holding';
 
 /** Register pozemných modulov podľa roly (poradie = poradie `enlist`, svet ho volá vzostupne podľa id). */
 export interface LandsideRoster {
   readonly gates: TruckGate[];
-  readonly waitingAreas: WaitingArea[];
-  readonly ramps: LoadingRamp[];
+  readonly preGates: PreGateBuffer[];
+  readonly holdings: TruckHolding[];
 }
 
 export abstract class LandExportModule extends Module {

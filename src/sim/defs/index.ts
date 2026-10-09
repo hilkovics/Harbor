@@ -11,7 +11,7 @@ export {
   craneParams,
   depotParams,
   gateParams,
-  rampParams,
+  holdingParams,
+  preGateParams,
   storageParams,
-  waitingAreaParams,
 } from './module-def';

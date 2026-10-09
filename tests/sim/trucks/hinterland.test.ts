@@ -1,8 +1,7 @@
 // Počítadlá vnútrozemia (T6D-01, ADR-035): počet a súčet a maximum čakania vpustených kamiónov podľa misie, vzdané kamióny a ticky nedostatku stojísk pre odvoz;
-// čistý JSON stav (`getState` / `fromState`) a pravidlá `TRUCK_MISSION_USES_PICKUP_BAYS`.
+// čistý JSON stav (`getState` / `fromState`) a obrat kamiónov (TTT).
 import { describe, expect, it } from 'vitest';
 import { Hinterland, emptyHinterlandState } from '../../../src/sim/trucks/hinterland';
-import { TRUCK_MISSION_USES_PICKUP_BAYS } from '../../../src/sim/trucks/truck-fsm';
 
 describe('Hinterland — počítadlá', () => {
   it('nová hra: samé nuly', () => {
@@ -23,6 +22,7 @@ describe('Hinterland — počítadlá', () => {
       delivery: { admitted: 3, waitTicksTotal: 65, waitTicksMax: 40, turnedAway: 0 },
       collect: { admitted: 1, waitTicksTotal: 7, waitTicksMax: 7, turnedAway: 2 },
       pickupBayStarvationTicks: 0,
+      truckTurn: { trucks: 0, ticksTotal: 0, ticksMax: 0 },
     });
     expect([hinterland.waitTicksTotal('delivery'), hinterland.waitTicksMax('delivery'), hinterland.turnedAway('collect')]).toEqual([65, 40, 2]);
   });
@@ -51,8 +51,17 @@ describe('Hinterland — počítadlá', () => {
   });
 });
 
-describe('TRUCK_MISSION_USES_PICKUP_BAYS', () => {
-  it('stojiská rezervované pre odvoz smú obsadiť misie, ktoré náklad odvážajú (pickup, collect), nie dovoz (delivery)', () => {
-    expect(TRUCK_MISSION_USES_PICKUP_BAYS).toEqual({ pickup: true, delivery: false, collect: true });
+describe('Hinterland — obrat kamióna (TTT, R4 ADR-041)', () => {
+  it('recordTurn: počet, súčet a maximum pobytu kamiónov od vstupného pruhu po výjazd; presiahnutie max sa prejaví v getteri aj v stave', () => {
+    const hinterland = new Hinterland();
+    expect([hinterland.turnTrucks, hinterland.turnTicksTotal, hinterland.turnTicksMax]).toEqual([0, 0, 0]);
+    hinterland.recordTurn(300);
+    hinterland.recordTurn(900);
+    hinterland.recordTurn(120);
+    expect([hinterland.turnTrucks, hinterland.turnTicksTotal, hinterland.turnTicksMax]).toEqual([3, 1320, 900]);
+    expect(hinterland.getState().truckTurn).toEqual({ trucks: 3, ticksTotal: 1320, ticksMax: 900 });
+    const restored = Hinterland.fromState(hinterland.getState());
+    restored.recordTurn(10);
+    expect([restored.turnTrucks, hinterland.turnTrucks]).toEqual([4, 3]);
   });
 });

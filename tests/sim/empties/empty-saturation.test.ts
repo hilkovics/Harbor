@@ -4,10 +4,8 @@
 import { describe, expect, it } from 'vitest';
 import { assertCargoConservation } from '../helpers/invariants';
 import { exportWorld } from '../helpers/f6a';
-import { TICKS_PER_DAY, acceptedImport, depotOf, emptiesByLocation, emptyWorld, eventsOf, f6cDefs, lost, rampOf, run, runUntil, stockDepot } from '../helpers/f6c';
-import type { EntityId } from '@sim/core';
+import { TICKS_PER_DAY, acceptedImport, depotOf, emptiesByLocation, emptyWorld, eventsOf, f6cDefs, lost, gateInOf, run, runUntil, stockDepot } from '../helpers/f6c';
 import { StorageModule } from '@sim/modules';
-import { emptyLabelsOf } from '../logistics/yard-fixtures';
 import { emptyReturnRoom } from '@sim/logistics/empty-stock';
 
 const TWO_STRADDLES = ['straddle_carrier', 'straddle_carrier'];
@@ -56,7 +54,7 @@ describe('návrat prázdneho — len s voľným miestom v depe (M1)', () => {
     const defs = f6cDefs({ moduleParams: { empty_depot: { capacityUnits: 3 } } });
     const world = emptyWorld({ defs, vehicles: TWO_STRADDLES });
     stockDepot(world, 'golden_wave', 1);
-    expect(emptyReturnRoom(world, rampOf(world), 'container')).toBe(2);
+    expect(emptyReturnRoom(world, gateInOf(world), 'container')).toBe(2);
     const tick = world.clock.tick;
     for (let i = 0; i < 4; i++) world.emptyFlow.scheduleReturn(tick + 5, 'blue_anchor');
     const events = run(world, 4_000);
@@ -64,25 +62,26 @@ describe('návrat prázdneho — len s voľným miestom v depe (M1)', () => {
     expect(eventsOf(events, 'EmptyReturned')).toHaveLength(2);
     expect(depotOf(world).storedCount).toBe(3);
     expect(emptiesInYards(world)).toBe(0);
-    expect(emptyReturnRoom(world, rampOf(world), 'container')).toBe(0);
+    expect(emptyReturnRoom(world, gateInOf(world), 'container')).toBe(0);
     assertCargoConservation(world);
   });
 
-  it('rozbehnuté návraty sa počítajú v TEU (TR2-06b): prázdny 40′ čakajúci na docku zaberie 2 miesta depa, 20′ jedno', () => {
+  it('rozbehnuté návraty sa počítajú v TEU (TR2-06b): kamión s prázdnym 40′ zaberie 2 miesta depa, s 20′ jedno', () => {
     const world = emptyWorld({ vehicles: TWO_STRADDLES });
-    const ramp = rampOf(world);
-    const before = emptyReturnRoom(world, ramp, 'container');
-    const arrive = (sizeFt: 20 | 40): void => {
-      const { id } = world.cargo.create('container_teu', { kind: 'in_truck', truckId: 950 as EntityId }, null, emptyLabelsOf('blue_anchor', sizeFt));
-      world.cargo.move(id, { kind: 'at_ramp', rampId: ramp.id, dock: 0 });
+    const gate = gateInOf(world);
+    const before = emptyReturnRoom(world, gate, 'container');
+    // kamión s návratom drží rezerváciu miesta v depe od vzniku (TEU: 40′ dve miesta, 20′ jedno)
+    const arrive = (sizeFt: 20 | 40, trucks: number): void => {
+      world.emptyFlow.scheduleReturn(world.clock.tick + 1, 'blue_anchor', sizeFt);
+      runUntil(world, (w) => w.trucks.size === trucks, 200, 'vznik kamióna s návratom');
     };
-    arrive(40);
-    expect(emptyReturnRoom(world, ramp, 'container')).toBe(before - 2);
-    arrive(20);
-    expect(emptyReturnRoom(world, ramp, 'container')).toBe(before - 3);
+    arrive(40, 1);
+    expect(emptyReturnRoom(world, gate, 'container')).toBe(before - 2);
+    arrive(20, 2);
+    expect(emptyReturnRoom(world, gate, 'container')).toBe(before - 3);
   });
 
-  it('depo plné + import s návratmi: import sa vyloží a odíde, všetky návraty sa zahodia, na docku ani vo dvore žiadny prázdny', () => {
+  it('depo plné + import s návratmi: import sa vyloží a odíde, všetky návraty sa zahodia, v kamióne ani vo dvore žiadny prázdny', () => {
     const defs = f6cDefs({
       moduleParams: { empty_depot: { capacityUnits: 2 } },
       emptyFlow: { emptyReturnRate: 1, hinterlandDaysRange: [1, 1] },
@@ -101,24 +100,23 @@ describe('návrat prázdneho — len s voľným miestom v depe (M1)', () => {
     expect(world.cargo.createdCount).toBe(6);
     expect(emptiesByLocation(world)).toEqual({ in_storage: 2 });
     expect(emptiesInYards(world)).toBe(0);
-    expect(world.cargo.countByKind('at_ramp')).toBe(0);
+    expect(world.cargo.countByKind('in_truck')).toBe(0);
     expect(world.cargo.countByKind('on_apron')).toBe(0);
     expect(world.trucks.size).toBe(0);
     expect(lost(world)).toBe(0);
     assertCargoConservation(world);
   }, 120_000);
 
-  it('depo existuje, ale z rampy sa k nemu nedá dôjsť: návrat sa zahodí (do dvora sa nikdy nelieva), kým depo nechýba', () => {
+  it('depo existuje, ale z brány sa k nemu nedá dôjsť: návrat sa zahodí (do dvora sa nikdy nelieva), kým depo nechýba', () => {
     const world = exportWorld({
       defs: f6cDefs(),
       vehicles: TWO_STRADDLES,
       yards: ['far'],
       extra: [
-        { atTick: 0, command: { type: 'PlaceRoad', cells: [{ x: 32, y: 22 }] } },
         { atTick: 0, command: { type: 'PlaceModule', defId: 'empty_depot', x: 31, y: 18, rotation: 0 } },
       ],
     });
-    const ramp = rampOf(world);
+    const ramp = gateInOf(world);
     expect(emptyReturnRoom(world, ramp, 'container')).toBe(0);
     const tick = world.clock.tick;
     for (let i = 0; i < 3; i++) world.emptyFlow.scheduleReturn(tick + 5, 'blue_anchor');
@@ -131,6 +129,6 @@ describe('návrat prázdneho — len s voľným miestom v depe (M1)', () => {
 
   it('svet bez depa: miesto je neohraničené (Infinity) — fallback do dvora ostáva (depo zbúrané po naplánovaní)', () => {
     const world = emptyWorld({ depot: false, vehicles: TWO_STRADDLES });
-    expect(emptyReturnRoom(world, rampOf(world), 'container')).toBe(Infinity);
+    expect(emptyReturnRoom(world, gateInOf(world), 'container')).toBe(Infinity);
   });
 });

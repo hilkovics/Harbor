@@ -1,20 +1,16 @@
 /**
- * Kamión (ARCHITECTURE §4.2 `trucks.json`, §7.1, §7.5, §7.8 bod 3; rozhodnutia orchestrátora F4 č. 2, 3, 5, 6; ADR-024)
- * — vozidlo zvonka mapy, ktoré príde road portálom, prejde bránou, počká v stojisku, naloží jednotky z docku rampy
- * (`at_ramp → in_truck`) a odíde bránou a portálom z mapy (`in_truck → exported`). Jednotky v kamióne vedie výlučne
- * `CargoLedger` (`in_truck`, pravidlo 2); kamión si ich neeviduje.
+ * Kamión (ARCHITECTURE §4.2 `trucks.json`, §7.1, §7.5, §7.8 bod 3; ADR-024; R4 ADR-041) — externá návšteva terminálu s lístkom: príde road portálom, prejde bránou, na odovzdávacom mieste (TP)
+ * pri bloku ho obsluhuje stroj bloku (RTG) alebo straddle carrier a odíde výstupnou bránou a portálom z mapy (`in_truck → exported`). Jednotky v kamióne vedie výlučne `CargoLedger`
+ * (`in_truck`, pravidlo 2); kamión si ich neeviduje.
  *
- * - **Pohyb** dedí zo zdieľaného `Carrier` (`src/sim/movement`) — ten istý kód ako interné vozidlá: trasa po cestách,
- *   jednosmerky, rýchlosť podľa typu cesty, `no_path` + preplánovanie, `PROGRESS_NOISE` (ADR-019, ADR-020, ADR-021).
- *   Prechod telom brány a stojiska je abstrahovaný (ADR-011): kamión sa po ňom objaví na výstupnej bunke (`jumpTo`).
- * - **Väzby** (nemenné od spawnu): rampa a dock, na ktorého náklad má kamión nárok (`rampId`, `dock`; ADR-029 — dock
- *   samotný drží až od povelu do docku), brána (`gateId`) a stojisko (`waitingAreaId`) trasy z `World.landsideRoutes`.
- *   `bay` = rezervovaný bay stojiska, kým ho kamión drží (`TRUCK_STATE_TRAITS.holdsBay`), inak `null`.
- * - `resume` = jazdný stav, do ktorého sa kamión vráti z `no_path` (mimo `no_path` `null`). Väzby stavu (bay, dock,
- *   náklad) sa v `no_path` riadia `resume` (`effectiveState`).
- * - `mission` (F6a, ADR-032): `pickup` (odvoz importu) alebo `delivery` (dovoz exportu); vlastnosti stavu
- *   (`bonds`, `traits`) sú podľa misie (`truckStateTraits`). Delivery kamión sa pri dual transaction zmení na pickup
- *   (`becomePickup`, len vo vykládke).
+ * - **Pohyb** dedí zo zdieľaného `Carrier` (`src/sim/movement`) — ten istý kód ako interné vozidlá (ADR-019, ADR-020, ADR-021).
+ * - **Lístok** (nemenný od spawnu až po odchod z TP): `blockId` (blok aktuálnej zastávky), `jobId` (job `in_storage ↔ in_truck`, ktorý drží rezerváciu a cieľovú jednotku zastávky; `null`, kým
+ *   zastávka nie je naplánovaná alebo po nej), `tpCell` (rezervované TP — bunka pruhu RTG bloku alebo vonkajšia bunka konektora bloku) alebo `holdingId` + `stall` (rezervované státie odstavnej
+ *   plochy; kamión čaká, kým ho TOS nezavolá). Práve jeden z tokenov (`tpCell`, `stall`) platí od vzniku po odchod z TP (`TRUCK_STATE_TRAITS.holdsToken`).
+ * - `phase` (len na TP): `safe_in → (unlash) → handling → safe_out → (lash)`, odpočet `waitTicks` (`handling` je pripnutý na 1, kým neskončí odovzdanie).
+ * - `resume` = jazdný stav, do ktorého sa kamión vráti z `no_path` (mimo `no_path` `null`).
+ * - `mission` (F6a, ADR-032): `pickup` / `delivery` / `collect`; vlastnosti stavu podľa misie (`truckStateTraits`). Delivery kamión sa pri dual transaction zmení na pickup (`becomePickup`).
+ * - `gateInTick`: tick príchodu k vstupnému pruhu brány (začiatok TTT, `truckTurnTimeAvgMin`); `null` pred bránou.
  *
  * Stav je privátny s getterom `state` a mení ho len `transition` podľa `TRUCK_TRANSITIONS`; trasu len metódy `Carrier`.
  */
@@ -26,11 +22,13 @@ import { serializeSlots, type SerializedSlot } from '../traffic/lane-slots';
 import { TruckError } from './truck-error';
 import {
   TRUCK_TRANSITIONS,
+  isTpPhase,
   isTruckMission,
   isTruckState,
   isTruckTransitionAllowed,
   isTruckTravelState,
   truckStateTraits,
+  type TpPhase,
   type TruckMission,
   type TruckState,
   type TruckStateTraits,
@@ -47,12 +45,30 @@ export interface SerializedTruck {
   readonly x: number;
   readonly y: number;
   readonly heading: Rotation;
-  readonly rampId: number;
-  readonly dock: number;
+  /** Blok aktuálnej zastávky (lístok, ADR-041 bod 4). */
+  readonly blockId: number;
+  /** Job aktuálnej zastávky (`in_storage ↔ in_truck`), alebo `null`. */
+  readonly jobId: number | null;
+  /** Jednotka aktuálnej zastávky (z `jobId`; ostáva po zániku jobu do odchodu z TP — `TruckUnloaded`), alebo `null`. */
+  readonly unitId: number | null;
+  /** Rezervované TP (bunka), alebo `null`. */
+  readonly tpCell: number | null;
+  /** Odstavná plocha so rezervovaným státím, alebo `null`. */
+  readonly holdingId: number | null;
+  /** Rezervované státie odstavnej plochy, alebo `null`. */
+  readonly stall: number | null;
+  /** Fáza na TP (len v `at_tp` / `at_edge_tp`), inak `null`. */
+  readonly phase: TpPhase | null;
+  /** Tick príchodu k vstupnému pruhu brány (začiatok TTT), alebo `null`. */
+  readonly gateInTick: number | null;
+  /** Vstupný pruh brány (R4: pri `to_pre_gate` / `pre_gate` predbežný — pruh radu sa určí pri vjazde na plochu). */
   readonly gateId: number;
-  readonly waitingAreaId: number;
-  /** Rezervovaný bay stojiska (v stavoch s `holdsBay`), inak `null`. */
-  readonly bay: number | null;
+  /** Výstupný pruh brány; `null`, kým si ho kamión nevyberie (pri odchode od rampy, ADR-041 bod 3). */
+  readonly gateOutId: number | null;
+  /** Predbránová plocha kamióna v stavoch `to_pre_gate` / `pre_gate`, inak `null` (ADR-041 bod 2). */
+  readonly preGateId: number | null;
+  /** Radový pruh predbránovej plochy v stave `pre_gate`, inak `null`. */
+  readonly row: number | null;
   /** Stav, do ktorého sa kamión vráti z `no_path`; mimo `no_path` `null`. */
   readonly resume: TruckTravelState | null;
   /** Zvyšok trasy: `[cell, …cieľové bunky]` (indexy buniek); obnova neplánuje znova (ADR-019). */
@@ -81,11 +97,18 @@ export const SERIALIZED_TRUCK_KEYS: readonly (keyof SerializedTruck)[] = [
   'x',
   'y',
   'heading',
-  'rampId',
-  'dock',
+  'blockId',
+  'jobId',
+  'unitId',
+  'tpCell',
+  'holdingId',
+  'stall',
+  'phase',
+  'gateInTick',
   'gateId',
-  'waitingAreaId',
-  'bay',
+  'gateOutId',
+  'preGateId',
+  'row',
   'resume',
   'route',
   'progress',
@@ -102,15 +125,31 @@ export interface TruckInit extends CarrierInit {
   readonly id: EntityId;
   readonly def: Readonly<TruckDef>;
   readonly state: TruckState;
-  readonly rampId: EntityId;
-  readonly dock: number;
+  /** Blok prvej zastávky lístka. */
+  readonly blockId: EntityId;
+  /** Predvolene `null`. */
+  readonly jobId?: EntityId | null;
+  /** Predvolene `null`. */
+  readonly unitId?: EntityId | null;
+  /** Predvolene `null`; rezervované TP (viď `Truck.tpCell`). */
+  readonly tpCell?: number | null;
+  /** Predvolene `null`; odstavná plocha a státie (spolu, viď `Truck.stall`). */
+  readonly holdingId?: EntityId | null;
+  readonly stall?: number | null;
+  /** Predvolene `null`; fáza na TP. */
+  readonly phase?: TpPhase | null;
+  /** Predvolene `null`. */
+  readonly gateInTick?: number | null;
   readonly gateId: EntityId;
-  readonly waitingAreaId: EntityId;
-  /** Predvolene `null`; celé ≥ 0 práve v stavoch s `holdsBay` (pri `no_path` podľa `resume`). */
-  readonly bay?: number | null;
+  /** Predvolene `null` (výstupný pruh brány sa vyberá pri odchode z TP). */
+  readonly gateOutId?: EntityId | null;
+  /** Predvolene `null`; predbránová plocha práve v `to_pre_gate` / `pre_gate`. */
+  readonly preGateId?: EntityId | null;
+  /** Predvolene `null`; radový pruh plochy práve v `pre_gate`. */
+  readonly row?: number | null;
   /** Predvolene `null`; jazdný stav práve v `no_path`. */
   readonly resume?: TruckTravelState | null;
-  /** Predvolene `pickup` (F4 kamión); `delivery` = dovoz exportu (ADR-032). */
+  /** Predvolene `pickup` (F4 kamión); `delivery` = dovoz exportu / prázdneho (ADR-032). */
   readonly mission?: TruckMission;
 }
 
@@ -128,51 +167,86 @@ export class Truck extends Carrier {
   readonly def: Readonly<TruckDef>;
   /** Id defu (`def.id`). */
   readonly defId: string;
-  /** Rampa, z ktorej kamión nakladá. */
-  readonly rampId: EntityId;
+  /** Blok aktuálnej zastávky lístka; pri ďalšej zastávke (dual transaction) ho mení `World.moveTruckStop`. */
+  blockId: EntityId;
+  /** Job aktuálnej zastávky (`in_storage ↔ in_truck`); mení ho systém (`World.setTruckJob`). */
+  jobId: EntityId | null;
+  /** Jednotka aktuálnej zastávky (z `jobId`; ostáva po zániku jobu do odchodu z TP); mení ju systém (`openReceiveJob`, `openDeliverJob`). */
+  unitId: EntityId | null;
+  /** Rezervované TP: bunka pruhu RTG bloku, alebo vonkajšia bunka konektora bloku (TP na hrane); `null`, keď kamión drží státie alebo už z TP odišiel. */
+  private tpCellValue: number | null;
+  /** Odstavná plocha, v ktorej kamión drží státie `stall`; `null` bez státia. */
+  private holdingIdValue: EntityId | null;
+  private stallValue: number | null;
+  /** Fáza na TP (`at_tp`, `at_edge_tp`); inak `null`. */
+  phase: TpPhase | null;
+  /** Tick príchodu k vstupnému pruhu brány (TTT); `null` pred bránou. */
+  gateInTick: number | null;
   /**
-   * Dock rampy (`0 … docks − 1`): od spawnu má kamión nárok na jeho náklad, dock drží od povelu do docku po koniec
-   * nakládky (ADR-029).
+   * Vstupný pruh brány (R4, ADR-041): kamión pred plochou má predbežný pruh (prvý z pruhov plochy), pri vjazde na plochu sa preradí na pruh svojho radu
+   * (`assignLane`). Mení ho len systém pri vjazde na predbránovú plochu.
    */
-  readonly dock: number;
-  /** Brána, ktorou kamión prechádza dnu aj von (spoločná FIFO fronta). */
-  readonly gateId: EntityId;
-  /** Stojisko, v ktorom kamión drží bay. */
-  readonly waitingAreaId: EntityId;
-  /** Rezervovaný bay stojiska, kým ho kamión drží (`holdsBay`); inak `null`. Mení ho `landsideSystem`. */
-  bay: number | null;
+  private gateIdValue: EntityId;
+  /** Výstupný pruh brány (R4): `null`, kým si ho kamión nevyberie podľa odhadu času; po výbere nemenný (`assignOutLane`). */
+  private gateOutIdValue: EntityId | null;
+  /** Predbránová plocha v stavoch `to_pre_gate` / `pre_gate`; inak `null`. */
+  private preGateIdValue: EntityId | null;
+  /** Radový pruh predbránovej plochy v stave `pre_gate`; inak `null`. */
+  row: number | null;
+  /** Odvodený index obsadenia (`World.truckIndex`) sa zneplatní pri každej zmene poľa, ktoré číta; `null` mimo sveta. */
+  private watcher: (() => void) | null = null;
   private currentMission: TruckMission;
   private current: TruckState;
   private resumeState: TruckTravelState | null;
 
   /**
-   * Chyby (`TruckError('invalid_input')`): id, `rampId`, `gateId` alebo `waitingAreaId` nie je celé ≥ 1, `dock` nie je
-   * celé ≥ 0, neznámy stav, poloha nie je konečné číslo, neplatný kurz, `resume` nie je jazdný stav práve v `no_path`,
-   * `bay` nie je `null` ani celé ≥ 0 alebo nezodpovedá stavu (`holdsBay` efektívneho stavu), trasa nie je neprázdny
-   * zoznam indexov buniek, progres mimo `[0, 1)` alebo `> 0` bez ďalšej bunky, `waitTicks` nie je celé ≥ 0. Vzťahy k svetu
-   * (moduly, bay a dock, fronta brány, náklad, súlad polohy s trasou) overuje `World` a loader save.
+   * Chyby (`TruckError('invalid_input')`): id, `blockId` alebo `gateId` nie je celé ≥ 1, neznámy stav, poloha nie je konečné číslo, neplatný kurz, `resume` nie je jazdný stav práve v `no_path`,
+   * token nezodpovedá stavu (`holdsToken` efektívneho stavu: práve jeden z `tpCell`, `stall`), fáza mimo TP, trasa nie je neprázdny zoznam indexov buniek, progres mimo `[0, 1)`, `waitTicks`
+   * nie je celé ≥ 0. Vzťahy k svetu (moduly, job, náklad, súlad polohy s trasou) overuje `World` a loader save.
    */
   constructor(init: TruckInit) {
-    const { id, def, state, rampId, dock, gateId, waitingAreaId } = init;
-    const bay = init.bay ?? null;
+    const { id, def, state, blockId, gateId } = init;
+    const gateOutId = init.gateOutId ?? null;
+    const preGateId = init.preGateId ?? null;
+    const row = init.row ?? null;
+    const jobId = init.jobId ?? null;
+    const unitId = init.unitId ?? null;
+    const tpCell = init.tpCell ?? null;
+    const holdingId = init.holdingId ?? null;
+    const stall = init.stall ?? null;
+    const phase = init.phase ?? null;
+    const gateInTick = init.gateInTick ?? null;
     const resume = init.resume ?? null;
     const mission = init.mission ?? 'pickup';
     const label = `kamión '${def.id}' #${String(id)}`;
     if (!isPositiveId(id)) throw new TruckError('invalid_input', `${label}: id musí byť celé číslo ≥ 1`);
     if (!isTruckState(state)) throw new TruckError('invalid_input', `${label}: neznámy stav '${String(state)}'`);
     if (!isTruckMission(mission)) throw new TruckError('invalid_input', `${label}: neznáma misia '${String(mission)}'`);
-    for (const [name, value] of [['rampId', rampId], ['gateId', gateId], ['waitingAreaId', waitingAreaId]] as const) {
+    for (const [name, value] of [['blockId', blockId], ['gateId', gateId]] as const) {
       if (!isPositiveId(value)) throw new TruckError('invalid_input', `${label}: ${name} musí byť celé číslo ≥ 1, dostal ${String(value)}`);
     }
-    if (!isIndex(dock)) throw new TruckError('invalid_input', `${label}: dock musí byť celé číslo ≥ 0, dostal ${String(dock)}`);
     if ((state === 'no_path') !== isTruckTravelState(resume)) {
       throw new TruckError('invalid_input', `${label}: resume ${String(resume)} ${state === 'no_path' ? 'musí byť jazdný stav' : 'musí byť null mimo no_path'}`);
     }
     const effective: TruckState = resume ?? state;
-    if (bay !== null && !isIndex(bay)) throw new TruckError('invalid_input', `${label}: bay musí byť null alebo celé číslo ≥ 0, dostal ${String(bay)}`);
-    const holdsBay = truckStateTraits(mission, effective).holdsBay;
-    if (holdsBay !== (bay !== null)) {
-      throw new TruckError('invalid_input', `${label}: v stave '${effective}' ${holdsBay ? 'musí držať bay' : 'nesmie držať bay'}`);
+    for (const [name, value] of [['gateOutId', gateOutId], ['preGateId', preGateId], ['jobId', jobId], ['unitId', unitId], ['holdingId', holdingId]] as const) {
+      if (value !== null && !isPositiveId(value)) throw new TruckError('invalid_input', `${label}: ${name} musí byť null alebo celé číslo ≥ 1, dostal ${String(value)}`);
+    }
+    for (const [name, value] of [['row', row], ['tpCell', tpCell], ['stall', stall], ['gateInTick', gateInTick]] as const) {
+      if (value !== null && !isIndex(value)) throw new TruckError('invalid_input', `${label}: ${name} musí byť null alebo celé číslo ≥ 0, dostal ${String(value)}`);
+    }
+    const onPreGate = effective === 'to_pre_gate' || effective === 'pre_gate';
+    if (onPreGate !== (preGateId !== null)) throw new TruckError('invalid_input', `${label}: v stave '${effective}' ${onPreGate ? 'musí mať' : 'nesmie mať'} predbránovú plochu`);
+    if ((state === 'pre_gate') !== (row !== null)) throw new TruckError('invalid_input', `${label}: rad ${String(row)} nezodpovedá stavu '${state}'`);
+    if ((state === 'gate_queue_out' || state === 'gate_pass_out') && gateOutId === null) throw new TruckError('invalid_input', `${label}: v stave '${state}' musí mať výstupný pruh`);
+    if ((holdingId === null) !== (stall === null)) throw new TruckError('invalid_input', `${label}: odstavná plocha ${String(holdingId)} a státie ${String(stall)} sa musia zadať spolu`);
+    const holdsToken = truckStateTraits(mission, effective).holdsToken;
+    if (holdsToken !== (tpCell !== null || stall !== null) || (tpCell !== null && stall !== null)) {
+      throw new TruckError('invalid_input', `${label}: v stave '${effective}' ${holdsToken ? 'musí mať práve jeden token (TP alebo státie)' : 'nesmie držať token'}`);
+    }
+    if ((effective === 'holding' || effective === 'to_holding') && stall === null) throw new TruckError('invalid_input', `${label}: v stave '${effective}' musí mať státie`);
+    if (truckStateTraits(mission, state).atTp !== (phase !== null) || (phase !== null && !isTpPhase(phase))) {
+      throw new TruckError('invalid_input', `${label}: fáza ${String(phase)} nezodpovedá stavu '${state}'`);
     }
     const pose = carrierPoseProblem(label, init);
     if (pose !== undefined) throw new TruckError('invalid_input', pose);
@@ -182,14 +256,86 @@ export class Truck extends Carrier {
     this.id = id;
     this.def = def;
     this.defId = def.id;
-    this.rampId = rampId;
-    this.dock = dock;
-    this.gateId = gateId;
-    this.waitingAreaId = waitingAreaId;
-    this.bay = bay;
+    this.blockId = blockId;
+    this.jobId = jobId;
+    this.unitId = unitId;
+    this.tpCellValue = tpCell;
+    this.holdingIdValue = holdingId;
+    this.stallValue = stall;
+    this.phase = phase;
+    this.gateInTick = gateInTick;
+    this.gateIdValue = gateId;
+    this.gateOutIdValue = gateOutId;
+    this.preGateIdValue = preGateId;
+    this.row = row;
     this.currentMission = mission;
     this.current = state;
     this.resumeState = resume;
+  }
+
+  /** Pripojí (`null` = odpojí) sledovač zmien polí, z ktorých je odvodený index obsadenia (`World.addTruck` / `removeTruck`). */
+  watchChanges(watcher: (() => void) | null): void {
+    this.watcher = watcher;
+  }
+
+  /** Rezervované TP (viď polia vyššie); zmena zneplatní index obsadenia. */
+  get tpCell(): number | null {
+    return this.tpCellValue;
+  }
+
+  set tpCell(value: number | null) {
+    this.tpCellValue = value;
+    this.watcher?.();
+  }
+
+  /** Odstavná plocha držaného státia; zmena zneplatní index obsadenia. */
+  get holdingId(): EntityId | null {
+    return this.holdingIdValue;
+  }
+
+  set holdingId(value: EntityId | null) {
+    this.holdingIdValue = value;
+    this.watcher?.();
+  }
+
+  /** Držané státie; zmena zneplatní index obsadenia. */
+  get stall(): number | null {
+    return this.stallValue;
+  }
+
+  set stall(value: number | null) {
+    this.stallValue = value;
+    this.watcher?.();
+  }
+
+  /** Vstupný pruh brány; zmena zneplatní index obsadenia. */
+  get gateId(): EntityId {
+    return this.gateIdValue;
+  }
+
+  set gateId(value: EntityId) {
+    this.gateIdValue = value;
+    this.watcher?.();
+  }
+
+  /** Výstupný pruh brány; zmena zneplatní index obsadenia. */
+  get gateOutId(): EntityId | null {
+    return this.gateOutIdValue;
+  }
+
+  set gateOutId(value: EntityId | null) {
+    this.gateOutIdValue = value;
+    this.watcher?.();
+  }
+
+  /** Predbránová plocha; zmena zneplatní index obsadenia. */
+  get preGateId(): EntityId | null {
+    return this.preGateIdValue;
+  }
+
+  set preGateId(value: EntityId | null) {
+    this.preGateIdValue = value;
+    this.watcher?.();
   }
 
   /** Misia kamióna (ADR-032); mení ju len `becomePickup` (dual transaction). */
@@ -198,14 +344,15 @@ export class Truck extends Carrier {
   }
 
   /**
-   * Dual transaction (ADR-032 bod 12): delivery kamión po vykládke zostane na docku a naloží import — misia sa zmení na
-   * `pickup` (volá krok 8 tesne pred `unloading → loading`). Iná misia alebo stav → `TruckError('invalid_transition')`.
+   * Dual transaction (ADR-032 bod 13, ADR-041 bod 6): delivery kamión po vyložení na TP nakladá import — misia sa zmení na `pickup` (jeden lístok, druhá zastávka). Iná misia alebo stav mimo TP
+   * → `TruckError('invalid_transition')`.
    */
   becomePickup(): void {
-    if (this.currentMission !== 'delivery' || this.current !== 'unloading') {
-      throw new TruckError('invalid_transition', `${this.label}: na pickup sa mení len delivery kamión vo vykládke (misia ${this.currentMission}, stav ${this.current})`);
+    if (this.currentMission !== 'delivery' || !truckStateTraits(this.currentMission, this.current).atTp) {
+      throw new TruckError('invalid_transition', `${this.label}: na pickup sa mení len delivery kamión na TP (misia ${this.currentMission}, stav ${this.current})`);
     }
     this.currentMission = 'pickup';
+    this.watcher?.();
   }
 
   /** Aktuálny stav FSM (mení ho len `transition`). */
@@ -218,12 +365,12 @@ export class Truck extends Carrier {
     return this.resumeState;
   }
 
-  /** Stav, ktorého väzby (bay, dock, náklad) platia: v `no_path` `resume`, inak `state`. */
+  /** Stav, ktorého väzby (token, náklad) platia: v `no_path` `resume`, inak `state`. */
   get effectiveState(): TruckState {
     return this.resumeState ?? this.current;
   }
 
-  /** Vlastnosti efektívneho stavu podľa misie (bay, dock, náklad, cieľ po návrate z `no_path`). */
+  /** Vlastnosti efektívneho stavu podľa misie (token, náklad, cieľ po návrate z `no_path`). */
   get bonds(): TruckStateTraits {
     return truckStateTraits(this.currentMission, this.effectiveState);
   }
@@ -244,13 +391,12 @@ export class Truck extends Carrier {
   }
 
   /**
-   * Prechod podľa `TRUCK_TRANSITIONS` a vlastností misie (`TRUCK_MISSION_GIVES_UP`: vzdať sa čakania smie len `collect`; `landsideSystem`); udalosť `TruckStateChanged` emituje volajúci
-   * (`changeTruckState`). Do `no_path` si kamión zapamätá doterajší jazdný stav (`resume`) a z `no_path` sa smie vrátiť
-   * len doň. Nepovolený prechod → `TruckError('invalid_transition')`, kamión sa nezmení.
+   * Prechod podľa `TRUCK_TRANSITIONS`; udalosť `TruckStateChanged` emituje volajúci (`changeTruckState`). Do `no_path` si kamión zapamätá doterajší jazdný stav (`resume`) a z `no_path` sa
+   * smie vrátiť len doň. Nepovolený prechod → `TruckError('invalid_transition')`, kamión sa nezmení.
    */
   transition(to: TruckState): void {
     const from = this.current;
-    const allowed = isTruckTransitionAllowed(from, to, this.currentMission) && (from !== 'no_path' || to === this.resumeState);
+    const allowed = isTruckTransitionAllowed(from, to) && (from !== 'no_path' || to === this.resumeState);
     if (!allowed) {
       const options = from === 'no_path' ? [String(this.resumeState)] : [...(TRUCK_TRANSITIONS.get(from) ?? [])];
       throw new TruckError('invalid_transition', `${this.label}: prechod ${from} → ${to} nie je povolený (povolené: ${options.join(', ') || '–'})`);
@@ -258,7 +404,8 @@ export class Truck extends Carrier {
     if (to === 'no_path') this.resumeState = isTruckTravelState(from) ? from : null;
     else if (from === 'no_path') this.resumeState = null;
     this.current = to;
-    // Mimo cesty (stojisko, dock, prechod bránou) kamión nedrží žiadne sloty; vo fronte brány a bez cesty ich drží ďalej (ADR-037).
+    this.watcher?.();
+    // Mimo cesty (predbránová a odstavná plocha, TP na hrane bloku, prechod bránou) kamión nedrží žiadne sloty; vo fronte brány, na TP v pruhu a bez cesty ich drží ďalej (ADR-037).
     if (!this.traits.holdsRoad) this.leaveRoad();
   }
 
@@ -272,11 +419,18 @@ export class Truck extends Carrier {
       x: this.x,
       y: this.y,
       heading: this.heading,
-      rampId: this.rampId,
-      dock: this.dock,
+      blockId: this.blockId,
+      jobId: this.jobId,
+      unitId: this.unitId,
+      tpCell: this.tpCell,
+      holdingId: this.holdingId,
+      stall: this.stall,
+      phase: this.phase,
+      gateInTick: this.gateInTick,
       gateId: this.gateId,
-      waitingAreaId: this.waitingAreaId,
-      bay: this.bay,
+      gateOutId: this.gateOutId,
+      preGateId: this.preGateId,
+      row: this.row,
       resume: this.resumeState,
       route: this.remainingRoute(),
       progress: this.progress,

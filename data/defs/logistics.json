@@ -8,6 +8,7 @@
   "yardMachineLoadWeight": 12,
   "rehandleSpareCells": 2,
   "apronUnloadReserveSlots": 1,
+  "dualCandidateLimit": 64,
   "hookJobLookahead": 8,
   "hookPairedLoadJobs": 1,
   "importDwellEstimateHours": 6,

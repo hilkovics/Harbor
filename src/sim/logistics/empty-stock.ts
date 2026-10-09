@@ -12,7 +12,7 @@
  *   bežným skladom, v rámci toho kontajner navrchu stohu (najmenej kontajnerov nad ním, ADR-039), potom najmenšie id (nezávisí od poradia indexu, takže ho obnova save nemení). Obe vedia obmedziť výber na sklady
  *   s cestou k cieľu (`targets`: kotvisko nakládky, rampa výdaja; `load-access.ts`, T6C-07b).
  */
-import { DEFAULT_CONTAINER_LABELS, EMPTY_WEIGHT_CLASS, teuOf, type CargoUnit, type CargoUnitLabels, type ContainerSize } from '../cargo/cargo-unit';
+import { DEFAULT_CONTAINER_LABELS, EMPTY_WEIGHT_CLASS, type CargoUnit, type CargoUnitLabels, type ContainerSize } from '../cargo/cargo-unit';
 import type { DefRegistry } from '../defs/def-registry';
 import type { CargoCategory } from '../defs/types';
 import { EMPTY_DEPOT_CATEGORY, EmptyDepot } from '../modules/empty-depot';
@@ -54,34 +54,6 @@ export function emptyLabels(lineId: string, sizeFt: ContainerSize = DEFAULT_CONT
   return { direction: 'empty', voyageId: null, lineId, destinationPort: null, weightClass: EMPTY_WEIGHT_CLASS, ...DEFAULT_CONTAINER_LABELS, sizeFt };
 }
 
-/**
- * Prázdne kontajnery (v TEU — 40′ zaberá 2 bunky depa), ktoré ešte nemajú rezervované miesto v depe, ale budú ho potrebovať — **rozbehnuté návraty**: jednotka v kamióne
- * misie `delivery` (prešla bránou alebo čaká) a jednotka na docku rampy bez jobu a bez poverenia kamiónom `collect` (čaká na job prijatia).
- * Jednotka s jobom (`in_vehicle`, `at_ramp` s jobom) už drží rezerváciu, takže je v `freeCount` depa. Prechod trucks a ramp — volá sa len pri
- * rozhodovaní o návrate (zriedka), nie v každom ticku.
- */
-function emptiesAwaitingDepot(world: World): number {
-  let count = 0;
-  for (const truck of world.trucks.values()) {
-    if (truck.mission !== 'delivery') continue;
-    const aboard = world.cargo.countAt('in_truck', truck.id);
-    for (let i = 0; i < aboard; i++) {
-      const unitId = world.cargo.unitAtIndex('in_truck', truck.id, i);
-      const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
-      if (unit?.direction === 'empty') count += teuOf(unit);
-    }
-  }
-  for (const ramp of world.landsideModules.ramps) {
-    const docked = world.cargo.countAt('at_ramp', ramp.id);
-    for (let i = 0; i < docked; i++) {
-      const unitId = world.cargo.unitAtIndex('at_ramp', ramp.id, i);
-      const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
-      if (unit !== undefined && unit.direction === 'empty' && world.jobOfUnit(unit.id) === undefined && world.emptyFlow.errandOfUnit(unit.id) === undefined) count += teuOf(unit);
-    }
-  }
-  return count;
-}
-
 /** Časť sveta, ktorú čítajú dotazy na depá (`World` ju spĺňa). */
 interface DepotEnv extends ModuleAccessEnv {
   readonly modules: ReadonlyMap<EntityId, Module>;
@@ -100,12 +72,12 @@ export function depotFreeSlots(env: DepotEnv, source: Module, category: CargoCat
 }
 
 /**
- * Koľko ďalších návratov prázdneho z vnútrozemia (kamión na rampu `source`) depo kategórie `category` prijme (viď hlavička): Σ voľné miesta
- * dosiahnuteľných dep − rozbehnuté návraty (`emptiesAwaitingDepot`), nie pod 0; vo svete bez depa `Infinity` (platí fallback do dvora).
+ * Koľko ďalších návratov prázdneho z vnútrozemia (kamión s lístkom z brány `source`) depo kategórie `category` prijme (viď hlavička): Σ voľné miesta dosiahnuteľných dep (kamión s návratom drží rezerváciu
+ * slotu od vzniku, takže je už vo `freeCount`); vo svete bez depa `Infinity` (platí fallback do dvora).
  */
 export function emptyReturnRoom(world: World, source: Module, category: CargoCategory): number {
   const free = depotFreeSlots(world, source, category);
-  return free === undefined ? Infinity : Math.max(0, free - emptiesAwaitingDepot(world));
+  return free === undefined ? Infinity : Math.max(0, free);
 }
 
 /** Rozhodnutie o výbere: depo (0) pred bežným skladom (1). */

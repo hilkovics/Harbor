@@ -15,7 +15,7 @@
  *  - XP pri dokončení = `xpReward` (včas) alebo `round(xpReward × lateXpFactor)` (po SLA).
  *
  * `Run5` je náprotivok `Recorder4`: po **každom** ticku `assertCargoConservation(world)` (CLAUDE.md, pravidlo 2),
- * voliteľne nezávislý audit ledgera a jobov z F4, a k tomu invarianty peňazí (hotovosť = štart + Σ `MoneyChanged`,
+ * a k tomu invarianty peňazí (hotovosť = štart + Σ `MoneyChanged`,
  * každá zmena má záznam v ledgeri) a kontraktov (FSM podľa tabuľky, počítadlá jednotiek, veľkosť poolu, XP, tier).
  */
 import shipsJson from '@data/defs/ships.json';
@@ -25,15 +25,14 @@ import { DefRegistry, craneParams, storageParams } from '@sim/defs';
 import type { LedgerCategory } from '@sim/economy';
 import type { SimEvent } from '@sim/events';
 import { World } from '@sim/world';
-import { LEGACY_CAPACITY_MODULES, MAP, RAW_DEFS } from '../world/world-fixtures';
-import { auditJobsF4, auditLedgerF4 } from './f4';
+import { LEGACY_CAPACITY_MODULES, MAP, PORT_MAP, RAW_DEFS } from '../world/world-fixtures';
 import { f4Scenario, type F4Options } from './f4-layout';
 import { cranesOf, type TimedEvent } from './harbor';
 import { assertCargoConservation } from './invariants';
 import { runScenario, type Scenario, type ScenarioEntry } from './scenario';
 import { storageModulesOf } from './f3';
 
-export { MAP, RAW_DEFS };
+export { MAP, PORT_MAP, RAW_DEFS };
 
 /**
  * Economy bez booking ponúk (`bookingOffersPerDay: 0`, F6a): testy fázy 5 overujú správanie importu (pool, ponuky,
@@ -435,7 +434,7 @@ export const SLICE_TICKS = 60_000;
  */
 export const SLICE_CONTRACT_ID = 1;
 
-/** Rozloženie prístavu F4 (cesty, dvory, depo, brána, stojisko, rampa) bez lode; `units` sa nikdy nepoužije. */
+/** Rozloženie prístavu (cesty, dvory, depo, brány) bez lode; `units` sa nikdy nepoužije. */
 export function portScenario(id: string, seed: number, options: Omit<F4Options, 'units'> = {}): Scenario {
   return f4Scenario(id, seed, { vehicles: SLICE_VEHICLES, ...options });
 }
@@ -448,7 +447,7 @@ export function verticalSliceScenario(contractId: number, acceptTick: number = S
 
 /** Nový svet po prvom ticku — pool ponúk existuje najneskôr po ňom (plní sa pri štarte hry). */
 export function worldWithPool(defs: DefRegistry = DEFS, seed: number = SLICE_SEED): World {
-  const world = World.create(defs, MAP, seed);
+  const world = World.create(defs, PORT_MAP, seed);
   world.tick();
   return world;
 }
@@ -475,7 +474,7 @@ export interface Violation5 {
 }
 
 export interface Run5Options {
-  /** Nezávislý audit ledgera nákladu a jobov z F4 po každom ticku (drahší; pre dlhé behy vypnúť). */
+  /** Ponechané kvôli volajúcim: nezávislý audit F4 zanikol (R4), invarianty ledgera a jobov kontroluje svet krokom 12 (`checkInvariants`). */
   readonly fullAudit?: boolean;
   /** Krížová kontrola počítadiel kontraktov proti `CargoMoved` (nemá zmysel pre svet obnovený zo savu). */
   readonly checkCounters?: boolean;
@@ -612,10 +611,6 @@ export class Run5 {
 
   private observe(world: World, tickEvents: readonly SimEvent[]): void {
     assertCargoConservation(world);
-    if (this.options.fullAudit === true) {
-      auditLedgerF4(world);
-      auditJobsF4(world);
-    }
     const tick = world.clock.tick;
     // `TickAdvanced` sa nezaznamenáva (jedna udalosť na tick, nenesie informáciu navyše a nafukuje dlhé behy).
     for (const event of tickEvents) if (event.type !== 'TickAdvanced') this.events.push({ tick, hour: world.clock.gameHour, event });
@@ -800,7 +795,7 @@ export interface StartedContract {
  */
 export function startContract(options: StartContractOptions): StartedContract {
   const { id, seed, defs = DEFS, fullAudit = false } = options;
-  const world = World.create(defs, MAP, seed);
+  const world = World.create(defs, PORT_MAP, seed);
   const run = new Run5(world, options.scenario ?? portScenario(id, seed), { fullAudit });
   run.runTo(1);
   const contractId = run.acceptLowestOffer();

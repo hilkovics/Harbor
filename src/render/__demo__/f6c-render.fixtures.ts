@@ -8,7 +8,7 @@
  *  - `depot`: depo prázdnych (sivé kontajnery na svetlej ploche) s odznakmi poškodených a opráv a dvor kontajnerov (oranžové) pre
  *    porovnanie; po ceste jazdí empty handler (s prázdnym kontajnerom aj bez), straddle carrier s prázdnym a s plným kontajnerom
  *    a kamión s prázdnym kontajnerom;
- *  - `ramp`: rampa s pripravenými jednotkami (plné aj prázdne kontajnery na dokoch) a kamióny s prázdnym a s plným kontajnerom.
+ *  - `gate`: vstupný pruh brány pri ceste a kamióny s prázdnym a s plným kontajnerom (stav nákladu na návese).
  *
  * `tests/render/f6c-render-fixtures.test.ts` stráži, že scény sú konzistentné (moduly sa neprekrývajú, cesty nevedú cez moduly,
  * lode ležia na vode, VM polia sedia na manifest).
@@ -17,7 +17,7 @@ import { rotateFootprint, type CellCoord } from '@sim/grid';
 import { moduleSprite } from '../entity-assets';
 import type { CraneVM, EntitiesVM, ModuleVM, ShipVM, TruckVM, VehicleVM, ViewRotation } from '../view-models';
 import { berthVM, craneVM, shipVM } from './f2-render.fixtures';
-import { rampVM, truckAt } from './f4-render.fixtures';
+import { gateLaneVM, truckAt } from './f4-render.fixtures';
 import type { T5b03Scene } from './t5b03-render.fixtures';
 
 /** Scéna dema: rovnaký tvar ako scény T5B-03 (cesty, VM, kamera), takže ju zdieľa `createT5b03Grid`. */
@@ -26,7 +26,7 @@ export type F6cScene = T5b03Scene;
 export const BERTH_ID = 1;
 export const CRANE_ID = 2;
 export const YARD_ID = 3;
-export const RAMP_ID = 4;
+export const GATE_ID = 4;
 export const DEPOT_ID = 5;
 
 /** Typ nákladu prázdneho kontajnera (prázdne sú vždy kontajnery TEU). */
@@ -164,26 +164,26 @@ export const DEPOT_SCENE: F6cScene = {
   view: { centerX: 46.5, centerY: 21.4, zoom: 1.25 },
 };
 
-// ---- scéna `ramp` --------------------------------------------------------------------------------------------------
+// ---- scéna `gate` -------------------------------------------------------------------------------------------------
 
-/** Cesta od rampy (51; 24): stĺpec (50; 17…26) a rad (50…53; 26) ako v scéne `scale` F5b. */
-export const RAMP_ROADS: readonly CellCoord[] = [...column(50, 17, 26), ...row(26, 50, 53)];
+/** Cesta popri pruhu brány (51; 22): stĺpec (50; 17…26) a rad (50…53; 26) ako v scéne `scale` F5b. */
+export const GATE_ROADS: readonly CellCoord[] = [...column(50, 17, 26), ...row(26, 50, 53)];
 
-/** Rampa s pripravenými jednotkami: dok 0 = 3 jednotky, z toho 1 prázdna; dok 1 = 2 prázdne. */
-export const RAMP: ModuleVM = { ...rampVM(RAMP_ID, 51, 24, 0, [3, 2], true), ramp: { docks: 2, staged: [3, 2], operational: true, stagedEmpty: [1, 2] } };
+/** Vstupný pruh brány so strechou, bez kroku (závora hore). */
+export const GATE: ModuleVM = gateLaneVM(GATE_ID, 'gate_in_lane', 51, 22, { kind: 'in', mode: 'normal', roofPart: 'single' });
 
-export const RAMP_TRUCKS: readonly TruckVM[] = [
-  truckInCell(71, 50, 19, 180, true, 'to_dock', true), // prichádza s návratom prázdneho kontajnera
+export const GATE_TRUCKS: readonly TruckVM[] = [
+  truckInCell(71, 50, 19, 180, true, 'to_gate', true), // prichádza s návratom prázdneho kontajnera
   truckInCell(72, 50, 22, 0, true, 'to_gate_out'), // odchádza s plným
 ];
 
-export const RAMP_SCENE: F6cScene = {
-  roads: RAMP_ROADS,
-  vm: { modules: [RAMP], cranes: [], ships: [], vehicles: [], trucks: RAMP_TRUCKS },
+export const GATE_SCENE: F6cScene = {
+  roads: GATE_ROADS,
+  vm: { modules: [GATE], cranes: [], ships: [], vehicles: [], trucks: GATE_TRUCKS },
   view: { centerX: 51.5, centerY: 23, zoom: 1.6 },
 };
 
-export const F6C_SCENES = Object.freeze({ ships: SHIPS_SCENE, depot: DEPOT_SCENE, ramp: RAMP_SCENE });
+export const F6C_SCENES = Object.freeze({ ships: SHIPS_SCENE, depot: DEPOT_SCENE, gate: GATE_SCENE });
 export type F6cSceneName = keyof typeof F6C_SCENES;
 
 /** VM scény s nahradenými kamiónmi / žeriavmi / loďami (pre test, ktorý scénu postupne mení). */

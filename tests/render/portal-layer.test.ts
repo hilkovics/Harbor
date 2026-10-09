@@ -30,10 +30,11 @@ describe('PortalLayer (Pixi scene graph bez renderera)', () => {
   const map = loadBundledMap();
   const { width, height } = map;
 
-  it('harbor_01: road_south_in (44,63) → juh 180°, rail_east (95,24) → východ 90°', () => {
+  it('harbor_01: road_south_in (44,63) → juh 180°, road_west_in (0,60) → západ 270°, rail_east (95,24) → východ 90°', () => {
     const layer = new PortalLayer(map, width, height, PALETTE, new StubTextures());
-    expect(layer.portalCount).toBe(3);
+    expect(layer.portalCount).toBe(5);
     expect(layer.portalOf('road_south_in')).toEqual({ kind: 'road', rotation: 180 });
+    expect(layer.portalOf('road_west_in')).toEqual({ kind: 'road', rotation: 270 });
     expect(layer.portalOf('rail_east')).toEqual({ kind: 'rail', rotation: 90 });
     expect(layer.portalOf('neexistuje')).toBeUndefined();
   });
@@ -66,7 +67,7 @@ describe('PortalLayer (Pixi scene graph bez renderera)', () => {
 
   it('bez textúr: Graphics fallback s rovnakou polohou a rotáciou', () => {
     const layer = new PortalLayer(map, width, height, PALETTE, null);
-    expect(layer.view.children).toHaveLength(3);
+    expect(layer.view.children).toHaveLength(5);
     expect(layer.view.children.every((child) => child instanceof Graphics)).toBe(true);
     const south = layer.view.children[0];
     expect(south.position.x).toBe((44 + 0.5) * PALETTE.cellPx);

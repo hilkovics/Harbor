@@ -4,7 +4,7 @@
   "description": "Logistické konštanty (ARCHITECTURE §4.6, §7.3, §7.4, §7.6; ADR-010, ADR-029): pobyt vozidla v module, opakovanie hľadania cesty, model kongescie a lodná navigácia. Konfiguračný def bez items[] (ADR-009); všetky trvania v tickoch.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "defaultInternalTicks", "repathIntervalTicks", "rehandleTicks", "rehandleGiveUpTicks", "buryReserveColumns", "yardMachineLoadWeight", "rehandleSpareCells", "apronUnloadReserveSlots", "hookJobLookahead", "hookPairedLoadJobs", "importDwellEstimateHours", "yardPlanner", "congestion", "traffic", "shipNavigation", "exportFlow", "emptyFlow"],
+  "required": ["schemaVersion", "defaultInternalTicks", "repathIntervalTicks", "rehandleTicks", "rehandleGiveUpTicks", "buryReserveColumns", "yardMachineLoadWeight", "rehandleSpareCells", "apronUnloadReserveSlots", "hookJobLookahead", "hookPairedLoadJobs", "dualCandidateLimit", "importDwellEstimateHours", "yardPlanner", "congestion", "traffic", "shipNavigation", "exportFlow", "emptyFlow"],
   "properties": {
     "schemaVersion": {
       "const": 1,
@@ -49,6 +49,11 @@
       "type": "integer",
       "minimum": 0,
       "description": "Sloty apronu, ktoré záložná nakládka cez apron nezaberie (ADR-040 dodatok TR3-02b): musí tam ostať miesto, kam žeriav odloží vykladanú jednotku; inak žeriav drží import, apron je plný exportov čakajúcich na žeriav a nič sa nepohne."
+    },
+    "dualCandidateLimit": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Najviac kandidátov na odvoz, ktoré dual transaction kamióna porovná (R4, ADR-041 bod 6): deterministický strop prechodu dopytov."
     },
     "hookJobLookahead": {
       "type": "integer",

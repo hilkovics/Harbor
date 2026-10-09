@@ -18,6 +18,7 @@ import { SellVehicleCommand } from './sell-vehicle';
 import { SetBlockPriorityCommand } from './set-block-priority';
 import { SetCraneGangCommand } from './set-crane-gang';
 import { SetGameSpeedCommand } from './set-game-speed';
+import { SetGateLaneModeCommand } from './set-gate-lane-mode';
 import { SpawnShipDebugCommand } from './spawn-ship-debug';
 
 /** Trieda príkazu, ktorú možno registrovať: typ v registri + factory zo serializovaného tvaru. */
@@ -43,6 +44,7 @@ export const BUILTIN_COMMANDS: readonly RegistrableCommand[] = Object.freeze([
   DeclineContractCommand,
   SetBlockPriorityCommand,
   SetCraneGangCommand,
+  SetGateLaneModeCommand,
 ]);
 
 /** Zaregistruje všetky vstavané príkazy do `registry` (už registrovaný typ → `CommandError`). */

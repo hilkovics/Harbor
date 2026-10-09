@@ -1,10 +1,9 @@
-// Cieľ doručenia jobu a zápis výdaja (T04-03, ADR-023): `Module.cargoDropTarget()` — sklad (slot, `in_storage`) a rampa
-// (dock, `at_ramp`) s rovnakým tokom rezervácia → assertCommittable → CargoLedger.move → commit, zrušenie `release`,
+// Cieľ doručenia jobu a zápis výdaja (T04-03, ADR-023): `Module.cargoDropTarget()` — sklad (slot, `in_storage`) s tokom rezervácia → assertCommittable → CargoLedger.move → commit, zrušenie `release`,
 // obnova `restoreReservation`; ostatné moduly cieľom nie sú. `Module.recordTaken` — sklad počíta `unitsOut`, apron nič.
 import { describe, expect, it } from 'vitest';
 import type { CargoLedger } from '@sim/cargo';
 import type { EntityId } from '@sim/core';
-import { LoadingRamp, ModuleError, StorageModule, moduleRegistry, type Module, type ModuleErrorCode } from '@sim/modules';
+import { ModuleError, StorageModule, moduleRegistry, type Module, type ModuleErrorCode } from '@sim/modules';
 import { DEFS } from '../world/world-fixtures';
 import { berthOn, emptyCargo, id, quayGrid } from './module-fixtures';
 
@@ -17,12 +16,6 @@ function create(defId: string, cargo: CargoLedger, moduleId: number): Module {
 function yardOf(cargo: CargoLedger = emptyCargo(DEFS)): StorageModule {
   const module = create('container_yard_small', cargo, 10);
   if (!(module instanceof StorageModule)) throw new Error('container_yard_small nie je StorageModule');
-  return module;
-}
-
-function rampOf(cargo: CargoLedger = emptyCargo(DEFS)): LoadingRamp {
-  const module = create('loading_ramp_container', cargo, 20);
-  if (!(module instanceof LoadingRamp)) throw new Error('loading_ramp_container nie je LoadingRamp');
   return module;
 }
 
@@ -89,42 +82,6 @@ describe('StorageModule.cargoDropTarget — slot skladu', () => {
     cargo.move(unit, { kind: 'in_vehicle', vehicleId: id(904) });
     asModule.recordTaken(unit);
     expect(yard.unitsOut).toBe(1);
-  });
-});
-
-describe('LoadingRamp.cargoDropTarget — staging dock rampy', () => {
-  it('druh at_ramp, kategória rampy, miest = docks; vždy ten istý zmrazený objekt', () => {
-    const ramp = rampOf();
-    const target = ramp.cargoDropTarget();
-    expect([target.kind, target.category, target.places]).toEqual(['at_ramp', 'container', 2]);
-    expect(ramp.cargoDropTarget()).toBe(target);
-    expect(Object.isFrozen(target)).toBe(true);
-  });
-
-  it('reserve(dock) → assertCommittable → move na dock → commit: rezervácia zanikne, staged + 1; reservationsAt = reservedAt, mimo rozsahu 0', () => {
-    const cargo = emptyCargo(DEFS);
-    const ramp = rampOf(cargo);
-    const target = ramp.cargoDropTarget();
-    ramp.reserve(1);
-    ramp.reserve(1);
-    expect([target.reservationsAt(0), target.reservationsAt(1), target.reservationsAt(2), target.reservationsAt(-1)]).toEqual([0, 2, 0, 0]);
-    const unit = unitInVehicle(cargo);
-    target.assertCommittable(1, unit);
-    cargo.move(unit, { kind: 'at_ramp', rampId: ramp.id, dock: 1 });
-    target.commit(1, unit);
-    expect([ramp.stagedAt(1), ramp.reservedAt(1), target.reservationsAt(1)]).toEqual([1, 1, 1]);
-    expect(errorCode(() => target.assertCommittable(0, unit))).toBe('slot_not_reserved');
-  });
-
-  it('restoreReservation = reserve(dock): nad stagingPerDock → no_free_slot, dock mimo rozsahu → invalid_slot; release', () => {
-    const ramp = rampOf();
-    const target = ramp.cargoDropTarget();
-    const per = ramp.stagingPerDock;
-    for (let i = 0; i < per; i++) target.restoreReservation(0);
-    expect(errorCode(() => target.restoreReservation(0))).toBe('no_free_slot');
-    expect(errorCode(() => target.restoreReservation(2))).toBe('invalid_slot');
-    target.release(0);
-    expect([ramp.reservedAt(0), ramp.freeAt(0)]).toEqual([per - 1, 1]);
   });
 });
 

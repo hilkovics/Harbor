@@ -1,11 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
-import type { TruckVM } from '../../src/render/view-models';
 import type { YardCraneDecor } from '../../src/render/yard-crane-decor';
 
 // T5B-03 render demo (`src/render/__demo__/t5b03-render.html`): pevné view-modely bez simu a riadené hodiny animácií, takže
 // screenshoty sú deterministické. Scény: `scale` (audit mierky, napojenie ciest na konektory), `lanes` (protismerné vozidlá na
-// dvojpruhovej ceste), `connect` (brána, stojisko
-// a rampy prepojené cestami), `yard` (portálový žeriav dvora), `dock` (kamión cúva do docku).
+// dvojpruhovej ceste), `connect` (pruhy brány a odstavná plocha prepojené cestami), `yard` (portálový žeriav dvora).
 
 const DEMO_URL = '/src/render/__demo__/t5b03-render.html';
 
@@ -67,12 +65,12 @@ test('lanes: protismerné vozidlá v pravých pruhoch dvojpruhovej cesty sa mí�
   expect(errors).toEqual([]);
 });
 
-test('connect: cesty napojené na bránu, stojisko a rampy', async ({ page }) => {
+test('connect: cesty napojené na pruhy brány a odstavnú plochu', async ({ page }) => {
   const errors = await openDemo(page, 'connect');
   await page.screenshot({ path: 'tests/e2e/__screenshots__/t5b03-roads-connected.png' });
   await page.evaluate(() => {
     const demo = window.__t5b03Demo!;
-    return demo.focus(demo.scene, 35, 26, 1.4);
+    return demo.focus(demo.scene, 38, 28, 1.4);
   });
   await page.screenshot({ path: 'tests/e2e/__screenshots__/t5b03-roads-connected-zoom.png' });
   expect(errors).toEqual([]);
@@ -156,140 +154,4 @@ test('yard: s prefers-reduced-motion žeriav nad slot preskočí bez animácie',
   expect(result.busy).toBe(false);
   expect(result.y).toBeGreaterThan(-1.4875); // už nie v domovskej polohe
   expect(errors).toEqual([]);
-});
-
-test.describe('dock: kamión cúva do docku a odchádza predkom', () => {
-  /** Dok 0 (príjazd popri rampe z východu) a dok 1 (príjazd zo juhu priamo na modul) rampy A (30; 23): stredy docku z manifestu. */
-  const DOCK_Y = 24 + (60 + 62 / 2) / 64 - 1;
-  const loading = (id: number, x: number, arrival: 0 | 270): TruckVM => ({
-    id,
-    defId: 'truck_container',
-    x,
-    y: DOCK_Y,
-    prevX: x,
-    prevY: DOCK_Y,
-    heading: 180,
-    loaded: false,
-    state: 'loading',
-    prevState: 'to_dock',
-    approach: { x, y: 25.5, heading: arrival },
-  });
-
-  interface Sample {
-    t: number;
-    trucks: { x: number; y: number; angle: number; phase: string }[];
-  }
-
-  /** Kroky animácie v jednom behu stránky: pre každý čas nastaví hodiny, zobrazí kamióny a zaznamená ich pózy. */
-  async function run(page: Page, frames: { t: number; trucks: TruckVM[] }[], shots: Record<number, string> = {}): Promise<Sample[]> {
-    const samples: Sample[] = [];
-    for (const frame of frames) {
-      samples.push(
-        await page.evaluate(async ({ frame }) => {
-          const demo = window.__t5b03Demo!;
-          demo.clock.set(frame.t);
-          if (frame.shot) await demo.show({ ...demo.scene, trucks: frame.trucks });
-          else demo.sync({ ...demo.scene, trucks: frame.trucks });
-          const cellPx = demo.renderer.palette.cellPx;
-          return {
-            t: frame.t,
-            trucks: frame.trucks.map((truck) => {
-              const view = demo.renderer.entities.truckView(truck.id)!;
-              return { x: view.view.x / cellPx, y: view.view.y / cellPx, angle: ((view.view.angle % 360) + 360) % 360, phase: view.dockPhase };
-            }),
-          };
-        }, { frame: { ...frame, shot: shots[frame.t] !== undefined } }),
-      );
-      const shot = shots[frame.t];
-      if (shot !== undefined) await page.screenshot({ path: `tests/e2e/__screenshots__/${shot}.png` });
-    }
-    return samples;
-  }
-
-  /** Najväčší krok polohy (bunky) a otočenia (°) medzi susednými vzorkami; otočenie bez posunu sa hlási zvlášť. */
-  function smoothness(samples: Sample[], truck: number): { step: number; turn: number; spin: number } {
-    let step = 0;
-    let turn = 0;
-    let spin = 0;
-    for (let i = 1; i < samples.length; i++) {
-      const a = samples[i - 1].trucks[truck];
-      const b = samples[i].trucks[truck];
-      const moved = Math.hypot(b.x - a.x, b.y - a.y);
-      let rotated = Math.abs(b.angle - a.angle);
-      if (rotated > 180) rotated = 360 - rotated;
-      step = Math.max(step, moved);
-      turn = Math.max(turn, rotated);
-      if (moved < 0.002 && rotated > 3) spin = Math.max(spin, rotated); // otáča sa na mieste
-    }
-    return { step, turn, spin };
-  }
-
-  test('bočný príjazd (dok 0) a príjazd priamo na modul (dok 1): zastavenie, cúvanie po krivke bez skoku, nakládka, výjazd', async ({ page }) => {
-    test.setTimeout(120_000);
-    const errors = await openDemo(page, 'dock');
-    const side = loading(201, 31.5, 270);
-    const straight = loading(202, 32.5, 0);
-    const arrived = [
-      { ...side, state: 'to_dock', x: 31.5, y: 25.5, prevX: 31.5, prevY: 25.5, heading: 270 as const, approach: undefined },
-      { ...straight, state: 'to_dock', x: 32.5, y: 25.5, prevX: 32.5, prevY: 25.5, heading: 0 as const, approach: undefined },
-    ];
-
-    // 1) príjazd: kamióny stoja na vonkajších bunkách konektorov (to_dock), potom sa v čase 1000 začne nakládka
-    const times = [1000, 1150, 1300, 1500, 1800, 2100, 2400, 2700, 3000];
-    const entering = await run(
-      page,
-      [{ t: 500, trucks: arrived }, ...times.map((t) => ({ t, trucks: [side, straight] }))],
-      { 500: 't5b03-dock-1-arrived', 1150: 't5b03-dock-2-stopped', 1800: 't5b03-dock-3-reversing', 2400: 't5b03-dock-4-reversing-late', 3000: 't5b03-dock-5-docked' },
-    );
-    const at = (t: number): Sample => entering.find((sample) => sample.t === t)!;
-    // zastavenie: prvých 300 ms sa kamióny nehýbu, potom cúvajú; v doku kabína von z rampy (juh 180°) v strede docku
-    expect(at(1000).trucks.map((truck) => truck.phase)).toEqual(['entering', 'entering']);
-    for (const truck of [0, 1]) {
-      expect(at(1150).trucks[truck].y).toBeCloseTo(at(1000).trucks[truck].y, 6);
-      expect(Math.hypot(at(1800).trucks[truck].x - at(1000).trucks[truck].x, at(1800).trucks[truck].y - at(1000).trucks[truck].y)).toBeGreaterThan(0.1);
-      expect(at(3000).trucks[truck].phase).toBe('docked');
-      expect(at(3000).trucks[truck].angle).toBeCloseTo(180, 6);
-    }
-    expect(at(3000).trucks[0].x).toBeCloseTo(31.5, 6);
-    expect(at(3000).trucks[1].x).toBeCloseTo(32.5, 6);
-    expect(at(3000).trucks[0].y).toBeCloseTo(DOCK_Y, 6);
-    // kurz sa mení plynule spolu s pohybom: prvý kamión stojí v zákrute (45° medzi západom a severom = 315°) a cúva na 180°
-    expect(at(1000).trucks[0].angle).toBeCloseTo(315, 6);
-    expect(at(1800).trucks[0].angle).toBeLessThan(315);
-    expect(at(1800).trucks[0].angle).toBeGreaterThan(180);
-
-    // 2) cúvanie je spojité: hustejší záznam bez skoku a bez otáčania na mieste
-    const dense = await run(page, Array.from({ length: 27 }, (_, i) => ({ t: 1000 + i * 75, trucks: [side, straight] })));
-    for (const truck of [0, 1]) {
-      const { step, turn, spin } = smoothness(dense, truck);
-      expect(step, `kamión ${String(truck)}: skok`).toBeLessThan(0.3);
-      expect(turn, `kamión ${String(truck)}: uhol za 75 ms`).toBeLessThan(40);
-      expect(spin, `kamión ${String(truck)}: otáčanie na mieste`).toBe(0);
-    }
-
-    // 3) výjazd predkom: po nakládke (to_gate_out) sa sim kamióny rozbehnú po ceste, zobrazená póza ich plynule dobieha
-    const leavingFrames = Array.from({ length: 17 }, (_, i) => {
-      const t = 4000 + i * 75;
-      const travelled = (i * 75) / 1000 * 0.5;
-      return {
-        t,
-        trucks: [
-          { ...side, state: 'to_gate_out', prevState: 'loading', approach: undefined, loaded: true, x: 31.5 + travelled, y: 25.5, prevX: 31.5 + travelled, prevY: 25.5, heading: 90 as const },
-          { ...straight, state: 'to_gate_out', prevState: 'loading', approach: undefined, loaded: true, x: 32.5, y: 25.5 + travelled, prevX: 32.5, prevY: 25.5 + travelled, heading: 180 as const },
-        ],
-      };
-    });
-    const leaving = await run(page, [{ t: 3500, trucks: [side, straight] }, ...leavingFrames], { 4300: 't5b03-dock-6-leaving' });
-    expect(leaving[1].trucks[0].phase).toBe('leaving');
-    expect(leaving[leaving.length - 1].trucks[0].phase).toBe('free');
-    expect(leaving[leaving.length - 1].trucks[1].phase).toBe('free');
-    for (const truck of [0, 1]) {
-      const { step, turn } = smoothness(leaving.slice(1), truck);
-      expect(step, `kamión ${String(truck)}: skok pri výjazde`).toBeLessThan(0.4);
-      expect(turn, `kamión ${String(truck)}: uhol pri výjazde`).toBeLessThan(40);
-    }
-    // výjazd začína v doku (nie na vonkajšej bunke), končí na pohyblivej póze zo simu
-    expect(leaving[1].trucks[0].y).toBeCloseTo(DOCK_Y, 1);
-    expect(errors).toEqual([]);
-  });
 });

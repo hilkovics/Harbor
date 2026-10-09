@@ -1,4 +1,4 @@
-// F6c (T6C-04): prázdne kontajnery na aprone, na doku rampy, pod žeriavom berthu a na žeriave dvora — kreslia sa farbou `--cargo-empty`
+// F6c (T6C-04): prázdne kontajnery na aprone, pod žeriavom berthu a na žeriave dvora — kreslia sa farbou `--cargo-empty`
 // (procedurálne z tokenov), pásik farby linky z `--line-*`; plné kontajnery ostávajú sprite `cargo.container_teu` (oranžový).
 import { Graphics, Sprite } from 'pixi.js';
 import { describe, expect, it } from 'vitest';
@@ -6,7 +6,6 @@ import { CargoSprite, LINE_BAND_SHARE, cargoSizePx } from '@render/cargo-sprite'
 import { CraneView } from '@render/crane-view';
 import { cargoSpriteEntry, moduleSprite } from '@render/entity-assets';
 import { ModuleView, unitLook } from '@render/module-view';
-import { RampDecor } from '@render/ramp-decor';
 import { lineColorOf } from '@render/tokens';
 import type { CraneVM, ModuleVM } from '@render/view-models';
 import { YardCraneDecor } from '@render/yard-crane-decor';
@@ -22,21 +21,6 @@ type Unit = NonNullable<ModuleVM['apron']>['units'][number];
 
 function berth(units: Unit[]): ModuleVM {
   return { id: 1, defId: 'berth_standard', kind: 'berth', x: 40, y: 14, rotation: 0, w: 8, h: 3, apron: { capacity: 8, units } };
-}
-
-function ramp(staged: readonly number[], stagedEmpty?: readonly number[]): ModuleVM {
-  return {
-    id: 9,
-    defId: 'loading_ramp_container',
-    kind: 'ramp',
-    x: 30,
-    y: 23,
-    rotation: 0,
-    w: 4,
-    h: 2,
-    connected: true,
-    ramp: { docks: 2, staged, operational: true, ...(stagedEmpty === undefined ? {} : { stagedEmpty }) },
-  };
 }
 
 function yard(over: Partial<ModuleVM> = {}): ModuleVM {
@@ -114,44 +98,6 @@ describe('ModuleView: prázdne kontajnery na aprone', () => {
     view.update(berth([{ slot: 1, unitId: 3, typeId: 'container_teu' }])); // iná (plná) jednotka na slote
     expect(view.cargoAt(1)?.children[0]).toBeInstanceOf(Sprite);
     expect(view.cargoAt(1)?.look).toEqual({});
-  });
-});
-
-describe('RampDecor: prázdne kontajnery pripravené na doku', () => {
-  function decor(view: ModuleView): RampDecor {
-    const found = view.decor<RampDecor>('ramp');
-    if (found === undefined) throw new Error('rampa nemá ozdobu');
-    return found;
-  }
-
-  it('prázdne sú za plnými a sivé, počet kusov sa nemení; bez `stagedEmpty` sú všetky plné', () => {
-    const view = new ModuleView(ramp([3, 2], [1, 2]), deps(new StubTextures()));
-    const ramps = decor(view);
-    expect([ramps.stagedDrawn(0), ramps.stagedDrawn(1)]).toEqual([3, 2]);
-    expect([ramps.emptyDrawn(0), ramps.emptyDrawn(1)]).toEqual([1, 2]);
-    expect([0, 1, 2].map((slot) => ramps.stagedSprite(0, slot)?.look.empty === true)).toEqual([false, false, true]);
-    expect([0, 1].map((slot) => ramps.stagedSprite(1, slot)?.look.empty === true)).toEqual([true, true]);
-    const plain = new ModuleView(ramp([3, 2]), deps(new StubTextures()));
-    expect([decor(plain).emptyDrawn(0), decor(plain).emptyDrawn(1)]).toEqual([0, 0]);
-    expect(decor(plain).stagedSprite(1, 0)?.look.empty).toBeUndefined();
-  });
-
-  it('zmena počtu prázdnych pri nezmenenom počte jednotiek prekreslí dok', () => {
-    const view = new ModuleView(ramp([2, 0], [0, 0]), deps(new StubTextures()));
-    const first = decor(view).stagedSprite(0, 1);
-    view.update(ramp([2, 0], [0, 0])); // nezmenené: nič sa neprekreslí
-    expect(decor(view).stagedSprite(0, 1)).toBe(first);
-    view.update(ramp([2, 0], [1, 0]));
-    expect(decor(view).emptyDrawn(0)).toBe(1);
-    expect(decor(view).stagedSprite(0, 1)).not.toBe(first);
-    expect(decor(view).stagedSprite(0, 1)?.look.empty).toBe(true);
-    expect(decor(view).stagedSprite(0, 0)?.look.empty).toBeUndefined();
-  });
-
-  it('počet prázdnych sa orezá na počet pripravených jednotiek', () => {
-    const view = new ModuleView(ramp([1, 0], [5, 3]), deps(new StubTextures()));
-    expect(decor(view).emptyDrawn(0)).toBe(1);
-    expect(decor(view).emptyDrawn(1)).toBe(0);
   });
 });
 

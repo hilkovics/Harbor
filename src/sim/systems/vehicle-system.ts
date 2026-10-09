@@ -161,7 +161,8 @@ function loadUnit(vehicle: Vehicle, world: World): void {
   // Blok so stohmi: kontajnery nad cieľom sa najprv preložia (`rehandling`, ADR-039 bod 6); bez cieľa presunu sa job zruší a vozidlo uvoľní (TR2-06b).
   if (startYardTake(world, vehicle, job, unitId) !== 'ready') return;
   world.cargo.move(unitId, { kind: 'in_vehicle', vehicleId: vehicle.id });
-  source.recordTaken(unitId);
+  // Výdaj skladu (`unitsOut`) sa zapisuje len pri zdvihu zo stohu; zdvih z kamióna (vyloženie na TP, ADR-041) sklad nevydáva.
+  if (job.from.kind === 'in_storage') source.recordTaken(unitId);
   completeLoad(world, vehicle, job, vehicle.def.loadTicks);
 }
 
@@ -186,6 +187,13 @@ function unloadUnit(vehicle: Vehicle, world: World): void {
   const job = jobOfVehicle(world, vehicle);
   const inVehicle: CargoLocation = { kind: 'in_vehicle', vehicleId: vehicle.id };
   const unitId = firstUnitAt(world, job, inVehicle);
+  // Odovzdanie na kamión na TP (ADR-041 bod 4): jednotka z vozidla do `in_truck`, bez rezervácie miesta (kamión drží job, nie slot).
+  if (job.to.kind === 'in_truck') {
+    if (unitId === undefined) throw new VehicleError('inconsistent', `${vehicle.label}: ${job.label} nemá jednotku vo vozidle`);
+    world.cargo.move(unitId, job.to);
+    completeDrop(world, vehicle, job, vehicle.def.unloadTicks);
+    return;
+  }
   const target = jobModule(world, job, 'target').cargoDropTarget();
   // Blok so stohmi: rezervácia sa usadí na skutočnú vrstvu stohu (vozidlá prichádzajú v inom poradí než rezervácie).
   settleYardDrop(world, job);

@@ -4,7 +4,7 @@
  *  (a) žeriav zdvíha kontajner z lode (`grabbing`, rezervovaný slot) alebo ho spúšťa na apron (`placing`, jednotka
  *      `in_crane`) alebo stojí zablokovaný plným apronom (`blocked`) — v kóde sú fázy cyklu `grabbing → swinging →
  *      placing`; `swinging` je okamžitý prechod a neukladá sa, preto „lifting/lowering“ z karty = `grabbing`/`placing`,
- *  (b) kamión ide k docku rampy (`to_dock`, uprostred úseku) alebo nakladá (`loading`),
+ *  (b) kamión ide k TP bloku (`to_tp`, uprostred úseku) alebo sa obsluhuje na TP (`at_edge_tp`, fáza `handling`),
  *  (c) kontrakt je `unloading` (uprostred vykládky) a (d) `exporting` (prvý tick aj uprostred exportu),
  *  (e) jedna loď je v `arriving` a iná čaká na anchorage (aj loď plávajúca na anchorage, loď vplávajúca pri odchode
  *      predchádzajúcej a odchod s frontou na anchorage) — scenár `multi_ship_queue` (jedno kotvisko, päť lodí),
@@ -29,7 +29,7 @@ import { World, fnv1a32Hex, stateHash, type WorldState } from '@sim/world';
 import { cranesOf } from '../helpers/harbor';
 import { assertCargoConservation } from '../helpers/invariants';
 import { loadScenarioFile, runScenario, type RunHooks, type Scenario } from '../helpers/scenario';
-import { DEFS, MAP } from './world-fixtures';
+import { DEFS, PORT_MAP } from './world-fixtures';
 
 /** Počet tickov po roundtripe, po ktorých sa porovnáva hash (zadanie T06-02). */
 const AFTER_TICKS = 5_000;
@@ -112,18 +112,18 @@ const CRANE_LOWERING: Situation = {
   tamper: tamperCranePhase('placing'),
 };
 
-const TRUCK_TO_DOCK: Situation = {
-  id: 'truck_to_dock',
-  title: 'kamión cúva k docku rampy (to_dock, uprostred úseku trasy)',
-  match: (world) => [...world.trucks.values()].some((truck) => truck.state === 'to_dock' && truck.progress > 0),
-  inSave: (state) => state.trucks.some((truck) => truck.state === 'to_dock' && truck.progress > 0 && truck.route.length >= 2),
+const TRUCK_TO_TP: Situation = {
+  id: 'truck_to_tp',
+  title: 'kamión ide k TP bloku (to_tp, uprostred úseku trasy, token TP rezervovaný)',
+  match: (world) => [...world.trucks.values()].some((truck) => truck.state === 'to_tp' && truck.progress > 0),
+  inSave: (state) => state.trucks.some((truck) => truck.state === 'to_tp' && truck.progress > 0 && truck.route.length >= 2 && truck.tpCell !== null),
 };
 
-const TRUCK_LOADING: Situation = {
-  id: 'truck_loading',
-  title: 'kamión nakladá na docku rampy (loading, odpočet pobytu beží)',
-  match: (world) => [...world.trucks.values()].some((truck) => truck.state === 'loading'),
-  inSave: (state) => state.trucks.some((truck) => truck.state === 'loading' && truck.waitTicks >= 0),
+const TRUCK_AT_TP: Situation = {
+  id: 'truck_at_tp',
+  title: 'kamión sa obsluhuje na TP na hrane bloku (at_edge_tp, fáza beží, job in_storage ↔ in_truck)',
+  match: (world) => [...world.trucks.values()].some((truck) => truck.state === 'at_edge_tp' && truck.phase === 'handling'),
+  inSave: (state) => state.trucks.some((truck) => truck.state === 'at_edge_tp' && truck.phase === 'handling' && truck.jobId !== null),
 };
 
 const CRANE_BLOCKED: Situation = {
@@ -246,7 +246,7 @@ interface Baseline {
  * hash. Hľadá najviac do ticku `searchLimit`; nenájdená situácia chýba v `captures` (test ju ohlási).
  */
 function recordBaseline(scenario: Scenario, situations: readonly Situation[], searchLimit: number): Baseline {
-  const world = World.create(DEFS, MAP, scenario.seed);
+  const world = World.create(DEFS, PORT_MAP, scenario.seed);
   const captures = new Map<string, Capture>();
   const hashAfter = new Map<string, string>();
   const dueHashes = new Map<number, string[]>();
@@ -291,7 +291,7 @@ interface Resumed {
 
 /** Obnoví svet zo savu situácie a dobehne `AFTER_TICKS` ticky so scenárom. */
 function resume(scenario: Scenario, baseline: Baseline, capture: Capture): Resumed {
-  const world = World.deserialize(DEFS, MAP, JSON.parse(capture.saveText) as WorldState);
+  const world = World.deserialize(DEFS, PORT_MAP, JSON.parse(capture.saveText) as WorldState);
   const loadedHash = stateHash(world);
   const tickAfterLoad = world.clock.tick;
   world.assertInvariants();
@@ -308,10 +308,10 @@ function resume(scenario: Scenario, baseline: Baseline, capture: Capture): Resum
 /** Reťazený roundtrip: svet sa nahradí obnoveným v každom zachytenom ticku (v poradí ticku) a dobehne do konca. */
 function resumeChained(scenario: Scenario, captures: readonly Capture[]): { readonly finalTick: number; readonly finalHash: string } {
   const ordered = [...captures].sort((a, b) => a.tick - b.tick);
-  let world = World.create(DEFS, MAP, scenario.seed);
+  let world = World.create(DEFS, PORT_MAP, scenario.seed);
   for (const capture of ordered) {
     runScenario(world, scenario, capture.tick, { afterTick: assertCargoConservation });
-    world = World.deserialize(DEFS, MAP, JSON.parse(JSON.stringify(world.serialize())) as WorldState);
+    world = World.deserialize(DEFS, PORT_MAP, JSON.parse(JSON.stringify(world.serialize())) as WorldState);
   }
   const finalTick = (ordered.at(-1)?.tick ?? 0) + AFTER_TICKS;
   runScenario(world, scenario, finalTick, { afterTick: assertCargoConservation });
@@ -320,7 +320,7 @@ function resumeChained(scenario: Scenario, captures: readonly Capture[]): { read
 
 /** Dobehne `AFTER_TICKS` ticky zo savu situácie upraveného `tamper` a vráti hash na konci. */
 function resumeTampered(scenario: Scenario, capture: Capture, tamper: (state: WorldState) => WorldState): string {
-  const world = World.deserialize(DEFS, MAP, tamper(JSON.parse(capture.saveText) as WorldState));
+  const world = World.deserialize(DEFS, PORT_MAP, tamper(JSON.parse(capture.saveText) as WorldState));
   runScenario(world, scenario, capture.tick + AFTER_TICKS, { afterTick: assertCargoConservation });
   return stateHash(world);
 }
@@ -409,8 +409,8 @@ describeRoundtrips(
     CONTRACT_UNLOADING,
     VEHICLE_LOADED_ON_ROAD,
     CONTRACT_EXPORTING_FIRST,
-    TRUCK_TO_DOCK,
-    TRUCK_LOADING,
+    TRUCK_TO_TP,
+    TRUCK_AT_TP,
     CONTRACT_EXPORTING_MID,
   ],
   14_000,

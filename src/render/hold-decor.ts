@@ -2,18 +2,14 @@
  * Ozdoba „jednotky vo VGM hold“ (`ModuleVM.held`, F6a, ADR-032 bod 7): exportná jednotka bez VGM sa pri bráne zdrží a nesmie sa
  * naložiť na loď. Sklad kreslí zrnitosť len ako fill stav (jednotky na slotoch sa nekreslia), preto je odznak `overlay.warning_badge`
  * s počtom na module; kde manifest pozná konkrétne miesto, sedí odznak pri ňom:
- *  - rampa: pri doku `docks[i]` (`held.docks[i] > 0`), v osi docku tesne za zadkom kamióna, ktorý v doku stojí (kamión cúva do docku,
- *    jeho zadok presahuje horný okraj docku o polovicu dĺžky kamióna mínus polovicu docku) — odznak neprekrýva kamión,
- *    ktorý sa kreslí nad modulmi, a odznaky susedných dokov sú oddelené;
  *  - berth: pri slote apronu `apronSlots[slot]` (`held.slots`), pravý horný roh bunky slotu;
- *  - inak (sklad, dock/slot bez záznamu v manifeste) jeden odznak s `held.count` v pravom hornom rohu footprintu.
+ *  - inak (sklad, slot bez záznamu v manifeste) jeden odznak s `held.count` v pravom hornom rohu footprintu.
  * Odznak je vzpriamený pri každej rotácii modulu a drží čitateľnú veľkosť pri zoome (`setBadgeScale`).
  */
 import { Container } from 'pixi.js';
 import { HoldBadge } from './badges';
 import { WARNING_BADGE_SIZE, manifestScale, type ManifestPoint } from './entity-assets';
 import { localCellCenter } from './footprint-pose';
-import { TRUCK_LENGTH_PX } from './world-scale';
 import type { ModuleDecor, ModuleDecorContext, ModuleDecorFactory } from './module-decor';
 import type { ModuleVM } from './view-models';
 
@@ -42,12 +38,6 @@ export function holdMarks(vm: ModuleVM, context: ModuleDecorContext): HoldMark[]
   const left = (-pose.baseW * cellPx) / 2;
   const top = (-pose.baseH * cellPx) / 2;
   const marks: HoldMark[] = [];
-  held.docks?.forEach((count, index) => {
-    const dock = entry?.docks?.[index];
-    if (count <= 0 || dock === undefined) return;
-    const rear = dock.y + dock.h / 2 - TRUCK_LENGTH_PX / 2; // zadok kamióna v doku (px zdroja, lokálny rámec modulu)
-    marks.push({ key: `dock-${String(index)}`, x: left + (dock.x + dock.w / 2) * unit, y: top + Math.max(half / unit, rear - half / unit) * unit, count });
-  });
   held.slots?.forEach((slot) => {
     const cell = entry?.apronSlots?.[slot];
     if (cell === undefined) return;

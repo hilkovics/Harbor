@@ -54,7 +54,7 @@ export const BUILD_CATEGORIES: readonly BuildCategorySpec[] = Object.freeze([
     label: 'Landside',
     icon: 'ic_gate',
     enabled: true,
-    kinds: ['gate', 'waiting_area', 'ramp'],
+    kinds: ['gate', 'pre_gate', 'holding'],
     roads: true,
   },
   { id: 'rail', label: 'Železnica', icon: 'ic_rail', enabled: false, kinds: ['rail_station'] },

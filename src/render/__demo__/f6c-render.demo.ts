@@ -1,7 +1,7 @@
 /**
  * Demo renderu Fázy 6c (T6C-04, prázdne kontajnery, depo prázdnych a empty handler): mapa `harbor_01` s pevnými view-modelmi
  * (`f6c-render.fixtures.ts`) — bez simu, bez UI. Spúšťa ju stránka `f6c-render.html`
- * (`/src/render/__demo__/f6c-render.html?scene=ships|depot|ramp`); Playwright (`tests/e2e/f6c-render-demo.spec.ts`) z nej robí screenshoty.
+ * (`/src/render/__demo__/f6c-render.html?scene=ships|depot|gate`); Playwright (`tests/e2e/f6c-render-demo.spec.ts`) z nej robí screenshoty.
  *
  * Animácie (žeriav dvora) bežia podľa **riadených hodín** `window.__f6cDemo.clock`, takže screenshoty sú deterministické: test nastaví
  * čas (`clock.set(ms)`) a zavolá `show(vm)`. Po vykreslení nastaví `data-demo-ready="true"` na `<body>`.

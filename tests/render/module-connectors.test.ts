@@ -41,7 +41,7 @@ const DEF_IDS_WITH_CONNECTORS = MODULE_DEFS.modules.items
 
 describe('worldConnectors (konektory z manifestu) sa zhodujú s konektormi simu (`connectorsOf`)', () => {
   it('existujú moduly s konektormi, ktoré manifest pozná', () => {
-    expect(DEF_IDS_WITH_CONNECTORS).toEqual(expect.arrayContaining(['truck_gate', 'truck_waiting_area', 'loading_ramp_container', 'container_yard_small', 'vehicle_depot']));
+    expect(DEF_IDS_WITH_CONNECTORS).toEqual(expect.arrayContaining(['gate_in_lane', 'gate_out_lane', 'truck_holding', 'container_yard_small', 'vehicle_depot']));
   });
 
   it.each(DEF_IDS_WITH_CONNECTORS)('%s: všetky rotácie', (defId) => {
@@ -79,27 +79,27 @@ describe('connectorArm', () => {
 });
 
 describe('ConnectorArmIndex', () => {
-  it('brána (44; 32) rot 0: cesta pred južným konektorom dostane rameno na sever, pred severným na juh', () => {
+  it('pruh brány (44; 30) rot 0: cesta pred južným konektorom dostane rameno na sever, pred severným na juh', () => {
     const g = new Grid(60, 60, () => ({ terrain: 'land' }));
     const index = new ConnectorArmIndex(g);
-    const changed = index.update([host('truck_gate', 44, 32, 0)]);
+    const changed = index.update([host('gate_in_lane', 44, 30, 0)]);
     expect(changed).toEqual([
-      { x: 44, y: 31 },
+      { x: 44, y: 29 },
       { x: 44, y: 34 },
     ]);
     expect(index.maskAt(44, 34)).toBe(N);
-    expect(index.maskAt(44, 31)).toBe(S);
+    expect(index.maskAt(44, 29)).toBe(S);
     expect(index.maskAt(44, 33)).toBe(0); // bunka konektora je v module, nie cesta
   });
 
   it('bez zmeny modulov vráti prázdny zoznam; po odstránení modulu vráti bunky, ktorým ramená zanikli', () => {
     const g = new Grid(60, 60, () => ({ terrain: 'land' }));
     const index = new ConnectorArmIndex(g);
-    const gate = host('truck_gate', 44, 32, 0);
+    const gate = host('gate_in_lane', 44, 30, 0);
     index.update([gate]);
     expect(index.update([{ ...gate }])).toEqual([]);
     expect(index.update([])).toEqual([
-      { x: 44, y: 31 },
+      { x: 44, y: 29 },
       { x: 44, y: 34 },
     ]);
     expect(index.maskAt(44, 34)).toBe(0);
@@ -126,7 +126,7 @@ describe('ConnectorArmIndex', () => {
   it('ignoruje konektory iného typu než vrstva indexu', () => {
     const g = new Grid(60, 60, () => ({ terrain: 'land' }));
     const rails = new ConnectorArmIndex(g, 'rail');
-    expect(rails.update([host('truck_gate', 44, 32, 0)])).toEqual([]);
+    expect(rails.update([host('gate_in_lane', 44, 30, 0)])).toEqual([]);
   });
 });
 
@@ -158,7 +158,7 @@ describe('autotile s ramenom k modulu', () => {
 });
 
 describe('RoadLayer napojený na konektory modulov', () => {
-  /** Cesta x = 44 od y = 34 dole; brána (44; 32) má južný konektor (44; 33) → vonkajšia bunka (44; 34). */
+  /** Cesta x = 44 od y = 34 dole; pruh brány (44; 30) má južný konektor (44; 33) → vonkajšia bunka (44; 34). */
   function gateScene(): { g: Grid; index: ConnectorArmIndex; layer: RoadLayer } {
     const g = grid(
       64,
@@ -172,21 +172,21 @@ describe('RoadLayer napojený na konektory modulov', () => {
   it('bez ramena končí cesta zaobleným koncom `end`; s ramenom sa napojí (`straight`)', () => {
     const { index, layer } = gateScene();
     expect(layer.tileAt(44, 34)).toEqual({ shape: 'end', rotation: 180 });
-    layer.updateRoads(index.update([host('truck_gate', 44, 32, 0)]));
+    layer.updateRoads(index.update([host('gate_in_lane', 44, 30, 0)]));
     expect(layer.tileAt(44, 34)).toEqual({ shape: 'straight', rotation: 0 });
     expect(layer.tileAt(44, 35)).toEqual({ shape: 'straight', rotation: 0 });
   });
 
   it('po odstránení modulu sa cesta vráti na zaoblený koniec', () => {
     const { index, layer } = gateScene();
-    layer.updateRoads(index.update([host('truck_gate', 44, 32, 0)]));
+    layer.updateRoads(index.update([host('gate_in_lane', 44, 30, 0)]));
     layer.updateRoads(index.update([]));
     expect(layer.tileAt(44, 34)).toEqual({ shape: 'end', rotation: 180 });
   });
 
-  it('rampa otočená o 90°: rameno smeruje k modulu pri každej rotácii', () => {
+  it('odstavná plocha otočená o 90°: rameno smeruje k modulu pri každej rotácii', () => {
     for (const rotation of ROTATIONS) {
-      const moduleHost = host('loading_ramp_container', 20, 20, rotation);
+      const moduleHost = host('truck_holding', 20, 20, rotation);
       const g = new Grid(64, 64, () => ({ terrain: 'land' }));
       const arms = worldConnectors(moduleHost).map(connectorArm);
       for (const arm of arms) g.at(arm.x, arm.y).road = 'road';

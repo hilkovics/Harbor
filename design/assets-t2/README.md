@@ -17,7 +17,7 @@ Odovzdanie podľa CLAUDE_DESIGN_TERMINAL_2.md §6. Súradnice v px v rámci súb
 ### STS žeriav (nový, nahrádza crane_container_gantry_base / _boom / _trolley)
 - `modules/sts_frame.svg` — **3×10 buniek (192×640)**, nos k vode. Červená konštrukcia, nosníky s bielymi panelmi, červeno-biele ťahadlá z apexu A-rámu, biela a sivá strojovňa na konci backreachu, sivé podvozky, káblový bubon.
   - umiestnenie: rám o **256 px nad** kotviskom (quayEdgeY 256 v rámci rámu)
-  - koľajnice y 282 (voda) a 456 (pevnina); rozchod nôh 168 px, svetlá šírka 152 px
+  - koľajnice y 282 (voda) a 448 (hranica pruh 2 / obchádzka); rozchod nôh 168 px, svetlá šírka 152 px
   - pivot 128,369 → **96,369**; žeriav jazdí po X, **výložník nerotuje**
 - `modules/sts_trolley.svg` — 3×1, pivot 96,32, v ráme **x = 0**, travel y **30–560** (zasahuje za pevninské nohy)
 - `modules/sts_spreader_40.svg` / `_20.svg` — pivot = pivot vozíka

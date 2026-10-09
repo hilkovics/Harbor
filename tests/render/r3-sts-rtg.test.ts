@@ -1,4 +1,6 @@
 // R3 (TR3-03): nový STS (pevný rám, vozík po Y, spreader podľa kontajnera), RTG nad blokom, ťahač terminálu (kĺbový), overlay pruhov.
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CraneLayer } from '@render/crane-layer';
 import { entitySpriteFiles, articulatedSprite, machineSprite, moduleSprite, stsSprite } from '@render/entity-assets';
@@ -250,5 +252,31 @@ describe('overlay pruhov (ModuleVM.lanes)', () => {
     expect(decor.view.children[0]).toBe(first);
     decor.update({ ...berth, lanes: [] });
     expect(decor.arrowCount).toBe(0);
+  });
+});
+
+describe('STS rám: nohy mimo jazdných pruhov kotviska (ADR-040)', () => {
+  const svg = readFileSync(resolve(__dirname, '../../assets/modules/sts_frame.svg'), 'utf8');
+  /** Rám leží 4 bunky nad kotviskom 8 × 4: riadok 0 = voda (nohy), 1–2 = pruhy pod žeriavom, 3 = obchádzka (tiež jazdná). */
+  const BERTH_TOP = 4 * 64;
+  const LANES = [1, 2, 3].map((row) => ({ from: BERTH_TOP + row * 64, to: BERTH_TOP + (row + 1) * 64 }));
+  /** Stojka stojí na hranici pruhov: do každého susedného pruhu smie zasahovať len pol svojej výšky (12 px). */
+  const MAX_OVERLAP_PX = 6;
+
+  it('stojky a podvozky v krajných stĺpcoch nezasahujú do pruhov viac než 6 px a bočné steny cez pruhy nie sú', () => {
+    const rects = [...svg.matchAll(/<rect x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)"/g)].map((m) => ({
+      x: Number(m[1]),
+      y: Number(m[2]),
+      h: Number(m[4]),
+      w: Number(m[3]),
+    }));
+    const legs = rects.filter((r) => r.w <= 24 && (r.x < 24 || r.x >= 168));
+    expect(legs.length).toBeGreaterThanOrEqual(8);
+    for (const leg of legs) {
+      for (const lane of LANES) {
+        const overlap = Math.min(leg.y + leg.h, lane.to) - Math.max(leg.y, lane.from);
+        expect(Math.max(0, overlap), `y=${String(leg.y)} h=${String(leg.h)}`).toBeLessThanOrEqual(MAX_OVERLAP_PX);
+      }
+    }
   });
 });

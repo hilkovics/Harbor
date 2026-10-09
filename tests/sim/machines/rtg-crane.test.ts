@@ -80,7 +80,7 @@ describe('RtgCrane — fázy, poloha a časy z defu', () => {
 
   it('cyklus: beginCycle len v idle bez cyklu; endCycle (z lower) vráti idle a počíta presun', () => {
     const rtg = crane();
-    const cycle = { kind: 'put', unitId: 9, vehicleId: 11, jobId: 12, fromSlot: null, toSlot: 7, tpBay: 0 } as const;
+    const cycle = { kind: 'put', unitId: 9, vehicleId: 11, jobId: 12, fromSlot: null, toSlot: 7, tpBay: 0, truck: false } as const;
     rtg.beginCycle(cycle);
     expect(() => rtg.beginCycle(cycle)).toThrow(MachineError);
     rtg.transition('travel');
@@ -102,14 +102,14 @@ describe('RtgCrane — fázy, poloha a časy z defu', () => {
     expect(rtg.serves(id(11))).toBe(false);
     expect(rtg.serves(id(12))).toBe(true);
     rtg.dequeue(id(12));
-    rtg.beginCycle({ kind: 'take', unitId: 9, vehicleId: 12, jobId: 13, fromSlot: 3, toSlot: null, tpBay: 0 });
+    rtg.beginCycle({ kind: 'take', unitId: 9, vehicleId: 12, jobId: 13, fromSlot: 3, toSlot: null, tpBay: 0, truck: false });
     expect(rtg.serves(id(12))).toBe(true);
   });
 
   it('toState je čistý JSON v poradí SERIALIZED_MACHINE_KEYS a obnova z neho dá rovnaký stav', () => {
     const rtg = crane();
     rtg.enqueue(id(11), 100);
-    rtg.beginCycle({ kind: 'relocate', unitId: 9, vehicleId: null, jobId: null, fromSlot: 4, toSlot: 9, tpBay: 0 });
+    rtg.beginCycle({ kind: 'relocate', unitId: 9, vehicleId: null, jobId: null, fromSlot: 4, toSlot: 9, tpBay: 0, truck: false });
     rtg.enterPhase('travel', 3, { gantry: 6, trolley: 2, hoist: 1 });
     rtg.advancePhase();
     const state = rtg.toState();

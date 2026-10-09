@@ -282,7 +282,7 @@ export function shipStateSequenceViolation(sequence: readonly string[]): string 
 // ---------------------------------------------------------------------------------------------------------
 
 /** Lokácie, ktoré vo fáze 2 nesmú mať žiadnu jednotku (vozidlá, sklady, rampy a export prídu v ďalších fázach). */
-const LOCATION_KINDS_AFTER_APRON = ['in_vehicle', 'in_storage', 'in_pipeline', 'at_ramp', 'in_truck', 'in_train', 'exported'] as const;
+const LOCATION_KINDS_AFTER_APRON = ['in_vehicle', 'in_storage', 'in_pipeline', 'in_truck', 'in_train', 'exported'] as const;
 
 export interface LedgerAudit {
   readonly onShip: number;

@@ -46,9 +46,10 @@ describe('BuildBar Landside: typy ciest z defov', () => {
     expect(category.enabled).toBe(true);
     expect(category.items.map((item) => item.defId)).toEqual([
       'road_one_way',
-      'truck_gate',
-      'truck_waiting_area',
-      'loading_ramp_container',
+      'gate_in_lane',
+      'gate_out_lane',
+      'pre_gate_buffer',
+      'truck_holding',
     ]);
   });
 
@@ -82,9 +83,10 @@ describe('BuildBar Landside: typy ciest z defov', () => {
   it('moduly Landside z defov: názov, cena, ikona druhu, rozmer; nie sú zamknuté a majú akciu stavby', () => {
     const modules = landside().items.slice(1);
     expect(modules.map((item) => [item.displayName, item.costCents, item.icon, item.footprint])).toEqual([
-      ['Brána kamiónov', 8_000_000, 'ic_gate', { w: 2, h: 2 }],
-      ['Čakacia plocha', 6_000_000, 'ic_waiting', { w: 4, h: 3 }],
-      ['Rampa · kontajnery', 10_000_000, 'ic_ramp', { w: 4, h: 2 }],
+      ['Vstupný pruh brány', 2_500_000, 'ic_gate', { w: 1, h: 4 }],
+      ['Výstupný pruh brány', 2_500_000, 'ic_gate', { w: 1, h: 4 }],
+      ['Predbránová plocha', 9_000_000, 'ic_one_way', { w: 8, h: 8 }],
+      ['Odstavná plocha kamiónov', 5_000_000, 'ic_waiting', { w: 6, h: 5 }],
     ]);
     for (const item of modules) {
       expect(item).toMatchObject({ locked: false, affordable: true });
@@ -97,13 +99,13 @@ describe('BuildBar Landside: typy ciest z defov', () => {
 
   it('moduly Landside bez peňazí: nedostupné (unaffordable) s chýbajúcou sumou, nie zamknuté', () => {
     const modules = landside(0).items.slice(1);
-    expect(modules.map((item) => item.missingCents)).toEqual([8_000_000, 6_000_000, 10_000_000]);
+    expect(modules.map((item) => item.missingCents)).toEqual([2_500_000, 2_500_000, 9_000_000, 5_000_000]);
     for (const item of modules) expect(itemStatus(item)).toBe('unaffordable');
   });
 
   it('ponuka nemá zástupné položky (gate, waiting_area, ramp, „čoskoro (F4)“)', () => {
     const items = buildBarCategories(defs, defs.economy.startingCashCents).flatMap((category) => category.items);
-    for (const defId of ['gate', 'waiting_area', 'ramp']) expect(items.some((item) => item.defId === defId)).toBe(false);
+    for (const defId of ['gate', 'waiting_area', 'ramp', 'truck_gate', 'truck_waiting_area', 'loading_ramp_container']) expect(items.some((item) => item.defId === defId)).toBe(false);
     expect(items.some((item) => item.priceText === 'čoskoro (F4)' || item.lockedReason === 'čoskoro (F4)')).toBe(false);
   });
 

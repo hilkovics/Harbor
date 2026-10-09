@@ -34,16 +34,28 @@ export interface MissionWaitState {
   readonly turnedAway: number;
 }
 
-/** Stav vnútrozemia v save (`WorldState.hinterland`, v9). */
+/** Počítadlá času kamiónov v termináli — TTT (R4, ADR-041; metrika `truckTurnTimeAvgMin`): odchody výstupnou bránou, súčet a maximum ticku od vstupnej brány po výstupnú. */
+export interface TruckTurnState {
+  readonly trucks: number;
+  readonly ticksTotal: number;
+  readonly ticksMax: number;
+}
+
+/** Kľúče `TruckTurnState` v poradí `getState()`. */
+export const TRUCK_TURN_KEYS: readonly (keyof TruckTurnState)[] = ['trucks', 'ticksTotal', 'ticksMax'];
+
+/** Stav vnútrozemia v save (`WorldState.hinterland`, v9; od v13 aj TTT). */
 export interface HinterlandState {
   readonly delivery: MissionWaitState;
   readonly collect: MissionWaitState;
   /** Ticky, v ktorých mal dopyt po kamióne na odvoz (náklad na docku) a žiadne stojisko nebolo voľné. */
   readonly pickupBayStarvationTicks: number;
+  /** TTT kamiónov, ktoré prešli výstupnou bránou (WorldState v13). */
+  readonly truckTurn: TruckTurnState;
 }
 
 /** Kľúče `HinterlandState` v poradí `getState()`. */
-export const HINTERLAND_STATE_KEYS: readonly (keyof HinterlandState)[] = ['delivery', 'collect', 'pickupBayStarvationTicks'];
+export const HINTERLAND_STATE_KEYS: readonly (keyof HinterlandState)[] = ['delivery', 'collect', 'pickupBayStarvationTicks', 'truckTurn'];
 /** Kľúče `MissionWaitState` v poradí `getState()`. */
 export const MISSION_WAIT_KEYS: readonly (keyof MissionWaitState)[] = ['admitted', 'waitTicksTotal', 'waitTicksMax', 'turnedAway'];
 
@@ -54,7 +66,7 @@ const EMPTY_MISSION_WAIT: MissionWaitState = Object.freeze({ admitted: 0, waitTi
 
 /** Prázdny stav (nová hra). */
 export function emptyHinterlandState(): HinterlandState {
-  return { delivery: { ...EMPTY_MISSION_WAIT }, collect: { ...EMPTY_MISSION_WAIT }, pickupBayStarvationTicks: 0 };
+  return { delivery: { ...EMPTY_MISSION_WAIT }, collect: { ...EMPTY_MISSION_WAIT }, pickupBayStarvationTicks: 0, truckTurn: { trucks: 0, ticksTotal: 0, ticksMax: 0 } };
 }
 
 interface MutableMissionWait {
@@ -67,12 +79,14 @@ interface MutableMissionWait {
 export class Hinterland {
   private readonly missions: { readonly [M in WaitingMission]: MutableMissionWait };
   private starvationTicks: number;
+  private turn: { trucks: number; ticksTotal: number; ticksMax: number };
   /** Tick, v ktorom sa naposledy započítal nedostatok bays (každý tick najviac raz); nie je v save — save vzniká medzi tickmi. */
   private lastStarvedTick = -1;
 
   constructor(state: HinterlandState = emptyHinterlandState()) {
     this.missions = { delivery: { ...state.delivery }, collect: { ...state.collect } };
     this.starvationTicks = state.pickupBayStarvationTicks;
+    this.turn = { ...state.truckTurn };
   }
 
   /** Obnova zo save (tvar a hodnoty overil `parseHinterlandState`). */
@@ -91,6 +105,28 @@ export class Hinterland {
   /** Kamión misie `mission` sa vzdal vo vnútrozemí bez vjazdu. */
   recordTurnedAway(mission: WaitingMission): void {
     this.missions[mission].turnedAway += 1;
+  }
+
+  /** Kamión prešiel výstupnou bránou po `ticks` tickoch od príchodu k vstupnej bráne (TTT). */
+  recordTurn(ticks: number): void {
+    this.turn.trucks += 1;
+    this.turn.ticksTotal += ticks;
+    if (ticks > this.turn.ticksMax) this.turn.ticksMax = ticks;
+  }
+
+  /** Počet kamiónov s odmeraným TTT. */
+  get turnTrucks(): number {
+    return this.turn.trucks;
+  }
+
+  /** Súčet TTT (ticky). */
+  get turnTicksTotal(): number {
+    return this.turn.ticksTotal;
+  }
+
+  /** Najdlhší TTT (ticky). */
+  get turnTicksMax(): number {
+    return this.turn.ticksMax;
   }
 
   /** Dopyt po kamióne na odvoz nemal v ticku `tick` voľný bay (každý tick najviac raz). */
@@ -133,6 +169,6 @@ export class Hinterland {
       waitTicksMax: wait.waitTicksMax,
       turnedAway: wait.turnedAway,
     });
-    return { delivery: copy(this.missions.delivery), collect: copy(this.missions.collect), pickupBayStarvationTicks: this.starvationTicks };
+    return { delivery: copy(this.missions.delivery), collect: copy(this.missions.collect), pickupBayStarvationTicks: this.starvationTicks, truckTurn: { ...this.turn } };
   }
 }

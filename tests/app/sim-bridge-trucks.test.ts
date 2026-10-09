@@ -1,5 +1,5 @@
-// T04-08 B: napojenie kamiónov na SimBridge — `revision` z udalostí Truck*/NoWaitingBay a cache modulov. Cache modulov je
-// podľa `revision` (stabilné pole), okrem brány a stojiska, ktorých VM sa porovnáva so živým modulom, lebo sa môže zmeniť
+// T04-08 B: napojenie kamiónov na SimBridge — `revision` z udalostí Truck* a cache modulov. Cache modulov je
+// podľa `revision` (stabilné pole), okrem brány, ktorej VM sa porovnáva so živým modulom, lebo sa môže zmeniť
 // aj bez udalosti (závora po prestavbe ciest). Celý reťazec ide skutočným tickom (`buildFullChain`), nie fiktívnymi id.
 import { describe, expect, it } from 'vitest';
 import type { ModuleVM } from '@render/view-models';
@@ -8,17 +8,21 @@ import type { SimEvent } from '@sim/events';
 import { TruckGate } from '@sim/modules';
 import { moduleVMs } from '@app/entities-vm';
 import { REVISION_EVENTS } from '@app/sim-bridge';
-import { CHAIN_GATE_ID, buildFullChain, createApp, frameUntil, type App } from './app-fixtures';
+import { CHAIN_GATE_ID, buildFullChain, createPortApp, frameUntil, type App } from './app-fixtures';
 
 const UNITS = 12;
 
 function chainApp(units = UNITS, vehicles?: number): App {
-  const app = createApp();
+  const app = createPortApp();
   buildFullChain(app, { units, vehicles });
   return app;
 }
 
-const gateVm = (modules: readonly ModuleVM[]): ModuleVM['gate'] => modules.find((vm) => vm.id === CHAIN_GATE_ID)?.gate;
+/** Pruh brány z VM modulov: `busy` = pruh práve spracúva kamión (má krok), `step` = id kroku. */
+const gateVm = (modules: readonly ModuleVM[]): { readonly busy: boolean; readonly step: string | undefined } | undefined => {
+  const lane = modules.find((vm) => vm.id === CHAIN_GATE_ID)?.gateLane;
+  return lane === undefined ? undefined : { busy: lane.step !== undefined, step: lane.step };
+};
 
 describe('SimBridge: revision a kamióny', () => {
   it('každá udalosť z REVISION_EVENTS (aj TruckSpawned/TruckStateChanged/TruckExited) zvýši revision o 1; iné ho nemenia', () => {
@@ -55,7 +59,7 @@ describe('SimBridge: revision a kamióny', () => {
   });
 });
 
-describe('SimBridge: cache modulov s bránou a stojiskom', () => {
+describe('SimBridge: cache modulov s bránou', () => {
   it('celý beh: VM modulov v snapshote sú v každom frame rovnaké ako čerstvo zložené zo sveta (žiadna zastaraná závora ani fronta)', () => {
     const app = chainApp();
     const { world, bridge } = app;
@@ -71,7 +75,7 @@ describe('SimBridge: cache modulov s bránou a stojiskom', () => {
     );
   });
 
-  it('pole modulov je pri rovnakej revision tá istá referencia, kým sa hodnoty brány a stojiska nezmenia; nové je len pri zmene', () => {
+  it('pole modulov je pri rovnakej revision tá istá referencia, kým sa hodnoty brány nezmenia; nové je len pri zmene', () => {
     const app = chainApp();
     const { world, bridge, loop } = app;
     let stable = 0;
@@ -81,9 +85,12 @@ describe('SimBridge: cache modulov s bránou a stojiskom', () => {
       loop.frame(loop.tickMs);
       const now = bridge.snapshot();
       if (now.revision === previous.revision) {
-        // bez udalosti sa v bežnej prevádzke nemení žiadny VM modulu → tá istá referencia, aj keď kamióny idú
-        expect(now.modules).toBe(previous.modules);
-        stable += 1;
+        // bez udalosti sa pole modulov nahradí len pri skutočnej zmene živých polí (krok pruhu brány, TP, státia); inak tá istá referencia, aj keď kamióny idú
+        if (now.modules === previous.modules) stable += 1;
+        else {
+          expect(JSON.stringify(now.modules)).not.toBe(JSON.stringify(previous.modules));
+          replaced += 1;
+        }
       } else if (now.modules !== previous.modules) {
         replaced += 1;
       }
@@ -93,24 +100,24 @@ describe('SimBridge: cache modulov s bránou a stojiskom', () => {
     expect(replaced).toBeGreaterThan(20);
   });
 
-  it('brána sa vo VM otvára a fronta rastie a klesá s kamiónmi (queueLength a open zo simu)', () => {
+  it('pruh brány sa vo VM mení s kamiónmi (krok a stav obsluhy zo simu)', () => {
     const app = chainApp();
     const { world, bridge } = app;
     const gate = world.modules.get(CHAIN_GATE_ID) as TruckGate;
-    const seen = { open: false, closed: false, queued: false };
+    const seen = { busy: false, free: false };
     frameUntil(
       app,
       () => {
         const vm = gateVm(bridge.snapshot().modules);
-        expect(vm).toMatchObject({ queueLength: gate.queueLength, open: gate.isOpen });
-        if (vm?.open === true) seen.open = true;
-        else seen.closed = true;
-        if ((vm?.queueLength ?? 0) > 0) seen.queued = true;
+        expect(vm?.busy).toBe(gate.currentStep() !== null);
+        expect(vm?.step).toBe(gate.currentStep()?.id);
+        if (vm?.busy === true) seen.busy = true;
+        else seen.free = true;
         return world.cargo.exportedCount === UNITS;
       },
       6000,
     );
-    expect(seen).toEqual({ open: true, closed: true, queued: true });
+    expect(seen).toEqual({ busy: true, free: true });
   });
 
   // Závora sa po odstránení výstupnej cesty dopočíta z prechodu, ktorý už beží; či jej zníženie padne do ticku s inou
@@ -132,10 +139,10 @@ describe('SimBridge: cache modulov s bránou a stojiskom', () => {
     const app = chainApp(30, vehicles);
     const { world, bridge, loop } = app;
     const gate = world.modules.get(CHAIN_GATE_ID) as TruckGate;
-    frameUntil(app, () => gate.isOpen, 3000);
+    frameUntil(app, () => gate.currentStep() !== null, 3000);
     // výstupná strana brány zanikne počas prechodu: kamión ostane na čele fronty a prechod sa nedokončí
-    const removal = commandFromJSON({ type: 'RemoveRoad', cells: [{ x: 47, y: 33 }, { x: 48, y: 33 }] });
-    expect(bridge.validate(removal).ok).toBe(true);
+    const removal = commandFromJSON({ type: 'RemoveRoad', cells: [{ x: 44, y: 29 }] });
+    expect(bridge.validate(removal).reasons).toEqual([]);
     bridge.dispatch(removal);
     loop.frame(0);
     expect(gate.exitSide).toBeNull();
@@ -146,8 +153,8 @@ describe('SimBridge: cache modulov s bránou a stojiskom', () => {
       const events = loop.frame(loop.tickMs);
       const now = bridge.snapshot();
       // revision-only cache by pri tichom znížení nechala `open: true` až do najbližšej udalosti; porovnanie so živým modulom to opraví
-      expect(gateVm(now.modules)).toMatchObject({ queueLength: gate.queueLength, open: gate.isOpen });
-      if (gateVm(before.modules)?.open !== true || gateVm(now.modules)?.open !== false) continue;
+      expect(gateVm(now.modules)?.busy).toBe(gate.currentStep() !== null);
+      if (gateVm(before.modules)?.busy !== true || gateVm(now.modules)?.busy !== false) continue;
       if (events.some((event) => REVISION_EVENTS.has(event.type))) {
         withEvent += 1;
         continue;

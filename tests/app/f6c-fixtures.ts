@@ -103,10 +103,9 @@ export function createEmptyUnit(world: World, lineId: string): CargoUnit {
   return world.cargo.create(TEU, { kind: 'in_truck', truckId: 9001 as EntityId }, null, emptyLabels(lineId));
 }
 
-/** Prázdny kontajner linky uložený v sklade `moduleId` (reťazec `in_truck → at_ramp → in_vehicle → in_storage`). */
+/** Prázdny kontajner linky uložený v sklade `moduleId` (reťazec `in_truck → in_vehicle → in_storage`). */
 export function storeEmptyUnit(world: World, lineId: string, moduleId: EntityId, slot: number): CargoUnit {
   const unit = createEmptyUnit(world, lineId);
-  world.cargo.move(unit.id, { kind: 'at_ramp', rampId: 9002 as EntityId, dock: 0 });
   world.cargo.move(unit.id, { kind: 'in_vehicle', vehicleId: 9003 as EntityId });
   world.cargo.move(unit.id, { kind: 'in_storage', moduleId, slot });
   return unit;

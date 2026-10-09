@@ -39,7 +39,7 @@ const TICKS_PER_DAY = 8640;
 // Dlhé behy (desaťtisíce tickov) pri paralelnom behu celej sady presiahnu predvolených 10 s pre hooky.
 const HEAVY_TIMEOUT_MS = 120_000;
 // harbor_01: 30 štartovacích ciest (x = 44, y 34…63).
-const STARTER_ROADS = 60; // harbor_01 po R1: jednosmerná slučka x = 44 (N) a x = 45 (S), 2 × 30 buniek
+const STARTER_ROADS = 62; // harbor_01 po R4: jednosmerná slučka x = 44 (N) a x = 45 (S), 2 × 30 buniek + 2 bunky západných portálov (0, 60) a (0, 61)
 // harbor_01: štartovacie moduly = berth_standard + crane_container_gantry.
 const STARTER_MODULES = 2;
 
@@ -245,7 +245,7 @@ describe('runScenario', () => {
   const defs = loadBundledDefs();
   const withCommands = (...commands: ScenarioEntry[]): Scenario => ({ ...SMOKE, commands });
 
-  it('1000 tickov → ticks 1000, lostUnits 0, roads 60, kľúče reportu presne podľa dohody', () => {
+  it('1000 tickov → ticks 1000, lostUnits 0, roads 62, kľúče reportu presne podľa dohody', () => {
     const report = runScenario(SMOKE, 1000, defs);
     expect(report.ticks).toBe(1000);
     expect(report.lostUnits).toBe(0);
@@ -276,7 +276,7 @@ describe('runScenario', () => {
       trucksSpawned: 0,
       trucksExited: 0,
       unitsExportedByTrucks: 0,
-      noWaitingBayEvents: 0,
+      truckTurnTimeAvgMin: null,
       gateQueueMax: 0,
       ticksToAllExported: null,
       contractsCompleted: 0,
@@ -359,7 +359,7 @@ describe('runScenario', () => {
       'trucksSpawned',
       'trucksExited',
       'unitsExportedByTrucks',
-      'noWaitingBayEvents',
+      'truckTurnTimeAvgMin',
       'gateQueueMax',
       'ticksToAllExported',
       'contractsCompleted',
@@ -446,7 +446,7 @@ describe('runScenario', () => {
     expect(line).not.toContain('\n');
     expect(line).toContain('smoke');
     expect(line).toContain('1000 tickov');
-    expect(line).toContain('cesty 60');
+    expect(line).toContain('cesty 62');
     expect(line).toContain('lode 0/0');
     expect(line).toContain('cykly žeriavov 0');
     expect(line).toContain('vozidlá 0');
@@ -457,7 +457,7 @@ describe('runScenario', () => {
     expect(line).toContain('všetko uložené n/a');
     expect(line).toContain('kamióny 0/0');
     expect(line).toContain('odvezené kamiónmi 0');
-    expect(line).toContain('bez stojiska 0');
+    expect(line).toContain('TTT n/a min');
     expect(line).toContain('fronta brány max 0');
     expect(line).toContain('všetko exportované n/a');
   });
@@ -603,8 +603,6 @@ describe('runScenario', () => {
     const fullChain = loadScenario(FULL_IMPORT_CHAIN_SCENARIO);
     const EXPORT_TICKS = 40_000;
     const UNITS = 120;
-    /** Fyzická kapacita oboch dvorov full_import_chain: 2 × 48 TEU (R2, ADR-039). */
-    const YARD_TEU = 96;
     let full: SimrunReport;
 
     beforeAll(() => {
@@ -627,9 +625,9 @@ describe('runScenario', () => {
       });
     });
 
-    it('cashEnd (ADR-025): 33 800 000 po stavbe (o bunku ciest menej, berth 8 × 4) − 225 000 napojenie scenára na slučku (PORT_BRIDGE) − 4 dni × (údržba 330 000 + mzdy 79 000) = 31 939 000', () => {
+    it('cashEnd (ADR-025): 56 675 000 po stavbe (R4: pruhy brány a cesty rozloženia, bez rampy a čakacej plochy) − 4 dni × (údržba 293 000 + mzdy 79 000) = 55 187 000', () => {
       expect(full.gameDays).toBe(4);
-      expect(full.cashEnd).toBe(31_939_000);
+      expect(full.cashEnd).toBe(55_187_000);
     });
 
     it('krížová kontrola: Σ TruckExited.units === exportedUnits (kamióny sú jediná cesta exportu)', () => {
@@ -666,16 +664,10 @@ describe('runScenario', () => {
       expect(Number.isInteger(full.gateQueueMax)).toBe(true);
     });
 
-    it('noWaitingBayEvents je nezáporné celé číslo', () => {
-      expect(Number.isInteger(full.noWaitingBayEvents)).toBe(true);
-      expect(full.noWaitingBayEvents).toBeGreaterThanOrEqual(0);
+    it('TTT (truckTurnTimeAvgMin): priemer od vstupnej po výstupnú bránu je kladné číslo, každý kamión sa započítal raz', () => {
+      expect(full.truckTurnTimeAvgMin).toBeGreaterThan(0);
+      expect(Number.isFinite(full.truckTurnTimeAvgMin)).toBe(true);
     });
-
-    // Fáza 5b: staging 2 × 4 = 8 kamiónov na 6 bayov stojiska → bundled balans hlási NoWaitingBay (balansová otázka, nie chyba simu);
-    // „stojisko stačí → 0" sa preto overuje na pôvodnom stagingu 2 × 2 (`LEGACY_CAPACITY_DEFS`).
-    it('noWaitingBayEvents je 0, keď stojisko stačí (pôvodný staging 2 × 2, 4 kamióny na 6 bayov)', () => {
-      expect(runScenario(fullChain, EXPORT_TICKS, LEGACY_CAPACITY_DEFS).noWaitingBayEvents).toBe(0);
-    }, HEAVY_TIMEOUT_MS);
 
     it('beh skrátený pred koncom exportu: trucksSpawned ≥ trucksExited, ticksToAllExported null, nič stratené', () => {
       const partial = runScenario(fullChain, 6000, defs);
@@ -686,24 +678,6 @@ describe('runScenario', () => {
       expect(partial.exportedUnits).toBe(partial.trucksExited);
       expect(partial.lostUnits).toBe(0);
     });
-
-    it('bez čakacej plochy je rampa neprevádzková: žiadne kamióny, ticksToAllExported null, náklad zostane v sklade', () => {
-      const commands = fullChain.commands.filter(
-        (entry) => (entry.command as { defId?: unknown }).defId !== 'truck_waiting_area',
-      );
-      expect(commands).toHaveLength(fullChain.commands.length - 1);
-      const report = runScenario({ ...fullChain, commands }, EXPORT_TICKS, defs);
-      expect(report).toMatchObject({
-        lostUnits: 0,
-        exportedUnits: 0,
-        unitsInStorage: YARD_TEU, // dva dvory po 48 TEU (R2, ADR-039); zvyšných 24 jednotiek ostáva na aprone
-        trucksSpawned: 0,
-        trucksExited: 0,
-        unitsExportedByTrucks: 0,
-        gateQueueMax: 0,
-      });
-      expect(report.ticksToAllExported).toBeNull();
-    }, 60_000);
 
     it('rovnaký scenár → identický report (metriky F4 sú deterministické)', () => {
       expect(runScenario(fullChain, EXPORT_TICKS, defs)).toEqual(full);
@@ -719,7 +693,7 @@ describe('runScenario', () => {
         trucksSpawned: 0,
         trucksExited: 0,
         unitsExportedByTrucks: 0,
-        noWaitingBayEvents: 0,
+        truckTurnTimeAvgMin: null,
         gateQueueMax: 0,
         exportedUnits: 0,
       });
@@ -819,19 +793,21 @@ describe('runScenario', () => {
         // dva dvory (T6D-04): žiadny export nezostal rolled; pool škáluje s kapacitou skladov, takže importy #1 a #4 majú 48 + 96 TEU (pred druhým dvorom 45 + 64)
         // R2 (ADR-039): počty kontajnerov (export 36 TEU = 22, repositioning 24 TEU = 14 prázdnych, prekládka 36 TEU = 22); jeden export prišiel po cut-off
         // R2 plánovač (ADR-039): iný prúd Rng a časovanie ukladania — 2 rolled exporty, 16 prázdnych v repositioningu, 73 exportovaných, 60 odplávaných
-        rolledUnits: 2,
-        exportedUnits: 73,
-        shippedUnits: 60,
-        emptyReturns: 34,
-        emptyPickedUp: 12,
-        repositionedUnits: 16,
+        // R4 (ADR-041): brána losuje problémy z Rng a mení plán príchodov — žiadny rolled export, 14 prázdnych v repositioningu, 78 exportovaných (17 prázdnych odviezol exportér), 58 odplávaných
+        // R4 TR4-02 (ADR-041 dodatok): obsluha na TP v blokoch, jednosmerné okruhy a odstavná plocha — 1 rolled export, 15 prázdnych v repositioningu, 69 exportovaných (8 prázdnych odviezol exportér), 59 odplávaných
+        rolledUnits: 1,
+        exportedUnits: 69,
+        shippedUnits: 59,
+        emptyReturns: 40,
+        emptyPickedUp: 8,
+        repositionedUnits: 15,
         transhipLoaded: 22,
         transhipMissed: 0,
         transhipRescued: 0,
         transhipSold: 0,
         emptyReturnsDeclined: 0,
         // vozidlo stojí pod žeriavom a buffer je 0: každé odovzdanie žeriav ↔ vozidlo je priame (pred T6D-02 49 %)
-        directHandoverPct: 97.9,
+        directHandoverPct: 98.6,
       });
       // odplávané = export 22 + repositioning 16 + prekládka 22 (kontajnery)
       expect(report.shippedUnits).toBe(22 + report.repositionedUnits + report.transhipLoaded);
@@ -1079,7 +1055,7 @@ describe('runScenario', () => {
       expect(explicit).toEqual(bundled);
     });
 
-    it('scenár s `map` používa túto mapu (o jednu štartovaciu cestu menej → roads 59)', () => {
+    it('scenár s `map` používa túto mapu (o jednu štartovaciu cestu menej → roads 61)', () => {
       const raw = JSON.parse(readFileSync(HARBOR_MAP, 'utf8')) as { starter: { roads: unknown[] } };
       raw.starter.roads.pop();
       const map = join(dir, 'harbor_minus_one.json');
@@ -1194,7 +1170,7 @@ describe('CLI (tools/simrun.ts)', () => {
       trucksExited: 120,
       unitsExportedByTrucks: 120,
     });
-    expect(Number.isInteger(report['noWaitingBayEvents'])).toBe(true); // hodnota závisí od balansu stojiska/stagingu
+    expect(report['truckTurnTimeAvgMin']).toBeGreaterThan(0);
     expect(typeof report['ticksToAllExported']).toBe('number');
     expect(report['gateQueueMax']).toBeGreaterThanOrEqual(1);
   }, 60_000);
@@ -1211,13 +1187,14 @@ describe('CLI (tools/simrun.ts)', () => {
       // Predvolený under_hook (T6D-02) so vjazdom z vnútrozemia podľa T6D-01 (ADR-035): posledný kamión vojde až po uvoľnení staging miesta na docku, t. j. po začiatku
       // lashingu — rolled jednotka sa nenaloží (35 odplávaných) a vráti sa odosielateľovi po súši. Pred T6D-01 prišla ešte počas nakládky (last minute, 36 odplávaných).
       // R2 (ADR-039): počty kontajnerov (import 54 TEU = 31, export 36 TEU = 24; posledný, 40′, je rolled a vrátený → 23 odplávaných); VGM holdy losuje Rng.
-      exportedUnits: 32,
-      shippedUnits: 23,
+      // TR4-02: kamión s rolled jednotkou prichádza po cut-offe a odchádza bez nej (náklad sa neodviezol späť) — 31 exportovaných, 24 odplávaných
+      exportedUnits: 31,
+      shippedUnits: 24,
       rolledUnits: 1,
-      returnedUnits: 1,
-      vgmHolds: 2,
+      returnedUnits: 0,
+      vgmHolds: 2, // R4: posun prúdu Rng
       dualTransactionRate: 0,
-      stowageOrderViolations: 1, // rehandling (R2) oneskorí jedno vozidlo — jednotka nižšej triedy sa naloží pred vyššou
+      stowageOrderViolations: 7, // rehandling (R2) oneskoruje vozidlá; po R4 (posun prúdu Rng) 7 jednotiek nižšej triedy pred vyššou
       exportGroupingPct: 100,
     });
     expect(report['dualCycleRate']).toBeGreaterThan(0);
@@ -1240,7 +1217,7 @@ describe('CLI (tools/simrun.ts)', () => {
       trucksSpawned: 0,
       trucksExited: 0,
       unitsExportedByTrucks: 0,
-      noWaitingBayEvents: 0,
+      truckTurnTimeAvgMin: null,
       gateQueueMax: 0,
       ticksToAllExported: null,
       contractsCompleted: 0,

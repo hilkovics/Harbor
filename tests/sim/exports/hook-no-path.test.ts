@@ -5,57 +5,26 @@
  *
  * - **Prerezaná cesta**: `vertical_slice`, `RemoveRoad` na trase vozidiel v ticku 8 332 (obe vozidlá preplánujú do `no_path`), oprava o 3 000 ticků
  *   neskôr. Pred opravou žeriav ostal v `placing` s prvou jednotkou a loď (49 jednotiek) sa nevykladala.
- * - **Jednosmerky popri nábreží**: kruh ciest okolo dvora je jednosmerný tak, že z cestných buniek pri nábreží sa na ňho nedá odbočiť
- *   (`isRoadStepAllowed`); prístupová bunka kotviska je dosiahnuteľná, bunka pod hákom nie — každá jednotka ide cez apron.
- * - **Nakládka exportu** pod hákom na tom istom kruhu (`export_roundtrip`): vozidlo s jednotkou k háku nedôjde, job `in_storage → in_crane` sa presmeruje na
- *   voľný slot apronu (`TransportJob.rebindTarget`), vozidlo ide na prístupovú bunku a žeriav jednotku naloží z apronu (`on_apron → in_crane → on_ship`).
- * - Save v `no_path` / uprostred záložnej nakládky: obnova dá zhodný `stateHash`.
+ * - R4 (TR4-02): jednosmerné avenue nemá obchádzku, po ktorej by prístupová bunka kotviska bola dosiahnuteľná a hák nie (návrat z kotviska vedie jedine cez nábrežie), preto zátkové scenáre
+ *   („jednosmerky popri nábreží“, záložná nakládka cez apron) zanikli; presmerovanie jobu nakládky na apron (`TransportJob.rebindTarget`) pokrýva jednotkový test `transport-job.test.ts`.
+ * - Save v `no_path`: obnova dá zhodný `stateHash`.
  */
 import { describe, expect, it } from 'vitest';
 import type { SimEvent } from '@sim/events';
-import { BerthModule, CraneModule } from '@sim/modules';
+import { CraneModule } from '@sim/modules';
 import { World, stateHash, type WorldState } from '@sim/world';
 import { findWorldViolation } from '@sim/world/world-invariants';
-import { MAP, lostUnits } from '../helpers/f6a';
+import { PORT_MAP, lostUnits } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
 import { loadScenarioFile, runScenario, type Scenario } from '../helpers/scenario';
-import modulesJson from '@data/defs/modules.json';
-import { DefRegistry } from '@sim/defs';
-import { BUNDLED_DEFS, RAW_DEFS } from '../world/world-fixtures';
+import type { DefRegistry } from '@sim/defs';
+import { BUNDLED_DEFS } from '../world/world-fixtures';
 
 const BASE = loadScenarioFile('vertical_slice');
 const TICKS = 30_000;
 /** Import kontraktu #1 `vertical_slice`: 78 TEU = 50 kontajnerov pri `sizeMix` 0,6 (ADR-039). */
 const IMPORT_UNITS = 50;
 const TIMEOUT_MS = 120_000;
-
-/**
- * Bundled defy s vyššími stohmi dvora (maxTier 5; fyzická kapacita `min(capacityUnits 64, 80)` = 64 TEU, hint poolu ostáva 64): na jednosmernom kruhu je dosiahnuteľný jediný dvor
- * a 78 TEU importu `vertical_slice` sa do 48 TEU (4 × 4 × 3, R2 ADR-039) nezmestí naraz — žeriav by držal jednotku bez skladu a vozidlá by sa na kruhu zablokovali. Test sleduje no_path pri háku, nie kapacitu dvora.
- */
-const TALL_YARD_DEFS = DefRegistry.fromRaw({
-  ...RAW_DEFS,
-  modules: { ...modulesJson, items: modulesJson.items.map((item) => (item.id === 'container_yard_small' ? { ...item, params: { ...item.params, maxTier: 5 } } : item)) },
-});
-
-const cells = (points: readonly (readonly [number, number])[]): { x: number; y: number }[] => points.map(([x, y]) => ({ x, y }));
-
-/**
- * Jednosmerné „zátky“ pri nábreží (kotvisko 8 × 4, ADR-040): prístupová bunka západného konektora (41, 18) je jednosmerka na západ a východného (46, 18) na východ; z oboch sa preto
- * nedá odbočiť na sever do pruhu kotviska (`isRoadStepAllowed`) a vozidlo z nich odíde obchádzkou (jednosmerné bunky (40, 18), (47, 18) na juh a stĺpec x = 40 resp. x = 47 späť k priečke y = 22). Prístupové bunky
- * konektorov kotviska sú cieľom jazdy (dosiahnuteľné), bunka pod hákom (43, 16) nie.
- */
-const RING = [
-  { atTick: 0, command: { type: 'PlaceRoad', cells: cells([[40, 18], [40, 19], [40, 20], [40, 21], [40, 22]]) } },
-  { atTick: 0, command: { type: 'PlaceRoad', cells: cells([[47, 18], [47, 19], [47, 20], [47, 21], [47, 22]]) } },
-  { atTick: 0, command: { type: 'PlaceRoad', cells: cells([[41, 18]]), kind: 'one_way', dirs: ['W'] } },
-  { atTick: 0, command: { type: 'PlaceRoad', cells: cells([[40, 18]]), kind: 'one_way', dirs: ['S'] } },
-  { atTick: 0, command: { type: 'PlaceRoad', cells: cells([[47, 18]]), kind: 'one_way', dirs: ['S'] } },
-  { atTick: 0, command: { type: 'PlaceRoad', cells: cells([[46, 18]]), kind: 'one_way', dirs: ['E'] } },
-] as unknown as Scenario['commands'];
-
-/** Scenár prístavu F4 s jednosmernými zátkami hneď po prvých štyroch cestách (zvyšok zo scenára `base`). */
-const withRing = (base: Scenario): Scenario => ({ ...base, commands: [...base.commands.slice(0, 4), ...RING, ...base.commands.slice(4)] });
 
 type Entries = { tick: number; event: SimEvent }[];
 
@@ -76,7 +45,7 @@ const craneHoldsWhileStuck =
 
 /** Beh scenára (`ticks`) s kontrolou konzervácie po každom ticku, udalosťami a uložením stavu v prvom ticku, kde platí `saveWhen`. */
 function observe(scenario: Scenario, saveWhen: (world: World, crane: CraneModule) => boolean, ticks = TICKS, defs: DefRegistry = BUNDLED_DEFS): Observed {
-  const world = World.create(defs, MAP, scenario.seed);
+  const world = World.create(defs, PORT_MAP, scenario.seed);
   const events: Entries = [];
   let heldUnit: number | null = null;
   let hold = 0;
@@ -103,7 +72,7 @@ const moves = (events: Entries, from: string, to: string, window: readonly [numb
 function expectRoundtrip(observed: Observed, scenario: Scenario, ticks = TICKS, defs: DefRegistry = BUNDLED_DEFS): void {
   expect(observed.saved, 'sledovaný stav sa v behu nenašiel').toBeDefined();
   const { state } = observed.saved as NonNullable<Observed['saved']>;
-  const restored = World.deserialize(defs, MAP, JSON.parse(JSON.stringify(state)) as WorldState);
+  const restored = World.deserialize(defs, PORT_MAP, JSON.parse(JSON.stringify(state)) as WorldState);
   runScenario(restored, scenario, ticks);
   expect(stateHash(restored)).toBe(stateHash(observed.world));
   expect(restored.cargo.exportedCount).toBe(observed.world.cargo.exportedCount);
@@ -112,18 +81,15 @@ function expectRoundtrip(observed: Observed, scenario: Scenario, ticks = TICKS, 
 describe('prerezaná cesta počas vykládky (buffer 0): žeriav neuviazne na jednotke vozidla v no_path', () => {
   const CUT_TICK = 8_332;
   const REPAIR_TICK = 11_332;
-  // Vozidlá jazdia medzi berthom a dvorom po kruhu okolo dvora (x = 41 alebo x = 46): strata oboch strán v ticku 8 332 (zaparkované vozidlá
+  // K háku vedie jediná cesta cez západný konektor kotviska (41, 18): strata bunky (42, 18) v ticku 8 332 (zaparkované vozidlá
   // vyšli z depa v 8 327 s prvou loďou) nechá obe vozidlá bez cesty k háku v no_path.
-  const CUT_CELL = [
-    { x: 41, y: 19 },
-    { x: 46, y: 19 },
-  ];
+  const CUT_CELL = [{ x: 42, y: 18 }];
   const scenario: Scenario = {
     ...BASE,
     commands: [
       ...BASE.commands,
       { atTick: CUT_TICK, command: { type: 'RemoveRoad', cells: CUT_CELL } },
-      { atTick: REPAIR_TICK, command: { type: 'PlaceRoad', cells: CUT_CELL } },
+      { atTick: REPAIR_TICK, command: { type: 'PlaceRoad', cells: CUT_CELL, kind: 'one_way', dirs: ['W'] } },
     ],
   };
   const observed = observe(scenario, craneHoldsWhileStuck(CUT_TICK + 600));
@@ -152,113 +118,5 @@ describe('prerezaná cesta počas vykládky (buffer 0): žeriav neuviazne na jed
     expect(observed.saved?.tick).toBeGreaterThanOrEqual(CUT_TICK);
     expect(observed.saved?.tick).toBeLessThan(REPAIR_TICK);
     expectRoundtrip(observed, scenario);
-  }, TIMEOUT_MS);
-});
-
-describe('jednosmerky popri nábreží: prístupová bunka kotviska je dosiahnuteľná, bunka pod hákom nie', () => {
-  const scenario = withRing(BASE);
-  const observed = observe(scenario, craneHoldsWhileStuck(0), TICKS, TALL_YARD_DEFS);
-  const { world, events } = observed;
-
-  it('každé vozidlo jobu vykládky uviazne v no_path (k háku nevedie cesta) a žeriav všetko odloží na apron; nikdy nie priamo na vozidlo', () => {
-    expect(events.some((entry) => entry.event.type === 'VehicleStateChanged' && entry.event.to === 'no_path')).toBe(true);
-    expect(moves(events, 'in_crane', 'in_vehicle')).toBe(0);
-    expect(moves(events, 'in_crane', 'on_apron')).toBe(IMPORT_UNITS);
-    expect(moves(events, 'on_apron', 'in_vehicle')).toBeGreaterThanOrEqual(IMPORT_UNITS); // vozidlo ich berie z apronu na prístupovej bunke
-  });
-
-  it('žeriav nezamrzne: žiadnu jednotku nedrží dlhšie než 500 ticků (nameraných 150 — čakanie na voľné vozidlo; bez opravy držal prvú jednotku do konca behu)', () => {
-    expect(observed.longestHold).toBeLessThan(500);
-  });
-
-  it('všetko sa dokončí: kontrakt, 50 exportovaných jednotiek, žiadna stratená, invarianty sveta', () => {
-    expect(world.contracts.get(1 as never)?.state).toBe('completed');
-    expect(world.cargo.exportedCount).toBe(IMPORT_UNITS);
-    expect(lostUnits(world)).toBe(0);
-    expect(findWorldViolation(world)).toBeUndefined();
-  });
-
-  it('save v no_path uprostred cyklu: obnova dá zhodný stateHash aj výsledok', () => {
-    expectRoundtrip(observed, scenario, TICKS, TALL_YARD_DEFS);
-  }, TIMEOUT_MS);
-});
-
-// Hák je za zátkami nedosiahnuteľný, no prístupové bunky kotviska áno: nakládka ide cez apron od priradenia jobu (slot sa rezervuje v dispatcheri, ADR-040 dodatok TR3-02b).
-describe('nakládka exportu pod hákom na kruhu jednosmeriek: záložná cesta cez apron (export_roundtrip)', () => {
-  const ROUNDTRIP = loadScenarioFile('export_roundtrip');
-  const ROUNDTRIP_TICKS = 40_000;
-  const IMPORT = 31; // 54 TEU
-  const BOOKED = 24; // 36 TEU
-  // Posledný kontajner prišiel po cut-off ako rolled a pri kotvisku 8 × 4 (iný čas príjazdu než pri starom kruhu) až po začiatku lashingu: nenaloží sa a vráti sa po súši
-  // (ADR-040 dodatok TR3-02b; v starom rozložení stihol last minute a odplávalo 24).
-  const SHIPPED = BOOKED - 1;
-  const scenario = withRing(ROUNDTRIP);
-  /** Job nakládky presmerovaný na apron: `in_storage → on_apron` s vozidlom v `moving`, ktoré k háku nedôjde; stav sa uloží uprostred záložnej nakládky. */
-  const rebound = (w: World): boolean => [...w.jobs.values()].some((job) => job.from.kind === 'in_storage' && job.to.kind === 'on_apron' && job.state === 'moving');
-  const observed = observe(scenario, (w) => rebound(w), ROUNDTRIP_TICKS);
-  const { world, events } = observed;
-
-  it('loď sa naloží a odpláva: 23 odplávaných (posledný rolled sa vráti po súši), 31 exportovaných importov, obe kontrakty dokončené, žiadna stratená', () => {
-    expect(world.cargo.shippedCount).toBe(SHIPPED);
-    expect(world.cargo.exportedCount).toBe(IMPORT + 1); // 31 importov + 1 rolled export vrátený po súši
-    expect([7, 8].map((id) => world.contracts.get(id as never)?.state)).toEqual(['completed', 'completed']);
-    expect(lostUnits(world)).toBe(0);
-    expect(world.cargo.liveCount).toBe(0);
-    expect(findWorldViolation(world)).toBeUndefined();
-  });
-
-  it('každá jednotka exportu ide zo skladu cez vozidlo na apron a odtiaľ žeriavom na loď (nikdy priamo vozidlo → žeriav)', () => {
-    expect(events.some((entry) => entry.event.type === 'VehicleStateChanged' && entry.event.to === 'no_path')).toBe(true);
-    expect(moves(events, 'in_vehicle', 'in_crane')).toBe(0);
-    expect(moves(events, 'in_vehicle', 'on_apron')).toBe(SHIPPED);
-    expect(moves(events, 'on_apron', 'in_crane')).toBe(SHIPPED);
-    expect(moves(events, 'in_crane', 'on_ship')).toBe(SHIPPED);
-    expect(moves(events, 'on_ship', 'shipped')).toBe(SHIPPED);
-  });
-
-  it('save uprostred záložnej nakládky (job presmerovaný na apron, vozidlo vezie jednotku): obnova dá zhodný stateHash aj výsledok', () => {
-    expect(observed.saved).toBeDefined();
-    expectRoundtrip(observed, scenario, ROUNDTRIP_TICKS);
-  }, TIMEOUT_MS);
-
-  it('apron bez voľného slotu: job nakládky sa nepriradí (jednotka ostáva v sklade, žiadne vozidlo nečaká v no_path na zdrojovej bunke); po uvoľnení slotov sa loď naloží', () => {
-    // Rezervácie slotov apronu bez jobu / žeriava porušujú invarianty sveta (krok 12) — kým je apron „plný“, sú vypnuté; konzerváciu nákladu kontroluje test po každom ticku.
-    const run = World.create(BUNDLED_DEFS, MAP, scenario.seed, { checkInvariants: false });
-    const berth = [...run.modules.values()].find((module): module is BerthModule => module instanceof BerthModule) as BerthModule;
-    const held: number[] = [];
-    let heldTicks = 0;
-    let assignedWhileFull = 0;
-    let noPathWhileFull = 0;
-    let loadedWhileFull = 0;
-    let released = false;
-    const wait = 3 * run.defs.logistics.repathIntervalTicks;
-    runScenario(run, scenario, ROUNDTRIP_TICKS, {
-      afterTick: (w, tickEvents) => {
-        assertCargoConservation(w);
-        if (released) return;
-        const loadJobs = [...w.jobs.values()].filter((job) => job.from.kind === 'in_storage' && (job.to.kind === 'in_crane' || job.to.kind === 'on_apron'));
-        // Apron sa zaplní, keď je na lodi dokovanej nakládka a job nakládky ešte čaká (`open`): volné sloty (nad rezervou) by ho hneď priradili.
-        const unloading = [...w.jobs.values()].some((job) => job.from.kind === 'in_crane');
-        if (held.length === 0 && !unloading && loadJobs.some((job) => job.state === 'open' && job.to.kind === 'in_crane')) while (berth.apron.freeUnreservedCount > 0) held.push(berth.apron.reserve());
-        if (held.length === 0) return;
-        while (berth.apron.freeUnreservedCount > 0) held.push(berth.apron.reserve()); // slot, ktorý medzitým uvoľnil iný job, sa hneď znova zaberie (apron ostáva plný)
-        heldTicks += 1;
-        assignedWhileFull += loadJobs.filter((job) => job.state !== 'open' && job.to.kind === 'in_crane').length;
-        noPathWhileFull += loadJobs.filter((job) => job.vehicleId !== null && w.vehicles.get(job.vehicleId)?.state === 'no_path').length;
-        loadedWhileFull += tickEvents.filter((event) => event.type === 'CargoMoved' && event.from.kind === 'in_storage' && event.to.kind === 'in_vehicle').length;
-        if (heldTicks >= wait) {
-          for (const slot of held) berth.apron.release(slot);
-          released = true;
-        }
-      },
-    });
-    expect(held.length, 'apron sa zaplnil').toBeGreaterThan(0);
-    expect(released, 'apron sa uvoľnil').toBe(true);
-    expect(assignedWhileFull).toBe(0); // job s nedosiahnuteľným hákom bez slotu apronu vozidlo nedostane
-    expect(noPathWhileFull).toBe(0); // nič neuviazne v no_path s jednotkou na zdrojovej bunke
-    expect(loadedWhileFull).toBe(0); // jednotka exportu ostáva v sklade
-    expect(run.cargo.shippedCount).toBe(SHIPPED);
-    expect(lostUnits(run)).toBe(0);
-    expect(findWorldViolation(run)).toBeUndefined();
   }, TIMEOUT_MS);
 });

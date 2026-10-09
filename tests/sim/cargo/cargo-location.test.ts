@@ -25,12 +25,11 @@ const EXPECTED_TRANSITIONS: Readonly<Record<CargoLocationKind, readonly CargoLoc
   on_ship: ['in_crane', 'in_pipeline', 'in_vehicle', 'shipped'],
   in_crane: ['on_apron', 'on_ship', 'in_vehicle'],
   on_apron: ['in_vehicle', 'in_crane'],
-  in_vehicle: ['in_storage', 'at_ramp', 'on_apron', 'in_crane', 'in_handler'],
-  in_handler: ['in_storage', 'in_vehicle'],
+  in_vehicle: ['in_storage', 'on_apron', 'in_crane', 'in_handler', 'in_truck'],
+  in_handler: ['in_storage', 'in_vehicle', 'in_truck'],
   in_storage: ['in_vehicle', 'in_pipeline', 'in_handler'],
-  in_pipeline: ['in_storage', 'at_ramp'],
-  at_ramp: ['in_truck', 'in_train', 'in_vehicle'],
-  in_truck: ['exported', 'at_ramp'],
+  in_pipeline: ['in_storage', 'in_truck'],
+  in_truck: ['exported', 'in_handler', 'in_vehicle'],
   in_train: ['exported'],
   exported: [],
   shipped: [],
@@ -41,7 +40,7 @@ const TERMINAL: readonly CargoLocationKind[] = ['exported', 'shipped'];
 const kindsOf = (chain: readonly CargoLocation[]): CargoLocationKind[] => ['on_ship', ...chain.map((location) => location.kind)];
 
 describe('CARGO_LOCATION_KINDS a CARGO_TRANSITIONS', () => {
-  it('všetkých 12 druhov lokácií v poradí §7.1 (ADR-032 pridal shipped, ADR-040 in_handler)', () => {
+  it('všetkých 11 druhov lokácií v poradí §7.1 (ADR-032 pridal shipped, ADR-040 in_handler, ADR-041 zrušil at_ramp)', () => {
     expect(CARGO_LOCATION_KINDS).toEqual([
       'on_ship',
       'in_crane',
@@ -50,7 +49,6 @@ describe('CARGO_LOCATION_KINDS a CARGO_TRANSITIONS', () => {
       'in_handler',
       'in_storage',
       'in_pipeline',
-      'at_ramp',
       'in_truck',
       'in_train',
       'exported',
@@ -97,8 +95,8 @@ describe('CARGO_LOCATION_KINDS a CARGO_TRANSITIONS', () => {
   });
 
   it.each([
-    ['export (kamión → rampa → sklad → apron → žeriav → loď → shipped)', EXPORT_CHAIN],
-    ['last minute (rampa → apron bez skladu)', LAST_MINUTE_CHAIN],
+    ['export (kamión → vozidlo → sklad → apron → žeriav → loď → shipped)', EXPORT_CHAIN],
+    ['last minute (kamión → apron bez skladu)', LAST_MINUTE_CHAIN],
   ])('exportný reťazec %s je povolený krok po kroku (ADR-032 bod 3)', (_name, chain) => {
     const kinds: CargoLocationKind[] = ['in_truck', ...chain.map((location) => location.kind)];
     for (let i = 1; i < kinds.length; i++) {
@@ -128,11 +126,11 @@ describe('CARGO_LOCATION_KINDS a CARGO_TRANSITIONS', () => {
     }
   });
 
-  it('in_handler je prechodová poloha: len in_vehicle ↔ in_handler ↔ in_storage, ťahač ani stoh sa nepreskočí', () => {
-    expect([...(CARGO_TRANSITIONS.get('in_handler') ?? [])].sort()).toEqual(['in_storage', 'in_vehicle']);
+  it('in_handler je prechodová poloha: len in_vehicle / in_truck ↔ in_handler ↔ in_storage, ťahač ani stoh sa nepreskočí', () => {
+    expect([...(CARGO_TRANSITIONS.get('in_handler') ?? [])].sort()).toEqual(['in_storage', 'in_truck', 'in_vehicle']);
     expect(holderIdOf(at.handler(95))).toBe(95);
     expect(slotOf(at.handler(95))).toBeNull();
-    for (const [from, to] of [['in_handler', 'in_crane'], ['in_handler', 'on_apron'], ['in_handler', 'at_ramp'], ['on_apron', 'in_handler'], ['in_crane', 'in_handler'], ['in_handler', 'in_handler']] as const) {
+    for (const [from, to] of [['in_handler', 'in_crane'], ['in_handler', 'on_apron'], ['in_handler', 'in_pipeline'], ['on_apron', 'in_handler'], ['in_crane', 'in_handler'], ['in_handler', 'in_handler']] as const) {
       expect(isTransitionAllowed(from, to), `${from} → ${to}`).toBe(false);
     }
     expect(normalizeLocation({ kind: 'in_handler', machineId: 7 })).toEqual({ ok: true, location: { kind: 'in_handler', machineId: 7 } });
@@ -145,18 +143,17 @@ describe('CARGO_LOCATION_KINDS a CARGO_TRANSITIONS', () => {
     ['on_ship', 'on_apron'],
     ['on_ship', 'exported'],
     ['in_crane', 'in_storage'],
-    ['in_crane', 'at_ramp'],
+    ['in_crane', 'in_truck'],
     ['in_crane', 'shipped'],
     ['on_apron', 'in_storage'],
     ['on_apron', 'on_ship'],
-    ['in_storage', 'at_ramp'],
+    ['in_storage', 'in_truck'],
     ['in_storage', 'on_apron'],
     ['in_vehicle', 'exported'],
     ['in_vehicle', 'on_ship'],
     ['in_storage', 'in_crane'],
-    ['at_ramp', 'in_crane'],
-    ['at_ramp', 'exported'],
-    ['at_ramp', 'in_storage'],
+    ['in_truck', 'in_crane'],
+    ['in_train', 'in_truck'],
     ['in_truck', 'in_train'],
     ['in_truck', 'in_storage'],
     ['in_truck', 'shipped'],
@@ -179,7 +176,8 @@ describe('CARGO_LOCATION_KINDS a CARGO_TRANSITIONS', () => {
       }
       return seen;
     };
-    expect([...reachable('on_ship')].sort()).toEqual([...CARGO_LOCATION_KINDS].sort());
+    // `in_train` zatiaľ nemá vstup (ADR-041 zrušil `at_ramp`; vlak sa napojí s železnicou), preto nie je z lode dosiahnuteľný
+    expect([...reachable('on_ship')].sort()).toEqual(CARGO_LOCATION_KINDS.filter((kind) => kind !== 'in_train').sort());
     for (const kind of CARGO_HOLDER_KINDS) {
       expect(reachable(kind).has('exported'), kind).toBe(true);
       expect(reachable(kind).has('shipped'), kind).toBe(kind !== 'in_train');
@@ -212,10 +210,9 @@ describe('CARGO_HOLDER_SPECS', () => {
     expect(Object.isFrozen(CARGO_HOLDER_SPECS)).toBe(true);
   });
 
-  it('jedinečné miesto majú len apron a sklad; dock rampy zdieľa viac jednotiek (§7.5, §7.7)', () => {
+  it('jedinečné miesto majú len apron a sklad; ostatní držitelia zdieľajú viac jednotiek (§7.5, §7.7)', () => {
     const unique = CARGO_HOLDER_KINDS.filter((kind) => CARGO_HOLDER_SPECS[kind].uniqueSlot);
     expect(unique).toEqual(['on_apron', 'in_storage']);
-    expect(CARGO_HOLDER_SPECS.at_ramp).toMatchObject({ slotKey: 'dock', uniqueSlot: false });
   });
 
   it('loď vydáva od najmenšieho id, ostatní držitelia vo FIFO', () => {
@@ -233,7 +230,6 @@ describe('holderIdOf, slotOf, uniqueSlotOf, formatLocation', () => {
     ['in_vehicle', 903, null, null, 'in_vehicle(vehicleId=903)'],
     ['in_storage', 904, 7, 7, 'in_storage(moduleId=904, slot=7)'],
     ['in_pipeline', 905, null, null, 'in_pipeline(pipelineId=905)'],
-    ['at_ramp', 906, 2, null, 'at_ramp(rampId=906, dock=2)'],
     ['in_truck', 907, null, null, 'in_truck(truckId=907)'],
     ['in_train', 908, null, null, 'in_train(trainId=908)'],
     ['exported', null, null, null, 'exported'],
@@ -277,7 +273,6 @@ describe('normalizeLocation', () => {
 
   it('miesto 0 je platné (sloty sa číslujú od 0)', () => {
     expect(normalizeLocation(at.apron(1, 0)).ok).toBe(true);
-    expect(normalizeLocation(at.ramp(1, 0)).ok).toBe(true);
   });
 
   it.each<[string, string, unknown, RegExp]>([
@@ -296,7 +291,7 @@ describe('normalizeLocation', () => {
     ['držiteľ necelý', '/trainId', { kind: 'in_train', trainId: 1.5 }, /celé číslo ≥ 1.*1\.5/],
     ['držiteľ reťazec', '/shipId', { kind: 'on_ship', shipId: '3' }, /celé číslo ≥ 1.*"3"/],
     ['miesto záporné', '/slot', { kind: 'in_storage', moduleId: 4, slot: -1 }, /celé číslo ≥ 0.*-1/],
-    ['miesto necelé', '/dock', { kind: 'at_ramp', rampId: 4, dock: 0.5 }, /celé číslo ≥ 0.*0\.5/],
+    ['miesto necelé', '/slot', { kind: 'in_storage', moduleId: 4, slot: 0.5 }, /celé číslo ≥ 0.*0\.5/],
     ['miesto NaN', '/slot', { kind: 'on_apron', berthId: 4, slot: Number.NaN }, /celé číslo ≥ 0.*NaN/],
   ])("%s → problém na '%s'", (_name, path, raw, problem) => {
     const result = normalizeLocation(raw);

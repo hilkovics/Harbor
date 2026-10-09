@@ -6,10 +6,8 @@
  * Druhy obsahu sa vykreslia podľa prítomnosti polí v `ModuleInspectorData`, nie podľa `kind` (ten určuje len
  * ikonu): kotvisko (`apron`, `dockedShip`) a žeriav (`crane`) z F2, sklad (`storage`) a depo vozidiel (`depot`,
  * zoznam vozidiel s predajom a tlačidlo „Kúpiť vozidlo v depe") z F3, brána (`gate`: fronta, priepustnosť za hodinu,
- * ticky na kamión), čakacia plocha (`waitingArea`: rad stojísk) a rampa (`ramp`: docky so staging slotmi a kamiónom)
- * z F4. `connected === false` pridá banner „Nepripojené k ceste" a žltý badge „Nepripojené" (vzor `insp_gate`
- * z prototypu) — má prednosť pred `stateLabel`; neprevádzková rampa (`ramp.operational === false`) má vlastný
- * banner s dôvodom a žltý badge „Neprevádzková" (po „Nepripojené", pred `stateLabel`). Prototypová akcia
+ * ticky na kamión) z F4 (od R4 sú rampa a čakacia plocha zrušené, ADR-041; pruh brány a predbránová plocha majú vlastné inšpektory v `gate-inspector.tsx`). `connected === false` pridá banner „Nepripojené k ceste" a žltý badge „Nepripojené" (vzor `insp_gate`
+ * z prototypu) — má prednosť pred `stateLabel`. Prototypová akcia
  * „Presunúť" nie je (žiadny príkaz na presun), sparkline 24 h a politika skladu prídu s fázami, ktoré ich dáta prinesú.
  * F6a (T6A-07, ADR-032): sklad ukáže rozdelenie uskladnených jednotiek na import a export (`storage.split`), zakotvená loď
  * náklad na palube podľa smeru (`dockedShip.cargoSplit`: import na vykládku / naložený export) a stav lashing s progresom
@@ -90,30 +88,6 @@ export interface YardStackData {
   readonly height: number;
   readonly top: YardContainerLook | null;
   readonly tiers?: readonly (YardContainerLook | null)[];
-}
-
-/** F4: čakacia plocha. `occupied` = kamión stojí na bay, `reserved` = bay je rezervovaný kamiónu na ceste. */
-export interface WaitingAreaData {
-  readonly bays: number;
-  readonly occupied: number;
-  readonly reserved: number;
-}
-
-/** F4: jeden dock rampy — `staged` jednotiek pripravených v staging slotoch z `capacity`, `truck` = kamión stojí v docku. */
-export interface RampDockData {
-  readonly staged: number;
-  readonly capacity: number;
-  readonly truck: boolean;
-}
-
-/**
- * F4: nakladacia rampa. `operational === false` = žltý badge „Neprevádzková" + banner; `inoperativeReason` je hotový
- * slovenský text dôvodu (kódy simu → text: `rampInoperativeText`), bez neho sa ukáže všeobecný text.
- */
-export interface RampData {
-  readonly docks: readonly RampDockData[];
-  readonly operational: boolean;
-  readonly inoperativeReason?: string;
 }
 
 /**
@@ -238,10 +212,6 @@ export interface ModuleInspectorData {
   };
   /** F4: brána kamiónov (`kind: 'gate'`). */
   readonly gate?: GateData;
-  /** F4: čakacia plocha (stojisko) kamiónov (`kind: 'waiting_area'`). */
-  readonly waitingArea?: WaitingAreaData;
-  /** F4: nakladacia rampa (`kind: 'ramp'`). */
-  readonly ramp?: RampData;
   /**
    * R2: blok stohu (yard block). `geometry` = veľkosť gridu, `usedTeu` / `capacityTeu` = obsadenosť,
    * `rehandlesPerMove` = rehandling na presun (voliteľný), `stacks` = pole stohu po bayoch/radoch.
@@ -307,8 +277,8 @@ const MODULE_KIND_ICONS: Readonly<Record<string, IconName>> = {
   crane: 'ic_crane',
   storage: 'ic_yard',
   gate: 'ic_gate',
-  waiting_area: 'ic_waiting',
-  ramp: 'ic_ramp',
+  pre_gate: 'ic_one_way',
+  holding: 'ic_waiting',
   depot: 'ic_depot',
   rail_station: 'ic_rail_station',
   pipeline: 'ic_pipe',
@@ -324,8 +294,8 @@ const MODULE_KIND_CODES: Readonly<Record<string, string>> = {
   crane: 'CRN',
   storage: 'YRD',
   gate: 'GTE',
-  waiting_area: 'WAI',
-  ramp: 'RMP',
+  pre_gate: 'PRG',
+  holding: 'HLD',
   depot: 'DEP',
   rail_station: 'RST',
   pipeline: 'PIP',
@@ -675,7 +645,7 @@ export function lashingText(lashing: Pick<LashingData, 'ticksLeft' | 'scale'>): 
   return `Lashing a papiere · zostáva ${formatDuration(lashing.ticksLeft, lashing.scale)}`;
 }
 
-// --- F4: brána, čakacia plocha, rampa -----------------------------------------------------------------------------
+// --- F4: brána -----------------------------------------------------------------------------
 
 /** Celé nezáporné číslo z počtu (neplatná hodnota → 0); počty kusov v dátach sú celé, UI sa nikdy nerozbije na `NaN`. */
 function wholeCount(value: number): number {
@@ -741,97 +711,9 @@ export function hinterlandRows(hinterland: HinterlandData): InspectorRow[] {
   return rows;
 }
 
-/** Stav jedného stojiska (bay) čakacej plochy. */
-export type BayState = 'occupied' | 'reserved' | 'free';
-
-/**
- * Stojiská čakacej plochy v poradí obsadené → rezervované → voľné; dĺžka je vždy `bays` (počty sa orežú, aby súčet
- * nepresiahol počet stojísk).
- */
-export function bayStates(area: WaitingAreaData): BayState[] {
-  const bays = wholeCount(area.bays);
-  const occupied = Math.min(bays, wholeCount(area.occupied));
-  const reserved = Math.min(bays - occupied, wholeCount(area.reserved));
-  const states: BayState[] = [];
-  for (let index = 0; index < bays; index += 1) {
-    states.push(index < occupied ? 'occupied' : index < occupied + reserved ? 'reserved' : 'free');
-  }
-  return states;
-}
-
-/** Voľné stojiská (nikdy záporné). */
-export function waitingAreaFree(area: WaitingAreaData): number {
-  return bayStates(area).filter((state) => state === 'free').length;
-}
-
-/** Dlaždice čakacej plochy: obsadené / rezervované / voľné stojiská (voľné 0 = varovanie), rovnaké ako pri apron kotviska. */
-export function waitingAreaStats(area: WaitingAreaData): InspectorStat[] {
-  return berthStats({ used: area.occupied, reserved: area.reserved, capacity: area.bays });
-}
-
-/** Súčty rampy: docky, jednotky v staging slotoch, kapacita staging slotov a docky s kamiónom. */
-export function rampTotals(ramp: Pick<RampData, 'docks'>): {
-  readonly docks: number;
-  readonly staged: number;
-  readonly capacity: number;
-  readonly trucks: number;
-} {
-  let staged = 0;
-  let capacity = 0;
-  let trucks = 0;
-  for (const dock of ramp.docks) {
-    staged += Math.min(wholeCount(dock.staged), wholeCount(dock.capacity));
-    capacity += wholeCount(dock.capacity);
-    if (dock.truck) trucks += 1;
-  }
-  return { docks: ramp.docks.length, staged, capacity, trucks };
-}
-
-/** Dlaždice rampy: počet dockov / jednotky v staging slotoch (farba nákladu) / kamióny v dockoch. */
-export function rampStats(ramp: Pick<RampData, 'docks'>): InspectorStat[] {
-  const totals = rampTotals(ramp);
-  return [
-    { key: 'docks', label: 'Docky', value: formatCount(totals.docks), tone: 'normal' },
-    { key: 'staged', label: 'Staging', value: formatFraction(totals.staged, totals.capacity), tone: 'normal', swatch: 'used' },
-    { key: 'trucks', label: 'Kamióny', value: formatCount(totals.trucks), tone: 'normal' },
-  ];
-}
-
-/** Sloty staging jednotiek docku: `true` = slot obsadený pripraveným nákladom; dĺžka je `capacity`. */
-export function stagingSlots(dock: Pick<RampDockData, 'staged' | 'capacity'>): boolean[] {
-  const capacity = wholeCount(dock.capacity);
-  const staged = Math.min(capacity, wholeCount(dock.staged));
-  const slots: boolean[] = [];
-  for (let index = 0; index < capacity; index += 1) slots.push(index < staged);
-  return slots;
-}
-
-/** Dôvody neprevádzkovosti rampy zo simu (`LoadingRamp.inoperativeReason`) → slovenský text pre `RampData.inoperativeReason`. */
-export const RAMP_INOPERATIVE_TEXTS: Readonly<Record<string, string>> = {
-  no_gate: 'Chýba brána na ceste.',
-  no_waiting_area: 'Chýba stojisko na ceste.',
-  not_connected: 'Chýba súvislá cesta k rampe.',
-  no_return_path: 'Kamióny sa nemajú ako vrátiť cez bránu k portálu.',
-};
-
-/** Všeobecný text, keď rampa je neprevádzková, ale dôvod nie je známy. */
-export const RAMP_INOPERATIVE_FALLBACK = 'Rampa nemá súvislú cestu cez bránu a stojisko.';
-
-/** Text dôvodu podľa kódu zo simu (`no_gate` …); neznámy alebo chýbajúci kód → `undefined`. */
-export function rampInoperativeText(reason: string | null | undefined): string | undefined {
-  return reason === null || reason === undefined ? undefined : RAMP_INOPERATIVE_TEXTS[reason];
-}
-
-/** Popis stavu docku v zozname rampy: kamión v docku / bez kamióna. */
-export function dockTruckLabel(dock: Pick<RampDockData, 'truck'>): string {
-  return dock.truck ? 'Kamión' : 'Bez kamióna';
-}
-
-/** Text a vzhľad badge v hlavičke; „Nepripojené" (`connected === false`) a „Neprevádzková" (rampa) majú prednosť pred stavom modulu. */
+/** Text a vzhľad badge v hlavičke; „Nepripojené" (`connected === false`) má prednosť pred stavom modulu. */
 export const DISCONNECTED_BADGE_LABEL = 'Nepripojené';
 export const DISCONNECTED_TITLE = 'Nepripojené k ceste';
-export const INOPERATIVE_BADGE_LABEL = 'Neprevádzková';
-export const INOPERATIVE_TITLE = 'Rampa je neprevádzková';
 
 export interface InspectorBadge {
   readonly label: string;
@@ -840,20 +722,9 @@ export interface InspectorBadge {
   readonly ok: boolean;
 }
 
-/** Dôvod neprevádzkovosti rampy: zadaný text, inak všeobecný. */
-export function rampInoperativeReason(ramp: Pick<RampData, 'inoperativeReason'>): string {
-  return ramp.inoperativeReason ?? RAMP_INOPERATIVE_FALLBACK;
-}
-
-/**
- * Badge hlavičky: „Nepripojené" (modul bez cesty) má prednosť pred „Neprevádzková" (rampa bez brány / stojiska), tá
- * pred stavom modulu. Titulok neprevádzkovej rampy nesie aj dôvod.
- */
-export function inspectorBadge(data: Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'connected' | 'ramp'>): InspectorBadge {
+/** Badge hlavičky: „Nepripojené" (modul bez cesty) má prednosť pred stavom modulu. */
+export function inspectorBadge(data: Pick<ModuleInspectorData, 'stateLabel' | 'ok' | 'connected'>): InspectorBadge {
   if (data.connected === false) return { label: DISCONNECTED_BADGE_LABEL, title: DISCONNECTED_TITLE, ok: false };
-  if (data.ramp?.operational === false) {
-    return { label: INOPERATIVE_BADGE_LABEL, title: `${INOPERATIVE_BADGE_LABEL} — ${rampInoperativeReason(data.ramp)}`, ok: false };
-  }
   return { label: badgeText(data.stateLabel), title: data.stateLabel, ok: data.ok };
 }
 
@@ -1281,91 +1152,6 @@ function renderVehicles(depot: DepotData, onSellVehicle: ModuleInspectorProps['o
   );
 }
 
-const BAY_STATE_TEXT: Readonly<Record<BayState, string>> = { occupied: 'obsadené', reserved: 'rezervované', free: 'voľné' };
-
-/** Rad stojísk čakacej plochy: obsadené (kamión, farba nákladu) → rezervované (svetlejšie, prerušovaný obrys) → voľné. */
-function renderBays(area: WaitingAreaData) {
-  const states = bayStates(area);
-  return (
-    <div className="module-inspector__meter" data-section="bays">
-      <div className="module-inspector__meter-head">
-        <span className="module-inspector__meter-label">Stojiská</span>
-        <span data-field="bays-count">{formatFraction(states.filter((state) => state === 'occupied').length, states.length, 'stojísk')}</span>
-      </div>
-      <ul className="module-inspector__bays" aria-label="Obsadenosť stojísk">
-        {states.map((state, index) => {
-          const title = `Stojisko ${String(index + 1)} · ${BAY_STATE_TEXT[state]}`;
-          return (
-            <li key={index} className={`module-inspector__bay module-inspector__bay--${state}`} data-bay={index} data-state={state} title={title} aria-label={title}>
-              {state !== 'free' && <Icon name="ic_truck" className="module-inspector__bay-icon" />}
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
-function renderInoperativeBanner(ramp: RampData) {
-  return (
-    <div className="module-inspector__banner" role="status" data-section="inoperative">
-      <Icon name="ic_warning" className="module-inspector__banner-icon" />
-      <div className="module-inspector__banner-text">
-        <span className="module-inspector__banner-title">{INOPERATIVE_TITLE}</span>
-        <span className="module-inspector__banner-desc" data-field="inoperative-reason">
-          {rampInoperativeReason(ramp)}
-        </span>
-        <span className="module-inspector__banner-desc">Nedostane kamióny ani úlohy na presun nákladu.</span>
-      </div>
-    </div>
-  );
-}
-
-/** Docky rampy: staging sloty (obsadený slot = farba nákladu), počet `staged / kapacita` a kamión v docku. */
-function renderDocks(ramp: RampData) {
-  return (
-    <div className="module-inspector__section" data-section="docks">
-      <span className="module-inspector__section-title">Docky rampy</span>
-      {ramp.docks.length === 0 ? (
-        <p className="module-inspector__empty" data-field="docks-empty">
-          Rampa nemá žiadne docky.
-        </p>
-      ) : (
-        <ul className="module-inspector__docks">
-          {ramp.docks.map((dock, index) => {
-            const slots = stagingSlots(dock);
-            const staged = slots.filter(Boolean).length;
-            return (
-              <li key={index} className="module-inspector__dock" data-dock={index} data-truck={dock.truck}>
-                <span className="module-inspector__dock-name" data-field="dock-name">{`Dock ${String(index + 1)}`}</span>
-                <span
-                  className="module-inspector__pips"
-                  role="img"
-                  aria-label={`Pripravené jednotky: ${formatFraction(staged, slots.length)}`}
-                >
-                  {slots.map((filled, slot) => (
-                    <span key={slot} className={filled ? 'module-inspector__pip module-inspector__pip--filled' : 'module-inspector__pip'} />
-                  ))}
-                </span>
-                <span className="module-inspector__dock-count" data-field="dock-staged">
-                  {formatFraction(staged, slots.length)}
-                </span>
-                <span
-                  className={`module-inspector__dock-truck module-inspector__dock-truck--${dock.truck ? 'present' : 'absent'}`}
-                  data-field="dock-truck"
-                >
-                  <Icon name={dock.truck ? 'ic_truck' : 'ic_idle'} className="module-inspector__dock-truck-icon" />
-                  {dockTruckLabel(dock)}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 /** Sekcia vnútrozemia brány (ADR-035): riadky `hinterlandRows` v štýle ostatných riadkov s údajmi. */
 function renderHinterland(hinterland: HinterlandData) {
   return (
@@ -1381,7 +1167,7 @@ function renderHinterland(hinterland: HinterlandData) {
 }
 
 export function ModuleInspector({ data, onRemove, onClose, onBuyVehicle, onSellVehicle }: ModuleInspectorProps) {
-  const { apron, crane, dockedShip, storage, emptyDepot, depot, gate, waitingArea, ramp, yardBlock } = data;
+  const { apron, crane, dockedShip, storage, emptyDepot, depot, gate, yardBlock } = data;
   const blocked = crane?.state === 'blocked';
   const waiting = crane?.waitingForVehicle === true;
   const badge = inspectorBadge(data);
@@ -1434,14 +1220,11 @@ export function ModuleInspector({ data, onRemove, onClose, onBuyVehicle, onSellV
           </div>
         )}
         {data.connected === false && renderDisconnectedBanner()}
-        {ramp?.operational === false && renderInoperativeBanner(ramp)}
         {apron !== undefined && renderStats(berthStats(apron))}
         {crane !== undefined && renderStats(craneStats(crane))}
         {storage !== undefined && renderStats(emptyDepot === undefined ? storageStats(storage) : emptyDepotStats(emptyDepot))}
         {depot !== undefined && renderStats(depotStats(depot))}
         {gate !== undefined && renderStats(gateStats(gate))}
-        {waitingArea !== undefined && renderStats(waitingAreaStats(waitingArea))}
-        {ramp !== undefined && renderStats(rampStats(ramp))}
         {apron !== undefined && renderApron(apron)}
         {crane !== undefined && renderCraneTime(crane)}
         {yardBlock !== undefined && renderYardBlock(yardBlock)}
@@ -1449,8 +1232,6 @@ export function ModuleInspector({ data, onRemove, onClose, onBuyVehicle, onSellV
         {emptyDepot === undefined && storage?.split !== undefined && renderStorageSplit(storage, storage.split)}
         {emptyDepot !== undefined && renderEmptyLines(emptyDepot)}
         {emptyDepot !== undefined && renderRepairBays(emptyDepot)}
-        {waitingArea !== undefined && renderBays(waitingArea)}
-        {ramp !== undefined && renderDocks(ramp)}
         {gate?.hinterland !== undefined && renderHinterland(gate.hinterland)}
         {dockedShip !== undefined && (
           <div className="module-inspector__section">

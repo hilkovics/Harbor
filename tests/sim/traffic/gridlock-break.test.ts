@@ -90,6 +90,7 @@ describe('stress_f6 so 16 vozidlami dobehne bez trvalého uviaznutia', () => {
     assertCargoConservation(world);
     expect(world.assertInvariants()).toBeUndefined();
     // pred R1: 656 exportovaných jednotiek; s dopravou bez prekrývania menej, ale rádovo rovnako (nie 7 ako pri uviaznutí)
-    expect(world.cargo.exportedCount).toBeGreaterThan(400);
+    // R4 (ADR-041): kamióny sa obsluhujú na TP bloku (jeden TP na dvor, tokeny) — namerané 306 za 30 000 tickov
+    expect(world.cargo.exportedCount).toBeGreaterThan(250);
   }, 120_000);
 });

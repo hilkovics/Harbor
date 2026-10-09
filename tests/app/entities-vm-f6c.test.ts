@@ -1,6 +1,6 @@
 // T6C-06a: nákladové polia render VM pre prázdne kontajnery a prekládku (ADR-034) nad živým svetom s nákladom presunutým cez ledger:
 // náklad lode (`cargoSplit.empty`, prekládka do importu na lodi A a do exportu na lodi B, `unitsOnBoard` = súčet), apron (`empty`,
-// `lineToken`), rampa (`stagedEmpty`), depo (`depot`), žeriav (`holding.empty`), vozidlo a kamión (`carriesEmpty`), `lastStorageOp.empty`.
+// `lineToken`), depo (`depot`), žeriav (`holding.empty`), vozidlo a kamión (`carriesEmpty`), `lastStorageOp.empty`.
 // Skutočný tok prázdnych (návrat, depo, M&R, výdaj) overuje `f6c-real-sim.test.ts`; repositioning a prekládku sim dodá T6C-03,
 // preto tu idú ako ručne vložené kontrakty a jednotky (ako `helpers/f6a.ts` pri exporte).
 import { describe, expect, it } from 'vitest';
@@ -8,12 +8,12 @@ import type { CargoUnit, CargoUnitLabelsInput } from '@sim/cargo';
 import { commandFromJSON } from '@sim/commands';
 import type { ContractId, EntityId, VoyageId } from '@sim/core';
 import type { SimEvent } from '@sim/events';
-import { CraneModule, EmptyDepot, LoadingRamp } from '@sim/modules';
+import { CraneModule, EmptyDepot } from '@sim/modules';
 import type { Ship } from '@sim/ships';
 import { EntitiesVMBuilder, craneVMs, moduleVMs, shipVMs, vehicleVMs } from '@app/entities-vm';
-import { ShipSplitCache, emptiesPerDock, lineTokenOf, shipDeckSplit, truckCarriesEmpty } from '@app/cargo-vm';
+import { ShipSplitCache, lineTokenOf, shipDeckSplit, truckCarriesEmpty } from '@app/cargo-vm';
 import { StorageOpTracker } from '@app/storage-ops';
-import { RAMP_ID, YARD_ID, buildLandside, buildLogistics, buyVehicles, createApp, runCommands, type App } from './app-fixtures';
+import { YARD_ID, buildLogistics, buyVehicles, createApp, runCommands, type App } from './app-fixtures';
 import { TEU, addRoundtripOffer, createExportUnit, moveChain, toShipChain } from './f6a-fixtures';
 import { addTranshipOffer, createEmptyUnit, emptyLabels, storeEmptyUnit } from './f6c-fixtures';
 
@@ -170,12 +170,10 @@ describe('ModuleVM.apron: prázdne kontajnery', () => {
     const empty = createEmptyUnit(world, 'northern_star');
     const exportUnit = createExportUnit(world, addRoundtripOffer(world).exportContract);
     moveChain(world, empty.id, [
-      { kind: 'at_ramp', rampId: 9002 as EntityId, dock: 0 },
       { kind: 'in_vehicle', vehicleId: 9003 as EntityId },
       { kind: 'on_apron', berthId: ROOT_BERTH, slot: 0 },
     ]);
     moveChain(world, exportUnit.id, [
-      { kind: 'at_ramp', rampId: 9002 as EntityId, dock: 0 },
       { kind: 'in_vehicle', vehicleId: 9003 as EntityId },
       { kind: 'on_apron', berthId: ROOT_BERTH, slot: 1 },
     ]);
@@ -205,7 +203,6 @@ describe('CraneVM.holding: prázdny kontajner', () => {
     if (!(crane instanceof CraneModule)) throw new Error('žeriav chýba');
     const empty = createEmptyUnit(world, 'golden_wave');
     moveChain(world, empty.id, [
-      { kind: 'at_ramp', rampId: 9002 as EntityId, dock: 0 },
       { kind: 'in_vehicle', vehicleId: 9003 as EntityId },
       { kind: 'on_apron', berthId: ROOT_BERTH, slot: 0 },
       { kind: 'in_crane', craneId: ROOT_CRANE },
@@ -215,42 +212,12 @@ describe('CraneVM.holding: prázdny kontajner', () => {
 
     const exportUnit = createExportUnit(world, addRoundtripOffer(world).exportContract);
     moveChain(world, exportUnit.id, [
-      { kind: 'at_ramp', rampId: 9002 as EntityId, dock: 1 },
       { kind: 'in_vehicle', vehicleId: 9003 as EntityId },
       { kind: 'on_apron', berthId: ROOT_BERTH, slot: 1 },
       { kind: 'in_crane', craneId: ROOT_CRANE },
     ]);
     crane.heldUnitId = exportUnit.id;
     expect(craneVMs(world)[0]?.holding).toEqual({ unitId: exportUnit.id, typeId: TEU });
-  });
-});
-
-describe('ModuleVM.ramp: prázdne kontajnery na doku', () => {
-  it('prázdny na doku sa zarátava do `staged` a vyčísli v `stagedEmpty` (sim ho do `stagedAt` nepočíta); bez prázdnych pole nie je', () => {
-    const app = createApp();
-    buildLandside(app);
-    const { world } = app;
-    const ramp = world.modules.get(RAMP_ID);
-    if (!(ramp instanceof LoadingRamp)) throw new Error('rampa chýba');
-    const rampVM = (): ReturnType<typeof moduleVMs>[number]['ramp'] => moduleVMs(world).find((vm) => vm.id === RAMP_ID)?.ramp;
-    expect(rampVM()).toEqual({ docks: 2, staged: [0, 0], operational: true });
-    expect(emptiesPerDock(world, ramp)).toBeNull();
-
-    const empty = createEmptyUnit(world, 'blue_anchor');
-    world.cargo.move(empty.id, { kind: 'at_ramp', rampId: RAMP_ID, dock: 1 });
-    const second = createEmptyUnit(world, 'blue_anchor');
-    world.cargo.move(second.id, { kind: 'at_ramp', rampId: RAMP_ID, dock: 1 });
-    const imported = world.cargo.create(TEU, { kind: 'on_ship', shipId: 900 as EntityId }).id;
-    world.cargo.move(imported, { kind: 'in_crane', craneId: 901 as EntityId });
-    world.cargo.move(imported, { kind: 'on_apron', berthId: ROOT_BERTH, slot: 0 });
-    world.cargo.move(imported, { kind: 'in_vehicle', vehicleId: 902 as EntityId });
-    ramp.reserve(1);
-    world.cargo.move(imported, { kind: 'at_ramp', rampId: RAMP_ID, dock: 1 });
-    ramp.commit(1, imported);
-
-    expect(ramp.stagedAt(1)).toBe(1); // sim: len import
-    expect(emptiesPerDock(world, ramp)).toEqual([0, 2]);
-    expect(rampVM()).toEqual({ docks: 2, staged: [0, 3], operational: true, stagedEmpty: [0, 2] });
   });
 });
 
@@ -309,12 +276,10 @@ describe('VehicleVM.carriesEmpty', () => {
     expect(first).toBeDefined();
     const empty = createEmptyUnit(world, 'blue_anchor');
     moveChain(world, empty.id, [
-      { kind: 'at_ramp', rampId: 9002 as EntityId, dock: 0 },
       { kind: 'in_vehicle', vehicleId: first as EntityId },
     ]);
     const exportUnit = createExportUnit(world, addRoundtripOffer(world).exportContract);
     moveChain(world, exportUnit.id, [
-      { kind: 'at_ramp', rampId: 9002 as EntityId, dock: 1 },
       { kind: 'in_vehicle', vehicleId: second as EntityId },
     ]);
     const vms = vehicleVMs(world);
@@ -337,7 +302,7 @@ describe('truckCarriesEmpty', () => {
 
     const empty = createEmptyUnit(world, 'blue_anchor'); // vzniká `in_truck` kamióna 9001
     expect(truckCarriesEmpty(world, TRUCK, false)).toBe(true);
-    world.cargo.move(empty.id, { kind: 'at_ramp', rampId: RAMP_ID, dock: 0 });
+    world.cargo.move(empty.id, { kind: 'in_vehicle', vehicleId: 9003 as EntityId });
     expect(truckCarriesEmpty(world, TRUCK, true)).toBe(true);
 
     const exportUnit = createExportUnit(world, addRoundtripOffer(world).exportContract); // neprázdny náklad v kamióne prepíše pamäť

@@ -7,7 +7,7 @@ import { ConnectedModuleInspector } from '@app/connected-module-inspector';
 import { ModuleSelection } from '@app/module-selection';
 import { SimBridgeProvider } from '@app/use-sim-snapshot';
 import type { ModuleInspectorProps } from '@ui/module-inspector';
-import { GATE_ID, RAMP_ID, buildLandside, createApp } from './app-fixtures';
+import { CHAIN_GATE_ID, buildFullChain, createApp, createPortApp } from './app-fixtures';
 
 // `ModuleInspector` je čisto prezentačný (jeho vzhľad testuje tests/ui) — tu ho nahradíme atrapou, ktorá zachytí props,
 // aby sme overili napojenie: dáta zo sveta, „Odstrániť“ cez validate + dispatch a „Zavrieť“ cez výber.
@@ -31,7 +31,7 @@ beforeEach(() => {
   captured.props = null;
 });
 
-function render(app: ReturnType<typeof createApp>, selection: ModuleSelection): string {
+function render(app: ReturnType<typeof createApp | typeof createPortApp>, selection: ModuleSelection): string {
   return renderToStaticMarkup(createElement(SimBridgeProvider, { bridge: app.bridge }, createElement(ConnectedModuleInspector, { selection })));
 }
 
@@ -67,16 +67,13 @@ describe('ConnectedModuleInspector', () => {
     });
   });
 
-  it('vybraná brána a rampa (F4): panel dostane pozemné dáta zo sveta', () => {
-    const app = createApp();
-    buildLandside(app);
+  it('vybraná brána (R4): panel dostane pozemné dáta zo sveta', () => {
+    const app = createPortApp();
+    buildFullChain(app, { units: 0, vehicles: 0 });
     const selection = new ModuleSelection();
-    selection.select(GATE_ID);
+    selection.select(CHAIN_GATE_ID);
     render(app, selection);
-    expect(inspectorProps().data).toMatchObject({ kind: 'gate', gate: { queueLength: 0, processTicks: 18 }, connected: true });
-    selection.select(RAMP_ID);
-    render(app, selection);
-    expect(inspectorProps().data).toMatchObject({ kind: 'ramp', ramp: { operational: true, docks: [{ staged: 0, capacity: 4, truck: false }, { staged: 0, capacity: 4, truck: false }] } });
+    expect(inspectorProps().data).toMatchObject({ kind: 'gate', gate: { queueLength: 0 }, connected: true });
   });
 
   it('výber modulu, ktorý vo svete nie je, nevykreslí nič', () => {

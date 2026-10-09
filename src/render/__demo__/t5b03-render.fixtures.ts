@@ -3,15 +3,13 @@
  *
  * Scény (`?scene=<názov>`):
  *  - `scale` (audit mierky, č. 10): Root berth so žeriavom, loďami feeder a handy, kontajnermi na aprone, dvor (fill 50),
- *    rampa s pripravenými kontajnermi, cesty, straddle carriery (prázdny a naložený vedľa seba) a kamióny (prázdny, naložený).
- *    Cesty sa napájajú na konektory berthu, dvora a rampy (č. 3);
- *  - `connect` (č. 3): scéna F4 — brána, čakacia plocha a dve rampy prepojené cestami (bez medzier pri konektoroch);
+ *    vstupný pruh brány, cesty, straddle carriery (prázdny a naložený vedľa seba) a kamióny (prázdny, naložený).
+ *    Cesty sa napájajú na konektory berthu, dvora a pruhu brány (č. 3);
+ *  - `connect` (č. 3): scéna F4 — pruhy brány a odstavná plocha prepojené cestami (bez medzier pri konektoroch);
  *  - `lanes` (č. 10): protismerné vozidlá na dvojpruhovej ceste — dva carriery, dva kamióny, carrier proti kamiónu; každé v svojom
  *    pravom pruhu (26 px), presah cez stredovú čiaru len o pár px;
  *  - `yard` (č. 8): kontajnerový dvor s cestou a straddle carrierom pri vstupe; animáciu žeriavu spúšťa test zmenou
  *    `lastStorageOp` (`yardScene`);
- *  - `dock` (č. 11): rampa A s dvoma kamiónmi, ktoré cúvajú do docku — jeden prichádza popri rampe (kurz kolmý na os docku),
- *    druhý priamo na modul; póza sa skladá funkciami `dockTruck*`.
  *
  * Geometria (vonkajšie bunky konektorov, stredy dokov) sa počíta z manifestu rovnako ako v sime;
  * `tests/render/t5b03-render-fixtures.test.ts` stráži, že scény sú konzistentné (moduly sa neprekrývajú, cesty sú pri
@@ -20,10 +18,9 @@
 import type { CellCoord, Grid, LoadedMap } from '@sim/grid';
 import { rotateFootprint, type Rotation } from '@sim/grid';
 import { moduleSprite } from '../entity-assets';
-import { dockCenter } from '../module-slots';
 import type { EntitiesVM, ModuleVM, TruckVM, VehicleVM, ViewRotation } from '../view-models';
 import { berthVM, craneVM, shipVM } from './f2-render.fixtures';
-import { F4_ROADS, RAMP_A, RAMP_B, F4_MAIN_SCENE, F4_MAIN_VIEW, GATE, WAITING_AREA, rampVM, truckAt } from './f4-render.fixtures';
+import { F4_ROADS, F4_MAIN_SCENE, F4_MAIN_VIEW, gateLaneVM, truckAt } from './f4-render.fixtures';
 
 /** Kam sa má nasmerovať kamera (stred v bunkách) a zoom. */
 export interface T5b03View {
@@ -76,11 +73,11 @@ export function truckInCellAt(id: number, cellX: number, cellY: number, heading:
 
 const SCALE_BERTH = berthVM(1, 40, 14, 0, [0, 1, 3]);
 const SCALE_YARD = yardVM(3, 44, 19, 32);
-const SCALE_RAMP = rampVM(4, 51, 24, 0, [2, 1], true);
+const SCALE_GATE = gateLaneVM(4, 'gate_in_lane', 52, 22, { kind: 'in', mode: 'normal', roofPart: 'single' });
 
 /**
  * Cesty scény `scale`: od južného konektora berthu (41; 17) → vonkajšia (41; 18) dole a doprava k dvoru (45; 23) a od (50; 18)
- * dole k rampe (vonkajšie bunky (52; 26), (53; 26)).
+ * dole k pruhu brány (vonkajšia bunka pruhu brány (52; 26)).
  */
 export const SCALE_ROADS: readonly CellCoord[] = [...column(41, 18, 23), ...row(23, 41, 45), ...column(50, 18, 26), ...row(26, 50, 53)];
 
@@ -92,14 +89,14 @@ const SCALE_VEHICLES: readonly VehicleVM[] = [
 ];
 
 const SCALE_TRUCKS: readonly TruckVM[] = [
-  truckInCellAt(21, 50, 19, 180, false, 'to_dock'),
+  truckInCellAt(21, 50, 19, 180, false, 'to_gate'),
   truckInCellAt(22, 50, 22, 180, true, 'to_gate_out'),
 ];
 
 export const SCALE_SCENE: T5b03Scene = {
   roads: SCALE_ROADS,
   vm: {
-    modules: [SCALE_BERTH, SCALE_YARD, SCALE_RAMP].map((module) => ({ ...module, connected: true })),
+    modules: [SCALE_BERTH, SCALE_YARD, SCALE_GATE].map((module) => ({ ...module, connected: true })),
     cranes: [craneVM(2, SCALE_BERTH)],
     ships: [shipVM(31, 'feeder', 43, 13, 90), shipVM(32, 'handy', 54, 12, 90)],
     vehicles: SCALE_VEHICLES,
@@ -146,50 +143,7 @@ export function yardScene(op?: ModuleVM['lastStorageOp']): T5b03Scene {
 
 export const YARD_SCENE: T5b03Scene = yardScene();
 
-// ---- scéna `dock` --------------------------------------------------------------------------------------------------
-
-/** Dva kamióny pri rampe A: dok 0 (príjazd z východu popri rampe) a dok 1 (príjazd zo juhu priamo na rampu). */
-export const DOCK_TRUCK_SIDE = 201;
-export const DOCK_TRUCK_STRAIGHT = 202;
-
-/** Cieľová póza v doku `dock` rampy A: stred docku a kabína von z rampy (proti smeru do modulu). */
-function dockTarget(dock: number): { x: number; y: number; heading: ViewRotation } {
-  const at = dockCenter(RAMP_A, dock);
-  return { x: at.x, y: at.y, heading: 180 };
-}
-
-/** Kamión tesne pred dokom: `to_dock`, stojí na vonkajšej bunke konektora s kurzom príjazdu. */
-export function dockTruckArriving(id: number, cellX: number, cellY: number, heading: ViewRotation): TruckVM {
-  return truckInCellAt(id, cellX, cellY, heading, false, 'to_dock');
-}
-
-/** Kamión v `loading`: `x`, `y`, `heading` = póza v doku, `approach` = sim poloha (vonkajšia bunka) a kurz príjazdu. */
-export function dockTruckLoading(id: number, cellX: number, cellY: number, arrivalHeading: ViewRotation, dock: number, loaded = false): TruckVM {
-  const target = dockTarget(dock);
-  return {
-    ...truckAt(id, target.x, target.y, target.heading, loaded, 'loading'),
-    prevState: 'to_dock',
-    approach: { x: cellX + 0.5, y: cellY + 0.5, heading: arrivalHeading },
-  };
-}
-
-/** Kamión po nakládke: `to_gate_out` na sim polohe (vonkajšia bunka) s kurzom prvého úseku cesty. */
-export function dockTruckLeaving(id: number, x: number, y: number, heading: ViewRotation): TruckVM {
-  return { ...truckAt(id, x, y, heading, true, 'to_gate_out'), prevState: 'loading' };
-}
-
-/** Scéna `dock` so zadanými kamiónmi. */
-export function dockScene(trucks: readonly TruckVM[]): T5b03Scene {
-  return {
-    roads: F4_ROADS,
-    vm: { modules: [GATE, WAITING_AREA, RAMP_A, RAMP_B], cranes: [], ships: [], vehicles: [], trucks },
-    view: { centerX: 32, centerY: 25.2, zoom: 2.2 },
-  };
-}
-
-export const DOCK_SCENE: T5b03Scene = dockScene([dockTruckArriving(DOCK_TRUCK_SIDE, 31, 25, 270), dockTruckArriving(DOCK_TRUCK_STRAIGHT, 32, 25, 0)]);
-
-export const T5B03_SCENES = Object.freeze({ scale: SCALE_SCENE, lanes: LANES_SCENE, connect: CONNECT_SCENE, yard: YARD_SCENE, dock: DOCK_SCENE });
+export const T5B03_SCENES = Object.freeze({ scale: SCALE_SCENE, lanes: LANES_SCENE, connect: CONNECT_SCENE, yard: YARD_SCENE });
 export type T5b03SceneName = keyof typeof T5B03_SCENES;
 
 /** Mriežka pre scénu: terén mapy + štartová cesta + cesty scény. */

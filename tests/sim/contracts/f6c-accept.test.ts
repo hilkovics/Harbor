@@ -36,10 +36,10 @@ describe('AcceptContract — pripravenosť podľa druhu', () => {
     expect(refused.state).toBe('offered');
   });
 
-  it('skupina export + repositioning jednej voyage: export kontroluje aj pozemnú stranu (bez rampy no_ramp_for_category), repositioning depo', () => {
+  it('skupina export + repositioning jednej voyage: export kontroluje aj pozemnú stranu (bez brány no_gate_for_category), repositioning depo', () => {
     const world = emptyWorld({ defs: f6cDefs(), landside: [] });
     const repo = offerRepositioning(world, { withExport: 6 });
-    expect(reasonsOf(send(world, acceptCommand(repo.id)))).toEqual(['no_ramp_for_category']);
+    expect(reasonsOf(send(world, acceptCommand(repo.id)))).toEqual(['no_gate_for_category']);
     expect(world.contracts.get((repo.id - 1) as never)?.state).toBe('offered');
     expect(repo.state).toBe('offered');
   });

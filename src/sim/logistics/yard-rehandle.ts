@@ -13,9 +13,7 @@
  * kontajnery nad jednotkou nie je miesto (`unitPickable`); preto zrušenie zároveň slúži ako backoff. Pri príchode sa `unitPickable` kontroluje znova —
  * od založenia jobu mohol blok zaplniť iný príchod — a jednotku, ktorú nemožno vybrať, vozidlo hneď uvoľní.
  *
- * **Zásoba docku** (ADR-023 bod 7, ADR-029 bod 11): job do rampy s nákladom na odvoz je zásoba docku — nárok kamiónov nesmie presiahnuť pripravené + vezené
- * jednotky. Takýto job sa zruší len keď po jeho odpočítaní nárok stále platí (`releasable`); inak vozidlo čaká ďalej s novou trpezlivosťou (kamión na dock
- * čaká na jednotku tak či tak) a vyčerpanie trpezlivosti sa aj tak zapíše do `rehandleStalls`.
+ * **Job kamióna** (R4, ADR-041): job `receive` kamióna na TP sa nezruší (kamión čaká na odovzdanie) — vozidlo čaká ďalej s novou trpezlivosťou; vyčerpanie sa zapíše do `rehandleStalls`.
  */
 import type { EntityId } from '../core/entity-id';
 import { YardBlock } from '../modules/yard-block';
@@ -24,9 +22,8 @@ import { VehicleError } from '../vehicles/vehicle-error';
 import { changeVehicleState } from '../vehicles/vehicle-fsm';
 import type { World } from '../world/world';
 import { releaseLoadAssignment } from './export-load';
-import { DockSupply } from '../trucks/dock-supply';
-import { LoadingRamp } from '../modules/loading-ramp';
 import { cancelJob } from './job-cancel';
+import { isTruckJob } from './truck-jobs';
 import type { TransportJob } from './transport-job';
 import { chooseRehandleSlot, unitPickable } from './yard-planner';
 
@@ -40,28 +37,19 @@ function patienceTicks(world: World): number {
 }
 
 /**
- * Smie sa job zrušiť bez porušenia zásoby docku (viď hlavička)? Job mimo rampy alebo bez nákladu na odvoz (prázdny kontajner pre kamión `collect`) áno;
- * job do docku len keď nárok kamiónov docku ostane ≤ pripravené + vezené jednotky bez jednotky jobu. Volá sa zriedka (vyčerpaná trpezlivosť), alokuje.
+ * Smie sa job zrušiť (viď hlavička)? Job kamióna na TP nie: kamión čaká na odovzdanie a jeho job drží nárok na jednotku, takže vozidlo čaká ďalej s novou trpezlivosťou
+ * (vyčerpanie sa zapíše do `rehandleStalls`). Ostatné joby áno.
  */
-function releasable(world: World, job: TransportJob): boolean {
-  const { to } = job;
-  if (to.kind !== 'at_ramp') return true;
-  const ramp = world.modules.get(job.toModuleId);
-  if (!(ramp instanceof LoadingRamp)) return true;
-  let carried = 0;
-  for (const unitId of job.unitIds) if (world.cargo.get(unitId)?.direction !== 'empty') carried += 1;
-  if (carried === 0) return true;
-  const supply = new DockSupply();
-  supply.refresh(world);
-  return ramp.claimedAt(to.dock) <= supply.suppliedAt(ramp, to.dock) - carried;
+function releasable(job: TransportJob): boolean {
+  return !isTruckJob(job);
 }
 
 /**
  * Uvoľní vozidlo od jobu, ktorého jednotku nemožno vybrať (viď hlavička): `picking → cancelled`, vozidlo `rehandling → idle`.
- * `false` = zrušenie by porušilo zásobu docku, nič sa nezmenilo.
+ * `false` = job kamióna sa nezruší, nič sa nezmenilo.
  */
 function tryAbandonPickup(world: World, vehicle: Vehicle, job: TransportJob): boolean {
-  if (!releasable(world, job)) return false;
+  if (!releasable(job)) return false;
   releaseLoadAssignment(world, job);
   cancelJob(world, job, 'rehandle_stalled');
   vehicle.jobId = null;
@@ -76,7 +64,7 @@ function tryAbandonPickup(world: World, vehicle: Vehicle, job: TransportJob): bo
  */
 export function startYardTake(world: World, vehicle: Vehicle, job: TransportJob, unitId: EntityId): YardTakeResult {
   const block = world.modules.get(job.fromModuleId);
-  if (!(block instanceof YardBlock) || block.topBlockerOf(unitId) === null) return 'ready';
+  if (job.from.kind !== 'in_storage' || !(block instanceof YardBlock) || block.topBlockerOf(unitId) === null) return 'ready';
   vehicle.waitTicks = patienceTicks(world);
   changeVehicleState(world.events, vehicle, 'rehandling');
   // Kontrola pri príchode: od založenia jobu mohol iný príchod zaplniť blok (rezervácie sa menia na kontajnery a miesto sa nevracia) — beznádejnú jednotku
@@ -133,7 +121,7 @@ export function rehandleStep(world: World, vehicle: Vehicle, job: TransportJob, 
     const slot = chooseRehandleSlot(world, block, blocker, block.positionOfSlot(blocker.location.slot));
     if (slot === null) {
       if (vehicle.waitTicks > 0) return;
-      // Trpezlivosť sa vyčerpala: job sa zruší, ak to zásoba docku dovolí, inak vozidlo čaká ďalej s novou trpezlivosťou.
+      // Trpezlivosť sa vyčerpala: job sa zruší (okrem jobu kamióna), inak vozidlo čaká ďalej s novou trpezlivosťou.
       block.recordRehandleStall();
       if (!tryAbandonPickup(world, vehicle, job)) vehicle.waitTicks = patienceTicks(world);
       return;

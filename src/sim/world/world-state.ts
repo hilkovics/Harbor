@@ -46,10 +46,13 @@ import {
   TRUCK_MISSIONS,
   TRUCK_STATES,
   TRUCK_TRAVEL_STATES,
+  TP_PHASES,
   isTruckMission,
   isTruckState,
+  isTpPhase,
   isTruckTravelState,
   truckStateTraits,
+  type TpPhase,
   type TruckMission,
   type TruckState,
   type TruckTravelState,
@@ -221,7 +224,7 @@ export interface ParsedVehicleEntry {
 
 /**
  * Kamión zo save s overeným tvarom (známy def, stav bez `exited`, `resume` práve v `no_path`, `bay` podľa stavu, trasa
- * po susedných bunkách, poloha na trase); moduly, bay, dock, fronta brány, náklad a cesty pod trasou overí obnova.
+ * po susedných bunkách, poloha na trase); moduly, token, job, fronta brány, náklad a cesty pod trasou overí obnova.
  */
 export interface ParsedTruckEntry {
   readonly id: EntityId;
@@ -232,11 +235,18 @@ export interface ParsedTruckEntry {
   readonly x: number;
   readonly y: number;
   readonly heading: Rotation;
-  readonly rampId: EntityId;
-  readonly dock: number;
+  readonly blockId: EntityId;
+  readonly jobId: EntityId | null;
+  readonly unitId: EntityId | null;
+  readonly tpCell: number | null;
+  readonly holdingId: EntityId | null;
+  readonly stall: number | null;
+  readonly phase: TpPhase | null;
+  readonly gateInTick: number | null;
   readonly gateId: EntityId;
-  readonly waitingAreaId: EntityId;
-  readonly bay: number | null;
+  readonly gateOutId: EntityId | null;
+  readonly preGateId: EntityId | null;
+  readonly row: number | null;
   readonly resume: TruckTravelState | null;
   readonly route: readonly number[];
   readonly progress: number;
@@ -696,10 +706,15 @@ function checkProgress(value: unknown, route: readonly number[], path: string): 
 /**
  * Tvar kamiónov (ADR-024): presne kľúče `SerializedTruck`, id celé 1…`nextId − 1` a ostro rastúce (poradie spawnu),
  * známy def z `trucks.json`, misia z `TRUCK_MISSIONS` (ADR-032), stav z `TRUCK_STATES` okrem `exited`, platný kurz, `rampId` / `gateId` / `waitingAreaId`
- * celé ≥ 1, `dock` celé ≥ 0, `resume` jazdný stav práve v `no_path`, `bay` celé ≥ 0 práve v stavoch s `holdsBay`
+ * celé ≥ 1, `gateOutId` / `preGateId` null alebo celé ≥ 1, `row` null alebo celé ≥ 0 (R4), `dock` celé ≥ 0, `resume` jazdný stav práve v `no_path`, `bay` celé ≥ 0 práve v stavoch s `holdsBay`
  * (v `no_path` podľa `resume`), trasa (`parseRoute`), progres v `[0, 1)` (> 0 len s ďalšou bunkou), `waitTicks` celé ≥ 0,
  * `replan` boolean, poloha = poloha na trase. Moduly, bay, dock, fronta brány, náklad a cesty overí obnova.
  */
+/** Celé číslo ≥ `min`, alebo `null`. */
+function checkNullableInteger(value: unknown, min: number, path: string): number | null {
+  return value === null ? null : checkInteger(value, min, path);
+}
+
 function parseTrucks(value: unknown, defs: DefRegistry, map: LoadedMap, grid: Grid, nextId: number): ParsedTruckEntry[] {
   let previousId = 0;
   return checkArray(value, '/trucks').map((raw: unknown, i): ParsedTruckEntry => {
@@ -718,20 +733,30 @@ function parseTrucks(value: unknown, defs: DefRegistry, map: LoadedMap, grid: Gr
     const x = checkCoordinate(entry['x'], map.width, `${path}/x`);
     const y = checkCoordinate(entry['y'], map.height, `${path}/y`);
     if (!isRotation(heading)) throw new WorldStateError(`${path}/heading`, `kurz musí byť 0, 90, 180 alebo 270, dostal ${describeValue(heading)}`);
-    const rampId = checkInteger(entry['rampId'], 1, `${path}/rampId`);
-    const dock = checkInteger(entry['dock'], 0, `${path}/dock`);
+    const blockId = checkInteger(entry['blockId'], 1, `${path}/blockId`);
+    const jobId = checkNullableInteger(entry['jobId'], 1, `${path}/jobId`);
+    const unitId = checkNullableInteger(entry['unitId'], 1, `${path}/unitId`);
+    const tpCell = checkNullableInteger(entry['tpCell'], 0, `${path}/tpCell`);
+    const holdingId = checkNullableInteger(entry['holdingId'], 1, `${path}/holdingId`);
+    const stall = checkNullableInteger(entry['stall'], 0, `${path}/stall`);
+    const phase = entry['phase'];
+    if (phase !== null && !isTpPhase(phase)) throw new WorldStateError(`${path}/phase`, `fáza TP musí byť null alebo jedna z: ${TP_PHASES.join(', ')}, dostal ${describeValue(phase)}`);
+    const gateInTick = checkNullableInteger(entry['gateInTick'], 0, `${path}/gateInTick`);
     const gateId = checkInteger(entry['gateId'], 1, `${path}/gateId`);
-    const waitingAreaId = checkInteger(entry['waitingAreaId'], 1, `${path}/waitingAreaId`);
+    const gateOutId = checkNullableInteger(entry['gateOutId'], 1, `${path}/gateOutId`);
+    const preGateId = checkNullableInteger(entry['preGateId'], 1, `${path}/preGateId`);
+    const row = checkNullableInteger(entry['row'], 0, `${path}/row`);
     if (state === 'no_path' ? !isTruckTravelState(resume) : resume !== null) {
       throw new WorldStateError(`${path}/resume`, state === 'no_path' ? `stav no_path vyžaduje jeden z: ${TRUCK_TRAVEL_STATES.join(', ')}` : `stav '${state}' musí mať resume null`);
     }
     const effective: TruckState = isTruckTravelState(resume) ? resume : state;
-    const rawBay = entry['bay'];
-    const bay = rawBay === null ? null : checkInteger(rawBay, 0, `${path}/bay`);
-    const { holdsBay } = truckStateTraits(mission, effective);
-    if (holdsBay !== (bay !== null)) {
-      throw new WorldStateError(`${path}/bay`, holdsBay ? `stav '${effective}' vyžaduje bay` : `stav '${effective}' nesmie držať bay`);
+    if ((holdingId === null) !== (stall === null)) throw new WorldStateError(`${path}/stall`, `odstavná plocha a státie sa musia zadať spolu (plocha ${describeValue(holdingId)}, státie ${describeValue(stall)})`);
+    const { holdsToken } = truckStateTraits(mission, effective);
+    if (holdsToken !== (tpCell !== null || stall !== null) || (tpCell !== null && stall !== null)) {
+      throw new WorldStateError(`${path}/tpCell`, holdsToken ? `stav '${effective}' vyžaduje práve jeden token (TP alebo státie)` : `stav '${effective}' nesmie držať token`);
     }
+    if ((phase !== null) !== truckStateTraits(mission, state).atTp) throw new WorldStateError(`${path}/phase`, `fáza ${describeValue(phase)} nezodpovedá stavu '${state}'`);
+    if (jobId !== null && unitId === null) throw new WorldStateError(`${path}/unitId`, 'kamión s jobom zastávky musí mať jednotku zastávky');
     const route = parseRoute(entry['route'], `${path}/route`, grid);
     const progress = checkProgress(entry['progress'], route, `${path}/progress`);
     const waitTicks = checkInteger(entry['waitTicks'], 0, `${path}/waitTicks`);
@@ -749,11 +774,18 @@ function parseTrucks(value: unknown, defs: DefRegistry, map: LoadedMap, grid: Gr
       x,
       y,
       heading,
-      rampId: rampId as EntityId,
-      dock,
+      blockId: blockId as EntityId,
+      jobId: jobId as EntityId | null,
+      unitId: unitId as EntityId | null,
+      tpCell,
+      holdingId: holdingId as EntityId | null,
+      stall,
+      phase,
+      gateInTick,
       gateId: gateId as EntityId,
-      waitingAreaId: waitingAreaId as EntityId,
-      bay,
+      gateOutId: gateOutId as EntityId | null,
+      preGateId: preGateId as EntityId | null,
+      row,
       resume: isTruckTravelState(resume) ? resume : null,
       route,
       progress,

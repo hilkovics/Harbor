@@ -33,7 +33,10 @@ export function isDriving(carrier: RoadCarrier): boolean {
 
 const QUEUES_AT_END: { readonly [K in CarrierKind]: (carrier: RoadCarrier) => boolean } = Object.freeze({
   vehicle: () => false,
-  truck: (carrier: RoadCarrier) => (carrier as Truck).traits.stop === 'gate' && (carrier as Truck).traits.motion === 'drive',
+  truck: (carrier: RoadCarrier) => {
+    const { stop, motion } = (carrier as Truck).traits;
+    return (stop === 'gate' || stop === 'pre_gate') && motion === 'drive';
+  },
 });
 
 /**

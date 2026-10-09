@@ -7,14 +7,17 @@
  *   inšpektor (`removeBlockedReason`).
  * - Depo (T03-10): „Kúpiť vozidlo“ → `BuyVehicle` do tohto depa (`depotVehicleDef`), „Predať“ → `SellVehicle`; oba príkazy
  *   idú cez `validate` a `dispatch` len pri `ok` (`vehicle-purchase`).
+ * - Brána a predbránová plocha (R4, TR4-05): `GateLaneInspector` (režim → `SetGateLaneMode`), `PreGateInspector` a karta TTT (`gate-inspector-data.ts`).
  * - „Zavrieť“ zruší výber; zaniknutý modul (`inspectorData → null`) panel skryje (výber zruší `bindSelectionRing`).
  * - Bez výberu sa do DOM nevykreslí nič, takže pravý okraj mapy ostáva klikateľný.
  */
 import { useCallback, useSyncExternalStore } from 'react';
 import { RemoveModuleCommand } from '@sim/commands';
+import { GateLaneInspector, PreGateInspector, TurnTimeStat } from '@ui/gate-inspector';
 import { BlockInspector, CraneInspector, MachineInspector } from '@ui/machine-inspector';
 import { ModuleInspector } from '@ui/module-inspector';
 import { blockPanelData, cranePanelData, sameBlockPanel, sameCranePanel, setBlockPriority, setCraneGang } from './machine-inspector-data';
+import { gatePanelData, sameGatePanel, setGateLaneMode } from './gate-inspector-data';
 import { depotVehicleDef, inspectorData, sameInspectorData } from './inspector-data';
 import type { ModuleSelection } from './module-selection';
 import { useSimBridge, useSimSnapshot } from './use-sim-snapshot';
@@ -30,6 +33,7 @@ export function ConnectedModuleInspector({ selection }: ConnectedModuleInspector
   const data = useSimSnapshot(() => (moduleId === null ? null : inspectorData(bridge, moduleId)), undefined, sameInspectorData);
   const blockPanel = useSimSnapshot(() => (moduleId === null ? null : blockPanelData(bridge, moduleId)), undefined, sameBlockPanel);
   const cranePanel = useSimSnapshot(() => (moduleId === null ? null : cranePanelData(bridge, moduleId)), undefined, sameCranePanel);
+  const gatePanel = useSimSnapshot(() => (moduleId === null ? null : gatePanelData(bridge, moduleId)), undefined, sameGatePanel);
   const remove = useCallback(
     (id: number) => {
       const command = new RemoveModuleCommand(id);
@@ -66,6 +70,20 @@ export function ConnectedModuleInspector({ selection }: ConnectedModuleInspector
               setBlockPriority(bridge, blockPanel.blockId, order);
             }}
           />
+        </>
+      )}
+      {gatePanel !== null && (
+        <>
+          {gatePanel.lane !== null && (
+            <GateLaneInspector
+              data={gatePanel.lane}
+              onSetMode={(mode) => {
+                setGateLaneMode(bridge, gatePanel.moduleId, mode);
+              }}
+            />
+          )}
+          {gatePanel.preGate !== null && <PreGateInspector data={gatePanel.preGate} />}
+          <TurnTimeStat {...(gatePanel.tttMinutes === null ? {} : { minutes: gatePanel.tttMinutes })} />
         </>
       )}
       {cranePanel !== null && (

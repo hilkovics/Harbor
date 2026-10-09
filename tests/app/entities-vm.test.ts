@@ -5,7 +5,7 @@ import type { EntityId } from '@sim/core';
 import { CraneModule } from '@sim/modules';
 import type { World } from '@sim/world';
 import { EntitiesVMBuilder, craneVMs, entitiesVM, moduleVMs, shipVMs, type ShipPositions } from '@app/entities-vm';
-import { DEPOT_ID, buildFullChain, buildLogistics, buyVehicles, createApp, createLegacyCapacityWorld, createWorld, frameUntil } from './app-fixtures';
+import { DEPOT_ID, buildFullChain, buildLogistics, buyVehicles, createApp, createLegacyCapacityWorld, createPortApp, createWorld, frameUntil } from './app-fixtures';
 
 const ROOT_BERTH_ID = 1;
 const ROOT_CRANE_ID = 2;
@@ -346,7 +346,7 @@ describe('entitiesVM: Carrier trail R1 (vozidlá, kamióny)', () => {
   });
 
   it('TruckVM má lengthCells, offRoad, blocked, jammed polia', () => {
-    const app = createApp();
+    const app = createPortApp();
     buildFullChain(app, { units: 4 });
     frameUntil(app, () => app.world.trucks.size > 0, 5000);
 

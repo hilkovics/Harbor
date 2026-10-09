@@ -2,24 +2,11 @@
 // minimálne testovacie príkazy, ktoré implementujú rozhranie `Command` a menia svet priamo.
 import { commandFromJSON, type Command, type SerializedCommand, type ValidationResult } from '@sim/commands';
 import type { EntityId } from '@sim/core';
-import cargoTypesJson from '@data/defs/cargo_types.json';
-import contractTemplatesJson from '@data/defs/contract_templates.json';
-import economyJson from '@data/defs/economy.json';
-import infrastructureJson from '@data/defs/infrastructure.json';
-import linesJson from '@data/defs/lines.json';
-import containerTypesJson from '@data/defs/container_types.json';
-import equipmentJson from '@data/defs/equipment.json';
-import logisticsJson from '@data/defs/logistics.json';
-import modulesJson from '@data/defs/modules.json';
-import shipsJson from '@data/defs/ships.json';
-import timeJson from '@data/defs/time.json';
-import trucksJson from '@data/defs/trucks.json';
-import vehiclesJson from '@data/defs/vehicles.json';
-import { DefRegistry } from '@sim/defs';
 import { World, type WorldOptions } from '@sim/world';
 import { GameLoop } from '@app/game-loop';
 import { SimBridge } from '@app/sim-bridge';
-import { DEFS as APRON_DEFS, LEGACY_CAPACITY_DEFS, MAP } from '../sim/world/world-fixtures';
+import { DEFS as APRON_DEFS, LEGACY_CAPACITY_DEFS, MAP, PORT_MAP } from '../sim/world/world-fixtures';
+import { f4Scenario } from '../sim/helpers/f4-layout';
 
 export const SEED = 20260929;
 
@@ -38,39 +25,6 @@ export function createWorld(options: WorldOptions = {}): World {
  */
 export function createLegacyCapacityWorld(options: WorldOptions = {}): World {
   return World.create(LEGACY_CAPACITY_DEFS, MAP, SEED, options);
-}
-
-/**
- * Defy s upraveným počtom stojísk čakacej plochy (`truck_waiting_area.params.bays`). Pri menej stojiskách než dockoch rampy
- * sa druhý kamión nespawnuje, kým prvý neodíde zo stojiska → sim hlási `NoWaitingBay`.
- */
-export function defsWithBays(bays: number): DefRegistry {
-  return DefRegistry.fromRaw({
-    time: timeJson,
-    economy: economyJson,
-    infrastructure: infrastructureJson,
-    cargo_types: cargoTypesJson,
-    modules: {
-      ...modulesJson,
-      items: modulesJson.items.map((item) => (item.id === 'truck_waiting_area' ? { ...item, params: { ...item.params, bays } } : item)),
-    },
-    ships: shipsJson,
-    vehicles: vehiclesJson,
-    trucks: trucksJson,
-    logistics: logisticsJson,
-    contract_templates: contractTemplatesJson,
-    lines: linesJson,
-    container_types: containerTypesJson,
-    equipment: equipmentJson,
-  });
-}
-
-/** Ako `createApp`, ale s čakacou plochou o `bays` stojiskách (viď `defsWithBays`). */
-export function createAppWithBays(bays: number): App {
-  const world = World.create(defsWithBays(bays), MAP, SEED);
-  const bridge = new SimBridge(world);
-  const loop = new GameLoop(world, bridge);
-  return { world, bridge, loop };
 }
 
 /** World + SimBridge + GameLoop prepojené tak, ako ich zapojí bootstrap (loop publikuje do bridge). */
@@ -137,60 +91,28 @@ export function buyVehicles(app: App, count: number): void {
   runCommands(app, Array.from({ length: count }, () => ({ type: 'BuyVehicle', vehicleDefId: 'straddle_carrier', depotId: DEPOT_ID })));
 }
 
-// ---- pozemná časť F4: brána, stojisko, rampa (rozloženie TDD scenára full_import_chain, bez dvorov) ----
+// ---- celý reťazec R4: loď → dvory → kamióny na TP dvora → brána → export (priečna ulica z `f4-layout`) ----
 
-/**
- * Cesty pozemnej časti na `harbor_01`: (44, 33) vstup brány (nadväzuje na verejnú cestu x = 44, y 34..63 od portálu),
- * (47..48, 33) výstup brány → západ stojiska, (53, 31..33) východ stojiska → rampa, (51..55, 30) k dokom rampy.
- */
-export const LANDSIDE_ROAD_CELLS: readonly (readonly { x: number; y: number }[])[] = [
-  line([44, 33], [44, 33]),
-  line([47, 33], [48, 33]),
-  line([53, 33], [53, 31]),
-  line([51, 30], [55, 30]),
-];
+/** Id modulov rozloženia `f4Scenario`: depo 3, dvory 4 a 5, vstupný pruh brány 6, výstupný pruh brány 7. */
+export const CHAIN_GATE_ID = 6 as EntityId;
+export const CHAIN_GATE_OUT_ID = 7 as EntityId;
 
-export type LandsidePart = 'gate' | 'waiting_area' | 'ramp';
-
-/** Príkazy stavby pozemných modulov: brána (45, 32) rot 270, stojisko (49, 31), rampa (53, 28). */
-export const LANDSIDE_MODULE_COMMANDS: Readonly<Record<LandsidePart, SerializedCommand>> = {
-  gate: { type: 'PlaceModule', defId: 'truck_gate', x: 45, y: 32, rotation: 270 },
-  waiting_area: { type: 'PlaceModule', defId: 'truck_waiting_area', x: 49, y: 31, rotation: 0 },
-  ramp: { type: 'PlaceModule', defId: 'loading_ramp_container', x: 53, y: 28, rotation: 0 },
-};
-
-/** Id pozemných modulov, keď sa stavajú ako prvé po štartovnom kotvisku (1) a žeriave (2) v poradí brána, stojisko, rampa. */
-export const GATE_ID = 3 as EntityId;
-export const AREA_ID = 4 as EntityId;
-export const RAMP_ID = 5 as EntityId;
-
-/** Postaví cesty pozemnej časti (`roads = false` ich vynechá) a potom moduly `parts` v danom poradí. */
-export function buildLandside(app: App, options: { readonly roads?: boolean; readonly parts?: readonly LandsidePart[] } = {}): void {
-  const { roads = true, parts = ['gate', 'waiting_area', 'ramp'] } = options;
-  if (roads) runCommands(app, LANDSIDE_ROAD_CELLS.map((cells) => ({ type: 'PlaceRoad', cells })));
-  runCommands(
-    app,
-    parts.map((part) => LANDSIDE_MODULE_COMMANDS[part]),
-  );
+/** Aplikácia nad skutočnou `harbor_01` (jednosmerná slučka `PORT_MAP`): scenáre pozemnej časti stavajú priečnu ulicu na nej, nie na legacy `MAP`. */
+export function createPortApp(options: WorldOptions = {}): App {
+  const world = World.create(APRON_DEFS, PORT_MAP, SEED, options);
+  const bridge = new SimBridge(world);
+  const loop = new GameLoop(world, bridge);
+  return { world, bridge, loop };
 }
 
-// ---- celý reťazec F4: loď → dvory → rampa → kamióny → export (rozloženie scenára full_import_chain) ----
-
-/** Id pozemných modulov v celom reťazci: depo 3, dvory 4 a 5, potom brána, stojisko a rampa. */
-export const CHAIN_GATE_ID = 6 as EntityId;
-export const CHAIN_AREA_ID = 7 as EntityId;
-export const CHAIN_RAMP_ID = 8 as EntityId;
-
 /**
- * Postaví celý reťazec scenára `full_import_chain` (cesty a moduly F3 + pozemná časť), kúpi `vehicles` vozidiel a
- * spawnne feeder s `units` TEU. Kamióny potom vznikajú skutočným tickom sveta (`frameUntil`), nie fiktívnymi id.
+ * Postaví celé rozloženie pozemnej časti (cesty, depo, dvory, brány; `f4Scenario`), kúpi `vehicles` vozidiel a spawnne feeder s `units` TEU. Aplikácia musí byť
+ * z `createPortApp`. Kamióny potom vznikajú skutočným tickom sveta (`frameUntil`) na TP dvora, nie fiktívnymi id.
  */
 export function buildFullChain(app: App, options: { readonly units?: number; readonly vehicles?: number } = {}): void {
   const { units = 6, vehicles = 3 } = options;
-  buildLogistics(app);
-  buildLandside(app);
-  buyVehicles(app, vehicles);
-  runCommands(app, [{ type: 'SpawnShipDebug', shipClassId: 'feeder', cargoTypeId: 'container_teu', units }]);
+  const scenario = f4Scenario('app_chain', SEED, { units, vehicles: Array.from({ length: vehicles }, () => 'straddle_carrier') });
+  runCommands(app, scenario.commands.map((entry) => entry.command));
 }
 
 /** Posúva hru po framoch (jeden tick na frame), kým `done()` neplatí; strop chráni pred nekonečnou slučkou. */

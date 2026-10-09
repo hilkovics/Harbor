@@ -4,13 +4,12 @@
  * chyba pri vytváraní, nie tichý fallback.
  *
  * Predvolený `moduleRegistry` má vstavané druhy (`berth`, `crane`, od F3 `storage`, `depot`, od F4 pozemné `gate`,
- * `waiting_area`, `ramp` — `LandExportModule`, ADR-022) zaregistrované pri
+ * `pre_gate`, `holding` — `LandExportModule`, ADR-022, ADR-041) zaregistrované pri
  * načítaní modulu (staticky, rovnako ako `commandRegistry`), `World` ho používa pri stavbe aj pri obnove zo save.
  * Druh `storage` má viac tried podľa kategórie nákladu — vyberá ich tabuľka `STORAGE_MODULES` (§17: `kind`, potom
  * def → trieda), nie switch.
  */
 import type { CargoReader } from '../cargo/cargo-ledger';
-import type { CargoUnit } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
 import { storageParams } from '../defs/module-def';
 import type { CargoCategory, ModuleDef, ModuleKind, StorageRole } from '../defs/types';
@@ -20,13 +19,13 @@ import { BerthModule } from './berth-module';
 import { ContainerYard } from './container-yard';
 import { CraneModule } from './crane-module';
 import { EmptyDepot } from './empty-depot';
-import { LoadingRamp } from './loading-ramp';
 import { RtgBlock } from './rtg-block';
 import type { Module, ModuleInit } from './module';
 import { ModuleError } from './module-error';
+import { PreGateBuffer } from './pre-gate-buffer';
 import { TruckGate } from './truck-gate';
+import { TruckHolding } from './truck-holding';
 import { VehicleDepot } from './vehicle-depot';
-import { WaitingArea } from './waiting-area';
 
 /** Vytvorí inštanciu modulu z hotového vstupu (validáciu id, ceny, rotácie a hraníc robí `Module`). */
 export type ModuleFactory = (init: ModuleInit) => Module;
@@ -35,8 +34,6 @@ export type ModuleFactory = (init: ModuleInit) => Module;
 export interface ModuleEnv {
   readonly grid: Grid;
   readonly cargo: CargoReader;
-  /** Test „jednotka na docku čaká na kamión" pre rampy (`ModuleInit.pickupCargo`); chýba = každá jednotka. */
-  readonly pickupCargo?: (unit: CargoUnit) => boolean;
 }
 
 export class ModuleRegistry {
@@ -71,7 +68,7 @@ export class ModuleRegistry {
       const known = this.kinds.length > 0 ? this.kinds.join(', ') : '–';
       throw new ModuleError('unknown_kind', `ModuleRegistry.create: pre druh '${def.kind}' (modul '${def.id}') nie je registrovaná trieda (registrované: ${known})`);
     }
-    return factory({ def, id, origin: { x: spec.x, y: spec.y }, rotation: spec.rotation, purchaseCostCents, grid: env.grid, cargo: env.cargo, pickupCargo: env.pickupCargo });
+    return factory({ def, id, origin: { x: spec.x, y: spec.y }, rotation: spec.rotation, purchaseCostCents, grid: env.grid, cargo: env.cargo });
   }
 }
 
@@ -108,8 +105,8 @@ export const BUILTIN_MODULES: readonly (readonly [ModuleKind, ModuleFactory])[] 
   ['storage', createStorage],
   ['depot', (init) => new VehicleDepot(init)],
   ['gate', (init) => new TruckGate(init)],
-  ['waiting_area', (init) => new WaitingArea(init)],
-  ['ramp', (init) => new LoadingRamp(init)],
+  ['pre_gate', (init) => new PreGateBuffer(init)],
+  ['holding', (init) => new TruckHolding(init)],
 ]);
 
 /** Zaregistruje vstavané druhy do `registry`. */

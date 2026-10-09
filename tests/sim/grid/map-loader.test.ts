@@ -158,7 +158,7 @@ describe('loadMap(harbor_01)', () => {
 
   it('starter cesty zapísané do mriežky (road), inde none; moduly a traffic prázdne', () => {
     const roadCells = new Set(harbor01Json.starter.roads.map(({ x, y }) => grid.index(x, y)));
-    expect(roadCells.size).toBe(60);
+    expect(roadCells.size).toBe(62);
     for (let i = 0; i < grid.cellCount; i++) {
       const cell = grid.atIndex(i);
       expect(cell.road).toBe(roadCells.has(i) ? 'road' : 'none');
@@ -185,8 +185,11 @@ describe('loadMap(harbor_01)', () => {
 
   it('portály, seaLane a anchorage prevzaté z mapy', () => {
     expect(map.roadPortals).toEqual([
-      { id: 'road_south_in', cell: { x: 44, y: 63 }, direction: 'in' },
+      { id: 'road_south_in', cell: { x: 44, y: 63 }, direction: 'in', trafficShare: 0.6 },
       { id: 'road_south_out', cell: { x: 45, y: 63 }, direction: 'out' },
+      // R4 (ADR-041 bod 3): druhý portál vjazdu na západe a jeho výjazd
+      { id: 'road_west_in', cell: { x: 0, y: 60 }, direction: 'in', trafficShare: 0.4 },
+      { id: 'road_west_out', cell: { x: 0, y: 61 }, direction: 'out' },
     ]);
     expect(map.railPortals).toEqual([{ id: 'rail_east', cell: { x: 95, y: 24 } }]);
     expect(map.seaLane).toEqual(harbor01Json.seaLane);
@@ -392,7 +395,7 @@ const INVARIANT_CASES: readonly InvariantCase[] = [
   {
     name: 'dva cestné portály na jednej bunke',
     mutate: (m) => void m.roadPortals.push({ id: 'road_south_2', cell: { x: 44, y: 63 } }),
-    path: '/roadPortals/2/cell',
+    path: '/roadPortals/4/cell',
   },
   {
     name: 'cestný portál na bunke železničného (id sa líši)',

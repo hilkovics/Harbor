@@ -27,6 +27,8 @@ export interface MapPortal {
   readonly cell: CellCoord;
   /** Smer cestného portálu; bez poľa `both` (ADR-037 dodatok R1). */
   readonly direction?: PortalDirection;
+  /** Podiel premávky portálu vjazdu (R4, ADR-041 bod 3); chýba = predvolený podiel. */
+  readonly trafficShare?: number;
 }
 
 export interface LoadedStarter {
@@ -297,7 +299,11 @@ function toParcel(def: MapDef['parcels'][number]): Readonly<Parcel> {
 }
 
 function toPortals(portals: readonly MapPortalDef[]): readonly MapPortal[] {
-  return Object.freeze(portals.map(({ id, cell, direction }) => Object.freeze(direction === undefined ? { id, cell: freezeCell(cell) } : { id, cell: freezeCell(cell), direction })));
+  return Object.freeze(
+    portals.map(({ id, cell, direction, trafficShare }) =>
+      Object.freeze({ id, cell: freezeCell(cell), ...(direction === undefined ? {} : { direction }), ...(trafficShare === undefined ? {} : { trafficShare }) }),
+    ),
+  );
 }
 
 /**

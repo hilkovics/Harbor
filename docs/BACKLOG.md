@@ -184,3 +184,31 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - **Výber RTG kliknutím:** hráč vyberie RTG priamo na mape (nie len cez inšpektor bloku), ako pri žeriavoch. — pôvod: R3 (výsledok fázy) · fáza: R4 (UI)
 - **RTG obsluha kamiónov:** RTG pri bloku obsluhuje aj kamióny (rampa / stojisko) podľa `HANDLING_CHAINS`; dnes len STS ↔ TT ↔ RTG. — pôvod: R3 (výsledok fázy) · fáza: R4
 - **Reach stacker:** vozidlo s dosahom pre OOG plochu; presunuté z R3 (ADR-040 bod 8). — pôvod: R3 (výsledok fázy, ADR-040 bod 8) · fáza: R5
+
+## Z Fázy R4 (TR4-01)
+- **`traffic_stress` beží na seede 6015 (hack):** pôvodný seed po zmene prúdu `Rng` (ADR-041) zahltil križovatku; seed bol zvolený tak, aby scenár dobehol bez zápchy. Latentná zápcha ostáva (jedna križovatka s frontou do križovatky) — vlastní ju TR4-02 (100 000 ticků bez zápchy v `stress_f6` a `live_terminal`). — pôvod: TR4-01 · fáza: R4
+- **`stress_f6` 40 000 ticků: 6 udalostí zápchy (`gridlockEvents`), `lostUnits` 0, `stuckAtEnd` 0** — rovnaká príčina, rieši TR4-02 (`access` modulov, druhý výjazd bloku). — pôvod: TR4-01 · fáza: R4
+- **Rampa a stojisko ostávajú ako interné moduly** (ADR-041 prechodné stavy): kamióny ich zatiaľ používajú ako cieľ nakládky; BuildBar ich stále ponúka, UI karta TR4-04 ich schová, TR4-02 (TP pri blokoch) ich zruší spolu s `loading_ramp_*` a scenármi. — pôvod: TR4-01 · fáza: R4
+- **Odstavná plocha `truck_holding` je len def a trieda** bez správania (kamióny ju nepoužívajú). — pôvod: TR4-01 · fáza: R4 (TR4-02)
+- **Odstránený test „vzájomné ťahanie čelných rámp“ (tie-test facing-ramp):** s jednosmernými pruhmi (ADR-041) sa dva vzájomne čelné vstupy do jedného úseku nestavajú; ak sa v R4+ vrátia obojsmerné rampy, test obnoviť. — pôvod: TR4-01
+- **e2e špecifikácie (`tests/e2e/f3-road-build`, `f4-export-chain`, `f4-ui-demo`, `f5-vertical-slice`, `f6a-export`) a demá (`src/ui/__demo__`, `src/render/__demo__`) odkazujú na `truck_gate`/starý tvar brány:** upraví TR4-05 (napojenie VM, e2e) spolu s renderom (TR4-03) a UI (TR4-04); `pnpm test` (vitest) je zelené. — pôvod: TR4-01 · fáza: R4
+- **Jeden vjazd plochy ≈ 70 kamiónov/h** (kamión dlhý 3 bunky pri 0,6 bunky za tick): špička 100/h vyžaduje dve plochy alebo dva portály (scenár `r4-gate-peak`). Ak treba jednu plochu na 100/h, zvážiť kratší kamión alebo druhý vjazd plochy. — pôvod: TR4-01 · fáza: R4+
+
+## Z Fázy R4 (TR4-02)
+- **Vyriešené v TR4-02:** `traffic_stress` beží na pôvodnom seede 6014 (100 000 ticků bez zápchy), `stress_f6` aj `live_terminal` 100 000 ticků bez `TrafficJam` a `stuckAtEnd` 0; rampa, čakacia plocha a ich scenáre zrušené; `truck_holding` má správanie (volanie z TOS). Zodpovedajúce riadky z TR4-01 sú tým uzavreté.
+- **Odstránené testy kruhov „hook bez cesty“ (`hook-no-path`):** na jednosmernej priečnej ulici s jedným dvorom vozidlo bez trasy do depa a kamióny bez trasy späť uviaznu (zámerne nevyriešené, dnes testuje len prerušenie cesty). Ak sa vrátia obojsmerné rampy alebo druhé depo, obnoviť. — pôvod: TR4-02
+- **Nečinné vozidlo parkuje na ceste:** keď depo nie je dosiahnuteľné jednosmernou cestou, nečinné vozidlo môže zablokovať jednosmernú ulicu; pri zadávaní stavby overiť pripojenie depa k okruhu. — pôvod: TR4-02
+- **Časovanie scenárov `export_roundtrip` a `export_inbound`:** `RemoveRoad` / `PlaceRoad` v scenároch zachytávajú prechod posledného kamióna po cut-offe; v režimoch `apron` a `under_hook` majú inú trasu, preto okná (24 380 – 25 050 a 29 300 – 29 700) závisia od priepustnosti kamiónov. Pri zmene priepustnosti pregenerovať. — pôvod: TR4-02
+- **Priepustnosť kamiónov a zlom uviaznutia:** viac kamiónov na TP znamená viac tokenov držaných v okruhu; pri 12 dvoroch na jednej ceste (`r4-gates-layout`) a režime pruhov `trouble` sa kamióny naúčtujú na spoločnom pruhu s straddle carriermi — test rozloženie oddeľuje jednosmerným okruhom. — pôvod: TR4-02
+- **`in_train`:** lokácia nákladu nemá vstupný prechod (vlak príde vo fáze R7); `assertCargoConservation` ju zatiaľ vždy počíta ako 0. — pôvod: TR4-02 · fáza: R7
+- **Špička 100/h:** pri jednom súbore tokenov (12 TP + 60 státí) sa 100 jednotiek za hodinu nerozloží do vzniku kamiónov v jednej hodine (≈ 69/h); zvýšiť počet státí / TP, alebo dovoliť vznik kamiónov nad kapacitu tokenov so státím vo vnútrozemí. — pôvod: TR4-02 · fáza: R4+
+- **Manifest `assets/manifest.json`:** sprity `truck_waiting_area`, `loading_ramp_*` ostali ako sirotské záznamy (render a UI ich ešte odkazujú v `src/render/waiting-area-decor.ts`, demách a e2e); odstrániť v TR4-03 / TR4-05 spolu s renderom. — pôvod: TR4-02
+- **Férovosť výjazdu z brány:** kamión v `gate_pass` čaká na voľný slot výjazdovej bunky pruhu, kým ho zahlcuje prejazdná doprava k odstavným plochám (špička 100/h: pobyt ≈ 1 470 – 1 680 ticku, nikdy trvalé uviaznutie); zvážiť prednosť výjazdu z brány pred prejazdnou dopravou. — pôvod: TR4-06b · fáza: R4+
+
+## Z Fázy R4 (TR4-07)
+- **Kapacita TP a státí pri špičke 100/h:** pozri „Špička 100/h“ v „Z Fázy R4 (TR4-02)“ (nezdvojené). — pôvod: TR4-07 · fáza: R4+
+- **Férovosť výjazdu z brány:** pozri položku v „Z Fázy R4 (TR4-02)“ (nezdvojené). — pôvod: TR4-07 · fáza: R4+
+- **STS čaká na ťahač ≈ 60 %:** pozri „Z Fázy R3 (TR3-02)“ (TR3-02b, TR3-02c, TR3-02d; nezdvojené). Geometria okruhu ostáva otvorená. — pôvod: TR4-07 · fáza: R4+
+- **Zrušené ukážky dock-maneuver/rampa:** pozostatok po TR4-05b, stav treba potvrdiť. — pôvod: TR4-07 · fáza: R4 (docs)
+- **WorldState v13:** plán R4 (ADR-041) uvádza save v12; číslo treba potvrdiť. — pôvod: TR4-07 · fáza: R4 (docs)
+- **Artefakt verzia 12:** otvorené pri zverejnení artefaktu R4. — pôvod: TR4-07 · fáza: R4 (artefakt)

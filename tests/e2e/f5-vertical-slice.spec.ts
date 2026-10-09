@@ -1,8 +1,9 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { formatMoney, formatMoneyDelta } from '../../src/ui/format';
+import { scenarioLayout } from './layout';
 
 // F5 e2e (T05-09): míľnik M1 z pohľadu hráča — nová hra → prijatie kontraktu v UI → loď príde sama → vykládka → export
-// → výplata. Rozloženie F4 (cesty, depo, dva dvory, brána, stojisko, rampa, dve vozidlá) ide cez `dispatchJSON`
+// → výplata. Rozloženie R4 (jednosmerný okruh, depo, dva dvory, vstupný a výstupný pruh brány, dve vozidlá) ide cez `dispatchJSON`
 // (príkazy zo `data/scenarios/vertical_slice.json`), kontrakt sa prijíma klikom na „Prijať“ v ContractsPanel. Loď
 // nevytvára žiadny DEV príkaz: vygeneruje ju sám prijatý kontrakt (`ship_en_route`). Na stavy kontraktu sa čaká cez
 // `window.__sim.contracts()` (vzorkovanie v rAF stránky, aby test videl každý prechod) pri rýchlosti 8×; po
@@ -10,53 +11,18 @@ import { formatMoney, formatMoneyDelta } from '../../src/ui/format';
 //
 // Screenshoty: `f5-contracts.png` (panel s ponukami pred prijatím), `f5-payout.png` (po výplate: toast, HUD, História).
 //
-// Moduly majú id v poradí stavby: Root berth 1, žeriav 2, depo 3 (viď f4-export-chain.spec.ts).
+// Moduly majú id v poradí stavby: Root berth 1, žeriav 2, depo 3 (viď `layout.ts`).
 
 /** Loď príde o 0,5–2 herného dňa (pri 8× ≈ 108 s reálneho času na deň) a potom sa vykladá a exportuje. */
 const WAIT_LIMIT_MS = 6.5 * 60_000;
 test.describe.configure({ timeout: 8 * 60_000 });
 
-const DEPOT_ID = 3;
-const VEHICLES = 2;
+const LAYOUT = scenarioLayout('vertical_slice');
+const VEHICLES = LAYOUT.vehicles.length;
 const SHIP_PATH = ['accepted', 'ship_en_route', 'unloading', 'exporting', 'completed'] as const;
-
-type Cell = { readonly x: number; readonly y: number };
-
-/** Cesty F3 + pozemnej časti F4 ako úseky `[x0, y0, x1, y1]` (rovnaké ako vo `vertical_slice.json`). */
-const ROAD_SEGMENTS: readonly (readonly [number, number, number, number])[] = [
-  [41, 18, 41, 22],
-  [46, 18, 46, 22],
-  [42, 22, 45, 22],
-  [44, 23, 44, 30],
-  [45, 30, 50, 30],
-  [44, 33, 44, 33],
-  [47, 33, 48, 33],
-  [53, 31, 53, 33],
-  [51, 30, 55, 30],
-];
-
-/** Moduly rozloženia v poradí stavby (id 2 = žeriav berthu, preto depo dostane id 3). */
-const MODULES: readonly { readonly defId: string; readonly x: number; readonly y: number; readonly rotation: number }[] = [
-  { defId: 'vehicle_depot', x: 46, y: 27, rotation: 0 },
-  { defId: 'container_yard_small', x: 42, y: 18, rotation: 0 },
-  { defId: 'container_yard_small', x: 49, y: 26, rotation: 0 },
-  { defId: 'truck_gate', x: 45, y: 32, rotation: 270 },
-  { defId: 'truck_waiting_area', x: 49, y: 31, rotation: 0 },
-  { defId: 'loading_ramp_container', x: 53, y: 28, rotation: 0 },
-];
 
 /** Pohľad na celý prístav: zoom 0,5 (bunka 32 px), stred posunutý doľava od pravého panelu kontraktov. */
 const OVERVIEW = { x: 49, y: 23.5, zoom: 0.5 } as const;
-
-function segmentCells([x0, y0, x1, y1]: readonly [number, number, number, number]): Cell[] {
-  const cells: Cell[] = [];
-  const dx = Math.sign(x1 - x0);
-  const dy = Math.sign(y1 - y0);
-  for (let x = x0, y = y0; ; x += dx, y += dy) {
-    cells.push({ x, y });
-    if (x === x1 && y === y1) return cells;
-  }
-}
 
 async function openGame(page: Page): Promise<string[]> {
   const errors: string[] = [];
@@ -103,18 +69,10 @@ test.describe('F5: nová hra → kontrakt → loď → vykládka → export → 
     const cashStart = await cashCents(page);
 
     // 1) rozloženie F4 cez dispatchJSON (bez lode: tú prinesie až kontrakt)
-    for (const segment of ROAD_SEGMENTS) {
-      expect(await dispatch(page, { type: 'PlaceRoad', cells: segmentCells(segment) })).toMatchObject({ ok: true });
-    }
-    // R1 (ADR-037): obojsmerný úsek (44, 34–36) k bráne a bez (45, 34–35), ako v scenári `full_import_chain` (jednosmerná slučka verejnej cesty)
-    expect(await dispatch(page, { type: 'PlaceRoad', kind: 'two_lane', cells: [{ x: 44, y: 34 }, { x: 44, y: 35 }, { x: 44, y: 36 }] })).toMatchObject({ ok: true });
-    expect(await dispatch(page, { type: 'RemoveRoad', cells: [{ x: 45, y: 34 }, { x: 45, y: 35 }] })).toMatchObject({ ok: true });
-    await page.waitForFunction(() => window.__sim!.world.grid.at(44, 36).roadKind === 'two_lane' && window.__sim!.world.grid.at(45, 34).road !== 'road' && window.__sim!.world.grid.at(45, 35).road !== 'road');
-    for (const module of MODULES) expect(await dispatch(page, { type: 'PlaceModule', ...module })).toMatchObject({ ok: true });
-    await expect.poll(() => page.evaluate(() => window.__sim!.entities().modules.length)).toBe(1 + MODULES.length);
-    for (let bought = 1; bought <= VEHICLES; bought += 1) {
-      expect(await dispatch(page, { type: 'BuyVehicle', vehicleDefId: 'straddle_carrier', depotId: DEPOT_ID })).toMatchObject({ ok: true });
-    }
+    for (const command of LAYOUT.roads) expect(await dispatch(page, command)).toMatchObject({ ok: true });
+    for (const command of LAYOUT.modules) expect(await dispatch(page, command)).toMatchObject({ ok: true });
+    await expect.poll(() => page.evaluate(() => window.__sim!.entities().modules.length)).toBe(1 + LAYOUT.modules.length);
+    for (const command of LAYOUT.vehicles) expect(await dispatch(page, command)).toMatchObject({ ok: true });
     await expect.poll(() => page.evaluate(() => window.__sim!.world.vehicles.size)).toBe(VEHICLES);
     expect(await cashCents(page)).toBeLessThan(cashStart);
     // nie je žiadna loď ani kontrakt v behu: loď príde až po prijatí

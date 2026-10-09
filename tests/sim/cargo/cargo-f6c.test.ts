@@ -29,9 +29,9 @@ const EMPTY_LABELS: CargoUnitLabelsInput = { direction: 'empty', voyageId: null,
 const TRANSHIP_LABELS: CargoUnitLabelsInput = { direction: 'tranship', voyageId: 12 as VoyageId, lineId: 'golden_wave', destinationPort: 'Hamburg', weightClass: 'medium' };
 
 /** Prázdny kontajner: príchod kamiónom, depo, výdaj exportérovi (`exported`) — reťazec rozhodnutia 9 orchestrátora. */
-const EMPTY_TO_EXPORTER = [at.ramp(50, 0), at.vehicle(30), at.storage(40, 5), at.vehicle(31), at.ramp(50, 1), at.truck(61), at.exported()];
+const EMPTY_TO_EXPORTER = [at.vehicle(30), at.storage(40, 5), at.vehicle(31), at.truck(61), at.exported()];
 /** Prázdny kontajner do lode (repositioning): depo → vozidlo → hák → loď → odplávalo. */
-const EMPTY_TO_SHIP = [at.ramp(50, 0), at.vehicle(30), at.storage(40, 5), at.vehicle(31), at.crane(20), at.ship(SHIP_B), at.shipped()];
+const EMPTY_TO_SHIP = [at.vehicle(30), at.storage(40, 5), at.vehicle(31), at.crane(20), at.ship(SHIP_B), at.shipped()];
 /** Prekládka: vykládka z lode A pod hákom, sklad, nakládka na loď B (reverzný reťazec), `shipped`. */
 const TRANSHIP_CHAIN = [at.crane(20), at.vehicle(30), at.storage(40, 6), at.vehicle(31), at.crane(21), at.ship(SHIP_B), at.shipped()];
 
@@ -142,7 +142,7 @@ describe('CargoLedger.create — prázdny kontajner a prekládka', () => {
   it.each([
     ['prázdny na lodi', at.ship(SHIP_A), null, EMPTY_LABELS],
     ['prekládka v kamióne', at.truck(TRUCK), TRANSHIP_CONTRACT, TRANSHIP_LABELS],
-    ['prázdny na rampe', at.ramp(50, 0), null, EMPTY_LABELS],
+    ['prázdny vo vozidle', at.vehicle(50), null, EMPTY_LABELS],
   ])('%s → CargoTransitionError, stav bez zmeny', (_name, location, contractId, labels) => {
     const harness = createHarness();
     const before = snapshot(harness);
@@ -170,7 +170,7 @@ describe('CargoLedger.create — prázdny kontajner a prekládka', () => {
 });
 
 describe('reťazce prázdneho a prekládky (existujúce prechody §7.1 stačia)', () => {
-  it('prázdny: in_truck → at_ramp → in_vehicle → in_storage → in_vehicle → at_ramp → in_truck → exported (výdaj exportérovi)', () => {
+  it('prázdny: in_truck → in_vehicle → in_storage → in_vehicle → in_truck → exported (výdaj exportérovi)', () => {
     const harness = createHarness();
     const unit = harness.ledger.create(TEU, at.truck(TRUCK), null, EMPTY_LABELS);
     moveThrough(harness.ledger, unit.id, EMPTY_TO_EXPORTER);
@@ -201,7 +201,7 @@ describe('reťazce prázdneho a prekládky (existujúce prechody §7.1 stačia)'
   it('prázdny nemôže preskočiť sklad: in_vehicle → on_ship nie je povolený prechod', () => {
     const harness = createHarness();
     const unit = harness.ledger.create(TEU, at.truck(TRUCK), null, EMPTY_LABELS);
-    moveThrough(harness.ledger, unit.id, [at.ramp(50, 0), at.vehicle(30)]);
+    moveThrough(harness.ledger, unit.id, [at.vehicle(30)]);
     const before = snapshot(harness);
     expect(() => harness.ledger.move(unit.id, at.ship(SHIP_B))).toThrow(CargoTransitionError);
     expect(snapshot(harness)).toEqual(before);
@@ -212,7 +212,7 @@ describe('CargoLedger.setStatus — kontrola a M&R', () => {
   const emptyInStorage = () => {
     const harness = createHarness();
     const unit = harness.ledger.create(TEU, at.truck(TRUCK), null, EMPTY_LABELS);
-    moveThrough(harness.ledger, unit.id, [at.ramp(50, 0), at.vehicle(30), at.storage(40, 5)]);
+    moveThrough(harness.ledger, unit.id, [at.vehicle(30), at.storage(40, 5)]);
     harness.events.flush();
     return { harness, unitId: unit.id };
   };
@@ -221,7 +221,7 @@ describe('CargoLedger.setStatus — kontrola a M&R', () => {
     const { harness, unitId } = emptyInStorage();
     const { ledger } = harness;
     const other = ledger.create(TEU, at.truck(TRUCK + 1), null, EMPTY_LABELS).id;
-    moveThrough(ledger, other, [at.ramp(50, 1), at.vehicle(31), at.storage(40, 2)]);
+    moveThrough(ledger, other, [at.vehicle(31), at.storage(40, 2)]);
     harness.events.flush();
     const order = ledger.unitsAt('in_storage', id(40));
     const damaged = ledger.setStatus(unitId, 'damaged');
@@ -299,8 +299,8 @@ describe('stav ledgera s linkou a stavom kvality', () => {
     const a = ledger.create(TEU, at.truck(TRUCK), null, EMPTY_LABELS);
     const b = ledger.create(TEU, at.truck(TRUCK + 1), null, { ...EMPTY_LABELS, lineId: 'blue_anchor' });
     ledger.create(TEU, at.ship(SHIP_A), TRANSHIP_CONTRACT, TRANSHIP_LABELS);
-    moveThrough(ledger, a.id, [at.ramp(50, 0), at.vehicle(30), at.storage(40, 1)]);
-    moveThrough(ledger, b.id, [at.ramp(50, 1), at.vehicle(31), at.storage(40, 0)]);
+    moveThrough(ledger, a.id, [at.vehicle(30), at.storage(40, 1)]);
+    moveThrough(ledger, b.id, [at.vehicle(31), at.storage(40, 0)]);
     ledger.setStatus(a.id, 'in_repair', 4000);
     ledger.setStatus(b.id, 'damaged');
     const state = ledger.getState();

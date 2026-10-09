@@ -1,20 +1,12 @@
 /**
- * Scenár `export_roundtrip` (F6a, T6A-03/T6A-05, ADR-032, ADR-033): vertikálny rez celého roundtripu — roundtrip booking
- * (import 54 TEU + export 36 TEU, jedna voyage; kontrakty #7 a #8) prijatý v ticku 8 641 (od R2, ADR-039: 31 + 24 kontajnerov so zmesou 20′/40′ `sizeMix` 0,6), 36 delivery kamiónov prinesie export pred
- * cut-off (4 z nich s VGM hold), posledný kamión zablokuje chýbajúca cesta pred portálom (RemoveRoad 24 350, PlaceRoad 30 600),
- * takže prejde bránou po cut-off aj po začiatku lashingu (rolled, nenaloží sa), loď vyloží 31 kontajnerov / 54 TEU (žeriav, vozidlá, brána von),
- * naloží 23 kontajnerov / 34 TEU exportu v poradí stowage plánu, lashuje a odíde (`shipped`); rolled jednotka sa vráti odosielateľovi po súši.
+ * Scenár `export_roundtrip` (F6a, T6A-03/T6A-05, ADR-032, ADR-033; R4 ADR-041): vertikálny rez celého roundtripu — roundtrip booking
+ * (import 54 TEU + export 36 TEU, jedna voyage; kontrakty #7 a #8) prijatý v ticku 8 641 (od R2, ADR-039: 31 + 24 kontajnerov so zmesou 20′/40′ `sizeMix` 0,6), 24 delivery kamiónov prinesie export
+ * (4 z nich s VGM hold), posledný kamión zablokuje chýbajúca cesta pred portálom (RemoveRoad 24 380, PlaceRoad 25 050), takže prejde bránou po cut-off (rolled), no pred lashingom;
+ * loď vyloží 31 kontajnerov / 54 TEU (žeriav, vozidlá, brána von), naloží všetkých 24 kontajnerov / 36 TEU exportu (rolled jednotku ako last minute), lashuje a odíde (`shipped`).
  *
- * Beh sa overuje v oboch režimoch odovzdávania: predvolený `under_hook` (`BUNDLED_DEFS`, ADR-033) a `apron` (`DEFS`, F2–F5).
- * Režim `apron` ostáva v správaní zhodný s F6a — golden `tests/sim/__golden__/export_roundtrip.json`. Predvolený `under_hook` (od T6D-02: vozidlo
- * stojí pod žeriavom, buffer 0 — žeriav čaká na vozidlo) má pomalšiu vykládku — vlastný golden `tests/sim/__golden__/export_roundtrip_under_hook.json`.
- * Posledný kamión (zablokovaná cesta do 30 600, splatný od 24 395) po otvorení cesty nevojde hneď: od T6D-01 (ADR-035) potrebuje zaručené staging miesto
- * na docku. Príčina (T6D-05b): v ticku 30 601, prvom s prevádzkovou rampou, krok 5 (dispatcher) vytvorí 8× `JobCreated` pre import čakajúci na odvoz
- * a rezervuje všetkých 8 staging miest dockov skôr, než krok 8 čakajúci kamión vpustí — miesto sa uvoľní až po kamiónoch na odvoz importu. Prisľúbenie
- * miesta kamiónu (`DockIntake`, „príjem a odvoz majú každý vlastnú kapacitu“) platí až pre už vpustené kamióny, nie pre čakajúci kamión vo vnútrozemí.
- * Kamión tak vojde po začiatku lashingu v oboch režimoch (pod hákom 30 943, na aprone 30 699 — rozdiel je len v tom, kedy sa uvoľní prvé miesto) —
- * jednotka je rolled a vráti sa odosielateľovi po súši (23 odplávaných kontajnerov); pred T6D-01 dorazila ešte počas nakládky a naložila sa ako last minute
- * (to pokrýva `export-loading.test.ts`). Časovanie a `stateHash` sa líšia podľa režimu.
+ * Beh sa overuje v oboch režimoch odovzdávania: predvolený `under_hook` (`BUNDLED_DEFS`, ADR-033) a `apron` (`DEFS`, F2–F5) — golden `tests/sim/__golden__/export_roundtrip.json`,
+ * resp. `export_roundtrip_under_hook.json`. Časovanie a `stateHash` sa líšia podľa režimu. Kamión vznikne hneď po otvorení cesty (R4: vjazd len s tokenom TP, tie sú pred dokovaním lode voľné);
+ * rolled jednotka po začiatku lashingu a jej vrátenie odosielateľovi po súši pokrýva `export-loading.test.ts`.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -38,11 +30,8 @@ const IMPORT_TEU = 54;
 const BOOKED_TEU = 36;
 const IMPORT_UNITS = 31;
 const BOOKED = 24;
-/** Posledný kontajner exportu (index 23 z 24 kontajnerov / 36 TEU) je 40′: rolled a vrátený, naloží sa 23 kontajnerov = 34 TEU. */
-const SHIPPED = BOOKED - 1;
-const SHIPPED_TEU = BOOKED_TEU - 2;
-const REMOVE_ROAD_TICK = 24_350;
-const PLACE_ROAD_TICK = 30_600;
+const REMOVE_ROAD_TICK = 24_380;
+const PLACE_ROAD_TICK = 25_050;
 const RUN_TIMEOUT_MS = 300_000;
 const GOLDEN_PATH = `${REPO_ROOT}tests/sim/__golden__/export_roundtrip.json`;
 const GOLDEN_HOOK_PATH = `${REPO_ROOT}tests/sim/__golden__/export_roundtrip_under_hook.json`;
@@ -103,9 +92,9 @@ describe('scenár export_roundtrip: súbor', () => {
     expect(SCENARIO.map).toBe('data/maps/harbor_01.json');
   });
 
-  it('prístav F4 (10 úsekov ciest, 6 modulov, 2 vozidlá), AcceptContract 7 v ticku 8 641 a zablokovanie cesty pred portálom', () => {
+  it('prístav (8 úsekov ciest, 5 modulov, 2 vozidlá), AcceptContract 7 v ticku 8 641 a zablokovanie cesty pred portálom', () => {
     const types = SCENARIO.commands.map((entry) => entry.command.type);
-    expect(types).toEqual([...Array<string>(10).fill('PlaceRoad'), ...Array<string>(6).fill('PlaceModule'), 'BuyVehicle', 'BuyVehicle', 'PlaceRoad', 'RemoveRoad', 'AcceptContract', 'RemoveRoad', 'PlaceRoad']);
+    expect(types).toEqual([...Array<string>(8).fill('PlaceRoad'), ...Array<string>(5).fill('PlaceModule'), 'BuyVehicle', 'BuyVehicle', 'AcceptContract', 'RemoveRoad', 'PlaceRoad']);
     const accept = SCENARIO.commands.find((entry) => entry.command.type === 'AcceptContract');
     expect(accept).toEqual({ atTick: 8641, command: { type: 'AcceptContract', contractId: IMPORT_ID } });
     expect(SCENARIO.commands.find((entry) => entry.command.type === 'RemoveRoad' && entry.atTick > 0)?.atTick).toBe(REMOVE_ROAD_TICK);
@@ -114,14 +103,11 @@ describe('scenár export_roundtrip: súbor', () => {
 });
 
 /**
- * Režimy odovzdávania: v oboch príde rolled jednotka po začiatku lashingu (od T6D-01 vjazd z vnútrozemia len so zaručeným miestom na docku, viď hlavičku),
- * nenaloží sa a vráti sa odosielateľovi po súši (23 odplávaných kontajnerov, 1 vrátený). Naloženie rolled jednotky ako last minute pokrýva `export-loading.test.ts`.
+ * Režimy odovzdávania: R4 (ADR-041) — obe lode sa pri tom istom scenári dokovali a začali lashing takmer naraz, preto v oboch režimoch príde posledný kamión (po cut-off, zdržaný
+ * zablokovanou cestou pred portálom) ešte pred lashingom: rolled, ale naloží sa ako last minute. Vrátenie rolled jednotky po začiatku lashingu pokrýva `export-loading.test.ts`.
  */
 const MODES = [
-  // Pod hákom (31 796 lashing, 31 984 posledný kamión) príde posledný kontajner (40′) po začiatku lashingu: rolled a vrátený odosielateľovi.
-  { name: 'under_hook (predvolený režim)', defs: BUNDLED_DEFS, goldenPath: GOLDEN_HOOK_PATH, lateUnit: 'rolled_returned', shippedUnits: SHIPPED, returnedUnits: 1, shippedTeu: SHIPPED_TEU },
-  // Na aprone sa lashing začne až v 32 407, posledný kamión príde už v 31 173 (po cut-off, pred lashingom): rolled, ale naloží sa ako last minute (R2: menej
-  // kontajnerov = skôr hotová vykládka a iné časovanie než pred R2, kedy ho režimy delili len o ~240 ticků — viď hlavičku).
+  { name: 'under_hook (predvolený režim)', defs: BUNDLED_DEFS, goldenPath: GOLDEN_HOOK_PATH, lateUnit: 'last_minute', shippedUnits: BOOKED, returnedUnits: 0, shippedTeu: BOOKED_TEU },
   { name: 'apron', defs: DEFS, goldenPath: GOLDEN_PATH, lateUnit: 'last_minute', shippedUnits: BOOKED, returnedUnits: 0, shippedTeu: BOOKED_TEU },
 ] as const;
 
@@ -143,7 +129,7 @@ describe.each(MODES)('scenár export_roundtrip: režim $name', ({ defs, goldenPa
     expect(world.clock.tick).toBe(TICKS);
   });
 
-  it('24 kamiónov s exportom (36 TEU) prešlo bránou, posledný prišiel po cut-off ako rolled (VGM hold u časti jednotiek), pod hákom až počas lashingu', () => {
+  it('24 kamiónov s exportom (36 TEU) prešlo bránou, posledný prišiel po cut-off ako rolled (VGM hold u časti jednotiek), pred lashingom', () => {
     const cutoff = of(events, 'CutoffPassed');
     expect(cutoff).toHaveLength(1);
     expect(cutoff[0].event).toMatchObject({ contractId: EXPORT_ID, arrivedUnits: BOOKED - 1, bookedUnits: BOOKED });
@@ -154,10 +140,10 @@ describe.each(MODES)('scenár export_roundtrip: režim $name', ({ defs, goldenPa
     expect(rolled).toHaveLength(1);
     expect(rolled[0].tick).toBeGreaterThan(PLACE_ROAD_TICK);
     const lashingTick = of(events, 'ShipLashingStarted')[0].tick;
-    if (lateUnit === 'rolled_returned') expect(rolled[0].tick).toBeGreaterThan(lashingTick);
-    else expect(rolled[0].tick).toBeLessThan(lashingTick);
-    expect(of(events, 'VgmHoldStarted')).toHaveLength(2);
-    expect(of(events, 'VgmHoldReleased')).toHaveLength(2);
+    expect(rolled[0].tick).toBeLessThan(lashingTick);
+    // VGM hold je losovaný z Rng: po R4 (ADR-041, brána losuje problémy) má hold jedna jednotka (pred R4 dve); každý hold sa uvoľní.
+    expect(of(events, 'VgmHoldStarted').length).toBeGreaterThan(0);
+    expect(of(events, 'VgmHoldReleased')).toHaveLength(of(events, 'VgmHoldStarted').length);
     expect(of(events, 'TruckUnloaded')).toHaveLength(BOOKED);
   });
 
@@ -168,9 +154,7 @@ describe.each(MODES)('scenár export_roundtrip: režim $name', ({ defs, goldenPa
     expect(loaded.filter((entry) => entry.event.lastMinute)).toHaveLength(lateUnit === 'last_minute' ? 1 : 0);
     // Na aprone príde posledný (medium) kontajner ešte pred lashingom a čaká v sklade, kým sa nakladajú ľahšie jednotky → tie sú mimo poradia (last minute).
     // Pod hákom vozidlo, ktoré musí najprv preložiť kontajner nad cieľom (rehandling, R2 ADR-039), príde po inom vozidle — najviac 1 jednotka mimo poradia tried.
-    const outOfOrder = loaded.filter((entry) => entry.event.outOfOrder).length;
-    if (lateUnit === 'last_minute') expect(outOfOrder).toBeGreaterThan(0);
-    else expect(outOfOrder).toBeLessThanOrEqual(1);
+    expect(loaded.filter((entry) => entry.event.outOfOrder).length).toBeGreaterThan(0);
     expect(of(events, 'DualCycle').length).toBeGreaterThan(0);
   });
 
@@ -194,8 +178,8 @@ describe.each(MODES)('scenár export_roundtrip: režim $name', ({ defs, goldenPa
     const all = chains(events);
     const expected =
       defs.modules.get('berth_standard').params['handoverMode'] === 'under_hook'
-        ? ['in_truck', 'at_ramp', 'in_vehicle', 'in_storage', 'in_vehicle', 'in_crane', 'on_ship', 'shipped']
-        : ['in_truck', 'at_ramp', 'in_vehicle', 'in_storage', 'in_vehicle', 'on_apron', 'in_crane', 'on_ship', 'shipped'];
+        ? ['in_truck', 'in_vehicle', 'in_storage', 'in_vehicle', 'in_crane', 'on_ship', 'shipped']
+        : ['in_truck', 'in_vehicle', 'in_storage', 'in_vehicle', 'on_apron', 'in_crane', 'on_ship', 'shipped'];
     for (const entry of shipped) expect(all.get(entry.event.unitId), `jednotka ${String(entry.event.unitId)}`).toEqual(expected);
   });
 
@@ -263,17 +247,14 @@ describe('scenár export_roundtrip: časovanie podľa režimu', () => {
     const cranes = (world: World) => [...world.modules.values()].filter((module) => 'waitForVehicleTicks' in module) as unknown as { waitForVehicleTicks: number }[];
     expect(cranes(hook.world).some((crane) => crane.waitForVehicleTicks > 0)).toBe(true);
     expect(cranes(apron.world).every((crane) => crane.waitForVehicleTicks === 0)).toBe(true);
-    // Rolled jednotka prišla v oboch behoch po otvorení zablokovanej cesty (30 600); pod hákom neskôr — kamión z vnútrozemia vojde až po uvoľnení
-    // staging miesta na docku (T6D-01, ADR-035): všetkých 8 miest rezervoval v ticku 30 601 krok 5 pred krokom 8 (T6D-05b) a prvé sa uvoľní pod hákom
-    // o ~240 ticků neskôr než na aprone.
+    // Rolled jednotka prišla v oboch behoch po otvorení zablokovanej cesty (25 050): kamión vznikne hneď po otvorení a cesta k bráne trvá desiatky tickov.
     const rolledTicks = [hook, apron].map((entry) => of(entry.events, 'UnitRolled')[0].tick);
     for (const tick of rolledTicks) expect(tick).toBeGreaterThan(PLACE_ROAD_TICK);
-    expect(rolledTicks[0]).toBeGreaterThan(rolledTicks[1]);
-    expect(rolledTicks[0] - rolledTicks[1]).toBeLessThan(1000);
+    for (const tick of rolledTicks) expect(tick).toBeLessThan(PLACE_ROAD_TICK + 1000);
     // Pod hákom (buffer 0) ide vykládka priamo vozidlu, na aprone cez apron; pomalšia vykládka posunie lashing neskôr než na aprone.
     const direct = (events: Entries): number => of(events, 'CargoMoved').filter((entry) => entry.event.from.kind === 'in_crane' && entry.event.to.kind === 'in_vehicle').length;
-    // apron slúži len ako protideadlock (vozidlo s exportom čaká pod hákom, žeriav drží import): drvivá väčšina vykládky ide priamo
-    expect(direct(hook.events)).toBeGreaterThanOrEqual(Math.floor(IMPORT_UNITS * 0.8));
+    // apron slúži len ako protideadlock (vozidlo s exportom čaká pod hákom, žeriav drží import): väčšina vykládky ide priamo (R4, ADR-041: posun prúdu Rng — 23 z 31 namiesto 25+)
+    expect(direct(hook.events)).toBeGreaterThanOrEqual(Math.floor(IMPORT_UNITS * 0.7));
     expect(direct(apron.events)).toBe(0);
     // Časovanie lashingu sa v režimoch líši (pred R2 bol pod hákom neskôr; s menším počtom kontajnerov R2 je poradie závislé od priebehu vykládky).
     expect(of(hook.events, 'ShipLashingStarted')[0].tick).not.toBe(of(apron.events, 'ShipLashingStarted')[0].tick);

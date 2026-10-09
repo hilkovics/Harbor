@@ -201,7 +201,7 @@ describe('CargoLedger.move — nepovolený prechod a atomickosť', () => {
     expect(harness.ledger.unitAtSlot('on_apron', id(BERTH), 0)).toBe(b);
   });
 
-  it('obsadený slot skladu → slot_occupied; dock rampy zdieľa viac jednotiek', () => {
+  it('obsadený slot skladu → slot_occupied; kamión drží viac jednotiek', () => {
     const harness = withUnits(3);
     const [a, b, c] = harness.units;
     const toVehicle = [at.crane(CRANE), at.apron(BERTH, 0), at.vehicle(30)];
@@ -209,10 +209,10 @@ describe('CargoLedger.move — nepovolený prechod a atomickosť', () => {
     moveThrough(harness.ledger, b, toVehicle);
     harness.events.flush();
     expectAtomicFailure(harness, () => harness.ledger.move(b, at.storage(40, 5)), 'slot_occupied');
-    harness.ledger.move(b, at.ramp(50, 1));
-    moveThrough(harness.ledger, c, [...toVehicle, at.ramp(50, 1)]);
-    expect(harness.ledger.unitsAt('at_ramp', id(50))).toEqual([b, c]);
-    expect(harness.ledger.unitAtSlot('at_ramp', id(50), 1)).toBeUndefined();
+    harness.ledger.move(b, at.truck(50));
+    moveThrough(harness.ledger, c, [...toVehicle, at.truck(50)]);
+    expect(harness.ledger.unitsAt('in_truck', id(50))).toEqual([b, c]);
+    expect(harness.ledger.unitAtSlot('in_truck', id(50), 1)).toBeUndefined();
   });
 
   it('exported je konečný: exportovaná jednotka sa už nepohne (unknown_unit) a get vráti undefined', () => {
@@ -326,7 +326,7 @@ describe('CargoLedger — stroj bloku (in_handler, ADR-040)', () => {
     harness.ledger.assertConservation();
   });
 
-  it('žeriav ani rampa nesiahnu do in_handler (nepovolený prechod, stav sa nezmení)', () => {
+  it('žeriav ani kamión nesiahnu do in_handler (nepovolený prechod, stav sa nezmení)', () => {
     const harness = withUnits(1);
     const [unit] = harness.units;
     harness.ledger.move(unit, at.crane(CRANE));

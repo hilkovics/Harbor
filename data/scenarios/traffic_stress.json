@@ -310,6 +310,13 @@
       "atTick": 34561,
       "command": {
         "type": "AcceptContract",
+        "contractId": 30
+      }
+    },
+    {
+      "atTick": 34561,
+      "command": {
+        "type": "AcceptContract",
         "contractId": 31
       }
     },
@@ -321,7 +328,7 @@
       }
     },
     {
-      "atTick": 34561,
+      "atTick": 43201,
       "command": {
         "type": "AcceptContract",
         "contractId": 33
@@ -331,21 +338,14 @@
       "atTick": 43201,
       "command": {
         "type": "AcceptContract",
-        "contractId": 36
+        "contractId": 34
       }
     },
     {
       "atTick": 43201,
       "command": {
         "type": "AcceptContract",
-        "contractId": 37
-      }
-    },
-    {
-      "atTick": 43201,
-      "command": {
-        "type": "AcceptContract",
-        "contractId": 40
+        "contractId": 35
       }
     }
   ]

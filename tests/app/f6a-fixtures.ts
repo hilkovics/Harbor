@@ -82,7 +82,7 @@ export function createExportUnit(world: World, contract: ExportContract, weightC
   return world.cargo.create(TEU, { kind: 'in_truck', truckId: 9001 as EntityId }, contract.id as ContractId, exportLabels(contract, weightClass));
 }
 
-/** Presunie jednotku cez ledger po reťazci `at_ramp → in_vehicle → …` až na `last`. */
+/** Presunie jednotku cez ledger po reťazci `in_vehicle → …` až na `last`. */
 export function moveChain(world: World, unitId: EntityId, chain: readonly CargoLocation[]): void {
   for (const location of chain) world.cargo.move(unitId, location);
 }
@@ -90,7 +90,6 @@ export function moveChain(world: World, unitId: EntityId, chain: readonly CargoL
 /** Reťazec exportu po uloženie v sklade `storageId` (ADR-032 bod 5). */
 export function toStorageChain(storageId: EntityId, slot: number): readonly CargoLocation[] {
   return [
-    { kind: 'at_ramp', rampId: 9002 as EntityId, dock: 0 },
     { kind: 'in_vehicle', vehicleId: 9003 as EntityId },
     { kind: 'in_storage', moduleId: storageId, slot },
   ];
@@ -99,7 +98,6 @@ export function toStorageChain(storageId: EntityId, slot: number): readonly Carg
 /** Reťazec exportu po palubu lode `shipId` (z docku cez apron a žeriav, bez skladu — last minute vetva). */
 export function toShipChain(shipId: EntityId): readonly CargoLocation[] {
   return [
-    { kind: 'at_ramp', rampId: 9002 as EntityId, dock: 0 },
     { kind: 'in_vehicle', vehicleId: 9003 as EntityId },
     { kind: 'on_apron', berthId: 9004 as EntityId, slot: 0 },
     { kind: 'in_crane', craneId: 9005 as EntityId },

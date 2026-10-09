@@ -72,7 +72,7 @@ describe('CargoLedger.create — štítky a miesto vzniku podľa smeru (ADR-032)
   it.each([
     ['export na lodi', at.ship(SHIP), EXPORT_LABELS],
     ['import v kamióne', at.truck(TRUCK), IMPORT_LABELS],
-    ['export na rampe', at.ramp(50, 0), EXPORT_LABELS],
+    ['export vo vozidle', at.vehicle(50), EXPORT_LABELS],
   ])('%s → CargoTransitionError, stav bez zmeny', (_name, location, labels) => {
     const harness = createHarness();
     const before = snapshot(harness);
@@ -126,9 +126,9 @@ describe('reverzný reťazec a shipped (ADR-032 bod 3)', () => {
     const { ledger } = createHarness();
     const unit = ledger.create(TEU, at.truck(TRUCK), EXPORT_CONTRACT, EXPORT_LABELS);
     ledger.setHold(unit.id, { reason: 'vgm', untilTick: 40 });
-    ledger.move(unit.id, at.ramp(50, 0));
+    ledger.move(unit.id, at.vehicle(50));
     const moved = ledger.get(unit.id) as CargoUnit;
-    expect(moved).toMatchObject({ ...EXPORT_LABELS, contractId: EXPORT_CONTRACT, hold: { reason: 'vgm', untilTick: 40 }, location: at.ramp(50, 0) });
+    expect(moved).toMatchObject({ ...EXPORT_LABELS, contractId: EXPORT_CONTRACT, hold: { reason: 'vgm', untilTick: 40 }, location: at.vehicle(50) });
     expect(Object.isFrozen(moved)).toBe(true);
   });
 

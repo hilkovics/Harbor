@@ -154,7 +154,7 @@ describe('contractCards: skupiny a poradie', () => {
 });
 
 describe('dôvody odmietnutia pre nové druhy', () => {
-  const landside: readonly ValidationReason[] = ['no_ramp_for_category', 'ramp_inoperative', 'no_storage_for_category'];
+  const landside: readonly ValidationReason[] = ['no_gate_for_category', 'no_storage_for_category'];
 
   it('tabuľka KIND_REASON_TEXT má pre repositioning aj prekládku texty bez slova „export“ (ide o prázdne a prekládku)', () => {
     for (const kind of ['empty_repositioning', 'tranship'] as const) {

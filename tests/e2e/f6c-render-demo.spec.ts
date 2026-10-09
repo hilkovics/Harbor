@@ -1,6 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { DepotDecor } from '../../src/render/depot-decor';
-import type { RampDecor } from '../../src/render/ramp-decor';
 import type { YardCraneDecor } from '../../src/render/yard-crane-decor';
 
 // T6C-04 render demo (`src/render/__demo__/f6c-render.html`): prázdne kontajnery, depo prázdnych a empty handler na syntetických
@@ -9,7 +8,7 @@ import type { YardCraneDecor } from '../../src/render/yard-crane-decor';
 //    (import od predku, prázdne tesne pred exportom, export od zadku) a rad lodí s rôznymi kombináciami;
 //  - `depot`: depo prázdnych (sivé kontajnery na svetlej ploche, odznaky poškodených a opráv) vedľa dvora (oranžové), empty handler,
 //    straddle carrier a kamión s prázdnym kontajnerom;
-//  - `ramp`: pripravené plné a prázdne kontajnery na dokoch rampy, kamióny s prázdnym a s plným kontajnerom.
+//  - `gate`: kamióny s prázdnym a s plným kontajnerom pri pruhu brány.
 
 const DEMO_URL = '/src/render/__demo__/f6c-render.html';
 const SHOTS = 'tests/e2e/__screenshots__';
@@ -164,34 +163,25 @@ test('depot: sivé depo s odznakmi poškodených a opráv vedľa oranžového dv
   expect(errors).toEqual([]);
 });
 
-test('ramp: pripravené plné a prázdne kontajnery na dokoch, kamión s prázdnym kontajnerom prichádza', async ({ page }) => {
-  const errors = await openDemo(page, 'ramp');
-  await page.screenshot({ path: `${SHOTS}/f6c-ramp-overview.png` });
-  const ramp = await page.evaluate(() => {
-    const { renderer, fixtures } = window.__f6cDemo!;
-    const decor = renderer.modules.moduleView(fixtures.RAMP_ID)?.decor<RampDecor>('ramp');
+test('gate: kamión s prázdnym kontajnerom prichádza k pruhu brány, kamión s plným odchádza', async ({ page }) => {
+  const errors = await openDemo(page, 'gate');
+  await page.screenshot({ path: `${SHOTS}/f6c-gate-overview.png` });
+  const gate = await page.evaluate(() => {
+    const { renderer } = window.__f6cDemo!;
     const state = (id: number) => renderer.entities.truckView(id)?.loadState;
     return {
-      drawn: [decor?.stagedDrawn(0), decor?.stagedDrawn(1)],
-      empties: [decor?.emptyDrawn(0), decor?.emptyDrawn(1)],
-      firstDock0: decor?.stagedSprite(0, 0)?.look.empty === true,
-      lastDock0: decor?.stagedSprite(0, 2)?.look.empty === true,
       arriving: state(71),
       leaving: state(72),
       texturesDiffer: renderer.entities.truckView(71)?.cargoState !== renderer.entities.truckView(72)?.cargoState, // kamión: sivý (prázdny) vs plný kontajner na návese
     };
   });
-  expect(ramp.drawn).toEqual([3, 2]);
-  expect(ramp.empties).toEqual([1, 2]);
-  expect(ramp.firstDock0).toBe(false);
-  expect(ramp.lastDock0).toBe(true);
-  expect(ramp.arriving).toBe('carries_empty');
-  expect(ramp.leaving).toBe('loaded');
-  expect(ramp.texturesDiffer).toBe(true);
+  expect(gate.arriving).toBe('carries_empty');
+  expect(gate.leaving).toBe('loaded');
+  expect(gate.texturesDiffer).toBe(true);
   await page.evaluate(() => {
     const demo = window.__f6cDemo!;
-    return demo.focus(demo.scene, 51.5, 24.5, 3.0);
+    return demo.focus(demo.scene, 51, 22, 3.0);
   });
-  await page.screenshot({ path: `${SHOTS}/f6c-ramp-docks.png` });
+  await page.screenshot({ path: `${SHOTS}/f6c-gate-zoom.png` });
   expect(errors).toEqual([]);
 });

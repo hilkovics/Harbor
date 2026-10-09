@@ -44,9 +44,10 @@ import {
   type SpecTable,
   type StringSpec,
 } from './def-spec';
-import { checkModuleItem, rampParams } from './module-def';
+import { checkModuleItem } from './module-def';
 import {
   CARGO_CATEGORIES,
+  CONNECTOR_ACCESS,
   CONNECTOR_TYPES,
   CONTAINER_STACKING_RULES,
   CONTRACT_TEMPLATE_KINDS,
@@ -262,6 +263,7 @@ const LOGISTICS_FIELDS: FieldTable<LogisticsDef> = {
   yardMachineLoadWeight: { kind: 'number', min: 0 },
   rehandleSpareCells: { kind: 'integer', min: 0 },
   apronUnloadReserveSlots: { kind: 'integer', min: 0 },
+  dualCandidateLimit: { kind: 'integer', min: 1 },
   hookJobLookahead: { kind: 'integer', min: 1 },
   hookPairedLoadJobs: { kind: 'integer', min: 1 },
   importDwellEstimateHours: { kind: 'number', exclusiveMin: 0 },
@@ -357,6 +359,7 @@ const MODULE_FIELDS: SpecTable<Omit<ModuleDef, 'params'>> = {
         y: { kind: 'integer', min: 0 },
         side: { kind: 'enum', values: SIDES },
         type: { kind: 'enum', values: CONNECTOR_TYPES },
+        access: { kind: 'enum', values: CONNECTOR_ACCESS, optional: true },
       },
     },
   },
@@ -406,7 +409,7 @@ const VEHICLE_FIELDS: SpecTable<VehicleDef> = {
   techRequired: { kind: 'string', pattern: SNAKE_CASE_ID, patternName: 'snake_case identifikátor', optional: true },
 };
 
-/** Kamión (F4): bez nákupu a mzdy — spawnuje ho `TruckSpawner`, čas nakládky určuje rampa. */
+/** Kamión (F4, R4): bez nákupu a mzdy; časy bezpečnej zóny a lashingu na TP sú v defe (ADR-041 bod 4 a 7). */
 const TRUCK_FIELDS: SpecTable<TruckDef> = {
   id: ID_FIELD,
   displayName: TEXT_FIELD,
@@ -414,6 +417,9 @@ const TRUCK_FIELDS: SpecTable<TruckDef> = {
   lengthCells: { kind: 'integer', min: 1 },
   speedCellsPerTick: { kind: 'number', exclusiveMin: 0 },
   cargoCategories: { kind: 'array', minItems: 1, unique: true, item: { kind: 'enum', values: CARGO_CATEGORIES } },
+  safeZoneTicks: { kind: 'integer', min: 0 },
+  lashTicks: { kind: 'integer', min: 0 },
+  unlashTicks: { kind: 'integer', min: 0 },
 };
 
 /** Typ kontajnera (R2, ADR-039): `sizes` ⊂ {20, 40} bez opakovania je v `checkContainerType`; `oogChance` `0 … 1`, `rateMultiplier` > 0. */
@@ -493,26 +499,6 @@ function validateDef<T extends DefBase>(
   const relation = check?.(def);
   if (relation) fail(relation);
   return def;
-}
-
-/**
- * Krížová kontrola `modules.json` × `trucks.json` (review T04-11 f, dodatok ADR-024): kamión, ktorý spawner pošle na
- * rampu (prvý v poradí `trucks.json`, ktorý vozí jej kategóriu), musí mať `capacityUnits ≤ stagingPerDock` — inak by
- * na docku nikdy nebolo dosť jednotiek, rampa by prijímala outbound joby a nič by z nej neodišlo. Chyba patrí rampe
- * (`modules/items/<i>/params/stagingPerDock`). Rampa bez kamióna svojej kategórie je v registri prípustná (spawner
- * nič nepošle — syntetické defy testov tak izolujú outbound joby); v zabalených dátach ju zakáže `pnpm validate:defs`.
- */
-function checkRampTrucks(modules: Catalog<Readonly<ModuleDef>>, trucks: Catalog<Readonly<TruckDef>>): void {
-  modules.items.forEach((def, index) => {
-    if (def.kind !== 'ramp') return;
-    const { category, stagingPerDock } = rampParams(def);
-    const truck = trucks.items.find((candidate) => candidate.cargoCategories.includes(category));
-    if (truck === undefined || truck.capacityUnits <= stagingPerDock) return;
-    failWith('modules', {
-      path: `/items/${String(index)}/params/stagingPerDock`,
-      message: `kamión '${truck.id}' (kategória '${category}') má capacityUnits ${String(truck.capacityUnits)} > stagingPerDock ${String(stagingPerDock)} rampy '${def.id}' — dock by sa nikdy nenaplnil`,
-    });
-  });
 }
 
 /**
@@ -655,7 +641,7 @@ export class DefRegistry {
 
   /**
    * Zvaliduje surové defy (fail-fast, `DefError`) a zostaví register so zmrazenými objektmi. Po jednotlivých defoch
-   * krížové kontroly medzi nimi (`checkRampTrucks`, `checkContractTemplates`).
+   * krížové kontroly medzi nimi (`checkContractTemplates`).
    */
   static fromRaw(raw: RawDefs): DefRegistry {
     const time = validateDef<TimeDef>('time', raw.time, DEF_FIELDS.time);
@@ -672,7 +658,6 @@ export class DefRegistry {
     const containerTypes = validateCatalog<ContainerTypeDef>('container_types', raw.container_types, { fields: CONTAINER_TYPE_FIELDS, check: checkContainerType });
     const equipment = validateDef<EquipmentDef>('equipment', raw.equipment, DEF_FIELDS.equipment, checkEquipment);
     checkExportWindow(economy, logistics);
-    checkRampTrucks(modules, trucks);
     checkContractTemplates(contractTemplates, cargoTypes, ships);
     return new DefRegistry(time, economy, infrastructure, cargoTypes, modules, ships, vehicles, trucks, logistics, contractTemplates, lines, containerTypes, equipment);
   }
@@ -699,7 +684,7 @@ export class DefRegistry {
 
   /**
    * `modules.json` (§4.2, §5.3): moduly; typované parametre cez `berthParams(def)` / `craneParams(def)` /
-   * `storageParams(def)` / `depotParams(def)` / `gateParams(def)` / `waitingAreaParams(def)` / `rampParams(def)`.
+   * `storageParams(def)` / `depotParams(def)` / `gateParams(def)` / `preGateParams(def)` / `holdingParams(def)`.
    */
   get modules(): Catalog<Readonly<ModuleDef>> {
     return this.modulesCatalog;
@@ -715,7 +700,7 @@ export class DefRegistry {
     return this.vehiclesCatalog;
   }
 
-  /** `trucks.json` (§4.2, §7.5; F4): kamióny, ktoré odvážajú náklad z rampy. */
+  /** `trucks.json` (§4.2, §7.5; F4, R4): externé kamióny obsluhované na TP pri blokoch. */
   get trucks(): Catalog<Readonly<TruckDef>> {
     return this.trucksCatalog;
   }

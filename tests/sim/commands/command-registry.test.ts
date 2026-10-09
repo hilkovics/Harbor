@@ -127,12 +127,13 @@ describe('CommandRegistry (kostra T01-03)', () => {
       // T06-08b (ADR-031 dodatok): úsek kotvísk je, ale loď k nemu nedopláva
       'berth_unreachable',
       // F6a (ADR-032): pripravenosť pozemnej strany pri AcceptContract export / roundtrip bookingu
-      'no_ramp_for_category',
-      'ramp_inoperative',
+      'no_gate_for_category',
       'no_storage_for_category',
       // TR3-02 (ADR-040): SetBlockPriority, SetCraneGang
       'invalid_priority',
       'invalid_gang',
+      // TR4-01 (ADR-041): SetGateLaneMode
+      'invalid_gate_mode',
     ]);
     expect(new Set(VALIDATION_REASONS).size).toBe(VALIDATION_REASONS.length);
   });
@@ -160,6 +161,7 @@ describe('vstavané príkazy (T01-04, T02-04, T02-05)', () => {
       'DeclineContract',
       'SetBlockPriority',
       'SetCraneGang',
+      'SetGateLaneMode',
     ]);
     expect(BUILTIN_COMMANDS.map((command) => command.TYPE)).toEqual(commandRegistry.types);
   });
@@ -207,6 +209,7 @@ describe('vstavané príkazy (T01-04, T02-04, T02-05)', () => {
       'DeclineContract',
       'SetBlockPriority',
       'SetCraneGang',
+      'SetGateLaneMode',
     ]);
     expect(direct.commandFromJSON({ type: 'RemoveRoad', cells: [] }).type).toBe('RemoveRoad');
   });

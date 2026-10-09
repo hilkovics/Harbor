@@ -6,7 +6,7 @@
  * Konvencia (docs/tasks/phase-02.md): `x`, `y` = ľavý horný roh footprintu **po** rotácii; rotácia v smere
  * hodinových ručičiek (`rotateLocalCell`), preto strana `n` sa pri 90° stane `e`, pri 180° `s`, pri 270° `w`.
  */
-import type { ConnectorType, ModuleDef, ModulePlacementDef, Side } from '../defs/types';
+import type { ConnectorAccess, ConnectorType, ModuleDef, ModulePlacementDef, Side } from '../defs/types';
 import { SIDES } from '../defs/types';
 import type { CellCoord } from '../grid/grid';
 import { ROTATIONS, rotateFootprint, rotateLocalCell, type Rotation } from '../grid/rotation';
@@ -64,6 +64,14 @@ export interface PlacedConnector {
   readonly y: number;
   readonly side: Side;
   readonly type: ConnectorType;
+  /** Prístup cez konektor (ADR-041 bod 8); chýba = `both`. */
+  readonly access?: ConnectorAccess;
+}
+
+/** Smie sa cez konektor vojsť (`in`) alebo odísť (`out`)? Chýbajúci `access` = oboje. */
+export function connectorAllows(connector: Pick<PlacedConnector, 'access'>, direction: 'in' | 'out'): boolean {
+  const access = connector.access ?? 'both';
+  return access === 'both' || access === direction;
 }
 
 /**
@@ -75,7 +83,7 @@ export function connectorsOf(def: Readonly<ModuleDef>, x: number, y: number, rot
   return Object.freeze(
     def.connectors.map((connector): PlacedConnector => {
       const cell = rotateLocalCell(connector.x, connector.y, w, h, rotation);
-      return Object.freeze({ x: x + cell.x, y: y + cell.y, side: rotateSide(connector.side, rotation), type: connector.type });
+      return Object.freeze({ x: x + cell.x, y: y + cell.y, side: rotateSide(connector.side, rotation), type: connector.type, ...(connector.access === undefined ? {} : { access: connector.access }) });
     }),
   );
 }

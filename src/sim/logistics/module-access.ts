@@ -10,7 +10,7 @@
  */
 import type { Grid } from '../grid/grid';
 import type { Module } from '../modules/module';
-import { SIDE_STEPS, type PlacedConnector } from '../modules/module-geometry';
+import { SIDE_STEPS, connectorAllows, type PlacedConnector } from '../modules/module-geometry';
 import type { DistanceMatrix } from './distance-matrix';
 
 /** Časť sveta, ktorú prístup k modulom číta (`World` ju spĺňa). */
@@ -49,6 +49,7 @@ export function nearestAccessCell(env: ModuleAccessEnv, from: number, module: Mo
   let best = NO_ACCESS;
   let bestCost = Infinity;
   for (const connector of module.connectors) {
+    if (!connectorAllows(connector, 'in')) continue;
     const access = accessCellIndex(env.grid, connector);
     if (access === NO_ACCESS) continue;
     const cost = env.distances.distance(from, access);
@@ -67,6 +68,7 @@ export function nearestAccessCell(env: ModuleAccessEnv, from: number, module: Mo
 export function distanceToModule(env: ModuleAccessEnv, from: number, module: Module): number {
   let best = Infinity;
   for (const connector of module.connectors) {
+    if (!connectorAllows(connector, 'in')) continue;
     const access = accessCellIndex(env.grid, connector);
     if (access === NO_ACCESS) continue;
     const cost = env.distances.distance(from, access);
@@ -76,12 +78,13 @@ export function distanceToModule(env: ModuleAccessEnv, from: number, module: Mod
 }
 
 /**
- * Cestná vzdialenosť medzi modulmi = najlacnejšia dvojica prístupových buniek (`from` → `to`); `Infinity`, ak niektorý
+ * Cestná vzdialenosť medzi modulmi = najlacnejšia dvojica prístupových buniek (výjazd `from` → vjazd `to`, ADR-041 bod 8); `Infinity`, ak niektorý
  * nie je pripojený alebo medzi nimi nevedie cesta.
  */
 export function distanceBetweenModules(env: ModuleAccessEnv, from: Module, to: Module): number {
   let best = Infinity;
   for (const connector of from.connectors) {
+    if (!connectorAllows(connector, 'out')) continue;
     const access = accessCellIndex(env.grid, connector);
     if (access === NO_ACCESS) continue;
     const cost = distanceToModule(env, access, to);

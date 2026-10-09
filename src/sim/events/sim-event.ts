@@ -1,7 +1,7 @@
 /**
  * Udalosti simulácie (ARCHITECTURE §12.1, výber pre F1 + F2: `CargoMoved`, moduly, lode, žeriavy; F3: vozidlá, joby,
- * `NoStorageAvailable`; F4: `RampOperationalChanged`, `JobCancelled`, kamióny `TruckSpawned`, `TruckStateChanged`,
- * `TruckExited`, `NoWaitingBay`; F5: `DayClosedSummary`, `MonthlyReport`, `GameOver`, kontrakty `Contract*` a
+ * `NoStorageAvailable`; F4: `JobCancelled`, kamióny `TruckSpawned`, `TruckStateChanged`,
+ * `TruckExited`; F5: `DayClosedSummary`, `MonthlyReport`, `GameOver`, kontrakty `Contract*` a
  * `PenaltyApplied` — ADR-026; F6a export a booking — ADR-032: `ExportArrived`, `UnitRolled`, `VgmHoldStarted`,
  * `VgmHoldReleased`, `CutoffWarning`, `CutoffPassed`, `UnitLoaded`, `DualCycle`, `ShipLashingStarted`,
  * `ExportShipped`, `TruckUnloaded`, `BookingPenaltyApplied`; T6A-01 ich len deklaruje, emitujú ich T6A-04/05). Readonly DTO:
@@ -15,7 +15,6 @@ import type { ContractId, EntityId, VoyageId } from '../core/entity-id';
 import type { DaySummary, MonthSummary } from '../economy/ledger';
 import type { LedgerCategory } from '../economy/ledger-category';
 import type { JobCancelReason } from '../logistics/transport-job';
-import type { RampInoperativeReason } from '../modules/loading-ramp';
 import type { CellCoord } from '../grid/grid';
 import type { Rotation } from '../grid/rotation';
 import type { TruckState } from '../trucks/truck-fsm';
@@ -238,27 +237,12 @@ export interface NoStorageAvailableEvent {
 }
 
 /**
- * Zmenil sa prevádzkový stav rampy (ADR-022): prevádzkovosť alebo dôvod neprevádzkovosti — aj pri prvom vyhodnotení
- * novej rampy. Emituje ho svet po príkaze, ktorý zmenil cesty alebo moduly (po udalostiach príkazu); `reason` je `null`
- * práve pri `operational: true`.
- */
-export interface RampOperationalChangedEvent {
-  readonly type: 'RampOperationalChanged';
-  readonly rampId: EntityId;
-  readonly operational: boolean;
-  readonly reason: RampInoperativeReason | null;
-}
-
-/**
- * `landsideSystem` (krok 8, ADR-024) spawnol kamión `truckId` na road portáli (`roadPortals[0]`) v stave `to_gate`: dock
- * `dock` rampy `rampId` mal nenárokovaný náklad (pripravený alebo vezený vozidlom) a kamión má naň nárok a drží
- * rezervovaný bay stojiska svojej trasy; samotný dock drží až od povelu do docku (`waiting → to_dock`, ADR-029).
+ * Kamión `truckId` vznikol na road portáli (krok 8, ADR-024, ADR-041): má lístok na blok `blockId` (cieľ jeho prvej zastávky na TP) s rezerváciou TP alebo státia odstavnej plochy.
  */
 export interface TruckSpawnedEvent {
   readonly type: 'TruckSpawned';
   readonly truckId: EntityId;
-  readonly rampId: EntityId;
-  readonly dock: number;
+  readonly blockId: EntityId;
 }
 
 /** Kamión zmenil stav FSM (`TRUCK_TRANSITIONS`, ADR-024); jedna udalosť na prechod (aj posledný `to_portal → exited`). */
@@ -297,15 +281,6 @@ export interface TrafficJamClearedEvent {
   readonly type: 'TrafficJamCleared';
   readonly carrierId: EntityId;
   readonly carrierKind: 'vehicle' | 'truck';
-}
-
-/**
- * Dock prevádzkovej rampy `rampId` má pripravený náklad a voľný, ale žiadne stojisko na jej trasách nemá voľný bay —
- * kamión sa nespawnuje (§7.8 bod 3). Najviac raz za hernú hodinu na rampu (`LoadingRamp.lastNoWaitingBayHour`, ADR-024).
- */
-export interface NoWaitingBayEvent {
-  readonly type: 'NoWaitingBay';
-  readonly rampId: EntityId;
 }
 
 /**
@@ -494,14 +469,13 @@ export interface ExportShippedEvent {
 }
 
 /**
- * Delivery kamión vyložil export na dock (`in_truck → at_ramp`, krok 8); `dualTransaction` = zostáva a naloží import
- * (misia `pickup`, `unloading → loading`), inak odchádza prázdny (metrika `dualTransactionRate`).
+ * Delivery kamión odovzdal jednotku bloku `blockId` na TP (`in_truck → in_handler / in_vehicle → in_storage`, krok 6c / 8); `dualTransaction` = kamión pokračuje na ďalší TP po import (jeden lístok,
+ * misia `pickup`), inak odchádza prázdny (metrika `dualTransactionRate`).
  */
 export interface TruckUnloadedEvent {
   readonly type: 'TruckUnloaded';
   readonly truckId: EntityId;
-  readonly rampId: EntityId;
-  readonly dock: number;
+  readonly blockId: EntityId;
   readonly unitId: EntityId;
   readonly dualTransaction: boolean;
 }
@@ -654,13 +628,11 @@ export type SimEvent =
   | JobCancelledEvent
   | VehicleStateChangedEvent
   | NoStorageAvailableEvent
-  | RampOperationalChangedEvent
   | TruckSpawnedEvent
   | TruckStateChangedEvent
   | TruckExitedEvent
   | TrafficJamEvent
   | TrafficJamClearedEvent
-  | NoWaitingBayEvent
   | DayClosedSummaryEvent
   | MonthlyReportEvent
   | GameOverEvent

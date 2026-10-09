@@ -78,7 +78,7 @@ test.describe('F3: výber typu cesty a jednosmerný ťah (T03-20)', () => {
     await page.evaluate(() => window.__sim!.centerOn!(37, 23, 1));
     await settle(page);
 
-    // 1) BuildBar: Landside je povolená; tri typy ciest s cenou za bunku, potom moduly z defov (F4: brána, stojisko, rampa)
+    // 1) BuildBar: Landside je povolená; tri typy ciest s cenou za bunku, potom moduly z defov (R4: pruhy brány, predbránová plocha, odstavná plocha; rampa a stojisko zanikli)
     await bar(page).locator('[data-category="landside"]').click();
     await expect(bar(page).locator('[data-category="landside"]')).toBeEnabled();
     const item = (defId: string): Locator => bar(page).locator(`[data-def-id="${defId}"]`);
@@ -87,18 +87,19 @@ test.describe('F3: výber typu cesty a jednosmerný ťah (T03-20)', () => {
     await expect(item('road_one_lane')).toHaveCount(0);
     await expect(item('road_one_way')).toContainText('Jednosmerná cesta');
     await expect(item('road_one_way')).toContainText(ONE_WAY_PRICE);
-    // F4 (T04-08): brána, stojisko a rampa sú skutočné položky z defov (nie zástupné „čoskoro (F4)“)
+    // R4 (TR4-05): pruhy brány, predbránová plocha a odstavná plocha sú skutočné položky z defov (nie zástupné „čoskoro (F4)“)
     for (const [defId, name, price] of [
-      ['truck_gate', 'Brána kamiónov', '$80,000'],
-      ['truck_waiting_area', 'Čakacia plocha', '$60,000'],
-      ['loading_ramp_container', 'Rampa · kontajnery', '$100,000'],
+      ['gate_in_lane', 'Vstupný pruh brány', '$25,000'],
+      ['gate_out_lane', 'Výstupný pruh brány', '$25,000'],
+      ['pre_gate_buffer', 'Predbránová plocha', '$90,000'],
+      ['truck_holding', 'Odstavná plocha kamiónov', '$50,000'],
     ] as const) {
       await expect(item(defId)).toHaveAttribute('data-status', 'available');
       await expect(item(defId)).toContainText(name);
       await expect(item(defId)).toContainText(price);
       await expect(item(defId)).not.toContainText('čoskoro');
     }
-    for (const placeholderId of ['gate', 'waiting_area', 'ramp']) await expect(item(placeholderId)).toHaveCount(0);
+    for (const placeholderId of ['gate', 'waiting_area', 'ramp', 'truck_gate', 'truck_waiting_area', 'loading_ramp_container']) await expect(item(placeholderId)).toHaveCount(0);
     await expect(map(page)).toHaveAttribute('data-input-state', 'idle');
 
     // 2) klik na „Jednosmerná cesta“ zapne build mód ciest; položka svieti; opakovaný klik ho vypne

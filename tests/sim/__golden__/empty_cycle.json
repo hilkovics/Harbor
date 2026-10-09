@@ -1,14 +1,14 @@
 {
-  "cashEnd": 31587000,
-  "exportedUnits": 45,
-  "shippedUnits": 23,
-  "contractsCompleted": 2,
-  "xp": 100,
-  "emptyReturns": 25,
+  "cashEnd": 56636000,
+  "exportedUnits": 71,
+  "shippedUnits": 20,
+  "contractsCompleted": 3,
+  "xp": 132,
+  "emptyReturns": 22,
   "emptyFallbackStored": 0,
-  "emptyDamaged": 3,
-  "emptyRepaired": 3,
-  "repairCostCents": 36000,
-  "emptyPickedUp": 6,
-  "emptyPickupMisses": 8
+  "emptyDamaged": 1,
+  "emptyRepaired": 1,
+  "repairCostCents": 12000,
+  "emptyPickedUp": 11,
+  "emptyPickupMisses": 10
 }

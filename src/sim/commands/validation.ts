@@ -79,7 +79,7 @@ export const VALIDATION_REASONS = [
    * smerov než buniek alebo smer mimo N/E/S/W.
    */
   'invalid_direction',
-  /** `RemoveModule` (T04-04, ADR-024): bránu, stojisko alebo rampu používa kamión (trasa, bay, dock). */
+  /** `RemoveModule` (T04-04, ADR-024, ADR-041): bránu, plochu alebo blok používa kamión (lístok, TP, státie). */
   'has_trucks',
   /** `AcceptContract` / `DeclineContract` (T05-03, ADR-026): kontrakt s daným id vo `world.contracts` nie je (aj expirovaný). */
   'unknown_contract',
@@ -103,24 +103,20 @@ export const VALIDATION_REASONS = [
    */
   'berth_unreachable',
   /**
-   * `AcceptContract` pri export / roundtrip bookingu (F6a, ADR-032, pripravenosť pozemnej strany ako `berthReadiness`): vo svete
-   * nie je rampa kategórie nákladu bookingu — kamióny s exportom by nemali kam vyložiť.
+   * `AcceptContract` pri export / roundtrip bookingu (F6a, ADR-032, pripravenosť pozemnej strany ako `berthReadiness`; R4, ADR-041): vo svete nie je platný vstupný a výstupný pruh brány
+   * (alebo kamión kategórie) — kamióny s exportom by nevznikli.
    */
-  'no_ramp_for_category',
+  'no_gate_for_category',
   /**
-   * `AcceptContract` pri export / roundtrip bookingu: rampa kategórie je, ale žiadna nie je prevádzková (chýba brána, stojisko
-   * alebo cesta od portálu — `World.isRampOperational`), takže kamióny s exportom nevzniknú.
-   */
-  'ramp_inoperative',
-  /**
-   * `AcceptContract` pri export / roundtrip bookingu: prevádzková rampa je, ale žiadny sklad kategórie nákladu nie je z nej po
-   * ceste dosiahnuteľný — vyložený export by nemal kam ísť.
+   * `AcceptContract` pri export / roundtrip bookingu: brána je, ale žiadny sklad kategórie nákladu nie je z nej po ceste dosiahnuteľný — vyložený export by nemal kam ísť.
    */
   'no_storage_for_category',
   /** `SetBlockPriority` (TR3-02, ADR-040 bod 6): `order` nie je druh úlohy z `YARD_PRIORITY_KINDS` (ship, truck, housekeeping). */
   'invalid_priority',
   /** `SetCraneGang` (TR3-02, ADR-040 bod 7): režim nie je `pool` / `gang`, alebo `tractorsPerSts` mimo `equipment.json` `tractors.minPerSts … maxPerSts`. */
   'invalid_gang',
+  /** `SetGateLaneMode` (TR4-01, ADR-041 bod 1): režim nie je `standard` / `express` / `trouble`. */
+  'invalid_gate_mode',
 ] as const;
 
 export type ValidationReason = (typeof VALIDATION_REASONS)[number];

@@ -29,12 +29,10 @@ const REVISION_SAMPLES: readonly SimEvent[] = [
   { type: 'JobAssigned', jobId: SAMPLE_ID, vehicleId: SAMPLE_ID },
   { type: 'JobDone', jobId: SAMPLE_ID },
   { type: 'NoStorageAvailable', berthId: SAMPLE_ID, cargoTypeId: 'container_teu' },
-  { type: 'JobCancelled', jobId: SAMPLE_ID, reason: 'ramp_inoperative' },
-  { type: 'RampOperationalChanged', rampId: SAMPLE_ID, operational: false, reason: 'no_gate' },
-  { type: 'TruckSpawned', truckId: SAMPLE_ID, rampId: SAMPLE_ID, dock: 0 },
+  { type: 'JobCancelled', jobId: SAMPLE_ID, reason: 'loading_stopped' },
+  { type: 'TruckSpawned', truckId: SAMPLE_ID, blockId: SAMPLE_ID },
   { type: 'TruckStateChanged', truckId: SAMPLE_ID, from: 'to_gate', to: 'gate_queue' },
   { type: 'TruckExited', truckId: SAMPLE_ID, units: 1 },
-  { type: 'NoWaitingBay', rampId: SAMPLE_ID },
   { type: 'ContractOffered', contractId: SAMPLE_CONTRACT },
   { type: 'ContractAccepted', contractId: SAMPLE_CONTRACT },
   { type: 'ContractStateChanged', contractId: SAMPLE_CONTRACT, from: 'offered', to: 'accepted' },
@@ -79,7 +77,7 @@ const NEUTRAL_SAMPLES: readonly SimEvent[] = [
   { type: 'CutoffWarning', contractId: SAMPLE_CONTRACT, cutoffTick: 10 },
   { type: 'CutoffPassed', contractId: SAMPLE_CONTRACT, arrivedUnits: 1, bookedUnits: 2 },
   { type: 'DualCycle', craneId: SAMPLE_ID, shipId: SAMPLE_ID, loadedUnitId: SAMPLE_ID, unloadedUnitId: SAMPLE_ID },
-  { type: 'TruckUnloaded', truckId: SAMPLE_ID, rampId: SAMPLE_ID, dock: 0, unitId: SAMPLE_ID, dualTransaction: false },
+  { type: 'TruckUnloaded', truckId: SAMPLE_ID, blockId: SAMPLE_ID, unitId: SAMPLE_ID, dualTransaction: false },
   // F6c: kamión po prázdny kontajner odišiel prázdny — počítadlá kariet sa nehýbu (toast ide z udalosti).
   { type: 'EmptyPickupMissed', lineId: 'blue_anchor', contractId: SAMPLE_CONTRACT, truckId: SAMPLE_ID },
 ];
@@ -102,7 +100,7 @@ describe('WorldSnapshot v2: speeds a defs', () => {
 });
 
 describe('WorldSnapshot v2: revision', () => {
-  it('REVISION_EVENTS obsahuje presne udalosti z kariet T02-09, T03-10, T04-08, T05-07 a T6C-05 (vrátane Truck*, NoWaitingBay, udalostí kontraktov, prázdnych a prekládky) a vzorky ich pokrývajú', () => {
+  it('REVISION_EVENTS obsahuje presne udalosti z kariet T02-09, T03-10, T04-08, T05-07 a T6C-05 (vrátane Truck*, udalostí kontraktov, prázdnych a prekládky) a vzorky ich pokrývajú', () => {
     const expected: SimEventType[] = [
       'ModulePlaced',
       'ModuleRemoved',
@@ -122,11 +120,9 @@ describe('WorldSnapshot v2: revision', () => {
       'JobDone',
       'NoStorageAvailable',
       'JobCancelled',
-      'RampOperationalChanged',
       'TruckSpawned',
       'TruckStateChanged',
       'TruckExited',
-      'NoWaitingBay',
       'ContractOffered',
       'ContractAccepted',
       'ContractStateChanged',

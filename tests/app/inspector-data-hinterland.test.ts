@@ -1,26 +1,30 @@
 // T6D-04: dáta inšpektora brány — kamióny čakajúce vo vnútrozemí (`hinterlandQueue`, ADR-035). Čakajúci kamión je splatná položka plánu,
-// bez rampy a road portálu sa nič nevpúšťa (`admitFromHinterland`), takže plán návratov prázdnych sa dá nechať čakať bez simulovania celého reťazca.
+// bez cesty od road portálu a dvora s TP sa nič nevpúšťa (`admitFromHinterland`), takže plán návratov prázdnych sa dá nechať čakať bez simulovania celého reťazca.
 import { describe, expect, it } from 'vitest';
 import { hinterlandQueue } from '@sim/world';
 import { hinterlandData, inspectorData } from '@app/inspector-data';
 import { hinterlandRows } from '@ui/module-inspector';
-import { GATE_ID, buildLandside, createApp, type App } from './app-fixtures';
+import type { EntityId } from '@sim/core';
+import { CHAIN_GATE_ID, buildFullChain, createApp, createPortApp, runCommands, type App } from './app-fixtures';
+
+/** Prvý modul po štartovnom kotvisku (1) a žeriave (2): vstupný pruh brány bez ciest. */
+const GATE_ID = 3 as EntityId;
 
 const LINE = 'blue_anchor';
 
-/** Svet s bránou, ale bez ciest a rámp: plán návratov prázdnych čaká vo vnútrozemí, kým neuplynie čas. */
+/** Svet s bránou, ale bez ciest a dvorov: plán návratov prázdnych čaká vo vnútrozemí, kým neuplynie čas. */
 function gateOnlyApp(): App {
   const app = createApp();
-  buildLandside(app, { roads: false, parts: ['gate'] });
+  runCommands(app, [{ type: 'PlaceModule', defId: 'gate_in_lane', x: 52, y: 20, rotation: 0 }]);
   return app;
 }
 
 describe('inspectorData: brána — vnútrozemie (F6d)', () => {
   it('prázdny prístav: nikto nečaká — samé nuly a mierka herného času z hodín sveta', () => {
-    const app = createApp();
-    buildLandside(app);
+    const app = createPortApp();
+    buildFullChain(app, { units: 0, vehicles: 0 });
     const { ticksPerHour, ticksPerDay } = app.world.clock;
-    expect(inspectorData(app.bridge, GATE_ID)?.gate?.hinterland).toEqual({
+    expect(inspectorData(app.bridge, CHAIN_GATE_ID)?.gate?.hinterland).toEqual({
       pickup: 0,
       delivery: 0,
       collect: 0,

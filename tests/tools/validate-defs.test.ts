@@ -130,6 +130,7 @@ describe('validateDefsDir', () => {
         rehandleSpareCells: 2,
       apronUnloadReserveSlots: 1,
       hookJobLookahead: 8,
+      dualCandidateLimit: 64,
       hookPairedLoadJobs: 1,
         importDwellEstimateHours: 6,
         yardPlanner: 'planned',
@@ -358,44 +359,6 @@ describe('validateDefsDir', () => {
     });
   });
 
-  describe('krížová kontrola rampa × kamión (review T04-11 f)', () => {
-    const modules = (): Record<string, unknown> => readRealDef('modules');
-    const trucks = (): { items: Record<string, unknown>[] } => readRealDef('trucks') as unknown as { items: Record<string, unknown>[] };
-    const rampIndex = (): number => (modules()['items'] as { kind: string }[]).findIndex((item) => item.kind === 'ramp');
-
-    it('skutočné modules.json a trucks.json: každá rampa má kamión svojej kategórie s capacityUnits ≤ stagingPerDock', () => {
-      writeDef('modules.json', modules());
-      writeDef('trucks.json', trucks());
-      expect(resultFor('modules.json').errors).toEqual([]);
-    });
-
-    it('rampa bez kamióna svojej kategórie → chyba na params/category', () => {
-      const bulkOnly = trucks();
-      bulkOnly.items = bulkOnly.items.map((item) => ({ ...item, cargoCategories: ['bulk'] }));
-      writeDef('modules.json', modules());
-      writeDef('trucks.json', bulkOnly);
-      expect(resultFor('modules.json').errors).toEqual([
-        `modules.json: /items/${String(rampIndex())}/params/category rampa 'loading_ramp_container' nakladá kategóriu 'container', ale trucks.json nemá kamión tejto kategórie`,
-      ]);
-      expect(resultFor('trucks.json').errors).toEqual([]);
-    });
-
-    it('kamión s capacityUnits > stagingPerDock → chyba na params/stagingPerDock', () => {
-      const big = trucks();
-      big.items = big.items.map((item) => ({ ...item, capacityUnits: 5 }));
-      writeDef('modules.json', modules());
-      writeDef('trucks.json', big);
-      expect(resultFor('modules.json').errors).toEqual([
-        `modules.json: /items/${String(rampIndex())}/params/stagingPerDock kamión 'truck_container' má capacityUnits 5 > stagingPerDock 4 rampy 'loading_ramp_container' — dock by sa nikdy nenaplnil`,
-      ]);
-    });
-
-    it('bez trucks.json sa krížová kontrola preskočí (chýbajúci súbor hlási iná kontrola)', () => {
-      writeDef('modules.json', modules());
-      expect(resultFor('modules.json').errors).toEqual([]);
-    });
-  });
-
   describe('mapy (data/maps/*.json → map.schema.json)', () => {
     let mapsDir: string;
 
@@ -430,7 +393,7 @@ describe('validateDefsDir', () => {
         for (const row of map.terrain) expect(row).toHaveLength(96);
       });
 
-      it('harbor_01: súvislé nábrežie ≥ 24 buniek, 3 parcely (1 štartovná), 2 cestné (vjazd, výjazd) a 1 železničný portál', () => {
+      it('harbor_01: súvislé nábrežie ≥ 24 buniek, 3 parcely (1 štartovná), 4 cestné (2 × vjazd, 2 × výjazd) a 1 železničný portál', () => {
         const map = realMap() as {
           terrain: string[];
           parcels: { id: string; startOwned?: boolean; leasable: boolean }[];
@@ -444,7 +407,7 @@ describe('validateDefsDir', () => {
         expect(map.parcels).toHaveLength(3);
         expect(map.parcels.filter((p) => p.startOwned === true).map((p) => p.id)).toEqual(['starter']);
         expect(map.parcels.filter((p) => p.startOwned !== true).every((p) => p.leasable)).toBe(true);
-        expect(map.roadPortals).toHaveLength(2); // vjazd (in) a výjazd (out), jednosmerný prístav
+        expect(map.roadPortals).toHaveLength(4); // R4 (ADR-041): južný a západný vjazd (in) a výjazd (out), jednosmerný prístav
         expect(map.railPortals).toHaveLength(1);
       });
     });
@@ -963,58 +926,41 @@ describe('validateAssetManifest (assets/manifest.json → asset-manifest.schema.
       return index;
     };
 
-    it('skutočné defy a manifest: počty sedia (8 apronSlotov, 6 stojísk, 2 docky, 10 stajní)', () => {
+    it('skutočné defy a manifest: počty sedia (8 apronSlotov, 6 státí odstavnej plochy, 10 stajní)', () => {
       const manifest = realManifest();
       expect(sprite(manifest, 'berth_standard').apronSlots).toHaveLength(8);
-      expect(sprite(manifest, 'truck_waiting_area').stalls).toHaveLength(6);
-      expect(sprite(manifest, 'loading_ramp_container').docks).toHaveLength(2);
+      expect(sprite(manifest, 'truck_holding').stalls).toBe(6);
       expect(sprite(manifest, 'vehicle_depot').stalls).toBe(10);
       writeManifest(manifest);
       expect(errorsOf()).toEqual([]);
     });
 
-    it('stojisko: menej stalls v manifeste než params.bays → chyba s cestou v manifeste a odkazom na def', () => {
-      writeMutated((m) => (spriteArray(m, 'truck_waiting_area').stalls as Json[])?.pop());
-      const index = String(realCatalog('modules').items.findIndex((item) => item.id === 'truck_waiting_area'));
+    it('odstavná plocha: iné číslo stalls v manifeste než params.stalls → chyba s cestou v manifeste a odkazom na def', () => {
+      writeMutated((m) => (((m.sprites as JsonObject).truck_holding as JsonObject).stalls = 5));
+      const index = String(realCatalog('modules').items.findIndex((item) => item.id === 'truck_holding'));
       expect(errorsOf()).toEqual([
-        `assets/manifest.json: /sprites/truck_waiting_area/stalls počet stojísk (5) sa nezhoduje s params.bays (6) (modules.json: /items/${index}/params/bays)`,
+        `assets/manifest.json: /sprites/truck_holding/stalls počet státí (5) sa nezhoduje s params.stalls (6) (modules.json: /items/${index}/params/stalls)`,
       ]);
     });
 
-    it('stojisko: params.bays iné než počet stalls → chyba', () => {
-      const index = writeModuleParam('truck_waiting_area', 'bays', 8);
+    it('odstavná plocha: params.stalls iné než stalls v manifeste → chyba', () => {
+      const index = writeModuleParam('truck_holding', 'stalls', 8);
       writeManifest(realManifest());
       expect(errorsOf()).toEqual([
-        `assets/manifest.json: /sprites/truck_waiting_area/stalls počet stojísk (6) sa nezhoduje s params.bays (8) (modules.json: /items/${String(index)}/params/bays)`,
-      ]);
-    });
-
-    it('rampa: viac docks v manifeste než params.docks → chyba', () => {
-      writeMutated((m) => (spriteArray(m, 'loading_ramp_container').docks as Json[])?.push({ x: 196, y: 60, w: 56, h: 62 }));
-      const index = String(realCatalog('modules').items.findIndex((item) => item.id === 'loading_ramp_container'));
-      expect(errorsOf()).toEqual([
-        `assets/manifest.json: /sprites/loading_ramp_container/docks počet dockov (3) sa nezhoduje s params.docks (2) (modules.json: /items/${index}/params/docks)`,
-      ]);
-    });
-
-    it('rampa: params.docks iné než počet docks → chyba', () => {
-      const index = writeModuleParam('loading_ramp_container', 'docks', 1);
-      writeManifest(realManifest());
-      expect(errorsOf()).toEqual([
-        `assets/manifest.json: /sprites/loading_ramp_container/docks počet dockov (2) sa nezhoduje s params.docks (1) (modules.json: /items/${String(index)}/params/docks)`,
+        `assets/manifest.json: /sprites/truck_holding/stalls počet státí (6) sa nezhoduje s params.stalls (8) (modules.json: /items/${String(index)}/params/stalls)`,
       ]);
     });
 
     it('chýbajúci sprite hlási len chýbajúci sprite (počty sa preskočia)', () => {
-      writeMutated((m) => delete (m.sprites as JsonObject).truck_waiting_area);
+      writeMutated((m) => delete (m.sprites as JsonObject).truck_holding);
       const errors = errorsOf();
       expect(errors).toHaveLength(1);
-      expect(errors[0]).toContain("chýba sprite pre modul 'truck_waiting_area'");
+      expect(errors[0]).toContain("chýba sprite pre modul 'truck_holding'");
     });
 
-    it('sprite bez poľa stalls/docks sa preskočí (tvar hlási schéma manifestu)', () => {
-      writeMutated((m) => delete spriteArray(m, 'loading_ramp_container').docks);
-      expect(errorsOf().every((line) => !line.includes('počet dockov'))).toBe(true);
+    it('sprite bez poľa stalls sa preskočí (tvar hlási schéma manifestu)', () => {
+      writeMutated((m) => delete ((m.sprites as JsonObject).truck_holding as JsonObject).stalls);
+      expect(errorsOf().every((line) => !line.includes('počet státí'))).toBe(true);
     });
 
     it('berth: menej apronSlots v manifeste než params.apronSlots → chyba', () => {

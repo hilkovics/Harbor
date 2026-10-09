@@ -1,9 +1,9 @@
 /**
  * Demo renderu Fázy 6a (T6A-06, export a booking): mapa `harbor_01` s pevnými view-modelmi (`f6a-render.fixtures.ts`) — bez simu,
- * bez UI. Spúšťa ju stránka `f6a-render.html` (`/src/render/__demo__/f6a-render.html?scene=ships|dock|hold`); Playwright
+ * bez UI. Spúšťa ju stránka `f6a-render.html` (`/src/render/__demo__/f6a-render.html?scene=ships|hold`); Playwright
  * (`tests/e2e/f6a-render-demo.spec.ts`) z nej robí screenshoty.
  *
- * Animácie (manéver kamióna pri rampe, závora, žeriav dvora) bežia podľa **riadených hodín** `window.__f6aDemo.clock`, takže
+ * Animácie (závora, žeriav dvora) bežia podľa **riadených hodín** `window.__f6aDemo.clock`, takže
  * screenshoty sú deterministické: test nastaví čas (`clock.set(ms)`) a zavolá `show(vm)`. Po vykreslení nastaví
  * `data-demo-ready="true"` na `<body>`.
  */

@@ -43,7 +43,6 @@ export const CARGO_HOLDER_SOURCES: { readonly [K in CargoHolderKind]: HolderSour
   in_handler: (world: CargoHolderWorld) => world.machines.keys(),
   in_storage: modulesOfKinds('storage'),
   in_pipeline: modulesOfKinds('pipeline'),
-  at_ramp: modulesOfKinds('ramp', 'rail_station'),
   in_truck: (world: CargoHolderWorld) => world.trucks.keys(),
   in_train: NO_HOLDERS,
 });
@@ -54,5 +53,4 @@ export const MODULE_CARGO_HOLDER_KINDS: readonly CargoHolderKind[] = Object.free
   'on_apron',
   'in_storage',
   'in_pipeline',
-  'at_ramp',
 ]);

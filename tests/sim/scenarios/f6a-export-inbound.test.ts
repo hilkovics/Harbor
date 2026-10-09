@@ -10,7 +10,7 @@ import { World, stateHash, type WorldState } from '@sim/world';
 import { exportGroupingShare } from '@sim/world/cargo-queries';
 import { findWorldViolation } from '@sim/world/world-invariants';
 import type { SimEvent } from '@sim/events';
-import { MAP, TICKS_PER_HOUR, lostUnits } from '../helpers/f6a';
+import { PORT_MAP, TICKS_PER_HOUR, lostUnits } from '../helpers/f6a';
 import { assertCargoConservation } from '../helpers/invariants';
 import { loadScenarioFile, runScenario } from '../helpers/scenario';
 import { DEFS } from '../world/world-fixtures';
@@ -28,7 +28,7 @@ interface Run {
 }
 
 function run(): Run {
-  const world = World.create(DEFS, MAP, SCENARIO.seed);
+  const world = World.create(DEFS, PORT_MAP, SCENARIO.seed);
   const events: { tick: number; event: SimEvent }[] = [];
   runScenario(world, SCENARIO, TICKS, {
     afterTick: (w, tickEvents) => {
@@ -105,7 +105,7 @@ describe('scenár export_inbound', () => {
     expect(world.holdIndex.size).toBe(0);
   });
 
-  it('každá jednotka exportu prešla presne in_truck → at_ramp → in_vehicle → in_storage (nič sa neteleportuje)', () => {
+  it('každá jednotka exportu prešla presne in_truck → in_vehicle → in_storage (straddle carrier na hrane bloku; nič sa neteleportuje)', () => {
     const chains = new Map<number, string[]>();
     for (const entry of of(events, 'CargoMoved')) {
       const chain = chains.get(entry.event.unitId) ?? [];
@@ -113,7 +113,7 @@ describe('scenár export_inbound', () => {
       chains.set(entry.event.unitId, chain);
     }
     expect(chains.size).toBe(BOOKED);
-    for (const chain of chains.values()) expect(chain).toEqual(['in_truck→at_ramp', 'at_ramp→in_vehicle', 'in_vehicle→in_storage']);
+    for (const chain of chains.values()) expect(chain).toEqual(['in_truck→in_vehicle', 'in_vehicle→in_storage']);
   });
 
   it('všetky exporty skončia v sklade, žiadna sa nestratila a nič neodišlo mimo mapy', () => {
@@ -138,9 +138,9 @@ describe('scenár export_inbound', () => {
   it('deterministický: rovnaký beh dá rovnaký hash; roundtrip uprostred príchodov (aj pri rolled) dá zhodný stateHash', () => {
     expect(stateHash(run().world)).toBe(stateHash(world));
     for (const at of [12_000, 20_000, 29_300, 29_400, 29_750]) {
-      const half = World.create(DEFS, MAP, SCENARIO.seed);
+      const half = World.create(DEFS, PORT_MAP, SCENARIO.seed);
       runScenario(half, SCENARIO, at);
-      const restored = World.deserialize(DEFS, MAP, JSON.parse(JSON.stringify(half.serialize())) as WorldState);
+      const restored = World.deserialize(DEFS, PORT_MAP, JSON.parse(JSON.stringify(half.serialize())) as WorldState);
       runScenario(restored, SCENARIO, TICKS);
       expect(stateHash(restored), `roundtrip v ticku ${String(at)}`).toBe(stateHash(world));
     }

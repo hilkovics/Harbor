@@ -26,7 +26,7 @@ const TRANSHIP_LABELS: CargoUnitLabelsInput = { direction: 'tranship', voyageId:
 const TRANSHIP_CONTRACT = 5 as ContractId;
 const EXPORT_CONTRACT = 6 as ContractId;
 /** Prázdny z depa na loď (repositioning): depo → vozidlo → hák → loď (bez `shipped`). */
-const EMPTY_TO_SHIP = [at.ramp(50, 0), at.vehicle(30), at.storage(40, 5), at.vehicle(31), at.crane(20), at.ship(SHIP)];
+const EMPTY_TO_SHIP = [at.vehicle(30), at.storage(40, 5), at.vehicle(31), at.crane(20), at.ship(SHIP)];
 /** Prekládka z lode A cez sklad na loď B (bez `shipped`). */
 const TRANSHIP_TO_B = [at.crane(20), at.vehicle(30), at.storage(40, 6), at.vehicle(31), at.crane(21), at.ship(SHIP)];
 
@@ -43,7 +43,7 @@ describe('CargoLedger.countExportsAt a countTranshipAt (T6C-03)', () => {
     const tranA = ledger.create(TEU, at.ship(SHIP), TRANSHIP_CONTRACT, TRANSHIP_LABELS);
     expect([ledger.countAt('on_ship', id(SHIP)), ledger.countExportsAt('on_ship', id(SHIP)), ledger.countTranshipAt('on_ship', id(SHIP))]).toEqual([2, 0, 1]);
     const empty = ledger.create(TEU, at.truck(TRUCK), null, EMPTY_LABELS);
-    moveThrough(ledger, empty.id, [at.ramp(50, 0), at.vehicle(30), at.storage(40, 5), at.vehicle(31), at.crane(20), at.ship(SHIP)]);
+    moveThrough(ledger, empty.id, [at.vehicle(30), at.storage(40, 5), at.vehicle(31), at.crane(20), at.ship(SHIP)]);
     expect([ledger.countAt('on_ship', id(SHIP)), ledger.countExportsAt('on_ship', id(SHIP)), ledger.countTranshipAt('on_ship', id(SHIP))]).toEqual([3, 1, 1]);
     ledger.move(empty.id, { kind: 'shipped' });
     expect([ledger.countAt('on_ship', id(SHIP)), ledger.countExportsAt('on_ship', id(SHIP))]).toEqual([2, 0]);

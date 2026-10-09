@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@sim/core';
 import { findAvailableEmpty, countAvailableEmpties } from '@sim/logistics/empty-stock';
 import { BerthModule, StorageModule } from '@sim/modules';
-import { acceptCommand, hookDefs, send, startLoading, runUntilDeparted, exportUnitsByLocation, tickUntil } from '../helpers/f6a';
+import { acceptCommand, acceptUnchecked, exportWorld, hookDefs, send, startLoading, runUntilDeparted, exportUnitsByLocation, tickUntil } from '../helpers/f6a';
 import { depotOf, emptyWorld, eventsOf, f6cDefs, lost, offerRepositioning, putEmpty, runUntil, stockDepot } from '../helpers/f6c';
 import { assertCargoConservation } from '../helpers/invariants';
 import type { World } from '@sim/world';
@@ -20,17 +20,20 @@ const SHORT_FAIL = { failAfterDaysLate: 1 };
 /** Dlhý limit ticku. */
 const LONG = 80_000;
 
-/** Prerušené nohy kotviska (41, 21) a (46, 21) (obchádzka (40, 21) … (42, 23) a obchádzka berthu spájajú nohy len medzi sebou): kotvisko je odrezané od priečky, depa, dvorov aj rampy. */
-const CUT_BERTH = [
-  { x: 41, y: 21 },
-  { x: 46, y: 21 },
-];
+/**
+ * Depo prázdnych bez prístupu k cestám (R4: avenue je jednosmerné, depo by sa odrezať dalo len prerušením celej ulice): stojí na (31, 18) bez cesty, takže z neho nevedie cesta ku kotvisku ani
+ * k iným modulom. `AcceptContract` ho (správne) odmieta — testy, ktoré chcú bežať s odrezaným depom, prijímajú ponuku bez kontroly (`acceptUnchecked`).
+ */
+const ISOLATED_DEPOT = { atTick: 0, command: { type: 'PlaceModule' as const, defId: 'empty_depot', x: 31, y: 18, rotation: 0 as const } };
+/** Prerušenie ulice pred nábrežím: žiadny sklad nemá cestu ku kotvisku (jediný prístup k jeho konektoru vedie bunkou (43, 18)). */
+const CUT_QUAY = [{ x: 43, y: 18 }];
 
 const isTerminal = (state: string): boolean => state === 'completed' || state === 'failed';
 
 /** Svet s repositioningom na 4 prázdne a depom so zásobou 4 prázdnych linky `blue_anchor`. */
-function repoWorld(options: { readonly hook?: boolean; readonly vehicles?: readonly string[] } = {}): World {
+function repoWorld(options: { readonly hook?: boolean; readonly vehicles?: readonly string[]; readonly isolatedDepot?: boolean } = {}): World {
   const defs = options.hook === true ? hookDefs(1, { emptyFlow: NO_RANDOM, economy: SHORT_FAIL }) : f6cDefs({ emptyFlow: NO_RANDOM, economy: SHORT_FAIL });
+  if (options.isolatedDepot === true) return exportWorld({ defs, vehicles: options.vehicles ?? VEHICLES, yards: ['far'], extra: [ISOLATED_DEPOT] });
   return emptyWorld({ defs, vehicles: options.vehicles ?? VEHICLES });
 }
 
@@ -38,12 +41,11 @@ describe('repositioning — sklad bez cesty ku kotvisku', () => {
   it.each([
     ['apron', false],
     ['pod hákom', true],
-  ])('%s: depo odrezané od kotviska (cesta prerušená po prijatí): žiadny job, vozidlo neuviazne v no_path, loď odíde a booking zlyhá', (_name, hook) => {
-    const world = repoWorld({ hook });
+  ])('%s: depo odrezané od kotviska: žiadny job, vozidlo neuviazne v no_path, loď odíde a booking zlyhá', (_name, hook) => {
+    const world = repoWorld({ hook, isolatedDepot: true });
     stockDepot(world, 'blue_anchor', 4);
     const contract = offerRepositioning(world, { booked: 4, slaDays: 1 });
-    expect(send(world, acceptCommand(contract.id)).some((event) => event.type === 'ContractAccepted')).toBe(true);
-    send(world, { type: 'RemoveRoad', cells: CUT_BERTH });
+    expect(acceptUnchecked(world, contract.id).some((event) => event.type === 'ContractAccepted')).toBe(true);
     const events = runUntil(world, (w) => w.ships.size === 0 && isTerminal(contract.state), LONG, 'odchod lode a uzavretie bookingu');
     expect(eventsOf(events, 'JobCreated')).toEqual([]);
     expect(contract.state).toBe('failed');
@@ -58,16 +60,14 @@ describe('repositioning — sklad bez cesty ku kotvisku', () => {
   });
 
   it('depo bez prístupu, prázdne aj vo dvore: nakladá sa z dvora (depo pred dvorom platí len medzi dosiahnuteľnými)', () => {
-    const world = repoWorld({ hook: true });
+    const world = repoWorld({ hook: true, isolatedDepot: true });
     const depot = depotOf(world);
     const yard = [...world.modules.values()].find((module): module is StorageModule => module instanceof StorageModule && module.id !== depot.id && module.category === 'container');
     if (yard === undefined) throw new Error('svet nemá dvor');
     const depotUnits = stockDepot(world, 'blue_anchor', 4);
     const yardUnits = Array.from({ length: 4 }, () => putEmpty(world, yard, 'blue_anchor'));
     const contract = offerRepositioning(world, { booked: 4, slaDays: 1 });
-    send(world, acceptCommand(contract.id));
-    // vonkajšia bunka konektora depa (43, 22): bez nej depo nemá prístup — vozidlo k nemu nedôjde ani nepríde z neho
-    send(world, { type: 'RemoveRoad', cells: [{ x: 43, y: 22 }] });
+    acceptUnchecked(world, contract.id);
     runUntil(world, (w) => w.ships.size === 0 && isTerminal(contract.state), LONG, 'odchod lode a uzavretie bookingu');
     expect(contract.state).toBe('completed');
     expect(contract.booking.loadedUnits).toBe(4);
@@ -81,13 +81,12 @@ describe('repositioning — sklad bez cesty ku kotvisku', () => {
 
 describe('výber prázdneho s cestou k cieľu (findAvailableEmpty / countAvailableEmpties s targets)', () => {
   it('depo bez prístupu: s cieľom kotvisko sa berie dvor, s prázdnym zoznamom cieľov nič, bez cieľov (bez obmedzenia) depo pred dvorom', () => {
-    const world = repoWorld();
+    const world = repoWorld({ isolatedDepot: true });
     const depot = depotOf(world);
     const yard = [...world.modules.values()].find((module): module is StorageModule => module instanceof StorageModule && module.id !== depot.id && module.category === 'container');
     if (yard === undefined) throw new Error('svet nemá dvor');
     const depotUnit = stockDepot(world, 'blue_anchor', 2)[1]; // navrchu stohu (v depe sa vydáva kontajner navrchu, ADR-039)
     const yardUnit = putEmpty(world, yard, 'blue_anchor');
-    send(world, { type: 'RemoveRoad', cells: [{ x: 43, y: 22 }] });
     const berth = world.modules.get(1 as EntityId);
     if (berth === undefined) throw new Error('kotvisko #1 vo svete nie je');
     expect(findAvailableEmpty(world, 'blue_anchor')?.id).toBe(depotUnit);
@@ -99,11 +98,10 @@ describe('výber prázdneho s cestou k cieľu (findAvailableEmpty / countAvailab
   });
 
   it('prijatie repositioningu: depo bez prístupu ku kotvisku je no_storage_for_category (loď by na prázdne čakala zbytočne)', () => {
-    const world = repoWorld();
+    const world = repoWorld({ isolatedDepot: true });
     stockDepot(world, 'blue_anchor', 4);
-    send(world, { type: 'RemoveRoad', cells: [{ x: 43, y: 22 }] });
     const contract = offerRepositioning(world, { booked: 4 });
-    const events = send(world, acceptCommand(contract.id));
+    const events = send(world, acceptCommand(contract.id)).filter((event) => event.type === 'CommandRejected');
     expect(events).toEqual([{ type: 'CommandRejected', commandType: 'AcceptContract', reasons: ['no_storage_for_category'] }]);
     expect(contract.state).toBe('offered');
   });
@@ -114,14 +112,16 @@ describe('export — sklad bez cesty ku kotvisku', () => {
     const { world, offer } = startLoading({ defs: hookDefs(1, { economy: SHORT_FAIL }), kind: 'export', booked: 4, slaDays: 1, arrivals: [10, 20, 30, 40] });
     const { exportContract } = offer;
     tickUntil(world, (w) => exportUnitsByLocation(w)['in_storage'] === 4 && w.trucks.size === 0 && [...w.vehicles.values()].every((vehicle) => vehicle.state === 'parked'), 40_000);
-    // chrbtica x = 44 (44, 24): dvor, depo vozidiel a rampa sú odrezané od kotviska (cesta musí byť voľná — žiadne vozidlo ani kamión na nej nestojí)
-    expect(send(world, { type: 'RemoveRoad', cells: [{ x: 44, y: 24 }] }).map((event) => event.type)).not.toContain('CommandRejected');
+    // ulica pred nábrežím (43, 18): dvory sú odrezané od kotviska (cesta musí byť voľná — žiadne vozidlo ani kamión na nej nestojí)
+    expect(send(world, { type: 'RemoveRoad', cells: CUT_QUAY }).map((event) => event.type)).not.toContain('CommandRejected');
     const events = runUntilDeparted(world, LONG);
     expect(eventsOf(events, 'JobCreated').filter((event) => event.toModuleId === 1)).toEqual([]);
     expect(exportContract.booking.loadedUnits).toBe(0);
     expect(world.cargo.shippedCount).toBe(0);
     expect(world.ships.size).toBe(0);
-    // po uzavretí bookingu smú nenaložené jednotky na rampu (vrátenie odosielateľovi) — nič sa nestratilo
+    // po uzavretí bookingu a oprave ulice sa nenaložené jednotky vrátia odosielateľovi kamiónmi — nič sa nestratilo
+    expect(send(world, { type: 'PlaceRoad', cells: CUT_QUAY, kind: 'one_way', dirs: ['W'] }).map((event) => event.type)).not.toContain('CommandRejected');
+    tickUntil(world, (w) => w.cargo.exportedCount === 4, 60_000);
     expect(world.cargo.liveCount + world.cargo.exportedCount).toBe(4);
     expect(lost(world)).toBe(0);
     assertCargoConservation(world);

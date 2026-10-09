@@ -9,19 +9,19 @@ export type TruckErrorCode =
   | 'invalid_input'
   /** `World.addTruck`: id už vo svete má kamión, vozidlo, modul, loď, job alebo jednotka nákladu. */
   | 'duplicate_id'
-  /** `World.addTruck`: brána, stojisko alebo rampa kamióna vo svete nie je (alebo je iného druhu), dock mimo rozsahu. */
+  /** `World.addTruck`: blok, brána alebo odstavná plocha kamióna vo svete nie je (alebo je iného druhu), státie mimo rozsahu. */
   | 'unknown_module'
-  /** `World.addTruck`: bay stojiska už drží iný kamión. */
-  | 'bay_taken'
-  /** `World.addTruck`: dock rampy už drží iný kamión. */
-  | 'dock_taken'
+  /** `World.addTruck`: TP už drží iný kamión. */
+  | 'tp_taken'
+  /** `World.addTruck`: státie odstavnej plochy už drží iný kamión. */
+  | 'stall_taken'
   /** `World.addTruck`: sloty tela alebo slotov vpredu už drží iný nosič (ADR-037). */
   | 'slot_taken'
   /** `World.removeTruck`: kamión s daným id vo svete nie je. */
   | 'unknown_truck'
   /** `World.removeTruck`: kamión vezie náklad (`in_truck`) — jednotky by stratili držiteľa. */
   | 'has_cargo'
-  /** `World.removeTruck`: kamión drží bay, dock alebo stojí vo fronte brány. */
+  /** `World.removeTruck`: kamión drží TP, státie alebo job, alebo stojí vo fronte brány. */
   | 'busy'
   /** `Truck.transition`: prechod mimo `TRUCK_TRANSITIONS` alebo návrat z `no_path` do iného stavu, než z ktorého vypadol. */
   | 'invalid_transition'

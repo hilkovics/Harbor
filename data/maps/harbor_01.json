@@ -76,8 +76,10 @@
     { "id": "east_yard", "rect": { "x": 66, "y": 12, "w": 16, "h": 38 }, "priceCents": 58000000, "leasable": true }
   ],
   "roadPortals": [
-    { "id": "road_south_in", "cell": { "x": 44, "y": 63 }, "direction": "in" },
-    { "id": "road_south_out", "cell": { "x": 45, "y": 63 }, "direction": "out" }
+    { "id": "road_south_in", "cell": { "x": 44, "y": 63 }, "direction": "in", "trafficShare": 0.6 },
+    { "id": "road_south_out", "cell": { "x": 45, "y": 63 }, "direction": "out" },
+    { "id": "road_west_in", "cell": { "x": 0, "y": 60 }, "direction": "in", "trafficShare": 0.4 },
+    { "id": "road_west_out", "cell": { "x": 0, "y": 61 }, "direction": "out" }
   ],
   "railPortals": [
     { "id": "rail_east", "cell": { "x": 95, "y": 24 } }
@@ -161,7 +163,9 @@
       { "x": 45, "y": 60, "dir": "S" },
       { "x": 45, "y": 61, "dir": "S" },
       { "x": 45, "y": 62, "dir": "S" },
-      { "x": 45, "y": 63, "dir": "S" }
+      { "x": 45, "y": 63, "dir": "S" },
+      { "x": 0, "y": 60, "dir": "E" },
+      { "x": 0, "y": 61, "dir": "W" }
     ]
   }
 }

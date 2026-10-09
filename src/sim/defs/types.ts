@@ -236,6 +236,8 @@ export interface LogisticsDef extends DefBase {
   readonly apronUnloadReserveSlots: number;
   /** Okno dopredného plánovania pod hákom (celé ≥ 1, ADR-040 dodatok TR3-02d): najviac toľko jobov vykládky a toľko jobov nakládky na žeriav je vopred priradených, takže ťahače čakajú v pruhu kotviska pod žeriavom skôr, než ich žeriav potrebuje. */
   readonly hookJobLookahead: number;
+  /** Najviac kandidátov na odvoz (celé ≥ 1), ktoré dual transaction kamióna porovná (R4, ADR-041 bod 6). */
+  readonly dualCandidateLimit: number;
   /** Najviac jobov nakládky pod hákom v obehu na žeriav (celé ≥ 1), kým má loď aj import na vykládku (ADR-033 bod 4; nahrádza konštantu `PAIRED_HOOK_LOAD_JOBS_PER_CRANE`): export sa páruje s importom v dual cykle a nevyčerpá vozidlá vykládky. */
   readonly hookPairedLoadJobs: number;
   /** Koľko voľných stĺpcov (`maxTier` buniek každý, celé ≥ 0) musí ostať v bloku, aby plánovač smel zavaliť skôr odchádzajúci kontajner (ADR-039). */
@@ -280,8 +282,8 @@ export const MODULE_KINDS = [
   'crane',
   'storage',
   'gate',
-  'waiting_area',
-  'ramp',
+  'pre_gate',
+  'holding',
   'depot',
   'rail_station',
   'pipeline',
@@ -295,6 +297,13 @@ export type Side = (typeof SIDES)[number];
 /** Druhy konektorov modulu: cesta, koľaj, potrubie. */
 export const CONNECTOR_TYPES = ['road', 'rail', 'pipe'] as const;
 export type ConnectorType = (typeof CONNECTOR_TYPES)[number];
+
+/**
+ * Prístup cez konektor (R4, ADR-041 bod 8): `in` = len vjazd (cieľ jazdy k modulu), `out` = len výjazd (odtiaľ vozidlo odchádza, cieľom jazdy nie je), `both` = oboje
+ * (predvolené, jediný konektor modulu na jednosmernej ceste). Jednosmerný modul má vjazd a výjazd na rôznych konektoroch (RTG blok: sever dnu, juh von, bočný druhý výjazd).
+ */
+export const CONNECTOR_ACCESS = ['in', 'out', 'both'] as const;
+export type ConnectorAccess = (typeof CONNECTOR_ACCESS)[number];
 
 /** Položka `cargo_types.json` (§4.1). */
 export interface CargoTypeDef {
@@ -333,6 +342,8 @@ export interface ModuleConnectorDef {
   readonly y: number;
   readonly side: Side;
   readonly type: ConnectorType;
+  /** Prístup (`in`, `out`, `both`); chýba = `both`. */
+  readonly access?: ConnectorAccess;
 }
 
 /** Pravidlá umiestnenia modulu (§8). */
@@ -348,7 +359,7 @@ export interface ModulePlacementDef {
 
 /**
  * Voľné parametre modulu; tvar podľa `kind` overuje `MODULE_PARAM_SPECS`, typované gettery sú `berthParams`,
- * `craneParams`, `storageParams`, `depotParams`, `gateParams`, `waitingAreaParams` a `rampParams`.
+ * `craneParams`, `storageParams`, `depotParams`, `gateParams`, `preGateParams` a `holdingParams`.
  */
 export type ModuleParams = Readonly<Record<string, number | string>>;
 
@@ -458,46 +469,68 @@ export interface DepotParams {
   readonly internalTicks?: number;
 }
 
-/** `params` brány kamiónov (`kind: 'gate'`, F4). */
+/** Smer pruhu brány: vstupný (`gate_in_lane`) alebo výstupný (`gate_out_lane`), R4, ADR-041. */
+export const GATE_DIRECTIONS = ['in', 'out'] as const;
+export type GateDirection = (typeof GATE_DIRECTIONS)[number];
+
+/** Režim pruhu brány (R4, ADR-041 bod 1): `standard`, `express` (skrátený čas, bez náhodného problému), `trouble` (pomalé riešenie problémových kamiónov). */
+export const GATE_MODES = ['standard', 'express', 'trouble'] as const;
+export type GateMode = (typeof GATE_MODES)[number];
+
+/**
+ * `params` pruhu brány kamiónov (`kind: 'gate'`; od R4 `gate_in_lane` a `gate_out_lane`, ADR-041 bod 1). Pruh je jednosmerný (prvý konektor = vonkajšia strana,
+ * druhý = vnútorná) a obsluhuje 1 kamión naraz. Kroky vstupného pruhu: OCR → kontrola → lístok; výstupného: váha → sken → plomba.
+ * Pole kroku patrí len svojmu smeru (vzťah polí v `checkGateParams`).
+ */
 export interface GateParams {
-  /** Priepustnosť: 1 kamión za `processTicks` tickov (spoločná FIFO fronta oboch smerov, tvrdý bottleneck). */
-  readonly processTicks: number;
-  /**
-   * Vnútorný čas prechodu telom brány (ADR-011): prechod trvá `processTicks + internalTicks` (`TruckGate.passTicks`).
-   * Chýba = 0, nie `logistics.defaultInternalTicks` — priepustnosť brány určuje `processTicks` (ADR-024).
-   */
+  /** Smer pruhu. */
+  readonly direction: GateDirection;
+  /** Vstupný pruh: čas OCR v tickoch (celé ≥ 1). */
+  readonly ocrTicks?: number;
+  /** Vstupný pruh: čas kontroly (VGM, booking, termín) v tickoch (celé ≥ 1). */
+  readonly checkTicks?: number;
+  /** Vstupný pruh: čas vydania lístka a závory v tickoch (celé ≥ 1). */
+  readonly issueTicks?: number;
+  /** Vstupný pruh: šanca na problém pri kontrole v režime `standard` (0 … 1, `Rng`). */
+  readonly gateIssueChance?: number;
+  /** Vstupný pruh: čas riešenia problémového kamióna (tickov navyše; v režime `trouble` celý prechod). */
+  readonly troubleTicks?: number;
+  /** Výstupný pruh: čas váženia v tickoch (celé ≥ 1). */
+  readonly weighTicks?: number;
+  /** Výstupný pruh: čas skenu v tickoch (celé ≥ 1). */
+  readonly scanTicks?: number;
+  /** Výstupný pruh: čas plomby a závory v tickoch (celé ≥ 1). */
+  readonly sealTicks?: number;
+  /** Výstupný pruh: šanca na problém pri plombe v režime `standard` (0 … 1, `Rng`). */
+  readonly sealIssueChance?: number;
+  /** Výstupný pruh: čas dôkladnej kontroly (tickov navyše; v režime `trouble` celý prechod). */
+  readonly inspectionTicks?: number;
+  /** Celý prechod v režime `express` v tickoch (celé ≥ 1; odomyká ho tech F8 `gate_fast_lane`, zatiaľ bez podmienky). */
+  readonly expressTicks: number;
+  /** Vnútorný čas prechodu telom brány (ADR-011): pripočíta sa k trvaniu prechodu; chýba = 0 (ADR-024). */
   readonly internalTicks?: number;
 }
 
-/** `params` čakacej plochy kamiónov (`kind: 'waiting_area'`, F4). */
-export interface WaitingAreaParams {
-  /** Počet stojísk (bays) pre kamióny; `stalls` v manifeste. */
-  readonly bays: number;
-  /** Pobyt kamióna v bayi pred povelom do docku (ADR-011, ADR-024 bod 6); chýba = `logistics.defaultInternalTicks`. */
-  readonly internalTicks?: number;
-  /**
-   * Kvóta stojísk pre odvoz (F6d, ADR-035): `pickupReservedBays` stojísk smú obsadiť len kamióny, ktoré odvážajú náklad z prístavu (import, výdaj
-   * prázdneho); kamióny, ktoré náklad privezú (export, návrat prázdneho), nesmú obsadiť posledné rezervované. Celé ≥ 0; chýba = 0 (bez rezervy). Účinná kvóta je najviac `bays − 1` (`WaitingArea.pickupReservedBays`): aspoň jedno
-   * stojisko ostáva pre dovoz, inak by kamióny s dovozom nikdy nevošli.
-   */
-  readonly pickupReservedBays?: number;
+/**
+ * `params` predbránovej plochy (`kind: 'pre_gate'`, R4, ADR-041 bod 2): jeden vjazd z cesty a `rows` radových pruhov po `rowCapacity` kamiónov; kapacita
+ * plochy = `rows × rowCapacity`. Radový pruh `i` obsluhuje i-ty pruh brány dosiahnuteľný z výjazdu plochy (`i mod počet pruhov`).
+ */
+export interface PreGateParams {
+  /** Počet radových pruhov (celé ≥ 1). */
+  readonly rows: number;
+  /** Kapacita radového pruhu v kamiónoch (celé ≥ 1; podľa ADR-041 2). */
+  readonly rowCapacity: number;
 }
 
-/** `params` nakladacej rampy (`kind: 'ramp'`, F4). */
-export interface RampParams {
-  /** Počet dockov rampy; `docks` v manifeste. */
-  readonly docks: number;
-  /** Kapacita staging slotov `at_ramp` na jeden dock. */
-  readonly stagingPerDock: number;
-  /** Trvanie naloženia jednej jednotky na kamión v tickoch. */
-  readonly loadTicksPerUnit: number;
-  /** Kategória nákladu, ktorú rampa nakladá. */
-  readonly category: CargoCategory;
-  /**
-   * Pobyt **interného vozidla** v docku pred vykládkou (§7.3 bod 4, ADR-011); chýba = `logistics.defaultInternalTicks`.
-   * Kamión ho nepoužíva — nakladá `loadTicksPerUnit` na jednotku (ADR-024).
-   */
-  readonly internalTicks?: number;
+/**
+ * `params` odstavnej plochy kamiónov (`kind: 'holding'`, R4, ADR-041 bod 5): parkovisko so státiami 1 × 3 mimo pruhov. Správanie (volanie k TP) prinesie TR4-02;
+ * v TR4-01 je to len def a modul bez dynamiky.
+ */
+export interface HoldingParams {
+  /** Počet státí (celé ≥ 1). */
+  readonly stalls: number;
+  /** Dĺžka státia v bunkách (celé ≥ 1; ADR-041 bod 5: 1 × 3). */
+  readonly stallLengthCells: number;
 }
 
 /** Druh bez typovaných parametrov (zatiaľ ostatné kind-y): `params` musí byť `{}`. */
@@ -509,8 +542,8 @@ export interface ModuleParamsByKind {
   readonly crane: CraneParams;
   readonly storage: StorageParams;
   readonly gate: GateParams;
-  readonly waiting_area: WaitingAreaParams;
-  readonly ramp: RampParams;
+  readonly pre_gate: PreGateParams;
+  readonly holding: HoldingParams;
   readonly depot: DepotParams;
   readonly rail_station: NoParams;
   readonly pipeline: NoParams;
@@ -581,8 +614,8 @@ export interface LineDef {
 }
 
 /**
- * Položka `trucks.json` (§4.2, §7.5; F4): kamión, ktorý odváža náklad z rampy mimo mapu. Kamión sa nekupuje a nemá mzdu —
- * spawnuje ho `TruckSpawner`; čas nakládky určuje rampa (`RampParams.loadTicksPerUnit`). Sprite je `entities.<id>` v manifeste.
+ * Položka `trucks.json` (§4.2, §7.5; F4, R4): externý kamión. Kamión sa nekupuje a nemá mzdu — vpúšťa ho vnútrozemie / `TruckSpawner`; obsluhuje ho stroj bloku (RTG) alebo straddle carrier na odovzdávacom
+ * mieste (TP, ADR-041 bod 4). Časy na TP (bezpečná zóna, lashing) sú v tomto defe. Sprite je `entities.<id>` v manifeste.
  */
 export interface TruckDef {
   readonly id: string;
@@ -594,6 +627,12 @@ export interface TruckDef {
   /** Rýchlosť jazdy v bunkách za tick. */
   readonly speedCellsPerTick: number;
   readonly cargoCategories: readonly CargoCategory[];
+  /** Bezpečná zóna (R4, ADR-041 bod 4): čas, kým šofér pred zdvihom opustí kamión a po zdvihu sa vráti (ticky, celé ≥ 0; osoba sa nekreslí, ADR-036). */
+  readonly safeZoneTicks: number;
+  /** Lashing (zaistenie twistlockov po naložení importu) na TP, v tickoch (celé ≥ 0). */
+  readonly lashTicks: number;
+  /** Unlashing (odistenie pred zdvihom exportu a prázdneho) na TP, v tickoch (celé ≥ 0). */
+  readonly unlashTicks: number;
 }
 
 /**

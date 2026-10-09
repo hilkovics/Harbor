@@ -1,6 +1,6 @@
 /**
- * Pomocníci testov fázy 6a (T6A-04, ADR-032): svet s prístavom (cesty, depo, dva dvory, brána, stojisko, rampa, vozidlá —
- * rozloženie F4 `f4-layout.ts`) a priamo vložené booking ponuky, ktoré sa prijmú príkazom `AcceptContract`. Pool je
+ * Pomocníci testov fázy 6a (T6A-04, ADR-032): svet s prístavom (cesty, depo, dva dvory, brány, vozidlá —
+ * rozloženie `f4-layout.ts`) a priamo vložené booking ponuky, ktoré sa prijmú príkazom `AcceptContract`. Pool je
  * v týchto svetoch vypnutý (`offersPerDay: 0`, `bookingOffersPerDay: 0`), takže ponuky, ich id a `Rng` prúd riadi test.
  *
  * Skrátené defy (`f6aDefs`): príchod lode presne 1 deň po prijatí (`exportArrivalDaysRange [1, 1]`), okno príchodov exportu
@@ -12,10 +12,10 @@ import type { ContractId, EntityId, VoyageId } from '@sim/core';
 import { DefRegistry } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
 import { World } from '@sim/world';
-import { MAP, RAW_DEFS } from '../world/world-fixtures';
+import { MAP, PORT_MAP, RAW_DEFS } from '../world/world-fixtures';
 import { f4Scenario, type F4Options } from './f4-layout';
 
-export { MAP, RAW_DEFS };
+export { MAP, PORT_MAP, RAW_DEFS };
 
 export const TICKS_PER_HOUR = 3600 / (RAW_DEFS.time.tickGameSeconds as number);
 export const TICKS_PER_DAY = 24 * TICKS_PER_HOUR;
@@ -34,7 +34,7 @@ export interface F6aDefsOptions {
   readonly emptyFlow?: Readonly<Record<string, unknown>>;
   /** Prepíše polia lodnej triedy (`ships.json`). */
   readonly ship?: { readonly id: string; readonly fields: Readonly<Record<string, unknown>> };
-  /** Prepíše `params` modulov podľa id defu (napr. `truck_waiting_area: { bays: 1 }`). */
+  /** Prepíše `params` modulov podľa id defu (napr. `gate_in_lane: { … }`). */
   readonly moduleParams?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
   /** Prepíše polia `equipment.json` → `rtg` (TR3-06b). */
   readonly rtg?: Readonly<Record<string, unknown>>;
@@ -86,11 +86,11 @@ export interface ExportWorldOptions extends Pick<F4Options, 'vehicles' | 'landsi
 /** Dve vozidlá ako vo vertikálnom reze. */
 export const TWO_STRADDLES: readonly string[] = ['straddle_carrier', 'straddle_carrier'];
 
-/** Svet s prístavom F4 (cesty, depo, dva dvory, brána, stojisko, rampa) a vozidlami; príkazy tick 0 sú aplikované. */
+/** Svet s prístavom (cesty, depo, dva dvory, brány) a vozidlami; príkazy tick 0 sú aplikované. */
 export function exportWorld(options: ExportWorldOptions = {}): World {
   const { defs = f6aDefs(), seed = 6006, vehicles = TWO_STRADDLES, checkInvariants = true } = options;
   const scenario = f4Scenario('f6a_export', seed, { vehicles, landside: options.landside, yards: options.yards, omitRoadCells: options.omitRoadCells, extra: options.extra });
-  const world = World.create(defs, MAP, seed, { checkInvariants });
+  const world = World.create(defs, PORT_MAP, seed, { checkInvariants });
   for (const entry of scenario.commands) world.enqueue(commandFromJSON(entry.command));
   world.applyPending();
   return world;
@@ -153,7 +153,7 @@ export function send(world: World, command: SerializedCommand): readonly SimEven
 
 /**
  * Prijme ponuku skupiny bez kontroly pripravenosti pozemnej strany (`AcceptContract.validate` ju pri exporte vyžaduje,
- * ADR-032): účinok `apply` — plán lode, cut-off a príchody — sa vykoná priamo. Pre testy lode a hodín v svete bez rampy.
+ * ADR-032): účinok `apply` — plán lode, cut-off a príchody — sa vykoná priamo. Pre testy lode a hodín v svete bez brány.
  */
 export function acceptUnchecked(world: World, contractId: number): readonly SimEvent[] {
   const command = commandFromJSON(acceptCommand(contractId)) as unknown as { applyTo(world: World, offer: Contract): void };
@@ -162,12 +162,12 @@ export function acceptUnchecked(world: World, contractId: number): readonly SimE
 }
 
 /**
- * Ponuku vloží a prijme jedným príkazom `AcceptContract` (skupina voyage); vráti ponuku a udalosti prijatia. Svet bez rampy
+ * Ponuku vloží a prijme jedným príkazom `AcceptContract` (skupina voyage); vráti ponuku a udalosti prijatia. Svet bez brány
  * (`landside: []`) ponuku prijme bez kontroly pripravenosti (`acceptUnchecked`) — testy lode a hodín bez pozemnej časti.
  */
 export function acceptedBooking(world: World, options: BookingOptions): OfferedBooking & { readonly events: readonly SimEvent[] } {
   const offer = offerBooking(world, options);
-  const events = world.landsideModules.ramps.length === 0 ? acceptUnchecked(world, offer.exportContract.id) : send(world, acceptCommand(offer.exportContract.id));
+  const events = world.landsideModules.gates.length === 0 ? acceptUnchecked(world, offer.exportContract.id) : send(world, acceptCommand(offer.exportContract.id));
   return { ...offer, events };
 }
 

@@ -16,7 +16,7 @@ import { WorldStateError, checkArray, checkInteger, checkKeys, describeValue, po
 import type { World } from './world';
 
 const POSE_KEYS: readonly (keyof MachinePose)[] = ['gantry', 'trolley', 'hoist'];
-const CYCLE_KEYS: readonly (keyof MachineCycle)[] = ['kind', 'unitId', 'vehicleId', 'jobId', 'fromSlot', 'toSlot', 'tpBay'];
+const CYCLE_KEYS: readonly (keyof MachineCycle)[] = ['kind', 'unitId', 'vehicleId', 'truck', 'jobId', 'fromSlot', 'toSlot', 'tpBay'];
 const QUEUE_KEYS: readonly (keyof MachineQueueEntry)[] = ['vehicleId', 'createdTick'];
 
 function parsePose(value: unknown, path: string): MachinePose {
@@ -48,7 +48,9 @@ function parseCycle(value: unknown, path: string): MachineCycle | null {
   if ((kind === 'put') !== (fromSlot === null) || (kind === 'take') !== (toSlot === null)) {
     throw new WorldStateError(`${path}/fromSlot`, `cyklus ${kind}: zdroj a cieľ nezodpovedajú druhu (put zdvíha z vozidla, take odkladá na vozidlo)`);
   }
-  return { kind, unitId: checkInteger(raw['unitId'], 1, `${path}/unitId`), vehicleId, jobId, fromSlot, toSlot, tpBay: checkInteger(raw['tpBay'], 0, `${path}/tpBay`) };
+  const truck = raw['truck'];
+  if (typeof truck !== 'boolean') throw new WorldStateError(`${path}/truck`, `musí byť boolean, dostal ${describeValue(truck)}`);
+  return { kind, unitId: checkInteger(raw['unitId'], 1, `${path}/unitId`), vehicleId, truck, jobId, fromSlot, toSlot, tpBay: checkInteger(raw['tpBay'], 0, `${path}/tpBay`) };
 }
 
 /** Tvar strojov: presne kľúče `SerializedMachine`, id 1…`nextId − 1` a ostro rastúce, známy def (`rtg`), stav, poloha, fáza, cyklus a fronta; vzťahy k svetu overí `restoreMachines`. */

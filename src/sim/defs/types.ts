@@ -158,6 +158,8 @@ export interface TrafficDef {
   readonly rerouteCooldownTicks: number;
   /** Po koľkých tickoch nečinnosti vozidlo bez úlohy odíde do depa (TR1-04). */
   readonly idleParkDelayTicks: number;
+  /** Odstup ďalšieho pokusu o depo vozidla, ktoré k nemu nemá cestu (stojí `idle` mimo vjazdu modulu, TR5-06b). */
+  readonly strandedRetryTicks: number;
 }
 
 /**

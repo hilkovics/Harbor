@@ -106,7 +106,7 @@ function racks(): ModuleVM[] {
 
 /** Plocha OOG: bez sprite v manifeste, kreslí sa ako jednoduché dlaždice modulu. */
 function oogArea(): ModuleVM {
-  return { id: OOG_AREA_ID, defId: 'oog_area', kind: 'storage', x: 36, y: 25, rotation: 0, w: 3, h: 2, connected: true };
+  return { id: OOG_AREA_ID, defId: 'oog_area', kind: 'storage', x: 36, y: 25, rotation: 0, w: 4, h: 6, connected: true };
 }
 
 export const OOG_FLAT_RACK = typed(40, 'flat_rack', BLUE, { oog: true });

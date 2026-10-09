@@ -165,8 +165,10 @@ const APRON_HANDOVER: Handover = {
     crane.reservedSlot ??= berth.apron.reserve();
   },
   blocksWhenNotReady: true,
-  // Reefer bez zásuvky sa preskočí (R5, ADR-042); ak medzitým zásuvku obsadil iný príchod, vezme sa prvá jednotka a plán skladu počká na aprone.
-  unloadUnit: ({ world, ship, berth, crane }) => firstUnloadableOnShip(world, ship.id, (unit) => mayUnload(world, unit, berth, crane)) ?? firstUnloadableOnShip(world, ship.id),
+  // Reefer bez zásuvky sa preskočí (R5, ADR-042); ak medzitým zásuvku obsadil iný príchod, vezme sa len jednotka bez reeferu (reefer na aprone by bol bez napájania, TR5-06b) —
+  // inak `undefined` a žeriav cyklus preruší (`crane-system.ts`, `swing`).
+  unloadUnit: ({ world, ship, berth, crane }) =>
+    firstUnloadableOnShip(world, ship.id, (unit) => mayUnload(world, unit, berth, crane)) ?? firstUnloadableOnShip(world, ship.id, (unit) => unit.reefer === null),
   deliver: ({ world, crane, berth }) => {
     const unitId = crane.heldUnitId;
     const slot = crane.reservedSlot;

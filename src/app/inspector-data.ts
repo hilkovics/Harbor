@@ -72,6 +72,7 @@ export const DEPOT_VEHICLE_STATE: Readonly<Record<VehicleState, DepotVehicleStat
   to_depot: 'idle',
   parked: 'idle',
   depot_exit: 'busy',
+  to_vacate: 'idle',
 });
 
 /** Detailný stav FSM vozidla na zobrazenie v depo vozidiel inspektore; bez textu → abstraktný stav. */
@@ -80,6 +81,7 @@ export const VEHICLE_DETAILED_STATE: Readonly<Partial<Record<VehicleState, strin
   to_depot: 'Ide do depa',
   parked: 'Parkuje v depe',
   depot_exit: 'Odchádza z depa',
+  to_vacate: 'Uvoľňuje vjazd',
 });
 
 /**

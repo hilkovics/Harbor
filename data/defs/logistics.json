@@ -20,7 +20,8 @@
     "gridlockTicks": 30,
     "stuckTicks": 120,
     "rerouteCooldownTicks": 60,
-    "idleParkDelayTicks": 6
+    "idleParkDelayTicks": 6,
+    "strandedRetryTicks": 300
   },
   "shipNavigation": {
     "approachMarginCells": 1,

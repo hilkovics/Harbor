@@ -191,6 +191,7 @@ describe('DefRegistry.fromRaw', () => {
       ['logistics', '/traffic/stuckTicks', 0],
       ['logistics', '/traffic/rerouteCooldownTicks', -1],
       ['logistics', '/traffic/idleParkDelayTicks', null],
+      ['logistics', '/traffic/strandedRetryTicks', 0],
       // T06-07: lodná navigácia (predtým konštanty v src/sim/ships)
       ['logistics', '/shipNavigation', null],
       ['logistics', '/shipNavigation/approachMarginCells', 0],
@@ -303,7 +304,7 @@ describe('DefRegistry.fromRaw', () => {
       const raw = rawDefs();
       raw.logistics['defaultInternalTicks'] = 0;
       Object.assign(raw.logistics['congestion'] as Record<string, unknown>, { trafficDecayPerHour: 0 });
-      Object.assign(raw.logistics['traffic'] as Record<string, unknown>, { gridlockTicks: 1, stuckTicks: 1, rerouteCooldownTicks: 1, idleParkDelayTicks: 1 });
+      Object.assign(raw.logistics['traffic'] as Record<string, unknown>, { gridlockTicks: 1, stuckTicks: 1, rerouteCooldownTicks: 1, idleParkDelayTicks: 1, strandedRetryTicks: 1 });
       const logistics = DefRegistry.fromRaw(raw).logistics;
       expect([logistics.defaultInternalTicks, logistics.congestion.trafficDecayPerHour, logistics.traffic.gridlockTicks]).toEqual([0, 0, 1]);
       (raw.logistics['congestion'] as Record<string, unknown>)['trafficDecayPerHour'] = 1;
@@ -451,7 +452,7 @@ describe('loadBundledDefs', () => {
       yardPlanner: 'planned',
       congestion: { trafficDecayPerHour: 0.9 },
       // R1 (ADR-037): doprava bez prekrývania.
-      traffic: { gridlockTicks: 30, stuckTicks: 120, rerouteCooldownTicks: 60, idleParkDelayTicks: 6 },
+      traffic: { gridlockTicks: 30, stuckTicks: 120, rerouteCooldownTicks: 60, idleParkDelayTicks: 6, strandedRetryTicks: 300 },
       // T06-07: hodnoty doterajších konštánt APPROACH_MARGIN_CELLS, SWEEP_STEP_CELLS, TURN_MANEUVERS, SIDEWAYS_MANEUVERS.
       shipNavigation: { approachMarginCells: 1, sweepStepCells: 0.5, turnManeuvers: 1, sidewaysManeuvers: 1 },
       // T6A-02 (ADR-032): tok exportu po súši.

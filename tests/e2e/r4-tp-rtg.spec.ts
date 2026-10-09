@@ -5,7 +5,7 @@ import { dismissToasts } from './dismiss-toasts';
 // Rozloženie na `harbor_01` (jednosmerný okruh, bez lode a vozidiel; export prichádza kamiónmi, RTG ho ukladá do bloku):
 //
 //   verejná cesta x = 44 sever → (44, 33) západ po y = 33 → vjazd predbránovej plochy (34, 33) → plocha (34, 25) 8 × 8 → výjazd (41, 24) → vstupný pruh (41, 20)
-//   → (41, 18) východ po y = 18 → (52, 18) juh do pruhu RTG bloku (48, 19) [pruh x = 52, TP v každom bayi] → (52, 31) západ po y = 31 → (47, 31) sever → (47, 29)
+//   → (41, 18) východ po y = 18 → (52, 18) obojsmerná bunka, juh do pruhu RTG bloku (48, 19) [pruh x = 52, TP v každom bayi] → (52, 31) západ po y = 31 → (47, 31) sever → (47, 29)
 //   západ → (45, 29) juh → výstupný pruh (45, 30) rot 180 → verejná cesta x = 45 na juh k portálu.
 //
 // Export prichádza po prijatí ponuky (booking vzniká pri uzávierke prvého dňa, ADR-032); čas sa posúva cez `window.__sim.advance` a hra sa zastaví, keď platí podmienka: aspoň dva
@@ -23,7 +23,9 @@ const COMMANDS: readonly Record<string, unknown>[] = [
   oneWay([{ x: 44, y: 34 }], ['N']),
   oneWay([...row(33, 35, 44).reverse(), { x: 34, y: 33 }], [...Array<string>(10).fill('W'), 'N']),
   oneWay([{ x: 41, y: 24 }], ['N']),
-  oneWay([{ x: 41, y: 19 }, { x: 41, y: 18 }, ...row(18, 42, 51), { x: 52, y: 18 }], ['N', ...Array<string>(11).fill('E'), 'S']),
+  oneWay([{ x: 41, y: 19 }, { x: 41, y: 18 }, ...row(18, 42, 51)], ['N', ...Array<string>(11).fill('E')]),
+  // vjazd RTG bloku je obojsmerná bunka: jednosmerná cesta by mu vjazd odmietla ako slepú (`connector_blocked`, TR5-02b); do pruhu bloku sa z nej ide na juh
+  { type: 'PlaceRoad', cells: [{ x: 52, y: 18 }] },
   oneWay(
     [...row(31, 48, 52).reverse(), { x: 47, y: 31 }, { x: 47, y: 30 }, { x: 47, y: 29 }, { x: 46, y: 29 }, { x: 45, y: 29 }],
     [...Array<string>(5).fill('W'), 'N', 'N', 'W', 'W', 'S'],

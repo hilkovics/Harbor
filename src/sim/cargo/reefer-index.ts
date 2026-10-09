@@ -14,9 +14,9 @@ export class ReeferIndex {
     return this.sorted.length;
   }
 
-  /** Sledované id vzostupne (kópia — dá sa iterovať počas `remove`). */
+  /** Sledované id vzostupne — živé pole bez kópie (hot path): počas iterácie sa nesmie volať `add`/`remove`, vyradenie sa odkladá na koniec prechodu. */
   ids(): readonly EntityId[] {
-    return [...this.sorted];
+    return this.sorted;
   }
 
   /** Je jednotka v indexe (binárne vyhľadanie)? */

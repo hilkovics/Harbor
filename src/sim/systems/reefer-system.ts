@@ -45,6 +45,13 @@ function claim(world: World, unit: CargoUnit, reason: ReeferClaimReason): void {
   world.events.emit({ type: 'ReeferClaim', unitId: unit.id, reason, cents });
 }
 
+/** Znovupoužiteľné polia (hot path bez alokácie; obsah sa vždy najprv vyprázdni). */
+const STALE: EntityId[] = [];
+const WAITING: CargoUnit[] = [];
+
+/** Alarm s najskorším termínom prvý, pri zhode najmenšie id. */
+const byDeadline = (a: CargoUnit, b: CargoUnit): number => (a.reefer?.alarmUntilTick ?? 0) - (b.reefer?.alarmUntilTick ?? 0) || a.id - b.id;
+
 export class ReeferSystem {
   /** Krok 6d: stav reeferov podľa polohy, hodiny bez napájania, alarmy, technici a (pri uzavretí hodiny) elektrina. */
   tick(world: World, closed: ClockBoundaries): void {
@@ -58,10 +65,11 @@ export class ReeferSystem {
     const alarmChancePerHour = cfg.alarmChancePerDay / (world.clock.ticksPerDay / hourTicks);
     let pluggedInStorage = 0;
     const ids = index.ids();
+    STALE.length = 0;
     for (const id of ids) {
       const unit = world.cargo.get(id);
       if (unit === undefined || unit.reefer === null) {
-        index.remove(id);
+        STALE.push(id);
         continue;
       }
       const current = unit.reefer;
@@ -112,8 +120,11 @@ export class ReeferSystem {
         }
       }
       if (!same(current, next)) world.cargo.setReefer(id, next);
+      // Napájaný na lodi a bez čakania nemá čo meniť: z indexu von (zdvih z lode ho vráti háčikom `CargoLedger.move`).
+      if (kind === 'on_ship' && next.waitSinceTick === null) STALE.push(id);
     }
     this.serveAlarms(world, ids, tick, cfg.technicians, cfg.alarmFixTicks);
+    for (const id of STALE) index.remove(id);
     if (closed.hourClosed && pluggedInStorage > 0 && world.defs.economy.reeferPowerCentsPerHour > 0) {
       world.economy.post(-pluggedInStorage * world.defs.economy.reeferPowerCentsPerHour, 'energy');
     }
@@ -122,7 +133,8 @@ export class ReeferSystem {
   /** Technici: dokončené zásahy sa uzavrú, voľná kapacita ide alarmom v poradí (termín, id), alarm po termíne bez začatého zásahu je reklamácia. */
   private serveAlarms(world: World, ids: readonly EntityId[], tick: number, technicians: number, fixTicks: number): void {
     let active = 0;
-    const waiting: CargoUnit[] = [];
+    const waiting = WAITING;
+    waiting.length = 0;
     for (const id of ids) {
       const unit = world.cargo.get(id);
       const state = unit?.reefer;
@@ -134,16 +146,18 @@ export class ReeferSystem {
         waiting.push(unit);
       }
     }
-    waiting.sort((a, b) => (a.reefer?.alarmUntilTick ?? 0) - (b.reefer?.alarmUntilTick ?? 0) || a.id - b.id);
+    waiting.sort(byDeadline);
     for (const unit of waiting) {
       const state = unit.reefer as ReeferState;
-      if (active < technicians) {
-        active += 1;
-        world.cargo.setReefer(unit.id, { ...state, fixUntilTick: tick + fixTicks });
-      } else if (tick >= (state.alarmUntilTick as number)) {
+      // Termín má prednosť pred technikom: alarm po termíne je reklamácia aj pri voľnej kapacite (TR5-06b).
+      if (tick >= (state.alarmUntilTick as number)) {
         claim(world, unit, 'alarm');
         world.cargo.setReefer(unit.id, { ...state, alarmUntilTick: null, fixUntilTick: null });
+      } else if (active < technicians) {
+        active += 1;
+        world.cargo.setReefer(unit.id, { ...state, fixUntilTick: tick + fixTicks });
       }
     }
+    waiting.length = 0;
   }
 }

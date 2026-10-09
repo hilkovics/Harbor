@@ -5,7 +5,9 @@ import type { EntityId } from '@sim/core';
 import type { SimEvent } from '@sim/events';
 import { loadMap, parseMapDef } from '@sim/grid';
 import { chooseYardSlot, liftBlockedByPower } from '@sim/logistics';
-import { BerthModule, ModuleError, YardBlock } from '@sim/modules';
+import { BerthModule, CraneModule, ModuleError, YardBlock } from '@sim/modules';
+import type { Ship } from '@sim/ships';
+import { HANDOVERS } from '../../../src/sim/systems/crane-handover';
 import { stateHash, World } from '@sim/world';
 import { findWorldViolation } from '@sim/world/world-invariants';
 import { hookDefs } from '../helpers/f6a';
@@ -212,6 +214,29 @@ describe('systém reeferov (krok 6d)', () => {
     expect(world.cargo.get(first)?.reefer?.fixUntilTick).not.toBeNull();
     tickFor(world, 500);
     expect(world.cargo.get(first)?.reefer?.alarmUntilTick).toBeNull();
+  });
+
+  it('alarm po termíne je reklamácia aj pri voľnom technikovi (termín má prednosť pred zásahom, TR5-06b)', () => {
+    const world = worldOf('reefer_flow', { alarmChancePerDay: 0, technicians: 2, alarmFixTicks: 500, alarmResponseHours: 0.5, plugTicks: 5 });
+    const unit = stockReefer(world, yardOf(world), 0);
+    tickFor(world, 20);
+    world.cargo.setReefer(unit, { ...(world.cargo.get(unit)?.reefer as NonNullable<ReturnType<typeof world.cargo.get>>['reefer'] & object), alarmUntilTick: world.clock.tick, fixUntilTick: null });
+    const events = tickFor(world, 1);
+    expect(eventsOfType(events, 'ReeferClaim')).toMatchObject([{ unitId: unit, reason: 'alarm' }]);
+    expect(world.cargo.get(unit)?.reefer?.alarmUntilTick).toBeNull();
+    expect(world.cargo.get(unit)?.reefer?.fixUntilTick).toBeNull();
+  });
+
+  it('STS nezdvihne reefer bez zásuvky ani náhradným výberom: bez inej jednotky `undefined`, s dry jednotkou vezme dry (TR5-06b)', () => {
+    const world = worldOf('tt_rtg');
+    const berth = [...world.modules.values()].find((module): module is BerthModule => module instanceof BerthModule) as BerthModule;
+    const crane = [...world.modules.values()].find((module): module is CraneModule => module instanceof CraneModule) as CraneModule;
+    const env = { world, ship: { id: id(900) } as Ship, berth, crane };
+    const reefer = onShip(world, 'reefer');
+    expect(HANDOVERS.apron.unloadUnit(env)).toBeUndefined();
+    expect(world.cargo.get(reefer)?.location.kind).toBe('on_ship');
+    const dry = onShip(world, 'dry');
+    expect(HANDOVERS.apron.unloadUnit(env)).toBe(dry);
   });
 
   it('zdvih zo skladu: job zo skladu spustí odpojenie (unplugTicks), kým je zapojený, `liftBlockedByPower` platí', () => {

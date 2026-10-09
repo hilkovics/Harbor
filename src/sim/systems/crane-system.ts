@@ -37,7 +37,7 @@ import {
   type CraneState,
 } from '../modules/crane-module';
 import { ModuleError } from '../modules/module-error';
-import { countShipCranes, importAboard, loadingInFlightTeu, openLoadBookings, stowageOutOfOrder } from '../logistics/voyage-cargo';
+import { countShipCranes, firstUnloadableOnShip, importAboard, loadingInFlightTeu, openLoadBookings, stowageOutOfOrder } from '../logistics/voyage-cargo';
 import type { Contract } from '../contracts/contract';
 import { teuOf } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
@@ -205,6 +205,16 @@ function swing(crane: CraneModule, world: World): void {
   const handover = HANDOVERS[berth.params.handoverMode];
   if (CRANE_CYCLE_TRAITS[crane.cycle].direction === 'unload') {
     const unitId = handover.unloadUnit(env);
+    if (unitId === undefined && firstUnloadableOnShip(world, ship.id) !== undefined) {
+      // Zostali len reefery bez voľnej zásuvky (zásuvku medzitým obsadil iný príchod, R5/TR5-06b): cyklus sa preruší, rezervovaný slot apronu sa vráti a žeriav štartuje znova.
+      if (crane.reservedSlot !== null) {
+        berth.apron.release(crane.reservedSlot);
+        crane.reservedSlot = null;
+      }
+      rest(crane);
+      start(crane, world);
+      return;
+    }
     if (unitId === undefined) throw new ModuleError('invalid_transition', `${crane.label}: koniec grabbing bez jednotky importu na lodi #${String(ship.id)}`);
     world.cargo.move(unitId, { kind: 'in_crane', craneId: crane.id });
     crane.heldUnitId = unitId;

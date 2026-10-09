@@ -22,7 +22,7 @@ function idleVehicle(): Vehicle {
 describe('VEHICLE_TRANSITIONS', () => {
   it('idle → to_pickup → loading → to_dropoff → unloading → idle, loading ↔ rehandling → idle (R2), to_* ↔ no_path, parkovanie idle → to_depot → parked → depot_exit → to_pickup; nič iné', () => {
     expect([...VEHICLE_TRANSITIONS.entries()]).toEqual([
-      ['idle', ['to_pickup', 'to_depot']],
+      ['idle', ['to_pickup', 'to_depot', 'to_vacate']],
       ['to_pickup', ['loading', 'no_path']],
       ['loading', ['to_dropoff', 'rehandling']],
       ['rehandling', ['loading', 'idle']],
@@ -32,10 +32,11 @@ describe('VEHICLE_TRANSITIONS', () => {
       ['to_depot', ['parked', 'to_pickup', 'idle']],
       ['parked', ['depot_exit']],
       ['depot_exit', ['to_pickup']],
+      ['to_vacate', ['to_pickup', 'idle']],
     ]);
     let allowed = 0;
     for (const from of VEHICLE_STATES) for (const to of VEHICLE_STATES) if (isVehicleTransitionAllowed(from, to)) allowed += 1;
-    expect(allowed).toBe(18);
+    expect(allowed).toBe(21);
   });
 });
 
@@ -55,6 +56,7 @@ describe('VEHICLE_STATE_TRAITS', () => {
       ['to_depot', false, [], 'drive', false, 'depot'],
       ['parked', false, [], 'park', false, 'depot'],
       ['depot_exit', true, ['assigned'], 'park', false, 'depot'],
+      ['to_vacate', false, [], 'drive', false, null],
     ]);
     expect(Object.isFrozen(VEHICLE_STATE_TRAITS)).toBe(true);
   });

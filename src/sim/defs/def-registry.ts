@@ -213,6 +213,7 @@ const TRAFFIC_FIELDS: SpecTable<TrafficDef> = {
   stuckTicks: { kind: 'integer', min: 1 },
   rerouteCooldownTicks: { kind: 'integer', min: 1 },
   idleParkDelayTicks: { kind: 'integer', min: 1 },
+  strandedRetryTicks: { kind: 'integer', min: 1 },
 };
 
 /**

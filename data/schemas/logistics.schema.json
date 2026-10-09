@@ -90,7 +90,7 @@
     "traffic": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["gridlockTicks", "stuckTicks", "rerouteCooldownTicks", "idleParkDelayTicks"],
+      "required": ["gridlockTicks", "stuckTicks", "rerouteCooldownTicks", "idleParkDelayTicks", "strandedRetryTicks"],
       "description": "Doprava bez prekrývania (ADR-037, ADR-038): čakanie nosičov na voľný slot, zápchy a parkovanie. Všetky trvania v tickoch.",
       "properties": {
         "gridlockTicks": {
@@ -112,6 +112,11 @@
           "type": "integer",
           "minimum": 1,
           "description": "Po koľkých tickoch nečinnosti vozidlo bez úlohy odíde do svojho depa (parkovanie, TR1-04)."
+        },
+        "strandedRetryTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Odstup pokusov o depo, keď k nemu vozidlo nemá cestu: vozidlo uvoľní vjazd modulu na najbližšiu voľnú bunku mimo vjazdov a skúša znova (TR5-06b)."
         }
       }
     },

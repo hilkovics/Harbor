@@ -25,7 +25,7 @@ import type { CarrierMotion } from '../movement/motion-check';
 import type { Vehicle } from './vehicle';
 
 /** Stavy vozidla v poradí životného cyklu. */
-export const VEHICLE_STATES = ['idle', 'to_pickup', 'loading', 'rehandling', 'to_dropoff', 'unloading', 'no_path', 'to_depot', 'parked', 'depot_exit'] as const;
+export const VEHICLE_STATES = ['idle', 'to_pickup', 'loading', 'rehandling', 'to_dropoff', 'unloading', 'no_path', 'to_depot', 'parked', 'depot_exit', 'to_vacate'] as const;
 export type VehicleState = (typeof VEHICLE_STATES)[number];
 
 /**
@@ -37,7 +37,8 @@ export const HOOK_WAIT_TICKS = 1;
 
 /** Povolené prechody `from → [to…]`. */
 export const VEHICLE_TRANSITIONS: ReadonlyMap<VehicleState, readonly VehicleState[]> = new Map<VehicleState, readonly VehicleState[]>([
-  ['idle', Object.freeze(['to_pickup', 'to_depot'] as const)],
+  // `to_vacate`: bez cesty k depu vozidlo uvoľní vjazd modulu a odíde na najbližšiu voľnú bunku mimo vjazdov (TR5-06b).
+  ['idle', Object.freeze(['to_pickup', 'to_depot', 'to_vacate'] as const)],
   ['to_pickup', Object.freeze(['loading', 'no_path'] as const)],
   // Zdroj je blok so stohmi a cieľ nie je navrchu: vozidlo prekladá kontajnery nad ním (`rehandling`), potom nakladá (R2, ADR-039 bod 6); bez cieľa v bloku
   // sa job zruší a vozidlo uvoľní (`rehandling → idle`, dodatok TR2-06b).
@@ -50,6 +51,7 @@ export const VEHICLE_TRANSITIONS: ReadonlyMap<VehicleState, readonly VehicleStat
   ['to_depot', Object.freeze(['parked', 'to_pickup', 'idle'] as const)],
   ['parked', Object.freeze(['depot_exit'] as const)],
   ['depot_exit', Object.freeze(['to_pickup'] as const)],
+  ['to_vacate', Object.freeze(['to_pickup', 'idle'] as const)],
 ]);
 
 /** Je prechod `from → to` v tabuľke? */
@@ -109,6 +111,8 @@ export const VEHICLE_STATE_TRAITS: { readonly [S in VehicleState]: VehicleStateT
   to_depot: Object.freeze({ hasJob: false, jobStates: Object.freeze([] as const), motion: 'drive', holdsRoad: true, free: true, waitsOptional: false, waits: false, destination: 'depot' }),
   parked: Object.freeze({ hasJob: false, jobStates: Object.freeze([] as const), motion: 'park', holdsRoad: false, free: true, waitsOptional: false, waits: false, destination: 'depot' }),
   depot_exit: Object.freeze({ hasJob: true, jobStates: Object.freeze(['assigned'] as const), motion: 'park', holdsRoad: false, free: false, waitsOptional: false, waits: false, destination: 'depot' }),
+  // Jazda bez jobu na voľnú bunku mimo vjazdov (`startVacateTrip`): cieľ nie je modul, preto `destination: null`; voľné pre dispatcher ako `to_depot`.
+  to_vacate: Object.freeze({ hasJob: false, jobStates: Object.freeze([] as const), motion: 'drive', holdsRoad: true, free: true, waitsOptional: false, waits: false, destination: null }),
 } as const);
 
 /** Stav jazdy, do ktorého sa vozidlo vráti z `no_path`, podľa stavu jobu (`assigned` → k zdroju, `moving` → k cieľu). */

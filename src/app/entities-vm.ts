@@ -38,10 +38,11 @@
  *
  * Bez side-effectov a bez závislosti na DOM/Pixi/React.
  */
-import type { ContainerVM, CraneVM, EntitiesVM, GateLaneVM, HoldingSlotVM, MachineVM, ModuleVM, ShipVM, StackVM, TpCellVM, TruckVM, VehicleVM, ViewRotation } from '@render/view-models';
+import type { ContainerVM, CraneVM, EntitiesVM, GateLaneVM, HoldingSlotVM, MachineVM, ModuleVM, ReeferPlugStateVM, ReeferPlugVM, ShipVM, StackVM, TpCellVM, TruckVM, VehicleVM, ViewRotation } from '@render/view-models';
 import type { CargoLocation, CargoUnit } from '@sim/cargo';
 import type { EntityId } from '@sim/core';
 import { moduleLanes } from '@sim/logistics';
+import { ReachStacker } from '@sim/machines';
 import { BerthModule, CraneModule, RtgBlock, adjacentLaneGroups, craneCargo, craneTrolley, EmptyDepot, StorageModule, PreGateBuffer, TruckGate, TruckHolding, VehicleDepot, YardBlock, type LaneRoofPlacement, type Module } from '@sim/modules';
 import { SHIP_STATE_TRAITS, type Ship } from '@sim/ships';
 import { tpCellsOf, type Truck } from '@sim/trucks';
@@ -131,10 +132,11 @@ interface LiveParts {
   gateLane?: GateLaneVM;
   tpCells?: readonly TpCellVM[];
   holdingSlots?: readonly HoldingSlotVM[];
+  plugs?: readonly ReeferPlugVM[];
 }
 
 /** Kľúče `LiveParts` (pri obnove VM sa najprv zahodia a potom nahradia čerstvými). */
-const LIVE_KEYS: readonly (keyof LiveParts)[] = ['gateLane', 'tpCells', 'holdingSlots'];
+const LIVE_KEYS: readonly (keyof LiveParts)[] = ['gateLane', 'tpCells', 'holdingSlots', 'plugs'];
 
 /** Pruh brány: smer, režim, strecha a aktuálny krok (`currentStep`). */
 function gateLaneVM(gate: TruckGate, roofs: LaneRoofs): GateLaneVM {
@@ -171,7 +173,9 @@ function liveParts(world: World, module: Module, roofs: LaneRoofs): LiveParts {
   if (module instanceof TruckGate) return { gateLane: gateLaneVM(module, roofs) };
   if (module instanceof YardBlock) {
     const tpCells = tpCellVMs(world, module);
-    return tpCells.length > 0 ? { tpCells } : {};
+    const parts: LiveParts = tpCells.length > 0 ? { tpCells } : {};
+    if (module.hasSockets) parts.plugs = plugVMs(world, module);
+    return parts;
   }
   if (module instanceof TruckHolding) return { holdingSlots: holdingSlotVMs(world, module) };
   return {};
@@ -242,7 +246,7 @@ function yardBlockStacks(world: World, yard: YardBlock): readonly StackVM[] {
       if (topUnitId !== null) {
         const unit = world.cargo.get(topUnitId);
         if (unit !== undefined) {
-          topContainer = { sizeFt: unit.sizeFt as 20 | 40, containerType: unit.containerType, lineId: unit.lineId, direction: unit.direction };
+          topContainer = containerOf(unit);
         }
       }
       stacks.push({ bay, row, height, top: topContainer });
@@ -320,9 +324,43 @@ export function moduleVMs(world: World, storageOps: StorageOps = NO_STORAGE_OPS)
   return result;
 }
 
-/** VM kontajnera z jednotky ledgera. */
+/** Stav zásuvky reefera jednotky (R5): `alarm` pri aktívnom alarme, `on` zapojený, inak `off`; bez reefera `undefined`. */
+export function reeferPlugState(unit: CargoUnit): ReeferPlugStateVM | undefined {
+  const reefer = unit.reefer;
+  if (reefer === null) return undefined;
+  if (reefer.alarmUntilTick !== null) return 'alarm';
+  return reefer.plugged ? 'on' : 'off';
+}
+
+/** VM kontajnera z jednotky ledgera (R5: s `oog` a `reefer` len ak platia). */
 function containerOf(unit: CargoUnit): ContainerVM {
-  return { sizeFt: unit.sizeFt as 20 | 40, containerType: unit.containerType, lineId: unit.lineId, direction: unit.direction };
+  const vm: ContainerVM = { sizeFt: unit.sizeFt as 20 | 40, containerType: unit.containerType, lineId: unit.lineId, direction: unit.direction };
+  if (unit.oog) vm.oog = true;
+  const reefer = reeferPlugState(unit);
+  if (reefer !== undefined) vm.reefer = reefer;
+  return vm;
+}
+
+/** Zásuvky bloku so zásuvkami (R5): stred bunky stohu vo svete (s rotáciou bloku) a stav podľa reeferov v stohu (alarm > on > off, bez reeferu `empty`). */
+function plugVMs(world: World, yard: YardBlock): readonly ReeferPlugVM[] {
+  const { w, h } = yard.def.footprint;
+  const plugs: ReeferPlugVM[] = [];
+  for (const { bay, row } of yard.plugCells()) {
+    const lx = row + 0.5;
+    const ly = bay + 0.5;
+    const local = { 0: { x: lx, y: ly }, 90: { x: h - ly, y: lx }, 180: { x: w - lx, y: h - ly }, 270: { x: ly, y: w - lx } }[yard.rotation];
+    let state: ReeferPlugVM['state'] = 'empty';
+    const ids: EntityId[] = [];
+    yard.columnUnits(bay, row, ids);
+    for (const id of ids) {
+      const unit = world.cargo.get(id);
+      const found = unit === undefined ? undefined : reeferPlugState(unit);
+      if (found === undefined) continue;
+      if (found === 'alarm' || state === 'empty' || (state === 'off' && found === 'on')) state = found;
+    }
+    plugs.push({ x: yard.origin.x + local.x, y: yard.origin.y + local.y, state });
+  }
+  return plugs;
 }
 
 /** Stroje blokov (R3, RTG): stred rámu v bunkách sveta (s rotáciou bloku), vozík a zdvih 0..1, náklad z `in_handler`. */
@@ -331,19 +369,19 @@ export function machineVMs(world: World): MachineVM[] {
   for (const machine of world.machines.values()) {
     const block = world.modules.get(machine.blockId);
     if (!(block instanceof RtgBlock)) continue;
-    const pose = machine.poseNow();
     const { w, h } = block.def.footprint;
-    const lx = w / 2;
-    const ly = pose.gantry + 0.5;
+    const reach = machine instanceof ReachStacker;
+    const pose = machine.poseNow();
+    // R5: reach stacker jazdí v uličke (stĺpec `laneCol`, pojazd = bay), RTG má rám v strede šírky bloku
+    const lx = reach ? block.laneCol + 0.5 : w / 2;
+    const ly = (reach ? machine.aislePos() : pose.gantry) + 0.5;
     const local = { 0: { x: lx, y: ly }, 90: { x: h - ly, y: lx }, 180: { x: w - lx, y: h - ly }, 270: { x: ly, y: w - lx } }[block.rotation];
     let cargo: ContainerVM | null = null;
-    if (world.cargo.countAt('in_handler', machine.id) > 0) {
-      const unitId = world.cargo.unitAtIndex('in_handler', machine.id, 0);
-      const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
-      if (unit !== undefined) cargo = containerOf(unit);
-    }
+    const unitId = reach ? (machine.cycle?.unitId as EntityId | undefined) : world.cargo.countAt('in_handler', machine.id) > 0 ? world.cargo.unitAtIndex('in_handler', machine.id, 0) : undefined;
+    const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
+    if (unit !== undefined && unit.location.kind === 'in_handler') cargo = containerOf(unit);
     const { rows, maxTier } = block.geometry;
-    result.push({
+    const vm: MachineVM = {
       id: machine.id,
       defId: machine.defId,
       blockId: machine.blockId,
@@ -353,7 +391,12 @@ export function machineVMs(world: World): MachineVM[] {
       hoist: Math.min(1, Math.max(0, pose.hoist / maxTier)),
       state: machine.state,
       cargo,
-    });
+    };
+    if (reach) {
+      vm.angle = (270 + block.rotation) % 360; // výložník smeruje k radom (−x pri rotácii 0)
+      vm.boom = machine.boom(rows);
+    }
+    result.push(vm);
   }
   return result;
 }
@@ -454,7 +497,7 @@ export function vehicleVMs(world: World, prev: VehiclePoses = NO_VEHICLE_POSES):
         if (unitId !== undefined) {
           const unit = world.cargo.get(unitId);
           if (unit !== undefined) {
-            cargo = { sizeFt: unit.sizeFt as 20 | 40, containerType: unit.containerType, lineId: unit.lineId, direction: unit.direction };
+            cargo = containerOf(unit);
           }
         }
       }
@@ -584,7 +627,7 @@ export function truckVMs(world: World, prev: TruckPoses = NO_TRUCK_POSES): Truck
       if (unitId !== undefined) {
         const unit = world.cargo.get(unitId);
         if (unit !== undefined) {
-          cargo = { sizeFt: unit.sizeFt as 20 | 40, containerType: unit.containerType, lineId: unit.lineId, direction: unit.direction };
+          cargo = containerOf(unit);
         }
       }
     }
@@ -657,7 +700,7 @@ function liveModuleChanged(vm: ModuleVM, parts: LiveParts): boolean {
   if (gateLane !== undefined && next !== undefined) {
     if (gateLane.kind !== next.kind || gateLane.mode !== next.mode || gateLane.roofPart !== next.roofPart || gateLane.step !== next.step || gateLane.progress !== next.progress) return true;
   }
-  return !sameItems(vm.tpCells, parts.tpCells) || !sameItems(vm.holdingSlots, parts.holdingSlots);
+  return !sameItems(vm.tpCells, parts.tpCells) || !sameItems(vm.holdingSlots, parts.holdingSlots) || !sameItems(vm.plugs, parts.plugs);
 }
 
 /**

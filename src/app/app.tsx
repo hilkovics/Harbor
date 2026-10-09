@@ -11,6 +11,7 @@ import { BuildFeedbackLabel, type FeedbackSource } from './build-feedback';
 import { BuildSelection } from './build-selection';
 import { ConnectedBuildBar } from './connected-build-bar';
 import { ConnectedContractsPanel } from './connected-contracts-panel';
+import { ConnectedFinancePanel } from './connected-finance-panel';
 import { ConnectedGameOver } from './connected-game-over';
 import { ConnectedTopHUD } from './connected-hud';
 import { ConnectedModuleInspector } from './connected-module-inspector';
@@ -80,6 +81,7 @@ export function App({ bridge, feedback, selection, moduleSelection, roadSelectio
       </div>
       <ConnectedModuleInspector selection={inspectedModules} />
       <ConnectedContractsPanel panels={panelSelection} overlays={overlaySelection} />
+      <ConnectedFinancePanel panels={panelSelection} />
       {toasts !== undefined && <ConnectedToasts center={toasts} />}
       <div className="app__build">
         <ConnectedBuildBar selection={selection ?? ownSelection} roadSelection={roadSelection ?? ownRoadSelection} />

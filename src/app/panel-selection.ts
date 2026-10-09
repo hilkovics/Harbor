@@ -10,11 +10,11 @@ import type { ModuleSelection } from './module-selection';
 import { SelectionCell } from './selection-cell';
 
 /** Panely, ktoré vie HUD otvoriť. */
-export type PanelId = 'contracts';
+export type PanelId = 'contracts' | 'finance';
 
 /** Je `id` z HUD tlačidla panel, ktorý už existuje? */
 export function isPanelId(id: string): id is PanelId {
-  return id === 'contracts';
+  return id === 'contracts' || id === 'finance';
 }
 
 export class PanelSelection extends SelectionCell<PanelId> {

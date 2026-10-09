@@ -19,18 +19,15 @@
  *   repairBays }` z `depotCargoSplit` (`cargo-vm.ts`).
  *   Moduly s cestným konektorom nesú `connected = world.isConnected(module)` (odznak „nepripojené“); ostatné (žeriav)
  *   pole nemajú.
- * - Pozemné moduly F4 (T04-08), každý len svoje pole:
- *   - brána (`TruckGate`): `gate = { queueLength, open, entryConnector }`; `open` = brána práve púšťa kamión (závora
- *     hore), `entryConnector` = index konektora v defe, ktorý je vstupnou stranou (`entrySide`, určuje ju svet z ciest;
- *     neurčená strana → 0, prvý konektor);
- *   - stojisko (`WaitingArea`): `waitingArea = { bays, occupied[] }`, `occupied[i]` = bay `i` je obsadený alebo rezervovaný;
- *   - rampa (`LoadingRamp`): `ramp = { docks, staged[], operational, stagedEmpty? }`, `staged[i]` = jednotky na docku `i`
- *     (ledger; F6c: vrátane prázdnych kontajnerov, ktoré sim do `stagedAt` nepočíta — `stagedEmpty[i]` ich vyčísľuje),
- *     `operational` = `World.isRampOperational`.
- *   Fronta brány a obsadenie stojiska sprevádzajú `Truck*` udalosti, ale nie všetky zmeny: `open` sa po prechode, ktorému
- *   zanikla výstupná strana (prestavba ciest za behu), vypne bez udalosti. Preto VM týchto dvoch modulov (`isLiveModule`)
- *   `EntitiesVMBuilder` porovnáva so živým modulom pri každom snapshote (plytko) a pole modulov je nové len pri skutočnej
- *   zmene hodnôt.
+ * - Pozemné moduly R4 (TR4-05), každý len svoje pole (živé polia sa menia aj bez udalosti, preto ich `EntitiesVMBuilder` pri každom snapshote
+ *   porovnáva so živým modulom, `isLiveModule`):
+ *   - pruh brány (`TruckGate`: `gate_in_lane`, `gate_out_lane`): `gateLane = { kind, mode, roofPart, step?, progress? }`; strecha z `adjacentLaneGroups`,
+ *     krok z `TruckGate.currentStep()` (bez kroku = voľný pruh);
+ *   - blok skladu (`YardBlock`): `tpCells = [{ x, y, busy }]` z `tpCellsOf`; `busy` = kamión s touto bunkou TP je `at_tp` / `at_edge_tp`;
+ *   - odstavná plocha (`TruckHolding`): `holdingSlots = [{ x, y, occupied }]` zo `stallCells()` (obsadené kamiónom s `holdingId` a `stall`).
+ * - Kamióny (`TruckVM`): `loaded` = aspoň jedna jednotka `in_truck`, `carriesEmpty` (F6c) = je prázdny kontajner. Mimo cesty sa kamión kreslí na
+ *   prezentovanej polohe (`truckPose`): v `gate_pass` / `gate_pass_out` (prechod pruhom brány) v strede pruhu, v `pre_gate` na mieste rady predbránovej
+ *   plochy (vedľa seba, kabína v smere plochy), v `holding` na státí odstavnej plochy. Pri zmene stavu z/do takého stavu je `prev = curr` (bez interpolácie).
  * - Lode: `cargoSplit` (import / export / `empty` na palube; prekládka do importu na lodi A a do exportu na lodi B, `shipDeckSplit`,
  *   `unitsOnBoard` je ich súčet; `EntitiesVMBuilder` ho cachuje podľa revízie) a v stave `lashing`
  *   `lashing = { ticksLeft, ticksTotal }` (`ticksTotal` z udalosti `ShipLashingStarted`, ktorú si pamätá `LashingTracker`;
@@ -38,27 +35,16 @@
  * - Lode, vozidlá a kamióny: `prevX/prevY` (a `prevHeading` vozidla a kamióna) sim nevedie — dodá ich volajúci
  *   (`SimBridge` si polohu pamätá pred každým tickom); nová loď / vozidlo / kamión bez záznamu má `prev = curr`.
  * - Vozidlá: `loaded` = v ledgeri je aspoň jedna jednotka `in_vehicle` u tohto vozidla; `carriesEmpty` (F6c) = je prázdny kontajner.
- * - Kamióny (`TruckVM`): `loaded` = aspoň jedna jednotka `in_truck`, `carriesEmpty` (F6c) = je prázdny kontajner (návrat prázdnych,
- *   výdaj exportérovi — kamión misie `collect` je pred naložením prázdny a po naložení nesie prázdny kontajner; po vyložení
- *   prázdneho si kamión hodnotu pamätá, `truckCarriesEmpty`). Sim vedie kamión vždy na bunke cesty (v `waiting`
- *   na vstupnej bunke stojiska, v `loading` na vonkajšej bunke konektora docku); prezentovaná poloha (`truckPose`) je však
- *   v `waiting` stred stojiska `stalls[truck.bay]` (kurz podľa rotácie modulu) a v `loading` stred docku `docks[truck.dock]`
- *   z manifestu s kabínou von z rampy (kamión do docku cúva, F5b č. 11; `dockHeading`). Rovnako v `unloading` (F6a: exportný
- *   kamión vykladá na dock rampy). V `loading` / `unloading` nesie VM aj `approach` — sim polohu (vonkajšia bunka konektora)
- *   a kurz príjazdu, z ktorých renderer kamión plynule vedie do docku (`dock-maneuver.ts`), a `prevState` (stav pred
- *   posledným tickom), z ktorého pozná práve dokončený príjazd (`to_dock` → `loading` / `unloading`). Pri zmene stavu
- *   z/do `waiting` / `loading` / `unloading` (skok do stojiska / z docku) je `prev = curr`, aby sa kamión neinterpoloval
- *   naprieč mapou; výjazd z docku (`loading` / `unloading` → `to_gate_out`) vedie renderer časom, nie interpoláciou ticku.
  *
  * Bez side-effectov a bez závislosti na DOM/Pixi/React.
  */
-import type { ContainerVM, CraneVM, EntitiesVM, MachineVM, ModuleVM, ShipVM, StackVM, TruckVM, VehicleVM, ViewRotation } from '@render/view-models';
+import type { ContainerVM, CraneVM, EntitiesVM, GateLaneVM, HoldingSlotVM, MachineVM, ModuleVM, ShipVM, StackVM, TpCellVM, TruckVM, VehicleVM, ViewRotation } from '@render/view-models';
 import type { CargoLocation, CargoUnit } from '@sim/cargo';
 import type { EntityId } from '@sim/core';
 import { moduleLanes } from '@sim/logistics';
-import { BerthModule, CraneModule, RtgBlock, craneCargo, craneTrolley, EmptyDepot, StorageModule, TruckGate, VehicleDepot, YardBlock, type Module } from '@sim/modules';
+import { BerthModule, CraneModule, RtgBlock, adjacentLaneGroups, craneCargo, craneTrolley, EmptyDepot, StorageModule, PreGateBuffer, TruckGate, TruckHolding, VehicleDepot, YardBlock, type LaneRoofPlacement, type Module } from '@sim/modules';
 import { SHIP_STATE_TRAITS, type Ship } from '@sim/ships';
-import type { Truck } from '@sim/trucks';
+import { tpCellsOf, type Truck } from '@sim/trucks';
 import { hookCellOfCrane } from '@sim/vehicles';
 import { holdsRoad } from '@sim/traffic';
 import type { World } from '@sim/world';
@@ -134,35 +120,77 @@ export function hasRoadConnector(module: Module): boolean {
   return module.connectors.some((connector) => connector.type === 'road');
 }
 
-/**
- * Index vstupného konektora brány v defe (`gate.connectors`, poradie ako `sprites.<defId>.connectors` v manifeste);
- * neurčená strana (svet ju ešte nevyhodnotil) → 0, prvý konektor.
- */
-function entryConnectorOf(gate: TruckGate): number {
-  const { entrySide } = gate;
-  return entrySide === null ? 0 : Math.max(0, gate.connectors.indexOf(entrySide));
+/** Strecha pruhov brány podľa modulov (R4, `adjacentLaneGroups`); mení sa len s modulmi, preto ju `EntitiesVMBuilder` cachuje podľa revízie. */
+export type LaneRoofs = ReadonlyMap<EntityId, LaneRoofPlacement>;
+
+/** Bez zoskupenia pruhov (každý pruh `single`). */
+const NO_ROOFS: LaneRoofs = new Map();
+
+/** Polia VM, ktoré sa menia aj bez udalosti (každý tick): pruh brány, TP bloku a miesta odstavnej plochy. */
+interface LiveParts {
+  gateLane?: GateLaneVM;
+  tpCells?: readonly TpCellVM[];
+  holdingSlots?: readonly HoldingSlotVM[];
 }
 
-/** VM brány: fronta, závora a vstupný konektor. */
-function gateVM(gate: TruckGate): NonNullable<ModuleVM['gate']> {
-  return { queueLength: gate.queueLength, open: gate.isOpen, entryConnector: entryConnectorOf(gate) };
+/** Kľúče `LiveParts` (pri obnove VM sa najprv zahodia a potom nahradia čerstvými). */
+const LIVE_KEYS: readonly (keyof LiveParts)[] = ['gateLane', 'tpCells', 'holdingSlots'];
+
+/** Pruh brány: smer, režim, strecha a aktuálny krok (`currentStep`). */
+function gateLaneVM(gate: TruckGate, roofs: LaneRoofs): GateLaneVM {
+  const step = gate.currentStep();
+  return {
+    kind: gate.direction,
+    mode: gate.mode,
+    roofPart: roofs.get(gate.id)?.position ?? 'single',
+    ...(step === null ? {} : { step: step.id, progress: step.progress }),
+  };
 }
 
-/** Zadržané (VGM hold) jednotky jedného modulu: všetky, po dockoch rampy a sloty apronu (utriedené vzostupne). */
+/** TP bloku (bunky sveta) s príznakom obsadenia: kamión na TP (`at_tp` / `at_edge_tp`) s `tpCell` v tej bunke. */
+function tpCellVMs(world: World, block: YardBlock): readonly TpCellVM[] {
+  const busy = new Set<number>();
+  for (const truck of world.trucks.values()) {
+    if (truck.tpCell !== null && (truck.state === 'at_tp' || truck.state === 'at_edge_tp')) busy.add(truck.tpCell);
+  }
+  const { width } = world.grid;
+  return tpCellsOf(world, block).map((cell) => ({ x: cell % width, y: Math.floor(cell / width), busy: busy.has(cell) }));
+}
+
+/** Státia odstavnej plochy (bunky sveta) a obsadenie kamiónmi s `holdingId` a `stall`. */
+function holdingSlotVMs(world: World, holding: TruckHolding): readonly HoldingSlotVM[] {
+  const taken = new Set<number>();
+  for (const truck of world.trucks.values()) {
+    if (truck.holdingId === holding.id && truck.stall !== null) taken.add(truck.stall);
+  }
+  return holding.stallCells().map((cell, stall) => ({ x: cell.x, y: cell.y, occupied: taken.has(stall) }));
+}
+
+/** Živé polia VM modulu (`isLiveModule`); modul bez nich vráti prázdny objekt. */
+function liveParts(world: World, module: Module, roofs: LaneRoofs): LiveParts {
+  if (module instanceof TruckGate) return { gateLane: gateLaneVM(module, roofs) };
+  if (module instanceof YardBlock) {
+    const tpCells = tpCellVMs(world, module);
+    return tpCells.length > 0 ? { tpCells } : {};
+  }
+  if (module instanceof TruckHolding) return { holdingSlots: holdingSlotVMs(world, module) };
+  return {};
+}
+
+/** Zadržané (VGM hold) jednotky jedného modulu: všetky a sloty apronu (utriedené vzostupne). */
 interface HeldAt {
   count: number;
-  readonly docks: Map<number, number>;
   readonly slots: number[];
 }
 
-/** Zadržané jednotky podľa `id` modulu (sklad, rampa, berth); modul bez zadržaných jednotiek záznam nemá. */
+/** Zadržané jednotky podľa `id` modulu (sklad, berth); modul bez zadržaných jednotiek záznam nemá. */
 export type HeldByModule = ReadonlyMap<number, HeldAt>;
 
 /** Bez zadržaných jednotiek (`holdIndex` je prázdny, F2–F6 testy, `moduleVMs(world)`). */
 const NO_HELD: HeldByModule = new Map();
 
-/** Modul, v ktorom jednotka leží, a jej miesto (dock rampy / slot apronu); jednotka mimo skladu, rampy a apronu → `undefined`. */
-function heldPlace(location: CargoLocation): { moduleId: EntityId; dock?: number; slot?: number } | undefined {
+/** Modul, v ktorom jednotka leží, a jej miesto (slot apronu); jednotka mimo skladu a apronu → `undefined`. */
+function heldPlace(location: CargoLocation): { moduleId: EntityId; slot?: number } | undefined {
   if (location.kind === 'in_storage') return { moduleId: location.moduleId };
   if (location.kind === 'on_apron') return { moduleId: location.berthId, slot: location.slot };
   return undefined;
@@ -182,17 +210,16 @@ export function heldByModule(world: World): HeldByModule {
     if (place === undefined) continue;
     let at = result.get(place.moduleId);
     if (at === undefined) {
-      at = { count: 0, docks: new Map(), slots: [] };
+      at = { count: 0, slots: [] };
       result.set(place.moduleId, at);
     }
     at.count += 1;
-    if (place.dock !== undefined) at.docks.set(place.dock, (at.docks.get(place.dock) ?? 0) + 1);
     if (place.slot !== undefined) at.slots.push(place.slot);
   }
   return result;
 }
 
-/** `ModuleVM.held` modulu: rampa dopĺňa `docks[i]`, berth `slots`; sklad nesie len `count`. */
+/** `ModuleVM.held` modulu: berth dopĺňa `slots`; sklad nesie len `count`. */
 function heldVM(module: Module, at: HeldAt): NonNullable<ModuleVM['held']> {
   if (module instanceof BerthModule) return { count: at.count, slots: [...at.slots].sort((a, b) => a - b) };
   return { count: at.count };
@@ -200,7 +227,7 @@ function heldVM(module: Module, at: HeldAt): NonNullable<ModuleVM['held']> {
 
 /** Modul, ktorého VM sa môže zmeniť aj bez udalosti v `REVISION_EVENTS` (pozemné moduly s kamiónmi): porovnáva sa so živým modulom pri každom snapshote. */
 export function isLiveModule(module: Module): boolean {
-  return module instanceof TruckGate;
+  return module instanceof TruckGate || module instanceof YardBlock || module instanceof TruckHolding;
 }
 
 /** Stohy bloku skladu (R2): všetky pozície `(bay, row)` s výškou a vrchným kontajnerom. */
@@ -226,9 +253,9 @@ function yardBlockStacks(world: World, yard: YardBlock): readonly StackVM[] {
 
 /**
  * VM jedného modulu (mimo žeriavov); `storageOps` dopĺňa `lastStorageOp` skladom (animácia žeriavu dvora), `held` odznak
- * VGM hold skladu, rampy a berthu.
+ * VGM hold skladu a berthu.
  */
-function moduleVM(world: World, module: Module, storageOps: StorageOps = NO_STORAGE_OPS, held: HeldByModule = NO_HELD): ModuleVM {
+function moduleVM(world: World, module: Module, storageOps: StorageOps = NO_STORAGE_OPS, held: HeldByModule = NO_HELD, roofs: LaneRoofs = NO_ROOFS): ModuleVM {
   const vm: ModuleVM = {
     id: module.id,
     defId: module.def.id,
@@ -256,7 +283,6 @@ function moduleVM(world: World, module: Module, storageOps: StorageOps = NO_STOR
     if (op !== undefined) vm.lastStorageOp = { slot: op.slot, tick: op.tick, kind: op.kind, ...(op.empty === true ? { empty: true } : {}) };
     if (module instanceof EmptyDepot) vm.depot = depotVM(world, module);
   }
-  if (module instanceof TruckGate) vm.gate = gateVM(module);
   if (module instanceof VehicleDepot) {
     // Depo vozidiel (R1, ADR-037 bod 11): parked vehicles vzostupne podľa id
     const parkedVehicles: { id: number; defId: string }[] = [];
@@ -278,16 +304,18 @@ function moduleVM(world: World, module: Module, storageOps: StorageOps = NO_STOR
   if (hasRoadConnector(module)) vm.connected = world.isConnected(module);
   const heldHere = held.get(module.id);
   if (heldHere !== undefined) vm.held = heldVM(module, heldHere);
+  Object.assign(vm, liveParts(world, module, roofs));
   return vm;
 }
 
 /** Moduly sveta v poradí umiestnenia, bez žeriavov. */
 export function moduleVMs(world: World, storageOps: StorageOps = NO_STORAGE_OPS): ModuleVM[] {
   const held = heldByModule(world);
+  const roofs = adjacentLaneGroups(world.modules.values());
   const result: ModuleVM[] = [];
   for (const module of world.modules.values()) {
     if (module.kind === CRANE_KIND) continue;
-    result.push(moduleVM(world, module, storageOps, held));
+    result.push(moduleVM(world, module, storageOps, held, roofs));
   }
   return result;
 }
@@ -458,8 +486,8 @@ export function vehicleVMs(world: World, prev: VehiclePoses = NO_VEHICLE_POSES):
 /** Stavy brány: `gate_pass` (vjazd) a `gate_pass_out` (výjazd). */
 const GATE_PASS_STATES: ReadonlySet<string> = new Set<string>(['gate_pass', 'gate_pass_out']);
 
-/** Stav kamióna, v ktorom sa kreslí v strede brány (`gate_pass` / `gate_pass_out`), nie na bunke cesty. */
-const SLOT_STATES: ReadonlySet<string> = new Set<string>(GATE_PASS_STATES);
+/** Stavy kamióna, v ktorých sa kreslí na vyhradenom mieste modulu (pruh brány, rad plochy, státie), nie na bunke cesty. */
+const SLOT_STATES: ReadonlySet<string> = new Set<string>([...GATE_PASS_STATES, 'pre_gate', 'holding']);
 
 /** Zmeniteľná póza (bridge ju prepisuje pred každým tickom bez alokácie). */
 export interface MutableTruckPose {
@@ -471,19 +499,41 @@ export interface MutableTruckPose {
   carriesEmpty?: boolean;
 }
 
+/** Stred miesta s lokálnymi súradnicami (bunky, rot 0) v module `host` vo svete (po rotácii modulu). */
+function moduleLocalCenter(host: Module, lx: number, ly: number): { x: number; y: number } {
+  const { w, h } = host.def.footprint;
+  const local = { 0: { x: lx, y: ly }, 90: { x: h - ly, y: lx }, 180: { x: w - lx, y: h - ly }, 270: { x: ly, y: w - lx } }[host.rotation];
+  return { x: host.origin.x + local.x, y: host.origin.y + local.y };
+}
+
+/** Stred miesta `slot` (0 = čelo) v rade `row` predbránovej plochy: miesta po 3 bunky, zvislo vycentrované (ako `pre-gate-decor`). */
+function preGateSlotCenter(buffer: PreGateBuffer, row: number, slot: number): { x: number; y: number } {
+  const slotCells = 3;
+  const top = (buffer.def.footprint.h - buffer.rowCapacity * slotCells) / 2;
+  return moduleLocalCenter(buffer, row + 0.5, top + slot * slotCells + slotCells / 2);
+}
+
 /**
- * Zapíše prezentovanú pózu kamióna do `out`: v `waiting` stred stojiska `stalls[truck.bay]` čakacej plochy, v `loading`
- * a `unloading` stred docku `docks[truck.dock]` rampy (kurz = rotácia modulu), v `gate_pass` a `gate_pass_out` stred brány;
- * inak (aj keď modul alebo slot v manifeste chýba) poloha a kurz zo simu.
+ * Zapíše prezentovanú pózu kamióna do `out`: v `gate_pass` a `gate_pass_out` stred pruhu brány, v `pre_gate` miesto v rade predbránovej plochy (kabína v smere
+ * plochy), v `holding` stred státia odstavnej plochy; inak (aj keď modul chýba) poloha a kurz zo simu. `state` je stav FSM simu.
  */
 export function writeTruckPose(world: World, truck: Truck, out: MutableTruckPose): void {
   let slot: { x: number; y: number } | undefined;
   let host: Module | undefined;
   if (GATE_PASS_STATES.has(truck.state)) {
     host = world.modules.get(truck.state === 'gate_pass_out' && truck.gateOutId !== null ? truck.gateOutId : truck.gateId);
-    if (host instanceof TruckGate) {
-      // Stred brány modulu
-      slot = { x: host.origin.x + host.size.w / 2, y: host.origin.y + host.size.h / 2 };
+    if (host instanceof TruckGate) slot = { x: host.origin.x + host.size.w / 2, y: host.origin.y + host.size.h / 2 };
+  } else if (truck.state === 'pre_gate' && truck.preGateId !== null && truck.row !== null) {
+    host = world.modules.get(truck.preGateId);
+    if (host instanceof PreGateBuffer) {
+      const index = host.rowTrucks(truck.row).indexOf(truck.id);
+      if (index >= 0) slot = preGateSlotCenter(host, truck.row, index);
+    }
+  } else if (truck.state === 'holding' && truck.holdingId !== null && truck.stall !== null) {
+    host = world.modules.get(truck.holdingId);
+    if (host instanceof TruckHolding) {
+      const cell = host.stallCell(truck.stall);
+      slot = { x: cell.x + 0.5, y: cell.y + 0.5 };
     }
   }
   out.x = slot?.x ?? truck.x;
@@ -589,13 +639,25 @@ interface LiveModule {
   readonly module: Module;
 }
 
-/** Plytká zhoda VM brány / stojiska so živým modulom (nič nealokuje); iné moduly sa nemenia bez udalosti. */
-function liveModuleChanged(vm: ModuleVM, module: Module): boolean {
-  if (module instanceof TruckGate) {
-    const { gate } = vm;
-    return gate === undefined || gate.queueLength !== module.queueLength || gate.open !== module.isOpen || gate.entryConnector !== entryConnectorOf(module);
+/** Zhoda dvoch polí rovnakých plochých objektov (hodnoty primitívne). */
+function sameItems<T extends object>(a: readonly T[] | undefined, b: readonly T[] | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  if (a.length !== b.length) return false;
+  return a.every((item, i) => {
+    const other = b[i] as Record<string, unknown>;
+    return Object.entries(item).every(([key, value]) => other[key] === value);
+  });
+}
+
+/** Zhoda živých polí VM so živým modulom (nič sa nemení bez udalosti, takže väčšinou bez alokácie nového VM). */
+function liveModuleChanged(vm: ModuleVM, parts: LiveParts): boolean {
+  const { gateLane } = vm;
+  const next = parts.gateLane;
+  if ((gateLane === undefined) !== (next === undefined)) return true;
+  if (gateLane !== undefined && next !== undefined) {
+    if (gateLane.kind !== next.kind || gateLane.mode !== next.mode || gateLane.roofPart !== next.roofPart || gateLane.step !== next.step || gateLane.progress !== next.progress) return true;
   }
-  return false;
+  return !sameItems(vm.tpCells, parts.tpCells) || !sameItems(vm.holdingSlots, parts.holdingSlots);
 }
 
 /**
@@ -612,6 +674,8 @@ export class EntitiesVMBuilder {
   private modulesRevision: number | null = null;
   private modules: readonly ModuleVM[] = Object.freeze([]);
   private live: readonly LiveModule[] = [];
+  /** Strecha pruhov brány (R4): prepočíta sa s modulmi pri zmene revízie. */
+  private roofs: LaneRoofs = NO_ROOFS;
   /** Náklad lodí pre palubu (F6c): prepočíta sa len pri zmene revízie alebo počtu jednotiek na palube. */
   private readonly shipSplits = new ShipSplitCache();
 
@@ -626,12 +690,13 @@ export class EntitiesVMBuilder {
   ): SimEntitiesVM {
     if (this.modulesRevision !== revision) {
       const held = heldByModule(world);
+      this.roofs = adjacentLaneGroups(world.modules.values());
       const modules: ModuleVM[] = [];
       const live: LiveModule[] = [];
       for (const module of world.modules.values()) {
         if (module.kind === CRANE_KIND) continue;
         if (isLiveModule(module)) live.push({ index: modules.length, module });
-        modules.push(moduleVM(world, module, storageOps, held));
+        modules.push(moduleVM(world, module, storageOps, held, this.roofs));
       }
       this.modules = Object.freeze(modules);
       this.live = live;
@@ -654,9 +719,12 @@ export class EntitiesVMBuilder {
   private refreshLiveModules(world: World): void {
     let next: ModuleVM[] | null = null;
     for (const { index, module } of this.live) {
-      if (!liveModuleChanged(this.modules[index], module)) continue;
+      const parts = liveParts(world, module, this.roofs);
+      if (!liveModuleChanged(this.modules[index], parts)) continue;
       next ??= [...this.modules];
-      next[index] = moduleVM(world, module);
+      const base: ModuleVM = { ...this.modules[index] };
+      for (const key of LIVE_KEYS) delete base[key];
+      next[index] = Object.assign(base, parts);
     }
     if (next !== null) this.modules = Object.freeze(next);
   }

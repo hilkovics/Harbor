@@ -125,7 +125,7 @@ describe('TruckVM: prev (interpolácia) v SimBridge', () => {
           expect([vm.prevX, vm.prevY, vm.prevHeading]).toEqual([vm.x, vm.y, vm.heading]); // nový kamión
           continue;
         }
-        const slotSwitch = last.state !== vm.state && ['gate_pass', 'gate_pass_out'].some((state) => state === last.state || state === vm.state);
+        const slotSwitch = last.state !== vm.state && ['gate_pass', 'gate_pass_out', 'pre_gate', 'holding'].some((state) => state === last.state || state === vm.state);
         if (slotSwitch) {
           expect([vm.prevX, vm.prevY, vm.prevHeading]).toEqual([vm.x, vm.y, vm.heading]);
           if (vm.state === 'gate_pass' || vm.state === 'gate_pass_out') jumps.intoGate += 1;

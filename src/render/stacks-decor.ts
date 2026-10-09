@@ -16,9 +16,9 @@
  * 8 (posun 24 px je väčší než šírka kontajnera). Tieň sa orezáva na plochu bloku. Stohy sa kreslia od najnižšieho, takže tieň vyššieho stohu padá na
  * nižšie susedné. Režim „Odznak“ (kruh s číslom) pribudne neskôr (BACKLOG).
  */
-import { Container, Graphics } from 'pixi.js';
+import { Container, Graphics, Sprite } from 'pixi.js';
 import { CargoSprite, cargoSizePx } from './cargo-sprite';
-import { manifestScale } from './entity-assets';
+import { REEFER_PLUG_FILES, REEFER_PLUG_SIZE, manifestScale } from './entity-assets';
 import type { ModuleDecor, ModuleDecorContext, ModuleDecorFactory } from './module-decor';
 import type { ModuleVM, StackGeometryVM, StackVM } from './view-models';
 
@@ -160,7 +160,7 @@ function signatureOf(vm: ModuleVM, geometry: StackGeometryVM): string {
     const top = stack.top;
     parts.push(
       `${String(stack.bay)},${String(stack.row)},${String(stack.height)}` +
-        (top === null ? '' : `,${String(top.sizeFt)},${top.containerType},${top.lineId ?? ''},${top.direction}`),
+        (top === null ? '' : `,${String(top.sizeFt)},${top.containerType},${top.lineId ?? ''},${top.direction},${top.oog === true ? 'o' : ''},${top.reefer ?? ''}`),
     );
   }
   return parts.join(';');
@@ -259,6 +259,25 @@ export class StacksDecor implements ModuleDecor {
     this.grid.stroke({ width: (OUTLINE_CELLS * cellPx) / 2, color: grid.color, alpha: grid.alpha });
   }
 
+  /** Odznak zásuvky reefera (`overlay.reefer_plug_<stav>`) na pravom konci vrchného kontajnera; bez textúry malý kruh z tokenov (`on` accent, `off` neutrál, `alarm` varovanie). */
+  private plugBadge(state: 'on' | 'off' | 'alarm', x: number, y: number, fit: number): Container {
+    const { cellPx, palette, textures } = this.context.deps;
+    const size = REEFER_PLUG_SIZE.w * manifestScale(cellPx) * fit;
+    const holder = new Container({ label: `reefer-plug-${state}` });
+    holder.position.set(x, y);
+    const texture = textures?.file(REEFER_PLUG_FILES[state]);
+    if (texture !== undefined) {
+      const sprite = new Sprite(texture);
+      sprite.anchor.set(0.5);
+      sprite.setSize(size, size);
+      holder.addChild(sprite);
+    } else {
+      const color = state === 'on' ? palette.accent : state === 'alarm' ? palette.emptyState.repair : palette.container.neutral;
+      holder.addChild(new Graphics().circle(0, 0, size / 2).fill({ color: color.color, alpha: color.alpha }));
+    }
+    return holder;
+  }
+
   /** Vrchné kontajnery od najnižšieho stohu; pred každým jeho tieň (výška × krok dole-vpravo), orezaný na plochu bloku. */
   private drawStacks(stacks: readonly VisibleStack[], layout: StackLayout): void {
     const { deps } = this.context;
@@ -282,6 +301,8 @@ export class StacksDecor implements ModuleDecor {
       const clamped = outline.map((value, index) => (index % 2 === 0 ? Math.min(Math.max(value, limit.left), limit.right) : Math.min(Math.max(value, limit.top), limit.bottom)));
       shadow.poly(clamped).fill({ color: palette.stack.shadow.color, alpha: palette.stack.shadow.alpha });
       this.tops.addChild(shadow, sprite);
+      const plug = stack.top.reefer === undefined ? undefined : this.plugBadge(stack.top.reefer, at.x + w / 2 - (REEFER_PLUG_SIZE.w * manifestScale(cellPx) * layout.fit) / 2, at.y, layout.fit);
+      if (plug !== undefined) this.tops.addChild(plug);
       this.stackList.push({ bay: stack.bay, row: stack.row, height: stack.height, sizeFt: stack.top.sizeFt, sprite, shadow });
     }
   }

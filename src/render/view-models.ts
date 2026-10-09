@@ -23,6 +23,20 @@ export interface ContainerVM {
   containerType: string;
   lineId: string | null;
   direction: ContainerDirectionVM;
+  /** R5: nadrozmerný náklad (OOG) → sprite `container_<size>_<type>_oog`, ak existuje (inak bežný). */
+  oog?: boolean;
+  /** R5: stav zásuvky reefera (len vrchný kontajner stohu): odznak `overlay.reefer_plug_<stav>` na kontajneri. */
+  reefer?: ReeferPlugStateVM;
+}
+
+/** Stav zásuvky reefera na bloku (`on` zapojený, `off` odpojený, `alarm` porucha). */
+export type ReeferPlugStateVM = 'on' | 'off' | 'alarm';
+
+/** Zásuvka reefer racku (R5): stred v bunkách sveta (stred bunky = +0,5) a stav (`empty` = voľná, nekreslí sa). */
+export interface ReeferPlugVM {
+  x: number;
+  y: number;
+  state: ReeferPlugStateVM | 'empty';
 }
 
 /** Jeden stoh bloku skladu (R2): pozícia `bay` × `row` (od 0), výška stohu (0 = prázdna pozícia) a vrchný kontajner (`null` pri výške 0). */
@@ -43,6 +57,8 @@ export interface StackGeometryVM {
 export interface ModuleVM {
   id: number;
   defId: string;
+  /** R5: zásuvky reefer racku (`reefer_rack`) — ikony `overlay.reefer_plug_*` v bunkách sveta. */
+  plugs?: readonly ReeferPlugVM[];
   kind: string;
   /** Ľavý horný roh footprintu PO rotácii (bunky). */
   x: number;
@@ -337,6 +353,10 @@ export interface MachineVM {
   hoist: number;
   state: string;
   cargo: ContainerVM | null;
+  /** R5 (`reach_stacker`): uhol stroja v stupňoch v smere hodinových ručičiek (0 = predkom hore). */
+  angle?: number;
+  /** R5 (`reach_stacker`): vysunutie výložníka 0..1 (0 = zasunutý). */
+  boom?: number;
 }
 
 export interface EntitiesVM {

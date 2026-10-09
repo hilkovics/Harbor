@@ -927,6 +927,11 @@
     "gate_in_lane": {
       "footprint": { "w": 1, "h": 4 },
       "file": "modules/gate_in_lane_single.svg",
+      "parts": {
+        "left": { "file": "modules/gate_in_lane_left.svg", "footprint": { "w": 1, "h": 4 } },
+        "mid": { "file": "modules/gate_in_lane_mid.svg", "footprint": { "w": 1, "h": 4 } },
+        "right": { "file": "modules/gate_in_lane_right.svg", "footprint": { "w": 1, "h": 4 } }
+      },
       "connectors": [
         { "x": 0, "y": 3, "side": "s", "type": "road" },
         { "x": 0, "y": 0, "side": "n", "type": "road" }
@@ -935,14 +940,35 @@
     "gate_out_lane": {
       "footprint": { "w": 1, "h": 4 },
       "file": "modules/gate_out_lane_single.svg",
+      "parts": {
+        "left": { "file": "modules/gate_out_lane_left.svg", "footprint": { "w": 1, "h": 4 } },
+        "mid": { "file": "modules/gate_out_lane_mid.svg", "footprint": { "w": 1, "h": 4 } },
+        "right": { "file": "modules/gate_out_lane_right.svg", "footprint": { "w": 1, "h": 4 } }
+      },
       "connectors": [
         { "x": 0, "y": 3, "side": "s", "type": "road" },
         { "x": 0, "y": 0, "side": "n", "type": "road" }
       ]
     },
+    "gate_lane_barrier": {
+      "footprint": { "w": 1, "h": 1 },
+      "parts": {
+        "barrier": {
+          "file": "modules/gate_lane_barrier.svg",
+          "footprint": { "w": 1, "h": 1 },
+          "offset": { "x": 0, "y": 24 },
+          "pivot": { "x": 9, "y": 32 },
+          "closedDeg": 0,
+          "openDeg": -90
+        }
+      },
+      "connectors": []
+    },
     "pre_gate_buffer": {
       "footprint": { "w": 8, "h": 8 },
-      "file": "modules/pre_gate_lane.svg",
+      "parts": {
+        "lane": { "file": "modules/pre_gate_lane.svg", "footprint": { "w": 1, "h": 6 } }
+      },
       "connectors": [
         { "x": 0, "y": 7, "side": "s", "type": "road" },
         { "x": 7, "y": 0, "side": "n", "type": "road" }
@@ -2045,6 +2071,24 @@
         "w": 200,
         "h": 12
       }
+    },
+    "tp_marker": {
+      "file": "overlay/tp_marker.svg",
+      "footprint": { "w": 1, "h": 1 },
+      "rotatable": true,
+      "note": "odovzdávacie miesto RTG; šípka = smer jazdy"
+    },
+    "safe_zone": {
+      "file": "overlay/safe_zone.svg",
+      "footprint": { "w": 1, "h": 1 },
+      "rotatable": true,
+      "note": "bezpečnostná zóna pri TP; kreslí sa, keď je TP obsadené"
+    },
+    "inspection_bay": {
+      "file": "overlay/inspection_bay.svg",
+      "footprint": { "w": 1, "h": 3 },
+      "rotatable": true,
+      "note": "kontrolné státie výstupnej brány"
     },
     "queue_badge": {
       "file": "overlay/queue_badge.svg",

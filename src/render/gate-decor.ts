@@ -93,7 +93,7 @@ export function queueBadgePosition(
 }
 
 /** Závora: kontajner v pivote (jeho `angle` je uhol závory), v ňom sprite alebo fallback rameno. */
-function createBarrier(part: ManifestPart, context: ModuleDecorContext): Container {
+export function createBarrier(part: ManifestPart, context: ModuleDecorContext): Container {
   const { cellPx, textures, palette } = context.deps;
   const { pose } = context;
   const unit = manifestScale(cellPx);

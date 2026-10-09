@@ -131,6 +131,40 @@ export interface ModuleVM {
    * šípkový overlay nad telom modulu (`lanes-decor.ts`). Chýba / prázdne = bez overlaya. Plní `SimBridge` (TR3-05).
    */
   lanes?: readonly LaneCellVM[];
+  /**
+   * R4 (TERMINAL_2, TR4-03): pruh brány (`gate_in_lane` / `gate_out_lane`) — strecha podľa polohy v rade susedných pruhov (`roofPart`; chýba = `single`),
+   * krok spracovania (`step`: `ocr`, `check`, `weigh`, … ; chýba = voľný pruh, závora hore) a jeho postup 0..1. Renderer kreslí strechu, závoru, štítok kroku a pruh
+   * postupu (`gate-lane-decor.ts`). Plní `SimBridge` (TR4-05).
+   */
+  gateLane?: GateLaneVM;
+  /** R4: odovzdávacie miesta RTG bloku (svet, bunky) — overlay `tp_marker`, pri `busy` aj `safe_zone` (`tp-holding-decor.ts`). */
+  tpCells?: readonly TpCellVM[];
+  /** R4: miesta odstavnej plochy kamiónov (svet, bunky) a ich obsadenosť (`tp-holding-decor.ts`). */
+  holdingSlots?: readonly HoldingSlotVM[];
+}
+
+/** Pruh brány (R4): smer, režim, časť strechy, aktuálny krok a jeho postup. */
+export interface GateLaneVM {
+  kind: 'in' | 'out';
+  mode: string;
+  roofPart?: 'single' | 'left' | 'mid' | 'right';
+  step?: string;
+  /** Postup kroku 0..1. */
+  progress?: number;
+}
+
+/** Odovzdávacie miesto RTG (R4): bunka (svet) a či je práve obsadené (kamión / ťahač pri bloku). */
+export interface TpCellVM {
+  x: number;
+  y: number;
+  busy: boolean;
+}
+
+/** Miesto odstavnej plochy (R4): bunka (svet) a či na ňom stojí kamión. */
+export interface HoldingSlotVM {
+  x: number;
+  y: number;
+  occupied: boolean;
 }
 
 /** Bunka pruhu so smerom jazdy (R3): `dir` = strana, ktorou vozidlo bunku opúšťa (`e` = doprava). */

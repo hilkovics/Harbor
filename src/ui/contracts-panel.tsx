@@ -1046,11 +1046,70 @@ function rewardTone(cents: number, expired: boolean): 'pos' | 'neg' | 'zero' | '
   return sign < 0 ? 'neg' : sign > 0 ? 'pos' : 'zero';
 }
 
+/** Typ kontajnera v zmesi kontraktu (TR5, TERMINAL_2 §3): suchý, reefer, open top, flat rack, tank. */
+export type ContainerTypeKey = 'dry' | 'reefer' | 'open_top' | 'flat_rack' | 'tank';
+
+/** Jeden čip zmesi typov: počet kontajnerov daného typu; `oogCount` = z nich nadrozmerných (OOG). */
+export interface ContractTypeChip {
+  readonly type: ContainerTypeKey;
+  readonly count: number;
+  readonly oogCount?: number;
+}
+
+export const CONTAINER_TYPE_LABELS: Readonly<Record<ContainerTypeKey, string>> = {
+  dry: 'dry',
+  reefer: 'reefer',
+  open_top: 'open top',
+  flat_rack: 'flat rack',
+  tank: 'tank',
+};
+
+export const CONTAINER_TYPE_ICONS: Readonly<Record<ContainerTypeKey, IconName>> = {
+  dry: 'ic_container_40',
+  reefer: 'ic_reefer',
+  open_top: 'ic_open_top',
+  flat_rack: 'ic_flat_rack',
+  tank: 'ic_tank',
+};
+
 export interface ContractCardProps {
   readonly contract: ContractCardData;
   readonly time: ContractsTimeScale;
   readonly onAccept: (id: ContractCardId) => void;
   readonly onDecline: (id: ContractCardId) => void;
+  /** TR5-04: zmes typov kontajnerov (čipy + odznak OOG); bez nej sa rad nekreslí. */
+  readonly typeMix?: readonly ContractTypeChip[];
+}
+
+/** Riadok čipov zmesi typov; čip s nulou je stlmený, OOG odznak sa kreslí len pri `oogCount > 0`. */
+function TypeMixChips({ chips }: { readonly chips: readonly ContractTypeChip[] }) {
+  if (chips.length === 0) return null;
+  return (
+    <div className="contract-card__types" data-section="type-mix" aria-label="Zmes typov kontajnerov">
+      {chips.map((chip) => {
+        const oog = chip.oogCount ?? 0;
+        return (
+          <span
+            key={chip.type}
+            className={`contract-card__type contract-card__type--${chip.type}${chip.count === 0 ? ' contract-card__type--empty' : ''}`}
+            data-type={chip.type}
+            data-count={chip.count}
+          >
+            <Icon name={CONTAINER_TYPE_ICONS[chip.type]} className="contract-card__type-icon" />
+            <span className="contract-card__type-count" data-field={`type-count-${chip.type}`}>
+              {formatCount(chip.count)}
+            </span>
+            <span className="contract-card__type-label">{CONTAINER_TYPE_LABELS[chip.type]}</span>
+            {oog > 0 && (
+              <span className="contract-card__oog" data-field={`oog-${chip.type}`}>
+                {`OOG ${formatCount(oog)}`}
+              </span>
+            )}
+          </span>
+        );
+      })}
+    </div>
+  );
 }
 
 /** Predpona názvu karty podľa druhu: `Export · Kontajnery`; import je bez predpony (názov nákladu). */
@@ -1068,7 +1127,7 @@ const KIND_ARIA_NAME: Readonly<Record<ContractCardKind, string>> = {
 };
 
 /** Jedna karta kontraktu (import, export booking, repositioning alebo prekládka; roundtrip skladá `VoyageCard`). */
-export function ContractCard({ contract, time, onAccept, onDecline }: ContractCardProps) {
+export function ContractCard({ contract, time, onAccept, onDecline, typeMix }: ContractCardProps) {
   const { id, state } = contract;
   const kind = contractKind(contract);
   const tab = contractTab(state);
@@ -1106,6 +1165,7 @@ export function ContractCard({ contract, time, onAccept, onDecline }: ContractCa
         <span className="contract-card__spacer" />
         <StatusLabel contract={contract} time={time} />
       </div>
+      {typeMix !== undefined && <TypeMixChips chips={typeMix} />}
       <KindSection contract={contract} time={time} line={contract.line} />
       <PenaltyRow cents={contract.penaltiesCents} kind={kind} />
       {state === 'offered' && renderOfferBlock({ parts: [contract], time, onAccept, onDecline })}

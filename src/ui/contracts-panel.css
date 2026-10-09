@@ -741,3 +741,62 @@
     transition: none;
   }
 }
+
+/* TR5-04: zmes typov kontajnerov v karte (čipy dry / reefer / open top / flat rack / tank + odznak OOG).
+   Farby len z tokenov; čip s nulou je stlmený, počty tabular-nums. */
+.contract-card__types {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.contract-card__type {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--space-6);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--ui-border);
+  border-left-width: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.contract-card__type--dry { border-left-color: var(--cargo-container); }
+.contract-card__type--reefer { border-left-color: var(--container-reefer); }
+.contract-card__type--open_top { border-left-color: var(--container-tarp); }
+.contract-card__type--flat_rack { border-left-color: var(--container-neutral); }
+.contract-card__type--tank { border-left-color: var(--cargo-gas); }
+
+.contract-card__type--empty {
+  opacity: 0.35;
+}
+
+.contract-card__type-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--ui-text-2);
+  flex-shrink: 0;
+}
+
+.contract-card__type-count {
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.contract-card__type-label {
+  color: var(--ui-text-2);
+}
+
+.contract-card__oog {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  color: var(--ui-warning);
+  background: color-mix(in srgb, var(--ui-warning) 16%, transparent);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+}

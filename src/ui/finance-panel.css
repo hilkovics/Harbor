@@ -1,0 +1,36 @@
+/* Tabuľka kategórií financií (TR5-04, finance-panel.tsx): len tokeny z design/tokens.css, čísla tabular-nums. */
+
+.finance-panel {
+  width: var(--side-panel-w);
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+  color: var(--ui-text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+}
+
+.finance-panel__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.finance-panel__row {
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.finance-panel__label {
+  padding: var(--space-2) var(--space-4);
+  color: var(--ui-text-2);
+  font-weight: var(--fw-regular);
+  text-align: left;
+}
+
+.finance-panel__value {
+  padding: var(--space-2) var(--space-4);
+  color: var(--ui-text);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}

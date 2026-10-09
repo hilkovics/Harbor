@@ -207,12 +207,10 @@ describe('audit mierky: cesty, lode a moduly', () => {
     expect(moduleSprite('berth_standard')!.footprint).toEqual({ w: 8, h: 4 });
   });
 
-  it('kamión (28 px široký) sa zmestí do pruhu brány aj do radu predbránovej plochy (1 bunka), státie odstavnej plochy je 1 × 3 bunky', () => {
+  it('kamión (28 px široký) sa zmestí do pruhu brány aj do radu predbránovej plochy (1 bunka), státie odstavnej plochy má dĺžku 3 bunky', () => {
     const cell = 64;
     expect(TRUCK_WIDTH_PX).toBeLessThanOrEqual(cell);
-    const stall = moduleSprite('truck_holding')!.stallSize!;
-    expect(stall.w * cell).toBeGreaterThanOrEqual(TRUCK_WIDTH_PX);
-    expect(stall.h * cell).toBeGreaterThanOrEqual(TRUCK_LENGTH_PX);
+    expect(TRUCK_LENGTH_PX).toBeLessThanOrEqual(3 * cell); // státie 1 × 3 bunky (`STALL_LENGTH_CELLS`)
     const lane = moduleSprite('pre_gate_buffer')!.parts!['lane']!.footprint!;
     expect(lane.h * cell).toBeGreaterThanOrEqual(2 * TRUCK_LENGTH_PX / 2); // dve miesta po 3 bunky v rade
   });

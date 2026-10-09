@@ -23,8 +23,8 @@ const FALLBACK_EXPORTED = 12;
 
 /** Pohľad na celé rozloženie pri stavbe: zoom 0,5 (bunka 32 px), stred posunutý o pás HUD a BuildBaru. */
 const OVERVIEW = { x: 47, y: 28, zoom: 0.5 } as const;
-/** Pohľad na pozemnú časť (oba screenshoty): zoom 1 (bunka 64 px), pruhy brány (44–45 × 30–33), dvory a okruh nad nimi. */
-const LANDSIDE_VIEW = { x: 45.5, y: 27.5, zoom: 1 } as const;
+/** Pohľad na pozemnú časť (oba screenshoty): zoom 0,75 (bunka 48 px), pruhy brány (44–45 × 30–33), dvory a okruh nad nimi. */
+const LANDSIDE_VIEW = { x: 45.5, y: 28, zoom: 0.75 } as const;
 
 async function openGame(page: Page): Promise<string[]> {
   const errors: string[] = [];

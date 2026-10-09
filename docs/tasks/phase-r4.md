@@ -54,7 +54,9 @@
 | TR4-03 | Render: pruhy brány so strechou, predbránová plocha, odstavná plocha, TP a safe zone overlay; demo | implementer (sonnet, worktree) | VM kontrakt |
 | TR4-04 | UI: BuildBar (brána, plochy), inšpektor pruhu brány (režim, fronta, kamióny/h), TTT v štatistikách | ui-builder (haiku, worktree) | VM kontrakt |
 | TR4-05 | Napojenie VM, `simrun`, e2e úpravy | implementer (sonnet) | 02, 03, 04 |
+| TR4-05b | Obnova ukážok f4/f6a/f6c/t5b03 bez rampy | implementer (sonnet) | 05 |
 | TR4-06 | Review + opravy | sim-reviewer → sim-architect | 05 |
+| TR4-06b | Opravy review: defy, prednosť holdingu, index obsadenia, ARCHITECTURE | sim-architect (sonnet) | 06 |
 | TR4-07 | e2e, artefakt, docs, PR | orchestrátor + haiku | 06 |
 
 **VM kontrakt** (voliteľné polia):
@@ -64,7 +66,17 @@
 - `TruckVM.state` zahŕňa `at_tp`, `holding`, `gate_lane`.
 
 ## Checklist
-- [ ] TR4-00 · [ ] TR4-01 · [ ] TR4-02 · [ ] TR4-03 · [ ] TR4-04 · [ ] TR4-05 · [ ] TR4-06 · [ ] TR4-07
+- [x] TR4-00 · [x] TR4-01 · [x] TR4-02 · [x] TR4-03 · [x] TR4-04 · [x] TR4-05 · [x] TR4-05b · [x] TR4-06 · [x] TR4-06b · [x] TR4-07
 
 ## Výsledok fázy
-_(doplní orchestrátor)_
+**Stav:** hotová s čiastočnou akceptáciou 2 (TR4-00 … TR4-07, vrátane TR4-05b a TR4-06b).
+
+- **Pipeline:** `pnpm test` 397 súborov / 8 666 testov zelené; e2e 61/61 zelené.
+- **Akceptácia:**
+  1. SPLNENÉ: `live_terminal` na novom rozložení (import, export, prázdne, prekládka), lostUnits 0, stuckAtEnd 0, TTT sa meria (38 min).
+  2. ČIASTOČNE: 8 vstupných pruhov zvládne 100 kamiónov/h bez fronty na verejnej ceste (`r4-gate-peak`, len brána); s obsluhou na TP je najlepšia hodina ≈ 69 kamiónov (strop: 12 TP + 60 státí).
+  3. SPLNENÉ: `stress_f6`, `traffic_stress` (pôvodný seed), `live_terminal`: 100 000 tickov, 0 TrafficJam, stuckAtEnd 0.
+  4. SPLNENÉ: render brány so strechou, predbránová plocha, TP, odstavná plocha.
+  5. SPLNENÉ.
+- Oprava nôh STS (TR4-00) hotová.
+- **Otvorené** (→ `docs/BACKLOG.md` „Z Fázy R4“): STS čaká na ťahač ≈ 60 % (R3, geometria okruhu); priepustnosť TP pri špičke; férovosť výjazdu z brány (STUCK_TICKS 2000); zrušené ukážky dock-maneuver/rampa; WorldState v13; artefakt verzia 12.

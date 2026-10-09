@@ -395,3 +395,21 @@ Stav: **hotová s otvorenou akceptáciou 2** (TR3-01 … TR3-07, vrátane TR3-02
 - E2E: 1 špecifikácia nestabilná pod záťažou (viď vyššie)
 
 **Otvorené:** STS čaká na ťahač < 20 % → R4 (geometria / druhý výjazd z bloku); `stress_f6` 100k zvyškové zápchy (R1, 17 stuck) → R4; výber RTG kliknutím; RTG obsluha kamiónov → R4; reach stacker → R5. Viď `docs/BACKLOG.md` „Z Fázy R3“.
+
+## Fáza R4 — Brána, predbránová plocha, TP a odstavná plocha
+Karty: `docs/tasks/phase-r4.md` · vetva `phase/r4-gates` (stacked nad `phase/r3-tractors-rtg`, PR hilkovics/Harbor#14)
+
+Stav: **hotová s čiastočnou akceptáciou 2** (TR4-00 … TR4-07, vrátane TR4-05b a TR4-06b)
+
+**Výsledky:**
+- `pnpm test`: 397 súborov, 8 666 testov zelených
+- `pnpm test:e2e`: 61/61
+- Akceptácia: 1 splnené (`live_terminal` import, export, prázdne, prekládka; lostUnits 0, stuckAtEnd 0, TTT 38 min); 2 čiastočne (100 kamiónov/h bez fronty na verejnej ceste len v `r4-gate-peak`, len brána; s obsluhou na TP ≈ 69 kamiónov/h, strop 12 TP + 60 státí); 3 splnené (`stress_f6`, `traffic_stress` pôvodný seed, `live_terminal`: 100 000 tickov, 0 TrafficJam, stuckAtEnd 0); 4 splnené (render brány so strechou, predbránová plocha, TP, odstavná plocha); 5 splnené
+
+**Čo je hotové:**
+- ADR-041: brána z pruhov `gate_in_lane` / `gate_out_lane`, predbránová plocha, portály `trafficShare`, TP pri blokoch, odstavná plocha `truck_holding`, dual transaction, lashing; zrušené rampa, stojiská a `truck_gate` z katalógu a máp
+- Oprava nôh STS mimo jazdných pruhov (TR4-00)
+- Obnova ukážok f4/f6a/f6c/t5b03 bez rampy (TR4-05b)
+- Opravy review: defy, prednosť holdingu, index obsadenia, ARCHITECTURE (TR4-06b)
+
+**Otvorené:** STS čaká na ťahač ≈ 60 % (R3, geometria okruhu); priepustnosť TP pri špičke; férovosť výjazdu z brány (STUCK_TICKS 2000); zrušené ukážky dock-maneuver/rampa; WorldState v13; artefakt verzia 12. Viď `docs/BACKLOG.md` „Z Fázy R4“.

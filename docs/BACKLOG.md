@@ -204,3 +204,11 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - **Špička 100/h:** pri jednom súbore tokenov (12 TP + 60 státí) sa 100 jednotiek za hodinu nerozloží do vzniku kamiónov v jednej hodine (≈ 69/h); zvýšiť počet státí / TP, alebo dovoliť vznik kamiónov nad kapacitu tokenov so státím vo vnútrozemí. — pôvod: TR4-02 · fáza: R4+
 - **Manifest `assets/manifest.json`:** sprity `truck_waiting_area`, `loading_ramp_*` ostali ako sirotské záznamy (render a UI ich ešte odkazujú v `src/render/waiting-area-decor.ts`, demách a e2e); odstrániť v TR4-03 / TR4-05 spolu s renderom. — pôvod: TR4-02
 - **Férovosť výjazdu z brány:** kamión v `gate_pass` čaká na voľný slot výjazdovej bunky pruhu, kým ho zahlcuje prejazdná doprava k odstavným plochám (špička 100/h: pobyt ≈ 1 470 – 1 680 ticku, nikdy trvalé uviaznutie); zvážiť prednosť výjazdu z brány pred prejazdnou dopravou. — pôvod: TR4-06b · fáza: R4+
+
+## Z Fázy R4 (TR4-07)
+- **Kapacita TP a státí pri špičke 100/h:** pozri „Špička 100/h“ v „Z Fázy R4 (TR4-02)“ (nezdvojené). — pôvod: TR4-07 · fáza: R4+
+- **Férovosť výjazdu z brány:** pozri položku v „Z Fázy R4 (TR4-02)“ (nezdvojené). — pôvod: TR4-07 · fáza: R4+
+- **STS čaká na ťahač ≈ 60 %:** pozri „Z Fázy R3 (TR3-02)“ (TR3-02b, TR3-02c, TR3-02d; nezdvojené). Geometria okruhu ostáva otvorená. — pôvod: TR4-07 · fáza: R4+
+- **Zrušené ukážky dock-maneuver/rampa:** pozostatok po TR4-05b, stav treba potvrdiť. — pôvod: TR4-07 · fáza: R4 (docs)
+- **WorldState v13:** plán R4 (ADR-041) uvádza save v12; číslo treba potvrdiť. — pôvod: TR4-07 · fáza: R4 (docs)
+- **Artefakt verzia 12:** otvorené pri zverejnení artefaktu R4. — pôvod: TR4-07 · fáza: R4 (artefakt)

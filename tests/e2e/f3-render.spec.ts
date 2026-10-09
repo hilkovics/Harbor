@@ -247,7 +247,7 @@ test.describe('F3: typy ciest, šípky jednosmerky a oblúky (scéna road-kinds)
     expect(state.vehicleCount).toBe(scene.length);
     expect(state.vehicles.every((vehicle) => vehicle.textured)).toBe(true);
     expect(state.styles).toEqual({ wide: 'wide', narrow: 'narrow:0', oneWay: 'narrow:0', taper: expect.stringMatching(/^narrow:[1-9]/), crossArm: expect.stringMatching(/^narrow:[1-9]/) });
-    expect(state.arrows).toBe(90); // okruh 20 + rovná cesta 6 + odbočka 4 + štartová slučka harbor_01 60 (jednosmerka od R1)
+    expect(state.arrows).toBe(92); // okruh 20 + rovná cesta 6 + odbočka 4 + štartová slučka harbor_01 60 (jednosmerka od R1) + západný portál 2 (R4, ADR-041)
     expect([state.arrowE, state.arrowS, state.arrowNone]).toEqual([90, 180, undefined]);
     // vrstva značiek je nad cestami a pod entitami (šípky nezakryjú vozidlá)
     expect(state.layers.indexOf('road-marks')).toBe(state.layers.indexOf('roads') + 1);

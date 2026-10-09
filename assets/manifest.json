@@ -885,39 +885,113 @@
       "slots": 90
     },
     "gate_in_lane": {
-      "footprint": { "w": 1, "h": 4 },
+      "footprint": {
+        "w": 1,
+        "h": 4
+      },
       "file": "modules/gate_in_lane_single.svg",
       "parts": {
-        "left": { "file": "modules/gate_in_lane_left.svg", "footprint": { "w": 1, "h": 4 } },
-        "mid": { "file": "modules/gate_in_lane_mid.svg", "footprint": { "w": 1, "h": 4 } },
-        "right": { "file": "modules/gate_in_lane_right.svg", "footprint": { "w": 1, "h": 4 } }
+        "left": {
+          "file": "modules/gate_in_lane_left.svg",
+          "footprint": {
+            "w": 1,
+            "h": 4
+          }
+        },
+        "mid": {
+          "file": "modules/gate_in_lane_mid.svg",
+          "footprint": {
+            "w": 1,
+            "h": 4
+          }
+        },
+        "right": {
+          "file": "modules/gate_in_lane_right.svg",
+          "footprint": {
+            "w": 1,
+            "h": 4
+          }
+        }
       },
       "connectors": [
-        { "x": 0, "y": 3, "side": "s", "type": "road" },
-        { "x": 0, "y": 0, "side": "n", "type": "road" }
+        {
+          "x": 0,
+          "y": 3,
+          "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 0,
+          "y": 0,
+          "side": "n",
+          "type": "road"
+        }
       ]
     },
     "gate_out_lane": {
-      "footprint": { "w": 1, "h": 4 },
+      "footprint": {
+        "w": 1,
+        "h": 4
+      },
       "file": "modules/gate_out_lane_single.svg",
       "parts": {
-        "left": { "file": "modules/gate_out_lane_left.svg", "footprint": { "w": 1, "h": 4 } },
-        "mid": { "file": "modules/gate_out_lane_mid.svg", "footprint": { "w": 1, "h": 4 } },
-        "right": { "file": "modules/gate_out_lane_right.svg", "footprint": { "w": 1, "h": 4 } }
+        "left": {
+          "file": "modules/gate_out_lane_left.svg",
+          "footprint": {
+            "w": 1,
+            "h": 4
+          }
+        },
+        "mid": {
+          "file": "modules/gate_out_lane_mid.svg",
+          "footprint": {
+            "w": 1,
+            "h": 4
+          }
+        },
+        "right": {
+          "file": "modules/gate_out_lane_right.svg",
+          "footprint": {
+            "w": 1,
+            "h": 4
+          }
+        }
       },
       "connectors": [
-        { "x": 0, "y": 3, "side": "s", "type": "road" },
-        { "x": 0, "y": 0, "side": "n", "type": "road" }
+        {
+          "x": 0,
+          "y": 3,
+          "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 0,
+          "y": 0,
+          "side": "n",
+          "type": "road"
+        }
       ]
     },
     "gate_lane_barrier": {
-      "footprint": { "w": 1, "h": 1 },
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
       "parts": {
         "barrier": {
           "file": "modules/gate_lane_barrier.svg",
-          "footprint": { "w": 1, "h": 1 },
-          "offset": { "x": 0, "y": 24 },
-          "pivot": { "x": 9, "y": 32 },
+          "footprint": {
+            "w": 1,
+            "h": 1
+          },
+          "offset": {
+            "x": 0,
+            "y": 24
+          },
+          "pivot": {
+            "x": 9,
+            "y": 32
+          },
           "closedDeg": 0,
           "openDeg": -90
         }
@@ -925,25 +999,63 @@
       "connectors": []
     },
     "pre_gate_buffer": {
-      "footprint": { "w": 8, "h": 8 },
+      "footprint": {
+        "w": 8,
+        "h": 8
+      },
       "parts": {
-        "lane": { "file": "modules/pre_gate_lane.svg", "footprint": { "w": 1, "h": 6 } }
+        "lane": {
+          "file": "modules/pre_gate_lane.svg",
+          "footprint": {
+            "w": 1,
+            "h": 6
+          }
+        }
       },
       "connectors": [
-        { "x": 0, "y": 7, "side": "s", "type": "road" },
-        { "x": 7, "y": 0, "side": "n", "type": "road" }
+        {
+          "x": 0,
+          "y": 7,
+          "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 7,
+          "y": 0,
+          "side": "n",
+          "type": "road"
+        }
       ]
     },
     "truck_holding": {
-      "footprint": { "w": 6, "h": 5 },
+      "footprint": {
+        "w": 6,
+        "h": 5
+      },
       "file": "modules/truck_holding.svg",
       "connectors": [
-        { "x": 0, "y": 4, "side": "s", "type": "road" },
-        { "x": 5, "y": 4, "side": "s", "type": "road" }
+        {
+          "x": 0,
+          "y": 4,
+          "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 5,
+          "y": 4,
+          "side": "s",
+          "type": "road"
+        }
       ],
       "stalls": 6,
-      "stallSize": { "w": 1, "h": 3 },
-      "aisleRows": [3, 4]
+      "stallSize": {
+        "w": 1,
+        "h": 3
+      },
+      "aisleRows": [
+        3,
+        4
+      ]
     },
     "vehicle_depot": {
       "footprint": {
@@ -1052,6 +1164,14 @@
           }
         }
       },
+      "connectors": []
+    },
+    "reefer_rack": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "modules/reefer_rack.svg",
       "connectors": []
     }
   },
@@ -1660,6 +1780,66 @@
         }
       },
       "note": "RTG: rám jazdí po Y, vozík po X (travel v súradniciach rámu, 64 = rail y), rady x 36-216, pruh kamióna x 236-300"
+    },
+    "reach_stacker": {
+      "footprint": {
+        "w": 1,
+        "h": 2
+      },
+      "file": "entities/reach_stacker.svg",
+      "parts": {
+        "boom": {
+          "file": "entities/reach_stacker_boom.svg",
+          "footprint": {
+            "w": 1,
+            "h": 2
+          },
+          "pivot": {
+            "x": 32,
+            "y": 116
+          },
+          "mountOnBase": {
+            "x": 32,
+            "y": 96
+          },
+          "travel": {
+            "axis": "y",
+            "yMin": 0,
+            "yMax": 64
+          }
+        },
+        "spreader_20": {
+          "file": "entities/reach_stacker_spreader_20.svg",
+          "footprint": {
+            "w": 1,
+            "h": 1
+          },
+          "pivot": {
+            "x": 32,
+            "y": 27
+          },
+          "mountOnBase": {
+            "x": 32,
+            "y": 8
+          }
+        },
+        "spreader_40": {
+          "file": "entities/reach_stacker_spreader_40.svg",
+          "footprint": {
+            "w": 2,
+            "h": 1
+          },
+          "pivot": {
+            "x": 64,
+            "y": 27
+          },
+          "mountOnBase": {
+            "x": 32,
+            "y": 8
+          }
+        }
+      },
+      "note": "reach stacker (R5, MachineVM): telo 1×2 predkom hore; boom.mountOnBase = bod telesa (px súboru), kde sedí pivot výložníka; travel = posun výložníka vpred v px pri boom 0..1; spreader.mountOnBase = hlava výložníka v px súboru výložníka (pivot spreadera sa kladie sem)"
     }
   },
   "cargo": {
@@ -1671,35 +1851,35 @@
       "file": "cargo/container_teu.svg"
     },
     "container_20_dry": {
+      "file": "cargo/container_20_dry.svg",
       "size": {
         "w": 64,
         "h": 26
       },
-      "file": "cargo/container_20_dry.svg",
       "tintable": true
     },
     "container_40_dry": {
+      "file": "cargo/container_40_dry.svg",
       "size": {
         "w": 128,
         "h": 26
       },
-      "file": "cargo/container_40_dry.svg",
       "tintable": true
     },
     "container_20_empty": {
+      "file": "cargo/container_20_empty.svg",
       "size": {
         "w": 64,
         "h": 26
       },
-      "file": "cargo/container_20_empty.svg",
       "tintable": false
     },
     "container_40_empty": {
+      "file": "cargo/container_40_empty.svg",
       "size": {
         "w": 128,
         "h": 26
       },
-      "file": "cargo/container_40_empty.svg",
       "tintable": false
     },
     "bulk_pile": {
@@ -1729,6 +1909,78 @@
         "h": 64
       },
       "file": "cargo/car.svg"
+    },
+    "container_20_flat_rack": {
+      "file": "cargo/container_20_flat_rack.svg",
+      "size": {
+        "w": 64,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "container_20_open_top": {
+      "file": "cargo/container_20_open_top.svg",
+      "size": {
+        "w": 64,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "container_20_reefer": {
+      "file": "cargo/container_20_reefer.svg",
+      "size": {
+        "w": 64,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "container_20_tank": {
+      "file": "cargo/container_20_tank.svg",
+      "size": {
+        "w": 64,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "container_40_flat_rack": {
+      "file": "cargo/container_40_flat_rack.svg",
+      "size": {
+        "w": 128,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "container_40_flat_rack_oog": {
+      "file": "cargo/container_40_flat_rack_oog.svg",
+      "size": {
+        "w": 128,
+        "h": 40
+      },
+      "tintable": false
+    },
+    "container_40_open_top": {
+      "file": "cargo/container_40_open_top.svg",
+      "size": {
+        "w": 128,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "container_40_open_top_oog": {
+      "file": "cargo/container_40_open_top_oog.svg",
+      "size": {
+        "w": 128,
+        "h": 34
+      },
+      "tintable": false
+    },
+    "container_40_reefer": {
+      "file": "cargo/container_40_reefer.svg",
+      "size": {
+        "w": 128,
+        "h": 26
+      },
+      "tintable": false
     }
   },
   "overlay": {
@@ -1798,19 +2050,28 @@
     },
     "tp_marker": {
       "file": "overlay/tp_marker.svg",
-      "footprint": { "w": 1, "h": 1 },
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
       "rotatable": true,
       "note": "odovzdávacie miesto RTG; šípka = smer jazdy"
     },
     "safe_zone": {
       "file": "overlay/safe_zone.svg",
-      "footprint": { "w": 1, "h": 1 },
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
       "rotatable": true,
       "note": "bezpečnostná zóna pri TP; kreslí sa, keď je TP obsadené"
     },
     "inspection_bay": {
       "file": "overlay/inspection_bay.svg",
-      "footprint": { "w": 1, "h": 3 },
+      "footprint": {
+        "w": 1,
+        "h": 3
+      },
       "rotatable": true,
       "note": "kontrolné státie výstupnej brány"
     },
@@ -1821,6 +2082,27 @@
         "h": 24
       },
       "note": "číslo fronty kreslí engine, stred 12,12"
+    },
+    "reefer_plug_on": {
+      "file": "overlay/reefer_plug_on.svg",
+      "size": {
+        "w": 16,
+        "h": 16
+      }
+    },
+    "reefer_plug_off": {
+      "file": "overlay/reefer_plug_off.svg",
+      "size": {
+        "w": 16,
+        "h": 16
+      }
+    },
+    "reefer_plug_alarm": {
+      "file": "overlay/reefer_plug_alarm.svg",
+      "size": {
+        "w": 16,
+        "h": 16
+      }
     }
   },
   "icons": {

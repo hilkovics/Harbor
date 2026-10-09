@@ -9,8 +9,9 @@ import { lanesDecorFactory } from './lanes-decor';
 import type { ModuleDecorFactory } from './module-decor';
 import { parkedVehiclesDecorFactory } from './parked-vehicles-decor';
 import { preGateDecorFactory } from './pre-gate-decor';
+import { reeferPlugsDecorFactory } from './reefer-plugs-decor';
 import { stacksDecorFactory } from './stacks-decor';
 import { holdingSlotsDecorFactory, tpDecorFactory } from './tp-holding-decor';
 import { yardCraneDecorFactory } from './yard-crane-decor';
 
-export const MODULE_DECORS: readonly ModuleDecorFactory[] = [stacksDecorFactory, yardCraneDecorFactory, holdDecorFactory, depotDecorFactory, parkedVehiclesDecorFactory, lanesDecorFactory, gateLaneDecorFactory, preGateDecorFactory, tpDecorFactory, holdingSlotsDecorFactory];
+export const MODULE_DECORS: readonly ModuleDecorFactory[] = [stacksDecorFactory, yardCraneDecorFactory, holdDecorFactory, depotDecorFactory, parkedVehiclesDecorFactory, lanesDecorFactory, gateLaneDecorFactory, preGateDecorFactory, tpDecorFactory, holdingSlotsDecorFactory, reeferPlugsDecorFactory];

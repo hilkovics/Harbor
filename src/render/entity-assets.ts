@@ -252,6 +252,46 @@ export function machineSprite(defId: string): MachineSpriteEntry | undefined {
   return { footprint: entry.footprint, frame, trolley, travelX: { yMin: travel.yMin, yMax: travel.yMax } };
 }
 
+/** Id záznamu reach stackera v `entities` (R5, `MachineVM.defId`). */
+export const REACH_STACKER_ID = 'reach_stacker';
+
+/** Reach stacker (R5): telo `file` (footprint 1 × 2, predkom hore), výložník (`boom`: pivot, `mountOnBase` na tele, `travel` teleskopu) a spreadery (pivot sa kladie do hlavy výložníka). */
+export interface ReachStackerEntry {
+  readonly footprint: CellSize;
+  readonly file: string;
+  readonly boom: StsPart & { readonly mount: ManifestPoint; readonly travel: { readonly yMin: number; readonly yMax: number } };
+  readonly spreader20: StsPart & { readonly head: ManifestPoint };
+  readonly spreader40: StsPart & { readonly head: ManifestPoint };
+}
+
+type RawReachPart = Partial<StsPart> & { readonly mountOnBase?: ManifestPoint; readonly travel?: { readonly yMin: number; readonly yMax: number } };
+
+/** Reach stacker z `entities.reach_stacker` (telo + `parts.boom`, `spreader_20`, `spreader_40`), alebo `undefined`. */
+export function reachStackerSprite(): ReachStackerEntry | undefined {
+  const entry = lookup(VEHICLE_SPRITES, REACH_STACKER_ID) as
+    | { readonly footprint?: CellSize; readonly file?: string; readonly parts?: Readonly<Record<string, RawReachPart>> }
+    | undefined;
+  const boom = entry?.parts?.['boom'];
+  const s20 = entry?.parts?.['spreader_20'];
+  const s40 = entry?.parts?.['spreader_40'];
+  if (entry?.footprint === undefined || entry.file === undefined) return undefined;
+  if (boom?.file === undefined || boom.footprint === undefined || boom.pivot === undefined || boom.mountOnBase === undefined || boom.travel === undefined) return undefined;
+  const spreader = (part: RawReachPart | undefined): (StsPart & { readonly head: ManifestPoint }) | undefined =>
+    part?.file === undefined || part.footprint === undefined || part.pivot === undefined || part.mountOnBase === undefined
+      ? undefined
+      : { file: part.file, footprint: part.footprint, pivot: part.pivot, head: part.mountOnBase };
+  const spreader20 = spreader(s20);
+  const spreader40 = spreader(s40);
+  if (spreader20 === undefined || spreader40 === undefined) return undefined;
+  return {
+    footprint: entry.footprint,
+    file: entry.file,
+    boom: { file: boom.file, footprint: boom.footprint, pivot: boom.pivot, mount: boom.mountOnBase, travel: { yMin: boom.travel.yMin, yMax: boom.travel.yMax } },
+    spreader20,
+    spreader40,
+  };
+}
+
 /** Záznam lode triedy `classId` (`entities.ship_<classId>`), alebo `undefined`. */
 export function shipSprite(classId: string): ShipSpriteEntry | undefined {
   return lookup(SHIP_SPRITES, `${SHIP_ENTRY_PREFIX}${classId}`);
@@ -317,6 +357,14 @@ export function cargoDisplaySize(typeId: string): CellSize | undefined {
   if (typeId === TEU_TYPE_ID && cargoSpriteEntry(typeId) !== undefined) return TEU_PX;
   return cargoSpriteEntry(typeId)?.size;
 }
+
+/** Stav zásuvky reefera → súbor `overlay.reefer_plug_<stav>` (R5; cesta relatívne k `assets/`) a spoločný rozmer ikony v px zdroja. */
+export const REEFER_PLUG_FILES: Readonly<Record<'on' | 'off' | 'alarm', string>> = {
+  on: overlayManifest.reefer_plug_on.file,
+  off: overlayManifest.reefer_plug_off.file,
+  alarm: overlayManifest.reefer_plug_alarm.file,
+};
+export const REEFER_PLUG_SIZE: CellSize = overlayManifest.reefer_plug_on.size;
 
 /** Rozmer bunky `badge` (`overlay.blocked_badge.size`) v px zdroja. */
 export const BLOCKED_BADGE_SIZE: CellSize = overlayManifest.blocked_badge.size;
@@ -436,6 +484,14 @@ export function entitySpriteFiles(): string[] {
   files.add(BLOCKED_BADGE_FILE);
   files.add(WARNING_BADGE_FILE);
   files.add(QUEUE_BADGE_FILE);
+  for (const file of Object.values(REEFER_PLUG_FILES)) files.add(file);
+  const reach = reachStackerSprite();
+  if (reach !== undefined) {
+    files.add(reach.file);
+    files.add(reach.boom.file);
+    files.add(reach.spreader20.file);
+    files.add(reach.spreader40.file);
+  }
   files.add(TP_MARKER_FILE);
   files.add(SAFE_ZONE_FILE);
   return [...files];

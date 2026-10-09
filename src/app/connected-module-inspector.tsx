@@ -18,6 +18,8 @@ import { BlockInspector, CraneInspector, MachineInspector } from '@ui/machine-in
 import { ModuleInspector } from '@ui/module-inspector';
 import { blockPanelData, cranePanelData, sameBlockPanel, sameCranePanel, setBlockPriority, setCraneGang } from './machine-inspector-data';
 import { gatePanelData, sameGatePanel, setGateLaneMode } from './gate-inspector-data';
+import { ReeferBlockInspector } from '@ui/reefer-inspector';
+import { reeferInspectorData, sameReeferInspector } from './reefer-inspector-data';
 import { depotVehicleDef, inspectorData, sameInspectorData } from './inspector-data';
 import type { ModuleSelection } from './module-selection';
 import { useSimBridge, useSimSnapshot } from './use-sim-snapshot';
@@ -34,6 +36,7 @@ export function ConnectedModuleInspector({ selection }: ConnectedModuleInspector
   const blockPanel = useSimSnapshot(() => (moduleId === null ? null : blockPanelData(bridge, moduleId)), undefined, sameBlockPanel);
   const cranePanel = useSimSnapshot(() => (moduleId === null ? null : cranePanelData(bridge, moduleId)), undefined, sameCranePanel);
   const gatePanel = useSimSnapshot(() => (moduleId === null ? null : gatePanelData(bridge, moduleId)), undefined, sameGatePanel);
+  const reeferPanel = useSimSnapshot(() => (moduleId === null ? null : reeferInspectorData(bridge.world, moduleId)), undefined, sameReeferInspector);
   const remove = useCallback(
     (id: number) => {
       const command = new RemoveModuleCommand(id);
@@ -61,6 +64,7 @@ export function ConnectedModuleInspector({ selection }: ConnectedModuleInspector
   return (
     <div className="app__side">
       <ModuleInspector data={data} onRemove={remove} onClose={close} onBuyVehicle={buyVehicle} onSellVehicle={sell} />
+      {reeferPanel !== null && <ReeferBlockInspector data={reeferPanel} />}
       {blockPanel !== null && (
         <>
           {blockPanel.machine !== null && <MachineInspector data={blockPanel.machine} />}

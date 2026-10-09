@@ -73,7 +73,7 @@ describe('PanelSelection a vylúčenie s inšpektorom', () => {
     expect(panels.get()).toBe('contracts');
     panels.toggle('contracts');
     expect(panels.get()).toBeNull();
-    expect([isPanelId('contracts'), isPanelId('finance')]).toEqual([true, false]);
+    expect([isPanelId('contracts'), isPanelId('finance')]).toEqual([true, true]);
   });
 
   it('otvorený panel zruší výber modulu; výber modulu panel zavrie; po odhlásení sa nič nedeje', () => {

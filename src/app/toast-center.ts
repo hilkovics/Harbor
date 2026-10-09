@@ -40,6 +40,7 @@ import type { BookingPenaltyKind, PenaltyKind, SimEvent } from '@sim/events';
 import type { World } from '@sim/world';
 import { formatDuration, formatFraction, formatMoney, formatMoneyDelta, formatXp } from '@ui/format';
 import { moduleCode } from '@ui/module-inspector';
+import { reeferAlarmToast, reeferClaimToast, reeferSkippedToast } from '@ui/reefer-toasts';
 import { MAX_TOASTS, type ToastData, type ToastId, type ToastTone } from '@ui/toasts';
 import { QUIET_TOAST_AUTO_CLOSE_MS, TOAST_AUTO_CLOSE_MS } from './config';
 import { hasRoadConnector } from './entities-vm';
@@ -522,6 +523,15 @@ export function toastSpecsForEvents(world: World, events: readonly SimEvent[]): 
         text: `${module.def.displayName} ${moduleCode(module.kind, module.id)} nemá cestu k vjazdu — pripoj ho cestou`,
         focus: { x: module.origin.x + module.size.w / 2, y: module.origin.y + module.size.h / 2 },
       });
+    } else if (event.type === 'ReeferSkipped' || event.type === 'ReeferClaim' || event.type === 'ReeferAlarm') {
+      const label = `Reefer #${String(event.unitId)}`;
+      const text =
+        event.type === 'ReeferSkipped'
+          ? reeferSkippedToast({ label })
+          : event.type === 'ReeferClaim'
+            ? reeferClaimToast({ label, penaltyCents: event.cents })
+            : reeferAlarmToast({ label, minutesToRespond: Math.round(world.defs.logistics.reefer.alarmResponseHours * 60) });
+      specs.push({ key: `${event.type}:${String(event.unitId)}`, ...text });
     } else if (event.type === 'TrafficJam') {
       const carrierLabel = event.carrierKind === 'truck' ? 'Kamión' : 'Vozidlo';
       specs.push({

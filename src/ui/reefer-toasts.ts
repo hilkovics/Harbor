@@ -36,8 +36,9 @@ export interface ReeferSkippedToastInput {
 /** `ReeferAlarm`: teplota reefera mimo rozsahu, hráč má reagovať do daného času. */
 export interface ReeferAlarmToastInput {
   readonly label: string;
-  readonly temperatureC: number;
-  readonly targetC: number;
+  /** Teplota a cieľ (voliteľné; sim ich zatiaľ nenesie — bez nich text teplotu vynechá). */
+  readonly temperatureC?: number;
+  readonly targetC?: number;
   readonly minutesToRespond: number;
 }
 
@@ -65,6 +66,6 @@ export function reeferAlarmToast({ label, temperatureC, targetC, minutesToRespon
     tone: 'danger',
     icon: 'ic_warning',
     title: 'Reefer alarm',
-    text: `${label} · ${reeferTemperatureText(temperatureC)} (cieľ ${reeferTemperatureText(targetC)}) · reagovať do ${formatMinutesLeft(minutesToRespond)}`,
+    text: `${label}${temperatureC === undefined ? '' : ` · ${reeferTemperatureText(temperatureC)}${targetC === undefined ? '' : ` (cieľ ${reeferTemperatureText(targetC)})`}`} · reagovať do ${formatMinutesLeft(minutesToRespond)}`,
   };
 }

@@ -1,13 +1,14 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { dismissToasts } from './dismiss-toasts';
 import { formatMoney, formatMoneyDelta } from '../../src/ui/format';
+import { scenarioLayout } from './layout';
 
 // F6a e2e (T6A-10): export booking z pohľadu hráča — nová hra → minimálny prístav pre export → prijatie roundtripu v paneli
 // Kontrakty → export prichádza kamiónmi, uloží sa do skladov → loď prinesie import, žeriav ho vykladá a súčasne nakladá export
 // (dual cycle, odovzdávanie pod hákom, ADR-033) → lashing → odchod lode → booking `completed` a výplata.
 //
 // Prístav (rovnaké rozloženie ako `export_roundtrip`, f5-vertical-slice): cesty, depo (id 3) s tromi vozidlami, dva dvory (4, 5),
-// brána (6), stojisko (7) a rampa (8) idú cez `dispatchJSON`. Čas sa posúva cez `window.__sim.advance` v krokoch (`advanceUntil`):
+// vstupný (6) a výstupný (7) pruh brány idú cez `dispatchJSON` (príkazy zo scenára `export_roundtrip`, `layout.ts`). Čas sa posúva cez `window.__sim.advance` v krokoch (`advanceUntil`):
 // kontrakt dostane loď až o ~2,2 herného dňa a pri 8× by to trvalo minúty. Podmienka sa vyhodnocuje po každom kroku priamo
 // v stránke a pri zhode sa hra pozastaví, takže screenshot ukazuje presne overený stav. Čo sa medzitým stalo, overuje počítadlo
 // udalostí simu (`__tally`), nie vzorkovanie stavov — kroky `advance` môžu krátke stavy preskočiť.
@@ -16,7 +17,7 @@ import { formatMoney, formatMoneyDelta } from '../../src/ui/format';
 // ani na náhodné súbehy: číta ich z prijatej voyage a podmienky screenshotov majú záložnú vetvu.
 // Booking ponuky vznikajú až pri uzávierke prvého herného dňa (ADR-032), takže prvá hra čaká na `DayClosed`.
 //
-// Screenshoty: `f6a-export-arrivals.png` (naložený kamión vo fronte brány / vykladajúci export na rampe), `f6a-export-loading.png`
+// Screenshoty: `f6a-export-arrivals.png` (naložený kamión vo fronte brány / vykladajúci export na TP dvora), `f6a-export-loading.png`
 // (nakladanie: náklad na palube import / export), `f6a-export-lashing.png` (odznak lashingu na lodi + inšpektor kotviska),
 // `f6a-export-done.png` (loď odplávala, booking splnený: toasty, panel Kontrakty), `f6a-export-payout.png` (celá voyage splnená
 // v História, výplata).
@@ -24,51 +25,18 @@ import { formatMoney, formatMoneyDelta } from '../../src/ui/format';
 const SHOTS = 'tests/e2e/__screenshots__';
 test.describe.configure({ timeout: 4 * 60_000 });
 
-const DEPOT_ID = 3;
-const RAMP_ID = 8;
-const VEHICLES = 3;
+const LAYOUT = scenarioLayout('export_roundtrip');
+const DEPOT_ID = LAYOUT.depotId;
+const VEHICLES = LAYOUT.vehicles.length;
 
 type Cell = { readonly x: number; readonly y: number };
 
-/** Cesty F3 + pozemnej časti F4 po úsekoch `[x0, y0, x1, y1]` (rovnaké ako `export_roundtrip.json`). */
-const ROAD_SEGMENTS: readonly (readonly [number, number, number, number])[] = [
-  [41, 18, 41, 22],
-  [46, 18, 46, 22],
-  [42, 22, 45, 22],
-  [44, 23, 44, 30],
-  [45, 30, 50, 30],
-  [44, 33, 44, 33],
-  [47, 33, 48, 33],
-  [53, 31, 53, 33],
-  [51, 30, 55, 30],
-];
-
-/** Moduly v poradí stavby (id 2 = žeriav Root berthu, preto depo dostane id 3). */
-const MODULES: readonly { readonly defId: string; readonly x: number; readonly y: number; readonly rotation: number }[] = [
-  { defId: 'vehicle_depot', x: 46, y: 27, rotation: 0 },
-  { defId: 'container_yard_small', x: 42, y: 18, rotation: 0 },
-  { defId: 'container_yard_small', x: 49, y: 26, rotation: 0 },
-  { defId: 'truck_gate', x: 45, y: 32, rotation: 270 },
-  { defId: 'truck_waiting_area', x: 49, y: 31, rotation: 0 },
-  { defId: 'loading_ramp_container', x: 53, y: 28, rotation: 0 },
-];
-
 /** Pohľad na celý prístav pri stavbe: zoom 0,5 (bunka 32 px). */
 const OVERVIEW = { x: 47, y: 25, zoom: 0.5 } as const;
-/** Pozemná časť exportu (brána 45–46 × 32–33, stojisko, rampa 53–56 × 28–29): zoom 1, mapa medzi pásom HUD a BuildBarom. */
-const LANDSIDE_VIEW = { x: 49.5, y: 31, zoom: 1 } as const;
+/** Pozemná časť exportu (pruhy brány 44–45 × 30–33, dvory pri ulici x = 44 a 47): zoom 1, mapa medzi pásom HUD a BuildBarom. */
+const LANDSIDE_VIEW = { x: 45.5, y: 28, zoom: 1 } as const;
 /** Root berth s apronom a vozidlami pod hákom: loď nad nábrežím (y ≤ 13), apron a okruh ciest pod ním. */
 const BERTH_VIEW = { x: 44, y: 14.3, zoom: 1 } as const;
-
-function segmentCells([x0, y0, x1, y1]: readonly [number, number, number, number]): Cell[] {
-  const cells: Cell[] = [];
-  const dx = Math.sign(x1 - x0);
-  const dy = Math.sign(y1 - y0);
-  for (let x = x0, y = y0; ; x += dx, y += dy) {
-    cells.push({ x, y });
-    if (x === x1 && y === y1) return cells;
-  }
-}
 
 async function openGame(page: Page): Promise<string[]> {
   const errors: string[] = [];
@@ -158,7 +126,7 @@ async function selectModuleAt(page: Page, cell: Cell): Promise<void> {
   await expect(inspector(page)).toBeVisible();
 }
 
-/** Export jednotky podľa polohy v ledgeri (`in_truck`, `at_ramp`, `in_storage`, `in_vehicle`, `on_ship`, …) — a počet živých jednotiek exportu. */
+/** Export jednotky podľa polohy v ledgeri (`in_truck`, `in_storage`, `in_vehicle`, `on_ship`, …) — a počet živých jednotiek exportu. */
 const exportByLocation = (page: Page) =>
   page.evaluate(() => {
     const counts: Record<string, number> = {};
@@ -195,25 +163,15 @@ test.describe('F6a: export booking → kamióny → sklad → nakládka → lash
     });
     await view(page, OVERVIEW);
 
-    // 1) minimálny prístav pre export cez dispatchJSON: cesty, depo, dva dvory, brána, stojisko, rampa a tri vozidlá
-    for (const segment of ROAD_SEGMENTS) expect(await dispatch(page, { type: 'PlaceRoad', cells: segmentCells(segment) })).toMatchObject({ ok: true });
-    // R1 (ADR-037): obojsmerný úsek (44, 34–36) k bráne a bez (45, 34–35), ako v scenári `full_import_chain` (jednosmerná slučka verejnej cesty)
-    expect(await dispatch(page, { type: 'PlaceRoad', kind: 'two_lane', cells: [{ x: 44, y: 34 }, { x: 44, y: 35 }, { x: 44, y: 36 }] })).toMatchObject({ ok: true });
-    expect(await dispatch(page, { type: 'RemoveRoad', cells: [{ x: 45, y: 34 }, { x: 45, y: 35 }] })).toMatchObject({ ok: true });
-    await page.waitForFunction(() => window.__sim!.world.grid.at(44, 36).roadKind === 'two_lane' && window.__sim!.world.grid.at(45, 34).road !== 'road' && window.__sim!.world.grid.at(45, 35).road !== 'road');
-    for (const module of MODULES) expect(await dispatch(page, { type: 'PlaceModule', ...module })).toMatchObject({ ok: true });
-    await expect.poll(() => page.evaluate(() => window.__sim!.entities().modules.length)).toBe(1 + MODULES.length);
+    // 1) minimálny prístav pre export cez dispatchJSON: cesty, depo, dva dvory, pruhy brány a vozidlá
+    for (const command of LAYOUT.roads) expect(await dispatch(page, command)).toMatchObject({ ok: true });
+    for (const command of LAYOUT.modules) expect(await dispatch(page, command)).toMatchObject({ ok: true });
+    await expect.poll(() => page.evaluate(() => window.__sim!.entities().modules.length)).toBe(1 + LAYOUT.modules.length);
     expect(await page.evaluate((id) => window.__sim!.entities().modules.find((module) => module.id === id)?.defId, DEPOT_ID)).toBe('vehicle_depot');
-    for (let bought = 1; bought <= VEHICLES; bought += 1) {
-      expect(await dispatch(page, { type: 'BuyVehicle', vehicleDefId: 'straddle_carrier', depotId: DEPOT_ID })).toMatchObject({ ok: true });
-    }
+    for (const command of LAYOUT.vehicles) expect(await dispatch(page, command)).toMatchObject({ ok: true });
     await expect.poll(() => page.evaluate(() => window.__sim!.world.vehicles.size)).toBe(VEHICLES);
-    const port = await page.evaluate((rampId) => {
-      const { modules } = window.__sim!.entities();
-      return { connected: modules.filter((module) => module.connected !== undefined).every((module) => module.connected === true), ramp: modules.find((module) => module.id === rampId)?.ramp };
-    }, RAMP_ID);
-    expect(port.connected).toBe(true);
-    expect(port.ramp).toMatchObject({ docks: 2, operational: true });
+    const connected = await page.evaluate(() => window.__sim!.entities().modules.filter((module) => module.connected !== undefined).every((module) => module.connected === true));
+    expect(connected).toBe(true);
     // žiadna loď ani booking v hre; export ponuky vznikajú až pri uzávierke dňa
     expect(await page.evaluate(() => window.__sim!.entities().ships.length)).toBe(0);
     expect(await page.evaluate(() => [...window.__sim!.world.contracts.values()].some((contract) => contract.kind === 'export'))).toBe(false);
@@ -282,7 +240,7 @@ test.describe('F6a: export booking → kamióny → sklad → nakládka → lash
     await page.keyboard.press('Escape');
     await expect(panel(page)).toHaveCount(0);
 
-    // 4) príchod exportu: kamióny prichádzajú naložené; ideálne naraz kamión vo fronte brány a kamión vykladajúci na rampe. Časovanie
+    // 4) príchod exportu: kamióny prichádzajú naložené; ideálne naraz kamión vo fronte brány a kamión vykladaný na TP dvora. Časovanie
     //    príchodov závisí od ticku prijatia (klik v reálnom čase), preto ak sa tá náhoda nepodarí, stačí naložený kamión po 12 príchodoch.
     await view(page, LANDSIDE_VIEW);
     await advanceUntil(
@@ -290,7 +248,7 @@ test.describe('F6a: export booking → kamióny → sklad → nakládka → lash
       () => {
         const { trucks } = window.__sim!.entities();
         const arrived = (window as unknown as { __tally: Record<string, number> }).__tally['ExportArrived'] ?? 0;
-        const both = trucks.some((truck) => truck.state === 'unloading' && truck.loaded) && trucks.some((truck) => truck.state === 'gate_queue' && truck.loaded);
+        const both = trucks.some((truck) => (truck.state === 'at_tp' || truck.state === 'at_edge_tp') && truck.loaded) && trucks.some((truck) => truck.state === 'gate_queue' && truck.loaded);
         return both || (arrived >= 12 && trucks.some((truck) => truck.loaded));
       },
       null,
@@ -316,7 +274,7 @@ test.describe('F6a: export booking → kamióny → sklad → nakládka → lash
     await parkMouse(page);
     await page.screenshot({ path: `${SHOTS}/f6a-export-arrivals.png`, fullPage: true });
 
-    // 5) všetok export dorazil (posledný kamión je vyložený): nič nie je v kamióne, nič nezmizlo, jednotky ležia na rampe / v sklade
+    // 5) všetok export dorazil (posledný kamión je vyložený): nič nie je v kamióne, nič nezmizlo, jednotky ležia v sklade / na vozidle
     await advanceUntil(
       page,
       (booked: number) =>
@@ -327,9 +285,9 @@ test.describe('F6a: export booking → kamióny → sklad → nakládka → lash
     const arrived = await exportByLocation(page);
     expect(arrived.total).toBe(voyage.bookedUnits);
     expect(arrived.counts['in_truck'] ?? 0).toBe(0);
-    expect((arrived.counts['in_storage'] ?? 0) + (arrived.counts['at_ramp'] ?? 0) + (arrived.counts['in_vehicle'] ?? 0)).toBe(voyage.bookedUnits);
+    expect((arrived.counts['in_storage'] ?? 0) + (arrived.counts['in_vehicle'] ?? 0) + (arrived.counts['in_handler'] ?? 0)).toBe(voyage.bookedUnits);
 
-    // 6) loď doplávala: všetok export je v sklade (vozidlá ho z rampy odviezli), nič sa ešte nenaložilo
+    // 6) loď doplávala: všetok export je v sklade (vozidlá ho z TP odviezli), nič sa ešte nenaložilo
     await advanceUntil(page, () => window.__sim!.entities().ships.length === 1, null);
     expect(await exportByLocation(page)).toEqual({ total: voyage.bookedUnits, counts: { in_storage: voyage.bookedUnits } });
     expect(await page.evaluate((ids) => ids.map((id) => window.__sim!.world.contracts.get(id as never)!.state), [voyage.importId, voyage.exportId])).toEqual(['ship_en_route', 'ship_en_route']);
@@ -439,7 +397,7 @@ test.describe('F6a: export booking → kamióny → sklad → nakládka → lash
         exported: cargo.exportedCount,
         shipped: cargo.shippedCount,
         live: cargo.liveCount,
-        onMap: ['on_ship', 'in_crane', 'on_apron', 'in_vehicle', 'in_storage', 'at_ramp', 'in_truck'].reduce((sum, kind) => sum + cargo.countByKind(kind as never), 0),
+        onMap: ['on_ship', 'in_crane', 'on_apron', 'in_vehicle', 'in_storage', 'in_truck'].reduce((sum, kind) => sum + cargo.countByKind(kind as never), 0),
         cash: world.cashCents,
         xp: world.xp,
         revenue: world.economy.entries.filter((entry) => entry.category === 'contract_revenue').map((entry) => entry.amountCents),

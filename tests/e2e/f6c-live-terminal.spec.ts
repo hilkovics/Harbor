@@ -26,7 +26,7 @@ const SHOTS = 'tests/e2e/__screenshots__';
 test.describe.configure({ timeout: 8 * 60_000 });
 
 const SCENARIO = JSON.parse(readFileSync('data/scenarios/live_terminal.json', 'utf8')) as { commands: { atTick: number; command: Record<string, unknown> }[] };
-/** Príkazy tick 0 scenára: cesty, moduly (depo vozidiel, depo prázdnych, dva dvory, brána, stojisko, rampa) a tri vozidlá (2 × straddle, empty handler). */
+/** Príkazy tick 0 scenára: cesty, moduly (depo vozidiel, depo prázdnych, dva dvory, vstupný a výstupný pruh brány) a tri vozidlá (2 × straddle, empty handler). */
 const BUILD = SCENARIO.commands.filter((entry) => entry.atTick === 0).map((entry) => entry.command);
 const PLACEMENTS = BUILD.filter((command) => command['type'] !== 'BuyVehicle');
 const PURCHASES = BUILD.filter((command) => command['type'] === 'BuyVehicle');
@@ -36,13 +36,13 @@ const YARD_COUNT = PLACEMENTS.filter((command) => command['type'] === 'PlaceModu
 const OVERVIEW = { x: 47, y: 25, zoom: 0.5 } as const;
 /** Root berth s apronom a vozidlami pod hákom (loď nad nábrežím). */
 const BERTH_VIEW = { x: 44, y: 14.3, zoom: 1 } as const;
-/** Depo prázdnych (42–45 × 18–21) s cestami okolo; pravý panel (inšpektor) zakrýva len pravý okraj mapy. */
-const DEPOT_VIEW = { x: 44, y: 21, zoom: 0.8 } as const;
+/** Depo prázdnych (40–43 × 23–26) s cestami okolo; pravý panel (inšpektor) zakrýva len pravý okraj mapy. */
+const DEPOT_VIEW = { x: 44, y: 25, zoom: 0.8 } as const;
 /** Zoom pohľadu na dvory: stred pohľadu sa odvodí z ich footprintov (`yardsView`), aby boli oba vľavo od panela. */
 const YARD_ZOOM = 0.8;
 
-/** Bunka vo vnútri depa prázdnych (footprint 4 × 4 od [42, 18]). */
-const DEPOT_CELL = { x: 43, y: 19 } as const;
+/** Bunka vo vnútri depa prázdnych (footprint 4 × 4 od [40, 23]). */
+const DEPOT_CELL = { x: 41, y: 24 } as const;
 
 type Cell = { readonly x: number; readonly y: number };
 /** Modul zo `window.__sim.entities()`: ľavý horný roh a rozmery footprintu PO rotácii (bunky). */
@@ -183,11 +183,9 @@ test.describe('F6c: prázdne kontajnery a prekládka v jednom prístave (T6C-06b
         depot: depot === undefined ? null : { id: depot.id, vm: depot.depot },
         yards: modules.filter((module) => module.defId === 'container_yard_small').map((module) => ({ id: module.id, x: module.x, y: module.y, w: module.w, h: module.h })),
         vehicles: (vehicles ?? []).map((vehicle) => vehicle.defId).sort(),
-        ramp: modules.find((module) => module.defId === 'loading_ramp_container')?.ramp?.operational,
       };
     });
     expect(port.connected).toBe(true);
-    expect(port.ramp).toBe(true);
     expect(port.yards).toHaveLength(YARD_COUNT); // prístav má dva kontajnerové dvory (druhý otočený o 90°), prekládka sa uloží do ktoréhokoľvek
     expect(YARD_COUNT).toBe(2);
     expect(port.vehicles).toEqual(['empty_handler', 'straddle_carrier', 'straddle_carrier']);
@@ -307,10 +305,10 @@ test.describe('F6c: prázdne kontajnery a prekládka v jednom prístave (T6C-06b
       for (const unit of world.cargo.liveUnits()) if (unit.direction === 'tranship') locations[unit.location.kind] = (locations[unit.location.kind] ?? 0) + 1;
       return { locations, loaded: contract.booking!.loadedUnits };
     }, offer.id);
-    // jednotky sú v sklade alebo na ceste doň (vozidlá ich odvážajú z apronu / pod hákom), nikdy na rampe ani v kamióne; loď B ich ešte nenaložila
+    // jednotky sú v sklade alebo na ceste doň (vozidlá ich odvážajú z apronu / pod hákom), nikdy v kamióne; loď B ich ešte nenaložila
     // (môže už čakať na kotvisku — príchod lode B nezávisí od konca vykládky lode A)
     expect(waiting.loaded).toBe(0);
-    expect(Object.keys(waiting.locations).filter((kind) => kind === 'at_ramp' || kind === 'in_truck' || kind === 'on_ship')).toEqual([]);
+    expect(Object.keys(waiting.locations).filter((kind) => kind === 'in_truck' || kind === 'on_ship')).toEqual([]);
     await advanceUntil(page, (id: number) => window.__sim!.world.cargo.countByKind('in_storage') >= 1 && [...window.__sim!.world.cargo.liveUnits()].filter((unit) => unit.direction === 'tranship').every((unit) => unit.location.kind === 'in_storage') && window.__sim!.world.contracts.get(id as never)!.unitsUnloaded > 0, offer.id, { step: 5 });
     // prekládka sa rozdelí medzi dvory podľa toho, kam ju dispečer vozidlám pridelil: súčet cez dvory = objem kontraktu, inšpektor otvoríme
     // nad dvorom s väčšinou (pri rovnosti nad prvým), ktorý musí niesť aspoň jednu jednotku
@@ -418,7 +416,7 @@ test.describe('F6c: prázdne kontajnery a prekládka v jednom prístave (T6C-06b
     const returned = await tallyOf(page);
     expect(returned['EmptyReturned']).toBeGreaterThanOrEqual(3);
     expect(returned['EmptyStored']).toBeGreaterThanOrEqual(3);
-    // prázdne prišli kamiónom `in_truck → at_ramp → in_vehicle → in_storage` a uložili sa do depa (nie do bežného dvora): dvory majú len import / export
+    // prázdne prišli kamiónom `in_truck → in_handler → in_storage` a uložili sa do depa (nie do bežného dvora): dvory majú len import / export
     const stored = await page.evaluate(
       ([depot, yardList]) => {
         const { world } = window.__sim!;

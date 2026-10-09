@@ -60,6 +60,7 @@ describe('CargoLedger.create — štítky a miesto vzniku podľa smeru (ADR-032)
       hold: null,
       status: 'available',
       repairUntilTick: null,
+      reefer: null,
       quantity: 1,
       location: at.truck(TRUCK),
     });

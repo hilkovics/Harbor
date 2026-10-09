@@ -56,6 +56,15 @@ function checkIntegerList(value: unknown, min: number, path: string): number[] {
   return checkArray(value, path).map((raw: unknown, i) => checkInteger(raw, min, `${path}${pointerSegment(i)}`));
 }
 
+/** Typy kontajnerov kontraktu (v14): prázdne pole, alebo presne `volumeUnits` známych typov z `container_types.json`. */
+function parseUnitTypes(raw: unknown, defs: DefRegistry, volumeUnits: number, path: string): string[] {
+  const types = checkArray(raw, path).map((value: unknown, i) => checkKnown(checkString(value, `${path}${pointerSegment(i)}`), (id) => defs.containerTypes.has(id), 'typ kontajnera', `${path}${pointerSegment(i)}`));
+  if (types.length !== 0 && types.length !== volumeUnits) {
+    throw new WorldStateError(path, `musí byť prázdne pole alebo mať volumeUnits (${String(volumeUnits)}) prvkov, dostal ${String(types.length)}`);
+  }
+  return types;
+}
+
 /** Booking export kontraktu (tvar a typy, v7). */
 function parseBooking(raw: unknown, path: string): SerializedBooking {
   const entry = checkKeys(raw, SERIALIZED_BOOKING_KEYS, path);
@@ -126,6 +135,7 @@ function parseContract(raw: unknown, defs: DefRegistry, clockTick: number, ticks
     cargoTypeId: checkKnown(checkString(entry['cargoTypeId'], `${path}/cargoTypeId`), (value) => defs.cargoTypes.has(value), 'typ nákladu', `${path}/cargoTypeId`),
     shipClassId: checkKnown(checkString(entry['shipClassId'], `${path}/shipClassId`), (value) => defs.ships.has(value), 'trieda lode', `${path}/shipClassId`),
     xpReward,
+    unitTypes: parseUnitTypes(entry['unitTypes'], defs, counts.volumeUnits, `${path}/unitTypes`),
     state,
     ...counts,
     ...nullable,

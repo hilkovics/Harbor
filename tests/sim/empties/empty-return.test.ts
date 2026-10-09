@@ -26,7 +26,7 @@ function importUnit(lineId: string | null, direction: CargoUnit['direction'] = '
     weightClass: 'medium',
     hold: null,
     status: 'available',
-    repairUntilTick: null,
+    repairUntilTick: null, reefer: null,
     quantity: 1,
     location: { kind: 'in_truck', truckId: 1 as EntityId },
   };

@@ -72,6 +72,7 @@ import type { ClockBoundaries } from '../core/sim-clock';
 import { EmptyDepotService } from '../logistics/empty-depot-service';
 import { hasEmptyDepot } from '../logistics/empty-stock';
 import { loadingInFlight, loadingStopped } from '../logistics/voyage-cargo';
+import { YardBlock } from '../modules/yard-block';
 import type { World } from '../world/world';
 import {
   SHIP_LEFT_BERTH,
@@ -271,6 +272,7 @@ function offerContextOf(world: World): OfferContext {
     tier: book.tier(defs.economy.contractsPerTier),
     capacityHint: capacityHintFrom(capacity, defs.economy.minCapacityHint),
     storageCapacity: capacity.storageCapacity,
+    poweredSupply: [...world.modules.values()].some((module) => module instanceof YardBlock && module.hasSockets),
     nextId: () => book.allocateId(),
     nextVoyageId: () => book.allocateVoyageId(),
   };

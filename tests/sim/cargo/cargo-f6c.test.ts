@@ -123,6 +123,7 @@ describe('CargoLedger.create — prázdny kontajner a prekládka', () => {
       hold: null,
       status: 'available',
       repairUntilTick: null,
+      reefer: null,
       quantity: 1,
       location: at.truck(TRUCK),
     });

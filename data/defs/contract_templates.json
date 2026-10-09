@@ -17,6 +17,9 @@
       "kind": "import",
       "cargoTypeId": "container_teu",
       "sizeMix": 0.6,
+      "typeMix": [
+        { "type": "reefer", "share": 0.15 }
+      ],
       "volumeUnitsRange": [24, 96],
       "slaDaysRange": [3, 5],
       "shipClassIds": ["feeder"],
@@ -28,6 +31,9 @@
       "kind": "import",
       "cargoTypeId": "container_teu",
       "sizeMix": 0.6,
+      "typeMix": [
+        { "type": "reefer", "share": 0.15 }
+      ],
       "volumeUnitsRange": [60, 240],
       "slaDaysRange": [5, 8],
       "shipClassIds": ["handy"],

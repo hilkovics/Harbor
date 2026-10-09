@@ -83,6 +83,44 @@ export interface CargoHold {
   readonly untilTick: number;
 }
 
+/**
+ * Stav reeferu (R5, ADR-042; docs/TERMINAL_2.md §6.7) — meniteľný stav jednotky typu s `needsPower` (nie prázdneho kontajnera); mení ho len `CargoLedger.setReefer`
+ * (systém reeferov, krok 6d). Ticky sú absolútne (`clock.tick`), `null` = nenastavené.
+ */
+export interface ReeferState {
+  /** Je zapojený do zásuvky (alebo napájaný z lode, kým leží na palube)? */
+  readonly plugged: boolean;
+  /** Odkedy je bez napájania (zdvih z lode, odpojenie); `null` = napájaný. Po `maxUnpluggedHours` reklamácia a hodiny sa spustia znova. */
+  readonly unpluggedSinceTick: number | null;
+  /** Kedy skončí zapájanie (uložený bez napájania) alebo odpájanie (pripravený na odvoz); `null` = nič nebeží. */
+  readonly switchAtTick: number | null;
+  /** Odkedy čaká na palube, lebo ho STS preskočil (bez voľnej zásuvky); `null` = nečaká. Po `maxUnpluggedHours` reklamácia. */
+  readonly waitSinceTick: number | null;
+  /** Termín zásahu technika pri alarme (`alarmResponseHours`); `null` = bez alarmu. */
+  readonly alarmUntilTick: number | null;
+  /** Kedy technik dokončí zásah (zásah už beží); `null` = technik ešte nezačal. */
+  readonly fixUntilTick: number | null;
+}
+
+/** Kľúče `ReeferState` v kanonickom poradí (save). */
+export const REEFER_STATE_KEYS: readonly (keyof ReeferState)[] = ['plugged', 'unpluggedSinceTick', 'switchAtTick', 'waitSinceTick', 'alarmUntilTick', 'fixUntilTick'];
+
+/** Súlad stavu reeferu — `undefined` = v poriadku: presné kľúče, `plugged` boolean, ticky `null` alebo celé ≥ 0; napájaný reefer nemá `unpluggedSinceTick`. */
+export function reeferStateProblem(state: unknown): string | undefined {
+  if (typeof state !== 'object' || state === null || Array.isArray(state)) return `musí byť objekt { ${REEFER_STATE_KEYS.join(', ')} }, dostal ${String(state)}`;
+  const keys = Object.keys(state);
+  if (keys.length !== REEFER_STATE_KEYS.length || !REEFER_STATE_KEYS.every((key) => keys.includes(key))) return `musí mať presne kľúče ${REEFER_STATE_KEYS.join(', ')} (má ${keys.join(', ')})`;
+  const record = state as Record<string, unknown>;
+  if (typeof record['plugged'] !== 'boolean') return `plugged musí byť boolean, dostal ${String(record['plugged'])}`;
+  for (const key of REEFER_STATE_KEYS) {
+    if (key === 'plugged') continue;
+    const value = record[key];
+    if (value !== null && (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0)) return `${key} musí byť null alebo celé číslo ≥ 0, dostal ${String(value)}`;
+  }
+  if (record['plugged'] === true && record['unpluggedSinceTick'] !== null) return 'zapojený reefer nemá unpluggedSinceTick';
+  return undefined;
+}
+
 /** Nemenné štítky jednotky z jej vzniku (`CargoLedger.create`). */
 export interface CargoUnitLabels {
   /** Import a tranship vznikajú na lodi, export a prázdny v kamióne (`CARGO_SPAWN_KIND_BY_DIRECTION`). */
@@ -138,6 +176,8 @@ export interface CargoUnit extends CargoUnitLabels {
   readonly status: CargoStatus;
   /** Tick dokončenia opravy — práve pri `status: 'in_repair'` celé ≥ 0, inak `null` (ADR-034). */
   readonly repairUntilTick: number | null;
+  /** Stav reeferu (R5, ADR-042): práve pri type s `needsPower`, ak jednotka nie je prázdna; inak `null`. Mení ho len `CargoLedger.setReefer`. */
+  readonly reefer: ReeferState | null;
   /** Množstvo v jednotkách typu (`unitsPerBatch`: 1 TEU, 25 t…). */
   readonly quantity: number;
   /** Jediná poloha jednotky; mení ju výlučne `CargoLedger.move` (pravidlo 2). */
@@ -257,6 +297,11 @@ export function containerLabelsDefProblem(
   }
   if (labels.oog && !(def.oogChance > 0)) return { field: 'oog', problem: `typ '${def.id}' nemá nadrozmer (oogChance 0)` };
   return undefined;
+}
+
+/** Potrebuje jednotka zásuvku? Typ s `needsPower` a nie prázdny kontajner (prázdny reefer nemá čo chladiť; R5, ADR-042). */
+export function needsPlug(unit: Pick<CargoUnit, 'containerType' | 'direction'>, containerTypes: Catalog<Readonly<ContainerTypeDef>>): boolean {
+  return unit.direction !== 'empty' && containerTypes.has(unit.containerType) && containerTypes.get(unit.containerType).needsPower;
 }
 
 /**

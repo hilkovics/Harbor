@@ -47,6 +47,7 @@ export { assignOpenJobs, chooseVehicle, createInboundJobs, vehicleCarries } from
 export { forEachPickupCandidate } from './pickup-demand';
 export { isTruckJob, openDeliverJob, openReceiveJob, truckJobBlock, truckOfJob } from './truck-jobs';
 export { chooseRehandleSlot, chooseYardSlot, rehandleRoom, reserveYardSlot, sameGroup, unitPickable } from './yard-planner';
+export { liftBlockedByPower, mayUnload } from './reefer-supply';
 export type { YardChoice } from './yard-planner';
 export { plannedDepartureTick } from './planned-departure';
 export { yardMetrics } from './yard-metrics';

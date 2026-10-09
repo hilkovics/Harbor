@@ -102,6 +102,10 @@ export interface EconomyDef extends DefBase {
   readonly transhipRescueDays: number;
   /** Penalizácia za zmeškanú prekládku (jednotka nenaložená na loď B): podiel odmeny za jednotku. */
   readonly transhipMissedRateOfReward: number;
+  /** Reklamácia za pokazený reefer v centoch (R5, ADR-042): dlho bez napájania, alebo alarm bez zásahu technika; strhne sa ako `penalty`. */
+  readonly reeferClaimCents: number;
+  /** Cena elektriny za jeden zapojený reefer a hernú hodinu v centoch (R5, ADR-042; ledger kategória `energy`). */
+  readonly reeferPowerCentsPerHour: number;
 }
 
 /** Cena a údržba jednej vrstvy dopravy (cesta alebo koľaj), počítané za bunku; peniaze v centoch. */
@@ -193,6 +197,34 @@ export interface ExportFlowDef {
 }
 
 /**
+ * Reefery (R5, ADR-042; docs/TERMINAL_2.md §6.7): časy v tickoch, limity v herných hodinách. Technik sa nekreslí (ADR-036) — je len čas a počet súčasných zásahov.
+ */
+export interface ReeferDef {
+  /** Zapojenie reeferu po uložení do bloku so zásuvkami v tickoch (celé ≥ 1). */
+  readonly plugTicks: number;
+  /** Odpojenie reeferu pred zdvihom zo skladu v tickoch (celé ≥ 1). */
+  readonly unplugTicks: number;
+  /** Najdlhší čas bez napájania v herných hodinách (> 0), potom vznikne reklamácia (od zdvihu z lode alebo odpojenia; aj reefer preskočený STS bez voľnej zásuvky). */
+  readonly maxUnpluggedHours: number;
+  /** Šanca alarmu zapojeného reeferu za herný deň (`0 … 1`; losuje sa raz za hernú hodinu ako `chance(p / 24)`). */
+  readonly alarmChancePerDay: number;
+  /** Do koľkých hodín od alarmu musí technik začať zásah (> 0), inak reklamácia. */
+  readonly alarmResponseHours: number;
+  /** Koľko alarmov rieši technik naraz (celé ≥ 1; technik je len čas, nekreslí sa). */
+  readonly technicians: number;
+  /** Trvanie zásahu technika pri alarme v tickoch (celé ≥ 1). */
+  readonly alarmFixTicks: number;
+}
+
+/** Nadrozmerný náklad (OOG; R5, ADR-042 — správanie v TR5-02): ticky navyše pri STS (rám) a pri zaistení na kamióne. */
+export interface OogDef {
+  /** Ticky navyše v cykle STS pri OOG (celé ≥ 0). */
+  readonly extraCycleTicks: number;
+  /** Trvanie zaistenia OOG na kamióne v tickoch (celé ≥ 0), namiesto `trucks.lashTicks`. */
+  readonly lashTicks: number;
+}
+
+/**
  * Tok prázdnych kontajnerov (F6c, ADR-034): návrat z vnútrozemia, kontrola a oprava v depe, výdaj prázdneho exportérovi.
  * Trvania sú v dňoch a hodinách (prevod na ticky robí sim z `time.json`), pravdepodobnosti v `0 … 1`.
  */
@@ -256,6 +288,10 @@ export interface LogisticsDef extends DefBase {
   readonly exportFlow: ExportFlowDef;
   /** Tok prázdnych kontajnerov: návrat, kontrola, oprava, výdaj exportérovi (F6c, ADR-034). */
   readonly emptyFlow: EmptyFlowDef;
+  /** Reefery: zapojenie, limit bez napájania, alarmy a technici (R5, ADR-042). */
+  readonly reefer: ReeferDef;
+  /** Nadrozmerný náklad: časy navyše pri STS a zaistení na kamióne (R5, ADR-042; správanie prináša TR5-02). */
+  readonly oog: OogDef;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -459,6 +495,11 @@ export interface StorageParams {
   readonly laneCol?: number;
   /** Každý koľký bay má odovzdávacie miesto (TP) v pruhu (celé ≥ 1); povinné práve pri `role: 'rtg_block'`. */
   readonly tpSpacingBays?: number;
+  /**
+   * Zásuvky pre reefery (R5, ADR-042): počet radov od radu 0 (celé ≥ 1, najviac `rows`), v ktorých má každá vrstva stohu zásuvku; chýba = blok bez zásuvok.
+   * Blok so zásuvkami prijíma len jednotky, ktoré zásuvku potrebujú (`needsPlug`), a tie smú stáť len v ňom (`reefer_block_8`: všetky rady).
+   */
+  readonly plugRows?: number;
 }
 
 /** `params` depa vozidiel (`kind: 'depot'`). */
@@ -661,6 +702,11 @@ export interface ContractTemplateDef {
    * počet kontajnerov je z neho odvodený. Hlavný kontrakt `empty_repositioning` ho ignoruje (prázdne berie depo s veľkosťou, akú má).
    */
   readonly sizeMix?: number;
+  /**
+   * Zmes typov kontajnerov (R5, ADR-042): podiel každého typu iného než `dry` (`0 … 1`, súčet ≤ 1; zvyšok je `dry`); chýba = všetko `dry` bez spotreby `Rng`.
+   * Typ každého kontajnera určí `Rng` pri vzniku ponuky (`drawUnitTypes`); len kategória `container` a druhy `import` / `tranship`. OOG sa zatiaľ nelosuje (TR5-02).
+   */
+  readonly typeMix?: readonly ContractTypeShare[];
   /** Rozsah `[min, max]` objemu kontraktu v jednotkách typu nákladu (kontajnery: TEU; `min ≤ max`). */
   readonly volumeUnitsRange: readonly [number, number];
   /** Rozsah `[min, max]` SLA v celých dňoch od príchodu lode (`min ≤ max`). */
@@ -671,6 +717,12 @@ export interface ContractTemplateDef {
   readonly weight: number;
   /** Minimálny tier hráča, od ktorého sa šablóna ponúka. */
   readonly minTier: number;
+}
+
+/** Podiel typu kontajnera v zmesi šablóny kontraktu (`ContractTemplateDef.typeMix`). */
+export interface ContractTypeShare {
+  readonly type: string;
+  readonly share: number;
 }
 
 /** Pravidlá stohovania typu kontajnera (`ContainerTypeDef.stacking`): `normal` = bežné, `top_only` = len navrch alebo na zem (flat rack, R5). */

@@ -36,7 +36,9 @@
     "repairCostCents",
     "transhipGapDaysRange",
     "transhipRescueDays",
-    "transhipMissedRateOfReward"
+    "transhipMissedRateOfReward",
+    "reeferClaimCents",
+    "reeferPowerCentsPerHour"
   ],
   "properties": {
     "schemaVersion": {
@@ -192,6 +194,16 @@
       "type": "integer",
       "minimum": 0,
       "description": "Cieľový počet ponúk prekládky loď → loď (šablóna `tranship`), ktoré pool dopĺňa pri DayClosed (F6c, ADR-034; pool ich ponúka od T6C-03); 0 = pool tranship neponúka."
+    },
+    "reeferClaimCents": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Reklamácia za pokazený reefer v centoch (R5, ADR-042): dlho bez napájania, alebo alarm bez zásahu technika; kniha kategórie `penalty`."
+    },
+    "reeferPowerCentsPerHour": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Cena elektriny za jeden zapojený reefer a hernú hodinu v centoch (R5, ADR-042); kniha kategórie `energy`."
     },
     "repairCostCents": {
       "type": "integer",

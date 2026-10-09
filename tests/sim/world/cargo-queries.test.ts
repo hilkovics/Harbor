@@ -20,7 +20,7 @@ const exportUnit = (unitId: number, location: CargoLocation): CargoUnit => ({
   destinationPort: 'Rotterdam',
   hold: null,
   status: 'available',
-  repairUntilTick: null,
+  repairUntilTick: null, reefer: null,
   quantity: 1,
   location,
 });

@@ -4,7 +4,7 @@
   "description": "Logistické konštanty (ARCHITECTURE §4.6, §7.3, §7.4, §7.6; ADR-010, ADR-029): pobyt vozidla v module, opakovanie hľadania cesty, model kongescie a lodná navigácia. Konfiguračný def bez items[] (ADR-009); všetky trvania v tickoch.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "defaultInternalTicks", "repathIntervalTicks", "rehandleTicks", "rehandleGiveUpTicks", "buryReserveColumns", "yardMachineLoadWeight", "rehandleSpareCells", "apronUnloadReserveSlots", "hookJobLookahead", "hookPairedLoadJobs", "dualCandidateLimit", "importDwellEstimateHours", "yardPlanner", "congestion", "traffic", "shipNavigation", "exportFlow", "emptyFlow"],
+  "required": ["schemaVersion", "defaultInternalTicks", "repathIntervalTicks", "rehandleTicks", "rehandleGiveUpTicks", "buryReserveColumns", "yardMachineLoadWeight", "rehandleSpareCells", "apronUnloadReserveSlots", "hookJobLookahead", "hookPairedLoadJobs", "dualCandidateLimit", "importDwellEstimateHours", "yardPlanner", "congestion", "traffic", "shipNavigation", "exportFlow", "emptyFlow", "reefer", "oog"],
   "properties": {
     "schemaVersion": {
       "const": 1,
@@ -179,6 +179,31 @@
             "heavy": { "type": "number", "minimum": 0 }
           }
         }
+      }
+    },
+    "reefer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plugTicks", "unplugTicks", "maxUnpluggedHours", "alarmChancePerDay", "alarmResponseHours", "technicians", "alarmFixTicks"],
+      "description": "Reefery (R5, ADR-042; docs/TERMINAL_2.md §6.7): zapojenie a odpojenie, limit bez napájania, alarmy a technici (technik je len čas, nekreslí sa).",
+      "properties": {
+        "plugTicks": { "type": "integer", "minimum": 1, "description": "Zapojenie reeferu po uložení do bloku so zásuvkami (ticky)." },
+        "unplugTicks": { "type": "integer", "minimum": 1, "description": "Odpojenie reeferu pred zdvihom zo skladu (ticky)." },
+        "maxUnpluggedHours": { "type": "number", "exclusiveMinimum": 0, "description": "Najdlhší čas bez napájania v herných hodinách; potom vznikne reklamácia (od zdvihu z lode alebo odpojenia; aj reefer preskočený STS bez voľnej zásuvky)." },
+        "alarmChancePerDay": { "type": "number", "minimum": 0, "maximum": 1, "description": "Šanca alarmu zapojeného reeferu za herný deň (losuje sa raz za hernú hodinu)." },
+        "alarmResponseHours": { "type": "number", "exclusiveMinimum": 0, "description": "Do koľkých hodín od alarmu musí technik začať zásah, inak reklamácia." },
+        "technicians": { "type": "integer", "minimum": 1, "description": "Koľko alarmov rieši technik naraz." },
+        "alarmFixTicks": { "type": "integer", "minimum": 1, "description": "Trvanie zásahu technika pri alarme (ticky)." }
+      }
+    },
+    "oog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["extraCycleTicks", "lashTicks"],
+      "description": "Nadrozmerný náklad (R5, ADR-042; správanie prináša TR5-02): ticky navyše pri STS (rám) a zaistenie na kamióne.",
+      "properties": {
+        "extraCycleTicks": { "type": "integer", "minimum": 0, "description": "Ticky navyše v cykle STS pri OOG." },
+        "lashTicks": { "type": "integer", "minimum": 0, "description": "Trvanie zaistenia OOG na kamióne (ticky), namiesto `trucks.lashTicks`." }
       }
     },
     "emptyFlow": {

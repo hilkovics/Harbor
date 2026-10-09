@@ -23,8 +23,10 @@ function carrier(cash = defs.economy.startingCashCents, target?: VehicleBuyTarge
 
 describe('BuildBar: Sklady', () => {
   it('container_yard_small ako stavba (build) s cenou a rozmerom z defu', () => {
-    const [yard, depot, rtg, ...rest] = category('storage').items;
+    const [yard, depot, rtg, reefer, ...rest] = category('storage').items;
     expect(rest).toEqual([]);
+    // Reefer blok (R5, ADR-042) je v Skladoch z defu; vlastný odznak a inšpektor zásuviek dodá TR5-04.
+    expect(reefer).toMatchObject({ defId: 'reefer_block_8', costCents: defs.modules.get('reefer_block_8').costCents, footprint: { w: 4, h: 8 }, locked: false });
     // RTG blok (R3, ADR-040) je v kategórii Sklady z defu; vlastný odznak a inšpektor stroja dodá TR3-04.
     expect(rtg).toMatchObject({ defId: 'rtg_block', costCents: defs.modules.get('rtg_block').costCents, footprint: { w: 5, h: 12 }, locked: false });
     // Depo prázdnych (F6c, ADR-034) je v kategórii Sklady z defu; jeho odznak a text dodá T6C-05.

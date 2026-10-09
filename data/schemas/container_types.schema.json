@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "container_types.json",
-  "description": "Katalóg typov kontajnerov (docs/TERMINAL_2.md §3, ADR-039): { schemaVersion, items: [...] }. Typ určuje povolené veľkosti (20′/40′), pravidlo stohovania a zvláštnosti; `CargoUnit.containerType` je `id` z tohto katalógu. R2 pozná len `dry`, ostatné typy (reefer, open_top, flat_rack, tank) prídu v R5. Jedinečnosť `id` v items[] schéma nevyjadrí — kontroluje ju DefRegistry a `pnpm validate:defs`.",
+  "description": "Katalóg typov kontajnerov (docs/TERMINAL_2.md §3, ADR-039): { schemaVersion, items: [...] }. Typ určuje povolené veľkosti (20′/40′), pravidlo stohovania a zvláštnosti; `CargoUnit.containerType` je `id` z tohto katalógu. Od R5 (ADR-042): `dry`, `reefer` (zásuvka), `open_top`, `flat_rack` (len navrch), `tank`. Jedinečnosť `id` v items[] schéma nevyjadrí — kontroluje ju DefRegistry a `pnpm validate:defs`.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "items"],
@@ -37,7 +37,7 @@
           "description": "Povolené veľkosti typu v stopách (20′ = 1 TEU, 40′ = 2 TEU)."
         },
         "stacking": { "enum": ["normal", "top_only"], "description": "Pravidlo stohovania: `normal` = bežné, `top_only` = len navrch alebo na zem." },
-        "needsPower": { "type": "boolean", "description": "Potrebuje zásuvku (reefer); R5." },
+        "needsPower": { "type": "boolean", "description": "Potrebuje zásuvku (reefer; ak nie je prázdny)." },
         "oogChance": { "type": "number", "minimum": 0, "maximum": 1, "description": "Šanca nadrozmerného nákladu pri vzniku jednotky (0 = nikdy); R5." },
         "rateMultiplier": { "type": "number", "exclusiveMinimum": 0, "description": "Násobiteľ odmeny za TEU oproti základnej cene typu nákladu; R5." }
       }

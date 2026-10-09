@@ -45,6 +45,7 @@ function probeUnit(world: World, spec: DeliverySpec): CargoUnit {
     hold: null,
     status: 'available',
     repairUntilTick: null,
+    reefer: null,
     quantity: world.defs.cargoTypes.get(spec.typeId).unitsPerBatch,
     location: { kind: 'in_truck', truckId: 0 as EntityId },
     ...spec.probe,

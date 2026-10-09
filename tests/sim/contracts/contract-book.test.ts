@@ -33,7 +33,7 @@ function terms(id: number, volumeUnits = 3, voyageId = id): ContractTerms {
 
 const SHIP = 50 as EntityId;
 function unit(contractId: number | null, location: CargoLocation = { kind: 'on_ship', shipId: SHIP }): CargoUnit {
-  return { id: 99 as EntityId, typeId: 'container_teu', contractId: contractId as ContractId | null, ...IMPORT_LABELS, hold: null, status: 'available', repairUntilTick: null, quantity: 1, location };
+  return { id: 99 as EntityId, typeId: 'container_teu', contractId: contractId as ContractId | null, ...IMPORT_LABELS, hold: null, status: 'available', repairUntilTick: null, reefer: null, quantity: 1, location };
 }
 
 describe('ContractBook: id a poradie', () => {

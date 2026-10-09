@@ -212,6 +212,7 @@
         "rows": { "type": "integer", "minimum": 1, "description": "Geometria bloku (ADR-039): počet radov naprieč blokom." },
         "maxTier": { "type": "integer", "minimum": 1, "description": "Geometria bloku (ADR-039): najvyššia vrstva stohu (straddle blok 3, depo prázdnych 8, RTG blok 5). Kapacita v TEU je `bays × rows × maxTier` (od TR2-02; `capacityUnits` ostáva kvôli kompatibilite)." },
         "laneCol": { "type": "integer", "minimum": 0, "description": "RTG blok (ADR-040 bod 2): stĺpec footprintu (pri rotácii 0), v ktorom beží jednosmerný pruh pozdĺž bloku; povinné práve pri `role: rtg_block`." },
+        "plugRows": { "type": "integer", "minimum": 1, "description": "Zásuvky pre reefery (R5, ADR-042): počet radov od radu 0, v ktorých má každá vrstva stohu zásuvku; len pri `role: rtg_block`, najviac `rows` (kontroluje DefRegistry). Blok so zásuvkami prijíma len reefery." },
         "tpSpacingBays": { "type": "integer", "minimum": 1, "description": "RTG blok (ADR-040 bod 2): každý koľký bay má odovzdávacie miesto (TP) v pruhu; povinné práve pri `role: rtg_block`." }
       }
     },

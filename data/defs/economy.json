@@ -30,5 +30,7 @@
   "repairCostCents": 12000,
   "transhipGapDaysRange": [1, 2],
   "transhipRescueDays": 3,
-  "transhipMissedRateOfReward": 0.25
+  "transhipMissedRateOfReward": 0.25,
+  "reeferClaimCents": 150000,
+  "reeferPowerCentsPerHour": 800
 }

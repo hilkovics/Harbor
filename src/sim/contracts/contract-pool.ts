@@ -30,6 +30,7 @@ import { DEFAULT_TEMPLATE_KIND, type ContractTemplateDef, type ContractTemplateK
 import type { Module } from '../modules/module';
 import type { StatResolver } from '../tech/stat-resolver';
 import { EmptyRepositioningContract, ExportContract, ImportContract, TranshipContract, type Contract } from './contract';
+import { drawUnitTypes, rateTeuOf } from './container-mix';
 import { drawContainerCount } from './container-sizes';
 import { contractRewardCents, contractXpReward, lineForVoyage, maxSlaDaysOf, urgencyBp } from './contract-terms';
 
@@ -86,6 +87,8 @@ export interface OfferContext {
   readonly capacityHint: number;
   /** Celková kapacita skladov prístavu (poistka objemu; 0 = bez skladov, poistka neplatí). */
   readonly storageCapacity: number;
+  /** Má prístav blok so zásuvkami pre reefery (R5, ADR-042)? Bez neho `typeMix` nelosuje typy s napájaním; chýba = nie. */
+  readonly poweredSupply?: boolean;
   /** Pridelí id novej ponuke (volá sa až po výbere šablóny). */
   readonly nextId: () => ContractId;
   /** Pridelí id voyage novej ponuke (ADR-032; volá sa hneď po `nextId`, `Rng` nespotrebuje). */
@@ -134,6 +137,8 @@ interface DrawnTerms {
 interface OfferVolume {
   readonly volumeUnits: number;
   readonly volumeTeu: number;
+  /** Typy kontajnerov (R5, ADR-042; prázdne = všetky `dry`). */
+  readonly unitTypes: readonly string[];
 }
 
 /**
@@ -144,7 +149,9 @@ function volumeOf(context: OfferContext, terms: DrawnTerms, range: readonly [num
   const shipCapacity = context.defs.ships.get(terms.shipClassId).capacityUnits;
   const volumeTeu = offerVolumeUnits(terms.scale, context.capacityHint, range, shipCapacity, context.storageCapacity);
   const sizeMix = mixed ? (terms.template.sizeMix ?? 0) : 0;
-  return { volumeTeu, volumeUnits: drawContainerCount(context.rng, volumeTeu, sizeMix) };
+  const volumeUnits = drawContainerCount(context.rng, volumeTeu, sizeMix);
+  const unitTypes = drawUnitTypes(context.rng, volumeUnits, volumeTeu, mixed ? terms.template.typeMix : undefined, context.defs.containerTypes, context.poweredSupply ?? false);
+  return { volumeTeu, volumeUnits, unitTypes };
 }
 
 /** Podmienky ponuky po ťahoch `Rng` (šablóna, loď, mierka a SLA už sú vyžrebované). */
@@ -172,7 +179,7 @@ function buildImport(context: OfferContext, terms: DrawnTerms, id: ContractId, v
     cargoTypeId: terms.template.cargoTypeId,
     ...volume,
     slaDays: terms.slaDays,
-    rewardCents: contractRewardCents(volume.volumeTeu, cargoType.basePricePerUnitCents, terms.urgency),
+    rewardCents: contractRewardCents(rateTeuOf(volume.unitTypes, volume.volumeUnits, volume.volumeTeu, defs.containerTypes), cargoType.basePricePerUnitCents, terms.urgency),
     xpReward: contractXpReward(volume.volumeTeu, cargoType.xpPerUnit, defs.economy.xpMultiplier),
     offeredTick: terms.offeredTick,
     offerExpiresTick: terms.offerExpiresTick,
@@ -243,7 +250,7 @@ function buildTranship(
     cargoTypeId: terms.template.cargoTypeId,
     ...volume,
     slaDays: terms.slaDays,
-    rewardCents: contractRewardCents(volume.volumeTeu, cargoType.transhipPricePerUnitCents, terms.urgency),
+    rewardCents: contractRewardCents(rateTeuOf(volume.unitTypes, volume.volumeUnits, volume.volumeTeu, defs.containerTypes), cargoType.transhipPricePerUnitCents, terms.urgency),
     xpReward: contractXpReward(volume.volumeTeu, cargoType.xpPerUnit, defs.economy.xpMultiplier),
     offeredTick: terms.offeredTick,
     offerExpiresTick: terms.offerExpiresTick,

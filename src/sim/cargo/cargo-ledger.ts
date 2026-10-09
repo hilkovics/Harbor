@@ -52,6 +52,8 @@ import {
   cargoLabelsProblem,
   cargoStatusProblem,
   containerLabelsDefProblem,
+  needsPlug,
+  reeferStateProblem,
   teuOf,
   type CargoDirection,
   type CargoHold,
@@ -59,6 +61,7 @@ import {
   type CargoUnit,
   type CargoUnitLabels,
   type CargoUnitLabelsInput,
+  type ReeferState,
 } from './cargo-unit';
 
 /** Závislosti ledgera od sveta (v `World` sú to `defs.cargoTypes`, `ids`, `events`, `clock`). */
@@ -92,7 +95,7 @@ export interface CargoMoveObserver {
  * `unitAtIndex` (T04-02): rampa počíta jednotky na docku prechodom svojich jednotiek bez kópie (dock nie je jedinečné
  * miesto, ledger ho neindexuje).
  */
-export type CargoReader = Pick<CargoLedger, 'get' | 'unitsAt' | 'countAt' | 'teuAt' | 'firstUnitAt' | 'unitAtSlot' | 'unitAtIndex'>;
+export type CargoReader = Pick<CargoLedger, 'containerTypeOf' | 'get' | 'unitsAt' | 'countAt' | 'teuAt' | 'firstUnitAt' | 'unitAtSlot' | 'unitAtIndex'>;
 
 /** Index jednotiek jedného držiteľa. */
 interface Bucket {
@@ -137,10 +140,11 @@ interface UnitState {
   readonly hold: CargoHold | null;
   readonly status: CargoStatus;
   readonly repairUntilTick: number | null;
+  readonly reefer: ReeferState | null;
 }
 
 /** Zmrazená jednotka s kanonickým poradím kľúčov (`id, typeId, contractId, štítky, hold, status, repairUntilTick, quantity, location`). */
-function freezeUnit(base: Omit<CargoUnit, 'location' | 'hold' | 'status' | 'repairUntilTick'>, state: UnitState, location: CargoLocation): CargoUnit {
+function freezeUnit(base: Omit<CargoUnit, 'location' | 'hold' | 'status' | 'repairUntilTick' | 'reefer'>, state: UnitState, location: CargoLocation): CargoUnit {
   return Object.freeze({
     id: base.id,
     typeId: base.typeId,
@@ -156,13 +160,19 @@ function freezeUnit(base: Omit<CargoUnit, 'location' | 'hold' | 'status' | 'repa
     hold: state.hold,
     status: state.status,
     repairUntilTick: state.repairUntilTick,
+    reefer: state.reefer,
     quantity: base.quantity,
     location,
   });
 }
 
+/** Počiatočný stav reeferu: na palube napájaný z lode, inak bez napájania od `tick`. */
+function freshReefer(onShip: boolean, tick: number): ReeferState {
+  return Object.freeze({ plugged: onShip, unpluggedSinceTick: onShip ? null : tick, switchAtTick: null, waitSinceTick: null, alarmUntilTick: null, fixUntilTick: null });
+}
+
 /** Počiatočný stav novej jednotky: bez zadržania, `available`. */
-const FRESH_STATE: UnitState = Object.freeze({ hold: null, status: DEFAULT_CARGO_STATUS, repairUntilTick: null });
+const FRESH_STATE: UnitState = Object.freeze({ hold: null, status: DEFAULT_CARGO_STATUS, repairUntilTick: null, reefer: null });
 
 function zeroCounts(): Record<CargoLocationKind, number> {
   return Object.fromEntries(CARGO_LOCATION_KINDS.map((kind) => [kind, 0])) as Record<CargoLocationKind, number>;
@@ -185,6 +195,7 @@ function unitState(unit: CargoUnit): CargoUnit {
     hold: unit.hold === null ? null : { reason: unit.hold.reason, untilTick: unit.hold.untilTick },
     status: unit.status,
     repairUntilTick: unit.repairUntilTick,
+    reefer: unit.reefer === null ? null : { ...unit.reefer },
     quantity: unit.quantity,
     location: { ...unit.location },
   };
@@ -267,7 +278,9 @@ export class CargoLedger {
     const { unitsPerBatch } = this.deps.cargoTypes.get(typeId);
     // Od tohto bodu nič nevyhadzuje: id sa spotrebuje len pre skutočne vytvorenú jednotku.
     const base = { id: this.deps.ids.next(), typeId, contractId, ...labels, quantity: unitsPerBatch };
-    const unit = freezeUnit(base, FRESH_STATE, target);
+    // Reefer (R5, ADR-042): na palube je napájaný z lode, inak vzniká bez napájania (kamión) — hodiny bez napájania bežia od vzniku.
+    const reefer = needsPlug({ containerType: labels.containerType, direction: labels.direction }, this.deps.containerTypes) ? freshReefer(target.kind === 'on_ship', this.deps.clock.tick) : null;
+    const unit = freezeUnit(base, { ...FRESH_STATE, reefer }, target);
     this.place(unit);
     this.created += 1;
     return unit;
@@ -305,9 +318,32 @@ export class CargoLedger {
     }
     const problem = cargoStatusProblem(status, repairUntilTick, unit.direction);
     if (problem !== undefined) throw new CargoError('invalid_input', `CargoLedger.setStatus(#${String(unitId)}): ${problem}`);
-    const next = freezeUnit(unit, { hold: unit.hold, status, repairUntilTick }, unit.location);
+    const next = freezeUnit(unit, { hold: unit.hold, status, repairUntilTick, reefer: unit.reefer }, unit.location);
     this.units.set(unitId, next);
     return next;
+  }
+
+  /**
+   * Zmení stav reeferu (R5, ADR-042) — poloha ani poradie v indexe sa nemenia, udalosť nevzniká (hlási ju volajúci systém). Chyby (stav sa nezmení): neznáma jednotka →
+   * `CargoError('unknown_unit')`, jednotka, ktorá reefer nie je (`needsPlug`), alebo neplatný stav (`reeferStateProblem`) → `CargoError('invalid_input')`.
+   */
+  setReefer(unitId: EntityId, reefer: ReeferState): CargoUnit {
+    const unit = this.units.get(unitId);
+    if (unit === undefined) {
+      throw new CargoError('unknown_unit', `CargoLedger.setReefer: jednotka #${String(unitId)} neexistuje (neznáme id alebo už opustila mapu)`);
+    }
+    if (unit.reefer === null) throw new CargoError('invalid_input', `CargoLedger.setReefer(#${String(unitId)}): jednotka nie je reefer so zásuvkou (typ ${unit.containerType}, smer ${unit.direction})`);
+    const problem = reeferStateProblem(reefer);
+    if (problem !== undefined) throw new CargoError('invalid_input', `CargoLedger.setReefer(#${String(unitId)}): ${problem}`);
+    const next = freezeUnit(unit, { hold: unit.hold, status: unit.status, repairUntilTick: unit.repairUntilTick, reefer: Object.freeze({ ...reefer }) }, unit.location);
+    this.units.set(unitId, next);
+    return next;
+  }
+
+  /** Def typu kontajnera jednotky (pravidlá stohu), alebo `undefined` pre neznámu jednotku. */
+  containerTypeOf(unitId: EntityId): Readonly<ContainerTypeDef> | undefined {
+    const unit = this.units.get(unitId);
+    return unit === undefined ? undefined : this.deps.containerTypes.get(unit.containerType);
   }
 
   /**

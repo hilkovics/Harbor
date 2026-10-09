@@ -72,6 +72,8 @@ export const MODULE_PARAM_SPECS: { readonly [K in ModuleKind]: SpecTable<ModuleP
     // RTG blok (R3, ADR-040 bod 2): stĺpec jednosmerného pruhu a rozstup TP; povinné práve pri `role: 'rtg_block'` (`checkStorageParams`).
     laneCol: { kind: 'integer', min: 0, optional: true },
     tpSpacingBays: { kind: 'integer', min: 1, optional: true },
+    // Zásuvky pre reefery (R5, ADR-042): počet radov od radu 0 so zásuvkou (pri každej vrstve); len RTG blok, najviac `rows` (`checkStorageParams`).
+    plugRows: { kind: 'integer', min: 1, optional: true },
   },
   gate: {
     // Pruh brány (R4, ADR-041 bod 1): smer, kroky podľa smeru (vzťah polí v `checkGateParams`), šance cez `Rng`, režim `express`.
@@ -154,6 +156,12 @@ function checkStorageParams(params: Readonly<Record<string, unknown>>, path: str
   const lane = ['laneCol', 'tpSpacingBays'].find((key) => (role === 'rtg_block') !== (params[key] !== undefined));
   if (lane !== undefined) {
     return { path: `${path}/${lane}`, message: role === 'rtg_block' ? `RTG blok (role rtg_block) vyžaduje ${lane}` : `${lane} má zmysel len pri role rtg_block` };
+  }
+  if (params['plugRows'] !== undefined) {
+    if (role !== 'rtg_block') return { path: `${path}/plugRows`, message: 'plugRows (zásuvky pre reefery) má zmysel len pri role rtg_block' };
+    if (typeof params['rows'] === 'number' && (params['plugRows'] as number) > params['rows']) {
+      return { path: `${path}/plugRows`, message: `plugRows (${String(params['plugRows'])}) musí byť ≤ rows (${String(params['rows'])})` };
+    }
   }
   const geometry = STORAGE_GEOMETRY_KEYS.filter((key) => params[key] !== undefined);
   if (geometry.length > 0 && geometry.length < STORAGE_GEOMETRY_KEYS.length) {

@@ -1,6 +1,10 @@
 {
   "schemaVersion": 1,
   "items": [
-    { "id": "dry", "sizes": [20, 40], "stacking": "normal", "needsPower": false, "oogChance": 0, "rateMultiplier": 1.0 }
+    { "id": "dry", "sizes": [20, 40], "stacking": "normal", "needsPower": false, "oogChance": 0, "rateMultiplier": 1.0 },
+    { "id": "reefer", "sizes": [20, 40], "stacking": "normal", "needsPower": true, "oogChance": 0, "rateMultiplier": 1.6 },
+    { "id": "open_top", "sizes": [20, 40], "stacking": "normal", "needsPower": false, "oogChance": 0.5, "rateMultiplier": 1.4 },
+    { "id": "flat_rack", "sizes": [20, 40], "stacking": "top_only", "needsPower": false, "oogChance": 0.8, "rateMultiplier": 1.8 },
+    { "id": "tank", "sizes": [20], "stacking": "normal", "needsPower": false, "oogChance": 0, "rateMultiplier": 1.3 }
   ]
 }

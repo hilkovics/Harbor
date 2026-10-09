@@ -11,6 +11,7 @@
  *    skupiny, ktorého vrch odchádza neskôr, medzi nimi najtesnejšie pasujúci (`gap`) → inak najmenšia penalizácia (počet kontajnerov, ktoré by sa zavalili) —
  *    zavalenie len v bloku, ktorý ostane voľný aspoň na `logistics.buryReserveColumns` stĺpcov (rehandling potrebuje kam preložiť; kontajner s jobom sa nezavaľuje nikdy);
  *    bez vhodného stohu jednotka čaká (`null`, `NoStorageAvailable`).
+ * 3b. **Typy (R5, ADR-042):** reefer len do bloku so zásuvkami a len na stoh so zásuvkou (a ten blok prijíma len reefery), OOG len do bloku, ktorý ho prijíma; na flat rack ani na OOG sa neukladá.
  * 4. **Vzdialenosť:** bližší blok má prednosť; vzdialenosť bloku s RTG sa zväčší o `logistics.yardMachineLoadWeight` × (fronta stroja + rozbehnutý cyklus), takže
  *    práca sa rozloží medzi stroje (ADR-040 dodatok TR3-02c); bloky bez stroja (strádl) sa nemenia.
  *
@@ -18,12 +19,12 @@
  * Stohy počítajú aj rezervácie rozbehnutých jobov (`YardBlock.effectiveHeight`), takže rezervovaná bunka je platná aj vzhľadom na ostatné rezervácie.
  */
 import type { CargoUnit } from '../cargo/cargo-unit';
-import { teuOf } from '../cargo/cargo-unit';
+import { needsPlug, teuOf } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
 import { EmptyDepot } from '../modules/empty-depot';
 import { TruckGate } from '../modules/truck-gate';
 import type { Module } from '../modules/module';
-import { YardBlock } from '../modules/yard-block';
+import { YardBlock, coversBlocked } from '../modules/yard-block';
 import type { World } from '../world/world';
 import { emptyReturnRoom } from './empty-stock';
 import { distanceBetweenModules } from './module-access';
@@ -136,6 +137,13 @@ function scoreColumn(world: World, block: YardBlock, unit: CargoUnit, bay: numbe
   } else if (height > 0 && block.effectiveTopSize(bay, row) !== 20) {
     return false;
   }
+  // Pravidlá typov (R5, ADR-042): reefer len na stohu so zásuvkou; na flat rack ani na OOG nič neukladáme.
+  if (needsPlug(unit, world.defs.containerTypes) && !block.isPowered(bay, row)) return false;
+  if (height > 0) {
+    const coverId = block.effectiveTopUnit(bay, row);
+    const cover = coverId === null ? undefined : world.cargo.get(coverId);
+    if (cover !== undefined && coversBlocked(cover, world.cargo.containerTypeOf(cover.id))) return false;
+  }
   into.height = height;
   into.fill = unit.direction === 'import' ? height : -height;
   into.penalty = 0;
@@ -216,6 +224,8 @@ const TIERS: YardBlock[][] = [];
 function candidateTiers(world: World, unit: CargoUnit, from: Module): readonly YardBlock[][] {
   const category = world.defs.cargoTypes.get(unit.typeId).category;
   const teu = teuOf(unit);
+  // Blok so zásuvkami prijíma len reefery a reefer smie len do neho; OOG len do bloku, ktorý ho prijíma (R5, ADR-042).
+  const plug = needsPlug(unit, world.defs.containerTypes);
   DEPOT_BLOCKS.length = 0;
   YARD_BLOCKS.length = 0;
   TIERS.length = 0;
@@ -224,7 +234,7 @@ function candidateTiers(world: World, unit: CargoUnit, from: Module): readonly Y
     if (!(module instanceof YardBlock) || module.category !== category) continue;
     const isDepot = module instanceof EmptyDepot;
     anyDepot ||= isDepot;
-    if (!module.acceptsDirection(unit.direction) || module.freeCount < teu || distanceBetweenModules(world, from, module) === Infinity) continue;
+    if (!module.acceptsDirection(unit.direction) || module.freeCount < teu || module.hasSockets !== plug || module.acceptsOog !== unit.oog || distanceBetweenModules(world, from, module) === Infinity) continue;
     (isDepot ? DEPOT_BLOCKS : YARD_BLOCKS).push(module);
   }
   if (unit.direction !== 'empty') {

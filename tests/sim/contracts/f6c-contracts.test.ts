@@ -99,7 +99,7 @@ const unit = (unitId: number, direction: CargoUnit['direction'], location: Cargo
   weightClass: 'medium',
   hold: null,
   status: 'available',
-  repairUntilTick: null,
+  repairUntilTick: null, reefer: null,
   quantity: 1,
   location,
 });

@@ -138,7 +138,7 @@ export const EXPORT_LABELS: CargoUnitLabelsInput = { direction: 'export', voyage
 
 /** Celá import jednotka bez kontraktu (štítky `IMPORT_LABELS`, bez hold) — pre ručne skladané pohľady a stavy. */
 export function importUnit(fields: Pick<CargoUnit, 'id' | 'location'> & Partial<CargoUnit>): CargoUnit {
-  return { typeId: TEU, contractId: null, ...IMPORT_LABELS, hold: null, status: 'available', repairUntilTick: null, quantity: 1, ...fields };
+  return { typeId: TEU, contractId: null, ...IMPORT_LABELS, hold: null, status: 'available', repairUntilTick: null, reefer: null, quantity: 1, ...fields };
 }
 
 export interface LedgerHarness {

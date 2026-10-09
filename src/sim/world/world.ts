@@ -5,7 +5,7 @@
  *
  * Tick pipeline (§6): príkazy z fronty → krok 1 (`clock.advance()` + udalosti hraníc) → krok 2 (`ContractSystem`: pool,
  * lode kontraktov, SLA, penalizácie, výplata — ADR-026) → krok 3 (`ShipSystem`) →
- * krok 4 (`CraneSystem`) → krok 5 (`DispatcherSystem`) → krok 6a (`TrafficSystem`: pohyb všetkých nosičov pod pruhovými slotmi, ADR-037, ADR-038) → krok 6b (`VehicleSystem`) → krok 6c (`YardMachineSystem`: stroje blokov RTG, ADR-040) →
+ * krok 4 (`CraneSystem`) → krok 5 (`DispatcherSystem`) → krok 6a (`TrafficSystem`: pohyb všetkých nosičov pod pruhovými slotmi, ADR-037, ADR-038) → krok 6b (`VehicleSystem`) → krok 6c (`YardMachineSystem`: stroje blokov RTG, ADR-040) → krok 6d (`ReeferSystem`: napájanie reeferov, ADR-042) →
  * krok 8 (`LandsideSystem`: kamióny, brány, spawn, export) → krok 9 (`EconomySystem`: údržba, mzdy, súhrny, bankrot — ADR-025) → krok 11 (`MetricsSystem`, traffic) → krok 12 (`assertInvariants()`, ak je zapnuté
  * `checkInvariants`) → krok 13 (`events.flush()`). Ďalšie kroky pribúdajú so systémami na označenom mieste v `tick()`; poradie §6 je záväzné
  * a mení sa len cez ADR.
@@ -54,6 +54,7 @@
 import { CargoLedger } from '../cargo/cargo-ledger';
 import type { CargoLedgerState } from '../cargo/cargo-ledger-state';
 import { HoldIndex } from '../cargo/hold-index';
+import { ReeferIndex } from '../cargo/reefer-index';
 import type { CargoLocation } from '../cargo/cargo-location';
 import type { CargoUnit } from '../cargo/cargo-unit';
 import type { StorageGuard } from '../cargo/storage-guard';
@@ -86,6 +87,7 @@ import { RtgBlock } from '../modules/rtg-block';
 import { MachineError } from '../machines/machine-error';
 import { RtgCrane } from '../machines/rtg-crane';
 import type { YardMachine } from '../machines/yard-machine';
+import { ReeferSystem } from '../systems/reefer-system';
 import { YardMachineSystem } from '../systems/yard-machine-system';
 import { VehicleDepot } from '../modules/vehicle-depot';
 import type { AdvanceGate, Carrier } from '../movement/carrier';
@@ -258,6 +260,11 @@ export class World {
    */
   readonly holdIndex = new HoldIndex();
   /**
+   * Sledované reefery (R5, ADR-042) — odvodená cache pre krok 6d (`ReeferSystem`), nie je v save (obnova ju zostaví z jednotiek so stavom `reefer`). Plní ju háčik `CargoLedger.move`
+   * a STS pri preskočení reeferu.
+   */
+  readonly reeferIndex = new ReeferIndex();
+  /**
    * Plán toku prázdnych kontajnerov (F6c, ADR-034): naplánované návraty z vnútrozemia a výdaje prázdneho exportérovi, zoradené
    * podľa ticku, a poverenia kamiónov misie `collect` (`errands`). Je v save (`emptyFlow`); plánuje ho krok 8 (`trucks/empty-plan.ts`:
    * odchod importu kamiónom, `AcceptContract` export bookingu) a spotrebúva krok 8 (`trucks/empty-trucks.ts`); v prístave bez depa prázdnych
@@ -295,6 +302,7 @@ export class World {
   private readonly trafficSystem = new TrafficSystem();
   private readonly vehicleSystem = new VehicleSystem();
   private readonly yardMachineSystem = new YardMachineSystem();
+  private readonly reeferSystem = new ReeferSystem();
   private readonly landsideSystem = new LandsideSystem();
   private readonly economySystem = new EconomySystem();
   private readonly metricsSystem = new MetricsSystem();
@@ -332,7 +340,7 @@ export class World {
     this.contractBook = parts.contracts === null ? new ContractBook(bookEnv) : ContractBook.fromState(bookEnv, parts.contracts);
     this.emptyFlow = parts.emptyFlow === null ? new EmptyFlow() : EmptyFlow.fromState(parts.emptyFlow);
     this.hinterland = parts.hinterland === null ? new Hinterland() : Hinterland.fromState(parts.hinterland);
-    const { contractBook, storedCargo, holdIndex } = this;
+    const { contractBook, storedCargo, holdIndex, reeferIndex } = this;
     // Počítadlá jednotiek kontraktov (ADR-026), index uskladneného nákladu pre outbound (ADR-027) a index zadržaných
     // jednotiek (ADR-032: zadržaná jednotka, ktorá opustí mapu, z neho vypadne) z háčika ledgera — bez skenu nákladu v ticku.
     const observer = {
@@ -340,6 +348,7 @@ export class World {
         contractBook.cargoMoved(unit, to);
         storedCargo.cargoMoved(unit, to);
         if (unit.hold !== null && (to.kind === 'exported' || to.kind === 'shipped')) holdIndex.remove(unit.id);
+        if (unit.reefer !== null) reeferIndex.add(unit.id);
       },
     };
     // Stráž skladov so stohmi (ADR-039): ledger pri presune do / zo skladu overí pravidlá stohu a udržiava `StackGrid` bloku.
@@ -1108,6 +1117,9 @@ export class World {
 
     // 6c. yardMachineSystem — stroje blokov (RTG): fronta TP, cykly zdvih / pojazd / odklad, odovzdanie vozidlu (ADR-040; poradie §6 rozšírené o krok 6c).
     this.yardMachineSystem.tick(this);
+
+    // 6d. reeferSystem — napájanie reeferov (zapojenie, odpojenie, hodiny bez prúdu), alarmy a technici, reklamácie, elektrina (ADR-042; poradie §6 rozšírené o krok 6d).
+    this.reeferSystem.tick(this, closed);
 
     // 7. flowSystem — pribudne s potrubiami (F9) presne na tomto mieste §6.
 

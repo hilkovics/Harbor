@@ -77,9 +77,9 @@ describe('containerLabelsDefProblem — súlad s container_types.json', () => {
   });
 
   it('neznámy typ → problém na containerType so zoznamom známych', () => {
-    const problem = containerLabelsDefProblem({ sizeFt: 20, containerType: 'reefer', oog: false }, types);
+    const problem = containerLabelsDefProblem({ sizeFt: 20, containerType: 'hazmat_x', oog: false }, types);
     expect(problem?.field).toBe('containerType');
-    expect(problem?.problem).toMatch(/neznámy typ kontajnera 'reefer' \(známe: dry\)/);
+    expect(problem?.problem).toMatch(/neznámy typ kontajnera 'hazmat_x' \(známe: dry, reefer, open_top, flat_rack, tank\)/);
   });
 
   it('nadrozmer pri type bez oogChance je chyba', () => {
@@ -105,7 +105,7 @@ describe('CargoLedger.create — štítky kontajnera a TEU u držiteľa', () => 
 
   it.each([
     ['veľkosť 30', { sizeFt: 30 as 20 }, /sizeFt/],
-    ['neznámy typ', { containerType: 'reefer' }, /containerType: neznámy typ kontajnera 'reefer'/],
+    ['neznámy typ', { containerType: 'hazmat_x' }, /containerType: neznámy typ kontajnera 'hazmat_x'/],
     ['nadrozmer pri dry', { oog: true }, /oog/],
   ])('create odmietne: %s (CargoError invalid_input, id sa nespotrebuje)', (_name, patch, message) => {
     const harness = createHarness();
@@ -163,7 +163,7 @@ describe('save: štítky kontajnera v ledgeri', () => {
 
   it.each([
     ['veľkosť 30', { sizeFt: 30 }, '/units/0/sizeFt'],
-    ['neznámy typ kontajnera', { containerType: 'reefer' }, '/units/0/containerType'],
+    ['neznámy typ kontajnera', { containerType: 'hazmat_x' }, '/units/0/containerType'],
     ['nadrozmer pri dry', { oog: true }, '/units/0/oog'],
     ['oog ako reťazec', { oog: 'false' }, '/units/0/oog'],
   ])('fromState odmietne: %s → CargoStateError na %s', (_name, patch, path) => {

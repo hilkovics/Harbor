@@ -694,6 +694,27 @@
         }
       ]
     },
+    "reefer_block_8": {
+      "footprint": {
+        "w": 4,
+        "h": 8
+      },
+      "file": "modules/reefer_block_8.svg",
+      "connectors": [
+        {
+          "x": 3,
+          "y": 0,
+          "side": "n",
+          "type": "road"
+        },
+        {
+          "x": 3,
+          "y": 7,
+          "side": "s",
+          "type": "road"
+        }
+      ]
+    },
     "empty_depot": {
       "footprint": {
         "w": 4,

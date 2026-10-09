@@ -81,6 +81,7 @@ describe('skutočné katalógy F2 až F4', () => {
       'gate_out_lane',
       'pre_gate_buffer',
       'truck_holding',
+      'reefer_block_8',
     ]);
     expect(item(def, 'berth_standard')).toEqual({
       id: 'berth_standard',
@@ -248,6 +249,8 @@ describe('skutočné katalógy F2 až F4', () => {
         emptyPickupLeadHoursRange: [4, 12],
         emptyPickupMaxWaitHours: 6,
       },
+      reefer: { plugTicks: 30, unplugTicks: 30, maxUnpluggedHours: 3, alarmChancePerDay: 0.05, alarmResponseHours: 2, technicians: 1, alarmFixTicks: 60 },
+      oog: { extraCycleTicks: 60, lashTicks: 120 },
     });
   });
 

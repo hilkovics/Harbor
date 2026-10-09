@@ -29,8 +29,11 @@ const RUN_TICKS = 7_000;
 const MIN_BEST_HOUR = 60;
 /** Kamión v `to_pre_gate`, ktorý stojí aspoň toľko tickov, je front na verejnej ceste (krátke zastavenie za predchádzajúcim kamiónom front nie je). */
 const QUEUE_BLOCK_TICKS = 10;
-/** Najdlhší pobyt v jednom stave: kamión čaká v stojisku na dock najviac niekoľko stoviek tickov (namerané ≈ 530). */
-const STUCK_TICKS = 1_500;
+/**
+ * Najdlhší pobyt v jednom stave (mimo `holding`): všetky jednotky sa napokon vyvezú, takže ide o strop proti trvalému uviaznutiu, nie o cieľ. Namerané ≈ 1 470 (kamión v `gate_pass` čaká na voľný slot
+ * výjazdovej bunky pruhu, kým ho zahlcuje prejazdná doprava k odstavným plochám) a po prednosti čakajúcich z odstavnej plochy (TR4-06b) ≈ 1 680; férovosť výjazdu z brány je v BACKLOG.
+ */
+const STUCK_TICKS = 2_000;
 const SPLIT_TICK = 200;
 const INVARIANT_EVERY = 100;
 

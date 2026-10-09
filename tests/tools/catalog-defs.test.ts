@@ -151,7 +151,7 @@ describe('skutočné katalógy F2 až F4', () => {
     });
     expect(item(def, 'gate_out_lane')['params']).toEqual({ direction: 'out', weighTicks: 6, scanTicks: 6, sealTicks: 4, sealIssueChance: 0.03, inspectionTicks: 40, expressTicks: 8 });
     expect(item(def, 'pre_gate_buffer')).toMatchObject({ kind: 'pre_gate', footprint: { w: 8, h: 8 }, params: { rows: 8, rowCapacity: 2 } });
-    expect(item(def, 'truck_holding')).toMatchObject({ kind: 'holding', footprint: { w: 6, h: 5 }, params: { stalls: 6 } });
+    expect(item(def, 'truck_holding')).toMatchObject({ kind: 'holding', footprint: { w: 6, h: 5 }, params: { stalls: 6, stallLengthCells: 3 } });
   });
 
   it('trucks.json: truck_container (ARCHITECTURE §4.2, §7.5)', () => {
@@ -231,6 +231,7 @@ describe('skutočné katalógy F2 až F4', () => {
       rehandleSpareCells: 2,
       apronUnloadReserveSlots: 1,
       hookJobLookahead: 8,
+      dualCandidateLimit: 64,
       hookPairedLoadJobs: 1,
       importDwellEstimateHours: 6,
       yardPlanner: 'planned',
@@ -826,6 +827,7 @@ describe('schémy katalógov (validateDefsDir)', () => {
         ['stalls', 0, '/items/9/params/stalls must be >= 1'],
         ['stalls', 6.5, '/items/9/params/stalls must be integer'],
         ['stalls', '6', '/items/9/params/stalls must be integer'],
+        ['stallLengthCells', 0, '/items/9/params/stallLengthCells must be >= 1'],
       ])('holding %s = %j', (field, value, message) => {
         expect(errorsAfter('modules', (def) => void (params(holding(def))[field] = value))).toEqual([`modules.json: ${message}`]);
       });
@@ -839,6 +841,9 @@ describe('schémy katalógov (validateDefsDir)', () => {
         ]);
         expect(errorsAfter('modules', (def) => void delete params(holding(def))['stalls'])).toEqual([
           "modules.json: /items/9/params must have required property 'stalls'",
+        ]);
+        expect(errorsAfter('modules', (def) => void delete params(holding(def))['stallLengthCells'])).toEqual([
+          "modules.json: /items/9/params must have required property 'stallLengthCells'",
         ]);
       });
 
@@ -859,6 +864,8 @@ describe('schémy katalógov (validateDefsDir)', () => {
         ]);
         expect(errorsAfter('modules', (def) => void (holding(def)['params'] = {}))).toEqual([
           "modules.json: /items/9/params must have required property 'stalls'",
+
+          "modules.json: /items/9/params must have required property 'stallLengthCells'",
         ]);
       });
 

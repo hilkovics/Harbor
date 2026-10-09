@@ -22,23 +22,22 @@ import type { Truck } from './truck';
 import { TP_PHASE_SEQUENCE, TP_ROLE_OF_MISSION, changeTruckState, type TpPhase } from './truck-fsm';
 import { canExitTo, exitTo, startTruckTrip } from './truck-trip';
 
-/** Najviac kandidátov na odvoz, ktoré dual transaction porovná (deterministický strop prechodu dopytov). */
-const DUAL_CANDIDATE_LIMIT = 64;
+/** Odpočet fázy bez pevného času (`handling`, `depart`): fáza trvá aspoň tento tick (nesmie byť 0, inak by ju `enterPhase` preskočil). */
+const UNTIMED_PHASE_TICKS = 1;
 
-/** Trvanie fázy v tickoch z defu kamióna; `handling` a `depart` nemajú pevný čas (pripnuté na 1). */
+/** Trvanie fázy v tickoch z defu kamióna (tabuľka, nie switch). */
+const PHASE_TICKS: { readonly [P in TpPhase]: (def: Truck['def']) => number } = Object.freeze({
+  safe_in: (def: Truck['def']) => def.safeZoneTicks,
+  safe_out: (def: Truck['def']) => def.safeZoneTicks,
+  unlash: (def: Truck['def']) => def.unlashTicks,
+  lash: (def: Truck['def']) => def.lashTicks,
+  handling: () => UNTIMED_PHASE_TICKS,
+  depart: () => UNTIMED_PHASE_TICKS,
+});
+
+/** Trvanie fázy v tickoch z defu kamióna; `handling` a `depart` nemajú pevný čas (`UNTIMED_PHASE_TICKS`). */
 function phaseTicks(truck: Truck, phase: TpPhase): number {
-  switch (phase) {
-    case 'safe_in':
-    case 'safe_out':
-      return truck.def.safeZoneTicks;
-    case 'unlash':
-      return truck.def.unlashTicks;
-    case 'lash':
-      return truck.def.lashTicks;
-    case 'handling':
-    case 'depart':
-      return 1;
-  }
+  return PHASE_TICKS[phase](truck.def);
 }
 
 /** Fáza po `phase` podľa úlohy kamióna (`TP_PHASE_SEQUENCE`); po poslednej `depart`. */
@@ -68,26 +67,45 @@ interface DualChoice {
   readonly cell: number;
 }
 
+/** Stav hľadania druhej zastávky (modulový, bez alokácie na hot path; `search` ho vždy najprv inicializuje, vykonáva sa synchrónne). */
+const SEARCH: { world: World | null; truck: Truck | null; best: DualChoice | null; bestCost: number; seen: number } = { world: null, truck: null, best: null, bestCost: Infinity, seen: 0 };
+
+/** Návštevník kandidátov na odvoz pre `forEachPickupCandidate` (statická funkcia, žiadny closure na tick). */
+function visitCandidate(unit: CargoUnit, block: YardBlock): boolean {
+  const { world, truck } = SEARCH;
+  if (world === null || truck === null) return false;
+  const slot = slotOf(unit.location);
+  if (slot === null) return true;
+  const token = reserveToken(world, block, nearBayOfSlot(block, slot), false, truck.id);
+  if (token === null || token.kind !== 'tp') return true;
+  const cost = token.cell === truck.cell ? 0 : world.distances.distance(truck.cell, token.cell);
+  if (Number.isFinite(cost) && cost < SEARCH.bestCost) {
+    SEARCH.best = { unit, block, cell: token.cell };
+    SEARCH.bestCost = cost;
+  }
+  SEARCH.seen += 1;
+  return SEARCH.seen < world.defs.logistics.dualCandidateLimit;
+}
+
+/** Vezme nájdeného kandidáta a vyčistí stav hľadania. */
+function takeBest(): DualChoice | null {
+  const best = SEARCH.best;
+  SEARCH.world = null;
+  SEARCH.truck = null;
+  SEARCH.best = null;
+  return best;
+}
+
 /** Dual transaction (viď hlavička): `true`, keď si kamión nárokoval ďalšiu jednotku a pokračuje druhou zastávkou. */
 function tryDualTransaction(world: World, truck: Truck): boolean {
-  let best: DualChoice | undefined;
-  let bestCost = Infinity;
-  let seen = 0;
-  forEachPickupCandidate(world, (unit, block) => {
-    const slot = slotOf(unit.location);
-    if (slot === null) return true;
-    const token = reserveToken(world, block, nearBayOfSlot(block, slot), false, truck.id);
-    if (token === null || token.kind !== 'tp') return true;
-    const cost = token.cell === truck.cell ? 0 : world.distances.distance(truck.cell, token.cell);
-    if (Number.isFinite(cost) && cost < bestCost) {
-      best = { unit, block, cell: token.cell };
-      bestCost = cost;
-    }
-    seen += 1;
-    return seen < DUAL_CANDIDATE_LIMIT;
-  });
-  if (best === undefined) return false;
-  const choice: DualChoice = best;
+  SEARCH.world = world;
+  SEARCH.truck = truck;
+  SEARCH.best = null;
+  SEARCH.bestCost = Infinity;
+  SEARCH.seen = 0;
+  forEachPickupCandidate(world, visitCandidate);
+  const choice = takeBest();
+  if (choice === null) return false;
   const edge = truck.state === 'at_edge_tp';
   const previousCell = truck.tpCell;
   const sameTp = choice.cell === previousCell;

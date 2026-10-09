@@ -174,10 +174,10 @@ export class Truck extends Carrier {
   /** Jednotka aktuálnej zastávky (z `jobId`; ostáva po zániku jobu do odchodu z TP); mení ju systém (`openReceiveJob`, `openDeliverJob`). */
   unitId: EntityId | null;
   /** Rezervované TP: bunka pruhu RTG bloku, alebo vonkajšia bunka konektora bloku (TP na hrane); `null`, keď kamión drží státie alebo už z TP odišiel. */
-  tpCell: number | null;
+  private tpCellValue: number | null;
   /** Odstavná plocha, v ktorej kamión drží státie `stall`; `null` bez státia. */
-  holdingId: EntityId | null;
-  stall: number | null;
+  private holdingIdValue: EntityId | null;
+  private stallValue: number | null;
   /** Fáza na TP (`at_tp`, `at_edge_tp`); inak `null`. */
   phase: TpPhase | null;
   /** Tick príchodu k vstupnému pruhu brány (TTT); `null` pred bránou. */
@@ -186,13 +186,15 @@ export class Truck extends Carrier {
    * Vstupný pruh brány (R4, ADR-041): kamión pred plochou má predbežný pruh (prvý z pruhov plochy), pri vjazde na plochu sa preradí na pruh svojho radu
    * (`assignLane`). Mení ho len systém pri vjazde na predbránovú plochu.
    */
-  gateId: EntityId;
+  private gateIdValue: EntityId;
   /** Výstupný pruh brány (R4): `null`, kým si ho kamión nevyberie podľa odhadu času; po výbere nemenný (`assignOutLane`). */
-  gateOutId: EntityId | null;
+  private gateOutIdValue: EntityId | null;
   /** Predbránová plocha v stavoch `to_pre_gate` / `pre_gate`; inak `null`. */
-  preGateId: EntityId | null;
+  private preGateIdValue: EntityId | null;
   /** Radový pruh predbránovej plochy v stave `pre_gate`; inak `null`. */
   row: number | null;
+  /** Odvodený index obsadenia (`World.truckIndex`) sa zneplatní pri každej zmene poľa, ktoré číta; `null` mimo sveta. */
+  private watcher: (() => void) | null = null;
   private currentMission: TruckMission;
   private current: TruckState;
   private resumeState: TruckTravelState | null;
@@ -257,18 +259,83 @@ export class Truck extends Carrier {
     this.blockId = blockId;
     this.jobId = jobId;
     this.unitId = unitId;
-    this.tpCell = tpCell;
-    this.holdingId = holdingId;
-    this.stall = stall;
+    this.tpCellValue = tpCell;
+    this.holdingIdValue = holdingId;
+    this.stallValue = stall;
     this.phase = phase;
     this.gateInTick = gateInTick;
-    this.gateId = gateId;
-    this.gateOutId = gateOutId;
-    this.preGateId = preGateId;
+    this.gateIdValue = gateId;
+    this.gateOutIdValue = gateOutId;
+    this.preGateIdValue = preGateId;
     this.row = row;
     this.currentMission = mission;
     this.current = state;
     this.resumeState = resume;
+  }
+
+  /** Pripojí (`null` = odpojí) sledovač zmien polí, z ktorých je odvodený index obsadenia (`World.addTruck` / `removeTruck`). */
+  watchChanges(watcher: (() => void) | null): void {
+    this.watcher = watcher;
+  }
+
+  /** Rezervované TP (viď polia vyššie); zmena zneplatní index obsadenia. */
+  get tpCell(): number | null {
+    return this.tpCellValue;
+  }
+
+  set tpCell(value: number | null) {
+    this.tpCellValue = value;
+    this.watcher?.();
+  }
+
+  /** Odstavná plocha držaného státia; zmena zneplatní index obsadenia. */
+  get holdingId(): EntityId | null {
+    return this.holdingIdValue;
+  }
+
+  set holdingId(value: EntityId | null) {
+    this.holdingIdValue = value;
+    this.watcher?.();
+  }
+
+  /** Držané státie; zmena zneplatní index obsadenia. */
+  get stall(): number | null {
+    return this.stallValue;
+  }
+
+  set stall(value: number | null) {
+    this.stallValue = value;
+    this.watcher?.();
+  }
+
+  /** Vstupný pruh brány; zmena zneplatní index obsadenia. */
+  get gateId(): EntityId {
+    return this.gateIdValue;
+  }
+
+  set gateId(value: EntityId) {
+    this.gateIdValue = value;
+    this.watcher?.();
+  }
+
+  /** Výstupný pruh brány; zmena zneplatní index obsadenia. */
+  get gateOutId(): EntityId | null {
+    return this.gateOutIdValue;
+  }
+
+  set gateOutId(value: EntityId | null) {
+    this.gateOutIdValue = value;
+    this.watcher?.();
+  }
+
+  /** Predbránová plocha; zmena zneplatní index obsadenia. */
+  get preGateId(): EntityId | null {
+    return this.preGateIdValue;
+  }
+
+  set preGateId(value: EntityId | null) {
+    this.preGateIdValue = value;
+    this.watcher?.();
   }
 
   /** Misia kamióna (ADR-032); mení ju len `becomePickup` (dual transaction). */
@@ -285,6 +352,7 @@ export class Truck extends Carrier {
       throw new TruckError('invalid_transition', `${this.label}: na pickup sa mení len delivery kamión na TP (misia ${this.currentMission}, stav ${this.current})`);
     }
     this.currentMission = 'pickup';
+    this.watcher?.();
   }
 
   /** Aktuálny stav FSM (mení ho len `transition`). */
@@ -336,6 +404,7 @@ export class Truck extends Carrier {
     if (to === 'no_path') this.resumeState = isTruckTravelState(from) ? from : null;
     else if (from === 'no_path') this.resumeState = null;
     this.current = to;
+    this.watcher?.();
     // Mimo cesty (predbránová a odstavná plocha, TP na hrane bloku, prechod bránou) kamión nedrží žiadne sloty; vo fronte brány, na TP v pruhu a bez cesty ich drží ďalej (ADR-037).
     if (!this.traits.holdsRoad) this.leaveRoad();
   }

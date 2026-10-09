@@ -263,6 +263,7 @@ const LOGISTICS_FIELDS: FieldTable<LogisticsDef> = {
   yardMachineLoadWeight: { kind: 'number', min: 0 },
   rehandleSpareCells: { kind: 'integer', min: 0 },
   apronUnloadReserveSlots: { kind: 'integer', min: 0 },
+  dualCandidateLimit: { kind: 'integer', min: 1 },
   hookJobLookahead: { kind: 'integer', min: 1 },
   hookPairedLoadJobs: { kind: 'integer', min: 1 },
   importDwellEstimateHours: { kind: 'number', exclusiveMin: 0 },

@@ -7,21 +7,12 @@
 import type { World } from '../world/world';
 import { YardBlock } from '../modules/yard-block';
 import { slotOf } from '../cargo/cargo-location';
-import { unitPickable } from '../logistics/yard-planner';
 import { NO_ACCESS } from '../logistics/module-access';
 import { holdingCell, nearBayOfSlot } from './destination';
 import { chooseTp } from './tp-points';
+import { stopReady } from './stop-ready';
 import type { Truck } from './truck';
 import { canExitTo, exitTo, holdingOfTruck } from './truck-trip';
-
-/** Je jednotka zastávky kamióna pripravená (viď hlavička)? */
-function stopReady(world: World, truck: Truck): boolean {
-  const job = truck.jobId === null ? undefined : world.jobs.get(truck.jobId);
-  if (job === undefined) return false;
-  if (job.from.kind !== 'in_storage') return true;
-  const unit = world.cargo.get(job.unitIds[0]);
-  return unit !== undefined && unit.location.kind === 'in_storage' && unitPickable(world, unit);
-}
 
 /** Bay, ku ktorému má kamión mieriť: bay jednotky (odvoz), alebo bay rezervovaného slotu (vyloženie). */
 function nearBayOf(world: World, truck: Truck, block: YardBlock): number | undefined {

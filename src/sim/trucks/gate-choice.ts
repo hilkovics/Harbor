@@ -59,9 +59,7 @@ export function pickInPortalFor(world: World, truckDef: Readonly<TruckDef> | und
 
 /** Kamióny, ktoré idú (stav `to_pre_gate`) na predbránovú plochu `buffer` a ešte na nej nie sú — držia si miesto. */
 export function preGateInbound(world: World, buffer: PreGateBuffer): number {
-  let count = 0;
-  for (const truck of world.trucks.values()) if (truck.state === 'to_pre_gate' && truck.preGateId === buffer.id) count += 1;
-  return count;
+  return world.truckIndex.inboundToPreGateOf(buffer.id);
 }
 
 /** Voľné miesta plochy po odpočítaní kamiónov na ceste k nej. */
@@ -71,11 +69,7 @@ export function preGateRoom(world: World, buffer: PreGateBuffer): number {
 
 /** Záťaž pruhu: kamióny vo fronte (aj prechádzajúci) a kamióny, ktoré k nemu idú (`to_gate` so vstupným pruhom, `to_gate_out` s výstupným pruhom). */
 export function laneLoad(world: World, lane: TruckGate): number {
-  let load = lane.queueLength;
-  for (const truck of world.trucks.values()) {
-    if ((truck.state === 'to_gate' && truck.gateId === lane.id) || (truck.state === 'to_gate_out' && truck.gateOutId === lane.id)) load += 1;
-  }
-  return load;
+  return lane.queueLength + world.truckIndex.inboundToGateOf(lane.id) + world.truckIndex.inboundToGateOutOf(lane.id);
 }
 
 /** Výber vstupu: vstupný pruh a (voliteľne) predbránová plocha, cez ktorú kamión ide. */

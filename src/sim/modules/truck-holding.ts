@@ -12,9 +12,6 @@ import { rotateLocalCell } from '../grid/rotation';
 import { LandExportModule, type LandsideRole, type LandsideRoster } from './land-export-module';
 import type { ModuleInit } from './module';
 
-/** Dĺžka státia v bunkách (1 × 3, ADR-041 bod 5). */
-export const STALL_LENGTH_CELLS = 3;
-
 /** Bunka státia vo svete pre VM `holdingSlots` (stredná bunka státia). */
 export interface StallCell {
   readonly x: number;
@@ -52,7 +49,7 @@ export class TruckHolding extends LandExportModule {
   stallCell(stall: number): StallCell {
     if (!Number.isInteger(stall) || stall < 0 || stall >= this.stalls) throw new RangeError(`${this.label}.stallCell: státie ${String(stall)} mimo 0…${String(this.stalls - 1)}`);
     const { w, h } = this.def.footprint;
-    const local = rotateLocalCell(stall % w, Math.floor(stall / w) * STALL_LENGTH_CELLS + 1, w, h, this.rotation);
+    const local = rotateLocalCell(stall % w, Math.floor(stall / w) * this.params.stallLengthCells + 1, w, h, this.rotation);
     return { x: this.origin.x + local.x, y: this.origin.y + local.y };
   }
 

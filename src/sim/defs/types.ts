@@ -236,6 +236,8 @@ export interface LogisticsDef extends DefBase {
   readonly apronUnloadReserveSlots: number;
   /** Okno dopredného plánovania pod hákom (celé ≥ 1, ADR-040 dodatok TR3-02d): najviac toľko jobov vykládky a toľko jobov nakládky na žeriav je vopred priradených, takže ťahače čakajú v pruhu kotviska pod žeriavom skôr, než ich žeriav potrebuje. */
   readonly hookJobLookahead: number;
+  /** Najviac kandidátov na odvoz (celé ≥ 1), ktoré dual transaction kamióna porovná (R4, ADR-041 bod 6). */
+  readonly dualCandidateLimit: number;
   /** Najviac jobov nakládky pod hákom v obehu na žeriav (celé ≥ 1), kým má loď aj import na vykládku (ADR-033 bod 4; nahrádza konštantu `PAIRED_HOOK_LOAD_JOBS_PER_CRANE`): export sa páruje s importom v dual cykle a nevyčerpá vozidlá vykládky. */
   readonly hookPairedLoadJobs: number;
   /** Koľko voľných stĺpcov (`maxTier` buniek každý, celé ≥ 0) musí ostať v bloku, aby plánovač smel zavaliť skôr odchádzajúci kontajner (ADR-039). */
@@ -527,6 +529,8 @@ export interface PreGateParams {
 export interface HoldingParams {
   /** Počet státí (celé ≥ 1). */
   readonly stalls: number;
+  /** Dĺžka státia v bunkách (celé ≥ 1; ADR-041 bod 5: 1 × 3). */
+  readonly stallLengthCells: number;
 }
 
 /** Druh bez typovaných parametrov (zatiaľ ostatné kind-y): `params` musí byť `{}`. */

@@ -48,8 +48,7 @@ export function laneBayOf(world: World, block: YardBlock, cell: number): number 
 
 /** Kamión, ktorý drží rezervované TP `cell`; `undefined` = TP je voľné. */
 export function tpHolder(world: World, cell: number): Truck | undefined {
-  for (const truck of world.trucks.values()) if (truck.tpCell === cell) return truck;
-  return undefined;
+  return world.truckIndex.tpHolder(cell);
 }
 
 /** Je TP voľné pre kamión `self` (nikto iný ho nedrží)? */
@@ -87,15 +86,12 @@ export function chooseTp(world: World, block: YardBlock, nearBay: number | undef
 
 /** Kamión, ktorý drží státie `stall` odstavnej plochy `holding`; `undefined` = voľné. */
 export function stallHolder(world: World, holding: TruckHolding, stall: number): Truck | undefined {
-  for (const truck of world.trucks.values()) if (truck.holdingId === holding.id && truck.stall === stall) return truck;
-  return undefined;
+  return world.truckIndex.stallHolder(holding.id, stall);
 }
 
 /** Počet voľných státí odstavnej plochy. */
 export function freeStalls(world: World, holding: TruckHolding): number {
-  let used = 0;
-  for (const truck of world.trucks.values()) if (truck.holdingId === holding.id) used += 1;
-  return holding.stalls - used;
+  return holding.stalls - world.truckIndex.usedStalls(holding.id);
 }
 
 /** Prvé voľné státie odstavnej plochy, alebo −1. */

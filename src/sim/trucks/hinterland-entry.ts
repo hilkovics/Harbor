@@ -56,6 +56,8 @@ function probeUnit(world: World, spec: DeliverySpec): CargoUnit {
  * vznikne kamión, skutočná jednotka v ňom (`CargoLedger.create` v `in_truck`) a job `deliver` s rezervovaným slotom.
  */
 export function tryAdmitDelivery(world: World, direction: DeliveryDirection, spec: DeliverySpec): AdmissionOutcome {
+  // Zdrojový pruh plánu miesta: plánovač (`chooseYardSlot`) potrebuje pruh ešte pred výberom bloku, kým skutočný vstup (`pickGate`) závisí od bloku a tokenu, takže vstupný pruh sa vyberá až potom;
+  // plán miesta v bloku od pruhu závisí len pri zdroji vzdialenosti (všetky vstupné pruhy sú v jednej sieti), preto stačí prvý platný pruh.
   const lane = world.landside.inLanes[0];
   const def = truckDefFor(world.defs, world.defs.cargoTypes.get(spec.typeId).category);
   if (lane === undefined || def === undefined) return 'waiting';

@@ -5,11 +5,12 @@
  */
 import type { EntityId } from '../core/entity-id';
 import { NO_ACCESS, accessCellIndex } from '../logistics/module-access';
-import type { TruckHolding } from '../modules/truck-holding';
+import { TruckHolding } from '../modules/truck-holding';
 import type { YardBlock } from '../modules/yard-block';
 import type { World } from '../world/world';
 import type { Truck } from './truck';
-import { chooseTp, firstFreeStall, hasLaneTp } from './tp-points';
+import { stopReady } from './stop-ready';
+import { chooseTp, firstFreeStall, hasLaneTp, isTpFree, tpCellsOf } from './tp-points';
 
 /** Rezervované TP. */
 export interface TpToken {
@@ -56,13 +57,45 @@ function freeHolding(world: World): StallToken | undefined {
   return undefined;
 }
 
+/** Má kamión z odstavnej plochy voľné TP z `cells`, na ktoré ho TOS môže zavolať (cesta z výjazdu plochy k TP a z TP von; rovnaká podmienka ako `callFromHolding`)? */
+function callableToFreeTp(world: World, truck: Truck, cells: readonly number[], self: EntityId | undefined): boolean {
+  const holding = truck.holdingId === null ? undefined : world.modules.get(truck.holdingId);
+  if (!(holding instanceof TruckHolding)) return false;
+  const exit = holdingCell(world, holding, 'exit');
+  if (exit === NO_ACCESS) return false;
+  for (const cell of cells) if (isTpFree(world, cell, self) && world.distances.distance(exit, cell) < Infinity && world.landside.reachesOut(cell)) return true;
+  return false;
+}
+
+/**
+ * Smie si nový záujemca zobrať voľné TP `cell` bloku `block`? Kamióny v odstavnej ploche, ktoré na TP bloku čakajú a ich zastávka je pripravená, majú prednosť (inak by nové kamióny
+ * donekonečna predbiehali čakajúcich, keď sa TP uvoľní skôr, než ho TOS zavolá): záujemca uspeje, len keď voľných TP bloku je viac ako pripravených čakajúcich. TP, ktoré už drží `self`
+ * (dual transaction na tom istom mieste), sa neodoberá nikomu.
+ */
+function tpOpenTo(world: World, block: YardBlock, cell: number, self: EntityId | undefined): boolean {
+  const waiting = world.truckIndex.holdingFor(block.id);
+  if (waiting.length === 0 || (self !== undefined && world.truckIndex.tpHolder(cell)?.id === self)) return true;
+  const cells = tpCellsOf(world, block);
+  let free = 0;
+  for (const candidate of cells) if (isTpFree(world, candidate, self)) free += 1;
+  // Čakajúci, ktorého TOS nemá kam zavolať (žiadne voľné TP z výjazdu jeho plochy), TP nezdržiava.
+  let ready = 0;
+  for (const truck of waiting) if (stopReady(world, truck) && callableToFreeTp(world, truck, cells, self)) ready += 1;
+  return free > ready;
+}
+
 /**
  * Token cieľa pre blok `block`: voľné TP najbližšie k bayu `nearBay` s cestou tam a von; inak voľné státie odstavnej plochy (`allowStall`); `null` = ani jedno (kamión čaká vo vnútrozemí).
  * `self` = kamión, ktorý už token drží (jeho TP sa nepočíta ako obsadené).
  */
 export function reserveToken(world: World, block: YardBlock, nearBay: number | undefined, allowStall: boolean, self?: EntityId): Token | null {
   const cell = chooseTp(world, block, nearBay, self, (candidate) => anyLaneServes(world, candidate));
-  if (cell !== NO_ACCESS) return { kind: 'tp', cell };
+  if (cell !== NO_ACCESS) {
+    if (tpOpenTo(world, block, cell, self)) return { kind: 'tp', cell };
+    // TP je vyhradené čakajúcemu kamiónu z odstavnej plochy: záujemca dostane `null` (čaká vo vnútrozemí), nie státie — ďalšie kamióny mieriace do odstavných plôch by zahltili cestu,
+    // po ktorej sa čakajúci kamióny volajú k TP (namerané: pobyt v bráne ×3 v špičke).
+    return null;
+  }
   return allowStall ? (freeHolding(world) ?? null) : null;
 }
 

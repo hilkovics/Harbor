@@ -95,6 +95,7 @@ export const MODULE_PARAM_SPECS: { readonly [K in ModuleKind]: SpecTable<ModuleP
   },
   holding: {
     stalls: { kind: 'integer', min: 1 },
+    stallLengthCells: { kind: 'integer', min: 1 },
   },
   depot: {
     capacity: { kind: 'integer', min: 1 },

@@ -118,6 +118,7 @@ import { StatResolver } from '../tech/stat-resolver';
 import { ShipTraffic } from '../ships/ship-traffic';
 import type { Truck } from '../trucks/truck';
 import { TruckError } from '../trucks/truck-error';
+import { TruckIndex } from '../trucks/truck-index';
 import { TRUCK_STATE_TRAITS } from '../trucks/truck-fsm';
 import type { Vehicle } from '../vehicles/vehicle';
 import { VehicleError } from '../vehicles/vehicle-error';
@@ -277,6 +278,8 @@ export class World {
   private readonly vehicleMap = new Map<EntityId, Vehicle>();
   private readonly jobMap = new Map<EntityId, TransportJob>();
   private readonly truckMap = new Map<EntityId, Truck>();
+  /** Odvodený index obsadenia TP, státí a smerovania kamiónov (nie je v save; viď `trucks/truck-index.ts`). */
+  readonly truckIndex = new TruckIndex(this.truckMap);
   private readonly machineMap = new Map<EntityId, YardMachine>();
   /** Jednotka → jej aktívny job (odvodený index nad `jobMap`). */
   private readonly unitJobs = new Map<EntityId, TransportJob>();
@@ -922,19 +925,21 @@ export class World {
       if (!(holding instanceof TruckHolding) || truck.stall === null || truck.stall >= holding.stalls) {
         throw new TruckError('unknown_module', `World.addTruck: ${truck.label}: odstavná plocha #${String(truck.holdingId)} alebo státie ${String(truck.stall)} vo svete nie je`);
       }
-      for (const other of this.truckMap.values()) {
-        if (other.holdingId === truck.holdingId && other.stall === truck.stall) throw new TruckError('stall_taken', `World.addTruck: ${truck.label}: státie ${String(truck.stall)} ${holding.label} drží kamión #${String(other.id)}`);
-      }
+      const other = this.truckIndex.stallHolder(truck.holdingId, truck.stall);
+      if (other !== undefined) throw new TruckError('stall_taken', `World.addTruck: ${truck.label}: státie ${String(truck.stall)} ${holding.label} drží kamión #${String(other.id)}`);
     }
     if (truck.tpCell !== null) {
-      for (const other of this.truckMap.values()) {
-        if (other.tpCell === truck.tpCell) throw new TruckError('tp_taken', `World.addTruck: ${truck.label}: TP (bunka ${String(truck.tpCell)}) drží kamión #${String(other.id)}`);
-      }
+      const other = this.truckIndex.tpHolder(truck.tpCell);
+      if (other !== undefined) throw new TruckError('tp_taken', `World.addTruck: ${truck.label}: TP (bunka ${String(truck.tpCell)}) drží kamión #${String(other.id)}`);
     }
     const taken = this.slotConflict(truck);
     if (taken !== undefined) throw new TruckError('slot_taken', `World.addTruck: ${truck.label}: ${taken}`);
     truck.attachSlots(this.laneSlots);
     this.truckMap.set(id, truck);
+    truck.watchChanges(() => {
+      this.truckIndex.invalidate();
+    });
+    this.truckIndex.invalidate();
     this.lastTruckId = id;
   }
 
@@ -953,6 +958,8 @@ export class World {
     }
     truck.leaveRoad();
     this.truckMap.delete(truckId);
+    truck.watchChanges(null);
+    this.truckIndex.invalidate();
     if (truckId === this.lastTruckId) this.lastTruckId = lastKeyOf(this.truckMap);
     return truck;
   }

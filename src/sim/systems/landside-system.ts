@@ -56,6 +56,9 @@ function countDown(truck: Truck): boolean {
   return truck.waitTicks === 0;
 }
 
+/** Odpočet kamióna po príchode do odstavnej plochy (`holding`): aspoň 1 tick, aby sa zavolanie k TP neskúšalo v tom istom ticku ako príchod. */
+const HOLDING_ENTRY_WAIT_TICKS = 1;
+
 const NOTHING = (): void => undefined;
 
 /**
@@ -99,8 +102,12 @@ const ARRIVALS: { readonly [S in TruckTravelState]: Arrival } = Object.freeze({
   to_pre_gate: (truck: Truck, world: World) => {
     const buffer = preGateOfTruck(world, truck);
     const row = buffer.shortestRow();
-    // Plná plocha: kamión ostane na ceste a skúsi to v ďalšom ticku (rezervácia miesta pri vjazde to nepripustí; ochrana pred prestavbou).
-    if (row < 0) return;
+    // Plná plocha (rezervácia miesta pri vjazde to nepripustí; nastane len po prestavbe): kamión nesmie ticho stáť na verejnej ceste — prejde do `no_path` a po `repathIntervalTicks`
+    // skúsi vjazd znova (viditeľný stav, počíta ho metrika zaseknutých kamiónov).
+    if (row < 0) {
+      enterTruckNoPath(world, truck);
+      return;
+    }
     const lanes = world.landside.preGateLanes(buffer);
     if (lanes.length === 0) {
       enterTruckNoPath(world, truck);
@@ -117,7 +124,7 @@ const ARRIVALS: { readonly [S in TruckTravelState]: Arrival } = Object.freeze({
     truck.gateInTick ??= world.clock.tick;
   },
   to_holding: (truck: Truck, world: World) => {
-    truck.waitTicks = 1;
+    truck.waitTicks = HOLDING_ENTRY_WAIT_TICKS;
     changeTruckState(world.events, truck, 'holding');
   },
   to_tp: (truck: Truck, world: World) => {

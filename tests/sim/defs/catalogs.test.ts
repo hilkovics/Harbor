@@ -196,7 +196,7 @@ describe('bundled katalógy (loadBundledDefs)', () => {
       { x: 7, y: 0, side: 'n', type: 'road', access: 'out' },
     ]);
     const holding = defs.modules.get('truck_holding');
-    expect([holding.kind, holding.footprint, holding.params]).toEqual(['holding', { w: 6, h: 5 }, { stalls: 6 }]);
+    expect([holding.kind, holding.footprint, holding.params]).toEqual(['holding', { w: 6, h: 5 }, { stalls: 6, stallLengthCells: 3 }]);
     expect(holding.connectors).toEqual([
       { x: 0, y: 4, side: 's', type: 'road', access: 'in' },
       { x: 5, y: 4, side: 's', type: 'road', access: 'out' },
@@ -255,7 +255,7 @@ describe('bundled katalógy (loadBundledDefs)', () => {
   it('typované gettery gateParams / preGateParams / holdingParams', () => {
     expect(gateParams(defs.modules.get('gate_in_lane'))).toMatchObject({ direction: 'in', expressTicks: 6 });
     expect(preGateParams(defs.modules.get('pre_gate_buffer'))).toEqual({ rows: 8, rowCapacity: 2 });
-    expect(holdingParams(defs.modules.get('truck_holding'))).toEqual({ stalls: 6 });
+    expect(holdingParams(defs.modules.get('truck_holding'))).toEqual({ stalls: 6, stallLengthCells: 3 });
   });
 
   it('typované gettery berthParams / craneParams', () => {
@@ -926,7 +926,7 @@ describe('MODULE_PARAM_SPECS', () => {
       'internalTicks',
     ]);
     expect(Object.keys(MODULE_PARAM_SPECS.pre_gate)).toEqual(['rows', 'rowCapacity']);
-    expect(Object.keys(MODULE_PARAM_SPECS.holding)).toEqual(['stalls']);
+    expect(Object.keys(MODULE_PARAM_SPECS.holding)).toEqual(['stalls', 'stallLengthCells']);
     expect(MODULE_PARAM_SPECS.gate.internalTicks.optional).toBe(true);
     expect(MODULE_PARAM_SPECS.gate.direction.optional).not.toBe(true);
     expect(MODULE_PARAM_SPECS.gate.expressTicks.optional).not.toBe(true);

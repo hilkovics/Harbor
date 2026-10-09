@@ -445,6 +445,7 @@ describe('loadBundledDefs', () => {
       rehandleSpareCells: 2,
       apronUnloadReserveSlots: 1,
       hookJobLookahead: 8,
+      dualCandidateLimit: 64,
       hookPairedLoadJobs: 1,
       importDwellEstimateHours: 6,
       yardPlanner: 'planned',

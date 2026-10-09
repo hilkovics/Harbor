@@ -405,7 +405,8 @@
       "costCents": 5000000,
       "maintenancePerDayCents": 6000,
       "params": {
-        "stalls": 6
+        "stalls": 6,
+        "stallLengthCells": 3
       }
     }
   ]

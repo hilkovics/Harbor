@@ -500,6 +500,11 @@ export interface StorageParams {
    * Blok so zásuvkami prijíma len jednotky, ktoré zásuvku potrebujú (`needsPlug`), a tie smú stáť len v ňom (`reefer_block_8`: všetky rady).
    */
   readonly plugRows?: number;
+  /**
+   * OOG plocha (R5, ADR-042 TR5-02): blok prijíma **len** nadrozmerný náklad (OOG) a obsluhuje ho reach stacker (`equipment.json` → `reachStacker`) namiesto RTG; len pri
+   * `role: 'rtg_block'` s `maxTier` 1 (OOG sa nestohuje). Chýba = bežný blok.
+   */
+  readonly acceptsOog?: boolean;
 }
 
 /** `params` depa vozidiel (`kind: 'depot'`). */
@@ -783,5 +788,7 @@ export interface TractorsDef {
 /** `equipment.json` — stroje bloku a ťahače (TERMINAL_2 §10.5, ADR-040): `rtg` a `tractors`. */
 export interface EquipmentDef extends DefBase {
   readonly rtg: RtgDef;
+  /** Reach stacker OOG plochy (R5, TR5-02): rovnaký tvar ako `rtg`; pojazd = ulička plochy, vozík = výložník (rad), zdvih = vrstva. */
+  readonly reachStacker: RtgDef;
   readonly tractors: TractorsDef;
 }

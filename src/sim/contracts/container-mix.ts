@@ -53,6 +53,20 @@ export function drawUnitTypes(
   return anySpecial ? result : [];
 }
 
+/**
+ * OOG jednotky kontraktu (R5, ADR-042 TR5-02): indexy kontajnerov (vzostupne), ktorým `Rng` pridelí nadrozmer. Každá jednotka typu s `oogChance > 0` dostane jedno číslo `Rng`
+ * (`< oogChance` = OOG); len keď má prístav OOG plochu (`oogSupply`) — inak sa `Rng` nespotrebuje a svet bez OOG plochy ostáva bitovo rovnaký. Prázdne pole = žiadne OOG.
+ */
+export function drawOogUnits(rng: Pick<Rng, 'next'>, unitTypes: readonly string[], types: Catalog<Readonly<ContainerTypeDef>>, oogSupply: boolean): readonly number[] {
+  if (!oogSupply) return [];
+  const result: number[] = [];
+  unitTypes.forEach((type, index) => {
+    const chance = types.get(type).oogChance;
+    if (chance > 0 && rng.next() < chance) result.push(index);
+  });
+  return result;
+}
+
 /** Efektívne TEU kontraktu pre odmenu: Σ TEU kontajnera × `rateMultiplier` jeho typu (pole typov prázdne = `volumeTeu`). Zaokrúhlené na celé číslo. */
 export function rateTeuOf(unitTypes: readonly string[], volumeUnits: number, volumeTeu: number, types: Catalog<Readonly<ContainerTypeDef>>): number {
   if (unitTypes.length === 0) return volumeTeu;

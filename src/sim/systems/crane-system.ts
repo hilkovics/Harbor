@@ -188,7 +188,10 @@ function start(crane: CraneModule, world: World): void {
 /** `swinging` → `placing` (jednotku už drží). */
 function beginPlacing(crane: CraneModule, world: World): void {
   crane.transition('placing');
-  crane.enterPhase(phaseTicksOf(world, crane, crane.cycle).placing);
+  // OOG (R5, ADR-042): nadrozmerný náklad žeriav spúšťa dlhšie (`logistics.oog.extraCycleTicks`); čas navyše pripadá na fázu `placing`.
+  const held = crane.heldUnitId === null ? undefined : world.cargo.get(crane.heldUnitId);
+  const extra = held?.oog === true ? world.defs.logistics.oog.extraCycleTicks : 0;
+  crane.enterPhase(phaseTicksOf(world, crane, crane.cycle).placing + extra);
 }
 
 /** Koniec `grabbing`: jednotka `→ in_crane` (vykládka z lode, nakládka z apronu / vozidla), `swinging` a hneď `placing`. */

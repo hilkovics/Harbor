@@ -85,6 +85,7 @@ import { TruckHolding } from '../modules/truck-holding';
 import { YardBlock } from '../modules/yard-block';
 import { RtgBlock } from '../modules/rtg-block';
 import { MachineError } from '../machines/machine-error';
+import { ReachStacker } from '../machines/reach-stacker';
 import { RtgCrane } from '../machines/rtg-crane';
 import type { YardMachine } from '../machines/yard-machine';
 import { ReeferSystem } from '../systems/reefer-system';
@@ -647,7 +648,10 @@ export class World {
     const module = moduleRegistry.create(def, spec, this.ids.next(), purchaseCostCents, { grid: this.grid, cargo: this.cargo });
     this.addModule(module);
     // RTG blok sa stavia aj so svojím strojom (ADR-040 bod 3): stroj je súčasť ceny bloku.
-    if (module instanceof RtgBlock) this.addMachine(RtgCrane.create(this.ids.next(), module.id, this.defs.equipment.rtg, module.geometry.maxTier));
+    // OOG plocha (R5, ADR-042 TR5-02) má reach stacker namiesto RTG.
+    if (module instanceof RtgBlock) {
+      this.addMachine(module.acceptsOog ? ReachStacker.create(this.ids.next(), module.id, this.defs.equipment.reachStacker, module.geometry.maxTier) : RtgCrane.create(this.ids.next(), module.id, this.defs.equipment.rtg, module.geometry.maxTier));
+    }
     return module;
   }
 

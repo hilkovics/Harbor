@@ -13,8 +13,9 @@ function categoriesFromArchitecture(): string[] {
 }
 
 describe('LEDGER_CATEGORIES', () => {
-  it('zhodujú sa s ARCHITECTURE §9.2 vrátane poradia; za nimi nasleduje `energy` (R5, ADR-042: elektrina reeferov)', () => {
-    expect([...LEDGER_CATEGORIES]).toEqual([...categoriesFromArchitecture(), 'energy']);
+  it('zhodujú sa s ARCHITECTURE §9.2 vrátane poradia (od R5, ADR-042 na konci `energy` — elektrina reeferov)', () => {
+    expect([...LEDGER_CATEGORIES]).toEqual(categoriesFromArchitecture());
+    expect(LEDGER_CATEGORIES[LEDGER_CATEGORIES.length - 1]).toBe('energy');
   });
 
   it('road_sale (ADR-012) nasleduje hneď za road_capex; žiadne duplicity', () => {

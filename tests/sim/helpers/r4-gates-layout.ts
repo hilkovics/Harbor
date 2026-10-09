@@ -24,7 +24,7 @@ import { commandFromJSON, type SerializedCommand } from '@sim/commands';
 import type { EntityId } from '@sim/core';
 import { DefRegistry } from '@sim/defs';
 import { loadMap, parseMapDef, type CellCoord, type LoadedMap } from '@sim/grid';
-import { RtgBlock, type PreGateBuffer, type StorageModule, type TruckGate, type TruckHolding, type VehicleDepot } from '@sim/modules';
+import { RtgBlock, YardBlock, type PreGateBuffer, type StorageModule, type TruckGate, type TruckHolding, type VehicleDepot } from '@sim/modules';
 import { World } from '@sim/world';
 import { execute, stockYard } from '../logistics/outbound-fixtures';
 import { LEGACY_HARBOR_JSON, RAW_DEFS } from '../world/world-fixtures';
@@ -185,5 +185,22 @@ export function addRtgBlock(layout: GatesWorld): RtgBlock {
   execute(world, { type: 'PlaceModule', defId: 'rtg_block', x: RTG_ORIGIN.x, y: RTG_ORIGIN.y, rotation: 0 });
   const block = world.moduleAt(RTG_ORIGIN.x, RTG_ORIGIN.y);
   if (!(block instanceof RtgBlock)) throw new Error('RTG blok sa nepostavil');
+  return block;
+}
+
+/**
+ * Dostaví do `layout` OOG plochu (R5, TR5-02; blok 4 × 6, pruh je stĺpec `RTG_ORIGIN.x + 3`, vjazd na severe, výjazd na juhu) s reach stackerom: dvojpruhové cesty ako pri `addRtgBlock`
+ * (vjazd (83, 21) ← stĺpec x = 88 ← križovatka (88, 40), výjazd (83, 28) → stĺpec x = 83 → okruh (83, 40)). Vráti blok.
+ */
+export function addOogArea(layout: GatesWorld): YardBlock {
+  const { world } = layout;
+  const lane = RTG_ORIGIN.x + 3;
+  execute(world, { type: 'RemoveRoad', cells: [{ x: 88, y: 40 }] });
+  execute(world, { type: 'PlaceRoad', cells: [{ x: 88, y: 40 }], kind: 'two_lane' });
+  execute(world, { type: 'PlaceRoad', cells: [...row(21, lane, 88), ...column(88, 22, 39)] });
+  execute(world, { type: 'PlaceRoad', cells: column(lane, 28, 39) });
+  execute(world, { type: 'PlaceModule', defId: 'oog_area', x: RTG_ORIGIN.x, y: RTG_ORIGIN.y, rotation: 0 });
+  const block = world.moduleAt(RTG_ORIGIN.x, RTG_ORIGIN.y);
+  if (!(block instanceof YardBlock) || !block.acceptsOog) throw new Error('OOG plocha sa nepostavila');
   return block;
 }

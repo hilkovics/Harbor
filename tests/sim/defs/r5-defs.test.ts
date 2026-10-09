@@ -59,7 +59,9 @@ describe('typeMix šablón kontraktu (R5)', () => {
     expectDefError(withTemplate({ typeMix: [{ type: 'dry', share: 0.1 }] }), 'contract_templates', '/items/0/typeMix/0/type');
     expectDefError(withTemplate({ typeMix: [{ type: 'reefer', share: 0.1 }, { type: 'reefer', share: 0.1 }] }), 'contract_templates', '/items/0/typeMix/1/type');
     expectDefError(withTemplate({ typeMix: [{ type: 'reefer', share: 0.7 }, { type: 'tank', share: 0.5 }] }), 'contract_templates', '/items/0/typeMix');
-    expectDefError(withTemplate({ kind: 'export', destinationPorts: ['Hamburg'], typeMix: [{ type: 'reefer', share: 0.1 }] }), 'contract_templates', '/items/0/typeMix');
+    expectDefError(withTemplate({ kind: 'empty_repositioning', destinationPorts: ['Hamburg'], typeMix: [{ type: 'reefer', share: 0.1 }] }), 'contract_templates', '/items/0/typeMix');
+    // TR5-02: export a roundtrip zmes typov majú (kamióny privezú open top / flat rack, OOG)
+    expect(withTemplate({ kind: 'export', destinationPorts: ['Hamburg'], typeMix: [{ type: 'flat_rack', share: 0.1 }] })().contractTemplates.items[0].typeMix).toHaveLength(1);
   });
 });
 
@@ -76,5 +78,30 @@ describe('reefer_block_8 (R5)', () => {
       DefRegistry.fromRaw({ ...RAW_DEFS, modules: { ...RAW_DEFS.modules, items: RAW_DEFS.modules.items.map((item) => (item.id === id ? { ...item, params: patch({ ...item.params }) } : item)) } });
     expectDefError(modules((params) => ({ ...params, plugRows: 5 }), 'reefer_block_8'), 'modules', '/items/' + String(RAW_DEFS.modules.items.findIndex((item) => item.id === 'reefer_block_8')) + '/params/plugRows');
     expectDefError(modules((params) => ({ ...params, plugRows: 1 }), 'container_yard_small'), 'modules', '/items/' + String(RAW_DEFS.modules.items.findIndex((item) => item.id === 'container_yard_small')) + '/params/plugRows');
+  });
+});
+
+describe('oog_area a reach stacker (R5, TR5-02)', () => {
+  const index = (id: string): string => String(RAW_DEFS.modules.items.findIndex((item) => item.id === id));
+  const modules = (patch: (params: Record<string, unknown>) => Record<string, unknown>, id: string) => () =>
+    DefRegistry.fromRaw({ ...RAW_DEFS, modules: { ...RAW_DEFS.modules, items: RAW_DEFS.modules.items.map((item) => (item.id === id ? { ...item, params: patch({ ...item.params }) } : item)) } });
+
+  it('oog_area: RTG blok 6 × 3, jeden rad vrstiev (len na zem), acceptsOog, bez zásuviek', () => {
+    const def = DEFS.modules.get('oog_area');
+    expect(def.params).toMatchObject({ role: 'rtg_block', bays: 6, rows: 3, maxTier: 1, acceptsOog: true, capacityUnits: 18, laneCol: 3 });
+    expect(def.footprint).toEqual({ w: 4, h: 6 });
+  });
+
+  it('acceptsOog len pri maxTier 1, bez zásuviek a len pri rtg_block', () => {
+    expectDefError(modules((params) => ({ ...params, maxTier: 2, capacityUnits: 36 }), 'oog_area'), 'modules', '/items/' + index('oog_area') + '/params/maxTier');
+    expectDefError(modules((params) => ({ ...params, plugRows: 1 }), 'oog_area'), 'modules', '/items/' + index('oog_area') + '/params/plugRows');
+    expectDefError(modules((params) => ({ ...params, acceptsOog: true }), 'container_yard_small'), 'modules', '/items/' + index('container_yard_small') + '/params/acceptsOog');
+  });
+
+  it('equipment.reachStacker má časy a priority ako RTG (rovnaká tabuľka polí), priorita musí rásť', () => {
+    expect(DEFS.equipment.reachStacker.prefetchCells).toBe(0);
+    expect(DEFS.equipment.reachStacker.priorities).toEqual({ ship: 0, truck: 1, housekeeping: 2 });
+    const bad = () => DefRegistry.fromRaw({ ...RAW_DEFS, equipment: { ...RAW_DEFS.equipment, reachStacker: { ...RAW_DEFS.equipment.reachStacker, priorities: { ship: 1, truck: 1, housekeeping: 2 } } } });
+    expectDefError(bad, 'equipment', '/reachStacker/priorities/truck');
   });
 });

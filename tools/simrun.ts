@@ -17,6 +17,7 @@ import { loadBundledDefs, type DefRegistry } from '@sim/defs';
 import type { CargoMovedEvent, SimEvent } from '@sim/events';
 import { loadBundledMap, loadMap, parseMapDef, type LoadedMap } from '@sim/grid';
 import { terminalMetrics, yardMetrics } from '@sim/logistics';
+import { ReachStacker } from '@sim/machines';
 import { CraneModule, TruckGate } from '@sim/modules';
 import { VEHICLE_STATE_TRAITS } from '@sim/vehicles';
 import { World, hinterlandMetrics, stateHash, type HinterlandQueue, type WorldState } from '@sim/world';
@@ -267,6 +268,12 @@ export interface SimrunReport {
   readonly rtgMovesPerHour: number;
   /** Podiel času práce STS, ktorý čakal na ťahač pod hákom, v % (R3, TR3-02); bez práce žeriavov `null`. */
   readonly stsWaitForTractorPct: number | null;
+  /** Počet reklamácií reeferov (`ReeferClaim`: bez prúdu, dlhé čakanie na palube, alarm bez zásahu; R5, TR5-01). */
+  readonly reeferClaims: number;
+  /** Σ náklady na elektrinu reeferov v centoch (kategória ledgera `energy`, `MoneyChanged.reason`; kladné číslo; R5). */
+  readonly energyCents: number;
+  /** Dokončené cykly reach stackerov na OOG plochách (položenie aj zdvih; R5, TR5-02). */
+  readonly oogMoves: number;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -557,6 +564,8 @@ interface EventTally {
   revenueCents: number;
   maintenanceCents: number;
   wagesCents: number;
+  reeferClaims: number;
+  energyCents: number;
   rolledUnits: number;
   vgmHolds: number;
   dualCycles: number;
@@ -619,6 +628,8 @@ function tallyEvents(tally: EventTally, events: readonly SimEvent[]): void {
     else if (event.type === 'ContractFailed') tally.contractsFailed += 1;
     else if (event.type === 'ContractExpired') tally.contractsExpired += 1;
     else if (event.type === 'PenaltyApplied') tally.penaltiesCents += event.amountCents;
+    else if (event.type === 'ReeferClaim') tally.reeferClaims += 1;
+    else if (event.type === 'MoneyChanged' && event.reason === 'energy') tally.energyCents -= event.deltaCents;
     else if (event.type === 'UnitRolled') tally.rolledUnits += 1;
     else if (event.type === 'VgmHoldStarted') tally.vgmHolds += 1;
     else if (event.type === 'DualCycle') tally.dualCycles += 1;
@@ -822,6 +833,8 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     revenueCents: 0,
     maintenanceCents: 0,
     wagesCents: 0,
+    reeferClaims: 0,
+    energyCents: 0,
     rolledUnits: 0,
     vgmHolds: 0,
     dualCycles: 0,
@@ -976,7 +989,17 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     stuckAtEnd,
     ...yardReport(world),
     ...terminalReport(world),
+    reeferClaims: tally.reeferClaims,
+    energyCents: tally.energyCents,
+    oogMoves: oogMoves(world),
   };
+}
+
+/** Σ dokončené cykly reach stackerov (OOG plochy, R5, TR5-02). */
+function oogMoves(world: World): number {
+  let moves = 0;
+  for (const machine of world.machines.values()) if (machine instanceof ReachStacker) moves += machine.moves;
+  return moves;
 }
 
 /** Metriky ťahačov a strojov (R3, TR3-02) z `terminalMetrics`; hodnoty na 1 desatinné miesto. */
@@ -1044,7 +1067,7 @@ export function formatSummary(report: SimrunReport): string {
     `vo vnútrozemí čaká ${String(report.trucksWaitingInland.total)} (odvoz/dovoz/výdaj ${String(report.trucksWaitingInland.pickup)}/` +
     `${String(report.trucksWaitingInland.delivery)}/${String(report.trucksWaitingInland.collect)}), čakanie vo vnútrozemí ${String(report.inlandWaitTicks)} ` +
     `(max ${String(report.inlandWaitTicksMax)}), bez stojiska pre odvoz ${String(report.pickupBayStarvationTicks)}, ` +
-    `priame odovzdanie ${metric(report.directHandoverPct)} %` +
+    `priame odovzdanie ${metric(report.directHandoverPct)} %, reklamácie reeferov ${String(report.reeferClaims)}, energia ${String(report.energyCents)}, OOG presuny ${String(report.oogMoves)}` +
     (report.stateHash === null ? '' : `, hash stavu ${report.stateHash}`)
   );
 }

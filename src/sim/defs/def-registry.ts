@@ -328,6 +328,7 @@ const TRACTORS_FIELDS: SpecTable<TractorsDef> = {
 
 const EQUIPMENT_FIELDS: FieldTable<EquipmentDef> = {
   rtg: { kind: 'object', fields: RTG_FIELDS },
+  reachStacker: { kind: 'object', fields: RTG_FIELDS },
   tractors: { kind: 'object', fields: TRACTORS_FIELDS },
 };
 
@@ -561,7 +562,7 @@ const TEMPLATE_KIND_PRICE_FIELD: { readonly [K in ContractTemplateKind]: keyof C
 };
 
 /**
- * Zmes typov kontajnerov šablóny (R5, ADR-042): len kategória `container` a druhy `import` / `tranship` (jednotky vznikajú na lodi; export a repositioning zostávajú `dry`),
+ * Zmes typov kontajnerov šablóny (R5, ADR-042): len kategória `container` a druhy `import` / `tranship` / `export` / `roundtrip` (TR5-02: export privezú kamióny, bez reeferov; repositioning ostáva `dry`),
  * známy typ iný než `dry`, každý typ najviac raz, súčet podielov ≤ 1.
  */
 function checkTypeMix(
@@ -575,7 +576,7 @@ function checkTypeMix(
   const mix = template.typeMix;
   if (mix === undefined) return;
   if (category !== 'container') fail(index, 'typeMix', `zmes typov kontajnerov má zmysel len pre kategóriu 'container', '${template.cargoTypeId}' je '${category}'`);
-  if (kind !== 'import' && kind !== 'tranship') fail(index, 'typeMix', `zmes typov (jednotky vznikajú na lodi) patrí len šablóne 'import' alebo 'tranship', dostal '${kind}'`);
+  if (kind !== 'import' && kind !== 'tranship' && kind !== 'export' && kind !== 'roundtrip') fail(index, 'typeMix', `zmes typov patrí len šablóne 'import', 'tranship', 'export' alebo 'roundtrip', dostal '${kind}'`);
   let total = 0;
   mix.forEach((entry, i) => {
     if (entry.type === DEFAULT_CONTAINER_TYPE || !containerTypes.has(entry.type)) {
@@ -665,12 +666,14 @@ function checkEquipment(def: Readonly<EquipmentDef>): Problem | undefined {
   const { minPerSts, maxPerSts, defaultPerSts } = def.tractors;
   if (minPerSts > maxPerSts) return { path: '/tractors/minPerSts', message: `minPerSts (${String(minPerSts)}) nesmie byť väčší než maxPerSts (${String(maxPerSts)})` };
   if (defaultPerSts < minPerSts || defaultPerSts > maxPerSts) return { path: '/tractors/defaultPerSts', message: `defaultPerSts (${String(defaultPerSts)}) musí ležať v ${String(minPerSts)} … ${String(maxPerSts)}` };
-  const { priorities } = def.rtg;
-  for (let i = 1; i < YARD_PRIORITY_KINDS.length; i++) {
-    const previous = YARD_PRIORITY_KINDS[i - 1];
-    const kind = YARD_PRIORITY_KINDS[i];
-    if (priorities[kind] <= priorities[previous]) {
-      return { path: `/rtg/priorities/${kind}`, message: `priorita '${kind}' (${String(priorities[kind])}) musí byť väčšia než '${previous}' (${String(priorities[previous])}) — poradie loď > kamión > housekeeping` };
+  for (const machine of ['rtg', 'reachStacker'] as const) {
+    const { priorities } = def[machine];
+    for (let i = 1; i < YARD_PRIORITY_KINDS.length; i++) {
+      const previous = YARD_PRIORITY_KINDS[i - 1];
+      const kind = YARD_PRIORITY_KINDS[i];
+      if (priorities[kind] <= priorities[previous]) {
+        return { path: `/${machine}/priorities/${kind}`, message: `priorita '${kind}' (${String(priorities[kind])}) musí byť väčšia než '${previous}' (${String(priorities[previous])}) — poradie loď > kamión > housekeeping` };
+      }
     }
   }
   return undefined;

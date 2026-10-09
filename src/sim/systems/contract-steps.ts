@@ -185,6 +185,7 @@ export function boardVoyageShip(world: World, contract: Contract): void {
     labels: contract.spawnLabels,
     sizeOf: (index) => contract.unitSizeFt(index),
     typeOf: (index) => contract.unitContainerType(index),
+    oogOf: (index) => contract.unitIsOog(index),
   });
   contract.shipId = ship.id;
 }

@@ -694,6 +694,27 @@
         }
       ]
     },
+    "oog_area": {
+      "footprint": {
+        "w": 4,
+        "h": 6
+      },
+      "file": "modules/oog_area.svg",
+      "connectors": [
+        {
+          "x": 3,
+          "y": 0,
+          "side": "n",
+          "type": "road"
+        },
+        {
+          "x": 3,
+          "y": 5,
+          "side": "s",
+          "type": "road"
+        }
+      ]
+    },
     "reefer_block_8": {
       "footprint": {
         "w": 4,

@@ -36,7 +36,9 @@ const PHASE_TICKS: { readonly [P in TpPhase]: (def: Truck['def']) => number } = 
 });
 
 /** Trvanie fázy v tickoch z defu kamióna; `handling` a `depart` nemajú pevný čas (`UNTIMED_PHASE_TICKS`). */
-function phaseTicks(truck: Truck, phase: TpPhase): number {
+function phaseTicks(world: World, truck: Truck, phase: TpPhase): number {
+  // OOG na kamióne (R5, ADR-042): zaistenie / odistenie trvá `logistics.oog.lashTicks` namiesto `lashTicks` / `unlashTicks` defu kamióna.
+  if ((phase === 'lash' || phase === 'unlash') && truck.unitId !== null && world.cargo.get(truck.unitId)?.oog === true) return world.defs.logistics.oog.lashTicks;
   return PHASE_TICKS[phase](truck.def);
 }
 
@@ -47,17 +49,17 @@ function nextPhase(truck: Truck, phase: TpPhase): TpPhase {
 }
 
 /** Vstúpi do fázy `phase` (nulové fázy preskočí): `phase` a odpočet `waitTicks ≥ 1`. */
-function enterPhase(truck: Truck, phase: TpPhase): void {
+function enterPhase(world: World, truck: Truck, phase: TpPhase): void {
   let next = phase;
-  while (phaseTicks(truck, next) === 0) next = nextPhase(truck, next);
+  while (phaseTicks(world, truck, next) === 0) next = nextPhase(truck, next);
   truck.phase = next;
-  truck.waitTicks = phaseTicks(truck, next);
+  truck.waitTicks = phaseTicks(world, truck, next);
 }
 
 /** Príchod na TP (`to_tp` → `at_tp` v pruhu bloku, `at_edge_tp` na hrane): začína prvá fáza úlohy. */
 export function arriveAtTp(world: World, truck: Truck, onLane: boolean): void {
   changeTruckState(world.events, truck, onLane ? 'at_tp' : 'at_edge_tp');
-  enterPhase(truck, TP_PHASE_SEQUENCE[TP_ROLE_OF_MISSION[truck.mission]][0]);
+  enterPhase(world, truck, TP_PHASE_SEQUENCE[TP_ROLE_OF_MISSION[truck.mission]][0]);
 }
 
 /** Kandidát druhej zastávky: jednotka, blok a TP. */
@@ -119,7 +121,7 @@ function tryDualTransaction(world: World, truck: Truck): boolean {
   truck.blockId = choice.block.id;
   openReceiveJob(world, truck, choice.unit, choice.block);
   if (sameTp) {
-    enterPhase(truck, 'handling');
+    enterPhase(world, truck, 'handling');
     return true;
   }
   truck.phase = null;
@@ -153,7 +155,7 @@ export function stepTp(world: World, truck: Truck): void {
   if (phase === 'handling') {
     if (truck.jobId !== null && world.jobs.has(truck.jobId)) return;
     truck.jobId = null;
-    enterPhase(truck, nextPhase(truck, 'handling'));
+    enterPhase(world, truck, nextPhase(truck, 'handling'));
     return;
   }
   if (phase === 'depart') {
@@ -162,5 +164,5 @@ export function stepTp(world: World, truck: Truck): void {
     return;
   }
   truck.waitTicks = Math.max(0, truck.waitTicks - 1);
-  if (truck.waitTicks === 0) enterPhase(truck, nextPhase(truck, phase));
+  if (truck.waitTicks === 0) enterPhase(world, truck, nextPhase(truck, phase));
 }

@@ -31,6 +31,8 @@ export interface ShipSpawnSpec {
   readonly sizeOf?: (index: number) => ContainerSize;
   /** Typ kontajnera `i`-tej jednotky (kontrakt: `Contract.unitContainerType`, R5, ADR-042); chýba = podľa `labels` (predvolene `dry`). */
   readonly typeOf?: (index: number) => string;
+  /** Je `i`-ta jednotka nadrozmerná (OOG; kontrakt: `Contract.unitIsOog`, R5, TR5-02)? Chýba = nie. */
+  readonly oogOf?: (index: number) => boolean;
 }
 
 /** Vytvorí loď s nákladom podľa `spec` (viď hlavička súboru) a vráti ju. */
@@ -49,7 +51,8 @@ export function spawnShip(world: World, spec: ShipSpawnSpec): Ship {
   const labels = spec.labels ?? IMPORT_LABELS;
   for (let i = 0; i < spec.units; i++) {
     const sized = spec.sizeOf === undefined ? labels : { ...labels, sizeFt: spec.sizeOf(i) };
-    const unitLabels = spec.typeOf === undefined ? sized : { ...sized, containerType: spec.typeOf(i) };
+    const typed = spec.typeOf === undefined ? sized : { ...sized, containerType: spec.typeOf(i) };
+    const unitLabels = spec.oogOf === undefined ? typed : { ...typed, oog: spec.oogOf(i) };
     world.cargo.create(spec.cargoTypeId, { kind: 'on_ship', shipId: ship.id }, spec.contractId, unitLabels);
   }
   world.events.emit({ type: 'ShipSpawned', shipId: ship.id, classId: ship.classId, cargoTypeId: ship.cargoTypeId, units: spec.units });

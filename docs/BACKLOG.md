@@ -212,3 +212,8 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - **Zrušené ukážky dock-maneuver/rampa:** pozostatok po TR4-05b, stav treba potvrdiť. — pôvod: TR4-07 · fáza: R4 (docs)
 - **WorldState v13:** plán R4 (ADR-041) uvádza save v12; číslo treba potvrdiť. — pôvod: TR4-07 · fáza: R4 (docs)
 - **Artefakt verzia 12:** otvorené pri zverejnení artefaktu R4. — pôvod: TR4-07 · fáza: R4 (artefakt)
+
+## Z Fázy R5 (TR5-02)
+- **`rs_area` (8 × 4, 3 rady × 5/4/3 kontajnerov):** vyžaduje per-rad `maxTier` v `YardBlock` / `StackGrid`; plán R5 ju označil za voliteľnú. — pôvod: TR5-02 · fáza: R5+
+- **Reefer blok a OOG plocha v 100k `live_terminal`:** dvojpruhové cesty k dvorom v rozložení `live_terminal` dali `TrafficJam` (okruh kamiónov a ťahačov sa prekrýva); treba samostatné rozloženie s vlastným okruhom pre reefer blok a OOG plochu. — pôvod: TR5-02 · fáza: R5+
+- **Kapacita TP a státí pri špičke 100/h (R4):** nezmenené (zmena `truck_holding.stalls` posúva všetky scenáre R4). — pôvod: TR5-02 · fáza: R5+

@@ -65,6 +65,16 @@ function parseUnitTypes(raw: unknown, defs: DefRegistry, volumeUnits: number, pa
   return types;
 }
 
+/** OOG kontajnery kontraktu (v14): vzostupné indexy `0 … volumeUnits − 1` bez opakovania. */
+function parseOogUnits(raw: unknown, volumeUnits: number, path: string): number[] {
+  const indexes = checkIntegerList(raw, 0, path);
+  indexes.forEach((index, i) => {
+    if (index >= volumeUnits) throw new WorldStateError(`${path}${pointerSegment(i)}`, `index kontajnera musí byť < volumeUnits (${String(volumeUnits)}), dostal ${String(index)}`);
+    if (i > 0 && index <= indexes[i - 1]) throw new WorldStateError(`${path}${pointerSegment(i)}`, 'indexy OOG musia byť ostro vzostupné');
+  });
+  return indexes;
+}
+
 /** Booking export kontraktu (tvar a typy, v7). */
 function parseBooking(raw: unknown, path: string): SerializedBooking {
   const entry = checkKeys(raw, SERIALIZED_BOOKING_KEYS, path);
@@ -136,6 +146,7 @@ function parseContract(raw: unknown, defs: DefRegistry, clockTick: number, ticks
     shipClassId: checkKnown(checkString(entry['shipClassId'], `${path}/shipClassId`), (value) => defs.ships.has(value), 'trieda lode', `${path}/shipClassId`),
     xpReward,
     unitTypes: parseUnitTypes(entry['unitTypes'], defs, counts.volumeUnits, `${path}/unitTypes`),
+    oogUnits: parseOogUnits(entry['oogUnits'], counts.volumeUnits, `${path}/oogUnits`),
     state,
     ...counts,
     ...nullable,

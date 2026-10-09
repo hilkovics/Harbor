@@ -35,6 +35,11 @@ export class RtgBlock extends YardBlock {
     this.tpSpacingBays = tpSpacingBays;
   }
 
+  /** OOG plocha (`params.acceptsOog`, R5, ADR-042 TR5-02): prijíma len OOG a obsluhuje ho reach stacker. */
+  override get acceptsOog(): boolean {
+    return this.params.acceptsOog === true;
+  }
+
   override get handlingSystem(): HandlingSystem {
     return 'rtg';
   }

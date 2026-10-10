@@ -41,3 +41,6 @@ Odovzdanie podľa CLAUDE_DESIGN_TERMINAL_2.md §6. Súradnice v px v rámci súb
 
 ## Referenčné hárky a UI (v projekte Claude Design)
 Cargo Sheet, Vehicles Sheet, Machines Sheet, STS Sheet, Gates Sheet, Yard Reference, Rail Terminal Reference, Icons T2, Game UI T2.
+
+### Integrácia R6 (TR6-03)
+`rmg_frame` (6×2, pivot 160,64, jazdí po Y), `rmg_trolley` (pivot 32,32, travel x 32–352), `locomotive` (1×3, pivot 32,96, spriahlo y 4/188) a `wagon_container_60` (1×3, pivot 32,96, `slots20` [2,66] [64,128] [126,190], `slot40` [2,128]) sú v `assets/entities/` a `assets/manifest.json` (`entities.rmg.parts`, `entities.locomotive`, `entities.wagon_container_60`). Koľaje: existujúce `infra.rail.*` cez `WorldRenderer.rails`.

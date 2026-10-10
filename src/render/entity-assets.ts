@@ -240,16 +240,52 @@ export function stsSprite(defId: string): StsEntry | undefined {
 export const RTG_ENTRY_ID = 'rtg';
 
 /** Stroje, ktorých sprity sa načítajú do atlasu. */
-export const LOADED_MACHINES: readonly string[] = [RTG_ENTRY_ID];
+/** Id záznamu RMG v `entities` (R6, koľajový portál; rovnaká štruktúra ako RTG). */
+export const RMG_ENTRY_ID = 'rmg';
+
+export const LOADED_MACHINES: readonly string[] = [RTG_ENTRY_ID, RMG_ENTRY_ID];
 
 /** RTG `defId` (`entities.rtg.parts.frame` + `trolley` s `travel`; `rtg*` → `rtg`), alebo `undefined`. */
 export function machineSprite(defId: string): MachineSpriteEntry | undefined {
-  const entry = lookup(MACHINE_SPRITES, defId.startsWith(RTG_ENTRY_ID) ? RTG_ENTRY_ID : defId);
+  const entry = lookup(MACHINE_SPRITES, defId.startsWith(RTG_ENTRY_ID) ? RTG_ENTRY_ID : defId.startsWith(RMG_ENTRY_ID) ? RMG_ENTRY_ID : defId);
   const frame = stsPart(entry?.parts?.['frame']);
   const trolley = stsPart(entry?.parts?.['trolley']);
   const travel = entry?.parts?.['trolley']?.travel;
   if (entry?.footprint === undefined || frame === undefined || trolley === undefined || travel === undefined) return undefined;
   return { footprint: entry.footprint, frame, trolley, travelX: { yMin: travel.yMin, yMax: travel.yMax } };
+}
+
+/** Časť vlaku (`entities.locomotive` / `entities.wagon_container_60`): súbor, rozmer v bunkách a pivot v px súboru (stred vozňa). */
+export interface TrainCarSprite {
+  readonly file: string;
+  readonly footprint: CellSize;
+  readonly pivot: ManifestPoint;
+}
+
+/** Vagón 60′: sloty kontajnerov v px súboru po osi vozňa (od predku): `slots20` tri 20′ sloty `[od, do]`, `slot40` 40′ na začiatku. */
+export interface WagonSprite extends TrainCarSprite {
+  readonly slots20: readonly (readonly [number, number])[];
+  readonly slot40: readonly [number, number];
+}
+
+type RawTrainEntry = { readonly file?: string; readonly footprint?: CellSize; readonly pivot?: ManifestPoint; readonly slots20?: readonly (readonly [number, number])[]; readonly slot40?: readonly [number, number] };
+
+/** Id záznamov vlaku v `entities`. */
+export const LOCOMOTIVE_ID = 'locomotive';
+export const WAGON_CONTAINER_ID = 'wagon_container_60';
+
+/** Lokomotíva z `entities.locomotive`, alebo `undefined`. */
+export function locomotiveSprite(): TrainCarSprite | undefined {
+  const entry = lookup(VEHICLE_SPRITES, LOCOMOTIVE_ID) as RawTrainEntry | undefined;
+  if (entry?.file === undefined || entry.footprint === undefined || entry.pivot === undefined) return undefined;
+  return { file: entry.file, footprint: entry.footprint, pivot: entry.pivot };
+}
+
+/** Vagón 60′ z `entities.wagon_container_60`, alebo `undefined`. */
+export function wagonSprite(): WagonSprite | undefined {
+  const entry = lookup(VEHICLE_SPRITES, WAGON_CONTAINER_ID) as RawTrainEntry | undefined;
+  if (entry?.file === undefined || entry.footprint === undefined || entry.pivot === undefined || entry.slots20 === undefined || entry.slot40 === undefined) return undefined;
+  return { file: entry.file, footprint: entry.footprint, pivot: entry.pivot, slots20: entry.slots20, slot40: entry.slot40 };
 }
 
 /** Id záznamu reach stackera v `entities` (R5, `MachineVM.defId`). */
@@ -492,6 +528,10 @@ export function entitySpriteFiles(): string[] {
     files.add(reach.spreader20.file);
     files.add(reach.spreader40.file);
   }
+  const loco = locomotiveSprite();
+  if (loco !== undefined) files.add(loco.file);
+  const wagon = wagonSprite();
+  if (wagon !== undefined) files.add(wagon.file);
   files.add(TP_MARKER_FILE);
   files.add(SAFE_ZONE_FILE);
   return [...files];

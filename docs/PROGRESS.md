@@ -444,9 +444,9 @@ Stav: **hotová** (TR6-01 … TR6-07, vrátane TR6-02b, TR6-02c, TR6-03b a TR6-0
 **Výsledky:**
 - `pnpm test`: 432 súborov, 8 930 testov zelených
 - `pnpm test:e2e`: 65/65
-- Akceptácia: 1 splnené (`rail_flow`: 100 % importu vlakom, export vlakom → loď, import a export súbežne, nakládka po vagónoch; lostUnits 0, stuckAtEnd 0, deterministické); 2 splnené (odchod podľa poriadku alebo plný; rešpitná lehota 30 min; metriky `trainTurnaroundMin`, `trainDelayMin`); 3 splnené (`live_terminal_rail` 100k, seedy 5001–5016: 0 pádov, 0 TrafficJam, stuckAtEnd 0, lostUnits 0); 4 splnené (koľaje s plynulými oblúkmi, lokomotíva a vagóny, RMG, závory priecestí); 5 splnené
+- Akceptácia: 1 splnené (`rail_flow`: 100 % importu vlakom, export vlakom → loď, import a export súbežne, nakládka po vagónoch; lostUnits 0, stuckAtEnd 0, deterministické); 2 splnené (odchod podľa poriadku alebo plný; lehota na odchod 30 min; metriky `trainTurnaroundMin`, `trainDelayMin`); 3 splnené (`live_terminal_rail` 100k, seedy 5001–5016: 0 pádov, 0 TrafficJam, stuckAtEnd 0, lostUnits 0); 4 splnené (koľaje s plynulými oblúkmi, lokomotíva a vagóny, RMG, závory priecestí); 5 splnené
 
-**Čo je hotové:** rozsah kariet TR6-01 … TR6-07 podľa `docs/tasks/phase-r6.md`; opravy z review TR6-02b (flat rack pod rezerváciou, zaseknutie pod hákom) a TR6-02c (pád RMG trolley→trolley seed 5008, rešpitná lehota odchodu, sloty priecestí po obnove, výkon).
+**Čo je hotové:** rozsah kariet TR6-01 … TR6-07 podľa `docs/tasks/phase-r6.md`; opravy z review TR6-02b (flat rack pod rezerváciou, zaseknutie pod hákom) a TR6-02c (pád RMG trolley→trolley seed 5008, lehota na odchod, sloty priecestí po obnove, výkon).
 
 **Rozhodnutia (ADR-043):** úrovňové priecestie; harbor_01 parcela `rail_yard`; import pre vlak ide do bufferu priamo pri vykládke (nie TT zo skladu); reefer a OOG po koľaji nejdú; naraz jeden vlak; WorldState v15; artefakt verzia 14.
 

@@ -61,7 +61,7 @@
 | TR6-06 | Review + opravy | sim-reviewer → sim-architect | 05 |
 | TR6-07 | Pipeline, artefakt, docs, PR | orchestrátor + haiku | 06 |
 | TR6-02b | Flat rack pod rezerváciou; zaseknutie pod hákom pri súbehu importu/exportu | sim-architect (sonnet) | 02 |
-| TR6-02c | Pád RMG trolley→trolley (seed 5008); review opravy: rešpitná lehota odchodu vlaku, sloty priecestí po obnove, výkon | sim-architect (sonnet) | 02b |
+| TR6-02c | Pád RMG trolley→trolley (seed 5008); review opravy: lehota na odchod vlaku, sloty priecestí po obnove, výkon | sim-architect (sonnet) | 02b |
 | TR6-03b | Plynulé oblúky koľají (r = 3) | implementer (sonnet) | 03 |
 | TR6-07a | E2E po R6; koľaje nad značkami ciest | implementer (sonnet) | 07 |
 
@@ -77,7 +77,7 @@
 - **Pipeline:** `pnpm test` 432 súborov / 8 930 testov zelené; e2e 65/65 zelené.
 - **Akceptácia:**
   1. SPLNENÉ — `rail_flow`: 100 % importu vlakom, export vlakom → loď, import a export súbežne, nakládka po vagónoch, lostUnits 0, stuckAtEnd 0, deterministické.
-  2. SPLNENÉ — odchod podľa poriadku alebo plný; rešpitná lehota 30 min; metriky `trainTurnaroundMin`, `trainDelayMin`.
+  2. SPLNENÉ — odchod podľa poriadku alebo plný; lehota na odchod 30 min; metriky `trainTurnaroundMin`, `trainDelayMin`.
   3. SPLNENÉ — `live_terminal_rail` 100k, seedy 5001–5016: 0 pádov, 0 TrafficJam, stuckAtEnd 0, lostUnits 0.
   4. SPLNENÉ — koľaje s plynulými oblúkmi, lokomotíva a vagóny, RMG, závory priecestí.
   5. SPLNENÉ.

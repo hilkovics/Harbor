@@ -68,9 +68,9 @@ test('ships: prázdne kontajnery na aprone, pod žeriavom a na palube majú siv�
   await page.screenshot({ path: `${SHOTS}/f6c-ships-berth-empty.png` });
   const held = await page.evaluate(async () => {
     const demo = window.__f6cDemo!;
-    const holdingEmpty = demo.renderer.cranes.craneView(2)?.heldCargo?.look.empty === true;
+    const holdingEmpty = demo.renderer.cranes.anyView(2)?.heldCargo?.look.empty === true;
     await demo.show({ ...demo.scene, cranes: [demo.fixtures.craneLoadingFull()] });
-    const holdingFull = demo.renderer.cranes.craneView(2)?.heldCargo?.look.empty === true;
+    const holdingFull = demo.renderer.cranes.anyView(2)?.heldCargo?.look.empty === true;
     return { holdingEmpty, holdingFull };
   });
   expect(held).toEqual({ holdingEmpty: true, holdingFull: false });

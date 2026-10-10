@@ -22,7 +22,7 @@ import {
   type StsEntry,
   type StsPart,
 } from './entity-assets';
-import { footprintPose, type FootprintPose } from './footprint-pose';
+import { footprintPose, rotateOffset, type FootprintPose } from './footprint-pose';
 import type { ContainerVM, CraneVM } from './view-models';
 
 /** Hrúbka obrysu fallbacku ako zlomok bunky (2 px pri 64 px, DESIGN_BRIEF §4 „Obrys“). */
@@ -45,6 +45,24 @@ export function stsTrolleyFrameY(fraction: number, travel: { readonly yMin: numb
 /** Veľkosť spreadera pre kontajner na ňom (bez kontajnera 40′). */
 export function stsSpreaderSize(cargo: ContainerVM | null | undefined): 20 | 40 {
   return cargo?.sizeFt === 20 ? 20 : 40;
+}
+
+/**
+ * Poloha rámu: pri module žeriavu s `entry.module` (napr. `crane_container_gantry` 2 × 3) je `vm.x/y` roh modulu a rám 3 × 10 sa kladie o `frameOffset`
+ * (rot 0) od neho — os vozíka na bunku pod hákom, nohy mimo pruhov nábrežia; posun medzi stredmi sa otáča s modulom. Inak je `vm.x/y` roh rámu.
+ */
+export function stsPose(vm: CraneVM, entry: StsEntry, cellPx: number): FootprintPose {
+  const frame = footprintPose(craneBox(vm, entry.footprint), cellPx);
+  const mod = entry.module;
+  if (mod === undefined) return frame;
+  const moduleBox = craneBox(vm, mod.footprint);
+  const moduleCenter = { x: moduleBox.x + moduleBox.w / 2, y: moduleBox.y + moduleBox.h / 2 };
+  const delta = rotateOffset(
+    mod.frameOffset.x + entry.footprint.w / 2 - mod.footprint.w / 2,
+    mod.frameOffset.y + entry.footprint.h / 2 - mod.footprint.h / 2,
+    vm.rotation,
+  );
+  return { ...frame, cx: (moduleCenter.x + delta.x) * cellPx, cy: (moduleCenter.y + delta.y) * cellPx };
 }
 
 export class StsCraneView {
@@ -73,7 +91,7 @@ export class StsCraneView {
     this.id = vm.id;
     this.last = vm;
     this.scale = manifestScale(deps.cellPx);
-    this.pose = footprintPose(craneBox(vm, entry.footprint), deps.cellPx);
+    this.pose = stsPose(vm, entry, deps.cellPx);
     this.view = new Container({ label: `sts-${String(vm.id)}` });
     this.view.position.set(this.pose.cx, this.pose.cy);
     this.baseView = new Container({ label: `sts-base-${String(vm.id)}` });

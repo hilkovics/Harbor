@@ -524,6 +524,13 @@
         "w": 2,
         "h": 3
       },
+      "sts": {
+        "entry": "sts",
+        "frameOffset": {
+          "x": -1,
+          "y": -4
+        }
+      },
       "parts": {
         "base": {
           "file": "modules/crane_container_gantry_base.svg"

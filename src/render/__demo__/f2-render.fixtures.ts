@@ -13,7 +13,8 @@ import { moduleSprite, shipSprite } from '../entity-assets';
 import type { CraneVM, EntitiesVM, ModuleGhostVM, ModuleVM, ShipVM, ViewSide } from '../view-models';
 
 export const DEMO_BERTH_DEF = 'berth_standard';
-export const DEMO_CRANE_DEF = 'crane_container_gantry';
+/** Demo kreslí starý žeriav s výložníkom (`CraneView`): kontajnerový `crane_container_gantry` je od R3 STS (scéna `sts-in-game`, r3 demo); rovnaký footprint 2 × 3. */
+export const DEMO_CRANE_DEF = 'crane_bulk_grab';
 
 /** Bunky berthu (rot 0), ktoré zaberá žeriav: stredné dva stĺpce (x 3–4) po celej hĺbke. Ľavý horný roh žeriava pri rot 0. */
 export const CRANE_OFFSET_ON_BERTH = { x: 3, y: 0 } as const;

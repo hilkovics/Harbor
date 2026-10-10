@@ -186,25 +186,28 @@ describe('CraneView s `hook`: kontajner sa spúšťa na vozidlo pod hákom', () 
   });
 });
 
+/** Žeriav na starom view (`CraneView`): kontajnerový `crane_container_gantry` sa od R3 kreslí STS rámom, výložník ostal pre sypký žeriav. */
+const OLD_CRANE = 'crane_bulk_grab';
+
 describe('CraneLayer: základne žeriavov v samostatnom kontajneri pod vozidlami', () => {
   it('každý žeriav má základňu v `baseView` a výložník v `view`; zánik žeriava odstráni obe', () => {
     const layer = new CraneLayer(deps());
-    layer.sync([crane({ id: 1 }), crane({ id: 2, x: 50, hook: { x: 50.5, y: 16.5 } })]);
+    layer.sync([crane({ defId: OLD_CRANE, id: 1 }), crane({ defId: OLD_CRANE, id: 2, x: 50, hook: { x: 50.5, y: 16.5 } })]);
     expect(layer.view.children).toHaveLength(2);
     expect(layer.baseView.children).toHaveLength(2);
     const first = layer.craneView(1);
     expect(first?.baseView.parent).toBe(layer.baseView);
     expect(first?.view.parent).toBe(layer.view);
-    layer.sync([crane({ id: 2, x: 50, hook: { x: 50.5, y: 16.5 } })]);
+    layer.sync([crane({ defId: OLD_CRANE, id: 2, x: 50, hook: { x: 50.5, y: 16.5 } })]);
     expect(layer.baseView.children).toHaveLength(1);
     expect(first?.baseView.destroyed).toBe(true);
   });
 
   it('zmena bunky pod hákom vytvorí view nanovo (poloha nákladu sa odvodzuje z `hook`)', () => {
     const layer = new CraneLayer(deps());
-    layer.sync([crane()]);
+    layer.sync([crane({ defId: OLD_CRANE })]);
     const first = layer.craneView(7);
-    layer.sync([crane({ hook: { x: 44.5, y: 16.5 } })]);
+    layer.sync([crane({ defId: OLD_CRANE, hook: { x: 44.5, y: 16.5 } })]);
     expect(layer.craneView(7)).not.toBe(first);
   });
 });

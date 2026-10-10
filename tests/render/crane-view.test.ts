@@ -218,13 +218,16 @@ describe('CraneView: sklon výložníka a odznak', () => {
   });
 });
 
+/** Žeriav na starom view (`CraneView`): kontajnerový `crane_container_gantry` sa od R3 kreslí STS rámom, výložník ostal pre sypký žeriav. */
+const OLD_CRANE = 'crane_bulk_grab';
+
 describe('CraneLayer (synchronizácia podľa id)', () => {
   it('vytvára a ruší views podľa id, nezmenené ponecháva', () => {
     const layer = new CraneLayer(deps(new StubTextures()));
-    layer.sync([crane({ id: 1 }), crane({ id: 2, x: 50 })]);
+    layer.sync([crane({ defId: OLD_CRANE, id: 1 }), crane({ defId: OLD_CRANE, id: 2, x: 50 })]);
     expect(layer.craneCount).toBe(2);
     const first = layer.craneView(1);
-    layer.sync([crane({ id: 1, state: 'grabbing', progress: 0.3 })]);
+    layer.sync([crane({ defId: OLD_CRANE, id: 1, state: 'grabbing', progress: 0.3 })]);
     expect(layer.craneView(1)).toBe(first);
     expect(first?.vm.state).toBe('grabbing');
     expect(layer.craneCount).toBe(1);
@@ -233,20 +236,20 @@ describe('CraneLayer (synchronizácia podľa id)', () => {
 
   it('zmena polohy alebo rotácie vytvorí view nanovo', () => {
     const layer = new CraneLayer(deps(new StubTextures()));
-    layer.sync([crane()]);
+    layer.sync([crane({ defId: OLD_CRANE })]);
     const first = layer.craneView(7);
-    layer.sync([crane({ rotation: 180 })]);
+    layer.sync([crane({ defId: OLD_CRANE, rotation: 180 })]);
     expect(layer.craneView(7)).not.toBe(first);
     expect(first?.view.destroyed).toBe(true);
   });
 
   it('setZoom zväčší odznaky pri malom zoome (aj pre nové žeriavy)', () => {
     const layer = new CraneLayer(deps(new StubTextures()));
-    layer.sync([crane({ state: 'blocked' })]);
+    layer.sync([crane({ defId: OLD_CRANE, state: 'blocked' })]);
     layer.setZoom(0.5);
     const badge = layer.craneView(7)?.view.children[1] as Container;
     expect(badge.scale.x).toBeCloseTo(2, 9);
-    layer.sync([crane({ state: 'blocked' }), crane({ id: 8, x: 50, state: 'blocked' })]);
+    layer.sync([crane({ defId: OLD_CRANE, state: 'blocked' }), crane({ defId: OLD_CRANE, id: 8, x: 50, state: 'blocked' })]);
     const other = layer.craneView(8)?.view.children[1] as Container;
     expect(other.scale.x).toBeCloseTo(2, 9);
     layer.setZoom(1);

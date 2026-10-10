@@ -76,6 +76,8 @@ export interface ModuleSpriteEntry {
   readonly docks?: readonly ManifestRect[];
   /** Kategória nákladu rampy (`container`, `bulk`, …); určuje typ nákladu pripraveného na doku. */
   readonly category?: string;
+  /** Modul žeriavu kreslený STS rámom (R3): `entry` = záznam `sprites` so zložením STS, `frameOffset` = ľavý horný roh rámu od ľavého horného rohu modulu (bunky, rot 0). */
+  readonly sts?: { readonly entry: string; readonly frameOffset: ManifestPoint };
   /** Sklady: počet stohových pozícií na jednej vrstve (`slots`) a počet vrstiev (`layers`); kapacita = `slots × layers`. */
   readonly slots?: number;
   readonly layers?: number;
@@ -166,6 +168,8 @@ export interface StsEntry {
   readonly travelY: { readonly yMin: number; readonly yMax: number };
   readonly spreader20: StsPart;
   readonly spreader40: StsPart;
+  /** Rozmer modulu žeriavu (bunky, rot 0) a posun rámu od jeho ľavého horného rohu; chýba = `CraneVM.x/y` je ľavý horný roh rámu. */
+  readonly module?: { readonly footprint: CellSize; readonly frameOffset: ManifestPoint };
 }
 
 /** RTG (R3, `entities.rtg`): rám (pivot = stred rámu, jazdí po Y) a vozík (jazdí po X rámu v rozsahu `travelX`, px rámu; stred vozíka). */
@@ -225,7 +229,9 @@ function stsPart(part: (Partial<StsPart> & { readonly file?: string }) | undefin
 
 /** STS žeriav `defId` (`sprites.<defId>.parts.frame` + `trolley` s `travel` + `spreader_20` / `spreader_40`), alebo `undefined` (starý žeriav s výložníkom). */
 export function stsSprite(defId: string): StsEntry | undefined {
-  const entry = moduleSprite(defId.startsWith(STS_ENTRY_ID) ? STS_ENTRY_ID : defId);
+  const own = moduleSprite(defId);
+  const alias = own?.sts;
+  const entry = moduleSprite(alias?.entry ?? (defId.startsWith(STS_ENTRY_ID) ? STS_ENTRY_ID : defId));
   const parts = entry?.parts;
   const frame = stsPart(parts?.['frame']);
   const trolley = stsPart(parts?.['trolley']);
@@ -233,7 +239,8 @@ export function stsSprite(defId: string): StsEntry | undefined {
   const spreader40 = stsPart(parts?.['spreader_40']);
   const travel = parts?.['trolley']?.travel;
   if (entry === undefined || frame === undefined || trolley === undefined || spreader20 === undefined || spreader40 === undefined || travel === undefined) return undefined;
-  return { footprint: entry.footprint, frame, trolley, travelY: { yMin: travel.yMin, yMax: travel.yMax }, spreader20, spreader40 };
+  const module = alias === undefined || own === undefined ? undefined : { footprint: own.footprint, frameOffset: alias.frameOffset };
+  return { footprint: entry.footprint, frame, trolley, travelY: { yMin: travel.yMin, yMax: travel.yMax }, spreader20, spreader40, ...(module === undefined ? {} : { module }) };
 }
 
 /** Id záznamu RTG v `entities`: každé `rtg*` id stroja sa kreslí z neho. */

@@ -68,6 +68,11 @@ export class CraneLayer {
     return view instanceof StsCraneView ? view : undefined;
   }
 
+  /** View žeriava `id` bez ohľadu na druh (starý aj STS; e2e, ladenie). */
+  anyView(id: number): AnyCraneView | undefined {
+    return this.cranes.get(id);
+  }
+
   /** Zosúladí žeriavy s VM: vytvorí nové, zruší zmiznuté, zmenenú polohu / rotáciu / def vytvorí nanovo. */
   sync(cranes: readonly CraneVM[]): void {
     this.cranes.sync(cranes);

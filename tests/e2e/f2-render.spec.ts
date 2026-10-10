@@ -51,8 +51,8 @@ test.describe('F2: render entít (demo s pevnými view-modelmi)', () => {
         modules: renderer.modules.moduleCount,
         cranes: renderer.cranes.craneCount,
         ships: renderer.ships.shipCount,
-        blockedBadge: renderer.cranes.craneView(22)?.badgeVisible,
-        holding: renderer.cranes.craneView(21)?.heldCargo?.unitId,
+        blockedBadge: renderer.cranes.anyView(22)?.badgeVisible,
+        holding: renderer.cranes.anyView(21)?.heldCargo?.unitId,
       };
     });
     expect(counts).toEqual({ modules: 2, cranes: 2, ships: 2, blockedBadge: true, holding: 900 });

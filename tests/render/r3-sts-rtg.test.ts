@@ -6,7 +6,7 @@ import { CraneLayer } from '@render/crane-layer';
 import { entitySpriteFiles, articulatedSprite, machineSprite, moduleSprite, stsSprite } from '@render/entity-assets';
 import { MachineLayer } from '@render/machine-layer';
 import { MACHINE_HOIST_SCALE, MachineView, rtgHoistScale, rtgTrolleyFrameX } from '@render/machine-view';
-import { StsCraneView, stsSpreaderSize, stsTrolleyFrameY, stsTrolleyFraction } from '@render/sts-crane-view';
+import { StsCraneView, stsPose, stsSpreaderSize, stsTrolleyFrameY, stsTrolleyFraction } from '@render/sts-crane-view';
 import { footprintPose } from '@render/footprint-pose';
 import { LANE_DIR_ANGLE, LanesDecor, laneArrows } from '@render/lanes-decor';
 import { VehicleView } from '@render/vehicle-view';
@@ -41,7 +41,10 @@ describe('manifest R3', () => {
     expect(entry?.spreader20.pivot).toEqual({ x: 64, y: 32 });
     expect(entry?.spreader40.pivot).toEqual({ x: 96, y: 32 });
     expect(stsSprite('sts_standard')).toBeDefined(); // `sts*` id → záznam `sts`
-    expect(stsSprite('crane_container_gantry')).toBeUndefined(); // starý žeriav s výložníkom
+    expect(stsSprite('crane_bulk_grab')).toBeUndefined(); // sypký / kvapalný / plynový žeriav ostáva na starom view
+    const gantry = stsSprite('crane_container_gantry'); // hra: kontajnerový žeriav 2 × 3 sa kreslí STS rámom
+    expect(gantry?.footprint).toEqual({ w: 3, h: 10 });
+    expect(gantry?.module).toEqual({ footprint: { w: 2, h: 3 }, frameOffset: { x: -1, y: -4 } });
   });
 
   it('berth_standard je 8 × 4 s ôsmimi konektormi; ťahač je kĺbový 1 × 3; rtg 5 × 2 s travel x 32–288', () => {
@@ -120,13 +123,24 @@ describe('StsCraneView', () => {
 
   it('CraneLayer vyberie STS view podľa manifestu a starý žeriav ostáva CraneView', () => {
     const layer = new CraneLayer(deps(new StubTextures()));
-    layer.sync([sts(), sts({ id: 6, defId: 'crane_container_gantry', x: 30 })]);
+    layer.sync([sts(), sts({ id: 6, defId: 'crane_bulk_grab', x: 30 })]);
     expect(layer.craneCount).toBe(2);
     expect(layer.stsView(5)).toBeInstanceOf(StsCraneView);
     expect(layer.craneView(5)).toBeUndefined();
     expect(layer.craneView(6)).toBeDefined();
-    layer.sync([sts({ trolleyY: 0.25 }), sts({ id: 6, defId: 'crane_container_gantry', x: 30 })]);
+    layer.sync([sts({ trolleyY: 0.25 }), sts({ id: 6, defId: 'crane_bulk_grab', x: 30 })]);
     expect(layer.stsView(5)?.vm.trolleyY).toBe(0.25);
+  });
+
+  it('crane_container_gantry (modul 2 × 3 na (43; 14)) je STS: rám 3 × 10 má os na bunke pod hákom a nohy nad pruhmi', () => {
+    const layer = new CraneLayer(deps(new StubTextures()));
+    layer.sync([sts({ id: 7, defId: 'crane_container_gantry', x: 43, y: 14 })]);
+    expect(layer.stsView(7)).toBeInstanceOf(StsCraneView);
+    const pose = stsPose(sts({ defId: 'crane_container_gantry', x: 43, y: 14 }), stsSprite('crane_container_gantry')!, CELL);
+    expect(pose.cx / CELL).toBe(43.5); // rám x 42–45, os vozíka = stred bunky pod hákom (43,5)
+    expect(pose.cy / CELL).toBe(15); // rám y 10–20: riadok 4 rámu = riadok 14 kotviska
+    const rotated = stsPose(sts({ defId: 'crane_container_gantry', x: 43, y: 14, rotation: 90 }), stsSprite('crane_container_gantry')!, CELL);
+    expect(rotated.angle).toBe(90);
   });
 
   it('rotácia 90° prehodí footprint rámu (10 × 3)', () => {

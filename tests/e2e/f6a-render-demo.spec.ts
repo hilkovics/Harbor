@@ -59,7 +59,7 @@ test('ships: náklad na palube podľa počtu (import / export farebne), lashing 
     const { craneAt } = demo.fixtures;
     const sample = async (state: 'grabbing' | 'placing', progress: number, cycle: 'unload' | 'load' | 'dual_load' | 'dual_unload') => {
       await demo.show({ ...demo.scene, cranes: [craneAt(state, progress, cycle, state === 'placing')] });
-      return demo.renderer.cranes.craneView(2)?.trolleyOffsetY ?? Number.NaN;
+      return demo.renderer.cranes.anyView(2)?.trolleyOffsetY ?? Number.NaN;
     };
     return {
       loadEarly: await sample('grabbing', 0.2, 'load'),

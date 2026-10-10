@@ -408,6 +408,96 @@
         "stalls": 6,
         "stallLengthCells": 3
       }
+    },
+    {
+      "id": "reefer_block_8",
+      "kind": "storage",
+      "displayName": "Reefer blok",
+      "footprint": {
+        "w": 4,
+        "h": 8
+      },
+      "placement": {
+        "requiredTerrain": [
+          "land",
+          "quay"
+        ],
+        "requiresParcelOwnership": true
+      },
+      "connectors": [
+        {
+          "x": 3,
+          "y": 0,
+          "side": "n",
+          "type": "road",
+          "access": "in"
+        },
+        {
+          "x": 3,
+          "y": 7,
+          "side": "s",
+          "type": "road",
+          "access": "out"
+        }
+      ],
+      "costCents": 20000000,
+      "maintenancePerDayCents": 110000,
+      "params": {
+        "capacityUnits": 128,
+        "category": "container",
+        "role": "rtg_block",
+        "bays": 8,
+        "rows": 4,
+        "maxTier": 4,
+        "laneCol": 3,
+        "tpSpacingBays": 1,
+        "plugRows": 4
+      }
+    },
+    {
+      "id": "oog_area",
+      "kind": "storage",
+      "displayName": "OOG plocha",
+      "footprint": {
+        "w": 4,
+        "h": 6
+      },
+      "placement": {
+        "requiredTerrain": [
+          "land",
+          "quay"
+        ],
+        "requiresParcelOwnership": true
+      },
+      "connectors": [
+        {
+          "x": 3,
+          "y": 0,
+          "side": "n",
+          "type": "road",
+          "access": "in"
+        },
+        {
+          "x": 3,
+          "y": 5,
+          "side": "s",
+          "type": "road",
+          "access": "out"
+        }
+      ],
+      "costCents": 9000000,
+      "maintenancePerDayCents": 50000,
+      "params": {
+        "capacityUnits": 18,
+        "category": "container",
+        "role": "rtg_block",
+        "bays": 6,
+        "rows": 3,
+        "maxTier": 1,
+        "laneCol": 3,
+        "tpSpacingBays": 1,
+        "acceptsOog": true
+      }
     }
   ]
 }

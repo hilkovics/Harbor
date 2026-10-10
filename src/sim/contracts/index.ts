@@ -64,3 +64,4 @@ export {
 } from './contract-pool';
 export type { OfferContext, PortCapacity, TemplateGroup } from './contract-pool';
 export { drawContainerCount, largeContainerCount, unitSizeFt } from './container-sizes';
+export { drawOogUnits, drawUnitTypes, rateTeuOf, unitTypeAt } from './container-mix';

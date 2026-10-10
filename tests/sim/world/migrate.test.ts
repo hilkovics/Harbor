@@ -1,5 +1,5 @@
 /**
- * Verzia `WorldState` v13 bez migrácií (ADR-036 bod 2, clean break savov; ARCHITECTURE §14): aktuálna verzia je jediná podporovaná,
+ * Verzia `WorldState` v14 bez migrácií (ADR-036 bod 2, clean break savov; ARCHITECTURE §14): aktuálna verzia je jediná podporovaná,
  * save inej verzie (v1–v11 aj novšej) odmietne `World.deserialize` aj `parseWorldState` chybou `UnsupportedSaveVersionError`
  * s pointerom `/version`, ktorú vie aplikácia rozpoznať. Svet pri odmietnutí ostáva nedotknutý (nevznikne polovičatý svet).
  */
@@ -19,7 +19,7 @@ import { DEFS, MAP } from './world-fixtures';
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
-/** Aktuálny save s upravenou verziou (tvar zostáva v13 — chyba verzie musí prísť pred kontrolou tvaru). */
+/** Aktuálny save s upravenou verziou (tvar zostáva v14 — chyba verzie musí prísť pred kontrolou tvaru). */
 function withVersion(version: unknown): WorldState {
   return { ...clone(World.create(DEFS, MAP, 4242).serialize()), version } as unknown as WorldState;
 }
@@ -33,10 +33,10 @@ function thrownBy(fn: () => unknown): unknown {
   throw new Error('očakávaná výnimka, nevznikla');
 }
 
-describe('verzia WorldState v13 bez migrácií (ADR-036, v13 ADR-041)', () => {
-  it('aktuálna aj najstaršia podporovaná verzia je 13; kľúče v13 v poradí serialize()', () => {
-    expect(WORLD_STATE_VERSION).toBe(13);
-    expect(OLDEST_WORLD_STATE_VERSION).toBe(13);
+describe('verzia WorldState v14 bez migrácií (ADR-036, v14 ADR-042)', () => {
+  it('aktuálna aj najstaršia podporovaná verzia je 14; kľúče v14 v poradí serialize()', () => {
+    expect(WORLD_STATE_VERSION).toBe(14);
+    expect(OLDEST_WORLD_STATE_VERSION).toBe(14);
     const state = World.create(DEFS, MAP, 4242).serialize();
     expect(state.version).toBe(WORLD_STATE_VERSION);
     expect(Object.keys(state)).toEqual([...WORLD_STATE_KEYS]);

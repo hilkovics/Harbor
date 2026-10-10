@@ -79,6 +79,20 @@
           "maximum": 1,
           "description": "Podiel 40′ kontajnerov v kontrakte šablóny (ADR-039; chýba = 0, všetky 20′). Zmes veľkostí losuje `Rng` pri vzniku ponuky; objem `volumeUnitsRange` ostáva v TEU, počet kontajnerov je z neho odvodený. Nepoužije sa pri hlavnom kontrakte `empty_repositioning` (prázdne berie depo s veľkosťou, akú má)."
         },
+        "typeMix": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "share"],
+            "properties": {
+              "type": { "$ref": "#/$defs/id" },
+              "share": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+            }
+          },
+          "description": "Zmes typov kontajnerov (R5, ADR-042): podiel každého typu iného než `dry` (zvyšok je `dry`). `Rng` losuje typ každého kontajnera pri vzniku ponuky. Len kategória `container` a druhy `import` / `tranship` / `export` / `roundtrip` (export bez reeferov; TR5-02: OOG sa losuje len pri OOG ploche); súčet podielov ≤ 1, typ existuje v `container_types.json` a je v zmesi najviac raz — kontroluje DefRegistry a `pnpm validate:defs`."
+        },
         "volumeUnitsRange": {
           "$ref": "#/$defs/intRange",
           "description": "Rozsah [min, max] objemu kontraktu v jednotkách typu nákladu (kontajnery: TEU, ADR-039); max sa musí zmestiť do najmenšej lode zo shipClassIds (kapacita lode je v TEU)."

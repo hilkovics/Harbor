@@ -19,12 +19,13 @@
  * Funkcie nemenia stav FSM žeriava (to robí `CraneSystem`); presuny nákladu idú výlučne cez `CargoLedger.move` (pravidlo 2).
  */
 import { compareStowageOrder } from '../cargo/stowage';
-import type { CargoUnit } from '../cargo/cargo-unit';
+import { teuOf, type CargoUnit } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
 import type { HandoverMode } from '../defs/types';
 import { apronDirectionCap, bothDirections, importApronUsage } from '../logistics/apron-usage';
 import { jobNeedsMachine } from '../logistics/handling-chains';
 import { hookUnreachable } from '../logistics/load-access';
+import { mayUnload } from '../logistics/reefer-supply';
 import { firstUnloadableOnShip, isLoadable, isOutboundOnShip } from '../logistics/voyage-cargo';
 import { BerthModule } from '../modules/berth-module';
 import { CRANE_CYCLE_TRAITS, CraneModule } from '../modules/crane-module';
@@ -157,13 +158,17 @@ const APRON_HANDOVER: Handover = {
   vehiclesUnderHook: false,
   reservesUnloadSlot: true,
   plansUnloadTarget: false,
-  planUnload: (env, continuation) => (continuation || apronUnloadSlot(env) ? null : undefined),
+  planUnload: (env, continuation) =>
+    continuation || (apronUnloadSlot(env) && firstUnloadableOnShip(env.world, env.ship.id, (unit) => mayUnload(env.world, unit, env.berth, env.crane)) !== undefined) ? null : undefined,
   reserveUnload: ({ crane, berth }) => {
     // Druhá polovica dual cyklu už nesie slot uvoľnený exportom (`lift`) — nová rezervácia len pri samostatnej vykládke.
     crane.reservedSlot ??= berth.apron.reserve();
   },
   blocksWhenNotReady: true,
-  unloadUnit: ({ world, ship }) => firstUnloadableOnShip(world, ship.id),
+  // Reefer bez zásuvky sa preskočí (R5, ADR-042); ak medzitým zásuvku obsadil iný príchod, vezme sa len jednotka bez reeferu (reefer na aprone by bol bez napájania, TR5-06b) —
+  // inak `undefined` a žeriav cyklus preruší (`crane-system.ts`, `swing`).
+  unloadUnit: ({ world, ship, berth, crane }) =>
+    firstUnloadableOnShip(world, ship.id, (unit) => mayUnload(world, unit, berth, crane)) ?? firstUnloadableOnShip(world, ship.id, (unit) => unit.reefer === null),
   deliver: ({ world, crane, berth }) => {
     const unitId = crane.heldUnitId;
     const slot = crane.reservedSlot;
@@ -278,7 +283,7 @@ const HOOK_HANDOVER: Handover = {
   vehiclesUnderHook: true,
   reservesUnloadSlot: false,
   plansUnloadTarget: true,
-  planUnload: ({ world, crane, ship }) => {
+  planUnload: ({ world, crane, ship, berth }) => {
     // Jednotka pre tento žeriav v poradí: (1) najmenšie id s vozidlom už pod hákom (žeriav nečaká), (2) job s vozidlom na ceste k háku
     // so platnou trasou (`to_pickup`; priradené vozidlo príde — bez neho by žeriav s jednotkou čakal na vozidlo, ktoré nikdy nepríde,
     // T6D-02), (3) job s vozidlom v `no_path` (vozidlo k háku nedôjde; jednotku žeriav odloží na apron a vozidlo ju vezme odtiaľ,
@@ -286,6 +291,12 @@ const HOOK_HANDOVER: Handover = {
     // (4) job bez vozidla, (5) prvá voľná jednotka importu (job vznikne v kroku 5 toho istého ticku). Jednotky s jobom iného žeriava
     // a zabrané jednotky sa preskočia.
     const claimed = claimImports(world, ship, crane);
+    // TEU reeferov zabraných inými žeriavmi bez jobu (zásuvku im rezervuje až dispatcher v kroku 5): `mayUnload` ich neráta dvakrát.
+    let pendingTeu = 0;
+    for (const claimedId of claimed) {
+      const other = world.cargo.get(claimedId);
+      if (other !== undefined && other.reefer !== null && world.jobOfUnit(claimedId) === undefined) pendingTeu += teuOf(other);
+    }
     let enRoute: EntityId | undefined;
     let stranded: EntityId | undefined;
     let queued: EntityId | undefined;
@@ -297,7 +308,8 @@ const HOOK_HANDOVER: Handover = {
       if (unitId === undefined || unit === undefined || isOutboundOnShip(world, unit, ship.id) || claimed.includes(unitId)) continue;
       const job = world.jobOfUnit(unitId);
       if (job === undefined) {
-        fresh ??= unitId;
+        // Reefer bez voľnej zásuvky STS preskočí (R5, ADR-042).
+        if (fresh === undefined && mayUnload(world, unit, berth, crane, pendingTeu)) fresh = unitId;
         continue;
       }
       if (job.from.kind !== 'in_crane' || job.from.craneId !== crane.id) continue;

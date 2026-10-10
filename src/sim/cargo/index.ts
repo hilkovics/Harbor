@@ -49,6 +49,9 @@ export {
   isCargoStatus,
   isContainerSize,
   isWeightClass,
+  needsPlug,
+  reeferStateProblem,
+  REEFER_STATE_KEYS,
   teuOf,
   teuOfSize,
 } from './cargo-unit';
@@ -62,8 +65,10 @@ export type {
   CargoUnitLabelsInput,
   ContainerLabels,
   ContainerSize,
+  ReeferState,
   WeightClass,
 } from './cargo-unit';
+export { ReeferIndex } from './reefer-index';
 export { STOWAGE_DIRECTION_RANK, STOWAGE_WEIGHT_RANK, compareStowageClass, compareStowageOrder } from './stowage';
 export type { StowageKey } from './stowage';
 export { CargoConservationError, CargoError, CargoStateError, CargoTransitionError } from './cargo-error';

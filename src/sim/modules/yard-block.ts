@@ -23,7 +23,7 @@ import { ModuleError } from './module-error';
 import { checkRuntimeKeys, readCount } from './runtime-state';
 import { StackGrid, columnOfSlot, geometryCapacity, positionOfCell, slotOfCell, tierOfSlot, type YardGeometry, type YardPosition } from './stack-grid';
 import { StorageModule, type StorageRuntimeState } from './storage-module';
-import type { CargoCategory } from '../defs/types';
+import type { CargoCategory, ContainerTypeDef } from '../defs/types';
 
 /**
  * Dynamický stav bloku v save: počítadlá skladu + `rehandles` (počet presunov kontajnerov nad cieľom, ADR-039 bod 6) a `rehandleStalls`
@@ -39,6 +39,11 @@ const SIZE_OF_CODE = [0, 20, 40] as const;
 /** Veľkosť rezervácie: 1 = 20′, 2 = 40′ (TEU). */
 function codeOfSize(sizeFt: number): 1 | 2 {
   return sizeFt === 40 ? 2 : 1;
+}
+
+/** Smie sa na jednotku položiť ďalší kontajner? Nie na `top_only` typ (flat rack) ani na nadrozmerný náklad (R5, ADR-042). */
+export function coversBlocked(unit: Pick<CargoUnit, 'oog'>, def: Readonly<ContainerTypeDef> | undefined): boolean {
+  return unit.oog || def?.stacking === 'top_only';
 }
 
 /**
@@ -77,6 +82,37 @@ export abstract class YardBlock extends StorageModule implements StorageGuard {
     this.reservedSize = new Uint8Array(cells);
     this.columnReserved = new Uint8Array(this.geometry.bays * this.geometry.rows);
     this.rebuildGrid();
+  }
+
+  // ---- zásuvky a pravidlá typov (R5, ADR-042) ----
+
+  /** Počet radov od radu 0, v ktorých má každá vrstva stohu zásuvku (`params.plugRows`; 0 = blok bez zásuvok). */
+  get plugRows(): number {
+    return this.params.plugRows ?? 0;
+  }
+
+  /** Má blok zásuvky pre reefery? Takýto blok prijíma len jednotky, ktoré zásuvku potrebujú, a tie smú stáť len v ňom. */
+  get hasSockets(): boolean {
+    return this.plugRows > 0;
+  }
+
+  /** Má stoh `(bay, row)` zásuvku (pri každej vrstve)? */
+  isPowered(bay: number, row: number): boolean {
+    return row < this.plugRows && bay >= 0 && bay < this.geometry.bays;
+  }
+
+  /** Stohy so zásuvkou v poradí `(row, bay)` — bunky pre VM (`ModuleVM.plugs`); prázdne pre blok bez zásuvok. */
+  plugCells(): readonly { readonly bay: number; readonly row: number }[] {
+    const cells: { bay: number; row: number }[] = [];
+    for (let row = 0; row < Math.min(this.plugRows, this.geometry.rows); row++) {
+      for (let bay = 0; bay < this.geometry.bays; bay++) cells.push({ bay, row });
+    }
+    return cells;
+  }
+
+  /** Smie blok skladovať nadrozmerný náklad (OOG)? Bežný blok nie; OOG plochu prinesie TR5-02 (R5, ADR-042). */
+  get acceptsOog(): boolean {
+    return false;
   }
 
   // ---- geometria a obsadenie ----
@@ -256,7 +292,22 @@ export abstract class YardBlock extends StorageModule implements StorageGuard {
       if (this.grid.height(bay, row) !== tier) return fail('ukladá sa len na vrchol stohu');
       if (tier > 0 && this.sizeOfCell(bay, row, tier - 1) !== 20) return fail('pod 20′ smie byť len 20′ alebo zem');
     }
+    this.assertTypeRules(unit, bay, row, tier, fail);
     // `tier < maxTier` platí vždy: `assertCell` pustí len sloty z kapacity, ktorá nie je väčšia než `bays × rows × maxTier`.
+  }
+
+  /**
+   * Pravidlá typov (R5, ADR-042; docs/TERMINAL_2.md §4.2): jednotka, ktorá potrebuje zásuvku, smie stáť len na stohu so zásuvkou; OOG len v bloku, ktorý ho prijíma
+   * (`acceptsOog`); na `top_only` jednotku (flat rack) ani na OOG nesmie nič ležať — pod ukladanou jednotkou nesmie byť taká.
+   */
+  private assertTypeRules(unit: CargoUnit, bay: number, row: number, tier: number, fail: (why: string) => never): void {
+    const def = this.ledger.containerTypeOf(unit.id);
+    if (def !== undefined && def.needsPower && unit.direction !== 'empty' && !this.isPowered(bay, row)) fail('reefer smie stáť len na pozícii so zásuvkou');
+    if (unit.oog && !this.acceptsOog) fail('OOG smie stáť len na OOG ploche');
+    if (tier === 0) return;
+    const belowId = this.grid.at(bay, row, tier - 1);
+    const below = belowId === null ? undefined : this.ledger.get(belowId);
+    if (below !== undefined && coversBlocked(below, this.ledger.containerTypeOf(below.id))) fail('na flat rack ani na OOG nesmie nič ležať');
   }
 
   assertCanTake(unit: CargoUnit): void {
@@ -466,6 +517,15 @@ export abstract class YardBlock extends StorageModule implements StorageGuard {
         if (belowUnit === undefined) return `${this.label}: pod jednotkou #${String(unitId)} na (${String(bay)}, ${String(row)}, ${String(tier)}) je prázdna bunka (stoh nie je súvislý)`;
         if (belowUnit.sizeFt !== unit.sizeFt) return `${this.label}: jednotka #${String(unitId)} (${String(unit.sizeFt)}′) leží na ${String(belowUnit.sizeFt)}′ jednotke #${String(below)}`;
         if (wide && this.grid.at(bay + 1, row, tier - 1) !== below) return `${this.label}: 40′ jednotka #${String(unitId)} nesedí na tej istej 40′ v oboch bays`;
+      }
+      // Pravidlá typov (R5, ADR-042): reefer len na stohu so zásuvkou, OOG len v bloku, ktorý ho prijíma, nič na flat racku ani na OOG.
+      const def = this.ledger.containerTypeOf(unit.id);
+      if (def !== undefined && def.needsPower && unit.direction !== 'empty' && !this.isPowered(bay, row)) return `${this.label}: reefer #${String(unitId)} leží na (${String(bay)}, ${String(row)}) bez zásuvky`;
+      if (unit.oog && !this.acceptsOog) return `${this.label}: OOG jednotka #${String(unitId)} leží v bloku, ktorý OOG neprijíma`;
+      if (tier > 0) {
+        const coverId = this.grid.at(bay, row, tier - 1);
+        const cover = coverId === null ? undefined : this.ledger.get(coverId);
+        if (cover !== undefined && coversBlocked(cover, this.ledger.containerTypeOf(cover.id))) return `${this.label}: jednotka #${String(unitId)} leží na flat racku / OOG #${String(coverId)}`;
       }
       teu += teuOf(unit);
     }

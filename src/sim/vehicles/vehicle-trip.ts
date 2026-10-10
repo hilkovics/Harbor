@@ -24,6 +24,10 @@ import type { EntityId } from '../core/entity-id';
 import type { Module } from '../modules/module';
 import type { TransportJob } from '../logistics/transport-job';
 import { carrierMotionProblem, type MotionProblem, type MotionTarget } from '../movement/motion-check';
+import { DIRECTIONS_4 } from '../grid/grid';
+import { isRoadStepAllowed } from '../grid/road-direction';
+import { isAccessCell } from '../logistics/module-access';
+import { LANES_PER_CELL, slotKey } from '../traffic/lane-slots';
 import { findRouteToCell, findRouteToModule, planRouteToCell, planRouteToModule } from '../movement/route-planning';
 import { exitSlotKey, headSlotKey } from '../traffic/head-slot';
 import type { World } from '../world/world';
@@ -175,6 +179,53 @@ export function startDepotTrip(world: World, vehicle: Vehicle): boolean {
   if (findRouteToModule(world, vehicle.cell, depot) === null) return false;
   changeVehicleState(world.events, vehicle, 'to_depot');
   return planRouteToModule(world, vehicle, depot);
+}
+
+/** Je bunka `index` prístupovou bunkou (vjazdom) niektorého modulu? */
+function isAnyAccessCell(world: World, index: number): boolean {
+  for (const module of world.modules.values()) if (isAccessCell(world.grid, module, index)) return true;
+  return false;
+}
+
+/**
+ * Vozidlo bez cesty k depu stojí na vjazde modulu (TR5-06b): nájde najbližšiu (BFS po povolených krokoch ciest, poradie N, E, S, W; aspoň o `lengthCells`) **voľnú** bunku s cestou, ktorá nie je
+ * vjazdom žiadneho modulu, a pošle ho tam (`to_vacate` s trasou — po príchode sa vozidlo vráti do `idle` a skúša depo znova, `vacateWhenThere`).
+ * `false` = vozidlo už vjazd neblokuje, alebo nie je kam odísť (nič sa nezmenilo).
+ */
+export function startVacateTrip(world: World, vehicle: Vehicle): boolean {
+  const { grid } = world;
+  if (!isAnyAccessCell(world, vehicle.cell)) return false;
+  const seen = new Set<number>([vehicle.cell]);
+  const queue: number[] = [vehicle.cell];
+  const depth = new Map<number, number>([[vehicle.cell, 0]]);
+  // Telo vozidla zaberá až `lengthCells` buniek: vjazd je voľný, až keď hlava odíde aspoň o toľko buniek.
+  const clearance = vehicle.lengthCells;
+  for (let head = 0; head < queue.length; head++) {
+    const at = queue[head] as number;
+    const from = grid.atIndex(at);
+    const x = at % grid.width;
+    const y = Math.floor(at / grid.width);
+    for (const direction of DIRECTIONS_4) {
+      const nx = x + direction.dx;
+      const ny = y + direction.dy;
+      if (!grid.inBounds(nx, ny)) continue;
+      const next = grid.index(nx, ny);
+      if (seen.has(next)) continue;
+      const cell = grid.atIndex(next);
+      if (cell.road !== 'road' || !isRoadStepAllowed(from, cell, direction.name)) continue;
+      seen.add(next);
+      queue.push(next);
+      depth.set(next, (depth.get(at) as number) + 1);
+      if ((depth.get(next) as number) < clearance) continue;
+      let free = true;
+      for (let lane = 0; lane < LANES_PER_CELL; lane++) if (world.laneSlots.holderOfKey(slotKey(next, lane)) !== 0) free = false;
+      if (!free || isAnyAccessCell(world, next)) continue;
+      if (!planRouteToCell(world, vehicle, next)) continue;
+      changeVehicleState(world.events, vehicle, 'to_vacate');
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

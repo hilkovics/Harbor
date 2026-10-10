@@ -10,6 +10,7 @@ import { MachineError } from '../machines/machine-error';
 import { isMachineState } from '../machines/machine-fsm';
 import { MACHINE_STATES } from '../machines/machine-state-types';
 import type { MachineCycle, MachinePose, MachineQueueEntry } from '../machines/machine-state-types';
+import { REACH_STACKER_DEF_ID, ReachStacker } from '../machines/reach-stacker';
 import { RTG_DEF_ID, RtgCrane } from '../machines/rtg-crane';
 import { SERIALIZED_MACHINE_KEYS, YardMachine, type SerializedMachine } from '../machines/yard-machine';
 import { WorldStateError, checkArray, checkInteger, checkKeys, describeValue, pointerSegment } from './state-check';
@@ -63,7 +64,8 @@ export function parseMachines(value: unknown, nextId: number): SerializedMachine
     if (id >= nextId) throw new WorldStateError(`${path}/id`, `id ${String(id)} musí byť menšie ako ids.nextId ${String(nextId)}`);
     if (id <= previousId) throw new WorldStateError(`${path}/id`, `stroje musia byť vzostupne podľa id, ${String(id)} ≤ ${String(previousId)}`);
     previousId = id;
-    if (entry['defId'] !== RTG_DEF_ID) throw new WorldStateError(`${path}/defId`, `neznámy stroj ${describeValue(entry['defId'])} (známy: ${RTG_DEF_ID})`);
+    const defId = entry['defId'];
+    if (defId !== RTG_DEF_ID && defId !== REACH_STACKER_DEF_ID) throw new WorldStateError(`${path}/defId`, `neznámy stroj ${describeValue(defId)} (známe: ${RTG_DEF_ID}, ${REACH_STACKER_DEF_ID})`);
     const { state } = entry;
     if (!isMachineState(state)) throw new WorldStateError(`${path}/state`, `stav musí byť jeden z: ${MACHINE_STATES.join(', ')}, dostal ${describeValue(state)}`);
     const queue = checkArray(entry['queue'], `${path}/queue`).map((item: unknown, q): MachineQueueEntry => {
@@ -73,7 +75,7 @@ export function parseMachines(value: unknown, nextId: number): SerializedMachine
     });
     return {
       id,
-      defId: RTG_DEF_ID,
+      defId,
       blockId: checkInteger(entry['blockId'], 1, `${path}/blockId`),
       state,
       pose: parsePose(entry['pose'], `${path}/pose`),
@@ -112,7 +114,8 @@ export function restoreMachines(world: World, entries: readonly SerializedMachin
   entries.forEach((entry, index) => {
     const path = `/machines${pointerSegment(index)}`;
     try {
-      world.addMachine(new RtgCrane({ ...entry, id: entry.id as EntityId, blockId: entry.blockId as EntityId, def: defs.equipment.rtg }));
+      const init = { ...entry, id: entry.id as EntityId, blockId: entry.blockId as EntityId };
+      world.addMachine(entry.defId === REACH_STACKER_DEF_ID ? new ReachStacker({ ...init, def: defs.equipment.reachStacker }) : new RtgCrane({ ...init, def: defs.equipment.rtg }));
       restoreReleasedPut(world, entry);
     } catch (error) {
       if (error instanceof MachineError) throw new WorldStateError(`${path}/${error.code === 'unknown_block' ? 'blockId' : 'id'}`, error.message);

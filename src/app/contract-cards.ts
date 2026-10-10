@@ -18,7 +18,7 @@
 import { AcceptContractCommand, type ValidationReason } from '@sim/commands';
 import { largeContainerCount, offerClosingTick, type Contract, type ContractKind, type ExportBooking, type TranshipLeg } from '@sim/contracts';
 import { terminalEmptySplit, type LineStatusSplit, type World } from '@sim/world';
-import type { ContractBookingData, ContractCardData, ContractLineData, ContractTranshipData, ContractsTimeScale } from '@ui/contracts-panel';
+import type { ContainerTypeKey, ContractTypeChip, ContractBookingData, ContractCardData, ContractLineData, ContractTranshipData, ContractsTimeScale } from '@ui/contracts-panel';
 import { REASON_TEXT } from './build-feedback';
 import { CARGO_CATEGORY_TEXT } from './toast-center';
 
@@ -129,6 +129,26 @@ function availableOf(split: readonly LineStatusSplit[], lineId: string): number 
  * Objem kontraktu v TEU a rozdelenie na 20′ / 40′ (R2, ADR-039): `volumeTeu` (chýba = `volumeUnits`), počet 40′ je `volumeTeu − volumeUnits`
  * (`largeContainerCount`), zvyšok sú 20′. Čisté z kontraktu, takže platí aj pre ponuku, ktorá ešte nemá jednotky.
  */
+/** Zmes typov kontraktu pre čipy (R5): počty podľa `unitTypes` v poradí typov, z toho OOG podľa `oogUnits`; kontrakt bez iných typov ako dry a OOG čipy nemá. */
+export function typeMixChips(contract: Contract): readonly ContractTypeChip[] | undefined {
+  const { unitTypes, oogUnits } = contract;
+  if (unitTypes.length === 0) return undefined;
+  const order: ContainerTypeKey[] = ['dry', 'reefer', 'open_top', 'flat_rack', 'tank'];
+  const counts = new Map<string, { count: number; oog: number }>();
+  unitTypes.forEach((type, index) => {
+    const entry = counts.get(type) ?? { count: 0, oog: 0 };
+    entry.count += 1;
+    if (oogUnits.includes(index)) entry.oog += 1;
+    counts.set(type, entry);
+  });
+  const chips: ContractTypeChip[] = [];
+  for (const type of order) {
+    const entry = counts.get(type);
+    if (entry !== undefined) chips.push(entry.oog > 0 ? { type, count: entry.count, oogCount: entry.oog } : { type, count: entry.count });
+  }
+  return chips.length === 0 ? undefined : chips;
+}
+
 function containerMix(contract: Contract): { volumeTeu: number; count20: number; count40: number } {
   const volumeTeu = contract.volumeTeu ?? contract.volumeUnits;
   const count40 = largeContainerCount(contract.volumeUnits, volumeTeu);
@@ -173,6 +193,7 @@ export function contractCard(world: World, contract: Contract, emptySplit?: read
     ...(tranship === null ? {} : { tranship: transhipData(world, tranship) }),
     ...(repositioning ? { availableEmpties: availableOf(emptySplit ?? terminalEmptySplit(world), contract.lineId) } : {}),
     ...containerMix(contract),
+    ...(typeMixChips(contract) === undefined ? {} : { typeMix: typeMixChips(contract) }),
   };
 }
 

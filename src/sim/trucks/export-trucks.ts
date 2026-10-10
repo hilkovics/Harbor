@@ -16,8 +16,8 @@ import type { World } from '../world/world';
 import { tryAdmitDelivery, type AdmissionOutcome } from './hinterland-entry';
 
 /** Štítky jednotky exportu: hmotnostná trieda `weightClass`, štítky z kontraktu a bookingu. */
-function exportLabels(contract: Contract, destinationPort: string, sizeFt: CargoUnitLabels['sizeFt'], weightClass: CargoUnitLabels['weightClass']): CargoUnitLabels {
-  return { direction: 'export', voyageId: contract.voyageId, lineId: contract.lineId, destinationPort, weightClass, ...DEFAULT_CONTAINER_LABELS, sizeFt };
+function exportLabels(contract: Contract, destinationPort: string, index: number, sizeFt: CargoUnitLabels['sizeFt'], weightClass: CargoUnitLabels['weightClass']): CargoUnitLabels {
+  return { direction: 'export', voyageId: contract.voyageId, lineId: contract.lineId, destinationPort, weightClass, ...DEFAULT_CONTAINER_LABELS, sizeFt, containerType: contract.unitContainerType(index), oog: contract.unitIsOog(index) };
 }
 
 /**
@@ -29,12 +29,13 @@ function admitExportTruck(world: World, contract: Contract): AdmissionOutcome {
   if (booking === null) return 'waiting';
   const shares = world.defs.logistics.exportFlow.weightClassShares;
   // Veľkosť kontajnera, ktorý kamión privezie: `volumeUnits − arrivalPlan.length`-ty kontajnerov bookingu (ADR-039); plán sa spotrebuje až po vjazde.
-  const sizeFt = contract.unitSizeFt(contract.volumeUnits - booking.arrivalPlan.length);
+  const index = contract.volumeUnits - booking.arrivalPlan.length;
+  const sizeFt = contract.unitSizeFt(index);
   return tryAdmitDelivery(world, 'export', {
     typeId: contract.cargoTypeId,
     contractId: contract.id,
-    probe: exportLabels(contract, booking.destinationPort, sizeFt, 'medium'),
-    final: () => exportLabels(contract, booking.destinationPort, sizeFt, world.rng.weighted(WEIGHT_CLASSES, (item) => shares[item])),
+    probe: exportLabels(contract, booking.destinationPort, index, sizeFt, 'medium'),
+    final: () => exportLabels(contract, booking.destinationPort, index, sizeFt, world.rng.weighted(WEIGHT_CLASSES, (item) => shares[item])),
   });
 }
 

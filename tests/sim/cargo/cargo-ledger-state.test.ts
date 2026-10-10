@@ -95,7 +95,7 @@ describe('CargoLedger.getState', () => {
       ['in_truck', 50, 6],
       ['in_truck', 50, 3],
     ]);
-    expect(Object.keys(units[4])).toEqual(['id', 'typeId', 'contractId', 'voyageId', 'lineId', 'direction', 'destinationPort', 'weightClass', 'sizeFt', 'containerType', 'oog', 'hold', 'status', 'repairUntilTick', 'quantity', 'location']);
+    expect(Object.keys(units[4])).toEqual(['id', 'typeId', 'contractId', 'voyageId', 'lineId', 'direction', 'destinationPort', 'weightClass', 'sizeFt', 'containerType', 'oog', 'hold', 'status', 'repairUntilTick', 'reefer', 'quantity', 'location']);
     expect(JSON.stringify(units[4].location)).toBe('{"kind":"on_apron","berthId":10,"slot":3}');
     expect(units.find((unit) => unit.id === 1)).toMatchObject({ typeId: GRAIN, contractId: 500, quantity: 25 });
   });
@@ -195,6 +195,7 @@ describe('CargoLedger.fromState — neplatný stav', () => {
     hold: null,
     status: 'available',
     repairUntilTick: null,
+    reefer: null,
     quantity: 1,
     location: at.ship(SHIP_A),
     ...overrides,

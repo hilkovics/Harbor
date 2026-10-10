@@ -164,6 +164,35 @@ export interface CraneBlockedEvent {
 }
 
 /**
+ * STS preskočil reefer, lebo plánovač nemá pre neho voľnú zásuvku (R5, ADR-042; docs/TERMINAL_2.md §6.7): jednotka čaká na palube, kým sa zásuvka neuvoľní. Emituje sa pri
+ * prvom preskočení a potom najviac raz za hernú hodinu (toast pre hráča).
+ */
+export interface ReeferSkippedEvent {
+  readonly type: 'ReeferSkipped';
+  readonly unitId: EntityId;
+  readonly craneId: EntityId;
+  readonly berthId: EntityId;
+}
+
+/** Dôvody reklamácie reeferu: `unpowered` (dlho bez napájania), `waiting` (dlho čakal na palube bez zásuvky), `alarm` (technik neprišiel včas). */
+export const REEFER_CLAIM_REASONS = ['unpowered', 'waiting', 'alarm'] as const;
+export type ReeferClaimReason = (typeof REEFER_CLAIM_REASONS)[number];
+
+/** Reklamácia za reefer (R5, ADR-042): `cents` sa strhli z hotovosti ako `penalty`. */
+export interface ReeferClaimEvent {
+  readonly type: 'ReeferClaim';
+  readonly unitId: EntityId;
+  readonly reason: ReeferClaimReason;
+  readonly cents: number;
+}
+
+/** Zapojený reefer v sklade ohlásil alarm; technik musí začať zásah do `alarmResponseHours` (R5, ADR-042). */
+export interface ReeferAlarmEvent {
+  readonly type: 'ReeferAlarm';
+  readonly unitId: EntityId;
+}
+
+/**
  * `BuyVehicle` (T03-04) kúpil vozidlo: `vehicleId` s defom `defId` stojí `idle` na vonkajšej bunke konektora depa
  * `depotId` a depo ho eviduje vo `vehicleIds`. Cena ide samostatne v `MoneyChanged(vehicle_capex)`.
  */
@@ -620,6 +649,9 @@ export type SimEvent =
   | ShipDepartedEvent
   | CraneCycleDoneEvent
   | CraneBlockedEvent
+  | ReeferSkippedEvent
+  | ReeferClaimEvent
+  | ReeferAlarmEvent
   | VehicleBoughtEvent
   | VehicleSoldEvent
   | JobCreatedEvent

@@ -194,6 +194,12 @@ export interface TranshipOptions {
   readonly lineId?: string;
   readonly slaDays?: number;
   readonly destinationPort?: string;
+  /** Typ kontajnera všetkých jednotiek prekládky (R5, ADR-042; predvolene `dry`). */
+  readonly containerType?: string;
+  /** Typy kontajnerov podľa poradia (R5; má prednosť pred `containerType`); musí mať `units` prvkov. */
+  readonly unitTypes?: readonly string[];
+  /** Indexy OOG kontajnerov (R5, TR5-02). */
+  readonly oogUnits?: readonly number[];
 }
 
 /** Vloží do knihy ponuku prekládky (voyage lode A a voyage lode B); vráti kontrakt. */
@@ -208,6 +214,8 @@ export function offerTranship(world: World, options: TranshipOptions = {}): Tran
     templateId: 'container_feeder_tranship',
     volumeUnits: units,
     destinationPort,
+    ...(options.unitTypes !== undefined ? { unitTypes: options.unitTypes } : options.containerType === undefined ? {} : { unitTypes: Array<string>(units).fill(options.containerType) }),
+    ...(options.oogUnits === undefined ? {} : { oogUnits: options.oogUnits }),
   });
   book.add(contract);
   return contract;

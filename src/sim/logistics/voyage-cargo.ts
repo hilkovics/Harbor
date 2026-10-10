@@ -78,12 +78,12 @@ export function importAboard(world: World, shipId: EntityId): number {
 }
 
 /** Prvá jednotka na vykládku na lodi (najmenšie id, náklad na nakládku sa preskočí); bez nej `undefined`. Bez prekládky O(1) ako `firstUnitAt`. */
-export function firstUnloadableOnShip(world: World, shipId: EntityId): EntityId | undefined {
+export function firstUnloadableOnShip(world: World, shipId: EntityId, accepts?: (unit: CargoUnit) => boolean): EntityId | undefined {
   const count = world.cargo.countAt('on_ship', shipId);
   for (let i = 0; i < count; i++) {
     const unitId = world.cargo.unitAtIndex('on_ship', shipId, i);
     const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
-    if (unit !== undefined && !isOutboundOnShip(world, unit, shipId)) return unitId;
+    if (unit !== undefined && !isOutboundOnShip(world, unit, shipId) && (accepts === undefined || accepts(unit))) return unitId;
   }
   return undefined;
 }

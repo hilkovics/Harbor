@@ -26,6 +26,7 @@ import type { CargoLocation } from '../cargo/cargo-location';
 import { CONTAINER_SIZES, DEFAULT_WEIGHT_CLASS, IMPORT_LABELS, teuOf, teuOfSize, type CargoUnit, type CargoUnitLabels, type ContainerSize } from '../cargo/cargo-unit';
 import type { ContractId, EntityId, VoyageId } from '../core/entity-id';
 import type { Rng } from '../core/rng';
+import { unitTypeAt } from './container-mix';
 import { unitSizeFt } from './container-sizes';
 import { ContractError } from './contract-error';
 import {
@@ -59,6 +60,13 @@ export interface ContractTerms {
    * Chýba = `volumeUnits` (všetky kontajnery 20′, náklad mimo kontajnerov); pool ho dodáva vždy.
    */
   readonly volumeTeu?: number;
+  /**
+   * Typy kontajnerov podľa poradia kontajnerov kontraktu (R5, ADR-042; `drawUnitTypes` pri vzniku ponuky): prázdne pole alebo chýba = všetky `dry`; inak presne `volumeUnits`
+   * id typov z `container_types.json`. Typ jednotky pri vzniku na lodi: `unitContainerType(index)`.
+   */
+  readonly unitTypes?: readonly string[];
+  /** Indexy OOG kontajnerov (vzostupne, R5, ADR-042 TR5-02; chýba = žiadne OOG); každý index patrí kontajneru typu s `oogChance > 0`. */
+  readonly oogUnits?: readonly number[];
   /** SLA v celých dňoch od príchodu lode (zo `slaDaysRange` šablóny). */
   readonly slaDays: number;
   /**
@@ -153,8 +161,12 @@ export interface SerializedTranship {
 export const SERIALIZED_TRANSHIP_KEYS: readonly (keyof SerializedTranship)[] = ['outVoyageId', 'outArrivalTick', 'outShipId', 'rescueDeadlineTick'];
 
 /** Kontrakt v save (`WorldState.contracts`, v8): druh, voyage, linka, podmienky + priebeh (`null` = nenastavené), booking a plán prekládky. */
-export interface SerializedContract extends Omit<ContractTerms, 'id' | 'voyageId' | 'volumeTeu'> {
+export interface SerializedContract extends Omit<ContractTerms, 'id' | 'voyageId' | 'volumeTeu' | 'unitTypes' | 'oogUnits'> {
   readonly id: number;
+  /** Typy kontajnerov kontraktu (`ContractTerms.unitTypes`; v save vždy uvedené, prázdne = všetky `dry`; v14). */
+  readonly unitTypes: readonly string[];
+  /** Indexy OOG kontajnerov (`ContractTerms.oogUnits`; v save vždy uvedené, prázdne = žiadne; v14). */
+  readonly oogUnits: readonly number[];
   /** Objem v TEU (`ContractTerms.volumeTeu`; v save vždy uvedený). */
   readonly volumeTeu: number;
   readonly kind: ContractKind;
@@ -187,6 +199,8 @@ export const SERIALIZED_CONTRACT_KEYS: readonly (keyof SerializedContract)[] = [
   'cargoTypeId',
   'volumeUnits',
   'volumeTeu',
+  'unitTypes',
+  'oogUnits',
   'slaDays',
   'rewardCents',
   'xpReward',
@@ -302,6 +316,10 @@ export abstract class Contract {
   readonly cargoTypeId: string;
   readonly volumeUnits: number;
   readonly volumeTeu: number;
+  /** Typy kontajnerov podľa poradia kontajnerov (prázdne = všetky `dry`; R5, ADR-042). */
+  readonly unitTypes: readonly string[];
+  /** Indexy OOG kontajnerov (vzostupne; prázdne = žiadne OOG; R5, TR5-02). */
+  readonly oogUnits: readonly number[];
   readonly slaDays: number;
   readonly rewardCents: number;
   readonly xpReward: number;
@@ -355,6 +373,14 @@ export abstract class Contract {
     this.cargoTypeId = terms.cargoTypeId;
     this.volumeUnits = terms.volumeUnits;
     this.volumeTeu = volumeTeu;
+    this.unitTypes = Object.freeze([...(terms.unitTypes ?? [])]);
+    if (this.unitTypes.length !== 0 && this.unitTypes.length !== terms.volumeUnits) {
+      throw new ContractError('invalid_input', `${label}: unitTypes musí byť prázdne alebo mať volumeUnits (${String(terms.volumeUnits)}) prvkov, dostal ${String(this.unitTypes.length)}`);
+    }
+    this.oogUnits = Object.freeze([...(terms.oogUnits ?? [])]);
+    if (this.oogUnits.some((index) => !Number.isSafeInteger(index) || index < 0 || index >= terms.volumeUnits)) {
+      throw new ContractError('invalid_input', `${label}: oogUnits musia byť indexy kontajnerov 0 … ${String(terms.volumeUnits - 1)}`);
+    }
     this.slaDays = terms.slaDays;
     this.rewardCents = terms.rewardCents;
     this.xpReward = terms.xpReward;
@@ -457,6 +483,16 @@ export abstract class Contract {
    */
   get spawnLabels(): CargoUnitLabels {
     return { ...IMPORT_LABELS, voyageId: this.voyageId, lineId: this.lineId };
+  }
+
+  /** Typ `index`-teho kontajnera kontraktu (od 0; R5, ADR-042): `dry`, keď kontrakt nemá zmes typov. */
+  unitContainerType(index: number): string {
+    return unitTypeAt(this.unitTypes, index);
+  }
+
+  /** Je `index`-ty kontajner kontraktu nadrozmerný (OOG; R5, ADR-042 TR5-02)? */
+  unitIsOog(index: number): boolean {
+    return this.oogUnits.includes(index);
   }
 
   /** Veľkosť `index`-teho kontajnera kontraktu (od 0; ADR-039): deterministická funkcia `volumeUnits` a `volumeTeu`, rovnomerné rozloženie 40′. */
@@ -610,6 +646,8 @@ export abstract class Contract {
       cargoTypeId: this.cargoTypeId,
       volumeUnits: this.volumeUnits,
       volumeTeu: this.volumeTeu,
+      unitTypes: [...this.unitTypes],
+      oogUnits: [...this.oogUnits],
       slaDays: this.slaDays,
       rewardCents: this.rewardCents,
       xpReward: this.xpReward,

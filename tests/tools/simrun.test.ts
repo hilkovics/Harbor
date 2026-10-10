@@ -326,6 +326,9 @@ describe('runScenario', () => {
       stsMovesPerHour: 0,
       rtgMovesPerHour: 0,
       stsWaitForTractorPct: null,
+      reeferClaims: 0,
+      energyCents: 0,
+      oogMoves: 0,
       directHandoverPct: null,
       gridlockEvents: 0,
       trafficWaitTicks: { vehicles: 0, trucks: 0 },
@@ -414,6 +417,9 @@ describe('runScenario', () => {
       'stsMovesPerHour',
       'rtgMovesPerHour',
       'stsWaitForTractorPct',
+      'reeferClaims',
+      'energyCents',
+      'oogMoves',
     ]);
   });
 

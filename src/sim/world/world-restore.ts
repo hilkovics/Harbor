@@ -851,6 +851,8 @@ export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'mo
   world.storedCargo.rebuild(world.cargo, world.modules.keys());
   // Index zadržaných jednotiek (VGM hold, ADR-032) sa tiež neukladá: zostaví sa z jednotiek s `hold`.
   world.holdIndex.rebuild(units);
+  // Index sledovaných reeferov (ADR-042) sa neukladá: zostaví sa z jednotiek so stavom `reefer`.
+  world.reeferIndex.rebuild(units);
   const violation = findWorldViolation(world);
   if (violation !== undefined) throw new WorldStateError('', violation);
 }

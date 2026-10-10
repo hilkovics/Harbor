@@ -8,7 +8,7 @@ import type { SimEvent } from '@sim/events';
 import { Vehicle } from '@sim/vehicles';
 import { carrierOverlapProblem, slotKey } from '@sim/traffic';
 import type { World } from '@sim/world';
-import { DEPOT_ACCESS, YARD_W, buyVehicle, dispatchWorld, execute, placeYard, unitsOnApron } from '../logistics/dispatch-fixtures';
+import { DEPOT_ACCESS, YARD_W, YARD_W_ACCESS, cellIndex, buyVehicle, dispatchWorld, execute, placeYard, unitsOnApron } from '../logistics/dispatch-fixtures';
 import { DEFS } from '../world/world-fixtures';
 
 interface Timed {
@@ -116,8 +116,10 @@ describe('nečinné vozidlo ide do depa', () => {
     // cesta medzi dvorom (37, 18) a depom (32, 18) sa preruší za vozidlom
     execute(world, { type: 'RemoveRoad', cells: [{ x: 35, y: 18 }] });
     run(world, 4 * PARK_DELAY, log);
+    // vozidlo bez cesty k depu uvoľní vjazd dvora (TR5-06b) a stojí `idle` mimo vjazdov
     expect(world.vehicles.get(vehicleId)?.state).toBe('idle');
-    expect(seen(log, stateChange(vehicleId, 'idle', 'to_depot'))).toBe(false);
+    expect(world.vehicles.get(vehicleId)?.cell).not.toBe(cellIndex(world, YARD_W_ACCESS));
+    expect(seen(log, stateChange(vehicleId, 'to_depot', 'parked'))).toBe(false);
     execute(world, { type: 'PlaceRoad', cells: [{ x: 35, y: 18 }] });
     runUntil(world, (l) => seen(l, stateChange(vehicleId, 'to_depot', 'parked')), 400, log);
     expect(world.vehicles.get(vehicleId)?.state).toBe('parked');
@@ -139,6 +141,27 @@ describe('nečinné vozidlo ide do depa', () => {
     expect(['idle', 'to_depot']).toContain(world.vehicles.get(vehicleId)?.state);
     expect(world.vehicles.get(vehicleId)?.state).not.toBe('parked');
     expect(() => world.assertInvariants()).not.toThrow();
+  });
+});
+
+describe('vozidlo bez cesty k depu neblokuje vjazd (TR5-06b)', () => {
+  it('po odrezaní depa uvoľní vjazd dvora, 5000 ticks bez TrafficJam; po obnove cesty zaparkuje', () => {
+    const { world, vehicleId } = oneVehicleWorld();
+    const log = runUntil(world, (l) => seen(l, stateChange(vehicleId, 'unloading', 'idle')), 400);
+    const entry = cellIndex(world, YARD_W_ACCESS);
+    expect(world.vehicles.get(vehicleId)?.cell).toBe(entry);
+    execute(world, { type: 'RemoveRoad', cells: [{ x: 35, y: 18 }] });
+    run(world, 5000, log);
+    const vehicle = world.vehicles.get(vehicleId) as Vehicle;
+    expect(vehicle.state).toBe('idle');
+    expect(vehicle.cell).not.toBe(entry);
+    expect(log.filter((entry) => entry.event.type === 'TrafficJam')).toEqual([]);
+    expect(world.laneSlots.holderOfKey(slotKey(entry, 0))).toBe(0);
+    expect(world.laneSlots.holderOfKey(slotKey(entry, 1))).toBe(0);
+    expect(() => world.assertInvariants()).not.toThrow();
+    execute(world, { type: 'PlaceRoad', cells: [{ x: 35, y: 18 }] });
+    runUntil(world, (l) => seen(l, stateChange(vehicleId, 'to_depot', 'parked')), 1000, log);
+    expect(world.vehicles.get(vehicleId)?.state).toBe('parked');
   });
 });
 

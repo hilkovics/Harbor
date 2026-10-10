@@ -11,11 +11,14 @@ import { YardMachine, type YardMachineInit } from './yard-machine';
 export const RTG_DEF_ID = 'rtg';
 
 export class RtgCrane extends YardMachine {
-  readonly defId = RTG_DEF_ID;
+  readonly defId: string;
   readonly def: Readonly<RtgDef>;
 
-  constructor(init: YardMachineInit & { readonly def: Readonly<RtgDef> }) {
-    super(init, RTG_DEF_ID);
+  /** `defId` (predvolene `rtg`) mení len odvodená trieda (`ReachStacker`): ten istý FSM a plánovanie cyklov, iné časy. */
+  constructor(init: YardMachineInit & { readonly def: Readonly<RtgDef>; readonly defId?: string }) {
+    const defId = init.defId ?? RTG_DEF_ID;
+    super(init, defId);
+    this.defId = defId;
     this.def = init.def;
   }
 

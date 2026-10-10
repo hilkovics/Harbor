@@ -35,12 +35,12 @@ const BASE: VehicleInit = {
 
 describe('stavy vozidla', () => {
   it('VEHICLE_STATES = stavy zo „Spoločných rozhraní" v poradí životného cyklu', () => {
-    expect(VEHICLE_STATES).toEqual(['idle', 'to_pickup', 'loading', 'rehandling', 'to_dropoff', 'unloading', 'no_path', 'to_depot', 'parked', 'depot_exit']);
+    expect(VEHICLE_STATES).toEqual(['idle', 'to_pickup', 'loading', 'rehandling', 'to_dropoff', 'unloading', 'no_path', 'to_depot', 'parked', 'depot_exit', 'to_vacate']);
   });
 
   it('VEHICLE_STATE_TRAITS: job má každý stav okrem voľných (idle, to_depot, parked); tabuľka pokrýva všetky stavy a je zmrazená', () => {
     expect(Object.keys(VEHICLE_STATE_TRAITS)).toEqual([...VEHICLE_STATES]);
-    for (const state of VEHICLE_STATES) expect(VEHICLE_STATE_TRAITS[state].hasJob).toBe(!['idle', 'to_depot', 'parked'].includes(state));
+    for (const state of VEHICLE_STATES) expect(VEHICLE_STATE_TRAITS[state].hasJob).toBe(!['idle', 'to_depot', 'parked', 'to_vacate'].includes(state));
     expect(Object.isFrozen(VEHICLE_STATE_TRAITS)).toBe(true);
   });
 

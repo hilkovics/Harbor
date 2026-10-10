@@ -23,7 +23,7 @@ import shipsJson from '@data/defs/ships.json';
 import timeJson from '@data/defs/time.json';
 import trucksJson from '@data/defs/trucks.json';
 import vehiclesJson from '@data/defs/vehicles.json';
-import { CARGO_DIRECTIONS, CONTAINER_SIZES } from '../cargo/cargo-unit';
+import { CARGO_DIRECTIONS, CONTAINER_SIZES, DEFAULT_CONTAINER_TYPE } from '../cargo/cargo-unit';
 import { SECONDS_PER_MINUTE } from '../core/sim-clock';
 import { DEFAULT_ROAD_KIND } from '../grid/road-kind';
 import { TERRAIN_TYPES } from '../grid/terrain';
@@ -63,6 +63,8 @@ import {
   type EquipmentDef,
   type RtgDef,
   type ContainerTypeDef,
+  type OogDef,
+  type ReeferDef,
   type CongestionDef,
   type TrafficDef,
   type ContractTemplateDef,
@@ -137,6 +139,9 @@ const ECONOMY_FIELDS: FieldTable<EconomyDef> = {
   transhipGapDaysRange: { kind: 'range', bound: { kind: 'number', exclusiveMin: 0 } },
   transhipRescueDays: { kind: 'number', min: 0 },
   transhipMissedRateOfReward: { kind: 'number', min: 0, max: 1 },
+  // Reefery (R5, ADR-042): reklamácia a elektrina.
+  reeferClaimCents: { kind: 'integer', min: 0 },
+  reeferPowerCentsPerHour: { kind: 'integer', min: 0 },
 };
 
 /** Hodín v dni — prevod `exportArrivalDaysRange` (dni) na hodiny `cutoffHours` (kalendárna konštanta, nie balans). */
@@ -208,6 +213,7 @@ const TRAFFIC_FIELDS: SpecTable<TrafficDef> = {
   stuckTicks: { kind: 'integer', min: 1 },
   rerouteCooldownTicks: { kind: 'integer', min: 1 },
   idleParkDelayTicks: { kind: 'integer', min: 1 },
+  strandedRetryTicks: { kind: 'integer', min: 1 },
 };
 
 /**
@@ -253,6 +259,23 @@ const EMPTY_FLOW_FIELDS: SpecTable<EmptyFlowDef> = {
   emptyPickupMaxWaitHours: { kind: 'number', exclusiveMin: 0 },
 };
 
+/** Reefery (R5, ADR-042), tabuľka zrkadlí `logistics.schema.json`: ticky ≥ 1, hodiny > 0, šanca `0 … 1`, technici ≥ 1. */
+const REEFER_FIELDS: SpecTable<ReeferDef> = {
+  plugTicks: { kind: 'integer', min: 1 },
+  unplugTicks: { kind: 'integer', min: 1 },
+  maxUnpluggedHours: { kind: 'number', exclusiveMin: 0 },
+  alarmChancePerDay: { kind: 'number', min: 0, max: 1 },
+  alarmResponseHours: { kind: 'number', exclusiveMin: 0 },
+  technicians: { kind: 'integer', min: 1 },
+  alarmFixTicks: { kind: 'integer', min: 1 },
+};
+
+/** Nadrozmerný náklad (R5, ADR-042). */
+const OOG_FIELDS: SpecTable<OogDef> = {
+  extraCycleTicks: { kind: 'integer', min: 0 },
+  lashTicks: { kind: 'integer', min: 0 },
+};
+
 const LOGISTICS_FIELDS: FieldTable<LogisticsDef> = {
   defaultInternalTicks: { kind: 'integer', min: 0 },
   repathIntervalTicks: { kind: 'integer', min: 1 },
@@ -273,6 +296,8 @@ const LOGISTICS_FIELDS: FieldTable<LogisticsDef> = {
   shipNavigation: { kind: 'object', fields: SHIP_NAVIGATION_FIELDS },
   exportFlow: { kind: 'object', fields: EXPORT_FLOW_FIELDS },
   emptyFlow: { kind: 'object', fields: EMPTY_FLOW_FIELDS },
+  reefer: { kind: 'object', fields: REEFER_FIELDS },
+  oog: { kind: 'object', fields: OOG_FIELDS },
 };
 
 /** Vzťah polí `logistics.json` (F6a): aspoň jedna hmotnostná trieda má kladnú váhu (inak `Rng.weighted` nemá z čoho vyberať). */
@@ -304,6 +329,7 @@ const TRACTORS_FIELDS: SpecTable<TractorsDef> = {
 
 const EQUIPMENT_FIELDS: FieldTable<EquipmentDef> = {
   rtg: { kind: 'object', fields: RTG_FIELDS },
+  reachStacker: { kind: 'object', fields: RTG_FIELDS },
   tractors: { kind: 'object', fields: TRACTORS_FIELDS },
 };
 
@@ -450,6 +476,14 @@ const CONTRACT_TEMPLATE_FIELDS: SpecTable<ContractTemplateDef> = {
   cargoTypeId: { kind: 'string', pattern: SNAKE_CASE_ID, patternName: 'snake_case identifikátor' },
   // Podiel 40′ kontajnerov (R2, ADR-039); chýba = 0 (všetky 20′).
   sizeMix: { kind: 'number', min: 0, max: 1, optional: true },
+  // Zmes typov kontajnerov (R5, ADR-042): podiely `0 … 1` jednotlivých typov (zvyšok je `dry`); vzťahy na katalóg typov hlási `checkContractTemplates`.
+  typeMix: {
+    kind: 'array',
+    minItems: 1,
+    unique: false,
+    item: { kind: 'object', fields: { type: { kind: 'string', pattern: SNAKE_CASE_ID, patternName: 'snake_case identifikátor' }, share: { kind: 'number', exclusiveMin: 0, max: 1 } } },
+    optional: true,
+  },
   volumeUnitsRange: { kind: 'range', bound: { kind: 'integer', min: 1 } },
   slaDaysRange: { kind: 'range', bound: { kind: 'integer', min: 1 } },
   shipClassIds: { kind: 'array', minItems: 1, unique: true, item: { kind: 'string', pattern: SNAKE_CASE_ID, patternName: 'snake_case identifikátor' } },
@@ -529,6 +563,33 @@ const TEMPLATE_KIND_PRICE_FIELD: { readonly [K in ContractTemplateKind]: keyof C
 };
 
 /**
+ * Zmes typov kontajnerov šablóny (R5, ADR-042): len kategória `container` a druhy `import` / `tranship` / `export` / `roundtrip` (TR5-02: export privezú kamióny, bez reeferov; repositioning ostáva `dry`),
+ * známy typ iný než `dry`, každý typ najviac raz, súčet podielov ≤ 1.
+ */
+function checkTypeMix(
+  template: Readonly<ContractTemplateDef>,
+  index: number,
+  category: string,
+  kind: ContractTemplateKind,
+  containerTypes: Catalog<Readonly<ContainerTypeDef>>,
+  fail: (index: number, field: string, message: string) => never,
+): void {
+  const mix = template.typeMix;
+  if (mix === undefined) return;
+  if (category !== 'container') fail(index, 'typeMix', `zmes typov kontajnerov má zmysel len pre kategóriu 'container', '${template.cargoTypeId}' je '${category}'`);
+  if (kind !== 'import' && kind !== 'tranship' && kind !== 'export' && kind !== 'roundtrip') fail(index, 'typeMix', `zmes typov patrí len šablóne 'import', 'tranship', 'export' alebo 'roundtrip', dostal '${kind}'`);
+  let total = 0;
+  mix.forEach((entry, i) => {
+    if (entry.type === DEFAULT_CONTAINER_TYPE || !containerTypes.has(entry.type)) {
+      fail(index, `typeMix/${String(i)}/type`, `neznámy typ kontajnera alebo '${DEFAULT_CONTAINER_TYPE}' (zvyšok podielu) '${entry.type}'`);
+    }
+    if (mix.findIndex((other) => other.type === entry.type) !== i) fail(index, `typeMix/${String(i)}/type`, `typ '${entry.type}' je v zmesi viackrát`);
+    total += entry.share;
+  });
+  if (total > 1) fail(index, 'typeMix', `súčet podielov typov musí byť ≤ 1, dostal ${String(total)}`);
+}
+
+/**
  * Krížová kontrola `contract_templates.json` × `cargo_types.json` × `ships.json` (F5, F6a; fail-fast): `cargoTypeId` a
  * `shipClassIds` existujú, každá loď šablóny vozí kategóriu nákladu a `volumeUnitsRange[1]` (pri roundtripe aj
  * `exportVolumeUnitsRange[1]`) sa zmestí do najmenšej lode šablóny (ponuka nikdy nepresiahne kapacitu lode, §9.1);
@@ -539,6 +600,7 @@ function checkContractTemplates(
   templates: Catalog<Readonly<ContractTemplateDef>>,
   cargoTypes: Catalog<Readonly<CargoTypeDef>>,
   ships: Catalog<Readonly<ShipClassDef>>,
+  containerTypes: Catalog<Readonly<ContainerTypeDef>>,
 ): void {
   const fail = (index: number, field: string, message: string): never =>
     failWith('contract_templates', { path: `/items/${String(index)}/${field}`, message });
@@ -559,6 +621,7 @@ function checkContractTemplates(
     if ((template.sizeMix ?? 0) > 0 && category !== 'container') {
       fail(index, 'sizeMix', `zmes veľkostí (40′) má zmysel len pre kategóriu 'container', '${template.cargoTypeId}' je '${category}'`);
     }
+    checkTypeMix(template, index, category, kind, containerTypes, fail);
     const priceField = TEMPLATE_KIND_PRICE_FIELD[kind];
     if (priceField !== undefined && !((cargoType[priceField] as number) > 0)) {
       fail(index, 'cargoTypeId', `šablóna druhu '${kind}' vyžaduje typ nákladu s ${priceField} > 0, '${cargoType.id}' má ${String(cargoType[priceField])}`);
@@ -604,12 +667,14 @@ function checkEquipment(def: Readonly<EquipmentDef>): Problem | undefined {
   const { minPerSts, maxPerSts, defaultPerSts } = def.tractors;
   if (minPerSts > maxPerSts) return { path: '/tractors/minPerSts', message: `minPerSts (${String(minPerSts)}) nesmie byť väčší než maxPerSts (${String(maxPerSts)})` };
   if (defaultPerSts < minPerSts || defaultPerSts > maxPerSts) return { path: '/tractors/defaultPerSts', message: `defaultPerSts (${String(defaultPerSts)}) musí ležať v ${String(minPerSts)} … ${String(maxPerSts)}` };
-  const { priorities } = def.rtg;
-  for (let i = 1; i < YARD_PRIORITY_KINDS.length; i++) {
-    const previous = YARD_PRIORITY_KINDS[i - 1];
-    const kind = YARD_PRIORITY_KINDS[i];
-    if (priorities[kind] <= priorities[previous]) {
-      return { path: `/rtg/priorities/${kind}`, message: `priorita '${kind}' (${String(priorities[kind])}) musí byť väčšia než '${previous}' (${String(priorities[previous])}) — poradie loď > kamión > housekeeping` };
+  for (const machine of ['rtg', 'reachStacker'] as const) {
+    const { priorities } = def[machine];
+    for (let i = 1; i < YARD_PRIORITY_KINDS.length; i++) {
+      const previous = YARD_PRIORITY_KINDS[i - 1];
+      const kind = YARD_PRIORITY_KINDS[i];
+      if (priorities[kind] <= priorities[previous]) {
+        return { path: `/${machine}/priorities/${kind}`, message: `priorita '${kind}' (${String(priorities[kind])}) musí byť väčšia než '${previous}' (${String(priorities[previous])}) — poradie loď > kamión > housekeeping` };
+      }
     }
   }
   return undefined;
@@ -658,7 +723,7 @@ export class DefRegistry {
     const containerTypes = validateCatalog<ContainerTypeDef>('container_types', raw.container_types, { fields: CONTAINER_TYPE_FIELDS, check: checkContainerType });
     const equipment = validateDef<EquipmentDef>('equipment', raw.equipment, DEF_FIELDS.equipment, checkEquipment);
     checkExportWindow(economy, logistics);
-    checkContractTemplates(contractTemplates, cargoTypes, ships);
+    checkContractTemplates(contractTemplates, cargoTypes, ships, containerTypes);
     return new DefRegistry(time, economy, infrastructure, cargoTypes, modules, ships, vehicles, trucks, logistics, contractTemplates, lines, containerTypes, equipment);
   }
 

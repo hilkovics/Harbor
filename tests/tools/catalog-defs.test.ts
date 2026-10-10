@@ -81,6 +81,8 @@ describe('skutočné katalógy F2 až F4', () => {
       'gate_out_lane',
       'pre_gate_buffer',
       'truck_holding',
+      'reefer_block_8',
+      'oog_area',
     ]);
     expect(item(def, 'berth_standard')).toEqual({
       id: 'berth_standard',
@@ -236,7 +238,7 @@ describe('skutočné katalógy F2 až F4', () => {
       importDwellEstimateHours: 6,
       yardPlanner: 'planned',
       congestion: { trafficDecayPerHour: 0.9 },
-      traffic: { gridlockTicks: 30, stuckTicks: 120, rerouteCooldownTicks: 60, idleParkDelayTicks: 6 },
+      traffic: { gridlockTicks: 30, stuckTicks: 120, rerouteCooldownTicks: 60, idleParkDelayTicks: 6, strandedRetryTicks: 300 },
       shipNavigation: { approachMarginCells: 1, sweepStepCells: 0.5, turnManeuvers: 1, sidewaysManeuvers: 1 },
       exportFlow: { arrivalWindowDays: 2, vgmMissingChance: 0.05, vgmHoldHours: 6, weightClassShares: { light: 0.3, medium: 0.5, heavy: 0.2 } },
       emptyFlow: {
@@ -248,6 +250,8 @@ describe('skutočné katalógy F2 až F4', () => {
         emptyPickupLeadHoursRange: [4, 12],
         emptyPickupMaxWaitHours: 6,
       },
+      reefer: { plugTicks: 30, unplugTicks: 30, maxUnpluggedHours: 3, alarmChancePerDay: 0.05, alarmResponseHours: 2, technicians: 1, alarmFixTicks: 60 },
+      oog: { extraCycleTicks: 60, lashTicks: 120 },
     });
   });
 

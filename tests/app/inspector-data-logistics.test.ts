@@ -150,7 +150,7 @@ describe('DEPOT_VEHICLE_STATE a depotVehicleDef', () => {
     expect(DEPOT_VEHICLE_STATE.no_path).toBe('no_path');
     // parkovanie (R1): zatiaľ sa zobrazuje ako nečinné (texty nových stavov prinesie TR1-07)
     for (const state of ['to_depot', 'parked'] as const) expect(DEPOT_VEHICLE_STATE[state]).toBe('idle');
-    for (const state of VEHICLE_STATES.filter((s) => !['idle', 'no_path', 'to_depot', 'parked'].includes(s))) expect(DEPOT_VEHICLE_STATE[state]).toBe('busy');
+    for (const state of VEHICLE_STATES.filter((s) => !['idle', 'no_path', 'to_depot', 'parked', 'to_vacate'].includes(s))) expect(DEPOT_VEHICLE_STATE[state]).toBe('busy');
   });
 
   it('ponúkané vozidlo depa je prvý def bez technológie (straddle_carrier)', () => {

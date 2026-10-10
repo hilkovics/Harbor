@@ -69,7 +69,8 @@ describe('containerSpriteId', () => {
     [box({ sizeFt: 40, direction: 'empty' }), 'container_40_empty'],
     [box({ sizeFt: 40, direction: 'export' }), 'container_40_dry'],
     [box({ sizeFt: 20, direction: 'tranship' }), 'container_20_dry'],
-    [box({ sizeFt: 20, containerType: 'reefer' }), 'container_20_dry'], // reefer prichádza v R5: do vtedy ako dry
+    [box({ sizeFt: 20, containerType: 'reefer' }), 'container_20_reefer'], // R5: vlastný sprite
+    [box({ sizeFt: 40, containerType: 'tank' }), 'container_40_dry'], // typ bez sprite → dry
   ])('%j → %s', (container, id) => {
     expect(containerSpriteId(container)).toBe(id);
     expect(cargoSpriteEntry(id)).toBeDefined();

@@ -1047,6 +1047,30 @@ const checkEmptyFlow: Check = (world) => {
 /** Doprava bez prekrývania (ADR-037): sloty = telá nosičov, žiadny prekryv, nosič mimo cesty nič nedrží. */
 const checkCarrierOverlap: Check = (world) => carrierOverlapProblem(world) ?? undefined;
 
+/**
+ * Reefery (R5, ADR-042): jednotka stojí v sklade len na pozícii so zásuvkou (kontroluje `YardBlock.findStackProblem` cez `checkModuleRuntime`), blok so zásuvkami drží len jednotky, ktoré zásuvku
+ * potrebujú, reefer mimo lode je v indexe `world.reeferIndex` a zapojený reefer leží v sklade (na palube ho napája loď) — inak by hodiny bez napájania nikdy neboli spustené.
+ */
+const checkReefers: Check = (world) => {
+  for (const unit of world.cargo.liveUnits()) {
+    const reefer = unit.reefer;
+    if (reefer === null) continue;
+    const { kind } = unit.location;
+    if (kind !== 'on_ship' && !world.reeferIndex.has(unit.id)) return `reefer #${String(unit.id)} (${kind}) nie je v indexe reeferov`;
+    if (reefer.plugged && kind !== 'on_ship' && kind !== 'in_storage') return `reefer #${String(unit.id)} je zapojený mimo lode a skladu (${kind})`;
+  }
+  for (const module of world.modules.values()) {
+    if (!(module instanceof YardBlock) || !module.hasSockets) continue;
+    const count = world.cargo.countAt('in_storage', module.id);
+    for (let i = 0; i < count; i++) {
+      const unitId = world.cargo.unitAtIndex('in_storage', module.id, i);
+      const unit = unitId === undefined ? undefined : world.cargo.get(unitId);
+      if (unit !== undefined && unit.reefer === null) return `${module.label} (zásuvky) drží jednotku #${String(unitId)} typu '${unit.containerType}', ktorá zásuvku nepotrebuje`;
+    }
+  }
+  return undefined;
+};
+
 const CHECKS: readonly Check[] = [
   checkCargoHolders,
   checkModuleCells,
@@ -1063,6 +1087,7 @@ const CHECKS: readonly Check[] = [
   checkCarrierOverlap,
   checkEmptyFlow,
   checkContracts,
+  checkReefers,
 ];
 
 /** Prvé porušenie invariantov sveta (viď hlavička súboru), alebo `undefined`. Svet nemení. */

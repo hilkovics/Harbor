@@ -82,6 +82,7 @@ function withEmptyUnit(state: WorldState, fields: Json = {}): WorldState {
     hold: null,
     status: 'damaged',
     repairUntilTick: null,
+    reefer: null,
     quantity: 1,
     location: { kind: 'in_storage', moduleId: yard.id, slot: freeColumn * 3 },
     ...fields,

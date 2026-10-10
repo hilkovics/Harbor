@@ -38,6 +38,8 @@ export interface F6aDefsOptions {
   readonly moduleParams?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
   /** Prepíše polia `equipment.json` → `rtg` (TR3-06b). */
   readonly rtg?: Readonly<Record<string, unknown>>;
+  /** Prepíše polia `logistics.json` → `reefer` (R5, ADR-042). */
+  readonly reefer?: Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -72,6 +74,7 @@ export function f6aDefs(overrides: F6aDefsOptions = {}): DefRegistry {
       ...RAW_DEFS.logistics,
       exportFlow: { ...RAW_DEFS.logistics.exportFlow, arrivalWindowDays: F6A_WINDOW_DAYS, ...overrides.exportFlow },
       emptyFlow: { ...RAW_DEFS.logistics.emptyFlow, ...overrides.emptyFlow },
+      reefer: { ...RAW_DEFS.logistics.reefer, ...overrides.reefer },
     },
   });
 }

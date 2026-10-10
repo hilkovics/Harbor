@@ -44,12 +44,15 @@ import type { ModuleDef, Side } from '../defs/types';
 import type { CellCoord, Grid } from '../grid/grid';
 import type { Parcel } from '../grid/parcel';
 import type { Rotation } from '../grid/rotation';
+import { ROAD_KIND_TRAITS } from '../grid/road-kind';
+import { DIRECTIONS_4 } from '../grid/grid';
+import { isRoadStepAllowed } from '../grid/road-direction';
 import { isWater } from '../grid/terrain';
 import { BerthModule } from '../modules/berth-module';
 import { CRANE_STATE_TRAITS, CraneModule } from '../modules/crane-module';
 import type { Module } from '../modules/module';
 import type { ModuleErrorCode } from '../modules/module-error';
-import { SIDE_STEPS, connectorOutside, connectorsOf, edgeCells, footprintOf, waterSideOf } from '../modules/module-geometry';
+import { SIDE_STEPS, connectorAllows, connectorOutside, connectorsOf, edgeCells, footprintOf, waterSideOf } from '../modules/module-geometry';
 import { VehicleDepot } from '../modules/vehicle-depot';
 import { hasQuayLane } from '../logistics/quay-lanes';
 import type { Ship } from '../ships/ship';
@@ -252,12 +255,34 @@ const checkWaterBand: PlacementCheck = (ctx) => {
  * §8 bod 5 (ADR-017): aspoň jeden konektor typu `road` má vonkajšiu bunku s cestou alebo voľnú pre cestu. Modul bez
  * cestných konektorov (žeriav) pravidlo nemá; konektory na bunkách mimo mapy sa nehodnotia (hlási ich `out_of_bounds`).
  */
+/**
+ * Vonkajšia bunka vjazdu je jednosmerná cesta bez pokračovania (ďalšia bunka v smere nie je cesta, alebo do nej jednosmerka nepustí)? Vozidlo, ktoré tam odovzdá náklad,
+ * by z nej nikdy neodišlo (ľahne si na cestu a zablokuje vjazd — `TrafficJam`, TR5-02b).
+ */
+function isOneWayDeadEnd(grid: Grid, outside: CellCoord): boolean {
+  if (!grid.inBounds(outside.x, outside.y)) return false;
+  const cell = grid.at(outside.x, outside.y);
+  if (cell.road !== 'road' || !ROAD_KIND_TRAITS[cell.roadKind].oneWay || cell.roadDir === null) return false;
+  const step = DIRECTIONS_4.find((direction) => direction.name === cell.roadDir);
+  if (step === undefined) return false;
+  const nx = outside.x + step.dx;
+  const ny = outside.y + step.dy;
+  if (!grid.inBounds(nx, ny)) return true;
+  const next = grid.at(nx, ny);
+  return next.road !== 'road' || !isRoadStepAllowed(cell, next, step.name);
+}
+
 const checkConnectors: PlacementCheck = (ctx) => {
   const { grid } = ctx.world;
   const roadConnectors = connectorsOf(ctx.def, ctx.spec.x, ctx.spec.y, ctx.spec.rotation).filter(
     (connector) => connector.type === 'road' && grid.inBounds(connector.x, connector.y),
   );
   if (roadConnectors.length === 0) return undefined;
+  // Sklad s vjazdom `access: 'in'`: ak je na jeho vonkajšej bunke jednosmerná slepá cesta, vozidlo z nej neodíde (TR5-02b).
+  if (ctx.def.kind === 'storage') {
+    const dead = roadConnectors.find((connector) => !connectorAllows(connector, 'out') && isOneWayDeadEnd(grid, connectorOutside(connector)));
+    if (dead !== undefined) return `vjazd skladu ${cellLabel(connectorOutside(dead))} je jednosmerná slepá cesta (vozidlo by z nej neodišlo)`;
+  }
   const { x, y } = ctx.spec;
   const { w, h } = ctx.size;
   const ownFootprint = (cx: number, cy: number): boolean => cx >= x && cy >= y && cx < x + w && cy < y + h;

@@ -20,11 +20,14 @@ import {
   cargoLabelsProblem,
   cargoStatusProblem,
   containerLabelsDefProblem,
+  needsPlug,
+  reeferStateProblem,
   type CargoDirection,
   type CargoHold,
   type CargoStatus,
   type CargoUnit,
   type ContainerSize,
+  type ReeferState,
   type WeightClass,
 } from './cargo-unit';
 
@@ -56,6 +59,7 @@ export const CARGO_UNIT_KEYS: readonly (keyof CargoUnit)[] = [
   'hold',
   'status',
   'repairUntilTick',
+  'reefer',
   'quantity',
   'location',
 ];
@@ -113,7 +117,7 @@ function parseUnit(raw: unknown, path: string, context: UnitContext): CargoUnit 
   if (typeof quantity !== 'number' || !Number.isSafeInteger(quantity) || quantity < 1) {
     throw new CargoStateError(`${path}/quantity`, `musí byť celé číslo ≥ 1, dostal ${describeValue(quantity)}`);
   }
-  const { voyageId, lineId, direction, destinationPort, weightClass, sizeFt, containerType, oog, hold, status, repairUntilTick } = fields;
+  const { voyageId, lineId, direction, destinationPort, weightClass, sizeFt, containerType, oog, hold, status, repairUntilTick, reefer } = fields;
   const labelProblem = cargoLabelsProblem({ voyageId, lineId, direction, destinationPort, weightClass, sizeFt, containerType, oog }, contractId);
   if (labelProblem !== undefined) throw new CargoStateError(`${path}/${labelProblem.field}`, labelProblem.problem);
   const defProblem = containerLabelsDefProblem({ sizeFt: sizeFt as ContainerSize, containerType: containerType as string, oog: oog as boolean }, context.containerTypes);
@@ -122,6 +126,11 @@ function parseUnit(raw: unknown, path: string, context: UnitContext): CargoUnit 
   if (holdProblem !== undefined) throw new CargoStateError(`${path}/hold`, holdProblem);
   const statusProblem = cargoStatusProblem(status, repairUntilTick, direction as CargoDirection);
   if (statusProblem !== undefined) throw new CargoStateError(`${path}/status`, statusProblem);
+  // Reefer (R5, ADR-042): stav má práve jednotka, ktorá potrebuje zásuvku (typ s `needsPower`, nie prázdna).
+  const plug = needsPlug({ containerType: containerType as string, direction: direction as CargoDirection }, context.containerTypes);
+  if (plug !== (reefer !== null)) throw new CargoStateError(`${path}/reefer`, plug ? 'reefer so zásuvkou musí mať stav' : 'jednotka bez zásuvky nemá stav reeferu (null)');
+  const reeferProblem = reefer === null ? undefined : reeferStateProblem(reefer);
+  if (reeferProblem !== undefined) throw new CargoStateError(`${path}/reefer`, reeferProblem);
   const normalized = normalizeLocation(fields['location']);
   if (!normalized.ok) throw new CargoStateError(`${path}/location${normalized.path}`, normalized.problem);
   const { location } = normalized;
@@ -144,6 +153,7 @@ function parseUnit(raw: unknown, path: string, context: UnitContext): CargoUnit 
     hold: frozenHold,
     status: status as CargoStatus,
     repairUntilTick: repairUntilTick as number | null,
+    reefer: reefer === null ? null : Object.freeze({ ...(reefer as ReeferState) }),
     quantity,
     location,
   });

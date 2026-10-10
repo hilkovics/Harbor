@@ -26,6 +26,7 @@ import type { EntityId } from '../core/entity-id';
 import type { YardPriorityKind } from '../defs/types';
 import { onEmptyStored } from '../logistics/empty-depot-service';
 import { chainBlockOf, isMachineEndpoint } from '../logistics/handling-chains';
+import { liftBlockedByPower } from '../logistics/reefer-supply';
 import { accessCellIndex } from '../logistics/module-access';
 import type { TransportJob } from '../logistics/transport-job';
 import { beginRelocation, endRelocation } from '../logistics/yard-rehandle';
@@ -350,7 +351,7 @@ function startPrefetch(world: World, machine: RtgCrane, block: RtgBlock): boolea
   for (const vehicle of world.vehicles.values()) {
     if (vehicle.jobId === null || machine.serves(vehicle.id)) continue;
     const job = approachingJob(world, vehicle, block, lane, prefetchCells);
-    if (job === undefined) continue;
+    if (job === undefined || liftBlockedByPower(world, job)) continue;
     const tpBay = lane.indexOf(approachCell);
     // Poradie v pruhu = vzdialenosť k vjazdu pruhu (buniek do TP − index TP; záporná = ťahač je už v pruhu); pri rovnosti plytší TP.
     const toEntry = vehicle.cellsAhead - tpBay;
@@ -455,6 +456,8 @@ function startCycle(world: World, machine: RtgCrane, block: RtgBlock): boolean {
     const vehicle = partnerById(world, entry.vehicleId as EntityId);
     const job = vehicle === undefined || jobIdOfPartner(vehicle) === null ? undefined : world.jobs.get(jobIdOfPartner(vehicle) as EntityId);
     if (vehicle === undefined || job === undefined) continue;
+    // Reefer sa zdvihne až po odpojení (R5, ADR-042): záznam ostáva vo fronte, stroj ide k ďalšiemu a čakanie nie je „zavalenie“ (`stalled`).
+    if (liftBlockedByPower(world, job)) continue;
     const cycle = planCycle(world, machine, block, vehicle, job);
     if (cycle === null) {
       stalled = true;

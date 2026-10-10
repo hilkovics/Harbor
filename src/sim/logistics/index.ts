@@ -12,6 +12,7 @@ export { beginGangPass, endGangPass, gangFilter, gangRoster, craneGangMode, cran
 export { terminalMetrics } from './terminal-metrics';
 export type { TerminalMetrics } from './terminal-metrics';
 export { railMetrics } from './rail-metrics';
+export { isRailBound, isRailImportUnit, railTerminalTakes } from './rail-units';
 export type { RailMetrics } from './rail-metrics';
 export { moduleLanes } from './module-lanes';
 export type { LaneCell, LaneDirection, LaneRole } from './module-lanes';

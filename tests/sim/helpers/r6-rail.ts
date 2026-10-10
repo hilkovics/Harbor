@@ -18,7 +18,7 @@ export const RAIL_MAP: LoadedMap = loadMap(
   parseMapDef({
     ...LEGACY_HARBOR_JSON,
     // Vlastnená parcela pod terminálom a koľajou (modul vyžaduje vlastnenú parcelu, ADR-008); harbor_01 má na južnom páse súše len verejné bunky.
-    parcels: [...LEGACY_HARBOR_JSON.parcels, { id: 'rail_yard', rect: { x: 66, y: 50, w: 20, h: 10 }, priceCents: 1_000_000, leasable: false, startOwned: true }],
+    parcels: [...LEGACY_HARBOR_JSON.parcels, { id: 'rail_yard_test', rect: { x: 66, y: 50, w: 20, h: 10 }, priceCents: 1_000_000, leasable: false, startOwned: true }],
     railPortals: [{ id: 'rail_east', cell: RAIL_PORTAL }],
     starter: { ...LEGACY_HARBOR_JSON.starter, modules: [] },
   }),

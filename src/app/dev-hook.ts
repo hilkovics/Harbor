@@ -27,6 +27,9 @@ export interface RenderedCounts {
   readonly vehicles: number;
   /** Kamióny (`TruckView`, F4). */
   readonly trucks: number;
+  /** Vlaky (`TrainView`, R6) a závory priecestí (`CrossingLayer`). */
+  readonly trains?: number;
+  readonly crossings?: number;
   /**
    * Počty kamiónov podľa stavu FSM (`to_gate`, `gate_queue`, `waiting`, `loading` …) v entitách, ktoré renderer dostal
    * naposledy; stav bez kamiónov kľúč nemá. E2E podľa nich počká na kamión vo fronte, v stojisku či v docku.

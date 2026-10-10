@@ -38,11 +38,12 @@
  *
  * Bez side-effectov a bez závislosti na DOM/Pixi/React.
  */
-import type { ContainerVM, CraneVM, EntitiesVM, GateLaneVM, HoldingSlotVM, MachineVM, ModuleVM, ReeferPlugStateVM, ReeferPlugVM, ShipVM, StackVM, TpCellVM, TruckVM, VehicleVM, ViewRotation } from '@render/view-models';
+import type { ContainerVM, CraneVM, CrossingVM, TrainCarVM, TrainVM, EntitiesVM, GateLaneVM, HoldingSlotVM, MachineVM, ModuleVM, ReeferPlugStateVM, ReeferPlugVM, ShipVM, StackVM, TpCellVM, TruckVM, VehicleVM, ViewRotation } from '@render/view-models';
 import type { CargoLocation, CargoUnit } from '@sim/cargo';
 import type { EntityId } from '@sim/core';
 import { moduleLanes } from '@sim/logistics';
 import { ReachStacker } from '@sim/machines';
+import { crossingStates, railPoseAt } from '@sim/rail';
 import { BerthModule, CraneModule, RtgBlock, adjacentLaneGroups, craneCargo, craneTrolley, EmptyDepot, StorageModule, PreGateBuffer, TruckGate, TruckHolding, VehicleDepot, YardBlock, type LaneRoofPlacement, type Module } from '@sim/modules';
 import { SHIP_STATE_TRAITS, type Ship } from '@sim/ships';
 import { tpCellsOf, type Truck } from '@sim/trucks';
@@ -104,6 +105,8 @@ const NO_LASHING_TOTALS: LashingTotals = new Map();
 export interface SimEntitiesVM extends EntitiesVM {
   readonly vehicles: readonly VehicleVM[];
   readonly trucks: readonly TruckVM[];
+  readonly trains: readonly TrainVM[];
+  readonly crossings: readonly CrossingVM[];
 }
 
 /** Druh modulu, ktorý sa prezentuje samostatne v `EntitiesVM.cranes`. */
@@ -401,6 +404,43 @@ export function machineVMs(world: World): MachineVM[] {
   return result;
 }
 
+/** Prevod uhla koľaje (0 = +x, v smere hodinových ručičiek na obrazovke) na uhol renderu (0 = hore, v smere hodinových ručičiek). */
+const RAIL_ANGLE_TO_RENDER = 90;
+const FULL_TURN = 360;
+
+/** Vlaky (R6): vozne od lokomotívy s polohou z `railPoseAt` a nákladom `in_train` zoskupeným podľa vagóna (`⌊slot / wagonTeu⌋`). */
+export function trainVMs(world: World): TrainVM[] {
+  const result: TrainVM[] = [];
+  for (const train of world.rail.trains.values()) {
+    const cargoByWagon = new Map<number, { slot: number; vm: ContainerVM }[]>();
+    for (const unitId of world.cargo.unitsAt('in_train', train.id)) {
+      const unit = unitOf(world, unitId, train.label);
+      if (unit.location.kind !== 'in_train') continue;
+      const wagon = train.wagonOfSlot(unit.location.slot);
+      const list = cargoByWagon.get(wagon) ?? [];
+      list.push({ slot: unit.location.slot, vm: containerOf(unit) });
+      cargoByWagon.set(wagon, list);
+    }
+    const cars: TrainCarVM[] = train.cars().map((span) => {
+      const pose = railPoseAt(world.grid, train.route, span.centerMilli);
+      const cargo = span.kind === 'wagon' ? (cargoByWagon.get(span.wagon) ?? []).sort((a, b) => a.slot - b.slot).map((entry) => entry.vm) : [];
+      return { kind: span.kind, x: pose.x, y: pose.y, angle: (((pose.angle + RAIL_ANGLE_TO_RENDER) % FULL_TURN) + FULL_TURN) % FULL_TURN, cargo };
+    });
+    const vm: TrainVM = { id: train.id, cars, state: train.state };
+    if (train.departAtTick !== null) vm.departureTick = train.departAtTick;
+    result.push(vm);
+  }
+  return result;
+}
+
+/** Priecestia s aktuálnou závorou (R6). */
+export function crossingVMs(world: World): CrossingVM[] {
+  return crossingStates(world).map(({ cell, barrier }) => {
+    const { x, y } = world.grid.coordOf(cell);
+    return { x: x + 0.5, y: y + 0.5, barrier };
+  });
+}
+
 /** Žeriavy sveta v poradí umiestnenia. */
 export function craneVMs(world: World): CraneVM[] {
   const result: CraneVM[] = [];
@@ -673,6 +713,8 @@ export function entitiesVM(
     ships: Object.freeze(shipVMs(world, prev, lashingTotals)),
     vehicles: Object.freeze(vehicleVMs(world, prevVehicles)),
     trucks: Object.freeze(truckVMs(world, prevTrucks)),
+    trains: Object.freeze(trainVMs(world)),
+    crossings: Object.freeze(crossingVMs(world)),
   });
 }
 
@@ -755,6 +797,8 @@ export class EntitiesVMBuilder {
       ships: Object.freeze(shipVMs(world, prev, lashingTotals, (target, ship) => this.shipSplits.split(target, ship, revision))),
       vehicles: Object.freeze(vehicleVMs(world, prevVehicles)),
       trucks: Object.freeze(truckVMs(world, prevTrucks)),
+      trains: Object.freeze(trainVMs(world)),
+      crossings: Object.freeze(crossingVMs(world)),
     });
   }
 

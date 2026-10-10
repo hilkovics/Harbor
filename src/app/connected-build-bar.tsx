@@ -13,7 +13,7 @@ import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import { BuildBar } from '@ui/build-bar';
 import { DEFAULT_BUILD_CATEGORY_ID, buildBarCategories } from './build-bar-data';
 import type { BuildSelection } from './build-selection';
-import { roadItemId, roadKindOfItem } from './road-build';
+import { roadKindOfItem, roadToolItemId } from './road-build';
 import { RoadSelection } from './road-selection';
 import { useSimBridge, useSimSnapshot } from './use-sim-snapshot';
 import { buyVehicleFromBuildBar, sameBuyTarget, vehicleBuyTarget } from './vehicle-purchase';
@@ -54,7 +54,7 @@ export function ConnectedBuildBar({ selection, roadSelection }: ConnectedBuildBa
       onSelectCategory={setActiveCategoryId}
       onSelect={selection.select}
       onBuy={buy}
-      selectedRoadDefId={selectedRoadKind === null ? null : roadItemId(selectedRoadKind)}
+      selectedRoadDefId={selectedRoadKind === null ? null : roadToolItemId(selectedRoadKind)}
       onSelectRoad={selectRoad}
     />
   );

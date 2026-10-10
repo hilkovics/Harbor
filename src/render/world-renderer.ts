@@ -19,6 +19,7 @@ import { Camera } from './camera';
 import { CraneLayer } from './crane-layer';
 import type { CargoSpriteDeps } from './cargo-sprite';
 import { MachineLayer } from './machine-layer';
+import { CrossingLayer } from './crossing-layer';
 import { TrainLayer } from './train-layer';
 import { EntityLayer } from './entity-layer';
 import { createRoadKindAt, createRoadMaskAt } from './lane';
@@ -40,7 +41,7 @@ import {
   type RenderPalette,
   type TokenResolver,
 } from './tokens';
-import type { EntitiesVM, MachineVM, ModuleGhostVM, TrainVM, TruckVM, VehicleVM } from './view-models';
+import type { CrossingVM, EntitiesVM, MachineVM, ModuleGhostVM, TrainVM, TruckVM, VehicleVM } from './view-models';
 
 export interface WorldRendererOptions {
   /** Prvok, do ktorého sa vloží canvas; renderer sa prispôsobí jeho veľkosti. */
@@ -91,6 +92,7 @@ const NO_MACHINES: readonly MachineVM[] = Object.freeze([]);
 
 /** Prázdny zoznam vlakov pre VM bez poľa `trains` (do R6). */
 const NO_TRAINS: readonly TrainVM[] = Object.freeze([]);
+const NO_CROSSINGS: readonly CrossingVM[] = Object.freeze([]);
 
 export class WorldRenderer {
   readonly app: Application;
@@ -114,6 +116,8 @@ export class WorldRenderer {
   readonly machines: MachineLayer;
   /** Vlaky (R6): lokomotíva + vagóny s kontajnermi. */
   readonly trains: TrainLayer;
+  /** Závory priecestí (R6). */
+  readonly crossings: CrossingLayer;
   /** Zvýraznenie zápchy (R1): červené bunky pod vozidlami (`cells`) a odznaky nad nimi (`badges`). */
   readonly jams: TrafficJamLayer;
   /** Ghost stavby: cesty (`setGhost`, `GhostView`) aj modulu (`setModuleGhost`); je navrchu nad žeriavmi. */
@@ -173,6 +177,7 @@ export class WorldRenderer {
     this.cranes = new CraneLayer(entityDeps);
     this.machines = new MachineLayer(entityDeps);
     this.trains = new TrainLayer(entityDeps, () => this.rails.paths);
+    this.crossings = new CrossingLayer(entityDeps.cellPx, entityDeps.palette);
     this.jams = new TrafficJamLayer(entityDeps);
     this.build = build;
     this.world.addChild(
@@ -186,6 +191,7 @@ export class WorldRenderer {
       this.cranes.baseView,
       this.jams.cells,
       this.ships.view,
+      this.crossings.view,
       this.trains.view,
       this.machines.view,
       this.jams.badges,
@@ -257,6 +263,7 @@ export class WorldRenderer {
     this.jams.sync(vm.vehicles ?? NO_VEHICLES, vm.trucks ?? NO_TRUCKS, alpha);
     this.machines.sync(vm.machines ?? NO_MACHINES);
     this.trains.sync(vm.trains ?? NO_TRAINS);
+    this.crossings.sync(vm.crossings ?? NO_CROSSINGS);
     this.cranes.sync(vm.cranes);
   }
 
@@ -309,6 +316,7 @@ export class WorldRenderer {
     this.cranes.destroy();
     this.machines.destroy();
     this.trains.destroy();
+    this.crossings.destroy();
     this.jams.destroy();
     this.build.destroy();
     this.app.destroy({ removeView: true }, { children: true });

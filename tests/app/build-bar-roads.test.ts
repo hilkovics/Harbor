@@ -109,9 +109,9 @@ describe('BuildBar Landside: typy ciest z defov', () => {
     expect(items.some((item) => item.priceText === 'čoskoro (F4)' || item.lockedReason === 'čoskoro (F4)')).toBe(false);
   });
 
-  it('zamknuté zostávajú Železnica a Potrubia', () => {
+  it('zamknuté zostávajú Potrubia (Železnica je od R6 povolená)', () => {
     const categories = buildBarCategories(defs, 0);
-    expect(categories.filter((category) => !category.enabled).map((category) => category.id)).toEqual(['rail', 'pipes']);
+    expect(categories.filter((category) => !category.enabled).map((category) => category.id)).toEqual(['pipes']);
   });
 
   it('id cestných položiek sa nezrazia s defmi modulov ani vozidiel', () => {

@@ -17,6 +17,7 @@
  */
 import { AcceptContractCommand, type ValidationReason } from '@sim/commands';
 import { largeContainerCount, offerClosingTick, type Contract, type ContractKind, type ExportBooking, type TranshipLeg } from '@sim/contracts';
+import { BASIS_POINTS } from '@sim/economy';
 import { terminalEmptySplit, type LineStatusSplit, type World } from '@sim/world';
 import type { ContainerTypeKey, ContractTypeChip, ContractBookingData, ContractCardData, ContractLineData, ContractTranshipData, ContractsTimeScale } from '@ui/contracts-panel';
 import { REASON_TEXT } from './build-feedback';
@@ -194,6 +195,7 @@ export function contractCard(world: World, contract: Contract, emptySplit?: read
     ...(repositioning ? { availableEmpties: availableOf(emptySplit ?? terminalEmptySplit(world), contract.lineId) } : {}),
     ...containerMix(contract),
     ...(typeMixChips(contract) === undefined ? {} : { typeMix: typeMixChips(contract) }),
+    ...(contract.railShareBp > 0 ? { railSharePct: (contract.railShareBp / BASIS_POINTS) * 100 } : {}),
   };
 }
 

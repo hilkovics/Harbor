@@ -220,6 +220,8 @@ export async function bootstrap(root: HTMLElement, options: BootstrapOptions = {
       ships: renderer.ships.shipCount,
       vehicles: renderer.ships.vehicleCount,
       trucks: renderer.ships.truckCount,
+      trains: renderer.trains.trainCount,
+      crossings: renderer.crossings.count,
       truckStates: truckStateCounts(syncedTrucks),
       ghostCells: renderer.build.shownCount,
       ghostConnectors: renderer.build.markerCount,

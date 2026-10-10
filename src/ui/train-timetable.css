@@ -1,0 +1,79 @@
+/* Cestovný poriadok vlakov (TR6-04, train-timetable.tsx): len tokeny z design/tokens.css, čísla tabular-nums. */
+
+.train-timetable {
+  width: 100%;
+  color: var(--ui-text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+}
+
+.train-timetable__empty {
+  display: block;
+  padding: var(--space-3) var(--space-4);
+  color: var(--ui-text-2);
+}
+
+.train-timetable__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.train-timetable__head {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--ui-border);
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.train-timetable__head--num {
+  text-align: right;
+}
+
+.train-timetable__head-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  margin-right: var(--space-1);
+  vertical-align: middle;
+  color: var(--train-loco);
+}
+
+.train-timetable__cell {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--ui-border);
+  white-space: nowrap;
+}
+
+.train-timetable__cell--num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.train-timetable__row--delayed .train-timetable__cell {
+  background: color-mix(in srgb, var(--ui-warning) 8%, transparent);
+}
+
+.train-timetable__badge {
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+.train-timetable__badge--ok {
+  color: var(--ui-success);
+  background: color-mix(in srgb, var(--ui-success) 16%, transparent);
+}
+
+.train-timetable__badge--warn {
+  color: var(--ui-warning);
+  background: color-mix(in srgb, var(--ui-warning) 16%, transparent);
+}
+
+.train-timetable__badge--mute {
+  color: var(--ui-text-2);
+  background: var(--ui-surface-2);
+}

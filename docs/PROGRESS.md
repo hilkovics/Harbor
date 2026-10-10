@@ -26,3 +26,430 @@ Stav: **hotová** · vetva `claude/laughing-galileo-2ctnlq`
 - Odchýlky od plánu: simrun používa `data/scenarios/smoke.json` namiesto `vertical_slice` (vznikne vo F5); `World` je zatiaľ stub v tools/simrun.ts (F1).
 - Dodatočné karty z review (T00-15 až T00-18): hranica src/sim je trojvrstvová (sim tsconfig bez DOM/Node, ESLint allowlist + zákazy obchvatov vrátane inline `eslint-disable` a `@ts-expect-error`, len `.ts`), `tickGameSeconds` len delitele 60 (schéma = DefRegistry = SimClock). Pipeline zelená, 500 testov.
 - Rozhodnutia pred F1 (T00-19, delegované používateľom): ADR-007 trojvrstvová hranica src/sim, ADR-008 cesty/koľaje aj na verejných bunkách, ADR-009 konfiguračné vs katalógové defy, ADR-010 `infrastructure.json` + `logistics.json`, ADR-011 pobyt vozidla = internalTicks + load/unload za jednotku. Overené proti GDD (bez rozporu).
+
+## Fáza 1 — Grid, mapa, kamera, príkazy, cesty
+Karty: `docs/tasks/phase-01.md` · vetva `phase/01-grid-roads` (stacked nad PR #1)
+
+- [x] `Grid`, `Cell`, `TerrainType`, `MapDef` loader (`data/maps/harbor_01.json`, 96×64, pobrežie na severe, 3 parcely, 1 road portal, 1 rail portal, sea lane, anchorage).
+- [x] `Command` infra: `CommandQueue`, `ValidationResult`, `PlaceRoadCommand`, `RemoveRoadCommand` (cena, terén, parcela, footprint).
+- [x] `World` s `tick()` obsahujúcim kroky 1, 13 (§6) a `serialize/deserialize` kostru.
+- [x] `SimBridge` (snapshot + events), `GameLoop` (fixed tick, speed, max 64 tickov/frame).
+- [x] Render: `WorldRenderer`, `TerrainLayer` (dočasné farebné tiles podľa DESIGN_BRIEF paliety), `RoadLayer` s autotile podľa 4 susedov, `Camera`.
+- [x] `InputController`: pan (drag/WASD), zoom (wheel, pivot pod kurzorom), build mode „cesta" (drag-paint), `Esc`.
+- [x] UI: `TopHUD` (cash placeholder, tick/čas, speed tlačidlá, pauza).
+
+Akceptácia: screenshot ukazuje pobrežie + nakreslenú cestu; `SetGameSpeed(4)` zrýchli hodiny v HUD.
+
+### Stav
+Stav: **hotová** (T01-01..T01-17). Plná pipeline T01-14 zelená: typecheck, lint, 1797 vitest testov, validate:defs, build, `simrun f1_roads --ticks 20000` (cashEnd 108 300 000 ¢, 85 buniek cesty, lostUnits 0), e2e `boot.png` + `f1-road.png` (orchestrátor screenshot prezrel: pobrežie, nábrežie, obrysy parciel, nakreslená cesta, HUD $1,180,000).
+- Review T01-13 (sim-reviewer): MERGE, 0 blocking, 0 major, 11 minor → BACKLOG / ADR-013 (T01-17).
+- Rozhodnutia: ADR-012 (refundácia ciest → kategória `road_sale`), ADR-013 (zosúladenie ARCHITECTURE s implementáciou: `maxTicksPerFrame`, `removalRefundRate`, `ValidationResult.costCents`, `deserialize(defs, map, state)`, `applyPending`, poradie udalostí v ticku).
+- Odchýlky od plánu: TerrainLayer a RoadLayer používajú namiesto dočasných farebných tiles rovno sprity z Claude Design (T01-16, `assets/manifest.json`), farebné kreslenie ostáva ako fallback; pridané obrysy parciel a portály (len vizuál); `simrun` beží nad `f1_roads.json` namiesto `vertical_slice` (vznikne vo F5); úvodná kamera zameraná na pobrežie.
+
+## Fáza 2 — Root modul, loď, žeriav, apron
+Karty: `docs/tasks/phase-02.md` · vetva `phase/02-berth-ship-crane` (stacked nad hilkovics/Harbor#2)
+
+- [x] `cargo_types.json` (`container_teu`), `modules.json` (`berth_standard`, `crane_container_gantry`), `ships.json` (`feeder`).
+- [x] `Module` (abstract), `ModuleRegistry`, `BerthModule` + `BerthGroup` prepočet, `ApronBuffer`, `CraneModule` FSM (§7.2), `StatResolver` (bez modifikátorov zatiaľ).
+- [x] `PlaceModuleCommand` / `RemoveModuleCommand` s pravidlami §8 (1–4, 7, 8); rotácia `R`; ghost s farbou validácie + zoznam dôvodov v tooltipe.
+- [x] `CargoUnit`, `CargoLocation`, `CargoLedger` s tabuľkou povolených prechodov (§7.1) a `assertConservation`.
+- [x] `Ship` FSM: `inbound → waiting_anchorage → berthing → docked → undocking → outbound → despawned`; pohyb po sea lane; `BerthAllocator`.
+- [x] Debug príkaz `SpawnShipDebugCommand(shipClass, cargoType, units)` (len DEV) — kontrakty prídu vo F5.
+- [x] Render: `ModuleView`, `ShipView` (rotácia podľa segmentu), `CraneView` (boom rotácia podľa fázy), `CargoSprite` na palube a na aprone; `BuildLayer` ghost + konektory.
+- [x] UI: `BuildBar` (kategória Terminál: berth, crane), `ModuleInspector` (názov, stav, apron obsadenosť).
+
+Akceptácia: v hre vidím loď doplávať, zakotviť, žeriav presúva kontajnery na quay; po vyložení odpláva.
+
+### Stav
+Stav: **hotová** (T02-01..T02-16). Plná pipeline T02-15 je zelená:
+  - typecheck, lint, 3495 vitest testov (113 súborov), validate:defs (8 súborov vrátane `assets/manifest.json`), build;
+  - `simrun f2_unload --ticks 5000`: 1 loď spawnutá aj odplávala, 4 TEU na aprone, 4 cykly žeriavu, lostUnits 0;
+  - `simrun f1_roads --ticks 20000`: cashEnd 108 300 000 ¢, lostUnits 0;
+  - e2e 9/9. Orchestrátor prezrel screenshoty `f2-docked.png`, `f2-departed.png` a `f2-inspector.png`: feeder pri Root kotvisku, výložník nad loďou, kontajnery na aprone, po odplávaní 4 TEU, inspector žeriavu s obrysom výberu.
+- Review T02-13 (sim-reviewer): MERGE, 0 blocking, 1 major, 10 minor. Opravené v T02-14 boli major (odstránenie žeriavu pri lodi pri kotvisku) a 9 minor; zvyšok je v BACKLOG.
+- Rozhodnutia:
+  - ADR-014: moduly, kotviská, žeriav na bunkách berthu, WorldState v2 + migrate, exportované jednotky len počtom;
+  - ADR-015: PlaceModule/RemoveModule, refund zo zaplatenej ceny v bázických bodoch, starter moduly zadarmo bez refundu;
+  - ADR-016: lode po seaLane bez trigonometrie, alokácia kotvísk (úsek so žeriavom, hĺbka per berth), cyklus žeriavu s rezerváciou slotu, throttle `CraneBlocked`, krok 12 `assertInvariants`.
+  - ARCHITECTURE je zosúladená s F1 + F2 (§3–§18).
+- Odchýlky od plánu:
+  - `ships.json` obsahuje aj `handy` (kvôli testu alokácie).
+  - Scenár `f1_roads` obchádza Root kotvisko.
+  - E2E beží sériovo (`workers: 1`), lebo test rýchlosti hodín pri súbehu so SwiftShader zlyhával.
+  - Karty T02-10 a T02-12 robil jeden agent.
+  - Dva commity T02-04 mali dočasne červené testy mimo rozsahu agenta; orchestrátor ich hneď opravil ďalším commitom.
+  - Pridané navyše: `selection_ring` a blokovanie stavby kotviska loďou v páse vody.
+
+## Fáza 3 — Vozidlá, pathfinding, dispatcher, sklad
+Karty: `docs/tasks/phase-03.md` · vetva `phase/03-vehicles-yard` (stacked nad hilkovics/Harbor#3)
+
+- [x] `vehicles.json` (`straddle_carrier`), `modules.json` (`container_yard_small`, `vehicle_depot`), konektory modulov.
+- [x] `StorageModule` (abstract, `reserve/store/take`, fill %), `ContainerYard extends StorageModule`.
+- [x] `VehicleDepot`, `BuyVehicleCommand`/`SellVehicleCommand` (vyžaduje voľné miesto v depe).
+- [x] `Pathfinder` (A*, binárna halda, `Int32Array`, bez alokácií), `PathCache` s invalidáciou na `RoadChanged`, `DistanceMatrix` konektor↔konektor (lazy).
+- [x] `TransportJob`, `Dispatcher` (§7.3 kroky 1 a 3), `StorageAllocator` (kompatibilita + najbližší), `Vehicle` FSM s `internalTicks` pri konektore, `traffic++`.
+- [x] Render: `VehicleView` (interpolácia, rotácia podľa smeru, empty/loaded), `ModuleView` fill stavy 0/25/50/75/100 %.
+- [x] UI: BuildBar kategórie Sklady/Logistika; `ModuleInspector` pre sklad (fill %, reserved, throughput) a depo (nákup vozidiel); notifikácia `NoStorageAvailable`, „modul nepripojený k ceste`.
+- [x] Doplnok od používateľa: vozidlá v pravom pruhu, jazda po oblúku v zákrute, typy ciest dvojpruhová / jednopruhová / jednosmerná (BuildBar Landside, smer ťahom, prestavba).
+
+Akceptácia: v hre vidím vozidlá jazdiť po cestách a dvor sa vizuálne zapĺňa.
+
+### Stav
+Stav: **hotová** (T03-01..T03-20).
+- Plná pipeline T03-15 je zelená:
+  - typecheck, lint, 5 213 vitest testov (172 súborov), validate:defs (10 súborov), build;
+  - `simrun apron_to_yard --ticks 15000`: 120 TEU v dvoroch, všetko uložené v ticku 5 332, 2 vozidlá, vyťaženie vozidiel 34,2 %, lostUnits 0;
+  - `f2_unload` a `f1_roads` bez zmeny (cashEnd 108 300 000 ¢);
+  - e2e 19/19. Orchestrátor prezrel screenshoty `f3-vehicles.png`, `f3-yard-filled.png`, `f3-lanes.png`, `f3-road-kinds.png` a `f3-road-build.png`: vozidlá v pravom pruhu, dvor sa zapĺňa, tri typy ciest, šípky jednosmerky, oblúky v zákrutách.
+- Review T03-13 (sim-reviewer): MERGE, 0 blocking, 1 major (šum progresu vozidla pri otočke → nenačítateľný save) a 12 minor. V T03-14 bol opravený major a väčšina minor nálezov, zvyšok ide do BACKLOG. Cena ticku v produkcii je 11–19 µs (20 vozidiel naplno), v DEV s krokom 12 zhruba 390 µs.
+- Rozhodnutia:
+  - ADR-017: sklad (rezervácie v module, obsadenie v ledgeri), pripojenie modulov, §8 bod 5;
+  - ADR-018: dispatcher, alokátor, A*;
+  - ADR-019: vozidlá (pohyb, pobyt v module, `no_path`, traffic, save);
+  - ADR-020: typy ciest, pruhy ako prezentácia;
+  - ADR-021: šum progresu, ceny ciest z PathCache, krok 12 bez alokácií.
+  - ARCHITECTURE je zosúladená s F3.
+- Odchýlky od plánu:
+  - doplnok od používateľa (karty T03-17..T03-20);
+  - karty T03-03 + T03-04 a T03-05 + T03-06 robil vždy jeden agent;
+  - `testTimeout` testov je 15 s a kalendárne testy bežia bez invariantov;
+  - ceny dvora a depa sú podľa ARCHITECTURE §5.3 (prototyp UI má iné);
+  - úzke cesty sú zatiaľ procedurálne (sprity z Claude Design sú v BACKLOG s promptom).
+
+## Fáza 4 — Export reťazec: brána, stojiská, rampa, kamióny
+Karty: `docs/tasks/phase-04.md` · vetva `phase/04-export-trucks` (stacked nad hilkovics/Harbor#4)
+
+- [x] `modules.json`: `truck_gate`, `truck_waiting_area`, `loading_ramp_container`; `trucks.json` (`truck_container`: capacity 1, speed 0.6).
+- [x] `LandExportModule` (abstract), `TruckGate` (FIFO fronta, `processTicks`), `WaitingArea` (bays), `LoadingRamp` (docks, `at_ramp` sloty).
+- [x] Validácia §8 bod 5 + „cesta portál → brána → rampa existuje" (prevádzkovosť rampy, ADR-022).
+- [x] `Dispatcher` krok 2 (outbound joby `in_storage → at_ramp`) — zatiaľ pre všetky jednotky (kontrakty vo F5).
+- [x] `TruckSpawner` + `Truck` FSM (§7.5), `RoadPortal` vstup/výstup, `CargoLedger` prechody `at_ramp → in_truck → exported`.
+- [x] Render: `TruckView`, stojiská s obsadenosťou, fronta pred bránou ako číslo.
+- [x] UI: inspector pre bránu (fronta, priepustnosť), rampu (docks), stojisko (bays).
+
+Akceptácia: vidím kamióny prichádzať bránou, čakať, nakladať a odchádzať z mapy.
+
+### Stav
+Stav: **hotová** (T04-01..T04-14). Plná pipeline T04-13 je zelená:
+  - typecheck, lint, 5 951 vitest testov (199 súborov), validate:defs (11 súborov), build;
+  - `simrun full_import_chain --ticks 40000`: 120 TEU exportovaných v ticku 9 836, 120 kamiónov spawnutých aj odídených, najdlhšia fronta pred bránou 2, všetko uložené v ticku 3 644, lostUnits 0;
+  - `apron_to_yard`, `f2_unload`, `f1_roads` bez regresie (cashEnd 108 300 000 ¢);
+  - e2e 24/24;
+  - orchestrátor prezrel screenshoty `f4-trucks-gate.png`, `f4-exported.png`, `f4-render-demo.png`, `f4-ui-demo.png` a sériu 15 záberov z bežiacej hry.
+- Review T04-11 (sim-reviewer): MERGE, 0 blocking, 2 major a 9 minor. Nálezy:
+  1. prevádzkovosť rampy neoverovala cestu späť — pri jednosmerke kamióny uviazli;
+  2. kamión za bránou závisel od cesty pred bránou.
+
+  T04-12 opravila oba majory aj minor nálezy: nový dôvod `no_return_path`, register pozemných modulov namiesto `instanceof`, krok 12 v O(n), `trucksProcessed` počíta len dokončené prechody, krížová kontrola kamión × rampa, validácia obnovy brány a kamióna. Zvyšok ide do BACKLOG.
+- Rozhodnutia:
+  - ADR-022: pozemné moduly, priechody, prevádzkovosť rampy namiesto validácie pri stavbe;
+  - ADR-023: outbound joby, priorita inbound, zrušenie `open` jobu;
+  - ADR-024: kamióny, zdieľaný `Carrier`, brána, stojisko, spawner, export, WorldState v4 + dodatok po review;
+  - ARCHITECTURE je zosúladená s F4.
+- Odchýlky od plánu:
+  - rampa je neplatná prevádzkovo, nie pri stavbe (ADR-022);
+  - brána púšťa 1 kamión za `processTicks + internalTicks`;
+  - spätný priechod stojiskom je okamžitý;
+  - fronta sa kreslí pri vstupe brány, nie pri portáli;
+  - T04-08 bola rozdelená na časti A a B;
+  - reštart kontajnera prerušil T04-08B a T04-11 — práca bola obnovená z patchu, resp. spustená znova;
+  - ADR kamiónov má číslo 024, lebo T04-03 potrebovala vlastné ADR-023;
+  - PR hilkovics/Harbor#5 založil používateľ proti `main`, obsahuje fázy 0–4.
+
+## Fáza 5 — Kontrakty, ledger, HUD → VERTICAL SLICE (M1)
+Karty: `docs/tasks/phase-05.md` · vetva `phase/05-contracts-vertical-slice` (stacked nad hilkovics/Harbor#5)
+
+- [x] `contract_templates.json` (3 šablóny container), `economy.json` hodnoty.
+- [x] `Contract` FSM (§9.1), `ContractSystem` (pool denne, expiry, spawn lode pri prijatí, SLA, demurrage, late penalty, fail, completion payout, XP).
+- [x] `Economy` + `Ledger` (kategórie, `DaySummary`), `MoneyChanged`, `PenaltyApplied`; CAPEX pri stavaní, `module_sale` pri odstránení.
+- [x] Odstrániť debug spawn; `AcceptContractCommand`, `DeclineContractCommand`.
+- [x] Dispatcher krok 2 filtruje jednotky podľa kontraktu v stave `exporting`, prioritizuje podľa SLA.
+- [x] UI: `ContractsPanel`, `TopHUD` skutočný cash + dnešná delta + XP, `Toasts` pre eventy, `GameOver` modal.
+- [x] `data/scenarios/vertical_slice.json` + golden report v `tests/sim/__golden__/`.
+
+### Stav
+Stav: **hotová (T05-01..T05-13), míľnik M1 splnený**. Novú hru možno odohrať od prijatia kontraktu v UI po výplatu bez debug príkazov.
+
+**Pipeline T05-12 je zelená:**
+- typecheck, lint, 6 540 testov (234 súborov), validate:defs, build.
+- `simrun vertical_slice --ticks 60000`: kontrakt 78 TEU dokončený včas v ticku 15 011, `cashEnd` 40 617 000 ¢, tržba 4 563 000 ¢, penalizácie 0, údržba 1 980 000 ¢, mzdy 366 000 ¢, XP 78, `lostUnits` 0. Zhoda s golden `tests/sim/__golden__/vertical_slice.json`.
+- Regresia bez chýb s novými hodnotami podľa ADR-025 (údržba a mzdy): `full_import_chain` 31 964 000, `apron_to_yard` 64 254 000, `f1_roads` 107 830 000.
+- Plná e2e sada zelená (raz za fázu, úsporný režim). E2E M1 `f5-vertical-slice` prijme kontrakt cez UI a dôjde po výplatu (+$8,483, +13 XP) za približne 3 min.
+- Orchestrátor prezrel screenshoty `f5-ui-demo-stage.png` a `f5-payout.png`.
+
+**Review T05-10:** MERGE, 0 blocking, 3 major, 5 minor. Hlavný nález bol deadlock: kontrakt s objemom nad kapacitu skladu sa nemohol dokončiť. T05-11 ho opravila exportom počas vykládky a poistkou objemu ponuky (dodatok ADR-027). Ďalej opravila alokáciu v kroku 2, dispatcher, mŕtvu vetvu a konštanty. T05-08 dokončila metriky.
+
+**Rozhodnutia:** ADR-025 (Economy, Ledger, údržba a mzdy, bankrot, v5), ADR-026 (kontrakty: FSM, vlastné id, pool, loď, penalizácie, výplata), ADR-027 (dispatcher podľa kontraktu, `failed` exportovateľné, centrálne `game_over`, dodatok). ARCHITECTURE je zosúladená.
+
+**Odchýlky:**
+- T05-06 (UI) sa robila v predstihu už počas F4;
+- kontrakty majú vlastnú postupnosť id;
+- ponuky expirujú pri dennej obnove;
+- uskladnené jednotky kontraktu idú na rampu už počas vykládky;
+- plná e2e beží raz za fázu (úsporný režim na žiadosť používateľa);
+- PR hilkovics/Harbor#6 založil používateľ proti `claude/laughing-galileo-2ctnlq`.
+
+## Fáza 5b — Spätná väzba z hrania
+Karty: `docs/tasks/phase-05b.md` · vetva `phase/05b-playtest-feedback` (stacked nad hilkovics/Harbor#6)
+
+Stav: **hotová** (T5B-01, T5B-02, T5B-03, T5B-04, T5B-04b, T5B-05, T5B-06, T5B-07)
+
+**Výsledky:**
+- review sim-reviewer: MERGE (0 blocking, 4 major opravené v T5B-04b)
+- `pnpm test`: 248 súborov, 6784 testov zelených
+- `pnpm test:e2e`: 34/34
+- `simrun vertical_slice`: cashEnd 41 790 000, exportedUnits 78, lostUnits 0, onTimeRate 1, craneBlockedPct 3,8 %
+- `simrun full_import_chain`: ticksToAllExported zlepšené z 9836 → 8166, lostUnits 0
+- Zmeny: `data/maps/harbor_01.json` (viac móla a apronových slotov), `data/defs/modules.json` (balans veľkostí depa), `src/render/` (napojenie ciest na konektory, mierka vozidiel, manéver kamióna na rampe), `src/sim/ships/` (trasy lodí bez prekryvu), validácia trás lodí pri obnove (ADR-029)
+- Hrateľná verzia zverejnená (artefakt „Fáza 5b")
+
+Ďalej: **Fáza 6 — Save/Load, čas, nastavenia, stabilizácia**
+
+## Fáza 6 — Save/Load, čas, nastavenia, stabilizácia
+Karty: `docs/tasks/phase-06.md` · vetva `phase/06-save-load` (stacked nad hilkovics/Harbor#7)
+
+Stav: **hotová** (T06-01, T06-02, T06-03, T06-04, T06-03b, T06-05, T06-06, T06-07, T06-08, T06-08b, T06-09, T06-09b, T06-10)
+
+**Výsledky:**
+- review sim-reviewer: MERGE (0 blocking; 1 major + 4 minor opravené v T06-08b)
+- `pnpm test`: 274 súborov, 7300 testov
+- `pnpm test:e2e`: 37/37 (9,4 min)
+- `simrun vertical_slice`: 30 000 tickov — cashEnd 41 790 000, exportedUnits 78, lostUnits 0, stateHash 76d0cfba (zhodný s `--roundtrip-at 9000`)
+- `simrun stress_f6`: exportedUnits 658, lostUnits 0
+- `pnpm bench`: vertical_slice priemer 0,08 ms / p95 0,18 ms, stress_f6 (bez invariantov) 0,03 ms — cieľ < 2 ms splnený
+- Zmeny: `src/app/save/**` (encode/decode, sloty, autosave, export/import), `src/sim/world/state-hash.ts` (FNV-1a hash na overu roundtripu), Settings úložisko v localStorage, UI panely Save/Load a Settings, `tools/bench.ts` s scenárom `stress_f6`, roundtrip test uprostred tokov, P1 bugy (dosiahnuteľnosť kotviska, validácia pri obnove, refill poolu), optimalizácia hot path
+- Čo hráč dostal: 3 sloty na uloženie, automatické uloženie, export/import súboru, Ctrl+S rýchle uloženie do slotu 1, Nastavenia (predvolená rýchlosť a interval autosave), kontrakt sa nedá prijať, ak prístav nemá potrebný žeriav a dosiahnuteľné kotvisko, hra sa zastaví po načítaní savu
+- ADR-030 (SaveGame v1 obálka v app), ADR-031 (P1 opravy, pripravenosť prístavu)
+
+Ďalej: **Fáza 6a — Export a booking**
+
+## Fáza 6a — Export a booking
+Karty: `docs/tasks/phase-06a.md` · vetva `phase/06a-export-booking` (stacked nad hilkovics/Harbor#8)
+
+Stav: **hotová** (T6A-01 … T6A-09b, T6A-10, T6A-10a, T6A-10b, T6A-11)
+
+**Výsledky:**
+- review sim-reviewer: MERGE po opravách T6A-09b (FIX FIRST: 1 blocking, 3 major, minor 5–9 opravené)
+- `pnpm test`: 315 súborov, 7996 testov zelených
+- `export_roundtrip` (40 000 tickov): lostUnits 0, shipped 35, exported 58, rolled 1, vgmHolds 4, dualCycleRate 5,75 %, stowageOrderViolations 0, oba kontrakty `completed`, hash 8f8bbdaf (zhodný s `--roundtrip-at 28000`)
+- `vertical_slice` (30 000 tickov): cash 41 790 000, exported 78, lostUnits 0, hash c8a8fb43
+- `stress_f6`: lostUnits 0
+- `pnpm bench`: vertical_slice priemer 0,09 ms / tick
+- e2e: 42/43 → zlyhanie výberu modulu vyriešené v T6A-10b (príčina: prerušený `locator.click` v Playwrighte nechal v stránke zachytávač pointer udalostí; spoločný `tests/e2e/dismiss-toasts.ts`, f2-ship-crane 40/40 pri `--repeat-each=10`)
+- Hrateľná verzia zverejnená (artefakt „Fáza 6a“)
+
+**Čo je hotové:**
+- Návrh: ADR-032 (voyage, kontrakt `kind`, štítky a `hold` jednotky, reverzný reťazec ledgera so `shipped`, lashing, dual transaction, WorldState v7 + migrácia v6 → v7), ADR-033 (odovzdávanie pod hákom)
+- Defy exportu: `contract_templates` (export/roundtrip), `economy` (booking a penalizácie), `logistics.exportFlow`, `modules` (apron reserve, handoverMode), `ships` (lashing)
+- Sim jadro: booking/voyage v ContractSystem, plán príchodov, delivery kamióny, brána (VGM hold, rolled), vykládka na rampe, prijatie do skladu zoskupene, nakládka v poradí stowage, dual cycling, lashing, dual transaction, uzavretie bookingu s pomernou výplatou a penalizáciami
+- Odovzdávanie pod hákom (režim `under_hook`, buffer 0–1, dispatch vopred, metriky čakania)
+- Render, UI a app: naložený kamión pri príchode, nakládka žeriava, náklad na palube; ContractsPanel s bookingom, inšpektor skladu a lode, toasty exportu
+- TDD a tooling: scenáre `export_inbound` a `export_roundtrip` (golden), metriky `simrun` (shippedUnits, rolledUnits, vgmHolds, dualCycleRate, dualTransactionRate, …)
+- Dokumentácia: ARCHITECTURE (§5, §6, §7.1–7.5, §7.8, §9.1, §12, §14, §16, §18), PORT_OPERATIONS §1 a §3
+
+**Režimy odovzdávania:** `under_hook` (predvolený, ADR-033), `apron` (starý, pripnutý v legacy testoch); savy v1 … v6 sa načítajú a migrujú na v7.
+
+PR hilkovics/Harbor#9.
+
+Ďalej: **Fáza 6c — Prázdne kontajnery a tranship** (spolu so 6a míľnik M2)
+
+## Fáza 6c — Prázdne kontajnery a tranship (M2)
+Karty: `docs/tasks/phase-06c.md` · vetva `phase/06c-empties-tranship` (stacked nad hilkovics/Harbor#9)
+
+Stav: **hotová** (T6C-01 … T6C-09, vrátane T6C-06a, T6C-06b a T6C-07b), **míľnik M2 „živý terminál“ splnený**
+
+**Výsledky:**
+- review sim-reviewer: MERGE (2 major + 5 minor opravené v T6C-07b, m3 do BACKLOG, m7 ponechané)
+- `pnpm test`: 355 súborov, 8 630 testov zelených
+- `pnpm test:e2e`: 48/48
+- `simrun live_terminal` (60 000 tickov): lostUnits 0, exported 116, shipped 96, emptyReturns 68, emptyRepaired 11, repositioned 24, transhipLoaded 36, stateHash 271a07cc (zhodný s `--roundtrip-at 37000`)
+- `pnpm bench`: live_terminal priemer 0,11 ms / tick (cieľ < 2 ms)
+- Hrateľná verzia zverejnená (artefakt „Fáza 6c“); oprava buildu: Vite `assetsInlineLimit: 0` — `data:` URL SVG assetov blokovala CSP artefaktu
+
+**Čo je hotové:**
+- Návrh: ADR-034 (linky, smery `empty` / `tranship` a stav kvality jednotky, depo prázdnych, kontrola a M&R, empty handler, `EmptyFlow`, druhy kontraktu `empty_repositioning` a `tranship`, `WorldState` v8 + migrácia v7 → v8) a dodatky T6C-02, T6C-03, T6C-07b
+- Defy: `lines.json` (3 linky), `empty_depot`, `empty_handler`, ekonomika návratov / opráv / repositioningu / prekládky, `logistics.emptyFlow`, šablóny, schémy a `validate:defs`
+- Sim jadro: `lineId` bez `Rng`, návrat prázdnych z vnútrozemia (len s voľným miestom v depe), depo s kontrolou a M&R (ledger `maintenance_repair`), empty handler prednostne, výdaj prázdneho exportérovi (misia `collect`), repositioning (nakládka prázdnych po plných), tranship A → B (loď B, zmeškanie, záchrana, predaj), invarianty (`checkEmptyFlow`), obnova a migrácia v8
+- Render, UI a app: sivé prázdne kontajnery a odznak poškodených, depo prázdnych, empty handler, farby liniek, karty repositioningu a prekládky, inšpektor depa (dostupné / poškodené / v oprave podľa linky), toasty (návrat prázdnych, oprava hotová, tranship zmeškaný)
+- TDD a tooling: scenáre `empty_cycle` a `live_terminal` (golden, `--roundtrip-at`), metriky `simrun` (emptyReturns, emptyRepaired, repositionedUnits, transhipLoaded, …), e2e `f6c-live-terminal`
+- Dokumentácia: ARCHITECTURE (§5, §6, §7.1, §7.3, §7.5, §9.1, §9.2, §12, §14, §16, §18), PORT_OPERATIONS §1 a §3
+
+**Odchýlky od plánu:** `lineId` bez `Rng` (deterministicky podľa voyage); empty handler len def (bez triedy); tok prázdnych, repositioning a tranship sa ponúkajú len v prístave s depom prázdnych; výdaj exportérovi je misia `collect` s poverením (nie `pickup`); pripravenosť repositioningu = existuje depo; záchrana zmeškanej prekládky zjednodušená (prepíše sa voyage B, inak predaj po `transhipRescueDays`); T6C-06 sa rozdelila na T6C-06a a T6C-06b a review T6C-07 si vyžiadalo opravy T6C-07b. Odložené nálezy z review sú v BACKLOG „Z Fázy 6c“.
+
+Ďalej: **Fáza 6d — spätná väzba z hrania 2** (mesto a časové okná kamiónov, odovzdávanie priamo na vozidlo pod hákom, lode priamo na rejdu)
+
+## Fáza 6d — Spätná väzba z hrania 2
+Karty: `docs/tasks/phase-06d.md` · vetva `phase/06d-playtest-2` (stacked nad `phase/06c-empties-tranship`)
+
+Stav: **hotová** (T6D-01 … T6D-07, vrátane T6D-05b a T6D-05c)
+
+**Výsledky:**
+- review sim-reviewer: MERGE (0 blocking; 1 major opravený v T6D-05b, regresia nakládky pod hákom pri jednosmerkách opravená v T6D-05c, ostatné minor opravené alebo v BACKLOG „Z Fázy 6d“)
+- `pnpm test`: 372 súborov, 8 815 testov zelených
+- `pnpm test:e2e`: 50/50 (nové `f6d-hook`, `f6d-anchorage`; `f6c-live-terminal` pre prístav s dvoma dvormi)
+- `simrun vertical_slice` (30 000 tickov): cashEnd 41 790 000, exportedUnits 78, lostUnits 0, directHandoverPct 100, stateHash de8cdca1
+- `simrun live_terminal` (60 000 tickov, druhý dvor): lostUnits 0, exported 149, transhipLoaded 36, repositioned 24, rolled exporty 0, directHandoverPct 100, stateHash 89fb0ea3
+- `simrun landside_pressure` (40 000 tickov, nový scenár zámky príjmu a výdaja): dokončené kontrakty #2, #10, #11, exported 88, lostUnits 0, stateHash 64ba05c3
+- Hrateľná verzia zverejnená (artefakt „Fáza 6d“)
+
+**Čo je hotové:**
+- Kamióny (ADR-035): kamióny s dovozom (`delivery`) a po prázdny (`collect`) čakajú vo vnútrozemí a do prístavu vojdú len so zaručeným miestom (staging docku, sklad / depo, prázdny linky); kvóta stojísk pre odvoz `pickupReservedBays`; `DockIntake`; metriky `hinterlandQueue` / `trucksWaitingInland` / `inlandWaitTicks` / `pickupBayStarvationTicks`; inšpektor brány ukazuje kamióny čakajúce vo vnútrozemí; toast „Výdaj prázdneho zlyhal“ rozlišuje kamión, ktorý do prístavu nevošiel
+- Žeriav (ADR-033 dodatky T6D-02, T6D-05b): vozidlo stojí fyzicky pod hákom, predvolený `craneBufferSlots` 0, `directHandoverPct`, render spúšťania kontajnera na vozidlo; záložná cesta cez apron pri vozidle v `no_path` (vykládka) a pri nedosiahnuteľnom háku (nakládka); režim `apron` ostáva cez def
+- Lode (ADR-029 dodatok T6D-03): rejda v otvorenom mori, loď bez voľného kotviska pláva zo vstupu priamo na rejdu, jednotný kurz na kotve, invariant `anchoringProblem`
+- `WorldState` v9 = v8 + `hinterland` a nový význam rejdy; migrácia v8 → v9 (save so starou rejdou sa normalizuje, vozidlo spred T6D-02 sa preplánuje pod hák)
+
+**Odchýlky od plánu:** tri sim karty bežali paralelne vo worktree (zlúčenie T6D-04); scenár `live_terminal` dostal druhý dvor (po ADR-035 export čakal na miesto v plnom dvore); poradie vjazdu exportov je podľa kontraktov (nie FIFO naprieč bookingmi, BACKLOG); buffer 0 predlžuje čakanie dovozu vo vnútrozemí (`landside_pressure` 18 478 tickov vs 4 439 v režime apron — balans vo F7).
+
+Ďalej: **Fáza R1 — Doprava bez prekrývania**
+
+## Fáza R1 — Doprava bez prekrývania
+Karty: `docs/tasks/phase-r1.md` · vetva `phase/r1-traffic` (stacked nad PR hilkovics/Harbor#11)
+
+Stav: **hotová** (TR1-01 … TR1-10)
+
+**Výsledky:**
+- `pnpm test`: zelené (toate testy)
+- Plná e2e: 50/50 (viazanosť na PORT rozloženie)
+- `simrun` (30 000 tickov na scenár):
+  - `vertical_slice`: exportedUnits 78, stuckAtEnd 0, maxBlockedTicks 29
+  - `live_terminal`: exportedUnits 118, stuckAtEnd 0, maxBlockedTicks 37
+  - `landside_pressure`: exportedUnits 48, stuckAtEnd 0, maxBlockedTicks 35
+  - `stress_f6` (16 vozidiel): exportedUnits 573, stuckAtEnd 0, maxBlockedTicks 192
+  - `traffic_stress` (16 vozidiel): exportedUnits 559, stuckAtEnd 0, maxBlockedTicks 157
+- `pnpm bench`: priemer ms/tick pod cieľom < 2 ms
+
+**Čo je hotové:**
+- Jadro dopravy: pruhové sloty (`LaneSlots`), telo vozidiel (`lengthCells`), križovatky (naraz zabranie reťaze), úseky `one_lane` (smer bez teleportu), parkovanie vozidiel v depe (`to_depot`, `parked`, `depot_exit`)
+- TrafficSystem: poradie pohybu (blockedTicks a id), rekurzia pri cikloch, preplánovanie pri zápchach, deterministické pravidlá na zlomenie cyklov uviaznutia (obrat s pruhom, odchod späť, pretočenie cyklu, ústup)
+- Moduly: sloty drží aj stojace nosiče (pri module, na ceste, vo fronte, v no_path), mimo cesty (stojisko, dock, gate_pass, gate_pass_out)
+- Jednosmerný prístav: portal s vjazdom a výjazdom (`MapDef.roadPortals[].direction`), slučka cesty v `harbor_01`
+- Parkovanie: dispatcher berie ako voľné vozidlá v `idle`, `to_depot` a `parked`
+- Zápchy: `TrafficJam` event, metriky `gridlockEvents` a `maxBlockedTicks`, vlast... v `blockedTicks`
+- Invarianty: `carrierOverlapProblem` (sloty, telo, mimo cesty)
+- Save v10: nosič dostane `body`, `ahead`, `blockedTicks`, `rerouteCooldown`
+- Render, UI a app: napojené VM polia
+- `simrun` kľúče: `gridlockEvents`, `trafficWaitTicks`, `maxBlockedTicks`, `stuckAtEnd`
+
+**Odchýlky od plánu:**
+- `ModuleVM.parkedVehicles` namiesto `parkedVehicleIds` zo specifikácie (ponechané bez zmeny, kompatibilita)
+- Starý render stojiska a docku (`TRUCK_LENGTH_PX` pre kamión dlhý 3 bunky) — odsúdené na R4 pri rampe
+- Uviaznutie s 20 vozidlami na `stress_f6` ostáva `stuckAtEnd` 11 (križ zložitosť bez pruhov pod modulmi — R3/R4)
+
+**Ďalej:** Fáza R2 — Kontajnery a stohy
+
+## Fáza R2 — Kontajnery a stohy
+Karty: `docs/tasks/phase-r2.md` · vetva `phase/r2-stacks` (stacked nad hilkovics/Harbor#12)
+
+Stav: **hotová** (TR2-01 … TR2-07)
+
+**Výsledky:**
+- `pnpm test`: 405 súborov, 9 114 testov zelených
+- `pnpm test:e2e`: 50/50
+- `simrun` (30 000 tickov):
+  - `vertical_slice`: exported 50, stuckAtEnd 0, rehandlesPerMove 0,00 (planned), lostUnits 0
+  - `live_terminal`: exported 124, stuckAtEnd 0, rehandlesPerMove 0,00, lostUnits 0
+  - `stress_f6`: exported 631, stuckAtEnd 0, rehandlesPerMove 0,002, lostUnits 0
+  - `traffic_stress`: exported 633, stuckAtEnd 0, rehandlesPerMove 0,009, lostUnits 0
+- `pnpm bench`: priemer < 2 ms/tick
+
+**Čo je hotové:**
+- Štítky jednotky: `sizeFt: 20 | 40`, `containerType` (R2: `dry`), `oog: false` (ADR-039)
+- TEU: `volumeUnits` a `volumeTeu` v kontraktoch a lodiach; zmes veľkostí podľa `sizeMix` šablóny; všetky odmeny, penalizácie a kapacity v TEU
+- YardBlock: geometria `bays × rows × maxTier` (straddle 3, depo 8), poloha slot kóduje polohu; `StackGrid` cache s pravidlami — len vrch, rovnaká veľkosť, 40′ párové bays, bez zavalenia
+- Rehandling: vozidlo prejde cieľ navrchu, inak preloží cieľový bay; plánovač (`YardPlanner`) vyberie blok a stoh podľa času odchodu
+- Render: stohy zhora s tieňom výšky, kontajnery podľa veľkosti/typu/linky, empty handler (ECH) sprite
+- UI: inšpektor bloku s bayom zboku, karta kontraktu s TEU
+- Scenáre: `vertical_slice`, `live_terminal`, `stress_f6`, `traffic_stress` (golden s rehandlesPerMove)
+- Dokumentácia: ADR-039, ARCHITECTURE §7.1 a §7.7 doplnené
+
+**Odchýlky od plánu:**
+- `rehandlesPerMove` akceptácia 2: test `yard-contrast` s pevnou geometriou namiesto random tuningu na `vertical_slice` (0,14 nie je > 1, lebo dispatcher počká)
+- TR2-06 vrátila opravy TR2-06b (rehandling bez cieľa únik po `rehandleGiveUpTicks`)
+- E2E nový test `f2-stacks` ukázal spúšťanie kontajnerov na vozidlo pod hákom
+
+**Otvorené:** pri 100k tickoch `stress_f6` a `traffic_stress` majú 13–14 zaseknutých vozidiel v čelnej kolízii na križovatke (R3/R4). Latentná chyba rezervácie apronu v dual cykle. Rehandling bez cieľa vyriešený v TR2-06b únikem po `rehandleGiveUpTicks`.
+
+Ďalej: **Fáza R3 — Ťahače, RTG a TOS**
+
+## Fáza R3 — Ťahače, RTG a TOS
+Karty: `docs/tasks/phase-r3.md` · vetva `phase/r3-tractors-rtg` (stacked nad `phase/r2-stacks`, PR hilkovics/Harbor#13)
+
+Stav: **hotová s otvorenou akceptáciou 2** (TR3-01 … TR3-07, vrátane TR3-02b, TR3-02c, TR3-02d, TR3-06b a TR3-07a)
+
+**Výsledky:**
+- `pnpm test`: 420 súborov, 9 264 testov zelených (1 timeout pod záťažou opravený na 60 s)
+- `pnpm test:e2e`: 60/61 v plnom behu; `f5-app-contracts.spec.ts:28` padol pod záťažou a pri samostatnom behu prešiel; 10 špecifikácií upravených na kotvisko 8×4
+- Akceptácia: 1 splnené (`tt_rtg` 120 TEU, lostUnits 0, stuckAtEnd 0, rehandleStalls 0); 2 NESPLNENÉ (STS čaká na ťahač ≈ 60 %, `tt_rtg_2blocks` 59,8 %, cieľ < 20 %); 3 splnené (100k `tt_rtg_2blocks` stuck 0, 0 TrafficJam); 4 splnené (render STS, kotvisko 8×4, TT, RTG); 5 splnené
+
+**Čo je hotové:**
+- Terminálový ťahač (`terminal_tractor`, `TerminalTractor extends Vehicle`), RTG blok (`rtg_block`, `RtgBlock extends YardBlock`) s jednosmerným pruhom, RTG (`RtgCrane`, `YardMachine` v save), `in_handler` v ledgeri
+- Reťaz nôh STS ↔ TT ↔ RTG cez `HANDLING_CHAINS`; kotvisko 8×4 s pruhmi a obchádzkou; starter `harbor_01` s novým STS
+- Priority RTG a `SetBlockPriority`, gang/pool a `SetCraneGang`; metriky `stsMovesPerHour`, `rtgMovesPerHour`, `stsWaitForTractorPct`
+- Vyváženie RTG medzi bloky, prefetch v poradí pruhu, dopredné plánovanie jobov pod hákom (`logistics.hookJobLookahead`), ohraničené čakanie RTG (TR3-02b/02c/02d, TR3-06b)
+- Render a UI: nový STS, kotvisko 8×4, ťahač s podvozkom, RTG nad blokom; inšpektor stroja
+- Dokumentácia: ADR-040 (vrátane dodatkov TR3-02b/02c/02d a TR3-06b), `WorldState` v11
+
+**Odchýlky od plánu:**
+- Obeh ťahačov (~67 buniek, ~135 tickov/job) obmedzuje STS; 2 STS by potrebovali ~22 ťahačov, geometria a prístup riešiť v R4
+- `WorldState` v11 (clean break, ADR-036) namiesto „v10 bez migrácie" z ADR-040 bod 9
+- E2E: 1 špecifikácia nestabilná pod záťažou (viď vyššie)
+
+**Otvorené:** STS čaká na ťahač < 20 % → R4 (geometria / druhý výjazd z bloku); `stress_f6` 100k zvyškové zápchy (R1, 17 stuck) → R4; výber RTG kliknutím; RTG obsluha kamiónov → R4; reach stacker → R5. Viď `docs/BACKLOG.md` „Z Fázy R3“.
+
+## Fáza R4 — Brána, predbránová plocha, TP a odstavná plocha
+Karty: `docs/tasks/phase-r4.md` · vetva `phase/r4-gates` (stacked nad `phase/r3-tractors-rtg`, PR hilkovics/Harbor#14)
+
+Stav: **hotová s čiastočnou akceptáciou 2** (TR4-00 … TR4-07, vrátane TR4-05b a TR4-06b)
+
+**Výsledky:**
+- `pnpm test`: 397 súborov, 8 666 testov zelených
+- `pnpm test:e2e`: 61/61
+- Akceptácia: 1 splnené (`live_terminal` import, export, prázdne, prekládka; lostUnits 0, stuckAtEnd 0, TTT 38 min); 2 čiastočne (100 kamiónov/h bez fronty na verejnej ceste len v `r4-gate-peak`, len brána; s obsluhou na TP ≈ 69 kamiónov/h, strop 12 TP + 60 státí); 3 splnené (`stress_f6`, `traffic_stress` pôvodný seed, `live_terminal`: 100 000 tickov, 0 TrafficJam, stuckAtEnd 0); 4 splnené (render brány so strechou, predbránová plocha, TP, odstavná plocha); 5 splnené
+
+**Čo je hotové:**
+- ADR-041: brána z pruhov `gate_in_lane` / `gate_out_lane`, predbránová plocha, portály `trafficShare`, TP pri blokoch, odstavná plocha `truck_holding`, dual transaction, lashing; zrušené rampa, stojiská a `truck_gate` z katalógu a máp
+- Oprava nôh STS mimo jazdných pruhov (TR4-00)
+- Obnova ukážok f4/f6a/f6c/t5b03 bez rampy (TR4-05b)
+- Opravy review: defy, prednosť holdingu, index obsadenia, ARCHITECTURE (TR4-06b)
+
+**Otvorené:** STS čaká na ťahač ≈ 60 % (R3, geometria okruhu); priepustnosť TP pri špičke; férovosť výjazdu z brány (STUCK_TICKS 2000); zrušené ukážky dock-maneuver/rampa; WorldState v13; artefakt verzia 12. Viď `docs/BACKLOG.md` „Z Fázy R4“.
+
+## Fáza R5 — Reefery a špeciálne kontajnery
+Karty: `docs/tasks/phase-r5.md` · vetva `phase/r5-reefer-special` (stacked nad `phase/r4-gates`)
+
+Stav: **hotová** (TR5-01 … TR5-07, vrátane TR5-02b a TR5-06b)
+
+**Výsledky:**
+- `pnpm test`: 413 súborov, 8 794 testov zelených
+- `pnpm test:e2e`: 63/63
+- Akceptácia: 1 splnené (`reefer_flow`: dosť zásuviek → 0 reklamácií; málo → preskočenia + reklamácie; lostUnits 0, stuckAtEnd 0); 2 splnené (`oog_flow`: STS → TT → reach stacker → kamión, nič na OOG, flat rack navrchu); 3 splnené (ledger `energy`, FinancePanel); 4 splnené (typy, OOG, reefer rack a zásuvky, reach stacker); 5 splnené (`live_terminal_mix` s reefer blokom a OOG plochou 100k: 0 TrafficJam, stuckAtEnd 0, lostUnits 0)
+
+**Čo je hotové:**
+- ADR-042 (reefery a špeciály) vrátane dodatku TR5-02b (slepý vjazd, scenár `live_terminal_mix`)
+- Typy kontajnerov, `typeMix` v šablónach kontraktov, stav reeferu na `CargoUnit`, pravidlá stohu (flat rack navrch, reefer len na zásuvke)
+- `reefer_block_8` s napájaním, alarmami, reklamáciami a energiou v ledgeri; oprava `to_vacate` a termínu alarmu (TR5-06b)
+- `oog_area` a reach stacker (`YardMachine`), OOG cesta STS → TT → RS → kamión
+- Render, UI, napojenie VM, `simrun` metriky, e2e
+- `WorldState` v14
+
+**Odchýlky od plánu:** karty TR5-02b a TR5-06b pribudli z review a testov; `rs_area` nerobená (voliteľná podľa plánu).
+
+**Otvorené:** `rs_area` (3 rady 5/4/3) nerobené; kapacita TP a státí pri špičke 100/h (z R4); teplota reeferu sa nesleduje; e2e `r4-tp-rtg` používa obojsmernú bunku vjazdu RTG bloku; WorldState v14; artefakt verzia 13. Viď `docs/BACKLOG.md` „Z Fázy R5 (TR5-02)“.
+
+## Fáza R6 — Železnica s RMG
+Karty: `docs/tasks/phase-r6.md` · vetva `phase/r6-rail` (stacked nad `phase/r5-reefer-special`, PR hilkovics/Harbor#17)
+
+Stav: **hotová** (TR6-01 … TR6-07, vrátane TR6-02b, TR6-02c, TR6-03b a TR6-07a)
+
+**Výsledky:**
+- `pnpm test`: 432 súborov, 8 930 testov zelených
+- `pnpm test:e2e`: 65/65
+- Akceptácia: 1 splnené (`rail_flow`: 100 % importu vlakom, export vlakom → loď, import a export súbežne, nakládka po vagónoch; lostUnits 0, stuckAtEnd 0, deterministické); 2 splnené (odchod podľa poriadku alebo plný; lehota na odchod 30 min; metriky `trainTurnaroundMin`, `trainDelayMin`); 3 splnené (`live_terminal_rail` 100k, seedy 5001–5016: 0 pádov, 0 TrafficJam, stuckAtEnd 0, lostUnits 0); 4 splnené (koľaje s plynulými oblúkmi, lokomotíva a vagóny, RMG, závory priecestí); 5 splnené
+
+**Čo je hotové:** rozsah kariet TR6-01 … TR6-07 podľa `docs/tasks/phase-r6.md`; opravy z review TR6-02b (flat rack pod rezerváciou, zaseknutie pod hákom) a TR6-02c (pád RMG trolley→trolley seed 5008, lehota na odchod, sloty priecestí po obnove, výkon).
+
+**Rozhodnutia (ADR-043):** úrovňové priecestie; harbor_01 parcela `rail_yard`; import pre vlak ide do bufferu priamo pri vykládke (nie TT zo skladu); reefer a OOG po koľaji nejdú; naraz jeden vlak; WorldState v15; artefakt verzia 14.
+
+**Odchýlky od plánu:** pridané karty TR6-02b, TR6-02c, TR6-03b a TR6-07a.
+
+**Otvorené:** pravidlo „nevchádzaj na priecestie bez výjazdu“; prenos sklad → buffer (TT); viac vlakov naraz / signály; flat-rack oprava zakáže celý stĺpec s rezerváciou. Viď `docs/BACKLOG.md` „Z Fázy R6“.

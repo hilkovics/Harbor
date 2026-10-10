@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="design/tokens.css">
+<style>
+body{margin:0;background:#0B1520;color:var(--ui-text);font-family:var(--font-ui);-webkit-font-smoothing:antialiased}
+a{color:var(--ui-accent)}a:hover{color:var(--ui-accent-hover)}
+button{font-family:inherit;white-space:nowrap}
+*{scrollbar-width:thin;scrollbar-color:var(--ui-border) transparent}
+@keyframes mhJam{0%,100%{opacity:1}50%{opacity:.45}}
+</style>
+</helmet>
+<div style="min-height:100vh;display:flex;flex-direction:column;font-size:var(--fs-md);line-height:var(--lh-normal)">
+
+<nav style="display:flex;flex-wrap:wrap;gap:10px 24px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--ui-border);background:#0F1B27">
+  <span style="font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--ui-text-2);letter-spacing:.06em;text-transform:uppercase">Terminál 2.0 · Relácia H</span>
+  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+    <sc-for list="{{ screenChips }}" as="c" hint-placeholder-count="10">
+      <button onClick="{{ c.onClick }}" style="height:26px;padding:0 10px;border-radius:13px;border:1px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:12px;cursor:pointer" style-hover="border-color:var(--ui-accent)" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px">{{ c.label }}</button>
+    </sc-for>
+  </div>
+  <div style="display:flex;align-items:center;gap:6px">
+    <span style="font-size:var(--fs-xs);color:var(--ui-text-2)">Stav</span>
+    <sc-for list="{{ stateChips }}" as="c" hint-placeholder-count="3">
+      <button onClick="{{ c.onClick }}" style="height:26px;padding:0 10px;border-radius:13px;border:1px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:12px;cursor:pointer" style-hover="border-color:var(--ui-accent)" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px">{{ c.label }}</button>
+    </sc-for>
+  </div>
+</nav>
+
+<div ref="{{ wrapRef }}" style="flex:1;padding:16px;box-sizing:border-box">
+<div style="position:relative;width:100%;height:{{ stageH }}px">
+<div data-screen-label="Game UI T2" style="position:absolute;left:0;top:0;width:{{ W }}px;height:{{ H }}px;transform:scale({{ scale }});transform-origin:0 0;overflow:hidden;border-radius:4px;background:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px) 0 0/64px 64px,linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px) 0 0/64px 64px,#12304A">
+
+  <div style="position:absolute;left:0;right:0;top:48px;bottom:96px;display:flex;align-items:center;justify-content:center;pointer-events:none">
+    <span style="font-family:var(--font-mono);font-size:var(--fs-sm);color:var(--ui-text-2);letter-spacing:.08em">MAPA · PixiJS canvas</span>
+  </div>
+
+  <sc-if value="{{ jam.on }}" hint-placeholder-val="{{ false }}">
+    <sc-for list="{{ jam.cells }}" as="j" hint-placeholder-count="0"><div style="position:absolute;left:{{ j.x }}px;top:{{ j.y }}px;width:64px;height:64px;box-sizing:border-box;background:repeating-linear-gradient(45deg,rgba(229,72,77,.42) 0 3px,rgba(229,72,77,.12) 3px 9px);border:2px solid var(--ui-danger);animation:mhJam 1.4s ease-in-out infinite"></div></sc-for>
+    <div style="position:absolute;left:{{ jam.lx }}px;top:{{ jam.ly }}px;display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-danger);box-shadow:var(--shadow-panel)">
+      <svg width="16" height="16" style="color:var(--ui-danger)"><use href="#ic_traffic_jam"></use></svg>
+      <span style="font-weight:600;font-size:var(--fs-sm)">Zápcha · 7 vozidiel · 6 min</span>
+    </div>
+  </sc-if>
+
+  <header style="position:absolute;left:0;right:0;top:0;height:48px;box-sizing:border-box;display:flex;align-items:center;padding:0 12px;background:var(--ui-bg);border-bottom:1px solid var(--ui-border);font-variant-numeric:tabular-nums">
+    <div style="display:flex;align-items:center;gap:10px;padding:0 14px 0 6px"><svg width="20" height="20" style="color:var(--ui-success)"><use href="#ic_cash"></use></svg><span style="font-size:var(--fs-lg);font-weight:700">{{ cashLabel }}</span><span style="font-size:var(--fs-sm);color:var(--ui-money-pos)">▲ +$18,400/deň</span></div>
+    <div style="width:1px;height:24px;background:var(--ui-border);margin:0 12px"></div>
+    <div style="display:flex;align-items:center;gap:8px"><svg width="18" height="18" style="color:var(--ui-xp)"><use href="#ic_xp"></use></svg><span style="font-weight:600">520 XP</span></div>
+    <div style="width:1px;height:24px;background:var(--ui-border);margin:0 12px"></div>
+    <div style="display:flex;align-items:center;gap:8px"><svg width="18" height="18" style="color:var(--ui-text-2)"><use href="#ic_calendar"></use></svg><span>Deň 23 · 14:20</span></div>
+    <div style="width:1px;height:24px;background:var(--ui-border);margin:0 12px"></div>
+    <div style="display:flex;align-items:center;gap:2px;padding:2px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border)">
+      <span style="width:32px;height:28px;display:grid;place-items:center;color:var(--ui-text)"><svg width="16" height="16"><use href="#ic_pause"></use></svg></span>
+      <span style="min-width:34px;height:28px;display:grid;place-items:center;border-radius:6px;font-size:var(--fs-sm);font-weight:600;background:var(--ui-accent);color:#0F1B27">1×</span>
+      <span style="min-width:34px;height:28px;display:grid;place-items:center;font-size:var(--fs-sm);font-weight:600;color:var(--ui-text-2)">2×</span>
+      <span style="min-width:34px;height:28px;display:grid;place-items:center;font-size:var(--fs-sm);font-weight:600;color:var(--ui-text-2)">4×</span>
+      <span style="min-width:34px;height:28px;display:grid;place-items:center;font-size:var(--fs-sm);font-weight:600;color:var(--ui-text-2)">8×</span>
+    </div>
+    <div style="flex:1"></div>
+    <div style="display:flex;align-items:center;gap:4px">
+      <sc-for list="{{ hudButtons }}" as="b" hint-placeholder-count="5">
+        <button onClick="{{ b.onClick }}" title="{{ b.title }}" style="width:36px;height:36px;display:grid;place-items:center;border-radius:var(--radius-md);cursor:pointer;border:1px solid {{ b.bd }};background:{{ b.bg }};color:{{ b.fg }}" style-hover="background:var(--ui-surface-2);color:var(--ui-text)" style-focus="outline:2px solid var(--ui-accent);outline-offset:1px"><svg width="20" height="20"><use href="{{ b.icon }}"></use></svg></button>
+      </sc-for>
+    </div>
+  </header>
+
+  <sc-if value="{{ hasPanel }}" hint-placeholder-val="{{ true }}">
+  <aside style="position:absolute;right:12px;top:60px;bottom:108px;width:360px;display:flex;flex-direction:column;background:var(--ui-bg);border:1px solid var(--ui-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-panel);overflow:hidden">
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 12px 12px 16px;border-bottom:1px solid var(--ui-border);flex:none">
+      <svg width="20" height="20" style="color:var(--ui-text-2);flex:none"><use href="{{ ph.icon }}"></use></svg>
+      <div style="display:flex;flex-direction:column;flex:1;min-width:0">
+        <span style="font-size:var(--fs-lg);font-weight:600;line-height:var(--lh-tight)">{{ ph.title }}</span>
+        <span style="font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--ui-text-2)">{{ ph.sub }}</span>
+      </div>
+      <sc-if value="{{ ph.badge }}" hint-placeholder-val="{{ false }}"><span style="display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:11px;font-size:var(--fs-xs);font-weight:600;background:{{ ph.badgeBg }};color:{{ ph.badgeFg }}">{{ ph.badge }}</span></sc-if>
+      <span style="width:32px;height:32px;display:grid;place-items:center;color:var(--ui-text-2);flex:none"><svg width="18" height="18"><use href="#ic_close"></use></svg></span>
+    </div>
+    <div style="flex:1;overflow-y:auto;overflow-x:hidden;padding:16px;display:flex;flex-direction:column;gap:16px">
+      <sc-for list="{{ blocks }}" as="b" hint-placeholder-count="5">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <sc-if value="{{ b.title }}" hint-placeholder-val="{{ false }}"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><span style="font-size:var(--fs-sm);font-weight:600">{{ b.title }}</span><span style="font-size:var(--fs-xs);color:var(--ui-text-2);font-variant-numeric:tabular-nums">{{ b.right }}</span></div></sc-if>
+
+          <sc-if value="{{ b.is.banner }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;gap:10px;padding:12px;border-radius:var(--radius-md);background:{{ b.bg }};border:1px solid {{ b.bd }}">
+              <svg width="20" height="20" style="color:{{ b.c }};flex:none"><use href="{{ b.icon }}"></use></svg>
+              <div style="display:flex;flex-direction:column;gap:2px"><span style="font-weight:600">{{ b.head }}</span><span style="font-size:var(--fs-sm);color:var(--ui-text-2);text-wrap:pretty">{{ b.text }}</span></div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ b.is.tiles }}" hint-placeholder-val="{{ false }}">
+            <div style="display:grid;grid-template-columns:repeat({{ b.cols }},minmax(0,1fr));gap:8px">
+              <sc-for list="{{ b.items }}" as="t" hint-placeholder-count="3">
+                <div style="display:flex;flex-direction:column;gap:2px;padding:10px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border)">
+                  <span style="font-size:var(--fs-xs);color:var(--ui-text-2);line-height:var(--lh-tight)">{{ t.label }}</span>
+                  <span style="font-size:{{ b.vfs }};font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;color:{{ t.c }}">{{ t.value }}</span>
+                  <span style="font-size:11px;font-variant-numeric:tabular-nums;color:{{ t.sc }}">{{ t.sub }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ b.is.kv }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;font-size:var(--fs-sm);font-variant-numeric:tabular-nums">
+              <sc-for list="{{ b.rows }}" as="r" hint-placeholder-count="3"><div style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid var(--ui-border)"><span style="color:var(--ui-text-2)">{{ r.k }}</span><span style="color:{{ r.c }};text-align:right">{{ r.v }}</span></div></sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ b.is.seg }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;gap:2px;padding:2px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border)">
+              <sc-for list="{{ b.opts }}" as="o" hint-placeholder-count="3"><button onClick="{{ o.onClick }}" style="flex:1;height:28px;border:none;border-radius:6px;cursor:pointer;font-size:var(--fs-xs);font-weight:600;background:{{ o.bg }};color:{{ o.fg }}" style-hover="color:var(--ui-text)" style-focus="outline:2px solid var(--ui-accent)">{{ o.label }}</button></sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ b.is.toggle }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border)">
+              <svg width="18" height="18" style="color:var(--ui-text-2)"><use href="{{ b.icon }}"></use></svg>
+              <div style="display:flex;flex-direction:column;flex:1"><span style="font-size:var(--fs-sm);font-weight:600">{{ b.label }}</span><span style="font-size:11px;color:var(--ui-text-2)">{{ b.hint }}</span></div>
+              <button onClick="{{ b.onClick }}" role="switch" aria-checked="{{ b.on }}" style="width:40px;height:22px;border-radius:11px;border:none;padding:2px;cursor:pointer;display:flex;justify-content:{{ b.j }};background:{{ b.track }}" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px"><span style="width:18px;height:18px;border-radius:50%;background:var(--ui-text)"></span></button>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ b.is.bars }}" hint-placeholder-val="{{ false }}">
+            <sc-for list="{{ b.items }}" as="u" hint-placeholder-count="3">
+              <div style="display:grid;grid-template-columns:96px minmax(0,1fr) 64px;gap:10px;align-items:center;font-size:var(--fs-xs);font-variant-numeric:tabular-nums">
+                <span style="color:var(--ui-text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ u.label }}</span>
+                <div style="height:8px;border-radius:4px;background:var(--ui-surface-2);overflow:hidden"><div style="height:100%;width:{{ u.pct }}%;background:{{ u.c }}"></div></div>
+                <span style="text-align:right;font-weight:600;color:{{ u.tc }}">{{ u.val }}</span>
+              </div>
+            </sc-for>
+          </sc-if>
+
+          <sc-if value="{{ b.is.list }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;border-radius:var(--radius-md);border:1px solid var(--ui-border);overflow:hidden">
+              <sc-for list="{{ b.rows }}" as="r" hint-placeholder-count="4">
+                <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:{{ r.bg }};font-size:var(--fs-sm)">
+                  <svg width="16" height="16" style="color:{{ r.ic }};flex:none"><use href="{{ r.icon }}"></use></svg>
+                  <div style="display:flex;flex-direction:column;flex:1;min-width:0"><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.main }}</span><sc-if value="{{ r.sub }}" hint-placeholder-val="{{ false }}"><span style="font-size:11px;color:var(--ui-text-2)">{{ r.sub }}</span></sc-if></div>
+                  <sc-if value="{{ r.chip }}" hint-placeholder-val="{{ false }}"><button onClick="{{ r.onChip }}" style="height:20px;padding:0 6px;border-radius:4px;border:1px solid var(--ui-border);background:var(--ui-surface-2);color:var(--ui-text-2);font-size:10px;font-weight:600;cursor:pointer" style-hover="border-color:var(--ui-accent);color:var(--ui-text)">{{ r.chip }}</button></sc-if>
+                  <span style="display:inline-flex;align-items:center;gap:4px;font-size:var(--fs-xs);font-weight:600;font-variant-numeric:tabular-nums;color:{{ r.rc }}">{{ r.right }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ b.is.chart }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:10px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border)">{{ b.el }}</div>
+            <div style="display:flex;gap:14px;font-size:11px;color:var(--ui-text-2)"><sc-for list="{{ b.legend }}" as="l" hint-placeholder-count="2"><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:12px;height:2px;background:{{ l.c }}"></span>{{ l.name }}</span></sc-for></div>
+          </sc-if>
+
+          <sc-if value="{{ b.is.bay }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:8px">
+              <button onClick="{{ b.prev }}" title="Predchádzajúci bay" style="width:28px;height:28px;display:grid;place-items:center;border-radius:6px;border:1px solid var(--ui-border);background:var(--ui-surface);color:var(--ui-text);cursor:pointer;transform:scaleX(-1)" style-hover="border-color:var(--ui-accent)"><svg width="14" height="14"><use href="#ic_play"></use></svg></button>
+              <input type="range" min="1" max="12" value="{{ b.bay }}" onChange="{{ b.onBay }}" style="flex:1;accent-color:var(--ui-accent)">
+              <button onClick="{{ b.next }}" title="Ďalší bay" style="width:28px;height:28px;display:grid;place-items:center;border-radius:6px;border:1px solid var(--ui-border);background:var(--ui-surface);color:var(--ui-text);cursor:pointer" style-hover="border-color:var(--ui-accent)"><svg width="14" height="14"><use href="#ic_play"></use></svg></button>
+              <span style="font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--ui-text-2);width:64px;text-align:right">bay {{ b.bay }} / 12</span>
+            </div>
+            <div style="display:flex;gap:6px;padding:10px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border)">
+              <div style="display:flex;flex-direction:column;justify-content:space-around;font-family:var(--font-mono);font-size:10px;color:var(--ui-text-3);padding-bottom:16px"><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+                <div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:3px">
+                  <sc-for list="{{ b.cells }}" as="c" hint-placeholder-count="30">
+                    <div title="{{ c.tip }}" style="position:relative;height:30px;border-radius:2px;box-sizing:border-box;display:grid;place-items:center;background:{{ c.bg }};border:{{ c.bd }};outline:{{ c.ol }};outline-offset:1px">
+                      <sc-if value="{{ c.icon }}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" style="color:{{ c.fg }}"><use href="{{ c.icon }}"></use></svg></sc-if>
+                      <sc-if value="{{ c.plug }}" hint-placeholder-val="{{ false }}"><img src="{{ c.plug }}" alt="" style="position:absolute;right:-4px;top:-4px;width:12px;height:12px"></sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="height:3px;border-radius:1px;background:var(--ui-text-3)"></div>
+                <div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:3px;font-family:var(--font-mono);font-size:10px;color:var(--ui-text-3);text-align:center"><span>R1</span><span>R2</span><span>R3</span><span>R4</span><span>R5</span><span>R6</span></div>
+              </div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px 12px;font-size:11px;color:var(--ui-text-2)">
+              <sc-for list="{{ b.legend }}" as="l" hint-placeholder-count="5"><span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:{{ l.c }};outline:{{ l.ol }}"></span>{{ l.name }}</span></sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ b.is.move }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:10px;padding:12px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border)">
+              <div style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:0"><span style="font-size:11px;color:var(--ui-text-2)">odkiaľ</span><span style="font-weight:600;font-size:var(--fs-sm)">{{ b.from }}</span></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:2px;color:{{ b.cc }}"><svg width="22" height="22"><use href="{{ b.cicon }}"></use></svg><span style="font-size:10px;color:var(--ui-text-2)">{{ b.ctype }}</span></div>
+              <div style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;text-align:right"><span style="font-size:11px;color:var(--ui-text-2)">kam</span><span style="font-weight:600;font-size:var(--fs-sm)">{{ b.to }}</span></div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ b.is.steps }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column">
+              <sc-for list="{{ b.rows }}" as="s" hint-placeholder-count="3">
+                <div style="display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:10px;align-items:start">
+                  <div style="display:flex;flex-direction:column;align-items:center;align-self:stretch"><span style="width:20px;height:20px;border-radius:50%;display:grid;place-items:center;background:{{ s.dot }};color:#0F1B27;box-shadow:{{ s.ring }}"><svg width="12" height="12"><use href="{{ s.icon }}"></use></svg></span><span style="flex:1;width:2px;min-height:14px;background:{{ s.line }}"></span></div>
+                  <div style="display:flex;flex-direction:column;padding-bottom:12px"><span style="font-size:var(--fs-sm);font-weight:600;color:{{ s.fg }}">{{ s.label }}</span><span style="font-size:11px;color:var(--ui-text-2)">{{ s.sub }}</span></div>
+                  <span style="font-size:var(--fs-xs);color:var(--ui-text-2);font-variant-numeric:tabular-nums">{{ s.time }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ b.is.cards }}" hint-placeholder-val="{{ false }}">
+            <sc-for list="{{ b.cards }}" as="k" hint-placeholder-count="2">
+              <div style="display:flex;flex-direction:column;gap:10px;padding:12px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid {{ k.bd }}">
+                <div style="display:flex;align-items:flex-start;gap:10px">
+                  <div style="width:36px;height:36px;flex:none;border-radius:var(--radius-md);display:grid;place-items:center;background:var(--ui-surface-2);color:var(--cargo-container)"><svg width="22" height="22"><use href="#ic_container_40"></use></svg></div>
+                  <div style="display:flex;flex-direction:column;flex:1;min-width:0"><span style="font-weight:600;font-size:var(--fs-sm)">{{ k.title }}</span><span style="font-size:var(--fs-xs);color:var(--ui-text-2)">{{ k.meta }}</span></div>
+                  <span style="font-weight:700;font-variant-numeric:tabular-nums;color:var(--ui-money-pos)">{{ k.reward }}</span>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                  <sc-for list="{{ k.sizes }}" as="z" hint-placeholder-count="2"><span style="display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 8px;border-radius:12px;background:var(--ui-surface-2);font-size:var(--fs-xs);font-weight:600;font-variant-numeric:tabular-nums"><svg width="14" height="14" style="color:var(--ui-text-2)"><use href="{{ z.icon }}"></use></svg>{{ z.label }}</span></sc-for>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px">
+                  <sc-for list="{{ k.types }}" as="y" hint-placeholder-count="4"><div title="{{ y.name }}" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;border-radius:6px;background:var(--ui-bg);opacity:{{ y.op }}"><svg width="18" height="18" style="color:{{ y.c }}"><use href="{{ y.icon }}"></use></svg><span style="font-size:11px;font-weight:600;font-variant-numeric:tabular-nums">{{ y.n }}</span></div></sc-for>
+                </div>
+                <div style="display:flex;flex-direction:column;font-size:var(--fs-xs);font-variant-numeric:tabular-nums">
+                  <div style="display:flex;align-items:center;gap:6px;padding:4px 0"><svg width="14" height="14" style="color:var(--ui-text-2)"><use href="#ic_appointment"></use></svg><span style="color:var(--ui-text-2);flex:1">Okno odvozu</span><span>{{ k.window }}</span></div>
+                  <div style="display:flex;align-items:center;gap:6px;padding:4px 0"><svg width="14" height="14" style="color:var(--ui-text-2)"><use href="#ic_plug"></use></svg><span style="color:var(--ui-text-2);flex:1">Reefery</span><span style="color:{{ k.rc }}">{{ k.reefers }}</span></div>
+                  <div style="display:flex;align-items:center;gap:6px;padding:4px 0"><svg width="14" height="14" style="color:var(--ui-text-2)"><use href="#ic_clock"></use></svg><span style="color:var(--ui-text-2);flex:1">SLA</span><span>{{ k.sla }}</span></div>
+                </div>
+                <sc-if value="{{ k.warn }}" hint-placeholder-val="{{ false }}"><div style="display:flex;gap:8px;padding:8px 10px;border-radius:6px;background:rgba(242,178,51,.12);border:1px solid rgba(242,178,51,.5);font-size:var(--fs-xs)"><svg width="14" height="14" style="color:var(--ui-warning);flex:none"><use href="#ic_warning"></use></svg><span>{{ k.warn }}</span></div></sc-if>
+                <div style="display:flex;gap:8px">
+                  <button style="flex:1;height:32px;border-radius:var(--radius-md);border:1px solid var(--ui-accent);background:var(--ui-accent);color:#0F1B27;font-size:var(--fs-sm);font-weight:600;cursor:pointer" style-hover="background:var(--ui-accent-hover)">Prijať</button>
+                  <button style="flex:1;height:32px;border-radius:var(--radius-md);border:1px solid var(--ui-border);background:transparent;color:var(--ui-text-2);font-size:var(--fs-sm);font-weight:600;cursor:pointer" style-hover="background:var(--ui-surface-2);color:var(--ui-text)">Odmietnuť</button>
+                </div>
+              </div>
+            </sc-for>
+          </sc-if>
+
+          <sc-if value="{{ b.is.legend }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border)">
+              <div style="height:12px;border-radius:2px;background:linear-gradient(90deg,var(--heat-0),var(--heat-1),var(--heat-2),var(--heat-3)),var(--ui-surface-2)"></div>
+              <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ui-text-2);font-variant-numeric:tabular-nums"><span>0 min</span><span>2 min</span><span>5 min</span><span>10+ min</span></div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ b.is.empty }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:32px 16px">
+              <div style="width:56px;height:56px;border-radius:50%;display:grid;place-items:center;background:var(--ui-surface-2);color:var(--ui-text-2)"><svg width="26" height="26"><use href="{{ b.icon }}"></use></svg></div>
+              <span style="font-weight:600;font-size:var(--fs-lg)">{{ b.head }}</span>
+              <span style="color:var(--ui-text-2);max-width:32ch;text-wrap:pretty">{{ b.text }}</span>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ b.is.buttons }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;gap:8px">
+              <sc-for list="{{ b.items }}" as="x" hint-placeholder-count="2"><button style="flex:1;height:34px;display:flex;align-items:center;justify-content:center;gap:6px;border-radius:var(--radius-md);border:1px solid {{ x.bd }};background:{{ x.bg }};color:{{ x.fg }};font-size:var(--fs-sm);font-weight:600;cursor:pointer" style-hover="border-color:var(--ui-accent-hover)" style-focus="outline:2px solid var(--ui-accent);outline-offset:2px"><svg width="14" height="14"><use href="{{ x.icon }}"></use></svg>{{ x.label }}</button></sc-for>
+            </div>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+  </aside>
+  </sc-if>
+
+  <sc-if value="{{ showToasts }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;right:{{ toastRight }}px;bottom:108px;width:340px;display:flex;flex-direction:column;gap:8px">
+      <sc-for list="{{ toasts }}" as="t" hint-placeholder-count="4">
+        <div role="status" style="display:flex;gap:10px;padding:12px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border);box-shadow:var(--shadow-panel)">
+          <div style="width:4px;align-self:stretch;border-radius:2px;flex:none;background:var({{ t.c }})"></div>
+          <svg width="20" height="20" style="color:var({{ t.c }});flex:none"><use href="{{ t.icon }}"></use></svg>
+          <div style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:0">
+            <span style="font-weight:600;font-size:var(--fs-sm)">{{ t.title }}</span>
+            <span style="font-size:var(--fs-xs);color:var(--ui-text-2);font-variant-numeric:tabular-nums">{{ t.text }}</span>
+            <button onClick="{{ t.onShow }}" style="align-self:flex-start;margin-top:4px;padding:0;border:none;background:none;color:var(--ui-accent);font-size:var(--fs-xs);font-weight:600;cursor:pointer" style-hover="color:var(--ui-accent-hover)">{{ t.action }}</button>
+          </div>
+          <span style="width:24px;height:24px;display:grid;place-items:center;color:var(--ui-text-2);flex:none"><svg width="14" height="14"><use href="#ic_close"></use></svg></span>
+        </div>
+      </sc-for>
+    </div>
+  </sc-if>
+
+  <footer style="position:absolute;left:0;right:0;bottom:0;height:96px;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;padding:6px 12px 8px;background:var(--ui-bg);border-top:1px solid {{ barBd }}">
+    <div style="display:flex;gap:2px;height:26px;align-items:center">
+      <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="6">
+        <button onClick="{{ t.onClick }}" style="display:flex;align-items:center;gap:8px;height:26px;padding:0 12px;border:none;border-radius:6px;cursor:pointer;font-size:var(--fs-sm);font-weight:600;background:{{ t.bg }};color:{{ t.fg }}" style-hover="color:var(--ui-text);background:var(--ui-surface-2)" style-focus="outline:2px solid var(--ui-accent)"><svg width="14" height="14"><use href="{{ t.icon }}"></use></svg>{{ t.label }}<sc-if value="{{ t.locked }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12"><use href="#ic_lock"></use></svg></sc-if><span style="font-family:var(--font-mono);font-size:10px;padding:0 4px;border-radius:3px;border:1px solid var(--ui-border);color:var(--ui-text-2)">{{ t.key }}</span></button>
+      </sc-for>
+      <span style="flex:1"></span>
+      <sc-if value="{{ roads.on }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;align-items:center;gap:10px">
+          <sc-for list="{{ roads.groups }}" as="rg" hint-placeholder-count="2">
+            <div style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;color:var(--ui-text-2)">{{ rg.label }}</span>
+              <div style="display:flex;gap:2px;padding:2px;border-radius:6px;background:var(--ui-surface);border:1px solid var(--ui-border)"><sc-for list="{{ rg.opts }}" as="o" hint-placeholder-count="3"><button onClick="{{ o.onClick }}" style="height:20px;display:flex;align-items:center;gap:4px;padding:0 8px;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;background:{{ o.bg }};color:{{ o.fg }}" style-hover="color:var(--ui-text)"><svg width="12" height="12"><use href="{{ o.icon }}"></use></svg>{{ o.label }}</button></sc-for></div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+    </div>
+    <div style="display:flex;gap:8px;flex:1;min-height:0">
+      <sc-for list="{{ items }}" as="it" hint-placeholder-count="6">
+        <div onMouseEnter="{{ it.enter }}" onMouseLeave="{{ it.leave }}" tabindex="0" style="position:relative;flex:0 1 210px;min-width:0;display:flex;align-items:center;gap:10px;padding:0 12px;border-radius:var(--radius-md);background:var(--ui-surface);border:1px solid var(--ui-border);cursor:{{ it.cursor }}" style-hover="background:var(--ui-surface-2)" style-focus="outline:2px solid var(--ui-accent);outline-offset:1px">
+          <svg width="24" height="24" style="flex:none;color:{{ it.iconColor }}"><use href="{{ it.icon }}"></use></svg>
+          <div style="display:flex;flex-direction:column;min-width:0">
+            <span style="font-size:var(--fs-sm);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:{{ it.nameColor }}">{{ it.name }}</span>
+            <span style="font-size:var(--fs-xs);font-variant-numeric:tabular-nums;color:{{ it.priceColor }}">{{ it.price }}</span>
+          </div>
+          <sc-if value="{{ it.locked }}" hint-placeholder-val="{{ false }}"><svg width="14" height="14" style="position:absolute;top:6px;right:6px;color:var(--ui-text-2)"><use href="#ic_lock"></use></svg></sc-if>
+          <sc-if value="{{ it.tip }}" hint-placeholder-val="{{ false }}">
+            <div role="tooltip" style="position:absolute;left:0;bottom:calc(100% + 8px);min-width:240px;padding:10px 12px;border-radius:var(--radius-sm);background:var(--ui-surface-2);border:1px solid var(--ui-border);box-shadow:var(--shadow-panel);display:flex;flex-direction:column;gap:4px;z-index:5;pointer-events:none">
+              <span style="display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);font-weight:600"><svg width="14" height="14" style="color:{{ it.tipColor }}"><use href="{{ it.tipIcon }}"></use></svg>{{ it.tipTitle }}</span>
+              <span style="font-size:var(--fs-xs);color:var(--ui-text-2);font-variant-numeric:tabular-nums">{{ it.tip }}</span>
+            </div>
+          </sc-if>
+        </div>
+      </sc-for>
+      <sc-if value="{{ barEmpty }}" hint-placeholder-val="{{ false }}"><div style="flex:1;display:flex;align-items:center;gap:10px;padding:0 12px;color:var(--ui-text-2);font-size:var(--fs-sm)"><svg width="18" height="18"><use href="#ic_lock"></use></svg>{{ barEmpty }}</div></sc-if>
+    </div>
+  </footer>
+
+</div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;resolution&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;1920×1080&quot;,&quot;1280×720&quot;],&quot;default&quot;:&quot;1920×1080&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  state = { screen: 'block', st: 'normal', scale: 1, tab: 'yard', bay: 7, rtgPrio: 0, hk: true, mach: 'rtg', assign: 1, gang: 0, hoverItem: null, hoverH: null, jamClick: false, roadType: 0, roadAccess: 0, laneMode: {} };
+  wrapEl = null;
+  wrapRef = el => { if (el === this.wrapEl) return; if (this.ro) this.ro.disconnect(); this.wrapEl = el; if (el) { this.ro = new ResizeObserver(() => this.fit()); this.ro.observe(el); requestAnimationFrame(() => this.fit()); } };
+  componentDidMount() {
+    const R = window.__resources || {};
+    fetch(R.icons2 || 'design/assets-t2/icons/icons.svg').then(r => r.text()).then(t => { const o = document.getElementById('mh-icons'); if (o) o.remove(); const d = document.createElement('div'); d.id = 'mh-icons'; d.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden'; d.innerHTML = t; document.body.prepend(d); this.forceUpdate(); });
+    this.onResize = () => this.fit(); window.addEventListener('resize', this.onResize); this.fit();
+  }
+  componentDidUpdate() { this.fit(); }
+  componentWillUnmount() { this.ro && this.ro.disconnect(); window.removeEventListener('resize', this.onResize); }
+  dims() { return this.props.resolution === '1280×720' ? [1280, 720] : [1920, 1080]; }
+  fit() { const el = this.wrapEl; if (!el) { requestAnimationFrame(() => this.fit()); return; } const [W] = this.dims(); const s = Math.min(1, (el.clientWidth - 32) / W); if (s > 0 && Math.abs(s - this.state.scale) > .002) this.setState({ scale: s }); }
+
+  renderVals() {
+    const st = this.state, S = st.st, set = o => () => this.setState(o), h = React.createElement;
+    const [W, H] = this.dims();
+    const R = window.__resources || {};
+    const plug = s => R['t2/overlay/reefer_plug_' + s] || 'design/assets-t2/overlay/reefer_plug_' + s + '.svg';
+    const chip = on => on ? { bg: 'var(--ui-accent)', fg: '#0F1B27', bd: 'var(--ui-accent)' } : { bg: 'transparent', fg: 'var(--ui-text-2)', bd: 'var(--ui-border)' };
+    const seg = on => on ? { bg: 'var(--ui-surface-2)', fg: 'var(--ui-text)' } : { bg: 'transparent', fg: 'var(--ui-text-2)' };
+    const B = (k, o = {}) => ({ title: false, right: '', vfs: o.cols === 3 ? 'var(--fs-lg)' : 'var(--fs-xl)', ...o, is: { [k]: true } });
+    const TXT = { ok: 'var(--ui-success)', warn: 'var(--ui-warning)', bad: '#FF8A8E', info: 'var(--ui-info)', mute: 'var(--ui-text-2)', txt: 'var(--ui-text)' };
+    const tile = (label, value, sub = '', c = TXT.txt, sc = TXT.mute) => ({ label, value, sub, c, sc });
+    const banner = (tone, icon, head, text) => { const m = { warn: ['rgba(242,178,51,.12)', 'rgba(242,178,51,.55)', 'var(--ui-warning)'], bad: ['rgba(229,72,77,.12)', 'rgba(229,72,77,.6)', 'var(--ui-danger)'], info: ['rgba(111,183,255,.10)', 'rgba(111,183,255,.45)', 'var(--ui-info)'], ok: ['rgba(53,194,122,.10)', 'rgba(53,194,122,.45)', 'var(--ui-success)'] }[tone]; return B('banner', { bg: m[0], bd: m[1], c: m[2], icon: '#' + icon, head, text }); };
+    const row = (icon, main, sub, right, rc = TXT.mute, ic = 'var(--ui-text-2)', extra = {}) => ({ icon: '#' + icon, main, sub, right, rc, ic, chip: false, ...extra });
+    const zebra = rows => rows.map((r, i) => ({ ...r, bg: i % 2 ? 'var(--ui-surface)' : 'transparent' }));
+    const bar = (label, pct, val, c = 'var(--ui-accent)', tc = TXT.txt) => ({ label, pct: Math.max(0, Math.min(100, pct)), val, c, tc });
+    const uc = v => v >= 90 ? 'var(--ui-danger)' : v >= 75 ? 'var(--ui-warning)' : 'var(--ui-accent)';
+    const btn = (label, icon, primary) => primary ? { label, icon: '#' + icon, bg: 'var(--ui-accent)', fg: '#0F1B27', bd: 'var(--ui-accent)' } : { label, icon: '#' + icon, bg: 'var(--ui-surface-2)', fg: 'var(--ui-text)', bd: 'var(--ui-border)' };
+    const segB = (title, labels, cur, key) => B('seg', { title, opts: labels.map((l, i) => ({ label: l, onClick: set({ [key]: i }), ...seg(cur === i) })) });
+    const toggle = (icon, label, hint, on, onClick) => B('toggle', { icon: '#' + icon, label, hint, on, onClick, j: on ? 'flex-end' : 'flex-start', track: on ? 'var(--ui-accent)' : 'var(--ui-surface-2)' });
+    const badge = (t, tone) => ({ badge: t, badgeBg: { ok: 'rgba(53,194,122,.16)', warn: 'rgba(242,178,51,.16)', bad: 'rgba(229,72,77,.18)', mute: 'var(--ui-surface-2)', info: 'rgba(111,183,255,.16)' }[tone], badgeFg: TXT[tone] });
+
+    const SCREENS = [['build', 'BuildBar'], ['block', 'Inšpektor bloku'], ['machine', 'Inšpektor stroja'], ['gate', 'Inšpektor brány'], ['truck', 'Inšpektor kamióna'], ['landside', 'Panel landside'], ['reefer', 'Panel reeferov'], ['contract', 'Karta kontraktu'], ['toasts', 'Toasty a zápcha'], ['stats', 'Štatistiky']];
+    const screenChips = SCREENS.map(([k, l], i) => ({ label: (i + 1) + ' · ' + l, onClick: set({ screen: k, jamClick: false, hoverItem: null }), ...chip(st.screen === k) }));
+    const stateChips = [['empty', 'Prázdny'], ['normal', 'Bežný'], ['warning', 'Varovanie']].map(([k, l]) => ({ label: l, onClick: set({ st: k, jamClick: false }), ...chip(S === k) }));
+    const hb = (icon, title, scr) => ({ icon: '#' + icon, title, onClick: set({ screen: scr }), ...(st.screen === scr ? { bg: 'var(--ui-surface-2)', fg: 'var(--ui-text)', bd: 'var(--ui-border)' } : { bg: 'transparent', fg: 'var(--ui-text-2)', bd: 'transparent' }) });
+    const hudButtons = [hb('ic_contract', 'Kontrakty', 'contract'), hb('ic_gate_in', 'Landside', 'landside'), hb('ic_plug', 'Reefery', 'reefer'), hb('ic_utilization', 'Štatistiky', 'stats'), hb('ic_settings', 'Nastavenia', 'none')];
+
+    // ===== BuildBar
+    const cash = S === 'empty' && st.screen === 'build' ? 0 : 2840500;
+    const $ = n => '$' + Math.round(n).toLocaleString('en-US');
+    const CAT = [['quay', 'Nábrežie', 'ic_berth'], ['yard', 'Sklad', 'ic_yard'], ['land', 'Landside', 'ic_gate_in'], ['tech', 'Technika', 'ic_tractor'], ['roads', 'Cesty', 'ic_road'], ['rail', 'Železnica', 'ic_rail_station', true]];
+    const tabs = CAT.map(([k, l, ic, locked], i) => ({ label: l, icon: '#' + ic, key: String(i + 1), locked: !!locked, onClick: set({ tab: k, hoverItem: null }), ...seg(st.tab === k), fg: locked ? 'var(--ui-text-3)' : st.tab === k ? 'var(--ui-text)' : 'var(--ui-text-2)' }));
+    const BI = {
+      quay: [['Kotvisko 8×4', 'ic_berth', 400000, '8×4'], ['STS žeriav', 'ic_crane', 600000, '3×10'], ['Kotvisko hlbokovodné', 'ic_berth', 1450000, '8×4', 'Hlbokovodné kotvisko', 240]],
+      yard: [['RTG blok', 'ic_rtg', 180000, '12 bays × 6 radov'], ['Straddle blok', 'ic_straddle', 140000, '8 radov · výška 3'], ['Plocha reach stackera', 'ic_reach_stacker', 60000, '3 rady do hĺbky'], ['Reefer blok', 'ic_reefer', 260000, 'stojany so zásuvkami'], ['Depo prázdnych', 'ic_ech', 90000, 'výška 8'], ['OOG plocha', 'ic_flat_rack', 50000, 'len na zemi']],
+      land: [['Vstupný pruh', 'ic_gate_in', 45000, '1×4'], ['Výstupný pruh', 'ic_gate_out', 52000, '1×4 · váha'], ['Predbránový pruh', 'ic_one_way', 8000, '1×6'], ['Odstavná plocha', 'ic_holding', 36000, '6×5'], ['Parkovisko techniky', 'ic_tractor', 24000, '4×4']],
+      tech: [['Terminálový ťahač', 'ic_tractor', 85000, '1×1 + podvozok'], ['Straddle carrier', 'ic_straddle', 420000, '1×2'], ['RTG', 'ic_rtg', 1200000, '5×2'], ['Reach stacker', 'ic_reach_stacker', 380000, '1×2'], ['ECH', 'ic_ech', 260000, '1×2'], ['AGV', 'ic_agv', 310000, '1×3', 'Automatizácia I', 180]],
+      roads: [['Cesta', 'ic_road', 600, '/ bunka']],
+      rail: []
+    };
+    const forceTip = st.screen === 'build' && S === 'warning' && st.tab === 'tech' ? 5 : null;
+    const items = BI[st.tab].map(([name, icon, price, dim, lock, xp], i) => { const locked = !!lock, poor = !locked && price > cash, hov = st.hoverItem === i || forceTip === i;
+      return { name, icon: '#' + icon, price: $(price) + ' · ' + dim, locked, iconColor: locked ? 'var(--ui-text-3)' : 'var(--ui-text)', nameColor: locked ? 'var(--ui-text-2)' : 'var(--ui-text)', priceColor: poor ? 'var(--ui-money-neg)' : 'var(--ui-text-2)', cursor: locked || poor ? 'not-allowed' : 'pointer',
+        enter: () => this.setState({ hoverItem: i }), leave: () => this.setState({ hoverItem: null }),
+        tip: hov && locked ? 'Vyžaduje technológiu ' + lock + ' · ' + xp + ' XP' : hov && poor ? 'Chýba ' + $(price - cash) : false, tipTitle: locked ? 'Zamknuté' : 'Nedostatok peňazí', tipIcon: locked ? '#ic_lock' : '#ic_cash', tipColor: locked ? 'var(--ui-text-2)' : 'var(--ui-danger)' }; });
+    const barEmpty = st.tab === 'rail' ? 'Železnica je zamknutá · vyžaduje technológiu Železničný terminál · 300 XP' : false;
+    const rOpt = (labels, icons, cur, key) => labels.map((l, i) => ({ label: l, icon: '#' + icons[i], onClick: set({ [key]: i }), ...seg(cur === i) }));
+    const roads = { on: st.tab === 'roads', groups: [{ label: 'Typ', opts: rOpt(['Dvojpruhová', 'Jednopruhová', 'Jednosmerná'], ['ic_road', 'ic_road', 'ic_one_way'], st.roadType, 'roadType') }, { label: 'Prístup', opts: rOpt(['Všetci', 'Len technika', 'Len kamióny'], ['ic_check', 'ic_terminal_only', 'ic_truck'], st.roadAccess, 'roadAccess') }] };
+
+    // ===== Bay grid
+    const TY = { b: ['#549DE5', 'ic_container_40', '#0F1B27', 'dry · line-blue'], a: ['#CB882E', 'ic_container_40', '#0F1B27', 'dry · line-amber'], t: ['#00B1AA', 'ic_container_40', '#0F1B27', 'dry · line-teal'], e: ['#6E7783', 'ic_container_40', '#ECEFF3', 'empty'], r: ['#ECEFF3', 'ic_reefer', '#2C3E50', 'reefer'], o: ['#5D7A8C', 'ic_open_top', '#ECEFF3', 'open top'], k: ['#B8BEC7', 'ic_tank', '#2C3E50', 'tank 20′'] };
+    const BAYS = { normal: ['abtber', 'rbatab', 'tbr ab', 'abt e ', 'b  t  '], warning: ['abtbea', 'rbatab', 'tbrbab', 'abtreb', 'brata '], empty: ['      ', '      ', '      ', '      ', '      '] };
+    const shift = st.bay % 3;
+    const rowsB = BAYS[S].map(r => r.slice(shift) + r.slice(0, shift));
+    const buried = S === 'empty' ? null : S === 'warning' ? [[1, 2], [2, 0], [3, 4]] : [[2, 3]];
+    const cells = [];
+    for (let lv = 4; lv >= 0; lv--) for (let c = 0; c < 6; c++) {
+      const ch = rowsB[lv][c], filled = ch && ch !== ' ', below = lv === 0 || rowsB[lv - 1][c] !== ' ';
+      const isB = buried && buried.some(([cc, ll]) => cc === c && ll === lv) && filled;
+      const ty = filled ? TY[ch] : null;
+      const plugS = ty && ch === 'r' ? (S === 'warning' && c === 0 && lv === 3 ? 'alarm' : S === 'warning' && lv === 1 ? 'off' : 'on') : false;
+      cells.push(filled && below ? { bg: ty[0], fg: ty[2], icon: '#' + ty[1], bd: '1px solid rgba(0,0,0,.35)', ol: isB ? '2px dashed var(--ui-warning)' : 'none', plug: plugS ? plug(plugS) : false, tip: ty[3] + ' · R' + (c + 1) + ' · v' + (lv + 1) + (isB ? ' · zavalený' : '') }
+        : { bg: 'transparent', fg: 'transparent', icon: false, bd: '1px dashed rgba(233,228,214,.18)', ol: 'none', plug: false, tip: 'voľné · R' + (c + 1) + ' · v' + (lv + 1) });
+    }
+    const bayB = B('bay', { title: 'Pohľad na bay zboku', right: 'rady × výška', bay: st.bay, cells, onBay: e => this.setState({ bay: +e.target.value }), prev: () => this.setState(s => ({ bay: Math.max(1, s.bay - 1) })), next: () => this.setState(s => ({ bay: Math.min(12, s.bay + 1) })),
+      legend: [{ name: 'dry (farba linky)', c: '#549DE5', ol: 'none' }, { name: 'reefer', c: '#ECEFF3', ol: 'none' }, { name: 'empty', c: '#6E7783', ol: 'none' }, { name: 'open top', c: '#5D7A8C', ol: 'none' }, { name: 'zavalený', c: 'transparent', ol: '2px dashed var(--ui-warning)' }] });
+
+    // ===== Charts
+    const lineChart = (series, max, target, labels) => { const w = 306, hh = 120, x0 = 28, cw = w - x0 - 4, n = series[0].d.length, px = i => x0 + i * cw / (n - 1), py = v => 104 - v / max * 96, kids = [];
+      [0, .5, 1].forEach((f, i) => { const y = py(max * f); kids.push(h('line', { key: 'g' + i, x1: x0, x2: w - 4, y1: y, y2: y, style: { stroke: 'var(--ui-border)' } }), h('text', { key: 't' + i, x: x0 - 5, y: y + 3, textAnchor: 'end', style: { fill: 'var(--ui-text-3)', fontSize: 10 } }, Math.round(max * f))); });
+      if (target) kids.push(h('line', { key: 'tg', x1: x0, x2: w - 4, y1: py(target), y2: py(target), style: { stroke: 'var(--ui-warning)', strokeDasharray: '4 3' } }));
+      series.forEach((s, k) => kids.push(h('path', { key: 's' + k, d: s.d.map((v, i) => (i ? 'L' : 'M') + px(i).toFixed(1) + ' ' + py(v).toFixed(1)).join(''), style: { fill: 'none', stroke: s.c, strokeWidth: 2, strokeLinejoin: 'round' } })));
+      if (st.hoverH != null) { const i = st.hoverH; kids.push(h('line', { key: 'hv', x1: px(i), x2: px(i), y1: 8, y2: 104, style: { stroke: 'var(--ui-text-3)' } })); series.forEach((s, k) => kids.push(h('circle', { key: 'c' + k, cx: px(i), cy: py(s.d[i]), r: 3.5, style: { fill: s.c } }))); }
+      for (let i = 0; i < n; i++) kids.push(h('rect', { key: 'r' + i, x: px(i) - cw / (n - 1) / 2, y: 0, width: cw / (n - 1), height: hh, style: { fill: 'transparent' }, onMouseEnter: () => this.setState({ hoverH: i }), onMouseLeave: () => this.setState({ hoverH: null }) }));
+      labels.forEach(([i, t]) => kids.push(h('text', { key: 'l' + i, x: px(i), y: 117, textAnchor: 'middle', style: { fill: 'var(--ui-text-3)', fontSize: 10 } }, t)));
+      return h('svg', { viewBox: `0 0 ${w} ${hh}`, style: { display: 'block', width: '100%', height: 'auto' } }, kids); };
+
+    // ===== Screens
+    let ph = { title: '', sub: '', icon: '#ic_info', badge: false }, blocks = [], hasPanel = true;
+    const sc = st.screen;
+    if (sc === 'build' || sc === 'toasts') hasPanel = false;
+
+    if (sc === 'block') {
+      const emp = S === 'empty', wr = S === 'warning';
+      ph = { title: 'RTG blok B2', sub: 'BLK-02 · 12 bays × 6 radov · výška 5', icon: '#ic_rtg', ...(emp ? badge('Prázdny', 'mute') : wr ? badge('Takmer plný', 'warn') : badge('V prevádzke', 'ok')) };
+      blocks = [
+        ...(wr ? [banner('warn', 'ic_rehandle', 'Vysoký rehandling', 'Na jeden presun pripadá 0,81 prekladania. Zapni housekeeping alebo uprav prioritu RTG na kamióny.')] : []),
+        B('tiles', { cols: 3, items: [tile('Obsadenosť TEU', emp ? '0' : wr ? '1 382' : '1 064', emp ? '0 % z 1 440' : wr ? '96 % z 1 440' : '74 % z 1 440', TXT.txt, wr ? TXT.warn : TXT.mute), tile('Rehandling / presun', emp ? '—' : wr ? '0,81' : '0,32', emp ? '' : wr ? '▲ 0,27' : '▼ 0,04', wr ? TXT.warn : TXT.txt, wr ? TXT.bad : TXT.ok), tile('Priradené RTG', emp ? '0' : '2', emp ? 'žiadne' : 'RTG-03, 04')] }),
+        ...(emp ? [B('empty', { icon: '#ic_container_40', head: 'Blok je prázdny', text: 'Kontajnery sem začnú prichádzať po priradení RTG a prijatí kontraktu.' })] : [bayB]),
+        segB('Priorita RTG', ['Loď', 'Vlak', 'Kamión'], st.rtgPrio, 'rtgPrio'),
+        toggle('ic_rehandle', 'Housekeeping', 'v nečinnosti RTG preskladá stohy podľa odvozu', st.hk, () => this.setState(s => ({ hk: !s.hk }))),
+        B('buttons', { items: [btn('Priradiť RTG', 'ic_rtg', true), btn('Upraviť blok', 'ic_build', false)] })
+      ];
+    }
+    if (sc === 'machine') {
+      const emp = S === 'empty', wr = S === 'warning';
+      const MT = [['rtg', 'RTG', 'ic_rtg', 'RTG-03'], ['tractor', 'Ťahač', 'ic_tractor', 'TT-12'], ['straddle', 'Straddle', 'ic_straddle', 'SC-04'], ['rs', 'RS', 'ic_reach_stacker', 'RS-01'], ['ech', 'ECH', 'ic_ech', 'ECH-02']];
+      const m = MT.find(x => x[0] === st.mach);
+      ph = { title: m[1] === 'RS' ? 'Reach stacker' : m[1] === 'Ťahač' ? 'Terminálový ťahač' : m[1] === 'Straddle' ? 'Straddle carrier' : m[1], sub: m[3] + (st.mach === 'rtg' ? ' · blok B' + (st.assign + 1) : ''), icon: '#' + m[2], ...(emp ? badge('Nečinný', 'mute') : wr ? badge('Čaká', 'warn') : badge('Pracuje', 'ok')) };
+      const Q = { rtg: [['ic_truck', 'Kamión TRK-2041 → TP 3', 'naložiť 40′ dry · bay 7 R2'], ['ic_rehandle', 'Prekladanie bay 7', 'R3 v4 → R5 v2'], ['ic_tractor', 'Ťahač TT-08 → TP 1', 'vyložiť 40′ reefer'], ['ic_truck', 'Kamión TRK-2066 → TP 5', 'vyložiť 20′ tank'], ['ic_train', 'Vlak V-112', 'naložiť 40′ dry · bay 2']], tractor: [['ic_crane', 'STS-02 → blok B2 TP 3', '40′ dry · line-blue'], ['ic_crane', 'STS-02 → blok B4 TP 1', '40′ reefer'], ['ic_rtg', 'blok B2 → STS-02', '20′ tank'], ['ic_crane', 'STS-02 → blok B1', '40′ dry'], ['ic_rtg', 'blok B4 → STS-02', '40′ empty']] };
+      const q = Q[st.mach === 'rtg' ? 'rtg' : 'tractor'];
+      blocks = [
+        segB(false, MT.map(x => x[1]), MT.findIndex(x => x[0] === st.mach), '_m'),
+        ...(wr ? [banner('warn', 'ic_clock', st.mach === 'rtg' ? 'Čaká na kamión' : 'Čaká na STS', '38 % času za poslednú hodinu stojí. Najčastejšia príčina: kamión ešte neprešiel bránou.')] : []),
+        B('tiles', { cols: 3, items: [tile('Presuny / h', emp ? '0' : wr ? '11' : '19', emp ? '' : wr ? '▼ 8' : '▲ 2', TXT.txt, wr ? TXT.bad : TXT.ok), tile('Čakanie', emp ? '100 %' : wr ? '38 %' : '9 %', '', wr ? TXT.warn : TXT.txt), tile('Najazdené', emp ? '0 km' : '14,2 km', 'dnes')] }),
+        ...(emp ? [B('empty', { icon: '#ic_idle', head: 'Žiadne úlohy', text: 'Stroj čaká na prvú úlohu. Prideľ ho k bloku alebo ku gangu STS.' })] : [B('move', { title: 'Aktuálny presun', from: st.mach === 'rtg' ? 'Bay 7 · R2 · v3' : 'STS-02 · pruh 1', to: st.mach === 'rtg' ? 'Kamión TRK-2041 · TP 3' : 'Blok B2 · TP 3', cicon: '#ic_container_40', ctype: '40′ dry', cc: '#549DE5' }), B('list', { title: 'Fronta úloh', right: '5 ďalších', rows: zebra(q.map(([ic, a, b2], i) => row(ic.slice(1) === 'c_' ? ic : ic.replace('#', ''), a, b2, (i + 1) + '.'))) })]),
+        ...(st.mach === 'rtg' ? [segB('Pridelenie k bloku', ['B1', 'B2', 'B3', 'B4'], st.assign, 'assign')] : st.mach === 'tractor' ? [segB('Režim', ['Gang STS-02', 'Pool'], st.gang, 'gang')] : [])
+      ];
+      blocks[0] = { ...blocks[0], opts: blocks[0].opts.map((o, i) => ({ ...o, onClick: set({ mach: MT[i][0] }) })) };
+    }
+    if (sc === 'gate') {
+      const emp = S === 'empty', wr = S === 'warning';
+      ph = { title: 'Brána G-1', sub: 'GATE-01 · 8 vstupných · 4 výstupné', icon: '#ic_gate_in', ...(emp ? badge('Bez prevádzky', 'mute') : wr ? badge('Preplnená', 'bad') : badge('V prevádzke', 'ok')) };
+      const ST = emp ? 'vvvvvvvvvvvv' : wr ? 'sspsssspsssp' : 'svsvssvvsvsv';
+      const modes = ['Štandard', 'Express', 'Trouble'];
+      const lanes = Array.from({ length: 12 }, (_, i) => { const isIn = i < 8, k = ST[i], mi = st.laneMode[i] ?? (i === 7 ? 2 : i === 0 ? 1 : 0);
+        return row(isIn ? 'ic_gate_in' : 'ic_gate_out', (isIn ? 'IN-' + (i + 1) : 'OUT-' + (i - 7)), k === 'p' ? (isIn ? 'OCR nečitateľné · čaká na kontrolu' : 'Plomba nesedí') : k === 's' ? (isIn ? 'Spracúva · 0:48' : 'Váženie · 0:31') : 'Voľný', k === 'p' ? 'Problém' : k === 's' ? 'Spracúva' : 'Voľný', k === 'p' ? TXT.bad : k === 's' ? TXT.info : TXT.ok, k === 'p' ? 'var(--ui-danger)' : 'var(--ui-text-2)', { chip: modes[mi], onChip: () => this.setState(s => ({ laneMode: { ...s.laneMode, [i]: (mi + 1) % 3 } })) }); });
+      blocks = [
+        ...(wr ? [banner('bad', 'ic_traffic_jam', 'Front v predbránovej ploche', '23 kamiónov čaká, odhad 41 min. Prepni pruh IN-8 z režimu Trouble na Štandard alebo pridaj vstupné pruhy.')] : []),
+        B('tiles', { cols: 3, items: [tile('Front', emp ? '0' : wr ? '23' : '4', 'kamiónov', wr ? TXT.bad : TXT.txt), tile('Čas prechodu', emp ? '—' : wr ? '4:52' : '2:10', 'min · priemer', wr ? TXT.warn : TXT.txt), tile('Kamióny / h', emp ? '0' : wr ? '38' : '64', emp ? '' : wr ? '▼ 26' : '▲ 6', TXT.txt, wr ? TXT.bad : TXT.ok)] }),
+        B('list', { title: 'Pruhy', right: 'klik na režim prepína', rows: zebra(lanes) }),
+        B('buttons', { items: [btn('Pridať pruh', 'ic_build', true), btn('Ukázať front', 'ic_inspect', false)] })
+      ];
+    }
+    if (sc === 'truck') {
+      const emp = S === 'empty', wr = S === 'warning';
+      ph = { title: 'Kamión TRK-2041', sub: 'externý · 40′ dry · portál Sever', icon: '#ic_truck', ...(emp ? badge('Pred bránou', 'info') : wr ? badge('Mešká', 'bad') : badge('V termináli', 'ok')) };
+      const step = (state, icon, label, sub, time) => ({ icon: '#' + (state === 'done' ? 'ic_check' : icon), label, sub, time, dot: state === 'done' ? 'var(--ui-success)' : state === 'cur' ? (wr ? 'var(--ui-warning)' : 'var(--ui-accent)') : 'var(--ui-surface-2)', ring: state === 'cur' ? '0 0 0 3px rgba(58,160,255,.25)' : 'none', line: state === 'done' ? 'var(--ui-success)' : 'var(--ui-border)', fg: state === 'todo' ? 'var(--ui-text-2)' : 'var(--ui-text)' });
+      blocks = [
+        banner(emp ? 'info' : wr ? 'warn' : 'info', emp ? 'ic_one_way' : wr ? 'ic_clock' : 'ic_safe_zone', emp ? 'V predbránovej ploche' : wr ? 'Čaká na RTG · 21 min' : 'Šofér v bezpečnej zóne', emp ? 'Pruh P-3, druhý v rade. Termín 14:30–15:00.' : wr ? 'RTG-03 obsluhuje loď (priorita Loď). Termín odvozu vyprší o 9 min.' : 'RTG-03 nakladá 40′ dry na náves. Potom zaistí twistlocky a odíde k výstupnej bráne.'),
+        B('kv', { title: 'Misia', rows: [{ k: 'Typ', v: 'Vyzdvihnutie importu', c: TXT.txt }, { k: 'Kontajner', v: 'MSKU 412 038 · 40′ dry', c: TXT.txt }, { k: 'Termín', v: '14:30–15:00', c: wr ? TXT.bad : TXT.txt }] }),
+        B('steps', { title: 'Lístok', rows: [step(emp ? 'cur' : 'done', 'ic_gate_in', 'Vstupná brána · IN-3', 'OCR a plomba OK', emp ? '—' : '14:02'), step(emp ? 'todo' : 'cur', 'ic_tp', 'Blok B2 · TP 3', 'bay 7 · R2', emp ? '' : wr ? 'čaká 21 min' : '14:09'), step('todo', 'ic_gate_out', 'Výstupná brána · váha a skener', 'OUT-1 až OUT-4', '')] }),
+        B('tiles', { cols: 3, items: [tile('Čas v termináli', emp ? '0 min' : wr ? '71 min' : '18 min', 'TTT · cieľ 45', wr ? TXT.bad : TXT.txt), tile('Čakanie', emp ? '6 min' : wr ? '38 min' : '4 min', emp ? 'pred bránou' : 'z toho', wr ? TXT.warn : TXT.txt), tile('Stav', emp ? 'Front' : wr ? 'Čaká' : 'Nakládka', '', TXT.txt)] })
+      ];
+    }
+    if (sc === 'landside') {
+      const emp = S === 'empty', wr = S === 'warning';
+      ph = { title: 'Landside', sub: 'štatistiky · posledných 24 h', icon: '#ic_gate_in', ...(wr ? badge('TTT nad cieľom', 'warn') : {}) };
+      const avg = emp ? Array(13).fill(0) : wr ? [34, 31, 29, 30, 36, 44, 52, 58, 63, 66, 61, 57, 55] : [28, 26, 25, 27, 31, 35, 38, 41, 39, 36, 34, 33, 32];
+      const p95 = emp ? Array(13).fill(0) : avg.map((v, i) => Math.round(v * (wr ? 1.55 : 1.45) + (i % 3)));
+      const hlab = st.hoverH != null ? String(st.hoverH * 2).padStart(2, '0') + ':00 · ø ' + avg[st.hoverH] + ' · p95 ' + p95[st.hoverH] + ' min' : 'cieľ 45 min';
+      blocks = [
+        ...(emp ? [B('empty', { icon: '#ic_truck', head: 'Zatiaľ žiadne kamióny', text: 'Štatistiky landside sa naplnia po prvých termínoch odvozu.' })] : [
+          B('tiles', { cols: 3, items: [tile('TTT priemer', wr ? '52 min' : '33 min', wr ? '▲ 14 min' : '▼ 3 min', wr ? TXT.warn : TXT.txt, wr ? TXT.bad : TXT.ok), tile('TTT p95', wr ? '97 min' : '58 min', '', wr ? TXT.bad : TXT.txt), tile('Front pred bránami', wr ? '23' : '4', 'kamiónov', wr ? TXT.bad : TXT.txt)] }),
+          B('chart', { title: 'TTT za 24 h', right: hlab, el: lineChart([{ d: p95, c: 'var(--ui-xp)' }, { d: avg, c: 'var(--ui-accent)' }], wr ? 120 : 80, 45, [[0, '00'], [3, '06'], [6, '12'], [9, '18'], [12, '24']]), legend: [{ name: 'priemer', c: 'var(--ui-accent)' }, { name: 'p95', c: 'var(--ui-xp)' }, { name: 'cieľ', c: 'var(--ui-warning)' }] }),
+          B('bars', { title: 'Termíny', items: [bar('Včas', wr ? 71 : 92, wr ? '71 %' : '92 %', 'var(--ui-success)'), bar('Neskoro', wr ? 29 : 8, wr ? '29 %' : '8 %', 'var(--ui-danger)', wr ? TXT.bad : TXT.txt)] }),
+          B('bars', { title: 'Kamióny teraz', items: [bar('Predbránová', wr ? 100 : 25, wr ? '23' : '4', wr ? 'var(--ui-danger)' : 'var(--ui-accent)'), bar('Odstavná', wr ? 83 : 33, wr ? '5 / 6' : '2 / 6'), bar('Portál Sever', 60, '12'), bar('Portál Západ', 40, '8'), bar('Portál Juh', 25, '5')] })])
+      ];
+    }
+    if (sc === 'reefer') {
+      const emp = S === 'empty', wr = S === 'warning';
+      ph = { title: 'Reefery', sub: 'zásuvky a napájanie', icon: '#ic_plug', ...(wr ? badge('Alarm', 'bad') : emp ? {} : badge('OK', 'ok')) };
+      const cd = (id, temp, left, pct, tone) => row('ic_reefer', id + ' · ' + temp, 'bez napájania · limit ' + left, left, tone === 'bad' ? TXT.bad : tone === 'warn' ? TXT.warn : TXT.mute, tone === 'bad' ? 'var(--ui-danger)' : 'var(--ui-text-2)');
+      blocks = emp ? [B('tiles', { cols: 2, items: [tile('Zásuvky', '0 / 96', 'obsadené / celkom'), tile('Energia', '$0', 'za deň')] }), B('empty', { icon: '#ic_reefer', head: 'Žiadne reefery', text: 'Reefer bloky sú pripravené. Prvé reefery prídu s kontraktom, ktorý ich obsahuje.' })] : [
+        ...(wr ? [banner('bad', 'ic_warning', 'Zásuvky plné · 7 reeferov bez napájania', 'Najbližší limit o 18 min. Postav ďalší reefer blok alebo uprednostni odvoz reeferov.')] : []),
+        B('tiles', { cols: 2, items: [tile('Zásuvky', wr ? '96 / 96' : '84 / 96', 'obsadené / celkom', wr ? TXT.bad : TXT.txt), tile('Bez napájania', wr ? '7' : '2', 'čaká na zásuvku', wr ? TXT.bad : TXT.warn), tile('Alarmy', wr ? '3' : '0', 'teplota mimo rozsahu', wr ? TXT.bad : TXT.txt), tile('Energia', wr ? '$5,180' : '$4,320', 'za deň')] }),
+        B('bars', { title: 'Obsadenosť zásuviek', items: [bar('Reefer blok R1', wr ? 100 : 92, wr ? '48 / 48' : '44 / 48', uc(wr ? 100 : 92)), bar('Reefer blok R2', wr ? 100 : 83, wr ? '48 / 48' : '40 / 48', uc(wr ? 100 : 83))] }),
+        B('list', { title: 'Bez napájania', right: 'odpočet do limitu', rows: zebra(wr ? [cd('MSKU 412 038', '−18 °C', '18 min', 0, 'bad'), cd('CMAU 771 204', '−25 °C', '34 min', 0, 'bad'), cd('MEDU 300 116', '+4 °C', '1 h 10', 0, 'warn'), cd('HLXU 528 991', '+2 °C', '1 h 45', 0, 'warn'), cd('TGHU 004 772', '−18 °C', '2 h 20', 0, 'mute')] : [cd('MEDU 300 116', '+4 °C', '1 h 50', 0, 'warn'), cd('HLXU 528 991', '+2 °C', '2 h 40', 0, 'mute')]) }),
+        ...(wr ? [B('list', { title: 'Alarmy', rows: zebra([row('ic_warning', 'SUDU 618 220 · −14 °C', 'cieľ −18 °C · agregát', 'R1 · bay 3', TXT.bad, 'var(--ui-danger)'), row('ic_warning', 'MNBU 902 117 · +9 °C', 'cieľ +4 °C', 'R2 · bay 8', TXT.bad, 'var(--ui-danger)'), row('ic_warning', 'CXRU 145 300 · −21 °C', 'kolísanie', 'R2 · bay 1', TXT.warn, 'var(--ui-warning)')]) })] : [])
+      ];
+    }
+    if (sc === 'contract') {
+      const emp = S === 'empty', wr = S === 'warning';
+      ph = { title: 'Kontrakty', sub: 'ponuky · 2', icon: '#ic_contract' };
+      const T = (icon, name, n, c) => ({ icon: '#' + icon, name, n: String(n), c, op: n ? 1 : .35 });
+      const card = (o) => ({ bd: o.warn ? 'rgba(242,178,51,.6)' : 'var(--ui-border)', warn: false, rc: TXT.txt, ...o });
+      blocks = emp ? [B('empty', { icon: '#ic_contract', head: 'Žiadne ponuky', text: 'Ďalšia ponuka príde o 2 dni. Vyššia reputácia prináša viac ponúk a väčšie lode.' })] : [B('cards', { cards: [
+        card({ title: 'Import · MSC Aurora', meta: 'Panamax · kotvisko K1 · deň 25', reward: '+$412,000', sizes: [{ icon: '#ic_container_20', label: '20′ × 120' }, { icon: '#ic_container_40', label: '40′ × 340' }], types: [T('ic_container_40', 'dry', 386, '#549DE5'), T('ic_reefer', 'reefer', 48, '#ECEFF3'), T('ic_open_top', 'open top', 12, '#5D7A8C'), T('ic_tank', 'tank', 14, '#B8BEC7')], window: 'deň 26–29 · 06:00–22:00', reefers: wr ? '48 · voľných zásuviek 12' : '48 · voľných zásuviek 52', rc: wr ? TXT.bad : TXT.txt, sla: '4 dni', warn: wr ? 'Nedostatok zásuviek: treba 48, voľných 12. 36 reeferov by ostalo bez napájania.' : false }),
+        card({ title: 'Export · Maersk Kobe', meta: 'Handy · kotvisko K2 · deň 27', reward: '+$186,000', sizes: [{ icon: '#ic_container_20', label: '20′ × 60' }, { icon: '#ic_container_40', label: '40′ × 110' }], types: [T('ic_container_40', 'dry', 152, '#CB882E'), T('ic_reefer', 'reefer', 0, '#ECEFF3'), T('ic_flat_rack', 'flat rack', 8, '#5C626B'), T('ic_tank', 'tank', 10, '#B8BEC7')], window: 'dovoz do deň 26 · 08:00–20:00', reefers: '0', sla: '3 dni' })
+      ] })];
+    }
+    if (sc === 'stats') {
+      const emp = S === 'empty', wr = S === 'warning';
+      ph = { title: 'Štatistiky', sub: 'terminál · posledných 24 h', icon: '#ic_utilization' };
+      blocks = emp ? [B('tiles', { cols: 2, items: [tile('STS presuny / h', '—'), tile('RTG presuny / h', '—'), tile('Rehandling / presun', '—'), tile('Udalosti zápch', '0')] }), B('empty', { icon: '#ic_utilization', head: 'Zatiaľ bez dát', text: 'Štatistiky sa zbierajú od prvej vykládky lode.' }), B('legend', { title: 'Heatmapa čakania' })] : [
+        B('tiles', { cols: 2, items: [tile('STS presuny / h', wr ? '22' : '31', wr ? '▼ 9 · cieľ 30' : '▲ 2 · cieľ 30', wr ? TXT.warn : TXT.txt, wr ? TXT.bad : TXT.ok), tile('RTG presuny / h', wr ? '14' : '18', 'na stroj'), tile('Rehandling / presun', wr ? '0,62' : '0,32', wr ? '▲ 0,30' : '▼ 0,04', wr ? TXT.warn : TXT.txt, wr ? TXT.bad : TXT.ok), tile('Udalosti zápch', wr ? '11' : '2', 'za 24 h', wr ? TXT.bad : TXT.txt)] }),
+        B('bars', { title: 'STS presuny / h', items: [bar('STS-01', (wr ? 24 : 33) / 40 * 100, wr ? '24' : '33'), bar('STS-02', (wr ? 19 : 30) / 40 * 100, wr ? '19' : '30'), bar('STS-03', (wr ? 23 : 29) / 40 * 100, wr ? '23' : '29')] }),
+        B('bars', { title: 'RTG presuny / h', items: [bar('RTG-03 · B2', (wr ? 12 : 19) / 30 * 100, wr ? '12' : '19'), bar('RTG-04 · B2', (wr ? 15 : 18) / 30 * 100, wr ? '15' : '18'), bar('RTG-05 · B4', (wr ? 16 : 17) / 30 * 100, wr ? '16' : '17')] }),
+        B('list', { title: 'Udalosti zápch', right: wr ? '11 · posledné 4' : '2', rows: zebra((wr ? [['14:12', 'Križovatka X7 · 9 vozidiel', '8 min'], ['13:40', 'Pruh bloku B2 · 5 vozidiel', '6 min'], ['12:55', 'Predbránová plocha · 23 kamiónov', '41 min'], ['11:20', 'Kotvisko K1 · obchádzka', '4 min']] : [['11:20', 'Kotvisko K1 · obchádzka', '4 min'], ['08:05', 'Križovatka X7 · 4 vozidlá', '2 min']]).map(([t, a, d]) => row('ic_traffic_jam', a, t, d, TXT.mute, wr ? 'var(--ui-danger)' : 'var(--ui-warning)'))) }),
+        B('legend', { title: 'Heatmapa čakania', right: 'čas státia na bunke' })
+      ];
+    }
+
+    // ===== Toasts & jam
+    const jamOn = sc === 'toasts' && (S === 'warning' || st.jamClick);
+    const TT = [['--ui-danger', 'ic_traffic_jam', 'Zápcha', 'Križovatka X7 · 7 vozidiel · 6 min', 'Ukázať', set({ jamClick: true })], ['--ui-danger', 'ic_reefer', 'Reefer alarm', 'SUDU 618 220 · −14 °C · blok R1 bay 3', 'Ukázať', set({ screen: 'reefer', st: 'warning' })], ['--ui-warning', 'ic_plug', 'Zásuvky plné', '96 / 96 · 7 reeferov bez napájania', 'Otvoriť panel', set({ screen: 'reefer', st: 'warning' })], ['--ui-warning', 'ic_gate_in', 'Brána preplnená', 'G-1 · front 23 kamiónov · odhad 41 min', 'Ukázať', set({ screen: 'gate', st: 'warning' })]];
+    const toasts = (sc === 'toasts' ? (S === 'empty' ? [] : S === 'normal' ? TT.slice(0, 2) : TT) : []).map(([c, ic, title, text, action, onShow]) => ({ c, icon: '#' + ic, title, text, action, onShow }));
+    const jam = { on: jamOn, cells: [[12, 7], [13, 7], [14, 7], [14, 8], [14, 9], [11, 7], [14, 6]].map(([x, y]) => ({ x: x * 64, y: y * 64 })), lx: 15 * 64 + 8, ly: 7 * 64 + 16 };
+
+    return {
+      screenChips, stateChips, hudButtons, wrapRef: this.wrapRef, W, H, scale: st.scale, stageH: Math.round(H * st.scale),
+      cashLabel: $(cash), tabs, items, barEmpty, roads, barBd: sc === 'build' ? 'var(--ui-accent)' : 'var(--ui-border)',
+      hasPanel, ph, blocks, toasts, showToasts: toasts.length > 0, toastRight: hasPanel ? 384 : 12, jam
+    };
+  }
+}
+</script>
+</body>
+</html>

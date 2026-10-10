@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "contract_templates.json",
+  "description": "Katalóg šablón kontraktov (ARCHITECTURE §4.6, §9.1; F5): { schemaVersion, items: [...] }. Z šablón generuje pool ponuky. Jedinečnosť `id` v items[] a poradie `min ≤ max` v rozsahoch schéma nevyjadrí — kontroluje ich DefRegistry a `pnpm validate:defs`; tá overí aj krížové vzťahy (`cargoTypeId` v cargo_types.json, `shipClassIds` v ships.json, `volumeUnitsRange[1]` a `exportVolumeUnitsRange[1]` ≤ najmenšia kapacita lodí šablóny, `exportPricePerUnitCents` > 0 pri exporte a roundtripe). Pole `kind` (F6a, ADR-032): chýba = import; polia `destinationPorts` a `exportVolumeUnitsRange` podľa druhu vyjadruje schéma (`allOf` / `if`).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "items"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Verzia schémy defu."
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/template" },
+      "description": "Šablóny kontraktov v poradí súboru."
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "snake_case identifikátor."
+    },
+    "intRange": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "type": "integer", "minimum": 1 }
+    },
+    "template": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "cargoTypeId", "volumeUnitsRange", "slaDaysRange", "shipClassIds", "weight", "minTier"],
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "export" } }, "required": ["kind"] },
+          "then": { "required": ["destinationPorts"], "not": { "required": ["exportVolumeUnitsRange"] } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "roundtrip" } }, "required": ["kind"] },
+          "then": { "required": ["destinationPorts", "exportVolumeUnitsRange"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "empty_repositioning" } }, "required": ["kind"] },
+          "then": { "required": ["destinationPorts"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "tranship" } }, "required": ["kind"] },
+          "then": { "required": ["destinationPorts"], "not": { "required": ["exportVolumeUnitsRange"] } }
+        },
+        {
+          "if": { "anyOf": [{ "not": { "required": ["kind"] } }, { "properties": { "kind": { "const": "import" } } }] },
+          "then": { "not": { "anyOf": [{ "required": ["destinationPorts"] }, { "required": ["exportVolumeUnitsRange"] }] } }
+        }
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": {
+          "enum": ["import", "export", "roundtrip", "empty_repositioning", "tranship"],
+          "description": "Druh šablóny (F6a, ADR-032; F6c, ADR-034): import (predvolené), export (booking s vlastnou voyage), roundtrip (import + export jednej voyage), empty_repositioning (linka nalodí N prázdnych; s `exportVolumeUnitsRange` ako tretí kontrakt skupiny s export bookingom jednej voyage, bez neho vlastná voyage) alebo tranship (loď A privezie `volumeUnitsRange` jednotiek, loď B ich odvezie; pool ich ponúka od T6C-03)."
+        },
+        "destinationPorts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Cieľové prístavy exportu, repositioningu a prekládky (pool losuje jeden); export, roundtrip, empty_repositioning a tranship."
+        },
+        "exportVolumeUnitsRange": {
+          "$ref": "#/$defs/intRange",
+          "description": "Rozsah [min, max] bookovaných TEU exportu roundtripu; max sa musí zmestiť do najmenšej lode zo shipClassIds; roundtrip (povinné) a empty_repositioning (voliteľné: prítomnosť = skupina s export bookingom jednej voyage)."
+        },
+        "cargoTypeId": { "$ref": "#/$defs/id" },
+        "sizeMix": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Podiel 40′ kontajnerov v kontrakte šablóny (ADR-039; chýba = 0, všetky 20′). Zmes veľkostí losuje `Rng` pri vzniku ponuky; objem `volumeUnitsRange` ostáva v TEU, počet kontajnerov je z neho odvodený. Nepoužije sa pri hlavnom kontrakte `empty_repositioning` (prázdne berie depo s veľkosťou, akú má)."
+        },
+        "typeMix": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "share"],
+            "properties": {
+              "type": { "$ref": "#/$defs/id" },
+              "share": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+            }
+          },
+          "description": "Zmes typov kontajnerov (R5, ADR-042): podiel každého typu iného než `dry` (zvyšok je `dry`). `Rng` losuje typ každého kontajnera pri vzniku ponuky. Len kategória `container` a druhy `import` / `tranship` / `export` / `roundtrip` (export bez reeferov; TR5-02: OOG sa losuje len pri OOG ploche); súčet podielov ≤ 1, typ existuje v `container_types.json` a je v zmesi najviac raz — kontroluje DefRegistry a `pnpm validate:defs`."
+        },
+        "railShare": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number", "minimum": 0, "maximum": 1 },
+          "description": "Železničný podiel (R6, ADR-043): rozsah [min, max] podielu importu, ktorý odíde vlakom, a exportu, ktorý príde vlakom. `Rng` losuje hodnotu pri vzniku ponuky len pri železničnom termináli napojenom na portál; len kontajnerová šablóna `import` / `export` / `roundtrip` a min ≤ max (kontroluje DefRegistry)."
+        },
+        "volumeUnitsRange": {
+          "$ref": "#/$defs/intRange",
+          "description": "Rozsah [min, max] objemu kontraktu v jednotkách typu nákladu (kontajnery: TEU, ADR-039); max sa musí zmestiť do najmenšej lode zo shipClassIds (kapacita lode je v TEU)."
+        },
+        "slaDaysRange": {
+          "$ref": "#/$defs/intRange",
+          "description": "Rozsah [min, max] SLA v celých dňoch od príchodu lode."
+        },
+        "shipClassIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/id" },
+          "description": "Triedy lodí zo ships.json, ktoré kontrakt privezú."
+        },
+        "weight": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Váha pri váhovom výbere šablóny."
+        },
+        "minTier": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Minimálny tier hráča, od ktorého sa šablóna ponúka."
+        }
+      }
+    }
+  }
+}

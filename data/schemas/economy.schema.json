@@ -13,7 +13,32 @@
     "leaseMonthlyRateOfPrice",
     "bankruptcyDays",
     "offersPerDay",
-    "offerExpiryDays"
+    "offerExpiryDays",
+    "removalRefundRate",
+    "urgencyFactor",
+    "arrivalDaysRange",
+    "volumeScaleRange",
+    "minCapacityHint",
+    "contractsPerTier",
+    "xpMultiplier",
+    "lateXpFactor",
+    "ledgerEntriesKept",
+    "bookingOffersPerDay",
+    "exportArrivalDaysRange",
+    "cutoffHours",
+    "cutoffWarningHours",
+    "bookingFulfilmentShare",
+    "lastMinuteExportRateOfReward",
+    "rolledExportRateOfReward",
+    "unfulfilledBookingRateOfReward",
+    "repositioningOffersPerDay",
+    "transhipOffersPerDay",
+    "repairCostCents",
+    "transhipGapDaysRange",
+    "transhipRescueDays",
+    "transhipMissedRateOfReward",
+    "reeferClaimCents",
+    "reeferPowerCentsPerHour"
   ],
   "properties": {
     "schemaVersion": {
@@ -62,6 +87,146 @@
       "type": "integer",
       "minimum": 1,
       "description": "Po koľkých dňoch nevybraná ponuka expiruje."
+    },
+    "removalRefundRate": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Podiel pôvodnej ceny, ktorý sa vráti pri odstránení modulu, cesty alebo koľaje (ARCHITECTURE §8 bod 8)."
+    },
+    "urgencyFactor": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Urgency odmeny (F5): 1 + urgencyFactor × (1 − slaDays / maxSlaDays); 0 = odmena nezávisí od SLA."
+    },
+    "arrivalDaysRange": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "type": "number", "minimum": 0 },
+      "description": "Rozsah [min, max] dní od prijatia kontraktu po príchod lode (desatinné dni). Poradie min ≤ max a max > 0 schéma nevyjadrí — kontroluje ich DefRegistry a `pnpm validate:defs`."
+    },
+    "volumeScaleRange": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "type": "number", "exclusiveMinimum": 0 },
+      "description": "Rozsah [min, max] násobku capacityHint pri losovaní objemu ponuky. Poradie min ≤ max schéma nevyjadrí — kontroluje ho DefRegistry a `pnpm validate:defs`."
+    },
+    "minCapacityHint": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Spodná hranica capacityHint (jednotky), aby prvá ponuka na prázdnom prístave nemala objem 0."
+    },
+    "contractsPerTier": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Počet splnených kontraktov na jeden tier: tier = floor(completed / contractsPerTier)."
+    },
+    "xpMultiplier": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Globálny násobiteľ XP odmeny kontraktu (volumeUnits × xpPerUnit × xpMultiplier)."
+    },
+    "lateXpFactor": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Násobok XP pri splnení po SLA termíne."
+    },
+    "ledgerEntriesKept": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Koľko posledných LedgerEntry sa drží v pamäti a ukladá do savu (staršie sú len v denných súhrnoch)."
+    },
+    "bookingOffersPerDay": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Cieľový počet booking ponúk (skupín voyage s exportom: šablóny export a roundtrip), ktoré pool dopĺňa pri DayClosed po import ponukách (F6a, ADR-032); 0 = pool booking neponúka."
+    },
+    "exportArrivalDaysRange": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "type": "number", "minimum": 0 },
+      "description": "Rozsah [min, max] dní od prijatia po príchod lode voyage s exportom (desatinné dni). Poradie min ≤ max a min × 24 > cutoffHours schéma nevyjadrí — kontroluje ich DefRegistry a `pnpm validate:defs`."
+    },
+    "cutoffHours": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Cut-off exportu: hodiny pred príchodom lode, po ktorých brána prijíma len „rolled“ jednotky."
+    },
+    "cutoffWarningHours": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Varovanie pred cut-off (CutoffWarning): hodiny pred cut-off; 0 = varovanie v ticku cut-off."
+    },
+    "bookingFulfilmentShare": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Booking je splnený, keď sa naloží aspoň tento podiel bookovaných TEU (⌈podiel × booked⌉ jednotiek)."
+    },
+    "lastMinuteExportRateOfReward": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Penalizácia „last minute“ za naloženú jednotku, ktorá prešla bránou po cut-off: podiel odmeny za jednotku."
+    },
+    "rolledExportRateOfReward": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Penalizácia „rolled“ za prijatú, ale nenaloženú (vrátenú) jednotku: podiel odmeny za jednotku."
+    },
+    "unfulfilledBookingRateOfReward": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Penalizácia za nesplnený booking (naložené < bookingFulfilmentShare): podiel odmeny, raz za booking."
+    },
+    "repositioningOffersPerDay": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Cieľový počet ponúk repositioningu prázdnych (skupiny voyage so šablónou `empty_repositioning`), ktoré pool dopĺňa pri DayClosed (F6c, ADR-034; pool ich ponúka od T6C-03); 0 = pool repositioning neponúka."
+    },
+    "transhipOffersPerDay": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Cieľový počet ponúk prekládky loď → loď (šablóna `tranship`), ktoré pool dopĺňa pri DayClosed (F6c, ADR-034; pool ich ponúka od T6C-03); 0 = pool tranship neponúka."
+    },
+    "reeferClaimCents": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Reklamácia za pokazený reefer v centoch (R5, ADR-042): dlho bez napájania, alebo alarm bez zásahu technika; kniha kategórie `penalty`."
+    },
+    "reeferPowerCentsPerHour": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Cena elektriny za jeden zapojený reefer a hernú hodinu v centoch (R5, ADR-042); kniha kategórie `energy`."
+    },
+    "repairCostCents": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Cena opravy jedného poškodeného prázdneho kontajnera v centoch (M&R v depe prázdnych, ledger kategória `maintenance_repair`); strhne sa pri dokončení opravy."
+    },
+    "transhipGapDaysRange": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "type": "number", "exclusiveMinimum": 0 },
+      "description": "Rozsah [min, max] dní od príchodu lode A (privezie prekládku) po príchod lode B (odvezie ju), desatinné dni, > 0. Poradie min ≤ max schéma nevyjadrí — kontroluje ho DefRegistry a `pnpm validate:defs`."
+    },
+    "transhipRescueDays": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Záchrana zmeškanej prekládky: keď loď B odpláva bez nich, čakajú dni na ďalšiu voyage tej istej linky, ktorá príde do tohto počtu dní; inak odídu kamiónom ako „predané“ (penalizácia)."
+    },
+    "transhipMissedRateOfReward": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Penalizácia za zmeškanú prekládku (jednotka, ktorá nebola naložená na loď B): podiel odmeny za jednotku."
     }
   }
 }

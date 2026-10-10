@@ -1,0 +1,65 @@
+/**
+ * Vstavané príkazy simulácie a ich registrácia (CLAUDE.md, pravidlo 7 — tabuľka tried, žiadny `switch`).
+ * Nový príkaz = nová trieda so statickým `TYPE` a `fromJSON` + riadok v `BUILTIN_COMMANDS` (+ testy).
+ *
+ * Predvolený `commandRegistry` sa naplní pri načítaní `command-registry.ts`, takže `commandFromJSON` pozná
+ * všetky príkazy bez ohľadu na to, odkiaľ ho konzument importuje.
+ */
+import { AcceptContractCommand } from './accept-contract';
+import { BuyParcelCommand } from './buy-parcel';
+import { BuyVehicleCommand } from './buy-vehicle';
+import type { Command, SerializedCommand } from './command';
+import type { CommandRegistry } from './command-registry';
+import { DeclineContractCommand } from './decline-contract';
+import { LeaseParcelCommand } from './lease-parcel';
+import { PlaceModuleCommand } from './place-module';
+import { PlaceRailCommand } from './place-rail';
+import { PlaceRoadCommand } from './place-road';
+import { ReleaseParcelCommand } from './release-parcel';
+import { RemoveModuleCommand } from './remove-module';
+import { RemoveRailCommand } from './remove-rail';
+import { RemoveRoadCommand } from './remove-road';
+import { SellVehicleCommand } from './sell-vehicle';
+import { SetBlockPriorityCommand } from './set-block-priority';
+import { SetCraneGangCommand } from './set-crane-gang';
+import { SetGameSpeedCommand } from './set-game-speed';
+import { SetGateLaneModeCommand } from './set-gate-lane-mode';
+import { SpawnShipDebugCommand } from './spawn-ship-debug';
+
+/** Trieda príkazu, ktorú možno registrovať: typ v registri + factory zo serializovaného tvaru. */
+export interface RegistrableCommand {
+  readonly TYPE: string;
+  fromJSON(json: SerializedCommand): Command;
+}
+
+/**
+ * Vstavané príkazy v poradí registrácie (ARCHITECTURE §12.2): F1 + moduly F2 (T02-04) + ladiaca loď (T02-05) + vozidlá
+ * F3 (T03-04) + kontrakty F5 (T05-03, ADR-026).
+ */
+export const BUILTIN_COMMANDS: readonly RegistrableCommand[] = Object.freeze([
+  PlaceRoadCommand,
+  RemoveRoadCommand,
+  PlaceRailCommand,
+  RemoveRailCommand,
+  SetGameSpeedCommand,
+  PlaceModuleCommand,
+  RemoveModuleCommand,
+  SpawnShipDebugCommand,
+  BuyVehicleCommand,
+  SellVehicleCommand,
+  AcceptContractCommand,
+  DeclineContractCommand,
+  SetBlockPriorityCommand,
+  SetCraneGangCommand,
+  SetGateLaneModeCommand,
+  BuyParcelCommand,
+  LeaseParcelCommand,
+  ReleaseParcelCommand,
+]);
+
+/** Zaregistruje všetky vstavané príkazy do `registry` (už registrovaný typ → `CommandError`). */
+export function registerBuiltinCommands(registry: CommandRegistry): void {
+  for (const command of BUILTIN_COMMANDS) {
+    registry.register(command.TYPE, (json) => command.fromJSON(json));
+  }
+}

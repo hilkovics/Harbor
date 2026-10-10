@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "rtg": {
+    "wagePerDayCents": 22000,
+    "gantryCellsPerTick": 2,
+    "hoistTicksPerTier": 1,
+    "trolleyTicksPerRow": 1,
+    "lockTicks": 1,
+    "priorities": {
+      "ship": 0,
+      "truck": 1,
+      "housekeeping": 2
+    },
+    "prefetchCells": 6,
+    "handoverGiveUpTicks": 600
+  },
+  "reachStacker": {
+    "wagePerDayCents": 16000,
+    "gantryCellsPerTick": 1,
+    "hoistTicksPerTier": 2,
+    "trolleyTicksPerRow": 3,
+    "lockTicks": 2,
+    "priorities": {
+      "ship": 0,
+      "truck": 1,
+      "housekeeping": 2
+    },
+    "prefetchCells": 0,
+    "handoverGiveUpTicks": 600
+  },
+  "rmg": {
+    "wagePerDayCents": 24000,
+    "gantryCellsPerTick": 2,
+    "hoistTicksPerTier": 1,
+    "trolleyTicksPerRow": 1,
+    "lockTicks": 1,
+    "priorities": {
+      "train": 0,
+      "ship": 1,
+      "truck": 2,
+      "housekeeping": 3
+    },
+    "prefetchCells": 6,
+    "handoverGiveUpTicks": 600
+  },
+  "tractors": {
+    "defaultMode": "pool",
+    "defaultPerSts": 2,
+    "minPerSts": 1,
+    "maxPerSts": 8
+  }
+}

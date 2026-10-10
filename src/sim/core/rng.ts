@@ -18,7 +18,8 @@ function rotl(x: number, k: number): number {
 }
 
 /**
- * Seed → počiatočný stav cez splitmix32 (štyri po sebe idúce výstupy).
+ * Seed (uint32) → počiatočný stav cez splitmix32 (štyri po sebe idúce výstupy). `seed | 0` len reinterpretuje
+ * 32 bitov ako int32 (seedy ≥ 2^31 dajú rovnaké bity), takže každý uint32 seed má vlastnú sekvenciu.
  * Seed 0 je platný (splitmix32 pripočítava zlatý rez, takže stav nie je nulový).
  */
 function seedToState(seed: number): RngState {
@@ -47,10 +48,14 @@ export class Rng {
   private s2 = 0;
   private s3 = 0;
 
-  /** @param seed celé číslo (bezpečný integer); rovnaký seed → rovnaká sekvencia. */
+  /**
+   * @param seed uint32 — celé číslo 0 … 2^32 − 1; rovnaký seed → rovnaká sekvencia. Iná hodnota (záporná, necelá,
+   *   ≥ 2^32, NaN) → `RangeError`: splitmix32 berie len 32 bitov, takže väčší seed by sa potichu zlial s iným
+   *   (1 ≡ 2^32 + 1) a uložený seed v save by neurčoval sekvenciu jednoznačne.
+   */
   constructor(seed: number) {
-    if (!Number.isSafeInteger(seed)) {
-      throw new RangeError(`Rng: seed musí byť celé číslo, dostal ${String(seed)}`);
+    if (!isUint32(seed)) {
+      throw new RangeError(`Rng: seed musí byť celé číslo 0 … 2^32 − 1 (uint32), dostal ${String(seed)}`);
     }
     this.setState(seedToState(seed));
   }
@@ -96,15 +101,37 @@ export class Rng {
     return this.nextU32() / U32_RANGE;
   }
 
-  /** Reálne číslo z intervalu [min, max). Pri `min === max` vráti `min`; `min > max` je chyba. */
+  /**
+   * Reálne číslo z intervalu [min, max) ako `min + next() × (max − min)`; spotrebuje jedno číslo.
+   * Pri `min === max` vráti `min`.
+   *
+   * Chyba (`RangeError`, nič nespotrebuje): nekonečná alebo NaN hranica, `min > max`, alebo rozpätie `max − min`
+   * pretečie do `Infinity` (napr. `range(-Number.MAX_VALUE, Number.MAX_VALUE)`).
+   *
+   * Presnosť pri veľkých magnitúdach: `next()` má krok 2^−32, výsledok sa zaokrúhľuje na double. Horná hranica
+   * je výlučná zaručene, ak `max(|min|, |max|) < 2^20 × (max − min)` (napr. `range(1e6, 1e6 + 1)` áno). Pri väčšom
+   * pomere (veľké čísla s malým rozpätím, napr. `range(2^40, 2^40 + 1)`) môže zaokrúhlenie vrátiť presne `max`;
+   * dolná hranica `min` platí vždy. Pre diskrétne hodnoty použi `int`.
+   */
   range(min: number, max: number): number {
-    if (!Number.isFinite(min) || !Number.isFinite(max) || min > max) {
+    const span = max - min;
+    if (!Number.isFinite(min) || !Number.isFinite(max) || min > max || !Number.isFinite(span)) {
       throw new RangeError(`Rng.range: neplatný interval [${String(min)}, ${String(max)})`);
     }
-    return min + this.next() * (max - min);
+    return min + this.next() * span;
   }
 
-  /** Celé číslo z uzavretého intervalu [min, maxInclusive]. */
+  /**
+   * Celé číslo z uzavretého intervalu [min, maxInclusive] ako `min + floor(next() × span)`,
+   * `span = maxInclusive − min + 1`; spotrebuje jedno číslo. Výsledok nikdy neopustí interval (ani pri span = 2^32).
+   *
+   * Skreslenie: 2^32 hodnôt `nextU32` sa rozdelí medzi `span` výsledkov; ak `span` nie je mocnina dvojky, niektoré
+   * výsledky dostanú o jednu hodnotu viac → pravdepodobnosť výsledku sa od `1 / span` líši relatívne najviac
+   * o `span / 2^32` (pre span ≤ 2^16 menej ako 0,002 %). Pre span ≤ 2^21 je mapovanie presné; pri väčšom rozpätí
+   * môže zaokrúhlenie double posunúť ojedinelé hodnoty do susedného výsledku.
+   *
+   * Chyba (`RangeError`, nič nespotrebuje): hranica nie je bezpečné celé číslo, `min > maxInclusive`, `span > 2^32`.
+   */
   int(min: number, maxInclusive: number): number {
     if (!Number.isSafeInteger(min) || !Number.isSafeInteger(maxInclusive) || min > maxInclusive) {
       throw new RangeError(`Rng.int: neplatný interval [${String(min)}, ${String(maxInclusive)}]`);
@@ -114,6 +141,19 @@ export class Rng {
       throw new RangeError(`Rng.int: interval je širší než 2^32 (${String(span)})`);
     }
     return min + Math.floor(this.next() * span);
+  }
+
+  /**
+   * Pravdepodobnostné rozhodnutie: `true` s pravdepodobnosťou `probability` (`0 … 1`) ako `next() < probability`;
+   * spotrebuje vždy jedno číslo (aj pri 0 a 1), takže dĺžka prúdu nezávisí od hodnoty. `0` nikdy, `1` vždy (`next() < 1`).
+   *
+   * Chyba (`RangeError`, nič nespotrebuje): pravdepodobnosť nie je konečné číslo v `[0, 1]`.
+   */
+  chance(probability: number): boolean {
+    if (!Number.isFinite(probability) || probability < 0 || probability > 1) {
+      throw new RangeError(`Rng.chance: pravdepodobnosť musí byť číslo 0 … 1, dostal ${String(probability)}`);
+    }
+    return this.next() < probability;
   }
 
   /** Náhodný prvok poľa (spotrebuje jedno číslo). Na prázdnom poli vyhodí chybu. */

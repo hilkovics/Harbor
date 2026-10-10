@@ -1,0 +1,61 @@
+/**
+ * Spawn lode s nákladom (ARCHITECTURE §7.4, §9.1; ADR-016 bod 10, ADR-026) — jediný kód pre ladiacu loď
+ * (`SpawnShipDebug`) aj loď kontraktu (`ContractSystem`, krok 2): loď (`arriving`) so stredom v strede `seaLane[0]`
+ * a kurzom prvého úseku dráhy, potom `units` jednotiek `on_ship` s daným `contractId` a štítkami `labels` (kontrakt:
+ * `Contract.spawnLabels` — import `IMPORT_LABELS` s voyage a linkou, prekládka smer `tranship`; ladiaca loď `null` =
+ * `IMPORT_LABELS`; hmotnostná trieda bez `Rng` — ADR-032 odchýlka 1; `CargoLedger.create`; id lode predchádza id
+ * jednotiek) a `ShipSpawned`. Hneď potom loď skúsi vplávať (`ShipTraffic.tryEnterOnSpawn`, ADR-029):
+ * keď nečaká iná loď a má cieľ s voľnou trasou, je `inbound` a pohne sa v kroku 3 toho istého ticku ako doteraz;
+ * inak čaká pred vstupom (`arriving`) a vstup skúša krok 3 v poradí podľa id. Hotovosť sa nemení.
+ *
+ * Platnosť vstupu (známa trieda a typ, kompatibilná kategória, `1 ≤ units ≤ capacityUnits`; od R2 `capacityUnits` je v TEU a TEU jednotiek ho nesmie
+ * presiahnuť, ADR-039) overuje volajúci vopred (`SpawnShipDebug.validate`, pool kontraktov); chybu programu tu ohlási `Ship` / `CargoLedger` výnimkou.
+ */
+import { IMPORT_LABELS, type CargoUnitLabels, type ContainerSize } from '../cargo/cargo-unit';
+import type { ContractId } from '../core/entity-id';
+import type { World } from '../world/world';
+import { Ship } from './ship';
+import { cellCenter, laneStartHeading } from './ship-route';
+
+/** Čo sa spawnuje. */
+export interface ShipSpawnSpec {
+  readonly shipClassId: string;
+  readonly cargoTypeId: string;
+  /** Počet jednotiek nákladu (celé 1 … `capacityUnits`, overuje volajúci). */
+  readonly units: number;
+  /** Kontrakt, ku ktorému náklad patrí; `null` = bez kontraktu (ladiaca loď). */
+  readonly contractId: ContractId | null;
+  /** Štítky jednotiek (voyage, linka, smer; ADR-032, ADR-034); ladiaca loď `null` = `IMPORT_LABELS`. */
+  readonly labels: CargoUnitLabels | null;
+  /** Veľkosť `i`-tej jednotky (kontrakt: `Contract.unitSizeFt`, ADR-039); chýba = všetky podľa `labels` (predvolene 20′). */
+  readonly sizeOf?: (index: number) => ContainerSize;
+  /** Typ kontajnera `i`-tej jednotky (kontrakt: `Contract.unitContainerType`, R5, ADR-042); chýba = podľa `labels` (predvolene `dry`). */
+  readonly typeOf?: (index: number) => string;
+  /** Je `i`-ta jednotka nadrozmerná (OOG; kontrakt: `Contract.unitIsOog`, R5, TR5-02)? Chýba = nie. */
+  readonly oogOf?: (index: number) => boolean;
+}
+
+/** Vytvorí loď s nákladom podľa `spec` (viď hlavička súboru) a vráti ju. */
+export function spawnShip(world: World, spec: ShipSpawnSpec): Ship {
+  const spawn = cellCenter(world.map.seaLane[0]);
+  const ship = new Ship({
+    id: world.ids.next(),
+    def: world.defs.ships.get(spec.shipClassId),
+    cargoType: world.defs.cargoTypes.get(spec.cargoTypeId),
+    state: 'arriving',
+    x: spawn.x,
+    y: spawn.y,
+    heading: laneStartHeading(world.map),
+  });
+  world.addShip(ship);
+  const labels = spec.labels ?? IMPORT_LABELS;
+  for (let i = 0; i < spec.units; i++) {
+    const sized = spec.sizeOf === undefined ? labels : { ...labels, sizeFt: spec.sizeOf(i) };
+    const typed = spec.typeOf === undefined ? sized : { ...sized, containerType: spec.typeOf(i) };
+    const unitLabels = spec.oogOf === undefined ? typed : { ...typed, oog: spec.oogOf(i) };
+    world.cargo.create(spec.cargoTypeId, { kind: 'on_ship', shipId: ship.id }, spec.contractId, unitLabels);
+  }
+  world.events.emit({ type: 'ShipSpawned', shipId: ship.id, classId: ship.classId, cargoTypeId: ship.cargoTypeId, units: spec.units });
+  world.shipTraffic.tryEnterOnSpawn(ship);
+  return ship;
+}

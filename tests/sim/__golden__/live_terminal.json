@@ -1,0 +1,19 @@
+{
+  "cashEnd": 43048800,
+  "exportedUnits": 69,
+  "shippedUnits": 59,
+  "contractsCompleted": 5,
+  "xp": 192,
+  "emptyReturns": 40,
+  "emptyFallbackStored": 0,
+  "emptyDamaged": 5,
+  "emptyRepaired": 5,
+  "repairCostCents": 60000,
+  "emptyPickedUp": 8,
+  "emptyPickupMisses": 1,
+  "repositionedUnits": 15,
+  "transhipLoaded": 22,
+  "transhipMissed": 0,
+  "transhipRescued": 0,
+  "transhipSold": 0
+}

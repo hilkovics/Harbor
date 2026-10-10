@@ -1,0 +1,282 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "equipment.json",
+  "description": "Stroje bloku (TERMINAL_2 §5.3, §10.5; ADR-040): R3 pozná `rtg`. Konfiguračný def bez items[] (ADR-009); časy v tickoch, pojazd v bays za tick. Poradie priorít (loď < kamión < housekeeping) schéma nevyjadrí — kontroluje DefRegistry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "rtg",
+    "reachStacker",
+    "rmg",
+    "tractors"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Verzia schémy defu."
+    },
+    "rtg": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "wagePerDayCents",
+        "gantryCellsPerTick",
+        "hoistTicksPerTier",
+        "trolleyTicksPerRow",
+        "lockTicks",
+        "priorities",
+        "prefetchCells",
+        "handoverGiveUpTicks"
+      ],
+      "properties": {
+        "wagePerDayCents": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Denná mzda obsluhy stroja v centoch; strhne sa pri DayClosed (F7, ADR-044)."
+        },
+        "gantryCellsPerTick": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Rýchlosť pojazdu žeriavu pozdĺž bloku v bays za tick (spojitá poloha)."
+        },
+        "hoistTicksPerTier": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Zdvih alebo spúšťanie o jednu vrstvu stohu v tickoch."
+        },
+        "trolleyTicksPerRow": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Pojazd vozíka o jeden rad naprieč blokom v tickoch."
+        },
+        "lockTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Uchopenie alebo pustenie kontajnera (twist-lock) v tickoch."
+        },
+        "priorities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ship",
+            "truck",
+            "housekeeping"
+          ],
+          "description": "Priorita fronty stroja podľa druhu úlohy (ADR-040 bod 6): menšie číslo = skôr; musí ostro rásť v poradí ship, truck, housekeeping.",
+          "properties": {
+            "ship": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "truck": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "housekeeping": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "handoverGiveUpTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "TR3-06b: po tolko tickoch cakania RTG s jednotkou v in_handler na tahac (no_path, nezhoda bunky pruhu) stroj jednotku vrati do stohu a cyklus zrusi."
+        },
+        "prefetchCells": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Predzásobenie nakládky (TR3-02): RTG začne cyklus `take` (zdvih zo stohu a presun na TP), keď je ťahač s jobom nakládky na ceste k TP najviac toľko buniek pred ním; 0 = stroj čaká, kým ťahač dorazí na TP."
+        }
+      }
+    },
+    "reachStacker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "wagePerDayCents",
+        "gantryCellsPerTick",
+        "hoistTicksPerTier",
+        "trolleyTicksPerRow",
+        "lockTicks",
+        "priorities",
+        "prefetchCells",
+        "handoverGiveUpTicks"
+      ],
+      "properties": {
+        "wagePerDayCents": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Denná mzda obsluhy stroja v centoch; strhne sa pri DayClosed (F7, ADR-044)."
+        },
+        "gantryCellsPerTick": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Rýchlosť pojazdu žeriavu pozdĺž bloku v bays za tick (spojitá poloha)."
+        },
+        "hoistTicksPerTier": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Zdvih alebo spúšťanie o jednu vrstvu stohu v tickoch."
+        },
+        "trolleyTicksPerRow": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Pojazd vozíka o jeden rad naprieč blokom v tickoch."
+        },
+        "lockTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Uchopenie alebo pustenie kontajnera (twist-lock) v tickoch."
+        },
+        "priorities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ship",
+            "truck",
+            "housekeeping"
+          ],
+          "description": "Priorita fronty stroja podľa druhu úlohy (ADR-040 bod 6): menšie číslo = skôr; musí ostro rásť v poradí ship, truck, housekeeping.",
+          "properties": {
+            "ship": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "truck": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "housekeeping": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "handoverGiveUpTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "TR3-06b: po tolko tickoch cakania RTG s jednotkou v in_handler na tahac (no_path, nezhoda bunky pruhu) stroj jednotku vrati do stohu a cyklus zrusi."
+        },
+        "prefetchCells": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Predzásobenie nakládky (TR3-02): RTG začne cyklus `take` (zdvih zo stohu a presun na TP), keď je ťahač s jobom nakládky na ceste k TP najviac toľko buniek pred ním; 0 = stroj čaká, kým ťahač dorazí na TP."
+        }
+      },
+      "description": "Reach stacker OOG plochy (R5, ADR-042 TR5-02): rovnaké polia ako rtg; pojazd = pojazd po ulicke plochy (bays), vozik = vyložník (ťah po rade), zdvih = vrstva. Stroj sa stavia s plochou `acceptsOog`."
+    },
+    "rmg": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "wagePerDayCents",
+        "gantryCellsPerTick",
+        "hoistTicksPerTier",
+        "trolleyTicksPerRow",
+        "lockTicks",
+        "priorities",
+        "prefetchCells",
+        "handoverGiveUpTicks"
+      ],
+      "description": "RMG železničného terminálu (R6, ADR-043): ako RTG (časy v tickoch, predzásobenie) a priorita vlak < loď (ťahač od STS) < kamión < housekeeping (musia ostro rásť).",
+      "properties": {
+        "wagePerDayCents": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Denná mzda obsluhy stroja v centoch; strhne sa pri DayClosed (F7, ADR-044)."
+        },
+        "gantryCellsPerTick": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "hoistTicksPerTier": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "trolleyTicksPerRow": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "lockTicks": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "priorities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "train",
+            "ship",
+            "truck",
+            "housekeeping"
+          ],
+          "properties": {
+            "train": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "ship": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "truck": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "housekeeping": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "prefetchCells": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Predzásobenie nakládky (TR3-02): RTG začne cyklus `take` (zdvih zo stohu a presun na TP), keď je ťahač s jobom nakládky na ceste k TP najviac toľko buniek pred ním; 0 = stroj čaká, kým ťahač dorazí na TP."
+        },
+        "handoverGiveUpTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "TR3-06b: po tolko tickoch cakania RTG s jednotkou v in_handler na tahac (no_path, nezhoda bunky pruhu) stroj jednotku vrati do stohu a cyklus zrusi."
+        }
+      }
+    },
+    "tractors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "defaultMode",
+        "defaultPerSts",
+        "minPerSts",
+        "maxPerSts"
+      ],
+      "description": "Prideľovanie ťahačov žeriavom STS (ADR-040 bod 7): východiskový režim a počet ťahačov na STS v režime gang; meniteľné príkazom SetCraneGang.",
+      "properties": {
+        "defaultMode": {
+          "enum": [
+            "pool",
+            "gang"
+          ],
+          "description": "Východiskový režim žeriavu: pool = najbližší voľný ťahač, gang = pevná skupina."
+        },
+        "defaultPerSts": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Východiskový počet ťahačov na STS v režime gang."
+        },
+        "minPerSts": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Najmenší povolený počet ťahačov na STS."
+        },
+        "maxPerSts": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Najväčší povolený počet ťahačov na STS."
+        }
+      }
+    }
+  }
+}

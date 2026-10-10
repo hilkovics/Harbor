@@ -1,0 +1,345 @@
+{
+  "id": "landside_pressure",
+  "seed": 5016,
+  "map": "data/maps/harbor_01.json",
+  "commands": [
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceRoad",
+        "cells": [
+          {
+            "x": 44,
+            "y": 34
+          }
+        ],
+        "kind": "one_way",
+        "dirs": [
+          "N"
+        ]
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceRoad",
+        "cells": [
+          {
+            "x": 44,
+            "y": 29
+          },
+          {
+            "x": 44,
+            "y": 28
+          },
+          {
+            "x": 44,
+            "y": 27
+          },
+          {
+            "x": 44,
+            "y": 26
+          },
+          {
+            "x": 44,
+            "y": 25
+          },
+          {
+            "x": 44,
+            "y": 24
+          },
+          {
+            "x": 44,
+            "y": 23
+          },
+          {
+            "x": 44,
+            "y": 22
+          },
+          {
+            "x": 44,
+            "y": 21
+          },
+          {
+            "x": 44,
+            "y": 20
+          },
+          {
+            "x": 44,
+            "y": 19
+          }
+        ],
+        "kind": "one_way",
+        "dirs": [
+          "N",
+          "N",
+          "N",
+          "N",
+          "N",
+          "N",
+          "N",
+          "N",
+          "N",
+          "N",
+          "N"
+        ]
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceRoad",
+        "cells": [
+          {
+            "x": 44,
+            "y": 18
+          },
+          {
+            "x": 43,
+            "y": 18
+          },
+          {
+            "x": 42,
+            "y": 18
+          },
+          {
+            "x": 41,
+            "y": 18
+          }
+        ],
+        "kind": "one_way",
+        "dirs": [
+          "W",
+          "W",
+          "W",
+          "N"
+        ]
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceRoad",
+        "cells": [
+          {
+            "x": 46,
+            "y": 18
+          },
+          {
+            "x": 47,
+            "y": 18
+          }
+        ],
+        "kind": "one_way",
+        "dirs": [
+          "E",
+          "S"
+        ]
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceRoad",
+        "cells": [
+          {
+            "x": 47,
+            "y": 19
+          },
+          {
+            "x": 47,
+            "y": 20
+          },
+          {
+            "x": 47,
+            "y": 21
+          },
+          {
+            "x": 47,
+            "y": 22
+          },
+          {
+            "x": 47,
+            "y": 23
+          },
+          {
+            "x": 47,
+            "y": 24
+          },
+          {
+            "x": 47,
+            "y": 25
+          },
+          {
+            "x": 47,
+            "y": 26
+          },
+          {
+            "x": 47,
+            "y": 27
+          }
+        ],
+        "kind": "one_way",
+        "dirs": [
+          "S",
+          "S",
+          "S",
+          "S",
+          "S",
+          "S",
+          "S",
+          "S",
+          "S"
+        ]
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceRoad",
+        "cells": [
+          {
+            "x": 47,
+            "y": 28
+          }
+        ],
+        "kind": "two_lane"
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceRoad",
+        "cells": [
+          {
+            "x": 46,
+            "y": 28
+          },
+          {
+            "x": 45,
+            "y": 28
+          }
+        ],
+        "kind": "one_way",
+        "dirs": [
+          "W",
+          "W"
+        ]
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceRoad",
+        "cells": [
+          {
+            "x": 47,
+            "y": 29
+          },
+          {
+            "x": 46,
+            "y": 29
+          },
+          {
+            "x": 45,
+            "y": 29
+          }
+        ],
+        "kind": "one_way",
+        "dirs": [
+          "W",
+          "W",
+          "S"
+        ]
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceModule",
+        "defId": "vehicle_depot",
+        "x": 48,
+        "y": 24,
+        "rotation": 90
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceModule",
+        "defId": "container_yard_small",
+        "x": 40,
+        "y": 19,
+        "rotation": 270
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceModule",
+        "defId": "empty_depot",
+        "x": 40,
+        "y": 23,
+        "rotation": 270
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceModule",
+        "defId": "gate_in_lane",
+        "x": 44,
+        "y": 30,
+        "rotation": 0
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "PlaceModule",
+        "defId": "gate_out_lane",
+        "x": 45,
+        "y": 30,
+        "rotation": 180
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "straddle_carrier",
+        "depotId": 3
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "straddle_carrier",
+        "depotId": 3
+      }
+    },
+    {
+      "atTick": 0,
+      "command": {
+        "type": "BuyVehicle",
+        "vehicleDefId": "empty_handler",
+        "depotId": 3
+      }
+    },
+    {
+      "atTick": 2,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 5
+      }
+    },
+    {
+      "atTick": 8641,
+      "command": {
+        "type": "AcceptContract",
+        "contractId": 9
+      }
+    }
+  ]
+}

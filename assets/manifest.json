@@ -1,0 +1,2352 @@
+{
+  "schemaVersion": 1,
+  "cellPx": 64,
+  "conventions": {
+    "orientation": "rot 0 = sever hore; vozidlá a lode predkom hore; kotvisko s vodou na severe",
+    "pivot": "ľavý horný roh footprintu, ak nie je uvedené inak (parts.*.pivot v px v rámci súboru)",
+    "footprint": "w×h v bunkách pri rot 0; entity: w = šírka, h = dĺžka (SVG = w*64 × h*64)",
+    "rotation": "engine rotuje po 90° okolo stredu footprintu; sprity sú kreslené v jednej orientácii",
+    "waterTiles": "prípona = strana/roh s vodou; edge hĺbka vody 24 px",
+    "shadow": "2 px dole-vpravo, 20 % — zapečené v SVG entít, žeriavov a závory",
+    "connectors": "{x,y} = bunka vo footprinte pri rot 0, side = strana vjazdu, type = road|rail|pipe",
+    "fileNames": "{id}[_{variant}][_{state}].svg"
+  },
+  "terrain": {
+    "water_deep": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/water_deep.svg"
+    },
+    "water_shallow": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/water_shallow.svg"
+    },
+    "water_edge_n": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/water_edge_n.svg",
+      "waterSides": [
+        "n"
+      ]
+    },
+    "water_edge_e": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/water_edge_e.svg",
+      "waterSides": [
+        "e"
+      ]
+    },
+    "water_edge_s": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/water_edge_s.svg",
+      "waterSides": [
+        "s"
+      ]
+    },
+    "water_edge_w": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/water_edge_w.svg",
+      "waterSides": [
+        "w"
+      ]
+    },
+    "water_corner_ne": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/water_corner_ne.svg",
+      "waterCorner": "ne"
+    },
+    "water_corner_nw": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/water_corner_nw.svg",
+      "waterCorner": "nw"
+    },
+    "water_corner_se": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/water_corner_se.svg",
+      "waterCorner": "se"
+    },
+    "water_corner_sw": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/water_corner_sw.svg",
+      "waterCorner": "sw"
+    },
+    "water_inner_ne": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/water_inner_ne.svg",
+      "waterSides": [
+        "n",
+        "e"
+      ],
+      "landCorner": "sw"
+    },
+    "water_inner_nw": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/water_inner_nw.svg",
+      "waterSides": [
+        "n",
+        "w"
+      ],
+      "landCorner": "se"
+    },
+    "water_inner_se": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/water_inner_se.svg",
+      "waterSides": [
+        "s",
+        "e"
+      ],
+      "landCorner": "nw"
+    },
+    "water_inner_sw": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/water_inner_sw.svg",
+      "waterSides": [
+        "s",
+        "w"
+      ],
+      "landCorner": "ne"
+    },
+    "quay": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/quay.svg"
+    },
+    "quay_edge_n": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/quay_edge_n.svg",
+      "waterSides": [
+        "n"
+      ]
+    },
+    "land": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/land.svg"
+    },
+    "land_alt": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/land_alt.svg"
+    },
+    "blocked": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/blocked.svg"
+    },
+    "parcel_outline_for_sale": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/parcel_outline_for_sale.svg",
+      "nineSlice": {
+        "left": 8,
+        "top": 8,
+        "right": 8,
+        "bottom": 8
+      }
+    },
+    "parcel_outline_owned": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/parcel_outline_owned.svg",
+      "nineSlice": {
+        "left": 8,
+        "top": 8,
+        "right": 8,
+        "bottom": 8
+      }
+    },
+    "parcel_outline_leased": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/parcel_outline_leased.svg",
+      "nineSlice": {
+        "left": 8,
+        "top": 8,
+        "right": 8,
+        "bottom": 8
+      }
+    },
+    "portal_road": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/portal_road.svg",
+      "rotatable": true,
+      "note": "šípka von z mapy pri rot 0 = sever"
+    },
+    "portal_rail": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "terrain/portal_rail.svg",
+      "rotatable": true,
+      "note": "šípka von z mapy pri rot 0 = sever"
+    }
+  },
+  "infra": {
+    "road": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "rotatable": true,
+      "tiles": {
+        "straight": {
+          "file": "infra/road_straight.svg",
+          "connectsAtRot0": [
+            "n",
+            "s"
+          ]
+        },
+        "corner": {
+          "file": "infra/road_corner.svg",
+          "connectsAtRot0": [
+            "n",
+            "e"
+          ]
+        },
+        "t": {
+          "file": "infra/road_t.svg",
+          "connectsAtRot0": [
+            "n",
+            "e",
+            "w"
+          ]
+        },
+        "cross": {
+          "file": "infra/road_cross.svg",
+          "connectsAtRot0": [
+            "n",
+            "e",
+            "s",
+            "w"
+          ]
+        },
+        "end": {
+          "file": "infra/road_end.svg",
+          "connectsAtRot0": [
+            "n"
+          ]
+        }
+      }
+    },
+    "rail": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "rotatable": true,
+      "tiles": {
+        "straight": {
+          "file": "infra/rail_straight.svg",
+          "connectsAtRot0": [
+            "n",
+            "s"
+          ]
+        },
+        "corner": {
+          "file": "infra/rail_corner.svg",
+          "connectsAtRot0": [
+            "n",
+            "e"
+          ]
+        },
+        "t": {
+          "file": "infra/rail_t.svg",
+          "connectsAtRot0": [
+            "n",
+            "e",
+            "w"
+          ]
+        },
+        "cross": {
+          "file": "infra/rail_cross.svg",
+          "connectsAtRot0": [
+            "n",
+            "e",
+            "s",
+            "w"
+          ]
+        },
+        "end": {
+          "file": "infra/rail_end.svg",
+          "connectsAtRot0": [
+            "n"
+          ]
+        }
+      }
+    },
+    "pipe": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "rotatable": true,
+      "tiles": {
+        "straight": {
+          "file": "infra/pipe_straight.svg",
+          "connectsAtRot0": [
+            "n",
+            "s"
+          ]
+        },
+        "corner": {
+          "file": "infra/pipe_corner.svg",
+          "connectsAtRot0": [
+            "n",
+            "e"
+          ]
+        },
+        "t": {
+          "file": "infra/pipe_t.svg",
+          "connectsAtRot0": [
+            "n",
+            "e",
+            "w"
+          ]
+        },
+        "end": {
+          "file": "infra/pipe_end.svg",
+          "connectsAtRot0": [
+            "n"
+          ]
+        },
+        "valve": {
+          "file": "infra/pipe_valve.svg",
+          "connectsAtRot0": [
+            "n",
+            "s"
+          ]
+        }
+      }
+    }
+  },
+  "sprites": {
+    "berth_standard": {
+      "footprint": {
+        "w": 8,
+        "h": 4
+      },
+      "file": "modules/berth_standard.svg",
+      "apronSlots": [
+        {
+          "x": 1,
+          "y": 1
+        },
+        {
+          "x": 2,
+          "y": 1
+        },
+        {
+          "x": 5,
+          "y": 1
+        },
+        {
+          "x": 6,
+          "y": 1
+        },
+        {
+          "x": 0,
+          "y": 1
+        },
+        {
+          "x": 7,
+          "y": 1
+        },
+        {
+          "x": 2,
+          "y": 2
+        },
+        {
+          "x": 5,
+          "y": 2
+        }
+      ],
+      "connectors": [
+        {
+          "x": 1,
+          "y": 3,
+          "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 6,
+          "y": 3,
+          "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 0,
+          "y": 1,
+          "side": "w",
+          "type": "road"
+        },
+        {
+          "x": 0,
+          "y": 2,
+          "side": "w",
+          "type": "road"
+        },
+        {
+          "x": 0,
+          "y": 3,
+          "side": "w",
+          "type": "road"
+        },
+        {
+          "x": 7,
+          "y": 1,
+          "side": "e",
+          "type": "road"
+        },
+        {
+          "x": 7,
+          "y": 2,
+          "side": "e",
+          "type": "road"
+        },
+        {
+          "x": 7,
+          "y": 3,
+          "side": "e",
+          "type": "road"
+        }
+      ]
+    },
+    "berth_deepwater": {
+      "footprint": {
+        "w": 8,
+        "h": 3
+      },
+      "file": "modules/berth_deepwater.svg",
+      "apronSlots": [
+        {
+          "x": 1,
+          "y": 1
+        },
+        {
+          "x": 2,
+          "y": 1
+        },
+        {
+          "x": 3,
+          "y": 1
+        },
+        {
+          "x": 4,
+          "y": 1
+        },
+        {
+          "x": 5,
+          "y": 1
+        },
+        {
+          "x": 6,
+          "y": 1
+        }
+      ],
+      "connectors": [
+        {
+          "x": 1,
+          "y": 2,
+          "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 6,
+          "y": 2,
+          "side": "s",
+          "type": "road"
+        }
+      ]
+    },
+    "crane_container_gantry": {
+      "footprint": {
+        "w": 2,
+        "h": 3
+      },
+      "parts": {
+        "base": {
+          "file": "modules/crane_container_gantry_base.svg"
+        },
+        "boom": {
+          "file": "modules/crane_container_gantry_boom.svg",
+          "footprint": {
+            "w": 1,
+            "h": 5
+          },
+          "pivot": {
+            "x": 32,
+            "y": 300
+          },
+          "mountOnBase": {
+            "x": 64,
+            "y": 96
+          }
+        },
+        "trolley": {
+          "file": "modules/crane_container_gantry_trolley.svg",
+          "footprint": {
+            "w": 1,
+            "h": 1
+          },
+          "pivot": {
+            "x": 32,
+            "y": 32
+          },
+          "travel": {
+            "axis": "boom",
+            "yMin": 24,
+            "yMax": 280
+          }
+        }
+      },
+      "connectors": []
+    },
+    "crane_bulk_grab": {
+      "footprint": {
+        "w": 2,
+        "h": 3
+      },
+      "parts": {
+        "base": {
+          "file": "modules/crane_bulk_grab_base.svg"
+        },
+        "boom": {
+          "file": "modules/crane_bulk_grab_boom.svg",
+          "footprint": {
+            "w": 1,
+            "h": 5
+          },
+          "pivot": {
+            "x": 32,
+            "y": 300
+          },
+          "mountOnBase": {
+            "x": 64,
+            "y": 96
+          }
+        },
+        "bucket": {
+          "file": "modules/crane_bulk_grab_bucket.svg",
+          "footprint": {
+            "w": 1,
+            "h": 1
+          },
+          "pivot": {
+            "x": 32,
+            "y": 32
+          },
+          "travel": {
+            "axis": "boom",
+            "yMin": 24,
+            "yMax": 280
+          }
+        }
+      },
+      "connectors": []
+    },
+    "crane_liquid_arm": {
+      "footprint": {
+        "w": 1,
+        "h": 2
+      },
+      "file": "modules/crane_liquid_arm.svg",
+      "connectors": [
+        {
+          "x": 0,
+          "y": 1,
+          "side": "s",
+          "type": "pipe"
+        }
+      ]
+    },
+    "crane_gas_arm": {
+      "footprint": {
+        "w": 1,
+        "h": 2
+      },
+      "file": "modules/crane_gas_arm.svg",
+      "connectors": [
+        {
+          "x": 0,
+          "y": 1,
+          "side": "s",
+          "type": "pipe"
+        }
+      ]
+    },
+    "roro_ramp": {
+      "footprint": {
+        "w": 3,
+        "h": 3
+      },
+      "file": "modules/roro_ramp.svg",
+      "connectors": [
+        {
+          "x": 1,
+          "y": 2,
+          "side": "s",
+          "type": "road"
+        }
+      ]
+    },
+    "container_yard_small": {
+      "footprint": {
+        "w": 4,
+        "h": 4
+      },
+      "states": {
+        "fill00": "modules/container_yard_small_fill00.svg",
+        "fill25": "modules/container_yard_small_fill25.svg",
+        "fill50": "modules/container_yard_small_fill50.svg",
+        "fill75": "modules/container_yard_small_fill75.svg",
+        "fill100": "modules/container_yard_small_fill100.svg"
+      },
+      "connectors": [
+        {
+          "x": 1,
+          "y": 3,
+          "side": "s",
+          "type": "road"
+        }
+      ],
+      "slots": 32,
+      "layers": 2
+    },
+    "rtg_block": {
+      "footprint": {
+        "w": 5,
+        "h": 12
+      },
+      "file": "modules/rtg_block.svg",
+      "connectors": [
+        {
+          "x": 4,
+          "y": 0,
+          "side": "n",
+          "type": "road"
+        },
+        {
+          "x": 4,
+          "y": 11,
+          "side": "s",
+          "type": "road"
+        }
+      ]
+    },
+    "oog_area": {
+      "footprint": {
+        "w": 4,
+        "h": 6
+      },
+      "file": "modules/oog_area.svg",
+      "connectors": [
+        {
+          "x": 3,
+          "y": 0,
+          "side": "n",
+          "type": "road"
+        },
+        {
+          "x": 3,
+          "y": 5,
+          "side": "s",
+          "type": "road"
+        }
+      ]
+    },
+    "reefer_block_8": {
+      "footprint": {
+        "w": 4,
+        "h": 8
+      },
+      "file": "modules/reefer_block_8.svg",
+      "connectors": [
+        {
+          "x": 3,
+          "y": 0,
+          "side": "n",
+          "type": "road"
+        },
+        {
+          "x": 3,
+          "y": 7,
+          "side": "s",
+          "type": "road"
+        }
+      ]
+    },
+    "rmg_rail_block": {
+      "footprint": {
+        "w": 6,
+        "h": 16
+      },
+      "file": "modules/rmg_rail_block.svg",
+      "connectors": [
+        {
+          "x": 0,
+          "y": 0,
+          "side": "n",
+          "type": "rail"
+        },
+        {
+          "x": 1,
+          "y": 0,
+          "side": "n",
+          "type": "rail"
+        },
+        {
+          "x": 5,
+          "y": 0,
+          "side": "n",
+          "type": "road"
+        },
+        {
+          "x": 5,
+          "y": 15,
+          "side": "s",
+          "type": "road"
+        }
+      ]
+    },
+    "empty_depot": {
+      "footprint": {
+        "w": 4,
+        "h": 4
+      },
+      "states": {
+        "fill00": "modules/empty_depot_fill00.svg",
+        "fill25": "modules/empty_depot_fill25.svg",
+        "fill50": "modules/empty_depot_fill50.svg",
+        "fill75": "modules/empty_depot_fill75.svg",
+        "fill100": "modules/empty_depot_fill100.svg"
+      },
+      "connectors": [
+        {
+          "x": 1,
+          "y": 3,
+          "side": "s",
+          "type": "road"
+        }
+      ],
+      "slots": 16,
+      "layers": 6
+    },
+    "container_yard_medium": {
+      "footprint": {
+        "w": 6,
+        "h": 6
+      },
+      "states": {
+        "fill00": "modules/container_yard_medium_fill00.svg",
+        "fill25": "modules/container_yard_medium_fill25.svg",
+        "fill50": "modules/container_yard_medium_fill50.svg",
+        "fill75": "modules/container_yard_medium_fill75.svg",
+        "fill100": "modules/container_yard_medium_fill100.svg"
+      },
+      "connectors": [
+        {
+          "x": 1,
+          "y": 5,
+          "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 4,
+          "y": 5,
+          "side": "s",
+          "type": "road"
+        }
+      ],
+      "slots": 76,
+      "layers": 3
+    },
+    "container_yard_large": {
+      "footprint": {
+        "w": 8,
+        "h": 8
+      },
+      "states": {
+        "fill00": "modules/container_yard_large_fill00.svg",
+        "fill25": "modules/container_yard_large_fill25.svg",
+        "fill50": "modules/container_yard_large_fill50.svg",
+        "fill75": "modules/container_yard_large_fill75.svg",
+        "fill100": "modules/container_yard_large_fill100.svg"
+      },
+      "connectors": [
+        {
+          "x": 1,
+          "y": 7,
+          "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 6,
+          "y": 7,
+          "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 0,
+          "y": 3,
+          "side": "w",
+          "type": "road"
+        }
+      ],
+      "slots": 129,
+      "layers": 3
+    },
+    "silo_small": {
+      "footprint": {
+        "w": 3,
+        "h": 3
+      },
+      "states": {
+        "fill00": "modules/silo_small_fill00.svg",
+        "fill25": "modules/silo_small_fill25.svg",
+        "fill50": "modules/silo_small_fill50.svg",
+        "fill75": "modules/silo_small_fill75.svg",
+        "fill100": "modules/silo_small_fill100.svg"
+      },
+      "connectors": [
+        {
+          "x": 1,
+          "y": 2,
+          "side": "s",
+          "type": "road"
+        }
+      ]
+    },
+    "tank_farm_small": {
+      "footprint": {
+        "w": 4,
+        "h": 4
+      },
+      "states": {
+        "fill00": "modules/tank_farm_small_fill00.svg",
+        "fill25": "modules/tank_farm_small_fill25.svg",
+        "fill50": "modules/tank_farm_small_fill50.svg",
+        "fill75": "modules/tank_farm_small_fill75.svg",
+        "fill100": "modules/tank_farm_small_fill100.svg"
+      },
+      "connectors": [
+        {
+          "x": 1,
+          "y": 3,
+          "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 2,
+          "y": 0,
+          "side": "n",
+          "type": "pipe"
+        }
+      ]
+    },
+    "gas_holder_small": {
+      "footprint": {
+        "w": 3,
+        "h": 3
+      },
+      "states": {
+        "fill00": "modules/gas_holder_small_fill00.svg",
+        "fill25": "modules/gas_holder_small_fill25.svg",
+        "fill50": "modules/gas_holder_small_fill50.svg",
+        "fill75": "modules/gas_holder_small_fill75.svg",
+        "fill100": "modules/gas_holder_small_fill100.svg"
+      },
+      "connectors": [
+        {
+          "x": 1,
+          "y": 2,
+          "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 1,
+          "y": 0,
+          "side": "n",
+          "type": "pipe"
+        }
+      ]
+    },
+    "vehicle_lot_small": {
+      "footprint": {
+        "w": 6,
+        "h": 6
+      },
+      "states": {
+        "fill00": "modules/vehicle_lot_small_fill00.svg",
+        "fill25": "modules/vehicle_lot_small_fill25.svg",
+        "fill50": "modules/vehicle_lot_small_fill50.svg",
+        "fill75": "modules/vehicle_lot_small_fill75.svg",
+        "fill100": "modules/vehicle_lot_small_fill100.svg"
+      },
+      "connectors": [
+        {
+          "x": 1,
+          "y": 5,
+          "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 4,
+          "y": 5,
+          "side": "s",
+          "type": "road"
+        }
+      ],
+      "slots": 90
+    },
+    "gate_in_lane": {
+      "footprint": {
+        "w": 1,
+        "h": 4
+      },
+      "file": "modules/gate_in_lane_single.svg",
+      "parts": {
+        "left": {
+          "file": "modules/gate_in_lane_left.svg",
+          "footprint": {
+            "w": 1,
+            "h": 4
+          }
+        },
+        "mid": {
+          "file": "modules/gate_in_lane_mid.svg",
+          "footprint": {
+            "w": 1,
+            "h": 4
+          }
+        },
+        "right": {
+          "file": "modules/gate_in_lane_right.svg",
+          "footprint": {
+            "w": 1,
+            "h": 4
+          }
+        }
+      },
+      "connectors": [
+        {
+          "x": 0,
+          "y": 3,
+          "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 0,
+          "y": 0,
+          "side": "n",
+          "type": "road"
+        }
+      ]
+    },
+    "gate_out_lane": {
+      "footprint": {
+        "w": 1,
+        "h": 4
+      },
+      "file": "modules/gate_out_lane_single.svg",
+      "parts": {
+        "left": {
+          "file": "modules/gate_out_lane_left.svg",
+          "footprint": {
+            "w": 1,
+            "h": 4
+          }
+        },
+        "mid": {
+          "file": "modules/gate_out_lane_mid.svg",
+          "footprint": {
+            "w": 1,
+            "h": 4
+          }
+        },
+        "right": {
+          "file": "modules/gate_out_lane_right.svg",
+          "footprint": {
+            "w": 1,
+            "h": 4
+          }
+        }
+      },
+      "connectors": [
+        {
+          "x": 0,
+          "y": 3,
+          "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 0,
+          "y": 0,
+          "side": "n",
+          "type": "road"
+        }
+      ]
+    },
+    "gate_lane_barrier": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "parts": {
+        "barrier": {
+          "file": "modules/gate_lane_barrier.svg",
+          "footprint": {
+            "w": 1,
+            "h": 1
+          },
+          "offset": {
+            "x": 0,
+            "y": 24
+          },
+          "pivot": {
+            "x": 9,
+            "y": 32
+          },
+          "closedDeg": 0,
+          "openDeg": -90
+        }
+      },
+      "connectors": []
+    },
+    "pre_gate_buffer": {
+      "footprint": {
+        "w": 8,
+        "h": 8
+      },
+      "parts": {
+        "lane": {
+          "file": "modules/pre_gate_lane.svg",
+          "footprint": {
+            "w": 1,
+            "h": 6
+          }
+        }
+      },
+      "connectors": [
+        {
+          "x": 0,
+          "y": 7,
+          "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 7,
+          "y": 0,
+          "side": "n",
+          "type": "road"
+        }
+      ]
+    },
+    "truck_holding": {
+      "footprint": {
+        "w": 6,
+        "h": 5
+      },
+      "file": "modules/truck_holding.svg",
+      "connectors": [
+        {
+          "x": 0,
+          "y": 4,
+          "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 5,
+          "y": 4,
+          "side": "s",
+          "type": "road"
+        }
+      ],
+      "stalls": 6,
+      "stallSize": {
+        "w": 1,
+        "h": 3
+      },
+      "aisleRows": [
+        3,
+        4
+      ]
+    },
+    "vehicle_depot": {
+      "footprint": {
+        "w": 3,
+        "h": 3
+      },
+      "file": "modules/vehicle_depot.svg",
+      "stalls": 10,
+      "connectors": [
+        {
+          "x": 1,
+          "y": 2,
+          "side": "s",
+          "type": "road"
+        }
+      ]
+    },
+    "rail_station_small": {
+      "footprint": {
+        "w": 12,
+        "h": 4
+      },
+      "file": "modules/rail_station_small.svg",
+      "trackRow": 1,
+      "stagingBoxes": 11,
+      "connectors": [
+        {
+          "x": 0,
+          "y": 1,
+          "side": "w",
+          "type": "rail"
+        },
+        {
+          "x": 11,
+          "y": 1,
+          "side": "e",
+          "type": "rail"
+        },
+        {
+          "x": 3,
+          "y": 3,
+          "side": "s",
+          "type": "road"
+        },
+        {
+          "x": 8,
+          "y": 3,
+          "side": "s",
+          "type": "road"
+        }
+      ]
+    },
+    "sts": {
+      "footprint": {
+        "w": 3,
+        "h": 10
+      },
+      "parts": {
+        "frame": {
+          "file": "modules/sts_frame.svg",
+          "footprint": {
+            "w": 3,
+            "h": 10
+          },
+          "pivot": {
+            "x": 96,
+            "y": 369
+          }
+        },
+        "trolley": {
+          "file": "modules/sts_trolley.svg",
+          "footprint": {
+            "w": 3,
+            "h": 1
+          },
+          "pivot": {
+            "x": 96,
+            "y": 32
+          },
+          "travel": {
+            "axis": "y",
+            "yMin": 30,
+            "yMax": 560
+          }
+        },
+        "spreader_20": {
+          "file": "modules/sts_spreader_20.svg",
+          "footprint": {
+            "w": 2,
+            "h": 1
+          },
+          "pivot": {
+            "x": 64,
+            "y": 32
+          }
+        },
+        "spreader_40": {
+          "file": "modules/sts_spreader_40.svg",
+          "footprint": {
+            "w": 3,
+            "h": 1
+          },
+          "pivot": {
+            "x": 96,
+            "y": 32
+          }
+        }
+      },
+      "connectors": []
+    },
+    "reefer_rack": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "modules/reefer_rack.svg",
+      "connectors": []
+    }
+  },
+  "entities": {
+    "straddle_carrier": {
+      "footprint": {
+        "w": 1,
+        "h": 2
+      },
+      "note": "priehľadný stred; kontajner kreslí hra pod rám (CargoSprite), stav empty/loaded = bez/s kontajnerom",
+      "file": "entities/straddle_carrier.svg"
+    },
+    "empty_handler": {
+      "footprint": {
+        "w": 1,
+        "h": 2
+      },
+      "file": "entities/ech.svg",
+      "spreaderMount": {
+        "x": 32,
+        "y": 6
+      },
+      "parts": {
+        "spreader_20": {
+          "file": "entities/ech_spreader_20.svg",
+          "footprint": {
+            "w": 1,
+            "h": 1
+          },
+          "pivot": {
+            "x": 32,
+            "y": 32
+          }
+        },
+        "spreader_40": {
+          "file": "entities/ech_spreader_40.svg",
+          "footprint": {
+            "w": 2,
+            "h": 1
+          },
+          "pivot": {
+            "x": 64,
+            "y": 32
+          }
+        }
+      },
+      "note": "ECH (sprite `ech`, R2): rám bez kontajnera; kontajner a spreader kreslí hra v bode spreaderMount (px súboru, pivot spreadera = tento bod), nad rámom"
+    },
+    "agv": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "states": {
+        "empty": "entities/agv_empty.svg",
+        "loaded": "entities/agv_loaded.svg"
+      }
+    },
+    "forklift": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "states": {
+        "empty": "entities/forklift_empty.svg",
+        "loaded": "entities/forklift_loaded.svg"
+      }
+    },
+    "bulk_shuttle": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "states": {
+        "empty": "entities/bulk_shuttle_empty.svg",
+        "loaded": "entities/bulk_shuttle_loaded.svg"
+      }
+    },
+    "tanker_shuttle": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "states": {
+        "empty": "entities/tanker_shuttle_empty.svg",
+        "loaded": "entities/tanker_shuttle_loaded.svg"
+      }
+    },
+    "car": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "variants": {
+        "v1": "entities/car_v1.svg",
+        "v2": "entities/car_v2.svg",
+        "v3": "entities/car_v3.svg"
+      },
+      "note": "L −10 % / base / +10 %"
+    },
+    "truck_container": {
+      "footprint": {
+        "w": 1,
+        "h": 3
+      },
+      "parts": {
+        "cab": {
+          "file": "entities/truck_cab.svg",
+          "footprint": {
+            "w": 1,
+            "h": 1
+          },
+          "pivot": {
+            "x": 32,
+            "y": 54
+          }
+        },
+        "trailer": {
+          "file": "entities/truck_trailer_40.svg",
+          "footprint": {
+            "w": 1,
+            "h": 2
+          },
+          "pivot": {
+            "x": 32,
+            "y": 4
+          }
+        }
+      },
+      "note": "kabína na hlave, náves za čapom po stope; kontajner kreslí hra na náves"
+    },
+    "truck_bulk": {
+      "footprint": {
+        "w": 1,
+        "h": 2
+      },
+      "states": {
+        "empty": "entities/truck_bulk_empty.svg",
+        "loaded": "entities/truck_bulk_loaded.svg"
+      }
+    },
+    "truck_tanker": {
+      "footprint": {
+        "w": 1,
+        "h": 2
+      },
+      "states": {
+        "empty": "entities/truck_tanker_empty.svg",
+        "loaded": "entities/truck_tanker_loaded.svg"
+      }
+    },
+    "truck_car_transporter": {
+      "footprint": {
+        "w": 1,
+        "h": 2
+      },
+      "states": {
+        "empty": "entities/truck_car_transporter_empty.svg",
+        "loaded": "entities/truck_car_transporter_loaded.svg"
+      }
+    },
+    "locomotive": {
+      "footprint": {
+        "w": 1,
+        "h": 3
+      },
+      "file": "entities/locomotive.svg",
+      "pivot": {
+        "x": 32,
+        "y": 96
+      },
+      "couplerY": [
+        4,
+        188
+      ],
+      "note": "lokomotíva 1×3, nos hore, pivot = stred; kĺbovo po koľaji (TR6-03)"
+    },
+    "wagon_container": {
+      "footprint": {
+        "w": 1,
+        "h": 2
+      },
+      "states": {
+        "empty": "entities/wagon_container_empty.svg",
+        "loaded": "entities/wagon_container_loaded.svg"
+      }
+    },
+    "wagon_hopper": {
+      "footprint": {
+        "w": 1,
+        "h": 2
+      },
+      "states": {
+        "empty": "entities/wagon_hopper_empty.svg",
+        "loaded": "entities/wagon_hopper_loaded.svg"
+      }
+    },
+    "wagon_tank": {
+      "footprint": {
+        "w": 1,
+        "h": 2
+      },
+      "states": {
+        "empty": "entities/wagon_tank_empty.svg",
+        "loaded": "entities/wagon_tank_loaded.svg"
+      }
+    },
+    "wagon_car": {
+      "footprint": {
+        "w": 1,
+        "h": 2
+      },
+      "states": {
+        "empty": "entities/wagon_car_empty.svg",
+        "loaded": "entities/wagon_car_loaded.svg"
+      }
+    },
+    "ship_feeder": {
+      "footprint": {
+        "w": 2,
+        "h": 6
+      },
+      "variants": {
+        "container": {
+          "empty": "entities/ship_feeder_container_empty.svg",
+          "loaded": "entities/ship_feeder_container_loaded.svg"
+        },
+        "bulk": {
+          "empty": "entities/ship_feeder_bulk_empty.svg",
+          "loaded": "entities/ship_feeder_bulk_loaded.svg"
+        },
+        "tanker": {
+          "empty": "entities/ship_feeder_tanker_empty.svg",
+          "loaded": "entities/ship_feeder_tanker_loaded.svg"
+        },
+        "roro": {
+          "empty": "entities/ship_feeder_roro_empty.svg",
+          "loaded": "entities/ship_feeder_roro_loaded.svg"
+        }
+      },
+      "deck": {
+        "columns": 2,
+        "bays": [
+          {
+            "x": 28,
+            "y": 108,
+            "w": 72,
+            "h": 64
+          },
+          {
+            "x": 28,
+            "y": 178,
+            "w": 72,
+            "h": 64
+          },
+          {
+            "x": 28,
+            "y": 248,
+            "w": 72,
+            "h": 64
+          }
+        ]
+      }
+    },
+    "ship_handy": {
+      "footprint": {
+        "w": 2,
+        "h": 10
+      },
+      "variants": {
+        "container": {
+          "empty": "entities/ship_handy_container_empty.svg",
+          "loaded": "entities/ship_handy_container_loaded.svg"
+        },
+        "bulk": {
+          "empty": "entities/ship_handy_bulk_empty.svg",
+          "loaded": "entities/ship_handy_bulk_loaded.svg"
+        },
+        "tanker": {
+          "empty": "entities/ship_handy_tanker_empty.svg",
+          "loaded": "entities/ship_handy_tanker_loaded.svg"
+        },
+        "gas": {
+          "empty": "entities/ship_handy_gas_empty.svg",
+          "loaded": "entities/ship_handy_gas_loaded.svg"
+        },
+        "roro": {
+          "empty": "entities/ship_handy_roro_empty.svg",
+          "loaded": "entities/ship_handy_roro_loaded.svg"
+        }
+      },
+      "deck": {
+        "columns": 2,
+        "bays": [
+          {
+            "x": 28,
+            "y": 84,
+            "w": 72,
+            "h": 64
+          },
+          {
+            "x": 28,
+            "y": 154,
+            "w": 72,
+            "h": 64
+          },
+          {
+            "x": 28,
+            "y": 224,
+            "w": 72,
+            "h": 64
+          },
+          {
+            "x": 28,
+            "y": 294,
+            "w": 72,
+            "h": 64
+          },
+          {
+            "x": 28,
+            "y": 364,
+            "w": 72,
+            "h": 64
+          },
+          {
+            "x": 28,
+            "y": 434,
+            "w": 72,
+            "h": 64
+          },
+          {
+            "x": 28,
+            "y": 504,
+            "w": 72,
+            "h": 64
+          }
+        ]
+      }
+    },
+    "ship_panamax": {
+      "footprint": {
+        "w": 3,
+        "h": 14
+      },
+      "variants": {
+        "container": {
+          "empty": "entities/ship_panamax_container_empty.svg",
+          "loaded": "entities/ship_panamax_container_loaded.svg"
+        },
+        "bulk": {
+          "empty": "entities/ship_panamax_bulk_empty.svg",
+          "loaded": "entities/ship_panamax_bulk_loaded.svg"
+        },
+        "tanker": {
+          "empty": "entities/ship_panamax_tanker_empty.svg",
+          "loaded": "entities/ship_panamax_tanker_loaded.svg"
+        },
+        "gas": {
+          "empty": "entities/ship_panamax_gas_empty.svg",
+          "loaded": "entities/ship_panamax_gas_loaded.svg"
+        },
+        "roro": {
+          "empty": "entities/ship_panamax_roro_empty.svg",
+          "loaded": "entities/ship_panamax_roro_loaded.svg"
+        }
+      },
+      "deck": {
+        "columns": 4,
+        "bays": [
+          {
+            "x": 24,
+            "y": 177,
+            "w": 144,
+            "h": 64
+          },
+          {
+            "x": 24,
+            "y": 247,
+            "w": 144,
+            "h": 64
+          },
+          {
+            "x": 24,
+            "y": 317,
+            "w": 144,
+            "h": 64
+          },
+          {
+            "x": 24,
+            "y": 387,
+            "w": 144,
+            "h": 64
+          },
+          {
+            "x": 24,
+            "y": 457,
+            "w": 144,
+            "h": 64
+          },
+          {
+            "x": 24,
+            "y": 527,
+            "w": 144,
+            "h": 64
+          },
+          {
+            "x": 24,
+            "y": 597,
+            "w": 144,
+            "h": 64
+          },
+          {
+            "x": 24,
+            "y": 667,
+            "w": 144,
+            "h": 64
+          },
+          {
+            "x": 24,
+            "y": 737,
+            "w": 144,
+            "h": 64
+          }
+        ]
+      }
+    },
+    "ship_mega": {
+      "footprint": {
+        "w": 3,
+        "h": 20
+      },
+      "variants": {
+        "container": {
+          "empty": "entities/ship_mega_container_empty.svg",
+          "loaded": "entities/ship_mega_container_loaded.svg"
+        },
+        "bulk": {
+          "empty": "entities/ship_mega_bulk_empty.svg",
+          "loaded": "entities/ship_mega_bulk_loaded.svg"
+        },
+        "tanker": {
+          "empty": "entities/ship_mega_tanker_empty.svg",
+          "loaded": "entities/ship_mega_tanker_loaded.svg"
+        },
+        "gas": {
+          "empty": "entities/ship_mega_gas_empty.svg",
+          "loaded": "entities/ship_mega_gas_loaded.svg"
+        },
+        "roro": {
+          "empty": "entities/ship_mega_roro_empty.svg",
+          "loaded": "entities/ship_mega_roro_loaded.svg"
+        }
+      },
+      "deck": {
+        "columns": 4,
+        "bays": [
+          {
+            "x": 24,
+            "y": 161,
+            "w": 144,
+            "h": 64
+          },
+          {
+            "x": 24,
+            "y": 231,
+            "w": 144,
+            "h": 64
+          },
+          {
+            "x": 24,
+            "y": 301,
+            "w": 144,
+            "h": 64
+          },
+          {
+            "x": 24,
+            "y": 371,
+            "w": 144,
+            "h": 64
+          },
+          {
+            "x": 24,
+            "y": 441,
+            "w": 144,
+            "h": 64
+          },
+          {
+            "x": 24,
+            "y": 511,
+            "w": 144,
+            "h": 64
+          },
+          {
+            "x": 24,
+            "y": 581,
+            "w": 144,
+            "h": 64
+          },
+          {
+            "x": 24,
+            "y": 651,
+            "w": 144,
+            "h": 64
+          },
+          {
+            "x": 24,
+            "y": 721,
+            "w": 144,
+            "h": 64
+          },
+          {
+            "x": 24,
+            "y": 791,
+            "w": 144,
+            "h": 64
+          },
+          {
+            "x": 24,
+            "y": 861,
+            "w": 144,
+            "h": 64
+          },
+          {
+            "x": 24,
+            "y": 931,
+            "w": 144,
+            "h": 64
+          },
+          {
+            "x": 24,
+            "y": 1001,
+            "w": 144,
+            "h": 64
+          },
+          {
+            "x": 24,
+            "y": 1071,
+            "w": 144,
+            "h": 64
+          }
+        ]
+      }
+    },
+    "vehicle_brake_lights": {
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "file": "entities/vehicle_brake_lights.svg",
+      "note": "prekryv stojaceho vozidla, svetlá pri spodnom okraji"
+    },
+    "terminal_tractor": {
+      "footprint": {
+        "w": 1,
+        "h": 3
+      },
+      "parts": {
+        "cab": {
+          "file": "entities/terminal_tractor_cab.svg",
+          "footprint": {
+            "w": 1,
+            "h": 1
+          },
+          "pivot": {
+            "x": 32,
+            "y": 52
+          }
+        },
+        "trailer": {
+          "file": "entities/terminal_tractor_chassis_40.svg",
+          "footprint": {
+            "w": 1,
+            "h": 2
+          },
+          "pivot": {
+            "x": 32,
+            "y": 4
+          }
+        }
+      },
+      "note": "ťahač terminálu: kabína na hlave, podvozok 40' za čapom po stope; kontajner kreslí hra na podvozok"
+    },
+    "rtg": {
+      "footprint": {
+        "w": 5,
+        "h": 2
+      },
+      "parts": {
+        "frame": {
+          "file": "entities/rtg_frame.svg",
+          "footprint": {
+            "w": 5,
+            "h": 2
+          },
+          "pivot": {
+            "x": 160,
+            "y": 64
+          }
+        },
+        "trolley": {
+          "file": "entities/rtg_trolley.svg",
+          "footprint": {
+            "w": 1,
+            "h": 1
+          },
+          "pivot": {
+            "x": 32,
+            "y": 32
+          },
+          "travel": {
+            "axis": "x",
+            "yMin": 32,
+            "yMax": 288
+          }
+        }
+      },
+      "note": "RTG: rám jazdí po Y, vozík po X (travel v súradniciach rámu, 64 = rail y), rady x 36-216, pruh kamióna x 236-300"
+    },
+    "reach_stacker": {
+      "footprint": {
+        "w": 1,
+        "h": 2
+      },
+      "file": "entities/reach_stacker.svg",
+      "parts": {
+        "boom": {
+          "file": "entities/reach_stacker_boom.svg",
+          "footprint": {
+            "w": 1,
+            "h": 2
+          },
+          "pivot": {
+            "x": 32,
+            "y": 116
+          },
+          "mountOnBase": {
+            "x": 32,
+            "y": 96
+          },
+          "travel": {
+            "axis": "y",
+            "yMin": 0,
+            "yMax": 64
+          }
+        },
+        "spreader_20": {
+          "file": "entities/reach_stacker_spreader_20.svg",
+          "footprint": {
+            "w": 1,
+            "h": 1
+          },
+          "pivot": {
+            "x": 32,
+            "y": 27
+          },
+          "mountOnBase": {
+            "x": 32,
+            "y": 8
+          }
+        },
+        "spreader_40": {
+          "file": "entities/reach_stacker_spreader_40.svg",
+          "footprint": {
+            "w": 2,
+            "h": 1
+          },
+          "pivot": {
+            "x": 64,
+            "y": 27
+          },
+          "mountOnBase": {
+            "x": 32,
+            "y": 8
+          }
+        }
+      },
+      "note": "reach stacker (R5, MachineVM): telo 1×2 predkom hore; boom.mountOnBase = bod telesa (px súboru), kde sedí pivot výložníka; travel = posun výložníka vpred v px pri boom 0..1; spreader.mountOnBase = hlava výložníka v px súboru výložníka (pivot spreadera sa kladie sem)"
+    },
+    "wagon_container_60": {
+      "footprint": {
+        "w": 1,
+        "h": 3
+      },
+      "file": "entities/wagon_container_60.svg",
+      "pivot": {
+        "x": 32,
+        "y": 96
+      },
+      "couplerY": [
+        0,
+        192
+      ],
+      "slots20": [
+        [
+          2,
+          66
+        ],
+        [
+          64,
+          128
+        ],
+        [
+          126,
+          190
+        ]
+      ],
+      "slot40": [
+        2,
+        128
+      ],
+      "note": "vagón 60′: 3× 20′ alebo 40′ + 20′ (sloty y v px súboru od predku); bez nákladu, kontajnery kreslí hra"
+    },
+    "rmg": {
+      "footprint": {
+        "w": 6,
+        "h": 2
+      },
+      "parts": {
+        "frame": {
+          "file": "entities/rmg_frame.svg",
+          "footprint": {
+            "w": 6,
+            "h": 2
+          },
+          "pivot": {
+            "x": 160,
+            "y": 64
+          }
+        },
+        "trolley": {
+          "file": "entities/rmg_trolley.svg",
+          "footprint": {
+            "w": 1,
+            "h": 1
+          },
+          "pivot": {
+            "x": 32,
+            "y": 32
+          },
+          "travel": {
+            "axis": "x",
+            "yMin": 32,
+            "yMax": 352
+          }
+        }
+      },
+      "note": "RMG nad koľajami + buffer: rám jazdí po Y (travel 0..trackLength-128), vozík po X rámu (32–352), konzola x 320–384"
+    }
+  },
+  "cargo": {
+    "container_teu": {
+      "size": {
+        "w": 64,
+        "h": 32
+      },
+      "file": "cargo/container_teu.svg"
+    },
+    "container_20_dry": {
+      "file": "cargo/container_20_dry.svg",
+      "size": {
+        "w": 64,
+        "h": 26
+      },
+      "tintable": true
+    },
+    "container_40_dry": {
+      "file": "cargo/container_40_dry.svg",
+      "size": {
+        "w": 128,
+        "h": 26
+      },
+      "tintable": true
+    },
+    "container_20_empty": {
+      "file": "cargo/container_20_empty.svg",
+      "size": {
+        "w": 64,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "container_40_empty": {
+      "file": "cargo/container_40_empty.svg",
+      "size": {
+        "w": 128,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "bulk_pile": {
+      "size": {
+        "w": 32,
+        "h": 32
+      },
+      "file": "cargo/bulk_pile.svg"
+    },
+    "liquid_batch": {
+      "size": {
+        "w": 32,
+        "h": 32
+      },
+      "file": "cargo/liquid_batch.svg"
+    },
+    "gas_batch": {
+      "size": {
+        "w": 32,
+        "h": 32
+      },
+      "file": "cargo/gas_batch.svg"
+    },
+    "car": {
+      "size": {
+        "w": 64,
+        "h": 64
+      },
+      "file": "cargo/car.svg"
+    },
+    "container_20_flat_rack": {
+      "file": "cargo/container_20_flat_rack.svg",
+      "size": {
+        "w": 64,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "container_20_open_top": {
+      "file": "cargo/container_20_open_top.svg",
+      "size": {
+        "w": 64,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "container_20_reefer": {
+      "file": "cargo/container_20_reefer.svg",
+      "size": {
+        "w": 64,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "container_20_tank": {
+      "file": "cargo/container_20_tank.svg",
+      "size": {
+        "w": 64,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "container_40_flat_rack": {
+      "file": "cargo/container_40_flat_rack.svg",
+      "size": {
+        "w": 128,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "container_40_flat_rack_oog": {
+      "file": "cargo/container_40_flat_rack_oog.svg",
+      "size": {
+        "w": 128,
+        "h": 40
+      },
+      "tintable": false
+    },
+    "container_40_open_top": {
+      "file": "cargo/container_40_open_top.svg",
+      "size": {
+        "w": 128,
+        "h": 26
+      },
+      "tintable": false
+    },
+    "container_40_open_top_oog": {
+      "file": "cargo/container_40_open_top_oog.svg",
+      "size": {
+        "w": 128,
+        "h": 34
+      },
+      "tintable": false
+    },
+    "container_40_reefer": {
+      "file": "cargo/container_40_reefer.svg",
+      "size": {
+        "w": 128,
+        "h": 26
+      },
+      "tintable": false
+    }
+  },
+  "overlay": {
+    "ghost_hatch": {
+      "file": "overlay/ghost_hatch.svg",
+      "pattern": {
+        "w": 12,
+        "h": 12
+      },
+      "use": "nad --ghost-invalid"
+    },
+    "selection_ring": {
+      "file": "overlay/selection_ring.svg",
+      "nineSlice": {
+        "left": 8,
+        "top": 8,
+        "right": 8,
+        "bottom": 8
+      }
+    },
+    "hover_outline": {
+      "file": "overlay/hover_outline.svg",
+      "nineSlice": {
+        "left": 8,
+        "top": 8,
+        "right": 8,
+        "bottom": 8
+      }
+    },
+    "path_arrow": {
+      "file": "overlay/path_arrow.svg",
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "rotatable": true
+    },
+    "connector_marker": {
+      "file": "overlay/connector_marker.svg",
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "rotatable": true,
+      "note": "šípka smeruje do modulu pri rot 0 (vjazd zo severu)"
+    },
+    "warning_badge": {
+      "file": "overlay/warning_badge.svg",
+      "size": {
+        "w": 24,
+        "h": 24
+      }
+    },
+    "blocked_badge": {
+      "file": "overlay/blocked_badge.svg",
+      "size": {
+        "w": 24,
+        "h": 24
+      }
+    },
+    "heatmap_legend": {
+      "file": "overlay/heatmap_legend.svg",
+      "size": {
+        "w": 200,
+        "h": 12
+      }
+    },
+    "tp_marker": {
+      "file": "overlay/tp_marker.svg",
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "rotatable": true,
+      "note": "odovzdávacie miesto RTG; šípka = smer jazdy"
+    },
+    "safe_zone": {
+      "file": "overlay/safe_zone.svg",
+      "footprint": {
+        "w": 1,
+        "h": 1
+      },
+      "rotatable": true,
+      "note": "bezpečnostná zóna pri TP; kreslí sa, keď je TP obsadené"
+    },
+    "inspection_bay": {
+      "file": "overlay/inspection_bay.svg",
+      "footprint": {
+        "w": 1,
+        "h": 3
+      },
+      "rotatable": true,
+      "note": "kontrolné státie výstupnej brány"
+    },
+    "queue_badge": {
+      "file": "overlay/queue_badge.svg",
+      "size": {
+        "w": 24,
+        "h": 24
+      },
+      "note": "číslo fronty kreslí engine, stred 12,12"
+    },
+    "reefer_plug_on": {
+      "file": "overlay/reefer_plug_on.svg",
+      "size": {
+        "w": 16,
+        "h": 16
+      }
+    },
+    "reefer_plug_off": {
+      "file": "overlay/reefer_plug_off.svg",
+      "size": {
+        "w": 16,
+        "h": 16
+      }
+    },
+    "reefer_plug_alarm": {
+      "file": "overlay/reefer_plug_alarm.svg",
+      "size": {
+        "w": 16,
+        "h": 16
+      }
+    }
+  },
+  "icons": {
+    "file": "icons/icons.svg",
+    "grid": 24,
+    "stroke": 2,
+    "color": "currentColor",
+    "symbols": [
+      "ic_container",
+      "ic_bulk",
+      "ic_liquid",
+      "ic_gas",
+      "ic_roro",
+      "ic_berth",
+      "ic_crane",
+      "ic_yard",
+      "ic_silo",
+      "ic_tank_farm",
+      "ic_gasholder",
+      "ic_lot",
+      "ic_gate",
+      "ic_waiting",
+      "ic_ramp",
+      "ic_depot",
+      "ic_rail_station",
+      "ic_road",
+      "ic_rail",
+      "ic_pipe",
+      "ic_parcel",
+      "ic_build",
+      "ic_demolish",
+      "ic_rotate",
+      "ic_inspect",
+      "ic_close",
+      "ic_pause",
+      "ic_play",
+      "ic_speed2",
+      "ic_speed4",
+      "ic_speed8",
+      "ic_save",
+      "ic_load",
+      "ic_settings",
+      "ic_cash",
+      "ic_xp",
+      "ic_clock",
+      "ic_calendar",
+      "ic_contract",
+      "ic_ship",
+      "ic_truck",
+      "ic_vehicle",
+      "ic_heatmap",
+      "ic_utilization",
+      "ic_warning",
+      "ic_lock",
+      "ic_check",
+      "ic_reputation",
+      "ic_idle",
+      "ic_busy",
+      "ic_blocked",
+      "ic_info",
+      "ic_container_20",
+      "ic_container_40",
+      "ic_reefer",
+      "ic_open_top",
+      "ic_flat_rack",
+      "ic_tank",
+      "ic_plug",
+      "ic_rehandle",
+      "ic_stack_height",
+      "ic_tp",
+      "ic_appointment",
+      "ic_tractor",
+      "ic_straddle",
+      "ic_rtg",
+      "ic_rmg",
+      "ic_reach_stacker",
+      "ic_ech",
+      "ic_agv",
+      "ic_train",
+      "ic_gate_in",
+      "ic_gate_out",
+      "ic_weighbridge",
+      "ic_ocr",
+      "ic_seal",
+      "ic_twistlock",
+      "ic_safe_zone",
+      "ic_holding",
+      "ic_traffic_jam",
+      "ic_one_way",
+      "ic_terminal_only"
+    ]
+  }
+}

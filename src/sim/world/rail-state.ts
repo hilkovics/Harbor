@@ -34,6 +34,7 @@ export function parseRailState(value: unknown, grid: Grid): RailRuntimeState {
     delayTicksMax: field('delayTicksMax'),
     turnaroundTicksTotal: field('turnaroundTicksTotal'),
     turnaroundTicksMax: field('turnaroundTicksMax'),
+    importUnitsByTrain: field('importUnitsByTrain'),
     crossings,
   };
 }

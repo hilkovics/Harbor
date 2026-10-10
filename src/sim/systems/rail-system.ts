@@ -86,13 +86,15 @@ function drive(world: World, train: Train): void {
 /** Vlak prešiel portálom: jednotky `in_train → exported`, `TrainDeparted`, zánik vlaka. */
 function depart(world: World, train: Train): void {
   let units = 0;
+  let importUnits = 0;
   for (let unitId = world.cargo.firstUnitAt('in_train', train.id); unitId !== undefined; unitId = world.cargo.firstUnitAt('in_train', train.id)) {
+    if (world.cargo.get(unitId)?.direction === 'import') importUnits += 1;
     world.cargo.move(unitId, { kind: 'exported' });
     units += 1;
   }
   const turnaroundTicks = world.clock.tick - train.spawnedTick;
   world.removeTrain(train.id);
-  world.rail.recordDeparture(turnaroundTicks);
+  world.rail.recordDeparture(turnaroundTicks, importUnits);
   world.events.emit({ type: 'TrainDeparted', trainId: train.id, units, turnaroundTicks });
 }
 

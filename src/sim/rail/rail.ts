@@ -23,6 +23,8 @@ export interface RailRuntimeState {
   /** Súčet a maximum doby od vzniku vlaku po odchod cez portál (obrat). */
   readonly turnaroundTicksTotal: number;
   readonly turnaroundTicksMax: number;
+  /** Jednotky importu, ktoré odišli vlakom (`in_train → exported` pri odchode; podiel importu vlakom = metrika `railImportSharePct`). */
+  readonly importUnitsByTrain: number;
   /** Úrovňové priecestia (ADR-043 TR6-02): indexy buniek s cestou, cez ktoré vedie aj koľaj; vzostupne. */
   readonly crossings: readonly number[];
 }
@@ -40,6 +42,7 @@ export const RAIL_RUNTIME_KEYS: readonly (keyof RailRuntimeState)[] = [
   'delayTicksMax',
   'turnaroundTicksTotal',
   'turnaroundTicksMax',
+  'importUnitsByTrain',
   'crossings',
 ];
 
@@ -74,8 +77,8 @@ export class Rail {
     for (const index of state?.crossings ?? []) this.crossings.add(index);
     this.state =
       state === undefined
-        ? { nextArrivalTick: def.timetable.firstArrivalHour * clock.ticksPerHour, trainsSpawned: 0, trainsDeparted: 0, skippedArrivals: 0, delayTicksTotal: 0, delayTicksMax: 0, turnaroundTicksTotal: 0, turnaroundTicksMax: 0 }
-        : { nextArrivalTick: state.nextArrivalTick, trainsSpawned: state.trainsSpawned, trainsDeparted: state.trainsDeparted, skippedArrivals: state.skippedArrivals, delayTicksTotal: state.delayTicksTotal, delayTicksMax: state.delayTicksMax, turnaroundTicksTotal: state.turnaroundTicksTotal, turnaroundTicksMax: state.turnaroundTicksMax };
+        ? { nextArrivalTick: def.timetable.firstArrivalHour * clock.ticksPerHour, trainsSpawned: 0, trainsDeparted: 0, skippedArrivals: 0, delayTicksTotal: 0, delayTicksMax: 0, turnaroundTicksTotal: 0, turnaroundTicksMax: 0, importUnitsByTrain: 0 }
+        : { nextArrivalTick: state.nextArrivalTick, trainsSpawned: state.trainsSpawned, trainsDeparted: state.trainsDeparted, skippedArrivals: state.skippedArrivals, delayTicksTotal: state.delayTicksTotal, delayTicksMax: state.delayTicksMax, turnaroundTicksTotal: state.turnaroundTicksTotal, turnaroundTicksMax: state.turnaroundTicksMax, importUnitsByTrain: state.importUnitsByTrain };
   }
 
   get nextArrivalTick(): number {
@@ -164,8 +167,9 @@ export class Rail {
     this.state.delayTicksMax = Math.max(this.state.delayTicksMax, delayTicks);
   }
 
-  recordDeparture(turnaroundTicks: number): void {
+  recordDeparture(turnaroundTicks: number, importUnits: number): void {
     this.state.trainsDeparted += 1;
+    this.state.importUnitsByTrain += importUnits;
     this.state.turnaroundTicksTotal += turnaroundTicks;
     this.state.turnaroundTicksMax = Math.max(this.state.turnaroundTicksMax, turnaroundTicks);
   }

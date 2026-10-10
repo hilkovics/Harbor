@@ -16,7 +16,7 @@ import type { CargoDirection } from '@sim/cargo';
 import { loadBundledDefs, type DefRegistry } from '@sim/defs';
 import type { CargoMovedEvent, SimEvent } from '@sim/events';
 import { loadBundledMap, loadMap, parseMapDef, type LoadedMap } from '@sim/grid';
-import { terminalMetrics, yardMetrics } from '@sim/logistics';
+import { railMetrics, terminalMetrics, yardMetrics } from '@sim/logistics';
 import { ReachStacker } from '@sim/machines';
 import { CraneModule, TruckGate } from '@sim/modules';
 import { VEHICLE_STATE_TRAITS } from '@sim/vehicles';
@@ -274,6 +274,12 @@ export interface SimrunReport {
   readonly energyCents: number;
   /** Dokončené cykly reach stackerov na OOG plochách (položenie aj zdvih; R5, TR5-02). */
   readonly oogMoves: number;
+  /** Podiel importu, ktorý odišiel vlakom, v % (R6, TR6-02; `railMetrics`); bez odvozu importu `null`. */
+  readonly railImportSharePct: number | null;
+  /** Priemerný obrat vlaka (vznik na portáli → odchod) v herných minútach, 1 desatinné miesto (R6); bez odídeného vlaka `null`. */
+  readonly trainTurnaroundMin: number | null;
+  /** Priemerné oneskorenie príchodu vlaka oproti cestovnému poriadku v herných minútach, 1 desatinné miesto (R6); bez vlakov `null`. */
+  readonly trainDelayMin: number | null;
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -992,7 +998,15 @@ export function runScenario(scenario: LoadedScenario, ticks: number, defs: DefRe
     reeferClaims: tally.reeferClaims,
     energyCents: tally.energyCents,
     oogMoves: oogMoves(world),
+    ...railReport(world),
   };
+}
+
+/** Metriky železnice (R6, TR6-02) z `railMetrics`; hodnoty na 1 desatinné miesto. */
+function railReport(world: World): Pick<SimrunReport, 'railImportSharePct' | 'trainTurnaroundMin' | 'trainDelayMin'> {
+  const metrics = railMetrics(world);
+  const round = (value: number | null): number | null => (value === null ? null : Math.round(value * ONE_DECIMAL) / ONE_DECIMAL);
+  return { railImportSharePct: round(metrics.railImportSharePct), trainTurnaroundMin: round(metrics.trainTurnaroundMin), trainDelayMin: round(metrics.trainDelayMin) };
 }
 
 /** Σ dokončené cykly reach stackerov (OOG plochy, R5, TR5-02). */
@@ -1067,7 +1081,8 @@ export function formatSummary(report: SimrunReport): string {
     `vo vnútrozemí čaká ${String(report.trucksWaitingInland.total)} (odvoz/dovoz/výdaj ${String(report.trucksWaitingInland.pickup)}/` +
     `${String(report.trucksWaitingInland.delivery)}/${String(report.trucksWaitingInland.collect)}), čakanie vo vnútrozemí ${String(report.inlandWaitTicks)} ` +
     `(max ${String(report.inlandWaitTicksMax)}), bez stojiska pre odvoz ${String(report.pickupBayStarvationTicks)}, ` +
-    `priame odovzdanie ${metric(report.directHandoverPct)} %, reklamácie reeferov ${String(report.reeferClaims)}, energia ${String(report.energyCents)}, OOG presuny ${String(report.oogMoves)}` +
+    `priame odovzdanie ${metric(report.directHandoverPct)} %, reklamácie reeferov ${String(report.reeferClaims)}, energia ${String(report.energyCents)}, OOG presuny ${String(report.oogMoves)}, ` +
+    `železnica: import vlakom ${metric(report.railImportSharePct)} %, obrat vlaka ${metric(report.trainTurnaroundMin)} min, meškanie vlaka ${metric(report.trainDelayMin)} min` +
     (report.stateHash === null ? '' : `, hash stavu ${report.stateHash}`)
   );
 }

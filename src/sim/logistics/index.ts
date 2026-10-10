@@ -11,6 +11,8 @@ export type { QuaySource } from './quay-lanes';
 export { beginGangPass, endGangPass, gangFilter, gangRoster, craneGangMode, craneTractorsPerSts } from './gang-roster';
 export { terminalMetrics } from './terminal-metrics';
 export type { TerminalMetrics } from './terminal-metrics';
+export { railMetrics } from './rail-metrics';
+export type { RailMetrics } from './rail-metrics';
 export { moduleLanes } from './module-lanes';
 export type { LaneCell, LaneDirection, LaneRole } from './module-lanes';
 export { RoadSpeeds, UNIT_SPEED_FACTOR } from './road-speed';

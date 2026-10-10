@@ -221,3 +221,10 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - **e2e `r4-tp-rtg` používa obojsmernú bunku vjazdu RTG bloku:** test sa má previesť na jednosmerný vjazd, ktorý kladie TR5-02b. — pôvod: výsledok fázy R5 · fáza: R5+ (e2e)
 - **WorldState v14:** zmena stavu reeferu (`CargoUnit.reefer`); číslo overiť voči ADR-042 pri ďalšom save. — pôvod: výsledok fázy R5 · fáza: R5 (docs)
 - **Artefakt verzia 13:** zverejnenie artefaktu R5 pod týmto číslom. — pôvod: výsledok fázy R5 · fáza: R5 (artefakt)
+
+## Z Fázy R6
+- **Priecestie:** viac priecestí a signály/úseky (blokové zabezpečenie), závora so zvukom/animáciou vo VM (TR6-05), obmedzenie priecestia pod stojacim vlakom (dlhý dwell zatvára cestu).
+- **Prenos sklad → buffer osobným jobom** (zadanie TR6-02 bod 6 v pôvodnom znení): ťahač by vozil z RTG bloku do bufferu podľa plánu vlaka; teraz sa železničný import ukladá do bufferu hneď pri vykládke (ADR-043 dodatok).
+- **Priecestie: pravidlo „nevchádzaj bez výjazdu“** — cestné vozidlo by do priecestia nevstúpilo, ak za ním nemá voľný slot (nezahradzuje križovatku vlaku pri zápche). Dnes trvalo stojace vozidlo na priecestí zdrží vlak (hlási sa ako `TrafficJam`). — pôvod: TR6-02c review · fáza: R6/R7
+- **Viac vlakov naraz:** na koľaji dnes beží naraz jeden vlak (ADR-043); súbežné vlaky vyžadujú úseky a signály. Signály a úseky viď „Priecestie“ vyššie (nezdvojené). — pôvod: výsledok fázy R6 · fáza: podľa potreby
+- **Flat-rack oprava zakáže celý stĺpec s rezerváciou** (otvorené po TR6-02b). — pôvod: TR6-02b · fáza: podľa potreby

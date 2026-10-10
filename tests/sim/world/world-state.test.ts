@@ -86,6 +86,8 @@ describe('World.serialize — WorldState v13', () => {
       'jobs',
       'trucks',
       'machines',
+      'trains',
+      'rail',
       'economy',
       'contracts',
       'xp',
@@ -122,7 +124,7 @@ describe('World.serialize — WorldState v13', () => {
     expect(state.clock).toEqual({ tick: 0, speed: 1 });
     expect(state.ids).toEqual({ nextId: MAP.starter.modules.length + 1 });
     expect(state.cashCents).toBe(DEFS.economy.startingCashCents);
-    expect(state.parcels).toEqual({ starter: 'owned', west_quay: 'none', east_yard: 'none' });
+    expect(state.parcels).toEqual({ starter: 'owned', west_quay: 'none', east_yard: 'none', rail_yard: 'owned' });
     expect(Object.keys(state.parcels)).toEqual(MAP.parcels.map((p) => p.id));
   });
 
@@ -289,7 +291,7 @@ describe('World.deserialize', () => {
   const INVALID: readonly [string, Mutation, string][] = [
     ['neznámy kľúč', set('extra', 1), '/extra'],
     ['chýba kľúč', (s) => delete s.cashCents, '/cashCents'],
-    ['neznáma budúca verzia', set('version', 15), '/version'],
+    ['neznáma budúca verzia', set('version', 16), '/version'],
     ['verzia 0', set('version', 0), '/version'],
     ['verzia ako reťazec', set('version', '3'), '/version'],
     ['starý save v1 → clean break (ADR-036), chyba verzie pred tvarom', set('version', 1), '/version'],

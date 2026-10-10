@@ -9,6 +9,7 @@
 import { commandFromJSON, type SerializedCommand } from '@sim/commands';
 import { ExportContract, ImportContract, type Contract } from '@sim/contracts';
 import type { ContractId, EntityId, VoyageId } from '@sim/core';
+import railJson from '@data/defs/rail.json';
 import { DefRegistry } from '@sim/defs';
 import type { SimEvent } from '@sim/events';
 import { World } from '@sim/world';
@@ -40,6 +41,10 @@ export interface F6aDefsOptions {
   readonly rtg?: Readonly<Record<string, unknown>>;
   /** Prepíše polia `logistics.json` → `reefer` (R5, ADR-042). */
   readonly reefer?: Readonly<Record<string, unknown>>;
+  /** Prepíše `rail.json` (R6, ADR-043): `timetable`, `train` a `crossingClearTicks`. */
+  readonly rail?: { readonly timetable?: Readonly<Record<string, unknown>>; readonly train?: Readonly<Record<string, unknown>>; readonly crossingClearTicks?: number };
+  /** Prepíše polia `contract_templates.json` položiek (všetky šablóny, ktoré spĺňajú `where`) — napr. `railShare` (R6). */
+  readonly templates?: { readonly where: (item: Record<string, unknown>) => boolean; readonly fields: Readonly<Record<string, unknown>> };
 }
 
 /**
@@ -60,6 +65,11 @@ export function f6aDefs(overrides: F6aDefsOptions = {}): DefRegistry {
     ships,
     modules,
     equipment: { ...RAW_DEFS.equipment, rtg: { ...RAW_DEFS.equipment.rtg, ...overrides.rtg } },
+    rail: { ...railJson, timetable: { ...railJson.timetable, ...overrides.rail?.timetable }, train: { ...railJson.train, ...overrides.rail?.train }, crossingClearTicks: overrides.rail?.crossingClearTicks ?? railJson.crossingClearTicks },
+    contract_templates:
+      overrides.templates === undefined
+        ? RAW_DEFS.contract_templates
+        : { ...RAW_DEFS.contract_templates, items: RAW_DEFS.contract_templates.items.map((item) => (overrides.templates?.where(item) === true ? { ...item, ...overrides.templates.fields } : item)) },
     economy: {
       ...RAW_DEFS.economy,
       offersPerDay: 0,

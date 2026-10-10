@@ -465,7 +465,7 @@ export interface CraneParams {
 }
 
 /** Roly skladu (F6c, ADR-034): `empty_depot` = depo prázdnych kontajnerov (trieda `EmptyDepot`); chýbajúca rola = bežný sklad kategórie. */
-export const STORAGE_ROLES = ['empty_depot', 'rtg_block'] as const;
+export const STORAGE_ROLES = ['empty_depot', 'rtg_block', 'rail_terminal'] as const;
 export type StorageRole = (typeof STORAGE_ROLES)[number];
 
 /** `params` skladu (`kind: 'storage'`). */
@@ -507,6 +507,13 @@ export interface StorageParams {
    * `role: 'rtg_block'` s `maxTier` 1 (OOG sa nestohuje). Chýba = bežný blok.
    */
   readonly acceptsOog?: boolean;
+  /**
+   * Železničný terminál (R6, ADR-043): stĺpec footprintu (pri rotácii 0), v ktorom beží prvá koľaj pozdĺž bloku; ďalšie koľaje v susedných stĺpcoch (`tracks`). Povinné práve pri
+   * `role: 'rail_terminal'`. Koľaj má pre každý bay jednu bunku footprintu (vlak po nej jazdí, bunky nie sú vrstva `rail` mapy).
+   */
+  readonly trackCol?: number;
+  /** Počet koľají železničného terminálu (celé ≥ 1; `trackCol + tracks ≤ šírka footprintu`); povinné práve pri `role: 'rail_terminal'`. */
+  readonly tracks?: number;
 }
 
 /** `params` depa vozidiel (`kind: 'depot'`). */
@@ -714,6 +721,11 @@ export interface ContractTemplateDef {
    * Typ každého kontajnera určí `Rng` pri vzniku ponuky (`drawUnitTypes`); len kategória `container` a druhy `import` / `tranship`. OOG sa zatiaľ nelosuje (TR5-02).
    */
   readonly typeMix?: readonly ContractTypeShare[];
+  /**
+   * Železničný podiel (R6, ADR-043): rozsah `[min, max]` (`0 … 1`) podielu importu, ktorý odíde vlakom, a exportu, ktorý príde vlakom. `Rng` losuje hodnotu pri vzniku ponuky **len**, keď má prístav
+   * železničný terminál napojený na koľajový portál; inak 0 a `Rng` sa nespotrebuje. Len kategória `container` a druhy `import` / `export` / `roundtrip`.
+   */
+  readonly railShare?: readonly [number, number];
   /** Rozsah `[min, max]` objemu kontraktu v jednotkách typu nákladu (kontajnery: TEU; `min ≤ max`). */
   readonly volumeUnitsRange: readonly [number, number];
   /** Rozsah `[min, max]` SLA v celých dňoch od príchodu lode (`min ≤ max`). */
@@ -787,10 +799,61 @@ export interface TractorsDef {
   readonly maxPerSts: number;
 }
 
-/** `equipment.json` — stroje bloku a ťahače (TERMINAL_2 §10.5, ADR-040): `rtg` a `tractors`. */
+/**
+ * Priority RMG (`equipment.json` → `rmg.priorities`, ADR-043): vlak > ťahač (loď = ťahač od STS, potom kamión) > housekeeping; menšie číslo = vyššia priorita, hodnoty musia ostro rásť
+ * v tomto poradí.
+ */
+export const RMG_PRIORITY_KINDS = ['train', 'ship', 'truck', 'housekeeping'] as const;
+export type RmgPriorityKind = (typeof RMG_PRIORITY_KINDS)[number];
+
+/** RMG železničného terminálu (`equipment.json` → `rmg`, ADR-043 TR6-02): ako RTG (`RtgDef`: časy, predzásobenie ťahača) a navyše priorita práce pre vlak (`priorities.train`). */
+export interface RmgDef extends RtgDef {
+  /** Priority fronty stroja (menšie = skôr): vlak > ťahač (loď, kamión) > housekeeping. */
+  readonly priorities: { readonly [K in RmgPriorityKind]: number };
+}
+
+/** `equipment.json` — stroje bloku a ťahače (TERMINAL_2 §10.5, ADR-040): `rtg`, `reachStacker`, `rmg` a `tractors`. */
 export interface EquipmentDef extends DefBase {
   readonly rtg: RtgDef;
   /** Reach stacker OOG plochy (R5, TR5-02): rovnaký tvar ako `rtg`; pojazd = ulička plochy, vozík = výložník (rad), zdvih = vrstva. */
   readonly reachStacker: RtgDef;
+  /** RMG železničného terminálu (R6, ADR-043). */
+  readonly rmg: RmgDef;
   readonly tractors: TractorsDef;
+}
+
+/** Cestovný poriadok vlakov (`rail.json` → `timetable`, ADR-043): vlak z koľajového portálu prichádza v pravidelnom intervale a po pobyte v termináli odchádza. */
+export interface RailTimetableDef {
+  /** Interval medzi plánovanými príchodmi vlakov v herných hodinách (> 0). */
+  readonly intervalHours: number;
+  /** Hodina hry (od tick 0) prvého plánovaného príchodu (celé ≥ 0). */
+  readonly firstArrivalHour: number;
+  /** Počet vagónov vlaku okrem lokomotívy (celé ≥ 1). */
+  readonly wagonsPerTrain: number;
+  /** Plánovaný pobyt vlaku v termináli v herných minútach od zastavenia (celé ≥ 1); vlak odíde skôr, keď je plný. */
+  readonly dwellMinutes: number;
+  /** Rešpitná lehota po plánovanom odchode v herných minútach (celé ≥ 1): potom vlak odíde aj s nevyloženým nákladom z príchodu (TR6-02c). */
+  readonly departGraceMinutes: number;
+}
+
+/** Vlak (`rail.json` → `train`, ADR-043): rýchlosť, dĺžky vozňov a kapacita vagóna. */
+export interface RailTrainDef {
+  /** Rýchlosť vlaku v tisícinách bunky za tick (celé ≥ 1; 1000 = bunka za tick). */
+  readonly speedMilliCellsPerTick: number;
+  /** Dĺžka lokomotívy v bunkách (celé ≥ 1; bunka = 6 m). */
+  readonly locoLengthCells: number;
+  /** Dĺžka vagóna v bunkách (celé ≥ 1; vagón 60′ = 3 bunky). */
+  readonly wagonLengthCells: number;
+  /** Kapacita vagóna v TEU (celé ≥ 1; `wagon_container_60` = 3 TEU: 40′ + 20′ alebo 3× 20′). */
+  readonly wagonTeu: number;
+}
+
+/** `rail.json` — železnica (R6, ADR-043): cestovný poriadok a vlak. Konfiguračný def (ADR-009). */
+export interface RailDef extends DefBase {
+  readonly timetable: RailTimetableDef;
+  readonly train: RailTrainDef;
+  /** Úrovňové priecestie (TR6-02): vlak rezervuje priecestie pred sebou toľko tickov jazdy vopred (celé ≥ 1); cestné vozidlá do rezervovaného priecestia nevstúpia (závora). */
+  readonly crossingClearTicks: number;
+  /** Násobok hashu id jednotky pre železničný podiel (celé ≥ 1; Knuthova konštanta 2^32 / φ), `logistics/rail-units.ts`. */
+  readonly unitHashMultiplier: number;
 }

@@ -115,7 +115,8 @@ export class PlaceRoadCommand extends RoadLayerCommand {
       if (world.carrierOnCell(index) !== undefined) reasons.push('occupied');
     } else {
       if (!isRoadBuildable(cell.terrain)) reasons.push('terrain');
-      if (cell.moduleId !== null || cell.road === 'rail') reasons.push('occupied');
+      // Koľaj nie je prekážka: cesta ju kríži úrovňovým priecestím (`commitCell`); nie pod modulom a nie pod vlakom, ktorý na bunke práve stojí.
+      if (cell.moduleId !== null || (cell.road === 'rail' && world.rail.occupancy[index] !== 0)) reasons.push('occupied');
     }
     if (!this.parcelAllowsInfrastructure(world, cell)) reasons.push('parcel_not_owned');
     return reasons.length === 0 ? CHANGE_CELL : reasons;
@@ -132,6 +133,12 @@ export class PlaceRoadCommand extends RoadLayerCommand {
       if (cell.road === 'road') rebuiltPriceCents += roadKinds[cell.roadKind].costPerCellCents;
     }
     return { buildCents, refundCents: refundCents(rebuiltPriceCents, world.defs.economy.removalRefundRate) };
+  }
+
+  /** Cesta na koľaji vytvorí priecestie (koľaj sa zapíše do `Rail.crossings`, bunka sa stane cestou). */
+  protected override commitCell(world: World, cell: Cell, change: PlannedCell): void {
+    if (cell.road === 'rail') world.rail.crossings.add(change.index);
+    this.writeCell(cell, change);
   }
 
   protected writeCell(cell: Cell, change: PlannedCell): void {

@@ -60,6 +60,7 @@ import { WorldStateError, pointerSegment } from './state-check';
 import type { World } from './world';
 import { findWorldViolation, inGateQueue, queueGateIdOf, truckQueueSideProblem } from './world-invariants';
 import { heldByMachine, restoreMachines } from './machines-state';
+import { restoreTrains } from './rail-state';
 import type { ParsedJobEntry, ParsedModuleEntry, ParsedShipEntry, ParsedTruckEntry, ParsedVehicleEntry, ParsedWorldState } from './world-state';
 
 const modulePath = (index: number): string => `/modules${pointerSegment(index)}`;
@@ -821,7 +822,7 @@ function checkVoyages(world: World, held: ReadonlyMap<ContractId, number>): void
   }
 }
 
-export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'modules' | 'ships' | 'vehicles' | 'jobs' | 'trucks' | 'machines' | 'cargo'>): void {
+export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'modules' | 'ships' | 'vehicles' | 'jobs' | 'trucks' | 'machines' | 'trains' | 'cargo'>): void {
   const entries = parsed.modules;
   const { units } = parsed.cargo;
   restoreModules(world, entries);
@@ -830,6 +831,7 @@ export function restoreEntities(world: World, parsed: Pick<ParsedWorldState, 'mo
   restoreVehicles(world, parsed.vehicles);
   restoreTrucks(world, parsed.trucks);
   restoreMachines(world, parsed.machines, world.defs);
+  restoreTrains(world, parsed.trains);
   const indexOf = new Map<EntityId, number>(entries.map((entry, index) => [entry.id, index]));
   const unitIndexOf = new Map<EntityId, number>(units.map((unit, index) => [unit.id, index]));
   checkHolders(world, units);

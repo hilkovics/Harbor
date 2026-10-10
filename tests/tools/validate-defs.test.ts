@@ -397,7 +397,7 @@ describe('validateDefsDir', () => {
         for (const row of map.terrain) expect(row).toHaveLength(96);
       });
 
-      it('harbor_01: súvislé nábrežie ≥ 24 buniek, 3 parcely (1 štartovná), 4 cestné (2 × vjazd, 2 × výjazd) a 1 železničný portál', () => {
+      it('harbor_01: súvislé nábrežie ≥ 24 buniek, 4 parcely (2 štartovné: starter a rail_yard, TR6-02), 4 cestné (2 × vjazd, 2 × výjazd) a 1 železničný portál', () => {
         const map = realMap() as {
           terrain: string[];
           parcels: { id: string; startOwned?: boolean; leasable: boolean }[];
@@ -408,8 +408,8 @@ describe('validateDefsDir', () => {
           ...map.terrain.map((row) => Math.max(0, ...row.split(/[^Q]+/).map((run) => run.length))),
         );
         expect(longestQuayRun).toBeGreaterThanOrEqual(24);
-        expect(map.parcels).toHaveLength(3);
-        expect(map.parcels.filter((p) => p.startOwned === true).map((p) => p.id)).toEqual(['starter']);
+        expect(map.parcels).toHaveLength(4);
+        expect(map.parcels.filter((p) => p.startOwned === true).map((p) => p.id)).toEqual(['starter', 'rail_yard']);
         expect(map.parcels.filter((p) => p.startOwned !== true).every((p) => p.leasable)).toBe(true);
         expect(map.roadPortals).toHaveLength(4); // R4 (ADR-041): južný a západný vjazd (in) a výjazd (out), jednosmerný prístav
         expect(map.railPortals).toHaveLength(1);

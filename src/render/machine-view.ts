@@ -82,8 +82,9 @@ export class MachineView {
     const { cellPx } = this.deps;
     this.view.position.set(vm.x * cellPx, vm.y * cellPx);
     const travel = this.entry?.travelX ?? { yMin: 32, yMax: 288 };
-    const frameWidth = (this.entry?.frame.footprint.w ?? FALLBACK_FOOTPRINT.w) * MANIFEST_CELL_PX;
-    const x = (rtgTrolleyFrameX(vm.trolley, travel) - frameWidth / 2) * this.scale;
+    // x vozíka od pivotu rámu (RTG: pivot = stred rámu; RMG 6 × 2: pivot x 160, konzola vpravo)
+    const pivotX = this.entry?.frame.pivot.x ?? (FALLBACK_FOOTPRINT.w * MANIFEST_CELL_PX) / 2;
+    const x = (rtgTrolleyFrameX(vm.trolley, travel) - pivotX) * this.scale;
     this.trolleyGroup.x = x;
     this.cargoGroup.x = x;
     this.syncCargo(vm.cargo);

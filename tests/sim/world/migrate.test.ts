@@ -33,10 +33,10 @@ function thrownBy(fn: () => unknown): unknown {
   throw new Error('očakávaná výnimka, nevznikla');
 }
 
-describe('verzia WorldState v14 bez migrácií (ADR-036, v14 ADR-042)', () => {
-  it('aktuálna aj najstaršia podporovaná verzia je 14; kľúče v14 v poradí serialize()', () => {
-    expect(WORLD_STATE_VERSION).toBe(14);
-    expect(OLDEST_WORLD_STATE_VERSION).toBe(14);
+describe('verzia WorldState v15 bez migrácií (ADR-036, v15 ADR-043)', () => {
+  it('aktuálna aj najstaršia podporovaná verzia je 15; kľúče v15 v poradí serialize()', () => {
+    expect(WORLD_STATE_VERSION).toBe(15);
+    expect(OLDEST_WORLD_STATE_VERSION).toBe(15);
     const state = World.create(DEFS, MAP, 4242).serialize();
     expect(state.version).toBe(WORLD_STATE_VERSION);
     expect(Object.keys(state)).toEqual([...WORLD_STATE_KEYS]);

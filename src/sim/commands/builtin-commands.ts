@@ -11,8 +11,10 @@ import type { Command, SerializedCommand } from './command';
 import type { CommandRegistry } from './command-registry';
 import { DeclineContractCommand } from './decline-contract';
 import { PlaceModuleCommand } from './place-module';
+import { PlaceRailCommand } from './place-rail';
 import { PlaceRoadCommand } from './place-road';
 import { RemoveModuleCommand } from './remove-module';
+import { RemoveRailCommand } from './remove-rail';
 import { RemoveRoadCommand } from './remove-road';
 import { SellVehicleCommand } from './sell-vehicle';
 import { SetBlockPriorityCommand } from './set-block-priority';
@@ -34,6 +36,8 @@ export interface RegistrableCommand {
 export const BUILTIN_COMMANDS: readonly RegistrableCommand[] = Object.freeze([
   PlaceRoadCommand,
   RemoveRoadCommand,
+  PlaceRailCommand,
+  RemoveRailCommand,
   SetGameSpeedCommand,
   PlaceModuleCommand,
   RemoveModuleCommand,

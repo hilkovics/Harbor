@@ -22,7 +22,7 @@ describe('buildBarCategories: kategórie', () => {
       ['storage', 'Sklady', true],
       ['logistics', 'Logistika', true],
       ['landside', 'Landside', true],
-      ['rail', 'Železnica', false],
+      ['rail', 'Železnica', true],
       ['pipes', 'Potrubia', false],
     ]);
     for (const category of categories.filter((c) => !c.enabled)) expect(category.items).toEqual([]);

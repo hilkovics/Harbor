@@ -21,7 +21,7 @@
  * ostáva čakať, job sa nezruší — vozidlo na TP ho nedrží na ceste ako vozidlo pri vlastnom rehandlingu).
  */
 import { isSameLocation, slotOf, type CargoLocation } from '../cargo/cargo-location';
-import type { CargoUnit } from '../cargo/cargo-unit';
+import { teuOf, type CargoUnit } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
 import type { YardPriorityKind } from '../defs/types';
 import { onEmptyStored } from '../logistics/empty-depot-service';
@@ -30,17 +30,20 @@ import { liftBlockedByPower } from '../logistics/reefer-supply';
 import { accessCellIndex } from '../logistics/module-access';
 import type { TransportJob } from '../logistics/transport-job';
 import { beginRelocation, endRelocation } from '../logistics/yard-rehandle';
-import { settleYardDrop } from '../logistics/yard-settle';
+import { settleYardDrop, settleYardSlot } from '../logistics/yard-settle';
 import { chooseRehandleSlot } from '../logistics/yard-planner';
 import { LANE_ROW, RtgCrane } from '../machines/rtg-crane';
 import { MachineError } from '../machines/machine-error';
 import type { MachineCycle, MachinePose, MachineQueueEntry, MachineState } from '../machines/machine-state-types';
+import { RmgCrane } from '../machines/rmg-crane';
+import { RailTerminal } from '../modules/rail-terminal';
 import { RtgBlock } from '../modules/rtg-block';
 import type { Truck } from '../trucks/truck';
 import type { Vehicle } from '../vehicles/vehicle';
 import { truckJobBlock } from '../logistics/truck-jobs';
 import { HOOK_WAIT_TICKS } from '../vehicles/vehicle-fsm';
 import type { World } from '../world/world';
+import { planTrainCycle, serveQueueFirst, trainRow, trainSlotBay } from './rmg-train-work';
 import { completeDrop, completeLoad } from './vehicle-system';
 
 /** Priorita úlohy podľa jobu vozidla: žeriav (hák) → loď, kamión na TP → kamión, ostatné → housekeeping (tabuľka priorít je v `equipment.json`). */
@@ -146,6 +149,13 @@ function spotOfSlot(block: RtgBlock, unit: CargoUnit, slot: number): Spot {
 function spotsOf(world: World, block: RtgBlock, cycle: MachineCycle): { readonly pick: Spot; readonly drop: Spot } {
   const unit = world.cargo.get(cycle.unitId as EntityId);
   if (unit === undefined) throw new MachineError('inconsistent', `blok ${block.label}: jednotka #${String(cycle.unitId)} cyklu ${cycle.kind} v ledgeri nie je`);
+  if (cycle.trainId !== undefined) {
+    // Cyklus s vlakom: miesto vo vlaku (`tpBay` = TEU miesto) leží nad koľajou vlaka vo výške paluby.
+    const train = world.trains.get(cycle.trainId as EntityId);
+    if (train === undefined) throw new MachineError('inconsistent', `blok ${block.label}: vlak #${String(cycle.trainId)} cyklu ${cycle.kind} vo svete nie je`);
+    const deck: Spot = { bay: trainSlotBay(train, block.geometry.bays, cycle.tpBay, teuOf(unit)), row: trainRow(train), tier: 0 };
+    return { pick: cycle.fromSlot === null ? deck : spotOfSlot(block, unit, cycle.fromSlot), drop: cycle.toSlot === null ? deck : spotOfSlot(block, unit, cycle.toSlot) };
+  }
   const lane: Spot = { bay: cycle.tpBay, row: LANE_ROW, tier: 0 };
   return {
     pick: cycle.fromSlot === null ? lane : spotOfSlot(block, unit, cycle.fromSlot),
@@ -389,7 +399,7 @@ function startPrefetch(world: World, machine: RtgCrane, block: RtgBlock): boolea
 function holdForVehicle(world: World, machine: RtgCrane, block: RtgBlock, cycle: MachineCycle, next: PhasePlan): PhasePlan | null {
   const put = cycle.kind === 'put' && cycle.vehicleId !== null && next.state === 'lift';
   const take = cycle.kind === 'take' && next.state === 'lower';
-  if (!put && !take) return next;
+  if ((!put && !take) || cycle.trainId !== undefined) return next;
   // Kamión na TP stojí od zaradenia do fronty (fáza `handling`) a neodíde, kým neskončí odovzdanie — stroj naňho nečaká.
   if (cycle.truck) return next;
   const vehicle = world.vehicles.get(cycle.vehicleId as EntityId);
@@ -444,13 +454,46 @@ function abortCycle(world: World, machine: RtgCrane, block: RtgBlock, cycle: Mac
 
 /** Cyklus s vozidlom (`put` / `take`), ktorého vozidlo alebo job medzitým zanikol (job zrušený počas predzásobenia, vozidlo odstránené) — nemá komu odovzdať. */
 function cycleOrphaned(world: World, cycle: MachineCycle): boolean {
+  // Cyklus s vlakom: vlak musí stáť na koľaji (odchod čaká na dokončenie cyklu, `RailSystem`).
+  if (cycle.trainId !== undefined) return world.trains.get(cycle.trainId as EntityId)?.state !== 'dwelling';
   if (cycle.vehicleId === null) return false;
   const vehicle = partnerById(world, cycle.vehicleId as EntityId);
   return vehicle === undefined || cycle.jobId === null || vehicle.jobId !== cycle.jobId || !world.jobs.has(cycle.jobId as EntityId);
 }
 
-/** Začne ďalší cyklus podľa fronty; `true`, keď stroj opustil `idle`. Bez použiteľného vozidla beží trpezlivosť rehandlingu. */
+/** Vstúpi do prvej fázy práve začatého cyklu (`machine.beginCycle` už prebehlo): rehandling pripraví cieľ, potom pojazd k miestu zdvihu (alebo rovno zdvih, keď stroj stojí na mieste). */
+function launchCycle(world: World, machine: RtgCrane, block: RtgBlock, cycle: MachineCycle): void {
+  if (cycle.kind === 'relocate') beginRelocation(world, block, cycle.toSlot as number);
+  const { pick } = spotsOf(world, block, cycle);
+  const travel = planTravel(machine, pick);
+  if (travel === null) {
+    machine.transition('travel');
+    enter(machine, planLift(machine));
+  } else {
+    enter(machine, travel);
+  }
+}
+
+/** RMG: začne cyklus s vlakom na koľaji terminálu (viď `rmg-train-work.ts`); `true`, keď stroj opustil `idle`. */
+function startTrainCycle(world: World, machine: RtgCrane, block: RtgBlock): boolean {
+  if (!(machine instanceof RmgCrane) || !(block instanceof RailTerminal)) return false;
+  const cycle = planTrainCycle(world, block);
+  if (cycle === null) return false;
+  machine.beginCycle(cycle);
+  launchCycle(world, machine, block, cycle);
+  return true;
+}
+
+/**
+ * Začne ďalší cyklus: RMG najprv vlak (priorita vlak > ťahač; pri čakajúcom ťahači sa striedajú, `serveQueueFirst`), potom front ťahačov, potom vlak; `true`, keď stroj opustil `idle`.
+ */
 function startCycle(world: World, machine: RtgCrane, block: RtgBlock): boolean {
+  if (machine instanceof RmgCrane && !serveQueueFirst(machine) && startTrainCycle(world, machine, block)) return true;
+  return startQueuedCycle(world, machine, block) || startTrainCycle(world, machine, block);
+}
+
+/** Začne ďalší cyklus podľa fronty; `true`, keď stroj opustil `idle`. Bez použiteľného vozidla beží trpezlivosť rehandlingu. */
+function startQueuedCycle(world: World, machine: RtgCrane, block: RtgBlock): boolean {
   let stalled = false;
   for (let entry = nextInQueue(world, machine, undefined); entry !== undefined; entry = nextInQueue(world, machine, entry)) {
     const vehicle = partnerById(world, entry.vehicleId as EntityId);
@@ -502,6 +545,11 @@ function pickUp(world: World, machine: RtgCrane, block: RtgBlock, cycle: Machine
   const handler: CargoLocation = { kind: 'in_handler', machineId: machine.id };
   world.cargo.move(cycle.unitId as EntityId, handler);
   if (cycle.kind === 'take') block.recordTaken(cycle.unitId as EntityId);
+  if (cycle.kind === 'put' && cycle.trainId !== undefined) {
+    // Vykládka vlaka: rezervácia slotu v bufferi sa usadí na skutočnú vrstvu stohu (jobu nepatrí, drží ju cyklus).
+    machine.replaceCycle({ ...cycle, toSlot: settleYardSlot(world, block, cycle.toSlot as number, null) });
+    return;
+  }
   if (cycle.kind === 'put') {
     const vehicle = vehicleOfCycle(world, machine, cycle);
     const job = jobOfCycle(world, machine, cycle);
@@ -519,6 +567,10 @@ function putDown(world: World, machine: RtgCrane, block: RtgBlock, cycle: Machin
     const slot = cycle.toSlot as number;
     world.cargo.move(unitId, { kind: 'in_storage', moduleId: block.id, slot });
     endRelocation(world, block, unitId, slot);
+    return;
+  }
+  if (cycle.kind === 'take' && cycle.trainId !== undefined) {
+    world.cargo.move(unitId, { kind: 'in_train', trainId: cycle.trainId as EntityId, slot: cycle.tpBay });
     return;
   }
   if (cycle.kind === 'take') {

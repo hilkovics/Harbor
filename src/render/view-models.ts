@@ -344,7 +344,7 @@ export interface TruckVM extends CarrierTrailVM {
  */
 export interface MachineVM {
   id: number;
-  /** Id definície stroja (`rtg`, …); sprity z `entities.rtg` v manifeste (každé `rtg*` id sa kreslí ako `rtg`). */
+  /** Id definície stroja (`rtg`, `rmg`, …); sprity z `entities.rtg` / `entities.rmg` v manifeste (každé `rtg*` id sa kreslí ako `rtg`). RMG (R6): `x`,`y` = pivot rámu, `trolley` 0..1 naprieč rámom. */
   defId: string;
   blockId: number;
   x: number;
@@ -357,6 +357,37 @@ export interface MachineVM {
   angle?: number;
   /** R5 (`reach_stacker`): vysunutie výložníka 0..1 (0 = zasunutý). */
   boom?: number;
+}
+
+/** Stav vlaku (R6): príchod, státie pri termináli (nakladá sa), odchod. */
+export type TrainStateVM = 'arriving' | 'at_terminal' | 'departing' | (string & {});
+
+/**
+ * Jeden voz vlaku (R6): `x`, `y` = STRED vozňa v bunkách sveta (vozeň je 1 × 3 bunky), `angle` = smer v stupňoch v smere hodinových ručičiek
+ * (0 = predok hore, ako `VehicleVM`). Každý voz má vlastnú polohu a uhol, takže vlak sa po zákrute láme kĺbovo. `cargo` = kontajnery na vagóne
+ * od predku: 60′ vagón uvezie 3 TEU (3 × 20′, alebo 40′ + 20′); lokomotíva ho nemá.
+ */
+export interface TrainCarVM {
+  kind: 'loco' | 'wagon';
+  x: number;
+  y: number;
+  angle: number;
+  cargo: readonly ContainerVM[];
+}
+
+/** Vlak (R6, `EntitiesVM.trains`): lokomotíva a vagóny od hlavy; `departureTick` = tick odchodu podľa cestovného poriadku (UI). */
+export interface TrainVM {
+  id: number;
+  cars: readonly TrainCarVM[];
+  state: TrainStateVM;
+  departureTick?: number;
+}
+
+/** Úrovňové priecestie koľaj × cesta (R6, `EntitiesVM.crossings`): `x`, `y` = stred bunky; závora je `closed`, keď vlak drží alebo rezervuje priecestie. */
+export interface CrossingVM {
+  x: number;
+  y: number;
+  barrier: 'open' | 'closed';
 }
 
 export interface EntitiesVM {
@@ -375,6 +406,10 @@ export interface EntitiesVM {
   trucks?: readonly TruckVM[];
   /** Stroje v blokoch (R3, RTG). Voliteľné: VM bez poľa nekreslí nič. */
   machines?: readonly MachineVM[];
+  /** Vlaky (R6). Voliteľné: VM bez poľa nekreslí nič. */
+  trains?: readonly TrainVM[];
+  /** Priecestia (R6). Voliteľné: VM bez poľa nekreslí nič. */
+  crossings?: readonly CrossingVM[];
 }
 
 export interface ModuleGhostVM {

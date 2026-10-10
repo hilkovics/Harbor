@@ -86,9 +86,16 @@ import { YardBlock } from '../modules/yard-block';
 import { RtgBlock } from '../modules/rtg-block';
 import { MachineError } from '../machines/machine-error';
 import { ReachStacker } from '../machines/reach-stacker';
+import { RmgCrane } from '../machines/rmg-crane';
+import { RailTerminal } from '../modules/rail-terminal';
 import { RtgCrane } from '../machines/rtg-crane';
 import type { YardMachine } from '../machines/yard-machine';
 import { ReeferSystem } from '../systems/reefer-system';
+import { RailSystem } from '../systems/rail-system';
+import { Rail, type RailRuntimeState } from '../rail/rail';
+import { releaseCrossings, syncAllCrossings, syncCrossings } from '../rail/rail-crossings';
+import { computeRailRoutes, type RailRoute } from '../rail/rail-routes';
+import type { Train } from '../rail/train';
 import { YardMachineSystem } from '../systems/yard-machine-system';
 import { VehicleDepot } from '../modules/vehicle-depot';
 import type { AdvanceGate, Carrier } from '../movement/carrier';
@@ -163,6 +170,8 @@ interface WorldParts {
   readonly emptyFlow: EmptyFlowState | null;
   /** Uložené počítadlá vnútrozemia (v9, ADR-035); `null` = nulové počítadlá novej hry. */
   readonly hinterland: HinterlandState | null;
+  /** Cestovný poriadok a súčty železnice (R6); `null` = nová hra. */
+  readonly rail: RailRuntimeState | null;
 }
 
 /** Voľby sveta pri `World.create` / `World.deserialize` (nie sú súčasťou save). */
@@ -227,6 +236,10 @@ export class World {
   readonly trucks: ReadonlyMap<EntityId, Truck>;
   /** Stroje blokov (RTG, ADR-040) vzostupne podľa id; meniť len cez `addMachine`/`removeMachine` (stroj RTG bloku vzniká s blokom v `placeModule`). */
   readonly machines: ReadonlyMap<EntityId, YardMachine>;
+  /** Vlaky na koľajisku (R6, ADR-043) vzostupne podľa id; obsadenie a plán drží `rail`. */
+  readonly trains: ReadonlyMap<EntityId, Train>;
+  /** Železnica: vlaky, cestovný poriadok, obsadenie buniek (R6, ADR-043). */
+  readonly rail: Rail;
   /** Štatistiky entít po modifikátoroch (§10); vo F2 základ z defov. */
   readonly stats: StatResolver;
   /**
@@ -304,6 +317,9 @@ export class World {
   private readonly vehicleSystem = new VehicleSystem();
   private readonly yardMachineSystem = new YardMachineSystem();
   private readonly reeferSystem = new ReeferSystem();
+  private readonly railSystem = new RailSystem();
+  private railRoutesCache: readonly RailRoute[] | undefined;
+  private railRoutesKey = '';
   private readonly landsideSystem = new LandsideSystem();
   private readonly economySystem = new EconomySystem();
   private readonly metricsSystem = new MetricsSystem();
@@ -365,6 +381,8 @@ export class World {
     this.jobs = this.jobMap;
     this.trucks = this.truckMap;
     this.machines = this.machineMap;
+    this.rail = new Rail(parts.defs.rail, parts.clock, parts.grid.cellCount, parts.rail ?? undefined);
+    this.trains = this.rail.trains;
     this.stats = new StatResolver(parts.defs);
     this.roadSpeeds = new RoadSpeeds(parts.grid, parts.defs.infrastructure.roadKinds);
     this.laneSlots = new LaneSlots(parts.grid.cellCount);
@@ -402,6 +420,7 @@ export class World {
         cargo: null,
         emptyFlow: null,
         hinterland: null,
+        rail: null,
       },
       options,
     );
@@ -453,6 +472,7 @@ export class World {
         cargo: parsed.cargo,
         emptyFlow: parsed.emptyFlow,
         hinterland: parsed.hinterland,
+        rail: parsed.rail,
       },
       options,
     );
@@ -462,6 +482,44 @@ export class World {
     // Zverejnený stav pozemného reťazca sa neukladá: originál ho mal zverejnený po poslednom príkaze, obnova ho odvodí ticho.
     world.publishLandside(false);
     return world;
+  }
+
+  /**
+   * Trasy vlakov portál → koľaje terminálov (`computeRailRoutes`), prepočítané len pri zmene ciest/koľají alebo modulov (R6, ADR-043). Prázdne = žiadny terminál nie je napojený na koľajový portál.
+   */
+  get railRoutes(): readonly RailRoute[] {
+    const key = `${String(this.roadChanges)}:${String(this.moduleChanges)}`;
+    if (this.railRoutesCache === undefined || key !== this.railRoutesKey) {
+      this.railRoutesCache = computeRailRoutes(this.grid, this.map.railPortals[0]?.cell, this.moduleMap.values(), this.rail.crossings);
+      this.railRoutesKey = key;
+    }
+    return this.railRoutesCache;
+  }
+
+  /** Je vo svete železničný terminál napojený súvislou koľajou na koľajový portál (vlaky jazdia, `railShare` kontraktov sa losuje)? */
+  get hasRailService(): boolean {
+    return this.railRoutes.length > 0;
+  }
+
+  /** Leží bunka mapy na trase niektorého vlaku? (`RemoveRail` ju vtedy odmietne.) */
+  railCellInUse(index: number): boolean {
+    return this.rail.cellInUse(index);
+  }
+
+  /** Pridá vlak (nový z `RailSystem` alebo obnovený zo save): id musí pridelil alokátor a ešte nesmie existovať (`Error`). */
+  addTrain(train: Train): void {
+    if (train.id >= this.ids.getState().nextId) throw new Error(`World.addTrain: ${train.label}: id nepridelil alokátor sveta`);
+    this.rail.addTrain(train);
+    syncCrossings(this, train);
+  }
+
+  /** Odstráni vlak (odchod cez portál) a uvoľní jeho bunky. */
+  removeTrain(trainId: EntityId): Train {
+    const train = this.rail.trains.get(trainId);
+    if (train === undefined) throw new Error(`World.removeTrain: vlak #${String(trainId)} neexistuje`);
+    releaseCrossings(this, train);
+    this.rail.removeTrain(train);
+    return train;
   }
 
   /**
@@ -650,7 +708,7 @@ export class World {
     // RTG blok sa stavia aj so svojím strojom (ADR-040 bod 3): stroj je súčasť ceny bloku.
     // OOG plocha (R5, ADR-042 TR5-02) má reach stacker namiesto RTG.
     if (module instanceof RtgBlock) {
-      this.addMachine(module.acceptsOog ? ReachStacker.create(this.ids.next(), module.id, this.defs.equipment.reachStacker, module.geometry.maxTier) : RtgCrane.create(this.ids.next(), module.id, this.defs.equipment.rtg, module.geometry.maxTier));
+      this.addMachine(module instanceof RailTerminal ? RmgCrane.create(this.ids.next(), module.id, this.defs.equipment.rmg, module.geometry.maxTier) : module.acceptsOog ? ReachStacker.create(this.ids.next(), module.id, this.defs.equipment.reachStacker, module.geometry.maxTier) : RtgCrane.create(this.ids.next(), module.id, this.defs.equipment.rtg, module.geometry.maxTier));
     }
     return module;
   }
@@ -1125,10 +1183,15 @@ export class World {
     // 6d. reeferSystem — napájanie reeferov (zapojenie, odpojenie, hodiny bez prúdu), alarmy a technici, reklamácie, elektrina (ADR-042; poradie §6 rozšírené o krok 6d).
     this.reeferSystem.tick(this, closed);
 
+    // 6e. railSystem — vlaky: cestovný poriadok a vznik na koľajovom portáli, jazda po koľaji (jeden pohyblivý vlak, bez prekrytia), pobyt v termináli, odchod cez portál (ADR-043; poradie §6 rozšírené o krok 6e).
+    this.railSystem.tick(this);
+
     // 7. flowSystem — pribudne s potrubiami (F9) presne na tomto mieste §6.
 
     // 8. landsideSystem — kamióny (FSM, pohyb, nakládka, export), brány (FIFO, priepustnosť), spawn (ADR-024).
     this.landsideSystem.tick(this);
+    // 8b. priecestia vlakov — slot uvoľnený kamiónom po kroku 6e získa vlak hneď, aby stav na konci ticku nezávisel od toho, či svet vznikol obnovou save (TR6-02c, ADR-043 dodatok).
+    syncAllCrossings(this);
 
     // 9. economySystem — pri DayClosed údržba, mzdy, DaySummary, pri MonthClosed MonthSummary, bankrot (ADR-025).
     this.economySystem.tick(this, closed);
@@ -1198,6 +1261,8 @@ export class World {
       jobs: [...this.jobMap.values()].map((job) => job.toState()),
       trucks: [...this.truckMap.values()].map((truck) => truck.toState()),
       machines: [...this.machineMap.values()].map((machine) => machine.toState()),
+      trains: [...this.rail.trains.values()].map((train) => train.toState()),
+      rail: this.rail.getState(),
       economy: this.economy.getState(),
       ...this.contractBook.getState(),
       emptyFlow: this.emptyFlow.getState(),

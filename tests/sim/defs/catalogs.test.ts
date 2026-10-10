@@ -143,6 +143,7 @@ describe('bundled katalógy (loadBundledDefs)', () => {
       // R5 (ADR-042): blok so zásuvkami pre reefery
       'reefer_block_8',
       'oog_area',
+      'rmg_rail_block',
     ]);
     const berth = defs.modules.get('berth_standard');
     expect(berth.kind).toBe('berth');
@@ -901,7 +902,7 @@ describe('MODULE_PARAM_SPECS', () => {
   });
 
   it('storage a depot majú presne polia StorageParams a DepotParams (internalTicks je voliteľné)', () => {
-    expect(Object.keys(MODULE_PARAM_SPECS.storage)).toEqual(['capacityUnits', 'category', 'internalTicks', 'role', 'repairBays', 'bays', 'rows', 'maxTier', 'laneCol', 'tpSpacingBays', 'plugRows', 'acceptsOog']);
+    expect(Object.keys(MODULE_PARAM_SPECS.storage)).toEqual(['capacityUnits', 'category', 'internalTicks', 'role', 'repairBays', 'bays', 'rows', 'maxTier', 'laneCol', 'tpSpacingBays', 'plugRows', 'acceptsOog', 'trackCol', 'tracks']);
     expect(Object.keys(MODULE_PARAM_SPECS.depot)).toEqual(['capacity', 'internalTicks']);
     expect(MODULE_PARAM_SPECS.storage.internalTicks.optional).toBe(true);
     // F6c (ADR-034): rola a počet opráv sú voliteľné (bežný sklad ich nemá).

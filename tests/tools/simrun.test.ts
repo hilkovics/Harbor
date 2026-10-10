@@ -329,6 +329,9 @@ describe('runScenario', () => {
       reeferClaims: 0,
       energyCents: 0,
       oogMoves: 0,
+      railImportSharePct: null,
+      trainTurnaroundMin: null,
+      trainDelayMin: null,
       directHandoverPct: null,
       gridlockEvents: 0,
       trafficWaitTicks: { vehicles: 0, trucks: 0 },
@@ -420,6 +423,9 @@ describe('runScenario', () => {
       'reeferClaims',
       'energyCents',
       'oogMoves',
+      'railImportSharePct',
+      'trainTurnaroundMin',
+      'trainDelayMin',
     ]);
   });
 

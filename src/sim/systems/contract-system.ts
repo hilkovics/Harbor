@@ -273,6 +273,7 @@ function offerContextOf(world: World): OfferContext {
     capacityHint: capacityHintFrom(capacity, defs.economy.minCapacityHint),
     storageCapacity: capacity.storageCapacity,
     poweredSupply: [...world.modules.values()].some((module) => module instanceof YardBlock && module.hasSockets),
+    railSupply: world.hasRailService,
     oogSupply: [...world.modules.values()].some((module) => module instanceof YardBlock && module.acceptsOog),
     nextId: () => book.allocateId(),
     nextVoyageId: () => book.allocateVoyageId(),

@@ -110,6 +110,15 @@ export abstract class RoadLayerCommand extends SimCommand {
   /** Zapíše cieľový stav do bunky (`apply`, len bunky z plánu). */
   protected abstract writeCell(cell: Cell, change: PlannedCell): void;
 
+  /**
+   * Zápis bunky v kontexte sveta (`apply`): predvolene `writeCell`; podtrieda, ktorá mení aj stav mimo bunky (úrovňové priecestia `Rail.crossings`, ADR-043 TR6-02), ho prepíše.
+   * Volá sa pred zápisom bunky, takže `cell` ešte nesie pôvodný stav.
+   */
+  protected commitCell(world: World, cell: Cell, change: PlannedCell): void {
+    void world;
+    this.writeCell(cell, change);
+  }
+
   /** Zápisy `MoneyChanged` pri `apply` v poradí emitovania (súčet delt = −čistá cena). */
   protected abstract ledgerEntries(price: RoadPrice): readonly RoadPosting[];
 
@@ -139,7 +148,7 @@ export abstract class RoadLayerCommand extends SimCommand {
       throw new Error(`${this.type}.apply: príkaz nie je platný (${quote.reasons.join(', ')}) — volaj apply len po úspešnom validate`);
     }
     const entries = this.ledgerEntries(quote);
-    for (const change of changes) this.writeCell(world.grid.atIndex(change.index), change);
+    for (const change of changes) this.commitCell(world, world.grid.atIndex(change.index), change);
     world.markRoadsChanged();
     world.events.emit({ type: 'RoadChanged', cells: quote.cells });
     for (const { reason, deltaCents } of entries) world.economy.post(deltaCents, reason);

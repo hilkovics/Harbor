@@ -152,7 +152,7 @@ describe('save v10: stroj uprostred cyklu sa obnoví a beh pokračuje bit po bit
     expect(load((s) => (s.machines[0]['blockId'] = 1))).toThrow(/blockId|RTG blok/);
     expect(load((s) => (s.machines[0]['state'] = 'flying'))).toThrow(/stav musí byť/);
     expect(load((s) => (s.machines[0]['state'] = 'lift'))).toThrow();
-    expect(load((s) => (s.machines[0]['defId'] = 'rmg'))).toThrow(/neznámy stroj/);
+    expect(load((s) => (s.machines[0]['defId'] = 'flying_crane'))).toThrow(/neznámy stroj/);
     expect(load((s) => (s.machines[0]['cycle'] = { kind: 'take', unitId: 1, vehicleId: null, truck: false, jobId: null, fromSlot: 1, toSlot: null, tpBay: 0 }))).toThrow(/vozidlo aj job/);
     expect(load(() => undefined)()).toBeInstanceOf(World);
   });

@@ -13,10 +13,11 @@ import { DEFAULT_CONTAINER_LABELS, WEIGHT_CLASSES, type CargoUnitLabels } from '
 import type { Contract } from '../contracts/contract';
 import { CONTRACT_STATE_TRAITS } from '../contracts/contract-fsm';
 import type { World } from '../world/world';
+import { isRailExportDue } from '../rail/rail-exports';
 import { tryAdmitDelivery, type AdmissionOutcome } from './hinterland-entry';
 
 /** Štítky jednotky exportu: hmotnostná trieda `weightClass`, štítky z kontraktu a bookingu. */
-function exportLabels(contract: Contract, destinationPort: string, index: number, sizeFt: CargoUnitLabels['sizeFt'], weightClass: CargoUnitLabels['weightClass']): CargoUnitLabels {
+export function exportLabels(contract: Contract, destinationPort: string, index: number, sizeFt: CargoUnitLabels['sizeFt'], weightClass: CargoUnitLabels['weightClass']): CargoUnitLabels {
   return { direction: 'export', voyageId: contract.voyageId, lineId: contract.lineId, destinationPort, weightClass, ...DEFAULT_CONTAINER_LABELS, sizeFt, containerType: contract.unitContainerType(index), oog: contract.unitIsOog(index) };
 }
 
@@ -46,6 +47,8 @@ export function admitExportTrucks(world: World): void {
     // Booking po prijatí (plán je nastavený); ponuka ho nemá a uzavretý kontrakt už nie je medzi otvorenými.
     if (CONTRACT_STATE_TRAITS[contract.state].plan !== 'required') continue;
     for (let due = contract.nextArrivalTick; due !== undefined && due <= tick; due = contract.nextArrivalTick) {
+      // Železničná položka (R6, ADR-043) čaká na vlak, kým je železničná služba; kamión ju neobslúži.
+      if (isRailExportDue(world, contract)) break;
       if (admitExportTruck(world, contract) !== 'admitted') break;
       world.hinterland.recordAdmitted('delivery', tick - due);
       contract.consumeArrival();

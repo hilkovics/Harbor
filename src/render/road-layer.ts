@@ -22,7 +22,7 @@
  * Vrstva je vlastná render group: posun kamery (transformácia rodiča) neprepočítava dlaždice a zmena ciest
  * prestavia len túto vrstvu, nie terén.
  *
- * Kreslí sa iba vrstva `road`; koľaje (`rail`) pribudnú s ich stavbou (tokeny `--rail-*`).
+ * R6: tá istá trieda kreslí aj koľaje (`layer = 'rail'`, `WorldRenderer.rails`): sprity `infra.rail.tiles.*`, bez typu cesty a bez ramien k modulom.
  */
 import { Container, Graphics, GraphicsContext, Sprite } from 'pixi.js';
 import { DIRECTIONS_4, ROAD_KIND_TRAITS, type CellCoord, type Grid, type Rect, type Rotation } from '@sim/grid';
@@ -40,10 +40,12 @@ import { ROAD_ASPHALT_PX } from './lane';
 import { noConnectorMask, type ConnectorMaskAt } from './module-connectors';
 import { ROAD_EDGE_PX, narrowRoadPaths, type PathOp } from './narrow-road';
 import type { SpriteTextures } from './sprite-atlas';
+import { drawRailPath } from './rail-draw';
+import { buildRailPaths, cellKey, type RailPath } from './rail-path';
 import type { RenderPalette } from './tokens';
 
-/** Vrstva dopravy, ktorú tento layer kreslí. */
-const LAYER = 'road' as const;
+/** Vrstva dopravy, ktorú tento layer kreslí (`road` predvolene; R6: aj `rail` — koľaje s rovnakým autotilingom). */
+type TransportLayer = 'road' | 'rail';
 
 /** Šírka pásu cesty ako zlomok bunky (`--cell`); zvyšok bunky ostáva terén. */
 export const ROAD_BAND_CELLS = 3 / 4;
@@ -123,6 +125,10 @@ export class RoadLayer {
   private readonly contexts = new Map<AutotileShape, GraphicsContext>();
   /** Zdieľaná geometria úzkych ciest podľa tvaru a masky lievikov (vytvára sa lazy). */
   private readonly narrowContexts = new Map<string, GraphicsContext>();
+  /** R6: bunky koľají (kľúč `x,y`) a z nich postavené hladké cesty (oblúky `RAIL_CURVE_RADIUS_CELLS`), kreslené procedurálne nad dlaždicami. */
+  private readonly railCells = new Map<string, CellCoord>();
+  private railPaths: RailPath[] = [];
+  private railGraphics: Graphics[] = [];
 
   /**
    * @param textures sprity ciest z `SpriteAtlas`; `null` = dočasné `Graphics` z tokenov
@@ -133,8 +139,16 @@ export class RoadLayer {
     private readonly palette: RenderPalette,
     private readonly textures: SpriteTextures | null = null,
     private readonly connectorMask: ConnectorMaskAt = noConnectorMask,
+    /** R6: `rail` = tá istá vrstva s autotilingom koľají (sprity `infra.rail.tiles.*`, bez úzkych ciest). */
+    private readonly layer: TransportLayer = 'road',
   ) {
+    this.view.label = layer === 'rail' ? 'rails' : 'roads';
     this.rebuild();
+  }
+
+  /** Hladké cesty koľají (prázdne pre cesty a bez tokenov koľají) — podľa nich sa kladú vozy vlaku. */
+  get paths(): readonly RailPath[] {
+    return this.railPaths;
   }
 
   /** Počet nakreslených dlaždíc ciest. */
@@ -165,6 +179,7 @@ export class RoadLayer {
     for (let y = 0; y < this.grid.height; y++) {
       for (let x = 0; x < this.grid.width; x++) this.refresh(x, y);
     }
+    this.rebuildRailPaths();
   }
 
   /**
@@ -176,11 +191,14 @@ export class RoadLayer {
     for (const { x, y } of autotileAffected(this.grid, cells)) {
       if (this.refresh(x, y)) changed += 1;
     }
+    if (changed > 0) this.rebuildRailPaths();
     return changed;
   }
 
   destroy(): void {
     this.tiles.clear();
+    this.railGraphics = [];
+    this.railPaths = [];
     this.view.destroy({ children: true }); // dlaždice najprv, potom zdieľané geometrie
     for (const context of this.contexts.values()) context.destroy();
     for (const context of this.narrowContexts.values()) context.destroy();
@@ -188,11 +206,35 @@ export class RoadLayer {
     this.narrowContexts.clear();
   }
 
+  /** Zostaví hladké cesty koľají z buniek a skryje dlaždice ich vnútorných buniek (uzly — koniec, T, kríž, tesné rohy — ostanú spritmi). */
+  private rebuildRailPaths(): void {
+    const rail = this.palette.rail;
+    if (this.layer !== 'rail' || rail === undefined) return;
+    for (const g of this.railGraphics) g.destroy();
+    this.railGraphics = [];
+    this.railPaths = buildRailPaths([...this.railCells.values()]);
+    const hidden = new Set<string>();
+    for (const path of this.railPaths) {
+      for (const key of path.cells) hidden.add(key);
+      const g = new Graphics();
+      drawRailPath(g, path, this.palette.cellPx, rail);
+      this.view.addChild(g);
+      this.railGraphics.push(g);
+    }
+    for (const [index, tile] of this.tiles) {
+      tile.display.visible = !hidden.has(cellKey(index % this.grid.width, Math.floor(index / this.grid.width)));
+    }
+  }
+
   /** Zosúladí dlaždicu bunky s mriežkou; `true`, ak sa niečo zmenilo. */
   private refresh(x: number, y: number): boolean {
     const index = this.grid.index(x, y);
     const existing = this.tiles.get(index);
-    const wanted = autotileTile(this.grid, x, y, LAYER, this.connectorMask(x, y));
+    const wanted = autotileTile(this.grid, x, y, this.layer, this.connectorMask(x, y));
+    if (this.layer === 'rail') {
+      if (wanted) this.railCells.set(cellKey(x, y), { x, y });
+      else this.railCells.delete(cellKey(x, y));
+    }
     const style = wanted ? this.styleOf(x, y, wanted) : WIDE_STYLE;
     if (existing && wanted && existing.shape === wanted.shape && existing.rotation === wanted.rotation && existing.style === style) {
       return false;
@@ -208,7 +250,7 @@ export class RoadLayer {
 
   /** Je cesta v bunke jednopruhová (procedurálna, bez spritu)? */
   private isNarrow(x: number, y: number): boolean {
-    return ROAD_KIND_TRAITS[this.grid.at(x, y).roadKind].lanes === 1;
+    return this.layer === 'road' && ROAD_KIND_TRAITS[this.grid.at(x, y).roadKind].lanes === 1;
   }
 
   /**
@@ -221,7 +263,7 @@ export class RoadLayer {
     for (const { dx, dy, bit } of DIRECTIONS_4) {
       const nx = x + dx;
       const ny = y + dy;
-      if (this.grid.inBounds(nx, ny) && this.grid.at(nx, ny).road === LAYER && !this.isNarrow(nx, ny)) wideNeighbours |= bit;
+      if (this.grid.inBounds(nx, ny) && this.grid.at(nx, ny).road === this.layer && !this.isNarrow(nx, ny)) wideNeighbours |= bit;
     }
     // dlaždica je otočená o `rotation`; ramená základnej orientácie dostaneme otočením masky späť
     const base = rotateMask(wideNeighbours, ((360 - rotation) % 360) as Rotation) & AUTOTILE_SHAPE_BASE_MASK[shape];
@@ -237,7 +279,7 @@ export class RoadLayer {
       display = graphics;
     } else if (this.textures !== null) {
       // Sprite v základnej orientácii, otáča sa okolo stredu bunky (anchor 0,5).
-      const sprite = new Sprite(this.textures.infra(LAYER, shape));
+      const sprite = new Sprite(this.textures.infra(this.layer, shape));
       sprite.anchor.set(MID);
       sprite.setSize(cellPx, cellPx);
       display = sprite;

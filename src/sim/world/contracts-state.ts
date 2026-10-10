@@ -17,6 +17,7 @@
  * clock.tick`), prijatý kontrakt má `shipArrivalTick > clock.tick`. Súlad polí so stavom a počítadlá overí `Contract.fromState` (`ContractError` → `WorldStateError`); väzby
  * na lode a náklad overí obnova (`checkContracts` vo world-restore).
  */
+import { BASIS_POINTS } from '../economy/basis-points';
 import type { ContractBookState } from '../contracts/contract-book';
 import {
   SERIALIZED_BOOKING_KEYS,
@@ -73,6 +74,13 @@ function parseOogUnits(raw: unknown, volumeUnits: number, path: string): number[
     if (i > 0 && index <= indexes[i - 1]) throw new WorldStateError(`${path}${pointerSegment(i)}`, 'indexy OOG musia byť ostro vzostupné');
   });
   return indexes;
+}
+
+/** Železničný podiel kontraktu zo save: celé číslo `0 … 10 000` (basis points; v15). */
+function checkRailShare(raw: unknown, path: string): number {
+  const bp = checkInteger(raw, 0, path);
+  if (bp > BASIS_POINTS) throw new WorldStateError(path, `podiel musí byť ≤ ${String(BASIS_POINTS)} (100 %), dostal ${String(bp)}`);
+  return bp;
 }
 
 /** Booking export kontraktu (tvar a typy, v7). */
@@ -147,6 +155,7 @@ function parseContract(raw: unknown, defs: DefRegistry, clockTick: number, ticks
     xpReward,
     unitTypes: parseUnitTypes(entry['unitTypes'], defs, counts.volumeUnits, `${path}/unitTypes`),
     oogUnits: parseOogUnits(entry['oogUnits'], counts.volumeUnits, `${path}/oogUnits`),
+    railShareBp: checkRailShare(entry['railShareBp'], `${path}/railShareBp`),
     state,
     ...counts,
     ...nullable,

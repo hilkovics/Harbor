@@ -11,6 +11,7 @@ import { isMachineState } from '../machines/machine-fsm';
 import { MACHINE_STATES } from '../machines/machine-state-types';
 import type { MachineCycle, MachinePose, MachineQueueEntry } from '../machines/machine-state-types';
 import { REACH_STACKER_DEF_ID, ReachStacker } from '../machines/reach-stacker';
+import { RMG_DEF_ID, RmgCrane } from '../machines/rmg-crane';
 import { RTG_DEF_ID, RtgCrane } from '../machines/rtg-crane';
 import { SERIALIZED_MACHINE_KEYS, YardMachine, type SerializedMachine } from '../machines/yard-machine';
 import { WorldStateError, checkArray, checkInteger, checkKeys, describeValue, pointerSegment } from './state-check';
@@ -35,13 +36,18 @@ function nullableInteger(value: unknown, min: number, path: string): number | nu
 
 function parseCycle(value: unknown, path: string): MachineCycle | null {
   if (value === null) return null;
-  const raw = checkKeys(value, CYCLE_KEYS, path);
+  const hasTrain = typeof value === 'object' && !Array.isArray(value) && Object.hasOwn(value, 'trainId');
+  const raw = checkKeys(value, hasTrain ? [...CYCLE_KEYS, 'trainId'] : CYCLE_KEYS, path);
   const { kind } = raw;
   if (!YardMachine.isCycleKind(kind)) throw new WorldStateError(`${path}/kind`, `druh cyklu musí byť put, take alebo relocate, dostal ${describeValue(kind)}`);
   const vehicleId = nullableInteger(raw['vehicleId'], 1, `${path}/vehicleId`);
   const jobId = nullableInteger(raw['jobId'], 1, `${path}/jobId`);
-  // `put` po zdvihu je bez vozidla aj jobu (ťahač je voľný hneď po zdvihu, ADR-040 dodatok TR3-02); `take` vozidlo a job vyžaduje po celý cyklus.
-  if ((vehicleId === null) !== (jobId === null) || (kind === 'take' && vehicleId === null) || (kind === 'relocate' && vehicleId !== null)) {
+  const trainId = hasTrain ? checkInteger(raw['trainId'], 1, `${path}/trainId`) : undefined;
+  if (trainId !== undefined && (kind === 'relocate' || vehicleId !== null || jobId !== null)) {
+    throw new WorldStateError(`${path}/trainId`, 'cyklus s vlakom je put alebo take bez vozidla a jobu');
+  }
+  // `put` po zdvihu je bez vozidla aj jobu (ťahač je voľný hneď po zdvihu, ADR-040 dodatok TR3-02); `take` vozidlo a job vyžaduje po celý cyklus (okrem cyklu s vlakom).
+  if (trainId === undefined && ((vehicleId === null) !== (jobId === null) || (kind === 'take' && vehicleId === null) || (kind === 'relocate' && vehicleId !== null))) {
     throw new WorldStateError(`${path}/vehicleId`, kind === 'relocate' ? 'rehandling nemá vozidlo ani job' : `cyklus ${kind} vyžaduje vozidlo aj job (put ich po zdvihu nemá, ale vždy obe naraz)`);
   }
   const fromSlot = nullableInteger(raw['fromSlot'], 0, `${path}/fromSlot`);
@@ -51,7 +57,8 @@ function parseCycle(value: unknown, path: string): MachineCycle | null {
   }
   const truck = raw['truck'];
   if (typeof truck !== 'boolean') throw new WorldStateError(`${path}/truck`, `musí byť boolean, dostal ${describeValue(truck)}`);
-  return { kind, unitId: checkInteger(raw['unitId'], 1, `${path}/unitId`), vehicleId, truck, jobId, fromSlot, toSlot, tpBay: checkInteger(raw['tpBay'], 0, `${path}/tpBay`) };
+  const base = { kind, unitId: checkInteger(raw['unitId'], 1, `${path}/unitId`), vehicleId, truck, jobId, fromSlot, toSlot, tpBay: checkInteger(raw['tpBay'], 0, `${path}/tpBay`) };
+  return trainId === undefined ? base : { ...base, trainId };
 }
 
 /** Tvar strojov: presne kľúče `SerializedMachine`, id 1…`nextId − 1` a ostro rastúce, známy def (`rtg`), stav, poloha, fáza, cyklus a fronta; vzťahy k svetu overí `restoreMachines`. */
@@ -65,7 +72,7 @@ export function parseMachines(value: unknown, nextId: number): SerializedMachine
     if (id <= previousId) throw new WorldStateError(`${path}/id`, `stroje musia byť vzostupne podľa id, ${String(id)} ≤ ${String(previousId)}`);
     previousId = id;
     const defId = entry['defId'];
-    if (defId !== RTG_DEF_ID && defId !== REACH_STACKER_DEF_ID) throw new WorldStateError(`${path}/defId`, `neznámy stroj ${describeValue(defId)} (známe: ${RTG_DEF_ID}, ${REACH_STACKER_DEF_ID})`);
+    if (defId !== RTG_DEF_ID && defId !== REACH_STACKER_DEF_ID && defId !== RMG_DEF_ID) throw new WorldStateError(`${path}/defId`, `neznámy stroj ${describeValue(defId)} (známe: ${RTG_DEF_ID}, ${REACH_STACKER_DEF_ID}, ${RMG_DEF_ID})`);
     const { state } = entry;
     if (!isMachineState(state)) throw new WorldStateError(`${path}/state`, `stav musí byť jeden z: ${MACHINE_STATES.join(', ')}, dostal ${describeValue(state)}`);
     const queue = checkArray(entry['queue'], `${path}/queue`).map((item: unknown, q): MachineQueueEntry => {
@@ -115,7 +122,13 @@ export function restoreMachines(world: World, entries: readonly SerializedMachin
     const path = `/machines${pointerSegment(index)}`;
     try {
       const init = { ...entry, id: entry.id as EntityId, blockId: entry.blockId as EntityId };
-      world.addMachine(entry.defId === REACH_STACKER_DEF_ID ? new ReachStacker({ ...init, def: defs.equipment.reachStacker }) : new RtgCrane({ ...init, def: defs.equipment.rtg }));
+      world.addMachine(
+        entry.defId === REACH_STACKER_DEF_ID
+          ? new ReachStacker({ ...init, def: defs.equipment.reachStacker })
+          : entry.defId === RMG_DEF_ID
+            ? new RmgCrane({ ...init, def: defs.equipment.rmg })
+            : new RtgCrane({ ...init, def: defs.equipment.rtg }),
+      );
       restoreReleasedPut(world, entry);
     } catch (error) {
       if (error instanceof MachineError) throw new WorldStateError(`${path}/${error.code === 'unknown_block' ? 'blockId' : 'id'}`, error.message);

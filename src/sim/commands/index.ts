@@ -14,6 +14,8 @@ export { RoadLayerCommand } from './road-layer-command';
 export type { CellVerdict, RoadPosting, PlannedCell, RoadPrice, RoadQuote } from './road-layer-command';
 export { PlaceRoadCommand } from './place-road';
 export { RemoveRoadCommand } from './remove-road';
+export { PlaceRailCommand } from './place-rail';
+export { RemoveRailCommand } from './remove-rail';
 export { SetGameSpeedCommand } from './set-game-speed';
 export { PLACEMENT_REASON, PlaceModuleCommand } from './place-module';
 export type { PlaceModuleInput } from './place-module';

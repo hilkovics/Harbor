@@ -60,6 +60,10 @@ const REVISION_SAMPLES: readonly SimEvent[] = [
   { type: 'TranshipMissed', contractId: SAMPLE_CONTRACT, units: 1, outVoyageId: SAMPLE_VOYAGE },
   { type: 'TranshipRescued', contractId: SAMPLE_CONTRACT, units: 1, outVoyageId: SAMPLE_VOYAGE },
   { type: 'TranshipSold', contractId: SAMPLE_CONTRACT, units: 1 },
+  // R6 (TR6-05): vlak príde / odíde, export po koľaji dorazil.
+  { type: 'TrainArrived', trainId: SAMPLE_ID, terminalId: SAMPLE_ID, delayTicks: 0, exportUnits: 0 },
+  { type: 'TrainDeparted', trainId: SAMPLE_ID, units: 0, undeliveredUnits: 0, turnaroundTicks: 1 },
+  { type: 'TrainExportArrived', contractId: SAMPLE_CONTRACT, unitId: SAMPLE_ID, trainId: SAMPLE_ID },
 ];
 
 /** Udalosti, ktoré štruktúru nemenia (čas a peniaze majú vlastné polia snapshotu). */
@@ -148,6 +152,9 @@ describe('WorldSnapshot v2: revision', () => {
       'TranshipMissed',
       'TranshipRescued',
       'TranshipSold',
+      'TrainArrived',
+      'TrainDeparted',
+      'TrainExportArrived',
     ];
     expect([...REVISION_EVENTS].sort()).toEqual([...expected].sort());
     expect(REVISION_SAMPLES.map((event) => event.type).sort()).toEqual([...expected].sort());
@@ -349,7 +356,7 @@ describe('SimBridge.entities()', () => {
     expect(entities.ships).toBe(snapshot.ships);
     expect(entities.vehicles).toBe(snapshot.vehicles);
     expect(entities.trucks).toBe(snapshot.trucks);
-    expect(Object.keys(entities).sort()).toEqual(['cranes', 'machines', 'modules', 'ships', 'trucks', 'vehicles']);
+    expect(Object.keys(entities).sort()).toEqual(['cranes', 'crossings', 'machines', 'modules', 'ships', 'trains', 'trucks', 'vehicles']);
   });
 
   it('referencia je stabilná, kým sa snapshot nezmení; potom sa obnoví', () => {

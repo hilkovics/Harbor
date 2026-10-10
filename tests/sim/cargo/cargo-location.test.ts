@@ -26,11 +26,11 @@ const EXPECTED_TRANSITIONS: Readonly<Record<CargoLocationKind, readonly CargoLoc
   in_crane: ['on_apron', 'on_ship', 'in_vehicle'],
   on_apron: ['in_vehicle', 'in_crane'],
   in_vehicle: ['in_storage', 'on_apron', 'in_crane', 'in_handler', 'in_truck'],
-  in_handler: ['in_storage', 'in_vehicle', 'in_truck'],
+  in_handler: ['in_storage', 'in_vehicle', 'in_truck', 'in_train'],
   in_storage: ['in_vehicle', 'in_pipeline', 'in_handler'],
   in_pipeline: ['in_storage', 'in_truck'],
   in_truck: ['exported', 'in_handler', 'in_vehicle'],
-  in_train: ['exported'],
+  in_train: ['exported', 'in_handler'],
   exported: [],
   shipped: [],
 };
@@ -127,7 +127,7 @@ describe('CARGO_LOCATION_KINDS a CARGO_TRANSITIONS', () => {
   });
 
   it('in_handler je prechodová poloha: len in_vehicle / in_truck ↔ in_handler ↔ in_storage, ťahač ani stoh sa nepreskočí', () => {
-    expect([...(CARGO_TRANSITIONS.get('in_handler') ?? [])].sort()).toEqual(['in_storage', 'in_truck', 'in_vehicle']);
+    expect([...(CARGO_TRANSITIONS.get('in_handler') ?? [])].sort()).toEqual(['in_storage', 'in_train', 'in_truck', 'in_vehicle']);
     expect(holderIdOf(at.handler(95))).toBe(95);
     expect(slotOf(at.handler(95))).toBeNull();
     for (const [from, to] of [['in_handler', 'in_crane'], ['in_handler', 'on_apron'], ['in_handler', 'in_pipeline'], ['on_apron', 'in_handler'], ['in_crane', 'in_handler'], ['in_handler', 'in_handler']] as const) {
@@ -155,6 +155,9 @@ describe('CARGO_LOCATION_KINDS a CARGO_TRANSITIONS', () => {
     ['in_truck', 'in_crane'],
     ['in_train', 'in_truck'],
     ['in_truck', 'in_train'],
+    ['in_storage', 'in_train'],
+    ['in_train', 'in_storage'],
+    ['in_vehicle', 'in_train'],
     ['in_truck', 'in_storage'],
     ['in_truck', 'shipped'],
   ])('%s → %s nie je povolený (teleport cez vynechaný krok)', (from, to) => {
@@ -176,11 +179,11 @@ describe('CARGO_LOCATION_KINDS a CARGO_TRANSITIONS', () => {
       }
       return seen;
     };
-    // `in_train` zatiaľ nemá vstup (ADR-041 zrušil `at_ramp`; vlak sa napojí s železnicou), preto nie je z lode dosiahnuteľný
-    expect([...reachable('on_ship')].sort()).toEqual(CARGO_LOCATION_KINDS.filter((kind) => kind !== 'in_train').sort());
+    // `in_train` je od R6 (ADR-043) dosiahnuteľný cez `in_handler` (RMG) a vlak sa vráti aj na loď.
+    expect([...reachable('on_ship')].sort()).toEqual([...CARGO_LOCATION_KINDS].sort());
     for (const kind of CARGO_HOLDER_KINDS) {
       expect(reachable(kind).has('exported'), kind).toBe(true);
-      expect(reachable(kind).has('shipped'), kind).toBe(kind !== 'in_train');
+      expect(reachable(kind).has('shipped'), kind).toBe(true);
     }
   });
 
@@ -194,7 +197,7 @@ describe('CARGO_LOCATION_KINDS a CARGO_TRANSITIONS', () => {
   });
 
   it('jednotka smie vzniknúť na lodi (import) a v kamióne (export, ADR-032)', () => {
-    expect(CARGO_SPAWN_KINDS).toEqual(['on_ship', 'in_truck']);
+    expect(CARGO_SPAWN_KINDS).toEqual(['on_ship', 'in_truck', 'in_train']);
     expect(Object.isFrozen(CARGO_SPAWN_KINDS)).toBe(true);
   });
 });
@@ -210,9 +213,9 @@ describe('CARGO_HOLDER_SPECS', () => {
     expect(Object.isFrozen(CARGO_HOLDER_SPECS)).toBe(true);
   });
 
-  it('jedinečné miesto majú len apron a sklad; ostatní držitelia zdieľajú viac jednotiek (§7.5, §7.7)', () => {
+  it('jedinečné miesto majú len apron, sklad a vlak (R6); ostatní držitelia zdieľajú viac jednotiek (§7.5, §7.7)', () => {
     const unique = CARGO_HOLDER_KINDS.filter((kind) => CARGO_HOLDER_SPECS[kind].uniqueSlot);
-    expect(unique).toEqual(['on_apron', 'in_storage']);
+    expect(unique).toEqual(['on_apron', 'in_storage', 'in_train']);
   });
 
   it('loď vydáva od najmenšieho id, ostatní držitelia vo FIFO', () => {
@@ -231,7 +234,7 @@ describe('holderIdOf, slotOf, uniqueSlotOf, formatLocation', () => {
     ['in_storage', 904, 7, 7, 'in_storage(moduleId=904, slot=7)'],
     ['in_pipeline', 905, null, null, 'in_pipeline(pipelineId=905)'],
     ['in_truck', 907, null, null, 'in_truck(truckId=907)'],
-    ['in_train', 908, null, null, 'in_train(trainId=908)'],
+    ['in_train', 908, 3, 3, 'in_train(trainId=908, slot=3)'],
     ['exported', null, null, null, 'exported'],
     ['shipped', null, null, null, 'shipped'],
   ])('%s: držiteľ %s, miesto %s, jedinečné miesto %s, opis %s', (kind, holder, slot, unique, text) => {
@@ -288,7 +291,7 @@ describe('normalizeLocation', () => {
     ['chýba miesto', '/slot', { kind: 'on_apron', berthId: 2 }, /chýba povinný kľúč.*on_apron/],
     ['držiteľ 0', '/shipId', { kind: 'on_ship', shipId: 0 }, /celé číslo ≥ 1.*0/],
     ['držiteľ záporný', '/truckId', { kind: 'in_truck', truckId: -3 }, /celé číslo ≥ 1.*-3/],
-    ['držiteľ necelý', '/trainId', { kind: 'in_train', trainId: 1.5 }, /celé číslo ≥ 1.*1\.5/],
+    ['držiteľ necelý', '/trainId', { kind: 'in_train', trainId: 1.5, slot: 0 }, /celé číslo ≥ 1.*1\.5/],
     ['držiteľ reťazec', '/shipId', { kind: 'on_ship', shipId: '3' }, /celé číslo ≥ 1.*"3"/],
     ['miesto záporné', '/slot', { kind: 'in_storage', moduleId: 4, slot: -1 }, /celé číslo ≥ 0.*-1/],
     ['miesto necelé', '/slot', { kind: 'in_storage', moduleId: 4, slot: 0.5 }, /celé číslo ≥ 0.*0\.5/],

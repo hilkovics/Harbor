@@ -73,7 +73,8 @@
   "parcels": [
     { "id": "starter", "rect": { "x": 30, "y": 14, "w": 28, "h": 20 }, "priceCents": 60000000, "leasable": false, "startOwned": true },
     { "id": "west_quay", "rect": { "x": 6, "y": 12, "w": 16, "h": 38 }, "priceCents": 32000000, "leasable": true },
-    { "id": "east_yard", "rect": { "x": 66, "y": 12, "w": 16, "h": 38 }, "priceCents": 58000000, "leasable": true }
+    { "id": "east_yard", "rect": { "x": 66, "y": 12, "w": 16, "h": 38 }, "priceCents": 58000000, "leasable": true },
+    { "id": "rail_yard", "rect": { "x": 46, "y": 34, "w": 8, "h": 16 }, "priceCents": 24000000, "leasable": false, "startOwned": true }
   ],
   "roadPortals": [
     { "id": "road_south_in", "cell": { "x": 44, "y": 63 }, "direction": "in", "trafficShare": 0.6 },

@@ -20,8 +20,11 @@ import type { RoadKind } from '@sim/grid';
 import type { BuildBarCategory, BuildBarItem } from '@ui/build-bar';
 import { formatMoney } from '@ui/format';
 import { moduleKindIcon } from '@ui/module-inspector';
-import { ROAD_KIND_LABEL, roadItemId } from './road-build';
+import { RAIL_LABEL, RAIL_TOOL, ROAD_KIND_LABEL, roadItemId, roadToolItemId } from './road-build';
 import { NO_BUY_TARGET, type VehicleBuyTarget } from './vehicle-purchase';
+
+/** Def železničného terminálu (R6): patrí do Železnice, nie do Skladov. */
+export const RAIL_TERMINAL_DEF_ID = 'rmg_rail_block';
 
 /** Riadok tabuľky kategórií BuildBar. */
 export interface BuildCategorySpec {
@@ -36,6 +39,10 @@ export interface BuildCategorySpec {
   readonly vehicles?: boolean;
   /** Kategória ponúka typy ciest z `defs.infrastructure.roadKinds` (`action: 'road'`); F3: Landside. */
   readonly roads?: boolean;
+  /** Kategória ponúka nástroj koľaje (`action: 'road'`, cena z `infrastructure.rail`, R6). */
+  readonly rail?: boolean;
+  /** Id modulov, ktoré kategória berie navyše (bez ohľadu na `kinds`), a ktoré iná kategória nemá. */
+  readonly moduleIds?: readonly string[];
 }
 
 /** Jednotka ceny cesty: platí sa za bunku. */
@@ -57,9 +64,12 @@ export const BUILD_CATEGORIES: readonly BuildCategorySpec[] = Object.freeze([
     kinds: ['gate', 'pre_gate', 'holding'],
     roads: true,
   },
-  { id: 'rail', label: 'Železnica', icon: 'ic_rail', enabled: false, kinds: ['rail_station'] },
+  { id: 'rail', label: 'Železnica', icon: 'ic_rail', enabled: true, kinds: [], rail: true, moduleIds: [RAIL_TERMINAL_DEF_ID] },
   { id: 'pipes', label: 'Potrubia', icon: 'ic_pipe', enabled: false, kinds: ['pipeline'] },
 ]);
+
+/** Moduly, ktoré majú vlastnú kategóriu (`moduleIds`) a v kategórii podľa `kinds` sa neopakujú. */
+const EXTRA_MODULE_IDS: ReadonlySet<string> = new Set(BUILD_CATEGORIES.flatMap((spec) => spec.moduleIds ?? []));
 
 /** Kategória zvolená pri štarte. */
 export const DEFAULT_BUILD_CATEGORY_ID = 'terminal';
@@ -126,6 +136,23 @@ export function roadKindItem(defs: DefRegistry, kind: RoadKind, cashCents: numbe
   };
 }
 
+/** Položka nástroja koľaje (`action: 'road'`, cena za bunku z `infrastructure.rail.costPerCellCents`). */
+export function railToolItem(defs: DefRegistry, cashCents: number): BuildBarItem {
+  const costCents = defs.infrastructure.rail.costPerCellCents;
+  const affordable = cashCents >= costCents;
+  return {
+    defId: roadToolItemId(RAIL_TOOL),
+    displayName: RAIL_LABEL,
+    costCents,
+    priceText: `${formatMoney(costCents)} ${ROAD_PRICE_UNIT}`,
+    icon: 'ic_rail',
+    locked: false,
+    affordable,
+    action: 'road',
+    ...(affordable ? {} : { missingCents: costCents - cashCents }),
+  };
+}
+
 /**
  * Kategórie BuildBar z katalógu modulov, vozidiel a aktuálnej hotovosti (poradie položiek = poradie v `vehicles.json`
  * a `modules.json`, vozidlá pred stavbami). `buyTarget` = kam sa dá kúpiť vozidlo (`vehicleBuyTarget`); bez neho sa
@@ -135,7 +162,12 @@ export function buildBarCategories(defs: DefRegistry, cashCents: number, buyTarg
   return BUILD_CATEGORIES.map((spec) => {
     const vehicles = spec.enabled && spec.vehicles === true ? defs.vehicles.items.map((def) => vehicleBuyItem(def, cashCents, buyTarget)) : [];
     const roads = spec.enabled && spec.roads === true ? ['one_way'].map((kind) => roadKindItem(defs, kind as RoadKind, cashCents)) : [];
-    const modules = spec.enabled ? defs.modules.items.filter((def) => spec.kinds.includes(def.kind)).map((def) => buildBarItem(def, cashCents)) : [];
-    return { id: spec.id, label: spec.label, icon: spec.icon, enabled: spec.enabled, items: [...vehicles, ...roads, ...modules] };
+    const rails = spec.enabled && spec.rail === true ? [railToolItem(defs, cashCents)] : [];
+    const modules = spec.enabled
+      ? defs.modules.items
+          .filter((def) => (spec.kinds.includes(def.kind) && !EXTRA_MODULE_IDS.has(def.id)) || spec.moduleIds?.includes(def.id) === true)
+          .map((def) => buildBarItem(def, cashCents))
+      : [];
+    return { id: spec.id, label: spec.label, icon: spec.icon, enabled: spec.enabled, items: [...vehicles, ...roads, ...rails, ...modules] };
   });
 }

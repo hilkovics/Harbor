@@ -17,6 +17,7 @@
       "kind": "import",
       "cargoTypeId": "container_teu",
       "sizeMix": 0.6,
+      "railShare": [0.3, 0.6],
       "typeMix": [
         { "type": "reefer", "share": 0.15 }
       ],
@@ -31,6 +32,7 @@
       "kind": "import",
       "cargoTypeId": "container_teu",
       "sizeMix": 0.6,
+      "railShare": [0.3, 0.6],
       "typeMix": [
         { "type": "reefer", "share": 0.15 }
       ],
@@ -46,6 +48,7 @@
       "destinationPorts": ["Rotterdam", "Hamburg", "Gdańsk"],
       "cargoTypeId": "container_teu",
       "sizeMix": 0.6,
+      "railShare": [0.2, 0.5],
       "volumeUnitsRange": [24, 72],
       "exportVolumeUnitsRange": [12, 36],
       "slaDaysRange": [3, 5],
@@ -59,6 +62,7 @@
       "destinationPorts": ["Rotterdam", "Hamburg", "Gdańsk"],
       "cargoTypeId": "container_teu",
       "sizeMix": 0.6,
+      "railShare": [0.2, 0.5],
       "volumeUnitsRange": [12, 36],
       "slaDaysRange": [3, 5],
       "shipClassIds": ["feeder"],

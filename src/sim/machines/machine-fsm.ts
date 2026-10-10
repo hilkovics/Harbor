@@ -6,7 +6,8 @@
  * presunie do `in_handler`) `→ (shift)*` (pojazd žeriavu k bayu odkladu) `→ trolley` (vozík k radu odkladu) `→ lower` (spustenie a pustenie; na konci sa jednotka
  * presunie z `in_handler` na cieľ) `→ idle`. Fázy bez dráhy (žeriav už stojí v správnom bayi, vozík v správnom rade) sa preskočia, preto sú povolené aj prechody
  * `lift → trolley | lower` a `shift → lower`. Vzdanie cyklu (`YardMachine.abortCycle`, TR3-06b: ťahač neprišiel na TP, job zrušený) je `travel | shift | lift | trolley → idle`;
- * z `lower` sa ide `idle` len po dokončení (jednotka už leží na cieli).
+ * `shift → shift` a `trolley → trolley` je opätovný vstup do fázy nosenia: výška nosenia (`carryTierOf`) závisí od živých stohov, takže ak medzičasom vyrástol stoh na dráhe, po konci
+ * fázy ešte zostáva dráha spúšťača (TR6-02c, seed 5008). Z `lower` sa ide `idle` len po dokončení (jednotka už leží na cieli).
  */
 import { MACHINE_STATES, type MachineState } from './machine-state-types';
 
@@ -18,7 +19,7 @@ export const MACHINE_TRANSITIONS: ReadonlyMap<MachineState, readonly MachineStat
   ['travel', Object.freeze(['shift', 'lift', 'idle'] as const)],
   ['shift', Object.freeze(['shift', 'lift', 'trolley', 'lower', 'idle'] as const)],
   ['lift', Object.freeze(['shift', 'trolley', 'lower', 'idle'] as const)],
-  ['trolley', Object.freeze(['shift', 'lower', 'idle'] as const)],
+  ['trolley', Object.freeze(['shift', 'trolley', 'lower', 'idle'] as const)],
   ['lower', Object.freeze(['idle'] as const)],
 ]);
 

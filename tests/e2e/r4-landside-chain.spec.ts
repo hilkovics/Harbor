@@ -188,8 +188,8 @@ test.describe('R4: loď → apron → vozidlá → dvor → kamión na TP → v�
     expect(end.entities.trucks).toEqual([]);
     expect(end.entities.ships).toEqual([]);
     expect(end.rendered).toMatchObject({ trucks: 0, truckStates: {} });
-    // kamióny prešli celým životným cyklom: vstupný pruh (prechod = `gate_pass`), TP dvora, výstupný pruh, portál
-    for (const state of ['to_gate', 'gate_queue', 'gate_pass', 'to_tp', 'at_edge_tp', 'gate_queue_out', 'to_portal']) expect(end.seen, `kamióny prešli stavom ${state}`).toContain(state);
+    // kamióny prešli celým životným cyklom: vstupný pruh (prechod = `gate_pass`; od R6 nemusia kamióny čakať vo fronte, `gate_queue` nie je invariant), TP dvora, výstupný pruh, portál
+    for (const state of ['to_gate', 'gate_pass', 'to_tp', 'at_edge_tp', 'gate_pass_out', 'to_portal']) expect(end.seen, `kamióny prešli stavom ${state}`).toContain(state);
     expect(end.seen).not.toContain('waiting');
     expect(end.seen).not.toContain('loading');
     expect(end.processedIn).toBe(UNITS);

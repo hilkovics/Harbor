@@ -27,7 +27,7 @@ describe('VEHICLE_TRANSITIONS', () => {
       ['loading', ['to_dropoff', 'rehandling']],
       ['rehandling', ['loading', 'idle']],
       ['to_dropoff', ['unloading', 'no_path']],
-      ['unloading', ['idle']],
+      ['unloading', ['idle', 'to_dropoff']], // to_dropoff: vozidlo s exportom ustúpi z háku (TR6-02b)
       ['no_path', ['to_pickup', 'to_dropoff']],
       ['to_depot', ['parked', 'to_pickup', 'idle']],
       ['parked', ['depot_exit']],
@@ -36,7 +36,7 @@ describe('VEHICLE_TRANSITIONS', () => {
     ]);
     let allowed = 0;
     for (const from of VEHICLE_STATES) for (const to of VEHICLE_STATES) if (isVehicleTransitionAllowed(from, to)) allowed += 1;
-    expect(allowed).toBe(21);
+    expect(allowed).toBe(22);
   });
 });
 

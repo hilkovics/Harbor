@@ -7,6 +7,7 @@
  * len v svete s blokom so zásuvkami (`poweredSupply`) — inak by loď s reeferom nemala kde vykladať — a bez nich sa `Rng` nespotrebuje.
  * Odmena: `rateTeu` = Σ TEU × `rateMultiplier` typu; pri samých `dry` presne `volumeTeu` (odmena ostáva bitovo rovnaká).
  */
+import { BASIS_POINTS } from '../economy/basis-points';
 import { DEFAULT_CONTAINER_TYPE, FEET_PER_TEU } from '../cargo/cargo-unit';
 import type { Rng } from '../core/rng';
 import type { Catalog } from '../defs/catalog';
@@ -65,6 +66,15 @@ export function drawOogUnits(rng: Pick<Rng, 'next'>, unitTypes: readonly string[
     if (chance > 0 && rng.next() < chance) result.push(index);
   });
   return result;
+}
+
+/**
+ * Železničný podiel kontraktu (R6, ADR-043) v basis pointoch: `Rng` losuje hodnotu zo `range` šablóny (`[min, max]`, `0 … 1`) — jedno číslo; len keď šablóna `railShare` má a prístav má železničný terminál
+ * napojený na portál (`railSupply`), inak 0 a `Rng` sa nespotrebuje (svet bez železnice ostáva bitovo rovnaký).
+ */
+export function drawRailShare(rng: Pick<Rng, 'next'>, range: readonly [number, number] | undefined, railSupply: boolean): number {
+  if (range === undefined || !railSupply) return 0;
+  return Math.round((range[0] + rng.next() * (range[1] - range[0])) * BASIS_POINTS);
 }
 
 /** Efektívne TEU kontraktu pre odmenu: Σ TEU kontajnera × `rateMultiplier` jeho typu (pole typov prázdne = `volumeTeu`). Zaokrúhlené na celé číslo. */

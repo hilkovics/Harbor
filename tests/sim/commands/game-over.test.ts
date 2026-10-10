@@ -22,6 +22,8 @@ const SEED = 5501;
 const SAMPLES: readonly SerializedCommand[] = [
   { type: 'PlaceRoad', cells: [{ x: 41, y: 18 }, { x: 41, y: 19 }] },
   { type: 'RemoveRoad', cells: [{ x: 44, y: 34 }] },
+  { type: 'PlaceRail', cells: [{ x: 41, y: 18 }] },
+  { type: 'RemoveRail', cells: [{ x: 41, y: 18 }] },
   { type: 'SetGameSpeed', speed: 2 },
   { type: 'PlaceModule', defId: 'container_yard_small', x: 42, y: 18, rotation: 0 },
   { type: 'RemoveModule', moduleId: 2 },

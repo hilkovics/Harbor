@@ -30,7 +30,7 @@ import { DEFAULT_TEMPLATE_KIND, type ContractTemplateDef, type ContractTemplateK
 import type { Module } from '../modules/module';
 import type { StatResolver } from '../tech/stat-resolver';
 import { EmptyRepositioningContract, ExportContract, ImportContract, TranshipContract, type Contract } from './contract';
-import { drawOogUnits, drawUnitTypes, rateTeuOf } from './container-mix';
+import { drawOogUnits, drawRailShare, drawUnitTypes, rateTeuOf } from './container-mix';
 import { drawContainerCount } from './container-sizes';
 import { contractRewardCents, contractXpReward, lineForVoyage, maxSlaDaysOf, urgencyBp } from './contract-terms';
 
@@ -91,6 +91,8 @@ export interface OfferContext {
   readonly poweredSupply?: boolean;
   /** Má prístav OOG plochu (R5, ADR-042 TR5-02)? Bez nej sa OOG nelosuje; chýba = nie. */
   readonly oogSupply?: boolean;
+  /** Má prístav železničný terminál napojený na koľajový portál (R6, ADR-043)? Bez neho sa `railShare` nelosuje; chýba = nie. */
+  readonly railSupply?: boolean;
   /** Pridelí id novej ponuke (volá sa až po výbere šablóny). */
   readonly nextId: () => ContractId;
   /** Pridelí id voyage novej ponuke (ADR-032; volá sa hneď po `nextId`, `Rng` nespotrebuje). */
@@ -143,6 +145,8 @@ interface OfferVolume {
   readonly unitTypes: readonly string[];
   /** Indexy OOG kontajnerov (R5, TR5-02; prázdne = žiadne). */
   readonly oogUnits: readonly number[];
+  /** Železničný podiel v basis pointoch (R6, ADR-043; 0 = všetko kamiónmi). */
+  readonly railShareBp: number;
 }
 
 /**
@@ -157,7 +161,8 @@ function volumeOf(context: OfferContext, terms: DrawnTerms, range: readonly [num
   // Export privezú kamióny: reefer (napájanie) sa do exportu nelosuje (`poweredSupply = false`).
   const unitTypes = drawUnitTypes(context.rng, volumeUnits, volumeTeu, mixed ? terms.template.typeMix : undefined, context.defs.containerTypes, !exportSide && (context.poweredSupply ?? false));
   const oogUnits = drawOogUnits(context.rng, unitTypes, context.defs.containerTypes, context.oogSupply ?? false);
-  return { volumeTeu, volumeUnits, unitTypes, oogUnits };
+  const railShareBp = drawRailShare(context.rng, mixed ? terms.template.railShare : undefined, context.railSupply ?? false);
+  return { volumeTeu, volumeUnits, unitTypes, oogUnits, railShareBp };
 }
 
 /** Podmienky ponuky po ťahoch `Rng` (šablóna, loď, mierka a SLA už sú vyžrebované). */

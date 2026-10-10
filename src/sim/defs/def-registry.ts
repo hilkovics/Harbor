@@ -16,6 +16,7 @@ import contractTemplatesJson from '@data/defs/contract_templates.json';
 import economyJson from '@data/defs/economy.json';
 import equipmentJson from '@data/defs/equipment.json';
 import infrastructureJson from '@data/defs/infrastructure.json';
+import railJson from '@data/defs/rail.json';
 import linesJson from '@data/defs/lines.json';
 import logisticsJson from '@data/defs/logistics.json';
 import modulesJson from '@data/defs/modules.json';
@@ -62,6 +63,9 @@ import {
   type CargoTypeDef,
   type EquipmentDef,
   type RtgDef,
+  type RmgDef,
+  type RailDef,
+  RMG_PRIORITY_KINDS,
   type ContainerTypeDef,
   type OogDef,
   type ReeferDef,
@@ -319,6 +323,40 @@ const RTG_FIELDS: SpecTable<RtgDef> = {
   priorities: { kind: 'object', fields: { ship: { kind: 'integer', min: 0 }, truck: { kind: 'integer', min: 0 }, housekeeping: { kind: 'integer', min: 0 } } },
 };
 
+/** `equipment.json` → `rmg` (R6, ADR-043): časy RMG a priority vlak > ťahač > housekeeping. */
+const RMG_FIELDS: SpecTable<RmgDef> = {
+  ...RTG_FIELDS,
+  priorities: {
+    kind: 'object',
+    fields: { train: { kind: 'integer', min: 0 }, ship: { kind: 'integer', min: 0 }, truck: { kind: 'integer', min: 0 }, housekeeping: { kind: 'integer', min: 0 } },
+  },
+};
+
+/** `rail.json` (R6, ADR-043): cestovný poriadok a vlak. */
+const RAIL_FIELDS: FieldTable<RailDef> = {
+  timetable: {
+    kind: 'object',
+    fields: {
+      intervalHours: { kind: 'number', exclusiveMin: 0 },
+      firstArrivalHour: { kind: 'integer', min: 0 },
+      wagonsPerTrain: { kind: 'integer', min: 1 },
+      dwellMinutes: { kind: 'integer', min: 1 },
+      departGraceMinutes: { kind: 'integer', min: 1 },
+    },
+  },
+  train: {
+    kind: 'object',
+    fields: {
+      speedMilliCellsPerTick: { kind: 'integer', min: 1 },
+      locoLengthCells: { kind: 'integer', min: 1 },
+      wagonLengthCells: { kind: 'integer', min: 1 },
+      wagonTeu: { kind: 'integer', min: 1 },
+    },
+  },
+  crossingClearTicks: { kind: 'integer', min: 1 },
+  unitHashMultiplier: { kind: 'integer', min: 1 },
+};
+
 /** `equipment.json` → `tractors` (TR3-02, ADR-040 bod 7): východisko a medze počtu ťahačov na STS. */
 const TRACTORS_FIELDS: SpecTable<TractorsDef> = {
   defaultMode: { kind: 'enum', values: CRANE_GANG_MODES },
@@ -330,6 +368,7 @@ const TRACTORS_FIELDS: SpecTable<TractorsDef> = {
 const EQUIPMENT_FIELDS: FieldTable<EquipmentDef> = {
   rtg: { kind: 'object', fields: RTG_FIELDS },
   reachStacker: { kind: 'object', fields: RTG_FIELDS },
+  rmg: { kind: 'object', fields: RMG_FIELDS },
   tractors: { kind: 'object', fields: TRACTORS_FIELDS },
 };
 
@@ -339,6 +378,7 @@ const DEF_FIELDS = {
   infrastructure: INFRASTRUCTURE_FIELDS,
   logistics: LOGISTICS_FIELDS,
   equipment: EQUIPMENT_FIELDS,
+  rail: RAIL_FIELDS,
 } as const;
 
 // Katalógové defy (ADR-009): tabuľka polí jednej položky; `id` je vždy prvé pole.
@@ -484,6 +524,8 @@ const CONTRACT_TEMPLATE_FIELDS: SpecTable<ContractTemplateDef> = {
     item: { kind: 'object', fields: { type: { kind: 'string', pattern: SNAKE_CASE_ID, patternName: 'snake_case identifikátor' }, share: { kind: 'number', exclusiveMin: 0, max: 1 } } },
     optional: true,
   },
+  // Železničný podiel (R6, ADR-043): rozsah `[min, max]` v `0 … 1`; vzťah na druh šablóny hlási `checkContractTemplates`.
+  railShare: { kind: 'range', bound: { kind: 'number', min: 0, max: 1 }, optional: true },
   volumeUnitsRange: { kind: 'range', bound: { kind: 'integer', min: 1 } },
   slaDaysRange: { kind: 'range', bound: { kind: 'integer', min: 1 } },
   shipClassIds: { kind: 'array', minItems: 1, unique: true, item: { kind: 'string', pattern: SNAKE_CASE_ID, patternName: 'snake_case identifikátor' } },
@@ -622,6 +664,9 @@ function checkContractTemplates(
       fail(index, 'sizeMix', `zmes veľkostí (40′) má zmysel len pre kategóriu 'container', '${template.cargoTypeId}' je '${category}'`);
     }
     checkTypeMix(template, index, category, kind, containerTypes, fail);
+    if (template.railShare !== undefined && (category !== 'container' || (kind !== 'import' && kind !== 'export' && kind !== 'roundtrip'))) {
+      fail(index, 'railShare', `železničný podiel patrí len kontajnerovej šablóne 'import', 'export' alebo 'roundtrip', dostal '${kind}' / '${category}'`);
+    }
     const priceField = TEMPLATE_KIND_PRICE_FIELD[kind];
     if (priceField !== undefined && !((cargoType[priceField] as number) > 0)) {
       fail(index, 'cargoTypeId', `šablóna druhu '${kind}' vyžaduje typ nákladu s ${priceField} > 0, '${cargoType.id}' má ${String(cargoType[priceField])}`);
@@ -677,6 +722,14 @@ function checkEquipment(def: Readonly<EquipmentDef>): Problem | undefined {
       }
     }
   }
+  const { priorities } = def.rmg;
+  for (let i = 1; i < RMG_PRIORITY_KINDS.length; i++) {
+    const previous = RMG_PRIORITY_KINDS[i - 1];
+    const kind = RMG_PRIORITY_KINDS[i];
+    if (priorities[kind] <= priorities[previous]) {
+      return { path: `/rmg/priorities/${kind}`, message: `priorita '${kind}' (${String(priorities[kind])}) musí byť väčšia než '${previous}' (${String(priorities[previous])}) — poradie vlak > loď (ťahač) > kamión > housekeeping` };
+    }
+  }
   return undefined;
 }
 
@@ -702,6 +755,7 @@ export class DefRegistry {
     private readonly linesCatalog: Catalog<Readonly<LineDef>>,
     private readonly containerTypesCatalog: Catalog<Readonly<ContainerTypeDef>>,
     private readonly equipmentDef: Readonly<EquipmentDef>,
+    private readonly railDef: Readonly<RailDef>,
   ) {}
 
   /**
@@ -722,9 +776,11 @@ export class DefRegistry {
     const lines = validateCatalog<LineDef>('lines', raw.lines, { fields: LINE_FIELDS });
     const containerTypes = validateCatalog<ContainerTypeDef>('container_types', raw.container_types, { fields: CONTAINER_TYPE_FIELDS, check: checkContainerType });
     const equipment = validateDef<EquipmentDef>('equipment', raw.equipment, DEF_FIELDS.equipment, checkEquipment);
+    // `rail.json` (R6, ADR-043): chýbajúci def v ručne skladanej sade (testy pred R6) nahradí zabalený — katalóg bez železnice sa správa rovnako.
+    const rail = validateDef<RailDef>('rail', raw.rail ?? railJson, DEF_FIELDS.rail);
     checkExportWindow(economy, logistics);
     checkContractTemplates(contractTemplates, cargoTypes, ships, containerTypes);
-    return new DefRegistry(time, economy, infrastructure, cargoTypes, modules, ships, vehicles, trucks, logistics, contractTemplates, lines, containerTypes, equipment);
+    return new DefRegistry(time, economy, infrastructure, cargoTypes, modules, ships, vehicles, trucks, logistics, contractTemplates, lines, containerTypes, equipment, rail);
   }
 
   /** `time.json` (ARCHITECTURE §3); použiteľný priamo ako `SimClockConfig`. */
@@ -780,6 +836,11 @@ export class DefRegistry {
     return this.linesCatalog;
   }
 
+  /** `rail.json` (R6, ADR-043): cestovný poriadok vlakov a vlak. */
+  get rail(): Readonly<RailDef> {
+    return this.railDef;
+  }
+
   /** `equipment.json` (TERMINAL_2 §5.3, ADR-040): stroje bloku — R3 `rtg`. */
   get equipment(): Readonly<EquipmentDef> {
     return this.equipmentDef;
@@ -812,5 +873,6 @@ export function loadBundledDefs(options: { readonly startingCashCents?: number }
     lines: linesJson,
     container_types: containerTypesJson,
     equipment: equipmentJson,
+    rail: railJson,
   });
 }

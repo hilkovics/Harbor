@@ -249,13 +249,13 @@ describe('systém reeferov (krok 6d)', () => {
     expect(liftBlockedByPower(world, { from: { kind: 'on_apron', berthId: id(1), slot: 0 } })).toBe(false);
   });
 
-  it('save v14 uprostred behu: reefer so stavom a index sa obnovia, beh pokračuje rovnako', () => {
+  it('save v15 uprostred behu: reefer so stavom a index sa obnovia, beh pokračuje rovnako', () => {
     const world = worldOf('reefer_flow');
     const block = yardOf(world);
     stockReefer(world, block, 3);
     tickFor(world, 10);
     const state = JSON.parse(JSON.stringify(world.serialize())) as ReturnType<World['serialize']>;
-    expect(state.version).toBe(14);
+    expect(state.version).toBe(15);
     const restored = World.deserialize(world.defs, loadMap(parseMapDef(readRepoJson(loadScenarioFile('reefer_flow').map))), state);
     expect(stateHash(restored)).toBe(stateHash(world));
     expect(restored.reeferIndex.ids()).toEqual(world.reeferIndex.ids());

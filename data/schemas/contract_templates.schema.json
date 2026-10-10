@@ -93,6 +93,13 @@
           },
           "description": "Zmes typov kontajnerov (R5, ADR-042): podiel každého typu iného než `dry` (zvyšok je `dry`). `Rng` losuje typ každého kontajnera pri vzniku ponuky. Len kategória `container` a druhy `import` / `tranship` / `export` / `roundtrip` (export bez reeferov; TR5-02: OOG sa losuje len pri OOG ploche); súčet podielov ≤ 1, typ existuje v `container_types.json` a je v zmesi najviac raz — kontroluje DefRegistry a `pnpm validate:defs`."
         },
+        "railShare": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number", "minimum": 0, "maximum": 1 },
+          "description": "Železničný podiel (R6, ADR-043): rozsah [min, max] podielu importu, ktorý odíde vlakom, a exportu, ktorý príde vlakom. `Rng` losuje hodnotu pri vzniku ponuky len pri železničnom termináli napojenom na portál; len kontajnerová šablóna `import` / `export` / `roundtrip` a min ≤ max (kontroluje DefRegistry)."
+        },
         "volumeUnitsRange": {
           "$ref": "#/$defs/intRange",
           "description": "Rozsah [min, max] objemu kontraktu v jednotkách typu nákladu (kontajnery: TEU, ADR-039); max sa musí zmestiť do najmenšej lode zo shipClassIds (kapacita lode je v TEU)."

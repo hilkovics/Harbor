@@ -11,8 +11,22 @@
  *   bunky, za ktorou nasleduje skok, zdedí od predchádzajúcej bunky (prvej bunke pripadne `single`).
  * - Položky BuildBaru pre cesty majú `defId` `road_<kind>` (`roadItemId`), aby sa nikdy nezrazili s definíciou modulu.
  */
-import { PlaceRoadCommand } from '@sim/commands';
+import { PlaceRailCommand, PlaceRoadCommand } from '@sim/commands';
 import { DIRECTION_NAMES, ROAD_KINDS, ROAD_KIND_TRAITS, dragDirections, type CellCoord, type Direction4Name, type RoadKind } from '@sim/grid';
+
+/** Nástroj ťahu po mriežke: typ cesty alebo koľaj (R6, `PlaceRail`). */
+export type RoadTool = RoadKind | 'rail';
+
+/** Nástroj koľaje (položka `road_rail` v BuildBare). */
+export const RAIL_TOOL = 'rail';
+
+/** Názov koľaje (BuildBar, štítok pri kurzore). */
+export const RAIL_LABEL = 'Koľaj';
+
+/** Slovenský názov nástroja (typ cesty alebo koľaj). */
+export function roadToolLabel(tool: RoadTool): string {
+  return tool === RAIL_TOOL ? RAIL_LABEL : ROAD_KIND_LABEL[tool];
+}
 
 /** Slovenské názvy typov ciest (BuildBar, štítok pri kurzore); úplná mapa: nový typ v sime = chyba kompilácie tu. */
 export const ROAD_KIND_LABEL: Readonly<Record<RoadKind, string>> = {
@@ -38,13 +52,19 @@ export function roadItemId(kind: RoadKind): string {
 }
 
 /** Typ cesty z `defId` položky BuildBaru, alebo `null`, ak `defId` nepatrí žiadnej cestnej položke. */
-export function roadKindOfItem(defId: string): RoadKind | null {
+export function roadKindOfItem(defId: string): RoadTool | null {
+  if (defId === roadToolItemId(RAIL_TOOL)) return RAIL_TOOL;
   return ROAD_KINDS.find((kind) => roadItemId(kind) === defId) ?? null;
 }
 
+/** `defId` položky BuildBaru pre nástroj (`rail` → `road_rail`). */
+export function roadToolItemId(tool: RoadTool): string {
+  return `${ROAD_ITEM_PREFIX}${tool}`;
+}
+
 /** Je typ jednosmerný (potrebuje `dirs`)? */
-export function isOneWayKind(kind: RoadKind): boolean {
-  return ROAD_KIND_TRAITS[kind].oneWay;
+export function isOneWayKind(kind: RoadTool): boolean {
+  return kind !== RAIL_TOOL && ROAD_KIND_TRAITS[kind].oneWay;
 }
 
 /** Ďalší smer v smere hodinových ručičiek: N → E → S → W → N (`R` v build móde jednosmerky). */
@@ -86,6 +106,7 @@ export function strokeDirections(cells: readonly CellCoord[], single: Direction4
  * Príkaz na stavbu (alebo prestavbu) cesty `kind` na `cells`. `kind` sa posiela vždy výslovne (aj `two_lane`), `dirs`
  * len pri jednosmerke. `single` = smer pre ťah dlhý 1 bunku.
  */
-export function placeRoadCommand(cells: readonly CellCoord[], kind: RoadKind, single: Direction4Name): PlaceRoadCommand {
+export function placeRoadCommand(cells: readonly CellCoord[], kind: RoadTool, single: Direction4Name): PlaceRoadCommand | PlaceRailCommand {
+  if (kind === RAIL_TOOL) return new PlaceRailCommand(cells);
   return isOneWayKind(kind) ? new PlaceRoadCommand(cells, kind, strokeDirections(cells, single)) : new PlaceRoadCommand(cells, kind);
 }

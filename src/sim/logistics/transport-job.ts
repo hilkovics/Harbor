@@ -37,7 +37,8 @@ export const JOB_TRANSITIONS: ReadonlyMap<JobState, readonly JobState[]> = new M
   // Rehandling bez cieľa v bloku (R2, dodatok TR2-06b): vozidlo čaká v `picking` na kontajnery nad jednotkou; po `rehandleGiveUpTicks` sa job zruší a vozidlo uvoľní.
   ['picking', Object.freeze(['moving', 'cancelled'] as const)],
   ['moving', Object.freeze(['dropping'] as const)],
-  ['dropping', Object.freeze(['done'] as const)],
+  // `dropping → moving`: vozidlo s exportom ustúpi z háku, kým žeriav drží vykládku pre ťahač (`yieldHook`, TR6-02b), a jednotku odloží na apron.
+  ['dropping', Object.freeze(['done', 'moving'] as const)],
   ['done', Object.freeze([] as const)],
   ['cancelled', Object.freeze([] as const)],
 ]);
@@ -289,11 +290,11 @@ export class TransportJob {
   /**
    * Presmeruje cieľ jobu z háku žeriava (`in_crane`, nakládka pod hákom) na slot apronu toho istého kotviska (`toModuleId`) — vozidlo s jednotkou
    * k háku nedôjde (`no_path`), preto ju odloží na apron a žeriav ju zdvihne odtiaľ (ADR-033 dodatok T6D-05b). Povolené len pre job `moving`
-   * (jednotka je vo vozidle) alebo `assigned` (dispatcher presmeruje nakládku s nedosiahnuteľným hákom už pri priradení, TR3-02b) s cieľom `in_crane`; slot musí byť už rezervovaný volajúcim. Inak `JobError`, job sa nezmení.
+   * (jednotka je vo vozidle), `dropping` (vozidlo už stojí pod hákom a ustúpi vykládke, TR6-02b) alebo `assigned` (dispatcher presmeruje nakládku s nedosiahnuteľným hákom už pri priradení, TR3-02b) s cieľom `in_crane`; slot musí byť už rezervovaný volajúcim. Inak `JobError`, job sa nezmení.
    */
   rebindTarget(to: CargoLocation): void {
     const target = checkLocation(to, this.label, 'to');
-    if (this.target.kind !== 'in_crane' || (this.current !== 'moving' && this.current !== 'assigned')) {
+    if (this.target.kind !== 'in_crane' || (this.current !== 'moving' && this.current !== 'assigned' && this.current !== 'dropping')) {
       throw new JobError('invalid_transition', `${this.label}: cieľ sa presmeruje len pri jobe moving s cieľom in_crane (cieľ ${this.target.kind}, stav ${this.current})`);
     }
     if (target.kind !== 'on_apron' || holderIdOf(target) !== this.toModuleId || !isJobRoute(this.source.kind, target.kind)) {

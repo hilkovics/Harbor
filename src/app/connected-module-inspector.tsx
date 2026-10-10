@@ -18,6 +18,9 @@ import { BlockInspector, CraneInspector, MachineInspector } from '@ui/machine-in
 import { ModuleInspector } from '@ui/module-inspector';
 import { blockPanelData, cranePanelData, sameBlockPanel, sameCranePanel, setBlockPriority, setCraneGang } from './machine-inspector-data';
 import { gatePanelData, sameGatePanel, setGateLaneMode } from './gate-inspector-data';
+import { RailTerminalInspector } from '@ui/rail-terminal-inspector';
+import { TrainTimetable } from '@ui/train-timetable';
+import { railInspectorData, sameRailInspector, sameTimetable, trainTimetableRows } from './rail-inspector-data';
 import { ReeferBlockInspector } from '@ui/reefer-inspector';
 import { reeferInspectorData, sameReeferInspector } from './reefer-inspector-data';
 import { depotVehicleDef, inspectorData, sameInspectorData } from './inspector-data';
@@ -37,6 +40,8 @@ export function ConnectedModuleInspector({ selection }: ConnectedModuleInspector
   const cranePanel = useSimSnapshot(() => (moduleId === null ? null : cranePanelData(bridge, moduleId)), undefined, sameCranePanel);
   const gatePanel = useSimSnapshot(() => (moduleId === null ? null : gatePanelData(bridge, moduleId)), undefined, sameGatePanel);
   const reeferPanel = useSimSnapshot(() => (moduleId === null ? null : reeferInspectorData(bridge.world, moduleId)), undefined, sameReeferInspector);
+  const railPanel = useSimSnapshot(() => (moduleId === null ? null : railInspectorData(bridge.world, moduleId)), undefined, sameRailInspector);
+  const timetable = useSimSnapshot(() => (railPanel === null ? [] : trainTimetableRows(bridge.world)), undefined, sameTimetable);
   const remove = useCallback(
     (id: number) => {
       const command = new RemoveModuleCommand(id);
@@ -64,6 +69,12 @@ export function ConnectedModuleInspector({ selection }: ConnectedModuleInspector
   return (
     <div className="app__side">
       <ModuleInspector data={data} onRemove={remove} onClose={close} onBuyVehicle={buyVehicle} onSellVehicle={sell} />
+      {railPanel !== null && (
+        <>
+          <RailTerminalInspector data={railPanel} />
+          <TrainTimetable rows={timetable} />
+        </>
+      )}
       {reeferPanel !== null && <ReeferBlockInspector data={reeferPanel} />}
       {blockPanel !== null && (
         <>

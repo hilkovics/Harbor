@@ -16,10 +16,14 @@
 import type { Carrier } from '../movement/carrier';
 import type { World } from '../world/world';
 import { holdsRoad, type RoadCarrier } from './holds-road';
-import { keyCell, keyLane } from './lane-slots';
+import type { EntityId } from '../core/entity-id';
+import { LANES_PER_CELL, keyCell, keyLane, slotKey } from './lane-slots';
 
 /** Čo kontrola číta zo sveta (`World` ju spĺňa). */
-export type OverlapWorld = Pick<World, 'vehicles' | 'trucks' | 'laneSlots' | 'grid'>;
+export type OverlapWorld = Pick<World, 'vehicles' | 'trucks' | 'laneSlots' | 'grid'> & {
+  /** Vlaky a priecestia (ADR-043 TR6-02): sloty priecestí, ktoré drží vlak, nie sú sloty nosičov. */
+  readonly rail?: Pick<World['rail'], 'trains' | 'crossings'>;
+};
 
 function adjacentOrSame(width: number, a: number, b: number): boolean {
   const delta = Math.abs(a - b);
@@ -86,6 +90,11 @@ export function carrierOverlapProblem(world: OverlapWorld): string | null {
   for (const truck of world.trucks.values()) {
     const problem = check(truck);
     if (problem !== null) return problem;
+  }
+  if (world.rail !== undefined) {
+    for (const cell of world.rail.crossings) {
+      for (let lane = 0; lane < LANES_PER_CELL; lane++) if (world.rail.trains.has(slots.holderOfKey(slotKey(cell, lane)) as EntityId)) held += 1;
+    }
   }
   if (held !== slots.claimedCount) return `cache slotov drží ${String(slots.claimedCount)} slotov, nosiče ich držia ${String(held)}`;
   return null;

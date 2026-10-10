@@ -15,14 +15,14 @@ describe('equipment.json → rtg', () => {
 });
 
 describe('MACHINE_TRANSITIONS: idle → travel → (shift)* → lift → trolley → lower → idle', () => {
-  it('tabuľka presne zodpovedá FSM (preskočené fázy bez dráhy: lift → trolley | lower, shift → lower)', () => {
+  it('tabuľka presne zodpovedá FSM (preskočené fázy bez dráhy: lift → trolley | lower, shift → lower; opätovný vstup shift → shift, trolley → trolley)', () => {
     expect(MACHINE_STATES).toEqual(['idle', 'travel', 'shift', 'lift', 'trolley', 'lower']);
     expect(Object.fromEntries(MACHINE_TRANSITIONS)).toEqual({
       idle: ['travel'],
       travel: ['shift', 'lift', 'idle'],
       shift: ['shift', 'lift', 'trolley', 'lower', 'idle'],
       lift: ['shift', 'trolley', 'lower', 'idle'],
-      trolley: ['shift', 'lower', 'idle'],
+      trolley: ['shift', 'trolley', 'lower', 'idle'],
       lower: ['idle'],
     });
   });

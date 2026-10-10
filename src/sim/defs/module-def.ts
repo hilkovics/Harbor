@@ -76,6 +76,9 @@ export const MODULE_PARAM_SPECS: { readonly [K in ModuleKind]: SpecTable<ModuleP
     plugRows: { kind: 'integer', min: 1, optional: true },
     // OOG plocha (R5, ADR-042 TR5-02): blok prijíma len OOG a obsluhuje ho reach stacker; len RTG blok s jednou vrstvou (`checkStorageParams`).
     acceptsOog: { kind: 'boolean', optional: true },
+    // Železničný terminál (R6, ADR-043): prvý stĺpec koľají a ich počet; povinné práve pri `role: 'rail_terminal'` (`checkStorageParams`).
+    trackCol: { kind: 'integer', min: 0, optional: true },
+    tracks: { kind: 'integer', min: 1, optional: true },
   },
   gate: {
     // Pruh brány (R4, ADR-041 bod 1): smer, kroky podľa smeru (vzťah polí v `checkGateParams`), šance cez `Rng`, režim `express`.
@@ -155,9 +158,17 @@ const STORAGE_GEOMETRY_KEYS = ['bays', 'rows', 'maxTier'] as const;
  */
 function checkStorageParams(params: Readonly<Record<string, unknown>>, path: string): Problem | undefined {
   const { role, repairBays, category } = params;
-  const lane = ['laneCol', 'tpSpacingBays'].find((key) => (role === 'rtg_block') !== (params[key] !== undefined));
+  const hasLane = role === 'rtg_block' || role === 'rail_terminal';
+  const lane = ['laneCol', 'tpSpacingBays'].find((key) => hasLane !== (params[key] !== undefined));
   if (lane !== undefined) {
-    return { path: `${path}/${lane}`, message: role === 'rtg_block' ? `RTG blok (role rtg_block) vyžaduje ${lane}` : `${lane} má zmysel len pri role rtg_block` };
+    return { path: `${path}/${lane}`, message: hasLane ? `blok s pruhom (role ${String(role)}) vyžaduje ${lane}` : `${lane} má zmysel len pri role rtg_block alebo rail_terminal` };
+  }
+  const track = ['trackCol', 'tracks'].find((key) => (role === 'rail_terminal') !== (params[key] !== undefined));
+  if (track !== undefined) {
+    return { path: `${path}/${track}`, message: role === 'rail_terminal' ? `železničný terminál (role rail_terminal) vyžaduje ${track}` : `${track} má zmysel len pri role rail_terminal` };
+  }
+  if (role === 'rail_terminal' && (params['plugRows'] !== undefined || params['acceptsOog'] !== undefined)) {
+    return { path: `${path}/${params['plugRows'] !== undefined ? 'plugRows' : 'acceptsOog'}`, message: 'železničný terminál nemá zásuvky ani OOG plochu' };
   }
   if (params['plugRows'] !== undefined) {
     if (role !== 'rtg_block') return { path: `${path}/plugRows`, message: 'plugRows (zásuvky pre reefery) má zmysel len pri role rtg_block' };
@@ -175,7 +186,7 @@ function checkStorageParams(params: Readonly<Record<string, unknown>>, path: str
     const missing = STORAGE_GEOMETRY_KEYS.find((key) => params[key] === undefined) as string;
     return { path: `${path}/${missing}`, message: `geometria bloku (${STORAGE_GEOMETRY_KEYS.join(', ')}) musí byť zadaná celá, chýba ${missing}` };
   }
-  if (role === 'rtg_block') {
+  if (role === 'rtg_block' || role === 'rail_terminal') {
     if (category !== 'container') return { path: `${path}/category`, message: `RTG blok (role rtg_block) skladuje kontajnery — kategória musí byť 'container', dostal ${describeValue(category)}` };
     if (geometry.length < STORAGE_GEOMETRY_KEYS.length) return { path: `${path}/bays`, message: 'RTG blok (role rtg_block) vyžaduje geometriu bloku (bays, rows, maxTier)' };
     if (repairBays !== undefined) return { path: `${path}/repairBays`, message: 'repairBays má zmysel len pri role empty_depot' };
@@ -210,8 +221,12 @@ function numberAt(source: unknown, key: string): number | undefined {
 
 /** RTG blok: pruh leží vo footprinte (`laneCol < w`) a pozdĺž bloku je pre každý bay jedna bunka pruhu (`bays ≤ h`). `params` už prešli tabuľkou polí. */
 function checkRtgFootprint(params: unknown, w: number | undefined, h: number | undefined, path: string): Problem | undefined {
-  if (!isPlainObject(params) || params['role'] !== 'rtg_block' || w === undefined || h === undefined) return undefined;
-  const { laneCol, bays } = params;
+  if (!isPlainObject(params) || (params['role'] !== 'rtg_block' && params['role'] !== 'rail_terminal') || w === undefined || h === undefined) return undefined;
+  const { laneCol, bays, trackCol, tracks } = params;
+  if (typeof trackCol === 'number' && typeof tracks === 'number') {
+    if (trackCol + tracks > w) return { path: `${path}/tracks`, message: `koľaje (stĺpce ${String(trackCol)} … ${String(trackCol + tracks - 1)}) ležia mimo footprintu ${String(w)}×${String(h)}` };
+    if (typeof laneCol === 'number' && laneCol >= trackCol && laneCol < trackCol + tracks) return { path: `${path}/laneCol`, message: `pruh pre ťahače (stĺpec ${String(laneCol)}) leží na koľaji` };
+  }
   if (typeof laneCol === 'number' && laneCol >= w) return { path: `${path}/laneCol`, message: `pruh (stĺpec ${String(laneCol)}) leží mimo footprintu ${String(w)}×${String(h)}` };
   if (typeof bays === 'number' && bays > h) return { path: `${path}/bays`, message: `bays (${String(bays)}) musí byť ≤ dĺžke footprintu (${String(h)}) — každý bay má bunku pruhu` };
   return undefined;

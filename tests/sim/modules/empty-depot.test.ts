@@ -24,7 +24,7 @@ describe('EmptyDepot — registrácia a vlastnosti', () => {
     expect(depot).toBeInstanceOf(EmptyDepot);
     expect(depot).toBeInstanceOf(StorageModule);
     expect(create('container_yard_small')).toBeInstanceOf(ContainerYard);
-    expect(Object.keys(STORAGE_ROLE_MODULES)).toEqual(['empty_depot', 'rtg_block']);
+    expect(Object.keys(STORAGE_ROLE_MODULES)).toEqual(['empty_depot', 'rtg_block', 'rail_terminal']);
   });
 
   it('parametre z defu: kategória container, kapacita 96 slotov, 2 opravárenské miesta; footprint 4×4', () => {

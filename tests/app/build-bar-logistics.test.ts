@@ -27,6 +27,8 @@ describe('BuildBar: Sklady', () => {
     expect(rest).toEqual([]);
     // Reefer blok (R5, ADR-042) je v Skladoch z defu; vlastný odznak a inšpektor zásuviek dodá TR5-04.
     expect(reefer).toMatchObject({ defId: 'reefer_block_8', costCents: defs.modules.get('reefer_block_8').costCents, footprint: { w: 4, h: 8 }, locked: false });
+    // Železničný terminál (R6, ADR-043) je od TR6-05 v kategórii Železnica, nie v Skladoch.
+    expect(category('rail').items.find((item) => item.defId === 'rmg_rail_block')).toMatchObject({ costCents: defs.modules.get('rmg_rail_block').costCents, footprint: { w: 6, h: 16 }, locked: false });
     // OOG plocha (R5, TR5-02) je v Skladoch z defu; odznak a inšpektor reach stackera dodá TR5-04.
     expect(oog).toMatchObject({ defId: 'oog_area', costCents: defs.modules.get('oog_area').costCents, footprint: { w: 4, h: 6 }, locked: false });
     // RTG blok (R3, ADR-040) je v kategórii Sklady z defu; vlastný odznak a inšpektor stroja dodá TR3-04.

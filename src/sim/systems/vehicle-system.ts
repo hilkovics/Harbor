@@ -35,6 +35,7 @@ import { hookCraneOf, isHookDropoff, isHookPickup } from '../logistics/job-sourc
 import { rehandleStep, startYardTake } from '../logistics/yard-rehandle';
 import { settleYardDrop } from '../logistics/yard-settle';
 import type { JobState, TransportJob } from '../logistics/transport-job';
+import { BerthModule } from '../modules/berth-module';
 import { CraneModule } from '../modules/crane-module';
 import { advanceCarrier } from '../movement/route-planning';
 import type { Vehicle } from '../vehicles/vehicle';
@@ -42,6 +43,7 @@ import { VehicleError } from '../vehicles/vehicle-error';
 import { HOOK_WAIT_TICKS, RESUME_AFTER_NO_PATH, VEHICLE_STATE_TRAITS, changeVehicleState, type VehicleState } from '../vehicles/vehicle-fsm';
 import { enterNoPath, jobModule, jobOfVehicle, planDepotRoute, planJobRoute, startDepotTrip, startTrip, startVacateTrip, tryLeaveDepot } from '../vehicles/vehicle-trip';
 import type { World } from '../world/world';
+import { holdsUnloadForTractor } from './crane-handover';
 
 /** Čo sa stane pri príchode na koniec trasy (`to_*`): stav vozidla, stav jobu a trvanie manipulácie jednotky. */
 interface ArrivalRule {
@@ -97,6 +99,21 @@ function waitUnderHook(vehicle: Vehicle, world: World): void {
   const crane = craneId === undefined ? undefined : world.modules.get(craneId);
   if (!(crane instanceof CraneModule)) throw new VehicleError('inconsistent', `${vehicle.label}: čaká pod hákom, ale ${job.label} nemá žeriav`);
   crane.vehicleWaitTicks += 1;
+  if (vehicle.state === 'unloading') yieldHook(world, vehicle, job, crane);
+}
+
+/**
+ * Vozidlo s exportom stojí pod hákom, no žeriav drží vykládku pre ťahač, ktorý sa k háku nedostane (`holdsUnloadForTractor`, TR6-02b): jednotku odloží na voľný slot apronu
+ * (job sa presmeruje a vozidlo ide na prístupovú bunku kotviska ako pri apron-e, čím uvoľní bunku); žeriav ju zdvihne z apronu (`loadable` / `lift`). Bez voľného slotu
+ * apronu sa nič nestane a vozidlo skúsi znova.
+ */
+function yieldHook(world: World, vehicle: Vehicle, job: TransportJob, crane: CraneModule): void {
+  if (!holdsUnloadForTractor(world, crane)) return;
+  const berth = world.modules.get(job.toModuleId);
+  if (!(berth instanceof BerthModule) || berth.apron.freeUnreservedCount <= 0) return;
+  job.rebindTarget({ kind: 'on_apron', berthId: berth.id, slot: berth.apron.reserve() });
+  job.transition('moving');
+  startTrip(world, vehicle, 'to_dropoff');
 }
 
 /**

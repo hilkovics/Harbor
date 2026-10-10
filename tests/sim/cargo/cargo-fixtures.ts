@@ -57,7 +57,7 @@ export const at = {
   storage: (moduleId: number, slot: number): CargoLocation => ({ kind: 'in_storage', moduleId: id(moduleId), slot }),
   pipeline: (pipelineId: number): CargoLocation => ({ kind: 'in_pipeline', pipelineId: id(pipelineId) }),
   truck: (truckId: number): CargoLocation => ({ kind: 'in_truck', truckId: id(truckId) }),
-  train: (trainId: number): CargoLocation => ({ kind: 'in_train', trainId: id(trainId) }),
+  train: (trainId: number, slot = 0): CargoLocation => ({ kind: 'in_train', trainId: id(trainId), slot }),
   exported: (): CargoLocation => ({ kind: 'exported' }),
   shipped: (): CargoLocation => ({ kind: 'shipped' }),
 };
@@ -72,7 +72,7 @@ export const SAMPLE_LOCATIONS: Readonly<Record<CargoLocationKind, CargoLocation>
   in_storage: at.storage(904, 7),
   in_pipeline: at.pipeline(905),
   in_truck: at.truck(907),
-  in_train: at.train(908),
+  in_train: at.train(908, 3),
   exported: at.exported(),
   shipped: at.shipped(),
 };

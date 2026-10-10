@@ -4,7 +4,7 @@
  * (`World.assertInvariants`), obnova zo save (`restoreEntities`) aj `World.removeModule` (modul s nákladom
  * nejde odstrániť).
  *
- * Druhy bez entít v aktuálnej fáze (vlaky) nemajú držiteľov — jednotka v nich je chyba. Vozidlá (T03-04) sú držiteľmi
+ * Vlaky (R6) sú držiteľmi `in_train`. Vozidlá (T03-04) sú držiteľmi
  * `in_vehicle`, kamióny (T04-04) `in_truck`. Nová entita = nový riadok tu (a jej poradie v save).
  */
 import type { CargoHolderKind } from '../cargo/cargo-location';
@@ -19,6 +19,7 @@ export interface CargoHolderWorld {
   readonly vehicles: ReadonlyMap<EntityId, unknown>;
   readonly trucks: ReadonlyMap<EntityId, unknown>;
   readonly machines: ReadonlyMap<EntityId, unknown>;
+  readonly trains: ReadonlyMap<EntityId, unknown>;
 }
 
 type HolderSource = (world: CargoHolderWorld) => Iterable<EntityId>;
@@ -32,8 +33,6 @@ function modulesOfKinds(...kinds: readonly ModuleKind[]): HolderSource {
   };
 }
 
-const NO_HOLDERS: HolderSource = () => [];
-
 /** Držitelia podľa druhu lokácie. */
 export const CARGO_HOLDER_SOURCES: { readonly [K in CargoHolderKind]: HolderSource } = Object.freeze({
   on_ship: (world: CargoHolderWorld) => world.ships.keys(),
@@ -44,7 +43,7 @@ export const CARGO_HOLDER_SOURCES: { readonly [K in CargoHolderKind]: HolderSour
   in_storage: modulesOfKinds('storage'),
   in_pipeline: modulesOfKinds('pipeline'),
   in_truck: (world: CargoHolderWorld) => world.trucks.keys(),
-  in_train: NO_HOLDERS,
+  in_train: (world: CargoHolderWorld) => world.trains.keys(),
 });
 
 /** Druhy lokácií, ktorých držiteľom je modul — modul s nákladom v nich nejde odstrániť. */

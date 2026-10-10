@@ -109,8 +109,8 @@ describe('DefRegistry — equipment, canLift a rtg_block', () => {
     delete missing['equipment']!['rtg'];
     expect(errorOf(missing).defName).toBe('equipment');
     const extra = rawDefs();
-    (extra['equipment'] as Json)['rmg'] = {};
-    expect(errorOf(extra).path).toBe('/rmg');
+    (extra['equipment'] as Json)['agv'] = {};
+    expect(errorOf(extra).path).toBe('/agv');
   });
 
   it('canLift musí byť boolean', () => {

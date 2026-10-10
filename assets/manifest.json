@@ -736,6 +736,39 @@
         }
       ]
     },
+    "rmg_rail_block": {
+      "footprint": {
+        "w": 6,
+        "h": 16
+      },
+      "file": "modules/rmg_rail_block.svg",
+      "connectors": [
+        {
+          "x": 0,
+          "y": 0,
+          "side": "n",
+          "type": "rail"
+        },
+        {
+          "x": 1,
+          "y": 0,
+          "side": "n",
+          "type": "rail"
+        },
+        {
+          "x": 5,
+          "y": 0,
+          "side": "n",
+          "type": "road"
+        },
+        {
+          "x": 5,
+          "y": 15,
+          "side": "s",
+          "type": "road"
+        }
+      ]
+    },
     "empty_depot": {
       "footprint": {
         "w": 4,

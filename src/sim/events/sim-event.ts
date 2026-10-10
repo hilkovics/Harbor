@@ -292,6 +292,31 @@ export interface TruckExitedEvent {
   readonly units: number;
 }
 
+/** Vlak prišiel z koľajového portálu a vyrazil k termináli (R6, ADR-043): `delayTicks` = oneskorenie oproti cestovnému poriadku, `exportUnits` = jednotky exportu, ktoré privážal. */
+export interface TrainArrivedEvent {
+  readonly type: 'TrainArrived';
+  readonly trainId: EntityId;
+  readonly terminalId: EntityId;
+  readonly delayTicks: number;
+  readonly exportUnits: number;
+}
+
+/** Vlak odišiel cez koľajový portál (R6, ADR-043): `units` jednotiek prešlo `in_train → exported`, `turnaroundTicks` = od vzniku vlaku po odchod. */
+export interface TrainDepartedEvent {
+  readonly type: 'TrainDeparted';
+  readonly trainId: EntityId;
+  readonly units: number;
+  readonly turnaroundTicks: number;
+}
+
+/** Jednotka exportu prišla vlakom (`create` v `in_train` na portáli) a je zaregistrovaná na booking kontraktu (R6, ADR-043; ako `ExportArrived` pri kamióne). */
+export interface TrainExportArrivedEvent {
+  readonly type: 'TrainExportArrived';
+  readonly contractId: ContractId;
+  readonly unitId: EntityId;
+  readonly trainId: EntityId;
+}
+
 /**
  * Zápcha (ADR-037 bod 8, rozhodnutie R1 č. 12): nosič `carrierId` čaká na voľný slot prvýkrát `traffic.stuckTicks` tickov v kuse.
  * `cell` = bunka, na ktorej čaká a `blockerIds` = nosiče, ktoré držia sloty jeho blokovanej bunky (vzostupne podľa id; prázdne pri
@@ -663,6 +688,9 @@ export type SimEvent =
   | TruckSpawnedEvent
   | TruckStateChangedEvent
   | TruckExitedEvent
+  | TrainArrivedEvent
+  | TrainDepartedEvent
+  | TrainExportArrivedEvent
   | TrafficJamEvent
   | TrafficJamClearedEvent
   | DayClosedSummaryEvent

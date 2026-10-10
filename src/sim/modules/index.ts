@@ -20,6 +20,7 @@ export { YardBlock, isYardBlock } from './yard-block';
 export type { YardRuntimeState } from './yard-block';
 export { CONTAINER_YARD_CATEGORY, ContainerYard } from './container-yard';
 export { EMPTY_DEPOT_CATEGORY, EmptyDepot } from './empty-depot';
+export { RAIL_TERMINAL_CATEGORY, RailTerminal } from './rail-terminal';
 export { RTG_BLOCK_CATEGORY, RTG_LANE_DIRECTION, RtgBlock } from './rtg-block';
 export { VehicleDepot } from './vehicle-depot';
 export { LandExportModule } from './land-export-module';

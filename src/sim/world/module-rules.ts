@@ -419,6 +419,8 @@ export interface RemovalWorld {
   /** Stroje blokov (R3, ADR-040): blok so strojom v cykle alebo s frontou sa neodstráni. */
   readonly machines: ReadonlyMap<EntityId, { readonly blockId: EntityId; readonly state: string; readonly queue: readonly unknown[] }>;
   readonly grid: Pick<Grid, 'index'>;
+  /** Vlaky na koľajisku (R6, ADR-043): železničný terminál s vlakom sa neodstráni. */
+  readonly trains?: ReadonlyMap<EntityId, { readonly id: EntityId; readonly terminalId: EntityId }>;
 }
 
 /** Vozidlá, ktorých bunka alebo zvyšok trasy leží vo footprinte kotviska `berth` (nábrežie pod hákom, F6d), vzostupne podľa id. */
@@ -483,6 +485,9 @@ const REMOVAL_CHECKS: { readonly [R in RemovalRule]: RemovalCheck } = {
     return berth === module ? `${berth.label} má loď ${ship}` : `${module.label} stojí na ${berth.label}, ktoré drží loď ${ship}`;
   },
   busy: (world, module) => {
+    for (const train of world.trains?.values() ?? []) {
+      if (train.terminalId === module.id) return `${module.label} obsluhuje vlak #${String(train.id)}`;
+    }
     for (const machine of world.machines.values()) {
       if (machine.blockId === module.id && (machine.state !== 'idle' || machine.queue.length > 0)) return `stroj bloku ${module.label} je uprostred cyklu (${machine.state}) alebo má frontu`;
     }

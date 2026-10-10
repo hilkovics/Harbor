@@ -19,6 +19,7 @@ import { BerthModule } from './berth-module';
 import { ContainerYard } from './container-yard';
 import { CraneModule } from './crane-module';
 import { EmptyDepot } from './empty-depot';
+import { RailTerminal } from './rail-terminal';
 import { RtgBlock } from './rtg-block';
 import type { Module, ModuleInit } from './module';
 import { ModuleError } from './module-error';
@@ -84,6 +85,7 @@ export const STORAGE_MODULES: { readonly [C in CargoCategory]?: ModuleFactory } 
 export const STORAGE_ROLE_MODULES: { readonly [R in StorageRole]: ModuleFactory } = Object.freeze({
   empty_depot: (init: ModuleInit) => new EmptyDepot(init),
   rtg_block: (init: ModuleInit) => new RtgBlock(init),
+  rail_terminal: (init: ModuleInit) => new RailTerminal(init),
 });
 
 /** Factory druhu `storage`: trieda podľa `params.role`, inak `params.category`; kategória bez triedy → `ModuleError('unknown_kind')`. */

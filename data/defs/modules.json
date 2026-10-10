@@ -498,6 +498,66 @@
         "tpSpacingBays": 1,
         "acceptsOog": true
       }
+    },
+    {
+      "id": "rmg_rail_block",
+      "kind": "storage",
+      "displayName": "Železničný terminál (RMG)",
+      "footprint": {
+        "w": 6,
+        "h": 16
+      },
+      "placement": {
+        "requiredTerrain": [
+          "land",
+          "quay"
+        ],
+        "requiresParcelOwnership": true
+      },
+      "connectors": [
+        {
+          "x": 0,
+          "y": 0,
+          "side": "n",
+          "type": "rail",
+          "access": "in"
+        },
+        {
+          "x": 1,
+          "y": 0,
+          "side": "n",
+          "type": "rail",
+          "access": "in"
+        },
+        {
+          "x": 5,
+          "y": 0,
+          "side": "n",
+          "type": "road",
+          "access": "in"
+        },
+        {
+          "x": 5,
+          "y": 15,
+          "side": "s",
+          "type": "road",
+          "access": "out"
+        }
+      ],
+      "costCents": 36000000,
+      "maintenancePerDayCents": 160000,
+      "params": {
+        "capacityUnits": 256,
+        "category": "container",
+        "role": "rail_terminal",
+        "bays": 16,
+        "rows": 4,
+        "maxTier": 4,
+        "laneCol": 5,
+        "tpSpacingBays": 1,
+        "trackCol": 0,
+        "tracks": 2
+      }
     }
   ]
 }

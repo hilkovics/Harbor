@@ -73,7 +73,7 @@ export { STOWAGE_DIRECTION_RANK, STOWAGE_WEIGHT_RANK, compareStowageClass, compa
 export type { StowageKey } from './stowage';
 export { CargoConservationError, CargoError, CargoStateError, CargoTransitionError } from './cargo-error';
 export type { CargoErrorCode } from './cargo-error';
-export { CARGO_SPAWN_KIND_BY_DIRECTION, CargoLedger } from './cargo-ledger';
+export { CARGO_ALT_SPAWN_KIND_BY_DIRECTION, CARGO_SPAWN_KIND_BY_DIRECTION, CargoLedger } from './cargo-ledger';
 export type { CargoLedgerDeps, CargoMoveObserver, CargoReader } from './cargo-ledger';
 export type { CargoLedgerState } from './cargo-ledger-state';
 export type { StorageGuard, StorageGuards } from './storage-guard';

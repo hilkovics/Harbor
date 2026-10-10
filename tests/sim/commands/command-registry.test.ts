@@ -151,6 +151,8 @@ describe('vstavané príkazy (T01-04, T02-04, T02-05)', () => {
     expect(commandRegistry.types).toEqual([
       'PlaceRoad',
       'RemoveRoad',
+      'PlaceRail',
+      'RemoveRail',
       'SetGameSpeed',
       'PlaceModule',
       'RemoveModule',
@@ -199,6 +201,8 @@ describe('vstavané príkazy (T01-04, T02-04, T02-05)', () => {
     expect(direct.commandRegistry.types).toEqual([
       'PlaceRoad',
       'RemoveRoad',
+      'PlaceRail',
+      'RemoveRail',
       'SetGameSpeed',
       'PlaceModule',
       'RemoveModule',

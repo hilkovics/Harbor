@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "timetable": {
+    "intervalHours": 6,
+    "firstArrivalHour": 2,
+    "wagonsPerTrain": 4,
+    "dwellMinutes": 90
+  },
+  "train": {
+    "speedMilliCellsPerTick": 400,
+    "locoLengthCells": 3,
+    "wagonLengthCells": 3,
+    "wagonTeu": 3
+  }
+}

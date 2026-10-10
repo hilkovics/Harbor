@@ -23,7 +23,7 @@ export type CargoLocation =
   | { readonly kind: 'in_storage'; readonly moduleId: EntityId; readonly slot: number }
   | { readonly kind: 'in_pipeline'; readonly pipelineId: EntityId }
   | { readonly kind: 'in_truck'; readonly truckId: EntityId }
-  | { readonly kind: 'in_train'; readonly trainId: EntityId }
+  | { readonly kind: 'in_train'; readonly trainId: EntityId; readonly slot: number }
   | { readonly kind: 'exported' }
   | { readonly kind: 'shipped' };
 
@@ -83,7 +83,8 @@ export const CARGO_HOLDER_SPECS: { readonly [K in CargoHolderKind]: CargoHolderS
   in_storage: { holderKey: 'moduleId', slotKey: 'slot', uniqueSlot: true, order: 'arrival' },
   in_pipeline: { holderKey: 'pipelineId', slotKey: null, uniqueSlot: false, order: 'arrival' },
   in_truck: { holderKey: 'truckId', slotKey: null, uniqueSlot: false, order: 'arrival' },
-  in_train: { holderKey: 'trainId', slotKey: null, uniqueSlot: false, order: 'arrival' },
+  // Vlak (R6, ADR-043): `slot` = poradie miesta v celom vlaku od lokomotívy, vagón = `⌊slot / wagonTeu⌋` (jednotka sedí na prvom TEU miesta, 40′ zaberie dve po sebe idúce).
+  in_train: { holderKey: 'trainId', slotKey: 'slot', uniqueSlot: true, order: 'arrival' },
 });
 
 /**
@@ -98,6 +99,8 @@ export const CARGO_HOLDER_SPECS: { readonly [K in CargoHolderKind]: CargoHolderS
  * - odovzdávanie pod hákom (F6a, ADR-033, `handoverMode: 'under_hook'`): vykládka `on_ship → in_crane → in_vehicle →
  *   in_storage`, nakládka `in_storage → in_vehicle → in_crane → on_ship` — jednotka sa medzi žeriavom a vozidlom odovzdá
  *   priamo (`in_crane ↔ in_vehicle`), apron ostáva len buffer (`in_crane → on_apron`).
+ * - vlak (R6, ADR-043, TERMINAL_2 §6.10): nakládka `in_storage → in_handler → in_train`, vykládka `in_train → in_handler → in_storage`; odchod vlaku cez portál `in_train → exported`; export po koľaji vzniká
+ *   priamo `in_train` (`CARGO_ALT_SPAWN_KIND_BY_DIRECTION`).
  * - stroj bloku (R3, ADR-040 bod 3, TERMINAL_2 §6.10): vykládka `in_vehicle → in_handler → in_storage` (RTG zdvihne z ťahača a uloží do stohu), nakládka
  *   `in_storage → in_handler → in_vehicle`; `in_handler` drží najviac jednu jednotku (stroj) a je vždy len prechodová poloha.
  * Tabuľka je podľa druhu lokácie, nie kategórie nákladu ani smeru — kompatibilitu kategórie so žeriavom/potrubím/vozidlom
@@ -108,11 +111,11 @@ const TRANSITIONS: { readonly [K in CargoLocationKind]: readonly CargoLocationKi
   in_crane: ['on_apron', 'on_ship', 'in_vehicle'],
   on_apron: ['in_vehicle', 'in_crane'],
   in_vehicle: ['in_storage', 'on_apron', 'in_crane', 'in_handler', 'in_truck'],
-  in_handler: ['in_storage', 'in_vehicle', 'in_truck'],
+  in_handler: ['in_storage', 'in_vehicle', 'in_truck', 'in_train'],
   in_storage: ['in_vehicle', 'in_pipeline', 'in_handler'],
   in_pipeline: ['in_storage', 'in_truck'],
   in_truck: ['exported', 'in_handler', 'in_vehicle'],
-  in_train: ['exported'],
+  in_train: ['exported', 'in_handler'],
   exported: [],
   shipped: [],
 };
@@ -135,7 +138,7 @@ export const CARGO_TRANSITIONS: ReadonlyMap<CargoLocationKind, readonly CargoLoc
  * Kde smie jednotka vzniknúť (`CargoLedger.create`): import na lodi (F2), export v kamióne pri jeho spawne (F6a,
  * ADR-032 bod 3). Konkrétny druh podľa smeru jednotky určuje `CARGO_SPAWN_KIND_BY_DIRECTION` v ledgeri.
  */
-export const CARGO_SPAWN_KINDS: readonly CargoLocationKind[] = Object.freeze(['on_ship', 'in_truck']);
+export const CARGO_SPAWN_KINDS: readonly CargoLocationKind[] = Object.freeze(['on_ship', 'in_truck', 'in_train']);
 
 /** Konečné stavy (bez držiteľa) v poradí `CARGO_LOCATION_KINDS`. */
 export const CARGO_TERMINAL_KINDS: readonly CargoTerminalKind[] = Object.freeze(['exported', 'shipped']);

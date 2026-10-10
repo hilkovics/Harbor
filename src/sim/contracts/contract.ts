@@ -22,6 +22,7 @@
  * pomerná výplata exportu a penalizácie sa počítajú z TEU; booking drží TEU počítadlá (`arrivedTeu`, `loadedTeu`, `lastMinuteTeu`) vedľa počítadiel kontajnerov.
  * Veľkosť `i`-teho kontajnera kontraktu je `unitSizeFt(i, volumeUnits, volumeTeu)` — save nesie len `volumeTeu`.
  */
+import { BASIS_POINTS } from '../economy/basis-points';
 import type { CargoLocation } from '../cargo/cargo-location';
 import { CONTAINER_SIZES, DEFAULT_WEIGHT_CLASS, IMPORT_LABELS, teuOf, teuOfSize, type CargoUnit, type CargoUnitLabels, type ContainerSize } from '../cargo/cargo-unit';
 import type { ContractId, EntityId, VoyageId } from '../core/entity-id';
@@ -67,6 +68,8 @@ export interface ContractTerms {
   readonly unitTypes?: readonly string[];
   /** Indexy OOG kontajnerov (vzostupne, R5, ADR-042 TR5-02; chýba = žiadne OOG); každý index patrí kontajneru typu s `oogChance > 0`. */
   readonly oogUnits?: readonly number[];
+  /** Železničný podiel v basis pointoch (`0 … 10 000`; R6, ADR-043): podiel importu, ktorý odíde vlakom, a exportu, ktorý príde vlakom; chýba = 0. */
+  readonly railShareBp?: number;
   /** SLA v celých dňoch od príchodu lode (zo `slaDaysRange` šablóny). */
   readonly slaDays: number;
   /**
@@ -161,12 +164,14 @@ export interface SerializedTranship {
 export const SERIALIZED_TRANSHIP_KEYS: readonly (keyof SerializedTranship)[] = ['outVoyageId', 'outArrivalTick', 'outShipId', 'rescueDeadlineTick'];
 
 /** Kontrakt v save (`WorldState.contracts`, v8): druh, voyage, linka, podmienky + priebeh (`null` = nenastavené), booking a plán prekládky. */
-export interface SerializedContract extends Omit<ContractTerms, 'id' | 'voyageId' | 'volumeTeu' | 'unitTypes' | 'oogUnits'> {
+export interface SerializedContract extends Omit<ContractTerms, 'id' | 'voyageId' | 'volumeTeu' | 'unitTypes' | 'oogUnits' | 'railShareBp'> {
   readonly id: number;
   /** Typy kontajnerov kontraktu (`ContractTerms.unitTypes`; v save vždy uvedené, prázdne = všetky `dry`; v14). */
   readonly unitTypes: readonly string[];
   /** Indexy OOG kontajnerov (`ContractTerms.oogUnits`; v save vždy uvedené, prázdne = žiadne; v14). */
   readonly oogUnits: readonly number[];
+  /** Železničný podiel v basis pointoch (`ContractTerms.railShareBp`; v save vždy uvedený, 0 = žiadny; v15). */
+  readonly railShareBp: number;
   /** Objem v TEU (`ContractTerms.volumeTeu`; v save vždy uvedený). */
   readonly volumeTeu: number;
   readonly kind: ContractKind;
@@ -201,6 +206,7 @@ export const SERIALIZED_CONTRACT_KEYS: readonly (keyof SerializedContract)[] = [
   'volumeTeu',
   'unitTypes',
   'oogUnits',
+  'railShareBp',
   'slaDays',
   'rewardCents',
   'xpReward',
@@ -320,6 +326,8 @@ export abstract class Contract {
   readonly unitTypes: readonly string[];
   /** Indexy OOG kontajnerov (vzostupne; prázdne = žiadne OOG; R5, TR5-02). */
   readonly oogUnits: readonly number[];
+  /** Železničný podiel v basis pointoch (0 = všetko kamiónmi; R6, ADR-043). */
+  readonly railShareBp: number;
   readonly slaDays: number;
   readonly rewardCents: number;
   readonly xpReward: number;
@@ -380,6 +388,10 @@ export abstract class Contract {
     this.oogUnits = Object.freeze([...(terms.oogUnits ?? [])]);
     if (this.oogUnits.some((index) => !Number.isSafeInteger(index) || index < 0 || index >= terms.volumeUnits)) {
       throw new ContractError('invalid_input', `${label}: oogUnits musia byť indexy kontajnerov 0 … ${String(terms.volumeUnits - 1)}`);
+    }
+    this.railShareBp = terms.railShareBp ?? 0;
+    if (!Number.isSafeInteger(this.railShareBp) || this.railShareBp < 0 || this.railShareBp > BASIS_POINTS) {
+      throw new ContractError('invalid_input', `${label}: railShareBp musí byť celé číslo 0 … ${String(BASIS_POINTS)}, dostal ${String(this.railShareBp)}`);
     }
     this.slaDays = terms.slaDays;
     this.rewardCents = terms.rewardCents;
@@ -648,6 +660,7 @@ export abstract class Contract {
       volumeTeu: this.volumeTeu,
       unitTypes: [...this.unitTypes],
       oogUnits: [...this.oogUnits],
+      railShareBp: this.railShareBp,
       slaDays: this.slaDays,
       rewardCents: this.rewardCents,
       xpReward: this.xpReward,

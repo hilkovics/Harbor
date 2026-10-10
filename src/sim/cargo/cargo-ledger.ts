@@ -135,6 +135,9 @@ export const CARGO_SPAWN_KIND_BY_DIRECTION: { readonly [D in CargoDirection]: Ca
   empty: 'in_truck',
 });
 
+/** Alternatívne miesto vzniku smeru (R6, ADR-043): export po koľaji vzniká priamo vo vlaku na portáli. */
+export const CARGO_ALT_SPAWN_KIND_BY_DIRECTION: { readonly [D in CargoDirection]?: CargoLocationKind } = Object.freeze({ export: 'in_train' });
+
 /** Mutovateľný stav jednotky mimo polohy — `hold` a stav kvality (`setHold`, `setStatus`). */
 interface UnitState {
   readonly hold: CargoHold | null;
@@ -271,7 +274,7 @@ export class CargoLedger {
     const labelProblem = cargoLabelsProblem(labels, contractId) ?? containerLabelsDefProblem(labels, this.deps.containerTypes);
     if (labelProblem !== undefined) throw new CargoError('invalid_input', `CargoLedger.create: ${labelProblem.field}: ${labelProblem.problem}`);
     const spawnKind = CARGO_SPAWN_KIND_BY_DIRECTION[labels.direction];
-    if (!CARGO_SPAWN_KINDS.includes(target.kind) || target.kind !== spawnKind) {
+    if (!CARGO_SPAWN_KINDS.includes(target.kind) || (target.kind !== spawnKind && target.kind !== CARGO_ALT_SPAWN_KIND_BY_DIRECTION[labels.direction])) {
       throw new CargoTransitionError(null, null, target, `${labels.direction} jednotka smie vzniknúť len v: ${spawnKind}`);
     }
     this.assertSlotFree(target, null);

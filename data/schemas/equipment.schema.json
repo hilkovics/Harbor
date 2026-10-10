@@ -8,6 +8,7 @@
     "schemaVersion",
     "rtg",
     "reachStacker",
+    "rmg",
     "tractors"
   ],
   "properties": {
@@ -153,6 +154,59 @@
         }
       },
       "description": "Reach stacker OOG plochy (R5, ADR-042 TR5-02): rovnak\u00e9 polia ako rtg; pojazd = pojazd po ulicke plochy (bays), vozik = vylo\u017en\u00edk (\u0165ah po rade), zdvih = vrstva. Stroj sa stavia s plochou `acceptsOog`."
+    },
+    "rmg": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gantryCellsPerTick",
+        "hoistTicksPerTier",
+        "trolleyTicksPerRow",
+        "lockTicks",
+        "priorities"
+      ],
+      "description": "RMG \u017eelezni\u010dn\u00e9ho termin\u00e1lu (R6, ADR-043): \u010dasy v tickoch a priority vlak < \u0165aha\u010d < housekeeping (musia ostro r\u00e1s\u0165).",
+      "properties": {
+        "gantryCellsPerTick": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "hoistTicksPerTier": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "trolleyTicksPerRow": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "lockTicks": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "priorities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "train",
+            "tractor",
+            "housekeeping"
+          ],
+          "properties": {
+            "train": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tractor": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "housekeeping": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
     },
     "tractors": {
       "type": "object",

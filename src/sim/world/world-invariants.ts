@@ -75,6 +75,7 @@
  * trasy vozidiel cez `Vehicle.routeCellAt`, depá kurzorom, rezervácie súčtami; podrobné správy sa skladajú až pri
  * porušení. Jednotky skladu sa čítajú jednou kópiou (`units()`) — pri stovkách jednotiek lacnejšie než `unitAtIndex`.
  */
+import { teuOf } from '../cargo/cargo-unit';
 import { CARGO_HOLDER_KINDS, holderIdOf, slotOf, uniqueSlotOf } from '../cargo/cargo-location';
 import { OPPOSITE_DIRECTION } from '../grid/road-direction';
 import { DEFAULT_ROAD_KIND, ROAD_KIND_TRAITS, isRoadKind } from '../grid/road-kind';
@@ -90,6 +91,7 @@ import { BerthModule } from '../modules/berth-module';
 import { computeBerthGroups } from '../modules/berth-group';
 import { CRANE_CYCLE_TRAITS, CRANE_STATE_TRAITS, CraneModule, craneReservesApronSlot, cranePhaseProblem } from '../modules/crane-module';
 import { EmptyDepot } from '../modules/empty-depot';
+import { RailTerminal } from '../modules/rail-terminal';
 import { RtgBlock } from '../modules/rtg-block';
 import { StorageModule, storageSlotCapacity } from '../modules/storage-module';
 import { PreGateBuffer } from '../modules/pre-gate-buffer';
@@ -1071,6 +1073,52 @@ const checkReefers: Check = (world) => {
   return undefined;
 };
 
+/**
+ * Vlaky (R6, ADR-043): terminál existuje a má koľaj vlaku, každá koľaj najviac jeden vlak, najviac jeden pohyblivý vlak (žetón pohybu), poloha v rozsahu trasy (pobyt = koniec trasy), bunky trasy sú
+ * mapové koľaje alebo koľaje terminálu a obsadenie `rail.occupancy` presne zodpovedá polohám vlakov (žiadne prekrytie dvoch vlakov). Náklad vo vlaku: miesto v rozsahu vlaku, jednotka sa
+ * zmestí do jedného vagóna (40′ nepresahuje vagón) a jednotky sa neprekrývajú (druhá polovica 40′ je tiež obsadená).
+ */
+const checkTrains: Check = (world) => {
+  const { rail } = world;
+  const expected = new Int32Array(rail.occupancy.length);
+  const tracks = new Set<string>();
+  let movers = 0;
+  for (const [id, train] of rail.trains) {
+    if (train.id !== id) return `world.trains: kľúč ${String(id)} ukazuje na ${train.label}`;
+    const terminal = world.modules.get(train.terminalId);
+    if (!(terminal instanceof RailTerminal) || train.track >= terminal.tracks) return `${train.label}: terminál #${String(train.terminalId)} s koľajou ${String(train.track)} vo svete nie je`;
+    const trackKey = `${String(train.terminalId)}:${String(train.track)}`;
+    if (tracks.has(trackKey)) return `${train.label}: koľaj ${trackKey} má viac vlakov`;
+    tracks.add(trackKey);
+    if (train.moving) movers += 1;
+    if (train.posMilli > train.stopMilli || train.posMilli < train.lengthMilli * -1) return `${train.label}: poloha ${String(train.posMilli)} je mimo trasy`;
+    if (train.state === 'dwelling' && (train.posMilli !== train.stopMilli || train.stoppedTick === null || train.departAtTick === null)) return `${train.label}: v pobyte stojí na konci trasy a má plán odchodu`;
+    const { lo, hi } = train.occupiedRangeAt(train.posMilli);
+    for (let i = lo; i <= hi; i++) {
+      const cell = train.route[i];
+      if (expected[cell] !== 0) return `${train.label} sa prekrýva s vlakom #${String(expected[cell])} na bunke ${String(cell)}`;
+      expected[cell] = train.id;
+    }
+    const taken: boolean[] = new Array<boolean>(train.slotCount).fill(false);
+    for (const unitId of world.cargo.unitsAt('in_train', train.id)) {
+      const unit = world.cargo.get(unitId);
+      if (unit === undefined || unit.location.kind !== 'in_train') continue;
+      const first = unit.location.slot;
+      const teu = teuOf(unit);
+      if (first + teu > train.slotCount || train.wagonOfSlot(first) !== train.wagonOfSlot(first + teu - 1)) return `${train.label}: jednotka #${String(unitId)} (${String(teu)} TEU) na mieste ${String(first)} nepatrí do jedného vagóna`;
+      for (let i = first; i < first + teu; i++) {
+        if (taken[i]) return `${train.label}: miesto ${String(i)} zaberá viac jednotiek`;
+        taken[i] = true;
+      }
+    }
+  }
+  if (movers > 1) return `po koľajisku jazdí ${String(movers)} vlakov naraz (najviac jeden)`;
+  for (let cell = 0; cell < expected.length; cell++) {
+    if (expected[cell] !== rail.occupancy[cell]) return `obsadenie koľajiska: bunka ${String(cell)} má vlak #${String(rail.occupancy[cell])}, má #${String(expected[cell])}`;
+  }
+  return undefined;
+};
+
 const CHECKS: readonly Check[] = [
   checkCargoHolders,
   checkModuleCells,
@@ -1084,6 +1132,7 @@ const CHECKS: readonly Check[] = [
   checkMachines,
   checkJobs,
   checkTrucks,
+  checkTrains,
   checkCarrierOverlap,
   checkEmptyFlow,
   checkContracts,

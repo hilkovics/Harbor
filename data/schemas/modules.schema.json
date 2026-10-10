@@ -206,7 +206,7 @@
         "capacityUnits": { "type": "integer", "minimum": 1, "description": "Kapacita skladu v CargoUnit (pre dvor: sloty × vrstvy v manifeste)." },
         "category": { "enum": ["container", "bulk", "liquid", "gas", "roro"], "description": "Kategória nákladu, ktorú sklad prijíma." },
         "internalTicks": { "type": "integer", "minimum": 0, "description": "Vnútorný čas vozidla v module; chýba = logistics.defaultInternalTicks." },
-        "role": { "enum": ["empty_depot", "rtg_block"], "description": "Rola skladu (F6c, ADR-034; R3, ADR-040): `empty_depot` = depo prázdnych kontajnerov (iná trieda, prijíma len prázdne, kontrola a M&R), `rtg_block` = blok obsluhovaný RTG (`RtgBlock`, jednosmerný pruh a TP); chýba = bežný (straddle) sklad. `empty_depot` vyžaduje kategóriu `container` a `repairBays`; `rtg_block` kategóriu `container`, geometriu bloku, `laneCol` a `tpSpacingBays` — kontroluje DefRegistry a `pnpm validate:defs`." },
+        "role": { "enum": ["empty_depot", "rtg_block", "rail_terminal"], "description": "Rola skladu (F6c, ADR-034; R3, ADR-040): `empty_depot` = depo prázdnych kontajnerov (iná trieda, prijíma len prázdne, kontrola a M&R), `rtg_block` = blok obsluhovaný RTG (`RtgBlock`, jednosmerný pruh a TP); chýba = bežný (straddle) sklad. `empty_depot` vyžaduje kategóriu `container` a `repairBays`; `rtg_block` kategóriu `container`, geometriu bloku, `laneCol` a `tpSpacingBays` — kontroluje DefRegistry a `pnpm validate:defs`." },
         "repairBays": { "type": "integer", "minimum": 1, "description": "Počet súčasných opráv v depe prázdnych (M&R); povinné práve pri `role: empty_depot`." },
         "bays": { "type": "integer", "minimum": 1, "description": "Geometria bloku (ADR-039): počet bays pozdĺž bloku (1 bay = 1 bunka = 20′; 40′ zaberie pár bays 2k, 2k+1). Všetky tri polia geometrie naraz alebo žiadne — kontroluje DefRegistry a `pnpm validate:defs`." },
         "rows": { "type": "integer", "minimum": 1, "description": "Geometria bloku (ADR-039): počet radov naprieč blokom." },
@@ -214,6 +214,8 @@
         "laneCol": { "type": "integer", "minimum": 0, "description": "RTG blok (ADR-040 bod 2): stĺpec footprintu (pri rotácii 0), v ktorom beží jednosmerný pruh pozdĺž bloku; povinné práve pri `role: rtg_block`." },
         "plugRows": { "type": "integer", "minimum": 1, "description": "Zásuvky pre reefery (R5, ADR-042): počet radov od radu 0, v ktorých má každá vrstva stohu zásuvku; len pri `role: rtg_block`, najviac `rows` (kontroluje DefRegistry). Blok so zásuvkami prijíma len reefery." },
         "acceptsOog": { "type": "boolean", "description": "OOG plocha (R5, ADR-042 TR5-02): blok prijíma len nadrozmerný náklad (OOG) a obsluhuje ho reach stacker; len pri `role: rtg_block`, `maxTier` 1 (kontroluje DefRegistry)." },
+        "trackCol": { "type": "integer", "minimum": 0, "description": "Železničný terminál (R6, ADR-043): prvý stĺpec koľají vo footprinte (pri rotácii 0); povinné práve pri `role: rail_terminal`." },
+        "tracks": { "type": "integer", "minimum": 1, "description": "Železničný terminál (R6, ADR-043): počet koľají v susedných stĺpcoch od `trackCol`; povinné práve pri `role: rail_terminal`." },
         "tpSpacingBays": { "type": "integer", "minimum": 1, "description": "RTG blok (ADR-040 bod 2): každý koľký bay má odovzdávacie miesto (TP) v pruhu; povinné práve pri `role: rtg_block`." }
       }
     },

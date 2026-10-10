@@ -14,10 +14,30 @@
  * z vnútrozemia) — brána ho neregistruje na kontrakt (nemá ho), len ohlási `EmptyReturned`. Smer jednotky vyberá tabuľka
  * `DELIVERY_REGISTRARS` (jednotka iného smeru kamión s misiou `delivery` nevezie — riadky držia úplnosť tabuľky).
  */
-import { teuOf, type CargoDirection } from '../cargo/cargo-unit';
+import { teuOf, type CargoDirection, type CargoUnit } from '../cargo/cargo-unit';
+import type { Contract } from '../contracts/contract';
 import type { World } from '../world/world';
 import type { Truck } from './truck';
 import { TRUCK_STATE_TRAITS, type TruckMission } from './truck-fsm';
+
+/**
+ * Jednotka exportu vstúpila na terminál (bránou, alebo vlakom na portáli, R6): registrácia na booking (`recordArrival`, rolled po cut-off), `emitArrived` (`ExportArrived` / `TrainExportArrived`),
+ * `UnitRolled` a VGM hold — spoločné pre kamión aj vlak, poradie udalostí zachované.
+ */
+export function registerBookingArrival(world: World, contract: Contract, unit: CargoUnit, emitArrived: () => void): void {
+  const { tick, ticksPerHour } = world.clock;
+  const cutoff = contract.booking?.cutoffTick;
+  const rolled = cutoff !== undefined && tick > cutoff;
+  contract.recordArrival(unit.id, rolled, teuOf(unit));
+  emitArrived();
+  if (rolled) world.events.emit({ type: 'UnitRolled', contractId: contract.id, unitId: unit.id });
+  if (!world.rng.chance(world.defs.logistics.exportFlow.vgmMissingChance)) return;
+  const untilTick = tick + Math.round(world.defs.logistics.exportFlow.vgmHoldHours * ticksPerHour);
+  world.cargo.setHold(unit.id, { reason: 'vgm', untilTick });
+  world.holdIndex.add(untilTick, unit.id);
+  contract.recordHold(1);
+  world.events.emit({ type: 'VgmHoldStarted', contractId: contract.id, unitId: unit.id, untilTick });
+}
 
 /** Kamión s exportom prešiel bránou dnu: registrácia jednotky, rolled a VGM (viď hlavička). */
 function registerExport(world: World, truck: Truck): void {
@@ -26,18 +46,7 @@ function registerExport(world: World, truck: Truck): void {
   if (unit === undefined || unit.contractId === null) return;
   const contract = world.contractBook.get(unit.contractId);
   if (contract === undefined) return;
-  const { tick, ticksPerHour } = world.clock;
-  const cutoff = contract.booking?.cutoffTick;
-  const rolled = cutoff !== undefined && tick > cutoff;
-  contract.recordArrival(unit.id, rolled, teuOf(unit));
-  world.events.emit({ type: 'ExportArrived', contractId: contract.id, unitId: unit.id, truckId: truck.id, gateId: truck.gateId });
-  if (rolled) world.events.emit({ type: 'UnitRolled', contractId: contract.id, unitId: unit.id });
-  if (!world.rng.chance(world.defs.logistics.exportFlow.vgmMissingChance)) return;
-  const untilTick = tick + Math.round(world.defs.logistics.exportFlow.vgmHoldHours * ticksPerHour);
-  world.cargo.setHold(unit.id, { reason: 'vgm', untilTick });
-  world.holdIndex.add(untilTick, unit.id);
-  contract.recordHold(1);
-  world.events.emit({ type: 'VgmHoldStarted', contractId: contract.id, unitId: unit.id, untilTick });
+  registerBookingArrival(world, contract, unit, () => world.events.emit({ type: 'ExportArrived', contractId: contract.id, unitId: unit.id, truckId: truck.id, gateId: truck.gateId }));
 }
 
 /** Kamión s prázdnym kontajnerom prešiel bránou dnu: `EmptyReturned` (návrat prázdneho z vnútrozemia, ADR-034). */

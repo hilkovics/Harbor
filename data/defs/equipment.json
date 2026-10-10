@@ -26,6 +26,17 @@
     "prefetchCells": 0,
     "handoverGiveUpTicks": 600
   },
+  "rmg": {
+    "gantryCellsPerTick": 2,
+    "hoistTicksPerTier": 1,
+    "trolleyTicksPerRow": 1,
+    "lockTicks": 1,
+    "priorities": {
+      "train": 0,
+      "tractor": 1,
+      "housekeeping": 2
+    }
+  },
   "tractors": {
     "defaultMode": "pool",
     "defaultPerSts": 2,

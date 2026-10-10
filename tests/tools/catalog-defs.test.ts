@@ -83,6 +83,7 @@ describe('skutočné katalógy F2 až F4', () => {
       'truck_holding',
       'reefer_block_8',
       'oog_area',
+      'rmg_rail_block',
     ]);
     expect(item(def, 'berth_standard')).toEqual({
       id: 'berth_standard',

@@ -221,3 +221,9 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - **e2e `r4-tp-rtg` používa obojsmernú bunku vjazdu RTG bloku:** test sa má previesť na jednosmerný vjazd, ktorý kladie TR5-02b. — pôvod: výsledok fázy R5 · fáza: R5+ (e2e)
 - **WorldState v14:** zmena stavu reeferu (`CargoUnit.reefer`); číslo overiť voči ADR-042 pri ďalšom save. — pôvod: výsledok fázy R5 · fáza: R5 (docs)
 - **Artefakt verzia 13:** zverejnenie artefaktu R5 pod týmto číslom. — pôvod: výsledok fázy R5 · fáza: R5 (artefakt)
+
+## Z TR6-02 (R6, železnica)
+- **Hák pod STS a súbeh nakládky s vykládkou ťahačmi (`under_hook`, `buffer 0/1`):** ťahač s exportom pod hákom blokuje žeriav, ktorý drží import s machine-legom (nemožno odložiť na apron), a nečinný ťahač na slepej bunke háku nemá kam odísť, keď mu vstup zahradí ďalší ťahač. Preto `rail_flow` vedie import a export za sebou. Návrh: nakládkový ťahač nevstúpi pod hák, kým žeriav drží vykládku bez prijímajúceho vozidla; nečinný ťahač pod hákom uvoľní bunku pred ďalším.
+- **`YardBlock.settleReservation` a typové pravidlá:** vykládka v inom poradí, než sa rezervovalo, môže uložiť `top_only` kontajner (flat rack) alebo OOG pod kontajner s rezerváciou nad ním → `ModuleError stack_rule`. Opraviť výmenou rezervácií len pri kompatibilných typoch (alebo neodovzdať flat rack pred kontajnermi nad ním).
+- **Priecestie:** viac priecestí a signály/úseky (blokové zabezpečenie), závora so zvukom/animáciou vo VM (TR6-05), obmedzenie priecestia pod stojacim vlakom (dlhý dwell zatvára cestu).
+- **Prenos sklad → buffer osobným jobom** (zadanie TR6-02 bod 6 v pôvodnom znení): ťahač by vozil z RTG bloku do bufferu podľa plánu vlaka; teraz sa železničný import ukladá do bufferu hneď pri vykládke (ADR-043 dodatok).

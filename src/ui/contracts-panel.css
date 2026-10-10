@@ -1,0 +1,802 @@
+/*
+ * ContractsPanel + ContractCard (DESIGN_BRIEF §6.2 bod 3; vizuál z prototypu design/ui/game-ui.source.html, pravý panel
+ * `contracts`). Len tokeny z design/tokens.css: žiadne pevné farby ani rozmery. Rozmery prototypu bez vlastného tokenu
+ * (36 / 22 / 12 / 10 px…) sú odvodené z tokenov (`calc(var(--space-*) ± …)`); pevné sú len 1 px čiary, 2 px focus ring
+ * a ±2 px korekcie. Priesvitné farby prototypu (rgba) nahrádza color-mix() nad tokenmi; svetlejšia červená textu
+ * (#FF8A8E) je color-mix(--ui-danger, --ui-text), ako v top-hud.css; tmavý text na accent ploche (#0F1B27) je --ui-surface.
+ * BEM: .contracts-panel (__header / __title / __close / __body / __tabs / __tab / __list / __empty*),
+ * .contract-card (--container|bulk|liquid|gas|roro; __head / __tile / __titles / __meta / __reward / __chips / __pill /
+ * __status / __bars / __bar / __penalty / __offer / __expiry / __actions / __btn / __reason); F6a (T6A-07, ADR-032):
+ * .contract-card--voyage (spoločná karta import + export), __part (+ __part-head / __part-title / __part-volume),
+ * __booking / __booking-head / __pending / __summary a __counters / __counter (--warn|danger|muted; __counter-icon / __counter-value);
+ * F6c (T6C-05, ADR-034): __line / __line-dot (odznak linky; farbu dáva `--line-color` nastavená inline z tokenu linky) a __route /
+ * __leg (--normal|danger; __leg-badge / __leg-text / __leg-time) — trasa prekládky loď A → loď B.
+ */
+
+/* Lokálne rozmery zdieľa panel aj samostatná karta (galéria dema). */
+.contracts-panel,
+.contract-card {
+  --cp-icon-lg: calc(var(--icon-sm) + var(--space-1));
+  --cp-icon-xs: var(--space-3);
+  --cp-gap: calc(var(--space-2) + 2px);
+}
+
+.contracts-panel {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: var(--side-panel-w);
+  height: 100%;
+  overflow: hidden;
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+  color: var(--ui-text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-normal);
+  font-variant-numeric: tabular-nums;
+}
+
+.contracts-panel svg,
+.contract-card svg {
+  flex: none;
+}
+
+/* ===== Hlavička ===== */
+
+.contracts-panel__header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--cp-gap);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.contracts-panel__header-icon {
+  width: var(--cp-icon-lg);
+  height: var(--cp-icon-lg);
+  color: var(--ui-text-2);
+}
+
+.contracts-panel__title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+}
+
+.contracts-panel__close {
+  box-sizing: border-box;
+  appearance: none;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--space-8);
+  height: var(--space-8);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ui-text-2);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+}
+
+.contracts-panel__close:hover {
+  background: var(--ui-surface-2);
+  color: var(--ui-text);
+}
+
+.contracts-panel__close-icon {
+  width: calc(var(--icon-sm) + 2px);
+  height: calc(var(--icon-sm) + 2px);
+}
+
+.contracts-panel__close:focus-visible,
+.contracts-panel__tab:focus-visible,
+.contract-card__btn:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+
+/* ===== Telo a záložky ===== */
+
+.contracts-panel__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+  padding: var(--space-4);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.contracts-panel__tabs {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+}
+
+.contracts-panel__tab {
+  box-sizing: border-box;
+  appearance: none;
+  flex: 1;
+  height: calc(var(--space-8) - 2px);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: transparent;
+  color: var(--ui-text-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+}
+
+.contracts-panel__tab:hover {
+  color: var(--ui-text);
+}
+
+.contracts-panel__tab--active {
+  background: var(--ui-surface-2);
+  color: var(--ui-text);
+}
+
+.contracts-panel__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ===== Prázdny stav (prototyp `contracts_empty`) ===== */
+
+.contracts-panel__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--cp-gap);
+  padding: calc(var(--space-8) + var(--space-2)) var(--space-4);
+  text-align: center;
+}
+
+.contracts-panel__empty-badge {
+  display: grid;
+  place-items: center;
+  width: calc(var(--space-8) + var(--space-6));
+  height: calc(var(--space-8) + var(--space-6));
+  border-radius: 50%;
+  background: var(--ui-surface-2);
+  color: var(--ui-text-2);
+}
+
+.contracts-panel__empty-icon {
+  width: calc(var(--icon-sm) + var(--cp-gap));
+  height: calc(var(--icon-sm) + var(--cp-gap));
+}
+
+.contracts-panel__empty-title {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+}
+
+.contracts-panel__empty-text {
+  max-width: 32ch;
+  color: var(--ui-text-2);
+  text-wrap: pretty;
+}
+
+/* ===== Karta kontraktu ===== */
+
+.contract-card {
+  --cc-cat: var(--ui-text-2);
+  /* Farba linky (odznak `__line`); karta s linkou ju prepíše inline z tokenu linky (`lineStyle`). */
+  --line-color: var(--ui-text-2);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--cp-gap);
+  padding: var(--space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+}
+
+/* Farba kategórie: glyf aj progres. Kvapaliny a RoRo používajú svetlý variant kvôli kontrastu (ako prototyp). */
+.contract-card--container {
+  --cc-cat: var(--cargo-container);
+}
+
+.contract-card--bulk {
+  --cc-cat: var(--cargo-bulk);
+}
+
+.contract-card--liquid {
+  --cc-cat: var(--cargo-liquid-light);
+}
+
+.contract-card--gas {
+  --cc-cat: var(--cargo-gas);
+}
+
+.contract-card--roro {
+  --cc-cat: var(--cargo-roro-light);
+}
+
+.contract-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cp-gap);
+}
+
+.contract-card__tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: calc(var(--space-8) + var(--space-1));
+  height: calc(var(--space-8) + var(--space-1));
+  border-radius: var(--radius-md);
+  background: var(--ui-surface-2);
+  color: var(--cc-cat);
+}
+
+.contract-card__tile-icon {
+  width: calc(var(--icon-sm) + var(--space-1) + 2px);
+  height: calc(var(--icon-sm) + var(--space-1) + 2px);
+}
+
+.contract-card__titles {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.contract-card__title {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.contract-card__meta {
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+}
+
+.contract-card__xp {
+  color: var(--ui-xp);
+}
+
+.contract-card__reward {
+  font-weight: var(--fw-bold);
+  white-space: nowrap;
+}
+
+.contract-card__reward--pos {
+  color: var(--ui-money-pos);
+}
+
+/* Svetlejšia červená z tokenov: --ui-money-neg má na tmavom pozadí len 3,9 : 1. */
+.contract-card__reward--neg {
+  color: color-mix(in srgb, var(--ui-money-neg) 70%, var(--ui-text));
+}
+
+.contract-card__reward--zero,
+.contract-card__reward--muted {
+  color: var(--ui-text-2);
+}
+
+/* --- Pilulky SLA a lode, stav --- */
+
+.contract-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.contract-card__spacer {
+  flex: 1;
+}
+
+.contract-card__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: calc(var(--space-6) - 2px);
+  padding: 0 var(--space-2);
+  border-radius: calc((var(--space-6) - 2px) / 2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+.contract-card__pill-icon {
+  width: var(--cp-icon-xs);
+  height: var(--cp-icon-xs);
+}
+
+.contract-card__pill--ok {
+  background: color-mix(in srgb, var(--ui-success) 16%, transparent);
+  color: var(--ui-success);
+}
+
+.contract-card__pill--warn {
+  background: color-mix(in srgb, var(--ui-warning) 16%, transparent);
+  color: var(--ui-warning);
+}
+
+.contract-card__pill--danger {
+  background: color-mix(in srgb, var(--ui-danger) 18%, transparent);
+  color: color-mix(in srgb, var(--ui-danger) 70%, var(--ui-text));
+}
+
+.contract-card__pill--muted,
+.contract-card__pill--plain {
+  background: var(--ui-surface-2);
+  color: var(--ui-text-2);
+}
+
+.contract-card__pill--plain {
+  font-weight: var(--fw-regular);
+}
+
+.contract-card__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+.contract-card__status-icon {
+  width: var(--cp-icon-xs);
+  height: var(--cp-icon-xs);
+}
+
+.contract-card__status--info {
+  color: var(--ui-info);
+}
+
+.contract-card__status--accent {
+  color: var(--ui-accent);
+}
+
+.contract-card__status--ok {
+  color: var(--ui-success);
+}
+
+.contract-card__status--warn {
+  color: var(--ui-warning);
+}
+
+.contract-card__status--danger {
+  color: color-mix(in srgb, var(--ui-danger) 70%, var(--ui-text));
+}
+
+.contract-card__status--muted {
+  color: var(--ui-text-2);
+}
+
+/* --- Progres unloaded / exported --- */
+
+.contract-card__bars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.contract-card__bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.contract-card__bar-head {
+  display: flex;
+  justify-content: space-between;
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+}
+
+.contract-card__bar-value {
+  color: var(--ui-text);
+}
+
+.contract-card__bar-track {
+  height: calc(var(--space-1) + 2px);
+  overflow: hidden;
+  border-radius: calc(var(--space-1) - 1px);
+  background: var(--ui-surface-2);
+}
+
+.contract-card__bar-fill {
+  height: 100%;
+  background: var(--cc-cat);
+}
+
+/* --- Export booking (F6a): cut-off, plánované príchody, súhrn a počítadlá jednotiek --- */
+
+.contract-card__booking {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.contract-card__booking-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.contract-card__pending,
+.contract-card__summary {
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+}
+
+.contract-card__counters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.contract-card__counter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: calc(var(--space-6) - 2px);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface-2);
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.contract-card__counter-icon {
+  width: var(--cp-icon-xs);
+  height: var(--cp-icon-xs);
+}
+
+.contract-card__counter-value {
+  color: var(--ui-text);
+  font-weight: var(--fw-semibold);
+}
+
+.contract-card__counter--warn {
+  background: color-mix(in srgb, var(--ui-warning) 16%, transparent);
+}
+
+.contract-card__counter--warn .contract-card__counter-icon {
+  color: var(--ui-warning);
+}
+
+.contract-card__counter--danger {
+  background: color-mix(in srgb, var(--ui-danger) 18%, transparent);
+}
+
+.contract-card__counter--danger .contract-card__counter-icon {
+  color: color-mix(in srgb, var(--ui-danger) 70%, var(--ui-text));
+}
+
+/* --- F6c: odznak linky a trasa prekládky (loď A → loď B) --- */
+
+.contract-card__line-dot {
+  flex: none;
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: 50%;
+  background: var(--line-color);
+}
+
+.contract-card__route {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.contract-card__leg {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--space-6);
+  font-size: var(--fs-xs);
+}
+
+/* Spojnica medzi lodami A a B: zvislá čiara pod odznakom prvej lode. */
+.contract-card__leg:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: calc(100% - 2px);
+  left: calc(var(--space-2) + 1px);
+  width: 2px;
+  height: var(--space-2);
+  background: var(--ui-border);
+}
+
+.contract-card__leg-badge {
+  box-sizing: border-box;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: calc(var(--space-4) + var(--space-1));
+  height: calc(var(--space-4) + var(--space-1));
+  border: 1px solid var(--ui-border);
+  border-radius: 50%;
+  background: var(--ui-surface-2);
+  color: var(--ui-text);
+  font-weight: var(--fw-bold);
+}
+
+.contract-card__leg-text {
+  min-width: 0;
+  color: var(--ui-text-2);
+}
+
+.contract-card__leg-time {
+  margin-left: auto;
+  color: var(--ui-text);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+.contract-card__leg--danger .contract-card__leg-badge {
+  border-color: var(--ui-danger);
+}
+
+.contract-card__leg--danger .contract-card__leg-time {
+  color: color-mix(in srgb, var(--ui-danger) 70%, var(--ui-text));
+}
+
+/* --- Spoločná karta voyage (roundtrip): časti Import a Export v jednej karte --- */
+
+.contract-card__part {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cp-gap);
+  padding: var(--space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--ui-surface-2) 55%, transparent);
+}
+
+.contract-card__part-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.contract-card__part-title {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.contract-card__part-volume {
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+}
+
+/* --- Penalizácie --- */
+
+.contract-card__penalty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--ui-danger) 45%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--ui-danger) 12%, transparent);
+  font-size: var(--fs-xs);
+}
+
+.contract-card__penalty-icon {
+  width: var(--cp-icon-xs);
+  height: var(--cp-icon-xs);
+  color: var(--ui-danger);
+}
+
+.contract-card__penalty-label {
+  flex: 1;
+  color: var(--ui-text-2);
+}
+
+.contract-card__penalty-value {
+  color: color-mix(in srgb, var(--ui-danger) 70%, var(--ui-text));
+  font-weight: var(--fw-semibold);
+}
+
+/* --- Ponuka: expirácia a akcie --- */
+
+.contract-card__offer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.contract-card__expiry {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+}
+
+.contract-card__expiry--soon {
+  color: var(--ui-warning);
+}
+
+.contract-card__expiry-icon {
+  width: var(--cp-icon-xs);
+  height: var(--cp-icon-xs);
+}
+
+.contract-card__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.contract-card__btn {
+  box-sizing: border-box;
+  appearance: none;
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--space-2) - 2px);
+  height: var(--space-8);
+  margin: 0;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ui-text-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    border-color 120ms ease-out,
+    color 120ms ease-out;
+}
+
+.contract-card__btn:hover {
+  background: var(--ui-surface-2);
+  color: var(--ui-text);
+}
+
+.contract-card__btn-icon {
+  width: calc(var(--icon-sm) - 2px);
+  height: calc(var(--icon-sm) - 2px);
+}
+
+.contract-card__btn--primary {
+  border-color: var(--ui-accent);
+  background: var(--ui-accent);
+  color: var(--ui-surface);
+}
+
+.contract-card__btn--primary:hover {
+  border-color: var(--ui-accent-hover);
+  background: var(--ui-accent-hover);
+  color: var(--ui-surface);
+}
+
+/* Zablokované „Prijať" (napr. chýba kapacita): stlmené, dôvod je v title aj pod tlačidlami. */
+.contract-card__btn--primary[aria-disabled='true'],
+.contract-card__btn--primary[aria-disabled='true']:hover {
+  border-color: var(--ui-border);
+  background: transparent;
+  color: var(--ui-text-2);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.contract-card__reason {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+}
+
+.contract-card__reason-icon {
+  width: var(--cp-icon-xs);
+  height: var(--cp-icon-xs);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .contracts-panel,
+  .contracts-panel *,
+  .contract-card,
+  .contract-card * {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* TR5-04: zmes typov kontajnerov v karte (čipy dry / reefer / open top / flat rack / tank + odznak OOG).
+   Farby len z tokenov; čip s nulou je stlmený, počty tabular-nums. */
+.contract-card__types {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.contract-card__type {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--space-6);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--ui-border);
+  border-left-width: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.contract-card__type--dry { border-left-color: var(--cargo-container); }
+.contract-card__type--reefer { border-left-color: var(--container-reefer); }
+.contract-card__type--open_top { border-left-color: var(--container-tarp); }
+.contract-card__type--flat_rack { border-left-color: var(--container-neutral); }
+.contract-card__type--tank { border-left-color: var(--cargo-gas); }
+
+.contract-card__type--empty {
+  opacity: 0.35;
+}
+
+.contract-card__type-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--ui-text-2);
+  flex-shrink: 0;
+}
+
+.contract-card__type-count {
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.contract-card__type-label {
+  color: var(--ui-text-2);
+}
+
+.contract-card__oog {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  color: var(--ui-warning);
+  background: color-mix(in srgb, var(--ui-warning) 16%, transparent);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+}

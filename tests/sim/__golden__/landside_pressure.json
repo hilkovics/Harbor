@@ -1,0 +1,13 @@
+{
+  "cashEnd": 54506500,
+  "exportedUnits": 70,
+  "shippedUnits": 21,
+  "contractsCompleted": 2,
+  "xp": 96,
+  "emptyReturns": 18,
+  "emptyPickedUp": 9,
+  "emptyPickupMisses": 3,
+  "inlandWaitTicks": 4920,
+  "inlandWaitTicksMax": 1809,
+  "pickupBayStarvationTicks": 11109
+}

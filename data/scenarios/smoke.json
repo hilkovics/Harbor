@@ -1,5 +1,6 @@
 {
   "id": "smoke",
   "seed": 42,
+  "map": "data/maps/harbor_01.json",
   "commands": []
 }

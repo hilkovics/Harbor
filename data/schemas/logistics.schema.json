@@ -1,0 +1,265 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "logistics.json",
+  "description": "Logistické konštanty (ARCHITECTURE §4.6, §7.3, §7.4, §7.6; ADR-010, ADR-029): pobyt vozidla v module, opakovanie hľadania cesty, model kongescie a lodná navigácia. Konfiguračný def bez items[] (ADR-009); všetky trvania v tickoch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "defaultInternalTicks", "repathIntervalTicks", "rehandleTicks", "rehandleGiveUpTicks", "buryReserveColumns", "yardMachineLoadWeight", "rehandleSpareCells", "apronUnloadReserveSlots", "hookJobLookahead", "hookPairedLoadJobs", "dualCandidateLimit", "importDwellEstimateHours", "yardPlanner", "congestion", "traffic", "shipNavigation", "exportFlow", "emptyFlow", "reefer", "oog"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Verzia schémy defu."
+    },
+    "defaultInternalTicks": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Predvolený vnútorný čas vozidla v module pred load/unload; modul ho môže prepísať `params.internalTicks`."
+    },
+    "repathIntervalTicks": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Po koľkých tickoch skúša vozidlo bez cesty (`no_path`) hľadať cestu znova."
+    },
+    "rehandleTicks": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Trvanie jedného rehandle (ADR-039): presun kontajnera z vrchu stohu inam v tom istom bloku (`in_storage → in_vehicle → in_storage`), v tickoch."
+    },
+    "rehandleGiveUpTicks": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Trpezlivosť rehandlingu (ADR-039 dodatok TR2-06b): koľko ticks bez úspešného presunu (cieľ v bloku sa nenašiel) vozidlo čaká, kým job zruší a vozidlo uvoľní; zaokrúhľuje sa nahor na celé cykly `rehandleTicks`. Má byť menej ako `traffic.stuckTicks`, aby stojace vozidlo nebolo nikdy vyhlásené za zápchu."
+    },
+    "buryReserveColumns": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Plánovač skladu (ADR-039): koľko voľných stĺpcov (`maxTier` buniek každý) musí ostať v bloku, aby smel zavaliť skôr odchádzajúci kontajner; rehandling potrebuje kam preložiť."
+    },
+    "yardMachineLoadWeight": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Plánovač skladu (ADR-040 dodatok TR3-02c): o koľko buniek vzdialenosti sa blok s RTG „predĺži“ za každú položku fronty stroja a rozbehnutý cyklus; vyvažuje vyťaženie strojov medzi bloky. 0 = vyvažovanie vypnuté."
+    },
+    "rehandleSpareCells": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Rezerva buniek navyše (ADR-039 dodatok TR2-06b): vozidlo sa jobu pre zavalenú jednotku priradí, len keď je v bloku miesto pre kontajnery nad ňou plus túto rezervu — plánovač počas cesty vozidla ukladá príchody do tých istých stohov a berie miesto pre rehandling. Job vzniká a vozidlo pri príchode kontroluje len samotné miesto."
+    },
+    "apronUnloadReserveSlots": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Sloty apronu, ktoré záložná nakládka cez apron nezaberie (ADR-040 dodatok TR3-02b): musí tam ostať miesto, kam žeriav odloží vykladanú jednotku; inak žeriav drží import, apron je plný exportov čakajúcich na žeriav a nič sa nepohne."
+    },
+    "dualCandidateLimit": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Najviac kandidátov na odvoz, ktoré dual transaction kamióna porovná (R4, ADR-041 bod 6): deterministický strop prechodu dopytov."
+    },
+    "hookJobLookahead": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Okno dopredného plánovania pod hákom (ADR-040 dodatok TR3-02d): najviac toľko jobov vykládky a toľko jobov nakládky na žeriav je v obehu vopred, takže ťahače čakajú v pruhu kotviska pod žeriavom skôr, než ich žeriav potrebuje. 1 = job vzniká tesne pred potrebou."
+    },
+    "hookPairedLoadJobs": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Najviac jobov nakládky pod hákom v obehu na žeriav, kým má loď aj import na vykládku (ADR-033 bod 4, TR3-02d): export sa páruje s importom v dual cykle a nevyčerpá vozidlá vykládky."
+    },
+    "importDwellEstimateHours": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Odhad doby, ktorú import leží v sklade po vykládke (hodiny); plánovač z neho odvodí čas odchodu importu (`dischargeTick + odhad`, obmedzený SLA; ADR-039). Skutočné termíny odvozu prídu v R4."
+    },
+    "yardPlanner": {
+      "enum": ["planned", "random"],
+      "description": "Režim plánovača skladu (ADR-039): `planned` = segregácia podľa času odchodu, `random` = náhodné ukladanie z `Rng` (len pre akceptačný test, že plánovač funguje)."
+    },
+    "congestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trafficDecayPerHour"],
+      "properties": {
+        "trafficDecayPerHour": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Násobiteľ `cell.traffic` pri každom HourClosed (0 = okamžitý reset, 1 = bez útlmu); `traffic` je len heatmapa (ADR-037)."
+        }
+      }
+    },
+    "traffic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gridlockTicks", "stuckTicks", "rerouteCooldownTicks", "idleParkDelayTicks", "strandedRetryTicks"],
+      "description": "Doprava bez prekrývania (ADR-037, ADR-038): čakanie nosičov na voľný slot, zápchy a parkovanie. Všetky trvania v tickoch.",
+      "properties": {
+        "gridlockTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Po koľkých tickoch čakania nosič v cykle čakania skúsi preplánovať trasu mimo blokovanej bunky."
+        },
+        "stuckTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Po koľkých tickoch čakania je nosič zaseknutý: vynúti si preplánovanie a hlási sa zápcha (`TrafficJam`)."
+        },
+        "rerouteCooldownTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Najkratší odstup medzi dvoma preplánovaniami jedného nosiča kvôli zápche."
+        },
+        "idleParkDelayTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Po koľkých tickoch nečinnosti vozidlo bez úlohy odíde do svojho depa (parkovanie, TR1-04)."
+        },
+        "strandedRetryTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Odstup pokusov o depo, keď k nemu vozidlo nemá cestu: vozidlo uvoľní vjazd modulu na najbližšiu voľnú bunku mimo vjazdov a skúša znova (TR5-06b)."
+        }
+      }
+    },
+    "shipNavigation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approachMarginCells", "sweepStepCells", "turnManeuvers", "sidewaysManeuvers"],
+      "description": "Lodná navigácia (ARCHITECTURE §7.4, ADR-029; T06-07): geometria rezervácií trás a lexikografická cena A* po vode. Štrukturálne hodnoty, nie balans.",
+      "properties": {
+        "approachMarginCells": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Rezerva (bunky) za bodom priblíženia v páse pred kotviskami, kam anchorage nesmie: pás vody kotviska + šírka najširšej lode + táto rezerva na otočenie a posun v bunke bodu priblíženia (stav lode = stred bunky)."
+        },
+        "sweepStepCells": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 1,
+          "description": "Krok vzorkovania šikmého úseku trasy lode pri výpočte zabratých buniek (bunky); menší = tesnejší obal, výsledok je konzervatívny pri každom kroku. Rozsah 0,1–1: nad 1 bunku obal šikmého úseku zbytočne narastie (loď si rezervuje priveľa buniek), pod 0,1 rastie počet obdĺžnikov obalu bez úžitku (rezervácie sa prepočítavajú každý tick)."
+        },
+        "turnManeuvers": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Manévre za otočenie lode na mieste — druhá zložka lexikografickej ceny A* po vode (najprv pohyby, potom manévre). Strop drží cenu v bezpečných celých číslach."
+        },
+        "sidewaysManeuvers": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Manévre navyše za krok lode bokom (kolmo na os) — druhá zložka lexikografickej ceny A* po vode."
+        }
+      }
+    },
+    "exportFlow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["arrivalWindowDays", "vgmMissingChance", "vgmHoldHours", "weightClassShares"],
+      "description": "Tok exportu po súši (F6a, ADR-032): príchody kamiónov s exportom pred loďou, brána (VGM) a hmotnostné triedy jednotiek.",
+      "properties": {
+        "arrivalWindowDays": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Okno príchodov exportu pred loďou (dni): kamióny prichádzajú od príchod lode − okno po cut-off."
+        },
+        "vgmMissingChance": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Pravdepodobnosť, že jednotka pri bráne nemá VGM a ide do hold."
+        },
+        "vgmHoldHours": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Trvanie VGM hold v hodinách; jednotka sa potom uvoľní sama."
+        },
+        "weightClassShares": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["light", "medium", "heavy"],
+          "description": "Váhy výberu hmotnostnej triedy exportnej jednotky. Súčet > 0 schéma nevyjadrí — kontroluje ho DefRegistry a `pnpm validate:defs`.",
+          "properties": {
+            "light": { "type": "number", "minimum": 0 },
+            "medium": { "type": "number", "minimum": 0 },
+            "heavy": { "type": "number", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "reefer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plugTicks", "unplugTicks", "maxUnpluggedHours", "alarmChancePerDay", "alarmResponseHours", "technicians", "alarmFixTicks"],
+      "description": "Reefery (R5, ADR-042; docs/TERMINAL_2.md §6.7): zapojenie a odpojenie, limit bez napájania, alarmy a technici (technik je len čas, nekreslí sa).",
+      "properties": {
+        "plugTicks": { "type": "integer", "minimum": 1, "description": "Zapojenie reeferu po uložení do bloku so zásuvkami (ticky)." },
+        "unplugTicks": { "type": "integer", "minimum": 1, "description": "Odpojenie reeferu pred zdvihom zo skladu (ticky)." },
+        "maxUnpluggedHours": { "type": "number", "exclusiveMinimum": 0, "description": "Najdlhší čas bez napájania v herných hodinách; potom vznikne reklamácia (od zdvihu z lode alebo odpojenia; aj reefer preskočený STS bez voľnej zásuvky)." },
+        "alarmChancePerDay": { "type": "number", "minimum": 0, "maximum": 1, "description": "Šanca alarmu zapojeného reeferu za herný deň (losuje sa raz za hernú hodinu)." },
+        "alarmResponseHours": { "type": "number", "exclusiveMinimum": 0, "description": "Do koľkých hodín od alarmu musí technik začať zásah, inak reklamácia." },
+        "technicians": { "type": "integer", "minimum": 1, "description": "Koľko alarmov rieši technik naraz." },
+        "alarmFixTicks": { "type": "integer", "minimum": 1, "description": "Trvanie zásahu technika pri alarme (ticky)." }
+      }
+    },
+    "oog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["extraCycleTicks", "lashTicks"],
+      "description": "Nadrozmerný náklad (R5, ADR-042; správanie prináša TR5-02): ticky navyše pri STS (rám) a zaistenie na kamióne.",
+      "properties": {
+        "extraCycleTicks": { "type": "integer", "minimum": 0, "description": "Ticky navyše v cykle STS pri OOG." },
+        "lashTicks": { "type": "integer", "minimum": 0, "description": "Trvanie zaistenia OOG na kamióne (ticky), namiesto `trucks.lashTicks`." }
+      }
+    },
+    "emptyFlow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hinterlandDaysRange", "emptyReturnRate", "damageChance", "repairHours", "emptyPickupRate", "emptyPickupLeadHoursRange", "emptyPickupMaxWaitHours"],
+      "description": "Tok prázdnych kontajnerov (F6c, ADR-034): návrat z vnútrozemia, kontrola a oprava v depe, výdaj prázdneho exportérovi.",
+      "properties": {
+        "hinterlandDaysRange": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number", "minimum": 0 },
+          "description": "Rozsah [min, max] dní od odchodu importu kamiónom po návrat prázdneho kontajnera tej istej linky (desatinné dni). Poradie min ≤ max schéma nevyjadrí — kontroluje DefRegistry a `pnpm validate:defs`."
+        },
+        "emptyReturnRate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Pravdepodobnosť, že sa importná jednotka vráti ako prázdna do tohto prístavu (inak sa vráti inam — mimo hry)."
+        },
+        "damageChance": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Pravdepodobnosť, že kontrola pri uložení prázdneho do depa nájde poškodenie (status `damaged`)."
+        },
+        "repairHours": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Trvanie opravy poškodeného prázdneho v hodinách (status `in_repair`); cena `economy.repairCostCents`."
+        },
+        "emptyPickupRate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Podiel jednotiek export bookingu, pre ktoré exportér najprv vyzdvihne prázdny kontajner linky bookingu (prázdny kamión pred príchodom naloženého)."
+        },
+        "emptyPickupLeadHoursRange": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number", "exclusiveMinimum": 0 },
+          "description": "Rozsah [min, max] hodín, o ktoré prázdny kamión po prázdny kontajner predchádza príchod naloženého exportu (> 0, min ≤ max — kontroluje DefRegistry a `pnpm validate:defs`)."
+        },
+        "emptyPickupMaxWaitHours": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Ako dlho čaká kamión po prázdny kontajner, kým linka nemá dostupný prázdny; potom odíde prázdny (metrika `emptyPickupMisses`)."
+        }
+      }
+    }
+  }
+}

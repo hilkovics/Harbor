@@ -1,0 +1,904 @@
+/*
+ * ModuleInspector (DESIGN_BRIEF §6.2 bod 4; vizuál z prototypu design/ui/game-ui.source.html, pravý SidePanel).
+ * Len tokeny z design/tokens.css: žiadne pevné farby ani rozmery. Rozmery prototypu bez vlastného tokenu
+ * (20 / 22 / 12 / 10 px…) sú odvodené z tokenov (`calc(var(--space-*) ± …)`); pevné sú len 1 px čiary, 2 px focus
+ * ring a ±2 px korekcie. Priesvitné farby prototypu (rgba) nahrádza color-mix() nad tokenmi; tmavý text na accent
+ * ploche z prototypu (#0F1B27, tlačidlo „Kúpiť vozidlo v depe") nahrádza --ui-surface (ako v top-hud.css).
+ * BEM: .module-inspector, __header / __titles / __badge / __close, __body, __banner, __stats / __stat,
+ * __meter / __bar, __section / __ship, __vehicles / __vehicle (F3, zoznam vozidiel v depe), __bays / __bay (F4, rad
+ * stojísk čakacej plochy), __docks / __dock / __pips / __pip (F4, docky rampy), __legend / __legend-item (F6a, import / export
+ * v sklade a na lodi; swatch a bar-fill --import / --export), __lashing (F6a, lashing lode s progresom), __rows / __row,
+ * __actions / __btn / __reason; F6c (T6C-05): swatch a bar-fill --tranship / --empty / --damaged / --repair (--empty a --damaged z tokenov `--cargo-empty*`, ostatné lokálne `--mi-*`),
+ * __lines / __line (+ __line-head / __line-dot / __line-name / __line-total / __line-counts / __line-count / __line-value--warn|busy;
+ * depo prázdnych: zoznam podľa linky) a __meter-note.
+ */
+
+.module-inspector {
+  --mi-icon-lg: calc(var(--icon-sm) + var(--space-1));
+  --mi-icon-md: calc(var(--icon-sm) + 2px);
+  --mi-icon-xs: var(--space-3);
+  --mi-badge-h: calc(var(--space-6) - 2px);
+  --mi-gap: calc(var(--space-2) + 2px);
+  /* F6c: farby segmentov (ADR-034). Prázdne = `--cargo-empty` (neutrálna šedá, rovnaká ako kontajner na mape; T6C-04), poškodené =
+     `--cargo-empty-damaged` (ten istý token ako odznak poškodených na depe v rendereri — jedna farba na mape aj v inšpektore), prekládka =
+     fialová (odlíšená od importu, exportu aj prázdnych; token `--cargo-tranship` v tokens.css nie je, preto `--ui-xp`), oprava = accent. */
+  --mi-tranship: var(--ui-xp);
+  --mi-repair: var(--ui-accent);
+  /* Farba linky (bodka v tabuľke depa); riadok ju prepíše inline z tokenu linky (`lineStyle`). */
+  --line-color: var(--ui-text-2);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: var(--side-panel-w);
+  height: 100%;
+  overflow: hidden;
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+  color: var(--ui-text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-normal);
+  font-variant-numeric: tabular-nums;
+}
+
+.module-inspector svg {
+  flex: none;
+}
+
+/* ===== Hlavička ===== */
+
+.module-inspector__header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--mi-gap);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.module-inspector__header-icon {
+  width: var(--mi-icon-lg);
+  height: var(--mi-icon-lg);
+  color: var(--ui-text-2);
+}
+
+.module-inspector__titles {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.module-inspector__title {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  /* Dlhší názov („Kontajnerový dvor S") sa zalomí vyvážene, nie s osamelým „S" na druhom riadku. */
+  text-wrap: balance;
+}
+
+.module-inspector__sub {
+  overflow: hidden;
+  color: var(--ui-text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Badge stavu: zelený = v poriadku, žltý = varovanie (vždy s ikonou a textom, nie len farbou). */
+.module-inspector__badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--mi-badge-h);
+  padding: 0 var(--space-2);
+  border-radius: calc(var(--mi-badge-h) / 2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+.module-inspector__badge--ok {
+  background: color-mix(in srgb, var(--ui-success) 16%, transparent);
+  color: var(--ui-success);
+}
+
+.module-inspector__badge--warn {
+  background: color-mix(in srgb, var(--module-disconnected) 16%, transparent);
+  color: var(--module-disconnected);
+}
+
+.module-inspector__badge-icon {
+  width: var(--mi-icon-xs);
+  height: var(--mi-icon-xs);
+}
+
+.module-inspector__close {
+  box-sizing: border-box;
+  appearance: none;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--space-8);
+  height: var(--space-8);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ui-text-2);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+}
+
+.module-inspector__close:hover {
+  background: var(--ui-surface-2);
+  color: var(--ui-text);
+}
+
+.module-inspector__close-icon {
+  width: var(--mi-icon-md);
+  height: var(--mi-icon-md);
+}
+
+.module-inspector__close:focus-visible,
+.module-inspector__btn:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+
+/* ===== Telo ===== */
+
+.module-inspector__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+  padding: var(--space-4);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* Upozornenie: „Nepripojené k ceste" (prototyp `insp_gate`, F3) alebo blokovaný žeriav (F2). */
+.module-inspector__banner {
+  display: flex;
+  gap: var(--mi-gap);
+  padding: var(--space-3);
+  border: 1px solid var(--module-disconnected);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--module-disconnected) 12%, transparent);
+}
+
+.module-inspector__banner-icon {
+  width: var(--mi-icon-lg);
+  height: var(--mi-icon-lg);
+  color: var(--module-disconnected);
+}
+
+.module-inspector__banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.module-inspector__banner-title {
+  font-weight: var(--fw-semibold);
+}
+
+.module-inspector__banner-desc {
+  color: var(--ui-text-2);
+  font-size: var(--fs-sm);
+  text-wrap: pretty;
+}
+
+/* --- Číselné dlaždice (StatTile) --- */
+
+.module-inspector__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.module-inspector__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: calc(var(--space-2) + 2px) var(--space-2);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+}
+
+.module-inspector__stat-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.module-inspector__stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+
+.module-inspector__stat-value {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+}
+
+.module-inspector__stat-value--warn {
+  color: var(--ui-warning);
+}
+
+.module-inspector__stat-value--danger {
+  color: var(--ui-danger);
+}
+
+/* Farebná značka dlaždice (vpravo vedľa hodnoty, aby popis mal celú šírku) = farba segmentu v pruhu pod nimi. */
+.module-inspector__swatch {
+  flex: none;
+  box-sizing: border-box;
+  width: var(--space-2);
+  height: var(--space-2);
+  border: 1px solid var(--ui-border);
+  border-radius: 2px;
+}
+
+.module-inspector__swatch--used,
+.module-inspector__bar-fill--used {
+  background: var(--cargo-container);
+}
+
+.module-inspector__swatch--reserved,
+.module-inspector__bar-fill--reserved {
+  background: var(--cargo-container-light);
+}
+
+.module-inspector__swatch--busy,
+.module-inspector__bar-fill--busy {
+  background: var(--ui-accent);
+}
+
+.module-inspector__swatch--blocked,
+.module-inspector__bar-fill--blocked {
+  background: var(--ui-warning);
+}
+
+/* Import (príde loďou) = farba kontajnera ako obsadený apron; export (príde po súši a odpláva) = accent. */
+.module-inspector__swatch--import,
+.module-inspector__bar-fill--import {
+  background: var(--cargo-container);
+}
+
+.module-inspector__swatch--export,
+.module-inspector__bar-fill--export {
+  background: var(--ui-accent);
+}
+
+.module-inspector__swatch--free,
+.module-inspector__swatch--idle {
+  background: var(--ui-surface-2);
+}
+
+/* F6c: prekládka a prázdne (pruh a legenda skladu a lode), poškodené a oprava (depo prázdnych). Prázdne a poškodené čítajú tokeny
+   `--cargo-empty` a `--cargo-empty-damaged` (farby kontajnerov a odznaku depa na mape), ostatné lokálne premenné `--mi-*` (hore). */
+.module-inspector__swatch--tranship,
+.module-inspector__bar-fill--tranship {
+  background: var(--mi-tranship);
+}
+
+.module-inspector__swatch--empty,
+.module-inspector__bar-fill--empty {
+  background: var(--cargo-empty);
+}
+
+.module-inspector__swatch--damaged,
+.module-inspector__bar-fill--damaged {
+  background: var(--cargo-empty-damaged);
+}
+
+.module-inspector__swatch--repair,
+.module-inspector__bar-fill--repair {
+  background: var(--mi-repair);
+}
+
+.module-inspector__swatch--used,
+.module-inspector__swatch--reserved,
+.module-inspector__swatch--busy,
+.module-inspector__swatch--blocked,
+.module-inspector__swatch--import,
+.module-inspector__swatch--export,
+.module-inspector__swatch--tranship,
+.module-inspector__swatch--empty,
+.module-inspector__swatch--damaged,
+.module-inspector__swatch--repair {
+  border-color: transparent;
+}
+
+/* --- Pruhy (kapacita apronu, čas žeriavu, náklad lode) --- */
+
+.module-inspector__meter {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-2) - 2px);
+}
+
+.module-inspector__meter-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: var(--fs-sm);
+}
+
+.module-inspector__meter-label {
+  color: var(--ui-text-2);
+}
+
+.module-inspector__bar {
+  display: flex;
+  height: var(--space-2);
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface-2);
+}
+
+.module-inspector__bar-fill {
+  flex: none;
+  height: 100%;
+}
+
+/* --- Zakotvená loď (karta ako v ContractsPanel prototypu) --- */
+
+.module-inspector__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.module-inspector__section-title {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.module-inspector__ship {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mi-gap);
+  padding: var(--space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+}
+
+.module-inspector__ship-head {
+  display: flex;
+  align-items: center;
+  gap: var(--mi-gap);
+}
+
+.module-inspector__ship-icon {
+  width: var(--mi-icon-lg);
+  height: var(--mi-icon-lg);
+  color: var(--ui-text-2);
+}
+
+.module-inspector__ship-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.module-inspector__ship--empty .module-inspector__ship-name {
+  color: var(--ui-text-2);
+  font-weight: var(--fw-regular);
+}
+
+.module-inspector__ship-count {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  white-space: nowrap;
+}
+
+/* --- F6a: legenda import / export (sklad, loď) a lashing lode --- */
+
+.module-inspector__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-xs);
+}
+
+.module-inspector__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.module-inspector__legend-label {
+  color: var(--ui-text-2);
+}
+
+.module-inspector__legend-value {
+  font-weight: var(--fw-semibold);
+}
+
+.module-inspector__lashing {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-2) - 2px);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--ui-border);
+  font-size: var(--fs-xs);
+}
+
+.module-inspector__lashing-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.module-inspector__lashing-icon {
+  width: var(--mi-icon-xs);
+  height: var(--mi-icon-xs);
+  color: var(--ui-accent);
+}
+
+.module-inspector__lashing-value {
+  margin-left: auto;
+  font-weight: var(--fw-semibold);
+}
+
+/* --- Vozidlá v depe (F3; prototyp: „Vozidlá v depe" — rámovaný zoznam, striedavé pozadie riadkov) --- */
+
+.module-inspector__empty {
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+  color: var(--ui-text-2);
+  font-size: var(--fs-sm);
+}
+
+.module-inspector__vehicles {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  list-style: none;
+}
+
+.module-inspector__vehicle {
+  display: flex;
+  align-items: center;
+  gap: var(--mi-gap);
+  padding: calc(var(--space-1) + 2px) var(--mi-gap);
+  font-size: var(--fs-sm);
+}
+
+.module-inspector__vehicle:nth-child(even) {
+  background: var(--ui-surface);
+}
+
+.module-inspector__vehicle-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--ui-text-2);
+}
+
+.module-inspector__vehicle-code {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.module-inspector__vehicle-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.module-inspector__vehicle-state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+.module-inspector__vehicle-state--success {
+  color: var(--ui-success);
+}
+
+.module-inspector__vehicle-state--muted {
+  color: var(--ui-text-2);
+}
+
+.module-inspector__vehicle-state--warn {
+  color: var(--ui-warning);
+}
+
+.module-inspector__vehicle-state-icon {
+  width: var(--mi-icon-xs);
+  height: var(--mi-icon-xs);
+}
+
+/* Predaj vozidla: ikonové tlačidlo 24 px (názov a dôvod nesie title + aria-label); nečinné vozidlo sa dá predať. */
+.module-inspector__vehicle-sell {
+  box-sizing: border-box;
+  appearance: none;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--icon-md);
+  height: var(--icon-md);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ui-text-2);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+}
+
+.module-inspector__vehicle-sell:hover:not([aria-disabled='true']) {
+  background: var(--ui-surface-2);
+  color: var(--ui-text);
+}
+
+.module-inspector__vehicle-sell[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.module-inspector__vehicle-sell:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+
+.module-inspector__vehicle-sell-icon {
+  width: calc(var(--icon-sm) - 2px);
+  height: calc(var(--icon-sm) - 2px);
+}
+
+/* --- F4: stojiská čakacej plochy (rad políčok; obsadené = farba nákladu ako „obsadené" pri apron, rezervované = svetlejšie) --- */
+
+.module-inspector__bays {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--icon-lg), 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.module-inspector__bay {
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  height: var(--icon-lg);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface-2);
+  color: var(--ui-surface);
+}
+
+.module-inspector__bay--occupied {
+  border-color: transparent;
+  background: var(--cargo-container);
+}
+
+.module-inspector__bay--reserved {
+  border-style: dashed;
+  border-color: var(--cargo-container);
+  background: var(--cargo-container-light);
+}
+
+.module-inspector__bay-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+/* --- F6c: depo prázdnych — zoznam liniek (názov + súčet, pod ním tri počty) a opravárenské miesta (rad políčok ako stojiská) --- */
+
+.module-inspector__lines {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  list-style: none;
+}
+
+.module-inspector__line {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: calc(var(--space-1) + 2px) var(--mi-gap);
+  font-size: var(--fs-sm);
+}
+
+.module-inspector__line:nth-child(odd) {
+  background: var(--ui-surface);
+}
+
+.module-inspector__line-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.module-inspector__line-dot {
+  flex: none;
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: 50%;
+  background: var(--line-color);
+}
+
+.module-inspector__line-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: var(--fw-semibold);
+}
+
+.module-inspector__line-total {
+  flex: none;
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+}
+
+.module-inspector__line-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.module-inspector__line-count {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+
+.module-inspector__line-count dt {
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+}
+
+.module-inspector__line-count dd {
+  margin: 0;
+}
+
+.module-inspector__line-value--warn {
+  color: var(--ui-warning);
+  font-weight: var(--fw-semibold);
+}
+
+.module-inspector__line-value--busy {
+  color: var(--ui-accent);
+  font-weight: var(--fw-semibold);
+}
+
+.module-inspector__meter-note {
+  color: var(--ui-warning);
+  font-size: var(--fs-xs);
+}
+
+.module-inspector__meter[data-section='repair-bays'] .module-inspector__bays {
+  grid-template-columns: repeat(auto-fill, var(--icon-lg));
+}
+
+.module-inspector__meter[data-section='repair-bays'] .module-inspector__bay--occupied {
+  background: var(--mi-repair);
+}
+
+/* --- Riadky s údajmi (ako ParcelPanel prototypu) --- */
+
+.module-inspector__rows {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--fs-sm);
+}
+
+.module-inspector__row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.module-inspector__row-label {
+  color: var(--ui-text-2);
+}
+
+/* ===== Akcie (prilepené na spodok panelu) ===== */
+
+.module-inspector__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: auto;
+}
+
+.module-inspector__btn {
+  box-sizing: border-box;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--space-2) - 2px);
+  height: var(--space-8);
+  margin: 0;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface-2);
+  color: var(--ui-text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    border-color 120ms ease-out;
+}
+
+.module-inspector__btn-icon {
+  width: calc(var(--icon-sm) - 2px);
+  height: calc(var(--icon-sm) - 2px);
+}
+
+/* Hlavná akcia (F3: „Kúpiť vozidlo v depe"): accent plocha s tmavým textom (prototyp), o 4 px vyššia ako ostatné. */
+.module-inspector__btn--primary {
+  height: calc(var(--space-8) + var(--space-1));
+  border-color: var(--ui-accent);
+  background: var(--ui-accent);
+  color: var(--ui-surface);
+}
+
+.module-inspector__btn--primary:hover:not([aria-disabled='true']) {
+  border-color: var(--ui-accent-hover);
+  background: var(--ui-accent-hover);
+}
+
+.module-inspector__btn--danger {
+  border-color: var(--ui-danger);
+  background: color-mix(in srgb, var(--ui-danger) 14%, transparent);
+}
+
+.module-inspector__btn--danger .module-inspector__btn-icon {
+  color: var(--ui-danger);
+}
+
+.module-inspector__btn--danger:hover:not([aria-disabled='true']) {
+  background: color-mix(in srgb, var(--ui-danger) 26%, transparent);
+}
+
+/* Nedá sa odstrániť (loď pri kotvisku, žeriav na kotvisku…): stlmené, dôvod je pod tlačidlom aj v title. */
+.module-inspector__btn[aria-disabled='true'] {
+  border-color: var(--ui-border);
+  background: transparent;
+  color: var(--ui-text-2);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.module-inspector__btn[aria-disabled='true'] .module-inspector__btn-icon {
+  color: var(--ui-text-2);
+}
+
+.module-inspector__reason {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+}
+
+.module-inspector__reason-icon {
+  width: var(--mi-icon-xs);
+  height: var(--mi-icon-xs);
+}
+
+/* R2: bay view (stacks) */
+.module-inspector__bay-view {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.module-inspector__bay-columns {
+  display: flex;
+  gap: var(--space-1);
+  justify-content: center;
+}
+
+.module-inspector__bay-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+}
+
+.module-inspector__bay-stacks {
+  --bay-rows: 4; /* počet riadkov bloku; inline štýl ho prepíše geometriou z defu */
+  display: grid;
+  grid-template-columns: repeat(var(--bay-rows, 4), var(--icon-lg));
+  gap: var(--space-1);
+}
+
+.module-inspector__bay-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+  border-radius: 2px;
+  border: 1px solid color-mix(in srgb, var(--ui-text) 7%, transparent);
+  background: var(--ui-surface-2);
+  color: var(--ui-bg);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  cursor: default;
+}
+
+/* Zaplnená bunka: farba nesie linku (`--line-color` z `lineStyle`), prázdny kontajner `--cargo-empty`, bez linky neutrálny; typ je len skratka. */
+.module-inspector__bay-cell[data-empty='false'] {
+  border: 1px solid color-mix(in srgb, var(--ui-bg) 35%, transparent);
+  background: var(--container-neutral);
+}
+
+.module-inspector__bay-cell[data-fill='line'] {
+  background: var(--line-color, var(--container-neutral));
+}
+
+.module-inspector__bay-cell[data-fill='empty'] {
+  background: var(--cargo-empty);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .module-inspector,
+  .module-inspector * {
+    animation: none;
+    transition: none;
+  }
+}

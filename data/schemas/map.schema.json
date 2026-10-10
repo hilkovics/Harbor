@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "data/maps/*.json",
+  "description": "Mapa sveta (ARCHITECTURE §4.7). Schéma popisuje štruktúru a rozsahy; vzťahy medzi poľami (počet riadkov terénu = height, dĺžka riadku = width, parcely v mape a bez prekryvu, portály na okraji na pevnine a bez zdieľanej bunky, seaLane a anchorage na vode, starter cesty a moduly v mape) overuje loader mapy v sime (MapError); existenciu defu starter modulu a pravidlá jeho umiestnenia overuje World.create.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "width",
+    "height",
+    "terrain",
+    "depth",
+    "parcels",
+    "roadPortals",
+    "railPortals",
+    "seaLane",
+    "anchorage",
+    "starter"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Verzia formátu mapy."
+    },
+    "id": {
+      "$ref": "#/$defs/id",
+      "description": "Identifikátor mapy (zhodný s názvom súboru bez .json)."
+    },
+    "width": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Šírka mapy v bunkách; každý riadok terénu má presne tento počet znakov."
+    },
+    "height": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Výška mapy v bunkách; terén má presne tento počet riadkov."
+    },
+    "terrain": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^[~=Q.#]+$"
+      },
+      "description": "Riadky terénu zhora nadol, znak = bunka: '~' hlboká voda, '=' plytká voda, 'Q' nábrežie, '.' pevnina, '#' neprejazdná pevnina."
+    },
+    "depth": {
+      "type": "object",
+      "propertyNames": { "pattern": "^\\d+,\\d+,[1-9]\\d*,[1-9]\\d*$" },
+      "additionalProperties": { "enum": [1, 2, 3] },
+      "description": "Hĺbková trieda nábrežia po zónach: kľúč = obdĺžnik \"x,y,w,h\" (pokrýva bunky Q), hodnota 1|2|3. Bunky Q mimo zón majú triedu 1."
+    },
+    "parcels": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "rect", "priceCents", "leasable"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "rect": { "$ref": "#/$defs/rect" },
+          "priceCents": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Kúpna cena v centoch (USD); z nej sa počíta aj mesačný nájom."
+          },
+          "leasable": {
+            "type": "boolean",
+            "description": "Či sa parcela dá prenajať namiesto kúpy."
+          },
+          "startOwned": {
+            "type": "boolean",
+            "description": "Parcela je vlastnená od začiatku hry (ADR-008); predvolene false."
+          }
+        }
+      },
+      "description": "Parcely na predaj alebo prenájom; moduly sa stavajú len na vlastnej/prenajatej parcele (§5.2)."
+    },
+    "roadPortals": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/portal" },
+      "description": "Vstup/výstup kamiónov na okraji mapy."
+    },
+    "railPortals": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/portal" },
+      "description": "Vstup/výstup vlakov na okraji mapy."
+    },
+    "seaLane": {
+      "type": "array",
+      "minItems": 2,
+      "items": { "$ref": "#/$defs/cell" },
+      "description": "Polyline plavebnej dráhy lodí od okraja mapy k kotvisku."
+    },
+    "anchorage": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/cell" },
+      "description": "Čakacie pozície lodí na hlbokej vode — rejda: vyhradená zóna kotvísk na otvorenom mori pri príjazdovej dráhe, mimo dráhy a pásov pred kotviskami, s rozostupmi podľa dĺžky lodí (ADR-029 dodatok, T6D-03)."
+    },
+    "anchorageHeading": {
+      "enum": [0, 90, 180, 270],
+      "description": "Kurz všetkých lodí na kotve (0 = predok na sever, v smere hodinových ručičiek): jednotné natočenie voči pobrežiu — pozdĺž pobrežia alebo prídou proti prevládajúcemu prúdu. Predvolene 90 (východ, rovnobežne s pobrežím na sever od prístavu)."
+    },
+    "starter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["modules", "roads"],
+      "properties": {
+        "modules": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/placedModule" },
+          "description": "Predpostavené moduly (Root modul od fázy 2); x, y = ľavý horný roh footprintu po rotácii. Umiestňuje ich World.create rovnakou validáciou ako PlaceModule (okrem ceny)."
+        },
+        "roads": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/starterRoad" },
+          "description": "Predpostavené cesty; len na pevnine/nábreží po verejných bunkách alebo na štartovnej parcele (ADR-008)."
+        }
+      },
+      "description": "Počiatočný stav sveta."
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "snake_case identifikátor."
+    },
+    "cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 }
+      },
+      "description": "Súradnice bunky (x doprava, y nadol)."
+    },
+    "rect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "w", "h"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "w": { "type": "integer", "minimum": 1 },
+        "h": { "type": "integer", "minimum": 1 }
+      },
+      "description": "Obdĺžnik buniek: ľavý horný roh a rozmery."
+    },
+    "portal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "cell"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "cell": { "$ref": "#/$defs/cell" },
+        "direction": { "enum": ["in", "out", "both"], "description": "Len cestné portály: in = vjazd do mapy (vznik kamiónov), out = výjazd z mapy, both = oboje (predvolené, staré mapy)." },
+        "trafficShare": { "type": "number", "exclusiveMinimum": 0, "description": "Len cestné portály vjazdu (R4, ADR-041 bod 3): podiel kamiónov z danej strany vnútrozemia (relatívna váha, nie súčet 1); portál vyberá `Rng` pri vzniku kamióna. Chýba = rovnaký podiel ako ostatné portály." }
+      }
+    },
+    "starterRoad": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "dir": { "enum": ["N", "E", "S", "W"], "description": "Jednosmerná cesta (one_way) v danom smere; bez poľa dvojpruhová." }
+      }
+    },
+    "placedModule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["defId", "x", "y", "rotation"],
+      "properties": {
+        "defId": { "$ref": "#/$defs/id", "description": "Id definície modulu z modules.json." },
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "rotation": { "enum": [0, 90, 180, 270], "description": "Rotácia v smere hodinových ručičiek." }
+      }
+    }
+  }
+}

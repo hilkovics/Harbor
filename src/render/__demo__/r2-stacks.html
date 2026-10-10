@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="sk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Modular Harbor — demo renderu R2 stohy a kontajnery (TR2-03)</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: var(--terrain-water-deep);
+      }
+      #map {
+        position: fixed;
+        inset: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script type="module" src="./r2-stacks.demo.ts"></script>
+  </body>
+</html>

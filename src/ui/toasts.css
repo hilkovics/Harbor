@@ -1,0 +1,157 @@
+/*
+ * Toasts (DESIGN_BRIEF §6.2; vizuál z prototypu design/ui/game-ui.source.html, `showToasts`).
+ * Len tokeny z design/tokens.css: žiadne pevné farby ani rozmery. Rozmery prototypu bez vlastného tokenu
+ * (340 / 384 / 108 / 20 / 10 px…) sú odvodené z tokenov (`calc(var(--space-*) ± …)`); pevné sú len 1 px čiary,
+ * 2 px focus ring a ±2 px korekcie. Farbu tónu drží lokálna premenná --toast-tone (pruh aj ikona).
+ * BEM: .toasts (zásobník), .toast (+ --info / --success / --warning / --danger), __stripe / __icon / __body /
+ * __title / __text / __action / __close.
+ */
+
+/* Zásobník: vľavo od pravého panelu (prototyp right:384px = panel 360 + 24), nad BuildBarom (bottom:108px = 96 + 12). */
+.toasts {
+  --toast-w: calc(var(--space-8) * 10 + var(--space-4) + var(--space-1));
+  --toast-icon: calc(var(--icon-sm) + var(--space-1));
+  --toast-gap: calc(var(--space-2) + 2px);
+  position: absolute;
+  right: calc(var(--side-panel-w) + var(--space-6));
+  bottom: calc(var(--build-bar-h) + var(--space-3));
+  /* Nad zásterkou overlayov a modálov (z-index 30): chyby ukladania a importu sa ukazujú práve vtedy, keď je dialóg otvorený. */
+  z-index: 40;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: var(--toast-w);
+  color: var(--ui-text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-normal);
+  font-variant-numeric: tabular-nums;
+}
+
+.toast {
+  box-sizing: border-box;
+  display: flex;
+  gap: var(--toast-gap);
+  padding: var(--space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+  box-shadow: var(--shadow-panel);
+}
+
+.toast--info {
+  --toast-tone: var(--ui-info);
+}
+
+.toast--success {
+  --toast-tone: var(--ui-success);
+}
+
+.toast--warning {
+  --toast-tone: var(--ui-warning);
+}
+
+.toast--danger {
+  --toast-tone: var(--ui-danger);
+}
+
+/* Pruh tónu vľavo (4 px, na celú výšku). */
+.toast__stripe {
+  flex: none;
+  align-self: stretch;
+  width: var(--space-1);
+  border-radius: 2px;
+  background: var(--toast-tone);
+}
+
+.toast__icon {
+  flex: none;
+  width: var(--toast-icon);
+  height: var(--toast-icon);
+  color: var(--toast-tone);
+}
+
+.toast__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.toast__title {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.toast__text {
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+  text-wrap: pretty;
+}
+
+/* Odkaz akcie („Zobraziť" / „Ukázať"): text v accent farbe bez podkladu. */
+.toast__action {
+  appearance: none;
+  align-self: flex-start;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ui-accent);
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition: color 120ms ease-out;
+}
+
+.toast__action:hover {
+  color: var(--ui-accent-hover);
+}
+
+.toast__close {
+  box-sizing: border-box;
+  appearance: none;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--icon-md);
+  height: var(--icon-md);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ui-text-2);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+}
+
+.toast__close:hover {
+  background: var(--ui-surface-2);
+  color: var(--ui-text);
+}
+
+.toast__close-icon {
+  width: calc(var(--icon-sm) - 2px);
+  height: calc(var(--icon-sm) - 2px);
+}
+
+.toast__action:focus-visible,
+.toast__close:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toasts,
+  .toasts * {
+    animation: none;
+    transition: none;
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "rtg": {
+    "gantryCellsPerTick": 2,
+    "hoistTicksPerTier": 1,
+    "trolleyTicksPerRow": 1,
+    "lockTicks": 1,
+    "priorities": {
+      "ship": 0,
+      "truck": 1,
+      "housekeeping": 2
+    },
+    "prefetchCells": 6,
+    "handoverGiveUpTicks": 600
+  },
+  "reachStacker": {
+    "gantryCellsPerTick": 1,
+    "hoistTicksPerTier": 2,
+    "trolleyTicksPerRow": 3,
+    "lockTicks": 2,
+    "priorities": {
+      "ship": 0,
+      "truck": 1,
+      "housekeeping": 2
+    },
+    "prefetchCells": 0,
+    "handoverGiveUpTicks": 600
+  },
+  "tractors": {
+    "defaultMode": "pool",
+    "defaultPerSts": 2,
+    "minPerSts": 1,
+    "maxPerSts": 8
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "items": [
+    { "id": "blue_anchor", "displayName": "Blue Anchor Lines", "colorToken": "line-blue" },
+    { "id": "northern_star", "displayName": "Northern Star Shipping", "colorToken": "line-amber" },
+    { "id": "golden_wave", "displayName": "Golden Wave Container", "colorToken": "line-teal" }
+  ]
+}

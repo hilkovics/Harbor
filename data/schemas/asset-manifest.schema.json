@@ -1,0 +1,357 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "assets/manifest.json",
+  "description": "Kanonický manifest grafiky z Claude Design (DESIGN_BRIEF §7): sprity terénu, infraštruktúry, modulov, entít, nákladu, overlayov a ikon. Schéma popisuje štruktúru; existenciu súborov, pokrytie všetkých SVG v assets/ a rozmery overuje tests/tools/asset-manifest.test.ts. Cesty súborov sú relatívne k assets/.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "cellPx", "conventions", "terrain", "infra", "sprites", "entities", "cargo", "overlay", "icons"],
+  "properties": {
+    "schemaVersion": { "const": 1, "description": "Verzia schémy manifestu." },
+    "cellPx": { "type": "integer", "minimum": 1, "description": "Veľkosť bunky v px pri zoome 1; zhodná s tokenom --cell." },
+    "conventions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["orientation", "pivot", "footprint", "rotation", "waterTiles", "shadow", "connectors", "fileNames"],
+      "description": "Textový popis konvencií (orientácia, pivot, footprint, rotácia, prechody pobrežia, tieň, konektory, názvy súborov).",
+      "properties": {
+        "orientation": { "type": "string" },
+        "pivot": { "type": "string" },
+        "footprint": { "type": "string" },
+        "rotation": { "type": "string" },
+        "waterTiles": { "type": "string" },
+        "shadow": { "type": "string" },
+        "connectors": { "type": "string" },
+        "fileNames": { "type": "string" }
+      }
+    },
+    "terrain": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/id" },
+      "additionalProperties": { "$ref": "#/$defs/terrainTile" },
+      "description": "Dlaždice terénu 1×1: voda, prechody pobrežia, nábrežie, pevnina, obrysy parciel a portály."
+    },
+    "infra": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/id" },
+      "additionalProperties": { "$ref": "#/$defs/infraLayer" },
+      "description": "Infraštruktúra po vrstvách (road, rail, pipe): dlaždice autotile v jednej orientácii (rot 0)."
+    },
+    "sprites": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/id" },
+      "additionalProperties": { "$ref": "#/$defs/moduleSprite" },
+      "description": "Sprity modulov (žeriavy, sklady, kotviská, landside) s konektormi a pivotmi častí."
+    },
+    "entities": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/id" },
+      "additionalProperties": { "$ref": "#/$defs/entitySprite" },
+      "description": "Sprity vozidiel, vlakov a lodí (predok hore)."
+    },
+    "cargo": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/id" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["file", "size"],
+        "properties": {
+          "file": { "$ref": "#/$defs/svgFile" },
+          "size": { "$ref": "#/$defs/pxSize" },
+          "tintable": { "type": "boolean", "description": "Sprite je neutrálny (`--container-neutral`) a hra ho tónuje farbou linky (R2: `container_<20|40>_dry`); sivé prázdne a ostatný náklad nie." }
+        }
+      },
+      "description": "Sprity nákladu (veľkosť v px, nie v bunkách)."
+    },
+    "overlay": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/id" },
+      "additionalProperties": { "$ref": "#/$defs/overlayAsset" },
+      "description": "Overlaye a efekty: šrafa ghostu, obrysy, šípky, odznaky, legenda heatmapy."
+    },
+    "icons": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "grid", "stroke", "color", "symbols"],
+      "properties": {
+        "file": { "$ref": "#/$defs/svgFile", "description": "Sprite sheet s <symbol id=\"ic_…\">." },
+        "grid": { "type": "integer", "minimum": 1, "description": "Rozmer mriežky ikony v px." },
+        "stroke": { "type": "integer", "minimum": 1, "description": "Hrúbka čiary v px." },
+        "color": { "type": "string", "minLength": 1 },
+        "symbols": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^ic_[a-z0-9_]+$" }
+        }
+      },
+      "description": "Ikony UI (24 px mriežka, 2 px čiara) ako symboly jedného SVG."
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Snake_case id assetu (rovnaké pravidlo ako def id)."
+    },
+    "svgFile": {
+      "type": "string",
+      "pattern": "^[a-z]+/[a-z0-9_]+\\.svg$",
+      "description": "Cesta k SVG relatívne k assets/, napr. terrain/quay.svg (názov {id}[_{variant}][_{state}].svg)."
+    },
+    "side": { "enum": ["n", "e", "s", "w"] },
+    "corner": { "enum": ["ne", "nw", "se", "sw"] },
+    "footprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["w", "h"],
+      "properties": {
+        "w": { "type": "integer", "minimum": 1 },
+        "h": { "type": "integer", "minimum": 1 }
+      },
+      "description": "Rozmery v bunkách pri rotácii 0."
+    },
+    "pxSize": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["w", "h"],
+      "properties": {
+        "w": { "type": "integer", "minimum": 1 },
+        "h": { "type": "integer", "minimum": 1 }
+      },
+      "description": "Rozmery v px."
+    },
+    "pxPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "integer" },
+        "y": { "type": "integer" }
+      }
+    },
+    "pxRect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "w", "h"],
+      "properties": {
+        "x": { "type": "integer" },
+        "y": { "type": "integer" },
+        "w": { "type": "integer", "minimum": 1 },
+        "h": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "cellPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "nineSlice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["left", "top", "right", "bottom"],
+      "properties": {
+        "left": { "type": "integer", "minimum": 0 },
+        "top": { "type": "integer", "minimum": 0 },
+        "right": { "type": "integer", "minimum": 0 },
+        "bottom": { "type": "integer", "minimum": 0 }
+      },
+      "description": "Okraje 9-slice v px zdroja."
+    },
+    "sides": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/side" }
+    },
+    "terrainTile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["footprint", "file"],
+      "properties": {
+        "footprint": { "$ref": "#/$defs/footprint" },
+        "file": { "$ref": "#/$defs/svgFile" },
+        "waterSides": { "$ref": "#/$defs/sides", "description": "Strany bunky s vodou (water_edge_*, water_inner_*, quay_edge_n)." },
+        "waterCorner": { "$ref": "#/$defs/corner", "description": "Roh s vodou pri pevnine bez vody na stranách (water_corner_*)." },
+        "landCorner": { "$ref": "#/$defs/corner", "description": "Roh s pevninou pri vnútornom rohu (water_inner_*)." },
+        "nineSlice": { "$ref": "#/$defs/nineSlice", "description": "Obrysy parciel: rám natiahnutý na rozmer parcely." },
+        "rotatable": { "type": "boolean" },
+        "note": { "type": "string" }
+      }
+    },
+    "infraTile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "connectsAtRot0"],
+      "properties": {
+        "file": { "$ref": "#/$defs/svgFile" },
+        "connectsAtRot0": { "$ref": "#/$defs/sides", "description": "Strany bunky, na ktoré dlaždica pri rotácii 0 nadväzuje." }
+      }
+    },
+    "infraLayer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["footprint", "rotatable", "tiles"],
+      "properties": {
+        "footprint": { "$ref": "#/$defs/footprint" },
+        "rotatable": { "type": "boolean" },
+        "tiles": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/id" },
+          "additionalProperties": { "$ref": "#/$defs/infraTile" }
+        }
+      }
+    },
+    "connector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "side", "type"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "side": { "$ref": "#/$defs/side" },
+        "type": { "enum": ["road", "rail", "pipe"] }
+      },
+      "description": "Bunka vo footprinte pri rot 0 a strana vjazdu."
+    },
+    "spritePart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file"],
+      "properties": {
+        "file": { "$ref": "#/$defs/svgFile" },
+        "footprint": { "$ref": "#/$defs/footprint" },
+        "pivot": { "$ref": "#/$defs/pxPoint" },
+        "mountOnBase": { "$ref": "#/$defs/pxPoint" },
+        "offset": { "$ref": "#/$defs/pxPoint" },
+        "closedDeg": { "type": "integer" },
+        "openDeg": { "type": "integer" },
+        "travel": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["axis", "yMin", "yMax"],
+          "properties": {
+            "axis": { "type": "string", "minLength": 1 },
+            "yMin": { "type": "integer" },
+            "yMax": { "type": "integer" }
+          }
+        }
+      },
+      "description": "Pohyblivá časť modulu (boom, trolley, závora) s vlastným pivotom."
+    },
+    "stateFiles": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/id" },
+      "additionalProperties": { "$ref": "#/$defs/svgFile" },
+      "description": "Stav → SVG (fill00…fill100, empty/loaded)."
+    },
+    "moduleSprite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["footprint", "connectors"],
+      "anyOf": [{ "required": ["file"] }, { "required": ["states"] }, { "required": ["parts"] }],
+      "properties": {
+        "footprint": { "$ref": "#/$defs/footprint" },
+        "file": { "$ref": "#/$defs/svgFile" },
+        "states": { "$ref": "#/$defs/stateFiles" },
+        "parts": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/id" },
+          "additionalProperties": { "$ref": "#/$defs/spritePart" }
+        },
+        "connectors": { "type": "array", "items": { "$ref": "#/$defs/connector" } },
+        "apronSlots": { "type": "array", "items": { "$ref": "#/$defs/cellPoint" } },
+        "docks": { "type": "array", "items": { "$ref": "#/$defs/pxRect" } },
+        "stalls": {
+          "oneOf": [
+            { "type": "integer", "minimum": 1 },
+            { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/pxRect" } }
+          ]
+        },
+        "stallSize": { "type": "object", "required": ["w", "h"], "additionalProperties": false, "properties": { "w": { "type": "integer", "minimum": 1 }, "h": { "type": "integer", "minimum": 1 } } },
+        "aisleRows": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 0 } },
+        "slots": { "type": "integer", "minimum": 1 },
+        "layers": { "type": "integer", "minimum": 1 },
+        "category": { "enum": ["container", "bulk", "liquid", "gas", "roro"] },
+        "stagingBoxes": { "type": "integer", "minimum": 1 },
+        "trackRow": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "entitySprite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["footprint"],
+      "anyOf": [{ "required": ["file"] }, { "required": ["states"] }, { "required": ["variants"] }, { "required": ["parts"] }],
+      "properties": {
+        "footprint": { "$ref": "#/$defs/footprint" },
+        "file": { "$ref": "#/$defs/svgFile" },
+        "states": { "$ref": "#/$defs/stateFiles" },
+        "parts": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/id" },
+          "additionalProperties": { "$ref": "#/$defs/spritePart" },
+          "description": "Kĺbové vozidlo z častí (kamión: `cab` s pivotom točnice, `trailer` s pivotom čapu); časti sa skladajú po stope (R1, ADR-037)."
+        },
+        "variants": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/id" },
+          "additionalProperties": {
+            "oneOf": [{ "$ref": "#/$defs/svgFile" }, { "$ref": "#/$defs/stateFiles" }]
+          },
+          "description": "Variant → SVG (napr. veľkosť auta) alebo variant → stavy (typ lode: empty/loaded)."
+        },
+        "spreaderMount": {
+          "$ref": "#/$defs/pxPoint",
+          "description": "ECH (R2): bod v px súboru, kde visí spreader s kontajnerom (pivot spreadera = tento bod); časti `spreader_20` / `spreader_40` sú v `parts`."
+        },
+        "deck": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "bays"],
+          "properties": {
+            "columns": { "type": "integer", "minimum": 1, "description": "Počet kontajnerov (stĺpcov) naprieč lodou v jednom poli paluby." },
+            "bays": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/pxRect" },
+              "description": "Polia paluby kontajnerovej lode od predku k zadku (px súboru pri rot 0): obdĺžniky `#A5AFB9` v sprite `empty`; poradie = index poľa."
+            }
+          },
+          "description": "Paluba kontajnerovej lode (variant `container`): kam renderer kladie kontajnery podľa počtu jednotiek na palube (F6a)."
+        },
+        "note": { "type": "string" }
+      }
+    },
+    "overlayAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file"],
+      "properties": {
+        "file": { "$ref": "#/$defs/svgFile" },
+        "pattern": { "$ref": "#/$defs/pxSize", "description": "Rozmer opakujúceho sa vzoru (TilingSprite)." },
+        "use": { "type": "string" },
+        "nineSlice": { "$ref": "#/$defs/nineSlice" },
+        "footprint": { "$ref": "#/$defs/footprint" },
+        "size": { "$ref": "#/$defs/pxSize" },
+        "rotatable": { "type": "boolean" },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}

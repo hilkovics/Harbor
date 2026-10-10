@@ -1,0 +1,191 @@
+/* Inšpektor strojov a blokov (TR3-04, machine-inspector.tsx): len tokeny z design/tokens.css, čísla tabular-nums. */
+
+.machine-inspector {
+  display: flex;
+  flex-direction: column;
+  width: var(--side-panel-w);
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+  color: var(--ui-text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+}
+
+.machine-inspector__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.machine-inspector__icon {
+  width: var(--icon-md);
+  height: var(--icon-md);
+  color: var(--ui-text-2);
+  flex-shrink: 0;
+}
+
+.machine-inspector__titles {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.machine-inspector__title {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.machine-inspector__sub {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ui-text-3);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.machine-inspector__badge {
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.machine-inspector__badge--ok {
+  color: var(--ui-success);
+  background: color-mix(in srgb, var(--ui-success) 16%, transparent);
+}
+
+.machine-inspector__badge--warn {
+  color: var(--ui-warning);
+  background: color-mix(in srgb, var(--ui-warning) 16%, transparent);
+}
+
+.machine-inspector__badge--bad {
+  color: var(--ui-danger);
+  background: color-mix(in srgb, var(--ui-danger) 18%, transparent);
+}
+
+.machine-inspector__badge--mute {
+  color: var(--ui-text-2);
+  background: var(--ui-surface-2);
+}
+
+.machine-inspector__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.machine-inspector__empty {
+  padding: var(--space-4);
+  color: var(--ui-text-2);
+}
+
+.machine-inspector__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.machine-inspector__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.machine-inspector__label {
+  color: var(--ui-text-2);
+  font-size: var(--fs-sm);
+}
+
+.machine-inspector__value {
+  margin: 0;
+  color: var(--ui-text);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.machine-inspector__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--ui-border);
+}
+
+.machine-inspector__section-title {
+  color: var(--ui-text-2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+}
+
+.machine-inspector__segments {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+}
+
+.machine-inspector__segment {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ui-text-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+
+.machine-inspector__segment:hover {
+  color: var(--ui-text);
+  background: var(--ui-surface-2);
+}
+
+.machine-inspector__segment--on {
+  color: var(--ui-text);
+  background: var(--ui-surface-2);
+  border-color: var(--ui-accent);
+  font-weight: var(--fw-semibold);
+}
+
+.machine-inspector__segment:focus-visible,
+.machine-inspector__number:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+
+.machine-inspector__number {
+  width: 4em;
+  padding: var(--space-1) var(--space-2);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  color: var(--ui-text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}

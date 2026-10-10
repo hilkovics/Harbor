@@ -1,0 +1,124 @@
+:root {
+  /* ===== Herný svet (terén) ===== */
+  --terrain-water-deep: #0E3A5B;
+  --terrain-water-shallow: #1F6F8B;
+  --terrain-water-foam: #7FC2D6;      /* jemná linka pri pobreží */
+  --terrain-quay: #B7B2A6;            /* betón kotviska */
+  --terrain-quay-edge: #7D786E;       /* hrana k vode, 4 px */
+  --terrain-land: #D8D2C4;
+  --terrain-land-alt: #CFC8B8;        /* šachovnica 2×2 buniek pre orientáciu */
+  --terrain-blocked: #6E6A66;
+  --parcel-for-sale: #F2B233;         /* prerušovaný obrys 2 px */
+  --parcel-owned: #35C27A;
+  --parcel-leased: #3AA0FF;
+
+  /* ===== Infraštruktúra ===== */
+  --road-base: #4B5058;
+  --road-marking: #E9E4D6;
+  --rail-base: #3B3B3B;
+  --rail-tie: #6B5A45;
+  --pipe-base: #8A8F98;
+  --pipe-valve: #E5484D;
+
+  /* ===== Kategórie nákladu (sémantické) ===== */
+  --cargo-container: #F28C28;   /* glyf: obdĺžnik s dvomi pruhmi */
+  --cargo-bulk: #C9A227;        /* glyf: kopa / tri kruhy */
+  --cargo-liquid: #7B4FA0;      /* glyf: kvapka */
+  --cargo-gas: #2BB3A3;         /* glyf: valec s hrdlom */
+  --cargo-roro: #D64545;        /* glyf: auto zhora */
+  /* svetlé/tmavé varianty: +14 % L / −14 % L od base */
+
+  /* ===== Moduly ===== */
+  --module-base: #9DA3AC;       /* neutrálny betón/oceľ modulu */
+  --module-roof: #B8BEC7;
+  --module-outline: #5C626B;
+  --module-connector: #3AA0FF;  /* bunka konektora v build mode */
+  --module-disconnected: #F2B233;
+
+  /* ===== Entity ===== */
+  --vehicle-body: #F4D03F;      /* straddle carrier / AGV: žltá "industrial" */
+  --vehicle-dark: #2B2B2B;
+  --truck-cab: #3A6EA5;
+  --truck-trailer: #C9CDD3;
+  --train-loco: #2F5D8A;
+  --train-wagon: #7A7F87;
+  --ship-hull: #2C3E50;
+  --ship-deck: #8E9AA7;
+  --ship-superstructure: #ECEFF3;
+  --crane-frame: #E3B23C;       /* portálový žeriav: žlto-oranžová */
+  --crane-boom: #C88B1F;
+
+  /* ===== Stavy na mape ===== */
+  --ghost-valid: rgba(53,194,122,.55);
+  --ghost-invalid: rgba(229,72,77,.55);  /* + diagonálny hatch 45°, 6 px */
+  --outline-hover: #FFFFFF;              /* 2 px */
+  --outline-selected: #3AA0FF;           /* 3 px */
+  --heat-0: rgba(58,160,255,0);
+  --heat-1: rgba(58,160,255,.65);
+  --heat-2: rgba(242,178,51,.8);
+  --heat-3: rgba(229,72,77,.9);
+
+  /* ===== UI (tmavá, poloprehľadná nad mapou) ===== */
+  --ui-bg: rgba(15,27,39,.92);
+  --ui-surface: #172736;
+  --ui-surface-2: #1F334A;
+  --ui-border: #2E4760;
+  --ui-text: #EEF3F7;
+  --ui-text-2: #9FB2C4;
+  --ui-text-3: #6E8299;
+  --ui-accent: #3AA0FF;
+  --ui-accent-hover: #63B5FF;
+  --ui-success: #35C27A;
+  --ui-warning: #F2B233;
+  --ui-danger: #E5484D;
+  --ui-info: #6FB7FF;
+  --ui-money-pos: #35C27A;
+  --ui-money-neg: #E5484D;
+  --ui-xp: #B58CFF;
+
+  /* ===== Typografia ===== */
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --fs-xs: 12px; --fs-sm: 13px; --fs-md: 14px; --fs-lg: 16px; --fs-xl: 20px; --fs-2xl: 28px;
+  --fw-regular: 400; --fw-semibold: 600; --fw-bold: 700;
+  --lh-tight: 1.2; --lh-normal: 1.45;
+  /* čísla v UI vždy `font-variant-numeric: tabular-nums` */
+
+  /* ===== Rozmery ===== */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-6: 24px; --space-8: 32px;
+  --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px;
+  --shadow-panel: 0 8px 24px rgba(0,0,0,.35);
+  --icon-sm: 16px; --icon-md: 24px; --icon-lg: 32px;
+  --hud-top-h: 48px; --build-bar-h: 96px; --side-panel-w: 360px;
+  --cell: 64px;   /* 1 bunka gridu pri zoom 1 */
+
+  /* ===== Odvodené (Relácia 1): kategórie nákladu ±14 % L (HSL) ===== */
+  --cargo-container-light: #F6B06B;
+  --cargo-container-dark: #C7680C;
+  --cargo-bulk-light: #DFBE59;
+  --cargo-bulk-dark: #8D721B;
+  --cargo-liquid-light: #9E79BD;
+  --cargo-liquid-dark: #563770;
+  --cargo-gas-light: #50D5C5;
+  --cargo-gas-dark: #1D796F;
+  --cargo-roro-light: #E38080;
+  --cargo-roro-dark: #AD2626;
+
+  /* ===== Terminál 2.0 ===== */
+  --cargo-empty: #6E7783;
+  --cargo-empty-light: #98A1AD;
+  --cargo-empty-dark: #4A525C;
+  --container-neutral: #D9DDE2;
+  --container-reefer: #ECEFF3;
+  --container-tarp: #5D7A8C;
+  --safe-zone: #3FA34D;
+  --tp-marker: #F4D03F;
+  /* náhľadové farby liniek (tint), oklch(0.68 0.13 h) */
+  --line-blue: #549DE5;
+  --line-amber: #CB882E;
+  --line-teal: #00B1AA;
+  /* STS žeriav */
+  --sts-steel: #D64545;
+  --sts-stay-red: #E5484D;
+  --sts-stay-white: #ECEFF3;
+}

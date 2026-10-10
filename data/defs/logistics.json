@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "defaultInternalTicks": 6,
+  "repathIntervalTicks": 30,
+  "rehandleTicks": 12,
+  "rehandleGiveUpTicks": 96,
+  "buryReserveColumns": 4,
+  "yardMachineLoadWeight": 12,
+  "rehandleSpareCells": 2,
+  "apronUnloadReserveSlots": 1,
+  "dualCandidateLimit": 64,
+  "hookJobLookahead": 8,
+  "hookPairedLoadJobs": 1,
+  "importDwellEstimateHours": 6,
+  "yardPlanner": "planned",
+  "congestion": {
+    "trafficDecayPerHour": 0.9
+  },
+  "traffic": {
+    "gridlockTicks": 30,
+    "stuckTicks": 120,
+    "rerouteCooldownTicks": 60,
+    "idleParkDelayTicks": 6,
+    "strandedRetryTicks": 300
+  },
+  "shipNavigation": {
+    "approachMarginCells": 1,
+    "sweepStepCells": 0.5,
+    "turnManeuvers": 1,
+    "sidewaysManeuvers": 1
+  },
+  "exportFlow": {
+    "arrivalWindowDays": 2,
+    "vgmMissingChance": 0.05,
+    "vgmHoldHours": 6,
+    "weightClassShares": { "light": 0.3, "medium": 0.5, "heavy": 0.2 }
+  },
+  "emptyFlow": {
+    "hinterlandDaysRange": [1, 3],
+    "emptyReturnRate": 0.6,
+    "damageChance": 0.08,
+    "repairHours": 6,
+    "emptyPickupRate": 0.4,
+    "emptyPickupLeadHoursRange": [4, 12],
+    "emptyPickupMaxWaitHours": 6
+  },
+  "reefer": {
+    "plugTicks": 30,
+    "unplugTicks": 30,
+    "maxUnpluggedHours": 3,
+    "alarmChancePerDay": 0.05,
+    "alarmResponseHours": 2,
+    "technicians": 1,
+    "alarmFixTicks": 60
+  },
+  "oog": {
+    "extraCycleTicks": 60,
+    "lashTicks": 120
+  }
+}

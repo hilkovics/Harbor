@@ -1,0 +1,274 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "modules.json",
+  "description": "Katalóg modulov (ARCHITECTURE §4.2, §5.3, ADR-009): { schemaVersion, items: [...] }. Tvar `params` závisí od `kind` (berth, crane, storage, gate, pre_gate, holding, depot; rail_station a pipeline zatiaľ bez parametrov). Jedinečnosť `id` v items[] schéma nevyjadrí — kontroluje ju DefRegistry a `pnpm validate:defs`; polohu konektora vo footprinte kontroluje DefRegistry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "items"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Verzia schémy defu."
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/module" },
+      "description": "Moduly v poradí súboru."
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "snake_case identifikátor."
+    },
+    "kind": {
+      "enum": ["berth", "crane", "storage", "gate", "pre_gate", "holding", "depot", "rail_station", "pipeline"]
+    },
+    "terrain": {
+      "enum": ["deep_water", "shallow_water", "quay", "land", "blocked"]
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "displayName",
+        "footprint",
+        "placement",
+        "connectors",
+        "costCents",
+        "maintenancePerDayCents",
+        "params"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "$ref": "#/$defs/kind" },
+        "displayName": { "type": "string", "minLength": 1 },
+        "footprint": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["w", "h"],
+          "properties": {
+            "w": { "type": "integer", "minimum": 1 },
+            "h": { "type": "integer", "minimum": 1 }
+          },
+          "description": "Rozmery v bunkách pri rotácii 0°."
+        },
+        "placement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["requiredTerrain", "requiresParcelOwnership"],
+          "properties": {
+            "requiredTerrain": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/terrain" },
+              "description": "Terény, na ktorých smú stáť všetky bunky footprintu."
+            },
+            "waterSide": {
+              "enum": ["north"],
+              "description": "Berth: strana dlhej hrany, ktorá musí susediť s vodou (pri rotácii 0 sever)."
+            },
+            "requiresParcelOwnership": {
+              "type": "boolean",
+              "description": "Modul smie stáť len na vlastnenej alebo prenajatej parcele."
+            },
+            "mustAttachTo": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/kind" },
+              "description": "Modul sa musí prekrývať s modulom jedného z týchto kind-ov (crane → berth)."
+            }
+          }
+        },
+        "connectors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/connector" },
+          "description": "Bunky, cez ktoré vozidlá vchádzajú do modulu a vychádzajú z neho (súradnice vo footprinte pri rotácii 0°)."
+        },
+        "costCents": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Kúpna cena v centoch (USD)."
+        },
+        "maintenancePerDayCents": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Denná údržba v centoch (USD)."
+        },
+        "techRequired": {
+          "$ref": "#/$defs/id",
+          "description": "Id uzla tech tree, ktorý modul odomyká; chýba = dostupný od začiatku."
+        },
+        "params": {
+          "type": "object",
+          "description": "Typ-špecifické parametre; tvar podľa `kind` (pozri `allOf`)."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "berth" } }, "required": ["kind"] },
+          "then": {
+            "properties": {
+              "params": { "$ref": "#/$defs/berthParams" },
+              "placement": { "type": "object", "required": ["waterSide"] }
+            }
+          }
+        },
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "crane" } }, "required": ["kind"] },
+          "then": { "properties": { "params": { "$ref": "#/$defs/craneParams" } } }
+        },
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "storage" } }, "required": ["kind"] },
+          "then": { "properties": { "params": { "$ref": "#/$defs/storageParams" } } }
+        },
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "depot" } }, "required": ["kind"] },
+          "then": { "properties": { "params": { "$ref": "#/$defs/depotParams" } } }
+        },
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "gate" } }, "required": ["kind"] },
+          "then": { "properties": { "params": { "$ref": "#/$defs/gateParams" } } }
+        },
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "pre_gate" } }, "required": ["kind"] },
+          "then": { "properties": { "params": { "$ref": "#/$defs/preGateParams" } } }
+        },
+        {
+          "if": { "type": "object", "properties": { "kind": { "const": "holding" } }, "required": ["kind"] },
+          "then": { "properties": { "params": { "$ref": "#/$defs/holdingParams" } } }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "kind": { "enum": ["rail_station", "pipeline"] }
+            },
+            "required": ["kind"]
+          },
+          "then": { "properties": { "params": { "$ref": "#/$defs/noParams" } } }
+        }
+      ]
+    },
+    "connector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "side", "type"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "side": { "enum": ["n", "e", "s", "w"], "description": "Strana bunky, ktorou sa vchádza (pri rotácii 0°)." },
+        "type": { "enum": ["road", "rail", "pipe"] },
+        "access": { "enum": ["in", "out", "both"], "description": "Prístup cez konektor (ADR-041 bod 8): in = len vjazd, out = len výjazd, both = oboje (predvolené)." }
+      }
+    },
+    "berthParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["depthClass", "apronSlots", "maxCranes", "frontWaterCells", "apronReserveSlots", "handoverMode", "craneBufferSlots"],
+      "properties": {
+        "depthClass": { "enum": [1, 2, 3], "description": "Najhlbší ponor, ktorý kotvisko unesie." },
+        "apronSlots": { "type": "integer", "minimum": 1, "description": "Počet slotov apronu (ApronBuffer)." },
+        "maxCranes": { "type": "integer", "minimum": 1, "description": "Najviac žeriavov na kotvisku." },
+        "frontWaterCells": { "type": "integer", "minimum": 1, "description": "Šírka pásu vody pred dlhou hranou, ktorý musí byť voľný." },
+        "apronReserveSlots": { "type": "integer", "minimum": 0, "description": "Rezerva slotov apronu pre opačný smer (F6a, ADR-032 bod 10); najviac ⌊apronSlots / 2⌋ — vzťah polí kontroluje DefRegistry a `pnpm validate:defs`." },
+        "handoverMode": { "enum": ["apron", "under_hook"], "description": "Odovzdávanie žeriav ↔ vozidlo (F6a, ADR-033): `apron` = žeriav kladie jednotky na sloty apronu (F2–F5), `under_hook` = vozidlo čaká pod hákom žeriava." },
+        "craneBufferSlots": { "type": "integer", "minimum": 0, "maximum": 1, "description": "Buffer apronu na žeriav v režime under_hook (ADR-033): 0 = čisté priame odovzdanie, 1 = jedna jednotka na žeriav; craneBufferSlots × maxCranes ≤ apronSlots (vzťah polí kontroluje DefRegistry a `pnpm validate:defs`)." }
+      }
+    },
+    "craneParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cycleTicks", "category", "wagePerDayCents", "dualCycleFactor"],
+      "properties": {
+        "cycleTicks": { "type": "integer", "minimum": 2, "description": "Trvanie celého cyklu žeriava v tickoch." },
+        "category": { "enum": ["container", "bulk", "liquid", "gas", "roro"], "description": "Kategória nákladu, ktorú žeriav vykladá." },
+        "wagePerDayCents": { "type": "integer", "minimum": 0, "description": "Denná mzda obsluhy žeriava v centoch; strhne sa pri DayClosed (F5)." },
+        "dualCycleFactor": { "type": "number", "minimum": 1, "maximum": 2, "description": "Dual cycling (F6a, ADR-032 bod 11): násobok jedného cyklu, za ktorý žeriav naloží export a vyloží import (2 = žiadny prínos oproti dvom cyklom)." }
+      }
+    },
+    "storageParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capacityUnits", "category"],
+      "dependentRequired": {
+        "bays": ["rows", "maxTier"],
+        "rows": ["bays", "maxTier"],
+        "maxTier": ["bays", "rows"]
+      },
+      "properties": {
+        "capacityUnits": { "type": "integer", "minimum": 1, "description": "Kapacita skladu v CargoUnit (pre dvor: sloty × vrstvy v manifeste)." },
+        "category": { "enum": ["container", "bulk", "liquid", "gas", "roro"], "description": "Kategória nákladu, ktorú sklad prijíma." },
+        "internalTicks": { "type": "integer", "minimum": 0, "description": "Vnútorný čas vozidla v module; chýba = logistics.defaultInternalTicks." },
+        "role": { "enum": ["empty_depot", "rtg_block"], "description": "Rola skladu (F6c, ADR-034; R3, ADR-040): `empty_depot` = depo prázdnych kontajnerov (iná trieda, prijíma len prázdne, kontrola a M&R), `rtg_block` = blok obsluhovaný RTG (`RtgBlock`, jednosmerný pruh a TP); chýba = bežný (straddle) sklad. `empty_depot` vyžaduje kategóriu `container` a `repairBays`; `rtg_block` kategóriu `container`, geometriu bloku, `laneCol` a `tpSpacingBays` — kontroluje DefRegistry a `pnpm validate:defs`." },
+        "repairBays": { "type": "integer", "minimum": 1, "description": "Počet súčasných opráv v depe prázdnych (M&R); povinné práve pri `role: empty_depot`." },
+        "bays": { "type": "integer", "minimum": 1, "description": "Geometria bloku (ADR-039): počet bays pozdĺž bloku (1 bay = 1 bunka = 20′; 40′ zaberie pár bays 2k, 2k+1). Všetky tri polia geometrie naraz alebo žiadne — kontroluje DefRegistry a `pnpm validate:defs`." },
+        "rows": { "type": "integer", "minimum": 1, "description": "Geometria bloku (ADR-039): počet radov naprieč blokom." },
+        "maxTier": { "type": "integer", "minimum": 1, "description": "Geometria bloku (ADR-039): najvyššia vrstva stohu (straddle blok 3, depo prázdnych 8, RTG blok 5). Kapacita v TEU je `bays × rows × maxTier` (od TR2-02; `capacityUnits` ostáva kvôli kompatibilite)." },
+        "laneCol": { "type": "integer", "minimum": 0, "description": "RTG blok (ADR-040 bod 2): stĺpec footprintu (pri rotácii 0), v ktorom beží jednosmerný pruh pozdĺž bloku; povinné práve pri `role: rtg_block`." },
+        "plugRows": { "type": "integer", "minimum": 1, "description": "Zásuvky pre reefery (R5, ADR-042): počet radov od radu 0, v ktorých má každá vrstva stohu zásuvku; len pri `role: rtg_block`, najviac `rows` (kontroluje DefRegistry). Blok so zásuvkami prijíma len reefery." },
+        "acceptsOog": { "type": "boolean", "description": "OOG plocha (R5, ADR-042 TR5-02): blok prijíma len nadrozmerný náklad (OOG) a obsluhuje ho reach stacker; len pri `role: rtg_block`, `maxTier` 1 (kontroluje DefRegistry)." },
+        "tpSpacingBays": { "type": "integer", "minimum": 1, "description": "RTG blok (ADR-040 bod 2): každý koľký bay má odovzdávacie miesto (TP) v pruhu; povinné práve pri `role: rtg_block`." }
+      }
+    },
+    "depotParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capacity"],
+      "properties": {
+        "capacity": { "type": "integer", "minimum": 1, "description": "Počet státí (vozidiel) v depe (`stalls` v manifeste)." },
+        "internalTicks": { "type": "integer", "minimum": 0, "description": "Vnútorný čas vozidla v module; chýba = logistics.defaultInternalTicks." }
+      }
+    },
+    "gateParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["direction", "expressTicks"],
+      "description": "Pruh brány (R4, ADR-041 bod 1): jednosmerný, 1 kamión naraz. Pole krokov patrí svojmu smeru (`in`: ocrTicks, checkTicks, issueTicks, gateIssueChance, troubleTicks; `out`: weighTicks, scanTicks, sealTicks, sealIssueChance, inspectionTicks) — povinné práve pri svojom smere, kontroluje DefRegistry a `pnpm validate:defs`.",
+      "properties": {
+        "direction": { "enum": ["in", "out"], "description": "Smer pruhu: vstupný (`gate_in_lane`) alebo výstupný (`gate_out_lane`)." },
+        "ocrTicks": { "type": "integer", "minimum": 1, "description": "Vstupný pruh: čas OCR v tickoch." },
+        "checkTicks": { "type": "integer", "minimum": 1, "description": "Vstupný pruh: čas kontroly (VGM, booking, termín) v tickoch." },
+        "issueTicks": { "type": "integer", "minimum": 1, "description": "Vstupný pruh: čas vydania lístka a závory v tickoch." },
+        "gateIssueChance": { "type": "number", "minimum": 0, "maximum": 1, "description": "Vstupný pruh: šanca na problém pri kontrole v režime standard (losuje `Rng`)." },
+        "troubleTicks": { "type": "integer", "minimum": 1, "description": "Vstupný pruh: čas riešenia problému (ticky navyše; v režime trouble celý prechod)." },
+        "weighTicks": { "type": "integer", "minimum": 1, "description": "Výstupný pruh: čas váženia v tickoch." },
+        "scanTicks": { "type": "integer", "minimum": 1, "description": "Výstupný pruh: čas skenu v tickoch." },
+        "sealTicks": { "type": "integer", "minimum": 1, "description": "Výstupný pruh: čas plomby a závory v tickoch." },
+        "sealIssueChance": { "type": "number", "minimum": 0, "maximum": 1, "description": "Výstupný pruh: šanca na problém pri plombe v režime standard (losuje `Rng`)." },
+        "inspectionTicks": { "type": "integer", "minimum": 1, "description": "Výstupný pruh: čas dôkladnej kontroly (ticky navyše; v režime trouble celý prechod)." },
+        "expressTicks": { "type": "integer", "minimum": 1, "description": "Celý prechod v režime express v tickoch." },
+        "internalTicks": { "type": "integer", "minimum": 0, "description": "Vnútorný čas prechodu telom brány; pripočíta sa k trvaniu prechodu. Chýba = 0 (ADR-024)." }
+      }
+    },
+    "preGateParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rows", "rowCapacity"],
+      "properties": {
+        "rows": { "type": "integer", "minimum": 1, "description": "Počet radových pruhov predbránovej plochy (ADR-041 bod 2)." },
+        "rowCapacity": { "type": "integer", "minimum": 1, "description": "Kapacita radového pruhu v kamiónoch (podľa GDD 2)." }
+      }
+    },
+    "holdingParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stalls", "stallLengthCells"],
+      "properties": {
+        "stalls": { "type": "integer", "minimum": 1, "description": "Počet státí 1 × 3 odstavnej plochy kamiónov (ADR-041 bod 5, TR4-02)." },
+        "stallLengthCells": { "type": "integer", "minimum": 1, "description": "Dĺžka státia v bunkách (ADR-041 bod 5: 1 × 3); státie zaberá `stallLengthCells` riadkov pásma." }
+      }
+    },
+    "noParams": {
+      "type": "object",
+      "maxProperties": 0,
+      "description": "Kind zatiaľ nemá typované parametre."
+    }
+  }
+}

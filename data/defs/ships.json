@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "items": [
+    {
+      "id": "feeder",
+      "displayName": "Feeder",
+      "lengthCells": 6,
+      "widthCells": 2,
+      "draftClass": 1,
+      "capacityUnits": 120,
+      "speedCellsPerTick": 0.15,
+      "cargoCategories": ["container", "bulk", "liquid", "gas", "roro"],
+      "berthAllowanceTicks": 17280,
+      "lashingTicksPerUnit": 6,
+      "paperworkTicks": 360
+    },
+    {
+      "id": "handy",
+      "displayName": "Handysize",
+      "lengthCells": 10,
+      "widthCells": 2,
+      "draftClass": 1,
+      "capacityUnits": 300,
+      "speedCellsPerTick": 0.15,
+      "cargoCategories": ["container", "bulk", "liquid", "gas", "roro"],
+      "berthAllowanceTicks": 17280,
+      "lashingTicksPerUnit": 6,
+      "paperworkTicks": 540
+    }
+  ]
+}

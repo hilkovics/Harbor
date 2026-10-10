@@ -203,6 +203,12 @@ export abstract class YardBlock extends StorageModule implements StorageGuard {
     return height;
   }
 
+  /** Má stoh `(bay, row)` (pri 40′ aj `bay + 1`) rozbehnutú rezerváciu? Plánovač naň neukladá flat rack ani OOG: poradie príchodov nie je známe, takže by sa pri usadení mohol ocitnúť pod kontajnerom (TR6-02b). */
+  hasReservations(bay: number, row: number, wide: boolean): boolean {
+    const index = row * this.geometry.bays + bay;
+    return this.columnReserved[index] !== 0 || (wide && this.columnReserved[index + 1] !== 0);
+  }
+
   /** Najvyššia jednotka stohu vrátane rezervácií (rezervácia bez známej jednotky sa preskočí), alebo `null`. */
   effectiveTopUnit(bay: number, row: number): EntityId | null {
     if (this.columnReserved[row * this.geometry.bays + bay] === 0) return this.grid.top(bay, row);
@@ -405,6 +411,7 @@ export abstract class YardBlock extends StorageModule implements StorageGuard {
     const actual = slotOfCell(this.geometry, bay, row, actualTier);
     const size = this.reservedSize[slot];
     const unit = this.reservedUnit[slot];
+    this.assertSettleKeepsCoverOnTop(slot, actual, bay, row);
     const otherSize = this.reservedSize[actual];
     const otherUnit = this.reservedUnit[actual];
     if (otherSize !== 0 && otherSize !== size) {
@@ -420,6 +427,25 @@ export abstract class YardBlock extends StorageModule implements StorageGuard {
     }
     this.writeReservedCells(slot, otherSize, otherUnit);
     return { slot: actual, displaced: slot };
+  }
+
+  /**
+   * Usadenie rezervácie jednotky, na ktorú nesmie nič ležať (flat rack, OOG), na nižšiu vrstvu `actual` by ju dalo pod rezerváciu nad ňou (vrstva ≥ `actual`; rezerváciu na `actual` výmena posunie nad ňu) — pravidlo stohu by sa
+   * porušilo až pri uložení. Plánovač také rezervácie nevytvára (`hasReservations`); tu sa to overí pri usadení a porušenie je `ModuleError('stack_rule')` skôr, než sa niečo zmení (TR6-02b).
+   */
+  private assertSettleKeepsCoverOnTop(slot: number, actual: number, bay: number, row: number): void {
+    const id = this.reservedUnit[slot];
+    const unit = id > 0 ? this.ledger.get(id as EntityId) : undefined;
+    if (unit === undefined || !coversBlocked(unit, this.ledger.containerTypeOf(unit.id))) return;
+    const wide = this.reservedSize[slot] === 2;
+    for (let tier = this.geometry.maxTier - 1; tier >= tierOfSlot(this.geometry, actual); tier--) {
+      for (let i = 0; i < (wide ? 2 : 1); i++) {
+        const cell = slotOfCell(this.geometry, bay + i, row, tier);
+        if (cell !== slot && this.reservedSize[cell] !== 0 && this.reservedUnit[cell] !== id) {
+          throw new ModuleError('stack_rule', `${this.label}: rezerváciu flat racku / OOG #${String(id)} nemožno usadiť na vrstvu ${String(tierOfSlot(this.geometry, actual))} pod rezerváciu slotu ${String(cell)}`);
+        }
+      }
+    }
   }
 
   /**

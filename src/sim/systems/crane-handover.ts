@@ -279,6 +279,19 @@ function exchangeWithWaitingTractor(world: World, crane: CraneModule, job: Trans
   }
 }
 
+/**
+ * Drží žeriav v `placing` jednotku vykládky, ktorú smie prevziať len ťahač (job s legom stroja bloku, RTG) a ktorého ťahač ešte nestojí pod hákom? Také odovzdanie nemožno odložiť
+ * na apron (`deliver`), žeriav teda čaká na ťahač — a vozidlo s exportom pod hákom by mu zahradilo bunku (vzájomné čakanie, TR6-02b). `vehicle-system` v tom prípade vozidlo s exportom
+ * nechá odložiť jednotku na apron a uvoľniť hák (`yieldHook`).
+ */
+export function holdsUnloadForTractor(world: World, crane: CraneModule): boolean {
+  if (crane.state !== 'placing' || CRANE_CYCLE_TRAITS[crane.cycle].direction !== 'unload' || crane.heldUnitId === null) return false;
+  const job = world.jobOfUnit(crane.heldUnitId);
+  if (job === undefined || !jobNeedsMachine(world, job)) return false;
+  const vehicle = job.vehicleId === null ? undefined : world.vehicles.get(job.vehicleId);
+  return vehicle?.state !== 'loading';
+}
+
 const HOOK_HANDOVER: Handover = {
   vehiclesUnderHook: true,
   reservesUnloadSlot: false,

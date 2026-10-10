@@ -45,7 +45,8 @@ export const VEHICLE_TRANSITIONS: ReadonlyMap<VehicleState, readonly VehicleStat
   ['loading', Object.freeze(['to_dropoff', 'rehandling'] as const)],
   ['rehandling', Object.freeze(['loading', 'idle'] as const)],
   ['to_dropoff', Object.freeze(['unloading', 'no_path'] as const)],
-  ['unloading', Object.freeze(['idle'] as const)],
+  // `unloading → to_dropoff`: vozidlo s exportom pod hákom ustúpi vykládke a ide odložiť jednotku na apron (`yieldHook`, TR6-02b).
+  ['unloading', Object.freeze(['idle', 'to_dropoff'] as const)],
   ['no_path', Object.freeze(['to_pickup', 'to_dropoff'] as const)],
   // Cesta do depa zanikla alebo ju vozidlo nenašlo → `idle` (skúsi znova); dispatcher priradí job priamo (`to_pickup`).
   ['to_depot', Object.freeze(['parked', 'to_pickup', 'idle'] as const)],

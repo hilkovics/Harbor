@@ -141,6 +141,8 @@ function scoreColumn(world: World, block: YardBlock, unit: CargoUnit, bay: numbe
   }
   // Pravidlá typov (R5, ADR-042): reefer len na stohu so zásuvkou; na flat rack ani na OOG nič neukladáme.
   if (needsPlug(unit, world.defs.containerTypes) && !block.isPowered(bay, row)) return false;
+  // Flat rack a OOG ostanú v stohu navrchu: s rozbehnutou rezerváciou v stohu by mohli prísť skôr než kontajner, ktorý sa nad nich plánoval (TR6-02b).
+  if (coversBlocked(unit, world.cargo.containerTypeOf(unit.id)) && block.hasReservations(bay, row, wide)) return false;
   if (height > 0) {
     const coverId = block.effectiveTopUnit(bay, row);
     const cover = coverId === null ? undefined : world.cargo.get(coverId);

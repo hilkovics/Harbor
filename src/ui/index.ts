@@ -280,3 +280,20 @@ export { ENERGY_CATEGORY_LABEL, FinancePanel } from './finance-panel';
 export type { FinancePanelProps, FinanceCategoryRow } from './finance-panel';
 export { CONTAINER_TYPE_ICONS, CONTAINER_TYPE_LABELS } from './contracts-panel';
 export type { ContainerTypeKey, ContractTypeChip } from './contracts-panel';
+export {
+  RAIL_WAGON_CAPACITY_TEU,
+  RailTerminalInspector,
+  railBufferPct,
+  railDelayText,
+  railDepartureText,
+  railTerminalTone,
+  railWagonFill,
+} from './rail-terminal-inspector';
+export type {
+  RailTerminalInspectorData,
+  RailTerminalInspectorProps,
+  RailTrainData,
+  RailWagonData,
+} from './rail-terminal-inspector';
+export { TRAIN_STATUS_LABELS, TRAIN_STATUS_TONES, TrainTimetable } from './train-timetable';
+export type { TrainTimetableProps, TrainTimetableRow, TrainTimetableStatus } from './train-timetable';

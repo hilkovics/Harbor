@@ -33,6 +33,7 @@ import {
   formatFraction,
   formatMoney,
   formatMoneyDelta,
+  formatPercent,
   formatXp,
   moneySign,
   type TimeScale,
@@ -1081,6 +1082,20 @@ export interface ContractCardProps {
   readonly onDecline: (id: ContractCardId) => void;
   /** TR5-04: zmes typov kontajnerov (čipy + odznak OOG); bez nej sa rad nekreslí. */
   readonly typeMix?: readonly ContractTypeChip[];
+  /** TR6-04: podiel železničnej dopravy v percentách (0–100); bez neho alebo neplatný ako odznak sa nekreslí. */
+  readonly railSharePct?: number;
+}
+
+/** Odznak železničného podielu: ikona koľaje + `60 % vlakom`; neplatné číslo = nekreslí sa. */
+function RailSharePill({ pct }: { readonly pct: number | undefined }) {
+  if (pct === undefined || !Number.isFinite(pct)) return null;
+  const clamped = Math.min(100, Math.max(0, pct));
+  return (
+    <span className="contract-card__pill contract-card__pill--plain contract-card__rail" data-pct={clamped}>
+      <Icon name="ic_rail" className="contract-card__pill-icon" />
+      <span data-field="rail-share">{`${formatPercent(clamped)} vlakom`}</span>
+    </span>
+  );
 }
 
 /** Riadok čipov zmesi typov; čip s nulou je stlmený, OOG odznak sa kreslí len pri `oogCount > 0`. */
@@ -1129,7 +1144,7 @@ const KIND_ARIA_NAME: Readonly<Record<ContractCardKind, string>> = {
 };
 
 /** Jedna karta kontraktu (import, export booking, repositioning alebo prekládka; roundtrip skladá `VoyageCard`). */
-export function ContractCard({ contract, time, onAccept, onDecline, typeMix: typeMixProp }: ContractCardProps) {
+export function ContractCard({ contract, time, onAccept, onDecline, typeMix: typeMixProp, railSharePct }: ContractCardProps) {
   const typeMix = typeMixProp ?? contract.typeMix;
   const { id, state } = contract;
   const kind = contractKind(contract);
@@ -1165,6 +1180,7 @@ export function ContractCard({ contract, time, onAccept, onDecline, typeMix: typ
       <div className="contract-card__chips">
         <SlaPill contract={contract} time={time} />
         <ShipPill contract={contract} time={time} />
+        <RailSharePill pct={railSharePct} />
         <span className="contract-card__spacer" />
         <StatusLabel contract={contract} time={time} />
       </div>

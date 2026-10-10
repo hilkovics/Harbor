@@ -9,7 +9,11 @@ import { Container, Graphics, Sprite } from 'pixi.js';
 import { CargoSprite, type CargoSpriteDeps } from './cargo-sprite';
 import { containerKey } from './container-sprites';
 import { MANIFEST_CELL_PX, locomotiveSprite, manifestScale, wagonSprite, type TrainCarSprite, type WagonSprite } from './entity-assets';
+import { trainPosesOnPaths, type RailPath } from './rail-path';
 import type { ContainerVM, TrainCarVM, TrainVM } from './view-models';
+
+/** Dĺžka voza (lokomotíva aj vagón 60′) v bunkách — footprint 1 × 3. */
+const CAR_LENGTH_CELLS = 3;
 
 /** Hrúbka obrysu fallbacku ako zlomok bunky (2 px pri 64 px). */
 const OUTLINE_CELLS = 2 / 64;
@@ -146,6 +150,7 @@ export class TrainView {
   constructor(
     vm: TrainVM,
     private readonly deps: CargoSpriteDeps,
+    private readonly paths: () => readonly RailPath[] = () => [],
   ) {
     this.id = vm.id;
     this.last = vm;
@@ -170,7 +175,12 @@ export class TrainView {
   update(vm: TrainVM): void {
     this.last = vm;
     while (this.cars.length > vm.cars.length) this.cars.pop()?.destroy();
-    vm.cars.forEach((car, i) => {
+    const head = vm.cars[0];
+    // Hlava z simu sa premietne na hladkú os koľaje, vozy sa rozložia po nej (podvozky na koľaji, pevná medzera spojky).
+    const poses = head === undefined ? undefined : trainPosesOnPaths(this.paths(), head, vm.cars.length, CAR_LENGTH_CELLS);
+    vm.cars.forEach((simCar, i) => {
+      const pose = poses?.[i];
+      const car = pose === undefined ? simCar : { ...simCar, x: pose.x, y: pose.y, angle: pose.angle };
       let view: TrainCarView | undefined = this.cars[i];
       if (view !== undefined && view.kind !== car.kind) {
         view.destroy();

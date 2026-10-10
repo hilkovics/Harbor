@@ -1,69 +1,41 @@
 /**
  * Pevné view-modely pre demo renderu karty TR6-03 (`r6-rail.html`, R6 železnica s RMG) — bez simu a bez UI.
  *
- * Scéna `terminal`: koľaj z východu sa v zákrute (44; 22) stáča na juh a ide pozdĺž terminálu (stĺpec x = 44) ; vlak
- * (lokomotíva + 6 vagónov 60′, časť naložená) stojí hlavou na juhu, jeho chvost je ešte v zákrute (kĺbové uhly voz po voze); RMG (rám 6 × 2) nad koľajami a
- * bufferom zdvíha kontajner z vagóna. Pózy vozov vznikajú z lomenej čiary koľaje (`carPoses`), nie ručne.
+ * Scéna `terminal`: dlhá koľaj z východu s dvoma veľkými zákrutami (S, polomer `RAIL_CURVE_RADIUS_CELLS`) a tretou pri RMG (stĺpec x = 44); vlak
+ * (lokomotíva + 6 vagónov 60′, časť naložená) stojí hlavou na juhu a jeho chvost je ešte v zákrutách; RMG (rám 6 × 2) nad koľajami a
+ * bufferom zdvíha kontajner z vagóna. Pózy vozov vznikajú z hladkej osi koľaje (`placeCars`), nie ručne.
  *
  * `tests/render/r6-rail.test.ts` stráži konzistenciu (vozy na koľaji, uhly po zákrute, sloty kontajnerov).
  */
 import type { CellCoord } from '@sim/grid';
 import type { ContainerVM, EntitiesVM, MachineVM, TrainCarVM, TrainVM } from '../view-models';
+import { buildRailPaths, placeCars, type RailPath } from '../rail-path';
 import type { R1Scene } from './r1-traffic.fixtures';
 
 export type R6Scene = R1Scene;
 
 /** Dĺžka vozňa a lokomotívy v bunkách (footprint 1 × 3). */
 export const CAR_LENGTH_CELLS = 3;
-/** Vzdialenosť „náprav“ od stredu vozňa (bunky): oblúk sa láme medzi nimi. */
-const AXLE_HALF_CELLS = 1.2;
 
 export const TRAIN_ID = 61;
 export const RMG_ID = 62;
+/** Zvislá koľaj pri RMG (stĺpec) a jej južný koniec. */
 export const TRACK_X = 44;
-export const CORNER_Y = 22;
-export const TRACK_END_X = 54;
-export const HEAD_Y = 36;
+export const HEAD_Y = 38;
 
-interface Pt {
-  x: number;
-  y: number;
-}
-
-/** Os koľaje od hlavy vlaku (juh) cez zákrutu na východ: stredy buniek. */
-export const TRACK_PATH: readonly Pt[] = [
-  { x: TRACK_X + 0.5, y: HEAD_Y + 0.5 },
-  { x: TRACK_X + 0.5, y: CORNER_Y + 0.5 },
-  { x: TRACK_END_X + 0.5, y: CORNER_Y + 0.5 },
+/** Koľaje: východ (y = 16) → juh (x = 50) → západ (y = 24) → juh (x = 44): dve veľké zákruty S a tretia, každá s polomerom 3 bunky. */
+export const RAILS: readonly CellCoord[] = [
+  ...Array.from({ length: 9 }, (_, i) => ({ x: 50 + i, y: 16 })),
+  ...Array.from({ length: 8 }, (_, i) => ({ x: 50, y: 17 + i })),
+  ...Array.from({ length: 5 }, (_, i) => ({ x: 45 + i, y: 24 })),
+  ...Array.from({ length: HEAD_Y - 23 }, (_, i) => ({ x: TRACK_X, y: 24 + i })),
 ];
 
-/** Bod lomenej čiary vo vzdialenosti `s` od jej začiatku (za koncom pokračuje v smere posledného úseku). */
-export function pointAt(path: readonly Pt[], s: number): Pt {
-  let left = s;
-  for (let i = 0; i + 1 < path.length; i++) {
-    const a = path[i]!;
-    const b = path[i + 1]!;
-    const len = Math.hypot(b.x - a.x, b.y - a.y);
-    if (left <= len || i + 2 === path.length) return { x: a.x + ((b.x - a.x) * left) / len, y: a.y + ((b.y - a.y) * left) / len };
-    left -= len;
-  }
-  return path[0]!;
-}
+/** Hladká os koľaje (od východného konca po južný) — rovnaká, akú kreslí `RoadLayer`. */
+export const TRACK_PATH: RailPath = buildRailPaths(RAILS)[0]!;
 
-/**
- * Pózy `count` vozov za sebou od hlavy po lomenej čiare: stred voza = stred medzi prednou a zadnou „nápravou“, uhol = smer jazdy
- * (0 = hore, v smere hodinových ručičiek; smer ide od zadnej nápravy k prednej).
- */
-export function carPoses(path: readonly Pt[], count: number): { x: number; y: number; angle: number }[] {
-  return Array.from({ length: count }, (_, k) => {
-    const mid = CAR_LENGTH_CELLS * k + CAR_LENGTH_CELLS / 2;
-    const front = pointAt(path, mid - AXLE_HALF_CELLS);
-    const rear = pointAt(path, mid + AXLE_HALF_CELLS);
-    const dx = front.x - rear.x;
-    const dy = front.y - rear.y;
-    return { x: (front.x + rear.x) / 2, y: (front.y + rear.y) / 2, angle: (Math.atan2(dx, -dy) * 180) / Math.PI };
-  });
-}
+/** Hlava vlaku stojí 5 buniek pred južným koncom, chvost je ešte v druhej zákrute. */
+export const HEAD_S = TRACK_PATH.length - 5;
 
 const box = (sizeFt: 20 | 40, lineId: string | null, containerType = 'dry'): ContainerVM => ({
   sizeFt,
@@ -83,8 +55,8 @@ export const WAGON_CARGO: readonly (readonly ContainerVM[])[] = [
 ];
 
 function trainVM(): TrainVM {
-  const poses = carPoses(TRACK_PATH, 1 + WAGON_CARGO.length);
-  const cars: TrainCarVM[] = poses.map((pose, i) => ({ kind: i === 0 ? 'loco' : 'wagon', ...pose, cargo: i === 0 ? [] : (WAGON_CARGO[i - 1] ?? []) }));
+  const poses = placeCars(TRACK_PATH, HEAD_S, 1, 1 + WAGON_CARGO.length, CAR_LENGTH_CELLS);
+  const cars: TrainCarVM[] = poses.map((pose, i) => ({ kind: i === 0 ? 'loco' : 'wagon', x: pose.x, y: pose.y, angle: pose.angle, cargo: i === 0 ? [] : (WAGON_CARGO[i - 1] ?? []) }));
   return { id: TRAIN_ID, cars, state: 'at_terminal', departureTick: 4800 };
 }
 
@@ -101,16 +73,10 @@ export const RMG: MachineVM = {
   cargo: box(40, 'blue_anchor'),
 };
 
-/** Koľaje: hlavná (zákruta + juh) . */
-export const RAILS: readonly CellCoord[] = [
-  ...Array.from({ length: TRACK_END_X - TRACK_X + 1 }, (_, i) => ({ x: TRACK_X + i, y: CORNER_Y })),
-  ...Array.from({ length: HEAD_Y - CORNER_Y }, (_, i) => ({ x: TRACK_X, y: CORNER_Y + 1 + i })),
-];
-
 const TERMINAL_VM: EntitiesVM = { modules: [], cranes: [], ships: [], vehicles: [], trucks: [], machines: [RMG], trains: [trainVM()] };
 
 export const R6_SCENES = Object.freeze({
-  terminal: { roads: [], vm: TERMINAL_VM, view: { centerX: 47, centerY: 28.5, zoom: 0.5 } } satisfies R6Scene,
+  terminal: { roads: [], vm: TERMINAL_VM, view: { centerX: 50, centerY: 27, zoom: 0.5 } } satisfies R6Scene,
   rmg: { roads: [], vm: TERMINAL_VM, view: { centerX: 45.5, centerY: 30, zoom: 1.6 } } satisfies R6Scene,
 });
 export type R6SceneName = keyof typeof R6_SCENES;

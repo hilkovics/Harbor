@@ -3,6 +3,7 @@
  */
 import { Container } from 'pixi.js';
 import type { CargoSpriteDeps } from './cargo-sprite';
+import type { RailPath } from './rail-path';
 import { TrainView } from './train-view';
 import type { TrainVM } from './view-models';
 import { ViewSync } from './view-sync';
@@ -11,10 +12,10 @@ export class TrainLayer {
   readonly view = new Container({ label: 'trains' });
   private readonly trains: ViewSync<TrainVM, TrainView>;
 
-  constructor(deps: CargoSpriteDeps) {
+  constructor(deps: CargoSpriteDeps, paths: () => readonly RailPath[] = () => []) {
     this.trains = new ViewSync<TrainVM, TrainView>({
       create: (vm) => {
-        const view = new TrainView(vm, deps);
+        const view = new TrainView(vm, deps, paths);
         this.view.addChild(view.view);
         return view;
       },

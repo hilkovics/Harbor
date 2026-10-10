@@ -172,7 +172,7 @@ export class WorldRenderer {
     this.ships = new EntityLayer(entityDeps);
     this.cranes = new CraneLayer(entityDeps);
     this.machines = new MachineLayer(entityDeps);
-    this.trains = new TrainLayer(entityDeps);
+    this.trains = new TrainLayer(entityDeps, () => this.rails.paths);
     this.jams = new TrafficJamLayer(entityDeps);
     this.build = build;
     this.world.addChild(

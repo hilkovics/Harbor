@@ -123,6 +123,12 @@ export interface RoadPalette {
   readonly arrow: ColorValue;
 }
 
+/** Farby koľají (R6): podložka a koľajnice `--rail-base`, pražce `--rail-tie` (procedurálne kreslenie koľají, `rail-layer`). */
+export interface RailPalette {
+  readonly base: ColorValue;
+  readonly tie: ColorValue;
+}
+
 /** Farby obrysov parciel podľa vlastníctva (DESIGN_BRIEF §3 „Herný svet“). */
 export interface ParcelPalette {
   readonly forSale: ColorValue;
@@ -137,6 +143,8 @@ export interface RenderPalette {
   readonly terrain: TerrainPalette;
   readonly road: RoadPalette;
   readonly parcel: ParcelPalette;
+  /** Farby koľají; bez nich sa koľaje kreslia len spritmi (testy s ručnou paletou). */
+  readonly rail?: RailPalette;
 }
 
 /** Stmaví farbu na `factor` (0…1) jej jasu — každý kanál sa vynásobí a zaokrúhli; priehľadnosť ostáva. */
@@ -172,6 +180,7 @@ export function loadRenderPalette(resolve: TokenResolver = documentTokenResolver
       owned: color('--parcel-owned'),
       leased: color('--parcel-leased'),
     },
+    rail: { base: color('--rail-base'), tie: color('--rail-tie') },
   };
 }
 

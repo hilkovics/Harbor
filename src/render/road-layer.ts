@@ -40,6 +40,8 @@ import { ROAD_ASPHALT_PX } from './lane';
 import { noConnectorMask, type ConnectorMaskAt } from './module-connectors';
 import { ROAD_EDGE_PX, narrowRoadPaths, type PathOp } from './narrow-road';
 import type { SpriteTextures } from './sprite-atlas';
+import { drawRailPath } from './rail-draw';
+import { buildRailPaths, cellKey, type RailPath } from './rail-path';
 import type { RenderPalette } from './tokens';
 
 /** Vrstva dopravy, ktorú tento layer kreslí (`road` predvolene; R6: aj `rail` — koľaje s rovnakým autotilingom). */
@@ -123,6 +125,10 @@ export class RoadLayer {
   private readonly contexts = new Map<AutotileShape, GraphicsContext>();
   /** Zdieľaná geometria úzkych ciest podľa tvaru a masky lievikov (vytvára sa lazy). */
   private readonly narrowContexts = new Map<string, GraphicsContext>();
+  /** R6: bunky koľají (kľúč `x,y`) a z nich postavené hladké cesty (oblúky `RAIL_CURVE_RADIUS_CELLS`), kreslené procedurálne nad dlaždicami. */
+  private readonly railCells = new Map<string, CellCoord>();
+  private railPaths: RailPath[] = [];
+  private railGraphics: Graphics[] = [];
 
   /**
    * @param textures sprity ciest z `SpriteAtlas`; `null` = dočasné `Graphics` z tokenov
@@ -137,6 +143,11 @@ export class RoadLayer {
     private readonly layer: TransportLayer = 'road',
   ) {
     this.rebuild();
+  }
+
+  /** Hladké cesty koľají (prázdne pre cesty a bez tokenov koľají) — podľa nich sa kladú vozy vlaku. */
+  get paths(): readonly RailPath[] {
+    return this.railPaths;
   }
 
   /** Počet nakreslených dlaždíc ciest. */
@@ -167,6 +178,7 @@ export class RoadLayer {
     for (let y = 0; y < this.grid.height; y++) {
       for (let x = 0; x < this.grid.width; x++) this.refresh(x, y);
     }
+    this.rebuildRailPaths();
   }
 
   /**
@@ -178,11 +190,14 @@ export class RoadLayer {
     for (const { x, y } of autotileAffected(this.grid, cells)) {
       if (this.refresh(x, y)) changed += 1;
     }
+    if (changed > 0) this.rebuildRailPaths();
     return changed;
   }
 
   destroy(): void {
     this.tiles.clear();
+    this.railGraphics = [];
+    this.railPaths = [];
     this.view.destroy({ children: true }); // dlaždice najprv, potom zdieľané geometrie
     for (const context of this.contexts.values()) context.destroy();
     for (const context of this.narrowContexts.values()) context.destroy();
@@ -190,11 +205,35 @@ export class RoadLayer {
     this.narrowContexts.clear();
   }
 
+  /** Zostaví hladké cesty koľají z buniek a skryje dlaždice ich vnútorných buniek (uzly — koniec, T, kríž, tesné rohy — ostanú spritmi). */
+  private rebuildRailPaths(): void {
+    const rail = this.palette.rail;
+    if (this.layer !== 'rail' || rail === undefined) return;
+    for (const g of this.railGraphics) g.destroy();
+    this.railGraphics = [];
+    this.railPaths = buildRailPaths([...this.railCells.values()]);
+    const hidden = new Set<string>();
+    for (const path of this.railPaths) {
+      for (const key of path.cells) hidden.add(key);
+      const g = new Graphics();
+      drawRailPath(g, path, this.palette.cellPx, rail);
+      this.view.addChild(g);
+      this.railGraphics.push(g);
+    }
+    for (const [index, tile] of this.tiles) {
+      tile.display.visible = !hidden.has(cellKey(index % this.grid.width, Math.floor(index / this.grid.width)));
+    }
+  }
+
   /** Zosúladí dlaždicu bunky s mriežkou; `true`, ak sa niečo zmenilo. */
   private refresh(x: number, y: number): boolean {
     const index = this.grid.index(x, y);
     const existing = this.tiles.get(index);
     const wanted = autotileTile(this.grid, x, y, this.layer, this.connectorMask(x, y));
+    if (this.layer === 'rail') {
+      if (wanted) this.railCells.set(cellKey(x, y), { x, y });
+      else this.railCells.delete(cellKey(x, y));
+    }
     const style = wanted ? this.styleOf(x, y, wanted) : WIDE_STYLE;
     if (existing && wanted && existing.shape === wanted.shape && existing.rotation === wanted.rotation && existing.style === style) {
       return false;

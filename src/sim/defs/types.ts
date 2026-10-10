@@ -799,18 +799,16 @@ export interface TractorsDef {
   readonly maxPerSts: number;
 }
 
-/** Priority RMG (`equipment.json` → `rmg.priorities`, ADR-043): vlak > ťahač > housekeeping; menšie číslo = vyššia priorita, hodnoty musia ostro rásť v tomto poradí. */
-export const RMG_PRIORITY_KINDS = ['train', 'tractor', 'housekeeping'] as const;
+/**
+ * Priority RMG (`equipment.json` → `rmg.priorities`, ADR-043): vlak > ťahač (loď = ťahač od STS, potom kamión) > housekeeping; menšie číslo = vyššia priorita, hodnoty musia ostro rásť
+ * v tomto poradí.
+ */
+export const RMG_PRIORITY_KINDS = ['train', 'ship', 'truck', 'housekeeping'] as const;
 export type RmgPriorityKind = (typeof RMG_PRIORITY_KINDS)[number];
 
-/** Časy RMG železničného terminálu (`equipment.json` → `rmg`, ADR-043; samotný stroj prinesie TR6-02): tiky ako pri RTG, navyše zmena vagóna. */
-export interface RmgDef {
-  /** Rýchlosť pojazdu rámu pozdĺž koľají v bays za tick. */
-  readonly gantryCellsPerTick: number;
-  readonly hoistTicksPerTier: number;
-  readonly trolleyTicksPerRow: number;
-  readonly lockTicks: number;
-  /** Priority fronty stroja (menšie = skôr): vlak > ťahač > housekeeping. */
+/** RMG železničného terminálu (`equipment.json` → `rmg`, ADR-043 TR6-02): ako RTG (`RtgDef`: časy, predzásobenie ťahača) a navyše priorita práce pre vlak (`priorities.train`). */
+export interface RmgDef extends RtgDef {
+  /** Priority fronty stroja (menšie = skôr): vlak > ťahač (loď, kamión) > housekeeping. */
   readonly priorities: { readonly [K in RmgPriorityKind]: number };
 }
 

@@ -102,14 +102,17 @@ describe('jazda, pobyt a odchod', () => {
     expect(world.rail.counters.delayTicksMax).toBeGreaterThan(0);
   });
 
-  it('prázdny vlak, ktorý nie je plný, odíde v pláne; náklad z príchodu ho drží (odchod až po vyložení)', () => {
-    const { world } = railWorld({ timetable: { firstArrivalHour: 0, dwellMinutes: 10 } });
+  it('náklad z príchodu vlak podrží, kým ho RMG nevyloží do bufferu; potom vlak odíde v pláne (TR6-02)', () => {
+    const { world, terminal } = railWorld({ timetable: { firstArrivalHour: 0, dwellMinutes: 10 } });
     runUntil(world, (w) => [...w.trains.values()][0]?.state === 'dwelling', 2000);
     const train = [...world.trains.values()][0];
-    // Jednotka exportu na vlaku (vznik v in_train) ho podrží: vlak neodíde, kým ju RMG (TR6-02) nevyloží.
-    world.cargo.create(TEU, { kind: 'in_train', trainId: train.id, slot: 0 }, EXPORT_CONTRACT, EXPORT_LABELS);
-    for (let i = 0; i < 400; i++) world.tick();
+    // Jednotka exportu na vlaku (vznik v in_train): odchod čaká na vykládku RMG, ten ju uloží do bufferu a vlak po pobyte odíde prázdny.
+    const unit = world.cargo.create(TEU, { kind: 'in_train', trainId: train.id, slot: 0 }, EXPORT_CONTRACT, EXPORT_LABELS);
     expect(train.state).toBe('dwelling');
+    runUntil(world, (w) => w.cargo.get(unit.id)?.location.kind === 'in_storage', 400);
+    expect(world.cargo.get(unit.id)?.location).toMatchObject({ kind: 'in_storage', moduleId: terminal.id });
+    runUntil(world, (w) => w.rail.counters.trainsDeparted === 1, 800);
+    expect(world.cargo.get(unit.id)?.location.kind).toBe('in_storage');
   });
 });
 

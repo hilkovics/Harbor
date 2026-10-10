@@ -33,9 +33,12 @@
     "lockTicks": 1,
     "priorities": {
       "train": 0,
-      "tractor": 1,
-      "housekeeping": 2
-    }
+      "ship": 1,
+      "truck": 2,
+      "housekeeping": 3
+    },
+    "prefetchCells": 6,
+    "handoverGiveUpTicks": 600
   },
   "tractors": {
     "defaultMode": "pool",

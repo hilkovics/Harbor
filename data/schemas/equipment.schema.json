@@ -163,9 +163,11 @@
         "hoistTicksPerTier",
         "trolleyTicksPerRow",
         "lockTicks",
-        "priorities"
+        "priorities",
+        "prefetchCells",
+        "handoverGiveUpTicks"
       ],
-      "description": "RMG \u017eelezni\u010dn\u00e9ho termin\u00e1lu (R6, ADR-043): \u010dasy v tickoch a priority vlak < \u0165aha\u010d < housekeeping (musia ostro r\u00e1s\u0165).",
+      "description": "RMG \u017eelezni\u010dn\u00e9ho termin\u00e1lu (R6, ADR-043): ako RTG (\u010dasy v tickoch, predz\u00e1sobenie) a priorita vlak < lo\u010f (\u0165aha\u010d od STS) < kami\u00f3n < housekeeping (musia ostro r\u00e1s\u0165).",
       "properties": {
         "gantryCellsPerTick": {
           "type": "number",
@@ -188,7 +190,8 @@
           "additionalProperties": false,
           "required": [
             "train",
-            "tractor",
+            "ship",
+            "truck",
             "housekeeping"
           ],
           "properties": {
@@ -196,7 +199,11 @@
               "type": "integer",
               "minimum": 0
             },
-            "tractor": {
+            "ship": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "truck": {
               "type": "integer",
               "minimum": 0
             },
@@ -205,6 +212,16 @@
               "minimum": 0
             }
           }
+        },
+        "prefetchCells": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Predz\u00e1sobenie nakl\u00e1dky (TR3-02): RTG za\u010dne cyklus `take` (zdvih zo stohu a presun na TP), ke\u010f je \u0165aha\u010d s jobom nakl\u00e1dky na ceste k TP najviac to\u013eko buniek pred n\u00edm; 0 = stroj \u010dak\u00e1, k\u00fdm \u0165aha\u010d doraz\u00ed na TP."
+        },
+        "handoverGiveUpTicks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "TR3-06b: po tolko tickoch cakania RTG s jednotkou v in_handler na tahac (no_path, nezhoda bunky pruhu) stroj jednotku vrati do stohu a cyklus zrusi."
         }
       }
     },

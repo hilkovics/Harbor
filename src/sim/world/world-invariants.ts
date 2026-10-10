@@ -458,8 +458,16 @@ const checkMachines: Check = (world) => {
       if (held > 1) return `${machine.label} drží ${String(held)} jednotiek (najviac 1)`;
       if (held === 1 && world.cargo.unitAtIndex('in_handler', machine.id, 0) !== cycle.unitId) return `${machine.label} drží inú jednotku než #${String(cycle.unitId)} cyklu ${cycle.kind}`;
       if (carrying !== (held === 1)) return `${machine.label} v stave '${state}' ${held === 1 ? 'drží jednotku skôr, než ju zdvihol' : 'nedrží jednotku po zdvihu'}`;
-      // `put` po zdvihu je bez vozidla a jobu (ťahač je voľný hneď po zdvihu, ADR-040 dodatok TR3-02); inak vozidlo cyklu čaká na TP.
-      if (cycle.kind === 'put' && cycle.vehicleId === null) {
+      // Cyklus s vlakom (RMG, R6): vlak stojí na koľaji terminálu stroja; `put` drží jednotku vo vlaku do zdvihu, `take` ju má v bufferi do zdvihu.
+      if (cycle.trainId !== undefined) {
+        const train = world.trains.get(cycle.trainId as EntityId);
+        if (train === undefined || train.state !== 'dwelling' || train.terminalId !== block.id) return `${machine.label}: vlak #${String(cycle.trainId)} cyklu ${cycle.kind} nestojí na koľaji terminálu stroja`;
+        if (cycle.vehicleId !== null || cycle.jobId !== null || cycle.kind === 'relocate') return `${machine.label}: cyklus s vlakom je put alebo take bez vozidla a jobu`;
+        const unit = world.cargo.get(cycle.unitId as EntityId);
+        const home = cycle.kind === 'put' ? 'in_train' : 'in_storage';
+        if (unit === undefined || (!carrying && unit.location.kind !== home) || (carrying && unit.location.kind !== 'in_handler')) return `${machine.label}: jednotka #${String(cycle.unitId)} cyklu ${cycle.kind} s vlakom nie je tam, kde má byť (${unit?.location.kind ?? '–'})`;
+      } else if (cycle.kind === 'put' && cycle.vehicleId === null) {
+        // `put` po zdvihu je bez vozidla a jobu (ťahač je voľný hneď po zdvihu, ADR-040 dodatok TR3-02); inak vozidlo cyklu čaká na TP.
         if (!carrying || cycle.jobId !== null) return `${machine.label}: cyklus put bez vozidla musí byť po zdvihu a bez jobu`;
       } else if (cycle.kind !== 'relocate' && cycle.truck) {
         // Kamión na TP vo fáze `handling` s jobom cyklu (ADR-041 bod 4); stroj naňho nikdy nečaká prefetchom.
@@ -476,7 +484,8 @@ const checkMachines: Check = (world) => {
       }
     }
     const { gantry, trolley, hoist } = machine.restPose;
-    if (!isWithin(gantry, block.geometry.bays) || trolley < -1 || trolley > block.geometry.rows - 1 || !isWithin(hoist, block.geometry.maxTier)) {
+    const lowestRow = -1 - (block instanceof RailTerminal ? block.tracks : 0);
+    if (!isWithin(gantry, block.geometry.bays) || trolley < lowestRow || trolley > block.geometry.rows - 1 || !isWithin(hoist, block.geometry.maxTier)) {
       return `${machine.label} stojí mimo bloku (bay ${String(gantry)}, rad ${String(trolley)}, vrstva ${String(hoist)})`;
     }
   }

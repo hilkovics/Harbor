@@ -86,6 +86,8 @@ import { YardBlock } from '../modules/yard-block';
 import { RtgBlock } from '../modules/rtg-block';
 import { MachineError } from '../machines/machine-error';
 import { ReachStacker } from '../machines/reach-stacker';
+import { RmgCrane } from '../machines/rmg-crane';
+import { RailTerminal } from '../modules/rail-terminal';
 import { RtgCrane } from '../machines/rtg-crane';
 import type { YardMachine } from '../machines/yard-machine';
 import { ReeferSystem } from '../systems/reefer-system';
@@ -706,7 +708,7 @@ export class World {
     // RTG blok sa stavia aj so svojím strojom (ADR-040 bod 3): stroj je súčasť ceny bloku.
     // OOG plocha (R5, ADR-042 TR5-02) má reach stacker namiesto RTG.
     if (module instanceof RtgBlock) {
-      this.addMachine(module.acceptsOog ? ReachStacker.create(this.ids.next(), module.id, this.defs.equipment.reachStacker, module.geometry.maxTier) : RtgCrane.create(this.ids.next(), module.id, this.defs.equipment.rtg, module.geometry.maxTier));
+      this.addMachine(module instanceof RailTerminal ? RmgCrane.create(this.ids.next(), module.id, this.defs.equipment.rmg, module.geometry.maxTier) : module.acceptsOog ? ReachStacker.create(this.ids.next(), module.id, this.defs.equipment.reachStacker, module.geometry.maxTier) : RtgCrane.create(this.ids.next(), module.id, this.defs.equipment.rtg, module.geometry.maxTier));
     }
     return module;
   }

@@ -72,8 +72,8 @@ describe('railShare', () => {
 });
 
 describe('export po koľaji', () => {
-  it('vlak privezie splatné železničné kontajnery: vznik v `in_train`, vagón po vagóne od lokomotívy, registrácia na booking; vlak ich drží (neodíde)', () => {
-    const { world } = railWorld(AFTER_PLAN);
+  it('vlak privezie splatné železničné kontajnery: vznik v `in_train`, vagón po vagóne od lokomotívy, registrácia na booking; RMG ich vyloží do bufferu a vlak odíde prázdny', () => {
+    const { world, terminal } = railWorld(AFTER_PLAN);
     const contract = railBooking(world, 4, 10_000);
     expect(contract.booking?.arrivalPlan).toHaveLength(4);
     const events = tickAll(world, 11_200);
@@ -87,10 +87,12 @@ describe('export po koľaji', () => {
     expect(wagonFillTeu(world.cargo, train)).toEqual([3, 1, 0, 0]);
     expect(trainSlotMap(world.cargo, train).slice(0, 5)).toEqual([true, true, true, true, false]);
     expect(findWorldViolation(world)).toBeUndefined();
-    // Nevyložený export vlak drží aj po plánovanom pobyte.
+    // RMG export vyloží do bufferu terminálu (`in_train → in_handler → in_storage`) a až potom vlak po plánovanom pobyte odíde prázdny (nič sa „nevyvezie“ po koľaji).
     tickAll(world, 1200);
-    expect(train.state).toBe('dwelling');
-    expect(world.rail.counters.trainsDeparted).toBe(0);
+    expect(world.cargo.countAt('in_train', train.id)).toBe(0);
+    expect(world.cargo.countAt('in_storage', terminal.id)).toBe(4);
+    expect(world.rail.counters.trainsDeparted).toBe(1);
+    expect(world.cargo.exportedCount).toBe(0);
   });
 
   it('vlak vezie len toľko, koľko sa zmestí; zvyšok počká na ďalší vlak', () => {

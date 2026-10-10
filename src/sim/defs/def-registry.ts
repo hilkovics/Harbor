@@ -325,11 +325,11 @@ const RTG_FIELDS: SpecTable<RtgDef> = {
 
 /** `equipment.json` → `rmg` (R6, ADR-043): časy RMG a priority vlak > ťahač > housekeeping. */
 const RMG_FIELDS: SpecTable<RmgDef> = {
-  gantryCellsPerTick: { kind: 'number', exclusiveMin: 0 },
-  hoistTicksPerTier: { kind: 'integer', min: 1 },
-  trolleyTicksPerRow: { kind: 'integer', min: 1 },
-  lockTicks: { kind: 'integer', min: 1 },
-  priorities: { kind: 'object', fields: { train: { kind: 'integer', min: 0 }, tractor: { kind: 'integer', min: 0 }, housekeeping: { kind: 'integer', min: 0 } } },
+  ...RTG_FIELDS,
+  priorities: {
+    kind: 'object',
+    fields: { train: { kind: 'integer', min: 0 }, ship: { kind: 'integer', min: 0 }, truck: { kind: 'integer', min: 0 }, housekeeping: { kind: 'integer', min: 0 } },
+  },
 };
 
 /** `rail.json` (R6, ADR-043): cestovný poriadok a vlak. */
@@ -725,7 +725,7 @@ function checkEquipment(def: Readonly<EquipmentDef>): Problem | undefined {
     const previous = RMG_PRIORITY_KINDS[i - 1];
     const kind = RMG_PRIORITY_KINDS[i];
     if (priorities[kind] <= priorities[previous]) {
-      return { path: `/rmg/priorities/${kind}`, message: `priorita '${kind}' (${String(priorities[kind])}) musí byť väčšia než '${previous}' (${String(priorities[previous])}) — poradie vlak > ťahač > housekeeping` };
+      return { path: `/rmg/priorities/${kind}`, message: `priorita '${kind}' (${String(priorities[kind])}) musí byť väčšia než '${previous}' (${String(priorities[previous])}) — poradie vlak > loď (ťahač) > kamión > housekeeping` };
     }
   }
   return undefined;

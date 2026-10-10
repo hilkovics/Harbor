@@ -68,7 +68,7 @@ describe('bundled defy R6', () => {
   });
 
   it('equipment.rmg: časy a priority vlak < ťahač < housekeeping', () => {
-    expect(defs.equipment.rmg).toEqual({ gantryCellsPerTick: 2, hoistTicksPerTier: 1, trolleyTicksPerRow: 1, lockTicks: 1, priorities: { train: 0, tractor: 1, housekeeping: 2 } });
+    expect(defs.equipment.rmg).toEqual({ gantryCellsPerTick: 2, hoistTicksPerTier: 1, trolleyTicksPerRow: 1, lockTicks: 1, prefetchCells: 6, handoverGiveUpTicks: 600, priorities: { train: 0, ship: 1, truck: 2, housekeeping: 3 } });
   });
 
   it('rmg_rail_block: 6 × 16, 2 koľaje, buffer 4 rady × 4 vrstvy po 16 bays, pruh pre ťahače a 4 konektory', () => {
@@ -90,7 +90,7 @@ describe('neplatné defy R6', () => {
     ['wagonTeu 0', (raw: Record<string, Json>) => ((raw['rail']!['train'] as Json)['wagonTeu'] = 0), 'rail'],
     ['wagonsPerTrain 0', (raw: Record<string, Json>) => ((raw['rail']!['timetable'] as Json)['wagonsPerTrain'] = 0), 'rail'],
     ['neznámy kľúč', (raw: Record<string, Json>) => ((raw['rail']!['train'] as Json)['colour'] = 'red'), 'rail'],
-    ['priority RMG nerastú', (raw: Record<string, Json>) => (((raw['equipment']!['rmg'] as Json)['priorities'] as Json)['tractor'] = 0), 'equipment'],
+    ['priority RMG nerastú', (raw: Record<string, Json>) => (((raw['equipment']!['rmg'] as Json)['priorities'] as Json)['ship'] = 0), 'equipment'],
   ])('%s sa odmietne', (_name, mutate, defName) => {
     const raw = rawDefs();
     mutate(raw);

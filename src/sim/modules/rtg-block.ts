@@ -28,7 +28,8 @@ export class RtgBlock extends YardBlock {
   constructor(init: ModuleInit) {
     super(init, RTG_BLOCK_CATEGORY);
     const { role, laneCol, tpSpacingBays, bays, rows, maxTier } = this.params;
-    if (role !== 'rtg_block' || laneCol === undefined || tpSpacingBays === undefined || bays === undefined || rows === undefined || maxTier === undefined) {
+    // `rail_terminal` je RTG blok s koľajami (`RailTerminal`, R6): pruh s TP a stroj bloku (RMG) má rovnaký.
+    if ((role !== 'rtg_block' && role !== 'rail_terminal') || laneCol === undefined || tpSpacingBays === undefined || bays === undefined || rows === undefined || maxTier === undefined) {
       throw new ModuleError('invalid_input', `${this.label}: RTG blok vyžaduje params.role 'rtg_block', geometriu bloku, laneCol a tpSpacingBays`);
     }
     this.laneCol = laneCol;

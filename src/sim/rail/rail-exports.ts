@@ -19,11 +19,18 @@ export function isRailExportIndex(railShareBp: number, index: number): boolean {
   return Math.floor(((index + 1) * railShareBp) / BASIS_POINTS) > Math.floor((index * railShareBp) / BASIS_POINTS);
 }
 
+/** Je položka `index` kontraktu železničná: patrí do podielu a smie ísť po koľaji (nie reefer ani OOG — terminál nemá zásuvky ani OOG plochu, ADR-043 TR6-02)? */
+export function isRailExportItem(world: World, contract: Contract, index: number): boolean {
+  if (!isRailExportIndex(contract.railShareBp, index) || contract.unitIsOog(index)) return false;
+  const type = contract.unitContainerType(index);
+  return !(world.defs.containerTypes.has(type) && world.defs.containerTypes.get(type).needsPower);
+}
+
 /** Najbližšia položka plánu príchodov kontraktu je železničná a vo svete je železničná služba (kamión ju nesmie obslúžiť). */
 export function isRailExportDue(world: World, contract: Contract): boolean {
   const booking = contract.booking;
   if (booking === null || contract.railShareBp === 0 || !world.hasRailService) return false;
-  return isRailExportIndex(contract.railShareBp, contract.volumeUnits - booking.arrivalPlan.length);
+  return isRailExportItem(world, contract, contract.volumeUnits - booking.arrivalPlan.length);
 }
 
 /**
@@ -40,7 +47,7 @@ export function loadRailExports(world: World, train: Train): number {
     if (booking === null || contract.railShareBp === 0) continue;
     for (let due = contract.nextArrivalTick; due !== undefined && due <= tick; due = contract.nextArrivalTick) {
       const index = contract.volumeUnits - booking.arrivalPlan.length;
-      if (!isRailExportIndex(contract.railShareBp, index)) break;
+      if (!isRailExportItem(world, contract, index)) break;
       const sizeFt = contract.unitSizeFt(index);
       const slot = findTrainSlot(world.cargo, train, teuOf({ sizeFt }));
       if (slot === undefined) break;

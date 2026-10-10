@@ -22,6 +22,7 @@ import type { CargoUnit } from '../cargo/cargo-unit';
 import { needsPlug, teuOf } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
 import { EmptyDepot } from '../modules/empty-depot';
+import { RailTerminal } from '../modules/rail-terminal';
 import { TruckGate } from '../modules/truck-gate';
 import type { Module } from '../modules/module';
 import { YardBlock, coversBlocked } from '../modules/yard-block';
@@ -29,6 +30,7 @@ import type { World } from '../world/world';
 import { emptyReturnRoom } from './empty-stock';
 import { distanceBetweenModules } from './module-access';
 import { plannedDepartureTick } from './planned-departure';
+import { railTerminalTakes } from './rail-units';
 
 /** Rezervovaná pozícia v bloku: modul a slot bunky (`YardBlock.slotOf`). */
 export interface YardChoice {
@@ -212,6 +214,7 @@ function scanBlock(world: World, block: YardBlock, unit: CargoUnit, distance: nu
 }
 
 /** Znovupoužiteľné polia blokov kandidátov (hot path: plánovač beží pre každú jednotku; obsah sa vždy najprv vyprázdni). */
+const RAIL_BLOCKS: YardBlock[] = [];
 const DEPOT_BLOCKS: YardBlock[] = [];
 const YARD_BLOCKS: YardBlock[] = [];
 const NO_BLOCKS: YardBlock[] = [];
@@ -226,6 +229,7 @@ function candidateTiers(world: World, unit: CargoUnit, from: Module): readonly Y
   const teu = teuOf(unit);
   // Blok so zásuvkami prijíma len reefery a reefer smie len do neho; OOG len do bloku, ktorý ho prijíma (R5, ADR-042).
   const plug = needsPlug(unit, world.defs.containerTypes);
+  RAIL_BLOCKS.length = 0;
   DEPOT_BLOCKS.length = 0;
   YARD_BLOCKS.length = 0;
   TIERS.length = 0;
@@ -234,10 +238,17 @@ function candidateTiers(world: World, unit: CargoUnit, from: Module): readonly Y
     if (!(module instanceof YardBlock) || module.category !== category) continue;
     const isDepot = module instanceof EmptyDepot;
     anyDepot ||= isDepot;
+    // Železničný terminál (R6, ADR-043): len import určený na vlak a export privezený vlakom tohto terminálu; ostatné jednotky doň nepatria.
+    const isRail = module instanceof RailTerminal;
+    if (isRail && !railTerminalTakes(world, module, unit, from)) continue;
     if (!module.acceptsDirection(unit.direction) || module.freeCount < teu || module.hasSockets !== plug || module.acceptsOog !== unit.oog || distanceBetweenModules(world, from, module) === Infinity) continue;
-    (isDepot ? DEPOT_BLOCKS : YARD_BLOCKS).push(module);
+    (isRail ? RAIL_BLOCKS : isDepot ? DEPOT_BLOCKS : YARD_BLOCKS).push(module);
   }
-  if (unit.direction !== 'empty') {
+  if (RAIL_BLOCKS.length > 0) {
+    // Železničná jednotka najprv do bufferu terminálu (kam ju vlak vezme); export z vlaka len tam; bez miesta v bufferi import ide do bežného bloku a odíde kamiónom.
+    TIERS.push(RAIL_BLOCKS);
+    if (unit.direction === 'import') TIERS.push(YARD_BLOCKS);
+  } else if (unit.direction !== 'empty') {
     TIERS.push(YARD_BLOCKS);
   } else if (from instanceof TruckGate) {
     TIERS.push(anyDepot ? DEPOT_BLOCKS : YARD_BLOCKS);
@@ -277,6 +288,17 @@ export function chooseYardSlot(world: World, unit: CargoUnit, from: Module): Yar
     if (best !== undefined) return { moduleId: best.id, slot: best.slotOf(BEST.bay, BEST.row, BEST.height) };
   }
   return null;
+}
+
+/**
+ * Najlepší stoh pre `unit` v konkrétnom bloku `block` (slot bunky), alebo `null`, keď tam jednotka nemá kam. Pre RMG: export vyložený z vlaka sa ukladá do bufferu svojho terminálu
+ * (`logistics/rail-units.ts`) bez ohľadu na iné bloky. Stav sveta nemení.
+ */
+export function chooseSlotInBlock(world: World, block: YardBlock, unit: CargoUnit): number | null {
+  if (block.freeCount < teuOf(unit)) return null;
+  resetBest();
+  scanBlock(world, block, unit, 0, undefined, 'best', 'place');
+  return BEST.block === undefined ? null : block.slotOf(BEST.bay, BEST.row, BEST.height);
 }
 
 /** Vyberie stoh (`chooseYardSlot`) a rezervuje jeho bunku; `null` = žiadny blok jednotku neprijme (nič sa nerezervovalo). */

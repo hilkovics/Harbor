@@ -12,6 +12,7 @@ import type { EntityId } from '../core/entity-id';
 import { YardBlock } from '../modules/yard-block';
 import type { World } from '../world/world';
 import type { StoredCargoGroup } from './stored-cargo-index';
+import { isRailBound } from './rail-units';
 import { unitPickable } from './yard-planner';
 
 /** Znovupoužiteľné pole kontajnerov nad jednotkou pre `blockedByLeavingUnit` (hot path; obsah sa vždy najprv vyprázdni). */
@@ -101,6 +102,8 @@ export function forEachPickupCandidate(world: World, visit: (unit: CargoUnit, bl
     for (const unitId of group.units) {
       const unit = world.cargo.get(unitId);
       if (unit === undefined || unit.location.kind !== 'in_storage' || unit.direction === 'empty' || world.jobOfUnit(unit.id) !== undefined) continue;
+      // Import v buffere železničného terminálu odvezie vlak (RMG), nie kamión (R6, ADR-043 TR6-02).
+      if (isRailBound(world, unit)) continue;
       const block = world.modules.get(unit.location.moduleId);
       if (!(block instanceof YardBlock) || blockedByLeavingUnit(world, unit, leavesByItself) || !unitPickable(world, unit)) continue;
       if (!visit(unit, block)) return;

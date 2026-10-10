@@ -6,14 +6,15 @@
  *    `Rng` sa nespotrebuje. Keď príchod nejde (obsadené koľaje, jazdí iný vlak), vlak vznikne v najbližšom ticku, ktorý to dovolí — oneskorenie sa meria.
  * 2. **Jazda** (vlaky vzostupne podľa id): `arriving` ide k zastávke (koniec koľaje), `departing` k portálu; posun o `train.speedMilliCellsPerTick`, bunku pred sebou smie vlak obsadiť,
  *    len ak ju nedrží iný vlak (obsadenie `rail.occupancy`, vlaky sa neprekrývajú, ADR-037). Na zastávke `arriving → dwelling` (`departAtTick = tick + dwell`).
- * 3. **Pobyt**: `dwelling` odíde (`→ departing`), keď `tick ≥ departAtTick` alebo je plný, ak na ňom nezostal náklad z príchodu (jednotky iného smeru než `import`, tie vyloží RMG, TR6-02) a po
- *    koľajisku nejazdí iný vlak. Odchod = po portál (chvost vlaku opustil trasu): jednotky `in_train → exported` (FIFO), `TrainDeparted`, vlak zanikne.
+ * 3. **Pobyt**: `dwelling` odíde (`→ departing`) v plánovanom čase (`tick ≥ departAtTick`) alebo keď je plný (všetky miesta obsadené), ak RMG dokončil jeho vykládku (nezostal náklad z príchodu — jednotky
+ *    iného smeru než `import` — a RMG nie je v cykle s ním; TR6-02: RMG vykladá a nakladá po vagónoch, `systems/rmg-train-work.ts`) a po koľajisku nejazdí iný vlak. Odchod = po portál (chvost vlaku opustil trasu): jednotky `in_train → exported` (FIFO), `TrainDeparted`, vlak zanikne.
  */
 import { crossingsHeld, syncCrossings } from '../rail/rail-crossings';
 import { MILLI_PER_CELL, Train } from '../rail/train';
 import { loadRailExports } from '../rail/rail-exports';
 import { isTrainFull } from '../rail/train-cargo';
 import type { World } from '../world/world';
+import { machineWorksOnTrain } from './rmg-train-work';
 
 /** Vlak so všetkým nákladom z príchodu vyloženým? (Zostáva len import naložený na odvoz.) */
 function hasInboundCargo(world: World, train: Train): boolean {
@@ -110,7 +111,7 @@ export class RailSystem {
     for (const train of [...rail.trains.values()]) {
       if (train.state === 'dwelling') {
         const due = train.departAtTick !== null && tick >= train.departAtTick;
-        if (mover !== undefined || !(due || isTrainFull(world.cargo, train)) || hasInboundCargo(world, train)) continue;
+        if (mover !== undefined || !(due || isTrainFull(world.cargo, train)) || hasInboundCargo(world, train) || machineWorksOnTrain(world, train.id)) continue;
         train.transition('departing');
         mover = train;
         // Vlak vyráža v nasledujúcom ticku — tento tick sa len rozbieha (obsadenie sa nemení).

@@ -4,7 +4,7 @@
   "description": "Železnica (R6, ADR-043): cestovný poriadok vlakov a vlak. Konfiguračný def bez items[] (ADR-009).",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "timetable", "train"],
+  "required": ["schemaVersion", "timetable", "train", "crossingClearTicks"],
   "properties": {
     "schemaVersion": { "const": 1, "description": "Verzia schémy defu." },
     "timetable": {
@@ -18,6 +18,7 @@
         "dwellMinutes": { "type": "integer", "minimum": 1, "description": "Plánovaný pobyt vlaku v termináli v herných minútach od zastavenia; vlak odíde skôr, keď je plný." }
       }
     },
+    "crossingClearTicks": { "type": "integer", "minimum": 1, "description": "Úrovňové priecestie: vlak ho rezervuje pred sebou toľko tickov jazdy vopred; cestné vozidlá doň po rezervácii nevstúpia (závora)." },
     "train": {
       "type": "object",
       "additionalProperties": false,

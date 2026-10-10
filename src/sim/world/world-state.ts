@@ -946,7 +946,7 @@ export function parseWorldState(raw: unknown, defs: DefRegistry, map: LoadedMap,
   const trucks = parseTrucks(state.trucks, defs, map, grid, nextId);
   const machines = parseMachines(state.machines, nextId);
   const trains = parseTrains(state.trains, defs, grid, nextId);
-  const rail = parseRailState(state.rail);
+  const rail = parseRailState(state.rail, grid);
   const contracts = parseContractsState(state, defs, clock);
   checkIdCollisions(modules, ships, vehicles, jobs, trucks, machines, trains, cargo);
   const economy = parseEconomyState(state.economy, clock);

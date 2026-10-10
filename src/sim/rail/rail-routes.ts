@@ -15,10 +15,18 @@ export interface RailRoute {
   readonly cells: readonly number[];
 }
 
-/** Najkratšia cesta po koľajiach z bunky `from` do `to` (obe musia mať koľaj) ako indexy buniek vrátane oboch koncov; `undefined`, keď neexistuje. */
-export function findRailPath(grid: Grid, from: CellCoord, to: CellCoord): readonly number[] | undefined {
+/** Bez priecestí (testy, ručné volania). */
+const NO_CROSSINGS: ReadonlySet<number> = new Set<number>();
+
+/** Je bunka `index` koľajová: vrstva `rail`, alebo úrovňové priecestie (cesta, ktorou vedie aj koľaj)? */
+export function isRailCell(grid: Grid, crossings: ReadonlySet<number>, index: number): boolean {
+  return grid.atIndex(index).road === 'rail' || crossings.has(index);
+}
+
+/** Najkratšia cesta po koľajiach (aj cez priecestia `crossings`) z bunky `from` do `to` (obe musia mať koľaj) ako indexy buniek vrátane oboch koncov; `undefined`, keď neexistuje. */
+export function findRailPath(grid: Grid, from: CellCoord, to: CellCoord, crossings: ReadonlySet<number> = NO_CROSSINGS): readonly number[] | undefined {
   if (!grid.inBounds(from.x, from.y) || !grid.inBounds(to.x, to.y)) return undefined;
-  if (grid.at(from.x, from.y).road !== 'rail' || grid.at(to.x, to.y).road !== 'rail') return undefined;
+  if (!isRailCell(grid, crossings, grid.index(from.x, from.y)) || !isRailCell(grid, crossings, grid.index(to.x, to.y))) return undefined;
   const start = grid.index(from.x, from.y);
   const goal = grid.index(to.x, to.y);
   const previous = new Map<number, number>([[start, -1]]);
@@ -30,8 +38,9 @@ export function findRailPath(grid: Grid, from: CellCoord, to: CellCoord): readon
     for (const { dx, dy } of DIRECTIONS_4) {
       const x = at.x + dx;
       const y = at.y + dy;
-      if (!grid.inBounds(x, y) || grid.at(x, y).road !== 'rail') continue;
+      if (!grid.inBounds(x, y)) continue;
       const next = grid.index(x, y);
+      if (!isRailCell(grid, crossings, next)) continue;
       if (previous.has(next)) continue;
       previous.set(next, current);
       queue.push(next);
@@ -47,13 +56,13 @@ export function findRailPath(grid: Grid, from: CellCoord, to: CellCoord): readon
  * Trasy portál → koľaj terminálu pre všetky železničné terminály vo svete (vzostupne podľa id modulu, potom podľa koľaje); koľaje bez napojenia chýbajú.
  * `portal` je bunka koľajového portálu mapy (`undefined` = mapa ho nemá → žiadne trasy).
  */
-export function computeRailRoutes(grid: Grid, portal: CellCoord | undefined, modules: Iterable<Module>): readonly RailRoute[] {
+export function computeRailRoutes(grid: Grid, portal: CellCoord | undefined, modules: Iterable<Module>, crossings: ReadonlySet<number> = NO_CROSSINGS): readonly RailRoute[] {
   if (portal === undefined) return [];
   const terminals = [...modules].filter((module): module is RailTerminal => module instanceof RailTerminal).sort((a, b) => a.id - b.id);
   const routes: RailRoute[] = [];
   for (const terminal of terminals) {
     for (let track = 0; track < terminal.tracks; track++) {
-      const approach = findRailPath(grid, portal, terminal.trackEntry(track));
+      const approach = findRailPath(grid, portal, terminal.trackEntry(track), crossings);
       if (approach === undefined) continue;
       const cells = [...approach, ...terminal.trackCells(track).map(({ x, y }) => grid.index(x, y))];
       routes.push(Object.freeze({ terminalId: terminal.id, track, cells: Object.freeze(cells) }));

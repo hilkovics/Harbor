@@ -72,10 +72,13 @@ describe('PlaceRoad.validate — odmietnutia', () => {
     expect(place(CELLS.starterLand).validate(world).reasons).toEqual(['occupied']);
   });
 
-  it('bunka s koľajou → occupied (cesta a koľaj sa nekrižujú, ADR-006)', () => {
+  it('bunka s koľajou → priecestie (ADR-043 TR6-02): validácia prejde, bunka sa stane cestou a koľaj ostane v `Rail.crossings`', () => {
     const world = newWorld();
     world.grid.at(CELLS.publicLand.x, CELLS.publicLand.y).road = 'rail';
-    expect(place(CELLS.publicLand).validate(world).reasons).toEqual(['occupied']);
+    expect(place(CELLS.publicLand).validate(world).ok).toBe(true);
+    place(CELLS.publicLand).apply(world);
+    expect(world.grid.at(CELLS.publicLand.x, CELLS.publicLand.y).road).toBe('road');
+    expect(world.rail.isCrossing(world.grid.index(CELLS.publicLand.x, CELLS.publicLand.y))).toBe(true);
   });
 
   it('atomickosť: jedna zlá bunka odmietne celý príkaz; cells/costCents = platná časť', () => {

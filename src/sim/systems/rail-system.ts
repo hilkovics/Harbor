@@ -9,7 +9,8 @@
  * 3. **Pobyt**: `dwelling` odíde (`→ departing`), keď `tick ≥ departAtTick` alebo je plný, ak na ňom nezostal náklad z príchodu (jednotky iného smeru než `import`, tie vyloží RMG, TR6-02) a po
  *    koľajisku nejazdí iný vlak. Odchod = po portál (chvost vlaku opustil trasu): jednotky `in_train → exported` (FIFO), `TrainDeparted`, vlak zanikne.
  */
-import { Train } from '../rail/train';
+import { crossingsHeld, syncCrossings } from '../rail/rail-crossings';
+import { MILLI_PER_CELL, Train } from '../rail/train';
 import { loadRailExports } from '../rail/rail-exports';
 import { isTrainFull } from '../rail/train-cargo';
 import type { World } from '../world/world';
@@ -62,6 +63,8 @@ function drive(world: World, train: Train): void {
       const holder = rail.occupancy[train.route[i]];
       if (holder !== 0 && holder !== train.id) return;
     }
+    // Úrovňové priecestie: do jeho bunky vlak vstúpi, len keď drží oba pruhové sloty (vozidlo na priecestí ho zdrží).
+    if (!crossingsHeld(world, train, train.occHi + 1, hi)) return;
     train.posMilli = next;
     rail.refreshOccupancy(train);
     if (train.posMilli >= train.stopMilli) {
@@ -72,6 +75,8 @@ function drive(world: World, train: Train): void {
     }
     return;
   }
+  const nextLo = Math.floor(Math.max(0, train.posMilli - speed - train.lengthMilli) / MILLI_PER_CELL);
+  if (!crossingsHeld(world, train, nextLo, train.occLo - 1)) return;
   train.posMilli -= speed;
   rail.refreshOccupancy(train);
   if (train.posMilli - train.lengthMilli <= 0) depart(world, train);
@@ -109,9 +114,11 @@ export class RailSystem {
         train.transition('departing');
         mover = train;
         // Vlak vyráža v nasledujúcom ticku — tento tick sa len rozbieha (obsadenie sa nemení).
-        continue;
+      } else {
+        drive(world, train);
       }
-      drive(world, train);
+      // Sloty priecestí podľa novej polohy (aj keď vlak stojí pred priecestím a získava uvoľnené sloty).
+      if (rail.trains.has(train.id)) syncCrossings(world, train);
     }
   }
 }

@@ -111,6 +111,7 @@ import type { Truck } from '../trucks/truck';
 import { TRUCK_STATE_TRAITS } from '../trucks/truck-fsm';
 import { gateNearSideCell, isOffQueueSide, truckMotionProblem } from '../trucks/truck-trip';
 import type { Vehicle } from '../vehicles/vehicle';
+import { LANES_PER_CELL, slotKey } from '../traffic/lane-slots';
 import { carrierOverlapProblem } from '../traffic/overlap-check';
 import { VEHICLE_STATE_TRAITS } from '../vehicles/vehicle-fsm';
 import { vehicleMotionProblem } from '../vehicles/vehicle-trip';
@@ -1098,6 +1099,12 @@ const checkTrains: Check = (world) => {
       const cell = train.route[i];
       if (expected[cell] !== 0) return `${train.label} sa prekrýva s vlakom #${String(expected[cell])} na bunke ${String(cell)}`;
       expected[cell] = train.id;
+      // Priecestie pod vlakom: obe pruhové sloty drží vlak (žiadne cestné vozidlo na ňom nestojí, ADR-043 TR6-02).
+      if (rail.crossings.has(cell)) {
+        for (let lane = 0; lane < LANES_PER_CELL; lane++) {
+          if (world.laneSlots.holderOfKey(slotKey(cell, lane)) !== train.id) return `${train.label} je na priecestí ${String(cell)}, ale jeho pruh ${String(lane)} drží #${String(world.laneSlots.holderOfKey(slotKey(cell, lane)))}`;
+        }
+      }
     }
     const taken: boolean[] = new Array<boolean>(train.slotCount).fill(false);
     for (const unitId of world.cargo.unitsAt('in_train', train.id)) {
@@ -1111,6 +1118,9 @@ const checkTrains: Check = (world) => {
         taken[i] = true;
       }
     }
+  }
+  for (const cell of rail.crossings) {
+    if (!world.grid.inBounds(cell % world.grid.width, Math.floor(cell / world.grid.width)) || world.grid.atIndex(cell).road !== 'road') return `priecestie ${String(cell)} nie je bunka s cestou`;
   }
   if (movers > 1) return `po koľajisku jazdí ${String(movers)} vlakov naraz (najviac jeden)`;
   for (let cell = 0; cell < expected.length; cell++) {

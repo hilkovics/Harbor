@@ -352,6 +352,7 @@ const RAIL_FIELDS: FieldTable<RailDef> = {
       wagonTeu: { kind: 'integer', min: 1 },
     },
   },
+  crossingClearTicks: { kind: 'integer', min: 1 },
 };
 
 /** `equipment.json` → `tractors` (TR3-02, ADR-040 bod 7): východisko a medze počtu ťahačov na STS. */

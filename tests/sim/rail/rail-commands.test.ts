@@ -35,23 +35,24 @@ describe('PlaceRail', () => {
     expect(new PlaceRailCommand([{ x: 60, y: 52 }, { x: 61, y: 52 }]).validate(world)).toMatchObject({ ok: true, costCents: RAIL_COST });
   });
 
-  it('nekríži cestu ani modul a nestojí na vode; jedna zlá bunka odmietne celý príkaz (atomicky)', () => {
+  it('cestu kríži priecestím, ale nie modul a nestojí na vode; jedna zlá bunka odmietne celý príkaz (atomicky)', () => {
     const world = plain();
     expect(world.grid.at(ROAD_CELL.x, ROAD_CELL.y).road).toBe('road');
-    expect(new PlaceRailCommand([ROAD_CELL]).validate(world).reasons).toContain('occupied');
+    expect(new PlaceRailCommand([ROAD_CELL]).validate(world).ok).toBe(true);
     expect(new PlaceRailCommand([{ x: 0, y: 0 }]).validate(world).reasons).toContain('terrain');
     const module = [...world.modules.values()][0];
     expect(new PlaceRailCommand([{ x: module.origin.x, y: module.origin.y }]).validate(world).reasons).toContain('occupied');
-    expect(new PlaceRailCommand([{ x: 60, y: 52 }, ROAD_CELL]).validate(world).ok).toBe(false);
-    expect(send(world, { type: 'PlaceRail', cells: [{ x: 60, y: 52 }, ROAD_CELL] })).toEqual([{ type: 'CommandRejected', commandType: 'PlaceRail', reasons: ['occupied'] }]);
+    const bad = { x: module.origin.x, y: module.origin.y };
+    expect(new PlaceRailCommand([{ x: 60, y: 52 }, bad]).validate(world).ok).toBe(false);
+    expect(send(world, { type: 'PlaceRail', cells: [{ x: 60, y: 52 }, bad] })).toEqual([{ type: 'CommandRejected', commandType: 'PlaceRail', reasons: ['occupied'] }]);
     expect(world.grid.at(60, 52).road).toBe('none');
     expect(new PlaceRailCommand([{ x: 200, y: 0 }]).validate(world).reasons).toContain('out_of_bounds');
   });
 
-  it('cestu na koľaji tiež nepostavíš; bez hotovosti `insufficient_funds`', () => {
+  it('cestu na koľaji postavíš (priecestie); bez hotovosti `insufficient_funds`', () => {
     const world = plain();
     send(world, { type: 'PlaceRail', cells: [{ x: 60, y: 52 }] });
-    expect(new PlaceRoadCommand([{ x: 60, y: 52 }]).validate(world).reasons).toContain('occupied');
+    expect(new PlaceRoadCommand([{ x: 60, y: 52 }]).validate(world).ok).toBe(true);
     expect(new RemoveRoadCommand([{ x: 60, y: 52 }]).validate(world).reasons).toContain('no_road');
     const cells = Array.from({ length: 250 }, (_, i) => ({ x: 46 + (i % 50), y: 50 + Math.floor(i / 50) }));
     expect(new PlaceRailCommand(cells).validate(world).reasons).toContain('insufficient_funds');

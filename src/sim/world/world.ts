@@ -91,6 +91,7 @@ import type { YardMachine } from '../machines/yard-machine';
 import { ReeferSystem } from '../systems/reefer-system';
 import { RailSystem } from '../systems/rail-system';
 import { Rail, type RailRuntimeState } from '../rail/rail';
+import { releaseCrossings, syncCrossings } from '../rail/rail-crossings';
 import { computeRailRoutes, type RailRoute } from '../rail/rail-routes';
 import type { Train } from '../rail/train';
 import { YardMachineSystem } from '../systems/yard-machine-system';
@@ -487,7 +488,7 @@ export class World {
   get railRoutes(): readonly RailRoute[] {
     const key = `${String(this.roadChanges)}:${String(this.moduleChanges)}`;
     if (this.railRoutesCache === undefined || key !== this.railRoutesKey) {
-      this.railRoutesCache = computeRailRoutes(this.grid, this.map.railPortals[0]?.cell, this.moduleMap.values());
+      this.railRoutesCache = computeRailRoutes(this.grid, this.map.railPortals[0]?.cell, this.moduleMap.values(), this.rail.crossings);
       this.railRoutesKey = key;
     }
     return this.railRoutesCache;
@@ -507,12 +508,14 @@ export class World {
   addTrain(train: Train): void {
     if (train.id >= this.ids.getState().nextId) throw new Error(`World.addTrain: ${train.label}: id nepridelil alokátor sveta`);
     this.rail.addTrain(train);
+    syncCrossings(this, train);
   }
 
   /** Odstráni vlak (odchod cez portál) a uvoľní jeho bunky. */
   removeTrain(trainId: EntityId): Train {
     const train = this.rail.trains.get(trainId);
     if (train === undefined) throw new Error(`World.removeTrain: vlak #${String(trainId)} neexistuje`);
+    releaseCrossings(this, train);
     this.rail.removeTrain(train);
     return train;
   }

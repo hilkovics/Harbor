@@ -13,9 +13,18 @@ import { WorldStateError, checkArray, checkInteger, checkKeys, describeValue, po
 import type { World } from './world';
 
 /** Tvar súčtov železnice: presne kľúče `RailRuntimeState`, celé čísla ≥ 0. */
-export function parseRailState(value: unknown): RailRuntimeState {
+export function parseRailState(value: unknown, grid: Grid): RailRuntimeState {
   const raw = checkKeys(value, RAIL_RUNTIME_KEYS, '/rail');
-  const field = (key: keyof RailRuntimeState): number => checkInteger(raw[key], 0, `/rail/${key}`);
+  const field = (key: Exclude<keyof RailRuntimeState, 'crossings'>): number => checkInteger(raw[key], 0, `/rail/${key}`);
+  let previous = -1;
+  const crossings = checkArray(raw['crossings'], '/rail/crossings').map((cell: unknown, i): number => {
+    const path = `/rail/crossings${pointerSegment(i)}`;
+    const index = checkInteger(cell, 0, path);
+    if (index >= grid.cellCount) throw new WorldStateError(path, `bunka ${String(index)} je mimo mapy`);
+    if (index <= previous) throw new WorldStateError(path, `priecestia musia byť ostro vzostupne, ${String(index)} ≤ ${String(previous)}`);
+    previous = index;
+    return index;
+  });
   return {
     nextArrivalTick: field('nextArrivalTick'),
     trainsSpawned: field('trainsSpawned'),
@@ -25,6 +34,7 @@ export function parseRailState(value: unknown): RailRuntimeState {
     delayTicksMax: field('delayTicksMax'),
     turnaroundTicksTotal: field('turnaroundTicksTotal'),
     turnaroundTicksMax: field('turnaroundTicksMax'),
+    crossings,
   };
 }
 

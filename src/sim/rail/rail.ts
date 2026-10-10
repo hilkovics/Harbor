@@ -23,7 +23,12 @@ export interface RailRuntimeState {
   /** Súčet a maximum doby od vzniku vlaku po odchod cez portál (obrat). */
   readonly turnaroundTicksTotal: number;
   readonly turnaroundTicksMax: number;
+  /** Úrovňové priecestia (ADR-043 TR6-02): indexy buniek s cestou, cez ktoré vedie aj koľaj; vzostupne. */
+  readonly crossings: readonly number[];
 }
+
+/** Počítadlá bez priecestí (`Rail.counters`). */
+export type RailCounters = Omit<RailRuntimeState, 'crossings'>;
 
 /** Kľúče `RailRuntimeState` v poradí `getState()`. */
 export const RAIL_RUNTIME_KEYS: readonly (keyof RailRuntimeState)[] = [
@@ -35,6 +40,7 @@ export const RAIL_RUNTIME_KEYS: readonly (keyof RailRuntimeState)[] = [
   'delayTicksMax',
   'turnaroundTicksTotal',
   'turnaroundTicksMax',
+  'crossings',
 ];
 
 /** Čas v tickoch, z ktorého `Rail` odvodzuje plán (z `SimClock`). */
@@ -53,26 +59,40 @@ export class Rail {
   readonly intervalTicks: number;
   /** Plánovaný pobyt v termináli v tickoch (`timetable.dwellMinutes`). */
   readonly dwellTicks: number;
-  private state: { -readonly [K in keyof RailRuntimeState]: RailRuntimeState[K] };
+  /** Úrovňové priecestia: bunka s cestou (`Cell.road = 'road'`), ktorou vedie aj koľaj (vlak ju rezervuje, cestné vozidlá ju nesmú obsadiť, kým je vlak na nej alebo pred ňou). */
+  readonly crossings = new Set<number>();
+  /** Ticky vopred, na ktoré vlak rezervuje priecestie pred sebou (`rail.json` → `train.crossingClearTicks`). */
+  readonly crossingClearTicks: number;
+  private state: { -readonly [K in keyof RailCounters]: RailCounters[K] };
 
   constructor(def: Readonly<RailDef>, clock: RailClock, cellCount: number, state?: RailRuntimeState) {
     this.def = def;
     this.occupancy = new Int32Array(cellCount);
     this.intervalTicks = Math.max(1, Math.round(def.timetable.intervalHours * clock.ticksPerHour));
     this.dwellTicks = def.timetable.dwellMinutes * clock.ticksPerMinute;
-    this.state = state === undefined ? { nextArrivalTick: def.timetable.firstArrivalHour * clock.ticksPerHour, trainsSpawned: 0, trainsDeparted: 0, skippedArrivals: 0, delayTicksTotal: 0, delayTicksMax: 0, turnaroundTicksTotal: 0, turnaroundTicksMax: 0 } : { ...state };
+    this.crossingClearTicks = def.crossingClearTicks;
+    for (const index of state?.crossings ?? []) this.crossings.add(index);
+    this.state =
+      state === undefined
+        ? { nextArrivalTick: def.timetable.firstArrivalHour * clock.ticksPerHour, trainsSpawned: 0, trainsDeparted: 0, skippedArrivals: 0, delayTicksTotal: 0, delayTicksMax: 0, turnaroundTicksTotal: 0, turnaroundTicksMax: 0 }
+        : { nextArrivalTick: state.nextArrivalTick, trainsSpawned: state.trainsSpawned, trainsDeparted: state.trainsDeparted, skippedArrivals: state.skippedArrivals, delayTicksTotal: state.delayTicksTotal, delayTicksMax: state.delayTicksMax, turnaroundTicksTotal: state.turnaroundTicksTotal, turnaroundTicksMax: state.turnaroundTicksMax };
   }
 
   get nextArrivalTick(): number {
     return this.state.nextArrivalTick;
   }
 
-  get counters(): Readonly<RailRuntimeState> {
+  get counters(): Readonly<RailCounters> {
     return this.state;
   }
 
   getState(): RailRuntimeState {
-    return { ...this.state };
+    return { ...this.state, crossings: [...this.crossings].sort((a, b) => a - b) };
+  }
+
+  /** Je bunka priecestím? */
+  isCrossing(index: number): boolean {
+    return this.crossings.has(index);
   }
 
   /** Vlak, ktorý práve jazdí (drží žetón pohybu), alebo `undefined`. */

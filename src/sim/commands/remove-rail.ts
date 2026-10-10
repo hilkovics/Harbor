@@ -28,7 +28,7 @@ export class RemoveRailCommand extends RoadLayerCommand {
 
   protected inspectCell(world: World, cell: Readonly<Cell>, index: number): CellVerdict {
     const reasons: ValidationReason[] = [];
-    if (cell.road !== 'rail') reasons.push('no_road');
+    if (cell.road !== 'rail' && !world.rail.isCrossing(index)) reasons.push('no_road');
     if (world.railCellInUse(index)) reasons.push('occupied');
     if (!this.parcelAllowsInfrastructure(world, cell)) reasons.push('parcel_not_owned');
     return reasons.length === 0 ? CHANGE_CELL : reasons;
@@ -37,6 +37,11 @@ export class RemoveRailCommand extends RoadLayerCommand {
   protected priceOf(world: World, changes: readonly PlannedCell[]): RoadPrice {
     const priceCents = changes.length * world.defs.infrastructure.rail.costPerCellCents;
     return { buildCents: 0, refundCents: refundCents(priceCents, world.defs.economy.removalRefundRate) };
+  }
+
+  /** Priecestie po odstránení koľaje ostane cestou; inak bunka bez vrstvy. */
+  protected override commitCell(world: World, cell: Cell, change: PlannedCell): void {
+    if (!world.rail.crossings.delete(change.index)) this.writeCell(cell);
   }
 
   protected writeCell(cell: Cell): void {

@@ -11,5 +11,6 @@
     "locoLengthCells": 3,
     "wagonLengthCells": 3,
     "wagonTeu": 3
-  }
+  },
+  "crossingClearTicks": 12
 }

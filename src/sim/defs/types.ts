@@ -852,4 +852,6 @@ export interface RailTrainDef {
 export interface RailDef extends DefBase {
   readonly timetable: RailTimetableDef;
   readonly train: RailTrainDef;
+  /** Úrovňové priecestie (TR6-02): vlak rezervuje priecestie pred sebou toľko tickov jazdy vopred (celé ≥ 1); cestné vozidlá do rezervovaného priecestia nevstúpia (závora). */
+  readonly crossingClearTicks: number;
 }

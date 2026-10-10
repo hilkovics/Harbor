@@ -194,7 +194,7 @@ test.describe('F2: loď, žeriav, apron (T02-12)', () => {
     await expect(bar.locator('[data-category="storage"]')).toBeEnabled();
     await expect(bar.locator('[data-category="logistics"]')).toBeEnabled();
     await expect(bar.locator('[data-category="landside"]')).toBeEnabled();
-    await expect(bar.locator('[data-category="rail"]')).toBeDisabled();
+    await expect(bar.locator('[data-category="rail"]')).toBeEnabled(); // R6: Železnica odomknutá
     await expect(bar.locator('[data-category="pipes"]')).toBeDisabled();
     await expect(bar.locator('.build-bar__tabs .build-bar__tab kbd')).toHaveCount(0);
     await expect(berthItem).toHaveAttribute('aria-pressed', 'false');

@@ -142,6 +142,7 @@ export class RoadLayer {
     /** R6: `rail` = tá istá vrstva s autotilingom koľají (sprity `infra.rail.tiles.*`, bez úzkych ciest). */
     private readonly layer: TransportLayer = 'road',
   ) {
+    this.view.label = layer === 'rail' ? 'rails' : 'roads';
     this.rebuild();
   }
 

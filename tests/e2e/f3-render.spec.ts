@@ -252,6 +252,8 @@ test.describe('F3: typy ciest, šípky jednosmerky a oblúky (scéna road-kinds)
     // vrstva značiek je nad cestami a pod entitami (šípky nezakryjú vozidlá)
     expect(state.layers.indexOf('road-marks')).toBe(state.layers.indexOf('roads') + 1);
     expect(state.layers.indexOf('road-marks')).toBeLessThan(state.layers.indexOf('entities'));
+    // koľajnice (R6) sú nad cestou aj jej značkami (železničné priecestie)
+    expect(state.layers.indexOf('rails')).toBeGreaterThan(state.layers.indexOf('road-marks'));
 
     const at = (id: number) => state.vehicles.find((vehicle) => vehicle.id === id)!;
     const vm = (id: number) => scene.find((vehicle) => vehicle.id === id)!;

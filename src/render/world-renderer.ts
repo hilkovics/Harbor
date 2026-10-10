@@ -183,8 +183,8 @@ export class WorldRenderer {
     this.world.addChild(
       this.terrain.view,
       this.roads.view,
-      this.rails.view,
       this.roadMarks.view,
+      this.rails.view,
       this.parcels.view,
       this.portals.view,
       this.modules.view,

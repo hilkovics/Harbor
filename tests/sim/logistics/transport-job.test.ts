@@ -48,7 +48,7 @@ describe('stavy jobu a tabuľky', () => {
       ['assigned', ['picking']],
       ['picking', ['moving', 'cancelled']],
       ['moving', ['dropping']],
-      ['dropping', ['done']],
+      ['dropping', ['done', 'moving']], // moving: vozidlo s exportom ustúpi z háku (TR6-02b)
       ['done', []],
       ['cancelled', []],
     ]);
@@ -56,7 +56,7 @@ describe('stavy jobu a tabuľky', () => {
     for (const from of JOB_STATES) {
       for (const to of JOB_STATES) {
         const forward = lifecycle.includes(from) && lifecycle.includes(to) && lifecycle.indexOf(to) === lifecycle.indexOf(from) + 1;
-        expect(isJobTransitionAllowed(from, to), `${from} → ${to}`).toBe(forward || ((from === 'open' || from === 'picking') && to === 'cancelled') || (from === 'open' && to === 'done'));
+        expect(isJobTransitionAllowed(from, to), `${from} → ${to}`).toBe(forward || ((from === 'open' || from === 'picking') && to === 'cancelled') || (from === 'open' && to === 'done') || (from === 'dropping' && to === 'moving'));
       }
     }
   });

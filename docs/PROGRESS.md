@@ -435,3 +435,21 @@ Stav: **hotová** (TR5-01 … TR5-07, vrátane TR5-02b a TR5-06b)
 **Odchýlky od plánu:** karty TR5-02b a TR5-06b pribudli z review a testov; `rs_area` nerobená (voliteľná podľa plánu).
 
 **Otvorené:** `rs_area` (3 rady 5/4/3) nerobené; kapacita TP a státí pri špičke 100/h (z R4); teplota reeferu sa nesleduje; e2e `r4-tp-rtg` používa obojsmernú bunku vjazdu RTG bloku; WorldState v14; artefakt verzia 13. Viď `docs/BACKLOG.md` „Z Fázy R5 (TR5-02)“.
+
+## Fáza R6 — Železnica s RMG
+Karty: `docs/tasks/phase-r6.md` · vetva `phase/r6-rail` (stacked nad `phase/r5-reefer-special`, PR hilkovics/Harbor#17)
+
+Stav: **hotová** (TR6-01 … TR6-07, vrátane TR6-02b, TR6-02c, TR6-03b a TR6-07a)
+
+**Výsledky:**
+- `pnpm test`: 432 súborov, 8 930 testov zelených
+- `pnpm test:e2e`: 65/65
+- Akceptácia: 1 splnené (`rail_flow`: 100 % importu vlakom, export vlakom → loď, import a export súbežne, nakládka po vagónoch; lostUnits 0, stuckAtEnd 0, deterministické); 2 splnené (odchod podľa poriadku alebo plný; rešpitná lehota 30 min; metriky `trainTurnaroundMin`, `trainDelayMin`); 3 splnené (`live_terminal_rail` 100k, seedy 5001–5016: 0 pádov, 0 TrafficJam, stuckAtEnd 0, lostUnits 0); 4 splnené (koľaje s plynulými oblúkmi, lokomotíva a vagóny, RMG, závory priecestí); 5 splnené
+
+**Čo je hotové:** rozsah kariet TR6-01 … TR6-07 podľa `docs/tasks/phase-r6.md`; opravy z review TR6-02b (flat rack pod rezerváciou, zaseknutie pod hákom) a TR6-02c (pád RMG trolley→trolley seed 5008, rešpitná lehota odchodu, sloty priecestí po obnove, výkon).
+
+**Rozhodnutia (ADR-043):** úrovňové priecestie; harbor_01 parcela `rail_yard`; import pre vlak ide do bufferu priamo pri vykládke (nie TT zo skladu); reefer a OOG po koľaji nejdú; naraz jeden vlak; WorldState v15; artefakt verzia 14.
+
+**Odchýlky od plánu:** pridané karty TR6-02b, TR6-02c, TR6-03b a TR6-07a.
+
+**Otvorené:** pravidlo „nevchádzaj na priecestie bez výjazdu“; prenos sklad → buffer (TT); viac vlakov naraz / signály; flat-rack oprava zakáže celý stĺpec s rezerváciou. Viď `docs/BACKLOG.md` „Z Fázy R6“.

@@ -60,6 +60,10 @@
 | TR6-05 | Napojenie VM, `simrun`, e2e (vlak príde, RMG nakladá vagón) | implementer (sonnet) | 02, 03, 04 |
 | TR6-06 | Review + opravy | sim-reviewer → sim-architect | 05 |
 | TR6-07 | Pipeline, artefakt, docs, PR | orchestrátor + haiku | 06 |
+| TR6-02b | Flat rack pod rezerváciou; zaseknutie pod hákom pri súbehu importu/exportu | sim-architect (sonnet) | 02 |
+| TR6-02c | Pád RMG trolley→trolley (seed 5008); review opravy: rešpitná lehota odchodu vlaku, sloty priecestí po obnove, výkon | sim-architect (sonnet) | 02b |
+| TR6-03b | Plynulé oblúky koľají (r = 3) | implementer (sonnet) | 03 |
+| TR6-07a | E2E po R6; koľaje nad značkami ciest | implementer (sonnet) | 07 |
 
 **VM kontrakt** (voliteľné polia):
 - `RailVM` (bunky koľají) v `TerrainVM` alebo `InfraVM`;
@@ -67,7 +71,15 @@
 - `MachineVM.defId` = `rmg`.
 
 ## Checklist
-- [ ] TR6-01 · [ ] TR6-02 · [ ] TR6-03 · [ ] TR6-04 · [ ] TR6-05 · [ ] TR6-06 · [ ] TR6-07
+- [x] TR6-01 · [x] TR6-02 · [x] TR6-03 · [x] TR6-04 · [x] TR6-05 · [x] TR6-06 · [x] TR6-07 · [x] TR6-02b · [x] TR6-02c · [x] TR6-03b · [x] TR6-07a
 
 ## Výsledok fázy
-_(doplní orchestrátor)_
+- **Pipeline:** `pnpm test` 432 súborov / 8 930 testov zelené; e2e 65/65 zelené.
+- **Akceptácia:**
+  1. SPLNENÉ — `rail_flow`: 100 % importu vlakom, export vlakom → loď, import a export súbežne, nakládka po vagónoch, lostUnits 0, stuckAtEnd 0, deterministické.
+  2. SPLNENÉ — odchod podľa poriadku alebo plný; rešpitná lehota 30 min; metriky `trainTurnaroundMin`, `trainDelayMin`.
+  3. SPLNENÉ — `live_terminal_rail` 100k, seedy 5001–5016: 0 pádov, 0 TrafficJam, stuckAtEnd 0, lostUnits 0.
+  4. SPLNENÉ — koľaje s plynulými oblúkmi, lokomotíva a vagóny, RMG, závory priecestí.
+  5. SPLNENÉ.
+- **Rozhodnutia:** úrovňové priecestie; harbor_01 parcela `rail_yard`; import pre vlak ide do bufferu priamo pri vykládke (nie TT zo skladu); reefer a OOG po koľaji nejdú; naraz jeden vlak; WorldState v15; artefakt verzia 14; PR hilkovics/Harbor#17.
+- **Otvorené** (→ `docs/BACKLOG.md` „Z Fázy R6“): pravidlo „nevchádzaj na priecestie bez výjazdu“; TT prenos sklad → buffer; viac vlakov naraz / signály; flat-rack oprava zakáže celý stĺpec s rezerváciou.

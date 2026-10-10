@@ -189,10 +189,10 @@ describe('bundled katalógy (loadBundledDefs)', () => {
       { x: 0, y: 0, side: 'n', type: 'road', access: 'out' },
     ]);
     expect([gate.costCents, gate.maintenancePerDayCents]).toEqual([2_500_000, 4_000]);
-    expect(gate.params).toEqual({ direction: 'in', ocrTicks: 3, checkTicks: 8, issueTicks: 4, gateIssueChance: 0.05, troubleTicks: 40, expressTicks: 6 });
+    expect(gate.params).toEqual({ direction: 'in', ocrTicks: 3, checkTicks: 8, issueTicks: 4, gateIssueChance: 0.05, troubleTicks: 40, expressTicks: 6, wagePerDayCents: 15_000 });
     const gateOut = defs.modules.get('gate_out_lane');
     expect([gateOut.kind, gateOut.displayName, gateOut.footprint]).toEqual(['gate', 'Výstupný pruh brány', { w: 1, h: 4 }]);
-    expect(gateOut.params).toEqual({ direction: 'out', weighTicks: 6, scanTicks: 6, sealTicks: 4, sealIssueChance: 0.03, inspectionTicks: 40, expressTicks: 8 });
+    expect(gateOut.params).toEqual({ direction: 'out', weighTicks: 6, scanTicks: 6, sealTicks: 4, sealIssueChance: 0.03, inspectionTicks: 40, expressTicks: 8, wagePerDayCents: 15_000 });
     const preGate = defs.modules.get('pre_gate_buffer');
     expect([preGate.kind, preGate.footprint, preGate.params]).toEqual(['pre_gate', { w: 8, h: 8 }, { rows: 8, rowCapacity: 2 }]);
     expect(preGate.connectors).toEqual([
@@ -927,6 +927,7 @@ describe('MODULE_PARAM_SPECS', () => {
       'sealIssueChance',
       'inspectionTicks',
       'expressTicks',
+      'wagePerDayCents',
       'internalTicks',
     ]);
     expect(Object.keys(MODULE_PARAM_SPECS.pre_gate)).toEqual(['rows', 'rowCapacity']);

@@ -10,7 +10,7 @@ const crane = (): RtgCrane => RtgCrane.create(id(5), id(4), DEF, 5);
 
 describe('equipment.json → rtg', () => {
   it('časy a priority loď > kamión > housekeeping sú v dátach', () => {
-    expect(DEF).toEqual({ gantryCellsPerTick: 2, hoistTicksPerTier: 1, trolleyTicksPerRow: 1, lockTicks: 1, prefetchCells: 6, handoverGiveUpTicks: 600, priorities: { ship: 0, truck: 1, housekeeping: 2 } });
+    expect(DEF).toEqual({ wagePerDayCents: 22_000, gantryCellsPerTick: 2, hoistTicksPerTier: 1, trolleyTicksPerRow: 1, lockTicks: 1, prefetchCells: 6, handoverGiveUpTicks: 600, priorities: { ship: 0, truck: 1, housekeeping: 2 } });
   });
 });
 

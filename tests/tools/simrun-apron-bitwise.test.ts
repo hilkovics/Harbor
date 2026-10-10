@@ -18,6 +18,7 @@ import { DEFS } from '../sim/world/world-fixtures';
 const HEAVY_TIMEOUT_MS = 180_000;
 
 describe('režim apron: bitovo zhodný s F2–F6c', () => {
+  // TF7-01 (F7, ADR-044): `WorldState` v16 (`version` je v hashi) a mzdy pruhov brány 2 × 15 000 za deň → nové hashe (vertical_slice 667d7e1a → e7fc4cc3, full_import_chain 6c8e0311 → 6f545c5d, export_roundtrip ef877383 → c59999f3) a `cashEnd` (−30 000 za deň); `exportedUnits` ostali, tok nákladu sa nezmenil.
   // TR6-02 (R6, ADR-043 dodatok): `harbor_01` má novú vlastnenú parcelu `rail_yard` (kľúč v `parcels` stavu) a stav železnice nové kľúče (`rail.crossings`, `rail.importUnitsByTrain`) → nové hashe (vertical_slice 6c8eba08 → 667d7e1a, full_import_chain 549a9caf → 6c8e0311, export_roundtrip edbf161d → ef877383); `cashEnd`, `exportedUnits` a tok sveta bez železničného terminálu ostali, `Rng` sa nespotrebuje.
   // TR6-01 (R6, ADR-043): `WorldState` v15 (kľúče `trains` a `rail`, `railShareBp` kontraktu) → nové hashe (vertical_slice 1f17ed55 → 6c8eba08, full_import_chain ff8a930b → 549a9caf, export_roundtrip 28eb3050 → edbf161d); `cashEnd`, `exportedUnits` ostali, tok sveta bez železničného terminálu je rovnaký, `Rng` sa nespotrebuje.
   // TR5-02: kontrakt nesie `oogUnits` (save v14) → ďalšie hashe (vertical_slice 1931044d → 1f17ed55, full_import_chain 98bb417b → ff8a930b, export_roundtrip 0df6a880 → 28eb3050); tok sveta bez OOG plochy je rovnaký, `Rng` sa nespotrebuje.
@@ -30,9 +31,9 @@ describe('režim apron: bitovo zhodný s F2–F6c', () => {
   // TR3-01 (ADR-040): `WorldState` nesie nový kľúč `machines: []` → nové hashe (vertical_slice 8c7ec283 → b2dd39a3, full_import_chain ba945370 → f6a160e0, export_roundtrip 9326712a → 9bc73b8a); `cashEnd` a `exportedUnits` ostali, sim sa nezmenil.
   // TR2-06b: runtime bloku nesie aj `rehandleStalls` → nové hashe (vertical_slice 80ba4d63 → 8c7ec283, full_import_chain 91ec22b0 → ba945370, export_roundtrip 1d247952 → 9326712a); `cashEnd` a `exportedUnits` ostali.
   it.each([
-    { name: 'vertical_slice', ticks: 30_000, stateHash: '667d7e1a', cashEnd: 64_976_000, exportedUnits: 50 },
-    { name: 'full_import_chain', ticks: 40_000, stateHash: '6c8e0311', cashEnd: 55_187_000, exportedUnits: 120 },
-    { name: 'export_roundtrip', ticks: 40_000, stateHash: 'ef877383', cashEnd: 65_303_050, exportedUnits: 31 },
+    { name: 'vertical_slice', ticks: 30_000, stateHash: 'e7fc4cc3', cashEnd: 64_886_000, exportedUnits: 50 },
+    { name: 'full_import_chain', ticks: 40_000, stateHash: '6f545c5d', cashEnd: 55_067_000, exportedUnits: 120 },
+    { name: 'export_roundtrip', ticks: 40_000, stateHash: 'c59999f3', cashEnd: 65_183_050, exportedUnits: 31 },
   ])('$name ($ticks tickov): stateHash $stateHash, apron → directHandoverPct 0', ({ name, ticks, stateHash, cashEnd, exportedUnits }) => {
     const report = runScenario(loadScenario(`data/scenarios/${name}.json`), ticks, DEFS, { hash: true });
     expect(report).toMatchObject({ stateHash, cashEnd, exportedUnits, lostUnits: 0, directHandoverPct: 0 });

@@ -150,9 +150,9 @@ describe('skutočné katalógy F2 až F4', () => {
       ],
       costCents: 2_500_000,
       maintenancePerDayCents: 4_000,
-      params: { direction: 'in', ocrTicks: 3, checkTicks: 8, issueTicks: 4, gateIssueChance: 0.05, troubleTicks: 40, expressTicks: 6 },
+      params: { direction: 'in', ocrTicks: 3, checkTicks: 8, issueTicks: 4, gateIssueChance: 0.05, troubleTicks: 40, expressTicks: 6, wagePerDayCents: 15_000 },
     });
-    expect(item(def, 'gate_out_lane')['params']).toEqual({ direction: 'out', weighTicks: 6, scanTicks: 6, sealTicks: 4, sealIssueChance: 0.03, inspectionTicks: 40, expressTicks: 8 });
+    expect(item(def, 'gate_out_lane')['params']).toEqual({ direction: 'out', weighTicks: 6, scanTicks: 6, sealTicks: 4, sealIssueChance: 0.03, inspectionTicks: 40, expressTicks: 8, wagePerDayCents: 15_000 });
     expect(item(def, 'pre_gate_buffer')).toMatchObject({ kind: 'pre_gate', footprint: { w: 8, h: 8 }, params: { rows: 8, rowCapacity: 2 } });
     expect(item(def, 'truck_holding')).toMatchObject({ kind: 'holding', footprint: { w: 6, h: 5 }, params: { stalls: 6, stallLengthCells: 3 } });
   });

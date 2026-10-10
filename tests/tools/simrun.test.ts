@@ -637,9 +637,9 @@ describe('runScenario', () => {
       });
     });
 
-    it('cashEnd (ADR-025): 56 675 000 po stavbe (R4: pruhy brány a cesty rozloženia, bez rampy a čakacej plochy) − 4 dni × (údržba 293 000 + mzdy 79 000) = 55 187 000', () => {
+    it('cashEnd (ADR-025): 56 675 000 po stavbe (R4: pruhy brány a cesty rozloženia, bez rampy a čakacej plochy) − 4 dni × (údržba 293 000 + mzdy 109 000) = 55 067 000', () => {
       expect(full.gameDays).toBe(4);
-      expect(full.cashEnd).toBe(55_187_000);
+      expect(full.cashEnd).toBe(55_067_000);
     });
 
     it('krížová kontrola: Σ TruckExited.units === exportedUnits (kamióny sú jediná cesta exportu)', () => {

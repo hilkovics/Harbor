@@ -262,7 +262,7 @@ describe('scenár vertical_slice: beh 60 000 tickov', () => {
         .reduce((sum, move) => sum + move.event.deltaCents, 0);
     for (let day = 1; day <= daily.length; day++) {
       expect(sumAt('maintenance', day * TICKS_PER_DAY), `údržba, deň ${String(day)}`).toBe(-293_000);
-      expect(sumAt('wages', day * TICKS_PER_DAY), `mzdy, deň ${String(day)}`).toBe(-61_000);
+      expect(sumAt('wages', day * TICKS_PER_DAY), `mzdy, deň ${String(day)}`).toBe(-91_000);
     }
     expect(run.ofSim('MoneyChanged').filter((move) => (move.event.reason === 'maintenance' || move.event.reason === 'wages') && move.tick % TICKS_PER_DAY !== 0)).toEqual([]);
   });

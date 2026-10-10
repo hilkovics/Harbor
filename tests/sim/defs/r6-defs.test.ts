@@ -68,7 +68,7 @@ describe('bundled defy R6', () => {
   });
 
   it('equipment.rmg: časy a priority vlak < ťahač < housekeeping', () => {
-    expect(defs.equipment.rmg).toEqual({ gantryCellsPerTick: 2, hoistTicksPerTier: 1, trolleyTicksPerRow: 1, lockTicks: 1, prefetchCells: 6, handoverGiveUpTicks: 600, priorities: { train: 0, ship: 1, truck: 2, housekeeping: 3 } });
+    expect(defs.equipment.rmg).toEqual({ wagePerDayCents: 24_000, gantryCellsPerTick: 2, hoistTicksPerTier: 1, trolleyTicksPerRow: 1, lockTicks: 1, prefetchCells: 6, handoverGiveUpTicks: 600, priorities: { train: 0, ship: 1, truck: 2, housekeeping: 3 } });
   });
 
   it('rmg_rail_block: 6 × 16, 2 koľaje, buffer 4 rady × 4 vrstvy po 16 bays, pruh pre ťahače a 4 konektory', () => {

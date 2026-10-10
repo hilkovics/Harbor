@@ -34,3 +34,144 @@
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
+
+/* TF7-03: grafy a tabuľka po obdobiach (finance-panel.tsx, ChartSection). Len tokeny; prototyp: game-ui.source.html, Financie. */
+
+.finance-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.finance-panel__toggle {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+}
+
+.finance-panel__toggle-btn {
+  flex: 1;
+  height: 30px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  background: transparent;
+  color: var(--ui-text-2);
+}
+
+.finance-panel__toggle-btn:hover {
+  color: var(--ui-text);
+}
+
+.finance-panel__toggle-btn:focus-visible {
+  outline: 2px solid var(--ui-accent);
+}
+
+.finance-panel__toggle-btn--active {
+  background: var(--ui-accent);
+  color: var(--ui-surface);
+}
+
+.finance-panel__toggle-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.finance-panel__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.finance-panel__title {
+  font-weight: var(--fw-semibold);
+  color: var(--ui-text);
+}
+
+.finance-panel__range {
+  font-size: var(--fs-xs);
+  color: var(--ui-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.finance-panel__value-strong {
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text);
+}
+
+.finance-panel__frame {
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+}
+
+.finance-panel__empty {
+  margin: 0;
+  color: var(--ui-text-2);
+}
+
+.finance-panel__breakdown {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.finance-panel__breakdown th,
+.finance-panel__breakdown td {
+  padding: var(--space-2) var(--space-2);
+  border-bottom: 1px solid var(--ui-border);
+  font-weight: var(--fw-regular);
+  text-align: left;
+  color: var(--ui-text);
+}
+
+.finance-panel__breakdown thead th {
+  background: var(--ui-surface-2);
+  font-size: var(--fs-xs);
+  color: var(--ui-text-2);
+}
+
+.finance-panel__breakdown tbody th {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: var(--fw-regular);
+}
+
+.finance-panel__breakdown .finance-panel__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.finance-panel__total th,
+.finance-panel__total td {
+  font-weight: var(--fw-semibold);
+}
+
+.finance-panel__swatch {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-sm);
+}
+
+.finance-panel__money--pos {
+  color: var(--ui-money-pos);
+}
+
+.finance-panel__money--neg {
+  color: var(--ui-money-neg);
+}

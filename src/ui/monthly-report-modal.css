@@ -1,0 +1,161 @@
+/*
+ * MonthlyReportModal (monthly-report-modal.tsx, TF7-03). Obsah v rámci ModalDialog (modal-dialog.css); vizuál z prototypu
+ * design/ui/game-ui.source.html (overlay `report`). Len tokeny z design/tokens.css, čísla tabular-nums.
+ */
+
+.monthly-report {
+  width: 100%;
+  max-width: 600px;
+}
+
+.monthly-report__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.monthly-report__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.monthly-report__eyebrow {
+  font-size: var(--fs-xs);
+  color: var(--ui-text-2);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.monthly-report__tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.monthly-report__tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface-2);
+}
+
+.monthly-report__tile-label {
+  font-size: var(--fs-xs);
+  color: var(--ui-text-2);
+}
+
+.monthly-report__tile-value {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.monthly-report__cash {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: var(--fs-sm);
+  color: var(--ui-text-2);
+}
+
+.monthly-report__cash-value {
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text);
+}
+
+.monthly-report__table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.monthly-report__table th,
+.monthly-report__table td {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--ui-border);
+  text-align: left;
+  font-weight: var(--fw-regular);
+  color: var(--ui-text);
+}
+
+.monthly-report__table thead th {
+  background: var(--ui-surface-2);
+  font-size: var(--fs-xs);
+  color: var(--ui-text-2);
+}
+
+.monthly-report__table .monthly-report__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.monthly-report__changes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.monthly-report__section-title {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.monthly-report__change-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.monthly-report__change {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--ui-border);
+  font-size: var(--fs-sm);
+}
+
+.monthly-report__rank {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ui-text-2);
+}
+
+.monthly-report__change-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.monthly-report__change-value {
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.monthly-report__empty {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--ui-text-2);
+}
+
+.monthly-report__money--pos {
+  color: var(--ui-money-pos);
+}
+
+.monthly-report__money--neg {
+  color: var(--ui-money-neg);
+}

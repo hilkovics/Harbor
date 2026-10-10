@@ -276,8 +276,42 @@ export type {
   ReeferSkippedToastInput,
   ReeferToastText,
 } from './reefer-toasts';
-export { ENERGY_CATEGORY_LABEL, FinancePanel } from './finance-panel';
-export type { FinancePanelProps, FinanceCategoryRow } from './finance-panel';
+export {
+  ENERGY_CATEGORY_LABEL,
+  FINANCE_PERIOD_LABELS,
+  FinancePanel,
+  availableFinancePeriods,
+  financeBreakdownRows,
+  resolveFinancePeriod,
+} from './finance-panel';
+export type { FinancePanelProps, FinanceCategoryRow, FinanceChartPeriod, FinanceBreakdownRow } from './finance-panel';
+export {
+  CATEGORY_COLOR_TOKENS,
+  CHART_HEIGHT,
+  CHART_WIDTH,
+  LineChart,
+  StackedBars,
+  categoryColor,
+  categoryIds,
+  linePath,
+  linePoints,
+  periodTotals,
+  stackedBarLayout,
+} from './finance-charts';
+export type {
+  BarColumn,
+  BarSegment,
+  FinanceChartCategory,
+  FinancePeriod,
+  LineChartProps,
+  PeriodTotals,
+  StackedBarLayout,
+  StackedBarsProps,
+} from './finance-charts';
+export { PARCEL_STATE_LABELS, ParcelPanel, canBuyParcel, canLeaseParcel, canReleaseParcel, parcelArea, paybackMonths } from './parcel-panel';
+export type { ParcelInfo, ParcelPanelProps, ParcelState } from './parcel-panel';
+export { MonthlyReportModal, TOP_CHANGES_COUNT, topChanges } from './monthly-report-modal';
+export type { CategoryChange, MonthlyReportModalProps, MonthlyReportSummary } from './monthly-report-modal';
 export { CONTAINER_TYPE_ICONS, CONTAINER_TYPE_LABELS } from './contracts-panel';
 export type { ContainerTypeKey, ContractTypeChip } from './contracts-panel';
 export {

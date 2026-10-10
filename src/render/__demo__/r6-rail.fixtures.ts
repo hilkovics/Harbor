@@ -1,7 +1,7 @@
 /**
  * Pevné view-modely pre demo renderu karty TR6-03 (`r6-rail.html`, R6 železnica s RMG) — bez simu a bez UI.
  *
- * Scéna `terminal`: koľaj z východu sa v zákrute (44; 22) stáča na juh a ide pozdĺž terminálu (stĺpec x = 44) s vedľajšou koľajou (x = 45); vlak
+ * Scéna `terminal`: koľaj z východu sa v zákrute (44; 22) stáča na juh a ide pozdĺž terminálu (stĺpec x = 44) ; vlak
  * (lokomotíva + 6 vagónov 60′, časť naložená) stojí hlavou na juhu, jeho chvost je ešte v zákrute (kĺbové uhly voz po voze); RMG (rám 6 × 2) nad koľajami a
  * bufferom zdvíha kontajner z vagóna. Pózy vozov vznikajú z lomenej čiary koľaje (`carPoses`), nie ručne.
  *
@@ -21,7 +21,6 @@ const AXLE_HALF_CELLS = 1.2;
 export const TRAIN_ID = 61;
 export const RMG_ID = 62;
 export const TRACK_X = 44;
-export const SIDING_X = 45;
 export const CORNER_Y = 22;
 export const TRACK_END_X = 54;
 export const HEAD_Y = 36;
@@ -89,7 +88,7 @@ function trainVM(): TrainVM {
   return { id: TRAIN_ID, cars, state: 'at_terminal', departureTick: 4800 };
 }
 
-/** RMG: rám 6 × 2 (pivot x 160 px) nad koľajami x = 44 a 45 a bufferom; vozík nad hlavnou koľajou, kontajner zdvihnutý z vagóna. */
+/** RMG: rám 6 × 2 (pivot x 160 px) nad koľajou x = 44 a bufferom (stĺpce 45–47); vozík nad hlavnou koľajou, kontajner zdvihnutý z vagóna. */
 export const RMG: MachineVM = {
   id: RMG_ID,
   defId: 'rmg',
@@ -102,11 +101,10 @@ export const RMG: MachineVM = {
   cargo: box(40, 'blue_anchor'),
 };
 
-/** Koľaje: hlavná (zákruta + juh) a vedľajšia pri RMG. */
+/** Koľaje: hlavná (zákruta + juh) . */
 export const RAILS: readonly CellCoord[] = [
   ...Array.from({ length: TRACK_END_X - TRACK_X + 1 }, (_, i) => ({ x: TRACK_X + i, y: CORNER_Y })),
   ...Array.from({ length: HEAD_Y - CORNER_Y }, (_, i) => ({ x: TRACK_X, y: CORNER_Y + 1 + i })),
-  ...Array.from({ length: HEAD_Y - 26 + 1 }, (_, i) => ({ x: SIDING_X, y: 26 + i })),
 ];
 
 const TERMINAL_VM: EntitiesVM = { modules: [], cranes: [], ships: [], vehicles: [], trucks: [], machines: [RMG], trains: [trainVM()] };
@@ -116,3 +114,18 @@ export const R6_SCENES = Object.freeze({
   rmg: { roads: [], vm: TERMINAL_VM, view: { centerX: 45.5, centerY: 30, zoom: 1.6 } } satisfies R6Scene,
 });
 export type R6SceneName = keyof typeof R6_SCENES;
+
+/** Buffer pod RMG (R6, `rmg_rail_block`): 4 rady × 6 bays vedľa koľaje; rad = 0,5 bunky, bay = 1 bunka; `null` = prázdna pozícia. */
+export const BUFFER = {
+  x0: TRACK_X + 1.25,
+  rowPitch: 0.5,
+  y0: 27,
+  rows: 4,
+  bays: 6,
+  stacks: [
+    [box(20, 'blue_anchor'), box(20, 'northern_star'), null, box(20, 'blue_anchor'), box(20, 'blue_anchor'), null],
+    [box(20, 'northern_star'), null, box(20, 'northern_star'), box(20, 'northern_star'), null, box(20, 'blue_anchor')],
+    [null, box(20, 'blue_anchor'), box(20, 'blue_anchor'), null, box(20, 'northern_star'), box(20, 'northern_star')],
+    [box(20, 'northern_star'), box(20, 'northern_star'), null, box(20, 'blue_anchor'), null, null],
+  ] as readonly (readonly (ContainerVM | null)[])[],
+} as const;

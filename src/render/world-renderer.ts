@@ -17,6 +17,7 @@ import type { CellCoord, Grid, LoadedMap, Parcel, Rect } from '@sim/grid';
 import { BuildLayer, loadGhostPalette } from './build-layer';
 import { Camera } from './camera';
 import { CraneLayer } from './crane-layer';
+import type { CargoSpriteDeps } from './cargo-sprite';
 import { MachineLayer } from './machine-layer';
 import { TrainLayer } from './train-layer';
 import { EntityLayer } from './entity-layer';
@@ -118,6 +119,8 @@ export class WorldRenderer {
   /** Ghost stavby: cesty (`setGhost`, `GhostView`) aj modulu (`setModuleGhost`); je navrchu nad žeriavmi. */
   readonly build: BuildLayer;
   readonly entityPalette: EntityPalette;
+  /** Závislosti kreslenia entít a nákladu (demá a testy skladajú vlastné `CargoSprite`). */
+  readonly cargoDeps: CargoSpriteDeps;
   /** Ramená ciest k konektorom modulov (cesta sa na modul napája, nekončí zaoblene pred ním). */
   private readonly connectorArms: ConnectorArmIndex;
   private syncedVersion = -1;
@@ -164,6 +167,7 @@ export class WorldRenderer {
       // číslo v odznaku fronty brány sa rasterizuje pre najväčší zoom a hustotu displeja, aby ostalo ostré
       textResolution: Math.ceil(SPRITE_RASTER_RESOLUTION * window.devicePixelRatio),
     };
+    this.cargoDeps = { cellPx: entityDeps.cellPx, palette: entityDeps.palette, textures: entityDeps.textures };
     this.modules = new ModuleLayer(entityDeps);
     this.ships = new EntityLayer(entityDeps);
     this.cranes = new CraneLayer(entityDeps);

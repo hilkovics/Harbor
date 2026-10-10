@@ -10,8 +10,10 @@ import '@fontsource/inter/latin-ext-600.css';
 import '../../../design/tokens.css';
 import { DEFAULT_ROAD_KIND, loadBundledMap, type Grid, type LoadedMap } from '@sim/grid';
 import type { EntitiesVM } from '../view-models';
+import { Container, Graphics } from 'pixi.js';
+import { CargoSprite } from '../cargo-sprite';
 import { WorldRenderer } from '../world-renderer';
-import { R6_SCENES, RAILS, type R6SceneName } from './r6-rail.fixtures';
+import { R6_SCENES, RAILS, BUFFER, type R6SceneName } from './r6-rail.fixtures';
 
 /** Riadené hodiny animácií (ms). */
 export interface DemoClock {
@@ -65,6 +67,28 @@ function afterTwoFrames(): Promise<void> {
   });
 }
 
+/** Buffer RMG bloku: podložka (tokeny modulu) a stohy 20′ kontajnerov ležiace pozdĺž koľaje, pod vlakom a RMG. */
+function addBuffer(renderer: WorldRenderer): void {
+  const { cellPx, palette } = renderer.cargoDeps;
+  const layer = new Container({ label: 'r6-buffer' });
+  const pad = new Graphics();
+  pad
+    .rect(BUFFER.x0 * cellPx - cellPx * 0.1, (BUFFER.y0 - 0.1) * cellPx, (BUFFER.rows * BUFFER.rowPitch + 0.2) * cellPx, (BUFFER.bays + 0.2) * cellPx)
+    .fill({ color: palette.module.base.color, alpha: palette.module.base.alpha })
+    .stroke({ width: cellPx / 32, color: palette.module.outline.color, alpha: palette.module.outline.alpha });
+  layer.addChild(pad);
+  BUFFER.stacks.forEach((rowStacks, row) => {
+    rowStacks.forEach((container, bay) => {
+      if (container === null) return;
+      const sprite = new CargoSprite(900 + row * 10 + bay, 'container_teu', renderer.cargoDeps, { container });
+      sprite.angle = 90;
+      sprite.position.set((BUFFER.x0 + (row + 0.5) * BUFFER.rowPitch) * cellPx, (BUFFER.y0 + bay + 0.5) * cellPx);
+      layer.addChild(sprite);
+    });
+  });
+  renderer.world.addChildAt(layer, renderer.world.getChildIndex(renderer.trains.view));
+}
+
 async function main(): Promise<void> {
   const host = document.getElementById('map');
   if (host === null) throw new Error('r6-rail.html: chýba #map');
@@ -80,6 +104,7 @@ async function main(): Promise<void> {
   };
   const renderer = await WorldRenderer.create({ host, map, grid: createRailGrid(map), now: clock.now, reducedMotion: () => true });
 
+  addBuffer(renderer);
   const { camera } = renderer;
   const setView = (cellX: number, cellY: number, zoom: number): void => {
     camera.zoomAt(zoom / camera.zoom, camera.viewportWidth / 2, camera.viewportHeight / 2);

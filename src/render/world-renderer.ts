@@ -156,7 +156,7 @@ export class WorldRenderer {
     this.roads = new RoadLayer(grid, palette, textures, this.connectorArms.maskAt);
     this.rails = new RoadLayer(grid, palette, textures, noConnectorMask, 'rail');
     this.roadMarks = new RoadMarkLayer(grid, palette, textures?.overlay('path_arrow') ?? null);
-    this.parcels = new ParcelLayer(options.parcels ?? options.map.parcels, palette, textures);
+    this.parcels = new ParcelLayer(options.parcels ?? options.map.parcels, palette, textures, entityPalette.label);
     this.portals = new PortalLayer(options.map, grid.width, grid.height, palette, textures);
     this.entityPalette = entityPalette;
     // Typ cesty pod vozidlom (pruh) a tvar zákrut (oblúk) sa čítajú z živej mriežky; vozidlá vidia zmeny ciest hneď.

@@ -423,3 +423,17 @@ export interface ModuleGhostVM {
   /** Konektory v SVETOVÝCH bunkách po rotácii; `side` = strana vjazdu (po rotácii). */
   connectors: { x: number; y: number; side: 'n' | 'e' | 's' | 'w' }[];
 }
+
+/** Stav parcely pre vrstvu parciel (F7): na predaj / vlastnená / prenajatá. */
+export type ParcelStateVM = 'for_sale' | 'owned' | 'leased';
+
+/** Parcela pre `ParcelLayer.sync` (F7, TF7-02): obdĺžnik v bunkách, stav a ceny v centoch (USD). */
+export interface ParcelVM {
+  id: string;
+  rect: { x: number; y: number; w: number; h: number };
+  state: ParcelStateVM;
+  /** Kúpna cena (zobrazuje sa pri parcele na predaj). */
+  priceCents: number;
+  /** Mesačný nájom v centoch. */
+  leasePerMonthCents: number;
+}

@@ -25,7 +25,7 @@ export {
   narrowRoadPaths,
 } from './narrow-road';
 export type { NarrowRoadPaths, PathOp } from './narrow-road';
-export { ParcelLayer, outlineScaleForZoom, parcelOutlineId } from './parcel-layer';
+export { ParcelLayer, outlineScaleForZoom, parcelOutlineId, formatParcelPrice, PRICE_LABEL_MIN_ZOOM } from './parcel-layer';
 export type { ParcelOutlineId } from './parcel-layer';
 export { PortalLayer, portalRotation } from './portal-layer';
 export type { PortalKind, PortalSet } from './portal-layer';
@@ -36,6 +36,8 @@ export type {
   CraneVM,
   EntitiesVM,
   ModuleGhostVM,
+  ParcelStateVM,
+  ParcelVM,
   ModuleVM,
   ShipVM,
   TruckVM,

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Graphics, NineSliceSprite } from 'pixi.js';
 import { loadBundledMap, type Parcel } from '@sim/grid';
-import { ParcelLayer, outlineScaleForZoom, parcelOutlineId } from '@render/parcel-layer';
+import { ParcelLayer, PRICE_LABEL_MIN_ZOOM, formatParcelPrice, outlineScaleForZoom, parcelOutlineId } from '@render/parcel-layer';
+import type { ParcelVM } from '@render/view-models';
 import { terrain as terrainManifest } from '../../assets/manifest.json';
 import { PALETTE, StubTextures } from './stub-textures';
 
@@ -127,7 +128,7 @@ describe('ParcelLayer so spritmi (Pixi scene graph bez renderera)', () => {
   it('bez textúr: obrys z `Graphics` v tokenoch, refresh ho prekreslí', () => {
     const parcels = liveParcels();
     const layer = new ParcelLayer(parcels, PALETTE, null);
-    expect(layer.view.children).toHaveLength(4);
+    expect(layer.view.children).toHaveLength(8); // výplň + obrys na parcelu
     expect(layer.view.children.every((child) => child instanceof Graphics)).toBe(true);
     expect(layer.outlineOf('starter')).toBeUndefined();
     parcels[0].ownership = 'leased';
@@ -138,12 +139,59 @@ describe('ParcelLayer so spritmi (Pixi scene graph bez renderera)', () => {
     const parcels = liveParcels();
     const layer = new ParcelLayer(parcels, PALETTE, null);
     parcels.forEach((parcel, i) => {
-      const bounds = layer.view.children[i].getLocalBounds();
+      const bounds = layer.view.children[i * 2 + 1].getLocalBounds();
       const cell = PALETTE.cellPx;
       expect(bounds.minX).toBeGreaterThanOrEqual(parcel.rect.x * cell);
       expect(bounds.minY).toBeGreaterThanOrEqual(parcel.rect.y * cell);
       expect(bounds.maxX).toBeLessThanOrEqual((parcel.rect.x + parcel.rect.w) * cell);
       expect(bounds.maxY).toBeLessThanOrEqual((parcel.rect.y + parcel.rect.h) * cell);
     });
+  });
+});
+
+describe('ParcelLayer F7: hover, hit-test, cenovky, sync', () => {
+  const label = { color: { color: 0xffffff, alpha: 1 }, fontFamily: 'Inter', fontWeight: '600', sizePx: 12 };
+  const make = (): ParcelLayer => new ParcelLayer(liveParcels(), PALETTE, null, label);
+
+  it('formatParcelPrice skracuje centy na USD K/M', () => {
+    expect(formatParcelPrice(32000000)).toBe('$320K');
+    expect(formatParcelPrice(120000000)).toBe('$1.2M');
+    expect(formatParcelPrice(50000)).toBe('$500');
+  });
+
+  it('parcelAt vráti parcelu pod bunkou, mimo parciel undefined', () => {
+    const layer = make();
+    expect(layer.parcelAt({ x: 10, y: 20 })).toBe('west_quay');
+    expect(layer.parcelAt({ x: 30, y: 14 })).toBe('starter');
+    expect(layer.parcelAt({ x: 58, y: 14 })).toBeUndefined(); // x + w je mimo
+    expect(layer.parcelAt({ x: 0, y: 0 })).toBeUndefined();
+  });
+
+  it('cenovka len na parcele na predaj a len pri dostatočnom zoome', () => {
+    const layer = make();
+    expect(layer.priceLabelOf('west_quay')).toBe('$320K');
+    expect(layer.priceLabelOf('starter')).toBeUndefined();
+    layer.setZoom(PRICE_LABEL_MIN_ZOOM / 2);
+    expect(layer.priceLabelOf('west_quay')).toBeUndefined();
+    layer.setZoom(1);
+    expect(layer.priceLabelOf('west_quay')).toBe('$320K');
+  });
+
+  it('setHover mení zvýraznenie iba pri zmene', () => {
+    const layer = make();
+    expect(layer.setHover('west_quay')).toBe(true);
+    expect(layer.setHover('west_quay')).toBe(false);
+    expect(layer.hovered).toBe('west_quay');
+    expect(layer.setHover(null)).toBe(true);
+  });
+
+  it('sync prevezme stav a cenu z ParcelVM', () => {
+    const layer = make();
+    const vm: ParcelVM = { id: 'west_quay', rect: { x: 6, y: 12, w: 16, h: 38 }, state: 'leased', priceCents: 1, leasePerMonthCents: 5 };
+    expect(layer.sync([vm])).toBe(1);
+    expect(layer.priceLabelOf('west_quay')).toBeUndefined();
+    expect(layer.sync([{ ...vm, state: 'for_sale', priceCents: 150000000 }])).toBe(1);
+    expect(layer.priceLabelOf('west_quay')).toBe('$1.5M');
+    expect(layer.sync([{ ...vm, id: 'neznama' }])).toBe(0);
   });
 });

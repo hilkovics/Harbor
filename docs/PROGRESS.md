@@ -413,3 +413,25 @@ Stav: **hotová s čiastočnou akceptáciou 2** (TR4-00 … TR4-07, vrátane TR4
 - Opravy review: defy, prednosť holdingu, index obsadenia, ARCHITECTURE (TR4-06b)
 
 **Otvorené:** STS čaká na ťahač ≈ 60 % (R3, geometria okruhu); priepustnosť TP pri špičke; férovosť výjazdu z brány (STUCK_TICKS 2000); zrušené ukážky dock-maneuver/rampa; WorldState v13; artefakt verzia 12. Viď `docs/BACKLOG.md` „Z Fázy R4“.
+
+## Fáza R5 — Reefery a špeciálne kontajnery
+Karty: `docs/tasks/phase-r5.md` · vetva `phase/r5-reefer-special` (stacked nad `phase/r4-gates`)
+
+Stav: **hotová** (TR5-01 … TR5-07, vrátane TR5-02b a TR5-06b)
+
+**Výsledky:**
+- `pnpm test`: 413 súborov, 8 794 testov zelených
+- `pnpm test:e2e`: 63/63
+- Akceptácia: 1 splnené (`reefer_flow`: dosť zásuviek → 0 reklamácií; málo → preskočenia + reklamácie; lostUnits 0, stuckAtEnd 0); 2 splnené (`oog_flow`: STS → TT → reach stacker → kamión, nič na OOG, flat rack navrchu); 3 splnené (ledger `energy`, FinancePanel); 4 splnené (typy, OOG, reefer rack a zásuvky, reach stacker); 5 splnené (`live_terminal_mix` s reefer blokom a OOG plochou 100k: 0 TrafficJam, stuckAtEnd 0, lostUnits 0)
+
+**Čo je hotové:**
+- ADR-042 (reefery a špeciály) vrátane dodatku TR5-02b (slepý vjazd, scenár `live_terminal_mix`)
+- Typy kontajnerov, `typeMix` v šablónach kontraktov, stav reeferu na `CargoUnit`, pravidlá stohu (flat rack navrch, reefer len na zásuvke)
+- `reefer_block_8` s napájaním, alarmami, reklamáciami a energiou v ledgeri; oprava `to_vacate` a termínu alarmu (TR5-06b)
+- `oog_area` a reach stacker (`YardMachine`), OOG cesta STS → TT → RS → kamión
+- Render, UI, napojenie VM, `simrun` metriky, e2e
+- `WorldState` v14
+
+**Odchýlky od plánu:** karty TR5-02b a TR5-06b pribudli z review a testov; `rs_area` nerobená (voliteľná podľa plánu).
+
+**Otvorené:** `rs_area` (3 rady 5/4/3) nerobené; kapacita TP a státí pri špičke 100/h (z R4); teplota reeferu sa nesleduje; e2e `r4-tp-rtg` používa obojsmernú bunku vjazdu RTG bloku; WorldState v14; artefakt verzia 13. Viď `docs/BACKLOG.md` „Z Fázy R5 (TR5-02)“.

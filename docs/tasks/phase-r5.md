@@ -64,10 +64,12 @@
 |---|---|---|---|
 | TR5-01 | ADR-042 + defy (typy, `typeMix`, reefer, OOG a RS parametre, energia) + `CargoUnit.reefer` + pravidlá stohu + `reefer_block_8` + napájanie, alarmy, reklamácie, energia v ledgeri + scenár `reefer_flow`; save v14 | sim-architect (sonnet) | – |
 | TR5-02 | `oog_area` + reach stacker (`YardMachine`) + OOG cesta STS → TT → RS → kamión + scenár `oog_flow` + 100k `live_terminal` so zmesou | sim-architect (sonnet) | 01 |
+| TR5-02b | Zápcha pri slepom vjazde: kontrola pri stavbe, scenár `live_terminal_mix` | sim-architect (sonnet) | 02 |
 | TR5-03 | Render: kontajnery podľa typu a OOG, reefer rack a stav zásuviek, reach stacker (telo, výložník, spreader), OOG plocha; demo | implementer (sonnet, worktree) | VM kontrakt |
 | TR5-04 | UI: inšpektor reefer bloku (zásuvky, alarmy, odpojené), energia vo financiách, toasty reklamácií, typy v karte kontraktu | ui-builder (haiku, worktree) | VM kontrakt |
 | TR5-05 | Napojenie VM, `simrun` (`reeferClaims`, `energyCents`, `oogMoves`), e2e | implementer (sonnet) | 02, 03, 04 |
 | TR5-06 | Review + opravy | sim-reviewer → sim-architect | 05 |
+| TR5-06b | Opravy review: uvoľnenie vjazdu idle vozidlom `to_vacate`, termín alarmu, reefer fallback STS, e2e | sim-reviewer → sim-architect (sonnet) | 06 |
 | TR5-07 | Pipeline, artefakt, docs, PR | orchestrátor + haiku | 06 |
 
 **VM kontrakt** (voliteľné):
@@ -78,7 +80,20 @@
 - `FinanceVM.energyCents`.
 
 ## Checklist
-- [ ] TR5-01 · [ ] TR5-02 · [ ] TR5-03 · [ ] TR5-04 · [ ] TR5-05 · [ ] TR5-06 · [ ] TR5-07
+- [x] TR5-01 · [x] TR5-02 · [x] TR5-02b · [x] TR5-03 · [x] TR5-04 · [x] TR5-05 · [x] TR5-06 · [x] TR5-06b · [x] TR5-07
 
 ## Výsledok fázy
-_(doplní orchestrátor)_
+**Hotová.** Všetky karty vrátane TR5-02b a TR5-06b; akceptácia 1–5 splnená.
+
+**Pipeline:**
+- `pnpm test`: 413 súborov, 8 794 testov zelených
+- `pnpm test:e2e`: 63/63 zelených
+
+**Akceptácia:**
+1. SPLNENÉ — `reefer_flow`: dosť zásuviek → 0 reklamácií; málo → preskočenia + reklamácie; lostUnits 0, stuckAtEnd 0.
+2. SPLNENÉ — `oog_flow`: STS (dlhší cyklus) → TT → reach stacker → kamión; nič na OOG; flat rack navrchu.
+3. SPLNENÉ — ledger `energy`, zobrazenie vo FinancePanel.
+4. SPLNENÉ — typy kontajnerov, OOG, reefer rack so stavom zásuviek, reach stacker.
+5. SPLNENÉ — `live_terminal_mix` s reefer blokom a OOG plochou 100k: 0 TrafficJam, stuckAtEnd 0, lostUnits 0.
+
+**Otvorené** (viď `docs/BACKLOG.md` „Z Fázy R5 (TR5-02)“): `rs_area` (3 rady 5/4/3) nerobené; kapacita TP a státí pri špičke 100/h (z R4); teplota reeferu sa nesleduje; e2e `r4-tp-rtg` používa obojsmernú bunku vjazdu RTG bloku; WorldState v14; artefakt verzia 13.

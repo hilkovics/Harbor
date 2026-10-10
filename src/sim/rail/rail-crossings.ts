@@ -7,7 +7,8 @@
  *   obsadený slot), takže pred ním stojí — žiadna osobitná vetva v premávke. Vlak nezíska slot, ktorý drží vozidlo (je na priecestí): drží si voľné sloty a získa zvyšok, keď vozidlo odíde.
  * - **Vlak čaká na vozidlo:** do bunky priecestia vlak vstúpi, len keď drží oba sloty (`crossingsHeld`); inak stojí pred ňou. Vozidlo na priecestí nečaká na vlak (závora mu už nebráni
  *   odísť), takže cyklus čakania vlak ↔ vozidlo nevznikne.
- * - Stav slotov je odvodený z polôh vlakov (`syncCrossings` na konci kroku 6e a pri obnove save): po obnove sa rovná stavu pôvodného behu.
+ * - Stav slotov je odvodený z polôh vlakov (`syncCrossings` v kroku 6e, potom ešte `syncAllCrossings` na konci kroku 8 — po odchode kamiónov — a pri obnove save): vlak teda na konci každého
+ *   ticku drží všetky voľné sloty, ktoré chce, a obnova save (`addTrain` → `syncCrossings`) dá bit-presne ten istý stav (TR6-02c). Vlak drží sloty len v rozsahu, ktorý chce.
  */
 import type { EntityId } from '../core/entity-id';
 import type { World } from '../world/world';
@@ -28,9 +29,8 @@ export function syncCrossings(world: World, train: Train): void {
   const { rail, laneSlots } = world;
   if (rail.crossings.size === 0) return;
   const { lo, hi } = wantedRange(world, train);
-  for (let i = 0; i < train.route.length; i++) {
+  for (const i of train.crossingIndexes(rail.crossings)) {
     const cell = train.route[i];
-    if (!rail.crossings.has(cell)) continue;
     const wanted = i >= lo && i <= hi;
     for (let lane = 0; lane < LANES_PER_CELL; lane++) {
       const key = slotKey(cell, lane);
@@ -45,8 +45,8 @@ export function syncCrossings(world: World, train: Train): void {
 export function releaseCrossings(world: World, train: Train): void {
   const { rail, laneSlots } = world;
   if (rail.crossings.size === 0) return;
-  for (const cell of train.route) {
-    if (!rail.crossings.has(cell)) continue;
+  for (const i of train.crossingIndexes(rail.crossings)) {
+    const cell = train.route[i];
     for (let lane = 0; lane < LANES_PER_CELL; lane++) {
       const key = slotKey(cell, lane);
       if (laneSlots.holderOfKey(key) === train.id) laneSlots.release(key, train.id);
@@ -58,9 +58,9 @@ export function releaseCrossings(world: World, train: Train): void {
 export function crossingsHeld(world: World, train: Train, from: number, to: number): boolean {
   const { rail, laneSlots } = world;
   if (rail.crossings.size === 0) return true;
-  for (let i = Math.max(0, from); i <= Math.min(train.route.length - 1, to); i++) {
+  for (const i of train.crossingIndexes(rail.crossings)) {
+    if (i < from || i > to) continue;
     const cell = train.route[i];
-    if (!rail.crossings.has(cell)) continue;
     for (let lane = 0; lane < LANES_PER_CELL; lane++) if (laneSlots.holderOfKey(slotKey(cell, lane)) !== train.id) return false;
   }
   return true;
@@ -77,4 +77,10 @@ export function crossingBarrier(world: World, cell: number): 'open' | 'closed' {
 /** Priecestia mapy s aktuálnym stavom závory (vzostupne podľa bunky) — `RailVM.crossings`. */
 export function crossingStates(world: World): readonly { readonly cell: number; readonly barrier: 'open' | 'closed' }[] {
   return [...world.rail.crossings].sort((a, b) => a - b).map((cell) => ({ cell, barrier: crossingBarrier(world, cell) }));
+}
+
+/** Dorovná sloty priecestí všetkých vlakov (koniec kroku 8): slot, ktorý po kroku 6e uvoľnil odchádzajúci kamión, vlak získa hneď — rovnaký stav ako po obnove save. */
+export function syncAllCrossings(world: World): void {
+  if (world.rail.crossings.size === 0) return;
+  for (const train of world.rail.trains.values()) syncCrossings(world, train);
 }

@@ -21,7 +21,7 @@
  * ostáva čakať, job sa nezruší — vozidlo na TP ho nedrží na ceste ako vozidlo pri vlastnom rehandlingu).
  */
 import { isSameLocation, slotOf, type CargoLocation } from '../cargo/cargo-location';
-import type { CargoUnit } from '../cargo/cargo-unit';
+import { teuOf, type CargoUnit } from '../cargo/cargo-unit';
 import type { EntityId } from '../core/entity-id';
 import type { YardPriorityKind } from '../defs/types';
 import { onEmptyStored } from '../logistics/empty-depot-service';
@@ -153,7 +153,7 @@ function spotsOf(world: World, block: RtgBlock, cycle: MachineCycle): { readonly
     // Cyklus s vlakom: miesto vo vlaku (`tpBay` = TEU miesto) leží nad koľajou vlaka vo výške paluby.
     const train = world.trains.get(cycle.trainId as EntityId);
     if (train === undefined) throw new MachineError('inconsistent', `blok ${block.label}: vlak #${String(cycle.trainId)} cyklu ${cycle.kind} vo svete nie je`);
-    const deck: Spot = { bay: trainSlotBay(train, block.geometry.bays, cycle.tpBay, unit.sizeFt === 40 ? 2 : 1), row: trainRow(train), tier: 0 };
+    const deck: Spot = { bay: trainSlotBay(train, block.geometry.bays, cycle.tpBay, teuOf(unit)), row: trainRow(train), tier: 0 };
     return { pick: cycle.fromSlot === null ? deck : spotOfSlot(block, unit, cycle.fromSlot), drop: cycle.toSlot === null ? deck : spotOfSlot(block, unit, cycle.toSlot) };
   }
   const lane: Spot = { bay: cycle.tpBay, row: LANE_ROW, tier: 0 };

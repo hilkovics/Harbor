@@ -19,7 +19,7 @@ import { trackRow } from '../machines/rmg-crane';
 import type { RmgCrane } from '../machines/rmg-crane';
 import type { MachineCycle } from '../machines/machine-state-types';
 import type { RailTerminal } from '../modules/rail-terminal';
-import { findTrainSlot } from '../rail/train-cargo';
+import { findTrainSlot, trainSlotMap } from '../rail/train-cargo';
 import type { Train } from '../rail/train';
 import type { World } from '../world/world';
 
@@ -74,10 +74,11 @@ function planUnload(world: World, block: RailTerminal, train: Train): MachineCyc
 function planLoad(world: World, block: RailTerminal, train: Train): MachineCycle | null {
   let best: { readonly unitId: EntityId; readonly slot: number; readonly trainSlot: number } | undefined;
   let buried: { readonly unitId: EntityId; readonly slot: number } | undefined;
+  const taken = trainSlotMap(world.cargo, train);
   for (const unitId of world.cargo.unitsAt('in_storage', block.id)) {
     const unit = world.cargo.get(unitId);
     if (unit === undefined || unit.location.kind !== 'in_storage' || unit.direction !== 'import' || world.jobOfUnit(unitId) !== undefined) continue;
-    const trainSlot = findTrainSlot(world.cargo, train, teuOf(unit));
+    const trainSlot = findTrainSlot(world.cargo, train, teuOf(unit), taken);
     if (trainSlot === undefined) continue;
     if (block.topBlockerOf(unitId) !== null) {
       if (buried === undefined) buried = { unitId, slot: unit.location.slot };
@@ -101,6 +102,7 @@ function planLoad(world: World, block: RailTerminal, train: Train): MachineCycle
  */
 export function planTrainCycle(world: World, block: RailTerminal): MachineCycle | null {
   for (const train of dwellingTrains(world, block)) {
+    if (world.rail.isOverdue(train, world.clock.tick)) continue;
     const cycle = planUnload(world, block, train) ?? planLoad(world, block, train);
     if (cycle !== null) return cycle;
   }

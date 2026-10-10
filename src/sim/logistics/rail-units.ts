@@ -10,16 +10,13 @@ import type { Module } from '../modules/module';
 import { RailTerminal } from '../modules/rail-terminal';
 import type { World } from '../world/world';
 
-/** Násobok hashu id (Knuthova multiplikatívna konštanta 2^32 / φ): rozloží po sebe idúce id rovnomerne cez `0 … BASIS_POINTS − 1`. */
-const ID_HASH_MULTIPLIER = 0x9e3779b1;
-
 /** Je import `unit` určený na odvoz vlakom? (Vo svete musí byť železničná služba; jednotka musí mať kontrakt s podielom a smie ísť po koľaji.) */
 export function isRailImportUnit(world: World, unit: CargoUnit): boolean {
   if (unit.direction !== 'import' || unit.contractId === null || unit.oog || !world.hasRailService) return false;
   const contract = world.contractBook.get(unit.contractId);
   if (contract === undefined || contract.railShareBp === 0) return false;
   if (needsPlug(unit, world.defs.containerTypes)) return false;
-  return (Math.imul(unit.id, ID_HASH_MULTIPLIER) >>> 0) % BASIS_POINTS < contract.railShareBp;
+  return (Math.imul(unit.id, world.rail.def.unitHashMultiplier) >>> 0) % BASIS_POINTS < contract.railShareBp;
 }
 
 /** Prijme terminál `terminal` jednotku `unit` zo zdroja `from`? Import len železničný, export len z vlaka tohto terminálu (`from` = terminál). */

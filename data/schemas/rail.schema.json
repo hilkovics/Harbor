@@ -15,10 +15,12 @@
         "intervalHours": { "type": "number", "exclusiveMinimum": 0, "description": "Interval medzi plánovanými príchodmi vlakov v herných hodinách." },
         "firstArrivalHour": { "type": "integer", "minimum": 0, "description": "Hodina hry (od ticku 0) prvého plánovaného príchodu." },
         "wagonsPerTrain": { "type": "integer", "minimum": 1, "description": "Počet vagónov vlaku okrem lokomotívy." },
-        "dwellMinutes": { "type": "integer", "minimum": 1, "description": "Plánovaný pobyt vlaku v termináli v herných minútach od zastavenia; vlak odíde skôr, keď je plný." }
+        "dwellMinutes": { "type": "integer", "minimum": 1, "description": "Plánovaný pobyt vlaku v termináli v herných minútach od zastavenia; vlak odíde skôr, keď je plný." },
+        "departGraceMinutes": { "type": "integer", "minimum": 1, "description": "Rešpitná lehota po plánovanom odchode (herné minúty): potom vlak odíde aj s nevyloženým nákladom z príchodu (buffer plný), nové cykly RMG sa s ním už nezačnú." }
       }
     },
     "crossingClearTicks": { "type": "integer", "minimum": 1, "description": "Úrovňové priecestie: vlak ho rezervuje pred sebou toľko tickov jazdy vopred; cestné vozidlá doň po rezervácii nevstúpia (závora)." },
+    "unitHashMultiplier": { "type": "integer", "minimum": 1, "description": "Násobok hashu id jednotky (Knuthova konštanta 2^32/φ), ktorým sa rozdeľuje železničný podiel importu (isRailImportUnit)." },
     "train": {
       "type": "object",
       "additionalProperties": false,

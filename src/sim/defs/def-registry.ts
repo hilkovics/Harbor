@@ -341,6 +341,7 @@ const RAIL_FIELDS: FieldTable<RailDef> = {
       firstArrivalHour: { kind: 'integer', min: 0 },
       wagonsPerTrain: { kind: 'integer', min: 1 },
       dwellMinutes: { kind: 'integer', min: 1 },
+      departGraceMinutes: { kind: 'integer', min: 1 },
     },
   },
   train: {
@@ -353,6 +354,7 @@ const RAIL_FIELDS: FieldTable<RailDef> = {
     },
   },
   crossingClearTicks: { kind: 'integer', min: 1 },
+  unitHashMultiplier: { kind: 'integer', min: 1 },
 };
 
 /** `equipment.json` → `tractors` (TR3-02, ADR-040 bod 7): východisko a medze počtu ťahačov na STS. */

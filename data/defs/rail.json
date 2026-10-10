@@ -4,7 +4,8 @@
     "intervalHours": 6,
     "firstArrivalHour": 2,
     "wagonsPerTrain": 4,
-    "dwellMinutes": 90
+    "dwellMinutes": 90,
+    "departGraceMinutes": 30
   },
   "train": {
     "speedMilliCellsPerTick": 400,
@@ -12,5 +13,6 @@
     "wagonLengthCells": 3,
     "wagonTeu": 3
   },
-  "crossingClearTicks": 12
+  "crossingClearTicks": 12,
+  "unitHashMultiplier": 2654435761
 }

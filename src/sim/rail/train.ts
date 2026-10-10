@@ -113,6 +113,27 @@ export class Train {
     return this.wagons * this.def.wagonTeu;
   }
 
+  private crossingIdx: readonly number[] = [];
+  private crossingIdxFor: ReadonlySet<number> | null = null;
+  private crossingIdxSize = -1;
+
+  /**
+   * Indexy trasy, ktoré sú priecestiami (vzostupne): zostavia sa raz a prepočítajú sa len pri zmene množiny priecestí (zmena veľkosti; priecestie pod trasou stojaceho vlaka pribudne
+   * len `PlaceRoad`, nikdy nezanikne — `RemoveRail` s vlakom na trase sa odmieta), takže sync priecestí v každom ticku neprechádza celú trasu.
+   */
+  crossingIndexes(crossings: ReadonlySet<number>): readonly number[] {
+    if (this.crossingIdxFor !== crossings || this.crossingIdxSize !== crossings.size) {
+      const found: number[] = [];
+      this.route.forEach((cell, index) => {
+        if (crossings.has(cell)) found.push(index);
+      });
+      this.crossingIdx = found;
+      this.crossingIdxFor = crossings;
+      this.crossingIdxSize = crossings.size;
+    }
+    return this.crossingIdx;
+  }
+
   /** Vagón, v ktorom je miesto `slot`. */
   wagonOfSlot(slot: number): number {
     return Math.floor(slot / this.def.wagonTeu);

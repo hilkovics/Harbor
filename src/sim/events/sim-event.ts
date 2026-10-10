@@ -301,11 +301,13 @@ export interface TrainArrivedEvent {
   readonly exportUnits: number;
 }
 
-/** Vlak odišiel cez koľajový portál (R6, ADR-043): `units` jednotiek prešlo `in_train → exported`, `turnaroundTicks` = od vzniku vlaku po odchod. */
+/** Vlak odišiel cez koľajový portál (R6, ADR-043): `units` jednotiek prešlo `in_train → exported`, `turnaroundTicks` = od vzniku vlaku po odchod; `undeliveredUnits` = z `units` nevyložený náklad z príchodu
+ * (odchod po rešpitnej lehote `departGraceMinutes`, buffer bol plný; jednotky odišli späť, ledger ich vedie ako `exported`, TR6-02c). */
 export interface TrainDepartedEvent {
   readonly type: 'TrainDeparted';
   readonly trainId: EntityId;
   readonly units: number;
+  readonly undeliveredUnits: number;
   readonly turnaroundTicks: number;
 }
 

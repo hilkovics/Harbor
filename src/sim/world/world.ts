@@ -93,7 +93,7 @@ import type { YardMachine } from '../machines/yard-machine';
 import { ReeferSystem } from '../systems/reefer-system';
 import { RailSystem } from '../systems/rail-system';
 import { Rail, type RailRuntimeState } from '../rail/rail';
-import { releaseCrossings, syncCrossings } from '../rail/rail-crossings';
+import { releaseCrossings, syncAllCrossings, syncCrossings } from '../rail/rail-crossings';
 import { computeRailRoutes, type RailRoute } from '../rail/rail-routes';
 import type { Train } from '../rail/train';
 import { YardMachineSystem } from '../systems/yard-machine-system';
@@ -1190,6 +1190,8 @@ export class World {
 
     // 8. landsideSystem — kamióny (FSM, pohyb, nakládka, export), brány (FIFO, priepustnosť), spawn (ADR-024).
     this.landsideSystem.tick(this);
+    // 8b. priecestia vlakov — slot uvoľnený kamiónom po kroku 6e získa vlak hneď, aby stav na konci ticku nezávisel od toho, či svet vznikol obnovou save (TR6-02c, ADR-043 dodatok).
+    syncAllCrossings(this);
 
     // 9. economySystem — pri DayClosed údržba, mzdy, DaySummary, pri MonthClosed MonthSummary, bankrot (ADR-025).
     this.economySystem.tick(this, closed);

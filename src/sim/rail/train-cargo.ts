@@ -23,22 +23,31 @@ export function trainSlotMap(cargo: CargoReader, train: Train): boolean[] {
 export function wagonFillTeu(cargo: CargoReader, train: Train): number[] {
   const taken = trainSlotMap(cargo, train);
   const { wagonTeu } = train.def;
-  return Array.from({ length: train.wagons }, (_, wagon) => taken.slice(wagon * wagonTeu, (wagon + 1) * wagonTeu).filter(Boolean).length);
+  return Array.from({ length: train.wagons }, (_, wagon) => {
+    let fill = 0;
+    for (let i = wagon * wagonTeu; i < (wagon + 1) * wagonTeu; i++) if (taken[i]) fill += 1;
+    return fill;
+  });
 }
 
-/** Je vlak plný (všetky miesta obsadené)? */
+/** Je vlak plný (všetky miesta obsadené)? Lacný predtest: jednotka zaberá najviac 2 TEU, takže pod `slotCount / 2` jednotkami plný byť nemôže (bez alokácie). */
 export function isTrainFull(cargo: CargoReader, train: Train): boolean {
-  return wagonFillTeu(cargo, train).every((fill) => fill >= train.def.wagonTeu);
+  if (cargo.countAt('in_train', train.id) * 2 < train.slotCount) return false;
+  return trainSlotMap(cargo, train).every(Boolean);
 }
 
-/** Prvé voľné miesto pre `teu` TEU v jednom vagóne (vagóny od lokomotívy), alebo `undefined`, keď sa jednotka nezmestí. */
-export function findTrainSlot(cargo: CargoReader, train: Train, teu: number): number | undefined {
-  const taken = trainSlotMap(cargo, train);
+/**
+ * Prvé voľné miesto pre `teu` TEU v jednom vagóne (vagóny od lokomotívy), alebo `undefined`, keď sa jednotka nezmestí. `taken` = už zostavená mapa obsadenia (`trainSlotMap`);
+ * volajúci, ktorý hľadá miesto pre viac jednotiek v jednom ticku, ju zostaví raz.
+ */
+export function findTrainSlot(cargo: CargoReader, train: Train, teu: number, taken: readonly boolean[] = trainSlotMap(cargo, train)): number | undefined {
   const { wagonTeu } = train.def;
   for (let wagon = 0; wagon < train.wagons; wagon++) {
     for (let offset = 0; offset + teu <= wagonTeu; offset++) {
       const first = wagon * wagonTeu + offset;
-      if (taken.slice(first, first + teu).every((slot) => !slot)) return first;
+      let free = true;
+      for (let i = first; i < first + teu; i++) if (taken[i]) free = false;
+      if (free) return first;
     }
   }
   return undefined;

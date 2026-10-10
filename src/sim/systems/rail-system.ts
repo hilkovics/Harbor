@@ -7,7 +7,7 @@
  * 2. **Jazda** (vlaky vzostupne podľa id): `arriving` ide k zastávke (koniec koľaje), `departing` k portálu; posun o `train.speedMilliCellsPerTick`, bunku pred sebou smie vlak obsadiť,
  *    len ak ju nedrží iný vlak (obsadenie `rail.occupancy`, vlaky sa neprekrývajú, ADR-037). Na zastávke `arriving → dwelling` (`departAtTick = tick + dwell`).
  * 3. **Pobyt**: `dwelling` odíde (`→ departing`) v plánovanom čase (`tick ≥ departAtTick`) alebo keď je plný (všetky miesta obsadené), ak RMG dokončil jeho vykládku (nezostal náklad z príchodu — jednotky
- *    iného smeru než `import` — a RMG nie je v cykle s ním; TR6-02: RMG vykladá a nakladá po vagónoch, `systems/rmg-train-work.ts`) a po koľajisku nejazdí iný vlak. Odchod = po portál (chvost vlaku opustil trasu): jednotky `in_train → exported` (FIFO), `TrainDeparted`, vlak zanikne.
+ *    iného smeru než `import` — a RMG nie je v cykle s ním; TR6-02: RMG vykladá a nakladá po vagónoch, `systems/rmg-train-work.ts`) a po koľajisku nejazdí iný vlak; po rešpitnej lehote `departGraceMinutes` odíde aj s nevyloženým nákladom z príchodu (`undeliveredUnits`; buffer plný, TR6-02c) — RMG s ním už nové cykly nezačne. Odchod = po portál (chvost vlaku opustil trasu): jednotky `in_train → exported` (FIFO), `TrainDeparted`, vlak zanikne.
  */
 import { crossingsHeld, syncCrossings } from '../rail/rail-crossings';
 import { MILLI_PER_CELL, Train } from '../rail/train';
@@ -87,18 +87,22 @@ function drive(world: World, train: Train): void {
 function depart(world: World, train: Train): void {
   let units = 0;
   let importUnits = 0;
+  let undelivered = 0;
   for (let unitId = world.cargo.firstUnitAt('in_train', train.id); unitId !== undefined; unitId = world.cargo.firstUnitAt('in_train', train.id)) {
     if (world.cargo.get(unitId)?.direction === 'import') importUnits += 1;
+    else undelivered += 1;
     world.cargo.move(unitId, { kind: 'exported' });
     units += 1;
   }
   const turnaroundTicks = world.clock.tick - train.spawnedTick;
   world.removeTrain(train.id);
   world.rail.recordDeparture(turnaroundTicks, importUnits);
-  world.events.emit({ type: 'TrainDeparted', trainId: train.id, units, turnaroundTicks });
+  world.events.emit({ type: 'TrainDeparted', trainId: train.id, units, undeliveredUnits: undelivered, turnaroundTicks });
 }
 
 export class RailSystem {
+  private readonly trainsBuffer: Train[] = [];
+
   /** Krok 6e (viď hlavička). */
   tick(world: World): void {
     const { rail } = world;
@@ -109,11 +113,16 @@ export class RailSystem {
       if (!world.hasRailService) rail.skipArrivals(tick);
       else if (mover === undefined && trySpawn(world)) mover = rail.mover();
     }
-    // Kópia id: odchod vlaka ho odstráni z mapy počas prechodu.
-    for (const train of [...rail.trains.values()]) {
+    // Kópia vlakov (zdieľaný buffer): odchod vlaka ho odstráni z mapy počas prechodu; bez alokácie v každom ticku.
+    const trains = this.trainsBuffer;
+    trains.length = 0;
+    for (const train of rail.trains.values()) trains.push(train);
+    for (const train of trains) {
       if (train.state === 'dwelling') {
+        if (mover !== undefined || machineWorksOnTrain(world, train.id)) continue;
+        // Po plánovanom odchode odíde vyložený vlak; po rešpitnej lehote odíde aj s nevyloženým nákladom z príchodu (buffer plný — inak by držal koľaj navždy).
         const due = train.departAtTick !== null && tick >= train.departAtTick;
-        if (mover !== undefined || !(due || isTrainFull(world.cargo, train)) || hasInboundCargo(world, train) || machineWorksOnTrain(world, train.id)) continue;
+        if (!rail.isOverdue(train, tick) && !((due || isTrainFull(world.cargo, train)) && !hasInboundCargo(world, train))) continue;
         train.transition('departing');
         mover = train;
         // Vlak vyráža v nasledujúcom ticku — tento tick sa len rozbieha (obsadenie sa nemení).

@@ -62,7 +62,7 @@ const REVISION_SAMPLES: readonly SimEvent[] = [
   { type: 'TranshipSold', contractId: SAMPLE_CONTRACT, units: 1 },
   // R6 (TR6-05): vlak príde / odíde, export po koľaji dorazil.
   { type: 'TrainArrived', trainId: SAMPLE_ID, terminalId: SAMPLE_ID, delayTicks: 0, exportUnits: 0 },
-  { type: 'TrainDeparted', trainId: SAMPLE_ID, units: 0, turnaroundTicks: 1 },
+  { type: 'TrainDeparted', trainId: SAMPLE_ID, units: 0, undeliveredUnits: 0, turnaroundTicks: 1 },
   { type: 'TrainExportArrived', contractId: SAMPLE_CONTRACT, unitId: SAMPLE_ID, trainId: SAMPLE_ID },
 ];
 

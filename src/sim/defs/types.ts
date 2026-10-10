@@ -832,6 +832,8 @@ export interface RailTimetableDef {
   readonly wagonsPerTrain: number;
   /** Plánovaný pobyt vlaku v termináli v herných minútach od zastavenia (celé ≥ 1); vlak odíde skôr, keď je plný. */
   readonly dwellMinutes: number;
+  /** Rešpitná lehota po plánovanom odchode v herných minútach (celé ≥ 1): potom vlak odíde aj s nevyloženým nákladom z príchodu (TR6-02c). */
+  readonly departGraceMinutes: number;
 }
 
 /** Vlak (`rail.json` → `train`, ADR-043): rýchlosť, dĺžky vozňov a kapacita vagóna. */
@@ -852,4 +854,6 @@ export interface RailDef extends DefBase {
   readonly train: RailTrainDef;
   /** Úrovňové priecestie (TR6-02): vlak rezervuje priecestie pred sebou toľko tickov jazdy vopred (celé ≥ 1); cestné vozidlá do rezervovaného priecestia nevstúpia (závora). */
   readonly crossingClearTicks: number;
+  /** Násobok hashu id jednotky pre železničný podiel (celé ≥ 1; Knuthova konštanta 2^32 / φ), `logistics/rail-units.ts`. */
+  readonly unitHashMultiplier: number;
 }

@@ -289,7 +289,8 @@ export function holdsUnloadForTractor(world: World, crane: CraneModule): boolean
   const job = world.jobOfUnit(crane.heldUnitId);
   if (job === undefined || !jobNeedsMachine(world, job)) return false;
   const vehicle = job.vehicleId === null ? undefined : world.vehicles.get(job.vehicleId);
-  return vehicle?.state !== 'loading';
+  // Len keď ťahač naozaj ide k háku (`to_pickup`) a bunku pod hákom mu zahradzuje cudzie vozidlo; bez priradeného ťahača sa apron zbytočne neberie (TR6-02c).
+  return vehicle?.state === 'to_pickup';
 }
 
 const HOOK_HANDOVER: Handover = {

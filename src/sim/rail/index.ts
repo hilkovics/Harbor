@@ -5,5 +5,5 @@ export { TRAIN_MOVING, TRAIN_STATES, TRAIN_TRANSITIONS, isTrainState, isTrainTra
 export { computeRailRoutes, findRailPath, type RailRoute } from './rail-routes';
 export { railPoseAt, type RailPose } from './rail-geometry';
 export { findTrainSlot, isTrainFull, trainFits, trainSlotMap, wagonFillTeu } from './train-cargo';
-export { crossingBarrier, crossingStates, crossingsHeld, releaseCrossings, syncCrossings } from './rail-crossings';
+export { crossingBarrier, crossingStates, crossingsHeld, releaseCrossings, syncAllCrossings, syncCrossings } from './rail-crossings';
 export { isRailExportDue, isRailExportIndex, loadRailExports } from './rail-exports';

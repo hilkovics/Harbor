@@ -62,6 +62,8 @@ export class Rail {
   readonly intervalTicks: number;
   /** Plánovaný pobyt v termináli v tickoch (`timetable.dwellMinutes`). */
   readonly dwellTicks: number;
+  /** Rešpitná lehota po plánovanom odchode v tickoch (`timetable.departGraceMinutes`): potom vlak odíde aj s nevyloženým nákladom z príchodu. */
+  readonly departGraceTicks: number;
   /** Úrovňové priecestia: bunka s cestou (`Cell.road = 'road'`), ktorou vedie aj koľaj (vlak ju rezervuje, cestné vozidlá ju nesmú obsadiť, kým je vlak na nej alebo pred ňou). */
   readonly crossings = new Set<number>();
   /** Ticky vopred, na ktoré vlak rezervuje priecestie pred sebou (`rail.json` → `train.crossingClearTicks`). */
@@ -73,6 +75,7 @@ export class Rail {
     this.occupancy = new Int32Array(cellCount);
     this.intervalTicks = Math.max(1, Math.round(def.timetable.intervalHours * clock.ticksPerHour));
     this.dwellTicks = def.timetable.dwellMinutes * clock.ticksPerMinute;
+    this.departGraceTicks = def.timetable.departGraceMinutes * clock.ticksPerMinute;
     this.crossingClearTicks = def.crossingClearTicks;
     for (const index of state?.crossings ?? []) this.crossings.add(index);
     this.state =
@@ -96,6 +99,11 @@ export class Rail {
   /** Je bunka priecestím? */
   isCrossing(index: number): boolean {
     return this.crossings.has(index);
+  }
+
+  /** Uplynula po plánovanom odchode rešpitná lehota (`departGraceMinutes`)? Vlak potom nezačína nové cykly RMG (`planTrainCycle`) a odíde aj s nevyloženým nákladom. */
+  isOverdue(train: Train, tick: number): boolean {
+    return train.departAtTick !== null && tick >= train.departAtTick + this.departGraceTicks;
   }
 
   /** Vlak, ktorý práve jazdí (drží žetón pohybu), alebo `undefined`. */

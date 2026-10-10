@@ -223,6 +223,6 @@ Nápady a problémy mimo aktuálnej fázy (CLAUDE.md, pravidlo 8). Každá polo�
 - **Artefakt verzia 13:** zverejnenie artefaktu R5 pod týmto číslom. — pôvod: výsledok fázy R5 · fáza: R5 (artefakt)
 
 ## Z TR6-02 (R6, železnica)
-- **Seed 5008 `live_terminal_rail`:** 100k beh padne v ticku 13 956 na `MachineError: rmg #17: prechod trolley → trolley nie je povolený` (RMG FSM, iný než opravené chyby TR6-02b); objavené pri hľadaní pôvodného seedu. — pôvod: TR6-02b · fáza: R6
 - **Priecestie:** viac priecestí a signály/úseky (blokové zabezpečenie), závora so zvukom/animáciou vo VM (TR6-05), obmedzenie priecestia pod stojacim vlakom (dlhý dwell zatvára cestu).
 - **Prenos sklad → buffer osobným jobom** (zadanie TR6-02 bod 6 v pôvodnom znení): ťahač by vozil z RTG bloku do bufferu podľa plánu vlaka; teraz sa železničný import ukladá do bufferu hneď pri vykládke (ADR-043 dodatok).
+- **Priecestie: pravidlo „nevchádzaj bez výjazdu“** — cestné vozidlo by do priecestia nevstúpilo, ak za ním nemá voľný slot (nezahradzuje križovatku vlaku pri zápche). Dnes trvalo stojace vozidlo na priecestí zdrží vlak (hlási sa ako `TrafficJam`). — pôvod: TR6-02c review · fáza: R6/R7

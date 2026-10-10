@@ -124,7 +124,7 @@ describe('World.serialize — WorldState v13', () => {
     expect(state.clock).toEqual({ tick: 0, speed: 1 });
     expect(state.ids).toEqual({ nextId: MAP.starter.modules.length + 1 });
     expect(state.cashCents).toBe(DEFS.economy.startingCashCents);
-    expect(state.parcels).toEqual({ starter: 'owned', west_quay: 'none', east_yard: 'none' });
+    expect(state.parcels).toEqual({ starter: 'owned', west_quay: 'none', east_yard: 'none', rail_yard: 'owned' });
     expect(Object.keys(state.parcels)).toEqual(MAP.parcels.map((p) => p.id));
   });
 

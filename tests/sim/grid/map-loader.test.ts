@@ -145,6 +145,7 @@ describe('loadMap(harbor_01)', () => {
       { id: 'starter', ownership: 'owned' },
       { id: 'west_quay', ownership: 'none' },
       { id: 'east_yard', ownership: 'none' },
+      { id: 'rail_yard', ownership: 'owned' },
     ]);
     expect(map.parcels[0]).toEqual({
       id: 'starter',

@@ -51,9 +51,9 @@ describe('ParcelLayer so spritmi (Pixi scene graph bez renderera)', () => {
     const parcels = liveParcels();
     const layer = new ParcelLayer(parcels, PALETTE, new StubTextures());
     expect(layer.view.isRenderGroup).toBe(true);
-    expect(layer.outlineCount).toBe(3);
+    expect(layer.outlineCount).toBe(4);
     const sprites = outlineSprites(layer);
-    expect(sprites).toHaveLength(3);
+    expect(sprites).toHaveLength(4);
     parcels.forEach((parcel, i) => {
       expect(sprites[i].position.x).toBe(parcel.rect.x * PALETTE.cellPx);
       expect(sprites[i].position.y).toBe(parcel.rect.y * PALETTE.cellPx);
@@ -127,7 +127,7 @@ describe('ParcelLayer so spritmi (Pixi scene graph bez renderera)', () => {
   it('bez textúr: obrys z `Graphics` v tokenoch, refresh ho prekreslí', () => {
     const parcels = liveParcels();
     const layer = new ParcelLayer(parcels, PALETTE, null);
-    expect(layer.view.children).toHaveLength(3);
+    expect(layer.view.children).toHaveLength(4);
     expect(layer.view.children.every((child) => child instanceof Graphics)).toBe(true);
     expect(layer.outlineOf('starter')).toBeUndefined();
     parcels[0].ownership = 'leased';

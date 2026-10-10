@@ -7,7 +7,7 @@ import type { DefRegistry } from '../defs/def-registry';
 import type { Grid } from '../grid/grid';
 import { RailTerminal } from '../modules/rail-terminal';
 import { RAIL_RUNTIME_KEYS, type RailRuntimeState } from '../rail/rail';
-import { SERIALIZED_TRAIN_KEYS, Train, type SerializedTrain } from '../rail/train';
+import { MILLI_PER_CELL, SERIALIZED_TRAIN_KEYS, Train, type SerializedTrain } from '../rail/train';
 import { TRAIN_STATES, isTrainState } from '../rail/train-fsm';
 import { WorldStateError, checkArray, checkInteger, checkKeys, describeValue, pointerSegment } from './state-check';
 import type { World } from './world';
@@ -58,7 +58,7 @@ export function parseTrains(value: unknown, defs: DefRegistry, grid: Grid, nextI
     if ((state === 'arriving') !== (stoppedTick === null) || (stoppedTick === null) !== (departAtTick === null)) {
       throw new WorldStateError(`${path}/stoppedTick`, `stav ${state}: stoppedTick a departAtTick sú nastavené práve po zastavení vlaku`);
     }
-    const stopMilli = route.length * 1000;
+    const stopMilli = route.length * MILLI_PER_CELL;
     if (posMilli > stopMilli || posMilli < 0) throw new WorldStateError(`${path}/posMilli`, `poloha ${String(posMilli)} je mimo trasy (0 … ${String(stopMilli)})`);
     if (state === 'dwelling' && posMilli !== stopMilli) throw new WorldStateError(`${path}/posMilli`, 'vlak v pobyte stojí na konci trasy');
     return {

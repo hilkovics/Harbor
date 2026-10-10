@@ -1091,7 +1091,7 @@ const checkTrains: Check = (world) => {
     if (tracks.has(trackKey)) return `${train.label}: koľaj ${trackKey} má viac vlakov`;
     tracks.add(trackKey);
     if (train.moving) movers += 1;
-    if (train.posMilli > train.stopMilli || train.posMilli < train.lengthMilli * -1) return `${train.label}: poloha ${String(train.posMilli)} je mimo trasy`;
+    if (train.posMilli > train.stopMilli || train.posMilli < 0) return `${train.label}: poloha ${String(train.posMilli)} je mimo trasy`;
     if (train.state === 'dwelling' && (train.posMilli !== train.stopMilli || train.stoppedTick === null || train.departAtTick === null)) return `${train.label}: v pobyte stojí na konci trasy a má plán odchodu`;
     const { lo, hi } = train.occupiedRangeAt(train.posMilli);
     for (let i = lo; i <= hi; i++) {

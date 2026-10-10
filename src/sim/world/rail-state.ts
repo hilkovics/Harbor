@@ -50,7 +50,6 @@ export function parseTrains(value: unknown, defs: DefRegistry, grid: Grid, nextI
       return index;
     });
     if (route.length < 2) throw new WorldStateError(`${path}/route`, 'trasa musí mať aspoň 2 bunky');
-    const train = defs.rail.train;
     const wagons = checkInteger(entry['wagons'], 1, `${path}/wagons`);
     const posMilli = entry['posMilli'];
     if (typeof posMilli !== 'number' || !Number.isSafeInteger(posMilli)) throw new WorldStateError(`${path}/posMilli`, `musí byť celé číslo, dostal ${describeValue(posMilli)}`);
@@ -60,8 +59,7 @@ export function parseTrains(value: unknown, defs: DefRegistry, grid: Grid, nextI
       throw new WorldStateError(`${path}/stoppedTick`, `stav ${state}: stoppedTick a departAtTick sú nastavené práve po zastavení vlaku`);
     }
     const stopMilli = route.length * 1000;
-    const lengthMilli = (train.locoLengthCells + wagons * train.wagonLengthCells) * 1000;
-    if (posMilli > stopMilli || posMilli - lengthMilli > 0) throw new WorldStateError(`${path}/posMilli`, `poloha ${String(posMilli)} je mimo trasy (0 … ${String(stopMilli)})`);
+    if (posMilli > stopMilli || posMilli < 0) throw new WorldStateError(`${path}/posMilli`, `poloha ${String(posMilli)} je mimo trasy (0 … ${String(stopMilli)})`);
     if (state === 'dwelling' && posMilli !== stopMilli) throw new WorldStateError(`${path}/posMilli`, 'vlak v pobyte stojí na konci trasy');
     return {
       id,

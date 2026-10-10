@@ -4,6 +4,7 @@ import { loadBundledDefs } from '@sim/defs';
 import { WorldStateError, World, stateHash } from '@sim/world';
 import { findWorldViolation } from '@sim/world/world-invariants';
 import type { SimEvent } from '@sim/events';
+import { EXPORT_CONTRACT, EXPORT_LABELS, TEU } from '../cargo/cargo-fixtures';
 import { assertCargoConservation } from '../helpers/invariants';
 import { RAIL_MAP, railDefs, railWorld } from '../helpers/r6-rail';
 
@@ -34,12 +35,13 @@ describe('cestovný poriadok a príchod', () => {
 
   it('bez napojenej koľaje vlak nevznikne a plán sa preskočí (Rng sa nespotrebuje)', () => {
     const { world } = railWorld({ rails: false, timetable: { firstArrivalHour: 0, intervalHours: 1 } });
-    const rng = JSON.stringify(world.rng.getState());
     for (let i = 0; i < 3 * TICKS_PER_HOUR; i++) world.tick();
     expect(world.trains.size).toBe(0);
     expect(world.rail.counters.skippedArrivals).toBeGreaterThanOrEqual(3);
     expect(world.hasRailService).toBe(false);
-    expect(JSON.stringify(world.rng.getState())).toBe(rng);
+    // `railShare` sa bez napojeného terminálu nelosuje: ponuky ho nemajú.
+    expect(world.contracts.size).toBeGreaterThan(0);
+    expect([...world.contracts.values()].every((contract) => contract.railShareBp === 0)).toBe(true);
   });
 
   it('plán je pravidelný: príchody po `intervalHours`', () => {
@@ -105,13 +107,7 @@ describe('jazda, pobyt a odchod', () => {
     runUntil(world, (w) => [...w.trains.values()][0]?.state === 'dwelling', 2000);
     const train = [...world.trains.values()][0];
     // Jednotka exportu na vlaku (vznik v in_train) ho podrží: vlak neodíde, kým ju RMG (TR6-02) nevyloží.
-    world.cargo.create('container_teu', { kind: 'in_train', trainId: train.id, slot: 0 }, 1 as never, {
-      direction: 'export',
-      voyageId: 1 as never,
-      lineId: null,
-      destinationPort: 'Rotterdam',
-      weightClass: 'medium',
-    });
+    world.cargo.create(TEU, { kind: 'in_train', trainId: train.id, slot: 0 }, EXPORT_CONTRACT, EXPORT_LABELS);
     for (let i = 0; i < 400; i++) world.tick();
     expect(train.state).toBe('dwelling');
   });

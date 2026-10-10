@@ -123,6 +123,8 @@ export interface ContractCardData {
   readonly id: ContractCardId;
   /** R5 (TR5-05): zmes typov kontajnerov kontraktu; chýba = žiadne čipy. */
   readonly typeMix?: readonly ContractTypeChip[];
+  /** R6 (TR6-05): podiel exportu vlakom v percentách (0–100); chýba alebo 0 = bez odznaku. */
+  readonly railSharePct?: number;
   /** Druh kontraktu; bez neho `import` (karty spred F6a). */
   readonly kind?: ContractCardKind;
   /** Návšteva lode, ku ktorej kontrakt patrí; kontrakty s rovnakou voyage tvoria jednu kartu. Bez nej = `id`. */
@@ -1144,8 +1146,9 @@ const KIND_ARIA_NAME: Readonly<Record<ContractCardKind, string>> = {
 };
 
 /** Jedna karta kontraktu (import, export booking, repositioning alebo prekládka; roundtrip skladá `VoyageCard`). */
-export function ContractCard({ contract, time, onAccept, onDecline, typeMix: typeMixProp, railSharePct }: ContractCardProps) {
+export function ContractCard({ contract, time, onAccept, onDecline, typeMix: typeMixProp, railSharePct: railSharePctProp }: ContractCardProps) {
   const typeMix = typeMixProp ?? contract.typeMix;
+  const railSharePct = railSharePctProp ?? contract.railSharePct;
   const { id, state } = contract;
   const kind = contractKind(contract);
   const tab = contractTab(state);

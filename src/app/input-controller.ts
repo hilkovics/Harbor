@@ -39,7 +39,9 @@
  * validácii celého ťahu (príkazy sú atomické — jedna neplatná bunka odmietne celý ťah).
  */
 import {
+  PlaceRailCommand,
   PlaceRoadCommand,
+  RemoveRailCommand,
   RemoveRoadCommand,
   SetGameSpeedCommand,
   type Command,
@@ -47,7 +49,7 @@ import {
   type ValidationResult,
 } from '@sim/commands';
 import type { EntityId } from '@sim/core';
-import { DEFAULT_ROAD_KIND, type CellCoord, type Direction4Name, type RoadKind, type Rotation } from '@sim/grid';
+import { DEFAULT_ROAD_KIND, type CellCoord, type Direction4Name, type Rotation } from '@sim/grid';
 import type { Camera } from '@render/camera';
 import type { BuildLayer, GhostArrow, GhostCell, GhostView } from '@render/build-layer';
 import type { ModuleGhostVM } from '@render/view-models';
@@ -61,7 +63,7 @@ import {
   WHEEL_ZOOM_PER_PX,
 } from './config';
 import { nextRotation, placeCommand, previewModule, type ModulePreview } from './module-build';
-import { isOneWayKind, nextDirection, placeRoadCommand, strokeDirections } from './road-build';
+import { RAIL_TOOL, isOneWayKind, nextDirection, placeRoadCommand, strokeDirections, type RoadTool } from './road-build';
 import { RoadSelection } from './road-selection';
 import type { SelectionSource } from './selection-cell';
 import type { SimBridge } from './sim-bridge';
@@ -211,7 +213,7 @@ export interface InputControllerOptions {
    * Výber typu cesty (T03-20): zmena zapína a vypína build mód ciest; ovládanie ho zrkadlí (`B`, Esc). Bez neho si
    * ovládanie vedie vlastný (testy).
    */
-  readonly roadSelection?: SelectionSource<RoadKind>;
+  readonly roadSelection?: SelectionSource<RoadTool>;
   /** Šípky smeru jednosmerky na ghoste (typicky tá istá `BuildLayer`); bez neho sa smer ukazuje len v štítku. */
   readonly ghostArrows?: GhostArrowsTarget;
   /** Zmena režimu (kurzor, indikátor); volá sa len pri skutočnej zmene stavu. */
@@ -256,7 +258,7 @@ export interface BuildFeedback {
   /** Len `module` a `place`: hráč nemá na cenu — ghost môže byť zelený, ale klik nič nepostaví (ikona $). */
   readonly fundsShort?: boolean;
   /** Len `place`: typ cesty, ktorý ťah stavia. */
-  readonly roadKind?: RoadKind;
+  readonly roadKind?: RoadTool;
   /** Len `place`: cena stavby (nových aj prestavaných buniek) v centoch (`PlaceRoadCommand.quote`). */
   readonly buildCents?: number;
   /** Len `place`: refundácia prestavaných buniek v centoch; > 0 = ťah je (aj) prestavba. */
@@ -328,7 +330,7 @@ export class InputController {
   private readonly moduleGhostView: ModuleGhostView;
   private readonly buildSelection: SelectionSource<string>;
   private readonly moduleSelection: SelectionSource<EntityId>;
-  private readonly roadSelection: SelectionSource<RoadKind>;
+  private readonly roadSelection: SelectionSource<RoadTool>;
   private readonly ghostArrows: GhostArrowsTarget | undefined;
   private readonly onStateChange: ((state: InputState) => void) | undefined;
   private readonly onQuickSave: (() => void) | undefined;
@@ -338,7 +340,7 @@ export class InputController {
   private moduleDefId: string | null = null;
   private moduleRotation: Rotation = 0;
   /** Typ cesty, ktorý stavia build mód ciest; po vypnutí módu ostáva ako „naposledy použitý“ pre `B`. */
-  private roadKindValue: RoadKind = DEFAULT_ROAD_KIND;
+  private roadKindValue: RoadTool = DEFAULT_ROAD_KIND;
   /** Smer jednosmerky pre ťah dlhý 1 bunku: posledný smer ťahu jednosmerky, `R` ho otáča. */
   private singleDirection: Direction4Name = DEFAULT_ONE_WAY_DIRECTION;
   private arrowsShown = false;
@@ -417,7 +419,7 @@ export class InputController {
   }
 
   /** Typ cesty build módu ciest; mimo neho naposledy použitý typ (`B` ho spustí znova). */
-  get roadKind(): RoadKind {
+  get roadKind(): RoadTool {
     return this.roadKindValue;
   }
 
@@ -754,11 +756,12 @@ export class InputController {
   }
 
   private makeCommand(kind: BuildKind, cells: readonly CellCoord[]): Command {
-    return kind === 'place' ? this.placeCommand(cells) : new RemoveRoadCommand(cells);
+    if (kind === 'place') return this.placeCommand(cells);
+    return this.roadKindValue === RAIL_TOOL ? new RemoveRailCommand(cells) : new RemoveRoadCommand(cells);
   }
 
   /** `PlaceRoad` s aktuálnym typom cesty (a smermi pri jednosmerke). */
-  private placeCommand(cells: readonly CellCoord[]): PlaceRoadCommand {
+  private placeCommand(cells: readonly CellCoord[]): PlaceRoadCommand | PlaceRailCommand {
     return placeRoadCommand(cells, this.roadKindValue, this.singleDirection);
   }
 

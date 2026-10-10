@@ -144,10 +144,10 @@ describe('App: BuildBar dole (kategória Terminál z defs.modules)', () => {
 
   it('kategórie mimo fázy sú zamknuté (disabled tab so zámkom); Terminál, Sklady, Logistika a Landside (cesty) sú povolené', () => {
     const html = render();
-    for (const id of ['rail', 'pipes']) {
+    for (const id of ['pipes']) {
       expect(html, id).toMatch(new RegExp(`<button[^>]*disabled=""[^>]*data-category="${id}"`));
     }
-    for (const id of ['terminal', 'storage', 'logistics', 'landside']) {
+    for (const id of ['terminal', 'storage', 'logistics', 'landside', 'rail']) {
       expect(html, id).not.toMatch(new RegExp(`<button[^>]*disabled=""[^>]*data-category="${id}"`));
     }
   });

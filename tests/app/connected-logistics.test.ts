@@ -61,7 +61,7 @@ const carrierItem = (props: BuildBarProps) => props.categories.find((c) => c.id 
 describe('ConnectedBuildBar: Sklady a Logistika', () => {
   it('kategórie Sklady a Logistika sú povolené; vozidlo bez depa je zamknuté s dôvodom', () => {
     const props = renderBar(createApp());
-    expect(props.categories.filter((c) => c.enabled).map((c) => c.id)).toEqual(['terminal', 'storage', 'logistics', 'landside']);
+    expect(props.categories.filter((c) => c.enabled).map((c) => c.id)).toEqual(['terminal', 'storage', 'logistics', 'landside', 'rail']);
     expect(carrierItem(props)).toMatchObject({ action: 'buy', locked: true, lockedReason: 'Postav a pripoj depo vozidiel' });
   });
 

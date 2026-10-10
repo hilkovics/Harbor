@@ -383,6 +383,13 @@ export interface TrainVM {
   departureTick?: number;
 }
 
+/** Úrovňové priecestie koľaj × cesta (R6, `EntitiesVM.crossings`): `x`, `y` = stred bunky; závora je `closed`, keď vlak drží alebo rezervuje priecestie. */
+export interface CrossingVM {
+  x: number;
+  y: number;
+  barrier: 'open' | 'closed';
+}
+
 export interface EntitiesVM {
   modules: readonly ModuleVM[];
   cranes: readonly CraneVM[];
@@ -401,6 +408,8 @@ export interface EntitiesVM {
   machines?: readonly MachineVM[];
   /** Vlaky (R6). Voliteľné: VM bez poľa nekreslí nič. */
   trains?: readonly TrainVM[];
+  /** Priecestia (R6). Voliteľné: VM bez poľa nekreslí nič. */
+  crossings?: readonly CrossingVM[];
 }
 
 export interface ModuleGhostVM {

@@ -16,7 +16,7 @@ import { formatMoney, formatMoneyDelta } from '@ui/format';
 import { Icon, type IconName } from '@ui/icon';
 import { moduleKindIcon } from '@ui/module-inspector';
 import type { BuildFeedback } from './input-controller';
-import { DIRECTION_LABEL, ROAD_KIND_LABEL } from './road-build';
+import { DIRECTION_LABEL, roadToolLabel } from './road-build';
 
 /** Slovenské popisy dôvodov odmietnutia (úplná mapa: nový dôvod v sime = chyba kompilácie tu). */
 export const REASON_TEXT: Readonly<Record<ValidationReason, string>> = {
@@ -93,7 +93,7 @@ function roadMoneyText(feedback: BuildFeedback): string {
 /** Text štítka stavby cesty: `Jednosmerná cesta · 5 buniek · $7,500 · → východ (R otočí)`; pri odmietnutí dôvody. */
 function roadFeedbackText(feedback: BuildFeedback): string {
   if (!feedback.ok && !isFundsOnly(feedback)) return feedback.reasons.map((reason) => REASON_TEXT[reason]).join(' · ');
-  const title = feedback.roadKind === undefined ? 'Cesta' : ROAD_KIND_LABEL[feedback.roadKind];
+  const title = feedback.roadKind === undefined ? 'Cesta' : roadToolLabel(feedback.roadKind);
   const parts = [title, cellCountLabel(feedback.cellCount), roadMoneyText(feedback)];
   if (feedback.direction !== undefined) parts.push(feedback.rotatable === true ? `${DIRECTION_LABEL[feedback.direction]} (R otočí)` : DIRECTION_LABEL[feedback.direction]);
   if (!feedback.ok) parts.push(feedback.reasons.map((reason) => REASON_TEXT[reason]).join(' · '));

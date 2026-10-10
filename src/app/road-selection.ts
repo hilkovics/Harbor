@@ -8,8 +8,8 @@
  *   v BuildBare svieti presne vtedy, keď je mód zapnutý.
  * Naposledy použitý typ si pamätá ovládanie (`InputController.roadKind`), nie tento výber.
  */
-import type { RoadKind } from '@sim/grid';
+import type { RoadTool } from './road-build';
 import { SelectionCell } from './selection-cell';
 
 /** Vybraný typ cesty v build móde ciest, alebo `null` = mód ciest je vypnutý. */
-export class RoadSelection extends SelectionCell<RoadKind> {}
+export class RoadSelection extends SelectionCell<RoadTool> {}

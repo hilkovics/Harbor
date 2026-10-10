@@ -21,7 +21,7 @@
 import shipsJson from '@data/defs/ships.json';
 import { commandFromJSON, type SerializedCommand } from '@sim/commands';
 import type { EntityId } from '@sim/core';
-import { DefRegistry, craneParams, storageParams } from '@sim/defs';
+import { DefRegistry, craneParams, gateParams, storageParams } from '@sim/defs';
 import type { LedgerCategory } from '@sim/economy';
 import type { SimEvent } from '@sim/events';
 import { World } from '@sim/world';
@@ -327,7 +327,14 @@ export function expectedMaintenanceCents(world: World): number {
 export function expectedWagesCents(world: World): number {
   const vehicles = [...world.vehicles.values()].reduce((sum, vehicle) => sum + vehicle.def.wagePerDayCents, 0);
   const cranes = cranesOf(world).reduce((sum, crane) => sum + craneParams(crane.def).wagePerDayCents, 0);
-  return vehicles + cranes;
+  const gates = [...world.modules.values()].reduce((sum, module) => sum + (module.def.kind === 'gate' ? gateParams(module.def).wagePerDayCents ?? 0 : 0), 0);
+  const equipment: Readonly<Record<string, number>> = {
+    rtg: world.defs.equipment.rtg.wagePerDayCents,
+    reach_stacker: world.defs.equipment.reachStacker.wagePerDayCents,
+    rmg: world.defs.equipment.rmg.wagePerDayCents,
+  };
+  const machines = [...world.machines.values()].reduce((sum, machine) => sum + (equipment[machine.defId] ?? 0), 0);
+  return vehicles + cranes + gates + machines;
 }
 
 // ---------------------------------------------------------------------------------------------------------

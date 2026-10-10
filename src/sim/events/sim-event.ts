@@ -16,6 +16,7 @@ import type { DaySummary, MonthSummary } from '../economy/ledger';
 import type { LedgerCategory } from '../economy/ledger-category';
 import type { JobCancelReason } from '../logistics/transport-job';
 import type { CellCoord } from '../grid/grid';
+import type { ParcelOwnership } from '../grid/parcel';
 import type { Rotation } from '../grid/rotation';
 import type { TruckState } from '../trucks/truck-fsm';
 import type { VehicleState } from '../vehicles/vehicle-fsm';
@@ -354,6 +355,13 @@ export interface MonthlyReportEvent {
   readonly type: 'MonthlyReport';
   readonly month: number;
   readonly summary: MonthSummary;
+}
+
+/** Vlastníctvo parcely sa zmenilo (`BuyParcel` → `owned`, `LeaseParcel` → `leased`, `ReleaseParcel` → `none`; F7, ADR-044). */
+export interface ParcelOwnershipChangedEvent {
+  readonly type: 'ParcelOwnershipChanged';
+  readonly parcelId: string;
+  readonly ownership: ParcelOwnership;
 }
 
 /** Prečo sa hra skončila; F5 pozná len bankrot (§9.2). */
@@ -698,6 +706,7 @@ export type SimEvent =
   | DayClosedSummaryEvent
   | MonthlyReportEvent
   | GameOverEvent
+  | ParcelOwnershipChangedEvent
   | ContractOfferedEvent
   | ContractAcceptedEvent
   | ContractStateChangedEvent

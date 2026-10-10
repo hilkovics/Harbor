@@ -19,12 +19,12 @@ import {
 const RUN_TIMEOUT_MS = 300_000;
 
 describe('WorldState: ekonomika a kontrakty', () => {
-  it('WORLD_STATE_VERSION je 15 (clean break savov, ADR-036) a serialize() vracia verziu 15 ako čistý JSON', () => {
-    expect(WORLD_STATE_VERSION).toBe(15);
+  it('WORLD_STATE_VERSION je 16 (clean break savov, ADR-036) a serialize() vracia verziu 16 ako čistý JSON', () => {
+    expect(WORLD_STATE_VERSION).toBe(16);
     const world = World.create(DEFS, MAP, 5901);
     world.tick();
     const state = world.serialize();
-    expect(state.version).toBe(15);
+    expect(state.version).toBe(16);
     expect(JSON.parse(JSON.stringify(state))).toEqual(state);
   });
 

@@ -109,6 +109,11 @@ export abstract class YardMachine {
     this.first = firstPriority;
   }
 
+  /** Denná mzda obsluhy stroja v centoch (`DayClosed`, F7, ADR-044); základ 0, `RtgCrane` ju berie z defu. */
+  dailyWageCents(): number {
+    return 0;
+  }
+
   /** Druh úlohy povýšený hráčom na prvý (`SetBlockPriority`), alebo `null` (poradie z defu). */
   get firstPriority(): YardPriorityKind | null {
     return this.first;

@@ -6,13 +6,16 @@
  * všetky príkazy bez ohľadu na to, odkiaľ ho konzument importuje.
  */
 import { AcceptContractCommand } from './accept-contract';
+import { BuyParcelCommand } from './buy-parcel';
 import { BuyVehicleCommand } from './buy-vehicle';
 import type { Command, SerializedCommand } from './command';
 import type { CommandRegistry } from './command-registry';
 import { DeclineContractCommand } from './decline-contract';
+import { LeaseParcelCommand } from './lease-parcel';
 import { PlaceModuleCommand } from './place-module';
 import { PlaceRailCommand } from './place-rail';
 import { PlaceRoadCommand } from './place-road';
+import { ReleaseParcelCommand } from './release-parcel';
 import { RemoveModuleCommand } from './remove-module';
 import { RemoveRailCommand } from './remove-rail';
 import { RemoveRoadCommand } from './remove-road';
@@ -49,6 +52,9 @@ export const BUILTIN_COMMANDS: readonly RegistrableCommand[] = Object.freeze([
   SetBlockPriorityCommand,
   SetCraneGangCommand,
   SetGateLaneModeCommand,
+  BuyParcelCommand,
+  LeaseParcelCommand,
+  ReleaseParcelCommand,
 ]);
 
 /** Zaregistruje všetky vstavané príkazy do `registry` (už registrovaný typ → `CommandError`). */

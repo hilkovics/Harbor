@@ -314,6 +314,7 @@ function checkLogistics(def: Readonly<LogisticsDef>): Problem | undefined {
 /** Tabuľky konfiguračných defov; kľúč je názov defu (= názov súboru bez `.json`). */
 /** `equipment.json` → `rtg` (TR3-01, ADR-040 bod 3): časy RTG v tickoch a priority fronty podľa druhu úlohy. */
 const RTG_FIELDS: SpecTable<RtgDef> = {
+  wagePerDayCents: { kind: 'integer', min: 0 },
   gantryCellsPerTick: { kind: 'number', exclusiveMin: 0 },
   hoistTicksPerTier: { kind: 'integer', min: 1 },
   trolleyTicksPerRow: { kind: 'integer', min: 1 },

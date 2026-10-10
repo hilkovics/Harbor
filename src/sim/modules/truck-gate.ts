@@ -99,6 +99,11 @@ export class TruckGate extends LandExportModule {
     this.params = gateParams(init.def);
   }
 
+  /** Denná mzda obsluhy pruhu (`params.wagePerDayCents`, F7, ADR-044). */
+  override dailyWageCents(): number {
+    return this.params.wagePerDayCents ?? 0;
+  }
+
   override get landsideRole(): LandsideRole {
     return 'gate';
   }

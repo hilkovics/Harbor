@@ -5,7 +5,7 @@
  * Cesty majú údržbu 0 (`infrastructure.json`), prenájmy pozemkov prídu až vo F7.
  *
  * Rozloženie F4 s 2 vozidlami: údržba = berth 120 000 + žeriav 90 000 + depo 15 000 + 2 × dvor 30 000 + vstupný a výstupný pruh brány
- * (spolu 8 000) = 293 000, mzdy = 2 × 18 000 + 25 000 = 61 000; spolu 354 000 za deň.
+ * (spolu 8 000) = 293 000, mzdy = 2 × 18 000 + 25 000 = 61 000 + 2 pruhy brány po 15 000 = 91 000; spolu 384 000 za deň.
  * Starter prístav (berth + žeriav): údržba 210 000, mzdy 25 000 = 235 000 za deň.
  *
  * Predpoklady o API:
@@ -46,7 +46,7 @@ const START_CASH = DEFS.economy.startingCashCents;
 const ROAD_CAPEX = (ALL_F4_ROAD_CELLS.length - 1) * DEFS.infrastructure.roadKinds.one_way.costPerCellCents + DEFS.infrastructure.roadKinds.two_lane.costPerCellCents;
 const ROAD_SALE = 75_000;
 const PORT_MAINTENANCE = 293_000;
-const PORT_WAGES = 61_000;
+const PORT_WAGES = 91_000;
 const STARTER_MAINTENANCE = 210_000;
 const STARTER_WAGES = 25_000;
 const LONG_TIMEOUT_MS = 300_000;
@@ -77,7 +77,7 @@ describe('DayClosed: údržba a mzdy v rozložení F4 s 2 vozidlami', () => {
     expect(economyOf(world).todayDeltaCents()).toBe(cashOf(world) - START_CASH);
   });
 
-  it('prvý DayClosed: údržba −293 000 a mzdy −61 000 v ticku uzávierky, DaySummary s výdavkami dňa 0 (CAPEX + údržba + mzdy)', () => {
+  it('prvý DayClosed: údržba −293 000 a mzdy −91 000 v ticku uzávierky, DaySummary s výdavkami dňa 0 (CAPEX + údržba + mzdy)', () => {
     run.runTo(TICKS_PER_DAY);
     const closes = run.ofSim('DayClosed');
     expect(closes.map((entry) => entry.tick)).toEqual([TICKS_PER_DAY]);
@@ -114,7 +114,7 @@ describe('DayClosed: údržba a mzdy v rozložení F4 s 2 vozidlami', () => {
     expect(cashOf(world)).toBe(cashAtClose0);
   });
 
-  it('druhý DayClosed bez akcií: hotovosť klesne presne o 354 000 (údržba + mzdy), súhrn dňa má len tieto dve kategórie', () => {
+  it('druhý DayClosed bez akcií: hotovosť klesne presne o 384 000 (údržba + mzdy), súhrn dňa má len tieto dve kategórie', () => {
     run.runTo(2 * TICKS_PER_DAY);
     const daily = economyOf(world).daily;
     expect(daily).toHaveLength(2);
@@ -128,7 +128,7 @@ describe('DayClosed: údržba a mzdy v rozložení F4 s 2 vozidlami', () => {
     cashAtClose1 = summary.cashEndCents;
   });
 
-  it('tretie vozidlo mení mzdy od nasledujúcej uzávierky: −79 000 mzdy, údržba rovnaká; nákup je CAPEX dňa nákupu', () => {
+  it('tretie vozidlo mení mzdy od nasledujúcej uzávierky: −109 000 mzdy, údržba rovnaká; nákup je CAPEX dňa nákupu', () => {
     const depot = must([...world.modules.values()].find((module) => module.kind === 'depot'), 'depo');
     run.send({ type: 'BuyVehicle', vehicleDefId: 'straddle_carrier', depotId: depot.id });
     run.step();

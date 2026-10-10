@@ -58,6 +58,7 @@ export type {
   SimEvent,
   SimEventOf,
   SimEventType,
+  ParcelOwnershipChangedEvent,
   TickAdvancedEvent,
   TranshipMissedEvent,
   TranshipRescuedEvent,

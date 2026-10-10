@@ -245,6 +245,7 @@
         "sealTicks": { "type": "integer", "minimum": 1, "description": "Výstupný pruh: čas plomby a závory v tickoch." },
         "sealIssueChance": { "type": "number", "minimum": 0, "maximum": 1, "description": "Výstupný pruh: šanca na problém pri plombe v režime standard (losuje `Rng`)." },
         "inspectionTicks": { "type": "integer", "minimum": 1, "description": "Výstupný pruh: čas dôkladnej kontroly (ticky navyše; v režime trouble celý prechod)." },
+        "wagePerDayCents": { "type": "integer", "minimum": 0, "description": "Denná mzda obsluhy pruhu v centoch; strhne sa pri DayClosed (F7, ADR-044). Chýba = 0." },
         "expressTicks": { "type": "integer", "minimum": 1, "description": "Celý prechod v režime express v tickoch." },
         "internalTicks": { "type": "integer", "minimum": 0, "description": "Vnútorný čas prechodu telom brány; pripočíta sa k trvaniu prechodu. Chýba = 0 (ADR-024)." }
       }

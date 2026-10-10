@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "rtg": {
+    "wagePerDayCents": 22000,
     "gantryCellsPerTick": 2,
     "hoistTicksPerTier": 1,
     "trolleyTicksPerRow": 1,
@@ -14,6 +15,7 @@
     "handoverGiveUpTicks": 600
   },
   "reachStacker": {
+    "wagePerDayCents": 16000,
     "gantryCellsPerTick": 1,
     "hoistTicksPerTier": 2,
     "trolleyTicksPerRow": 3,
@@ -27,6 +29,7 @@
     "handoverGiveUpTicks": 600
   },
   "rmg": {
+    "wagePerDayCents": 24000,
     "gantryCellsPerTick": 2,
     "hoistTicksPerTier": 1,
     "trolleyTicksPerRow": 1,

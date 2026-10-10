@@ -117,6 +117,16 @@ export const VALIDATION_REASONS = [
   'invalid_gang',
   /** `SetGateLaneMode` (TR4-01, ADR-041 bod 1): režim nie je `standard` / `express` / `trouble`. */
   'invalid_gate_mode',
+  /** `BuyParcel` / `LeaseParcel` / `ReleaseParcel` (F7, ADR-044): parcela s daným id v mape nie je. */
+  'unknown_parcel',
+  /** `BuyParcel` / `LeaseParcel`: parcela už nie je na predaj (vlastnená alebo prenajatá). */
+  'parcel_not_for_sale',
+  /** `LeaseParcel`: parcela nie je na prenájom (`leasable: false`). */
+  'parcel_not_leasable',
+  /** `ReleaseParcel`: parcela nie je prenajatá (kúpenú parcelu uvoľniť nemožno). */
+  'parcel_not_leased',
+  /** `ReleaseParcel`: na parcele stojí modul, cesta alebo koľaj. */
+  'parcel_in_use',
 ] as const;
 
 export type ValidationReason = (typeof VALIDATION_REASONS)[number];

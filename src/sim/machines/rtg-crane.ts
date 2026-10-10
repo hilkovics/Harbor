@@ -22,6 +22,11 @@ export class RtgCrane extends YardMachine {
     this.def = init.def;
   }
 
+  /** Denná mzda obsluhy (`equipment.json` → `wagePerDayCents`, F7, ADR-044). */
+  override dailyWageCents(): number {
+    return this.def.wagePerDayCents;
+  }
+
   /**
    * Poradie obsluhy druhu úlohy (menšie = skôr): z `equipment.json`, a ak hráč povýšil druh `firstPriority` (`SetBlockPriority`), ten má 0 a ostatné nasledujú
    * vo východiskovom poradí.

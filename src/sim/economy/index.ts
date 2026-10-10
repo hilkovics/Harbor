@@ -6,3 +6,8 @@ export type { CategoryTotals, DaySummary, LedgerEntry, MonthSummary } from './le
 export { DAILY_SUMMARIES_KEPT, Economy, MONTHLY_SUMMARIES_KEPT } from './economy';
 export type { EconomyEnv, EconomyState, OpenDayTotals } from './economy';
 export { BASIS_POINTS, applyBasisPoints, shareOfCents, toBasisPoints } from './basis-points';
+export { leasePerDayCents, leasePerMonthCents, totalLeasePerDayCents } from './parcel-lease';
+export { listParcels } from './parcel-view';
+export type { ParcelView, ParcelViewState } from './parcel-view';
+export { financeSeries } from './finance-series';
+export type { FinancePoint, FinanceSeries } from './finance-series';

@@ -93,8 +93,8 @@ describe('commandFromJSON ↔ toJSON', () => {
 
 describe('commandFromJSON — neplatný vstup → CommandError', () => {
   it('neznámy typ', () => {
-    expect(() => commandFromJSON({ type: 'BuyParcel', parcelId: 'x' })).toThrow(CommandError);
-    expect(() => commandFromJSON({ type: 'BuyParcel', parcelId: 'x' })).toThrow(/neznámy typ príkazu 'BuyParcel'/);
+    expect(() => commandFromJSON({ type: 'SellParcel', parcelId: 'x' })).toThrow(CommandError);
+    expect(() => commandFromJSON({ type: 'SellParcel', parcelId: 'x' })).toThrow(/neznámy typ príkazu 'SellParcel'/);
     expect(() => commandFromJSON({ type: 'placeRoad', cells: [] })).toThrow(/neznámy typ príkazu 'placeRoad'/);
   });
 

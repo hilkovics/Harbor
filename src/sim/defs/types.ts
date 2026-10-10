@@ -562,6 +562,8 @@ export interface GateParams {
   readonly inspectionTicks?: number;
   /** Celý prechod v režime `express` v tickoch (celé ≥ 1; odomyká ho tech F8 `gate_fast_lane`, zatiaľ bez podmienky). */
   readonly expressTicks: number;
+  /** Denná mzda obsluhy pruhu v centoch (`DayClosed`, F7, ADR-044); chýba = 0. */
+  readonly wagePerDayCents?: number;
   /** Vnútorný čas prechodu telom brány (ADR-011): pripočíta sa k trvaniu prechodu; chýba = 0 (ADR-024). */
   readonly internalTicks?: number;
 }
@@ -771,6 +773,8 @@ export type YardPriorityKind = (typeof YARD_PRIORITY_KINDS)[number];
 
 /** Parametre RTG žeriavu (`equipment.json` → `rtg`, docs/TERMINAL_2.md §5.3); časy sú v tickoch, pohyb v bunkách (bays) za tick. */
 export interface RtgDef {
+  /** Denná mzda obsluhy stroja v centoch; strhne ju `EconomySystem` pri `DayClosed` (F7, ADR-044). */
+  readonly wagePerDayCents: number;
   /** Rýchlosť pojazdu žeriavu pozdĺž bloku v bays za tick (spojitá poloha). */
   readonly gantryCellsPerTick: number;
   /** Zdvih / spúšťanie o jednu vrstvu stohu v tickoch. */

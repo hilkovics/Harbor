@@ -203,6 +203,7 @@
       "maintenancePerDayCents": 4000,
       "params": {
         "direction": "in",
+        "wagePerDayCents": 15000,
         "ocrTicks": 3,
         "checkTicks": 8,
         "issueTicks": 4,
@@ -325,6 +326,7 @@
       "maintenancePerDayCents": 4000,
       "params": {
         "direction": "out",
+        "wagePerDayCents": 15000,
         "weighTicks": 6,
         "scanTicks": 6,
         "sealTicks": 4,

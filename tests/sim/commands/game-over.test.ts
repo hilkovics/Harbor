@@ -35,6 +35,9 @@ const SAMPLES: readonly SerializedCommand[] = [
   { type: 'SetBlockPriority', blockId: 99, order: 'ship' },
   { type: 'SetCraneGang', craneId: 2, mode: 'gang', tractorsPerSts: 2 },
   { type: 'SetGateLaneMode', laneId: 99, mode: 'express' },
+  { type: 'BuyParcel', parcelId: 'west_quay' },
+  { type: 'LeaseParcel', parcelId: 'west_quay' },
+  { type: 'ReleaseParcel', parcelId: 'west_quay' },
 ];
 
 /** Svet po prvom ticku (pool ponúk existuje) a jeho kópia zo save s `gameOver = true`. */

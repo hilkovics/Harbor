@@ -32,3 +32,7 @@ export { ContractOfferCommand } from './contract-command';
 export { AcceptContractCommand } from './accept-contract';
 export { DeclineContractCommand } from './decline-contract';
 export { BASIS_POINTS_PER_UNIT, rateToBasisPoints, refundCents } from './refund';
+export { BuyParcelCommand } from './buy-parcel';
+export { LeaseParcelCommand } from './lease-parcel';
+export { ReleaseParcelCommand } from './release-parcel';
+export { ParcelCommand, parcelInUse } from './parcel-command';

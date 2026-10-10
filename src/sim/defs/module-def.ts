@@ -94,6 +94,7 @@ export const MODULE_PARAM_SPECS: { readonly [K in ModuleKind]: SpecTable<ModuleP
     sealIssueChance: { kind: 'number', min: 0, max: 1, optional: true },
     inspectionTicks: { kind: 'integer', min: 1, optional: true },
     expressTicks: { kind: 'integer', min: 1 },
+    wagePerDayCents: { kind: 'integer', min: 0, optional: true },
     internalTicks: { kind: 'integer', min: 0, optional: true },
   },
   pre_gate: {

@@ -10,9 +10,11 @@
  * 3. `DaySummary` uzavretého dňa (`clock.gameDay − 1`) a udalosť `DayClosedSummary`;
  * 4. pri `MonthClosed` `MonthSummary` uzavretého mesiaca a udalosť `MonthlyReport`;
  * 5. bankrotové počítadlo (`economy.bankruptcyDays` dní za sebou s hotovosťou < 0) → pri dosiahnutí `GameOver`.
- * Prenájmy parciel (§9.2 `lease`) pribudnú vo F7 medzi krok 2 a 3.
+ * Poradie v rámci kroku: údržba → mzdy (vozidlá, moduly vrátane žeriavov a pruhov brány, stroje RTG/RMG/RS) → nájomné parciel
+ * (`parcel_lease`, F7, ADR-044) → súhrny. Energia reeferov sa účtuje priebežne (ReeferSystem, R5).
  */
 import { DAYS_PER_MONTH, type ClockBoundaries } from '../core/sim-clock';
+import { totalLeasePerDayCents } from '../economy/parcel-lease';
 import type { World } from '../world/world';
 
 export class EconomySystem {
@@ -28,8 +30,11 @@ export class EconomySystem {
       wagesCents += module.dailyWageCents();
     }
     for (const vehicle of world.vehicles.values()) wagesCents += vehicle.def.wagePerDayCents;
+    for (const machine of world.machines.values()) wagesCents += machine.dailyWageCents();
     if (maintenanceCents > 0) economy.post(-maintenanceCents, 'maintenance');
     if (wagesCents > 0) economy.post(-wagesCents, 'wages');
+    const leaseCents = totalLeasePerDayCents(world.parcels.values(), world.defs.economy.leaseMonthlyRateOfPrice);
+    if (leaseCents > 0) economy.post(-leaseCents, 'parcel_lease');
 
     const day = clock.gameDay - 1;
     events.emit({ type: 'DayClosedSummary', day, summary: economy.closeDay(day) });

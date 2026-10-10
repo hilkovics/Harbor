@@ -134,6 +134,12 @@ describe('CommandRegistry (kostra T01-03)', () => {
       'invalid_gang',
       // TR4-01 (ADR-041): SetGateLaneMode
       'invalid_gate_mode',
+      // F7 (ADR-044): BuyParcel, LeaseParcel, ReleaseParcel
+      'unknown_parcel',
+      'parcel_not_for_sale',
+      'parcel_not_leasable',
+      'parcel_not_leased',
+      'parcel_in_use',
     ]);
     expect(new Set(VALIDATION_REASONS).size).toBe(VALIDATION_REASONS.length);
   });
@@ -164,6 +170,9 @@ describe('vstavané príkazy (T01-04, T02-04, T02-05)', () => {
       'SetBlockPriority',
       'SetCraneGang',
       'SetGateLaneMode',
+      'BuyParcel',
+      'LeaseParcel',
+      'ReleaseParcel',
     ]);
     expect(BUILTIN_COMMANDS.map((command) => command.TYPE)).toEqual(commandRegistry.types);
   });
@@ -214,6 +223,9 @@ describe('vstavané príkazy (T01-04, T02-04, T02-05)', () => {
       'SetBlockPriority',
       'SetCraneGang',
       'SetGateLaneMode',
+      'BuyParcel',
+      'LeaseParcel',
+      'ReleaseParcel',
     ]);
     expect(direct.commandFromJSON({ type: 'RemoveRoad', cells: [] }).type).toBe('RemoveRoad');
   });

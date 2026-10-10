@@ -7,6 +7,7 @@
  * Počas R1–R6 každá fáza zmení tvar v11 bez migrácie a bez zvýšenia verzie; migračný reťazec sa obnoví od vydania (F13).
  * Súbor ostáva domovom verzie, aby sa ten reťazec mal kam vrátiť.
  *
+ * Tvar v16 (F7, ADR-044) = v15; tvar sa nemení, mení sa zúčtovanie (mzdy strojov a pruhov brány, nájomné parciel `parcel_lease`, príkazy `BuyParcel`/`LeaseParcel`/`ReleaseParcel`); save v15 sa odmietne, lebo jeho ledger a hotovosť zodpovedajú inému OPEX (ADR-036 bod 2).
  * Tvar v15 (R6, TR6-01, ADR-043) = v14 + `trains` (vlaky: trasa, poloha, stav, plán), `rail` (cestovný poriadok a súčty), `Contract.railShareBp` a lokácia nákladu `in_train { trainId, slot }`; save v14 sa odmietne (ADR-036 bod 2).
  * Tvar v14 (R5, TR5-01, ADR-042) = v13 + `CargoUnit.reefer` (stav reeferu: napájanie, hodiny bez prúdu, alarm; `null` mimo reeferov) a `Contract.unitTypes` (typy kontajnerov kontraktu); ledger kategória `energy`; save v13 sa odmietne (ADR-036 bod 2).
  * Tvar v13 (R4, TR4-02, ADR-041 dodatok) = v12 + kamión s lístkom (`blockId`, `jobId`, `unitId`, `tpCell`, `holdingId`, `stall`, `phase`, `gateInTick`; bez `rampId`, `dock`, `waitingAreaId`, `bay`), joby
@@ -18,10 +19,10 @@
 import { WorldStateError, describeValue, isPlainObject } from './state-check';
 
 /** Aktuálna verzia `WorldState` — `serialize()` vždy vracia ju. */
-export const WORLD_STATE_VERSION = 15;
+export const WORLD_STATE_VERSION = 16;
 
 /** Najstaršia verzia, ktorú vie `World.deserialize` načítať (bez migrácií rovná aktuálnej, ADR-036). */
-export const OLDEST_WORLD_STATE_VERSION = 15;
+export const OLDEST_WORLD_STATE_VERSION = 16;
 
 /**
  * Save s verziou sveta, ktorú táto verzia hry nenačíta (`version` je celé číslo iné než `WORLD_STATE_VERSION`). Väčšinou ide

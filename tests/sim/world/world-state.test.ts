@@ -291,7 +291,7 @@ describe('World.deserialize', () => {
   const INVALID: readonly [string, Mutation, string][] = [
     ['neznámy kľúč', set('extra', 1), '/extra'],
     ['chýba kľúč', (s) => delete s.cashCents, '/cashCents'],
-    ['neznáma budúca verzia', set('version', 16), '/version'],
+    ['neznáma budúca verzia', set('version', 17), '/version'],
     ['verzia 0', set('version', 0), '/version'],
     ['verzia ako reťazec', set('version', '3'), '/version'],
     ['starý save v1 → clean break (ADR-036), chyba verzie pred tvarom', set('version', 1), '/version'],

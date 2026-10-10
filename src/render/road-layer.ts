@@ -22,7 +22,7 @@
  * Vrstva je vlastná render group: posun kamery (transformácia rodiča) neprepočítava dlaždice a zmena ciest
  * prestavia len túto vrstvu, nie terén.
  *
- * Kreslí sa iba vrstva `road`; koľaje (`rail`) pribudnú s ich stavbou (tokeny `--rail-*`).
+ * R6: tá istá trieda kreslí aj koľaje (`layer = 'rail'`, `WorldRenderer.rails`): sprity `infra.rail.tiles.*`, bez typu cesty a bez ramien k modulom.
  */
 import { Container, Graphics, GraphicsContext, Sprite } from 'pixi.js';
 import { DIRECTIONS_4, ROAD_KIND_TRAITS, type CellCoord, type Grid, type Rect, type Rotation } from '@sim/grid';
@@ -42,8 +42,8 @@ import { ROAD_EDGE_PX, narrowRoadPaths, type PathOp } from './narrow-road';
 import type { SpriteTextures } from './sprite-atlas';
 import type { RenderPalette } from './tokens';
 
-/** Vrstva dopravy, ktorú tento layer kreslí. */
-const LAYER = 'road' as const;
+/** Vrstva dopravy, ktorú tento layer kreslí (`road` predvolene; R6: aj `rail` — koľaje s rovnakým autotilingom). */
+type TransportLayer = 'road' | 'rail';
 
 /** Šírka pásu cesty ako zlomok bunky (`--cell`); zvyšok bunky ostáva terén. */
 export const ROAD_BAND_CELLS = 3 / 4;
@@ -133,6 +133,8 @@ export class RoadLayer {
     private readonly palette: RenderPalette,
     private readonly textures: SpriteTextures | null = null,
     private readonly connectorMask: ConnectorMaskAt = noConnectorMask,
+    /** R6: `rail` = tá istá vrstva s autotilingom koľají (sprity `infra.rail.tiles.*`, bez úzkych ciest). */
+    private readonly layer: TransportLayer = 'road',
   ) {
     this.rebuild();
   }
@@ -192,7 +194,7 @@ export class RoadLayer {
   private refresh(x: number, y: number): boolean {
     const index = this.grid.index(x, y);
     const existing = this.tiles.get(index);
-    const wanted = autotileTile(this.grid, x, y, LAYER, this.connectorMask(x, y));
+    const wanted = autotileTile(this.grid, x, y, this.layer, this.connectorMask(x, y));
     const style = wanted ? this.styleOf(x, y, wanted) : WIDE_STYLE;
     if (existing && wanted && existing.shape === wanted.shape && existing.rotation === wanted.rotation && existing.style === style) {
       return false;
@@ -208,7 +210,7 @@ export class RoadLayer {
 
   /** Je cesta v bunke jednopruhová (procedurálna, bez spritu)? */
   private isNarrow(x: number, y: number): boolean {
-    return ROAD_KIND_TRAITS[this.grid.at(x, y).roadKind].lanes === 1;
+    return this.layer === 'road' && ROAD_KIND_TRAITS[this.grid.at(x, y).roadKind].lanes === 1;
   }
 
   /**
@@ -221,7 +223,7 @@ export class RoadLayer {
     for (const { dx, dy, bit } of DIRECTIONS_4) {
       const nx = x + dx;
       const ny = y + dy;
-      if (this.grid.inBounds(nx, ny) && this.grid.at(nx, ny).road === LAYER && !this.isNarrow(nx, ny)) wideNeighbours |= bit;
+      if (this.grid.inBounds(nx, ny) && this.grid.at(nx, ny).road === this.layer && !this.isNarrow(nx, ny)) wideNeighbours |= bit;
     }
     // dlaždica je otočená o `rotation`; ramená základnej orientácie dostaneme otočením masky späť
     const base = rotateMask(wideNeighbours, ((360 - rotation) % 360) as Rotation) & AUTOTILE_SHAPE_BASE_MASK[shape];
@@ -237,7 +239,7 @@ export class RoadLayer {
       display = graphics;
     } else if (this.textures !== null) {
       // Sprite v základnej orientácii, otáča sa okolo stredu bunky (anchor 0,5).
-      const sprite = new Sprite(this.textures.infra(LAYER, shape));
+      const sprite = new Sprite(this.textures.infra(this.layer, shape));
       sprite.anchor.set(MID);
       sprite.setSize(cellPx, cellPx);
       display = sprite;

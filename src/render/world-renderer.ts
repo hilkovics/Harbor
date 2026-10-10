@@ -18,6 +18,7 @@ import { BuildLayer, loadGhostPalette } from './build-layer';
 import { Camera } from './camera';
 import { CraneLayer } from './crane-layer';
 import { MachineLayer } from './machine-layer';
+import { TrainLayer } from './train-layer';
 import { EntityLayer } from './entity-layer';
 import { createRoadKindAt, createRoadMaskAt } from './lane';
 import { ConnectorArmIndex } from './module-connectors';
@@ -25,6 +26,7 @@ import { ModuleLayer } from './module-layer';
 import { ParcelLayer } from './parcel-layer';
 import { PortalLayer } from './portal-layer';
 import { RoadLayer } from './road-layer';
+import { noConnectorMask } from './module-connectors';
 import { RoadMarkLayer } from './road-mark-layer';
 import { TrafficJamLayer } from './traffic-jam-layer';
 import { SPRITE_RASTER_RESOLUTION, SpriteAtlas, type SpriteTextures } from './sprite-atlas';
@@ -37,7 +39,7 @@ import {
   type RenderPalette,
   type TokenResolver,
 } from './tokens';
-import type { EntitiesVM, MachineVM, ModuleGhostVM, TruckVM, VehicleVM } from './view-models';
+import type { EntitiesVM, MachineVM, ModuleGhostVM, TrainVM, TruckVM, VehicleVM } from './view-models';
 
 export interface WorldRendererOptions {
   /** Prvok, do ktorého sa vloží canvas; renderer sa prispôsobí jeho veľkosti. */
@@ -86,6 +88,9 @@ const NO_TRUCKS: readonly TruckVM[] = Object.freeze([]);
 /** Prázdny zoznam strojov pre VM bez poľa `machines` (do R3). */
 const NO_MACHINES: readonly MachineVM[] = Object.freeze([]);
 
+/** Prázdny zoznam vlakov pre VM bez poľa `trains` (do R6). */
+const NO_TRAINS: readonly TrainVM[] = Object.freeze([]);
+
 export class WorldRenderer {
   readonly app: Application;
   readonly camera: Camera;
@@ -94,6 +99,8 @@ export class WorldRenderer {
   readonly world = new Container({ label: 'world' });
   readonly terrain: TerrainLayer;
   readonly roads: RoadLayer;
+  /** Koľaje (R6): `grid.road === 'rail'` s autotilingom, pod cestnými značkami. */
+  readonly rails: RoadLayer;
   /** Cestné značky nad cestami a pod entitami: šípky smeru jednosmeriek. */
   readonly roadMarks: RoadMarkLayer;
   readonly parcels: ParcelLayer;
@@ -104,6 +111,8 @@ export class WorldRenderer {
   readonly cranes: CraneLayer;
   /** Stroje v blokoch (R3, RTG) nad vozidlami. */
   readonly machines: MachineLayer;
+  /** Vlaky (R6): lokomotíva + vagóny s kontajnermi. */
+  readonly trains: TrainLayer;
   /** Zvýraznenie zápchy (R1): červené bunky pod vozidlami (`cells`) a odznaky nad nimi (`badges`). */
   readonly jams: TrafficJamLayer;
   /** Ghost stavby: cesty (`setGhost`, `GhostView`) aj modulu (`setModuleGhost`); je navrchu nad žeriavmi. */
@@ -138,6 +147,7 @@ export class WorldRenderer {
     this.terrain = new TerrainLayer(grid, palette, textures);
     this.connectorArms = new ConnectorArmIndex(grid);
     this.roads = new RoadLayer(grid, palette, textures, this.connectorArms.maskAt);
+    this.rails = new RoadLayer(grid, palette, textures, noConnectorMask, 'rail');
     this.roadMarks = new RoadMarkLayer(grid, palette, textures?.overlay('path_arrow') ?? null);
     this.parcels = new ParcelLayer(options.parcels ?? options.map.parcels, palette, textures);
     this.portals = new PortalLayer(options.map, grid.width, grid.height, palette, textures);
@@ -158,11 +168,13 @@ export class WorldRenderer {
     this.ships = new EntityLayer(entityDeps);
     this.cranes = new CraneLayer(entityDeps);
     this.machines = new MachineLayer(entityDeps);
+    this.trains = new TrainLayer(entityDeps);
     this.jams = new TrafficJamLayer(entityDeps);
     this.build = build;
     this.world.addChild(
       this.terrain.view,
       this.roads.view,
+      this.rails.view,
       this.roadMarks.view,
       this.parcels.view,
       this.portals.view,
@@ -170,6 +182,7 @@ export class WorldRenderer {
       this.cranes.baseView,
       this.jams.cells,
       this.ships.view,
+      this.trains.view,
       this.machines.view,
       this.jams.badges,
       this.cranes.view,
@@ -239,6 +252,7 @@ export class WorldRenderer {
     this.ships.syncTrucks(vm.trucks ?? NO_TRUCKS, alpha);
     this.jams.sync(vm.vehicles ?? NO_VEHICLES, vm.trucks ?? NO_TRUCKS, alpha);
     this.machines.sync(vm.machines ?? NO_MACHINES);
+    this.trains.sync(vm.trains ?? NO_TRAINS);
     this.cranes.sync(vm.cranes);
   }
 
@@ -253,7 +267,7 @@ export class WorldRenderer {
    */
   updateRoads(cells: readonly CellCoord[]): number {
     this.roadMarks.updateCells(cells);
-    return this.roads.updateRoads(cells);
+    return this.roads.updateRoads(cells) + this.rails.updateRoads(cells);
   }
 
   /** Prekreslí obrysy parciel po zmene vlastníctva (kúpa, prenájom); @returns počet prekreslených obrysov */
@@ -282,6 +296,7 @@ export class WorldRenderer {
     this.app.ticker.remove(this.onTick, this);
     this.terrain.destroy();
     this.roads.destroy();
+    this.rails.destroy();
     this.roadMarks.destroy();
     this.parcels.destroy();
     this.portals.destroy();
@@ -289,6 +304,7 @@ export class WorldRenderer {
     this.ships.destroy();
     this.cranes.destroy();
     this.machines.destroy();
+    this.trains.destroy();
     this.jams.destroy();
     this.build.destroy();
     this.app.destroy({ removeView: true }, { children: true });

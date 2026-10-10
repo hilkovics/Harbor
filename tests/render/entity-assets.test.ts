@@ -167,10 +167,13 @@ describe('entitySpriteFiles (čo načíta atlas)', () => {
       'entities/ech.svg',
       'entities/ech_spreader_20.svg',
       'entities/ech_spreader_40.svg',
+      'entities/locomotive.svg',
       'entities/reach_stacker.svg',
       'entities/reach_stacker_boom.svg',
       'entities/reach_stacker_spreader_20.svg',
       'entities/reach_stacker_spreader_40.svg',
+      'entities/rmg_frame.svg',
+      'entities/rmg_trolley.svg',
       'entities/rtg_frame.svg',
       'entities/rtg_trolley.svg',
       'entities/straddle_carrier.svg',
@@ -179,6 +182,7 @@ describe('entitySpriteFiles (čo načíta atlas)', () => {
       'entities/truck_cab.svg',
       'entities/truck_trailer_40.svg',
       'entities/vehicle_brake_lights.svg',
+      'entities/wagon_container_60.svg',
     ]);
   });
 

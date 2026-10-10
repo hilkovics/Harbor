@@ -335,6 +335,27 @@
           },
           "description": "Paluba kontajnerovej lode (variant `container`): kam renderer kladie kontajnery podľa počtu jednotiek na palube (F6a)."
         },
+        "pivot": { "$ref": "#/$defs/pxPoint", "description": "Pivot v px súboru (R6: stred lokomotívy / vagóna)." },
+        "couplerY": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number" },
+          "description": "R6: y spriahadiel v px súboru (predné, zadné)."
+        },
+        "slots20": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number" } },
+          "description": "R6 (vagón): sloty 20′ kontajnera ako rozsah y [od, do] v px súboru, od predku."
+        },
+        "slot40": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number" },
+          "description": "R6 (vagón): slot 40′ kontajnera ako rozsah y [od, do] v px súboru (pri predku)."
+        },
         "note": { "type": "string" }
       }
     },

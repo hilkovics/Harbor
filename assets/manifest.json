@@ -1378,9 +1378,18 @@
     "locomotive": {
       "footprint": {
         "w": 1,
-        "h": 2
+        "h": 3
       },
-      "file": "entities/locomotive.svg"
+      "file": "entities/locomotive.svg",
+      "pivot": {
+        "x": 32,
+        "y": 96
+      },
+      "couplerY": [
+        4,
+        188
+      ],
+      "note": "lokomotíva 1×3, nos hore, pivot = stred; kĺbovo po koľaji (TR6-03)"
     },
     "wagon_container": {
       "footprint": {
@@ -1882,6 +1891,76 @@
         }
       },
       "note": "reach stacker (R5, MachineVM): telo 1×2 predkom hore; boom.mountOnBase = bod telesa (px súboru), kde sedí pivot výložníka; travel = posun výložníka vpred v px pri boom 0..1; spreader.mountOnBase = hlava výložníka v px súboru výložníka (pivot spreadera sa kladie sem)"
+    },
+    "wagon_container_60": {
+      "footprint": {
+        "w": 1,
+        "h": 3
+      },
+      "file": "entities/wagon_container_60.svg",
+      "pivot": {
+        "x": 32,
+        "y": 96
+      },
+      "couplerY": [
+        0,
+        192
+      ],
+      "slots20": [
+        [
+          2,
+          66
+        ],
+        [
+          64,
+          128
+        ],
+        [
+          126,
+          190
+        ]
+      ],
+      "slot40": [
+        2,
+        128
+      ],
+      "note": "vagón 60′: 3× 20′ alebo 40′ + 20′ (sloty y v px súboru od predku); bez nákladu, kontajnery kreslí hra"
+    },
+    "rmg": {
+      "footprint": {
+        "w": 6,
+        "h": 2
+      },
+      "parts": {
+        "frame": {
+          "file": "entities/rmg_frame.svg",
+          "footprint": {
+            "w": 6,
+            "h": 2
+          },
+          "pivot": {
+            "x": 160,
+            "y": 64
+          }
+        },
+        "trolley": {
+          "file": "entities/rmg_trolley.svg",
+          "footprint": {
+            "w": 1,
+            "h": 1
+          },
+          "pivot": {
+            "x": 32,
+            "y": 32
+          },
+          "travel": {
+            "axis": "x",
+            "yMin": 32,
+            "yMax": 352
+          }
+        }
+      },
+      "note": "RMG nad koľajami + buffer: rám jazdí po Y (travel 0..trackLength-128), vozík po X rámu (32–352), konzola x 320–384"
     }
   },
   "cargo": {
